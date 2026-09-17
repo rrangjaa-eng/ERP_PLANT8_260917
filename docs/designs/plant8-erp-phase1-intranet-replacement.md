@@ -156,7 +156,7 @@ Claude 서브에이전트(이 대화를 보지 않고 요약만 읽음)의 냉�
 2. **이관 + 미러링**: `fone_project`→`projects`, `QUOTATION_LINE`→`quotes`/`quote_items`, `QUOTATION_PAYMENT`(승인 상태 포함)→`expenses`/`statuses`, `CARD_USED`→법인카드 사용, `fone_partners`/`fone_client`→`vendors`, `fone_member`→`people`, `REPORT_CATEGORY1/2`→`code_lists`, `fone_project`의 담당자 컬럼→`projects.owner_id`(미러 소유). 담당자가 비어 있으면 팀장이 데모 전 `projects.owner_override`(새 시스템 소유 컬럼)에 지정하고, 권한 판정은 `owner_override`가 있으면 그것을, 없으면 `owner_id`를 쓴다.
    - 경로: 인트라넷 서버에서 `mysqldump` → Cloud Storage → Cloud Run Job이 적재. RDS 직접 연결은 회사 GCP 이후.
    - 멱등·재실행 가능. `intranet_id_map`(원본 표·ID ↔ 새 ID) 매핑표를 두고, 원본에서 사라진 ID는 soft-delete.
-   - 미러가 소유하는 컬럼과 새 시스템이 쓰는 컬럼을 분리한다. 새 시스템이 만든 행은 `source='erp'`로 미러 대상에서 제외. 미러 행에 새 시스템이 덧붙이는 값(미사용 표시, 역할·팀, 첨부, `owner_override`, `order_links`)은 별도 컬럼·표에 둔다.
+   - 미러가 소유하는 컬럼과 새 시스템이 쓰는 컬럼을 분리한다. 새 시스템이 만든 행은 `source='erp'`로 미러 대상에서 제외. 미러 행에 새 시스템이 덧붙이는 값(미사용 표시, 계급·팀, 첨부, `owner_override`, 견적 줄의 `ordered_at`·`ordered_by`·`order_status`)은 별도 컬럼·표에 둔다.
    - 검증: 행수 일치(원본 전체, 고아 견적 줄 5 포함) + 프로젝트별 견적 줄 합계 대 인트라넷 차익. 고아·불일치 66줄은 고치지 않고 `flag` 컬럼으로 표시만. 검증 실패 시 트랜잭션 롤백, 직전 성공본 유지, 실패는 관리 화면 배너로 표시(알림은 7단계라 이 시점엔 없음).
    - 계좌번호 컬럼은 `/cso` 완료 전까지 미러링 제외.
    - **계급·팀은 이 단계에서**: 260907 계급 5(`ceo`·`head`·`team_lead`·`staff`·`sys_admin`)와 팀 컬럼을 그대로 쓰고, 열람 범위 판정(대표·본부 책임자 전체 / 팀장 자기 팀 / staff 자기 프로젝트)만 확인한다. 초기값은 `fone_member`와 인트라넷의 지정 팀장 5명에서. 직책 층 정리와 권한표 화면은 8단계.

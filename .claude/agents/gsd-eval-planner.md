@@ -18,7 +18,7 @@ Turn domain rubric ingredients into measurable, tooled evaluation criteria. Writ
 </role>
 
 <required_reading>
-Read `F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/ai-evals.md` before planning. This is your evaluation framework.
+Read `.claude/gsd-core/references/ai-evals.md` before planning. This is your evaluation framework.
 </required_reading>
 
 <input>

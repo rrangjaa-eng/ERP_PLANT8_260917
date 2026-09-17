@@ -11,7 +11,7 @@ Answer: "What AI/LLM framework is right for this project?" Run a ≤6-question i
 </role>
 
 <required_reading>
-Read `F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/ai-frameworks.md` before asking questions — it is your decision matrix.
+Read `.claude/gsd-core/references/ai-frameworks.md` before asking questions — it is your decision matrix.
 </required_reading>
 
 <project_context>

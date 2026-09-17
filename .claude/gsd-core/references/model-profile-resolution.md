@@ -26,7 +26,7 @@ string** when nothing resolved.
 
 ## Lookup Table
 
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/model-profiles.md
+@.claude/gsd-core/references/model-profiles.md
 
 ## Passing the model to a spawn
 

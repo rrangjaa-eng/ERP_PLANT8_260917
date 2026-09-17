@@ -26,7 +26,7 @@ Flags:
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/audit-fix.md
+@.claude/gsd-core/workflows/audit-fix.md
 </execution_context>
 
 <process>

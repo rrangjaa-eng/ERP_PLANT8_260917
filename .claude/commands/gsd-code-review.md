@@ -32,7 +32,7 @@ Output: {padded_phase}-REVIEW.md in phase directory + inline summary of findings
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/code-review.md
+@.claude/gsd-core/workflows/code-review.md
 </execution_context>
 
 <context>

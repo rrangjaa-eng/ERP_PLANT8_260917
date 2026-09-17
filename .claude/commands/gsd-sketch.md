@@ -30,13 +30,13 @@ Does not require prior new-project setup — auto-creates `.planning/sketches/` 
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/sketch.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/sketch-wrap-up.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/ui-brand.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/sketch-theme-system.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/sketch-interactivity.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/sketch-tooling.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/sketch-variant-patterns.md
+@.claude/gsd-core/workflows/sketch.md
+@.claude/gsd-core/workflows/sketch-wrap-up.md
+@.claude/gsd-core/references/ui-brand.md
+@.claude/gsd-core/references/sketch-theme-system.md
+@.claude/gsd-core/references/sketch-interactivity.md
+@.claude/gsd-core/references/sketch-tooling.md
+@.claude/gsd-core/references/sketch-variant-patterns.md
 </execution_context>
 
 

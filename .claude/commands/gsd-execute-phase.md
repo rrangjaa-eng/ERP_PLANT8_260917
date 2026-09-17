@@ -33,8 +33,8 @@ Context budget: ~15% orchestrator, 100% fresh per subagent.
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/execute-phase.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/ui-brand.md
+@.claude/gsd-core/workflows/execute-phase.md
+@.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 

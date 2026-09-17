@@ -16,7 +16,7 @@ Use when `.planning/phases/` has accumulated directories from past milestones.
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/cleanup.md
+@.claude/gsd-core/workflows/cleanup.md
 </execution_context>
 
 <process>

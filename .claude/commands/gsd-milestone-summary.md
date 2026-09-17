@@ -19,7 +19,7 @@ Output: MILESTONE_SUMMARY written to `.planning/reports/`, presented inline, opt
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/milestone-summary.md
+@.claude/gsd-core/workflows/milestone-summary.md
 </execution_context>
 
 <context>

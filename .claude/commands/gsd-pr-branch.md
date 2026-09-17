@@ -19,7 +19,7 @@ changes that are irrelevant to code review.
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/pr-branch.md
+@.claude/gsd-core/workflows/pr-branch.md
 </execution_context>
 
 <process>

@@ -20,7 +20,7 @@ planning via /gsd-plan-phase --reviews.
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/review.md
+@.claude/gsd-core/workflows/review.md
 </execution_context>
 
 <context>

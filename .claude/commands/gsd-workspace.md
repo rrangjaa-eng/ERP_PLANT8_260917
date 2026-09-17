@@ -30,10 +30,10 @@ Mode routing:
 </routing>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/new-workspace.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/list-workspaces.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/remove-workspace.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/ui-brand.md
+@.claude/gsd-core/workflows/new-workspace.md
+@.claude/gsd-core/workflows/list-workspaces.md
+@.claude/gsd-core/workflows/remove-workspace.md
+@.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>

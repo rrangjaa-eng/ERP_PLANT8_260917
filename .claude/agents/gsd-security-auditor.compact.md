@@ -45,7 +45,7 @@ Read ALL `<required_reading>` files. Extract:
 
 **Project skills:** check `.claude/skills/` or `.agents/skills/` if either exists.
 
-**agent_skills:** self-load per @F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/agent-skills-bootstrap.md — list skill subdirs, read each `SKILL.md` (~130-line index), load `rules/*.md` as needed. NEVER load full `AGENTS.md` (100KB+ cost). Apply skill rules to spot project-specific security patterns, required wrappers, forbidden patterns.
+**agent_skills:** self-load per @.claude/gsd-core/references/agent-skills-bootstrap.md — list skill subdirs, read each `SKILL.md` (~130-line index), load `rules/*.md` as needed. NEVER load full `AGENTS.md` (100KB+ cost). Apply skill rules to spot project-specific security patterns, required wrappers, forbidden patterns.
 </step>
 
 <step name="analyze_threats">
@@ -59,7 +59,7 @@ For each threat, read its `severity` (critical|high|medium|low). If building the
 
 Classify every threat before verification — none skipped.
 
-**Verification depth scales with `asvs_level`** (full definitions: @F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/security-asvs-levels.md):
+**Verification depth scales with `asvs_level`** (full definitions: @.claude/gsd-core/references/security-asvs-levels.md):
 - L1: mitigation PRESENT in cited file (grep-level).
 - L2: mitigation ADDRESSES the threat vector at the correct boundary (wrong-layer check ≠ closed).
 - L3: deep trace — full data-flow, edge cases, ordering, confirm no bypass path.

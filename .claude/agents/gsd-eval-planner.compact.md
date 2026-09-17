@@ -17,7 +17,7 @@ GSD eval planner: "How will we know this AI system is working correctly?" Turn d
 </role>
 
 <required_reading>
-Read `F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/ai-evals.md` first — your evaluation framework.
+Read `.claude/gsd-core/references/ai-evals.md` first — your evaluation framework.
 </required_reading>
 
 <input>

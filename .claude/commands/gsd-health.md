@@ -23,7 +23,7 @@ Validate `.planning/` directory integrity and report actionable issues. Checks f
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/health.md
+@.claude/gsd-core/workflows/health.md
 </execution_context>
 
 <process>

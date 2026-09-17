@@ -30,9 +30,9 @@ Does not require prior new-project setup — auto-creates `.planning/spikes/` if
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/spike.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/spike-wrap-up.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/ui-brand.md
+@.claude/gsd-core/workflows/spike.md
+@.claude/gsd-core/workflows/spike-wrap-up.md
+@.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 

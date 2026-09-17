@@ -22,9 +22,9 @@ Flow: Select Framework → Research Docs → Research Domain → Design Eval Str
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/ai-integration-phase.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/ai-frameworks.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/ai-evals.md
+@.claude/gsd-core/workflows/ai-integration-phase.md
+@.claude/gsd-core/references/ai-frameworks.md
+@.claude/gsd-core/references/ai-evals.md
 </execution_context>
 
 <context>

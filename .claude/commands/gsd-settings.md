@@ -22,7 +22,7 @@ Routes to the settings workflow which handles:
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/settings.md
+@.claude/gsd-core/workflows/settings.md
 </execution_context>
 
 <process>

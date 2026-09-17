@@ -188,5 +188,5 @@ Full protocol and rationale: `gsd-core/references/honest-verifier.md`.
 
 ## Lazy references
 
-- **Per-stack verification patterns:** before Step 4 (artifact verification) on an unfamiliar stack, Read `F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/verification-patterns.md` — the grep catalog for React/Next.js components, API routes, database schema, and the universal stub patterns. Read it lazily (only the sections for the stack under verification); it is too large to load wholesale on every run.
-- **Canonical report shape:** the emitted VERIFICATION.md follows `@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/templates/verification-report.md` — the template whose Guidelines and row shapes `src/uat.cts` treats as canonical when consuming verification output.
+- **Per-stack verification patterns:** before Step 4 (artifact verification) on an unfamiliar stack, Read `.claude/gsd-core/references/verification-patterns.md` — the grep catalog for React/Next.js components, API routes, database schema, and the universal stub patterns. Read it lazily (only the sections for the stack under verification); it is too large to load wholesale on every run.
+- **Canonical report shape:** the emitted VERIFICATION.md follows `@.claude/gsd-core/templates/verification-report.md` — the template whose Guidelines and row shapes `src/uat.cts` treats as canonical when consuming verification output.

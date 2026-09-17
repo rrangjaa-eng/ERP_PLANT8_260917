@@ -31,7 +31,7 @@ Characteristics: already filtered to genuine user messages (no system/tool/Claud
 </input>
 
 <reference>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/user-profiling.md
+@.claude/gsd-core/references/user-profiling.md
 
 Detection heuristics rubric — read in full before analyzing. Defines: the 8 dimensions and rating spectrums, signal patterns, detection heuristics, confidence scoring thresholds, evidence curation rules, output schema.
 </reference>
@@ -39,7 +39,7 @@ Detection heuristics rubric — read in full before analyzing. Defines: the 8 di
 <process>
 
 <step name="load_rubric">
-Read `F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/user-profiling.md` to load: all 8 dimension definitions + rating spectrums; signal patterns/heuristics per dimension; confidence thresholds (HIGH: 10+ signals across 2+ projects, MEDIUM: 5-9, LOW: <5, UNSCORED: 0); evidence curation rules (Signal+Example format, 3 quotes/dimension, ~100 char quotes); sensitive-content exclusions; recency weighting; output schema.
+Read `.claude/gsd-core/references/user-profiling.md` to load: all 8 dimension definitions + rating spectrums; signal patterns/heuristics per dimension; confidence thresholds (HIGH: 10+ signals across 2+ projects, MEDIUM: 5-9, LOW: <5, UNSCORED: 0); evidence curation rules (Signal+Example format, 3 quotes/dimension, ~100 char quotes); sensitive-content exclusions; recency weighting; output schema.
 </step>
 
 <step name="read_messages">

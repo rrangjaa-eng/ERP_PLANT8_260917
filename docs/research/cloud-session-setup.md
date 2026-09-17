@@ -86,12 +86,8 @@ git commit -m "vendor GSD project-local for cloud sessions"
    - 위치: claude.ai/code 메시지 입력창 윗줄의 구름 아이콘("Default") → **Add cloud environment**, 또는 기존 환경에 마우스 올려 톱니바퀴. 데스크톱 앱 입력창에도 같은 선택기가 있다.
    - 대화상자 칸: Name / Network access(Trusted 유지) / Environment variables(.env 형식) / Setup script(Bash).
    - **bun은 클라우드 VM에 이미 설치돼 있다**(Node.js 행: npm, yarn, pnpm, bun). 단 "Bun is installed but has known proxy compatibility issues for package fetching" 이므로 실패 시 npm으로 넘어가게 쓴다.
-   - Setup script:
-     ```bash
-     set -e
-     cd "$(git rev-parse --show-toplevel)/.claude/skills/gstack"
-     bun install || npm install
-     ```
+   - **Setup script 칸은 비워 둔다.** 2026-09-17 실측: 설정 스크립트는 리포가 복제되기 전에 돌아서 `git rev-parse`가 "not a git repository"로 실패했다. 문서 규칙대로 VM 도구 설치(설정 스크립트)와 프로젝트 의존성 설치(SessionStart hook)를 나눈다. bun은 이미 있으니 설정 스크립트에 넣을 게 없다.
+   - 프로젝트 의존성은 리포에 커밋된 SessionStart hook이 설치한다: `.claude/settings.json`의 `hooks.SessionStart` → `scripts/install_pkgs.sh`. 스크립트는 `CLAUDE_CODE_REMOTE=true`가 아니면 즉시 종료하고, 클라우드에서만 `.claude/skills/gstack`에 `bun install || npm install`을 한다(`node_modules`가 있으면 건너뜀). 매 세션 시작·재개 때 돈다.
    - Environment variables: `GSTACK_SKIP_PLAYWRIGHT=1` (브라우저 QA를 클라우드에서 안 쓸 때)
    - Setup script는 첫 세션에서 한 번 실행되고 약 7일간 파일시스템 스냅샷으로 캐시된다. 스크립트나 허용 도메인을 바꾸면 다시 실행. 5분 안에 끝나야 한다. root로 실행. 이 칸의 값은 환경을 쓰는 누구나 볼 수 있으니 비밀값 금지.
 5. 클라우드 세션에서 `/gsd-progress`로 확인. 필요하면 `check-tools`를 실행해 달라고 해서 설치 도구 버전을 본다.

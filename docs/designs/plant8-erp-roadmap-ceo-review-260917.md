@@ -15,7 +15,7 @@ Supersedes: `docs/designs/plant8-erp-phase1-intranet-replacement.md` (사용자 
 - **0C 12개월 이상**: 30명이 매일 입력, 관리자 1인이 코드 없이 조정, 두 본부가 같은 화면에서 납득. 이탈 위험은 알림 규칙 생성기·커스텀 필드 UI의 "설정 엔진화".
 - **0C-bis 접근**: A 패리티 우선 단일 앱(채택, 9/10) / B 최소 실행안(6/10, 권한 후행) / C 메타데이터 엔진(10/10, 실패 경로).
 - **0F 모드**: HOLD SCOPE (범위는 문답으로 확정, 15파일 초과→REDUCTION 기본값은 사용자가 축소를 명시적으로 거부해 미적용).
-- **0E 시점 결정**: D3 완료(정산) = 정산 결재 문서(경영관리 기안 → 대표 승인, 승인 순간 스냅샷) · D4 원화 정수 + 서버 단일 반올림(외화 소수 2, 환율 소수 4) · D5 이메일 발송은 회사 GCP 이식 뒤 활성화(앱 알림함으로 Phase 6 완결).
+- **0E 시점 결정**: D3 완료(정산) = 정산 결재 문서(경영관리 기안 → 대표 승인, 승인 순간 스냅샷) · D4 원화 정수 + 서버 단일 반올림(외화 소수 2, 환율 소수 4) · D5 이메일 발송 = 회사 Google 계정 SMTP(개인 GCP 단계는 개인 Gmail SMTP, 환경 변수 4개, 발송 실패는 알림함·관리자 배너) — 사용자가 리뷰 후 C→A로 변경. Phase 6에서 이메일 활성.
 
 ## 불변식 (리뷰 전체의 잣대)
 
@@ -59,7 +59,6 @@ Supersedes: `docs/designs/plant8-erp-phase1-intranet-replacement.md` (사용자 
 - 새 기능·화면(예: 경영관리 자금 일정 캘린더) — 모드가 HOLD. v2 목록(카카오톡·Google 로그인·확인증 PDF)과 Out of Scope 표(REQUIREMENTS.md)가 그대로 유효.
 - 손익 골든 데이터셋·양 본부 사전 합의 절차 — 사용자가 15B로 거부. 수용된 위험: "인트라넷과 다르다"는 이의에 답할 표가 없음.
 - 결재 위임·대표 대행 — 260907에 있었으나 사용자가 제외(9A가 퇴사 케이스를 대신 해결).
-- 이메일 발송 — 회사 GCP 이식 뒤(D5). Phase 6은 앱 알림함으로 완결.
 
 ## What already exists
 
@@ -67,7 +66,7 @@ Supersedes: `docs/designs/plant8-erp-phase1-intranet-replacement.md` (사용자 
 
 ## Dream state delta
 
-12개월 이상(30명 매일 입력, 관리자 코드 없는 조정, 두 본부 같은 화면) 대비 이 계획은 Phase 10까지 전부를 겨냥한다. 남는 격차는 (1) 이메일·카카오톡 채널(D5·v2), (2) 손익 납득의 사람 검증 절차(15B로 미정), (3) 회사 GCP 이식 시점(외부 조건).
+12개월 이상(30명 매일 입력, 관리자 코드 없는 조정, 두 본부 같은 화면) 대비 이 계획은 Phase 10까지 전부를 겨냥한다. 남는 격차는 (1) 카카오톡 채널(v2), (2) 손익 납득의 사람 검증 절차(15B로 미정), (3) 회사 GCP 이식 시점(외부 조건). 회계는 위하고(WEHAGO)가 맡으므로 이 시스템의 경계 밖.
 
 ## Error & Rescue Registry
 
@@ -174,4 +173,4 @@ Synthesized from this review's findings. Each task derives from a specific findi
 - [ ] **T23 (P1, human: ~1d / CC: ~30min)** — design-system — 다섯 상태 컴포넌트 계약 (23A) · Phase 2
 - [ ] **T24 (P1, human: ~1d / CC: ~20min)** — approvals/pnl — 정산 결재 문서 종류 + 승인 시 스냅샷 (D3) · Phase 5·8
 - [ ] **T25 (P1, human: ~0.5d / CC: ~15min)** — money — 정수 원·소수 자릿수·단일 반올림 함수·분할 보정 (D4) · Phase 4
-- [ ] **T26 (P2, human: ~2h / CC: ~10min)** — notify — 발송 어댑터 인터페이스 + 회사 GCP 게이트 플래그 (D5) · Phase 6
+- [ ] **T26 (P2, human: ~2h / CC: ~10min)** — notify — SMTP 발송 어댑터(환경 변수 host·user·password·from) + 실패 시 알림함·배너 (D5=A) · Phase 6

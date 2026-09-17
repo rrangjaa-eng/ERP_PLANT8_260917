@@ -124,7 +124,6 @@ Deferred to future release. Tracked but not in current roadmap.
 
 - **NOTI-05**: 카카오톡 알림 — 시스템 안정화 뒤
 - **AUTH-05**: Google 로그인(회사 Workspace) — 회사 GCP 이식 시 환경 변수로 켬
-- **ORD-01**: 발주 순간 폰 입력("발주됨" 상태·예정 지급일) — 데이터가 쌓인 뒤 재검토
 - **CERT-04**: 확인증 PDF 출력
 
 ## Out of Scope
@@ -134,6 +133,7 @@ Explicitly excluded. Documented to prevent scope creep.
 | Feature | Reason |
 |---------|--------|
 | 260907 코드 재사용 | 63만 줄·미결 54건 상속 불가. 용어·규칙 참고만 |
+| 발주 순간 폰 입력("발주됨" 상태) | 사용자 결정: 필요 없음. 비용은 견적 실행가 → 지출결의 → 증빙으로 충분 |
 | 고정 데모 일정 | 기한 없음 |
 | 인트라넷 지속 미러링 | 일회 이전 + 리허설. 병행 기간에도 입력은 새 시스템만 |
 | 홈택스 API 연동 | 인증서·세무 규정 의존, 비개발자 유지 불가. 파일 첨부로 충분 |

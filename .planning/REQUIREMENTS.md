@@ -67,6 +67,12 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **PNL-08**: 프로젝트·팀 손익 목록을 Excel로 내보낸다. 정보 노출표가 내보내기에도 적용된다
 - [ ] **PNL-09**: 모든 금액 입력·계산·표시는 공급가액(부가세 제외) 기준이며 화면에 명시된다. 부가세율(기본 10%)은 적용 시작일이 있는 이력형 설정이다
 
+### 리저브·외화 (RSV, FX)
+
+- [ ] **RSV-01**: 클라이언트별 리저브 대장: 입금·출금·잔액을 날짜순으로 기록하고 본다. 각 줄은 프로젝트에 연결할 수 있고, 통화·환율·원화 환산액을 함께 적는다
+- [ ] **RSV-02**: 프로젝트 매출을 리저브에서 충당하면 대장에 출금으로 남고, 그 금액이 손익의 매출(설정된 매출 기준)에 반영된다. 잔액이 부족하면 이유와 함께 막힌다
+- [ ] **FX-01**: 매출·지출결의·증빙·법인카드·리저브 금액에 통화·외화 금액·환율·원화 환산액을 함께 기록한다. 환율은 입력할 때 사람이 적고 기본값은 설정(통화별 최근 환율)에서 온다. 손익·목표·내보내기는 원화 환산액 기준이며 원래 통화·금액이 함께 표시된다
+
 ### 연간 목표·인센티브 (GOAL)
 
 - [ ] **GOAL-01**: 팀별 연간 목표(매출·이익)를 입력하고 달성률·진행률이 보인다. 팀장까지 열람한다
@@ -156,7 +162,8 @@ Explicitly excluded. Documented to prevent scope creep.
 | 인트라넷 지속 미러링 | 일회 이전 + 리허설. 병행 기간에도 입력은 새 시스템만 |
 | 홈택스 API 연동 | 인증서·세무 규정 의존, 비개발자 유지 불가. 파일 첨부로 충분 |
 | 구매 요청의 결재선 | 구매 요청은 결재 없는 경량 흐름(경영관리가 처리). 협력사 발주는 지출결의로 |
-| 매출·수금·리저브 전체 대장 | 핵심은 나간 돈. 매출 최소 칸만 프로젝트에 |
+| 매출·수금 전체 대장(세금계산서 발행·수금 관리 모듈) | 핵심은 나간 돈. 매출 최소 칸 + 클라이언트별 리저브 대장만 |
+| 실시간 환율 API 연동 | 외부 의존·비용. 환율은 입력 시 사람이 적고 기본값은 설정 |
 | 대결(위임 결재)·조건부 결재 분기 | 30명 조직에 과함. 빈 자리 건너뜀 + 설정에서 담당 변경으로 대체 |
 | 영수증 OCR | 외부 API 의존. 수동 입력 + 자동완성 |
 | 리포트 빌더·BI | 정보 노출표 우회 경로. 고정 화면 + Excel |
@@ -172,13 +179,99 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (roadmap 생성 시 채움) | | |
+| AUTH-01 | Phase 1 | Pending |
+| AUTH-02 | Phase 1 | Pending |
+| AUTH-03 | Phase 1 | Pending |
+| AUTH-04 | Phase 1 | Pending |
+| MAST-01 | Phase 3 | Pending |
+| MAST-02 | Phase 3 | Pending |
+| MAST-03 | Phase 3 | Pending |
+| MAST-04 | Phase 3 | Pending |
+| PROJ-01 | Phase 4 | Pending |
+| PROJ-02 | Phase 4 | Pending |
+| PROJ-03 | Phase 4 | Pending |
+| PROJ-04 | Phase 4 | Pending |
+| PROJ-05 | Phase 4 | Pending |
+| PROJ-06 | Phase 6 | Pending |
+| PROJ-07 | Phase 4 | Pending |
+| EXP-01 | Phase 5 | Pending |
+| EXP-02 | Phase 5 | Pending |
+| EXP-03 | Phase 5 | Pending |
+| EXP-04 | Phase 5 | Pending |
+| EXP-05 | Phase 5 | Pending |
+| EXP-06 | Phase 6 | Pending |
+| EXP-07 | Phase 6 | Pending |
+| EXP-08 | Phase 5 | Pending |
+| EXP-09 | Phase 6 | Pending |
+| EXP-10 | Phase 6 | Pending |
+| EXP-11 | Phase 6 | Pending |
+| EXP-12 | Phase 6 | Pending |
+| EXP-13 | Phase 6 | Pending |
+| EXP-14 | Phase 5 | Pending |
+| EVID-01 | Phase 5 | Pending |
+| EVID-02 | Phase 6 | Pending |
+| EVID-03 | Phase 6 | Pending |
+| EVID-04 | Phase 6 | Pending |
+| PNL-01 | Phase 8 | Pending |
+| PNL-02 | Phase 8 | Pending |
+| PNL-03 | Phase 8 | Pending |
+| PNL-04 | Phase 8 | Pending |
+| PNL-05 | Phase 8 | Pending |
+| PNL-06 | Phase 8 | Pending |
+| PNL-07 | Phase 9 | Pending |
+| PNL-08 | Phase 8 | Pending |
+| PNL-09 | Phase 8 | Pending |
+| RSV-01 | Phase 4 | Pending |
+| RSV-02 | Phase 8 | Pending |
+| FX-01 | Phase 4 | Pending |
+| GOAL-01 | Phase 9 | Pending |
+| GOAL-02 | Phase 9 | Pending |
+| GOAL-03 | Phase 9 | Pending |
+| NOTI-01 | Phase 6 | Pending |
+| NOTI-02 | Phase 6 | Pending |
+| NOTI-03 | Phase 6 | Pending |
+| NOTI-04 | Phase 6 | Pending |
+| LEAV-01 | Phase 5 | Pending |
+| CERT-01 | Phase 10 | Pending |
+| CERT-02 | Phase 10 | Pending |
+| CERT-03 | Phase 10 | Pending |
+| CERT-04 | Phase 10 | Pending |
+| ADMN-01 | Phase 3 | Pending |
+| ADMN-02 | Phase 3 | Pending |
+| ADMN-03 | Phase 3 | Pending |
+| ADMN-04 | Phase 5 | Pending |
+| ADMN-05 | Phase 3 | Pending |
+| ADMN-06 | Phase 3 | Pending |
+| ADMN-07 | Phase 9 | Pending |
+| ADMN-08 | Phase 3 | Pending |
+| ADMN-09 | Phase 4 | Pending |
+| ADMN-10 | Phase 3 | Pending |
+| ADMN-11 | Phase 6 | Pending |
+| ADMN-12 | Phase 3 | Pending |
+| MIG-01 | Phase 7 | Pending |
+| MIG-02 | Phase 7 | Pending |
+| MIG-03 | Phase 7 | Pending |
+| MIG-04 | Phase 7 | Pending |
+| MIG-05 | Phase 7 | Pending |
+| OPS-01 | Phase 1 | Pending |
+| OPS-02 | Phase 1 | Pending |
+| OPS-03 | Phase 7 | Pending |
+| OPS-04 | Phase 1 | Pending |
+| OPS-05 | Phase 3 | Pending |
+| UX-01 | Phase 2 | Pending |
+| UX-02 | Phase 8 | Pending |
+| UX-03 | Phase 5 | Pending |
+| UX-04 | Phase 4 | Pending |
+| UX-05 | Phase 4 | Pending |
+| UX-06 | Phase 5 | Pending |
 
 **Coverage:**
-- v1 requirements: 82 total
-- Mapped to phases: 0
-- Unmapped: 82 ⚠️
+- v1 requirements: 85 total
+- Mapped to phases: 85
+- Unmapped: 0 ✓
+
+**By phase:** 1 (7) · 2 (1) · 3 (13) · 4 (11) · 5 (12) · 6 (16) · 7 (6) · 8 (10) · 9 (5) · 10 (4)
 
 ---
 *Requirements defined: 2026-09-17*
-*Last updated: 2026-09-17 after user confirmation (82 v1 requirements)*
+*Last updated: 2026-09-17 after roadmap revision (85/85 mapped to Phases 1-10; RSV-01·FX-01 → Phase 4, RSV-02 → Phase 8)*

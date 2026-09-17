@@ -23,7 +23,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 Phase: 1 of 10 (배포 스켈레톤·로그인)
 Plan: 0 of TBD in current phase
 Status: Ready to plan
-Last activity: 2026-09-17 — 로드맵 수정: plan-ceo-review 결정 반영(23 findings + D3·D4·D5 + OV-1..8), OPS-06·OPS-07 Phase 1 추가, v1 요구사항 87/87. 10 페이즈, MVP 모드
+Last activity: 2026-09-17 — 로드맵 수정: plan-ceo-review 결정 반영(23 findings + D3·D4·D5 + OV-1..8), OPS-06·OPS-07 Phase 1 추가, OV-3 재정의(EXP-15)·CERT-01 QR·비용 누수 규칙 3건(대납 세금·EXP-16 대리 등록·개인 비용 팀 귀속) 반영, v1 요구사항 89/89. 10 페이즈, MVP 모드
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -65,7 +65,10 @@ Recent decisions affecting current work:
 - [CEO 리뷰 OV-1]: 인트라넷 추출·변환(extract/transform) 스크립트는 Phase 4부터 시작해 실제 데이터를 픽스처로 쓴다. Phase 7은 적재·검증·델타 이전·전환. Phase 8 착수 조건은 Phase 4~6 실사용 지표
 - [CEO 리뷰 OV-5]: Phase 3은 메커니즘(can/visible/scopeFor, 리포지토리 viewer 투영, 설정 레지스트리, 누수 스캔 테스트 생성기, 보관함, 행동 로그) + 마스터로 좁힌다. ADMN-01/02/03/10의 전 메뉴 검수는 Phase 6 끝 성공 기준(요구사항 매핑은 Phase 3 유지)
 - [CEO 리뷰 OV-6]: Phase 7 착수 게이트 = 회사 GCP에서 `scripts/deploy.sh` 1회 성공
-- [CEO 리뷰 범위]: HOLD SCOPE — 새 기능 없음. OPS-06(관리자 시스템 상태 화면·JSON 로그)·OPS-07(ARCHITECTURE.md·OPERATIONS.md 각 300줄 상한)만 Phase 1에 추가(85→87)
+- [CEO 리뷰 범위]: HOLD SCOPE — 새 기능 없음. OPS-06(관리자 시스템 상태 화면·JSON 로그)·OPS-07(ARCHITECTURE.md·OPERATIONS.md 각 300줄 상한)만 Phase 1에 추가(85→87). 이후 사용자 OV-3 재정의로 EXP-15 추가(→88), 비용 누수 규칙으로 EXP-16 추가(→89)
+- [OV-3 재정의(사용자, 리뷰 후)]: 사람은 공급가액만 적는다. 증빙 종류(코드표: 세금계산서·계산서·카드 전표·현금영수증·기타소득·사업소득·해외 인보이스 등)별 세금 규칙(없음 / 부가세 가산율 / 원천징수율+면제 기준, 이력형 설정)으로 부가세·원천징수액·지급 총액을 서버가 계산하고 종류를 바꾸면 즉시 재계산, 손익 비용은 공급가 기준 그대로 — EXP-15 → Phase 5; 코드표 세금 규칙·설정 키·거래처 기본 종류는 Phase 3(MAST-01/04), 매출 칸은 Phase 4(PROJ-03), 지급 완료액·증빙은 Phase 6(EXP-09/EVID-03), 이전 행 종류 매핑은 Phase 7, 원천징수 제안은 Phase 10(CERT-04). 세부 (a) 통장에 실제 오간 돈 칸(입금액·지급 완료액)만 합계(부가세 포함·원천징수 차감 후)로 적고 시스템이 공급가로 역산, 계산값과 다르면 차이 표시 (b) 거래처 마스터의 기본 증빙 종류를 지출결의·카드 사용 등록 때 자동 채움 (c) 기타소득 면제 기준 기본값 = 기타소득금액 5만원 이하(= 지급액 125,000원 이하), 이력형 설정
+- [CERT-01 QR(사용자)]: 수령자가 직원 화면·인쇄물의 QR(1회성 링크)을 폰으로 찍고 들어와 본인 정보(이름·주민등록번호·주소·연락처·계좌)를 직접 입력하고 터치 서명을 제출한다(로그인 없음). 지급 금액·소득 종류·원천징수액은 지출결의에서 미리 채워져 수령자는 고칠 수 없고, 링크는 1회 제출 후 만료(Phase 10)
+- [비용이 새는 곳 셋(사용자)]: ① 경품 등 회사 대납 세금 — EXP-15 4번째 규칙 '원천징수 회사 대납'(세율·계산 방식 단순 비율/gross-up, 이력형 설정), 대납 세금은 그 줄의 프로젝트(또는 팀) 비용에 더해진다(PNL-02; Phase 3 코드표·설정 키, Phase 5 계산, Phase 8 손익) ② 자동 결제·정기 결제 — 경영관리가 PM이 모르는 법인카드 사용을 대리 등록해 견적 줄 / 견적가 0인 '견적 외 비용' 줄 / 카드 소지자 팀 비용에 연결, 담당 PM 알림 + '경영관리 등록' 표시, 결재 없음(EXP-16 → Phase 6; '견적 외 비용' 줄은 Phase 4 원장의 한 종류; EXP-07 연결 대상은 셋 중 하나, 팀 비용은 소속 팀 자동) ③ 직원 개인 비용 — 프로젝트 미연결이면 사용일 시점 소속 팀 비용, 팀장 화면 '프로젝트 미연결' 표시(EXP-08 Phase 5; MAST-02 팀 소속 발령일 이력 Phase 3; PNL-07 팀 직접 관리비 = 팀 이름 지출 + 미연결 개인 비용, Phase 9)
 
 ### Pending Todos
 
@@ -92,5 +95,5 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-09-17
-Stopped at: 로드맵 수정(plan-ceo-review 결정 반영: 23 findings·D3·D4·D5·OV-1..8, OPS-06·OPS-07 Phase 1, 87/87), STATE.md 갱신. 오케스트레이터 커밋·사용자 승인 대기
+Stopped at: 로드맵 수정(plan-ceo-review 결정 반영: 23 findings·D3·D4·D5·OV-1..8, OPS-06·OPS-07 Phase 1, OV-3 재정의 EXP-15·CERT-01 QR·비용 누수 규칙 3건(EXP-16), 89/89), STATE.md 갱신. 오케스트레이터 커밋·사용자 승인 대기
 Resume file: None

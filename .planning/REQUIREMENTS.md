@@ -120,6 +120,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **UX-02**: 역할별 첫 화면: PM(내 프로젝트·내 지출결의), 경영관리(나갈 돈·결재·미증빙), 대표·팀장(손익)
 - [ ] **UX-03**: 폰에서 결재·조회·지출결의 작성이 된다(반응형)
 - [ ] **UX-04**: 잘못된 입력은 서버 검증으로 즉시 안내되고, 저장 실패·중복 저장·입력값 유실이 없다
+- [ ] **UX-05**: 모든 데이터 입력을 키보드만으로 끝낼 수 있고, 표 입력(견적 줄·법인카드·목표 등)은 엑셀과 같은 키 구성을 따른다: Tab/Enter·방향키로 칸 이동, 여러 칸 복사·붙여넣기, Esc 취소, 단축키로 저장·새 줄
+- [ ] **UX-06**: 화면에 안내 문구를 두지 않는다. 규칙과 절차는 행동 유도로 습관이 되게 한다: 다음 할 일이 한 곳에 보이고, 선행 단계가 끝나기 전에는 다음 동작이 비활성이며, 필수 항목·증빙이 빠지면 제출 버튼 자체가 이유와 함께 막힌다
 
 ## v2 Requirements
 
@@ -162,9 +164,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | (roadmap 생성 시 채움) | | |
 
 **Coverage:**
-- v1 requirements: 69 total
+- v1 requirements: 71 total
 - Mapped to phases: 0
-- Unmapped: 69 ⚠️
+- Unmapped: 71 ⚠️
 
 ---
 *Requirements defined: 2026-09-17*

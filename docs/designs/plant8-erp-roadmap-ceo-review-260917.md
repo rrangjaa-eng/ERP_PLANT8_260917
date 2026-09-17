@@ -174,3 +174,80 @@ Synthesized from this review's findings. Each task derives from a specific findi
 - [ ] **T24 (P1, human: ~1d / CC: ~20min)** — approvals/pnl — 정산 결재 문서 종류 + 승인 시 스냅샷 (D3) · Phase 5·8
 - [ ] **T25 (P1, human: ~0.5d / CC: ~15min)** — money — 정수 원·소수 자릿수·단일 반올림 함수·분할 보정 (D4) · Phase 4
 - [ ] **T26 (P2, human: ~2h / CC: ~10min)** — notify — SMTP 발송 어댑터(환경 변수 host·user·password·from) + 실패 시 알림함·배너 (D5=A) · Phase 6
+- [ ] **T27 (P1, human: ~2d / CC: ~30min)** — migrate — extract→transform을 Phase 4로 당기고 Phase 5·6에 지급요청·카드 적재, Phase 7은 델타 재실행+전환 (OV-1) · Phase 4~7
+- [ ] **T28 (P1, human: ~1d / CC: ~20min)** — migrate/rules — 이전 행 규칙·알림 면제 + 일괄 "이전 완료"(flag=migrated, 귀속일=종료일) (OV-2) · Phase 7
+- [ ] **T29 (P2, human: ~2h / CC: ~10min)** — migrate — 옛 카드·지급요청 금액의 부가세 기준 확인·변환 (OV-3) · Phase 7
+- [ ] **T30 (P1, human: ~1d / CC: ~30min)** — ledger/approvals — 분할 계획·줄당 문서 규칙·합계 상한·지급 완료 잠금·idempotency key (OV-4) · Phase 5·6
+- [ ] **T31 (P2, planning)** — roadmap — Phase 3을 메커니즘+마스터로, 권한표·노출표 전체 검수를 Phase 6 끝으로 (OV-5) · 로드맵
+- [ ] **T32 (P1, planning)** — roadmap/ops — Phase 7 착수 게이트 = 회사 GCP에서 deploy.sh 1회 성공, 이식 체크리스트 (OV-6) · 로드맵·OPERATIONS.md
+- [ ] **T33 (P2, human: ~1d / CC: ~20min)** — grid — 구현 선택은 Phase 4 계획에서 승인, 일괄 저장 트랜잭션·충돌 표시 (OV-7) · Phase 4
+- [ ] **T34 (P1, human: ~1d / CC: ~20min)** — notify — predicate 레지스트리 × 파라미터 인스턴스, 등록 종류 전부 평가 테스트 (OV-8) · Phase 6
+
+## OUTSIDE VOICE (Claude subagent — 신선한 컨텍스트, 같은 하네스, 모델 미확인)
+
+Codex 미설치로 네이티브 대체. 8건 발견, 전부 이 리뷰의 사각지대(반박 아님).
+
+| # | 발견 | 결정 |
+|---|---|---|
+| OV-1 | 이전이 Phase 7이면 4~6 실사용이 이중 입력·삭제 | **A 수용**: extract/transform Phase 4, 7은 델타+전환, Phase 8 착수 조건에 실사용 지표 |
+| OV-2 | D3·규칙이 이전 데이터에 그대로 적용되면 첫날 자체 봉쇄 | **A 수용**: 이전 행 규칙·알림 면제(편집 전), 일괄 이전 완료, 귀속일=종료일 |
+| OV-3 | "모든 입력 공급가"가 전표 현실과 충돌 | **현행 유지(사용자)**: 직원이 공급가 입력에 익숙. 차이는 증빙 금액으로 확정(EVID-03). 옛 금액 기준은 Phase 7에서 확인 |
+| OV-4 | 줄당 문서 N개면 우선순위 미정의, 이중 탭 | **A 수용(보강)**: 기본 1줄 1문서, 분할 계획 시만 회차별 문서, 합계 ≤ 실행가, 지급 완료 줄 잠금, idempotency key |
+| OV-5 | Phase 3이 대상 없이 관리 콘솔 전부 검수 | **A 수용**: Phase 3 = 메커니즘+마스터, 전체 검수는 Phase 6 끝(매핑 유지) |
+| OV-6 | 회사 GCP 이식 이벤트 부재 | **A 수용**: Phase 7 착수 게이트 = 회사 GCP에서 deploy.sh 1회 성공 |
+| OV-7 | 엑셀식 표 build-vs-library 미결, 일괄 저장 의미 | **A 수용**: 구현 선택은 Phase 4 계획, 일괄 저장 = 전부/전부 거부 + 충돌 표시 |
+| OV-8 | 범용 알림 조건식이 교차 엔티티 부정 조건 표현 불가 | **A 수용**: 조건 종류는 코드 등록, 규칙 = 종류 × 파라미터 인스턴스 |
+
+CROSS-MODEL TENSION: 8건 모두 리뷰가 다루지 않은 지점이라 정면 충돌은 없음. OV-3만 외부 목소리 권고(합계+과세 유형 입력)를 사용자가 거부 — 현행 공급가 입력 유지.
+
+## Completion Summary
+
+```
+  +====================================================================+
+  |            MEGA PLAN REVIEW — COMPLETION SUMMARY                   |
+  +====================================================================+
+  | Mode selected        | HOLD SCOPE                                  |
+  | System Audit         | 코드 0, 계획 문서만; 폐기 설계 문서 1; zip 잔재 2  |
+  | Step 0               | 접근 A, HOLD, D3·D4·D5 결정                    |
+  | Section 1  (Arch)    | 1 issue found                               |
+  | Section 2  (Errors)  | 11 codepaths mapped, 3 GAPS (all closed)     |
+  | Section 3  (Security)| 3 issues found, 1 High severity(계좌)         |
+  | Section 4  (Data/UX) | 9 edge cases mapped, 5 unhandled (closed)    |
+  | Section 5  (Quality) | 1 issue found                               |
+  | Section 6  (Tests)   | Diagram produced, 2 gaps (1 accepted risk)   |
+  | Section 7  (Perf)    | 2 issues found                              |
+  | Section 8  (Observ)  | 2 gaps found                                |
+  | Section 9  (Deploy)  | 2 risks flagged                             |
+  | Section 10 (Future)  | Reversibility: 3/5, debt items: 1(문서)       |
+  | Section 11 (Design)  | 1 issue                                     |
+  +--------------------------------------------------------------------+
+  | NOT in scope         | written (4 items)                           |
+  | What already exists  | written                                     |
+  | Dream state delta    | written                                     |
+  | Error/rescue registry| 11 methods, 0 CRITICAL GAPS                 |
+  | Failure modes        | 12 total, 0 CRITICAL GAPS (1 accepted risk)  |
+  | TODOS.md updates     | 0 items proposed                            |
+  | Scope proposals      | 0 proposed, 0 accepted (HOLD)               |
+  | CEO plan             | skipped (HOLD)                               |
+  | Outside voice        | codex unavailable → Claude subagent: 8 findings, 7 accepted |
+  | Lake Score           | 22/23 recommendations chose complete option |
+  | Diagrams produced    | 6 (architecture, data flow, state, error, deploy, rollback) |
+  | Stale diagrams found | 0                                           |
+  | Unresolved decisions | 0                                           |
+  +====================================================================+
+```
+
+## GSTACK REVIEW REPORT
+
+| Review | Trigger | Why | Runs | Status | Findings |
+|--------|---------|-----|------|--------|----------|
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | CLEAR | mode: HOLD_SCOPE, 0 critical gaps, 23 findings decided + 8 outside |
+| Outside Review | Claude subagent (codex not installed) | Independent 2nd opinion | 1 | unavailable (native fallback completed, 8 findings) | 7 accepted, 1 kept current |
+| Eng Review | `/plan-eng-review` | Architecture & tests (required) | 0 | — | — |
+| Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | — |
+| DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
+
+- **OUTSIDE COVERAGE:** provider codex — not installed; phase plan-review; native Claude subagent completed with 8 findings (counts as in-host, not outside coverage).
+- **VERDICT:** CEO CLEARED — eng review required (`/plan-eng-review` next).
+
+NO UNRESOLVED DECISIONS

@@ -1,0 +1,21 @@
+# Claude Code personal settings (per machine)
+.claude/settings.local.json
+.claude/.gsd-staging/
+.claude/scheduled_tasks.lock
+.claude/*.lock
+
+# gstack vendored copy: never commit installs or build output
+.claude/skills/gstack/node_modules/
+.claude/skills/gstack/browse/dist/
+.claude/skills/gstack/design/dist/
+.claude/skills/gstack/make-pdf/dist/
+.claude/skills/gstack/.gstack/
+.claude/skills/gstack/.env
+.claude/skills/gstack/bin/gstack-cso-launcher*
+.claude/skills/gstack/bin/gstack-cso-core*
+.claude/skills/gstack/bin/gstack-cso-watchdog*
+.claude/skills/gstack/bin/.gstack-cso-*
+.claude/skills/gstack/bin/gstack-global-discover*
+
+# Node
+node_modules/

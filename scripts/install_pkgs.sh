@@ -33,4 +33,30 @@ if [ -d "$GSTACK/node_modules" ] && [ ! -x "$GSTACK/browse/dist/browse" ] \
     || echo "install_pkgs: gstack bundle build failed; browser skills unavailable this session" >&2
 fi
 
+# Chromium for /browse, /qa, /design-review: the cloud VM ships Playwright
+# browsers under $PLAYWRIGHT_BROWSERS_PATH, but not the revision gstack's
+# playwright expects, and the Playwright CDN is not reachable through the
+# proxy. Link the expected headless-shell revision to the preinstalled one.
+# Verified: goto/text/screenshot work with Chromium 141 under playwright 1.62.
+PW="${PLAYWRIGHT_BROWSERS_PATH:-}"
+BJ="$GSTACK/node_modules/playwright-core/browsers.json"
+if [ -n "$PW" ] && [ -d "$PW" ] && [ -f "$BJ" ]; then
+  REV="$(node -e '
+    const b = require(process.argv[1]).browsers;
+    const e = b.find(x => x.name === "chromium-headless-shell") || b.find(x => x.name === "chromium");
+    if (e) process.stdout.write(String(e.revision));' "$BJ" 2>/dev/null || true)"
+  WANT="$PW/chromium_headless_shell-${REV}/chrome-headless-shell-linux64/chrome-headless-shell"
+  if [ -n "$REV" ] && [ ! -e "$WANT" ]; then
+    HAVE="$(find "$PW" -maxdepth 3 -type f \( -name chrome-headless-shell -o -name headless_shell \) 2>/dev/null | head -1)"
+    if [ -n "$HAVE" ] && mkdir -p "$(dirname "$WANT")" 2>/dev/null; then
+      ln -sfn "$HAVE" "$WANT" \
+        && touch "$PW/chromium_headless_shell-${REV}/INSTALLATION_COMPLETE" \
+                 "$PW/chromium_headless_shell-${REV}/DEPENDENCIES_VALIDATED" \
+        && echo "install_pkgs: linked Playwright chromium_headless_shell-${REV} -> $HAVE"
+    else
+      echo "install_pkgs: no preinstalled headless Chromium found; /browse unavailable this session" >&2
+    fi
+  fi
+fi
+
 exit 0

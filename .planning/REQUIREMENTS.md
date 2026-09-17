@@ -84,7 +84,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### 알림 (NOTI)
 
 - [ ] **NOTI-01**: 앱 안 알림함과 미읽음 배지가 있다
-- [ ] **NOTI-02**: 같은 알림이 이메일로도 간다. 발송은 회사 Google 계정 SMTP(환경 변수 host·user·password·from, 개인 GCP 단계는 개인 Gmail SMTP)이며, 발송 실패는 알림함과 관리자 배너에 남는다
+- [ ] **NOTI-02**: 같은 알림이 이메일로도 간다. 발송은 회사 Google 계정 SMTP(환경 변수 host·user·password·from; Workspace 릴레이 설정은 TODOS.md)이며, 발송 실패는 알림함과 관리자 배너에 남는다
 - [ ] **NOTI-03**: 관리자가 설정에서 알림 규칙을 새로 만든다. 조건 종류(상태 + 기준일로부터 N일 전/후, '프로젝트 종료 후 지출결의 없음' 같은 교차 문서 조건 등)는 코드에 등록되고, 규칙 = 조건 종류 × 파라미터(대상 문서(지출결의·구매 요청·결재·증빙·프로젝트·연차), N일, 받는 사람(계급·담당자·팀장), 채널)의 인스턴스다. 기본 규칙 4개(종료 후 지출결의 없음, 지급 예정일 임박, 결재 대기 초과, 증빙 미첨부)는 시드로 제공
 - [ ] **NOTI-04**: 같은 건이 두 번 발송되지 않는다. 스케줄러가 하루 몇 번 호출하는 단일 엔드포인트로 동작한다(큐 없음). tick은 advisory lock으로 동시 실행을 막고 notification_log 유니크 제약으로 중복 발송을 막는다
 
@@ -104,7 +104,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **ADMN-01**: 권한표: 계급 × 메뉴 × 동작(보기/쓰기/승인) 체크박스
 - [ ] **ADMN-02**: 정보 노출표: 계급 × 정보 항목(손익 숫자·팀 비용·목표·인센티브·거래처 금액 등). 기획본부 기본값은 인트라넷 수준, 새 기능 정보는 기본 숨김
-- [ ] **ADMN-03**: 정보 노출은 화면·API·Excel 내보내기·자동완성·검색에 동일하게 적용된다(우회 경로 없음). 강제 지점은 리포지토리의 viewer 투영이며(화면 코드가 아님), 계급 × 엔드포인트 × 필드 누수 테스트가 노출표·엔드포인트 목록에서 자동 생성되고 미등록 엔드포인트는 테스트가 실패한다
+- [ ] **ADMN-03**: 정보 노출은 화면·API·Excel 내보내기·자동완성·검색에 동일하게 적용된다(우회 경로 없음). 강제 지점은 리포지토리의 viewer 투영이며(화면 코드가 아님), 누수 테스트가 서버 액션 레지스트리 × DTO 타입 목록 × Excel 내보내기 함수 × 계급에서 자동 생성되고, 노출표 항목에 매핑되지 않은 DTO 타입이 있으면 테스트가 실패한다
 - [ ] **ADMN-04**: 결재 단계·담당 계급, 규칙 on/off, 알림 시점·대상, 세율·수식을 설정 화면에서 바꾼다
 - [ ] **ADMN-05**: 설정 키는 레지스트리 한 곳에 등록되며 설정 화면이 자동 생성된다. 등록된 키를 서버가 읽는지 테스트가 강제한다
 - [ ] **ADMN-06**: 설정을 JSON으로 내보내고 빈 환경에 가져온다
@@ -209,8 +209,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EXP-08 | Phase 5 | Pending |
 | EXP-09 | Phase 6 | Pending |
 | EXP-10 | Phase 6 | Pending |
-| EXP-11 | Phase 6 | Pending |
-| EXP-12 | Phase 6 | Pending |
+| EXP-11 | Phase 7 | Pending |
+| EXP-12 | Phase 7 | Pending |
 | EXP-13 | Phase 6 | Pending |
 | EXP-14 | Phase 5 | Pending |
 | EXP-15 | Phase 5 | Pending |
@@ -219,56 +219,56 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EVID-02 | Phase 6 | Pending |
 | EVID-03 | Phase 6 | Pending |
 | EVID-04 | Phase 6 | Pending |
-| PNL-01 | Phase 8 | Pending |
-| PNL-02 | Phase 8 | Pending |
-| PNL-03 | Phase 8 | Pending |
-| PNL-04 | Phase 8 | Pending |
-| PNL-05 | Phase 8 | Pending |
-| PNL-06 | Phase 8 | Pending |
-| PNL-07 | Phase 9 | Pending |
-| PNL-08 | Phase 8 | Pending |
-| PNL-09 | Phase 8 | Pending |
+| PNL-01 | Phase 9 | Pending |
+| PNL-02 | Phase 9 | Pending |
+| PNL-03 | Phase 9 | Pending |
+| PNL-04 | Phase 9 | Pending |
+| PNL-05 | Phase 9 | Pending |
+| PNL-06 | Phase 9 | Pending |
+| PNL-07 | Phase 10 | Pending |
+| PNL-08 | Phase 9 | Pending |
+| PNL-09 | Phase 9 | Pending |
 | RSV-01 | Phase 4 | Pending |
-| RSV-02 | Phase 8 | Pending |
+| RSV-02 | Phase 9 | Pending |
 | FX-01 | Phase 4 | Pending |
-| GOAL-01 | Phase 9 | Pending |
-| GOAL-02 | Phase 9 | Pending |
-| GOAL-03 | Phase 9 | Pending |
-| NOTI-01 | Phase 6 | Pending |
-| NOTI-02 | Phase 6 | Pending |
-| NOTI-03 | Phase 6 | Pending |
-| NOTI-04 | Phase 6 | Pending |
+| GOAL-01 | Phase 10 | Pending |
+| GOAL-02 | Phase 10 | Pending |
+| GOAL-03 | Phase 10 | Pending |
+| NOTI-01 | Phase 7 | Pending |
+| NOTI-02 | Phase 7 | Pending |
+| NOTI-03 | Phase 7 | Pending |
+| NOTI-04 | Phase 7 | Pending |
 | LEAV-01 | Phase 5 | Pending |
-| CERT-01 | Phase 10 | Pending |
-| CERT-02 | Phase 10 | Pending |
-| CERT-03 | Phase 10 | Pending |
-| CERT-04 | Phase 10 | Pending |
+| CERT-01 | Phase 11 | Pending |
+| CERT-02 | Phase 11 | Pending |
+| CERT-03 | Phase 11 | Pending |
+| CERT-04 | Phase 11 | Pending |
 | ADMN-01 | Phase 3 | Pending |
 | ADMN-02 | Phase 3 | Pending |
 | ADMN-03 | Phase 3 | Pending |
 | ADMN-04 | Phase 5 | Pending |
 | ADMN-05 | Phase 3 | Pending |
 | ADMN-06 | Phase 3 | Pending |
-| ADMN-07 | Phase 9 | Pending |
+| ADMN-07 | Phase 10 | Pending |
 | ADMN-08 | Phase 3 | Pending |
 | ADMN-09 | Phase 4 | Pending |
 | ADMN-10 | Phase 3 | Pending |
-| ADMN-11 | Phase 6 | Pending |
+| ADMN-11 | Phase 7 | Pending |
 | ADMN-12 | Phase 3 | Pending |
-| MIG-01 | Phase 7 | Pending |
-| MIG-02 | Phase 7 | Pending |
-| MIG-03 | Phase 7 | Pending |
-| MIG-04 | Phase 7 | Pending |
-| MIG-05 | Phase 7 | Pending |
+| MIG-01 | Phase 8 | Pending |
+| MIG-02 | Phase 8 | Pending |
+| MIG-03 | Phase 8 | Pending |
+| MIG-04 | Phase 8 | Pending |
+| MIG-05 | Phase 8 | Pending |
 | OPS-01 | Phase 1 | Pending |
 | OPS-02 | Phase 1 | Pending |
-| OPS-03 | Phase 7 | Pending |
+| OPS-03 | Phase 8 | Pending |
 | OPS-04 | Phase 1 | Pending |
 | OPS-05 | Phase 3 | Pending |
 | OPS-06 | Phase 1 | Pending |
 | OPS-07 | Phase 1 | Pending |
 | UX-01 | Phase 2 | Pending |
-| UX-02 | Phase 8 | Pending |
+| UX-02 | Phase 9 | Pending |
 | UX-03 | Phase 5 | Pending |
 | UX-04 | Phase 4 | Pending |
 | UX-05 | Phase 4 | Pending |
@@ -279,8 +279,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 - Mapped to phases: 89
 - Unmapped: 0 ✓
 
-**By phase:** 1 (9) · 2 (1) · 3 (13) · 4 (11) · 5 (13) · 6 (17) · 7 (6) · 8 (10) · 9 (5) · 10 (4)
+**By phase:** 1 (9) · 2 (1) · 3 (13) · 4 (11) · 5 (13) · 6 (10) · 7 (7) · 8 (6) · 9 (10) · 10 (5) · 11 (4)
 
 ---
 *Requirements defined: 2026-09-17*
-*Last updated: 2026-09-17 after /plan-ceo-review (23 findings + D3·D4·D5 + OV-1..8 folded in; OPS-06·OPS-07 added; OV-3 redefined → EXP-15 증빙 종류별 세금 자동 계산; CERT-01 QR 진입; EXP-16 경영관리 카드 사용 대리 등록·개인 비용 팀 귀속·경품 대납 세금 비용 포함; 89/89 mapped; /plan-eng-review decisions 1–15 + OV-1..8 folded: 본부·계급×조직 범위·자기 승인, 세율 기준일·절사, effectiveCost 식 공유, upsert 이전·결정적 번호·amount_basis·중복 후보, demo 입력)*
+*Last updated: 2026-09-17 after /plan-ceo-review (23 findings + D3·D4·D5 + OV-1..8 folded in; OPS-06·OPS-07 added; OV-3 redefined → EXP-15 증빙 종류별 세금 자동 계산; CERT-01 QR 진입; EXP-16 경영관리 카드 사용 대리 등록·개인 비용 팀 귀속·경품 대납 세금 비용 포함; 89/89 mapped; /plan-eng-review decisions 1–15 + OV-1..8 folded: 본부·계급×조직 범위·자기 승인, 세율 기준일·절사, effectiveCost 식 공유, upsert 이전·결정적 번호·amount_basis·중복 후보, demo 입력; roadmap Phase 6 split per Eng OV-6 → 11 phases, traceability renumbered: old 6 → 6/7, old 7~10 → 8~11; 회사 GCP Phase 1부터)*

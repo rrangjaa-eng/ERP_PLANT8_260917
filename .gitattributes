@@ -1,0 +1,4 @@
+# Shell scripts must stay LF so they run on the Linux cloud VM even when
+# committed from Windows (core.autocrlf).
+*.sh text eol=lf
+.claude/skills/gstack/bin/* text eol=lf

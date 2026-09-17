@@ -32,10 +32,10 @@ Three modes:
 </flags>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/progress.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/next.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/do.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/ui-brand.md
+@.claude/gsd-core/workflows/progress.md
+@.claude/gsd-core/workflows/next.md
+@.claude/gsd-core/workflows/do.md
+@.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 <process>

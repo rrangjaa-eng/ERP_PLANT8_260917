@@ -44,7 +44,7 @@ instead, or file the tasks individually.
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/quick-batch.md
+@.claude/gsd-core/workflows/quick-batch.md
 </execution_context>
 
 <context>

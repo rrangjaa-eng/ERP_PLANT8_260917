@@ -10,7 +10,7 @@ Apply response_language to all user-facing prose — narration between tool call
 ## Dispatch
 
 ```
-Read @F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/discuss-phase-power.md
+Read @.claude/gsd-core/workflows/discuss-phase-power.md
 ```
 
 Execute it end-to-end. Do not continue with the standard interactive steps.

@@ -21,7 +21,7 @@ and optionally applies labels or closes non-compliant submissions.
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/inbox.md
+@.claude/gsd-core/workflows/inbox.md
 </execution_context>
 
 <context>

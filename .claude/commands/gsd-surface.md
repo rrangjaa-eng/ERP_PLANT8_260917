@@ -10,9 +10,9 @@ requires: [config, update]
 ---
 
 <objective>
-Manage the runtime skill surface without reinstall. Reads/writes `F:/CLAUDE/ERP_PLANT8_260917/.claude/.gsd-surface.json`
-(sibling to `F:/CLAUDE/ERP_PLANT8_260917/.claude/.gsd-profile`) and re-stages the active skills directory in place.
-Skill dirs live at `F:/CLAUDE/ERP_PLANT8_260917/.claude/skills/gsd-*/`.
+Manage the runtime skill surface without reinstall. Reads/writes `.claude/.gsd-surface.json`
+(sibling to `.claude/.gsd-profile`) and re-stages the active skills directory in place.
+Skill dirs live at `.claude/skills/gsd-*/`.
 
 Sub-commands: list · status · profile · disable · enable · reset
 </objective>
@@ -133,11 +133,11 @@ Valid cluster names: `core_loop`, `audit_review`, `milestone`, `research_ideate`
 ## runtimeConfigDir resolution
 
 The `runtimeConfigDir` for `applySurface` is the **base Claude config directory**
-(`~/.claude`), NOT the skills sub-directory (`F:/CLAUDE/ERP_PLANT8_260917/.claude/skills`).
+(`~/.claude`), NOT the skills sub-directory (`.claude/skills`).
 
 This matches `installRuntimeArtifacts` and `uninstallRuntimeArtifacts`, which also
 receive `~/.claude` as `configDir`. The skill dirs themselves live at
-`F:/CLAUDE/ERP_PLANT8_260917/.claude/skills/gsd-*/` because the `claude global` layout has `destSubpath =
+`.claude/skills/gsd-*/` because the `claude global` layout has `destSubpath =
 'skills'` — they are derived from `configDir`, not the root for it.
 
 ```bash
@@ -151,7 +151,7 @@ SCOPE="global"
 ```
 
 Surface state is stored at `${RUNTIME_CONFIG_DIR}/.gsd-surface.json`
-(i.e. `F:/CLAUDE/ERP_PLANT8_260917/.claude/.gsd-surface.json`).
+(i.e. `.claude/.gsd-surface.json`).
 
 All paths can be overridden by reading the `CLAUDE_CONFIG_DIR` env var if set.
 
@@ -164,9 +164,9 @@ All paths can be overridden by reading the `CLAUDE_CONFIG_DIR` env var if set.
 - Missing `surface.cjs` → prompt: "Run `npm i -g @opengsd/gsd-core` to reinstall GSD."
 
 <execution_context>
-Surface state file: `F:/CLAUDE/ERP_PLANT8_260917/.claude/.gsd-surface.json`
-Install profile marker: `F:/CLAUDE/ERP_PLANT8_260917/.claude/.gsd-profile`
-Skill dirs: `F:/CLAUDE/ERP_PLANT8_260917/.claude/skills/gsd-*/`
-Engine module: `F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/bin/lib/surface.cjs`
-Cluster definitions: `F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/bin/lib/clusters.cjs`
+Surface state file: `.claude/.gsd-surface.json`
+Install profile marker: `.claude/.gsd-profile`
+Skill dirs: `.claude/skills/gsd-*/`
+Engine module: `.claude/gsd-core/bin/lib/surface.cjs`
+Cluster definitions: `.claude/gsd-core/bin/lib/clusters.cjs`
 </execution_context>

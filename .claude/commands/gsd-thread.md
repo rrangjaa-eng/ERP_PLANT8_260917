@@ -17,7 +17,7 @@ doesn't belong to any specific phase.
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/thread.md
+@.claude/gsd-core/workflows/thread.md
 </execution_context>
 
 <process>

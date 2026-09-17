@@ -26,7 +26,7 @@ Flag handling rule:
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/docs-update.md
+@.claude/gsd-core/workflows/docs-update.md
 </execution_context>
 
 <context>

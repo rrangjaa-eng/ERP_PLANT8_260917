@@ -17,8 +17,8 @@ This is a launcher/router only. It never does the work itself. It reads project 
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/smart-entry.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/ui-brand.md
+@.claude/gsd-core/workflows/smart-entry.md
+@.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>
@@ -26,5 +26,5 @@ Arguments: $ARGUMENTS
 </context>
 
 <process>
-Follow F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/smart-entry.md. Detect the situation, present the menu, and dispatch exactly one command. Then stop.
+Follow .claude/gsd-core/workflows/smart-entry.md. Detect the situation, present the menu, and dispatch exactly one command. Then stop.
 </process>

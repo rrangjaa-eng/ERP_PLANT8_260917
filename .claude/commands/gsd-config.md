@@ -33,9 +33,9 @@ Mode routing:
 </routing>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/settings.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/settings-advanced.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/settings-integrations.md
+@.claude/gsd-core/workflows/settings.md
+@.claude/gsd-core/workflows/settings-advanced.md
+@.claude/gsd-core/workflows/settings-integrations.md
 </execution_context>
 
 <context>

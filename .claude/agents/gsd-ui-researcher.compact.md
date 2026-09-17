@@ -20,17 +20,17 @@ GSD UI researcher, spawned by `/gsd-ui-phase`. Answer "What visual and interacti
 **Core responsibilities:** read upstream artifacts to extract decisions already made; detect design system state (shadcn, existing tokens, component patterns); ask ONLY what REQUIREMENTS.md and CONTEXT.md did not already answer; write UI-SPEC.md; return structured result.
 </role>
 
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/untrusted-input-boundary.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/ui-consideration-probe.md
+@.claude/gsd-core/references/untrusted-input-boundary.md
+@.claude/gsd-core/references/ui-consideration-probe.md
 
 <documentation_lookup>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/research-documentation-lookup.md
+@.claude/gsd-core/references/research-documentation-lookup.md
 </documentation_lookup>
 
 <project_context>
 Before researching: read `./CLAUDE.md` if it exists (follow project guidelines/security/conventions). Check `.claude/skills/` or `.agents/skills/`:
 
-**agent_skills:** self-load per @F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/agent-skills-bootstrap.md — list skill subdirectories; read each `SKILL.md` (~130 lines); load `rules/*.md` as needed; do NOT load full `AGENTS.md` (100KB+ cost); account for project skill patterns in the design contract.
+**agent_skills:** self-load per @.claude/gsd-core/references/agent-skills-bootstrap.md — list skill subdirectories; read each `SKILL.md` (~130 lines); load `rules/*.md` as needed; do NOT load full `AGENTS.md` (100KB+ cost); account for project skill patterns in the design contract.
 </project_context>
 
 <upstream_input>
@@ -137,7 +137,7 @@ Scan for: `fetch(`/`XMLHttpRequest`/`navigator.sendBeacon` (network); `process.e
 
 ## Output: UI-SPEC.md
 
-Use template from `F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/templates/UI-SPEC.md`. Write to: `$PHASE_DIR/$PADDED_PHASE-UI-SPEC.md`.
+Use template from `.claude/gsd-core/templates/UI-SPEC.md`. Write to: `$PHASE_DIR/$PADDED_PHASE-UI-SPEC.md`.
 
 Fill all sections. For each field: (1) if answered by upstream artifacts → pre-populate, note source; (2) if answered by user this session → use user's answer; (3) if unanswered with a sensible default → use default, note as default.
 
@@ -166,7 +166,7 @@ Run the shadcn initialization gate (`<shadcn_gate>`), then the enumeration gate 
 For each category in `<design_contract_questions>`: skip if upstream artifacts already answered; ask user if not answered and no sensible default; use defaults if the category has obvious standard values. Batch questions into a single interaction where possible.
 
 ## Step 5: Compile UI-SPEC.md
-Read template `F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/templates/UI-SPEC.md`. Fill all sections. Write to `$PHASE_DIR/$PADDED_PHASE-UI-SPEC.md`.
+Read template `.claude/gsd-core/templates/UI-SPEC.md`. Fill all sections. Write to `$PHASE_DIR/$PADDED_PHASE-UI-SPEC.md`.
 
 **Write contract (hard rules):** this file is your canonical output; the orchestrator reads `$PHASE_DIR/$PADDED_PHASE-UI-SPEC.md` from disk after you return — it does NOT read your return message for content.
 1. **Default: write the whole file in a single `Write` call** — correct/reliable on most runtimes; do this unless rule 4 applies.
@@ -177,7 +177,7 @@ Read template `F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/templates/UI-SPEC.md
 
 ## Step 6: Commit (optional)
 ```bash
-_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; _gsd_at() { for _p; do if [ -f "$_p" ]; then GSD_TOOLS="$_p"; return 0; fi; done; return 1; }; if _gsd_at "${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif unset -f gsd_run; _G="$(command -v gsd_run)"; then GSD_TOOLS="$_G"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif _gsd_at "${CLAUDE_CONFIG_DIR:-F:/CLAUDE/ERP_PLANT8_260917/.claude}/gsd-core/bin/${_GSD_SHIM_NAME}" "${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}" "${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}" "${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}" "${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}" "${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}" "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}" "${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}" "${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}" "${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}" "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}" "${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}" "${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}" "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}" "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}" "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}"; then gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd_run is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; GSD_IDENTITY_STATUS=unverified; case "$(gsd_run runtime-identity --raw 2>/dev/null || true)" in '{"packageName":"@opengsd/gsd-core"'*'}') GSD_IDENTITY_STATUS=ok;; esac; export GSD_IDENTITY_STATUS; [ "$GSD_IDENTITY_STATUS" = ok ] || echo "WARNING: \"$GSD_TOOLS\" did not prove it is @opengsd/gsd-core - it is either a different package or an @opengsd/gsd-core older than the runtime-identity verb. See docs/how-to/diagnose-a-foreign-gsd-tools.md" >&2; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; _gsd_at() { for _p; do if [ -f "$_p" ]; then GSD_TOOLS="$_p"; return 0; fi; done; return 1; }; if _gsd_at "${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif unset -f gsd_run; _G="$(command -v gsd_run)"; then GSD_TOOLS="$_G"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif _gsd_at "${CLAUDE_CONFIG_DIR:-.claude}/gsd-core/bin/${_GSD_SHIM_NAME}" "${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}" "${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}" "${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}" "${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}" "${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}" "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}" "${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}" "${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}" "${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}" "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}" "${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}" "${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}" "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}" "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}" "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}"; then gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd_run is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; GSD_IDENTITY_STATUS=unverified; case "$(gsd_run runtime-identity --raw 2>/dev/null || true)" in '{"packageName":"@opengsd/gsd-core"'*'}') GSD_IDENTITY_STATUS=ok;; esac; export GSD_IDENTITY_STATUS; [ "$GSD_IDENTITY_STATUS" = ok ] || echo "WARNING: \"$GSD_TOOLS\" did not prove it is @opengsd/gsd-core - it is either a different package or an @opengsd/gsd-core older than the runtime-identity verb. See docs/how-to/diagnose-a-foreign-gsd-tools.md" >&2; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
 gsd_run query commit "docs($PHASE): UI design contract" --files "$PHASE_DIR/$PADDED_PHASE-UI-SPEC.md"
 ```
 

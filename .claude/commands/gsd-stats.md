@@ -13,7 +13,7 @@ Display comprehensive project statistics including phase progress, plan executio
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/stats.md
+@.claude/gsd-core/workflows/stats.md
 </execution_context>
 
 <process>

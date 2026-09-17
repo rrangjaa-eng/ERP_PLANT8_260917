@@ -1,4 +1,4 @@
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/response-language-directive.md
+@.claude/gsd-core/references/response-language-directive.md
 
 <purpose>
 Autonomous repair operator for failed task verification. Invoked by execute-plan when a task fails its done-criteria. Proposes and attempts structured fixes before escalating to the user.

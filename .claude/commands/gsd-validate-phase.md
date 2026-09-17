@@ -23,7 +23,7 @@ Output: updated VALIDATION.md + generated test files.
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/validate-phase.md
+@.claude/gsd-core/workflows/validate-phase.md
 </execution_context>
 
 <context>

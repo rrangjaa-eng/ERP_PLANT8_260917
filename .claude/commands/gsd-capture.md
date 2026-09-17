@@ -38,13 +38,13 @@ Mode routing:
 </routing>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/add-todo.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/note.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/add-backlog.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/plant-seed.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/check-todos.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/list-seeds.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/ui-brand.md
+@.claude/gsd-core/workflows/add-todo.md
+@.claude/gsd-core/workflows/note.md
+@.claude/gsd-core/workflows/add-backlog.md
+@.claude/gsd-core/workflows/plant-seed.md
+@.claude/gsd-core/workflows/check-todos.md
+@.claude/gsd-core/workflows/list-seeds.md
+@.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>

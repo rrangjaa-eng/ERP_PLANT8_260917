@@ -26,10 +26,10 @@ Replaces gsd-plan-phase's internal gsd-plan-checker with external AI reviewers (
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/plan-review-convergence.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/revision-loop.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/gates.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/agent-contracts.md
+@.claude/gsd-core/workflows/plan-review-convergence.md
+@.claude/gsd-core/references/revision-loop.md
+@.claude/gsd-core/references/gates.md
+@.claude/gsd-core/references/agent-contracts.md
 </execution_context>
 
 

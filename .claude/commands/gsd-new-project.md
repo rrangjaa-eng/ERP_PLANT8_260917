@@ -33,11 +33,11 @@ Initialize a new project through unified flow: questioning → research (optiona
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/new-project.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/questioning.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/ui-brand.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/templates/project.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/templates/requirements.md
+@.claude/gsd-core/workflows/new-project.md
+@.claude/gsd-core/references/questioning.md
+@.claude/gsd-core/references/ui-brand.md
+@.claude/gsd-core/templates/project.md
+@.claude/gsd-core/templates/requirements.md
 </execution_context>
 
 <process>

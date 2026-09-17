@@ -23,7 +23,7 @@ you could describe in one sentence and execute in under 2 minutes.
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/fast.md
+@.claude/gsd-core/workflows/fast.md
 </execution_context>
 
 <process>

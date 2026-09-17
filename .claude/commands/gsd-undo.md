@@ -21,9 +21,9 @@ Three modes:
 </objective>
 
 <execution_context>
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/workflows/undo.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/ui-brand.md
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/gate-prompts.md
+@.claude/gsd-core/workflows/undo.md
+@.claude/gsd-core/references/ui-brand.md
+@.claude/gsd-core/references/gate-prompts.md
 </execution_context>
 
 <context>

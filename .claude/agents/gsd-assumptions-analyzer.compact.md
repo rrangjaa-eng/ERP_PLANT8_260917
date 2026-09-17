@@ -10,9 +10,9 @@ effort: high
 GSD assumptions analyzer. Deeply analyze the codebase for ONE phase; produce structured assumptions with evidence and confidence levels. Spawned by `discuss-phase-assumptions` via `Task()`. Do NOT present output to the user — return structured output for the main workflow to present/confirm.
 </role>
 
-@F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/untrusted-input-boundary.md
+@.claude/gsd-core/references/untrusted-input-boundary.md
 
-**agent_skills:** self-load per @F:/CLAUDE/ERP_PLANT8_260917/.claude/gsd-core/references/agent-skills-bootstrap.md
+**agent_skills:** self-load per @.claude/gsd-core/references/agent-skills-bootstrap.md
 
 <input>
 Via prompt: `<phase>` (number/name), `<phase_goal>` (ROADMAP.md), `<prior_decisions>` (locked decisions, earlier phases), `<codebase_hints>` (scout results: files/components/patterns), `<calibration_tier>` (`full_maturity` | `standard` | `minimal_decisive`).

@@ -295,7 +295,7 @@ Cloud Run 직결 환경에서 **실측으로 맞다**.
   `status.url`이 항상 다르다 — 결정적 URL 가정 기각(맨 위 참고).
 - **신규 서비스 첫 배포 트래픽**: 100%(카나리 제거 후 설계대로).
 
-### ⚠️ deploy.yml 프로덕션 가드 전제 — **기각됨**(01-08이 고쳐야 함)
+### ⚠️ deploy.yml 프로덕션 가드 전제 — **기각됨** → 수정·실측 검증 완료
 
 플랜의 `[ASSUMED]` 2건을 실측했다:
 
@@ -314,11 +314,35 @@ Cloud Run 직결 환경에서 **실측으로 맞다**.
    `:` 뒤를 git SHA로 간주하므로, 실제로는 **이미지 다이제스트**
    (`662211fc…`)를 얻는다. 그 결과 `[ "$SHA" != "$STAGING_SHA" ]` 비교가
    **항상 참**이 되어 프로덕션 승격이 영구히 막힌다.
-   → **01-08 Task 1 전에 반드시 수정해야 한다.** 예: 리비전의 배포 태그를
-   따로 라벨/어노테이션으로 기록하고 그것을 읽거나, 다이제스트로
-   Artifact Registry를 역조회해 `:<sha>` 태그를 얻는 방식.
-   (이번 페이즈에서는 프로덕션 배포가 없으므로 이 로그에 기록만 하고
-   고치지 않는다 — 01-08의 입력이다.)
+   → **수정 완료**(commit `fe851be`). 다이제스트 역조회 대신, `deploy.sh`가
+   이미 리비전에 심어 두는 `APP_GIT_SHA` 환경변수(= `/api/health`가 돌려주는
+   `sha`와 같은 값)를 읽는다. 판정 로직은 YAML 안의 30줄 bash에서
+   `scripts/promote-guard.sh`로 분리해 단위 테스트 11건을 붙였고,
+   `APP_GIT_SHA`가 없거나 40자 hex가 아니면 다이제스트로 대체하지 않고
+   명시적으로 거부한다.
+
+#### 수정된 가드의 실제 GCP 검증 (guard-probe, run `35375257182`)
+
+단위 테스트는 fakebin `gcloud` 기준이라 "진짜 Cloud Run이 무엇을 돌려주는가"는
+증명하지 못한다. 그래서 일회용 읽기 전용 워크플로(`.github/workflows/guard-probe.yml`,
+배포 없음)로 실제 스테이징에 대고 한 번 돌렸다. 결과(마스킹):
+
+| 확인 | 값 |
+|------|-----|
+| 서빙 리비전 | `plant8-staging-00023-tsm`, `traffic entries=5`(태그 잔여 4개 그대로) |
+| 리비전 `image` | `…/plant8/app@sha256:ba44dec2…` — **다이제스트 저장 재확인** |
+| 리비전 `APP_GIT_SHA` | `5ca35226bc2f75be453e8c02adbe7aeb929bc1d7` ✅ |
+| 가드 `--sha ""`(비움) | `STAGING_SHA=5ca35226…` / `PROMOTE_SHA=5ca35226…`, exit **0** ✅ |
+| 가드 `--sha 5ca35226…`(명시) | 같은 두 줄, exit **0** ✅ |
+| 가드 `--sha 0000…`(틀린 값) | `image for 0000… not found in Artifact Registry — deploy it to staging first (D-05)`, exit **1** ✅ |
+| `plant8-prod` 존재 여부 | **없음** — 01-08은 프로덕션 첫 배포다 |
+
+즉 이 가드는 실제 GCP에서 통과할 값은 통과시키고 틀린 SHA는 막는다. 프로덕션
+승격을 영구히 막던 회귀는 닫혔다. 검증이 끝났으므로 `guard-probe.yml`은 삭제한다.
+
+남은 정리 대상(01-08): 태그 전용 트래픽 항목 4개(`rev-54152656`, `rev-76518d7d`,
+`rev-fa7eadf1`, `rev-6d8cebc1`) — 가드·배포에 영향은 없지만 `traffic[]`을 읽는
+사람을 헷갈리게 한다.
 
 ## 계정 생성
 
@@ -342,7 +366,9 @@ Cloud Run 직결 환경에서 **실측으로 맞다**.
 
 - `git status --porcelain` 비어 있음: **예**
 - 임시 `probe.yml` 워크플로: **삭제 완료**(commit `8478584`)
-- 임시 결과 브랜치 `probe-result`, `probe-result2`: **남아 있음 — 수동 삭제 필요**.
-  실행자 세션의 깃 프록시가 ref 삭제(API·`git push --delete` 모두)를 403으로
-  막는다. 두 브랜치에는 프로브 출력만 있고(프로젝트 ID 마스킹, 임시 비밀번호
-  줄은 `[REDACTED]` 치환) 시크릿은 없다. GitHub UI → Branches에서 지우면 된다.
+- 임시 `guard-probe.yml` 워크플로: **삭제 완료**(가드 검증 뒤)
+- 임시 결과 브랜치 `probe-result`, `probe-result2`, `guard-probe-result`:
+  **남아 있음 — 사용자가 수동 삭제**. 실행자 세션에서는 ref 삭제가 막힌다(깃
+  프록시 403, 이번 세션에서는 도구 정책). 세 브랜치에는 프로브 출력만 있고
+  (프로젝트 ID·번호 마스킹, 임시 비밀번호 줄은 `[REDACTED]` 치환) 시크릿은
+  없다. GitHub UI → Branches에서 지우면 된다.

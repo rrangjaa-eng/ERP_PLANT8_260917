@@ -20,6 +20,10 @@ COPY package.json pnpm-lock.yaml ./
 # 스크립트 없이도 동작한다.
 RUN pnpm install --frozen-lockfile --ignore-scripts
 
+FROM base AS deps-prod
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile --ignore-scripts --prod
+
 FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -43,6 +47,14 @@ COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public
 COPY --from=build /app/dist/cli ./dist/cli
+# dist/cli의 esbuild 번들은 packages:"external"이라 node_modules에서 진짜
+# 패키지를 resolve해야 하는데, .next/standalone이 트레이싱하는 node_modules는
+# Next 앱 자체 경로만 보장하고 일부 패키지(@google-cloud/cloud-sql-connector,
+# zod 등)의 최상위 심볼릭 링크를 안 만든다 — 실제 스테이징 배포에서 재현
+# (2026-09-18, ERR_MODULE_NOT_FOUND). dist/cli 바로 아래에 정상적으로 pnpm
+# install된 프로덕션 전용 node_modules를 따로 둬서, Node ESM 해석이 가장
+# 가까운 node_modules(dist/cli/node_modules)부터 찾게 한다.
+COPY --from=deps-prod /app/node_modules ./dist/cli/node_modules
 COPY --from=build /app/db/migrations ./db/migrations
 USER app
 EXPOSE 3000

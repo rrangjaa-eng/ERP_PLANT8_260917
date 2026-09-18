@@ -22,12 +22,12 @@ async function main() {
     // 전이 의존성)을 단일 ESM 파일로 번들하면 Node 22/24가 런타임에
     // "Cannot determine intended module format because both require() and
     // top-level await are present"로 크래시한다(require()/동적 로딩이 섞인
-    // 대형 gRPC 코드베이스가 esbuild의 CJS interop과 충돌). 이 패키지들은 이미
-    // Next.js 앱(app/admin/system-status, db/client.ts)이 실제로 쓰고 있어
-    // `.next/standalone/node_modules`에 pnpm trace로 포함되고, 같은 이미지의
-    // dist/cli는 standalone과 같은 /app 루트에서 실행되므로(Node 모듈 해석이
-    // 상위 디렉터리로 올라가며 node_modules를 찾는다) external로 둬도 런타임에
-    // 정상 resolve된다.
+    // 대형 gRPC 코드베이스가 esbuild의 CJS interop과 충돌). 런타임엔 진짜
+    // node_modules가 필요하다 — `.next/standalone`이 트레이싱하는 node_modules는
+    // 이 패키지들의 파일을 담기는 하지만 최상위 심볼릭 링크를 항상 만들어주진
+    // 않는다(실제 스테이징 배포에서 재현, 2026-09-18: ERR_MODULE_NOT_FOUND).
+    // 그래서 Dockerfile이 dist/cli 바로 아래에 정상적으로 pnpm install된
+    // 프로덕션 전용 node_modules를 따로 둔다(deps-prod 스테이지).
     packages: "external",
     banner: {
       js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",

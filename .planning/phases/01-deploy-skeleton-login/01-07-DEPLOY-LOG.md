@@ -13,10 +13,13 @@
     **다르다** — 아래 run #12~#16 항목 참고. 결정적 URL 가정(A)은 **기각**.
 - 처음 성공한 실행: **run #20**, commit `5ed3eec`, workflow run id `35368076525`
   (`deploy` 워크플로 / `staging` 잡 success) — 아래 실측값은 이 리비전에서 쟀다.
-- 마지막 실행: **run #21**, commit `5ca3522`, workflow run id `35372905903`
-  (success) — 계정 Job 종료 버그 수정을 배포한 것(아래 "계정 Job 종료 버그").
+- 마지막 실행: **run #22**, commit `ed2fbc5`, workflow run id `35376419153`
+  (success) — 계정 Job 종료 버그의 코드 리뷰 후속 수정까지 반영한 배포.
+  (run #21 `5ca3522`는 그 전 단계, 아래 "계정 Job 종료 버그" 참고.)
 - 스테이징이 서빙 중인 SHA(= 01-08 Task 1의 입력):
-  **`5ca35226bc2f75be453e8c02adbe7aeb929bc1d7`**
+  **`ed2fbc5`** — 정확한 값은 승격 직전에 `scripts/promote-guard.sh`가
+  서빙 리비전의 `APP_GIT_SHA`에서 직접 읽으므로, 이 로그의 값을 손으로
+  옮겨 적지 말고 가드가 읽은 값을 쓴다.
 - run #20 시점의 서빙 리비전: `plant8-staging-00021-jxr`
 
 ## 시도별 원인·수정 이력
@@ -295,7 +298,7 @@ Cloud Run 직결 환경에서 **실측으로 맞다**.
   `status.url`이 항상 다르다 — 결정적 URL 가정 기각(맨 위 참고).
 - **신규 서비스 첫 배포 트래픽**: 100%(카나리 제거 후 설계대로).
 
-### ⚠️ deploy.yml 프로덕션 가드 전제 — **기각됨**(01-08이 고쳐야 함)
+### deploy.yml 프로덕션 가드 전제 — **기각됨 → 수정 완료**
 
 플랜의 `[ASSUMED]` 2건을 실측했다:
 
@@ -314,11 +317,15 @@ Cloud Run 직결 환경에서 **실측으로 맞다**.
    `:` 뒤를 git SHA로 간주하므로, 실제로는 **이미지 다이제스트**
    (`662211fc…`)를 얻는다. 그 결과 `[ "$SHA" != "$STAGING_SHA" ]` 비교가
    **항상 참**이 되어 프로덕션 승격이 영구히 막힌다.
-   → **01-08 Task 1 전에 반드시 수정해야 한다.** 예: 리비전의 배포 태그를
-   따로 라벨/어노테이션으로 기록하고 그것을 읽거나, 다이제스트로
-   Artifact Registry를 역조회해 `:<sha>` 태그를 얻는 방식.
-   (이번 페이즈에서는 프로덕션 배포가 없으므로 이 로그에 기록만 하고
-   고치지 않는다 — 01-08의 입력이다.)
+   → **수정 완료** (commit `fe851be`, 2026-09-18): 가드 로직을
+   `.github/workflows/deploy.yml` 인라인에서 `scripts/promote-guard.sh`로
+   빼내고, SHA를 이미지 문자열이 아니라 **서빙 리비전의 `APP_GIT_SHA`
+   환경변수**에서 읽도록 바꿨다(`deploy.sh:404`가 원래부터 심고 있던 값이다).
+   `APP_GIT_SHA`가 없거나 40자 hex가 아니면 "스테이징을 다시 배포하라"는
+   명확한 메시지로 중단한다 — 그 환경변수가 생기기 전의 옛 리비전을
+   조용히 승격하지 않는다. 단위 테스트는
+   `test/unit/deploy/promote-guard-sh.test.ts`.
+   현재 서빙 리비전은 `APP_GIT_SHA`를 갖고 있다(run #22, `ed2fbc5` 재배포).
 
 ## 계정 생성
 
@@ -342,7 +349,8 @@ Cloud Run 직결 환경에서 **실측으로 맞다**.
 
 - `git status --porcelain` 비어 있음: **예**
 - 임시 `probe.yml` 워크플로: **삭제 완료**(commit `8478584`)
-- 임시 결과 브랜치 `probe-result`, `probe-result2`: **남아 있음 — 수동 삭제 필요**.
+- 임시 결과 브랜치 `probe-result`, `probe-result2`, `guard-probe-result`:
+  **남아 있음 — 수동 삭제 필요**.
   실행자 세션의 깃 프록시가 ref 삭제(API·`git push --delete` 모두)를 403으로
   막는다. 두 브랜치에는 프로브 출력만 있고(프로젝트 ID 마스킹, 임시 비밀번호
   줄은 `[REDACTED]` 치환) 시크릿은 없다. GitHub UI → Branches에서 지우면 된다.

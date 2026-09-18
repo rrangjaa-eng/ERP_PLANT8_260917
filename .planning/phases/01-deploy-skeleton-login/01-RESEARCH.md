@@ -669,22 +669,27 @@ function log(severity: "INFO" | "WARNING" | "ERROR", message: string, fields: Re
 | A5 | ESLint 규칙(`require-action-client.js`, `money-boundary.js` 스텁)의 AST 접근 방식 | Architecture Patterns Pattern 5 | 이 세션 설계 제안이며 공식 예제가 아니다. 실제 구현 시 next-safe-action의 정확한 export 형태(화살표 함수 vs `.action()` 체인 반환값)에 따라 AST 매칭 로직을 조정해야 함 |
 | A6 | Cloud Run 서비스 계정에 필요한 최소 IAM 역할 목록(Pattern 9) | Pattern 9 | 과다 권한 부여 또는 권한 부족으로 배포 실패. 실제 GCP 프로젝트에서 `gcloud run deploy` dry-run으로 권한 오류를 확인하며 좁혀야 함 |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> 세 항목 모두 계획(2026-09-18, 플랜 01-01~01-08)에서 권고안을 채택해 닫았다. 각 항목의 `RESOLVED:` 줄이 채택 내용과 담당 플랜이다.
 
 1. **Cloud Run 도메인 매핑의 asia-northeast3 지원 여부(D-15)**
    - What we know: 두 차례 WebSearch 종합 중 신뢰도가 더 높아 보이는 쪽(구체적 리전 목록·다른 GCP 서비스명과 혼동 없음)이 "미지원"이라고 답함.
    - What's unclear: `docs.cloud.google.com` 원문을 이 세션에서 열지 못해 확정 불가.
    - Recommendation: Phase 1 계획에는 영향 없음(인자 자리만). 회사 GCP 확보 직후 `gcloud run domain-mappings create --region=asia-northeast3 ...`를 1회 시도해 실제 오류 메시지로 확정하고, Phase 2/3 계획 시점에 로드밸런서 대안 여부를 결정한다.
+   - RESOLVED: 권고대로 Phase 1은 `scripts/deploy.sh --domain`을 인자 자리(no-op — stderr에 Phase 2~3 연기 안내, 도메인 매핑 명령 미실행; COVERAGE.md OPT-OUT)로만 두고, 리전 지원 여부(A1)는 사용자가 Cloud Shell에서 1회 실행하는 `scripts/bootstrap-gcp.sh`가 `gcloud beta run domain-mappings list --region=asia-northeast3`의 성공/오류 메시지를 그대로 출력해 01-07 DEPLOY-LOG와 01-08 OPERATIONS.md에 기록한다(`create` 대신 `list`로 확인 — 실제 매핑을 만들지 않으면서 리전 지원만 확정). 로드밸런서 여부는 Phase 2~3 계획의 입력이다 — Plan 01-06 Task 1·2, 01-07 Task 2·3, 01-08 Task 3
 
 2. **`login_attempts` 성공 시 "초기화" 방식 — 실패 기록 삭제 vs 플래그**
    - What we know: 로드맵은 "성공 시 초기화"만 요구, 행동 로그에는 잠금·해제 이벤트만 남기면 된다.
    - What's unclear: 실패 기록 자체를 지울지, 아니면 `resolved_at` 같은 컬럼으로 남겨 감사 추적성을 유지할지는 CONTEXT.md가 Claude's Discretion으로 열어뒀다.
    - Recommendation: 감사 추적을 위해 삭제하지 않고 `resolved_at`/`reset_reason`(예: "success" / "admin_unlock")을 남기는 쪽을 계획에서 제안한다 — ADMN-12("지우지 않는다") 원칙과도 일관된다.
+   - RESOLVED: 권고대로 삭제하지 않는다. `login_attempts`에 `resolved_at`·`resolved_reason`('success' | 'admin_unlock') 컬럼을 두고, 로그인 성공은 `resolveOpenFailures(…, 'success')`, 관리자 해제(`pnpm account:unlock`)는 `'admin_unlock'`으로 열린 실패 기록을 닫는다(권고의 `reset_reason`은 `resolved_reason`으로 명명). 잠금 판정은 `resolved_at IS NULL`인 실패만 센다 — Plan 01-02 Task 2 (schema `db/schema/login-attempts.ts`, `repositories/login-attempts.ts`, 통합 테스트 `lockout.test.ts`)
 
 3. **`gha-deployer` 서비스 계정의 정확한 최소 역할 세트**
    - What we know: Pattern 9에 제안 목록이 있다.
    - What's unclear: 실제 GCP 프로젝트 조직 정책(예: 커스텀 역할 강제)에 따라 달라질 수 있다.
    - Recommendation: 부트스트랩 스크립트를 먼저 넓은 역할로 실행해 성공을 확인한 뒤, `gcloud iam service-accounts get-iam-policy` + Cloud Audit Logs의 `Policy Analyzer`로 실제 쓰인 권한만 남기는 2단계 접근을 계획에 넣는다.
+   - RESOLVED: 2단계 접근 채택. 1단계 — `scripts/bootstrap-gcp.sh`가 배포자 SA에 넓은 프로젝트 역할 8개(run.admin·cloudsql.admin·secretmanager.admin·artifactregistry.admin·monitoring.editor·logging.admin·serviceusage.serviceUsageAdmin·compute.networkAdmin)와 런타임 SA 둘에 대한 iam.serviceAccountUser를 바인딩하고 첫 배포 성공을 확인한다(T-1-30 accept). 2단계 — 01-08이 OPERATIONS.md에 Cloud Audit Logs Policy Analyzer로 실제 사용 권한만 남겨 bootstrap-gcp.sh 역할 목록을 축소·재실행하는 절차를 적는다(축소 실행 자체는 첫 실운영 뒤) — Plan 01-06 Task 2, 01-08 Task 3
 
 ## Environment Availability
 

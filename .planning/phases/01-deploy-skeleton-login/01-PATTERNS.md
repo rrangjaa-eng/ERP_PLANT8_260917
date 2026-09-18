@@ -17,9 +17,9 @@
 | `scripts/deploy.sh` | utility | batch | `scripts/install_pkgs.sh` | role-match (셸 스크립트 관례만; 배포 로직은 RESEARCH.md Pattern 7-8) |
 | `scripts/rollback.sh` | utility | batch | `scripts/install_pkgs.sh` | role-match (로직은 RESEARCH.md Pattern 8) |
 | `scripts/bootstrap-gcp.sh` | utility | batch | `scripts/install_pkgs.sh` | role-match (로직은 RESEARCH.md Pattern 9, 511줄 이후 — 필요 시 offset 511부터 추가 Read) |
-| `scripts/account-create.ts` (CLI) | utility | CRUD | 없음 | no analog — RESEARCH.md Pattern 3 (`setUserPassword`/`revokeUserSessions`) 참조 |
+| `scripts/account-cli.ts` (CLI create/reset/unlock) | utility | CRUD | 없음 | no analog — RESEARCH.md Pattern 3 (`setUserPassword`/`revokeUserSessions`) 참조 |
 | `db/client.ts` | config/service | request-response | 없음 | no analog — RESEARCH.md Pattern 6 (Cloud SQL connector vs Auth Proxy 스위치) |
-| `db/auth.ts` (betterAuth 인스턴스) | service | request-response | 없음 | no analog — RESEARCH.md Pattern 1 |
+| `lib/auth.ts` (betterAuth 인스턴스 — SKELETON.md: domain 훅을 등록해야 하므로 `db/`가 아니라 `lib/`) | service | request-response | 없음 | no analog — RESEARCH.md Pattern 1 |
 | `db/schema/*.ts` (users, login_attempts, better-auth 테이블) | model | CRUD | 없음 | no analog — Drizzle 스키마, RESEARCH.md 프로젝트 구조 절 |
 | `db/migrations/*.sql` | migration | batch | 없음 | no analog — RESEARCH.md Pattern 7 (`drizzle-kit generate` → Squawk) |
 | `domain/auth/hooks.ts` (login_attempts lockout) | service | event-driven | 없음 | no analog — RESEARCH.md Pattern 2 (before/after hooks, 전체 코드 포함) |
@@ -28,13 +28,13 @@
 | `repositories/users.ts` | model | CRUD | 없음 | no analog — RESEARCH.md 프로젝트 구조 절 "viewer 인자 필수" 규칙만 명시, 구현 예시 없음(계획에서 설계) |
 | `repositories/login-attempts.ts` | model | CRUD | 없음 | no analog — 위와 동일 |
 | `lib/actions/client.ts` (`authedActionClient`) | middleware | request-response | 없음 | no analog — RESEARCH.md Pattern 4 (전체 코드 포함) |
-| `app/(auth)/login/page.tsx` + `actions.ts` | component/controller | request-response | 없음 | no analog — 화면 구조는 RESEARCH.md 프로젝트 구조 절, 액션 패턴은 Pattern 4 |
+| `app/(auth)/login/page.tsx` + `login-form.tsx` | component/controller | request-response | 없음 | no analog — 화면 구조는 RESEARCH.md 프로젝트 구조 절; 로그인은 better-auth 클라이언트 SDK(`authClient.signIn.email`)라 Server Action 없음 |
 | `app/(app)/account/page.tsx` + `actions.ts` | component/controller | request-response | 없음 | no analog — Pattern 3(`changePassword` revokeOtherSessions) + Pattern 4 |
-| `app/(admin)/system-status/page.tsx` | component/controller | request-response | 없음 | no analog — D-17(404 for non-admin), D-18(캐시 없음) 참조, 코드 예시 없음 |
+| `app/admin/system-status/page.tsx` (라우트 그룹이 아니라 실제 `/admin/system-status` 경로 — D-17) | component/controller | request-response | 없음 | no analog — D-17(404 for non-admin), D-18(캐시 없음) 참조, 코드 예시 없음 |
 | `app/api/auth/[...all]/route.ts` | route | request-response | 없음 | no analog — better-auth 라우트 핸들러 표준 마운트, Pattern 1 참조 |
-| `eslint/rules/require-action-client.js` | utility | transform | 없음 | no analog — RESEARCH.md Pattern 5 (설계 스텁 포함) |
+| `eslint/rules/require-action-client.mjs` | utility | transform | 없음 | no analog — RESEARCH.md Pattern 5 (설계 스텁 포함) |
 | `.github/workflows/ci.yml` | config | event-driven | 없음 | no analog — RESEARCH.md OPS-04 행 + Architecture Diagram의 CI 단계 나열 |
-| `.github/workflows/deploy-*.yml` | config | event-driven | 없음 | no analog — RESEARCH.md D-05 승격 흐름 + Architecture Diagram |
+| `.github/workflows/deploy.yml`·`account.yml` | config | event-driven | 없음 | no analog — RESEARCH.md D-05 승격 흐름 + Architecture Diagram |
 | `docs/ARCHITECTURE.md`, `docs/OPERATIONS.md` | config/doc | — | 없음 | no analog — RESEARCH.md Architecture Patterns 절의 다이어그램/구조를 초안 골격으로 사용(D-07 근거: CONTEXT.md canonical_refs) |
 
 ## Pattern Assignments
@@ -93,12 +93,12 @@ ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 - 4계층 import 경계: `app/ → domain/ → repositories/(viewer 필수) → db/` (역방향 import 금지, `eslint-plugin-boundaries`로 강제)
 
 ### 인증/세션 (better-auth 설정 전체)
-**Source:** RESEARCH.md Pattern 1 (`db/auth.ts`), 이 문서 179번째 줄 부근 — 전체 코드 블록 그대로 복사 가능
-**Apply to:** `db/auth.ts`, `app/api/auth/[...all]/route.ts`, `lib/actions/client.ts`
+**Source:** RESEARCH.md Pattern 1 (RESEARCH 예시는 `db/auth.ts`; 플랜 배치는 `lib/auth.ts`), 이 문서 179번째 줄 부근 — 전체 코드 블록 그대로 복사 가능
+**Apply to:** `lib/auth.ts`, `app/api/auth/[...all]/route.ts`, `lib/actions/client.ts`
 
 ### Server Action 미들웨어 (`authedActionClient`)
 **Source:** RESEARCH.md Pattern 4 — 전체 코드 블록
-**Apply to:** `lib/actions/client.ts`, `app/(auth)/login/actions.ts`, `app/(app)/account/actions.ts`
+**Apply to:** `lib/actions/client.ts`, `app/(app)/account/actions.ts` (로그인은 better-auth 라우트 + 클라이언트 SDK라 Server Action 없음)
 
 ### 잠금 로직 (before/after hooks + login_attempts)
 **Source:** RESEARCH.md Pattern 2 — 전체 코드 블록 (DB 저장 필수, 인스턴스 메모리 카운트 금지 — F3 실패 모드)
@@ -106,7 +106,7 @@ ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 
 ### 세션 전체 만료 (비밀번호 변경/재발급)
 **Source:** RESEARCH.md Pattern 3 — 전체 코드 블록
-**Apply to:** `app/(app)/account/actions.ts`, `scripts/account-create.ts`
+**Apply to:** `domain/auth/password.ts`(`finalizePasswordChange` — 액션은 domain만 부른다), `domain/auth/accounts.ts`(`resetPassword`), `scripts/account-cli.ts`
 
 ### DB 연결 스위칭 (로컬 Auth Proxy vs Cloud Run connector)
 **Source:** RESEARCH.md Pattern 6 — 전체 코드 블록 + 커넥션 공식(16A) 주의사항

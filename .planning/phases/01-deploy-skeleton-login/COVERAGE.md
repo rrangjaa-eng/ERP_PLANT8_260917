@@ -37,7 +37,8 @@
 | run services deploy / describe / update-traffic / add-iam-policy-binding | INTEGRATE | |
 | run revisions list | INTEGRATE | |
 | run jobs deploy / execute --wait | INTEGRATE | |
-| run domain-mappings create | OPT-OUT | not needed yet — D-15: `--domain` 인자 자리만, 회사 도메인은 Phase 2~3 |
+| run domain-mappings create | OPT-OUT | not needed yet — D-15: `deploy.sh --domain`은 인자 자리만(받으면 stderr에 Phase 2~3 연기 안내, 명령 미실행), 회사 도메인은 Phase 2~3 |
+| run domain-mappings list (bootstrap-gcp.sh, Cloud Shell 1회) | INTEGRATE | 리전 지원 확인(A1, RESEARCH Open Q1)만 — 매핑을 만들지 않고 `--region=asia-northeast3`의 성공/오류를 출력해 01-07 DEPLOY-LOG에 기록 |
 | sql instances create / describe | INTEGRATE | |
 | sql databases create | INTEGRATE | |
 | sql users create (cloud_iam_service_account) / set-password (postgres) | INTEGRATE | |

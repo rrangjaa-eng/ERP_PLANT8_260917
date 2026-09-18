@@ -56,7 +56,7 @@ main{padding:var(--s-5) var(--pad-page) 96px;max-width:var(--container-max)}
 .inp.num{text-align:right}
 .inp.err{border-color:var(--danger)}
 .inp::placeholder{color:var(--faint)}
-select.inp{max-width:280px}
+select.inp{max-width:200px}
 .ferr{font-size:var(--fs-sm);color:var(--danger);margin-top:var(--s-1)}
 .calc{font-size:var(--fs-sm);color:var(--muted);margin-top:var(--s-1);display:flex;gap:var(--s-3);flex-wrap:wrap}
 .calc b{color:var(--fg);font-weight:var(--fw-bold)}
@@ -67,8 +67,8 @@ select.inp{max-width:280px}
 .hint{font-size:var(--fs-sm);color:var(--muted);padding-top:7px}
 
 /* 첨부 (§7-10) */
-.drop{background:var(--surface);border:var(--line-w) dashed var(--line-ui);height:96px;display:flex;align-items:center;justify-content:center;font-size:var(--fs-sm);color:var(--muted);gap:var(--s-1)}
-.files{list-style:none}
+.drop{background:var(--surface);border:var(--line-w) dashed var(--line-ui);height:96px;display:flex;align-items:center;justify-content:center;font-size:var(--fs-sm);color:var(--muted);max-width:480px;gap:var(--s-1)}
+.files{list-style:none;max-width:480px}
 .files li{display:flex;align-items:center;gap:var(--s-3);padding:6px 0;border-bottom:var(--line-w) solid var(--line);font-size:var(--fs-sm)}
 .files .th{width:48px;height:48px;background:var(--surface);border:var(--line-w) solid var(--line-ui);flex:none;position:relative;overflow:hidden}
 .files .th i{position:absolute;left:8px;right:8px;height:2px;background:var(--line-ui);opacity:.55}
@@ -152,7 +152,7 @@ body[data-scene="done"] .inp,body[data-scene="done"] select{pointer-events:none}
       <input id="due-e" class="inp num err s-error" value="2026/9/19" aria-invalid="true" aria-describedby="due-why">
       <div class="ferr s-error" id="due-why">날짜 형식이 아닙니다 · 2026-09-19처럼 적어 주세요</div>
       <div class="calc"><span>결재 마감 <b class="num">2026-09-18 14:00</b></span><span>지급일 규칙 · 금요일</span></div></div></div>
-    <div class="row"><label for="memo">비고</label><div><input id="memo" class="inp" value="2차 견적 기준. 철거 포함." style="max-width:none"></div></div>
+    <div class="row"><label for="memo">비고</label><div><input id="memo" class="inp" value="2차 견적 기준. 철거 포함." style="max-width:480px"></div></div>
 
     <div class="sep"></div>
 

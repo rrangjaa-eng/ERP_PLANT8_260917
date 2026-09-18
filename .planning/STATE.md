@@ -2,16 +2,16 @@
 gsd_state_version: "1.0"
 current_phase: 1
 current_phase_name: 배포 스켈레톤·로그인
-status: planning
+status: executing
 stopped_at: Phase 1 context gathered
-last_updated: "2026-09-18T01:28:10.486Z"
+last_updated: "2026-09-18T03:13:48.052Z"
 last_activity: 2026-09-17
 last_activity_desc: "로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드"
-state_head: 69e924b536052a393866199a142775b2a9789e2b
+state_head: 470ee23b6d23db5de663070deab1b3e51c6487a1
 progress:
   total_phases: 11
   completed_phases: 0
-  total_plans: 0
+  total_plans: 8
   completed_plans: 0
   percent: 0
 ---
@@ -27,9 +27,9 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 
 ## Current Position
 
-Phase: 1 of 11 (배포 스켈레톤·로그인)
+Phase: 1 (배포 스켈레톤·로그인) — READY TO EXECUTE
 Plan: 0 of TBD in current phase
-Status: Ready to plan
+Status: Ready to execute
 Last activity: 2026-09-17 — 로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드
 
 Progress: [░░░░░░░░░░] 0%
@@ -84,6 +84,8 @@ Recent decisions affecting current work:
 - [Eng 리뷰 OV-3(회사 GCP 다음 주 확보)]: Phase 1부터 회사 GCP 프로젝트에서 운영, 개인 GCP 단계 삭제(개인 환경은 로컬 개발만). 회사 GCP 조직 정책(비인증 ingress·외부 링크 허용)은 Phase 1 기준 1에서 확인. CEO OV-6 게이트는 Phase 1에서 충족, D5 개인 Gmail 단계 삭제. deploy.sh는 프로젝트 ID·리전 인자로 다른 프로젝트(재해 복구·스테이징)에도 재현
 - [Eng 리뷰 OV-4 기각]: 손익 비용의 쓰기 시점 파생 컬럼은 갱신 누락 비정규화라 두지 않는다. 읽기 시점 계산 유지하되 effectiveCost SQL 식 하나(우선순위 CASE + 근거 id)를 목록·합계·상세(trace)가 공유, 저장은 정산 스냅샷만(Phase 9; PNL-02)
 - [Eng 리뷰 OV-6 분할]: 옛 Phase 6(17개)을 Phase 6 지급·증빙·법인카드·구매 요청·미결 점검(EXP-06/07/09/10/13/16, EVID-02/03/04, PROJ-06 = 10개)과 Phase 7 공휴일·지급일·마감·알림·SMTP·tick + 전 메뉴 권한 검수(EXP-11/12, ADMN-11, NOTI-01~04 = 7개)로 나눔. 옛 7~10 → 8~11. 11페이즈, decimal 없음
+- [Phase 1]: Phase 1은 8플랜/7웨이브 그대로 진행(1a/1b 분할 안 함, 사용자 결정 2026-09-18). 실행은 웨이브 5(01-06)까지 한 세션에서 끝내고 /gsd-pause-work로 끊은 뒤 01-07~08(GCP·사람 체크포인트)은 새 세션
+- [Phase 1]: 회사 GCP 프로젝트 생성·결제 연결 완료(2026-09-18, billingEnabled true). 프로젝트 ID는 리포·문서에 적지 않고 실행 단계에서 GitHub 변수 GCP_PROJECT_ID와 deploy.sh 인자로만 넣는다(D-03)
 
 ### Pending Todos
 
@@ -98,6 +100,7 @@ None yet.
 - [Phase 9]: 정산(완료) 시점은 D3(정산 결재 대표 승인)로 확정. 매출 기준·연도 귀속을 기획본부·경영관리가 합의하는 절차는 여전히 PROJECT.md에 없다 — 계획 단계에서 사용자와 확정. 착수 조건은 전환 후 N주(설정, 기본 2주) 실입력(Eng OV-1)
 - [Phase 11]: CERT 활성화 조건은 `/cso` 보안 감사 통과. 개인정보보호법 적용 범위·보존 기간은 감사에서 재확인(리서치 Gap). 감사 뒤 KMS 봉투 승격(Issue 7)
 - [All]: 과잉 설계 재발 방지 — 페이즈마다 "인트라넷보다 못한가"로 검증하고, 실제 사용자 로그인·입력이 있어야 완료로 본다
+- [Phase 1] 조직 정책 iam.allowedPolicyMemberDomains가 조직 고객 ID만 허용해 allUsers run.invoker 부여(비인증 ingress)가 막힘. 프로젝트 수준 예외(inheritFromParent:false, allowAll:true)를 조직 정책 관리자에게 요청 중 — 사용자 계정에는 orgpolicy.policies.create 권한 없음. 01-07 부트스트랩 전제 조건, 웨이브 1~5는 영향 없음. run.allowedIngress는 allowAll로 통과
 
 ## Deferred Items
 

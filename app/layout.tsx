@@ -7,7 +7,11 @@ export const metadata: Metadata = {
   description: "PLANT8 ERP — 프로젝트·지출결의·법인카드·손익 관리",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="ko">
       <body>

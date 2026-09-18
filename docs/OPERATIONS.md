@@ -11,11 +11,16 @@
 | Cloud Run 서비스 | `plant8-staging` | `plant8-prod` |
 | Cloud SQL 인스턴스 | `plant8-staging-db` | `plant8-prod-db` |
 | 시크릿 접미사 | `-staging` | `-prod` |
-| 접속 주소 | `https://plant8-staging-<프로젝트 번호>.asia-northeast3.run.app` | `https://plant8-prod-<프로젝트 번호>.asia-northeast3.run.app` |
+| 접속 주소 | `gcloud run services describe plant8-staging --format='value(status.url)'` | 같은 명령, `plant8-prod` |
 
-접속 주소는 이 **결정적 URL** 하나만 쓴다. Cloud Run이 함께 주는 레거시 `*.a.run.app`
-주소나 태그 리비전 URL로 열면 화면은 뜨지만 로그인 POST가 better-auth의 Origin 검사
-(`BETTER_AUTH_URL`)에 걸려 403이 난다 — 북마크·안내는 항상 결정적 URL로.
+접속 주소는 **`status.url` 실측값**만 쓴다. 프로젝트 번호로 만든 "결정적" 형식
+(`https://plant8-<env>-<프로젝트 번호>.asia-northeast3.run.app`)은 이 프로젝트에서
+실제 주소가 아니었다 — 2026-09-18 스테이징 첫 배포에서 확인했고, 그 형식으로 열면
+404가 난다(01-07-DEPLOY-LOG). 실제 주소는 `plant8-staging-<해시>-du.a.run.app` 형태다.
+`deploy.sh`는 `status.url`이 계산값과 다르면 그 값으로 `BETTER_AUTH_URL`까지 맞춰
+재배포하므로(`note: computed url differs` 줄), 배포 로그 마지막의 `SERVICE_URL=` 줄이
+항상 정본이다. 다른 주소(태그 리비전 URL 등)로 열면 화면은 떠도 로그인 POST가
+better-auth의 Origin 검사에 걸려 403이 난다 — 북마크·안내는 항상 `status.url`로.
 
 ## 2. 월 비용 목표
 
@@ -63,14 +68,18 @@ Artifact Registry에 있고 스테이징이 실제로 서빙 중인지 확인 �
 GitHub Environments·승인 버튼은 없다(D-05, 무료 플랜 비공개 저장소) — 실행 권한은 저장소
 쓰기 협업자로 제한한다.
 
-**실패 시:** 스모크 실패 = 트래픽 0% 유지(리비전은 남아 조사 가능). 실패 단계 이름은
-워크플로 로그 마지막 줄의 `deploy failed at <stage>`로 안다.
+**실패 시:** 카나리(0% → 검증 → 승격) 단계는 없다 — 새 리비전은 스모크 **전에** 이미
+100% 트래픽을 받는다. 그래서 스모크 실패는 **나쁜 리비전이 서빙 중인 상태**를 뜻하고,
+자동 롤백도 없다: 즉시 `pnpm rollback`(§5)으로 되돌린 뒤 원인을 본다. 실패 단계 이름은
+워크플로 로그 마지막 줄의 `deploy failed at <stage>`로 안다. (카나리를 뺀 이유: 태그
+전용 리비전 URL이 4회 연속 15분 넘게 라우팅되지 않았다 — 01-07-DEPLOY-LOG.)
 
 ## 5. 롤백
 
 `pnpm rollback` = `scripts/rollback.sh --env … --project … --region …` — **현재 100%
-서빙 중인 리비전보다 오래된 최신 리비전**으로 되돌린다(스모크에 실패해 0%로 남은 리비전은
-건너뛴다). DB는 확장-축소 규칙(컬럼 추가만)이라 되돌릴 필요가 없다 — 데이터 손상은 백업
+서빙 중인 리비전보다 오래된 최신 리비전**으로 되돌린다(`status.traffic`에서 percent 100인
+리비전을 찾아 그보다 오래된 것 중 가장 최신을 고른다. percent가 없는 태그 전용 항목은
+후보가 아니다). DB는 확장-축소 규칙(컬럼 추가만)이라 되돌릴 필요가 없다 — 데이터 손상은 백업
 복원(OPS-03, 별도 페이즈)으로 대응한다.
 
 ## 6. 경보 3개

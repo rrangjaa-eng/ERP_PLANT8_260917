@@ -58,7 +58,9 @@ describe("docs/OPERATIONS.md", () => {
     "D-01",
     "2,000",
     "x-client-ip",
-    "결정적 URL",
+    // 01-07 실측으로 "결정적 URL" 가정이 기각됐다 — 런북이 가리켜야 하는 정본은
+    // status.url이고, 그것이 문서에 남아 있는지를 대신 고정한다.
+    "status.url",
   ])("'%s'를 포함한다", (token) => {
     expect(content).toContain(token);
   });

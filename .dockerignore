@@ -1,0 +1,17 @@
+node_modules
+.next
+dist
+.env
+.env.*
+!.env.example
+.git
+.planning
+docs
+test
+playwright-report
+test-results
+.claude
+
+# GitHub Actions WIF 자격 파일 — google-github-actions/auth가 워크스페이스에
+# 두는 파일이다. 빌드 컨텍스트에 들어가면 이미지 레이어에 남는다(T-1-SC3).
+gha-creds-*.json

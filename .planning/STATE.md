@@ -2,17 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 1
 current_phase_name: 배포 스켈레톤·로그인
+current_plan: 7
 status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-09-18T03:53:46.460Z"
+stopped_at: "Resuming: wave 6 (01-07) starting"
+last_updated: "2026-09-18T10:37:44.591Z"
 last_activity: 2026-09-17
 last_activity_desc: "로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드"
-state_head: e4f4105be59ce78119722d4f5d9f7f95f5254301
+state_head: b40fb5e6a78d51cef16f087532fab2c27ba66697
 progress:
   total_phases: 11
   completed_phases: 0
   total_plans: 8
-  completed_plans: 0
+  completed_plans: 6
   percent: 0
 ---
 
@@ -27,8 +28,9 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 
 ## Current Position
 
-Phase: 1 (배포 스켈레톤·로그인) — READY TO EXECUTE
-Plan: 0 of TBD in current phase
+Phase: 1 (배포 스켈레톤·로그인) — EXECUTING
+Current Plan: 7
+Total Plans in Phase: 8
 Status: Ready to execute
 Last activity: 2026-09-17 — 로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드
 
@@ -54,6 +56,15 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: -
 
 *Updated after each plan completion*
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 01-deploy-skeleton-login P02 | 65min | 2 tasks | 22 files |
+| Phase 01-deploy-skeleton-login P03 | 18min | 2 tasks | 17 files |
+| Phase 01-deploy-skeleton-login P04 | 40min | 3 tasks | 32 files |
+| Phase 01-deploy-skeleton-login P05 | 14min | 2 tasks | 11 files |
+| Phase 01-deploy-skeleton-login P06 | 38min | 2 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -88,6 +99,23 @@ Recent decisions affecting current work:
 - [Phase 1]: 회사 GCP 프로젝트 생성·결제 연결 완료(2026-09-18, billingEnabled true). 프로젝트 ID는 리포·문서에 적지 않고 실행 단계에서 GitHub 변수 GCP_PROJECT_ID와 deploy.sh 인자로만 넣는다(D-03)
 - [Phase 1]: GitHub 저장소는 개인 계정 rrangjaa-eng 비공개로 유지 + GitHub Pro 구독(사용자 결정 B, 2026-09-18) — Environment production의 required reviewers(D-05)를 쓰기 위함. 회사 조직 이전은 이월(이전 시 WIF 부트스트랩 재실행)
 - [Phase 1]: D-05 변경(사용자 결정 C, 2026-09-18, 같은 날 B 대체): GitHub 저장소는 개인 무료 비공개 유지. Environments·required reviewers 없이 프로덕션은 workflow_dispatch 수동 실행(같은 SHA 이미지 재사용, 스테이징 배포 확인 가드). 변수·시크릿은 저장소 수준
+- [Phase 1]: better-auth 1.7.5 rate_limits 스키마 검사가 id 컬럼을 요구해 text id 추가(0002 마이그레이션) — drizzle-adapter의 schema-diff.mjs가 모든 모델에 id 존재를 강제하고 실제로 문자열 id를 insert함(실측)
+- [Phase 1]: advanced.ipAddress.ipAddressHeaders를 x-forwarded-for에서 x-client-ip로 교체, proxy.ts가 단일 헤더로 고정 — better-auth가 헤더 값 2개 이상이면 IP를 null로 보고 공용 rateLimit 버킷에 묶어, 클라이언트가 XFF 위조 시 전 직원이 같은 버킷을 나눠 쓰는 DoS가 됨(Eng Issue 1)
+- [Phase 1]: [Phase 1] revokeAllSessions는 auth.$context.internalAdapter.deleteUserSessions(userId)를 쓴다(계획 문서의 deleteSessions는 세션 토큰 배열을 받는 다른 메서드 — 실측으로 정정, 01-02 선례와 일치)
+- [Phase 1]: [Phase 1] AUTH-04 Google 로그인 버튼의 클릭 핸들러는 서버 컴포넌트(login/page.tsx)가 아니라 기존 클라이언트 컴포넌트(login-form.tsx)에 showGoogle prop으로 위임 — 서버 컴포넌트는 authClient.signIn.social을 직접 호출할 수 없다
+- [Phase 1]: [Phase 1] AUTH-03·AUTH-04는 REQUIREMENTS.md에서 Complete로 반영됨. OPS-06은 01-07이 같은 요구사항을 공유(shared-ID gate)해 01-07 완료 시 Complete로 바뀐다(의도된 동작)
+- [Phase 1]: 01-07 Task 1 GCP 리소스 이름 결정(사용자, 2026-09-18): 옵션 A/B 대신 순수 접두어 `plant8-` 커스텀 선택 — 서비스 plant8-staging/plant8-prod, Cloud SQL 인스턴스 plant8-staging-db/plant8-prod-db, DB 이름 plant8, SA plant8-{env}-runtime, Artifact Registry plant8. infra/names.sh(웨이브 5/01-06) 생성 시 이 값으로 반영하고, 01-07 Task 1 체크포인트에서 재확인 없이 바로 적용한다
+- [Phase 1]: 01-07 사전 준비 완료(사용자, 2026-09-18): 조직 정책 iam.allowedPolicyMemberDomains를 allUsers 등 전체 허용으로 변경해 run.invoker 부여(비인증 ingress) 차단 블로커 해소. 프로젝트 소유자 역할·경보 알림 그룹도 준비 완료 — 웨이브 6(01-07) 시작 전 재확인 항목 3개(조직 정책·프로젝트 소유자·경보 그룹) 모두 충족
+- [Phase 01-deploy-skeleton-login]: 01-04: .squawk.toml 키는 최상위(섹션 없음)여야 적용된다 — assume_in_transaction/pg_version/excluded_rules 실측 확인
+- [Phase 01-deploy-skeleton-login]: 01-04: db→lib, test→eslint boundaries 경계 예외 추가(기존 db/client.ts의 lib/env.ts import, eslint-rules 테스트의 규칙 모듈 import 요구에 맞춤)
+- [Phase 01-deploy-skeleton-login]: 01-04: recommendedTypeChecked 적용으로 드러난 실제 타입 버그 4곳(File-vs-string, misused-promises, ctx.body any, 테스트 mock 타입) 수정
+- [Phase 01-deploy-skeleton-login]: 01-04: CI ci-guard.test.ts는 두 잡(quality/integration-e2e) 각각의 내부 순서를 검증한다 — 전체 파일 단일 순서 대신(두 잡 분리 유지가 CEO 9A Actions 예산에 더 부합)
+- [Phase 01-deploy-skeleton-login]: 01-04: .squawk.toml excluded_rules 4개(prefer-timestamp-tz, prefer-bigint-over-int, adding-required-field, require-concurrent-index-creation) — 스키마 전체 변경 필요해 범위 밖, WINDOWS.md에 lint-warning 4건 등록
+- [Phase 1]: [Phase 1] 01-05: esbuild build-cli.mjs external을 ['pg-native']에서 packages:'external'로 정정 — google-gax 계열 대형 gRPC 코드베이스를 단일 ESM 파일로 인라인하면 Node 22/24가 런타임에 'both require() and top-level await' 에러로 크래시함을 실측. 이 패키지들은 이미 Next 앱이 써서 .next/standalone/node_modules에 포함되므로 external로 둬도 같은 이미지 안에서 정상 resolve된다
+- [Phase 1]: [Phase 1] 01-05: db-bootstrap.ts의 CREATE DATABASE는 buildBootstrapSql 순수 함수 밖 main()의 별도 단계로 분리 — 존재 확인 뒤에만 실행, buildBootstrapSql은 항상 멱등한 ALTER DATABASE...OWNER TO만 반환
+- [Phase 1]: [Phase 01-deploy-skeleton-login] 01-06: infra/names.sh 리소스 접두어를 plant8-로 통일(서비스·SQL·SA·AR은 사용자 결정 명시, Job 이름도 같은 계열이라 확장) — WIF_POOL/WIF_PROVIDER/DEPLOYER_SA는 identity 식별자라 플랜 원문 값 유지
+- [Phase 1]: [Phase 01-deploy-skeleton-login] 01-06: bash ERR 트랩은 기본적으로 함수 안에서 발동하지 않는다 — set -o errtrace(set -E) 없이는 deploy.sh의 STAGE 트랩 메시지가 안 나옴을 실측(scripts/deploy.sh)
+- [Phase 1]: [Phase 01-deploy-skeleton-login] 01-06: deploy.yml/account.yml에 pnpm build:cli 스텝 불필요 — Dockerfile의 build 스테이지가 컨테이너 안에서 이미 pnpm build && pnpm build:cli를 실행함을 확인(01-05 Dockerfile 직접 확인)
 
 ### Pending Todos
 
@@ -102,7 +130,6 @@ None yet.
 - [Phase 9]: 정산(완료) 시점은 D3(정산 결재 대표 승인)로 확정. 매출 기준·연도 귀속을 기획본부·경영관리가 합의하는 절차는 여전히 PROJECT.md에 없다 — 계획 단계에서 사용자와 확정. 착수 조건은 전환 후 N주(설정, 기본 2주) 실입력(Eng OV-1)
 - [Phase 11]: CERT 활성화 조건은 `/cso` 보안 감사 통과. 개인정보보호법 적용 범위·보존 기간은 감사에서 재확인(리서치 Gap). 감사 뒤 KMS 봉투 승격(Issue 7)
 - [All]: 과잉 설계 재발 방지 — 페이즈마다 "인트라넷보다 못한가"로 검증하고, 실제 사용자 로그인·입력이 있어야 완료로 본다
-- [Phase 1] 조직 정책 iam.allowedPolicyMemberDomains가 조직 고객 ID만 허용해 allUsers run.invoker 부여(비인증 ingress)가 막힘. 프로젝트 수준 예외(inheritFromParent:false, allowAll:true)를 조직 정책 관리자에게 요청 중 — 사용자 계정에는 orgpolicy.policies.create 권한 없음. 01-07 부트스트랩 전제 조건, 웨이브 1~5는 영향 없음. run.allowedIngress는 allowAll로 통과
 
 ## Deferred Items
 
@@ -114,6 +141,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-18T00:57:26.386Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-deploy-skeleton-login/01-CONTEXT.md
+Last session: 2026-09-18T10:37:44.289Z
+Stopped at: Resuming: wave 6 (01-07) starting
+Resume file: None

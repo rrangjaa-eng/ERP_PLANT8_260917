@@ -4,6 +4,10 @@
 .claude/scheduled_tasks.lock
 .claude/*.lock
 
+# GSD harness-managed agent worktrees and run-scoped tool state (ephemeral, never source content)
+.claude/worktrees/
+.gsd/
+
 # gstack vendored copy: never commit installs or build output
 .claude/skills/gstack/node_modules/
 .claude/skills/gstack/browse/dist/
@@ -22,3 +26,19 @@ node_modules/
 
 # GSD research web-search cache (tool artifact)
 .planning/research/.cache/
+
+# Next.js app
+.env
+.env.*
+!.env.example
+.next/
+dist/
+playwright-report/
+test-results/
+*.tsbuildinfo
+next-env.d.ts
+
+# GitHub Actions WIF credential files (google-github-actions/auth writes these
+# into $GITHUB_WORKSPACE — must be ignored or deploy.sh's dirty-tree check and
+# docker build context break, plan review CEO OV-2)
+gha-creds-*.json

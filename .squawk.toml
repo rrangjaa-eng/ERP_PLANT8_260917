@@ -1,0 +1,32 @@
+pg_version = "16.0"
+# drizzle의 migrate()는 이번에 실행할 마이그레이션 전부를 하나의 트랜잭션으로 감싼다
+# (drizzle-orm/pg-core/dialect.js의 session.transaction(...) 참고, 실측 확인).
+assume_in_transaction = true
+
+excluded_rules = [
+  # CREATE INDEX CONCURRENTLY는 트랜잭션 밖에서만 실행 가능하다 — drizzle migrate()가
+  # 파일 전체를 트랜잭션으로 감싸므로(assume_in_transaction) 이 규칙과 근본적으로 양립하지
+  # 않는다. 현재 SQL에는 CONCURRENTLY 인덱스가 없지만, 실수로 넣더라도 이 예외 자체가
+  # "쓰지 말라"는 신호이므로 배제해 둔다.
+  "require-concurrent-index-creation",
+
+  # better-auth 1.7.5의 drizzle-adapter가 자체 스키마 검사기(schema-diff.mjs)로 강제하는
+  # 컬럼 타입(01-02 실측: rate_limits.id는 text, NOT NULL). 01-04 시점에 이 테이블은
+  # 0000/0001 직후 항상 비어 있으므로(실사용 트래픽 전) NOT NULL 추가로 인한 테이블 재작성
+  # 락 리스크가 실질적으로 없다. nullable+트리거 백필로 바꾸면 better-auth 어댑터의 요구와
+  # 어긋난다(01-02 SUMMARY 결정 참조).
+  "adding-required-field",
+
+  # better-auth 1.7.5 스키마의 timestamp 컬럼들(01-01이 만든 users/sessions/accounts/
+  # verifications/rate_limits + 01-02의 login_attempts) 전부가 timezone 없는 timestamp다.
+  # timestamptz로 바꾸려면 db/schema/*.ts 전체와 새 마이그레이션(ALTER COLUMN TYPE)이
+  # 필요해 이 플랜(린트·CI·문서)의 범위를 벗어나는 스키마 변경이 된다 — 별도 플랜에서
+  # 다루도록 WINDOWS.md에 기록(deferred, 이 플랜의 변경으로 생긴 문제가 아님).
+  "prefer-timestamp-tz",
+
+  # rate_limits.count(integer)는 better-auth 자체 rate limiter가 매 윈도우마다 리셋하는
+  # 카운터다(01-01/01-02가 정의한 필드, int32 상한에 닿을 값이 아님). bigint로 바꾸면
+  # better-auth drizzle-adapter의 스키마 검사기가 기대하는 타입과 어긋날 위험이 있다
+  # (01-02 SUMMARY: schema-diff.mjs가 필드 존재·타입을 엄격히 검사).
+  "prefer-bigint-over-int",
+]

@@ -34,29 +34,47 @@ if [ -d "$GSTACK/node_modules" ] && [ ! -x "$GSTACK/browse/dist/browse" ] \
 fi
 
 # Chromium for /browse, /qa, /design-review: the cloud VM ships Playwright
-# browsers under $PLAYWRIGHT_BROWSERS_PATH, but not the revision gstack's
+# browsers under $PLAYWRIGHT_BROWSERS_PATH, but not the revision the caller's
 # playwright expects, and the Playwright CDN is not reachable through the
 # proxy. Link the expected headless-shell revision to the preinstalled one.
 # Verified: goto/text/screenshot work with Chromium 141 under playwright 1.62.
-PW="${PLAYWRIGHT_BROWSERS_PATH:-}"
-BJ="$GSTACK/node_modules/playwright-core/browsers.json"
-if [ -n "$PW" ] && [ -d "$PW" ] && [ -f "$BJ" ]; then
-  REV="$(node -e '
+link_chromium_headless_shell() {
+  local browsers_json="$1"
+  local pw="${PLAYWRIGHT_BROWSERS_PATH:-}"
+  if [ -z "$pw" ] || [ ! -d "$pw" ] || [ ! -f "$browsers_json" ]; then
+    return 0
+  fi
+  local rev
+  rev="$(node -e '
     const b = require(process.argv[1]).browsers;
     const e = b.find(x => x.name === "chromium-headless-shell") || b.find(x => x.name === "chromium");
-    if (e) process.stdout.write(String(e.revision));' "$BJ" 2>/dev/null || true)"
-  WANT="$PW/chromium_headless_shell-${REV}/chrome-headless-shell-linux64/chrome-headless-shell"
-  if [ -n "$REV" ] && [ ! -e "$WANT" ]; then
-    HAVE="$(find "$PW" -maxdepth 3 -type f \( -name chrome-headless-shell -o -name headless_shell \) 2>/dev/null | head -1)"
-    if [ -n "$HAVE" ] && mkdir -p "$(dirname "$WANT")" 2>/dev/null; then
-      ln -sfn "$HAVE" "$WANT" \
-        && touch "$PW/chromium_headless_shell-${REV}/INSTALLATION_COMPLETE" \
-                 "$PW/chromium_headless_shell-${REV}/DEPENDENCIES_VALIDATED" \
-        && echo "install_pkgs: linked Playwright chromium_headless_shell-${REV} -> $HAVE"
+    if (e) process.stdout.write(String(e.revision));' "$browsers_json" 2>/dev/null || true)"
+  local want="$pw/chromium_headless_shell-${rev}/chrome-headless-shell-linux64/chrome-headless-shell"
+  if [ -n "$rev" ] && [ ! -e "$want" ]; then
+    local have
+    have="$(find "$pw" -maxdepth 3 -type f \( -name chrome-headless-shell -o -name headless_shell \) 2>/dev/null | head -1)"
+    if [ -n "$have" ] && mkdir -p "$(dirname "$want")" 2>/dev/null; then
+      ln -sfn "$have" "$want" \
+        && touch "$pw/chromium_headless_shell-${rev}/INSTALLATION_COMPLETE" \
+                 "$pw/chromium_headless_shell-${rev}/DEPENDENCIES_VALIDATED" \
+        && echo "install_pkgs: linked Playwright chromium_headless_shell-${rev} -> $have"
     else
-      echo "install_pkgs: no preinstalled headless Chromium found; /browse unavailable this session" >&2
+      echo "install_pkgs: no preinstalled headless Chromium found; browser skills unavailable this session" >&2
     fi
   fi
+}
+
+link_chromium_headless_shell "$GSTACK/node_modules/playwright-core/browsers.json"
+
+# 프로젝트 의존성(pnpm) — 클라우드 세션마다 lockfile 그대로 설치. 실패해도 세션은
+# 계속(D-01, dev-db.sh가 이어서 로컬 DB를 준비한다).
+if [ -f "$ROOT/package.json" ] && command -v pnpm >/dev/null 2>&1; then
+  (cd "$ROOT" && pnpm install --frozen-lockfile) \
+    || echo "install_pkgs: pnpm install --frozen-lockfile failed" >&2
 fi
+
+# 앱 자체의 Playwright(@playwright/test)도 gstack과 같은 헤드리스 셸 링크가
+# 필요하다(test/e2e가 쓰는 Chromium).
+link_chromium_headless_shell "$ROOT/node_modules/playwright-core/browsers.json"
 
 exit 0

@@ -1,0 +1,126 @@
+name: deploy
+
+# main push는 스테이징에 자동 배포한다. 프로덕션은 workflow_dispatch로만 실행되고
+# (push로는 절대 실행되지 않는다, D-05) 가드 스텝이 스테이징이 실제로 서빙 중인
+# 이미지 태그를 확인한 뒤에만 같은 SHA를 그대로 승격한다 — GitHub Environments·
+# required reviewers는 쓰지 않는다(무료 플랜 비공개 저장소). 변수는 저장소 수준
+# vars.*이고 시크릿 탭은 비워 둔다(WIF, 키 파일 없음).
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - ".planning/**"
+      - "docs/**"
+  workflow_dispatch:
+    inputs:
+      target:
+        type: choice
+        description: "배포 대상"
+        options:
+          - staging
+          - production
+        default: staging
+      sha:
+        type: string
+        description: "production 전용 — 배포할 git SHA(7~40자 hex); 비우면 스테이징이 현재 서빙 중인 SHA"
+        default: ""
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  ci:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.target == 'staging')
+    uses: ./.github/workflows/ci.yml
+
+  staging:
+    needs: ci
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.target == 'staging')
+    runs-on: ubuntu-latest
+    env:
+      ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/erp-repo
+          service_account: gha-deployer@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          install_components: alpha,beta
+      - id: deploy
+        shell: bash
+        run: |
+          bash scripts/deploy.sh --env staging --project "${{ vars.GCP_PROJECT_ID }}" --region "${{ vars.GCP_REGION }}" --sha "${{ github.sha }}" | tee deploy.log
+          URL=$(grep '^SERVICE_URL=' deploy.log | cut -d= -f2-)
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "staging: $URL (sha ${{ github.sha }})" >> "$GITHUB_STEP_SUMMARY"
+
+  production:
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'production'
+    runs-on: ubuntu-latest
+    env:
+      ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/erp-repo
+          service_account: gha-deployer@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          install_components: alpha,beta
+      # 스테이징이 실제로 서빙 중인 SHA만 프로덕션에 올린다(D-05) — 이 가드가
+      # 통과하지 못하면(exit 1) 다음 배포 스텝은 실행되지 않는다(if: success() 기본).
+      - id: guard
+        shell: bash
+        env:
+          SHA_INPUT: ${{ inputs.sha }}
+          PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+        run: |
+          source infra/names.sh
+          REV=$(gcloud run services describe "$(svc_name staging)" --region "$REGION" --project "$PROJECT" --format=json | jq -r '.status.traffic[] | select(.percent == 100) | .revisionName' | head -n1)
+          if [ -z "$REV" ]; then
+            echo "staging is not serving any revision — deploy staging first (D-05)" >&2
+            exit 1
+          fi
+          STAGING_IMAGE=$(gcloud run revisions describe "$REV" --region "$REGION" --project "$PROJECT" --format='value(spec.containers[0].image)')
+          STAGING_SHA=${STAGING_IMAGE##*:}
+          if [ -z "$SHA_INPUT" ]; then
+            SHA="$STAGING_SHA"
+          else
+            if ! [[ "$SHA_INPUT" =~ ^[0-9a-f]{7,40}$ ]]; then
+              echo "sha must be 7-40 hex chars" >&2
+              exit 1
+            fi
+            SHA=$(git rev-parse --verify "${SHA_INPUT}^{commit}")
+          fi
+          if ! gcloud artifacts docker images describe "$(image_path "$SHA" "$PROJECT" "$REGION")" --project "$PROJECT" >/dev/null 2>&1; then
+            echo "image for $SHA not found in Artifact Registry — deploy it to staging first (D-05)" >&2
+            exit 1
+          fi
+          if [ "$SHA" != "$STAGING_SHA" ]; then
+            echo "staging is serving $STAGING_SHA, not $SHA — deploy $SHA to staging first (D-05)" >&2
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "promoting $SHA (staging serving $STAGING_SHA)" >> "$GITHUB_STEP_SUMMARY"
+      - id: deploy
+        shell: bash
+        run: |
+          bash scripts/deploy.sh --env prod --project "${{ vars.GCP_PROJECT_ID }}" --region "${{ vars.GCP_REGION }}" --sha "${{ steps.guard.outputs.sha }}" | tee deploy.log
+          URL=$(grep '^SERVICE_URL=' deploy.log | cut -d= -f2-)
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "production: $URL (sha ${{ steps.guard.outputs.sha }})" >> "$GITHUB_STEP_SUMMARY"

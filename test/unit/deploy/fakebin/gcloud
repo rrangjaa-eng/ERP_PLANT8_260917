@@ -1,0 +1,301 @@
+#!/usr/bin/env bash
+# 가짜 gcloud — deploy.sh/rollback.sh/bootstrap-gcp.sh 단위 테스트용.
+# 호출 인자를 $DEPLOY_FAKE_LOG에 한 줄씩 append하고, $DEPLOY_FAKE_STATE 디렉터리의
+# 파일로 상태(서비스 존재·이미지 존재·리비전 목록 등)를 흉내 낸다.
+set -u
+
+STATE="${DEPLOY_FAKE_STATE:-}"
+LOG="${DEPLOY_FAKE_LOG:-}"
+ARGS="$*"
+
+state_file() { [ -n "$STATE" ] && [ -f "$STATE/$1" ]; }
+# 상태 파일이 없으면 그냥 빈 값으로 성공(exit 0) — "목록이 비어 있음"과 "명령
+# 자체가 실패함"을 구분한다(가짜 gcloud가 실패로 취급해야 하는 경우는 각 case
+# 분기에서 state_file로 명시적으로 검사한다).
+state_val() {
+  if [ -n "$STATE" ] && [ -f "$STATE/$1" ]; then
+    cat "$STATE/$1"
+  fi
+}
+
+if [ -n "$LOG" ]; then
+  printf '%s\n' "$ARGS" >>"$LOG"
+fi
+
+# 임의 하위 명령을 실패시키는 범용 훅(behavior 5b): 상태 파일 fail-gcloud의 내용이
+# 이번 호출 인자의 접두어면 실패한다.
+if state_file fail-gcloud; then
+  needle="$(state_val fail-gcloud)"
+  case "$ARGS" in
+    "$needle"*)
+      echo "fake gcloud: forced failure for '$needle'" >&2
+      exit 1
+      ;;
+  esac
+fi
+
+PROJECT_NUMBER=123456789012
+
+case "$ARGS" in
+  "projects describe "*)
+    if state_file project-missing; then
+      echo "fake gcloud: project not found" >&2
+      exit 1
+    fi
+    echo "$PROJECT_NUMBER"
+    ;;
+
+  "billing projects describe "*)
+    if state_file billing-disabled; then
+      echo "False"
+    else
+      echo "True"
+    fi
+    ;;
+
+  "services enable"*)
+    exit 0
+    ;;
+
+  "artifacts repositories describe "*)
+    state_file ar-repo-exists || { echo "fake gcloud: repo not found" >&2; exit 1; }
+    ;;
+  "artifacts repositories create "*)
+    exit 0
+    ;;
+  "artifacts repositories set-cleanup-policies"*)
+    exit 0
+    ;;
+  "artifacts docker images describe "*)
+    state_file image-exists || { echo "fake gcloud: image not found" >&2; exit 1; }
+    ;;
+
+  "services vpc-peerings list"*)
+    if state_file no-vpc-peering; then
+      echo ""
+    else
+      echo "google-managed-services-default"
+    fi
+    ;;
+
+  "sql instances describe "*"--format=value(state)"*)
+    echo "RUNNABLE"
+    ;;
+  "sql instances describe "*"--format=value(connectionName)"*)
+    echo "test-proj:asia-northeast3:$(printf '%s' "$ARGS" | grep -oE 'plant8-[a-z]+-db' | head -1)"
+    ;;
+  "sql instances describe "*)
+    state_file sql-instance-exists || { echo "fake gcloud: sql instance not found" >&2; exit 1; }
+    ;;
+  "sql instances create "*)
+    exit 0
+    ;;
+
+  "sql databases describe "*)
+    state_file db-exists || { echo "fake gcloud: db not found" >&2; exit 1; }
+    ;;
+  "sql databases create "*)
+    exit 0
+    ;;
+
+  "sql users list"*)
+    state_val iam-user-created
+    ;;
+  "sql users create "*)
+    exit 0
+    ;;
+  "sql users set-password "*)
+    exit 0
+    ;;
+
+  "secrets versions list"*)
+    state_val secret-version-exists
+    ;;
+  "secrets describe "*)
+    state_file secret-exists || { echo "fake gcloud: secret not found" >&2; exit 1; }
+    ;;
+  "secrets create "*)
+    exit 0
+    ;;
+  "secrets versions add"*)
+    cat >/dev/null
+    exit 0
+    ;;
+  "secrets add-iam-policy-binding"*)
+    exit 0
+    ;;
+
+  "auth configure-docker"*)
+    exit 0
+    ;;
+
+  "run jobs deploy "*)
+    exit 0
+    ;;
+  "run jobs execute "*"db-bootstrap"*)
+    if state_file fail-db-bootstrap; then
+      echo "fake gcloud: db-bootstrap job failed" >&2
+      exit 1
+    fi
+    exit 0
+    ;;
+  "run jobs execute "*"migrate"*)
+    if state_file fail-migrate; then
+      echo "fake gcloud: migrate job failed" >&2
+      exit 1
+    fi
+    exit 0
+    ;;
+  "run jobs execute "*)
+    exit 0
+    ;;
+
+  "logging read "*)
+    if state_file fail-migrate && [ "$(state_val fail-migrate)" = "3" ]; then
+      echo '{"event":"deploy.pool_rule_violation"}'
+    fi
+    exit 0
+    ;;
+
+  "run deploy "*)
+    exit 0
+    ;;
+
+  "run services describe "*"--format=value(status.url)"*)
+    if state_file describe-url; then
+      state_val describe-url
+    else
+      svc="$(printf '%s\n' "$ARGS" | awk '{print $4}')"
+      region="$(printf '%s\n' "$ARGS" | grep -oE -- '--region=[^ ]+' | cut -d= -f2)"
+      echo "https://${svc}-${PROJECT_NUMBER}.${region}.run.app"
+    fi
+    ;;
+  "run services describe "*"--format=json"*)
+    if ! state_file service-exists; then
+      echo "fake gcloud: service not found" >&2
+      exit 1
+    fi
+    url_field=""
+    if state_file describe-url; then
+      url_field="\"url\": \"$(state_val describe-url)\","
+    fi
+    serving=""
+    if state_file serving; then
+      serving="$(state_val serving)"
+    fi
+    traffic="[]"
+    if [ -n "$serving" ]; then
+      traffic="[{\"revisionName\":\"$serving\",\"percent\":100}]"
+    fi
+    echo "{ \"status\": { $url_field \"traffic\": $traffic } }"
+    ;;
+  "run services describe "*)
+    state_file service-exists || { echo "fake gcloud: service not found" >&2; exit 1; }
+    ;;
+
+  "run services update-traffic "*)
+    exit 0
+    ;;
+
+  "run revisions list"*)
+    if state_file revisions; then
+      state_val revisions
+    fi
+    ;;
+  "run revisions describe "*)
+    exit 0
+    ;;
+
+  "beta monitoring channels list"*)
+    state_val channel-name
+    ;;
+  "beta monitoring channels create"*)
+    exit 0
+    ;;
+
+  "logging metrics describe "*)
+    state_file metric-exists || { echo "fake gcloud: metric not found" >&2; exit 1; }
+    ;;
+  "logging metrics create "*)
+    exit 0
+    ;;
+
+  "alpha monitoring policies list"*)
+    if state_file policy-exists; then
+      echo "projects/test-proj/alertPolicies/1"
+    fi
+    ;;
+  "alpha monitoring policies create"*)
+    exit 0
+    ;;
+  "alpha monitoring policies update"*)
+    exit 0
+    ;;
+
+  "beta run domain-mappings list"*)
+    exit 0
+    ;;
+
+  "iam workload-identity-pools describe "*)
+    state_file wif-pool-exists || { echo "fake gcloud: pool not found" >&2; exit 1; }
+    ;;
+  "iam workload-identity-pools create "*)
+    exit 0
+    ;;
+  "iam workload-identity-pools providers describe "*)
+    state_file wif-provider-exists || { echo "fake gcloud: provider not found" >&2; exit 1; }
+    ;;
+  "iam workload-identity-pools providers create-oidc "*)
+    exit 0
+    ;;
+
+  "iam service-accounts describe "*)
+    state_file sa-exists || { echo "fake gcloud: sa not found" >&2; exit 1; }
+    ;;
+  "iam service-accounts create "*)
+    exit 0
+    ;;
+  "iam service-accounts add-iam-policy-binding"*)
+    exit 0
+    ;;
+
+  "projects add-iam-policy-binding"*)
+    exit 0
+    ;;
+
+  "compute networks describe "*)
+    state_file network-exists || { echo "fake gcloud: network not found" >&2; exit 1; }
+    ;;
+  "compute networks create "*)
+    exit 0
+    ;;
+  "compute addresses describe "*)
+    state_file address-exists || { echo "fake gcloud: address not found" >&2; exit 1; }
+    ;;
+  "compute addresses create"*)
+    exit 0
+    ;;
+
+  "services vpc-peerings connect"*)
+    exit 0
+    ;;
+
+  "org-policies describe "*)
+    if state_file org-policy-blocks-wif; then
+      case "$ARGS" in
+        *"iam.workloadIdentityPoolProviders"*)
+          echo "constraint: constraints/iam.workloadIdentityPoolProviders"
+          echo "listPolicy: { deniedValues: [\"*\"] }"
+          exit 0
+          ;;
+      esac
+    fi
+    echo "constraint: (unset)"
+    exit 0
+    ;;
+
+  *)
+    echo "fake gcloud: unhandled invocation: $ARGS" >&2
+    exit 1
+    ;;
+esac

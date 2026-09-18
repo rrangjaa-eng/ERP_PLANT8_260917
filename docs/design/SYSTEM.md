@@ -103,6 +103,34 @@
 
 시스템 스택을 버린 이유: 회사 PC는 Windows가 많아 시스템 스택이면 맑은 고딕이 되고, 맑은 고딕은 tabular-nums를 지원하지 않아 표의 자릿수 정렬이 깨진다. 표가 화면인 시스템에서 이건 비용이 아니라 성립 조건이다. 서브셋 첫 로드는 약 200–300KB, 사내 고정 사용자라 캐시 후 0이다.
 
+**파일과 `@font-face` 계획 (확정 2026-09-18, `DECISIONS.md` 「서체 파일 리포 커밋」)**
+
+출처는 npm 패키지 `pretendard@1.3.9`(2023-11-05, OFL-1.1, GitHub `orioncactus/pretendard` 릴리스 v1.3.9와 같은 파일). 패키지 의존은 만들지 않고 tarball에서 파일만 복사한다. 리포에 들어가는 것:
+
+```
+public/fonts/pretendard/
+  LICENSE.txt                              ← OFL 1.1 원문(dist/LICENSE.txt 그대로). 재배포 조건
+  pretendard-dynamic-subset.css            ← dist/web/variable/pretendardvariable-dynamic-subset.css
+  woff2-dynamic-subset/PretendardVariable.subset.{0..91}.woff2   ← 92개, 합계 3.1MB
+```
+
+css는 원본을 그대로 쓴다 — 이미 `font-family: 'Pretendard Variable'` · `font-display: swap` · `font-weight: 45 920` · `format('woff2-variations')` · unicode-range 92분할이고, `src: url(./woff2-dynamic-subset/…)`가 상대 경로라 css와 폴더를 같은 자리에 두면 고칠 것이 없다.
+
+```html
+<!-- app/layout.tsx <head> — 이 한 줄뿐 -->
+<link rel="stylesheet" href="/fonts/pretendard/pretendard-dynamic-subset.css">
+```
+
+```css
+/* 전역 CSS는 tokens.css의 --font-sans만 쓴다. @font-face를 다시 쓰지 않는다 */
+body { font-family: var(--font-sans); }
+```
+
+- 단일 파일(`woff2/PretendardVariable.woff2`, 2.0MB)은 쓰지 않는다 — 첫 화면에 필요한 글자 범위만 받는 서브셋이 200–300KB로 끝난다. preload 없음(범위별 지연 로드가 목적)
+- 캐시: Cloud Run 정적 자산 기본 헤더. 파일명에 해시가 없으므로 버전을 올릴 때 폴더째 바꾼다(`pretendard/` → `pretendard-1.3.10/`)
+- 검수(Phase 2): Windows Chrome/Edge에서 표의 자릿수 정렬 스크린샷 — 맑은 고딕 폴백과 Pretendard `tnum`을 나란히. 첫 로드 전송량 200–300KB 확인
+- 실제 파일은 **Phase 1(앱 스켈레톤, `public/`) 머지 뒤 Phase 2 앱 코드**에서 넣는다(U3). `docs/design/`에는 바이너리를 두지 않는다
+
 ### 2-2. 스케일 6단계 (px)
 
 | 토큰 | 크기 | 행간 | 굵기 | 쓰는 곳 |

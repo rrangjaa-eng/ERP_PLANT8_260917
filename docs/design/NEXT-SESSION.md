@@ -1,4 +1,4 @@
-# 다음 세션 — §4(통일): **C 끝 · 인쇄 확인증 경품 행 추가 끝 → B(Pretendard)**
+# 다음 세션 — §4(통일) 이 세션 몫은 끝: **C 3개 확정 · B 1~3 끝.** 남은 것은 Phase 1 머지 뒤 B-4·5(앱 코드)뿐
 
 §1·§2·§3은 끝났고 §4(통일)가 진행 중이다. 판단의 근거는 `BRIEF.md` → `EXPLORE.md` → `SYSTEM.md`·`DECISIONS.md` 순서. 어긋나면 `SYSTEM.md`가 맞다.
 
@@ -13,7 +13,7 @@
 ## 1. 시작 순서
 
 1. `.planning/STATE.md`와 열린 PR(#9 등)로 Phase 1 진행 여부 확인 → 진행 중이면 GSD 명령 금지
-2. C는 전부 끝. 인쇄 확인증에는 사용자 결정으로 「경품」 행만 추가했다(나머지 그대로). 남은 것은 **B(Pretendard)** — 할지 묻는다
+2. C는 전부 끝, B는 1~3 끝. 디자인 §4에서 이 리포(`docs/design/`)로 할 일은 없다. Phase 1이 머지되면 앱 코드 세션이 B-4·5와 실물 → 앱 이관(§6 실물 7개)을 한다
 3. 결정이 필요한 것은 **실물(HTML → 스크린샷 → 보드 아티팩트)을 먼저** 보이고 **한 건씩** 묻는다. 「고칠 것이 있음」이라고만 답하면 무엇인지 되묻는다 — 첫 답이 질문일 수 있다
 4. 끝나면 `DECISIONS.md`(결정) → `SYSTEM.md`(규칙) → `system/README.md`(실물 목록) → 이 파일(상태) 순서로 갱신, 커밋(영어 접두어 + 한국어 본문), 푸시, 드래프트 PR
 
@@ -27,23 +27,29 @@
 
 ---
 
-## B. Pretendard Variable 파일 준비 (U3 승인)
+## B. Pretendard Variable 파일 준비 — **1~3 끝(2026-09-18), 4·5는 Phase 1 머지 뒤**
 
-### 결정된 것 (`SYSTEM.md` §2-1, `DECISIONS.md` 서체)
-자체 호스팅 `/public/fonts/`, woff2 **동적 서브셋(unicode-range 분할)**, `font-display: swap`, 외부 CDN 금지, 라이선스 SIL OFL 1.1. 폴백 `'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif`. 실제 파일은 **Phase 2 앱 코드**에 넣는다(사용자 결정 U3).
+### 결정된 것 (`SYSTEM.md` §2-1, `DECISIONS.md` 서체 · 서체 파일 리포 커밋)
+자체 호스팅 `/public/fonts/pretendard/`, 동적 서브셋 woff2 92개(3.1MB) + css + OFL 라이선스를 **리포에 커밋**(사용자 결정 「커밋해」). `font-display: swap`, 외부 CDN 금지. 폴백 `'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif`. 실제 파일은 Phase 2 앱 코드에서(U3).
 
-### 전제
-앱 스켈레톤(`public/` 디렉터리)은 Phase 1 산출물이다. Phase 1이 머지되기 전에는 폰트 바이너리를 리포에 넣을 자리가 없다 — **넣지 않는다.** 그 전에 할 수 있는 것은 아래 1~3.
+### 확인된 출처 (2026-09-18)
+npm `pretendard@1.3.9`(2023-11-05, `license: OFL-1.1`, repo `orioncactus/pretendard`). GitHub 릴리스 v1.3.9와 같은 파일. 이 세션의 실행 환경에서 GitHub(HTML·API)는 403, `/browse`는 인증서 오류였고 `registry.npmjs.org`는 허용 목록이라 tarball로 확인했다. `@font-face` 계획과 파일 배치는 `SYSTEM.md` §2-1에 코드 블록으로 적었다.
 
-### 절차
-1. `/browse`로 출처 확인: GitHub `orioncactus/pretendard` 최신 릴리스(2024-05 기준 v1.3.9 — **버전·경로는 확인 필요**). 릴리스 zip 안의 `web/variable/woff2-dynamic-subset/`(서브셋 woff2 100여 개) + `web/variable/pretendardvariable-dynamic-subset.css`. npm 패키지 `pretendard`의 `dist/web/variable/` 에 같은 파일이 있다(패키지 의존은 만들지 않는다 — 파일만 복사)
-2. 라이선스 파일(`LICENSE`, OFL 1.1) 원문을 함께 둘 것. OFL은 재배포 시 라이선스 동봉을 요구한다
-3. `@font-face` 계획을 `SYSTEM.md` §2-1 아래에 코드 블록으로 적는다: css의 `url(…)`을 `/fonts/pretendard/…`로 바꾸고 `font-display: swap`, `font-weight: 45 920`(Variable). 전역 CSS는 `--font-sans`만 쓴다(`tokens.css` 그대로)
-4. (Phase 1 머지 후) `public/fonts/pretendard/` 에 복사, `app/layout.tsx`(또는 전역 CSS)에 css 링크. 캐시 헤더는 Cloud Run 정적 자산 기본
-5. **검수**: Windows Chrome/Edge에서 표의 자릿수 정렬 스크린샷 — 맑은 고딕 폴백과 Pretendard `tnum`을 나란히. 첫 로드 전송량 200–300KB 확인(사내 10~30명, 캐시 후 0)
+### 남은 절차 (Phase 1 머지 뒤, 앱 코드 세션에서)
+```bash
+# 의존성으로 넣지 않는다 — tarball에서 파일만 복사
+cd "$(mktemp -d)" && npm pack pretendard@1.3.9 >/dev/null && tar xzf pretendard-1.3.9.tgz
+mkdir -p "$REPO/public/fonts/pretendard"
+cp package/dist/LICENSE.txt                                   "$REPO/public/fonts/pretendard/LICENSE.txt"
+cp package/dist/web/variable/pretendardvariable-dynamic-subset.css "$REPO/public/fonts/pretendard/pretendard-dynamic-subset.css"
+cp -r package/dist/web/variable/woff2-dynamic-subset          "$REPO/public/fonts/pretendard/"
+# 확인: 92개 · 3.1MB
+ls "$REPO/public/fonts/pretendard/woff2-dynamic-subset" | wc -l
+```
+4. `app/layout.tsx` `<head>`에 `<link rel="stylesheet" href="/fonts/pretendard/pretendard-dynamic-subset.css">` 한 줄. 전역 CSS는 `--font-sans`만
+5. **검수**: Windows Chrome/Edge에서 표의 자릿수 정렬 스크린샷 — 맑은 고딕 폴백과 Pretendard `tnum` 나란히. 첫 로드 전송량 200–300KB
 
-### 물을 것 (한 건)
-- 서브셋 파일 100여 개를 리포에 커밋하는 것(약 2MB)에 동의하는지 — 대안은 빌드 시 다운로드 스크립트(`scripts/fetch-fonts.sh`), 그러면 배포가 외부 릴리스 URL에 의존한다. **권고: 커밋**(사내망 정책·재현성)
+물을 것 없음.
 
 ---
 
@@ -52,7 +58,7 @@
 C-1 폼은 보드(https://claude.ai/artifact/Ts4ScSj1hD2AiiWD17Evkc)로 확정했다 — `DECISIONS.md` 「폼 화면 실물 확정 7건」, `SYSTEM.md` §6-3. C-1 폼(보드 https://claude.ai/artifact/Ts4ScSj1hD2AiiWD17Evkc) · C-2 손익(https://claude.ai/artifact/5kQyygb3hLbiQpo38BNznr, 원장 → 대시보드) · C-3 외부 수령자(https://claude.ai/artifact/LF5FZgn2Qqbp7VMVHdfgSD, 현금 → 경품) 전부 확정. `DECISIONS.md` 세 절, `SYSTEM.md` §6-3 · §6-4 · §6-5, `tokens.css` 토큰 3종.
 
 ### 다음 세션이 할 일
-1. B(Pretendard) 할지 묻는다 — B 절의 「물을 것」 한 건부터
+1. (없음 — 다음은 앱 코드 세션) Phase 1 머지 확인 → B-4·5 → `system/*.html` 실물을 앱 컴포넌트로 옮길 때 `SYSTEM.md` §6 규칙과 `DECISIONS.md`를 근거로
 2. C에서 배운 것: 사용자는 실물을 보고서야 전제(현금 vs 경품)를 말한다 — 첫 보드에 **업무 전제를 한 줄로 적어 두고** 「이 전제가 맞나」부터 묻는다. 「다 빼라」는 말은 글자 그대로 뺀다(안내 문구까지)
 
 ### 초안이 임시로 정한 것 (SYSTEM.md에 없는 것 — 보드에서 「내가 정한 것」 표로 보이고 물어야 한다)

@@ -199,3 +199,12 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 
 **같이 확인된 사실**: 인쇄 템플릿 「기타소득 지급 확인증」(§6-6, 확정)은 내부·세무 보관용이라 지급액 · 원천징수 골격이 남아 있다. 경품이 대부분이면 인쇄물도 바꿔야 하는지 물었고 사용자: **「인쇄물에 경품명만 더 추가하고 나머지는 그대로.」** → `print-cert.html` 지급 내용에 「경품」 행 하나(현물이면 품목 · 수량, 현금이면 「—」), 지급액 · 원천징수 · 계좌 골격은 그대로. §6-6 한 줄 갱신.
 
+---
+
+## 2026-09-18 — 서체 파일은 리포에 커밋 (사용자 결정 「커밋해」, B 항목)
+
+**결정**: Pretendard Variable 동적 서브셋 woff2 **92개(3.1MB) + css + OFL 라이선스**를 `public/fonts/pretendard/`에 커밋한다. 빌드 때 외부 릴리스 URL에서 내려받는 스크립트는 쓰지 않는다.
+**이유**: 사내망 정책과 재현성 — 배포가 GitHub 릴리스 URL의 생존에 의존하면 안 된다(이 세션의 실행 환경에서도 GitHub는 403이었다). 3.1MB는 리포 크기로 감당된다.
+**버린 대안**: `scripts/fetch-fonts.sh`(빌드 시 다운로드) · 단일 woff2 2.0MB(서브셋보다 첫 로드가 무겁다) · CDN(이미 버림).
+**확인된 사실(2026-09-18)**: npm `pretendard` 최신 1.3.9(2023-11-05), `license: OFL-1.1`, `dist/web/variable/woff2-dynamic-subset/` 92개, `pretendardvariable-dynamic-subset.css`에 `font-display: swap` · `font-weight: 45 920` 이미 있음, `dist/LICENSE.txt` = OFL 1.1 원문. 메모의 「약 2MB · 100여 개」는 3.1MB · 92개로 정정. 계획은 `SYSTEM.md` §2-1.
+

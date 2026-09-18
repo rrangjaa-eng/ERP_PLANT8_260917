@@ -43,7 +43,12 @@ export const pool: Pool = await createPool();
 export const db = drizzle(pool, { schema });
 
 export async function closeDb(): Promise<void> {
-  await pool.end();
-  connector?.close();
-  connector = null;
+  // pool.end()가 거부해도 커넥터는 반드시 닫는다 — finally가 아니면 풀 종료
+  // 실패 한 번에 갱신 타이머가 살아남아 고치려던 누수가 그대로 돌아온다.
+  try {
+    await pool.end();
+  } finally {
+    connector?.close();
+    connector = null;
+  }
 }

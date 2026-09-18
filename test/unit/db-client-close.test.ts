@@ -12,7 +12,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 // 로컬(DATABASE_URL) 경로는 커넥터를 안 쓰므로 통합 테스트로는 재현되지
 // 않는다 — 커넥터 모듈을 모킹해 closeDb()가 커넥터도 닫는지 단언한다.
 
-const poolEnd = vi.fn(() => Promise.resolve());
+const poolEnd = vi.fn<() => Promise<void>>(() => Promise.resolve());
 const connectorClose = vi.fn();
 const getOptions = vi.fn(() => Promise.resolve({ stream: () => undefined }));
 
@@ -49,6 +49,9 @@ describe("db/client closeDb — Cloud SQL 커넥터 경로", () => {
   beforeEach(() => {
     poolEnd.mockClear();
     connectorClose.mockClear();
+    // db/client는 모듈 수준에 커넥터를 들고 있고 closeDb()가 그걸 null로
+    // 되돌린다 — 모듈 캐시를 비워야 각 테스트가 새 커넥터로 시작한다.
+    vi.resetModules();
   });
 
   it("closeDb()가 풀과 커넥터를 모두 닫는다(Cloud Run Job이 스스로 종료되도록)", async () => {
@@ -58,6 +61,16 @@ describe("db/client closeDb — Cloud SQL 커넥터 경로", () => {
 
     expect(poolEnd).toHaveBeenCalledOnce();
     // 이 단언이 없으면 커넥터의 갱신 타이머가 살아남아 Job이 task-timeout까지 매달린다.
+    expect(connectorClose).toHaveBeenCalledOnce();
+  });
+
+  it("pool.end()가 거부해도 커넥터는 닫는다(누수 재발 방지)", async () => {
+    const { closeDb } = await import("@/db/client");
+    poolEnd.mockRejectedValueOnce(new Error("pool already ended"));
+
+    await expect(closeDb()).rejects.toThrow("pool already ended");
+
+    // finally가 아니면 여기서 0번 — 풀 종료 실패 한 번에 타이머가 살아남는다.
     expect(connectorClose).toHaveBeenCalledOnce();
   });
 });

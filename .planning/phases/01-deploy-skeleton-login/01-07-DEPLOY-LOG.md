@@ -214,6 +214,21 @@ fakebin/curl·운영 문서(`OPERATIONS.md`, `ARCHITECTURE.md`)를 모두 새
 **검증**: 수정 배포 후 계정 발급 2건이 모두 timeout 없이 success로 끝났다
 (아래 "계정 생성").
 
+**코드 리뷰 후속**: 위 수정을 `/code-review`에 걸어
+4건을 더 고쳤다 — ① `closeDb()`의 `connector.close()`를 `finally`로 옮김
+(`pool.end()`가 거부하면 타이머가 그대로 살아남아 누수가 재발했다),
+② `account-cli` 진입점의 `.then()`에 `.catch()` 추가(`closeDb()`가 새로
+던질 수 있게 됐는데 catch가 없으면 unhandled rejection으로 죽어 바로 이
+버그와 같은 모양이 된다 — `migrate-runner.ts`에는 원래 있던 짝),
+③ 통합 테스트의 `it()` 타임아웃 명시(vitest 기본 5초가 먼저 터져 진단
+단언이 안 보였다), ④ 통합 테스트가 **이 버그의 회귀 테스트가 아니라는
+점**을 파일 주석에 명시(로컬 경로는 커넥터를 안 만들어 수정 전에도 통과한다
+— 진짜 회귀 테스트는 `test/unit/db-client-close.test.ts` 하나다).
+
+**남은 같은 계열 문제(01-08 후보)**: `scripts/db-bootstrap.ts`의
+`createAdminPool()`도 호출마다 `new Connector()`를 만들고 닫지 않는다.
+지금은 끝에서 `process.exit()`를 부르기 때문에 증상이 없지만 같은 지뢰다.
+
 ## 측정값
 
 측정 방법: 실행자 세션은 아웃바운드 방화벽 때문에 `*.run.app`에도 Actions

@@ -113,7 +113,17 @@ export async function main(): Promise<void> {
 // process.exit는 main() 안이 아니라 여기에 둔다(테스트가 main()을 직접
 // import해 부를 때 테스트 프로세스를 죽이지 않도록).
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  void main().then(() => {
-    process.exit(process.exitCode ?? 0);
-  });
+  void main()
+    .then(() => {
+      process.exit(process.exitCode ?? 0);
+    })
+    // main()이 거부할 수 있는 경로는 finally의 closeDb() 하나뿐인데, 바로 그
+    // closeDb()가 커넥터를 닫으면서 새로 던질 수 있게 됐다. catch가 없으면
+    // unhandled rejection으로 죽어 process.exit에 닿지 못한다 — 계정은 이미
+    // 만들어진 뒤라 정확히 이번에 고친 그 실패 모양이 된다.
+    // migrate-runner.ts의 .catch와 같은 짝.
+    .catch((error: unknown) => {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exit(process.exitCode || 1);
+    });
 }

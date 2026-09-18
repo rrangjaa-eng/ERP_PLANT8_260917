@@ -4,10 +4,10 @@
 > 여기엔 "몇 달 뒤에도 그대로인 것"만. 진행 상황·날짜·TODO는 GSD `.planning/`에.
 
 ## 프로젝트
-- 이름 / 한 줄 설명: [ ]
-- 스택: [프론트] · [백엔드] · [DB] · [배포]
-- 패키지 매니저: [ ] (다른 것 금지)
-- 명령: dev `[ ]` · test `[ ]` · lint `[ ]` · build `[ ]`
+- 이름 / 한 줄 설명: PLANT8 ERP — BTL 광고대행사의 프로젝트·지출결의·법인카드·손익 관리 시스템(PHP 인트라넷 대체, 10→30명)
+- 스택: Next.js 16(App Router, RSC + Server Actions via next-safe-action) + TypeScript 6 strict · domain/·repositories/ 4계층 + Drizzle ORM · PostgreSQL(Cloud SQL, 서울) · Cloud Run(서울, 회사 GCP) + Cloud Scheduler + GCS + Secret Manager
+- 패키지 매니저: pnpm (다른 것 금지)
+- 명령: dev `[ ]` · test `[ ]` · lint `[ ]` · build `[ ]` — Phase 1(배포 스켈레톤) 완료 시 확정해 채운다
 - 구조: `docs/ARCHITECTURE.md` · 디자인: `docs/DESIGN.md` — 둘 다 필요할 때 Read (import 금지)
 
 ## 워크플로: Pre-build(gstack) → Build(GSD+Superpowers) → Post-build(gstack)
@@ -50,7 +50,7 @@
 ## 코딩 규칙
 - TDD: 실패 테스트 → 최소 구현 → 리팩터. 실제 실행 확인 없이 "완료" 금지
 - 버그: 재현 → 원인 → 수정 → 회귀 테스트. 추측 수정 금지
-- 한 커밋 한 의도. 커밋 메시지 언어: [ ]
+- 한 커밋 한 의도. 커밋 메시지 언어: 제목은 영어 접두어(docs:/feat:/fix:/chore:) + 짧은 요약, 본문은 한국어
 - 새 의존성은 이유 한 줄 + 승인 후
 - 시크릿은 코드·커밋에 절대 금지. `any` 금지
 - 요청받지 않은 리팩터·주석·파일 이동 금지. 기존 컨벤션 우선

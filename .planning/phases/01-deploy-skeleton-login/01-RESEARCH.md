@@ -21,6 +21,7 @@
 - **D-03:** 회사 GCP가 확보되기 전(2026-09 넷째 주 예정)에는 로컬에서 되는 플랜(앱 골격·인증·CLI·CI·문서·상태 화면 코드)을 먼저 실행하고, 실제 GCP를 필요로 하는 일(부트스트랩·deploy.sh 첫 실행·경보·상태 화면의 GCP 조회 확인)은 마지막 플랜(들)로 묶어 GCP 확보 뒤 실행한다. 페이즈 완료 판정은 마지막 플랜의 deploy.sh 성공이다.
 - **D-04:** 환경은 스테이징 + 프로덕션 둘이며, 같은 회사 GCP 프로젝트 하나 안에 Cloud Run 서비스 2개(예: `erp-staging`·`erp-prod`)와 Cloud SQL 인스턴스 2대, 환경 접미사가 붙은 시크릿으로 분리한다. deploy.sh는 환경 이름을 인자로 받고, 프로젝트 ID·리전 인자(재해 복구·다른 프로젝트 재현용)는 로드맵대로 유지한다. 별도 GCP 프로젝트 2개는 거부했다. — **Reversibility:** costly.
 - **D-05:** 승격 흐름: main 병합 → CI → 스테이징 자동 배포(migrate Job → 0% 리비전 → 스모크 → 100%) → 사용자가 스테이징에서 확인 → GitHub Environment `production`의 승인 버튼(required reviewer = 사용자) → 같은 git SHA 이미지를 프로덕션에 같은 순서로 배포. 빌드는 한 번, 태그 규칙 없음, 승인 기록은 GitHub에 남는다.
+  - (superseded 2026-09-18 — CONTEXT.md D-05 C: workflow_dispatch 수동 실행, GitHub Environments 없음)
 - **D-06:** Cloud SQL은 두 환경 모두 최소 사양(공유 코어 db-f1-micro급, 최소 스토리지, 자동 백업 켬)이며 두 환경 합계 월 $30 안팎이 상한이다. 초과하면 스테이징을 먼저 줄인다(중지 스케줄은 지금은 하지 않음). 커넥션 풀 크기·max-instances는 이 티어의 `max_connections`를 기준으로 계획에서 정하고 deploy.sh의 `max-instances × 풀 ≤ max_connections − 5` 검사(16A)에 넣는다.
 
 **세션·비밀번호 정책**
@@ -222,6 +223,7 @@ deploy.sh: gcloud run jobs execute migrate --wait (같은 이미지) ─ 실패 
 gcloud run deploy --no-traffic (새 리비전) → 스모크(/healthz, 로그인 페이지) → update-traffic 100%
    │
    ├─▶ (staging 성공 시) GitHub Environment `production` 승인 대기 → 같은 SHA를 prod에 동일 순서로 배포
+   │     (superseded 2026-09-18 — CONTEXT.md D-05 C: workflow_dispatch 수동 실행, GitHub Environments 없음)
    │
    └─▶ deploy.sh: gcloud monitoring channels/policies upsert (5xx>5%, backup 실패, tick 24h — idempotent)
 

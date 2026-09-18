@@ -1,0 +1,68 @@
+{
+  "contract": "1.0.0",
+  "flavor": "core",
+  "milestone": null,
+  "phases": [
+    {
+      "number": "1",
+      "name": "배포 스켈레톤·로그인",
+      "status": "pending"
+    },
+    {
+      "number": "2",
+      "name": "디자인 시스템·앱 셸",
+      "status": "pending"
+    },
+    {
+      "number": "3",
+      "name": "권한·설정·마스터 (관리자 운영 콘솔)",
+      "status": "pending"
+    },
+    {
+      "number": "4",
+      "name": "프로젝트·견적 원장",
+      "status": "pending"
+    },
+    {
+      "number": "5",
+      "name": "지출결의·결재·연차",
+      "status": "pending"
+    },
+    {
+      "number": "6",
+      "name": "지급·증빙·법인카드·구매 요청 (경영관리)",
+      "status": "pending"
+    },
+    {
+      "number": "7",
+      "name": "공휴일·지급일·마감·알림 + 전 메뉴 권한 검수",
+      "status": "pending"
+    },
+    {
+      "number": "8",
+      "name": "데이터 이전·전환",
+      "status": "pending"
+    },
+    {
+      "number": "9",
+      "name": "프로젝트 손익",
+      "status": "pending"
+    },
+    {
+      "number": "10",
+      "name": "팀 손익·연간 목표·인센티브·화면 항목 추가",
+      "status": "pending"
+    },
+    {
+      "number": "11",
+      "name": "기타소득 확인증",
+      "status": "pending"
+    }
+  ],
+  "next": {
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 1 of 11 · 0% · executing"
+  },
+  "updated_at": "2026-09-18T03:13:17.485Z"
+}

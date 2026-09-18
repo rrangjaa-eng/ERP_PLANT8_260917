@@ -1,10 +1,17 @@
 ---
-gsd_state_version: '1.0'
-status: planning
+gsd_state_version: "1.0"
+current_phase: 1
+current_phase_name: 배포 스켈레톤·로그인
+status: executing
+stopped_at: Phase 1 context gathered
+last_updated: "2026-09-18T03:53:46.460Z"
+last_activity: 2026-09-17
+last_activity_desc: "로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드"
+state_head: e4f4105be59ce78119722d4f5d9f7f95f5254301
 progress:
   total_phases: 11
   completed_phases: 0
-  total_plans: 0
+  total_plans: 8
   completed_plans: 0
   percent: 0
 ---
@@ -20,9 +27,9 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 
 ## Current Position
 
-Phase: 1 of 11 (배포 스켈레톤·로그인)
+Phase: 1 (배포 스켈레톤·로그인) — READY TO EXECUTE
 Plan: 0 of TBD in current phase
-Status: Ready to plan
+Status: Ready to execute
 Last activity: 2026-09-17 — 로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드
 
 Progress: [░░░░░░░░░░] 0%
@@ -30,6 +37,7 @@ Progress: [░░░░░░░░░░] 0%
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed: 0
 - Average duration: -
 - Total execution time: 0 hours
@@ -41,6 +49,7 @@ Progress: [░░░░░░░░░░] 0%
 | - | - | - | - |
 
 **Recent Trend:**
+
 - Last 5 plans: -
 - Trend: -
 
@@ -75,6 +84,10 @@ Recent decisions affecting current work:
 - [Eng 리뷰 OV-3(회사 GCP 다음 주 확보)]: Phase 1부터 회사 GCP 프로젝트에서 운영, 개인 GCP 단계 삭제(개인 환경은 로컬 개발만). 회사 GCP 조직 정책(비인증 ingress·외부 링크 허용)은 Phase 1 기준 1에서 확인. CEO OV-6 게이트는 Phase 1에서 충족, D5 개인 Gmail 단계 삭제. deploy.sh는 프로젝트 ID·리전 인자로 다른 프로젝트(재해 복구·스테이징)에도 재현
 - [Eng 리뷰 OV-4 기각]: 손익 비용의 쓰기 시점 파생 컬럼은 갱신 누락 비정규화라 두지 않는다. 읽기 시점 계산 유지하되 effectiveCost SQL 식 하나(우선순위 CASE + 근거 id)를 목록·합계·상세(trace)가 공유, 저장은 정산 스냅샷만(Phase 9; PNL-02)
 - [Eng 리뷰 OV-6 분할]: 옛 Phase 6(17개)을 Phase 6 지급·증빙·법인카드·구매 요청·미결 점검(EXP-06/07/09/10/13/16, EVID-02/03/04, PROJ-06 = 10개)과 Phase 7 공휴일·지급일·마감·알림·SMTP·tick + 전 메뉴 권한 검수(EXP-11/12, ADMN-11, NOTI-01~04 = 7개)로 나눔. 옛 7~10 → 8~11. 11페이즈, decimal 없음
+- [Phase 1]: Phase 1은 8플랜/7웨이브 그대로 진행(1a/1b 분할 안 함, 사용자 결정 2026-09-18). 실행은 웨이브 5(01-06)까지 한 세션에서 끝내고 /gsd-pause-work로 끊은 뒤 01-07~08(GCP·사람 체크포인트)은 새 세션
+- [Phase 1]: 회사 GCP 프로젝트 생성·결제 연결 완료(2026-09-18, billingEnabled true). 프로젝트 ID는 리포·문서에 적지 않고 실행 단계에서 GitHub 변수 GCP_PROJECT_ID와 deploy.sh 인자로만 넣는다(D-03)
+- [Phase 1]: GitHub 저장소는 개인 계정 rrangjaa-eng 비공개로 유지 + GitHub Pro 구독(사용자 결정 B, 2026-09-18) — Environment production의 required reviewers(D-05)를 쓰기 위함. 회사 조직 이전은 이월(이전 시 WIF 부트스트랩 재실행)
+- [Phase 1]: D-05 변경(사용자 결정 C, 2026-09-18, 같은 날 B 대체): GitHub 저장소는 개인 무료 비공개 유지. Environments·required reviewers 없이 프로덕션은 workflow_dispatch 수동 실행(같은 SHA 이미지 재사용, 스테이징 배포 확인 가드). 변수·시크릿은 저장소 수준
 
 ### Pending Todos
 
@@ -82,7 +95,6 @@ None yet.
 
 ### Blockers/Concerns
 
-- [Phase 1]: 회사 GCP 프로젝트는 2026-09 넷째 주 확보 예정 — Phase 1 착수 조건(deploy.sh 대상 프로젝트, 조직 정책 확인). 확보 전에는 로컬 개발(Auth Proxy + 로컬 Postgres)만 진행하고 deploy.sh 첫 성공이 Phase 1 완료 조건
 - [Phase 1]: CLAUDE.md의 스택·명령 자리(`[ ]`)가 비어 있다. Phase 1이 스택(Next.js + Drizzle + Postgres, next-safe-action, 패키지 매니저, dev/test/lint/build 명령)을 확정하면 세션 끝에 CLAUDE.md에 한 번에 반영한다(세션 중 수정 금지 규칙)
 - [Phase 2]: 디자인 절차 문서 `docs/DESIGN.md`(§1→§4)는 리포에 있다(CLAUDE.md 경로와 일치, 52f695a). `docs/design/`(BRIEF.md·EXPLORE.md·SYSTEM.md·tokens.css·DECISIONS.md)은 아직 없으며 Phase 2의 산출물이다 — SYSTEM.md 전에는 업무 화면을 만들지 않는 규칙은 그대로
 - [Phase 4]: 11개 요구사항(금액 모델·리저브 대장·문서 카운터·게이트·추출/변환 포함)으로 5플랜 상한에 닿을 수 있다 — 계획 단계에서 넘기면 리저브 대장(RSV-01)을 별도 페이즈로 뗀다
@@ -90,6 +102,7 @@ None yet.
 - [Phase 9]: 정산(완료) 시점은 D3(정산 결재 대표 승인)로 확정. 매출 기준·연도 귀속을 기획본부·경영관리가 합의하는 절차는 여전히 PROJECT.md에 없다 — 계획 단계에서 사용자와 확정. 착수 조건은 전환 후 N주(설정, 기본 2주) 실입력(Eng OV-1)
 - [Phase 11]: CERT 활성화 조건은 `/cso` 보안 감사 통과. 개인정보보호법 적용 범위·보존 기간은 감사에서 재확인(리서치 Gap). 감사 뒤 KMS 봉투 승격(Issue 7)
 - [All]: 과잉 설계 재발 방지 — 페이즈마다 "인트라넷보다 못한가"로 검증하고, 실제 사용자 로그인·입력이 있어야 완료로 본다
+- [Phase 1] 조직 정책 iam.allowedPolicyMemberDomains가 조직 고객 ID만 허용해 allUsers run.invoker 부여(비인증 ingress)가 막힘. 프로젝트 수준 예외(inheritFromParent:false, allowAll:true)를 조직 정책 관리자에게 요청 중 — 사용자 계정에는 orgpolicy.policies.create 권한 없음. 01-07 부트스트랩 전제 조건, 웨이브 1~5는 영향 없음. run.allowedIngress는 allowAll로 통과
 
 ## Deferred Items
 
@@ -101,6 +114,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-17
-Stopped at: 로드맵 수정(plan-eng-review 결정 15건 + OV-1..8 반영: 4계층·next-safe-action·읽기 2계층 DTO·Cloud Run Job+Squawk·domain/money·rules.gate·3계층 테스트, Phase 6 분할 → 11페이즈, 회사 GCP Phase 1부터, 손익 착수 = 전환 후 N주 실입력), REQUIREMENTS 트레이서빌리티 재번호(89/89), STATE.md 갱신. 오케스트레이터 커밋·사용자 승인 대기
-Resume file: None
+Last session: 2026-09-18T00:57:26.386Z
+Stopped at: Phase 1 context gathered
+Resume file: .planning/phases/01-deploy-skeleton-login/01-CONTEXT.md

@@ -66,4 +66,4 @@ Phase 8(데이터 이전)·10(팀 손익·목표)·11(확인증)은 이번 범�
 
 ## 계획에 반영해야 할 것 1건
 
-`phase-04-project-quote.md` §1 — **수주중·종료 프로젝트 상태 추가**. 현재 `.planning/REQUIREMENTS.md`(PROJ-04·EXP-08·PNL-07)와 `ROADMAP.md`(Phase 4)에 없는 결정이다. 사용자가 반영 여부를 판정해야 한다.
+`phase-04-project-quote.md` §1 — **수주중·미수주 프로젝트 상태 추가 + PNL-07 용어 변경**. 현재 `.planning/REQUIREMENTS.md`(PROJ-04·EXP-08·PNL-07)와 `ROADMAP.md`(Phase 4)에 없는 결정이다. 사용자가 반영 여부를 판정해야 한다.

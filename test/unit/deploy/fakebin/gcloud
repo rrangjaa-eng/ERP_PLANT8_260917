@@ -199,6 +199,9 @@ case "$ARGS" in
   "run services update "*)
     exit 0
     ;;
+  "run services get-iam-policy "*)
+    exit 0
+    ;;
 
   "run revisions list"*)
     if state_file revisions; then

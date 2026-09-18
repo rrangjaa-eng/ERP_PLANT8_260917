@@ -452,13 +452,20 @@ deploy_service() {
   fi
 }
 
-# healthz curl이 정본 URL에서도 계속 404면(2026-09-18: 대체 호스트명
-# 문제가 아니라고 이미 확인된 뒤에도 재현) 더 이상 추측하지 않고 실제
-# 서비스 상태(ingress 설정·조건·트래픽)를 로그에 남긴다 — 다음에 또
-# 실패하면 이 출력으로 바로 원인을 알 수 있게.
+# healthz curl이 두 호스트명 형식 모두에서 반복 404면(2026-09-18: run
+# #16에서 status.url로 고친 뒤에도 재현 — 호스트명 문제가 아니었다는 뜻)
+# 더 이상 추측하지 않는다. Cloud Run은 --allow-unauthenticated가 조직
+# 정책(iam.allowedPolicyMemberDomains)에 막혀 조용히 실패했을 때도
+# "Setting IAM Policy....done"을 그대로 찍는다 — 인증 안 된 외부 요청을
+# IAM이 막으면 403이 아니라 404를 돌려준다(서비스 존재 자체를 숨기기
+# 위한 의도적 동작). 실제 IAM 정책을 같이 찍어서 allUsers/run.invoker가
+# 정말 붙어 있는지 확인한다.
 _dump_service_diagnostics() {
-  run gcloud run services describe "$(svc_name "$ENV")" --region="$REGION" --project="$PROJECT" \
+  local svc
+  svc="$(svc_name "$ENV")"
+  run gcloud run services describe "$svc" --region="$REGION" --project="$PROJECT" \
     --format='yaml(status.url,status.conditions,status.traffic,spec.template.metadata.annotations)' >&2 || true
+  run gcloud run services get-iam-policy "$svc" --region="$REGION" --project="$PROJECT" --format=yaml >&2 || true
 }
 
 # GET만으로는 잡히지 않는 "화면은 뜨는데 로그인만 안 됨"을 배포 직후 잡는다.

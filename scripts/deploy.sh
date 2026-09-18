@@ -181,7 +181,10 @@ ensure_sql_instance() {
   instance="$(sql_instance "$ENV")"
 
   if ! run gcloud sql instances describe "$instance" --project="$PROJECT" >/dev/null 2>&1; then
-    run gcloud sql instances create "$instance" \
+    # --storage-auto-increase-limit is beta-only in gcloud's stable track
+    # (real staging deploy run, 2026-09-18) — this script already uses
+    # `gcloud beta`/`gcloud alpha` elsewhere (monitoring), so match that.
+    run gcloud beta sql instances create "$instance" \
       --project="$PROJECT" --region="$REGION" \
       --database-version="$DB_VERSION" --tier="$DB_TIER" --edition=ENTERPRISE \
       --storage-type=HDD --storage-size="$DB_STORAGE_GB" \

@@ -87,7 +87,7 @@ case "$ARGS" in
   "sql instances describe "*)
     state_file sql-instance-exists || { echo "fake gcloud: sql instance not found" >&2; exit 1; }
     ;;
-  "sql instances create "*)
+  "sql instances create "*|"beta sql instances create "*)
     exit 0
     ;;
 

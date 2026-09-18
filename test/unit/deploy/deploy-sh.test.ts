@@ -134,7 +134,7 @@ describe("deploy.sh — 새 프로젝트(시나리오 1)", () => {
     expect(deployLine).toContain("--max-instances=3");
     expect(deployLine).toContain("--set-secrets=BETTER_AUTH_SECRET=better-auth-secret-staging:latest");
 
-    const sqlCreateLine = r.log.split("\n").find((l) => l.startsWith("sql instances create"));
+    const sqlCreateLine = r.log.split("\n").find((l) => l.startsWith("beta sql instances create"));
     expect(sqlCreateLine).toContain("--tier=db-f1-micro");
     expect(sqlCreateLine).toContain("--no-assign-ip");
     expect(sqlCreateLine).toContain("--database-flags=cloudsql.iam_authentication=on");
@@ -250,7 +250,7 @@ describe("deploy.sh — 거부·실패 경로", () => {
 
   it("임의 gcloud 하위 명령이 실패하면 exit 1과 'deploy failed at <함수명>'을 stderr 마지막 줄에 남긴다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: { "fail-gcloud": "sql instances create" },
+      state: { "fail-gcloud": "beta sql instances create" },
     });
     expect(r.status).toBe(1);
     const lastLine = r.stderr.trim().split("\n").at(-1);
@@ -367,7 +367,7 @@ describe("deploy.sh — 프로덕션은 빌드하지 않는다(시나리오 11)"
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("ProdImageMissing");
     expect(r.log).not.toMatch(/build --build-arg/);
-    expect(r.log).not.toMatch(/^sql instances create/m);
+    expect(r.log).not.toMatch(/^beta sql instances create/m);
     expect(r.log).not.toMatch(/^run jobs execute/m);
     expect(r.log).not.toMatch(/^run deploy /m);
   });

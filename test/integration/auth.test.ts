@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/db/client";
-import { sessions } from "@/db/schema";
-import { createAccount } from "@/domain/auth/accounts";
+import { sessions, users } from "@/db/schema";
+import { createAccount, resetPassword, unlockAccount } from "@/domain/auth/accounts";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { resolveOpenFailures } from "@/repositories/login-attempts";
 import { CLIENT_IP_HEADER } from "@/lib/client-ip";
 
 const BASE_URL = process.env.BETTER_AUTH_URL ?? "http://127.0.0.1:3000";
@@ -127,5 +128,96 @@ describe("domain/auth/accounts + better-auth 통합", () => {
     );
     const staleSetCookies = staleResponse.headers.getSetCookie();
     expect(staleSetCookies.some((cookie) => cookie.startsWith("erp.session_token="))).toBe(true);
+  });
+});
+
+// AUTH-03·D-10: 관리자 재발급 — 새 임시 비밀번호, 전 세션 만료, password_is_temporary=true.
+describe("domain/auth/accounts resetPassword (AUTH-03)", () => {
+  it("재발급 뒤 옛 비밀번호는 실패, 새 임시 비밀번호는 성공, 기존 세션은 무효, password_is_temporary=true", async () => {
+    const email = uniqueEmail("reset");
+    const { tempPassword: oldPassword, userId } = await createAccount(SYSTEM_VIEWER, {
+      email,
+      name: "Reset User",
+      isAdmin: false,
+    });
+
+    const signInResponse = await auth.handler(
+      new Request(`${BASE_URL}/api/auth/sign-in/email`, {
+        method: "POST",
+        headers: { "content-type": "application/json", [CLIENT_IP_HEADER]: nextTestIp() },
+        body: JSON.stringify({ email, password: oldPassword }),
+      }),
+    );
+    const setCookies = signInResponse.headers.getSetCookie();
+    const sessionSetCookie = setCookies.find((cookie) => cookie.startsWith("erp.session_token="));
+    const oldSessionCookie = sessionSetCookie!.split(";")[0]!;
+
+    const { tempPassword: newPassword } = await resetPassword(SYSTEM_VIEWER, email);
+    expect(newPassword).not.toBe(oldPassword);
+
+    await expect(
+      auth.api.signInEmail({
+        body: { email, password: oldPassword },
+        headers: new Headers({ [CLIENT_IP_HEADER]: nextTestIp() }),
+      }),
+    ).rejects.toThrow();
+
+    const newSignIn = await auth.api.signInEmail({
+      body: { email, password: newPassword },
+      headers: new Headers({ [CLIENT_IP_HEADER]: nextTestIp() }),
+    });
+    expect(newSignIn.token).toBeTruthy();
+
+    const oldSessionCheck = await auth.handler(
+      new Request(`${BASE_URL}/api/auth/get-session`, {
+        headers: { cookie: oldSessionCookie },
+      }),
+    );
+    const oldSessionBody = (await oldSessionCheck.json()) as unknown;
+    expect(oldSessionBody).toBeNull();
+
+    const [row] = await db.select().from(users).where(eq(users.id, userId));
+    expect(row?.passwordIsTemporary).toBe(true);
+  });
+
+  it("관리자가 아닌 viewer로 resetPassword를 부르면 throw한다", async () => {
+    const email = uniqueEmail("reset-forbidden");
+    await createAccount(SYSTEM_VIEWER, { email, name: "Forbidden Reset", isAdmin: false });
+
+    await expect(resetPassword({ id: "emp", isAdmin: false }, email)).rejects.toThrow();
+  });
+
+  it("없는 이메일로 resetPassword를 부르면 throw한다", async () => {
+    await expect(resetPassword(SYSTEM_VIEWER, uniqueEmail("no-such-user"))).rejects.toThrow();
+  });
+});
+
+// AUTH-01: 관리자 해제.
+describe("domain/auth/accounts unlockAccount (AUTH-01)", () => {
+  it("열린 실패 기록 수를 반환하고 admin_unlock으로 닫는다", async () => {
+    const email = uniqueEmail("unlock");
+    await createAccount(SYSTEM_VIEWER, { email, name: "Unlock User", isAdmin: false });
+
+    // login_attempts 표는 domain/auth/hooks.ts가 채우지만, 여기서는 repository를
+    // 직접 호출해 열린 실패 행을 만든다(이 테스트는 unlockAccount 자체의 동작만 본다).
+    const { recordAttempt } = await import("@/repositories/login-attempts");
+    for (let i = 0; i < 3; i++) {
+      await recordAttempt(SYSTEM_VIEWER, {
+        email,
+        success: false,
+        ip: "198.51.100.200",
+        attemptedAt: new Date(),
+      });
+    }
+
+    const { resolved } = await unlockAccount(SYSTEM_VIEWER, email);
+    expect(resolved).toBe(3);
+
+    const again = await resolveOpenFailures(SYSTEM_VIEWER, email, "admin_unlock");
+    expect(again).toBe(0);
+  });
+
+  it("관리자가 아닌 viewer로 unlockAccount를 부르면 throw한다", async () => {
+    await expect(unlockAccount({ id: "emp", isAdmin: false }, uniqueEmail("unlock-forbidden"))).rejects.toThrow();
   });
 });

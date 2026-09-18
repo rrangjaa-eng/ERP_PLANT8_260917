@@ -1,0 +1,137 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>안 D — 전표 (Voucher)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@500;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --desk:#EFEFEC; --sheet:#FFFFFF; --fg:#1B1B19; --muted:#5E5E58; --faint:#8C8C85;
+  --line:#D6D6CF; --rule:#1B1B19; --accent:#005446; --accent-weak:#E6EEEB;
+  --danger:#9B1C1C;
+}
+html{font-size:15px}
+body{background:var(--desk);color:var(--fg);
+  font-family:'Pretendard','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+  line-height:1.65;letter-spacing:-0.015em;word-break:keep-all;-webkit-font-smoothing:antialiased}
+.serif{font-family:'Noto Serif KR','Nanum Myeongjo','AppleMyungjo','Batang','바탕','Songti SC',serif;letter-spacing:-0.03em}
+.num{font-variant-numeric:tabular-nums;text-align:right;letter-spacing:0}
+button{font:inherit;cursor:pointer}
+/* desk chrome — 인쇄 시 사라지는 유일한 부분 */
+.chrome{display:flex;align-items:center;gap:18px;padding:10px 20px;border-bottom:1px solid var(--line);background:var(--desk)}
+.mark{font-weight:800;font-size:14px;letter-spacing:-0.03em}.mark i{font-style:normal;color:var(--accent)}
+.chrome nav{display:flex;gap:16px;font-size:13px;color:var(--muted)}
+.chrome nav b{color:var(--fg);font-weight:600}
+.chrome .r{margin-left:auto;display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--faint)}
+.btn{font-size:13px;font-weight:600;padding:6px 14px;border:1px solid var(--rule);background:#fff;color:var(--fg)}
+.btn.p{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn:disabled{border-color:var(--line);color:var(--faint);cursor:not-allowed}
+/* sheet */
+.wrap{padding:26px 20px 60px;display:flex;justify-content:center}
+.sheet{background:var(--sheet);width:100%;max-width:760px;border:1px solid var(--line);padding:44px 52px 40px}
+.doc-h{display:flex;align-items:flex-end;gap:16px;border-bottom:2px solid var(--rule);padding-bottom:10px}
+.doc-h h1{font-size:26px;font-weight:700;letter-spacing:-0.04em}
+.doc-h .no{margin-left:auto;font-size:12.5px;color:var(--muted);text-align:right;line-height:1.5}
+.doc-h .no b{display:block;font-size:14px;color:var(--fg);font-variant-numeric:tabular-nums}
+/* meta grid — 양식지의 칸 */
+.meta{display:grid;grid-template-columns:86px 1fr 86px 1fr;border-bottom:1px solid var(--line)}
+.meta dt{font-size:12.5px;color:var(--muted);padding:9px 10px 9px 0;border-bottom:1px solid var(--line)}
+.meta dd{font-size:14px;padding:9px 16px 9px 0;border-bottom:1px solid var(--line)}
+.meta dd .s{font-size:12px;color:var(--faint)}
+.meta dd.wide{grid-column:2 / -1}
+.meta dt:nth-last-of-type(-n+2),.meta dd:nth-last-of-type(-n+2){border-bottom:0}
+/* amount block */
+.amt{margin-top:22px;border-top:1px solid var(--line)}
+.amt .row{display:flex;align-items:baseline;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.amt .row .l{color:var(--muted);font-size:13px}
+.amt .row.total{border-bottom:2px solid var(--rule);padding:12px 0}
+.amt .row.total .l{font-size:15px;color:var(--fg);font-weight:600}
+.amt .row.total .v{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-0.02em}
+.amt .han{padding:7px 0;font-size:12.5px;color:var(--muted);text-align:right}
+/* 결재란 — 실제 종이 결재란 */
+.sign{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--rule);margin-top:26px}
+.sign .c{border-right:1px solid var(--line);text-align:center}
+.sign .c:last-child{border-right:0}
+.sign .c .r{font-size:11px;color:var(--muted);padding:5px 0;border-bottom:1px solid var(--line);background:#FAFAF8}
+.sign .c .b{height:66px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.sign .c .b .nm{font-size:13px;font-weight:600}
+.sign .c .b .dt{font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+.sign .c.done .nm{color:var(--accent)}
+.sign .c.wait .b{background:var(--accent-weak)}
+.sign .c.wait .nm{color:var(--accent);font-weight:700}
+.sign .c.skip .b{color:var(--faint);font-size:12px}
+/* 증빙 */
+.ev{margin-top:26px;border:1.5px dashed var(--danger);padding:16px 18px;display:flex;gap:14px;align-items:center}
+.ev .k{font-size:12px;font-weight:700;color:var(--danger);flex:none}
+.ev p{font-size:13.5px}
+.ev .a{margin-left:auto;flex:none}
+/* action bar */
+.act{max-width:760px;margin:16px auto 0;display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted)}
+.act .r{margin-left:auto;display:flex;gap:8px;align-items:center}
+kbd{font-family:ui-monospace,monospace;font-size:11px;border:1px solid var(--line);padding:0 4px;color:var(--muted);background:#fff}
+.note{max-width:760px;margin:30px auto 0;font-size:12px;color:var(--faint);border-top:1px solid var(--line);padding-top:10px}
+@media(max-width:700px){
+  .sheet{padding:24px 20px} .chrome nav{display:none}
+  .meta{grid-template-columns:80px 1fr}
+  .doc-h h1{font-size:21px}
+  .sign{grid-template-columns:repeat(2,1fr)}
+}
+@media print{
+  .chrome,.act,.note{display:none}
+  body{background:#fff} .wrap{padding:0}
+  .sheet{border:0;max-width:none;padding:0}
+}
+</style></head><body>
+<div class="chrome">
+  <span class="mark">PL<i>A</i>NT8</span>
+  <nav><span>프로젝트</span><b>지출결의</b><span>법인카드</span><span>결재</span></nav>
+  <span class="r">박서연 · 기획1팀 PM</span>
+</div>
+
+<div class="wrap"><div class="sheet">
+  <div class="doc-h">
+    <h1 class="serif">지출결의서</h1>
+    <div class="no">문서번호<b>EXP-2026-0418</b></div>
+  </div>
+
+  <dl class="meta">
+    <dt>프로젝트</dt><dd class="wide">2026 현대자동차 아이오닉9 미디어 론칭 쇼케이스 <span class="s">· 견적 2차 1번 줄</span></dd>
+    <dt>적요</dt><dd class="wide">메인 스테이지 구조물 설치 및 철거</dd>
+    <dt>거래처</dt><dd>(주)스테이지원커뮤니케이션즈 <span class="s">· 국민 ****3417</span></dd>
+    <dt>증빙 종류</dt><dd>세금계산서</dd>
+    <dt>기안일</dt><dd>2026-09-04</dd>
+    <dt>지급 예정일</dt><dd>2026-11-06 <span class="s">· 작성일+60일, 기한 전 마지막 금요일</span></dd>
+  </dl>
+
+  <div class="amt">
+    <div class="row"><span class="l">공급가액</span><span class="num">12,400,000</span></div>
+    <div class="row"><span class="l">부가세 10%</span><span class="num">1,240,000</span></div>
+    <div class="row total"><span class="l">지급 총액</span><span class="v">13,640,000</span></div>
+    <div class="han">금 일천삼백육십사만 원정</div>
+  </div>
+
+  <div class="sign">
+    <div class="c done"><div class="r">팀장</div><div class="b"><span class="nm">이정훈</span><span class="dt">09-04</span></div></div>
+    <div class="c done"><div class="r">본부 책임자</div><div class="b"><span class="nm">최유진</span><span class="dt">09-04</span></div></div>
+    <div class="c skip"><div class="r">경영관리</div><div class="b">겸직 · 건너뜀</div></div>
+    <div class="c wait"><div class="r">대표</div><div class="b"><span class="nm">승인 대기</span><span class="dt">09-04 제출</span></div></div>
+  </div>
+
+  <div class="ev">
+    <span class="k">증빙 없음</span>
+    <p>선결제 건이고 기한 14일이 지났습니다. 세금계산서가 붙기 전에는 지급 완료 처리가 열리지 않습니다.</p>
+    <span class="a"><button class="btn p">세금계산서 첨부</button></span>
+  </div>
+</div></div>
+
+<div class="act">
+  <span>보이는 그대로 인쇄됩니다 <kbd>⌘P</kbd></span>
+  <span class="r">
+    <button class="btn">복사해 새 문서</button>
+    <button class="btn" disabled>지급 완료 · 증빙 필요</button>
+    <button class="btn p">세금계산서 첨부</button>
+  </span>
+</div>
+
+<p class="note">안 D — 전표. 화면의 문서와 인쇄물이 같은 한 벌의 레이아웃이다(별도 인쇄 스타일시트 없음). 결재선은 종이 결재란 그대로이고, 건너뛴 단계도 칸으로 남아 결재 흐름이 한눈에 보인다.</p>
+</body></html>

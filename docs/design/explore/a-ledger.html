@@ -1,0 +1,169 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>안 A — 원장 (Ledger)</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#FFFFFF; --fg:#000000; --muted:#5C5C5C; --faint:#8C8C8C;
+  --line:#DCDCDC; --line-strong:#000000; --surface:#F4F4F4;
+  --accent:#005446; --accent-weak:#E4EDEA;
+  --warn:#8A5A00; --danger:#9B1C1C;
+  --s:4px;
+}
+html{font-size:15px}
+body{background:var(--bg);color:var(--fg);
+  font-family:'Pretendard','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+  line-height:1.6;letter-spacing:-0.015em;word-break:keep-all;
+  -webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";text-align:right;letter-spacing:0}
+a{color:inherit}
+/* ---- shell ---- */
+header{border-bottom:2px solid var(--line-strong);padding:10px 20px;display:flex;align-items:baseline;gap:24px}
+.mark{font-weight:800;font-size:15px;letter-spacing:-0.03em}
+.mark i{font-style:normal;color:var(--accent)}
+nav{display:flex;gap:18px;font-size:13px;color:var(--muted)}
+nav b{color:var(--fg);font-weight:600;box-shadow:inset 0 -2px 0 var(--accent)}
+.who{margin-left:auto;font-size:13px;color:var(--faint)}
+main{padding:20px;max-width:1280px}
+/* ---- next up ---- */
+.next{border-top:2px solid var(--line-strong);border-bottom:1px solid var(--line);padding:10px 0 12px;margin-bottom:24px}
+.next h2{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:0.02em;margin-bottom:6px}
+.next ul{list-style:none;display:flex;flex-direction:column}
+.next li{display:flex;align-items:baseline;gap:12px;padding:5px 0;border-bottom:1px dotted var(--line);font-size:14px}
+.next li:last-child{border-bottom:0}
+.next .tag{font-size:11px;font-weight:600;padding:1px 6px;border:1px solid currentColor;color:var(--accent);flex:none}
+.next .tag.w{color:var(--warn)} .next .tag.d{color:var(--danger)}
+.next .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.next .go{font-size:13px;font-weight:600;color:var(--accent);border-bottom:1px solid var(--accent);flex:none}
+/* ---- section head ---- */
+.sec{display:flex;align-items:baseline;gap:12px;border-bottom:2px solid var(--line-strong);padding-bottom:6px;margin-bottom:0}
+.sec h1{font-size:18px;font-weight:700;letter-spacing:-0.02em}
+.sec .sub{font-size:13px;color:var(--muted)}
+.sec .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+.btn{font:inherit;font-size:13px;font-weight:600;padding:5px 12px;border:1px solid var(--line-strong);background:var(--bg);color:var(--fg);cursor:pointer}
+.btn.p{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn:disabled{border-color:var(--line);color:var(--faint);cursor:not-allowed}
+kbd{font:inherit;font-size:11px;font-family:ui-monospace,monospace;border:1px solid var(--line);padding:0 4px;color:var(--muted)}
+/* ---- ledger table ---- */
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+thead th{font-size:12px;font-weight:600;color:var(--muted);text-align:left;padding:7px 8px;border-bottom:1px solid var(--line-strong);white-space:nowrap}
+thead th.num{text-align:right}
+tbody td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:baseline}
+tbody tr:hover{background:var(--surface)}
+tbody tr.edit td{background:var(--accent-weak);border-bottom:1px solid var(--accent)}
+td .cell{display:block;min-height:20px}
+td .in{border:0;border-bottom:1px solid var(--accent);background:transparent;font:inherit;width:100%;padding:0;outline:2px solid var(--accent);outline-offset:2px}
+td .in.num{text-align:right;font-variant-numeric:tabular-nums}
+.grp td{background:var(--bg);font-size:12px;font-weight:600;color:var(--muted);border-bottom:1px solid var(--line-strong);padding-top:14px}
+tfoot td{padding:9px 8px;border-top:2px solid var(--line-strong);font-weight:700;font-size:14px}
+.sm{font-size:11.5px;color:var(--faint)}
+.blocked{color:var(--danger)}
+.state{font-size:11px;font-weight:600;color:var(--muted)}
+.state.ok{color:var(--accent)}
+.hint{display:flex;gap:16px;margin-top:10px;font-size:12px;color:var(--faint);flex-wrap:wrap}
+.note{margin-top:28px;border-top:1px solid var(--line);padding-top:10px;font-size:12px;color:var(--faint)}
+@media(max-width:700px){
+  main{padding:14px} html{font-size:14px}
+  thead th.h,tbody td.h{display:none}
+  nav{display:none}
+}
+</style></head><body>
+<header>
+  <span class="mark">PL<i>A</i>NT8</span>
+  <nav><b>프로젝트</b><span>지출결의</span><span>법인카드</span><span>결재</span><span>손익</span></nav>
+  <span class="who">박서연 · 기획1팀 PM</span>
+</header>
+<main>
+  <section class="next">
+    <h2>내 차례 4</h2>
+    <ul>
+      <li><span class="tag d">막힘</span><span class="grow">아이오닉9 쇼케이스 — 무대설치 지출결의, 증빙 없이 14일 경과</span><span class="num">12,400,000</span><a class="go" href="#">증빙 올리기</a></li>
+      <li><span class="tag w">오늘</span><span class="grow">한빛무대예술 지급결의 — 결재 마감 14:00</span><span class="num">8,800,000</span><a class="go" href="#">제출</a></li>
+      <li><span class="tag">대기</span><span class="grow">아이오닉9 쇼케이스 2차 견적 — 고객 승인 표시 전</span><span class="num">48,000,000</span><a class="go" href="#">견적 열기</a></li>
+      <li><span class="tag">대기</span><span class="grow">법인카드 3건 미연결 — 2026-09-12 ~ 09-16</span><span class="num">417,300</span><a class="go" href="#">연결</a></li>
+    </ul>
+  </section>
+
+  <div class="sec">
+    <h1>2026 현대자동차 아이오닉9 미디어 론칭 쇼케이스</h1>
+    <span class="sub">상세 견적 2차 · 진행 중</span>
+    <span class="right">
+      <span class="sm">저장 <kbd>⌘S</kbd> · 새 줄 <kbd>⌘↵</kbd></span>
+      <button class="btn">복사해 새 차수</button>
+      <button class="btn p">일괄 저장 3</button>
+    </span>
+  </div>
+
+  <table>
+    <thead><tr>
+      <th style="width:26px"></th><th>항목</th><th class="h">거래처</th>
+      <th class="num">견적가</th><th class="num">실행가</th><th class="num h">차익</th>
+      <th class="h">상태</th><th style="width:88px"></th>
+    </tr></thead>
+    <tbody>
+      <tr class="grp"><td colspan="8">무대·시공</td></tr>
+      <tr>
+        <td class="sm num">1</td>
+        <td>메인 스테이지 구조물 설치 및 철거</td>
+        <td class="h">(주)스테이지원커뮤니케이션즈</td>
+        <td class="num">18,000,000</td><td class="num">12,400,000</td><td class="num h">5,600,000</td>
+        <td class="h"><span class="state blocked">증빙 14일 경과</span></td>
+        <td><a class="go" href="#">증빙</a></td>
+      </tr>
+      <tr class="edit">
+        <td class="sm num">2</td>
+        <td><span class="cell">LED 월 W12000×H4000</span></td>
+        <td class="h"><span class="cell">한빛무대예술</span></td>
+        <td class="num"><input class="in num" value="9,600,000"></td>
+        <td class="num"><span class="cell">6,900,000</span></td>
+        <td class="num h"><span class="cell">2,700,000</span></td>
+        <td class="h"><span class="state">편집 중</span></td>
+        <td><span class="sm">저장 대기</span></td>
+      </tr>
+      <tr>
+        <td class="sm num">3</td><td>음향·조명 오퍼레이팅 (2일)</td>
+        <td class="h">한빛무대예술</td>
+        <td class="num">4,400,000</td><td class="num">3,100,000</td><td class="num h">1,300,000</td>
+        <td class="h"><span class="state ok">지출결의 승인</span></td><td></td>
+      </tr>
+      <tr class="grp"><td colspan="8">운영·인력</td></tr>
+      <tr>
+        <td class="sm num">4</td><td>행사 진행 MC — 김민지</td>
+        <td class="h">김민지 (기타소득)</td>
+        <td class="num">3,000,000</td><td class="num">2,200,000</td><td class="num h">800,000</td>
+        <td class="h"><span class="state">확인증 미제출</span></td>
+        <td><a class="go" href="#">QR 발송</a></td>
+      </tr>
+      <tr>
+        <td class="sm num">5</td><td>운영요원 12명 × 2일</td>
+        <td class="h">(주)이벤트스태프코리아</td>
+        <td class="num">7,200,000</td><td class="num">5,760,000</td><td class="num h">1,440,000</td>
+        <td class="h"><span class="state">미착수</span></td>
+        <td><a class="go" href="#">지출결의</a></td>
+      </tr>
+      <tr>
+        <td class="sm num">6</td><td>해외 연사 항공·숙박 <span class="sm">USD 4,200 @1,318.40</span></td>
+        <td class="h">Skyline Travel Pte Ltd</td>
+        <td class="num">5,800,000<span class="sm"> · $4,400</span></td>
+        <td class="num">5,537,280<span class="sm"> · $4,200</span></td>
+        <td class="num h">262,720</td>
+        <td class="h"><span class="state">미착수</span></td><td></td>
+      </tr>
+    </tbody>
+    <tfoot><tr>
+      <td></td><td>합계 <span class="sm">공급가액 기준 · 6줄</span></td><td class="h"></td>
+      <td class="num">48,000,000</td><td class="num">35,897,280</td><td class="num h">12,102,720</td>
+      <td class="h"></td><td></td>
+    </tr></tfoot>
+  </table>
+
+  <div class="hint">
+    <span>이동 <kbd>Tab</kbd> <kbd>↑↓←→</kbd></span>
+    <span>범위 복사 <kbd>⌘C</kbd> / 붙여넣기 <kbd>⌘V</kbd></span>
+    <span>취소 <kbd>Esc</kbd></span>
+    <span>새 줄 <kbd>⌘↵</kbd></span>
+    <span>지출결의 올리기 <kbd>⌘E</kbd></span>
+  </div>
+
+  <p class="note">안 A — 원장. 카드·그림자 0. 구분은 선 두께 2단계(2px 강 / 1px 약)와 배경 톤 1단계로만. 포인트 색은 “내 차례”와 “막힘”에만 쓴다.</p>
+</main></body></html>

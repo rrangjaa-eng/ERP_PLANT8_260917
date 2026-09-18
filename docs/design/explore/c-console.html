@@ -1,0 +1,145 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>안 C — 작업대 (Console)</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --ink:#00211C; --bar:#00312A; --accent:#005446; --accent-lt:#0E7A66;
+  --tint:#EBF2F0; --tint2:#DCE8E4; --bg:#FFFFFF; --fg:#0B1512; --muted:#4E5D59; --faint:#7C8A86;
+  --line:#CFDBD7; --line-s:#00312A; --warn:#8A5A00; --danger:#9B1C1C;
+}
+html{font-size:14px}
+body{background:var(--bg);color:var(--fg);
+  font-family:'Pretendard','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+  line-height:1.5;letter-spacing:-0.012em;word-break:keep-all;-webkit-font-smoothing:antialiased;
+  padding-bottom:84px}
+.mono{font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+.num{font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums;text-align:right;letter-spacing:-0.02em}
+button{font:inherit;cursor:pointer}
+/* top bar */
+.top{background:var(--bar);color:#DCE8E4;display:flex;align-items:center;gap:20px;padding:0 14px;height:38px;font-size:12.5px}
+.mark{font-weight:800;letter-spacing:-0.03em;color:#fff}.mark i{font-style:normal;color:#6FBFA9}
+.top .ctx{color:#9DBDB4}
+.top .ctx b{color:#fff;font-weight:600}
+.top .r{margin-left:auto;display:flex;gap:16px;color:#9DBDB4}
+/* strip : 내 차례 */
+.strip{display:flex;gap:0;border-bottom:1px solid var(--line-s);background:var(--tint);overflow-x:auto}
+.strip .c{padding:8px 14px;border-right:1px solid var(--line);white-space:nowrap;font-size:12.5px;cursor:pointer}
+.strip .c b{display:block;font-size:11px;font-weight:700;letter-spacing:0.03em;color:var(--accent)}
+.strip .c.d b{color:var(--danger)} .strip .c.w b{color:var(--warn)}
+.strip .c.on{background:var(--bg);box-shadow:inset 0 -2px 0 var(--accent)}
+.strip .c span{color:var(--muted)}
+/* toolbar */
+.tb{display:flex;align-items:center;gap:10px;padding:7px 14px;border-bottom:1px solid var(--line)}
+.tb h1{font-size:14px;font-weight:700;letter-spacing:-0.02em}
+.tb .tag{font-size:11px;font-weight:700;color:var(--accent);border:1px solid var(--accent);padding:0 6px}
+.tb .r{margin-left:auto;display:flex;gap:6px;align-items:center}
+.btn{font-size:12.5px;font-weight:600;padding:4px 11px;border:1px solid var(--line-s);background:#fff;color:var(--fg)}
+.btn.p{background:var(--accent);border-color:var(--accent);color:#fff}
+/* grid */
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{background:var(--tint2);font-size:11px;font-weight:700;color:var(--ink);text-align:left;
+  padding:4px 8px;border-right:1px solid var(--line);border-bottom:1px solid var(--line-s);white-space:nowrap;letter-spacing:0.02em}
+thead th.num{text-align:right}
+tbody td{padding:3px 8px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);height:27px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;max-width:0}
+tbody tr:nth-child(even) td{background:#FAFCFB}
+tbody td.rn{background:var(--tint2)!important;color:var(--faint);text-align:right;font-size:11px;width:34px;
+  font-family:ui-monospace,monospace}
+td.sel{outline:2px solid var(--accent);outline-offset:-2px;background:#fff!important;position:relative}
+td.rng{background:var(--tint)!important}
+td.err{background:#FBE9E9!important;box-shadow:inset 2px 0 0 var(--danger)}
+td.dirty{box-shadow:inset 0 0 0 1px var(--accent-lt)}
+tfoot td{background:var(--tint2);border-top:1px solid var(--line-s);border-right:1px solid var(--line);
+  padding:5px 8px;font-weight:700;font-size:12.5px}
+.f{font-size:11px;color:var(--faint)}
+.st{font-size:11px;font-weight:700}
+.st.d{color:var(--danger)}.st.o{color:var(--accent)}.st.w{color:var(--warn)}
+/* command bar */
+.cmd{position:fixed;left:0;right:0;bottom:0;background:var(--bar);color:#DCE8E4;border-top:2px solid var(--accent-lt)}
+.cmd .line{display:flex;align-items:center;gap:10px;padding:9px 14px}
+.cmd .p1{color:#6FBFA9;font-weight:700}
+.cmd input{flex:1;background:transparent;border:0;outline:0;color:#fff;font:inherit;font-size:13.5px;
+  font-family:'JetBrains Mono',ui-monospace,monospace}
+.cmd .ghost{color:#5E7B74}
+.cmd .ok{font-size:11.5px;color:#6FBFA9;font-weight:700}
+.keys{display:flex;gap:14px;padding:0 14px 8px;font-size:11px;color:#8FA8A2;flex-wrap:wrap}
+.keys kbd{font-family:ui-monospace,monospace;background:#0A423A;border:1px solid #14574C;padding:0 4px;color:#C9DED8}
+.note{padding:16px 14px 4px;font-size:11.5px;color:var(--faint)}
+@media(max-width:760px){
+  body{padding-bottom:0}
+  .cmd{position:static;border-top:1px solid var(--line-s)}
+  .h{display:none}
+  .keys{display:none}
+}
+</style></head><body>
+<div class="top">
+  <span class="mark">PL<i>A</i>NT8</span>
+  <span class="ctx">프로젝트 <b>아이오닉9 쇼케이스</b> / 견적 <b>상세 2차</b></span>
+  <span class="r"><span class="mono">저장 대기 3</span><span>박서연 · 기획1팀</span></span>
+</div>
+
+<div class="strip">
+  <div class="c d"><b>막힘 1</b><span>증빙 14일 경과 · 12,400,000</span></div>
+  <div class="c w"><b>오늘 14:00</b><span>한빛무대예술 지급결의 제출</span></div>
+  <div class="c on"><b>작업 중</b><span>아이오닉9 견적 2차 · 6줄</span></div>
+  <div class="c"><b>대기 2</b><span>카드 3건 미연결 · 확인증 1건</span></div>
+</div>
+
+<div class="tb">
+  <h1>견적 원장</h1><span class="tag">고객 승인 전 · 지출 잠김</span>
+  <span class="r">
+    <button class="btn">차수 복사</button>
+    <button class="btn p">일괄 저장 3</button>
+  </span>
+</div>
+
+<table>
+  <thead><tr>
+    <th class="rn"></th><th style="width:22%">항목</th><th class="h" style="width:20%">거래처</th>
+    <th class="h" style="width:9%">증빙종류</th>
+    <th class="num" style="width:12%">견적가</th><th class="num" style="width:12%">실행가</th>
+    <th class="num h" style="width:11%">차익</th><th class="h" style="width:14%">상태</th>
+  </tr></thead>
+  <tbody>
+    <tr><td class="rn">1</td><td>메인 스테이지 구조물 설치 및 철거</td><td class="h">(주)스테이지원커뮤니케이션즈</td>
+      <td class="h f">세금계산서</td>
+      <td class="num">18,000,000</td><td class="num">12,400,000</td><td class="num h">5,600,000</td>
+      <td class="h"><span class="st d">증빙 14일 경과</span></td></tr>
+    <tr><td class="rn">2</td><td>LED 월 W12000×H4000</td><td class="h">한빛무대예술</td><td class="h f">세금계산서</td>
+      <td class="num sel dirty">9,600,000</td><td class="num rng dirty">6,900,000</td><td class="num h rng">2,700,000</td>
+      <td class="h"><span class="st">수정됨</span></td></tr>
+    <tr><td class="rn">3</td><td>음향·조명 오퍼레이팅 (2일)</td><td class="h">한빛무대예술</td><td class="h f">세금계산서</td>
+      <td class="num">4,400,000</td><td class="num">3,100,000</td><td class="num h">1,300,000</td>
+      <td class="h"><span class="st o">지출결의 승인</span></td></tr>
+    <tr><td class="rn">4</td><td>행사 진행 MC — 김민지</td><td class="h">김민지</td><td class="h f">기타소득</td>
+      <td class="num">3,000,000</td><td class="num">2,200,000</td><td class="num h">800,000</td>
+      <td class="h"><span class="st w">확인증 미제출</span></td></tr>
+    <tr><td class="rn">5</td><td>운영요원 12명 × 2일</td><td class="h">(주)이벤트스태프코리아</td><td class="h f">세금계산서</td>
+      <td class="num">7,200,000</td><td class="num err dirty">5,760,00</td><td class="num h">—</td>
+      <td class="h"><span class="st d">숫자 아님</span></td></tr>
+    <tr><td class="rn">6</td><td>해외 연사 항공·숙박</td><td class="h">Skyline Travel Pte Ltd</td><td class="h f">해외 인보이스</td>
+      <td class="num">5,800,000</td><td class="num">5,537,280</td><td class="num h">262,720</td>
+      <td class="h f">USD 4,200 @1,318.40</td></tr>
+  </tbody>
+  <tfoot><tr><td class="rn"></td><td>합계 <span class="f">공급가액 · 6줄</span></td><td class="h"></td><td class="h"></td>
+    <td class="num">48,000,000</td><td class="num">—</td><td class="num h">—</td>
+    <td class="h"><span class="st d">오류 1칸 · 전부 거부</span></td></tr></tfoot>
+</table>
+
+<p class="note">안 C — 작업대. 읽기 모드가 아니라 편집 모드가 기본. 하단 명령 바가 1차 입력 수단이고 마우스는 2순위. 일괄 저장은 전부 저장 또는 전부 거부 — 오류 칸이 붉게 고정된다.</p>
+
+<div class="cmd">
+  <div class="line">
+    <span class="p1">&gt;</span>
+    <input value="지출결의 3줄 한빛무대예술 " placeholder="명령 또는 검색">
+    <span class="ghost mono">3,100,000 · 세금계산서 · 지급예정 11-06 &nbsp;↵ 생성</span>
+    <span class="ok">Enter로 문서 생성</span>
+  </div>
+  <div class="keys">
+    <span><kbd>⌘K</kbd> 명령</span><span><kbd>Tab</kbd> <kbd>↑↓←→</kbd> 이동</span>
+    <span><kbd>⌘C</kbd>/<kbd>⌘V</kbd> 범위 복사</span><span><kbd>Esc</kbd> 취소</span>
+    <span><kbd>⌘↵</kbd> 새 줄</span><span><kbd>⌘S</kbd> 일괄 저장</span><span><kbd>⌘E</kbd> 지출결의</span>
+  </div>
+</div>
+</body></html>

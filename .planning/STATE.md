@@ -4,11 +4,11 @@ current_phase: 1
 current_phase_name: 배포 스켈레톤·로그인
 current_plan: 8
 status: executing
-stopped_at: "01-07 완료(스테이징 실배포·실측·승격 가드 수정). 01-08 대기: 사용자 프로덕션 수동 실행 + 01-07 human-check 6항목"
-last_updated: "2026-09-18T17:52:04.020Z"
+stopped_at: 01-08 프로덕션 승격 완료, 세션 마감
+last_updated: "2026-09-18T18:54:04.527Z"
 last_activity: 2026-09-17
 last_activity_desc: "로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드"
-state_head: ed2fbc56a52ddb5b73884fc3247999cd15855d5e
+state_head: b5d6deb74882a1b2c7e4f209ee30177a9555ea0c
 progress:
   total_phases: 11
   completed_phases: 0
@@ -123,13 +123,12 @@ None yet.
 
 ### Blockers/Concerns
 
-- [Phase 1]: CLAUDE.md의 스택·명령 자리(`[ ]`)가 비어 있다. Phase 1이 스택(Next.js + Drizzle + Postgres, next-safe-action, 패키지 매니저, dev/test/lint/build 명령)을 확정하면 세션 끝에 CLAUDE.md에 한 번에 반영한다(세션 중 수정 금지 규칙)
-- [Phase 2]: 디자인 절차 문서 `docs/DESIGN.md`(§1→§4)는 리포에 있다(CLAUDE.md 경로와 일치, 52f695a). `docs/design/`(BRIEF.md·EXPLORE.md·SYSTEM.md·tokens.css·DECISIONS.md)은 아직 없으며 Phase 2의 산출물이다 — SYSTEM.md 전에는 업무 화면을 만들지 않는 규칙은 그대로
 - [Phase 4]: 11개 요구사항(금액 모델·리저브 대장·문서 카운터·게이트·추출/변환 포함)으로 5플랜 상한에 닿을 수 있다 — 계획 단계에서 넘기면 리저브 대장(RSV-01)을 별도 페이즈로 뗀다
 - [Phase 7]: 회사 Google Workspace SMTP 릴레이(앱 비밀번호·발송 한도)는 계획 단계에서 확인(TODOS P2)
 - [Phase 9]: 정산(완료) 시점은 D3(정산 결재 대표 승인)로 확정. 매출 기준·연도 귀속을 기획본부·경영관리가 합의하는 절차는 여전히 PROJECT.md에 없다 — 계획 단계에서 사용자와 확정. 착수 조건은 전환 후 N주(설정, 기본 2주) 실입력(Eng OV-1)
 - [Phase 11]: CERT 활성화 조건은 `/cso` 보안 감사 통과. 개인정보보호법 적용 범위·보존 기간은 감사에서 재확인(리서치 Gap). 감사 뒤 KMS 봉투 승격(Issue 7)
 - [All]: 과잉 설계 재발 방지 — 페이즈마다 "인트라넷보다 못한가"로 검증하고, 실제 사용자 로그인·입력이 있어야 완료로 본다
+- [Phase 2]: 디자인 절차 문서 `docs/DESIGN.md`(§1→§4)는 리포에 있다(CLAUDE.md 경로와 일치, 52f695a). `docs/design/`(BRIEF.md·EXPLORE.md·SYSTEM.md·tokens.css·DECISIONS.md)은 아직 없으며 Phase 2의 산출물이다 — SYSTEM.md 전에는 업무 화면을 만들지 않는 규칙은 그대로
 
 ## Deferred Items
 
@@ -141,6 +140,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-18T10:37:44.289Z
-Stopped at: 01-07 완료(스테이징 실배포·실측·승격 가드 수정). 01-08 대기: 사용자 프로덕션 수동 실행 + 01-07 human-check 6항목
+Last session: 2026-09-18T18:54:04.478Z
+Stopped at: 01-08 프로덕션 승격 완료, 세션 마감
 Resume file: None

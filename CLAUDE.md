@@ -7,7 +7,7 @@
 - 이름 / 한 줄 설명: PLANT8 ERP — BTL 광고대행사의 프로젝트·지출결의·법인카드·손익 관리 시스템(PHP 인트라넷 대체, 10→30명)
 - 스택: Next.js 16(App Router, RSC + Server Actions via next-safe-action) + TypeScript 6 strict · domain/·repositories/ 4계층 + Drizzle ORM · PostgreSQL(Cloud SQL, 서울) · Cloud Run(서울, 회사 GCP) + Cloud Scheduler + GCS + Secret Manager
 - 패키지 매니저: pnpm (다른 것 금지)
-- 명령: dev `[ ]` · test `[ ]` · lint `[ ]` · build `[ ]` — Phase 1(배포 스켈레톤) 완료 시 확정해 채운다
+- 명령: dev `pnpm dev` · test `pnpm test`(단위→통합→E2E) · lint `pnpm lint`(+ `pnpm typecheck` · `pnpm lint:sql`) · build `pnpm build` — 통합·E2E는 로컬 DB가 필요하다(`pnpm db:dev`)
 - 구조: `docs/ARCHITECTURE.md` · 디자인: `docs/DESIGN.md` — 둘 다 필요할 때 Read (import 금지)
 
 ## 워크플로: Pre-build(gstack) → Build(GSD+Superpowers) → Post-build(gstack)

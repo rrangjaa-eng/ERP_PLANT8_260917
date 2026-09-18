@@ -1,0 +1,182 @@
+/* tokens.css — PLANT8 ERP 디자인 토큰
+ * 출처: docs/design/SYSTEM.md (이 파일과 어긋나면 SYSTEM.md가 맞다)
+ * 규칙: 컴포넌트는 이 변수만 참조한다. 새 값이 필요하면 DECISIONS.md → SYSTEM.md → 여기 순서로 추가한다.
+ * 브레이크포인트는 CSS 변수로 쓸 수 없어 주석으로 고정한다:
+ *   폰  <700px  · PC ≥1024px · 컨테이너 최대 1280px
+ */
+
+:root {
+  /* ---- 1. 색 — 그린 명도 단계 (브랜드 #005446 = --g-700) ---- */
+  --g-950: #00211C;
+  --g-900: #00312A;
+  --g-800: #00443A;
+  --g-700: #005446;
+  --g-600: #0E7A66;
+  --g-400: #6FBFA9;
+  --g-300: #9DBDB4;
+  --g-100: #DCE8E4;
+  --g-50:  #EBF2F0;
+
+  /* ---- 1. 색 — 의미 토큰 (컴포넌트는 이것만) ---- */
+  --bg:            #FFFFFF;
+  --surface:       #F3F7F5;
+  --fg:            #0B1512;   /* on --bg 18.6 */
+  --muted:         #4E5D59;   /* on --bg 6.9 · on --g-100 5.5 */
+  --faint:         #5F6E6A;   /* on --bg 5.4 · on --g-50 4.7 · --g-100 위 금지 */
+
+  --accent:        var(--g-700);   /* on --bg 8.9 */
+  --accent-hover:  var(--g-800);   /* white on it 11.1 */
+  --accent-weak:   var(--g-50);
+
+  --success:       var(--g-600);   /* on --bg 5.3 */
+  --warning:       #8A5A00;        /* on --bg 5.9 · on --warning-weak 5.3 */
+  --warning-weak:  #FBF1DE;
+  --danger:        #9B1C1C;        /* on --bg 8.2 · on --danger-weak 7.0 */
+  --danger-weak:   #FBE9E9;
+
+  --line:          #CFDBD7;        /* 장식선 1px */
+  --line-ui:       #7C8A86;        /* 인식해야 하는 UI 경계 · on --bg 3.6 */
+  --line-strong:   var(--g-900);   /* 2px 강한 선 */
+
+  --bar:           var(--g-900);
+  --bar-fg:        var(--g-100);   /* on --bar 11.3 */
+  --bar-muted:     var(--g-300);   /* on --bar 7.0 */
+  --bar-leaf:      var(--g-400);   /* 로고 잎 · on --bar 6.6 */
+
+  --focus:         var(--g-700);
+  --scrim:         rgba(0, 33, 28, 0.45);
+
+  /* 브라우저 기본 표면 (SYSTEM.md §4-4) */
+  --sel-bg:        var(--g-100);
+  --sel-fg:        var(--fg);
+  --caret:         var(--g-700);
+  --native-accent: var(--g-700);   /* accent-color: 체크박스·라디오·progress */
+  --scrollbar:     var(--line-ui);
+  --underline-offset: 2px;
+
+  /* 인쇄 전용 (print 라우트에서 --fg/--line-strong를 이것으로 덮는다) */
+  --print-ink:     #000000;
+
+  /* ---- 2. 타입 ---- */
+  --font-sans: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
+
+  --fs-xs:   11px;
+  --fs-sm:   12px;
+  --fs-base: 14px;   /* 폰에서 15px (아래 미디어 쿼리) */
+  --fs-md:   15px;
+  --fs-lg:   18px;
+  --fs-xl:   24px;
+
+  --lh-tight: 1.3;   /* --fs-xl */
+  --lh-head:  1.4;   /* --fs-lg · --fs-xs 태그 */
+  --lh-table: 1.5;   /* 표 셀 · --fs-sm */
+  --lh-body:  1.6;   /* 본문 */
+
+  --ls-body:  -0.015em;
+  --ls-head:  -0.02em;
+  --ls-num:   0;
+
+  --fw-regular: 400;
+  --fw-medium:  600;
+  --fw-bold:    700;
+  --fw-mark:    800;   /* 로고 워드마크만 */
+
+  --measure: 64ch;     /* 산문 최대 줄 길이 */
+
+  /* ---- 3. 간격 (4px 단위) ---- */
+  --s-1:  4px;
+  --s-2:  8px;
+  --s-3:  12px;
+  --s-4:  16px;
+  --s-5:  20px;   /* PC 컨테이너 좌우 패딩 */
+  --s-6:  24px;
+  --s-8:  32px;
+  --s-12: 48px;
+
+  --container-max: 1280px;
+  --pad-page:      var(--s-5);   /* 폰 14px */
+  --cell-pad-y:    6px;          /* 폰 10px */
+  --cell-pad-x:    8px;
+  --row-min:       36px;         /* 폰 44px */
+  --label-w:       96px;         /* PC 폼 라벨 열 */
+  --form-max:      720px;
+  --modal-w:       480px;
+
+  --control-h:     32px;   /* 버튼·입력 PC. 폰 40px, 외부 수령자 48px */
+  --touch-min:     44px;
+
+  /* ---- 4. 형태 ---- */
+  --radius:        0;
+  --line-w:        1px;
+  --line-w-strong: 2px;
+  --focus-w:       2px;
+  --focus-offset:  2px;
+  --shadow:        none;   /* 그림자 없음. 인셋 선만 허용 */
+
+  --inset-tab:     inset 0 -2px 0 var(--accent);   /* 현재 탭 밑줄 */
+  --inset-error:   inset 2px 0 0 var(--danger);    /* 오류 셀 좌측 */
+  --inset-dirty:   inset 0 0 0 1px var(--g-600);   /* 저장 대기 셀 */
+
+  /* ---- 5. 모션 (응답형만) ---- */
+  --dur-hover:     120ms;
+  --dur-toast:     160ms;
+  --dur-sheet:     200ms;
+  --dur-saved:     600ms;
+  --dur-progress:  1200ms;
+  --ease-out:      ease-out;
+  --ease-sheet:    cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* ---- z-index ---- */
+  --z-sticky: 10;   /* 표 머리글 */
+  --z-bar:    20;   /* 상단 바 · 폰 하단 탭 */
+  --z-toast:  30;
+  --z-scrim:  40;
+  --z-modal:  50;
+
+  /* ---- 아이콘 ---- */
+  --icon-sm:     16px;
+  --icon-lg:     20px;
+  --icon-stroke: 1.75;
+}
+
+/* 폰: 본문 1단계 위, 여백·행 높이·컨트롤 조정 */
+@media (max-width: 699.98px) {
+  :root {
+    --fs-base:   15px;
+    --pad-page:  14px;
+    --cell-pad-y: 10px;
+    --row-min:   44px;
+    --control-h: 40px;
+  }
+}
+
+/* 모션 축소: 전부 즉시 */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-hover:    0.01ms;
+    --dur-toast:    0.01ms;
+    --dur-sheet:    0.01ms;
+    --dur-saved:    0.01ms;
+    --dur-progress: 0.01ms;
+  }
+}
+
+/* 인쇄: 검정 하나. 인쇄 라우트(/print/…)와 브라우저 인쇄 모두 적용 */
+@media print {
+  :root {
+    --bg:          #FFFFFF;
+    --fg:          var(--print-ink);
+    --muted:       var(--print-ink);
+    --faint:       var(--print-ink);
+    --line:        var(--print-ink);
+    --line-ui:     var(--print-ink);
+    --line-strong: var(--print-ink);
+    --accent:      var(--print-ink);
+    --success:     var(--print-ink);
+    --warning:     var(--print-ink);
+    --danger:      var(--print-ink);
+    --surface:     #FFFFFF;
+    --g-50:        #FFFFFF;
+    --g-100:       #FFFFFF;
+  }
+}

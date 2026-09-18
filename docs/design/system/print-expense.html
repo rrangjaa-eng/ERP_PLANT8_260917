@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>지출결의서 EXP-2026-0464 — 인쇄 템플릿</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+/* SYSTEM.md §6-6 인쇄 템플릿 실물. 색은 --print-ink 하나. 화면 토큰(서체·간격)만 공유한다. */
+*{box-sizing:border-box;margin:0;padding:0}
+@page{size:A4 portrait;margin:18mm}
+html{font-size:var(--fs-base)}
+body{background:#fff;color:var(--print-ink);font-family:var(--font-sans);line-height:var(--lh-table);letter-spacing:var(--ls-body);word-break:keep-all}
+.sheet{width:210mm;min-height:297mm;padding:18mm;margin:0 auto;position:relative}
+@media screen{body{background:#E9ECEA}.sheet{background:#fff;margin:16px auto;outline:1px solid #CFD3D0}}
+.num{font-variant-numeric:tabular-nums;letter-spacing:0}
+.head{display:flex;justify-content:space-between;align-items:baseline}
+.head .mark{font-weight:var(--fw-mark);font-size:var(--fs-md);letter-spacing:var(--ls-head)}
+.head .no{font-size:var(--fs-sm)}
+h1{font-size:var(--fs-xl);font-weight:var(--fw-bold);letter-spacing:.2em;text-align:center;margin:var(--s-8) 0 var(--s-3)}
+.rule2{border-top:2px solid var(--print-ink)} .rule1{border-top:1px solid var(--print-ink)}
+table{width:100%;border-collapse:collapse;font-size:var(--fs-base)}
+td,th{padding:6px 8px;border:1px solid var(--print-ink);vertical-align:top;text-align:left}
+th{width:26mm;font-weight:var(--fw-medium);background:#fff}
+td.num{text-align:right}
+.grid{margin-top:var(--s-3)}
+.sign{display:flex;gap:0;margin-top:var(--s-4)}
+.sign div{flex:1;border:1px solid var(--print-ink);height:26mm;padding:4px 6px;font-size:var(--fs-sm);display:flex;flex-direction:column;justify-content:space-between}
+.sign div + div{border-left:0}
+.sign b{font-weight:var(--fw-medium)}
+.sign small{font-size:var(--fs-sm)}
+.att{margin-top:var(--s-4);font-size:var(--fs-sm)}
+.foot{position:absolute;left:18mm;right:18mm;bottom:12mm;display:flex;justify-content:space-between;font-size:var(--fs-sm)}
+tr{break-inside:avoid}
+</style>
+</head>
+<body>
+<div class="sheet">
+  <div class="head"><span class="mark">PLANT8</span><span class="no num">EXP-2026-0464</span></div>
+  <h1>지출결의서</h1>
+  <div class="rule2"></div>
+  <table class="grid">
+    <tr><th>프로젝트</th><td colspan="3">2026 현대자동차 아이오닉9 미디어 론칭 쇼케이스</td></tr>
+    <tr><th>항목</th><td colspan="3">메인 스테이지 구조물 설치 및 철거</td></tr>
+    <tr><th>거래처</th><td colspan="3">(주)스테이지원커뮤니케이션즈</td></tr>
+    <tr><th>공급가액</th><td class="num">12,400,000</td><th>부가세</th><td class="num">1,240,000</td></tr>
+    <tr><th>합계</th><td class="num">13,640,000</td><th>지급 예정일</th><td class="num">2026-09-19</td></tr>
+    <tr><th>증빙</th><td>세금계산서 · 2026-09-05</td><th>결제 수단</th><td>계좌 이체</td></tr>
+    <tr><th>비고</th><td colspan="3">2차 견적 기준. 철거 포함.</td></tr>
+  </table>
+  <div class="sign">
+    <div><b>기안</b><span>박서연<br><small class="num">2026-09-05</small></span></div>
+    <div><b>팀장</b><span>김도윤<br><small class="num">2026-09-05</small></span></div>
+    <div><b>경영관리</b><span>이수아<br><small class="num">2026-09-06</small></span></div>
+    <div><b>대표</b><span></span></div>
+  </div>
+  <div class="att">첨부 1 · 세금계산서 (다음 장)</div>
+  <div class="foot"><span>PLANT8 ERP · 2026-09-18 14:02 출력</span><span class="num">1 / 2</span></div>
+</div>
+</body>
+</html>

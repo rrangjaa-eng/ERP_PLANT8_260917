@@ -366,6 +366,11 @@ run_migrate() {
       echo "PoolRuleViolation: max_instances × pool exceeds max_connections − 5" >&2
     else
       echo "migration failed" >&2
+      # pool_rule_violation이 아닌 일반 실패는 지금까지 원인을 로그로 안
+      # 남겨서 진단이 안 됐다(2026-09-18 run #18) — db-bootstrap과 같은
+      # 방식으로 실제 컨테이너 에러를 stderr에 남긴다.
+      run gcloud logging read "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"$(job_name "$ENV" migrate)\" AND severity>=ERROR" \
+        --project="$PROJECT" --freshness=10m --limit=20 --format='value(textPayload, jsonPayload.message)' >&2 || true
     fi
     exit 1
   fi

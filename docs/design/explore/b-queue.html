@@ -1,0 +1,125 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>안 B — 차례 (Queue)</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#FFFFFF; --rail:#F5F6F5; --fg:#16211E; --muted:#5A6663; --faint:#8B9491;
+  --line:#E2E6E4; --accent:#005446; --accent-weak:#E3EEEA;
+  --warn:#8A5A00; --warn-weak:#FBF1DE; --danger:#9B1C1C; --danger-weak:#FBE9E9;
+  --r:4px;
+}
+html{font-size:16px}
+body{background:var(--bg);color:var(--fg);
+  font-family:'Pretendard','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+  line-height:1.6;letter-spacing:-0.015em;word-break:keep-all;-webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums;text-align:right;letter-spacing:0}
+button{font:inherit;cursor:pointer}
+/* shell */
+.app{display:grid;grid-template-columns:340px 1fr;min-height:100vh}
+/* ---- rail : 내 차례 ---- */
+.rail{background:var(--rail);border-right:1px solid var(--line);display:flex;flex-direction:column}
+.rail .top{padding:16px 18px 10px;display:flex;align-items:baseline;gap:10px;border-bottom:1px solid var(--line)}
+.mark{font-weight:800;font-size:15px;letter-spacing:-0.03em}.mark i{font-style:normal;color:var(--accent)}
+.rail .top .who{margin-left:auto;font-size:12px;color:var(--faint)}
+.rail h2{font-size:13px;font-weight:700;padding:16px 18px 8px;display:flex;align-items:baseline;gap:8px}
+.rail h2 em{font-style:normal;background:var(--accent);color:#fff;border-radius:999px;font-size:11px;padding:1px 7px;font-weight:700}
+.q{list-style:none;padding:0 10px;display:flex;flex-direction:column;gap:6px}
+.q li{background:var(--bg);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:var(--r);
+  padding:10px 12px;cursor:pointer}
+.q li.now{border-color:var(--accent);border-left-width:3px;box-shadow:0 0 0 1px var(--accent)}
+.q li.stop{border-left-color:var(--danger)} .q li.due{border-left-color:var(--warn)}
+.q .k{font-size:11px;font-weight:700;color:var(--accent);letter-spacing:0.02em}
+.q li.stop .k{color:var(--danger)} .q li.due .k{color:var(--warn)}
+.q .t{font-size:13.5px;font-weight:600;margin:2px 0 4px;line-height:1.45}
+.q .m{font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:8px}
+.rail .rest{margin-top:auto;padding:14px 18px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted);
+  display:flex;flex-direction:column;gap:7px}
+.rail .rest a{color:var(--muted);text-decoration:none}
+/* ---- work ---- */
+.work{padding:26px 34px;max-width:840px}
+.crumb{font-size:12.5px;color:var(--faint);margin-bottom:6px}
+h1{font-size:24px;font-weight:700;letter-spacing:-0.025em;line-height:1.35}
+.why{display:flex;gap:10px;align-items:flex-start;background:var(--danger-weak);border-radius:var(--r);
+  padding:12px 14px;margin:18px 0 22px}
+.why .b{font-size:13px;font-weight:700;color:var(--danger);flex:none}
+.why p{font-size:13.5px;color:var(--fg)}
+.why .act{margin-left:auto;flex:none}
+.fields{display:grid;grid-template-columns:110px 1fr;gap:0;border-top:1px solid var(--line)}
+.fields dt{font-size:13px;color:var(--muted);padding:11px 0;border-bottom:1px solid var(--line)}
+.fields dd{font-size:14.5px;padding:11px 0;border-bottom:1px solid var(--line)}
+.fields dd .sm{font-size:12.5px;color:var(--faint)}
+.fields dd.big{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.drop{margin:20px 0 0;border:1.5px dashed var(--accent);border-radius:var(--r);background:var(--accent-weak);
+  padding:22px;text-align:center}
+.drop b{display:block;font-size:14.5px;margin-bottom:3px}
+.drop span{font-size:12.5px;color:var(--muted)}
+.bar{display:flex;align-items:center;gap:10px;margin-top:26px;padding-top:18px;border-top:1px solid var(--line)}
+.btn{font-size:14px;font-weight:600;padding:9px 18px;border-radius:var(--r);border:1px solid var(--line);background:#fff;color:var(--fg)}
+.btn.p{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn:disabled{background:var(--rail);color:var(--faint);border-color:var(--line);cursor:not-allowed}
+.bar .after{margin-left:auto;font-size:12.5px;color:var(--muted)}
+.bar .after b{color:var(--accent)}
+kbd{font-family:ui-monospace,monospace;font-size:11px;border:1px solid var(--line);border-radius:3px;padding:0 4px;color:var(--muted)}
+.note{margin-top:34px;font-size:12px;color:var(--faint);border-top:1px solid var(--line);padding-top:10px}
+@media(max-width:760px){
+  .app{grid-template-columns:1fr}
+  .rail{border-right:0;border-bottom:1px solid var(--line)}
+  .rail .rest{display:none}
+  .work{padding:20px 16px}
+  h1{font-size:20px}
+}
+</style></head><body>
+<div class="app">
+  <aside class="rail">
+    <div class="top"><span class="mark">PL<i>A</i>NT8</span><span class="who">박서연 · 기획1팀</span></div>
+    <h2>내 차례 <em>4</em></h2>
+    <ul class="q">
+      <li class="now stop"><div class="k">막힘 · 증빙 14일 경과</div>
+        <div class="t">무대설치 지출결의 — (주)스테이지원커뮤니케이션즈</div>
+        <div class="m"><span>아이오닉9 쇼케이스</span><span class="num">12,400,000</span></div></li>
+      <li class="due"><div class="k">오늘 14:00 마감</div>
+        <div class="t">한빛무대예술 지급결의 제출</div>
+        <div class="m"><span>결재 4단 · 미제출</span><span class="num">8,800,000</span></div></li>
+      <li><div class="k">대기 · 고객 승인 전</div>
+        <div class="t">아이오닉9 쇼케이스 2차 견적</div>
+        <div class="m"><span>6줄 · 지출 불가</span><span class="num">48,000,000</span></div></li>
+      <li><div class="k">대기 · 연결 필요</div>
+        <div class="t">법인카드 3건 미연결</div>
+        <div class="m"><span>09-12 ~ 09-16</span><span class="num">417,300</span></div></li>
+    </ul>
+    <div class="rest">
+      <a href="#">프로젝트 7</a><a href="#">내 지출결의 12</a><a href="#">법인카드</a><a href="#">거래처</a>
+    </div>
+  </aside>
+
+  <main class="work">
+    <div class="crumb">2026 현대자동차 아이오닉9 미디어 론칭 쇼케이스 · 견적 2차 · 1번 줄</div>
+    <h1>메인 스테이지 구조물 설치 및 철거</h1>
+
+    <div class="why">
+      <span class="b">막힘</span>
+      <p>2026-09-04에 선결제로 승인됐고 증빙 기한 14일이 지났습니다. 증빙이 붙기 전에는 지급 완료로 넘어가지 않습니다.</p>
+      <span class="act"><button class="btn p">증빙 올리기</button></span>
+    </div>
+
+    <dl class="fields">
+      <dt>거래처</dt><dd>(주)스테이지원커뮤니케이션즈 <span class="sm">· 세금계산서</span></dd>
+      <dt>공급가액</dt><dd class="big">12,400,000</dd>
+      <dt>부가세 10%</dt><dd>1,240,000 <span class="sm">· 지급 총액 13,640,000</span></dd>
+      <dt>지급 예정일</dt><dd>2026-11-06 <span class="sm">· 작성일+60일 규칙, 기한 전 마지막 금요일</span></dd>
+      <dt>결재</dt><dd>4단 전원 승인 완료 <span class="sm">· 2026-09-04</span></dd>
+    </dl>
+
+    <div class="drop"><b>여기에 세금계산서를 끌어 놓거나 폰으로 찍으세요</b>
+      <span>이미지 · PDF · 10MB 이하 &nbsp;|&nbsp; 붙여넣기 <kbd>⌘V</kbd></span></div>
+
+    <div class="bar">
+      <button class="btn p">증빙 등록하고 다음 차례로</button>
+      <button class="btn">나중에</button>
+      <span class="after">다음 차례 <b>한빛무대예술 지급결의</b> · 오늘 14:00</span>
+    </div>
+
+    <p class="note">안 B — 차례. 메뉴가 아니라 대기열이 1차 내비게이션. 처리하면 스택에서 사라지고 다음 항목이 자동으로 올라온다. 막힘은 이유 + 다음 한 수를 같은 블록에 둔다.</p>
+  </main>
+</div></body></html>

@@ -1,0 +1,81 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PLANT8 ERP — §2 발산 비교 보드</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#F4F4F2;color:#101010;font-family:'Pretendard','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;
+  line-height:1.6;letter-spacing:-0.015em;word-break:keep-all;padding:26px 22px 60px}
+header{max-width:1400px;margin:0 auto 22px;border-bottom:2px solid #000;padding-bottom:10px}
+h1{font-size:20px;font-weight:700;letter-spacing:-0.03em}
+header p{font-size:13px;color:#5C5C5C;margin-top:4px}
+.grid{max-width:1400px;margin:0 auto;display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+.card{background:#fff;border:1px solid #D8D8D4}
+.card h2{font-size:15px;font-weight:700;padding:11px 14px 3px;letter-spacing:-0.02em}
+.card h2 em{font-style:normal;color:#005446}
+.card .ax{font-size:11.5px;color:#6A6A64;padding:0 14px 9px;border-bottom:1px solid #E6E6E2}
+.card .shots{display:grid;grid-template-columns:1fr 132px;gap:0;background:#EFEFEC}
+.card .shots a{display:block;overflow:hidden;border-right:1px solid #E6E6E2}
+.card .shots img{width:100%;display:block;border:0}
+.card .shots .m{border-right:0}
+.card .why{font-size:12.5px;padding:10px 14px;border-top:1px solid #E6E6E2;color:#3A3A36}
+.card .why b{color:#005446}
+.card .risk{font-size:12px;padding:0 14px 12px;color:#9B1C1C}
+.card .open{display:block;padding:9px 14px;border-top:1px solid #E6E6E2;font-size:12.5px;font-weight:600;
+  color:#005446;text-decoration:none}
+@media(max-width:820px){.grid{grid-template-columns:1fr}.card .shots{grid-template-columns:1fr}}
+</style></head><body>
+<header>
+  <h1>PLANT8 ERP — §2 발산 비교 보드</h1>
+  <p>같은 상황(아이오닉9 쇼케이스 · 무대설치 12,400,000 · 증빙 14일 경과)을 네 방향으로. 왼쪽 PC 1280 / 오른쪽 폰 390. 클릭하면 원본이 열린다.</p>
+</header>
+<div class="grid">
+
+  <div class="card">
+    <h2>안 A — <em>원장</em> <span style="font-weight:400;font-size:12px;color:#6A6A64">가장 안전한 안</span></h2>
+    <div class="ax">절제 · 밀도 높음 · 무채+포인트1 · 산세리프 단일 · 직각/선 · 격자 · 응답형만 · 문서(장부)</div>
+    <div class="shots">
+      <a href="a-ledger.html"><img src="shots/a-ledger-pc.png" alt="안 A 데스크톱"></a>
+      <a class="m" href="a-ledger.html"><img src="shots/a-ledger-m.png" alt="안 A 폰"></a>
+    </div>
+    <p class="why">카드·그림자를 <b>앱 전체에서 0</b>으로. 깊이는 선 두께 2단계와 배경 톤 1단계로만 만든다. 포인트 색은 “내 차례”와 “막힘”에만.</p>
+    <p class="risk">위험: 밀도가 높아 폰에서 표가 무너진다. 위계가 평평해 처음 보는 직원이 못 읽을 수 있다.</p>
+    <a class="open" href="a-ledger.html">원본 열기 →</a>
+  </div>
+
+  <div class="card">
+    <h2>안 B — <em>차례</em></h2>
+    <div class="ax">중립~약간 표현적 · 여백 중심 · 무채+포인트+상태색3 · 산세리프 단일 · 직각+r4 · 좌측 대기열 · 상태 전환 1회 · 대화</div>
+    <div class="shots">
+      <a href="b-queue.html"><img src="shots/b-queue-pc.png" alt="안 B 데스크톱"></a>
+      <a class="m" href="b-queue.html"><img src="shots/b-queue-m.png" alt="안 B 폰"></a>
+    </div>
+    <p class="why">메뉴가 아니라 <b>대기열이 1차 내비게이션</b>. 처리하면 스택에서 사라지고 다음이 자동으로 올라온다. 역할이 달라도 첫 화면 구조가 같다.</p>
+    <p class="risk">위험: 과거 건 탐색이 2급 시민이 된다. PM의 대량 표 입력과 궁합이 나쁘다.</p>
+    <a class="open" href="b-queue.html">원본 열기 →</a>
+  </div>
+
+  <div class="card">
+    <h2>안 C — <em>작업대</em> <span style="font-weight:400;font-size:12px;color:#9B1C1C">위험한 안</span></h2>
+    <div class="ax">표현적 · 밀도 최고 · 톤온톤(그린 명도) · 산세리프+숫자 모노 · 직각/굵은 구분 · 비대칭+하단 고정 · 리듬 있음 · 도구(콘솔)</div>
+    <div class="shots">
+      <a href="c-console.html"><img src="shots/c-console-pc.png" alt="안 C 데스크톱"></a>
+      <a class="m" href="c-console.html"><img src="shots/c-console-m.png" alt="안 C 폰"></a>
+    </div>
+    <p class="why">읽기 모드가 아니라 <b>편집 모드가 기본</b>. 하단 명령 바가 1차 입력 수단이고 마우스는 2순위. 단축키가 화면에 상시 노출.</p>
+    <p class="risk">위험: 폰에서 성립하지 않는다(오른쪽 스크린샷). 처음 보는 직원이 겁먹는다. 구현·유지 비용 최대.</p>
+    <a class="open" href="c-console.html">원본 열기 →</a>
+  </div>
+
+  <div class="card">
+    <h2>안 D — <em>전표</em></h2>
+    <div class="ax">절제 · 여백 중심 · 무채+포인트1+종이톤 · 세리프 헤드+산세리프 · 직각/테두리 최소 · 편집 레이아웃 · 모션 없음 · 문서(양식지)</div>
+    <div class="shots">
+      <a href="d-voucher.html"><img src="shots/d-voucher-pc.png" alt="안 D 데스크톱"></a>
+      <a class="m" href="d-voucher.html"><img src="shots/d-voucher-m.png" alt="안 D 폰"></a>
+    </div>
+    <p class="why"><b>화면 ≡ 인쇄</b>. 별도 인쇄 스타일시트를 두지 않고 한 레이아웃이 둘 다 한다. 결재란은 종이 결재란 그대로, 건너뛴 단계도 칸으로 남는다.</p>
+    <p class="risk">위험: 견적 줄 대량 입력에는 여백이 사치. 세리프 헤드가 밀도와 싸운다. 문서 아닌 화면(목록·손익)에 쓸 틀이 없다.</p>
+    <a class="open" href="d-voucher.html">원본 열기 →</a>
+  </div>
+
+</div></body></html>

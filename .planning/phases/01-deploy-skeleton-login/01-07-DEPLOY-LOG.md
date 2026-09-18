@@ -326,4 +326,8 @@ Cloud Run 직결 환경에서 **실측으로 맞다**.
 ## 최종 확인
 
 - `git status --porcelain` 비어 있음: **예**
-- 임시 `probe.yml` 워크플로·`probe-result` 브랜치: 삭제 완료
+- 임시 `probe.yml` 워크플로: **삭제 완료**(commit `8478584`)
+- 임시 결과 브랜치 `probe-result`, `probe-result2`: **남아 있음 — 수동 삭제 필요**.
+  실행자 세션의 깃 프록시가 ref 삭제(API·`git push --delete` 모두)를 403으로
+  막는다. 두 브랜치에는 프로브 출력만 있고(프로젝트 ID 마스킹, 임시 비밀번호
+  줄은 `[REDACTED]` 치환) 시크릿은 없다. GitHub UI → Branches에서 지우면 된다.

@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 1
 current_phase_name: 배포 스켈레톤·로그인
-current_plan: 6
+current_plan: 7
 status: executing
-stopped_at: Completed 01-05-PLAN.md
-last_updated: "2026-09-18T09:38:47.668Z"
+stopped_at: Completed 01-06-PLAN.md
+last_updated: "2026-09-18T10:18:46.623Z"
 last_activity: 2026-09-17
 last_activity_desc: "로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드"
-state_head: b89f89ef2ae0a9f96bda23a921bac916c87a5374
+state_head: 04d5b098efa2cd742600685c42d3da2aec2ce25a
 progress:
   total_phases: 11
   completed_phases: 0
   total_plans: 8
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 1 (배포 스켈레톤·로그인) — EXECUTING
-Current Plan: 6
+Current Plan: 7
 Total Plans in Phase: 8
 Status: Ready to execute
 Last activity: 2026-09-17 — 로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드
@@ -64,6 +64,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01-deploy-skeleton-login P03 | 18min | 2 tasks | 17 files |
 | Phase 01-deploy-skeleton-login P04 | 40min | 3 tasks | 32 files |
 | Phase 01-deploy-skeleton-login P05 | 14min | 2 tasks | 11 files |
+| Phase 01-deploy-skeleton-login P06 | 38min | 2 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -112,6 +113,9 @@ Recent decisions affecting current work:
 - [Phase 01-deploy-skeleton-login]: 01-04: .squawk.toml excluded_rules 4개(prefer-timestamp-tz, prefer-bigint-over-int, adding-required-field, require-concurrent-index-creation) — 스키마 전체 변경 필요해 범위 밖, WINDOWS.md에 lint-warning 4건 등록
 - [Phase 1]: [Phase 1] 01-05: esbuild build-cli.mjs external을 ['pg-native']에서 packages:'external'로 정정 — google-gax 계열 대형 gRPC 코드베이스를 단일 ESM 파일로 인라인하면 Node 22/24가 런타임에 'both require() and top-level await' 에러로 크래시함을 실측. 이 패키지들은 이미 Next 앱이 써서 .next/standalone/node_modules에 포함되므로 external로 둬도 같은 이미지 안에서 정상 resolve된다
 - [Phase 1]: [Phase 1] 01-05: db-bootstrap.ts의 CREATE DATABASE는 buildBootstrapSql 순수 함수 밖 main()의 별도 단계로 분리 — 존재 확인 뒤에만 실행, buildBootstrapSql은 항상 멱등한 ALTER DATABASE...OWNER TO만 반환
+- [Phase 1]: [Phase 01-deploy-skeleton-login] 01-06: infra/names.sh 리소스 접두어를 plant8-로 통일(서비스·SQL·SA·AR은 사용자 결정 명시, Job 이름도 같은 계열이라 확장) — WIF_POOL/WIF_PROVIDER/DEPLOYER_SA는 identity 식별자라 플랜 원문 값 유지
+- [Phase 1]: [Phase 01-deploy-skeleton-login] 01-06: bash ERR 트랩은 기본적으로 함수 안에서 발동하지 않는다 — set -o errtrace(set -E) 없이는 deploy.sh의 STAGE 트랩 메시지가 안 나옴을 실측(scripts/deploy.sh)
+- [Phase 1]: [Phase 01-deploy-skeleton-login] 01-06: deploy.yml/account.yml에 pnpm build:cli 스텝 불필요 — Dockerfile의 build 스테이지가 컨테이너 안에서 이미 pnpm build && pnpm build:cli를 실행함을 확인(01-05 Dockerfile 직접 확인)
 
 ### Pending Todos
 
@@ -137,6 +141,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-18T09:38:47.625Z
-Stopped at: Completed 01-05-PLAN.md
+Last session: 2026-09-18T10:18:46.578Z
+Stopped at: Completed 01-06-PLAN.md
 Resume file: None

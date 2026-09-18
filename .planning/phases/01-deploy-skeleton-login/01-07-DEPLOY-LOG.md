@@ -17,9 +17,16 @@
   (success) — 계정 Job 종료 버그의 코드 리뷰 후속 수정까지 반영한 배포.
   (run #21 `5ca3522`는 그 전 단계, 아래 "계정 Job 종료 버그" 참고.)
 - 스테이징이 서빙 중인 SHA(= 01-08 Task 1의 입력):
-  **`ed2fbc5`** — 정확한 값은 승격 직전에 `scripts/promote-guard.sh`가
-  서빙 리비전의 `APP_GIT_SHA`에서 직접 읽으므로, 이 로그의 값을 손으로
-  옮겨 적지 말고 가드가 읽은 값을 쓴다.
+  **`ed2fbc5`** — 다만 이 값을 손으로 옮겨 적어 쓰지 않는다. 승격 직전에
+  `scripts/promote-guard.sh`가 서빙 리비전의 `APP_GIT_SHA`에서 직접 읽으므로
+  **가드가 읽은 값이 단일 출처**다(이 로그의 값은 언제든 낡을 수 있다).
+  - 01-07 종료 시점에는 `5ca3522`였다. 그 뒤 코드리뷰 수정 커밋 `ed2fbc5`를
+    올렸는데 **push가 deploy 워크플로를 트리거하지 못해** 스테이징이 한 커밋
+    뒤처져 있었다(원인 미상 — 그 커밋에 `[skip ci]`는 없고 paths-ignore
+    대상도 아니다). 수동 `workflow_dispatch`로 배포해 맞췄다:
+    run `35376419153`, 리비전 `plant8-staging-00025-m5r`, 100% 트래픽,
+    `quick probe: / -> 307, /login -> 200, /api/health -> 200`.
+  - 같은 SHA로 큐에 걸린 중복 실행 `35376464153`은 취소했다.
 - run #20 시점의 서빙 리비전: `plant8-staging-00021-jxr`
 
 ## 시도별 원인·수정 이력
@@ -298,7 +305,7 @@ Cloud Run 직결 환경에서 **실측으로 맞다**.
   `status.url`이 항상 다르다 — 결정적 URL 가정 기각(맨 위 참고).
 - **신규 서비스 첫 배포 트래픽**: 100%(카나리 제거 후 설계대로).
 
-### deploy.yml 프로덕션 가드 전제 — **기각됨 → 수정 완료**
+### deploy.yml 프로덕션 가드 전제 — **기각됨 → 수정·실측 검증 완료**
 
 플랜의 `[ASSUMED]` 2건을 실측했다:
 
@@ -317,15 +324,39 @@ Cloud Run 직결 환경에서 **실측으로 맞다**.
    `:` 뒤를 git SHA로 간주하므로, 실제로는 **이미지 다이제스트**
    (`662211fc…`)를 얻는다. 그 결과 `[ "$SHA" != "$STAGING_SHA" ]` 비교가
    **항상 참**이 되어 프로덕션 승격이 영구히 막힌다.
-   → **수정 완료** (commit `fe851be`, 2026-09-18): 가드 로직을
-   `.github/workflows/deploy.yml` 인라인에서 `scripts/promote-guard.sh`로
-   빼내고, SHA를 이미지 문자열이 아니라 **서빙 리비전의 `APP_GIT_SHA`
-   환경변수**에서 읽도록 바꿨다(`deploy.sh:404`가 원래부터 심고 있던 값이다).
-   `APP_GIT_SHA`가 없거나 40자 hex가 아니면 "스테이징을 다시 배포하라"는
-   명확한 메시지로 중단한다 — 그 환경변수가 생기기 전의 옛 리비전을
-   조용히 승격하지 않는다. 단위 테스트는
-   `test/unit/deploy/promote-guard-sh.test.ts`.
-   현재 서빙 리비전은 `APP_GIT_SHA`를 갖고 있다(run #22, `ed2fbc5` 재배포).
+   → **수정 완료**(commit `fe851be`, 2026-09-18). 다이제스트 역조회 대신,
+   `deploy.sh`가 이미 리비전에 심어 두는 **`APP_GIT_SHA` 환경변수**
+   (`deploy.sh:404`, `/api/health`가 돌려주는 `sha`와 같은 값)를 읽는다.
+   판정 로직은 `deploy.yml` 안의 30줄 bash에서 `scripts/promote-guard.sh`로
+   분리해 단위 테스트 11건을 붙였다(`test/unit/deploy/promote-guard-sh.test.ts`).
+   `APP_GIT_SHA`가 없거나 40자 hex가 아니면 다이제스트로 대체하지 않고
+   "스테이징을 다시 배포하라"는 메시지로 명시적으로 중단한다 — 그 환경변수가
+   생기기 전의 옛 리비전을 조용히 승격하지 않는다.
+
+#### 수정된 가드의 실제 GCP 검증 (guard-probe, run `35375257182`)
+
+단위 테스트는 fakebin `gcloud` 기준이라 "진짜 Cloud Run이 무엇을 돌려주는가"는
+증명하지 못한다. 그래서 일회용 읽기 전용 워크플로(`.github/workflows/guard-probe.yml`,
+배포 없음)로 실제 스테이징에 대고 한 번 돌렸다. 결과(마스킹):
+
+| 확인 | 값 |
+|------|-----|
+| 서빙 리비전 | `plant8-staging-00023-tsm`, `traffic entries=5`(태그 잔여 4개 그대로) |
+| 리비전 `image` | `…/plant8/app@sha256:ba44dec2…` — **다이제스트 저장 재확인** |
+| 리비전 `APP_GIT_SHA` | `5ca35226bc2f75be453e8c02adbe7aeb929bc1d7` ✅ |
+| 가드 `--sha ""`(비움) | `STAGING_SHA=5ca35226…` / `PROMOTE_SHA=5ca35226…`, exit **0** ✅ |
+| 가드 `--sha 5ca35226…`(명시) | 같은 두 줄, exit **0** ✅ |
+| 가드 `--sha 0000…`(틀린 값) | `image for 0000… not found in Artifact Registry — deploy it to staging first (D-05)`, exit **1** ✅ |
+| `plant8-prod` 존재 여부 | **없음** — 01-08은 프로덕션 첫 배포다 |
+
+즉 이 가드는 실제 GCP에서 통과할 값은 통과시키고 틀린 SHA는 막는다. 프로덕션
+승격을 영구히 막던 회귀는 닫혔다. 검증이 끝났으므로 `guard-probe.yml`은 삭제한다.
+(실측 당시 서빙 SHA는 `5ca3522`였고, 이후 run #22가 `ed2fbc5`로 재배포했다 —
+두 리비전 모두 `APP_GIT_SHA`를 갖고 있다.)
+
+남은 정리 대상(01-08): 태그 전용 트래픽 항목 4개(`rev-54152656`, `rev-76518d7d`,
+`rev-fa7eadf1`, `rev-6d8cebc1`) — 가드·배포에 영향은 없지만 `traffic[]`을 읽는
+사람을 헷갈리게 한다.
 
 ## 계정 생성
 
@@ -349,8 +380,9 @@ Cloud Run 직결 환경에서 **실측으로 맞다**.
 
 - `git status --porcelain` 비어 있음: **예**
 - 임시 `probe.yml` 워크플로: **삭제 완료**(commit `8478584`)
+- 임시 `guard-probe.yml` 워크플로: **삭제 완료**(가드 검증 뒤)
 - 임시 결과 브랜치 `probe-result`, `probe-result2`, `guard-probe-result`:
-  **남아 있음 — 수동 삭제 필요**.
-  실행자 세션의 깃 프록시가 ref 삭제(API·`git push --delete` 모두)를 403으로
-  막는다. 두 브랜치에는 프로브 출력만 있고(프로젝트 ID 마스킹, 임시 비밀번호
-  줄은 `[REDACTED]` 치환) 시크릿은 없다. GitHub UI → Branches에서 지우면 된다.
+  **남아 있음 — 사용자가 수동 삭제**. 실행자 세션에서는 ref 삭제가 막힌다(깃
+  프록시 403, 이후 세션에서는 도구 정책). 세 브랜치에는 프로브 출력만 있고
+  (프로젝트 ID·번호 마스킹, 임시 비밀번호 줄은 `[REDACTED]` 치환) 시크릿은
+  없다. GitHub UI → Branches에서 지우면 된다.

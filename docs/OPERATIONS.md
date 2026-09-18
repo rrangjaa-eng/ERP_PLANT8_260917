@@ -11,11 +11,16 @@
 | Cloud Run 서비스 | `plant8-staging` | `plant8-prod` |
 | Cloud SQL 인스턴스 | `plant8-staging-db` | `plant8-prod-db` |
 | 시크릿 접미사 | `-staging` | `-prod` |
-| 접속 주소 | `https://plant8-staging-<프로젝트 번호>.asia-northeast3.run.app` | `https://plant8-prod-<프로젝트 번호>.asia-northeast3.run.app` |
+| 접속 주소 | `gcloud run services describe plant8-staging --format='value(status.url)'` | 같은 명령, `plant8-prod` |
 
-접속 주소는 이 **결정적 URL** 하나만 쓴다. Cloud Run이 함께 주는 레거시 `*.a.run.app`
-주소나 태그 리비전 URL로 열면 화면은 뜨지만 로그인 POST가 better-auth의 Origin 검사
-(`BETTER_AUTH_URL`)에 걸려 403이 난다 — 북마크·안내는 항상 결정적 URL로.
+접속 주소는 **`status.url` 실측값**만 쓴다. 프로젝트 번호로 만든 "결정적" 형식
+(`https://plant8-<env>-<프로젝트 번호>.asia-northeast3.run.app`)은 이 프로젝트에서
+실제 주소가 아니었다 — 2026-09-18 스테이징 첫 배포에서 확인했고, 그 형식으로 열면
+404가 난다(01-07-DEPLOY-LOG). 실제 주소는 `plant8-staging-<해시>-du.a.run.app` 형태다.
+`deploy.sh`는 `status.url`이 계산값과 다르면 그 값으로 `BETTER_AUTH_URL`까지 맞춰
+재배포하므로(`note: computed url differs` 줄), 배포 로그 마지막의 `SERVICE_URL=` 줄이
+항상 정본이다. 다른 주소(태그 리비전 URL 등)로 열면 화면은 떠도 로그인 POST가
+better-auth의 Origin 검사에 걸려 403이 난다 — 북마크·안내는 항상 `status.url`로.
 
 ## 2. 월 비용 목표
 
@@ -28,6 +33,31 @@
 - Artifact Registry 이미지 — 정리 정책(최근 20버전 유지, 60일 지난 나머지 삭제) 없으면
   SHA 태그 이미지(~300MB)가 push마다 쌓여 상한을 잠식한다
 - Secret Manager 접근, Cloud Logging 수집
+
+**첫 청구서 확인(D-06):** 프로덕션은 2026-09-18에 올라갔다 — 이 날부터 Cloud SQL이
+**2대** 상시 과금된다. 매월 초 GCP 콘솔 → Billing → Reports에서 다음을 본다.
+
+1. 두 환경 합계가 $30 안팎인가 — 넘으면 스테이징 Cloud SQL부터 줄인다(중지/축소)
+2. 비용의 대부분이 Cloud SQL인가 — 아니라면 예상 밖 항목이 있다는 뜻이다
+   (Artifact Registry 누적, Logging 수집량 등)
+3. 첫 확인 대상은 2026년 9월분(10월 초 확정). 9월은 월중 시작이라 일할 계산된다
+
+**배포자 SA 권한 축소(01-08):** `gha-deployer`는 부트스트랩이 8개 admin 역할을
+넓게 부여한 상태다(`run.admin` `cloudsql.admin` `secretmanager.admin`
+`artifactregistry.admin` `monitoring.editor` `logging.admin`
+`serviceusage.serviceUsageAdmin` `compute.networkAdmin`). 실제 배포가 쓰는 권한으로
+좁힐 때의 근거:
+
+- **`compute.networkAdmin`은 뺄 수 있다.** `deploy.sh`의 `ensure_network()`는 VPC
+  피어링을 **조회만** 하고, 없으면 "run scripts/bootstrap-gcp.sh first"로 중단한다 —
+  네트워크 생성은 Owner가 실행하는 부트스트랩의 몫이다. 조회 권한만 남기면 된다.
+- **`serviceusage.serviceUsageAdmin`은 지금 구조에서는 뺄 수 없다.** `ensure_apis()`가
+  매 배포마다 `gcloud services enable`을 호출한다. 빼려면 그 단계를 "이미 켜져 있으면
+  건너뛰기"로 바꾸는 코드 변경이 먼저다.
+- 나머지 6개는 배포가 매번 실제로 쓴다(서비스·Job 배포, SQL 인스턴스/DB/사용자,
+  시크릿 생성·IAM, 이미지 push·정리 정책, 경보 정책·채널, 로그 메트릭).
+- 참고: 배포자 SA에는 `orgpolicy.policy.get`이 **없다**(01-07 실측, `PERMISSION_DENIED`).
+  조직 정책 원문 확인은 Owner 계정으로 한다.
 
 **GitHub Actions 분 예산:** 무료 플랜 비공개 저장소는 월 **2,000**분. CI 1회 ≈ 8~10분,
 스테이징 배포 1회 ≈ 8~10분 — 월 100회 안팎이 사실상 상한이다. 소진되면 GitHub이 월말까지
@@ -63,14 +93,18 @@ Artifact Registry에 있고 스테이징이 실제로 서빙 중인지 확인 �
 GitHub Environments·승인 버튼은 없다(D-05, 무료 플랜 비공개 저장소) — 실행 권한은 저장소
 쓰기 협업자로 제한한다.
 
-**실패 시:** 스모크 실패 = 트래픽 0% 유지(리비전은 남아 조사 가능). 실패 단계 이름은
-워크플로 로그 마지막 줄의 `deploy failed at <stage>`로 안다.
+**실패 시:** 카나리(0% → 검증 → 승격) 단계는 없다 — 새 리비전은 스모크 **전에** 이미
+100% 트래픽을 받는다. 그래서 스모크 실패는 **나쁜 리비전이 서빙 중인 상태**를 뜻하고,
+자동 롤백도 없다: 즉시 `pnpm rollback`(§5)으로 되돌린 뒤 원인을 본다. 실패 단계 이름은
+워크플로 로그 마지막 줄의 `deploy failed at <stage>`로 안다. (카나리를 뺀 이유: 태그
+전용 리비전 URL이 4회 연속 15분 넘게 라우팅되지 않았다 — 01-07-DEPLOY-LOG.)
 
 ## 5. 롤백
 
 `pnpm rollback` = `scripts/rollback.sh --env … --project … --region …` — **현재 100%
-서빙 중인 리비전보다 오래된 최신 리비전**으로 되돌린다(스모크에 실패해 0%로 남은 리비전은
-건너뛴다). DB는 확장-축소 규칙(컬럼 추가만)이라 되돌릴 필요가 없다 — 데이터 손상은 백업
+서빙 중인 리비전보다 오래된 최신 리비전**으로 되돌린다(`status.traffic`에서 percent 100인
+리비전을 찾아 그보다 오래된 것 중 가장 최신을 고른다. percent가 없는 태그 전용 항목은
+후보가 아니다). DB는 확장-축소 규칙(컬럼 추가만)이라 되돌릴 필요가 없다 — 데이터 손상은 백업
 복원(OPS-03, 별도 페이즈)으로 대응한다.
 
 ## 6. 경보 3개

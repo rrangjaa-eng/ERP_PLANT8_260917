@@ -34,6 +34,7 @@ const scenes = [
   ['pnl-lead',        'dashboard-pnl.html',  'lead',    1280, 900, false, true,  'shots/pnl-lead-pc.png'],
   ['pnl-empty',       'dashboard-pnl.html',  'empty',   1280, 900, false, true,  'shots/pnl-empty-pc.png'],
   ['pnl-m',           'dashboard-pnl.html',  'ceo',     390,  844, true,  true,  'shots/pnl-ceo-m.png'],
+  ['pnl-m-view',      'dashboard-pnl.html',  'ceo',     390,  844, true,  false, 'shots/pnl-ceo-m-viewport.png'],
   ['cert-empty',      'external-cert.html',  'empty',   390,  844, true,  true,  'shots/cert-empty-m.png'],
   ['cert-sign',       'external-cert.html',  'sign',    390,  844, true,  true,  'shots/cert-sign-m.png'],
   ['cert-error',      'external-cert.html',  'error',   390,  844, true,  true,  'shots/cert-error-m.png'],
@@ -49,6 +50,11 @@ for (const [name, file, hash, w, h, mobile, fullPage, out] of scenes) {
   const page = await ctx.newPage();
   await page.goto(pathToFileURL(resolve(dir, file)).href + (hash ? '#' + hash : ''));
   await page.waitForTimeout(300);
+  if (fullPage) { // 고정·sticky 요소(하단 탭·제출 줄)가 문서 끝에 놓이도록 뷰포트를 문서 높이로 늘린다
+    const full = await page.evaluate(() => document.documentElement.scrollHeight);
+    await page.setViewportSize({ width: w, height: Math.max(h, full) });
+    await page.waitForTimeout(100);
+  }
   await page.screenshot({ path: resolve(dir, out), fullPage });
   await ctx.close();
   console.log('ok', name, '→', out);

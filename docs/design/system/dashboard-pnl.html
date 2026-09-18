@@ -106,6 +106,8 @@ body:not([data-scene="lead"]) .sub-lead{display:none}
   .next .why{display:block;font-size:var(--fs-sm)}
   .sec .right{margin-left:0;flex-basis:100%}
   .goal i{width:56px}
+  td.goalcell,thead th.goalcell{width:1%;white-space:nowrap}
+  tbody td.num,tfoot td.num{width:1%}
   .tabs{position:fixed;left:0;right:0;bottom:0;height:var(--touch-min);background:var(--bg);border-top:var(--line-w-strong) solid var(--line-strong);display:flex;z-index:var(--z-bar)}
   .tabs a{flex:1;display:flex;align-items:center;justify-content:center;font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--muted);text-decoration:none}
   .tabs a[aria-current]{color:var(--accent);box-shadow:var(--inset-tab)}
@@ -147,7 +149,7 @@ body:not([data-scene="lead"]) .sub-lead{display:none}
       <th class="rn"></th><th>프로젝트</th><th class="p3 ceo-only">팀</th><th class="num p2">견적</th><th class="num p2">확정 비용</th><th class="num">수익</th><th class="num p3">수익률</th><th class="goalcell">목표 대비</th>
     </tr></thead>
     <tbody>
-      <tr class="grp"><td></td><td colspan="7">진행 중 <span class="num" style="text-align:left">5</span></td></tr>
+      <tr class="grp"><td class="rn"></td><td colspan="7">진행 중 <span class="num" style="text-align:left">5</span></td></tr>
       <tr>
         <td class="rn">1</td>
         <td>2026 현대자동차 아이오닉9 미디어 론칭 쇼케이스<span class="fold">기획1팀 · 견적 48,000,000 · 비용 22,400,000 · 25.2%</span></td>
@@ -178,7 +180,7 @@ body:not([data-scene="lead"]) .sub-lead{display:none}
         <td class="p3 ceo-only">기획2팀</td><td class="num p2">27,000,000</td><td class="num p2">19,800,000</td><td class="num">2,403,000</td><td class="num p3">8.9%</td>
         <td class="goalcell"><span class="goal"><span class="na">—</span></span></td>
       </tr>
-      <tr class="grp"><td></td><td colspan="7">완료 · 정산 <span class="num" style="text-align:left">2</span></td></tr>
+      <tr class="grp"><td class="rn"></td><td colspan="7">완료 · 정산 <span class="num" style="text-align:left">2</span></td></tr>
       <tr>
         <td class="rn">6</td>
         <td>신세계 VIP 라운지 리뉴얼<span class="fold">기획1팀 · 견적 210,000,000 · 비용 148,800,000 · <span class="st ok">정산 09-08</span></span></td>
@@ -194,7 +196,7 @@ body:not([data-scene="lead"]) .sub-lead{display:none}
       <tr class="empty-row"><td class="empty" colspan="8">이 기간에 프로젝트가 없습니다 · <button class="b3">기간 바꾸기</button></td></tr>
     </tbody>
     <tfoot><tr>
-      <td></td><td>합계<span class="lbl">계산된 것만 · 6건 · 계산 불가 1건 제외</span></td><td class="p3 ceo-only"></td>
+      <td class="rn"></td><td>합계<span class="lbl">계산된 것만 · 6건 · 계산 불가 1건 제외</span></td><td class="p3 ceo-only"></td>
       <td class="num p2 sub-ceo">482,000,000</td><td class="num p2 sub-ceo">324,900,000</td><td class="num sub-ceo">110,125,720</td><td class="num p3 sub-ceo">22.8%</td>
       <td class="num p2 sub-lead">322,000,000</td><td class="num p2 sub-lead">210,100,000</td><td class="num sub-lead">86,806,720</td><td class="num p3 sub-lead">27.0%</td>
       <td class="goalcell"><span class="goal"><i><b style="width:100%"></b></i><span>104%</span></span></td>

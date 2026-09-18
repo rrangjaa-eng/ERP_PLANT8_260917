@@ -27,7 +27,7 @@ button,input,select{font:inherit;color:inherit}
 .bar .mark i{font-style:normal;color:var(--bar-leaf)}
 .bar .r{margin-left:auto;color:var(--bar-muted)}
 .progress{height:2px;background:var(--accent);width:100%;display:none}
-main{padding:var(--s-5) var(--pad-page) 120px;max-width:480px}
+main{padding:var(--s-5) var(--pad-page) 0;max-width:480px}
 
 h1{font-size:var(--fs-xl);font-weight:var(--fw-bold);letter-spacing:var(--ls-head);line-height:var(--lh-tight)}
 .sub{font-size:var(--fs-sm);color:var(--muted);margin-top:var(--s-1)}
@@ -67,7 +67,7 @@ h1{font-size:var(--fs-xl);font-weight:var(--fw-bold);letter-spacing:var(--ls-hea
 .b3.sm{font-size:var(--fs-sm)}
 
 /* 제출 줄 (하단 고정) */
-.submit{position:fixed;left:0;right:0;bottom:0;background:var(--bg);border-top:var(--line-w-strong) solid var(--line-strong);padding:var(--s-3) var(--pad-page) calc(var(--s-3) + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:var(--s-2);z-index:var(--z-bar)}
+.submit{position:sticky;bottom:0;margin:var(--s-5) calc(-1 * var(--pad-page)) 0;background:var(--bg);border-top:var(--line-w-strong) solid var(--line-strong);padding:var(--s-3) var(--pad-page) calc(var(--s-3) + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:var(--s-2);z-index:var(--z-bar)}
 .btn{height:48px;padding:0 var(--s-4);font-size:var(--fs-md);font-weight:var(--fw-medium);border:var(--line-w) solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;border-radius:var(--radius);display:inline-flex;align-items:center;justify-content:center;width:100%}
 .btn:disabled{background:var(--surface);border-color:var(--line);color:var(--faint);cursor:not-allowed}
 .blocked{font-size:var(--fs-sm);color:var(--danger)}
@@ -147,14 +147,13 @@ body[data-scene="error"] .sig svg{display:block}
     <p><b>이미 제출된 링크입니다</b></p>
     <p class="who">김하늘 · <span class="num">2026-09-20 18:42</span> 제출됨. 내용을 고치려면 담당자 박서연 · PLANT8 경영관리에 연락해 주세요</p>
   </section>
-</main>
-
 <div class="submit">
   <button class="btn" disabled aria-describedby="why">확인증 제출</button>
   <span class="blocked s-empty" id="why">이름 · 주민등록번호 · 주소 · 연락처 · 계좌 · 동의 · 서명을 채우면 제출할 수 있습니다</span>
   <span class="blocked s-sign">서명을 해 주세요</span>
   <span class="blocked s-error">주민등록번호를 고쳐 주세요 · 나머지는 채워졌습니다</span>
 </div>
+</main>
 
 <script>
 (function(){

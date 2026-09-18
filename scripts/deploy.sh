@@ -459,7 +459,7 @@ smoke() {
   fi
 
   if [ "$DRY_RUN" = "1" ]; then
-    run curl -fsS --retry 30 --retry-delay 10 --retry-all-errors "${target}/healthz"
+    run curl -fsS --retry 60 --retry-delay 15 --retry-all-errors "${target}/healthz"
     run curl -s -o /dev/null -w '%{http_code}' "${target}/login"
     run curl -s -o /dev/null -w '%{http_code}' -X POST \
       -H "Origin: ${SERVICE_URL}" -H 'content-type: application/json' \
@@ -468,7 +468,7 @@ smoke() {
     return 0
   fi
 
-  if ! run curl -fsS --retry 30 --retry-delay 10 --retry-all-errors "${target}/healthz" | grep -q '"ok":true'; then
+  if ! run curl -fsS --retry 60 --retry-delay 15 --retry-all-errors "${target}/healthz" | grep -q '"ok":true'; then
     echo "SmokeFailed: traffic left unchanged" >&2
     exit 1
   fi

@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PLANT8 ERP — 시스템 실물 (전사 대시보드 · 대표·경영관리)</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+/* §6-4 손익 대시보드(대표·경영관리 첫 화면). 확정 2026-09-18(DECISIONS.md 「손익 화면 = 대시보드」).
+   프로젝트별 원장은 여기 없다(프로젝트 목록에 수익률 열이 있다). 컴포넌트: KPI 타일(추세선 · 전년 대비 칩) ·
+   목표 달성 막대(전사 + 팀별, 목표 눈금) · 월별 매출·수익 막대 + 수익률 선 · 팀별 매출 비중 띠 ·
+   클라이언트별 매출 순위(팀 색) · 비용 구성 도넛(추천) · 프로젝트 현황(상태 칩 + 수익률 낮은 프로젝트).
+   2026-09-18 사용자: 「다가오는 지급」 「챙길 것」 제외, 클라이언트별 매출 순위 추가, 색 더 다양하게(→ --viz-* 제안).
+   토큰만 쓴다. 토큰은 ../tokens.css만(--fs-2xl · --viz-1/2 · --seg-1~5 는 2026-09-18 확정으로 tokens.css에 있음).
+   장면: #ceo(기본) · #mgmt(경영관리 — 같은 화면, 계급 이름만). 앱 코드가 아니다. */
+*{box-sizing:border-box;margin:0;padding:0}
+html{font-size:var(--fs-base)}
+body{background:var(--bg);color:var(--fg);font-family:var(--font-sans);font-size:var(--fs-base);line-height:var(--lh-body);letter-spacing:var(--ls-body);word-break:keep-all;overflow-wrap:anywhere;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+::selection{background:var(--sel-bg);color:var(--sel-fg)}
+:root{caret-color:var(--caret);accent-color:var(--native-accent);scrollbar-color:var(--scrollbar) var(--bg);scrollbar-width:thin}
+:focus-visible{outline:var(--focus-w) solid var(--focus);outline-offset:var(--focus-offset)}
+.num{font-variant-numeric:tabular-nums;letter-spacing:var(--ls-num);white-space:nowrap}
+kbd{font:inherit;font-size:var(--fs-xs);border:var(--line-w) solid var(--line);padding:0 var(--s-1);color:var(--faint);line-height:var(--lh-head)}
+.bar{background:var(--bar);color:var(--bar-fg);display:flex;align-items:center;gap:var(--s-6);padding:0 var(--pad-page);height:38px;font-size:var(--fs-sm);position:sticky;top:0;z-index:var(--z-bar)}
+.bar .mark{font-weight:var(--fw-mark);font-size:var(--fs-md);letter-spacing:var(--ls-head);color:#fff}
+.bar .mark i{font-style:normal;color:var(--bar-leaf)}
+.bar nav{display:flex;gap:var(--s-4)}
+.bar nav a{color:var(--bar-muted);text-decoration:none;padding:9px 0}
+.bar nav a[aria-current]{color:var(--bar-fg);font-weight:var(--fw-bold);box-shadow:inset 0 -2px 0 var(--bar-leaf)}
+.bar .r{margin-left:auto;display:flex;gap:var(--s-4);color:var(--bar-muted);align-items:center}
+.bar .r kbd{border-color:var(--g-700);color:var(--bar-fg)}
+main{padding:var(--s-5) var(--pad-page) 72px;max-width:var(--container-max)}
+.b3{background:none;border:0;padding:0;color:var(--accent);font-weight:var(--fw-medium);border-bottom:var(--line-w) solid var(--accent);cursor:pointer;font-size:inherit;line-height:1.3;white-space:nowrap}
+.b3:hover{border-bottom-width:var(--line-w-strong)}
+.btn{height:var(--control-h);padding:0 var(--s-3);font-size:var(--fs-sm);font-weight:var(--fw-medium);border:var(--line-w) solid var(--line-strong);background:var(--bg);color:var(--fg);cursor:pointer;border-radius:var(--radius);display:inline-flex;align-items:center;gap:var(--s-2);white-space:nowrap}
+.inp{height:var(--control-h);border:var(--line-w) solid var(--line-ui);background:var(--bg);padding:0 var(--s-2);border-radius:var(--radius);font-size:var(--fs-sm)}
+
+/* 머리 */
+.sec{display:flex;align-items:baseline;gap:var(--s-3);flex-wrap:wrap;padding-bottom:var(--s-3);border-bottom:var(--line-w-strong) solid var(--line-strong);margin-bottom:var(--s-4)}
+.sec h1{font-size:var(--fs-lg);font-weight:var(--fw-bold);letter-spacing:var(--ls-head);line-height:var(--lh-head)}
+.sec .sub{font-size:var(--fs-sm);color:var(--muted)}
+.sec .right{margin-left:auto;display:flex;gap:var(--s-2);align-items:center}
+
+/* 격자 */
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:var(--s-4)}
+.blk{border:var(--line-w) solid var(--line);padding:var(--s-3) var(--s-4) var(--s-4);min-width:0;display:flex;flex-direction:column;gap:var(--s-2)}
+.blk h2{font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--muted);display:flex;align-items:baseline;gap:var(--s-2)}
+.blk h2 .b3{margin-left:auto;font-size:var(--fs-sm)}
+.c3{grid-column:span 3}.c4{grid-column:span 4}.c5{grid-column:span 5}.c6{grid-column:span 6}.c7{grid-column:span 7}.c8{grid-column:span 8}.c12{grid-column:span 12}
+
+/* KPI 타일 */
+.kpi{background:var(--surface);border-color:var(--surface);gap:var(--s-1)}
+.kpi .v{font-size:var(--fs-2xl);font-weight:var(--fw-bold);line-height:var(--lh-tight);letter-spacing:var(--ls-head)}
+.kpi .v small{font-size:var(--fs-md);font-weight:var(--fw-regular);color:var(--muted);margin-left:2px;letter-spacing:var(--ls-body)}
+.kpi .row{display:flex;align-items:center;gap:var(--s-2);margin-top:2px}
+.chip{font-size:var(--fs-xs);font-weight:var(--fw-medium);padding:1px 6px;line-height:var(--lh-head);white-space:nowrap;border:var(--line-w) solid currentColor}
+.chip.up{color:var(--success);background:var(--bg)}
+.chip.down{color:var(--danger);background:var(--bg)}
+.chip.flat{color:var(--muted);background:var(--bg)}
+.kpi .row .why{font-size:var(--fs-xs);color:var(--faint)}
+.spark{width:100%;height:28px;margin-top:auto}
+.spark polyline{fill:none;stroke:var(--g-700);stroke-width:1.5}
+.spark .area{fill:var(--g-100)}
+.spark circle{fill:var(--g-700)}
+
+/* 목표 달성 */
+.goal-big{display:flex;align-items:baseline;gap:var(--s-3)}
+.goal-big .pct{font-size:var(--fs-2xl);font-weight:var(--fw-bold);line-height:var(--lh-tight);letter-spacing:var(--ls-head)}
+.goal-big .of{font-size:var(--fs-sm);color:var(--muted)}
+.track{position:relative;height:14px;background:var(--g-100);margin:var(--s-1) 0 var(--s-1)}
+.track b{position:absolute;left:0;top:0;bottom:0;background:var(--g-700)}
+.track b.over{background:var(--g-400)}
+.track i{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--fg)}
+.track .tick{position:absolute;top:100%;font-size:var(--fs-xs);color:var(--faint);transform:translateX(-50%);margin-top:3px;white-space:nowrap}
+.teams{list-style:none;display:flex;flex-direction:column;gap:var(--s-3);margin-top:var(--s-3)}
+.teams li{display:flex;flex-direction:column;gap:5px;min-width:0;padding-top:var(--s-2);border-top:var(--line-w) dotted var(--line)}
+.teams .hd{display:flex;gap:var(--s-2);align-items:baseline;flex-wrap:wrap}
+.teams .hd b{font-weight:var(--fw-medium)}
+.teams .hd small{font-size:var(--fs-xs);color:var(--faint)}
+.teams .r{display:grid;grid-template-columns:40px minmax(0,1fr) 108px;gap:var(--s-2);align-items:center}
+.teams .r small{font-size:var(--fs-xs);color:var(--faint)}
+.teams .r .track{margin:0;height:10px}
+.teams .r .track i{top:-3px;bottom:-3px}
+.teams .r.rate .track{height:6px}
+.teams .r.rate .track b{opacity:.55}
+.teams .pct{text-align:right;font-weight:var(--fw-bold);white-space:nowrap}
+.teams .pct small{font-weight:var(--fw-regular);color:var(--faint);font-size:var(--fs-xs)}
+.teams .pct.low,.teams .pct.miss{color:var(--danger)}
+.teams li.t1 .track b{background:var(--viz-1)}
+.teams li.t2 .track b{background:var(--viz-2)}
+.teams li.t3 .track b{background:var(--line-ui)}
+
+/* 월별 차트 */
+.chart{width:100%;height:auto;display:block;margin-top:var(--s-2)}
+.chart .grid-l{stroke:var(--line);stroke-width:1}
+.chart .ax{font-size:11px;fill:var(--faint);font-family:var(--font-sans)}
+.chart .sales{fill:var(--g-100)}
+.chart .profit{fill:var(--g-700)}
+.chart .now .sales{fill:var(--g-400)}
+.chart .rate{fill:none;stroke:var(--fg);stroke-width:1.5}
+.chart .rate-dot{fill:var(--bg);stroke:var(--fg);stroke-width:1.5}
+.chart .lbl{font-size:11px;fill:var(--fg);font-weight:600;font-family:var(--font-sans)}
+.chart .lbl.rate-l{fill:var(--fg)}
+.legend{display:flex;gap:var(--s-4);font-size:var(--fs-xs);color:var(--muted);flex-wrap:wrap}
+.legend i{display:inline-block;width:10px;height:10px;vertical-align:-1px;margin-right:4px}
+.legend .l-sales{background:var(--g-100)}.legend .l-profit{background:var(--g-700)}.legend .l-now{background:var(--g-400)}
+.legend .l-rate{width:14px;height:0;border-top:1.5px solid var(--fg);vertical-align:2px}
+
+/* 비중 띠 */
+.share{display:flex;height:22px;margin-top:var(--s-2)}
+.share span{display:flex;align-items:center;padding:0 var(--s-2);font-size:var(--fs-xs);font-weight:var(--fw-medium);white-space:nowrap;overflow:hidden;min-width:0}
+.share .a{background:var(--g-700);color:#fff}
+.share .b{background:var(--viz-2);color:#fff}
+.share .c{background:var(--g-100);color:var(--fg)}
+.share-l{display:flex;gap:var(--s-4);font-size:var(--fs-xs);color:var(--muted);margin-top:var(--s-1);flex-wrap:wrap}
+.share-l b{color:var(--fg)}
+
+/* 챙길 것 */
+.care{list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:var(--s-2)}
+.care li{border:var(--line-w) solid var(--line);padding:var(--s-2) var(--s-3);box-shadow:inset 3px 0 0 var(--line-ui);display:flex;flex-direction:column;gap:2px;min-width:0}
+.care li.warn{box-shadow:inset 3px 0 0 var(--warning);background:var(--warning-weak)}
+.care li.bad{box-shadow:inset 3px 0 0 var(--danger);background:var(--danger-weak)}
+.care li.ok{box-shadow:inset 3px 0 0 var(--success)}
+.care .n{font-size:var(--fs-xl);font-weight:var(--fw-bold);line-height:var(--lh-tight);letter-spacing:var(--ls-head)}
+.care .n small{font-size:var(--fs-sm);font-weight:var(--fw-regular);color:var(--muted);margin-left:4px;letter-spacing:var(--ls-body)}
+.care .l{font-size:var(--fs-sm);color:var(--muted)}
+.care .b3{font-size:var(--fs-sm);align-self:flex-start}
+
+/* 프로젝트 현황 */
+.status{display:flex;gap:var(--s-2);flex-wrap:wrap}
+.status span{border:var(--line-w) solid var(--line-strong);padding:2px 10px;font-size:var(--fs-sm);display:inline-flex;gap:6px;align-items:baseline}
+.status span.wait,.status span.next{border-color:var(--line);color:var(--muted)}
+.status b{font-size:var(--fs-md)}
+.status span.m{border-color:var(--line);color:var(--muted)}
+.low{list-style:none;margin-top:var(--s-2)}
+.low li{display:grid;grid-template-columns:1fr 64px 52px;gap:var(--s-2);align-items:center;padding:6px 0;border-top:var(--line-w) dotted var(--line);font-size:var(--fs-sm)}
+.low .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.low .nm small{color:var(--faint);margin-left:4px}
+.low .mini{height:6px;background:var(--g-100);position:relative}
+.low .mini b{position:absolute;left:0;top:0;bottom:0;background:var(--warning)}
+.low .mini b.bad{background:var(--danger)}
+.low .pct{text-align:right;font-weight:var(--fw-bold)}
+.low .pct.w{color:var(--warning)}.low .pct.d{color:var(--danger)}
+
+/* 클라이언트별 매출 순위 */
+.rank{list-style:none;display:flex;flex-direction:column;gap:6px;margin-top:var(--s-1)}
+.rank li{display:grid;grid-template-columns:18px minmax(0,1fr) 92px;gap:var(--s-2);align-items:center;font-size:var(--fs-sm)}
+.rank .no{font-size:var(--fs-xs);color:var(--faint);text-align:right;font-variant-numeric:tabular-nums}
+.rank .nm{display:flex;justify-content:space-between;gap:var(--s-2);min-width:0}
+.rank .nm span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank .nm small{color:var(--faint);white-space:nowrap}
+.rank .bar-c{grid-column:2;height:12px;background:var(--surface);position:relative;margin-top:-2px}
+.rank .bar-c b{position:absolute;left:0;top:0;bottom:0;background:var(--viz-1)}
+.rank li.t2 .bar-c b{background:var(--viz-2)}
+.rank li.na .bar-c b{background:var(--line-ui)}
+.rank .amt{grid-row:span 2;text-align:right;font-weight:var(--fw-bold);align-self:center}
+.rank .amt small{display:block;font-size:var(--fs-xs);color:var(--faint);font-weight:var(--fw-regular)}
+.rank-l{display:flex;gap:var(--s-4);font-size:var(--fs-xs);color:var(--muted);margin-top:auto;padding-top:var(--s-2)}
+.rank-l i{display:inline-block;width:10px;height:10px;vertical-align:-1px;margin-right:4px}
+/* 비용 구성 도넛 */
+.donut{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--s-3);align-items:center;justify-items:center;flex:1}
+.donut svg{width:min(100%,220px);height:auto;margin-top:var(--s-2)}
+.donut circle{fill:none;stroke-width:26}
+.donut .c1{stroke:var(--seg-1)}.donut .c2{stroke:var(--seg-2)}.donut .c3{stroke:var(--seg-3)}.donut .c4{stroke:var(--seg-4)}.donut .c5{stroke:var(--seg-5)}
+.donut .ctr{font-size:var(--fs-xl);font-weight:var(--fw-bold);fill:var(--fg);font-family:var(--font-sans)}
+.donut .ctr-l{font-size:9px;fill:var(--faint);font-family:var(--font-sans)}
+.donut ul{list-style:none;display:flex;flex-direction:column;gap:6px;font-size:var(--fs-base);min-width:0;width:100%}
+.donut li{display:grid;grid-template-columns:10px auto 1fr;gap:8px;align-items:baseline;white-space:nowrap}
+.donut li .p{text-align:right}
+.donut li i{width:10px;height:10px;display:block;align-self:center}
+.donut li .p{font-weight:var(--fw-bold);font-variant-numeric:tabular-nums}
+.donut li small{color:var(--faint);margin-left:4px}
+.donut .k1{background:var(--seg-1)}.donut .k2{background:var(--seg-2)}.donut .k3{background:var(--seg-3)}.donut .k4{background:var(--seg-4)}.donut .k5{background:var(--seg-5);border:1px solid var(--line)}
+
+/* 다가오는 지급 */
+.pay{list-style:none}
+.pay li{display:grid;grid-template-columns:44px 1fr auto;gap:var(--s-3);align-items:baseline;padding:6px 0;border-top:var(--line-w) dotted var(--line);font-size:var(--fs-sm)}
+.pay li:first-child{border-top:0}
+.pay .d{font-weight:var(--fw-bold)}
+.pay .d small{display:block;font-size:var(--fs-xs);color:var(--faint);font-weight:var(--fw-regular)}
+.pay .who{color:var(--muted)}
+.pay .amt{font-weight:var(--fw-medium)}
+.pay .tag{font-size:var(--fs-xs);border:var(--line-w) solid currentColor;padding:0 5px;margin-left:6px;color:var(--warning)}
+
+.foot{margin-top:var(--s-4);font-size:var(--fs-sm);color:var(--muted);display:flex;gap:var(--s-4);flex-wrap:wrap}
+
+.tabs{display:none}
+@media (min-width:700px) and (max-width:1023.98px){
+  .c3{grid-column:span 6}.c4{grid-column:span 6}.c5,.c7,.c8{grid-column:span 12}
+}
+@media (max-width:699.98px){
+  .bar{height:44px}.bar nav,.bar .r kbd{display:none}
+  main{padding-bottom:calc(var(--touch-min) + var(--s-6))}
+  .grid{gap:var(--s-3)}
+  .c3{grid-column:span 6}.c4,.c5,.c6,.c7,.c8{grid-column:span 12}
+  .kpi .v{font-size:var(--fs-xl)}
+  .sec .right{flex-basis:100%;margin-left:0}
+  .care{grid-template-columns:1fr 1fr}
+  .tabs{position:fixed;left:0;right:0;bottom:0;height:var(--touch-min);background:var(--bg);border-top:var(--line-w-strong) solid var(--line-strong);display:flex;z-index:var(--z-bar)}
+  .tabs a{flex:1;display:flex;align-items:center;justify-content:center;font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--muted);text-decoration:none}
+  .tabs a[aria-current]{color:var(--accent);box-shadow:var(--inset-tab)}
+}
+@media (prefers-reduced-motion:no-preference){.track b{transition:width var(--dur-hover) var(--ease-out)}}
+</style>
+</head>
+<body data-scene="ceo">
+<header class="bar">
+  <span class="mark">PL<i>A</i>NT8</span>
+  <nav aria-label="주 메뉴"><a href="#">프로젝트</a><a href="#">지출결의</a><a href="#">법인카드</a><a href="#">결재</a><a href="#" aria-current="page">손익</a></nav>
+  <div class="r"><span><kbd>⌘K</kbd></span><span class="who">정우성 · 대표</span></div>
+</header>
+
+<main>
+  <div class="sec">
+    <h1>2026 전사 손익</h1>
+    <span class="sub">원화 환산 · 확정 비용 기준 · 09-18 기준 · <span class="num">계산 불가 1건</span> 제외</span>
+    <div class="right"><select class="inp" aria-label="연도"><option>2026</option><option>2025</option></select><button class="btn">Excel 내보내기</button></div>
+  </div>
+
+  <div class="grid">
+    <!-- KPI 4 -->
+    <section class="blk kpi c3" aria-label="연간 매출">
+      <h2>연간 매출 <span class="why">견적 합계</span></h2>
+      <div class="v num">482,000,000</div>
+      <div class="row"><span class="chip up">▲ 12.4%</span><span class="why">전년 같은 기간 428,900,000</span></div>
+      <svg class="spark" viewBox="0 0 200 28" preserveAspectRatio="none" aria-hidden="true"><polygon class="area" points="0,28 0,22 25,19 50,11 75,15 100,10 125,12 150,16 175,7 200,2 200,28"/><polyline points="0,22 25,19 50,11 75,15 100,10 125,12 150,16 175,7 200,2"/><circle cx="200" cy="2" r="2.5"/></svg>
+    </section>
+    <section class="blk kpi c3" aria-label="연간 실행가">
+      <h2>연간 실행가 <span class="why">확정 비용</span></h2>
+      <div class="v num">324,900,000</div>
+      <div class="row"><span class="chip flat">매출의 67.4%</span><span class="why">전년 70.1%</span></div>
+      <svg class="spark" viewBox="0 0 200 28" preserveAspectRatio="none" aria-hidden="true"><polygon class="area" points="0,28 0,23 25,20 50,13 75,17 100,12 125,14 150,18 175,9 200,4 200,28"/><polyline points="0,23 25,20 50,13 75,17 100,12 125,14 150,18 175,9 200,4"/><circle cx="200" cy="4" r="2.5"/></svg>
+    </section>
+    <section class="blk kpi c3" aria-label="연간 수익">
+      <h2>연간 수익</h2>
+      <div class="v num">110,125,720</div>
+      <div class="row"><span class="chip up">▲ 31.8%</span><span class="why">전년 같은 기간 83,560,000</span></div>
+      <svg class="spark" viewBox="0 0 200 28" preserveAspectRatio="none" aria-hidden="true"><polygon class="area" points="0,28 0,24 25,21 50,14 75,18 100,11 125,14 150,17 175,8 200,3 200,28"/><polyline points="0,24 25,21 50,14 75,18 100,11 125,14 150,17 175,8 200,3"/><circle cx="200" cy="3" r="2.5"/></svg>
+    </section>
+    <section class="blk kpi c3" aria-label="수익률">
+      <h2>수익률</h2>
+      <div class="v num">22.8<small>%</small></div>
+      <div class="row"><span class="chip up">▲ 3.4%p</span><span class="why">전년 19.4% · 목표 20%</span></div>
+      <svg class="spark" viewBox="0 0 200 28" preserveAspectRatio="none" aria-hidden="true"><polygon class="area" points="0,28 0,20 25,17 50,15 75,16 100,12 125,13 150,15 175,9 200,6 200,28"/><polyline points="0,20 25,17 50,15 75,16 100,12 125,13 150,15 175,9 200,6"/><circle cx="200" cy="6" r="2.5"/></svg>
+    </section>
+
+    <!-- 목표 달성 -->
+    <section class="blk c5" aria-label="목표 달성">
+      <h2>목표 달성 <span class="why">팀별 목표 = 수익 금액 + 수익률</span><button class="b3">목표 고치기</button></h2>
+      <div class="goal-big"><span class="pct num">104%</span><span class="of">수익 <span class="num">110,125,720</span> / <span class="num">105,000,000</span> · 남은 기간 3.5개월</span><span class="of" style="margin-left:auto">수익률 <b class="num" style="color:var(--fg)">22.8%</b> / 목표 20% <span class="chip up">달성</span></span></div>
+      <div class="track" aria-hidden="true"><b style="width:100%"></b><i style="left:96%"></i><span class="tick" style="left:96%">목표</span></div>
+      <ul class="teams">
+        <li class="t1"><div class="hd"><b>기획1팀</b><small>수익 <span class="num">86,806,720</span> / 목표 <span class="num">77,500,000</span> · 초과 <span class="num">9,306,720</span></small></div>
+          <div class="r"><small>수익</small><span class="track"><b style="width:100%"></b><i style="left:89%"></i></span><span class="pct num">112%</span></div>
+          <div class="r rate"><small>수익률</small><span class="track"><b style="width:68%"></b><i style="left:55%"></i></span><span class="pct num">27.0%<small> / 22%</small></span></div></li>
+        <li class="t2"><div class="hd"><b>기획2팀</b><small>수익 <span class="num">23,319,000</span> / 목표 <span class="num">26,500,000</span> · 남은 <span class="num">3,181,000</span> · 진행 2건 예상 <span class="num">4,900,000</span></small></div>
+          <div class="r"><small>수익</small><span class="track"><b style="width:88%"></b><i style="left:100%"></i></span><span class="pct num low">88%</span></div>
+          <div class="r rate"><small>수익률</small><span class="track"><b style="width:37%"></b><i style="left:45%"></i></span><span class="pct num miss">14.6%<small> / 18%</small></span></div></li>
+        <li class="t3"><div class="hd"><b>경영관리</b><small>프로젝트 없음 · 팀 비용만 · 목표 <span class="num">1,000,000</span></small></div>
+          <div class="r"><small>수익</small><span class="track"><b style="width:0"></b><i style="left:100%"></i></span><span class="pct num low">0%</span></div></li>
+      </ul>
+    </section>
+
+    <!-- 월별 -->
+    <section class="blk c7" aria-label="월별 매출·수익">
+      <h2>월별 매출 · 수익 <span class="why">백만 원 · 정산일 기준</span><span class="legend" style="margin-left:auto"><span><i class="l-sales"></i>매출</span><span><i class="l-now"></i>이번 달</span><span><i class="l-profit"></i>수익</span><span><i class="l-rate"></i>수익률</span></span></h2>
+      <svg class="chart" viewBox="0 -10 640 230" aria-hidden="true">
+        <g class="grid-l"><line x1="36" y1="20" x2="640" y2="20"/><line x1="36" y1="70" x2="640" y2="70"/><line x1="36" y1="120" x2="640" y2="120"/><line x1="36" y1="170" x2="640" y2="170"/></g>
+        <g class="ax"><text x="30" y="24" text-anchor="end">100</text><text x="30" y="74" text-anchor="end">75</text><text x="30" y="124" text-anchor="end">50</text><text x="30" y="174" text-anchor="end">25</text><text x="30" y="194" text-anchor="end">0</text></g>
+        <!-- 12달 · 칸 50 · 매출 막대 22 · 수익 막대 22 -->
+        <g><rect class="sales" x="42" y="146" width="22" height="44"/><rect class="profit" x="64" y="182" width="22" height="8"/><text class="ax" x="64" y="210" text-anchor="middle">1월</text></g>
+        <g><rect class="sales" x="92" y="128" width="22" height="62"/><rect class="profit" x="114" y="176" width="22" height="14"/><text class="ax" x="114" y="210" text-anchor="middle">2월</text></g>
+        <g><rect class="sales" x="142" y="74" width="22" height="116"/><rect class="profit" x="164" y="163" width="22" height="27"/><text class="ax" x="164" y="210" text-anchor="middle">3월</text></g>
+        <g><rect class="sales" x="192" y="96" width="22" height="94"/><rect class="profit" x="214" y="170" width="22" height="20"/><text class="ax" x="214" y="210" text-anchor="middle">4월</text></g>
+        <g><rect class="sales" x="242" y="64" width="22" height="126"/><rect class="profit" x="264" y="158" width="22" height="32"/><text class="ax" x="264" y="210" text-anchor="middle">5월</text></g>
+        <g><rect class="sales" x="292" y="80" width="22" height="110"/><rect class="profit" x="314" y="165" width="22" height="25"/><text class="ax" x="314" y="210" text-anchor="middle">6월</text></g>
+        <g><rect class="sales" x="342" y="102" width="22" height="88"/><rect class="profit" x="364" y="171" width="22" height="19"/><text class="ax" x="364" y="210" text-anchor="middle">7월</text></g>
+        <g><rect class="sales" x="392" y="46" width="22" height="144"/><rect class="profit" x="414" y="155" width="22" height="35"/><text class="ax" x="414" y="210" text-anchor="middle">8월</text></g>
+        <g class="now"><rect class="sales" x="442" y="10" width="22" height="180"/><rect class="profit" x="464" y="150" width="22" height="40"/><text class="lbl" x="453" y="6" text-anchor="middle">90</text><text class="ax" x="464" y="210" text-anchor="middle">9월</text></g>
+        <g><text class="ax" x="514" y="210" text-anchor="middle">10월</text><text class="ax" x="564" y="210" text-anchor="middle">11월</text><text class="ax" x="614" y="210" text-anchor="middle">12월</text></g>
+        <!-- 수익률 선: 우측 축 0~40% → y 190~20 -->
+        <polyline class="rate" points="64,111 114,97 164,91 214,98 264,83 314,94 364,96 414,88 464,95"/>
+        <g class="rate-dot"><circle cx="64" cy="111" r="3"/><circle cx="114" cy="97" r="3"/><circle cx="164" cy="91" r="3"/><circle cx="214" cy="98" r="3"/><circle cx="264" cy="83" r="3"/><circle cx="314" cy="94" r="3"/><circle cx="364" cy="96" r="3"/><circle cx="414" cy="88" r="3"/><circle cx="464" cy="95" r="3"/></g>
+        <text class="lbl rate-l" x="472" y="92">22.4%</text>
+      </svg>
+      <div class="share-l"><span>매출 비중</span></div>
+      <div class="share" aria-label="팀별 매출 비중"><span class="a" style="width:67%">기획1팀 67% · 322,000,000</span><span class="b" style="width:33%">기획2팀 33% · 160,000,000</span></div>
+    </section>
+
+    <!-- 비용 구성 (추천: 「챙길 것」 자리) -->
+    <section class="blk c4" aria-label="비용 구성">
+      <h2>비용 구성 <span class="why">실행가 324,900,000</span></h2>
+      <div class="donut">
+        <svg viewBox="0 0 132 132" aria-hidden="true">
+          <!-- r=44 · 둘레 276.5 · 44% 28% 12% 9% 7% · 그린 단계 진한 순 -->
+          <circle class="c1" cx="66" cy="66" r="44" stroke-dasharray="121.7 276.5" transform="rotate(-90 66 66)"/>
+          <circle class="c2" cx="66" cy="66" r="44" stroke-dasharray="77.4 276.5" stroke-dashoffset="-121.7" transform="rotate(-90 66 66)"/>
+          <circle class="c3" cx="66" cy="66" r="44" stroke-dasharray="33.2 276.5" stroke-dashoffset="-199.1" transform="rotate(-90 66 66)"/>
+          <circle class="c4" cx="66" cy="66" r="44" stroke-dasharray="24.9 276.5" stroke-dashoffset="-232.3" transform="rotate(-90 66 66)"/>
+          <circle class="c5" cx="66" cy="66" r="44" stroke-dasharray="19.3 276.5" stroke-dashoffset="-257.2" transform="rotate(-90 66 66)"/>
+          <text class="ctr" x="66" y="66" text-anchor="middle">67%</text><text class="ctr-l" x="66" y="82" text-anchor="middle">매출 대비</text>
+        </svg>
+        <ul>
+          <li><i class="k1"></i><span>무대·시공</span><span class="p">44%<small>142.6M</small></span></li>
+          <li><i class="k2"></i><span>운영·인력</span><span class="p">28%<small>91.3M</small></span></li>
+          <li><i class="k3"></i><span>제작·인쇄</span><span class="p">12%<small>38.2M</small></span></li>
+          <li><i class="k4"></i><span>법인카드</span><span class="p">9%<small>29.5M</small></span></li>
+          <li><i class="k5"></i><span>해외·기타</span><span class="p">7%<small>23.3M</small></span></li>
+        </ul>
+      </div>
+      <div class="rank-l"><span>전년 무대·시공 48% → 44%</span><span>법인카드 6% → 9%</span></div>
+    </section>
+
+    <!-- 클라이언트별 매출 -->
+    <section class="blk c4" aria-label="클라이언트별 매출">
+      <h2>클라이언트별 매출 <span class="why">견적 기준 · 7곳</span><button class="b3">프로젝트 목록</button></h2>
+      <ol class="rank">
+        <li class="t1"><span class="no">1</span><span class="nm"><span>신세계 <small>· VIP 라운지 리뉴얼 · 기획1팀</small></span></span><span class="amt num">210,000,000<small>40%</small></span><span class="bar-c"><b style="width:100%"></b></span></li>
+        <li class="t2"><span class="no">2</span><span class="nm"><span>한빛 <small>· 브랜드 팝업스토어 · 기획2팀</small></span></span><span class="amt num">92,000,000<small>18%</small></span><span class="bar-c"><b style="width:44%"></b></span></li>
+        <li class="t1"><span class="no">3</span><span class="nm"><span>LG전자 <small>· 올레드 체험존 · 기획1팀</small></span></span><span class="amt num">64,000,000<small>12%</small></span><span class="bar-c"><b style="width:30%"></b></span></li>
+        <li class="t1"><span class="no">4</span><span class="nm"><span>현대자동차 <small>· 아이오닉9 쇼케이스 · 기획1팀</small></span></span><span class="amt num">48,000,000<small>9%</small></span><span class="bar-c"><b style="width:23%"></b></span></li>
+        <li class="t2"><span class="no">5</span><span class="nm"><span>카카오 <small>· 개발자 컨퍼런스 부스 · 기획2팀</small></span></span><span class="amt num">41,000,000<small>8%</small></span><span class="bar-c"><b style="width:20%"></b></span></li>
+        <li class="t1 na"><span class="no">6</span><span class="nm"><span>Skyline Travel <small>· 인센티브 투어 · 기획1팀 · 계산 불가</small></span></span><span class="amt num">38,000,000<small>7%</small></span><span class="bar-c"><b style="width:18%"></b></span></li>
+        <li class="t2"><span class="no">7</span><span class="nm"><span>서울시 <small>· 야외도서관 운영 · 기획2팀</small></span></span><span class="amt num">27,000,000<small>5%</small></span><span class="bar-c"><b style="width:13%"></b></span></li>
+      </ol>
+      <div class="rank-l"><span><i style="background:var(--viz-1)"></i>기획1팀</span><span><i style="background:var(--viz-2)"></i>기획2팀</span><span><i style="background:var(--line-ui)"></i>계산 불가</span><span>상위 3곳 = 70%</span></div>
+    </section>
+    <!-- 프로젝트 현황 -->
+    <section class="blk c4" aria-label="프로젝트 현황">
+      <h2>프로젝트 현황 <button class="b3">프로젝트 목록</button></h2>
+      <div class="status"><span>진행 <b class="num">5</b></span><span class="done">완료 <b class="num">2</b></span><span class="wait">정산 대기 <b class="num">1</b></span><span class="next">10월 시작 <b class="num">2</b></span></div>
+      <h2 style="margin-top:var(--s-2)">수익률 15% 아래 <span class="why">3건</span></h2>
+      <ul class="low">
+        <li><span class="nm">서울시 야외도서관 운영 대행<small>기획2팀</small></span><span class="mini"><b class="bad" style="width:36%"></b></span><span class="pct num d">8.9%</span></li>
+        <li><span class="nm">한빛 브랜드 팝업스토어 성수<small>기획2팀</small></span><span class="mini"><b style="width:59%"></b></span><span class="pct num w">14.8%</span></li>
+        <li><span class="nm">카카오 개발자 컨퍼런스 부스 <small>기획2팀 · 완료</small></span><span class="mini"><b style="width:71%"></b></span><span class="pct num w">17.8%</span></li>
+      </ul>
+    </section>
+
+  </div>
+
+  <div class="foot"><span>프로젝트별 견적 · 비용 · 수익률은 <button class="b3">프로젝트 목록</button>에서</span><span>숫자는 09-18 06:00 기준 · 정산 스냅샷 포함</span></div>
+</main>
+
+<nav class="tabs" aria-label="하단 탭"><a href="#">내 차례 2</a><a href="#">결재</a><a href="#" aria-current="page">손익</a><a href="#">더보기</a></nav>
+<script>
+(function(){var h=location.hash.slice(1);if(h==='mgmt'){document.body.dataset.scene='mgmt';document.querySelector('.bar .who').textContent='이수아 · 경영관리';}})();
+</script>
+</body>
+</html>

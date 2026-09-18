@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 1
 current_phase_name: 배포 스켈레톤·로그인
-current_plan: 5
+current_plan: 6
 status: executing
-stopped_at: Completed 01-04-PLAN.md
-last_updated: "2026-09-18T09:15:32.364Z"
+stopped_at: Completed 01-05-PLAN.md
+last_updated: "2026-09-18T09:38:47.668Z"
 last_activity: 2026-09-17
 last_activity_desc: "로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드"
-state_head: ef8334f04f5a2616b7c75809265b65d7a07241c7
+state_head: b89f89ef2ae0a9f96bda23a921bac916c87a5374
 progress:
   total_phases: 11
   completed_phases: 0
   total_plans: 8
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 1 (배포 스켈레톤·로그인) — EXECUTING
-Current Plan: 5
+Current Plan: 6
 Total Plans in Phase: 8
 Status: Ready to execute
 Last activity: 2026-09-17 — 로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드
@@ -63,6 +63,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01-deploy-skeleton-login P02 | 65min | 2 tasks | 22 files |
 | Phase 01-deploy-skeleton-login P03 | 18min | 2 tasks | 17 files |
 | Phase 01-deploy-skeleton-login P04 | 40min | 3 tasks | 32 files |
+| Phase 01-deploy-skeleton-login P05 | 14min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -109,6 +110,8 @@ Recent decisions affecting current work:
 - [Phase 01-deploy-skeleton-login]: 01-04: recommendedTypeChecked 적용으로 드러난 실제 타입 버그 4곳(File-vs-string, misused-promises, ctx.body any, 테스트 mock 타입) 수정
 - [Phase 01-deploy-skeleton-login]: 01-04: CI ci-guard.test.ts는 두 잡(quality/integration-e2e) 각각의 내부 순서를 검증한다 — 전체 파일 단일 순서 대신(두 잡 분리 유지가 CEO 9A Actions 예산에 더 부합)
 - [Phase 01-deploy-skeleton-login]: 01-04: .squawk.toml excluded_rules 4개(prefer-timestamp-tz, prefer-bigint-over-int, adding-required-field, require-concurrent-index-creation) — 스키마 전체 변경 필요해 범위 밖, WINDOWS.md에 lint-warning 4건 등록
+- [Phase 1]: [Phase 1] 01-05: esbuild build-cli.mjs external을 ['pg-native']에서 packages:'external'로 정정 — google-gax 계열 대형 gRPC 코드베이스를 단일 ESM 파일로 인라인하면 Node 22/24가 런타임에 'both require() and top-level await' 에러로 크래시함을 실측. 이 패키지들은 이미 Next 앱이 써서 .next/standalone/node_modules에 포함되므로 external로 둬도 같은 이미지 안에서 정상 resolve된다
+- [Phase 1]: [Phase 1] 01-05: db-bootstrap.ts의 CREATE DATABASE는 buildBootstrapSql 순수 함수 밖 main()의 별도 단계로 분리 — 존재 확인 뒤에만 실행, buildBootstrapSql은 항상 멱등한 ALTER DATABASE...OWNER TO만 반환
 
 ### Pending Todos
 
@@ -134,6 +137,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-18T09:15:32.321Z
-Stopped at: Completed 01-04-PLAN.md
+Last session: 2026-09-18T09:38:47.625Z
+Stopped at: Completed 01-05-PLAN.md
 Resume file: None

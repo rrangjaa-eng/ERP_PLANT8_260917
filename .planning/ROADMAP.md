@@ -55,7 +55,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   6. 배포는 CI 통과 뒤 같은 이미지의 Cloud Run Job(migrate)을 deploy.sh가 먼저 실행하고 실패하면 중단하며, 성공하면 트래픽 0% 리비전 → 스모크 → 100% 순서로 진행된다. 마이그레이션은 drizzle-kit generate가 만든 SQL 파일만 쓰고 CI에서 `drizzle-kit push`는 금지되며, Squawk이 그 SQL을 린트해 확장-축소(expand-contract) 위반(컬럼 drop·잠금 유발 변경)을 CI에서 거부한다 — "확장-축소 마이그레이션 린트"의 실체가 Squawk이다. `scripts/rollback.sh`는 이전 리비전으로 트래픽을 되돌린다(Issue 4). deploy.sh는 max-instances × 커넥션 풀 ≤ DB max_connections − 5 를 검사해 초과 시 배포를 거부한다(16A 공식 유지; 풀·max-instances·DB 티어 숫자는 Phase 1 계획에서 정한다). Cloud Monitoring 경보 3개(5xx > 5%·알림 tick 24시간 미성공·백업 실패)가 관리자 메일로 가고 deploy.sh로 재현된다(스케줄러 잡·서비스 계정 생성은 Phase 7에서 deploy.sh에 더한다)
   7. 관리자 시스템 상태 화면 뼈대가 있어 배포 버전·DB 커넥션·마지막 백업을 보이고 한도 초과 시 배너가 뜬다. 서버 로그는 JSON 형식이다. 이후 페이즈가 항목을 더한다(Phase 7 마지막 알림 tick, Phase 8 이전 실행·백업, Phase 9 계산 불가 건수)
 
-**Plans**: 4/8 plans executed
+**Plans**: 5/8 plans executed
 
 Plans:
 **Wave 1**
@@ -76,7 +76,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 01-05-PLAN.md — Dockerfile 멀티스테이지·esbuild CLI 번들·db-bootstrap Job·16A 커넥션 규칙(migrate-runner) (W5, 01-06과 병렬)
+- [x] 01-05-PLAN.md — Dockerfile 멀티스테이지·esbuild CLI 번들·db-bootstrap Job·16A 커넥션 규칙(migrate-runner) (W5, 01-06과 병렬)
 - [ ] 01-06-PLAN.md — deploy.sh·rollback.sh·bootstrap-gcp.sh·경보 정책 3개·deploy.yml/account.yml — 가짜 gcloud 테스트 (W5, 01-05와 병렬)
 
 **Wave 6** *(blocked on Wave 5 completion)*
@@ -285,7 +285,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. 배포 스켈레톤·로그인 | 4/8 | In Progress|  |
+| 1. 배포 스켈레톤·로그인 | 5/8 | In Progress|  |
 | 2. 디자인 시스템·앱 셸 | 0/TBD | Not started | - |
 | 3. 권한·설정·마스터 (관리자 운영 콘솔) | 0/TBD | Not started | - |
 | 4. 프로젝트·견적 원장 | 0/TBD | Not started | - |

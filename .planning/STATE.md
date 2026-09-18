@@ -4,10 +4,10 @@ current_phase: 1
 current_phase_name: 배포 스켈레톤·로그인
 status: executing
 stopped_at: Phase 1 context gathered
-last_updated: "2026-09-18T03:39:11.315Z"
+last_updated: "2026-09-18T03:53:46.460Z"
 last_activity: 2026-09-17
 last_activity_desc: "로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드"
-state_head: f3aa2eba565fa9d3d06d2753626bac5f3aafbd2b
+state_head: e4f4105be59ce78119722d4f5d9f7f95f5254301
 progress:
   total_phases: 11
   completed_phases: 0
@@ -87,6 +87,7 @@ Recent decisions affecting current work:
 - [Phase 1]: Phase 1은 8플랜/7웨이브 그대로 진행(1a/1b 분할 안 함, 사용자 결정 2026-09-18). 실행은 웨이브 5(01-06)까지 한 세션에서 끝내고 /gsd-pause-work로 끊은 뒤 01-07~08(GCP·사람 체크포인트)은 새 세션
 - [Phase 1]: 회사 GCP 프로젝트 생성·결제 연결 완료(2026-09-18, billingEnabled true). 프로젝트 ID는 리포·문서에 적지 않고 실행 단계에서 GitHub 변수 GCP_PROJECT_ID와 deploy.sh 인자로만 넣는다(D-03)
 - [Phase 1]: GitHub 저장소는 개인 계정 rrangjaa-eng 비공개로 유지 + GitHub Pro 구독(사용자 결정 B, 2026-09-18) — Environment production의 required reviewers(D-05)를 쓰기 위함. 회사 조직 이전은 이월(이전 시 WIF 부트스트랩 재실행)
+- [Phase 1]: D-05 변경(사용자 결정 C, 2026-09-18, 같은 날 B 대체): GitHub 저장소는 개인 무료 비공개 유지. Environments·required reviewers 없이 프로덕션은 workflow_dispatch 수동 실행(같은 SHA 이미지 재사용, 스테이징 배포 확인 가드). 변수·시크릿은 저장소 수준
 
 ### Pending Todos
 

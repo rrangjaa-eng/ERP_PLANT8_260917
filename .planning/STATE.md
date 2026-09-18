@@ -2,17 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 1
 current_phase_name: 배포 스켈레톤·로그인
+current_plan: 3
 status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-09-18T03:53:46.460Z"
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-09-18T08:08:58.104Z"
 last_activity: 2026-09-17
 last_activity_desc: "로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드"
-state_head: e4f4105be59ce78119722d4f5d9f7f95f5254301
+state_head: 9892c9403228b19685ea534d09de26f7a4c19b90
 progress:
   total_phases: 11
   completed_phases: 0
   total_plans: 8
-  completed_plans: 0
+  completed_plans: 2
   percent: 0
 ---
 
@@ -27,8 +28,9 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 
 ## Current Position
 
-Phase: 1 (배포 스켈레톤·로그인) — READY TO EXECUTE
-Plan: 0 of TBD in current phase
+Phase: 1 (배포 스켈레톤·로그인) — EXECUTING
+Current Plan: 3
+Total Plans in Phase: 8
 Status: Ready to execute
 Last activity: 2026-09-17 — 로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드
 
@@ -54,6 +56,11 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: -
 
 *Updated after each plan completion*
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 01-deploy-skeleton-login P02 | 65min | 2 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -88,6 +95,8 @@ Recent decisions affecting current work:
 - [Phase 1]: 회사 GCP 프로젝트 생성·결제 연결 완료(2026-09-18, billingEnabled true). 프로젝트 ID는 리포·문서에 적지 않고 실행 단계에서 GitHub 변수 GCP_PROJECT_ID와 deploy.sh 인자로만 넣는다(D-03)
 - [Phase 1]: GitHub 저장소는 개인 계정 rrangjaa-eng 비공개로 유지 + GitHub Pro 구독(사용자 결정 B, 2026-09-18) — Environment production의 required reviewers(D-05)를 쓰기 위함. 회사 조직 이전은 이월(이전 시 WIF 부트스트랩 재실행)
 - [Phase 1]: D-05 변경(사용자 결정 C, 2026-09-18, 같은 날 B 대체): GitHub 저장소는 개인 무료 비공개 유지. Environments·required reviewers 없이 프로덕션은 workflow_dispatch 수동 실행(같은 SHA 이미지 재사용, 스테이징 배포 확인 가드). 변수·시크릿은 저장소 수준
+- [Phase 1]: better-auth 1.7.5 rate_limits 스키마 검사가 id 컬럼을 요구해 text id 추가(0002 마이그레이션) — drizzle-adapter의 schema-diff.mjs가 모든 모델에 id 존재를 강제하고 실제로 문자열 id를 insert함(실측)
+- [Phase 1]: advanced.ipAddress.ipAddressHeaders를 x-forwarded-for에서 x-client-ip로 교체, proxy.ts가 단일 헤더로 고정 — better-auth가 헤더 값 2개 이상이면 IP를 null로 보고 공용 rateLimit 버킷에 묶어, 클라이언트가 XFF 위조 시 전 직원이 같은 버킷을 나눠 쓰는 DoS가 됨(Eng Issue 1)
 
 ### Pending Todos
 
@@ -114,6 +123,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-18T00:57:26.386Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-deploy-skeleton-login/01-CONTEXT.md
+Last session: 2026-09-18T08:08:58.065Z
+Stopped at: Completed 01-02-PLAN.md
+Resume file: None

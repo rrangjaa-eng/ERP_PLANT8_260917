@@ -6,7 +6,7 @@
     {
       "number": "1",
       "name": "배포 스켈레톤·로그인",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "2",
@@ -64,5 +64,5 @@
     "label": "Advance to the next step",
     "reason": "Phase 1 of 11 · 0% · executing"
   },
-  "updated_at": "2026-09-18T03:13:17.485Z"
+  "updated_at": "2026-09-18T08:08:29.957Z"
 }

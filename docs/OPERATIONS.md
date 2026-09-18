@@ -8,10 +8,10 @@
 
 | | staging | production |
 |---|---|---|
-| Cloud Run 서비스 | `erp-staging` | `erp-prod` |
-| Cloud SQL 인스턴스 | `erp-staging-db` | `erp-prod-db` |
+| Cloud Run 서비스 | `plant8-staging` | `plant8-prod` |
+| Cloud SQL 인스턴스 | `plant8-staging-db` | `plant8-prod-db` |
 | 시크릿 접미사 | `-staging` | `-prod` |
-| 접속 주소 | `https://erp-staging-<프로젝트 번호>.asia-northeast3.run.app` | `https://erp-prod-<프로젝트 번호>.asia-northeast3.run.app` |
+| 접속 주소 | `https://plant8-staging-<프로젝트 번호>.asia-northeast3.run.app` | `https://plant8-prod-<프로젝트 번호>.asia-northeast3.run.app` |
 
 접속 주소는 이 **결정적 URL** 하나만 쓴다. Cloud Run이 함께 주는 레거시 `*.a.run.app`
 주소나 태그 리비전 URL로 열면 화면은 뜨지만 로그인 POST가 better-auth의 Origin 검사

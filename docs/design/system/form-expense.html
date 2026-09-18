@@ -33,7 +33,7 @@ kbd{font:inherit;font-size:var(--fs-xs);border:var(--line-w) solid var(--line);p
 .progress{height:2px;background:var(--accent);width:100%;position:sticky;top:38px;z-index:var(--z-bar);display:none}
 main{padding:var(--s-5) var(--pad-page) 96px;max-width:var(--container-max)}
 
-.sec{display:flex;align-items:baseline;gap:var(--s-3);flex-wrap:wrap;padding-bottom:var(--s-2)}
+.sec{display:flex;align-items:baseline;gap:var(--s-3);flex-wrap:wrap;padding-bottom:var(--s-2);max-width:var(--form-max)}
 .sec h1{font-size:var(--fs-lg);font-weight:var(--fw-bold);letter-spacing:var(--ls-head);line-height:var(--lh-head)}
 .sec .sub{font-size:var(--fs-sm);color:var(--muted)}
 .sec .right{margin-left:auto;display:flex;gap:var(--s-2)}
@@ -56,7 +56,7 @@ main{padding:var(--s-5) var(--pad-page) 96px;max-width:var(--container-max)}
 .inp.num{text-align:right}
 .inp.err{border-color:var(--danger)}
 .inp::placeholder{color:var(--faint)}
-select.inp{max-width:200px}
+select.inp{max-width:280px}
 .ferr{font-size:var(--fs-sm);color:var(--danger);margin-top:var(--s-1)}
 .calc{font-size:var(--fs-sm);color:var(--muted);margin-top:var(--s-1);display:flex;gap:var(--s-3);flex-wrap:wrap}
 .calc b{color:var(--fg);font-weight:var(--fw-bold)}
@@ -67,8 +67,8 @@ select.inp{max-width:200px}
 .hint{font-size:var(--fs-sm);color:var(--muted);padding-top:7px}
 
 /* 첨부 (§7-10) */
-.drop{background:var(--surface);border:var(--line-w) dashed var(--line-ui);height:96px;display:flex;align-items:center;justify-content:center;font-size:var(--fs-sm);color:var(--muted);max-width:480px;gap:var(--s-1)}
-.files{list-style:none;max-width:480px}
+.drop{background:var(--surface);border:var(--line-w) dashed var(--line-ui);height:96px;display:flex;align-items:center;justify-content:center;font-size:var(--fs-sm);color:var(--muted);gap:var(--s-1)}
+.files{list-style:none}
 .files li{display:flex;align-items:center;gap:var(--s-3);padding:6px 0;border-bottom:var(--line-w) solid var(--line);font-size:var(--fs-sm)}
 .files .th{width:48px;height:48px;background:var(--surface);border:var(--line-w) solid var(--line-ui);flex:none;position:relative;overflow:hidden}
 .files .th i{position:absolute;left:8px;right:8px;height:2px;background:var(--line-ui);opacity:.55}
@@ -109,6 +109,10 @@ body[data-scene="done"] .inp,body[data-scene="done"] select{pointer-events:none}
   .row label,.row .lbl,.hint{padding-top:0}
   .inp,select.inp{max-width:none}
   .drop{height:72px}
+  .ro{display:grid;grid-template-columns:1fr auto;gap:2px var(--s-3);align-items:baseline}
+  .ro>span:first-child{grid-row:1;grid-column:1}
+  .ro .b3{grid-row:1;grid-column:2;justify-self:end}
+  .ro .sub{grid-row:2;grid-column:1/-1}
   .sec .right{display:none}
   .submit{position:fixed;left:0;right:0;bottom:var(--touch-min);background:var(--bg);margin:0;padding:var(--s-3) var(--pad-page);border-top:var(--line-w-strong) solid var(--line-strong);z-index:var(--z-bar);max-width:none;gap:var(--s-2) var(--s-3)}
   .submit .btn.p{order:-1;flex:1;justify-content:center;height:var(--touch-min);font-size:var(--fs-base)}
@@ -148,7 +152,7 @@ body[data-scene="done"] .inp,body[data-scene="done"] select{pointer-events:none}
       <input id="due-e" class="inp num err s-error" value="2026/9/19" aria-invalid="true" aria-describedby="due-why">
       <div class="ferr s-error" id="due-why">날짜 형식이 아닙니다 · 2026-09-19처럼 적어 주세요</div>
       <div class="calc"><span>결재 마감 <b class="num">2026-09-18 14:00</b></span><span>지급일 규칙 · 금요일</span></div></div></div>
-    <div class="row"><label for="memo">비고</label><div><input id="memo" class="inp" value="2차 견적 기준. 철거 포함." style="max-width:480px"></div></div>
+    <div class="row"><label for="memo">비고</label><div><input id="memo" class="inp" value="2차 견적 기준. 철거 포함." style="max-width:none"></div></div>
 
     <div class="sep"></div>
 

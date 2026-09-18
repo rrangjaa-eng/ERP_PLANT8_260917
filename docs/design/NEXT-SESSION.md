@@ -5,12 +5,27 @@
 
 ---
 
+## 시작 전 — 이 파일들이 보이는지부터 확인한다
+
+§1·§2 결과물은 **브랜치 `design/brief-explore-260918`(드래프트 PR #6)에만 있다.**
+이 글이 읽힌다는 건 그 브랜치에 있다는 뜻이지만, master로 시작했다면 아무것도 없다:
+
+```
+git fetch origin design/brief-explore-260918
+git checkout design/brief-explore-260918
+```
+
+PR #6이 이미 master에 머지됐다면 그냥 master로 진행하면 된다.
+
 ## 0. 먼저 — 방향이 아직 안 정해졌다
 
 §3은 "한 안을 고르고 시스템으로 굳히는" 단계인데, **사용자가 아직 고르지 않았다.**
 그러니 첫 순서는 계획이 아니라 질문이다.
 
-1. 사용자에게 `docs/design/explore/index.html`(비교 보드)을 열어 달라고 한다
+1. 사용자에게 **비교 보드 링크**를 다시 안내한다 — https://claude.ai/artifact/7pyqZmFAGShzyipzpah9df
+   (네 안의 실제 화면을 PC 1280 / 폰 390으로 바꿔 가며 보는 페이지. 이전 세션에서 배포했고 사용자 본인만 열 수 있다.
+   링크가 안 열리면 `docs/design/explore/index.html`이 같은 내용이지만, 그 파일은 사용자 PC에 리포를 받아야 열린다 —
+   클라우드 컨테이너 안의 경로는 사용자 브라우저에서 열리지 않는다)
 2. A·B·D 중 하나를 고르게 한다 — `EXPLORE.md`「선택」절의 **고르는 기준 5개**를 그 순서대로 같이 보여 준다
 3. 고르기 전에는 `SYSTEM.md`·`tokens.css`를 쓰지 않는다
 
@@ -22,7 +37,7 @@
 | 순서 | 파일 | 왜 |
 |---|---|---|
 | 1 | `docs/design/EXPLORE.md` 맨 끝 **「선택」** 절 | §3의 유일한 입력. 후보 3개·고르는 기준·남은 구멍 |
-| 2 | `docs/design/explore/index.html` | 실물 비교 보드 (스크린샷은 `explore/shots/`) |
+| 2 | 비교 보드 https://claude.ai/artifact/7pyqZmFAGShzyipzpah9df | 네 안의 실제 화면. 리포 안의 같은 내용은 `explore/index.html`, 스크린샷은 `explore/shots/` |
 | 3 | `docs/design/BRIEF.md` | 모든 판단을 되돌려 검증하는 기준 |
 | 4 | `docs/DESIGN.md` §3 · §5(안티슬롭) · §6(품질 바닥) | 수렴 절차와 금지 목록 |
 | 5 | `.planning/PROJECT.md` — Context「정보 노출 원칙」·「기획본부의 기준」, Constraints 디자인 항목 | 화면 제약의 출처 |
@@ -64,7 +79,8 @@ C는 후보에서 뺐지만(폰 미성립 → UX-03 위반, 유지 비용 최대
 
 ## 6. 현재 상태
 
-- 브랜치 `design/brief-explore-260918`, 드래프트 PR **#6**
+- 브랜치 `design/brief-explore-260918`, 드래프트 PR **#6** — **아직 master에 머지되지 않았다**
+- 비교 보드(배포본): https://claude.ai/artifact/7pyqZmFAGShzyipzpah9df
 - CI 없음(리포에 `.github/workflows/` 자체가 없다), 충돌 없음, 리뷰 스레드 없음
 - §1·§2 산출물: `BRIEF.md` · `EXPLORE.md` · `explore/*.html` · `explore/shots/*.png`
 - 아직 없는 것: `SYSTEM.md` · `tokens.css` · `DECISIONS.md`

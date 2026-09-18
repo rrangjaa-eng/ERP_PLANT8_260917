@@ -5,10 +5,10 @@ current_phase_name: 배포 스켈레톤·로그인
 current_plan: 4
 status: executing
 stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-09-18T08:33:50.262Z"
+last_updated: "2026-09-18T08:47:44.095Z"
 last_activity: 2026-09-17
 last_activity_desc: "로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드"
-state_head: fbc0dd10aa41c7a443611e46b4e891bc7d058a18
+state_head: b8ee710fbb130607eba06271cb7d800e43e9e63b
 progress:
   total_phases: 11
   completed_phases: 0
@@ -102,6 +102,7 @@ Recent decisions affecting current work:
 - [Phase 1]: [Phase 1] AUTH-04 Google 로그인 버튼의 클릭 핸들러는 서버 컴포넌트(login/page.tsx)가 아니라 기존 클라이언트 컴포넌트(login-form.tsx)에 showGoogle prop으로 위임 — 서버 컴포넌트는 authClient.signIn.social을 직접 호출할 수 없다
 - [Phase 1]: [Phase 1] AUTH-03·AUTH-04는 REQUIREMENTS.md에서 Complete로 반영됨. OPS-06은 01-07이 같은 요구사항을 공유(shared-ID gate)해 01-07 완료 시 Complete로 바뀐다(의도된 동작)
 - [Phase 1]: 01-07 Task 1 GCP 리소스 이름 결정(사용자, 2026-09-18): 옵션 A/B 대신 순수 접두어 `plant8-` 커스텀 선택 — 서비스 plant8-staging/plant8-prod, Cloud SQL 인스턴스 plant8-staging-db/plant8-prod-db, DB 이름 plant8, SA plant8-{env}-runtime, Artifact Registry plant8. infra/names.sh(웨이브 5/01-06) 생성 시 이 값으로 반영하고, 01-07 Task 1 체크포인트에서 재확인 없이 바로 적용한다
+- [Phase 1]: 01-07 사전 준비 완료(사용자, 2026-09-18): 조직 정책 iam.allowedPolicyMemberDomains를 allUsers 등 전체 허용으로 변경해 run.invoker 부여(비인증 ingress) 차단 블로커 해소. 프로젝트 소유자 역할·경보 알림 그룹도 준비 완료 — 웨이브 6(01-07) 시작 전 재확인 항목 3개(조직 정책·프로젝트 소유자·경보 그룹) 모두 충족
 
 ### Pending Todos
 
@@ -116,7 +117,6 @@ None yet.
 - [Phase 9]: 정산(완료) 시점은 D3(정산 결재 대표 승인)로 확정. 매출 기준·연도 귀속을 기획본부·경영관리가 합의하는 절차는 여전히 PROJECT.md에 없다 — 계획 단계에서 사용자와 확정. 착수 조건은 전환 후 N주(설정, 기본 2주) 실입력(Eng OV-1)
 - [Phase 11]: CERT 활성화 조건은 `/cso` 보안 감사 통과. 개인정보보호법 적용 범위·보존 기간은 감사에서 재확인(리서치 Gap). 감사 뒤 KMS 봉투 승격(Issue 7)
 - [All]: 과잉 설계 재발 방지 — 페이즈마다 "인트라넷보다 못한가"로 검증하고, 실제 사용자 로그인·입력이 있어야 완료로 본다
-- [Phase 1] 조직 정책 iam.allowedPolicyMemberDomains가 조직 고객 ID만 허용해 allUsers run.invoker 부여(비인증 ingress)가 막힘. 프로젝트 수준 예외(inheritFromParent:false, allowAll:true)를 조직 정책 관리자에게 요청 중 — 사용자 계정에는 orgpolicy.policies.create 권한 없음. 01-07 부트스트랩 전제 조건, 웨이브 1~5는 영향 없음. run.allowedIngress는 allowAll로 통과
 
 ## Deferred Items
 

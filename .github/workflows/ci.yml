@@ -1,0 +1,83 @@
+name: ci
+
+# push 트리거는 두지 않는다 — main push는 deploy.yml이 workflow_call로 이 워크플로를
+# 먼저 부른다(01-06). 같은 커밋에 push·pull_request가 둘 다 걸리면 CI가 2회 돌고
+# concurrency로도 합쳐지지 않는다(ref가 다르다). 무료 플랜 비공개 저장소 Actions는
+# 월 2,000분 — CI 1회 ≈ 8~10분(플랜 리뷰 CEO 9A).
+on:
+  pull_request:
+    paths-ignore:
+      - ".planning/**"
+      - "docs/**"
+  workflow_call: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # 빠르고 값싼 검사만 — Postgres 없이 몇 초~수십 초 안에 끝난다. 여기서 실패하면
+  # integration-e2e(Postgres 컨테이너 + Playwright, 비용이 더 큰 잡)는 실행되지 않는다.
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm lint:sql
+      - run: pnpm test:unit
+
+  # quality 통과 뒤에만 Postgres 서비스 컨테이너 + 마이그레이션 + 통합 + E2E를 돈다
+  # (Eng Issue 14 — 3계층 테스트, D-01 — CI는 services.postgres로 실제 DB를 붙인다).
+  integration-e2e:
+    runs-on: ubuntu-latest
+    needs: quality
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: erp
+          POSTGRES_PASSWORD: erp
+          POSTGRES_DB: erp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://erp:erp@127.0.0.1:5432/erp_test
+      BETTER_AUTH_URL: http://127.0.0.1:3100
+      APP_ENV: local
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # 실제 시크릿을 갖지 않는 일회용 값 — CI 로그·이 워크플로 어디에도 진짜
+      # BETTER_AUTH_SECRET이 없다(T-1-22).
+      - run: echo "BETTER_AUTH_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+      - run: pnpm db:migrate
+      - run: pnpm test:integration
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

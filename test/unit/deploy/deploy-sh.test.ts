@@ -198,6 +198,11 @@ describe("deploy.sh — 기존 서비스·이미지(시나리오 2)", () => {
     expect(deployLine).toContain("--no-traffic");
     expect(deployLine).toContain("--tag=rev-01234567");
 
+    // 카나리 배포는 계산한 결정적 URL이 아니라 gcloud 배포 출력이 알려준
+    // 실제 태그 리비전 URL로 스모크해야 한다(2026-09-18 실측 버그 수정).
+    const healthzLine = r.log.split("\n").find((l) => l.includes("/healthz"));
+    expect(healthzLine).toContain("https://rev-01234567---fake-tagged-hash.a.run.app/healthz");
+
     const order = ["sign-in/email", "alpha monitoring policies update", "services update-traffic"].map((n) =>
       lineIndex(r.log, n),
     );

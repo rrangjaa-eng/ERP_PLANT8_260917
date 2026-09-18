@@ -30,6 +30,7 @@ PROJECT_NUMBER=""
 SERVICE_URL=""
 CONN_NAME=""
 EXISTS=0
+TAGGED_URL=""
 
 usage() {
   cat >&2 <<'USAGE'
@@ -396,7 +397,8 @@ deploy_service() {
     extra_flags+=(--no-traffic "--tag=rev-${SHA:0:8}")
   fi
 
-  if ! run gcloud run deploy "$svc" \
+  local deploy_output
+  if ! deploy_output="$(run gcloud run deploy "$svc" \
     --image="$IMAGE" --region="$REGION" --project="$PROJECT" --platform=managed \
     --service-account="$runtime_email" \
     --min-instances=0 --max-instances="$MAX_INSTANCES" --concurrency=80 --cpu=1 --memory=512Mi --port=3000 \
@@ -405,9 +407,24 @@ deploy_service() {
     --allow-unauthenticated \
     --set-env-vars="$env_vars" \
     --set-secrets="$secrets" \
-    "${extra_flags[@]}"; then
+    "${extra_flags[@]}" 2>&1)"; then
+    printf '%s\n' "$deploy_output" >&2
     echo "org policy blocks unauthenticated ingress (iam.allowedPolicyMemberDomains) — ask the GCP org admin" >&2
     exit 1
+  fi
+  printf '%s\n' "$deploy_output"
+
+  # 카나리 배포(EXISTS=1)는 gcloud가 배포 출력 자체에 태그 리비전의 실제
+  # 도달 가능 URL을 알려준다("The revision can be reached directly at …") —
+  # 계산한 결정적 URL 패턴을 다시 조립해 추측하지 않고 이 실측값을 그대로
+  # 쓴다(실제 스테이징 배포에서 재현, 2026-09-18: 계산값으로 스모크하면
+  # 404). 트래픽은 여전히 0%로 남아있으므로(--no-traffic) 안전하다.
+  if [ "$EXISTS" = "1" ]; then
+    TAGGED_URL="$(printf '%s\n' "$deploy_output" | grep -oE 'https://rev-[A-Za-z0-9.-]+' | head -1 || true)"
+    if [ -z "$TAGGED_URL" ] && [ "$DRY_RUN" != "1" ]; then
+      echo "could not find tagged revision URL in gcloud run deploy output" >&2
+      exit 1
+    fi
   fi
 
   local describe_url
@@ -436,7 +453,7 @@ smoke() {
   STAGE=smoke
   local target
   if [ "$EXISTS" = "1" ]; then
-    target="https://rev-${SHA:0:8}---$(svc_name "$ENV")-${PROJECT_NUMBER}.${REGION}.run.app"
+    target="$TAGGED_URL"
   else
     target="$SERVICE_URL"
   fi

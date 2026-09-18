@@ -158,6 +158,10 @@ case "$ARGS" in
     ;;
 
   "run deploy "*)
+    tag="$(printf '%s\n' "$ARGS" | grep -oE -- '--tag=rev-[A-Za-z0-9]+' | cut -d= -f2)"
+    if [ -n "$tag" ]; then
+      echo "The revision can be reached directly at https://${tag}---fake-tagged-hash.a.run.app"
+    fi
     exit 0
     ;;
 

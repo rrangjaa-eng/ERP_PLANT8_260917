@@ -6,18 +6,13 @@
 <title>PLANT8 ERP — 시스템 실물 (전사 대시보드 · 대표·경영관리)</title>
 <link rel="stylesheet" href="../tokens.css">
 <style>
-/* §6-4 다시 씀 후보(2026-09-18, 사용자 요청 「대시보드 형식으로 한눈에」): 대표·경영관리 첫 화면.
+/* §6-4 손익 대시보드(대표·경영관리 첫 화면). 확정 2026-09-18(DECISIONS.md 「손익 화면 = 대시보드」).
    프로젝트별 원장은 여기 없다(프로젝트 목록에 수익률 열이 있다). 컴포넌트: KPI 타일(추세선 · 전년 대비 칩) ·
    목표 달성 막대(전사 + 팀별, 목표 눈금) · 월별 매출·수익 막대 + 수익률 선 · 팀별 매출 비중 띠 ·
    클라이언트별 매출 순위(팀 색) · 비용 구성 도넛(추천) · 프로젝트 현황(상태 칩 + 수익률 낮은 프로젝트).
    2026-09-18 사용자: 「다가오는 지급」 「챙길 것」 제외, 클라이언트별 매출 순위 추가, 색 더 다양하게(→ --viz-* 제안).
-   토큰만 쓴다. 제안 토큰: --fs-2xl(32px) · --viz-1/2(팀 색) · --seg-1~5(구성 비율, 그린 단계) — 승인 전이라 이 파일 안에서만 정의.
+   토큰만 쓴다. 토큰은 ../tokens.css만(--fs-2xl · --viz-1/2 · --seg-1~5 는 2026-09-18 확정으로 tokens.css에 있음).
    장면: #ceo(기본) · #mgmt(경영관리 — 같은 화면, 계급 이름만). 앱 코드가 아니다. */
-:root{--fs-2xl:32px;
-  /* 제안 토큰(승인 전): 색 하나 = 뜻 하나. 팀 색 2개(기획1팀 = 그린, 기획2팀 = 파랑) + 상태색(--warning·--danger)만.
-     구성 비율(도넛)은 그린 단계 5단. 그 밖의 장식색 없음 */
-  --viz-1:var(--g-700);--viz-2:#1F5FA8;--viz-2-weak:#DCE7F5;
-  --seg-1:var(--g-900);--seg-2:var(--g-700);--seg-3:var(--g-600);--seg-4:var(--g-400);--seg-5:var(--g-100)}
 *{box-sizing:border-box;margin:0;padding:0}
 html{font-size:var(--fs-base)}
 body{background:var(--bg);color:var(--fg);font-family:var(--font-sans);font-size:var(--fs-base);line-height:var(--lh-body);letter-spacing:var(--ls-body);word-break:keep-all;overflow-wrap:anywhere;-webkit-font-smoothing:antialiased}

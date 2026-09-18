@@ -14,11 +14,17 @@ const scenes = [
   ['preview-pc',      'preview.html',       '',          1280, 900, false, true,  'shots/preview-pc.png'],
   ['preview-m',       'preview.html',       '',          390,  844, true,  true,  'shots/preview-m.png'],
   ['preview-m-view',  'preview.html',       '',          390,  844, true,  false, 'shots/preview-m-viewport.png'],
-  ['print-expense',   'print-expense.html', '',          900,  1200, false, true, 'shots/print-expense.png'],
+  ['print-expense',   'print-expense.html', '',          900,  1240, false, true, 'shots/print-expense.png'],
+  ['print-cert',      'print-cert.html',    '',          900,  1240, false, true, 'shots/print-cert.png'],
   ['sheet-approve',   'sheet-modal.html',   'approve',   390,  844, true,  false, 'shots/sheet-approve-m.png'],
   ['sheet-more',      'sheet-modal.html',   'more',      390,  844, true,  false, 'shots/sheet-more-m.png'],
   ['sheet-reject',    'sheet-modal.html',   'reject-m',  390,  844, true,  false, 'shots/sheet-reject-m.png'],
   ['modal-reject-pc', 'sheet-modal.html',   'reject-pc', 1280, 800, false, false, 'shots/modal-reject-pc.png'],
+  // 인쇄 재디자인 발산 기록(두 장씩: 지출결의서 · 확인증). P2가 채택되어 위 print-*.html로 승격됨
+  ['p1-form',         'print/p1-form.html',      '', 900, 1240, false, true, 'shots/print-p1-form.png'],
+  ['p2-letter',       'print/p2-letter.html',    '', 900, 1240, false, true, 'shots/print-p2-letter.png'],
+  ['p3-statement',    'print/p3-statement.html', '', 900, 1240, false, true, 'shots/print-p3-statement.png'],
+  ['p4-seal',         'print/p4-seal.html',      '', 900, 1240, false, true, 'shots/print-p4-seal.png'],
 ];
 
 const only = new Set(process.argv.slice(2));

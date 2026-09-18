@@ -2,11 +2,12 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<title>지출결의서 EXP-2026-0464 — 인쇄 템플릿</title>
-<link rel="stylesheet" href="../tokens.css">
+<title>인쇄 안 P2 「레터」(지출결의서 = P2 골격 + P3 명세 표) — 지출결의서 · 기타소득 확인증</title>
+<link rel="stylesheet" href="../../tokens.css">
 <style>
-/* SYSTEM.md §6-6 인쇄 템플릿 실물 — 지출결의서. 확정 2026-09-18(사용자): 골격 = 안 P2 「레터」(+ P3 명세 표), 색 = 글자 검정 · 구조 선 --print-rule · 구분선 --print-line.
-   발산 기록은 system/print/. 인쇄 템플릿은 --print-ink / --print-rule / --print-line과 서체·간격 토큰만 쓴다. 앱 코드가 아니다. */
+/* 인쇄 재디자인 안 P2 「레터」. 사용자 결정(2026-09-18): 지출결의서는 P2 골격 + P3 명세 표, 확인증은 P2 그대로. 축: 머리 = 좌상단 제목·문서 번호 / 괘선 = 가로선만(세로선 없음) / 색 = 글자 검정, 구조 선(워드마크·제목 괘선·명세 머리/합계 2px·결재 칸 선)은 --g-700, 구분 가로선 1px은 --line (사용자 결정 C, 2026-09-18) /
+   금액 = 합계 --fs-xl, 오른쪽 정렬 블록 / 결재 = 이름·일시 텍스트 줄 / 밀도 = 여백 넉넉.
+   주의: tokens.css의 @media print가 --g-700을 덮지 않으므로 그린은 인쇄에도 남는다. 그레이스케일 복사에서는 진회색이 된다. 토큰만 사용. 앱 코드가 아니다. */
 *{box-sizing:border-box;margin:0;padding:0}
 @page{size:A4 portrait;margin:0}
 html{font-size:var(--fs-base)}
@@ -16,36 +17,36 @@ body{color:var(--print-ink);font-family:var(--font-sans);line-height:var(--lh-bo
 .num{font-variant-numeric:tabular-nums;letter-spacing:0}
 
 .top{display:flex;justify-content:space-between;align-items:baseline;font-size:var(--fs-sm)}
-.top .mark{font-weight:var(--fw-mark);font-size:var(--fs-md);letter-spacing:var(--ls-head);color:var(--print-rule)}
+.top .mark{font-weight:var(--fw-mark);font-size:var(--fs-md);letter-spacing:var(--ls-head);color:var(--g-700)}
 h1{font-size:var(--fs-xl);font-weight:var(--fw-bold);letter-spacing:var(--ls-head);line-height:var(--lh-tight);margin-top:var(--s-12)}
 .sub{font-size:var(--fs-sm);margin-top:var(--s-1)}
 .sub .num{margin-right:var(--s-2)}
-.rule{border-top:2px solid var(--print-rule);margin:var(--s-3) 0 var(--s-6)}
+.rule{border-top:2px solid var(--g-700);margin:var(--s-3) 0 var(--s-6)}
 
 dl{display:grid;grid-template-columns:30mm 1fr;column-gap:var(--s-4)}
-dt{font-size:var(--fs-sm);font-weight:var(--fw-medium);padding:7px 0;border-bottom:1px solid var(--print-line)}
-dd{padding:6px 0;border-bottom:1px solid var(--print-line);min-width:0}
+dt{font-size:var(--fs-sm);font-weight:var(--fw-medium);padding:7px 0;border-bottom:1px solid var(--line)}
+dd{padding:6px 0;border-bottom:1px solid var(--line);min-width:0}
 dd .sm{font-size:var(--fs-sm);display:block}
 h2{font-size:var(--fs-sm);font-weight:var(--fw-medium);letter-spacing:.08em;margin:var(--s-8) 0 var(--s-1)}
 
 .amt{margin-top:var(--s-8);margin-left:auto;width:90mm}
 .amt .row{display:flex;justify-content:space-between;padding:5px 0;font-size:var(--fs-base)}
-.amt .row.total{border-top:2px solid var(--print-rule);margin-top:var(--s-2);padding-top:var(--s-3);align-items:baseline}
+.amt .row.total{border-top:2px solid var(--g-700);margin-top:var(--s-2);padding-top:var(--s-3);align-items:baseline}
 .amt .row.total b{font-size:var(--fs-xl);font-weight:var(--fw-bold);line-height:var(--lh-tight)}
 .amt .han{text-align:right;font-size:var(--fs-sm);margin-top:var(--s-1)}
 
 table.st{width:100%;border-collapse:collapse;margin-top:var(--s-8);font-size:var(--fs-base)}
-.st thead th{font-size:var(--fs-sm);font-weight:var(--fw-medium);text-align:left;padding:4px 6px;border-bottom:2px solid var(--print-rule);white-space:nowrap}
+.st thead th{font-size:var(--fs-sm);font-weight:var(--fw-medium);text-align:left;padding:4px 6px;border-bottom:2px solid var(--g-700);white-space:nowrap}
 .st thead th.r,.st td.r{text-align:right}
-.st tbody td{padding:7px 6px;border-bottom:1px solid var(--print-line);vertical-align:top}
+.st tbody td{padding:7px 6px;border-bottom:1px solid var(--line);vertical-align:top}
 .st tbody td.n{width:7mm;font-size:var(--fs-xs)}
 .st tbody td .sm{display:block;font-size:var(--fs-sm)}
 .st td.w{white-space:nowrap}
-.st tfoot td{padding:10px 6px 4px;border-top:2px solid var(--print-rule);font-weight:var(--fw-bold);vertical-align:baseline}
+.st tfoot td{padding:10px 6px 4px;border-top:2px solid var(--g-700);font-weight:var(--fw-bold);vertical-align:baseline}
 .st tfoot td.big{font-size:var(--fs-xl);line-height:var(--lh-tight)}
 .st tfoot .han{font-size:var(--fs-sm);font-weight:var(--fw-regular)}
 .appr{margin-top:var(--s-8);display:grid;grid-template-columns:repeat(4,1fr);column-gap:var(--s-4)}
-.appr div{border-top:2px solid var(--print-rule);padding-top:var(--s-2);font-size:var(--fs-sm)}
+.appr div{border-top:2px solid var(--g-700);padding-top:var(--s-2);font-size:var(--fs-sm)}
 .appr b{display:block;font-size:var(--fs-base);font-weight:var(--fw-bold);margin-top:2px}
 .appr small{display:block;font-size:var(--fs-xs)}
 .appr .wait b{font-weight:var(--fw-regular)}
@@ -97,6 +98,46 @@ table.st{width:100%;border-collapse:collapse;margin-top:var(--s-8);font-size:var
   <p style="font-size:var(--fs-sm)">1. 세금계산서 (다음 장)</p>
 
   <div class="foot"><span>PLANT8 ERP</span><span class="num">1 / 2</span></div>
+</section>
+
+<section class="sheet">
+  <div class="top"><span class="mark">PLANT8</span><span>출력 <span class="num">2026-09-21 09:12</span></span></div>
+  <h1>기타소득 지급 확인증</h1>
+  <p class="sub"><span class="num">CERT-2026-0031</span>지출결의 <span class="num">EXP-2026-0471</span></p>
+  <div class="rule"></div>
+
+  <dl>
+    <dt>프로젝트</dt><dd>2026 현대자동차 아이오닉9 미디어 론칭 쇼케이스</dd>
+    <dt>항목</dt><dd>행사 진행 MC<span class="sm num">2026-09-12 ~ 09-13 · 2일</span></dd>
+    <dt>소득 종류</dt><dd>기타소득</dd>
+    <dt>지급일</dt><dd class="num">2026-09-19</dd>
+  </dl>
+
+  <h2>수령자</h2>
+  <dl>
+    <dt>이름</dt><dd>김하늘</dd>
+    <dt>주민등록번호</dt><dd class="num">930412-2******</dd>
+    <dt>주소</dt><dd>서울특별시 마포구 월드컵북로 396, 누리꿈스퀘어 비즈니스타워 1203호</dd>
+    <dt>연락처</dt><dd class="num">010-4821-7730</dd>
+    <dt>계좌</dt><dd>국민은행 <span class="num">123456-01-234567</span> (김하늘)</dd>
+  </dl>
+
+  <div class="amt">
+    <div class="row"><span>지급액</span><span class="num">3,000,000</span></div>
+    <div class="row"><span>원천징수</span><span class="num">264,000</span></div>
+    <div class="row" style="font-size:var(--fs-sm);padding-top:0;margin-top:-4px"><span></span><span class="num">소득세 240,000 + 지방소득세 24,000 · 8.8%</span></div>
+    <div class="row total"><span>실지급액</span><b class="num">2,736,000</b></div>
+    <div class="han">금 이백칠십삼만육천 원정</div>
+  </div>
+
+  <p class="decl">위 금액을 기타소득으로 지급받았음을 확인합니다.</p>
+  <div class="sign">
+    <div class="who" style="margin-right:auto;text-align:left">지급자<b>PLANT8</b><span class="num">2026-09-19</span></div>
+    <div class="who">수령자<b>김하늘</b><span class="num">2026-09-20 18:42</span> 제출</div>
+    <div class="box"><svg viewBox="0 0 520 200" aria-label="김하늘 서명" role="img"><path fill="none" stroke="#000" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" d="M28 132 C 40 84, 70 62, 92 74 C 116 88, 96 140, 74 150 C 60 158, 48 148, 58 136 C 78 112, 130 96, 168 100 C 190 102, 176 130, 158 138 C 142 144, 148 118, 176 110 C 214 100, 232 118, 224 142 C 220 156, 236 150, 252 128 C 270 104, 300 90, 322 96 C 344 104, 336 132, 318 144 C 302 154, 296 134, 316 120 C 350 98, 400 92, 436 108 C 460 118, 472 138, 466 156 M 250 70 L 310 66 M 396 64 C 420 56, 448 58, 470 66"/></svg><span>서명</span></div>
+  </div>
+
+  <div class="foot"><span>PLANT8 ERP</span><span class="num">1 / 1</span></div>
 </section>
 
 </body>

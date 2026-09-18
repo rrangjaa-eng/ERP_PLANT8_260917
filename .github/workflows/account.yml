@@ -1,0 +1,97 @@
+name: account
+
+# 운영 계정 발급(D-11) — Cloud Run Job erp-{env}-account를 workflow_dispatch로
+# 실행한다. GitHub Environments 키는 쓰지 않는다(D-05) — 실행 권한은 비공개
+# 저장소의 write 협업자뿐이고 실행 기록은 Actions 로그가 남긴다(T-1-45).
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        type: choice
+        description: "대상 환경"
+        options:
+          - staging
+          - production
+      action:
+        type: choice
+        description: "동작"
+        options:
+          - create
+          - reset
+          - unlock
+      email:
+        type: string
+        description: "계정 이메일"
+      name:
+        type: string
+        description: "이름(create 전용)"
+        default: ""
+      admin:
+        type: boolean
+        description: "관리자 권한(create 전용)"
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  account:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/erp-repo
+          service_account: gha-deployer@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v3
+      - shell: bash
+        env:
+          INPUT_ENV: ${{ inputs.env }}
+          INPUT_ACTION: ${{ inputs.action }}
+          INPUT_EMAIL: ${{ inputs.email }}
+          INPUT_NAME: ${{ inputs.name }}
+          INPUT_ADMIN: ${{ inputs.admin }}
+          PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+        run: |
+          source infra/names.sh
+          ENV_SHORT="$INPUT_ENV"
+          if [ "$ENV_SHORT" = "production" ]; then
+            ENV_SHORT="prod"
+          fi
+
+          ARGS="$INPUT_ACTION,--email,$INPUT_EMAIL"
+          if [ "$INPUT_ACTION" = "create" ]; then
+            ARGS="$ARGS,--name,$INPUT_NAME"
+          fi
+          if [ "$INPUT_ADMIN" = "true" ]; then
+            ARGS="$ARGS,--admin"
+          fi
+
+          gcloud run jobs execute "$(job_name "$ENV_SHORT" account)" --region "$REGION" --project "$PROJECT" --args="$ARGS" --wait
+
+          echo "⚠️  임시 비밀번호(있다면)는 즉시 로그인해 변경하세요." >> "$GITHUB_STEP_SUMMARY"
+
+          WANT="temporary password"
+          if [ "$INPUT_ACTION" = "unlock" ]; then
+            WANT="unlocked"
+          fi
+
+          FOUND=""
+          for i in $(seq 1 12); do
+            OUT=$(gcloud logging read "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"$(job_name "$ENV_SHORT" account)\"" --project "$PROJECT" --freshness=15m --limit=30 --format='value(textPayload)' || true)
+            if printf '%s' "$OUT" | grep -q "$WANT"; then
+              FOUND="$OUT"
+              break
+            fi
+            sleep 10
+          done
+
+          if [ -z "$FOUND" ]; then
+            echo "account job finished but its output is not in Cloud Logging yet — do NOT re-run reset; open Logging → job_name=erp-<env>-account in a minute" >&2
+            exit 1
+          fi
+
+          echo "$FOUND"

@@ -10,8 +10,8 @@
    #blocked (기본) 막힘 = 증빙 없음 · 제출 버튼 비활성 + 이유 + 다음 한 수
    #error   서버 검증 오류 = 지급 예정일 형식 · 값 보존 · 원인 · 다음 행동
    #done    제출됨 = 버튼 자리에 결과 + 토스트
-   #self-a / #self-b  (d) 자기 승인 건너뜀 표시 2안(기안자 = 팀장 김도윤): a 취소선 / b 한 마디
-   #pick    「바꾸기」 안 1 = 목록 골라내기(PC 모달 480 · 폰 시트) / #pick-inline 안 2 = 제자리 select
+   #self    자기 승인 건너뜀(기안자 = 팀장 김도윤): 빠진 단계 없이 끝에 「팀장 단계 건너뜀(자기 승인 없음)」
+   #pick    「바꾸기」 = 목록 골라내기(PC 모달 480 · 폰 시트)
    컴포넌트는 tokens.css 변수만 참조한다. 앱 코드가 아니다. */
 *{box-sizing:border-box;margin:0;padding:0}
 html{font-size:var(--fs-base)}
@@ -83,7 +83,6 @@ select.inp{max-width:200px}
 .chain{display:flex;flex-wrap:wrap;gap:var(--s-1) var(--s-2);align-items:baseline;padding-top:6px}
 .chain .arrow{color:var(--faint)}
 .chain .me{font-weight:var(--fw-bold)}
-.chain .skip{color:var(--faint);text-decoration:line-through}
 .chain .why{font-size:var(--fs-sm);color:var(--muted)}
 
 /* 제출 줄 */
@@ -94,7 +93,7 @@ select.inp{max-width:200px}
 .result{font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--success);display:inline-flex;align-items:center;gap:var(--s-2);height:var(--control-h)}
 .toast{position:fixed;left:var(--pad-page);bottom:var(--s-4);background:var(--bg);border:var(--line-w-strong) solid var(--line-strong);padding:var(--s-2) var(--s-3);font-size:var(--fs-sm);display:none;gap:var(--s-3);z-index:var(--z-toast)}
 
-/* 「바꾸기」 실물 2안 (c) — #pick: 목록 골라내기(PC 모달 480 · 폰 시트) / #pick-inline: 제자리 select */
+/* 「바꾸기」(확정 2026-09-18) — #pick: 목록 골라내기(PC 모달 480 · 폰 시트, §7-8 골격) */
 .scrim{position:fixed;inset:0;background:var(--scrim);z-index:var(--z-scrim);display:none}
 body[data-pick="modal"] .scrim{display:block}
 .picker{position:fixed;z-index:var(--z-modal);display:none;flex-direction:column;background:var(--bg);border:var(--line-w-strong) solid var(--line-strong)}
@@ -131,15 +130,9 @@ body[data-pick="modal"] .picker{display:flex}
   .picker .ft .btn.p{flex:2}
   .picker .ft .hint{flex-basis:100%;margin:0}
 }
-.ro-inline{display:none;gap:var(--s-2);align-items:center;flex-wrap:wrap}
-body[data-pick="inline"] .ro-line{display:none}
-body[data-pick="inline"] .ro-inline{display:flex}
-.ro-inline select.inp{max-width:none;width:auto;flex:1}
-.ro-inline .b3{font-size:var(--fs-sm)}
-.chain-self-a,.chain-self-b{display:none}
-body[data-self="a"] .chain-normal,body[data-self="b"] .chain-normal{display:none}
-body[data-self="a"] .chain-self-a{display:flex}
-body[data-self="b"] .chain-self-b{display:flex}
+.chain-self{display:none}
+body[data-self] .chain-normal{display:none}
+body[data-self] .chain-self{display:flex}
 body[data-self] .bar .r span:last-child{display:none}
 
 /* 장면 */
@@ -193,8 +186,7 @@ body[data-scene="done"] .inp,body[data-scene="done"] select{pointer-events:none}
 
   <form class="form" onsubmit="return false">
     <div class="row"><span class="lbl">견적 줄</span><div>
-      <div class="ro ro-line"><span>1 메인 스테이지 구조물 설치 및 철거</span><span class="sub num">견적 18,000,000</span><button type="button" class="b3">바꾸기</button></div>
-      <div class="ro-inline"><select class="inp" aria-label="견적 줄" autofocus><option>1 메인 스테이지 구조물 설치 및 철거 · (주)스테이지원 · 18,000,000</option><option>2 LED 월 W12000×H4000 · 한빛무대예술 · 8,800,000</option><option>3 음향 시스템 렌탈 · 사운드포레스트 · 6,500,000</option><option>4 조명 디자인 및 운용 · 라이트온 · 5,200,000</option><option>5 행사 진행 MC · 김하늘(개인) · 3,000,000</option><option>6 케이터링 200인 · 더테이블 · 4,400,000</option></select><button type="button" class="b3">취소</button></div>
+      <div class="ro"><span>1 메인 스테이지 구조물 설치 및 철거</span><span class="sub num">견적 18,000,000</span><button type="button" class="b3">바꾸기</button></div>
     </div></div>
     <div class="row"><span class="lbl">거래처</span><div class="ro"><span>(주)스테이지원커뮤니케이션즈</span><span class="sub">기본 증빙 세금계산서</span><button type="button" class="b3">바꾸기</button></div></div>
     <div class="row"><label for="kind">증빙 종류</label><div><select id="kind" class="inp"><option>세금계산서</option><option>계산서</option><option>카드 전표</option><option>현금영수증</option><option>기타소득</option><option>사업소득</option><option>해외 인보이스</option></select></div></div>
@@ -219,9 +211,8 @@ body[data-scene="done"] .inp,body[data-scene="done"] select{pointer-events:none}
 
     <div class="row chain-row"><span class="lbl">결재선</span><div>
       <div class="chain chain-normal"><span class="me">박서연</span><span class="arrow">→</span><span>김도윤 <span class="why">팀장</span></span><span class="arrow">→</span><span>이수아 <span class="why">경영관리</span></span><span class="arrow">→</span><span>대표</span><span class="why">· 결재 규칙</span></div>
-      <!-- (d) 자기 승인 건너뜀(Eng OV-2) 표시 2안 — 기안자가 팀장 김도윤일 때 -->
-      <div class="chain chain-self-a"><span class="me">김도윤</span><span class="arrow">→</span><span class="skip">김도윤 <span class="why">팀장</span></span><span class="arrow">→</span><span>이수아 <span class="why">경영관리</span></span><span class="arrow">→</span><span>대표</span><span class="why">· 자기 승인 없음 · 결재 규칙</span></div>
-      <div class="chain chain-self-b"><span class="me">김도윤</span><span class="arrow">→</span><span>이수아 <span class="why">경영관리</span></span><span class="arrow">→</span><span>대표</span><span class="why">· 팀장 단계 건너뜀(자기 승인 없음) · 결재 규칙</span></div>
+      <!-- 자기 승인 건너뜀(Eng OV-2, 확정 2026-09-18): 빠진 단계는 그리지 않고 끝에 한 마디 -->
+      <div class="chain chain-self"><span class="me">김도윤</span><span class="arrow">→</span><span>이수아 <span class="why">경영관리</span></span><span class="arrow">→</span><span>대표</span><span class="why">· 팀장 단계 건너뜀(자기 승인 없음) · 결재 규칙</span></div>
     </div></div>
 
     <div class="submit">
@@ -263,7 +254,7 @@ body[data-scene="done"] .inp,body[data-scene="done"] select{pointer-events:none}
 <nav class="tabs" aria-label="하단 탭"><a href="#">내 차례 4</a><a href="#">프로젝트</a><a href="#" aria-current="page">지출결의</a><a href="#">더보기</a></nav>
 
 <script>
-(function(){var h=location.hash.slice(1);if(['blocked','error','done'].includes(h))document.body.dataset.scene=h;if(h==='pick')document.body.dataset.pick='modal';if(h==='pick-inline')document.body.dataset.pick='inline';if(h==='self-a'||h==='self-b'){document.body.dataset.self=h.slice(-1);document.querySelector('.sec h1').textContent='지출결의 — 아이오닉9 · 팀 회식';document.querySelector('.bar .r').insertAdjacentHTML('beforeend','<span>김도윤 · 기획1팀장</span>');}})();
+(function(){var h=location.hash.slice(1);if(['blocked','error','done'].includes(h))document.body.dataset.scene=h;if(h==='pick')document.body.dataset.pick='modal';if(h==='self'){document.body.dataset.self='1';document.querySelector('.sec h1').textContent='지출결의 — 아이오닉9 · 팀 회식';document.querySelector('.bar .r').insertAdjacentHTML('beforeend','<span>김도윤 · 기획1팀장</span>');}})();
 </script>
 </body>
 </html>

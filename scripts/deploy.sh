@@ -486,6 +486,13 @@ smoke() {
     return 0
   fi
 
+  # healthz가 재시도 예산을 다 쓰기 전에, 다른 경로(/·/login)도 같은
+  # 주소에서 404인지 한 번(재시도 없이) 빠르게 찍어둔다 — "인프라 전체가
+  # 막혔다"와 "healthz 경로만 문제"를 구분할 유일한 데이터인데, 지금까지는
+  # healthz가 항상 먼저 재시도 예산을 다 쓰고 exit해서 이 정보를 한 번도
+  # 얻은 적이 없었다(2026-09-18).
+  echo "quick probe (no retry): / -> $(curl -s -o /dev/null -w '%{http_code}' "${target}/" 2>/dev/null || echo ERR), /login -> $(curl -s -o /dev/null -w '%{http_code}' "${target}/login" 2>/dev/null || echo ERR), /healthz -> $(curl -s -o /dev/null -w '%{http_code}' "${target}/healthz" 2>/dev/null || echo ERR)" >&2
+
   if ! run curl -fsS --retry 20 --retry-delay 15 --retry-all-errors "${target}/healthz" | grep -q '"ok":true'; then
     echo "SmokeFailed: run scripts/rollback.sh if this is a real regression" >&2
     _dump_service_diagnostics

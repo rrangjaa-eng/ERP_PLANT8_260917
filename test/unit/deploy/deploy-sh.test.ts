@@ -102,7 +102,12 @@ describe("deploy.sh — 새 프로젝트(시나리오 1)", () => {
 
   it("exit 0이고 인프라 ensure → 이미지 → Job → 스모크 → 경보 순서로 gcloud가 호출된다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
-    expect(r.stderr).toBe("");
+    // smoke()가 healthz 재시도 전에 /·/login·/healthz를 한 번(재시도 없이)
+    // 찍어두는 진단 줄만 stderr에 남는다(2026-09-18 — healthz만 항상 먼저
+    // 실패하면서 다른 경로 상태를 한 번도 못 봤던 문제 대응).
+    expect(r.stderr).toContain("quick probe (no retry):");
+    expect(r.stderr).not.toContain("SmokeFailed");
+    expect(r.stderr).not.toContain("deploy failed at");
     expect(r.status).toBe(0);
 
     const order = [

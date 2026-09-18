@@ -46,6 +46,14 @@
   --focus:         var(--g-700);
   --scrim:         rgba(0, 33, 28, 0.45);
 
+  /* 브라우저 기본 표면 (SYSTEM.md §4-4) */
+  --sel-bg:        var(--g-100);
+  --sel-fg:        var(--fg);
+  --caret:         var(--g-700);
+  --native-accent: var(--g-700);   /* accent-color: 체크박스·라디오·progress */
+  --scrollbar:     var(--line-ui);
+  --underline-offset: 2px;
+
   /* 인쇄 전용 (print 라우트에서 --fg/--line-strong를 이것으로 덮는다) */
   --print-ink:     #000000;
 

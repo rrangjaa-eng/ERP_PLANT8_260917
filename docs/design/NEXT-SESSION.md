@@ -1,86 +1,26 @@
-# 다음 세션 — §3(수렴) 시작 안내
+# 다음 세션 — §3(수렴) 끝, §4(통일)로
 
-§1·§2는 끝났다. 이 문서는 **§3을 어떻게 시작하는지**만 적는다.
-판단의 근거는 여기가 아니라 `BRIEF.md`와 `EXPLORE.md`에 있다. 내용이 어긋나면 그 둘이 맞다.
+§1(브리프)·§2(발산)·§3(수렴)이 끝났다. 판단의 근거는 `BRIEF.md` → `EXPLORE.md` → `SYSTEM.md`·`DECISIONS.md` 순서로 있다. 내용이 어긋나면 `SYSTEM.md`가 맞다.
 
----
+## 상태 (2026-09-18)
 
-## 시작 전 — 이 파일들이 보이는지부터 확인한다
+- 채택: **안 A 원장**, 색 구성은 안 C의 그린 톤온톤 흡수 (사용자 결정)
+- 산출물: `SYSTEM.md` · `tokens.css` · `DECISIONS.md` · `REVIEW.md`(디자인 리뷰 7패스, 7→9점) · `system/`(실물 + 스크린샷)
+- 브랜치 `design/system-260918`, 드래프트 PR **#7** — 머지 전이면 `git fetch origin design/system-260918 && git checkout design/system-260918`
+- CI 없음(리포에 `.github/workflows/` 없음)
 
-§1·§2 결과물은 **브랜치 `design/brief-explore-260918`(드래프트 PR #6)에만 있다.**
-이 글이 읽힌다는 건 그 브랜치에 있다는 뜻이지만, master로 시작했다면 아무것도 없다:
+## 먼저 — 사용자 결정 4건 (`DECISIONS.md` 「미확정」)
 
-```
-git fetch origin design/brief-explore-260918
-git checkout design/brief-explore-260918
-```
+U1 로고 워드마크 반전 사용 · U2 인쇄물 결재 칸(텍스트/서명 이미지) · U3 Pretendard 웹폰트 파일 추가 승인(의존성) · U4 손익 인라인 막대 v1 포함 여부.
+답이 나오면 `DECISIONS.md`에 결정 줄을 더하고 `SYSTEM.md`의 해당 절을 고친다. U1·U3은 첫 화면 구현 전에 필요하다.
 
-PR #6이 이미 master에 머지됐다면 그냥 master로 진행하면 된다.
+## 그 다음 — §4 통일 (화면마다)
 
-## 0. 먼저 — 방향이 아직 안 정해졌다
+`docs/DESIGN.md` §4 절차. 새 화면은 `SYSTEM.md` §6 템플릿 중 하나에서 시작하고, 토큰은 `tokens.css` 변수만. 완료 판정은 `/design-review` → `/qa`.
+Phase 2(UX-01: SYSTEM.md 확정 + 컴포넌트 계약)가 이 산출물을 소비한다. GSD 명령은 그 페이즈를 맡은 세션에서만 실행한다.
 
-§3은 "한 안을 고르고 시스템으로 굳히는" 단계인데, **사용자가 아직 고르지 않았다.**
-그러니 첫 순서는 계획이 아니라 질문이다.
+## 지킨 제약 (다음 세션도 확인)
 
-1. 사용자에게 **비교 보드 링크**를 다시 안내한다 — https://claude.ai/artifact/7pyqZmFAGShzyipzpah9df
-   (네 안의 실제 화면을 PC 1280 / 폰 390으로 바꿔 가며 보는 페이지. 이전 세션에서 배포했고 사용자 본인만 열 수 있다.
-   링크가 안 열리면 `docs/design/explore/index.html`이 같은 내용이지만, 그 파일은 사용자 PC에 리포를 받아야 열린다 —
-   클라우드 컨테이너 안의 경로는 사용자 브라우저에서 열리지 않는다)
-2. A·B·D 중 하나를 고르게 한다 — `EXPLORE.md`「선택」절의 **고르는 기준 5개**를 그 순서대로 같이 보여 준다
-3. 고르기 전에는 `SYSTEM.md`·`tokens.css`를 쓰지 않는다
-
-`DESIGN.md` §3-1: **최종 결정은 사용자가 한다.** 점수는 참고다.
-두 안이 근접해도 **혼합하지 않는다** — 한 안을 고르고 다른 안의 장점을 그 안으로 흡수한다.
-
-## 1. 읽을 순서
-
-| 순서 | 파일 | 왜 |
-|---|---|---|
-| 1 | `docs/design/EXPLORE.md` 맨 끝 **「선택」** 절 | §3의 유일한 입력. 후보 3개·고르는 기준·남은 구멍 |
-| 2 | 비교 보드 https://claude.ai/artifact/7pyqZmFAGShzyipzpah9df | 네 안의 실제 화면. 리포 안의 같은 내용은 `explore/index.html`, 스크린샷은 `explore/shots/` |
-| 3 | `docs/design/BRIEF.md` | 모든 판단을 되돌려 검증하는 기준 |
-| 4 | `docs/DESIGN.md` §3 · §5(안티슬롭) · §6(품질 바닥) | 수렴 절차와 금지 목록 |
-| 5 | `.planning/PROJECT.md` — Context「정보 노출 원칙」·「기획본부의 기준」, Constraints 디자인 항목 | 화면 제약의 출처 |
-| 6 | `.planning/REQUIREMENTS.md` UX-01 ~ UX-06 | 화면이 만족해야 할 요구사항 |
-
-`EXPLORE.md` 본문(각 안의 축 값·색·와이어프레임)은 고른 안의 절만 읽으면 된다.
-
-## 2. 안이 정해진 뒤 할 일
-
-1. `EXPLORE.md`의 비교표(빈 칸 11행)를 1–5점으로 채운다 — 결론이 아니라 기록용
-2. `docs/design/SYSTEM.md` 작성 — 항목은 `DESIGN.md` §3-2 그대로
-3. `docs/design/tokens.css` — SYSTEM.md의 토큰을 코드로. 컴포넌트는 이 변수만 참조
-4. `docs/design/DECISIONS.md` — 채택 이유 + **버린 안마다 "왜 버렸나" 한 줄**
-5. `/plan-design-review`
-
-## 3. 안 선택과 무관하게 §3에서 메워야 할 구멍 6개
-
-§2에서 미해결로 남긴 것들이다. 어느 안을 골라도 그대로 남는다.
-
-1. **폰에서의 표 전략** — 가로 스크롤 / 칸 접기 / 카드 전환 중 하나를 시스템 규칙으로 고정. A를 고르면 필수
-2. **인쇄 템플릿** — 지출결의서·기타소득 확인증. D를 고르지 않아도 필수 요구사항이다
-3. **`#005446`의 명도 단계** — 현재 브랜드 근거는 이 한 색뿐. 배경 틴트·hover·disabled 단계를 만들고 각 대비값 검증
-4. **EMPTY 상태** — B를 고르면 대기열이 빈 첫 화면이 성패를 가른다
-5. **서체 확정** — Pretendard 웹폰트(로딩 비용) vs 시스템 스택. D면 명조까지 두 벌
-6. **외화 병기** — 금액 한 칸이 두 줄이 되는 경우의 표 행 높이 규칙
-
-## 4. 안 C(작업대)에서 흡수할 것
-
-C는 후보에서 뺐지만(폰 미성립 → UX-03 위반, 유지 비용 최대) 두 가지는 채택안에 넣는다.
-
-- 단축키를 숨은 기능이 아니라 **화면에 상시 노출되는 힌트 줄**로 취급 (UX-05)
-- 표의 오류 칸을 붉게 **고정**하고 「전부 저장 또는 전부 거부」를 표 안에서 보여 주기 (UX-05)
-
-## 5. 이 세션이 지킨 제약 (다음 세션도 확인할 것)
-
-- 변경 범위는 `docs/design/` 뿐이었다. `.planning/`·`CLAUDE.md`·`.claude/`·앱 코드는 건드리지 않았다
-- GSD 명령(`/gsd-*`)을 실행하지 않았다 — **Phase 1이 다른 세션에서 진행 중이라 `STATE.md`가 충돌한다.** 다음 세션도 시작 전에 Phase 1이 아직 도는지 확인할 것
-- 260907의 화면·정보구조·UI 흐름·틀·토큰은 참고하지 않았다(업무 규칙·용어만 참고 가능)
-
-## 6. 현재 상태
-
-- 브랜치 `design/brief-explore-260918`, 드래프트 PR **#6** — **아직 master에 머지되지 않았다**
-- 비교 보드(배포본): https://claude.ai/artifact/7pyqZmFAGShzyipzpah9df
-- CI 없음(리포에 `.github/workflows/` 자체가 없다), 충돌 없음, 리뷰 스레드 없음
-- §1·§2 산출물: `BRIEF.md` · `EXPLORE.md` · `explore/*.html` · `explore/shots/*.png`
-- 아직 없는 것: `SYSTEM.md` · `tokens.css` · `DECISIONS.md`
+- 변경 범위 `docs/design/`만. `.planning/`·`CLAUDE.md`·`.claude/`·앱 코드 무변경
+- GSD 명령 미실행(Phase 1이 다른 세션에서 진행 중)
+- 260907의 화면·정보구조·UI 흐름·틀·토큰 참고 안 함

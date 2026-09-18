@@ -13,6 +13,8 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font-sans);font-size
   line-height:var(--lh-body);letter-spacing:var(--ls-body);word-break:keep-all;overflow-wrap:anywhere;
   -webkit-font-smoothing:antialiased}
 button,input,select{font:inherit;color:inherit}
+::selection{background:var(--sel-bg);color:var(--sel-fg)}
+:root{caret-color:var(--caret);accent-color:var(--native-accent);scrollbar-color:var(--scrollbar) var(--bg);scrollbar-width:thin}
 .num{font-variant-numeric:tabular-nums;letter-spacing:var(--ls-num);text-align:right;white-space:nowrap}
 kbd{font:inherit;font-size:var(--fs-xs);border:var(--line-w) solid var(--line);padding:0 var(--s-1);color:var(--faint);line-height:var(--lh-head)}
 
@@ -38,7 +40,7 @@ main{padding:var(--s-5) var(--pad-page) 72px;max-width:var(--container-max)}
 .next .grow{flex:1;min-width:0}
 .next .why{color:var(--muted)}
 .next .amt{flex:none;min-width:11ch}
-.b3{background:none;border:0;padding:0;color:var(--accent);font-weight:var(--fw-medium);border-bottom:var(--line-w) solid var(--accent);cursor:pointer;font-size:inherit;line-height:1.3;white-space:nowrap}
+.b3{background:none;border:0;padding:0;color:var(--accent);font-weight:var(--fw-medium);border-bottom:var(--line-w) solid var(--accent);cursor:pointer;font-size:inherit;line-height:1.3;white-space:nowrap;text-underline-offset:var(--underline-offset)}
 .b3:hover{border-bottom-width:var(--line-w-strong)}
 .next .go{flex:none;font-size:var(--fs-sm)}
 

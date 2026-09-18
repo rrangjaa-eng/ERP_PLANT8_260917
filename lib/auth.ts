@@ -3,6 +3,7 @@ import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { db } from "@/db/client";
 import * as schema from "@/db/schema";
 import { env } from "@/lib/env";
+import { getAuthProvider } from "@/domain/auth/provider";
 
 // better-auth 인스턴스. next import 금지(01-05가 CLI 번들에 포함한다) — 이 파일과
 // db/*·domain/*·repositories/*는 `next/*`·`server-only`를 import하지 않는다.
@@ -36,4 +37,15 @@ export const auth = betterAuth({
       ipAddressHeaders: ["x-forwarded-for"],
     },
   },
+  // AUTH-04: 로그인 방식 환경 변수 전환. 기본 email에서는 undefined — 01-03이
+  // 로그인 화면 버튼 슬롯과 구조 불변 테스트를 더한다.
+  socialProviders:
+    getAuthProvider() === "google"
+      ? {
+          google: {
+            clientId: env.GOOGLE_CLIENT_ID as string,
+            clientSecret: env.GOOGLE_CLIENT_SECRET as string,
+          },
+        }
+      : undefined,
 });

@@ -35,8 +35,7 @@ export default defineConfig({
   retries: 0,
   webServer: {
     command: process.env.CI ? "pnpm build && pnpm start" : "pnpm dev",
-    // Task 3이 /healthz로 바꾼다(healthz는 이 태스크 이후에 생긴다).
-    url: "http://127.0.0.1:3100/login",
+    url: "http://127.0.0.1:3100/healthz",
     reuseExistingServer: false,
     env: {
       DATABASE_URL: process.env.DATABASE_URL,

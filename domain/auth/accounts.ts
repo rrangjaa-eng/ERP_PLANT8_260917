@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { auth } from "@/lib/auth";
+import { log } from "@/lib/log";
 import type { Viewer } from "@/domain/viewer";
 
 // D-11: 계정 발급 수단은 CLI 하나. 무작위 임시 비밀번호를 반환하고, 어떤 로그·
@@ -42,6 +43,8 @@ export async function createAccount(
     accountId: user.id,
     password: hash,
   });
+
+  log.info("auth.account_created", { userId: user.id, isAdmin: input.isAdmin });
 
   return { userId: user.id, tempPassword };
 }

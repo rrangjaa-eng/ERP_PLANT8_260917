@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 1
 current_phase_name: 배포 스켈레톤·로그인
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-09-18T08:47:44.095Z"
+stopped_at: Completed 01-04-PLAN.md
+last_updated: "2026-09-18T09:15:32.364Z"
 last_activity: 2026-09-17
 last_activity_desc: "로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드"
-state_head: b8ee710fbb130607eba06271cb7d800e43e9e63b
+state_head: ef8334f04f5a2616b7c75809265b65d7a07241c7
 progress:
   total_phases: 11
   completed_phases: 0
   total_plans: 8
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 1 (배포 스켈레톤·로그인) — EXECUTING
-Current Plan: 4
+Current Plan: 5
 Total Plans in Phase: 8
 Status: Ready to execute
 Last activity: 2026-09-17 — 로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드
@@ -62,6 +62,7 @@ Progress: [░░░░░░░░░░] 0%
 |------|----------|-------|-------|
 | Phase 01-deploy-skeleton-login P02 | 65min | 2 tasks | 22 files |
 | Phase 01-deploy-skeleton-login P03 | 18min | 2 tasks | 17 files |
+| Phase 01-deploy-skeleton-login P04 | 40min | 3 tasks | 32 files |
 
 ## Accumulated Context
 
@@ -103,6 +104,11 @@ Recent decisions affecting current work:
 - [Phase 1]: [Phase 1] AUTH-03·AUTH-04는 REQUIREMENTS.md에서 Complete로 반영됨. OPS-06은 01-07이 같은 요구사항을 공유(shared-ID gate)해 01-07 완료 시 Complete로 바뀐다(의도된 동작)
 - [Phase 1]: 01-07 Task 1 GCP 리소스 이름 결정(사용자, 2026-09-18): 옵션 A/B 대신 순수 접두어 `plant8-` 커스텀 선택 — 서비스 plant8-staging/plant8-prod, Cloud SQL 인스턴스 plant8-staging-db/plant8-prod-db, DB 이름 plant8, SA plant8-{env}-runtime, Artifact Registry plant8. infra/names.sh(웨이브 5/01-06) 생성 시 이 값으로 반영하고, 01-07 Task 1 체크포인트에서 재확인 없이 바로 적용한다
 - [Phase 1]: 01-07 사전 준비 완료(사용자, 2026-09-18): 조직 정책 iam.allowedPolicyMemberDomains를 allUsers 등 전체 허용으로 변경해 run.invoker 부여(비인증 ingress) 차단 블로커 해소. 프로젝트 소유자 역할·경보 알림 그룹도 준비 완료 — 웨이브 6(01-07) 시작 전 재확인 항목 3개(조직 정책·프로젝트 소유자·경보 그룹) 모두 충족
+- [Phase 01-deploy-skeleton-login]: 01-04: .squawk.toml 키는 최상위(섹션 없음)여야 적용된다 — assume_in_transaction/pg_version/excluded_rules 실측 확인
+- [Phase 01-deploy-skeleton-login]: 01-04: db→lib, test→eslint boundaries 경계 예외 추가(기존 db/client.ts의 lib/env.ts import, eslint-rules 테스트의 규칙 모듈 import 요구에 맞춤)
+- [Phase 01-deploy-skeleton-login]: 01-04: recommendedTypeChecked 적용으로 드러난 실제 타입 버그 4곳(File-vs-string, misused-promises, ctx.body any, 테스트 mock 타입) 수정
+- [Phase 01-deploy-skeleton-login]: 01-04: CI ci-guard.test.ts는 두 잡(quality/integration-e2e) 각각의 내부 순서를 검증한다 — 전체 파일 단일 순서 대신(두 잡 분리 유지가 CEO 9A Actions 예산에 더 부합)
+- [Phase 01-deploy-skeleton-login]: 01-04: .squawk.toml excluded_rules 4개(prefer-timestamp-tz, prefer-bigint-over-int, adding-required-field, require-concurrent-index-creation) — 스키마 전체 변경 필요해 범위 밖, WINDOWS.md에 lint-warning 4건 등록
 
 ### Pending Todos
 
@@ -128,6 +134,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-18T08:31:01.230Z
-Stopped at: Completed 01-03-PLAN.md
+Last session: 2026-09-18T09:15:32.321Z
+Stopped at: Completed 01-04-PLAN.md
 Resume file: None

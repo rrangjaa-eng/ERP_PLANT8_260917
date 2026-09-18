@@ -34,6 +34,31 @@ better-auth의 Origin 검사에 걸려 403이 난다 — 북마크·안내는 �
   SHA 태그 이미지(~300MB)가 push마다 쌓여 상한을 잠식한다
 - Secret Manager 접근, Cloud Logging 수집
 
+**첫 청구서 확인(D-06):** 프로덕션은 2026-09-18에 올라갔다 — 이 날부터 Cloud SQL이
+**2대** 상시 과금된다. 매월 초 GCP 콘솔 → Billing → Reports에서 다음을 본다.
+
+1. 두 환경 합계가 $30 안팎인가 — 넘으면 스테이징 Cloud SQL부터 줄인다(중지/축소)
+2. 비용의 대부분이 Cloud SQL인가 — 아니라면 예상 밖 항목이 있다는 뜻이다
+   (Artifact Registry 누적, Logging 수집량 등)
+3. 첫 확인 대상은 2026년 9월분(10월 초 확정). 9월은 월중 시작이라 일할 계산된다
+
+**배포자 SA 권한 축소(01-08):** `gha-deployer`는 부트스트랩이 8개 admin 역할을
+넓게 부여한 상태다(`run.admin` `cloudsql.admin` `secretmanager.admin`
+`artifactregistry.admin` `monitoring.editor` `logging.admin`
+`serviceusage.serviceUsageAdmin` `compute.networkAdmin`). 실제 배포가 쓰는 권한으로
+좁힐 때의 근거:
+
+- **`compute.networkAdmin`은 뺄 수 있다.** `deploy.sh`의 `ensure_network()`는 VPC
+  피어링을 **조회만** 하고, 없으면 "run scripts/bootstrap-gcp.sh first"로 중단한다 —
+  네트워크 생성은 Owner가 실행하는 부트스트랩의 몫이다. 조회 권한만 남기면 된다.
+- **`serviceusage.serviceUsageAdmin`은 지금 구조에서는 뺄 수 없다.** `ensure_apis()`가
+  매 배포마다 `gcloud services enable`을 호출한다. 빼려면 그 단계를 "이미 켜져 있으면
+  건너뛰기"로 바꾸는 코드 변경이 먼저다.
+- 나머지 6개는 배포가 매번 실제로 쓴다(서비스·Job 배포, SQL 인스턴스/DB/사용자,
+  시크릿 생성·IAM, 이미지 push·정리 정책, 경보 정책·채널, 로그 메트릭).
+- 참고: 배포자 SA에는 `orgpolicy.policy.get`이 **없다**(01-07 실측, `PERMISSION_DENIED`).
+  조직 정책 원문 확인은 Owner 계정으로 한다.
+
 **GitHub Actions 분 예산:** 무료 플랜 비공개 저장소는 월 **2,000**분. CI 1회 ≈ 8~10분,
 스테이징 배포 1회 ≈ 8~10분 — 월 100회 안팎이 사실상 상한이다. 소진되면 GitHub이 월말까지
 워크플로를 아예 시작하지 않아 배포가 조용히 멈춘다(GitHub 청구 메일이 유일한 신호) —

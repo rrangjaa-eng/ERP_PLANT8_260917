@@ -517,10 +517,14 @@ ensure_alerts() {
   # Cloud Monitoring 필터 문법은 문자열 리터럴에 큰따옴표를 요구한다(작은
   # 따옴표는 문법 오류 — 실제 스테이징에서 재현, 2026-09-18: channel이 0개일
   # 땐 경고만 뜨고 넘어가지만 1개 이상이면 INVALID_ARGUMENT로 실패한다).
-  channel_name="$(run gcloud beta monitoring channels list --project="$PROJECT" --filter="displayName=\"${channel_display}\"" --format='value(name)')"
+  # `value(name)`은 일치하는 줄마다 하나씩 돌려준다 — 같은 표시 이름이
+  # 중복되면(콘솔에서 수동 생성 등) 여러 줄이 섞여 그다음 sed 치환에
+  # 줄바꿈이 끼어 정책 JSON이 깨진다. 하나만 쓴다(Fable 코드 리뷰,
+  # 2026-09-18).
+  channel_name="$(run gcloud beta monitoring channels list --project="$PROJECT" --filter="displayName=\"${channel_display}\"" --format='value(name)' | head -n1)"
   if [ -z "$channel_name" ]; then
     run gcloud beta monitoring channels create --project="$PROJECT" --display-name="$channel_display" --type=email --channel-labels="email_address=${ALERT_EMAIL}"
-    channel_name="$(run gcloud beta monitoring channels list --project="$PROJECT" --filter="displayName=\"${channel_display}\"" --format='value(name)')"
+    channel_name="$(run gcloud beta monitoring channels list --project="$PROJECT" --filter="displayName=\"${channel_display}\"" --format='value(name)' | head -n1)"
   fi
 
   local metric
@@ -542,8 +546,9 @@ ensure_alerts() {
 _upsert_policy() {
   local display_name="$1" template="$2" channel_name="$3" metric="$4" instance="$5"
   local existing
-  # 같은 이유(위 ensure_alerts 참고)로 큰따옴표를 쓴다.
-  existing="$(run gcloud alpha monitoring policies list --project="$PROJECT" --filter="displayName=\"${display_name}\"" --format='value(name)')"
+  # 같은 이유(위 ensure_alerts 참고)로 큰따옴표를 쓰고, 중복 매치 대비로
+  # 한 줄만 쓴다(Fable 코드 리뷰, 2026-09-18).
+  existing="$(run gcloud alpha monitoring policies list --project="$PROJECT" --filter="displayName=\"${display_name}\"" --format='value(name)' | head -n1)"
   local tmpfile
   tmpfile="$(mktemp)"
   sed \

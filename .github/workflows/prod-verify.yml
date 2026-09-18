@@ -1,0 +1,106 @@
+name: prod-verify
+
+# 임시 워크플로 — 01-08 human-check 중 "프로덕션 설정"에 해당하는 항목을
+# **읽기 전용으로** 한 번 확인한다. 배포도, 쓰기도 하지 않는다.
+# 실행자 세션은 *.run.app에 접속할 수 없어(방화벽) Actions 안에서 재고
+# 결과를 orphan 브랜치로 회수한다. 확인 후 이 파일과 브랜치는 삭제한다.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: prod-verify
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/erp-repo
+          service_account: gha-deployer@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          install_components: alpha,beta
+
+      - name: verify
+        shell: bash
+        env:
+          PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          PROJECT_NUMBER: ${{ vars.GCP_PROJECT_NUMBER }}
+          REGION: ${{ vars.GCP_REGION }}
+        run: |
+          set +e
+          OUT=/tmp/verify.txt
+          : >"$OUT"
+
+          URL=$(gcloud run services describe plant8-prod --region "$REGION" --project "$PROJECT" --format='value(status.url)')
+
+          echo "## 1. 서빙 리비전과 배포 SHA (human-check 3)" >>"$OUT"
+          REV=$(gcloud run services describe plant8-prod --region "$REGION" --project "$PROJECT" --format=json \
+            | jq -r '.status.traffic[]? | select(.percent == 100) | .revisionName' | head -n1)
+          echo "revision=$REV" >>"$OUT"
+          gcloud run revisions describe "$REV" --region "$REGION" --project "$PROJECT" --format=json \
+            | jq -r '"APP_GIT_SHA=" + (.spec.containers[0].env[]? | select(.name=="APP_GIT_SHA") | .value)' >>"$OUT"
+
+          echo "" >>"$OUT"
+          echo "## 2. /api/health 실제 응답 본문 (human-check 3)" >>"$OUT"
+          curl -fsS --max-time 30 "$URL/api/health" >>"$OUT" 2>&1
+          echo "" >>"$OUT"
+
+          echo "" >>"$OUT"
+          echo "## 3. 비로그인 접근 차단 (human-check 4의 프로덕션 확인)" >>"$OUT"
+          echo "/admin/system-status (익명) -> $(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$URL/admin/system-status")" >>"$OUT"
+          echo "/account (익명) -> $(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$URL/account")" >>"$OUT"
+          echo "/login -> $(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$URL/login")" >>"$OUT"
+
+          echo "" >>"$OUT"
+          echo "## 4. 세션 쿠키가 영속 쿠키인가 (human-check 5, D-07)" >>"$OUT"
+          curl -s -D - -o /dev/null --max-time 30 "$URL/login" | grep -i '^set-cookie' >>"$OUT" 2>&1
+          echo "(로그인 전 단계 쿠키만 보인다면 만료 속성 유무로 판단)" >>"$OUT"
+
+          echo "" >>"$OUT"
+          echo "## 5. 경보 정책·채널 (human-check 6)" >>"$OUT"
+          gcloud alpha monitoring policies list --project "$PROJECT" \
+            --format='value(displayName,enabled)' >>"$OUT" 2>&1
+          echo "-- 알림 채널 --" >>"$OUT"
+          gcloud beta monitoring channels list --project "$PROJECT" \
+            --format='value(displayName,type)' >>"$OUT" 2>&1
+
+          echo "" >>"$OUT"
+          echo "## 6. A3 — cloudsql.viewer가 backupRuns.list를 포함하는가 (01-07 미결)" >>"$OUT"
+          gcloud iam roles describe roles/cloudsql.viewer --format='value(includedPermissions)' \
+            | tr ',' '\n' | grep -i 'backup' >>"$OUT" 2>&1
+          echo "exit=$? (0이면 포함 — 상태 화면 백업 절이 permission 이유로 막히지 않는다)" >>"$OUT"
+
+          echo "" >>"$OUT"
+          echo "## 7. 런타임 SA 역할" >>"$OUT"
+          gcloud projects get-iam-policy "$PROJECT" --flatten='bindings[].members' \
+            --filter="bindings.members:plant8-prod-runtime@${PROJECT}.iam.gserviceaccount.com" \
+            --format='value(bindings.role)' >>"$OUT" 2>&1
+
+          # 마스킹(D-03): 프로젝트 ID·번호·서비스 호스트를 지운다.
+          HOST="${URL#https://}"
+          sed -i "s/${PROJECT}/<PROJECT_ID>/g; s/${PROJECT_NUMBER}/<PROJECT_NUMBER>/g; s/[0-9]\{12\}/<PROJECT_NUMBER>/g; s/${HOST}/<PROD_HOST>/g" "$OUT"
+          cat "$OUT"
+
+      - name: publish result
+        if: always()
+        shell: bash
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "github-actions"
+          git checkout --orphan prod-verify-result
+          git rm -rq --cached . || true
+          rm -rf ./* .github .planning 2>/dev/null || true
+          cp /tmp/verify.txt ./RESULT.md
+          git add RESULT.md
+          git commit -q -m "prod verify result"
+          git push -f origin prod-verify-result

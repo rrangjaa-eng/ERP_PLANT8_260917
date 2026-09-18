@@ -119,9 +119,9 @@ describe("deploy.sh — 새 프로젝트(시나리오 1)", () => {
       "run jobs execute plant8-staging-db-bootstrap",
       "run jobs execute plant8-staging-migrate",
       "run deploy plant8-staging ",
+      "alpha monitoring policies create",
       "/healthz",
       "sign-in/email",
-      "alpha monitoring policies create",
     ].map((needle) => lineIndex(r.log, needle));
 
     for (const idx of order) expect(idx).toBeGreaterThan(-1);
@@ -181,7 +181,7 @@ describe("deploy.sh — 기존 서비스·이미지(시나리오 2)", () => {
     repoDir = setupRepo();
   });
 
-  it("docker build를 건너뛰고 --no-traffic + --tag로 배포한 뒤 경보 upsert 후 승격한다", () => {
+  it("docker build를 건너뛰고 바로 100% 트래픽으로 재배포한 뒤 경보를 upsert하고 실제 주소로 스모크한다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj", "--sha", "0123456789abcdef0123456789abcdef01234567"], {
       state: {
         "service-exists": true,
@@ -194,26 +194,34 @@ describe("deploy.sh — 기존 서비스·이미지(시나리오 2)", () => {
     expect(r.status).toBe(0);
     expect(r.log).not.toMatch(/^(docker )?build /m);
 
+    // 카나리(--no-traffic/--tag) 단계 없이 신규 배포와 동일하게 바로 100%
+    // 트래픽으로 배포한다(2026-09-18 — 태그 전용 URL 라우팅 지연 문제로
+    // 카나리 단계 자체를 없앰). 트래픽을 옮기는 별도 update-traffic 호출도
+    // 없다.
     const deployLine = r.log.split("\n").find((l) => l.startsWith("run deploy plant8-staging "));
-    expect(deployLine).toContain("--no-traffic");
-    expect(deployLine).toContain("--tag=rev-01234567");
+    expect(deployLine).not.toContain("--no-traffic");
+    expect(deployLine).not.toContain("--tag=");
+    expect(r.log).not.toContain("services update-traffic");
 
-    // 카나리 배포는 계산한 결정적 URL이 아니라 gcloud 배포 출력이 알려준
-    // 실제 태그 리비전 URL로 스모크해야 한다(2026-09-18 실측 버그 수정).
+    // 실제 URL이 계산한 결정적 URL과 다르면(describe-url) 실측값으로
+    // 바로잡고, 이미 100%로 배포했으므로 컨테이너의 BETTER_AUTH_URL도
+    // 안전하게 같이 고친다 — 스모크는 이 실측 주소로 한다.
+    const updateLine = r.log.split("\n").find((l) => l.startsWith("run services update plant8-staging "));
+    expect(updateLine).toBeDefined();
+    expect(updateLine).toContain("--update-env-vars=BETTER_AUTH_URL=https://plant8-staging-abc123-du.a.run.app");
+
     const healthzLine = r.log.split("\n").find((l) => l.includes("/healthz"));
-    expect(healthzLine).toContain("https://rev-01234567---fake-tagged-hash.a.run.app/healthz");
+    expect(healthzLine).toContain("https://plant8-staging-abc123-du.a.run.app/healthz");
 
-    const order = ["sign-in/email", "alpha monitoring policies update", "services update-traffic"].map((n) =>
-      lineIndex(r.log, n),
+    const order = ["run deploy plant8-staging ", "alpha monitoring policies update", "/healthz", "sign-in/email"].map(
+      (n) => lineIndex(r.log, n),
     );
     for (const idx of order) expect(idx).toBeGreaterThan(-1);
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(r.log).not.toContain("alpha monitoring policies create");
 
     expect(r.stderr).toContain("describe url differs");
-    expect(r.stdout.trim().split("\n").at(-1)).toBe(
-      "SERVICE_URL=https://plant8-staging-123456789012.asia-northeast3.run.app",
-    );
+    expect(r.stdout.trim().split("\n").at(-1)).toBe("SERVICE_URL=https://plant8-staging-abc123-du.a.run.app");
   });
 });
 
@@ -251,23 +259,22 @@ describe("deploy.sh — 거부·실패 경로", () => {
     expect(r.stderr).toContain("migration failed");
   });
 
-  it("기존 서비스에서 healthz가 503이면 SmokeFailed, 트래픽은 옮기지 않는다", () => {
+  it("기존 서비스에서 healthz가 503이면 SmokeFailed로 exit 1한다(이미 100%로 배포된 뒤라 롤백은 수동)", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
       state: { "service-exists": true, "image-exists": true, healthz: "503" },
     });
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("SmokeFailed");
-    expect(r.log).not.toContain("update-traffic");
+    expect(r.stderr).toContain("rollback.sh");
   });
 
-  it("sign-in이 403이면 SmokeFailed(origin)과 BETTER_AUTH_URL을 stderr에 남기고 트래픽은 옮기지 않는다", () => {
+  it("sign-in이 403이면 SmokeFailed(origin)과 BETTER_AUTH_URL을 stderr에 남기고 exit 1한다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
       state: { "service-exists": true, "image-exists": true, signin: "403" },
     });
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("SmokeFailed(origin)");
     expect(r.stderr).toContain("BETTER_AUTH_URL");
-    expect(r.log).not.toContain("update-traffic");
   });
 
   it("임의 gcloud 하위 명령이 실패하면 exit 1과 'deploy failed at <함수명>'을 stderr 마지막 줄에 남긴다", () => {

@@ -3,7 +3,15 @@ set -euo pipefail
 set -o errtrace  # ERR 트랩이 함수 안에서도 발동하도록(그렇지 않으면 STAGE 메시지가 나오지 않는다)
 
 # scripts/deploy.sh — OPS-01: 인프라 ensure(멱등) → 이미지(SHA 태그) → Job 3개 →
-# 0%(신규는 100%) 리비전 → 스모크 3종 → 경보 3개 upsert → 100% 승격.
+# 리비전 배포(신규·기존 모두 바로 100% 트래픽) → 경보 3개 upsert → 스모크 3종
+# (실제 서비스 주소로). 원래는 기존 서비스 업데이트를 0%(카나리)로 몰래
+# 올려 전용 URL로 미리 검증한 뒤 승격하는 절차였는데, 그 전용 URL이 실제
+# 스테이징에서 반복적으로(4회 연속) 15분 넘게 라우팅되지 않았다
+# (2026-09-18, 리비전 자체는 매번 Ready — 원인은 구글 인프라 쪽으로 추정).
+# `gcloud run deploy`가 성공적으로 끝났다는 것 자체가 이미 리비전 Ready를
+# 보장하므로(실패하면 gcloud가 실패로 끝난다), 카나리 단계 없이 바로 배포
+# 하고 실제 서비스 주소로 사후 검증한다. 실패해도 자동 롤백은 없다 —
+# scripts/rollback.sh로 수동 롤백.
 # 프로젝트 ID·리전·이메일은 인자/환경에서만 온다(D-03) — 이 파일·infra/names.sh에
 # 실제 프로젝트 번호·이메일 등 식별자를 절대 적지 않는다.
 #
@@ -30,7 +38,6 @@ PROJECT_NUMBER=""
 SERVICE_URL=""
 CONN_NAME=""
 EXISTS=0
-TAGGED_URL=""
 
 usage() {
   cat >&2 <<'USAGE'
@@ -392,11 +399,15 @@ deploy_service() {
   local env_vars="APP_ENV=${ENV},APP_GIT_SHA=${SHA},APP_DEPLOYED_AT=${deployed_at},CLOUD_SQL_CONNECTION_NAME=${CONN_NAME},DB_IAM_USER=${iam_user},DB_NAME=${DB_NAME},DB_POOL_MAX=${DB_POOL_MAX},BETTER_AUTH_URL=${SERVICE_URL},AUTH_PROVIDER=email,GCP_PROJECT_ID=${PROJECT},CLOUD_SQL_INSTANCE_ID=${instance}"
   local secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest,APP_DATA_KEY_v1=${app_data_key_secret}:latest,SMTP_HOST=${smtp_host_secret}:latest,SMTP_USER=${smtp_user_secret}:latest,SMTP_PASSWORD=${smtp_password_secret}:latest,SMTP_FROM=${smtp_from_secret}:latest"
 
-  local extra_flags=()
-  if [ "$EXISTS" = "1" ]; then
-    extra_flags+=(--no-traffic "--tag=rev-${SHA:0:8}")
-  fi
-
+  # 신규·기존 서비스 모두 바로 100% 트래픽으로 배포한다(--no-traffic/--tag
+  # 카나리 단계 없음). 원래는 기존 서비스 업데이트를 0%로 몰래 올려 태그
+  # 전용 URL로 미리 검증한 뒤 승격하는 절차였는데, 그 태그 전용 URL이 실제
+  # 스테이징에서 반복적으로(4회 연속) 15분 넘게 라우팅되지 않는 문제가
+  # 있었다(2026-09-18, 원인은 구글 인프라 쪽으로 추정 — 리비전 자체는 매번
+  # Ready였다). `gcloud run deploy`가 성공적으로 끝났다는 것 자체가 이미
+  # 리비전 Ready를 보장하므로(실패하면 gcloud가 실패로 끝난다), 검증은
+  # 배포 직후 실제 서비스 주소로 한다(smoke, main()에서 이 함수 다음에
+  # 실행). 실패해도 자동 롤백은 없다 — scripts/rollback.sh로 수동 롤백.
   local deploy_output
   if ! deploy_output="$(run gcloud run deploy "$svc" \
     --image="$IMAGE" --region="$REGION" --project="$PROJECT" --platform=managed \
@@ -406,57 +417,35 @@ deploy_service() {
     --set-cloudsql-instances="$CONN_NAME" \
     --allow-unauthenticated \
     --set-env-vars="$env_vars" \
-    --set-secrets="$secrets" \
-    "${extra_flags[@]}" 2>&1)"; then
+    --set-secrets="$secrets" 2>&1)"; then
     printf '%s\n' "$deploy_output" >&2
     echo "org policy blocks unauthenticated ingress (iam.allowedPolicyMemberDomains) — ask the GCP org admin" >&2
     exit 1
   fi
   printf '%s\n' "$deploy_output"
 
-  # 카나리 배포(EXISTS=1)는 gcloud가 배포 출력 자체에 태그 리비전의 실제
-  # 도달 가능 URL을 알려준다("The revision can be reached directly at …") —
-  # 계산한 결정적 URL 패턴을 다시 조립해 추측하지 않고 이 실측값을 그대로
-  # 쓴다(실제 스테이징 배포에서 재현, 2026-09-18: 계산값으로 스모크하면
-  # 404). 트래픽은 여전히 0%로 남아있으므로(--no-traffic) 안전하다.
-  if [ "$EXISTS" = "1" ]; then
-    TAGGED_URL="$(printf '%s\n' "$deploy_output" | grep -oE 'https://rev-[A-Za-z0-9.-]+' | head -1 || true)"
-    if [ -z "$TAGGED_URL" ] && [ "$DRY_RUN" != "1" ]; then
-      echo "could not find tagged revision URL in gcloud run deploy output" >&2
-      exit 1
-    fi
-  fi
-
   local describe_url
   describe_url="$(run gcloud run services describe "$svc" --region="$REGION" --project="$PROJECT" --format='value(status.url)')"
   if [ "$describe_url" != "$SERVICE_URL" ]; then
     echo "note: describe url differs ($describe_url); canonical is $SERVICE_URL" >&2
-    # 실제 스테이징 첫 배포에서 재현(2026-09-18): 계산한 결정적 URL이 실제
+    # 실제 스테이징 배포에서 반복 재현(2026-09-18): 계산한 결정적 URL이 실제
     # Cloud Run이 부여한 URL과 다른 경우가 있다([ASSUMED] 항목 검증 실패).
-    # 새 서비스(EXISTS=0)는 아직 트래픽이 없으므로 실측 URL로 바로잡아도
-    # 안전하다 — 이후 스모크·최종 출력이 계산값이 아니라 실측값을 쓰게
-    # 하고, 컨테이너에 이미 구운 BETTER_AUTH_URL도 맞춰야 better-auth의
-    # origin 검사(baseURL 기준)가 통과한다. 기존 서비스 카나리 배포
-    # (EXISTS=1)는 이 보정을 하지 않는다 — `services update`가 기본으로
-    # 새 리비전에 트래픽 100%를 즉시 넘겨 0%→스모크→100% 안전장치를
-    # 깨기 때문이다(이 경로는 아직 실측으로 확인된 바 없다).
-    if [ "$EXISTS" = "0" ]; then
-      SERVICE_URL="$describe_url"
-      run gcloud run services update "$svc" --region="$REGION" --project="$PROJECT" \
-        --update-env-vars="BETTER_AUTH_URL=${SERVICE_URL}"
-    fi
+    # 이후 스모크·최종 출력·컨테이너의 BETTER_AUTH_URL 전부 계산값이 아니라
+    # 실측값(describe_url)을 쓴다 — 이미 100% 트래픽으로 배포했으므로(위
+    # 참고) env var를 고치는 재배포도 안전하다.
+    SERVICE_URL="$describe_url"
+    run gcloud run services update "$svc" --region="$REGION" --project="$PROJECT" \
+      --update-env-vars="BETTER_AUTH_URL=${SERVICE_URL}"
   fi
 }
 
-# GET만으로는 잡히지 않는 "화면은 뜨는데 로그인만 안 됨"을 배포 시점에 잡는다.
+# GET만으로는 잡히지 않는 "화면은 뜨는데 로그인만 안 됨"을 배포 직후 잡는다.
+# deploy_service()가 이미 100% 트래픽으로 배포했으므로(카나리 단계 없음),
+# 여기서는 이미 검증된 실제 서비스 주소(SERVICE_URL)로 사후 확인만 한다.
+# 실패해도 자동 롤백은 하지 않는다 — `scripts/rollback.sh`로 수동 롤백한다.
 smoke() {
   STAGE=smoke
-  local target
-  if [ "$EXISTS" = "1" ]; then
-    target="$TAGGED_URL"
-  else
-    target="$SERVICE_URL"
-  fi
+  local target="$SERVICE_URL"
 
   if [ "$DRY_RUN" = "1" ]; then
     run curl -fsS --retry 60 --retry-delay 15 --retry-all-errors "${target}/healthz"
@@ -469,14 +458,14 @@ smoke() {
   fi
 
   if ! run curl -fsS --retry 60 --retry-delay 15 --retry-all-errors "${target}/healthz" | grep -q '"ok":true'; then
-    echo "SmokeFailed: traffic left unchanged" >&2
+    echo "SmokeFailed: run scripts/rollback.sh if this is a real regression" >&2
     exit 1
   fi
 
   local login_code
   login_code="$(run curl -s -o /dev/null -w '%{http_code}' "${target}/login")"
   if [ "$login_code" != "200" ]; then
-    echo "SmokeFailed: traffic left unchanged" >&2
+    echo "SmokeFailed: run scripts/rollback.sh if this is a real regression" >&2
     exit 1
   fi
 
@@ -493,13 +482,12 @@ smoke() {
   case "$signin_code" in
     4*) : ;;
     *)
-      echo "SmokeFailed: traffic left unchanged" >&2
+      echo "SmokeFailed: run scripts/rollback.sh if this is a real regression" >&2
       exit 1
       ;;
   esac
 }
 
-# 스모크 뒤·승격 앞 — 경보 upsert가 실패하면 트래픽을 옮기기 전에 멈춘다(Eng OV-8).
 ensure_alerts() {
   STAGE=ensure_alerts
   local channel_display
@@ -549,13 +537,6 @@ _upsert_policy() {
   rm -f "$tmpfile"
 }
 
-promote() {
-  STAGE=promote
-  if [ "$EXISTS" = "1" ]; then
-    run gcloud run services update-traffic "$(svc_name "$ENV")" --region="$REGION" --project="$PROJECT" --to-latest
-  fi
-}
-
 # Phase 1은 자리만 — 도메인 매핑 gcloud 명령은 호출하지 않는다(D-15). 리전 지원
 # 확인(A1)은 scripts/bootstrap-gcp.sh 몫이다.
 map_domain() {
@@ -581,9 +562,8 @@ main() {
   run_db_bootstrap
   run_migrate
   deploy_service
-  smoke
   ensure_alerts
-  promote
+  smoke
   map_domain
 
   echo "SERVICE_URL=$SERVICE_URL"

@@ -43,6 +43,15 @@
 - **D-17:** 관리자 시스템 상태 화면은 관리자 계급만 본다. 직원이 접근하면 404. 한도 초과 배너도 관리자에게만.
 - **D-18:** 상태 화면의 "마지막 백업"은 Cloud SQL Admin API, "DB 커넥션"은 `pg_stat_activity`를 화면 로드 시 직접 조회한다(캐시·별도 저장 없음). Cloud Run 서비스 계정에 Cloud SQL 읽기 권한만 추가한다. 로컬 개발처럼 GCP 조회가 불가능하면 "확인 불가"로 표시한다.
 
+### 플랜 리뷰에서 확정한 재량 사항 (2026-09-18, `docs/designs/plant8-erp-phase1-{ceo,eng}-review-260918.md`)
+D-01~D-18은 바뀌지 않았다. 아래는 Claude's Discretion 범위 안에서 리뷰가 고정한 것이다(플랜 본문이 출처, 여기는 색인).
+- 클라이언트 IP = `x-forwarded-for`의 **마지막** 항목. 리포 루트 `proxy.ts`(Next.js 16)가 `/api/auth/*`에서 그 값을 `x-client-ip`로 고정하고 better-auth·잠금 훅은 그 헤더만 읽는다; 헤더가 없으면 로그인 요청을 500으로 거부(fail-closed). 근거: better-auth 1.7.5는 헤더 값이 2개 이상이면 IP를 null로 보고 공용 버킷에 넣는다(Eng Issue 1·OV-2). Phase 2~3 로드밸런서 도입 시 `lib/client-ip.ts` 한 곳만 바뀐다
+- 접속 주소는 결정적 URL(`https://erp-{env}-<번호>.asia-northeast3.run.app`) 하나. `BETTER_AUTH_URL`·스모크·stdout·문서 전부 같은 값; 스모크에 Origin 검사 POST 포함(Eng Issue 2)
+- sliding 세션의 쿠키 연장은 `app/session-refresh.tsx`가 페이지 마운트 시 `/api/auth/get-session`을 불러 일으킨다(Eng OV-3)
+- rollback.sh는 "현재 서빙 중인 리비전보다 오래된 최신 리비전"으로 되돌린다(Eng Issue 3); account Job은 `--command=node,dist/cli/account-cli.mjs`로 배포(Eng OV-1); 경보 upsert는 승격 앞(Eng OV-8)
+- CI는 `pull_request`(+`workflow_call`)만, `.planning/**`·`docs/**`만 바뀐 PR은 건너뜀 — GitHub 무료 플랜 Actions 2,000분/월(CEO 9A). Cloud SQL 스토리지 자동 증가 상한 20GB(CEO OV-6), Artifact Registry 정리 정책 최근 20버전·60일(CEO OV-8), Dockerfile은 `--ignore-scripts`·corepack 미사용(Eng Issue 7)
+- `bootstrap-gcp.sh`는 단일 파일(Cloud Shell 붙여넣기 실행), 조직 정책 확인에 `iam.workloadIdentityPoolProviders` 포함(CEO OV-9·저확신 항목)
+
 ### Claude's Discretion
 - 리포 디렉터리 배치(최상위 `app/ domain/ repositories/ db/` vs `src/` 아래), Node 24·pnpm 버전 고정, Dockerfile(멀티스테이지·standalone), `.github/workflows` 분리 방식
 - WIF 풀·프로바이더·서비스 계정 이름과 최소 권한 세트, 부트스트랩 스크립트와 deploy.sh의 책임 경계

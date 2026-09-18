@@ -4,10 +4,10 @@ current_phase: 1
 current_phase_name: 배포 스켈레톤·로그인
 status: executing
 stopped_at: Phase 1 context gathered
-last_updated: "2026-09-18T03:13:48.052Z"
+last_updated: "2026-09-18T03:39:11.315Z"
 last_activity: 2026-09-17
 last_activity_desc: "로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드"
-state_head: 470ee23b6d23db5de663070deab1b3e51c6487a1
+state_head: f3aa2eba565fa9d3d06d2753626bac5f3aafbd2b
 progress:
   total_phases: 11
   completed_phases: 0
@@ -86,6 +86,7 @@ Recent decisions affecting current work:
 - [Eng 리뷰 OV-6 분할]: 옛 Phase 6(17개)을 Phase 6 지급·증빙·법인카드·구매 요청·미결 점검(EXP-06/07/09/10/13/16, EVID-02/03/04, PROJ-06 = 10개)과 Phase 7 공휴일·지급일·마감·알림·SMTP·tick + 전 메뉴 권한 검수(EXP-11/12, ADMN-11, NOTI-01~04 = 7개)로 나눔. 옛 7~10 → 8~11. 11페이즈, decimal 없음
 - [Phase 1]: Phase 1은 8플랜/7웨이브 그대로 진행(1a/1b 분할 안 함, 사용자 결정 2026-09-18). 실행은 웨이브 5(01-06)까지 한 세션에서 끝내고 /gsd-pause-work로 끊은 뒤 01-07~08(GCP·사람 체크포인트)은 새 세션
 - [Phase 1]: 회사 GCP 프로젝트 생성·결제 연결 완료(2026-09-18, billingEnabled true). 프로젝트 ID는 리포·문서에 적지 않고 실행 단계에서 GitHub 변수 GCP_PROJECT_ID와 deploy.sh 인자로만 넣는다(D-03)
+- [Phase 1]: GitHub 저장소는 개인 계정 rrangjaa-eng 비공개로 유지 + GitHub Pro 구독(사용자 결정 B, 2026-09-18) — Environment production의 required reviewers(D-05)를 쓰기 위함. 회사 조직 이전은 이월(이전 시 WIF 부트스트랩 재실행)
 
 ### Pending Todos
 

@@ -22,7 +22,7 @@
 - **D-02:** deploy.sh의 실행 주체는 GitHub Actions다. main 병합 → CI 통과 → 같은 워크플로가 deploy.sh를 실행한다. GCP 인증은 Workload Identity Federation(키 파일 없음). 사용자 PC에 gcloud를 요구하지 않는다. 단, WIF 풀·서비스 계정을 만드는 최초 1회 부트스트랩은 GitHub Actions가 스스로 할 수 없으므로 별도 스크립트(예: `scripts/bootstrap-gcp.sh`)를 사용자가 Cloud Shell(브라우저)에서 한 번 실행한다 — 이 예외는 OPERATIONS.md에 적는다. — **Reversibility:** costly — 수동 배포로 되돌리면 CI 워크플로·WIF·GitHub Environment 설정을 걷어내야 한다.
 - **D-03:** 회사 GCP 조직에서 사용자 계정의 Owner 권한이 확보됐다(2026-09-18 사용자 확인 — 대기 조건 없음). 프로젝트는 아직 없으며 사용자가 콘솔에서 직접 만든다: 프로젝트 1개(스테이징·프로덕션은 그 안에서 분리 — D-04), 회사 조직 아래, 회사 결제 계정 연결까지. 이것이 01-07 부트스트랩 사람 체크포인트의 전제 조건이며 스크립트는 프로젝트를 만들지 않는다(재해 복구용 재현은 이월). 플랜 순서는 로컬에서 되는 것(앱 골격·인증·CLI·CI·문서·상태 화면 코드) → 실제 GCP가 필요한 것(부트스트랩·deploy.sh 첫 실행·경보·상태 화면 GCP 조회 확인) 순으로 두되, 마지막 플랜을 뒤로 미루지 않고 바로 이어서 실행한다. 부트스트랩(WIF·서비스 계정·조직 정책 확인)은 배포 플랜 직전의 사람 체크포인트다. 프로젝트 ID는 리포·문서에 적지 않고 변수명(`GCP_PROJECT_ID`)만 두며, 실제 값은 실행 단계에서 GitHub Actions 변수와 deploy.sh 인자로 넣는다. 리전은 `asia-northeast3`, 사용자 계정이 프로젝트 Owner이고 결제 계정이 연결돼 있다고 가정한다. 페이즈 완료 판정은 deploy.sh 성공이다.
 - **D-04:** 환경은 스테이징 + 프로덕션 둘이며, 같은 회사 GCP 프로젝트 하나 안에 Cloud Run 서비스 2개(예: `erp-staging`·`erp-prod`)와 Cloud SQL 인스턴스 2대, 환경 접미사가 붙은 시크릿으로 분리한다. deploy.sh는 환경 이름을 인자로 받고, 프로젝트 ID·리전 인자(재해 복구·다른 프로젝트 재현용)는 로드맵대로 유지한다. 별도 GCP 프로젝트 2개는 거부했다(조직 정책·IAM 확인이 두 번). — **Reversibility:** costly — 인스턴스를 나중에 합치거나 프로젝트를 나누려면 DB 이전이 필요하다.
-- **D-05:** 승격 흐름: main 병합 → CI → 스테이징 자동 배포(migrate Job → 0% 리비전 → 스모크 → 100%) → 사용자가 스테이징에서 확인 → GitHub Environment `production`의 승인 버튼(required reviewer = 사용자) → 같은 git SHA 이미지를 프로덕션에 같은 순서로 배포. 빌드는 한 번, 태그 규칙 없음, 승인 기록은 GitHub에 남는다.
+- **D-05:** 승격 흐름: main 병합 → CI → 스테이징 자동 배포(migrate Job → 0% 리비전 → 스모크 → 100%) → 사용자가 스테이징에서 확인 → GitHub Environment `production`의 승인 버튼(required reviewer = 사용자) → 같은 git SHA 이미지를 프로덕션에 같은 순서로 배포. 빌드는 한 번, 태그 규칙 없음, 승인 기록은 GitHub에 남는다. 저장소는 개인 계정 `rrangjaa-eng`의 비공개 저장소로 유지하고(사용자 결정 B, 2026-09-18), 비공개 저장소의 Environment 보호 규칙(required reviewers)을 쓰기 위해 GitHub Pro(개인, 월 $4)로 올린다. 회사 GitHub 조직으로의 이전은 이월한다 — 이전하면 WIF가 저장소 경로에 묶여 있어 `bootstrap-gcp.sh`를 다시 돌려야 한다.
 - **D-06:** Cloud SQL은 두 환경 모두 최소 사양(공유 코어 db-f1-micro급, 최소 스토리지, 자동 백업 켬)이며 두 환경 합계 월 $30 안팎이 상한이다. 초과하면 스테이징을 먼저 줄인다(중지 스케줄은 지금은 하지 않음). 커넥션 풀 크기·max-instances는 이 티어의 `max_connections`를 기준으로 계획에서 정하고 deploy.sh의 `max-instances × 풀 ≤ max_connections − 5` 검사(16A)에 넣는다. 실제 과금 항목과 목표는 OPERATIONS.md 비용 절에 적는다.
 
 ### 세션·비밀번호 정책
@@ -120,6 +120,7 @@
 - "모든 기기에서 로그아웃" 버튼, 임시 비밀번호 유효 기한 — 필요가 생기면
 - 스테이징 Cloud SQL 중지 스케줄 — 월 비용이 $30을 넘을 때
 - Google 로그인 활성화 — v2(AUTH-05), Phase 1은 어댑터 자리만
+- 저장소를 회사 GitHub 조직으로 이전 — 코드 소유권을 회사로. 이전 시 WIF 속성 조건(저장소 경로)·Environment 설정·Claude GitHub 앱 설치를 다시 해야 하므로 `bootstrap-gcp.sh` 재실행 포함
 
 </deferred>
 

@@ -71,25 +71,47 @@ differs from actual status.url (https://plant8-prod-<해시>-du.a.run.app) — u
 - [~] **human-check** — 6항목 중 2개 완료, 4개는 자동 시험·배포 로그로 대체 확인 중
   - [x] 1. 관리자 로그인 + 임시 비밀번호 배너 — **사용자 확인 완료**(2026-09-18)
   - [x] 2. 비밀번호 변경 + 옛 비밀번호 거부 — **사용자 확인 완료**(2026-09-18)
-  - [ ] 3~6. 사용자가 모바일이라 브라우저·GCP 콘솔 확인 불가. 실행자가 대신 확인하되
-        `*.run.app`이 실행자 세션의 에그레스 프록시에 막혀 있어(403 CONNECT) 직접
-        두드릴 수 없다. 현재까지의 근거:
-    - **4번(직원 404·로그아웃)**: `test/e2e/system-status.spec.ts`("직원이 접근하면
-      404를 받는다")와 `test/e2e/login-logout.spec.ts`(로그아웃 후 `/account` 재접근이
-      `/login`으로, D-10)가 **프로덕션에 떠 있는 바로 그 커밋 `ed2fbc5`에서** 통과.
-    - **5번(세션 유지)**: 같은 E2E가 새 브라우저 컨텍스트에서 세션 유지 + 쿠키 만료
-      30일을 단언(`lib/auth.ts`의 `expiresIn` 30일, D-07).
-    - **6번(경보 3개)**: 이 배포의 로그에 채널 1개·정책 3개 `Created`.
-    - **3번(상태 화면)**: 화면 동작은 E2E가 증명. `/api/health`의 `"ok":true`는
-      `deploy.sh`의 `smoke()`가 **차단 조건으로** 검사해 통과(상태코드만이 아니다).
-    - 남은 것은 "프로덕션 인스턴스 자체가 그렇게 설정돼 있는가" — 서빙 리비전의
-      `APP_GIT_SHA` 실제 값, 비로그인 접근이 정말 404인지, 경보 정책이 enabled인지.
-      일회용 읽기 전용 워크플로(`prod-verify.yml`)로 확인한다. `workflow_dispatch`는
-      기본 브랜치에 있어야 실행되므로 이 PR이 main에 병합된 뒤에 돌린다.
-- [ ] **백업 경보 필터 확인** — 첫 자동 백업 창(18:00 UTC) 이후에만 볼 수 있다(01-07에서 이월)
+  - [x] 3~6. 사용자가 모바일이라 브라우저·GCP 콘솔을 볼 수 없어 실행자가 확인했다.
+        실행자 세션은 `*.run.app`이 에그레스 프록시에 막혀 있어(403 CONNECT) 직접
+        두드릴 수 없으므로, 일회용 읽기 전용 워크플로 `prod-verify.yml`
+        (run `35382145883`, 배포 없음)로 Actions 안에서 쟀다. 결과(마스킹):
+
+    | 확인 | 실측값 | 판정 |
+    |------|--------|------|
+    | 서빙 리비전 | `plant8-prod-00002-dw6` | — |
+    | 리비전 `APP_GIT_SHA` | `ed2fbc56a52ddb5b73884fc3247999cd15855d5e` | ✅ 승격한 커밋과 일치 |
+    | `/api/health` 본문 | `{"ok":true,"sha":"ed2fbc56…","deployedAt":"2026-09-18T18:26:47Z"}` | ✅ **3번 닫힘** — ok:true + SHA 일치 |
+    | `/admin/system-status` (비로그인) | **307** | ✅ 정상 (아래 설명) |
+    | `/account` (비로그인) | 307 | ✅ 같은 처리 |
+    | `/login` | 200 | ✅ |
+    | 경보 정책 | `[prod] 5xx ratio > 5%`=enabled, `[prod] Cloud SQL backup failed`=enabled, `[prod] notify tick stale 23h30m`=disabled(설계대로) | ✅ **6번 닫힘** |
+    | 알림 채널 | `ERP Alerts (prod)` (email) | ✅ |
+
+    **307은 404가 아니지만 정상이다.** `app/admin/system-status/page.tsx`는
+    `if (!session) redirect("/login")` → 비로그인은 **307**,
+    `if (!session.viewer.isAdmin) notFound()` → 로그인한 **비관리자**만 **404**다(D-17).
+    프로브는 세션이 없으므로 307이 맞다. 4번이 말하는 "직원 404"는 로그인한 직원
+    경우이고, 그쪽은 `test/e2e/system-status.spec.ts`가 프로덕션에 떠 있는 커밋
+    `ed2fbc5`에서 통과시켰다. `/account`도 같은 307이라 존재 여부가 새지 않는다.
+
+    **5번(세션 유지)은 프로브로 못 닫았다.** `/login`은 로그인 전 페이지라
+    `Set-Cookie`가 없어 쿠키 속성을 볼 수 없었다 — 프로브 설계의 한계다. 근거는
+    E2E(새 브라우저 컨텍스트에서 세션 유지 + 쿠키 만료 30일 단언)와
+    `lib/auth.ts`의 `expiresIn` 30일(D-07)로 남는다.
+
+- [x] **A3 해소(01-07 이월)** — `roles/cloudsql.viewer`의 포함 권한에
+      **`cloudsql.backupRuns.list`가 있다**(같은 프로브 6번, `gcloud iam roles describe`).
+      상태 화면의 "마지막 백업" 절이 권한 때문에 막히는 일은 없다.
+- [ ] **백업 경보 필터·실제 백업 확인** — 프로덕션 DB는 18:25에 생겨 자동 백업이 아직
+      한 번도 돌지 않았다. 상태 화면의 백업 절은 지금 "백업 없음"이 정상이고, 경보
+      필터가 실제 로그 항목과 맞는지는 실패 이벤트 없이는 검증할 수 없다. 내일 첫
+      백업 창 이후 확인한다.
 - [ ] **조직 정책 원문 확인** — 배포 SA에 `orgpolicy.policy.get`이 없다. Owner 계정 몫
 - [ ] **스테이징 태그 전용 트래픽 항목 4개 정리** (01-07에서 이월)
 - [ ] **`db-bootstrap.ts`의 `createAdminPool` 커넥터 미종료** — 지금은 `process.exit()`로
       가려져 있다(01-07에서 이월)
 - [ ] **문서 마무리** — `docs/OPERATIONS.md` 실측 반영 잔여분, `CLAUDE.md` 명령 4자리
-- [ ] **임시 결과 브랜치 3개 삭제** — `probe-result`, `probe-result2`, `guard-probe-result`
+- [ ] **임시 결과 브랜치 4개 삭제** — `probe-result`, `probe-result2`,
+      `guard-probe-result`, `prod-verify-result` (실행자 세션에서는 ref 삭제가 막힌다)
+- **참고**: 배포자 SA에는 `resourcemanager.projects.getIamPolicy`도 없다(이번 프로브에서
+  드러남). 런타임 SA의 역할 목록 확인은 Owner 계정 몫이다 — 조직 정책 원문과 같은 처지.

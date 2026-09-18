@@ -68,8 +68,10 @@ git push(main) ─▶ deploy.yml: workflow_call로 ci.yml 실행(quality → int
      │ 통과
      ▼
 scripts/deploy.sh: 이미지(git SHA 태그) → db-bootstrap Job → migrate Job(16A 검사)
-     → 기존 서비스면 --no-traffic 리비전 → 스모크(/healthz, /login, 가짜 로그인 Origin
-       검사) → 경보 3개 upsert → 100% 승격
+     → 신규·기존 서비스 모두 바로 100% 트래픽 배포 → 스모크(/api/health, /login, 가짜
+       로그인 Origin 검사) → 경보 3개 upsert
+       (/healthz가 아니라 /api/health인 이유: /healthz는 Cloud Run/구글 엣지의
+       예약 경로라 컨테이너까지 안 오고 404가 났다 — 2026-09-18 확인)
 프로덕션: 사용자가 GitHub Actions "Run workflow"로 수동 실행(같은 SHA, 스테이징 서빙
        확인 가드) — GitHub Environments 없음(D-05)
 실패 시: scripts/rollback.sh → 서빙 중인 것보다 오래된 최신 리비전으로 트래픽 복구

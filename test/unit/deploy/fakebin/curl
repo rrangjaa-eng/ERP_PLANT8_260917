@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 가짜 curl — deploy.sh의 스모크 검사 3종(healthz GET, login GET, sign-in POST)을 흉내 낸다.
+# 가짜 curl — deploy.sh의 스모크 검사 3종(health GET, login GET, sign-in POST)을 흉내 낸다.
 set -u
 
 STATE="${DEPLOY_FAKE_STATE:-}"
@@ -14,9 +14,9 @@ if [ -n "$LOG" ]; then
 fi
 
 case "$ARGS" in
-  *"/healthz"*)
-    if state_file healthz && [ "$(state_val healthz)" = "503" ]; then
-      echo "fake curl: healthz 503" >&2
+  *"/api/health"*)
+    if state_file health && [ "$(state_val health)" = "503" ]; then
+      echo "fake curl: health 503" >&2
       exit 22
     fi
     echo '{"ok":true}'
@@ -36,7 +36,7 @@ case "$ARGS" in
     ;;
   *)
     # 알려지지 않은 경로(예: smoke()의 빠른 진단 프로브 "/") — 200으로
-    # 가장한다. 이 파일이 실제로 검사하는 3가지(healthz·login·sign-in)는
+    # 가장한다. 이 파일이 실제로 검사하는 3가지(health·login·sign-in)는
     # 위에서 이미 명시적으로 다룬다.
     printf '200'
     exit 0

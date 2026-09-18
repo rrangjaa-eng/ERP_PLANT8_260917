@@ -51,9 +51,11 @@ Proxy와도 호환되므로, 나중에 정말 필요해지면(예: 운영 DB 조
 **트리거:** main 병합(자동, staging) 또는 GitHub Actions "Run workflow"(수동, 대상 선택).
 
 **단계:** CI(quality → integration-e2e) → 이미지 빌드(SHA 태그, 이미 있으면 생략) →
-db-bootstrap Job → migrate Job(16A 커넥션 검사, 위반이면 exit 3으로 중단) → 기존 서비스면
-0% 리비전 → 스모크(`/healthz`, `/login`, 가짜 자격 로그인 Origin 검사) → 경보 3개 upsert →
-100% 승격.
+db-bootstrap Job → migrate Job(16A 커넥션 검사, 위반이면 exit 3으로 중단) → 신규·기존
+서비스 모두 바로 100% 트래픽으로 배포 → 스모크(`/api/health`, `/login`, 가짜 자격 로그인
+Origin 검사) → 경보 3개 upsert. (`/healthz`가 아니라 `/api/health`인 이유: `/healthz`는
+Cloud Run/구글 엣지가 예약 경로로 취급해 컨테이너까지 도달하지 못하고 404를
+돌려줬다 — 2026-09-18 실제 스테이징에서 확인.)
 
 **승격(스테이징 → **production**):** 스테이징에서 확인 → GitHub Actions "Run workflow" →
 target=production, sha 입력(비우면 스테이징이 서빙 중인 SHA) → 가드가 그 SHA 이미지가

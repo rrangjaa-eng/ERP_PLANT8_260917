@@ -9,7 +9,7 @@ vi.mock("@/domain/health", async () => {
 });
 
 import { checkHealth } from "@/domain/health";
-import { GET } from "@/app/healthz/route";
+import { GET } from "@/app/api/health/route";
 
 type HealthzBody = { ok: boolean; sha?: string };
 
@@ -24,7 +24,7 @@ describe("domain/health.checkHealth", () => {
   });
 });
 
-describe("app/healthz/route GET", () => {
+describe("app/api/health/route GET", () => {
   it("checkHealth 성공 시 200 { ok: true, sha: 'local' }를 반환한다", async () => {
     const response = await GET();
     expect(response.status).toBe(200);

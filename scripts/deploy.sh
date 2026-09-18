@@ -457,14 +457,12 @@ deploy_service() {
   fi
 }
 
-# healthz curl이 두 호스트명 형식 모두에서 반복 404면(2026-09-18: run
-# #16에서 status.url로 고친 뒤에도 재현 — 호스트명 문제가 아니었다는 뜻)
-# 더 이상 추측하지 않는다. Cloud Run은 --allow-unauthenticated가 조직
-# 정책(iam.allowedPolicyMemberDomains)에 막혀 조용히 실패했을 때도
-# "Setting IAM Policy....done"을 그대로 찍는다 — 인증 안 된 외부 요청을
-# IAM이 막으면 403이 아니라 404를 돌려준다(서비스 존재 자체를 숨기기
-# 위한 의도적 동작). 실제 IAM 정책을 같이 찍어서 allUsers/run.invoker가
-# 정말 붙어 있는지 확인한다.
+# 스모크가 실패하면 서비스 상태·IAM 정책을 같이 남긴다 — 다음에 다른
+# 이유로 또 실패하면 추측 없이 바로 원인을 알 수 있게(2026-09-18: 오늘의
+# 실제 원인은 /healthz 자체가 Cloud Run/구글 엣지의 예약 경로였던 것 —
+# gcloud shell에서 여러 경로를 직접 curl해 확인함. 그래서 헬스체크
+# 경로를 /api/health로 옮겼다. 이 진단 함수는 앞으로의 다른 실패에도
+# 쓸모 있어 남겨둔다).
 _dump_service_diagnostics() {
   local svc
   svc="$(svc_name "$ENV")"
@@ -482,7 +480,7 @@ smoke() {
   local target="$SERVICE_URL"
 
   if [ "$DRY_RUN" = "1" ]; then
-    run curl -fsS --retry 20 --retry-delay 15 --retry-all-errors "${target}/healthz"
+    run curl -fsS --retry 20 --retry-delay 15 --retry-all-errors "${target}/api/health"
     run curl -s -o /dev/null -w '%{http_code}' "${target}/login"
     run curl -s -o /dev/null -w '%{http_code}' -X POST \
       -H "Origin: ${SERVICE_URL}" -H 'content-type: application/json' \
@@ -491,14 +489,12 @@ smoke() {
     return 0
   fi
 
-  # healthz가 재시도 예산을 다 쓰기 전에, 다른 경로(/·/login)도 같은
-  # 주소에서 404인지 한 번(재시도 없이) 빠르게 찍어둔다 — "인프라 전체가
-  # 막혔다"와 "healthz 경로만 문제"를 구분할 유일한 데이터인데, 지금까지는
-  # healthz가 항상 먼저 재시도 예산을 다 쓰고 exit해서 이 정보를 한 번도
-  # 얻은 적이 없었다(2026-09-18).
-  echo "quick probe (no retry): / -> $(curl -s -o /dev/null -w '%{http_code}' "${target}/" 2>/dev/null || echo ERR), /login -> $(curl -s -o /dev/null -w '%{http_code}' "${target}/login" 2>/dev/null || echo ERR), /healthz -> $(curl -s -o /dev/null -w '%{http_code}' "${target}/healthz" 2>/dev/null || echo ERR)" >&2
+  # 재시도 전에 다른 경로도 한 번(재시도 없이) 빠르게 찍어둔다 — 앞으로
+  # 다른 원인으로 또 막히면 "경로 하나만 문제"인지 "전체가 막혔다"인지
+  # 바로 구분할 수 있게.
+  echo "quick probe (no retry): / -> $(curl -s -o /dev/null -w '%{http_code}' "${target}/" 2>/dev/null || echo ERR), /login -> $(curl -s -o /dev/null -w '%{http_code}' "${target}/login" 2>/dev/null || echo ERR), /api/health -> $(curl -s -o /dev/null -w '%{http_code}' "${target}/api/health" 2>/dev/null || echo ERR)" >&2
 
-  if ! run curl -fsS --retry 20 --retry-delay 15 --retry-all-errors "${target}/healthz" | grep -q '"ok":true'; then
+  if ! run curl -fsS --retry 20 --retry-delay 15 --retry-all-errors "${target}/api/health" | grep -q '"ok":true'; then
     echo "SmokeFailed: run scripts/rollback.sh if this is a real regression" >&2
     _dump_service_diagnostics
     exit 1

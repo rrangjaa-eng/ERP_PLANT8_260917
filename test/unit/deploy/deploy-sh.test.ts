@@ -102,9 +102,8 @@ describe("deploy.sh — 새 프로젝트(시나리오 1)", () => {
 
   it("exit 0이고 인프라 ensure → 이미지 → Job → 스모크 → 경보 순서로 gcloud가 호출된다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
-    // smoke()가 healthz 재시도 전에 /·/login·/healthz를 한 번(재시도 없이)
-    // 찍어두는 진단 줄만 stderr에 남는다(2026-09-18 — healthz만 항상 먼저
-    // 실패하면서 다른 경로 상태를 한 번도 못 봤던 문제 대응).
+    // smoke()가 재시도 전에 /·/login·/api/health를 한 번(재시도 없이)
+    // 찍어두는 진단 줄만 stderr에 남는다.
     expect(r.stderr).toContain("quick probe (no retry):");
     expect(r.stderr).not.toContain("SmokeFailed");
     expect(r.stderr).not.toContain("deploy failed at");
@@ -126,7 +125,7 @@ describe("deploy.sh — 새 프로젝트(시나리오 1)", () => {
       "run deploy plant8-staging ",
       "run services update-traffic plant8-staging ",
       "alpha monitoring policies create",
-      "/healthz",
+      "/api/health",
       "sign-in/email",
     ].map((needle) => lineIndex(r.log, needle));
 
@@ -188,8 +187,8 @@ describe("deploy.sh — 새 프로젝트(시나리오 1)", () => {
 
     expect(r.stdout.trim().split("\n").at(-1)).toBe("SERVICE_URL=https://plant8-staging-67rumhdgba-du.a.run.app");
 
-    const healthzLine = r.log.split("\n").find((l) => l.includes("/healthz"));
-    expect(healthzLine).toContain("https://plant8-staging-67rumhdgba-du.a.run.app/healthz");
+    const healthLine = r.log.split("\n").find((l) => l.includes("/api/health"));
+    expect(healthLine).toContain("https://plant8-staging-67rumhdgba-du.a.run.app/api/health");
   });
 });
 
@@ -233,14 +232,14 @@ describe("deploy.sh — 기존 서비스·이미지(시나리오 2)", () => {
     expect(updateLine).toBeDefined();
     expect(updateLine).toContain("--update-env-vars=BETTER_AUTH_URL=https://plant8-staging-abc123-du.a.run.app");
 
-    const healthzLine = r.log.split("\n").find((l) => l.includes("/healthz"));
-    expect(healthzLine).toContain("https://plant8-staging-abc123-du.a.run.app/healthz");
+    const healthLine = r.log.split("\n").find((l) => l.includes("/api/health"));
+    expect(healthLine).toContain("https://plant8-staging-abc123-du.a.run.app/api/health");
 
     const order = [
       "run deploy plant8-staging ",
       "run services update-traffic plant8-staging ",
       "alpha monitoring policies update",
-      "/healthz",
+      "/api/health",
       "sign-in/email",
     ].map((n) => lineIndex(r.log, n));
     for (const idx of order) expect(idx).toBeGreaterThan(-1);
@@ -292,9 +291,9 @@ describe("deploy.sh — 거부·실패 경로", () => {
     expect(r.stderr).toContain("migration failed");
   });
 
-  it("기존 서비스에서 healthz가 503이면 SmokeFailed로 exit 1한다(이미 100%로 배포된 뒤라 롤백은 수동)", () => {
+  it("기존 서비스에서 health가 503이면 SmokeFailed로 exit 1한다(이미 100%로 배포된 뒤라 롤백은 수동)", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: { "service-exists": true, "image-exists": true, healthz: "503" },
+      state: { "service-exists": true, "image-exists": true, health: "503" },
     });
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("SmokeFailed");

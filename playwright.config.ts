@@ -35,7 +35,7 @@ export default defineConfig({
   retries: 0,
   webServer: {
     command: process.env.CI ? "pnpm build && pnpm start" : "pnpm dev",
-    url: "http://127.0.0.1:3100/healthz",
+    url: "http://127.0.0.1:3100/api/health",
     reuseExistingServer: false,
     env: {
       DATABASE_URL: process.env.DATABASE_URL,

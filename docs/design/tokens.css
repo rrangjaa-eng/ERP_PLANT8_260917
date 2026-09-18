@@ -55,7 +55,9 @@
   --underline-offset: 2px;
 
   /* 인쇄 전용 (print 라우트에서 --fg/--line-strong를 이것으로 덮는다) */
-  --print-ink:     #000000;
+  --print-ink:     #000000;         /* 글자 · 서명 */
+  --print-rule:    var(--g-700);    /* 구조 선: 워드마크 · 제목 괘선 · 명세 머리/합계 · 결재 칸 (2px). 인쇄 미디어에서도 유지 (DECISIONS 2026-09-18 인쇄 색) */
+  --print-line:    #CFDBD7;         /* 구분 가로선 1px (= --line 값. @media print가 --line을 검정으로 덮으므로 따로 둔다) */
 
   /* ---- 2. 타입 ---- */
   --font-sans: 'Pretendard Variable', Pretendard, 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
@@ -161,7 +163,7 @@
   }
 }
 
-/* 인쇄: 검정 하나. 인쇄 라우트(/print/…)와 브라우저 인쇄 모두 적용 */
+/* 인쇄: 화면 토큰은 검정으로 접는다. 인쇄 템플릿 자체는 --print-ink / --print-rule / --print-line 셋만 쓴다(§6-6). 인쇄 라우트(/print/…)와 브라우저 인쇄 모두 적용 */
 @media print {
   :root {
     --bg:          #FFFFFF;

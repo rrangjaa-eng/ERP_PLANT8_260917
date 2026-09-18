@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>인쇄 안 P1 「양식」 — 지출결의서 · 기타소득 확인증</title>
+<link rel="stylesheet" href="../../tokens.css">
+<style>
+/* 인쇄 재디자인 안 P1 「양식」. 축: 머리 = 좌 워드마크·우 결재란(양식지 관습) / 괘선 = 전체 격자, 바깥 2px / 색 = 검정 하나 /
+   금액 = 합계 --fs-xl + 한글 금액 병기 / 결재 칸 = 크게, 머리 오른쪽 / 밀도 = 한 장 꽉. 토큰은 tokens.css만. 앱 코드가 아니다. */
+*{box-sizing:border-box;margin:0;padding:0}
+@page{size:A4 portrait;margin:0}
+html{font-size:var(--fs-base)}
+body{color:var(--print-ink);font-family:var(--font-sans);line-height:var(--lh-table);letter-spacing:var(--ls-body);word-break:keep-all}
+.sheet{width:210mm;height:297mm;padding:16mm 18mm;position:relative;background:#fff;break-after:page}
+@media screen{body{background:#E9ECEA;padding:16px 0}.sheet{margin:0 auto 16px;outline:1px solid #CFD3D0}}
+.num{font-variant-numeric:tabular-nums;letter-spacing:0}
+.r{text-align:right}
+
+.head{display:flex;justify-content:space-between;align-items:flex-start}
+.head .id .mark{font-weight:var(--fw-mark);font-size:var(--fs-lg);letter-spacing:var(--ls-head);display:block}
+.head .id .no{font-size:var(--fs-sm);display:block;margin-top:var(--s-1)}
+.appr{border-collapse:collapse;font-size:var(--fs-sm)}
+.appr th,.appr td{border:1px solid var(--print-ink);text-align:center;vertical-align:middle}
+.appr th{font-weight:var(--fw-medium);padding:3px 0;width:26mm}
+.appr th.lbl{width:7mm;writing-mode:vertical-rl;letter-spacing:.3em;padding:0}
+.appr td{height:20mm;padding:0 4px}
+.appr td b{display:block;font-size:var(--fs-base);font-weight:var(--fw-bold)}
+.appr td small{display:block;font-size:var(--fs-xs)}
+.appr td.sig{width:40mm;position:relative}
+.appr td.sig svg{position:absolute;inset:2mm 4mm;width:calc(100% - 8mm);height:calc(100% - 4mm)}
+
+h1{font-size:var(--fs-xl);font-weight:var(--fw-bold);letter-spacing:.35em;text-align:center;margin:var(--s-8) 0 var(--s-5);text-indent:.35em}
+table.grid{width:100%;border-collapse:collapse;border:2px solid var(--print-ink);font-size:var(--fs-base)}
+.grid th,.grid td{border:1px solid var(--print-ink);padding:7px 8px;vertical-align:top;text-align:left}
+.grid th{width:28mm;font-weight:var(--fw-medium);text-align:center}
+.grid td.r{text-align:right}
+.grid tr.sum td{font-size:var(--fs-xl);font-weight:var(--fw-bold);line-height:var(--lh-tight);padding:8px}
+.grid tr.sum th{vertical-align:middle;font-weight:var(--fw-bold)}
+.grid tr.han td{letter-spacing:.12em;text-align:center;font-weight:var(--fw-medium)}
+.gap{height:var(--s-4)}
+.decl{text-align:center;margin:var(--s-6) 0 var(--s-3);letter-spacing:.05em}
+.foot{position:absolute;left:18mm;right:18mm;bottom:11mm;display:flex;justify-content:space-between;font-size:var(--fs-sm);border-top:1px solid var(--print-ink);padding-top:var(--s-1)}
+tr{break-inside:avoid}
+</style>
+</head>
+<body>
+
+<!-- 지출결의서 -->
+<section class="sheet">
+  <div class="head">
+    <div class="id"><span class="mark">PLANT8</span><span class="no">지출결의서 <span class="num">EXP-2026-0464</span></span></div>
+    <table class="appr">
+      <tr><th class="lbl" rowspan="2">결재</th><th>기안</th><th>팀장</th><th>경영관리</th><th>대표</th></tr>
+      <tr>
+        <td><b>박서연</b><small class="num">2026-09-05 11:20</small></td>
+        <td><b>김도윤</b><small class="num">2026-09-05 14:10</small></td>
+        <td><b>이수아</b><small class="num">2026-09-06 09:30</small></td>
+        <td></td>
+      </tr>
+    </table>
+  </div>
+
+  <h1>지출결의서</h1>
+
+  <table class="grid">
+    <tr><th>프로젝트</th><td colspan="3">2026 현대자동차 아이오닉9 미디어 론칭 쇼케이스</td></tr>
+    <tr><th>항목</th><td colspan="3">1 메인 스테이지 구조물 설치 및 철거 <span class="num">· 견적 18,000,000</span></td></tr>
+    <tr><th>거래처</th><td colspan="3">(주)스테이지원커뮤니케이션즈</td></tr>
+    <tr><th>증빙</th><td>세금계산서 · <span class="num">2026-09-05</span></td><th>결제 수단</th><td>계좌 이체</td></tr>
+    <tr><th>지급 예정일</th><td class="num">2026-09-19</td><th>결재 마감</th><td class="num">2026-09-18 14:00</td></tr>
+    <tr><th>비고</th><td colspan="3">2차 견적 기준. 철거 포함.</td></tr>
+  </table>
+
+  <div class="gap"></div>
+
+  <table class="grid">
+    <tr><th>공급가액</th><td class="r num" colspan="3">12,400,000</td></tr>
+    <tr><th>부가세</th><td class="r num" colspan="3">1,240,000</td></tr>
+    <tr class="sum"><th>합계</th><td class="r num" colspan="3">13,640,000</td></tr>
+    <tr class="han"><td colspan="4">금 일천삼백육십사만 원정</td></tr>
+  </table>
+
+  <div class="gap"></div>
+  <table class="grid">
+    <tr><th>첨부</th><td>1. 세금계산서 (다음 장)</td></tr>
+  </table>
+
+  <div class="foot"><span>PLANT8 ERP · <span class="num">2026-09-18 14:02</span> 출력</span><span class="num">1 / 2</span></div>
+</section>
+
+<!-- 기타소득 지급 확인증 -->
+<section class="sheet">
+  <div class="head">
+    <div class="id"><span class="mark">PLANT8</span><span class="no">기타소득 지급 확인증 <span class="num">CERT-2026-0031</span></span></div>
+    <table class="appr">
+      <tr><th class="lbl" rowspan="2">확인</th><th>지급자</th><th>수령자</th><th style="width:40mm">서명</th></tr>
+      <tr>
+        <td><b>PLANT8</b><small class="num">2026-09-19</small></td>
+        <td><b>김하늘</b><small class="num">2026-09-20 18:42 제출</small></td>
+        <td class="sig"><svg viewBox="0 0 520 200" aria-label="김하늘 서명" role="img"><path fill="none" stroke="#000" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" d="M28 132 C 40 84, 70 62, 92 74 C 116 88, 96 140, 74 150 C 60 158, 48 148, 58 136 C 78 112, 130 96, 168 100 C 190 102, 176 130, 158 138 C 142 144, 148 118, 176 110 C 214 100, 232 118, 224 142 C 220 156, 236 150, 252 128 C 270 104, 300 90, 322 96 C 344 104, 336 132, 318 144 C 302 154, 296 134, 316 120 C 350 98, 400 92, 436 108 C 460 118, 472 138, 466 156 M 250 70 L 310 66 M 396 64 C 420 56, 448 58, 470 66"/></svg></td>
+      </tr>
+    </table>
+  </div>
+
+  <h1>기타소득 지급 확인증</h1>
+
+  <table class="grid">
+    <tr><th>프로젝트</th><td colspan="3">2026 현대자동차 아이오닉9 미디어 론칭 쇼케이스</td></tr>
+    <tr><th>항목</th><td colspan="3">행사 진행 MC <span class="num">(2026-09-12 ~ 09-13, 2일)</span></td></tr>
+    <tr><th>소득 종류</th><td>기타소득</td><th>지급일</th><td class="num">2026-09-19</td></tr>
+    <tr><th>지출결의</th><td class="num" colspan="3">EXP-2026-0471</td></tr>
+  </table>
+
+  <div class="gap"></div>
+
+  <table class="grid">
+    <tr><th>이름</th><td>김하늘</td><th>주민등록번호</th><td class="num">930412-2******</td></tr>
+    <tr><th>주소</th><td colspan="3">서울특별시 마포구 월드컵북로 396, 누리꿈스퀘어 비즈니스타워 1203호</td></tr>
+    <tr><th>연락처</th><td class="num">010-4821-7730</td><th>계좌</th><td>국민은행 <span class="num">123456-01-234567</span> (김하늘)</td></tr>
+  </table>
+
+  <div class="gap"></div>
+
+  <table class="grid">
+    <tr><th>지급액</th><td class="r num" colspan="3">3,000,000</td></tr>
+    <tr><th>원천징수</th><td colspan="2">소득세 <span class="num">240,000</span> + 지방소득세 <span class="num">24,000</span> (기타소득 8.8%)</td><td class="r num">264,000</td></tr>
+    <tr class="sum"><th>실지급액</th><td class="r num" colspan="3">2,736,000</td></tr>
+    <tr class="han"><td colspan="4">금 이백칠십삼만육천 원정</td></tr>
+  </table>
+
+  <p class="decl">위 금액을 기타소득으로 지급받았음을 확인합니다.</p>
+
+  <div class="foot"><span>PLANT8 ERP · <span class="num">2026-09-21 09:12</span> 출력</span><span class="num">1 / 1</span></div>
+</section>
+
+</body>
+</html>

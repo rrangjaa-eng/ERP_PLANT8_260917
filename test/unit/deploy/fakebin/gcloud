@@ -212,10 +212,22 @@ case "$ARGS" in
     # 리비전의 spec.containers[0] — 이미지 문자열과 환경변수. Cloud Run은 배포
     # 시점에 `app:<sha>` 태그를 다이제스트로 해석해 저장하므로(01-07 실측)
     # 기본 revision-image도 다이제스트 형태다. 진짜 배포 SHA는 APP_GIT_SHA.
+    #
+    # 리비전마다 다른 SHA가 필요한 경우(한 배포가 리비전을 둘 만드는 실제 동작)
+    # 상태 파일 revision-git-sha-<리비전이름>을 먼저 본다. 없으면 공용
+    # revision-git-sha로 떨어진다.
+    # ARGS: run revisions describe <name> ... → 이름은 네 번째 인자다.
+    rev_name="$4"
     image="$(state_val revision-image)"
     env_entries='{"name":"APP_ENV","value":"staging"}'
-    if state_file revision-git-sha; then
-      env_entries="$env_entries,{\"name\":\"APP_GIT_SHA\",\"value\":\"$(state_val revision-git-sha)\"}"
+    rev_sha=""
+    if state_file "revision-git-sha-${rev_name}"; then
+      rev_sha="$(state_val "revision-git-sha-${rev_name}")"
+    elif state_file revision-git-sha; then
+      rev_sha="$(state_val revision-git-sha)"
+    fi
+    if [ -n "$rev_sha" ]; then
+      env_entries="$env_entries,{\"name\":\"APP_GIT_SHA\",\"value\":\"$rev_sha\"}"
     fi
     echo "{\"spec\":{\"containers\":[{\"image\":\"$image\",\"env\":[$env_entries]}]}}"
     ;;

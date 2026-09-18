@@ -123,7 +123,7 @@ GitHub Environments·승인 버튼은 없다(D-05, 무료 플랜 비공개 저�
 
 로컬 3종 CLI: `pnpm account:create --email … --name … [--admin]` / `pnpm account:reset
 --email …` / `pnpm account:unlock --email …`. 운영에서는 같은 컨테이너 이미지의 Cloud Run
-Job `erp-{env}-**account**`를 GitHub Actions `account.yml`로 실행한다(입력: env·action·
+Job `plant8-{env}-**account**`를 GitHub Actions `account.yml`로 실행한다(입력: env·action·
 email·name·admin).
 
 임시 비밀번호는 워크플로 로그와 Cloud Logging에 한 번 남으므로 전달받는 즉시 변경을

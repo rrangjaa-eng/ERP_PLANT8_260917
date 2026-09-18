@@ -12,6 +12,7 @@
    #error        주민등록번호 형식 오류 · ~해 주세요체
    #done         제출됨 · 링크 닫힘 (PDF 링크 없음 = v1)
    #expired      이미 제출된 링크로 재진입
+   2026-09-18 사용자: 기타소득은 거의 경품(현물)이라 지급액·계좌를 빼고 경품 품목을 보인다(제세공과금 부담 주체·22%는 임시).
    이 화면만 본문 --fs-md · 입력 48px · 한 열. 나머지 규칙(직각·틴트·색)은 그대로. 컴포넌트는 tokens.css 변수만 참조한다. 앱 코드가 아니다. */
 *{box-sizing:border-box;margin:0;padding:0}
 html{font-size:var(--fs-md)}
@@ -36,17 +37,18 @@ h1{font-size:var(--fs-xl);font-weight:var(--fw-bold);letter-spacing:var(--ls-hea
 .pay dt{font-size:var(--fs-sm);color:var(--muted);font-weight:var(--fw-medium);padding-top:2px}
 .pay dd{text-align:right}
 .pay dd.big{font-size:var(--fs-lg);font-weight:var(--fw-bold)}
+.pay .ro-in{font-size:var(--fs-xs);color:var(--faint);font-weight:var(--fw-regular);margin-left:2px}
 .pay .ro{font-size:var(--fs-sm);color:var(--faint);margin-top:var(--s-2)}
 
 .form{border-top:var(--line-w-strong) solid var(--line-strong);padding-top:var(--s-3)}
 .row{padding:var(--s-2) 0}
 .row label,.row .lbl{display:block;font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--muted);margin-bottom:var(--s-1)}
+.lbl-sub{font-size:var(--fs-xs);color:var(--faint);font-weight:var(--fw-regular);margin-left:4px}
 .inp{height:48px;border:var(--line-w) solid var(--line-ui);background:var(--bg);padding:0 var(--s-3);width:100%;border-radius:var(--radius);font-size:var(--fs-md)}
 .inp.err{border-color:var(--danger)}
 .inp::placeholder{color:var(--faint)}
 .two{display:grid;grid-template-columns:1fr auto 1fr;gap:var(--s-2);align-items:center}
 .two .dash{color:var(--faint)}
-.acct{display:grid;grid-template-columns:120px 1fr;gap:var(--s-2)}
 .ferr{font-size:var(--fs-sm);color:var(--danger);margin-top:var(--s-1)}
 .sep{border-top:var(--line-w) solid var(--line);margin:var(--s-3) 0}
 
@@ -94,16 +96,17 @@ body[data-scene="error"] .sig svg{display:block}
 
 <main>
   <h1>기타소득 지급 확인</h1>
-  <p class="sub">2026 현대자동차 아이오닉9 미디어 론칭 쇼케이스 · 행사 진행 MC · <span class="num">2026-09-12 ~ 09-13</span></p>
+  <p class="sub">2026 현대자동차 아이오닉9 미디어 론칭 쇼케이스 · 현장 SNS 이벤트 경품 · <span class="num">2026-09-13</span> 당첨</p>
 
-  <section class="pay" aria-label="지급 내용">
+  <section class="pay" aria-label="경품 내용">
     <dl>
-      <dt>지급액</dt><dd class="num">3,000,000</dd>
-      <dt>원천징수 <span class="num">8.8%</span></dt><dd class="num">264,000</dd>
-      <dt>실지급액</dt><dd class="num big">2,736,000</dd>
-      <dt>지급 예정일</dt><dd class="num">2026-09-19</dd>
+      <dt>경품</dt><dd class="big">갤럭시 탭 S10 <span class="num">1</span>개</dd>
+      <dt>시가 <span class="ro-in">과세 기준</span></dt><dd class="num">899,000</dd>
+      <dt>원천징수 <span class="num">22%</span></dt><dd class="num">197,780</dd>
+      <dt>제세공과금</dt><dd>PLANT8 부담</dd>
+      <dt>전달</dt><dd>택배 · <span class="num">09-19</span> 발송</dd>
     </dl>
-    <p class="ro">PLANT8이 미리 채운 금액입니다 · 다르면 담당자 박서연에게 연락해 주세요</p>
+    <p class="ro">PLANT8이 미리 채운 내용입니다 · 다르면 담당자 박서연에게 연락해 주세요</p>
   </section>
 
   <form class="form" onsubmit="return false">
@@ -112,17 +115,14 @@ body[data-scene="error"] .sig svg{display:block}
       <div class="two"><input id="rrn1" class="inp num" inputmode="numeric" placeholder="930412" maxlength="6"><span class="dash">-</span><input id="rrn2" class="inp num" inputmode="numeric" type="password" placeholder="•••••••" maxlength="7"></div>
       <div class="ferr s-error">주민등록번호 형식이 아닙니다 · 앞 6자리, 뒤 7자리를 적어 주세요</div>
     </div>
-    <div class="row"><label for="addr">주소</label><input id="addr" class="inp" placeholder="도로명 주소"></div>
+    <div class="row"><label for="addr">주소 <span class="lbl-sub">경품 받을 곳</span></label><input id="addr" class="inp" placeholder="도로명 주소"></div>
     <div class="row"><label for="tel">연락처</label><input id="tel" class="inp num" inputmode="tel" placeholder="010-0000-0000"></div>
-    <div class="row"><label for="bank">계좌</label>
-      <div class="acct"><select id="bank" class="inp"><option>은행</option><option>국민</option><option>신한</option><option>우리</option><option>하나</option><option>농협</option><option>카카오뱅크</option><option>토스뱅크</option></select><input id="acct" class="inp num" inputmode="numeric" placeholder="계좌번호" aria-label="계좌번호"></div>
-    </div>
 
     <div class="sep"></div>
 
     <div class="consent">
       <input type="checkbox" id="agree">
-      <label for="agree">개인정보 수집·이용에 동의합니다<small>수집 항목 이름 · 주민등록번호 · 주소 · 연락처 · 계좌 — 기타소득 원천징수 신고와 지급에만 쓰고, 법정 보존 기간(5년) 뒤 파기합니다. 동의하지 않으면 지급이 진행되지 않습니다. <button type="button" class="b3 sm">전문 보기</button></small></label>
+      <label for="agree">개인정보 수집·이용에 동의합니다<small>수집 항목 이름 · 주민등록번호 · 주소 · 연락처 — 기타소득 원천징수 신고와 경품 전달에만 쓰고, 법정 보존 기간(5년) 뒤 파기합니다. 동의하지 않으면 지급이 진행되지 않습니다. <button type="button" class="b3 sm">전문 보기</button></small></label>
     </div>
 
     <div class="sep"></div>
@@ -139,7 +139,7 @@ body[data-scene="error"] .sig svg{display:block}
 
   <section class="state s-done" aria-live="polite">
     <p><b>제출되었습니다 · 이 링크는 닫혔습니다</b></p>
-    <p class="who">김하늘 · <span class="num">2026-09-20 18:42</span> 제출 · 실지급액 <span class="num">2,736,000</span>은 <span class="num">2026-09-19</span> 국민은행 계좌로 지급됩니다</p>
+    <p class="who">김하늘 · <span class="num">2026-09-20 18:42</span> 제출 · 갤럭시 탭 S10 <span class="num">1</span>개를 <span class="num">2026-09-19</span> 적은 주소로 택배 발송합니다</p>
     <p class="who">확인이 필요하면 담당자 박서연 · PLANT8 경영관리에 연락해 주세요</p>
   </section>
 
@@ -149,7 +149,7 @@ body[data-scene="error"] .sig svg{display:block}
   </section>
 <div class="submit">
   <button class="btn" disabled aria-describedby="why">확인증 제출</button>
-  <span class="blocked s-empty" id="why">이름 · 주민등록번호 · 주소 · 연락처 · 계좌 · 동의 · 서명을 채우면 제출할 수 있습니다</span>
+  <span class="blocked s-empty" id="why">이름 · 주민등록번호 · 주소 · 연락처 · 동의 · 서명을 채우면 제출할 수 있습니다</span>
   <span class="blocked s-sign">서명을 해 주세요</span>
   <span class="blocked s-error">주민등록번호를 고쳐 주세요 · 나머지는 채워졌습니다</span>
 </div>
@@ -160,9 +160,9 @@ body[data-scene="error"] .sig svg{display:block}
   var h=location.hash.slice(1);
   if(['empty','sign','error','done','expired'].includes(h))document.body.dataset.scene=h;
   if(h==='sign'||h==='error'){
-    var v={name:'김하늘',rrn1:'930412',rrn2:'2345678',addr:'서울특별시 마포구 월드컵북로 396, 누리꿈스퀘어 비즈니스타워 1203호',tel:'010-4821-7730',acct:'123456-01-234567'};
+    var v={name:'김하늘',rrn1:'930412',rrn2:'2345678',addr:'서울특별시 마포구 월드컵북로 396, 누리꿈스퀘어 비즈니스타워 1203호',tel:'010-4821-7730'};
     for(var k in v){var el=document.getElementById(k);if(el)el.value=v[k]}
-    document.getElementById('bank').selectedIndex=1;document.getElementById('agree').checked=true;
+    document.getElementById('agree').checked=true;
     if(h==='error'){var r=document.getElementById('rrn1');r.value='93041';r.classList.add('err');r.setAttribute('aria-invalid','true')}
   }
 })();

@@ -170,21 +170,21 @@ describe("deploy.sh — 새 프로젝트(시나리오 1)", () => {
     expect(r.stdout.trim().split("\n").at(-1)).toMatch(/^SERVICE_URL=https:\/\/plant8-staging-/);
   });
 
-  it("새 서비스의 실제 URL이 계산한 결정적 URL과 다르면 실측값으로 바로잡고 BETTER_AUTH_URL도 갱신한다", () => {
+  it("describe()가 다른 대체 호스트명을 돌려줘도 계산한 정본 URL을 그대로 쓴다(2026-09-18: 그 대체 호스트명이 실제로 라우팅 안 되는 쪽이었다)", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
       state: { "describe-url": "https://plant8-staging-67rumhdgba-du.a.run.app" },
     });
     expect(r.status).toBe(0);
-    expect(r.stderr).toContain("describe url differs");
+    expect(r.stderr).toContain("differs from canonical");
 
-    const updateLine = r.log.split("\n").find((l) => l.startsWith("run services update plant8-staging "));
-    expect(updateLine).toBeDefined();
-    expect(updateLine).toContain("--update-env-vars=BETTER_AUTH_URL=https://plant8-staging-67rumhdgba-du.a.run.app");
+    // BETTER_AUTH_URL을 대체 호스트명으로 재배포하지 않는다 — 컨테이너의
+    // env var도 처음 배포 때 이미 정본 URL로 들어갔다.
+    expect(r.log).not.toMatch(/^run services update plant8-staging /m);
 
-    expect(r.stdout.trim().split("\n").at(-1)).toBe("SERVICE_URL=https://plant8-staging-67rumhdgba-du.a.run.app");
+    expect(r.stdout.trim().split("\n").at(-1)).toBe("SERVICE_URL=https://plant8-staging-123456789012.asia-northeast3.run.app");
 
     const healthzLine = r.log.split("\n").find((l) => l.includes("/healthz"));
-    expect(healthzLine).toContain("https://plant8-staging-67rumhdgba-du.a.run.app/healthz");
+    expect(healthzLine).toContain("https://plant8-staging-123456789012.asia-northeast3.run.app/healthz");
   });
 });
 
@@ -220,15 +220,13 @@ describe("deploy.sh — 기존 서비스·이미지(시나리오 2)", () => {
     expect(trafficLine).toBeDefined();
     expect(trafficLine).toContain("--to-latest");
 
-    // 실제 URL이 계산한 결정적 URL과 다르면(describe-url) 실측값으로
-    // 바로잡고, 이미 100%로 배포했으므로 컨테이너의 BETTER_AUTH_URL도
-    // 안전하게 같이 고친다 — 스모크는 이 실측 주소로 한다.
-    const updateLine = r.log.split("\n").find((l) => l.startsWith("run services update plant8-staging "));
-    expect(updateLine).toBeDefined();
-    expect(updateLine).toContain("--update-env-vars=BETTER_AUTH_URL=https://plant8-staging-abc123-du.a.run.app");
+    // describe()가 계산한 정본 URL과 다른 대체 호스트명을 돌려줘도(예:
+    // abc123-du.a.run.app) 그걸로 재배포하지 않는다 — 2026-09-18 실제
+    // 스테이징에서 이 대체 호스트명 자체가 라우팅 안 되는 쪽으로 드러났다.
+    expect(r.log).not.toMatch(/^run services update plant8-staging /m);
 
     const healthzLine = r.log.split("\n").find((l) => l.includes("/healthz"));
-    expect(healthzLine).toContain("https://plant8-staging-abc123-du.a.run.app/healthz");
+    expect(healthzLine).toContain("https://plant8-staging-123456789012.asia-northeast3.run.app/healthz");
 
     const order = [
       "run deploy plant8-staging ",
@@ -247,8 +245,8 @@ describe("deploy.sh — 기존 서비스·이미지(시나리오 2)", () => {
     const policiesUpdateArgLine = r.log.split("\n").find((l) => l.startsWith("alpha monitoring policies list"));
     expect(policiesUpdateArgLine).toContain('--filter=displayName="');
 
-    expect(r.stderr).toContain("describe url differs");
-    expect(r.stdout.trim().split("\n").at(-1)).toBe("SERVICE_URL=https://plant8-staging-abc123-du.a.run.app");
+    expect(r.stderr).toContain("differs from canonical");
+    expect(r.stdout.trim().split("\n").at(-1)).toBe("SERVICE_URL=https://plant8-staging-123456789012.asia-northeast3.run.app");
   });
 });
 

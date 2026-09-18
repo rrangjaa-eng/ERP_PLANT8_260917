@@ -432,18 +432,21 @@ deploy_service() {
   # 서비스는 이미 100%라 no-op이다.
   run gcloud run services update-traffic "$svc" --region="$REGION" --project="$PROJECT" --to-latest
 
+  # `describe().status.url`은 이 서비스에서 `<svc>-<hash>-<region코드>.a.run.app`
+  # 형식(예: plant8-staging-67rumhdgba-du.a.run.app)의 대체 호스트명을
+  # 돌려준다 — 이 호스트명은 오늘 하루 실제 스테이징에서 5차례(카나리 태그
+  # URL 4회 + run #12 직접 curl 1회) 전부 404/라우팅 실패로 재현됐다(반면
+  # `gcloud run deploy`/`services update`가 매번 자체적으로 보고하는
+  # "Service URL:"은 항상 계산한 정본 형식 `<svc>-<PROJECT_NUMBER>.
+  # <region>.run.app`과 일치했고, 실제로 작동한다). 과거엔 이 대체 URL을
+  # "실측값"으로 신뢰해 SERVICE_URL을 덮어썼는데, 그게 바로 run #12
+  # 스모크가 404로 계속 실패한 원인이었다(2026-09-18) — 이 프로젝트에서
+  # 정본이 아닌 쪽이 오히려 이 대체 URL이었다. 이제 진단 로그만 남기고
+  # SERVICE_URL은 절대 덮어쓰지 않는다.
   local describe_url
   describe_url="$(run gcloud run services describe "$svc" --region="$REGION" --project="$PROJECT" --format='value(status.url)')"
   if [ "$describe_url" != "$SERVICE_URL" ]; then
-    echo "note: describe url differs ($describe_url); canonical is $SERVICE_URL" >&2
-    # 실제 스테이징 배포에서 반복 재현(2026-09-18): 계산한 결정적 URL이 실제
-    # Cloud Run이 부여한 URL과 다른 경우가 있다([ASSUMED] 항목 검증 실패).
-    # 이후 스모크·최종 출력·컨테이너의 BETTER_AUTH_URL 전부 계산값이 아니라
-    # 실측값(describe_url)을 쓴다 — 이미 100% 트래픽으로 배포했으므로(위
-    # 참고) env var를 고치는 재배포도 안전하다.
-    SERVICE_URL="$describe_url"
-    run gcloud run services update "$svc" --region="$REGION" --project="$PROJECT" \
-      --update-env-vars="BETTER_AUTH_URL=${SERVICE_URL}"
+    echo "note: describe url ($describe_url) differs from canonical ($SERVICE_URL) — using canonical, the alternate host is unreliable in this project" >&2
   fi
 }
 

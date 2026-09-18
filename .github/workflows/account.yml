@@ -70,7 +70,20 @@ jobs:
             ARGS="$ARGS,--admin"
           fi
 
-          gcloud run jobs execute "$(job_name "$ENV_SHORT" account)" --region "$REGION" --project "$PROJECT" --args="$ARGS" --wait
+          JOB="$(job_name "$ENV_SHORT" account)"
+
+          # 실행 이름을 반드시 잡아둔다 — job_name만으로 로그를 거르면 바로
+          # 전(다른) 실행의 로그 줄이 먼저 걸려서(Cloud Logging 수집 지연 중
+          # 직전 실행 로그가 아직 남아있음) 엉뚱한 계정의 임시 비밀번호를
+          # 출력할 수 있다(admin 만들고 몇 분 뒤 test를 만드는 실제 순서에서
+          # 재현 가능 — 2026-09-18 코드 리뷰). 이번 실행의 execution name으로
+          # 반드시 좁혀서 조회한다.
+          if ! EXEC="$(gcloud run jobs execute "$JOB" --region "$REGION" --project "$PROJECT" --args="$ARGS" --wait --format='value(metadata.name)')"; then
+            echo "account job execution failed" >&2
+            gcloud logging read "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"$JOB\" AND severity>=ERROR" \
+              --project "$PROJECT" --freshness=10m --limit=20 --format='value(textPayload, jsonPayload.message)' >&2 || true
+            exit 1
+          fi
 
           echo "⚠️  임시 비밀번호(있다면)는 즉시 로그인해 변경하세요." >> "$GITHUB_STEP_SUMMARY"
 
@@ -81,16 +94,17 @@ jobs:
 
           FOUND=""
           for i in $(seq 1 12); do
-            OUT=$(gcloud logging read "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"$(job_name "$ENV_SHORT" account)\"" --project "$PROJECT" --freshness=15m --limit=30 --format='value(textPayload)' || true)
-            if printf '%s' "$OUT" | grep -q "$WANT"; then
-              FOUND="$OUT"
+            OUT=$(gcloud logging read "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"$JOB\" AND labels.\"run.googleapis.com/execution_name\"=\"$EXEC\"" --project "$PROJECT" --freshness=15m --limit=30 --format='value(textPayload)' || true)
+            LINE="$(printf '%s\n' "$OUT" | grep "$WANT" | head -n1 || true)"
+            if [ -n "$LINE" ]; then
+              FOUND="$LINE"
               break
             fi
             sleep 10
           done
 
           if [ -z "$FOUND" ]; then
-            echo "account job finished but its output is not in Cloud Logging yet — do NOT re-run reset; open Logging → job_name=erp-<env>-account in a minute" >&2
+            echo "account job finished but its output is not in Cloud Logging yet — do NOT re-run reset; open Logging → job_name=$JOB, execution=$EXEC in a minute" >&2
             exit 1
           fi
 

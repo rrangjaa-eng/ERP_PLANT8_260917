@@ -93,9 +93,9 @@ select.inp{max-width:200px}
 .toast{position:fixed;left:var(--pad-page);bottom:var(--s-4);background:var(--bg);border:var(--line-w-strong) solid var(--line-strong);padding:var(--s-2) var(--s-3);font-size:var(--fs-sm);display:none;gap:var(--s-3);z-index:var(--z-toast)}
 
 /* 장면 */
-body[data-scene="blocked"] .s-error,body[data-scene="blocked"] .s-done{display:none}
-body[data-scene="error"] .s-blocked,body[data-scene="error"] .s-done{display:none}
-body[data-scene="done"] .s-blocked,body[data-scene="done"] .s-error{display:none}
+body[data-scene="blocked"] :is(.s-error,.s-done):not(.s-blocked){display:none}
+body[data-scene="error"] :is(.s-blocked,.s-done):not(.s-error){display:none}
+body[data-scene="done"] :is(.s-blocked,.s-error):not(.s-done){display:none}
 body[data-scene="done"] .toast{display:flex}
 body[data-scene="done"] .inp,body[data-scene="done"] select{pointer-events:none}
 

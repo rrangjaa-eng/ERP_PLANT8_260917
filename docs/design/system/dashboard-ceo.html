@@ -9,10 +9,14 @@
 /* §6-4 다시 씀 후보(2026-09-18, 사용자 요청 「대시보드 형식으로 한눈에」): 대표·경영관리 첫 화면.
    프로젝트별 원장은 여기 없다(프로젝트 목록에 수익률 열이 있다). 컴포넌트: KPI 타일(추세선 · 전년 대비 칩) ·
    목표 달성 막대(전사 + 팀별, 목표 눈금) · 월별 매출·수익 막대 + 수익률 선 · 팀별 매출 비중 띠 ·
-   챙길 것 타일 · 프로젝트 현황(상태 칩 + 수익률 낮은 프로젝트) · 다가오는 지급.
-   토큰만 쓴다. 제안 토큰 1개: --fs-2xl(32px, 대시보드 큰 숫자) — 승인 전이라 이 파일 안에서만 정의.
+   클라이언트별 매출 순위(팀 색) · 비용 구성 도넛(추천) · 프로젝트 현황(상태 칩 + 수익률 낮은 프로젝트).
+   2026-09-18 사용자: 「다가오는 지급」 「챙길 것」 제외, 클라이언트별 매출 순위 추가, 색 더 다양하게(→ --viz-* 제안).
+   토큰만 쓴다. 제안 토큰: --fs-2xl(32px) · --viz-1~6(데이터 색) — 승인 전이라 이 파일 안에서만 정의.
    장면: #ceo(기본) · #mgmt(경영관리 — 같은 화면, 계급 이름만). 앱 코드가 아니다. */
-:root{--fs-2xl:32px}
+:root{--fs-2xl:32px;
+  /* 제안 토큰(승인 전): 데이터 색 6단 — 그린을 1번으로, 나머지는 같은 명도대의 다른 색상. 흰 글자 대비 1·2·4·5 ≥ 4.5, 3·6은 짙은 글자 */
+  --viz-1:var(--g-700);--viz-2:#1F5FA8;--viz-3:#C27A12;--viz-4:#6C4BA6;--viz-5:#B03A2E;--viz-6:var(--g-400);
+  --viz-1-weak:var(--g-100);--viz-2-weak:#DCE7F5;--viz-3-weak:#F7E8CF}
 *{box-sizing:border-box;margin:0;padding:0}
 html{font-size:var(--fs-base)}
 body{background:var(--bg);color:var(--fg);font-family:var(--font-sans);font-size:var(--fs-base);line-height:var(--lh-body);letter-spacing:var(--ls-body);word-break:keep-all;overflow-wrap:anywhere;-webkit-font-smoothing:antialiased}
@@ -74,13 +78,22 @@ main{padding:var(--s-5) var(--pad-page) 72px;max-width:var(--container-max)}
 .track i{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--fg)}
 .track .tick{position:absolute;top:100%;font-size:var(--fs-xs);color:var(--faint);transform:translateX(-50%);margin-top:3px;white-space:nowrap}
 .teams{list-style:none;display:flex;flex-direction:column;gap:var(--s-3);margin-top:var(--s-3)}
-.teams li{display:grid;grid-template-columns:72px minmax(0,1fr) 56px;gap:var(--s-3);align-items:center;min-width:0}
-.teams .t{font-weight:var(--fw-medium)}
-.teams .t small{display:block;font-size:var(--fs-xs);color:var(--faint);font-weight:var(--fw-regular)}
-.teams .track{height:10px;margin:0}
-.teams .pct{text-align:right;font-weight:var(--fw-bold)}
-.teams .pct.low{color:var(--warning)}
-.teams .amt{grid-column:2/-1;font-size:var(--fs-xs);color:var(--faint);margin-top:-6px;white-space:normal;letter-spacing:var(--ls-body)}
+.teams li{display:flex;flex-direction:column;gap:5px;min-width:0;padding-top:var(--s-2);border-top:var(--line-w) dotted var(--line)}
+.teams .hd{display:flex;gap:var(--s-2);align-items:baseline;flex-wrap:wrap}
+.teams .hd b{font-weight:var(--fw-medium)}
+.teams .hd small{font-size:var(--fs-xs);color:var(--faint)}
+.teams .r{display:grid;grid-template-columns:40px minmax(0,1fr) 108px;gap:var(--s-2);align-items:center}
+.teams .r small{font-size:var(--fs-xs);color:var(--faint)}
+.teams .r .track{margin:0;height:10px}
+.teams .r .track i{top:-3px;bottom:-3px}
+.teams .r.rate .track{height:6px;background:var(--viz-3-weak)}
+.teams .r.rate .track b{background:var(--viz-3)}
+.teams .pct{text-align:right;font-weight:var(--fw-bold);white-space:nowrap}
+.teams .pct small{font-weight:var(--fw-regular);color:var(--faint);font-size:var(--fs-xs)}
+.teams .pct.low,.teams .pct.miss{color:var(--viz-5)}
+.teams li.t1 .r:not(.rate) .track b{background:var(--viz-1)}
+.teams li.t2 .r:not(.rate) .track b{background:var(--viz-2)}
+.teams li.t3 .r:not(.rate) .track b{background:var(--viz-4)}
 
 /* 월별 차트 */
 .chart{width:100%;height:auto;display:block;margin-top:var(--s-2)}
@@ -89,19 +102,20 @@ main{padding:var(--s-5) var(--pad-page) 72px;max-width:var(--container-max)}
 .chart .sales{fill:var(--g-100)}
 .chart .profit{fill:var(--g-700)}
 .chart .now .sales{fill:var(--g-400)}
-.chart .rate{fill:none;stroke:var(--fg);stroke-width:1.5;stroke-dasharray:3 3}
-.chart .rate-dot{fill:var(--bg);stroke:var(--fg);stroke-width:1.5}
+.chart .rate{fill:none;stroke:var(--viz-3);stroke-width:2}
+.chart .rate-dot{fill:var(--bg);stroke:var(--viz-3);stroke-width:2}
 .chart .lbl{font-size:11px;fill:var(--fg);font-weight:600;font-family:var(--font-sans)}
+.chart .lbl.rate-l{fill:var(--viz-3)}
 .legend{display:flex;gap:var(--s-4);font-size:var(--fs-xs);color:var(--muted);flex-wrap:wrap}
 .legend i{display:inline-block;width:10px;height:10px;vertical-align:-1px;margin-right:4px}
 .legend .l-sales{background:var(--g-100)}.legend .l-profit{background:var(--g-700)}.legend .l-now{background:var(--g-400)}
-.legend .l-rate{width:14px;height:0;border-top:2px dashed var(--fg);vertical-align:2px}
+.legend .l-rate{width:14px;height:0;border-top:2px solid var(--viz-3);vertical-align:2px}
 
 /* 비중 띠 */
 .share{display:flex;height:22px;margin-top:var(--s-2)}
 .share span{display:flex;align-items:center;padding:0 var(--s-2);font-size:var(--fs-xs);font-weight:var(--fw-medium);white-space:nowrap;overflow:hidden;min-width:0}
 .share .a{background:var(--g-700);color:#fff}
-.share .b{background:var(--g-400);color:var(--g-900)}
+.share .b{background:var(--viz-2);color:#fff}
 .share .c{background:var(--g-100);color:var(--fg)}
 .share-l{display:flex;gap:var(--s-4);font-size:var(--fs-xs);color:var(--muted);margin-top:var(--s-1);flex-wrap:wrap}
 .share-l b{color:var(--fg)}
@@ -119,7 +133,10 @@ main{padding:var(--s-5) var(--pad-page) 72px;max-width:var(--container-max)}
 
 /* 프로젝트 현황 */
 .status{display:flex;gap:var(--s-2);flex-wrap:wrap}
-.status span{border:var(--line-w) solid var(--line-strong);padding:2px 10px;font-size:var(--fs-sm);display:inline-flex;gap:6px;align-items:baseline}
+.status span{border:var(--line-w) solid var(--line-strong);padding:2px 10px;font-size:var(--fs-sm);display:inline-flex;gap:6px;align-items:baseline;box-shadow:inset 3px 0 0 var(--viz-1)}
+.status span.done{box-shadow:inset 3px 0 0 var(--viz-2)}
+.status span.wait{box-shadow:inset 3px 0 0 var(--viz-3)}
+.status span.next{box-shadow:inset 3px 0 0 var(--viz-4)}
 .status b{font-size:var(--fs-md)}
 .status span.m{border-color:var(--line);color:var(--muted)}
 .low{list-style:none;margin-top:var(--s-2)}
@@ -131,6 +148,36 @@ main{padding:var(--s-5) var(--pad-page) 72px;max-width:var(--container-max)}
 .low .mini b.bad{background:var(--danger)}
 .low .pct{text-align:right;font-weight:var(--fw-bold)}
 .low .pct.w{color:var(--warning)}.low .pct.d{color:var(--danger)}
+
+/* 클라이언트별 매출 순위 */
+.rank{list-style:none;display:flex;flex-direction:column;gap:6px;margin-top:var(--s-1)}
+.rank li{display:grid;grid-template-columns:18px minmax(0,1fr) 92px;gap:var(--s-2);align-items:center;font-size:var(--fs-sm)}
+.rank .no{font-size:var(--fs-xs);color:var(--faint);text-align:right;font-variant-numeric:tabular-nums}
+.rank .nm{display:flex;justify-content:space-between;gap:var(--s-2);min-width:0}
+.rank .nm span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank .nm small{color:var(--faint);white-space:nowrap}
+.rank .bar-c{grid-column:2;height:12px;background:var(--surface);position:relative;margin-top:-2px}
+.rank .bar-c b{position:absolute;left:0;top:0;bottom:0;background:var(--viz-1)}
+.rank li.t2 .bar-c b{background:var(--viz-2)}
+.rank li.na .bar-c b{background:var(--line-ui)}
+.rank .amt{grid-row:span 2;text-align:right;font-weight:var(--fw-bold);align-self:center}
+.rank .amt small{display:block;font-size:var(--fs-xs);color:var(--faint);font-weight:var(--fw-regular)}
+.rank-l{display:flex;gap:var(--s-4);font-size:var(--fs-xs);color:var(--muted);margin-top:auto;padding-top:var(--s-2)}
+.rank-l i{display:inline-block;width:10px;height:10px;vertical-align:-1px;margin-right:4px}
+/* 비용 구성 도넛 */
+.donut{display:grid;grid-template-columns:132px minmax(0,1fr);gap:var(--s-3);align-items:center}
+.donut svg{width:132px;height:132px}
+.donut circle{fill:none;stroke-width:22}
+.donut .c1{stroke:var(--viz-1)}.donut .c2{stroke:var(--viz-2)}.donut .c3{stroke:var(--viz-3)}.donut .c4{stroke:var(--viz-4)}.donut .c5{stroke:var(--viz-5)}
+.donut .ctr{font-size:var(--fs-lg);font-weight:var(--fw-bold);fill:var(--fg);font-family:var(--font-sans)}
+.donut .ctr-l{font-size:11px;fill:var(--faint);font-family:var(--font-sans)}
+.donut ul{list-style:none;display:flex;flex-direction:column;gap:5px;font-size:var(--fs-sm);min-width:0}
+.donut li{display:grid;grid-template-columns:10px auto 1fr;gap:8px;align-items:baseline;white-space:nowrap}
+.donut li .p{text-align:right}
+.donut li i{width:10px;height:10px;display:block;align-self:center}
+.donut li .p{font-weight:var(--fw-bold);font-variant-numeric:tabular-nums}
+.donut li small{color:var(--faint);margin-left:4px}
+.donut .k1{background:var(--viz-1)}.donut .k2{background:var(--viz-2)}.donut .k3{background:var(--viz-3)}.donut .k4{background:var(--viz-4)}.donut .k5{background:var(--viz-5)}
 
 /* 다가오는 지급 */
 .pay{list-style:none}
@@ -206,13 +253,18 @@ main{padding:var(--s-5) var(--pad-page) 72px;max-width:var(--container-max)}
 
     <!-- 목표 달성 -->
     <section class="blk c5" aria-label="목표 달성">
-      <h2>목표 달성 <span class="why">수익 기준 · 연간 목표 105,000,000</span><button class="b3">목표 고치기</button></h2>
-      <div class="goal-big"><span class="pct num">104%</span><span class="of">전사 · <span class="num">110,125,720</span> / <span class="num">105,000,000</span> · 남은 기간 3.5개월</span></div>
+      <h2>목표 달성 <span class="why">팀별 목표 = 수익 금액 + 수익률</span><button class="b3">목표 고치기</button></h2>
+      <div class="goal-big"><span class="pct num">104%</span><span class="of">수익 <span class="num">110,125,720</span> / <span class="num">105,000,000</span> · 남은 기간 3.5개월</span><span class="of" style="margin-left:auto">수익률 <b class="num" style="color:var(--fg)">22.8%</b> / 목표 20% <span class="chip up">달성</span></span></div>
       <div class="track" aria-hidden="true"><b style="width:100%"></b><i style="left:96%"></i><span class="tick" style="left:96%">목표</span></div>
       <ul class="teams">
-        <li><span class="t">기획1팀<small>목표 77,500,000</small></span><span class="track"><b style="width:100%"></b><i style="left:89%"></i></span><span class="pct num">112%</span><span class="amt num">86,806,720 · 초과 9,306,720</span></li>
-        <li><span class="t">기획2팀<small>목표 26,500,000</small></span><span class="track"><b style="width:88%"></b><i style="left:100%"></i></span><span class="pct num low">88%</span><span class="amt num">23,319,000 · 남은 3,181,000 · 진행 2건 예상 수익 4,900,000</span></li>
-        <li><span class="t">경영관리<small>목표 1,000,000</small></span><span class="track"><b style="width:0%"></b><i style="left:100%"></i></span><span class="pct num low">0%</span><span class="amt">프로젝트 없음 · 팀 비용만</span></li>
+        <li class="t1"><div class="hd"><b>기획1팀</b><small>수익 <span class="num">86,806,720</span> / 목표 <span class="num">77,500,000</span> · 초과 <span class="num">9,306,720</span></small></div>
+          <div class="r"><small>수익</small><span class="track"><b style="width:100%"></b><i style="left:89%"></i></span><span class="pct num">112%</span></div>
+          <div class="r rate"><small>수익률</small><span class="track"><b style="width:68%"></b><i style="left:55%"></i></span><span class="pct num">27.0%<small> / 22%</small></span></div></li>
+        <li class="t2"><div class="hd"><b>기획2팀</b><small>수익 <span class="num">23,319,000</span> / 목표 <span class="num">26,500,000</span> · 남은 <span class="num">3,181,000</span> · 진행 2건 예상 <span class="num">4,900,000</span></small></div>
+          <div class="r"><small>수익</small><span class="track"><b style="width:88%"></b><i style="left:100%"></i></span><span class="pct num low">88%</span></div>
+          <div class="r rate"><small>수익률</small><span class="track"><b style="width:37%"></b><i style="left:45%"></i></span><span class="pct num miss">14.6%<small> / 18%</small></span></div></li>
+        <li class="t3"><div class="hd"><b>경영관리</b><small>프로젝트 없음 · 팀 비용만 · 목표 <span class="num">1,000,000</span></small></div>
+          <div class="r"><small>수익</small><span class="track"><b style="width:0"></b><i style="left:100%"></i></span><span class="pct num low">0%</span></div></li>
       </ul>
     </section>
 
@@ -236,27 +288,54 @@ main{padding:var(--s-5) var(--pad-page) 72px;max-width:var(--container-max)}
         <!-- 수익률 선: 우측 축 0~40% → y 190~20 -->
         <polyline class="rate" points="64,111 114,97 164,91 214,98 264,83 314,94 364,96 414,88 464,95"/>
         <g class="rate-dot"><circle cx="64" cy="111" r="3"/><circle cx="114" cy="97" r="3"/><circle cx="164" cy="91" r="3"/><circle cx="214" cy="98" r="3"/><circle cx="264" cy="83" r="3"/><circle cx="314" cy="94" r="3"/><circle cx="364" cy="96" r="3"/><circle cx="414" cy="88" r="3"/><circle cx="464" cy="95" r="3"/></g>
-        <text class="lbl" x="472" y="92">22.4%</text>
+        <text class="lbl rate-l" x="472" y="92">22.4%</text>
       </svg>
       <div class="share-l"><span>매출 비중</span></div>
       <div class="share" aria-label="팀별 매출 비중"><span class="a" style="width:67%">기획1팀 67% · 322,000,000</span><span class="b" style="width:33%">기획2팀 33% · 160,000,000</span></div>
     </section>
 
-    <!-- 챙길 것 -->
-    <section class="blk c4" aria-label="챙길 것">
-      <h2>챙길 것</h2>
-      <ul class="care">
-        <li class="warn"><span class="n num">2<small>건</small></span><span class="l">결재 대기 · 가장 급한 마감 오늘 14:00</span><button class="b3">내 차례</button></li>
-        <li class="bad"><span class="n num">1<small>건</small></span><span class="l">계산 불가 · Skyline 다낭 · 환율 없음</span><button class="b3">환율 넣기</button></li>
-        <li><span class="n num">5<small>건</small></span><span class="l">이번 달 지급 예정 · <span class="num">41,200,000</span></span></li>
-        <li class="ok"><span class="n num">0<small>건</small></span><span class="l">마감 지난 결재 · 미연결 카드 0</span></li>
-      </ul>
+    <!-- 비용 구성 (추천: 「챙길 것」 자리) -->
+    <section class="blk c4" aria-label="비용 구성">
+      <h2>비용 구성 <span class="why">실행가 324,900,000</span></h2>
+      <div class="donut">
+        <svg viewBox="0 0 132 132" aria-hidden="true">
+          <!-- r=44 · 둘레 276.5 · 44% 28% 12% 9% 7% -->
+          <circle class="c1" cx="66" cy="66" r="44" stroke-dasharray="121.7 276.5" transform="rotate(-90 66 66)"/>
+          <circle class="c2" cx="66" cy="66" r="44" stroke-dasharray="77.4 276.5" stroke-dashoffset="-121.7" transform="rotate(-90 66 66)"/>
+          <circle class="c3" cx="66" cy="66" r="44" stroke-dasharray="33.2 276.5" stroke-dashoffset="-199.1" transform="rotate(-90 66 66)"/>
+          <circle class="c4" cx="66" cy="66" r="44" stroke-dasharray="24.9 276.5" stroke-dashoffset="-232.3" transform="rotate(-90 66 66)"/>
+          <circle class="c5" cx="66" cy="66" r="44" stroke-dasharray="19.3 276.5" stroke-dashoffset="-257.2" transform="rotate(-90 66 66)"/>
+          <text class="ctr" x="66" y="64" text-anchor="middle">67%</text><text class="ctr-l" x="66" y="80" text-anchor="middle">매출 대비</text>
+        </svg>
+        <ul>
+          <li><i class="k1"></i><span>무대·시공</span><span class="p">44%<small>142.6M</small></span></li>
+          <li><i class="k2"></i><span>운영·인력</span><span class="p">28%<small>91.3M</small></span></li>
+          <li><i class="k3"></i><span>제작·인쇄</span><span class="p">12%<small>38.2M</small></span></li>
+          <li><i class="k4"></i><span>법인카드</span><span class="p">9%<small>29.5M</small></span></li>
+          <li><i class="k5"></i><span>해외·기타</span><span class="p">7%<small>23.3M</small></span></li>
+        </ul>
+      </div>
+      <div class="rank-l" style="margin-top:auto"><span>전년 무대·시공 48% → 44%</span><span>법인카드 6% → 9%</span></div>
     </section>
 
+    <!-- 클라이언트별 매출 -->
+    <section class="blk c4" aria-label="클라이언트별 매출">
+      <h2>클라이언트별 매출 <span class="why">견적 기준 · 7곳</span><button class="b3">프로젝트 목록</button></h2>
+      <ol class="rank">
+        <li class="t1"><span class="no">1</span><span class="nm"><span>신세계 <small>· VIP 라운지 리뉴얼 · 기획1팀</small></span></span><span class="amt num">210,000,000<small>40%</small></span><span class="bar-c"><b style="width:100%"></b></span></li>
+        <li class="t2"><span class="no">2</span><span class="nm"><span>한빛 <small>· 브랜드 팝업스토어 · 기획2팀</small></span></span><span class="amt num">92,000,000<small>18%</small></span><span class="bar-c"><b style="width:44%"></b></span></li>
+        <li class="t1"><span class="no">3</span><span class="nm"><span>LG전자 <small>· 올레드 체험존 · 기획1팀</small></span></span><span class="amt num">64,000,000<small>12%</small></span><span class="bar-c"><b style="width:30%"></b></span></li>
+        <li class="t1"><span class="no">4</span><span class="nm"><span>현대자동차 <small>· 아이오닉9 쇼케이스 · 기획1팀</small></span></span><span class="amt num">48,000,000<small>9%</small></span><span class="bar-c"><b style="width:23%"></b></span></li>
+        <li class="t2"><span class="no">5</span><span class="nm"><span>카카오 <small>· 개발자 컨퍼런스 부스 · 기획2팀</small></span></span><span class="amt num">41,000,000<small>8%</small></span><span class="bar-c"><b style="width:20%"></b></span></li>
+        <li class="t1 na"><span class="no">6</span><span class="nm"><span>Skyline Travel <small>· 인센티브 투어 · 기획1팀 · 계산 불가</small></span></span><span class="amt num">38,000,000<small>7%</small></span><span class="bar-c"><b style="width:18%"></b></span></li>
+        <li class="t2"><span class="no">7</span><span class="nm"><span>서울시 <small>· 야외도서관 운영 · 기획2팀</small></span></span><span class="amt num">27,000,000<small>5%</small></span><span class="bar-c"><b style="width:13%"></b></span></li>
+      </ol>
+      <div class="rank-l"><span><i style="background:var(--viz-1)"></i>기획1팀</span><span><i style="background:var(--viz-2)"></i>기획2팀</span><span><i style="background:var(--line-ui)"></i>계산 불가</span><span>상위 3곳 = 70%</span></div>
+    </section>
     <!-- 프로젝트 현황 -->
     <section class="blk c4" aria-label="프로젝트 현황">
       <h2>프로젝트 현황 <button class="b3">프로젝트 목록</button></h2>
-      <div class="status"><span>진행 <b class="num">5</b></span><span>완료 <b class="num">2</b></span><span class="m">정산 대기 <b class="num">1</b></span><span class="m">10월 시작 <b class="num">2</b></span></div>
+      <div class="status"><span>진행 <b class="num">5</b></span><span class="done">완료 <b class="num">2</b></span><span class="wait">정산 대기 <b class="num">1</b></span><span class="next">10월 시작 <b class="num">2</b></span></div>
       <h2 style="margin-top:var(--s-2)">수익률 15% 아래 <span class="why">3건</span></h2>
       <ul class="low">
         <li><span class="nm">서울시 야외도서관 운영 대행<small>기획2팀</small></span><span class="mini"><b class="bad" style="width:36%"></b></span><span class="pct num d">8.9%</span></li>
@@ -265,17 +344,6 @@ main{padding:var(--s-5) var(--pad-page) 72px;max-width:var(--container-max)}
       </ul>
     </section>
 
-    <!-- 다가오는 지급 -->
-    <section class="blk c4" aria-label="다가오는 지급">
-      <h2>다가오는 지급 <span class="why">2주</span><button class="b3">지출결의</button></h2>
-      <ul class="pay">
-        <li><span class="d num">09-19<small>금</small></span><span>스테이지원 · 무대설치 <span class="who">· 기획1팀</span><span class="tag">결재 중</span></span><span class="amt num">13,640,000</span></li>
-        <li><span class="d num">09-19<small>금</small></span><span>김하늘 · 행사 진행 MC <span class="who">· 기타소득</span></span><span class="amt num">2,736,000</span></li>
-        <li><span class="d num">09-26<small>금</small></span><span>한빛무대예술 · LED 월 <span class="who">· 기획1팀</span><span class="tag">결재 중</span></span><span class="amt num">8,800,000</span></li>
-        <li><span class="d num">09-26<small>금</small></span><span>사운드포레스트 · 음향 <span class="who">· 기획1팀</span></span><span class="amt num">7,150,000</span></li>
-        <li><span class="d num">10-02<small>금</small></span><span>더테이블 · 케이터링 <span class="who">· 기획2팀</span></span><span class="amt num">4,840,000</span></li>
-      </ul>
-    </section>
   </div>
 
   <div class="foot"><span>프로젝트별 견적 · 비용 · 수익률은 <button class="b3">프로젝트 목록</button>에서</span><span>숫자는 09-18 06:00 기준 · 정산 스냅샷 포함</span></div>

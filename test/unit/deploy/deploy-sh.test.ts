@@ -119,6 +119,7 @@ describe("deploy.sh — 새 프로젝트(시나리오 1)", () => {
       "run jobs execute plant8-staging-db-bootstrap",
       "run jobs execute plant8-staging-migrate",
       "run deploy plant8-staging ",
+      "run services update-traffic plant8-staging ",
       "alpha monitoring policies create",
       "/healthz",
       "sign-in/email",
@@ -133,6 +134,18 @@ describe("deploy.sh — 새 프로젝트(시나리오 1)", () => {
     expect(deployLine).toContain("--min-instances=0");
     expect(deployLine).toContain("--max-instances=3");
     expect(deployLine).toContain("--set-secrets=BETTER_AUTH_SECRET=better-auth-secret-staging:latest");
+
+    const trafficLine = r.log.split("\n").find((l) => l.startsWith("run services update-traffic plant8-staging "));
+    expect(trafficLine).toBeDefined();
+    expect(trafficLine).toContain("--to-latest");
+
+    const channelsLine = r.log.split("\n").find((l) => l.startsWith("beta monitoring channels list"));
+    expect(channelsLine).toContain('--filter=displayName="');
+    expect(channelsLine).not.toContain("displayName='");
+
+    const policiesListLine = r.log.split("\n").find((l) => l.startsWith("alpha monitoring policies list"));
+    expect(policiesListLine).toContain('--filter=displayName="');
+    expect(policiesListLine).not.toContain("displayName='");
 
     const sqlCreateLine = r.log.split("\n").find((l) => l.startsWith("beta sql instances create"));
     expect(sqlCreateLine).toContain("--tier=db-f1-micro");
@@ -196,12 +209,16 @@ describe("deploy.sh — 기존 서비스·이미지(시나리오 2)", () => {
 
     // 카나리(--no-traffic/--tag) 단계 없이 신규 배포와 동일하게 바로 100%
     // 트래픽으로 배포한다(2026-09-18 — 태그 전용 URL 라우팅 지연 문제로
-    // 카나리 단계 자체를 없앰). 트래픽을 옮기는 별도 update-traffic 호출도
-    // 없다.
+    // 카나리 단계 자체를 없앰). 다만 과거 --no-traffic 배포가 트래픽을
+    // 특정 리비전에 고정해 놨을 수 있어(실제 재현) update-traffic
+    // --to-latest는 그대로 매번 호출한다.
     const deployLine = r.log.split("\n").find((l) => l.startsWith("run deploy plant8-staging "));
     expect(deployLine).not.toContain("--no-traffic");
     expect(deployLine).not.toContain("--tag=");
-    expect(r.log).not.toContain("services update-traffic");
+
+    const trafficLine = r.log.split("\n").find((l) => l.startsWith("run services update-traffic plant8-staging "));
+    expect(trafficLine).toBeDefined();
+    expect(trafficLine).toContain("--to-latest");
 
     // 실제 URL이 계산한 결정적 URL과 다르면(describe-url) 실측값으로
     // 바로잡고, 이미 100%로 배포했으므로 컨테이너의 BETTER_AUTH_URL도
@@ -213,12 +230,22 @@ describe("deploy.sh — 기존 서비스·이미지(시나리오 2)", () => {
     const healthzLine = r.log.split("\n").find((l) => l.includes("/healthz"));
     expect(healthzLine).toContain("https://plant8-staging-abc123-du.a.run.app/healthz");
 
-    const order = ["run deploy plant8-staging ", "alpha monitoring policies update", "/healthz", "sign-in/email"].map(
-      (n) => lineIndex(r.log, n),
-    );
+    const order = [
+      "run deploy plant8-staging ",
+      "run services update-traffic plant8-staging ",
+      "alpha monitoring policies update",
+      "/healthz",
+      "sign-in/email",
+    ].map((n) => lineIndex(r.log, n));
     for (const idx of order) expect(idx).toBeGreaterThan(-1);
     expect(order).toEqual([...order].sort((a, b) => a - b));
     expect(r.log).not.toContain("alpha monitoring policies create");
+
+    const channelsLine = r.log.split("\n").find((l) => l.startsWith("beta monitoring channels list"));
+    expect(channelsLine).toContain('--filter=displayName="');
+
+    const policiesUpdateArgLine = r.log.split("\n").find((l) => l.startsWith("alpha monitoring policies list"));
+    expect(policiesUpdateArgLine).toContain('--filter=displayName="');
 
     expect(r.stderr).toContain("describe url differs");
     expect(r.stdout.trim().split("\n").at(-1)).toBe("SERVICE_URL=https://plant8-staging-abc123-du.a.run.app");

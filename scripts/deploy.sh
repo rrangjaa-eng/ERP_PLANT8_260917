@@ -424,6 +424,14 @@ deploy_service() {
   fi
   printf '%s\n' "$deploy_output"
 
+  # 과거 카나리(--no-traffic/--tag) 배포가 이 서비스의 트래픽을 특정
+  # 리비전에 고정해 놨을 수 있다 — 그러면 --no-traffic 없이 배포해도 새
+  # 리비전이 0%로 뜬다(실제 스테이징에서 재현, 2026-09-18: "serving 0
+  # percent of traffic"). --to-latest로 100% 트래픽을 최신 리비전에 명시적
+  # 으로 고정하고, 서비스의 트래픽 모드도 "항상 최신"으로 되돌린다. 신규
+  # 서비스는 이미 100%라 no-op이다.
+  run gcloud run services update-traffic "$svc" --region="$REGION" --project="$PROJECT" --to-latest
+
   local describe_url
   describe_url="$(run gcloud run services describe "$svc" --region="$REGION" --project="$PROJECT" --format='value(status.url)')"
   if [ "$describe_url" != "$SERVICE_URL" ]; then
@@ -493,10 +501,13 @@ ensure_alerts() {
   local channel_display
   channel_display="$(alert_channel "$ENV")"
   local channel_name
-  channel_name="$(run gcloud beta monitoring channels list --project="$PROJECT" --filter="displayName='${channel_display}'" --format='value(name)')"
+  # Cloud Monitoring 필터 문법은 문자열 리터럴에 큰따옴표를 요구한다(작은
+  # 따옴표는 문법 오류 — 실제 스테이징에서 재현, 2026-09-18: channel이 0개일
+  # 땐 경고만 뜨고 넘어가지만 1개 이상이면 INVALID_ARGUMENT로 실패한다).
+  channel_name="$(run gcloud beta monitoring channels list --project="$PROJECT" --filter="displayName=\"${channel_display}\"" --format='value(name)')"
   if [ -z "$channel_name" ]; then
     run gcloud beta monitoring channels create --project="$PROJECT" --display-name="$channel_display" --type=email --channel-labels="email_address=${ALERT_EMAIL}"
-    channel_name="$(run gcloud beta monitoring channels list --project="$PROJECT" --filter="displayName='${channel_display}'" --format='value(name)')"
+    channel_name="$(run gcloud beta monitoring channels list --project="$PROJECT" --filter="displayName=\"${channel_display}\"" --format='value(name)')"
   fi
 
   local metric
@@ -518,7 +529,8 @@ ensure_alerts() {
 _upsert_policy() {
   local display_name="$1" template="$2" channel_name="$3" metric="$4" instance="$5"
   local existing
-  existing="$(run gcloud alpha monitoring policies list --project="$PROJECT" --filter="displayName='${display_name}'" --format='value(name)')"
+  # 같은 이유(위 ensure_alerts 참고)로 큰따옴표를 쓴다.
+  existing="$(run gcloud alpha monitoring policies list --project="$PROJECT" --filter="displayName=\"${display_name}\"" --format='value(name)')"
   local tmpfile
   tmpfile="$(mktemp)"
   sed \

@@ -9,10 +9,11 @@
 - 브랜치 `design/system-260918`, 드래프트 PR **#7** — 머지 전이면 `git fetch origin design/system-260918 && git checkout design/system-260918`
 - CI 없음(리포에 `.github/workflows/` 없음)
 
-## 먼저 — 사용자 결정 4건 (`DECISIONS.md` 「미확정」)
+## 결정 상태 — 미확정 없음
 
-U1 로고 워드마크 반전 사용 · U2 인쇄물 결재 칸(텍스트/서명 이미지) · U3 Pretendard 웹폰트 파일 추가 승인(의존성) · U4 손익 인라인 막대 v1 포함 여부.
-답이 나오면 `DECISIONS.md`에 결정 줄을 더하고 `SYSTEM.md`의 해당 절을 고친다. U1·U3은 첫 화면 구현 전에 필요하다.
+리뷰 미결 4건(U1~U4)과 보강 6건(R1~R6)은 사용자가 보드 https://claude.ai/artifact/LfcJbipmZLEhsjkGeRJ5rR 에서 실물을 보고 전부 결정했다(`DECISIONS.md` 2026-09-18 마지막 두 표). 특히 **U4는 권고와 달리 「목표 대비」 인라인 막대를 v1부터 포함**한다(`SYSTEM.md` §6-4). Pretendard 파일 추가(U3)는 승인됐으나 실제 파일은 Phase 2 앱 코드에서 넣는다.
+
+**이 세션의 교훈**: 사용자는 실시간으로 답한다. 결정은 실물(보드)을 먼저 보여 주고 한 건씩 묻는다. 묻지 않고 넣지 않는다.
 
 ## 그 다음 — §4 통일 (화면마다)
 

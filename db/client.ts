@@ -8,9 +8,15 @@ import * as schema from "./schema";
 // DATABASE_URL 스위칭하는 단일 db 진입점 (RESEARCH.md Pattern 6). 로컬(PC·클라우드
 // 세션)은 DATABASE_URL이 Cloud SQL Auth Proxy 소켓과도 호환되는 127.0.0.1 경로,
 // Cloud Run은 커넥터 + IAM 인증 + 공인 IP 없음(6A).
+// 커넥터는 인증서·토큰 갱신 타이머를 들고 있어서 닫지 않으면 이벤트 루프가
+// 비지 않는다 — Cloud Run Job이 할 일을 다 하고도 종료되지 않고 task-timeout
+// 900초를 다 쓴다(2026-09-18 plant8-staging-account-txfcr에서 실제로 발생).
+// closeDb()가 닫을 수 있게 모듈 수준에 들고 있는다.
+let connector: Connector | null = null;
+
 async function createPool(): Promise<Pool> {
   if (env.CLOUD_SQL_CONNECTION_NAME) {
-    const connector = new Connector();
+    connector = new Connector();
     const clientOpts = await connector.getOptions({
       instanceConnectionName: env.CLOUD_SQL_CONNECTION_NAME,
       authType: AuthTypes.IAM,
@@ -38,4 +44,6 @@ export const db = drizzle(pool, { schema });
 
 export async function closeDb(): Promise<void> {
   await pool.end();
+  connector?.close();
+  connector = null;
 }

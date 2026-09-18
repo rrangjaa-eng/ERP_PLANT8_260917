@@ -105,6 +105,15 @@ export async function main(): Promise<void> {
 
 // 테스트가 이 파일을 import해도 실행되지 않게: 직접 실행될 때만 main()을 부른다.
 // next import 금지(01-05가 esbuild로 번들해 Cloud Run Job이 실행한다).
+//
+// main()이 끝나면 migrate-runner와 같이 명시적으로 종료한다 — 남은 핸들
+// 하나가 Cloud Run Job을 task-timeout까지 매달리게 만든 적이 있다
+// (2026-09-18 plant8-staging-account-txfcr). 근본 원인인 Cloud SQL 커넥터는
+// db/client.ts의 closeDb()가 닫지만, 이 진입점에서도 이중으로 막는다.
+// process.exit는 main() 안이 아니라 여기에 둔다(테스트가 main()을 직접
+// import해 부를 때 테스트 프로세스를 죽이지 않도록).
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  void main();
+  void main().then(() => {
+    process.exit(process.exitCode ?? 0);
+  });
 }

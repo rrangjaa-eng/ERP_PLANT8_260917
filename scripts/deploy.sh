@@ -450,6 +450,15 @@ deploy_service() {
   fi
 }
 
+# healthz curl이 정본 URL에서도 계속 404면(2026-09-18: 대체 호스트명
+# 문제가 아니라고 이미 확인된 뒤에도 재현) 더 이상 추측하지 않고 실제
+# 서비스 상태(ingress 설정·조건·트래픽)를 로그에 남긴다 — 다음에 또
+# 실패하면 이 출력으로 바로 원인을 알 수 있게.
+_dump_service_diagnostics() {
+  run gcloud run services describe "$(svc_name "$ENV")" --region="$REGION" --project="$PROJECT" \
+    --format='yaml(status.url,status.conditions,status.traffic,spec.template.metadata.annotations)' >&2 || true
+}
+
 # GET만으로는 잡히지 않는 "화면은 뜨는데 로그인만 안 됨"을 배포 직후 잡는다.
 # deploy_service()가 이미 100% 트래픽으로 배포했으므로(카나리 단계 없음),
 # 여기서는 이미 검증된 실제 서비스 주소(SERVICE_URL)로 사후 확인만 한다.
@@ -470,6 +479,7 @@ smoke() {
 
   if ! run curl -fsS --retry 60 --retry-delay 15 --retry-all-errors "${target}/healthz" | grep -q '"ok":true'; then
     echo "SmokeFailed: run scripts/rollback.sh if this is a real regression" >&2
+    _dump_service_diagnostics
     exit 1
   fi
 

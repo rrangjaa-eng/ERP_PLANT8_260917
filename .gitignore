@@ -26,3 +26,19 @@ node_modules/
 
 # GSD research web-search cache (tool artifact)
 .planning/research/.cache/
+
+# Next.js app
+.env
+.env.*
+!.env.example
+.next/
+dist/
+playwright-report/
+test-results/
+*.tsbuildinfo
+next-env.d.ts
+
+# GitHub Actions WIF credential files (google-github-actions/auth writes these
+# into $GITHUB_WORKSPACE — must be ignored or deploy.sh's dirty-tree check and
+# docker build context break, plan review CEO OV-2)
+gha-creds-*.json

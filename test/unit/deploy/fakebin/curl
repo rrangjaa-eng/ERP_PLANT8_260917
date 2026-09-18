@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# 가짜 curl — deploy.sh의 스모크 검사 3종(healthz GET, login GET, sign-in POST)을 흉내 낸다.
+set -u
+
+STATE="${DEPLOY_FAKE_STATE:-}"
+LOG="${DEPLOY_FAKE_LOG:-}"
+ARGS="$*"
+
+state_file() { [ -n "$STATE" ] && [ -f "$STATE/$1" ]; }
+state_val()  { [ -n "$STATE" ] && [ -f "$STATE/$1" ] && cat "$STATE/$1"; }
+
+if [ -n "$LOG" ]; then
+  printf '%s\n' "$ARGS" >>"$LOG"
+fi
+
+case "$ARGS" in
+  *"/healthz"*)
+    if state_file healthz && [ "$(state_val healthz)" = "503" ]; then
+      echo "fake curl: healthz 503" >&2
+      exit 22
+    fi
+    echo '{"ok":true}'
+    exit 0
+    ;;
+  *"sign-in/email"*)
+    code="401"
+    if state_file signin; then
+      code="$(state_val signin)"
+    fi
+    printf '%s' "$code"
+    exit 0
+    ;;
+  *"/login"*)
+    printf '200'
+    exit 0
+    ;;
+  *)
+    echo "fake curl: unhandled invocation: $ARGS" >&2
+    exit 1
+    ;;
+esac

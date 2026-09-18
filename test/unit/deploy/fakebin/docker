@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# 가짜 docker — 항상 성공. 호출 인자만 로그에 남긴다.
+set -u
+if [ -n "${DEPLOY_FAKE_LOG:-}" ]; then
+  printf '%s\n' "$*" >>"$DEPLOY_FAKE_LOG"
+fi
+exit 0

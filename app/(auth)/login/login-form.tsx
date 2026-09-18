@@ -6,7 +6,10 @@ import { authClient } from "@/lib/auth-client";
 
 const GENERIC_ERROR = "이메일 또는 비밀번호가 올바르지 않습니다.";
 
-export function LoginForm() {
+// AUTH-04: showGoogle은 서버 컴포넌트(page.tsx)의 getAuthProvider() === "google"
+// 조건 결과를 그대로 넘겨받는다 — 클라이언트 컴포넌트만 authClient.signIn.social을
+// 호출할 수 있어 조건 자체는 여기(login-form.tsx)가 아니라 page.tsx에 둔다.
+export function LoginForm({ showGoogle = false }: { showGoogle?: boolean }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -31,36 +34,47 @@ export function LoginForm() {
     router.push("/account");
   }
 
+  async function handleGoogleSignIn() {
+    await authClient.signIn.social({ provider: "google", callbackURL: "/account" });
+  }
+
   return (
-    <form onSubmit={handleSubmit}>
-      <div>
-        <label htmlFor="email">이메일</label>
-        <input
-          id="email"
-          type="email"
-          name="email"
-          autoComplete="username"
-          required
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-        />
-      </div>
-      <div>
-        <label htmlFor="password">비밀번호</label>
-        <input
-          id="password"
-          type="password"
-          name="password"
-          autoComplete="current-password"
-          required
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-        />
-      </div>
-      {error ? <p role="alert">{error}</p> : null}
-      <button type="submit" disabled={pending}>
-        로그인
-      </button>
-    </form>
+    <>
+      <form onSubmit={handleSubmit}>
+        <div>
+          <label htmlFor="email">이메일</label>
+          <input
+            id="email"
+            type="email"
+            name="email"
+            autoComplete="username"
+            required
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        </div>
+        <div>
+          <label htmlFor="password">비밀번호</label>
+          <input
+            id="password"
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+        </div>
+        {error ? <p role="alert">{error}</p> : null}
+        <button type="submit" disabled={pending}>
+          로그인
+        </button>
+      </form>
+      {showGoogle ? (
+        <button type="button" onClick={handleGoogleSignIn}>
+          Google로 로그인
+        </button>
+      ) : null}
+    </>
   );
 }

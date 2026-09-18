@@ -4,10 +4,10 @@ current_phase: 1
 current_phase_name: 배포 스켈레톤·로그인
 status: planning
 stopped_at: Phase 1 context gathered
-last_updated: "2026-09-18T00:57:26.432Z"
+last_updated: "2026-09-18T01:28:10.486Z"
 last_activity: 2026-09-17
 last_activity_desc: "로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드"
-state_head: ee5c07252ad7cd0a30c0c9acfe6e7590fe5f42e9
+state_head: 69e924b536052a393866199a142775b2a9789e2b
 progress:
   total_phases: 11
   completed_phases: 0
@@ -91,7 +91,6 @@ None yet.
 
 ### Blockers/Concerns
 
-- [Phase 1]: 회사 GCP 프로젝트는 2026-09 넷째 주 확보 예정 — Phase 1 착수 조건(deploy.sh 대상 프로젝트, 조직 정책 확인). 확보 전에는 로컬 개발(Auth Proxy + 로컬 Postgres)만 진행하고 deploy.sh 첫 성공이 Phase 1 완료 조건
 - [Phase 1]: CLAUDE.md의 스택·명령 자리(`[ ]`)가 비어 있다. Phase 1이 스택(Next.js + Drizzle + Postgres, next-safe-action, 패키지 매니저, dev/test/lint/build 명령)을 확정하면 세션 끝에 CLAUDE.md에 한 번에 반영한다(세션 중 수정 금지 규칙)
 - [Phase 2]: 디자인 절차 문서 `docs/DESIGN.md`(§1→§4)는 리포에 있다(CLAUDE.md 경로와 일치, 52f695a). `docs/design/`(BRIEF.md·EXPLORE.md·SYSTEM.md·tokens.css·DECISIONS.md)은 아직 없으며 Phase 2의 산출물이다 — SYSTEM.md 전에는 업무 화면을 만들지 않는 규칙은 그대로
 - [Phase 4]: 11개 요구사항(금액 모델·리저브 대장·문서 카운터·게이트·추출/변환 포함)으로 5플랜 상한에 닿을 수 있다 — 계획 단계에서 넘기면 리저브 대장(RSV-01)을 별도 페이즈로 뗀다

@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PLANT8 ERP — 시스템 실물 (원장)</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+/* 이 파일은 SYSTEM.md의 실물 확인용이다. 컴포넌트는 tokens.css 변수만 참조한다. 앱 코드가 아니다. */
+*{box-sizing:border-box;margin:0;padding:0}
+html{font-size:var(--fs-base)}
+body{background:var(--bg);color:var(--fg);font-family:var(--font-sans);font-size:var(--fs-base);
+  line-height:var(--lh-body);letter-spacing:var(--ls-body);word-break:keep-all;overflow-wrap:anywhere;
+  -webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+.num{font-variant-numeric:tabular-nums;letter-spacing:var(--ls-num);text-align:right;white-space:nowrap}
+kbd{font:inherit;font-size:var(--fs-xs);border:var(--line-w) solid var(--line);padding:0 var(--s-1);color:var(--faint);line-height:var(--lh-head)}
+
+/* 상단 바 */
+.bar{background:var(--bar);color:var(--bar-fg);display:flex;align-items:center;gap:var(--s-6);padding:0 var(--pad-page);height:38px;font-size:var(--fs-sm);position:sticky;top:0;z-index:var(--z-bar)}
+.bar .mark{font-weight:var(--fw-mark);font-size:var(--fs-md);letter-spacing:var(--ls-head);color:#fff}
+.bar .mark i{font-style:normal;color:var(--bar-leaf)}
+.bar nav{display:flex;gap:var(--s-4)}
+.bar nav a{color:var(--bar-muted);text-decoration:none;padding:9px 0}
+.bar nav a[aria-current]{color:var(--bar-fg);font-weight:var(--fw-bold);box-shadow:inset 0 -2px 0 var(--bar-leaf)}
+.bar .r{margin-left:auto;display:flex;gap:var(--s-4);color:var(--bar-muted)}
+.bar .r kbd{border-color:var(--g-700);color:var(--bar-fg)}
+main{padding:var(--s-5) var(--pad-page) 72px;max-width:var(--container-max)}
+
+/* 내 차례 */
+.next{border-top:var(--line-w-strong) solid var(--line-strong);padding:var(--s-3) 0 var(--s-3);margin-bottom:var(--s-6)}
+.next h2{font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--muted);margin-bottom:var(--s-1)}
+.next ul{list-style:none}
+.next li{display:flex;align-items:baseline;gap:var(--s-3);padding:6px 0;border-bottom:var(--line-w) dotted var(--line);min-height:var(--row-min)}
+.next li:last-child{border-bottom:0}
+.tag{font-size:var(--fs-xs);font-weight:var(--fw-medium);padding:1px 6px;border:var(--line-w) solid currentColor;color:var(--accent);flex:none;line-height:var(--lh-head)}
+.tag.w{color:var(--warning)} .tag.d{color:var(--danger)} .tag.m{color:var(--muted)}
+.next .grow{flex:1;min-width:0}
+.next .why{color:var(--muted)}
+.next .amt{flex:none;min-width:11ch}
+.b3{background:none;border:0;padding:0;color:var(--accent);font-weight:var(--fw-medium);border-bottom:var(--line-w) solid var(--accent);cursor:pointer;font-size:inherit;line-height:1.3;white-space:nowrap}
+.b3:hover{border-bottom-width:var(--line-w-strong)}
+.next .go{flex:none;font-size:var(--fs-sm)}
+
+/* 섹션 머리 */
+.sec{display:flex;align-items:baseline;gap:var(--s-3);flex-wrap:wrap;padding-bottom:var(--s-2)}
+.sec h1{font-size:var(--fs-lg);font-weight:var(--fw-bold);letter-spacing:var(--ls-head);line-height:var(--lh-head)}
+.sec .sub{font-size:var(--fs-sm);color:var(--muted)}
+.sec .right{margin-left:auto;display:flex;gap:var(--s-2);align-items:center}
+.pnl{display:flex;gap:var(--s-6);flex-wrap:wrap;font-size:var(--fs-base);color:var(--muted);padding:var(--s-1) 0 var(--s-3)}
+.pnl b{color:var(--fg);font-weight:var(--fw-bold);margin-left:var(--s-1)}
+
+/* 버튼 */
+.btn{height:var(--control-h);padding:0 var(--s-3);font-size:var(--fs-sm);font-weight:var(--fw-medium);border:var(--line-w) solid var(--line-strong);background:var(--bg);color:var(--fg);cursor:pointer;border-radius:var(--radius);transition:background-color var(--dur-hover) var(--ease-out),color var(--dur-hover) var(--ease-out);display:inline-flex;align-items:center;gap:var(--s-2)}
+.btn:hover{background:var(--surface)}
+.btn.p{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.p:hover{background:var(--accent-hover);border-color:var(--accent-hover)}
+.btn:disabled{background:var(--surface);border-color:var(--line);color:var(--faint);cursor:not-allowed}
+.btn kbd{color:inherit;border-color:currentColor;opacity:.8}
+.btn.p kbd{border-color:rgba(255,255,255,.5)}
+:focus-visible{outline:var(--focus-w) solid var(--focus);outline-offset:var(--focus-offset)}
+.blocked{display:inline-flex;align-items:center;gap:var(--s-2);font-size:var(--fs-sm);color:var(--danger)}
+
+/* 표 */
+table{width:100%;border-collapse:collapse;font-size:var(--fs-base);line-height:var(--lh-table)}
+thead th{font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--muted);text-align:left;padding:7px var(--cell-pad-x);border-bottom:var(--line-w) solid var(--line-strong);white-space:nowrap;position:sticky;top:38px;background:var(--bg);z-index:var(--z-sticky)}
+table.edit thead th{background:var(--g-100);color:var(--g-950)}
+thead th.num{text-align:right}
+tbody td{padding:var(--cell-pad-y) var(--cell-pad-x);border-bottom:var(--line-w) solid var(--line);vertical-align:top}
+tbody tr{min-height:var(--row-min)}
+tbody tr:hover td{background:var(--surface)}
+td.rn{font-size:var(--fs-xs);color:var(--faint);width:28px;text-align:right;padding-top:9px}
+tr.grp td{font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--muted);border-bottom:var(--line-w) solid var(--line-strong);padding-top:var(--s-4);background:var(--bg)!important}
+tr.editing td{background:var(--g-50)!important}
+td .in{border:0;border-bottom:var(--line-w) solid var(--accent);background:transparent;width:100%;padding:0;outline:var(--focus-w) solid var(--focus);outline-offset:var(--focus-offset)}
+td.dirty{box-shadow:var(--inset-dirty)}
+td.err{background:var(--danger-weak)!important;box-shadow:var(--inset-error)}
+td.err .why{display:block;font-size:var(--fs-sm);color:var(--danger);text-align:left;line-height:1.3;margin-top:2px}
+.fx{display:block;font-size:var(--fs-sm);color:var(--muted);font-weight:var(--fw-regular)}
+.st{font-size:var(--fs-xs);font-weight:var(--fw-medium);color:var(--muted);white-space:nowrap}
+.st.d{color:var(--danger)} .st.ok{color:var(--success)} .st.a{color:var(--accent)} .st.w{color:var(--warning)}
+tfoot td{padding:9px var(--cell-pad-x);border-top:var(--line-w-strong) solid var(--line-strong);font-weight:var(--fw-bold);vertical-align:baseline}
+table.edit tfoot td{background:var(--g-100)}
+tfoot .lbl{font-size:var(--fs-sm);font-weight:var(--fw-regular);color:var(--muted);margin-left:var(--s-2)}
+tfoot .res{font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--danger);white-space:nowrap}
+tfoot .res.ok{color:var(--success)}
+td.empty{padding:var(--s-6) var(--cell-pad-x);color:var(--muted);text-align:left}
+.hint{display:flex;gap:var(--s-4);margin-top:var(--s-3);font-size:var(--fs-sm);color:var(--faint);flex-wrap:wrap}
+
+/* 폼 조각 */
+.form{max-width:var(--form-max);margin-top:var(--s-8);border-top:var(--line-w-strong) solid var(--line-strong);padding-top:var(--s-3)}
+.row{display:grid;grid-template-columns:var(--label-w) 1fr;gap:var(--s-1) var(--s-3);align-items:start;padding:var(--s-2) 0}
+.row label{font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--muted);padding-top:7px}
+.inp{height:var(--control-h);border:var(--line-w) solid var(--line-ui);background:var(--bg);padding:0 var(--s-2);width:100%;max-width:280px;border-radius:var(--radius)}
+.inp.err{border-color:var(--danger)}
+.ferr{font-size:var(--fs-sm);color:var(--danger);margin-top:var(--s-1)}
+.ro{padding-top:6px;display:flex;gap:var(--s-3);align-items:baseline}
+.drop{background:var(--surface);border:var(--line-w) dashed var(--line-ui);height:96px;display:flex;align-items:center;justify-content:center;font-size:var(--fs-sm);color:var(--muted);max-width:480px}
+.submit{display:flex;gap:var(--s-3);align-items:center;flex-wrap:wrap;border-top:var(--line-w-strong) solid var(--line-strong);padding-top:var(--s-3);margin-top:var(--s-3)}
+.submit .sp{margin-left:auto}
+
+/* 토스트 · 로딩 */
+.toast{position:fixed;left:var(--pad-page);bottom:var(--s-4);background:var(--bg);border:var(--line-w-strong) solid var(--line-strong);padding:var(--s-2) var(--s-3);font-size:var(--fs-sm);display:flex;gap:var(--s-3);z-index:var(--z-toast)}
+.progress{height:2px;background:var(--accent);width:38%;margin-top:-2px}
+.skel td{height:var(--row-min);background:var(--surface)}
+
+/* 폰: 칸 접기 */
+@media (max-width:699.98px){
+  .bar{height:44px}
+  .bar nav,.bar .r kbd{display:none}
+  thead th{top:44px}
+  .p2,.p3,thead th.p2,thead th.p3,td.rn{display:none}
+  td .fold{display:block;font-size:var(--fs-sm);color:var(--muted);font-weight:var(--fw-regular);text-align:left;margin-top:2px}
+  .hint{display:none}
+  .pnl{gap:var(--s-2) var(--s-4);font-size:var(--fs-sm)}
+  .fx,td.err .why,tfoot .lbl{display:none}
+  .next li{display:grid;grid-template-columns:auto 1fr auto;column-gap:var(--s-3);row-gap:2px;align-items:baseline}
+  .next .grow{grid-column:2}
+  .next .go{grid-column:3}
+  .next .amt{grid-column:2;min-width:0;text-align:left;font-size:var(--fs-sm);color:var(--muted)}
+  .next .why{display:block;font-size:var(--fs-sm)}
+  .row{grid-template-columns:1fr}
+  .row label{padding-top:0}
+  .sec .right{margin-left:0}
+  .tabs{position:fixed;left:0;right:0;bottom:0;height:var(--touch-min);background:var(--bg);border-top:var(--line-w-strong) solid var(--line-strong);display:flex;z-index:var(--z-bar)}
+  .tabs a{flex:1;display:flex;align-items:center;justify-content:center;font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--muted);text-decoration:none}
+  .tabs a[aria-current]{color:var(--accent);box-shadow:var(--inset-tab)}
+  .toast{bottom:calc(var(--touch-min) + var(--s-3))}
+}
+@media (min-width:700px){ td .fold{display:none} .tabs{display:none} }
+</style>
+</head>
+<body>
+<header class="bar">
+  <span class="mark">PL<i>A</i>NT8</span>
+  <nav><a href="#" aria-current="page">프로젝트</a><a href="#">지출결의</a><a href="#">법인카드</a><a href="#">결재</a><a href="#">손익</a></nav>
+  <div class="r"><span><kbd>⌘K</kbd></span><span>박서연 · 기획1팀</span></div>
+</header>
+
+<main>
+  <section class="next">
+    <h2>내 차례 4</h2>
+    <ul>
+      <li><span class="tag d">막힘</span><span class="grow">아이오닉9 쇼케이스 — 무대설치 지출결의 <span class="why">· 증빙 14일 경과</span></span><span class="amt num">12,400,000</span><button class="b3 go">증빙 올리기</button></li>
+      <li><span class="tag w">오늘</span><span class="grow">한빛무대예술 지급결의 <span class="why">· 결재 마감 14:00</span></span><span class="amt num">8,800,000</span><button class="b3 go">지출결의 제출</button></li>
+      <li><span class="tag">대기</span><span class="grow">아이오닉9 쇼케이스 2차 견적 <span class="why">· 고객 승인 표시 전</span></span><span class="amt num">48,000,000</span><button class="b3 go">견적 열기</button></li>
+      <li><span class="tag">대기</span><span class="grow">법인카드 3건 미연결 <span class="why">· 09-12 ~ 09-16</span></span><span class="amt num">417,300</span><button class="b3 go">견적 줄에 연결</button></li>
+    </ul>
+  </section>
+
+  <div class="sec">
+    <h1>2026 현대자동차 아이오닉9 미디어 론칭 쇼케이스</h1>
+    <span class="sub">상세 견적 2차 · 진행 중</span>
+    <div class="right">
+      <button class="btn">복사해 새 차수</button>
+      <button class="btn p">일괄 저장 3 <kbd>⌘S</kbd></button>
+    </div>
+  </div>
+  <div class="pnl"><span>견적<b class="num">48,000,000</b></span><span>예상 비용<b class="num">35,897,280</b></span><span>확정 비용<b class="num">22,400,000</b></span><span>수익<b class="num">12,102,720 · 25.2%</b></span><span class="tag m">계산 불가 1건</span></div>
+
+  <table class="edit">
+    <thead><tr>
+      <th class="rn"></th><th>항목</th><th class="p2">거래처</th><th class="num p2">견적가</th><th class="num">실행가</th><th class="num p3">차익</th><th class="p2">상태</th><th class="p3"></th>
+    </tr></thead>
+    <tbody>
+      <tr class="grp"><td></td><td colspan="7">무대·시공</td></tr>
+      <tr>
+        <td class="rn">1</td>
+        <td>메인 스테이지 구조물 설치 및 철거<span class="fold">(주)스테이지원커뮤니케이션즈 · 견적 18,000,000 · <span class="st d">증빙 14일 경과</span></span></td>
+        <td class="p2">(주)스테이지원커뮤니케이션즈</td>
+        <td class="num p2">18,000,000</td>
+        <td class="num">12,400,000</td>
+        <td class="num p3">5,600,000</td>
+        <td class="p2"><span class="st d">증빙 14일 경과</span></td>
+        <td class="p3"><button class="b3" style="font-size:var(--fs-sm)">증빙 올리기</button></td>
+      </tr>
+      <tr class="editing">
+        <td class="rn">2</td>
+        <td>LED 월 W12000×H4000<span class="fold">한빛무대예술 · 견적 9,600,000 · <span class="st a">편집 중</span></span></td>
+        <td class="p2">한빛무대예술</td>
+        <td class="num p2"><input class="in num" value="9,600,000" aria-label="견적가"></td>
+        <td class="num dirty">6,900,000</td>
+        <td class="num p3">2,700,000</td>
+        <td class="p2"><span class="st a">편집 중</span></td>
+        <td class="p3"></td>
+      </tr>
+      <tr>
+        <td class="rn">3</td>
+        <td>음향·조명 오퍼레이팅 (2일)<span class="fold">한빛무대예술 · 견적 4,400,000 · <span class="st ok">지출결의 승인</span></span></td>
+        <td class="p2">한빛무대예술</td>
+        <td class="num p2">4,400,000</td>
+        <td class="num">3,100,000</td>
+        <td class="num p3">1,300,000</td>
+        <td class="p2"><span class="st ok">지출결의 승인</span></td>
+        <td class="p3"></td>
+      </tr>
+      <tr class="grp"><td></td><td colspan="7">운영·인력</td></tr>
+      <tr>
+        <td class="rn">4</td>
+        <td>행사 진행 MC — 김민지<span class="fold">김민지 (기타소득) · 견적 3,000,000 · <span class="st w">확인증 미제출</span></span></td>
+        <td class="p2">김민지 (기타소득)</td>
+        <td class="num p2">3,000,000</td>
+        <td class="num">2,200,000</td>
+        <td class="num p3">800,000</td>
+        <td class="p2"><span class="st w">확인증 미제출</span></td>
+        <td class="p3"><button class="b3" style="font-size:var(--fs-sm)">QR 발송</button></td>
+      </tr>
+      <tr>
+        <td class="rn">5</td>
+        <td>운영요원 12명 × 2일<span class="fold">(주)이벤트스태프코리아 · 견적 7,200,000 · <span class="st d">숫자 아님 · 쉼표 위치 확인</span></span></td>
+        <td class="p2">(주)이벤트스태프코리아</td>
+        <td class="num p2">7,200,000</td>
+        <td class="num err">5,760,00<span class="why">숫자 아님 · 쉼표 위치 확인</span></td>
+        <td class="num p3">—</td>
+        <td class="p2"><span class="st m">미착수</span></td>
+        <td class="p3"></td>
+      </tr>
+      <tr>
+        <td class="rn">6</td>
+        <td>해외 연사 항공·숙박<span class="fold">Skyline Travel Pte Ltd · USD 4,200.00 @1,318.4000 · <span class="st">미착수</span></span></td>
+        <td class="p2">Skyline Travel Pte Ltd</td>
+        <td class="num p2">5,800,000<span class="fx">USD 4,400.00 @1,318.1818</span></td>
+        <td class="num">5,537,280<span class="fx">USD 4,200.00 @1,318.4000</span></td>
+        <td class="num p3">262,720</td>
+        <td class="p2"><span class="st">미착수</span></td>
+        <td class="p3"></td>
+      </tr>
+    </tbody>
+    <tfoot><tr>
+      <td></td><td>합계<span class="lbl">공급가액 · 6줄</span></td><td class="p2"></td>
+      <td class="num p2">48,000,000</td><td class="num">35,897,280</td><td class="num p3">12,102,720</td>
+      <td class="p2" colspan="2"><span class="res">오류 1칸 · 전부 거부</span></td>
+    </tr></tfoot>
+  </table>
+  <div class="hint"><span>이동 <kbd>Tab</kbd> <kbd>↑↓←→</kbd></span><span>범위 복사 <kbd>⌘C</kbd> / 붙여넣기 <kbd>⌘V</kbd></span><span>취소 <kbd>Esc</kbd></span><span>새 줄 <kbd>⌘↵</kbd></span><span>저장 <kbd>⌘S</kbd></span><span>지출결의 <kbd>⌘E</kbd></span></div>
+
+  <!-- 빈 상태 · 로딩 -->
+  <div class="sec" style="margin-top:var(--s-8)"><h1 style="font-size:var(--fs-base)">지출결의</h1><span class="sub">이 프로젝트 · 0건</span></div>
+  <table>
+    <thead><tr><th>번호</th><th>항목</th><th class="num">금액</th><th class="p2">지급 예정</th><th class="p2">상태</th></tr></thead>
+    <tbody><tr><td class="empty" colspan="5">이 프로젝트에 지출결의가 없습니다 · <button class="b3">견적 줄에서 올리기 <kbd>⌘E</kbd></button></td></tr></tbody>
+  </table>
+
+  <!-- 폼 조각: 막힘 = 이유 + 다음 한 수 -->
+  <div class="form">
+    <div class="sec"><h1 style="font-size:var(--fs-base)">지출결의 — 아이오닉9 · 무대설치</h1><span class="sub">EXP-2026-0464 · 작성 중</span></div>
+    <div class="row"><label>견적 줄</label><div class="ro"><span>1 메인 스테이지 구조물 설치 및 철거 · (주)스테이지원</span><button class="b3" style="font-size:var(--fs-sm)">바꾸기</button></div></div>
+    <div class="row"><label for="amt">금액</label><div><input id="amt" class="inp num" value="12,400,000"></div></div>
+    <div class="row"><label for="due">지급 예정</label><div><input id="due" class="inp err" value="2026/9/19"><div class="ferr">날짜 형식이 아닙니다 · 2026-09-19처럼 적어 주세요</div></div></div>
+    <div class="row"><label>증빙</label><div class="drop">파일을 끌어 놓거나 <kbd style="margin:0 4px">⌘U</kbd> · 이미지·PDF 10MB</div></div>
+    <div class="submit">
+      <button class="btn p" disabled>지출결의 제출 <kbd>⌘↵</kbd></button>
+      <span class="blocked">제출할 수 없음 — 증빙 없음 · <button class="b3" style="font-size:var(--fs-sm)">증빙 올리기</button></span>
+      <button class="btn sp">임시 저장</button>
+    </div>
+  </div>
+</main>
+
+<div class="toast"><span>지출결의 제출 · 결재 요청됨 → 김팀장</span><button class="b3" style="font-size:var(--fs-sm)">되돌리기</button></div>
+<nav class="tabs"><a href="#" aria-current="page">내 차례 4</a><a href="#">프로젝트</a><a href="#">결재</a><a href="#">더보기</a></nav>
+</body>
+</html>

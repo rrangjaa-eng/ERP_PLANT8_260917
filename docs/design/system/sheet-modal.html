@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PLANT8 ERP — 시스템 실물 (시트 · 모달)</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+/* SYSTEM.md §7-8 모달·시트 실물. 장면은 URL 해시로 고른다:
+   #approve  폰 · 내 차례 행 탭 → 결재 시트 (동선 C 2단계)
+   #more     폰 · 하단 탭 「더보기」 시트
+   #reject-m 폰 · 「반려」 확인 시트
+   #reject-pc PC · 「반려」 확인 모달 (480)
+   컴포넌트는 tokens.css 변수만 참조한다. 앱 코드가 아니다. */
+*{box-sizing:border-box;margin:0;padding:0}
+html{font-size:var(--fs-base)}
+body{background:var(--bg);color:var(--fg);font-family:var(--font-sans);font-size:var(--fs-base);
+  line-height:var(--lh-body);letter-spacing:var(--ls-body);word-break:keep-all;overflow-wrap:anywhere;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+::selection{background:var(--sel-bg);color:var(--sel-fg)}
+:root{caret-color:var(--caret);accent-color:var(--native-accent);scrollbar-color:var(--scrollbar) var(--bg);scrollbar-width:thin}
+:focus-visible{outline:var(--focus-w) solid var(--focus);outline-offset:var(--focus-offset)}
+.num{font-variant-numeric:tabular-nums;letter-spacing:var(--ls-num);text-align:right;white-space:nowrap}
+kbd{font:inherit;font-size:var(--fs-xs);border:var(--line-w) solid var(--line);padding:0 var(--s-1);color:var(--faint);line-height:var(--lh-head)}
+
+/* 상단 바 (preview.html과 동일) */
+.bar{background:var(--bar);color:var(--bar-fg);display:flex;align-items:center;gap:var(--s-6);padding:0 var(--pad-page);height:38px;font-size:var(--fs-sm);position:sticky;top:0;z-index:var(--z-bar)}
+.bar .mark{font-weight:var(--fw-mark);font-size:var(--fs-md);letter-spacing:var(--ls-head);color:#fff}
+.bar .mark i{font-style:normal;color:var(--bar-leaf)}
+.bar nav{display:flex;gap:var(--s-4)}
+.bar nav a{color:var(--bar-muted);text-decoration:none;padding:9px 0}
+.bar nav a[aria-current]{color:var(--bar-fg);font-weight:var(--fw-bold);box-shadow:inset 0 -2px 0 var(--bar-leaf)}
+.bar .r{margin-left:auto;display:flex;gap:var(--s-4);color:var(--bar-muted);align-items:center}
+.bar .r kbd{border-color:var(--g-700);color:var(--bar-fg)}
+.bar .menu{display:none;background:none;border:0;color:var(--bar-fg);width:var(--touch-min);height:var(--touch-min);margin-right:calc(var(--s-3) * -1);align-items:center;justify-content:center;cursor:pointer}
+.bar .menu svg{width:var(--icon-lg);height:var(--icon-lg);stroke:currentColor;stroke-width:var(--icon-stroke);fill:none;stroke-linecap:round;stroke-linejoin:round}
+main{padding:var(--s-5) var(--pad-page) 72px;max-width:var(--container-max)}
+
+/* 내 차례 */
+.next{border-top:var(--line-w-strong) solid var(--line-strong);padding:var(--s-3) 0;margin-bottom:var(--s-6)}
+.next h2{font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--muted);margin-bottom:var(--s-1)}
+.next ul{list-style:none}
+.next li{display:flex;align-items:baseline;gap:var(--s-3);padding:6px 0;border-bottom:var(--line-w) dotted var(--line);min-height:var(--row-min)}
+.next li:last-child{border-bottom:0}
+.tag{font-size:var(--fs-xs);font-weight:var(--fw-medium);padding:1px 6px;border:var(--line-w) solid currentColor;color:var(--accent);flex:none;line-height:var(--lh-head)}
+.tag.w{color:var(--warning)} .tag.d{color:var(--danger)} .tag.m{color:var(--muted)}
+.next .grow{flex:1;min-width:0}
+.next .why{color:var(--muted)}
+.next .amt{flex:none;min-width:11ch}
+.next .acts{display:flex;gap:var(--s-3);flex:none;font-size:var(--fs-sm)}
+.b3{background:none;border:0;padding:0;color:var(--accent);font-weight:var(--fw-medium);border-bottom:var(--line-w) solid var(--accent);cursor:pointer;font-size:inherit;line-height:1.3;white-space:nowrap}
+.b3:hover{border-bottom-width:var(--line-w-strong)}
+
+/* 섹션 머리 · 버튼 */
+.sec{display:flex;align-items:baseline;gap:var(--s-3);flex-wrap:wrap;padding-bottom:var(--s-2)}
+.sec h1{font-size:var(--fs-lg);font-weight:var(--fw-bold);letter-spacing:var(--ls-head);line-height:var(--lh-head)}
+.sec .sub{font-size:var(--fs-sm);color:var(--muted)}
+.btn{height:var(--control-h);padding:0 var(--s-3);font-size:var(--fs-sm);font-weight:var(--fw-medium);border:var(--line-w) solid var(--line-strong);background:var(--bg);color:var(--fg);cursor:pointer;border-radius:var(--radius);transition:background-color var(--dur-hover) var(--ease-out);display:inline-flex;align-items:center;gap:var(--s-2);white-space:nowrap}
+.btn:hover{background:var(--surface)}
+.btn.p{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.p:hover{background:var(--accent-hover);border-color:var(--accent-hover)}
+.btn:disabled{background:var(--surface);border-color:var(--line);color:var(--faint);cursor:not-allowed}
+.btn kbd{color:inherit;border-color:currentColor;opacity:.8}
+.btn.p kbd{border-color:rgba(255,255,255,.5)}
+.blocked{display:inline-flex;align-items:center;gap:var(--s-2);font-size:var(--fs-sm);color:var(--danger)}
+
+/* 표 (읽기용 원장) */
+table{width:100%;border-collapse:collapse;font-size:var(--fs-base);line-height:var(--lh-table)}
+caption{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+thead th{font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--muted);text-align:left;padding:7px var(--cell-pad-x);border-bottom:var(--line-w) solid var(--line-strong);white-space:nowrap;background:var(--bg)}
+thead th.num{text-align:right}
+tbody td{padding:var(--cell-pad-y) var(--cell-pad-x);border-bottom:var(--line-w) solid var(--line);vertical-align:top}
+tbody tr:hover td{background:var(--surface)}
+tbody tr[aria-selected] td{background:var(--g-50)}
+td.rn{font-size:var(--fs-xs);color:var(--faint);width:28px;text-align:right;padding-top:9px}
+.st{font-size:var(--fs-xs);font-weight:var(--fw-medium);color:var(--muted);white-space:nowrap}
+.st.d{color:var(--danger)} .st.ok{color:var(--success)} .st.a{color:var(--accent)} .st.w{color:var(--warning)}
+td .acts{display:flex;gap:var(--s-3);font-size:var(--fs-sm)}
+tfoot td{padding:9px var(--cell-pad-x);border-top:var(--line-w-strong) solid var(--line-strong);font-weight:var(--fw-bold)}
+tfoot .lbl{font-size:var(--fs-sm);font-weight:var(--fw-regular);color:var(--muted);margin-left:var(--s-2)}
+.fold{display:none}
+td .fx{display:block;font-size:var(--fs-sm);color:var(--muted);font-weight:var(--fw-regular)}
+
+/* ---------- 스크림 · 시트 · 모달 (§7-8) ---------- */
+.scrim{position:fixed;inset:0;background:var(--scrim);z-index:var(--z-scrim);display:none}
+body[data-open] .scrim{display:block}
+
+.sheet{position:fixed;left:0;right:0;bottom:0;max-height:85vh;background:var(--bg);border-top:var(--line-w-strong) solid var(--line-strong);z-index:var(--z-modal);
+  display:none;flex-direction:column;transform:translateY(0);transition:transform var(--dur-sheet) var(--ease-sheet);padding-bottom:env(safe-area-inset-bottom,0px)}
+.sheet[open]{display:flex}
+.sheet .hd{display:flex;align-items:flex-start;gap:var(--s-3);padding:var(--s-3) var(--pad-page) var(--s-2)}
+.sheet .hd h2{font-size:var(--fs-lg);font-weight:var(--fw-bold);letter-spacing:var(--ls-head);line-height:var(--lh-head);flex:1;min-width:0}
+.sheet .hd .sub{display:block;font-size:var(--fs-sm);color:var(--muted);font-weight:var(--fw-regular);letter-spacing:var(--ls-body);margin-top:2px}
+.x{flex:none;width:var(--touch-min);height:var(--touch-min);margin:calc(var(--s-2) * -1) calc(var(--s-3) * -1) 0 0;background:none;border:0;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted)}
+.x svg{width:var(--icon-lg);height:var(--icon-lg);stroke:currentColor;stroke-width:var(--icon-stroke);fill:none;stroke-linecap:round;stroke-linejoin:round}
+.sheet .bd{overflow-y:auto;padding:0 var(--pad-page) var(--s-3)}
+.sheet .ft{display:flex;gap:var(--s-3);padding:var(--s-3) var(--pad-page);border-top:var(--line-w) solid var(--line);align-items:center;flex-wrap:wrap}
+.sheet .ft .btn{height:var(--touch-min);flex:1;justify-content:center;font-size:var(--fs-base)}
+.sheet .ft .btn.p{flex:2}
+
+/* 시트 안 상세: 라벨 96 · 값 (표의 P2·P3 열이 여기로 내려온다) */
+.kv{display:grid;grid-template-columns:var(--label-w) 1fr;gap:0 var(--s-3)}
+.kv dt{font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--muted);padding:7px 0;border-bottom:var(--line-w) dotted var(--line)}
+.kv dd{padding:6px 0;border-bottom:var(--line-w) dotted var(--line);min-width:0}
+.kv dd .num{text-align:left}
+.kv dd .fx{display:block;font-size:var(--fs-sm);color:var(--muted)}
+.kv dd b{font-weight:var(--fw-bold)}
+.kv dt:last-of-type,.kv dd:last-of-type{border-bottom:0}
+.line{font-size:var(--fs-sm);color:var(--muted)}
+.att{display:flex;gap:var(--s-3);align-items:flex-start;padding-top:2px}
+.thumb{width:72px;height:96px;flex:none;background:var(--surface);border:var(--line-w) solid var(--line-ui);position:relative;overflow:hidden}
+.thumb i{position:absolute;left:10px;right:10px;height:2px;background:var(--line-ui);opacity:.55}
+.thumb i:nth-child(1){top:14px;right:28px;height:4px}.thumb i:nth-child(2){top:28px}.thumb i:nth-child(3){top:38px}.thumb i:nth-child(4){top:48px;right:22px}.thumb i:nth-child(5){top:70px;left:30px;height:3px}
+.att .meta{font-size:var(--fs-sm);color:var(--muted);line-height:var(--lh-body)}
+.att .meta b{display:block;color:var(--fg);font-weight:var(--fw-regular);font-size:var(--fs-base)}
+.approvers{display:flex;flex-wrap:wrap;gap:var(--s-1) var(--s-2);align-items:baseline}
+.approvers .me{font-weight:var(--fw-bold)}
+.approvers .arrow{color:var(--faint)}
+
+/* 「더보기」 시트: 목록 행 모양, 아이콘 없음 */
+.menu-list{list-style:none}
+.menu-list li{border-bottom:var(--line-w) solid var(--line)}
+.menu-list li:last-child{border-bottom:0}
+.menu-list a,.menu-list button{display:flex;align-items:center;gap:var(--s-3);width:100%;min-height:var(--touch-min);padding:0 var(--pad-page);color:var(--fg);text-decoration:none;background:none;border:0;text-align:left;cursor:pointer;font-size:var(--fs-base)}
+.menu-list a:hover,.menu-list button:hover{background:var(--surface)}
+.menu-list .search{background:var(--surface)}
+.menu-list .search kbd{margin-left:auto}
+.menu-list .cnt{margin-left:auto;font-size:var(--fs-sm);color:var(--muted)}
+.menu-list .grp{font-size:var(--fs-xs);font-weight:var(--fw-medium);color:var(--faint);padding:var(--s-3) var(--pad-page) var(--s-1);border-bottom:0}
+.menu-list .me{display:block}
+.menu-list .me small{display:block;font-size:var(--fs-sm);color:var(--muted)}
+
+/* 반려 사유 */
+.reason{display:grid;grid-template-columns:var(--label-w) 1fr;gap:var(--s-1) var(--s-3);align-items:start;padding:var(--s-3) 0 0}
+.reason label{font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--muted);padding-top:7px}
+.reason input{height:var(--control-h);border:var(--line-w) solid var(--line-ui);background:var(--bg);padding:0 var(--s-2);width:100%;border-radius:var(--radius)}
+.reason .to{font-size:var(--fs-sm);color:var(--muted);grid-column:2;padding-top:2px}
+
+/* 모달(PC): 480 고정 */
+.modal{position:fixed;inset:0;z-index:var(--z-modal);display:none;align-items:center;justify-content:center;padding:var(--s-4)}
+.modal[open]{display:flex}
+.modal .box{width:var(--modal-w);max-width:100%;background:var(--bg);border:var(--line-w-strong) solid var(--line-strong)}
+.modal .hd{display:flex;align-items:flex-start;gap:var(--s-3);padding:var(--s-4) var(--s-5) var(--s-2)}
+.modal .hd h2{font-size:var(--fs-lg);font-weight:var(--fw-bold);letter-spacing:var(--ls-head);line-height:var(--lh-head);flex:1}
+.modal .hd .sub{display:block;font-size:var(--fs-sm);color:var(--muted);font-weight:var(--fw-regular);letter-spacing:var(--ls-body);margin-top:2px}
+.modal .bd{padding:0 var(--s-5) var(--s-4)}
+.modal .ft{display:flex;gap:var(--s-2);justify-content:flex-end;align-items:center;padding:var(--s-3) var(--s-5);border-top:var(--line-w) solid var(--line)}
+.modal .ft .blocked{margin-right:auto}
+
+/* 장면 선택 */
+body:not([data-scene="approve"]) #sheet-approve,
+body:not([data-scene="more"]) #sheet-more,
+body:not([data-scene="reject-m"]) #sheet-reject,
+body:not([data-scene="reject-pc"]) #modal-reject{display:none}
+
+/* 폰 */
+@media (max-width:699.98px){
+  .bar{height:44px}
+  .bar nav,.bar .r kbd,.bar .r .team{display:none}
+  .bar .menu{display:inline-flex}
+  .p2,.p3,thead th.p2,thead th.p3,.rn,thead th.rn{display:none}
+  .fold{display:block;font-size:var(--fs-sm);color:var(--muted);text-align:left;margin-top:2px}
+  td .fx{display:none}
+  .next li{display:grid;grid-template-columns:auto 1fr;column-gap:var(--s-3);row-gap:2px;align-items:baseline}
+  .next .grow{grid-column:2}
+  .next .amt{grid-column:2;min-width:0;text-align:left;font-size:var(--fs-sm);color:var(--muted)}
+  .next .acts{grid-column:2}
+  .next .why{display:block;font-size:var(--fs-sm)}
+  .tabs{position:fixed;left:0;right:0;bottom:0;height:var(--touch-min);background:var(--bg);border-top:var(--line-w-strong) solid var(--line-strong);display:flex;z-index:var(--z-bar)}
+  .tabs a{flex:1;display:flex;align-items:center;justify-content:center;font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--muted);text-decoration:none}
+  .tabs a[aria-current]{color:var(--accent);box-shadow:var(--inset-tab)}
+  .kv{grid-template-columns:84px 1fr}
+  .reason{grid-template-columns:1fr}
+  .reason label{padding-top:0}
+  .reason .to{grid-column:1}
+  .modal .box{width:100%}
+}
+@media (min-width:700px){ .tabs{display:none} .sheet{display:none!important} }
+@media (min-width:700px) and (max-width:1023.98px){ .p3,thead th.p3{display:none} }
+</style>
+</head>
+<body>
+<header class="bar">
+  <span class="mark">PL<i>A</i>NT8</span>
+  <nav aria-label="주 메뉴"><a href="#">프로젝트</a><a href="#">지출결의</a><a href="#">법인카드</a><a href="#" aria-current="page">결재</a><a href="#">손익</a></nav>
+  <div class="r"><span><kbd>⌘K</kbd></span><span>김도윤<span class="team"> · 기획1팀장</span></span>
+    <button class="menu" aria-label="메뉴" data-open-sheet="sheet-more"><svg viewBox="0 0 24 24"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg></button>
+  </div>
+</header>
+
+<main>
+  <section class="next" aria-label="내 차례">
+    <h2>내 차례 1</h2>
+    <ul>
+      <li><span class="tag">결재</span><span class="grow">한빛무대예술 · LED 월 지출결의 <span class="why">· 결재 마감 14:00</span></span><span class="amt num">8,800,000</span>
+        <span class="acts"><button class="b3" data-open-sheet="sheet-approve">승인</button><button class="b3" data-open-sheet="sheet-reject">반려</button></span></li>
+    </ul>
+  </section>
+
+  <div class="sec">
+    <h1>결재함</h1>
+    <span class="sub">기획1팀 · 이번 달 · 5건</span>
+  </div>
+  <table>
+    <caption>결재함 목록</caption>
+    <thead><tr>
+      <th class="rn"></th><th>항목</th><th class="p2">기안</th><th class="p2">거래처</th><th class="num">금액</th><th class="p3">지급 예정</th><th>상태</th><th class="p2"></th>
+    </tr></thead>
+    <tbody>
+      <tr aria-selected="true">
+        <td class="rn">1</td>
+        <td>LED 월 W12000×H4000 — 아이오닉9 쇼케이스<span class="fold">박서연 · 한빛무대예술 · 세금계산서 09-05 · 지급 09-19</span></td>
+        <td class="p2">박서연 · 09-05</td>
+        <td class="p2">한빛무대예술</td>
+        <td class="num">8,800,000</td>
+        <td class="num p3">09-19</td>
+        <td><span class="st a">내 결재</span></td>
+        <td class="p2"><span class="acts"><button class="b3" data-open-sheet="sheet-approve">승인</button><button class="b3" data-open-modal="modal-reject">반려</button></span></td>
+      </tr>
+      <tr>
+        <td class="rn">2</td>
+        <td>메인 스테이지 구조물 설치 및 철거 — 아이오닉9 쇼케이스<span class="fold">박서연 · (주)스테이지원커뮤니케이션즈 · 지급 09-19</span></td>
+        <td class="p2">박서연 · 09-05</td>
+        <td class="p2">(주)스테이지원커뮤니케이션즈</td>
+        <td class="num">12,400,000</td>
+        <td class="num p3">09-19</td>
+        <td><span class="st">경영관리 결재 중</span></td>
+        <td class="p2"></td>
+      </tr>
+      <tr>
+        <td class="rn">3</td>
+        <td>운영요원 12명 × 2일 — 아이오닉9 쇼케이스<span class="fold">이준호 · (주)이벤트스태프코리아 · 지급 09-26</span></td>
+        <td class="p2">이준호 · 09-08</td>
+        <td class="p2">(주)이벤트스태프코리아</td>
+        <td class="num">5,760,000</td>
+        <td class="num p3">09-26</td>
+        <td><span class="st ok">승인 09-08</span></td>
+        <td class="p2"></td>
+      </tr>
+      <tr>
+        <td class="rn">4</td>
+        <td>해외 연사 항공·숙박 — 아이오닉9 쇼케이스<span class="fold">박서연 · Skyline Travel Pte Ltd · USD 4,200.00 @1,318.4000</span></td>
+        <td class="p2">박서연 · 09-09</td>
+        <td class="p2">Skyline Travel Pte Ltd</td>
+        <td class="num">5,537,280<span class="fx">USD 4,200.00 @1,318.4000</span></td>
+        <td class="num p3">10-02</td>
+        <td><span class="st ok">승인 09-09</span></td>
+        <td class="p2"></td>
+      </tr>
+      <tr>
+        <td class="rn">5</td>
+        <td>포토월 제작 — 신세계 VIP 라운지<span class="fold">최유진 · 디자인모멘트 · 지급 09-12</span></td>
+        <td class="p2">최유진 · 09-02</td>
+        <td class="p2">디자인모멘트</td>
+        <td class="num">1,900,000</td>
+        <td class="num p3">09-12</td>
+        <td><span class="st d">반려 09-03</span></td>
+        <td class="p2"></td>
+      </tr>
+    </tbody>
+    <tfoot><tr>
+      <td class="rn"></td><td>합계<span class="lbl">공급가액 · 5건</span></td><td class="p2"></td><td class="p2"></td>
+      <td class="num">34,397,280</td><td class="p3"></td><td></td><td class="p2"></td>
+    </tr></tfoot>
+  </table>
+</main>
+
+<nav class="tabs" aria-label="하단 탭"><a href="#" aria-current="page">내 차례 1</a><a href="#">결재</a><a href="#">손익</a><a href="#" data-open-sheet="sheet-more">더보기</a></nav>
+
+<div class="scrim" data-close></div>
+
+<!-- 시트 1: 결재 (행 탭 · 동선 C 2단계) -->
+<section class="sheet" id="sheet-approve" role="dialog" aria-modal="true" aria-labelledby="t-approve">
+  <div class="hd">
+    <h2 id="t-approve">LED 월 W12000×H4000<span class="sub">지출결의 <span class="num" style="text-align:left">EXP-2026-0468</span> · 아이오닉9 쇼케이스</span></h2>
+    <button class="x" aria-label="닫기" data-close><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </div>
+  <div class="bd">
+    <dl class="kv">
+      <dt>금액</dt><dd><b class="num">8,800,000</b><span class="fx">부가세 880,000 · 합계 9,680,000</span></dd>
+      <dt>거래처</dt><dd>한빛무대예술</dd>
+      <dt>지급 예정</dt><dd><span class="num">2026-09-19</span> <span class="line">· 금요일 지급일</span></dd>
+      <dt>견적 줄</dt><dd>2 LED 월 W12000×H4000<span class="fx">견적 9,600,000 · 실행 8,800,000</span></dd>
+      <dt>증빙</dt><dd class="att"><span class="thumb" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><span class="meta"><b>세금계산서 · 2026-09-05</b>PDF 1장 · 212KB<br><button class="b3" style="font-size:var(--fs-sm)">크게 보기</button></span></dd>
+      <dt>기안</dt><dd>박서연 <span class="line">· <span class="num" style="text-align:left">2026-09-05 11:20</span></span></dd>
+      <dt>결재선</dt><dd class="approvers"><span class="me">김도윤(나)</span><span class="arrow">→</span><span>이수아</span><span class="arrow">→</span><span>대표</span></dd>
+    </dl>
+  </div>
+  <div class="ft">
+    <button class="btn" data-open-sheet="sheet-reject">반려</button>
+    <button class="btn p" autofocus>승인</button>
+  </div>
+</section>
+
+<!-- 시트 2: 더보기 (첫 항목 검색 · 나머지 1차 메뉴 · 설정 · 내 정보 · 로그아웃) -->
+<section class="sheet" id="sheet-more" role="dialog" aria-modal="true" aria-label="더보기">
+  <div class="hd" style="padding-bottom:0">
+    <h2 class="line" style="font-size:var(--fs-sm);font-weight:var(--fw-medium);align-self:center">더보기</h2>
+    <button class="x" aria-label="닫기" data-close><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </div>
+  <ul class="menu-list bd" style="padding:0">
+    <li><a class="search" href="#" autofocus>검색<span class="cnt">프로젝트 · 지출결의 · 거래처</span></a></li>
+    <li><a href="#">프로젝트<span class="cnt num">진행 12</span></a></li>
+    <li><a href="#">지출결의<span class="cnt num">이번 달 41</span></a></li>
+    <li><a href="#">법인카드<span class="cnt num">미연결 3</span></a></li>
+    <li class="grp">계정</li>
+    <li><a href="#"><span class="me">김도윤<small>기획1팀장 · 팀장</small></span></a></li>
+    <li><a href="#">설정</a></li>
+    <li><button type="button">로그아웃</button></li>
+  </ul>
+</section>
+
+<!-- 시트 3: 반려 확인 (폰) -->
+<section class="sheet" id="sheet-reject" role="dialog" aria-modal="true" aria-labelledby="t-reject-m">
+  <div class="hd">
+    <h2 id="t-reject-m">지출결의 반려<span class="sub"><span class="num" style="text-align:left">EXP-2026-0468</span> · 한빛무대예술 · <span class="num" style="text-align:left">8,800,000</span></span></h2>
+    <button class="x" aria-label="닫기" data-close><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </div>
+  <div class="bd">
+    <div class="reason">
+      <label for="reason-m">사유</label>
+      <input id="reason-m" value="LED 규격 견적 2차와 다름 · 견적 확정 후 다시" autofocus>
+      <span class="to">기안자 박서연에게 돌아갑니다 · 내 차례에서 사라집니다</span>
+    </div>
+  </div>
+  <div class="ft">
+    <button class="btn" data-close>취소</button>
+    <button class="btn p">반려</button>
+  </div>
+</section>
+
+<!-- 모달: 반려 확인 (PC, 480) -->
+<div class="modal" id="modal-reject" role="dialog" aria-modal="true" aria-labelledby="t-reject-pc">
+  <div class="box">
+    <div class="hd">
+      <h2 id="t-reject-pc">지출결의 반려<span class="sub"><span class="num" style="text-align:left">EXP-2026-0468</span> · LED 월 W12000×H4000 · 한빛무대예술 · <span class="num" style="text-align:left">8,800,000</span></span></h2>
+      <button class="x" aria-label="닫기" data-close><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    </div>
+    <div class="bd">
+      <div class="reason">
+        <label for="reason-pc">사유</label>
+        <input id="reason-pc" value="" placeholder="" autofocus aria-describedby="why-pc">
+        <span class="to">기안자 박서연에게 돌아갑니다 · 내 차례에서 사라집니다</span>
+      </div>
+    </div>
+    <div class="ft">
+      <span class="blocked" id="why-pc">사유 없음 · 한 줄 적어 주세요</span>
+      <button class="btn" data-close>취소 <kbd>Esc</kbd></button>
+      <button class="btn p" disabled>반려 <kbd>⌘↵</kbd></button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* 실물 확인용 최소 동작: 해시로 장면 선택, 열기/닫기, Esc, 첫 행동 요소 포커스. 앱 코드가 아니다. */
+(function(){
+  var body=document.body;
+  function open(id){
+    var el=document.getElementById(id); if(!el) return;
+    document.querySelectorAll('.sheet[open],.modal[open]').forEach(function(o){o.removeAttribute('open')});
+    body.dataset.scene={ 'sheet-approve':'approve','sheet-more':'more','sheet-reject':'reject-m','modal-reject':'reject-pc' }[id];
+    el.setAttribute('open',''); body.setAttribute('data-open','');
+    var f=el.querySelector('[autofocus]'); if(f) f.focus();
+  }
+  function close(){
+    document.querySelectorAll('.sheet[open],.modal[open]').forEach(function(o){o.removeAttribute('open')});
+    body.removeAttribute('data-open'); delete body.dataset.scene;
+  }
+  document.addEventListener('click',function(e){
+    var o=e.target.closest('[data-open-sheet],[data-open-modal]');
+    if(o){e.preventDefault();open(o.dataset.openSheet||o.dataset.openModal);return}
+    if(e.target.closest('[data-close]')){e.preventDefault();close()}
+  });
+  document.addEventListener('keydown',function(e){ if(e.key==='Escape') close(); });
+  var h=location.hash.slice(1);
+  var map={approve:'sheet-approve',more:'sheet-more','reject-m':'sheet-reject','reject-pc':'modal-reject'};
+  if(map[h]) open(map[h]);
+})();
+</script>
+</body>
+</html>

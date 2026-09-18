@@ -41,6 +41,9 @@ const scenes = [
   ['pnl-dash-pc',     'dashboard-pnl.html',  'dash',    1280, 900, false, true,  'shots/pnl-dash-pc.png'],
   ['pnl-dash-big-pc', 'dashboard-pnl.html',  'dash-big',1280, 900, false, true,  'shots/pnl-dash-big-pc.png'],
   ['pnl-dash-m',      'dashboard-pnl.html',  'dash-big',390,  844, true,  false, 'shots/pnl-dash-m.png'],
+  ['ceo-pc',          'dashboard-ceo.html',  'ceo',     1280, 900, false, true,  'shots/ceo-dash-pc.png'],
+  ['ceo-m',           'dashboard-ceo.html',  'ceo',     390,  844, true,  true,  'shots/ceo-dash-m.png'],
+  ['ceo-m-view',      'dashboard-ceo.html',  'ceo',     390,  844, true,  false, 'shots/ceo-dash-m-viewport.png'],
   ['cert-empty',      'external-cert.html',  'empty',   390,  844, true,  true,  'shots/cert-empty-m.png'],
   ['cert-sign',       'external-cert.html',  'sign',    390,  844, true,  true,  'shots/cert-sign-m.png'],
   ['cert-error',      'external-cert.html',  'error',   390,  844, true,  true,  'shots/cert-error-m.png'],
@@ -52,14 +55,23 @@ const only = new Set(process.argv.slice(2));
 const browser = await chromium.launch();
 for (const [name, file, hash, w, h, mobile, fullPage, out, selector] of scenes) {
   if (only.size && !only.has(name)) continue;
-  const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, isMobile: mobile, hasTouch: mobile });
-  const page = await ctx.newPage();
-  await page.goto(pathToFileURL(resolve(dir, file)).href + (hash ? '#' + hash : ''));
+  const url = pathToFileURL(resolve(dir, file)).href + (hash ? '#' + hash : '');
+  let ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, isMobile: mobile, hasTouch: mobile });
+  let page = await ctx.newPage();
+  await page.goto(url);
   await page.waitForTimeout(300);
   if (fullPage) { // 고정·sticky 요소(하단 탭·제출 줄)가 문서 끝에 놓이도록 뷰포트를 문서 높이로 늘린다
-    const full = await page.evaluate(() => document.documentElement.scrollHeight);
-    await page.setViewportSize({ width: w, height: Math.max(h, full) });
-    await page.waitForTimeout(100);
+    const full = Math.max(h, await page.evaluate(() => document.documentElement.scrollHeight));
+    if (mobile) { // 모바일 에뮬레이션은 세로로 늘리면 가로 폭이 변하므로, 같은 폭의 비모바일 컨텍스트로 다시 연다
+      await ctx.close();
+      ctx = await browser.newContext({ viewport: { width: w, height: full }, deviceScaleFactor: 2 });
+      page = await ctx.newPage();
+      await page.goto(url);
+      await page.waitForTimeout(300);
+    } else {
+      await page.setViewportSize({ width: w, height: full });
+      await page.waitForTimeout(100);
+    }
   }
   if (selector) await page.locator(selector).screenshot({ path: resolve(dir, out) });
   else await page.screenshot({ path: resolve(dir, out), fullPage });

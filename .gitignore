@@ -42,3 +42,7 @@ next-env.d.ts
 # into $GITHUB_WORKSPACE — must be ignored or deploy.sh's dirty-tree check and
 # docker build context break, plan review CEO OV-2)
 gha-creds-*.json
+
+# deploy.yml pipes deploy.sh's output into this via `tee` from $GITHUB_WORKSPACE —
+# same dirty-tree check as above trips on it if untracked
+deploy.log

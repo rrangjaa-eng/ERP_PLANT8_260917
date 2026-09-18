@@ -4,6 +4,11 @@ import type { FormEvent } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { changePasswordAction } from "./actions";
 
+function getStringField(formData: FormData, key: string): string {
+  const value = formData.get(key);
+  return typeof value === "string" ? value : "";
+}
+
 export function ChangePasswordForm() {
   const { execute, result, isExecuting } = useAction(changePasswordAction);
 
@@ -11,8 +16,8 @@ export function ChangePasswordForm() {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     execute({
-      currentPassword: String(formData.get("currentPassword") ?? ""),
-      newPassword: String(formData.get("newPassword") ?? ""),
+      currentPassword: getStringField(formData, "currentPassword"),
+      newPassword: getStringField(formData, "newPassword"),
     });
   }
 

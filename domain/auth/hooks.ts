@@ -9,6 +9,16 @@ import { isLocked, lockoutConfig, windowStart, LOCKED_MESSAGE } from "@/domain/a
 // before가 로그인 시도 전에 login_attempts를 확인해 거부하고, after가 결과를
 // 기록·초기화한다. 사용자 존재 여부와 무관하게 동일하게 동작한다.
 
+// better-auth의 ctx.body는 any다 — 훅 경로 전체에 걸친 공용 타입이라 요청마다
+// 모양이 다르기 때문. email 필드만 안전하게 꺼낸다(no-unsafe-member-access).
+function getBodyEmail(body: unknown): string {
+  if (body !== null && typeof body === "object" && "email" in body) {
+    const value = (body as { email?: unknown }).email;
+    if (typeof value === "string") return value.toLowerCase();
+  }
+  return "";
+}
+
 export const before = createAuthMiddleware(async (ctx) => {
   if (ctx.path !== "/sign-in/email") return;
 
@@ -19,7 +29,7 @@ export const before = createAuthMiddleware(async (ctx) => {
     throw new APIError("INTERNAL_SERVER_ERROR", { message: "요청 정보가 올바르지 않습니다." });
   }
 
-  const email = String(ctx.body?.email ?? "").toLowerCase();
+  const email = getBodyEmail(ctx.body);
   const { threshold, windowMinutes } = lockoutConfig();
   const count = await countOpenFailures(SYSTEM_VIEWER, email, windowStart(new Date(), windowMinutes));
   if (isLocked(count, threshold)) {
@@ -30,7 +40,7 @@ export const before = createAuthMiddleware(async (ctx) => {
 export const after = createAuthMiddleware(async (ctx) => {
   if (ctx.path !== "/sign-in/email") return;
 
-  const email = String(ctx.body?.email ?? "").toLowerCase();
+  const email = getBodyEmail(ctx.body);
   const success = Boolean(ctx.context.newSession);
   // 원본 포워딩 헤더를 직접 읽지 않는다 — 그 헤더의 첫 항목은 클라이언트가
   // 위조할 수 있고, IP 규칙은 lib/client-ip.ts 한 곳에만 둔다.

@@ -1,8 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import { log } from "@/lib/log";
 
+type LogLine = {
+  severity: string;
+  message: string;
+  event?: string;
+  time: string;
+  a?: number;
+};
+
 describe("lib/log", () => {
-  let spy: ReturnType<typeof vi.spyOn>;
+  let spy: MockInstance<typeof console.log>;
 
   beforeEach(() => {
     spy = vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -17,7 +25,7 @@ describe("lib/log", () => {
 
     expect(spy).toHaveBeenCalledTimes(1);
     const line = spy.mock.calls[0]?.[0] as string;
-    const parsed = JSON.parse(line);
+    const parsed = JSON.parse(line) as LogLine;
 
     expect(parsed.severity).toBe("INFO");
     expect(parsed.message).toBe("x");
@@ -29,13 +37,13 @@ describe("lib/log", () => {
 
   it("warn은 severity WARNING을 쓴다", () => {
     log.warn("y");
-    const parsed = JSON.parse(spy.mock.calls[0]?.[0] as string);
+    const parsed = JSON.parse(spy.mock.calls[0]?.[0] as string) as LogLine;
     expect(parsed.severity).toBe("WARNING");
   });
 
   it("error는 severity ERROR를 쓴다", () => {
     log.error("z");
-    const parsed = JSON.parse(spy.mock.calls[0]?.[0] as string);
+    const parsed = JSON.parse(spy.mock.calls[0]?.[0] as string) as LogLine;
     expect(parsed.severity).toBe("ERROR");
   });
 });

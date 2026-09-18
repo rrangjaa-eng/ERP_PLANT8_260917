@@ -27,9 +27,9 @@ describe("getSystemStatus", () => {
 
   it("정상 조회 시 db.ratio·banner·backup.kind·version.sha를 계산한다", async () => {
     const status = await getSystemStatus(adminViewer, {
-      countConnections: async () => 3,
-      maxConnections: async () => 25,
-      getLastBackup: async () => ({ kind: "unavailable", reason: "not-configured" }),
+      countConnections: () => Promise.resolve(3),
+      maxConnections: () => Promise.resolve(25),
+      getLastBackup: () => Promise.resolve({ kind: "unavailable" as const, reason: "not-configured" }),
     });
 
     expect("unavailable" in status.db).toBe(false);
@@ -45,11 +45,11 @@ describe("getSystemStatus", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     try {
       const status = await getSystemStatus(adminViewer, {
-        countConnections: async () => {
+        countConnections: () => {
           throw new Error("connection refused");
         },
-        maxConnections: async () => 25,
-        getLastBackup: async () => ({ kind: "none" }),
+        maxConnections: () => Promise.resolve(25),
+        getLastBackup: () => Promise.resolve({ kind: "none" as const }),
       });
 
       expect(status.db).toEqual({ unavailable: true });
@@ -68,9 +68,9 @@ describe("getSystemStatus", () => {
 
   it("getLastBackup이 none이면 backup.kind가 none이다", async () => {
     const status = await getSystemStatus(adminViewer, {
-      countConnections: async () => 1,
-      maxConnections: async () => 25,
-      getLastBackup: async () => ({ kind: "none" }),
+      countConnections: () => Promise.resolve(1),
+      maxConnections: () => Promise.resolve(25),
+      getLastBackup: () => Promise.resolve({ kind: "none" as const }),
     });
     expect(status.backup.kind).toBe("none");
   });
@@ -85,7 +85,7 @@ describe("getLastBackup (D-18)", () => {
   it("items가 비어 있으면(또는 없으면) none이다 — 첫 자동 백업 전", async () => {
     const result = await getLastBackup(
       { project: "p", instance: "i" },
-      { list: async () => ({ items: [] }) },
+      { list: () => Promise.resolve({ items: [] }) },
     );
     expect(result).toEqual({ kind: "none" });
   });
@@ -94,9 +94,10 @@ describe("getLastBackup (D-18)", () => {
     const result = await getLastBackup(
       { project: "p", instance: "i" },
       {
-        list: async () => ({
-          items: [{ status: "SUCCESSFUL", endTime: "2026-09-19T18:30:00Z" }],
-        }),
+        list: () =>
+          Promise.resolve({
+            items: [{ status: "SUCCESSFUL", endTime: "2026-09-19T18:30:00Z" }],
+          }),
       },
     );
     expect(result).toEqual({ kind: "ok", status: "SUCCESSFUL", endTime: "2026-09-19T18:30:00Z" });
@@ -106,7 +107,7 @@ describe("getLastBackup (D-18)", () => {
     const result = await getLastBackup(
       { project: "p", instance: "i" },
       {
-        list: async () => {
+        list: () => {
           throw new Error("boom");
         },
       },

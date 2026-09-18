@@ -40,7 +40,11 @@ export function LoginForm({ showGoogle = false }: { showGoogle?: boolean }) {
 
   return (
     <>
-      <form onSubmit={handleSubmit}>
+      <form
+        onSubmit={(event) => {
+          void handleSubmit(event);
+        }}
+      >
         <div>
           <label htmlFor="email">이메일</label>
           <input
@@ -71,7 +75,12 @@ export function LoginForm({ showGoogle = false }: { showGoogle?: boolean }) {
         </button>
       </form>
       {showGoogle ? (
-        <button type="button" onClick={handleGoogleSignIn}>
+        <button
+          type="button"
+          onClick={() => {
+            void handleGoogleSignIn();
+          }}
+        >
           Google로 로그인
         </button>
       ) : null}

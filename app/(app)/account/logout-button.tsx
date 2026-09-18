@@ -12,5 +12,13 @@ export function LogoutButton() {
     router.push("/login");
   }
 
-  return <button onClick={handleClick}>로그아웃</button>;
+  return (
+    <button
+      onClick={() => {
+        void handleClick();
+      }}
+    >
+      로그아웃
+    </button>
+  );
 }

@@ -119,7 +119,7 @@ frontmatter `key-decisions` 참조.
 
 ## Next Phase Readiness
 
-- 스테이징이 서빙 중인 SHA가 01-08 Task 1의 입력이다 — 01-07 종료 시점 `5ca3522`, 이후 `ed2fbc5`(코드리뷰 수정)를 스테이징에 올려 갱신했다(deploy run #23). 프로덕션에는 **그 시점 스테이징이 서빙 중인 SHA**를 승격한다
+- 스테이징이 서빙 중인 SHA가 01-08 Task 1의 입력이다 — **현재 `ed2fbc5`**(리비전 `plant8-staging-00025-m5r`, run `35376419153` success). 01-07 종료 시점의 `5ca3522`에서 갱신됐다. 프로덕션에는 이 SHA를 승격한다(가드가 `sha` 빈 값이면 자동으로 이 값을 고른다)
 - 승격 가드는 실제 GCP에서 검증됐다 — 올바른 SHA 통과(exit 0), 틀린 SHA 거부(exit 1), `plant8-prod`는 아직 없음(01-08이 첫 배포)
 - 01-08이 처리할 잔여 항목: 백업 경보 필터 확인, 조직 정책 원문(Owner), 태그 전용 트래픽 4개 정리, `db-bootstrap.ts`의 `createAdminPool` 커넥터 미종료(지금은 `process.exit()`로 가려짐), OPERATIONS.md 실측 반영, CLAUDE.md 명령 4자리 채우기
 

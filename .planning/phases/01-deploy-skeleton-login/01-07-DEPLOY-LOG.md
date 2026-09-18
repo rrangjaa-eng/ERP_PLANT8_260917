@@ -16,7 +16,14 @@
 - 마지막 실행: **run #21**, commit `5ca3522`, workflow run id `35372905903`
   (success) — 계정 Job 종료 버그 수정을 배포한 것(아래 "계정 Job 종료 버그").
 - 스테이징이 서빙 중인 SHA(= 01-08 Task 1의 입력):
-  **`5ca35226bc2f75be453e8c02adbe7aeb929bc1d7`**
+  **`ed2fbc56a52ddb5b73884fc3247999cd15855d5e`**
+  - 01-07 종료 시점에는 `5ca3522`였다. 그 뒤 코드리뷰 수정 커밋 `ed2fbc5`를
+    올렸는데 **push가 deploy 워크플로를 트리거하지 못해** 스테이징이 한 커밋
+    뒤처져 있었다(원인 미상 — 그 커밋에 `[skip ci]`는 없고 paths-ignore
+    대상도 아니다). 수동 `workflow_dispatch`로 배포해 맞췄다:
+    run `35376419153`, 리비전 `plant8-staging-00025-m5r`, 100% 트래픽,
+    `quick probe: / -> 307, /login -> 200, /api/health -> 200`.
+  - 같은 SHA로 큐에 걸린 중복 실행 `35376464153`은 취소했다.
 - run #20 시점의 서빙 리비전: `plant8-staging-00021-jxr`
 
 ## 시도별 원인·수정 이력

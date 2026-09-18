@@ -11,8 +11,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **AUTH-01**: 관리자가 직원 계정을 만들고 초기 비밀번호를 발급하면, 직원은 이메일+비밀번호로 로그인한다. 로그인 실패 N회(기본 5, 설정) 시 15분 잠금과 IP 속도 제한이 걸리고, 잠금·해제는 행동 로그에 남으며 관리자가 풀 수 있다
 - [x] **AUTH-02**: 로그인 세션은 브라우저를 다시 열어도 유지되고, 어느 화면에서든 로그아웃할 수 있다
-- [ ] **AUTH-03**: 직원은 비밀번호를 바꿀 수 있고, 관리자는 비밀번호를 재발급할 수 있다
-- [ ] **AUTH-04**: 로그인 방식은 환경 변수로 선택된다(기본 이메일). Google 로그인 추가가 코드 구조를 바꾸지 않는다
+- [x] **AUTH-03**: 직원은 비밀번호를 바꿀 수 있고, 관리자는 비밀번호를 재발급할 수 있다
+- [x] **AUTH-04**: 로그인 방식은 환경 변수로 선택된다(기본 이메일). Google 로그인 추가가 코드 구조를 바꾸지 않는다
 
 ### 마스터·코드표 (MAST)
 
@@ -186,8 +186,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | AUTH-01 | Phase 1 | Complete |
 | AUTH-02 | Phase 1 | Complete |
-| AUTH-03 | Phase 1 | Pending |
-| AUTH-04 | Phase 1 | Pending |
+| AUTH-03 | Phase 1 | Complete |
+| AUTH-04 | Phase 1 | Complete |
 | MAST-01 | Phase 3 | Pending |
 | MAST-02 | Phase 3 | Pending |
 | MAST-03 | Phase 3 | Pending |

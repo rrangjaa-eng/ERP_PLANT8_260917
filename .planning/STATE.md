@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 1
 current_phase_name: 배포 스켈레톤·로그인
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Completed 01-02-PLAN.md
-last_updated: "2026-09-18T08:08:58.104Z"
+stopped_at: Completed 01-03-PLAN.md
+last_updated: "2026-09-18T08:31:01.270Z"
 last_activity: 2026-09-17
 last_activity_desc: "로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드"
-state_head: 9892c9403228b19685ea534d09de26f7a4c19b90
+state_head: 68ebad36f074e65a98c9a2d6cb2d3a8fcb099d5e
 progress:
   total_phases: 11
   completed_phases: 0
   total_plans: 8
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 1 (배포 스켈레톤·로그인) — EXECUTING
-Current Plan: 3
+Current Plan: 4
 Total Plans in Phase: 8
 Status: Ready to execute
 Last activity: 2026-09-17 — 로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드
@@ -61,6 +61,7 @@ Progress: [░░░░░░░░░░] 0%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 01-deploy-skeleton-login P02 | 65min | 2 tasks | 22 files |
+| Phase 01-deploy-skeleton-login P03 | 18min | 2 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -97,6 +98,9 @@ Recent decisions affecting current work:
 - [Phase 1]: D-05 변경(사용자 결정 C, 2026-09-18, 같은 날 B 대체): GitHub 저장소는 개인 무료 비공개 유지. Environments·required reviewers 없이 프로덕션은 workflow_dispatch 수동 실행(같은 SHA 이미지 재사용, 스테이징 배포 확인 가드). 변수·시크릿은 저장소 수준
 - [Phase 1]: better-auth 1.7.5 rate_limits 스키마 검사가 id 컬럼을 요구해 text id 추가(0002 마이그레이션) — drizzle-adapter의 schema-diff.mjs가 모든 모델에 id 존재를 강제하고 실제로 문자열 id를 insert함(실측)
 - [Phase 1]: advanced.ipAddress.ipAddressHeaders를 x-forwarded-for에서 x-client-ip로 교체, proxy.ts가 단일 헤더로 고정 — better-auth가 헤더 값 2개 이상이면 IP를 null로 보고 공용 rateLimit 버킷에 묶어, 클라이언트가 XFF 위조 시 전 직원이 같은 버킷을 나눠 쓰는 DoS가 됨(Eng Issue 1)
+- [Phase 1]: [Phase 1] revokeAllSessions는 auth.$context.internalAdapter.deleteUserSessions(userId)를 쓴다(계획 문서의 deleteSessions는 세션 토큰 배열을 받는 다른 메서드 — 실측으로 정정, 01-02 선례와 일치)
+- [Phase 1]: [Phase 1] AUTH-04 Google 로그인 버튼의 클릭 핸들러는 서버 컴포넌트(login/page.tsx)가 아니라 기존 클라이언트 컴포넌트(login-form.tsx)에 showGoogle prop으로 위임 — 서버 컴포넌트는 authClient.signIn.social을 직접 호출할 수 없다
+- [Phase 1]: [Phase 1] AUTH-03·AUTH-04는 REQUIREMENTS.md에서 Complete로 반영됨. OPS-06은 01-07이 같은 요구사항을 공유(shared-ID gate)해 01-07 완료 시 Complete로 바뀐다(의도된 동작)
 
 ### Pending Todos
 
@@ -123,6 +127,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-18T08:08:58.065Z
-Stopped at: Completed 01-02-PLAN.md
+Last session: 2026-09-18T08:31:01.230Z
+Stopped at: Completed 01-03-PLAN.md
 Resume file: None

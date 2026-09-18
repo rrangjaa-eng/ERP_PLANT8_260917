@@ -11,12 +11,13 @@
    목표 달성 막대(전사 + 팀별, 목표 눈금) · 월별 매출·수익 막대 + 수익률 선 · 팀별 매출 비중 띠 ·
    클라이언트별 매출 순위(팀 색) · 비용 구성 도넛(추천) · 프로젝트 현황(상태 칩 + 수익률 낮은 프로젝트).
    2026-09-18 사용자: 「다가오는 지급」 「챙길 것」 제외, 클라이언트별 매출 순위 추가, 색 더 다양하게(→ --viz-* 제안).
-   토큰만 쓴다. 제안 토큰: --fs-2xl(32px) · --viz-1~6(데이터 색) — 승인 전이라 이 파일 안에서만 정의.
+   토큰만 쓴다. 제안 토큰: --fs-2xl(32px) · --viz-1/2(팀 색) · --seg-1~5(구성 비율, 그린 단계) — 승인 전이라 이 파일 안에서만 정의.
    장면: #ceo(기본) · #mgmt(경영관리 — 같은 화면, 계급 이름만). 앱 코드가 아니다. */
 :root{--fs-2xl:32px;
-  /* 제안 토큰(승인 전): 데이터 색 6단 — 그린을 1번으로, 나머지는 같은 명도대의 다른 색상. 흰 글자 대비 1·2·4·5 ≥ 4.5, 3·6은 짙은 글자 */
-  --viz-1:var(--g-700);--viz-2:#1F5FA8;--viz-3:#C27A12;--viz-4:#6C4BA6;--viz-5:#B03A2E;--viz-6:var(--g-400);
-  --viz-1-weak:var(--g-100);--viz-2-weak:#DCE7F5;--viz-3-weak:#F7E8CF}
+  /* 제안 토큰(승인 전): 색 하나 = 뜻 하나. 팀 색 2개(기획1팀 = 그린, 기획2팀 = 파랑) + 상태색(--warning·--danger)만.
+     구성 비율(도넛)은 그린 단계 5단. 그 밖의 장식색 없음 */
+  --viz-1:var(--g-700);--viz-2:#1F5FA8;--viz-2-weak:#DCE7F5;
+  --seg-1:var(--g-900);--seg-2:var(--g-700);--seg-3:var(--g-600);--seg-4:var(--g-400);--seg-5:var(--g-100)}
 *{box-sizing:border-box;margin:0;padding:0}
 html{font-size:var(--fs-base)}
 body{background:var(--bg);color:var(--fg);font-family:var(--font-sans);font-size:var(--fs-base);line-height:var(--lh-body);letter-spacing:var(--ls-body);word-break:keep-all;overflow-wrap:anywhere;-webkit-font-smoothing:antialiased}
@@ -86,14 +87,14 @@ main{padding:var(--s-5) var(--pad-page) 72px;max-width:var(--container-max)}
 .teams .r small{font-size:var(--fs-xs);color:var(--faint)}
 .teams .r .track{margin:0;height:10px}
 .teams .r .track i{top:-3px;bottom:-3px}
-.teams .r.rate .track{height:6px;background:var(--viz-3-weak)}
-.teams .r.rate .track b{background:var(--viz-3)}
+.teams .r.rate .track{height:6px}
+.teams .r.rate .track b{opacity:.55}
 .teams .pct{text-align:right;font-weight:var(--fw-bold);white-space:nowrap}
 .teams .pct small{font-weight:var(--fw-regular);color:var(--faint);font-size:var(--fs-xs)}
-.teams .pct.low,.teams .pct.miss{color:var(--viz-5)}
-.teams li.t1 .r:not(.rate) .track b{background:var(--viz-1)}
-.teams li.t2 .r:not(.rate) .track b{background:var(--viz-2)}
-.teams li.t3 .r:not(.rate) .track b{background:var(--viz-4)}
+.teams .pct.low,.teams .pct.miss{color:var(--danger)}
+.teams li.t1 .track b{background:var(--viz-1)}
+.teams li.t2 .track b{background:var(--viz-2)}
+.teams li.t3 .track b{background:var(--line-ui)}
 
 /* 월별 차트 */
 .chart{width:100%;height:auto;display:block;margin-top:var(--s-2)}
@@ -102,14 +103,14 @@ main{padding:var(--s-5) var(--pad-page) 72px;max-width:var(--container-max)}
 .chart .sales{fill:var(--g-100)}
 .chart .profit{fill:var(--g-700)}
 .chart .now .sales{fill:var(--g-400)}
-.chart .rate{fill:none;stroke:var(--viz-3);stroke-width:2}
-.chart .rate-dot{fill:var(--bg);stroke:var(--viz-3);stroke-width:2}
+.chart .rate{fill:none;stroke:var(--fg);stroke-width:1.5}
+.chart .rate-dot{fill:var(--bg);stroke:var(--fg);stroke-width:1.5}
 .chart .lbl{font-size:11px;fill:var(--fg);font-weight:600;font-family:var(--font-sans)}
-.chart .lbl.rate-l{fill:var(--viz-3)}
+.chart .lbl.rate-l{fill:var(--fg)}
 .legend{display:flex;gap:var(--s-4);font-size:var(--fs-xs);color:var(--muted);flex-wrap:wrap}
 .legend i{display:inline-block;width:10px;height:10px;vertical-align:-1px;margin-right:4px}
 .legend .l-sales{background:var(--g-100)}.legend .l-profit{background:var(--g-700)}.legend .l-now{background:var(--g-400)}
-.legend .l-rate{width:14px;height:0;border-top:2px solid var(--viz-3);vertical-align:2px}
+.legend .l-rate{width:14px;height:0;border-top:1.5px solid var(--fg);vertical-align:2px}
 
 /* 비중 띠 */
 .share{display:flex;height:22px;margin-top:var(--s-2)}
@@ -133,10 +134,8 @@ main{padding:var(--s-5) var(--pad-page) 72px;max-width:var(--container-max)}
 
 /* 프로젝트 현황 */
 .status{display:flex;gap:var(--s-2);flex-wrap:wrap}
-.status span{border:var(--line-w) solid var(--line-strong);padding:2px 10px;font-size:var(--fs-sm);display:inline-flex;gap:6px;align-items:baseline;box-shadow:inset 3px 0 0 var(--viz-1)}
-.status span.done{box-shadow:inset 3px 0 0 var(--viz-2)}
-.status span.wait{box-shadow:inset 3px 0 0 var(--viz-3)}
-.status span.next{box-shadow:inset 3px 0 0 var(--viz-4)}
+.status span{border:var(--line-w) solid var(--line-strong);padding:2px 10px;font-size:var(--fs-sm);display:inline-flex;gap:6px;align-items:baseline}
+.status span.wait,.status span.next{border-color:var(--line);color:var(--muted)}
 .status b{font-size:var(--fs-md)}
 .status span.m{border-color:var(--line);color:var(--muted)}
 .low{list-style:none;margin-top:var(--s-2)}
@@ -165,19 +164,19 @@ main{padding:var(--s-5) var(--pad-page) 72px;max-width:var(--container-max)}
 .rank-l{display:flex;gap:var(--s-4);font-size:var(--fs-xs);color:var(--muted);margin-top:auto;padding-top:var(--s-2)}
 .rank-l i{display:inline-block;width:10px;height:10px;vertical-align:-1px;margin-right:4px}
 /* 비용 구성 도넛 */
-.donut{display:grid;grid-template-columns:132px minmax(0,1fr);gap:var(--s-3);align-items:center}
-.donut svg{width:132px;height:132px}
-.donut circle{fill:none;stroke-width:22}
-.donut .c1{stroke:var(--viz-1)}.donut .c2{stroke:var(--viz-2)}.donut .c3{stroke:var(--viz-3)}.donut .c4{stroke:var(--viz-4)}.donut .c5{stroke:var(--viz-5)}
-.donut .ctr{font-size:var(--fs-lg);font-weight:var(--fw-bold);fill:var(--fg);font-family:var(--font-sans)}
-.donut .ctr-l{font-size:11px;fill:var(--faint);font-family:var(--font-sans)}
-.donut ul{list-style:none;display:flex;flex-direction:column;gap:5px;font-size:var(--fs-sm);min-width:0}
+.donut{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--s-3);align-items:center;justify-items:center;flex:1}
+.donut svg{width:min(100%,220px);height:auto;margin-top:var(--s-2)}
+.donut circle{fill:none;stroke-width:26}
+.donut .c1{stroke:var(--seg-1)}.donut .c2{stroke:var(--seg-2)}.donut .c3{stroke:var(--seg-3)}.donut .c4{stroke:var(--seg-4)}.donut .c5{stroke:var(--seg-5)}
+.donut .ctr{font-size:var(--fs-xl);font-weight:var(--fw-bold);fill:var(--fg);font-family:var(--font-sans)}
+.donut .ctr-l{font-size:9px;fill:var(--faint);font-family:var(--font-sans)}
+.donut ul{list-style:none;display:flex;flex-direction:column;gap:6px;font-size:var(--fs-base);min-width:0;width:100%}
 .donut li{display:grid;grid-template-columns:10px auto 1fr;gap:8px;align-items:baseline;white-space:nowrap}
 .donut li .p{text-align:right}
 .donut li i{width:10px;height:10px;display:block;align-self:center}
 .donut li .p{font-weight:var(--fw-bold);font-variant-numeric:tabular-nums}
 .donut li small{color:var(--faint);margin-left:4px}
-.donut .k1{background:var(--viz-1)}.donut .k2{background:var(--viz-2)}.donut .k3{background:var(--viz-3)}.donut .k4{background:var(--viz-4)}.donut .k5{background:var(--viz-5)}
+.donut .k1{background:var(--seg-1)}.donut .k2{background:var(--seg-2)}.donut .k3{background:var(--seg-3)}.donut .k4{background:var(--seg-4)}.donut .k5{background:var(--seg-5);border:1px solid var(--line)}
 
 /* 다가오는 지급 */
 .pay{list-style:none}
@@ -299,13 +298,13 @@ main{padding:var(--s-5) var(--pad-page) 72px;max-width:var(--container-max)}
       <h2>비용 구성 <span class="why">실행가 324,900,000</span></h2>
       <div class="donut">
         <svg viewBox="0 0 132 132" aria-hidden="true">
-          <!-- r=44 · 둘레 276.5 · 44% 28% 12% 9% 7% -->
+          <!-- r=44 · 둘레 276.5 · 44% 28% 12% 9% 7% · 그린 단계 진한 순 -->
           <circle class="c1" cx="66" cy="66" r="44" stroke-dasharray="121.7 276.5" transform="rotate(-90 66 66)"/>
           <circle class="c2" cx="66" cy="66" r="44" stroke-dasharray="77.4 276.5" stroke-dashoffset="-121.7" transform="rotate(-90 66 66)"/>
           <circle class="c3" cx="66" cy="66" r="44" stroke-dasharray="33.2 276.5" stroke-dashoffset="-199.1" transform="rotate(-90 66 66)"/>
           <circle class="c4" cx="66" cy="66" r="44" stroke-dasharray="24.9 276.5" stroke-dashoffset="-232.3" transform="rotate(-90 66 66)"/>
           <circle class="c5" cx="66" cy="66" r="44" stroke-dasharray="19.3 276.5" stroke-dashoffset="-257.2" transform="rotate(-90 66 66)"/>
-          <text class="ctr" x="66" y="64" text-anchor="middle">67%</text><text class="ctr-l" x="66" y="80" text-anchor="middle">매출 대비</text>
+          <text class="ctr" x="66" y="66" text-anchor="middle">67%</text><text class="ctr-l" x="66" y="82" text-anchor="middle">매출 대비</text>
         </svg>
         <ul>
           <li><i class="k1"></i><span>무대·시공</span><span class="p">44%<small>142.6M</small></span></li>
@@ -315,7 +314,7 @@ main{padding:var(--s-5) var(--pad-page) 72px;max-width:var(--container-max)}
           <li><i class="k5"></i><span>해외·기타</span><span class="p">7%<small>23.3M</small></span></li>
         </ul>
       </div>
-      <div class="rank-l" style="margin-top:auto"><span>전년 무대·시공 48% → 44%</span><span>법인카드 6% → 9%</span></div>
+      <div class="rank-l"><span>전년 무대·시공 48% → 44%</span><span>법인카드 6% → 9%</span></div>
     </section>
 
     <!-- 클라이언트별 매출 -->

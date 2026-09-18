@@ -88,11 +88,79 @@ section h2 .s{font-size:12px;color:var(--muted);font-weight:400}
 .answer code{font-family:inherit;background:var(--g50);padding:2px 8px;font-weight:700;color:var(--g900)}
 .answer .hint{color:var(--faint);font-size:12px}
 @media(max-width:700px){.opts{grid-template-columns:1fr}.top nav{display:none}.stage.pc iframe{height:1460px}}
+
+/* 리뷰 보강 실물 */
+.rv{display:grid;grid-template-columns:1fr;gap:18px;margin-top:12px}
+.rv .card header b{background:var(--g900)}
+.rv .body{padding:12px 14px;display:grid;gap:14px}
+.rv .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.rv .lab2{font-size:12px;color:var(--muted);margin-bottom:6px}
+.mini{background:#fff;border:1px solid var(--line);font-size:13px}
+.tabs{display:flex;height:44px;border-top:2px solid var(--g900);background:#fff}
+.tabs span{flex:1;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--muted)}
+.tabs span.on{color:var(--g700);box-shadow:inset 0 -2px 0 var(--g700)}
+.sheet{background:#fff;border-top:2px solid var(--g900);max-width:390px}
+.sheet div{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+.sheet div.srch{background:var(--ground);border:1px solid var(--lineui);margin:12px 14px 4px;padding:8px 10px;color:var(--faint)}
+.sheet div.srch+div{border-top:0}
+.sheet .k{color:var(--faint);font-size:11px}
+.btn{height:32px;padding:0 12px;font-size:12px;font-weight:600;border:1px solid var(--g900);background:#fff;display:inline-flex;align-items:center;gap:8px}
+.btn.p{background:var(--g700);border-color:var(--g700);color:#fff}
+.btn.p:disabled{background:var(--ground);border-color:var(--line);color:var(--faint)}
+.btn kbd{font:inherit;font-size:11px;border:1px solid currentColor;padding:0 4px;opacity:.8}
+.prog{height:2px;background:var(--g700);width:38%}
+.bar2{background:var(--g900);height:14px}
+.stt{background:#fff;font-size:13px}
+.stt .h{display:grid;grid-template-columns:1fr 90px 70px;padding:6px 8px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--g900)}
+.stt .h.ed{background:var(--g100);color:var(--g900)}
+.stt .r{display:grid;grid-template-columns:1fr 90px 70px;padding:6px 8px;border-bottom:1px solid var(--line)}
+.stt .r.sk{height:36px;background:var(--ground);border-bottom:1px solid #fff}
+.stt .r.em{display:block;padding:20px 8px;color:var(--muted)}
+.stt .r.er{display:block;padding:14px 8px;color:var(--danger)}
+.stt .f{display:grid;grid-template-columns:1fr 90px 70px;padding:8px;border-top:2px solid var(--g900);font-weight:700;background:var(--g100)}
+.stt .f .ok{color:var(--g600);font-size:12px;font-weight:600;grid-column:2/4;text-align:right}
+.stt .f .ng{color:var(--danger);font-size:12px;font-weight:600;grid-column:2/4;text-align:right}
+.stt .err{background:#FBE9E9;box-shadow:inset 2px 0 0 var(--danger);text-align:right}
+.stt .badge{font-size:11px;border:1px solid var(--muted);color:var(--muted);padding:0 6px;margin-left:8px;font-weight:400}
+.b3{color:var(--g700);font-weight:600;border-bottom:1px solid var(--g700)}
+.a11y{background:#fff;padding:12px;font-size:13px;display:grid;gap:10px}
+.skip{display:inline-block;background:var(--g700);color:#fff;padding:4px 10px;font-size:12px;font-weight:600;outline:2px solid var(--g700);outline-offset:2px}
+.cellf{display:inline-block;padding:4px 8px;outline:2px solid var(--g700);outline-offset:2px;background:var(--g50)}
+.live{border-left:2px solid var(--g600);padding:4px 8px;color:var(--g600);font-size:12px;background:var(--ground)}
+.story{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.story .fr{background:#fff;border:1px solid var(--line);padding:8px;font-size:12px;min-height:110px}
+.story .fr b{display:block;font-size:11px;color:var(--faint);margin-bottom:4px}
+.story .fr .scr{background:var(--ground);border:1px solid var(--line);padding:6px;font-size:11px;margin:4px 0;color:var(--fg)}
+.story .fr .scr .d{color:var(--danger)} .story .fr .scr .g{color:var(--g600)} .story .fr .scr .a{color:var(--g700);font-weight:600}
+.story .fr em{font-style:normal;color:var(--muted)}
+@media(max-width:700px){.story{grid-template-columns:1fr 1fr}}
+
+/* R1 브라우저 표면 */
+.surf{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.surf .mini{padding:12px;display:grid;gap:12px}
+.surf .lab2{margin:0}
+.sel-d::selection,.sel-d *::selection{background:#B4D5FE;color:#000}
+.sel-g::selection,.sel-g *::selection{background:var(--g100);color:var(--fg)}
+.fake-sel-d{background:#B4D5FE;color:#000}
+.fake-sel-g{background:var(--g100);color:var(--fg)}
+.inp2{height:32px;border:1px solid var(--lineui);padding:0 8px;width:100%;max-width:240px;font:inherit;background:#fff}
+.inp2.g{caret-color:var(--g700)}
+.inp2.d{caret-color:auto}
+.chk{display:flex;gap:16px;align-items:center;font-size:13px}
+.chk.g input{accent-color:var(--g700)}
+.chk.d input{accent-color:auto}
+.scr-box{height:80px;overflow:auto;border:1px solid var(--line);padding:6px 8px;font-size:12px;color:var(--muted)}
+.scr-box.g{scrollbar-color:var(--lineui) #fff;scrollbar-width:thin}
+.scr-box.d{scrollbar-color:auto;scrollbar-width:auto}
+.u3{color:var(--g700);font-weight:600;text-decoration:underline;text-decoration-thickness:1px}
+.u3.g{text-underline-offset:2px}
+.u3.d{text-underline-offset:auto}
+@media(max-width:700px){.surf{grid-template-columns:1fr}}
 </style>
 
 <div class="top">
   <span class="mark">PL<i>A</i>NT8</span>
-  <nav><a href="#screen" class="on">화면</a><a href="#print">인쇄</a><a href="#decide">결정 4건</a></nav>
+  <nav><a href="#screen" class="on">화면</a><a href="#print">인쇄</a><a href="#decide">결정 4건</a><a href="#review">리뷰 6건</a></nav>
   <span class="sub">디자인 §3 · 안 A 원장 + C의 색</span>
 </div>
 
@@ -241,11 +309,164 @@ section h2 .s{font-size:12px;color:var(--muted);font-weight:400}
 
     </div>
   </section>
+
+  <section id="review">
+    <h2>리뷰 보강 6건 — 실물 <span class="s">디자인 리뷰에서 제가 묻지 않고 넣었던 것. 1~6번을 각각 그렸습니다. 1번은 채팅에서 「넣는다」로 답하셨고 실물 확인용으로 함께 둡니다.</span></h2>
+    <div class="rv">
+
+
+      <article class="card" data-id="R1">
+        <header><b>1/6</b><h3>브라우저 기본 표면 <span style="font-size:11px;color:var(--g600);font-weight:600;border:1px solid currentColor;padding:0 5px;margin-left:6px">채팅에서 「넣는다」로 답하셨음 — 실물 확인용</span></h3></header>
+        <div class="body">
+          <div class="lab2">왼쪽이 브라우저 기본값, 오른쪽이 시스템 적용. 글자를 드래그해 선택해 보고, 입력창을 클릭해 커서 색을 보고, 체크박스를 눌러 보세요.</div>
+          <div class="surf">
+            <div class="mini">
+              <div class="lab2"><b>기본값</b></div>
+              <div class="sel-d">텍스트 선택: <span class="fake-sel-d">아이오닉9 쇼케이스 무대설치 12,400,000</span> (드래그해도 파란색)</div>
+              <div><input class="inp2 d" value="9,600,000" aria-label="기본 커서"> <span class="lab2" style="display:inline">커서 검정/파랑</span></div>
+              <div class="chk d"><label><input type="checkbox" checked> 증빙 확인</label><label><input type="radio" name="r1d" checked> 세금계산서</label><label><input type="radio" name="r1d"> 영수증</label></div>
+              <div class="scr-box d">스크롤바 OS 기본 (굵음)<br>1 메인 스테이지 구조물 설치 및 철거<br>2 LED 월 W12000×H4000<br>3 음향·조명 오퍼레이팅<br>4 행사 진행 MC<br>5 운영요원 12명 × 2일<br>6 해외 연사 항공·숙박</div>
+              <div>3차 버튼 밑줄: <span class="u3 d">증빙 올리기</span> (글자에 붙음)</div>
+            </div>
+            <div class="mini">
+              <div class="lab2"><b>시스템 (§4-4)</b></div>
+              <div class="sel-g">텍스트 선택: <span class="fake-sel-g">아이오닉9 쇼케이스 무대설치 12,400,000</span> (드래그하면 옅은 그린)</div>
+              <div><input class="inp2 g" value="9,600,000" aria-label="그린 커서"> <span class="lab2" style="display:inline">커서 그린</span></div>
+              <div class="chk g"><label><input type="checkbox" checked> 증빙 확인</label><label><input type="radio" name="r1g" checked> 세금계산서</label><label><input type="radio" name="r1g"> 영수증</label></div>
+              <div class="scr-box g">스크롤바 얇게 · 그린 회색<br>1 메인 스테이지 구조물 설치 및 철거<br>2 LED 월 W12000×H4000<br>3 음향·조명 오퍼레이팅<br>4 행사 진행 MC<br>5 운영요원 12명 × 2일<br>6 해외 연사 항공·숙박</div>
+              <div>3차 버튼 밑줄: <span class="u3 g">증빙 올리기</span> (2px 띄움)</div>
+            </div>
+          </div>
+        </div>
+        <div class="opts" style="padding-top:0">
+          <div class="opt rec"><div class="lab"><kbd>A</kbd> 넣는다 <span class="r">권고 · 답하신 것</span></div><div class="why">CSS 5줄. 파란 선택색·회색 체크박스가 남으면 「조립된 화면」 티가 가장 먼저 난다.</div><button class="pick" data-v="A" aria-pressed="false">A로</button></div>
+          <div class="opt"><div class="lab"><kbd>B</kbd> 뺀다 / 일부만</div><div class="why">실물을 보고 마음이 바뀌면 여기서. 「스크롤바만 기본으로」처럼 일부만 빼는 것도 됩니다.</div><button class="pick" data-v="B" aria-pressed="false">B로</button></div>
+        </div>
+      </article>
+
+      <article class="card" data-id="R2">
+        <header><b>2/6</b><h3>태블릿 구간 · 폰 하단 탭 · 「더보기」 시트</h3></header>
+        <div class="body">
+          <div>
+            <div class="lab2">① 태블릿 700–1023: PC 셸 그대로, 표에서 P3 열(차익·행동)만 숨김. 아래는 900px로 띄운 실물.</div>
+            <div class="stage" id="stage-tb" style="width:100%"><div class="fit" id="fit-tb"><iframe src="system/preview.html" title="태블릿 900 실물" style="width:900px;height:900px;border:0;display:block"></iframe></div></div>
+          </div>
+          <div>
+            <div class="lab2">② 폰 하단 탭 4개 — 역할별. 1번 탭은 곧 첫 화면이고 건수를 붙임. 아이콘 없이 글자만.</div>
+            <div class="row">
+              <div class="mini"><div class="lab2" style="padding:6px 10px 0">기획 PM</div><div class="tabs"><span class="on">내 차례 4</span><span>프로젝트</span><span>지출결의</span><span>더보기</span></div></div>
+              <div class="mini"><div class="lab2" style="padding:6px 10px 0">경영관리</div><div class="tabs"><span class="on">내 차례 12</span><span>결재</span><span>지출결의</span><span>더보기</span></div></div>
+              <div class="mini"><div class="lab2" style="padding:6px 10px 0">팀장 · 대표</div><div class="tabs"><span class="on">내 차례 2</span><span>결재</span><span>손익</span><span>더보기</span></div></div>
+            </div>
+          </div>
+          <div>
+            <div class="lab2">③ 「더보기」를 누르면 아래에서 올라오는 시트. 첫 항목이 검색(PC의 ⌘K와 같은 화면).</div>
+            <div class="sheet">
+              <div class="srch">프로젝트·지출결의·거래처 검색</div>
+              <div><span>법인카드</span><span class="k">433건</span></div>
+              <div><span>손익</span><span class="k">팀장 이상만 보임</span></div>
+              <div><span>설정</span><span></span></div>
+              <div><span>내 정보</span><span class="k">박서연 · 기획1팀</span></div>
+              <div><span>로그아웃</span><span></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="opts" style="padding-top:0">
+          <div class="opt rec"><div class="lab"><kbd>A</kbd> 넣는다 <span class="r">권고</span></div><div class="why">셋을 지금 규칙으로 고정. 탭 구성은 뒤에 설정 화면에서 바꿀 수 있게 만든다.</div><button class="pick" data-v="A" aria-pressed="false">A로</button></div>
+          <div class="opt"><div class="lab"><kbd>B</kbd> 뺀다</div><div class="why">구현 단계에서 화면마다 정한다.</div><button class="pick" data-v="B" aria-pressed="false">B로</button></div>
+        </div>
+      </article>
+
+      <article class="card" data-id="R3">
+        <header><b>3/6</b><h3>서버 처리 중 버튼 상태</h3></header>
+        <div class="body">
+          <div class="lab2">누른 뒤 응답을 기다리는 동안. 스피너·회전 아이콘 없이, 같은 버튼이 비활성되고 라벨 뒤에 …이 붙는다. 300ms를 넘으면 상단 바 아래 2px 진행 바.</div>
+          <div class="row">
+            <div class="mini" style="padding:12px"><div class="lab2">기본</div><button class="btn p">일괄 저장 3 <kbd>⌘S</kbd></button></div>
+            <div class="mini" style="padding:0 0 12px"><div class="bar2"></div><div class="prog"></div><div style="padding:12px 12px 0"><div class="lab2">진행 중 (300ms 넘음)</div><button class="btn p" disabled>일괄 저장 3…</button></div></div>
+            <div class="mini" style="padding:12px"><div class="lab2">응답 후 — 버튼 자리에 결과</div><span style="color:var(--g600);font-weight:600;font-size:12px">저장됨 3줄 14:02</span></div>
+          </div>
+        </div>
+        <div class="opts" style="padding-top:0">
+          <div class="opt rec"><div class="lab"><kbd>A</kbd> 넣는다 <span class="r">권고</span></div><div class="why">「같은 단어」 규칙(버튼 = 결과)과 「스피너 없음」이 이어진다.</div><button class="pick" data-v="A" aria-pressed="false">A로</button></div>
+          <div class="opt"><div class="lab"><kbd>B</kbd> 뺀다 / 다르게</div><div class="why">예: 스피너 허용, 또는 버튼 안 진행 바. 원하는 방식을 말로 적어 주세요.</div><button class="pick" data-v="B" aria-pressed="false">B로</button></div>
+        </div>
+      </article>
+
+      <article class="card" data-id="R4">
+        <header><b>4/6</b><h3>컴포넌트별 다섯 상태 표</h3></header>
+        <div class="body">
+          <div class="lab2">표 하나로 다섯 상태가 어떻게 보이는지. 다른 컴포넌트(내 차례·폼·첨부·외부 수령자·손익·인쇄)도 같은 식으로 SYSTEM.md에 표로 적혀 있습니다.</div>
+          <div class="row">
+            <div class="stt"><div class="lab2" style="padding:6px 8px 0">LOADING — 뼈대 + 회색 행, 반짝임 없음</div><div class="h ed"><span>항목</span><span style="text-align:right">실행가</span><span>상태</span></div><div class="r sk"></div><div class="r sk"></div><div class="r sk"></div><div class="f"><span>합계</span><span></span><span></span></div></div>
+            <div class="stt"><div class="lab2" style="padding:6px 8px 0">EMPTY — 무엇이 없다 · 다음 한 수</div><div class="h"><span>번호</span><span style="text-align:right">금액</span><span>상태</span></div><div class="r em">이 프로젝트에 지출결의가 없습니다 · <span class="b3">견적 줄에서 올리기</span></div></div>
+            <div class="stt"><div class="lab2" style="padding:6px 8px 0">ERROR — 원인 · 다음 행동, 입력값 보존</div><div class="h ed"><span>항목</span><span style="text-align:right">실행가</span><span>상태</span></div><div class="r er">저장하지 못했습니다 · 네트워크 · <span class="b3">다시 시도</span></div></div>
+            <div class="stt"><div class="lab2" style="padding:6px 8px 0">SUCCESS — 합계 행에 결과, 토스트 없음</div><div class="h ed"><span>항목</span><span style="text-align:right">실행가</span><span>상태</span></div><div class="r"><span>LED 월</span><span class="num" style="text-align:right">6,900,000</span><span style="color:var(--g600);font-size:11px;font-weight:600">저장됨</span></div><div class="f"><span>합계</span><span class="ok">저장됨 6줄 14:02</span></div></div>
+            <div class="stt"><div class="lab2" style="padding:6px 8px 0">PARTIAL — 오류 셀 고정 · 계산 불가 배지</div><div class="h ed"><span>항목</span><span style="text-align:right">실행가</span><span>상태</span></div><div class="r"><span>운영요원</span><span class="num err">5,760,00</span><span style="color:var(--danger);font-size:11px;font-weight:600">숫자 아님</span></div><div class="f"><span>합계<span class="badge">계산 불가 1건</span></span><span class="ng">오류 1칸 · 전부 거부</span></div></div>
+          </div>
+        </div>
+        <div class="opts" style="padding-top:0">
+          <div class="opt rec"><div class="lab"><kbd>A</kbd> 넣는다 <span class="r">권고</span></div><div class="why">UX-01이 컴포넌트마다 다섯 상태 정의를 요구한다. 표로 박아 두면 구현 때 빠뜨리지 않는다.</div><button class="pick" data-v="A" aria-pressed="false">A로</button></div>
+          <div class="opt"><div class="lab"><kbd>B</kbd> 뺀다</div><div class="why">일반 규칙(§7-7 첫 표)만 두고 컴포넌트별 표는 Phase 2 컴포넌트 계약에서 쓴다.</div><button class="pick" data-v="B" aria-pressed="false">B로</button></div>
+        </div>
+      </article>
+
+      <article class="card" data-id="R5">
+        <header><b>5/6</b><h3>접근성 계약</h3></header>
+        <div class="body">
+          <div class="lab2">눈에 보이는 것은 셋뿐이고 나머지는 스크린리더·키보드용 마크업 규칙입니다.</div>
+          <div class="a11y">
+            <div><div class="lab2">Tab을 처음 누르면 나타나는 「본문으로 건너뛰기」 (평소엔 숨김)</div><span class="skip">본문으로 건너뛰기</span></div>
+            <div><div class="lab2">표에서 키보드로 이동 중인 셀 — 2px 그린 링</div><span class="cellf num">9,600,000</span></div>
+            <div><div class="lab2">합계 행의 저장 결과·토스트는 스크린리더에도 읽힘(aria-live)</div><div class="live">저장됨 6줄 14:02</div></div>
+            <div style="font-size:12px;color:var(--muted)">보이지 않는 규칙: 상단 바·메뉴·본문 랜드마크 · 편집 표 role=grid · 오류 셀 aria-invalid + 이유 연결 · 모달 닫히면 포커스 원위치 · 아이콘 버튼 aria-label · 200% 확대 시 폰 레이아웃으로 전환.</div>
+          </div>
+        </div>
+        <div class="opts" style="padding-top:0">
+          <div class="opt rec"><div class="lab"><kbd>A</kbd> 넣는다 <span class="r">권고</span></div><div class="why">브리프 제약 「모든 행동 키보드 도달」을 마크업 수준까지 내려 쓴 것. 나중에 붙이면 표 컴포넌트를 다시 짠다.</div><button class="pick" data-v="A" aria-pressed="false">A로</button></div>
+          <div class="opt"><div class="lab"><kbd>B</kbd> 뺀다</div><div class="why">§6 품질 바닥(대비·키보드·focus-visible)만 남긴다.</div><button class="pick" data-v="B" aria-pressed="false">B로</button></div>
+        </div>
+      </article>
+
+      <article class="card" data-id="R6">
+        <header><b>6/6</b><h3>핵심 동선 3개 스토리보드</h3></header>
+        <div class="body">
+          <div class="lab2">A. 막힘 해소 (PM · PC · 30초)</div>
+          <div class="story">
+            <div class="fr"><b>1 첫 화면</b><div class="scr"><span class="d">막힘</span> 무대설치 · 증빙 14일 경과 <span class="a">증빙 올리기</span></div><em>「내가 막은 게 하나 있다」</em></div>
+            <div class="fr"><b>2 지출결의 화면</b><div class="scr">견적 줄·금액·결재선 자동 채움<br>증빙 ┈ 비어 있음<br><span class="d">제출할 수 없음 — 증빙 없음</span></div><em>「채울 건 하나뿐」</em></div>
+            <div class="fr"><b>3 파일 끌어 놓기</b><div class="scr">세금계산서.pdf 1.2MB<br><span class="a">지출결의 제출 ⌘↵</span> 살아남</div><em>「끝났다」</em></div>
+            <div class="fr"><b>4 제출</b><div class="scr"><span class="g">결재 요청됨 → 김팀장</span><br>첫 화면의 그 줄 사라짐</div><em>「누구에게 갔는지 안다」</em></div>
+          </div>
+          <div class="lab2">B. 견적 줄 20줄 입력 (PM · PC · 몰아서)</div>
+          <div class="story">
+            <div class="fr"><b>1 프로젝트 상세</b><div class="scr">머리글 틴트 = 편집 가능<br>하단 힌트 줄</div><em>「엑셀이다」</em></div>
+            <div class="fr"><b>2 엑셀 범위 ⌘V</b><div class="scr">새 줄 20개 자동<br>dirty 셀 외곽선 · <span class="a">일괄 저장 20</span></div><em>「그대로 붙었다」</em></div>
+            <div class="fr"><b>3 ⌘S → 하나 틀림</b><div class="scr"><span class="d">5,760,00</span> 숫자 아님<br>합계 <span class="d">오류 1칸 · 전부 거부</span></div><em>「어디인지 안다」</em></div>
+            <div class="fr"><b>4 고치고 ⌘S</b><div class="scr">합계 <span class="g">저장됨 20줄 14:02</span></div><em>「저장됐다」</em></div>
+          </div>
+          <div class="lab2">C. 폰 승인 (팀장 · 이동 중 · 15초)</div>
+          <div class="story">
+            <div class="fr"><b>1 알림 → 첫 화면</b><div class="scr">하단 탭 <span class="a">내 차례 1</span><br><span class="a">결재</span> 한빛무대예술 8,800,000</div><em>「할 게 하나」</em></div>
+            <div class="fr"><b>2 행 탭 → 시트</b><div class="scr">거래처 · 증빙 썸네일 · 지급일<br>승인 · 반려</div><em>「근거가 보인다」</em></div>
+            <div class="fr"><b>3 승인</b><div class="scr">시트 닫힘<br>내 차례 블록 사라짐(0건)</div><em>「끝」</em></div>
+            <div class="fr"><b>—</b><div class="scr" style="color:var(--faint)">4단계 없음. 15초에 끝나야 한다.</div></div>
+          </div>
+        </div>
+        <div class="opts" style="padding-top:0">
+          <div class="opt rec"><div class="lab"><kbd>A</kbd> 넣는다 <span class="r">권고</span></div><div class="why">새 화면은 이 셋 중 하나에 끼어들어야 한다는 검증 기준이 된다. 화면이 늘어날 때 「왜 이 화면이 있는가」를 되묻는 장치.</div><button class="pick" data-v="A" aria-pressed="false">A로</button></div>
+          <div class="opt"><div class="lab"><kbd>B</kbd> 뺀다</div><div class="why">브리프의 검증 질문 3개만 남긴다.</div><button class="pick" data-v="B" aria-pressed="false">B로</button></div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
 </main>
 
 <div class="answer" id="answer">
-  <span>답장 문구</span><code id="reply">U1 ? · U2 ? · U3 ? · U4 ?</code>
-  <span class="hint">4개를 고르면 완성됩니다. 다른 의견은 그냥 말로 적어 주세요.</span>
+  <span>답장 문구</span><code id="reply">U1 ? · U2 ? · U3 ? · U4 ? · R1 ? · R2 ? · R3 ? · R4 ? · R5 ? · R6 ?</code>
+  <span class="hint">전부 고르면 완성됩니다. 다른 의견은 그냥 말로 적어 주세요.</span>
 </div>
 
 <script>
@@ -261,6 +482,7 @@ section h2 .s{font-size:12px;color:var(--muted);font-weight:400}
     if(mode==='pc'){stage.className='stage pc';fitOne(stage,fit,1280,1460);}
     else{stage.className='stage ph';fit.style.transform='none';fit.style.width='390px';stage.style.height='844px';}
     fitOne(stagePr,fitPr,900,1240);
+    var st=document.getElementById('stage-tb'),ft=document.getElementById('fit-tb'); if(st) fitOne(st,ft,900,900);
   }
   document.querySelectorAll('.seg button').forEach(function(b){
     b.addEventListener('click',function(){
@@ -274,7 +496,7 @@ section h2 .s{font-size:12px;color:var(--muted);font-weight:400}
   var picks={};
   try{picks=JSON.parse(localStorage.getItem('board-picks')||'{}');}catch(e){picks={};}
   function render(){
-    var ids=['U1','U2','U3','U4'];
+    var ids=['U1','U2','U3','U4','R1','R2','R3','R4','R5','R6'];
     document.getElementById('reply').textContent=ids.map(function(i){return i+' '+(picks[i]||'?');}).join(' · ');
     document.querySelectorAll('.card').forEach(function(c){
       var id=c.dataset.id;
@@ -291,7 +513,7 @@ section h2 .s{font-size:12px;color:var(--muted);font-weight:400}
   render();
 
   var links=document.querySelectorAll('.top nav a');
-  var secs=['screen','print','decide'].map(function(i){return document.getElementById(i);});
+  var secs=['screen','print','decide','review'].map(function(i){return document.getElementById(i);});
   function nav(){
     var y=window.scrollY+120,cur=0;
     secs.forEach(function(s,i){if(s.offsetTop<=y)cur=i;});

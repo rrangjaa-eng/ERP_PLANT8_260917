@@ -4,11 +4,11 @@ current_phase: 1
 current_phase_name: 배포 스켈레톤·로그인
 current_plan: 8
 status: verifying
-stopped_at: 01-08 프로덕션 승격 완료, 세션 마감
-last_updated: "2026-09-18T19:02:38.117Z"
+stopped_at: "Phase 1 마감 게이트 수행: 코드 리뷰(BLOCKER 1·MAJOR 8·MINOR 16) + 목표 검증(PARTIAL 6/7). 롤백 BLOCKER는 수정 완료. 카나리 계약 불일치는 사용자 결정 대기 — 그 전까지 Phase 1 완료 표시 보류. Phase 2는 막히지 않음"
+last_updated: "2026-09-18T19:17:50.566Z"
 last_activity: 2026-09-17
 last_activity_desc: "로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드"
-state_head: b6c1a4f07b8da968fb23da6c796cf3625c803b5b
+state_head: b7140f5f9a1f1bd477b3d093074cedb5965453a3
 progress:
   total_phases: 11
   completed_phases: 0
@@ -129,6 +129,7 @@ None yet.
 - [Phase 11]: CERT 활성화 조건은 `/cso` 보안 감사 통과. 개인정보보호법 적용 범위·보존 기간은 감사에서 재확인(리서치 Gap). 감사 뒤 KMS 봉투 승격(Issue 7)
 - [All]: 과잉 설계 재발 방지 — 페이즈마다 "인트라넷보다 못한가"로 검증하고, 실제 사용자 로그인·입력이 있어야 완료로 본다
 - [Phase 2]: `docs/design/`(SYSTEM.md 725줄·tokens.css·DECISIONS.md·BRIEF.md·EXPLORE.md)은 **이미 있다**(2026-09-18 확인). Phase 2는 이 시스템을 앱 셸·임시 화면에 적용하는 일이며, 새 화면은 SYSTEM.md 기준을 따르고 시스템을 벗어나면 DECISIONS.md에 이유를 남긴 뒤 SYSTEM.md를 고친다
+- [Phase 1]: 페이즈 검증 판정 PARTIAL(6/7) — 미충족은 ROADMAP SC6·OPS-01의 카나리 조항이다. 01-07에서 태그 전용 URL이 4회 연속 라우팅되지 않아 카나리(0%→스모크→100%)를 제거했는데 계약 문서는 그대로다. 실제 영향: 스모크 실패 리비전이 100%를 서빙한 채 남고 자동 롤백이 없다(rollback.sh 수동 복구가 유일, 그 복구는 배포 단위로 되돌리도록 수정됨). 사용자 결정 필요 — (a) 문서를 현실에 맞게 고치고 override 기록, (b) 태그 URL에 의존하지 않는 안전한 점진 배포를 후속 플랜으로 되살림. 결정 전까지 Phase 1은 완료로 표시하지 않는다
 
 ## Deferred Items
 
@@ -141,5 +142,5 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-09-18T18:54:04.478Z
-Stopped at: 01-08 프로덕션 승격 완료, 세션 마감
+Stopped at: Phase 1 마감 게이트 수행: 코드 리뷰(BLOCKER 1·MAJOR 8·MINOR 16) + 목표 검증(PARTIAL 6/7). 롤백 BLOCKER는 수정 완료. 카나리 계약 불일치는 사용자 결정 대기 — 그 전까지 Phase 1 완료 표시 보류. Phase 2는 막히지 않음
 Resume file: None

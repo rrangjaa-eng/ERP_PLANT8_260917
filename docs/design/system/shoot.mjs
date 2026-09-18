@@ -44,6 +44,8 @@ const scenes = [
   ['ceo-pc',          'dashboard-ceo.html',  'ceo',     1280, 900, false, true,  'shots/ceo-dash-pc.png'],
   ['ceo-m',           'dashboard-ceo.html',  'ceo',     390,  844, true,  true,  'shots/ceo-dash-m.png'],
   ['ceo-m-view',      'dashboard-ceo.html',  'ceo',     390,  844, true,  false, 'shots/ceo-dash-m-viewport.png'],
+  ['team-pc',         'dashboard-team.html', '',        1280, 900, false, true,  'shots/team-dash-pc.png'],
+  ['team-m',          'dashboard-team.html', '',        390,  844, true,  true,  'shots/team-dash-m.png'],
   ['cert-empty',      'external-cert.html',  'empty',   390,  844, true,  true,  'shots/cert-empty-m.png'],
   ['cert-sign',       'external-cert.html',  'sign',    390,  844, true,  true,  'shots/cert-sign-m.png'],
   ['cert-error',      'external-cert.html',  'error',   390,  844, true,  true,  'shots/cert-error-m.png'],

@@ -83,6 +83,8 @@ jobs:
           install_components: alpha,beta
       # 스테이징이 실제로 서빙 중인 SHA만 프로덕션에 올린다(D-05) — 이 가드가
       # 통과하지 못하면(exit 1) 다음 배포 스텝은 실행되지 않는다(if: success() 기본).
+      # 판정 로직은 scripts/promote-guard.sh에 있다(단위 테스트가 fakebin gcloud로
+      # 검증한다 — test/unit/deploy/promote-guard-sh.test.ts).
       - id: guard
         shell: bash
         env:
@@ -90,31 +92,10 @@ jobs:
           PROJECT: ${{ vars.GCP_PROJECT_ID }}
           REGION: ${{ vars.GCP_REGION }}
         run: |
-          source infra/names.sh
-          REV=$(gcloud run services describe "$(svc_name staging)" --region "$REGION" --project "$PROJECT" --format=json | jq -r '.status.traffic[] | select(.percent == 100) | .revisionName' | head -n1)
-          if [ -z "$REV" ]; then
-            echo "staging is not serving any revision — deploy staging first (D-05)" >&2
-            exit 1
-          fi
-          STAGING_IMAGE=$(gcloud run revisions describe "$REV" --region "$REGION" --project "$PROJECT" --format='value(spec.containers[0].image)')
-          STAGING_SHA=${STAGING_IMAGE##*:}
-          if [ -z "$SHA_INPUT" ]; then
-            SHA="$STAGING_SHA"
-          else
-            if ! [[ "$SHA_INPUT" =~ ^[0-9a-f]{7,40}$ ]]; then
-              echo "sha must be 7-40 hex chars" >&2
-              exit 1
-            fi
-            SHA=$(git rev-parse --verify "${SHA_INPUT}^{commit}")
-          fi
-          if ! gcloud artifacts docker images describe "$(image_path "$SHA" "$PROJECT" "$REGION")" --project "$PROJECT" >/dev/null 2>&1; then
-            echo "image for $SHA not found in Artifact Registry — deploy it to staging first (D-05)" >&2
-            exit 1
-          fi
-          if [ "$SHA" != "$STAGING_SHA" ]; then
-            echo "staging is serving $STAGING_SHA, not $SHA — deploy $SHA to staging first (D-05)" >&2
-            exit 1
-          fi
+          GUARD_OUT="$(bash scripts/promote-guard.sh --project "$PROJECT" --region "$REGION" --sha "$SHA_INPUT")"
+          printf '%s\n' "$GUARD_OUT"
+          SHA=$(printf '%s\n' "$GUARD_OUT" | grep '^PROMOTE_SHA=' | cut -d= -f2-)
+          STAGING_SHA=$(printf '%s\n' "$GUARD_OUT" | grep '^STAGING_SHA=' | cut -d= -f2-)
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "promoting $SHA (staging serving $STAGING_SHA)" >> "$GITHUB_STEP_SUMMARY"
       - id: deploy

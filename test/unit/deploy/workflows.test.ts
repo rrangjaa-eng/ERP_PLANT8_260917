@@ -61,17 +61,35 @@ describe("deploy.yml", () => {
     expect(productionBlock.split("\n").slice(0, 5).some((l) => l.includes("needs:"))).toBe(false);
   });
 
-  it("production 잡에 guard 스텝이 있고 스테이징 서빙 리비전·이미지 존재를 확인한다", () => {
+  it("production 잡의 guard 스텝이 scripts/promote-guard.sh에 위임하고 결과 SHA를 출력으로 넘긴다", () => {
     const productionStart = deploy.indexOf("\n  production:");
     const productionBlock = deploy.slice(productionStart);
     expect(productionBlock).toContain("id: guard");
-    expect(productionBlock).toContain("run services describe");
-    expect(productionBlock).toContain("run revisions describe");
-    expect(productionBlock).toContain("artifacts docker images describe");
-    expect(productionBlock).toContain("svc_name staging");
-    expect(productionBlock).toContain("git rev-parse --verify");
-    expect(productionBlock).toContain("exit 1");
+    expect(productionBlock).toContain("bash scripts/promote-guard.sh");
+    expect(productionBlock).toContain("PROMOTE_SHA=");
     expect(productionBlock).toMatch(/echo "sha=\$SHA" >> "\$GITHUB_OUTPUT"/);
+    expect(productionBlock).toContain("promoting $SHA (staging serving $STAGING_SHA)");
+    // 입력은 env로 넘겨 셸 인젝션을 막는다(T-1-32 — account.yml과 같은 규약).
+    expect(productionBlock).toContain("SHA_INPUT: ${{ inputs.sha }}");
+    expect(productionBlock).toContain('--sha "$SHA_INPUT"');
+  });
+
+  it("guard가 리비전 이미지 문자열에서 SHA를 잘라내지 않는다 (01-07 실측으로 기각된 전제)", () => {
+    // Cloud Run은 `app:<sha>` 태그를 다이제스트로 해석해 `app@sha256:…`로
+    // 저장한다 — 마지막 `:` 뒤를 git SHA로 쓰면 승격이 영구히 막힌다.
+    const guard = readFileSync(resolve(process.cwd(), "scripts/promote-guard.sh"), "utf8");
+    for (const content of [deploy, guard]) {
+      expect(content).not.toContain("${STAGING_IMAGE##*:}");
+      expect(content).not.toMatch(/value\(spec\.containers\[0\]\.image\)/);
+    }
+    // 대신 리비전의 APP_GIT_SHA 환경변수에서 읽는다.
+    expect(guard).toContain("APP_GIT_SHA");
+    expect(guard).toContain("run revisions describe");
+    expect(guard).toContain("artifacts docker images describe");
+    expect(guard).toContain("svc_name staging");
+    expect(guard).toContain("git rev-parse --verify");
+    expect(guard).toContain("exit 1");
+    expect(guard).not.toMatch(/[0-9]{12}/);
   });
 
   it("두 잡 모두 scripts/deploy.sh를 실행하고, staging은 --sha github.sha, production은 --env prod --sha steps.guard.outputs.sha를 쓴다", () => {

@@ -1,0 +1,1 @@
+ALTER TABLE "rate_limits" ADD COLUMN "id" text NOT NULL;

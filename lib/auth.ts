@@ -4,6 +4,8 @@ import { db } from "@/db/client";
 import * as schema from "@/db/schema";
 import { env } from "@/lib/env";
 import { getAuthProvider } from "@/domain/auth/provider";
+import { before, after } from "@/domain/auth/hooks";
+import { CLIENT_IP_HEADER } from "@/lib/client-ip";
 
 // better-auth 인스턴스. next import 금지(01-05가 CLI 번들에 포함한다) — 이 파일과
 // db/*·domain/*·repositories/*는 `next/*`·`server-only`를 import하지 않는다.
@@ -33,8 +35,26 @@ export const auth = betterAuth({
   advanced: {
     cookiePrefix: "erp",
     ipAddress: {
-      // Cloud Run 프록시가 넣는 X-Forwarded-For를 신뢰한다.
-      ipAddressHeaders: ["x-forwarded-for"],
+      // better-auth 1.7.5는 헤더 값이 쉼표로 2개 이상이면 trustedProxies 없이는
+      // IP를 null로 본다 — Cloud Run 뒤에서 원본 포워딩 헤더(XFF)를 직접 읽으면
+      // 클라이언트가 값을 하나만 끼워 넣어도 전 직원이 공용 rateLimit 버킷을
+      // 나눠 쓰게 된다(Eng Issue 1). proxy.ts가 항상 값 하나짜리 x-client-ip를
+      // 만들고, better-auth·잠금 훅은 그 헤더만 읽는다(원본 포워딩 헤더는
+      // lib/client-ip.ts 한 곳에서만 읽는다).
+      ipAddressHeaders: [CLIENT_IP_HEADER],
+    },
+  },
+  hooks: { before, after },
+  rateLimit: {
+    // better-auth 기본은 production만 활성 — 개발 환경에서도 통합 테스트로
+    // 검증하기 위해 명시적으로 켠다.
+    enabled: true,
+    storage: "database",
+    modelName: "rateLimit",
+    window: 60,
+    max: 100,
+    customRules: {
+      "/sign-in/email": { window: 60, max: env.RATE_LIMIT_LOGIN_MAX },
     },
   },
   // AUTH-04: 로그인 방식 환경 변수 전환. 기본 email에서는 undefined — 01-03이

@@ -58,8 +58,13 @@ export const verifications = pgTable("verifications", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-// better-auth rateLimit(storage: "database") 저장소. key가 기본키.
+// better-auth rateLimit(storage: "database") 저장소. key가 기본키. better-auth
+// 1.7.5는 이 모델에도 다른 모델과 같은 id 생성기를 적용해 실제로 문자열 id를
+// 만들어 insert에 넣는다(schema-diff.mjs가 모든 테이블에 id 컬럼을 요구하는 이유와
+// 같은 실측 — 01-02에서 rateLimit.storage: "database"를 처음 켜며 확인. uuid
+// 타입으로 두면 better-auth가 생성한 비-uuid 문자열이 22P02로 거부된다).
 export const rateLimits = pgTable("rate_limits", {
+  id: text("id").notNull(),
   key: text("key").primaryKey(),
   count: integer("count"),
   lastRequest: bigint("last_request", { mode: "number" }),

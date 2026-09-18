@@ -5,11 +5,21 @@ import { db } from "@/db/client";
 import { sessions } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { CLIENT_IP_HEADER } from "@/lib/client-ip";
 
 const BASE_URL = process.env.BETTER_AUTH_URL ?? "http://127.0.0.1:3000";
 
 function uniqueEmail(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}@example.test`;
+}
+
+// domain/auth/hooks.ts의 before 훅이 /sign-in/email에 x-client-ip를 강제한다
+// (fail-closed, Eng OV-2) — 이 파일의 모든 sign-in 호출은 이 헤더를 넣는다.
+// 각 it 블록은 rateLimit(60초 10회)과 겹치지 않게 서로 다른 IP를 쓴다.
+let ipCounter = 0;
+function nextTestIp(): string {
+  ipCounter += 1;
+  return `192.0.2.${ipCounter}`;
 }
 
 describe("domain/auth/accounts + better-auth 통합", () => {
@@ -23,6 +33,7 @@ describe("domain/auth/accounts + better-auth 통합", () => {
 
     const result = await auth.api.signInEmail({
       body: { email, password: tempPassword },
+      headers: new Headers({ [CLIENT_IP_HEADER]: nextTestIp() }),
     });
 
     expect(result.token).toBeTruthy();
@@ -33,7 +44,10 @@ describe("domain/auth/accounts + better-auth 통합", () => {
     await createAccount(SYSTEM_VIEWER, { email, name: "Wrong PW", isAdmin: false });
 
     await expect(
-      auth.api.signInEmail({ body: { email, password: "not-the-password" } }),
+      auth.api.signInEmail({
+        body: { email, password: "not-the-password" },
+        headers: new Headers({ [CLIENT_IP_HEADER]: nextTestIp() }),
+      }),
     ).rejects.toThrow();
   });
 
@@ -74,7 +88,7 @@ describe("domain/auth/accounts + better-auth 통합", () => {
     const signInResponse = await auth.handler(
       new Request(`${BASE_URL}/api/auth/sign-in/email`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", [CLIENT_IP_HEADER]: nextTestIp() },
         body: JSON.stringify({ email, password: tempPassword }),
       }),
     );

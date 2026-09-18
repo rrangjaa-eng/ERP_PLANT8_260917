@@ -25,6 +25,20 @@ const scenes = [
   ['p2-letter',       'print/p2-letter.html',    '', 900, 1240, false, true, 'shots/print-p2-letter.png'],
   ['p3-statement',    'print/p3-statement.html', '', 900, 1240, false, true, 'shots/print-p3-statement.png'],
   ['p4-seal',         'print/p4-seal.html',      '', 900, 1240, false, true, 'shots/print-p4-seal.png'],
+  // §6 남은 실물 3개 — 초안(2026-09-18, 보드 확인 전)
+  ['form-blocked',    'form-expense.html',   'blocked', 1280, 900, false, true,  'shots/form-blocked-pc.png'],
+  ['form-error',      'form-expense.html',   'error',   1280, 900, false, true,  'shots/form-error-pc.png'],
+  ['form-done',       'form-expense.html',   'done',    1280, 900, false, true,  'shots/form-done-pc.png'],
+  ['form-m',          'form-expense.html',   'blocked', 390,  844, true,  false, 'shots/form-blocked-m.png'],
+  ['pnl-ceo',         'dashboard-pnl.html',  'ceo',     1280, 900, false, true,  'shots/pnl-ceo-pc.png'],
+  ['pnl-lead',        'dashboard-pnl.html',  'lead',    1280, 900, false, true,  'shots/pnl-lead-pc.png'],
+  ['pnl-empty',       'dashboard-pnl.html',  'empty',   1280, 900, false, true,  'shots/pnl-empty-pc.png'],
+  ['pnl-m',           'dashboard-pnl.html',  'ceo',     390,  844, true,  true,  'shots/pnl-ceo-m.png'],
+  ['cert-empty',      'external-cert.html',  'empty',   390,  844, true,  true,  'shots/cert-empty-m.png'],
+  ['cert-sign',       'external-cert.html',  'sign',    390,  844, true,  true,  'shots/cert-sign-m.png'],
+  ['cert-error',      'external-cert.html',  'error',   390,  844, true,  true,  'shots/cert-error-m.png'],
+  ['cert-done',       'external-cert.html',  'done',    390,  844, true,  false, 'shots/cert-done-m.png'],
+  ['cert-expired',    'external-cert.html',  'expired', 390,  844, true,  false, 'shots/cert-expired-m.png'],
 ];
 
 const only = new Set(process.argv.slice(2));

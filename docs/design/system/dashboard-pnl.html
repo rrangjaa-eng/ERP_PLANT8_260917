@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PLANT8 ERP — 시스템 실물 (손익 원장)</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+/* SYSTEM.md §6-4 대시보드 = 손익 원장 실물(팀장·대표 첫 화면). 장면은 URL 해시로 고른다:
+   #ceo (기본) 대표 · 전 팀 · 열 전부 · 계산 불가 1건(PARTIAL)
+   #lead        팀장 · 기획1팀만 · 「팀」 열 없음(서버가 보내지 않음)
+   #empty       기간에 프로젝트 없음(EMPTY)
+   기획본부 렌더는 이 화면 자체가 없다(§6-4). 컴포넌트는 tokens.css 변수만 참조한다. 앱 코드가 아니다. */
+*{box-sizing:border-box;margin:0;padding:0}
+html{font-size:var(--fs-base)}
+body{background:var(--bg);color:var(--fg);font-family:var(--font-sans);font-size:var(--fs-base);line-height:var(--lh-body);letter-spacing:var(--ls-body);word-break:keep-all;overflow-wrap:anywhere;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+::selection{background:var(--sel-bg);color:var(--sel-fg)}
+:root{caret-color:var(--caret);accent-color:var(--native-accent);scrollbar-color:var(--scrollbar) var(--bg);scrollbar-width:thin}
+:focus-visible{outline:var(--focus-w) solid var(--focus);outline-offset:var(--focus-offset)}
+.num{font-variant-numeric:tabular-nums;letter-spacing:var(--ls-num);text-align:right;white-space:nowrap}
+kbd{font:inherit;font-size:var(--fs-xs);border:var(--line-w) solid var(--line);padding:0 var(--s-1);color:var(--faint);line-height:var(--lh-head)}
+
+.bar{background:var(--bar);color:var(--bar-fg);display:flex;align-items:center;gap:var(--s-6);padding:0 var(--pad-page);height:38px;font-size:var(--fs-sm);position:sticky;top:0;z-index:var(--z-bar)}
+.bar .mark{font-weight:var(--fw-mark);font-size:var(--fs-md);letter-spacing:var(--ls-head);color:#fff}
+.bar .mark i{font-style:normal;color:var(--bar-leaf)}
+.bar nav{display:flex;gap:var(--s-4)}
+.bar nav a{color:var(--bar-muted);text-decoration:none;padding:9px 0}
+.bar nav a[aria-current]{color:var(--bar-fg);font-weight:var(--fw-bold);box-shadow:inset 0 -2px 0 var(--bar-leaf)}
+.bar .r{margin-left:auto;display:flex;gap:var(--s-4);color:var(--bar-muted);align-items:center}
+.bar .r kbd{border-color:var(--g-700);color:var(--bar-fg)}
+main{padding:var(--s-5) var(--pad-page) 72px;max-width:var(--container-max)}
+
+.next{border-top:var(--line-w-strong) solid var(--line-strong);padding:var(--s-3) 0;margin-bottom:var(--s-6)}
+.next h2{font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--muted);margin-bottom:var(--s-1)}
+.next ul{list-style:none}
+.next li{display:flex;align-items:baseline;gap:var(--s-3);padding:6px 0;border-bottom:var(--line-w) dotted var(--line);min-height:var(--row-min)}
+.next li:last-child{border-bottom:0}
+.tag{font-size:var(--fs-xs);font-weight:var(--fw-medium);padding:1px 6px;border:var(--line-w) solid currentColor;color:var(--accent);flex:none;line-height:var(--lh-head)}
+.tag.w{color:var(--warning)} .tag.d{color:var(--danger)} .tag.m{color:var(--muted)}
+.next .grow{flex:1;min-width:0}
+.next .why{color:var(--muted)}
+.next .amt{flex:none;min-width:11ch}
+.next .acts{display:flex;gap:var(--s-3);flex:none;font-size:var(--fs-sm)}
+.b3{background:none;border:0;padding:0;color:var(--accent);font-weight:var(--fw-medium);border-bottom:var(--line-w) solid var(--accent);cursor:pointer;font-size:inherit;line-height:1.3;white-space:nowrap}
+.b3:hover{border-bottom-width:var(--line-w-strong)}
+
+.sec{display:flex;align-items:baseline;gap:var(--s-3);flex-wrap:wrap;padding-bottom:var(--s-2)}
+.sec h1{font-size:var(--fs-lg);font-weight:var(--fw-bold);letter-spacing:var(--ls-head);line-height:var(--lh-head)}
+.sec .sub{font-size:var(--fs-sm);color:var(--muted)}
+.sec .right{margin-left:auto;display:flex;gap:var(--s-2);align-items:center}
+.inp{height:var(--control-h);border:var(--line-w) solid var(--line-ui);background:var(--bg);padding:0 var(--s-2);border-radius:var(--radius);font-size:var(--fs-sm)}
+.btn{height:var(--control-h);padding:0 var(--s-3);font-size:var(--fs-sm);font-weight:var(--fw-medium);border:var(--line-w) solid var(--line-strong);background:var(--bg);color:var(--fg);cursor:pointer;border-radius:var(--radius);display:inline-flex;align-items:center;gap:var(--s-2);white-space:nowrap}
+.btn:hover{background:var(--surface)}
+.badge{font-size:var(--fs-xs);font-weight:var(--fw-medium);color:var(--muted);border:var(--line-w) solid currentColor;padding:1px 6px;line-height:var(--lh-head);white-space:nowrap}
+
+/* 표 (읽기용 원장) */
+table{width:100%;border-collapse:collapse;font-size:var(--fs-base);line-height:var(--lh-table)}
+caption{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+thead th{font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--muted);text-align:left;padding:7px var(--cell-pad-x);border-bottom:var(--line-w) solid var(--line-strong);white-space:nowrap;position:sticky;top:38px;background:var(--bg);z-index:var(--z-sticky)}
+thead th.num{text-align:right}
+tbody td{padding:var(--cell-pad-y) var(--cell-pad-x);border-bottom:var(--line-w) solid var(--line);vertical-align:top}
+tbody tr:hover td{background:var(--surface)}
+td.rn{font-size:var(--fs-xs);color:var(--faint);width:28px;text-align:right;padding-top:9px}
+tr.grp td{font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--muted);border-bottom:var(--line-w) solid var(--line-strong);padding-top:var(--s-4);background:var(--bg)!important}
+tfoot td{padding:9px var(--cell-pad-x);border-top:var(--line-w-strong) solid var(--line-strong);font-weight:var(--fw-bold);vertical-align:baseline}
+tfoot .lbl{font-size:var(--fs-sm);font-weight:var(--fw-regular);color:var(--muted);margin-left:var(--s-2)}
+td.empty{padding:var(--s-6) var(--cell-pad-x);color:var(--muted);text-align:left}
+.st{font-size:var(--fs-xs);font-weight:var(--fw-medium);color:var(--muted);white-space:nowrap}
+.st.ok{color:var(--success)}
+.na{color:var(--muted);font-weight:var(--fw-regular)}
+td .fold{display:none}
+td .sub{display:block;font-size:var(--fs-sm);color:var(--muted);font-weight:var(--fw-regular)}
+
+/* 목표 대비 막대 (§6-4, U4): --g-100 위 --g-700, 8×72, 오른쪽 --fs-sm 숫자 */
+.goal{display:inline-flex;align-items:center;gap:var(--s-2);white-space:nowrap}
+.goal i{display:block;width:72px;height:8px;background:var(--g-100);position:relative;flex:none}
+.goal i b{position:absolute;left:0;top:0;bottom:0;background:var(--g-700)}
+.goal span{font-size:var(--fs-sm);font-variant-numeric:tabular-nums;min-width:4ch;text-align:right}
+tfoot .goal span{font-weight:var(--fw-bold)}
+td.goalcell,th.goalcell{text-align:right}
+td.goalcell .goal{justify-content:flex-end}
+
+/* 장면 */
+body[data-scene="lead"] .ceo-only,body[data-scene="empty"] .ceo-only{display:none}
+body[data-scene="lead"] .row-other{display:none}
+body[data-scene="empty"] tbody tr:not(.empty-row){display:none}
+body[data-scene="empty"] tfoot,body[data-scene="empty"] .badge{display:none}
+body:not([data-scene="empty"]) .empty-row{display:none}
+body[data-scene="lead"] .sub-ceo{display:none}
+body:not([data-scene="lead"]) .sub-lead{display:none}
+
+/* 폰: 칸 접기 — P1 = 프로젝트 · 수익 · 목표 대비 */
+@media (max-width:699.98px){
+  .bar{height:44px}
+  .bar nav,.bar .r kbd{display:none}
+  thead th{top:44px}
+  .p2,.p3,thead th.p2,thead th.p3,.rn,thead th.rn{display:none}
+  td .fold{display:block;font-size:var(--fs-sm);color:var(--muted);text-align:left;margin-top:2px}
+  td .sub{display:none}
+  tfoot .lbl{display:none}
+  .next li{display:grid;grid-template-columns:auto 1fr;column-gap:var(--s-3);row-gap:2px;align-items:baseline}
+  .next .grow{grid-column:2}
+  .next .amt{grid-column:2;min-width:0;text-align:left;font-size:var(--fs-sm);color:var(--muted)}
+  .next .acts{grid-column:2}
+  .next .why{display:block;font-size:var(--fs-sm)}
+  .sec .right{margin-left:0;flex-basis:100%}
+  .goal i{width:56px}
+  .tabs{position:fixed;left:0;right:0;bottom:0;height:var(--touch-min);background:var(--bg);border-top:var(--line-w-strong) solid var(--line-strong);display:flex;z-index:var(--z-bar)}
+  .tabs a{flex:1;display:flex;align-items:center;justify-content:center;font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--muted);text-decoration:none}
+  .tabs a[aria-current]{color:var(--accent);box-shadow:var(--inset-tab)}
+}
+@media (min-width:700px){ .tabs{display:none} }
+@media (min-width:700px) and (max-width:1023.98px){ .p3,thead th.p3{display:none} }
+</style>
+</head>
+<body data-scene="ceo">
+<header class="bar">
+  <span class="mark">PL<i>A</i>NT8</span>
+  <nav aria-label="주 메뉴"><a href="#">프로젝트</a><a href="#">지출결의</a><a href="#">법인카드</a><a href="#">결재</a><a href="#" aria-current="page">손익</a></nav>
+  <div class="r"><span><kbd>⌘K</kbd></span><span class="sub-ceo">정우성 · 대표</span><span class="sub-lead">김도윤 · 기획1팀장</span></div>
+</header>
+
+<main>
+  <section class="next" aria-label="내 차례">
+    <h2>내 차례 2</h2>
+    <ul>
+      <li><span class="tag">결재</span><span class="grow">한빛무대예술 · LED 월 지출결의 <span class="why">· 기획1팀 박서연 · 결재 마감 14:00</span></span><span class="amt num">8,800,000</span><span class="acts"><button class="b3">승인</button><button class="b3">반려</button></span></li>
+      <li><span class="tag">결재</span><span class="grow">신세계 VIP 라운지 정산 <span class="why">· 경영관리 이수아 · 정산 결재</span></span><span class="amt num">61,200,000</span><span class="acts"><button class="b3">승인</button><button class="b3">반려</button></span></li>
+    </ul>
+  </section>
+
+  <div class="sec">
+    <h1>2026 팀 손익</h1>
+    <span class="sub"><span class="sub-ceo">전 팀 · 원화 환산 · 확정 비용 기준</span><span class="sub-lead">기획1팀 · 원화 환산 · 확정 비용 기준</span></span>
+    <div class="right">
+      <select class="inp ceo-only" aria-label="팀"><option>전 팀</option><option>기획1팀</option><option>기획2팀</option><option>경영관리</option></select>
+      <select class="inp" aria-label="연도"><option>2026</option><option>2025</option></select>
+      <span class="badge">계산 불가 1건</span>
+      <button class="btn">Excel 내보내기</button>
+    </div>
+  </div>
+
+  <table>
+    <caption>2026 팀 손익 원장</caption>
+    <thead><tr>
+      <th class="rn"></th><th>프로젝트</th><th class="p3 ceo-only">팀</th><th class="num p2">견적</th><th class="num p2">확정 비용</th><th class="num">수익</th><th class="num p3">수익률</th><th class="goalcell">목표 대비</th>
+    </tr></thead>
+    <tbody>
+      <tr class="grp"><td></td><td colspan="7">진행 중 <span class="num" style="text-align:left">5</span></td></tr>
+      <tr>
+        <td class="rn">1</td>
+        <td>2026 현대자동차 아이오닉9 미디어 론칭 쇼케이스<span class="fold">기획1팀 · 견적 48,000,000 · 비용 22,400,000 · 25.2%</span></td>
+        <td class="p3 ceo-only">기획1팀</td><td class="num p2">48,000,000</td><td class="num p2">22,400,000</td><td class="num">12,102,720</td><td class="num p3">25.2%</td>
+        <td class="goalcell"><span class="goal"><i><b style="width:100%"></b></i><span>118%</span></span></td>
+      </tr>
+      <tr class="row-other">
+        <td class="rn">2</td>
+        <td>한빛 브랜드 팝업스토어 성수<span class="fold">기획2팀 · 견적 92,000,000 · 비용 61,300,000 · 14.8%</span></td>
+        <td class="p3 ceo-only">기획2팀</td><td class="num p2">92,000,000</td><td class="num p2">61,300,000</td><td class="num">13,616,000</td><td class="num p3">14.8%</td>
+        <td class="goalcell"><span class="goal"><i><b style="width:72%"></b></i><span>72%</span></span></td>
+      </tr>
+      <tr>
+        <td class="rn">3</td>
+        <td>LG전자 올레드 체험존 코엑스<span class="fold">기획1팀 · 견적 64,000,000 · 비용 38,900,000 · 21.1%</span></td>
+        <td class="p3 ceo-only">기획1팀</td><td class="num p2">64,000,000</td><td class="num p2">38,900,000</td><td class="num">13,504,000</td><td class="num p3">21.1%</td>
+        <td class="goalcell"><span class="goal"><i><b style="width:94%"></b></i><span>94%</span></span></td>
+      </tr>
+      <tr>
+        <td class="rn">4</td>
+        <td>Skyline Travel 인센티브 투어 다낭<span class="fold">기획1팀 · 견적 38,000,000 · <span class="st">계산 불가 · 환율 없음</span></span></td>
+        <td class="p3 ceo-only">기획1팀</td><td class="num p2">38,000,000</td><td class="num p2 na">계산 불가<span class="sub">환율 없음 · USD 2건</span></td><td class="num na">계산 불가</td><td class="num p3 na">—</td>
+        <td class="goalcell"><span class="goal"><span class="na">—</span></span></td>
+      </tr>
+      <tr class="row-other">
+        <td class="rn">5</td>
+        <td>서울시 야외도서관 운영 대행<span class="fold">기획2팀 · 견적 27,000,000 · 비용 19,800,000 · 8.9%</span></td>
+        <td class="p3 ceo-only">기획2팀</td><td class="num p2">27,000,000</td><td class="num p2">19,800,000</td><td class="num">2,403,000</td><td class="num p3">8.9%</td>
+        <td class="goalcell"><span class="goal"><span class="na">—</span></span></td>
+      </tr>
+      <tr class="grp"><td></td><td colspan="7">완료 · 정산 <span class="num" style="text-align:left">2</span></td></tr>
+      <tr>
+        <td class="rn">6</td>
+        <td>신세계 VIP 라운지 리뉴얼<span class="fold">기획1팀 · 견적 210,000,000 · 비용 148,800,000 · <span class="st ok">정산 09-08</span></span></td>
+        <td class="p3 ceo-only">기획1팀</td><td class="num p2">210,000,000</td><td class="num p2">148,800,000</td><td class="num">61,200,000<span class="sub">정산 <span class="num">09-08</span> · 스냅샷</span></td><td class="num p3">29.1%</td>
+        <td class="goalcell"><span class="goal"><i><b style="width:100%"></b></i><span>131%</span></span></td>
+      </tr>
+      <tr class="row-other">
+        <td class="rn">7</td>
+        <td>카카오 개발자 컨퍼런스 부스<span class="fold">기획2팀 · 견적 41,000,000 · 비용 33,700,000 · <span class="st ok">정산 08-22</span></span></td>
+        <td class="p3 ceo-only">기획2팀</td><td class="num p2">41,000,000</td><td class="num p2">33,700,000</td><td class="num">7,300,000<span class="sub">정산 <span class="num">08-22</span> · 스냅샷</span></td><td class="num p3">17.8%</td>
+        <td class="goalcell"><span class="goal"><i><b style="width:61%"></b></i><span>61%</span></span></td>
+      </tr>
+      <tr class="empty-row"><td class="empty" colspan="8">이 기간에 프로젝트가 없습니다 · <button class="b3">기간 바꾸기</button></td></tr>
+    </tbody>
+    <tfoot><tr>
+      <td></td><td>합계<span class="lbl">계산된 것만 · 6건 · 계산 불가 1건 제외</span></td><td class="p3 ceo-only"></td>
+      <td class="num p2 sub-ceo">482,000,000</td><td class="num p2 sub-ceo">324,900,000</td><td class="num sub-ceo">110,125,720</td><td class="num p3 sub-ceo">22.8%</td>
+      <td class="num p2 sub-lead">322,000,000</td><td class="num p2 sub-lead">210,100,000</td><td class="num sub-lead">86,806,720</td><td class="num p3 sub-lead">27.0%</td>
+      <td class="goalcell"><span class="goal"><i><b style="width:100%"></b></i><span>104%</span></span></td>
+    </tr></tfoot>
+  </table>
+</main>
+
+<nav class="tabs" aria-label="하단 탭"><a href="#">내 차례 2</a><a href="#">결재</a><a href="#" aria-current="page">손익</a><a href="#">더보기</a></nav>
+
+<script>
+(function(){var h=location.hash.slice(1);if(['ceo','lead','empty'].includes(h))document.body.dataset.scene=h;})();
+</script>
+</body>
+</html>

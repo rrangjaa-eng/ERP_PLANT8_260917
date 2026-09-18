@@ -55,7 +55,19 @@ differs from actual status.url (https://plant8-prod-<해시>-du.a.run.app) — u
 
 ## 아직 안 한 것
 
-- [ ] **프로덕션 계정 발급** — `account` 워크플로 미실행. 프로덕션에는 계정이 0개다.
+- [x] **프로덕션 계정 발급 완료** — `account` 워크플로 `workflow_dispatch` 2회.
+      이름은 스테이징과 같게 맞췄다(`admin` / `test`). 임시 비밀번호는 리포에
+      절대 남기지 않는다(T-1-37) — Actions 실행 로그에만 있고 첫 로그인 직후
+      변경한다(D-08 배너).
+  - 관리자(`admin`, 관리자 권한): 실행 `35380666520` **재시도 2회차 success**
+    (Cloud Run 실행 `plant8-prod-account-...`).
+    1회차는 `gcloud run jobs execute`가 **토큰 갱신 실패**로 6초 만에 죽었다 —
+    `There was a problem refreshing your current auth tokens: ('Connection
+    aborted.', RemoteDisconnected(...))`. 잡 실행 자체가 시작되지 않았고
+    (계정 미생성), `createAccount`가 중복 이메일을 거부하므로 재시도는
+    안전했다. 일시적 네트워크 실패로 판정하고 **1회만** 재시도했다.
+  - 테스트 직원(`test`, 일반 권한): 실행 `35380946900` **success**
+    (Cloud Run 실행 `plant8-prod-account-f62zn`).
 - [ ] **human-check** — 브라우저에서 로그인 / 임시 비밀번호 배너 / 비밀번호 변경 /
       `/admin/system-status` 실데이터 / 테스트 직원 404 / 세션 유지
 - [ ] **백업 경보 필터 확인** — 첫 자동 백업 창(18:00 UTC) 이후에만 볼 수 있다(01-07에서 이월)

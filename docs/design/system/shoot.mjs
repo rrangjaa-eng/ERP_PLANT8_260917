@@ -51,6 +51,7 @@ const scenes = [
   ['cert-error',      'external-cert.html',  'error',   390,  844, true,  true,  'shots/cert-error-m.png'],
   ['cert-done',       'external-cert.html',  'done',    390,  844, true,  false, 'shots/cert-done-m.png'],
   ['cert-expired',    'external-cert.html',  'expired', 390,  844, true,  false, 'shots/cert-expired-m.png'],
+  ['cert-post',       'external-cert.html',  'post',    390,  844, true,  true,  'shots/cert-post-m.png'],
 ];
 
 const only = new Set(process.argv.slice(2));

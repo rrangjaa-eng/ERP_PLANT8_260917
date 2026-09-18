@@ -12,7 +12,8 @@
    #error        주민등록번호 형식 오류 · ~해 주세요체
    #done         제출됨 · 링크 닫힘 (PDF 링크 없음 = v1)
    #expired      이미 제출된 링크로 재진입
-   2026-09-18 사용자: 기타소득은 거의 경품(현물)이라 지급액·계좌를 빼고 경품명만 보인다(시가·원천징수·제세공과금 줄 없음).
+   #post         택배 전달일 때 — 주소 칸이 보인다(담당자가 링크 만들 때 정함). 기본은 현장 수령: 주소 칸 없음
+   2026-09-18 사용자: 기타소득은 거의 경품(현물)이라 지급액·계좌를 빼고 경품명만 보인다(시가·원천징수·제세공과금·「미리 채운」 안내 없음). 주소는 택배일 때만.
    이 화면만 본문 --fs-md · 입력 48px · 한 열. 나머지 규칙(직각·틴트·색)은 그대로. 컴포넌트는 tokens.css 변수만 참조한다. 앱 코드가 아니다. */
 *{box-sizing:border-box;margin:0;padding:0}
 html{font-size:var(--fs-md)}
@@ -79,6 +80,10 @@ h1{font-size:var(--fs-xl);font-weight:var(--fw-bold);letter-spacing:var(--ls-hea
 .state p{margin-bottom:var(--s-3)}
 .state .who{font-size:var(--fs-sm);color:var(--muted)}
 
+.row-addr,.only-post{display:none}
+body[data-post] .row-addr{display:block}
+body[data-post] .only-post{display:inline}
+body[data-post] .only-site{display:none}
 /* 장면 */
 body[data-scene="empty"] .s-sign,body[data-scene="empty"] .s-error,body[data-scene="empty"] .s-done,body[data-scene="empty"] .s-expired{display:none}
 body[data-scene="sign"] .s-empty,body[data-scene="sign"] .s-error,body[data-scene="sign"] .s-done,body[data-scene="sign"] .s-expired{display:none}
@@ -101,7 +106,6 @@ body[data-scene="error"] .sig svg{display:block}
     <dl>
       <dt>경품</dt><dd class="big">갤럭시 탭 S10 <span class="num">1</span>개</dd>
     </dl>
-    <p class="ro">PLANT8이 미리 채운 내용입니다 · 다르면 담당자 박서연에게 연락해 주세요</p>
   </section>
 
   <form class="form" onsubmit="return false">
@@ -110,14 +114,14 @@ body[data-scene="error"] .sig svg{display:block}
       <div class="two"><input id="rrn1" class="inp num" inputmode="numeric" placeholder="930412" maxlength="6"><span class="dash">-</span><input id="rrn2" class="inp num" inputmode="numeric" type="password" placeholder="•••••••" maxlength="7"></div>
       <div class="ferr s-error">주민등록번호 형식이 아닙니다 · 앞 6자리, 뒤 7자리를 적어 주세요</div>
     </div>
-    <div class="row"><label for="addr">주소 <span class="lbl-sub">경품 받을 곳</span></label><input id="addr" class="inp" placeholder="도로명 주소"></div>
+    <div class="row row-addr"><label for="addr">주소 <span class="lbl-sub">택배로 보내 드립니다</span></label><input id="addr" class="inp" placeholder="도로명 주소"></div>
     <div class="row"><label for="tel">연락처</label><input id="tel" class="inp num" inputmode="tel" placeholder="010-0000-0000"></div>
 
     <div class="sep"></div>
 
     <div class="consent">
       <input type="checkbox" id="agree">
-      <label for="agree">개인정보 수집·이용에 동의합니다<small>수집 항목 이름 · 주민등록번호 · 주소 · 연락처 — 기타소득 원천징수 신고와 경품 전달에만 쓰고, 법정 보존 기간(5년) 뒤 파기합니다. 동의하지 않으면 지급이 진행되지 않습니다. <button type="button" class="b3 sm">전문 보기</button></small></label>
+      <label for="agree">개인정보 수집·이용에 동의합니다<small>수집 항목 이름 · 주민등록번호 · <span class="only-post">주소 · </span>연락처 — 기타소득 원천징수 신고와 경품 전달에만 쓰고, 법정 보존 기간(5년) 뒤 파기합니다. 동의하지 않으면 지급이 진행되지 않습니다. <button type="button" class="b3 sm">전문 보기</button></small></label>
     </div>
 
     <div class="sep"></div>
@@ -134,7 +138,7 @@ body[data-scene="error"] .sig svg{display:block}
 
   <section class="state s-done" aria-live="polite">
     <p><b>제출되었습니다 · 이 링크는 닫혔습니다</b></p>
-    <p class="who">김하늘 · <span class="num">2026-09-20 18:42</span> 제출 · 갤럭시 탭 S10 <span class="num">1</span>개를 적은 주소로 보내 드립니다</p>
+    <p class="who">김하늘 · <span class="num">2026-09-20 18:42</span> 제출 · 갤럭시 탭 S10 <span class="num">1</span>개 <span class="only-site">현장 수령</span><span class="only-post">적은 주소로 보내 드립니다</span></p>
     <p class="who">확인이 필요하면 담당자 박서연 · PLANT8 경영관리에 연락해 주세요</p>
   </section>
 
@@ -144,7 +148,7 @@ body[data-scene="error"] .sig svg{display:block}
   </section>
 <div class="submit">
   <button class="btn" disabled aria-describedby="why">확인증 제출</button>
-  <span class="blocked s-empty" id="why">이름 · 주민등록번호 · 주소 · 연락처 · 동의 · 서명을 채우면 제출할 수 있습니다</span>
+  <span class="blocked s-empty" id="why">이름 · 주민등록번호 · <span class="only-post">주소 · </span>연락처 · 동의 · 서명을 채우면 제출할 수 있습니다</span>
   <span class="blocked s-sign">서명을 해 주세요</span>
   <span class="blocked s-error">주민등록번호를 고쳐 주세요 · 나머지는 채워졌습니다</span>
 </div>
@@ -153,6 +157,7 @@ body[data-scene="error"] .sig svg{display:block}
 <script>
 (function(){
   var h=location.hash.slice(1);
+  if(h==='post'){document.body.dataset.post='1';h='empty'}
   if(['empty','sign','error','done','expired'].includes(h))document.body.dataset.scene=h;
   if(h==='sign'||h==='error'){
     var v={name:'김하늘',rrn1:'930412',rrn2:'2345678',addr:'서울특별시 마포구 월드컵북로 396, 누리꿈스퀘어 비즈니스타워 1203호',tel:'010-4821-7730'};

@@ -51,7 +51,17 @@ Decimal phases appear between their surrounding integers in numeric order.
   5. `docs/ARCHITECTURE.md`와 `docs/OPERATIONS.md`(런북 포함)가 이 페이즈의 산출물로 존재하고 각 300줄 상한이며 이후 페이즈마다 갱신된다. ARCHITECTURE.md는 4계층 구조와 단일 지점 셋(`domain/money`·`domain/rules.gate`·`project(viewer, dto)`)의 계층 다이어그램을 기록한다(Issue 1). OPERATIONS.md에는 월 운영 비용 목표(Cloud Run 스케일-투-제로 + Cloud SQL 최소 사양, 유휴 시에도 DB는 과금)와 실제 과금 항목, 배포·롤백·경보 대응 절차가 적혀 있다
   6. 배포는 CI 통과 뒤 같은 이미지의 Cloud Run Job(migrate)을 deploy.sh가 먼저 실행하고 실패하면 중단하며, 성공하면 트래픽 0% 리비전 → 스모크 → 100% 순서로 진행된다. 마이그레이션은 drizzle-kit generate가 만든 SQL 파일만 쓰고 CI에서 `drizzle-kit push`는 금지되며, Squawk이 그 SQL을 린트해 확장-축소(expand-contract) 위반(컬럼 drop·잠금 유발 변경)을 CI에서 거부한다 — "확장-축소 마이그레이션 린트"의 실체가 Squawk이다. `scripts/rollback.sh`는 이전 리비전으로 트래픽을 되돌린다(Issue 4). deploy.sh는 max-instances × 커넥션 풀 ≤ DB max_connections − 5 를 검사해 초과 시 배포를 거부한다(16A 공식 유지; 풀·max-instances·DB 티어 숫자는 Phase 1 계획에서 정한다). Cloud Monitoring 경보 3개(5xx > 5%·알림 tick 24시간 미성공·백업 실패)가 관리자 메일로 가고 deploy.sh로 재현된다(스케줄러 잡·서비스 계정 생성은 Phase 7에서 deploy.sh에 더한다)
   7. 관리자 시스템 상태 화면 뼈대가 있어 배포 버전·DB 커넥션·마지막 백업을 보이고 한도 초과 시 배너가 뜬다. 서버 로그는 JSON 형식이다. 이후 페이즈가 항목을 더한다(Phase 7 마지막 알림 tick, Phase 8 이전 실행·백업, Phase 9 계산 불가 건수)
-**Plans**: TBD
+**Plans**: 8 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Walking Skeleton: 의존성 승인 → Next.js 16/TS 6/Drizzle/better-auth 골격 + 로그인→DB 세션→로그아웃 트레이서 + dev-db·healthz·테스트 러너 (W1)
+- [ ] 01-02-PLAN.md — 계정 CLI(create/reset/unlock) + login_attempts 잠금 훅 + IP 속도 제한 + 행동 로그 이벤트 (W2)
+- [ ] 01-03-PLAN.md — 비밀번호 변경(authedActionClient)·임시 비밀번호 배너·AUTH_PROVIDER 전환·관리자 시스템 상태 화면 뼈대 (W3)
+- [ ] 01-04-PLAN.md — ESLint 4계층 경계·커스텀 규칙 3개·Squawk·CI 워크플로·ARCHITECTURE.md/OPERATIONS.md 초판 (W4)
+- [ ] 01-05-PLAN.md — Dockerfile 멀티스테이지·esbuild CLI 번들·db-bootstrap Job·16A 커넥션 규칙(migrate-runner) (W5, 01-06과 병렬)
+- [ ] 01-06-PLAN.md — deploy.sh·rollback.sh·bootstrap-gcp.sh·경보 정책 3개·deploy.yml/account.yml — 가짜 gcloud 테스트 (W5, 01-05와 병렬)
+- [ ] 01-07-PLAN.md — 리소스 이름 결정 → 사용자 Cloud Shell 부트스트랩 → 스테이징 첫 배포·계정 발급·검증·실측 기록 (W6)
+- [ ] 01-08-PLAN.md — production 승인 배포·프로덕션 검증·OPERATIONS.md 실측 반영·CLAUDE.md 명령 확정 (W7)
 
 화면 범위(하드 제약 2): 이 페이즈의 화면은 로그인·내 계정(비밀번호 변경·로그아웃)·관리자 시스템 상태 뼈대 셋뿐이고 업무 화면은 없다. `docs/design/SYSTEM.md` 전이라 임시(무스타일) 화면이며 Phase 2에서 교체된다. 계정 발급의 관리 화면은 Phase 3(MAST-02)에서 붙는다. 회사 GCP가 확보되기 전까지는 로컬(Auth Proxy + 로컬 Postgres)에서만 개발하고, deploy.sh의 첫 성공이 이 페이즈의 완료 조건이다.
 

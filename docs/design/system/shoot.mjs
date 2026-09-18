@@ -9,7 +9,7 @@ const globalRoot = execSync('npm root -g').toString().trim();
 const { chromium } = await import(pathToFileURL(resolve(globalRoot, 'playwright/index.mjs')).href);
 
 const dir = 'docs/design/system';
-// [이름, 파일, 해시, 폭, 높이, isMobile, fullPage, 출력]
+// [이름, 파일, 해시, 폭, 높이, isMobile, fullPage, 출력, (선택자 — 있으면 그 요소만 캡처)]
 const scenes = [
   ['preview-pc',      'preview.html',       '',          1280, 900, false, true,  'shots/preview-pc.png'],
   ['preview-m',       'preview.html',       '',          390,  844, true,  true,  'shots/preview-m.png'],
@@ -33,6 +33,8 @@ const scenes = [
   ['form-pick-pc',    'form-expense.html',   'pick',    1280, 800, false, false, 'shots/form-pick-pc.png'],
   ['form-pick-m',     'form-expense.html',   'pick',    390,  844, true,  false, 'shots/form-pick-m.png'],
   ['form-inline-pc',  'form-expense.html',   'pick-inline', 1280, 600, false, false, 'shots/form-inline-pc.png'],
+  ['form-self-a',     'form-expense.html',   'self-a',  1280, 900, false, false, 'shots/form-self-a.png', '.chain-row'],
+  ['form-self-b',     'form-expense.html',   'self-b',  1280, 900, false, false, 'shots/form-self-b.png', '.chain-row'],
   ['pnl-ceo',         'dashboard-pnl.html',  'ceo',     1280, 900, false, true,  'shots/pnl-ceo-pc.png'],
   ['pnl-lead',        'dashboard-pnl.html',  'lead',    1280, 900, false, true,  'shots/pnl-lead-pc.png'],
   ['pnl-empty',       'dashboard-pnl.html',  'empty',   1280, 900, false, true,  'shots/pnl-empty-pc.png'],
@@ -47,7 +49,7 @@ const scenes = [
 
 const only = new Set(process.argv.slice(2));
 const browser = await chromium.launch();
-for (const [name, file, hash, w, h, mobile, fullPage, out] of scenes) {
+for (const [name, file, hash, w, h, mobile, fullPage, out, selector] of scenes) {
   if (only.size && !only.has(name)) continue;
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 2, isMobile: mobile, hasTouch: mobile });
   const page = await ctx.newPage();
@@ -58,7 +60,8 @@ for (const [name, file, hash, w, h, mobile, fullPage, out] of scenes) {
     await page.setViewportSize({ width: w, height: Math.max(h, full) });
     await page.waitForTimeout(100);
   }
-  await page.screenshot({ path: resolve(dir, out), fullPage });
+  if (selector) await page.locator(selector).screenshot({ path: resolve(dir, out) });
+  else await page.screenshot({ path: resolve(dir, out), fullPage });
   await ctx.close();
   console.log('ok', name, '→', out);
 }

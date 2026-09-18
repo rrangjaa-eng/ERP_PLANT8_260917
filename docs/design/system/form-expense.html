@@ -10,6 +10,7 @@
    #blocked (기본) 막힘 = 증빙 없음 · 제출 버튼 비활성 + 이유 + 다음 한 수
    #error   서버 검증 오류 = 지급 예정일 형식 · 값 보존 · 원인 · 다음 행동
    #done    제출됨 = 버튼 자리에 결과 + 토스트
+   #self-a / #self-b  (d) 자기 승인 건너뜀 표시 2안(기안자 = 팀장 김도윤): a 취소선 / b 한 마디
    #pick    「바꾸기」 안 1 = 목록 골라내기(PC 모달 480 · 폰 시트) / #pick-inline 안 2 = 제자리 select
    컴포넌트는 tokens.css 변수만 참조한다. 앱 코드가 아니다. */
 *{box-sizing:border-box;margin:0;padding:0}
@@ -135,6 +136,11 @@ body[data-pick="inline"] .ro-line{display:none}
 body[data-pick="inline"] .ro-inline{display:flex}
 .ro-inline select.inp{max-width:none;width:auto;flex:1}
 .ro-inline .b3{font-size:var(--fs-sm)}
+.chain-self-a,.chain-self-b{display:none}
+body[data-self="a"] .chain-normal,body[data-self="b"] .chain-normal{display:none}
+body[data-self="a"] .chain-self-a{display:flex}
+body[data-self="b"] .chain-self-b{display:flex}
+body[data-self] .bar .r span:last-child{display:none}
 
 /* 장면 */
 body[data-scene="blocked"] :is(.s-error,.s-done):not(.s-blocked){display:none}
@@ -211,7 +217,12 @@ body[data-scene="done"] .inp,body[data-scene="done"] select{pointer-events:none}
 
     <div class="sep"></div>
 
-    <div class="row"><span class="lbl">결재선</span><div class="chain"><span class="me">박서연</span><span class="arrow">→</span><span>김도윤 <span class="why">팀장</span></span><span class="arrow">→</span><span>이수아 <span class="why">경영관리</span></span><span class="arrow">→</span><span>대표</span><span class="why">· 자기 승인 없음 · 결재 규칙</span></div></div>
+    <div class="row chain-row"><span class="lbl">결재선</span><div>
+      <div class="chain chain-normal"><span class="me">박서연</span><span class="arrow">→</span><span>김도윤 <span class="why">팀장</span></span><span class="arrow">→</span><span>이수아 <span class="why">경영관리</span></span><span class="arrow">→</span><span>대표</span><span class="why">· 결재 규칙</span></div>
+      <!-- (d) 자기 승인 건너뜀(Eng OV-2) 표시 2안 — 기안자가 팀장 김도윤일 때 -->
+      <div class="chain chain-self-a"><span class="me">김도윤</span><span class="arrow">→</span><span class="skip">김도윤 <span class="why">팀장</span></span><span class="arrow">→</span><span>이수아 <span class="why">경영관리</span></span><span class="arrow">→</span><span>대표</span><span class="why">· 자기 승인 없음 · 결재 규칙</span></div>
+      <div class="chain chain-self-b"><span class="me">김도윤</span><span class="arrow">→</span><span>이수아 <span class="why">경영관리</span></span><span class="arrow">→</span><span>대표</span><span class="why">· 팀장 단계 건너뜀(자기 승인 없음) · 결재 규칙</span></div>
+    </div></div>
 
     <div class="submit">
       <button class="btn p s-blocked" disabled aria-describedby="why">지출결의 제출 <kbd>⌘↵</kbd></button>
@@ -252,7 +263,7 @@ body[data-scene="done"] .inp,body[data-scene="done"] select{pointer-events:none}
 <nav class="tabs" aria-label="하단 탭"><a href="#">내 차례 4</a><a href="#">프로젝트</a><a href="#" aria-current="page">지출결의</a><a href="#">더보기</a></nav>
 
 <script>
-(function(){var h=location.hash.slice(1);if(['blocked','error','done'].includes(h))document.body.dataset.scene=h;if(h==='pick')document.body.dataset.pick='modal';if(h==='pick-inline')document.body.dataset.pick='inline';})();
+(function(){var h=location.hash.slice(1);if(['blocked','error','done'].includes(h))document.body.dataset.scene=h;if(h==='pick')document.body.dataset.pick='modal';if(h==='pick-inline')document.body.dataset.pick='inline';if(h==='self-a'||h==='self-b'){document.body.dataset.self=h.slice(-1);document.querySelector('.sec h1').textContent='지출결의 — 아이오닉9 · 팀 회식';document.querySelector('.bar .r').insertAdjacentHTML('beforeend','<span>김도윤 · 기획1팀장</span>');}})();
 </script>
 </body>
 </html>

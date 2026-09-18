@@ -432,21 +432,23 @@ deploy_service() {
   # 서비스는 이미 100%라 no-op이다.
   run gcloud run services update-traffic "$svc" --region="$REGION" --project="$PROJECT" --to-latest
 
-  # `describe().status.url`은 이 서비스에서 `<svc>-<hash>-<region코드>.a.run.app`
-  # 형식(예: plant8-staging-67rumhdgba-du.a.run.app)의 대체 호스트명을
-  # 돌려준다 — 이 호스트명은 오늘 하루 실제 스테이징에서 5차례(카나리 태그
-  # URL 4회 + run #12 직접 curl 1회) 전부 404/라우팅 실패로 재현됐다(반면
-  # `gcloud run deploy`/`services update`가 매번 자체적으로 보고하는
-  # "Service URL:"은 항상 계산한 정본 형식 `<svc>-<PROJECT_NUMBER>.
-  # <region>.run.app`과 일치했고, 실제로 작동한다). 과거엔 이 대체 URL을
-  # "실측값"으로 신뢰해 SERVICE_URL을 덮어썼는데, 그게 바로 run #12
-  # 스모크가 404로 계속 실패한 원인이었다(2026-09-18) — 이 프로젝트에서
-  # 정본이 아닌 쪽이 오히려 이 대체 URL이었다. 이제 진단 로그만 남기고
-  # SERVICE_URL은 절대 덮어쓰지 않는다.
+  # run #12에서 "gcloud run deploy가 화면에 찍는 Service URL:이 정본"이라고
+  # 판단해 describe().status.url을 무시하도록 바꿨었는데, 그게 틀렸다
+  # (2026-09-18 run #14 진단으로 확인). `gcloud run deploy`의 화면 출력
+  # "Service URL:"은 서비스의 실제 status.url 필드가 아니라 프로젝트
+  # 번호로 만든 별개의 문자열이었다 — 실제 services describe --format=yaml
+  # 결과를 보면 status.conditions(Ready·ConfigurationsReady·RoutesReady)가
+  # 전부 True이고 트래픽도 최신 리비전에 100%인데, status.url 필드 자체는
+  # 계산한 프로젝트번호 URL이 아니라 대체 호스트명이었다 — 즉 이 프로젝트의
+  # 진짜 서비스 URL은 항상 이 대체 호스트명이었고, 계산한 프로젝트번호
+  # URL 쪽이 애초에 틀린 값이었다. status.url을 다시 신뢰값으로 쓴다.
   local describe_url
   describe_url="$(run gcloud run services describe "$svc" --region="$REGION" --project="$PROJECT" --format='value(status.url)')"
   if [ "$describe_url" != "$SERVICE_URL" ]; then
-    echo "note: describe url ($describe_url) differs from canonical ($SERVICE_URL) — using canonical, the alternate host is unreliable in this project" >&2
+    echo "note: computed url ($SERVICE_URL) differs from actual status.url ($describe_url) — using status.url" >&2
+    SERVICE_URL="$describe_url"
+    run gcloud run services update "$svc" --region="$REGION" --project="$PROJECT" \
+      --update-env-vars="BETTER_AUTH_URL=${SERVICE_URL}"
   fi
 }
 
@@ -468,7 +470,7 @@ smoke() {
   local target="$SERVICE_URL"
 
   if [ "$DRY_RUN" = "1" ]; then
-    run curl -fsS --retry 60 --retry-delay 15 --retry-all-errors "${target}/healthz"
+    run curl -fsS --retry 20 --retry-delay 15 --retry-all-errors "${target}/healthz"
     run curl -s -o /dev/null -w '%{http_code}' "${target}/login"
     run curl -s -o /dev/null -w '%{http_code}' -X POST \
       -H "Origin: ${SERVICE_URL}" -H 'content-type: application/json' \
@@ -477,7 +479,7 @@ smoke() {
     return 0
   fi
 
-  if ! run curl -fsS --retry 60 --retry-delay 15 --retry-all-errors "${target}/healthz" | grep -q '"ok":true'; then
+  if ! run curl -fsS --retry 20 --retry-delay 15 --retry-all-errors "${target}/healthz" | grep -q '"ok":true'; then
     echo "SmokeFailed: run scripts/rollback.sh if this is a real regression" >&2
     _dump_service_diagnostics
     exit 1

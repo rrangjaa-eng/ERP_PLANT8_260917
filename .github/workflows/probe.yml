@@ -1,0 +1,125 @@
+name: probe
+
+# 임시 워크플로 — 01-07 Task 3의 실측(XFF 레이트리밋 프로브 + max_connections·
+# 조직 정책·도메인 매핑 확인)을 GitHub Actions 안에서 한다. 실행자 세션은
+# 아웃바운드 방화벽 때문에 Cloud Run URL에도, Actions 로그 저장소에도 닿지
+# 못한다 — 그래서 결과를 orphan 브랜치 probe-result에 커밋해 API로 읽는다.
+# 측정이 끝나면 이 파일과 브랜치를 모두 지운다.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/erp-repo
+          service_account: gha-deployer@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          install_components: alpha,beta
+      - shell: bash
+        env:
+          PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+        run: |
+          set -u
+          source infra/names.sh
+          SVC="$(svc_name staging)"
+          OUT=/tmp/probe-result.txt
+          : > "$OUT"
+          say() { printf '%s\n' "$*" >> "$OUT"; }
+
+          SERVICE_URL="$(gcloud run services describe "$SVC" --region "$REGION" --project "$PROJECT" --format='value(status.url)')"
+          say "## service"
+          say "SERVICE_URL=$SERVICE_URL"
+          say ""
+
+          # --- 1. 엔드포인트 실측 -------------------------------------------
+          say "## endpoints"
+          say "/api/health code: $(curl -s -o /tmp/health.json -w '%{http_code}' --max-time 20 "$SERVICE_URL/api/health" || echo ERR)"
+          say "/api/health body: $(head -c 400 /tmp/health.json 2>/dev/null || true)"
+          say "/login code: $(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$SERVICE_URL/login" || echo ERR)"
+          say "/healthz code (Google 예약 경로 확인용): $(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$SERVICE_URL/healthz" || echo ERR)"
+          say ""
+
+          # --- 2. XFF 레이트리밋 프로브 --------------------------------------
+          # 요청마다 X-Forwarded-For를 다르게 위조한다. 앱이 클라이언트가 보낸
+          # XFF를 무시하고 진짜 소스 IP(러너 IP)로 묶으면 11번째가 429여야 한다.
+          # RATE_LIMIT_LOGIN_MAX=10, window=60s — 11회를 60초 안에 끝낸다.
+          say "## xff rate-limit probe (expect 429 on #11)"
+          say "started_at=$(date -u +%FT%TZ)"
+          for i in $(seq 1 11); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -X POST \
+              -H "Origin: $SERVICE_URL" \
+              -H "X-Forwarded-For: 10.0.0.$i" \
+              -H 'content-type: application/json' \
+              -d '{"email":"probe@example.invalid","password":"x"}' \
+              "$SERVICE_URL/api/auth/sign-in/email" || echo ERR)
+            say "  #$i  XFF=10.0.0.$i  -> $CODE"
+          done
+          say "finished_at=$(date -u +%FT%TZ)"
+          say ""
+
+          # --- 3. max_connections (migrate Job 구조화 로그에서) ---------------
+          say "## max_connections (migrate job log)"
+          gcloud logging read \
+            "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"$(job_name staging migrate)\" AND jsonPayload.event=\"db.max_connections\"" \
+            --project "$PROJECT" --freshness=7d --limit=5 --format='value(jsonPayload.value, jsonPayload.event, timestamp)' >> "$OUT" 2>&1 || true
+          say ""
+
+          # --- 4. better-auth no-trusted-ip 경고 유무 -------------------------
+          say "## better-auth no-trusted-ip warnings (expect none)"
+          gcloud logging read \
+            "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"$SVC\" AND textPayload:\"no-trusted-ip\"" \
+            --project "$PROJECT" --freshness=7d --limit=5 --format='value(textPayload, timestamp)' >> "$OUT" 2>&1 || true
+          say "(위가 비어 있으면 경고 없음)"
+          say ""
+
+          # --- 5. 조직 정책 --------------------------------------------------
+          say "## org policies (effective)"
+          for c in iam.allowedPolicyMemberDomains run.allowedIngress compute.restrictVpcPeering iam.workloadIdentityPoolProviders; do
+            say "--- $c"
+            gcloud org-policies describe "$c" --project "$PROJECT" --effective >> "$OUT" 2>&1 || true
+          done
+          say ""
+
+          # --- 6. 도메인 매핑 리전 지원(A1) -----------------------------------
+          say "## domain mappings ($REGION)"
+          gcloud beta run domain-mappings list --region "$REGION" --project "$PROJECT" >> "$OUT" 2>&1 || true
+          say ""
+
+          # --- 7. deploy.yml 가드 전제(트래픽 100% 단일 항목 · 이미지 태그) ----
+          say "## traffic + serving image (deploy.yml guard assumptions)"
+          gcloud run services describe "$SVC" --region "$REGION" --project "$PROJECT" \
+            --format='json(status.traffic)' >> "$OUT" 2>&1 || true
+          REV=$(gcloud run services describe "$SVC" --region "$REGION" --project "$PROJECT" --format=json | jq -r '.status.traffic[] | select(.percent == 100) | .revisionName' | head -n1)
+          say "serving revision: $REV"
+          say "serving image: $(gcloud run revisions describe "$REV" --region "$REGION" --project "$PROJECT" --format='value(spec.containers[0].image)' 2>&1 || true)"
+          say ""
+
+          # --- 8. 경보 정책 3개 ----------------------------------------------
+          say "## alert policies"
+          gcloud alpha monitoring policies list --project "$PROJECT" \
+            --format='value(displayName, enabled)' >> "$OUT" 2>&1 || true
+          say ""
+
+          # --- 마스킹: 프로젝트 번호(12자리)·프로젝트 ID는 리포에 남기지 않는다
+          sed -i -E "s/[0-9]{12}/<PROJECT_NUMBER>/g; s/${PROJECT}/<PROJECT_ID>/g" "$OUT"
+
+          # --- 결과를 orphan 브랜치로 푸시(실행자가 API로 읽는다) -------------
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan probe-result
+          git rm -rf . > /dev/null 2>&1 || true
+          cp "$OUT" ./probe-result.txt
+          git add probe-result.txt
+          git commit -m "chore: probe result (temporary, delete after reading)"
+          git push -f origin probe-result

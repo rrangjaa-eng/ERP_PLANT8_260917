@@ -339,6 +339,10 @@ run_db_bootstrap() {
   STAGE=run_db_bootstrap
   if ! run gcloud run jobs execute "$(job_name "$ENV" db-bootstrap)" --region="$REGION" --project="$PROJECT" --wait; then
     echo "db-bootstrap failed" >&2
+    # gcloud는 컨테이너 실패 이유를 전파하지 않는다(16A와 같은 이유) — 실제
+    # 에러 메시지는 Cloud Logging에서 가져와야 진단할 수 있다.
+    run gcloud logging read "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"$(job_name "$ENV" db-bootstrap)\" AND severity>=ERROR" \
+      --project="$PROJECT" --freshness=10m --limit=20 --format='value(textPayload, jsonPayload.message)' >&2 || true
     exit 1
   fi
 }

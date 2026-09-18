@@ -4,6 +4,10 @@
 .claude/scheduled_tasks.lock
 .claude/*.lock
 
+# GSD harness-managed agent worktrees and run-scoped tool state (ephemeral, never source content)
+.claude/worktrees/
+.gsd/
+
 # gstack vendored copy: never commit installs or build output
 .claude/skills/gstack/node_modules/
 .claude/skills/gstack/browse/dist/

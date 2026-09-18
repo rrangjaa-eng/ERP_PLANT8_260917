@@ -8,7 +8,7 @@
 
 `scripts/deploy.sh` 한 번으로 회사 GCP 프로젝트(서울)에 Cloud Run + Cloud SQL + Secret Manager + Artifact Registry가 서고 앱이 뜬다. 직원이 이메일+비밀번호로 로그인하고, 브라우저를 닫았다 열어도 세션이 유지되며, 비밀번호를 바꾸고, 어디서든 로그아웃한다. 이 페이즈가 세우는 뼈대: Next.js 단일 앱 4계층(`app/ → domain/ → repositories/(viewer 필수) → db/`), next-safe-action `authedActionClient`, better-auth + `login_attempts` 잠금, drizzle-kit generate + Squawk, Cloud Run Job(migrate) → 0% 리비전 → 스모크 → 100% 배포와 `rollback.sh`, Cloud Monitoring 경보 3개, 3계층 테스트(Vitest 단위·Vitest+Postgres 통합·Playwright E2E) CI, `docs/ARCHITECTURE.md`·`docs/OPERATIONS.md`, 관리자 시스템 상태 화면 뼈대, JSON 서버 로그.
 
-화면은 로그인·내 계정(비밀번호 변경·로그아웃)·관리자 상태 화면 셋뿐이고 전부 무스타일 임시 화면이다(Phase 2가 교체). 업무 화면·계정 관리 화면(Phase 3)·이메일 발송(Phase 7)은 없다. 회사 GCP 확보 전에는 로컬 개발만 하며, deploy.sh 첫 성공이 페이즈 완료 조건이다.
+화면은 로그인·내 계정(비밀번호 변경·로그아웃)·관리자 상태 화면 셋뿐이고 전부 무스타일 임시 화면이다(Phase 2가 교체). 업무 화면·계정 관리 화면(Phase 3)·이메일 발송(Phase 7)은 없다. 회사 GCP 프로젝트는 확보됐고(2026-09-18), deploy.sh 첫 성공이 페이즈 완료 조건이다.
 
 </domain>
 
@@ -20,7 +20,7 @@
 ### 개발·배포 동선
 - **D-01:** 개발 환경은 클라우드 세션(claude.ai/code)과 사용자 PC 둘 다 동등하게 지원한다. 통합 테스트용 Postgres는 스크립트 하나(예: `scripts/dev-db.sh`)가 환경을 감지한다 — Docker가 있으면 컨테이너, 없으면(클라우드 세션) apt로 설치한 Postgres. 클라우드 세션에서는 `.claude/settings.json`의 SessionStart 훅이 이 스크립트를 자동 실행한다. PC는 Docker Desktop이 있다고 전제한다. 통합·E2E 테스트를 CI에서만 돌리는 방식은 거부했다(TDD 사이클과 CLAUDE.md "실제 실행 확인" 규칙 때문).
 - **D-02:** deploy.sh의 실행 주체는 GitHub Actions다. main 병합 → CI 통과 → 같은 워크플로가 deploy.sh를 실행한다. GCP 인증은 Workload Identity Federation(키 파일 없음). 사용자 PC에 gcloud를 요구하지 않는다. 단, WIF 풀·서비스 계정을 만드는 최초 1회 부트스트랩은 GitHub Actions가 스스로 할 수 없으므로 별도 스크립트(예: `scripts/bootstrap-gcp.sh`)를 사용자가 Cloud Shell(브라우저)에서 한 번 실행한다 — 이 예외는 OPERATIONS.md에 적는다. — **Reversibility:** costly — 수동 배포로 되돌리면 CI 워크플로·WIF·GitHub Environment 설정을 걷어내야 한다.
-- **D-03:** 회사 GCP가 확보되기 전(2026-09 넷째 주 예정)에는 로컬에서 되는 플랜(앱 골격·인증·CLI·CI·문서·상태 화면 코드)을 먼저 실행하고, 실제 GCP를 필요로 하는 일(부트스트랩·deploy.sh 첫 실행·경보·상태 화면의 GCP 조회 확인)은 마지막 플랜(들)로 묶어 GCP 확보 뒤 실행한다. 페이즈 완료 판정은 마지막 플랜의 deploy.sh 성공이다.
+- **D-03:** 회사 GCP 프로젝트는 확보됐다(2026-09-18 사용자 확인 — 대기 조건 없음). 플랜 순서는 로컬에서 되는 것(앱 골격·인증·CLI·CI·문서·상태 화면 코드) → 실제 GCP가 필요한 것(부트스트랩·deploy.sh 첫 실행·경보·상태 화면 GCP 조회 확인) 순으로 두되, 마지막 플랜을 뒤로 미루지 않고 바로 이어서 실행한다. 부트스트랩(WIF·서비스 계정·조직 정책 확인)은 배포 플랜 직전의 사람 체크포인트다. 프로젝트 ID는 리포·문서에 적지 않고 변수명(`GCP_PROJECT_ID`)만 두며, 실제 값은 실행 단계에서 GitHub Actions 변수와 deploy.sh 인자로 넣는다. 리전은 `asia-northeast3`, 사용자 계정이 프로젝트 Owner이고 결제 계정이 연결돼 있다고 가정한다. 페이즈 완료 판정은 deploy.sh 성공이다.
 - **D-04:** 환경은 스테이징 + 프로덕션 둘이며, 같은 회사 GCP 프로젝트 하나 안에 Cloud Run 서비스 2개(예: `erp-staging`·`erp-prod`)와 Cloud SQL 인스턴스 2대, 환경 접미사가 붙은 시크릿으로 분리한다. deploy.sh는 환경 이름을 인자로 받고, 프로젝트 ID·리전 인자(재해 복구·다른 프로젝트 재현용)는 로드맵대로 유지한다. 별도 GCP 프로젝트 2개는 거부했다(조직 정책·IAM 확인이 두 번). — **Reversibility:** costly — 인스턴스를 나중에 합치거나 프로젝트를 나누려면 DB 이전이 필요하다.
 - **D-05:** 승격 흐름: main 병합 → CI → 스테이징 자동 배포(migrate Job → 0% 리비전 → 스모크 → 100%) → 사용자가 스테이징에서 확인 → GitHub Environment `production`의 승인 버튼(required reviewer = 사용자) → 같은 git SHA 이미지를 프로덕션에 같은 순서로 배포. 빌드는 한 번, 태그 규칙 없음, 승인 기록은 GitHub에 남는다.
 - **D-06:** Cloud SQL은 두 환경 모두 최소 사양(공유 코어 db-f1-micro급, 최소 스토리지, 자동 백업 켬)이며 두 환경 합계 월 $30 안팎이 상한이다. 초과하면 스테이징을 먼저 줄인다(중지 스케줄은 지금은 하지 않음). 커넥션 풀 크기·max-instances는 이 티어의 `max_connections`를 기준으로 계획에서 정하고 deploy.sh의 `max-instances × 풀 ≤ max_connections − 5` 검사(16A)에 넣는다. 실제 과금 항목과 목표는 OPERATIONS.md 비용 절에 적는다.

@@ -414,6 +414,20 @@ deploy_service() {
   describe_url="$(run gcloud run services describe "$svc" --region="$REGION" --project="$PROJECT" --format='value(status.url)')"
   if [ "$describe_url" != "$SERVICE_URL" ]; then
     echo "note: describe url differs ($describe_url); canonical is $SERVICE_URL" >&2
+    # 실제 스테이징 첫 배포에서 재현(2026-09-18): 계산한 결정적 URL이 실제
+    # Cloud Run이 부여한 URL과 다른 경우가 있다([ASSUMED] 항목 검증 실패).
+    # 새 서비스(EXISTS=0)는 아직 트래픽이 없으므로 실측 URL로 바로잡아도
+    # 안전하다 — 이후 스모크·최종 출력이 계산값이 아니라 실측값을 쓰게
+    # 하고, 컨테이너에 이미 구운 BETTER_AUTH_URL도 맞춰야 better-auth의
+    # origin 검사(baseURL 기준)가 통과한다. 기존 서비스 카나리 배포
+    # (EXISTS=1)는 이 보정을 하지 않는다 — `services update`가 기본으로
+    # 새 리비전에 트래픽 100%를 즉시 넘겨 0%→스모크→100% 안전장치를
+    # 깨기 때문이다(이 경로는 아직 실측으로 확인된 바 없다).
+    if [ "$EXISTS" = "0" ]; then
+      SERVICE_URL="$describe_url"
+      run gcloud run services update "$svc" --region="$REGION" --project="$PROJECT" \
+        --update-env-vars="BETTER_AUTH_URL=${SERVICE_URL}"
+    fi
   fi
 }
 

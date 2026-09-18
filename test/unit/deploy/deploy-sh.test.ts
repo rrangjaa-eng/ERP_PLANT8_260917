@@ -156,6 +156,23 @@ describe("deploy.sh — 새 프로젝트(시나리오 1)", () => {
 
     expect(r.stdout.trim().split("\n").at(-1)).toMatch(/^SERVICE_URL=https:\/\/plant8-staging-/);
   });
+
+  it("새 서비스의 실제 URL이 계산한 결정적 URL과 다르면 실측값으로 바로잡고 BETTER_AUTH_URL도 갱신한다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "describe-url": "https://plant8-staging-67rumhdgba-du.a.run.app" },
+    });
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain("describe url differs");
+
+    const updateLine = r.log.split("\n").find((l) => l.startsWith("run services update plant8-staging "));
+    expect(updateLine).toBeDefined();
+    expect(updateLine).toContain("--update-env-vars=BETTER_AUTH_URL=https://plant8-staging-67rumhdgba-du.a.run.app");
+
+    expect(r.stdout.trim().split("\n").at(-1)).toBe("SERVICE_URL=https://plant8-staging-67rumhdgba-du.a.run.app");
+
+    const healthzLine = r.log.split("\n").find((l) => l.includes("/healthz"));
+    expect(healthzLine).toContain("https://plant8-staging-67rumhdgba-du.a.run.app/healthz");
+  });
 });
 
 describe("deploy.sh — 기존 서비스·이미지(시나리오 2)", () => {

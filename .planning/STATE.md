@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 02
 current_phase_name: 디자인 시스템·앱 셸
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: Completed 02-04-PLAN.md
-last_updated: "2026-09-19T16:41:44.927Z"
+stopped_at: Completed 02-05-PLAN.md
+last_updated: "2026-09-19T17:05:01.554Z"
 last_activity: 2026-09-19
 last_activity_desc: Phase 02 execution started
-state_head: c525b549ae7c1c46446a17e79ff097e8a4721121
+state_head: a13f55e46d6f6976306291cd8c7697c7cce7e47a
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 15
-  completed_plans: 12
+  completed_plans: 13
   percent: 9
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 02 (디자인 시스템·앱 셸) — EXECUTING
-Current Plan: 4
+Current Plan: 5
 Total Plans in Phase: 7
 Status: Ready to execute
 Last activity: 2026-09-19 — Phase 02 execution started
@@ -69,6 +69,7 @@ Progress: [█░░░░░░░░░] 9%
 | Phase 02 P01 | unknown | 3 tasks | 4 files |
 | Phase 02 P03 | 19min | 3 tasks | 13 files |
 | Phase 02 P04 | 28min | 3 tasks | 14 files |
+| Phase 02-design-system-app-shell P05 | 20min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -130,6 +131,8 @@ Recent decisions affecting current work:
 - [Phase 02]: 02-04: 역할→메뉴 매핑을 role-menu.ts 순수 함수 하나로 고정, 셸 컴포넌트에는 isAdmin 조건문을 두지 않는다(D-23)
 - [Phase 02]: 02-04: MoreSheet 포커스 트랩은 네이티브 <dialog>.showModal()로 구현 — 새 런타임 의존성 없음
 - [Phase 02]: 02-04: PC 사용자 메뉴는 accountGroup에서 href==='/settings' 항목만 걸러 렌더 — SYSTEM.md가 PC 메뉴와 폰 시트의 계정 항목 구성을 다르게 규정
+- [Phase 02]: 02-05: §7-4 원문(결재·대기 둘 다 --accent)을 §7-5 일반 규칙보다 우선 적용 — 「내 차례」 전용 정본이 더 구체적
+- [Phase 02]: 02-05: ListEmpty의 다음 한 수는 ui/button/Button이 아니라 자체 <a> + 로컬 CSS로 구현 — 이 페이즈부터 실제 화면 이동 링크여야 하고 Button은 <button>만 렌더한다(§10)
 
 ### Pending Todos
 
@@ -155,6 +158,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-19T16:41:44.850Z
-Stopped at: Completed 02-04-PLAN.md
+Last session: 2026-09-19T17:04:52.094Z
+Stopped at: Completed 02-05-PLAN.md
 Resume file: None

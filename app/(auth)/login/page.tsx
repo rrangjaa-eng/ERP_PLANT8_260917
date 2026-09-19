@@ -15,6 +15,9 @@ export default async function LoginPage({
 
   return (
     <main>
+      {/* axe page-has-heading-one(§10) — 02-03이 뺀 시각적 h1은 워드마크와
+          중복이라 그대로 두고, 스크린 리더 전용 제목만 되살린다(app/globals.css .sr-only). */}
+      <h1 className="sr-only">로그인</h1>
       <AuthFrame>
         {/* F-1①: 비밀번호 변경 뒤 돌아온 안내 — 문장·질의 값 불변(change-password.spec.ts) */}
         {passwordChanged ? (

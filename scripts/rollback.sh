@@ -6,8 +6,10 @@ set -euo pipefail
 # 한 번의 배포가 리비전을 둘 만들기 때문이다(아래 주석 참고).
 #
 # 카나리(0% → 스모크 → 100%)는 01-07에서 제거됐다. 새 리비전은 스모크 **전에**
-# 이미 100%를 받으므로 스모크 실패는 나쁜 리비전이 서빙 중이라는 뜻이고,
-# 자동 롤백은 없다 — 이 스크립트가 유일한 복구 수단이다.
+# 이미 100%를 받으므로 스모크 실패는 나쁜 리비전이 서빙 중이라는 뜻이다.
+# deploy.sh가 스모크에 실패하면 이 스크립트를 한 번 호출해 자동으로 되돌린다
+# (smoke_failed()). 그래도 수동 실행이 필요한 경우가 남는다 — 자동 롤백 자체가
+# 실패했을 때, 그리고 스모크는 통과했지만 나중에 문제가 드러났을 때다.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -70,12 +72,15 @@ fi
 REVISIONS="$(gcloud run revisions list --service="$SVC" --region="$REGION" --project="$PROJECT" \
   --sort-by='~metadata.creationTimestamp' --format='value(metadata.name)')"
 
-# 배포 하나가 리비전을 둘 만든다(01-07·01-08 실측: staging 00024→00025,
-# prod 00001→00002). deploy.sh가 계산 URL을 BETTER_AUTH_URL로 넣어 먼저 배포한
-# 뒤 실제 status.url과 다르면 환경변수를 고쳐 재배포하기 때문이다. 첫 리비전은
-# 틀린 BETTER_AUTH_URL을 들고 있어 로그인 POST가 better-auth Origin 검사에
-# 걸린다. 그래서 "바로 직전 리비전"으로 되돌리면 사고 중에 로그인이 막힌
-# 리비전에 착륙한다. 되돌릴 단위는 리비전이 아니라 **배포**(APP_GIT_SHA)다.
+# 배포 하나가 리비전을 둘 만들던 시기가 있다(01-07·01-08 실측: staging
+# 00024→00025, prod 00001→00002). deploy.sh가 계산 URL을 BETTER_AUTH_URL로 넣어
+# 먼저 배포한 뒤 실제 status.url과 다르면 환경변수를 고쳐 재배포했기 때문이다.
+# 그 첫 리비전은 틀린 BETTER_AUTH_URL을 들고 있어 로그인 POST가 better-auth
+# Origin 검사에 걸린다. deploy.sh는 이제 기존 서비스의 status.url을 배포 전에
+# 확정해 배포당 리비전을 하나만 만들지만(01-08 실측: staging 00028 단일),
+# 그 이전에 만들어진 짝 리비전들은 서비스에 그대로 남아 있다. 그래서 "바로
+# 직전 리비전"으로 되돌리면 사고 중에 로그인이 막힌 리비전에 착륙할 수 있다.
+# 되돌릴 단위는 리비전이 아니라 **배포**(APP_GIT_SHA)다.
 rev_git_sha() {
   gcloud run revisions describe "$1" --region="$REGION" --project="$PROJECT" --format=json 2>/dev/null \
     | jq -r '.spec.containers[0].env[]? | select(.name == "APP_GIT_SHA") | .value' | head -n1

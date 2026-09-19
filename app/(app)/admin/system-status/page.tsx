@@ -18,7 +18,7 @@ export default async function SystemStatusPage() {
   const bannerPercent = Math.round(env.STATUS_CONN_BANNER_RATIO * 100);
 
   return (
-    <main>
+    <>
       <h1>시스템 상태</h1>
 
       <section>
@@ -55,6 +55,6 @@ export default async function SystemStatusPage() {
       {!("unavailable" in status.db) && status.db.banner ? (
         <p role="alert">DB 커넥션이 한도의 {bannerPercent}%를 넘었습니다.</p>
       ) : null}
-    </main>
+    </>
   );
 }

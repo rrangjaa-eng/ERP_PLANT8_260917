@@ -7,7 +7,7 @@ export default async function AccountPage() {
   const { user } = await requireSession();
 
   return (
-    <main>
+    <>
       <h1>내 계정</h1>
       <p>{user.email}</p>
       <p>{user.name}</p>
@@ -16,6 +16,6 @@ export default async function AccountPage() {
       ) : null}
       <ChangePasswordForm />
       <LogoutButton />
-    </main>
+    </>
   );
 }

@@ -137,7 +137,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 기준: 260907의 화면·정보구조·UI 흐름은 참고하지 않는다. 세련되고 깔끔하며 사용자 편의 우선으로 `docs/DESIGN.md` 절차로 새로 설계한다.
 
-- [ ] **UX-01**: `docs/design/SYSTEM.md`를 먼저 확정하고 모든 화면이 그 토큰·컴포넌트만 쓴다. 컴포넌트 계약은 LOADING/EMPTY/ERROR/SUCCESS/PARTIAL 상태를 필수로 정의하고, EMPTY·ERROR는 다음 행동을 유도한다
+- [x] **UX-01**: `docs/design/SYSTEM.md`를 먼저 확정하고 모든 화면이 그 토큰·컴포넌트만 쓴다. 컴포넌트 계약은 LOADING/EMPTY/ERROR/SUCCESS/PARTIAL 상태를 필수로 정의하고, EMPTY·ERROR는 다음 행동을 유도한다
 - [ ] **UX-02**: 역할별 첫 화면: PM(내 프로젝트·내 지출결의), 경영관리(나갈 돈·결재·미증빙), 대표·팀장(손익)
 - [ ] **UX-03**: 폰에서 결재·조회·지출결의 작성이 된다(반응형)
 - [ ] **UX-04**: 잘못된 입력은 서버 검증으로 즉시 안내되고, 저장 실패·중복 저장·입력값 유실이 없다
@@ -267,7 +267,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | OPS-05 | Phase 3 | Pending |
 | OPS-06 | Phase 1 | Complete |
 | OPS-07 | Phase 1 | Complete |
-| UX-01 | Phase 2 | Pending |
+| UX-01 | Phase 2 | Complete |
 | UX-02 | Phase 9 | Pending |
 | UX-03 | Phase 5 | Pending |
 | UX-04 | Phase 4 | Pending |

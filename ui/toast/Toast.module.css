@@ -1,0 +1,52 @@
+/* SYSTEM.md §7-6 토스트. 실물: docs/design/system/preview.html .toast 블록
+   (위치·면·테두리·간격 값 그대로 포트). 나타남 애니메이션은 §5 허용 목록
+   (opacity + translateY 160ms ease-out)만 쓰고 tokens.css의
+   prefers-reduced-motion 미디어 쿼리가 --dur-toast를 0.01ms로 낮춘다. 색·서체·
+   radius는 토큰 참조만 쓴다(D-20). */
+
+.toast {
+  position: fixed;
+  left: var(--pad-page);
+  bottom: var(--s-4);
+  background: var(--bg);
+  border: var(--line-w-strong) solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: var(--s-2) var(--s-3);
+  font-size: var(--fs-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  z-index: var(--z-toast);
+  animation: toast-in var(--dur-toast) var(--ease-out);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.action {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-sm);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+/* 폰: 하단 탭 위(§7-6). */
+@media (max-width: 699.98px) {
+  .toast {
+    bottom: calc(var(--touch-min) + var(--s-3));
+  }
+}

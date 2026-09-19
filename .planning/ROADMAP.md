@@ -25,7 +25,7 @@
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: 배포 스켈레톤·로그인** - 스크립트 한 번으로 회사 GCP의 Cloud Run + Cloud SQL(서울, 공인 IP 없음)에 올라가고 이메일+비밀번호 로그인(실패 잠금)이 되는 Next.js 단일 앱(4계층), Cloud Run Job 마이그레이션·Squawk·롤백·경보 3개, CI 3계층 테스트 골격(린트(import 경계·액션 래퍼·금액 산술)·타입체크·단위·통합·E2E), 관리자 시스템 상태 화면 뼈대·JSON 로그, `docs/ARCHITECTURE.md`·`docs/OPERATIONS.md`
+- [x] **Phase 1: 배포 스켈레톤·로그인** - 스크립트 한 번으로 회사 GCP의 Cloud Run + Cloud SQL(서울, 공인 IP 없음)에 올라가고 이메일+비밀번호 로그인(실패 잠금)이 되는 Next.js 단일 앱(4계층), Cloud Run Job 마이그레이션·Squawk·롤백·경보 3개, CI 3계층 테스트 골격(린트(import 경계·액션 래퍼·금액 산술)·타입체크·단위·통합·E2E), 관리자 시스템 상태 화면 뼈대·JSON 로그, `docs/ARCHITECTURE.md`·`docs/OPERATIONS.md` (completed 2026-09-19)
 - [ ] **Phase 2: 디자인 시스템·앱 셸** - `docs/design/SYSTEM.md` + `tokens.css` 확정, 앱 셸(내비게이션·레이아웃)과 핵심 컴포넌트 계약(5상태 필수, 엑셀식 표 동작 계약), Phase 1 임시 화면 교체
 - [ ] **Phase 3: 권한·설정·마스터 (관리자 운영 콘솔)** - 메커니즘+마스터: 사람·계급·본부·팀(발령일 이력), 권한표·정보 노출표(scopeFor 행 필터 + DTO 투영·누수 스캔 테스트 생성기), 설정 레지스트리 자동 화면, 거래처(계좌번호 암호화 헬퍼·기본 증빙 종류)·법인카드·코드표(증빙 종류별 세금 규칙 + 기준일·절사), 행동 로그·보관함 — 전 메뉴 검수는 Phase 7 끝
 - [ ] **Phase 4: 프로젝트·견적 원장** - 프로젝트 등록·목록·상세, 엑셀식 견적 줄 표(차익 서버 계산, 구현 방식 선택), 차수·고객 승인(게이트 단일 진입점), 매출 칸(공급가 입력·부가세 자동, 입금액은 합계→역산), 문서 번호 서식·카운터 행 잠금, `domain/money` 금액 모델(통화·환율·원화 환산, 정수 원·서버 단일 반올림), 클라이언트별 리저브 대장, 인트라넷 추출·변환 스크립트 시작(금액 기준 판정·외화 건수·결정적 번호)
@@ -81,11 +81,11 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 01-07-PLAN.md — 리소스 이름 결정 → 사용자 Cloud Shell 부트스트랩 → 스테이징 첫 배포·계정 발급·검증·실측 기록 (W6)
+- [x] 01-07-PLAN.md — 리소스 이름 결정 → 사용자 Cloud Shell 부트스트랩 → 스테이징 첫 배포·계정 발급·검증·실측 기록 (W6)
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 01-08-PLAN.md — production 승인 배포·프로덕션 검증·OPERATIONS.md 실측 반영·CLAUDE.md 명령 확정 (W7)
+- [x] 01-08-PLAN.md — production 승인 배포·프로덕션 검증·OPERATIONS.md 실측 반영·CLAUDE.md 명령 확정 (W7)
 
 화면 범위(하드 제약 2): 이 페이즈의 화면은 로그인·내 계정(비밀번호 변경·로그아웃)·관리자 시스템 상태 뼈대 셋뿐이고 업무 화면은 없다. `docs/design/SYSTEM.md` 전이라 임시(무스타일) 화면이며 Phase 2에서 교체된다. 계정 발급의 관리 화면은 Phase 3(MAST-02)에서 붙는다. 회사 GCP가 확보되기 전까지는 로컬(Auth Proxy + 로컬 Postgres)에서만 개발하고, deploy.sh의 첫 성공이 이 페이즈의 완료 조건이다.
 
@@ -285,7 +285,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. 배포 스켈레톤·로그인 | 6/8 | In Progress|  |
+| 1. 배포 스켈레톤·로그인 | 8/8 | Complete    | 2026-09-19 |
 | 2. 디자인 시스템·앱 셸 | 0/TBD | Not started | - |
 | 3. 권한·설정·마스터 (관리자 운영 콘솔) | 0/TBD | Not started | - |
 | 4. 프로젝트·견적 원장 | 0/TBD | Not started | - |

@@ -124,3 +124,29 @@ differs from actual status.url (https://plant8-prod-<해시>-du.a.run.app) — u
       `guard-probe-result`, `prod-verify-result` (실행자 세션에서는 ref 삭제가 막힌다)
 - **참고**: 배포자 SA에는 `resourcemanager.projects.getIamPolicy`도 없다(이번 프로브에서
   드러남). 런타임 SA의 역할 목록 확인은 Owner 계정 몫이다 — 조직 정책 원문과 같은 처지.
+
+## 추가 실측 (2026-09-19) — SC6 안전 속성 확인
+
+SC6는 2026-09-19에 절차("0% 리비전 → 스모크 → 100%")가 아니라 그 절차가 사려던 안전
+속성으로 재정의됐다: **스모크에 실패한 리비전이 트래픽을 계속 받는 상태로 끝나지
+않는다.** 구현은 둘이다 — (1) 기존 서비스는 배포 전에 `status.url`을 확정해 배포당
+리비전이 하나만 생기고, (2) 스모크가 실패하면 `deploy.sh`가 `rollback.sh`를 한 번
+호출한 뒤 실패로 끝낸다(`smoke_failed()`).
+
+두 번째는 단위 테스트로만 고정돼 있다(실패를 실제 GCP에서 일부러 낼 수는 없다).
+첫 번째는 스테이징 배포에서 실측했다 — 워크플로 실행 `35417809514`의 스테이징 잡:
+
+```
+03:18:40  note: using actual status.url (https://plant8-staging-<hash>-du.a.run.app)
+          instead of the computed one (https://plant8-staging-<num>.asia-northeast3.run.app)
+03:18:55  Creating Revision ... Service [plant8-staging] revision [plant8-staging-00028-dms]
+          has been deployed and is serving 100 percent of traffic.
+03:19:11  quick probe (no retry): / -> 307, /login -> 200, /api/health -> 200
+```
+
+읽는 법: `note:` 줄이 **단 하나뿐인** `Creating Revision` 앞에 있다. 두 번째
+`Deploying...`도, `run services update plant8-staging`도 로그에 없다. 어제
+(`00024`→`00025`, 프로덕션 `00001`→`00002`)와 달리 이 배포는 리비전 `00028` 하나만
+만들었다. 스모크는 통과했으므로 자동 롤백 경로는 이번에도 타지 않았다.
+
+이것으로 01-VERIFICATION.md의 유일한 미충족 항목(SC6)이 닫힌다.

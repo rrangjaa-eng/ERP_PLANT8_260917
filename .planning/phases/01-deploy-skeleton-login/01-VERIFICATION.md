@@ -1,9 +1,9 @@
 ---
 phase: 01-deploy-skeleton-login
-verified: 2026-09-18T19:09:12Z
-status: gaps_found
-verdict: PARTIAL
-score: 6/7 must-haves verified
+verified: 2026-09-19T03:31:45Z
+status: passed
+verdict: PASS
+score: 7/7 must-haves verified
 covered_files:
   - .github/workflows/account.yml
   - .github/workflows/ci.yml
@@ -144,29 +144,24 @@ covered_files:
   - test/unit/password.test.ts
   - test/unit/pool-rule.test.ts
   - test/unit/system-status.test.ts
-covered_digest: "v1:sha256:6aac3af4bc57a946cb988de862ec4b7733a9614ae3e956da742e78834795f26c"
+covered_digest: "v1:sha256:83df594828a8bdccc4e7455846286b1bb3afbbfe455621057fa824c9cfedd8c2"
 behavior_unverified: 0
 overrides_applied: 0
 decision_coverage:
   honored: 18
   total: 18
   not_honored: []
-gaps:
+gaps: []
+gaps_resolved:
   - truth: "SC6 — 배포는 migrate Job 성공 뒤 트래픽 0% 리비전 → 스모크 → 100% 순서로 진행된다 (OPS-01 본문에도 같은 문구)"
-    status: partial
-    reason: "scripts/deploy.sh main()은 run_migrate → deploy_service(즉시 100%, --to-latest) → ensure_alerts → smoke 순서다. 0% 리비전·태그 URL 스모크·승격 단계는 01-07에서 '[Rule 1 - Bug] 카나리 제거'로 설계에서 삭제됐다(태그 URL이 4회 연속 15분 넘게 라우팅되지 않음, 구글 인프라 내부 원인). 결과: 스모크 실패 리비전이 이미 100%를 서빙하고 자동 롤백은 없다(수동 rollback.sh). 의도된 이탈이지만 ROADMAP SC6·REQUIREMENTS OPS-01 문구와 어긋나고 override·문구 갱신이 없다."
-    artifacts:
-      - path: "scripts/deploy.sh"
-        issue: "deploy_service가 --no-traffic 없이 바로 100% 배포(407~438행), smoke는 그 뒤(613행). 단위 테스트 '기존 서비스에서 health가 503이면 SmokeFailed로 exit 1한다(이미 100%로 배포된 뒤라 롤백은 수동)'가 이 동작을 고정한다"
-      - path: "scripts/rollback.sh"
-        issue: "머리 주석(4~6행)이 여전히 '스모크에 실패해 0%로 남은 최신 리비전'을 전제로 설명한다 — 코드는 맞지만 주석이 폐기된 설계를 가리킨다(2460b5e 이후의 미커밋 수정본에서도 그대로)"
-      - path: ".planning/ROADMAP.md"
-        issue: "Phase 1 SC6 문구가 0% → 스모크 → 100%를 요구한다(55행). 실제 파이프라인과 불일치"
-      - path: ".planning/REQUIREMENTS.md"
-        issue: "OPS-01 본문(128행)이 '확장-축소 마이그레이션 → 0% → 스모크 → 100% 순'을 요구하고 Complete로 표시돼 있다"
-    missing:
-      - "결정 하나: (a) 카나리 제거를 공식 수용 — 아래 override를 이 파일 frontmatter에 추가하고 ROADMAP SC6·REQUIREMENTS OPS-01 문구를 '즉시 100% + 실제 주소 스모크 + 수동 rollback.sh'로 갱신, 또는 (b) 태그 URL에 의존하지 않는 다른 안전 배포 방식(예: --no-traffic 리비전을 gcloud run services proxy 또는 Job에서 내부 호출로 스모크)을 별도 플랜으로 복구"
-      - "scripts/rollback.sh 4~6행 주석을 현재 설계(100% 서빙 중인 실패 리비전 → 직전 리비전)로 정정"
+    resolved_at: "2026-09-19"
+    how: "위 gaps의 선택지 (a)와 (b) 중 어느 쪽도 그대로 쓰지 않았다. 계약을 절차가 아니라 그 절차가 사려던 안전 속성으로 다시 썼다 — '스모크에 실패한 리비전이 트래픽을 계속 받는 상태로 끝나지 않는다'. ROADMAP Phase 1 기준 6과 REQUIREMENTS OPS-01 본문을 그 문구로 갱신했고(재정의 근거를 본문에 남김), deploy.sh에 두 가지를 구현했다: (1) 기존 서비스는 배포 전에 status.url을 확정해 배포당 리비전이 하나만 생긴다, (2) 스모크 실패 시 smoke_failed()가 rollback.sh를 한 번 호출한 뒤 실패로 끝낸다(첫 배포는 되돌릴 대상이 없으므로 예외)."
+    evidence:
+      - "실측: 워크플로 실행 35417809514의 스테이징 잡. 03:18:40 'note: using actual status.url ...'이 03:18:55의 유일한 'Creating Revision ... plant8-staging-00028-dms ... serving 100 percent' 앞에 있고, 두 번째 'Deploying...'도 'run services update plant8-staging'도 없다. 어제의 00024→00025와 대비된다. 상세는 01-08-DEPLOY-LOG.md '추가 실측 (2026-09-19)'"
+      - "단위: test/unit/deploy/deploy-sh.test.ts에 4건 추가 — 기존 서비스의 URL 선확정, 첫 배포 예외, 스모크 실패 시 1회 자동 롤백, 첫 배포에서는 롤백하지 않음. 기존 3건은 새 계약으로 갱신했다(건너뛰거나 지우지 않았다)"
+      - "자동 롤백 경로 자체는 실제 GCP에서 관찰되지 않았다 — 프로덕션 스모크를 일부러 깨뜨릴 수 없기 때문이며, 근거는 위 단위 테스트(fakebin)뿐이다"
+    remaining: "scripts/rollback.sh 머리 주석의 '자동 롤백은 없다' 서술을 현재 설계로 정정했다(2026-09-19)."
+
 deferred:
   - truth: "SC2/AUTH-02 — '어느 화면에서든 로그아웃할 수 있다': Phase 1 화면 3개 중 /admin/system-status에는 로그아웃 버튼이 없다(LogoutButton은 app/(app)/account/page.tsx에만 있음)"
     addressed_in: "Phase 2"
@@ -226,10 +221,10 @@ human_verification:
 | 3 | SC3 — 직원이 비밀번호 변경, 관리자 재발급; `AUTH_PROVIDER` 환경 변수로 로그인 방식 선택, Google은 어댑터 자리 | ✓ VERIFIED | `app/(app)/account/actions.ts` changePasswordAction(`authedActionClient.schema(...)`) → `domain/auth/password.ts` validateNewPassword/finalizePasswordChange; `resetPassword`(전 세션 무효·password_is_temporary=true, 통합 테스트 3건). `lib/env.ts` `AUTH_PROVIDER: enum(email|google)` + google 시 client id/secret refine; `domain/auth/provider.ts`; `lib/auth.ts` `socialProviders` 조건부; `app/(auth)/login/page.tsx` `showGoogle={getAuthProvider()==="google"}` → login-form `signIn.social`. 단위 auth-provider.test.ts. E2E change-password.spec.ts 통과(호출자 확인: E2E 6/6) |
 | 4 | SC4 — Next.js 단일 앱 + Drizzle 4계층, Hono/REST/raw pg 없음; Server Action은 next-safe-action `authedActionClient`만(버전 고정); CI가 lint(any 금지)·타입체크·Squawk·단위·통합(Postgres 컨테이너)·E2E를 돌리고 실패 시 배포 차단; ESLint import 경계 + 커스텀 규칙 3개 | ✓ VERIFIED | 트리: app/ domain/ repositories/ db/ lib/ 만 존재. grep: `hono`/`express` 0건; `new Pool(` 은 db/client.ts·scripts/db-bootstrap.ts에만; app→`@/repositories|@/db` import 0건; domain/repositories→`@/app` 0건. `lib/actions/client.ts` createSafeActionClient + authedActionClient(getSession → viewer ctx); `package.json` `"next-safe-action": "8.7.3"`(정확 고정). `.github/workflows/ci.yml` quality(lint→typecheck→lint:sql→test:unit) → integration-e2e(postgres:16 서비스, db:migrate→test:integration→playwright); `deploy.yml` staging 잡 `needs: ci`. `eslint.config.mjs`: `no-explicit-any: error`, `boundaries/element-types`, `plant8/require-action-client`·`repository-viewer-param`·`money-boundary` 모두 error; RuleTester 단위 테스트 3개. 실행: `pnpm test:unit` 22 files / 198 passed(exit 0); `pnpm lint:sql` "Found 0 issues in 3 files". ci-guard.test.ts가 drizzle-kit push 부재·단계 순서를 고정 |
 | 5 | SC5 — `docs/ARCHITECTURE.md`·`docs/OPERATIONS.md` 존재, 각 ≤300줄, 4계층+단일 지점 셋 다이어그램, 비용 목표·과금 항목·배포/롤백/경보 절차 | ✓ VERIFIED (문서 오기 1건 — Anti-Patterns) | 121줄 / 168줄. ARCHITECTURE.md §2 계층 다이어그램에 `domain/money`·`domain/rules.gate`·`project(viewer, dto)` 명시(19~21행), 린트 표(92~95행). OPERATIONS.md §2 "두 환경 합계 $30 안팎", 과금 항목·첫 청구서 확인 절차(37~41행), §4 배포, §5 롤백, §6 경보 3개 대응 표. `test/unit/docs-limits.test.ts` 300줄 상한·12자리 프로젝트 번호 부재 단언 |
-| 6 | SC6 — CI 통과 뒤 migrate Job 먼저(실패 시 중단) → **0% 리비전 → 스모크 → 100%**; drizzle-kit generate SQL만, push 금지; Squawk이 컬럼 drop·잠금 유발 변경 거부; rollback.sh; 16A 커넥션 규칙 검사; 경보 3개가 deploy.sh로 재현 | ✗ FAILED (partial — 1개 절) | 충족: `run_migrate`가 `deploy_service` 앞(main 611~612행), 실패·exit 3 → PoolRuleViolation 중단(단위 테스트 2건); `scripts/migrate-runner.ts`가 `SHOW max_connections` → `checkPoolRule`(단위 13/13 passed, 통합 3건, 실측 25 → 3×5=15 ≤ 20); push 명령 워크플로·스크립트 0건(ci-guard 고정); Squawk CI 단계 + `.squawk.toml`(ban-drop-column 활성); `scripts/rollback.sh` `update-traffic --to-revisions=PREV=100`(단위 "v3는 스모크 실패로 0% 잔존 → v1" 1 passed); `ensure_alerts`가 채널 + 정책 3개 upsert(`policy-from-file`), 프로덕션 정책 3개 실존(호출자 확인). **미충족:** `deploy_service`는 `--no-traffic` 없이 바로 100%(407~438행 주석 "신규·기존 서비스 모두 바로 100% 트래픽으로 배포한다"), `smoke`는 그 뒤(613행). 01-07 key-decisions "[Rule 1 - Bug] 카나리(0% → 태그 URL 스모크 → 100%) 단계를 설계에서 통째로 제거". 단위 테스트가 이 동작을 고정("이미 100%로 배포된 뒤라 롤백은 수동"). ROADMAP SC6·REQUIREMENTS OPS-01 문구 미갱신, override 없음 → Gaps |
+| 6 | SC6 — CI 통과 뒤 migrate Job 먼저(실패 시 중단) → **스모크에 실패한 리비전이 트래픽을 계속 받는 상태로 끝나지 않는다**(2026-09-19 재정의); drizzle-kit generate SQL만, push 금지; Squawk이 컬럼 drop·잠금 유발 변경 거부; rollback.sh; 16A 커넥션 규칙 검사; 경보 3개가 deploy.sh로 재현 | ✓ VERIFIED (2026-09-19 재검증) | 충족: `run_migrate`가 `deploy_service` 앞(main 611~612행), 실패·exit 3 → PoolRuleViolation 중단(단위 테스트 2건); `scripts/migrate-runner.ts`가 `SHOW max_connections` → `checkPoolRule`(단위 13/13 passed, 통합 3건, 실측 25 → 3×5=15 ≤ 20); push 명령 워크플로·스크립트 0건(ci-guard 고정); Squawk CI 단계 + `.squawk.toml`(ban-drop-column 활성); `scripts/rollback.sh` `update-traffic --to-revisions=PREV=100`(단위 "v3는 스모크 실패로 0% 잔존 → v1" 1 passed); `ensure_alerts`가 채널 + 정책 3개 upsert(`policy-from-file`), 프로덕션 정책 3개 실존(호출자 확인). **2026-09-19 재검증:** 처음 판정(✗ FAILED)의 근거는 "카나리 절차가 없다"였다. 그 절차는 회사 GCP에서 4회 연속 재현 실패한 태그 전용 리비전 URL에 의존했으므로, 계약을 절차가 아니라 **그 절차가 사려던 안전 속성**으로 다시 쓰고(ROADMAP SC6·REQUIREMENTS OPS-01 갱신) 두 가지를 구현했다. (1) 기존 서비스는 `deploy_service`가 `env_vars`를 짜기 전에 `status.url`을 조회해 확정하므로 배포당 리비전이 하나만 생긴다 — 실측: 실행 `35417809514`에서 `note: using actual status.url` 줄이 **유일한** `Creating Revision`(`plant8-staging-00028-dms`) 앞에 있고 두 번째 `Deploying...`도 `run services update`도 없다(01-08-DEPLOY-LOG '추가 실측'). (2) 스모크 실패 시 `smoke_failed()`가 `rollback.sh`를 한 번 호출한 뒤 exit 1 한다(첫 배포는 되돌릴 대상이 없어 예외). 단위 테스트 4건 추가 + 옛 계약을 고정하던 3건 갱신. 자동 롤백 경로는 실제 GCP에서 관찰되지 않았다(프로덕션 스모크를 일부러 깨뜨릴 수 없다) — 근거는 fakebin 단위 테스트뿐이다 |
 | 7 | SC7 — 관리자 시스템 상태 화면 뼈대(배포 버전·DB 커넥션·마지막 백업·한도 배너); 서버 로그 JSON | ✓ VERIFIED | `app/admin/system-status/page.tsx`(세션 없음 → redirect, 비관리자 → notFound) → `domain/system-status/index.ts` getSystemStatus(NotAdminError 이중 방어, `connectionBanner` ratio 0.8) → `repositories/system-status.ts`(`pg_stat_activity`, `show max_connections` 실제 쿼리) + `lib/gcp/cloud-sql-admin.ts`(`backupRuns.list` maxResults 1, 5초 타임아웃, none/unavailable 구분). 데이터 흐름 실제(하드코딩 없음). E2E system-status.spec.ts 2건(직원 404·관리자 3항목), 통합 system-status.test.ts, 단위 system-status.test.ts. 프로덕션 비로그인 307 실측(01-08-DEPLOY-LOG). `lib/log.ts` 한 줄 JSON(severity/message/time/event), 8개 모듈에서 사용, 단위 log.test.ts. 프로덕션에서 관리자 렌더·백업 절은 미관찰 → Human Verification 2 |
 
-**Score:** 6/7 truths verified (0 present-behavior-unverified)
+**Score:** 7/7 truths verified (0 present-behavior-unverified) — SC6은 2026-09-19 재검증으로 닫혔다
 
 ### Plan-level must_haves (ROADMAP SC에 더해진 세부) — 요약
 
@@ -368,23 +363,21 @@ human_verification:
 
 **페이즈 목표는 달성됐다.** 두 환경이 같은 이미지 `ed2fbc5`로 서빙 중이고, 사용자가 브라우저에서 로그인·임시 비밀번호 배너·비밀번호 변경을 확인했으며, 4계층·린트·CI 3계층·롤백·경보·문서·상태 화면 뼈대가 코드와 테스트로 존재한다.
 
-**미충족 1건(SC6, OPS-01 본문):** "0% 리비전 → 스모크 → 100%" 안전 배포 순서가 없다. 01-07이 실측 근거(태그 URL 라우팅 4회 실패)로 카나리를 제거하고 "즉시 100% → 실제 주소 스모크 → 실패 시 수동 rollback.sh"로 바꿨다. 실제 영향: 스모크에 실패하는 리비전이 스모크 시간 동안 100% 트래픽을 받고, 자동 롤백이 없다(deploy.sh는 exit 1로 알리기만 한다). 이는 결함이라기보다 **문서화되지 않은 계약 변경**이다 — ROADMAP SC6·REQUIREMENTS OPS-01 문구가 여전히 카나리를 요구하고 OPS-01은 Complete로 표시돼 있다.
+**2026-09-19: 미충족 1건(SC6)이 닫혔다.** 아래는 당시 판정과 해소 경위를 남긴 것이다.
 
-**이것은 의도된 이탈로 보인다.** 수용하려면 이 파일 frontmatter에 다음을 추가하고 ROADMAP SC6·REQUIREMENTS OPS-01 문구를 갱신한 뒤 재검증한다:
+> **당시 미충족:** "0% 리비전 → 스모크 → 100%" 안전 배포 순서가 없다. 01-07이 실측 근거(태그 URL 라우팅 4회 실패)로 카나리를 제거하고 "즉시 100% → 실제 주소 스모크 → 실패 시 수동 rollback.sh"로 바꿨다. 실제 영향: 스모크에 실패하는 리비전이 스모크 시간 동안 100% 트래픽을 받고, 자동 롤백이 없다. 이는 결함이라기보다 **문서화되지 않은 계약 변경**이었다 — ROADMAP SC6·REQUIREMENTS OPS-01 문구가 여전히 카나리를 요구했다.
 
-```yaml
-overrides:
-  - must_have: "트래픽 0% 리비전 → 스모크 → 100% 순서로 진행된다"
-    reason: "Cloud Run 태그 전용 URL이 회사 GCP에서 15분 넘게 라우팅되지 않아(4회 실측, 01-07-DEPLOY-LOG) 카나리를 제거. 즉시 100% + 실제 주소 스모크 + 수동 rollback.sh로 대체. 자동 롤백 부재는 OPERATIONS.md §4·§5에 기록"
-    accepted_by: "{name}"
-    accepted_at: "{ISO timestamp}"
-```
+보고서는 두 선택지를 제시했다 — (a) override로 이탈을 수용, (b) 태그 URL에 의존하지 않는 안전 배포를 별도 플랜으로 복구. 실제로는 **어느 쪽도 그대로 쓰지 않았다.** 절차 대신 그 절차가 사려던 안전 속성을 계약으로 삼았다:
 
-또는 태그 URL에 의존하지 않는 안전 배포(예: `--no-traffic` 리비전을 내부 경로로 스모크)를 별도 플랜으로 복구한다.
+> **스모크에 실패한 리비전이 트래픽을 계속 받는 상태로 끝나지 않는다.**
 
-**요구사항 표 불일치 2건:** OPS-06·OPS-07은 Phase 1 담당분이 충족됐는데 REQUIREMENTS.md에서 Pending/미체크다(shared-ID gate가 01-03 SUMMARY의 `requirements-completed` 누락으로 닫히지 않은 것으로 보임). Complete로 갱신해야 한다. OPS-01은 반대로 Complete인데 본문 문구 하나가 미충족이다.
+ROADMAP Phase 1 기준 6과 REQUIREMENTS OPS-01 본문을 이 문구로 갱신하고 재정의 근거를 함께 남겼으며, `deploy.sh`에 URL 선확정(리비전 하나)과 1회 자동 롤백을 구현했다. 근거는 위 SC6 행과 frontmatter `gaps_resolved`에 있다. override는 쓰지 않았다 — 계약 자체가 바뀌었으므로 이탈이 아니다.
 
-**다음 페이즈 영향:** Phase 2(디자인 시스템·앱 셸)는 배포 파이프라인·로그인 흐름에만 의존하며 둘 다 동작한다. 위 gap은 Phase 2 착수를 막지 않는다. 다만 override/문구 갱신 결정과 human_verification 1~4는 이 페이즈 완료 처리(`/gsd-complete-milestone` 전) 안에서 닫는 것을 권한다 — 특히 2번(백업 절)은 2026-09-19 첫 백업 이후에만 가능하다.
+**요구사항 표 불일치 2건도 정정했다(2026-09-19):** OPS-06·OPS-07은 Phase 1 담당분이 충족됐는데 REQUIREMENTS.md에서 Pending이었다. `gsd_run requirements mark-complete OPS-06,OPS-07`로 체크박스·추적표를 함께 Complete로 맞췄다. 뒤 페이즈가 이 화면·문서에 항목을 더하는 것은 OPS-01이 Phase 7에서 스케줄러 잡을 더하는 것과 같은 구조이며, OPS-01은 이미 Complete였다.
+
+**남은 것은 사람만 할 수 있는 확인 4건이다**(아래 Human Verification) — 프로덕션 브라우저 세션 유지, 첫 자동 백업 이후의 상태 화면 백업 절과 경보 필터, 조직 정책 원문·런타임 SA 역할. 어느 것도 ROADMAP 성공 기준 7개의 판정을 뒤집지 않으며, 셋은 실행자 세션의 권한·네트워크 밖이고 하나는 2026-09-19 18:00 UTC 첫 백업 이후에만 가능하다.
+
+**다음 페이즈 영향:** Phase 2(디자인 시스템·앱 셸)는 배포 파이프라인·로그인 흐름에만 의존하며 둘 다 동작한다. 01-REVIEW.md의 MAJOR 8·MINOR 16은 전부 Phase 1 목표 밖이라 이 판정에 들어가지 않았고, 해당 페이즈에서 다룬다.
 
 ## 부록 A — 보고서 전달 직후 디스크에서 관찰된 변경 (검증 판정에 영향 없음)
 
@@ -399,5 +392,5 @@ overrides:
 
 ---
 
-_Verified: 2026-09-18T19:09:12Z_
+_Verified: 2026-09-18T19:09:12Z · SC6 재검증: 2026-09-19T03:31:45Z_
 _Verifier: Claude (gsd-verifier)_

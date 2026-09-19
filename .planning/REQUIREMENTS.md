@@ -130,8 +130,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **OPS-03**: DB가 자동 백업되고 복원 절차가 문서화되며 복원 리허설을 1회 한다
 - [x] **OPS-04**: 린트(`any` 금지)·타입체크·핵심 흐름(로그인→지출결의→결재→손익) 통합 테스트가 CI에서 돈다. ESLint import 경계(app↛repositories/db, domain↛app, repository는 viewer 필수)와 Server Action zod 검증 필수 린트가 포함된다
 - [ ] **OPS-05**: 직원 계정별 핵심 행동만 로그로 남긴다: 로그인, 문서 생성·제출·승인·반려·회수·삭제, 지급·구매 처리, 설정·권한 변경, 민감 정보(손익·인센티브·주민등록번호) 열람. 단순 조회·화면 이동 같은 잡음은 남기지 않는다. 관리자는 로그를 정리(수정·삭제)할 수 있다. Excel 내보내기와 마스킹 해제는 설정으로 끌 수 없는 핵심 로그다
-- [ ] **OPS-06**: 관리자 시스템 상태 화면: 마지막 알림 tick·백업·이전 실행·계산 불가 건수·DB 커넥션·배포 버전을 보이고 한도 초과 시 배너가 뜬다. 서버 로그는 JSON 형식이다
-- [ ] **OPS-07**: `docs/ARCHITECTURE.md`·`docs/OPERATIONS.md`(런북 포함)를 Phase 1 산출물로 만들고 페이즈마다 갱신한다(각 300줄 상한)
+- [x] **OPS-06**: 관리자 시스템 상태 화면: 마지막 알림 tick·백업·이전 실행·계산 불가 건수·DB 커넥션·배포 버전을 보이고 한도 초과 시 배너가 뜬다. 서버 로그는 JSON 형식이다
+- [x] **OPS-07**: `docs/ARCHITECTURE.md`·`docs/OPERATIONS.md`(런북 포함)를 Phase 1 산출물로 만들고 페이즈마다 갱신한다(각 300줄 상한)
 
 ### 기획본부 편의·디자인 (UX)
 
@@ -265,8 +265,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | OPS-03 | Phase 8 | Pending |
 | OPS-04 | Phase 1 | Complete |
 | OPS-05 | Phase 3 | Pending |
-| OPS-06 | Phase 1 | Pending |
-| OPS-07 | Phase 1 | Pending |
+| OPS-06 | Phase 1 | Complete |
+| OPS-07 | Phase 1 | Complete |
 | UX-01 | Phase 2 | Pending |
 | UX-02 | Phase 9 | Pending |
 | UX-03 | Phase 5 | Pending |

@@ -68,6 +68,9 @@ requirements-completed: [OPS-01, OPS-02, OPS-07]
 - **A3 해소** — 백업 조회 권한이 `roles/cloudsql.viewer`에 포함됨을 실측
 - **운영 문서 실측 반영** — 틀렸던 주소 규칙·스모크 실패 시 대응·롤백 선택 규칙 정정, 첫 청구서 확인 절차, 배포자 권한 축소 근거(뺄 수 있는 것과 없는 것을 이유와 함께)
 - **CLAUDE.md 명령 4자리 확정** — dev/test/lint/build 전부 실제 실행 확인 후 기입
+- **SC6 안전 속성 충족** — 배포당 리비전 하나(`status.url` 선확정)와 스모크 실패 시 1회
+  자동 롤백을 넣고, 전자를 스테이징 배포 `35417809514`(리비전 `plant8-staging-00028-dms`)
+  에서 실측했다. 01-VERIFICATION.md의 유일한 미충족 항목이 닫혔다
 
 ## Issues Encountered
 
@@ -82,7 +85,7 @@ requirements-completed: [OPS-01, OPS-02, OPS-07]
 ## Next Phase Readiness
 
 - 두 환경이 같은 이미지로 돌고 있고 승격 경로가 검증됐다 — 이후 페이즈는 main 병합 → 스테이징 자동 → 수동 승격 흐름을 그대로 쓴다
-- 이월 항목: 백업 경보 필터 검증(2026-09-19 첫 자동 백업 이후), 조직 정책 원문·런타임 SA 역할 확인(Owner 계정), 스테이징 태그 전용 트래픽 항목 4개 정리, `scripts/db-bootstrap.ts`의 `createAdminPool` 커넥터 미종료, Dockerfile의 `SecretsUsedInArgOrEnv` 경고 2건
+- 이월 항목: 백업 경보 필터 검증(2026-09-19 첫 자동 백업 이후), 프로덕션 세션 유지 브라우저 확인(01-VERIFICATION human_verification 1), 조직 정책 원문·런타임 SA 역할 확인(Owner 계정), 스테이징 태그 전용 트래픽 항목 4개 정리, `scripts/db-bootstrap.ts`의 `createAdminPool` 커넥터 미종료, Dockerfile의 `SecretsUsedInArgOrEnv` 경고 2건, 01-REVIEW.md의 MAJOR 8·MINOR 16(전부 Phase 1 목표 밖)
 - Phase 2 착수 조건은 충족 — `docs/design/`(SYSTEM.md 725줄·tokens.css·DECISIONS.md)이 이미 있다
 
 ---

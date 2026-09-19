@@ -1,4 +1,5 @@
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
+import { PageHeader } from "@/ui/page-header/PageHeader";
 
 // SYSTEM.md §6-9 오류 페이지 — 404(C①) 변종, 로그인한 사람이 보는 404다(C②:
 // 셸 안). 관리자 전용 화면의 접근 제어(D-17)가 던지는 notFound()도 이 파일로
@@ -7,7 +8,7 @@ import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 export default function NotFound() {
   return (
     <>
-      <h1>페이지를 찾을 수 없습니다</h1>
+      <PageHeader title="페이지를 찾을 수 없습니다" titleSize="2xl" />
       <ListEmpty
         message="이 페이지가 없거나 옮겨졌습니다"
         action={{ label: "첫 화면으로", href: "/" }}

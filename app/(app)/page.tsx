@@ -3,6 +3,7 @@ import { getSession } from "@/lib/viewer";
 import { buildNextTurnView } from "@/ui/next-turn/build-next-turn-view";
 import { NextTurn } from "@/ui/next-turn/NextTurn";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
+import { PageHeader } from "@/ui/page-header/PageHeader";
 
 // D-28: 루트가 「내 차례」 홈이다. 미인증이면 로그인으로 보내는 분기는
 // 02-04에서 그대로 유지한다(app/(app)/layout.tsx의 requireSession()이 이미
@@ -18,8 +19,7 @@ export default async function HomePage() {
 
   return (
     <>
-      <h1>내 차례</h1>
-      <p>지금 처리할 항목</p>
+      <PageHeader title="내 차례" subtitle="지금 처리할 항목" />
       <NextTurn view={view} />
       {!view.visible ? (
         <ListEmpty message="표시할 항목이 없습니다" action={{ label: "프로젝트 보기", href: "/projects" }} />

@@ -1,5 +1,6 @@
 import { requireSession } from "@/lib/viewer";
 import { Banner } from "@/ui/banner/Banner";
+import { PageHeader } from "@/ui/page-header/PageHeader";
 import { LogoutButton } from "./logout-button";
 import { ChangePasswordForm } from "./change-password-form";
 
@@ -13,8 +14,7 @@ export default async function AccountPage() {
   return (
     <>
       {user.passwordIsTemporary ? <Banner kind="info">임시 비밀번호를 쓰고 있습니다 — 바꾸세요.</Banner> : null}
-      <h1>내 계정</h1>
-      <p>{user.email}</p>
+      <PageHeader title="내 계정" subtitle={user.email} />
       <p>{user.name}</p>
       <ChangePasswordForm />
       <LogoutButton />

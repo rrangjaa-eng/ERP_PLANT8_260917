@@ -137,3 +137,57 @@ test.describe("시스템 상태 라벨·값 목록 — KvList (02-08 Task 1, §6
     await expect(page.getByText("확인 불가")).toBeVisible();
   });
 });
+
+test.describe("§6-0 화면 제목·부제 · §6-9 오류 제목 (02-08 Task 2)", () => {
+  test("/projects 제목·부제 계산값이 PageHeader 골격이다", async ({ page }) => {
+    await loginAs(page, false);
+    await page.goto("/projects");
+
+    const h1 = page.locator("main h1");
+    await expect(h1).toHaveCSS("font-size", "18px");
+    await expect(h1).toHaveCSS("font-weight", "700");
+    const letterSpacing = await h1.evaluate((el) => getComputedStyle(el).letterSpacing);
+    expect(px(letterSpacing)).toBeCloseTo(-0.36, 1);
+    const lineHeight = await h1.evaluate((el) => getComputedStyle(el).lineHeight);
+    expect(px(lineHeight)).toBeCloseTo(25.2, 1);
+
+    const subtitle = page.getByText("진행 중인 프로젝트 원장");
+    await expect(subtitle).toHaveCSS("font-size", "12px");
+    await expect(subtitle).toHaveCSS("color", "rgb(78, 93, 89)");
+  });
+
+  test("/account 제목·부제(이메일) 계산값이 PageHeader 골격이다", async ({ page }) => {
+    const user = await loginAs(page, false);
+    await page.goto("/account");
+
+    const h1 = page.locator("main h1");
+    await expect(h1).toHaveCSS("font-size", "18px");
+
+    const subtitle = page.getByText(user.email);
+    await expect(subtitle).toHaveCSS("font-size", "12px");
+    await expect(subtitle).toHaveCSS("color", "rgb(78, 93, 89)");
+  });
+
+  test("루트 404(셸 밖) 제목이 --fs-2xl 자간·행간이다", async ({ page }) => {
+    await page.goto("/e2e-page-chrome-nonexistent");
+
+    const h1 = page.locator("main h1");
+    await expect(h1).toHaveCSS("font-size", "32px");
+    const letterSpacing = await h1.evaluate((el) => getComputedStyle(el).letterSpacing);
+    expect(px(letterSpacing)).toBeCloseTo(-0.64, 1);
+    const lineHeight = await h1.evaluate((el) => getComputedStyle(el).lineHeight);
+    expect(px(lineHeight)).toBeCloseTo(41.6, 1);
+  });
+
+  test("셸 안 404(직원 → /admin/system-status) 제목이 --fs-2xl 자간·행간이다", async ({ page }) => {
+    await loginAs(page, false);
+    const response = await page.goto("/admin/system-status");
+    expect(response?.status()).toBe(404);
+
+    const h1 = page.locator("main h1");
+    const letterSpacing = await h1.evaluate((el) => getComputedStyle(el).letterSpacing);
+    expect(px(letterSpacing)).toBeCloseTo(-0.64, 1);
+    const lineHeight = await h1.evaluate((el) => getComputedStyle(el).lineHeight);
+    expect(px(lineHeight)).toBeCloseTo(41.6, 1);
+  });
+});

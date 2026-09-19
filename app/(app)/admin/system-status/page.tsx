@@ -5,6 +5,7 @@ import { env } from "@/lib/env";
 import { Banner } from "@/ui/banner/Banner";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { KvList } from "@/ui/kv-list/KvList";
+import { PageHeader } from "@/ui/page-header/PageHeader";
 
 // D-18: 캐시·별도 저장 없음 — 화면 로드마다 pg_stat_activity·Cloud SQL Admin API를
 // 직접 조회한다.
@@ -27,7 +28,7 @@ export default async function SystemStatusPage() {
       {/* SYSTEM.md §6-8 B③/D④: 커넥션 한도 경고는 §7-11 경고 배너, 화면 제목 위. */}
       {showConnBanner ? <Banner kind="warning">DB 커넥션이 한도의 {bannerPercent}%를 넘었습니다.</Banner> : null}
 
-      <h1>시스템 상태</h1>
+      <PageHeader title="시스템 상태" />
 
       {/* §6-8 B①: 라벨·값 목록(dl, §7-8 시트 상세와 같은 골격). */}
       <KvList

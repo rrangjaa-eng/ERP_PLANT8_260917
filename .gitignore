@@ -46,3 +46,9 @@ gha-creds-*.json
 # deploy.yml pipes deploy.sh's output into this via `tee` from $GITHUB_WORKSPACE —
 # same dirty-tree check as above trips on it if untracked
 deploy.log
+
+# GSD runtime lock: a session-scoped advisory claim over STATE.md's Current
+# Position, holding {phase, session, pid, updated_at} and expiring by TTL
+# (.claude/gsd-core/bin/lib/milestone-lock.cjs, #3311). Machine- and
+# session-specific runtime state, not source — same class as the entries above.
+.planning/milestone.lock

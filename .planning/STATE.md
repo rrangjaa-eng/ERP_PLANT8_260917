@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 current_phase: 02
 current_phase_name: 디자인 시스템·앱 셸
 current_plan: 7
-status: executing
-stopped_at: Completed 02-07-PLAN.md
-last_updated: "2026-09-19T18:03:31.640Z"
+status: verifying
+stopped_at: Completed 02-08-PLAN.md
+last_updated: "2026-09-19T22:27:22.933Z"
 last_activity: 2026-09-19
 last_activity_desc: Phase 02 execution started
-state_head: 7e8e987d0fa30838c858e98ccf1f687f8bd90018
+state_head: 3748fee99efae6516ae0f19168faeabcb833eae1
 progress:
   total_phases: 11
   completed_phases: 1
-  total_plans: 15
-  completed_plans: 15
+  total_plans: 16
+  completed_plans: 16
   percent: 9
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 Phase: 02 (디자인 시스템·앱 셸) — EXECUTING
 Current Plan: 7
 Total Plans in Phase: 7
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-19 — Phase 02 execution started
 
 Progress: [█░░░░░░░░░] 9%
@@ -72,6 +72,7 @@ Progress: [█░░░░░░░░░] 9%
 | Phase 02-design-system-app-shell P05 | 20min | 3 tasks | 15 files |
 | Phase 02 P06 | 20min | 3 tasks | 12 files |
 | Phase 02 P07 | 55min | 3 tasks | 10 files |
+| Phase 02 P08 | 16min | 3 tasks | 30 files |
 
 ## Accumulated Context
 
@@ -140,6 +141,8 @@ Recent decisions affecting current work:
 - [Phase 02]: 02-07: 체크포인트 승인 — @axe-core/playwright@4.13.0 devDependency 추가(정확히 버전 고정), SYSTEM.md §10을 규칙 엔진으로 판정. 남은 페이즈가 같은 검사를 물려받는다는 근거로 채택
 - [Phase 02]: 02-07: 키보드 비밀번호 변경 동선은 §6-0 (a) G①(작은 메뉴가 열린다) 형태 하나에만 대응 — 메뉴 열기 대기·Esc/포커스 복귀 단언 포함, ②·③ 분기 없음
 - [Phase 02]: 02-07: 로그인 화면 axe page-has-heading-one 위반을 규칙 비활성 대신 화면 수정으로 해소 — app/globals.css에 .sr-only 유틸리티 추가, 스크린 리더 전용 h1 복원(시각 디자인 불변)
+- [Phase 02]: 화면 제목·부제는 전역 h1 규칙이 아니라 ui/page-header/PageHeader 컴포넌트다(구조 우연 회피)
+- [Phase 02]: font:inherit 축약은 D-20 stylelint 허용 목록과 충돌해 롱핸드(font-family/font-size/line-height:inherit/letter-spacing:inherit/color:inherit)로 편다
 
 ### Pending Todos
 
@@ -165,6 +168,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-19T18:03:31.562Z
-Stopped at: Completed 02-07-PLAN.md
+Last session: 2026-09-19T22:27:22.848Z
+Stopped at: Completed 02-08-PLAN.md
 Resume file: None

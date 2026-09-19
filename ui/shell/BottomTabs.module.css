@@ -12,7 +12,10 @@
     left: 0;
     right: 0;
     bottom: 0;
-    height: var(--touch-min);
+    /* border-box(app/globals.css)라 border-top이 콘텐츠 높이에서 빠진다 — 위 경계선
+       두께만큼 더해 탭 항목(.tab)의 실제 터치 목표가 §10의 44px 그대로 유지된다
+       (02-07 실측: 보정 없이는 42px). */
+    height: calc(var(--touch-min) + var(--line-w-strong));
     display: flex;
     background: var(--bg);
     border-top: var(--line-w-strong) solid var(--line-strong);

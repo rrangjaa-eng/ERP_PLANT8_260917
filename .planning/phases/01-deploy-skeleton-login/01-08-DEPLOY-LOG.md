@@ -37,6 +37,15 @@
 | 경보 | 알림 채널 1개 + 정책 3개 + 로그 메트릭 `notify_tick_success_prod` 생성 |
 | 스모크 | `/` → **307**, `/login` → **200**, `/api/health` → **200** |
 
+### 이미지 (T-1-24 — 재빌드 없이 승격했으므로 스테이징 빌드의 값)
+
+- 베이스 이미지: `node:24-slim@sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553`
+- 앱 이미지 다이제스트: `sha256:06f46c98593f425095439fe63144ef355578c76fed0e8053962bd9f33f399790`
+  (태그 `app:ed2fbc56…`, 스테이징 빌드 run `35376419153`)
+- 빌드 경고 2건: `SecretsUsedInArgOrEnv`(Dockerfile 33줄의 `ENV BETTER_AUTH_SECRET`·
+  `BETTER_AUTH_URL`) — 빌드 시 더미값이고 실제 값은 런타임에 Secret Manager로 주입되지만,
+  docker가 경고하는 형태이므로 ARG로 옮기는 편이 낫다(후속 후보).
+
 ## 실측 — 스테이징에서 본 현상이 프로덕션에서도 재현됨
 
 **결정적 URL 가정은 프로덕션에서도 기각된다.** 로그에 그대로 남았다:

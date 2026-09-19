@@ -399,6 +399,21 @@ deploy_service() {
     EXISTS=1
   fi
 
+  # 서비스가 이미 있으면 **배포 전에** 실제 주소를 확정한다. 이 프로젝트에서는
+  # 계산식 URL과 status.url이 항상 다르고(01-07·01-08 실측), 배포 후에 고치면
+  # 리비전이 둘 생긴다 — 첫 리비전은 틀린 BETTER_AUTH_URL을 들고 100% 트래픽을
+  # 받아 로그인 POST가 better-auth Origin 검사에 걸린다. 먼저 읽어서 한 번에
+  # 맞는 값으로 배포하면 그 창이 없어지고 롤백 대상도 깔끔해진다.
+  # (최초 배포는 서비스가 없어 주소를 알 수 없으므로 아래 배포 후 교정이 남는다.)
+  if [ "$EXISTS" = "1" ] && [ "$DRY_RUN" != "1" ]; then
+    local existing_url
+    existing_url="$(run gcloud run services describe "$svc" --region="$REGION" --project="$PROJECT" --format='value(status.url)')"
+    if [ -n "$existing_url" ] && [ "$existing_url" != "$SERVICE_URL" ]; then
+      echo "note: using actual status.url ($existing_url) instead of the computed one ($SERVICE_URL)" >&2
+      SERVICE_URL="$existing_url"
+    fi
+  fi
+
   local deployed_at
   deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   local env_vars="APP_ENV=${ENV},APP_GIT_SHA=${SHA},APP_DEPLOYED_AT=${deployed_at},CLOUD_SQL_CONNECTION_NAME=${CONN_NAME},DB_IAM_USER=${iam_user},DB_NAME=${DB_NAME},DB_POOL_MAX=${DB_POOL_MAX},BETTER_AUTH_URL=${SERVICE_URL},AUTH_PROVIDER=email,GCP_PROJECT_ID=${PROJECT},CLOUD_SQL_INSTANCE_ID=${instance}"
@@ -475,6 +490,31 @@ _dump_service_diagnostics() {
 # deploy_service()가 이미 100% 트래픽으로 배포했으므로(카나리 단계 없음),
 # 여기서는 이미 검증된 실제 서비스 주소(SERVICE_URL)로 사후 확인만 한다.
 # 실패해도 자동 롤백은 하지 않는다 — `scripts/rollback.sh`로 수동 롤백한다.
+# SC6(재정의): "스모크에 실패한 리비전이 트래픽을 계속 받는 상태로 끝나지 않는다".
+# 카나리(0%→검증→승격)는 태그 전용 URL이 이 프로젝트에서 라우팅되지 않아
+# 01-07에서 제거됐다. 대신 새 리비전이 이미 100%를 받은 상태에서 스모크가
+# 실패하면 즉시 이전 **배포**로 되돌린다.
+#
+# 되돌리기는 **한 번만** 한다. 반복 재시도는 진짜 문제를 가린다 — 되돌린 뒤에는
+# 성공했든 실패했든 시끄럽게 exit 1로 끝낸다.
+smoke_failed() {
+  local reason="$1"
+  echo "SmokeFailed: $reason" >&2
+
+  if [ "$EXISTS" != "1" ]; then
+    echo "not rolling back: first deploy of this service — there is no previous deployment" >&2
+    exit 1
+  fi
+
+  echo "rolling back to the previous deployment (once, then failing)" >&2
+  if run bash "$SCRIPT_DIR/rollback.sh" --env "$ENV" --project "$PROJECT" --region "$REGION" >&2; then
+    echo "rolled back after a failed smoke — investigate before deploying again" >&2
+  else
+    echo "rollback FAILED after a failed smoke — the bad revision may still be serving" >&2
+  fi
+  exit 1
+}
+
 smoke() {
   STAGE=smoke
   local target="$SERVICE_URL"
@@ -495,16 +535,14 @@ smoke() {
   echo "quick probe (no retry): / -> $(curl -s -o /dev/null -w '%{http_code}' "${target}/" 2>/dev/null || echo ERR), /login -> $(curl -s -o /dev/null -w '%{http_code}' "${target}/login" 2>/dev/null || echo ERR), /api/health -> $(curl -s -o /dev/null -w '%{http_code}' "${target}/api/health" 2>/dev/null || echo ERR)" >&2
 
   if ! run curl -fsS --retry 20 --retry-delay 15 --retry-all-errors "${target}/api/health" | grep -q '"ok":true'; then
-    echo "SmokeFailed: run scripts/rollback.sh if this is a real regression" >&2
     _dump_service_diagnostics
-    exit 1
+    smoke_failed "/api/health did not return ok:true"
   fi
 
   local login_code
   login_code="$(run curl -s -o /dev/null -w '%{http_code}' "${target}/login")"
   if [ "$login_code" != "200" ]; then
-    echo "SmokeFailed: run scripts/rollback.sh if this is a real regression" >&2
-    exit 1
+    smoke_failed "/login returned $login_code (expected 200)"
   fi
 
   local signin_code
@@ -514,14 +552,12 @@ smoke() {
     "${target}/api/auth/sign-in/email")"
 
   if [ "$signin_code" = "403" ]; then
-    echo "SmokeFailed(origin): BETTER_AUTH_URL does not match the served origin" >&2
-    exit 1
+    smoke_failed "origin check — BETTER_AUTH_URL does not match the served origin"
   fi
   case "$signin_code" in
     4*) : ;;
     *)
-      echo "SmokeFailed: run scripts/rollback.sh if this is a real regression" >&2
-      exit 1
+      smoke_failed "sign-in probe returned $signin_code (expected a 4xx)"
       ;;
   esac
 }

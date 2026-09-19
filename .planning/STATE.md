@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 current_phase: 1
 current_phase_name: 배포 스켈레톤·로그인
 current_plan: 8
-status: executing
-stopped_at: 01-08 프로덕션 승격 완료, 세션 마감
-last_updated: "2026-09-18T18:55:58.316Z"
+status: verifying
+stopped_at: "Phase 1 마감 게이트 수행: 코드 리뷰(BLOCKER 1·MAJOR 8·MINOR 16) + 목표 검증(PARTIAL 6/7). 롤백 BLOCKER는 수정 완료. 카나리 계약 불일치는 사용자 결정 대기 — 그 전까지 Phase 1 완료 표시 보류. Phase 2는 막히지 않음"
+last_updated: "2026-09-19T02:15:07.263Z"
 last_activity: 2026-09-17
 last_activity_desc: "로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드"
-state_head: 8fa04ed82381e8d108e899f2beb9efbc200029ab
+state_head: d2a6ccddfd792d0ba6f8d062399a4680988d00a0
 progress:
   total_phases: 11
   completed_phases: 0
   total_plans: 8
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 Phase: 1 (배포 스켈레톤·로그인) — EXECUTING
 Current Plan: 8
 Total Plans in Phase: 8
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-17 — 로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드
 
 Progress: [░░░░░░░░░░] 0%
@@ -116,6 +116,7 @@ Recent decisions affecting current work:
 - [Phase 1]: [Phase 01-deploy-skeleton-login] 01-06: infra/names.sh 리소스 접두어를 plant8-로 통일(서비스·SQL·SA·AR은 사용자 결정 명시, Job 이름도 같은 계열이라 확장) — WIF_POOL/WIF_PROVIDER/DEPLOYER_SA는 identity 식별자라 플랜 원문 값 유지
 - [Phase 1]: [Phase 01-deploy-skeleton-login] 01-06: bash ERR 트랩은 기본적으로 함수 안에서 발동하지 않는다 — set -o errtrace(set -E) 없이는 deploy.sh의 STAGE 트랩 메시지가 안 나옴을 실측(scripts/deploy.sh)
 - [Phase 1]: [Phase 01-deploy-skeleton-login] 01-06: deploy.yml/account.yml에 pnpm build:cli 스텝 불필요 — Dockerfile의 build 스테이지가 컨테이너 안에서 이미 pnpm build && pnpm build:cli를 실행함을 확인(01-05 Dockerfile 직접 확인)
+- [Phase Phase 1]: SC6 재정의(사용자 결정 2026-09-19): 카나리를 복원하지 않고 안전 속성을 계약으로 삼는다 — 스모크에 실패한 리비전이 트래픽을 계속 받는 상태로 끝나지 않는다 — 카나리(0%→스모크→100%)는 태그 전용 리비전 URL에 의존하는데 이 프로젝트에서 4회 연속 라우팅되지 않았고 원인이 통제 밖이다(01-07). 같은 것을 다시 지으면 같은 데서 막힌다. 구현 둘: (1) 기존 서비스는 배포 전에 status.url을 확정해 배포당 리비전 하나 — 틀린 BETTER_AUTH_URL로 100%를 받던 창이 사라지고 롤백 대상도 깔끔해진다. (2) 스모크 실패 시 이전 배포로 1회 자동 롤백 후 실패 종료 — 재시도는 금지(반복은 진짜 원인을 가린다). 프로덕션은 승격 가드가 스테이징이 서빙 중인 이미지만 올리므로 스테이징이 카나리 역할을 한다. 남는 노출 창은 스모크 소요 시간(수십 초)이며 사용자 10~30명 사내 시스템에 적정하다고 판단. ROADMAP 기준 6과 REQUIREMENTS OPS-01 본문을 이 속성으로 고쳤다
 
 ### Pending Todos
 
@@ -141,5 +142,5 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-09-18T18:54:04.478Z
-Stopped at: 01-08 프로덕션 승격 완료, 세션 마감
+Stopped at: Phase 1 마감 게이트 수행: 코드 리뷰(BLOCKER 1·MAJOR 8·MINOR 16) + 목표 검증(PARTIAL 6/7). 롤백 BLOCKER는 수정 완료. 카나리 계약 불일치는 사용자 결정 대기 — 그 전까지 Phase 1 완료 표시 보류. Phase 2는 막히지 않음
 Resume file: None

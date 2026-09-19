@@ -17,9 +17,10 @@
 (`https://plant8-<env>-<프로젝트 번호>.asia-northeast3.run.app`)은 이 프로젝트에서
 실제 주소가 아니었다 — 2026-09-18 스테이징 첫 배포에서 확인했고, 그 형식으로 열면
 404가 난다(01-07-DEPLOY-LOG). 실제 주소는 `plant8-staging-<해시>-du.a.run.app` 형태다.
-`deploy.sh`는 `status.url`이 계산값과 다르면 그 값으로 `BETTER_AUTH_URL`까지 맞춰
-재배포하므로(`note: computed url differs` 줄), 배포 로그 마지막의 `SERVICE_URL=` 줄이
-항상 정본이다. 다른 주소(태그 리비전 URL 등)로 열면 화면은 떠도 로그인 POST가
+`deploy.sh`는 **기존 서비스라면 배포 전에** `status.url`을 읽어 그 값으로 배포하므로
+(`note: using actual status.url` 줄) 배포당 리비전이 하나만 생긴다. 서비스가 아직 없는
+최초 배포만 주소를 미리 알 수 없어 배포 후 교정이 일어난다(`note: computed url differs`
+줄, 리비전 2개). 어느 쪽이든 배포 로그 마지막의 `SERVICE_URL=` 줄이 정본이다. 다른 주소(태그 리비전 URL 등)로 열면 화면은 떠도 로그인 POST가
 better-auth의 Origin 검사에 걸려 403이 난다 — 북마크·안내는 항상 `status.url`로.
 
 ## 2. 월 비용 목표
@@ -94,10 +95,20 @@ GitHub Environments·승인 버튼은 없다(D-05, 무료 플랜 비공개 저�
 쓰기 협업자로 제한한다.
 
 **실패 시:** 카나리(0% → 검증 → 승격) 단계는 없다 — 새 리비전은 스모크 **전에** 이미
-100% 트래픽을 받는다. 그래서 스모크 실패는 **나쁜 리비전이 서빙 중인 상태**를 뜻하고,
-자동 롤백도 없다: 즉시 `pnpm rollback`(§5)으로 되돌린 뒤 원인을 본다. 실패 단계 이름은
-워크플로 로그 마지막 줄의 `deploy failed at <stage>`로 안다. (카나리를 뺀 이유: 태그
-전용 리비전 URL이 4회 연속 15분 넘게 라우팅되지 않았다 — 01-07-DEPLOY-LOG.)
+100% 트래픽을 받는다. 그래서 스모크 실패는 나쁜 리비전이 서빙 중이라는 뜻이고,
+`deploy.sh`가 **이전 배포로 한 번 자동 롤백한 뒤 실패로 끝낸다**(2026-09-19 SC6 재정의).
+로그에서 볼 것:
+
+- `SmokeFailed: <이유>` — 무엇이 실패했는지
+- `rolling back to the previous deployment (once, then failing)` — 되돌리기 시작
+- `rolled back …` 또는 `rollback FAILED …` — 되돌리기 결과
+- 최초 배포면 `not rolling back: first deploy …`(되돌릴 배포가 없다)
+
+**자동 롤백은 한 번뿐이다.** 재시도하지 않는다 — 반복은 진짜 원인을 가린다. 롤백이
+실패했다는 줄이 보이면 나쁜 리비전이 아직 서빙 중일 수 있으니 `pnpm rollback`(§5)을
+직접 돌리고 원인을 본다. 실패 단계 이름은 로그 마지막 줄의 `deploy failed at <stage>`.
+(카나리를 뺀 이유: 태그 전용 리비전 URL이 4회 연속 15분 넘게 라우팅되지 않았다 —
+01-07-DEPLOY-LOG.)
 
 ## 5. 롤백
 
@@ -123,7 +134,7 @@ GitHub Environments·승인 버튼은 없다(D-05, 무료 플랜 비공개 저�
 
 로컬 3종 CLI: `pnpm account:create --email … --name … [--admin]` / `pnpm account:reset
 --email …` / `pnpm account:unlock --email …`. 운영에서는 같은 컨테이너 이미지의 Cloud Run
-Job `erp-{env}-**account**`를 GitHub Actions `account.yml`로 실행한다(입력: env·action·
+Job `plant8-{env}-**account**`를 GitHub Actions `account.yml`로 실행한다(입력: env·action·
 email·name·admin).
 
 임시 비밀번호는 워크플로 로그와 Cloud Logging에 한 번 남으므로 전달받는 즉시 변경을

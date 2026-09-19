@@ -44,7 +44,14 @@ interface RollbackResult {
 
 function rollback(
   repoDir: string,
-  state: { revisions?: string[]; serving?: string; serviceExists?: boolean },
+  state: {
+    revisions?: string[];
+    serving?: string;
+    serviceExists?: boolean;
+    // 리비전 이름 -> APP_GIT_SHA. 한 번의 배포가 리비전을 둘 만드는 실제 동작
+    // (deploy.sh가 status.url을 확인하고 BETTER_AUTH_URL을 고쳐 재배포)을 모델링한다.
+    revisionShas?: Record<string, string>;
+  },
 ): RollbackResult {
   const stateDir = mkdtempSync(join(tmpdir(), "rollback-state-"));
   writeFileSync(join(stateDir, "service-exists"), "");
@@ -53,6 +60,9 @@ function rollback(
   }
   if (state.serving !== undefined) {
     writeFileSync(join(stateDir, "serving"), state.serving);
+  }
+  for (const [rev, sha] of Object.entries(state.revisionShas ?? {})) {
+    writeFileSync(join(stateDir, `revision-git-sha-${rev}`), sha);
   }
   const logDir = mkdtempSync(join(tmpdir(), "rollback-log-"));
   const logPath = join(logDir, "log");
@@ -89,6 +99,31 @@ describe("rollback.sh", () => {
     const r = rollback(repoDir, { revisions: ["v2", "v1"], serving: "v2" });
     expect(r.status).toBe(0);
     expect(r.log).toContain("--to-revisions=v1=100");
+  });
+
+  // 한 번의 배포가 리비전을 둘 만든다(01-07·01-08 실측: staging 00024→00025,
+  // prod 00001→00002). 첫 리비전은 계산 URL을 BETTER_AUTH_URL로 들고 있어
+  // 로그인 POST가 better-auth Origin 검사에 걸린다. "직전 리비전"으로 되돌리면
+  // 사고 중에 로그인이 막힌 리비전에 착륙한다 — 배포 단위(APP_GIT_SHA)로 건너뛴다.
+  it("같은 배포가 만든 중간 리비전을 건너뛰고 이전 배포로 되돌린다", () => {
+    const r = rollback(repoDir, {
+      revisions: ["v4", "v3", "v2", "v1"],
+      serving: "v4",
+      revisionShas: { v4: "shaB", v3: "shaB", v2: "shaA", v1: "shaA" },
+    });
+    expect(r.status).toBe(0);
+    expect(r.log).toContain("--to-revisions=v2=100");
+    expect(r.log).not.toContain("--to-revisions=v3=100");
+  });
+
+  it("이전 배포가 없으면(전부 같은 SHA) 거부한다", () => {
+    const r = rollback(repoDir, {
+      revisions: ["v2", "v1"],
+      serving: "v2",
+      revisionShas: { v2: "shaB", v1: "shaB" },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("no previous deployment");
   });
 
   it("리비전 [v3, v2, v1] 서빙 v2(v3는 스모크 실패로 0% 잔존) -> v1로 되돌린다(v3 아님)", () => {

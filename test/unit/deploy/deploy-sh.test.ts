@@ -179,6 +179,7 @@ describe("deploy.sh — 새 프로젝트(시나리오 1)", () => {
       state: { "describe-url": "https://plant8-staging-67rumhdgba-du.a.run.app" },
     });
     expect(r.status).toBe(0);
+    // 최초 배포는 서비스가 없어 주소를 미리 알 수 없다 — 배포 후 교정 경로가 남는다.
     expect(r.stderr).toContain("differs from actual status.url");
 
     const updateLine = r.log.split("\n").find((l) => l.startsWith("run services update plant8-staging "));
@@ -224,13 +225,11 @@ describe("deploy.sh — 기존 서비스·이미지(시나리오 2)", () => {
     expect(trafficLine).toBeDefined();
     expect(trafficLine).toContain("--to-latest");
 
-    // 실제 status.url이 계산한 정본 URL과 다르면(describe-url) 실측값으로
-    // 바로잡고, 이미 100%로 배포했으므로 컨테이너의 BETTER_AUTH_URL도
-    // 안전하게 같이 고친다 — 스모크는 이 실측 주소로 한다(2026-09-18: run
-    // #14 진단으로 status.url이 진짜 서비스 주소임을 확인).
-    const updateLine = r.log.split("\n").find((l) => l.startsWith("run services update plant8-staging "));
-    expect(updateLine).toBeDefined();
-    expect(updateLine).toContain("--update-env-vars=BETTER_AUTH_URL=https://plant8-staging-abc123-du.a.run.app");
+    // 기존 서비스는 배포 **전에** status.url을 읽어 그 값으로 배포한다(2026-09-19
+    // SC6 재정의). 그래서 위 배포 호출 자체가 실측 주소를 들고 있고, 배포 후
+    // 교정용 `services update`는 더 이상 없다 — 리비전이 하나만 생긴다.
+    expect(deployLine).toContain("BETTER_AUTH_URL=https://plant8-staging-abc123-du.a.run.app");
+    expect(r.log).not.toContain("run services update plant8-staging");
 
     const healthLine = r.log.split("\n").find((l) => l.includes("/api/health"));
     expect(healthLine).toContain("https://plant8-staging-abc123-du.a.run.app/api/health");
@@ -252,7 +251,7 @@ describe("deploy.sh — 기존 서비스·이미지(시나리오 2)", () => {
     const policiesUpdateArgLine = r.log.split("\n").find((l) => l.startsWith("alpha monitoring policies list"));
     expect(policiesUpdateArgLine).toContain('--filter=displayName="');
 
-    expect(r.stderr).toContain("differs from actual status.url");
+    expect(r.stderr).toContain("using actual status.url");
     expect(r.stdout.trim().split("\n").at(-1)).toBe("SERVICE_URL=https://plant8-staging-abc123-du.a.run.app");
   });
 });
@@ -291,21 +290,25 @@ describe("deploy.sh — 거부·실패 경로", () => {
     expect(r.stderr).toContain("migration failed");
   });
 
-  it("기존 서비스에서 health가 503이면 SmokeFailed로 exit 1한다(이미 100%로 배포된 뒤라 롤백은 수동)", () => {
+  it("기존 서비스에서 health가 503이면 SmokeFailed로 exit 1하고 롤백을 한 번 시도한다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
       state: { "service-exists": true, "image-exists": true, health: "503" },
     });
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("SmokeFailed");
-    expect(r.stderr).toContain("rollback.sh");
+    // SC6 재정의: 나쁜 리비전을 100%에 남겨두지 않는다. 이 시나리오에는 되돌릴
+    // 리비전 상태를 주지 않았으므로 롤백은 실패하지만, 시도 자체와 그 실패가
+    // 조용히 넘어가지 않고 stderr에 남는 것이 계약이다.
+    expect(r.stderr).toContain("rolling back to the previous deployment");
+    expect(r.stderr).toContain("rollback FAILED");
   });
 
-  it("sign-in이 403이면 SmokeFailed(origin)과 BETTER_AUTH_URL을 stderr에 남기고 exit 1한다", () => {
+  it("sign-in이 403이면 origin 불일치로 SmokeFailed하고 BETTER_AUTH_URL을 stderr에 남긴다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
       state: { "service-exists": true, "image-exists": true, signin: "403" },
     });
     expect(r.status).toBe(1);
-    expect(r.stderr).toContain("SmokeFailed(origin)");
+    expect(r.stderr).toContain("SmokeFailed: origin check");
     expect(r.stderr).toContain("BETTER_AUTH_URL");
   });
 
@@ -440,5 +443,80 @@ describe("deploy.sh — 프로덕션은 빌드하지 않는다(시나리오 11)"
     expect(r.status).toBe(0);
     expect(r.log).not.toMatch(/build --build-arg/);
     expect(r.log).toMatch(/^run deploy plant8-prod /m);
+  });
+});
+
+// SC6 재정의(2026-09-19 사용자 결정): 카나리(0%→스모크→100%)는 태그 전용 URL이
+// 이 프로젝트에서 라우팅되지 않아 01-07에서 제거됐다. 계약을 절차가 아니라 결과로
+// 바꾼다 — "스모크에 실패한 리비전이 트래픽을 계속 받는 상태로 끝나지 않는다".
+describe("deploy.sh — 배포당 리비전 하나(선행 URL 확정)", () => {
+  let repoDir: string;
+  beforeEach(() => {
+    repoDir = setupRepo();
+  });
+
+  it("기존 서비스면 배포 전에 status.url을 읽어 BETTER_AUTH_URL에 넣고, 교정용 재배포를 하지 않는다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: {
+        "service-exists": true,
+        "image-exists": true,
+        "describe-url": "https://plant8-staging-hash-du.a.run.app",
+      },
+    });
+    expect(r.status).toBe(0);
+
+    // 배포 호출 자체가 실측 URL을 BETTER_AUTH_URL로 들고 있어야 한다.
+    const deployLine = r.log.split("\n").find((l) => l.startsWith("run deploy plant8-staging "));
+    expect(deployLine).toBeDefined();
+    expect(deployLine).toContain("BETTER_AUTH_URL=https://plant8-staging-hash-du.a.run.app");
+
+    // 교정용 `services update --update-env-vars BETTER_AUTH_URL=...`가 없어야 한다.
+    expect(r.log).not.toContain("run services update plant8-staging");
+  });
+
+  it("최초 배포(서비스 없음)는 주소를 미리 알 수 없어 교정용 재배포가 남는다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "describe-url": "https://plant8-staging-hash-du.a.run.app" },
+    });
+    expect(r.status).toBe(0);
+    expect(r.log).toContain("run services update plant8-staging");
+  });
+});
+
+describe("deploy.sh — 스모크 실패 시 자동 롤백", () => {
+  let repoDir: string;
+  beforeEach(() => {
+    repoDir = setupRepo();
+  });
+
+  it("기존 서비스에서 스모크가 실패하면 이전 배포로 한 번 되돌리고 실패로 끝낸다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: {
+        "service-exists": true,
+        "image-exists": true,
+        health: "503",
+        revisions: "v2\nv1\n",
+        serving: "v2",
+        "revision-git-sha-v2": "shaB",
+        "revision-git-sha-v1": "shaA",
+      },
+    });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("SmokeFailed");
+    // 롤백이 실제로 트래픽을 되돌렸다.
+    expect(r.log).toContain("--to-revisions=v1=100");
+    // 한 번만 시도한다(재시도 루프 금지).
+    expect(r.log.split("\n").filter((l) => l.includes("--to-revisions=")).length).toBe(1);
+    expect(r.stderr).toContain("rolled back");
+  });
+
+  it("최초 배포는 되돌릴 이전 배포가 없으므로 롤백을 시도하지 않고 실패로 끝낸다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { health: "503" },
+    });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("SmokeFailed");
+    expect(r.log).not.toContain("--to-revisions=");
+    expect(r.stderr).toContain("first deploy");
   });
 });

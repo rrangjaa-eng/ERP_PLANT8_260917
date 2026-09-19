@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
+import { Button } from "@/ui/button/Button";
 
 const GENERIC_ERROR = "이메일 또는 비밀번호가 올바르지 않습니다.";
 
@@ -70,9 +71,9 @@ export function LoginForm({ showGoogle = false }: { showGoogle?: boolean }) {
           />
         </div>
         {error ? <p role="alert">{error}</p> : null}
-        <button type="submit" disabled={pending}>
+        <Button type="submit" variant="primary" pending={pending}>
           로그인
-        </button>
+        </Button>
       </form>
       {showGoogle ? (
         <button

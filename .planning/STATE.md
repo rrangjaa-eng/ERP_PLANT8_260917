@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 02
 current_phase_name: 디자인 시스템·앱 셸
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-09-19T15:48:46.414Z"
+stopped_at: Completed 02-03-PLAN.md
+last_updated: "2026-09-19T16:09:35.742Z"
 last_activity: 2026-09-19
 last_activity_desc: Phase 02 execution started
-state_head: a084a63543f92b7844c1bd2dda904e95fee0f0a4
+state_head: e233e1193d63ced26d8f7579912151fa91b05ae3
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 15
-  completed_plans: 10
+  completed_plans: 11
   percent: 9
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 02 (디자인 시스템·앱 셸) — EXECUTING
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 7
 Status: Ready to execute
 Last activity: 2026-09-19 — Phase 02 execution started
@@ -67,6 +67,7 @@ Progress: [█░░░░░░░░░] 9%
 | Phase 01-deploy-skeleton-login P06 | 38min | 2 tasks | 17 files |
 | Phase 02 P02 | 11min | 3 tasks | 11 files |
 | Phase 02 P01 | unknown | 3 tasks | 4 files |
+| Phase 02 P03 | 19min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -123,6 +124,8 @@ Recent decisions affecting current work:
 - [Phase 02]: 02-02: .dockerignore의 docs 라인을 부분 예외 대신 통째 제거 — COPY . .가 컨텍스트 전체를 한 레이어에 담아 캐시 보존 이점이 없고, 부정 패턴 의미론을 Docker 데몬 없는 환경에서 확인할 수 없음
 - [Phase 02]: 02-02: CI/배포 트리거를 paths-ignore에서 paths + ! 4패턴으로 교체 — GitHub 문서가 부정 패턴 지원을 명시하는 필터는 paths뿐 — 실제 트리거 동작은 사람 체크로 남김
 - [Phase 02]: [Phase 02] 02-01: 체크포인트 24개 항목(A~I) 전부 사용자 확정 — F-1①·F-2①·I②(--on-accent-weak 신설)·G①·H① 채택, A⑤·E⑤는 다섯 상태를 하나도 비우지 않고 "해당 없음 — 이유"로 명시하는 규칙으로 변경. 재계획 방아쇠 미선택
+- [Phase 02]: [Phase 02] 02-03: AuthFrame 최대 폭은 새 값을 만들지 않고 tokens.css의 기존 --modal-w(480) 토큰을 재사용했다 — §6-7의 「최대 폭 360」은 ASCII 목업 근사치이고 로그인 폼은 --form-max(720, 다항목 업무 폼)보다 단일 목적 좁은 컨테이너에 더 가깝다
+- [Phase 02]: [Phase 02] 02-03: §6-7 다이어그램에 없는 기존 h1 「로그인」 타이틀을 제거했다 — 워드마크(PLANT8)가 그 자리를 대신하고 어떤 E2E도 그 텍스트에 의존하지 않는다
 
 ### Pending Todos
 
@@ -148,6 +151,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-19T15:48:46.337Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-09-19T16:09:35.662Z
+Stopped at: Completed 02-03-PLAN.md
 Resume file: None

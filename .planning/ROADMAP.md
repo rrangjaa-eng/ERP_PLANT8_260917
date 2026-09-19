@@ -106,12 +106,29 @@ Plans:
 **Plans**: 7 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 02-01-PLAN.md — SYSTEM.md 빈 곳 8개 보강(로그인·시스템 상태·오류 페이지 템플릿, 배너·알림함 계약, §6-0·§7-7 보강) + 대비값 정정 2건 + DECISIONS.md 이탈 기록 (W1)
 - [ ] 02-02-PLAN.md — `ui` 경계 타입 신설 · stylelint 색/서체/radius 금지 + 규칙 테스트 · `.dockerignore`·두 워크플로 트리거 수정 (W1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 02-03-PLAN.md — [tracer] Pretendard·토큰 직접 import·버튼·입력을 로그인 한 경로로 끝까지 꿰고 §6-7 로그인 화면 완성 (W2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 02-04-PLAN.md — 역할→메뉴 매핑 · 상단 바(내 계정·로그아웃 진입점) · 폰 하단 탭 · 「더보기」 시트 · 셸 삽입 (W3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 02-05-PLAN.md — 「내 차례」 표시 계산·블록 · 목록 EMPTY · 루트 홈 + 1차 메뉴 다섯 화면 (W4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 02-06-PLAN.md — 배너·상태 태그·토스트 · 내 계정 재구성 · 시스템 상태 재구성 · 오류 화면 세 곳 (W5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 02-07-PLAN.md — 폰 375 뷰포트 프로젝트 · 키보드 전용 동선 · §10 접근성 계약 검증 (W6)
 
 **UI hint**: yes

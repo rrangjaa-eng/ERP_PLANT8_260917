@@ -8,10 +8,10 @@ import styles from "./ListEmpty.module.css";
 // 버튼(§7-7 EMPTY 행)이다.
 export type ListEmptyTone = "empty" | "error";
 
-export type ListEmptyAction = {
-  label: string;
-  href: string;
-};
+// 02-06: 다음 한 수가 화면 이동이면 href(<a>), 재시도처럼 이동이 아니면 onClick
+// (<button>)다(§10 — 3차 버튼은 <button>, 페이지 이동이면 <a>). 오류 경계
+// (app/(app)/error.tsx)의 "다시 시도"가 onClick 갈래를 쓴다.
+export type ListEmptyAction = { label: string; href: string } | { label: string; onClick: () => void };
 
 export type ListEmptyProps = {
   /** 「무엇이 없다」 부분. */
@@ -26,13 +26,20 @@ export type ListEmptyProps = {
 
 export function ListEmpty({ message, action, tone = "empty" }: ListEmptyProps) {
   const isError = tone === "error";
+  const actionClassName = isError ? styles.secondary : styles.tertiary;
 
   return (
     <p className={[styles.row, isError ? styles.error : styles.empty].join(" ")}>
       <span className={styles.message}>{message}</span>
-      <a href={action.href} className={isError ? styles.secondary : styles.tertiary}>
-        {action.label}
-      </a>
+      {"href" in action ? (
+        <a href={action.href} className={actionClassName}>
+          {action.label}
+        </a>
+      ) : (
+        <button type="button" onClick={action.onClick} className={actionClassName}>
+          {action.label}
+        </button>
+      )}
     </p>
   );
 }

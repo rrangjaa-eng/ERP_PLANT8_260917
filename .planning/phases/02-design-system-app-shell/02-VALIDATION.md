@@ -79,14 +79,18 @@ updated: "2026-09-19"
 
 - [ ] `eslint.config.mjs`에 `ui` boundaries 타입 등록 (+ `app`·`test` allow 목록, `{ from: "ui", allow: ["ui","lib"] }`) — **모든 `ui/` 작업의 선행 조건.** 등록 전에는 `ui/`의 금지 import가 아무 오류도 내지 않는다(리서치 실측)
 - [ ] `.dockerignore`에서 `docs` 제외 해제 — D-21 프로덕션 빌드 선행 조건
-- [ ] 두 워크플로 `paths-ignore`에 `docs/design/tokens.css` 부정 패턴
+- [ ] 두 워크플로(`ci.yml`·`deploy.yml`)의 트리거 경로 필터를 **`paths-ignore` → `paths` + `!` 네 줄로 교체**(02-02 Task 3). 순서가 곧 의미다: 「전체 포함 → `!.planning/**` → `!docs/**` → `docs/design/tokens.css`」 — tokens.css 줄이 `docs/**` 부정 줄보다 **뒤**여야 하고, 첫 패턴이 빠지면 필터가 뒤집혀 CI가 거의 모든 PR에서 사라진다. `test/unit/ci-guard.test.ts`·`test/unit/deploy/workflows.test.ts`가 `paths-ignore` 부재·네 패턴 존재·네 패턴의 순서 셋을 단언하도록 함께 고쳐진다
 - [ ] `stylelint@17.15.0` 설치 + `stylelint.config.mjs` + `package.json` `lint` 통합
 - [ ] `test/unit/stylelint-config.test.ts` — 규칙 자체의 테스트(D-20 요구)
 - [ ] `test/unit/design-system-docs.test.ts` — 디자인 문서 계약 회귀 + **두 워크플로의 `docs/**` 무시 때문에 docs 전용 커밋이 CI를 타지 않는 문제의 완화책**(이 파일이 커밋 묶음을 docs 전용이 아니게 만든다)
 - [ ] `docs/design/SYSTEM.md` 신설 절 5개 — §6-7 · §6-8 · §6-9 · §7-11 · §7-12. 이후 플랜의 화면·컴포넌트 태스크가 이 절들을 유일한 설계 출처로 읽는다
+- [ ] `docs/design/SYSTEM.md` §6-0 보강 (a)~(e) — 특히 **(a) PC 상단 바 사용자 진입점의 형태**(02-01 체크포인트 항목 G의 답). 02-04 Task 1이 그 형태대로 만들고 02-07 Task 3의 키보드 동선이 그 형태대로 단언한다. 이 문장이 없으면 두 태스크가 형태를 고를 수 없다
+- [ ] `docs/design/SYSTEM.md` §7-1 — 1차 버튼 위 `kbd` 테두리 처리(항목 I의 답). 02-03 Task 1이 참조할 유일한 출처이고, 답이 ②면 `docs/design/tokens.css`에 토큰 하나가 함께 생긴다
 
-**후속 웨이브에서 생성되는 테스트 파일**(각각 자기 태스크 안에서 구현보다 먼저 만들어진다 — TDD 태스크로 표시):
-`test/unit/ui/role-menu.test.ts`(02-04-01) · `test/unit/ui/next-turn.test.ts`(02-05-01) · `test/e2e/mobile-shell.spec.ts`(02-07-02) · `test/e2e/keyboard-nav.spec.ts`·`test/e2e/a11y.spec.ts`(02-07-03).
+**후속 웨이브에서 생성되는 테스트 파일**(각각 자기 태스크 안에서 만들어지고 그 태스크의 `<verify>`가 바로 돌린다):
+`test/unit/ui/role-menu.test.ts`(02-04-01 — `tdd="true"`, 실패 테스트 먼저) · `test/unit/ui/next-turn.test.ts`(02-05-01 — `tdd="true"`, 실패 테스트 먼저) · `test/e2e/mobile-shell.spec.ts`(02-07-02) · `test/e2e/keyboard-nav.spec.ts`·`test/e2e/a11y.spec.ts`(02-07-03). 앞의 둘만 TDD 태스크이고 뒤의 셋은 이미 만들어진 화면을 검사하는 스펙이다.
+
+**`ui/input/TextField.tsx`(02-03-02)는 자기 태스크에 테스트 파일을 두지 않는다 — 의도된 것이고 그 대가가 여기 적혀 있다.** 리포의 단위 계층이 `environment: node` + `include: test/unit/**/*.test.ts`라 컴포넌트를 렌더할 수단이 없고(새 devDependency가 필요한데 이 페이즈가 승인한 것은 stylelint 하나뿐이다), 로그인 화면은 필드 단위 오류를 만들지 않는다(실패는 폼 상단 alert). 그래서 그 태스크는 `tdd` 표시를 달지 않고, 계약 여섯의 검사 위치는 이렇다 — 라벨↔id는 02-03-02가 돌리는 `login-logout.spec.ts`, 오류 줄 렌더는 02-06-02의 `change-password.spec.ts`(새 비밀번호 8자 미만 케이스), `aria-invalid`·`aria-describedby`는 02-07-03의 `a11y.spec.ts`(필드 오류가 떠 있는 상태의 케이스). **입력값 보존 · 오류 없을 때 오류 줄 부재 · 자리표시자 규칙 셋은 실행 검사가 없다** — 정적 검사와 계약 문장뿐이고 02-03 SUMMARY가 그 사실을 그대로 적는다.
 
 ---
 
@@ -95,9 +99,9 @@ updated: "2026-09-19"
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
 | Pretendard가 Windows Chrome/Edge에서 실제로 적용되고 숫자 자릿수가 정렬되며 첫 로드 서체 전송량이 200–300KB 안이다 (D-32) | UX-01 | 리눅스 컨테이너에 Windows 폰트 스택(맑은 고딕)이 없어 폴백 대비 비교가 불가능하다 | Windows Chrome 또는 Edge로 배포된 앱을 열고 ① 개발자 도구에서 렌더된 서체가 폴백이 아니라 Pretendard인지, 여러 줄 숫자의 자릿수가 세로로 정렬되는지 ② 네트워크 탭에서 woff2 요청 합계가 200–300KB 안인지. 어긋나면 서브셋 unicode-range 분할이 의도대로 동작하지 않는 것 → 02-03으로 되돌아간다 |
-| `docs/design/tokens.css`만 바뀐 PR이 CI를 트리거한다 | UX-01 | GitHub Actions의 경로 필터 부정 패턴 의미론은 GitHub 서버만 판정한다. 로컬 재현 방법이 없다 | 다음에 tokens.css만 바뀐 PR이 올라올 때 Actions 탭에서 `ci` 워크플로가 실행되는지 확인. 실행되지 않으면 `paths-ignore`를 버리고 `paths` 화이트리스트로 바꾼다 |
+| `docs/design/tokens.css`만 바뀐 PR이 CI를 트리거하고, **그것과 무관한 소스 파일만 바뀐 PR도 여전히 트리거한다** | UX-01 | GitHub Actions의 경로 필터 판정은 GitHub 서버만 한다. 플랜은 이미 `paths` + `!` 형태(문서가 부정 패턴을 지원한다고 명시하는 유일한 쪽)를 쓰므로 남은 것은 로컬에서 재현 불가능한 실제 트리거 동작뿐이다 | 02-02 Task 3의 `human-check` 두 항목. **①** tokens.css만 바뀐 PR에서 Actions 탭의 `ci`가 실행되는지. **②** `.github/` 아래 파일이나 리포 루트의 점 파일처럼 문서·계획 밖 파일만 바뀐 PR에서 `ci`가 **여전히** 실행되는지 — `paths` 형태는 기본값이 「미실행」이라 첫 패턴이 모든 경로를 덮지 못하면 CI가 조용히 사라진다. **②가 이 변경의 진짜 위험 지점이다.** ②가 실패하면 즉시 `paths-ignore` 형태로 되돌리고 tokens.css 예외는 포기한다 — 예외 하나보다 CI가 도는 것이 우선이다. 이 둘이 통과하기 전까지 02-02 SUMMARY는 이 변경을 「미검증」으로 적는다 |
 | SYSTEM.md 일관성과 실제 브라우저 QA | UX-01 | CLAUDE.md 프론트엔드 규칙: 「UI 완료 판정은 `/design-review`(SYSTEM.md 일관성) → `/qa` 통과 후」 | `/design-review` → `/qa`. §11 「시스템 일치」 목록(새 색·서체·radius·그림자 0개 · 카드 0개 · 포인트 색 사용처 5군데 안 · 안내 문구 0개 · 이유 없는 비활성 버튼 0개)을 그 리뷰에서 확인 |
-| 신설 SYSTEM.md 절 5개의 제품 동작 선택 | UX-01 | 백지 설계 — 실물 HTML도 기존 결정 기록도 없다. 에이전트가 고르면 결정한 적 없는 것이 시스템 규칙이 된다 | 02-01 Task 1의 `checkpoint:decision`(A~E 19개 항목). `gate="blocking-human"`이라 자동 모드에서도 멈춘다 |
+| 신설 SYSTEM.md 절 5개의 제품 동작 선택 **과 플랜들이 전제하지만 결정이 없는 4건** | UX-01 | 백지 설계 — 실물 HTML도 기존 결정 기록도 없다. 에이전트가 고르면 결정한 적 없는 것이 시스템 규칙이 된다 | 02-01 Task 1의 `checkpoint:decision` — **A~I 아홉 묶음 24개 항목**. A~E는 신설 절 5개(§6-7 · §6-8 · §6-9 · §7-11 · §7-12)의 제품 동작이고, F~I는 코드 플랜이 이미 전제하는 것들이다(F 로그인 복귀 안내 · G PC 사용자 진입점 형태 · H 「설정」 항목의 목적지 · I 1차 버튼 위 `kbd` 테두리). G·H·I의 답은 각각 02-04 T1·02-07 T3 / 02-05 T3 / 02-03 T1이 소비한다. `gate="blocking-human"`이라 자동 모드에서도 멈춘다 |
 | `@axe-core/playwright` 도입 여부 | UX-01 | CLAUDE.md: 「새 의존성은 이유 한 줄 + 승인」. 리서치가 새로 제안한 것이라 아직 미승인이다 | 02-07 Task 1의 `checkpoint:decision`. 거절·보류 시 수동 assertion 경로로 진행 |
 
 ---

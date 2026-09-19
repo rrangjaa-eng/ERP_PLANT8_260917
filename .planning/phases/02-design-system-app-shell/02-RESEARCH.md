@@ -486,17 +486,19 @@ body { font-family: var(--font-sans); }
 | A3 | rgba(255,255,255,.5)(`kbd` 테두리) 처리 방식(리터럴 예외 vs 신규 토큰)은 열려 있다 | Pitfall 1 | 잘못 정하면 stylelint가 이 한 군데에서 오탐(false positive)을 낼 수 있음 — 영향 범위가 좁아 리스크 낮음 |
 | A4 | Docker 빌드 컨텍스트 문제(.dockerignore의 `docs` 제외)가 실제 `docker build` 실행에서도 재현된다 | Pattern 1, Q1 | 코드 판독(Dockerfile의 `COPY . .` + `.dockerignore`의 `docs` 라인)으로 확인했으나 이 환경에 Docker 데몬이 없어 직접 `docker build`로 실행 확인은 못 했다. Planner는 이 수정을 하되, 실행 검증(스모크)은 실제 CI/스테이징 배포에서 최종 확인해야 한다 |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **`rgba(255,255,255,.5)` (버튼 안 `kbd` 테두리, 1차 버튼 위)를 stylelint 예외로 둘지 새 토큰(`--on-accent-weak`)으로 만들지**
-   - What we know: 실물 HTML 전체에서 이 정확한 값이 한 곳(`btn.p kbd`)에만 쓰인다.
-   - What's unclear: DECISIONS.md에 새 토큰을 추가할 만큼의 재사용성이 있는지.
-   - Recommendation: 사용처가 하나뿐이므로 이번 페이즈는 stylelint 예외 문자열로 두고, 재사용이 생기면 그때 토큰화(YAGNI) — Claude's Discretion.
+> RESOLVED의 뜻: 아래 두 질문은 **답이 지어내어진 것이 아니라 답을 낼 주인이 정해졌다**는 뜻으로 닫혔다. 계획 어느 태스크도 「열린 질문」 상태의 이 항목에 의존하지 않는다. Q1은 사람이 고르고, Q2는 이미 실행 계획과 사람 검수 지점이 붙었다.
 
-2. **Docker 빌드 컨텍스트 수정의 실제 검증 시점**
-   - What we know: 코드 판독으로는 확실한 문제이고 수정 방법도 명확하다.
-   - What's unclear: 이 환경에 Docker 데몬이 없어 실제 `docker build .` 실행 확인을 못 했다.
-   - Recommendation: planner는 `.dockerignore` 수정을 별도 검증 가능한 작업으로 분리하고(`docker build --target build .`가 로컬 Docker 있는 개발자 환경 또는 CI에서 성공하는지), 실행 검증은 실제 CI 파이프라인(스테이징 배포)에서 최종 확인한다.
+1. **`rgba(255,255,255,.5)` (버튼 안 `kbd` 테두리, 1차 버튼 위)를 어떻게 처리할지** — **RESOLVED: 02-01 Task 1 체크포인트 항목 I가 이 질문의 주인이다.**
+   - What we know: 실물 HTML 전체에서 이 정확한 값이 한 곳(`docs/design/system/preview.html:62`, `.btn.p kbd{border-color:rgba(255,255,255,.5)}`)에만 쓰인다. 02-02가 세우는 stylelint 규칙은 색이 들어갈 수 있는 속성의 `rgba(...)` 리터럴을 금지하므로, 02-03 Task 1이 §7-1 버튼을 그대로 이관하면 이 한 선언이 lint에 걸린다.
+   - Resolution: **위 리서치의 옛 Recommendation(「stylelint 예외로 두자 — Claude's Discretion」)은 철회한다.** 1차 버튼 위 kbd 테두리를 어떤 색으로 둘지는 제품의 시각 결정이고 `docs/design/DECISIONS.md`에 이 주제의 선례가 0건이므로 planner·executor의 재량 범위가 아니다. 네 가지 선택지(기존 토큰 재사용 / 새 토큰 신설 / 좁은 stylelint 예외 / `.btn.p kbd` 덮어쓰기 제거)는 02-01 Task 1의 `blocking-human` 체크포인트 항목 I에 결과와 함께 적혀 있다.
+   - Consumer: 02-03 Task 1은 이 체크포인트가 해소되기 전에는 시작하지 않는다(`<precondition>`).
+
+2. **Docker 빌드 컨텍스트 수정의 실제 검증 시점** — **RESOLVED: 02-02 Task 3과 그 `<human-check>`가 이 질문의 주인이다.**
+   - What we know: 코드 판독으로는 확실한 문제이고(`Dockerfile`의 `COPY . .` + `.dockerignore`의 `docs` 줄) 수정 방법도 명확하다.
+   - What was unclear: 이 환경에 Docker 데몬이 없어 실제 `docker build .` 실행 확인을 못 했다.
+   - Resolution: 02-02 Task 3이 `.dockerignore`의 `docs` 줄을 제거하고, 그 수정의 실행 검증은 같은 태스크의 `<human-check>`와 실제 스테이징 배포가 맡는다. **열린 채로 남아 태스크를 막는 부분이 없다** — 로컬에서 판정 가능한 것(파일 내용·테스트)은 자동 검증으로, 서버만 판정할 수 있는 것은 사람 체크로 분리되어 있다.
 
 ## Environment Availability
 

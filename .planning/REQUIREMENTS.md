@@ -125,7 +125,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### 배포·운영 (OPS)
 
-- [x] **OPS-01**: 배포 스크립트 한 번으로 새 GCP 프로젝트에 기동한다. 프로젝트 ID·리전·DB 접속은 환경 변수. Cloud SQL은 공인 IP 없이 커넥터+IAM 인증(로컬은 Auth Proxy). 배포 스크립트는 max-instances × 풀 ≤ DB max_connections − 5 를 검사해 초과 시 거부하고, 확장-축소 마이그레이션 → 0% → 스모크 → 100% 순으로 배포하며 rollback.sh가 있다. Cloud Monitoring 경보 3개(5xx>5%·tick 24h 미성공·백업 실패)가 관리자 메일로 간다
+- [x] **OPS-01**: 배포 스크립트 한 번으로 새 GCP 프로젝트에 기동한다. 프로젝트 ID·리전·DB 접속은 환경 변수. Cloud SQL은 공인 IP 없이 커넥터+IAM 인증(로컬은 Auth Proxy). 배포 스크립트는 max-instances × 풀 ≤ DB max_connections − 5 를 검사해 초과 시 거부하고, 확장-축소 마이그레이션 뒤 새 리비전을 배포·스모크하며, 스모크에 실패한 리비전을 트래픽에 남기지 않는다(실패 시 이전 배포로 1회 자동 롤백 후 실패 종료). rollback.sh로 수동 롤백도 된다. (2026-09-19 재정의 — ROADMAP Phase 1 기준 6 참조) Cloud Monitoring 경보 3개(5xx>5%·tick 24h 미성공·백업 실패)가 관리자 메일로 간다
 - [x] **OPS-02**: 사용 없을 때 비용이 0에 가깝고(스케일-투-제로), 월 비용 목표가 문서화된다
 - [ ] **OPS-03**: DB가 자동 백업되고 복원 절차가 문서화되며 복원 리허설을 1회 한다
 - [x] **OPS-04**: 린트(`any` 금지)·타입체크·핵심 흐름(로그인→지출결의→결재→손익) 통합 테스트가 CI에서 돈다. ESLint import 경계(app↛repositories/db, domain↛app, repository는 viewer 필수)와 Server Action zod 검증 필수 린트가 포함된다

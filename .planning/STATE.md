@@ -5,10 +5,10 @@ current_phase_name: 배포 스켈레톤·로그인
 current_plan: 8
 status: verifying
 stopped_at: "Phase 1 마감 게이트 수행: 코드 리뷰(BLOCKER 1·MAJOR 8·MINOR 16) + 목표 검증(PARTIAL 6/7). 롤백 BLOCKER는 수정 완료. 카나리 계약 불일치는 사용자 결정 대기 — 그 전까지 Phase 1 완료 표시 보류. Phase 2는 막히지 않음"
-last_updated: "2026-09-18T19:17:50.566Z"
+last_updated: "2026-09-19T02:15:07.263Z"
 last_activity: 2026-09-17
 last_activity_desc: "로드맵 수정: 엔지니어링 리뷰 결정 15건 + 외부 목소리 8건 반영, Phase 6 분할로 11페이즈, 회사 GCP Phase 1부터. v1 요구사항 89/89, MVP 모드"
-state_head: b7140f5f9a1f1bd477b3d093074cedb5965453a3
+state_head: d2a6ccddfd792d0ba6f8d062399a4680988d00a0
 progress:
   total_phases: 11
   completed_phases: 0
@@ -116,6 +116,7 @@ Recent decisions affecting current work:
 - [Phase 1]: [Phase 01-deploy-skeleton-login] 01-06: infra/names.sh 리소스 접두어를 plant8-로 통일(서비스·SQL·SA·AR은 사용자 결정 명시, Job 이름도 같은 계열이라 확장) — WIF_POOL/WIF_PROVIDER/DEPLOYER_SA는 identity 식별자라 플랜 원문 값 유지
 - [Phase 1]: [Phase 01-deploy-skeleton-login] 01-06: bash ERR 트랩은 기본적으로 함수 안에서 발동하지 않는다 — set -o errtrace(set -E) 없이는 deploy.sh의 STAGE 트랩 메시지가 안 나옴을 실측(scripts/deploy.sh)
 - [Phase 1]: [Phase 01-deploy-skeleton-login] 01-06: deploy.yml/account.yml에 pnpm build:cli 스텝 불필요 — Dockerfile의 build 스테이지가 컨테이너 안에서 이미 pnpm build && pnpm build:cli를 실행함을 확인(01-05 Dockerfile 직접 확인)
+- [Phase Phase 1]: SC6 재정의(사용자 결정 2026-09-19): 카나리를 복원하지 않고 안전 속성을 계약으로 삼는다 — 스모크에 실패한 리비전이 트래픽을 계속 받는 상태로 끝나지 않는다 — 카나리(0%→스모크→100%)는 태그 전용 리비전 URL에 의존하는데 이 프로젝트에서 4회 연속 라우팅되지 않았고 원인이 통제 밖이다(01-07). 같은 것을 다시 지으면 같은 데서 막힌다. 구현 둘: (1) 기존 서비스는 배포 전에 status.url을 확정해 배포당 리비전 하나 — 틀린 BETTER_AUTH_URL로 100%를 받던 창이 사라지고 롤백 대상도 깔끔해진다. (2) 스모크 실패 시 이전 배포로 1회 자동 롤백 후 실패 종료 — 재시도는 금지(반복은 진짜 원인을 가린다). 프로덕션은 승격 가드가 스테이징이 서빙 중인 이미지만 올리므로 스테이징이 카나리 역할을 한다. 남는 노출 창은 스모크 소요 시간(수십 초)이며 사용자 10~30명 사내 시스템에 적정하다고 판단. ROADMAP 기준 6과 REQUIREMENTS OPS-01 본문을 이 속성으로 고쳤다
 
 ### Pending Todos
 
@@ -129,7 +130,6 @@ None yet.
 - [Phase 11]: CERT 활성화 조건은 `/cso` 보안 감사 통과. 개인정보보호법 적용 범위·보존 기간은 감사에서 재확인(리서치 Gap). 감사 뒤 KMS 봉투 승격(Issue 7)
 - [All]: 과잉 설계 재발 방지 — 페이즈마다 "인트라넷보다 못한가"로 검증하고, 실제 사용자 로그인·입력이 있어야 완료로 본다
 - [Phase 2]: `docs/design/`(SYSTEM.md 725줄·tokens.css·DECISIONS.md·BRIEF.md·EXPLORE.md)은 **이미 있다**(2026-09-18 확인). Phase 2는 이 시스템을 앱 셸·임시 화면에 적용하는 일이며, 새 화면은 SYSTEM.md 기준을 따르고 시스템을 벗어나면 DECISIONS.md에 이유를 남긴 뒤 SYSTEM.md를 고친다
-- [Phase 1]: 페이즈 검증 판정 PARTIAL(6/7) — 미충족은 ROADMAP SC6·OPS-01의 카나리 조항이다. 01-07에서 태그 전용 URL이 4회 연속 라우팅되지 않아 카나리(0%→스모크→100%)를 제거했는데 계약 문서는 그대로다. 실제 영향: 스모크 실패 리비전이 100%를 서빙한 채 남고 자동 롤백이 없다(rollback.sh 수동 복구가 유일, 그 복구는 배포 단위로 되돌리도록 수정됨). 사용자 결정 필요 — (a) 문서를 현실에 맞게 고치고 override 기록, (b) 태그 URL에 의존하지 않는 안전한 점진 배포를 후속 플랜으로 되살림. 결정 전까지 Phase 1은 완료로 표시하지 않는다
 
 ## Deferred Items
 

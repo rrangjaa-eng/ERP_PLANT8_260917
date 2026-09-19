@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 02
 current_phase_name: 디자인 시스템·앱 셸
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Completed 02-03-PLAN.md
-last_updated: "2026-09-19T16:09:35.742Z"
+stopped_at: Completed 02-04-PLAN.md
+last_updated: "2026-09-19T16:41:44.927Z"
 last_activity: 2026-09-19
 last_activity_desc: Phase 02 execution started
-state_head: e233e1193d63ced26d8f7579912151fa91b05ae3
+state_head: c525b549ae7c1c46446a17e79ff097e8a4721121
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 15
-  completed_plans: 11
+  completed_plans: 12
   percent: 9
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 02 (디자인 시스템·앱 셸) — EXECUTING
-Current Plan: 3
+Current Plan: 4
 Total Plans in Phase: 7
 Status: Ready to execute
 Last activity: 2026-09-19 — Phase 02 execution started
@@ -68,6 +68,7 @@ Progress: [█░░░░░░░░░] 9%
 | Phase 02 P02 | 11min | 3 tasks | 11 files |
 | Phase 02 P01 | unknown | 3 tasks | 4 files |
 | Phase 02 P03 | 19min | 3 tasks | 13 files |
+| Phase 02 P04 | 28min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -126,6 +127,9 @@ Recent decisions affecting current work:
 - [Phase 02]: [Phase 02] 02-01: 체크포인트 24개 항목(A~I) 전부 사용자 확정 — F-1①·F-2①·I②(--on-accent-weak 신설)·G①·H① 채택, A⑤·E⑤는 다섯 상태를 하나도 비우지 않고 "해당 없음 — 이유"로 명시하는 규칙으로 변경. 재계획 방아쇠 미선택
 - [Phase 02]: [Phase 02] 02-03: AuthFrame 최대 폭은 새 값을 만들지 않고 tokens.css의 기존 --modal-w(480) 토큰을 재사용했다 — §6-7의 「최대 폭 360」은 ASCII 목업 근사치이고 로그인 폼은 --form-max(720, 다항목 업무 폼)보다 단일 목적 좁은 컨테이너에 더 가깝다
 - [Phase 02]: [Phase 02] 02-03: §6-7 다이어그램에 없는 기존 h1 「로그인」 타이틀을 제거했다 — 워드마크(PLANT8)가 그 자리를 대신하고 어떤 E2E도 그 텍스트에 의존하지 않는다
+- [Phase 02]: 02-04: 역할→메뉴 매핑을 role-menu.ts 순수 함수 하나로 고정, 셸 컴포넌트에는 isAdmin 조건문을 두지 않는다(D-23)
+- [Phase 02]: 02-04: MoreSheet 포커스 트랩은 네이티브 <dialog>.showModal()로 구현 — 새 런타임 의존성 없음
+- [Phase 02]: 02-04: PC 사용자 메뉴는 accountGroup에서 href==='/settings' 항목만 걸러 렌더 — SYSTEM.md가 PC 메뉴와 폰 시트의 계정 항목 구성을 다르게 규정
 
 ### Pending Todos
 
@@ -151,6 +155,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-19T16:09:35.662Z
-Stopped at: Completed 02-03-PLAN.md
+Last session: 2026-09-19T16:41:44.850Z
+Stopped at: Completed 02-04-PLAN.md
 Resume file: None

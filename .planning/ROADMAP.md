@@ -103,7 +103,7 @@ Plans:
   4. 이후 페이즈가 그대로 가져다 쓰는 핵심 컴포넌트 계약이 SYSTEM.md에 있다: 서버 검증 오류를 보여주는 폼, 엑셀식 표 입력(grid), 선행 단계 전 비활성 + 이유를 보이는 행동 유도 버튼, 알림함·배지, 폰용 목록·시트. 모든 컴포넌트 계약은 LOADING/EMPTY/ERROR/SUCCESS/PARTIAL 다섯 상태를 필수로 정의하고 EMPTY·ERROR는 다음 행동을 유도한다(안내 문구 없음)
   5. 엑셀식 표(grid)는 이 페이즈에서 동작 계약만 확정한다: Tab/Enter·방향키 이동, 여러 칸 복사·붙여넣기, Esc 취소, 저장·새 줄 단축키, 일괄 저장은 전부 저장 또는 전부 거부이며 충돌·오류 칸을 표시한다. 자체 구현/라이브러리 선택은 Phase 4 계획에서 한다
 
-**Plans**: 3/7 plans executed
+**Plans**: 4/7 plans executed
 
 Plans:
 **Wave 1**
@@ -117,7 +117,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 02-04-PLAN.md — 역할→메뉴 매핑 · 상단 바(내 계정·로그아웃 진입점) · 폰 하단 탭 · 「더보기」 시트 · 셸 삽입 (W3)
+- [x] 02-04-PLAN.md — 역할→메뉴 매핑 · 상단 바(내 계정·로그아웃 진입점) · 폰 하단 탭 · 「더보기」 시트 · 셸 삽입 (W3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -313,7 +313,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. 배포 스켈레톤·로그인 | 8/8 | Complete    | 2026-09-19 |
-| 2. 디자인 시스템·앱 셸 | 3/7 | In Progress|  |
+| 2. 디자인 시스템·앱 셸 | 4/7 | In Progress|  |
 | 3. 권한·설정·마스터 (관리자 운영 콘솔) | 0/TBD | Not started | - |
 | 4. 프로젝트·견적 원장 | 0/TBD | Not started | - |
 | 5. 지출결의·결재·연차 | 0/TBD | Not started | - |

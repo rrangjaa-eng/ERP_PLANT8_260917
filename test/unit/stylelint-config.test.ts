@@ -83,3 +83,54 @@ describe("stylelint: 실물 흰색 리터럴 사례(Pitfall 1)", () => {
     expect(warnings).toHaveLength(0);
   });
 });
+
+// WR-08: D-20 가드에 뚫린 구멍 — 이름 있는 색, 최신 색 함수, font 축약
+describe("stylelint: WR-08 — 이름 있는 색상 리터럴 금지", () => {
+  it("named color(white)를 쓴 선언은 경고가 1개 이상이다", async () => {
+    const warnings = await lint(".probe { color: white; }");
+    expect(warnings.length).toBeGreaterThan(0);
+  });
+
+  it("named color(red)를 배경에 쓴 선언은 경고가 1개 이상이다", async () => {
+    const warnings = await lint(".probe { background: red; }");
+    expect(warnings.length).toBeGreaterThan(0);
+  });
+
+  it("currentColor는 named-color 금지에 걸리지 않는다", async () => {
+    const warnings = await lint(".probe { color: currentColor; }");
+    expect(warnings).toHaveLength(0);
+  });
+
+  it("inherit는 named-color 금지에 걸리지 않는다", async () => {
+    const warnings = await lint(".probe { color: inherit; }");
+    expect(warnings).toHaveLength(0);
+  });
+});
+
+describe("stylelint: WR-08 — 최신 색상 함수(oklch 등) 금지", () => {
+  it("oklch() 색상 함수는 경고가 1개 이상이다", async () => {
+    const warnings = await lint(".probe { color: oklch(50% 0.1 120); }");
+    expect(warnings.length).toBeGreaterThan(0);
+  });
+
+  it("calc()는 색상 함수 금지에 걸리지 않는다(간격 등 다른 용도로 계속 허용)", async () => {
+    const warnings = await lint(".probe { margin: calc(1px + 2px); }");
+    expect(warnings).toHaveLength(0);
+  });
+});
+
+describe("stylelint: WR-08 — font 축약 속성 금지", () => {
+  it("font 축약(font: 12px Arial)은 경고가 1개 이상이다", async () => {
+    const warnings = await lint(".probe { font: 12px Arial; }");
+    expect(warnings.length).toBeGreaterThan(0);
+  });
+});
+
+describe("stylelint: WR-08 — 리뷰가 확인한 전체 프로브 문자열", () => {
+  it("리뷰의 프로브 선언 전체가 최소 3개(색·radius·font) 이상 경고를 낸다", async () => {
+    const warnings = await lint(
+      ".probe{color:white;background:red;border-radius:9px;font:12px Arial}",
+    );
+    expect(warnings.length).toBeGreaterThanOrEqual(3);
+  });
+});

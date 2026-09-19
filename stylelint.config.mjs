@@ -19,6 +19,27 @@ const stylelintConfig = {
       "/^(color|background|background-color|.*border.*color.*|outline-color|fill|stroke|accent-color|caret-color|box-shadow|border|outline|background-image)$/":
         ["/#[0-9a-f]{3,8}\\b/i", "/\\brgba?\\(/i", "/\\bhsla?\\(/i"],
     },
+    // ── WR-08: 이름 있는 색상(white, red, rebeccapurple...) 금지.
+    // currentColor/inherit/transparent는 색상 키워드 문법이 아니라서 걸리지 않는다.
+    "color-named": "never",
+    // ── WR-08: 최신 색상 함수도 리터럴 색이므로 hex/rgb/hsl과 동일하게 금지한다.
+    // calc()는 목록에 넣지 않는다 — 간격 등에서 계속 쓰인다.
+    "function-disallowed-list": [
+      "rgb",
+      "rgba",
+      "hsl",
+      "hsla",
+      "hwb",
+      "lab",
+      "lch",
+      "oklab",
+      "oklch",
+      "color",
+      "color-mix",
+    ],
+    // ── WR-08: font 축약은 font-family/font-size 허용 목록을 우회하므로 통째로 금지하고
+    // 항상 롱핸드(font-family/font-size)를 쓰게 강제한다.
+    "property-disallowed-list": ["font"],
   },
 };
 

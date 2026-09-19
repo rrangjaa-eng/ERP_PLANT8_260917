@@ -60,11 +60,16 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
     expect(hasPushTrigger).toBe(false);
   });
 
-  it("pull_request 트리거는 .planning/**와 docs/**만 바뀐 PR을 건너뛴다", () => {
+  it("pull_request 트리거는 paths + ! 형태를 쓰고 paths-ignore는 없다(GitHub이 문서로 지원하는 형태만 사용)", () => {
     const ci = readWorkflow("ci.yml");
-    expect(ci).toContain("paths-ignore");
-    expect(ci).toContain(".planning/**");
-    expect(ci).toContain("docs/**");
+    expect(ci).not.toContain("paths-ignore");
+    expect(ci).toContain("paths:");
+    const patterns = ['- "**"', '- "!.planning/**"', '- "!docs/**"', '- "docs/design/tokens.css"'];
+    const indexes = patterns.map((pattern) => ci.indexOf(pattern));
+    for (const index of indexes) expect(index).toBeGreaterThan(-1);
+    // 순서가 의미를 갖는다: 전체 포함 → .planning 부정 → docs 부정 → tokens.css 긍정.
+    // tokens.css 줄이 docs/** 부정 줄보다 반드시 뒤여야 되살아난다.
+    expect(indexes).toEqual([...indexes].sort((a, b) => a - b));
   });
 
   it("quality 잡 내부 순서: lint < typecheck < lint:sql < test:unit", () => {

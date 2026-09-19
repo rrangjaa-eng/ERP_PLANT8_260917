@@ -14,11 +14,19 @@ function readWorkflow(filename: string): string {
 describe("deploy.yml", () => {
   const deploy = readWorkflow("deploy.yml");
 
-  it("push(main, paths-ignore)와 workflow_dispatch(target/sha)로 트리거된다", () => {
+  it("push(main, paths + !)와 workflow_dispatch(target/sha)로 트리거된다", () => {
     expect(deploy).toContain("branches: [main]");
-    expect(deploy).toContain("paths-ignore");
-    expect(deploy).toContain(".planning/**");
-    expect(deploy).toContain("docs/**");
+    expect(deploy).not.toContain("paths-ignore");
+    expect(deploy).toContain("paths:");
+    const patterns = [
+      '- "**"',
+      '- "!.planning/**"',
+      '- "!docs/**"',
+      '- "docs/design/tokens.css"',
+    ];
+    const indexes = patterns.map((pattern) => deploy.indexOf(pattern));
+    for (const index of indexes) expect(index).toBeGreaterThan(-1);
+    expect(indexes).toEqual([...indexes].sort((a, b) => a - b));
     expect(deploy).toMatch(/options:\s*\n\s*- staging\s*\n\s*- production/);
     expect(deploy).toContain("default: staging");
     expect(deploy).toMatch(/sha:[\s\S]*?default: ""/);

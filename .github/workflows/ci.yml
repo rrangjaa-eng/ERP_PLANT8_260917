@@ -6,9 +6,11 @@ name: ci
 # 월 2,000분 — CI 1회 ≈ 8~10분(플랜 리뷰 CEO 9A).
 on:
   pull_request:
-    paths-ignore:
-      - ".planning/**"
-      - "docs/**"
+    paths:
+      - "**"
+      - "!.planning/**"
+      - "!docs/**"
+      - "docs/design/tokens.css"
   workflow_call: {}
 
 concurrency:

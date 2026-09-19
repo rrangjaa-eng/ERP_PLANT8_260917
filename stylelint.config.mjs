@@ -5,7 +5,7 @@
 // docs/design/tokens.css는 별도 예외 처리하지 않는다 — package.json의 lint
 // 스크립트가 넘기는 glob을 앱 CSS(ui/**/*.module.css · app/globals.css ·
 // app/**/*.module.css)로 한정해 docs/가 애초에 스캔 대상에 들지 않는다.
-export default {
+const stylelintConfig = {
   rules: {
     // ── 단일 값이어야 하는 스칼라 속성: 전체 값이 var()와 정확히 일치해야 함 ──
     "declaration-property-value-allowed-list": {
@@ -21,3 +21,5 @@ export default {
     },
   },
 };
+
+export default stylelintConfig;

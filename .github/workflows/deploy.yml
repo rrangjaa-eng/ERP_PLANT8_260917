@@ -8,9 +8,11 @@ name: deploy
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - ".planning/**"
-      - "docs/**"
+    paths:
+      - "**"
+      - "!.planning/**"
+      - "!docs/**"
+      - "docs/design/tokens.css"
   workflow_dispatch:
     inputs:
       target:

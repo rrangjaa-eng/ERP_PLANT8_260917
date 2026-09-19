@@ -1,0 +1,40 @@
+/* SYSTEM.md §6-0 폰 하단 탭. 실물: docs/design/system/preview.html .tabs 블록.
+   색·서체·radius는 토큰 참조만 쓴다(D-20). 폰(<700)에서만 보인다 — 표시 여부는
+   이 미디어 쿼리가 결정하고 BottomTabs.tsx는 뷰포트 폭을 읽지 않는다. */
+
+.tabs {
+  display: none;
+}
+
+@media (max-width: 699.98px) {
+  .tabs {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: var(--touch-min);
+    display: flex;
+    background: var(--bg);
+    border-top: var(--line-w-strong) solid var(--line-strong);
+    z-index: var(--z-bar);
+  }
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.tab:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: calc(-1 * var(--focus-w));
+}

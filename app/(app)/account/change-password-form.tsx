@@ -5,6 +5,7 @@ import { useAction } from "next-safe-action/hooks";
 import { changePasswordAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
+import { FormAlert } from "@/ui/form-alert/FormAlert";
 
 function getStringField(formData: FormData, key: string): string {
   const value = formData.get(key);
@@ -51,7 +52,7 @@ export function ChangePasswordForm() {
         required
         error={newPasswordError}
       />
-      {result.serverError ? <p role="alert">{result.serverError}</p> : null}
+      {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
       <Button type="submit" variant="primary" pending={isExecuting}>
         비밀번호 변경
       </Button>

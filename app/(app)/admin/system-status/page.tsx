@@ -4,6 +4,7 @@ import { getSystemStatus } from "@/domain/system-status";
 import { env } from "@/lib/env";
 import { Banner } from "@/ui/banner/Banner";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
+import { KvList } from "@/ui/kv-list/KvList";
 
 // D-18: 캐시·별도 저장 없음 — 화면 로드마다 pg_stat_activity·Cloud SQL Admin API를
 // 직접 조회한다.
@@ -29,37 +30,43 @@ export default async function SystemStatusPage() {
       <h1>시스템 상태</h1>
 
       {/* §6-8 B①: 라벨·값 목록(dl, §7-8 시트 상세와 같은 골격). */}
-      <dl>
-        <dt>배포 버전</dt>
-        <dd>
-          {status.version.sha.slice(0, 8)} · {status.version.deployedAt ?? "없음"} · {status.version.env}
-        </dd>
-
-        <dt>DB 커넥션</dt>
-        <dd>
-          {/* §6-8 B②: 확인 불가는 §7-5 상태 태그(muted)로 표시한다. */}
-          {"unavailable" in status.db ? (
-            <StatusTag kind="muted">확인 불가</StatusTag>
-          ) : (
-            <>
-              {status.db.connections} / {status.db.maxConnections}
-            </>
-          )}
-        </dd>
-
-        <dt>마지막 백업</dt>
-        <dd>
-          {status.backup.kind === "ok" ? (
-            <>
-              {status.backup.status} · {status.backup.endTime ?? "종료 시각 없음"}
-            </>
-          ) : status.backup.kind === "none" ? (
-            "백업 없음 — 첫 자동 백업 전"
-          ) : (
-            <StatusTag kind="muted">확인 불가</StatusTag>
-          )}
-        </dd>
-      </dl>
+      <KvList
+        items={[
+          {
+            label: "배포 버전",
+            value: (
+              <>
+                {status.version.sha.slice(0, 8)} · {status.version.deployedAt ?? "없음"} · {status.version.env}
+              </>
+            ),
+          },
+          {
+            label: "DB 커넥션",
+            // §6-8 B②: 확인 불가는 §7-5 상태 태그(muted)로 표시한다.
+            value:
+              "unavailable" in status.db ? (
+                <StatusTag kind="muted">확인 불가</StatusTag>
+              ) : (
+                <>
+                  {status.db.connections} / {status.db.maxConnections}
+                </>
+              ),
+          },
+          {
+            label: "마지막 백업",
+            value:
+              status.backup.kind === "ok" ? (
+                <>
+                  {status.backup.status} · {status.backup.endTime ?? "종료 시각 없음"}
+                </>
+              ) : status.backup.kind === "none" ? (
+                "백업 없음 — 첫 자동 백업 전"
+              ) : (
+                <StatusTag kind="muted">확인 불가</StatusTag>
+              ),
+          },
+        ]}
+      />
     </>
   );
 }

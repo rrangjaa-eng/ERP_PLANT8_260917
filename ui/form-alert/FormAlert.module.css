@@ -1,0 +1,7 @@
+/* SYSTEM.md §6-7 A② 로그인 실패 문구 · §6-3/§6-8 ERROR 행 공유 스타일.
+   색은 토큰 참조만 쓴다(D-20). 크기는 정하지 않는다(body --fs-base 상속). */
+
+.alert {
+  margin: var(--s-2) 0 var(--s-4);
+  color: var(--danger);
+}

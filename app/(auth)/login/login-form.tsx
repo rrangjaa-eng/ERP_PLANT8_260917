@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import { Button } from "@/ui/button/Button";
 import { TextField } from "@/ui/input/TextField";
+import { FormAlert } from "@/ui/form-alert/FormAlert";
 
 const GENERIC_ERROR = "이메일 또는 비밀번호가 올바르지 않습니다.";
 
@@ -67,7 +68,7 @@ export function LoginForm({ showGoogle = false }: { showGoogle?: boolean }) {
           value={password}
           onChange={(event) => setPassword(event.target.value)}
         />
-        {error ? <p role="alert">{error}</p> : null}
+        {error ? <FormAlert>{error}</FormAlert> : null}
         <Button type="submit" variant="primary" pending={pending}>
           로그인
         </Button>

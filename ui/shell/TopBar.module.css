@@ -1,0 +1,131 @@
+/* SYSTEM.md §6-0 공통 셸 · PC 상단 바. 실물: docs/design/system/preview.html .bar 블록.
+   색·서체·radius는 토큰 참조만 쓴다(D-20). 흰색 반전 워드마크의 원래 리터럴 값은
+   계산값이 같은 var(--bg)로 옮긴다(02-PATTERNS.md Pitfall 1 — 새 토큰 없이, 픽셀 불변). */
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s-6);
+  height: 38px;
+  padding: 0 var(--pad-page);
+  background: var(--bar);
+  color: var(--bar-fg);
+  font-size: var(--fs-sm);
+  position: sticky;
+  top: 0;
+  z-index: var(--z-bar);
+}
+
+.mark {
+  color: var(--bg);
+  font-weight: var(--fw-mark);
+  font-size: var(--fs-md);
+  letter-spacing: var(--ls-head);
+  font-style: normal;
+}
+
+.leaf {
+  color: var(--bar-leaf);
+  font-style: normal;
+}
+
+.nav {
+  display: flex;
+  gap: var(--s-4);
+}
+
+.navLink {
+  padding: 9px 0;
+  color: var(--bar-muted);
+  text-decoration: none;
+}
+
+.navLink[aria-current="page"] {
+  color: var(--bar-fg);
+  font-weight: var(--fw-bold);
+  box-shadow: inset 0 -2px 0 var(--bar-leaf);
+}
+
+.right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  color: var(--bar-muted);
+}
+
+.kbdWrap {
+  display: flex;
+}
+
+.kbd {
+  border: var(--line-w) solid var(--g-700);
+  color: var(--bar-fg);
+  padding: 0 var(--s-1);
+  font-size: var(--fs-xs);
+}
+
+.userWrap {
+  position: relative;
+}
+
+.userTrigger {
+  border: 0;
+  background: none;
+  color: var(--bar-fg);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  padding: 0;
+}
+
+.userTrigger:focus-visible {
+  outline: var(--focus-w) solid var(--bar-fg);
+  outline-offset: var(--focus-offset);
+}
+
+.userMenu {
+  position: absolute;
+  top: calc(100% + var(--s-2));
+  right: 0;
+  min-width: 160px;
+  margin: 0;
+  padding: var(--s-1) 0;
+  list-style: none;
+  background: var(--bg);
+  border: var(--line-w-strong) solid var(--line-strong);
+  color: var(--fg);
+  z-index: var(--z-modal);
+}
+
+.userMenuItem {
+  display: block;
+  width: 100%;
+  padding: var(--s-2) var(--s-3);
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.userMenuItem:hover {
+  background: var(--surface);
+}
+
+.userMenuItem:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: calc(-1 * var(--focus-w));
+}
+
+@media (max-width: 699.98px) {
+  .bar {
+    height: 44px;
+  }
+
+  .nav,
+  .kbdWrap {
+    display: none;
+  }
+}

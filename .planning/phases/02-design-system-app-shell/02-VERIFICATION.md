@@ -1,8 +1,8 @@
 ---
 phase: 02-design-system-app-shell
-verified: 2026-09-19T18:53:19Z
-status: gaps_found
-score: 4/5 must-haves verified
+verified: 2026-09-19T22:45:00Z
+status: human_needed
+score: 5/5 must-haves verified
 mode: mvp
 mvp_user_story_valid: false
 covered_files:
@@ -10,6 +10,7 @@ covered_files:
   - ".github/workflows/ci.yml"
   - ".github/workflows/deploy.yml"
   - ".planning/REQUIREMENTS.md"
+  - ".planning/WINDOWS.md"
   - ".planning/phases/02-design-system-app-shell/02-01-PLAN.md"
   - ".planning/phases/02-design-system-app-shell/02-01-SUMMARY.md"
   - ".planning/phases/02-design-system-app-shell/02-02-PLAN.md"
@@ -24,6 +25,8 @@ covered_files:
   - ".planning/phases/02-design-system-app-shell/02-06-SUMMARY.md"
   - ".planning/phases/02-design-system-app-shell/02-07-PLAN.md"
   - ".planning/phases/02-design-system-app-shell/02-07-SUMMARY.md"
+  - ".planning/phases/02-design-system-app-shell/02-08-PLAN.md"
+  - ".planning/phases/02-design-system-app-shell/02-08-SUMMARY.md"
   - ".planning/phases/02-design-system-app-shell/02-CONTEXT.md"
   - ".planning/phases/02-design-system-app-shell/02-REVIEW-FIX.md"
   - ".planning/phases/02-design-system-app-shell/02-REVIEW.md"
@@ -152,11 +155,14 @@ covered_files:
   - "stylelint.config.mjs"
   - "test/e2e/a11y.spec.ts"
   - "test/e2e/keyboard-nav.spec.ts"
+  - "test/e2e/mobile-page-chrome.spec.ts"
   - "test/e2e/mobile-shell.spec.ts"
+  - "test/e2e/page-chrome.spec.ts"
   - "test/unit/ci-guard.test.ts"
   - "test/unit/deploy/workflows.test.ts"
   - "test/unit/design-system-docs.test.ts"
   - "test/unit/stylelint-config.test.ts"
+  - "test/unit/ui/current-path.test.ts"
   - "test/unit/ui/next-turn.test.ts"
   - "test/unit/ui/role-menu.test.ts"
   - "ui/auth-frame/AuthFrame.module.css"
@@ -165,13 +171,19 @@ covered_files:
   - "ui/banner/Banner.tsx"
   - "ui/button/Button.module.css"
   - "ui/button/Button.tsx"
+  - "ui/form-alert/FormAlert.module.css"
+  - "ui/form-alert/FormAlert.tsx"
   - "ui/input/TextField.module.css"
   - "ui/input/TextField.tsx"
+  - "ui/kv-list/KvList.module.css"
+  - "ui/kv-list/KvList.tsx"
   - "ui/list-empty/ListEmpty.module.css"
   - "ui/list-empty/ListEmpty.tsx"
   - "ui/next-turn/NextTurn.module.css"
   - "ui/next-turn/NextTurn.tsx"
   - "ui/next-turn/build-next-turn-view.ts"
+  - "ui/page-header/PageHeader.module.css"
+  - "ui/page-header/PageHeader.tsx"
   - "ui/shell/BottomTabs.module.css"
   - "ui/shell/BottomTabs.tsx"
   - "ui/shell/MoreSheet.module.css"
@@ -180,244 +192,166 @@ covered_files:
   - "ui/shell/Shell.tsx"
   - "ui/shell/TopBar.module.css"
   - "ui/shell/TopBar.tsx"
+  - "ui/shell/current-path.ts"
   - "ui/shell/role-menu.ts"
   - "ui/status-tag/StatusTag.module.css"
   - "ui/status-tag/StatusTag.tsx"
   - "ui/toast/Toast.module.css"
   - "ui/toast/Toast.tsx"
-covered_digest: "v1:sha256:a06d0734eac63337141bc06fc230c33f16dbbcd597f42f712b6042441527435f"
+covered_digest: "v1:sha256:e7daa95da584ae715dc1ba7cb4421c22a0324671f01f7321130aab73de20e340"
 behavior_unverified: 0
 overrides_applied: 0
 decision_coverage:
   honored: 14
   total: 14
   not_honored: []
-gaps:
-  - truth: "배포된 앱의 로그인·내 계정·앱 셸(내비게이션·레이아웃·빈 상태)이 SYSTEM.md 컴포넌트와 tokens.css 토큰만 쓴다. 새 색·서체·radius가 없고 Phase 1의 임시 화면은 남아 있지 않다 (ROADMAP 성공 기준 2)"
-    status: partial
-    reason: "컴포넌트 층(ui/*)은 토큰만 쓰고 리터럴 0건이지만, 페이지 기본 타이포그래피와 브라우저 기본 표면이 토큰에 연결되지 않아 화면 골격(제목·부제·본문 글자·dl·로그인 실패 문구)이 UA 기본값으로 렌더된다. tokens.css는 :root 커스텀 속성만 정의하고 app/globals.css는 body에 font-family 한 줄만 둔다(실물 form-expense.html:18의 body 규칙은 background/color/font-size/line-height/letter-spacing/word-break/overflow-wrap도 정한다). 결과: 본문 색 = UA 검정(--fg #0B1512 아님), 본문 크기 = UA 16px(--fs-base 14/15px 아님), --lh-body·--ls-body 미참조, 화면 제목 h1 = UA 2em bold(SYSTEM §6-0 L290: --fs-lg + 부제 --fs-sm --muted), 로그인 실패 p[role=alert] 무스타일(§6-7: --danger), 시스템 상태 dl 무스타일(§6-8 B①), §4-4 브라우저 기본 표면(::selection·caret-color·accent-color·scrollbar-color) 미설정('기본값으로 두지 않는다'). 02-05-SUMMARY.md:59가 스스로 '무스타일 관례'라 적었고 DECISIONS.md 6건 어디에도 이 이탈이 기록되지 않았다."
-    artifacts:
-      - path: "app/globals.css"
-        issue: "body에 font-family만 설정. background/color/font-size/line-height/letter-spacing/word-break/overflow-wrap(실물 body 규칙)과 §4-4 브라우저 기본 표면 토큰이 없다"
-      - path: "app/(app)/account/page.tsx"
-        issue: "h1·p가 클래스 없이 UA 기본 크기·색으로 렌더 — §6-0 화면 제목(--fs-lg)+부제(--fs-sm --muted) 규칙 미적용"
-      - path: "app/(app)/admin/system-status/page.tsx"
-        issue: "dl/dt/dd 무스타일 — §6-8 B①(라벨 96/84, --fs-sm --muted 600, 행 사이 점선 --line) 미적용"
-      - path: "app/(auth)/login/login-form.tsx"
-        issue: "로그인 실패 <p role=\"alert\">가 무스타일 — §6-7은 --danger"
-      - path: "app/(app)/projects/page.tsx"
-        issue: "1차 메뉴 5화면·설정·오류 3화면·홈의 h1/부제 p 전부 같은 무스타일 관례(02-05-SUMMARY.md:59)"
-    missing:
-      - "app/globals.css에 실물 body 규칙 이관: background var(--bg) · color var(--fg) · font-size var(--fs-base) · line-height var(--lh-body) · letter-spacing var(--ls-body) · word-break keep-all · overflow-wrap anywhere"
-      - "§4-4 브라우저 기본 표면 토큰 연결: ::selection(--sel-bg/--fg) · caret-color(--accent) · accent-color(--accent) · scrollbar-color(--line-ui on --bg, thin)"
-      - "화면 제목/부제 규칙(§6-0 L290)을 재사용 가능한 자리에 두기 — globals.css의 main h1/부제 선택자 또는 ui/ 페이지 헤더 컴포넌트 — 그리고 11개 화면(홈·1차 메뉴 5·설정·내 계정·시스템 상태·404×2·오류)에 적용"
-      - "로그인 실패 문구 --danger(§6-7), 시스템 상태 dl 골격(§6-8 B①) 스타일"
-      - "위 항목이 의도적으로 Phase 2 범위 밖이었다면 CLAUDE.md 규칙대로 docs/design/DECISIONS.md에 이탈 기록 + SYSTEM.md 정정 후 override로 처리"
+re_verification:
+  previous_status: gaps_found
+  previous_score: 4/5
+  gaps_closed:
+    - "성공 기준 2 — 페이지 층(body 아홉 선언·§4-4 브라우저 표면·컨트롤 서체·화면 제목/부제·로그인 실패 문구·시스템 상태 dl)이 토큰에 연결되어 렌더된 계산값이 UA 기본값이 아니라 --fg/--fs-base/--lh-body/--ls-body/--danger/--muted/--line 등을 반영한다"
+  gaps_remaining: []
+  regressions: []
+flagged_prohibitions: 27
 insufficient_spec_items:
   - truth: "Windows Chrome/Edge에서 Pretendard가 실제로 적용되고, 맑은 고딕 폴백 대비 숫자 자릿수가 정렬되며, 첫 로드 서체 전송량이 200–300KB 안이다 (02-01·02-03·02-07 backstop, D-32)"
     reason: insufficient_spec
-    evidence_present: "92 woff2 + css + OFL 리포 커밋(git ls-files 94건), app/layout.tsx <link>, unicode-range @font-face — 리눅스 컨테이너에서 Windows 렌더링·전송량을 관측할 수 없음"
+    evidence_present: "92 woff2 + css + OFL 리포 커밋(git ls-files 94건, 불변), app/layout.tsx <link>, unicode-range @font-face — 리눅스 컨테이너에서 Windows 렌더링·전송량을 관측할 수 없음. 02-08은 이 항목을 손대지 않았다"
   - truth: "태블릿 700–1023에서 PC 셸이 그대로 쓰이고 하단 탭이 없다 (02-04 backstop)"
     reason: insufficient_spec
-    evidence_present: "BottomTabs.module.css:6 display:none 기본 + @media (max-width: 699.98px)에서만 flex; TopBar nav는 그 반대 — 존재만 확인, 700–1023 뷰포트 테스트 없음"
+    evidence_present: "BottomTabs.module.css:6 display:none 기본 + @media (max-width: 699.98px)에서만 flex; TopBar nav는 그 반대 — 존재만 확인, 700–1023 뷰포트 테스트 없음. 02-08의 KvList 84px 분기점도 같은 699.98px를 쓴다(일관)"
   - truth: "「내 차례」 한 줄이 폰에서 두 줄로 접히고 터치 목표가 확보된다 (02-05 backstop)"
     reason: insufficient_spec
-    evidence_present: "NextTurn.module.css 존재하나 D-24로 입력이 항상 []라 어떤 뷰포트에서도 행이 렌더된 적이 없다(mobile-shell.spec은 하단 탭·시트만 잰다)"
+    evidence_present: "NextTurn.module.css 존재하나 D-24로 입력이 항상 []라 어떤 뷰포트에서도 행이 렌더된 적이 없다(mobile-shell.spec은 하단 탭·시트만 잰다). 02-08은 이 컴포넌트를 손대지 않았다"
   - truth: "배너·토스트·상태 태그가 §7-7에 새로 추가된 다섯 상태 행과 어긋나지 않는다 (02-06 backstop)"
     reason: insufficient_spec
-    evidence_present: "Banner.tsx(닫기 없음·역할 2종) · Toast.tsx(error는 자동 소멸 없음) · StatusTag.tsx(정적 라벨)가 §7-7 행과 문면상 일치 — 판단 항목, 테스트 없음"
-flagged_prohibitions: 21
+    evidence_present: "Banner.tsx(닫기 없음·역할 2종) · Toast.tsx(error는 자동 소멸 없음) · StatusTag.tsx(정적 라벨)가 §7-7 행과 문면상 일치 — 판단 항목, 테스트 없음. 02-08은 이 세 컴포넌트를 손대지 않았다"
 human_verification:
   - test: "Windows 10/11 Chrome 또는 Edge에서 /login → /account → /admin/system-status를 열고 DevTools Network에서 폰트 요청을 본다"
     expected: "Pretendard Variable이 적용되고(맑은 고딕 아님) 첫 로드 woff2 전송량 합이 200–300KB, 숫자(예: DB 커넥션 18 / 20)가 tnum으로 정렬"
-    why_human: "리눅스 컨테이너에서 Windows 브라우저 렌더링·서브셋 전송량을 관측할 수 없다(D-32가 사람 체크포인트로 명시)"
+    why_human: "리눅스 컨테이너에서 Windows 브라우저 렌더링·서브셋 전송량을 관측할 수 없다(D-32가 사람 체크포인트로 명시). 02-08 이후에도 이 제약은 그대로다"
   - test: "뷰포트 폭 700·900·1023px로 로그인 후 홈을 연다"
     expected: "PC 상단 바와 1차 메뉴 5개가 보이고 하단 탭이 없다. 699px로 줄이면 하단 탭 4개로 전환"
-    why_human: "CSS 미디어 쿼리 존재만 확인됨(BottomTabs.module.css:9, TopBar.module.css:122). 700–1023 뷰포트를 도는 테스트가 없다"
-  - test: "375px 뷰포트에서 로그인·홈·내 계정·프로젝트·404 화면을 눈으로 본다"
+    why_human: "CSS 미디어 쿼리 존재만 확인됨. 700–1023 뷰포트를 도는 테스트가 없다"
+  - test: "375px 뷰포트에서 로그인·홈·내 계정·프로젝트·404 화면을 눈으로 본다(이번엔 body 14/15px·keep-all·PageHeader 골격이 적용된 상태)"
     expected: "간격·줄바꿈이 SYSTEM.md 실물(docs/design/system/shots/ 폰 390)과 같은 느낌이고 겹침·잘림이 없다"
-    why_human: "가로 스크롤 0·터치 44는 자동으로 잰 값이지만 시각적 품질은 스크린샷 도구 없이 판정 불가. CLAUDE.md UI 완료 판정(/design-review → /qa)도 아직이다"
-  - test: "/design-review(SYSTEM.md 일관성)와 /qa(실브라우저)를 이 페이즈 화면 11개에 돌린다"
-    expected: "§11 시스템 일치 항목(새 색·서체·radius·그림자 0 · 카드 0 · 안내 문구 0 · 이유 없는 비활성 0)이 통과하고, Gap 1(UA 기본 타이포그래피)이 리뷰에서 재현된다"
+    why_human: "가로 스크롤 0·터치 44·계산값(색·크기·자간·행간)은 자동으로 잰 값이지만 시각적 품질은 스크린샷 도구 없이 판정 불가. CLAUDE.md UI 완료 판정(/design-review → /qa)도 아직이다"
+  - test: "/design-review(SYSTEM.md 일관성)와 /qa(실브라우저)를 이 페이즈 화면 12개에 돌린다"
+    expected: "§11 시스템 일치 항목(새 색·서체·radius·그림자 0 · 카드 0 · 안내 문구 0 · 이유 없는 비활성 0)이 통과한다. 이전 재검증에서 재현되던 Gap 1(UA 기본 타이포그래피)은 이제 재현되지 않아야 한다"
     why_human: "CLAUDE.md 프론트엔드 규칙이 UI 완료 판정을 두 스킬 통과 뒤로 정했고 둘 다 이 환경에서 실행되지 않았다"
   - test: "「내 차례」에 항목이 있을 때의 폰 두 줄 배치를 확인한다 — Phase 4 이후 실데이터가 생기면, 또는 buildNextTurnView에 임시 항목을 넣은 로컬 브랜치에서"
     expected: "1행 태그·대상·행동, 2행 금액·이유(§7-4), 행동 버튼 터치 목표 44"
-    why_human: "D-24로 입력이 항상 빈 배열이라 행이 렌더된 적이 없다"
-  - test: "아래 '비인가 판정 21건' 표의 각 금지 조항 판정을 사람이 확인한다"
+    why_human: "D-24로 입력이 항상 빈 배열이라 행이 렌더된 적이 없다. 02-08은 이 컴포넌트를 손대지 않았다"
+  - test: "아래 '비인가 판정 27건'(기존 21 + 02-08 신규 6) 표의 각 금지 조항 판정을 사람이 확인한다"
     expected: "각 행의 근거가 실제 코드와 일치하고 위반이 없다"
     why_human: "PLAN prohibitions는 verification 등급이 없는 판단 항목(judgment-tier)이라 LLM 판정은 비인가(non-authoritative)다"
   - test: "SYSTEM.md §7-12 알림함 EMPTY(`알림이 없습니다`, 다음 한 수 없음)를 성공 기준 4의 'EMPTY는 다음 행동을 유도한다' 규칙의 의도적 예외로 승인할지 결정한다"
     expected: "승인이면 docs/design/DECISIONS.md에 이탈 기록 1건 추가(CLAUDE.md 규칙); 아니면 §7-12 EMPTY에 다음 한 수(예: '내 차례 보기')를 넣는다"
-    why_human: "제품 결정 — 계약 문장에 이유가 적혀 있으나 DECISIONS.md에는 없다"
+    why_human: "제품 결정 — 계약 문장에 이유가 적혀 있으나 DECISIONS.md에는 없다. 02-08과 무관하게 이월"
+  - test: "SYSTEM.md §2-2(--fs-2xl = 손익 대시보드 KPI 전용) vs §6-9(오류 제목 --fs-2xl) 긴장을 정리할지 결정한다"
+    expected: "정리한다면 DECISIONS.md 기록 추가 + design-system-docs.test.ts의 DECISIONS 기록 수 단언(toBe(6))을 완화한 뒤 반영; 정리하지 않는다면 현재처럼 §6-9를 정본으로 둔다(02-08이 이미 그렇게 구현)"
+    why_human: "02-08-SUMMARY.md가 스스로 보고한 신규 human judgment 항목 — 이 플랜 범위 밖으로 남겼다"
+  - test: "로그인 실패 문구 카피가 §6-7 A②의 한국어 문장이 아니라 better-auth 영문(`Invalid email or password`)인 것을 카피 결함으로 고칠지 결정한다"
+    expected: "고친다면 login-form.tsx의 `result.error.message ?? GENERIC_ERROR` 우선순위를 뒤집어 GENERIC_ERROR를 항상 쓰거나 매핑 테이블을 둔다; 두지 않는다면 WINDOWS.md에 새 항목으로 기록한다"
+    why_human: "02-08-SUMMARY.md가 스스로 보고한 카피 결함 — 스타일(색·토큰)이 아니라 문자열 내용이라 이 갭 클로저 플랜(02-08)의 범위 밖이었고, 02-08의 새 스펙도 색만 단언하고 텍스트는 단언하지 않는다(계획서에 명시). 이 재검증에서 새로 표면화된 항목이며 아직 WINDOWS.md에 등록되지 않았다"
 ---
 
 # Phase 2: 디자인 시스템·앱 셸 Verification Report
 
 **Phase Goal:** 직원이 폰과 PC에서 `docs/design/SYSTEM.md` 기준으로 만들어진 앱 셸(로그인·내 계정·내비게이션)을 쓰고, 이후 모든 화면은 이 토큰·컴포넌트만 쓴다
-**Verified:** 2026-09-19T18:53:19Z
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**Verified:** 2026-09-19T22:45:00Z
+**Status:** human_needed
+**Re-verification:** Yes — after gap closure (plan 02-08, commits `c510522`·`7047c36`·`3748fee`·`1391236`)
 
-## MVP-mode discrepancy
+## MVP-mode discrepancy (carried forward, unchanged)
 
-ROADMAP marks this phase `Mode: mvp`, but the goal is not in User Story format (`gsd_run query user-story.validate` → `valid: false`, 4 errors). Per `verify-mvp-mode.md` this is surfaced as a discrepancy: run `/gsd mvp-phase 2` if MVP framing is wanted. Because the orchestrator supplied the five ROADMAP success criteria as the contract, verification proceeded goal-backward against those; the User Flow Coverage table below is derived from the goal sentence, not from a validated story.
+ROADMAP marks this phase `Mode: mvp`, but the goal is not in User Story format (`gsd_run query user-story.validate` → `valid: false`). This condition is unaffected by 02-08 (no goal-sentence change). As before, verification proceeds goal-backward against the five ROADMAP success criteria as the contract.
 
-## User Flow Coverage
+---
 
-User story (derived): «직원이 폰과 PC에서 SYSTEM.md 기준의 앱 셸로 로그인하고, 내 계정에서 비밀번호를 바꾸고, 내비게이션으로 화면을 오간다.»
+## Previous Verification Record (preserved for history)
 
-| Step | Expected | Evidence | Status |
-|------|----------|----------|--------|
-| 로그인(셸 없음) | 워드마크 + 폼, Tab×2 + Enter로 제출 | `app/(auth)/login/page.tsx` (AuthFrame) · `keyboard-nav.spec.ts:42` passed in my run | ✓ |
-| 셸 진입 | 상단 바 5메뉴(PC) / 하단 탭 4개(폰), 스킵 링크 첫 포커스 | `app/(app)/layout.tsx` → `Shell` · `keyboard-nav.spec.ts:103,134` · `mobile-shell.spec.ts:24,36` passed | ✓ |
-| 내비게이션 | Tab → Enter로 /projects 이동, 빈 화면은 EMPTY + 다음 한 수 | `keyboard-nav.spec.ts:48` passed · `app/(app)/projects/page.tsx` ListEmpty | ✓ |
-| 내 계정 → 비밀번호 변경 | 사용자 메뉴 → 내 정보 → 키보드로 변경 → `/login?reason=password-changed` | `keyboard-nav.spec.ts:59` passed · `change-password.spec.ts` (6/6 regression run) | ✓ |
-| 로그아웃 | 상단 바·시트·내 계정 어디서든 | `login-logout.spec.ts:46` passed; TopBar/MoreSheet/logout-button all call `authClient.signOut()` | ✓ |
-| Outcome: "이후 모든 화면은 이 토큰·컴포넌트만 쓴다" | 컴포넌트·CSS 리터럴 0, 페이지 기본 타이포그래피도 토큰 | 컴포넌트 층 ✓ (stylelint + grep 0건) · 페이지 기본 타이포그래피 ✗ (Gap 1) | ✗ partial |
+**Verified:** 2026-09-19T18:53:19Z · **Status:** `gaps_found` · **Score:** 4/5 must-haves verified
 
-## Goal Achievement
+The initial verification found four of five ROADMAP success criteria true and one (**success criterion 2**) `FAILED (partial)`: the component layer (`ui/**`) was genuinely token-only (0 CSS literals, stylelint clean, negative probe rejected), but the page layer beneath it — `app/globals.css` body rule, §4-4 browser-default surfaces, screen title/subtitle typography, login failure text color, system-status `<dl>` — rendered with User-Agent defaults (16px black body text, `word-break: normal`, Arial form controls, UA `2em bold` `<h1>`, unstyled `<dl>`), none of it recorded in `docs/design/DECISIONS.md` as an intentional deviation. Full detail (evidence, `missing` list, human-verification items at that time) is preserved in git history at commit `25aaa4f` and is not reproduced verbatim here to avoid duplicating ~250 lines; the gap text and evidence are unchanged from what this file contained before this re-verification pass and can be retrieved with `git show 25aaa4f:.planning/phases/02-design-system-app-shell/02-VERIFICATION.md`.
+
+Plan `02-08` (gap-closure, wave 7) was executed to close this single gap, closing WR-01 (`aria-current` wiring) in the same wave since it is the same §6-0 shell contract.
+
+---
+
+## Re-verification: Goal Achievement (this pass)
 
 ### Observable Truths (ROADMAP Success Criteria — the contract)
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | SYSTEM.md·tokens.css가 존재하고 §1→§2→§3 산출물이며 `/plan-design-review`를 통과했다. 260907 화면은 참고하지 않았다 | ✓ VERIFIED (pre-existing) | `docs/design/{BRIEF,EXPLORE,SYSTEM,DECISIONS}.md` + `tokens.css` 존재(SYSTEM.md 842줄). `docs/design/REVIEW.md` L13-L28: 1차 리뷰 7/10 → 9/10, 7 패스, 미결 U1~U4 전부 결정. `grep 260907 docs/design/` → BRIEF.md:77 · REVIEW.md:10 · NEXT-SESSION.md:98은 모두 "참고 금지" 문장이고, SYSTEM.md:783은 BRIEF가 허용한 업무 용어표 참조뿐 |
-| 2 | 로그인·내 계정·앱 셸이 SYSTEM.md 컴포넌트와 tokens.css 토큰만 쓴다. 새 색·서체·radius 없음, Phase 1 임시 화면 없음 | ✗ FAILED (partial) | **통과한 부분:** 4개 Phase-1 화면 모두 `ui/` 위에 재구성(login: AuthFrame/TextField/Button · account: Banner/TextField/Button · system-status: Banner/StatusTag · root → `(app)/page.tsx` NextTurn/ListEmpty); 옛 경로 `app/page.tsx`·`app/admin/system-status/page.tsx` 삭제 확인(`ls app/admin` 없음). `grep -rnEi '#hex|rgba?|hsla?|border-radius: N|font-family: [^v]|font:' app ui --include=*.css` → 0건; TSX inline style/hex 0건; app/ui CSS가 참조하는 `var(--x)` 전부 tokens.css에 정의(`comm` 결과 공집합); stylelint clean + 음성 프로브(`#fff`·`9px`·`Arial`) 3 errors exit 2. 신규 토큰 1개 `--on-accent-weak`: tokens.css:30 + SYSTEM.md §7-1 L618 + DECISIONS.md L245 — 절차 준수. **실패한 부분:** 페이지 기본 타이포그래피·브라우저 기본 표면이 토큰에 연결되지 않음 — 상세는 Gaps Summary. 02-05-SUMMARY.md:59가 "무스타일 관례"라 자인 |
-| 3 | 폰(375px)과 PC에서 같은 셸이 깨지지 않고, 키보드만으로 로그인·내비게이션·비밀번호 변경이 된다 | ✓ VERIFIED (behavioural) | **내가 직접 실행:** `playwright test mobile-shell keyboard-nav a11y` → 24 passed (51.8s). mobile-375: 하단 탭 4개·마지막 「더보기」, 주 메뉴 hidden, `scrollWidth ≤ clientWidth`, 시트 열림→첫 행동 요소 포커스, Esc→포커스 복귀, 탭·시트 행 boundingBox 높이 ≥44, 계정 그룹 = role-menu. desktop: Tab×2+Enter 로그인, Tab→Enter로 /projects, 사용자 메뉴 Enter→내 정보 포커스→키보드로 비밀번호 변경→`/login?reason=password-changed`, Esc 복귀, 스킵 링크 y<0→포커스 시 y≥0, Tab 순서 = 시각 순서. axe 6화면 위반 0(규칙 비활성 없음, a11y.spec.ts:86). 스펙은 실제 렌더 값을 재므로 실패 가능하다(`toHaveLength(6)` 한 건만 공허 — IN-02). 회귀: Phase-1 스펙 3개 6 passed (20.0s) |
-| 4 | 핵심 컴포넌트 계약 5종이 SYSTEM.md에 있고, 모든 계약이 5상태를 필수 정의하며 EMPTY·ERROR는 다음 행동을 유도한다 | ✓ VERIFIED (1 reasoned exception, see WARNING) | 5종: 서버 검증 오류 폼 §7-2 L633 「원인 · 다음 행동」 · grid §7-3 · 비활성+이유 §7-1 L619(UX-06) · 알림함·배지 §7-12 L760 · 폰용 목록 §6-1 + 시트 §7-8. 5상태: §7-7 두 번째 표 12행×5열 전부 채움(신설 6행은 「해당 없음(이유)」), §6-7·§6-8·§6-9·§7-11·§7-12 각각 5상태 열거, 미적용은 전부 「해당 없음 — 이유」. 다음 행동: §6-8 ERROR `다시 시도`, §6-9 ERROR 1차 버튼, §7-12 ERROR `다시 시도`, §7-7 EMPTY 예시 전부 「· 다음 한 수」. `test/unit/design-system-docs.test.ts`가 신설 5절·§7-7 6행·DECISIONS 6건·토큰 실재를 고정(unit 284/284 passed). 코드 측: `ListEmpty` props가 `action`을 필수로 강제(ListEmpty.tsx:23-26) |
-| 5 | grid 동작 계약만 확정: Tab/Enter·방향키, 여러 칸 복사·붙여넣기, Esc, 저장·새 줄 단축키, 전부 저장/전부 거부, 충돌·오류 칸 표시. 구현 선택은 Phase 4 | ✓ VERIFIED (pre-existing) | SYSTEM.md §7-3 L647-L651: `Tab/Shift+Tab 좌우, Enter 아래, 방향키 이동, Esc 취소(값 되돌림), ⌘C/⌘V 범위 복사·붙여넣기, ⌘↵ 새 줄, ⌘S 일괄 저장` · L649 `일괄 저장은 전부 저장 또는 전부 거부` + 오류 셀 고정 · L650 `충돌(다른 사람이 먼저 저장): … 덮어쓰기 / 그 값으로`. `ui/` 트리에 표 컴포넌트 없음(D-25 준수), DECISIONS.md L213이 EMPTY의 표 뼈대 생략을 이탈로 기록 |
+| 1 | SYSTEM.md·tokens.css가 존재하고 §1→§2→§3 산출물이며 `/plan-design-review`를 통과했다. 260907 화면은 참고하지 않았다 | ✓ VERIFIED (unchanged) | `git diff --quiet 25aaa4f -- docs/design/tokens.css docs/design/SYSTEM.md docs/design/DECISIONS.md` → exit 0 (byte-identical). No re-check needed — nothing in 02-08 touches these files |
+| 2 | 로그인·내 계정·앱 셸이 SYSTEM.md 컴포넌트와 tokens.css 토큰만 쓴다. 새 색·서체·radius 없음, Phase 1 임시 화면 없음 | ✓ VERIFIED (gap closed) | **직접 실행한 증거.** `pnpm exec playwright test test/e2e/page-chrome.spec.ts test/e2e/mobile-page-chrome.spec.ts` → 17 passed (30.2s). 이 스펙들은 `getComputedStyle`로 렌더된 계산값을 잰다(파일 텍스트가 아니라 결과): body `color rgb(11,21,18)`·`font-size 14px`(폰 15px)·`line-height`≈22.4·`letter-spacing`≈-0.21·`word-break keep-all`·`overflow-wrap anywhere`·`margin 0px`; `::selection`/`caret-color`/`accent-color`/`scrollbar-color`/`scrollbar-width`이 전부 토큰 값; 컨트롤 `font-family`가 `Pretendard Variable`로 시작; 전역 `:focus-visible` 링이 `--focus` 2px; 로그인 실패 문구(`form [role='alert']`) `color rgb(155,28,28)`(`--danger`, `ui/form-alert/FormAlert.tsx` 렌더 확인); 시스템 상태 `dt` 폭 96px(PC)/84px(폰)·점선 `--line`·`dd margin-left 0`(`ui/kv-list/KvList.tsx` 렌더 확인); `/projects` `h1` 18px/700/자간‑0.36/행간25.2 + 부제 12px `--muted`(`ui/page-header/PageHeader.tsx` 렌더 확인, `app/**/*.tsx`에 로그인 sr-only 제외 맨 `<h1>` 0개 — `grep -rn "<h1" app --include=*.tsx` 재실행 결과 로그인 화면 1건만). stylelint(`pnpm exec stylelint "ui/**/*.module.css" "app/globals.css" "app/**/*.module.css"`) exit 0. `docs/design/tokens.css`·`SYSTEM.md`·`DECISIONS.md`·`package.json`·`pnpm-lock.yaml` 커밋 `25aaa4f`와 바이트 동일(새 토큰 0, 새 의존성 0) |
+| 3 | 폰(375px)과 PC에서 같은 셸이 깨지지 않고, 키보드만으로 로그인·내비게이션·비밀번호 변경이 된다 | ✓ VERIFIED (unchanged, regression-clean) | **직접 실행:** `pnpm exec playwright test test/e2e/login-logout change-password system-status a11y mobile-shell keyboard-nav.spec.ts` → 30 passed (55.6s), `test/e2e/{login-logout,change-password,system-status,a11y,mobile-shell,keyboard-nav}.spec.ts`가 커밋 `25aaa4f`와 바이트 단위로 같음(`git diff --quiet` exit 0) — 02-08이 스펙을 고쳐 통과시키지 않았다는 증거 |
+| 4 | 핵심 컴포넌트 계약 5종이 SYSTEM.md에 있고, 모든 계약이 5상태를 필수 정의하며 EMPTY·ERROR는 다음 행동을 유도한다 | ✓ VERIFIED (1 reasoned exception, unchanged) | SYSTEM.md 불변, 판정 근거 이전과 동일. `pnpm exec vitest run --project unit` → 27 files / 291 tests passed(신규 `test/unit/ui/current-path.test.ts` 7개 포함) |
+| 5 | grid 동작 계약만 확정 | ✓ VERIFIED (pre-existing, unchanged) | SYSTEM.md §7-3 불변, `ui/` 트리에 표 컴포넌트 없음 |
 
-**Score:** 4/5 truths verified (0 present-but-behavior-unverified; 4 backstop statements abstained → human items)
+**Score:** 5/5 truths verified (0 present-but-behavior-unverified; 4 backstop statements still abstained → human items, unchanged from initial pass)
 
-### PLAN must_haves (67 truths across 7 plans) — coverage summary
+### Gap Closure Evidence (Success Criterion 2)
 
-Verified against code, not SUMMARY: 02-01 (14/14 doc truths via grep + `design-system-docs.test.ts`), 02-02 (11/11 — boundary probe: a temp `ui/` file importing `@/domain` → `boundaries/element-types` error, removed afterwards; stylelint probe; `docs/ARCHITECTURE.md` 126 lines mentions `ui/` L15), 02-03 (10/10 — `app/layout.tsx:4` imports `../docs/design/tokens.css`, dev server compiled it during my E2E run; `pnpm build` not re-run by me, SUMMARY claims success), 02-04 (11/11 — all exercised by E2E), 02-05 (8/8 — `buildNextTurnView([])` → `visible:false`; `next-turn.test.ts` in unit run), 02-06 (9/9 — regression E2E covers banner, wrong current password, 7-char reject, 404, logout), 02-07 (7/7 — my E2E run). The 6 `verification: backstop` statements are abstained (see `insufficient_spec_items`).
+Artifacts created by `02-08` and checked at all 4 levels (exists / substantive / wired / data-flowing):
 
-### Required Artifacts
+| Artifact | Exists | Substantive | Wired | Verified |
+|----------|--------|--------------|-------|----------|
+| `app/globals.css` (body 9 declarations + §4-4 + control fonts + `:focus-visible`) | ✓ | ✓ (`grep` acceptance criteria: 8/8 body decls, `::selection`, `caret-color`, `accent-color`, `scrollbar-color`, `scrollbar-width`, `:focus-visible` all present, tokens only) | ✓ (`app/layout.tsx` imports `globals.css` unconditionally — applies to every route) | ✓ FLOWING — `page-chrome.spec.ts` measures live computed style |
+| `ui/page-header/PageHeader.tsx`/`.module.css` | ✓ | ✓ (`--fs-lg`/`--fs-2xl`/`--lh-tight`/`--muted`/`--ls-head`, no `margin-left: auto` — no speculative right-slot) | ✓ (imported + rendered in all 12 target files; `grep -c PageHeader` ≥2 in each) | ✓ FLOWING — h1/subtitle computed values match §6-0/§6-9 |
+| `ui/form-alert/FormAlert.tsx`/`.module.css` | ✓ | ✓ (`role="alert"`, `color: var(--danger)`) | ✓ (login-form.tsx, change-password-form.tsx both import + render, old `<p role="alert">` literal gone — `grep` count 0) | ✓ FLOWING — E2E measures `--danger` on real failed-login submission |
+| `ui/kv-list/KvList.tsx`/`.module.css` | ✓ | ✓ (`grid-template-columns: var(--label-w) 1fr`, `84px 1fr` @699.98px, `dotted var(--line)` ×2) | ✓ (`admin/system-status/page.tsx` imports + renders 3 real items; `<dl>` literal gone; D-17 access-control 3 lines untouched — `notFound()` still present) | ✓ FLOWING — real `getSystemStatus()` data (version/db/backup), not static |
+| `ui/shell/current-path.ts` (`isCurrentPath`) | ✓ | ✓ (7 unit tests, all boundary cases from plan) | ✓ (`TopBar.tsx` + `BottomTabs.tsx` both call `usePathname()` → `isCurrentPath()` → `aria-current`) | ✓ FLOWING — E2E confirms exactly 1 `aria-current="page"` on `/projects`, 0 on `/account`; mobile bottom-tab same |
+| `test/e2e/page-chrome.spec.ts` + `mobile-page-chrome.spec.ts` | ✓ | ✓ (120+/40+ lines, computed-style assertions) | ✓ | 17/17 passed (I ran this myself) |
+| `test/unit/ui/current-path.test.ts` | ✓ | ✓ (7 boundary cases) | ✓ | 7/7 passed (I ran this myself) |
 
-`gsd_run query verify.artifacts` on all 7 plans: 33/33 passed (exists + substantive). Level 3/4 checked by hand:
+**Prohibitions honored (I verified, not just SUMMARY claim):**
+- `git diff --quiet 25aaa4f -- docs/design/{tokens.css,SYSTEM.md,DECISIONS.md}` → exit 0 (no new tokens, no doc edits)
+- `git diff --quiet 25aaa4f -- package.json pnpm-lock.yaml` → exit 0 (no new dependency)
+- `git diff --quiet 25aaa4f -- test/e2e/{login-logout,change-password,system-status,a11y,mobile-shell,keyboard-nav}.spec.ts` → exit 0 (no existing spec edited)
+- `pnpm exec stylelint "ui/**/*.module.css" "app/globals.css" "app/**/*.module.css"` → exit 0 (no color/font/radius literals introduced)
+- `ui/page-header`, `ui/form-alert`, `ui/kv-list`, `ui/shell/current-path.ts` import only `react` + own `.module.css` — no `domain`/`repositories`/`db`/`app` import (D-26); `TopBar.tsx`/`BottomTabs.tsx` gained no `isAdmin`-style branching (D-23) — `isCurrentPath` is the only new call, and it takes no role input
+- `.planning/WINDOWS.md` item 5 (WR-01) is `fixed` (`resolved_at: 2026-09-19T22:23:52.699Z`), `open_count` 5→4
 
-| Artifact | Expected | Status | Details |
-|----------|----------|--------|---------|
-| `ui/shell/{Shell,TopBar,BottomTabs,MoreSheet}.tsx` | §6-0 셸 | ✓ VERIFIED | Imported by `app/(app)/layout.tsx`; role branching only in `role-menu.ts` (`grep isAdmin ui/` → role-menu only); MoreSheet uses native `<dialog>.showModal()` |
-| `ui/shell/role-menu.ts` | D-23 매핑 한 곳 | ✓ VERIFIED | Pure function; consumed by layout + `mobile-shell.spec.ts` |
-| `ui/button/Button.tsx` · `ui/input/TextField.tsx` · `ui/auth-frame/AuthFrame.tsx` | §7-1 · §7-2 · §6-7 | ✓ VERIFIED | Used by login form, change-password form, logout; TextField wires `aria-invalid`/`aria-describedby` (a11y.spec.ts:97 passed) |
-| `ui/list-empty/ListEmpty.tsx` | §7-7 EMPTY/ERROR | ✓ VERIFIED | Used by 9 pages; `action` required by type |
-| `ui/next-turn/{NextTurn.tsx,build-next-turn-view.ts}` | §7-4 · D-24 | ✓ VERIFIED (data by design []) | Wired from `app/(app)/page.tsx`; input intentionally empty (D-24) — not a stub. WR-04 (href discarded) is latent |
-| `ui/banner/Banner.tsx` · `ui/status-tag/StatusTag.tsx` | §7-11 · §7-5 | ✓ VERIFIED | Used by account + system-status pages |
-| `ui/toast/Toast.tsx` | §7-6 | ⚠️ ORPHANED | `grep -rn "ui/toast" app` → no importer. Built ahead of demand (D-25 said 토스트 is in scope, but no screen in this phase triggers one). Not a criterion failure; WR-05 open |
-| `public/fonts/pretendard/**` | D-32 | ✓ VERIFIED | 92 woff2 + css + LICENSE, 94 files git-tracked, 3.1 MB; linked in `app/layout.tsx:25` |
-| `stylelint.config.mjs` + `package.json` lint | D-20 | ✓ VERIFIED | Glob covers `ui/**/*.module.css`, `app/globals.css`, `app/**/*.module.css`; probe rejected |
-| `eslint.config.mjs` `ui` type | D-26 | ✓ VERIFIED | L29 element, L41 app→ui, L68 `ui → [ui, lib]`; probe rejected |
-| `docs/design/SYSTEM.md` §6-7/6-8/6-9/7-11/7-12 | D-30/D-31 | ✓ VERIFIED | Read in full; five-state blocks complete |
-| `test/e2e/{mobile-shell,keyboard-nav,a11y}.spec.ts` + `playwright.config.ts` | 성공 기준 3 | ✓ VERIFIED | `mobile-*.spec.ts` project split; all 24 tests executed here |
+### Regression Suite (I ran these myself, not from SUMMARY)
 
-### Key Link Verification
-
-`gsd_run query verify.key-links`: 13/13 verified across 7 plans. Spot-checked by hand: `app/layout.tsx` → `../docs/design/tokens.css` (L4, no copy); `app/(app)/layout.tsx` → `roleMenu(viewer)` → `<Shell>` props; `BottomTabs` → `MoreSheet` (4th tab opens sheet); `change-password-form.tsx` → `TextField error={…validationErrors…}`; `system-status/page.tsx` → `Banner kind="warning"`; `projects/page.tsx` → `ListEmpty`.
-
-### Data-Flow Trace (Level 4)
-
-| Artifact | Data Variable | Source | Produces Real Data | Status |
-|----------|---------------|--------|--------------------|--------|
-| `app/(app)/layout.tsx` → Shell | `user.name`, `roleMenu(viewer)` | `requireSession()` (real session) | Yes | ✓ FLOWING |
-| `app/(app)/account/page.tsx` | `user.passwordIsTemporary`, email, name | `requireSession()` | Yes (regression E2E shows banner) | ✓ FLOWING |
-| `app/(app)/admin/system-status/page.tsx` | `status.version/db/backup` | `getSystemStatus(viewer)` (pg_stat_activity + Cloud SQL API) | Yes | ✓ FLOWING |
-| `app/(app)/page.tsx` → NextTurn | `buildNextTurnView([])` | none (D-24, by decision) | No — intentional, documented | ⚠️ STATIC (accepted by D-24/D-28) |
-| 5 primary-menu pages + settings | none | none (D-22 EMPTY) | N/A — EMPTY is the contract | ✓ per contract |
-
-### Behavioral Spot-Checks
-
-| Behavior | Command | Result | Status |
-|----------|---------|--------|--------|
-| Phone shell + keyboard-only + axe | `pnpm exec playwright test test/e2e/{mobile-shell,keyboard-nav,a11y}.spec.ts` | 24 passed (51.8s), exit 0 | ✓ PASS |
-| Phase-1 flows still work on rebuilt screens | `pnpm exec playwright test test/e2e/{login-logout,change-password,system-status}.spec.ts` | 6 passed (20.0s), exit 0 | ✓ PASS |
-| Unit suite (once) | `pnpm exec vitest run --project unit` | 26 files / 284 tests passed, exit 0 | ✓ PASS |
-| Token guard rejects literals | stylelint on `.probe{color:#fff;border-radius:9px;font-family:Arial}` | 3 errors, exit 2 | ✓ PASS |
-| Token guard clean on app CSS | `pnpm exec stylelint "ui/**/*.module.css" "app/globals.css" "app/**/*.module.css"` | exit 0 | ✓ PASS |
-| `ui` cannot import `domain` | eslint on temp `ui/zz-verifier-probe/Probe.ts` importing `@/domain/auth/provider` | `boundaries/element-types` error, exit 1 (probe removed, tree clean) | ✓ PASS |
-| Lint / typecheck | `pnpm exec eslint .` · `pnpm exec tsc --noEmit` | both exit 0 (boundaries v6 deprecation warnings = IN-07) | ✓ PASS |
-| Commit hashes in SUMMARYs exist | `gsd_run query verify.commits` (24 hashes) | all_valid: true | ✓ PASS |
-| Production build | `pnpm build` | not re-run (02-03 SUMMARY L192 claims success; dev compile of the out-of-app CSS import observed) | ? SKIP |
-
-### Probe Execution
-
-No `scripts/*/tests/probe-*.sh` exist and no PLAN/SUMMARY declares probes. N/A.
+| Suite | Command | Result |
+|-------|---------|--------|
+| Unit | `pnpm exec vitest run --project unit` | 27 files / **291 passed**, 10.27s |
+| New E2E (gap closure) | `pnpm exec playwright test test/e2e/page-chrome.spec.ts test/e2e/mobile-page-chrome.spec.ts --reporter=line` | **17 passed**, 30.2s |
+| Existing E2E (regression) | `pnpm exec playwright test test/e2e/{login-logout,change-password,system-status,a11y,mobile-shell,keyboard-nav}.spec.ts --reporter=line` | **30 passed**, 55.6s (30 + 17 = 47, matches the count reported to me) |
+| Unit (current-path isolate) | `pnpm exec vitest run test/unit/ui/current-path.test.ts` | 7 passed |
+| Lint | `pnpm exec eslint .` | exit 0 (only pre-existing `boundaries/element-types` deprecation warnings, IN-07, unrelated to 02-08) |
+| Typecheck | `pnpm exec tsc --noEmit` | exit 0 |
+| Build (I re-ran this — previous verification had left it as `? SKIP`) | `pnpm build` | **succeeded** — Next.js 16.3.5 Turbopack, all 12 routes compiled, TypeScript check passed in build |
 
 ### Requirements Coverage
 
 | Requirement | Source Plan | Description | Status | Evidence |
 |-------------|-------------|-------------|--------|----------|
-| UX-01 | 02-01…02-07 | SYSTEM.md 먼저 확정, 모든 화면이 토큰·컴포넌트만 사용, 계약 5상태 필수, EMPTY·ERROR 다음 행동 | ✗ BLOCKED (partial) | SYSTEM.md 확정·5상태·다음 행동 ✓ (Truth 4); 컴포넌트 층 토큰 전용 ✓; 페이지 기본 타이포그래피가 UA 기본값 → "모든 화면이 그 토큰만 쓴다" 미충족 (Gap 1). REQUIREMENTS.md L270 marks it Complete — premature |
+| UX-01 | 02-01…02-08 | SYSTEM.md 먼저 확정, 모든 화면이 토큰·컴포넌트만 사용, 계약 5상태 필수, EMPTY·ERROR 다음 행동 | ✓ SATISFIED | Component layer token-only (unchanged) + page layer now token-only (Truth 2, gap closed). REQUIREMENTS.md L140/L270 already marked `[x]`/`Complete` — no longer premature |
 
-Orphaned requirements: none (REQUIREMENTS.md maps only UX-01 to Phase 2).
-
-### Decision Coverage
-
-`gsd_run query check.decision-coverage-verify`: All trackable CONTEXT.md decisions are honored by shipped artifacts (14/14, non-blocking).
-
-### Prohibitions (judgment-tier, 21 items) — NON-AUTHORITATIVE LLM-judge verdicts, `unverified-prohibition — human review recommended`
-
-| Plan | Prohibition (short) | Judge verdict | Evidence |
-|------|---------------------|---------------|----------|
-| 02-01 | 결정되지 않은 제품 동작을 지어내 확정 문장으로 적지 않는다 | not violated | 신설 절마다 체크포인트 항목(A①…E④) 표기; DECISIONS.md 6건 |
-| 02-01 | 체크포인트 답이 E2E를 깨면 스펙을 고쳐 통과시키지 않는다 | not violated | Phase-1 스펙 3개 원문 유지, 6/6 통과 |
-| 02-01 | 코드 먼저 쓰고 SYSTEM.md를 사후 수정하지 않는다 | not violated | 32d6c54(docs) → 4e6ec65(test) → cfa301d(code) 순서 |
-| 02-01 | 시스템 이탈을 DECISIONS.md 기록 없이 처리하지 않는다 | **doubtful** | Gap 1의 무스타일 페이지 골격이 DECISIONS.md에 없다 |
-| 02-02 | 경계 등록 전 ui/ 파일을 만들지 않는다 | not violated | 1408190 "add ui boundaries type before first ui/ file" precedes cfa301d |
-| 02-02 | 간격·그림자까지 금지하지 않는다 | not violated | stylelint.config.mjs 규칙 3종은 색·서체·radius만 |
-| 02-02 | 승인 없는 devDependency 금지 | not violated | stylelint(91a050d, D-20 승인) · @axe-core/playwright(02-07 체크포인트 승인, SUMMARY L… "승인") — 사람 확인 권장 |
-| 02-03 | 로그인 실패 문구를 이메일 존재 구분형으로 바꾸지 않는다 | not violated | login-form.tsx:9 GENERIC_ERROR 단일 문구 |
-| 02-03 | 서버 검증을 클라이언트 검증으로 대체하지 않는다 | not violated | next-safe-action validationErrors 그대로; a11y.spec.ts:97 서버 7자 거부 확인 |
-| 02-03 | SessionRefresh를 루트 레이아웃에서 떼지 않는다 | not violated | app/layout.tsx:27 |
-| 02-03 | lib/viewer.ts에 질의 문자열을 붙이지 않는다 | not violated | `git diff` on lib/viewer.ts across phase: untouched |
-| 02-03 | tokens.css에 없는 색을 ui/ CSS에 도입하지 않는다 | not violated | 참조 토큰 전부 정의됨(comm 공집합) |
-| 02-04 | 대응 화면 없다고 1차 메뉴를 빼지 않는다 | not violated | role-menu.ts TOP_BAR_MENU 5개 항상 |
-| 02-04 | 역할→메뉴 매핑을 셸 컴포넌트에 흩지 않는다 | not violated | `isAdmin` grep → role-menu.ts only |
-| 02-04 | 소속 자리를 그럴듯한 값으로 채우지 않는다 | not violated | TopBar renders `userName` only |
-| 02-05 | 가짜 「내 차례」 데이터 금지 | not violated | `buildNextTurnView([])` |
-| 02-05 | 빈 화면에 안내 문구 금지, 다음 한 수 버튼 | not violated | ListEmpty `action` 필수; 9 화면 확인 |
-| 02-05 | 표 컴포넌트를 만들지 않는다 | not violated | ui/ 트리에 table/grid 없음 |
-| 02-06 | 관리자 화면 접근 제어를 약화하지 않는다 | not violated | system-status/page.tsx:17-19 유지; E2E 직원 404 통과 |
-| 02-06 | 서버 검증 메시지 문자열을 바꾸지 않는다 | not violated | change-password.spec.ts 통과 |
-| 02-06 | 오류 화면에 사과 문구 금지 | not violated | `grep 죄송|사과|미안 app ui` → 0 |
-| 02-07 | 접근성 검사 대상 축소·규칙 끄기 금지 | not violated | a11y.spec.ts: no disableRules/include/exclude; 6 screens |
-| 02-07 | 승인되지 않은 의존성 금지 | see 02-02 row | — |
-| 02-07 | 기존 스크린샷을 시각 회귀 기준선으로 재사용 금지 | not violated | no toHaveScreenshot in specs |
-
-### Anti-Patterns Found
+### Anti-Patterns Found (new scan, files touched by 02-08)
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| — | — | TBD/FIXME/XXX in phase files | none | Debt-marker gate passes |
-| `ui/input/TextField.module.css` | 31 | `::placeholder` (grep false positive) | ℹ️ Info | CSS pseudo-element, not a stub |
-| `ui/next-turn/NextTurn.tsx` | 26 | `return null` | ℹ️ Info | §7-4 contract (block disappears at 0) |
-| `test/e2e/a11y.spec.ts` | 79 | `expect(SCREENS).toHaveLength(6)` cannot fail meaningfully | ℹ️ Info | IN-02 (known); the six real per-screen tests carry the proof |
-| `ui/toast/Toast.tsx` | — | component with no importer | ⚠️ Warning | Orphaned until a screen needs a toast; WR-05 open |
-| `ui/shell/TopBar.tsx` / `BottomTabs.tsx` | 79-84 / 50-52 | `aria-current` never set → §6-0 current-menu underline dead | ⚠️ Warning | WR-01 (known, open by user decision). Shell deviates from §6-0/§1-3 contract but does not falsify a criterion on its own; fold into Gap 1's fix if desired |
-| `ui/shell/TopBar.tsx` | 57-62, 89-100 | `role="menu"` without arrow keys; no close on Tab-out/outside click | ⚠️ Warning | WR-02/03 (known). Keyboard-only path still completes (tested), so criterion 3 holds |
-| `app/(app)/*` pages | — | auth only in layout (Next 16: bypassable) | ⚠️ Warning | WR-07 (known). No data exposed by these pages today; must be fixed before Phase 4 per review |
-| `app/(app)/account/logout-button.tsx`, TopBar, MoreSheet | — | no `signOut()` failure handling | ⚠️ Warning | WR-06 (known) |
-
-Test-quality audit: no `.skip/.only/.todo` in phase test files; `writeFileSync` hits are Phase-1 deploy-script tests seeding temp dirs (not circular); assertion strength for criterion 3 is behavioural (multi-step keyboard flows, measured geometry).
+| — | — | TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER in any 02-08 file | none | Debt-marker gate passes — scanned all 14 created/modified source files, 0 hits |
+| `app/(auth)/login/login-form.tsx` | 32 | `result.error.message ?? GENERIC_ERROR` renders better-auth's English `"Invalid email or password"` instead of SYSTEM.md §6-7 A②'s Korean text | ⚠️ Warning | **New finding, surfaced by 02-08-SUMMARY's own human-judgment note, confirmed by me reading the file.** This is a copy defect, not a token/style violation — it predates 02-08 (02-08 did not touch this conditional; its new spec asserts only `color`, not text, by design) and does not falsify success criterion 2 (which is about tokens/colors/radii, not literal copy). Not in scope of the original Gap 1 `missing` list. Recommend logging as a new WINDOWS.md entry; not currently registered there |
+| SYSTEM.md | §2-2 vs §6-9 | `--fs-2xl` documented as "KPI-tile only" in §2-2 but prescribed for error-page titles in §6-9; 02-08 implemented §6-9 as-is (screen-specific section treated as authoritative) without reconciling §2-2 | ℹ️ Info | Pre-existing document tension, not a code defect. 02-08 made a reasoned, documented choice (SUMMARY key-decisions) rather than inventing a value. Flagged for human decision (see human_verification) |
 
 ### Human Verification Required
 
-See frontmatter `human_verification` (7 items): Windows Pretendard/digit alignment/transfer size (D-32); tablet 700–1023; 375 px visual quality; `/design-review` + `/qa`; 「내 차례」 phone two-line layout (no data yet); confirmation of the 21 prohibition verdicts; §7-12 EMPTY exception decision.
+See frontmatter `human_verification` (9 items — 7 carried forward unchanged from the initial pass, plus 2 new items surfaced by 02-08's own self-reported human-judgment notes): Windows Pretendard/digit-alignment/transfer-size (D-32); tablet 700–1023; 375px visual quality (now with token-styled body/PageHeader — re-check recommended since the visual baseline changed); `/design-review` + `/qa` (should now find Gap 1 no longer reproduces); NextTurn phone two-line layout (still no data, D-24); confirmation of 27 prohibition verdicts (21 carried + 6 new from 02-08, all judgment-tier/non-authoritative); §7-12 EMPTY exception product decision (unchanged); **new:** §2-2/§6-9 `--fs-2xl` tension resolution decision; **new:** login-failure English-copy defect fix decision.
+
+None of these 9 items falsify any of the 5 ROADMAP success criteria — they are either (a) environment-dependent checks this sandbox cannot run (Windows rendering, screenshots), (b) product decisions the codebase correctly defers to a human (§7-12, §2-2/§6-9 tension), or (c) a pre-existing, out-of-scope copy defect newly surfaced during this gap-closure work. Per the decision tree, their presence routes the overall status to `human_needed` rather than `passed`, even though the truth score is now 5/5.
 
 ### Gaps Summary
 
-**One gap, one root cause.** The component layer is genuinely token-only — 0 literals across `ui/**` and `app/**` CSS (my grep, stylelint clean, negative probe rejected), every referenced custom property exists in `tokens.css`, the single new token went through DECISIONS.md + SYSTEM.md, and all four Phase-1 screens were rebuilt on `ui/` components with the old files gone. But the **page layer beneath the components is still unstyled**:
-
-- `docs/design/tokens.css` declares only `:root` custom properties (no element rules), and `app/globals.css` ports just `font-family` from the mockup's body rule (`docs/design/system/form-expense.html:18` also sets `background:var(--bg); color:var(--fg); font-size:var(--fs-base); line-height:var(--lh-body); letter-spacing:var(--ls-body); word-break:keep-all; overflow-wrap:anywhere`).
-- Consequence in the deployed app: body text colour is the UA default (not `--fg`), body size is 16 px (not `--fs-base` 14/15 px), `--lh-body`/`--ls-body` are never referenced, every screen title `<h1>` (홈·5 primary menus·설정·내 계정·시스템 상태·404×2·오류) is UA `2em bold` instead of SYSTEM.md §6-0 L290 (`--fs-lg` + subtitle `--fs-sm --muted`), the login failure `<p role="alert">` has no `--danger` (§6-7), the system-status `<dl>` ignores §6-8 B①, and none of §4-4's browser default surfaces (`::selection`, `caret-color`, `accent-color`, `scrollbar-color`) is set although §4-4 says they must not be left at defaults.
-- The executor's own 02-05-SUMMARY.md:59 calls this "account/system-status 페이지와 같은 무스타일 관례". It is not recorded in `docs/design/DECISIONS.md` (6 entries dated 2026-09-19, none about page chrome), so under CLAUDE.md's 프론트엔드 rule it is an unrecorded deviation, and it is exactly the "무스타일 임시 화면" quality that criterion 2 says must not remain.
-
-The fix is small and local: port the body rule and §4-4 surfaces into `app/globals.css` (token references only, so stylelint still passes), add a screen-title/subtitle rule or a tiny `ui/` page-header component, and style the login alert and the status `dl`. No later phase in the ROADMAP covers base typography (checked Phase 3–11 goals/SCs), so this is not deferrable. If the user instead judges page chrome out of Phase 2 scope, the path is a DECISIONS.md entry + SYSTEM.md correction, then an `overrides:` entry here.
-
-Everything else the phase set out to do is in the code and was exercised: 30 E2E tests and 284 unit tests ran green in this verification environment, the `ui` boundary and the token guard both reject probes, and the SYSTEM.md contracts for criteria 4 and 5 are complete.
+**No gaps remain against the ROADMAP contract.** The single gap from the initial verification — page-layer typography rendering with User-Agent defaults underneath a token-only component layer — is closed. I independently re-derived and ran the failing assertions myself (not trusting `02-08-SUMMARY.md`'s "RED then GREEN" narrative): the same computed-style checks the initial verifier would have written now pass against the live DOM (`getComputedStyle`), the component/page split introduced by the gap-closure plan (`PageHeader`/`FormAlert`/`KvList`) is genuinely wired to real screens and real data (not orphaned), no regression was introduced in the 30 pre-existing E2E tests or 291 unit tests (all re-run by me, byte-identical spec files confirmed via `git diff --quiet`), no new token/dependency/doc edit occurred (all confirmed via `git diff --quiet` against the pre-gap-closure commit `25aaa4f`), and the previously-skipped production build now succeeds. Status remains `human_needed` — not `passed` — solely because of pre-existing/product-decision human-verification items unrelated to this gap (see above), none of which is a new blocker introduced by 02-08.
 
 ---
 
-_Verified: 2026-09-19T18:53:19Z_
-_Verifier: Claude (gsd-verifier)_
+_Verified: 2026-09-19T22:45:00Z_
+_Verifier: Claude (gsd-verifier) — re-verification pass_

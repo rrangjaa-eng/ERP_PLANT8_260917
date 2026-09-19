@@ -6,11 +6,20 @@ name: ci
 # 월 2,000분 — CI 1회 ≈ 8~10분(플랜 리뷰 CEO 9A).
 on:
   pull_request:
+    # !docs/** 뒤의 재포함 목록은 unit 테스트가 실제로 읽는 docs 파일 전부와
+    # 일치해야 한다(WR-09) — design-system-docs.test.ts(SYSTEM.md·tokens.css·
+    # DECISIONS.md), ui/role-menu.test.ts(SYSTEM.md), docs-limits.test.ts
+    # (ARCHITECTURE.md·OPERATIONS.md). 빠지면 그 파일만 바뀐 PR이 CI 없이
+    # 머지되고, main이 다음 무관한 PR에서야 빨간불로 드러난다.
     paths:
       - "**"
       - "!.planning/**"
       - "!docs/**"
       - "docs/design/tokens.css"
+      - "docs/design/SYSTEM.md"
+      - "docs/design/DECISIONS.md"
+      - "docs/ARCHITECTURE.md"
+      - "docs/OPERATIONS.md"
   workflow_call: {}
 
 concurrency:

@@ -41,6 +41,31 @@ describe("deploy.yml", () => {
     expect(deploy).toContain("uses: ./.github/workflows/ci.yml");
   });
 
+  // WR-09: ci.yml과 동일한 구멍 — !docs/**가 unit 테스트가 읽는 docs 파일까지
+  // 가려서 docs 전용 PR이 main에 머지된 뒤 배포 경로가 스킵될 수 있다.
+  it("push paths가 unit 테스트가 읽는 5개 docs 파일을 모두 재포함한다(ci.yml과 동일, 순서 포함)", () => {
+    const patterns = [
+      '- "**"',
+      '- "!.planning/**"',
+      '- "!docs/**"',
+      '- "docs/design/tokens.css"',
+      '- "docs/design/SYSTEM.md"',
+      '- "docs/design/DECISIONS.md"',
+      '- "docs/ARCHITECTURE.md"',
+      '- "docs/OPERATIONS.md"',
+    ];
+    const indexes = patterns.map((pattern) => deploy.indexOf(pattern));
+    for (const [i, index] of indexes.entries()) {
+      expect(index, `deploy.yml에 "${patterns[i]}"가 있어야 한다`).toBeGreaterThan(-1);
+    }
+    expect(indexes).toEqual([...indexes].sort((a, b) => a - b));
+  });
+
+  it(".planning/**은 여전히 완전히 제외된다(재포함 목록에 없다)", () => {
+    expect(deploy).toContain('- "!.planning/**"');
+    expect(deploy).not.toMatch(/-\s*"\.planning\//);
+  });
+
   it("WIF 인증에 정확한 workload_identity_provider 키를 쓴다(오타 없음)", () => {
     expect(deploy).toContain("workload_identity_provider:");
     expect(deploy).not.toContain("workflow_identity_provider:");

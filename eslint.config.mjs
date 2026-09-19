@@ -26,6 +26,7 @@ const eslintConfig = defineConfig([
         { type: "scripts", pattern: "scripts/**" },
         { type: "test", pattern: "test/**" },
         { type: "eslint", pattern: "eslint/**" },
+        { type: "ui", pattern: "ui/**" },
       ],
     },
     plugins: { boundaries, plant8 },
@@ -37,7 +38,7 @@ const eslintConfig = defineConfig([
         {
           default: "disallow",
           rules: [
-            { from: "app", allow: ["app", "domain", "lib"] },
+            { from: "app", allow: ["app", "domain", "lib", "ui"] },
             { from: "domain", allow: ["domain", "repositories", "lib"] },
             { from: "repositories", allow: ["repositories", "db", "domain"] },
             // db/client.ts는 lib/env.ts(환경 변수 계약)를 읽어야 한다 — lib는 횡단 모듈
@@ -48,9 +49,23 @@ const eslintConfig = defineConfig([
             {
               from: "test",
               // eslint-rules 테스트가 eslint/rules/*.mjs를 직접 import해 규칙을 검증한다.
-              allow: ["test", "app", "domain", "repositories", "db", "lib", "scripts", "eslint"],
+              // ui는 D-24의 「내 차례」 단위 테스트가 ui/next-turn/build-next-turn-view.ts를
+              // import해야 해서 더했다(02-RESEARCH.md 교차 의존 발견).
+              allow: [
+                "test",
+                "app",
+                "domain",
+                "repositories",
+                "db",
+                "lib",
+                "scripts",
+                "eslint",
+                "ui",
+              ],
             },
             { from: "eslint", allow: ["eslint"] },
+            // ui는 순수 표현 계층 — domain/repositories/db/app을 import할 수 없다(D-26).
+            { from: "ui", allow: ["ui", "lib"] },
           ],
         },
       ],

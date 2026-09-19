@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 02
 current_phase_name: 디자인 시스템·앱 셸
-current_plan: 5
+current_plan: 6
 status: executing
-stopped_at: Completed 02-05-PLAN.md
-last_updated: "2026-09-19T17:05:01.554Z"
+stopped_at: Completed 02-06-PLAN.md
+last_updated: "2026-09-19T17:27:58.960Z"
 last_activity: 2026-09-19
 last_activity_desc: Phase 02 execution started
-state_head: a13f55e46d6f6976306291cd8c7697c7cce7e47a
+state_head: 77b74bd5cb41e42d9a7f3c82ef6f6043b89fdd79
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 15
-  completed_plans: 13
+  completed_plans: 14
   percent: 9
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 02 (디자인 시스템·앱 셸) — EXECUTING
-Current Plan: 5
+Current Plan: 6
 Total Plans in Phase: 7
 Status: Ready to execute
 Last activity: 2026-09-19 — Phase 02 execution started
@@ -70,6 +70,7 @@ Progress: [█░░░░░░░░░] 9%
 | Phase 02 P03 | 19min | 3 tasks | 13 files |
 | Phase 02 P04 | 28min | 3 tasks | 14 files |
 | Phase 02-design-system-app-shell P05 | 20min | 3 tasks | 15 files |
+| Phase 02 P06 | 20min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -133,6 +134,8 @@ Recent decisions affecting current work:
 - [Phase 02]: 02-04: PC 사용자 메뉴는 accountGroup에서 href==='/settings' 항목만 걸러 렌더 — SYSTEM.md가 PC 메뉴와 폰 시트의 계정 항목 구성을 다르게 규정
 - [Phase 02]: 02-05: §7-4 원문(결재·대기 둘 다 --accent)을 §7-5 일반 규칙보다 우선 적용 — 「내 차례」 전용 정본이 더 구체적
 - [Phase 02]: 02-05: ListEmpty의 다음 한 수는 ui/button/Button이 아니라 자체 <a> + 로컬 CSS로 구현 — 이 페이즈부터 실제 화면 이동 링크여야 하고 Button은 <button>만 렌더한다(§10)
+- [Phase 02]: 02-06: §6-7 A④=「내 계정 화면 상단」, F-1=①(status 승격), §6-9 C②=「셸 안」 — SYSTEM.md 원문 대조로 확정, app/(app)/layout.tsx·login/page.tsx는 건드리지 않았다
+- [Phase 02]: 02-06: ListEmpty.action을 href/onClick 유니언으로 확장(Rule 2) — 오류 경계의 다시 시도는 페이지 이동이 아니라 retry() 호출이라 §10(3차 버튼은 button, 이동이면 a)을 지키려면 button 갈래가 필요했다
 
 ### Pending Todos
 
@@ -158,6 +161,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-19T17:04:52.094Z
-Stopped at: Completed 02-05-PLAN.md
+Last session: 2026-09-19T17:27:58.882Z
+Stopped at: Completed 02-06-PLAN.md
 Resume file: None

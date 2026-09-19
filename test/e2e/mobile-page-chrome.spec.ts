@@ -37,3 +37,33 @@ test.describe("폰 375 시스템 상태 목록 (02-08 Task 1)", () => {
     expect(box!.width).toBeLessThanOrEqual(85);
   });
 });
+
+test.describe("폰 375 하단 탭 현재 표시 (02-08 Task 3, WR-01)", () => {
+  test("/에서 하단 탭 현재가 하나이고 계산값이 현재 표시다", async ({ page }) => {
+    await loginAs(page, false);
+    await page.goto("/");
+
+    const current = page.locator('nav[aria-label="하단 탭"] [aria-current="page"]');
+    await expect(current).toHaveCount(1);
+    await expect(current).toHaveText("내 차례");
+    await expect(current).toHaveCSS("color", "rgb(0, 84, 70)");
+    const boxShadow = await current.evaluate((el) => getComputedStyle(el).boxShadow);
+    expect(boxShadow).toContain("inset");
+  });
+
+  test("/projects에서 현재 탭 텍스트가 프로젝트다", async ({ page }) => {
+    await loginAs(page, false);
+    await page.goto("/projects");
+
+    const current = page.locator('nav[aria-label="하단 탭"] [aria-current="page"]');
+    await expect(current).toHaveText("프로젝트");
+  });
+
+  test("/account에서는 하단 탭 현재가 없다", async ({ page }) => {
+    await loginAs(page, false);
+    await page.goto("/account");
+
+    const current = page.locator('nav[aria-label="하단 탭"] [aria-current="page"]');
+    await expect(current).toHaveCount(0);
+  });
+});

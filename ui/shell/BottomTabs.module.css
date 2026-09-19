@@ -41,3 +41,9 @@
   outline: var(--focus-w) solid var(--focus);
   outline-offset: calc(-1 * var(--focus-w));
 }
+
+/* WR-01 — 현재 탭 표시(preview.html:129 이관). */
+.tab[aria-current="page"] {
+  color: var(--accent);
+  box-shadow: var(--inset-tab);
+}

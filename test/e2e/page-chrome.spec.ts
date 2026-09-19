@@ -191,3 +191,26 @@ test.describe("§6-0 화면 제목·부제 · §6-9 오류 제목 (02-08 Task 2)
     expect(px(lineHeight)).toBeCloseTo(41.6, 1);
   });
 });
+
+test.describe("§6-0 현재 메뉴(WR-01)", () => {
+  test("/projects에서 주 메뉴 현재 링크가 하나이고 계산값이 현재 표시다", async ({ page }) => {
+    await loginAs(page, false);
+    await page.goto("/projects");
+
+    const current = page.locator('nav[aria-label="주 메뉴"] a[aria-current="page"]');
+    await expect(current).toHaveCount(1);
+    await expect(current).toHaveText("프로젝트");
+    await expect(current).toHaveCSS("font-weight", "700");
+    await expect(current).toHaveCSS("color", "rgb(220, 232, 228)");
+    const boxShadow = await current.evaluate((el) => getComputedStyle(el).boxShadow);
+    expect(boxShadow).toContain("inset");
+  });
+
+  test("/account에서는 주 메뉴 현재 링크가 없다", async ({ page }) => {
+    await loginAs(page, false);
+    await page.goto("/account");
+
+    const current = page.locator('nav[aria-label="주 메뉴"] a[aria-current="page"]');
+    await expect(current).toHaveCount(0);
+  });
+});

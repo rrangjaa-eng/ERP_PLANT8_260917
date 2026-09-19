@@ -1,8 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import type { AccountEntry, BottomTab, MenuLink } from "./role-menu";
 import { MoreSheet } from "./MoreSheet";
+import { isCurrentPath } from "./current-path";
 import styles from "./BottomTabs.module.css";
 
 // SYSTEM.md §6-0 폰 하단 탭 + 「더보기」 시트 트리거. 표시 여부(폰만 보임)는
@@ -32,6 +34,7 @@ export function BottomTabs({
 }: BottomTabsProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const moreTriggerRef = useRef<HTMLButtonElement>(null);
+  const pathname = usePathname();
 
   const tabHrefs = new Set(
     bottomTabs.filter((tab): tab is Extract<BottomTab, { kind: "link" }> => tab.kind === "link").map((tab) => tab.href),
@@ -47,7 +50,12 @@ export function BottomTabs({
           if (tab.kind === "link") {
             const label = index === 0 && typeof nextTurnCount === "number" ? `${tab.label} ${nextTurnCount}` : tab.label;
             return (
-              <a key={tab.href} href={tab.href} className={styles.tab}>
+              <a
+                key={tab.href}
+                href={tab.href}
+                className={styles.tab}
+                aria-current={isCurrentPath(pathname, tab.href) ? "page" : undefined}
+              >
                 {label}
               </a>
             );

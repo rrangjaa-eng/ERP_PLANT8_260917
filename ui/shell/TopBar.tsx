@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import type { AccountEntry, MenuLink } from "./role-menu";
+import { isCurrentPath } from "./current-path";
 import styles from "./TopBar.module.css";
 
 // SYSTEM.md §6-0 공통 셸 · PC 상단 바. 앱 유일의 딥그린 면 + 1차 메뉴 + 사용자 진입점.
@@ -15,6 +16,10 @@ import styles from "./TopBar.module.css";
 // 서버 컴포넌트로 남았을 것이다).
 //
 // 관리자 여부를 가르는 조건문을 두지 않는다 — 전부 role-menu.ts의 계산 결과로 받는다(D-23).
+//
+// WR-01(02-REVIEW.md, 02-04-SUMMARY.md L201-L212 후속): 02-04는 레이아웃이 현재
+// pathname을 얻을 방법이 없어 배선을 미뤘다 — 이 파일이 이미 클라이언트 컴포넌트라
+// usePathname()을 여기서 직접 읽으면 그 제약과 무관하게 배선할 수 있다(02-08 Task 3).
 export type TopBarProps = {
   topBarMenu: MenuLink[];
   systemStatus: MenuLink | null;
@@ -33,6 +38,7 @@ function isSettingsEntry(entry: AccountEntry): boolean {
 export function TopBar({ topBarMenu, systemStatus, accountGroup, userName }: TopBarProps) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const firstItemRef = useRef<HTMLAnchorElement | HTMLButtonElement>(null);
 
@@ -77,7 +83,12 @@ export function TopBar({ topBarMenu, systemStatus, accountGroup, userName }: Top
       </span>
       <nav aria-label="주 메뉴" className={styles.nav}>
         {topBarMenu.map((item) => (
-          <a key={item.href} href={item.href} className={styles.navLink}>
+          <a
+            key={item.href}
+            href={item.href}
+            className={styles.navLink}
+            aria-current={isCurrentPath(pathname, item.href) ? "page" : undefined}
+          >
             {item.label}
           </a>
         ))}

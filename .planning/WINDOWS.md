@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 5
+open_count: 4
 waived_count: 0
-fixed_count: 0
+fixed_count: 1
 total_count: 5
-last_updated: 2026-09-19T16:39:08.491Z
+last_updated: 2026-09-19T22:23:52.699Z
 ---
 
 # Broken Windows Ledger
@@ -19,7 +19,7 @@ last_updated: 2026-09-19T16:39:08.491Z
 | 2 | 01 | lint-warning | .squawk.toml |  | prefer-bigint-over-int excluded — rate_limits.count(integer)는 better-auth 자체 필드, bigint 전환은 adapter 스키마 검사와 충돌 위험 | open |  | 2026-09-18T09:14:36.412Z |  |
 | 3 | 01 | lint-warning | .squawk.toml |  | adding-required-field excluded — rate_limits.id NOT NULL 추가(0002), 마이그레이션 시점에 테이블이 항상 비어 있어 실질 위험 없음 | open |  | 2026-09-18T09:14:36.610Z |  |
 | 4 | 01 | lint-warning | .squawk.toml |  | require-concurrent-index-creation excluded — drizzle migrate()의 단일 트랜잭션과 CONCURRENTLY가 근본적으로 양립 불가(현재 SQL엔 미사용, 예방적 배제) | open |  | 2026-09-18T09:14:36.814Z |  |
-| 5 | 02 | deviation | ui/shell/TopBar.tsx |  | PC 상단 바의 현재 메뉴(aria-current) 하이라이트는 CSS만 준비되고 실제 경로 연결은 되지 않음 — layout.tsx가 현재 pathname을 얻을 방법이 없어(미들웨어 확장은 이 플랜 범위 밖) 배선을 다음 페이즈로 미룸 | open |  | 2026-09-19T16:39:08.491Z |  |
+| 5 | 02 | deviation | ui/shell/TopBar.tsx |  | PC 상단 바의 현재 메뉴(aria-current) 하이라이트는 CSS만 준비되고 실제 경로 연결은 되지 않음 — layout.tsx가 현재 pathname을 얻을 방법이 없어(미들웨어 확장은 이 플랜 범위 밖) 배선을 다음 페이즈로 미룸 | fixed |  | 2026-09-19T16:39:08.491Z | 2026-09-19T22:23:52.699Z |
 
 ````json
 [
@@ -82,10 +82,10 @@ last_updated: 2026-09-19T16:39:08.491Z
     "file": "ui/shell/TopBar.tsx",
     "line": null,
     "description": "PC 상단 바의 현재 메뉴(aria-current) 하이라이트는 CSS만 준비되고 실제 경로 연결은 되지 않음 — layout.tsx가 현재 pathname을 얻을 방법이 없어(미들웨어 확장은 이 플랜 범위 밖) 배선을 다음 페이즈로 미룸",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-19T16:39:08.491Z",
-    "resolved_at": null,
+    "resolved_at": "2026-09-19T22:23:52.699Z",
     "milestone": null
   }
 ]

@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 2
+current_phase: 02
 current_phase_name: 디자인 시스템·앱 셸
-current_plan: Not started
+current_plan: 2
 status: executing
-stopped_at: Phase 2 planned — 7 plans, 6 waves, ready to execute
-last_updated: "2026-09-19T14:23:31.503Z"
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-09-19T14:48:53.526Z"
 last_activity: 2026-09-19
-last_activity_desc: Phase 1 complete, transitioned to Phase 2
-state_head: f1198b659513356b3ec46018b9bab42498f77f78
+last_activity_desc: Phase 02 execution started
+state_head: b5876500a21ef035952d0c9fb7de3edd6ae3b08e
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 15
-  completed_plans: 8
+  completed_plans: 9
   percent: 9
 ---
 
@@ -24,15 +24,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-17)
 
 **Core value:** 기획본부와 경영관리본부가 프로젝트마다 같은 숫자(견적·예상 비용·확정 비용·손익)를 본다. 기획본부는 계산식·근거 없이 결과 숫자로 납득하고, 경영관리·대표는 근거 줄까지 본다.
-**Current focus:** Phase 2 — 디자인 시스템·앱 셸
+**Current focus:** Phase 02 — 디자인 시스템·앱 셸
 
 ## Current Position
 
-Phase: 2 (디자인 시스템·앱 셸) — READY TO EXECUTE
-Current Plan: Not started
+Phase: 02 (디자인 시스템·앱 셸) — EXECUTING
+Current Plan: 2
 Total Plans in Phase: 7
 Status: Ready to execute
-Last activity: 2026-09-19 — Phase 1 complete, transitioned to Phase 2
+Last activity: 2026-09-19 — Phase 02 execution started
 
 Progress: [█░░░░░░░░░] 9%
 
@@ -65,6 +65,7 @@ Progress: [█░░░░░░░░░] 9%
 | Phase 01-deploy-skeleton-login P04 | 40min | 3 tasks | 32 files |
 | Phase 01-deploy-skeleton-login P05 | 14min | 2 tasks | 11 files |
 | Phase 01-deploy-skeleton-login P06 | 38min | 2 tasks | 17 files |
+| Phase 02 P02 | 11min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -117,6 +118,9 @@ Recent decisions affecting current work:
 - [Phase 1]: [Phase 01-deploy-skeleton-login] 01-06: bash ERR 트랩은 기본적으로 함수 안에서 발동하지 않는다 — set -o errtrace(set -E) 없이는 deploy.sh의 STAGE 트랩 메시지가 안 나옴을 실측(scripts/deploy.sh)
 - [Phase 1]: [Phase 01-deploy-skeleton-login] 01-06: deploy.yml/account.yml에 pnpm build:cli 스텝 불필요 — Dockerfile의 build 스테이지가 컨테이너 안에서 이미 pnpm build && pnpm build:cli를 실행함을 확인(01-05 Dockerfile 직접 확인)
 - [Phase Phase 1]: SC6 재정의(사용자 결정 2026-09-19): 카나리를 복원하지 않고 안전 속성을 계약으로 삼는다 — 스모크에 실패한 리비전이 트래픽을 계속 받는 상태로 끝나지 않는다 — 카나리(0%→스모크→100%)는 태그 전용 리비전 URL에 의존하는데 이 프로젝트에서 4회 연속 라우팅되지 않았고 원인이 통제 밖이다(01-07). 같은 것을 다시 지으면 같은 데서 막힌다. 구현 둘: (1) 기존 서비스는 배포 전에 status.url을 확정해 배포당 리비전 하나 — 틀린 BETTER_AUTH_URL로 100%를 받던 창이 사라지고 롤백 대상도 깔끔해진다. (2) 스모크 실패 시 이전 배포로 1회 자동 롤백 후 실패 종료 — 재시도는 금지(반복은 진짜 원인을 가린다). 프로덕션은 승격 가드가 스테이징이 서빙 중인 이미지만 올리므로 스테이징이 카나리 역할을 한다. 남는 노출 창은 스모크 소요 시간(수십 초)이며 사용자 10~30명 사내 시스템에 적정하다고 판단. ROADMAP 기준 6과 REQUIREMENTS OPS-01 본문을 이 속성으로 고쳤다
+- [Phase 02]: 02-02: 간격(margin/padding/gap) 리터럴은 stylelint 금지 대상에서 제외 — D-20 비준대로 색·서체·radius 셋만 — 실물 HTML 간격 리터럴 283건 중 175건이 tokens.css 4px 스케일에 대응하지 않아 금지하면 이관할 마크업이 거부됨
+- [Phase 02]: 02-02: .dockerignore의 docs 라인을 부분 예외 대신 통째 제거 — COPY . .가 컨텍스트 전체를 한 레이어에 담아 캐시 보존 이점이 없고, 부정 패턴 의미론을 Docker 데몬 없는 환경에서 확인할 수 없음
+- [Phase 02]: 02-02: CI/배포 트리거를 paths-ignore에서 paths + ! 4패턴으로 교체 — GitHub 문서가 부정 패턴 지원을 명시하는 필터는 paths뿐 — 실제 트리거 동작은 사람 체크로 남김
 
 ### Pending Todos
 
@@ -130,6 +134,7 @@ None yet.
 - [Phase 11]: CERT 활성화 조건은 `/cso` 보안 감사 통과. 개인정보보호법 적용 범위·보존 기간은 감사에서 재확인(리서치 Gap). 감사 뒤 KMS 봉투 승격(Issue 7)
 - [All]: 과잉 설계 재발 방지 — 페이즈마다 "인트라넷보다 못한가"로 검증하고, 실제 사용자 로그인·입력이 있어야 완료로 본다
 - [Phase 2]: `docs/design/`(SYSTEM.md 725줄·tokens.css·DECISIONS.md·BRIEF.md·EXPLORE.md)은 **이미 있다**(2026-09-18 확인). Phase 2는 이 시스템을 앱 셸·임시 화면에 적용하는 일이며, 새 화면은 SYSTEM.md 기준을 따르고 시스템을 벗어나면 DECISIONS.md에 이유를 남긴 뒤 SYSTEM.md를 고친다
+- [Phase 2] 02-02: ci.yml/deploy.yml paths+! 트리거 실제 동작 미검증 — tokens.css 단독 PR이 CI를 타는지, 일반 소스 PR도 여전히 타는지 GitHub에서 사람이 확인해야 한다. (2)가 실패하면 즉시 paths-ignore로 되돌린다
 
 ## Deferred Items
 
@@ -141,6 +146,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-19T14:23:31.431Z
-Stopped at: Phase 2 planned — 7 plans, 6 waves, ready to execute
-Resume file: .planning/phases/02-design-system-app-shell/02-01-PLAN.md
+Last session: 2026-09-19T14:48:53.450Z
+Stopped at: Completed 02-02-PLAN.md
+Resume file: None

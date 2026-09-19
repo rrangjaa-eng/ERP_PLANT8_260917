@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import { Button } from "@/ui/button/Button";
+import { TextField } from "@/ui/input/TextField";
 
 const GENERIC_ERROR = "이메일 또는 비밀번호가 올바르지 않습니다.";
 
@@ -46,30 +47,26 @@ export function LoginForm({ showGoogle = false }: { showGoogle?: boolean }) {
           void handleSubmit(event);
         }}
       >
-        <div>
-          <label htmlFor="email">이메일</label>
-          <input
-            id="email"
-            type="email"
-            name="email"
-            autoComplete="username"
-            required
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-          />
-        </div>
-        <div>
-          <label htmlFor="password">비밀번호</label>
-          <input
-            id="password"
-            type="password"
-            name="password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-        </div>
+        <TextField
+          id="email"
+          label="이메일"
+          type="email"
+          name="email"
+          autoComplete="username"
+          required
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+        />
+        <TextField
+          id="password"
+          label="비밀번호"
+          type="password"
+          name="password"
+          autoComplete="current-password"
+          required
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
         {error ? <p role="alert">{error}</p> : null}
         <Button type="submit" variant="primary" pending={pending}>
           로그인

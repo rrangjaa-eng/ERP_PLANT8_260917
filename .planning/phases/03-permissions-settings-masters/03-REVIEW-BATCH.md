@@ -21,7 +21,7 @@
 | 2 | 03-02 | ✓ 완료 | `fa6d880` | ✓ | ✓ | ✓ 363 | ✓ 48 | ✓ 59 |
 | 3 | 03-03 | ✓ 완료 (+결함 2건 수정) | `3483fd8` | ✓ | ✓ | ✓ 381 | ✓ 103 | ✓ 63 |
 | 4 | 03-04 | ✓ 완료 (+결함 1건 수정) | `e113c7d` | ✓ | ✓ | ✓ 425 | ✓ 143 | ✓ 66 |
-| 5 | 03-05 | ✓ 완료 (결함 4건 수정 중) | `e963f2d` | ✓ | ✓ | ✓ 438 | ✓ 421 | ✓ 70 |
+| 5 | 03-05 | ✓ 완료 (+결함 4건 수정) | `25f7fdf` | ✓ | ✓ | ✓ 452 | ✓ 422 | ✓ 83 |
 | 6 | 03-06 | ○ 대기 | — | — | — | — | — | — |
 | 7 | 03-07 | ○ 대기 | — | — | — | — | — | — |
 
@@ -469,5 +469,64 @@ return e instanceof Error ? e.message : "서버 오류가 발생했습니다.";
 **상단 바 사용자 메뉴 버튼이 56×19로 44px에 크게 미달한다.** 웨이브 5 화면 5개 전부에서 재현되지만 원인은 `ui/shell/TopBar`(이전 페이즈 산출물)라 손대지 않았다.
 
 스크린샷의 빨간 "1 Issue" 배지는 앱 결함이 아니다 — Playwright의 CDP가 입력에 `style="caret-color:transparent"`를 인라인 주입해 생기는 하이드레이션 경고이고, 앱 코드에 그런 곳이 없음을 grep으로 확인했다(테스트 환경 노이즈).
+
+---
+
+## 웨이브 5 후속 수정 — 감사 결함 4건 (RED→GREEN 8커밋)
+
+**소요 50분** · 네 결함 모두 RED를 실제로 확인한 뒤 GREEN
+
+| # | RED | GREEN | 내용 |
+|---|---|---|---|
+| 1 | `973bec2` | `723f5e3` | handleServerError를 **허용목록으로 반전** |
+| 2 | `9b79d43` | `a772004` | 인라인 이름 입력에 행 식별 가능한 접근 가능한 이름 |
+| 3 | `41e0ea1` | `dc89853` | `.select{width:100%}` + `.table th{white-space:nowrap}` |
+| 4 | `c515920` | `25f7fdf` | `.tertiary{white-space:nowrap}` + 터치 목표 44×44 |
+
+### 결함 1 — 구조를 고쳤다
+
+`handleServerError`를 denylist → **allowlist**로 반전:
+
+```
+ZodError        → 기존 한국어 변환기
+UserFacingError → message 통과
+그 외           → "처리 중 오류가 발생했습니다 · 잠시 후 다시 시도해 주세요"
+                  + log.error로 원본은 서버에만 기록
+```
+
+**기존 컨벤션을 살린 선택**: 코드베이스에 이미 `ForbiddenError`·`WeakPasswordError`·`NotFoundError` 등 전용 오류 클래스 **약 30개**가 `extends Error {}`로 있었다. 즉 "이건 의도된 운영자 문구다"를 표현하는 관례가 이미 존재했다. 각 클래스를 `extends UserFacingError`로 바꾸는 한 줄 변경(약 20파일)으로 기존 `instanceof` 검사를 하나도 건드리지 않고 전부 보존했다. 새 관례를 발명하지 않았다.
+
+맨 `throw new Error("한국어…")` 9곳도 `UserFacingError`로 전환했다.
+
+**일부러 일반 `Error`로 남긴 것** (이제 일반 문구 + 서버 로그):
+- `repositories/*.ts`의 `"OOO insert가 행을 반환하지 않았습니다"` 7건 — 내부 불변식 단언이지 "원인·다음 행동" 운영자 안내가 아니다
+- 등록 시점 불변식 3건(`DuplicateDtoError` 등) — 실제 HTTP 요청에서 도달 불가
+- `lib/env.ts`의 기동 검증 — 프로세스 경계라 `handleServerError`에 닿지 않는다
+
+법인카드 중복은 `lib/pg-errors.ts`의 `isUniqueViolation()`(`code===23505` + 제약 이름, drizzle의 `.cause`까지 확인)으로 잡아 `이미 등록된 카드입니다 · 발급사와 뒤 4자리를 확인하세요`로 변환한다.
+
+오케스트레이터 독립 확인: 남은 `e.message` 2건은 주석과 **서버 측 `log.error`**용이라 클라이언트로 나가지 않는다.
+
+### 결함 3·4 — 원인을 먼저 검증하고 고쳤다
+
+감사가 지목한 원인을 액면 그대로 믿지 않고 Playwright 실측으로 확인한 뒤 수정했다. 결과: org 399→**375**, roles 416→**375**. 3차 버튼 22.78×39.375 → **40.59×20.19**. 터치 목표는 폰(`<=699.98px`)에만 `min-width/min-height: var(--touch-min)` 적용, PC 40px 버튼은 SYSTEM.md 규정대로 건드리지 않았다.
+
+**회귀 테스트가 측정 기반이다** — `scrollWidth <= clientWidth`, bounding box 실측. 결함 3이 완전히 녹색인 스위트를 통과해 살아남은 이유가 바로 측정 없는 CSS였다. e2e가 70 → **83**으로 늘었고 신규 스펙 6개(org·roles·mobile-org·mobile-roles·mobile-corp-cards·mobile-people)가 생겼다.
+
+### 게이트
+
+lint · lint:sql(7파일 0 issues) · typecheck · build PASS. unit **452/452** · integration **422/422** · e2e **83/83**.
+
+e2e 첫 실행에서 `permissions-grid.spec.ts`가 1회 흔들렸다(2워커 병렬 부하에서 로그인 리다이렉트 타임아웃). 단독 4/4 통과, 전체 재실행 83/83 통과로 `keyboard-nav`와 같은 종류의 플레이크로 확인했다 — **테스트를 약화시키지 않았다.**
+
+### 파일 이동 1건
+
+`lib/db/pg-errors.ts` → `lib/pg-errors.ts`. `boundaries/element-types` eslint 규칙이 경로에 `db/` 세그먼트가 있으면 `db` 요소로 분류해, `domain/corp-cards`가 import할 수 없었다.
+
+### 사람이 한 번 볼 것
+
+저장소 계층의 `"insert가 행을 반환하지 않았습니다"` 7건을 `UserFacingError`로 만들지 않고 일반 문구+로그로 둔 판단. 수정자도 나도 옳다고 보지만(운영자 안내가 아니라 내부 단언), 기존(전부 노출)에서 **동작이 바뀐 지점**이라 리뷰에서 한 번 볼 만하다.
+
+TopBar 56×19 터치 목표는 이전 페이즈 산출물이라 열어뒀다.
 
 ---

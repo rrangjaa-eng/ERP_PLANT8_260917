@@ -79,9 +79,23 @@ describe("docs/design/SYSTEM.md — §6-0 보강 (구간 단위 검증)", () => 
     expect(shell).toContain("시스템 상태");
   });
 
-  it("폰 하단 탭 역할 표에 관리자·직원 행이 있다", () => {
-    expect(shell).toContain("관리자");
-    expect(shell).toContain("직원");
+  it.each(["대표", "본부 책임자", "팀장", "기획 PM", "시스템 관리자"])(
+    "폰 하단 탭 역할 표에 계급 '%s' 행이 있다",
+    (role) => {
+      expect(shell).toContain(role);
+    },
+  );
+
+  it("폰 하단 탭 역할 표가 계급 5종 각각 탭 4개(계급 열 포함 5칸 이상)를 담는다", () => {
+    const lines = shell
+      .split("\n")
+      .filter((l) => l.trim().startsWith("|") && !l.includes("---") && l.includes("더보기"));
+    expect(lines.length).toBe(5);
+    for (const line of lines) {
+      const cells = line.split("|").filter((c) => c.trim() !== "");
+      // | 계급 | 탭1 | 탭2 | 탭3 | 탭4 | = 5칸
+      expect(cells.length).toBeGreaterThanOrEqual(5);
+    }
   });
 });
 

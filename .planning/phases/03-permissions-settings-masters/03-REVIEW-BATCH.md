@@ -22,7 +22,7 @@
 | 3 | 03-03 | ✓ 완료 (+결함 2건 수정) | `3483fd8` | ✓ | ✓ | ✓ 381 | ✓ 103 | ✓ 63 |
 | 4 | 03-04 | ✓ 완료 (+결함 1건 수정) | `e113c7d` | ✓ | ✓ | ✓ 425 | ✓ 143 | ✓ 66 |
 | 5 | 03-05 | ✓ 완료 (+결함 4건 수정) | `25f7fdf` | ✓ | ✓ | ✓ 452 | ✓ 422 | ✓ 83 |
-| 6 | 03-06 | ○ 대기 | — | — | — | — | — | — |
+| 6 | 03-06 | ✓ 완료 | `ce898d6` | ✓ | ✓ | ✓ 489 | ✓ 529 | ✓ 84 |
 | 7 | 03-07 | ○ 대기 | — | — | — | — | — | — |
 
 ---
@@ -528,5 +528,51 @@ e2e 첫 실행에서 `permissions-grid.spec.ts`가 1회 흔들렸다(2워커 병
 저장소 계층의 `"insert가 행을 반환하지 않았습니다"` 7건을 `UserFacingError`로 만들지 않고 일반 문구+로그로 둔 판단. 수정자도 나도 옳다고 보지만(운영자 안내가 아니라 내부 단언), 기존(전부 노출)에서 **동작이 바뀐 지점**이라 리뷰에서 한 번 볼 만하다.
 
 TopBar 56×19 터치 목표는 이전 페이즈 산출물이라 열어뒀다.
+
+---
+
+## 웨이브 6 — 03-06 앱단 암호화 · 거래처 · 커스텀 필드 · 문서 카운터
+
+**소요 1시간 23분** · 요구사항 MAST-01, MAST-04, OPS-05 · 커밋 15건
+
+### 게이트
+
+lint · typecheck · build PASS(`/admin/vendors` 라우트 생성) · `lint:sql` 8파일 0 issues. unit 49파일/**489** · integration 22파일/**529**(누수 스캔 376→410으로 확장) · e2e **84/84**.
+
+`git diff package.json` — `db:rotate-key` 스크립트 한 줄뿐, **신규 의존성 0**. 오케스트레이터 독립 확인: 테스트 약화 0건, `.squawk.toml` 무변경, 의존성 추가 0건.
+
+추가 검증 스크립트도 전부 `ok`: 암호화 무로그, `APP_DATA_KEY_v2` 이중 등록, 복호화 전 reveal 순서, 계좌번호 컴포넌트의 no-disabled/no-log, 세금 규칙 필드의 no-rate-input. `pg_indexes`로 GIN 인덱스 6개 실재 확인.
+
+### TDD — 세 모듈 전부 RED 선행 확인 ✓
+
+`lib/crypto.ts`(12/12 실패), `domain/custom-fields/build-schema.ts`, `domain/code-tables/tax-rule.ts` — 전부 구현 전 `pnpm vitest run`을 실제로 돌려 "Cannot find package" 실패를 눈으로 확인한 뒤 구현했다. 웨이브 4의 이탈, 웨이브 5의 부분 준수를 거쳐 **완전 준수로 돌아왔다.**
+
+### 체크포인트 ③ 확정과 구현
+
+옵션 A 그대로. `v1:<iv>:<tag>:<ciphertext>` · base64 32바이트 키 · fail-closed · 뒤 4자리 별도 평문 컬럼 · `APP_DATA_KEY_v2` 회전 자리 + `db:rotate-key` 스크립트. **v1·v2 혼재 복호화와 변조 탐지가 단위 테스트로 고정**됐다.
+
+설계 의도가 코드에 그대로 나타났다 — E2E가 `등록·마스킹·해제·가리기·숨김·권한 없는 계급 404`를 검사한다. 뒤 4자리가 평문이라 목록은 복호화하지 않고, **복호화 호출 자체가 "마스킹 해제"**라는 의미를 갖는다.
+
+### 실행자가 판단한 것
+
+1. `listVendors`/`searchVendors`가 `scope`를 인자로 받지 않고 내부에서 `scopeFor`로 계산 — 형제 도메인 모듈의 관례와 일치
+2. 중복 이름 경고를 **사전 차단이 아니라 성공 후 배너**로 — 플랜이 "중복이 등록을 막아선 안 된다"고 명시
+3. `updateVendor`의 `recordAction`이 `document_create`를 재사용 — OPS-05에 "수정"에 맞는 동작 유형이 없다. `updateCorpCardOwner`가 세운 선례를 따름
+4. 증빙 종류별 기본 세금 규칙 7개는 **합리적이지만 권위 있는 값은 아니다** — ROADMAP·EXP-15가 종류별 기본값을 명시한 적이 없다. 관리자가 화면에서 바꿀 수 있다
+5. 플랜 파일 목록 밖이지만 구조상 필수인 2건 추가: `scope-for.ts`(`vendor` → `admin.vendors`), `info-items.ts`(`vendor.value`). 없으면 `scopeFor("vendor")`가 즉시 throw한다 — 웨이브 5가 `org_unit`/`team`/`corp_card`/`user`에 한 것과 같은 패턴
+
+### 🔑 사람이 배포 전 반드시 확인할 것 (브라우저 아님)
+
+`lib/env.ts`가 `APP_DATA_KEY_v1`을 **선택 문자열**로 둔다. 키가 없어도 앱은 정상 기동하고, **거래처 계좌번호를 처음 저장할 때 500이 난다**(fail-closed, 의도된 설계). 즉 배포 후에야 드러난다.
+
+1. GCP Secret Manager에 `app-data-key-v1-{env}`가 **staging·prod 양쪽에** 실제로 있는가
+2. 값이 **base64 32바이트**인가 — `=` 패딩 포함 44자 문자열. hex 등 다른 인코딩이면 바이트 길이가 어긋나 `lib/crypto.ts`가 즉시 throw한다(길이만 알리고 값은 절대 로그에 남기지 않는다)
+3. 회전 절차(`app-data-key-v2-{env}` 추가)는 `docs/OPERATIONS.md` §9에 전문이 있다
+
+로컬·테스트는 영향 없다 — `test/integration/global-setup.ts`가 로컬 전용 키를 자동 생성한다.
+
+### e2e 플레이크 세 번째 계열
+
+웨이브 6 중간에 `corp-cards.spec.ts`·`mobile-corp-cards.spec.ts`·`mobile-people.spec.ts`가 간헐 실패했다 — `/admin/people`의 native-GET/하이드레이션 경쟁. 이 플랜이 건드리지 않은 파일들이고(`corp_cards`에 GIN 인덱스 스키마 변경만 있었다) 최종 실행은 84/84 통과. `keyboard-nav`·`permissions-grid`에 이어 세 번째 플레이크 계열이라 기록해 둔다 — **2워커 병렬 실행에서 반복되는 패턴**이므로 사람이 한 번 볼 만하다.
 
 ---

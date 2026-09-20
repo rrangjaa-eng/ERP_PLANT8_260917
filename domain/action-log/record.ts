@@ -44,9 +44,11 @@ export type RecordActionEntry = {
 
 export type RecordActionDeps = {
   appendActionLog: typeof defaultAppendActionLog;
-  // 03-04 설정 레지스트리("어떤 행동을 핵심으로 남길지 설정에서 고른다")가 붙는
-  // 자리. 이 페이즈는 조회 함수 자체가 아직 없으므로 dep이 주어지지 않으면
-  // 기본 켬으로 본다(judgment — SUMMARY "실행자가 판단한 것" 참고).
+  // 03-04: "어떤 행동을 핵심으로 남길지 설정에서 고른다"(ADMN-10)의 실제
+  // 조회 지점. 기본 구현은 domain/settings/registry.ts의 getSettingValue를
+  // 동적 import로 부른다 — domain/settings/registry.ts가 이 파일의
+  // recordAction을 정적으로 import하므로(설정 변경 로그), 정적 상호
+  // import는 순환이 되어 이 파일 쪽을 동적 import로 늦춰 끊는다.
   isActionTypeEnabled?: (actionType: CoreActionType) => Promise<boolean>;
 };
 
@@ -54,9 +56,26 @@ function isCoreActionType(value: string): value is CoreActionType {
   return (CORE_ACTION_TYPES as readonly string[]).includes(value);
 }
 
+// 레지스트리 읽기가 실패해도 기록이 빠지면 안 된다 — fail-open(항상 켬)이
+// 이 방향에서는 안전하다: "기록 안 함"으로 fail-closed하면 설정 레지스트리
+// 장애 한 번에 핵심 행동 로그 전체가 조용히 비어 OPS-05·ADMN-10이 요구하는
+// 감사 가능성을 정면으로 해친다.
+async function defaultIsActionTypeEnabled(actionType: CoreActionType): Promise<boolean> {
+  try {
+    const [{ getSettingValue }, { ACTION_LOG_OPTIONAL_TYPES }] = await Promise.all([
+      import("@/domain/settings/registry"),
+      import("@/domain/settings/keys"),
+    ]);
+    const enabledTypes = await getSettingValue(ACTION_LOG_OPTIONAL_TYPES);
+    return enabledTypes.includes(actionType);
+  } catch {
+    return true;
+  }
+}
+
 // 핵심 행동 기록 API. 핵심 목록에 없는 종류를 받으면 행을 만들지 않고
 // UnknownActionTypeError를 throw한다 — 조용히 삼키면 호출자가 기록됐다고
-// 오해한다. 끌 수 없는 종류는 설정 조회 dep을 아예 부르지 않고 항상 기록한다.
+// 오해한다. 끌 수 없는 종류는 설정 조회를 아예 부르지 않고 항상 기록한다.
 export async function recordAction(
   viewer: Viewer,
   entry: RecordActionEntry,
@@ -66,8 +85,9 @@ export async function recordAction(
     throw new UnknownActionTypeError(`핵심 행동 종류가 아닙니다: ${entry.actionType}`);
   }
 
-  if (!ALWAYS_ON_ACTION_TYPES.includes(entry.actionType) && deps?.isActionTypeEnabled) {
-    const enabled = await deps.isActionTypeEnabled(entry.actionType);
+  if (!ALWAYS_ON_ACTION_TYPES.includes(entry.actionType)) {
+    const isEnabled = deps?.isActionTypeEnabled ?? defaultIsActionTypeEnabled;
+    const enabled = await isEnabled(entry.actionType);
     if (!enabled) return;
   }
 

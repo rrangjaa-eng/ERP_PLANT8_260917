@@ -71,6 +71,14 @@ DB 세션 발급(30일 sliding, `updateAge` 1일 — 쿠키 연장은 `app/sessi
 (`action_log`)는 대상이 아니다(판정 표는 체크박스 값이라 보관 대상이 아니고 로그는
 append-only다).
 
+## 4-2. 설정 레지스트리 조회 계약(Phase 3 → Phase 4)
+
+`getSettingValue(def, opts?)`(`domain/settings/registry.ts`) — 키 문자열이 아니라
+레지스트리 **정의 객체**를 받아 반환 타입을 추론한다. `opts.asOf?: Date`는 이력형 키에서만
+쓰이고(`effective_from <= asOf` 중 최댓값, 경계 포함) 비이력형은 무시한다. **어느 날짜를
+넘길지는 호출자의 책임**이다 — Phase 4의 `domain/money`가 원천징수·회사대납은 지급일,
+부가세는 증빙일을 결정해 `asOf`로 넘긴다. 값도 기본값도 없으면 예외(fail-closed).
+
 ## 5. DB·마이그레이션
 
 `drizzle-kit generate` → Squawk(`.squawk.toml`, `pnpm lint:sql`) → `scripts/migrate-runner.ts`
@@ -121,7 +129,8 @@ domain 모듈 = 단위, 새 액션·DTO = 통합(+Phase 3부터 누수 생성), 
 | `CLOUD_SQL_CONNECTION_NAME`·`DB_IAM_USER`·`DB_NAME`·`DB_POOL_MAX` | Cloud SQL 커넥터(IAM) | 배포 워크플로 변수 |
 | `BETTER_AUTH_SECRET`·`BETTER_AUTH_URL` | 세션 서명·Origin 검사(비로컬 필수) | Secret Manager / 서비스 URL |
 | `AUTH_PROVIDER`·`GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET` | 로그인 방식 전환 | 환경 변수 |
-| `LOCKOUT_THRESHOLD`·`LOCKOUT_WINDOW_MINUTES`·`RATE_LIMIT_LOGIN_MAX` | 잠금·속도 제한 | 기본값(env로 조정) |
+| `LOCKOUT_THRESHOLD`·`LOCKOUT_WINDOW_MINUTES` | 잠금 | Phase 3부터 설정 레지스트리 키(`auth.lockout.*`)의 기본값 출처로만 남는다 |
+| `RATE_LIMIT_LOGIN_MAX` | 속도 제한 | 부팅 시 1회(`lib/auth.ts` better-auth 설정) — 레지스트리 밖, 런타임 변경 불가 |
 | `APP_DATA_KEY_v1` | 암호화 키 자리(Phase 3부터 사용) | Secret Manager |
 | `SMTP_HOST`·`SMTP_USER`·`SMTP_PASSWORD`·`SMTP_FROM` | 이메일(Phase 1은 정의만) | Secret Manager |
 | `GCP_PROJECT_ID`·`CLOUD_SQL_INSTANCE_ID` | 상태 화면의 GCP 조회 | 배포 워크플로 변수 |

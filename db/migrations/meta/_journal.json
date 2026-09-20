@@ -36,6 +36,13 @@
       "when": 1789918988891,
       "tag": "0004_users_role_id_validate",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789929517951,
+      "tag": "0005_settings_registry",
+      "breakpoints": true
     }
   ]
 }

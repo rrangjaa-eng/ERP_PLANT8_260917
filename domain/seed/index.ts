@@ -2,9 +2,16 @@ import type { Viewer } from "@/domain/viewer";
 import { SEED_ROLES, SYSADMIN_ROLE_ID, DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { MENUS, PERMISSION_ACTIONS } from "@/domain/permissions/menus";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
+import { SETTING_DEFS } from "@/domain/settings/keys";
 import { seedRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { seedCodeItem } from "@/repositories/code-tables";
+import { seedSimpleValue, seedHistorizedValue } from "@/repositories/settings";
+
+// 이력형 키의 시드 기본 행은 항상 과거인 고정 날짜를 쓴다 — 시드 직후부터
+// 유효값이 즉시 성립해(오늘 기준 effective_from <= asOf) 03-UI-SPEC.md가
+// 보장하는 "설정 화면에 EMPTY 상태가 발생하지 않는다"가 실제로 성립한다.
+const SEED_HISTORIZED_EFFECTIVE_FROM = "2000-01-01";
 
 // 프로젝트 상태 코드표 시드(ROADMAP MAST-04) — 기획·진행·보류·완료·취소.
 const PROJECT_STATUS_CODES = [
@@ -15,7 +22,13 @@ const PROJECT_STATUS_CODES = [
   { value: "cancelled", label: "취소", sortOrder: 4 },
 ];
 
-export type SeedResult = { roles: number; permissions: number; visibility: number; codeItems: number };
+export type SeedResult = {
+  roles: number;
+  permissions: number;
+  visibility: number;
+  codeItems: number;
+  settings: number;
+};
 
 // 이 모듈은 권한 판정을 거치지 않는 유일한 경로다 — 부트스트랩 시점에는 판정할
 // 권한표가 아직 없다. 허용된 호출자는 scripts/seed-master.ts·통합 테스트
@@ -73,5 +86,26 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
     if (inserted) codeItemsCount++;
   }
 
-  return { roles: rolesCount, permissions: permissionsCount, visibility: visibilityCount, codeItems: codeItemsCount };
+  // ADMN-05: 등록된 키 중 default가 있는 것을 시드한다(onConflictDoNothing
+  // — 이미 저장된 값을 덮어쓰지 않는다). Phase 1의 로그인 잠금 키가 이미
+  // 여기 등록돼 있어 설정 화면의 키 0개 상태가 성립하지 않는다.
+  let settingsCount = 0;
+  for (const def of SETTING_DEFS) {
+    if (def.default === undefined) continue;
+    if (def.kind === "historized") {
+      const inserted = await seedHistorizedValue(viewer, def.key, SEED_HISTORIZED_EFFECTIVE_FROM, def.default);
+      if (inserted) settingsCount++;
+    } else {
+      const inserted = await seedSimpleValue(viewer, def.key, def.default);
+      if (inserted) settingsCount++;
+    }
+  }
+
+  return {
+    roles: rolesCount,
+    permissions: permissionsCount,
+    visibility: visibilityCount,
+    codeItems: codeItemsCount,
+    settings: settingsCount,
+  };
 }

@@ -10,7 +10,7 @@ import { closeDb } from "@/db/client";
 export async function main(): Promise<void> {
   const result = await seedMasterData(SYSTEM_VIEWER);
   console.log(
-    `seed complete: roles=${result.roles} permissions=${result.permissions} visibility=${result.visibility} codeItems=${result.codeItems}`,
+    `seed complete: roles=${result.roles} permissions=${result.permissions} visibility=${result.visibility} codeItems=${result.codeItems} settings=${result.settings}`,
   );
 }
 

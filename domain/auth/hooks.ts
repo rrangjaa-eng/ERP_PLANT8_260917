@@ -30,7 +30,7 @@ export const before = createAuthMiddleware(async (ctx) => {
   }
 
   const email = getBodyEmail(ctx.body);
-  const { threshold, windowMinutes } = lockoutConfig();
+  const { threshold, windowMinutes } = await lockoutConfig();
   const count = await countOpenFailures(SYSTEM_VIEWER, email, windowStart(new Date(), windowMinutes));
   if (isLocked(count, threshold)) {
     throw new APIError("FORBIDDEN", { message: LOCKED_MESSAGE });
@@ -56,7 +56,7 @@ export const after = createAuthMiddleware(async (ctx) => {
   // at-least-once: 동시 실패 둘이 4→6으로 건너뛰어도 이벤트가 누락되지 않는다.
   // 잠긴 뒤에는 before 훅이 거부해 after가 돌지 않으므로 순차 실행에서는
   // 정확히 1회, 동시 실행에서만 드물게 2회 남는다.
-  const { threshold, windowMinutes } = lockoutConfig();
+  const { threshold, windowMinutes } = await lockoutConfig();
   const count = await countOpenFailures(SYSTEM_VIEWER, email, windowStart(new Date(), windowMinutes));
   if (isLocked(count, threshold)) {
     log.info("auth.lockout", { email, threshold, windowMinutes });

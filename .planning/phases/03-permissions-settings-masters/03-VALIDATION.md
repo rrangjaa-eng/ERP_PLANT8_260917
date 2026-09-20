@@ -73,6 +73,7 @@ plan, so `File Exists` records the plan that creates the file rather than an uno
 | 03-03-T3 | 03-03 | 3 | ADMN-01 | T-03-17 | 권한표 칸을 켜면 다른 계급의 접근이 즉시 열리고, 좌표가 접근성 라벨에 문장으로 담긴다 | E2E | `pnpm playwright test test/e2e/permissions-grid.spec.ts` | ❌ → 03-03 T3 | ⬜ pending |
 | 03-04-T2 | 03-04 | 4 | ADMN-05 | T-03-23 | 등록됐으나 읽히지 않는 키가 있으면 실패하고, 미래 페이즈 표시의 번호가 ROADMAP에 실재해야 한다 | unit | `pnpm vitest run --project unit test/unit/settings/registry-coverage.test.ts` | ❌ → 03-04 T2 | ⬜ pending |
 | 03-04-T2 | 03-04 | 4 | ADMN-05 | T-03-22 | 끌 수 없는 로그 종류를 값으로 받는 설정 키가 거부된다 | unit | `pnpm vitest run --project unit test/unit/settings/registry.test.ts` | ❌ → 03-04 T2 | ⬜ pending |
+| 03-04-T2 | 03-04 | 4 | ADMN-05 | T-03-25 | 잠금 설정 조회가 레지스트리 스텁 값을 그대로 돌려주고, 스텁이 throw하면 그 예외가 전파된다 — 잠금 판정을 건너뛰고 로그인을 허용하는 fail-open 경로가 없다 | unit | `pnpm vitest run --project unit test/unit/lockout.test.ts` | ✅ 수정 → 03-04 T2 | ⬜ pending |
 | 03-04-T2 | 03-04 | 4 | ADMN-05 | T-03-25 | 이력형 키의 경계(시작일 == 기준일) 포함과 fail-closed 기본값 | integration | `pnpm vitest run --project integration test/integration/settings.test.ts` | ❌ → 03-04 T2 | ⬜ pending |
 | 03-04-T2 | 03-04 | 4 | ADMN-06 | T-03-24 | JSON 내보내기 → 빈 환경 가져오기 후 동작 동일, 두 번 가져오기 멱등, 부분 적용 없음 | integration | `pnpm vitest run --project integration test/integration/settings-export.test.ts` | ❌ → 03-04 T2 | ⬜ pending |
 | 03-04-T3 | 03-04 | 4 | ADMN-05 | T-03-25 | 설정 값 변경이 저장 버튼 없이 즉시 반영되고 이력형 미래 값에 「예정」이 붙는다 | E2E | `pnpm playwright test test/e2e/settings.spec.ts` | ❌ → 03-04 T3 | ⬜ pending |
@@ -95,7 +96,7 @@ plan, so `File Exists` records the plan that creates the file rather than an uno
 | 03-07-T2 | 03-07 | 7 | ADMN-10 | T-03-48 · T-03-49 | 두 번 직렬화가 같고, 구분자·줄바꿈·따옴표가 든 값에서 열이 밀리지 않는다 | unit | `pnpm vitest run --project unit test/unit/action-log/export.test.ts` | ❌ → 03-07 T2 | ⬜ pending |
 | 03-07-T2 | 03-07 | 7 | OPS-05 | T-03-46 | 정리가 물리 삭제가 아니고 정리 자체가 기록되며 정리 기록은 다음 정리의 대상이 아니다 | integration | `pnpm vitest run --project integration test/integration/action-log-query.test.ts` | ❌ → 03-07 T2 | ⬜ pending |
 | 03-07-T2 | 03-07 | 7 | ADMN-10 | T-03-47 | 필터 → 내보내기 → 정리 → 정리 기록 확인, 권한 없는 계급 404 | E2E | `pnpm playwright test test/e2e/action-log.spec.ts` | ❌ → 03-07 T2 | ⬜ pending |
-| 03-07-T3 | 03-07 | 7 | ADMN-12 | T-03-50 · T-03-51 | 삭제는 보관함으로 가고 권한 있는 계급만 복원, 재복원 멱등, 시드 계급 보관 거부 | integration | `pnpm vitest run --project integration test/integration/archive.test.ts` | ❌ → 03-07 T3 | ⬜ pending |
+| 03-07-T3 | 03-07 | 7 | ADMN-12 | T-03-50 · T-03-51 · T-03-54 | 삭제는 보관함으로 가고 권한 있는 계급만 복원, 재복원 멱등, 시드 계급 보관 거부; 사람 보관 시 세션이 0개가 되고 로그인이 자격 증명 오류와 상태·본문이 같게 거부되며(거부 직전 더미 해시로 응답 시간도 같은 등급) 복원 뒤 다시 로그인된다 | integration | `pnpm vitest run --project integration test/integration/archive.test.ts` | ❌ → 03-07 T3 | ⬜ pending |
 | 03-07-T3 | 03-07 | 7 | ADMN-12 | T-03-52 | 삭제 → 보관함 → 복원, 빈 보관함에 다음 한 수 없음, 권한 없는 계급 404 | E2E | `pnpm playwright test test/e2e/archive.spec.ts` | ❌ → 03-07 T3 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*

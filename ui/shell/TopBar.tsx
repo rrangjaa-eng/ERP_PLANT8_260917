@@ -40,6 +40,7 @@ export function TopBar({ topBarMenu, systemStatus, accountGroup, userName }: Top
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
   const firstItemRef = useRef<HTMLAnchorElement | HTMLButtonElement>(null);
 
   const pcMenuItems: Array<{ key: string; entry: AccountEntry | MenuLink; kind: "link" | "action" }> = [
@@ -60,11 +61,49 @@ export function TopBar({ topBarMenu, systemStatus, accountGroup, userName }: Top
     triggerRef.current?.focus();
   }
 
+  // WR-03: 바깥을 클릭하면 닫는다. setOpen(false)를 쓰고 close()를 쓰지 않는다 —
+  // 사용자가 의도적으로 다른 곳으로 갔는데 포커스를 트리거로 뺏어오면 안 된다.
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  // WR-02: role="menu"로 노출하는 이상 WAI-ARIA menu 패턴의 키를 지켜야 한다 —
+  // 스크린 리더가 "메뉴"라고 읽으면 사용자는 Tab이 아니라 화살표를 쓴다.
+  // 끝에서 한 바퀴 도는 것도 그 패턴의 일부다.
   function handleKeyDown(event: React.KeyboardEvent) {
     if (event.key === "Escape") {
       event.preventDefault();
       close();
+      return;
     }
+    if (!open) return;
+
+    const items = Array.from(
+      event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    );
+    if (items.length === 0) return;
+    const current = items.indexOf(document.activeElement as HTMLElement);
+
+    function moveTo(index: number) {
+      event.preventDefault();
+      items[((index % items.length) + items.length) % items.length]?.focus();
+    }
+
+    if (event.key === "ArrowDown") moveTo(current + 1);
+    else if (event.key === "ArrowUp") moveTo(current - 1);
+    else if (event.key === "Home") moveTo(0);
+    else if (event.key === "End") moveTo(items.length - 1);
+  }
+
+  // WR-03: Tab으로 메뉴 밖으로 나가면 닫는다. 나가지 않은 포커스 이동(항목 간)은
+  // relatedTarget이 여전히 이 컨테이너 안이므로 걸리지 않는다.
+  function handleBlur(event: React.FocusEvent) {
+    if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
   }
 
   // WR-06: 성공했을 때만 메뉴를 닫는다. 예전에는 호출 전에 close()를 불러서
@@ -94,7 +133,7 @@ export function TopBar({ topBarMenu, systemStatus, accountGroup, userName }: Top
         <span className={styles.kbdWrap}>
           <kbd className={styles.kbd}>⌘K</kbd>
         </span>
-        <div className={styles.userWrap} onKeyDown={handleKeyDown}>
+        <div className={styles.userWrap} ref={wrapRef} onKeyDown={handleKeyDown} onBlur={handleBlur}>
           <button
             type="button"
             ref={triggerRef}

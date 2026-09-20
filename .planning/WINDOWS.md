@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 5
+open_count: 9
 waived_count: 0
 fixed_count: 7
-total_count: 12
-last_updated: 2026-09-20T06:07:59.294Z
+total_count: 16
+last_updated: 2026-09-20T08:00:59.072Z
 ---
 
 # Broken Windows Ledger
@@ -27,6 +27,10 @@ last_updated: 2026-09-20T06:07:59.294Z
 | 10 | 02 | deviation | ui/ |  | WR-02·WR-03 해소: 사용자 메뉴에 WAI-ARIA menu 키(ArrowDown/Up·Home/End, 순환)와 표준 해제(Tab 이탈·바깥 클릭)를 붙였다. test/e2e/user-menu.spec.ts 5건 | fixed |  | 2026-09-20T06:07:58.325Z | 2026-09-20T06:07:58.906Z |
 | 11 | 02 | deviation | ui/ |  | WR-05 해소: 토스트 자동 소멸 타이머가 onDismiss 정체성 변화에 재시작되던 것을 ref로 끊었다. 오류 토스트 role=alert. test/unit/ui/toast-timer.test.ts | fixed |  | 2026-09-20T06:07:58.521Z | 2026-09-20T06:07:59.100Z |
 | 12 | 02 | deviation | ui/ |  | WR-04 해소: 「내 차례」 다음 한 수가 item.action.href로 실제 이동한다. 더 보기는 moreHref가 있을 때만 링크. test/unit/ui/next-turn-action.test.ts | fixed |  | 2026-09-20T06:07:58.715Z | 2026-09-20T06:07:59.294Z |
+| 13 | 02 | unrun-verify | docs/design/tokens.css |  | D-32 미검증: Windows Chrome/Edge에서 Pretendard가 실제로 렌더되는지(맑은고딕 폴백 아님)·숫자 tabular 정렬·폰트 전송량 200~300KB. 리눅스 CI의 Playwright로는 판정 불가 — 실제 Windows 브라우저가 필요하다. /gsd-verify-work 02 | open |  | 2026-09-20T08:00:58.462Z |  |
+| 14 | 02 | unrun-verify | ui/shell/Shell.module.css |  | 태블릿 700~1023px 뷰포트 미검증: PC 셸이 유지되고 하단 탭이 안 나오는지. 미디어 쿼리 존재만 확인했고 그 폭으로 실제 렌더해 보지 않았다(Playwright 프로젝트가 desktop·mobile-375 둘뿐). /gsd-verify-work 02 | open |  | 2026-09-20T08:00:58.639Z |  |
+| 15 | 02 | unrun-verify | docs/design/SYSTEM.md |  | 375px 시각 품질 미검증: E2E는 계산값만 재고 보기 좋은지는 판정하지 않는다. /design-review(SYSTEM.md 일관성) + /qa(실제 브라우저) 미실행 — CLAUDE.md가 UI 완료 판정 조건으로 지정한 둘이다 | open |  | 2026-09-20T08:00:58.866Z |  |
+| 16 | 02 | unrun-verify | ui/next-turn/NextTurn.module.css |  | 「내 차례」 폰 2줄 레이아웃 미검증: D-24로 buildNextTurnView 입력이 항상 []라 블록이 렌더되지 않아 자동·수동 모두 확인 불가. Phase 4가 첫 실제 항목을 넣을 때 검증한다 | open |  | 2026-09-20T08:00:59.072Z |  |
 
 ````json
 [
@@ -184,6 +188,58 @@ last_updated: 2026-09-20T06:07:59.294Z
     "reason": "",
     "recorded_at": "2026-09-20T06:07:58.715Z",
     "resolved_at": "2026-09-20T06:07:59.294Z",
+    "milestone": null
+  },
+  {
+    "id": 13,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "docs/design/tokens.css",
+    "line": null,
+    "description": "D-32 미검증: Windows Chrome/Edge에서 Pretendard가 실제로 렌더되는지(맑은고딕 폴백 아님)·숫자 tabular 정렬·폰트 전송량 200~300KB. 리눅스 CI의 Playwright로는 판정 불가 — 실제 Windows 브라우저가 필요하다. /gsd-verify-work 02",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T08:00:58.462Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 14,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "ui/shell/Shell.module.css",
+    "line": null,
+    "description": "태블릿 700~1023px 뷰포트 미검증: PC 셸이 유지되고 하단 탭이 안 나오는지. 미디어 쿼리 존재만 확인했고 그 폭으로 실제 렌더해 보지 않았다(Playwright 프로젝트가 desktop·mobile-375 둘뿐). /gsd-verify-work 02",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T08:00:58.639Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 15,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "docs/design/SYSTEM.md",
+    "line": null,
+    "description": "375px 시각 품질 미검증: E2E는 계산값만 재고 보기 좋은지는 판정하지 않는다. /design-review(SYSTEM.md 일관성) + /qa(실제 브라우저) 미실행 — CLAUDE.md가 UI 완료 판정 조건으로 지정한 둘이다",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T08:00:58.866Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 16,
+    "kind": "unrun-verify",
+    "phase": "02",
+    "file": "ui/next-turn/NextTurn.module.css",
+    "line": null,
+    "description": "「내 차례」 폰 2줄 레이아웃 미검증: D-24로 buildNextTurnView 입력이 항상 []라 블록이 렌더되지 않아 자동·수동 모두 확인 불가. Phase 4가 첫 실제 항목을 넣을 때 검증한다",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T08:00:59.072Z",
+    "resolved_at": null,
     "milestone": null
   }
 ]

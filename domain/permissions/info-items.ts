@@ -27,4 +27,11 @@ export const INFO_ITEMS: InfoItemDef[] = [
   { key: "team.value", label: "팀 정보", staffDefault: true },
   { key: "team_assignment.value", label: "팀 소속 발령 이력", staffDefault: true },
   { key: "corp_card.value", label: "법인카드 정보", staffDefault: true },
+  // MAST-01(03-06): 거래처 구조 정보 — 이름·사업자 번호·뒤 4자리 등 마스킹
+  // 해제 이전 단계의 마스터 정보. 인트라넷 수준의 구조적 정보라 기본값은
+  // 참(person.value 등과 같은 결). 계좌번호 마스킹 해제(위 항목)와는 별도로
+  // 게이트한다 — 뒤 4자리는 이미 목록에 보이는 정보라 별도 항목일 필요가
+  // 없지만, 마스킹 해제(평문)는 위의 vendor.account_number_unmasked가
+  // 전담한다.
+  { key: "vendor.value", label: "거래처 정보", staffDefault: true },
 ];

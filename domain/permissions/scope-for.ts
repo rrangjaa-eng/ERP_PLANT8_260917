@@ -23,6 +23,7 @@ const ENTITY_MENUS: Record<string, string> = {
   team: "admin.people",
   user: "admin.people",
   corp_card: "admin.corp-cards",
+  vendor: "admin.vendors",
 };
 
 const ARCHIVE_MENU = "admin.archive";

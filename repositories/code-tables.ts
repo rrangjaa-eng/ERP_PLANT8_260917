@@ -72,10 +72,19 @@ export async function findCodeItemById(viewer: Viewer, id: string): Promise<Code
   return row ?? null;
 }
 
-// 멱등 시드 전용 — 이미 있으면 건드리지 않는다(onConflictDoNothing).
+// 03-06: 세금 규칙 컬럼 쓰기 — 증빙 종류(evidence_type) 항목에만 허용한다는
+// 제약은 domain 계층(setEvidenceTypeTaxRule)이 대상 항목의 table_key를 먼저
+// 확인해 지킨다. 이 함수 자체는 컬럼 쓰기만 한다.
+export async function setCodeItemTaxRule(viewer: Viewer, id: string, taxRule: unknown): Promise<void> {
+  void viewer;
+  await db.update(codeItems).set({ taxRule, updatedAt: new Date() }).where(eq(codeItems.id, id));
+}
+
+// 멱등 시드 전용 — 이미 있으면 건드리지 않는다(onConflictDoNothing). taxRule은
+// 증빙 종류 코드표 시드가 기본 세금 규칙을 함께 심을 때만 쓴다.
 export async function seedCodeItem(
   viewer: Viewer,
-  input: { tableKey: string; value: string; label: string; sortOrder: number },
+  input: { tableKey: string; value: string; label: string; sortOrder: number; taxRule?: unknown },
 ): Promise<boolean> {
   void viewer;
   const inserted = await db

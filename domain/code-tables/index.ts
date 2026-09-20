@@ -5,15 +5,22 @@ import { project, type DtoSpec } from "@/domain/permissions/project";
 import { recordAction } from "@/domain/action-log/record";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
 import {
   listCodeItems as repoListCodeItems,
   insertCodeItem as repoInsertCodeItem,
   setCodeItemActive as repoSetCodeItemActive,
   findCodeItemById as repoFindCodeItemById,
+  setCodeItemTaxRule as repoSetCodeItemTaxRule,
   type CodeItemRow,
 } from "@/repositories/code-tables";
 
 export class ForbiddenError extends UserFacingError {}
+// 03-06: 증빙 종류(evidence_type) 항목이 아닌 코드표 항목에 세금 규칙을
+// 저장하려는 시도 — 세금 규칙은 그 코드표에만 의미가 있다.
+export class NotEvidenceTypeError extends UserFacingError {}
+
+const EVIDENCE_TYPE_TABLE_KEY = "evidence_type";
 
 // MAST-04: 코드표 항목 DTO. id·tableKey·sortOrder·active·archivedAt은
 // "code_item.value" 정보 항목(구조/식별 정보) 아래, label만 별도
@@ -27,6 +34,9 @@ export type CodeItemDto = {
   sortOrder: number;
   active: boolean;
   archivedAt: Date | null;
+  // evidence_type이 아닌 코드표 항목은 항상 null(컬럼 자체가 그 항목엔
+  // 비어 있다).
+  taxRule: TaxRule | null;
 };
 
 export const CODE_ITEM_DTO_SPEC: DtoSpec<CodeItemRow, CodeItemDto> = {
@@ -38,6 +48,7 @@ export const CODE_ITEM_DTO_SPEC: DtoSpec<CodeItemRow, CodeItemDto> = {
     { key: "sortOrder", from: "sortOrder", infoItem: "code_item.value" },
     { key: "active", from: "active", infoItem: "code_item.value" },
     { key: "archivedAt", from: "archivedAt", infoItem: "code_item.value" },
+    { key: "taxRule", from: "taxRule", infoItem: "code_item.value" },
   ],
 };
 
@@ -100,6 +111,30 @@ export async function setCodeItemActive(
   }
 
   await repoSetCodeItemActive(viewer, id, active);
+  const updated = await repoFindCodeItemById(viewer, id);
+  return updated ? ((await project(viewer, updated, CODE_ITEM_DTO_SPEC)) as CodeItemDto) : null;
+}
+
+// 03-06: 증빙 종류 코드표 항목의 세금 규칙 저장 — taxRuleSchema로 검증하고,
+// evidence_type 코드표 항목에만 허용한다(다른 코드표 항목에 세금 규칙을
+// 넣는 것을 거부한다).
+export async function setEvidenceTypeTaxRule(
+  viewer: Viewer,
+  id: string,
+  taxRule: unknown,
+): Promise<CodeItemDto | null> {
+  const allowed = await can(viewer, "admin.code-tables", "write");
+  if (!allowed) throw new ForbiddenError("세금 규칙 변경 권한이 없습니다.");
+
+  const current = await repoFindCodeItemById(viewer, id);
+  if (!current) return null;
+  if (current.tableKey !== EVIDENCE_TYPE_TABLE_KEY) {
+    throw new NotEvidenceTypeError("증빙 종류 코드표 항목에만 세금 규칙을 저장할 수 있습니다.");
+  }
+
+  const parsed = taxRuleSchema.parse(taxRule);
+  await repoSetCodeItemTaxRule(viewer, id, parsed);
+
   const updated = await repoFindCodeItemById(viewer, id);
   return updated ? ((await project(viewer, updated, CODE_ITEM_DTO_SPEC)) as CodeItemDto) : null;
 }

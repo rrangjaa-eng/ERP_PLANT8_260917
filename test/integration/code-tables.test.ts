@@ -116,7 +116,7 @@ describe("code-tables (MAST-04, 실제 Postgres)", () => {
 
   it("domain 반환 객체의 키 집합이 spec 선언 키 집합의 부분집합이다(행 객체 누출 없음)", async () => {
     const dto = await createCodeItem(SYSTEM_VIEWER, { tableKey: TABLE_KEY, value: "spec-1", label: "스펙 검증" });
-    const allowedKeys = new Set(["id", "tableKey", "value", "label", "sortOrder", "active", "archivedAt"]);
+    const allowedKeys = new Set(["id", "tableKey", "value", "label", "sortOrder", "active", "archivedAt", "taxRule"]);
     for (const key of Object.keys(dto)) {
       expect(allowedKeys.has(key)).toBe(true);
     }

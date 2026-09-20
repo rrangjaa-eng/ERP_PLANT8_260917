@@ -24,6 +24,59 @@ const PROJECT_STATUS_CODES = [
   { value: "cancelled", label: "취소", sortOrder: 4 },
 ];
 
+// EXP-15·MAST-01: 증빙 종류 코드표 시드 — REQUIREMENTS.md가 열거한 일곱 종류와
+// 각 항목의 세금 규칙 기본값(judgment — 03-06-SUMMARY.md 「실행자가 판단한 것」
+// 참고. ROADMAP·EXP-15는 규칙 종류 네 값의 존재만 지정했고 일곱 종류 각각에
+// 어느 값을 기본으로 둘지는 지정하지 않았다). 관리자가 화면(Task 3)에서 언제든
+// 바꿀 수 있다 — 시드는 출발점일 뿐 정본이 아니다.
+const EVIDENCE_TYPE_CODES: {
+  value: string;
+  label: string;
+  sortOrder: number;
+  taxRule: Record<string, unknown>;
+}[] = [
+  {
+    value: "tax_invoice",
+    label: "세금계산서",
+    sortOrder: 0,
+    taxRule: {
+      ruleKind: "vat_surcharge",
+      roundingUnit: 1,
+      roundingMethod: "round",
+      minWithholdingAmount: 0,
+      basisDate: "evidence_date",
+    },
+  },
+  { value: "invoice", label: "계산서", sortOrder: 1, taxRule: { ruleKind: "none" } },
+  { value: "card_receipt", label: "카드 전표", sortOrder: 2, taxRule: { ruleKind: "none" } },
+  { value: "cash_receipt", label: "현금영수증", sortOrder: 3, taxRule: { ruleKind: "none" } },
+  {
+    value: "other_income",
+    label: "기타소득",
+    sortOrder: 4,
+    taxRule: {
+      ruleKind: "withholding",
+      roundingUnit: 10,
+      roundingMethod: "round",
+      minWithholdingAmount: 125000,
+      basisDate: "payment_date",
+    },
+  },
+  {
+    value: "business_income",
+    label: "사업소득",
+    sortOrder: 5,
+    taxRule: {
+      ruleKind: "withholding",
+      roundingUnit: 10,
+      roundingMethod: "round",
+      minWithholdingAmount: 0,
+      basisDate: "payment_date",
+    },
+  },
+  { value: "overseas_invoice", label: "해외 인보이스", sortOrder: 6, taxRule: { ruleKind: "none" } },
+];
+
 // MAST-02: 본부·팀 최소 시드 — PROJECT.md가 실명으로 쓰는 두 본부(기획본부·
 // 경영관리본부), 각 본부에 팀 하나. 임의의 이름을 만들지 않는다. 멱등이다.
 const ORG_SEED: { orgUnit: { name: string; sortOrder: number }; team: { name: string; sortOrder: number } }[] = [
@@ -94,6 +147,10 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
   let codeItemsCount = 0;
   for (const code of PROJECT_STATUS_CODES) {
     const inserted = await seedCodeItem(viewer, { tableKey: "project_status", ...code });
+    if (inserted) codeItemsCount++;
+  }
+  for (const code of EVIDENCE_TYPE_CODES) {
+    const inserted = await seedCodeItem(viewer, { tableKey: "evidence_type", ...code });
     if (inserted) codeItemsCount++;
   }
 

@@ -5,6 +5,7 @@ import { findOrgUnitById, setOrgUnitArchived } from "@/repositories/org-units";
 import { findTeamById, setTeamArchived } from "@/repositories/teams";
 import { findCorpCardById, setCorpCardArchived } from "@/repositories/corp-cards";
 import { findUserById, setUserArchived } from "@/repositories/users";
+import { findVendorById, setVendorArchived } from "@/repositories/vendors";
 
 // archive()/restore()(domain/archive/index.ts)가 필요로 하는 최소 행 모양.
 // isSeed는 roles 전용(시드 계급 보관 거부 판정) — 다른 표는 없어도 된다.
@@ -84,6 +85,16 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     },
     async findById(viewer, id) {
       return findUserById(viewer, id);
+    },
+  },
+  {
+    entity: "vendor",
+    label: "거래처",
+    async setArchived(viewer, id, value) {
+      await setVendorArchived(viewer, id, value);
+    },
+    async findById(viewer, id) {
+      return findVendorById(viewer, id);
     },
   },
 ];

@@ -7,22 +7,79 @@
 > **웨이브 종료 시점마다 해당 절만** 돌리고, 페이즈 끝에서 전체를 한 번 더 돈다
 > (`workflow.human_verify_mode=end-of-phase`).
 
-## 0. 준비
+## 0. 어디에 접속해서 보는가
+
+### 이 GSD 세션에서는 볼 수 없다
+
+계획을 만든 세션은 임시 원격 컨테이너에서 돌고, 거기서 `pnpm dev`를 띄워도 컨테이너
+내부 localhost에만 붙어 외부로 열린 포트가 없다. 세션이 끝나면 컨테이너도 회수된다.
+**브라우저 확인은 아래 두 경로 중 하나로 한다.**
+
+### 경로 A — 내 PC (기본)
 
 ```bash
-pnpm db:dev                 # 로컬 Postgres (erp / erp_test)
-pnpm db:migrate             # 03-01~03-07이 추가하는 마이그레이션 0003~0007
-pnpm db:seed                # 계급 5종·메뉴·정보 항목 레지스트리 시드 (03-01이 추가하는 스크립트)
-pnpm dev                    # http://localhost:3000
+git fetch origin claude/gsd-plan-phase-3-rzuho1
+git checkout claude/gsd-plan-phase-3-rzuho1
+pnpm install
+
+pnpm db:dev        # Docker 있으면 컨테이너, 없으면 apt Postgres → 127.0.0.1:5432 (erp · erp_test)
+pnpm db:migrate    # 03-01~03-07이 추가하는 마이그레이션 0003~0007
+pnpm db:seed       # 계급 5종·메뉴·정보 항목 레지스트리 시드 — 03-01이 만든다(웨이브 1 이후에만 존재)
+pnpm dev           # http://localhost:3000
 ```
 
-`pnpm db:seed`와 `scripts/seed-master.ts`는 03-01이 만든다. 웨이브 1 전에는 없다.
+`.env.local`은 `dev-db.sh`가 자동 생성하므로 `.env.example`를 직접 복사할 필요는 없다
+(`docs/OPERATIONS.md` §3). 로컬은 Cloud SQL Auth Proxy가 아니다 — Cloud SQL은 프라이빗
+IP뿐이라 PC에서 직접 붙을 수 없다(D-01).
+
+**로그인 계정 만들기**
+
+```bash
+pnpm account:create --email you@example.com --name 홍길동 --admin
+pnpm account:reset  --email you@example.com    # 임시 비밀번호 재발급
+pnpm account:unlock --email you@example.com    # 5회 실패 잠금 해제
+```
+
+> ⚠️ **웨이브 2부터 `--admin`이 없다.** 03-02가 관리자 불리언을 제거하고 `--role`로 바꾼다
+> (D-36). 웨이브 2 이후에는 `--role` 형태를 쓰고, 계급 5종 계정은 `--role`로 만든다.
+> 웨이브 5 이후에는 `/admin/people` 화면에서 직접 발급할 수 있다.
+
+### 경로 B — staging (Cloud Run, 서울)
+
+주소는 **반드시 실측 `status.url`**로만 연다.
+
+```bash
+gcloud run services describe plant8-staging \
+  --region "$GCP_REGION" --format='value(status.url)'
+```
+
+또는 배포 로그 마지막의 `SERVICE_URL=` 줄이 정본이다. Phase 1 스테이징 실측 주소는
+`.planning/phases/01-deploy-skeleton-login/01-07-DEPLOY-LOG.md`에 기록돼 있다 — D-03
+("실제 식별자를 적지 않는다")에 따라 이 문서에는 옮겨 적지 않는다.
+
+> ⚠️ **다른 주소로 열면 안 된다.** 프로젝트 번호로 만든 "결정적" 형식
+> (`https://plant8-<env>-<프로젝트 번호>.asia-northeast3.run.app`)은 이 프로젝트의 실제
+> 주소가 아니라 404다. 태그 리비전 URL로 열면 화면은 떠도 **로그인 POST가 better-auth의
+> Origin 검사에 걸려 403**이 난다. 북마크는 항상 `status.url`로 (`docs/OPERATIONS.md` §1).
+
+운영 환경 계정은 로컬 CLI가 아니라 GitHub Actions `account.yml`(Cloud Run Job
+`plant8-{env}-account`)로 만든다. 임시 비밀번호는 워크플로 로그에 한 번 남으므로 받는 즉시
+변경한다. 출력이 바로 안 보여도 `reset`을 다시 돌리지 말고 기다린다 — 재실행하면 전 세션이
+만료되고 새 임시 비밀번호가 또 발급된다(D-13, `docs/OPERATIONS.md` §7).
+
+### 지금 볼 수 있는 것과 없는 것
+
+이 문서의 화면 11개는 **아직 존재하지 않는다.** 계획만 끝난 상태이고
+`/gsd-execute-phase 3` 실행 후에 생긴다. 지금 접속해서 볼 수 있는 것은 Phase 1·2 결과뿐이다
+— 로그인·로그아웃, 비밀번호 변경, 앱 셸(상단 바·모바일 셸), 시스템 상태 화면.
+
+웨이브가 완전히 직렬이라 화면은 웨이브마다 늘어난다. **웨이브 종료 시점에 그 웨이브 절만**
+돌리고, 페이즈 끝에서 전체를 한 번 더 돈다 (`workflow.human_verify_mode=end-of-phase`).
 
 ### 계급 5종 계정
 
 권한표·노출표는 **계급별로 화면이 달라지는 것**이 핵심이므로, 다섯 계정을 만들어 두고
-같은 화면을 계급을 바꿔가며 본다. 계정 발급은 `pnpm account:create`(Phase 1) 또는
-03-05가 만드는 사람 등록 화면에서 한다.
+같은 화면을 계급을 바꿔가며 본다.
 
 | 계급 | 이 페이즈에서 기대되는 것 |
 |---|---|

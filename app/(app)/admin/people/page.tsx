@@ -71,7 +71,9 @@ export default async function PeoplePage() {
                   ) : null}
                 </td>
                 <td>
-                  <Link href={`/admin/people/${person.id}`}>상세</Link>
+                  <Link href={`/admin/people/${person.id}`} className={styles.detailLink}>
+                    상세
+                  </Link>
                 </td>
               </tr>
             ))}

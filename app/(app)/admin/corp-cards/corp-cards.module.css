@@ -15,6 +15,19 @@
   text-underline-offset: var(--underline-offset);
 }
 
+/* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44 — 짧은 글자 링크라 패딩으로
+   히트 영역만 키운다(글자 크기·시각은 그대로, PC는 대상 밖: §7-1 PC 컨트롤 32). */
+@media (max-width: 699.98px) {
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+    padding: 0 var(--s-2);
+  }
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;

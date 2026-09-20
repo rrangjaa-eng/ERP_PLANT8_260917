@@ -27,6 +27,18 @@
   background: var(--surface);
 }
 
+/* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44 — "상세"는 글자 2개짜리
+   짧은 링크라 히트 영역만 패딩으로 키운다(PC는 대상 밖). */
+@media (max-width: 699.98px) {
+  .detailLink {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+}
+
 .selectLabel {
   display: flex;
   flex-direction: column;

@@ -16,7 +16,7 @@ export function generateTempPassword(): string {
 
 export async function createAccount(
   viewer: Viewer,
-  input: { email: string; name: string; isAdmin: boolean },
+  input: { email: string; name: string; isAdmin: boolean; roleId?: string },
 ): Promise<{ userId: string; tempPassword: string }> {
   if (!viewer.isAdmin) {
     throw new Error("계정 생성 권한이 없습니다.");
@@ -42,6 +42,10 @@ export async function createAccount(
       name: input.name,
       emailVerified: true,
       isAdmin: input.isAdmin,
+      // Phase 3: 선택 인자 — 넘기지 않으면 undefined(better-auth가 등록된
+      // additionalFields의 defaultValue 없음 → 컬럼 null)로 저장된다. 기존
+      // 세 개의 권한 게이트와 다른 인자·호출은 한 글자도 바꾸지 않는다.
+      roleId: input.roleId,
       passwordIsTemporary: true,
     },
     { method: "admin" },

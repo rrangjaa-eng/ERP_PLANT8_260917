@@ -9,6 +9,7 @@ export type SessionUser = {
   email: string;
   name: string;
   isAdmin: boolean;
+  roleId: string | null;
   passwordIsTemporary: boolean;
 };
 
@@ -17,6 +18,7 @@ type SessionUserFields = {
   email: string;
   name: string;
   isAdmin: boolean;
+  roleId?: string | null;
   passwordIsTemporary: boolean;
 };
 
@@ -30,10 +32,11 @@ export async function getSession(): Promise<{ viewer: Viewer; user: SessionUser 
     email: rawUser.email,
     name: rawUser.name,
     isAdmin: rawUser.isAdmin,
+    roleId: rawUser.roleId ?? null,
     passwordIsTemporary: rawUser.passwordIsTemporary,
   };
 
-  return { viewer: { id: user.id, isAdmin: user.isAdmin }, user };
+  return { viewer: { id: user.id, isAdmin: user.isAdmin, roleId: user.roleId }, user };
 }
 
 export async function requireSession(): Promise<{ viewer: Viewer; user: SessionUser }> {

@@ -55,7 +55,21 @@ DB 세션 발급(30일 sliding, `updateAge` 1일 — 쿠키 연장은 `app/sessi
 - 클라이언트 IP는 `x-forwarded-for`의 **마지막** 항목 하나만 신뢰 — `proxy.ts`가
   `x-client-ip`로 고정하고 훅·better-auth는 그 헤더만 읽는다. 헤더 없으면 500(fail-closed)
 - 계급은 Phase 1엔 `users.is_admin` 하나. `password_is_temporary`가 임시 비밀번호 배너를
-  띄운다(강제 변경 없음, D-08). Phase 3가 계급 5종·권한표로 교체
+  띄운다(강제 변경 없음, D-08). Phase 3가 계급 5종·권한표로 교체(`users.is_admin`은
+  드롭하지 않고 남긴다 — Squawk `ban-drop-column`, 03-01-DECISION-TASK1.md ③)
+
+## 4-1. 권한 판정 4함수(Phase 3)
+
+`can(viewer, menu, action)`·`visible(viewer, item)`·`scopeFor(viewer, entity)`가
+유일한 판정 지점이고 서로 독립이다(`can`↔`visible` 완전 독립, D-35) —
+`project(viewer, row, dto)`(위 §2)가 행 객체를 DTO로 투영해 domain 밖으로 내보내는
+유일한 출구다. `scopeFor`는 Drizzle SQL 조각이 아니라 서술자(`{ rows, includeArchived }`)를
+돌려준다 — `boundaries/element-types`가 domain에서 `db` 계층 import를 금지하므로 표
+컬럼을 참조할 수 없다(리포지토리가 서술자를 where절로 번역한다). 보관함
+(`archived_at`/`archived_by`)과 `custom_fields` JSONB는 마스터 표에만 둔다(`roles`·
+`code_items` 등) — 판정 표(`permission_matrix`·`visibility_matrix`)와 로그 표
+(`action_log`)는 대상이 아니다(판정 표는 체크박스 값이라 보관 대상이 아니고 로그는
+append-only다).
 
 ## 5. DB·마이그레이션
 
@@ -119,7 +133,9 @@ domain 모듈 = 단위, 새 액션·DTO = 통합(+Phase 3부터 누수 생성), 
 
 - **Phase 2:** 임시 화면(로그인·내 계정·상태) 전부를 `docs/design/SYSTEM.md` 기준으로 교체
 - **Phase 3:** `can`/`visible`/`scopeFor(viewer)` + DTO 투영 + 누수 스캔 생성기, 설정
-  레지스트리, 암호화 헬퍼(`APP_DATA_KEY_v1` 사용 시작), 행동 로그 표, 계급 5종
+  레지스트리, 암호화 헬퍼(`APP_DATA_KEY_v1` 사용 시작), 행동 로그 표, 계급 5종.
+  03-01이 트레이서(판정 4함수 + 행동 로그 + 보관함 + 코드표 화면 1개)로 착수 —
+  나머지 여섯 플랜은 이 경로 위의 확장
 - **Phase 4:** `domain/money`·`domain/rules.gate` 실제 구현(현재는 린트 규칙 자리만),
   프로젝트·견적 원장, 통화·리저브 대장
 - **Phase 7:** 이메일 발송 활성화(SMTP 4개 변수 실사용), 알림 tick(현재 경보는

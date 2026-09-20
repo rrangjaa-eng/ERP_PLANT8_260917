@@ -69,7 +69,9 @@ better-auth의 Origin 검사에 걸려 403이 난다 — 북마크·안내는 �
 
 `scripts/dev-db.sh`가 Docker 있으면 컨테이너, 없으면(클라우드 세션) apt로 Postgres 16을
 설치해 127.0.0.1:5432에 `erp`·`erp_test` DB를 준비한다. `.env.local`에 로컬 값을 두고
-`pnpm db:dev && pnpm db:migrate && pnpm dev` 순서로 띄운다.
+`pnpm db:dev && pnpm db:migrate && pnpm db:seed && pnpm dev` 순서로 띄운다(Phase 3부터:
+`db:seed`가 계급·권한표·정보 노출표·프로젝트 상태 코드표를 멱등하게 채운다 —
+빠뜨리면 권한표가 빈 상태라 모든 메뉴 판정이 거부된다).
 
 **D-01(로드맵 기준 1의 "로컬 개발은 Auth Proxy" 문구 대체):** 로컬은 `dev-db.sh`의
 Docker/apt Postgres이지 Cloud SQL **Auth Proxy**가 아니다 — Cloud SQL은 프라이빗 IP뿐이라

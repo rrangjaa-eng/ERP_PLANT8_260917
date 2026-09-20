@@ -26,8 +26,13 @@ export const auth = betterAuth({
   },
   user: {
     additionalFields: {
-      // D-14: Phase 1의 계급은 관리자/직원 둘뿐.
+      // D-14: Phase 1의 계급은 관리자/직원 둘뿐. Phase 3(Task 1 결정 ③)가
+      // 계급 5종(roleId)으로 교체하되 이 필드는 드롭하지 않는다(03-RESEARCH.md §3).
       isAdmin: { type: "boolean", defaultValue: false, input: false },
+      // Phase 3: 계급 5종 외래키. 등록하지 않으면 better-auth drizzle-adapter가
+      // 이 컬럼을 세션에 싣지 않는다. input:false — 클라이언트가 회원가입·
+      // 업데이트 입력으로 계급을 지정할 수 없다(T-03-08).
+      roleId: { type: "string", required: false, input: false },
       // D-08: 임시 비밀번호 사용 중 표시. 본인이 비밀번호를 바꾸면 해제.
       passwordIsTemporary: { type: "boolean", defaultValue: false, input: false },
     },

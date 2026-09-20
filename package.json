@@ -22,6 +22,7 @@
     "db:dev": "bash scripts/dev-db.sh",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node --env-file-if-exists=.env.local --import tsx scripts/migrate-runner.ts",
+    "db:seed": "node --env-file-if-exists=.env.local --import tsx scripts/seed-master.ts",
     "account:create": "node --env-file-if-exists=.env.local --import tsx scripts/account-cli.ts create",
     "account:reset": "node --env-file-if-exists=.env.local --import tsx scripts/account-cli.ts reset",
     "account:unlock": "node --env-file-if-exists=.env.local --import tsx scripts/account-cli.ts unlock",

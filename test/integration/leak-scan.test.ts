@@ -18,6 +18,7 @@ import "@/domain/code-tables";
 import "@/domain/org";
 import "@/domain/corp-cards";
 import "@/domain/people";
+import "@/domain/vendors";
 import "@/app/(app)/admin/code-tables/actions.registry";
 import "@/app/(app)/admin/settings/actions.registry";
 import "@/app/(app)/admin/people/actions.registry";

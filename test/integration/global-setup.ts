@@ -13,6 +13,10 @@ export default async function globalSetup(): Promise<void> {
   process.env.BETTER_AUTH_SECRET ??= randomBytes(32).toString("hex");
   process.env.BETTER_AUTH_URL ??= "http://127.0.0.1:3000";
   process.env.APP_ENV ??= "local";
+  // 03-06: lib/crypto.ts는 키가 없으면 fail-closed로 즉시 throw한다(의도된
+  // 동작) — 통합 테스트가 실제 거래처 계좌번호 암호화 경로를 돌리려면 로컬
+  // 테스트 전용 키가 필요하다. base64로 인코딩된 32바이트(Task 1 결정 ②).
+  process.env.APP_DATA_KEY_v1 ??= randomBytes(32).toString("base64");
 
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   try {

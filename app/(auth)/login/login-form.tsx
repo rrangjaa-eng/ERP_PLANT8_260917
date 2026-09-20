@@ -6,8 +6,7 @@ import { authClient } from "@/lib/auth-client";
 import { Button } from "@/ui/button/Button";
 import { TextField } from "@/ui/input/TextField";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
-
-const GENERIC_ERROR = "이메일 또는 비밀번호가 올바르지 않습니다.";
+import { loginErrorMessage } from "./login-error";
 
 // AUTH-04: showGoogle은 서버 컴포넌트(page.tsx)의 getAuthProvider() === "google"
 // 조건 결과를 그대로 넘겨받는다 — 클라이언트 컴포넌트만 authClient.signIn.social을
@@ -30,7 +29,8 @@ export function LoginForm({ showGoogle = false }: { showGoogle?: boolean }) {
 
     if (result.error) {
       // 이메일/비밀번호 오류를 구분하지 않는다(Claude's Discretion, CONTEXT.md).
-      setError(result.error.message ?? GENERIC_ERROR);
+      // 문구 판정은 login-error.ts 한 곳에서 — §6-7 A②·A③.
+      setError(loginErrorMessage(result.error));
       return;
     }
 

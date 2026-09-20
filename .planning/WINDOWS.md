@@ -2,9 +2,9 @@
 schema_version: 1
 open_count: 5
 waived_count: 0
-fixed_count: 1
-total_count: 6
-last_updated: 2026-09-19T22:41:02.543Z
+fixed_count: 2
+total_count: 7
+last_updated: 2026-09-20T02:13:51.401Z
 ---
 
 # Broken Windows Ledger
@@ -20,7 +20,8 @@ last_updated: 2026-09-19T22:41:02.543Z
 | 3 | 01 | lint-warning | .squawk.toml |  | adding-required-field excluded — rate_limits.id NOT NULL 추가(0002), 마이그레이션 시점에 테이블이 항상 비어 있어 실질 위험 없음 | open |  | 2026-09-18T09:14:36.610Z |  |
 | 4 | 01 | lint-warning | .squawk.toml |  | require-concurrent-index-creation excluded — drizzle migrate()의 단일 트랜잭션과 CONCURRENTLY가 근본적으로 양립 불가(현재 SQL엔 미사용, 예방적 배제) | open |  | 2026-09-18T09:14:36.814Z |  |
 | 5 | 02 | deviation | ui/shell/TopBar.tsx |  | PC 상단 바의 현재 메뉴(aria-current) 하이라이트는 CSS만 준비되고 실제 경로 연결은 되지 않음 — layout.tsx가 현재 pathname을 얻을 방법이 없어(미들웨어 확장은 이 플랜 범위 밖) 배선을 다음 페이즈로 미룸 | fixed |  | 2026-09-19T16:39:08.491Z | 2026-09-19T22:23:52.699Z |
-| 6 | 02 | deviation | app/(auth)/login/login-form.tsx |  | 로그인 실패 문구가 SYSTEM.md §6-7 A②의 한국어 문장이 아니라 better-auth 영문("Invalid email or password") — login-form.tsx:32가 result.error.message를 GENERIC_ERROR보다 우선한다. 카피 결함이라 02-08(스타일 갭 클로저) 범위 밖이었고, 02-VERIFICATION.md 재검증에서 미추적으로 확인되어 등록 | open |  | 2026-09-19T22:41:02.543Z |  |
+| 6 | 02 | deviation | app/(auth)/login/login-form.tsx |  | 로그인 실패 문구가 SYSTEM.md §6-7 A②의 한국어 문장이 아니라 better-auth 영문("Invalid email or password") — login-form.tsx:32가 result.error.message를 GENERIC_ERROR보다 우선한다. 카피 결함이라 02-08(스타일 갭 클로저) 범위 밖이었고, 02-VERIFICATION.md 재검증에서 미추적으로 확인되어 등록 | fixed |  | 2026-09-19T22:41:02.543Z | 2026-09-20T02:13:51.401Z |
+| 7 | 02 | deviation | docs/design/SYSTEM.md |  | §2-2(--fs-2xl = KPI 타일 전용)와 §6-9(오류 페이지 제목 = --fs-2xl)가 같은 토큰에 다른 용도를 지정한다. 02-08은 구체가 일반을 이긴다는 해석으로 §6-9를 정본 삼아 구현했고 렌더 픽셀은 정확하다. KPI 타일이 아직 없어(Phase 9~10) 지금 판단할 근거가 부족해 미룸 — 2026-09-20 사용자 결정, DECISIONS.md 기록. KPI 타일을 처음 만드는 페이즈에서 §2-2를 넓히거나 오류 제목에 별도 토큰을 주는 것 중 하나로 정리한다 | open |  | 2026-09-20T02:13:42.754Z |  |
 
 ````json
 [
@@ -96,9 +97,22 @@ last_updated: 2026-09-19T22:41:02.543Z
     "file": "app/(auth)/login/login-form.tsx",
     "line": null,
     "description": "로그인 실패 문구가 SYSTEM.md §6-7 A②의 한국어 문장이 아니라 better-auth 영문(\"Invalid email or password\") — login-form.tsx:32가 result.error.message를 GENERIC_ERROR보다 우선한다. 카피 결함이라 02-08(스타일 갭 클로저) 범위 밖이었고, 02-VERIFICATION.md 재검증에서 미추적으로 확인되어 등록",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-19T22:41:02.543Z",
+    "resolved_at": "2026-09-20T02:13:51.401Z",
+    "milestone": null
+  },
+  {
+    "id": 7,
+    "kind": "deviation",
+    "phase": "02",
+    "file": "docs/design/SYSTEM.md",
+    "line": null,
+    "description": "§2-2(--fs-2xl = KPI 타일 전용)와 §6-9(오류 페이지 제목 = --fs-2xl)가 같은 토큰에 다른 용도를 지정한다. 02-08은 구체가 일반을 이긴다는 해석으로 §6-9를 정본 삼아 구현했고 렌더 픽셀은 정확하다. KPI 타일이 아직 없어(Phase 9~10) 지금 판단할 근거가 부족해 미룸 — 2026-09-20 사용자 결정, DECISIONS.md 기록. KPI 타일을 처음 만드는 페이즈에서 §2-2를 넓히거나 오류 제목에 별도 토큰을 주는 것 중 하나로 정리한다",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T02:13:42.754Z",
     "resolved_at": null,
     "milestone": null
   }

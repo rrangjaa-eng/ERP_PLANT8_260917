@@ -2,9 +2,9 @@
 schema_version: 1
 open_count: 5
 waived_count: 0
-fixed_count: 4
-total_count: 9
-last_updated: 2026-09-20T06:00:53.167Z
+fixed_count: 7
+total_count: 12
+last_updated: 2026-09-20T06:07:59.294Z
 ---
 
 # Broken Windows Ledger
@@ -24,6 +24,9 @@ last_updated: 2026-09-20T06:00:53.167Z
 | 7 | 02 | deviation | docs/design/SYSTEM.md |  | §2-2(--fs-2xl = KPI 타일 전용)와 §6-9(오류 페이지 제목 = --fs-2xl)가 같은 토큰에 다른 용도를 지정한다. 02-08은 구체가 일반을 이긴다는 해석으로 §6-9를 정본 삼아 구현했고 렌더 픽셀은 정확하다. KPI 타일이 아직 없어(Phase 9~10) 지금 판단할 근거가 부족해 미룸 — 2026-09-20 사용자 결정, DECISIONS.md 기록. KPI 타일을 처음 만드는 페이즈에서 §2-2를 넓히거나 오류 제목에 별도 토큰을 주는 것 중 하나로 정리한다 | open |  | 2026-09-20T02:13:42.754Z |  |
 | 8 | 02 | deviation | app/(app)/layout.tsx |  | WR-07 해소: 6개 페이지(approvals·cards·expenses·pnl·projects·settings)가 레이아웃 인증에만 의존하던 것을 각 페이지의 requireSession()으로 바꿨다. test/unit/page-auth-guard.test.ts가 (app) 그룹의 모든 page.tsx를 훑어 앞으로 만드는 페이지도 자동으로 잡는다 | fixed |  | 2026-09-20T05:53:42.705Z | 2026-09-20T05:53:54.621Z |
 | 9 | 02 | deviation | ui/logout/use-logout.ts |  | WR-06 해소: 로그아웃 세 경로의 실패 처리를 useLogout 훅 한 곳으로 모았다. 성공해야만 메뉴·시트를 닫고, 실패하면 pending을 풀고 role=alert 문구를 보인다. test/e2e/logout-failure.spec.ts가 sign-out을 네트워크 단에서 끊어 검증한다 | fixed |  | 2026-09-20T06:00:52.976Z | 2026-09-20T06:00:53.167Z |
+| 10 | 02 | deviation | ui/ |  | WR-02·WR-03 해소: 사용자 메뉴에 WAI-ARIA menu 키(ArrowDown/Up·Home/End, 순환)와 표준 해제(Tab 이탈·바깥 클릭)를 붙였다. test/e2e/user-menu.spec.ts 5건 | fixed |  | 2026-09-20T06:07:58.325Z | 2026-09-20T06:07:58.906Z |
+| 11 | 02 | deviation | ui/ |  | WR-05 해소: 토스트 자동 소멸 타이머가 onDismiss 정체성 변화에 재시작되던 것을 ref로 끊었다. 오류 토스트 role=alert. test/unit/ui/toast-timer.test.ts | fixed |  | 2026-09-20T06:07:58.521Z | 2026-09-20T06:07:59.100Z |
+| 12 | 02 | deviation | ui/ |  | WR-04 해소: 「내 차례」 다음 한 수가 item.action.href로 실제 이동한다. 더 보기는 moreHref가 있을 때만 링크. test/unit/ui/next-turn-action.test.ts | fixed |  | 2026-09-20T06:07:58.715Z | 2026-09-20T06:07:59.294Z |
 
 ````json
 [
@@ -142,6 +145,45 @@ last_updated: 2026-09-20T06:00:53.167Z
     "reason": "",
     "recorded_at": "2026-09-20T06:00:52.976Z",
     "resolved_at": "2026-09-20T06:00:53.167Z",
+    "milestone": null
+  },
+  {
+    "id": 10,
+    "kind": "deviation",
+    "phase": "02",
+    "file": "ui/",
+    "line": null,
+    "description": "WR-02·WR-03 해소: 사용자 메뉴에 WAI-ARIA menu 키(ArrowDown/Up·Home/End, 순환)와 표준 해제(Tab 이탈·바깥 클릭)를 붙였다. test/e2e/user-menu.spec.ts 5건",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-09-20T06:07:58.325Z",
+    "resolved_at": "2026-09-20T06:07:58.906Z",
+    "milestone": null
+  },
+  {
+    "id": 11,
+    "kind": "deviation",
+    "phase": "02",
+    "file": "ui/",
+    "line": null,
+    "description": "WR-05 해소: 토스트 자동 소멸 타이머가 onDismiss 정체성 변화에 재시작되던 것을 ref로 끊었다. 오류 토스트 role=alert. test/unit/ui/toast-timer.test.ts",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-09-20T06:07:58.521Z",
+    "resolved_at": "2026-09-20T06:07:59.100Z",
+    "milestone": null
+  },
+  {
+    "id": 12,
+    "kind": "deviation",
+    "phase": "02",
+    "file": "ui/",
+    "line": null,
+    "description": "WR-04 해소: 「내 차례」 다음 한 수가 item.action.href로 실제 이동한다. 더 보기는 moreHref가 있을 때만 링크. test/unit/ui/next-turn-action.test.ts",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-09-20T06:07:58.715Z",
+    "resolved_at": "2026-09-20T06:07:59.294Z",
     "milestone": null
   }
 ]

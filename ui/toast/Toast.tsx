@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import styles from "./Toast.module.css";
 
 // SYSTEM.md §7-6 토스트. 화면 이동이 따르는 행동의 결과에만 쓴다(표 저장 결과는
@@ -25,14 +25,23 @@ export type ToastProps = {
 const AUTO_DISMISS_MS = 4000;
 
 export function Toast({ message, tone = "default", actionLabel, onAction, onDismiss }: ToastProps) {
+  // WR-05: onDismiss를 의존성에 두면 안 된다. 호출부는 거의 항상 인라인 클로저를
+  // 넘기고(onDismiss={() => setToast(null)}) 그 정체성은 렌더마다 바뀐다 — 4초보다
+  // 자주 리렌더되는 부모 아래에서 타이머가 계속 재시작돼 토스트가 영원히 남는다.
+  // 최신 콜백은 ref로 읽고, 타이머는 tone에만 반응한다.
+  const onDismissRef = useRef(onDismiss);
+  useEffect(() => {
+    onDismissRef.current = onDismiss;
+  });
+
   useEffect(() => {
     if (tone === "error") return; // §7-6: 오류는 닫을 때까지 — 자동 소멸 없음
-    const timer = setTimeout(onDismiss, AUTO_DISMISS_MS);
+    const timer = setTimeout(() => onDismissRef.current(), AUTO_DISMISS_MS);
     return () => clearTimeout(timer);
-  }, [tone, onDismiss]);
+  }, [tone]);
 
   return (
-    <div className={styles.toast} role="status" aria-live="polite">
+    <div className={styles.toast} role={tone === "error" ? "alert" : "status"} aria-live={tone === "error" ? "assertive" : "polite"}>
       <span>{message}</span>
       {actionLabel && onAction ? (
         <button type="button" onClick={onAction} className={styles.action}>

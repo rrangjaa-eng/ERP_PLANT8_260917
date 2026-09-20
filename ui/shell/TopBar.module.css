@@ -136,3 +136,8 @@
     display: none;
   }
 }
+
+/* WR-06 — 사용자 메뉴 안 로그아웃 실패 문구 자리. 색·서체는 FormAlert가 갖는다. */
+.userMenuAlert {
+  padding: 0 var(--s-3);
+}

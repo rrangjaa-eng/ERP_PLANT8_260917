@@ -2,9 +2,9 @@
 schema_version: 1
 open_count: 5
 waived_count: 0
-fixed_count: 3
-total_count: 8
-last_updated: 2026-09-20T05:53:54.621Z
+fixed_count: 4
+total_count: 9
+last_updated: 2026-09-20T06:00:53.167Z
 ---
 
 # Broken Windows Ledger
@@ -23,6 +23,7 @@ last_updated: 2026-09-20T05:53:54.621Z
 | 6 | 02 | deviation | app/(auth)/login/login-form.tsx |  | 로그인 실패 문구가 SYSTEM.md §6-7 A②의 한국어 문장이 아니라 better-auth 영문("Invalid email or password") — login-form.tsx:32가 result.error.message를 GENERIC_ERROR보다 우선한다. 카피 결함이라 02-08(스타일 갭 클로저) 범위 밖이었고, 02-VERIFICATION.md 재검증에서 미추적으로 확인되어 등록 | fixed |  | 2026-09-19T22:41:02.543Z | 2026-09-20T02:13:51.401Z |
 | 7 | 02 | deviation | docs/design/SYSTEM.md |  | §2-2(--fs-2xl = KPI 타일 전용)와 §6-9(오류 페이지 제목 = --fs-2xl)가 같은 토큰에 다른 용도를 지정한다. 02-08은 구체가 일반을 이긴다는 해석으로 §6-9를 정본 삼아 구현했고 렌더 픽셀은 정확하다. KPI 타일이 아직 없어(Phase 9~10) 지금 판단할 근거가 부족해 미룸 — 2026-09-20 사용자 결정, DECISIONS.md 기록. KPI 타일을 처음 만드는 페이즈에서 §2-2를 넓히거나 오류 제목에 별도 토큰을 주는 것 중 하나로 정리한다 | open |  | 2026-09-20T02:13:42.754Z |  |
 | 8 | 02 | deviation | app/(app)/layout.tsx |  | WR-07 해소: 6개 페이지(approvals·cards·expenses·pnl·projects·settings)가 레이아웃 인증에만 의존하던 것을 각 페이지의 requireSession()으로 바꿨다. test/unit/page-auth-guard.test.ts가 (app) 그룹의 모든 page.tsx를 훑어 앞으로 만드는 페이지도 자동으로 잡는다 | fixed |  | 2026-09-20T05:53:42.705Z | 2026-09-20T05:53:54.621Z |
+| 9 | 02 | deviation | ui/logout/use-logout.ts |  | WR-06 해소: 로그아웃 세 경로의 실패 처리를 useLogout 훅 한 곳으로 모았다. 성공해야만 메뉴·시트를 닫고, 실패하면 pending을 풀고 role=alert 문구를 보인다. test/e2e/logout-failure.spec.ts가 sign-out을 네트워크 단에서 끊어 검증한다 | fixed |  | 2026-09-20T06:00:52.976Z | 2026-09-20T06:00:53.167Z |
 
 ````json
 [
@@ -128,6 +129,19 @@ last_updated: 2026-09-20T05:53:54.621Z
     "reason": "",
     "recorded_at": "2026-09-20T05:53:42.705Z",
     "resolved_at": "2026-09-20T05:53:54.621Z",
+    "milestone": null
+  },
+  {
+    "id": 9,
+    "kind": "deviation",
+    "phase": "02",
+    "file": "ui/logout/use-logout.ts",
+    "line": null,
+    "description": "WR-06 해소: 로그아웃 세 경로의 실패 처리를 useLogout 훅 한 곳으로 모았다. 성공해야만 메뉴·시트를 닫고, 실패하면 pending을 풀고 role=alert 문구를 보인다. test/e2e/logout-failure.spec.ts가 sign-out을 네트워크 단에서 끊어 검증한다",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-09-20T06:00:52.976Z",
+    "resolved_at": "2026-09-20T06:00:53.167Z",
     "milestone": null
   }
 ]

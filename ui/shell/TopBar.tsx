@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
-import { authClient } from "@/lib/auth-client";
+import { usePathname } from "next/navigation";
 import type { AccountEntry, MenuLink } from "./role-menu";
 import { isCurrentPath } from "./current-path";
+import { FormAlert } from "@/ui/form-alert/FormAlert";
+import { useLogout } from "@/ui/logout/use-logout";
 import styles from "./TopBar.module.css";
 
 // SYSTEM.md §6-0 공통 셸 · PC 상단 바. 앱 유일의 딥그린 면 + 1차 메뉴 + 사용자 진입점.
@@ -37,7 +38,6 @@ function isSettingsEntry(entry: AccountEntry): boolean {
 
 export function TopBar({ topBarMenu, systemStatus, accountGroup, userName }: TopBarProps) {
   const [open, setOpen] = useState(false);
-  const router = useRouter();
   const pathname = usePathname();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const firstItemRef = useRef<HTMLAnchorElement | HTMLButtonElement>(null);
@@ -67,12 +67,9 @@ export function TopBar({ topBarMenu, systemStatus, accountGroup, userName }: Top
     }
   }
 
-  async function handleLogout() {
-    close();
-    // D-10: 로그아웃은 현재 기기 세션만 끝낸다(app/(app)/account/logout-button.tsx와 동일 계약).
-    await authClient.signOut();
-    router.push("/login");
-  }
+  // WR-06: 성공했을 때만 메뉴를 닫는다. 예전에는 호출 전에 close()를 불러서
+  // 실패 시 아무 반응 없이 메뉴만 닫혔다 — 사용자는 로그아웃됐다고 믿는다.
+  const { logout, error: logoutError } = useLogout(close);
 
   // 메뉴가 빠지면(정보 노출표로 인해) 남은 메뉴가 왼쪽으로 붙는다 — flex 목록이라
   // 별도 처리 없이 빈 자리가 생기지 않는다(D-22).
@@ -129,7 +126,7 @@ export function TopBar({ topBarMenu, systemStatus, accountGroup, userName }: Top
                       className={styles.userMenuItem}
                       ref={index === 0 ? (firstItemRef as React.RefObject<HTMLButtonElement>) : undefined}
                       onClick={() => {
-                        void handleLogout();
+                        void logout();
                       }}
                     >
                       {item.entry.label}
@@ -137,6 +134,11 @@ export function TopBar({ topBarMenu, systemStatus, accountGroup, userName }: Top
                   )}
                 </li>
               ))}
+              {logoutError ? (
+                <li role="none" className={styles.userMenuAlert}>
+                  <FormAlert>{logoutError}</FormAlert>
+                </li>
+              ) : null}
             </ul>
           ) : null}
         </div>

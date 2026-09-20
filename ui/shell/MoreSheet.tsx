@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
-import { authClient } from "@/lib/auth-client";
 import type { AccountEntry, MenuLink } from "./role-menu";
 import styles from "./MoreSheet.module.css";
+import { FormAlert } from "@/ui/form-alert/FormAlert";
+import { useLogout } from "@/ui/logout/use-logout";
 
 // SYSTEM.md §7-8 「더보기」 시트. 실물: docs/design/system/sheet-modal.html #sheet-more.
 //
@@ -32,7 +32,6 @@ export function MoreSheet({ open, onClose, moreMenu, accountGroup, systemStatus,
   const dialogRef = useRef<HTMLDialogElement>(null);
   const firstItemRef = useRef<HTMLAnchorElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
-  const router = useRouter();
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -63,12 +62,8 @@ export function MoreSheet({ open, onClose, moreMenu, accountGroup, systemStatus,
     }
   }
 
-  async function handleLogout() {
-    dialogRef.current?.close();
-    // D-10: 로그아웃은 현재 기기 세션만 끝낸다(ui/shell/TopBar.tsx·logout-button.tsx와 동일 계약).
-    await authClient.signOut();
-    router.push("/login");
-  }
+  // WR-06: 성공했을 때만 시트를 닫는다(TopBar와 같은 계약).
+  const { logout, error: logoutError } = useLogout(() => dialogRef.current?.close());
 
   const firstRowHref = moreMenu[0]?.href ?? systemStatus?.href;
 
@@ -94,6 +89,7 @@ export function MoreSheet({ open, onClose, moreMenu, accountGroup, systemStatus,
           </svg>
         </button>
       </div>
+      {logoutError ? <FormAlert>{logoutError}</FormAlert> : null}
       <ul className={styles.list}>
         <li>
           <span className={styles.searchRow} aria-disabled="true">
@@ -139,7 +135,7 @@ export function MoreSheet({ open, onClose, moreMenu, accountGroup, systemStatus,
                 type="button"
                 className={styles.link}
                 onClick={() => {
-                  void handleLogout();
+                  void logout();
                 }}
               >
                 {entry.label}

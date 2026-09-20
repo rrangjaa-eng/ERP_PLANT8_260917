@@ -133,24 +133,41 @@ Accent reserved for: 상단 바 현재 메뉴 밑줄, 「내 차례」 태그/�
 
 ## UI Considerations
 
-Applicable state considerations resolved: 12 covered, 1 backstop, 1 unresolved.
+> 생성 근거: `ui-consideration-probe.cjs`를 이 페이즈의 표면 12개에 돌려 **적용 가능 94쌍**
+> (12 표면 × 8 범주, `설정 화면`만 6 — list-collection이 아니라 populated·zero-one-many 제외)을
+> 얻었다. 프로브의 `UI_CUES`가 영어 정규식뿐이라 한국어 산문은 구조적으로 매칭되지 않는다 —
+> 첫 실행이 12건 전부 `unclassified`로 나온 것은 상태 없는 UI라서가 아니라 분류기 한계다.
+> 그래서 표면마다 element kind를 직접 지정해(authored `elements` override) 다시 돌렸다.
+>
+> 94행을 그대로 옮기지 않는다. 이 시스템에서는 다섯 상태가 **화면별 결정이 아니라 시스템 계약**
+> (`SYSTEM.md` §7-7)이라 94쌍 중 대부분이 한 규칙으로 닫힌다. 아래는 그 일괄 규칙 하나와,
+> 일괄 규칙으로 닫히지 않는 표면별 예외만 적는다.
 
-| Category | Element(s) | Status | Resolution / Reason |
-|----------|------------|--------|---------------------|
-| empty | 사람·거래처·법인카드·코드표 목록(list-collection) | ✅ covered | §7-7 EMPTY 그대로: "등록된 {대상}가 없습니다 · {대상} 등록" 한 줄, `ListEmpty` 컴포넌트 재사용 |
-| empty | 권한표·정보 노출표 격자(list-collection) | ✅ covered | §7-13: 계급 5종 시드(ADMN-08)·메뉴/정보 항목 레지스트리 시드가 항상 있어 EMPTY는 "해당 없음"으로 계약에 명시 |
-| loading | 위 목록·격자 전체 | ✅ covered | §7-7 LOADING(머리글 뼈대 + `--surface` 행 3개) 재사용, 300ms 지연 표시 규칙 |
-| error | 목록·격자·이력 목록 전체 | ✅ covered | §7-7 ERROR 한 줄 패턴, §7-13/§7-14가 화면별 문구를 명시 |
-| populated | 권한표(계급 5 × 메뉴 N × 동작 3) | 🧪 backstop | 실제 메뉴 개수가 늘어 열이 수십 개를 넘을 때 2단 sticky 머리글·가로 스크롤이 실제로 버티는지는 계획 단계에서 실 데이터(메뉴 레지스트리 개수)로 확인해야 한다 — held-out 검증 필요 |
-| populated | 사람 목록(발령일 이력 포함) | ✅ covered | §6-1 목록 + §7-14 이력 목록으로 팀 소속 변경 히스토리를 안전하게 표시(append-only) |
-| partial | 권한표 열 일괄 토글 중 일부 실패 | ✅ covered | §7-13 "저장 시점과 피드백" PARTIAL 행에 명시(실패 셀만 원위치 + 오류, 나머지 유지) |
-| partial | 이력형 설정에서 미래 예정 값과 현재값 공존 | ✅ covered | §7-14 상태 태그 "적용 중"/"예정"으로 구분 |
-| overflow | 권한표 가로 스크롤(메뉴×동작 열) | ✅ covered | §7-13 행 머리글 sticky-left + 열 머리글 sticky-top |
-| overflow | 거래처명·프로젝트명 등 긴 텍스트(목록 셀) | ✅ covered | `SYSTEM.md` §2-3 `word-break: keep-all` · `overflow-wrap: anywhere` 상속(신규 규칙 없음) |
-| zero-one-many | 계급 종류(ADMN-08, 추가·이름 변경) | ✅ covered | 1개(대표류)~N개까지 §6-1 목록이 그대로 처리, 한국어는 단수/복수 별도 카피 분기가 필요 없다 |
-| zero-one-many | 행동 로그 필터 결과 | ✅ covered | §7-7 EMPTY "조건에 맞는 건이 없습니다 · 필터 지우기" 재사용 |
-| long-text | 계좌번호 마스킹 표시 | ✅ covered | 고정 자릿수(뒤 4자리 노출)라 overflow 문제 없음, §2-4 형식 규칙 |
-| long-text | 설정 항목의 사람이 읽는 설명 문구 | ⚠ unresolved | registry에 설명 문구를 얼마나 길게 둘지(라벨만 vs 긴 설명)는 실제 설정 키 목록이 있어야 정할 수 있다 — 계획 단계에서 planner assumption으로 처리 |
+### 일괄 규칙 (94쌍 중 다수를 닫는다)
+
+| Category | 적용 범위 | Status | Resolution |
+|----------|-----------|--------|------------|
+| empty · loading · error · partial · populated | 표면 12개 전부 | ✅ resolved (explicit) | `SYSTEM.md` §7-7 다섯 상태가 **모든 화면에 이미 강제**된다. 화면마다 새로 정하는 것이 아니라 §7-7을 구현하는 것이고, 문구만 화면별로 고른다. 검증: `test/unit/design-system-docs.test.ts`가 §7-7 계약 존재를 고정하고, 각 화면 E2E가 EMPTY·ERROR 경로를 탄다 |
+| overflow | 표면 12개 전부 | ✅ resolved (explicit) | `SYSTEM.md` §2-3 `word-break: keep-all` + `overflow-wrap: anywhere` 상속. 신규 규칙 없음 |
+| zero-one-many | 목록형 표면 11개 | ✅ resolved (explicit) | 한국어는 단수/복수 카피 분기가 없다. 0건은 §7-7 EMPTY, 1건 이상은 같은 행 템플릿 |
+
+### 표면별 예외 (일괄 규칙으로 닫히지 않는 것)
+
+| Category | Element | Status | Resolution / Reason |
+|----------|---------|--------|---------------------|
+| populated | 권한표·노출표 격자(E4·E5) | 🧪 resolved (backstop) | 메뉴가 늘어 열이 수십 개가 될 때 2단 sticky 머리글 + 가로 스크롤이 실제로 버티는지는 실 데이터가 있어야 안다. 계획 단계에서 메뉴 레지스트리의 실제 개수로 held-out 확인 |
+| empty | 권한표·노출표 격자(E4·E5) | ✅ resolved (explicit) | EMPTY가 **발생하지 않는다** — 계급 5종 시드(ADMN-08)와 메뉴·정보 항목 레지스트리 시드가 항상 있다. §7-13이 "해당 없음"으로 명시 |
+| empty | 설정 화면(E6) | ✅ resolved (explicit) | EMPTY가 발생하지 않는다 — Phase 1의 로그인 잠금 키(N·15분)가 이미 registry에 있어 키 0개 상태가 성립하지 않는다 |
+| partial | 설정 화면(E6) | ✅ resolved (explicit) | "등록됐으나 서버가 읽지 않는 키"는 화면 상태가 아니라 **테스트 실패**로 처리된다(ADMN-05). 화면에 부분 상태를 그리지 않는다 |
+| partial | 권한표 열 일괄 토글(E4·E5) | ✅ resolved (explicit) | §7-13 「저장 시점과 피드백」 PARTIAL 행: 실패한 셀만 원위치 + 오류 표시, 성공한 셀은 유지 |
+| partial | 이력형 설정·발령 이력(E6·E12) | ✅ resolved (explicit) | §7-14 상태 태그 「적용 중」/「예정」으로 현재값과 미래 예정값이 함께 보인다 |
+| error | 행동 로그 Excel 내보내기(E10) | ✅ resolved (explicit) | 내보내기는 화면 전환이 없는 동작이라 §7-7 ERROR가 아니라 §7-6 토스트로 실패를 알린다. 부분 파일을 내려주지 않는다 |
+| empty | 보관함(E11) | ✅ resolved (explicit) | §7-7 EMPTY + 다음 한 수 없음 — 보관함이 비어 있는 것은 해소할 상태가 아니라 정상이다(§7-12 알림함 EMPTY 예외와 같은 논리, `DECISIONS.md` 2026-09-20 기록) |
+| populated | 이력 목록(E12) | ✅ resolved (explicit) | 1건(최초 등록)과 N건이 같은 행 템플릿. append-only라 과거 행이 사라지지 않는다 |
+| long-text | 계좌번호 마스킹(E8) | ✅ resolved (explicit) | 고정 자릿수(뒤 4자리)라 overflow가 없다. §2-4 형식 규칙 |
+| long-text | 설정 항목 설명 문구(E6) | ⚠ unresolved — planner must treat as assumption | registry에 설명을 라벨만 둘지 긴 문장까지 둘지는 **실제 설정 키 목록이 있어야** 정해진다. 계획 단계에서 키를 열거한 뒤 결정 |
+
+**Summary:** applicable 94 · resolved 93 (explicit 92, backstop 1) · unresolved 1
 
 ---
 

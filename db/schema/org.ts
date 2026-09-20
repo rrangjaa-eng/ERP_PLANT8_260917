@@ -5,16 +5,21 @@ import { users } from "./auth";
 // (teamMemberships). 본부·팀은 마스터 표라 03-01이 정한 경계대로 보관함 컬럼 +
 // customFields를 둔다. 발령 이력은 append-only 감사 이력이라 그 경계 밖이다 —
 // 보관함·customFields 컬럼을 두지 않는다.
-export const orgUnits = pgTable("org_units", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull().unique(),
-  sortOrder: integer("sort_order").notNull().default(0),
-  customFields: jsonb("custom_fields").notNull().default({}),
-  archivedAt: timestamp("archived_at"),
-  archivedBy: text("archived_by"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+export const orgUnits = pgTable(
+  "org_units",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull().unique(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    customFields: jsonb("custom_fields").notNull().default({}),
+    archivedAt: timestamp("archived_at"),
+    archivedBy: text("archived_by"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  // 03-06이 GIN 인덱스를 뒤늦게 채운다(field_definitions 규약이 이제 정해졌다).
+  (table) => [index("org_units_custom_fields_idx").using("gin", table.customFields)],
+);
 
 export const teams = pgTable(
   "teams",
@@ -31,7 +36,10 @@ export const teams = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
-  (table) => [unique("teams_org_name_key").on(table.orgUnitId, table.name)],
+  (table) => [
+    unique("teams_org_name_key").on(table.orgUnitId, table.name),
+    index("teams_custom_fields_idx").using("gin", table.customFields),
+  ],
 );
 
 // 발령 이력 — effectiveFrom은 settings_historized.effective_from(03-04)과 같은

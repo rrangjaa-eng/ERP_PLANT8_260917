@@ -1,4 +1,4 @@
-import { pgTable, text, boolean, jsonb, timestamp, uuid, unique, check } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, jsonb, timestamp, uuid, unique, check, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { users } from "./auth";
 import { teams } from "./org";
@@ -33,5 +33,7 @@ export const corpCards = pgTable(
       "corp_cards_owner_xor_check",
       sql`(${table.holderUserId} is not null) <> (${table.teamId} is not null)`,
     ),
+    // 03-06이 GIN 인덱스를 뒤늦게 채운다(field_definitions 규약이 이제 정해졌다).
+    index("corp_cards_custom_fields_idx").using("gin", table.customFields),
   ],
 );

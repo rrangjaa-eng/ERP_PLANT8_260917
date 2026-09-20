@@ -28,7 +28,7 @@ function section(doc: string, startHeading: string, endHeading: string): string 
 const FIVE_STATES = ["LOADING", "EMPTY", "ERROR", "SUCCESS", "PARTIAL"];
 
 describe("docs/design/SYSTEM.md — 신설 절 5개 (§6-7·§6-8·§6-9·§7-11·§7-12)", () => {
-  it.each(["### 6-7", "### 6-8", "### 6-9", "### 7-11", "### 7-12", "### 7-13"])(
+  it.each(["### 6-7", "### 6-8", "### 6-9", "### 7-11", "### 7-12", "### 7-13", "### 7-14"])(
     "머리글 '%s'를 포함한다",
     (heading) => {
       expect(SYSTEM).toContain(heading);
@@ -48,7 +48,8 @@ describe("docs/design/SYSTEM.md — 신설 절 5개 (§6-7·§6-8·§6-9·§7-11
     ["6-9 오류 페이지", "### 6-9", "## 7. 컴포넌트 규칙"],
     ["7-11 배너", "### 7-11", "### 7-12"],
     ["7-12 알림함·배지", "### 7-12", "### 7-13"],
-    ["7-13 체크박스 매트릭스", "### 7-13", "## 8. 카피 규칙"],
+    ["7-13 체크박스 매트릭스", "### 7-13", "### 7-14"],
+    ["7-14 이력 목록", "### 7-14", "## 8. 카피 규칙"],
   ];
 
   it.each(sectionBounds)("'%s' 절이 다섯 상태를 전부 명시한다", (_name, start, end) => {

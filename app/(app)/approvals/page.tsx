@@ -13,7 +13,7 @@ export default async function ApprovalsPage() {
   return (
     <>
       <PageHeader title="결재" subtitle="내가 처리할 결재 문서" />
-      <ListEmpty message="결재할 문서가 없습니다" action={{ label: "손익 보기", href: "/pnl" }} />
+      <ListEmpty message="결재할 건이 없습니다" action={{ label: "지출결의 목록 보기", href: "/expenses" }} />
     </>
   );
 }

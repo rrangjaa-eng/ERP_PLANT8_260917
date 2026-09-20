@@ -23,6 +23,7 @@ import "@/app/(app)/admin/code-tables/actions.registry";
 import "@/app/(app)/admin/settings/actions.registry";
 import "@/app/(app)/admin/people/actions.registry";
 import "@/app/(app)/admin/corp-cards/actions.registry";
+import "@/app/(app)/admin/vendors/actions.registry";
 
 // D-38: 이 페이즈의 정본 예외 목록은 이 하나뿐이다(03-04가 이 이름으로
 // 등록한다) — dtoName이 null인 내보내기는 사람 단위 정보 항목이 없는

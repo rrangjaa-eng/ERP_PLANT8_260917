@@ -119,6 +119,41 @@ export async function searchVendors(viewer: Viewer, query: string, limit = 10): 
   return Promise.all(scored.map((entry) => project(viewer, entry.row, VENDOR_DTO_SPEC))) as Promise<VendorDto[]>;
 }
 
+// 커스텀 필드 정의 Dto — 필드 정의 자체는 사람 단위 민감 정보가 아니라
+// "어떤 필드가 있는지"를 알려주는 구조 메타데이터라 project()/정보 노출표를
+// 거치지 않는다(계좌번호 등 값과는 다른 종류). *Row 타입을 그대로 반환하지
+// 않도록 필드를 다시 매핑한다(plant8/no-row-type-escape).
+export type FieldDefinitionDto = {
+  id: string;
+  key: string;
+  type: "text" | "number" | "date" | "select";
+  options: string[] | null;
+  required: boolean;
+  sortOrder: number;
+};
+
+export type VendorFieldDefinitionsDeps = { can: typeof defaultCan };
+
+// 거래처 폼(Task 3)이 커스텀 필드 입력을 동적으로 그리는 데 쓴다. 거래처
+// 메뉴를 볼 수 없으면 빈 배열 — 화면 진입 자체가 이미 그 판정을 거친다.
+export async function listVendorFieldDefinitions(
+  viewer: Viewer,
+  deps?: Partial<VendorFieldDefinitionsDeps>,
+): Promise<FieldDefinitionDto[]> {
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, VENDORS_MENU, "view"))) return [];
+
+  const defs = await repoListFieldDefinitions(viewer, VENDOR_ENTITY);
+  return defs.map((def) => ({
+    id: def.id,
+    key: def.key,
+    type: def.type as FieldDefinitionDto["type"],
+    options: Array.isArray(def.options) ? (def.options as string[]) : null,
+    required: def.required,
+    sortOrder: def.sortOrder,
+  }));
+}
+
 async function validatedCustomFields(
   viewer: Viewer,
   input: Record<string, unknown> | undefined,

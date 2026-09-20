@@ -22,6 +22,13 @@ export const users = pgTable("users", {
   roleId: text("role_id").references(() => roles.id),
   // D-08: 관리자가 발급·재발급한 초기 비밀번호를 쓰고 있다는 표시. 본인이 바꾸면 해제.
   passwordIsTemporary: boolean("password_is_temporary").notNull().default(false),
+  // Phase 3(03-05): 사람은 마스터(MAST-02)라 03-01이 정한 경계(보관함 컬럼은
+  // 마스터 성격의 표에만)에 해당한다. 사람 목록의 행 필터, 사람 등록 실패 시
+  // 보상 조치, 03-07의 사람 화면 "삭제"(보관)가 전부 이 두 컬럼을 쓴다.
+  // customFields는 두지 않는다 — better-auth가 소유하는 표에 확장 가방을
+  // 얹는 것은 Phase 10의 커스텀 필드 관리 화면이 대상 표를 정할 때 다시 본다.
+  archivedAt: timestamp("archived_at"),
+  archivedBy: text("archived_by"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

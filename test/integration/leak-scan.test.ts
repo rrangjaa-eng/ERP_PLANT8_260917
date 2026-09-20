@@ -15,6 +15,8 @@ import type { Viewer } from "@/domain/viewer";
 // — 그래서 등록 선언을 actions.registry.ts로 분리했고(03-03) 여기서는 그
 // 부작용 없는 등록 파일만 import한다.
 import "@/domain/code-tables";
+import "@/domain/org";
+import "@/domain/corp-cards";
 import "@/app/(app)/admin/code-tables/actions.registry";
 import "@/app/(app)/admin/settings/actions.registry";
 

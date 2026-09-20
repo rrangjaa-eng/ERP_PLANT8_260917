@@ -1,6 +1,10 @@
 import type { Viewer } from "@/domain/viewer";
 import { findRoleById, setRoleArchived } from "@/repositories/roles";
 import { findCodeItemById, setCodeItemArchived } from "@/repositories/code-tables";
+import { findOrgUnitById, setOrgUnitArchived } from "@/repositories/org-units";
+import { findTeamById, setTeamArchived } from "@/repositories/teams";
+import { findCorpCardById, setCorpCardArchived } from "@/repositories/corp-cards";
+import { findUserById, setUserArchived } from "@/repositories/users";
 
 // archive()/restore()(domain/archive/index.ts)가 필요로 하는 최소 행 모양.
 // isSeed는 roles 전용(시드 계급 보관 거부 판정) — 다른 표는 없어도 된다.
@@ -40,6 +44,46 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     },
     async findById(viewer, id) {
       return findCodeItemById(viewer, id);
+    },
+  },
+  {
+    entity: "org_unit",
+    label: "본부",
+    async setArchived(viewer, id, value) {
+      await setOrgUnitArchived(viewer, id, value);
+    },
+    async findById(viewer, id) {
+      return findOrgUnitById(viewer, id);
+    },
+  },
+  {
+    entity: "team",
+    label: "팀",
+    async setArchived(viewer, id, value) {
+      await setTeamArchived(viewer, id, value);
+    },
+    async findById(viewer, id) {
+      return findTeamById(viewer, id);
+    },
+  },
+  {
+    entity: "corp_card",
+    label: "법인카드",
+    async setArchived(viewer, id, value) {
+      await setCorpCardArchived(viewer, id, value);
+    },
+    async findById(viewer, id) {
+      return findCorpCardById(viewer, id);
+    },
+  },
+  {
+    entity: "user",
+    label: "사람",
+    async setArchived(viewer, id, value) {
+      await setUserArchived(viewer, id, value);
+    },
+    async findById(viewer, id) {
+      return findUserById(viewer, id);
     },
   },
 ];

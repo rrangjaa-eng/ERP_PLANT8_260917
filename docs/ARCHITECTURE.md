@@ -79,6 +79,14 @@ append-only다).
 넘길지는 호출자의 책임**이다 — Phase 4의 `domain/money`가 원천징수·회사대납은 지급일,
 부가세는 증빙일을 결정해 `asOf`로 넘긴다. 값도 기본값도 없으면 예외(fail-closed).
 
+## 4-3. 시점 소속 조회 계약(Phase 3 → Phase 5·10)
+
+`teamAtDate(viewer, userId, date, deps?)`(`domain/org/index.ts`) — 발령일이 `date` 이하인
+발령 이력 중 가장 늦은 것의 팀 Dto를 돌려준다. 해당 이력이 없으면(발령 이력이 아예 없거나
+전부 `date`보다 뒤) **`null`을 돌려준다** — 임의의 기본 팀으로 떨어지지 않으며 호출자가 그
+`null`을 처리해야 한다. Phase 5의 비용 귀속·Phase 10의 팀 직접 관리비가 사용일을 `date`로
+넘겨 이 함수를 그대로 쓴다.
+
 ## 5. DB·마이그레이션
 
 `drizzle-kit generate` → Squawk(`.squawk.toml`, `pnpm lint:sql`) → `scripts/migrate-runner.ts`

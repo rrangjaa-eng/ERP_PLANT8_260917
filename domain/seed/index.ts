@@ -7,6 +7,8 @@ import { seedRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { seedCodeItem } from "@/repositories/code-tables";
 import { seedSimpleValue, seedHistorizedValue } from "@/repositories/settings";
+import { seedOrgUnit, findOrgUnitByName } from "@/repositories/org-units";
+import { seedTeam } from "@/repositories/teams";
 
 // 이력형 키의 시드 기본 행은 항상 과거인 고정 날짜를 쓴다 — 시드 직후부터
 // 유효값이 즉시 성립해(오늘 기준 effective_from <= asOf) 03-UI-SPEC.md가
@@ -22,12 +24,21 @@ const PROJECT_STATUS_CODES = [
   { value: "cancelled", label: "취소", sortOrder: 4 },
 ];
 
+// MAST-02: 본부·팀 최소 시드 — PROJECT.md가 실명으로 쓰는 두 본부(기획본부·
+// 경영관리본부), 각 본부에 팀 하나. 임의의 이름을 만들지 않는다. 멱등이다.
+const ORG_SEED: { orgUnit: { name: string; sortOrder: number }; team: { name: string; sortOrder: number } }[] = [
+  { orgUnit: { name: "기획본부", sortOrder: 0 }, team: { name: "기획1팀", sortOrder: 0 } },
+  { orgUnit: { name: "경영관리본부", sortOrder: 1 }, team: { name: "경영관리팀", sortOrder: 0 } },
+];
+
 export type SeedResult = {
   roles: number;
   permissions: number;
   visibility: number;
   codeItems: number;
   settings: number;
+  orgUnits: number;
+  teams: number;
 };
 
 // 이 모듈은 권한 판정을 거치지 않는 유일한 경로다 — 부트스트랩 시점에는 판정할
@@ -86,6 +97,18 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
     if (inserted) codeItemsCount++;
   }
 
+  let orgUnitsCount = 0;
+  let teamsCount = 0;
+  for (const entry of ORG_SEED) {
+    const insertedOrgUnit = await seedOrgUnit(viewer, entry.orgUnit);
+    if (insertedOrgUnit) orgUnitsCount++;
+
+    const orgUnit = await findOrgUnitByName(viewer, entry.orgUnit.name);
+    if (!orgUnit) continue;
+    const insertedTeam = await seedTeam(viewer, { orgUnitId: orgUnit.id, ...entry.team });
+    if (insertedTeam) teamsCount++;
+  }
+
   // ADMN-05: 등록된 키 중 default가 있는 것을 시드한다(onConflictDoNothing
   // — 이미 저장된 값을 덮어쓰지 않는다). Phase 1의 로그인 잠금 키가 이미
   // 여기 등록돼 있어 설정 화면의 키 0개 상태가 성립하지 않는다.
@@ -107,5 +130,7 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
     visibility: visibilityCount,
     codeItems: codeItemsCount,
     settings: settingsCount,
+    orgUnits: orgUnitsCount,
+    teams: teamsCount,
   };
 }

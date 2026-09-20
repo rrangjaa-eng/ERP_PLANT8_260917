@@ -18,6 +18,10 @@ export type ScopeForDeps = {
 // ARCHIVABLE_TABLES와 같은 결의 "단일 정본 + 한 줄 추가" 규약이다.
 const ENTITY_MENUS: Record<string, string> = {
   code_items: "admin.code-tables",
+  org_unit: "admin.people",
+  team: "admin.people",
+  user: "admin.people",
+  corp_card: "admin.corp-cards",
 };
 
 const ARCHIVE_MENU = "admin.archive";

@@ -19,4 +19,11 @@ export const INFO_ITEMS: InfoItemDef[] = [
   { key: "incentive.amount", label: "인센티브", staffDefault: false },
   { key: "vendor.amount", label: "거래처 금액", staffDefault: false },
   { key: "vendor.account_number_unmasked", label: "거래처 계좌번호 마스킹 해제", staffDefault: false },
+  // MAST-02·MAST-03(03-05): 사람·조직·법인카드 마스터 정보. 인트라넷 수준의
+  // 구조적 정보라 기본값은 참(code_item.value와 같은 결).
+  { key: "person.value", label: "사람 정보", staffDefault: true },
+  { key: "org_unit.value", label: "본부 정보", staffDefault: true },
+  { key: "team.value", label: "팀 정보", staffDefault: true },
+  { key: "team_assignment.value", label: "팀 소속 발령 이력", staffDefault: true },
+  { key: "corp_card.value", label: "법인카드 정보", staffDefault: true },
 ];

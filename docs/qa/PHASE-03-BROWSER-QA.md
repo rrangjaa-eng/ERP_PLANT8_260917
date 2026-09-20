@@ -46,21 +46,55 @@ pnpm account:unlock --email you@example.com    # 5회 실패 잠금 해제
 
 ### 경로 B — staging (Cloud Run, 서울)
 
-주소는 **반드시 실측 `status.url`**로만 연다.
+주소를 얻는 방법이 넷이고, **위에서부터 쉽다.** `gcloud` 설치 없이 되는 것이 위 둘이다.
+
+**① GitHub Actions 배포 요약 페이지 (브라우저만, 설치 0)** ← 권장
+
+저장소 → **Actions** → 왼쪽 **deploy** 워크플로 → 최근 성공한 run → 요약(Summary) 페이지.
+맨 위에 `deploy.yml`이 찍어 둔 줄이 있다:
+
+```
+staging: <실제 주소> (sha <커밋 SHA>)
+```
+
+이 줄은 `deploy.sh`가 마지막에 출력하는 `SERVICE_URL=`을 그대로 옮긴 것이라 **정본**이다
+(`deploy.yml`이 `$GITHUB_STEP_SUMMARY`에 기록). 지금 서빙 중인 SHA까지 같이 보이므로
+"내가 보는 화면이 어느 커밋인지"도 여기서 확인된다.
+
+**② Cloud Run 콘솔 (브라우저만)**
+
+`console.cloud.google.com/run` → 리전 서울(asia-northeast3) → 서비스 `plant8-staging`
+→ 상세 화면 상단의 URL. 콘솔이 보여주는 값이 곧 `status.url`이다.
+
+**③ GCP Cloud Shell (브라우저, gcloud 이미 설치·인증됨)**
+
+콘솔 우상단 터미널 아이콘으로 Cloud Shell을 연다. 최초 부트스트랩
+(`scripts/bootstrap-gcp.sh`, `docs/OPERATIONS.md` §8)을 돌린 곳이라 이미 권한이 있다.
 
 ```bash
 gcloud run services describe plant8-staging \
-  --region "$GCP_REGION" --format='value(status.url)'
+  --region asia-northeast3 --format='value(status.url)'
 ```
 
-또는 배포 로그 마지막의 `SERVICE_URL=` 줄이 정본이다. Phase 1 스테이징 실측 주소는
-`.planning/phases/01-deploy-skeleton-login/01-07-DEPLOY-LOG.md`에 기록돼 있다 — D-03
-("실제 식별자를 적지 않는다")에 따라 이 문서에는 옮겨 적지 않는다.
+**④ 내 PC의 gcloud**
+
+`gcloud` 설치 + `gcloud auth login` 후 ③과 같은 명령. 이 프로젝트는 WIF를 쓰고 키 파일이
+없으므로(`docs/OPERATIONS.md` §8) 내 구글 계정에 권한이 있어야 한다. 셋업 비용이 가장 크다.
+
+**이미 기록된 값**: Phase 1 스테이징 실측 주소가
+`.planning/phases/01-deploy-skeleton-login/01-07-DEPLOY-LOG.md`에 있다. 서비스를 지우고
+다시 만들지 않았다면 주소는 그대로다. D-03("실제 식별자를 적지 않는다")에 따라 이 문서에는
+옮겨 적지 않는다.
 
 > ⚠️ **다른 주소로 열면 안 된다.** 프로젝트 번호로 만든 "결정적" 형식
 > (`https://plant8-<env>-<프로젝트 번호>.asia-northeast3.run.app`)은 이 프로젝트의 실제
 > 주소가 아니라 404다. 태그 리비전 URL로 열면 화면은 떠도 **로그인 POST가 better-auth의
-> Origin 검사에 걸려 403**이 난다. 북마크는 항상 `status.url`로 (`docs/OPERATIONS.md` §1).
+> Origin 검사에 걸려 403**이 난다 — 배포가 `BETTER_AUTH_URL`을 `status.url`로 고정하기
+> 때문이다. 북마크는 항상 `status.url`로 (`docs/OPERATIONS.md` §1).
+
+**staging에 Phase 3가 올라가는 시점**: `main` 병합 시 자동 배포된다(`deploy.yml` push
+트리거). 즉 이 브랜치를 머지하기 전에는 staging에 Phase 3 화면이 없다. 머지 전에 보려면
+경로 A(내 PC)를 쓴다.
 
 운영 환경 계정은 로컬 CLI가 아니라 GitHub Actions `account.yml`(Cloud Run Job
 `plant8-{env}-account`)로 만든다. 임시 비밀번호는 워크플로 로그에 한 번 남으므로 받는 즉시

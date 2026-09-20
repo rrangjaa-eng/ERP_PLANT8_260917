@@ -14,7 +14,7 @@ import { ALWAYS_ON_ACTION_TYPES, CORE_ACTION_TYPES, type CoreActionType } from "
 export const AUTH_LOCKOUT_THRESHOLD: SettingDef<number> = {
   key: "auth.lockout.threshold",
   kind: "simple",
-  schema: z.number().int().min(1),
+  schema: z.coerce.number().int().min(1),
   label: "로그인 잠금 임계값",
   hint: "이 횟수만큼 연속 실패하면 로그인을 잠급니다.",
   namespace: "로그인 잠금",
@@ -24,7 +24,7 @@ export const AUTH_LOCKOUT_THRESHOLD: SettingDef<number> = {
 export const AUTH_LOCKOUT_WINDOW_MINUTES: SettingDef<number> = {
   key: "auth.lockout.window_minutes",
   kind: "simple",
-  schema: z.number().int().min(1),
+  schema: z.coerce.number().int().min(1),
   label: "로그인 잠금 창(분)",
   hint: "이 시간(분) 안의 실패만 잠금 판정에 셉니다.",
   namespace: "로그인 잠금",
@@ -58,7 +58,7 @@ export const ACTION_LOG_OPTIONAL_TYPES: SettingDef<CoreActionType[]> = {
 export const TAX_VAT_RATE: SettingDef<number> = {
   key: "tax.vat.rate",
   kind: "historized",
-  schema: z.number().min(0).max(1),
+  schema: z.coerce.number().min(0).max(1),
   label: "부가세율",
   hint: "적용 시작일부터 이 비율로 부가세를 계산합니다.",
   namespace: "세율",
@@ -69,7 +69,7 @@ export const TAX_VAT_RATE: SettingDef<number> = {
 export const TAX_WITHHOLDING_OTHER_INCOME_RATE: SettingDef<number> = {
   key: "tax.withholding.other_income.rate",
   kind: "historized",
-  schema: z.number().min(0).max(1),
+  schema: z.coerce.number().min(0).max(1),
   label: "기타소득 원천징수율",
   hint: "기타소득 지급액에서 이 비율만큼 원천징수합니다.",
   namespace: "세율",
@@ -80,7 +80,7 @@ export const TAX_WITHHOLDING_OTHER_INCOME_RATE: SettingDef<number> = {
 export const TAX_WITHHOLDING_BUSINESS_INCOME_RATE: SettingDef<number> = {
   key: "tax.withholding.business_income.rate",
   kind: "historized",
-  schema: z.number().min(0).max(1),
+  schema: z.coerce.number().min(0).max(1),
   label: "사업소득 원천징수율",
   hint: "사업소득 지급액에서 이 비율만큼 원천징수합니다.",
   namespace: "세율",
@@ -91,7 +91,7 @@ export const TAX_WITHHOLDING_BUSINESS_INCOME_RATE: SettingDef<number> = {
 export const TAX_WITHHOLDING_OTHER_INCOME_EXEMPT_THRESHOLD: SettingDef<number> = {
   key: "tax.withholding.other_income.exempt_threshold",
   kind: "historized",
-  schema: z.number().int().min(0),
+  schema: z.coerce.number().int().min(0),
   label: "기타소득 원천징수 면제 기준(지급액)",
   hint: "지급액이 이 금액 이하이면 원천징수하지 않습니다.",
   namespace: "세율",
@@ -102,7 +102,7 @@ export const TAX_WITHHOLDING_OTHER_INCOME_EXEMPT_THRESHOLD: SettingDef<number> =
 export const TAX_COMPANY_BORNE_RATE: SettingDef<number> = {
   key: "tax.company_borne.rate",
   kind: "historized",
-  schema: z.number().min(0).max(1),
+  schema: z.coerce.number().min(0).max(1),
   label: "회사 대납 세율",
   hint: "회사가 대신 부담하는 세금의 비율입니다.",
   namespace: "세율",
@@ -155,7 +155,7 @@ export const TAX_BASIS_DATE_VAT: SettingDef<TaxBasisDate> = {
 export const TAX_ROUNDING_VAT_UNIT: SettingDef<number> = {
   key: "tax.rounding.vat_unit",
   kind: "simple",
-  schema: z.number().int().min(1),
+  schema: z.coerce.number().int().min(1),
   label: "부가세 절사 단위(원)",
   hint: "이 단위 미만은 절사합니다.",
   namespace: "절사",
@@ -166,7 +166,7 @@ export const TAX_ROUNDING_VAT_UNIT: SettingDef<number> = {
 export const TAX_ROUNDING_WITHHOLDING_UNIT: SettingDef<number> = {
   key: "tax.rounding.withholding_unit",
   kind: "simple",
-  schema: z.number().int().min(1),
+  schema: z.coerce.number().int().min(1),
   label: "원천징수 절사 단위(원)",
   hint: "이 단위 미만은 절사합니다.",
   namespace: "절사",
@@ -177,7 +177,7 @@ export const TAX_ROUNDING_WITHHOLDING_UNIT: SettingDef<number> = {
 export const TAX_ROUNDING_MIN_WITHHOLDING: SettingDef<number> = {
   key: "tax.rounding.min_withholding",
   kind: "simple",
-  schema: z.number().int().min(0),
+  schema: z.coerce.number().int().min(0),
   label: "최소 징수액(원)",
   hint: "이 금액 미만이면 원천징수하지 않습니다.",
   namespace: "절사",
@@ -223,7 +223,7 @@ export const PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE: SettingDef<boolean> =
 export const PNL_START_GATE_WEEKS_AFTER_CUTOVER: SettingDef<number> = {
   key: "pnl.start_gate.weeks_after_cutover",
   kind: "simple",
-  schema: z.number().int().min(0),
+  schema: z.coerce.number().int().min(0),
   label: "손익 착수 대기 주수",
   hint: "전환 후 이 주(week)만큼 지나야 프로젝트 손익 계산을 시작합니다.",
   namespace: "손익",

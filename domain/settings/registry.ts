@@ -185,6 +185,51 @@ export async function cancelHistorizedValue<T>(
   });
 }
 
+// 설정 화면(app/(app)/admin/settings)이 registry 타입 → §7-2 입력 매핑을
+// 계산하는 지점. zod 내부 클래스에 의존하지 않고 공개 런타임 속성(schema.type
+// 등)만 읽는다 — 화면 코드에 zod 타입 판정을 다시 흩뿌리지 않는다.
+export type SettingFieldDescriptor =
+  | { kind: "boolean" }
+  | { kind: "number" }
+  | { kind: "string" }
+  | { kind: "enum"; options: string[] }
+  | { kind: "multi-enum"; options: string[] };
+
+function zodTypeName(schema: unknown): string | undefined {
+  if (schema && typeof schema === "object" && "type" in schema) {
+    const type = schema.type;
+    return typeof type === "string" ? type : undefined;
+  }
+  return undefined;
+}
+
+function zodEnumOptions(schema: unknown): string[] {
+  if (schema && typeof schema === "object" && "options" in schema) {
+    const options = schema.options;
+    if (Array.isArray(options)) return options.filter((option): option is string => typeof option === "string");
+  }
+  return [];
+}
+
+function zodArrayElement(schema: unknown): unknown {
+  if (schema && typeof schema === "object" && "element" in schema) {
+    return schema.element;
+  }
+  return undefined;
+}
+
+export function describeSettingField(def: SettingDef<unknown>): SettingFieldDescriptor {
+  const typeName = zodTypeName(def.schema);
+  if (typeName === "boolean") return { kind: "boolean" };
+  if (typeName === "number") return { kind: "number" };
+  if (typeName === "enum") return { kind: "enum", options: zodEnumOptions(def.schema) };
+  if (typeName === "array") {
+    const element = zodArrayElement(def.schema);
+    if (zodTypeName(element) === "enum") return { kind: "multi-enum", options: zodEnumOptions(element) };
+  }
+  return { kind: "string" };
+}
+
 export type HistorizedEntry<T> = { effectiveFrom: string; value: T };
 
 // 이력 목록 화면(§7-14)이 쓰는 읽기 전용 조회 — 적용 시작일 내림차순.

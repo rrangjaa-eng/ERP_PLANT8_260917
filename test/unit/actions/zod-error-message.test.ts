@@ -32,8 +32,7 @@ describe("koreanZodErrorMessage", () => {
 
     // §8 카피 규칙 3: 원인 · 다음 행동을 가운뎃점으로 나눈 한 줄. 제약(0
     // 이상)은 운영자에게 의미가 있으므로 완전히 버리지 않는다.
-    expect(message).toContain("·");
-    expect(message).toContain("0");
+    expect(message).toBe("0 이상이어야 합니다 · 값을 확인해 주세요");
     expect(message.split("\n")).toHaveLength(1);
   });
 

@@ -65,6 +65,10 @@ const rawSchema = z.object({
   LOCKOUT_WINDOW_MINUTES: numberWithDefault(15),
   RATE_LIMIT_LOGIN_MAX: numberWithDefault(10),
   APP_DATA_KEY_v1: optionalString(),
+  // Phase 3(03-06): 키 회전용 두 번째 버전 키. 선택 문자열이라 값이 없어도
+  // 앱이 뜬다(Phase 1 계약 그대로) — lib/crypto.ts가 있으면 새 암호화에 이
+  // 버전을 쓰고, 없으면 v1만 쓴다. 회전 완료 후에만 v1을 지운다.
+  APP_DATA_KEY_v2: optionalString(),
   SMTP_HOST: optionalString(),
   SMTP_USER: optionalString(),
   SMTP_PASSWORD: optionalString(),
@@ -133,6 +137,7 @@ const ENV_KEYS = [
   "LOCKOUT_WINDOW_MINUTES",
   "RATE_LIMIT_LOGIN_MAX",
   "APP_DATA_KEY_v1",
+  "APP_DATA_KEY_v2",
   "SMTP_HOST",
   "SMTP_USER",
   "SMTP_PASSWORD",

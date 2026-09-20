@@ -1,4 +1,3 @@
-import { Button } from "@/ui/button/Button";
 import { StatusTag, type StatusTagKind } from "@/ui/status-tag/StatusTag";
 import type { NextTurnTag, NextTurnView } from "./build-next-turn-view";
 import styles from "./NextTurn.module.css";
@@ -8,6 +7,12 @@ import styles from "./NextTurn.module.css";
 // 끝낸 계산을 다시 하면 D-24가 고정한 계약이 두 곳에서 어긋날 수 있다).
 export type NextTurnProps = {
   view: NextTurnView;
+  /**
+   * 「더 보기 N건」이 갈 곳. WR-04: 없으면 남은 건수를 글자로만 보인다 —
+   * 아무 데도 가지 않는 버튼을 그리지 않는다. 실제 목록 화면이 생기는
+   * Phase 4부터 호출부가 넘긴다.
+   */
+  moreHref?: string;
 };
 
 // §7-4: 태그 순서 고정(막힘 → 오늘 → 결재 → 대기)의 색 대응 — 막힘 danger,
@@ -20,7 +25,7 @@ const TAG_KIND: Record<NextTurnTag, StatusTagKind> = {
   대기: "accent",
 };
 
-export function NextTurn({ view }: NextTurnProps) {
+export function NextTurn({ view, moreHref }: NextTurnProps) {
   if (!view.visible) {
     // §7-4: 항목이 0이면 블록 자체가 사라진다. 빈 상태 문구를 대신 넣지 않는다.
     return null;
@@ -43,18 +48,24 @@ export function NextTurn({ view }: NextTurnProps) {
             </span>
             <span className={styles.amt}>{item.amount.toLocaleString("ko-KR")}</span>
             <span className={styles.action}>
-              <Button type="button" variant="tertiary">
+              {/* WR-04: §10 — 페이지 이동은 <a>다. ListEmpty의 3차 링크와 같은 모양. */}
+              <a href={item.action.href} className={styles.tertiary}>
                 {item.action.label}
-              </Button>
+              </a>
             </span>
           </li>
         ))}
       </ul>
       {view.overflowCount > 0 ? (
         <div className={styles.more}>
-          <Button type="button" variant="tertiary">
-            더 보기 {view.overflowCount}건
-          </Button>
+          {moreHref ? (
+            <a href={moreHref} className={styles.tertiary}>
+              더 보기 {view.overflowCount}건
+            </a>
+          ) : (
+            // 갈 곳을 못 받았으면 건수만 알린다 — 죽은 버튼을 그리느니 글자가 낫다.
+            <span className={styles.moreText}>더 보기 {view.overflowCount}건</span>
+          )}
         </div>
       ) : null}
     </section>

@@ -93,3 +93,26 @@
     font-size: var(--fs-sm);
   }
 }
+
+/* WR-04 — 다음 한 수는 3차 버튼 모양의 링크(§7-1 3차 · §7-7 EMPTY 행과 같은 모양).
+   ListEmpty.module.css의 .tertiary와 같은 선언이다. */
+.tertiary {
+  border: 0;
+  border-bottom: var(--line-w) solid var(--accent);
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-base);
+  text-decoration: none;
+}
+
+.tertiary:hover {
+  border-bottom-width: var(--line-w-strong);
+}
+
+/* 갈 곳이 없을 때의 건수 — 행동이 아니므로 3차 링크 모양을 주지 않는다. */
+.moreText {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}

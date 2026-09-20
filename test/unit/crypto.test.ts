@@ -80,10 +80,11 @@ describe("lib/crypto", () => {
     const { encrypt, decrypt } = await loadCrypto();
     const stored = encrypt("변조테스트");
     const parts = stored.split(":");
-    const tampered = [...parts];
+    const lastPart = parts[3] ?? "";
     // ciphertext(마지막 조각)의 첫 글자를 다른 base64 글자로 바꾼다.
-    const lastChar = tampered[3][0];
-    tampered[3] = (lastChar === "A" ? "B" : "A") + tampered[3].slice(1);
+    const lastChar = lastPart[0];
+    const tamperedLastPart = (lastChar === "A" ? "B" : "A") + lastPart.slice(1);
+    const tampered = [...parts.slice(0, 3), tamperedLastPart];
     expect(() => decrypt(tampered.join(":"))).toThrow();
   });
 

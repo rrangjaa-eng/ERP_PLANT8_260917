@@ -63,10 +63,10 @@ export function encrypt(plaintext: string): string {
 
 export function decrypt(stored: string): string {
   const parts = stored.split(":");
-  if (parts.length !== 4) {
+  const [version, ivB64, tagB64, dataB64] = parts;
+  if (parts.length !== 4 || version === undefined || ivB64 === undefined || tagB64 === undefined || dataB64 === undefined) {
     throw new MalformedCiphertextError("암호문 형식이 올바르지 않습니다 — 조각 수가 맞지 않습니다.");
   }
-  const [version, ivB64, tagB64, dataB64] = parts;
   if (!isKeyVersion(version)) {
     throw new UnknownEncryptionKeyVersionError(`알 수 없는 키 버전입니다: ${version}`);
   }

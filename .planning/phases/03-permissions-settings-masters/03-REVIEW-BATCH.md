@@ -21,7 +21,7 @@
 | 2 | 03-02 | ✓ 완료 | `fa6d880` | ✓ | ✓ | ✓ 363 | ✓ 48 | ✓ 59 |
 | 3 | 03-03 | ✓ 완료 (+결함 2건 수정) | `3483fd8` | ✓ | ✓ | ✓ 381 | ✓ 103 | ✓ 63 |
 | 4 | 03-04 | ✓ 완료 (+결함 1건 수정) | `e113c7d` | ✓ | ✓ | ✓ 425 | ✓ 143 | ✓ 66 |
-| 5 | 03-05 | ○ 대기 | — | — | — | — | — | — |
+| 5 | 03-05 | ✓ 완료 (결함 4건 수정 중) | `e963f2d` | ✓ | ✓ | ✓ 438 | ✓ 421 | ✓ 70 |
 | 6 | 03-06 | ○ 대기 | — | — | — | — | — | — |
 | 7 | 03-07 | ○ 대기 | — | — | — | — | — | — |
 
@@ -376,5 +376,98 @@ lint · typecheck · build PASS. unit **425/425**(42파일, 신규 RED→GREEN �
 ### 남긴 것 (범위 밖 판단)
 
 `errorMessageOf`의 `저장하지 못했습니다 · ` 접두사는 그대로 뒀다. §7-2의 2단 필드 오류 스타일로 재설계하는 것은 이 결함 티켓의 범위가 아니라고 판단했다 — 타당하다.
+
+---
+
+## 웨이브 5 — 03-05 조직·사람·법인카드
+
+**소요 62분** · 요구사항 MAST-02, MAST-03, ADMN-08 · 커밋 4건
+
+| SHA | 내용 |
+|---|---|
+| `37ec3c4` | feat(03-05): Task 1 — 조직·법인카드 스키마, `teamAtDate`, 마이그레이션 **0006** |
+| `ba2f89b` | feat(03-05): Task 2 — 사람 관리, 등록 한 흐름에서 계정·초기 비밀번호까지 |
+| `e17d6bd` | feat(03-05): Task 3 — 법인카드 관리 화면 |
+| `e963f2d` | docs(03-05): complete plan (SUMMARY.md) |
+
+### 게이트
+
+lint · typecheck · build PASS · `lint:sql` 7파일 0 issues. unit **438** · integration **421**(19파일) · e2e **70**. CI(`e963f2d`) ✓.
+
+integration이 143 → 421로 뛴 것은 누수 스캔 생성기에 새 DTO·액션이 물리면서 생성 케이스가 곱으로 늘어난 결과다 — **오케스트레이터가 직접 `pnpm test:integration`을 돌려 19파일 421테스트 통과를 확인했다.**
+
+오케스트레이터 독립 확인: 테스트 약화 0건 · `.squawk.toml`·`package.json`·eslint 설정 무변경.
+
+### TDD — 부분 준수 (웨이브 4보다 개선)
+
+순수 함수 두 개는 **RED를 실제로 확인**했다: `teamAtDate`·`cardOwnerKind`를 모듈이 없는 상태에서 테스트 실행 → "Cannot find package" 실패 확인 → 구현. 복합 흐름(`registerPerson`·화면)은 RED 선행을 하지 않았고 그렇다고 정직하게 보고했다.
+
+### 주목할 발견 — 순환 import가 권한 검사를 거짓으로 만들었다
+
+`domain/permissions/roles.ts` → `domain/action-log/record.ts` → `domain/viewer.ts` → 다시 `roles.ts`로 도는 고리가 **Vitest의 vite-node에서 `SYSTEM_VIEWER`의 live binding을 깨뜨렸다.** 실제 DB 권한 검사가 `true`여야 할 자리에서 `false`를 반환했고, **vitest 밖에서는 재현되지 않는다**. 웨이브 4가 `record.ts`↔`registry.ts`에서 쓴 동적 import 패턴으로 풀었다.
+
+같은 구조의 고리가 두 웨이브 연속 나왔다 — `domain/` 안에서 `record.ts`·`viewer.ts`·`registry.ts`·`roles.ts`가 서로를 끌어당기는 형태다. Phase 4 이후에 또 나올 수 있으니 사람이 구조를 한 번 볼 만하다.
+
+### 그 밖의 계획 범위 밖 수정
+
+- `plant8/no-row-type-escape`가 `listRoles`/`createRole`의 `RoleRow` 반환을 잡아 `RoleDto` + `role.value` 정보 항목 추가 (웨이브 3이 만든 lint 규칙이 실제로 일함)
+- Playwright `getByLabel("팀")` 모호성 — 중첩 `<label>{text}<select>` 구조에서 Chromium의 접근 가능 이름 계산이 옵션 텍스트("팀장"에 "팀" 포함)를 흡수했다. 이 플랜의 새 폼을 전부 `<label htmlFor>` + `<select id>`로 전환
+- `eslint-plugin-react-hooks` 불변성 규칙이 서버 컴포넌트 본문의 `let` 재할당을 잡아 헬퍼 함수로 추출
+
+### 실행자가 판단한 것
+
+1. **자기 계급 변경을 양방향 전부 차단** — 순위 컬럼이 없어(D-33) "강등"을 계산할 수 없다. `matrix.ts`의 자기 잠금 방지 선례를 따라 더 안전한 전면 차단을 택했다
+2. `PersonDto.roleName`/`currentTeamName`을 행마다 개별 해석(배치 아님) — 10~30명 규모에서 문제없다는 YAGNI 판단
+3. `updateCorpCardOwner`는 `setCorpCardActive`와 달리 멱등성 검사 없이 항상 `recordAction`을 부른다
+
+### ⚠ DOM 감사 결과 — 결함 4건 발견, 수정 중
+
+스크린샷 9장(`screens/wave-5/`)과 함께 DOM 실측 감사를 돌렸다.
+
+**1순위 (정보 노출) — 법인카드 중복 등록 시 원본 SQL INSERT 문 전체가 화면에 노출된다**
+
+같은 발급사+뒤4자리로 재등록하면:
+```
+Failed query: insert into "corp_cards" ("id", "issuer", ... "holder_user_id", ...)
+values (default, $1, $2, ...) returning ...
+params: E2E웨이브5카드사-..., 8191, 중복카드웨이브5, personal, <내부 user id>, ...
+```
+
+**구조적 원인이 핵심이다.** `lib/actions/client.ts`의 `handleServerError`가
+```ts
+if (e instanceof ZodError) return koreanZodErrorMessage(e);
+return e instanceof Error ? e.message : "서버 오류가 발생했습니다.";
+```
+즉 **denylist**다 — 명시적으로 처리하지 않은 모든 오류 유형이 원본 `message`를 그대로 브라우저에 흘린다. Drizzle은 SQL 전문과 바인드 파라미터를 `message`에 담는다.
+
+웨이브 4의 Zod 누수 수정이 ZodError 분기만 추가해 **한 갈래만 막고 이 종류를 살려뒀다.** 수정 에이전트가 보고서에 그 폴백을 명시했는데 내가 함의를 놓쳤다 — 내 판단 착오다. 이번엔 allowlist로 뒤집어 구조를 고친다.
+
+**2순위 (접근성)** — `/admin/people/org`의 본부·팀 이름 변경 인라인 입력 4개, `/admin/people/roles`의 계급 이름 변경 입력 5개 전부 `label`·`aria-label`·`aria-labelledby`가 **전혀 없다**. 스크린 리더 사용자는 이 입력이 무엇인지 알 수 없다.
+
+**3순위 (반응형)** — 375px에서 가로 스크롤 발생: org `scrollWidth` 399 vs 375, roles 416 vs 375. 원인 특정됨: rename `<input>`이 `styles.select`를 쓰는데 `.select`에 `width`가 없고, `<select>`와 달리 flex 부모가 없어 브라우저 기본 폭(`size=20`)이 최소 콘텐츠 폭이 된다. `roles-375`의 머리글 「시드 여부」「정렬」「동작」이 한 글자씩 세로로 쪼개지는 것도 같은 원인.
+
+**4순위** — `.tertiary` 버튼이 `height: auto; padding: 0`이라 좁은 셀에서 텍스트가 꺾이면 형태가 무너진다(「비활성화」가 19×78로 렌더). 터치 타깃 미달도 함께: 「상세」 13×42, 「숨김 포함」 43×19.
+
+### §7-7 다섯 상태 — 구조상 도달 불가 항목이 또 나왔다
+
+- corp-cards: EMPTY ✓(실측) · POPULATED ✓
+- people: **EMPTY 도달 불가** — `listPeople`이 뷰어 자신을 포함해 전체를 나열하므로, 화면을 보려면 최소 관리자 1명이 로그인해 있어야 하고 그 자신이 항상 1행을 채운다
+- org·roles: **EMPTY 도달 불가** — 시드가 본부 2·팀 2를 항상 넣고 `SEED_ROLES` 5종은 마이그레이션으로 들어간다 (DB 실측 org_units=2/teams=2/roles=5 일치)
+- 전 화면 LOADING·PARTIAL: 서버 컴포넌트라 클라이언트 스켈레톤 자체가 없다 — 결함이 아니라 구조
+
+웨이브 4의 설정 화면과 같은 패턴이 세 번째다. §7-7이 정의한 다섯 상태 중 EMPTY·LOADING이 이 제품의 관리자 화면에서 **구조적으로 발동하지 않는다**는 뜻이라, 계약 자체를 손볼지 사람이 판단할 만하다.
+
+### 통과 항목
+
+- `word-break: keep-all` + `overflow-wrap: anywhere` ✓ — computed style 실측, 공백 없는 긴 혼합 문자열도 정상 줄바꿈
+- people 등록 폼·상세·corp-cards 등록 폼의 라벨 짝 ✓ 전부 정상
+- BottomTabs 터치 타깃 ✓ 91×44 / 103×44
+- PC 40px 버튼들은 SYSTEM.md 187·751행이 명시한 의도된 값 — 결함 아님
+
+### 사람이 봐야 할 것 (이번 웨이브 범위 밖)
+
+**상단 바 사용자 메뉴 버튼이 56×19로 44px에 크게 미달한다.** 웨이브 5 화면 5개 전부에서 재현되지만 원인은 `ui/shell/TopBar`(이전 페이즈 산출물)라 손대지 않았다.
+
+스크린샷의 빨간 "1 Issue" 배지는 앱 결함이 아니다 — Playwright의 CDP가 입력에 `style="caret-color:transparent"`를 인라인 주입해 생기는 하이드레이션 경고이고, 앱 코드에 그런 곳이 없음을 grep으로 확인했다(테스트 환경 노이즈).
 
 ---

@@ -21,3 +21,10 @@ registerAction({
   action: "write",
   dtoName: "CodeItemDto",
 });
+
+registerAction({
+  name: "setEvidenceTypeTaxRuleAction",
+  menu: "admin.code-tables",
+  action: "write",
+  dtoName: "CodeItemDto",
+});

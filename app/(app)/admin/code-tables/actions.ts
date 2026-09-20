@@ -3,7 +3,8 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
-import { createCodeItem, setCodeItemActive } from "@/domain/code-tables";
+import { createCodeItem, setCodeItemActive, setEvidenceTypeTaxRule } from "@/domain/code-tables";
+import { taxRuleSchema } from "@/domain/code-tables/tax-rule";
 import "./actions.registry";
 
 // MAST-04: 두 액션이 domain/code-tables만 부르고 리포지토리·db 계층을 직접
@@ -28,5 +29,15 @@ export const setCodeItemActiveAction = authedActionClient
   .schema(z.object({ id: z.string().min(1), active: z.boolean() }))
   .action(async ({ parsedInput, ctx }) => {
     await setCodeItemActive(ctx.viewer, parsedInput.id, parsedInput.active);
+    revalidatePath("/admin/code-tables");
+  });
+
+// 03-06: 증빙 종류 항목의 세금 규칙 저장. taxRuleSchema를 그대로 액션
+// 스키마로 재사용한다(domain의 검증 계약과 화면의 입력 검증이 갈라지지
+// 않는다). domain이 evidence_type 항목이 아니면 거부한다.
+export const setEvidenceTypeTaxRuleAction = authedActionClient
+  .schema(z.object({ id: z.string().min(1), taxRule: taxRuleSchema }))
+  .action(async ({ parsedInput, ctx }) => {
+    await setEvidenceTypeTaxRule(ctx.viewer, parsedInput.id, parsedInput.taxRule);
     revalidatePath("/admin/code-tables");
   });

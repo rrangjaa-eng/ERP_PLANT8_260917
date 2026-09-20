@@ -133,10 +133,19 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
 
       const tableBox = await page.locator("table").first().boundingBox();
       if (!tableBox) throw new Error("표 bounding box를 가져오지 못했다");
+      // .wrap이 실제로 흡수할 수 있는 세로 스크롤량을 먼저 재서, 그 범위
+      // 안에서만 휠을 굴린다 — 범위를 넘겨 굴리면 브라우저가 남는 양을
+      // 문서로 체이닝해(정상 동작) 머리글이 아주 조금(수십 px) 같이
+      // 움직이는데, 이건 결함이 아니라 스크롤 체이닝의 정상 부작용이라
+      // 오탐을 만든다. .wrap이 세로로 전혀 넘치지 않는 결함 상태(수정
+      // 전)에서는 이 값이 0에 가까워 아래에서 900px로 폴백한다 — 그래야
+      // 결함이 재현했던 전량 문서 체이닝을 그대로 다시 만든다.
+      const wrapMaxScroll = await wrap.evaluate((el) => el.scrollHeight - el.clientHeight);
+      const deltaY = wrapMaxScroll > 150 ? Math.min(wrapMaxScroll - 50, 900) : 900;
       // 실제 사용자 스크롤과 같은 경로(스크롤 체이닝) — .wrap이 자기 축을
       // 갖든 문서가 스크롤되든 구현을 가정하지 않는다.
       await page.mouse.move(tableBox.x + tableBox.width / 2, tableBox.y + 200);
-      await page.mouse.wheel(0, 900);
+      await page.mouse.wheel(0, deltaY);
 
       // sanity: 무언가 실제로 스크롤됐는지 먼저 확인한다(문서 스크롤 +
       // .wrap 내부 스크롤 합산) — 안 그러면 아래 위치 불변 단언이
@@ -160,9 +169,12 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
       expect(Math.abs(afterBox.y - beforeBox.y)).toBeLessThanOrEqual(2);
 
       // 가로 스크롤(이미 정상 동작하던 축)이 이 수정으로 회귀하지 않았는지
-      // 같은 자리에서 이어서 확인한다.
+      // 같은 자리에서 이어서 확인한다. 세로와 같은 이유로 .wrap이 흡수할 수
+      // 있는 범위 안에서만 굴려 문서 체이닝을 만들지 않는다.
       const beforeScrollLeft = await wrap.evaluate((el) => el.scrollLeft);
-      await page.mouse.wheel(900, 0);
+      const wrapMaxScrollLeft = await wrap.evaluate((el) => el.scrollWidth - el.clientWidth);
+      const deltaX = wrapMaxScrollLeft > 150 ? Math.min(wrapMaxScrollLeft - 50, 900) : 900;
+      await page.mouse.wheel(deltaX, 0);
       await expect.poll(async () => wrap.evaluate((el) => el.scrollLeft)).toBeGreaterThan(beforeScrollLeft + 50);
 
       const afterXBox = await cornerHeader.boundingBox();

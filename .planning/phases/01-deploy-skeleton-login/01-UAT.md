@@ -1,19 +1,14 @@
 ---
-status: testing
+status: partial
 phase: 01-deploy-skeleton-login
 source: [01-01-SUMMARY.md, 01-02-SUMMARY.md, 01-03-SUMMARY.md, 01-04-SUMMARY.md, 01-05-SUMMARY.md, 01-06-SUMMARY.md, 01-07-SUMMARY.md, 01-08-SUMMARY.md]
 started: 2026-09-20T08:32:45Z
-updated: 2026-09-20T08:48:32Z
+updated: 2026-09-20T08:55:55Z
 ---
 
 ## Current Test
 
-number: 3
-name: Cloud Run 비용 ≈ 0 확인 (01-05 D5)
-expected: |
-  min-instances 0 전제라 유휴 시 과금이 거의 없어야 한다. GCP 청구서(또는 결제
-  대시보드)에서 Cloud Run·Cloud SQL 실제 금액을 본다. 코드로는 증명 불가 — 청구서 의존.
-awaiting: user response
+[testing paused — 6 items outstanding]
 
 ## Tests
 
@@ -31,7 +26,9 @@ evidence: "Actions ci.yml 43회 실행, 최신 run #43(35498414997) success. 잡
 
 ### 3. Cloud Run 비용 ≈ 0 확인 (01-05 D5)
 expected: min-instances 0 전제라 유휴 시 과금이 거의 없어야 한다. GCP 청구서(또는 결제 대시보드)에서 Cloud Run·Cloud SQL 실제 금액을 본다. 코드로는 증명 불가 — 청구서 의존.
-result: [pending]
+result: blocked
+blocked_by: third-party
+reason: "GCP 청구서·결제 대시보드 접근 필요. WINDOWS.md에 unrun-verify로 등록(2026-09-20)"
 
 ### 4. 실제 GCP 배포 경로 재확인 (01-06 D10)
 expected: 01-06은 가짜 gcloud/docker 심으로만 검증했고, 실제 gcloud 출력 형태(status.url 호스트, revisions describe의 image 필드) 재확인은 01-07의 몫이었다. 01-07·01-08 DEPLOY-LOG에 실측이 기록됐는지, 그 내용이 현재 스크립트와 일치하는지 확인한다.
@@ -41,23 +38,33 @@ evidence: "01-07·01-08이 남긴 실측 3건이 현재 스크립트에 그대�
 
 ### 5. 프로덕션 세션 유지 — 브라우저 종료 후 재진입 (VERIFICATION human 1)
 expected: 프로덕션 URL에서 관리자로 로그인한 뒤 브라우저를 완전히 종료하고 다시 열어 /account에 바로 들어가진다. 실제 Cloud Run 도메인에서 쿠키 속성(Secure/SameSite/만료 30일)이 같게 내려오는지는 브라우저로만 확인 가능 — 프로브는 /login에서 Set-Cookie를 못 봐 닫지 못했다.
-result: [pending]
+result: blocked
+blocked_by: physical-device
+reason: "실제 브라우저에서 프로덕션 로그인 후 완전 종료 → 재진입이 필요. 실행자 세션은 *.run.app에 프록시로 막혀 있다. WINDOWS.md 등록"
 
 ### 6. 프로덕션 /admin/system-status 관리자 렌더 + 백업 절 (VERIFICATION human 2)
 expected: 프로덕션에서 관리자로 /admin/system-status를 열면 배포 SHA(ed2fbc56)·DB 커넥션 n / 25·마지막 백업 절이 보인다. 2026-09-19 18:00 UTC 첫 자동 백업 이후 다시 열면 백업이 '성공 + 시각'으로 바뀐다. 런타임 SA의 roles/cloudsql.viewer 실부여와 Cloud SQL Admin API 호출 경로가 프로덕션에서 처음 관찰된다.
-result: [pending]
+result: blocked
+blocked_by: physical-device
+reason: "프로덕션 관리자 로그인 + 브라우저 렌더 관찰 필요, 첫 자동 백업 이후 재확인도 필요. WINDOWS.md 등록"
 
 ### 7. 백업 실패 경보 필터·메일 전달 (VERIFICATION human 3)
 expected: 백업 실패 경보 정책의 필터가 실제 이벤트를 잡고 이메일이 배달된다. 정책 존재는 2026-09-18 실측으로 확인됐지만, 실패 이벤트 없이는 필터 정확성과 메일 전달을 프로그램으로 검증할 수 없다.
-result: [pending]
+result: blocked
+blocked_by: third-party
+reason: "백업 실패 이벤트가 실제로 발생해야 필터·메일 도달을 판정할 수 있다. WINDOWS.md 등록"
 
 ### 8. 조직 정책 원문·런타임 SA 역할 확인 (VERIFICATION human 4)
 expected: Owner 계정으로 조직 정책 4건의 원문과 런타임 SA의 역할 목록을 직접 조회해 실효적 차단이 없음을 원문으로 확인한다. gha-deployer SA에는 orgpolicy.policy.get·resourcemanager.projects.getIamPolicy가 없어 실행자가 조회할 수 없었다(PERMISSION_DENIED).
-result: [pending]
+result: blocked
+blocked_by: third-party
+reason: "GCP Owner 계정 권한 필요 — gha-deployer SA는 orgpolicy.policy.get·getIamPolicy 미보유(PERMISSION_DENIED). WINDOWS.md 등록"
 
 ### 9. 임시 프로브 브랜치 4개 삭제 (01-08 User Setup Required)
 expected: origin의 `probe-result`, `probe-result2`, `guard-probe-result`, `prod-verify-result` 네 브랜치가 지워져 있다. 2026-09-20 확인 결과 네 개 모두 origin에 그대로 남아 있다 — 실행자 세션에서는 ref 삭제가 막혀 사용자가 지워야 한다.
-result: [pending]
+result: blocked
+blocked_by: other
+reason: "git push --delete가 이 세션의 에그레스 프록시에서 끊긴다(일반 push는 정상). 정책 거부로 판단해 우회하지 않았다 — 사용자가 GitHub에서 삭제. WINDOWS.md 등록"
 
 ### 10. 픽스처 계정으로 /login에서 이메일+비밀번호를 제출하면 /account로 이동하고 이메일이 보인다
 expected: 픽스처 계정으로 /login에서 이메일+비밀번호를 제출하면 /account로 이동하고 이메일이 보인다
@@ -292,9 +299,9 @@ coverage_id: D9
 total: 47
 passed: 41
 issues: 0
-pending: 6
+pending: 0
 skipped: 0
-blocked: 0
+blocked: 6
 
 ## Gaps
 

@@ -17,44 +17,57 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
     // 같은 DB를 공유하므로, 기존 계급(role-pm)의 권한을 여기서 바꾸면
     // code-tables.spec.ts의 "기획 PM은 404" 가정이 실행 순서·타이밍에 따라
     // 깨진다. 이 테스트 전용 임시 계급을 만들어 완전히 격리한다.
+    //
+    // 03-04: 이름을 매 실행 고유(UUID 접미사)로 만들고 finally에서 보관
+    // 처리한다 — 원래 정적 이름("E2E 임시 계급")을 보관하지 않으면
+    // roles_name_unique가 다음 로컬 실행에서 충돌한다(멱등하지 않은 사전
+    // 존재 결함, 03-03 산출 — 공유 계급은 건드리지 않고 이 스펙만 고친다).
     const tempRoleId = `role-e2e-perm-${randomUUID()}`;
-    await insertRole(SYSTEM_VIEWER, { id: tempRoleId, name: "E2E 임시 계급", sortOrder: 99 });
+    const tempRoleName = `E2E 임시 계급 ${tempRoleId.slice(-12)}`;
+    await insertRole(SYSTEM_VIEWER, { id: tempRoleId, name: tempRoleName, sortOrder: 99 });
 
-    const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+    try {
+      const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
 
-    await page.goto("/login");
-    await page.getByLabel("이메일").fill(admin.email);
-    await page.getByLabel("비밀번호").fill(admin.password);
-    await page.getByRole("button", { name: "로그인" }).click();
-    await expect(page).toHaveURL(/\/account$/);
+      await page.goto("/login");
+      await page.getByLabel("이메일").fill(admin.email);
+      await page.getByLabel("비밀번호").fill(admin.password);
+      await page.getByRole("button", { name: "로그인" }).click();
+      await expect(page).toHaveURL(/\/account$/);
 
-    const response = await page.goto("/admin/permissions");
-    expect(response?.status()).toBe(200);
+      const response = await page.goto("/admin/permissions");
+      expect(response?.status()).toBe(200);
 
-    const cell = page.getByRole("checkbox", { name: "E2E 임시 계급 · 코드표 · 보기" });
-    await expect(cell).not.toBeChecked();
+      const cell = page.getByRole("checkbox", { name: `${tempRoleName} · 코드표 · 보기` });
+      await expect(cell).not.toBeChecked();
 
-    // 「일괄 저장」 버튼이 없다 — 셀 하나가 곧 저장이다(성공 기준 2).
-    await expect(page.getByRole("button", { name: /일괄 저장/ })).toHaveCount(0);
+      // 「일괄 저장」 버튼이 없다 — 셀 하나가 곧 저장이다(성공 기준 2).
+      await expect(page.getByRole("button", { name: /일괄 저장/ })).toHaveCount(0);
 
-    await cell.check();
-    // 저장 버튼을 누르지 않고 상태가 켜진 것을 확인한다 — 클릭 자체가 저장이다.
-    await expect(cell).toBeChecked();
+      await cell.check();
+      // 저장 버튼을 누르지 않고 상태가 켜진 것을 확인한다 — 클릭 자체가 저장이다.
+      await expect(cell).toBeChecked();
 
-    // 같은 브라우저 컨텍스트를 버리고 방금 켠 계급의 픽스처로 로그인한다.
-    const tempUser = await createFixtureUser({ roleId: tempRoleId });
-    const tempContext = await browser.newContext();
-    const tempPage = await tempContext.newPage();
-    await tempPage.goto("/login");
-    await tempPage.getByLabel("이메일").fill(tempUser.email);
-    await tempPage.getByLabel("비밀번호").fill(tempUser.password);
-    await tempPage.getByRole("button", { name: "로그인" }).click();
-    await expect(tempPage).toHaveURL(/\/account$/);
+      // 같은 브라우저 컨텍스트를 버리고 방금 켠 계급의 픽스처로 로그인한다.
+      const tempUser = await createFixtureUser({ roleId: tempRoleId });
+      const tempContext = await browser.newContext();
+      const tempPage = await tempContext.newPage();
+      await tempPage.goto("/login");
+      await tempPage.getByLabel("이메일").fill(tempUser.email);
+      await tempPage.getByLabel("비밀번호").fill(tempUser.password);
+      await tempPage.getByRole("button", { name: "로그인" }).click();
+      await expect(tempPage).toHaveURL(/\/account$/);
 
-    const tempResponse = await tempPage.goto("/admin/code-tables");
-    expect(tempResponse?.status()).toBe(200);
+      const tempResponse = await tempPage.goto("/admin/code-tables");
+      expect(tempResponse?.status()).toBe(200);
 
-    await tempContext.close();
+      await tempContext.close();
+    } finally {
+      // 하드 DELETE 금지 — 보관 처리해 다음 로컬 실행에서 이름 UNIQUE
+      // 충돌을 만들지 않는다. listRoles()는 기본적으로 보관된 계급을
+      // 제외하므로 다른 스펙에 영향을 주지 않는다.
+      await setRoleArchived(SYSTEM_VIEWER, tempRoleId, true);
+    }
   });
 
   test("권한 없는 계급은 권한표 화면 자체에서 404를 받는다", async ({ page }) => {

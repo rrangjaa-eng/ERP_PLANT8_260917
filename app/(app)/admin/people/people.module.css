@@ -1,0 +1,71 @@
+/* SYSTEM.md §6-1 목록 · §6-3 폼 템플릿(D-39). 색·서체·radius는 tokens.css
+   변수만 쓴다(D-20). 간격 리터럴은 허용된다(02-02 결정). */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  text-align: left;
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+}
+
+.table td {
+  min-height: var(--row-min);
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  font-size: var(--fs-base);
+  border-bottom: var(--line-w) solid var(--line);
+}
+
+.table tbody tr:hover td {
+  background: var(--surface);
+}
+
+.selectLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  margin: var(--s-2) 0;
+}
+
+.select {
+  height: var(--control-h);
+  border: var(--line-w) solid var(--line-ui);
+  background: var(--bg);
+  padding: 0 var(--s-2);
+  font-size: var(--fs-base);
+}
+
+.registeredPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-4);
+  background: var(--surface);
+  border: var(--line-w) solid var(--line-ui);
+}
+
+.registeredLabel {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.tempPassword {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  user-select: all;
+}
+
+.registeredHint {
+  font-size: var(--fs-sm);
+  color: var(--danger);
+}

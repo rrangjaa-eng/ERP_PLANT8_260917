@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { log } from "@/lib/log";
 import type { Viewer } from "@/domain/viewer";
+import { can } from "@/domain/permissions/can";
 import { setPasswordTemporary } from "@/repositories/users";
 
 // D-09: 8자 이상 + 흔한 비밀번호 목록 차단뿐. 문자 조합 강제 없음.
@@ -93,7 +94,7 @@ export function validateNewPassword(pw: string): void {
 // 실제 구현 확인 후 정정, 01-02의 domain/auth/accounts.ts resetPassword가 이미 같은
 // 메서드를 쓰고 있다).
 export async function revokeAllSessions(viewer: Viewer, userId: string): Promise<void> {
-  if (viewer.id !== userId && !viewer.isAdmin) {
+  if (viewer.id !== userId && !(await can(viewer, "admin.people", "write"))) {
     throw new Error("세션을 만료할 권한이 없습니다.");
   }
   const ctx = await auth.$context;

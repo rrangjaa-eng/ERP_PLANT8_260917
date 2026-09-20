@@ -4,9 +4,13 @@ import { describe, expect, it } from "vitest";
 import { roleMenu, type RoleMenuViewer } from "../../../ui/shell/role-menu";
 
 // D-23의 계약 고정: 역할 → (상단 바 메뉴, 폰 하단 탭, 계정 그룹, 시스템 상태 진입점)
-// 매핑이 순수 함수 한 곳에 데이터로 있는지를 검증한다. 계정 그룹 항목 이름은
-// SYSTEM.md §6-0/§7-8에서 읽어 비교한다 — 문서가 바뀌면(예: 02-01 체크포인트 H가
-// 나중에 바뀌면) 이 파일을 고치지 않아도 실패로 드러난다(플랜 지시).
+// 매핑이 순수 함수 한 곳에 데이터로 있는지를 검증한다. 계정 그룹 항목 이름과 폰 하단
+// 탭은 SYSTEM.md §6-0/§7-8에서 읽어 비교한다 — 문서가 바뀌면 이 파일을 고치지
+// 않아도 실패로 드러난다(플랜 지시).
+//
+// D-36(03-02): 계급 5종으로 교체됐다. 시스템 상태 진입점 판정은 이제 계급 이름이
+// 아니라 app/(app)/layout.tsx가 can()으로 미리 계산한 allowedMenus를 읽는다 —
+// 이 파일은 그 계산 결과를 흉내낸 데이터만 넘긴다(ui는 domain을 import할 수 없다).
 
 function readSystemDoc(): string {
   return readFileSync(resolve(process.cwd(), "docs", "design", "SYSTEM.md"), "utf8");
@@ -45,63 +49,74 @@ function expectedBottomTabRow(doc: string, role: string): string[] {
     .split("|")
     .map((cell) => cell.trim())
     .filter((cell) => cell.length > 0);
-  // cells[0]은 역할 이름, 나머지 넷이 탭 1~4다.
+  // cells[0]은 계급 이름, 나머지 넷이 탭 1~4다.
   return cells.slice(1);
 }
 
-const ADMIN: RoleMenuViewer = { isAdmin: true };
-const EMPLOYEE: RoleMenuViewer = { isAdmin: false };
+// SYSTEM.md §6-0 표의 계급 이름(한글) ↔ domain/permissions/roles.ts SEED_ROLES 식별자.
+// ui/shell/role-menu.test.ts는 domain을 import할 수 없어(D-26) 이 매핑을 여기 복제한다
+// — 03-01-SUMMARY.md·domain/permissions/roles.ts가 정본이다.
+const SEED_ROLE_NAMES: ReadonlyArray<[roleId: string, name: string]> = [
+  ["role-ceo", "대표"],
+  ["role-division-head", "본부 책임자"],
+  ["role-team-lead", "팀장"],
+  ["role-pm", "기획 PM"],
+  ["role-sysadmin", "시스템 관리자"],
+];
+
+const SYSADMIN_ROLE_ID = "role-sysadmin";
+const DEFAULT_ROLE_ID = "role-pm";
+
+const ADMIN: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ["admin.system-status"] };
+const EMPLOYEE: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: [] };
 
 describe("roleMenu — 상단 바 1차 메뉴 (D-22)", () => {
-  it("관리자 입력이면 1차 메뉴 5개가 전부 들어 있다", () => {
+  it("시스템 관리자 입력이면 1차 메뉴 5개가 전부 들어 있다", () => {
     expect(roleMenu(ADMIN).topBarMenu).toHaveLength(5);
   });
 
-  it("직원 입력이면 1차 메뉴 5개가 전부 들어 있다 — 대응 화면 유무와 무관하다", () => {
+  it("기획 PM 입력이면 1차 메뉴 5개가 전부 들어 있다 — 대응 화면 유무와 무관하다", () => {
     expect(roleMenu(EMPLOYEE).topBarMenu).toHaveLength(5);
   });
 
-  it("관리자·직원의 상단 바 메뉴 결과가 같다(Phase 2는 역할별로 다르지 않다)", () => {
+  it("두 계급의 상단 바 메뉴 결과가 같다(허용 메뉴와 무관하다, D-22)", () => {
     expect(roleMenu(EMPLOYEE).topBarMenu).toEqual(roleMenu(ADMIN).topBarMenu);
   });
 });
 
-describe("roleMenu — 시스템 상태 진입점 (D-17)", () => {
-  it("관리자 입력이면 시스템 상태 진입점이 있다", () => {
+describe("roleMenu — 시스템 상태 진입점 (D-17, D-36 이후 allowedMenus 기준)", () => {
+  it("allowedMenus에 admin.system-status가 있으면 시스템 상태 진입점이 있다", () => {
     expect(roleMenu(ADMIN).systemStatus).not.toBeNull();
   });
 
-  it("직원 입력이면 시스템 상태 진입점이 없다", () => {
+  it("allowedMenus에 admin.system-status가 없으면 시스템 상태 진입점이 없다", () => {
     expect(roleMenu(EMPLOYEE).systemStatus).toBeNull();
+  });
+
+  it("계급 이름이 아니라 allowedMenus만 본다 — 시스템 관리자라도 허용 목록이 비면 진입점이 없다", () => {
+    const sysadminWithoutPermission: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [] };
+    expect(roleMenu(sysadminWithoutPermission).systemStatus).toBeNull();
   });
 });
 
-describe("roleMenu — 폰 하단 탭 (SYSTEM.md §6-0 표)", () => {
-  it("결과가 정확히 4개이고 4번째는 항상 「더보기」다(관리자)", () => {
-    const tabs = roleMenu(ADMIN).bottomTabs;
+describe("roleMenu — 폰 하단 탭 (SYSTEM.md §6-0 표, 계급 5종)", () => {
+  it.each(SEED_ROLE_NAMES)("%s(%s) 탭이 정확히 4개이고 4번째는 「더보기」다", (roleId) => {
+    const tabs = roleMenu({ roleId, allowedMenus: [] }).bottomTabs;
     expect(tabs).toHaveLength(4);
     expect(tabs[3]).toEqual({ kind: "more", label: "더보기" });
   });
 
-  it("결과가 정확히 4개이고 4번째는 항상 「더보기」다(직원)", () => {
-    const tabs = roleMenu(EMPLOYEE).bottomTabs;
-    expect(tabs).toHaveLength(4);
-    expect(tabs[3]).toEqual({ kind: "more", label: "더보기" });
+  it.each(SEED_ROLE_NAMES)("%s(%s) 탭 라벨이 SYSTEM.md 표의 그 행과 원소 단위로 같다", (roleId, name) => {
+    const expected = expectedBottomTabRow(SYSTEM, name);
+    const actual = roleMenu({ roleId, allowedMenus: [] }).bottomTabs.map((tab) => tab.label);
+    expect(actual).toEqual(expected);
   });
 
-  it("관리자 탭 라벨이 SYSTEM.md 표의 「관리자」 행과 같다", () => {
-    const expected = expectedBottomTabRow(SYSTEM, "관리자");
-    expect(roleMenu(ADMIN).bottomTabs.map((tab) => tab.label)).toEqual(expected);
-  });
-
-  it("직원 탭 라벨이 SYSTEM.md 표의 「직원」 행과 같다", () => {
-    const expected = expectedBottomTabRow(SYSTEM, "직원");
-    expect(roleMenu(EMPLOYEE).bottomTabs.map((tab) => tab.label)).toEqual(expected);
-  });
-
-  it("탭 1은 §6-0 표가 그 역할에 지정한 첫 화면이다(관리자·직원 모두 「내 차례」)", () => {
-    expect(roleMenu(ADMIN).bottomTabs[0]!.label).toBe(expectedBottomTabRow(SYSTEM, "관리자")[0]);
-    expect(roleMenu(EMPLOYEE).bottomTabs[0]!.label).toBe(expectedBottomTabRow(SYSTEM, "직원")[0]);
+  it("모르는 계급 식별자는 기본 계급(기획 PM) 탭으로 떨어지고 탭 수가 여전히 4다", () => {
+    const unknown = roleMenu({ roleId: "role-does-not-exist", allowedMenus: [] }).bottomTabs;
+    const fallback = roleMenu({ roleId: DEFAULT_ROLE_ID, allowedMenus: [] }).bottomTabs;
+    expect(unknown).toHaveLength(4);
+    expect(unknown).toEqual(fallback);
   });
 });
 
@@ -136,7 +151,7 @@ describe("roleMenu — 계정 그룹 (SYSTEM.md 목록과 원소 단위로 같�
     }
   });
 
-  it("accountGroup은 관리자·직원에 대해 같다(§6-0/§7-8 목록은 역할로 갈라지지 않는다)", () => {
+  it("accountGroup은 계급과 무관하게 같다(§6-0/§7-8 목록은 역할로 갈라지지 않는다)", () => {
     expect(roleMenu(EMPLOYEE).accountGroup).toEqual(roleMenu(ADMIN).accountGroup);
   });
 });

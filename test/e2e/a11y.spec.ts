@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { AxeBuilder } from "@axe-core/playwright";
 import { createFixtureUser } from "./fixtures";
+import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 
 // "axe-core" 자체는 @axe-core/playwright의 중첩(nested) 의존성이라 pnpm이 이 파일의
 // 모듈 해석 경로에 끌어올리지 않는다 — 직접 import하지 않고 AxeBuilder.analyze()의
@@ -18,8 +19,8 @@ type AxeResults = Awaited<ReturnType<InstanceType<typeof AxeBuilder>["analyze"]>
 // 검사 대상에서 화면을 빼거나 규칙을 꺼서 "통과"를 만들지 않는다 — 위반이 나오면
 // 화면(ui/*, app/*)을 고친다. 도저히 고칠 수 없으면 SUMMARY에 올린다(02-01 재계획 신호).
 
-async function loginAs(page: Page, isAdmin: boolean): Promise<{ email: string; password: string }> {
-  const user = await createFixtureUser({ isAdmin });
+async function loginAs(page: Page, roleId: string): Promise<{ email: string; password: string }> {
+  const user = await createFixtureUser({ roleId });
   await page.goto("/login");
   await page.getByLabel("이메일").fill(user.email);
   await page.getByLabel("비밀번호").fill(user.password);
@@ -41,35 +42,35 @@ const SCREENS: ReadonlyArray<{ name: string; goto: (page: Page) => Promise<void>
   {
     name: "홈(내 차례)",
     goto: async (page) => {
-      await loginAs(page, false);
+      await loginAs(page, DEFAULT_ROLE_ID);
       await page.goto("/");
     },
   },
   {
     name: "내 계정",
     goto: async (page) => {
-      await loginAs(page, false);
+      await loginAs(page, DEFAULT_ROLE_ID);
       await page.goto("/account");
     },
   },
   {
     name: "빈 목록(프로젝트)",
     goto: async (page) => {
-      await loginAs(page, false);
+      await loginAs(page, DEFAULT_ROLE_ID);
       await page.goto("/projects");
     },
   },
   {
     name: "시스템 상태(관리자)",
     goto: async (page) => {
-      await loginAs(page, true);
+      await loginAs(page, SYSADMIN_ROLE_ID);
       await page.goto("/admin/system-status");
     },
   },
   {
     name: "404",
     goto: async (page) => {
-      await loginAs(page, false);
+      await loginAs(page, DEFAULT_ROLE_ID);
       await page.goto("/e2e-a11y-nonexistent-route");
     },
   },
@@ -95,7 +96,7 @@ test.describe("§10 접근성 계약 (axe-core)", () => {
   // 오류 문자열 자체는 test/e2e/change-password.spec.ts가 이미 단언하므로 여기서는
   // 반복하지 않고 ARIA 연결(id 존재·요소 실재·내용 있음)만 확인한다.
   test("필드 서버 검증 오류가 aria-invalid·aria-describedby로 실제 오류 요소에 연결된다", async ({ page }) => {
-    const user = await loginAs(page, false);
+    const user = await loginAs(page, DEFAULT_ROLE_ID);
     await page.goto("/account");
 
     await page.getByLabel("현재 비밀번호").fill(user.password);

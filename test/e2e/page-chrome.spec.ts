@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
+import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 
 // 02-08 갭 클로저 — 페이지 층(body 아홉 선언 · §4-4 브라우저 표면 · 컨트롤 서체 ·
 // FormAlert · KvList · PageHeader · WR-01 aria-current)의 계산값을 고정한다.
@@ -11,8 +12,8 @@ function px(value: string): number {
   return Number.parseFloat(value);
 }
 
-async function loginAs(page: Page, isAdmin: boolean): Promise<{ email: string; password: string }> {
-  const user = await createFixtureUser({ isAdmin });
+async function loginAs(page: Page, roleId: string): Promise<{ email: string; password: string }> {
+  const user = await createFixtureUser({ roleId });
   await page.goto("/login");
   await page.getByLabel("이메일").fill(user.email);
   await page.getByLabel("비밀번호").fill(user.password);
@@ -86,7 +87,7 @@ test.describe("§4-4 브라우저 기본 표면 (02-08 Task 1)", () => {
 
 test.describe("로그인 실패 문구 — FormAlert (02-08 Task 1, §6-7 A②)", () => {
   test("form 안 role=alert 문구가 --danger 색이다", async ({ page }) => {
-    const user = await createFixtureUser({ isAdmin: false });
+    const user = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
     await page.goto("/login");
     await page.getByLabel("이메일").fill(user.email);
     await page.getByLabel("비밀번호").fill("definitely-wrong-password");
@@ -100,7 +101,7 @@ test.describe("로그인 실패 문구 — FormAlert (02-08 Task 1, §6-7 A②)"
 
 test.describe("전역 포커스 링 (02-08 Task 1, §4-4)", () => {
   test("컴포넌트 포커스 스타일이 없는 3차 링크에 전역 포커스 링이 적용된다", async ({ page }) => {
-    await loginAs(page, false);
+    await loginAs(page, DEFAULT_ROLE_ID);
     await page.goto("/projects");
 
     const link = page.getByRole("link", { name: "지출결의 보기" });
@@ -115,7 +116,7 @@ test.describe("전역 포커스 링 (02-08 Task 1, §4-4)", () => {
 
 test.describe("시스템 상태 라벨·값 목록 — KvList (02-08 Task 1, §6-8 B①)", () => {
   test("dt·dd 계산값이 KvList 골격이다", async ({ page }) => {
-    await loginAs(page, true);
+    await loginAs(page, SYSADMIN_ROLE_ID);
     await page.goto("/admin/system-status");
 
     const firstDt = page.locator("main dt").first();
@@ -140,7 +141,7 @@ test.describe("시스템 상태 라벨·값 목록 — KvList (02-08 Task 1, §6
 
 test.describe("§6-0 화면 제목·부제 · §6-9 오류 제목 (02-08 Task 2)", () => {
   test("/projects 제목·부제 계산값이 PageHeader 골격이다", async ({ page }) => {
-    await loginAs(page, false);
+    await loginAs(page, DEFAULT_ROLE_ID);
     await page.goto("/projects");
 
     const h1 = page.locator("main h1");
@@ -157,7 +158,7 @@ test.describe("§6-0 화면 제목·부제 · §6-9 오류 제목 (02-08 Task 2)
   });
 
   test("/account 제목·부제(이메일) 계산값이 PageHeader 골격이다", async ({ page }) => {
-    const user = await loginAs(page, false);
+    const user = await loginAs(page, DEFAULT_ROLE_ID);
     await page.goto("/account");
 
     const h1 = page.locator("main h1");
@@ -180,7 +181,7 @@ test.describe("§6-0 화면 제목·부제 · §6-9 오류 제목 (02-08 Task 2)
   });
 
   test("셸 안 404(직원 → /admin/system-status) 제목이 --fs-2xl 자간·행간이다", async ({ page }) => {
-    await loginAs(page, false);
+    await loginAs(page, DEFAULT_ROLE_ID);
     const response = await page.goto("/admin/system-status");
     expect(response?.status()).toBe(404);
 
@@ -194,7 +195,7 @@ test.describe("§6-0 화면 제목·부제 · §6-9 오류 제목 (02-08 Task 2)
 
 test.describe("§6-0 현재 메뉴(WR-01)", () => {
   test("/projects에서 주 메뉴 현재 링크가 하나이고 계산값이 현재 표시다", async ({ page }) => {
-    await loginAs(page, false);
+    await loginAs(page, DEFAULT_ROLE_ID);
     await page.goto("/projects");
 
     const current = page.locator('nav[aria-label="주 메뉴"] a[aria-current="page"]');
@@ -207,7 +208,7 @@ test.describe("§6-0 현재 메뉴(WR-01)", () => {
   });
 
   test("/account에서는 주 메뉴 현재 링크가 없다", async ({ page }) => {
-    await loginAs(page, false);
+    await loginAs(page, DEFAULT_ROLE_ID);
     await page.goto("/account");
 
     const current = page.locator('nav[aria-label="주 메뉴"] a[aria-current="page"]');

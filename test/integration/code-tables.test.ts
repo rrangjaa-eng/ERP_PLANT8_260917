@@ -97,7 +97,7 @@ describe("code-tables (MAST-04, 실제 Postgres)", () => {
   });
 
   it("권한표에서 기본 계급의 코드표 보기 칸을 켜면 같은 viewer의 목록 조회가 성공한다(재배포 없음)", async () => {
-    const pmViewer = { id: "pm-tester", isAdmin: false, roleId: DEFAULT_ROLE_ID };
+    const pmViewer = { id: "pm-tester", roleId: DEFAULT_ROLE_ID };
     await createCodeItem(SYSTEM_VIEWER, { tableKey: TABLE_KEY, value: "gate-1", label: "게이트 대상" });
 
     const before = await domainListCodeItems(pmViewer, TABLE_KEY);

@@ -13,7 +13,7 @@ export const SEED_ROLES: SeedRole[] = [
 
 export const SYSADMIN_ROLE_ID = "role-sysadmin";
 
-// 백필 규칙(Task 1 결정 ④)의 대상 — is_admin=false 행이 옮겨가는 기본 계급.
+// 백필 규칙(Task 1 결정 ④)의 대상 — 관리자 여부 잔여 컬럼이 거짓인 행이 옮겨가는 기본 계급.
 export const DEFAULT_ROLE_ID = "role-pm";
 
 // 계급 이름 중복 판정은 Unicode NFC 정규화 후에 한다 — 조합형(NFD)·완성형(NFC)으로

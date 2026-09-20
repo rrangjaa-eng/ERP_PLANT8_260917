@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { scopeFor, UnknownScopeEntityError } from "@/domain/permissions/scope-for";
 import type { Viewer } from "@/domain/viewer";
 
-const viewer: Viewer = { id: "u1", isAdmin: false, roleId: "role-pm" };
+const viewer: Viewer = { id: "u1", roleId: "role-pm" };
 
 describe("scopeFor (ADMN-01·ADMN-12 행 필터 서술자)", () => {
   it("메뉴 보기 권한이 있으면 rows가 all이다", async () => {

@@ -1,6 +1,7 @@
 import { env } from "@/lib/env";
 import { log } from "@/lib/log";
 import type { Viewer } from "@/domain/viewer";
+import { can as defaultCan } from "@/domain/permissions/can";
 import {
   countConnections as defaultCountConnections,
   maxConnections as defaultMaxConnections,
@@ -24,6 +25,7 @@ export type StatusDeps = {
   countConnections: typeof defaultCountConnections;
   maxConnections: typeof defaultMaxConnections;
   getLastBackup: typeof defaultGetLastBackup;
+  can: typeof defaultCan;
   now?: () => Date;
 };
 
@@ -33,13 +35,15 @@ export function connectionBanner(connections: number, maxConnections: number, ra
   return connections / maxConnections >= ratio;
 }
 
-// OPS-06·D-17·D-18: 관리자만 조회 가능(!viewer.isAdmin → NotAdminError, 화면의
-// notFound()와 이중 방어). 캐시 없이 매번 커넥션·백업·버전을 합성한다.
+// OPS-06·D-17·D-18: 시스템 상태 메뉴(admin.system-status)의 보기 권한이 있어야
+// 조회 가능(권한표를 읽는다 — 화면의 notFound()와 이중 방어). 캐시 없이 매번
+// 커넥션·백업·버전을 합성한다.
 export async function getSystemStatus(
   viewer: Viewer,
   deps?: Partial<StatusDeps>,
 ): Promise<SystemStatus> {
-  if (!viewer.isAdmin) {
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, "admin.system-status", "view"))) {
     throw new NotAdminError("관리자만 볼 수 있습니다.");
   }
 

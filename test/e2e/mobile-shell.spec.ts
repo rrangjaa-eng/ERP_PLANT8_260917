@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { roleMenu } from "@/ui/shell/role-menu";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 
 // SYSTEM.md §6-0 폰 셸(<700) 계약 — 성공 기준 3(폰 375px)을 자동 검사로 고정한다.
 // 이 파일은 playwright.config.ts의 "mobile-*.spec.ts" 파일명 접두어 규칙으로
@@ -11,7 +12,7 @@ import { roleMenu } from "@/ui/shell/role-menu";
 // 없어서 거기 두면 이 §10 항목이 한 번도 판정되지 않는다.
 
 async function loginAsEmployee(page: Page): Promise<{ email: string; password: string }> {
-  const user = await createFixtureUser({ isAdmin: false });
+  const user = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
   await page.goto("/login");
   await page.getByLabel("이메일").fill(user.email);
   await page.getByLabel("비밀번호").fill(user.password);
@@ -146,7 +147,7 @@ test.describe("폰 375 공통 셸 (성공 기준 3 · §6-0 폰 전략 · §10 �
     const sheet = page.getByRole("dialog", { name: "더보기" });
     await expect(sheet).toBeVisible();
 
-    const { accountGroup } = roleMenu({ isAdmin: false });
+    const { accountGroup } = roleMenu({ roleId: DEFAULT_ROLE_ID, allowedMenus: [] });
     // "계정" 그룹 헤더(role="presentation") 다음에 오는 형제 <li>들이 계정 그룹 항목이다.
     const accountItems = sheet.locator('li[role="presentation"] ~ li');
     const texts = await accountItems.allTextContents();

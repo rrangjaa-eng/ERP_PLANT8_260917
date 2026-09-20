@@ -1,11 +1,12 @@
 import { test, expect } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 
 test.describe("비밀번호 변경 + 임시 비밀번호 배너 (AUTH-03, D-08, D-09, D-10)", () => {
   test("임시 배너 → 변경 → 재로그인 → 옛 비밀번호 실패 → 새 비밀번호 성공 → 배너 사라짐 → 틀린 현재 비밀번호 → 7자 거부 → 로그아웃", async ({
     page,
   }) => {
-    const user = await createFixtureUser({ isAdmin: false });
+    const user = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
 
     await page.goto("/login");
     await page.getByLabel("이메일").fill(user.email);

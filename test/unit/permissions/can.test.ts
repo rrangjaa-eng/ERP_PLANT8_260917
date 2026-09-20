@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { can } from "@/domain/permissions/can";
 import type { Viewer } from "@/domain/viewer";
 
-const roleViewer: Viewer = { id: "u1", isAdmin: false, roleId: "role-pm" };
-const noRoleViewer: Viewer = { id: "u2", isAdmin: false, roleId: null };
+const roleViewer: Viewer = { id: "u1", roleId: "role-pm" };
+const noRoleViewer: Viewer = { id: "u2", roleId: null };
 
 function permissionRow(allowed: boolean) {
   return {

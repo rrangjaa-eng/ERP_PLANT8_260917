@@ -3,8 +3,8 @@ import * as canModule from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
 import type { Viewer } from "@/domain/viewer";
 
-const roleViewer: Viewer = { id: "u1", isAdmin: false, roleId: "role-pm" };
-const noRoleViewer: Viewer = { id: "u2", isAdmin: false, roleId: null };
+const roleViewer: Viewer = { id: "u1", roleId: "role-pm" };
+const noRoleViewer: Viewer = { id: "u2", roleId: null };
 
 function visibilityRow(isVisible: boolean) {
   return {

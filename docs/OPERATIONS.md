@@ -134,10 +134,10 @@ GitHub Environments·승인 버튼은 없다(D-05, 무료 플랜 비공개 저�
 
 ## 7. 계정 운영
 
-로컬 3종 CLI: `pnpm account:create --email … --name … [--admin]` / `pnpm account:reset
---email …` / `pnpm account:unlock --email …`. 운영에서는 같은 컨테이너 이미지의 Cloud Run
-Job `plant8-{env}-**account**`를 GitHub Actions `account.yml`로 실행한다(입력: env·action·
-email·name·admin).
+로컬 3종 CLI: `pnpm account:create --email … --name … [--role <계급 식별자>]` / `pnpm
+account:reset --email …` / `pnpm account:unlock --email …`. 운영에서는 같은 컨테이너
+이미지의 Cloud Run Job `plant8-{env}-**account**`를 GitHub Actions `account.yml`로
+실행한다(입력: env·action·email·name·role).
 
 임시 비밀번호는 워크플로 로그와 Cloud Logging에 한 번 남으므로 전달받는 즉시 변경을
 안내한다(D-13). 워크플로가 로그를 최대 2분(10초 간격 12회) 재조회하므로, 출력이 바로

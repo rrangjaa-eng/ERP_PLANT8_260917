@@ -3,7 +3,7 @@ import { createFixtureUser } from "./fixtures";
 
 test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 코드에 계급 이름 분기 없음)", () => {
   test("시스템 관리자 계급은 코드표 항목을 추가하고 목록에서 확인한다", async ({ page }) => {
-    const admin = await createFixtureUser({ isAdmin: true, roleId: "role-sysadmin" });
+    const admin = await createFixtureUser({ roleId: "role-sysadmin" });
 
     await page.goto("/login");
     await page.getByLabel("이메일").fill(admin.email);
@@ -25,7 +25,7 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
   test("기획 PM 계급은 코드표 관리 화면에서 404를 받는다 — 권한표가 이 계급에 메뉴를 주지 않았기 때문이다", async ({
     page,
   }) => {
-    const pm = await createFixtureUser({ isAdmin: false, roleId: "role-pm" });
+    const pm = await createFixtureUser({ roleId: "role-pm" });
 
     await page.goto("/login");
     await page.getByLabel("이메일").fill(pm.email);

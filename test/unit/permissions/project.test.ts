@@ -13,7 +13,7 @@ const spec: DtoSpec<Dto, Dto> = {
   ],
 };
 
-const viewer: Viewer = { id: "u1", isAdmin: false, roleId: "role-pm" };
+const viewer: Viewer = { id: "u1", roleId: "role-pm" };
 const row: WideRow = { id: "r1", value: "v1", label: "l1", secret: "s1" };
 
 function visibleAll() {

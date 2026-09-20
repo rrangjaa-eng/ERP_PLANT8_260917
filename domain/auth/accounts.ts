@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { log } from "@/lib/log";
 import type { Viewer } from "@/domain/viewer";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { can } from "@/domain/permissions/can";
 import { findUserByEmail, setPasswordTemporary } from "@/repositories/users";
 import { resolveOpenFailures } from "@/repositories/login-attempts";
 
@@ -16,9 +17,9 @@ export function generateTempPassword(): string {
 
 export async function createAccount(
   viewer: Viewer,
-  input: { email: string; name: string; isAdmin: boolean; roleId?: string },
+  input: { email: string; name: string; roleId?: string },
 ): Promise<{ userId: string; tempPassword: string }> {
-  if (!viewer.isAdmin) {
+  if (!(await can(viewer, "admin.people", "write"))) {
     throw new Error("계정 생성 권한이 없습니다.");
   }
 
@@ -41,7 +42,6 @@ export async function createAccount(
       email: input.email,
       name: input.name,
       emailVerified: true,
-      isAdmin: input.isAdmin,
       // Phase 3: 선택 인자 — 넘기지 않으면 undefined(better-auth가 등록된
       // additionalFields의 defaultValue 없음 → 컬럼 null)로 저장된다. 기존
       // 세 개의 권한 게이트와 다른 인자·호출은 한 글자도 바꾸지 않는다.
@@ -58,7 +58,7 @@ export async function createAccount(
     password: hash,
   });
 
-  log.info("auth.account_created", { userId: user.id, isAdmin: input.isAdmin });
+  log.info("auth.account_created", { userId: user.id, roleId: input.roleId });
 
   return { userId: user.id, tempPassword };
 }
@@ -70,7 +70,7 @@ export async function resetPassword(
   viewer: Viewer,
   email: string,
 ): Promise<{ userId: string; tempPassword: string }> {
-  if (!viewer.isAdmin) {
+  if (!(await can(viewer, "admin.people", "write"))) {
     throw new Error("비밀번호 재발급 권한이 없습니다.");
   }
 
@@ -96,7 +96,7 @@ export async function resetPassword(
 
 // AUTH-01: 관리자 해제 — 열린 실패 기록을 admin_unlock으로 닫는다.
 export async function unlockAccount(viewer: Viewer, email: string): Promise<{ resolved: number }> {
-  if (!viewer.isAdmin) {
+  if (!(await can(viewer, "admin.people", "write"))) {
     throw new Error("계정 잠금 해제 권한이 없습니다.");
   }
 

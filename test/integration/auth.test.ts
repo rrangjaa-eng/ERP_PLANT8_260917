@@ -5,6 +5,7 @@ import { db } from "@/db/client";
 import { sessions, users } from "@/db/schema";
 import { createAccount, resetPassword, unlockAccount } from "@/domain/auth/accounts";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { resolveOpenFailures } from "@/repositories/login-attempts";
 import { CLIENT_IP_HEADER } from "@/lib/client-ip";
 
@@ -28,8 +29,7 @@ describe("domain/auth/accounts + better-auth 통합", () => {
     const email = uniqueEmail("signin");
     const { tempPassword } = await createAccount(SYSTEM_VIEWER, {
       email,
-      name: "Signin User",
-      isAdmin: false,
+      name: "Signin User"
     });
 
     const result = await auth.api.signInEmail({
@@ -42,7 +42,7 @@ describe("domain/auth/accounts + better-auth 통합", () => {
 
   it("틀린 비밀번호는 throw한다", async () => {
     const email = uniqueEmail("wrongpw");
-    await createAccount(SYSTEM_VIEWER, { email, name: "Wrong PW", isAdmin: false });
+    await createAccount(SYSTEM_VIEWER, { email, name: "Wrong PW" });
 
     await expect(
       auth.api.signInEmail({
@@ -69,11 +69,13 @@ describe("domain/auth/accounts + better-auth 통합", () => {
     expect(response.status).toBeLessThan(500);
   });
 
-  it("관리자가 아닌 viewer로 createAccount를 부르면 throw한다", async () => {
+  // 기본 계급(role-pm)에는 사람 메뉴(admin.people) 쓰기 권한이 없다(03-01 시드
+  // 값) — 이 거부가 그 시드에 의존한다.
+  it("사람 메뉴 쓰기 권한이 없는 viewer로 createAccount를 부르면 throw한다", async () => {
     await expect(
       createAccount(
-        { id: "emp", isAdmin: false },
-        { email: uniqueEmail("forbidden"), name: "Forbidden", isAdmin: false },
+        { id: "emp", roleId: DEFAULT_ROLE_ID },
+        { email: uniqueEmail("forbidden"), name: "Forbidden" },
       ),
     ).rejects.toThrow();
   });
@@ -82,8 +84,7 @@ describe("domain/auth/accounts + better-auth 통합", () => {
     const email = uniqueEmail("sliding");
     const { tempPassword } = await createAccount(SYSTEM_VIEWER, {
       email,
-      name: "Sliding User",
-      isAdmin: false,
+      name: "Sliding User"
     });
 
     const signInResponse = await auth.handler(
@@ -137,8 +138,7 @@ describe("domain/auth/accounts resetPassword (AUTH-03)", () => {
     const email = uniqueEmail("reset");
     const { tempPassword: oldPassword, userId } = await createAccount(SYSTEM_VIEWER, {
       email,
-      name: "Reset User",
-      isAdmin: false,
+      name: "Reset User"
     });
 
     const signInResponse = await auth.handler(
@@ -180,11 +180,12 @@ describe("domain/auth/accounts resetPassword (AUTH-03)", () => {
     expect(row?.passwordIsTemporary).toBe(true);
   });
 
-  it("관리자가 아닌 viewer로 resetPassword를 부르면 throw한다", async () => {
+  // 기본 계급(role-pm)에는 사람 메뉴(admin.people) 쓰기 권한이 없다(03-01 시드 값).
+  it("사람 메뉴 쓰기 권한이 없는 viewer로 resetPassword를 부르면 throw한다", async () => {
     const email = uniqueEmail("reset-forbidden");
-    await createAccount(SYSTEM_VIEWER, { email, name: "Forbidden Reset", isAdmin: false });
+    await createAccount(SYSTEM_VIEWER, { email, name: "Forbidden Reset" });
 
-    await expect(resetPassword({ id: "emp", isAdmin: false }, email)).rejects.toThrow();
+    await expect(resetPassword({ id: "emp", roleId: DEFAULT_ROLE_ID }, email)).rejects.toThrow();
   });
 
   it("없는 이메일로 resetPassword를 부르면 throw한다", async () => {
@@ -196,7 +197,7 @@ describe("domain/auth/accounts resetPassword (AUTH-03)", () => {
 describe("domain/auth/accounts unlockAccount (AUTH-01)", () => {
   it("열린 실패 기록 수를 반환하고 admin_unlock으로 닫는다", async () => {
     const email = uniqueEmail("unlock");
-    await createAccount(SYSTEM_VIEWER, { email, name: "Unlock User", isAdmin: false });
+    await createAccount(SYSTEM_VIEWER, { email, name: "Unlock User" });
 
     // login_attempts 표는 domain/auth/hooks.ts가 채우지만, 여기서는 repository를
     // 직접 호출해 열린 실패 행을 만든다(이 테스트는 unlockAccount 자체의 동작만 본다).
@@ -217,7 +218,10 @@ describe("domain/auth/accounts unlockAccount (AUTH-01)", () => {
     expect(again).toBe(0);
   });
 
-  it("관리자가 아닌 viewer로 unlockAccount를 부르면 throw한다", async () => {
-    await expect(unlockAccount({ id: "emp", isAdmin: false }, uniqueEmail("unlock-forbidden"))).rejects.toThrow();
+  // 기본 계급(role-pm)에는 사람 메뉴(admin.people) 쓰기 권한이 없다(03-01 시드 값).
+  it("사람 메뉴 쓰기 권한이 없는 viewer로 unlockAccount를 부르면 throw한다", async () => {
+    await expect(
+      unlockAccount({ id: "emp", roleId: DEFAULT_ROLE_ID }, uniqueEmail("unlock-forbidden")),
+    ).rejects.toThrow();
   });
 });

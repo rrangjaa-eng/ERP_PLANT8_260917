@@ -7,7 +7,7 @@ import {
 } from "@/domain/action-log/record";
 import type { Viewer } from "@/domain/viewer";
 
-const viewer: Viewer = { id: "u1", isAdmin: false, roleId: "role-pm" };
+const viewer: Viewer = { id: "u1", roleId: "role-pm" };
 
 describe("recordAction (OPS-05)", () => {
   it("핵심 행동 종류 목록에 없는 종류를 받으면 행을 만들지 않고 UnknownActionTypeError를 던진다", async () => {

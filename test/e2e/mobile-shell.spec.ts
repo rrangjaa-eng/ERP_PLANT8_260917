@@ -94,6 +94,27 @@ test.describe("폰 375 공통 셸 (성공 기준 3 · §6-0 폰 전략 · §10 �
     }
   });
 
+  // 2026-09-20 staging QA 회귀: 검색 행에 "이 페이즈는 자리만 둔다"라는 계획 용어가
+  // 노출돼 있었다. §7-8이 이 자리에 요구하는 것은 대상 목록(범위 표시)이고,
+  // §8 규칙 5가 안내 문구 자체를 금지한다. 소스 단언은
+  // test/unit/ui/system-md-compliance.test.ts가 맡고, 여기서는 실제로 그렇게
+  // 렌더되는지를 본다.
+  test("검색 행에 대상 목록이 보이고 안내 문구가 없다", async ({ page }) => {
+    await loginAsEmployee(page);
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "더보기" }).click();
+    const sheet = page.getByRole("dialog", { name: "더보기" });
+    await expect(sheet).toBeVisible();
+
+    const searchRow = sheet.locator("ul > li").first();
+    await expect(searchRow).toContainText("검색");
+    for (const scope of ["프로젝트", "지출결의", "거래처"]) {
+      await expect(searchRow).toContainText(scope);
+    }
+    await expect(searchRow).not.toContainText("페이즈");
+  });
+
   test("더보기 시트 항목의 터치 목표가 44 이상이다", async ({ page }) => {
     await loginAsEmployee(page);
     await page.goto("/");

@@ -206,6 +206,45 @@ describe("account.yml", () => {
     expect(account).not.toMatch(/[0-9]{12}/);
     expect(account).not.toMatch(/@gmail\.com/);
   });
+
+  // 실패 경로가 이유를 못 보여주던 결함(2026-09-20 QA 실측) — 실행이 실패하면
+  // Actions 로그에 "account job execution failed" 한 줄만 남고 CLI가 stderr에
+  // 찍은 한국어 메시지("이미 존재하는 이메일입니다: …" / "create에는 --name이
+  // 필요합니다.")가 한 줄도 나오지 않았다. 원인 둘: ① 수집 지연을 모르고 한 번만
+  // 읽는다 ② severity>=ERROR로 걸러 stderr가 DEFAULT로 들어오면 버린다.
+  it("실패 경로가 severity로 거르지 않는다 — 컨테이너 stderr는 ERROR로 안 올 수 있다", () => {
+    expect(account).not.toContain("severity>=ERROR");
+  });
+
+  it("실패 경로도 성공 경로와 같은 대기 규칙으로 재조회한다(수집 지연)", () => {
+    // 두 경로가 각자 루프를 갖는 것보다 한 함수를 공유하는 편이 어긋날 수 없다 —
+    // 이 둘이 어긋나 있던 것이 애초 결함의 원인이었다.
+    expect(account).toMatch(/ATTEMPTS=\d+/);
+    expect(account).toMatch(/INTERVAL=\d+/);
+    expect(account).toMatch(/poll_logs\(\)\s*\{/);
+    expect(account).toMatch(/for\s+\S+\s+in\s+\$\(seq 1 "\$ATTEMPTS"\)/);
+    const calls = account.match(/poll_logs\s+"/g) ?? [];
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  // 분기 경계를 정확히 잘라야 한다 — 마커 뒤 전체를 보면 성공 경로의 조회가
+  // 걸려 실패 경로를 전혀 검사하지 않은 채 통과한다.
+  const failBranch = (() => {
+    const start = account.indexOf("account job execution failed");
+    expect(start).toBeGreaterThan(-1);
+    const end = account.indexOf("\n          fi", start);
+    expect(end).toBeGreaterThan(start);
+    return account.slice(start, end);
+  })();
+
+  it("실행이 실패해도 execution name으로 좁혀 조회한다(직전 실행 로그 혼입 방지)", () => {
+    expect(failBranch).toContain("run.googleapis.com/execution_name");
+  });
+
+  it("실패 이유를 Actions 로그와 요약 양쪽에 남기고 여전히 실패로 끝낸다", () => {
+    expect(failBranch).toContain("GITHUB_STEP_SUMMARY");
+    expect(failBranch).toContain("exit 1");
+  });
 });
 
 describe("deploy 워크플로 — ci-guard와 동일한 push 하위 명령 부재 확인", () => {

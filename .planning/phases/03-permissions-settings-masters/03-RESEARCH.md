@@ -498,17 +498,21 @@ export function buildCustomFieldsSchema(defs: FieldDef[]) {
 | A3 | 보관함은 DB 레벨 DELETE 권한 회수(REVOKE)까지는 하지 않고 "코드에서 DELETE를 호출하지 않는다"로 충분하다고 가정 | Architecture Patterns §9 | 실수로 어딘가 `db.delete(...)`가 들어가면 보관함 규약이 조용히 깨진다 — `plant8/no-hard-delete` 같은 린트 규칙이나 통합 테스트로 보강이 필요할 수 있다(계획 단계 재량) |
 | A4 | `role_id`를 도입할 때 기존 `users.is_admin=true` 행을 "시스템 관리자" 역할 하나로, `false` 행을 "직원" 기본 역할로 1:1 백필하면 충분하다(5계급 중 나머지 3종은 관리자가 화면에서 재배정) | Runtime State Inventory | 실제 스테이징 DB에 이미 세분화된 역할 기대가 있다면(예: 특정 계정을 이미 "경영관리"로 취급 중) 백필 뒤 재배정 작업이 별도로 필요 — 배포 전 실제 계정 목록을 확인할 것 |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+두 질문 모두 계획 단계에서 해소됐다 — 아래 각 항목의 `RESOLVED:` 줄이 결정과 그 위치를 가리킨다.
 
 1. **`domain/` 하위 폴더 단위 boundaries 세분화가 필요한가**
    - What we know: 현재 `eslint.config.mjs`의 `boundaries/element-types`는 `domain` 전체를 하나의 타입으로 취급한다. "repositories는 domain 안에서만 호출된다"는 이미 성립하지만 "repositories는 domain/permissions 같은 특정 서브모듈에서만 호출돼야 한다"는 세분화 요구는 로드맵에 없다.
    - What's unclear: Phase 3 이후 domain 서브모듈이 늘어나면(auth, permissions, settings, archive, action-log, system-status) 서로 다른 서브모듈이 repositories를 무분별하게 부르는 걸 막을 필요가 실제로 생기는지.
    - Recommendation: 이번 페이즈는 세분화하지 않는다(CONTEXT.md discretion 항목과 일치). Phase 7 전 메뉴 검수에서 실제 혼선이 발견되면 boundaries 엘리먼트를 `domain/permissions`처럼 서브패턴으로 추가한다.
+   - RESOLVED: 권고대로 세분화하지 않는다 — 03-03-PLAN.md Task 2 ①의 planner 결정(「`boundaries/elements`를 domain 하위 폴더 단위로 세분화하지 않는다」)이 근거와 함께 `eslint.config.mjs` 주석으로 남긴다.
 
 2. **체크박스 매트릭스 격자를 `ui/`의 정식 컴포넌트로 만들 것인가, 관리 화면 전용 로컬 마크업으로 갈 것인가**
    - What we know: D-40이 §7-3과 분리된 별개 계약을 SYSTEM.md §7에 신설하라고 명시했다. `ui/`에는 아직 표/그리드 계열 컴포넌트가 없다(`ls ui`로 12개 컴포넌트 확인, 표 없음).
    - What's unclear: 권한표·정보노출표 두 화면에서만 쓰는데 `ui/permission-grid/` 같은 정식 컴포넌트로 분리할 가치가 있는지, 아니면 `app/admin/permissions/`의 로컬 컴포넌트로 두어도 되는지.
    - Recommendation: 두 화면이 정확히 같은 컴포넌트를 재사용하므로 `ui/`에 두는 쪽을 권장하되, §7-3처럼 무겁게 설계하지 않는다(정적 격자 + 체크박스, 다행 편집 없음).
+   - RESOLVED: 권고대로 `ui/permission-grid/PermissionGrid.tsx`에 둔다 — 03-03-PLAN.md Task 1이 SYSTEM.md §7-13 계약을 먼저 신설하고 Task 3이 그 컴포넌트를 구현한다(D-40).
 
 ## Environment Availability
 

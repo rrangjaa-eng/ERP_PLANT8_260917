@@ -72,6 +72,31 @@ jobs:
 
           JOB="$(job_name "$ENV_SHORT" account)"
 
+          # Cloud Logging은 수집이 늦다. 성공·실패 두 경로가 같은 대기 규칙을 쓰도록
+          # 폴링을 함수 하나로 둔다 — 이 둘이 어긋나 있던 것이 「이유 없는 실패」의
+          # 원인이었다(2026-09-20 QA 실측: 실패 run의 Actions 로그에
+          # "account job execution failed" 한 줄뿐, CLI가 stderr에 찍은
+          # "이미 존재하는 이메일입니다: …"는 한 줄도 나오지 않았다).
+          ATTEMPTS=12
+          INTERVAL=10
+
+          # 로그 질의에 severity 조건을 걸지 않는다 — Cloud Run Job 컨테이너의
+          # stderr는 ERROR가 아니라 DEFAULT로 들어올 수 있어, 심각도로 거르면
+          # 정확히 우리가 보려던 줄을 버린다. 성공 경로가 쓰던 필터 모양 그대로다.
+          poll_logs() {
+            local exec_name="$1" want="$2" out line
+            for _ in $(seq 1 "$ATTEMPTS"); do
+              out=$(gcloud logging read "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"$JOB\" AND labels.\"run.googleapis.com/execution_name\"=\"$exec_name\"" --project "$PROJECT" --freshness=15m --limit=30 --format='value(textPayload)' || true)
+              line="$(printf '%s\n' "$out" | grep "$want" | head -n1 || true)"
+              if [ -n "$line" ]; then
+                printf '%s' "$line"
+                return 0
+              fi
+              sleep "$INTERVAL"
+            done
+            return 1
+          }
+
           # 실행 이름을 반드시 잡아둔다 — job_name만으로 로그를 거르면 바로
           # 전(다른) 실행의 로그 줄이 먼저 걸려서(Cloud Logging 수집 지연 중
           # 직전 실행 로그가 아직 남아있음) 엉뚱한 계정의 임시 비밀번호를
@@ -80,8 +105,23 @@ jobs:
           # 반드시 좁혀서 조회한다.
           if ! EXEC="$(gcloud run jobs execute "$JOB" --region "$REGION" --project "$PROJECT" --args="$ARGS" --wait --format='value(metadata.name)')"; then
             echo "account job execution failed" >&2
-            gcloud logging read "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"$JOB\" AND severity>=ERROR" \
-              --project "$PROJECT" --freshness=10m --limit=20 --format='value(textPayload, jsonPayload.message)' >&2 || true
+            # 실패하면 --format 값이 안 잡히므로 이 잡의 최근 실행에서 이름을 얻는다.
+            # 그래도 execution name으로 좁혀야 직전 실행의 줄을 남의 실패 이유로
+            # 보여주지 않는다.
+            FAILED_EXEC="$(gcloud run jobs executions list --job "$JOB" --region "$REGION" --project "$PROJECT" --limit 1 --format='value(metadata.name)' 2>/dev/null || true)"
+            REASON=""
+            if [ -n "$FAILED_EXEC" ]; then
+              # CLI는 실패 사유를 stderr 한 줄로 찍고 exit 1(런타임)·2(사용법)로 끝난다.
+              # grep은 그 한 줄을 고르기 위한 것이고, 못 고르면 아래에서 안내로 떨어진다.
+              REASON="$(poll_logs "$FAILED_EXEC" "니다" || true)"
+            fi
+            if [ -n "$REASON" ]; then
+              echo "$REASON" >&2
+              echo "account job failed: $REASON" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "account job failed and its reason is not in Cloud Logging yet — open Logging → job_name=$JOB, execution=${FAILED_EXEC:-unknown}" >&2
+              echo "account job failed — reason not in Cloud Logging yet (job_name=$JOB, execution=${FAILED_EXEC:-unknown})" >> "$GITHUB_STEP_SUMMARY"
+            fi
             exit 1
           fi
 
@@ -92,16 +132,7 @@ jobs:
             WANT="unlocked"
           fi
 
-          FOUND=""
-          for i in $(seq 1 12); do
-            OUT=$(gcloud logging read "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"$JOB\" AND labels.\"run.googleapis.com/execution_name\"=\"$EXEC\"" --project "$PROJECT" --freshness=15m --limit=30 --format='value(textPayload)' || true)
-            LINE="$(printf '%s\n' "$OUT" | grep "$WANT" | head -n1 || true)"
-            if [ -n "$LINE" ]; then
-              FOUND="$LINE"
-              break
-            fi
-            sleep 10
-          done
+          FOUND="$(poll_logs "$EXEC" "$WANT" || true)"
 
           if [ -z "$FOUND" ]; then
             echo "account job finished but its output is not in Cloud Logging yet — do NOT re-run reset; open Logging → job_name=$JOB, execution=$EXEC in a minute" >&2

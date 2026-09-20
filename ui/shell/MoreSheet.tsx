@@ -94,7 +94,13 @@ export function MoreSheet({ open, onClose, moreMenu, accountGroup, systemStatus,
         <li>
           <span className={styles.searchRow} aria-disabled="true">
             검색
-            <span className={styles.reason}>연결할 대상 데이터 없음 — 이 페이즈는 자리만 둔다</span>
+            {/* §7-8: 「검색 행에는 대상 목록(프로젝트 · 지출결의 · 거래처)」.
+                DECISIONS.md 결정표 — 「검색 대상 목록은 안내 문구가 아니라 범위
+                표시」이고, 기각된 대안이 「라벨만」이었다. 검색 자체는 아직
+                동작하지 않아 행이 aria-disabled지만, 범위 표시는 「검색이
+                동작한다」는 약속이 아니라 닿을 대상을 적는 것이라 모순이 아니다.
+                §8 규칙 5(안내 문구 없음)에 따라 설명문을 두지 않는다. */}
+            <span className={styles.reason}>프로젝트 · 지출결의 · 거래처</span>
           </span>
         </li>
         {moreMenu.map((item) => (

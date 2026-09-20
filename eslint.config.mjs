@@ -17,6 +17,10 @@ const eslintConfig = defineConfig([
       },
     },
     settings: {
+      // 03-03(D-33/D-34, 03-RESEARCH.md Open Question 1): domain 하위 폴더 단위로
+      // 세분화하지 않는다 — "repositories는 domain 안에서만 호출된다"는 이미 이
+      // 규칙으로 성립하고, 서브모듈별 경계가 필요하다는 실무 혼선 관측이 아직
+      // 없다(YAGNI). Phase 7 전 메뉴 검수에서 혼선이 발견되면 그때 세분화한다.
       "boundaries/elements": [
         { type: "app", pattern: "app/**" },
         { type: "domain", pattern: "domain/**" },
@@ -72,15 +76,18 @@ const eslintConfig = defineConfig([
       "plant8/require-action-client": "error",
       "plant8/repository-viewer-param": "error",
       "plant8/money-boundary": "error",
+      "plant8/no-row-type-escape": "error",
     },
   },
   // *.mjs는 tsconfig project service 밖(타입 정보 없음) — type-checked 규칙 제외.
-  // money-boundary는 타입 정보가 필수라 그 자체를 끈다(설정 오류로 오인되지 않게).
+  // money-boundary·no-row-type-escape는 타입 정보가 필수라 그 자체를 끈다
+  // (설정 오류로 오인되지 않게).
   {
     files: ["**/*.mjs"],
     extends: [tseslint.configs.disableTypeChecked],
     rules: {
       "plant8/money-boundary": "off",
+      "plant8/no-row-type-escape": "off",
     },
   },
   // Override default ignores of eslint-config-next.

@@ -8,4 +8,15 @@ export const INFO_ITEMS: InfoItemDef[] = [
   { key: "code_item.value", label: "코드표 값", staffDefault: true },
   { key: "code_item.label", label: "코드표 이름", staffDefault: true },
   { key: "action_log.detail", label: "행동 로그 상세", staffDefault: false },
+  // ADMN-02(REQUIREMENTS.md 106행)가 이름 붙인 새 기능 정보 6종 — 기획본부
+  // 기본값은 전부 숨김("새 기능 정보는 기본 숨김"). 앞 다섯은 Phase 9~10의
+  // DTO가 붙을 자리이고 마지막(계좌번호 마스킹 해제)은 03-06이 쓴다. 항목만
+  // 있고 아직 DTO가 없는 것은 문제가 아니다 — ADMN-03이 요구하는 방향은
+  // "DTO가 항목에 매핑되지 않으면 실패"이고 그 역방향이 아니다.
+  { key: "pnl.amount", label: "손익 숫자", staffDefault: false },
+  { key: "team.cost", label: "팀 비용", staffDefault: false },
+  { key: "target.amount", label: "목표", staffDefault: false },
+  { key: "incentive.amount", label: "인센티브", staffDefault: false },
+  { key: "vendor.amount", label: "거래처 금액", staffDefault: false },
+  { key: "vendor.account_number_unmasked", label: "거래처 계좌번호 마스킹 해제", staffDefault: false },
 ];

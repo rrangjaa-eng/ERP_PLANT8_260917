@@ -3,6 +3,7 @@ import { scopeFor } from "@/domain/permissions/scope-for";
 import { can } from "@/domain/permissions/can";
 import { project, type DtoSpec } from "@/domain/permissions/project";
 import { recordAction } from "@/domain/action-log/record";
+import { registerDto } from "@/domain/permissions/dto-registry";
 import {
   listCodeItems as repoListCodeItems,
   insertCodeItem as repoInsertCodeItem,
@@ -38,6 +39,14 @@ export const CODE_ITEM_DTO_SPEC: DtoSpec<CodeItemRow, CodeItemDto> = {
     { key: "archivedAt", from: "archivedAt", infoItem: "code_item.value" },
   ],
 };
+
+// D-38·성공 기준 3: DTO 레지스트리 항목을 CODE_ITEM_DTO_SPEC에서 파생시킨다
+// — spec과 레지스트리 항목을 각각 손으로 적으면 정본이 둘이 되어 조용히
+// 어긋난다. 누수 스캔(leak-scan.test.ts)의 DTO 축이 이 등록을 읽는다.
+registerDto({
+  name: "CodeItemDto",
+  fields: CODE_ITEM_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
+});
 
 // 읽기는 행 필터 서술자 → 리포지토리 → 투영 순서로 흐르고 행 객체를 그대로
 // 돌려주지 않는다. 단순 조회 경로에서는 recordAction을 아예 부르지 않는다.

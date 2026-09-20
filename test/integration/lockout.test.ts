@@ -51,6 +51,9 @@ describe("계정 잠금 (login_attempts)", () => {
     const afterWindowExpired = await signIn(email, tempPassword, ip);
     expect(afterWindowExpired.status).toBe(200);
 
+    // 15는 시드 기본값(auth.lockout.window_minutes, 03-04)에 의존한다 — 이
+    // 값이 env.LOCKOUT_WINDOW_MINUTES와 같아 이 리터럴은 이 플랜이 옮기지
+    // 않는다.
     const openCount = await countOpenFailures(SYSTEM_VIEWER, email, windowStart(new Date(), 15));
     expect(openCount).toBe(0);
   });

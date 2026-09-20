@@ -34,9 +34,21 @@ describe("recordAction (OPS-05)", () => {
   });
 
   it("같은 종류·같은 대상으로 두 번 부르면 기록 함수가 두 번 호출된다(append-only, 중복 제거 없음)", async () => {
+    // 03-04: isActionTypeEnabled를 생략하면 기본 구현이 설정 레지스트리를
+    // 실제로 조회한다(DB 필요) — 이 단위 테스트는 Postgres 없이 돌아야
+    // 하므로(quality CI job에 Postgres가 없다) 항상 켬으로 명시 스텁한다.
     const appendActionLog = vi.fn().mockResolvedValue(undefined);
-    await recordAction(viewer, { actionType: "document_create", entityId: "x" }, { appendActionLog });
-    await recordAction(viewer, { actionType: "document_create", entityId: "x" }, { appendActionLog });
+    const isActionTypeEnabled = () => Promise.resolve(true);
+    await recordAction(
+      viewer,
+      { actionType: "document_create", entityId: "x" },
+      { appendActionLog, isActionTypeEnabled },
+    );
+    await recordAction(
+      viewer,
+      { actionType: "document_create", entityId: "x" },
+      { appendActionLog, isActionTypeEnabled },
+    );
     expect(appendActionLog).toHaveBeenCalledTimes(2);
   });
 

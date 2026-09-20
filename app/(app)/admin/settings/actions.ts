@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { SETTING_DEFS } from "@/domain/settings/keys";
 import { setSettingValue, addHistorizedValue, cancelHistorizedValue, type SettingDef } from "@/domain/settings/registry";
 import { exportSettings } from "@/domain/settings/export";
@@ -12,10 +13,11 @@ import "./actions.registry";
 // 보낸 key로 SETTING_DEFS에서 정의를 찾는다. 등록되지 않은 키는 거부한다.
 // "use server" 파일은 함수 export만 허용한다 — 클래스를 여기서 export하면
 // Next.js가 모듈 전체의 export를 인식하지 못한다(실측). 에러 클래스는 이
-// 파일 안에서만 쓰는 내부 헬퍼로 둔다.
+// 파일 안에서만 쓰는 내부 헬퍼로 둔다. throw는 UserFacingError로 한다 —
+// 다른 파일에서 import해 쓰는 것뿐이라 위 제약과 무관하다(defect 1).
 function findSettingDef(key: string): SettingDef<unknown> {
   const def = SETTING_DEFS.find((candidate) => candidate.key === key);
-  if (!def) throw new Error(`등록되지 않은 설정 키입니다: ${key}`);
+  if (!def) throw new UserFacingError(`등록되지 않은 설정 키입니다: ${key}`);
   return def;
 }
 

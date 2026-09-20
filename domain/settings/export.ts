@@ -2,6 +2,7 @@ import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { SETTING_DEFS } from "@/domain/settings/keys";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import {
   getSettingValue as defaultGetSettingValue,
   listSettingHistory as defaultListSettingHistory,
@@ -13,8 +14,8 @@ import { applySettingsImport as defaultApplySettingsImport } from "@/repositorie
 // 03-01이 고정했다). 전 설정 덤프가 설정으로 조용해질 수 없다.
 const SCHEMA_VERSION = "1";
 
-export class ForbiddenError extends Error {}
-export class ImportValidationError extends Error {
+export class ForbiddenError extends UserFacingError {}
+export class ImportValidationError extends UserFacingError {
   constructor(public readonly issues: string[]) {
     super(`설정 가져오기 검증 실패: ${issues.join("; ")}`);
   }

@@ -2,13 +2,14 @@ import { env } from "@/lib/env";
 import { log } from "@/lib/log";
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import {
   countConnections as defaultCountConnections,
   maxConnections as defaultMaxConnections,
 } from "@/repositories/system-status";
 import { getLastBackup as defaultGetLastBackup } from "@/lib/gcp/cloud-sql-admin";
 
-export class NotAdminError extends Error {}
+export class NotAdminError extends UserFacingError {}
 
 export type SystemStatus = {
   version: { sha: string; deployedAt: string | null; env: "local" | "staging" | "prod" };

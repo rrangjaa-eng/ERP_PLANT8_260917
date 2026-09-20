@@ -4,6 +4,7 @@ import { can } from "@/domain/permissions/can";
 import { project, type DtoSpec } from "@/domain/permissions/project";
 import { recordAction } from "@/domain/action-log/record";
 import { registerDto } from "@/domain/permissions/dto-registry";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import {
   listCodeItems as repoListCodeItems,
   insertCodeItem as repoInsertCodeItem,
@@ -12,7 +13,7 @@ import {
   type CodeItemRow,
 } from "@/repositories/code-tables";
 
-export class ForbiddenError extends Error {}
+export class ForbiddenError extends UserFacingError {}
 
 // MAST-04: 코드표 항목 DTO. id·tableKey·sortOrder·active·archivedAt은
 // "code_item.value" 정보 항목(구조/식별 정보) 아래, label만 별도

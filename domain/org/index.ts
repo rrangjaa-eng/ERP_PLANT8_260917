@@ -4,6 +4,7 @@ import { scopeFor } from "@/domain/permissions/scope-for";
 import { project, type DtoSpec } from "@/domain/permissions/project";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { registerDto } from "@/domain/permissions/dto-registry";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import {
   listOrgUnits as repoListOrgUnits,
   findOrgUnitById as repoFindOrgUnitById,
@@ -25,9 +26,9 @@ import {
   deleteMembership as repoDeleteMembership,
 } from "@/repositories/team-memberships";
 
-export class ForbiddenError extends Error {}
-export class NotFoundError extends Error {}
-export class PastAssignmentCancelError extends Error {}
+export class ForbiddenError extends UserFacingError {}
+export class NotFoundError extends UserFacingError {}
+export class PastAssignmentCancelError extends UserFacingError {}
 
 const PEOPLE_MENU = "admin.people";
 

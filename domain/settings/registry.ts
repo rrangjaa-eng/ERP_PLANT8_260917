@@ -3,6 +3,7 @@ import type { Viewer } from "@/domain/viewer";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import {
   findSimpleValue as defaultFindSimpleValue,
   upsertSimpleValue as defaultUpsertSimpleValue,
@@ -37,10 +38,10 @@ export type SettingDef<T> = {
   readBy?: { phase: string };
 };
 
-export class SettingNotFoundError extends Error {}
-export class ForbiddenError extends Error {}
-export class SettingKindMismatchError extends Error {}
-export class FutureCancelOnlyError extends Error {}
+export class SettingNotFoundError extends UserFacingError {}
+export class ForbiddenError extends UserFacingError {}
+export class SettingKindMismatchError extends UserFacingError {}
+export class FutureCancelOnlyError extends UserFacingError {}
 
 function dateOnly(date: Date): string {
   return date.toISOString().slice(0, 10);

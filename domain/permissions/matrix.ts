@@ -5,6 +5,7 @@ import { listRoles as defaultListRoles } from "@/repositories/roles";
 import { MENUS, PERMISSION_ACTIONS, type PermissionAction } from "@/domain/permissions/menus";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import {
   listPermissions as defaultListPermissions,
   upsertPermission as defaultUpsertPermission,
@@ -17,8 +18,8 @@ import {
 // app/(app)/admin/visibility)이 이 파일만 호출한다 — 리포지토리 행 객체를
 // 그대로 돌려주지 않는다(plant8/no-row-type-escape가 그것을 빌드 실패로
 // 만든다).
-export class ForbiddenError extends Error {}
-export class SelfLockoutError extends Error {}
+export class ForbiddenError extends UserFacingError {}
+export class SelfLockoutError extends UserFacingError {}
 
 export type GridRole = { id: string; label: string };
 export type GridColumn = { id: string; label: string; group?: string };

@@ -9,6 +9,7 @@ import { createAccount as defaultCreateAccount } from "@/domain/auth/accounts";
 import { archive as defaultArchive } from "@/domain/archive";
 import { findRoleById as defaultFindRoleById } from "@/repositories/roles";
 import { findTeamById as defaultFindTeamById } from "@/repositories/teams";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import {
   listUsers as repoListUsers,
   findUserById as repoFindUserById,
@@ -22,10 +23,10 @@ import {
   type TeamAssignmentDto,
 } from "@/domain/org";
 
-export class ForbiddenError extends Error {}
-export class ValidationError extends Error {}
-export class SelfRoleChangeError extends Error {}
-export class UserNotFoundError extends Error {}
+export class ForbiddenError extends UserFacingError {}
+export class ValidationError extends UserFacingError {}
+export class SelfRoleChangeError extends UserFacingError {}
+export class UserNotFoundError extends UserFacingError {}
 
 const PEOPLE_MENU = "admin.people";
 const EFFECTIVE_FROM_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -179,7 +180,7 @@ export async function registerPerson(
             detail: { reason: "register_person_rollback", requestedBy: viewer.id },
           }),
       });
-      throw new Error(
+      throw new UserFacingError(
         "계정 발급은 됐으나 발령이 실패해 보관함으로 보냈습니다 · 보관함에서 복원한 뒤 사람 상세에서 발령을 추가하세요",
       );
     }

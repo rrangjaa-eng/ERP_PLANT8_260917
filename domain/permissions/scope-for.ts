@@ -1,5 +1,6 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 
 // ADMN-01·ADMN-12: 행 필터 서술자 — repositories가 where절로 번역한다. Drizzle
 // SQL 조각을 돌려주지 않는다 — boundaries/element-types가 domain에서 db 계층
@@ -26,7 +27,7 @@ const ENTITY_MENUS: Record<string, string> = {
 
 const ARCHIVE_MENU = "admin.archive";
 
-export class UnknownScopeEntityError extends Error {}
+export class UnknownScopeEntityError extends UserFacingError {}
 
 export async function scopeFor(
   viewer: Viewer,

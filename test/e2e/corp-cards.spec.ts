@@ -47,7 +47,15 @@ test.describe("법인카드 관리 화면 (MAST-03)", () => {
     await page.getByLabel("종류").selectOption("personal");
     await page.getByLabel("소지자").selectOption({ label: "카드소지자" });
     await page.getByRole("button", { name: "법인카드 등록" }).click();
-    await expect(page.getByRole("alert")).toBeVisible();
+    // defect 1 회귀 방지: 예전에는 이 자리에 drizzle의 원시 SQL·바인딩 값(내부
+    // user id 포함)이 그대로 떴다. 이제 운영자가 읽을 수 있는 문장만 나가야 한다.
+    // getByRole("alert")는 Next.js의 route announcer(빈 텍스트, 항상 role="alert")도
+    // 잡으므로 FormAlert가 렌더하는 <p role="alert">만 좁혀서 본다.
+    const alert = page.locator('p[role="alert"]');
+    await expect(alert).toBeVisible();
+    await expect(alert).toHaveText("이미 등록된 카드입니다 · 발급사와 뒤 4자리를 확인하세요");
+    await expect(alert).not.toContainText("insert into");
+    await expect(alert).not.toContainText("params:");
 
     // 팀 카드 등록
     const teamIssuer = `E2E팀카드사-${Date.now()}`;

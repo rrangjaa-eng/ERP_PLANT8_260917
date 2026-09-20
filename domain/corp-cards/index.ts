@@ -4,6 +4,8 @@ import { scopeFor } from "@/domain/permissions/scope-for";
 import { project, type DtoSpec } from "@/domain/permissions/project";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { registerDto } from "@/domain/permissions/dto-registry";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { isUniqueViolation } from "@/lib/pg-errors";
 import {
   listCorpCards as repoListCorpCards,
   insertCorpCard as repoInsertCorpCard,
@@ -13,8 +15,16 @@ import {
   type CorpCardRow,
 } from "@/repositories/corp-cards";
 
-export class ForbiddenError extends Error {}
-export class InvalidCardOwnerError extends Error {}
+export class ForbiddenError extends UserFacingError {}
+export class InvalidCardOwnerError extends UserFacingError {}
+// defect 1 구체적 수정: 같은 발급사·뒤 4자리로 중복 등록하면 DB unique 제약
+// (db/schema/corp-cards.ts의 corp_cards_issuer_last4_key)이 막고, drizzle의
+// DrizzleQueryError.message에 원시 SQL·바인딩 값(내부 user id 포함)이 그대로
+// 담긴다. 예전에는 그 message가 handleServerError를 거쳐 화면에 그대로 샜다 —
+// 이제 여기서 그 특정 제약 위반만 감지해 운영자가 읽을 수 있는 문장으로
+// 바꿔치기한다. 그 외 오류는 그대로 던져 handleServerError의 일반 처리(로그 +
+// 안전한 일반 문구)로 넘긴다.
+export class DuplicateCorpCardError extends UserFacingError {}
 
 const CARDS_MENU = "admin.corp-cards";
 
@@ -92,7 +102,15 @@ export async function createCorpCard(
     throw new ForbiddenError("법인카드 등록 권한이 없습니다.");
   }
 
-  const row = await repoInsertCorpCard(viewer, { ...input, kind });
+  let row: CorpCardRow;
+  try {
+    row = await repoInsertCorpCard(viewer, { ...input, kind });
+  } catch (e) {
+    if (isUniqueViolation(e, "corp_cards_issuer_last4_key")) {
+      throw new DuplicateCorpCardError("이미 등록된 카드입니다 · 발급사와 뒤 4자리를 확인하세요");
+    }
+    throw e;
+  }
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "document_create", entity: "corp_card", entityId: row.id });
 

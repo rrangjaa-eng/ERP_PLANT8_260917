@@ -1,9 +1,10 @@
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 // 16A 커넥션 규칙: max-instances × pool ≤ max_connections − 5. 경계값(정확히
 // max_connections − 5)은 허용, 1 넘으면 거부. 정수 산술만 쓰고 비정수·비숫자
 // 입력은 거부한다(반올림·부동소수 없음, Pitfall 3/A2 — 실측 max_connections를
 // 검사에 쓴다. 이 모듈은 그 값을 받기만 하고 직접 조회하지 않는다).
 
-export class PoolRuleInputError extends Error {}
+export class PoolRuleInputError extends UserFacingError {}
 
 export type PoolRuleInput = {
   maxInstances: number;

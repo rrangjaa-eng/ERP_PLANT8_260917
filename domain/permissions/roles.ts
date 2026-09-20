@@ -4,6 +4,7 @@ import { can as defaultCan } from "@/domain/permissions/can";
 import { project, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import type { recordAction as RecordActionFn } from "@/domain/action-log/record";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import {
   findRoleById as defaultFindRoleById,
   listRoles as repoListRoles,
@@ -48,7 +49,7 @@ export async function roleExists(viewer: Viewer, roleId: string, deps?: Partial<
   return (await findRoleById(viewer, roleId)) !== null;
 }
 
-export class ForbiddenError extends Error {}
+export class ForbiddenError extends UserFacingError {}
 
 const PEOPLE_MENU = "admin.people";
 

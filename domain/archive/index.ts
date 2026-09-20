@@ -2,15 +2,16 @@ import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { ARCHIVABLE_TABLES } from "@/repositories/archive";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 
 // ADMN-12: "지우지 않는다" — archived_at/archived_by 규약의 유일한 진입점.
 // 물리 삭제 문장은 이 리포 어디에도 넣지 않는다 — DB 레벨 권한 회수(REVOKE)는
 // 이 페이즈 범위 밖이다(운영 DB 권한 변경은 배포 절차 변경을 부르며, 코드에
 // 물리 삭제 호출이 0건인 것으로 이 페이즈의 계약은 성립한다).
-export class ForbiddenError extends Error {}
-export class UnknownArchivableEntityError extends Error {}
-export class ProtectedRowError extends Error {}
-export class ArchivableRowNotFoundError extends Error {}
+export class ForbiddenError extends UserFacingError {}
+export class UnknownArchivableEntityError extends UserFacingError {}
+export class ProtectedRowError extends UserFacingError {}
+export class ArchivableRowNotFoundError extends UserFacingError {}
 
 export type ArchiveDeps = {
   can: typeof defaultCan;

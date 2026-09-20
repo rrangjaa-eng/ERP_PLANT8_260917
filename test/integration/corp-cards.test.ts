@@ -11,6 +11,7 @@ import {
   setCorpCardActive,
   InvalidCardOwnerError,
   ForbiddenError,
+  DuplicateCorpCardError,
 } from "@/domain/corp-cards";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { archive, restore } from "@/domain/archive";
@@ -41,6 +42,33 @@ describe("corp-cards (MAST-03, 실제 Postgres)", () => {
     await expect(
       createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "2호", holderUserId }),
     ).rejects.toThrow();
+  });
+
+  // defect 1 구체적 수정: 예전에는 이 경로가 drizzle의 DrizzleQueryError.message를
+  // 그대로 던져 "Failed query: insert into ... params: ..., <내부 user id>, ..."가
+  // 화면까지 샜다(회귀 재현). 이제 특정 unique 제약 위반을 UserFacingError
+  // 하위 클래스로 바꿔치기해 운영자가 읽을 수 있는 문장만 나간다.
+  it("중복 등록 시 원시 SQL이 아니라 DuplicateCorpCardError와 사람이 읽는 문장을 던진다", async () => {
+    const holderUserId = await makeTestUser();
+    const issuer = `카드사-${randomUUID()}`;
+    const numberLast4 = uniqueLast4();
+    await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "1호", holderUserId });
+
+    await expect(
+      createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "2호", holderUserId }),
+    ).rejects.toThrow(DuplicateCorpCardError);
+
+    try {
+      await createCorpCard(SYSTEM_VIEWER, { issuer, numberLast4, label: "3호", holderUserId });
+      throw new Error("test setup 오류: 실패해야 할 등록이 성공했다");
+    } catch (e) {
+      expect(e).toBeInstanceOf(DuplicateCorpCardError);
+      const message = (e as Error).message;
+      expect(message).toBe("이미 등록된 카드입니다 · 발급사와 뒤 4자리를 확인하세요");
+      expect(message).not.toContain("insert into");
+      expect(message).not.toContain("params:");
+      expect(message).not.toContain(holderUserId);
+    }
   });
 
   it("소지자만 지정하면 등록에 성공한다", async () => {

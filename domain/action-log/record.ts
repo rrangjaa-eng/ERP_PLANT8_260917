@@ -1,6 +1,7 @@
 import type { Viewer } from "@/domain/viewer";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { appendActionLog as defaultAppendActionLog } from "@/repositories/action-log";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 
 // OPS-05: 핵심 행동 종류 목록의 정본. 단순 조회·화면 이동은 이 목록에 없다 —
 // recordAction을 아예 부르지 않는 것이 "잡음을 남기지 않는다"의 구현이다.
@@ -32,7 +33,7 @@ export type CoreActionType = (typeof CORE_ACTION_TYPES)[number];
 // 로그다 — 설정 조회 결과와 무관하게 항상 기록한다.
 export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = ["excel_export", "mask_reveal", "action_log_prune"];
 
-export class UnknownActionTypeError extends Error {}
+export class UnknownActionTypeError extends UserFacingError {}
 
 export type RecordActionEntry = {
   actionType: string;

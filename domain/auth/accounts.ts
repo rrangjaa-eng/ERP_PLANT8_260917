@@ -6,6 +6,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { can } from "@/domain/permissions/can";
 import { findUserByEmail, setPasswordTemporary } from "@/repositories/users";
 import { resolveOpenFailures } from "@/repositories/login-attempts";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 
 // D-11: 계정 발급 수단은 CLI 하나. 무작위 임시 비밀번호를 반환하고, 어떤 로그·
 // 출력에도 비밀번호 값 자체는 절대 남기지 않는다.
@@ -20,14 +21,14 @@ export async function createAccount(
   input: { email: string; name: string; roleId?: string },
 ): Promise<{ userId: string; tempPassword: string }> {
   if (!(await can(viewer, "admin.people", "write"))) {
-    throw new Error("계정 생성 권한이 없습니다.");
+    throw new UserFacingError("계정 생성 권한이 없습니다.");
   }
 
   // 사전 존재 확인 없이 DB unique 제약에만 맡기면 관리자에게 원시 SQL 에러가
   // 그대로 노출된다(Rule 1 — 운영 CLI 사용성 버그, 실제 실행 확인 중 발견).
   const existing = await findUserByEmail(viewer, input.email);
   if (existing) {
-    throw new Error(`이미 존재하는 이메일입니다: ${input.email}`);
+    throw new UserFacingError(`이미 존재하는 이메일입니다: ${input.email}`);
   }
 
   const tempPassword = generateTempPassword();
@@ -71,12 +72,12 @@ export async function resetPassword(
   email: string,
 ): Promise<{ userId: string; tempPassword: string }> {
   if (!(await can(viewer, "admin.people", "write"))) {
-    throw new Error("비밀번호 재발급 권한이 없습니다.");
+    throw new UserFacingError("비밀번호 재발급 권한이 없습니다.");
   }
 
   const user = await findUserByEmail(viewer, email);
   if (!user) {
-    throw new Error("사용자를 찾을 수 없습니다.");
+    throw new UserFacingError("사용자를 찾을 수 없습니다.");
   }
 
   const tempPassword = generateTempPassword();
@@ -97,7 +98,7 @@ export async function resetPassword(
 // AUTH-01: 관리자 해제 — 열린 실패 기록을 admin_unlock으로 닫는다.
 export async function unlockAccount(viewer: Viewer, email: string): Promise<{ resolved: number }> {
   if (!(await can(viewer, "admin.people", "write"))) {
-    throw new Error("계정 잠금 해제 권한이 없습니다.");
+    throw new UserFacingError("계정 잠금 해제 권한이 없습니다.");
   }
 
   const resolved = await resolveOpenFailures(SYSTEM_VIEWER, email, "admin_unlock");

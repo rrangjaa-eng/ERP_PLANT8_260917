@@ -14,6 +14,19 @@ export default async function globalSetup(): Promise<void> {
     await pool.end();
   }
 
+  // Phase 3: 마이그레이션이 넣는 것은 계급 5행과 백필뿐이다 — 권한표·노출표·
+  // 코드표 파생 시드는 domain/seed(MENUS·INFO_ITEMS 레지스트리에서 파생)가
+  // 맡는다. 이걸 부르지 않으면 E2E 픽스처의 시스템 관리자 계정도 권한표가
+  // 비어 있어 모든 메뉴 판정이 거부된다(can()의 기본 거부). 여기서는 이
+  // 파일이 이미 채운 DATABASE_URL로 앱의 db/client.ts 싱글턴이 붙게 동적
+  // import한다(정적 import면 이 모듈 로드 시점에 아직 없는 env로 풀이 먼저
+  // 만들어진다).
+  const { seedMasterData } = await import("@/domain/seed");
+  const { SYSTEM_VIEWER } = await import("@/domain/viewer");
+  await seedMasterData(SYSTEM_VIEWER);
+  const { closeDb } = await import("@/db/client");
+  await closeDb();
+
   await warmUpDevServer();
 }
 

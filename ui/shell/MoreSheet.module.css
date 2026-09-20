@@ -1,0 +1,134 @@
+/* SYSTEM.md §7-8 「더보기」 시트. 실물: docs/design/system/sheet-modal.html #sheet-more.
+   색·서체·radius는 토큰 참조만 쓴다(D-20). 네이티브 <dialog>가 가림막(::backdrop)·
+   포커스 트랩을 제공하므로 별도 scrim 요소를 만들지 않는다. */
+
+.sheet {
+  position: fixed;
+  inset-block-end: 0;
+  inset-inline: 0;
+  width: 100%;
+  max-width: none;
+  max-height: 85vh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-top: var(--line-w-strong) solid var(--line-strong);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.sheet[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet::backdrop {
+  background: var(--scrim);
+}
+
+.hd {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--pad-page) var(--s-2);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-head);
+  line-height: var(--lh-head);
+}
+
+.close {
+  flex: none;
+  width: var(--touch-min);
+  height: var(--touch-min);
+  margin: calc(var(--s-2) * -1) calc(var(--s-3) * -1) 0 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.closeIcon {
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+  stroke: currentColor;
+  stroke-width: var(--icon-stroke);
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.list {
+  margin: 0;
+  padding: 0 0 var(--s-3);
+  list-style: none;
+  overflow-y: auto;
+}
+
+.list li {
+  border-bottom: var(--line-w) solid var(--line);
+}
+
+.list li:last-child {
+  border-bottom: 0;
+}
+
+.link {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  min-height: var(--touch-min);
+  padding: 0 var(--pad-page);
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font-size: var(--fs-base);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.link:hover {
+  background: var(--surface);
+}
+
+.link:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: calc(-1 * var(--focus-w));
+}
+
+.group {
+  padding: var(--s-3) var(--pad-page) var(--s-1);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--faint);
+  border-bottom: 0;
+}
+
+.searchRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: var(--touch-min);
+  padding: 0 var(--pad-page);
+  background: var(--surface);
+  color: var(--faint);
+  font-size: var(--fs-base);
+  cursor: not-allowed;
+}
+
+.reason {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}

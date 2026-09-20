@@ -3,12 +3,19 @@
 import type { FormEvent } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { changePasswordAction } from "./actions";
+import { TextField } from "@/ui/input/TextField";
+import { Button } from "@/ui/button/Button";
+import { FormAlert } from "@/ui/form-alert/FormAlert";
 
 function getStringField(formData: FormData, key: string): string {
   const value = formData.get(key);
   return typeof value === "string" ? value : "";
 }
 
+// SYSTEM.md §6-3 폼 템플릿 재사용(D-30). next-safe-action 배선·필드 오류 추출
+// 모양은 그대로 — 서버가 돌려주는 검증 메시지 문자열은 한 글자도 바꾸지 않는다
+// (test/e2e/change-password.spec.ts 계약). 버튼 위계(§7-1): 이 화면의 1차 버튼은
+// 이 하나뿐 — 로그아웃은 2차(logout-button.tsx).
 export function ChangePasswordForm() {
   const { execute, result, isExecuting } = useAction(changePasswordAction);
 
@@ -27,26 +34,28 @@ export function ChangePasswordForm() {
   return (
     <form onSubmit={handleSubmit}>
       <h2>비밀번호 변경</h2>
-      <div>
-        <label htmlFor="currentPassword">현재 비밀번호</label>
-        <input
-          id="currentPassword"
-          name="currentPassword"
-          type="password"
-          autoComplete="current-password"
-          required
-        />
-        {currentPasswordError ? <p role="alert">{currentPasswordError}</p> : null}
-      </div>
-      <div>
-        <label htmlFor="newPassword">새 비밀번호</label>
-        <input id="newPassword" name="newPassword" type="password" autoComplete="new-password" required />
-        {newPasswordError ? <p role="alert">{newPasswordError}</p> : null}
-      </div>
-      {result.serverError ? <p role="alert">{result.serverError}</p> : null}
-      <button type="submit" disabled={isExecuting}>
+      <TextField
+        id="currentPassword"
+        name="currentPassword"
+        label="현재 비밀번호"
+        type="password"
+        autoComplete="current-password"
+        required
+        error={currentPasswordError}
+      />
+      <TextField
+        id="newPassword"
+        name="newPassword"
+        label="새 비밀번호"
+        type="password"
+        autoComplete="new-password"
+        required
+        error={newPasswordError}
+      />
+      {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
+      <Button type="submit" variant="primary" pending={isExecuting}>
         비밀번호 변경
-      </button>
+      </Button>
     </form>
   );
 }

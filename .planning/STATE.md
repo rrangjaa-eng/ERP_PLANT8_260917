@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 2
+current_phase: 02
 current_phase_name: 디자인 시스템·앱 셸
-current_plan: Not started
-status: planning
-stopped_at: Phase 1 complete, ready to plan Phase 2
-last_updated: "2026-09-19T03:32:38.349Z"
+current_plan: 7
+status: verifying
+stopped_at: Completed 02-08-PLAN.md
+last_updated: "2026-09-19T22:27:22.933Z"
 last_activity: 2026-09-19
-last_activity_desc: Phase 1 complete, transitioned to Phase 2
-state_head: d5e110eb1119aa22a6e6cfdf652d509a85b33100
+last_activity_desc: Phase 02 execution started
+state_head: 3748fee99efae6516ae0f19168faeabcb833eae1
 progress:
   total_phases: 11
   completed_phases: 1
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 16
+  completed_plans: 16
   percent: 9
 ---
 
@@ -24,15 +24,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-17)
 
 **Core value:** 기획본부와 경영관리본부가 프로젝트마다 같은 숫자(견적·예상 비용·확정 비용·손익)를 본다. 기획본부는 계산식·근거 없이 결과 숫자로 납득하고, 경영관리·대표는 근거 줄까지 본다.
-**Current focus:** Phase 2 — 디자인 시스템·앱 셸
+**Current focus:** Phase 02 — 디자인 시스템·앱 셸
 
 ## Current Position
 
-Phase: 2 — 디자인 시스템·앱 셸
-Current Plan: Not started
-Total Plans in Phase: 0
-Status: Ready to plan
-Last activity: 2026-09-19 — Phase 1 complete, transitioned to Phase 2
+Phase: 02 (디자인 시스템·앱 셸) — EXECUTING
+Current Plan: 7
+Total Plans in Phase: 7
+Status: Phase complete — ready for verification
+Last activity: 2026-09-19 — Phase 02 execution started
 
 Progress: [█░░░░░░░░░] 9%
 
@@ -65,6 +65,14 @@ Progress: [█░░░░░░░░░] 9%
 | Phase 01-deploy-skeleton-login P04 | 40min | 3 tasks | 32 files |
 | Phase 01-deploy-skeleton-login P05 | 14min | 2 tasks | 11 files |
 | Phase 01-deploy-skeleton-login P06 | 38min | 2 tasks | 17 files |
+| Phase 02 P02 | 11min | 3 tasks | 11 files |
+| Phase 02 P01 | unknown | 3 tasks | 4 files |
+| Phase 02 P03 | 19min | 3 tasks | 13 files |
+| Phase 02 P04 | 28min | 3 tasks | 14 files |
+| Phase 02-design-system-app-shell P05 | 20min | 3 tasks | 15 files |
+| Phase 02 P06 | 20min | 3 tasks | 12 files |
+| Phase 02 P07 | 55min | 3 tasks | 10 files |
+| Phase 02 P08 | 16min | 3 tasks | 30 files |
 
 ## Accumulated Context
 
@@ -117,6 +125,24 @@ Recent decisions affecting current work:
 - [Phase 1]: [Phase 01-deploy-skeleton-login] 01-06: bash ERR 트랩은 기본적으로 함수 안에서 발동하지 않는다 — set -o errtrace(set -E) 없이는 deploy.sh의 STAGE 트랩 메시지가 안 나옴을 실측(scripts/deploy.sh)
 - [Phase 1]: [Phase 01-deploy-skeleton-login] 01-06: deploy.yml/account.yml에 pnpm build:cli 스텝 불필요 — Dockerfile의 build 스테이지가 컨테이너 안에서 이미 pnpm build && pnpm build:cli를 실행함을 확인(01-05 Dockerfile 직접 확인)
 - [Phase Phase 1]: SC6 재정의(사용자 결정 2026-09-19): 카나리를 복원하지 않고 안전 속성을 계약으로 삼는다 — 스모크에 실패한 리비전이 트래픽을 계속 받는 상태로 끝나지 않는다 — 카나리(0%→스모크→100%)는 태그 전용 리비전 URL에 의존하는데 이 프로젝트에서 4회 연속 라우팅되지 않았고 원인이 통제 밖이다(01-07). 같은 것을 다시 지으면 같은 데서 막힌다. 구현 둘: (1) 기존 서비스는 배포 전에 status.url을 확정해 배포당 리비전 하나 — 틀린 BETTER_AUTH_URL로 100%를 받던 창이 사라지고 롤백 대상도 깔끔해진다. (2) 스모크 실패 시 이전 배포로 1회 자동 롤백 후 실패 종료 — 재시도는 금지(반복은 진짜 원인을 가린다). 프로덕션은 승격 가드가 스테이징이 서빙 중인 이미지만 올리므로 스테이징이 카나리 역할을 한다. 남는 노출 창은 스모크 소요 시간(수십 초)이며 사용자 10~30명 사내 시스템에 적정하다고 판단. ROADMAP 기준 6과 REQUIREMENTS OPS-01 본문을 이 속성으로 고쳤다
+- [Phase 02]: 02-02: 간격(margin/padding/gap) 리터럴은 stylelint 금지 대상에서 제외 — D-20 비준대로 색·서체·radius 셋만 — 실물 HTML 간격 리터럴 283건 중 175건이 tokens.css 4px 스케일에 대응하지 않아 금지하면 이관할 마크업이 거부됨
+- [Phase 02]: 02-02: .dockerignore의 docs 라인을 부분 예외 대신 통째 제거 — COPY . .가 컨텍스트 전체를 한 레이어에 담아 캐시 보존 이점이 없고, 부정 패턴 의미론을 Docker 데몬 없는 환경에서 확인할 수 없음
+- [Phase 02]: 02-02: CI/배포 트리거를 paths-ignore에서 paths + ! 4패턴으로 교체 — GitHub 문서가 부정 패턴 지원을 명시하는 필터는 paths뿐 — 실제 트리거 동작은 사람 체크로 남김
+- [Phase 02]: [Phase 02] 02-01: 체크포인트 24개 항목(A~I) 전부 사용자 확정 — F-1①·F-2①·I②(--on-accent-weak 신설)·G①·H① 채택, A⑤·E⑤는 다섯 상태를 하나도 비우지 않고 "해당 없음 — 이유"로 명시하는 규칙으로 변경. 재계획 방아쇠 미선택
+- [Phase 02]: [Phase 02] 02-03: AuthFrame 최대 폭은 새 값을 만들지 않고 tokens.css의 기존 --modal-w(480) 토큰을 재사용했다 — §6-7의 「최대 폭 360」은 ASCII 목업 근사치이고 로그인 폼은 --form-max(720, 다항목 업무 폼)보다 단일 목적 좁은 컨테이너에 더 가깝다
+- [Phase 02]: [Phase 02] 02-03: §6-7 다이어그램에 없는 기존 h1 「로그인」 타이틀을 제거했다 — 워드마크(PLANT8)가 그 자리를 대신하고 어떤 E2E도 그 텍스트에 의존하지 않는다
+- [Phase 02]: 02-04: 역할→메뉴 매핑을 role-menu.ts 순수 함수 하나로 고정, 셸 컴포넌트에는 isAdmin 조건문을 두지 않는다(D-23)
+- [Phase 02]: 02-04: MoreSheet 포커스 트랩은 네이티브 <dialog>.showModal()로 구현 — 새 런타임 의존성 없음
+- [Phase 02]: 02-04: PC 사용자 메뉴는 accountGroup에서 href==='/settings' 항목만 걸러 렌더 — SYSTEM.md가 PC 메뉴와 폰 시트의 계정 항목 구성을 다르게 규정
+- [Phase 02]: 02-05: §7-4 원문(결재·대기 둘 다 --accent)을 §7-5 일반 규칙보다 우선 적용 — 「내 차례」 전용 정본이 더 구체적
+- [Phase 02]: 02-05: ListEmpty의 다음 한 수는 ui/button/Button이 아니라 자체 <a> + 로컬 CSS로 구현 — 이 페이즈부터 실제 화면 이동 링크여야 하고 Button은 <button>만 렌더한다(§10)
+- [Phase 02]: 02-06: §6-7 A④=「내 계정 화면 상단」, F-1=①(status 승격), §6-9 C②=「셸 안」 — SYSTEM.md 원문 대조로 확정, app/(app)/layout.tsx·login/page.tsx는 건드리지 않았다
+- [Phase 02]: 02-06: ListEmpty.action을 href/onClick 유니언으로 확장(Rule 2) — 오류 경계의 다시 시도는 페이지 이동이 아니라 retry() 호출이라 §10(3차 버튼은 button, 이동이면 a)을 지키려면 button 갈래가 필요했다
+- [Phase 02]: 02-07: 체크포인트 승인 — @axe-core/playwright@4.13.0 devDependency 추가(정확히 버전 고정), SYSTEM.md §10을 규칙 엔진으로 판정. 남은 페이즈가 같은 검사를 물려받는다는 근거로 채택
+- [Phase 02]: 02-07: 키보드 비밀번호 변경 동선은 §6-0 (a) G①(작은 메뉴가 열린다) 형태 하나에만 대응 — 메뉴 열기 대기·Esc/포커스 복귀 단언 포함, ②·③ 분기 없음
+- [Phase 02]: 02-07: 로그인 화면 axe page-has-heading-one 위반을 규칙 비활성 대신 화면 수정으로 해소 — app/globals.css에 .sr-only 유틸리티 추가, 스크린 리더 전용 h1 복원(시각 디자인 불변)
+- [Phase 02]: 화면 제목·부제는 전역 h1 규칙이 아니라 ui/page-header/PageHeader 컴포넌트다(구조 우연 회피)
+- [Phase 02]: font:inherit 축약은 D-20 stylelint 허용 목록과 충돌해 롱핸드(font-family/font-size/line-height:inherit/letter-spacing:inherit/color:inherit)로 편다
 
 ### Pending Todos
 
@@ -130,6 +156,7 @@ None yet.
 - [Phase 11]: CERT 활성화 조건은 `/cso` 보안 감사 통과. 개인정보보호법 적용 범위·보존 기간은 감사에서 재확인(리서치 Gap). 감사 뒤 KMS 봉투 승격(Issue 7)
 - [All]: 과잉 설계 재발 방지 — 페이즈마다 "인트라넷보다 못한가"로 검증하고, 실제 사용자 로그인·입력이 있어야 완료로 본다
 - [Phase 2]: `docs/design/`(SYSTEM.md 725줄·tokens.css·DECISIONS.md·BRIEF.md·EXPLORE.md)은 **이미 있다**(2026-09-18 확인). Phase 2는 이 시스템을 앱 셸·임시 화면에 적용하는 일이며, 새 화면은 SYSTEM.md 기준을 따르고 시스템을 벗어나면 DECISIONS.md에 이유를 남긴 뒤 SYSTEM.md를 고친다
+- [Phase 2] 02-02: ci.yml/deploy.yml paths+! 트리거 실제 동작 미검증 — tokens.css 단독 PR이 CI를 타는지, 일반 소스 PR도 여전히 타는지 GitHub에서 사람이 확인해야 한다. (2)가 실패하면 즉시 paths-ignore로 되돌린다
 
 ## Deferred Items
 
@@ -141,6 +168,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-18T18:54:04.478Z
-Stopped at: Phase 1 complete, ready to plan Phase 2
+Last session: 2026-09-19T22:27:22.848Z
+Stopped at: Completed 02-08-PLAN.md
 Resume file: None

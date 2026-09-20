@@ -1,0 +1,87 @@
+/* SYSTEM.md §7-1 버튼 위계. 색·서체·radius는 전부 tokens.css 토큰 참조만 쓴다(D-20). */
+
+.wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: var(--control-h);
+  padding: 0 var(--s-3);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-hover) var(--ease-out),
+    color var(--dur-hover) var(--ease-out);
+}
+
+.btn:disabled {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--faint);
+  cursor: not-allowed;
+}
+
+.primary {
+  border: var(--line-w) solid var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.secondary {
+  border: var(--line-w) solid var(--line-strong);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.secondary:hover:not(:disabled) {
+  background: var(--surface);
+}
+
+.tertiary {
+  height: auto;
+  padding: 0;
+  border: 0;
+  border-bottom: var(--line-w) solid var(--accent);
+  background: none;
+  color: var(--accent);
+}
+
+.tertiary:hover:not(:disabled) {
+  border-bottom-width: var(--line-w-strong);
+}
+
+/* 기본 kbd(§7-1): 라벨 오른쪽 단축키 병기 */
+.kbd {
+  border: var(--line-w) solid var(--line);
+  color: var(--faint);
+  padding: 0 var(--s-1);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-head);
+}
+
+/* 1차 버튼(--accent 면) 위 kbd 전용 — 기본 --line 대신 --on-accent-weak(체크포인트 I②) */
+.kbdOnAccent {
+  border: var(--line-w) solid var(--on-accent-weak);
+  color: inherit;
+  opacity: 0.8;
+  padding: 0 var(--s-1);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-head);
+}
+
+.reason {
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}

@@ -8,9 +8,17 @@ name: deploy
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - ".planning/**"
-      - "docs/**"
+    # ci.yml과 동일한 재포함 목록을 유지한다(WR-09) — 두 워크플로가 어긋나면
+    # docs 전용 커밋이 CI는 돌지만 배포는 스킵되거나 그 반대가 된다.
+    paths:
+      - "**"
+      - "!.planning/**"
+      - "!docs/**"
+      - "docs/design/tokens.css"
+      - "docs/design/SYSTEM.md"
+      - "docs/design/DECISIONS.md"
+      - "docs/ARCHITECTURE.md"
+      - "docs/OPERATIONS.md"
   workflow_dispatch:
     inputs:
       target:

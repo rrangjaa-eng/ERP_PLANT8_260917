@@ -3,3 +3,68 @@
 *::after {
   box-sizing: border-box;
 }
+
+/* 페이지 층 — 실물 form-expense.html:16-21 이관. 실물이 요소 단위로 전역에 정한
+   것만 여기 둔다(화면 골격 단위 규칙은 ui/ 컴포넌트로 — 02-08-PLAN.md objective). */
+html {
+  font-size: var(--fs-base);
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  line-height: var(--lh-body);
+  letter-spacing: var(--ls-body);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  -webkit-font-smoothing: antialiased;
+  tab-size: 4;
+}
+
+/* 실물의 font:inherit는 롱핸드로 편다 — stylelint(D-20)가 font 축약과 font-family/
+   font-size의 inherit 값(허용 목록 밖)을 거부한다. 컴포넌트 클래스(.btn·.input·.tab)
+   가 요소 선택자보다 특이도가 높아 이 규칙은 UA 컨트롤 서체(Arial)만 없앤다. */
+button, input, select, textarea {
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  line-height: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+
+/* §4-4 브라우저 기본 표면 — 기본값으로 두지 않는다. */
+::selection {
+  background: var(--sel-bg);
+  color: var(--sel-fg);
+}
+
+:root {
+  caret-color: var(--caret);
+  accent-color: var(--native-accent);
+  scrollbar-color: var(--scrollbar) var(--bg);
+  scrollbar-width: thin;
+}
+
+:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+/* §10 접근성 계약 — 시각적으로 숨기되 스크린 리더에는 남기는 표준 유틸리티(표
+   caption·페이지 제목처럼 시각 디자인엔 없지만 구조상 필요한 텍스트에 쓴다).
+   02-07: 로그인 화면의 h1(02-03이 워드마크와 중복이라 시각적으로는 제거)이
+   axe page-has-heading-one을 만족하도록 여기에 스크린 리더 전용으로 되살렸다. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

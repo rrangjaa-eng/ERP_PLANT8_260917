@@ -1,0 +1,73 @@
+/* SYSTEM.md §7-2 입력 · 오류 표시, §10 접근성 계약. 색·서체·radius는 토큰 참조만 쓴다(D-20). */
+
+.row {
+  margin-bottom: var(--s-4);
+}
+
+.label {
+  display: block;
+  margin-bottom: var(--s-1);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.field {
+  width: 100%;
+}
+
+.input {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 var(--s-2);
+  border: var(--line-w) solid var(--line-ui);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: var(--fs-base);
+}
+
+.input::placeholder {
+  color: var(--faint);
+}
+
+.input:focus-visible {
+  border-color: var(--line-ui);
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.inputError {
+  border-color: var(--danger);
+}
+
+.numeric {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.error {
+  margin: var(--s-1) 0 0;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+/* PC 폼: 라벨 왼쪽 96px. 폰(<700px)은 위 규칙(row가 세로로 쌓인다)이 기본값이다 */
+@media (min-width: 700px) {
+  .row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s-2);
+  }
+
+  .label {
+    flex: 0 0 var(--label-w);
+    margin-bottom: 0;
+    padding-top: var(--s-1);
+  }
+
+  .field {
+    flex: 1 1 auto;
+  }
+}

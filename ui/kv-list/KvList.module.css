@@ -1,0 +1,31 @@
+/* SYSTEM.md §6-8 B① · §7-8 라벨·값 목록. 실물: sheet-modal.html:102-106 .kv 이관.
+   색·서체·radius는 토큰 참조만 쓴다(D-20). 라벨 폭 96(PC)/84(폰). */
+
+.kv {
+  display: grid;
+  grid-template-columns: var(--label-w) 1fr;
+  gap: 0 var(--s-3);
+  margin: 0;
+}
+
+.kv dt {
+  margin: 0;
+  padding: 7px 0;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  border-bottom: var(--line-w) dotted var(--line);
+}
+
+.kv dd {
+  margin: 0;
+  padding: 6px 0;
+  min-width: 0;
+  border-bottom: var(--line-w) dotted var(--line);
+}
+
+@media (max-width: 699.98px) {
+  .kv {
+    grid-template-columns: 84px 1fr;
+  }
+}

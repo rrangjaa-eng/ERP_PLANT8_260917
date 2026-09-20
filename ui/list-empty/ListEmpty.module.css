@@ -1,0 +1,57 @@
+/* SYSTEM.md §7-7 EMPTY 행 · §6-1 목록 EMPTY. 실물: docs/design/system/preview.html
+   td.empty 블록(표 대신 한 줄로 쓴다 — 표 뼈대는 이 페이즈 범위 밖, DECISIONS.md
+   기록). 색·서체·radius는 토큰 참조만 쓴다(D-20). */
+
+.row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  padding: var(--s-6) 0;
+  font-size: var(--fs-base);
+  margin: 0;
+}
+
+.empty .message {
+  color: var(--muted);
+}
+
+.error .message {
+  color: var(--danger);
+}
+
+/* EMPTY의 다음 한 수 = 3차 버튼(§7-1) 모양의 링크. */
+.tertiary {
+  border: 0;
+  border-bottom: var(--line-w) solid var(--accent);
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-base);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.tertiary:hover {
+  border-bottom-width: var(--line-w-strong);
+}
+
+/* ERROR의 다음 행동 = 2차 버튼(§7-1) 모양의 링크(§7-7 ERROR 행). */
+.secondary {
+  display: inline-flex;
+  align-items: center;
+  height: var(--control-h);
+  padding: 0 var(--s-3);
+  border: var(--line-w) solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-sm);
+  text-decoration: none;
+}
+
+.secondary:hover {
+  background: var(--surface);
+}

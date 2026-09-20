@@ -1,0 +1,26 @@
+/* SYSTEM.md §6-7 — 셸 없는 화면 골격. 색·서체·radius는 토큰 참조만 쓴다(D-20).
+   최대 폭은 새 값을 만들지 않고 tokens.css의 기존 폭 토큰(--modal-w, 480)을
+   재사용한다 — 로그인 폼은 --form-max(720, 다항목 업무 폼)보다 --modal-w처럼
+   단일 목적의 좁은 컨테이너에 가깝다. */
+
+.page {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  padding: var(--pad-page);
+}
+
+.frame {
+  width: 100%;
+  max-width: var(--modal-w);
+}
+
+.mark {
+  margin: 0 0 var(--s-6);
+  color: var(--fg);
+  font-weight: var(--fw-mark);
+  font-size: var(--fs-lg);
+  letter-spacing: var(--ls-head);
+  text-align: center;
+}

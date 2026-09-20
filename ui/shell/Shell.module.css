@@ -1,0 +1,48 @@
+/* SYSTEM.md §6-0 공통 셸. 본문 최대 폭 1280(--container-max), 좌측 정렬(auto 마진
+   없음), 패딩 PC 20 · 폰 14(--pad-page). 태블릿 700–1023은 이 PC 셸을 그대로 쓴다 —
+   별도 레이아웃이 없다. 색·서체·radius는 토큰 참조만 쓴다(D-20). */
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* 1차 버튼 모양(§7-1과 같은 시각 언어) — 포커스 전에는 화면 밖, 포커스되면 보인다. */
+.skipLink {
+  position: absolute;
+  top: -80px;
+  left: var(--s-2);
+  z-index: var(--z-modal);
+  display: inline-flex;
+  align-items: center;
+  height: var(--control-h);
+  padding: 0 var(--s-3);
+  background: var(--accent);
+  color: var(--bg);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  border-radius: var(--radius);
+  text-decoration: none;
+}
+
+.skipLink:focus-visible {
+  top: var(--s-2);
+}
+
+.main {
+  flex: 1;
+  width: 100%;
+  max-width: var(--container-max);
+  padding: var(--pad-page);
+}
+
+.main:focus-visible {
+  outline: none;
+}
+
+@media (max-width: 699.98px) {
+  .main {
+    padding-bottom: 72px;
+  }
+}

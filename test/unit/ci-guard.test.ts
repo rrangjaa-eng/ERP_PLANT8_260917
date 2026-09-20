@@ -60,11 +60,16 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
     expect(hasPushTrigger).toBe(false);
   });
 
-  it("pull_request 트리거는 .planning/**와 docs/**만 바뀐 PR을 건너뛴다", () => {
+  it("pull_request 트리거는 paths + ! 형태를 쓰고 paths-ignore는 없다(GitHub이 문서로 지원하는 형태만 사용)", () => {
     const ci = readWorkflow("ci.yml");
-    expect(ci).toContain("paths-ignore");
-    expect(ci).toContain(".planning/**");
-    expect(ci).toContain("docs/**");
+    expect(ci).not.toContain("paths-ignore");
+    expect(ci).toContain("paths:");
+    const patterns = ['- "**"', '- "!.planning/**"', '- "!docs/**"', '- "docs/design/tokens.css"'];
+    const indexes = patterns.map((pattern) => ci.indexOf(pattern));
+    for (const index of indexes) expect(index).toBeGreaterThan(-1);
+    // 순서가 의미를 갖는다: 전체 포함 → .planning 부정 → docs 부정 → tokens.css 긍정.
+    // tokens.css 줄이 docs/** 부정 줄보다 반드시 뒤여야 되살아난다.
+    expect(indexes).toEqual([...indexes].sort((a, b) => a - b));
   });
 
   it("quality 잡 내부 순서: lint < typecheck < lint:sql < test:unit", () => {
@@ -103,5 +108,35 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
     ].map((token) => firstLine(integrationBlock, token));
     for (const line of order) expect(line).toBeGreaterThan(-1);
     expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
+  // WR-09: !docs/**가 unit 테스트가 실제로 읽는 docs 파일까지 가려서, 그 파일만
+  // 바뀐 PR은 CI가 아예 돌지 않는다. test/unit/design-system-docs.test.ts·
+  // test/unit/ui/role-menu.test.ts·test/unit/docs-limits.test.ts가 읽는 5개
+  // 파일이 모두 !docs/** 뒤에 재포함되어야 한다.
+  it("pull_request paths가 unit 테스트가 읽는 5개 docs 파일을 모두 재포함한다(순서 포함)", () => {
+    const ci = readWorkflow("ci.yml");
+    const patterns = [
+      '- "**"',
+      '- "!.planning/**"',
+      '- "!docs/**"',
+      '- "docs/design/tokens.css"',
+      '- "docs/design/SYSTEM.md"',
+      '- "docs/design/DECISIONS.md"',
+      '- "docs/ARCHITECTURE.md"',
+      '- "docs/OPERATIONS.md"',
+    ];
+    const indexes = patterns.map((pattern) => ci.indexOf(pattern));
+    for (const [i, index] of indexes.entries()) {
+      expect(index, `ci.yml에 "${patterns[i]}"가 있어야 한다`).toBeGreaterThan(-1);
+    }
+    // !docs/** 뒤에만 와야 되살아난다 — 순서 자체가 GitHub paths 의미론이다.
+    expect(indexes).toEqual([...indexes].sort((a, b) => a - b));
+  });
+
+  it(".planning/**은 여전히 완전히 제외된다(재포함 목록에 없다)", () => {
+    const ci = readWorkflow("ci.yml");
+    expect(ci).toContain('- "!.planning/**"');
+    expect(ci).not.toMatch(/-\s*"\.planning\//);
   });
 });

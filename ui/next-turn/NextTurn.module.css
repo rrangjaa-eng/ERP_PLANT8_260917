@@ -1,0 +1,118 @@
+/* SYSTEM.md §7-4 「내 차례」 목록. 실물: docs/design/system/preview.html .next 블록.
+   색·서체·radius는 토큰 참조만 쓴다(D-20). */
+
+.next {
+  border-top: var(--line-w-strong) solid var(--line-strong);
+  padding: var(--s-3) 0;
+  margin-bottom: var(--s-6);
+}
+
+.heading {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  margin-bottom: var(--s-1);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  padding: 6px 0;
+  border-bottom: var(--line-w) dotted var(--line);
+  min-height: var(--row-min);
+}
+
+.item:last-child {
+  border-bottom: 0;
+}
+
+.tagSlot {
+  flex: none;
+}
+
+.grow {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.why {
+  color: var(--muted);
+}
+
+.amt {
+  flex: none;
+  min-width: 11ch;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.action {
+  flex: none;
+}
+
+.more {
+  margin-top: var(--s-2);
+}
+
+/* 폰: 두 줄(1행 태그·대상·행동, 2행 금액·이유) — preview.html의 검증된 grid
+   배치를 그대로 옮긴다(02-PATTERNS.md 포팅 원칙). */
+@media (max-width: 699.98px) {
+  .item {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    column-gap: var(--s-3);
+    row-gap: 2px;
+    align-items: baseline;
+  }
+
+  .grow {
+    grid-column: 2;
+  }
+
+  .action {
+    grid-column: 3;
+  }
+
+  .amt {
+    grid-column: 2;
+    min-width: 0;
+    text-align: left;
+    font-size: var(--fs-sm);
+    color: var(--muted);
+  }
+
+  .why {
+    display: block;
+    font-size: var(--fs-sm);
+  }
+}
+
+/* WR-04 — 다음 한 수는 3차 버튼 모양의 링크(§7-1 3차 · §7-7 EMPTY 행과 같은 모양).
+   ListEmpty.module.css의 .tertiary와 같은 선언이다. */
+.tertiary {
+  border: 0;
+  border-bottom: var(--line-w) solid var(--accent);
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-base);
+  text-decoration: none;
+}
+
+.tertiary:hover {
+  border-bottom-width: var(--line-w-strong);
+}
+
+/* 갈 곳이 없을 때의 건수 — 행동이 아니므로 3차 링크 모양을 주지 않는다. */
+.moreText {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}

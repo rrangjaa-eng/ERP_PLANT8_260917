@@ -1,0 +1,49 @@
+/* SYSTEM.md §6-0 폰 하단 탭. 실물: docs/design/system/preview.html .tabs 블록.
+   색·서체·radius는 토큰 참조만 쓴다(D-20). 폰(<700)에서만 보인다 — 표시 여부는
+   이 미디어 쿼리가 결정하고 BottomTabs.tsx는 뷰포트 폭을 읽지 않는다. */
+
+.tabs {
+  display: none;
+}
+
+@media (max-width: 699.98px) {
+  .tabs {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    /* border-box(app/globals.css)라 border-top이 콘텐츠 높이에서 빠진다 — 위 경계선
+       두께만큼 더해 탭 항목(.tab)의 실제 터치 목표가 §10의 44px 그대로 유지된다
+       (02-07 실측: 보정 없이는 42px). */
+    height: calc(var(--touch-min) + var(--line-w-strong));
+    display: flex;
+    background: var(--bg);
+    border-top: var(--line-w-strong) solid var(--line-strong);
+    z-index: var(--z-bar);
+  }
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.tab:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: calc(-1 * var(--focus-w));
+}
+
+/* WR-01 — 현재 탭 표시(preview.html:129 이관). */
+.tab[aria-current="page"] {
+  color: var(--accent);
+  box-shadow: var(--inset-tab);
+}

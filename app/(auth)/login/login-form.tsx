@@ -3,8 +3,10 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
-
-const GENERIC_ERROR = "이메일 또는 비밀번호가 올바르지 않습니다.";
+import { Button } from "@/ui/button/Button";
+import { TextField } from "@/ui/input/TextField";
+import { FormAlert } from "@/ui/form-alert/FormAlert";
+import { loginErrorMessage } from "./login-error";
 
 // AUTH-04: showGoogle은 서버 컴포넌트(page.tsx)의 getAuthProvider() === "google"
 // 조건 결과를 그대로 넘겨받는다 — 클라이언트 컴포넌트만 authClient.signIn.social을
@@ -27,7 +29,8 @@ export function LoginForm({ showGoogle = false }: { showGoogle?: boolean }) {
 
     if (result.error) {
       // 이메일/비밀번호 오류를 구분하지 않는다(Claude's Discretion, CONTEXT.md).
-      setError(result.error.message ?? GENERIC_ERROR);
+      // 문구 판정은 login-error.ts 한 곳에서 — §6-7 A②·A③.
+      setError(loginErrorMessage(result.error));
       return;
     }
 
@@ -45,34 +48,30 @@ export function LoginForm({ showGoogle = false }: { showGoogle?: boolean }) {
           void handleSubmit(event);
         }}
       >
-        <div>
-          <label htmlFor="email">이메일</label>
-          <input
-            id="email"
-            type="email"
-            name="email"
-            autoComplete="username"
-            required
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-          />
-        </div>
-        <div>
-          <label htmlFor="password">비밀번호</label>
-          <input
-            id="password"
-            type="password"
-            name="password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-          />
-        </div>
-        {error ? <p role="alert">{error}</p> : null}
-        <button type="submit" disabled={pending}>
+        <TextField
+          id="email"
+          label="이메일"
+          type="email"
+          name="email"
+          autoComplete="username"
+          required
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+        />
+        <TextField
+          id="password"
+          label="비밀번호"
+          type="password"
+          name="password"
+          autoComplete="current-password"
+          required
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
+        {error ? <FormAlert>{error}</FormAlert> : null}
+        <Button type="submit" variant="primary" pending={pending}>
           로그인
-        </button>
+        </Button>
       </form>
       {showGoogle ? (
         <button

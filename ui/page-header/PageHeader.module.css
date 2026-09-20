@@ -1,0 +1,30 @@
+/* SYSTEM.md §6-0 화면 제목·부제 · §6-9 오류 제목. 실물: preview.html:48-50 .sec 이관.
+   색·서체·radius는 토큰 참조만 쓴다(D-20). */
+
+.header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+  padding-bottom: var(--s-2);
+  margin: 0 0 var(--s-4);
+}
+
+.title {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-head);
+  line-height: var(--lh-head);
+}
+
+.title2xl {
+  font-size: var(--fs-2xl);
+  line-height: var(--lh-tight);
+}
+
+.subtitle {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}

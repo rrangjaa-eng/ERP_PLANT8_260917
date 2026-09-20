@@ -12,6 +12,9 @@ Next.js 16 단일 앱(App Router, RSC + Server Actions) + Drizzle ORM + PostgreS
 ## 2. 4계층 + 단일 지점
 
 ```
+ui/             디자인 시스템 컴포넌트(Phase 2) — 순수 표현, 토큰·마크업만
+  │  ← domain/repositories/db/app을 import 금지(lint, boundaries `ui` 타입)
+  ▼
 app/            화면 · Server Action(authedActionClient만) · 라우트 핸들러
   │  ← DTO만 통과(app은 repositories/db를 직접 import 금지, lint)
   ▼
@@ -26,7 +29,9 @@ db/             스키마 · 클라이언트 · 마이그레이션(drizzle-kit g
 ```
 
 횡단: `lib/`(env·log·auth·actions/client 등, domain/repositories/db를 부를 수 있음).
-`app`은 누구도 import하지 않고, `db`는 `lib`만 예외로 부른다(env 계약, 01-01).
+`app`은 누구도 import하지 않고, `db`는 `lib`만 예외로 부른다(env 계약, 01-01). `ui/`는
+`ui`와 `lib`만 부를 수 있다 — `app`과 `test`가 `ui`를 부르는 방향만 허용되고 그 반대는
+안 된다 — 강제는 lint(`boundaries/element-types`).
 
 ## 3. 요청 흐름
 
@@ -89,7 +94,7 @@ domain 모듈 = 단위, 새 액션·DTO = 통합(+Phase 3부터 누수 생성), 
 | 규칙 | 강제 내용 |
 |---|---|
 | `@typescript-eslint/no-explicit-any` | `any` 금지 |
-| `boundaries/element-types` | app↛repositories/db, domain↛app, db는 lib만 예외, eslint↛나머지 |
+| `boundaries/element-types` | app↛repositories/db, domain↛app, db는 lib만 예외, eslint↛나머지, ui↛domain/repositories/db/app(Phase 2) |
 | `plant8/repository-viewer-param` | `repositories/**` export 함수 첫 인자는 `viewer` |
 | `plant8/require-action-client` | `"use server"` export는 승인된 액션 클라이언트로만, 인라인 서버 액션 금지 |
 | `plant8/money-boundary` | `domain/money` 밖에서 Money 타입 산술 금지(type-aware) |

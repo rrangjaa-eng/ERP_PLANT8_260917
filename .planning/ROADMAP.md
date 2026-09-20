@@ -103,10 +103,41 @@ Plans:
   4. 이후 페이즈가 그대로 가져다 쓰는 핵심 컴포넌트 계약이 SYSTEM.md에 있다: 서버 검증 오류를 보여주는 폼, 엑셀식 표 입력(grid), 선행 단계 전 비활성 + 이유를 보이는 행동 유도 버튼, 알림함·배지, 폰용 목록·시트. 모든 컴포넌트 계약은 LOADING/EMPTY/ERROR/SUCCESS/PARTIAL 다섯 상태를 필수로 정의하고 EMPTY·ERROR는 다음 행동을 유도한다(안내 문구 없음)
   5. 엑셀식 표(grid)는 이 페이즈에서 동작 계약만 확정한다: Tab/Enter·방향키 이동, 여러 칸 복사·붙여넣기, Esc 취소, 저장·새 줄 단축키, 일괄 저장은 전부 저장 또는 전부 거부이며 충돌·오류 칸을 표시한다. 자체 구현/라이브러리 선택은 Phase 4 계획에서 한다
 
-**Plans**: TBD
+**Plans**: 8/8 plans executed
+
+Plans:
+**Wave 1**
+
+- [x] 02-01-PLAN.md — SYSTEM.md 빈 곳 8개 보강(로그인·시스템 상태·오류 페이지 템플릿, 배너·알림함 계약, §6-0·§7-7 보강) + 대비값 정정 2건 + DECISIONS.md 이탈 기록 (W1)
+- [x] 02-02-PLAN.md — `ui` 경계 타입 신설 · stylelint 색/서체/radius 금지 + 규칙 테스트 · `.dockerignore`·두 워크플로 트리거 수정 (W1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 02-03-PLAN.md — [tracer] Pretendard·토큰 직접 import·버튼·입력을 로그인 한 경로로 끝까지 꿰고 §6-7 로그인 화면 완성 (W2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 02-04-PLAN.md — 역할→메뉴 매핑 · 상단 바(내 계정·로그아웃 진입점) · 폰 하단 탭 · 「더보기」 시트 · 셸 삽입 (W3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 02-05-PLAN.md — 「내 차례」 표시 계산·블록 · 목록 EMPTY · 루트 홈 + 1차 메뉴 다섯 화면 (W4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [x] 02-06-PLAN.md — 배너·상태 태그·토스트 · 내 계정 재구성 · 시스템 상태 재구성 · 오류 화면 세 곳 (W5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [x] 02-07-PLAN.md — 폰 375 뷰포트 프로젝트 · 키보드 전용 동선 · §10 접근성 계약 검증 (W6)
+
+**Wave 7 — gap closure** *(02-VERIFICATION.md 성공 기준 2 갭 + 02-REVIEW.md WR-01)*
+
+- [x] 02-08-PLAN.md — 페이지 층 토큰 이관(body·컨트롤·§4-4 표면·포커스 링) · PageHeader/FormAlert/KvList로 12개 화면 골격 통일 · WR-01 현재 메뉴 aria-current 배선 (W7)
+
 **UI hint**: yes
 
-전제: 디자인 절차 문서 `docs/DESIGN.md`(§1 입력 → §2 발산 → §3 수렴 → §4 통일)는 리포에 있고 CLAUDE.md 경로와 일치한다. `docs/design/`(BRIEF.md·EXPLORE.md·SYSTEM.md·tokens.css·DECISIONS.md)은 아직 없으며 이 페이즈의 산출물이다 — 절차 문서를 다시 만들지 않고 §1부터 그대로 따른다.
+전제(2026-09-19 정정): 디자인 절차 문서 `docs/DESIGN.md`(§1 입력 → §2 발산 → §3 수렴 → §4 통일)는 리포에 있고 CLAUDE.md 경로와 일치한다. `docs/design/`(BRIEF.md·EXPLORE.md·SYSTEM.md·tokens.css·DECISIONS.md)은 **이미 전부 존재하고 `/plan-design-review`를 통과했다** — 이 페이즈의 산출물이 아니다. 따라서 성공 기준 1과 5는 이미 충족이고, 이 페이즈가 하는 일은 (a) SYSTEM.md가 덮지 못한 비원장 화면(로그인·내 계정·시스템 상태·셸·오류 페이지)의 빈 곳 8개를 문서로 먼저 메우고 (b) 그것을 코드로 실현해 기준 2·3·4를 채우는 것이다.
 
 ### Phase 3: 권한·설정·마스터 (관리자 운영 콘솔)
 
@@ -286,7 +317,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. 배포 스켈레톤·로그인 | 8/8 | Complete    | 2026-09-19 |
-| 2. 디자인 시스템·앱 셸 | 0/TBD | Not started | - |
+| 2. 디자인 시스템·앱 셸 | 8/8 | In Progress|  |
 | 3. 권한·설정·마스터 (관리자 운영 콘솔) | 0/TBD | Not started | - |
 | 4. 프로젝트·견적 원장 | 0/TBD | Not started | - |
 | 5. 지출결의·결재·연차 | 0/TBD | Not started | - |

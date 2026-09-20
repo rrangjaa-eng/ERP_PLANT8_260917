@@ -6,7 +6,6 @@ dist
 !.env.example
 .git
 .planning
-docs
 test
 playwright-report
 test-results

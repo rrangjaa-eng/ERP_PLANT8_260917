@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 9
+open_count: 15
 waived_count: 0
 fixed_count: 7
-total_count: 16
-last_updated: 2026-09-20T08:00:59.072Z
+total_count: 22
+last_updated: 2026-09-20T08:55:22.487Z
 ---
 
 # Broken Windows Ledger
@@ -31,6 +31,12 @@ last_updated: 2026-09-20T08:00:59.072Z
 | 14 | 02 | unrun-verify | ui/shell/Shell.module.css |  | 태블릿 700~1023px 뷰포트 미검증: PC 셸이 유지되고 하단 탭이 안 나오는지. 미디어 쿼리 존재만 확인했고 그 폭으로 실제 렌더해 보지 않았다(Playwright 프로젝트가 desktop·mobile-375 둘뿐). /gsd-verify-work 02 | open |  | 2026-09-20T08:00:58.639Z |  |
 | 15 | 02 | unrun-verify | docs/design/SYSTEM.md |  | 375px 시각 품질 미검증: E2E는 계산값만 재고 보기 좋은지는 판정하지 않는다. /design-review(SYSTEM.md 일관성) + /qa(실제 브라우저) 미실행 — CLAUDE.md가 UI 완료 판정 조건으로 지정한 둘이다 | open |  | 2026-09-20T08:00:58.866Z |  |
 | 16 | 02 | unrun-verify | ui/next-turn/NextTurn.module.css |  | 「내 차례」 폰 2줄 레이아웃 미검증: D-24로 buildNextTurnView 입력이 항상 []라 블록이 렌더되지 않아 자동·수동 모두 확인 불가. Phase 4가 첫 실제 항목을 넣을 때 검증한다 | open |  | 2026-09-20T08:00:59.072Z |  |
+| 17 | 01 | unrun-verify | docs/OPERATIONS.md |  | Cloud Run/Cloud SQL 실제 과금액 미확인(01-05 D5): min-instances 0 전제의 '비용 ≈ 0'은 GCP 청구서로만 판정된다. 코드·테스트로 증명 불가 | open |  | 2026-09-20T08:55:21.416Z |  |
+| 18 | 01 | unrun-verify | app/(auth)/login/login-form.tsx |  | 프로덕션 세션 유지 미검증(01-VERIFICATION human 1): 실제 Cloud Run 도메인에서 로그인 후 브라우저 완전 종료 → 재진입 시 /account 유지되는지. 근거는 로컬 E2E의 30일 쿠키 단언과 lib/auth.ts expiresIn뿐이고, 프로브는 /login에서 Set-Cookie를 못 봐 닫지 못했다 | open |  | 2026-09-20T08:55:21.607Z |  |
+| 19 | 01 | unrun-verify | app/admin/system-status/page.tsx |  | 프로덕션 /admin/system-status 관리자 렌더 + 백업 절 미관찰(01-VERIFICATION human 2, 01-08 human-check 3·4): 런타임 SA의 roles/cloudsql.viewer 실부여와 lib/gcp/cloud-sql-admin.ts 호출 경로가 프로덕션에서 한 번도 실행·관찰되지 않았다 | open |  | 2026-09-20T08:55:21.801Z |  |
+| 20 | 01 | unrun-verify | infra/monitoring/tick-stale.json.tpl |  | 백업 실패 경보 필터·메일 전달 미검증(01-VERIFICATION human 3): 경보 정책 존재는 2026-09-18 실측으로 확인됐으나, 실패 이벤트 없이는 필터 정확성과 메일 도달을 프로그램으로 검증할 수 없다 | open |  | 2026-09-20T08:55:22.100Z |  |
+| 21 | 01 | unrun-verify | scripts/bootstrap-gcp.sh |  | 조직 정책 원문·런타임 SA 역할 미확인(01-VERIFICATION human 4): gha-deployer SA에 orgpolicy.policy.get·resourcemanager.projects.getIamPolicy가 없어 실행자가 조회 불가(PERMISSION_DENIED). 실효적 차단 없음만 확인됨 — 원문 확인은 Owner 계정 몫 | open |  | 2026-09-20T08:55:22.302Z |  |
+| 22 | 01 | unrun-verify | .planning/phases/01-deploy-skeleton-login/01-08-DEPLOY-LOG.md |  | origin 임시 프로브 브랜치 4개 미삭제(probe-result·probe-result2·guard-probe-result·prod-verify-result): 2026-09-20 확인 결과 전부 잔존. git push --delete가 이 세션의 에그레스 프록시에서 끊긴다(일반 push는 정상) — 사용자가 GitHub에서 삭제해야 한다 | open |  | 2026-09-20T08:55:22.487Z |  |
 
 ````json
 [
@@ -239,6 +245,84 @@ last_updated: 2026-09-20T08:00:59.072Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-20T08:00:59.072Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 17,
+    "kind": "unrun-verify",
+    "phase": "01",
+    "file": "docs/OPERATIONS.md",
+    "line": null,
+    "description": "Cloud Run/Cloud SQL 실제 과금액 미확인(01-05 D5): min-instances 0 전제의 '비용 ≈ 0'은 GCP 청구서로만 판정된다. 코드·테스트로 증명 불가",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T08:55:21.416Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 18,
+    "kind": "unrun-verify",
+    "phase": "01",
+    "file": "app/(auth)/login/login-form.tsx",
+    "line": null,
+    "description": "프로덕션 세션 유지 미검증(01-VERIFICATION human 1): 실제 Cloud Run 도메인에서 로그인 후 브라우저 완전 종료 → 재진입 시 /account 유지되는지. 근거는 로컬 E2E의 30일 쿠키 단언과 lib/auth.ts expiresIn뿐이고, 프로브는 /login에서 Set-Cookie를 못 봐 닫지 못했다",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T08:55:21.607Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 19,
+    "kind": "unrun-verify",
+    "phase": "01",
+    "file": "app/admin/system-status/page.tsx",
+    "line": null,
+    "description": "프로덕션 /admin/system-status 관리자 렌더 + 백업 절 미관찰(01-VERIFICATION human 2, 01-08 human-check 3·4): 런타임 SA의 roles/cloudsql.viewer 실부여와 lib/gcp/cloud-sql-admin.ts 호출 경로가 프로덕션에서 한 번도 실행·관찰되지 않았다",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T08:55:21.801Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 20,
+    "kind": "unrun-verify",
+    "phase": "01",
+    "file": "infra/monitoring/tick-stale.json.tpl",
+    "line": null,
+    "description": "백업 실패 경보 필터·메일 전달 미검증(01-VERIFICATION human 3): 경보 정책 존재는 2026-09-18 실측으로 확인됐으나, 실패 이벤트 없이는 필터 정확성과 메일 도달을 프로그램으로 검증할 수 없다",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T08:55:22.100Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 21,
+    "kind": "unrun-verify",
+    "phase": "01",
+    "file": "scripts/bootstrap-gcp.sh",
+    "line": null,
+    "description": "조직 정책 원문·런타임 SA 역할 미확인(01-VERIFICATION human 4): gha-deployer SA에 orgpolicy.policy.get·resourcemanager.projects.getIamPolicy가 없어 실행자가 조회 불가(PERMISSION_DENIED). 실효적 차단 없음만 확인됨 — 원문 확인은 Owner 계정 몫",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T08:55:22.302Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 22,
+    "kind": "unrun-verify",
+    "phase": "01",
+    "file": ".planning/phases/01-deploy-skeleton-login/01-08-DEPLOY-LOG.md",
+    "line": null,
+    "description": "origin 임시 프로브 브랜치 4개 미삭제(probe-result·probe-result2·guard-probe-result·prod-verify-result): 2026-09-20 확인 결과 전부 잔존. git push --delete가 이 세션의 에그레스 프록시에서 끊긴다(일반 push는 정상) — 사용자가 GitHub에서 삭제해야 한다",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T08:55:22.487Z",
     "resolved_at": null,
     "milestone": null
   }

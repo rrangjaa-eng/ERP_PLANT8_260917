@@ -25,6 +25,7 @@ function RoleRow({ role }: { role: RoleRowView }) {
       <td>
         <input
           className={styles.select}
+          aria-label={`${role.name} 이름`}
           value={name}
           onChange={(event) => setName(event.target.value)}
           onBlur={() => {

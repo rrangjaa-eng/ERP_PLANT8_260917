@@ -23,10 +23,12 @@ function getStringField(formData: FormData, key: string): string {
 
 function RenameInput({
   value,
+  ariaLabel,
   onSave,
   error,
 }: {
   value: string;
+  ariaLabel: string;
   onSave: (name: string) => void;
   error?: string;
 }) {
@@ -35,6 +37,7 @@ function RenameInput({
     <>
       <input
         className={styles.select}
+        aria-label={ariaLabel}
         value={name}
         onChange={(event) => setName(event.target.value)}
         onBlur={() => {
@@ -52,6 +55,7 @@ function TeamRow({ team }: { team: TeamView }) {
     <li>
       <RenameInput
         value={team.name}
+        ariaLabel={`${team.name} 이름`}
         onSave={(name) => execute({ id: team.id, name })}
         error={result.serverError}
       />
@@ -63,7 +67,12 @@ function OrgUnitRow({ orgUnit, teams }: { orgUnit: OrgUnitView; teams: TeamView[
   const { execute, result } = useAction(renameOrgUnitAction);
   return (
     <li>
-      <RenameInput value={orgUnit.name} onSave={(name) => execute({ id: orgUnit.id, name })} error={result.serverError} />
+      <RenameInput
+        value={orgUnit.name}
+        ariaLabel={`${orgUnit.name} 이름`}
+        onSave={(name) => execute({ id: orgUnit.id, name })}
+        error={result.serverError}
+      />
       <ul>
         {teams
           .filter((team) => team.orgUnitId === orgUnit.id)

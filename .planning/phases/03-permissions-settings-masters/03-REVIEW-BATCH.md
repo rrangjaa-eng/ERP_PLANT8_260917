@@ -18,7 +18,7 @@
 | 웨이브 | 플랜 | 상태 | 커밋 | lint | typecheck | unit | integration | e2e |
 |---|---|---|---|---|---|---|---|---|
 | 1 | 03-01 | ✓ 완료 | `53e26a9` | ✓ | ✓ | ✓ 347 | ✓ 48 | ✓ 59 |
-| 2 | 03-02 | ○ 대기 | — | — | — | — | — | — |
+| 2 | 03-02 | ✓ 완료 | `fa6d880` | ✓ | ✓ | ✓ 363 | ✓ 48 | ✓ 59 |
 | 3 | 03-03 | ○ 대기 | — | — | — | — | — | — |
 | 4 | 03-04 | ○ 대기 | — | — | — | — | — | — |
 | 5 | 03-05 | ○ 대기 | — | — | — | — | — | — |
@@ -87,5 +87,62 @@ Task 1(계급·권한 모델, `gate="blocking"`)은 사전 확정된 **옵션 A*
 촬영 아티팩트로 보이는 것 2건 — 실브라우저에서 한 번 확인 필요:
 - `code-tables-375.png`에 빨간 "1 Issue" 배지가 표 위에 겹침 → Next.js dev 인디케이터로 보임(실사용 화면엔 없을 것)
 - `code-tables-375.png`의 fullPage 캡처에서 모바일 하단 네비가 표 중간에 한 번 더 렌더됨 → `position:fixed` 요소의 Playwright 스티칭 아티팩트로 보임
+
+---
+
+## 웨이브 2 — 03-02 관리자 불리언 → 계급 판정 전량 이관
+
+**소요 43분** · 요구사항 ADMN-01, ADMN-03
+
+### 커밋
+
+| SHA | 내용 |
+|---|---|
+| `7509041` | docs(03-02): SYSTEM.md §6-0 역할별 탭 표를 계급 5종으로 교체 |
+| `dbd80c1` | feat(03-02): 관리자 불리언을 판정 함수로 전량 이관 |
+| `47b4fc7` | test(03-02): 관리자 불리언 참조 0을 메타 테스트로 고정 |
+| `fa6d880` | docs(03-02): complete plan (SUMMARY.md) |
+
+### 게이트
+
+| 게이트 | 결과 |
+|---|---|
+| `pnpm lint` | ✓ PASS (기존 boundaries 플러그인 deprecation 경고만) |
+| `pnpm typecheck` | ✓ PASS |
+| `pnpm lint:sql` | ✓ PASS — 신규 마이그레이션 없음, `.squawk.toml` 무변경 |
+| `pnpm build` | ✓ PASS — 13 라우트 |
+| `pnpm test:unit` | ✓ PASS — 38 파일 / 363 테스트 |
+| `pnpm test:integration` | ✓ PASS — 11 파일 / 48 테스트 |
+| `pnpm test:e2e` | ✓ PASS — 59 테스트, **2회 연속 플레이크 0** |
+| CLI 스모크 | `--role role-team-lead` → exit 0 · `--role role-does-not-exist` → exit 2 |
+
+오케스트레이터 독립 확인: 테스트 약화 0건 · `.squawk.toml`·eslint 설정 무변경 · `package.json` 무변경(신규 의존성 0).
+
+웨이브 1에서 흔들렸던 `keyboard-nav.spec.ts` 플레이크는 **2회 실행 모두 재현되지 않았다**.
+
+### 계획이 열어둔 것 중 실행자가 판단한 것
+
+1. **`Viewer.roleId`를 `string | null`로 유지** (필수 키, nullable) — `string`으로 좁히면 `can()`/`visible()`의 "계급 없으면 거부" 방어 테스트가 깨진다. 그 테스트는 이 플랜의 `<files>` 밖이다
+2. **`scripts/account-cli.ts`의 계급 검증을 둘로 분리** — 순수 동기 `SEED_ROLES` 검사 + 주입 가능한 `ParseArgsDeps`를 통한 비동기 DB 검사. 코드베이스의 기존 `StatusDeps`/`CanDeps` 패턴을 따랐고, `parseArgs`가 Postgres 없이 단위 테스트 가능하면서도 알 수 없는 커스텀 계급은 거부한다
+3. **`main()`의 에러 처리를 try/catch/finally 하나로 통합** — 인자 파싱 중 DB 연결이 열려도 `closeDb()`가 항상 돈다
+4. **`test/integration/roles.test.ts`를 no-admin-boolean 메타 테스트 예외 목록에 추가** (Task 3이 명시하지 않았다) — `db/schema/auth.ts`와 같은 이유로, 잔존 `is_admin` 컬럼을 정당하게 사용해 백필을 검증하는 코드지 판정 코드가 아니다
+
+### 계획 범위 밖 수정 (전부 컴파일·테스트 파손 대응, SUMMARY에 전문)
+
+`Viewer`/`RoleMenuViewer`/CLI 시그니처 변경으로 6개 파일이 깨져 인라인 수정했다 — `test/unit/permissions/*.test.ts`, `test/unit/action-log/record.test.ts`, `test/integration/code-tables.test.ts`, `test/e2e/code-tables.spec.ts`, `test/unit/deploy/workflows.test.ts`. 더해 새 메타 테스트에 걸릴 `isAdmin`/`is_admin` 주석 참조 3건 정리.
+
+### 스크린샷
+
+`screens/wave-2/` 8장. **이번 웨이브의 핵심 확인 지점 — 계급별로 메뉴가 실제로 다르다:**
+
+- PC 사용자 메뉴: `role-sysadmin`은 「시스템 상태 / 내 정보 / 로그아웃」 3항목, `role-pm`은 「내 정보 / 로그아웃」 2항목(시스템 상태 없음). 상단 1차 메뉴 5개는 설계대로 두 계급 동일
+- 폰 하단 탭: sysadmin 「내 차례·결재·손익·더보기」 vs pm 「내 차례·프로젝트·지출결의·더보기」 — 3번째 탭까지 다르다. `role-menu.ts`의 `ROLE_BOTTOM_TABS` 매핑과 일치
+- `role-pm`은 `/admin/code-tables`에서 **404**(권한표에 메뉴 없음), sysadmin만 200 — 권한 판정이 라우트 수준에서 실제로 동작한다
+
+`code-tables-375.png`에 웨이브 1과 같은 fullPage 스티칭 아티팩트(고정 탭바 중복)가 있다. 앱 결함 아님.
+
+### 사람 판단이 필요한 항목
+
+이 웨이브에서 새로 생긴 것 없음. 실행자 보고도 "human attention 불필요" — 체크포인트·인증 게이트·스텁 없음.
 
 ---

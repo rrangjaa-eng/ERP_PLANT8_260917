@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 5
+open_count: 6
 waived_count: 0
 fixed_count: 2
-total_count: 7
-last_updated: 2026-09-20T02:13:51.401Z
+total_count: 8
+last_updated: 2026-09-20T05:53:42.705Z
 ---
 
 # Broken Windows Ledger
@@ -22,6 +22,7 @@ last_updated: 2026-09-20T02:13:51.401Z
 | 5 | 02 | deviation | ui/shell/TopBar.tsx |  | PC 상단 바의 현재 메뉴(aria-current) 하이라이트는 CSS만 준비되고 실제 경로 연결은 되지 않음 — layout.tsx가 현재 pathname을 얻을 방법이 없어(미들웨어 확장은 이 플랜 범위 밖) 배선을 다음 페이즈로 미룸 | fixed |  | 2026-09-19T16:39:08.491Z | 2026-09-19T22:23:52.699Z |
 | 6 | 02 | deviation | app/(auth)/login/login-form.tsx |  | 로그인 실패 문구가 SYSTEM.md §6-7 A②의 한국어 문장이 아니라 better-auth 영문("Invalid email or password") — login-form.tsx:32가 result.error.message를 GENERIC_ERROR보다 우선한다. 카피 결함이라 02-08(스타일 갭 클로저) 범위 밖이었고, 02-VERIFICATION.md 재검증에서 미추적으로 확인되어 등록 | fixed |  | 2026-09-19T22:41:02.543Z | 2026-09-20T02:13:51.401Z |
 | 7 | 02 | deviation | docs/design/SYSTEM.md |  | §2-2(--fs-2xl = KPI 타일 전용)와 §6-9(오류 페이지 제목 = --fs-2xl)가 같은 토큰에 다른 용도를 지정한다. 02-08은 구체가 일반을 이긴다는 해석으로 §6-9를 정본 삼아 구현했고 렌더 픽셀은 정확하다. KPI 타일이 아직 없어(Phase 9~10) 지금 판단할 근거가 부족해 미룸 — 2026-09-20 사용자 결정, DECISIONS.md 기록. KPI 타일을 처음 만드는 페이즈에서 §2-2를 넓히거나 오류 제목에 별도 토큰을 주는 것 중 하나로 정리한다 | open |  | 2026-09-20T02:13:42.754Z |  |
+| 8 | 02 | deviation | app/(app)/layout.tsx |  | WR-07 해소: 6개 페이지(approvals·cards·expenses·pnl·projects·settings)가 레이아웃 인증에만 의존하던 것을 각 페이지의 requireSession()으로 바꿨다. test/unit/page-auth-guard.test.ts가 (app) 그룹의 모든 page.tsx를 훑어 앞으로 만드는 페이지도 자동으로 잡는다 | open |  | 2026-09-20T05:53:42.705Z |  |
 
 ````json
 [
@@ -113,6 +114,19 @@ last_updated: 2026-09-20T02:13:51.401Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-20T02:13:42.754Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 8,
+    "kind": "deviation",
+    "phase": "02",
+    "file": "app/(app)/layout.tsx",
+    "line": null,
+    "description": "WR-07 해소: 6개 페이지(approvals·cards·expenses·pnl·projects·settings)가 레이아웃 인증에만 의존하던 것을 각 페이지의 requireSession()으로 바꿨다. test/unit/page-auth-guard.test.ts가 (app) 그룹의 모든 page.tsx를 훑어 앞으로 만드는 페이지도 자동으로 잡는다",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-20T05:53:42.705Z",
     "resolved_at": null,
     "milestone": null
   }

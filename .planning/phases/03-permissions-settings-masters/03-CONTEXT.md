@@ -29,7 +29,7 @@ Phase 1의 D-01~D-18, Phase 2의 D-19~D-32는 그대로 유효하다. 번호를 
 ### 권한 판정의 경계
 
 - **D-35:** **`can()`과 `visible()`은 서로를 호출하지 않는다(완전 독립).** 메뉴 접근 판정과 필드 노출 판정이 각자의 표만 읽는다. 관리자가 "메뉴는 막고 필드는 열어둔" 모순 상태를 만들 수 있지만 그것을 코드가 막지 않는다. 근거: 성공 기준 2는 "판정은 `can()`/`visible()`/`scopeFor()` 세 함수에서만 이루어진다"라고 했지 상호 호출을 요구하지 않았고, REQUIREMENTS가 ADMN-01(권한표=계급×메뉴×동작)과 ADMN-02(정보 노출표=계급×정보 항목)를 **별개 표**로 정의했다. 260907식 "메뉴 우선"은 정보 항목→메뉴 매핑이라는 추가 레지스트리를 요구해 이미 큰 페이즈를 더 키운다. 실무에서 모순이 실제로 문제가 되면 Phase 7 전 메뉴 검수에서 보강한다. — **Reversibility:** reversible — 나중에 `visible()` 안에서 `can()`을 먼저 부르도록 바꾸는 것은 한 함수의 변경 + 매핑 레지스트리 신설이다.
-- **D-36:** **`Viewer.isAdmin` 불리언을 이 페이즈에서 완전히 제거한다.** 모든 판정이 `can()`/`visible()`/`scopeFor()`를 거친다. `isAdmin` 분기를 남기면 그것이 네 번째 판정 경로가 되어 성공 기준 2를 정면으로 어긴다. **변경 반경을 과소평가하지 말 것** — 실측 2026-09-20: 프로덕션 9개 파일 + 테스트 16개 파일 = 25개. 테스트 쪽 진원지는 `test/fixtures.ts`의 `createFixtureUser({ isAdmin })`이고, 시그니처가 바뀌면 E2E 스펙 전부가 따라 움직인다. 그래서 **이 이관을 독립 플랜으로 떼어 낸다** — 다른 기능과 섞으면 TDD 사이클이 깨진다. — **Reversibility:** costly — 25개 파일의 호출 지점과 픽스처 시그니처가 함께 바뀐다.
+- **D-36:** **`Viewer.isAdmin` 불리언을 이 페이즈에서 완전히 제거한다.** 모든 판정이 `can()`/`visible()`/`scopeFor()`를 거친다. `isAdmin` 분기를 남기면 그것이 네 번째 판정 경로가 되어 성공 기준 2를 정면으로 어긴다. **변경 반경을 과소평가하지 말 것** — 실측 2026-09-20: 프로덕션 9개 파일 + 테스트 16개 파일 = 25개. 테스트 쪽 진원지는 `test/e2e/fixtures.ts`의 `createFixtureUser({ isAdmin })`이고, 시그니처가 바뀌면 E2E 스펙 전부가 따라 움직인다. 그래서 **이 이관을 독립 플랜으로 떼어 낸다** — 다른 기능과 섞으면 TDD 사이클이 깨진다. — **Reversibility:** costly — 25개 파일의 호출 지점과 픽스처 시그니처가 함께 바뀐다.
 - **D-37:** `users.isAdmin` **컬럼 자체는 이 페이즈에서 드롭하지 않는다.** `role_id` FK를 추가하고 코드를 전부 이관한 뒤, 컬럼은 남겨 둔다. 근거: `.squawk.toml`이 `ban-drop-column`을 예외 목록에 넣지 않았으므로 `pnpm lint:sql`이 DROP COLUMN 마이그레이션을 거부한다(실측). 드롭하려면 Squawk 예외를 새로 추가해야 하는데, 그 예외는 이 페이즈의 표 설계와 무관한 영구 완화라 값이 비싸다. 코드가 더는 읽지 않는 컬럼은 무해하며, 드롭은 별도 정리 작업으로 미룬다. **다만 이중 관리를 막기 위해** 이관 완료 후 `isAdmin` 컬럼을 참조하는 코드가 0임을 테스트로 고정한다(`ci-guard.test.ts`·`eslint-rules/` 전례와 같은 결). — **Reversibility:** reversible — 드롭은 언제든 별도 마이그레이션으로 가능하다.
 
 ### 누수 스캔 테스트 생성기
@@ -45,7 +45,8 @@ Phase 1의 D-01~D-18, Phase 2의 D-19~D-32는 그대로 유효하다. 번호를 
 
 사용자가 네 갈림길을 위임했으므로 D-33~D-40 전부가 Claude 판단이다. 그 밖에 planner 재량으로 남기는 것:
 
-- **DTO 출구 강제 수단** — `eslint-plugin-boundaries`가 `app→repositories`를 Phase 1부터 이미 막고 있다(실측: `eslint.config.mjs`의 `{ from: "app", allow: ["app","domain","lib","ui"] }` + `default: "disallow"`). 남은 절반("domain의 출구는 DTO뿐")은 import 경계가 아니라 **반환 타입** 문제라 boundaries로 강제 불가. 권장 방향: 커스텀 type-aware ESLint 규칙(`eslint/rules/money-boundary.mjs`가 전례). React `experimental_taint`는 Next.js 16 문서 확인 후 2차 방어로.
+- **DTO 출구 강제 수단** — `eslint-plugin-boundaries`가 `app→repositories`를 Phase 1부터 이미 막고 있다(실측: `eslint.config.mjs`의 `{ from: "app", allow: ["app","domain","lib","ui"] }` + `default: "disallow"`). 남은 절반("domain의 출구는 DTO뿐")은 import 경계가 아니라 **반환 타입** 문제라 boundaries로 강제 불가. 권장 방향: 커스텀 type-aware ESLint 규칙(`eslint/rules/money-boundary.mjs`가 전례).
+  - **정정(2026-09-20, 03-RESEARCH.md 실측):** **React `experimental_taint`는 쓸 수 없다.** 설치된 안정 채널 `react@19.3.0`에 `experimental_taint*`가 0건이고(`node_modules/react/cjs/react.development.js` grep 확인), API는 `node_modules/next/dist/compiled/react-experimental/`에만 존재한다 — `next.config.ts`의 `experimental.taint: true`는 앱 전체를 실험 React 채널로 바꾼다. ROADMAP Phase 3 절의 "React taint API가 2차 방어다"는 이 스택에서 성립하지 않으므로, DTO 출구 강제는 커스텀 lint 규칙 **하나**에 건다.
 - **설정 레지스트리의 이력형/비이력형 공존 형태** — 레지스트리는 하나, 값 저장 표는 `(key, effective_from, value)`와 `(key, value)` 둘. 로드맵이 "이 레지스트리에"를 반복해 설계가 이미 강하게 암시돼 있다. **다만 "특정 시점 기준 유효값" 조회 함수의 시그니처는 Phase 4의 `domain/money.applyTaxRule()`이 쓰는 계약**이므로 계획 단계에서 Phase 4 관점을 함께 본다.
 - **`domain/` 하위 폴더 단위 boundaries 세분화 필요 여부** — 현재 규칙은 `domain` 전체 단위다.
 - **완료 처리 강행 허용 설정 키의 형태** — Phase 6(PROJ-06)이 쓸 키를 이 페이즈가 등록한다. on/off 하나가 아니라 **점검 항목별 boolean**으로 넉넉하게 설계해 둔다.
@@ -110,7 +111,7 @@ Phase 1의 D-01~D-18, Phase 2의 D-19~D-32는 그대로 유효하다. 번호를 
 ### Integration Points
 - `ui/shell/role-menu.ts`(D-23) — 지금 관리자/직원 둘. 이 페이즈가 계급 5종 + 권한표로 **이 한 곳만** 교체하고 셸 컴포넌트는 건드리지 않는다
 - `domain/system-status/index.ts` · `app/(app)/admin/system-status/page.tsx` — 현재 `isAdmin` 분기. D-36이 `can()`으로 교체한다
-- `test/fixtures.ts`의 `createFixtureUser({ isAdmin })` — 테스트 16개 파일의 진원지
+- `test/e2e/fixtures.ts`의 `createFixtureUser({ isAdmin })` — 테스트 16개 파일의 진원지
 
 </code_context>
 

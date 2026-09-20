@@ -20,7 +20,7 @@
 | 1 | 03-01 | ✓ 완료 | `53e26a9` | ✓ | ✓ | ✓ 347 | ✓ 48 | ✓ 59 |
 | 2 | 03-02 | ✓ 완료 | `fa6d880` | ✓ | ✓ | ✓ 363 | ✓ 48 | ✓ 59 |
 | 3 | 03-03 | ✓ 완료 (+결함 2건 수정) | `3483fd8` | ✓ | ✓ | ✓ 381 | ✓ 103 | ✓ 63 |
-| 4 | 03-04 | ✓ 완료 (결함 1건 수정 중) | `72fc95e` | ✓ | ✓ | ✓ 422 | ✓ 143 | ✓ 66 |
+| 4 | 03-04 | ✓ 완료 (+결함 1건 수정) | `e113c7d` | ✓ | ✓ | ✓ 425 | ✓ 143 | ✓ 66 |
 | 5 | 03-05 | ○ 대기 | — | — | — | — | — | — |
 | 6 | 03-06 | ○ 대기 | — | — | — | — | — | — |
 | 7 | 03-07 | ○ 대기 | — | — | — | — | — | — |
@@ -333,5 +333,48 @@ CI(`72fc95e`) ✓ quality · integration-e2e. 오케스트레이터 독립 확�
 ### 알려진 스텁
 
 없음. 설정 가져오기 UI(파일 업로드)는 플랜이 의도적으로 범위 밖에 뒀고, `importSettings` + 통합 테스트가 유일한 인터페이스이며 화면이 내보내기 버튼 옆에 그렇게 안내한다.
+
+---
+
+## 웨이브 4 후속 수정 — Zod 오류 JSON 누수
+
+**소요 10분** · TDD(RED → GREEN) 준수
+
+| SHA | 내용 |
+|---|---|
+| `c3dd448` | test(03-04): RED — 원본 zod 이슈 JSON이 설정 화면에 절대 닿지 않아야 한다 |
+| `e113c7d` | fix(03-04): GREEN — Server Action 단일 진입점에서 ZodError를 한국어 카피로 변환 |
+
+### 보고된 원인이 한 겹 얕았다
+
+검증 에이전트는 `settings-form-client.tsx`의 `errorMessageOf`를 지목했지만, 그건 **표시 말단**이고 진짜 누수는 한 층 위였다:
+
+`lib/actions/client.ts`의 `handleServerError`(파일 주석: "이후 모든 페이즈의 유일한 Server Action 진입점")가 `e instanceof Error ? e.message : ...`로 처리하는데, **zod 4.6.5의 `ZodError.message`가 `JSON.stringify(issues, null, 2)`다.** `ZodError instanceof Error`가 참이라 가공 없이 통과했다.
+
+`errorMessageOf`만 고쳤다면 같은 원본 문자열이 다른 세 화면의 `serverError`에도 계속 도달했을 것이다. 수정 에이전트에게 "보고를 액면 그대로 믿지 말고 직접 재현해 원인을 확인하라"고 지시한 것이 값을 했다.
+
+### 수정
+
+`lib/actions/zod-error-message.ts` 신설 — `koreanZodErrorMessage(error: ZodError)`가 zod 이슈 코드(`too_small`·`too_big`·`invalid_type`·`invalid_value`·`not_multiple_of`·`invalid_format`·기본)를 SYSTEM.md §8 규칙 3(원인 · 다음 행동, 한 줄, 가운뎃점 구분)에 맞는 한국어 한 줄로 변환한다. `handleServerError`가 `ZodError`만 특별 처리하고 나머지 `Error`는 기존 경로를 탄다.
+
+재현 케이스 결과: `"0 이상이어야 합니다 · 값을 확인해 주세요"` — 사람에게 의미 있는 경계값은 남기고 zod 내부 구조는 전부 버린다. 화면 최종 문구는 `저장하지 못했습니다 · 0 이상이어야 합니다 · 값을 확인해 주세요`로 §7-7의 ERROR 예시(`저장하지 못했습니다 · 네트워크 · 다시 시도`)와 같은 3단 구조다.
+
+### 영향 범위 점검 (누수 경로를 닫았는가)
+
+- `grep -rn createSafeActionClient` — 앱 코드에 실제 클라이언트 인스턴스는 `lib/actions/client.ts` 하나뿐. **단일 지점 수정이 맞다**
+- `grep -rln '\.parse(' domain/` — `domain/settings/registry.ts`가 유일. 오케스트레이터가 독립 확인함
+- `permission-grid-client.tsx` · `code-item-form.tsx` · `change-password-form.tsx` 세 화면도 `serverError`를 같은 방식으로 가공 없이 렌더하지만, 각자의 도메인 호출이 `.parse()`를 쓰지 않아 현재는 노출되지 않는다. 이제 같은 수정으로 **선제적으로 보호된다**
+
+### 데이터 안전성
+
+`setSettingValue`가 저장소 쓰기 전에 검증하므로 아무것도 기록되지 않았다 — 표시 전용 결함이 맞다(검증 에이전트 보고와 일치, 수정 에이전트가 독립 확인).
+
+### 게이트
+
+lint · typecheck · build PASS. unit **425/425**(42파일, 신규 RED→GREEN 포함) · integration 143/143 · e2e 66/66(`settings.spec.ts` 포함, `keyboard-nav` 플레이크 없이 통과). 신규 의존성 0(zod는 이미 있다).
+
+### 남긴 것 (범위 밖 판단)
+
+`errorMessageOf`의 `저장하지 못했습니다 · ` 접두사는 그대로 뒀다. §7-2의 2단 필드 오류 스타일로 재설계하는 것은 이 결함 티켓의 범위가 아니라고 판단했다 — 타당하다.
 
 ---

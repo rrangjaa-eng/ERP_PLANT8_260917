@@ -29,7 +29,7 @@ const REVEAL_INFO_ITEM = "vendor.account_number_unmasked";
 
 // MAST-01: 거래처 Dto — 전체 계좌번호(평문) 필드를 두지 않는다. 뒤 4자리
 // (accountNumberLast4)만 실어 목록이 마스킹 표시를 그릴 수 있게 하고, 평문은
-// revealAccountNumber의 반환값으로만 나간다.
+// 마스킹 해제 함수(파일 아래쪽)의 반환값으로만 나간다.
 export type VendorDto = {
   id: string;
   name: string;

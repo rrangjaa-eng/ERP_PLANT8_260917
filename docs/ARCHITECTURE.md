@@ -87,6 +87,36 @@ append-only다).
 `null`을 처리해야 한다. Phase 5의 비용 귀속·Phase 10의 팀 직접 관리비가 사용일을 `date`로
 넘겨 이 함수를 그대로 쓴다.
 
+## 4-4. 앱단 암호화 계약(Phase 3, 03-06)
+
+`lib/crypto.ts`의 `encrypt`/`decrypt` — 저장 형식은 `v1:<iv>:<tag>:<ciphertext>`
+(콜론 구분, 뒤 세 조각은 각각 base64, AES-256-GCM). 키는 `APP_DATA_KEY_v1`/
+`APP_DATA_KEY_v2`(base64 32바이트, Secret Manager). **키가 없거나 길이가
+틀리면 암호화·복호화가 즉시 예외(fail-closed)** — 평문 저장이나 빈 값 통과로
+떨어지지 않는다. 키 회전은 새 버전 키를 추가하고 옛 키를 남긴 채
+`scripts/rotate-key.ts`로 재암호화한다(`pnpm db:rotate-key`) — 복호화는
+접두어의 버전으로 키를 골라 v1·v2가 동시에 있어도 둘 다 복호화된다. 마스킹
+표시용 뒤 4자리는 암호문과 별도 평문 컬럼에 함께 저장한다(목록이 복호화
+없이 그려지고, 복호화 호출 자체가 "마스킹 해제"라는 의미를 갖는다).
+
+## 4-5. 커스텀 필드 규약(Phase 3, 03-06)
+
+마스터 표의 `custom_fields` jsonb 컬럼은 `field_definitions` 표((entity, key)
+복합 unique)가 정의한 키·타입만 담는다. 서버 액션이 저장 전
+`domain/custom-fields/build-schema.ts`의 `buildCustomFieldsSchema(defs)`로
+zod 스키마를 조립해 검증한다(`.strict()` — 등록되지 않은 키 거부). **필드
+타입 변경은 금지** — 리포지토리 갱신 함수가 `type` 컬럼을 대상으로 받지
+않는다(타입을 바꾸려면 새 필드를 만든다). **이후 새 표는 생성 마이그레이션에
+GIN 인덱스를 포함한다** — 기존 마스터 표(`roles`·`code_items`·`org_units`·
+`teams`·`corp_cards`)는 이 규약이 정해지기 전에 생겨 마이그레이션 0007이
+뒤늦게 채웠다(`03-06-SUMMARY.md`).
+
+## 4-6. 문서 번호 카운터 표 규약(Phase 3 → Phase 4, 03-06)
+
+`document_counters`((counterKey, period) 복합 PK) — **이 표는 규약만 세운다.
+실제 번호 부여(원자적 증가)와 행 잠금은 Phase 4다.** `repositories/
+document-counters.ts`는 읽기와 upsert만 두고 증가 함수를 두지 않는다.
+
 ## 5. DB·마이그레이션
 
 `drizzle-kit generate` → Squawk(`.squawk.toml`, `pnpm lint:sql`) → `scripts/migrate-runner.ts`
@@ -139,7 +169,7 @@ domain 모듈 = 단위, 새 액션·DTO = 통합(+Phase 3부터 누수 생성), 
 | `AUTH_PROVIDER`·`GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET` | 로그인 방식 전환 | 환경 변수 |
 | `LOCKOUT_THRESHOLD`·`LOCKOUT_WINDOW_MINUTES` | 잠금 | Phase 3부터 설정 레지스트리 키(`auth.lockout.*`)의 기본값 출처로만 남는다 |
 | `RATE_LIMIT_LOGIN_MAX` | 속도 제한 | 부팅 시 1회(`lib/auth.ts` better-auth 설정) — 레지스트리 밖, 런타임 변경 불가 |
-| `APP_DATA_KEY_v1` | 암호화 키 자리(Phase 3부터 사용) | Secret Manager |
+| `APP_DATA_KEY_v1`·`APP_DATA_KEY_v2` | 암호화 키(Phase 3부터 사용, v2는 회전용 두 번째 버전) | Secret Manager |
 | `SMTP_HOST`·`SMTP_USER`·`SMTP_PASSWORD`·`SMTP_FROM` | 이메일(Phase 1은 정의만) | Secret Manager |
 | `GCP_PROJECT_ID`·`CLOUD_SQL_INSTANCE_ID` | 상태 화면의 GCP 조회 | 배포 워크플로 변수 |
 | `APP_GIT_SHA`·`APP_DEPLOYED_AT` | 상태 화면 배포 버전 표시 | deploy.sh가 주입 |

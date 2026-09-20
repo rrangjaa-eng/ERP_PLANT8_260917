@@ -13,6 +13,7 @@
   text-align: left;
   padding: var(--cell-pad-y) var(--cell-pad-x);
   border-bottom: var(--line-w-strong) solid var(--line-strong);
+  white-space: nowrap;
 }
 
 .table td {
@@ -37,6 +38,7 @@
 }
 
 .select {
+  width: 100%;
   height: var(--control-h);
   border: var(--line-w) solid var(--line-ui);
   background: var(--bg);

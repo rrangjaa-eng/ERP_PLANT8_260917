@@ -29,6 +29,30 @@ export const CORE_ACTION_TYPES = [
 
 export type CoreActionType = (typeof CORE_ACTION_TYPES)[number];
 
+// 03-07: 행동 로그 화면·Excel 내보내기가 보여줄 한국어 라벨. 지난 웨이브의
+// UI 감사가 "raw SQL INSERT with internal IDs shown to users" 같은 결함을
+// 찾았다 — 여기서도 snake_case 내부 토큰을 사용자에게 그대로 보여주지
+// 않는다(Rule 2 — 누락된 핵심 기능: 화면에 원문 코드가 새는 것을 막는다).
+export const ACTION_TYPE_LABELS: Record<CoreActionType, string> = {
+  login: "로그인",
+  document_create: "문서 생성",
+  document_submit: "문서 제출",
+  document_approve: "문서 승인",
+  document_reject: "문서 반려",
+  document_withdraw: "문서 철회",
+  document_delete: "문서 삭제",
+  payment_process: "지급 처리",
+  purchase_process: "구매 처리",
+  settings_change: "설정 변경",
+  permission_change: "권한 변경",
+  sensitive_view: "민감정보 열람",
+  archive: "보관",
+  restore: "복원",
+  excel_export: "Excel 내보내기",
+  mask_reveal: "마스킹 해제",
+  action_log_prune: "행동 로그 정리",
+};
+
 // OPS-05: Excel 내보내기·마스킹 해제·행동 로그 정리는 설정으로 못 끄는 핵심
 // 로그다 — 설정 조회 결과와 무관하게 항상 기록한다.
 export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = ["excel_export", "mask_reveal", "action_log_prune"];

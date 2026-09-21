@@ -108,7 +108,8 @@ describe("serializeActionLogExportAsCsv (Task 1 결정 A — UTF-8 BOM CSV)", ()
     const file = serializeActionLogExportAsCsv([row]);
     const parsed = parseCsv(file.body);
     expect(parsed.length).toBe(2);
-    const [, dataRow] = parsed;
+    const dataRow = parsed[1];
+    if (!dataRow) throw new Error("데이터 행이 없습니다.");
     expect(dataRow[1]).toBe('김,철수\n"별명"');
     expect(dataRow[4]).toContain("vendor");
     expect(dataRow[5]).toBe("doc,with,commas");

@@ -1,7 +1,10 @@
 {
   "extraKnownMarketplaces": {
     "superpowers-marketplace": {
-      "source": { "source": "github", "repo": "obra/superpowers-marketplace" }
+      "source": {
+        "source": "github",
+        "repo": "obra/superpowers-marketplace"
+      }
     }
   },
   "enabledPlugins": {
@@ -19,6 +22,29 @@
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR\"/scripts/dev-db.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/plant8-procedure-checklist.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/plant8-protect-claude-md.sh",
+            "timeout": 10
           }
         ]
       }

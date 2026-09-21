@@ -21,7 +21,7 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
 
     const value = `e2e-${Date.now()}`;
     await page.getByLabel("값").fill(value);
-    await page.getByLabel("이름").fill("E2E 코드");
+    await page.locator("#code-item-form").getByLabel("이름").fill("E2E 코드");
     await page.getByRole("button", { name: "코드 추가" }).click();
 
     await expect(page.getByText(value)).toBeVisible();

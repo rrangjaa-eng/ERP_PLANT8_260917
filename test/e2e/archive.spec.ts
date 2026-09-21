@@ -23,7 +23,7 @@ test.describe("보관함 화면 (ADMN-12)", () => {
     await page.goto("/admin/code-tables");
     await page.getByRole("link", { name: "코드 추가" }).click();
     await page.getByLabel("값").fill(codeValue);
-    await page.getByLabel("이름").fill(codeLabel);
+    await page.locator("#code-item-form").getByLabel("이름").fill(codeLabel);
     await page.getByRole("button", { name: "코드 추가" }).click();
     await expect(page.getByText(codeValue)).toBeVisible();
 

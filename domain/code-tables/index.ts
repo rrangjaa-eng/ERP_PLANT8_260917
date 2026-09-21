@@ -10,6 +10,7 @@ import {
   listCodeItems as repoListCodeItems,
   insertCodeItem as repoInsertCodeItem,
   setCodeItemActive as repoSetCodeItemActive,
+  updateCodeItemLabel as repoUpdateCodeItemLabel,
   findCodeItemById as repoFindCodeItemById,
   setCodeItemTaxRule as repoSetCodeItemTaxRule,
   type CodeItemRow,
@@ -19,6 +20,10 @@ export class ForbiddenError extends UserFacingError {}
 // 03-06: 증빙 종류(evidence_type) 항목이 아닌 코드표 항목에 세금 규칙을
 // 저장하려는 시도 — 세금 규칙은 그 코드표에만 의미가 있다.
 export class NotEvidenceTypeError extends UserFacingError {}
+// MAST-04 「수정」: 보관된 항목은 고칠 수 없다. 거래처의 ArchivedVendorError와
+// 같은 이유로 도메인에 둔다 — 목록에서 링크를 감추는 것만으로는 주소를 직접
+// 여는 경로를 못 막는다(DOM 감사 실측).
+export class ArchivedCodeItemError extends UserFacingError {}
 
 const EVIDENCE_TYPE_TABLE_KEY = "evidence_type";
 
@@ -111,6 +116,35 @@ export async function setCodeItemActive(
   }
 
   await repoSetCodeItemActive(viewer, id, active);
+  const updated = await repoFindCodeItemById(viewer, id);
+  return updated ? ((await project(viewer, updated, CODE_ITEM_DTO_SPEC)) as CodeItemDto) : null;
+}
+
+// MAST-04 「추가·수정·비활성화」의 「수정」. 바꾸는 것은 이름(label) 하나다 —
+// value는 vendors.default_evidence_type이 FK 없이 문자열로 참조하고 있어
+// 바꾸면 기존 거래처가 조용히 고아가 된다(사용자 결정 2026-09-21, 안 a).
+// 값 자체를 바꿔야 하는 경우는 비활성화 후 새 항목 추가로 처리한다.
+export async function updateCodeItemLabel(
+  viewer: Viewer,
+  id: string,
+  label: string,
+): Promise<CodeItemDto | null> {
+  const allowed = await can(viewer, "admin.code-tables", "write");
+  if (!allowed) throw new ForbiddenError("코드표 항목 수정 권한이 없습니다.");
+
+  const trimmed = label.trim();
+  if (trimmed === "") throw new UserFacingError("이름이 비어 있습니다 · 이름을 입력해 주세요.");
+
+  const current = await repoFindCodeItemById(viewer, id);
+  if (!current) return null;
+  if (current.archivedAt !== null) {
+    throw new ArchivedCodeItemError("보관된 코드표 항목은 수정할 수 없습니다 · 먼저 복원해 주세요.");
+  }
+
+  await repoUpdateCodeItemLabel(viewer, id, trimmed);
+  // 수정은 생성이 아니다 — updateVendor·updateCorpCardOwner와 같은 종류로 남긴다.
+  await recordAction(viewer, { actionType: "document_update", entity: "code_items", entityId: id });
+
   const updated = await repoFindCodeItemById(viewer, id);
   return updated ? ((await project(viewer, updated, CODE_ITEM_DTO_SPEC)) as CodeItemDto) : null;
 }

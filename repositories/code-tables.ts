@@ -50,6 +50,15 @@ export async function setCodeItemActive(viewer: Viewer, id: string, active: bool
   await db.update(codeItems).set({ active, updatedAt: new Date() }).where(eq(codeItems.id, id));
 }
 
+// MAST-04 「수정」 — 이름(label)만 쓴다. value는 이 함수가 건드리지 않는다:
+// vendors.default_evidence_type이 FK 없는 text 컬럼에 코드 항목의 value를
+// 담고 있어(db/schema/vendors.ts:19), value가 바뀌면 기존 거래처가 조용히
+// 고아가 된다(사용자 결정 2026-09-21).
+export async function updateCodeItemLabel(viewer: Viewer, id: string, label: string): Promise<void> {
+  void viewer;
+  await db.update(codeItems).set({ label, updatedAt: new Date() }).where(eq(codeItems.id, id));
+}
+
 // 보관·복원 둘 다 조건부 UPDATE로 멱등·경합 안전을 확보한다(repositories/roles.ts
 // setRoleArchived와 같은 패턴).
 export async function setCodeItemArchived(viewer: Viewer, id: string, value: boolean): Promise<void> {

@@ -3,7 +3,12 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
-import { createCodeItem, setCodeItemActive, setEvidenceTypeTaxRule } from "@/domain/code-tables";
+import {
+  createCodeItem,
+  setCodeItemActive,
+  updateCodeItemLabel,
+  setEvidenceTypeTaxRule,
+} from "@/domain/code-tables";
 import { taxRuleSchema } from "@/domain/code-tables/tax-rule";
 import { archive } from "@/domain/archive";
 import "./actions.registry";
@@ -23,6 +28,15 @@ export const createCodeItemAction = authedActionClient
   )
   .action(async ({ parsedInput, ctx }) => {
     await createCodeItem(ctx.viewer, parsedInput);
+    revalidatePath("/admin/code-tables");
+  });
+
+// MAST-04 「수정」 — 이름만 바꾼다. value를 스키마에 넣지 않는 것이 계약이다:
+// vendors.default_evidence_type이 FK 없이 value 문자열을 참조한다.
+export const updateCodeItemLabelAction = authedActionClient
+  .schema(z.object({ id: z.string().min(1), label: z.string().min(1, "이름을 입력하세요.") }))
+  .action(async ({ parsedInput, ctx }) => {
+    await updateCodeItemLabel(ctx.viewer, parsedInput.id, parsedInput.label);
     revalidatePath("/admin/code-tables");
   });
 

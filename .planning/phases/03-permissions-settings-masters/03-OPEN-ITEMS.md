@@ -43,10 +43,10 @@
 
 ## Phase 3에서 고치기로 한 것 (사용자 승인 2026-09-21)
 
-| 출처 | 항목 | 왜 지금인가 |
+| 출처 | 항목 | 상태 |
 |---|---|---|
-| /review M-2 | 보관과 세션 만료가 비원자적 · `getSession()`이 `archivedAt`을 안 봄 | 보관된(삭제된) 사람의 세션이 만료일까지 살아 있다 — 보안 |
-| /review L-3 | 로그인 403 메시지를 그대로 노출(`Invalid origin` 등) | 내부 문구가 사용자에게 샌다 — 보안 |
+| /review L-3 | 로그인 403 메시지를 그대로 노출(`Invalid origin` 등) | **GREEN** — `LOCKED_MESSAGE`를 import 없는 잎 모듈로 분리해 정확 대조. RED: `Invalid origin`이 그대로 반환됨 → 단위 9/9 통과 |
+| /review M-2 | 보관과 세션 만료가 비원자적 · `getSession()`이 `archivedAt`을 안 봄 | **구현 완료, e2e 미실행** — `lib/auth.ts`에 `archivedAt` 추가 필드 등록 + `lib/viewer.ts`가 fail-closed로 거부. 전제(better-auth가 요청마다 사용자 행을 다시 읽는다 — `cookieCache` 미사용)는 실제 실행으로 확인해야 한다. `test/e2e/archived-session.spec.ts` 작성됨 |
 
 ## Phase 4로 미루기로 한 것 (사용자 승인 2026-09-21)
 

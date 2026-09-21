@@ -122,7 +122,9 @@ export default async function CodeTablesPage({
               <th>이름</th>
               <th>정렬</th>
               <th>상태</th>
-              <th>동작</th>
+              {/* 칸을 비우면서 머리글만 남기면 빈 칸이 생긴다 — 법인카드
+                  화면과 같은 조건으로 머리글까지 감춘다. */}
+              {canWrite || canArchive ? <th>동작</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -151,18 +153,21 @@ export default async function CodeTablesPage({
                       </StatusTag>
                     ) : null}
                   </td>
-                  <td>
-                    {item.archivedAt ? null : (
-                      <>
-                        {canWrite ? <CodeItemActiveToggle id={item.id} active={item.active} /> : null}
-                        {canArchive ? <CodeItemDeleteButton id={item.id} label={item.label} /> : null}
-                      </>
-                    )}
-                  </td>
+                  {/* 머리글과 같은 조건이어야 칸이 어긋나지 않는다. */}
+                  {canWrite || canArchive ? (
+                    <td>
+                      {item.archivedAt ? null : (
+                        <>
+                          {canWrite ? <CodeItemActiveToggle id={item.id} active={item.active} /> : null}
+                          {canArchive ? <CodeItemDeleteButton id={item.id} label={item.label} /> : null}
+                        </>
+                      )}
+                    </td>
+                  ) : null}
                 </tr>
                 {isEvidenceType && canWrite ? (
                   <tr>
-                    <td colSpan={5}>
+                    <td colSpan={canWrite || canArchive ? 5 : 4}>
                       <EvidenceTypeFields itemId={item.id} initialValue={item.taxRule} />
                     </td>
                   </tr>

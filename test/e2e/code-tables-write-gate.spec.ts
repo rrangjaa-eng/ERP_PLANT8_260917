@@ -45,6 +45,10 @@ test("보기 권한만 있는 계급의 코드표 화면에는 편집 수단이 
     await expect(page.getByRole("button", { name: "비활성화" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "활성화" })).toHaveCount(0);
 
+    // 칸을 비우면서 머리글만 남기면 빈 칸이 생긴다 — 법인카드 화면은
+    // 머리글까지 감춘다(corp-cards/page.tsx). 두 화면이 갈리면 안 된다.
+    await expect(page.getByRole("columnheader", { name: "동작" })).toHaveCount(0);
+
     // ?new=1을 직접 쳐도 폼이 열리지 않는다.
     await page.goto("/admin/code-tables?new=1");
     await expect(page.locator("#code-item-form")).toHaveCount(0);

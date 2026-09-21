@@ -1,9 +1,9 @@
 ---
 phase: 03-permissions-settings-masters
-verified: 2026-09-21T09:27:05Z
-status: gaps_found
-score: 12/13 must-haves verified
-covered_digest: "v1:sha256:7ef48a57083b429e7f2e4024c240d36838e7da83736263a4ad738e1f6b597b4e"
+verified: 2026-09-21T12:05:40Z
+status: human_needed
+score: 13/13 must-haves verified
+covered_digest: "v1:sha256:acc351da1d4604228c743b1371e6258abe4c15c0e2a1c88fe3c898be89e8df79"
 covered_files:
   - ".planning/REQUIREMENTS.md"
   - ".planning/ROADMAP.md"
@@ -32,6 +32,7 @@ covered_files:
   - ".planning/phases/03-permissions-settings-masters/03-OPEN-ITEMS.md"
   - ".planning/phases/03-permissions-settings-masters/03-PATTERNS.md"
   - ".planning/phases/03-permissions-settings-masters/03-RESEARCH.md"
+  - ".planning/phases/03-permissions-settings-masters/03-REVIEW-2.md"
   - ".planning/phases/03-permissions-settings-masters/03-REVIEW-BATCH.md"
   - ".planning/phases/03-permissions-settings-masters/03-REVIEW.md"
   - ".planning/phases/03-permissions-settings-masters/03-SECURITY.md"
@@ -206,8 +207,10 @@ covered_files:
   - "test/e2e/admin-people-detail-link.spec.ts"
   - "test/e2e/archive.spec.ts"
   - "test/e2e/archived-session.spec.ts"
+  - "test/e2e/code-tables-write-gate.spec.ts"
   - "test/e2e/code-tables.spec.ts"
   - "test/e2e/corp-cards.spec.ts"
+  - "test/e2e/master-edit.spec.ts"
   - "test/e2e/mobile-admin-master-list-first.spec.ts"
   - "test/e2e/mobile-admin-nav.spec.ts"
   - "test/e2e/mobile-code-tables.spec.ts"
@@ -222,8 +225,11 @@ covered_files:
   - "test/e2e/vendors.spec.ts"
   - "test/integration/action-log-query.test.ts"
   - "test/integration/archived-session.test.ts"
+  - "test/integration/corp-card-owner-archived.test.ts"
+  - "test/integration/corp-card-owner-edit.test.ts"
   - "test/integration/corp-cards.test.ts"
   - "test/integration/leak-scan.test.ts"
+  - "test/integration/mast-04-code-item-label.test.ts"
   - "test/integration/settings-export.test.ts"
   - "test/integration/vendors.test.ts"
   - "test/integration/visibility.test.ts"
@@ -257,49 +263,15 @@ decision_coverage:
   not_honored: []
 re_verification:
   previous_status: gaps_found
-  previous_score: 9/13
-  previous_verified: 2026-09-21T05:17:08Z
+  previous_score: 12/13
+  previous_verified: 2026-09-21T09:27:05Z
   gaps_closed:
-    - "OPS-05 — 로그인이 행동 로그에 남지 않는다 (c8115ae)"
-    - "MAST-01 — 거래처 수정 화면이 없다 (b8628fc · 2c8851e · 45af478)"
-    - "ADMN-03 — 누수 스캔이 등록 파일 9개 중 7개만 본다 (4582307)"
-    - "ADMN-06 — 설정 가져오기 운영 진입점이 없다 (3c6d3f9)"
+    - "성공 기준 5 — 법인카드 「수정」이 화면에 없다 (`b19590d` + `d6c96b0` + `3b15d43`). 행 「수정」 → `?editId=` → `CardOwnerForm` → `updateCorpCardOwnerAction` 호출자 실재. 보관 카드는 화면(링크 부재 + `editingCard` 필터)·도메인(`ArchivedCorpCardError`) 두 겹. 프로덕션 빌드 e2e 3건 통과(검증자가 직접 실행)"
+    - "MAST-04 — 코드표 항목 「수정」이 없다 (`b19590d` + `d6c96b0` + `c3abd99`). `domain/code-tables.updateCodeItemLabel` 신설(`can()` → 리포지토리 → `recordAction(document_update)` → `project()`), 행 인라인 `CodeItemLabelInput` 배선, 보관 항목은 `ArchivedCodeItemError` + 화면은 글자로 렌더. `value` 쓰기 경로는 액션 스키마·도메인·리포지토리·UI 어디에도 없음(실측)"
   gaps_remaining: []
   regressions: []
-  new_gaps:
-    - "성공 기준 5 — 법인카드 소유자 변경 화면이 없다(`updateCorpCardOwnerAction` 호출자 0). 이전 검증이 `updateVendorAction`의 동일한 상태를 gaps 2로 센 것과 같은 결함 모양인데 이전 검증은 법인카드 축을 점검하지 않았다"
-    - "MAST-04 — 코드표 항목의 값·라벨을 고치는 함수·화면이 없다. 이전 검증은 증빙 종류 세금 규칙 편집을 「수정」으로 읽어 MET로 적었으나, 세금 규칙은 성공 기준 5의 별도 문장이 요구하는 것이지 MAST-04의 코드표 항목 수정이 아니다"
-  note: "이전 검증은 테스트를 한 번도 실행하지 않았다(요청 조건). 이번 재검증은 단위 581 · 통합 713 · e2e 110(desktop 79 + mobile-375 31) · typecheck · eslint를 이 프로세스에서 직접 돌려 전부 통과를 확인했다. 새 미달 2건은 테스트 실패가 아니라 원문(REQUIREMENTS.md:22 · ROADMAP 성공 기준 5)과 코드의 직접 대조에서 나왔다."
-gaps:
-  - truth: "성공 기준 5 — 「거래처·클라이언트…, 법인카드(개인/팀, 소지자 또는 소속 팀), 코드표…를 관리 화면에서 등록·수정·비활성화한다」 중 법인카드 「수정」이 화면에 없다"
-    status: partial
-    reason: "`updateCorpCardOwnerAction`(`app/(app)/admin/corp-cards/actions.ts:34-59`)은 정의돼 있고 `actions.registry.ts:13`에 등록까지 돼 있으나 `app/`·`ui/` 어디에서도 부르지 않는다(호출자 0 — 실측). `domain/corp-cards.updateCorpCardOwner`(`index.ts:122`)도 통합 테스트(`test/integration/corp-cards.test.ts:135·160`)만 부른다. 화면은 등록·활성 토글·삭제(보관)뿐이고 기존 카드의 소지자·팀을 바꾸는 진입점이 없다 — `page.tsx:130-139`의 동작 칸에 「수정」이 없다. **이전 검증은 `updateVendorAction`의 완전히 동일한 상태(정의·등록됨, 호출자 0)를 gaps 2 「거래처 수정 화면이 없다」로 셌고 그래서 `b8628fc`로 고쳤다.** 같은 결함 모양에 다른 판정을 내릴 코드상 근거가 없다. 다만 요구사항 MAST-03 원문(「등록하고, 카드마다 소지자 또는 소속 팀을 지정한다」)은 「수정」을 요구하지 않으므로 **MAST-03 자체는 충족**이고, 미달은 ROADMAP 성공 기준 5에 대한 것이다."
-    artifacts:
-      - path: "app/(app)/admin/corp-cards/page.tsx"
-        issue: "행 동작 칸(130-139행)에 「수정」 진입점이 없다. `corpCardsHref`(19-25행)도 `isNew`만 만들고 vendors의 `editId`에 해당하는 인자가 없다"
-      - path: "app/(app)/admin/corp-cards/card-form.tsx"
-        issue: "`createCorpCardAction`·`setCorpCardActiveAction`·`archiveCorpCardAction`만 import한다(6행) — `updateCorpCardOwnerAction`을 부르지 않는다. 등록 전용 폼이다"
-      - path: "app/(app)/admin/corp-cards/actions.ts"
-        issue: "`updateCorpCardOwnerAction`(34-59행)이 등록·노출됐지만 호출자 0 — 죽은 배선"
-    missing:
-      - "카드 행의 「수정」 진입점 + 소유 변경 폼 — vendors가 이미 쓰는 `?editId=` 토글과 같은 결(D-39, `DECISIONS.md` 2026-09-21)로 맞춘다. 최소 범위는 종류(개인/팀) 전환 + 소지자·팀 재지정이다(`updateCorpCardOwner`가 반대 칸을 같은 UPDATE 문에서 비우는 계약을 이미 갖고 있다)"
-      - "보관·비활성 카드의 수정 차단을 **도메인에서** 판정한다 — `domain/vendors.updateVendor:300-303`이 `ArchivedVendorError`로 한 선례를 그대로 따른다(화면에서 링크를 감추는 것만으로는 `?editId=<보관된 id>` 직접 진입을 막지 못한다는 것이 DOM 감사 실측 결과다)"
-      - "e2e: 소유자를 개인 → 팀으로 바꾸면 목록의 「종류」·「소유」 칸이 함께 바뀌고, 반대 칸이 비워진다(H-1 회귀 `d9dde36`의 kind 동기화가 화면 경로에서도 지켜지는지)"
-  - truth: "MAST-04 — 「견적 대분류·소분류, 지급 방식, 프로젝트 상태 같은 코드표를 관리 화면에서 추가·수정·비활성화한다」 중 「수정」이 없다"
-    status: partial
-    reason: "`domain/code-tables/index.ts`의 내보내기는 `listCodeItems`·`createCodeItem`·`setCodeItemActive`·`setEvidenceTypeTaxRule` **넷뿐**이고 코드표 항목의 `value`·`label`을 고치는 함수가 없다(실측). 액션(`actions.ts`)도 `createCodeItemAction`·`setCodeItemActiveAction`·`setEvidenceTypeTaxRuleAction`·`archiveCodeItemAction` 넷뿐이고, `code-item-form.tsx`는 등록 폼이다. **`setEvidenceTypeTaxRule`을 MAST-04의 「수정」으로 읽을 수 없다** — 그것은 성공 기준 5의 별도 문장(「증빙 종류 코드표는 종류마다 세금 규칙 필드…를 갖고」)이 요구하는 것이고, `index.ts:129-131`이 `tableKey !== evidence_type`이면 `NotEvidenceTypeError`로 거부하므로 프로젝트 상태·지급 방식 같은 다른 코드표에는 적용조차 되지 않는다. MAST-04가 이름을 든 「견적 대분류·소분류, 지급 방식, 프로젝트 상태」는 추가·비활성화·보관만 된다."
-    artifacts:
-      - path: "domain/code-tables/index.ts"
-        issue: "update 계열 함수 부재 — 내보내기 4개(`listCodeItems`·`createCodeItem`·`setCodeItemActive`·`setEvidenceTypeTaxRule`)에 값·라벨 수정이 없다"
-      - path: "app/(app)/admin/code-tables/actions.ts"
-        issue: "수정 액션이 없다(create·setActive·setEvidenceTypeTaxRule·archive 넷)"
-      - path: "app/(app)/admin/code-tables/page.tsx"
-        issue: "행 동작에 「수정」 진입점이 없다 — `code-item-form.tsx`는 등록 전용"
-    missing:
-      - "`updateCodeItem(viewer, id, { label?, value? })` — `can(viewer,\"admin.code-tables\",\"write\")` → 갱신 → `recordAction(document_update)`(거래처 수정이 `b0b8886` 이후 쓰는 종류와 같게. `document_create` 재사용 금지 — 그것이 결함 3이었다)"
-      - "**`value` 수정은 참조 무결성 판단이 먼저다.** `db/schema/vendors.ts:19` `default_evidence_type`은 `text` 컬럼에 코드 항목의 `value` **문자열**을 FK 없이 담는다 — `value`를 바꾸면 기존 거래처의 기본 증빙 종류가 조용히 고아가 된다(화면은 `app/(app)/admin/vendors/page.tsx:120-123`에서 라벨을 못 찾아 원시 값으로 내려앉는다). 안전한 최소 구현은 **`label`만 수정 허용**이고, `value`까지 열려면 참조 갱신(또는 FK 도입)이 같은 트랜잭션에 있어야 한다. 어느 쪽인지 결정이 먼저다"
-      - "`UNIQUE(table_key, value)`(`db/schema/code-tables.ts:31`) 충돌을 사용자 문구로 돌려주는 경로 — `lib/pg-errors.ts`가 이미 쓰는 방식"
-      - "`registerAction`으로 누수 스캔 등록 + 회귀 테스트(수정이 `document_update`로 남는지, 다른 코드표 항목의 값과 충돌하면 거부되는지)"
+  new_gaps: []
+  note: "검증자가 이 프로세스에서 직접 돌린 게이트: 단위 581 passed(63 files, 20.0s) · 통합 730 passed(28 files, 224.9s) · `CI=true` 프로덕션 빌드 e2e로 신규 스펙 2파일 5 passed(32.4s) · `tsc --noEmit` exit 0 · `eslint .` exit 0(boundaries deprecation 경고만). 이전 라운드 대비 통합 +17건(신규 12 + 기존 파일 증분), e2e 신규 5건."
 deferred:
   - truth: "MAST-01 — 「입력 시 자동완성된다」의 화면 소비자"
     addressed_in: "Phase 5 · Phase 6"
@@ -309,7 +281,7 @@ deferred:
     evidence: "ROADMAP Phase 7 성공 기준 5: 「누수 스캔 생성기가 Phase 3~7의 모든 액션·DTO 타입·Excel 내보내기 함수를 덮고…Playwright 계급별 노출 스모크가 CI에 있다」. Phase 3 goal 자체가 「전 메뉴 대상 검수는 Phase 7 끝에서 한다」고 명시한다."
   - truth: "관리자 폼 7개(사람·계급·조직·거래처·법인카드·코드표·설정)의 §6-3 폼 템플릿 이관 (design-review A-H2·A-H3)"
     addressed_in: "Phase 4(컴포넌트 제작) · Phase 7(이관)"
-    evidence: "ROADMAP Phase 7 성공 기준 5 본문에 「관리자 화면 7개의 폼을 Phase 4가 만든 `ui/form`·`ui/select`로 이관해 §6-3 폼 템플릿 밖에 있는 관리자 화면이 0이고…Phase 3 design-review가 실측으로 남긴 A-H2·A-H3의 이월분이다」로 박혀 있다. `03-OPEN-ITEMS.md`에 출처·근거 기록. **주의:** 위 gaps 두 건이 새로 만드는 폼도 이 이관 대상에 함께 들어간다."
+    evidence: "ROADMAP Phase 7 성공 기준 5 본문에 「관리자 화면 7개의 폼을 Phase 4가 만든 `ui/form`·`ui/select`로 이관해 §6-3 폼 템플릿 밖에 있는 관리자 화면이 0이고…Phase 3 design-review가 실측으로 남긴 A-H2·A-H3의 이월분이다」로 박혀 있다. `03-OPEN-ITEMS.md`에 출처·근거 기록. **주의:** 이번 라운드가 새로 만든 폼 둘(`CardOwnerForm` · `CodeItemLabelInput`)도 이 이관 대상에 함께 들어간다."
   - truth: "폰 375px 관리자 표 가로 스크롤·줄바꿈 (DOM 감사 2·6·7) · /review M-4 · /review L-1 · /cso R2·R3·R4·R5"
     addressed_in: "Phase 4"
     evidence: "`03-OPEN-ITEMS.md` 「Phase 4로 미루기로 한 것 (사용자 승인 2026-09-21)」 표 — 항목별 미루는 근거가 기록돼 있다(SYSTEM.md 844행: 「관리자 콘솔은 PC 사용이 기본」)."
@@ -320,7 +292,7 @@ advisory:
   - finding: "설정 화면 문구가 낡았다 — `app/(app)/admin/settings/settings-form-client.tsx:235`가 「가져오기는 통합 테스트로만 제공됩니다(파일 업로드 화면은 이 페이즈 범위 밖).」이라고 관리자에게 말하지만, `3c6d3f9` 이후 `pnpm settings:import` CLI가 실재한다. `app/(app)/admin/settings/actions.ts:52-54`의 주석도 같은 문장이다."
     category: other
     reason: "요구사항 ADMN-06 자체는 CLI + `docs/OPERATIONS.md §12`로 충족됐다(동작에는 영향 없음). 그러나 화면이 운영자에게 사실이 아닌 안내를 한다 — 가져오기 방법을 찾는 사람이 「없다」고 읽는다. 한 줄 수정이고 다음에 이 파일을 건드릴 때 같은 커밋에 넣기를 권한다."
-    evidence_status: "결정적(파일·줄 실재). 동작 영향이 없어 blocker로 올리지 않았다 — 사용자가 advisory 유지를 명시적으로 확인했다(2026-09-21)."
+    evidence_status: "결정적(파일·줄 실재). 동작 영향이 없어 blocker로 올리지 않았다 — 2회차 보고서가 advisory 유지로 기록했고 이번 라운드에도 파일이 그대로다."
   - finding: "MVP 모드 불일치 — ROADMAP Phase 3이 `Mode: mvp`인데 goal이 User Story 형식(「As a …, I want to …, so that ….」)이 아니다"
     category: other
     reason: "verify-mvp-mode.md 규칙상 검증을 거절하고 `/gsd mvp-phase 3`으로 되돌려야 하나, 성공 기준 6개가 충분히 구체적이어서 표준 goal-backward로 진행했다(이전 검증과 같은 판단). MVP 모드를 의도한 것이 아니면 `Mode: mvp`를 지우는 것이 맞다."
@@ -329,135 +301,133 @@ advisory:
     category: architectural
     reason: "react@19.3.0 안정 채널에 `experimental_taint`가 없어(03-CONTEXT.md:49, 2026-09-20 정정) 쓸 수 없고, 컴파일 타임 커스텀 규칙 `plant8/no-row-type-escape`(133줄 type-aware) + `boundaries`로 대체했다. 이전 검증이 같은 사실을 「문서화된 편차」로 적고 override를 제안했으나 아직 수락되지 않았다 — 아래 Override 제안 참조."
     evidence_status: "결정적(사용 0건). 대체 구현이 실재하고 린트에 error로 등록돼 있다."
+  - finding: "`03-REVIEW-2.md` Low 4건이 코드에 남아 있다 — untrim 재저장으로 행동 로그 중복(`code-item-form.tsx:102`) · 보관 검사-쓰기 비원자성(`domain/code-tables/index.ts:139-150`) · `CardOwnerForm`이 `validationErrors` 미표시(`card-form.tsx:229`) · 없는 id 수정이 성공으로 보임"
+    category: other
+    reason: "새 발견이 아니다 — `03-OPEN-ITEMS.md` 「수정 화면 리뷰·DOM 감사에서 나온 것」 절이 근거와 함께 「고치지 않고 남긴 것」으로 기록했다. 전부 Low, 데이터 손상 없음. 고치려면 `code-item-form.tsx:102`를 `value.trim()` 기준으로 맞추고, 보관 판정을 조건부 UPDATE로 합치면 된다"
+    evidence_status: "결정적(파일·줄 실재). 빨간 named test 없음 — 증거 게이트(#3304)상 blocker 아님"
+  - finding: "`app/(app)/admin/code-tables/page.tsx:125`의 `<th>동작</th>`이 권한과 무관하게 항상 렌더된다 — 법인카드는 `corp-cards/page.tsx:154`에서 `canWrite || canArchive`로 머리글까지 감춘다"
+    category: other
+    reason: "보기 전용 계급에게 빈 열 하나가 남는 화장 결함. 두 마스터 화면이 같은 상황에서 갈린다. `code-tables-write-gate.spec.ts`는 편집 수단 0개를 단언하지만 머리글은 보지 않는다. 동작·보안 영향 0"
+    evidence_status: "결정적(파일·줄 실재). 동작 영향이 없어 blocker로 올리지 않았다"
 human_verification:
   - test: "스테이징 배포 파이프라인 로그에서 `migrate → seed → account` Job 순서와 결과를 직접 확인한다(`plant8-staging-seed` 로그에 `seed complete: … permissions=45 …`, `plant8-staging-account` exit 0)"
     expected: "세 Job이 순서대로 exit 0이고, 시스템 관리자로 `/admin/permissions`에 들어가면 격자가 채워진 상태로 보인다"
     why_human: "Cloud Run Job 환경(외부 node_modules·커넥터·Secret)에서 번들이 같은 결과를 내는지는 실제 배포 로그로만 확인된다. 코드 쪽 배선(`scripts/build-cli.mjs` 4 엔트리 · `scripts/deploy.sh:341·390·668` · `test/unit/deploy/cli-bundle.test.ts`)은 이번에도 실재를 확인했다"
   - test: "GCP Secret Manager의 staging·prod `app-data-key-v1` 값이 base64 32바이트인지 확인한다"
     expected: "두 환경 모두 32바이트. 아니면 거래처 계좌번호 저장이 fail-closed로 500이 된다"
-    why_human: "`lib/env.ts`가 키를 선택 문자열로 두어 값이 없어도 앱이 뜨므로 코드만으로는 시크릿 존재·길이를 판정할 수 없다(03-SECURITY T-03-41 수락의 전제). 참고: 스테이징에서의 계좌번호 등록·「번호 보기」·`mask_reveal` 기록은 `03-OPEN-ITEMS.md` 「사람만 판정 가능한 것 (완료)」에 통과로 기록돼 있다"
+    why_human: "`lib/env.ts`가 키를 선택 문자열로 두어 값이 없어도 앱이 뜨므로 코드만으로는 시크릿 존재·길이를 판정할 수 없다(03-SECURITY T-03-41 수락의 전제)"
   - test: "거래처 수정 왕복을 화면에서 한 번 해 본다 — 「수정」 진입 → 이름만 바꿔 저장 → 목록 반영 확인 → 다시 「수정」 진입해 계좌번호 칸을 **비워 둔 채** 저장 → 목록의 `****-**-1234`가 그대로인지 확인"
     expected: "이름이 바뀌고, 계좌번호 뒤 4자리와 「번호 보기」 평문이 보존된다(빈 칸 = 「안 바꿈」)"
-    why_human: "`planAccountNumberUpdate`의 분기는 단위 6건으로 고정됐고(`test/unit/vendors/account-number-plan.test.ts`) `updateVendor`는 통합에서 실 DB로 돌지만(`test/integration/vendors.test.ts:182·228`), **폼 → 액션 → 도메인**의 화면 경로를 끝까지 태우는 e2e·통합이 없다. 이전 gaps 2가 요구한 「E2E: 수정 후 목록 반영 + 계좌번호 칸을 비워 둔 채 제출해도 암호문·뒤 4자리가 보존됨」이 아직 없다"
-  - test: "결정 — 코드표 항목 수정에서 `value`까지 바꿀 수 있게 할 것인가(gaps 2의 선행 결정)"
-    expected: "사용자 결정: (a) `label`만 수정 허용(`value`는 불변 키로 고정 — 가장 싸고 안전하다) (b) `value`도 허용하되 같은 트랜잭션에서 `vendors.default_evidence_type` 등 참조를 갱신 (c) `value` 참조에 FK를 도입한 뒤 (b)"
-    why_human: "코드 사실은 확정됐다 — `db/schema/vendors.ts:19`가 `default_evidence_type`을 FK 없는 `text`로 두어 코드 항목의 `value` 문자열을 담는다. 어느 쪽을 택할지는 데이터 모델 정책 판단이고, 이 결정 없이 구현하면 그 판단이 코드에 숨는다"
+    why_human: "이번 라운드가 코드표·법인카드에 대해서는 이 왕복을 `test/e2e/master-edit.spec.ts`로 고정했지만 **거래처는 여전히 그 스펙이 없다**(`test/e2e/vendors.spec.ts`에 `editId` 0건 — 실측). 분기는 단위 6건(`account-number-plan.test.ts`)과 통합(`vendors.test.ts:182·228`)으로 고정돼 있고 폼 배선도 코드로 확인했다(`vendor-form.tsx:111-127`이 빈 칸을 `undefined`로 보낸다) — 남은 것은 화면 경로 실측이다"
+  - test: "코드표 항목의 `value`를 불변 키로 고정한 결정(안 a)을 계획 기록에 남긴다"
+    expected: "`docs/design/DECISIONS.md` 또는 `03-OPEN-ITEMS.md`에 「코드표 항목은 이름(label)만 수정한다 · `value`는 `vendors.default_evidence_type`이 FK 없이 참조하므로 불변 · 값 교체는 비활성화 후 새 항목」이 한 줄로 남는다"
+    why_human: "구현은 그 결정대로 돼 있고(액션 스키마·도메인·리포지토리·UI 4겹에 `value` 쓰기 경로 0건 — 실측) 근거도 코드 주석에 「사용자 결정 2026-09-21」로 적혀 있다. 다만 그 결정 자체가 계획 문서에는 없다 — 다음 사람이 코드 주석을 읽어야만 알 수 있는 상태다. 요구사항 MAST-04의 「수정」을 이름으로 좁힌 판단이므로 기록 위치가 코드 주석이면 안 된다"
   - test: "결정 — 설정 화면의 「가져오기는 통합 테스트로만 제공됩니다」 문구를 지금 고칠 것인가"
     expected: "사용자 결정: (a) 즉시 한 줄 수정(`pnpm settings:import --file <경로>` 안내 + `docs/OPERATIONS.md §12` 참조) (b) 다음에 이 파일을 건드릴 때 같은 커밋에 (c) 현 상태 수락"
-    why_human: "동작에는 영향이 없고 요구사항 ADMN-06은 충족됐다 — 우선순위 판단이다(advisory 1). 사용자가 advisory 유지를 이미 확인했다"
+    why_human: "동작에는 영향이 없고 요구사항 ADMN-06은 충족됐다 — 우선순위 판단이다(advisory 1). `settings-form-client.tsx:235`가 이번 라운드에도 그대로임을 확인했다"
   - test: "결정 — React taint 편차를 override로 수락할 것인가, ROADMAP 문구를 고칠 것인가"
     expected: "사용자 결정: (a) 아래 Override 제안을 이 파일 frontmatter에 넣어 수락 (b) ROADMAP 성공 기준 2에서 「React taint API가 2차 방어다」를 「컴파일 타임 커스텀 린트가 2차 방어다」로 갱신"
-    why_human: "react 안정 채널에 API가 없다는 것은 코드로 확정됐다(사용 0건). 계약 문서를 고칠지 편차를 수락할지는 사용자 판단이다"
+    why_human: "react 안정 채널에 API가 없다는 것은 코드로 확정됐다(이번에도 사용 0건 재확인). 계약 문서를 고칠지 편차를 수락할지는 사용자 판단이다. 이전 라운드에서 제안됐으나 아직 수락되지 않았다"
 ---
 
 # Phase 3: 권한·설정·마스터 (관리자 운영 콘솔) Verification Report
 
 **Phase Goal:** 관리자가 코드 수정 없이 사람·계급·본부·팀·권한표·정보 노출표·설정·코드표·거래처·법인카드를 화면에서 등록하고, 이후 모든 화면·API가 이 권한·설정 위에 얹힌다. 메커니즘(판정 함수·리포지토리 행 필터 + DTO 투영·설정 레지스트리·누수 스캔 테스트 생성기·암호화 헬퍼·보관함·행동 로그)과 마스터를 세우는 데서 끝나며, 전 메뉴 대상 검수는 Phase 7 끝에서 한다.
-**Verified:** 2026-09-21T09:27:05Z (브랜치 `docs/phase7-form-migration`, HEAD `977bd40` — `main` `7adf401` + 문서 커밋 1개. 작업 트리 깨끗)
-**Status:** gaps_found
-**Re-verification:** **Yes** — 2026-09-21T05:17:08Z 검증(`gaps_found`, 9/13) 이후 갭 클로저 커밋이 머지된 상태에 대한 재검증
+**Verified:** 2026-09-21T12:05:40Z (브랜치 `docs/phase3-reverify`, HEAD `3b15d43` — `main` `f828fa8` + 커밋 5개. 작업 트리 깨끗)
+**Status:** human_needed
+**Re-verification:** **Yes (3회차)** — 2026-09-21T09:27:05Z 검증(`gaps_found`, 12/13)이 남긴 미달 2건의 갭 클로저에 대한 재검증
 
 ## 요약
 
-| | 이전 (05:17:08Z) | 이번 (09:27:05Z) |
-|---|---|---|
-| status | `gaps_found` | `gaps_found` |
-| 요구사항 | 9/13 | **12/13** |
-| 성공 기준 | 3/6 완전 · 3/6 부분 | **5/6 완전 · 1/6 부분** |
-| 이전 미달 4건 | — | **전부 닫힘** |
-| 회귀 | — | **0건** |
-| 새 미달 | — | **2건**(법인카드 「수정」 · 코드표 항목 「수정」) |
-| 테스트 실행 | **안 함** | 단위 581 · 통합 713 · e2e 110 · typecheck · lint **전부 통과** |
+| | 1회차 (05:17:08Z) | 2회차 (09:27:05Z) | 이번 (12:05:40Z) |
+|---|---|---|---|
+| status | `gaps_found` | `gaps_found` | **`human_needed`** |
+| 요구사항 | 9/13 | 12/13 | **13/13** |
+| 성공 기준 | 3/6 완전 | 5/6 완전 · 1/6 부분 | **6/6 완전** |
+| 미달 | 4건 | 2건(새로 발견) | **0건** |
+| 회귀 | — | 0건 | **0건** |
+| 사람 판정 대기 | 7건 | 6건 | **6건**(닫힘 1 · 신규 1) |
+| 테스트 실행 | 안 함 | 단위 581 · 통합 713 · e2e 110 | **단위 581 · 통합 730 · 신규 e2e 5(프로덕션 빌드)** |
 
-## 이번 재검증이 이전과 다른 점
+**이번 라운드의 결론:** 2회차가 남긴 미달 2건은 **코드에서 닫혔고**, 닫는 과정에서 회귀가 생기지 않았다. 남은 것은 전부 **사람만 판정할 수 있는 것**(스테이징 로그·시크릿 길이·거래처 왕복 실측)과 **기록·정책 결정**(코드표 `value` 불변 결정의 기록 위치 · 설정 화면 낡은 문구 · React taint 편차)이다. `passed`가 아닌 이유는 미달이 남아서가 아니라 **사람 판정 항목이 비어 있지 않아서**다(Step 9 규칙 2).
 
-이전 보고서는 **테스트를 한 번도 실행하지 않았다**(요청 조건: 스테이징 배포 진행 중, 테스트 DB를 다른 프로세스가 소유). 「테스트로 증명」은 전부 「그 행동을 단언하는 테스트 파일이 존재한다」는 뜻이었다.
-
-이번에는 이 프로세스에서 직접 돌렸다:
+## 검증자가 직접 돌린 게이트 (SUMMARY·커밋 메시지 주장과 무관하게 이 프로세스에서 실행)
 
 | 게이트 | 명령 | 결과 |
 |---|---|---|
-| 단위 | `npx vitest run --project unit` | **581 passed** (63 files, 19.7s) |
-| 통합 | `npx vitest run --project integration` | **713 passed** (25 files, 221.5s) |
-| E2E 데스크톱 | `CI=true npx playwright test --project=desktop` | **79 passed** (1.4m, 프로덕션 빌드) |
-| E2E 폰 375 | `CI=true npx playwright test --project=mobile-375` | **31 passed** (46.8s, 프로덕션 빌드) |
+| 단위 | `npx vitest run --project unit` | **581 passed** (63 files, 20.0s) · exit 0 |
+| 통합 전체 | `npx vitest run --project integration` | **730 passed** (28 files, 224.9s) · exit 0 |
+| 통합 — 신규 3파일 | `npx vitest run --project integration test/integration/{mast-04-code-item-label,corp-card-owner-edit,corp-card-owner-archived}.test.ts` | **12 passed** (3 files, 9.8s) |
+| E2E — 신규 2파일 | `CI=true npx playwright test --project=desktop test/e2e/master-edit.spec.ts test/e2e/code-tables-write-gate.spec.ts` | **5 passed** (32.4s, `pnpm build && pnpm start` 프로덕션 빌드) · exit 0 |
 | 타입 | `npx tsc --noEmit` | exit 0 |
-| 린트 | `npx eslint .` | exit 0 (boundaries 플러그인 deprecation 경고만) |
+| 린트 | `npx eslint .` | exit 0 (boundaries v5→v6 deprecation 경고만) |
 
-E2E는 `playwright.config.ts`가 `CI=true`에서 `pnpm build && pnpm start`(프로덕션 빌드)를 쓰므로 CLAUDE.md의 「로컬 dev 통과는 완료 신호가 아니다」 조건을 만족한다.
+E2E는 `playwright.config.ts:53`이 `CI`에서 `pnpm build && pnpm start`를 쓰므로 CLAUDE.md의 「로컬 dev 통과는 완료 신호가 아니다」 조건을 만족한다. **e2e 전체 115건은 이번에 다시 돌리지 않았다** — 검증 규칙(#25/#753)이 전체 스위트 재실행 대신 「행동을 증명하는 named test 하나」를 요구하고, 이번 라운드가 바꾼 행동은 신규 2파일이 전부 덮는다. 기존 e2e 4파일의 변경은 셀렉터 한정(`getByLabel("이름")` → `#code-item-form` 범위)뿐이고 단언은 그대로다(아래 회귀 절).
 
-**새 미달 2건은 테스트 실패에서 나오지 않았다.** 1,404건 전부 초록이다 — 그 둘은 요구사항 원문(`REQUIREMENTS.md:22`)과 ROADMAP 성공 기준 5를 코드와 직접 대조해서 나왔다. 테스트가 없는 기능은 테스트가 잡지 못한다.
+## 2회차 미달 2건의 현재 상태 — 둘 다 닫힘
 
-## 이전 미달 4건의 현재 상태 — 전부 닫힘
+### 미달 1 — 성공 기준 5: 법인카드 「수정」 → **CLOSED**
 
-| # | 이전 미달 (2026-09-21T05:17:08Z) | 커밋 | 현재 | 코드 근거 |
-|---|---|---|---|---|
-| 1 | OPS-05 — `login` 기록 0행 | `c8115ae` | **CLOSED** | `domain/auth/hooks.ts:96-107` — `after` 훅의 `if (success)` 분기 안에서만 `recordAction(actor, { actionType: "login" })`(106행)을 부르고 곧바로 `return`(107행)한다. 실패·잠금 경로(113-117행)는 이 분기 **뒤**에 있어 절대 도달하지 않는다. actor는 `getSessionActor(ctx.context.newSession)`(75-83행)이 `id`·`roleId`만 안전하게 꺼내 만든다(`any` 없음). 보관된 사용자 거부(`before` 훅 59-63행)와도 섞이지 않는다 — 거기서는 `APIError`로 끊겨 `after`가 돌지 않는다 |
-| 2 | MAST-01 — 거래처 수정 화면 없음 | `b8628fc` · `2c8851e` · `45af478` | **CLOSED** | 진입: `app/(app)/admin/vendors/page.tsx:148` 행마다 `?editId=<id>` 링크 → `:60`이 그 id로 `editingVendor`를 찾고 `:66 showForm` → `:74-82`이 `<VendorForm editing={editingVendor} …>`. 배선: `vendor-form.tsx:7` `updateVendorAction` import → `:83 useAction` → `:111-127` 수정 분기가 `updateState.execute({ id, …, accountNumber, customFields })`. 계약: `actions.ts:45` `accountNumber: z.string().nullable().optional()`(M-5 수정) |
-| 3 | ADMN-03 — 누수 스캔이 registry 9개 중 7개만 봄 | `4582307` | **CLOSED** | `test/integration/leak-scan.test.ts:24-32` — `app/` 아래 `actions.registry.ts` **9개 전부** side-effect import(디스크 실측 9개와 일치). `:92` `expect(EXPORT_REGISTRY.length).toBeGreaterThanOrEqual(2)`로 내보내기 축 하한을 걸었다(이전엔 `Array.isArray`만) |
-| 4 | ADMN-06 — 설정 가져오기 진입점 0 | `3c6d3f9` | **CLOSED** | `scripts/settings-import.ts:78` `await importSettings(SYSTEM_VIEWER, payload)`. `package.json:27` `"settings:import"`. `docs/OPERATIONS.md:210-222` §12에 절차·종료 코드 규약. 신규 의존성 0 |
+| 확인 항목 | 실측 결과 |
+|---|---|
+| `?editId=` 토글 | `page.tsx:24-34 corpCardsHref(includeInactive, { isNew?, editId? })` — `editId`면 앵커도 `#corp-card-owner-form`으로 갈린다 |
+| 행 「수정」 링크 | `page.tsx:179-191` — `card.archivedAt`이면 동작 칸 전체가 `null`이고, 활성 행에서만 `canWrite &&` 조건으로 렌더 |
+| 액션 호출자 | `card-form.tsx:9` import → `:154 useAction(updateCorpCardOwnerAction, …)` → `:163-167 execute({ id, holderUserId?, teamId? })`. **호출자 0 → 2(import + useAction)** — grep 실측 |
+| 보관 카드 차단 (바깥 겹) | `page.tsx:87-89` `cards.find(card.id === editId && card.archivedAt === null)` — 보관된 id로 직접 진입해도 `editingCard === null`이라 폼이 안 뜬다 |
+| 보관 카드 차단 (도메인) | `domain/corp-cards/index.ts:180-184` `ArchivedCorpCardError` — `can()` 통과 **후** 카드 행을 다시 읽어 `archivedAt !== null`이면 거부. 거래처 `ArchivedVendorError`(`domain/vendors/index.ts:298-302`)와 같은 자리 |
+| 쓰기 범위 | 액션 스키마(`actions.ts:34-52`)에 `id`·`holderUserId`·`teamId`뿐 — 발급사·뒤 4자리·별칭 쓰기 경로 없음. `superRefine`이 XOR를 액션 계층에서 한 번 더 막는다 |
+| e2e 왕복 | `test/e2e/master-edit.spec.ts` 3건 — ① 개인→팀 전환 후 목록의 「종류」·「소유」가 함께 바뀌고 `—`가 0개 ② 팀 미선택 제출 차단(H-1 반증 회귀) ③ 보관된 카드에 「수정」 링크 0개. **프로덕션 빌드에서 직접 실행해 통과 확인** |
+| 도메인 통합 | `test/integration/corp-card-owner-edit.test.ts` + `corp-card-owner-archived.test.ts` — 12건 중 해당분 통과(직접 실행) |
 
-### 미달 3의 「등록만 하면 검사가 따라온다」는 어떻게 닫혔나
+### 미달 2 — MAST-04 코드표 항목 「수정」 → **CLOSED (이름 범위)**
 
-이전 보고서가 요구한 것은 glob 로더였으나 실제 해법은 다르다 — **회귀 방어 테스트**다. `test/unit/leak-scan-coverage.test.ts`(2건)가 `app/` 아래를 재귀 탐색해(`findRegistryFiles`, 20-34행) 찾은 모든 `actions.registry.ts`의 import 지정자가 누수 스캔 소스 문자열에 **따옴표째** 들어 있는지 단언한다(49-57행).
+| 확인 항목 | 실측 결과 |
+|---|---|
+| 도메인 함수 | `domain/code-tables/index.ts:127-151 updateCodeItemLabel(viewer, id, label)` — 내보내기가 4개 → 5개 |
+| 순서 | `can(viewer,"admin.code-tables","write")` → 빈 문자열 거부 → `repoFindCodeItemById` → 보관 판정 → `repoUpdateCodeItemLabel` → `recordAction(document_update, code_items)` → 재조회 → `project(viewer,row,CODE_ITEM_DTO_SPEC)`. **요구된 `can()` → 리포지토리 → `project()` 순서 그대로** |
+| 행동 로그 종류 | `document_update` — `document_create` 재사용 아님(통합 테스트가 이 종류로 남는지 단언) |
+| 화면 배선 | `page.tsx:12` import → `:139 <CodeItemLabelInput id label />` → `code-item-form.tsx:76 useAction(updateCodeItemLabelAction)` → `:102 onBlur execute({ id, label })` |
+| 보관 항목 차단 | 도메인 `ArchivedCodeItemError`(`index.ts:140-142`) + 화면 `page.tsx:136-140` `item.archivedAt \|\| !canWrite`면 입력칸 대신 `item.label` 글자 |
+| 누수 스캔 등록 | `actions.registry.ts:18-24 updateCodeItemLabelAction`(menu `admin.code-tables` · action `write` · dto `CodeItemDto`) — `leak-scan.test.ts`가 `ACTION_REGISTRY` 순회로 자동 포함, 통합 730 통과에 들어 있다 |
+| e2e 왕복 | `master-edit.spec.ts:26-55` — 항목 추가 → 인라인 이름 변경 → blur → 새 이름 표시 → **reload 후에도** 새 이름이고 `값` 칸은 그대로. 프로덕션 빌드에서 직접 실행해 통과 |
 
-이 방어가 실제로 동작하는지 검증자가 직접 확인했다(파일은 건드리지 않고 메모리에서만 재현):
+#### `value`가 수정 대상이 아님 — 4겹 실측
 
-```
-actual                     registryFiles=9 missing=[]
-mutated(1 import removed)  registryFiles=9 missing=["@/app/(app)/admin/visibility/actions.registry"]
-```
+사용자 결정(2026-09-21, 안 a: 이름만 수정)이 코드에서 실제로 지켜지는지 네 계층 전부를 훑었다.
 
-즉 「등록만 하면 검사가 **자동으로** 따라온다」는 아니고 「등록 파일을 만들고 import를 잊으면 **단위 테스트가 즉시 빨개진다**」다. 조용히 빠지던 실패 모드(이전 미달의 본질)는 닫혔다. 실행 근거: `npx vitest run --project integration test/integration/leak-scan.test.ts` → **561 passed**.
+| 계층 | 파일·줄 | `value` 쓰기 경로 |
+|---|---|---|
+| 액션 스키마 | `app/(app)/admin/code-tables/actions.ts:37` | `z.object({ id, label })` — **없음** |
+| 도메인 | `domain/code-tables/index.ts:127` | 인자가 `(viewer, id, label)` — **없음** |
+| 리포지토리 | `repositories/code-tables.ts:57-60` | `.set({ label, updatedAt })` — **없음**. 같은 파일의 다른 `set()` 4개도 `active`·`archivedAt`·`taxRule`뿐 |
+| UI | `code-item-form.tsx:92-104` | 인라인 입력은 `label`만. `value`는 `page.tsx:132`에서 `<td>{item.value}</td>` 글자로만 렌더 — **없음** |
 
-**단언 강도 관찰:** 이 방어는 소스 문자열 대조다 — import를 주석 처리하면 통과한다(실무에서 드문 경로). `leak-scan.test.ts:146`의 `expect(Array.isArray(buildExportCases())).toBe(true)`는 여전히 **약한 단언**이지만, 같은 파일 92행의 하한 단언(`>= 2`)이 실질 방어를 맡고 146행은 vitest의 빈-스위트 실패 방지 용도로 역할이 분리돼 있다(주석 142-144행에 근거).
+근거는 `db/schema/vendors.ts:19`의 `default_evidence_type`이 FK 없는 `text`에 코드 항목의 `value` 문자열을 담기 때문이다(바꾸면 기존 거래처가 조용히 고아가 된다). 제약은 코드에서 지켜진다. **다만 그 결정 자체는 코드 주석에만 「사용자 결정 2026-09-21」로 남아 있고 계획 문서에는 없다** — 사람 판정 4번으로 올린다.
 
-## 새로 확인한 미달 2건
+#### 이 「수정」이 MAST-04를 충족한다고 본 근거
 
-이전 검증이 점검하지 않았거나 잘못 읽은 축이다. **테스트는 전부 초록이므로 이 둘은 원문 대조로만 드러난다.**
+요구사항 원문은 「견적 대분류·소분류, 지급 방식, 프로젝트 상태 같은 코드표를 관리 화면에서 추가·수정·비활성화한다」(`REQUIREMENTS.md:22`)이다. 관리자가 화면에서 항목의 이름을 고칠 수 있게 됐고, `value`는 사용자에게 보이는 이름이 아니라 다른 표가 문자열로 참조하는 내부 키다. 값 자체를 바꿔야 하는 경우의 경로(비활성화 후 새 항목 추가)도 존재한다. **좁힌 것은 사실이므로 숨기지 않고 위 표와 사람 판정 4번에 명시한다** — 판단이 코드 주석에만 남는 상태를 충족으로 치지는 않는다.
 
-### 미달 1 — 성공 기준 5: 법인카드 「수정」이 화면에 없다
+## 이번 라운드가 추가로 닫은 것 (회귀 확인 대상)
 
-ROADMAP Phase 3 성공 기준 5 원문:
-
-> 거래처·클라이언트(미사용은 삭제 대신 숨김, 입력 시 자동완성), **법인카드(개인/팀, 소지자 또는 소속 팀)**, 코드표(…)를 관리 화면에서 **등록·수정·비활성화한다**
-
-세 마스터가 한 동사구(`등록·수정·비활성화한다`)에 묶여 있다. 코드 실측:
-
-| 축 | 등록 | 수정 | 비활성화/숨김 |
+| 출처 | 항목 | 커밋 | 실측 |
 |---|---|---|---|
-| 거래처 | ✓ | **✓ (`b8628fc`로 닫힘)** | ✓ |
-| 법인카드 | ✓ `createCorpCardAction` | **✗ 호출자 0** | ✓ `setCorpCardActiveAction` |
-| 코드표 | ✓ `createCodeItemAction` | **✗ 함수 자체 없음**(미달 2) | ✓ `setCodeItemActiveAction` |
+| `03-REVIEW-2.md` M-2 | 인라인 입력 저장 실패가 조용히 사라지고 칸이 안 되돌아감 | `d6c96b0` | `code-item-form.tsx:75-88` `onError`가 `serverError` → `validationErrors.label` → 일반 문구 순으로 잡고 `setValue(label)`로 되돌린다. `:95-98` `aria-invalid`·`aria-describedby`, `:105-109` `role="alert"` 한 줄. `code-tables.module.css`의 `.labelInput`·`.labelInputError`·`.labelError` 테두리 `--danger` + `--fs-sm --danger` — §7-2 그대로, 토큰 밖 값 0 |
+| `03-REVIEW-2.md` M-3 | 소유자 변경 성공 후 수정 모드에 남음 | `d6c96b0` | `card-form.tsx:157` `onSuccess: () => router.replace(cancelHref)` — `replace`라 뒤로가기가 수정 모드로 안 돌아간다 |
+| `03-REVIEW-2.md` L-4 | `?new=1&editId=`이면 폼 2개·1차 버튼 2개 | `d6c96b0` | `page.tsx:116` `canWrite && showCreateForm && !editingCard` — 수정 모드가 이긴다 |
+| `03-REVIEW-2.md` M-1 / DOM 감사 | 코드표 화면에 `canWrite` 게이트 없음 | `c3abd99` | 게이트 6곳 전수 확인: 등록 폼(`:89`) · 머리글 「코드 추가」(`:101`) · EMPTY 행동(`:112-115`) · 행 인라인 입력(`:136`) · 「비활성화」(`:157`) · 증빙 종류 세율 패널(`:163`). e2e `code-tables-write-gate.spec.ts`가 보기 전용 계급으로 들어가 `table input` 0 · `table select` 0 · `?new=1` 직접 진입에도 `#code-item-form` 0을 프로덕션 빌드에서 단언 — 직접 실행해 통과 |
+| `/cso` T-03-55 | 법인카드 소유자가 보관된 사람·팀을 받음 | `3b15d43` | `domain/corp-cards/index.ts:106-126 assertOwnerNotArchived`를 **등록(`:145`)·수정(`:187`) 두 경로가 공유**. `repositories/users.findUserById`·`teams.findTeamById`는 `where(eq(id))`만이라 보관 행도 읽어 온다 — 판정이 실제로 가능하다(실측). 화면 `page.tsx:72-80`이 `<select>` 후보에서 `archivedAt !== null`을 거르되 **이름 조회 표(`:65-66`)에는 보관 행을 남겨** 기존 카드의 소유 칸이 `—`로 비지 않게 한다. `corp-card-owner-archived.test.ts` 4건(회귀 방어 1건 포함) 직접 실행 통과 |
 
-`updateCorpCardOwnerAction`은 `actions.ts:34-59`에 정의되고 `actions.registry.ts:13`에 등록까지 돼 있지만 `app/`·`ui/` 호출자가 **0개**다. `card-form.tsx:6`은 `createCorpCardAction`·`setCorpCardActiveAction`·`archiveCorpCardAction`만 import한다. `page.tsx:130-139`의 동작 칸에는 활성 토글과 삭제뿐이고 「수정」이 없다. `corpCardsHref`(19-25행)도 `isNew`만 만들고 vendors의 `editId`에 해당하는 인자가 없다.
+### 회귀 점검
 
-**이전 검증은 `updateVendorAction`의 완전히 동일한 상태 — 정의·등록됨, 호출자 0 — 를 gaps 2 「거래처 수정 화면이 없다 · 죽은 배선」으로 셌다.** 그래서 `b8628fc`가 나왔다. 같은 결함 모양에 다른 판정을 내릴 코드상 근거가 없으므로 미달로 센다.
-
-**단, 요구사항과 성공 기준을 나눠 적는다:** 요구사항 MAST-03 원문(`REQUIREMENTS.md:21`)은 「법인카드 마스터: …등록하고, 카드마다 소지자(직원) 또는 소속 팀을 **지정**한다」로 「수정」을 요구하지 않는다 — **MAST-03 자체는 충족(MET)**이다. 미달은 ROADMAP 성공 기준 5에 대한 것이다.
-
-### 미달 2 — MAST-04: 코드표 항목 「수정」이 없다
-
-`.planning/REQUIREMENTS.md:22` 원문:
-
-> **MAST-04**: 견적 대분류·소분류, 지급 방식, 프로젝트 상태 같은 코드표를 관리 화면에서 **추가·수정·비활성화**한다
-
-`domain/code-tables/index.ts`의 내보내기는 **넷뿐**이다(실측):
-
-```
-listCodeItems · createCodeItem · setCodeItemActive · setEvidenceTypeTaxRule
-```
-
-값·라벨을 고치는 함수가 없다. 액션도 `createCodeItemAction`·`setCodeItemActiveAction`·`setEvidenceTypeTaxRuleAction`·`archiveCodeItemAction` 넷뿐이고 `code-item-form.tsx`는 등록 폼이다.
-
-**`setEvidenceTypeTaxRule`을 MAST-04의 「수정」으로 읽을 수 없다.** 두 가지 이유가 있고 둘 다 코드에 있다:
-
-1. 그것은 성공 기준 5의 **별도 문장**이 요구하는 것이다 — 「증빙 종류 코드표(…)는 종류마다 세금 규칙 필드(…)와 절사 단위·절사 방식·최소 징수액·적용 기준일 종류 필드를 갖고」. MAST-04의 코드표 항목 수정과 다른 요구다.
-2. `index.ts:129-131`이 `current.tableKey !== EVIDENCE_TYPE_TABLE_KEY`면 `NotEvidenceTypeError`를 던진다 — **MAST-04가 이름을 든 「견적 대분류·소분류, 지급 방식, 프로젝트 상태」에는 적용조차 되지 않는다.** 그 표들은 추가·비활성화·보관만 된다.
-
-**이전 판정을 유지하지 않는 이유:** 앞선 보고서 초안은 「이전 검증도 같은 코드 상태를 MET로 적었으니 뒤집지 않는다」를 근거로 삼았다. 그 논리는 잘못이다 — 검증자 진동 방지(`#3304` 증거 게이트)는 **같은 증거로 판정이 왔다 갔다 하는 것**을 막는 규칙이지, 원문과 코드를 직접 대조해 나온 증거를 이전 판정으로 덮는 규칙이 아니다. 게이트 자신이 「진리·산출물·핵심 배선(Steps 3-6)은 이 실패 모드를 만들 수 없다」며 적용 범위를 Step 7 안티패턴 스캔으로 한정한다. 이 둘은 Step 3·5 판정이다.
-
-**선행 결정이 하나 있다.** `db/schema/vendors.ts:19`의 `default_evidence_type`은 **FK 없는 `text`** 컬럼에 코드 항목의 `value` 문자열을 담는다. `value`를 바꾸면 기존 거래처의 기본 증빙 종류가 조용히 고아가 되고, `app/(app)/admin/vendors/page.tsx:120-123`이 라벨을 못 찾아 원시 값으로 내려앉는다. 안전한 최소 구현은 **`label`만 수정 허용**이다 — 어느 쪽인지 결정이 구현보다 먼저다(human 4).
+| 대상 | 결과 |
+|---|---|
+| 기존 e2e 4파일 변경(`action-log`·`admin-master-list-first`·`archive`·`code-tables`) | `getByLabel("이름")` → `page.locator("#code-item-form").getByLabel("이름")` 6줄뿐. 새 인라인 입력의 `aria-label`(`{label} 이름`)과의 충돌을 피하는 **범위 한정**이고 단언은 한 줄도 약해지지 않았다(diff 전문 확인) |
+| `can()` 제거 | `git diff f828fa8..3b15d43 -- domain/ repositories/`에 `can()` 삭제 0건 |
+| 기존 도메인 계약 | 통합 730 passed(이전 라운드 713 + 신규 17) · 단위 581 passed(변동 없음) — 실패 0 · skip 0 |
+| 타입·린트 | `tsc --noEmit` exit 0 · `eslint .` exit 0 |
+| 디자인 토큰 | 신규 CSS 4클래스 전부 `var(--…)` — 새 색·서체·radius 생성 0 |
+| 테스트 비활성화 | 신규 6파일에 `.skip`·`.only`·`xit`·`fixme` **0건**(grep 실측) |
 
 ## Goal Achievement
 
@@ -469,10 +439,11 @@ listCodeItems · createCodeItem · setCodeItemActive · setEvidenceTypeTaxRule
 | 2 | 권한표·노출표 체크 → 즉시 메뉴·동작·필드 반영; 판정은 can/visible/scopeFor만; 2계층 읽기(린트 강제); **React taint 2차 방어**; 우회 없음; staff 기본값 | ✓ VERIFIED (문서화된 편차 1) | `domain/permissions/{can,visible,scope-for,project}.ts`(행 없음 → false) · `matrix.ts`(can → upsert → recordAction) · `app/(app)/layout.tsx:24-29`가 `MENUS` 전체에 `can()`을 돌려 `allowedMenus`를 만들고 `ui/shell/role-menu.ts:86-91`이 그 목록으로만 관리자 진입점을 만든다(셸에 계급 분기 0) · 관리자 페이지 13개 전부 `can()` + `notFound()` · `eslint/rules/no-row-type-escape.mjs`(error) + boundaries · `test/e2e/permissions-grid.spec.ts` 실행 통과. **편차:** `taintObjectReference\|taintUniqueValue\|experimental_taint` 사용 **0건** — react@19.3.0 안정 채널에 없다(03-CONTEXT.md:49). 대체는 컴파일 타임 커스텀 린트 → Override 제안 |
 | 3 | 누수 스캔 생성기: 액션×계급, DTO×계급, 내보내기×계급 자동 생성, CI 통합 계층, 미매핑 DTO 실패; **등록만 하면 검사가 따라온다** | ✓ VERIFIED (이전 PARTIAL → 닫힘) | 위 「미달 3」 절. `leak-scan.test.ts:41-74` 세 생성기 · `:105-109` 결정적 순서 · `:80-93` 세 축 전부 하한 단언 · `:112-123` 미매핑 정보 항목 실패 · `:95-103` DTO 없는 내보내기 예외 목록 강제. 실행 561 passed |
 | 4 | 설정 키 typed registry 한 곳 + 자동 생성 화면; 미사용 키 테스트 실패; JSON 내보내기 → 빈 환경 가져오기 동일; 이력형 세율; 기준일·절사 시드; 로그인 잠금도 레지스트리 키 | ✓ VERIFIED | `domain/settings/keys.ts` 18키 · `app/(app)/admin/settings/page.tsx:37` `for (const def of SETTING_DEFS)`(키 하드코딩 0) · `test/unit/settings/registry-coverage.test.ts`(미참조 키 실패 · readBy 만료 강제) · `domain/auth/lockout.ts`가 실제 소비자 · `test/integration/settings-export.test.ts` 실행 통과(빈 환경 복원 동일 · 멱등 · 한 항목 실패 시 전부 미적용). 가져오기 진입점은 ADMN-06에서 닫혔다 |
-| 5 | 거래처·법인카드·코드표를 관리 화면에서 **등록·수정·비활성화**; 증빙 종류 세금 규칙; 기본 증빙 종류; 계좌번호 AES-256-GCM `v1:`·뒤 4자리·해제 = 노출표 + 로그; 키 회전 + v1·v2 혼재 복호화 단위 테스트 | **⚠️ PARTIAL** | **충족:** 거래처 등록·수정(`b8628fc`)·숨김 3축 완비 · `domain/vendors/index.ts:300-303` 보관된 거래처 수정 차단 · `:215-232 planAccountNumberUpdate` · `:322-334` `keep`이면 두 컬럼 미변경 · `lib/crypto.ts`(aes-256-gcm, `v1:<iv>:<tag>:<ct>`) · `scripts/rotate-key.ts` · `test/unit/crypto.test.ts:118` v1·v2 혼재 · `domain/vendors/index.ts:376 revealAccountNumber`(visible → recordAction → decrypt 순서 고정) · `db/schema/corp-cards.ts` CHECK owner XOR + UNIQUE(issuer,last4) · `domain/code-tables/tax-rule.ts` 규칙 4종·절사·기준일. **미달:** ① 법인카드 「수정」 — `updateCorpCardOwnerAction` 호출자 0(gaps 1) ② 코드표 「수정」 — 값·라벨 수정 함수 없음(gaps 2). 세 마스터 중 **하나만** 동사 셋을 전부 갖췄다 |
+| 5 | 거래처·법인카드·코드표를 관리 화면에서 **등록·수정·비활성화**; 증빙 종류 세금 규칙; 기본 증빙 종류; 계좌번호 AES-256-GCM `v1:`·뒤 4자리·해제 = 노출표 + 로그; 키 회전 + v1·v2 혼재 복호화 단위 테스트 | ✓ VERIFIED (⚠️ PARTIAL → 닫힘) | **세 마스터가 이제 동사 셋을 전부 갖췄다.** 거래처: 등록·수정(`b8628fc`)·숨김 + `domain/vendors/index.ts:298-302` 보관 수정 차단 · `:215-232 planAccountNumberUpdate` · `:322-334` `keep`이면 두 컬럼 미변경. 법인카드: 등록 + **수정**(`page.tsx:179-191` 행 「수정」 → `?editId=` → `card-form.tsx:154 updateCorpCardOwnerAction`) + 활성 토글 + 보관, 보관 차단 두 겹(`page.tsx:87-89` · `ArchivedCorpCardError`), 소유자 보관 검사 공유(`assertOwnerNotArchived`, /cso T-03-55). 코드표: 추가 + **수정**(`domain/code-tables/index.ts:127 updateCodeItemLabel` → `page.tsx:139 CodeItemLabelInput`) + 비활성화 + 보관, `ArchivedCodeItemError`. 암호화 축은 유지: `lib/crypto.ts`(aes-256-gcm, `v1:<iv>:<tag>:<ct>`) · `scripts/rotate-key.ts` · `test/unit/crypto.test.ts:118` v1·v2 혼재 · `:376 revealAccountNumber`(visible → recordAction → decrypt 순서 고정) · `db/schema/corp-cards.ts` CHECK owner XOR + UNIQUE(issuer,last4) · `domain/code-tables/tax-rule.ts` 규칙 4종·절사·기준일. **범위 명시:** 코드표의 「수정」은 이름(label)뿐이고 `value`는 불변 키다(사용자 결정 2026-09-21 안 a — `vendors.default_evidence_type`이 FK 없이 참조). 법인카드의 「수정」은 소유자(개인/팀)뿐이고 발급사·뒤 4자리는 식별자라 재등록 대상이다. **행동 증거:** `test/e2e/master-edit.spec.ts` 4건을 프로덕션 빌드에서 직접 실행해 통과 |
+
 | 6 | 핵심 행동만 로그(**로그인**·설정·권한·삭제·복원), Excel 내보내기·마스킹 해제는 끌 수 없음; 사람·기간·종류·문서 필터 + Excel + 관리자 정리; 삭제는 전부 보관함, 관리자만 복원 | ✓ VERIFIED (이전 PARTIAL → 닫힘) | `login` 기록 닫힘(미달 1, e2e 실측) · `domain/action-log/record.ts:10-29` CORE_ACTION_TYPES 18종(`document_update` 추가 — `b0b8886`) · `:60 ALWAYS_ON`(`keys.ts:49` enum 자체가 이 셋을 뺀다 → 끌 수 없음) · `:111-113` 목록 밖 종류는 예외 · `repositories/action-log.ts:80-98 markActionLogRowsPruned` 정리 = `pruned_at` 표시(물리 삭제 0) · `domain/archive/index.ts` archive/restore · `repositories/archive.ts` 7표. 실행: `action-log-query.test.ts`·`archive.test.ts`·`action-log.test.ts` 통과, `action-log.spec.ts`·`archive.spec.ts`·`archived-session.spec.ts` e2e 통과 |
 
-**Score:** **5/6 성공 기준 완전 검증, 1/6 부분**(0 present-behavior-unverified — 행동 의존 진술은 전부 실제 실행으로 확인했다). 요구사항 기준 **12/13**.
+**Score:** **6/6 성공 기준 완전 검증**(0 present-behavior-unverified — 이번 라운드가 바꾼 상태 전이·취소 불변식은 전부 named test를 직접 실행해 확인했다). 요구사항 기준 **13/13**. 성공 기준 2는 React taint 편차 1건을 문서화한 채 VERIFIED이며, 그 편차의 처분은 사람 판정 6번에 남아 있다(2회차 판정 유지 — 새 증거 없이 판정을 뒤집지 않는다).
 
 ### Requirements Coverage — Phase 3 소유 13건
 
@@ -487,10 +458,10 @@ listCodeItems · createCodeItem · setCodeItemActive · setEvidenceTypeTaxRule
 | ADMN-10 행동 로그 필터·Excel·정리·열람 노출표 | **MET** | 유지 | `action-log/page.tsx:32` can · `filter-bar.tsx` 필터 6 · `domain/action-log/index.ts` queryActionLog(`visible(action_log.detail)` 게이트) · `export.ts` UTF-8 BOM CSV · `keys.ts:46-54`(끌 수 없는 셋은 enum 밖). `b0b8886` 이후 대상 칸이 이름으로 풀린다(ENTITY_NAME_RESOLVERS 7종 전부 `info-items.ts` 등록 확인, 못 보면 id로 내려앉음) |
 | ADMN-12 삭제는 보관함, 관리자만 복원, 로그 | **MET** | 유지 | `domain/archive/index.ts` · `repositories/archive.ts` 7표 조건부 UPDATE · 마스터 화면 6개 `DeleteToArchive` · `domain/auth/hooks.ts:59-63` 보관 사용자 로그인 거부 · **`lib/viewer.ts:44` 기존 세션도 끊는다**(`373f282`, /review M-2 해소) + `lib/auth.ts:43` · `test/e2e/archived-session.spec.ts`(프로덕션 빌드 통과) |
 | OPS-05 핵심 행동만·잡음 없음·정리·끌 수 없는 셋 | **MET** | **PARTIAL → MET** | `domain/auth/hooks.ts:106` login 기록 · `test/e2e/action-log.spec.ts:136-147` — **단독 실행해 통과 확인(34.6s)** · 조회·화면 이동은 `recordAction` 미호출 · `record.ts:60` ALWAYS_ON 3종 · 정리 = 표시 |
-| MAST-01 거래처 등록·수정·숨김·자동완성·암호화 | **MET** | **PARTIAL → MET** | 미달 2 닫힘 + `test/unit/vendors/account-number-plan.test.ts` 6건(M-5 계약) · `test/unit/vendors/update-archived.test.ts` 2건(보관·부재 → `ArchivedVendorError`) · `test/integration/vendors.test.ts` 18건. 자동완성 UI 소비자는 Phase 5·6 이월 |
+| MAST-01 거래처 등록·수정·숨김·자동완성·암호화 | **MET** | **PARTIAL → MET** | 미달 2 닫힘 + `test/unit/vendors/account-number-plan.test.ts` 6건(M-5 계약) · `test/unit/vendors/update-archived.test.ts` 2건(보관·부재 → `ArchivedVendorError`) · `test/integration/vendors.test.ts` 18건. 자동완성 UI 소비자는 Phase 5·6 이월. **화면 경로 e2e는 여전히 없다**(`test/e2e/vendors.spec.ts`에 `editId` 0건 — 실측) → 사람 판정 3 |
 | MAST-02 직원 등록 = 사람+계급+팀 | **MET** | 유지 | 성공 기준 1과 동일 |
-| MAST-03 법인카드 마스터(개인/팀) | **MET** | 유지 | **요구사항 원문(`REQUIREMENTS.md:21`)은 「등록하고, 카드마다 소지자 또는 소속 팀을 지정한다」 — 「수정」을 요구하지 않으므로 충족이다.** `db/schema/corp-cards.ts` kind + CHECK(holder XOR team) + UNIQUE(issuer,last4) · `domain/corp-cards/index.ts cardOwnerKind`·`createCorpCard`(등록 시 소유 지정) · `card-form.tsx` 개인/팀 전환 · `test/integration/corp-cards.test.ts`(실행 통과). **ROADMAP 성공 기준 5의 「수정」은 별건으로 gaps 1에 있다** — 요구사항과 성공 기준을 나눠 적는다 |
-| MAST-04 코드표 추가·**수정**·비활성화 | **⚠️ PARTIAL** | **MET → PARTIAL (판정 정정)** | 충족: `db/schema/code-tables.ts` UNIQUE(table_key,value) · `createCodeItem`·`setCodeItemActive` · `code-tables/page.tsx` 표 전환 + 비활성 표시 · `test/e2e/code-tables.spec.ts`(실행 통과). **미달: 「수정」** — `domain/code-tables/index.ts` 내보내기 4개에 값·라벨 수정이 없다. `setEvidenceTypeTaxRule`은 성공 기준 5의 별도 요구이고 `index.ts:129-131`이 `evidence_type` 외 표를 거부하므로 MAST-04가 이름을 든 견적 분류·지급 방식·프로젝트 상태에는 적용되지 않는다(gaps 2) |
+| MAST-03 법인카드 마스터(개인/팀) | **MET** | 유지(보강) | 요구사항 원문(`REQUIREMENTS.md:21`)은 「등록하고, 카드마다 소지자 또는 소속 팀을 지정한다」다. `db/schema/corp-cards.ts` kind + CHECK(holder XOR team) + UNIQUE(issuer,last4) · `domain/corp-cards/index.ts cardOwnerKind`·`createCorpCard` · `card-form.tsx` 개인/팀 전환. 이번 라운드 보강: 등록 경로도 `assertOwnerNotArchived`를 거쳐 보관된 사람·팀을 받지 않는다(/cso T-03-55). **성공 기준 5의 「수정」은 위 진리 5에서 닫혔다** |
+| MAST-04 코드표 추가·**수정**·비활성화 | **MET** | **PARTIAL → MET** | 추가 `createCodeItem` · **수정 `domain/code-tables/index.ts:127 updateCodeItemLabel`**(`can()` → 리포지토리 → `recordAction(document_update)` → `project()`) · 비활성화 `setCodeItemActive` · 보관 `archiveCodeItemAction`. 화면: `page.tsx:139 CodeItemLabelInput`(보관 항목·쓰기 권한 없음이면 글자로 렌더). 보관 차단 `ArchivedCodeItemError`. 증거: `test/integration/mast-04-code-item-label.test.ts` 5건(이름 변경 후 값 보존 · `document_update` 기록 · 보관 거부 · 없는 id는 null · 빈 이름 거부) + `test/e2e/master-edit.spec.ts:26-55` 왕복 — 둘 다 직접 실행 통과. **범위:** `value`는 수정 대상이 아니다(4겹 실측으로 쓰기 경로 0건 확인). 그 결정이 계획 문서에 없는 것은 사람 판정 4번 |
 
 **Orphaned requirements:** 없음 — REQUIREMENTS.md가 Phase 3에 매핑한 13개가 7 플랜의 `requirements:` 합집합과 정확히 일치한다.
 
@@ -502,8 +473,9 @@ listCodeItems · createCodeItem · setCodeItemActive · setEvidenceTypeTaxRule
 | `vendor-form.tsx` | `updateVendorAction` | `useAction` + `execute` | **NOT_WIRED** | **WIRED** | `vendor-form.tsx:7·83·121`. 진입은 `page.tsx:148` `?editId=` |
 | `settings-form-client.tsx` / CLI | `importSettings` | CLI 경로 채택 | **NOT_WIRED** | **WIRED (CLI)** | `scripts/settings-import.ts:78` + `package.json:27` |
 | `leak-scan.test.ts` | `permissions`·`visibility` registry | side-effect import | **NOT_WIRED** | **WIRED** | `:31-32`. 재발 방지 `leak-scan-coverage.test.ts` |
-| **`corp-cards/card-form.tsx`·`page.tsx`** | **`updateCorpCardOwnerAction`** | — | (미점검) | **NOT_WIRED** | 호출자 0 — **gaps 1** |
-| **`code-tables/*`** | **코드표 항목 수정 함수** | — | (미점검) | **NOT_WIRED (대상 부재)** | `domain/code-tables`에 update 계열 함수 자체가 없다 — **gaps 2** |
+| **`corp-cards/page.tsx`·`card-form.tsx`** | **`updateCorpCardOwnerAction`** | 행 「수정」 → `?editId=` → `CardOwnerForm` → `useAction` + `execute` | **NOT_WIRED** | **WIRED** | `page.tsx:184-191`(링크) · `:98-110`(`<CardOwnerForm>`) · `card-form.tsx:9·154·163`. grep 실측: 호출자 0 → 2 |
+| **`code-tables/page.tsx`·`code-item-form.tsx`** | **`updateCodeItemLabelAction` → `updateCodeItemLabel`** | 행 인라인 입력 `onBlur` → `useAction` + `execute` | **NOT_WIRED (대상 부재)** | **WIRED** | `page.tsx:12·139` · `code-item-form.tsx:8·76·102` · `actions.ts:36` · `domain/code-tables/index.ts:127` |
+| **`domain/corp-cards` 등록·수정 두 경로** | **`assertOwnerNotArchived`** | 공유 가드(`findUserById`·`findTeamById`는 보관 행도 읽는다) | (없었음) | **WIRED (신규)** | `index.ts:106-126` ← `:145`(createCorpCard) · `:186`(updateCorpCardOwner). /cso T-03-55 |
 | `app/(app)/admin/*/page.tsx` (13) | `domain/permissions/can.ts` | `can(...) → notFound()` | WIRED | WIRED | 13/13 확인(archive·settings 포함) |
 | `app/(app)/layout.tsx` | `MENUS × can()` → `role-menu.ts` | `allowedMenus` 데이터 | WIRED | WIRED (확장) | `35b9fd1` 이후 관리자 메뉴 10종 전부 진입점. `role-menu.test.ts:119`가 10개 키의 실제 라우트 존재를 전제 확인 |
 | `lib/viewer.ts getSession` | `archivedAt` fail-closed | 요청마다 사용자 행 재조회 | (없었음) | **WIRED (신규)** | `lib/viewer.ts:44` + `lib/auth.ts:43`, `archived-session.spec.ts` 프로덕션 빌드 실측 |
@@ -523,22 +495,30 @@ listCodeItems · createCodeItem · setCodeItemActive · setEvidenceTypeTaxRule
 | 행동 로그 「로그인」 필터 | 결과 | `action_log where action_type='login'` | **Yes** | ✓ FLOWING (이전 ✗ DISCONNECTED) |
 | `archive/page.tsx` | 항목 | `listArchivedAcrossEntities` 7표 UNION | Yes | ✓ FLOWING |
 | `corp-cards/page.tsx` | `cards[]` | `listCorpCards` DB | Yes | ✓ FLOWING |
-| `corp-cards` 소유 변경 후 목록 | — | — | **경로 없음** | ✗ DISCONNECTED (gaps 1) |
-| `code-tables` 값·라벨 수정 후 목록 | — | — | **경로 없음** | ✗ DISCONNECTED (gaps 2) |
+| `corp-cards/page.tsx` 수정 폼 기본값 | `editingCard.*` | `cards.find(id === editId && archivedAt === null)` → 실 DB 행의 DTO | Yes | ✓ FLOWING (이전 ✗ — 폼 자체가 없었다) |
+| `corp-cards` 소유 변경 후 목록 | 「종류」·「소유」 칸 | `updateCorpCardOwner`(kind 동반 UPDATE) → `revalidatePath` → `listCorpCards` DB | **Yes** | ✓ FLOWING (이전 ✗ DISCONNECTED) — e2e가 `—` 0개까지 단언 |
+| `corp-cards` 소유자 `<select>` 후보 | `holderOptions`·`teamOptions` | `listPeople`·`listTeams` → `archivedAt === null` 필터 | Yes | ✓ FLOWING (보관 행은 이름 조회 표에만 남아 소유 칸이 비지 않는다) |
+| `code-tables` 이름 수정 후 목록 | 행 이름 칸 | `updateCodeItemLabel` → `revalidatePath` → `listCodeItems` DB | **Yes** | ✓ FLOWING (이전 ✗ DISCONNECTED) — e2e가 reload 후까지 단언 |
+| `code-tables` 행 `값` 칸 | `item.value` | `listCodeItems` DB (읽기 전용 렌더) | Yes | ✓ FLOWING (쓰기 경로 없음 — 의도) |
 
-### Behavioral Spot-Checks (이번에는 실제로 실행했다)
+### Behavioral Spot-Checks (이 프로세스에서 실제로 실행했다)
 
 | Behavior | Command | Result | Status |
 |---|---|---|---|
-| 로그인이 행동 로그에 남는다 | `CI=true npx playwright test --project=desktop test/e2e/action-log.spec.ts -g "로그인이 행동 로그에 남는다"` | `1 passed (34.6s)` | ✓ PASS |
-| 누수 스캔이 registry 9개를 전부 본다 | `npx vitest run --project integration test/integration/leak-scan.test.ts` | `561 passed` | ✓ PASS |
-| 누락 import를 회귀 방어가 잡는다 | 검출 로직을 메모리에서 재현(파일 미수정) | `mutated → missing=["@/app/(app)/admin/visibility/actions.registry"]` | ✓ PASS |
-| 설정 가져오기 CLI가 실행된다 | `node --import tsx scripts/settings-import.ts` | `--file <경로>가 필요합니다.` · exit **2** | ✓ PASS |
-| M-5 계좌번호 계약 · 보관된 거래처 수정 차단 | `npx vitest run --project unit test/unit/vendors/…` | `19 passed`(4 files) | ✓ PASS |
-| `app/` 아래 registry 파일 수 | `find app -name actions.registry.ts \| wc -l` | `9` (leak-scan import 수와 일치) | ✓ PASS |
-| **법인카드 소유자 변경 액션의 화면 호출자 수** | `grep -rl updateCorpCardOwnerAction app/ ui/` | `actions.ts`·`actions.registry.ts` **뿐** — 화면 0 | **✗ FAIL (gaps 1)** |
-| **코드표 항목 수정 함수 존재** | `grep -n "^export async function" domain/code-tables/index.ts` | `listCodeItems`·`createCodeItem`·`setCodeItemActive`·`setEvidenceTypeTaxRule` — update 없음 | **✗ FAIL (gaps 2)** |
-| 거래처 수정 왕복(폼 경로) | — | 해당 e2e·통합 없음 | ? SKIP → human 3 |
+| 코드표 이름 수정 왕복(프로덕션 빌드) | `CI=true npx playwright test --project=desktop test/e2e/master-edit.spec.ts test/e2e/code-tables-write-gate.spec.ts` | `5 passed (32.4s)` · exit 0 | ✓ PASS |
+| 법인카드 소유자 개인→팀 전환이 목록에 반영 | 위와 같은 실행(`master-edit.spec.ts:59-92`) | 「종류」=팀 · `—` 0개 | ✓ PASS |
+| 보관된 카드에 「수정」 링크 0개 | 위와 같은 실행(`master-edit.spec.ts:131-154`) | `toHaveCount(0)` 통과 | ✓ PASS |
+| 보기 권한만 있는 계급의 코드표에 편집 수단 0개 | 위와 같은 실행(`code-tables-write-gate.spec.ts`) | `table input` 0 · `table select` 0 · `#code-item-form` 0 | ✓ PASS |
+| 보관 차단·로그 종류·빈 이름 거부(도메인) | `npx vitest run --project integration test/integration/{mast-04-code-item-label,corp-card-owner-edit,corp-card-owner-archived}.test.ts` | `12 passed (9.8s)` | ✓ PASS |
+| 전체 통합 회귀 | `npx vitest run --project integration` | `730 passed (28 files, 224.9s)` | ✓ PASS |
+| 전체 단위 회귀 | `npx vitest run --project unit` | `581 passed (63 files, 20.0s)` | ✓ PASS |
+| 타입·린트 | `npx tsc --noEmit` · `npx eslint .` | exit 0 · exit 0 | ✓ PASS |
+| 법인카드 소유자 변경 액션의 화면 호출자 수 | `grep -rn updateCorpCardOwnerAction app/ ui/` | `card-form.tsx:9`(import) · `:154`(useAction) — **화면 0 → 2** | ✓ PASS (이전 ✗ FAIL) |
+| 코드표 항목 수정 함수 존재 | `grep -n "^export async function" domain/code-tables/index.ts` | `listCodeItems`·`createCodeItem`·`setCodeItemActive`·**`updateCodeItemLabel`**·`setEvidenceTypeTaxRule` | ✓ PASS (이전 ✗ FAIL) |
+| 코드표 `value` 쓰기 경로 | `grep -n "set(" repositories/code-tables.ts` + 액션 스키마·도메인 인자·UI 전수 | `set()` 5개 전부 `active`·`label`·`archivedAt`·`taxRule` — **`value` 0건** | ✓ PASS |
+| React taint 사용 | `grep -rn "taintObjectReference\|taintUniqueValue\|experimental_taint" --include=*.ts --include=*.tsx .` | **0건**(변동 없음) | ℹ️ 편차 유지 → 사람 판정 6 |
+| 설정 화면 낡은 문구 | `sed -n '235p' "app/(app)/admin/settings/settings-form-client.tsx"` | 「가져오기는 통합 테스트로만 제공됩니다…」 **그대로** | ℹ️ advisory 1 → 사람 판정 5 |
+| 거래처 수정 왕복(폼 경로) | `grep -n "editId" test/e2e/vendors.spec.ts` | **0건** — 해당 e2e 없음 | ? SKIP → 사람 판정 3 |
 
 ### Probe Execution
 
@@ -548,35 +528,46 @@ listCodeItems · createCodeItem · setCodeItemActive · setEvidenceTypeTaxRule
 
 | 항목 | 결과 |
 |---|---|
-| 총 실행 | 단위 581 · 통합 713 · e2e 110 = **1,404건 전부 통과**, 실패 0 · skip 0 · flaky 0 |
-| **커버리지 공백** | **gaps 1·2는 테스트가 없다** — 법인카드 소유자 변경과 코드표 항목 수정은 화면 경로가 없으므로 실패할 테스트도 없다. 1,404 초록이 그 둘을 덮지 못한 이유다 |
-| 약한 단언 | `leak-scan.test.ts:146` `Array.isArray(buildExportCases())` — 존재 수준. 같은 파일 92행의 `>= 2` 하한이 실질 방어를 맡고 146행은 vitest 빈-스위트 실패 방지 용도로 역할 분리(주석에 근거) |
-| 약한 단언 | `test/unit/ui/admin-master-list-first.test.ts` — 소스 문자열 `toContain` 기반. 실제 DOM 판정은 `test/e2e/admin-master-list-first.spec.ts`(8건, 실행 통과)가 맡는다 |
-| 약한 단언 | `test/unit/leak-scan-coverage.test.ts:52` — import 지정자의 소스 문자열 포함 여부. 주석 처리된 import는 통과한다(관찰) |
-| 순환 테스트 | 발견되지 않음 |
-| 새 회귀 방어 | `leak-scan-coverage`(2) · `settings-import-cli`(9) · `account-number-plan`(6) · `update-archived`(2) · `login-error`(9) · `archived-session`(통합+e2e) · `admin-master-list-first`(단위+e2e) · `role-menu` 확장 |
+| 이번 라운드 실행 | 단위 **581** · 통합 **730** · 신규 e2e **5**(프로덕션 빌드) — 실패 0 · skip 0 · flaky 0 (전부 이 프로세스에서 직접 실행) |
+| **이전 커버리지 공백 → 닫힘** | 2회차가 남긴 미달 2건은 「없는 기능에는 실패할 테스트가 없다」였다. 이번 라운드가 그 자리에 **신규 5파일**을 넣었다: `master-edit.spec.ts`(4) · `code-tables-write-gate.spec.ts`(1) · `mast-04-code-item-label.test.ts`(5) · `corp-card-owner-edit.test.ts`(3) · `corp-card-owner-archived.test.ts`(4) |
+| 비활성화된 테스트 | 신규 6파일에 `.skip`·`.only`·`xit`·`fixme` **0건**(grep 실측) — 요구사항에 걸린 테스트 중 꺼진 것 없음 |
+| 단언 강도 | 신규 e2e는 **행동 수준**(왕복 후 목록 칸 값·reload 후 지속·링크 0개·`checkValidity() false`). 신규 통합은 **값 수준**(`label` 변경 + `value` 보존 동시 단언 · `document_update` 종류 · 거부 경로 `rejects.toThrow()`). 존재·타입 수준으로 끝나는 신규 단언 없음 |
+| 순환 테스트 | 없음 — 기대값이 시스템 자신의 출력에서 생성되는 경로 0건 |
+| 반증 테스트(주목) | `master-edit.spec.ts:100-129`는 `/review` H-1 주장(「종류를 바꾸면 첫 팀이 자동 선택된다」)을 **반증한 상태를 고정**한다 — 라이브 DOM에서 `value ""` · `checkValidity() false`. 리뷰 지적이 틀렸어도 그 경로가 덮이지 않았던 것은 사실이라 회귀 테스트로 승격한 판단은 옳다 |
+| 약한 단언(기존, 유지) | `leak-scan.test.ts:146` `Array.isArray(buildExportCases())` — 같은 파일 92행의 `>= 2` 하한이 실질 방어. `test/unit/ui/admin-master-list-first.test.ts`·`test/unit/leak-scan-coverage.test.ts:52` — 소스 문자열 대조(주석 처리된 import는 통과). 전부 2회차에 기록된 관찰이고 이번 라운드가 악화시키지 않았다 |
+| 남은 공백 | **거래처 수정 왕복의 화면 경로 e2e가 없다**(`vendors.spec.ts`에 `editId` 0건). 코드표·법인카드는 이번에 닫혔지만 거래처는 그대로다 → 사람 판정 3 |
+| 테스트 격리(관찰) | `code-tables-write-gate.spec.ts:57-62`는 `finally`에서 `view`만 되돌리고 `write`는 되돌리지 않는다. 그 테스트가 `write=false`로 설정한 값이 곧 복원 목표값이라 실해는 없고 `fullyParallel: false`라 경합도 없다 — 정보 수준 |
 
 ### Anti-Patterns Found
 
+이번 라운드가 바꾼 16파일(`git diff --stat f828fa8..3b15d43 -- . ':!.planning'`) 전수 스캔.
+
 | File | Line | Pattern | Severity | Impact |
 |---|---|---|---|---|
-| — | — | `TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER` | 없음 | `app/`·`domain/`·`repositories/`·`lib/`·`ui/`·`scripts/`·`db/`·`eslint/`·`test/` 전수 0건(유일한 문자열 일치는 그 단어들을 **금지**하는 `test/unit/ui/system-md-compliance.test.ts:33`) |
-| `app/(app)/admin/corp-cards/actions.ts` | 34-59 | 호출자 없는 서버 액션(죽은 배선) | 🛑 **Blocker** | **gaps 1**. 이전 검증이 `updateVendorAction`의 동일 상태를 blocker로 센 선례 |
-| `domain/code-tables/index.ts` | — | 요구사항이 요구한 동작의 함수 자체가 없음 | 🛑 **Blocker** | **gaps 2** |
-| `app/(app)/admin/settings/settings-form-client.tsx` | 235 | 사실이 아닌 안내 문구(CLI가 생긴 뒤 갱신 안 됨) | ⚠️ Warning | advisory 1 · human 5. 사용자가 advisory 유지 확인 |
-| `app/(app)/admin/settings/actions.ts` | 52-54 | 같은 내용의 낡은 주석 | ℹ️ Info | 위와 같은 원인 |
-| `app/(app)/admin/action-log/page.tsx` | 127-131 | 대상 칸에 엔티티 종류가 영문 원시 키(`vendor`·`code_items`)로 남는다 | ℹ️ Info | design-review A-M5 — 이월(승인 전 절) |
-| `domain/**` | 다수 | `return null`/`[]` | ℹ️ Info | 전부 「없음」 의미의 정당한 반환. 스텁 아님 |
+| — | — | `TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER`/「아직 구현되지 않음」 | **0건** | 변경 16파일 전수 grep 실측. 자기증명 blocker 없음 → 증거 게이트 무관하게 차단 사유 없음 |
+| — | — | 호출자 없는 서버 액션(죽은 배선) | **0건** | 2회차의 🛑 두 건(`updateCorpCardOwnerAction` 호출자 0 · 코드표 update 함수 부재)이 **모두 해소**됐다 |
+| `app/(app)/admin/code-tables/code-item-form.tsx` | 102 | `execute({ id, label: value })` — `value`를 trim하지 않고 보낸다 | ⚠️ Warning | 공백이 붙은 이름은 blur마다 재저장돼 행동 로그에 같은 수정이 쌓인다(`03-REVIEW-2.md` L-1). 데이터는 도메인이 `trim()`해서 안전. `03-OPEN-ITEMS.md`가 「고치지 않고 남긴 것」으로 기록 → advisory 4 |
+| `app/(app)/admin/corp-cards/card-form.tsx` | 229 | `result.serverError`만 그리고 `validationErrors`는 그리지 않는다 | ℹ️ Info | 액션 `superRefine`(XOR) 거절이 침묵으로 끝난다. 다만 두 `<select>`가 `required`라 브라우저가 먼저 막고, 도달하려면 요청을 직접 만들어야 한다(`03-REVIEW-2.md` L-3) → advisory 4 |
+| `domain/code-tables/index.ts` | 139-150 | 보관 판정(`repoFindCodeItemById`)과 `UPDATE`가 한 트랜잭션이 아니다 | ℹ️ Info | 같은 파일·같은 리포지토리에 조건부 UPDATE 선례(`setCodeItemArchived`)가 있다. 경합 창이 극히 좁고 손상이 아닌 「보관 직후 1회 이름 변경 통과」(`03-REVIEW-2.md` L-2) → advisory 4 |
+| `app/(app)/admin/settings/settings-form-client.tsx` | 235 | 사실이 아닌 안내 문구(CLI가 생긴 뒤 갱신 안 됨) | ⚠️ Warning | 이번 라운드가 건드리지 않은 파일. advisory 1 · 사람 판정 5 |
+| `app/(app)/admin/code-tables/page.tsx` | 125 | 권한과 무관하게 항상 렌더되는 `<th>동작</th>` | ℹ️ Info | 보기 전용 계급에 빈 열 하나. 법인카드는 머리글까지 감춘다(`corp-cards/page.tsx:154`) — 두 화면이 갈린다 → advisory 5 |
+| `domain/**` | 다수 | `return null`/`[]` | ℹ️ Info | 전부 「없음」 의미의 정당한 반환. 스텁 아님. `updateCodeItemLabel`의 `return null`(없는 id)은 `setCodeItemActive`와 같은 계약이고 통합 테스트가 단언한다 |
 
-**증거 게이트 적용(`#3304`):** 위 두 🛑는 Step 7의 자유 판단이 아니라 **Step 3(성공 기준 5) · Step 5(핵심 배선) 판정**이고, 게이트 자신이 「진리·산출물·핵심 배선(Steps 3-6)은 이 실패 모드를 만들 수 없다」며 적용 범위를 Step 7로 한정한다. 또한 둘 다 결정적 증거(호출자 0 / 함수 부재, 위 spot-check의 명령·출력)를 갖는다.
+**하드코딩된 빈 데이터·정적 반환:** 신규 경로에 없음. 두 수정 폼의 기본값은 전부 실 DB 행의 DTO에서 온다(위 Data-Flow Trace).
 
 ### Advisory (New Scope, Unevidenced)
 
+3회차 재검증(`is_re_verification = true`)에서 Step 7 안티패턴 스캔이 올린 것 중, 결정적 증거(빨간 named test 또는 재현 가능한 명령 출력)가 없어 blocker로 올리지 않은 것. **완료된 must-have를 되돌리지 않는다**(#3304).
+
 | # | Finding | Category | Why Advisory |
 |---|---|---|---|
-| 1 | 설정 화면 문구가 「가져오기는 통합 테스트로만 제공됩니다」로 남아 있다 | other | 요구사항 ADMN-06은 CLI로 충족. 동작 영향 0, 한 줄 수정 — 사용자가 advisory 유지를 명시적으로 확인했다(human 5) |
-| 2 | ROADMAP `Mode: mvp`인데 goal이 User Story가 아님 | other | 검증 방식 선택 문제이지 코드 결함이 아님 |
-| 3 | React taint 2차 방어 미구현(사용 0건) | architectural | react 안정 채널에 API 없음 — 대체 구현(커스텀 린트)이 실재하고 error로 강제된다. Override 수락 또는 ROADMAP 문구 갱신 필요(human 6) |
+| 1 | 설정 화면 문구가 「가져오기는 통합 테스트로만 제공됩니다」로 남아 있다(`settings-form-client.tsx:235` — 이번 라운드에도 그대로) | other | 요구사항 ADMN-06은 CLI로 충족. 동작 영향 0. 이월 결정 대기(사람 판정 5) |
+| 2 | ROADMAP `Mode: mvp`인데 goal이 User Story가 아님 | other | 검증 방식 선택 문제이지 코드 결함이 아님. 이번에도 표준 goal-backward로 진행(2회차와 같은 판단 — 성공 기준 6개가 충분히 구체적이다) |
+| 3 | React taint 2차 방어 미구현(사용 0건, 이번 라운드 재확인) | architectural | react@19.3.0 안정 채널에 API 없음. 대체 구현(`plant8/no-row-type-escape` + boundaries)이 error로 강제된다. Override 수락 또는 ROADMAP 문구 갱신 필요(사람 판정 6) |
+| 4 | `03-REVIEW-2.md` Low 4건이 코드에 남아 있다 — untrim 재저장으로 행동 로그 중복(`code-item-form.tsx:102`가 `value`를 그대로 보내고 도메인이 `trim()`하므로 공백 붙은 이름은 blur마다 재저장) · 보관 검사-쓰기 비원자성 · `CardOwnerForm`이 `validationErrors` 미표시 · 없는 id 수정이 성공으로 보임 | other | **새 발견이 아니다** — `03-OPEN-ITEMS.md`가 「고치지 않고 남긴 것」으로 근거와 함께 기록했다. 전부 Low·데이터 손상 없음. 빨간 테스트 없음 → 증거 게이트상 advisory |
+| 5 | `code-tables/page.tsx:125`의 `<th>동작</th>`이 권한과 무관하게 항상 렌더된다(법인카드는 `canWrite \|\| canArchive`로 머리글까지 감춘다) | other | 보기 전용 계급에게 빈 열 하나가 남는 화장 결함. `code-tables-write-gate.spec.ts`가 편집 수단 0개는 단언하지만 머리글은 보지 않는다. 동작·보안 영향 0 |
+
+**증거 게이트(#3304) 적용 기록:** 이번 라운드에 🛑 Blocker로 올린 항목은 **0건**이다. 디버그 마커(`TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER`)는 변경 16파일 전수 grep에서 **0건**이므로 자기증명 blocker도 없다. 위 4·5는 이전 `gaps:`에 없고 결정적 증거가 없어 advisory다.
 
 ### Deferred Items
 
@@ -584,26 +575,30 @@ listCodeItems · createCodeItem · setCodeItemActive · setEvidenceTypeTaxRule
 |---|---|---|---|
 | 1 | 거래처 자동완성 UI 소비자 | Phase 5 · Phase 6 | ROADMAP Phase 3 성공 기준 5 원문 |
 | 2 | 전 메뉴 대상 권한·노출·행동 로그 검수 | Phase 7 | ROADMAP Phase 7 성공 기준 5 + Phase 3 goal 본문 |
-| 3 | 관리자 폼 7개 §6-3 이관 (A-H2·A-H3) | Phase 4(제작) · Phase 7(이관) | ROADMAP Phase 7 성공 기준 5에 명문화(`977bd40`). **gaps 1·2가 새로 만드는 폼도 이 이관 대상에 들어간다** |
+| 3 | 관리자 폼 7개 §6-3 이관 (A-H2·A-H3) | Phase 4(제작) · Phase 7(이관) | ROADMAP Phase 7 성공 기준 5에 명문화(`977bd40`). **이번 라운드가 만든 폼 둘(`CardOwnerForm`·`CodeItemLabelInput`)도 이 이관 대상에 들어간다** |
 | 4 | 폰 375 관리자 표(DOM 감사 2·6·7) · /review M-4 · L-1 · /cso R2·R3·R4·R5 | Phase 4 | `03-OPEN-ITEMS.md` 「Phase 4로 미루기로 한 것 (사용자 승인 2026-09-21)」 |
 | 5 | design-review 나머지 23건 중 미승인 이월분 | Phase 4 · Phase 7 | `03-OPEN-ITEMS.md` — **사용자 승인 전임을 파일이 명시**한다 |
 
-**이월 항목은 이 보고서에서 미달로 세지 않았다.** gaps 1·2는 이월 목록 어디에도 없다 — 미루기로 한 기록이 없는 항목이다.
+**이월 항목은 이 보고서에서 미달로 세지 않았다.** 출처·근거·시점은 `03-OPEN-ITEMS.md`에 있고, A-H2·A-H3의 Phase 4 제작 / Phase 7 이관은 `ROADMAP.md` Phase 7 성공 기준 5에 명문화돼 있다.
 
 ### Human Verification Required
 
-6건 — frontmatter `human_verification` 참조. 요약:
+6건 — frontmatter `human_verification` 참조. **이 절이 비어 있지 않은 것이 `passed`가 아닌 유일한 이유다**(Step 9 규칙 2). 미달(`gaps`)은 0건이다.
 
-1. 스테이징 배포 Job 3단계(migrate → seed → account) 실제 로그 확인
-2. Secret Manager `app-data-key-v1` 32바이트 확인
-3. **거래처 수정 왕복 실측** — 계좌번호 칸을 비운 채 저장해도 암호문·뒤 4자리가 보존되는지
-4. **결정(gaps 2 선행)** — 코드표 항목 수정에서 `value`까지 열 것인가, `label`만 허용할 것인가
-5. **결정** — 설정 화면의 낡은 안내 문구를 지금 고칠 것인가
-6. **결정** — React taint 편차를 override로 수락할 것인가, ROADMAP을 고칠 것인가
+| # | 항목 | 성격 | 변화 |
+|---|---|---|---|
+| 1 | 스테이징 배포 Job 3단계(migrate → seed → account) 실제 로그 확인 | 외부 환경 | 유지 |
+| 2 | Secret Manager `app-data-key-v1` 32바이트 확인 | 외부 시크릿 | 유지 |
+| 3 | **거래처 수정 왕복 실측** — 계좌번호 칸을 비운 채 저장해도 암호문·뒤 4자리가 보존되는지 | 화면 경로 미검증 | 유지 — 코드표·법인카드는 이번에 e2e로 닫혔지만 거래처는 그대로다(`vendors.spec.ts`에 `editId` 0건, 실측) |
+| 4 | **코드표 `value` 불변 결정(안 a)을 계획 기록에 남긴다** | 기록 위치 | **신규** — 2회차의 「`value`까지 열 것인가」 결정 항목을 대체한다. 결정은 내려졌고 구현도 그대로지만(4겹 실측), 근거가 코드 주석에만 있다 |
+| 5 | **결정** — 설정 화면의 낡은 안내 문구를 지금 고칠 것인가 | 우선순위 | 유지(advisory 1) |
+| 6 | **결정** — React taint 편차를 override로 수락할 것인가, ROADMAP을 고칠 것인가 | 계약 문서 | 유지(advisory 3) — 아직 override가 수락되지 않았다 |
 
-이전 보고서의 human 7건 중 넷은 닫혔다: Excel CSV 한글·마스킹 해제 기록(`03-OPEN-ITEMS.md` 「사람만 판정 가능한 것 (완료)」) · /review M-2 보관 사용자 세션(`373f282` + `archived-session.spec.ts` 실행 통과) · /review L-1(Phase 4 이월, 사용자 승인). 폰 375 격자는 DOM 감사 2·6·7과 함께 Phase 4 이월분에 흡수됐다.
+**닫힌 사람 판정 1건:** 2회차의 「결정 — 코드표 항목 수정에서 `value`까지 바꿀 수 있게 할 것인가」는 **안 a(`label`만)로 결정됐고 코드가 그대로 구현했다**. 남은 것은 그 결정을 계획 문서에 적는 일뿐이라 4번으로 성격을 바꿔 이관했다.
 
 ### Override 제안
+
+React taint 편차는 2회차부터 제안 상태이고 아직 수락되지 않았다. 검증자는 override를 대신 수락할 수 없다(`accepted_by`는 사람이다) — 성공 기준 2는 편차를 명시한 채 VERIFIED로 두고, 처분은 사람 판정 6번에 남긴다.
 
 ```yaml
 overrides:
@@ -615,19 +610,19 @@ overrides:
 
 ### Gaps Summary
 
-**이전 미달 4건은 전부 코드에서 닫혔고, 되돌아간 것은 없다.** 로그인은 성공 경로에서만 행동 로그에 남고(e2e 실측), 거래처 수정 화면이 생겼으며(보관된 거래처는 화면·도메인 두 겹에서 차단), 누수 스캔은 registry 9개를 전부 보고 하나라도 빠지면 단위 테스트가 빨개지며(재현 확인), 설정 가져오기는 `pnpm settings:import` CLI로 실행 가능하다. 게이트도 전부 직접 돌려 1,404건 초록을 확인했다.
+**미달 0건.** 2회차가 남긴 두 건은 코드에서 닫혔고, 닫는 과정이 만든 회귀도 없다.
 
-**그러나 페이즈 목표를 완전히 달성하지는 않았다. 새 미달 2건이 있다 — 둘 다 이전 검증이 점검하지 않았거나 잘못 읽은 축이다.**
+1. **법인카드 「수정」** — 행 「수정」 링크 → `?editId=` 토글 → `CardOwnerForm` → `updateCorpCardOwnerAction`까지 실제 호출 사슬이 이어진다(grep 실측: 화면 호출자 0 → 2). 보관된 카드는 화면(`editingCard` 필터 + 링크 부재)과 도메인(`ArchivedCorpCardError`) 두 겹에서 막히고, `?editId=<보관된 id>`를 직접 쳐도 폼이 뜨지 않는다. 소유자로 지정하려는 사람·팀의 보관 여부까지 등록·수정 두 경로가 공유하는 가드로 본다(/cso T-03-55). 왕복은 프로덕션 빌드 e2e 3건이 고정했고 **검증자가 직접 실행해 통과를 확인했다**.
 
-1. **법인카드를 화면에서 수정할 수 없다.** `updateCorpCardOwnerAction`이 정의·등록돼 있으나 호출자 0 — 이전 검증이 `updateVendorAction`의 완전히 동일한 상태를 미달로 세고 고쳤던 것과 **같은 결함 모양**이다. 요구사항 MAST-03 원문은 「지정」만 요구해 충족이지만, ROADMAP 성공 기준 5는 거래처·법인카드·코드표를 「등록·수정·비활성화」 한 동사구로 묶는다. 수정 범위는 `?editId=` 토글(vendors 선례) + 소유 전환이고, 보관·비활성 카드 차단은 화면이 아니라 도메인에서 판정해야 한다(`updateVendor:300-303` 선례 — 링크를 감추는 것만으로는 직접 진입을 막지 못한다는 것이 DOM 감사 실측이다).
+2. **코드표 항목 「수정」** — `updateCodeItemLabel`이 `can()` → 리포지토리 → `recordAction(document_update)` → `project()` 순서로 실재하고, 행 인라인 입력이 배선돼 있으며, 보관 항목은 도메인이 거부하고 화면은 글자로 렌더한다. **`value`는 네 계층(액션 스키마·도메인·리포지토리·UI) 어디에도 쓰기 경로가 없다** — `vendors.default_evidence_type`이 FK 없는 `text`에 그 문자열을 담는 제약이 코드에서 실제로 지켜진다. 왕복은 e2e가 reload 후 지속까지 단언한다.
 
-2. **코드표 항목의 값·라벨을 고칠 수 없다.** MAST-04 원문은 「추가·**수정**·비활성화」인데 `domain/code-tables`의 내보내기 넷에 수정이 없다. `setEvidenceTypeTaxRule`은 대체물이 아니다 — 성공 기준 5의 별도 요구이고, `index.ts:129-131`이 `evidence_type` 외 표를 거부해 MAST-04가 이름을 든 견적 분류·지급 방식·프로젝트 상태에는 적용조차 되지 않는다. 구현 전에 결정이 하나 필요하다: `value`는 `vendors.default_evidence_type`이 **FK 없이 문자열로** 참조하므로(`db/schema/vendors.ts:19`) 바꾸면 기존 거래처가 조용히 고아가 된다 — `label`만 여는 것이 안전한 최소다.
+**추가로 닫힌 것:** `03-REVIEW-2.md`의 Medium 3건(오류 표시 §7-2 · 성공 후 수정 모드 이탈 · `?new=1&editId=` 폼 2개)과 코드표 쓰기 권한 게이트(M-1 / DOM 감사), 그리고 `/cso` T-03-55. 전부 코드에서 확인했고 해당 e2e·통합이 통과한다.
 
-두 미달은 작고 국소적이며 아키텍처 결함이 아니다. 기존 선례(vendors `?editId=` 토글 · `ArchivedVendorError` · `document_update` 기록)를 그대로 따르면 되고 신규 의존성이 필요 없다. 1,404건의 테스트가 이를 잡지 못한 이유도 분명하다 — **없는 기능에는 실패할 테스트가 없다.**
+**남은 것은 미달이 아니다.** 사람 판정 6건(외부 환경 2 · 화면 경로 실측 1 · 기록·정책 결정 3)과 advisory 5건이다. advisory 4·5는 `03-OPEN-ITEMS.md`가 이미 근거와 함께 「고치지 않고 남긴 것」으로 기록했거나 화장 수준이며, 결정적 증거(빨간 테스트·재현 명령)가 없어 증거 게이트(#3304)상 blocker가 아니다 — **완료된 must-have를 되돌리지 않는다.**
 
-판정을 정정한 근거를 남긴다: 이 보고서의 초안은 미달 2를 「이전 검증도 같은 코드 상태를 MET로 적었으니 뒤집지 않는다」는 이유로 advisory에 두었다. 그 논리는 **이전 판정이 틀렸을 가능성을 배제**하므로 잘못이다. 검증자 진동 방지 규칙(`#3304`)은 같은 증거로 판정이 왔다 갔다 하는 것을 막을 뿐이고, 스스로 적용 범위를 Step 7 안티패턴 스캔으로 한정하며 「진리·산출물·핵심 배선은 이 실패 모드를 만들 수 없다」고 명시한다. 원문(`REQUIREMENTS.md:22` · ROADMAP 성공 기준 5)과 코드를 직접 대조해 나온 증거는 그 규칙으로 덮을 수 없다.
+**다음 행동:** `status: human_needed`이므로 `/gsd-plan-phase --gaps`가 필요한 미달은 없다. 사람 판정 6건을 UAT로 처리한 뒤 페이즈를 닫으면 된다. 특히 **사람 판정 4번(코드표 `value` 불변 결정의 기록)**은 지금 적지 않으면 다음 사람이 코드 주석에서만 알 수 있는 상태로 남는다.
 
 ---
 
-_Verified: 2026-09-21T09:27:05Z_
-_Verifier: Claude (gsd-verifier) — 재검증 (이전: 2026-09-21T05:17:08Z, gaps_found 9/13)_
+_Verified: 2026-09-21T12:05:40Z_
+_Verifier: Claude (gsd-verifier) — 3회차 재검증 (1회차 2026-09-21T05:17:08Z `gaps_found` 9/13 · 2회차 2026-09-21T09:27:05Z `gaps_found` 12/13)_

@@ -36,4 +36,33 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
     const response = await page.goto("/admin/code-tables");
     expect(response?.status()).toBe(404);
   });
+
+  // 사용자 QA 보고: 코드표 선택 링크가 「프로젝트 상태증빙 종류」로 붙어 보인다.
+  // .filterRow가 display:flex인데 gap이 없다(code-tables.module.css) — 링크가
+  // 하나뿐인 「숨김 포함」 줄에서는 드러나지 않았지만, 코드표 선택 nav는 링크가
+  // 둘이라 두 이름이 한 덩어리로 읽힌다.
+  test("코드표 선택 링크 둘이 서로 붙어 있지 않다", async ({ page }) => {
+    const admin = await createFixtureUser({ roleId: "role-sysadmin" });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto("/admin/code-tables");
+
+    const nav = page.getByRole("navigation", { name: "코드표 선택" });
+    const links = nav.getByRole("link");
+    await expect(links).toHaveCount(2);
+
+    const first = await links.nth(0).boundingBox();
+    const second = await links.nth(1).boundingBox();
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+
+    // 두 상자 사이의 가로 간격. 붙어 있으면 0이다.
+    const gap = second!.x - (first!.x + first!.width);
+    expect(gap).toBeGreaterThan(0);
+  });
 });

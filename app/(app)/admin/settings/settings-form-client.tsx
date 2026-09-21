@@ -232,7 +232,9 @@ function ExportButton() {
       <Button variant="secondary" pending={isExecuting} onClick={() => execute({})}>
         설정 내보내기
       </Button>
-      <p className={styles.hint}>가져오기는 통합 테스트로만 제공됩니다(파일 업로드 화면은 이 페이즈 범위 밖).</p>
+      <p className={styles.hint}>
+        가져오기는 명령줄로 합니다 — `pnpm settings:import --file &lt;내보낸 JSON 경로&gt;` (docs/OPERATIONS.md §12).
+      </p>
     </div>
   );
 }

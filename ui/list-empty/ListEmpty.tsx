@@ -17,10 +17,13 @@ export type ListEmptyProps = {
   /** 「무엇이 없다」 부분. */
   message: string;
   /**
-   * 「다음 한 수」— 필수(§8 규칙 5). 원인만 쓰고 끝내는 EMPTY를 타입으로 막는다
-   * (다음 한 수 없이 원인만 렌더할 수 없다).
+   * 「다음 한 수」— 기본은 필수(§8 규칙 5, 원인만 쓰고 끝내는 EMPTY를 막는다).
+   * **예외:** 03-07(보관함) — 보관함이 비어 있는 것은 해소할 상태가 아니라
+   * 정상이라 다음 한 수를 두지 않는다(§7-12 알림함 EMPTY 예외와 같은 논리,
+   * `DECISIONS.md` 참고). 그런 화면만 명시적으로 `action`을 생략한다 — 잊고
+   * 안 넣은 것과 구분하기 위해 `action?: undefined`가 아니라 유니언으로 연다.
    */
-  action: ListEmptyAction;
+  action?: ListEmptyAction;
   tone?: ListEmptyTone;
 };
 
@@ -31,15 +34,15 @@ export function ListEmpty({ message, action, tone = "empty" }: ListEmptyProps) {
   return (
     <p className={[styles.row, isError ? styles.error : styles.empty].join(" ")}>
       <span className={styles.message}>{message}</span>
-      {"href" in action ? (
+      {action && "href" in action ? (
         <a href={action.href} className={actionClassName}>
           {action.label}
         </a>
-      ) : (
+      ) : action ? (
         <button type="button" onClick={action.onClick} className={actionClassName}>
           {action.label}
         </button>
-      )}
+      ) : null}
     </p>
   );
 }

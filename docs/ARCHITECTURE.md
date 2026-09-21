@@ -111,6 +111,13 @@ GIN 인덱스를 포함한다** — 기존 마스터 표(`roles`·`code_items`·
 `teams`·`corp_cards`)는 이 규약이 정해지기 전에 생겨 마이그레이션 0007이
 뒤늦게 채웠다(`03-06-SUMMARY.md`).
 
+## 4-6a. 행동 로그 정리 규약(Phase 3, 03-07)
+
+관리자의 "정리"(ADMN-10)는 `action_log.pruned_at`/`pruned_by` 표시일 뿐 물리 삭제가
+아니다 — 정리 함수(`domain/action-log.pruneActionLog`)가 대상 행에 표시를 남기는 것과
+같은 호출 안에서 정리 자체를 `action_log_prune` 종류로 기록한다(정리한 사람도 감사
+대상). 정리 종류 행 자체는 다음 정리의 대상에서 항상 제외된다.
+
 ## 4-6. 문서 번호 카운터 표 규약(Phase 3 → Phase 4, 03-06)
 
 `document_counters`((counterKey, period) 복합 PK) — **이 표는 규약만 세운다.

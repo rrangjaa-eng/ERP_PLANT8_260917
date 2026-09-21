@@ -7,11 +7,14 @@ import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import {
   filterActionLog as defaultFilterActionLog,
-  pruneActionLogRows as defaultPruneActionLogRows,
+  markActionLogRowsPruned as defaultPruneActionLogRows,
   type ActionLogRow,
 } from "@/repositories/action-log";
 import { findUserById as defaultFindUserById } from "@/repositories/users";
 import { findRoleById as defaultFindRoleById } from "@/repositories/roles";
+import { ACTION_LOG_FILTER_KEYS, type ActionLogFilterKey } from "@/domain/action-log/filter-keys";
+
+export { ACTION_LOG_FILTER_KEYS, type ActionLogFilterKey };
 
 // ADMN-10·OPS-05: 행동 로그 조회·필터·정리. 기록은 03-01의 record.ts가
 // 계속 담당한다 — 두 파일로 나누어 기록 경로와 조회 경로가 서로를 오염시키지
@@ -25,11 +28,6 @@ const ACTION_LOG_MENU = "admin.action-log";
 // 정보 항목을 이 플랜이 만들지 않는다).
 const DETAIL_INFO_ITEM = "action_log.detail";
 
-// 필터 축 넷(사람·기간·행동 종류·문서) + 정리 포함 3차 토글. 화면·액션이 이
-// 상수를 쓰고 키 문자열을 각자 적지 않는다.
-export const ACTION_LOG_FILTER_KEYS = ["actorId", "from", "to", "actionType", "documentId", "includePruned"] as const;
-export type ActionLogFilterKey = (typeof ACTION_LOG_FILTER_KEYS)[number];
-
 export type ActionLogFilter = {
   actorId?: string;
   from?: Date;
@@ -38,6 +36,17 @@ export type ActionLogFilter = {
   documentId?: string;
   includePruned?: boolean;
 };
+
+// 날짜 입력(YYYY-MM-DD, 화면의 date input)을 기간 경계 Date로 바꾼다 —
+// 시작일은 그날 00:00:00.000, 종료일은 23:59:59.999(UTC, 이 리포의 다른
+// 날짜형 컬럼과 같이 타임존 없이 처리). 화면(actions.ts)과 페이지가 같은
+// 함수를 써서 경계 해석이 두 곳에서 갈라지지 않는다.
+export function parseActionLogDateBoundary(dateStr: string | undefined, edge: "start" | "end"): Date | undefined {
+  if (!dateStr) return undefined;
+  const suffix = edge === "start" ? "T00:00:00.000Z" : "T23:59:59.999Z";
+  const date = new Date(`${dateStr}${suffix}`);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
 
 // 순수 함수 — 기간 경계 판정(양끝 포함: >= 시작, <= 끝). 리포지토리의
 // gte/lte where절과 같은 계약을 DB 없이 단위 테스트로 고정한다.
@@ -195,7 +204,7 @@ export async function queryActionLog(
 
 export type PruneActionLogDeps = {
   can: typeof defaultCan;
-  pruneActionLogRows: typeof defaultPruneActionLogRows;
+  markActionLogRowsPruned: typeof defaultPruneActionLogRows;
   recordAction: typeof defaultRecordAction;
 };
 
@@ -213,7 +222,7 @@ function serializableFilter(filter: ActionLogFilter): Record<string, unknown> {
 
 // 행동 로그 메뉴 쓰기 권한 확인 → 대상 행에 정리 표시를 남긴다(물리 삭제
 // 없음) → 정리 자체를 기록한다(정리 종류로, 필터와 정리된 건수를 상세에
-// 담는다). pruneActionLogRows가 이미 정리된 행·정리 종류 행을 항상 제외해
+// 담는다). markActionLogRowsPruned가 이미 정리된 행·정리 종류 행을 항상 제외해
 // 두 번의 정리로도 첫 정리 기록이 남는다.
 export async function pruneActionLog(
   viewer: Viewer,
@@ -225,7 +234,7 @@ export async function pruneActionLog(
     throw new ForbiddenError("행동 로그 정리 권한이 없습니다.");
   }
 
-  const pruneRows = deps?.pruneActionLogRows ?? defaultPruneActionLogRows;
+  const pruneRows = deps?.markActionLogRowsPruned ?? defaultPruneActionLogRows;
   const count = await pruneRows(viewer, filter);
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;

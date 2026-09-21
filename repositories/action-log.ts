@@ -82,7 +82,7 @@ export async function filterActionLog(viewer: Viewer, filter: ActionLogFilterInp
 // (action_log_prune)은 항상 제외한다 — 정리로 추가된 행이 다음 정리의
 // 대상이 되면 두 번의 정리로 정리 흔적이 사라진다(03-RESEARCH.md가
 // 태스크화하라고 지목한 재귀적 요구). 반환값은 정리된 행 수.
-export async function pruneActionLogRows(
+export async function markActionLogRowsPruned(
   viewer: Viewer,
   filter: Omit<ActionLogFilterInput, "includePruned">,
 ): Promise<number> {

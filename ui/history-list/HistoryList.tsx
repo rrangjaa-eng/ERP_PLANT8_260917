@@ -36,6 +36,14 @@ export type HistoryListProps = {
   isLoading?: boolean;
   errorMessage?: string | null;
   onRetry?: () => void;
+  /**
+   * M-3(03-REVIEW.md): 이 화면에 HistoryList가 여러 개 동시에 렌더될 수
+   * 있다(예: 설정 화면의 이력형 키마다 하나씩). "새 이력 추가" 입력의 id를
+   * 여기서 만드므로, 호출부마다 서로 다른 값을 반드시 넘겨야 한다 — 겹치면
+   * <label htmlFor>가 문서상 첫 번째 id에 바인딩되어 엉뚱한 입력에 포커스가
+   * 간다.
+   */
+  idPrefix: string;
 };
 
 function defaultValueFor(kind: HistoryValueKind): string {
@@ -48,10 +56,12 @@ function ValueInput({
   kind,
   value,
   onChange,
+  idPrefix,
 }: {
   kind: HistoryValueKind;
   value: string;
   onChange: (next: string) => void;
+  idPrefix: string;
 }) {
   if (kind.kind === "boolean") {
     return (
@@ -86,7 +96,7 @@ function ValueInput({
   }
   return (
     <TextField
-      id="history-list-add-value"
+      id={`${idPrefix}-add-value`}
       label="값"
       type={kind.kind === "number" ? "number" : "text"}
       numeric={kind.kind === "number"}
@@ -105,6 +115,7 @@ export function HistoryList({
   isLoading = false,
   errorMessage,
   onRetry,
+  idPrefix,
 }: HistoryListProps) {
   const [adding, setAdding] = useState(false);
   const [effectiveFrom, setEffectiveFrom] = useState("");
@@ -177,14 +188,14 @@ export function HistoryList({
           }}
         >
           <TextField
-            id="history-list-effective-from"
+            id={`${idPrefix}-effective-from`}
             label="적용 시작일"
             type="date"
             value={effectiveFrom}
             onChange={(event) => setEffectiveFrom(event.target.value)}
             required
           />
-          <ValueInput kind={valueKind} value={value} onChange={setValue} />
+          <ValueInput kind={valueKind} value={value} onChange={setValue} idPrefix={idPrefix} />
           {submitError ? <p className={styles.addError}>{submitError}</p> : null}
           <div className={styles.addActions}>
             <Button type="button" variant="secondary" onClick={closeAdd}>

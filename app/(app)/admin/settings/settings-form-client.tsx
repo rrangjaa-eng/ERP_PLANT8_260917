@@ -197,6 +197,7 @@ function HistorizedFieldEditor({
       <HistoryList
         entries={entries}
         valueKind={valueKind}
+        idPrefix={`setting-history-${fieldKey}`}
         onAdd={async ({ effectiveFrom, value }) => {
           const result = await executeAdd({ key: fieldKey, effectiveFrom, value });
           const message = errorMessageOf(result ?? {});

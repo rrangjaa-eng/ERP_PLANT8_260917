@@ -52,6 +52,7 @@ export function PersonDetailClient({
       <HistoryList
         entries={entries}
         valueKind={{ kind: "enum", options: teamOptions }}
+        idPrefix={`person-team-history-${userId}`}
         onAdd={async ({ effectiveFrom, value }) => {
           const result = await executeAssign({ userId, teamId: value, effectiveFrom });
           const message = errorMessageOf(result ?? {});

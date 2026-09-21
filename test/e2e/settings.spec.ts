@@ -64,6 +64,55 @@ test.describe("설정 화면 (ADMN-05, 성공 기준 4)", () => {
     await expect(page.getByText("예정")).toBeVisible();
   });
 
+  test("서로 다른 이력형 설정의 「새 이력 추가」 폼 두 개를 동시에 열어도 id가 겹치지 않는다 (M-3)", async ({
+    page,
+  }) => {
+    const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto("/admin/settings");
+
+    // 부가세율과 기타소득 원천징수율은 둘 다 이력형 키다 — 각각의
+    // HistorizedFieldEditor가 HistoryList를 하나씩 렌더한다.
+    const vatLabel = page.getByText("부가세율", { exact: true });
+    await expect(vatLabel).toBeVisible();
+    const vatContainer = vatLabel.locator("xpath=..");
+    await vatContainer.getByRole("button", { name: "새 이력 추가" }).click();
+
+    const witaxLabel = page.getByText("기타소득 원천징수율", { exact: true });
+    await expect(witaxLabel).toBeVisible();
+    const witaxContainer = witaxLabel.locator("xpath=..");
+    await witaxContainer.getByRole("button", { name: "새 이력 추가" }).click();
+
+    const vatDateInput = vatContainer.locator('input[type="date"]');
+    const witaxDateInput = witaxContainer.locator('input[type="date"]');
+
+    const vatId = await vatDateInput.getAttribute("id");
+    const witaxId = await witaxDateInput.getAttribute("id");
+    expect(vatId).toBeTruthy();
+    expect(witaxId).toBeTruthy();
+    // M-3: id가 하드코딩되어 있었을 때는 두 입력이 같은 id
+    // ("history-list-effective-from")를 가져 여기서 실패했다.
+    expect(vatId).not.toBe(witaxId);
+
+    // 두 번째로 연 폼(기타소득 원천징수율)의 「적용 시작일」 라벨을 클릭하면
+    // 그 폼 자신의 입력창이 포커스를 받아야 한다. id가 겹치면
+    // <label htmlFor>가 문서상 먼저 나오는 첫 번째 폼(부가세율)의
+    // 입력창에 포커스를 보낸다.
+    // 「적용 시작일」이라는 글자는 추가 폼의 라벨 말고 이력 표의 열 머리글에도
+    // 있어 이름으로 찾으면 둘이 잡힌다 — 이 폼 자신의 입력을 가리키는 label을
+    // 직접 집는다. 그리고 포커스 판정은 id 문자열이 아니라 요소 동일성으로 한다:
+    // id가 겹치던 시절엔 두 id가 같아서 문자열 비교로는 결함이 통과해 버린다.
+    await witaxContainer.locator(`label[for="${witaxId}"]`).click();
+    const witaxInputFocused = await witaxDateInput.evaluate((el) => el === document.activeElement);
+    expect(witaxInputFocused).toBe(true);
+  });
+
   test("설정 메뉴 권한이 없는 기본 계급은 이 화면에서 404를 받는다", async ({ page }) => {
     const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
 

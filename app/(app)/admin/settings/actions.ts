@@ -50,8 +50,9 @@ export const cancelHistorizedSettingAction = authedActionClient
 // ADMN-06: JSON 내보내기 — 화면의 내보내기 버튼이 이 액션 결과를 클라이언트
 // 에서 Blob으로 감싸 다운로드한다(별도 라우트 핸들러 없이 Server Action
 // 반환값으로 충분하다). 가져오기는 파일 업로드가 필요해 이 페이즈의 화면
-// 범위 밖이다(domain/settings/export.ts의 importSettings·통합 테스트로만
-// 제공).
+// 범위 밖이고, 대신 명령줄로 한다 — `pnpm settings:import --file <경로>`
+// (scripts/settings-import.ts → domain/settings/export.ts의 importSettings,
+// docs/OPERATIONS.md §12).
 export const exportSettingsAction = authedActionClient.schema(z.object({})).action(async ({ ctx }) => {
   return exportSettings(ctx.viewer);
 });

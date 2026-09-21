@@ -138,4 +138,27 @@ describe("serializeActionLogExportAsCsv (Task 1 결정 A — UTF-8 BOM CSV)", ()
     expect(file.contentType).toContain("text/csv");
     expect(typeof file.body).toBe("string");
   });
+
+  // /cso F3 — CSV 수식 인젝션. csvEscape가 RFC4180 인용만 하고 앞머리 수식
+  // 문자를 중화하지 않았다. 이 파일은 BOM을 붙여 Excel 더블클릭 열기를
+  // 노리므로(위 BOM 테스트), 사용자가 정하는 이름이 대표·경영관리의 Excel에서
+  // 수식으로 평가된다. 쓰기 권한만 있으면 거래처 이름으로 심을 수 있다.
+  it.each(["=", "+", "-", "@"])("%s로 시작하는 값은 Excel이 수식으로 읽지 않게 중화된다", (lead) => {
+    const payload = `${lead}HYPERLINK("http://evil.example","승인")`;
+    const file = serializeActionLogExportAsCsv([baseRow({ actorName: payload })]);
+    const parsed = parseCsv(file.body);
+    const actorCell = parsed[1]?.[1];
+    if (actorCell === undefined) throw new Error("행위자 칸이 없습니다.");
+
+    // 셀이 수식 문자로 시작하면 안 된다 — 그게 Excel의 평가 조건이다.
+    expect(actorCell.startsWith(lead)).toBe(false);
+    // 그러면서 원래 이름은 사람이 읽을 수 있게 남아 있어야 한다(감사 기록이다).
+    expect(actorCell).toContain(payload);
+  });
+
+  it("수식 문자로 시작하지 않는 값은 그대로 둔다", () => {
+    const file = serializeActionLogExportAsCsv([baseRow({ actorName: "홍길동" })]);
+    const parsed = parseCsv(file.body);
+    expect(parsed[1]?.[1]).toBe("홍길동");
+  });
 });

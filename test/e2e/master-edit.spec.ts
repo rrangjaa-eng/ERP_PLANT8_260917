@@ -145,7 +145,17 @@ test.describe("법인카드 소유자 수정 (성공 기준 5 「수정」)", ()
     const row = page.getByRole("row", { name: new RegExp(label) });
     await expect(row).toBeVisible();
     await row.getByRole("button", { name: "삭제" }).click();
+    // 확인 줄이 열린 것을 보고 두 번째 클릭을 한다.
+    await expect(row.getByText(/보관함으로 이동합니다/)).toBeVisible();
     await row.getByRole("button", { name: "삭제" }).click();
+
+    // 보관이 끝난 것을 같은 화면에서 먼저 확인한다 — 기다리지 않고 바로
+    // 이동하면 이동이 일으킨 SELECT가 보관 UPDATE의 커밋보다 먼저 읽혀
+    // 보관 전 상태가 렌더되고, 그 행에는 「수정」 링크가 그대로 있다.
+    // 워커 2개가 erp_test 하나를 공유할 때 전체 스위트에서 실제로 졌다.
+    // 보관된 행은 목록에 남고 동작 칸만 비는 계약이라(page.tsx) 여기서
+    // 기다릴 수 있다 — archive.spec.ts가 쓰는 확인 방식과 같다.
+    await expect(row.getByText("보관됨")).toBeVisible();
 
     await page.goto("/admin/corp-cards?includeInactive=1");
     const archivedRow = page.getByRole("row", { name: new RegExp(label) });

@@ -157,6 +157,13 @@ test.describe("거래처 수정 왕복 (MAST-01 · M-5)", () => {
     await form.getByLabel("이름").fill(after);
     await page.getByRole("button", { name: "거래처 수정" }).click();
 
+    // 저장이 끝나면 수정 모드를 나간다(vendor-form.tsx의 onSuccess가
+    // router.replace로 목록으로 돌아간다) — 그것을 먼저 확인하고 이동한다.
+    // 기다리지 않고 바로 이동하면 이동이 일으킨 SELECT가 수정 UPDATE의
+    // 커밋보다 먼저 읽혀 바뀌기 전 이름이 렌더된다(워커 2개가 erp_test
+    // 하나를 공유할 때 전체 스위트에서 실제로 졌다).
+    await expect(form.getByLabel("새 계좌번호")).toHaveCount(0);
+
     await page.goto("/admin/vendors");
     await expect(page.getByText(after)).toBeVisible();
     await expect(page.getByText(before)).toHaveCount(0);

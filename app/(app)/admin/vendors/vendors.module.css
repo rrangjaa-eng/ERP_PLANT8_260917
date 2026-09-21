@@ -107,13 +107,24 @@
   display: flex;
   flex-direction: column;
   gap: var(--s-1);
-  margin: var(--s-2) 0;
+  /* §3: 폼 항목 사이 16px — TextField .row의 margin-bottom과 같은 값이다. */
+  margin: var(--s-4) 0;
 }
 
 .hint {
   font-size: var(--fs-sm);
   color: var(--muted);
   margin: 0;
+}
+
+/* PC(§6-3)는 라벨 열 96px + 간격 8px 뒤에 필드가 온다(ui/input/TextField.module.css).
+   보조 문구와 체크박스가 라벨 열에 걸치지 않게 같은 만큼 들여쓴다. 폰은 라벨이
+   입력 위에 쌓이므로 들여쓰기하지 않는다. */
+@media (min-width: 700px) {
+  .hint,
+  .clearRow {
+    margin-left: calc(var(--label-w) + var(--s-2));
+  }
 }
 
 .clearRow {

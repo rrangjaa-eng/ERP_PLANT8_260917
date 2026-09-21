@@ -23,6 +23,9 @@ import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories
 
 export class ForbiddenError extends UserFacingError {}
 
+// 보관은 사용자에게 "삭제"로 보이는 상태다 — 삭제된 것이 조용히 바뀌면 안 된다.
+export class ArchivedVendorError extends UserFacingError {}
+
 const VENDORS_MENU = "admin.vendors";
 const VENDOR_ENTITY = "vendor";
 const REVEAL_INFO_ITEM = "vendor.account_number_unmasked";
@@ -170,7 +173,11 @@ async function validatedCustomFields(
   return schema.parse(input ?? {}) as Record<string, unknown>;
 }
 
-export type VendorWriteDeps = { can: typeof defaultCan; recordAction: typeof defaultRecordAction };
+export type VendorWriteDeps = {
+  can: typeof defaultCan;
+  findVendorById: typeof repoFindVendorById;
+  recordAction: typeof defaultRecordAction;
+};
 
 export type VendorInput = {
   name: string;
@@ -283,6 +290,15 @@ export async function updateVendor(
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, VENDORS_MENU, "write"))) {
     throw new ForbiddenError("거래처 수정 권한이 없습니다.");
+  }
+
+  // 목록이 보관된 행에 「수정」 링크를 감추는 것만으로는 부족하다 —
+  // /admin/vendors?editId=<보관된 id>를 직접 열면 화면은 수정 모드로 뜨고
+  // 저장까지 됐다(DOM 감사 실측). 판정은 화면이 아니라 여기서 한다.
+  const findVendorById = deps?.findVendorById ?? repoFindVendorById;
+  const existing = await findVendorById(viewer, id);
+  if (!existing || existing.archivedAt !== null) {
+    throw new ArchivedVendorError("보관되었거나 존재하지 않는 거래처는 수정할 수 없습니다.");
   }
 
   const normalizedName = normalizeVendorName(input.name);

@@ -163,18 +163,13 @@ export function VendorForm({
 
       {isEditing ? (
         <div className={styles.accountEdit}>
-          <p className={styles.hint}>
-            {maskedCurrent ? `현재 ${maskedCurrent} · 새 번호를 입력하면 교체됩니다` : "등록된 계좌번호 없음"}
-          </p>
           {!clearAccountNumber ? (
-            <TextField
-              id="accountNumber"
-              name="accountNumber"
-              label="새 계좌번호"
-              autoComplete="off"
-              placeholder="변경하려면 입력"
-            />
+            <TextField id="accountNumber" name="accountNumber" label="새 계좌번호" autoComplete="off" />
           ) : null}
+          {/* §6-3 보조 문구는 입력 아래. §8-5 「…하면 …됩니다」류 안내문을 두지
+              않고 §8-6 명사형으로 현재 값만 보인다 — 무엇을 하면 되는지는
+              라벨 「새 계좌번호」가 이미 말한다. */}
+          <p className={styles.hint}>{maskedCurrent ? `현재 ${maskedCurrent}` : "등록된 계좌번호 없음"}</p>
           {maskedCurrent ? (
             <label className={styles.clearRow}>
               <input

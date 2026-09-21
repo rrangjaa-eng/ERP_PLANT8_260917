@@ -146,6 +146,13 @@ case "$ARGS" in
     fi
     exit 0
     ;;
+  "run jobs execute "*"seed"*)
+    if state_file fail-seed; then
+      echo "fake gcloud: seed job failed" >&2
+      exit 1
+    fi
+    exit 0
+    ;;
   "run jobs execute "*)
     exit 0
     ;;

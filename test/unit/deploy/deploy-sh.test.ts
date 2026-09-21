@@ -122,6 +122,7 @@ describe("deploy.sh — 새 프로젝트(시나리오 1)", () => {
       "run jobs deploy plant8-staging-db-bootstrap",
       "run jobs execute plant8-staging-db-bootstrap",
       "run jobs execute plant8-staging-migrate",
+      "run jobs execute plant8-staging-seed",
       "run deploy plant8-staging ",
       "run services update-traffic plant8-staging ",
       "alpha monitoring policies create",
@@ -290,6 +291,18 @@ describe("deploy.sh — 거부·실패 경로", () => {
     expect(r.stderr).toContain("migration failed");
   });
 
+  // 03: 권한표·노출표는 마이그레이션이 아니라 domain/seed에서 파생된다 —
+  // 시드가 돌지 않으면 can()이 전부 거부해 서비스가 올라가도 아무 메뉴가
+  // 안 보인다. 실패하면 그 상태로 트래픽을 받지 않도록 중단한다.
+  it("seed Job이 실패하면 seed failed로 중단하고 서비스를 배포하지 않는다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "fail-seed": "1" },
+    });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("seed failed");
+    expect(r.log).not.toMatch(/^run deploy /m);
+  });
+
   it("기존 서비스에서 health가 503이면 SmokeFailed로 exit 1하고 롤백을 한 번 시도한다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
       state: { "service-exists": true, "image-exists": true, health: "503" },
@@ -369,12 +382,12 @@ describe("deploy.sh — Job 환경 계약(시나리오 9)", () => {
     repoDir = setupRepo();
   });
 
-  it("Job 3개 모두 APP_ENV·BETTER_AUTH_URL·BETTER_AUTH_SECRET을 갖고, DB_ADMIN_PASSWORD는 db-bootstrap에만 있다", () => {
+  it("Job 4개 모두 APP_ENV·BETTER_AUTH_URL·BETTER_AUTH_SECRET을 갖고, DB_ADMIN_PASSWORD는 db-bootstrap에만 있다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
     expect(r.status).toBe(0);
 
     const deployLines = r.log.split("\n").filter((l) => l.startsWith("run jobs deploy plant8-staging-"));
-    expect(deployLines).toHaveLength(3);
+    expect(deployLines).toHaveLength(4);
     for (const line of deployLines) {
       expect(line).toContain("APP_ENV=staging");
       expect(line).toContain("BETTER_AUTH_URL=https://plant8-staging-");
@@ -400,6 +413,11 @@ describe("deploy.sh — Job 환경 계약(시나리오 9)", () => {
     expect(dbBootstrap).toContain("--args=dist/cli/db-bootstrap.mjs");
     expect(migrate).toContain("--command=node ");
     expect(migrate).toContain("--args=dist/cli/migrate-runner.mjs");
+
+    const seed = jobLine(r.log, "seed");
+    expect(seed).toContain("--command=node ");
+    expect(seed).toContain("--args=dist/cli/seed-master.mjs");
+    expect(seed).not.toContain("DB_ADMIN_PASSWORD");
   });
 });
 

@@ -1,12 +1,22 @@
 import { build } from "esbuild";
 import { readFileSync } from "node:fs";
 
-// 01-06 Cloud Run Job 3개(migrate·db-bootstrap·account)가 공유하는 CLI 번들.
+// Cloud Run Job 4개(migrate·seed·db-bootstrap·account)가 공유하는 CLI 번들.
 // next를 끌어오면 01-01·01-02 계약 위반이므로 빌드 뒤 문자열 검사로 실패시킨다.
 
-const entryPoints = ["scripts/migrate-runner.ts", "scripts/account-cli.ts", "scripts/db-bootstrap.ts"];
+const entryPoints = [
+  "scripts/migrate-runner.ts",
+  "scripts/seed-master.ts",
+  "scripts/account-cli.ts",
+  "scripts/db-bootstrap.ts",
+];
 
-const outputs = ["dist/cli/migrate-runner.mjs", "dist/cli/account-cli.mjs", "dist/cli/db-bootstrap.mjs"];
+const outputs = [
+  "dist/cli/migrate-runner.mjs",
+  "dist/cli/seed-master.mjs",
+  "dist/cli/account-cli.mjs",
+  "dist/cli/db-bootstrap.mjs",
+];
 
 async function main() {
   await build({

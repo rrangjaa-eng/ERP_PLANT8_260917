@@ -7,6 +7,7 @@ import { recordAction as defaultRecordAction } from "@/domain/action-log/record"
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { createAccount as defaultCreateAccount } from "@/domain/auth/accounts";
 import { archive as defaultArchive } from "@/domain/archive";
+import { revokeAllSessions as defaultRevokeAllSessions } from "@/domain/auth/password";
 import { findRoleById as defaultFindRoleById } from "@/repositories/roles";
 import { findTeamById as defaultFindTeamById } from "@/repositories/teams";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -218,4 +219,25 @@ export async function changePersonRole(
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "permission_change", entity: "user", entityId: userId });
+}
+
+export type ArchivePersonDeps = {
+  archive: typeof defaultArchive;
+  revokeAllSessions: typeof defaultRevokeAllSessions;
+};
+
+// 03-07: 사람 삭제는 보관 + 세션 만료 둘이다. 보관은 archive()의 사람 메뉴
+// 쓰기 권한 판정(admin.archive write)에 위임하고, 세션 만료는
+// revokeAllSessions(admin.people write)를 따른다. 보관된 사람의 로그인
+// 재차단은 domain/auth/hooks.ts의 before 훅이 담당한다(별도 조건).
+export async function archivePerson(
+  viewer: Viewer,
+  userId: string,
+  deps?: Partial<ArchivePersonDeps>,
+): Promise<void> {
+  const archive = deps?.archive ?? defaultArchive;
+  await archive(viewer, "user", userId);
+
+  const revokeAllSessions = deps?.revokeAllSessions ?? defaultRevokeAllSessions;
+  await revokeAllSessions(viewer, userId);
 }

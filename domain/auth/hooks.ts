@@ -4,6 +4,7 @@ import { CLIENT_IP_HEADER } from "@/lib/client-ip";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { countOpenFailures, recordAttempt, resolveOpenFailures } from "@/repositories/login-attempts";
 import { isLocked, lockoutConfig, windowStart, LOCKED_MESSAGE } from "@/domain/auth/lockout";
+import { findUserByEmail } from "@/repositories/users";
 
 // AUTH-01·Eng Issue 5: better-auth에는 계정 잠금이 없다(rateLimit은 IP 단위일 뿐).
 // before가 로그인 시도 전에 login_attempts를 확인해 거부하고, after가 결과를
@@ -19,6 +20,24 @@ function getBodyEmail(body: unknown): string {
   return "";
 }
 
+// 03-07: read_first의 sign-in.mjs 315-335행 — better-auth 1.7.5 핸들러가
+// 사용자 부재 경로에서 쓰는 오류 구성의 거울(mirror)이다. 정본은
+// @better-auth/core(직접 의존성 아님 — pnpm 엄격 해석에서 import 불가,
+// node_modules/.pnpm/@better-auth+core@1.7.5*/node_modules/@better-auth/core/
+// dist/error/codes.mjs 11행이 실물)이고, `auth.$ERROR_CODES`는 lib/auth.ts가
+// 이 파일을 import해 순환이 된다. 문구가 어긋나면 test/integration/
+// archive.test.ts의 깊은 비교(better-auth의 실제 잘못된 비밀번호 응답과
+// 대조)가 잡는다.
+const INVALID_EMAIL_OR_PASSWORD = { code: "INVALID_EMAIL_OR_PASSWORD", message: "Invalid email or password" };
+
+function getBodyPassword(body: unknown): string {
+  if (body !== null && typeof body === "object" && "password" in body) {
+    const value = (body as { password?: unknown }).password;
+    if (typeof value === "string") return value;
+  }
+  return "";
+}
+
 export const before = createAuthMiddleware(async (ctx) => {
   if (ctx.path !== "/sign-in/email") return;
 
@@ -30,6 +49,17 @@ export const before = createAuthMiddleware(async (ctx) => {
   }
 
   const email = getBodyEmail(ctx.body);
+
+  // ADMN-12(03-07): 보관된 사용자의 로그인을 거부한다. 사용자 존재 여부와
+  // 무관하게 동일하게 동작한다는 10행 원칙을 상태·본문·응답 시간 셋에서
+  // 지킨다 — 거부 직전에 핸들러의 사용자 부재 경로와 같은 더미 해시를
+  // 수행해 해시 비교 전에 짧게 끊는 시간 측면 채널을 막는다.
+  const user = await findUserByEmail(SYSTEM_VIEWER, email);
+  if (user?.archivedAt) {
+    await ctx.context.password.hash(getBodyPassword(ctx.body));
+    throw APIError.from("UNAUTHORIZED", INVALID_EMAIL_OR_PASSWORD);
+  }
+
   const { threshold, windowMinutes } = await lockoutConfig();
   const count = await countOpenFailures(SYSTEM_VIEWER, email, windowStart(new Date(), windowMinutes));
   if (isLocked(count, threshold)) {

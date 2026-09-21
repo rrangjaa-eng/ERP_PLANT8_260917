@@ -1,7 +1,13 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
-import { ARCHIVABLE_TABLES } from "@/repositories/archive";
+import { project, type DtoSpec } from "@/domain/permissions/project";
+import { registerDto } from "@/domain/permissions/dto-registry";
+import {
+  ARCHIVABLE_TABLES,
+  listArchivedAcrossEntities as defaultListArchivedAcrossEntities,
+  type ArchivedItem,
+} from "@/repositories/archive";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 
 // ADMN-12: "지우지 않는다" — archived_at/archived_by 규약의 유일한 진입점.
@@ -76,4 +82,53 @@ export async function restore(
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "restore", entity, entityId: id });
+}
+
+// 03-07: 보관함 화면의 domain 진입점 — 새 정보 항목("archive.value")으로
+// 게이트한다(기존 정보 항목은 각 마스터 표 전용이라 여러 표를 섞은 목록에
+// 맞는 항목이 없었다 — Rule 2, 누락된 핵심 배선).
+const ARCHIVE_INFO_ITEM = "archive.value";
+
+export type ArchiveEntryDto = {
+  entity: string;
+  label: string;
+  id: string;
+  name: string;
+  archivedAt: Date;
+  archivedBy: string | null;
+};
+
+export const ARCHIVE_ENTRY_DTO_SPEC: DtoSpec<ArchivedItem, ArchiveEntryDto> = {
+  fields: [
+    { key: "entity", from: "entity", infoItem: ARCHIVE_INFO_ITEM },
+    { key: "label", from: "label", infoItem: ARCHIVE_INFO_ITEM },
+    { key: "id", from: "id", infoItem: ARCHIVE_INFO_ITEM },
+    { key: "name", from: "name", infoItem: ARCHIVE_INFO_ITEM },
+    { key: "archivedAt", from: "archivedAt", infoItem: ARCHIVE_INFO_ITEM },
+    { key: "archivedBy", from: "archivedBy", infoItem: ARCHIVE_INFO_ITEM },
+  ],
+};
+
+registerDto({
+  name: "ArchiveEntryDto",
+  fields: ARCHIVE_ENTRY_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
+});
+
+export type ListArchiveDeps = {
+  can: typeof defaultCan;
+  listArchivedAcrossEntities: typeof defaultListArchivedAcrossEntities;
+};
+
+// 보관함 메뉴 보기 권한 확인 → 여러 표를 훑는 조회(repositories/archive의
+// ARCHIVABLE_TABLES 순회) → 투영. 새 표 목록을 이 함수가 만들지 않는다 —
+// 정본은 ARCHIVABLE_TABLES 하나다.
+export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps>): Promise<ArchiveEntryDto[]> {
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, ARCHIVE_MENU, "view"))) {
+    throw new ForbiddenError("보관함 열람 권한이 없습니다.");
+  }
+
+  const listFn = deps?.listArchivedAcrossEntities ?? defaultListArchivedAcrossEntities;
+  const rows = await listFn(viewer);
+  return Promise.all(rows.map((row) => project(viewer, row, ARCHIVE_ENTRY_DTO_SPEC))) as Promise<ArchiveEntryDto[]>;
 }

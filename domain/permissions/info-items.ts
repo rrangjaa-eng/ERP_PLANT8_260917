@@ -34,4 +34,8 @@ export const INFO_ITEMS: InfoItemDef[] = [
   // 없지만, 마스킹 해제(평문)는 위의 vendor.account_number_unmasked가
   // 전담한다.
   { key: "vendor.value", label: "거래처 정보", staffDefault: true },
+  // ADMN-12(03-07): 보관함 목록 항목 — 여러 마스터 표를 섞어 보여주는
+  // 화면이라 특정 표 전용 항목(예: vendor.value)으로는 게이트할 수 없다.
+  // 관리자 전용 화면이라 기본값은 거짓(새 기능 정보는 기본 숨김).
+  { key: "archive.value", label: "보관함 정보", staffDefault: false },
 ];

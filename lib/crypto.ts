@@ -13,6 +13,12 @@ import { env } from "@/lib/env";
 const ALGO = "aes-256-gcm";
 const IV_LENGTH = 12; // GCM 권장 길이
 
+// aes-256-gcm 키 길이(바이트). scripts/deploy.sh가 app-data-key-v1을 최초
+// 생성할 때 이 값과 일치하는 seed byte 수로 openssl rand를 호출해야 한다 —
+// 어긋나면 keyFor()가 매번 InvalidEncryptionKeyLengthError로 막는다
+// (test/unit/deploy/app-data-key-length.test.ts가 두 소스를 대조한다).
+export const APP_DATA_KEY_BYTES = 32;
+
 type KeyVersion = "v1" | "v2";
 const KNOWN_VERSIONS: readonly KeyVersion[] = ["v1", "v2"];
 
@@ -37,7 +43,7 @@ function keyFor(version: KeyVersion): Buffer {
     throw new MissingEncryptionKeyError(`암호화 키가 설정되지 않았습니다: APP_DATA_KEY_${version}`);
   }
   const key = Buffer.from(raw, "base64");
-  if (key.length !== 32) {
+  if (key.length !== APP_DATA_KEY_BYTES) {
     throw new InvalidEncryptionKeyLengthError(
       `APP_DATA_KEY_${version}의 길이가 올바르지 않습니다 — base64로 인코딩된 32바이트여야 합니다.`,
     );

@@ -206,3 +206,16 @@ JSON 구조화 로그(`severity`·`message`·`event`·필드), Cloud Logging에�
 `x-forwarded-for`를 직접 읽지 않는다(위조 방지, Eng Issue 1). Phase 2~3에서 로드밸런서를
 앞에 두면 `lib/client-ip.ts` 한 곳만 "마지막에서 두 번째"로 바꾼다. `login_attempts`·
 `rate_limits` 행 정리는 Phase 7 tick에 붙인다.
+
+## 12. 설정 가져오기 (ADMN-06)
+
+내보내기는 화면(관리자 > 설정)에서 JSON 다운로드로 하지만, 가져오기는 파일 업로드
+화면이 없다 — `db:rotate-key`와 같은 결로 로컬 전용 CLI 하나뿐이다: `pnpm
+settings:import --file <내보낸 JSON 경로>`. Cloud Run Job이 아니다(migrate·seed·
+account·db-bootstrap 넷만 자동 프로비저닝 단계라 Job으로 존재한다) — `.env.local`에
+대상 환경 `DATABASE_URL`을 맞춘 로컬에서 운영자가 손으로 돌린다.
+
+`importSettings`는 파일의 모든 키를 먼저 검증하고 하나라도 스키마를 만족하지 않으면
+**아무것도 쓰지 않는다**(단일 트랜잭션). 부분적으로만 유효한 파일을 넣으면 CLI가 실패한
+항목을 한 줄씩 나열하고 종료 코드 1로 끝난다 — 상태는 가져오기 전 그대로다. 파일이
+없거나 JSON이 아니거나 `settings` 필드가 없으면 사용법 오류(종료 코드 2)다.

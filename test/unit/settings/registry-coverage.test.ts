@@ -96,6 +96,20 @@ describe("등록됐지만 읽히지 않는 설정 키 검출 (ADMN-05)", () => {
     expect(Array.isArray(readByDefs)).toBe(true);
   });
 
+  // readBy 표시는 "미래 페이즈가 읽을 것"이라는 약속이다. 그 페이즈가 실제로
+  // 읽기 시작하면 약속은 이행됐고 표시는 거짓이 된다. 남겨 두면 면제가 영구화되어
+  // ADMN-05의 미사용 키 검출이 시간이 갈수록 무력해진다 — 면제는 쌓이기만 하고
+  // 줄지 않는다. 이미 읽히는 키의 표시를 실패로 잡아 면제가 스스로 청소되게 한다.
+  it("readBy 표시가 남은 키는 아직 settings 밖에서 읽히지 않는다(표시 만료 강제)", () => {
+    const stale = readByDefs
+      .filter((def) => isReferencedOutsideSettings(def.name))
+      .map((def) => `${def.name}(phase ${def.readByPhase})`);
+    expect(
+      stale,
+      `이미 읽히고 있으므로 readBy 표시를 지워야 한다: ${stale.join(", ")}`,
+    ).toEqual([]);
+  });
+
   it.each(readByDefs.map((def) => [def.name, def.readByPhase] as const))(
     "%s의 readBy 페이즈 %s가 ROADMAP.md에 실재한다",
     (_name, phase) => {

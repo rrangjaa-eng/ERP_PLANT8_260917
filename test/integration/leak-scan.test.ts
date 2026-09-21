@@ -28,6 +28,8 @@ import "@/app/(app)/admin/corp-cards/actions.registry";
 import "@/app/(app)/admin/vendors/actions.registry";
 import "@/app/(app)/admin/action-log/actions.registry";
 import "@/app/(app)/admin/archive/actions.registry";
+import "@/app/(app)/admin/permissions/actions.registry";
+import "@/app/(app)/admin/visibility/actions.registry";
 
 // D-38: 이 페이즈의 정본 예외 목록은 이 하나뿐이다(03-04가 이 이름으로
 // 등록한다) — dtoName이 null인 내보내기는 사람 단위 정보 항목이 없는
@@ -83,8 +85,11 @@ describe("정보 노출 누수 스캔 (ADMN-03)", () => {
     expect(DTO_REGISTRY.length).toBeGreaterThan(0);
   });
 
-  it("내보내기 레지스트리는 배열이다(이 플랜 시점엔 0개가 정상 — 03-04·03-07이 채운다)", () => {
-    expect(Array.isArray(EXPORT_REGISTRY)).toBe(true);
+  // 03-04(설정)·03-07(행동 로그)이 실제로 채웠으므로 "0개가 정상"이던 시기는
+  // 끝났다. 배열 타입만 보면 내보내기 등록이 통째로 사라져도 초록불이 된다 —
+  // 액션·DTO 축과 같이 하한을 건다.
+  it("내보내기 레지스트리가 비어 있지 않다 — 0건 초록은 이 검사의 존재 이유를 무력화한다", () => {
+    expect(EXPORT_REGISTRY.length).toBeGreaterThanOrEqual(2);
   });
 
   it("dtoName이 null인 내보내기 항목은 전부 NULL_DTO_EXEMPT_EXPORTS 목록에 있다(검토되지 않은 우회 방지)", () => {
@@ -134,10 +139,9 @@ describe("정보 노출 누수 스캔 (ADMN-03)", () => {
   });
 
   describe("내보내기 축 — 메뉴가 등록되어 있고, DTO가 있으면 그 필드가 전부 노출표에 매핑되어 있다", () => {
-    // it.each가 빈 배열이면(이 플랜 시점의 정상 상태) 자식 스위트에 테스트가
-    // 0개가 되어 vitest가 "No test found in suite"로 스위트 자체를 실패시킨다
-    // — 이 항상-존재하는 테스트가 그 상태를 막는다. 03-04·03-07이 내보내기를
-    // 등록하면 아래 it.each가 실제 케이스를 추가로 만든다.
+    // it.each가 빈 배열이면 자식 스위트에 테스트가 0개가 되어 vitest가
+    // "No test found in suite"로 스위트 자체를 실패시킨다 — 이 항상-존재하는
+    // 테스트가 그 상태를 막는다. 실제 케이스 유무는 위의 하한 단언이 지킨다.
     it("EXPORT_REGISTRY 배열 자체는 항상 검사 대상이다(0건이어도 스위트가 죽지 않는다)", () => {
       expect(Array.isArray(buildExportCases())).toBe(true);
     });

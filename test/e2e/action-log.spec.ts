@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { test, expect } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 
@@ -43,6 +44,15 @@ test.describe("행동 로그 화면 (ADMN-10, OPS-05)", () => {
     await page.getByRole("button", { name: "Excel 내보내기" }).click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(/^action-log-.*\.csv$/);
+
+    // defect 1(DOM 감사): 문자열 수준이 아니라 실제 다운로드된 파일의 첫
+    // 3바이트로 검증한다 — Server Action 응답이 React Flight의 TextDecoder를
+    // 거치며 문자열 속 BOM이 조용히 사라지는 문제라, JS 문자열 검사로는
+    // 이 결함이 재현되지 않는다(파일 바이트만 증명한다).
+    const downloadPath = await download.path();
+    if (!downloadPath) throw new Error("다운로드 경로를 가져오지 못했습니다.");
+    const bytes = await readFile(downloadPath);
+    expect(bytes.subarray(0, 3).toString("hex")).toBe("efbbbf");
 
     // 정리 — 두 단계 제출. 첫 클릭이 확인 줄을 열고, 확인 문구가 정리 기록이
     // 남는다는 사실을 명시한다.

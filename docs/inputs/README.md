@@ -10,7 +10,7 @@
 | 파일 | 페이즈 | 미정 |
 |---|---|---|
 | `phase-03-masters.md` | Phase 3 권한·설정·마스터 | 5 |
-| `phase-04-project-quote.md` | Phase 4 프로젝트·견적 원장 | 0 (요구사항 보강 후보 1건) |
+| `phase-04-project-quote.md` | Phase 4 프로젝트·견적 원장 | 0 (보강 후보 1건 반영 완료 2026-09-21) |
 | `phase-05-approval.md` | Phase 5 지출결의·결재·연차 | 1 |
 | `phase-06-payment.md` | Phase 6 지급·증빙·법인카드·구매 요청 | 2 |
 | `phase-07-schedule-notify.md` | Phase 7 공휴일·지급일·마감·알림 | 2 |
@@ -64,6 +64,6 @@ Phase 8(데이터 이전)·10(팀 손익·목표)·11(확인증)은 이번 범�
 | 7-B | 회사 Google SMTP 주소·인증 방식·일 한도 | 사용자 (Workspace 관리자) | 회사 GCP 확보 시점 |
 | 9-A | 본부 책임자의 드릴다운·계산식 열람 여부 (확인 권장) | 사용자 | Phase 9 계획 |
 
-## 계획에 반영해야 할 것 1건
+## 계획에 반영해야 할 것 — 없음 (2026-09-21 반영 완료)
 
-`phase-04-project-quote.md` §1 — **수주중·미수주 프로젝트 상태 추가 + PNL-07 용어 변경**. 현재 `.planning/REQUIREMENTS.md`(PROJ-04·EXP-08·PNL-07)와 `ROADMAP.md`(Phase 4)에 없는 결정이다. 사용자가 반영 여부를 판정해야 한다.
+`phase-04-project-quote.md` §1의 **수주중·미수주 프로젝트 상태 추가 + PNL-07 용어 변경**을 사용자가 「전부 반영」으로 판정했다(Phase 4 discuss-phase). `.planning/REQUIREMENTS.md`의 PROJ-04·EXP-08·PNL-07과 `ROADMAP.md` Phase 4 기준 4가 그에 맞게 고쳐졌다. 근거와 따라온 결정 셋은 `.planning/phases/04-project-quotation-ledger/04-CONTEXT.md` D-41~D-44에 있다.

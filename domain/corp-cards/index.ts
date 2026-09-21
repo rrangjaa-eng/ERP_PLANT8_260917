@@ -125,14 +125,18 @@ export async function updateCorpCardOwner(
   owner: { holderUserId?: string | null; teamId?: string | null },
   deps?: Partial<CorpCardWriteDeps>,
 ): Promise<void> {
-  cardOwnerKind(owner);
+  const kind = cardOwnerKind(owner);
 
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, CARDS_MENU, "write"))) {
     throw new ForbiddenError("법인카드 소유자 변경 권한이 없습니다.");
   }
 
+  // kind도 같은 UPDATE에서 함께 옮긴다(생성 경로와 대칭). 빼먹으면 소유자만
+  // 바뀌고 종류가 예전 값으로 남아, 화면이 kind로 개인/팀을 갈라 그리는 탓에
+  // 종류 "개인" · 소유 "—"인 행이 된다.
   await repoUpdateCorpCardOwner(viewer, id, {
+    kind,
     holderUserId: owner.holderUserId ?? null,
     teamId: owner.teamId ?? null,
   });

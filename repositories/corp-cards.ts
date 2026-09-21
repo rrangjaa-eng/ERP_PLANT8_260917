@@ -60,11 +60,16 @@ export async function insertCorpCard(
 export async function updateCorpCardOwner(
   viewer: Viewer,
   id: string,
-  owner: { holderUserId: string | null; teamId: string | null },
+  owner: { kind: CorpCardRow["kind"]; holderUserId: string | null; teamId: string | null },
 ): Promise<void> {
   await db
     .update(corpCards)
-    .set({ holderUserId: owner.holderUserId, teamId: owner.teamId, updatedAt: new Date() })
+    .set({
+      kind: owner.kind,
+      holderUserId: owner.holderUserId,
+      teamId: owner.teamId,
+      updatedAt: new Date(),
+    })
     .where(eq(corpCards.id, id));
 }
 

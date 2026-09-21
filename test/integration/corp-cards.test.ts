@@ -137,6 +137,9 @@ describe("corp-cards (MAST-03, 실제 Postgres)", () => {
     const updated = list.find((c) => c.id === dto.id);
     expect(updated?.teamId).toBe(teamId);
     expect(updated?.holderUserId).toBeNull();
+    // kind도 같이 옮겨가야 한다 — 화면이 kind로 개인/팀을 갈라 그리므로
+    // 여기가 'personal'로 남으면 종류 "개인" · 소유 "—"로 표시된다.
+    expect(updated?.kind).toBe("team");
   });
 
   it("전체 카드 번호 컬럼이 존재하지 않는다", () => {

@@ -55,7 +55,74 @@ DB 세션 발급(30일 sliding, `updateAge` 1일 — 쿠키 연장은 `app/sessi
 - 클라이언트 IP는 `x-forwarded-for`의 **마지막** 항목 하나만 신뢰 — `proxy.ts`가
   `x-client-ip`로 고정하고 훅·better-auth는 그 헤더만 읽는다. 헤더 없으면 500(fail-closed)
 - 계급은 Phase 1엔 `users.is_admin` 하나. `password_is_temporary`가 임시 비밀번호 배너를
-  띄운다(강제 변경 없음, D-08). Phase 3가 계급 5종·권한표로 교체
+  띄운다(강제 변경 없음, D-08). Phase 3가 계급 5종·권한표로 교체(`users.is_admin`은
+  드롭하지 않고 남긴다 — Squawk `ban-drop-column`, 03-01-DECISION-TASK1.md ③)
+
+## 4-1. 권한 판정 4함수(Phase 3)
+
+`can(viewer, menu, action)`·`visible(viewer, item)`·`scopeFor(viewer, entity)`가
+유일한 판정 지점이고 서로 독립이다(`can`↔`visible` 완전 독립, D-35) —
+`project(viewer, row, dto)`(위 §2)가 행 객체를 DTO로 투영해 domain 밖으로 내보내는
+유일한 출구다. `scopeFor`는 Drizzle SQL 조각이 아니라 서술자(`{ rows, includeArchived }`)를
+돌려준다 — `boundaries/element-types`가 domain에서 `db` 계층 import를 금지하므로 표
+컬럼을 참조할 수 없다(리포지토리가 서술자를 where절로 번역한다). 보관함
+(`archived_at`/`archived_by`)과 `custom_fields` JSONB는 마스터 표에만 둔다(`roles`·
+`code_items` 등) — 판정 표(`permission_matrix`·`visibility_matrix`)와 로그 표
+(`action_log`)는 대상이 아니다(판정 표는 체크박스 값이라 보관 대상이 아니고 로그는
+append-only다).
+
+## 4-2. 설정 레지스트리 조회 계약(Phase 3 → Phase 4)
+
+`getSettingValue(def, opts?)`(`domain/settings/registry.ts`) — 키 문자열이 아니라
+레지스트리 **정의 객체**를 받아 반환 타입을 추론한다. `opts.asOf?: Date`는 이력형 키에서만
+쓰이고(`effective_from <= asOf` 중 최댓값, 경계 포함) 비이력형은 무시한다. **어느 날짜를
+넘길지는 호출자의 책임**이다 — Phase 4의 `domain/money`가 원천징수·회사대납은 지급일,
+부가세는 증빙일을 결정해 `asOf`로 넘긴다. 값도 기본값도 없으면 예외(fail-closed).
+
+## 4-3. 시점 소속 조회 계약(Phase 3 → Phase 5·10)
+
+`teamAtDate(viewer, userId, date, deps?)`(`domain/org/index.ts`) — 발령일이 `date` 이하인
+발령 이력 중 가장 늦은 것의 팀 Dto를 돌려준다. 해당 이력이 없으면(발령 이력이 아예 없거나
+전부 `date`보다 뒤) **`null`을 돌려준다** — 임의의 기본 팀으로 떨어지지 않으며 호출자가 그
+`null`을 처리해야 한다. Phase 5의 비용 귀속·Phase 10의 팀 직접 관리비가 사용일을 `date`로
+넘겨 이 함수를 그대로 쓴다.
+
+## 4-4. 앱단 암호화 계약(Phase 3, 03-06)
+
+`lib/crypto.ts`의 `encrypt`/`decrypt` — 저장 형식은 `v1:<iv>:<tag>:<ciphertext>`
+(콜론 구분, 뒤 세 조각은 각각 base64, AES-256-GCM). 키는 `APP_DATA_KEY_v1`/
+`APP_DATA_KEY_v2`(base64 32바이트, Secret Manager). **키가 없거나 길이가
+틀리면 암호화·복호화가 즉시 예외(fail-closed)** — 평문 저장이나 빈 값 통과로
+떨어지지 않는다. 키 회전은 새 버전 키를 추가하고 옛 키를 남긴 채
+`scripts/rotate-key.ts`로 재암호화한다(`pnpm db:rotate-key`) — 복호화는
+접두어의 버전으로 키를 골라 v1·v2가 동시에 있어도 둘 다 복호화된다. 마스킹
+표시용 뒤 4자리는 암호문과 별도 평문 컬럼에 함께 저장한다(목록이 복호화
+없이 그려지고, 복호화 호출 자체가 "마스킹 해제"라는 의미를 갖는다).
+
+## 4-5. 커스텀 필드 규약(Phase 3, 03-06)
+
+마스터 표의 `custom_fields` jsonb 컬럼은 `field_definitions` 표((entity, key)
+복합 unique)가 정의한 키·타입만 담는다. 서버 액션이 저장 전
+`domain/custom-fields/build-schema.ts`의 `buildCustomFieldsSchema(defs)`로
+zod 스키마를 조립해 검증한다(`.strict()` — 등록되지 않은 키 거부). **필드
+타입 변경은 금지** — 리포지토리 갱신 함수가 `type` 컬럼을 대상으로 받지
+않는다(타입을 바꾸려면 새 필드를 만든다). **이후 새 표는 생성 마이그레이션에
+GIN 인덱스를 포함한다** — 기존 마스터 표(`roles`·`code_items`·`org_units`·
+`teams`·`corp_cards`)는 이 규약이 정해지기 전에 생겨 마이그레이션 0007이
+뒤늦게 채웠다(`03-06-SUMMARY.md`).
+
+## 4-6a. 행동 로그 정리 규약(Phase 3, 03-07)
+
+관리자의 "정리"(ADMN-10)는 `action_log.pruned_at`/`pruned_by` 표시일 뿐 물리 삭제가
+아니다 — 정리 함수(`domain/action-log.pruneActionLog`)가 대상 행에 표시를 남기는 것과
+같은 호출 안에서 정리 자체를 `action_log_prune` 종류로 기록한다(정리한 사람도 감사
+대상). 정리 종류 행 자체는 다음 정리의 대상에서 항상 제외된다.
+
+## 4-6. 문서 번호 카운터 표 규약(Phase 3 → Phase 4, 03-06)
+
+`document_counters`((counterKey, period) 복합 PK) — **이 표는 규약만 세운다.
+실제 번호 부여(원자적 증가)와 행 잠금은 Phase 4다.** `repositories/
+document-counters.ts`는 읽기와 upsert만 두고 증가 함수를 두지 않는다.
 
 ## 5. DB·마이그레이션
 
@@ -107,8 +174,9 @@ domain 모듈 = 단위, 새 액션·DTO = 통합(+Phase 3부터 누수 생성), 
 | `CLOUD_SQL_CONNECTION_NAME`·`DB_IAM_USER`·`DB_NAME`·`DB_POOL_MAX` | Cloud SQL 커넥터(IAM) | 배포 워크플로 변수 |
 | `BETTER_AUTH_SECRET`·`BETTER_AUTH_URL` | 세션 서명·Origin 검사(비로컬 필수) | Secret Manager / 서비스 URL |
 | `AUTH_PROVIDER`·`GOOGLE_CLIENT_ID`·`GOOGLE_CLIENT_SECRET` | 로그인 방식 전환 | 환경 변수 |
-| `LOCKOUT_THRESHOLD`·`LOCKOUT_WINDOW_MINUTES`·`RATE_LIMIT_LOGIN_MAX` | 잠금·속도 제한 | 기본값(env로 조정) |
-| `APP_DATA_KEY_v1` | 암호화 키 자리(Phase 3부터 사용) | Secret Manager |
+| `LOCKOUT_THRESHOLD`·`LOCKOUT_WINDOW_MINUTES` | 잠금 | Phase 3부터 설정 레지스트리 키(`auth.lockout.*`)의 기본값 출처로만 남는다 |
+| `RATE_LIMIT_LOGIN_MAX` | 속도 제한 | 부팅 시 1회(`lib/auth.ts` better-auth 설정) — 레지스트리 밖, 런타임 변경 불가 |
+| `APP_DATA_KEY_v1`·`APP_DATA_KEY_v2` | 암호화 키(Phase 3부터 사용, v2는 회전용 두 번째 버전) | Secret Manager |
 | `SMTP_HOST`·`SMTP_USER`·`SMTP_PASSWORD`·`SMTP_FROM` | 이메일(Phase 1은 정의만) | Secret Manager |
 | `GCP_PROJECT_ID`·`CLOUD_SQL_INSTANCE_ID` | 상태 화면의 GCP 조회 | 배포 워크플로 변수 |
 | `APP_GIT_SHA`·`APP_DEPLOYED_AT` | 상태 화면 배포 버전 표시 | deploy.sh가 주입 |
@@ -119,7 +187,9 @@ domain 모듈 = 단위, 새 액션·DTO = 통합(+Phase 3부터 누수 생성), 
 
 - **Phase 2:** 임시 화면(로그인·내 계정·상태) 전부를 `docs/design/SYSTEM.md` 기준으로 교체
 - **Phase 3:** `can`/`visible`/`scopeFor(viewer)` + DTO 투영 + 누수 스캔 생성기, 설정
-  레지스트리, 암호화 헬퍼(`APP_DATA_KEY_v1` 사용 시작), 행동 로그 표, 계급 5종
+  레지스트리, 암호화 헬퍼(`APP_DATA_KEY_v1` 사용 시작), 행동 로그 표, 계급 5종.
+  03-01이 트레이서(판정 4함수 + 행동 로그 + 보관함 + 코드표 화면 1개)로 착수 —
+  나머지 여섯 플랜은 이 경로 위의 확장
 - **Phase 4:** `domain/money`·`domain/rules.gate` 실제 구현(현재는 린트 규칙 자리만),
   프로젝트·견적 원장, 통화·리저브 대장
 - **Phase 7:** 이메일 발송 활성화(SMTP 4개 변수 실사용), 알림 tick(현재 경보는

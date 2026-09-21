@@ -24,11 +24,14 @@ export type MoreSheetProps = {
   /** 하단 탭에 없는 1차 메뉴 — BottomTabs.tsx가 계산해 넘긴다. */
   moreMenu: MenuLink[];
   accountGroup: AccountEntry[];
-  systemStatus: MenuLink | null;
+  /** roleMenu(viewer).adminMenu — 허용된 admin.* 메뉴 전부. SYSTEM.md §6-8·§7-8이
+   * 말하는 "관리자용 「더보기」 시트"는 이 목록이 하나 이상일 때의 이 시트다
+   * (D-17 일반화, 네비게이션 공백 수정 2026-09-21). */
+  adminMenu: MenuLink[];
   triggerRef: React.RefObject<HTMLButtonElement | null>;
 };
 
-export function MoreSheet({ open, onClose, moreMenu, accountGroup, systemStatus, triggerRef }: MoreSheetProps) {
+export function MoreSheet({ open, onClose, moreMenu, accountGroup, adminMenu, triggerRef }: MoreSheetProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const firstItemRef = useRef<HTMLAnchorElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
@@ -65,7 +68,7 @@ export function MoreSheet({ open, onClose, moreMenu, accountGroup, systemStatus,
   // WR-06: 성공했을 때만 시트를 닫는다(TopBar와 같은 계약).
   const { logout, error: logoutError } = useLogout(() => dialogRef.current?.close());
 
-  const firstRowHref = moreMenu[0]?.href ?? systemStatus?.href;
+  const firstRowHref = moreMenu[0]?.href ?? adminMenu[0]?.href;
 
   return (
     <dialog
@@ -114,16 +117,23 @@ export function MoreSheet({ open, onClose, moreMenu, accountGroup, systemStatus,
             </a>
           </li>
         ))}
-        {systemStatus ? (
-          <li>
-            <a
-              href={systemStatus.href}
-              className={styles.link}
-              ref={systemStatus.href === firstRowHref ? firstItemRef : undefined}
-            >
-              {systemStatus.label}
-            </a>
-          </li>
+        {adminMenu.length > 0 ? (
+          <>
+            <li className={styles.group} role="presentation">
+              관리자
+            </li>
+            {adminMenu.map((item) => (
+              <li key={item.href}>
+                <a
+                  href={item.href}
+                  className={styles.link}
+                  ref={item.href === firstRowHref ? firstItemRef : undefined}
+                >
+                  {item.label}
+                </a>
+              </li>
+            ))}
+          </>
         ) : null}
         <li className={styles.group} role="presentation">
           계정

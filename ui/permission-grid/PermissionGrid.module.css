@@ -1,0 +1,195 @@
+/* SYSTEM.md §7-13 체크박스 매트릭스(권한표·정보 노출표) — §7-3(엑셀식 표)과
+   분리된 별개 컴포넌트다(D-40). 다행 편집·범위 복사·오류 셀 inset 선 같은
+   §7-3의 기계장치는 없다. 색·서체·radius는 tokens.css 변수만 쓴다(D-20).
+   간격 리터럴은 허용된다(02-02 결정). */
+
+/* §7-13: 「열이 많아지면 가로 스크롤 · 항목 수가 늘면 세로 스크롤도 함께
+   필요」 — 두 sticky(top·left)가 .wrap을 컨테이닝 블록으로 쓰므로, .wrap
+   자신이 실제로 스크롤하는 컨테이너여야 한다. overflow-x: auto만 있고 높이
+   제약이 없으면 .wrap은 절대 세로로 넘치지 않아(scrollHeight ===
+   clientHeight) sticky가 계산상으로만 존재하고 아무 효과가 없다 — 대신
+   문서가 스크롤되며 머리글이 함께 밀려난다(결함 실측: -356px). max-height +
+   overflow: auto로 .wrap 자체를 세로 스크롤 컨테이너로 만든다. overflow-x를
+   overflow-y와 분리해 한쪽만 auto로 둘 수 없다(CSS 스펙상 auto/visible을
+   섞으면 둘 다 auto로 계산된다) — 어차피 같은 값이라 축약형으로 합친다.
+   vh 치수 리터럴은 MoreSheet.module.css(max-height: 85vh)의 선례를 따른다
+   — 간격·치수 리터럴은 02-02 결정으로 허용되고, 색·서체·radius만 토큰
+   강제 대상이다(D-20). 70vh는 상단 바 + 화면 제목이 항상 보이게 하면서
+   격자에 충분한 세로 공간을 남긴다. */
+.wrap {
+  overflow: auto;
+  max-height: 70vh;
+}
+
+/* 시각적으로 숨긴 <caption> — 스크린리더만 읽는다. */
+.caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.table th,
+.table td {
+  border-bottom: var(--line-w) solid var(--line);
+}
+
+/* 열 머리글 — 위 sticky. §7-3의 "편집 가능한 표" 신호(--g-100 바탕 +
+   --g-950 글자)를 물려받는다 — 체크박스 격자도 값을 바꾸는 컨트롤이다. */
+.colHeader,
+.groupHeader {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  background: var(--g-100);
+  color: var(--g-950);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.groupHeader {
+  border-left: var(--line-w) solid var(--line);
+  /* 고정 높이 — 2단 머리글이 실제로 스크롤 컨테이너 안에서 고정되면(위
+   * .wrap 수정) 그룹 행과 열 머리글 행이 둘 다 top: 0으로 각자 sticky를
+   * 걸어 서로 겹친다(회귀 테스트로 실측: 31.6875px 어긋남). 이 행의 높이를
+   * 고정해 아래 열 머리글 행의 top 오프셋 값을 결정론적으로 만든다.
+   * --s-8(32px)은 이 파일의 .cellLabel 32×32와 같은 값을 재사용한 것이다. */
+  height: var(--s-8);
+}
+
+.colHeaderLabel {
+  display: block;
+  margin-top: var(--s-1);
+}
+
+.headerCheckbox {
+  accent-color: var(--native-accent);
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+}
+
+/* 행 머리글(계급) — 왼쪽 sticky + 오른쪽 강한 구분선. */
+.rowHeader {
+  position: sticky;
+  left: 0;
+  z-index: var(--z-sticky);
+  background: var(--g-100);
+  color: var(--g-950);
+  border-right: var(--line-w-strong) solid var(--line-strong);
+  text-align: left;
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+/* 좌상단 모서리 — 두 sticky가 겹치는 자리. --g-100으로 채워 스크롤 시
+   배경이 끊기지 않게 한다. */
+.corner {
+  position: sticky;
+  left: 0;
+  top: 0;
+  z-index: calc(var(--z-sticky) + 1);
+  background: var(--g-100);
+  color: var(--g-950);
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-align: left;
+}
+
+/* 그룹 머리글 행이 있으면(2단, 권한표) 열 머리글 행은 그 아래로 내려앉아야
+ * 스크롤로 둘 다 고정됐을 때 겹치지 않는다. thead 행이 두 개일 때만 이
+ * 규칙이 걸린다(:last-child이면서 :first-child가 아님) — 그룹 없는 단일 행
+ * 머리글(정보 노출표)은 이 선택자에 걸리지 않고 위 top: 0을 그대로 쓴다.
+ * .colHeader/.corner는 이 컴포넌트 전용 해시 클래스라 다른 표(§7-3 등)의
+ * thead/tr 요소에는 영향을 주지 않는다. */
+.table thead tr:last-child:not(:first-child) .colHeader,
+.table thead tr:last-child:not(:first-child) .corner {
+  top: var(--s-8);
+}
+
+.table td {
+  text-align: center;
+  padding: 0;
+}
+
+/* 터치 목표: PC 32×32 · 폰 44×44 — 셀 전체가 클릭 가능하도록 label이
+   칸을 채운다. */
+.cellLabel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 0 auto;
+  cursor: pointer;
+}
+
+.cellLabel input {
+  accent-color: var(--native-accent);
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+  cursor: pointer;
+}
+
+.delayed {
+  background: var(--surface);
+}
+
+.errorCell {
+  box-shadow: inset 0 0 0 1px var(--danger);
+}
+
+.mobileSelectLabel {
+  display: block;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  margin-bottom: var(--s-3);
+}
+
+.mobileSelect {
+  display: block;
+  width: 100%;
+  height: var(--control-h);
+  border: var(--line-w) solid var(--line-ui);
+  background: var(--bg);
+  padding: 0 var(--s-2);
+  font-size: var(--fs-base);
+  margin-top: var(--s-1);
+}
+
+.mobileCheckbox {
+  accent-color: var(--native-accent);
+  width: 44px;
+  height: 44px;
+  cursor: pointer;
+}
+
+/* 폰(<700px): 격자를 숨기고 select + KvList로 축을 접는다(§7-13). 표시
+   여부는 CSS 미디어 쿼리로만 가른다. */
+@media (max-width: 699.98px) {
+  .desktopOnly {
+    display: none;
+  }
+}
+
+@media (min-width: 700px) {
+  .mobileOnly {
+    display: none;
+  }
+}

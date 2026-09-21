@@ -169,13 +169,13 @@ describe("deploy.yml", () => {
 describe("account.yml", () => {
   const account = readWorkflow("account.yml");
 
-  it("workflow_dispatch inputs env/action/email/name/admin이 있다", () => {
+  it("workflow_dispatch inputs env/action/email/name/role이 있다(D-36 이후 role, admin 아님)", () => {
     expect(account).toContain("workflow_dispatch:");
     expect(account).toContain("env:");
     expect(account).toContain("action:");
     expect(account).toContain("email:");
     expect(account).toContain("name:");
-    expect(account).toContain("admin:");
+    expect(account).toContain("role:");
   });
 
   it("permissions에 id-token: write와 contents: read가 있다", () => {

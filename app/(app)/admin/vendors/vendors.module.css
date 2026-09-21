@@ -1,0 +1,158 @@
+/* SYSTEM.md §6-1 목록 · §6-3 폼 템플릿(D-39). 색·서체·radius는 tokens.css
+   변수만 쓴다(D-20). 간격 리터럴은 허용된다(02-02 결정). */
+
+.filterRow {
+  display: flex;
+  justify-content: flex-end;
+  /* 이 줄에 「숨김 포함/제외」와 「거래처 등록」 두 링크가 함께 있다 — gap이
+     없으면 code-tables에서 실측된 결함(두 이름이 붙어 보임)이 되풀이된다. */
+  gap: var(--s-4);
+  margin: var(--s-3) 0;
+}
+
+.toggle {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: var(--underline-offset);
+}
+
+/* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. */
+@media (max-width: 699.98px) {
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+    padding: 0 var(--s-2);
+  }
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  text-align: left;
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+  white-space: nowrap;
+}
+
+.table td {
+  min-height: var(--row-min);
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  font-size: var(--fs-base);
+  border-bottom: var(--line-w) solid var(--line);
+}
+
+.table tbody tr:hover td {
+  background: var(--surface);
+}
+
+/* §2-4: 계좌번호 마스킹 표시는 고정 자릿수라 넘침이 없다 — 숫자 칸은
+   우측 정렬 + tabular-nums로 자릿수가 흔들리지 않고 nowrap으로 줄바꿈되지
+   않는다. */
+.accountCell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-2);
+  white-space: nowrap;
+}
+
+.masked {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.revealError {
+  font-size: var(--fs-sm);
+  color: var(--danger);
+  margin-top: var(--s-1);
+}
+
+.duplicateNotice {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  margin: var(--s-2) 0;
+}
+
+.selectLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  margin: var(--s-2) 0;
+}
+
+.select {
+  height: var(--control-h);
+  border: var(--line-w) solid var(--line-ui);
+  background: var(--bg);
+  padding: 0 var(--s-2);
+  font-size: var(--fs-base);
+}
+
+/* 03-06-후속: 거래처 수정 폼의 계좌번호 영역. §7-2 "서버 계산 값은 입력
+   바로 아래 한 줄" 규칙과 같은 자리 배치 — 현재 값(마스킹)을 힌트로,
+   입력은 새 값 전용이다. */
+.accountEdit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  /* §3: 폼 항목 사이 16px — TextField .row의 margin-bottom과 같은 값이다. */
+  margin: var(--s-4) 0;
+}
+
+.hint {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  margin: 0;
+}
+
+/* PC(§6-3)는 라벨 열 96px + 간격 8px 뒤에 필드가 온다(ui/input/TextField.module.css).
+   보조 문구와 체크박스가 라벨 열에 걸치지 않게 같은 만큼 들여쓴다. 폰은 라벨이
+   입력 위에 쌓이므로 들여쓰기하지 않는다. */
+@media (min-width: 700px) {
+  .hint,
+  .clearRow {
+    margin-left: calc(var(--label-w) + var(--s-2));
+  }
+}
+
+.clearRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--fs-base);
+}
+
+.clearRow input {
+  accent-color: var(--native-accent);
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+}
+
+.formActions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+/* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. */
+@media (max-width: 699.98px) {
+  .clearRow input {
+    width: var(--touch-min);
+    height: var(--touch-min);
+  }
+}

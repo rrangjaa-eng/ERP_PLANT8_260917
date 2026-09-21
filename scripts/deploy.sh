@@ -275,7 +275,7 @@ _ensure_secret() {
 ensure_secrets() {
   STAGE=ensure_secrets
   _ensure_secret better-auth-secret 48
-  _ensure_secret app-data-key-v1 48
+  _ensure_secret app-data-key-v1 32
   _ensure_secret smtp-host sentinel
   _ensure_secret smtp-user sentinel
   _ensure_secret smtp-password sentinel
@@ -334,6 +334,16 @@ deploy_jobs() {
     --set-env-vars="${common_env},MAX_INSTANCES=${MAX_INSTANCES},DB_POOL_MAX=${DB_POOL_MAX}" \
     --set-secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest"
 
+  # 03: 권한표·노출표·코드표·설정 기본값은 마이그레이션 SQL이 아니라
+  # domain/seed가 MENUS·INFO_ITEMS 레지스트리에서 파생한다(정본을 둘로 쪼개지
+  # 않으려고). 그래서 마이그레이션만으로는 permission_matrix가 비어 can()이
+  # 전부 거부한다 — 배포마다 시드를 돌린다(멱등).
+  run gcloud run jobs deploy "$(job_name "$ENV" seed)" \
+    "${job_common[@]}" \
+    --command=node --args=dist/cli/seed-master.mjs \
+    --set-env-vars="$common_env" \
+    --set-secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest"
+
   # account Job만 스크립트 경로를 --command 둘째 항목에 둔다 — account.yml의
   # `execute --args=<action>,...`가 배포 시 args를 대체하기 때문(Eng OV-1).
   run gcloud run jobs deploy "$(job_name "$ENV" account)" \
@@ -372,6 +382,17 @@ run_migrate() {
       run gcloud logging read "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"$(job_name "$ENV" migrate)\" AND severity>=ERROR" \
         --project="$PROJECT" --freshness=10m --limit=20 --format='value(textPayload, jsonPayload.message)' >&2 || true
     fi
+    exit 1
+  fi
+}
+
+# 시드가 실패하면 권한표가 빈 채로 트래픽을 받게 되므로 서비스 배포 전에 멈춘다.
+run_seed() {
+  STAGE=run_seed
+  if ! run gcloud run jobs execute "$(job_name "$ENV" seed)" --region="$REGION" --project="$PROJECT" --wait; then
+    echo "seed failed" >&2
+    run gcloud logging read "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"$(job_name "$ENV" seed)\" AND severity>=ERROR" \
+      --project="$PROJECT" --freshness=10m --limit=20 --format='value(textPayload, jsonPayload.message)' >&2 || true
     exit 1
   fi
 }
@@ -644,6 +665,7 @@ main() {
   deploy_jobs
   run_db_bootstrap
   run_migrate
+  run_seed
   deploy_service
   ensure_alerts
   smoke

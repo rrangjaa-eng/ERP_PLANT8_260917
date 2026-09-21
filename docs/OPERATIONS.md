@@ -69,7 +69,9 @@ better-auth의 Origin 검사에 걸려 403이 난다 — 북마크·안내는 �
 
 `scripts/dev-db.sh`가 Docker 있으면 컨테이너, 없으면(클라우드 세션) apt로 Postgres 16을
 설치해 127.0.0.1:5432에 `erp`·`erp_test` DB를 준비한다. `.env.local`에 로컬 값을 두고
-`pnpm db:dev && pnpm db:migrate && pnpm dev` 순서로 띄운다.
+`pnpm db:dev && pnpm db:migrate && pnpm db:seed && pnpm dev` 순서로 띄운다(Phase 3부터:
+`db:seed`가 계급·권한표·정보 노출표·프로젝트 상태 코드표를 멱등하게 채운다 —
+빠뜨리면 권한표가 빈 상태라 모든 메뉴 판정이 거부된다).
 
 **D-01(로드맵 기준 1의 "로컬 개발은 Auth Proxy" 문구 대체):** 로컬은 `dev-db.sh`의
 Docker/apt Postgres이지 Cloud SQL **Auth Proxy**가 아니다 — Cloud SQL은 프라이빗 IP뿐이라
@@ -132,10 +134,10 @@ GitHub Environments·승인 버튼은 없다(D-05, 무료 플랜 비공개 저�
 
 ## 7. 계정 운영
 
-로컬 3종 CLI: `pnpm account:create --email … --name … [--admin]` / `pnpm account:reset
---email …` / `pnpm account:unlock --email …`. 운영에서는 같은 컨테이너 이미지의 Cloud Run
-Job `plant8-{env}-**account**`를 GitHub Actions `account.yml`로 실행한다(입력: env·action·
-email·name·admin).
+로컬 3종 CLI: `pnpm account:create --email … --name … [--role <계급 식별자>]` / `pnpm
+account:reset --email …` / `pnpm account:unlock --email …`. 운영에서는 같은 컨테이너
+이미지의 Cloud Run Job `plant8-{env}-**account**`를 GitHub Actions `account.yml`로
+실행한다(입력: env·action·email·name·role).
 
 임시 비밀번호는 워크플로 로그와 Cloud Logging에 한 번 남으므로 전달받는 즉시 변경을
 안내한다(D-13). 워크플로가 로그를 최대 2분(10초 간격 12회) 재조회하므로, 출력이 바로
@@ -163,6 +165,33 @@ WIF 풀·프로바이더, 서비스 계정 3개(배포자 + 환경별 런타임 
 때 `deploy.sh`가 재설정하지 않으므로, 그때는 `gcloud sql users set-password postgres`를
 손으로 맞춘다.
 
+**`app-data-key-v1`은 base64로 인코딩된 정확히 32바이트여야 한다**(`lib/crypto.ts`
+`APP_DATA_KEY_BYTES`, aes-256-gcm 키 길이 — 길이가 다르면 `keyFor()`가 쓰기 전에
+즉시 예외를 던진다). `_ensure_secret`은 ENABLED 버전이 이미 있으면 새로 만들지
+않으므로, 이 계약이 생기기 전(03-06 이전)에 배포된 환경은 `deploy.sh`를 다시 돌려도
+고쳐지지 않는다 — 실제로 01-07·01-08에서 만든 `app-data-key-v1-staging`·
+`app-data-key-v1-prod`가 옛 코드(`openssl rand -base64 48`, 48바이트)로 생성돼 이
+상태다. 다만 길이가 틀린 키로는 `encrypt()`/`decrypt()`가 애초에 실행되지 않으므로
+(fail-closed), 이 48바이트 버전으로 실제 암호화에 성공한 데이터는 존재할 수 없다 —
+새 버전을 추가해도 잃을 데이터가 없다. 고치는 법(추가만 하고 옛 버전은 지우지
+않는다):
+
+```bash
+openssl rand -base64 32 | gcloud secrets versions add app-data-key-v1-staging --project="$PROJECT" --data-file=-
+openssl rand -base64 32 | gcloud secrets versions add app-data-key-v1-prod    --project="$PROJECT" --data-file=-
+```
+
+새 버전이 최신(`latest`)이 되고 앱은 `--set-secrets=...:latest`로 그 버전만 읽으므로
+다음 리비전 배포부터 바로 적용된다. 옛 48바이트 버전을 지우지 않아도 무해하다 —
+아무 데이터도 그 키로 암호화되지 않았고, `_ensure_secret`은 ENABLED 버전이 하나라도
+있으면 건드리지 않는다.
+
+**키 회전 절차(03-06):** `app-data-key-v2-{env}` 시크릿을 새로 만들고 두 키(v1·v2)를
+함께 둔 상태에서 `pnpm db:rotate-key`를 돌린다 — 옛 버전 암호문을 복호화해 새 버전으로
+다시 쓴다(중단·재실행 안전, 이미 최신 버전인 행은 건너뛴다). **회전 완료 후에만** 옛
+키(`app-data-key-v1-{env}`)를 지운다 — 먼저 지우면 아직 재암호화되지 않은 행이 영구히
+읽히지 않는다.
+
 ## 10. 상태 화면
 
 `/admin/system-status`(관리자 전용, 직원은 404) — 배포 버전(git SHA + 배포 시각), DB
@@ -177,3 +206,16 @@ JSON 구조화 로그(`severity`·`message`·`event`·필드), Cloud Logging에�
 `x-forwarded-for`를 직접 읽지 않는다(위조 방지, Eng Issue 1). Phase 2~3에서 로드밸런서를
 앞에 두면 `lib/client-ip.ts` 한 곳만 "마지막에서 두 번째"로 바꾼다. `login_attempts`·
 `rate_limits` 행 정리는 Phase 7 tick에 붙인다.
+
+## 12. 설정 가져오기 (ADMN-06)
+
+내보내기는 화면(관리자 > 설정)에서 JSON 다운로드로 하지만, 가져오기는 파일 업로드
+화면이 없다 — `db:rotate-key`와 같은 결로 로컬 전용 CLI 하나뿐이다: `pnpm
+settings:import --file <내보낸 JSON 경로>`. Cloud Run Job이 아니다(migrate·seed·
+account·db-bootstrap 넷만 자동 프로비저닝 단계라 Job으로 존재한다) — `.env.local`에
+대상 환경 `DATABASE_URL`을 맞춘 로컬에서 운영자가 손으로 돌린다.
+
+`importSettings`는 파일의 모든 키를 먼저 검증하고 하나라도 스키마를 만족하지 않으면
+**아무것도 쓰지 않는다**(단일 트랜잭션). 부분적으로만 유효한 파일을 넣으면 CLI가 실패한
+항목을 한 줄씩 나열하고 종료 코드 1로 끝난다 — 상태는 가져오기 전 그대로다. 파일이
+없거나 JSON이 아니거나 `settings` 필드가 없으면 사용법 오류(종료 코드 2)다.

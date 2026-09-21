@@ -1,0 +1,193 @@
+import type { Viewer } from "@/domain/viewer";
+import { SEED_ROLES, SYSADMIN_ROLE_ID, DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { MENUS, PERMISSION_ACTIONS } from "@/domain/permissions/menus";
+import { INFO_ITEMS } from "@/domain/permissions/info-items";
+import { SETTING_DEFS } from "@/domain/settings/keys";
+import { seedRole } from "@/repositories/roles";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { seedCodeItem } from "@/repositories/code-tables";
+import { seedSimpleValue, seedHistorizedValue } from "@/repositories/settings";
+import { seedOrgUnit, findOrgUnitByName } from "@/repositories/org-units";
+import { seedTeam } from "@/repositories/teams";
+
+// 이력형 키의 시드 기본 행은 항상 과거인 고정 날짜를 쓴다 — 시드 직후부터
+// 유효값이 즉시 성립해(오늘 기준 effective_from <= asOf) 03-UI-SPEC.md가
+// 보장하는 "설정 화면에 EMPTY 상태가 발생하지 않는다"가 실제로 성립한다.
+const SEED_HISTORIZED_EFFECTIVE_FROM = "2000-01-01";
+
+// 프로젝트 상태 코드표 시드(ROADMAP MAST-04) — 기획·진행·보류·완료·취소.
+const PROJECT_STATUS_CODES = [
+  { value: "planning", label: "기획", sortOrder: 0 },
+  { value: "in_progress", label: "진행", sortOrder: 1 },
+  { value: "on_hold", label: "보류", sortOrder: 2 },
+  { value: "done", label: "완료", sortOrder: 3 },
+  { value: "cancelled", label: "취소", sortOrder: 4 },
+];
+
+// EXP-15·MAST-01: 증빙 종류 코드표 시드 — REQUIREMENTS.md가 열거한 일곱 종류와
+// 각 항목의 세금 규칙 기본값(judgment — 03-06-SUMMARY.md 「실행자가 판단한 것」
+// 참고. ROADMAP·EXP-15는 규칙 종류 네 값의 존재만 지정했고 일곱 종류 각각에
+// 어느 값을 기본으로 둘지는 지정하지 않았다). 관리자가 화면(Task 3)에서 언제든
+// 바꿀 수 있다 — 시드는 출발점일 뿐 정본이 아니다.
+const EVIDENCE_TYPE_CODES: {
+  value: string;
+  label: string;
+  sortOrder: number;
+  taxRule: Record<string, unknown>;
+}[] = [
+  {
+    value: "tax_invoice",
+    label: "세금계산서",
+    sortOrder: 0,
+    taxRule: {
+      ruleKind: "vat_surcharge",
+      roundingUnit: 1,
+      roundingMethod: "round",
+      minWithholdingAmount: 0,
+      basisDate: "evidence_date",
+    },
+  },
+  { value: "invoice", label: "계산서", sortOrder: 1, taxRule: { ruleKind: "none" } },
+  { value: "card_receipt", label: "카드 전표", sortOrder: 2, taxRule: { ruleKind: "none" } },
+  { value: "cash_receipt", label: "현금영수증", sortOrder: 3, taxRule: { ruleKind: "none" } },
+  {
+    value: "other_income",
+    label: "기타소득",
+    sortOrder: 4,
+    taxRule: {
+      ruleKind: "withholding",
+      roundingUnit: 10,
+      roundingMethod: "round",
+      minWithholdingAmount: 125000,
+      basisDate: "payment_date",
+    },
+  },
+  {
+    value: "business_income",
+    label: "사업소득",
+    sortOrder: 5,
+    taxRule: {
+      ruleKind: "withholding",
+      roundingUnit: 10,
+      roundingMethod: "round",
+      minWithholdingAmount: 0,
+      basisDate: "payment_date",
+    },
+  },
+  { value: "overseas_invoice", label: "해외 인보이스", sortOrder: 6, taxRule: { ruleKind: "none" } },
+];
+
+// MAST-02: 본부·팀 최소 시드 — PROJECT.md가 실명으로 쓰는 두 본부(기획본부·
+// 경영관리본부), 각 본부에 팀 하나. 임의의 이름을 만들지 않는다. 멱등이다.
+const ORG_SEED: { orgUnit: { name: string; sortOrder: number }; team: { name: string; sortOrder: number } }[] = [
+  { orgUnit: { name: "기획본부", sortOrder: 0 }, team: { name: "기획1팀", sortOrder: 0 } },
+  { orgUnit: { name: "경영관리본부", sortOrder: 1 }, team: { name: "경영관리팀", sortOrder: 0 } },
+];
+
+export type SeedResult = {
+  roles: number;
+  permissions: number;
+  visibility: number;
+  codeItems: number;
+  settings: number;
+  orgUnits: number;
+  teams: number;
+};
+
+// 이 모듈은 권한 판정을 거치지 않는 유일한 경로다 — 부트스트랩 시점에는 판정할
+// 권한표가 아직 없다. 허용된 호출자는 scripts/seed-master.ts·통합 테스트
+// setup·test/e2e/global-setup.ts 뿐이다 — 화면 계층의 어떤 파일도 이 모듈을
+// import하지 않는다(검증: Task 2 <verify> BOOTSTRAP LEAK 스캔).
+//
+// 두 번 호출해도 결과 상태가 같다(멱등) — ①은 onConflictDoNothing, ②·③은
+// onConflictDoUpdate(같은 값으로 갱신), ④는 onConflictDoNothing.
+export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
+  let rolesCount = 0;
+  for (const role of SEED_ROLES) {
+    const inserted = await seedRole(viewer, {
+      id: role.id,
+      name: role.name,
+      isSeed: role.isSeed,
+      sortOrder: role.sortOrder,
+    });
+    if (inserted) rolesCount++;
+  }
+
+  let permissionsCount = 0;
+  for (const menu of MENUS) {
+    for (const action of PERMISSION_ACTIONS) {
+      await upsertPermission(viewer, {
+        roleId: SYSADMIN_ROLE_ID,
+        menu: menu.key,
+        action,
+        allowed: true,
+        updatedBy: null,
+      });
+      permissionsCount++;
+    }
+  }
+
+  let visibilityCount = 0;
+  for (const item of INFO_ITEMS) {
+    await upsertVisibility(viewer, {
+      roleId: SYSADMIN_ROLE_ID,
+      infoItem: item.key,
+      visible: true,
+      updatedBy: null,
+    });
+    await upsertVisibility(viewer, {
+      roleId: DEFAULT_ROLE_ID,
+      infoItem: item.key,
+      visible: item.staffDefault,
+      updatedBy: null,
+    });
+    visibilityCount += 2;
+  }
+
+  let codeItemsCount = 0;
+  for (const code of PROJECT_STATUS_CODES) {
+    const inserted = await seedCodeItem(viewer, { tableKey: "project_status", ...code });
+    if (inserted) codeItemsCount++;
+  }
+  for (const code of EVIDENCE_TYPE_CODES) {
+    const inserted = await seedCodeItem(viewer, { tableKey: "evidence_type", ...code });
+    if (inserted) codeItemsCount++;
+  }
+
+  let orgUnitsCount = 0;
+  let teamsCount = 0;
+  for (const entry of ORG_SEED) {
+    const insertedOrgUnit = await seedOrgUnit(viewer, entry.orgUnit);
+    if (insertedOrgUnit) orgUnitsCount++;
+
+    const orgUnit = await findOrgUnitByName(viewer, entry.orgUnit.name);
+    if (!orgUnit) continue;
+    const insertedTeam = await seedTeam(viewer, { orgUnitId: orgUnit.id, ...entry.team });
+    if (insertedTeam) teamsCount++;
+  }
+
+  // ADMN-05: 등록된 키 중 default가 있는 것을 시드한다(onConflictDoNothing
+  // — 이미 저장된 값을 덮어쓰지 않는다). Phase 1의 로그인 잠금 키가 이미
+  // 여기 등록돼 있어 설정 화면의 키 0개 상태가 성립하지 않는다.
+  let settingsCount = 0;
+  for (const def of SETTING_DEFS) {
+    if (def.default === undefined) continue;
+    if (def.kind === "historized") {
+      const inserted = await seedHistorizedValue(viewer, def.key, SEED_HISTORIZED_EFFECTIVE_FROM, def.default);
+      if (inserted) settingsCount++;
+    } else {
+      const inserted = await seedSimpleValue(viewer, def.key, def.default);
+      if (inserted) settingsCount++;
+    }
+  }
+
+  return {
+    roles: rolesCount,
+    permissions: permissionsCount,
+    visibility: visibilityCount,
+    codeItems: codeItemsCount,
+    settings: settingsCount,
+    orgUnits: orgUnitsCount,
+    teams: teamsCount,
+  };
+}

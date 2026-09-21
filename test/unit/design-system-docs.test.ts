@@ -28,14 +28,14 @@ function section(doc: string, startHeading: string, endHeading: string): string 
 const FIVE_STATES = ["LOADING", "EMPTY", "ERROR", "SUCCESS", "PARTIAL"];
 
 describe("docs/design/SYSTEM.md — 신설 절 5개 (§6-7·§6-8·§6-9·§7-11·§7-12)", () => {
-  it.each(["### 6-7", "### 6-8", "### 6-9", "### 7-11", "### 7-12"])(
+  it.each(["### 6-7", "### 6-8", "### 6-9", "### 7-11", "### 7-12", "### 7-13", "### 7-14"])(
     "머리글 '%s'를 포함한다",
     (heading) => {
       expect(SYSTEM).toContain(heading);
     },
   );
 
-  it.each(["시스템 상태", "세션 만료", "권한 없음", "배너", "알림함"])(
+  it.each(["시스템 상태", "세션 만료", "권한 없음", "배너", "알림함", "체크박스", "중간 상태"])(
     "핵심 계약 낱말 '%s'를 포함한다",
     (word) => {
       expect(SYSTEM).toContain(word);
@@ -47,7 +47,9 @@ describe("docs/design/SYSTEM.md — 신설 절 5개 (§6-7·§6-8·§6-9·§7-11
     ["6-8 시스템 상태 화면", "### 6-8", "### 6-9"],
     ["6-9 오류 페이지", "### 6-9", "## 7. 컴포넌트 규칙"],
     ["7-11 배너", "### 7-11", "### 7-12"],
-    ["7-12 알림함·배지", "### 7-12", "## 8. 카피 규칙"],
+    ["7-12 알림함·배지", "### 7-12", "### 7-13"],
+    ["7-13 체크박스 매트릭스", "### 7-13", "### 7-14"],
+    ["7-14 이력 목록", "### 7-14", "## 8. 카피 규칙"],
   ];
 
   it.each(sectionBounds)("'%s' 절이 다섯 상태를 전부 명시한다", (_name, start, end) => {
@@ -79,9 +81,23 @@ describe("docs/design/SYSTEM.md — §6-0 보강 (구간 단위 검증)", () => 
     expect(shell).toContain("시스템 상태");
   });
 
-  it("폰 하단 탭 역할 표에 관리자·직원 행이 있다", () => {
-    expect(shell).toContain("관리자");
-    expect(shell).toContain("직원");
+  it.each(["대표", "본부 책임자", "팀장", "기획 PM", "시스템 관리자"])(
+    "폰 하단 탭 역할 표에 계급 '%s' 행이 있다",
+    (role) => {
+      expect(shell).toContain(role);
+    },
+  );
+
+  it("폰 하단 탭 역할 표가 계급 5종 각각 탭 4개(계급 열 포함 5칸 이상)를 담는다", () => {
+    const lines = shell
+      .split("\n")
+      .filter((l) => l.trim().startsWith("|") && !l.includes("---") && l.includes("더보기"));
+    expect(lines.length).toBe(5);
+    for (const line of lines) {
+      const cells = line.split("|").filter((c) => c.trim() !== "");
+      // | 계급 | 탭1 | 탭2 | 탭3 | 탭4 | = 5칸
+      expect(cells.length).toBeGreaterThanOrEqual(5);
+    }
   });
 });
 

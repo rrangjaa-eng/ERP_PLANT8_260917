@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import { requireSession } from "@/lib/viewer";
 import { roleMenu } from "@/ui/shell/role-menu";
 import { Shell } from "@/ui/shell/Shell";
+import { can } from "@/domain/permissions/can";
+import { MENUS } from "@/domain/permissions/menus";
 
 // 인증 화면 공통 셸 삽입 지점(D-23). 로그인 화면(app/(auth)/login)은 이 라우트
 // 그룹 밖이라 셸에 감싸이지 않는다(§6-7 — 셸 없는 유일한 화면). 루트 레이아웃이
@@ -11,14 +13,25 @@ import { Shell } from "@/ui/shell/Shell";
 // 세션이 반드시 필요하다 — 미인증이면 /login으로 보낸다(각 페이지의 자체 인증
 // 검사는 그대로 둔다. 예: app/(app)/admin/system-status/page.tsx의 접근 제어
 // 세 줄은 이 레이아웃과 무관하게 손대지 않는다).
+//
+// D-36(03-02): roleMenu는 domain을 import할 수 없으므로(ui 경계) 메뉴별 보기
+// 판정을 여기서 미리 계산해 계산된 데이터(allowedMenus)로 넘긴다. MENUS 수만큼
+// can() 호출이 생기지만 전부 같은 계급의 권한표 행을 읽는다 — 사용자 10~30명
+// 사내 시스템이라 개별 호출을 최적화하지 않는다(03-02-PLAN.md ⑤).
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const { viewer, user } = await requireSession();
-  const menu = roleMenu(viewer);
+
+  const visibleMenus = await Promise.all(
+    MENUS.map(async (menu) => ((await can(viewer, menu.key, "view")) ? menu.key : null)),
+  );
+  const allowedMenus = visibleMenus.filter((key): key is string => key !== null);
+
+  const menu = roleMenu({ roleId: viewer.roleId ?? "", allowedMenus });
 
   return (
     <Shell
       topBarMenu={menu.topBarMenu}
-      systemStatus={menu.systemStatus}
+      adminMenu={menu.adminMenu}
       accountGroup={menu.accountGroup}
       bottomTabs={menu.bottomTabs}
       userName={user.name}

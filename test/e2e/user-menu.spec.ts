@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
+import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 
 // WR-02·WR-03(02-REVIEW.md) — 사용자 메뉴가 role="menu"/"menuitem"으로 노출되는데
 // 키보드·해제 동작이 그 약속을 지키지 않는다.
@@ -11,7 +12,7 @@ import { createFixtureUser } from "./fixtures";
 const USER_NAME = "E2E Admin"; // 관리자여야 시스템 상태까지 3항목이 된다
 
 async function loginAndOpenMenu(page: Page): Promise<void> {
-  const user = await createFixtureUser({ isAdmin: true });
+  const user = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
   await page.goto("/login");
   await page.getByLabel("이메일").fill(user.email);
   await page.getByLabel("비밀번호").fill(user.password);

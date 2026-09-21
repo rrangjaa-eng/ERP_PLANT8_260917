@@ -34,8 +34,7 @@ describe("계정 잠금 (login_attempts)", () => {
     const email = uniqueEmail("lockout-a");
     const { tempPassword } = await createAccount(SYSTEM_VIEWER, {
       email,
-      name: "Lockout A",
-      isAdmin: false,
+      name: "Lockout A"
     });
     const ip = "198.51.100.1";
 
@@ -52,6 +51,9 @@ describe("계정 잠금 (login_attempts)", () => {
     const afterWindowExpired = await signIn(email, tempPassword, ip);
     expect(afterWindowExpired.status).toBe(200);
 
+    // 15는 시드 기본값(auth.lockout.window_minutes, 03-04)에 의존한다 — 이
+    // 값이 env.LOCKOUT_WINDOW_MINUTES와 같아 이 리터럴은 이 플랜이 옮기지
+    // 않는다.
     const openCount = await countOpenFailures(SYSTEM_VIEWER, email, windowStart(new Date(), 15));
     expect(openCount).toBe(0);
   });
@@ -60,8 +62,7 @@ describe("계정 잠금 (login_attempts)", () => {
     const email = uniqueEmail("lockout-b");
     const { tempPassword } = await createAccount(SYSTEM_VIEWER, {
       email,
-      name: "Lockout B",
-      isAdmin: false,
+      name: "Lockout B"
     });
     const ip = "198.51.100.2";
 
@@ -102,7 +103,7 @@ describe("계정 잠금 (login_attempts)", () => {
 
   it("D: 5회째 실패에 auth.lockout 이벤트가 정확히 1회, ip는 보낸 x-client-ip와 같다", async () => {
     const email = uniqueEmail("lockout-d");
-    await createAccount(SYSTEM_VIEWER, { email, name: "Lockout D", isAdmin: false });
+    await createAccount(SYSTEM_VIEWER, { email, name: "Lockout D" });
     const ip = "198.51.100.4";
 
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);

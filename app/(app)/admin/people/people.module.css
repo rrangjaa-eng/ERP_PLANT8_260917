@@ -1,0 +1,133 @@
+/* SYSTEM.md §6-1 목록 · §6-3 폼 템플릿(D-39). 색·서체·radius는 tokens.css
+   변수만 쓴다(D-20). 간격 리터럴은 허용된다(02-02 결정). */
+
+/* vendors.module.css·corp-cards.module.css와 같은 결 — 목록 머리글의 등록
+   행동 한 줄(§6-1, 2026-09-21 이후). */
+.filterRow {
+  display: flex;
+  justify-content: flex-end;
+  /* 조직 화면은 이 줄에 링크가 둘이다(본부 추가·팀 추가) — gap이 없으면 두
+     이름이 한 덩어리로 붙어 읽힌다(코드표에서 같은 일이 있었다). */
+  gap: var(--s-4);
+  margin: var(--s-3) 0;
+}
+
+.toggle {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: var(--underline-offset);
+}
+
+/* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. */
+@media (max-width: 699.98px) {
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+    padding: 0 var(--s-2);
+  }
+}
+
+.formActions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  text-align: left;
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+  white-space: nowrap;
+}
+
+.table td {
+  min-height: var(--row-min);
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  font-size: var(--fs-base);
+  border-bottom: var(--line-w) solid var(--line);
+}
+
+.table tbody tr:hover td {
+  background: var(--surface);
+}
+
+/* §7-1 3차 버튼 — 위 .toggle과 같은 모양이다. 기본 규칙이 통째로 빠져 있어
+   브라우저 기본 파랑(#0000EE) 14px 400으로 렌더됐다(design-review A-H4):
+   관리자 화면 전체에서 팔레트 밖 색은 이 링크 하나뿐이었다(§11 「새 색 0개」). */
+.detailLink {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: var(--underline-offset);
+}
+
+/* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44 — "상세"는 글자 2개짜리
+   짧은 링크라 히트 영역만 패딩으로 키운다(PC는 대상 밖). */
+@media (max-width: 699.98px) {
+  .detailLink {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+}
+
+.selectLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  margin: var(--s-2) 0;
+}
+
+.select {
+  width: 100%;
+  height: var(--control-h);
+  border: var(--line-w) solid var(--line-ui);
+  background: var(--bg);
+  padding: 0 var(--s-2);
+  font-size: var(--fs-base);
+}
+
+.registeredPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-4);
+  background: var(--surface);
+  border: var(--line-w) solid var(--line-ui);
+}
+
+.registeredLabel {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.tempPassword {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  user-select: all;
+}
+
+.registeredHint {
+  font-size: var(--fs-sm);
+  color: var(--danger);
+}

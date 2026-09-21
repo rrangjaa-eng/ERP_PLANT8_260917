@@ -1,40 +1,60 @@
 import { pathToFileURL } from "node:url";
 import { createAccount, resetPassword, unlockAccount } from "@/domain/auth/accounts";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { SEED_ROLES, DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { findRoleById as defaultFindRoleById } from "@/repositories/roles";
 import { closeDb } from "@/db/client";
 
 // D-11: 계정 발급 수단은 CLI 하나(로컬 tsx, 01-06 Cloud Run Job 번들 공용).
 // 인자 규약은 하나뿐 — 플래그와 값은 항상 별개 argv 원소(`--email a@b.c`).
-// account.yml이 `--args=<action>,--email,<v>[,--name,<v>][,--admin]` 쉼표
+// account.yml이 `--args=<action>,--email,<v>[,--name,<v>][,--role,<v>]` 쉼표
 // 목록으로 넘기는 것도 결국 같은 argv가 된다.
 
 export class UsageError extends Error {}
 
 export type ParsedArgs =
-  | { cmd: "create"; email: string; name: string; admin: boolean }
+  | { cmd: "create"; email: string; name: string; roleId: string }
   | { cmd: "reset"; email: string }
   | { cmd: "unlock"; email: string };
 
+// domain/system-status의 StatusDeps·domain/permissions/can의 CanDeps와 같은
+// deps?: Partial<XDeps> 주입 패턴 — 단위 테스트가 Postgres 없이 findRoleById를
+// 스텁할 수 있게 한다.
+export type ParseArgsDeps = {
+  findRoleById: typeof defaultFindRoleById;
+};
+
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export function parseArgs(argv: string[]): ParsedArgs {
+// 시드 5종은 정적으로, 그 밖의 값은 DB(관리자가 화면에서 추가한 계급)에서
+// 확인한다. 둘 다 아니면 오타를 조용히 기본 계급으로 만들지 않고 거부한다(T-03-12).
+async function assertKnownRole(roleId: string, deps?: Partial<ParseArgsDeps>): Promise<void> {
+  if (SEED_ROLES.some((role) => role.id === roleId)) return;
+  const findRoleById = deps?.findRoleById ?? defaultFindRoleById;
+  const found = await findRoleById(SYSTEM_VIEWER, roleId);
+  if (!found) {
+    throw new UsageError(`알 수 없는 계급 식별자: ${roleId}`);
+  }
+}
+
+// D-36(03-02): 계급 인자 --role. 값이 없으면 DEFAULT_ROLE_ID로 해석한다 —
+// 관리자 여부를 켜는 불리언 플래그는 없다.
+export async function parseArgs(argv: string[], deps?: Partial<ParseArgsDeps>): Promise<ParsedArgs> {
   const [cmd, ...rest] = argv;
   if (cmd !== "create" && cmd !== "reset" && cmd !== "unlock") {
     throw new UsageError(`알 수 없는 서브커맨드: ${cmd ?? "(없음)"}. create|reset|unlock 중 하나여야 합니다.`);
   }
 
-  const flags: { email?: string; name?: string; admin?: boolean } = {};
+  const flags: { email?: string; name?: string; role?: string } = {};
   for (let i = 0; i < rest.length; i++) {
     const token = rest[i];
-    if (token === "--email" || token === "--name") {
+    if (token === "--email" || token === "--name" || token === "--role") {
       const value = rest[i + 1];
       if (value === undefined || value.startsWith("--")) {
         throw new UsageError(`${token} 뒤에 값이 필요합니다.`);
       }
-      flags[token === "--email" ? "email" : "name"] = value;
+      flags[token === "--email" ? "email" : token === "--name" ? "name" : "role"] = value;
       i++;
-    } else if (token === "--admin") {
-      flags.admin = true;
     } else {
       throw new UsageError(`알 수 없는 플래그: ${token}. 등호 결합(--flag=value) 토큰은 지원하지 않습니다.`);
     }
@@ -48,7 +68,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
     if (!flags.name) {
       throw new UsageError("create에는 --name이 필요합니다.");
     }
-    return { cmd: "create", email: flags.email, name: flags.name, admin: Boolean(flags.admin) };
+    const roleId = flags.role ?? DEFAULT_ROLE_ID;
+    await assertKnownRole(roleId, deps);
+    return { cmd: "create", email: flags.email, name: flags.name, roleId };
   }
 
   return { cmd, email: flags.email };
@@ -65,9 +87,9 @@ async function run(parsed: ParsedArgs): Promise<void> {
     const { tempPassword } = await createAccount(SYSTEM_VIEWER, {
       email: parsed.email,
       name: parsed.name,
-      isAdmin: parsed.admin,
+      roleId: parsed.roleId,
     });
-    console.log(`account created: ${parsed.email} (admin=${parsed.admin})`);
+    console.log(`account created: ${parsed.email} (role=${parsed.roleId})`);
     printTempPassword(tempPassword);
     return;
   }
@@ -84,20 +106,15 @@ async function run(parsed: ParsedArgs): Promise<void> {
 }
 
 export async function main(): Promise<void> {
-  let parsed: ParsedArgs;
+  // parseArgs가 계급 검증(assertKnownRole)으로 DB를 조회할 수 있어(--role
+  // 값이 시드가 아닐 때) 이제 사용법 오류도 DB 접근 뒤에 날 수 있다 — closeDb()를
+  // 한 finally로 묶어 어느 단계에서 실패해도 커넥터가 남지 않게 한다.
   try {
-    parsed = parseArgs(process.argv.slice(2));
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = 2;
-    return;
-  }
-
-  try {
+    const parsed = await parseArgs(process.argv.slice(2));
     await run(parsed);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = 1;
+    process.exitCode = error instanceof UsageError ? 2 : 1;
   } finally {
     await closeDb();
   }

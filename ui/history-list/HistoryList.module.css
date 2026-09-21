@@ -1,0 +1,86 @@
+/* SYSTEM.md §7-14 이력 목록(이력형 설정 값 · 발령일 이력) — §6-3 폼 화면의 한
+   섹션에 딸린 §6-1 목록과 같은 얇은 표. 색·서체·radius는 tokens.css 변수만
+   쓴다(D-20). 간격 리터럴은 허용된다(02-02 결정). */
+
+.wrap {
+  width: 100%;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  text-align: left;
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+}
+
+.table td {
+  min-height: var(--row-min);
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  font-size: var(--fs-base);
+  border-bottom: var(--line-w) solid var(--line);
+}
+
+.addForm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s-4);
+  padding: var(--s-2) 0;
+}
+
+.addCheckboxLabel,
+.addSelectLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+}
+
+.addCheckbox {
+  accent-color: var(--native-accent);
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+}
+
+.addSelect {
+  height: var(--control-h);
+  border: var(--line-w) solid var(--line-ui);
+  background: var(--bg);
+  padding: 0 var(--s-2);
+  font-size: var(--fs-base);
+}
+
+.addError {
+  font-size: var(--fs-sm);
+  color: var(--danger);
+  width: 100%;
+}
+
+.addActions {
+  display: flex;
+  gap: var(--s-2);
+}
+
+.addRowTrigger {
+  margin-top: var(--s-2);
+}
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.skeletonRow {
+  height: var(--row-min);
+  background: var(--surface);
+}

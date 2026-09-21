@@ -6,6 +6,11 @@ import { defineConfig } from "@playwright/test";
 // 겹치지 않게 여기서 먼저 채운다(플랜 리뷰 Eng OV-5).
 process.env.DATABASE_URL ??= "postgres://erp:erp@127.0.0.1:5432/erp_test";
 process.env.BETTER_AUTH_SECRET ??= randomBytes(32).toString("hex");
+// 03-06이 도입한 앱단 암호화 키. 없으면 거래처 계좌번호 저장이 fail-closed로
+// 500을 내므로 vendors E2E가 깨진다. 로컬은 .env.local이 채워 줘서 통과했지만
+// 그 파일은 gitignore라 CI에는 없다 — integration/global-setup.ts와 같은 방식으로
+// 여기서 테스트 전용 키를 만든다(체크포인트 ③대로 base64 32바이트).
+process.env.APP_DATA_KEY_v1 ??= randomBytes(32).toString("base64");
 process.env.BETTER_AUTH_URL ??= "http://127.0.0.1:3100";
 process.env.APP_ENV ??= "local";
 // 02-07: 픽스처 로그인이 늘어(모든 스펙이 같은 루프백 IP를 공유) 프로덕션 기본값

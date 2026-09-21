@@ -1,9 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
+import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 
 test.describe("관리자 시스템 상태 화면 (OPS-06, D-17, D-18)", () => {
-  test("직원이 접근하면 404를 받는다", async ({ page }) => {
-    const user = await createFixtureUser({ isAdmin: false });
+  test("권한표에 시스템 상태 보기 권한이 없는 계급이 접근하면 404를 받는다", async ({ page }) => {
+    const user = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
 
     await page.goto("/login");
     await page.getByLabel("이메일").fill(user.email);
@@ -15,8 +16,8 @@ test.describe("관리자 시스템 상태 화면 (OPS-06, D-17, D-18)", () => {
     expect(response?.status()).toBe(404);
   });
 
-  test("관리자는 배포 버전·DB 커넥션·마지막 백업을 보고 배너는 없다", async ({ page }) => {
-    const admin = await createFixtureUser({ isAdmin: true });
+  test("시스템 관리자는 배포 버전·DB 커넥션·마지막 백업을 보고 배너는 없다", async ({ page }) => {
+    const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
 
     await page.goto("/login");
     await page.getByLabel("이메일").fill(admin.email);

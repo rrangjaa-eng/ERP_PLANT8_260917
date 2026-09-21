@@ -1,9 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 
 test.describe("로그인 → 세션 영속 → 로그아웃 (AUTH-02, D-07)", () => {
   test("픽스처 계정으로 로그인하면 /account로 이동하고 이메일이 보인다", async ({ page }) => {
-    const user = await createFixtureUser({ isAdmin: false });
+    const user = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
 
     await page.goto("/login");
     await page.getByLabel("이메일").fill(user.email);
@@ -18,7 +19,7 @@ test.describe("로그인 → 세션 영속 → 로그아웃 (AUTH-02, D-07)", ()
     page,
     browser,
   }) => {
-    const user = await createFixtureUser({ isAdmin: false });
+    const user = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
 
     await page.goto("/login");
     await page.getByLabel("이메일").fill(user.email);
@@ -46,7 +47,7 @@ test.describe("로그인 → 세션 영속 → 로그아웃 (AUTH-02, D-07)", ()
   test("로그아웃하면 /login으로 가고 /account 재접근은 /login으로 리다이렉트된다 (D-10)", async ({
     page,
   }) => {
-    const user = await createFixtureUser({ isAdmin: false });
+    const user = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
 
     await page.goto("/login");
     await page.getByLabel("이메일").fill(user.email);

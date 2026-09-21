@@ -24,7 +24,7 @@ async function signIn(email: string, password: string, headers: Record<string, s
 describe("IP 속도 제한 (/sign-in/email)", () => {
   it("같은 IP에서 60초 안에 RATE_LIMIT_LOGIN_MAX(10)회 넘게 부르면 429가 온다", async () => {
     const email = uniqueEmail("ratelimit");
-    await createAccount(SYSTEM_VIEWER, { email, name: "Rate Limit", isAdmin: false });
+    await createAccount(SYSTEM_VIEWER, { email, name: "Rate Limit" });
     const ip = "203.0.113.9";
 
     let last: Response | undefined;
@@ -36,7 +36,7 @@ describe("IP 속도 제한 (/sign-in/email)", () => {
 
   it("다른 IP의 1회 요청은 429가 아니다", async () => {
     const email = uniqueEmail("ratelimit-other");
-    await createAccount(SYSTEM_VIEWER, { email, name: "Rate Limit Other", isAdmin: false });
+    await createAccount(SYSTEM_VIEWER, { email, name: "Rate Limit Other" });
 
     const res = await signIn(email, "wrong-password", { "x-client-ip": "203.0.113.10" });
     expect(res.status).not.toBe(429);
@@ -44,7 +44,7 @@ describe("IP 속도 제한 (/sign-in/email)", () => {
 
   it("x-client-ip 없이 x-forwarded-for만 있으면 500 계열 + auth.client_ip_missing 로그(fail-closed)", async () => {
     const email = uniqueEmail("ratelimit-missing-ip");
-    await createAccount(SYSTEM_VIEWER, { email, name: "Missing IP", isAdmin: false });
+    await createAccount(SYSTEM_VIEWER, { email, name: "Missing IP" });
 
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     let response: Response;

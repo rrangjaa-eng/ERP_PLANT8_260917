@@ -23,20 +23,23 @@ import styles from "./TopBar.module.css";
 // usePathname()을 여기서 직접 읽으면 그 제약과 무관하게 배선할 수 있다(02-08 Task 3).
 export type TopBarProps = {
   topBarMenu: MenuLink[];
-  systemStatus: MenuLink | null;
+  adminMenu: MenuLink[];
   accountGroup: AccountEntry[];
   userName: string;
 };
 
-// §6-0 (a): PC 사용자 메뉴는 「내 정보 · 로그아웃(관리자는 그 위에 시스템 상태)」뿐이다.
-// 「설정」은 §7-8 「더보기」 시트 전용 — role-menu.ts의 accountGroup은 두 표면이
-// 공유하는 정본이고, 어느 항목이 어느 표면에 보이는지는 각 표면 컴포넌트가 href로
-// 가른다(라벨 문자열이 아니라 URL로 판별해 역할 분기와 무관하게 안정적이다).
+// §6-0 (a): PC 사용자 메뉴는 「내 정보 · 로그아웃(권한표에서 view 권한이 있는
+// admin.* 메뉴가 있으면 그 위에 전부)」다. D-17을 admin.system-status 하나에서
+// role-menu.ts의 adminMenu(admin.* 전체)로 일반화했다(네비게이션 공백 수정,
+// 2026-09-21). 「설정」은 §7-8 「더보기」 시트 전용 — role-menu.ts의 accountGroup은
+// 두 표면이 공유하는 정본이고, 어느 항목이 어느 표면에 보이는지는 각 표면
+// 컴포넌트가 href로 가른다(라벨 문자열이 아니라 URL로 판별해 역할 분기와 무관하게
+// 안정적이다).
 function isSettingsEntry(entry: AccountEntry): boolean {
   return entry.kind === "link" && entry.href === "/settings";
 }
 
-export function TopBar({ topBarMenu, systemStatus, accountGroup, userName }: TopBarProps) {
+export function TopBar({ topBarMenu, adminMenu, accountGroup, userName }: TopBarProps) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -44,7 +47,7 @@ export function TopBar({ topBarMenu, systemStatus, accountGroup, userName }: Top
   const firstItemRef = useRef<HTMLAnchorElement | HTMLButtonElement>(null);
 
   const pcMenuItems: Array<{ key: string; entry: AccountEntry | MenuLink; kind: "link" | "action" }> = [
-    ...(systemStatus ? [{ key: systemStatus.href, entry: systemStatus, kind: "link" as const }] : []),
+    ...adminMenu.map((entry) => ({ key: entry.href, entry, kind: "link" as const })),
     ...accountGroup
       .filter((entry) => !isSettingsEntry(entry))
       .map((entry) => ({ key: entry.label, entry, kind: entry.kind })),

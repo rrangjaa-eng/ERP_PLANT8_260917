@@ -1,7 +1,9 @@
 import { auth } from "@/lib/auth";
 import { log } from "@/lib/log";
 import type { Viewer } from "@/domain/viewer";
+import { can } from "@/domain/permissions/can";
 import { setPasswordTemporary } from "@/repositories/users";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 
 // D-09: 8자 이상 + 흔한 비밀번호 목록 차단뿐. 문자 조합 강제 없음.
 // 목록은 외부 파일·의존성 없이 이 파일 안 상수(소문자 비교) — 일반적인 흔한
@@ -75,7 +77,7 @@ export const COMMON_PASSWORDS: ReadonlySet<string> = new Set([
   "plant82026",
 ]);
 
-export class WeakPasswordError extends Error {}
+export class WeakPasswordError extends UserFacingError {}
 
 export function validateNewPassword(pw: string): void {
   if (pw.length < 8) {
@@ -93,8 +95,8 @@ export function validateNewPassword(pw: string): void {
 // 실제 구현 확인 후 정정, 01-02의 domain/auth/accounts.ts resetPassword가 이미 같은
 // 메서드를 쓰고 있다).
 export async function revokeAllSessions(viewer: Viewer, userId: string): Promise<void> {
-  if (viewer.id !== userId && !viewer.isAdmin) {
-    throw new Error("세션을 만료할 권한이 없습니다.");
+  if (viewer.id !== userId && !(await can(viewer, "admin.people", "write"))) {
+    throw new UserFacingError("세션을 만료할 권한이 없습니다.");
   }
   const ctx = await auth.$context;
   await ctx.internalAdapter.deleteUserSessions(userId);

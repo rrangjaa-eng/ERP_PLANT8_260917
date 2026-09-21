@@ -71,7 +71,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 **[Build] GSD가 뼈대, Superpowers가 규율**
 - `/gsd-execute-phase`로 실행. 상태의 단일 출처는 `.planning/`
-- 실행 중 Superpowers 스킬(TDD, systematic-debugging, verification-before-completion)은 항상 켜진 것으로 본다
+- 실행 중 Superpowers 스킬은 **호출**한다(켜졌다고 가정만 하지 않는다): 버그·테스트 실패·CI 실패를 쫓기 전에 `systematic-debugging`, "완료"를 말하기 전에 `verification-before-completion`, 구현 전에 `test-driven-development`. 서브에이전트에 위임할 때도 프롬프트에 그 스킬을 명시한다
 - 페이즈 밖 소규모 작업: `/gsd-quick` 또는 `/superpowers:brainstorm → write-plan → execute-plan` 중 하나만
 - 페이즈 종료: `/gsd-verify-work` → `/gsd-complete-milestone`
 
@@ -81,9 +81,11 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 3. `/cso` 보안 감사 (인증·결제·외부 입력 다룰 때 필수)
 4. `/ship` PR 생성·머지 → `/retro` 회고
 - 회고에서 나온 규칙은 이 파일이 아니라 `.planning/` 또는 `/learn`에 남긴다
+- **Post-build 넷은 건너뛰지 않는다.** 페이즈 실행이 끝나면 즉석 검증으로 대체하지 말고 `/review` → `/qa` → (해당 시)`/cso` → `/ship`을 실제로 호출한다. 페이즈가 인증·권한·암호화·외부 입력을 건드렸으면 `/cso`는 선택이 아니다
 
 공통
-- 사소한 변경(오타·색·한 줄)은 절차 없이 바로. 절차는 작업 크기가 정한다
+- **이 파일의 절차를 건너뛰지 않는다.** 건너뛰는 것이 맞다고 판단되면 **먼저 말하고 승인을 받는다** — 조용히 생략하거나 즉석 방법으로 대체하지 않는다. "지금은 이게 빠르다"는 건너뛸 이유가 되지 않는다(Phase 3에서 Post-build 넷을 전부 건너뛰고 즉석 프롬프트로 대체했고, 나중에 `/review`가 14건을 찾았다)
+- 사소한 변경(오타·색·한 줄)은 절차 없이 바로. 절차는 작업 크기가 정한다 — 단 이 예외는 **한 파일 안에서 끝나는 변경**에만 쓴다
 - 웹 브라우징은 `/browse`만. `mcp__claude-in-chrome__*` 사용 금지
 
 ## 캐시·컨텍스트 규칙
@@ -99,6 +101,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## 코딩 규칙
 - TDD: 실패 테스트 → 최소 구현 → 리팩터. 실제 실행 확인 없이 "완료" 금지
+- **로컬 dev 통과는 완료 신호가 아니다.** `playwright.config.ts`가 CI에서만 프로덕션 빌드를 쓴다 — 배포·완료 판정은 `CI=true`로 확인한다
 - 버그: 재현 → 원인 → 수정 → 회귀 테스트. 추측 수정 금지
 - 한 커밋 한 의도. 커밋 메시지 언어: 제목은 영어 접두어(docs:/feat:/fix:/chore:) + 짧은 요약, 본문은 한국어
 - 새 의존성은 이유 한 줄 + 승인 후
@@ -110,6 +113,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - 새 화면·컴포넌트는 `docs/DESIGN.md` §4 절차대로. 새 색·서체·radius 생성 금지, 토큰은 `docs/design/tokens.css`에서만
 - 시스템을 벗어나야 하면 `docs/design/DECISIONS.md`에 이유 기록 후 SYSTEM.md를 고친다. 화면 하나만 예외 금지
 - UI 완료 판정은 `/design-review`(SYSTEM.md 일관성) → `/qa` 통과 후
+- **화면 검증 순서: 싼 게이트(lint·typecheck·build) → 독립 DOM 감사 → 수정 → 전체 게이트 한 번.** 감사는 실행자가 아닌 별도 에이전트가 `CI=true`로 DOM을 실측 판정한다(스크린샷 육안 금지). 전체 게이트를 두 번 돌리지 않기 위한 순서다
 
 ## 금지
 - `.planning/` 수동 편집 · `git push --force` · 프로덕션 DB 직접 명령 · 이 파일에 진행 상황 추가

@@ -37,6 +37,20 @@
   border-bottom-width: var(--line-w-strong);
 }
 
+/* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. 이 링크는 밑줄만 있는
+   3차 모양이라 글자 줄 높이(실측 25px)로 찌그러진다 — EMPTY 화면에서는
+   본문의 유일한 행동 요소라 미달이 특히 아프다. 공유 Button .tertiary·
+   코드표 .toggle과 같은 폰 전용 패턴(PC는 그대로). */
+@media (max-width: 699.98px) {
+  .tertiary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+}
+
 /* ERROR의 다음 행동 = 2차 버튼(§7-1) 모양의 링크(§7-7 ERROR 행). */
 .secondary {
   display: inline-flex;

@@ -26,10 +26,21 @@ export const auth = betterAuth({
   },
   user: {
     additionalFields: {
-      // D-14: Phase 1의 계급은 관리자/직원 둘뿐.
-      isAdmin: { type: "boolean", defaultValue: false, input: false },
+      // Phase 3(03-02): 계급 5종 외래키가 유일한 계급 판정 입력이다. 관리자
+      // 여부 불리언의 additionalField 등록은 D-36 이관으로 제거했다 — 그
+      // 잔여 컬럼(D-37) 자체는 드롭하지 않고 남지만, better-auth 세션에는
+      // 더 이상 싣지 않는다. 등록하지 않으면 better-auth drizzle-adapter가
+      // 이 컬럼을 세션에 싣지 않는다. input:false — 클라이언트가 회원가입·
+      // 업데이트 입력으로 계급을 지정할 수 없다(T-03-08).
+      roleId: { type: "string", required: false, input: false },
       // D-08: 임시 비밀번호 사용 중 표시. 본인이 비밀번호를 바꾸면 해제.
       passwordIsTemporary: { type: "boolean", defaultValue: false, input: false },
+      // /review M-2: 보관(= 사용자에게 「삭제」)된 사람의 기존 세션을
+      // getSession이 거부하려면 이 값이 세션 사용자에 실려야 한다. 등록하지
+      // 않으면 drizzle-adapter가 컬럼을 싣지 않는다. cookieCache를 쓰지 않으므로
+      // better-auth가 요청마다 사용자 행을 다시 읽어 값이 최신이다.
+      // input:false — 클라이언트가 자기 보관 상태를 바꿀 수 없다.
+      archivedAt: { type: "date", required: false, input: false },
     },
   },
   advanced: {

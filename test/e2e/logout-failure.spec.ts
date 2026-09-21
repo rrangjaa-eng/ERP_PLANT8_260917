@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 
 // WR-06(02-REVIEW.md) — 로그아웃 세 경로가 실패를 삼킨다.
 // 상단 바·「더보기」 시트는 호출 *전에* 표면을 닫아서 실패 시 아무 반응이 없다:
@@ -15,7 +16,7 @@ function accountLogout(page: Page) {
 }
 
 async function login(page: Page): Promise<string> {
-  const user = await createFixtureUser({ isAdmin: false });
+  const user = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
   await page.goto("/login");
   await page.getByLabel("이메일").fill(user.email);
   await page.getByLabel("비밀번호").fill(user.password);

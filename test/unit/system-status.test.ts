@@ -3,8 +3,13 @@ import { NotAdminError, connectionBanner, getSystemStatus } from "@/domain/syste
 import { getLastBackup } from "@/lib/gcp/cloud-sql-admin";
 import type { Viewer } from "@/domain/viewer";
 
-const adminViewer: Viewer = { id: "admin-1", isAdmin: true };
-const employeeViewer: Viewer = { id: "emp-1", isAdmin: false };
+const adminViewer: Viewer = { id: "admin-1", roleId: "role-sysadmin" };
+const employeeViewer: Viewer = { id: "emp-1", roleId: "role-pm" };
+
+// D-36(03-02) 이후 판정은 권한표(can())를 읽는다 — 여기서는 StatusDeps.can을
+// 스텁해 Postgres 없이 두 계급을 흉내낸다.
+const allowCan = () => Promise.resolve(true);
+const denyCan = () => Promise.resolve(false);
 
 describe("connectionBanner (OPS-06, D-17)", () => {
   it("정확히 80%면 배너가 뜬다(경계 포함)", () => {
@@ -21,12 +26,25 @@ describe("connectionBanner (OPS-06, D-17)", () => {
 });
 
 describe("getSystemStatus", () => {
-  it("관리자가 아니면 NotAdminError를 throw한다", async () => {
-    await expect(getSystemStatus(employeeViewer)).rejects.toBeInstanceOf(NotAdminError);
+  it("권한표에서 시스템 상태 보기 권한이 없으면 NotAdminError를 throw한다", async () => {
+    await expect(getSystemStatus(employeeViewer, { can: denyCan })).rejects.toBeInstanceOf(NotAdminError);
+  });
+
+  // D-36 이후 판정이 계급 이름이 아니라 권한표를 읽는다는 증명 — 기본 계급
+  // (role-pm) viewer라도 can()이 허용을 돌려주면 성공한다.
+  it("권한표에서 시스템 상태 보기 칸이 켜진 기본 계급 viewer는 성공한다", async () => {
+    const status = await getSystemStatus(employeeViewer, {
+      can: allowCan,
+      countConnections: () => Promise.resolve(1),
+      maxConnections: () => Promise.resolve(25),
+      getLastBackup: () => Promise.resolve({ kind: "none" as const }),
+    });
+    expect(status.backup.kind).toBe("none");
   });
 
   it("정상 조회 시 db.ratio·banner·backup.kind·version.sha를 계산한다", async () => {
     const status = await getSystemStatus(adminViewer, {
+      can: allowCan,
       countConnections: () => Promise.resolve(3),
       maxConnections: () => Promise.resolve(25),
       getLastBackup: () => Promise.resolve({ kind: "unavailable" as const, reason: "not-configured" }),
@@ -45,6 +63,7 @@ describe("getSystemStatus", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     try {
       const status = await getSystemStatus(adminViewer, {
+        can: allowCan,
         countConnections: () => {
           throw new Error("connection refused");
         },
@@ -68,6 +87,7 @@ describe("getSystemStatus", () => {
 
   it("getLastBackup이 none이면 backup.kind가 none이다", async () => {
     const status = await getSystemStatus(adminViewer, {
+      can: allowCan,
       countConnections: () => Promise.resolve(1),
       maxConnections: () => Promise.resolve(25),
       getLastBackup: () => Promise.resolve({ kind: "none" as const }),

@@ -1,0 +1,98 @@
+/* SYSTEM.md §6-1 목록 템플릿 · §7-3 표 구조(읽기 전용, D-39 — 정식 편집용 표
+   컴포넌트는 Phase 4). 색·서체·radius는 tokens.css 변수만(D-20). 간격 리터럴은
+   허용된다(02-02 결정). */
+
+.filterRow {
+  display: flex;
+  justify-content: flex-end;
+  /* 이 줄은 링크가 여럿일 수 있다(코드표 선택 nav) — gap이 없으면 두 이름이
+     「프로젝트 상태증빙 종류」처럼 한 덩어리로 붙어 읽힌다(사용자 QA 보고). */
+  gap: var(--s-4);
+  margin: var(--s-3) 0;
+}
+
+.toggle {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: var(--underline-offset);
+}
+
+/* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. 밑줄 링크는 글자 줄 높이
+   (19px 안팎)로 찌그러져 있었다 — 공유 Button .tertiary와 같은 폰 전용
+   패턴으로 히트 영역만 키운다(PC는 그대로). */
+@media (max-width: 699.98px) {
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  text-align: left;
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+}
+
+.table td {
+  min-height: var(--row-min);
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  font-size: var(--fs-base);
+  border-bottom: var(--line-w) solid var(--line);
+}
+
+.table tbody tr:hover td {
+  background: var(--surface);
+}
+
+/* 03-06: 증빙 종류 항목 아래 세금 규칙 편집 섹션. */
+.taxRuleSection {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--cell-pad-x) var(--s-3);
+  background: var(--surface);
+}
+
+.taxRuleHint {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  width: 100%;
+}
+
+.selectLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  margin: var(--s-2) 0;
+}
+
+.select {
+  height: var(--control-h);
+  border: var(--line-w) solid var(--line-ui);
+  background: var(--bg);
+  padding: 0 var(--s-2);
+  font-size: var(--fs-base);
+}
+
+/* vendors.module.css와 같은 결 — 폼 제출 버튼 + 취소 링크를 한 줄에. */
+.formActions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}

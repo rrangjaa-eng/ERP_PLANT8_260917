@@ -1,5 +1,6 @@
 import { test, expect, type Page, type Locator } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 
 // SYSTEM.md §11 브리프 2("마우스를 한 번도 잡지 않고 끝낼 수 있는가?") + ROADMAP.md
 // Phase 2 성공 기준 3("키보드만으로 로그인·내비게이션·비밀번호 변경이 된다") + §10
@@ -13,7 +14,7 @@ import { createFixtureUser } from "./fixtures";
 // 써야 한다는 뜻이고, 그 신호는 TopBar.tsx의 위 주석이 먼저 알린다.
 
 async function loginWithKeyboard(page: Page): Promise<{ email: string; password: string }> {
-  const user = await createFixtureUser({ isAdmin: false });
+  const user = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
   await page.goto("/login");
   await page.keyboard.press("Tab");
   await expect(page.getByLabel("이메일")).toBeFocused();

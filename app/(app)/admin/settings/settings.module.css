@@ -1,0 +1,82 @@
+/* SYSTEM.md §6-2 상세 화면 골격(탭 없이 섹션) + §7-2 자동 생성 설정 화면
+   필드 렌더 규칙. 색·서체·radius는 tokens.css 변수만(D-20). 간격 리터럴은
+   허용된다(02-02 결정). */
+
+.section {
+  border-top: var(--line-w-strong) solid var(--line-strong);
+  padding-top: var(--s-6);
+  margin-top: var(--s-6);
+}
+
+.sectionTitle {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  margin: 0 0 var(--s-4) 0;
+}
+
+.field {
+  margin-bottom: var(--s-4);
+  border: 0;
+  padding: 0;
+}
+
+.field legend {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  padding: 0;
+  margin-bottom: var(--s-1);
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--fs-base);
+}
+
+.checkboxLabel input {
+  accent-color: var(--native-accent);
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+}
+
+.selectLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+}
+
+.select {
+  height: var(--control-h);
+  border: var(--line-w) solid var(--line-ui);
+  background: var(--bg);
+  padding: 0 var(--s-2);
+  font-size: var(--fs-base);
+}
+
+.hint {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  margin: var(--s-1) 0 0 0;
+}
+
+.error {
+  font-size: var(--fs-sm);
+  color: var(--danger);
+  margin: var(--s-1) 0 0 0;
+}
+
+.historizedLabel {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  margin: 0;
+}
+
+.exportRow {
+  margin-bottom: var(--s-6);
+}

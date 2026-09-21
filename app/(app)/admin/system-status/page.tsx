@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { getSystemStatus } from "@/domain/system-status";
+import { can } from "@/domain/permissions/can";
 import { env } from "@/lib/env";
 import { Banner } from "@/ui/banner/Banner";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
@@ -11,13 +12,14 @@ import { PageHeader } from "@/ui/page-header/PageHeader";
 // 직접 조회한다.
 export const dynamic = "force-dynamic";
 
-// D-17: 관리자만 본다. 서버 컴포넌트의 notFound() + domain의 NotAdminError
-// 이중 방어(T-1-15) — 직원은 404. 아래 세 줄(캐시 지시자·미인증 리다이렉트·404)은
-// D-29 재구성 대상이 아니다 — 손대지 않는다(02-06 Task 3 read_first).
+// D-17·D-36(03-02): 권한표의 시스템 상태 보기 권한이 있는 계급만 본다. 서버
+// 컴포넌트의 notFound() + domain의 NotAdminError 이중 방어(T-1-15) — 권한
+// 없는 계급은 404. 아래 세 줄(캐시 지시자·미인증 리다이렉트·404)은 D-29
+// 재구성 대상이 아니다 — 손대지 않는다(02-06 Task 3 read_first).
 export default async function SystemStatusPage() {
   const session = await getSession();
   if (!session) redirect("/login");
-  if (!session.viewer.isAdmin) notFound();
+  if (!(await can(session.viewer, "admin.system-status", "view"))) notFound();
 
   const status = await getSystemStatus(session.viewer);
   const bannerPercent = Math.round(env.STATUS_CONN_BANNER_RATIO * 100);

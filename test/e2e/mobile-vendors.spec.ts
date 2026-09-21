@@ -42,5 +42,14 @@ test.describe("폰 375 /admin/vendors 3차 버튼 터치 목표 (defect 2)", () 
     expect(hideBox).not.toBeNull();
     expect(hideBox!.width).toBeGreaterThanOrEqual(44);
     expect(hideBox!.height).toBeGreaterThanOrEqual(44);
+
+    // 정리 — 계좌번호 있는 거래처를 기본 목록에 남기지 않는다.
+    // 남기면 mobile-admin-master-list-first.spec.ts:56의 375px 가로 오버플로
+    // 단언이 깨진다: 계좌 칸의 「번호 보기」(폰 44×44)가 표를 481까지 넓힌다.
+    // 이 스펙은 측정만 하고 끝나서 그 행을 영구히 남기고 있었다 —
+    // 같은 프로젝트(mobile-375) 안에서 워커 2개가 병렬이라 경합이 됐다.
+    // vendors.spec.ts:178이 desktop에서 쓰는 정리 방식과 같다.
+    await hideButton.click();
+    await expect(page.getByText(vendorName)).toHaveCount(0);
   });
 });

@@ -81,8 +81,19 @@ export default defineConfig({
       // 중에 목록에 노출하고, 그 칸 때문에 481 > 375가 된다(6회 중 1회 실측).
       // 프로젝트를 줄 세워 그 창을 없앤다 — 두 스펙 모두 끝에 「숨기기」로
       // 정리하므로 desktop이 끝난 뒤에는 그런 행이 목록에 없다.
-      // 대가: desktop이 빨가면 mobile은 skip된다(Playwright 기본 동작).
-      // 함정 5와 달리 조용하지 않다 — 리포트에 skipped로 나온다.
+      // 같은 결함이 mobile-375 **안에도** 있었다(mobile-vendors.spec.ts가
+      // 계좌번호 거래처를 만들고 정리하지 않았다). 그쪽이 실제로 재현된
+      // 원인이고 그 스펙의 정리로 닫았다 — 프로젝트 직렬화는 desktop 쪽
+      // 창을 닫는다. 둘은 다른 결함이라 둘 다 필요하다.
+      //
+      // 대가 둘:
+      // 1) desktop이 빨가면 mobile은 아예 디스패치되지 않는다. 리포트에
+      //    「N did not run」으로 나온다(skipped 버킷이 아니다). 함정 5와
+      //    달리 조용하지는 않다.
+      // 2) `--project=mobile-375`만 돌리면 desktop이 먼저 따라온다
+      //    (02-RESEARCH.md:535가 성공 기준 3 검증 명령으로 적어 둔 형태다).
+      //    폰만 빨리 보려면 `--project=mobile-375 --no-deps`를 쓴다.
+      //
       // 진짜 해결은 워커별 DB 분리(후속 과제)이고, 375px 표 오버플로 자체는
       // Phase 4 이월 항목이다.
       dependencies: ["desktop"],

@@ -2,10 +2,11 @@
 
 import { useRef, useState, type FormEvent } from "react";
 import { useAction } from "next-safe-action/hooks";
-import { registerPersonAction } from "./actions";
+import { registerPersonAction, archivePersonAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
+import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import styles from "./people.module.css";
 
 export type RoleOption = { id: string; name: string };
@@ -94,5 +95,19 @@ export function PersonForm({ roles, teams }: { roles: RoleOption[]; teams: TeamO
         사람 등록
       </Button>
     </form>
+  );
+}
+
+// 03-07: 「삭제」 — 보관함으로 이동 + 세션 만료(domain/people.archivePerson)를
+// 부른다.
+export function PersonDeleteButton({ userId, name }: { userId: string; name: string }) {
+  return (
+    <DeleteToArchive
+      name={name}
+      onArchive={async () => {
+        const result = await archivePersonAction({ userId });
+        if (result?.serverError) throw new Error(result.serverError);
+      }}
+    />
   );
 }

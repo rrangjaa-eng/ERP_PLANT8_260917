@@ -6,7 +6,7 @@ import { listCodeItems } from "@/domain/code-tables";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
-import { CodeItemForm, CodeItemActiveToggle } from "./code-item-form";
+import { CodeItemForm, CodeItemActiveToggle, CodeItemDeleteButton } from "./code-item-form";
 import { EvidenceTypeFields } from "./evidence-type-fields";
 import styles from "./code-tables.module.css";
 
@@ -40,7 +40,10 @@ export default async function CodeTablesPage({
   const tableKey = TABLE_OPTIONS.some((option) => option.key === tableKeyParam) ? tableKeyParam! : DEFAULT_TABLE_KEY;
   const isEvidenceType = tableKey === EVIDENCE_TYPE_TABLE_KEY;
 
-  const items = await listCodeItems(session.viewer, tableKey, { includeInactive });
+  const [items, canArchive] = await Promise.all([
+    listCodeItems(session.viewer, tableKey, { includeInactive }),
+    can(session.viewer, "admin.archive", "write"),
+  ]);
   const currentLabel = TABLE_OPTIONS.find((option) => option.key === tableKey)?.label ?? tableKey;
 
   return (
@@ -92,14 +95,23 @@ export default async function CodeTablesPage({
                   <td>{item.label}</td>
                   <td>{item.sortOrder}</td>
                   <td>
-                    {item.active === false ? (
+                    {item.archivedAt ? (
+                      <StatusTag kind="muted" variant="text">
+                        보관됨
+                      </StatusTag>
+                    ) : item.active === false ? (
                       <StatusTag kind="muted" variant="text">
                         비활성
                       </StatusTag>
                     ) : null}
                   </td>
                   <td>
-                    <CodeItemActiveToggle id={item.id} active={item.active} />
+                    {item.archivedAt ? null : (
+                      <>
+                        <CodeItemActiveToggle id={item.id} active={item.active} />
+                        {canArchive ? <CodeItemDeleteButton id={item.id} label={item.label} /> : null}
+                      </>
+                    )}
                   </td>
                 </tr>
                 {isEvidenceType ? (

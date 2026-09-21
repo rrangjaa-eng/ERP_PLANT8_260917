@@ -2,10 +2,11 @@
 
 import { useRef, useState, type FormEvent } from "react";
 import { useAction } from "next-safe-action/hooks";
-import { createVendorAction, setVendorHiddenAction } from "./actions";
+import { createVendorAction, setVendorHiddenAction, archiveVendorAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
+import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import styles from "./vendors.module.css";
 
 export type EvidenceTypeOption = { value: string; label: string };
@@ -131,5 +132,18 @@ export function VendorHiddenToggle({ id, hidden }: { id: string; hidden: boolean
     <Button variant="tertiary" pending={isExecuting} onClick={() => execute({ id, hidden: !hidden })}>
       {hidden ? "보이기" : "숨기기"}
     </Button>
+  );
+}
+
+// 03-07: 「삭제」— 보관함으로 이동한다.
+export function VendorDeleteButton({ id, name }: { id: string; name: string }) {
+  return (
+    <DeleteToArchive
+      name={name}
+      onArchive={async () => {
+        const result = await archiveVendorAction({ id });
+        if (result?.serverError) throw new Error(result.serverError);
+      }}
+    />
   );
 }

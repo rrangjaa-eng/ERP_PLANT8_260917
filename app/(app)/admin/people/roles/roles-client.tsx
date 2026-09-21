@@ -6,19 +6,26 @@ import { createRoleAction, renameRoleAction, archiveRoleAction } from "../action
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
+import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
+import { StatusTag } from "@/ui/status-tag/StatusTag";
 import styles from "../people.module.css";
 
-export type RoleRowView = { id: string; name: string; isSeed: boolean; sortOrder: number };
+export type RoleRowView = {
+  id: string;
+  name: string;
+  isSeed: boolean;
+  sortOrder: number;
+  archivedAt: Date | null;
+};
 
 function getStringField(formData: FormData, key: string): string {
   const value = formData.get(key);
   return typeof value === "string" ? value : "";
 }
 
-function RoleRow({ role }: { role: RoleRowView }) {
+function RoleRow({ role, canArchive }: { role: RoleRowView; canArchive: boolean }) {
   const [name, setName] = useState(role.name);
   const { execute: executeRename, result: renameResult } = useAction(renameRoleAction);
-  const { execute: executeArchive, isExecuting: archiving } = useAction(archiveRoleAction);
 
   return (
     <tr>
@@ -37,17 +44,29 @@ function RoleRow({ role }: { role: RoleRowView }) {
       <td>{role.isSeed ? "시드" : ""}</td>
       <td>{role.sortOrder}</td>
       <td>
-        {role.isSeed ? null : (
-          <Button variant="tertiary" pending={archiving} onClick={() => executeArchive({ id: role.id })}>
-            보관
-          </Button>
-        )}
+        {role.archivedAt ? (
+          <StatusTag kind="muted" variant="text">
+            보관됨
+          </StatusTag>
+        ) : null}
+        {/* 03-07: 시드 계급·이미 보관된 계급은 버튼 자체가 없다(03-01의
+            isProtected가 서버에서도 거부한다). 쓰기 권한이 없는 계급에도
+            렌더하지 않는다. */}
+        {!role.isSeed && !role.archivedAt && canArchive ? (
+          <DeleteToArchive
+            name={role.name}
+            onArchive={async () => {
+              const result = await archiveRoleAction({ id: role.id });
+              if (result?.serverError) throw new Error(result.serverError);
+            }}
+          />
+        ) : null}
       </td>
     </tr>
   );
 }
 
-export function RolesClient({ roles }: { roles: RoleRowView[] }) {
+export function RolesClient({ roles, canArchive }: { roles: RoleRowView[]; canArchive: boolean }) {
   const formRef = useRef<HTMLFormElement>(null);
   const { execute, result, isExecuting } = useAction(createRoleAction, {
     onSuccess: () => formRef.current?.reset(),
@@ -82,7 +101,7 @@ export function RolesClient({ roles }: { roles: RoleRowView[] }) {
         </thead>
         <tbody>
           {roles.map((role) => (
-            <RoleRow key={role.id} role={role} />
+            <RoleRow key={role.id} role={role} canArchive={canArchive} />
           ))}
         </tbody>
       </table>

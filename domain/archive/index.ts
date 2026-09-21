@@ -8,6 +8,7 @@ import {
   listArchivedAcrossEntities as defaultListArchivedAcrossEntities,
   type ArchivedItem,
 } from "@/repositories/archive";
+import { findUserById as defaultFindUserById } from "@/repositories/users";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 
 // ADMN-12: "지우지 않는다" — archived_at/archived_by 규약의 유일한 진입점.
@@ -117,11 +118,15 @@ registerDto({
 export type ListArchiveDeps = {
   can: typeof defaultCan;
   listArchivedAcrossEntities: typeof defaultListArchivedAcrossEntities;
+  findUserById: typeof defaultFindUserById;
 };
 
 // 보관함 메뉴 보기 권한 확인 → 여러 표를 훑는 조회(repositories/archive의
-// ARCHIVABLE_TABLES 순회) → 투영. 새 표 목록을 이 함수가 만들지 않는다 —
-// 정본은 ARCHIVABLE_TABLES 하나다.
+// ARCHIVABLE_TABLES 순회) → 보관한 사람 id를 이름으로 합성 → 투영. 새 표
+// 목록을 이 함수가 만들지 않는다 — 정본은 ARCHIVABLE_TABLES 하나다.
+// archivedBy는 raw id가 아니라 이름으로 화면에 낸다(내부 식별자를 그대로
+// 사용자에게 보이지 않는다 — 지난 웨이브 UI 감사가 잡은 결함과 같은 종류를
+// 미리 막는다).
 export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps>): Promise<ArchiveEntryDto[]> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, ARCHIVE_MENU, "view"))) {
@@ -130,5 +135,22 @@ export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps
 
   const listFn = deps?.listArchivedAcrossEntities ?? defaultListArchivedAcrossEntities;
   const rows = await listFn(viewer);
-  return Promise.all(rows.map((row) => project(viewer, row, ARCHIVE_ENTRY_DTO_SPEC))) as Promise<ArchiveEntryDto[]>;
+
+  const findUserById = deps?.findUserById ?? defaultFindUserById;
+  const archivedByIds = [...new Set(rows.map((row) => row.archivedBy).filter((id): id is string => id !== null))];
+  const namesById = new Map(
+    await Promise.all(
+      archivedByIds.map(async (id) => [id, (await findUserById(viewer, id))?.name ?? id] as const),
+    ),
+  );
+
+  return Promise.all(
+    rows.map((row) =>
+      project(
+        viewer,
+        { ...row, archivedBy: row.archivedBy ? (namesById.get(row.archivedBy) ?? row.archivedBy) : null },
+        ARCHIVE_ENTRY_DTO_SPEC,
+      ),
+    ),
+  ) as Promise<ArchiveEntryDto[]>;
 }

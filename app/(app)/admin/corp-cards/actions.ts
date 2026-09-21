@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
 import { createCorpCard, updateCorpCardOwner, setCorpCardActive } from "@/domain/corp-cards";
+import { archive } from "@/domain/archive";
 import "./actions.registry";
 
 // MAST-03: domain/corp-cards만 부른다. 등록은 ./actions.registry로 분리
@@ -63,4 +64,13 @@ export const setCorpCardActiveAction = authedActionClient
   .action(async ({ parsedInput, ctx }) => {
     await setCorpCardActive(ctx.viewer, parsedInput.id, parsedInput.active);
     revalidatePath("/admin/corp-cards");
+  });
+
+// 03-07: 「삭제」 — domain/archive의 보관 함수만 부른다.
+export const archiveCorpCardAction = authedActionClient
+  .schema(z.object({ id: z.string().min(1) }))
+  .action(async ({ parsedInput, ctx }) => {
+    await archive(ctx.viewer, "corp_card", parsedInput.id);
+    revalidatePath("/admin/corp-cards");
+    revalidatePath("/admin/archive");
   });

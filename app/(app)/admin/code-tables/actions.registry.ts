@@ -28,3 +28,12 @@ registerAction({
   action: "write",
   dtoName: "CodeItemDto",
 });
+
+// 03-07: 「삭제」(보관) — 보관함 자체는 domain/archive/index.ts의 정본
+// 경로다(03-01). 이 항목은 그 경로를 부르는 액션의 등록일 뿐이다.
+registerAction({
+  name: "archiveCodeItemAction",
+  menu: "admin.archive",
+  action: "write",
+  dtoName: "CodeItemDto",
+});

@@ -33,3 +33,12 @@ registerAction({
   action: "view",
   dtoName: null,
 });
+
+// 03-07: 「삭제」(보관) — 보관함 정본 경로(domain/archive/index.ts)를 부르는
+// 액션의 등록.
+registerAction({
+  name: "archiveVendorAction",
+  menu: "admin.archive",
+  action: "write",
+  dtoName: "VendorDto",
+});

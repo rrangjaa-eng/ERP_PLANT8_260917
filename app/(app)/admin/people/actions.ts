@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
-import { registerPerson, changePersonRole } from "@/domain/people";
+import { registerPerson, changePersonRole, archivePerson } from "@/domain/people";
 import { assignTeam, cancelFutureAssignment, createOrgUnit, renameOrgUnit, createTeam, renameTeam } from "@/domain/org";
 import { createRole, renameRole } from "@/domain/permissions/roles";
 import { archive } from "@/domain/archive";
@@ -95,6 +95,33 @@ export const renameOrgUnitAction = authedActionClient
   .action(async ({ parsedInput, ctx }) => {
     await renameOrgUnit(ctx.viewer, parsedInput.id, parsedInput.name);
     revalidatePath("/admin/people/org");
+  });
+
+// 03-07: 「삭제」 셋 — 사람은 보관 + 세션 만료(domain/people.archivePerson),
+// 본부·팀은 domain/archive의 보관 함수만 부른다. 계급은 이미 위
+// archiveRoleAction이 있다.
+export const archivePersonAction = authedActionClient
+  .schema(z.object({ userId: z.string().min(1) }))
+  .action(async ({ parsedInput, ctx }) => {
+    await archivePerson(ctx.viewer, parsedInput.userId);
+    revalidatePath("/admin/people");
+    revalidatePath("/admin/archive");
+  });
+
+export const archiveOrgUnitAction = authedActionClient
+  .schema(z.object({ id: z.string().min(1) }))
+  .action(async ({ parsedInput, ctx }) => {
+    await archive(ctx.viewer, "org_unit", parsedInput.id);
+    revalidatePath("/admin/people/org");
+    revalidatePath("/admin/archive");
+  });
+
+export const archiveTeamAction = authedActionClient
+  .schema(z.object({ id: z.string().min(1) }))
+  .action(async ({ parsedInput, ctx }) => {
+    await archive(ctx.viewer, "team", parsedInput.id);
+    revalidatePath("/admin/people/org");
+    revalidatePath("/admin/archive");
   });
 
 export const createTeamAction = authedActionClient

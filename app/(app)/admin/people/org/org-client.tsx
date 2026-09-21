@@ -7,14 +7,18 @@ import {
   renameOrgUnitAction,
   createTeamAction,
   renameTeamAction,
+  archiveOrgUnitAction,
+  archiveTeamAction,
 } from "../actions";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
+import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
+import { StatusTag } from "@/ui/status-tag/StatusTag";
 import styles from "../people.module.css";
 
-export type OrgUnitView = { id: string; name: string };
-export type TeamView = { id: string; orgUnitId: string; name: string };
+export type OrgUnitView = { id: string; name: string; archivedAt: Date | null };
+export type TeamView = { id: string; orgUnitId: string; name: string; archivedAt: Date | null };
 
 function getStringField(formData: FormData, key: string): string {
   const value = formData.get(key);
@@ -49,7 +53,7 @@ function RenameInput({
   );
 }
 
-function TeamRow({ team }: { team: TeamView }) {
+function TeamRow({ team, canArchive }: { team: TeamView; canArchive: boolean }) {
   const { execute, result } = useAction(renameTeamAction);
   return (
     <li>
@@ -59,11 +63,32 @@ function TeamRow({ team }: { team: TeamView }) {
         onSave={(name) => execute({ id: team.id, name })}
         error={result.serverError}
       />
+      {team.archivedAt ? (
+        <StatusTag kind="muted" variant="text">
+          보관됨
+        </StatusTag>
+      ) : canArchive ? (
+        <DeleteToArchive
+          name={team.name}
+          onArchive={async () => {
+            const archiveResult = await archiveTeamAction({ id: team.id });
+            if (archiveResult?.serverError) throw new Error(archiveResult.serverError);
+          }}
+        />
+      ) : null}
     </li>
   );
 }
 
-function OrgUnitRow({ orgUnit, teams }: { orgUnit: OrgUnitView; teams: TeamView[] }) {
+function OrgUnitRow({
+  orgUnit,
+  teams,
+  canArchive,
+}: {
+  orgUnit: OrgUnitView;
+  teams: TeamView[];
+  canArchive: boolean;
+}) {
   const { execute, result } = useAction(renameOrgUnitAction);
   return (
     <li>
@@ -73,18 +98,39 @@ function OrgUnitRow({ orgUnit, teams }: { orgUnit: OrgUnitView; teams: TeamView[
         onSave={(name) => execute({ id: orgUnit.id, name })}
         error={result.serverError}
       />
+      {orgUnit.archivedAt ? (
+        <StatusTag kind="muted" variant="text">
+          보관됨
+        </StatusTag>
+      ) : canArchive ? (
+        <DeleteToArchive
+          name={orgUnit.name}
+          onArchive={async () => {
+            const archiveResult = await archiveOrgUnitAction({ id: orgUnit.id });
+            if (archiveResult?.serverError) throw new Error(archiveResult.serverError);
+          }}
+        />
+      ) : null}
       <ul>
         {teams
           .filter((team) => team.orgUnitId === orgUnit.id)
           .map((team) => (
-            <TeamRow key={team.id} team={team} />
+            <TeamRow key={team.id} team={team} canArchive={canArchive} />
           ))}
       </ul>
     </li>
   );
 }
 
-export function OrgClient({ orgUnits, teams }: { orgUnits: OrgUnitView[]; teams: TeamView[] }) {
+export function OrgClient({
+  orgUnits,
+  teams,
+  canArchive,
+}: {
+  orgUnits: OrgUnitView[];
+  teams: TeamView[];
+  canArchive: boolean;
+}) {
   const orgFormRef = useRef<HTMLFormElement>(null);
   const teamFormRef = useRef<HTMLFormElement>(null);
 
@@ -156,7 +202,7 @@ export function OrgClient({ orgUnits, teams }: { orgUnits: OrgUnitView[]; teams:
 
       <ul>
         {orgUnits.map((org) => (
-          <OrgUnitRow key={org.id} orgUnit={org} teams={teams} />
+          <OrgUnitRow key={org.id} orgUnit={org} teams={teams} canArchive={canArchive} />
         ))}
       </ul>
     </>

@@ -2,10 +2,11 @@
 
 import { useRef, useState, type FormEvent } from "react";
 import { useAction } from "next-safe-action/hooks";
-import { createCorpCardAction, setCorpCardActiveAction } from "./actions";
+import { createCorpCardAction, setCorpCardActiveAction, archiveCorpCardAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
+import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import styles from "./corp-cards.module.css";
 
 export type HolderOption = { id: string; name: string };
@@ -117,5 +118,18 @@ export function CorpCardActiveToggle({ id, active }: { id: string; active: boole
     <Button variant="tertiary" pending={isExecuting} onClick={() => execute({ id, active: !active })}>
       {active ? "비활성화" : "활성화"}
     </Button>
+  );
+}
+
+// 03-07: 「삭제」 — 보관함으로 이동한다.
+export function CorpCardDeleteButton({ id, label }: { id: string; label: string }) {
+  return (
+    <DeleteToArchive
+      name={label}
+      onArchive={async () => {
+        const result = await archiveCorpCardAction({ id });
+        if (result?.serverError) throw new Error(result.serverError);
+      }}
+    />
   );
 }

@@ -82,3 +82,26 @@ registerAction({
   action: "write",
   dtoName: "TeamDto",
 });
+
+// 03-07: 「삭제」(보관) 셋 — 사람·본부·팀. 계급은 위 archiveRoleAction이
+// 이미 담당한다.
+registerAction({
+  name: "archivePersonAction",
+  menu: "admin.archive",
+  action: "write",
+  dtoName: "PersonDto",
+});
+
+registerAction({
+  name: "archiveOrgUnitAction",
+  menu: "admin.archive",
+  action: "write",
+  dtoName: "OrgUnitDto",
+});
+
+registerAction({
+  name: "archiveTeamAction",
+  menu: "admin.archive",
+  action: "write",
+  dtoName: "TeamDto",
+});

@@ -8,7 +8,7 @@ import { listOrgUnits, listTeams } from "@/domain/org";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
-import { PersonForm } from "./person-form";
+import { PersonForm, PersonDeleteButton } from "./person-form";
 import styles from "./people.module.css";
 
 // 사람·계급·조직 세 화면은 같은 권한(admin.people)으로 관리되는 한 묶음이라
@@ -21,11 +21,12 @@ export default async function PeoplePage() {
   if (!session) redirect("/login");
   if (!(await can(session.viewer, "admin.people", "view"))) notFound();
 
-  const [people, roles, orgUnits, teams] = await Promise.all([
+  const [people, roles, orgUnits, teams, canArchive] = await Promise.all([
     listPeople(session.viewer),
     listRoles(session.viewer),
     listOrgUnits(session.viewer),
     listTeams(session.viewer),
+    can(session.viewer, "admin.archive", "write"),
   ]);
 
   const roleNameById = new Map(roles.map((role) => [role.id, role.name]));
@@ -74,6 +75,9 @@ export default async function PeoplePage() {
                   <Link href={`/admin/people/${person.id}`} className={styles.detailLink}>
                     상세
                   </Link>
+                  {!person.archivedAt && canArchive ? (
+                    <PersonDeleteButton userId={person.id} name={person.name} />
+                  ) : null}
                 </td>
               </tr>
             ))}

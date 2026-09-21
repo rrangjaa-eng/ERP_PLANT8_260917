@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
 import { createCodeItem, setCodeItemActive, setEvidenceTypeTaxRule } from "@/domain/code-tables";
 import { taxRuleSchema } from "@/domain/code-tables/tax-rule";
+import { archive } from "@/domain/archive";
 import "./actions.registry";
 
 // MAST-04: 두 액션이 domain/code-tables만 부르고 리포지토리·db 계층을 직접
@@ -40,4 +41,14 @@ export const setEvidenceTypeTaxRuleAction = authedActionClient
   .action(async ({ parsedInput, ctx }) => {
     await setEvidenceTypeTaxRule(ctx.viewer, parsedInput.id, parsedInput.taxRule);
     revalidatePath("/admin/code-tables");
+  });
+
+// 03-07: 「삭제」 — domain/archive의 보관 함수만 부른다(03-01의 유일한
+// 진입점).
+export const archiveCodeItemAction = authedActionClient
+  .schema(z.object({ id: z.string().min(1) }))
+  .action(async ({ parsedInput, ctx }) => {
+    await archive(ctx.viewer, "code_items", parsedInput.id);
+    revalidatePath("/admin/code-tables");
+    revalidatePath("/admin/archive");
   });

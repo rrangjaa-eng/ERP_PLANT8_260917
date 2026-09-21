@@ -7,7 +7,7 @@ import { listOrgUnits, listTeams } from "@/domain/org";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
-import { CardForm, CorpCardActiveToggle } from "./card-form";
+import { CardForm, CorpCardActiveToggle, CorpCardDeleteButton } from "./card-form";
 import styles from "./corp-cards.module.css";
 
 // D-18과 같은 결: 캐시·별도 저장 없음.
@@ -25,12 +25,13 @@ export default async function CorpCardsPage({
   const { includeInactive: includeInactiveParam } = await searchParams;
   const includeInactive = includeInactiveParam === "1";
 
-  const [cards, canWrite, people, orgUnits, teams] = await Promise.all([
+  const [cards, canWrite, people, orgUnits, teams, canArchive] = await Promise.all([
     listCorpCards(session.viewer, { includeInactive }),
     can(session.viewer, "admin.corp-cards", "write"),
     listPeople(session.viewer),
     listOrgUnits(session.viewer),
     listTeams(session.viewer),
+    can(session.viewer, "admin.archive", "write"),
   ]);
 
   const orgUnitNameById = new Map(orgUnits.map((org) => [org.id, org.name]));
@@ -74,7 +75,7 @@ export default async function CorpCardsPage({
               <th scope="col">종류</th>
               <th scope="col">소유</th>
               <th scope="col">상태</th>
-              {canWrite ? <th scope="col">동작</th> : null}
+              {canWrite || canArchive ? <th scope="col">동작</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -90,15 +91,24 @@ export default async function CorpCardsPage({
                     : (teamNameById.get(card.teamId ?? "") ?? "—")}
                 </td>
                 <td>
-                  {card.active === false ? (
+                  {card.archivedAt ? (
+                    <StatusTag kind="muted" variant="text">
+                      보관됨
+                    </StatusTag>
+                  ) : card.active === false ? (
                     <StatusTag kind="muted" variant="text">
                       비활성
                     </StatusTag>
                   ) : null}
                 </td>
-                {canWrite ? (
+                {canWrite || canArchive ? (
                   <td>
-                    <CorpCardActiveToggle id={card.id} active={card.active} />
+                    {card.archivedAt ? null : (
+                      <>
+                        {canWrite ? <CorpCardActiveToggle id={card.id} active={card.active} /> : null}
+                        {canArchive ? <CorpCardDeleteButton id={card.id} label={card.label} /> : null}
+                      </>
+                    )}
                   </td>
                 ) : null}
               </tr>

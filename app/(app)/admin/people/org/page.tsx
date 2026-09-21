@@ -14,12 +14,16 @@ export default async function OrgPage() {
   if (!session) redirect("/login");
   if (!(await can(session.viewer, "admin.people", "view"))) notFound();
 
-  const [orgUnits, teams] = await Promise.all([listOrgUnits(session.viewer), listTeams(session.viewer)]);
+  const [orgUnits, teams, canArchive] = await Promise.all([
+    listOrgUnits(session.viewer),
+    listTeams(session.viewer),
+    can(session.viewer, "admin.archive", "write"),
+  ]);
 
   return (
     <>
       <PageHeader title="조직" />
-      <OrgClient orgUnits={orgUnits} teams={teams} />
+      <OrgClient orgUnits={orgUnits} teams={teams} canArchive={canArchive} />
     </>
   );
 }

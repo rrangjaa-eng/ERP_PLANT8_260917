@@ -22,3 +22,11 @@ registerAction({
   action: "write",
   dtoName: "CorpCardDto",
 });
+
+// 03-07: 「삭제」(보관) — 보관함 정본 경로를 부르는 액션의 등록.
+registerAction({
+  name: "archiveCorpCardAction",
+  menu: "admin.archive",
+  action: "write",
+  dtoName: "CorpCardDto",
+});

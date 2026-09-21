@@ -15,12 +15,15 @@ export default async function RolesPage() {
   if (!session) redirect("/login");
   if (!(await can(session.viewer, "admin.people", "view"))) notFound();
 
-  const roles = await listRoles(session.viewer);
+  const [roles, canArchive] = await Promise.all([
+    listRoles(session.viewer),
+    can(session.viewer, "admin.archive", "write"),
+  ]);
 
   return (
     <>
       <PageHeader title="계급" />
-      <RolesClient roles={roles} />
+      <RolesClient roles={roles} canArchive={canArchive} />
     </>
   );
 }

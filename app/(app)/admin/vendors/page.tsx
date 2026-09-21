@@ -8,7 +8,7 @@ import { maskTail4 } from "@/lib/crypto";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
-import { VendorForm, VendorHiddenToggle } from "./vendor-form";
+import { VendorForm, VendorHiddenToggle, VendorDeleteButton } from "./vendor-form";
 import { AccountNumberCell } from "./account-number";
 import styles from "./vendors.module.css";
 
@@ -29,12 +29,13 @@ export default async function VendorsPage({
   const { includeHidden: includeHiddenParam } = await searchParams;
   const includeHidden = includeHiddenParam === "1";
 
-  const [vendors, canWrite, canReveal, evidenceTypes, fieldDefs] = await Promise.all([
+  const [vendors, canWrite, canReveal, evidenceTypes, fieldDefs, canArchive] = await Promise.all([
     listVendors(session.viewer, { includeHidden }),
     can(session.viewer, "admin.vendors", "write"),
     visible(session.viewer, REVEAL_INFO_ITEM),
     listCodeItems(session.viewer, "evidence_type"),
     listVendorFieldDefinitions(session.viewer),
+    can(session.viewer, "admin.archive", "write"),
   ]);
 
   const evidenceTypeLabelByValue = new Map(evidenceTypes.map((item) => [item.value, item.label]));
@@ -69,7 +70,7 @@ export default async function VendorsPage({
               <th scope="col">기본 증빙 종류</th>
               <th scope="col">계좌</th>
               <th scope="col">상태</th>
-              {canWrite ? <th scope="col">동작</th> : null}
+              {canWrite || canArchive ? <th scope="col">동작</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -90,15 +91,24 @@ export default async function VendorsPage({
                   />
                 </td>
                 <td>
-                  {vendor.hidden ? (
+                  {vendor.archivedAt ? (
+                    <StatusTag kind="muted" variant="text">
+                      보관됨
+                    </StatusTag>
+                  ) : vendor.hidden ? (
                     <StatusTag kind="muted" variant="text">
                       숨김
                     </StatusTag>
                   ) : null}
                 </td>
-                {canWrite ? (
+                {canWrite || canArchive ? (
                   <td>
-                    <VendorHiddenToggle id={vendor.id} hidden={vendor.hidden} />
+                    {vendor.archivedAt ? null : (
+                      <>
+                        {canWrite ? <VendorHiddenToggle id={vendor.id} hidden={vendor.hidden} /> : null}
+                        {canArchive ? <VendorDeleteButton id={vendor.id} name={vendor.name} /> : null}
+                      </>
+                    )}
                   </td>
                 ) : null}
               </tr>

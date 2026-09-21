@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
 import { createVendor, updateVendor, setVendorHidden, revealAccountNumber } from "@/domain/vendors";
+import { archive } from "@/domain/archive";
 import "./actions.registry";
 
 // MAST-01: domain/vendors만 부른다. 등록은 ./actions.registry로 분리(03-03
@@ -61,4 +62,13 @@ export const revealVendorAccountNumberAction = authedActionClient
   .action(async ({ parsedInput, ctx }) => {
     const value = await revealAccountNumber(ctx.viewer, parsedInput.id);
     return { value };
+  });
+
+// 03-07: 「삭제」 — domain/archive의 보관 함수만 부른다.
+export const archiveVendorAction = authedActionClient
+  .schema(z.object({ id: z.string().min(1) }))
+  .action(async ({ parsedInput, ctx }) => {
+    await archive(ctx.viewer, "vendor", parsedInput.id);
+    revalidatePath("/admin/vendors");
+    revalidatePath("/admin/archive");
   });

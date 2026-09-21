@@ -2,10 +2,11 @@
 
 import { useRef, type FormEvent } from "react";
 import { useAction } from "next-safe-action/hooks";
-import { createCodeItemAction, setCodeItemActiveAction } from "./actions";
+import { createCodeItemAction, setCodeItemActiveAction, archiveCodeItemAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
+import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 
 function getStringField(formData: FormData, key: string): string {
   const value = formData.get(key);
@@ -59,5 +60,19 @@ export function CodeItemActiveToggle({ id, active }: { id: string; active: boole
     >
       {active ? "비활성화" : "활성화"}
     </Button>
+  );
+}
+
+// 03-07: 「삭제」— 보관함으로 이동한다. delete-to-archive.tsx의 두 단계
+// 확인 컴포넌트를 여섯 화면 중 하나로 여기서 배선한다.
+export function CodeItemDeleteButton({ id, label }: { id: string; label: string }) {
+  return (
+    <DeleteToArchive
+      name={label}
+      onArchive={async () => {
+        const result = await archiveCodeItemAction({ id });
+        if (result?.serverError) throw new Error(result.serverError);
+      }}
+    />
   );
 }

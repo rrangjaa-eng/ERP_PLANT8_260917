@@ -29,7 +29,9 @@
     "account:reset": "node --env-file-if-exists=.env.local --import tsx scripts/account-cli.ts reset",
     "account:unlock": "node --env-file-if-exists=.env.local --import tsx scripts/account-cli.ts unlock",
     "deploy": "bash scripts/deploy.sh",
-    "rollback": "bash scripts/rollback.sh"
+    "rollback": "bash scripts/rollback.sh",
+    "db:reset:test": "bash scripts/reset-test-db.sh",
+    "test:e2e:ci": "pnpm db:reset:test && CI=true pnpm test:e2e"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "1.7.5",

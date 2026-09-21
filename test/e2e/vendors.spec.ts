@@ -110,3 +110,65 @@ test.describe("거래처 관리 화면 (MAST-01)", () => {
     }
   });
 });
+
+// 03-VERIFICATION.md human_verification 3번 — 거래처 수정 왕복을 화면 경로로
+// 고정한다. 코드표·법인카드는 master-edit.spec.ts가 같은 왕복을 이미 덮고
+// 있는데 거래처만 없었다(재검증 3회차가 `editId` 0건으로 실측). M-5(빈 칸 =
+// 「안 바꿈」)의 분기는 단위·통합에 있고, 여기서 증명하는 것은 그 분기까지
+// 화면이 실제로 닿는다는 것이다.
+//
+// 마지막에 숨김 처리하는 이유: 계좌번호 있는 거래처가 기본 목록에 남으면
+// mobile-admin-master-list-first.spec.ts의 375px 폭 단언(계좌 칸 때문에
+// 481>375)이 깨진다. 같은 파일 위쪽 스펙이 쓰는 정리 방식과 같다.
+test.describe("거래처 수정 왕복 (MAST-01 · M-5)", () => {
+  test("「수정」 진입 → 이름 변경 반영 → 계좌번호 칸을 비워 저장해도 기존 번호 보존", async ({
+    page,
+  }) => {
+    const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    const stamp = Date.now();
+    const before = `E2E수정전-${stamp}`;
+    const after = `E2E수정후-${stamp}`;
+    const accountNumber = "110-222-334455";
+
+    await page.goto("/admin/vendors");
+    await page.getByRole("link", { name: "거래처 등록" }).click();
+    await page.getByLabel("이름").fill(before);
+    await page.getByLabel("계좌 은행").fill("국민은행");
+    await page.getByLabel("예금주").fill("홍길동");
+    await page.getByLabel("계좌번호").fill(accountNumber);
+    await page.getByRole("button", { name: "거래처 등록" }).click();
+    await expect(page.getByText(before)).toBeVisible();
+
+    // 「수정」으로 들어간다 — 등록 폼이 아니라 수정 폼이 열린다(버튼이
+    // 「거래처 수정」이고, 계좌번호 칸 라벨이 「새 계좌번호」로 바뀐다).
+    await page.locator("tr", { hasText: before }).getByRole("link", { name: "수정" }).click();
+    const form = page.locator("#vendor-form");
+    await expect(form.getByLabel("새 계좌번호")).toBeVisible();
+    await expect(form.getByText(`현재 ****-**-4455`)).toBeVisible();
+
+    // 이름만 바꾸고, 「새 계좌번호」는 비워 둔 채 저장한다.
+    await form.getByLabel("이름").fill(after);
+    await page.getByRole("button", { name: "거래처 수정" }).click();
+
+    await page.goto("/admin/vendors");
+    await expect(page.getByText(after)).toBeVisible();
+    await expect(page.getByText(before)).toHaveCount(0);
+
+    // 계좌번호는 그대로다 — 뒤 4자리도, 「번호 보기」가 푸는 평문도.
+    const row = page.locator("tr", { hasText: after });
+    await expect(row.getByText("****-**-4455")).toBeVisible();
+    await row.getByRole("button", { name: "번호 보기" }).click();
+    await expect(row.getByText(accountNumber)).toBeVisible();
+
+    // 정리 — 계좌번호 있는 거래처를 기본 목록에 남기지 않는다.
+    await row.getByRole("button", { name: "숨기기" }).click();
+    await expect(page.getByText(after)).toHaveCount(0);
+  });
+});

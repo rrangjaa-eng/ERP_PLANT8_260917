@@ -193,7 +193,11 @@ export async function registerPerson(
   return { userId, tempPassword };
 }
 
-export type ChangePersonRoleDeps = { can: typeof defaultCan; recordAction: typeof defaultRecordAction };
+export type ChangePersonRoleDeps = {
+  can: typeof defaultCan;
+  findRoleById: typeof defaultFindRoleById;
+  recordAction: typeof defaultRecordAction;
+};
 
 // 자기 자신의 계급 변경은 거부한다 — D-33이 순위(rank) 컬럼을 두지 않기로
 // 했으므로 "낮추는" 요청만 가려낼 방법이 없다. 마지막 관리자가 자기 계급을
@@ -213,6 +217,16 @@ export async function changePersonRole(
 
   if (viewer.id === userId) {
     throw new SelfRoleChangeError("자기 자신의 계급은 이 화면에서 바꿀 수 없습니다.");
+  }
+
+  // registerPerson과 같은 검사를 여기에도 둔다(T-03-30). 외래키는 없는
+  // 식별자만 막고 보관된 계급은 통과시키는데, findPermission이
+  // roles.archived_at을 보지 않으므로 은퇴한 계급의 권한 행이 사용자
+  // 단위로 되살아난다.
+  const findRoleById = deps?.findRoleById ?? defaultFindRoleById;
+  const role = await findRoleById(viewer, roleId);
+  if (!role || role.archivedAt) {
+    throw new ValidationError(`존재하지 않거나 보관된 계급입니다: ${roleId}`);
   }
 
   await repoUpdateUserRole(viewer, userId, roleId);

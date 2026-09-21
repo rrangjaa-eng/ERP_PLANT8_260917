@@ -122,4 +122,21 @@ test.describe("행동 로그 화면 (ADMN-10, OPS-05)", () => {
     await expect(page.getByText("정리하지 못했습니다 · 다시 시도")).toHaveCount(0);
     await expect(page.getByRole("cell", { name: "문서 생성" })).toHaveCount(0);
   });
+
+  // OPS-05는 행동 로그에 남길 핵심 행동으로 「로그인」을 명시한다. record.ts의
+  // CORE_ACTION_TYPES에 "login"이 선언돼 있고 화면 필터에도 나오지만, 정작
+  // recordAction({actionType:"login"})을 부르는 코드가 없어서 그 필터는 영원히
+  // 0건이었다(페이즈 검증에서 발견). 인증 훅은 잠금용 login_attempts만 썼다.
+  test("로그인이 행동 로그에 남는다", async ({ page }) => {
+    const admin = await createFixtureUser({ roleId: "role-sysadmin" });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto("/admin/action-log?actionType=login");
+    await expect(page.getByRole("cell", { name: "로그인" }).first()).toBeVisible();
+  });
 });

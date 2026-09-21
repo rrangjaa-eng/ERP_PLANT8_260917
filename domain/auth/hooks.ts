@@ -5,6 +5,8 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { countOpenFailures, recordAttempt, resolveOpenFailures } from "@/repositories/login-attempts";
 import { isLocked, lockoutConfig, windowStart, LOCKED_MESSAGE } from "@/domain/auth/lockout";
 import { findUserByEmail } from "@/repositories/users";
+import { recordAction } from "@/domain/action-log/record";
+import type { Viewer } from "@/domain/viewer";
 
 // AUTH-01·Eng Issue 5: better-auth에는 계정 잠금이 없다(rateLimit은 IP 단위일 뿐).
 // before가 로그인 시도 전에 login_attempts를 확인해 거부하고, after가 결과를
@@ -67,6 +69,19 @@ export const before = createAuthMiddleware(async (ctx) => {
   }
 });
 
+// better-auth의 ctx.context.newSession도 any다 — getBodyEmail과 같은 결로
+// 필요한 필드만 안전하게 꺼낸다. roleId는 lib/auth.ts가 input:false로 등록한
+// 추가 필드라 세션 사용자에 실려 온다.
+function getSessionActor(newSession: unknown): Viewer | null {
+  if (newSession === null || typeof newSession !== "object" || !("user" in newSession)) return null;
+  const user = (newSession as { user?: unknown }).user;
+  if (user === null || typeof user !== "object") return null;
+  const id = (user as { id?: unknown }).id;
+  if (typeof id !== "string") return null;
+  const roleId = (user as { roleId?: unknown }).roleId;
+  return { id, roleId: typeof roleId === "string" ? roleId : null };
+}
+
 export const after = createAuthMiddleware(async (ctx) => {
   if (ctx.path !== "/sign-in/email") return;
 
@@ -80,6 +95,15 @@ export const after = createAuthMiddleware(async (ctx) => {
 
   if (success) {
     await resolveOpenFailures(SYSTEM_VIEWER, email, "success");
+
+    // OPS-05가 핵심 행동으로 명시한 「로그인」의 유일한 기록 지점이다.
+    // 성공한 로그인만 남긴다 — 실패 시도는 login_attempts가 잠금 목적으로
+    // 이미 기록하고, 행동 로그는 "누가 무엇을 했는가"의 감사 기록이라
+    // 실패까지 섞으면 잡음이 된다(같은 파일 머리 주석의 역할 분담).
+    // recordAttempt와 마찬가지로 감싸지 않고 await한다 — 둘 다 같은 DB에
+    // 쓰므로, 여기서 실패할 상황이면 바로 위 recordAttempt에서 이미 실패한다.
+    const actor = getSessionActor(ctx.context.newSession);
+    if (actor) await recordAction(actor, { actionType: "login" });
     return;
   }
 

@@ -1,10 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useAction } from "next-safe-action/hooks";
-import { restoreArchivedAction } from "./actions";
 import { Button } from "@/ui/button/Button";
-import { Toast } from "@/ui/toast/Toast";
 import styles from "./archive.module.css";
 
 // 03-UI-SPEC.md § Copywriting Contract 「Destructive confirmation」 —
@@ -61,24 +58,7 @@ export function DeleteToArchive({ name, onArchive, failureMessage }: DeleteToArc
   );
 }
 
-// 보관함 화면(page.tsx) 자신의 3차 「복원」 — 확인 없이 즉시 실행(비파괴적)
-// 하고 결과 토스트를 낸다(03-UI-SPEC.md). delete-to-archive.tsx 파일 하나에
-// 함께 둔 이유: 이 플랜의 <files> 목록이 archive 디렉터리에 이 파일 하나만
-// 클라이언트 컴포넌트로 지정했고, filter-bar.tsx(Task 2)가 이미 같은
-// 방식으로 여러 상호작용 컴포넌트를 한 파일에 모은 선례를 세웠다.
-export function RestoreButton({ entity, id, name }: { entity: string; id: string; name: string }) {
-  const [toast, setToast] = useState<{ message: string; tone: "default" | "error" } | null>(null);
-  const { execute, isExecuting } = useAction(restoreArchivedAction, {
-    onSuccess: () => setToast({ message: `복원 · ${name} 복원됨`, tone: "default" }),
-    onError: () => setToast({ message: "복원 · 실패 · 다시 시도", tone: "error" }),
-  });
-
-  return (
-    <>
-      <Button variant="tertiary" pending={isExecuting} onClick={() => execute({ entity, id })}>
-        복원
-      </Button>
-      {toast ? <Toast message={toast.message} tone={toast.tone} onDismiss={() => setToast(null)} /> : null}
-    </>
-  );
-}
+// 보관함 화면(page.tsx) 자신의 3차 「복원」은 ./archive-table.tsx가 담당한다
+// — 그 파일의 머리 주석 참고: 복원 성공 토스트는 행이 사라지는 재렌더보다
+// 오래 살아남아야 해서 토스트 상태를 표 전체로 끌어올린 클라이언트
+// 컴포넌트가 필요했다(이 파일의 행 단위 컴포넌트로는 불가능한 요구).

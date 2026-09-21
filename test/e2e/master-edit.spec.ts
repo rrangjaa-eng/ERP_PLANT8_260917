@@ -91,6 +91,43 @@ test.describe("법인카드 소유자 수정 (성공 기준 5 「수정」)", ()
     await expect(updatedRow.getByRole("cell", { name: "—", exact: true })).toHaveCount(0);
   });
 
+  // /review H-1 주장: 종류를 바꾸면 React가 <select> 노드를 재사용해
+  // defaultValue를 다시 적용하지 않고, 브라우저가 자리표시자를 건너뛰어 첫
+  // 팀을 자동 선택한다 → 팀을 고르지 않아도 저장된다. 실측으로 반증됐다
+  // (value "" · selectedIndex 0 「팀 선택」 · checkValidity false).
+  // 위 왕복 테스트는 종류 전환 직후 {index:1}을 고르므로 이 경로를 덮지
+  // 못한다 — 그 지적은 맞았고, 그래서 이 단언을 따로 둔다.
+  test("종류를 팀으로 바꾸고 팀을 고르지 않으면 제출이 막힌다", async ({ page }) => {
+    await loginAsSysadmin(page);
+
+    const stamp = Date.now();
+    await page.goto("/admin/corp-cards?new=1");
+    await page.getByLabel("발급사").fill(`전환카드사-${stamp}`);
+    await page.getByLabel("뒤 4자리").fill(String(Math.floor(1000 + Math.random() * 9000)));
+    await page.getByLabel("별칭").fill(`전환대상-${stamp}`);
+    await page.getByLabel("소지자").selectOption({ index: 1 });
+    await page.getByRole("button", { name: "법인카드 등록" }).click();
+
+    const row = page.getByRole("row", { name: new RegExp(`전환대상-${stamp}`) });
+    await expect(row).toBeVisible();
+    await row.getByRole("link", { name: "수정" }).click();
+
+    // 종류만 바꾸고 팀 선택은 건드리지 않는다.
+    await page.getByLabel("종류").selectOption("team");
+
+    const state = await page.getByLabel("팀").evaluate((el) => {
+      const select = el as HTMLSelectElement;
+      return { value: select.value, valid: select.checkValidity() };
+    });
+    expect(state.value).toBe("");
+    expect(state.valid).toBe(false);
+
+    // 이 상태로 제출해도 소유가 팀으로 바뀌지 않는다.
+    await page.getByRole("button", { name: "소유자 변경" }).click();
+    const afterRow = page.getByRole("row", { name: new RegExp(`전환대상-${stamp}`) });
+    await expect(afterRow.getByRole("cell", { name: "개인", exact: true })).toBeVisible();
+  });
+
   test("보관된 카드에는 「수정」 링크가 없다", async ({ page }) => {
     await loginAsSysadmin(page);
 

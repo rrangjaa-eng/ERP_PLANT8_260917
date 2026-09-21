@@ -69,20 +69,44 @@ export function CodeItemForm({ tableKey, cancelHref }: { tableKey: string; cance
 // 바꾸면 기존 거래처가 조용히 고아가 된다(사용자 결정 2026-09-21).
 export function CodeItemLabelInput({ id, label }: { id: string; label: string }) {
   const [value, setValue] = useState(label);
-  const { execute, result } = useAction(updateCodeItemLabelAction);
+  // §7-2 오류 한 줄은 실패의 종류를 가리지 않는다 — 서버 오류·검증 오류·
+  // 네트워크 실패 중 하나만 보이면 나머지는 조용히 사라진다. onError가 셋을
+  // 모두 받으므로 여기서 한 번에 잡는다.
+  const [errorText, setErrorText] = useState<string | undefined>(undefined);
+  const { execute } = useAction(updateCodeItemLabelAction, {
+    onError: ({ error }) => {
+      // 저장이 실패하면 화면의 값을 서버 값으로 되돌린다 — 안 되돌리면 칸에는
+      // 새 이름이, DB에는 옛 이름이 남아 사용자가 저장됐다고 믿는다.
+      setValue(label);
+      setErrorText(
+        error.serverError ??
+          error.validationErrors?.label?._errors?.[0] ??
+          "저장하지 못했습니다 · 잠시 후 다시 시도해 주세요.",
+      );
+    },
+    onSuccess: () => setErrorText(undefined),
+  });
+
+  const errorId = `code-item-label-error-${id}`;
 
   return (
     <>
       <input
-        className={styles.labelInput}
+        className={[styles.labelInput, errorText ? styles.labelInputError : ""].filter(Boolean).join(" ")}
         aria-label={`${label} 이름`}
+        aria-invalid={errorText ? true : undefined}
+        aria-describedby={errorText ? errorId : undefined}
         value={value}
         onChange={(event) => setValue(event.target.value)}
         onBlur={() => {
           if (value.trim() && value !== label) execute({ id, label: value });
         }}
       />
-      {result.serverError ? <p className={styles.taxRuleHint}>{result.serverError}</p> : null}
+      {errorText ? (
+        <p id={errorId} role="alert" className={styles.labelError}>
+          {errorText}
+        </p>
+      ) : null}
     </>
   );
 }

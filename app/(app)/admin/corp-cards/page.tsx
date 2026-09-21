@@ -98,7 +98,10 @@ export default async function CorpCardsPage({
         />
       ) : null}
 
-      {canWrite && showCreateForm ? (
+      {/* 수정 모드가 이긴다 — ?new=1&editId=를 같이 주면 폼 2개와 1차 버튼
+          2개가 함께 떠서 §7-1을 어겼다(주소를 직접 칠 때만 도달). 거래처는
+          폼 하나에 editing prop을 넘겨 이 상태 자체가 불가능하다. */}
+      {canWrite && showCreateForm && !editingCard ? (
         <CardForm
           holders={people.map((p) => ({ id: p.id, name: p.name }))}
           teams={teamOptions}

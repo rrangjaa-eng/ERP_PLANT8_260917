@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAction } from "next-safe-action/hooks";
 import {
@@ -148,8 +149,13 @@ export function CardOwnerForm({
   teams: TeamOption[];
   cancelHref: string;
 }) {
+  const router = useRouter();
   const [kind, setKind] = useState<"personal" | "team">(card.kind === "team" ? "team" : "personal");
-  const { execute, result, isExecuting } = useAction(updateCorpCardOwnerAction);
+  const { execute, result, isExecuting } = useAction(updateCorpCardOwnerAction, {
+    // 거래처(vendor-form.tsx)와 같은 결 — 수정이 끝나면 목록으로 돌아가
+    // 수정 모드를 나간다. 뒤로가기가 수정 모드로 되돌아가지 않도록 replace.
+    onSuccess: () => router.replace(cancelHref),
+  });
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

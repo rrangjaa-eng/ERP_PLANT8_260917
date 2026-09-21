@@ -20,7 +20,13 @@ async function withAdminPool<T>(fn: (pool: Pool) => Promise<T>): Promise<T> {
 
 async function cleanup(): Promise<void> {
   await withAdminPool(async (pool) => {
-    await pool.query(`DROP DATABASE IF EXISTS "${TEST_DB}"`);
+    // WITH (FORCE)가 없으면 DROP DATABASE는 그 DB에 붙은 세션이 하나라도 남아
+    // 있는 동안 무한정 기다린다. 클라이언트가 pool.end()를 불러도 서버가 그
+    // 소켓을 언제 거둬가는지는 보장되지 않아, CI에서 afterAll이 10초
+    // hookTimeout에 걸려 통합 스위트 전체가 FAIL로 끝나고 e2e 단계가 skip됐다
+    // (run #69·#70 연속, 개별 테스트 691건은 전부 통과한 상태였다).
+    // FORCE는 남은 백엔드를 끊고 진행한다(PostgreSQL 13+, CI·로컬 모두 16).
+    await pool.query(`DROP DATABASE IF EXISTS "${TEST_DB}" WITH (FORCE)`);
     await pool.query(`DROP ROLE IF EXISTS "${TEST_ROLE}"`);
   });
 }
@@ -33,9 +39,13 @@ describe("scripts/db-bootstrap 통합 (DB_ADMIN_URL 경로)", () => {
     });
   });
 
+  // WITH (FORCE)는 남은 백엔드가 실제로 빠져나갈 때까지 내부적으로 최대 5초쯤
+  // 기다린다. 무한 대기는 없어졌지만 CI의 디스크 부하(실측: 체크포인트 하나가
+  // 51초, 파일 14만 개 동기화)와 겹치면 기본 10초 hookTimeout을 넘길 수 있다 —
+  // 정리에 쓰는 대기 한도만 넉넉히 둔다(단언은 그대로다).
   afterAll(async () => {
     await cleanup();
-  });
+  }, 60_000);
 
   it("DB 소유권을 부여하고 재실행해도 멱등하다", async () => {
     const savedEnv = {
@@ -92,4 +102,38 @@ describe("scripts/db-bootstrap 통합 (DB_ADMIN_URL 경로)", () => {
       else process.env.DB_IAM_USER = savedEnv.DB_IAM_USER;
     }
   });
+
+  // CI 실측(run #69·#70 연속): afterAll의 cleanup()이 10초 hookTimeout에 걸려
+  // 통합 스위트가 FAIL로 끝나고 e2e 단계가 통째로 skip됐다 — 개별 테스트 691건은
+  // 전부 통과한 상태였다. 원인은 DROP DATABASE가 그 DB에 붙은 세션이 하나라도
+  // 남아 있으면 무한정 기다린다는 것이다(로컬 실측: FORCE 없이는 5초 제한에
+  // 강제 종료, WITH (FORCE)는 즉시 성공). 클라이언트가 pool.end()를 불러도
+  // 서버가 그 소켓을 언제 거둬가는지는 보장되지 않아 로컬에서는 재현되지 않았다.
+  // 이 테스트는 연결을 일부러 붙잡아 그 조건을 결정적으로 만든다.
+  it("대상 DB에 연결이 남아 있어도 정리가 끝난다", async () => {
+    // 앞 테스트가 이미 만들어 뒀을 수 있다 — 순서에 기대지 않는다.
+    await withAdminPool(async (pool) => {
+      const existing = await pool.query(`SELECT 1 FROM pg_database WHERE datname = $1`, [TEST_DB]);
+      if ((existing.rowCount ?? 0) === 0) await pool.query(`CREATE DATABASE "${TEST_DB}"`);
+    });
+
+    const holder = new Pool({ connectionString: ADMIN_URL.replace("/postgres", `/${TEST_DB}`) });
+    // FORCE가 이 연결을 끊으면 pg가 57P01을 비동기 error 이벤트로 올린다 —
+    // 이 테스트가 일부러 만든 상황이므로 여기서 삼킨다(없으면 처리되지 않은
+    // 예외로 스위트 전체가 exit 1이 된다).
+    holder.on("error", () => undefined);
+    await holder.query("select 1");
+
+    try {
+      await cleanup();
+    } finally {
+      await holder.end().catch(() => undefined);
+    }
+
+    const stillThere = await withAdminPool(async (pool) => {
+      const result = await pool.query(`SELECT 1 FROM pg_database WHERE datname = $1`, [TEST_DB]);
+      return result.rowCount ?? 0;
+    });
+    expect(stillThere).toBe(0);
+  }, 60_000);
 });

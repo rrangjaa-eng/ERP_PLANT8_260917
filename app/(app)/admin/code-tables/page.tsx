@@ -59,8 +59,9 @@ export default async function CodeTablesPage({
   // 폼이 없다.
   const showForm = newParam === "1";
 
-  const [items, canArchive] = await Promise.all([
+  const [items, canWrite, canArchive] = await Promise.all([
     listCodeItems(session.viewer, tableKey, { includeInactive }),
+    can(session.viewer, "admin.code-tables", "write"),
     can(session.viewer, "admin.archive", "write"),
   ]);
   const currentLabel = TABLE_OPTIONS.find((option) => option.key === tableKey)?.label ?? tableKey;
@@ -82,7 +83,10 @@ export default async function CodeTablesPage({
         ))}
       </nav>
 
-      {showForm ? (
+      {/* 쓰기 권한이 없는 계급에는 등록·편집 수단 자체를 렌더하지 않는다 —
+          "이유 있는 비활성" 대신 "버튼 자체가 없음"(03-UI-SPEC.md). 거래처·
+          법인카드·사람 화면이 이미 하는 것을 이 화면만 빠뜨리고 있었다. */}
+      {canWrite && showForm ? (
         <CodeItemForm tableKey={tableKey} cancelHref={codeTablesHref(tableKey, includeInactive)} />
       ) : null}
 
@@ -94,7 +98,7 @@ export default async function CodeTablesPage({
           {includeInactive ? "숨김 제외" : "숨김 포함"}
         </a>
         {/* §6-1 「새 지출결의」와 같은 자리 — 목록 머리글의 등록 행동. */}
-        {!showForm && items.length > 0 ? (
+        {canWrite && !showForm && items.length > 0 ? (
           <Link href={codeTablesHref(tableKey, includeInactive, { isNew: true })} className={styles.toggle}>
             코드 추가
           </Link>
@@ -104,7 +108,11 @@ export default async function CodeTablesPage({
       {items.length === 0 ? (
         <ListEmpty
           message="등록된 코드가 없습니다"
-          action={{ label: "코드 추가", href: codeTablesHref(tableKey, includeInactive, { isNew: true }) }}
+          action={
+            canWrite
+              ? { label: "코드 추가", href: codeTablesHref(tableKey, includeInactive, { isNew: true }) }
+              : undefined
+          }
         />
       ) : (
         <table className={styles.table}>
@@ -125,7 +133,11 @@ export default async function CodeTablesPage({
                   {/* MAST-04 「수정」 — 보관된 항목은 도메인이 거부하므로
                       입력칸 대신 글자로 보인다(계급 화면과 같은 결). */}
                   <td>
-                    {item.archivedAt ? item.label : <CodeItemLabelInput id={item.id} label={item.label} />}
+                    {item.archivedAt || !canWrite ? (
+                      item.label
+                    ) : (
+                      <CodeItemLabelInput id={item.id} label={item.label} />
+                    )}
                   </td>
                   <td>{item.sortOrder}</td>
                   <td>
@@ -142,13 +154,13 @@ export default async function CodeTablesPage({
                   <td>
                     {item.archivedAt ? null : (
                       <>
-                        <CodeItemActiveToggle id={item.id} active={item.active} />
+                        {canWrite ? <CodeItemActiveToggle id={item.id} active={item.active} /> : null}
                         {canArchive ? <CodeItemDeleteButton id={item.id} label={item.label} /> : null}
                       </>
                     )}
                   </td>
                 </tr>
-                {isEvidenceType ? (
+                {isEvidenceType && canWrite ? (
                   <tr>
                     <td colSpan={5}>
                       <EvidenceTypeFields itemId={item.id} initialValue={item.taxRule} />

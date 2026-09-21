@@ -3,7 +3,7 @@ import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
 import { roles } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
-import { normalizeRoleName } from "@/domain/permissions/roles";
+import { normalizeRoleName } from "@/domain/permissions/role-name";
 
 export type RoleRow = InferSelectModel<typeof roles>;
 

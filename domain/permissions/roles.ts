@@ -5,6 +5,7 @@ import { project, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import type { recordAction as RecordActionFn } from "@/domain/action-log/record";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { normalizeRoleName } from "@/domain/permissions/role-name";
 import {
   findRoleById as defaultFindRoleById,
   listRoles as repoListRoles,
@@ -26,16 +27,13 @@ export const SEED_ROLES: SeedRole[] = [
   { id: "role-sysadmin", name: "시스템 관리자", isSeed: true, sortOrder: 4 },
 ];
 
+export { normalizeRoleName };
+
 export const SYSADMIN_ROLE_ID = "role-sysadmin";
 
 // 백필 규칙(Task 1 결정 ④)의 대상 — 관리자 여부 잔여 컬럼이 거짓인 행이 옮겨가는 기본 계급.
 export const DEFAULT_ROLE_ID = "role-pm";
 
-// 계급 이름 중복 판정은 Unicode NFC 정규화 후에 한다 — 조합형(NFD)·완성형(NFC)으로
-// 적은 같은 한글 이름이 같은 이름으로 취급된다. DB의 UNIQUE 제약과 짝을 이룬다.
-export function normalizeRoleName(name: string): string {
-  return name.normalize("NFC").trim();
-}
 
 // T-03-17: 권한표·정보 노출표 셀 저장 액션의 zod 스키마가 roleId를 검증할 때
 // 쓰는 domain 진입점 — `app`은 `repositories`를 직접 import할 수 없으므로

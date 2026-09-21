@@ -21,7 +21,7 @@
 
 **[Build] GSD가 뼈대, Superpowers가 규율**
 - `/gsd-execute-phase`로 실행. 상태의 단일 출처는 `.planning/`
-- 실행 중 Superpowers 스킬(TDD, systematic-debugging, verification-before-completion)은 항상 켜진 것으로 본다
+- 실행 중 Superpowers 스킬은 **호출**한다(켜졌다고 가정만 하지 않는다): 버그·테스트 실패·CI 실패를 쫓기 전에 `systematic-debugging`, "완료"를 말하기 전에 `verification-before-completion`, 구현 전에 `test-driven-development`. 서브에이전트에 위임할 때도 프롬프트에 그 스킬을 명시한다
 - 페이즈 밖 소규모 작업: `/gsd-quick` 또는 `/superpowers:brainstorm → write-plan → execute-plan` 중 하나만
 - 페이즈 종료: `/gsd-verify-work` → `/gsd-complete-milestone`
 
@@ -31,6 +31,7 @@
 3. `/cso` 보안 감사 (인증·결제·외부 입력 다룰 때 필수)
 4. `/ship` PR 생성·머지 → `/retro` 회고
 - 회고에서 나온 규칙은 이 파일이 아니라 `.planning/` 또는 `/learn`에 남긴다
+- **Post-build 넷은 건너뛰지 않는다.** 페이즈 실행이 끝나면 즉석 검증으로 대체하지 말고 `/review` → `/qa` → (해당 시)`/cso` → `/ship`을 실제로 호출한다. 페이즈가 인증·권한·암호화·외부 입력을 건드렸으면 `/cso`는 선택이 아니다
 
 공통
 - 사소한 변경(오타·색·한 줄)은 절차 없이 바로. 절차는 작업 크기가 정한다

@@ -137,3 +137,78 @@ test.describe("법인카드 화면 — 목록이 첫 화면, 등록은 행동 (�
     await expect(page.getByRole("cell", { name: "목록우선카드" }).first()).toBeVisible();
   });
 });
+
+// 2026-09-21 관리자 화면 design-review A-H1: 위 네 화면의 §6-1 재구성에서
+// 조직·계급 두 화면이 빠져 있었다 — 기본 진입에 `form#org-unit-form`·
+// `form#team-form`·`form#role-form`이 상시 렌더되어 목록이 그 아래로 밀렸고,
+// 조직 화면은 1차 버튼(「본부 추가」·「팀 추가」)이 한 화면에 둘이었다(§7-1은
+// 1개). 같은 토글을 두 화면에도 적용한다.
+
+test.describe("계급 화면 — 목록이 첫 화면, 추가는 행동 (§6-1)", () => {
+  test("기본 진입에 폼이 없고, 「계급 추가」가 스크롤 없이 닿으며, 누르면 폼이 열리고 제출된다", async ({
+    page,
+  }) => {
+    await loginAs(page, SYSADMIN_ROLE_ID);
+    const response = await page.goto("/admin/people/roles");
+    expect(response?.status()).toBe(200);
+
+    await expect(page.locator("#role-form")).toHaveCount(0);
+    await expectReachableWithoutScrolling(page, "계급 추가");
+
+    await page.getByRole("link", { name: "계급 추가" }).click();
+    await expect(page).toHaveURL(/[?&]new=1/);
+    await expect(page.locator("#role-form")).toBeVisible();
+
+    const roleName = `E2E목록우선계급-${Date.now()}`;
+    await page.locator("#role-form").getByLabel("이름", { exact: true }).fill(roleName);
+    await page.getByRole("button", { name: "계급 추가" }).click();
+    await expect(page.getByLabel(`${roleName} 이름`)).toBeVisible();
+  });
+});
+
+test.describe("조직 화면 — 목록이 첫 화면, 추가는 행동 (§6-1 · §7-1)", () => {
+  test("기본 진입에 폼이 0개이고 1차 버튼도 0개다", async ({ page }) => {
+    await loginAs(page, SYSADMIN_ROLE_ID);
+    const response = await page.goto("/admin/people/org");
+    expect(response?.status()).toBe(200);
+
+    await expect(page.locator("#org-unit-form")).toHaveCount(0);
+    await expect(page.locator("#team-form")).toHaveCount(0);
+    await expect(page.locator("form")).toHaveCount(0);
+    await expectReachableWithoutScrolling(page, "본부 추가");
+    await expectReachableWithoutScrolling(page, "팀 추가");
+  });
+
+  test("「본부 추가」를 누르면 본부 폼만 열리고(1차 버튼 1개) 제출된다", async ({ page }) => {
+    await loginAs(page, SYSADMIN_ROLE_ID);
+    await page.goto("/admin/people/org");
+
+    await page.getByRole("link", { name: "본부 추가" }).click();
+    await expect(page).toHaveURL(/[?&]new=org/);
+    await expect(page.locator("#org-unit-form")).toBeVisible();
+    await expect(page.locator("#team-form")).toHaveCount(0);
+    await expect(page.locator("button[type=submit]")).toHaveCount(1);
+
+    const orgUnitName = `E2E목록우선본부-${Date.now()}`;
+    await page.locator("#org-unit-form").getByLabel("이름", { exact: true }).fill(orgUnitName);
+    await page.locator("#org-unit-form button[type=submit]").click();
+    await expect(page.getByLabel(`${orgUnitName} 이름`)).toBeVisible();
+  });
+
+  test("「팀 추가」를 누르면 팀 폼만 열리고(1차 버튼 1개) 제출된다", async ({ page }) => {
+    await loginAs(page, SYSADMIN_ROLE_ID);
+    await page.goto("/admin/people/org");
+
+    await page.getByRole("link", { name: "팀 추가" }).click();
+    await expect(page).toHaveURL(/[?&]new=team/);
+    await expect(page.locator("#team-form")).toBeVisible();
+    await expect(page.locator("#org-unit-form")).toHaveCount(0);
+    await expect(page.locator("button[type=submit]")).toHaveCount(1);
+
+    const teamName = `E2E목록우선팀-${Date.now()}`;
+    await page.locator("#team-form select[name=orgUnitId]").selectOption({ label: "기획본부" });
+    await page.locator("#team-form").getByLabel("이름", { exact: true }).fill(teamName);
+    await page.locator("#team-form button[type=submit]").click();
+    await expect(page.getByLabel(`${teamName} 이름`)).toBeVisible();
+  });
+});

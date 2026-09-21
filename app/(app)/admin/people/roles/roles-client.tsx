@@ -1,14 +1,18 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useAction } from "next-safe-action/hooks";
 import { createRoleAction, renameRoleAction, archiveRoleAction } from "../actions";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
+import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import styles from "../people.module.css";
+
+const NEW_HREF = "/admin/people/roles?new=1#role-form";
 
 export type RoleRowView = {
   id: string;
@@ -66,7 +70,18 @@ function RoleRow({ role, canArchive }: { role: RoleRowView; canArchive: boolean 
   );
 }
 
-export function RolesClient({ roles, canArchive }: { roles: RoleRowView[]; canArchive: boolean }) {
+// §6-1: 목록이 화면이고 추가는 목록 머리글의 행동이다 — 폼은 ?new=1일 때만
+// 렌더한다(design-review A-H1). 거래처·코드표·사람·법인카드 네 화면이 쓰는
+// 것과 같은 토글이다.
+export function RolesClient({
+  roles,
+  canArchive,
+  showForm,
+}: {
+  roles: RoleRowView[];
+  canArchive: boolean;
+  showForm: boolean;
+}) {
   const formRef = useRef<HTMLFormElement>(null);
   const { execute, result, isExecuting } = useAction(createRoleAction, {
     onSuccess: () => formRef.current?.reset(),
@@ -82,14 +97,32 @@ export function RolesClient({ roles, canArchive }: { roles: RoleRowView[]; canAr
 
   return (
     <>
-      <form ref={formRef} onSubmit={handleSubmit} id="role-form">
-        <TextField id="role-name" name="name" label="이름" required error={nameError} />
-        {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
-        <Button type="submit" variant="primary" pending={isExecuting}>
-          계급 추가
-        </Button>
-      </form>
+      {showForm ? (
+        <form ref={formRef} onSubmit={handleSubmit} id="role-form">
+          <TextField id="role-name" name="name" label="이름" required error={nameError} />
+          {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
+          <div className={styles.formActions}>
+            <Button type="submit" variant="primary" pending={isExecuting}>
+              계급 추가
+            </Button>
+            <Link href="/admin/people/roles" className={styles.toggle}>
+              취소
+            </Link>
+          </div>
+        </form>
+      ) : roles.length > 0 ? (
+        // 목록이 비면 §7-7 EMPTY가 같은 이름의 「다음 한 수」를 이미 보이므로
+        // 이 줄은 없다 — 같은 링크를 두 번 그리지 않는다(접근 가능한 이름 중복).
+        <div className={styles.filterRow}>
+          <Link href={NEW_HREF} className={styles.toggle}>
+            계급 추가
+          </Link>
+        </div>
+      ) : null}
 
+      {roles.length === 0 ? (
+        <ListEmpty message="등록된 계급이 없습니다" action={{ label: "계급 추가", href: NEW_HREF }} />
+      ) : (
       <table className={styles.table}>
         <thead>
           <tr>
@@ -105,6 +138,7 @@ export function RolesClient({ roles, canArchive }: { roles: RoleRowView[]; canAr
           ))}
         </tbody>
       </table>
+      )}
     </>
   );
 }

@@ -18,7 +18,7 @@ async function loginAs(page: Page): Promise<void> {
 test.describe("계급 이름 변경 입력의 접근 가능한 이름 (defect 2)", () => {
   test("각 계급 이름 입력이 <계급 이름> 이름으로 된 고유한 접근 가능한 이름을 가진다", async ({ page }) => {
     await loginAs(page);
-    await page.goto("/admin/people/roles");
+    await page.goto("/admin/people/roles?new=1");
 
     const roleName = `E2E계급-${Date.now()}`;
     await page.locator("#role-form").getByLabel("이름").fill(roleName);
@@ -31,7 +31,7 @@ test.describe("계급 이름 변경 입력의 접근 가능한 이름 (defect 2)
 
   test("서로 다른 두 계급의 이름 입력은 서로 다른 접근 가능한 이름을 가진다(행 구분 가능)", async ({ page }) => {
     await loginAs(page);
-    await page.goto("/admin/people/roles");
+    await page.goto("/admin/people/roles?new=1");
 
     const roleA = `E2E계급A-${Date.now()}`;
     const roleB = `E2E계급B-${Date.now()}`;

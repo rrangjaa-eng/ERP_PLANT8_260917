@@ -389,3 +389,5 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 
 **범위**: `app/(app)/admin/{vendors,code-tables,people,corp-cards}/**`(구현)와 `SYSTEM.md` §6-1(계약 한 문단). `docs/design/SYSTEM.md` 본문 외 다른 절은 바꾸지 않았다.
 
+**추가(같은 날, design-review A-H1)**: 위 네 화면만 적은 것이 누락이었다. 같은 `admin.people` 권한 아래 있는 **조직**(`admin/people/org`)·**계급**(`admin/people/roles`) 두 화면도 등록 폼을 목록 위에 상시 렌더하고 있었고(`form#org-unit-form`·`form#team-form`·`form#role-form`), 조직 화면은 그 때문에 1차 버튼이 한 화면에 **둘**이었다(§7-1은 1개). 스테이징 프로덕션 빌드의 라이브 DOM 실측으로 확인했다 — 조직 화면의 목록은 y 352.4부터 시작했다. 같은 토글을 두 화면에도 적용했다: 계급은 `?new=1`, 조직은 폼이 둘이므로 `?new=org`·`?new=team`으로 **한 번에 하나만** 연다. 따라서 이 결정의 범위는 `app/(app)/admin/people/{org,roles}/**`까지다. 조직 화면이 `<ul>` 중첩 목록이고 §6-1 원장(`<table>`) 골격이 아니라는 점은 별개 항목으로 남긴다(`.planning/phases/03-permissions-settings-masters/03-OPEN-ITEMS.md`) — 본부→팀 계층을 평평한 표로 어떻게 보일지는 이 결정이 다루지 않은 새 설계 판단이다.
+

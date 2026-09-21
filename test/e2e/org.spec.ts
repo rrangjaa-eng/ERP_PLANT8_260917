@@ -20,7 +20,7 @@ async function loginAs(page: Page): Promise<void> {
 test.describe("본부·팀 이름 변경 입력의 접근 가능한 이름 (defect 2)", () => {
   test("각 본부 이름 입력이 <본부 이름> 이름으로 된 고유한 접근 가능한 이름을 가진다", async ({ page }) => {
     await loginAs(page);
-    await page.goto("/admin/people/org");
+    await page.goto("/admin/people/org?new=org");
 
     const orgUnitName = `E2E본부-${Date.now()}`;
     await page.locator("#org-unit-form").getByLabel("이름").fill(orgUnitName);
@@ -33,7 +33,7 @@ test.describe("본부·팀 이름 변경 입력의 접근 가능한 이름 (defe
 
   test("각 팀 이름 입력이 <팀 이름> 이름으로 된 고유한 접근 가능한 이름을 가진다", async ({ page }) => {
     await loginAs(page);
-    await page.goto("/admin/people/org");
+    await page.goto("/admin/people/org?new=team");
 
     // 시드 데이터의 본부 하나를 골라 그 아래 팀을 만든다.
     const teamName = `E2E팀-${Date.now()}`;
@@ -48,7 +48,7 @@ test.describe("본부·팀 이름 변경 입력의 접근 가능한 이름 (defe
 
   test("서로 다른 두 행의 이름 입력은 서로 다른 접근 가능한 이름을 가진다(행 구분 가능)", async ({ page }) => {
     await loginAs(page);
-    await page.goto("/admin/people/org");
+    await page.goto("/admin/people/org?new=org");
 
     const orgA = `E2E본부A-${Date.now()}`;
     const orgB = `E2E본부B-${Date.now()}`;

@@ -19,12 +19,15 @@ const REVEAL_INFO_ITEM = "vendor.account_number_unmasked";
 export const dynamic = "force-dynamic";
 
 // 목록 화면의 필터 상태(숨김 포함 여부)를 유지한 채 이동하는 링크를 만든다 —
-// 「수정」에서 폼으로 들어갈 때도, 폼의 「취소」에서 목록으로 돌아올 때도 같은
-// 필터를 쓴다.
-function vendorsHref(includeHidden: boolean, editId?: string): string {
+// 「수정」·「거래처 등록」에서 폼으로 들어갈 때도, 폼의 「취소」에서 목록으로
+// 돌아올 때도 같은 필터를 쓴다. `isNew`는 등록 모드(D-39: 추가·수정은 별도
+// 화면 — vendors가 이미 쓰던 ?editId= 토글 방식을 등록에도 그대로 확장한다,
+// DECISIONS.md 2026-09-21 참고).
+function vendorsHref(includeHidden: boolean, opts?: { editId?: string; isNew?: boolean }): string {
   const params = new URLSearchParams();
   if (includeHidden) params.set("includeHidden", "1");
-  if (editId) params.set("editId", editId);
+  if (opts?.editId) params.set("editId", opts.editId);
+  if (opts?.isNew) params.set("new", "1");
   const query = params.toString();
   return query ? `/admin/vendors?${query}#vendor-form` : "/admin/vendors";
 }
@@ -32,13 +35,13 @@ function vendorsHref(includeHidden: boolean, editId?: string): string {
 export default async function VendorsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ includeHidden?: string; editId?: string }>;
+  searchParams: Promise<{ includeHidden?: string; editId?: string; new?: string }>;
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
   if (!(await can(session.viewer, "admin.vendors", "view"))) notFound();
 
-  const { includeHidden: includeHiddenParam, editId } = await searchParams;
+  const { includeHidden: includeHiddenParam, editId, new: newParam } = await searchParams;
   const includeHidden = includeHiddenParam === "1";
 
   const [vendors, canWrite, canReveal, evidenceTypes, fieldDefs, canArchive] = await Promise.all([
@@ -56,6 +59,11 @@ export default async function VendorsPage({
   // 조용히 등록 모드로 돌아간다 — 존재하지 않는 대상을 오류로 다루지 않는다.
   const editingVendor = editId ? (vendors.find((vendor) => vendor.id === editId) ?? null) : null;
   const cancelHref = vendorsHref(includeHidden);
+  // §6-1: 목록이 화면이고 등록은 목록 머리글의 행동이다 — 기본 진입(쿼리
+  // 없음)에는 폼이 없다. editId가 가리키는 행이 있으면 수정 모드로 그 자체가
+  // 열림 신호다(?new=1과 무관하게).
+  const showCreateForm = newParam === "1";
+  const showForm = editingVendor !== null || showCreateForm;
 
   return (
     <>
@@ -63,7 +71,7 @@ export default async function VendorsPage({
 
       {/* 쓰기 권한이 없는 계급에는 등록 폼 자체를 렌더하지 않는다 —
           "이유 있는 비활성" 대신 "버튼 자체가 없음"(03-UI-SPEC.md). */}
-      {canWrite ? (
+      {canWrite && showForm ? (
         <VendorForm
           key={editingVendor?.id ?? "create"}
           evidenceTypes={evidenceTypes.map((item) => ({ value: item.value, label: item.label }))}
@@ -77,10 +85,21 @@ export default async function VendorsPage({
         <a href={includeHidden ? "?includeHidden=0" : "?includeHidden=1"} className={styles.toggle}>
           {includeHidden ? "숨김 제외" : "숨김 포함"}
         </a>
+        {/* §6-1 「새 지출결의」와 같은 자리 — 목록 머리글의 등록 행동. 폼이
+            이미 열려 있으면 그 폼의 「취소」가 같은 역할을 하므로 중복해
+            보이지 않는다. */}
+        {canWrite && !showForm && vendors.length > 0 ? (
+          <Link href={vendorsHref(includeHidden, { isNew: true })} className={styles.toggle}>
+            거래처 등록
+          </Link>
+        ) : null}
       </div>
 
       {vendors.length === 0 ? (
-        <ListEmpty message="등록된 거래처가 없습니다" action={{ label: "거래처 등록", href: "#vendor-form" }} />
+        <ListEmpty
+          message="등록된 거래처가 없습니다"
+          action={{ label: "거래처 등록", href: vendorsHref(includeHidden, { isNew: true }) }}
+        />
       ) : (
         <table className={styles.table}>
           <thead>
@@ -126,7 +145,7 @@ export default async function VendorsPage({
                     {vendor.archivedAt ? null : (
                       <>
                         {canWrite ? (
-                          <Link href={vendorsHref(includeHidden, vendor.id)} className={styles.toggle}>
+                          <Link href={vendorsHref(includeHidden, { editId: vendor.id })} className={styles.toggle}>
                             수정
                           </Link>
                         ) : null}

@@ -1,6 +1,40 @@
 /* SYSTEM.md §6-1 목록 · §6-3 폼 템플릿(D-39). 색·서체·radius는 tokens.css
    변수만 쓴다(D-20). 간격 리터럴은 허용된다(02-02 결정). */
 
+/* vendors.module.css·corp-cards.module.css와 같은 결 — 목록 머리글의 등록
+   행동 한 줄(§6-1, 2026-09-21 이후). */
+.filterRow {
+  display: flex;
+  justify-content: flex-end;
+  margin: var(--s-3) 0;
+}
+
+.toggle {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: var(--underline-offset);
+}
+
+/* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. */
+@media (max-width: 699.98px) {
+  .toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+    padding: 0 var(--s-2);
+  }
+}
+
+.formActions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;

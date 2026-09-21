@@ -1,12 +1,14 @@
 "use client";
 
 import { useRef, type FormEvent } from "react";
+import Link from "next/link";
 import { useAction } from "next-safe-action/hooks";
 import { createCodeItemAction, setCodeItemActiveAction, archiveCodeItemAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
+import styles from "./code-tables.module.css";
 
 function getStringField(formData: FormData, key: string): string {
   const value = formData.get(key);
@@ -14,7 +16,9 @@ function getStringField(formData: FormData, key: string): string {
 }
 
 // SYSTEM.md §6-3 폼 템플릿 재사용(D-39) — 목록 위에 펼치는 폼이고 모달이 아니다.
-export function CodeItemForm({ tableKey }: { tableKey: string }) {
+// §6-1(2026-09-21 이후): page.tsx가 ?new=1일 때만 이 폼을 렌더한다 — 기본
+// 진입에는 없다. cancelHref는 그 쿼리를 뺀 같은 화면으로 돌아간다.
+export function CodeItemForm({ tableKey, cancelHref }: { tableKey: string; cancelHref: string }) {
   const formRef = useRef<HTMLFormElement>(null);
   const { execute, result, isExecuting } = useAction(createCodeItemAction, {
     onSuccess: () => formRef.current?.reset(),
@@ -40,9 +44,14 @@ export function CodeItemForm({ tableKey }: { tableKey: string }) {
       <TextField id="label" name="label" label="이름" required error={labelError} />
       <TextField id="sortOrder" name="sortOrder" label="정렬 순서" type="number" defaultValue={0} />
       {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
-      <Button type="submit" variant="primary" pending={isExecuting}>
-        코드 추가
-      </Button>
+      <div className={styles.formActions}>
+        <Button type="submit" variant="primary" pending={isExecuting}>
+          코드 추가
+        </Button>
+        <Link href={cancelHref} className={styles.toggle}>
+          취소
+        </Link>
+      </div>
     </form>
   );
 }

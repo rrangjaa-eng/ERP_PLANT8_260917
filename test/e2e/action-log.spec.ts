@@ -17,7 +17,10 @@ test.describe("행동 로그 화면 (ADMN-10, OPS-05)", () => {
 
     // 코드표 항목 하나를 추가해 행동 로그 행을 만든다.
     const codeValue = `e2e-log-${Date.now()}`;
+    // 2026-09-21 스테이징 QA 수정: 등록 폼이 기본 진입에는 없다(§6-1) —
+    // 목록 머리글의 「코드 추가」가 그 폼을 연다.
     await page.goto("/admin/code-tables");
+    await page.getByRole("link", { name: "코드 추가" }).click();
     await page.getByLabel("값").fill(codeValue);
     await page.getByLabel("이름").fill("행동 로그 E2E");
     await page.getByRole("button", { name: "코드 추가" }).click();
@@ -98,7 +101,10 @@ test.describe("행동 로그 화면 (ADMN-10, OPS-05)", () => {
     await expect(page).toHaveURL(/\/account$/);
 
     const codeValue = `e2e-empty-${Date.now()}`;
+    // 2026-09-21 스테이징 QA 수정: 등록 폼이 기본 진입에는 없다(§6-1) —
+    // 목록 머리글의 「코드 추가」가 그 폼을 연다.
     await page.goto("/admin/code-tables");
+    await page.getByRole("link", { name: "코드 추가" }).click();
     await page.getByLabel("값").fill(codeValue);
     await page.getByLabel("이름").fill("빈 파라미터 E2E");
     await page.getByRole("button", { name: "코드 추가" }).click();

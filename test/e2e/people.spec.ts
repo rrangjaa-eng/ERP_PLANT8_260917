@@ -18,6 +18,11 @@ test.describe("사람 등록 → 계정·초기 비밀번호 발급 → 로그�
     const response = await page.goto("/admin/people");
     expect(response?.status()).toBe(200);
 
+    // 2026-09-21 스테이징 QA 수정: 등록 폼이 기본 진입에는 없다(§6-1) —
+    // 목록 머리글의 「사람 등록」이 그 폼을 연다.
+    await expect(page.getByLabel("이름")).toHaveCount(0);
+    await page.getByRole("link", { name: "사람 등록" }).click();
+
     const newEmail = `e2e-person-${Date.now()}@example.test`;
     await page.getByLabel("이름").fill("이영희");
     await page.getByLabel("이메일").fill(newEmail);

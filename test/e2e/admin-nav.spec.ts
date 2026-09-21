@@ -31,8 +31,11 @@ test.describe("PC 사용자 메뉴로 관리자 화면에 클릭만으로 닿는
     await menu.getByRole("menuitem", { name: "코드표" }).click();
 
     await expect(page).toHaveURL(/\/admin\/code-tables$/);
-    // code-tables.spec.ts가 이미 쓰는 화면 고유 라벨 — 404가 아니라 실제 화면임을 확인한다.
-    await expect(page.getByLabel("값")).toBeVisible();
+    // 404가 아니라 실제 화면임을 확인한다. 등록 폼의 입력칸으로 판정하지
+    // 않는다 — §6-1 재구성으로 폼이 ?new=1 뒤로 들어가 기본 진입에는 없다.
+    // 화면 제목과 코드표 선택 nav는 기본 진입에 항상 있다.
+    await expect(page.getByRole("heading", { name: "코드표" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "코드표 선택" })).toBeVisible();
   });
 
   test("시스템 관리자의 사용자 메뉴에는 admin.* 10개 전부가 「내 정보」·「로그아웃」 위에 보인다", async ({

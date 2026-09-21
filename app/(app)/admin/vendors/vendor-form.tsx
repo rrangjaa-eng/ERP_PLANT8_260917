@@ -197,11 +197,11 @@ export function VendorForm({
         <Button type="submit" variant="primary" pending={isExecuting}>
           {isEditing ? "거래처 수정" : "거래처 등록"}
         </Button>
-        {isEditing ? (
-          <Link href={cancelHref} className={styles.toggle}>
-            취소
-          </Link>
-        ) : null}
+        {/* 등록 모드도 이제 폼이 항상 열려 있지 않다(§6-1) — 열었던 방법과
+            무관하게 닫는 방법이 있어야 하므로 등록·수정 둘 다 취소를 보인다. */}
+        <Link href={cancelHref} className={styles.toggle}>
+          취소
+        </Link>
       </div>
     </form>
   );

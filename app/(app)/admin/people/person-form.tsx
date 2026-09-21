@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useAction } from "next-safe-action/hooks";
 import { registerPersonAction, archivePersonAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
@@ -20,7 +21,17 @@ function getStringField(formData: FormData, key: string): string {
 // SYSTEM.md §6-3 폼 템플릿(D-39) — 목록 위에 펼치는 폼. 성공 시 초기 비밀번호를
 // 그 자리에 한 번 보여준다(T-03-29) — 클라이언트 상태에만 담고 URL·로컬
 // 저장소에 넣지 않는다.
-export function PersonForm({ roles, teams }: { roles: RoleOption[]; teams: TeamOption[] }) {
+// §6-1(2026-09-21 이후): page.tsx가 ?new=1일 때만 이 폼을 렌더한다 — 기본
+// 진입에는 없다. cancelHref는 그 쿼리를 뺀 같은 화면으로 돌아간다.
+export function PersonForm({
+  roles,
+  teams,
+  cancelHref,
+}: {
+  roles: RoleOption[];
+  teams: TeamOption[];
+  cancelHref: string;
+}) {
   const formRef = useRef<HTMLFormElement>(null);
   const [registered, setRegistered] = useState<{ email: string; tempPassword: string } | null>(null);
   const { execute, result, isExecuting } = useAction(registerPersonAction, {
@@ -91,9 +102,14 @@ export function PersonForm({ roles, teams }: { roles: RoleOption[]; teams: TeamO
       </div>
       <TextField id="effectiveFrom" name="effectiveFrom" label="발령일" type="date" />
       {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
-      <Button type="submit" variant="primary" pending={isExecuting}>
-        사람 등록
-      </Button>
+      <div className={styles.formActions}>
+        <Button type="submit" variant="primary" pending={isExecuting}>
+          사람 등록
+        </Button>
+        <Link href={cancelHref} className={styles.toggle}>
+          취소
+        </Link>
+      </div>
     </form>
   );
 }

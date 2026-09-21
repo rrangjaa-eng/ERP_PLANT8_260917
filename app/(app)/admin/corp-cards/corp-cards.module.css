@@ -4,6 +4,10 @@
 .filterRow {
   display: flex;
   justify-content: flex-end;
+  /* 이 줄에 「숨김 포함/제외」와 「법인카드 등록」 두 링크가 함께 있다 —
+     gap이 없으면 code-tables에서 실측된 결함(두 이름이 붙어 보임)이
+     되풀이된다. */
+  gap: var(--s-4);
   margin: var(--s-3) 0;
 }
 
@@ -76,4 +80,11 @@
   background: var(--bg);
   padding: 0 var(--s-2);
   font-size: var(--fs-base);
+}
+
+/* vendors.module.css와 같은 결 — 폼 제출 버튼 + 취소 링크를 한 줄에. */
+.formActions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
 }

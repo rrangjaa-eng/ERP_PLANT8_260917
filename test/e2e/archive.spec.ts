@@ -18,7 +18,10 @@ test.describe("보관함 화면 (ADMN-12)", () => {
     const unique = Date.now();
     const codeValue = `e2e-archive-${unique}`;
     const codeLabel = `보관함 E2E ${unique}`;
+    // 2026-09-21 스테이징 QA 수정: 등록 폼이 기본 진입에는 없다(§6-1) —
+    // 목록 머리글의 「코드 추가」가 그 폼을 연다.
     await page.goto("/admin/code-tables");
+    await page.getByRole("link", { name: "코드 추가" }).click();
     await page.getByLabel("값").fill(codeValue);
     await page.getByLabel("이름").fill(codeLabel);
     await page.getByRole("button", { name: "코드 추가" }).click();

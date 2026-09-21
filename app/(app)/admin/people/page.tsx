@@ -16,10 +16,19 @@ import styles from "./people.module.css";
 // 않는다(head 주석 판단, SUMMARY 참고). D-18과 같은 결: 캐시 없음.
 export const dynamic = "force-dynamic";
 
-export default async function PeoplePage() {
+export default async function PeoplePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ new?: string }>;
+}) {
   const session = await getSession();
   if (!session) redirect("/login");
   if (!(await can(session.viewer, "admin.people", "view"))) notFound();
+
+  const { new: newParam } = await searchParams;
+  // §6-1: 목록이 화면이고 등록은 목록 머리글의 행동이다 — 기본 진입에는
+  // 폼이 없다(D-39, DECISIONS.md 2026-09-21).
+  const showForm = newParam === "1";
 
   const [people, roles, orgUnits, teams, canArchive] = await Promise.all([
     listPeople(session.viewer),
@@ -41,10 +50,22 @@ export default async function PeoplePage() {
     <>
       <PageHeader title="사람" />
 
-      <PersonForm roles={roles} teams={teamOptions} />
+      {showForm ? (
+        <PersonForm roles={roles} teams={teamOptions} cancelHref="/admin/people" />
+      ) : people.length > 0 ? (
+        // §6-1 「새 지출결의」와 같은 자리 — 목록 머리글의 등록 행동. 폼이
+        // 열려 있으면 그 폼의 「취소」가 같은 역할을 하므로 이 줄 자체가 없다.
+        // 목록이 비면 §7-7 EMPTY가 같은 이름·같은 곳의 「다음 한 수」를 이미
+        // 보이므로 이 줄도 없다 — 같은 링크를 두 번 그리지 않는다.
+        <div className={styles.filterRow}>
+          <Link href="/admin/people?new=1#person-form" className={styles.toggle}>
+            사람 등록
+          </Link>
+        </div>
+      ) : null}
 
       {people.length === 0 ? (
-        <ListEmpty message="등록된 사람이 없습니다" action={{ label: "사람 등록", href: "#person-form" }} />
+        <ListEmpty message="등록된 사람이 없습니다" action={{ label: "사람 등록", href: "/admin/people?new=1#person-form" }} />
       ) : (
         <table className={styles.table}>
           <thead>

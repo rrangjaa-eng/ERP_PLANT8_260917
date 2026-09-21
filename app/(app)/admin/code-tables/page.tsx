@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import { notFound, redirect } from "next/navigation";
+import Link from "next/link";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { listCodeItems } from "@/domain/code-tables";
@@ -22,6 +23,16 @@ const EVIDENCE_TYPE_TABLE_KEY = "evidence_type";
 // D-18과 같은 결: 캐시·별도 저장 없음 — 화면 로드마다 목록을 다시 조회한다.
 export const dynamic = "force-dynamic";
 
+// 목록 화면의 필터 상태(코드표 선택·숨김 포함 여부)를 유지한 채 등록 폼을
+// 열고 닫는 링크를 만든다 — vendors의 ?editId= 토글과 같은 결(§6-1, D-39,
+// DECISIONS.md 2026-09-21).
+function codeTablesHref(tableKey: string, includeInactive: boolean, opts?: { isNew?: boolean }): string {
+  const params = new URLSearchParams({ tableKey });
+  if (includeInactive) params.set("includeInactive", "1");
+  if (opts?.isNew) params.set("new", "1");
+  return `?${params.toString()}#code-item-form`;
+}
+
 // app/(app)/admin/system-status/page.tsx의 세 게이트 순서를 그대로 복제하고
 // 세 번째 줄만 코드표 메뉴 보기 판정으로 바꾼다(D-36 계약: 화면 코드에 계급
 // 이름 분기가 없다 — can()이 유일한 판정 지점). 이 세 줄과 기존 열 구성은
@@ -29,16 +40,19 @@ export const dynamic = "force-dynamic";
 export default async function CodeTablesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ includeInactive?: string; tableKey?: string }>;
+  searchParams: Promise<{ includeInactive?: string; tableKey?: string; new?: string }>;
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
   if (!(await can(session.viewer, "admin.code-tables", "view"))) notFound();
 
-  const { includeInactive: includeInactiveParam, tableKey: tableKeyParam } = await searchParams;
+  const { includeInactive: includeInactiveParam, tableKey: tableKeyParam, new: newParam } = await searchParams;
   const includeInactive = includeInactiveParam === "1";
   const tableKey = TABLE_OPTIONS.some((option) => option.key === tableKeyParam) ? tableKeyParam! : DEFAULT_TABLE_KEY;
   const isEvidenceType = tableKey === EVIDENCE_TYPE_TABLE_KEY;
+  // §6-1: 목록이 화면이고 등록은 목록 머리글의 행동이다 — 기본 진입에는
+  // 폼이 없다.
+  const showForm = newParam === "1";
 
   const [items, canArchive] = await Promise.all([
     listCodeItems(session.viewer, tableKey, { includeInactive }),
@@ -63,7 +77,9 @@ export default async function CodeTablesPage({
         ))}
       </nav>
 
-      <CodeItemForm tableKey={tableKey} />
+      {showForm ? (
+        <CodeItemForm tableKey={tableKey} cancelHref={codeTablesHref(tableKey, includeInactive)} />
+      ) : null}
 
       <div className={styles.filterRow}>
         <a
@@ -72,10 +88,19 @@ export default async function CodeTablesPage({
         >
           {includeInactive ? "숨김 제외" : "숨김 포함"}
         </a>
+        {/* §6-1 「새 지출결의」와 같은 자리 — 목록 머리글의 등록 행동. */}
+        {!showForm && items.length > 0 ? (
+          <Link href={codeTablesHref(tableKey, includeInactive, { isNew: true })} className={styles.toggle}>
+            코드 추가
+          </Link>
+        ) : null}
       </div>
 
       {items.length === 0 ? (
-        <ListEmpty message="등록된 코드가 없습니다" action={{ label: "코드 추가", href: "#code-item-form" }} />
+        <ListEmpty
+          message="등록된 코드가 없습니다"
+          action={{ label: "코드 추가", href: codeTablesHref(tableKey, includeInactive, { isNew: true }) }}
+        />
       ) : (
         <table className={styles.table}>
           <thead>

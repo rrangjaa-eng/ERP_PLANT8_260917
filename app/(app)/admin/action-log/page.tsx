@@ -123,7 +123,14 @@ export default async function ActionLogPage({ searchParams }: { searchParams: Pr
                 <td>{row.actorName ?? "—"}</td>
                 <td>{row.actorRoleName ?? "—"}</td>
                 <td>{row.actionTypeLabel ?? row.actionType ?? "—"}</td>
-                <td>{row.entity ? `${row.entity}${row.entityId ? ` ${row.entityId}` : ""}` : "—"}</td>
+                {/* 대상은 이름으로 보인다 — entityName은 도메인이 읽기 시점에 푼 값이고,
+                    풀 수 없으면(삭제된 대상·노출표에서 막힌 계급) entityId로 안전하게
+                    내려앉는다. 원시 UUID를 사람에게 그대로 보이지 않는다. */}
+                <td>
+                  {row.entity
+                    ? `${row.entity}${row.entityName ? ` ${row.entityName}` : row.entityId ? ` ${row.entityId}` : ""}`
+                    : "—"}
+                </td>
                 <td>{row.documentId ?? "—"}</td>
                 {/* 상세 열은 노출표에서 상세 항목이 꺼진 계급에는 값이 비어
                     있다(project()가 이미 걸렀다 — 필드 부재가 아니라 undefined). */}

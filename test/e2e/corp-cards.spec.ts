@@ -16,7 +16,10 @@ test.describe("법인카드 관리 화면 (MAST-03)", () => {
     await expect(page).toHaveURL(/\/account$/);
 
     // 이 카드 화면이 참조할 소지자·팀이 존재해야 하므로 먼저 사람 한 명을 등록한다.
+    // 2026-09-21 스테이징 QA 수정: 등록 폼이 기본 진입에는 없다(§6-1) —
+    // 목록 머리글의 「사람 등록」이 그 폼을 연다.
     await page.goto("/admin/people");
+    await page.getByRole("link", { name: "사람 등록" }).click();
     const holderEmail = `e2e-card-holder-${Date.now()}@example.test`;
     await page.getByLabel("이름").fill("카드소지자");
     await page.getByLabel("이메일").fill(holderEmail);
@@ -26,6 +29,12 @@ test.describe("법인카드 관리 화면 (MAST-03)", () => {
 
     const response = await page.goto("/admin/corp-cards");
     expect(response?.status()).toBe(200);
+
+    // 2026-09-21 스테이징 QA 수정: 등록 폼이 기본 진입에는 없다(§6-1) —
+    // 목록 머리글의 「법인카드 등록」이 그 폼을 연다. 제출해도 폼은 열린
+    // 채로 남으므로(필드만 reset) 아래 세 번 등록에 한 번만 열면 된다.
+    await expect(page.getByLabel("발급사")).toHaveCount(0);
+    await page.getByRole("link", { name: "법인카드 등록" }).click();
 
     const issuer = `E2E카드사-${Date.now()}`;
     const last4 = String(Math.floor(1000 + Math.random() * 9000));

@@ -23,7 +23,10 @@ async function loginAs(page: Page, roleId: string): Promise<{ email: string; pas
 test.describe("폰 375 /admin/corp-cards 3차 버튼·터치 목표 (defect 4)", () => {
   test("법인카드 등록 후 비활성화 버튼이 한 줄로 렌더되고 문서 가로 스크롤이 없다", async ({ page }) => {
     await loginAs(page, SYSADMIN_ROLE_ID);
+    // 2026-09-21 스테이징 QA 수정: 등록 폼이 기본 진입에는 없다(§6-1) —
+    // 목록 머리글의 「사람 등록」·「법인카드 등록」이 그 폼을 연다.
     await page.goto("/admin/people");
+    await page.getByRole("link", { name: "사람 등록" }).click();
     const holderEmail = `e2e-mobile-card-holder-${Date.now()}@example.test`;
     await page.getByLabel("이름").fill("폰카드소지자");
     await page.getByLabel("이메일").fill(holderEmail);
@@ -32,6 +35,7 @@ test.describe("폰 375 /admin/corp-cards 3차 버튼·터치 목표 (defect 4)",
     await expect(page.getByText(`초기 비밀번호 — ${holderEmail}`)).toBeVisible();
 
     await page.goto("/admin/corp-cards");
+    await page.getByRole("link", { name: "법인카드 등록" }).click();
     const issuer = `폰E2E카드사-${Date.now()}`;
     const last4 = String(Math.floor(1000 + Math.random() * 9000));
     await page.getByLabel("발급사").fill(issuer);

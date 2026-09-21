@@ -22,6 +22,11 @@ test.describe("거래처 관리 화면 (MAST-01)", () => {
     const response = await page.goto("/admin/vendors");
     expect(response?.status()).toBe(200);
 
+    // 2026-09-21 스테이징 QA 수정: 등록 폼이 기본 진입에는 없다(§6-1) —
+    // 목록 머리글의 「거래처 등록」이 그 폼을 연다.
+    await expect(page.getByLabel("이름")).toHaveCount(0);
+    await page.getByRole("link", { name: "거래처 등록" }).click();
+
     const vendorName = `E2E거래처-${Date.now()}`;
     const accountNumber = "110-222-334455";
 

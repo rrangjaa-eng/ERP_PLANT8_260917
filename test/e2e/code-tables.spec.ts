@@ -14,6 +14,11 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
     const response = await page.goto("/admin/code-tables");
     expect(response?.status()).toBe(200);
 
+    // 2026-09-21 스테이징 QA 수정: 등록 폼이 기본 진입에는 없다(§6-1) —
+    // 목록 머리글의 「코드 추가」가 그 폼을 연다.
+    await expect(page.getByLabel("값")).toHaveCount(0);
+    await page.getByRole("link", { name: "코드 추가" }).click();
+
     const value = `e2e-${Date.now()}`;
     await page.getByLabel("값").fill(value);
     await page.getByLabel("이름").fill("E2E 코드");

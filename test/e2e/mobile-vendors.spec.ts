@@ -17,6 +17,9 @@ test.describe("폰 375 /admin/vendors 3차 버튼 터치 목표 (defect 2)", () 
     await expect(page).toHaveURL(/\/account$/);
 
     await page.goto("/admin/vendors");
+    // 2026-09-21 스테이징 QA 수정: 등록 폼이 기본 진입에는 없다(§6-1) —
+    // 목록 머리글의 「거래처 등록」이 그 폼을 연다(폰도 같은 한 번 클릭).
+    await page.getByRole("link", { name: "거래처 등록" }).click();
     const vendorName = `폰E2E거래처-${Date.now()}`;
     await page.getByLabel("이름").fill(vendorName);
     await page.getByLabel("사업자 번호").fill("123-45-67890");

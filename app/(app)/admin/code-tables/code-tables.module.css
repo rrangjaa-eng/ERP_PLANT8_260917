@@ -89,3 +89,10 @@
   padding: 0 var(--s-2);
   font-size: var(--fs-base);
 }
+
+/* vendors.module.css와 같은 결 — 폼 제출 버튼 + 취소 링크를 한 줄에. */
+.formActions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}

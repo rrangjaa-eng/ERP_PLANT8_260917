@@ -178,10 +178,52 @@ export type VendorInput = {
   defaultEvidenceType?: string | null;
   accountBank?: string | null;
   accountHolder?: string | null;
-  /** 평문 계좌번호 — 저장 전 이 함수 안에서 즉시 암호화한다. */
+  /**
+   * 평문 계좌번호 — 저장 전 이 함수 안에서 즉시 암호화한다.
+   * updateVendor에서는 세 값이 서로 다르게 해석된다(M-5):
+   * undefined = 안 바꿈(기존 암호문·뒤 4자리 유지) · null = 지움(두 컬럼 모두 null) ·
+   * 문자열 = 새 값으로 교체. createVendor에서는 undefined·null·빈 문자열 모두
+   * "계좌번호 없음"으로 같다 — 지울 기존 값이 없다.
+   */
   accountNumber?: string | null;
+  /**
+   * updateVendor에서 undefined면 기존 customFields를 건드리지 않는다(M-5와 같은
+   * 이유 — 필드 정의가 늘어난 뒤 일부 값만 보내는 경우를 생각하면, 전체를 무조건
+   * 교체하는 편이 "보내지 않은 값은 지운다"는 뜻이 되어 위험하다). 객체를 보내면
+   * (빈 객체 포함) 그 값으로 통째로 교체한다. createVendor에서는 항상 검증해
+   * 저장한다.
+   */
   customFields?: Record<string, unknown>;
 };
+
+// MAST-01 리뷰 M-5 — 계좌번호 갱신 계획을 순수 함수로 뽑는다. undefined(안 바꿈) ·
+// null(지움) · 문자열(새 값)을 구분해, ""가 "지움"으로 잘못 해석돼 암호문·뒤 4자리를
+// 함께 날리던 landmine을 없앤다. encryptFn을 주입받아 암호화 키 없이도(단위 테스트)
+// 이 분기를 고정할 수 있다.
+export type AccountNumberPlan =
+  | { kind: "keep" }
+  | { kind: "clear" }
+  | { kind: "set"; accountNumberEncrypted: string; accountNumberLast4: string };
+
+export function planAccountNumberUpdate(
+  accountNumber: string | null | undefined,
+  encryptFn: (plaintext: string) => string = encrypt,
+): AccountNumberPlan {
+  if (accountNumber === undefined) return { kind: "keep" };
+  if (accountNumber === null) return { kind: "clear" };
+
+  const trimmed = accountNumber.trim();
+  // 빈 문자열(공백만 있는 값 포함)은 "지움"이 아니라 "안 바꿈"이다 — 편집 폼에서
+  // 칸을 비워 두는 가장 자연스러운 방법이 곧 "지움"이 되어서는 안 된다. 명시적으로
+  // 지우려면 null을 보낸다(편집 폼의 「계좌번호 지우기」 체크박스).
+  if (trimmed === "") return { kind: "keep" };
+
+  return {
+    kind: "set",
+    accountNumberEncrypted: encryptFn(trimmed),
+    accountNumberLast4: trimmed.slice(-4),
+  };
+}
 
 export type CreateVendorResult = { vendor: VendorDto; duplicateCount: number };
 
@@ -203,9 +245,11 @@ export async function createVendor(
   const normalizedName = normalizeVendorName(input.name);
   const duplicates = await repoFindVendorsByNormalizedName(viewer, normalizedName);
 
-  const accountNumber = input.accountNumber?.trim();
-  const accountNumberEncrypted = accountNumber ? encrypt(accountNumber) : null;
-  const accountNumberLast4 = accountNumber ? accountNumber.slice(-4) : null;
+  // create에는 "안 바꿈" 개념이 없다 — keep이든 clear든 지울 기존 값이 없으므로
+  // 둘 다 "계좌번호 없음"으로 같다.
+  const accountNumberPlan = planAccountNumberUpdate(input.accountNumber);
+  const accountNumberEncrypted = accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberEncrypted : null;
+  const accountNumberLast4 = accountNumberPlan.kind === "set" ? accountNumberPlan.accountNumberLast4 : null;
 
   const row = await repoInsertVendor(viewer, {
     name: input.name,
@@ -227,8 +271,9 @@ export async function createVendor(
 }
 
 // 거래처 수정 — 계좌번호를 바꿀 때만 암호문·뒤 4자리 두 컬럼을 같은 UPDATE
-// 문에서 교체한다(updateVendorAccountNumber). 계좌번호를 안 바꾸는 갱신은 두
-// 컬럼을 건드리지 않는다.
+// 문에서 교체한다(updateVendorAccountNumber, planAccountNumberUpdate로 판정).
+// 계좌번호를 안 바꾸는 갱신(accountNumber === undefined)은 두 컬럼을 건드리지
+// 않는다. customFields도 같은 규칙 — undefined면 기존 값을 그대로 둔다(M-5).
 export async function updateVendor(
   viewer: Viewer,
   id: string,
@@ -240,26 +285,34 @@ export async function updateVendor(
     throw new ForbiddenError("거래처 수정 권한이 없습니다.");
   }
 
-  const customFields = await validatedCustomFields(viewer, input.customFields);
   const normalizedName = normalizeVendorName(input.name);
 
-  await repoUpdateVendor(viewer, id, {
+  const updatePayload: Parameters<typeof repoUpdateVendor>[2] = {
     name: input.name,
     normalizedName,
     businessNo: input.businessNo ?? null,
     defaultEvidenceType: input.defaultEvidenceType ?? null,
     accountBank: input.accountBank ?? null,
     accountHolder: input.accountHolder ?? null,
-    customFields,
-  });
+  };
+  // customFields를 보내지 않으면(undefined) 기존 값을 그대로 둔다 — 무조건
+  // validatedCustomFields(viewer, undefined)를 태우면 필드 정의가 늘어난 뒤
+  // 빈 값으로 검증되어 기존에 입력된 값을 조용히 지울 수 있다.
+  if (input.customFields !== undefined) {
+    updatePayload.customFields = await validatedCustomFields(viewer, input.customFields);
+  }
+  await repoUpdateVendor(viewer, id, updatePayload);
 
-  if (input.accountNumber !== undefined) {
-    const accountNumber = input.accountNumber?.trim();
+  const accountNumberPlan = planAccountNumberUpdate(input.accountNumber);
+  if (accountNumberPlan.kind === "clear") {
+    await repoUpdateVendorAccountNumber(viewer, id, { accountNumberEncrypted: null, accountNumberLast4: null });
+  } else if (accountNumberPlan.kind === "set") {
     await repoUpdateVendorAccountNumber(viewer, id, {
-      accountNumberEncrypted: accountNumber ? encrypt(accountNumber) : null,
-      accountNumberLast4: accountNumber ? accountNumber.slice(-4) : null,
+      accountNumberEncrypted: accountNumberPlan.accountNumberEncrypted,
+      accountNumberLast4: accountNumberPlan.accountNumberLast4,
     });
   }
+  // kind === "keep" → 두 컬럼 모두 건드리지 않는다.
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "document_create", entity: VENDOR_ENTITY, entityId: id });

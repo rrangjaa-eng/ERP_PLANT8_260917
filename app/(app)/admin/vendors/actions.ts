@@ -38,7 +38,11 @@ export const updateVendorAction = authedActionClient
       defaultEvidenceType: z.string().optional(),
       accountBank: z.string().optional(),
       accountHolder: z.string().optional(),
-      accountNumber: z.string().optional(),
+      // M-5: undefined(키 자체를 보내지 않음) = 안 바꿈 · null = 지움 · 문자열 =
+      // 새 값. ""는 여기서 막지 않고 domain의 planAccountNumberUpdate가 "안
+      // 바꿈"으로 처리한다(편집 폼이 빈 칸을 그냥 보낼 수도 있어 액션 계층에서
+      // 거부하면 자연스러운 "안 바꿈" 조작이 에러가 된다).
+      accountNumber: z.string().nullable().optional(),
       customFields: customFieldsSchema,
     }),
   )

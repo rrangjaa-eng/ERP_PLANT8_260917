@@ -141,8 +141,10 @@ export async function updateCorpCardOwner(
     teamId: owner.teamId ?? null,
   });
 
+  // 결함 3: 소유자 변경은 수정이다 — vendors의 updateVendor와 같은 이유로
+  // document_create가 아니라 document_update로 남긴다.
   const recordAction = deps?.recordAction ?? defaultRecordAction;
-  await recordAction(viewer, { actionType: "document_create", entity: "corp_card", entityId: id });
+  await recordAction(viewer, { actionType: "document_update", entity: "corp_card", entityId: id });
 }
 
 // 활성 상태 토글은 코드표의 setCodeItemActive와 같은 결 — 값이 같으면

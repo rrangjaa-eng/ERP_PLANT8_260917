@@ -12,6 +12,11 @@ import {
 } from "@/repositories/action-log";
 import { findUserById as defaultFindUserById } from "@/repositories/users";
 import { findRoleById as defaultFindRoleById } from "@/repositories/roles";
+import { findVendorById as defaultFindVendorById } from "@/repositories/vendors";
+import { findOrgUnitById as defaultFindOrgUnitById } from "@/repositories/org-units";
+import { findTeamById as defaultFindTeamById } from "@/repositories/teams";
+import { findCorpCardById as defaultFindCorpCardById } from "@/repositories/corp-cards";
+import { findCodeItemById as defaultFindCodeItemById } from "@/repositories/code-tables";
 import { ACTION_LOG_FILTER_KEYS, type ActionLogFilterKey } from "@/domain/action-log/filter-keys";
 
 export { ACTION_LOG_FILTER_KEYS, type ActionLogFilterKey };
@@ -99,6 +104,12 @@ export type ActionLogDto = {
   actionTypeLabel: string;
   entity: string | null;
   entityId: string | null;
+  // 결함 2: 대상(entity/entityId)이 raw UUID 그대로 보이던 문제 — entity와
+  // entityId는 절대 바꾸지 않고(append-only 원본 그대로 남긴다), 표시용
+  // 이름을 이 필드에 따로 싣는다. 해석 불가(엔티티 종류를 모르거나, 노출표가
+  // 막거나, 참조 대상이 이미 없는 경우)면 entityId를 그대로 담아 안전하게
+  // 내려앉는다(기존 화면 동작과 같다 — 절대 빈 값으로 정보를 감추지 않는다).
+  entityName: string | null;
   documentId: string | null;
   detail: Record<string, unknown>;
   prunedAt: Date | null;
@@ -108,6 +119,7 @@ type ActionLogDtoSource = ActionLogRow & {
   actorName: string | null;
   actorRoleName: string | null;
   actionTypeLabel: string;
+  entityName: string | null;
 };
 
 export const ACTION_LOG_DTO_SPEC: DtoSpec<ActionLogDtoSource, ActionLogDto> = {
@@ -122,6 +134,7 @@ export const ACTION_LOG_DTO_SPEC: DtoSpec<ActionLogDtoSource, ActionLogDto> = {
     { key: "actionTypeLabel", from: "actionTypeLabel", infoItem: DETAIL_INFO_ITEM },
     { key: "entity", from: "entity", infoItem: DETAIL_INFO_ITEM },
     { key: "entityId", from: "entityId", infoItem: DETAIL_INFO_ITEM },
+    { key: "entityName", from: "entityName", infoItem: DETAIL_INFO_ITEM },
     { key: "documentId", from: "documentId", infoItem: DETAIL_INFO_ITEM },
     { key: "detail", from: "detail", infoItem: DETAIL_INFO_ITEM },
     { key: "prunedAt", from: "prunedAt", infoItem: DETAIL_INFO_ITEM },
@@ -150,6 +163,94 @@ async function resolveNames(
   return new Map(pairs);
 }
 
+// 결함 2: entity/entityId 쌍을 사람이 읽는 이름으로 바꾼다. 각 엔티티 종류가
+// 자기 마스터 데이터 화면에서 이미 쓰는 정보 항목으로 게이트한다 — action_log.
+// detail을 볼 수 있어도 예를 들어 person.value가 안 보이는 계급에는 이름을
+// 보여주지 않는다(과다 노출 금지, 플랜의 "정보 노출표를 다시 거친다" 요구).
+// corp_card는 label, code_items는 value 필드를 이름 대신 쓴다 — 두 표에는
+// VendorRow·OrgUnitRow 같은 "name" 컬럼이 없다.
+type EntityNameResolver = {
+  infoItem: string;
+  find: (viewer: Viewer, id: string) => Promise<{ name: string } | null>;
+};
+
+async function findCorpCardName(viewer: Viewer, id: string): Promise<{ name: string } | null> {
+  const row = await defaultFindCorpCardById(viewer, id);
+  return row ? { name: row.label } : null;
+}
+
+async function findCodeItemName(viewer: Viewer, id: string): Promise<{ name: string } | null> {
+  const row = await defaultFindCodeItemById(viewer, id);
+  return row ? { name: row.value } : null;
+}
+
+const ENTITY_NAME_RESOLVERS: Record<string, EntityNameResolver> = {
+  vendor: { infoItem: "vendor.value", find: defaultFindVendorById },
+  org_unit: { infoItem: "org_unit.value", find: defaultFindOrgUnitById },
+  team: { infoItem: "team.value", find: defaultFindTeamById },
+  corp_card: { infoItem: "corp_card.value", find: findCorpCardName },
+  code_items: { infoItem: "code_item.value", find: findCodeItemName },
+  user: { infoItem: "person.value", find: defaultFindUserById },
+  roles: { infoItem: "role.value", find: defaultFindRoleById },
+};
+
+// entity 종류별로 고유 entityId만 모아 한 번씩만 조회한다(행마다 조회하는
+// N+1을 피한다 — 조회 횟수는 행 수가 아니라 "이 페이지에 나온 서로 다른
+// (엔티티 종류, id)" 수에 비례한다). 노출표 판정도 엔티티 종류마다 한 번뿐이다.
+async function resolveEntityNames(
+  viewer: Viewer,
+  rows: { entity: string | null; entityId: string | null }[],
+  visibleFn: typeof defaultVisible,
+): Promise<Map<string, Map<string, string>>> {
+  const idsByEntity = new Map<string, Set<string>>();
+  for (const row of rows) {
+    if (!row.entity || !row.entityId) continue;
+    if (!(row.entity in ENTITY_NAME_RESOLVERS)) continue;
+    const set = idsByEntity.get(row.entity) ?? new Set<string>();
+    set.add(row.entityId);
+    idsByEntity.set(row.entity, set);
+  }
+
+  const result = new Map<string, Map<string, string>>();
+  await Promise.all(
+    [...idsByEntity.entries()].map(async ([entity, ids]) => {
+      const resolver = ENTITY_NAME_RESOLVERS[entity];
+      if (!resolver) return;
+      // 노출표가 막으면 이름을 만들지 않는다 — 호출부가 entityId로 그대로
+      // 내려앉는다(over-disclosure보다 안전한 쪽).
+      if (!(await visibleFn(viewer, resolver.infoItem))) return;
+      result.set(entity, await resolveNames(viewer, [...ids], resolver.find));
+    }),
+  );
+  return result;
+}
+
+// 결함 1: 정리(prune)·Excel 내보내기가 "어떤 필터로 조회했는지"를 detail에
+// 기록할 때 filter.actorId에 내부 사용자 id를 그대로 담았다(record.ts의
+// 원칙 — snake_case 내부 토큰을 그대로 보여주지 않는다 — 를 상세에도 적용).
+// append-only라 저장된 행은 못 바꾸므로 읽을 때만 이름으로 옮겨 보여준다.
+// actorNames에 없으면(탈퇴 등) id를 그대로 남긴다.
+function extractFilterActorId(detail: Record<string, unknown>): string | null {
+  const filter = detail["filter"];
+  if (!filter || typeof filter !== "object") return null;
+  const actorId = (filter as Record<string, unknown>)["actorId"];
+  return typeof actorId === "string" ? actorId : null;
+}
+
+export function sanitizeActionLogDetailForDisplay(
+  detail: Record<string, unknown>,
+  actorNames: Map<string, string>,
+): Record<string, unknown> {
+  const filterActorId = extractFilterActorId(detail);
+  if (!filterActorId) return detail;
+
+  const filter = detail["filter"] as Record<string, unknown>;
+  return {
+    ...detail,
+    filter: { ...filter, actorId: actorNames.get(filterActorId) ?? filterActorId },
+  };
+}
+
 // 열람 판정을 먼저 한다 — 행동 로그 상세는 정보 노출표 항목이므로 노출
 // 판정이 거짓이면 ForbiddenError. 통과하면 리포지토리 조회 → 이름 합성 →
 // 투영. 기간 필터는 양끝 포함이고 그 의미가 위 isWithinActionLogPeriod
@@ -173,17 +274,18 @@ export async function queryActionLog(
 
   const findUserById = deps?.findUserById ?? defaultFindUserById;
   const findRoleById = deps?.findRoleById ?? defaultFindRoleById;
-  const [actorNames, roleNames] = await Promise.all([
-    resolveNames(
-      viewer,
-      sorted.map((row) => row.actorId),
-      findUserById,
-    ),
+  // 결함 1: detail.filter.actorId(정리·내보내기가 필터로 고른 사람)도 같은
+  // users 조회로 한 번에 해석한다 — actorId 목록에 합쳐서 조회 횟수를
+  // 늘리지 않는다.
+  const filterActorIds = sorted.map((row) => extractFilterActorId(row.detail as Record<string, unknown>));
+  const [actorNames, roleNames, entityNames] = await Promise.all([
+    resolveNames(viewer, [...sorted.map((row) => row.actorId), ...filterActorIds], findUserById),
     resolveNames(
       viewer,
       sorted.map((row) => row.actorRoleId),
       findRoleById,
     ),
+    resolveEntityNames(viewer, sorted, visibleFn),
   ]);
 
   return Promise.all(
@@ -195,6 +297,9 @@ export async function queryActionLog(
           actorName: row.actorId ? (actorNames.get(row.actorId) ?? row.actorId) : null,
           actorRoleName: row.actorRoleId ? (roleNames.get(row.actorRoleId) ?? row.actorRoleId) : null,
           actionTypeLabel: ACTION_TYPE_LABELS[row.actionType as CoreActionType] ?? row.actionType,
+          entityName:
+            row.entity && row.entityId ? (entityNames.get(row.entity)?.get(row.entityId) ?? row.entityId) : null,
+          detail: sanitizeActionLogDetailForDisplay(row.detail as Record<string, unknown>, actorNames),
         },
         ACTION_LOG_DTO_SPEC,
       ),

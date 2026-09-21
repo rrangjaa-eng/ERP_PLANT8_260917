@@ -72,6 +72,7 @@ function baseRow(overrides: Partial<ActionLogExportRow> = {}): ActionLogExportRo
     actionTypeLabel: "문서 생성",
     entity: "vendor",
     entityId: "abc-123",
+    entityName: "abc-123",
     documentId: null,
     detail: {},
     ...overrides,
@@ -114,6 +115,21 @@ describe("serializeActionLogExportAsCsv (Task 1 결정 A — UTF-8 BOM CSV)", ()
     expect(dataRow[4]).toContain("vendor");
     expect(dataRow[5]).toBe("doc,with,commas");
     expect(JSON.parse(dataRow[6]!)).toEqual(trickyDetail);
+  });
+
+  // 결함 2: 대상(4번째 열)이 raw entityId가 아니라 해석된 entityName을 써야
+  // 한다 — "vendor 302c0549-..." 같은 내부 UUID가 그대로 새면 안 된다.
+  it("대상 열이 entityId가 아니라 entityName을 쓴다(결함 2)", () => {
+    const row = baseRow({
+      entityId: "302c0549-e17f-4dff-b64a-64d6daa50f51",
+      entityName: "테스트거래처",
+    });
+    const file = serializeActionLogExportAsCsv([row]);
+    const parsed = parseCsv(file.body);
+    const dataRow = parsed[1];
+    if (!dataRow) throw new Error("데이터 행이 없습니다.");
+    expect(dataRow[4]).toBe("vendor 테스트거래처");
+    expect(dataRow[4]).not.toContain("302c0549");
   });
 
   it("반환 형태가 { filename, contentType, body } 세 조각이다(체크포인트 계약)", () => {

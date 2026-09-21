@@ -16,6 +16,7 @@ import {
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { archive, restore } from "@/domain/archive";
 import { listCorpCards as repoListCorpCards } from "@/repositories/corp-cards";
+import { queryActionLog } from "@/repositories/action-log";
 
 async function makeTestUser(): Promise<string> {
   const id = `card-user-${randomUUID()}`;
@@ -140,6 +141,29 @@ describe("corp-cards (MAST-03, 실제 Postgres)", () => {
     // kind도 같이 옮겨가야 한다 — 화면이 kind로 개인/팀을 갈라 그리므로
     // 여기가 'personal'로 남으면 종류 "개인" · 소유 "—"로 표시된다.
     expect(updated?.kind).toBe("team");
+  });
+
+  // 결함 3: updateCorpCardOwner도 vendors의 updateVendor와 같은 결함(document_create
+  // 재사용)이 있었다 — 소유자 변경은 수정이지 생성이 아니다.
+  it("소유자 변경은 document_update로 기록되고 document_create를 남기지 않는다(결함 3)", async () => {
+    const holderUserId = await makeTestUser();
+    const teamId = await makeTestTeam();
+    const dto = await createCorpCard(SYSTEM_VIEWER, {
+      issuer: `카드사-${randomUUID()}`,
+      numberLast4: uniqueLast4(),
+      label: "결함3대상",
+      holderUserId,
+    });
+
+    const createRowsBefore = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_create" });
+
+    await updateCorpCardOwner(SYSTEM_VIEWER, dto.id, { teamId });
+
+    const createRowsAfter = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_create" });
+    const updateRows = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_update" });
+
+    expect(createRowsAfter.length).toBe(createRowsBefore.length);
+    expect(updateRows.some((row) => row.entityId === dto.id)).toBe(true);
   });
 
   it("전체 카드 번호 컬럼이 존재하지 않는다", () => {

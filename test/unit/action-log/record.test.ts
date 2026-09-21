@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   recordAction,
   CORE_ACTION_TYPES,
+  ACTION_TYPE_LABELS,
   ALWAYS_ON_ACTION_TYPES,
   UnknownActionTypeError,
 } from "@/domain/action-log/record";
@@ -66,5 +67,22 @@ describe("recordAction (OPS-05)", () => {
     for (const type of ALWAYS_ON_ACTION_TYPES) {
       expect(CORE_ACTION_TYPES as readonly string[]).toContain(type);
     }
+  });
+
+  // 결함 3: updateVendor가 document_create를 재사용해 수정을 생성으로 기록했다
+  // (독립 감사에서 수정 8건이 document_create 9건으로 보였다). 수정 전용 종류가
+  // 핵심 목록에 있어야 vendors·corp-cards의 update 호출부가 정확한 종류를 쓸 수
+  // 있다.
+  it("document_update가 핵심 행동 종류 목록에 있다(결함 3)", () => {
+    expect(CORE_ACTION_TYPES as readonly string[]).toContain("document_update");
+  });
+
+  it("document_update의 한국어 라벨이 있고 document_create와 다르다(결함 3)", () => {
+    expect(ACTION_TYPE_LABELS.document_update).toBeTruthy();
+    expect(ACTION_TYPE_LABELS.document_update).not.toBe(ACTION_TYPE_LABELS.document_create);
+  });
+
+  it("document_update는 끌 수 없는 종류가 아니다 — 다른 일반 종류와 같이 설정으로 끌 수 있어야 한다", () => {
+    expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).not.toContain("document_update");
   });
 });

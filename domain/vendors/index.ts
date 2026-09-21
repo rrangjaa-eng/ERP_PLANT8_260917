@@ -330,8 +330,10 @@ export async function updateVendor(
   }
   // kind === "keep" → 두 컬럼 모두 건드리지 않는다.
 
+  // 결함 3: 수정을 document_create로 남기면 생성 9건처럼 보인다(독립 감사가
+  // 실측 — 수정 8건이 document_create 9건으로 나타났다). 수정 전용 종류로 남긴다.
   const recordAction = deps?.recordAction ?? defaultRecordAction;
-  await recordAction(viewer, { actionType: "document_create", entity: VENDOR_ENTITY, entityId: id });
+  await recordAction(viewer, { actionType: "document_update", entity: VENDOR_ENTITY, entityId: id });
 
   const updated = await repoFindVendorById(viewer, id);
   return updated ? ((await project(viewer, updated, VENDOR_DTO_SPEC)) as VendorDto) : null;

@@ -7,6 +7,7 @@ import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { recordAction } from "@/domain/action-log/record";
 import { queryActionLog, pruneActionLog, parseActionLogDateBoundary, ForbiddenError } from "@/domain/action-log";
 import { exportActionLog } from "@/domain/action-log/export";
+import { createVendor } from "@/domain/vendors";
 
 function uniqueDocumentId(): string {
   return `doc-${randomUUID()}`;
@@ -154,6 +155,52 @@ describe("action-log 조회·필터·정리 (ADMN-10·OPS-05, 실제 Postgres)",
     expect(file.body.charCodeAt(0)).toBe(0xfeff);
     const after = await queryActionLog(SYSTEM_VIEWER, { actionType: "excel_export" });
     expect(after.length).toBe(before.length + 1);
+  });
+
+  // 결함 1: 정리(prune)·Excel 내보내기가 필터에 담은 actorId(내부 사용자 id)가
+  // 상세(detail)에 원문 그대로 저장돼 화면·CSV로 샜다. 사람이 관련된 상세라면
+  // id가 아니라 이름을 보여줘야 한다(record.ts의 원칙 — snake_case 내부 토큰을
+  // 사용자에게 그대로 보여주지 않는다 — 를 detail에도 적용한다).
+  it("정리 필터에 담긴 actorId가 상세에 이름으로 나타나고 원문 id는 남지 않는다(결함 1)", async () => {
+    const filterTarget = await makeTestUser();
+
+    await pruneActionLog(SYSTEM_VIEWER, { actorId: filterTarget.id });
+
+    const rows = await queryActionLog(SYSTEM_VIEWER, { actionType: "action_log_prune", includePruned: true });
+    const pruneRow = rows.find(
+      (row) => (row.detail as { filter?: { actorId?: string | null } }).filter?.actorId === filterTarget.name,
+    );
+    expect(pruneRow).toBeTruthy();
+
+    const leaked = rows.some(
+      (row) => (row.detail as { filter?: { actorId?: string | null } }).filter?.actorId === filterTarget.id,
+    );
+    expect(leaked).toBe(false);
+  });
+
+  // 결함 2: 상세 상단의 대상(entity/entityId)이 raw UUID 그대로였다 — 행동
+  // 종류(ACTION_TYPE_LABELS)는 한글화됐는데 대상은 그렇지 않았다. entityName이
+  // 새로 추가돼 사람이 읽을 수 있는 이름을 담아야 한다.
+  it("거래처 등록 로그의 대상이 거래처 이름으로 나타난다 — entityId가 그대로 새지 않는다(결함 2)", async () => {
+    const vendorName = `행동로그거래처-${randomUUID()}`;
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: vendorName });
+
+    const rows = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_create" });
+    const vendorRow = rows.find((row) => row.entity === "vendor" && row.entityId === vendor.id);
+    expect(vendorRow?.entityName).toBe(vendorName);
+  });
+
+  it("존재하지 않는(삭제된) 거래처를 가리키는 오래된 행은 entityId로 안전하게 내려앉는다(결함 2, 열람 불가 엔티티)", async () => {
+    const missingVendorId = randomUUID();
+    await recordAction(SYSTEM_VIEWER, {
+      actionType: "document_create",
+      entity: "vendor",
+      entityId: missingVendorId,
+    });
+
+    const rows = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_create" });
+    const row = rows.find((r) => r.entity === "vendor" && r.entityId === missingVendorId);
+    expect(row?.entityName).toBe(missingVendorId);
   });
 
   it("같은 필터로 두 번 조회하면 같은 순서의 같은 행 집합이 나온다", async () => {

@@ -222,6 +222,29 @@ describe("vendors (MAST-01, 실제 Postgres)", () => {
     expect(keys).toContain("accountNumberLast4");
   });
 
+  // 결함 3: updateVendor가 document_create를 재사용해 수정을 생성처럼 남겼다
+  // (독립 감사 실측 — 수정 8건이 document_create 9건으로 보였다). 수정은
+  // document_update로, document_create로는 남지 않아야 한다.
+  it("거래처 수정은 document_update로 기록되고 document_create를 추가로 남기지 않는다(결함 3)", async () => {
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: uniqueName() });
+
+    const createRowsBefore = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_create" });
+    const updateRowsBefore = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_update" });
+
+    await updateVendor(SYSTEM_VIEWER, vendor.id, { name: `${vendor.name}-수정` });
+
+    const createRowsAfter = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_create" });
+    const updateRowsAfter = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_update" });
+
+    // 생성 종류 행 수는 그대로다 — 수정이 생성으로 잘못 잡히지 않는다.
+    expect(createRowsAfter.length).toBe(createRowsBefore.length);
+    // 수정 종류 행이 이 거래처를 대상으로 하나 늘었다.
+    const newUpdateRows = updateRowsAfter.filter(
+      (row) => row.entityId === vendor.id && !updateRowsBefore.some((before) => before.seq === row.seq),
+    );
+    expect(newUpdateRows.length).toBe(1);
+  });
+
   // 권한표 판정이 실제로 도는지 확인 — upsertPermission을 직접 부르는 것
   // 자체가 뷰용 픽스처가 아니라 이 테스트의 게이트 대상이다.
   it("권한표에서 기본 계급의 거래처 보기 칸을 켜면 같은 viewer의 목록 조회가 성공한다", async () => {

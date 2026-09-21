@@ -13,6 +13,11 @@ export type ActionLogExportRow = {
   actionTypeLabel: string;
   entity: string | null;
   entityId: string | null;
+  // 결함 2: "대상" 열이 raw entityId(UUID)를 그대로 보여줬다. 해석된 이름이
+  // 있으면 그것을, 없으면(엔티티 종류를 모르거나 삭제됐거나 노출표가 막으면)
+  // domain/action-log/index.ts의 queryActionLog가 이미 entityId로 내려앉혀
+  // 채워 둔다 — 여기서는 있는 값을 그대로 쓴다.
+  entityName: string | null;
   documentId: string | null;
   detail: Record<string, unknown>;
 };
@@ -39,9 +44,9 @@ function formatOccurredAt(date: Date): string {
   )}:${pad(date.getSeconds())}`;
 }
 
-function toTarget(entity: string | null, entityId: string | null): string {
-  if (!entity) return entityId ?? "";
-  return entityId ? `${entity} ${entityId}` : entity;
+function toTarget(entity: string | null, entityName: string | null): string {
+  if (!entity) return entityName ?? "";
+  return entityName ? `${entity} ${entityName}` : entity;
 }
 
 function toDetailCell(detail: Record<string, unknown>): string {
@@ -60,7 +65,7 @@ export function serializeActionLogExportAsCsv(rows: ActionLogExportRow[]): Expor
         row.actorName ?? "",
         row.actorRoleName ?? "",
         row.actionTypeLabel,
-        toTarget(row.entity, row.entityId),
+        toTarget(row.entity, row.entityName),
         row.documentId ?? "",
         toDetailCell(row.detail),
       ]
@@ -119,6 +124,7 @@ export async function exportActionLog(
     actionTypeLabel: row.actionTypeLabel,
     entity: row.entity,
     entityId: row.entityId,
+    entityName: row.entityName,
     documentId: row.documentId,
     detail: row.detail,
   }));

@@ -10,6 +10,7 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 export const CORE_ACTION_TYPES = [
   "login",
   "document_create",
+  "document_update",
   "document_submit",
   "document_approve",
   "document_reject",
@@ -36,6 +37,7 @@ export type CoreActionType = (typeof CORE_ACTION_TYPES)[number];
 export const ACTION_TYPE_LABELS: Record<CoreActionType, string> = {
   login: "로그인",
   document_create: "문서 생성",
+  document_update: "문서 수정",
   document_submit: "문서 제출",
   document_approve: "문서 승인",
   document_reject: "문서 반려",

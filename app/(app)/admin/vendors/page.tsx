@@ -57,7 +57,13 @@ export default async function VendorsPage({
   // editId가 가리키는 행이 지금 이 조회 결과(숨김 포함 여부에 따라 달라짐)에
   // 없으면(예: 숨김 거래처를 「숨김 포함」 꺼진 채로 가리키는 오래된 링크)
   // 조용히 등록 모드로 돌아간다 — 존재하지 않는 대상을 오류로 다루지 않는다.
-  const editingVendor = editId ? (vendors.find((vendor) => vendor.id === editId) ?? null) : null;
+  // 보관된 거래처는 수정 모드로 열지 않는다 — 목록에서 「수정」 링크를 감추는
+  // 것만으로는 ?editId=<보관된 id>를 직접 여는 경로를 못 막는다(DOM 감사
+  // 실측). 도메인의 ArchivedVendorError가 저장을 막지만, 고칠 수 있는 폼을
+  // 보여 놓고 제출한 뒤에 실패시키면 안 된다. 법인카드 화면과 같은 조건이다.
+  const editingVendor = editId
+    ? (vendors.find((vendor) => vendor.id === editId && vendor.archivedAt === null) ?? null)
+    : null;
   const cancelHref = vendorsHref(includeHidden);
   // §6-1: 목록이 화면이고 등록은 목록 머리글의 행동이다 — 기본 진입(쿼리
   // 없음)에는 폼이 없다. editId가 가리키는 행이 있으면 수정 모드로 그 자체가

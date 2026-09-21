@@ -6,6 +6,8 @@ import { recordAction as defaultRecordAction } from "@/domain/action-log/record"
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { isUniqueViolation } from "@/lib/pg-errors";
+import { findUserById as defaultFindUserById } from "@/repositories/users";
+import { findTeamById as defaultFindTeamById } from "@/repositories/teams";
 import {
   listCorpCards as repoListCorpCards,
   insertCorpCard as repoInsertCorpCard,
@@ -28,6 +30,12 @@ export class DuplicateCorpCardError extends UserFacingError {}
 // 성공 기준 5 「수정」: 보관되었거나 없는 카드는 소유자를 바꿀 수 없다
 // (domain/vendors의 ArchivedVendorError와 같은 결).
 export class ArchivedCorpCardError extends UserFacingError {}
+// /cso T-03-55: 소유자로 지정하려는 사람·팀이 보관됐는지 본다. FK는 존재하지
+// 않는 id만 막고 보관된 id는 통과시킨다 — T-03-30(계급 변경이 보관된 계급을
+// 통과)과 구조가 같다. registerPerson이 role·team에 대해 이미 하는 검사다
+// (domain/people/index.ts). 공격이 아니라 일상 실수를 막는 쪽이 크다:
+// 화면의 <select>에 퇴사자가 활성 직원과 구분 없이 보였다.
+export class ArchivedCardOwnerError extends UserFacingError {}
 
 const CARDS_MENU = "admin.corp-cards";
 
@@ -89,7 +97,32 @@ export type CorpCardWriteDeps = {
   can: typeof defaultCan;
   recordAction: typeof defaultRecordAction;
   findCorpCardById: typeof repoFindCorpCardById;
+  findUserById: typeof defaultFindUserById;
+  findTeamById: typeof defaultFindTeamById;
 };
+
+// 등록·수정 두 경로가 같은 가드를 쓴다 — 한쪽만 막으면 다른 쪽으로 같은 값이
+// 들어온다. cardOwnerKind가 XOR를 이미 보장하므로 여기서는 지정된 쪽만 본다.
+async function assertOwnerNotArchived(
+  viewer: Viewer,
+  owner: { holderUserId?: string | null; teamId?: string | null },
+  deps?: Partial<CorpCardWriteDeps>,
+): Promise<void> {
+  if (owner.holderUserId) {
+    const findUserById = deps?.findUserById ?? defaultFindUserById;
+    const holder = await findUserById(viewer, owner.holderUserId);
+    if (!holder || holder.archivedAt !== null) {
+      throw new ArchivedCardOwnerError("보관되었거나 존재하지 않는 사람은 카드 소지자가 될 수 없습니다.");
+    }
+  }
+  if (owner.teamId) {
+    const findTeamById = deps?.findTeamById ?? defaultFindTeamById;
+    const team = await findTeamById(viewer, owner.teamId);
+    if (!team || team.archivedAt !== null) {
+      throw new ArchivedCardOwnerError("보관되었거나 존재하지 않는 팀은 카드 소유 팀이 될 수 없습니다.");
+    }
+  }
+}
 
 export async function createCorpCard(
   viewer: Viewer,
@@ -108,6 +141,8 @@ export async function createCorpCard(
   if (!(await canFn(viewer, CARDS_MENU, "write"))) {
     throw new ForbiddenError("법인카드 등록 권한이 없습니다.");
   }
+
+  await assertOwnerNotArchived(viewer, input, deps);
 
   let row: CorpCardRow;
   try {
@@ -147,6 +182,8 @@ export async function updateCorpCardOwner(
   if (!existing || existing.archivedAt !== null) {
     throw new ArchivedCorpCardError("보관되었거나 존재하지 않는 법인카드는 수정할 수 없습니다.");
   }
+
+  await assertOwnerNotArchived(viewer, owner, deps);
 
   // kind도 같은 UPDATE에서 함께 옮긴다(생성 경로와 대칭). 빼먹으면 소유자만
   // 바뀌고 종류가 예전 값으로 남아, 화면이 kind로 개인/팀을 갈라 그리는 탓에

@@ -60,13 +60,25 @@ export default async function CorpCardsPage({
   ]);
 
   const orgUnitNameById = new Map(orgUnits.map((org) => [org.id, org.name]));
-  const teamOptions = teams.map((team) => ({
-    id: team.id,
-    name: team.name,
-    orgUnitName: orgUnitNameById.get(team.orgUnitId) ?? "",
-  }));
+  // 이름 조회 표는 보관된 행까지 담는다 — 이미 그 사람·팀이 소유한 기존 카드의
+  // 목록 칸이 "—"로 비지 않게 해야 한다.
   const teamNameById = new Map(teams.map((team) => [team.id, team.name]));
   const holderNameById = new Map(people.map((person) => [person.id, person.name]));
+
+  // /cso T-03-55: 선택 후보에서는 보관된 사람·팀을 뺀다. listPeople·listTeams는
+  // scopeFor의 includeArchived를 따르므로 보관함 보기 권한이 있는 계급에게는
+  // 퇴사자·해체된 팀이 활성 항목과 구분 없이 보였다. 도메인이
+  // ArchivedCardOwnerError로 막지만, 고를 수 있게 두면 고른 뒤에야 실패한다.
+  const holderOptions = people
+    .filter((person) => person.archivedAt === null)
+    .map((person) => ({ id: person.id, name: person.name }));
+  const teamOptions = teams
+    .filter((team) => team.archivedAt === null)
+    .map((team) => ({
+      id: team.id,
+      name: team.name,
+      orgUnitName: orgUnitNameById.get(team.orgUnitId) ?? "",
+    }));
 
   // vendors와 같은 결: editId가 가리키는 행이 지금 조회 결과에 없으면(숨김
   // 필터 때문이거나 오래된 링크) 조용히 목록으로 돌아간다. 보관된 카드는
@@ -92,7 +104,7 @@ export default async function CorpCardsPage({
             holderUserId: editingCard.holderUserId ?? null,
             teamId: editingCard.teamId ?? null,
           }}
-          holders={people.map((p) => ({ id: p.id, name: p.name }))}
+          holders={holderOptions}
           teams={teamOptions}
           cancelHref={corpCardsHref(includeInactive)}
         />
@@ -103,7 +115,7 @@ export default async function CorpCardsPage({
           폼 하나에 editing prop을 넘겨 이 상태 자체가 불가능하다. */}
       {canWrite && showCreateForm && !editingCard ? (
         <CardForm
-          holders={people.map((p) => ({ id: p.id, name: p.name }))}
+          holders={holderOptions}
           teams={teamOptions}
           cancelHref={corpCardsHref(includeInactive)}
         />

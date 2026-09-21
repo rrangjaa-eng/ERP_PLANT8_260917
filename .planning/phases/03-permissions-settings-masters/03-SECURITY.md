@@ -1,11 +1,11 @@
 # Phase 3 — 보안 감사 기록 (Security Record)
 
 - 페이즈: 03-permissions-settings-masters
-- 감사일: 2026-09-21
+- 감사일: 2026-09-21 (1차) · **2026-09-21 재감사** — 재검증 라운드가 새 쓰기 경로 2개와 권한 게이트를 만들어 레지스터 전건을 다시 확인했다
 - 기준: ASVS Level 1, block_on: high
 - 위협 레지스터: 03-01~03-07 일곱 개 계획에 걸쳐 고유 위협 T-03-01 ~ T-03-54(54건) + 계획마다 반복되는 공통 항목 T-03-SC(7건) = 총 61행
 - 심각도 분포: high 32 · medium 22 · low 7
-- 집계: 총 61 · 완화(mitigated) 57 · 수락(accepted) 3 · 열림(open) 0
+- 집계: 총 **62** · 완화(mitigated) **59** · 수락(accepted) 3 · 열림(open) 0
 
 ## 열려 있던 위협과 해소
 
@@ -44,6 +44,48 @@
 - **R4** — 위협 항목 T-03-28/36/45/53이 인용하는 마이그레이션 번호(0004~0007)가 실제 파일과 어긋난다. 실제로는 `db/migrations/0005_settings_registry.sql`, `0006_org_people_cards.sql`, `0007_vendors_crypto_conventions.sql`, `0008_action_log_prune.sql`이며, 0004는 FK VALIDATE 단계(`0004_users_role_id_validate.sql`)로 별도 분리되었다. 완화 내용 자체는 실제 파일 기준으로 재확인해 문제없음 — 문서 표기 오차일 뿐이다.
 - **R5 (T-03-33)** — `app/(app)/admin/corp-cards/actions.ts`의 `createCorpCardAction` 스키마에는 `updateCorpCardOwnerAction`(42행)에 있는 owner XOR `superRefine` 검증이 없다. 도메인 검사와 DB CHECK 제약은 여전히 강제하므로, 선언된 3중 방어 중 생성(create) 경로에서는 2겹만 유효하다. 조치: `createCorpCardAction`에도 동일한 `superRefine`을 추가.
 
+## 재감사 2026-09-21 — 새 쓰기 경로와 권한 게이트
+
+| 항목 | 수 |
+|---|---|
+| 재검증한 기존 위협 | 61 (전건 CLOSED, 증거 파일·줄 확인) |
+| 신규 위협 | 1 (T-03-55) |
+| 차단(high 이상) 열림 | **0** |
+
+**왜 재감사했나**: 단축 규칙(열림 0 + ASVS 1이면 감사자 생략)은 구현이 그대로일 때의 전제다. 재검증이 찾은 미달 2건을 닫으면서 `domain/code-tables.updateCodeItemLabel`(신설)과 `domain/corp-cards.updateCorpCardOwner`의 화면 배선(선재 함수·호출자 0이었다)이 생겼고, `app/(app)/admin/code-tables/page.tsx`에 `canWrite` 게이트가 붙었다.
+
+**확인한 것** — `git diff f828fa8..HEAD -- domain/ repositories/`에서 `can()` 호출이 제거된 곳 0건 · 두 새 액션이 `can()` → `registerAction` → `project()` 규약 준수 · 누수 스캔이 `ACTION_REGISTRY` 순회로 자동 포함 · 보관 우회 불가(판정이 화면이 아니라 도메인) · XOR 3겹 유지 · 로그 `document_update` · **`value` 쓰기 경로 신설 0건**(`vendors.default_evidence_type` 고아 위험 열리지 않음).
+
+### T-03-55 — Tampering (medium) — CLOSED
+
+**위협**: 법인카드 소유자 변경·등록이 새 소유자(사람·팀)의 보관 여부를 보지 않았다.
+
+- `updateCorpCardOwner`가 검사하던 것은 ① XOR(`cardOwnerKind`) ② `can()` ③ **대상 카드 자신의** `archivedAt` 셋뿐이었다.
+- FK `corp_cards_holder_user_id_users_id_fk`·`corp_cards_team_id_teams_id_fk`(`0006_org_people_cards.sql:59-60`)는 **존재하지 않는 id만** 막고 보관된 id는 통과시킨다 — **T-03-30과 구조가 정확히 같다**(그건 high로 잡아 `f8fdb44`로 닫았다).
+- 화면으로도 도달했다: `page.tsx`의 `holders`·`teamOptions`가 `listPeople`·`listTeams`를 `archivedAt` 필터 없이 썼고, `scopeFor`의 `includeArchived`는 `admin.archive` 보기 권한을 따른다. 시드 sysadmin은 전 메뉴 × 전 동작을 받으므로 **퇴사자·해체된 팀이 활성 항목과 구분 없이 `<select>`에 떴다**.
+- 같은 코드베이스의 선례와 어긋났다: `registerPerson`은 `role.archivedAt`·`team.archivedAt`을 둘 다 검사한다(`domain/people/index.ts:145,155`).
+- 심각도 medium 근거: `admin.corp-cards` 쓰기 권한이 전제라 권한 상승이 아니다. 다만 **공격이 아니라 일상 실수**로 일어난다 — 드롭다운에서 무심코 고르면 끝이고, 그 값을 Phase 4·6의 비용 귀속이 읽는다.
+
+**수정**: `domain/corp-cards/index.ts`에 `assertOwnerNotArchived`(`ArchivedCardOwnerError`)를 두고 **등록·수정 두 경로가 공유**한다 — 한쪽만 막으면 다른 쪽으로 같은 값이 들어온다. 화면도 선택 후보에서 보관된 사람·팀을 거른다(바깥 겹: 도메인이 막아도 고를 수 있게 두면 고른 뒤에야 실패한다). 이름 조회 표는 보관된 행을 그대로 담는다 — 기존 카드의 소유 칸이 "—"로 비지 않아야 한다.
+
+**증거**: `test/integration/corp-card-owner-archived.test.ts` 4건 — RED 3 failed/1 passed(통과한 1건은 회귀 방어) → GREEN 4/4. 통합 전체 730 통과.
+
+### 경고 2건 (조치하지 않음, 기록)
+
+- **`## Threat Flags` 절이 `03-0{1..7}-SUMMARY.md` 어디에도 없다.** 이번 라운드의 새 표면은 실행자 쪽 위협 플래그로 한 번도 올라오지 않았고 감사 프롬프트의 서술로만 전달됐다. 다음 페이즈에서 이 절을 강제하지 않으면 같은 종류의 표면이 조용히 지나간다.
+- **`changePasswordAction`이 `ACTION_REGISTRY`에 없다**(`app/(app)/account/actions.ts`). 선재이고 메뉴 게이트가 없는 본인 계정 전용 액션이라 누수 스캔이 검사할 축이 없다 — T-03-16이 감수한 D-38 구멍의 실물 사례다.
+
+### 테스트 커버리지 관찰 (위협 아님)
+
+`corp-card-owner-*.test.ts`·`mast-04-code-item-label.test.ts`가 전부 `SYSTEM_VIEWER`로 돈다 — 보관 차단은 증명하지만 `can()` 거부 경로는 증명하지 않는다. 도메인의 `can()` 호출 자체는 코드로 확인했고, 권한 거부의 바깥 겹은 `test/e2e/code-tables-write-gate.spec.ts`가 덮는다.
+
+### R1·R5 상태 갱신
+
+- **R1 (T-03-16)** — `4582307`로 해소됐다. `leak-scan.test.ts`가 registry 9/9를 import하고 `EXPORT_REGISTRY >= 2` 단언이 있으며, `test/unit/leak-scan-coverage.test.ts`가 그 목록을 강제한다.
+- **R5 (T-03-33)** — 여전히 열려 있다(create 경로의 zod `superRefine` 부재). 도메인·DB 2겹은 유효하다.
+
 ## 결론
 
-Phase 3의 유일한 열린 고위험 위협(T-03-30, 계급 변경 시 보관된 계급 방어 누락)은 커밋 `f8fdb44`로 닫혔고, 남은 3건의 수락 위험은 각각 코드 증거로 뒷받침되며, 5건의 비차단 보강 항목은 다음 작업 사이클로 이월한다 — threats_open: 0.
+Phase 3의 유일한 열린 고위험 위협(T-03-30, 계급 변경 시 보관된 계급 방어 누락)은 커밋 `f8fdb44`로 닫혔고, 남은 3건의 수락 위험은 각각 코드 증거로 뒷받침된다.
+
+재감사(2026-09-21)에서 기존 61행을 전건 재확인했고, 새 표면에서 나온 T-03-55(법인카드 소유자가 보관된 사람·팀을 받던 문제)도 닫았다 — FK가 보관된 id를 통과시키는 T-03-30과 같은 구조였다. 비차단 보강 항목은 R1이 해소되어 4건이 남는다 — **threats_open: 0**.

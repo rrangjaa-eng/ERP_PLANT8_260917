@@ -29,4 +29,18 @@ describe("loginErrorMessage (§6-7 A②·A③)", () => {
   it("500(client-ip 누락 등)도 영문 누출을 막기 위해 일반 문구로 접는다", () => {
     expect(loginErrorMessage({ status: 500, message: "Internal Server Error" })).toBe(GENERIC_ERROR);
   });
+
+  // /review L-3: 판정 기준이 상태 코드 하나였다. 잠금 문구만 통과시키려는
+  // 의도인데, better-auth가 오리진 불일치 같은 다른 이유로 내는 403의 영문
+  // 메시지도 그대로 새어 나간다 — 사용자는 「Invalid origin」을 보고 아무것도
+  // 할 수 없고, 서버 구성 정보만 노출된다.
+  it("L-3: 잠금이 아닌 403(오리진 불일치 등)의 영문 메시지는 접는다", () => {
+    expect(loginErrorMessage({ status: 403, message: "Invalid origin" })).toBe(GENERIC_ERROR);
+    expect(loginErrorMessage({ status: 403, message: "CSRF token mismatch" })).toBe(GENERIC_ERROR);
+  });
+
+  it("L-3: 잠금 문구는 그대로 보인다 — 잠긴 줄 모르고 비밀번호만 고쳐 보게 두지 않는다", () => {
+    const locked = "로그인 시도가 너무 많습니다. 15분 뒤 다시 시도하거나 관리자에게 문의하세요.";
+    expect(loginErrorMessage({ status: 403, message: locked })).toBe(locked);
+  });
 });

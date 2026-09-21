@@ -40,7 +40,7 @@ export type PermissionGridProps = {
   onToggle: (rowId: string, columnId: string, next: boolean) => Promise<void>;
 };
 
-function buildInitialCells(
+export function buildInitialCells(
   rows: PermissionGridRow[],
   columns: PermissionGridColumn[],
   values: Record<string, boolean>,
@@ -53,6 +53,30 @@ function buildInitialCells(
     }
   }
   return cells;
+}
+
+// 03-REVIEW.md M-1 — useState(() => buildInitialCells(...))는 첫 마운트에서
+// 딱 한 번만 실행된다. readPermissionGrid()가 일시 실패해 rows=[] values={}
+// 로 처음 렌더된 뒤 "다시 시도"가 router.refresh()로 실제 매트릭스를
+// 가져와도, 클라이언트 컴포넌트는 리마운트되지 않아 cells가 빈 채로 남고
+// 격자가 전부 미체크로 그려진다. 이 함수는 rows/columns/values가 바뀔
+// 때마다 cells를 다시 만들되, 저장 중이거나 실패한 셀(status !== "idle")은
+// 무관한 리렌더가 사용자의 낙관적 토글·되돌림 상태를 지우지 않도록 그대로
+// 넘긴다 — key로 리마운트시키면 이 진행 중 상태까지 통째로 사라진다.
+export function resyncCells(
+  prev: Record<string, CellState>,
+  rows: PermissionGridRow[],
+  columns: PermissionGridColumn[],
+  values: Record<string, boolean>,
+): Record<string, CellState> {
+  const next = buildInitialCells(rows, columns, values);
+  for (const key of Object.keys(next)) {
+    const prevCell = prev[key];
+    if (prevCell && prevCell.status !== "idle") {
+      next[key] = prevCell;
+    }
+  }
+  return next;
 }
 
 function groupColumns(columns: PermissionGridColumn[]): Array<{ name: string; span: number }> {
@@ -113,6 +137,21 @@ export function PermissionGrid({
   const [toast, setToast] = useState<{ message: string; tone: "default" | "error" } | null>(null);
   const [selectedRoleId, setSelectedRoleId] = useState<string>(rows[0]?.id ?? "");
   const delayTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // M-1 회귀 수정: rows/columns/values가 (재조회로) 바뀔 때마다 cells를
+  // 다시 동기화한다 — 위 useState의 지연 초기화는 첫 마운트에서만 돈다.
+  // 렌더 중 setState로 처리한다(react-hooks/set-state-in-effect 계약:
+  // effect 안에서의 동기 setState는 불필요한 연쇄 렌더를 만든다) — React가
+  // 권장하는 "prop 변화에 맞춰 state 조정" 패턴이다.
+  const [prevRows, setPrevRows] = useState(rows);
+  const [prevColumns, setPrevColumns] = useState(columns);
+  const [prevValues, setPrevValues] = useState(values);
+  if (rows !== prevRows || columns !== prevColumns || values !== prevValues) {
+    setPrevRows(rows);
+    setPrevColumns(columns);
+    setPrevValues(values);
+    setCells((prev) => resyncCells(prev, rows, columns, values));
+  }
 
   if (errorMessage) {
     return (

@@ -31,7 +31,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   return (
     <Shell
       topBarMenu={menu.topBarMenu}
-      systemStatus={menu.systemStatus}
+      adminMenu={menu.adminMenu}
       accountGroup={menu.accountGroup}
       bottomTabs={menu.bottomTabs}
       userName={user.name}

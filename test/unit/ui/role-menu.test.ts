@@ -1,16 +1,22 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { roleMenu, type RoleMenuViewer } from "../../../ui/shell/role-menu";
 
-// D-23의 계약 고정: 역할 → (상단 바 메뉴, 폰 하단 탭, 계정 그룹, 시스템 상태 진입점)
+// D-23의 계약 고정: 역할 → (상단 바 메뉴, 폰 하단 탭, 계정 그룹, 관리자 메뉴 진입점)
 // 매핑이 순수 함수 한 곳에 데이터로 있는지를 검증한다. 계정 그룹 항목 이름과 폰 하단
 // 탭은 SYSTEM.md §6-0/§7-8에서 읽어 비교한다 — 문서가 바뀌면 이 파일을 고치지
 // 않아도 실패로 드러난다(플랜 지시).
 //
-// D-36(03-02): 계급 5종으로 교체됐다. 시스템 상태 진입점 판정은 이제 계급 이름이
+// D-36(03-02): 계급 5종으로 교체됐다. 관리자 메뉴 진입점 판정은 이제 계급 이름이
 // 아니라 app/(app)/layout.tsx가 can()으로 미리 계산한 allowedMenus를 읽는다 —
 // 이 파일은 그 계산 결과를 흉내낸 데이터만 넘긴다(ui는 domain을 import할 수 없다).
+//
+// 네비게이션 공백 수정(2026-09-21): Phase 3이 관리자 화면 9개를 더 만들었지만
+// role-menu.ts는 "admin.system-status" 하나만 진입점으로 뚫려 있었다(나머지는
+// 주소를 직접 입력해야만 닿을 수 있었다). systemStatus: MenuLink | null 하나를
+// adminMenu: MenuLink[]로 일반화해 allowedMenus에 있는 admin.* 키 전부가 보이게
+// 한다(SYSTEM.md §6-0 (a) · §6-8 · §7-8 — PC 사용자 메뉴와 관리자용 「더보기」 시트).
 
 function readSystemDoc(): string {
   return readFileSync(resolve(process.cwd(), "docs", "design", "SYSTEM.md"), "utf8");
@@ -84,18 +90,80 @@ describe("roleMenu — 상단 바 1차 메뉴 (D-22)", () => {
   });
 });
 
-describe("roleMenu — 시스템 상태 진입점 (D-17, D-36 이후 allowedMenus 기준)", () => {
-  it("allowedMenus에 admin.system-status가 있으면 시스템 상태 진입점이 있다", () => {
-    expect(roleMenu(ADMIN).systemStatus).not.toBeNull();
+// domain/permissions/menus.ts MENUS의 admin.* 키 전부(정본) ↔ role-menu.ts
+// ADMIN_MENUS(ui 쪽 복제본). 이 테스트 파일 자체가 경로에 "ui/"를 포함해
+// boundaries/element-types가 "ui" 요소로 잡는다(위 SEED_ROLE_NAMES 주석과 같은
+// 이유) — domain을 import할 수 없어 이 목록도 여기 복제한다. 03-01·03-02가
+// 만든 domain/permissions/menus.ts MENUS·03-*가 만든 app/(app)/admin/ 라우트가
+// 정본이고, 셋 중 하나가 바뀌면 이 파일이나 role-menu.ts가 먼저 어긋난다.
+const ADMIN_MENU_KEYS = [
+  "admin.system-status",
+  "admin.code-tables",
+  "admin.people",
+  "admin.vendors",
+  "admin.corp-cards",
+  "admin.permissions",
+  "admin.visibility",
+  "admin.settings",
+  "admin.action-log",
+  "admin.archive",
+];
+
+/** admin.<name> 키의 실제 라우트 디렉터리(app/(app)/admin/<name>/page.tsx)가 있는지. */
+function adminRouteExists(key: string): boolean {
+  const name = key.slice("admin.".length);
+  return existsSync(resolve(process.cwd(), "app", "(app)", "admin", name, "page.tsx"));
+}
+
+describe("roleMenu — 관리자 메뉴 진입점 (D-17 일반화, D-36 이후 allowedMenus 기준)", () => {
+  it("전제 확인: 위에 복제한 admin.* 키 10개 전부 실제 라우트 디렉터리가 있다", () => {
+    expect(ADMIN_MENU_KEYS.length).toBe(10);
+    for (const key of ADMIN_MENU_KEYS) {
+      expect(adminRouteExists(key)).toBe(true);
+    }
   });
 
-  it("allowedMenus에 admin.system-status가 없으면 시스템 상태 진입점이 없다", () => {
-    expect(roleMenu(EMPLOYEE).systemStatus).toBeNull();
+  it("allowedMenus에 admin.system-status가 있으면 관리자 메뉴에 그 항목이 있다", () => {
+    expect(roleMenu(ADMIN).adminMenu).toContainEqual({ label: "시스템 상태", href: "/admin/system-status" });
+  });
+
+  it("allowedMenus가 비어 있으면 관리자 메뉴도 비어 있다", () => {
+    expect(roleMenu(EMPLOYEE).adminMenu).toEqual([]);
   });
 
   it("계급 이름이 아니라 allowedMenus만 본다 — 시스템 관리자라도 허용 목록이 비면 진입점이 없다", () => {
     const sysadminWithoutPermission: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [] };
-    expect(roleMenu(sysadminWithoutPermission).systemStatus).toBeNull();
+    expect(roleMenu(sysadminWithoutPermission).adminMenu).toEqual([]);
+  });
+
+  it.each(ADMIN_MENU_KEYS)("%s 하나만 허용돼도 관리자 메뉴에 그 항목 하나만 나타난다", (key) => {
+    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [key] };
+    const name = key.slice("admin.".length);
+    expect(roleMenu(viewer).adminMenu).toHaveLength(1);
+    expect(roleMenu(viewer).adminMenu[0]?.href).toBe(`/admin/${name}`);
+  });
+
+  it("allowedMenus에 admin.* 키 10개가 전부 있으면 관리자 메뉴도 10개다", () => {
+    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ADMIN_MENU_KEYS };
+    const menu = roleMenu(viewer).adminMenu;
+    expect(menu).toHaveLength(10);
+    expect(new Set(menu.map((item) => item.href))).toEqual(
+      new Set(ADMIN_MENU_KEYS.map((key) => `/admin/${key.slice("admin.".length)}`)),
+    );
+  });
+
+  it("admin.settings(관리자용 설정 화면)는 사용자 자신의 「설정」(/settings)과 라벨·경로가 다르다", () => {
+    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ["admin.settings"] };
+    const entry = roleMenu(viewer).adminMenu[0];
+    expect(entry?.href).toBe("/admin/settings");
+    expect(entry?.href).not.toBe("/settings");
+    expect(entry?.label).not.toBe("설정");
+  });
+
+  it("허용된 관리자 메뉴는 매번 같은 순서로 나온다(allowedMenus의 순서와 무관, 순수 함수)", () => {
+    const forward: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [...ADMIN_MENU_KEYS] };
+    const reversed: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [...ADMIN_MENU_KEYS].reverse() };
+    expect(roleMenu(forward).adminMenu).toEqual(roleMenu(reversed).adminMenu);
   });
 });
 

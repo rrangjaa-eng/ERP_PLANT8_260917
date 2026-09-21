@@ -12,7 +12,7 @@ import styles from "./BottomTabs.module.css";
 // 않는다(서버 렌더 결과가 뷰포트에 따라 달라지지 않는다). 「더보기」를 열고 닫는
 // 상태만 클라이언트에 있어 이 컴포넌트는 client다.
 //
-// 역할 분기를 두지 않는다 — bottomTabs·topBarMenu·accountGroup·systemStatus 전부
+// 역할 분기를 두지 않는다 — bottomTabs·topBarMenu·accountGroup·adminMenu 전부
 // role-menu.ts의 계산 결과를 그대로 받는다(D-23).
 export type BottomTabsProps = {
   /** 1차 메뉴 다섯 전부 — 하단 탭에 없는 항목을 「더보기」 시트가 계산해 보여 준다. */
@@ -20,7 +20,8 @@ export type BottomTabsProps = {
   /** roleMenu(viewer).bottomTabs — 정확히 4개, 4번째는 항상 {kind:"more"}. */
   bottomTabs: BottomTab[];
   accountGroup: AccountEntry[];
-  systemStatus: MenuLink | null;
+  /** roleMenu(viewer).adminMenu — 허용된 admin.* 메뉴 전부(D-17 일반화). */
+  adminMenu: MenuLink[];
   /** 「내 차례」 탭 라벨에 붙일 건수 — 데이터 출처가 없는 이 페이즈에서는 생략(undefined)한다. */
   nextTurnCount?: number;
 };
@@ -29,7 +30,7 @@ export function BottomTabs({
   topBarMenu,
   bottomTabs,
   accountGroup,
-  systemStatus,
+  adminMenu,
   nextTurnCount,
 }: BottomTabsProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -80,7 +81,7 @@ export function BottomTabs({
         onClose={() => setSheetOpen(false)}
         moreMenu={moreMenu}
         accountGroup={accountGroup}
-        systemStatus={systemStatus}
+        adminMenu={adminMenu}
         triggerRef={moreTriggerRef}
       />
     </>

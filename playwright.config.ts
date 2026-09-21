@@ -73,6 +73,19 @@ export default defineConfig({
     {
       name: "mobile-375",
       testMatch: MOBILE_SPEC_PATTERN,
+      // 두 프로젝트는 erp_test 하나를 공유한다(함정 6) — 동시에 돌면 서로의
+      // 데이터를 본다. mobile-admin-master-list-first.spec.ts는
+      // document.documentElement.scrollWidth로 /admin/vendors의 가로 오버플로를
+      // 재는데, 그 폭은 **다른 워커가 방금 만든 행**에 따라 달라진다:
+      // vendors.spec.ts의 두 테스트가 계좌번호 있는 거래처를 테스트 진행
+      // 중에 목록에 노출하고, 그 칸 때문에 481 > 375가 된다(6회 중 1회 실측).
+      // 프로젝트를 줄 세워 그 창을 없앤다 — 두 스펙 모두 끝에 「숨기기」로
+      // 정리하므로 desktop이 끝난 뒤에는 그런 행이 목록에 없다.
+      // 대가: desktop이 빨가면 mobile은 skip된다(Playwright 기본 동작).
+      // 함정 5와 달리 조용하지 않다 — 리포트에 skipped로 나온다.
+      // 진짜 해결은 워커별 DB 분리(후속 과제)이고, 375px 표 오버플로 자체는
+      // Phase 4 이월 항목이다.
+      dependencies: ["desktop"],
       use: {
         viewport: { width: 375, height: 800 },
       },

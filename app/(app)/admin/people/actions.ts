@@ -81,6 +81,7 @@ export const archiveRoleAction = authedActionClient
   .action(async ({ parsedInput, ctx }) => {
     await archive(ctx.viewer, "roles", parsedInput.id);
     revalidatePath("/admin/people/roles");
+    revalidatePath("/admin/archive");
   });
 
 export const createOrgUnitAction = authedActionClient

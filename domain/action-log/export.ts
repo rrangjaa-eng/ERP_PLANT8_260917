@@ -26,13 +26,23 @@ export type ExportFile = { filename: string; contentType: string; body: string }
 
 const CSV_HEADERS = ["발생 시각", "행위자", "행위자 계급", "행동 종류", "대상", "문서", "상세"] as const;
 
+// 앞머리가 이 문자면 Excel·LibreOffice가 셀을 수식으로 평가한다. 인용만으로는
+// 막히지 않는다 — 따옴표 안에 있어도 평가된다.
+const FORMULA_LEAD = /^[=+\-@\t\r]/;
+
 // 표준 CSV 이스케이프 — 구분자·줄바꿈·따옴표가 있으면 따옴표로 감싸고 내부
 // 따옴표는 둘로 늘린다(RFC4180과 같은 결).
+//
+// 더해서 수식 인젝션을 막는다(/cso F3): 이 파일은 아래에서 BOM을 붙여 Excel
+// 더블클릭 열기를 노리므로, 사용자가 정하는 값(거래처·사람·팀 이름 등)이
+// 그대로 나가면 대표·경영관리의 Excel에서 수식으로 실행된다. 앞에 작은따옴표를
+// 붙이면 Excel이 텍스트로 읽고, 사람이 읽는 값은 그대로 남는다(감사 기록이다).
 function csvEscape(value: string): string {
-  if (/[",\r\n]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
+  const safe = FORMULA_LEAD.test(value) ? `'${value}` : value;
+  if (/[",\r\n]/.test(safe)) {
+    return `"${safe.replace(/"/g, '""')}"`;
   }
-  return value;
+  return safe;
 }
 
 // §2-4 날짜·시각 형식(ISO 날짜 + 24시간 시각) — 표 안 값이라 초까지 담아

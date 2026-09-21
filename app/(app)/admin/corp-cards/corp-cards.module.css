@@ -88,3 +88,10 @@
   align-items: center;
   gap: var(--s-3);
 }
+
+/* 소유자 변경 폼의 대상 표시 한 줄 — vendors.module.css의 .hint와 같은 결. */
+.hint {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  margin: 0 0 var(--s-3);
+}

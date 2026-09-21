@@ -7,7 +7,12 @@ import { listCodeItems } from "@/domain/code-tables";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
-import { CodeItemForm, CodeItemActiveToggle, CodeItemDeleteButton } from "./code-item-form";
+import {
+  CodeItemForm,
+  CodeItemLabelInput,
+  CodeItemActiveToggle,
+  CodeItemDeleteButton,
+} from "./code-item-form";
 import { EvidenceTypeFields } from "./evidence-type-fields";
 import styles from "./code-tables.module.css";
 
@@ -117,7 +122,11 @@ export default async function CodeTablesPage({
               <Fragment key={item.id}>
                 <tr>
                   <td>{item.value}</td>
-                  <td>{item.label}</td>
+                  {/* MAST-04 「수정」 — 보관된 항목은 도메인이 거부하므로
+                      입력칸 대신 글자로 보인다(계급 화면과 같은 결). */}
+                  <td>
+                    {item.archivedAt ? item.label : <CodeItemLabelInput id={item.id} label={item.label} />}
+                  </td>
                   <td>{item.sortOrder}</td>
                   <td>
                     {item.archivedAt ? (

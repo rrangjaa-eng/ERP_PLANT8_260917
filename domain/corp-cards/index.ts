@@ -25,6 +25,9 @@ export class InvalidCardOwnerError extends UserFacingError {}
 // 바꿔치기한다. 그 외 오류는 그대로 던져 handleServerError의 일반 처리(로그 +
 // 안전한 일반 문구)로 넘긴다.
 export class DuplicateCorpCardError extends UserFacingError {}
+// 성공 기준 5 「수정」: 보관되었거나 없는 카드는 소유자를 바꿀 수 없다
+// (domain/vendors의 ArchivedVendorError와 같은 결).
+export class ArchivedCorpCardError extends UserFacingError {}
 
 const CARDS_MENU = "admin.corp-cards";
 
@@ -82,7 +85,11 @@ export async function listCorpCards(
   return Promise.all(rows.map((row) => project(viewer, row, CORP_CARD_DTO_SPEC))) as Promise<CorpCardDto[]>;
 }
 
-export type CorpCardWriteDeps = { can: typeof defaultCan; recordAction: typeof defaultRecordAction };
+export type CorpCardWriteDeps = {
+  can: typeof defaultCan;
+  recordAction: typeof defaultRecordAction;
+  findCorpCardById: typeof repoFindCorpCardById;
+};
 
 export async function createCorpCard(
   viewer: Viewer,
@@ -130,6 +137,15 @@ export async function updateCorpCardOwner(
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, CARDS_MENU, "write"))) {
     throw new ForbiddenError("법인카드 소유자 변경 권한이 없습니다.");
+  }
+
+  // 거래처(updateVendor)와 같은 이유로 판정을 여기서 한다 — 목록이 보관된
+  // 행의 「수정」 링크를 감추는 것만으로는 ?editId=<보관된 id>를 직접 여는
+  // 경로를 못 막는다(DOM 감사 실측).
+  const findCorpCardById = deps?.findCorpCardById ?? repoFindCorpCardById;
+  const existing = await findCorpCardById(viewer, id);
+  if (!existing || existing.archivedAt !== null) {
+    throw new ArchivedCorpCardError("보관되었거나 존재하지 않는 법인카드는 수정할 수 없습니다.");
   }
 
   // kind도 같은 UPDATE에서 함께 옮긴다(생성 경로와 대칭). 빼먹으면 소유자만

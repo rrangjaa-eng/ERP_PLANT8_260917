@@ -78,7 +78,7 @@ test.describe("코드표 화면 — 목록이 첫 화면, 등록은 행동 (§6-
 
     const value = `e2e-목록우선-${Date.now()}`;
     await page.getByLabel("값").fill(value);
-    await page.getByLabel("이름").fill("목록 우선 E2E");
+    await page.locator("#code-item-form").getByLabel("이름").fill("목록 우선 E2E");
     await page.getByRole("button", { name: "코드 추가" }).click();
     await expect(page.getByText(value)).toBeVisible();
   });

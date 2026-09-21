@@ -1,9 +1,14 @@
 "use client";
 
-import { useRef, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useAction } from "next-safe-action/hooks";
-import { createCodeItemAction, setCodeItemActiveAction, archiveCodeItemAction } from "./actions";
+import {
+  createCodeItemAction,
+  updateCodeItemLabelAction,
+  setCodeItemActiveAction,
+  archiveCodeItemAction,
+} from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
@@ -58,6 +63,30 @@ export function CodeItemForm({ tableKey, cancelHref }: { tableKey: string; cance
 
 // §6-1 목록 행 3차 버튼 — 되돌릴 수 있는 상태 변경이라 확인 모달 없음, 즉시
 // 반영(03-UI-SPEC.md 「비활성화 표현」).
+// MAST-04 「수정」 — 계급 화면(roles-client.tsx)의 인라인 이름 입력과 같은 결:
+// 행 안에서 고치고 포커스를 잃을 때 저장한다. 값(value)은 입력칸으로 내보내지
+// 않는다 — vendors.default_evidence_type이 FK 없이 그 문자열을 참조해서,
+// 바꾸면 기존 거래처가 조용히 고아가 된다(사용자 결정 2026-09-21).
+export function CodeItemLabelInput({ id, label }: { id: string; label: string }) {
+  const [value, setValue] = useState(label);
+  const { execute, result } = useAction(updateCodeItemLabelAction);
+
+  return (
+    <>
+      <input
+        className={styles.labelInput}
+        aria-label={`${label} 이름`}
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+        onBlur={() => {
+          if (value.trim() && value !== label) execute({ id, label: value });
+        }}
+      />
+      {result.serverError ? <p className={styles.taxRuleHint}>{result.serverError}</p> : null}
+    </>
+  );
+}
+
 export function CodeItemActiveToggle({ id, active }: { id: string; active: boolean }) {
   const { execute, isExecuting } = useAction(setCodeItemActiveAction);
 

@@ -82,6 +82,21 @@
   margin: var(--s-2) 0;
 }
 
+/* MAST-04 「수정」의 행 인라인 이름 입력 전용. 폭을 칸에 맞추지 않으면
+   <td> 안에서 브라우저 기본 입력 폭(~170px+)을 그대로 써서 폰 375에서 표가
+   뷰포트를 넘는다(실측 489 > 375) — people.module.css의 .select가 defect 3
+   때 같은 이유로 width: 100%를 받았다. 여기서는 등록 폼의 <select> 렌더를
+   건드리지 않으려고 공유 .select를 넓히는 대신 별도 클래스로 둔다. */
+.labelInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--control-h);
+  border: var(--line-w) solid var(--line-ui);
+  background: var(--bg);
+  padding: 0 var(--s-2);
+  font-size: var(--fs-base);
+}
+
 .select {
   height: var(--control-h);
   border: var(--line-w) solid var(--line-ui);

@@ -3,7 +3,12 @@
 import { useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useAction } from "next-safe-action/hooks";
-import { createCorpCardAction, setCorpCardActiveAction, archiveCorpCardAction } from "./actions";
+import {
+  createCorpCardAction,
+  updateCorpCardOwnerAction,
+  setCorpCardActiveAction,
+  archiveCorpCardAction,
+} from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
@@ -127,6 +132,107 @@ export function CardForm({
 }
 
 // §6-1 목록 행 3차 버튼 — 되돌릴 수 있는 상태 변경이라 확인 모달 없음, 즉시 반영.
+// 성공 기준 5 「수정」 — 거래처의 ?editId= 토글과 같은 결. 바꾸는 것은
+// 소유자(개인 소지자 또는 팀)뿐이다: 발급사·뒤 4자리는 카드의 식별자라
+// 바꾸는 것이 아니라 새로 등록하는 일이고, 별칭 수정은 요구사항 밖이다.
+// 보관된 카드는 domain/corp-cards가 ArchivedCorpCardError로 거부한다 —
+// 목록이 링크를 감추는 것은 두 겹 중 바깥쪽일 뿐이다.
+export function CardOwnerForm({
+  card,
+  holders,
+  teams,
+  cancelHref,
+}: {
+  card: { id: string; label: string; kind: string; holderUserId: string | null; teamId: string | null };
+  holders: HolderOption[];
+  teams: TeamOption[];
+  cancelHref: string;
+}) {
+  const [kind, setKind] = useState<"personal" | "team">(card.kind === "team" ? "team" : "personal");
+  const { execute, result, isExecuting } = useAction(updateCorpCardOwnerAction);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    execute({
+      id: card.id,
+      holderUserId: kind === "personal" ? getStringField(formData, "holderUserId") || undefined : undefined,
+      teamId: kind === "team" ? getStringField(formData, "teamId") || undefined : undefined,
+    });
+  }
+
+  return (
+    <form onSubmit={handleSubmit} id="corp-card-owner-form">
+      <p className={styles.hint}>{card.label} 소유자 변경</p>
+
+      <div className={styles.selectLabel}>
+        <label htmlFor="owner-kind">종류</label>
+        <select
+          id="owner-kind"
+          className={styles.select}
+          value={kind}
+          onChange={(event) => setKind(event.target.value === "team" ? "team" : "personal")}
+        >
+          <option value="personal">개인</option>
+          <option value="team">팀</option>
+        </select>
+      </div>
+
+      {kind === "personal" ? (
+        <div className={styles.selectLabel}>
+          <label htmlFor="owner-holderUserId">소지자</label>
+          <select
+            id="owner-holderUserId"
+            name="holderUserId"
+            className={styles.select}
+            required
+            defaultValue={card.holderUserId ?? ""}
+          >
+            <option value="" disabled>
+              소지자 선택
+            </option>
+            {holders.map((holder) => (
+              <option key={holder.id} value={holder.id}>
+                {holder.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : (
+        <div className={styles.selectLabel}>
+          <label htmlFor="owner-teamId">팀</label>
+          <select
+            id="owner-teamId"
+            name="teamId"
+            className={styles.select}
+            required
+            defaultValue={card.teamId ?? ""}
+          >
+            <option value="" disabled>
+              팀 선택
+            </option>
+            {teams.map((team) => (
+              <option key={team.id} value={team.id}>
+                {team.orgUnitName} · {team.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
+      <div className={styles.formActions}>
+        <Button type="submit" variant="primary" pending={isExecuting}>
+          소유자 변경
+        </Button>
+        <Link href={cancelHref} className={styles.toggle}>
+          취소
+        </Link>
+      </div>
+    </form>
+  );
+}
+
 export function CorpCardActiveToggle({ id, active }: { id: string; active: boolean }) {
   const { execute, isExecuting } = useAction(setCorpCardActiveAction);
 

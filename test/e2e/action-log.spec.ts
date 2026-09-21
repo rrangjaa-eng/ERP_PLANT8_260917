@@ -22,7 +22,7 @@ test.describe("행동 로그 화면 (ADMN-10, OPS-05)", () => {
     await page.goto("/admin/code-tables");
     await page.getByRole("link", { name: "코드 추가" }).click();
     await page.getByLabel("값").fill(codeValue);
-    await page.getByLabel("이름").fill("행동 로그 E2E");
+    await page.locator("#code-item-form").getByLabel("이름").fill("행동 로그 E2E");
     await page.getByRole("button", { name: "코드 추가" }).click();
     await expect(page.getByText(codeValue)).toBeVisible();
 
@@ -106,7 +106,7 @@ test.describe("행동 로그 화면 (ADMN-10, OPS-05)", () => {
     await page.goto("/admin/code-tables");
     await page.getByRole("link", { name: "코드 추가" }).click();
     await page.getByLabel("값").fill(codeValue);
-    await page.getByLabel("이름").fill("빈 파라미터 E2E");
+    await page.locator("#code-item-form").getByLabel("이름").fill("빈 파라미터 E2E");
     await page.getByRole("button", { name: "코드 추가" }).click();
     await expect(page.getByText(codeValue)).toBeVisible();
 

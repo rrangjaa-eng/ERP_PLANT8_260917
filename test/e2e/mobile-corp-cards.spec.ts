@@ -44,11 +44,33 @@ test.describe("폰 375 /admin/corp-cards 3차 버튼·터치 목표 (defect 4)",
     const toggleButton = page.getByRole("button", { name: "비활성화" }).first();
     const box = await toggleButton.boundingBox();
     expect(box).not.toBeNull();
-    // 재현 당시 폭 19 · 높이 78(세로 텍스트로 찌그러짐). 정상 렌더는 한 줄
-    // 텍스트라 높이가 --control-h(폰 40) 근방이어야 하고, 폭은 "비활성화" 네
-    // 글자가 다 들어갈 만큼은 돼야 한다.
-    expect(box!.height).toBeLessThan(30);
+    // 재현 당시 폭 19 · 높이 78 — "비활성화"가 한 글자씩 세로로 꺾인 모습이다.
+    // 결함의 정체는 "텍스트가 여러 줄로 꺾였다"이므로 줄 수를 직접 잰다.
+    // (이전에는 대리 지표로 버튼 높이 < 30을 썼는데, 같은 .tertiary에 §3 폰
+    //  터치 목표 44×44를 채우면서 높이가 44가 돼 대리 지표만 깨졌다 — 의도는
+    //  그대로고 표현이 틀렸던 것이라, 느슨하게 푸는 대신 의도를 직접 잰다.)
+    const textLines = await toggleButton.evaluate((el) => {
+      // 버튼 안 텍스트 노드의 줄 상자를 직접 센다. 래퍼 <span>까지 포함되면
+      // 같은 한 줄이 상자 두 개로 잡히므로 텍스트 노드만 본다.
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      const rects: DOMRect[] = [];
+      let node = walker.nextNode();
+      while (node) {
+        if ((node.textContent ?? "").trim() !== "") {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          rects.push(...Array.from(range.getClientRects()).filter((r) => r.width > 0));
+        }
+        node = walker.nextNode();
+      }
+      return { count: rects.length, height: Math.max(...rects.map((r) => r.height)) };
+    });
+    expect(textLines.count).toBe(1);
+    expect(textLines.height).toBeLessThan(30);
     expect(box!.width).toBeGreaterThan(30);
+    // 줄 수를 재게 된 이상 버튼 자체의 §3 터치 목표는 여기서도 같이 지킨다
+    // (대리 지표를 걷어내며 44×44 보장이 사라지지 않도록).
+    expect(box!.height).toBeGreaterThanOrEqual(44);
 
     const { scrollWidth, clientWidth } = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,

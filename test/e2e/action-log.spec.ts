@@ -82,4 +82,44 @@ test.describe("행동 로그 화면 (ADMN-10, OPS-05)", () => {
     expect(pmResponse?.status()).toBe(404);
     if (pmContext) await pmContext.close();
   });
+  // /review 지적: page.tsx가 검색 파라미터를 정규화하지 않고 filterValues로
+  // 그대로 넘긴다. 필터 줄은 네이티브 GET 폼이라 한 번이라도 제출되면 빈
+  // 칸까지 `actorId=&from=&...`로 URL에 실리는데, 내보내기·정리 액션의
+  // 스키마는 `z.string().min(1).optional()`이라 빈 문자열을 거부한다 —
+  // 즉 필터를 화면에서 한 번 건드리면 두 기능이 다 막힌다. 위 테스트는
+  // 매번 page.goto로 깨끗한 URL을 만들어 들어가서 이 경로를 비켜갔다.
+  test("필터를 폼으로 제출한 뒤에도 Excel 내보내기와 정리가 동작한다", async ({ page }) => {
+    const admin = await createFixtureUser({ roleId: "role-sysadmin" });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    const codeValue = `e2e-empty-${Date.now()}`;
+    await page.goto("/admin/code-tables");
+    await page.getByLabel("값").fill(codeValue);
+    await page.getByLabel("이름").fill("빈 파라미터 E2E");
+    await page.getByRole("button", { name: "코드 추가" }).click();
+    await expect(page.getByText(codeValue)).toBeVisible();
+
+    // 화면에서 필터를 고른다 — page.goto가 아니라 폼 제출이어야 빈 칸이 함께 실린다.
+    await page.goto("/admin/action-log");
+    await page.getByLabel("행동 종류").selectOption("document_create");
+    await expect(page).toHaveURL(/actorId=&/);
+    await expect(page.getByRole("cell", { name: "문서 생성" }).first()).toBeVisible();
+
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Excel 내보내기" }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/^action-log-.*\.csv$/);
+    await expect(page.getByText("Excel 내보내기 · 실패 · 다시 시도")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "정리" }).click();
+    await expect(page.getByText(/건을 정리합니다 · 정리 기록은 남습니다/)).toBeVisible();
+    await page.getByRole("button", { name: "정리" }).click();
+    await expect(page.getByText("정리하지 못했습니다 · 다시 시도")).toHaveCount(0);
+    await expect(page.getByRole("cell", { name: "문서 생성" })).toHaveCount(0);
+  });
 });

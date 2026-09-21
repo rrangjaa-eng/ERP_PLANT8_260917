@@ -32,20 +32,28 @@ export default async function ActionLogPage({ searchParams }: { searchParams: Pr
   if (!(await can(session.viewer, "admin.action-log", "view"))) notFound();
 
   const params = await searchParams;
+  // 필터 줄은 네이티브 GET 폼이라 한 번 제출되면 빈 칸까지 `actorId=&...`로
+  // 실린다. 빈 문자열은 "필터 없음"이므로 여기서 한 번만 undefined로 정규화해
+  // filter와 filterValues가 같은 값을 쓰게 한다 — filterValues를 정규화하지
+  // 않으면 그 ""가 내보내기·정리 액션의 z.string().min(1)에 걸려, 필터를 화면에서
+  // 한 번 건드린 뒤에는 두 기능이 다 막힌다.
+  const actorId = params.actorId || undefined;
+  const actionType = params.actionType || undefined;
+  const documentId = params.documentId || undefined;
   const from = isValidDateString(params.from) ? params.from : undefined;
   const to = isValidDateString(params.to) ? params.to : undefined;
   const includePruned = params.includePruned === "1";
 
   const filter: ActionLogFilter = {
-    actorId: params.actorId || undefined,
-    actionType: params.actionType || undefined,
-    documentId: params.documentId || undefined,
+    actorId,
+    actionType,
+    documentId,
     from: parseActionLogDateBoundary(from, "start"),
     to: parseActionLogDateBoundary(to, "end"),
     includePruned,
   };
 
-  const hasFilter = Boolean(filter.actorId || filter.actionType || filter.documentId || from || to);
+  const hasFilter = Boolean(actorId || actionType || documentId || from || to);
 
   const [rows, canWrite, people] = await Promise.all([
     queryActionLog(session.viewer, filter),
@@ -56,11 +64,11 @@ export default async function ActionLogPage({ searchParams }: { searchParams: Pr
   const pruneCount = rows.filter((row) => !row.prunedAt && row.actionType !== "action_log_prune").length;
 
   const filterValues: ActionLogFilterValues = {
-    actorId: params.actorId,
+    actorId,
     from,
     to,
-    actionType: params.actionType,
-    documentId: params.documentId,
+    actionType,
+    documentId,
     includePruned,
   };
 

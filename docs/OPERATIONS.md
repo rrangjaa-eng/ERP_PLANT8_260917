@@ -165,6 +165,27 @@ WIF 풀·프로바이더, 서비스 계정 3개(배포자 + 환경별 런타임 
 때 `deploy.sh`가 재설정하지 않으므로, 그때는 `gcloud sql users set-password postgres`를
 손으로 맞춘다.
 
+**`app-data-key-v1`은 base64로 인코딩된 정확히 32바이트여야 한다**(`lib/crypto.ts`
+`APP_DATA_KEY_BYTES`, aes-256-gcm 키 길이 — 길이가 다르면 `keyFor()`가 쓰기 전에
+즉시 예외를 던진다). `_ensure_secret`은 ENABLED 버전이 이미 있으면 새로 만들지
+않으므로, 이 계약이 생기기 전(03-06 이전)에 배포된 환경은 `deploy.sh`를 다시 돌려도
+고쳐지지 않는다 — 실제로 01-07·01-08에서 만든 `app-data-key-v1-staging`·
+`app-data-key-v1-prod`가 옛 코드(`openssl rand -base64 48`, 48바이트)로 생성돼 이
+상태다. 다만 길이가 틀린 키로는 `encrypt()`/`decrypt()`가 애초에 실행되지 않으므로
+(fail-closed), 이 48바이트 버전으로 실제 암호화에 성공한 데이터는 존재할 수 없다 —
+새 버전을 추가해도 잃을 데이터가 없다. 고치는 법(추가만 하고 옛 버전은 지우지
+않는다):
+
+```bash
+openssl rand -base64 32 | gcloud secrets versions add app-data-key-v1-staging --project="$PROJECT" --data-file=-
+openssl rand -base64 32 | gcloud secrets versions add app-data-key-v1-prod    --project="$PROJECT" --data-file=-
+```
+
+새 버전이 최신(`latest`)이 되고 앱은 `--set-secrets=...:latest`로 그 버전만 읽으므로
+다음 리비전 배포부터 바로 적용된다. 옛 48바이트 버전을 지우지 않아도 무해하다 —
+아무 데이터도 그 키로 암호화되지 않았고, `_ensure_secret`은 ENABLED 버전이 하나라도
+있으면 건드리지 않는다.
+
 **키 회전 절차(03-06):** `app-data-key-v2-{env}` 시크릿을 새로 만들고 두 키(v1·v2)를
 함께 둔 상태에서 `pnpm db:rotate-key`를 돌린다 — 옛 버전 암호문을 복호화해 새 버전으로
 다시 쓴다(중단·재실행 안전, 이미 최신 버전인 행은 건너뛴다). **회전 완료 후에만** 옛

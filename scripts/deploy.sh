@@ -275,7 +275,7 @@ _ensure_secret() {
 ensure_secrets() {
   STAGE=ensure_secrets
   _ensure_secret better-auth-secret 48
-  _ensure_secret app-data-key-v1 48
+  _ensure_secret app-data-key-v1 32
   _ensure_secret smtp-host sentinel
   _ensure_secret smtp-user sentinel
   _ensure_secret smtp-password sentinel

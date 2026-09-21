@@ -63,6 +63,23 @@
   border-bottom-width: var(--line-w-strong);
 }
 
+/* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. .tertiary는 height: auto
+   + padding: 0라 글자 줄 높이(20px 안팎)로 찌그러져 있었다(wave 6 DOM 감사,
+   defect 2) — .toggle/.detailLink(개별 화면 CSS 모듈)와 같은 폰 전용
+   min-width/min-height 패턴을 공유 컴포넌트에 적용한다. PC(--control-h)는
+   그대로 둔다 — §7-1 "시트 밖 폰 버튼은 40 유지" 예외는 --control-h 버튼
+   얘기라 여기(20px 3차 버튼)엔 해당하지 않는다. */
+@media (max-width: 699.98px) {
+  .tertiary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+    padding: 0 var(--s-2);
+  }
+}
+
 /* 기본 kbd(§7-1): 라벨 오른쪽 단축키 병기 */
 .kbd {
   border: var(--line-w) solid var(--line);

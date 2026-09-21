@@ -99,3 +99,46 @@
   padding: 0 var(--s-2);
   font-size: var(--fs-base);
 }
+
+/* 03-06-후속: 거래처 수정 폼의 계좌번호 영역. §7-2 "서버 계산 값은 입력
+   바로 아래 한 줄" 규칙과 같은 자리 배치 — 현재 값(마스킹)을 힌트로,
+   입력은 새 값 전용이다. */
+.accountEdit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  margin: var(--s-2) 0;
+}
+
+.hint {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  margin: 0;
+}
+
+.clearRow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--fs-base);
+}
+
+.clearRow input {
+  accent-color: var(--native-accent);
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+}
+
+.formActions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+/* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. */
+@media (max-width: 699.98px) {
+  .clearRow input {
+    width: var(--touch-min);
+    height: var(--touch-min);
+  }
+}

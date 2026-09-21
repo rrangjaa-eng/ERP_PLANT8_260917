@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import Link from "next/link";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
@@ -17,16 +18,27 @@ const REVEAL_INFO_ITEM = "vendor.account_number_unmasked";
 // D-18과 같은 결: 캐시·별도 저장 없음.
 export const dynamic = "force-dynamic";
 
+// 목록 화면의 필터 상태(숨김 포함 여부)를 유지한 채 이동하는 링크를 만든다 —
+// 「수정」에서 폼으로 들어갈 때도, 폼의 「취소」에서 목록으로 돌아올 때도 같은
+// 필터를 쓴다.
+function vendorsHref(includeHidden: boolean, editId?: string): string {
+  const params = new URLSearchParams();
+  if (includeHidden) params.set("includeHidden", "1");
+  if (editId) params.set("editId", editId);
+  const query = params.toString();
+  return query ? `/admin/vendors?${query}#vendor-form` : "/admin/vendors";
+}
+
 export default async function VendorsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ includeHidden?: string }>;
+  searchParams: Promise<{ includeHidden?: string; editId?: string }>;
 }) {
   const session = await getSession();
   if (!session) redirect("/login");
   if (!(await can(session.viewer, "admin.vendors", "view"))) notFound();
 
-  const { includeHidden: includeHiddenParam } = await searchParams;
+  const { includeHidden: includeHiddenParam, editId } = await searchParams;
   const includeHidden = includeHiddenParam === "1";
 
   const [vendors, canWrite, canReveal, evidenceTypes, fieldDefs, canArchive] = await Promise.all([
@@ -39,6 +51,11 @@ export default async function VendorsPage({
   ]);
 
   const evidenceTypeLabelByValue = new Map(evidenceTypes.map((item) => [item.value, item.label]));
+  // editId가 가리키는 행이 지금 이 조회 결과(숨김 포함 여부에 따라 달라짐)에
+  // 없으면(예: 숨김 거래처를 「숨김 포함」 꺼진 채로 가리키는 오래된 링크)
+  // 조용히 등록 모드로 돌아간다 — 존재하지 않는 대상을 오류로 다루지 않는다.
+  const editingVendor = editId ? (vendors.find((vendor) => vendor.id === editId) ?? null) : null;
+  const cancelHref = vendorsHref(includeHidden);
 
   return (
     <>
@@ -48,8 +65,11 @@ export default async function VendorsPage({
           "이유 있는 비활성" 대신 "버튼 자체가 없음"(03-UI-SPEC.md). */}
       {canWrite ? (
         <VendorForm
+          key={editingVendor?.id ?? "create"}
           evidenceTypes={evidenceTypes.map((item) => ({ value: item.value, label: item.label }))}
           fieldDefs={fieldDefs}
+          editing={editingVendor}
+          cancelHref={cancelHref}
         />
       ) : null}
 
@@ -105,6 +125,11 @@ export default async function VendorsPage({
                   <td>
                     {vendor.archivedAt ? null : (
                       <>
+                        {canWrite ? (
+                          <Link href={vendorsHref(includeHidden, vendor.id)} className={styles.toggle}>
+                            수정
+                          </Link>
+                        ) : null}
                         {canWrite ? <VendorHiddenToggle id={vendor.id} hidden={vendor.hidden} /> : null}
                         {canArchive ? <VendorDeleteButton id={vendor.id} name={vendor.name} /> : null}
                       </>

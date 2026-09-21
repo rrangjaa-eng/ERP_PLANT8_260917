@@ -1,11 +1,12 @@
 ---
 phase: "04"
 slug: "project-quotation-ledger"
-status: approved-candidate
+status: approved
 shadcn_initialized: false
 preset: none
 created: "2026-09-21"
 revised: "2026-09-21"
+reviewed_at: "2026-09-21"
 ---
 
 # Phase 4 — UI Design Contract

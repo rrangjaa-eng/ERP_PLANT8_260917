@@ -120,10 +120,35 @@ Phase 1의 D-01~D-18, Phase 2의 D-19~D-32, Phase 3의 D-33~D-40은 그대로 �
 
 ### 이전 준비 · 페이즈 운영
 
-- **D-57:** **인트라넷 덤프는 `.gitignore`된 경로에 두고 `extract`가 환경 변수로 읽는다.**
-  커밋되는 것은 이름·금액을 치환한 축약 픽스처뿐이다. `docs/inputs/README.md`의 「개인정보를
-  넣지 않는다」 규칙을 지키면서 성공 기준 7을 문자 그대로 만족한다. **사용자가 덤프를 지금
-  준비한다** — 계획에 `extract`를 온전히 넣고 실데이터로 돌린다.
+- **D-57 (2026-09-21 개정 — 실측으로 전제가 바뀌었다):** 인트라넷 덤프는 **별도 private 레포
+  `rrangjaa-eng/PLANT8_INTRANET_BACKUP_260915`**에 Git LFS로 있다(`db_backup_260915.sql`,
+  19.2MB, 8개 DB · 46표). `분석산출물/요약.json`의 수치가 ROADMAP과 정확히 일치한다
+  (projects 125 · lines 1,379 · payments 464 · cards 433). **`ERP_PLANT8_260917`은 public이고
+  사용자가 그것을 의도했다**(2026-09-21 확인). 그래서 **인트라넷에서 나온 값은 익명화해도 이
+  레포에 커밋하지 않는다** — 프로젝트명·클라이언트명은 물론 `quotationSum` 같은 집계도
+  회사 매출 규모 공개라 제외다. **픽스처는 전부 합성으로 만들고, 실데이터는 transform을
+  검증하는 데만 쓴다.** 변환 결과 보고서도 커밋하지 않는다.
+- **D-57a — extract 허용목록은 DB가 아니라 표 단위다.** `PLANT8_INTRANET` **안에도**
+  개인정보가 있다: `fone_member`(`neo_pass`·`neo_mail`·`neo_name`) · `tb_admin_member`
+  (`admin_pw`·`admin_pwkey`) · `fone_partners`(`contact_phone`·`contact_hphone`·평문
+  `account_number`) · `QUOTATION_PAYMENT`(`pay_name`·`pay_phone`·`pay_account`). 나머지 7개
+  DB(`AWS_DATA` · `LGCNS` · `Verkada_DATA` · `fortinet_DATA` · `snowflake_database` ·
+  `Sivantos_DATA` · `PLANT8_DATA`)는 고객사 행사 참가자 DB로 실명·전화·이메일 약 3,800행이다.
+  성공 기준 7이 요구하는 것은 **프로젝트·견적 줄**뿐이므로 허용목록은 `fone_project` ·
+  `QUOTATION_LINE` · `REPORT_CATEGORY1` · `REPORT_CATEGORY2` · `fone_client` · `fone_team` ·
+  `fone_card` **일곱 표**다. 허용목록 밖 표·DB를 만나면 extract가 실패하게 만들고 그것을
+  테스트로 고정한다.
+- **D-63:** **프로젝트 상태는 고정 값 네 개이고 코드표는 라벨만 공급한다.** `projects.status`는
+  CHECK 제약이 붙은 컬럼이고 값 네 개가 고정이다. `project_status` 코드표는 그 네 값의 한글
+  라벨만 담도록 **재시드**하며(Phase 3이 시드한 `planning`·`in_progress`·`on_hold`·`done`·
+  `cancelled` 다섯은 D-41의 넷과 겹치는 것이 `in_progress` 하나뿐이다 — `domain/seed/index.ts:19-25`
+  실측), 네 항목은 비활성화되지 않게 막는다. 관리자는 「진행」을 「실행」으로 바꿀 수 있지만
+  상태를 늘리거나 없앨 수는 없다. 근거: `docs/inputs/README.md`가 40행에서 프로젝트 상태
+  **이름**을 마스터 데이터로, 42행에서 상태 **전이**를 「코드 수정 필요」 층으로 이미 갈라
+  놨다. 두 줄을 모두 지키는 유일한 형태다. 리서처가 짚은 구멍(관리자가 「완료(정산)」을
+  비활성화하면 완료 처리가 막힌다)도 이것으로 닫힌다.
+  — **Reversibility:** costly — CHECK 제약과 코드표 시드가 함께 움직이고 Phase 5·6의 게이트가
+  이 값들을 참조한다.
 - **D-58:** **`source`·`source_id` 컬럼을 이전 대상 업무 표마다 둔다.** `source NOT NULL
   DEFAULT 'demo'`이고, 새 표가 빠뜨리면 잡는 테스트를 함께 둔다. 근거: Phase 8의
   `(source, source_id)` upsert 규약이 그 두 컬럼을 요구하고, `registry-coverage`·
@@ -159,6 +184,12 @@ Phase 1의 D-01~D-18, Phase 2의 D-19~D-32, Phase 3의 D-33~D-40은 그대로 �
 - **목록 p99 500ms를 어떻게 증명할지** — 125건 규모에서 자명하나 기준 1이 수치를 못박았다.
 - **`rules.gate`의 `rule` 인자 모양**(문자열 키 + 레지스트리 vs 선언 객체) — D-56이 정한 것은
   **반환 형태**뿐이다.
+- **그리드 클립보드는 네이티브 `copy`/`paste` DOM 이벤트로 간다**(Claude 판단, 2026-09-21).
+  `navigator.clipboard`는 권한 프롬프트와 HTTPS/localhost 조건이 붙고 Playwright에서
+  `grantPermissions`가 필요하다. 네이티브 이벤트는 둘 다 없고 E2E가 바로 된다.
+- **`scripts/migrate/`는 CLI 번들(`scripts/build-cli.mjs`)에 넣지 않는다**(Claude 판단).
+  `scripts/settings-import.ts`처럼 로컬 운영자 스크립트로 둔다 — 적재(load)가 Cloud Run Job을
+  필요로 하는 시점은 Phase 8이다.
 
 ### Folded Todos
 
@@ -196,6 +227,13 @@ Phase 1의 D-01~D-18, Phase 2의 D-19~D-32, Phase 3의 D-33~D-40은 그대로 �
 - `docs/design/tokens.css` — 유일한 토큰 원천. `--form-max: 720px`는 116행
 - `docs/DESIGN.md` §4 — 새 화면·컴포넌트 제작 절차
 - `docs/design/DECISIONS.md` — 시스템을 벗어날 때 근거를 남기는 곳
+
+### 인트라넷 원천 (별도 private 레포 — 값을 이 레포로 옮기지 않는다)
+- `rrangjaa-eng/PLANT8_INTRANET_BACKUP_260915` — `db_backup_260915.sql`(Git LFS, 19.2MB,
+  8 DB · 46표) · `분석도구/parse_dump.js`(mysqldump → 표별 JSON, extract의 뼈대) ·
+  `분석도구/analyze.js` · `분석도구/recon2.js` · `분석산출물/요약.json`(ROADMAP 수치와 일치) ·
+  `분석산출물/행사DB_개인정보_인벤토리.csv`(허용목록의 근거) · `보고서_구인트라넷백업분석_260915.md`
+- **읽기 전용이다.** 허용목록은 D-57a, 커밋 금지 범위는 D-57
 
 ### 아키텍처·강제 지점
 - `docs/ARCHITECTURE.md` — 4계층 경계. **D-49가 `document_counters` 컬럼명 매핑을,
@@ -238,6 +276,34 @@ Phase 1의 D-01~D-18, Phase 2의 D-19~D-32, Phase 3의 D-33~D-40은 그대로 �
 - 판정 3함수 `can()` / `visible()` / `scopeFor()` — 리저브는 정보 노출표의 새 항목이라
   `visible()`에 등록해야 한다(기획본부 기본 숨김)
 - 보관함(soft delete) · 행동 로그 · `custom_fields` JSONB + `field_definitions` 규약(Phase 3)
+
+### 인트라넷 원천 스키마 — 실측 (2026-09-21, `PLANT8_INTRANET`)
+
+transform 규칙을 정하는 사실이다. 값은 열어 보지 않았고 컬럼 정의만 읽었다.
+
+- **`fone_project`에 상태 컬럼이 없다.** 있는 것은 `confirm_manager`·`confirm_kuckjang`·
+  `confirm_admin`·`confirm_ceo` 네 장의 `char(1)` 결재 플래그뿐이다. **D-41/D-63의 상태 4종은
+  이전할 원천이 없다** — transform이 유도하거나 기본값을 준다
+- **시작일이 없다.** `project_edate datetime` 하나와 자유 텍스트 `project_date varchar(500)`
+  뿐인데 PROJ-01은 기간(시작일·종료일)을 필수로 요구한다
+- **`QUOTATION_LINE`에 차수 컬럼이 없다.** D-55의 차수 모델도 원천이 없어 옛 줄은 전부 한
+  차수로 들어간다
+- **`quo_benefit decimal(15,0)`이 저장돼 있다** — ROADMAP 기준 2가 말한 「차익 불일치 66줄」이
+  이 컬럼이다. transform은 믿지 말고 재계산한다
+- **`invoice_money varchar(500)` · `invoice_date varchar(1000)` · `QUOTATION_PAYMENT.pay_money
+  varchar(45)`** — 금액이 자유 텍스트다. `분석도구/README.md`가 「계산서 금액 칸에
+  `(카결 28,999,000)` 같은 주석이 섞여 있다 — 앞 숫자만 취해야 앱 합계와 맞는다」고 경고했고,
+  이것이 `요약.json`의 `invoiceSum: 4887400581393167`(4,887조)을 만든 원인이다.
+  **`amount_basis` 판정이 다뤄야 할 대상이 바로 이 칸들이다**
+- **통화·환율 컬럼이 어디에도 없다** — 「옛 금액은 통화 KRW·환율 1」(Phase 8 규약)이 실측으로
+  확인된다. `quo_price`·`quo_expect`·`quo_execute`는 전부 `decimal(15,0)` 정수라 D-53의
+  최소단위 정수와 맞는다
+- **`pro_num`은 `AUTO_INCREMENT=363`인데 프로젝트는 125건** — 결번이 이미 있다. 옛 id에서
+  결정적으로 파생하는 번호(MIG-01)는 그 결번을 그대로 물려받는다
+- **재사용 가능한 파서가 이미 있다.** `분석도구/parse_dump.js`가 mysqldump의 `INSERT ... VALUES`를
+  직접 파싱해 표별 JSON을 낸다(46표). 같은 폴더의 README가 「덤프 → JSONL 어댑터를 만들 때 이
+  파서를 뼈대로 쓸 수 있다」고 적어 뒀다. 함께 기록된 교훈 하나 더: 긁기 자료 JSONL의 id는
+  **문자열**, DB는 **숫자**라 대조 시 형변환이 필수다
 
 ### Integration Points
 - `app/(app)/projects` 라우트가 이미 비어 있는 상태로 존재한다

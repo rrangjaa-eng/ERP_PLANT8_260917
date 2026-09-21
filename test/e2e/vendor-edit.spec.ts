@@ -28,20 +28,6 @@ async function loginAsSysadmin(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/account$/);
 }
 
-// 이름을 짧게 쓴다 — 거래처 표의 폰 375 가로 넘침은 Phase 4 이월 항목이고
-// (03-OPEN-ITEMS.md, 실측 481>375), 이 스펙의 목적은 수정 왕복이지 이름
-// 길이가 아니다. 긴 이름을 남기면 같은 실행의 mobile 스펙이 그 이월 항목
-// 때문에 깨진다.
-async function createVendor(page: Page, name: string, accountNumber: string): Promise<void> {
-  await page.goto("/admin/vendors?new=1");
-  await page.getByLabel("이름").fill(name);
-  await page.getByLabel("계좌 은행").fill("국민은행");
-  await page.getByLabel("예금주").fill("홍길동");
-  await page.getByLabel("계좌번호").fill(accountNumber);
-  await page.getByRole("button", { name: "거래처 등록" }).click();
-  await expect(page.getByRole("cell", { name })).toBeVisible();
-}
-
 test.describe("거래처 수정 화면 경로 (MAST-01)", () => {
   test("보관된 거래처는 ?editId=로 직접 열어도 수정 폼이 뜨지 않는다", async ({ page }) => {
     await loginAsSysadmin(page);

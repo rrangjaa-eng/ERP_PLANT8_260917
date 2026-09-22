@@ -217,4 +217,25 @@ test.describe("폰 375 공통 셸 (성공 기준 3 · §6-0 폰 전략 · §10 �
       expect(fontSize).toBe(expectedFontSize);
     }
   });
+
+  // /design-review 발견 3 — 「더보기」 시트 그룹 머리글("계정")이 11px(--fs-xs)로
+  // 렌더됐다. SYSTEM.md §6-10이 admin-index.module.css .groupLabel에 적용한
+  // §7-3 그룹 머리글 행 규칙(--fs-sm)과 같은 값이어야 한다.
+  test("더보기 시트 그룹 머리글 글자 크기가 --fs-sm이다(§7-3 그룹 머리글 행)", async ({ page }) => {
+    await loginAsEmployee(page);
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "더보기" }).click();
+    const sheet = page.getByRole("dialog", { name: "더보기" });
+    await expect(sheet).toBeVisible();
+
+    const groupHeader = sheet.locator('li[role="presentation"]').first();
+    await expect(groupHeader).toHaveText("계정");
+
+    const expectedFontSize = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--fs-sm").trim(),
+    );
+    const fontSize = await groupHeader.evaluate((el) => getComputedStyle(el).fontSize);
+    expect(fontSize).toBe(expectedFontSize);
+  });
 });

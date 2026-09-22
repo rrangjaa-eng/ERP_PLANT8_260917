@@ -191,4 +191,30 @@ test.describe("폰 375 공통 셸 (성공 기준 3 · §6-0 폰 전략 · §10 �
     expect(headerBox).not.toBeNull();
     expect(triggerBox!.y + triggerBox!.height).toBeLessThanOrEqual(headerBox!.y + headerBox!.height);
   });
+
+  // /design-review 발견 1 — 폰 사용자 메뉴(TopBar 트리거가 여는 메뉴, F-05 트리거
+  // 자체는 위에서 이미 44×44를 확인한다)의 항목이 12px/400으로 35px 높이였다.
+  // §3·§10 폰 터치 목표 44×44는 트리거뿐 아니라 열리는 항목에도 적용된다.
+  test("사용자 메뉴 항목의 터치 목표가 44 이상이고 글자 크기가 --fs-base다", async ({ page }) => {
+    await loginAsEmployee(page);
+    await page.goto("/");
+
+    await page.locator('header button[aria-haspopup="menu"]').click();
+    const items = page.getByRole("menuitem");
+    const count = await items.count();
+    expect(count).toBeGreaterThan(0);
+
+    const expectedFontSize = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--fs-base").trim(),
+    );
+
+    for (let i = 0; i < count; i += 1) {
+      const item = items.nth(i);
+      const box = await item.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+      const fontSize = await item.evaluate((el) => getComputedStyle(el).fontSize);
+      expect(fontSize).toBe(expectedFontSize);
+    }
+  });
 });

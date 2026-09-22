@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 14
+open_count: 13
 waived_count: 0
-fixed_count: 10
+fixed_count: 11
 total_count: 24
-last_updated: 2026-09-22T05:07:38.860Z
+last_updated: 2026-09-22T06:00:49.449Z
 ---
 
 # Broken Windows Ledger
@@ -35,7 +35,7 @@ last_updated: 2026-09-22T05:07:38.860Z
 | 18 | 01 | unrun-verify | app/(auth)/login/login-form.tsx |  | 프로덕션 세션 유지 미검증(01-VERIFICATION human 1): 실제 Cloud Run 도메인에서 로그인 후 브라우저 완전 종료 → 재진입 시 /account 유지되는지. 근거는 로컬 E2E의 30일 쿠키 단언과 lib/auth.ts expiresIn뿐이고, 프로브는 /login에서 Set-Cookie를 못 봐 닫지 못했다 | open |  | 2026-09-20T08:55:21.607Z |  |
 | 19 | 01 | unrun-verify | app/admin/system-status/page.tsx |  | 프로덕션 /admin/system-status 관리자 렌더 + 백업 절 미관찰(01-VERIFICATION human 2, 01-08 human-check 3·4): 런타임 SA의 roles/cloudsql.viewer 실부여와 lib/gcp/cloud-sql-admin.ts 호출 경로가 프로덕션에서 한 번도 실행·관찰되지 않았다 | open |  | 2026-09-20T08:55:21.801Z |  |
 | 20 | 01 | unrun-verify | infra/monitoring/tick-stale.json.tpl |  | 백업 실패 경보 필터·메일 전달 미검증(01-VERIFICATION human 3): 경보 정책 존재는 2026-09-18 실측으로 확인됐으나, 실패 이벤트 없이는 필터 정확성과 메일 도달을 프로그램으로 검증할 수 없다 | open |  | 2026-09-20T08:55:22.100Z |  |
-| 21 | 01 | unrun-verify | scripts/bootstrap-gcp.sh |  | 조직 정책 원문·런타임 SA 역할 미확인(01-VERIFICATION human 4): gha-deployer SA에 orgpolicy.policy.get·resourcemanager.projects.getIamPolicy가 없어 실행자가 조회 불가(PERMISSION_DENIED). 실효적 차단 없음만 확인됨 — 원문 확인은 Owner 계정 몫 | open |  | 2026-09-20T08:55:22.302Z |  |
+| 21 | 01 | unrun-verify | scripts/bootstrap-gcp.sh |  | 조직 정책 원문·런타임 SA 역할 미확인(01-VERIFICATION human 4): gha-deployer SA에 orgpolicy.policy.get·resourcemanager.projects.getIamPolicy가 없어 실행자가 조회 불가(PERMISSION_DENIED). 실효적 차단 없음만 확인됨 — 원문 확인은 Owner 계정 몫 | fixed |  | 2026-09-20T08:55:22.302Z | 2026-09-22T06:00:49.449Z |
 | 22 | 01 | unrun-verify | .planning/phases/01-deploy-skeleton-login/01-08-DEPLOY-LOG.md |  | origin 임시 프로브 브랜치 4개 미삭제(probe-result·probe-result2·guard-probe-result·prod-verify-result): 2026-09-20 확인 결과 전부 잔존. git push --delete가 이 세션의 에그레스 프록시에서 끊긴다(일반 push는 정상) — 사용자가 GitHub에서 삭제해야 한다 | open |  | 2026-09-20T08:55:22.487Z |  |
 | 23 | 02 | deviation | ui/shell/TopBar.tsx |  | §10 터치 목표 44 미달(375px DOM 감사 2026-09-22): 사용자 메뉴 트리거 19px, 로그인·비밀번호 변경·로그아웃·첫 화면으로 버튼 40px(--control-h 폰 40). 컨트롤 높이는 SYSTEM.md 토큰 결정이라 화면 하나로 못 고친다 — 디자인 결정 후 tokens.css에서 | open |  | 2026-09-22T05:07:38.693Z |  |
 | 24 | 02 | deviation | docs/design/system/preview.html |  | §7-4 폰 두 줄 실물(preview.html .next li grid)이 §7-4 원문과 다르게 렌더된다 — grid(auto 1fr auto) 자동 배치가 .amt를 2행 2칸에 먼저 놓아 .go(행동)가 2행으로 밀린다. 컴포넌트(NextTurn)는 2026-09-22 원문대로 고쳤고(test/e2e/mobile-next-turn.spec.ts 실측) 실물은 미수정. 디자인 문서 정비 시 맞춘다 | open |  | 2026-09-22T05:07:38.860Z |  |
@@ -309,10 +309,10 @@ last_updated: 2026-09-22T05:07:38.860Z
     "file": "scripts/bootstrap-gcp.sh",
     "line": null,
     "description": "조직 정책 원문·런타임 SA 역할 미확인(01-VERIFICATION human 4): gha-deployer SA에 orgpolicy.policy.get·resourcemanager.projects.getIamPolicy가 없어 실행자가 조회 불가(PERMISSION_DENIED). 실효적 차단 없음만 확인됨 — 원문 확인은 Owner 계정 몫",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-20T08:55:22.302Z",
-    "resolved_at": null,
+    "resolved_at": "2026-09-22T06:00:49.449Z",
     "milestone": null
   },
   {

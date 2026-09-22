@@ -149,6 +149,7 @@ Recent decisions affecting current work:
 - [2026-09-20] [planning] Phase 3 실행 전 결정 4건의 확정 답 (전부 A) — [todo file](.planning/todos/pending/2026-09-20-phase-3-checkpoint-answers.md) — Needs `/gsd-execute-phase 3` 실행 중 각 체크포인트에서 **`A`** 라고 답한다.
 - [2026-09-22] [planning] Phase 4 U-2·U-4 UI 결정 확정 답 (U-5는 귀결) — [todo file](.planning/todos/pending/2026-09-22-phase-4-u-2-u-4-ui.md) — Needs ### U-2ⓐ — 최신이면서 고객 승인까지 된 차수의 S5 상태 열 = `승인`만 (`success`).
 - [2026-09-22] [planning] 새 세션 인수인계 — 관리자 메뉴 → 코덱스 디자인 리뷰 → Phase 4 실행 — [todo file](.planning/todos/pending/2026-09-22-session-handoff-admin-menu-codex-design-review-phase-4-execu.md) — Needs 세 가지를 이 순서로 한다.
+- [2026-09-22] [docs] 한 칸짜리 목록·폼의 최대 폭이 전역으로 규정돼 있지 않다 — [todo file](.planning/todos/pending/2026-09-22-single-column-max-width.md) — Needs `/admin` 하나만 좁히는 것은 CLAUDE.md의 「화면 하나만 예외 금지」에 정면으로.
 
 ### Blockers/Concerns
 

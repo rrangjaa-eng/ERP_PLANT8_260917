@@ -32,7 +32,7 @@ Phase: 03 — COMPLETE
 Current Plan: 1
 Total Plans in Phase: 7
 Status: Phase 03 complete
-Last activity: 2026-09-21 — Phase 03 marked complete
+Last activity: 2026-09-22 - Completed quick task 260922-c04: Codex CLI SessionStart 훅 설치 + CODEX_AUTH_JSON_B64 자격 주입
 
 Progress: [█░░░░░░░░░] 9%
 
@@ -157,6 +157,12 @@ Recent decisions affecting current work:
 - [All]: 과잉 설계 재발 방지 — 페이즈마다 "인트라넷보다 못한가"로 검증하고, 실제 사용자 로그인·입력이 있어야 완료로 본다
 - [Phase 2]: `docs/design/`(SYSTEM.md 725줄·tokens.css·DECISIONS.md·BRIEF.md·EXPLORE.md)은 **이미 있다**(2026-09-18 확인). Phase 2는 이 시스템을 앱 셸·임시 화면에 적용하는 일이며, 새 화면은 SYSTEM.md 기준을 따르고 시스템을 벗어나면 DECISIONS.md에 이유를 남긴 뒤 SYSTEM.md를 고친다
 - [Phase 2] 02-02: ci.yml/deploy.yml paths+! 트리거 실제 동작 미검증 — tokens.css 단독 PR이 CI를 타는지, 일반 소스 PR도 여전히 타는지 GitHub에서 사람이 확인해야 한다. (2)가 실패하면 즉시 paths-ignore로 되돌린다
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260922-c04 | Codex CLI SessionStart 훅 설치 + CODEX_AUTH_JSON_B64 자격 주입 | 2026-09-22 | 4b5f8ea | [260922-c04-codex-cli-sessionstart-codex-auth-json-b](./quick/260922-c04-codex-cli-sessionstart-codex-auth-json-b/) |
 
 ### Roadmap Evolution
 

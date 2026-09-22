@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 04
 current_phase_name: 프로젝트·견적 원장
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Completed 04-02-PLAN.md (금액 모델 완성 + 매출 섹션). Next is 04-03.
-last_updated: "2026-09-22T21:50:32.260Z"
+stopped_at: Completed 04-05-PLAN.md (목록 완성 + 문서 번호 서식화). Wave 3 sibling 04-04 still pending.
+last_updated: "2026-09-22T22:57:34.533Z"
 last_activity: 2026-09-22
 last_activity_desc: Phase 04 execution started
-state_head: 2c769cfa95c126c00ea0097fdaa05a01ffc73251
+state_head: 9d35d0f6f99f2700530d3fe7429207bef8ff7a79
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 30
-  completed_plans: 25
+  completed_plans: 26
   percent: 9
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 04 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 3
+Current Plan: 4
 Total Plans in Phase: 7
 Status: Ready to execute
 Last activity: 2026-09-22 — Phase 04 execution started
@@ -75,6 +75,7 @@ Progress: [█░░░░░░░░░] 9%
 | Phase 02 P08 | 16min | 3 tasks | 30 files |
 | Phase 04 P01 | 1h36m | 3 tasks | 54 files |
 | Phase 04 P02 | 1h10m | 3 tasks | 36 files |
+| Phase 04 P05 | 1h2m | 2 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -151,6 +152,9 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-02: applyTaxRule은 세율·절사 단위·최소 징수액을 settings registry에서 기준일과 함께 읽고, 절사 방식만 코드표 rule에서 읽는다(Task 1 action 원문 + readBy 표시 11개 소비 강제 기준)
 - [Phase 04]: 04-02: 새 메뉴 projects.revenue(write)로 발행·입금 쓰기를 게이트 — 경영관리는 SEED_ROLES 5종에 없어 코드에 역할명을 박지 않고 관리자가 권한표에서 배정한다(D-57). 계약 금액은 기존 projects write(PM)
 - [Phase 04]: 04-02: saveQuoteLines·saveRevenue에 옵션 tx 파라미터를 더해 domain/projects/ledger.ts가 견적 줄+매출을 한 트랜잭션·한 저장 버튼으로 묶는다(§7-3 전부 저장/전부 거부)
+- [Phase 04]: [Phase 04]: 04-05: 서식 키 형태 = 문서 종류별 키 묶음(document_number.project.*), JSON 한 개가 아니다 — 설정 화면의 필드 단위 렌더·검증, Phase 5·6·11의 확장 용이성 근거 셋
+- [Phase 04]: [Phase 04]: 04-05: 리포지토리 공유 필터 함수(projectFilterConditions)로 목록/집계 쿼리가 같은 행만 세게 강제 — 집계는 pool.query 스파이로 SQL 왕복 한 번임을 실측. 정렬은 종료일 월 그룹 안에서만 순서를 바꾼다(그룹 macro 구조 유지)
+- [Phase 04]: [Phase 04]: 04-05: 열 머리글 클릭 정렬·aria-sort는 ui/table/Table.tsx(04-04 소유, 같은 웨이브)를 건드리지 않고 서버 정렬만 구현·검증(WINDOWS.md stub #27) — 클릭 UI는 04-04 이후 후속 작업
 
 ### Pending Todos
 
@@ -193,6 +197,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-22T21:50:32.095Z
-Stopped at: Completed 04-02-PLAN.md (금액 모델 완성 + 매출 섹션). Next is 04-03.
+Last session: 2026-09-22T22:57:20.269Z
+Stopped at: Completed 04-05-PLAN.md (목록 완성 + 문서 번호 서식화). Wave 3 sibling 04-04 still pending.
 Resume file: None

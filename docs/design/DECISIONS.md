@@ -455,3 +455,23 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 - 새 컴포넌트 — JS가 필요 없는 폭 하나라 `.sr-only`처럼 전역 유틸리티가 가장 싸다.
 
 **범위**: SYSTEM.md §2-3·§3, tokens.css(주석만), app/globals.css, 적용 화면 목록(260922-o2b 태스크 1·2의 파일).
+
+---
+
+## 2026-09-22 — 로그인 틀 폭 360: --auth-max 신설(480 모달 폭 재사용 철회)
+
+**결정**: §6-7의 360을 `--auth-max: 360px`로 이름 붙여 AuthFrame이 쓴다.
+
+**결정자**: 02-03(2026-09-18)의 480(`--modal-w`) 재사용을 뒤집는다. 사용자 결정이 아니라 SYSTEM.md §6-7이 이미 확정한 값(360)에 토큰 이름을 붙이는 미기록 이탈 정리.
+
+**왜**
+1. SYSTEM.md §6-7이 확정한 값은 360인데, 구현은 기록 없이 480 모달 폭 토큰을 재사용했다(Codex F-09).
+2. `tokens.css` 머리말이 「컴포넌트는 이 변수만 참조한다. 새 값이 필요하면 DECISIONS.md → SYSTEM.md → 여기」라고 적혀 있고, 레이아웃 폭(`--container-max`·`--label-w`·`--form-max`·`--modal-w`)도 전부 토큰이다.
+3. 화면 값은 SYSTEM.md 그대로라 새 디자인 결정이 아니다(`--on-accent-weak` 선례).
+
+**버린 대안**
+- AuthFrame에 360px 리터럴 — 토큰 규칙 위반.
+- `calc(var(--form-max) / 2)` — 관계없는 폼 폭에 로그인 폭이 묶인다.
+- 480 유지 + SYSTEM.md 개정 — 확정 디자인을 이유 없이 넓힌다.
+
+**범위**: SYSTEM.md §6-7, tokens.css, AuthFrame.module.css.

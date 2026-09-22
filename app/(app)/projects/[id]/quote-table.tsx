@@ -268,6 +268,7 @@ export function QuoteLedger({
                   amount: line.unitPriceAmount,
                   fxRate: line.unitPriceFxRate,
                 },
+                unitPriceFxRateTouched: line.unitPriceFxRateTouched,
                 execution: { currency: "KRW" as const, amount: line.executionAmount, fxRate: 1 },
                 lineStatus: line.lineStatus,
                 note: line.note ?? undefined,

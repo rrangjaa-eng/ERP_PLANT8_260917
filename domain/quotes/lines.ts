@@ -8,6 +8,7 @@ import { buildCustomFieldsSchema, type FieldDefType } from "@/domain/custom-fiel
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import { moneyFromRow, moneyToColumns, quoteAmount, profit, type Money, type Currency } from "@/domain/money";
+import { rememberFxRate } from "@/domain/money/currency";
 import { withTransaction } from "@/lib/db-transaction";
 import type { DbOrTx } from "@/repositories/document-counters";
 import {
@@ -186,6 +187,8 @@ export type QuoteLineWriteRow = {
   vendorId?: string | null;
   quantity?: number;
   unitPrice: MoneyInputDto;
+  /** 04-02(D-71) — 단가 환율 칸을 이번 저장에서 실제로 고쳤을 때만 true. */
+  unitPriceFxRateTouched?: boolean;
   execution: MoneyInputDto;
   lineStatus?: string;
   note?: string | null;
@@ -268,6 +271,12 @@ export async function saveQuoteLines(
 
       const { unitPriceColumns, executionColumns, quoteAmountKrw, profitKrw } = computeQuoteLineAmounts(input);
       const quantityValue = input.quantity && input.quantity > 0 ? input.quantity : 1;
+
+      // D-71 — 환율 칸을 실제로 고친 저장에서만 그 통화의 최근 환율
+      // 설정을 갱신한다(T-04-11과 같은 결). 건드리지 않은 저장은 갱신하지 않는다.
+      if (unitPriceColumns.currency !== "KRW" && input.unitPriceFxRateTouched) {
+        await rememberFxRate(unitPriceColumns.currency, Number(unitPriceColumns.fxRate));
+      }
 
       const payload = {
         sortOrder: input.sortOrder ?? index,

@@ -73,6 +73,7 @@ export const saveProjectLedgerAction = authedActionClient
               vendorId: z.string().optional(),
               quantity: z.coerce.number().optional(),
               unitPrice: moneyInputSchema,
+              unitPriceFxRateTouched: z.boolean().optional(),
               execution: moneyInputSchema,
               lineStatus: z.string().optional(),
               note: z.string().optional(),

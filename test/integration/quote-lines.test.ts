@@ -12,6 +12,8 @@ import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { getSettingValue } from "@/domain/settings/registry";
+import { FX_RECENT_RATE_USD } from "@/domain/settings/keys";
 
 const QUOTE_LINE_ENTITY = "quote_line";
 
@@ -147,5 +149,34 @@ describe("domain/quotes/lines saveQuoteLines (Phase 4, 실제 Postgres)", () => 
     const cause = (caught as { cause?: { code?: string; message?: string } }).cause;
     expect(cause?.code).toBe("23503");
     expect(cause?.message).toMatch(/foreign key constraint|violates foreign key/i);
+  });
+
+  // 04-02(D-71) — 단가 환율 칸을 실제로 고친 저장만 fx.recent_rate.USD를
+  // 갱신한다. 건드리지 않은 저장은 갱신하지 않는다.
+  it("(e) 단가 환율을 고쳐 저장하면 fx.recent_rate.USD가 갱신되고, 건드리지 않은 저장은 갱신하지 않는다", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+      {
+        subcategory: subcategoryValue,
+        itemName: "외화 줄",
+        unitPrice: { currency: "USD", amount: 100, fxRate: 1350.25 },
+        unitPriceFxRateTouched: true,
+        execution: { currency: "KRW", amount: 0, fxRate: 1 },
+      },
+    ]);
+    expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(1350.25);
+
+    // 다른 값으로 다시 저장하되 fxRateTouched: false — 설정이 그대로다.
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+      {
+        subcategory: subcategoryValue,
+        itemName: "외화 줄 2",
+        unitPrice: { currency: "USD", amount: 200, fxRate: 1400.0 },
+        unitPriceFxRateTouched: false,
+        execution: { currency: "KRW", amount: 0, fxRate: 1 },
+      },
+    ]);
+    expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(1350.25);
   });
 });

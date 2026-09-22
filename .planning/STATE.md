@@ -32,7 +32,7 @@ Phase: 04 (project-quote-ledger) — READY TO EXECUTE
 Current Plan: 1
 Total Plans in Phase: 7
 Status: Ready to execute
-Last activity: 2026-09-22 - Completed quick task 260922-c04: Codex CLI SessionStart 훅 설치 + CODEX_AUTH_JSON_B64 자격 주입
+Last activity: 2026-09-22 - Completed quick task 260922-i3k: 관리자 메뉴 정리(옵션 B) + A-M3 표 캡션
 
 Progress: [█░░░░░░░░░] 9%
 
@@ -165,6 +165,7 @@ Recent decisions affecting current work:
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260922-c04 | Codex CLI SessionStart 훅 설치 + CODEX_AUTH_JSON_B64 자격 주입 | 2026-09-22 | 4b5f8ea | [260922-c04-codex-cli-sessionstart-codex-auth-json-b](./quick/260922-c04-codex-cli-sessionstart-codex-auth-json-b/) |
+| 260922-i3k | 관리자 메뉴 정리(옵션 B: 「관리」 한 줄 + /admin 인덱스 3그룹) + A-M3 표 캡션 | 2026-09-22 | 811243e | [260922-i3k-b-admin-3-a-m3](./quick/260922-i3k-b-admin-3-a-m3/) |
 
 ### Roadmap Evolution
 

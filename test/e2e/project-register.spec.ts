@@ -51,7 +51,9 @@ test.describe("프로젝트 등록 → 견적 줄 저장 (Phase 4 트레이서)"
 
     await page.getByLabel("소분류").selectOption({ index: 1 });
     await page.getByLabel("항목").fill("메인 스테이지 구조물 설치");
-    await page.getByLabel("단가").fill("1200000");
+    // 04-02가 「단가」 칸 옆에 통화 Select(aria-label "단가 통화")를 더해
+    // getByLabel의 기본 부분일치가 둘을 함께 잡는다 — exact로 좁힌다.
+    await page.getByLabel("단가", { exact: true }).fill("1200000");
     await page.getByLabel("실행가").fill("800000");
 
     await page.getByRole("button", { name: /일괄 저장/ }).click();

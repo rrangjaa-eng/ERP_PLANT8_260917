@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 12
+open_count: 13
 waived_count: 0
 fixed_count: 13
-total_count: 25
-last_updated: 2026-09-22T20:41:47.158Z
+total_count: 26
+last_updated: 2026-09-22T21:35:03.481Z
 ---
 
 # Broken Windows Ledger
@@ -40,6 +40,7 @@ last_updated: 2026-09-22T20:41:47.158Z
 | 23 | 02 | deviation | ui/shell/TopBar.tsx |  | §10 터치 목표 44 미달(375px DOM 감사 2026-09-22): 사용자 메뉴 트리거 19px, 로그인·비밀번호 변경·로그아웃·첫 화면으로 버튼 40px(--control-h 폰 40). 컨트롤 높이는 SYSTEM.md 토큰 결정이라 화면 하나로 못 고친다 — 디자인 결정 후 tokens.css에서 | open |  | 2026-09-22T05:07:38.693Z |  |
 | 24 | 02 | deviation | docs/design/system/preview.html |  | §7-4 폰 두 줄 실물(preview.html .next li grid)이 §7-4 원문과 다르게 렌더된다 — grid(auto 1fr auto) 자동 배치가 .amt를 2행 2칸에 먼저 놓아 .go(행동)가 2행으로 밀린다. 컴포넌트(NextTurn)는 2026-09-22 원문대로 고쳤고(test/e2e/mobile-next-turn.spec.ts 실측) 실물은 미수정. 디자인 문서 정비 시 맞춘다 | open |  | 2026-09-22T05:07:38.860Z |  |
 | 25 | 04 | unrun-verify | test/e2e/action-log.spec.ts |  | 04-01: 전체 E2E 스위트 동시 실행 시 간헐적 실패(단독 실행은 통과) — Excel BOM·corp-cards·master-edit·org, 웹서버 stream 오류 의심, 04-01 범위 밖 | open |  | 2026-09-22T20:41:47.158Z |  |
+| 26 | 04 | stub | app/(app)/projects/[id]/revenue-section.tsx |  | 발행·입금 줄은 스키마·domain 계층이 이미 임의 통화를 지원하나 UI는 KRW 입력만 제공한다(계약 금액·견적 단가는 통화 Select+환율 완비) — 04-04 이후 외화 입금 실사례가 나오면 마저 채운다 | open |  | 2026-09-22T21:35:03.481Z |  |
 
 ````json
 [
@@ -365,6 +366,19 @@ last_updated: 2026-09-22T20:41:47.158Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-22T20:41:47.158Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 26,
+    "kind": "stub",
+    "phase": "04",
+    "file": "app/(app)/projects/[id]/revenue-section.tsx",
+    "line": null,
+    "description": "발행·입금 줄은 스키마·domain 계층이 이미 임의 통화를 지원하나 UI는 KRW 입력만 제공한다(계약 금액·견적 단가는 통화 Select+환율 완비) — 04-04 이후 외화 입금 실사례가 나오면 마저 채운다",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-22T21:35:03.481Z",
     "resolved_at": null,
     "milestone": null
   }

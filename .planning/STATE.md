@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 04
 current_phase_name: 프로젝트·견적 원장
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 04-01-PLAN.md (프로젝트·견적 원장 트레이서). PROJ-01/PROJ-02/UX-04는 형제 플랜 대기로 미완료 표시. 다음은 04-02.
-last_updated: "2026-09-22T20:49:29.474Z"
+stopped_at: Completed 04-02-PLAN.md (금액 모델 완성 + 매출 섹션). Next is 04-03.
+last_updated: "2026-09-22T21:50:32.260Z"
 last_activity: 2026-09-22
 last_activity_desc: Phase 04 execution started
-state_head: ea24b348dff8c03afedf896feeee46dcf5a996d6
+state_head: 2c769cfa95c126c00ea0097fdaa05a01ffc73251
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 30
-  completed_plans: 24
+  completed_plans: 25
   percent: 9
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 04 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 7
 Status: Ready to execute
 Last activity: 2026-09-22 — Phase 04 execution started
@@ -74,6 +74,7 @@ Progress: [█░░░░░░░░░] 9%
 | Phase 02 P07 | 55min | 3 tasks | 10 files |
 | Phase 02 P08 | 16min | 3 tasks | 30 files |
 | Phase 04 P01 | 1h36m | 3 tasks | 54 files |
+| Phase 04 P02 | 1h10m | 3 tasks | 36 files |
 
 ## Accumulated Context
 
@@ -147,6 +148,9 @@ Recent decisions affecting current work:
 - [Phase 04]: 마이그레이션 번호를 계획의 0004에서 실제 다음 번호 0009로 정정(Rule 1)
 - [Phase 04]: domain이 db를 직접 import하지 않도록 lib/db-transaction.ts(withTransaction) 래퍼 신설 — boundaries 규칙 준수(Rule 2)
 - [Phase 04]: role-pm 기본 권한에 projects 메뉴 view+write 추가, admin.vendors/admin.people은 열지 않고 domain/projects/references.ts로 참조 데이터만 좁게 노출
+- [Phase 04]: 04-02: applyTaxRule은 세율·절사 단위·최소 징수액을 settings registry에서 기준일과 함께 읽고, 절사 방식만 코드표 rule에서 읽는다(Task 1 action 원문 + readBy 표시 11개 소비 강제 기준)
+- [Phase 04]: 04-02: 새 메뉴 projects.revenue(write)로 발행·입금 쓰기를 게이트 — 경영관리는 SEED_ROLES 5종에 없어 코드에 역할명을 박지 않고 관리자가 권한표에서 배정한다(D-57). 계약 금액은 기존 projects write(PM)
+- [Phase 04]: 04-02: saveQuoteLines·saveRevenue에 옵션 tx 파라미터를 더해 domain/projects/ledger.ts가 견적 줄+매출을 한 트랜잭션·한 저장 버튼으로 묶는다(§7-3 전부 저장/전부 거부)
 
 ### Pending Todos
 
@@ -189,6 +193,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-22T20:49:29.336Z
-Stopped at: Completed 04-01-PLAN.md (프로젝트·견적 원장 트레이서). PROJ-01/PROJ-02/UX-04는 형제 플랜 대기로 미완료 표시. 다음은 04-02.
+Last session: 2026-09-22T21:50:32.095Z
+Stopped at: Completed 04-02-PLAN.md (금액 모델 완성 + 매출 섹션). Next is 04-03.
 Resume file: None

@@ -34,20 +34,22 @@ export default async function AdminIndexPage() {
   return (
     <>
       <PageHeader title="관리" />
-      {groups.map((group) => (
-        <section key={group.label}>
-          <h2 className={styles.groupLabel}>{group.label}</h2>
-          <ul className={styles.list}>
-            {group.items.map((item) => (
-              <li key={item.href}>
-                <Link href={item.href} className={styles.link}>
-                  {item.label}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
+      <div className="single-column">
+        {groups.map((group) => (
+          <section key={group.label}>
+            <h2 className={styles.groupLabel}>{group.label}</h2>
+            <ul className={styles.list}>
+              {group.items.map((item) => (
+                <li key={item.href}>
+                  <Link href={item.href} className={styles.link}>
+                    {item.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
     </>
   );
 }

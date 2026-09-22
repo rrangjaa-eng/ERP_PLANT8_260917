@@ -98,7 +98,7 @@ export function RolesClient({
   return (
     <>
       {showForm ? (
-        <form ref={formRef} onSubmit={handleSubmit} id="role-form">
+        <form ref={formRef} onSubmit={handleSubmit} id="role-form" className="single-column">
           <TextField id="role-name" name="name" label="이름" required error={nameError} />
           {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
           <div className={styles.formActions}>

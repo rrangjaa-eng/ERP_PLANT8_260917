@@ -25,8 +25,19 @@ function section(doc: string, startHeading: string, endHeading: string): string 
   return doc.slice(start, end);
 }
 
-// 태스크 2가 관리자 화면·폼 10개를 더한다(single-column.spec.ts와 짝).
-export const TARGETS = ["app/(app)/account/page.tsx"];
+export const TARGETS = [
+  "app/(app)/account/page.tsx",
+  "app/(app)/admin/page.tsx",
+  "app/(app)/admin/settings/page.tsx",
+  "app/(app)/admin/people/[id]/page.tsx",
+  "app/(app)/admin/people/org/page.tsx",
+  "app/(app)/admin/system-status/page.tsx",
+  "app/(app)/admin/vendors/vendor-form.tsx",
+  "app/(app)/admin/corp-cards/card-form.tsx",
+  "app/(app)/admin/code-tables/code-item-form.tsx",
+  "app/(app)/admin/people/person-form.tsx",
+  "app/(app)/admin/people/roles/roles-client.tsx",
+];
 
 describe("docs/design/SYSTEM.md — 단일 기둥 최대 폭 (§3, F-02)", () => {
   const section3 = section(SYSTEM, "## 3. 간격", "## 4. 형태");

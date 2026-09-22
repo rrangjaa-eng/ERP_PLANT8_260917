@@ -64,22 +64,24 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
     <>
       <PageHeader title={detail.person.name} subtitle={detail.person.email} />
 
-      <KvList
-        items={[
-          { label: "이름", value: detail.person.name },
-          { label: "이메일", value: detail.person.email },
-          { label: "계급", value: detail.person.roleName ?? "—" },
-          { label: "현재 소속", value: detail.person.currentTeamName ?? "미배정" },
-        ]}
-      />
+      <div className="single-column">
+        <KvList
+          items={[
+            { label: "이름", value: detail.person.name },
+            { label: "이메일", value: detail.person.email },
+            { label: "계급", value: detail.person.roleName ?? "—" },
+            { label: "현재 소속", value: detail.person.currentTeamName ?? "미배정" },
+          ]}
+        />
 
-      <PersonDetailClient
-        userId={detail.person.id}
-        roles={roles}
-        currentRoleId={detail.person.roleId}
-        teamOptions={teamOptions}
-        entries={entries}
-      />
+        <PersonDetailClient
+          userId={detail.person.id}
+          roles={roles}
+          currentRoleId={detail.person.roleId}
+          teamOptions={teamOptions}
+          entries={entries}
+        />
+      </div>
     </>
   );
 }

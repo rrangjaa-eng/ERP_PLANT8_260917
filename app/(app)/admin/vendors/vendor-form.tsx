@@ -137,7 +137,7 @@ export function VendorForm({
   const maskedCurrent = editing ? maskTail4(editing.accountNumberLast4) : "";
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit} id="vendor-form">
+    <form ref={formRef} onSubmit={handleSubmit} id="vendor-form" className="single-column">
       <TextField id="name" name="name" label="이름" required defaultValue={editing?.name} error={nameError} />
       <TextField id="businessNo" name="businessNo" label="사업자 번호" defaultValue={editing?.businessNo ?? undefined} />
 

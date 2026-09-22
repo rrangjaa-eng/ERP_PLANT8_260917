@@ -297,6 +297,43 @@ F9 리저브 0건은 §7-7 EMPTY로 닫힘 · F10 `04-RESEARCH.md:156`의 `navig
 도입한 값은 0개라 PASS로 판정했다. 줄이라고 요구하면 잠긴 시스템 문서를 이 페이즈 범위 밖에서
 고치라는 지시가 된다 — 타당한 판단이다.
 
+### 계획자가 정정한 것 (2026-09-22, 원문 확인 완료)
+
+계획자가 이 파일의 결정 둘을 반박했다. **둘 다 계획자가 옳다** — 오케스트레이터가
+호출처를 전수 조사해 확인했다.
+
+- **D-59 정정 (F2의 수정 위치):** D-59는 「`repositories/vendors.ts:47` `findVendorById`에
+  `archivedAt` 필터가 없다」를 근거로 그 함수를 고치라는 뜻으로 읽혔다. **그 함수를 고치면
+  회귀가 난다.** 호출처 전수(실측):
+  - `repositories/archive.ts:169` — 거래처 보관 항목의 `findById`다. `domain/archive/index.ts`의
+    `restore()`가 이것을 쓰므로 **보관된 행을 못 찾아 복원이 아예 불가**해진다
+    (`ArchivableRowNotFoundError`)
+  - `domain/action-log/index.ts:15` — 거래처 이름 해석기다. **보관·복원 로그 행이 이름을 잃는다**
+  - `domain/vendors/index.ts:298` — `updateVendor`
+  - `domain/vendors/index.ts:377` — `revealAccountNumber` ← **실제 누수는 이 한 곳뿐**
+
+  **수정은 `revealAccountNumber`에서 한다.** 선례가 같은 파일에 있다 —
+  `domain/vendors/index.ts:296-302`의 `updateVendor`가 `ArchivedVendorError`
+  (`UserFacingError` 상속이라 문구가 화면에 간다)를 던지고, 주석이 「판정은 화면이 아니라
+  여기서 한다」로 그 위치 선택을 이미 설명해 뒀다. 그것도 DOM 감사에서 나온 같은 부류의
+  수정이었다. **D-59의 잠긴 내용(맨 앞에·독립 커밋·회귀 테스트)은 그대로이고 파일 좌표만
+  바뀐다.** 플랜은 `findVendorById`가 필터되지 *않았음*을 단언하는 정규식 게이트까지 둔다.
+
+- **04-VALIDATION.md 경로 정정:** Wave 0 목록이 `domain/money/index.test.ts`와
+  `domain/rules/gate.test.ts`를 적었으나 `vitest.config.ts:15`의 unit project가
+  `include: ["test/unit/**/*.test.ts"]`이고 이 레포에 co-located 테스트가 **0건**이다(실측).
+  그 두 파일은 **영원히 실행되지 않는다.** `test/unit/money/*` · `test/unit/rules/*`로 옮겼고
+  계획자가 `04-VALIDATION.md`를 고쳐 `nyquist_compliant: true`로 올렸다.
+
+- **React 렌더 테스트 러너가 없다** (실측: `package.json`에 `testing-library` 0건, unit project
+  `environment: "node"`). D-45가 새 의존성을 금지하므로 추가하지 않는다. 컴포넌트 계약은 세
+  방법으로 검증한다: **순수 모듈**은 실제 단위 테스트(선례: `PermissionGrid`가 `resyncCells`를
+  export해 `test/unit/ui/permission-grid-resync.test.ts`가 부른다) · **렌더 문자열·CSS**는 소스
+  단언(`toast-timer.test.ts` · `system-md-compliance.test.ts`) · **실제 DOM**은 `CI=true` E2E.
+  이 제약이 설계를 한 번 밀었다 — 04-08·04-10이 계약 무게를 컴포넌트에서 `column-fold.ts` ·
+  `grid-keys.ts` · `tsv.ts`로 일부러 밀어내 단위 테스트가 가능하게 했고, 04-10의 계약 테스트는
+  `Grid.tsx`에 키 매칭 분기가 **없음**을 단언한다.
+
 ### Claude's Discretion
 
 - **`Money`의 객체 모양** — 통화·외화금액·환율·환산액을 담은 단일 객체로 갈지, 금액만 브랜디드

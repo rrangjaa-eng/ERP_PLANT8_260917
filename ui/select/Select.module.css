@@ -1,0 +1,29 @@
+/* SYSTEM.md §7-15 · §7-2 — 네이티브 select + 시스템 테두리. 토큰만(D-20). */
+
+.select {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 var(--s-2);
+  border: var(--line-w) solid var(--line-ui);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+}
+
+.select:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.selectError {
+  border-color: var(--danger);
+}
+
+.error {
+  margin: var(--s-1) 0 0;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}

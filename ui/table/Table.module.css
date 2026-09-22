@@ -1,0 +1,114 @@
+/* SYSTEM.md §7-3 + 보강 (가)~(아) — 표. 색·서체·radius는 토큰만(D-20). */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-base);
+}
+
+.headerCell {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+  background: var(--bg);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-align: left;
+}
+
+/* (가) — 편집 가능한 셀이 하나라도 있으면 --g-100 + --g-950 머리글(편집
+   가능 신호). 읽기 표는 흰 바탕 그대로다. */
+.editable .headerCell {
+  background: var(--g-100);
+  color: var(--g-950);
+}
+
+.cell {
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w) solid var(--line);
+  vertical-align: top;
+}
+
+.alignRight {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.groupRow td {
+  padding-top: var(--s-3);
+}
+
+.groupHeader {
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+/* (가) 편집 단계 — 편집 가능 셀만 상호작용 신호(커서 + 포커스 링). 읽기
+   전용·잠김 셀은 값만, 배경 없음(§7-3 (가) 표). */
+.editableCell {
+  cursor: pointer;
+}
+
+.editableCell:hover {
+  background: var(--surface);
+}
+
+.editableCell:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: -2px;
+}
+
+.lockedCell {
+  color: var(--muted);
+}
+
+.collapsedRow {
+  display: none;
+}
+
+.collapsedCell {
+  padding: 0 var(--cell-pad-x) var(--cell-pad-y);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.emptyCell {
+  padding: var(--s-6) var(--cell-pad-x);
+  color: var(--muted);
+  font-size: var(--fs-base);
+  text-align: left;
+}
+
+.emptyAction {
+  margin-left: var(--s-2);
+  border: 0;
+  border-bottom: var(--line-w) solid var(--accent);
+  background: none;
+  color: var(--accent);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+}
+
+/* §7-3 폰 전략 — P1만 열로 남고 P2는 행 아래 접힌 줄, P3은 숨는다. 가로
+   스크롤을 만들지 않는다(S11). */
+@media (max-width: 699.98px) {
+  .prio-p2,
+  .prio-p3 {
+    display: none;
+  }
+
+  .collapsedRow {
+    display: table-row;
+  }
+
+  .cell,
+  .headerCell {
+    padding: var(--cell-pad-y) var(--cell-pad-x);
+  }
+}

@@ -1,0 +1,76 @@
+/* SYSTEM.md §7-15 — Form 컴포넌트 계약. 색·서체·radius는 토큰만(D-20). */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-6);
+  max-width: var(--form-max);
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.label {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.control {
+  width: 100%;
+}
+
+/* 칸 폭 3종 — select 200 · 짧은 칸 280 · 긴 칸 480 */
+.select {
+  max-width: 200px;
+}
+
+.short {
+  max-width: 280px;
+}
+
+.long {
+  max-width: 480px;
+}
+
+.hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.error {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+  padding-top: var(--s-4);
+  border-top: var(--line-w) solid var(--line);
+}
+
+/* PC: 라벨 왼쪽 96px. 폰(<700px)은 위 세로쌓기 규칙이 기본값이다 */
+@media (min-width: 700px) {
+  .row {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: var(--s-2);
+  }
+
+  .label {
+    flex: 0 0 var(--label-w);
+    padding-top: var(--s-1);
+  }
+
+  .control {
+    flex: 1 1 auto;
+  }
+}

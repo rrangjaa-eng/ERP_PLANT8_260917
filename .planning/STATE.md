@@ -147,6 +147,7 @@ Recent decisions affecting current work:
 ### Pending Todos
 
 - [2026-09-20] [planning] Phase 3 실행 전 결정 4건의 확정 답 (전부 A) — [todo file](.planning/todos/pending/2026-09-20-phase-3-checkpoint-answers.md) — Needs `/gsd-execute-phase 3` 실행 중 각 체크포인트에서 **`A`** 라고 답한다.
+- [2026-09-22] [planning] 새 세션 인수인계 — 관리자 메뉴 → 코덱스 디자인 리뷰 → Phase 4 실행 — [todo file](.planning/todos/pending/2026-09-22-session-handoff-admin-menu-codex-design-review-phase-4-execu.md) — Needs 세 가지를 이 순서로 한다.
 
 ### Blockers/Concerns
 

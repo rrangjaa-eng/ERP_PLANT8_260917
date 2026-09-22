@@ -7,6 +7,7 @@
 # GSD harness-managed agent worktrees and run-scoped tool state (ephemeral, never source content)
 .claude/worktrees/
 .gsd/
+.planning/**/.review-fix-recovery-pending.json
 
 # gstack vendored copy: never commit installs or build output
 .claude/skills/gstack/node_modules/

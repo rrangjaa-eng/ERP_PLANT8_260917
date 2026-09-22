@@ -7,6 +7,7 @@ import { Button } from "@/ui/button/Button";
 import { TextField } from "@/ui/input/TextField";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { loginErrorMessage } from "./login-error";
+import styles from "./login-form.module.css";
 
 // AUTH-04: showGoogle은 서버 컴포넌트(page.tsx)의 getAuthProvider() === "google"
 // 조건 결과를 그대로 넘겨받는다 — 클라이언트 컴포넌트만 authClient.signIn.social을
@@ -69,9 +70,11 @@ export function LoginForm({ showGoogle = false }: { showGoogle?: boolean }) {
           onChange={(event) => setPassword(event.target.value)}
         />
         {error ? <FormAlert>{error}</FormAlert> : null}
-        <Button type="submit" variant="primary" pending={pending}>
-          로그인
-        </Button>
+        <div className={styles.submitRow}>
+          <Button type="submit" variant="primary" pending={pending}>
+            로그인
+          </Button>
+        </div>
       </form>
       {showGoogle ? (
         <button

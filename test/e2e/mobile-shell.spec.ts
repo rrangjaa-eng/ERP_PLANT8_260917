@@ -238,4 +238,21 @@ test.describe("폰 375 공통 셸 (성공 기준 3 · §6-0 폰 전략 · §10 �
     const fontSize = await groupHeader.evaluate((el) => getComputedStyle(el).fontSize);
     expect(fontSize).toBe(expectedFontSize);
   });
+
+  // /design-review 발견 4 — SYSTEM.md §6-7 로그인 화면 실물 스케치는 제출 버튼이
+  // 폼 가운데 온다. 폰 375에서도 같은 계약이다(셸 없는 화면이라 폰·PC 공통 틀).
+  test("로그인 버튼이 폼 안에서 가운데 정렬된다(§6-7)", async ({ page }) => {
+    await page.goto("/login");
+
+    const form = page.locator("form");
+    const button = page.getByRole("button", { name: "로그인" });
+    const formBox = await form.boundingBox();
+    const buttonBox = await button.boundingBox();
+    expect(formBox).not.toBeNull();
+    expect(buttonBox).not.toBeNull();
+
+    const formCenterX = formBox!.x + formBox!.width / 2;
+    const buttonCenterX = buttonBox!.x + buttonBox!.width / 2;
+    expect(Math.abs(formCenterX - buttonCenterX)).toBeLessThanOrEqual(1);
+  });
 });

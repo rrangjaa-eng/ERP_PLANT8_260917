@@ -1,0 +1,7 @@
+/* SYSTEM.md §6-7 로그인 화면 — 실물 스케치는 제출 버튼이 폼 가운데 온다
+   (/design-review 발견 4). Button.module.css의 .wrap은 inline-flex라 내용
+   폭만큼만 차지하고 폼(block) 안에서 좌측으로 흘렀다 — 감싸는 줄만 가운데로
+   잡는다. 색·서체·radius는 건드리지 않는다(D-20). */
+.submitRow {
+  text-align: center;
+}

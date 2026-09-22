@@ -102,3 +102,22 @@ export function quoteAmount(quantity: number | null | undefined, unitPrice: Mone
 export function profit(quoteAmountKrw: number, execution: Money): number {
   return quoteAmountKrw - execution.amountKrw;
 }
+
+// 04-02 Task 1 ① — 분할 시 마지막 회차가 나머지를 흡수해 합계가 정확히
+// 원금과 같다(04-RESEARCH.md Pattern 2). 반올림 오차가 누적되지 않도록
+// 정수 나눗셈만 쓴다.
+export function splitWithRemainder(totalKrw: number, count: number): number[] {
+  const base = Math.floor(totalKrw / count);
+  const remainder = totalKrw - base * count;
+  return Array.from({ length: count }, (_, i) => (i === count - 1 ? base + remainder : base));
+}
+
+// 04-02 Task 1 ① — 합계(부가세 포함)에서 공급가액을 역산한다. `round()`를
+// 재사용해 이 모듈 안에서도 반올림 지점이 하나다. **재계산 합계가 원래
+// 입력과 어긋나도 이 함수는 조정하지 않는다** — 1원 오차가 구조적임을
+// 04-RESEARCH.md Pattern 2가 설명한다. 차이 판단·표시는 호출자(도메인
+// revenue)의 몫이다.
+export function grossFromTotal(totalKrw: number, vatRate: number, unit: RoundingUnit, method: RoundingMethod): number {
+  const raw = totalKrw / (1 + vatRate);
+  return round(raw, unit, method);
+}

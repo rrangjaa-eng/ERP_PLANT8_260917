@@ -24,7 +24,10 @@ const SETTING_VALUES: Record<string, unknown> = {
 
 function fakeGetSettingValue(overrides: Record<string, unknown> = {}) {
   const values = { ...SETTING_VALUES, ...overrides };
-  return vi.fn(async (def: { key: string }) => values[def.key]);
+  return vi.fn((def: { key: string }, opts?: { asOf?: Date }) => {
+    void opts;
+    return Promise.resolve(values[def.key]);
+  });
 }
 
 const NONE_RULE: TaxRule = { ruleKind: "none" };
@@ -51,7 +54,7 @@ describe("applyTaxRule", () => {
       1_000_000,
       NONE_RULE,
       { paymentDate: PAYMENT_DATE, evidenceDate: EVIDENCE_DATE },
-      { getSettingValue },
+      { getSettingValue: getSettingValue as never },
     );
     expect(result).toEqual({ vatKrw: 0, withholdingKrw: 0, companyBorneKrw: 0, payableKrw: 1_000_000 });
   });
@@ -62,7 +65,7 @@ describe("applyTaxRule", () => {
       1_000_000,
       VAT_RULE,
       { paymentDate: PAYMENT_DATE, evidenceDate: EVIDENCE_DATE },
-      { getSettingValue },
+      { getSettingValue: getSettingValue as never },
     );
     expect(result.vatKrw).toBe(100_000);
     expect(result.payableKrw).toBe(1_100_000);
@@ -76,7 +79,7 @@ describe("applyTaxRule", () => {
       1_000_000,
       VAT_RULE,
       { paymentDate: PAYMENT_DATE, evidenceDate: EVIDENCE_DATE },
-      { getSettingValue },
+      { getSettingValue: getSettingValue as never },
     );
     const vatRateCall = getSettingValue.mock.calls.find(([def]) => def.key === "tax.vat.rate");
     expect(vatRateCall?.[1]).toEqual({ asOf: EVIDENCE_DATE });
@@ -88,7 +91,7 @@ describe("applyTaxRule", () => {
       1_000_000,
       WITHHOLDING_RULE,
       { paymentDate: PAYMENT_DATE, evidenceDate: EVIDENCE_DATE },
-      { getSettingValue },
+      { getSettingValue: getSettingValue as never },
     );
     // 1,000,000 * 0.088 = 88,000 (10원 단위 반올림 — 이미 10원 단위)
     expect(result.withholdingKrw).toBe(88_000);
@@ -103,7 +106,7 @@ describe("applyTaxRule", () => {
       1_000_000,
       WITHHOLDING_RULE,
       { paymentDate: PAYMENT_DATE, evidenceDate: EVIDENCE_DATE },
-      { getSettingValue },
+      { getSettingValue: getSettingValue as never },
     );
     const rateCall = getSettingValue.mock.calls.find(([def]) => def.key === "tax.withholding.other_income.rate");
     expect(rateCall?.[1]).toEqual({ asOf: PAYMENT_DATE });
@@ -115,7 +118,7 @@ describe("applyTaxRule", () => {
       100_000, // exempt_threshold 125,000 이하
       WITHHOLDING_RULE,
       { paymentDate: PAYMENT_DATE, evidenceDate: EVIDENCE_DATE },
-      { getSettingValue },
+      { getSettingValue: getSettingValue as never },
     );
     expect(result.withholdingKrw).toBe(0);
     expect(result.payableKrw).toBe(100_000);
@@ -127,7 +130,7 @@ describe("applyTaxRule", () => {
       1_000_000,
       WITHHOLDING_RULE,
       { paymentDate: PAYMENT_DATE, evidenceDate: EVIDENCE_DATE },
-      { getSettingValue },
+      { getSettingValue: getSettingValue as never },
     );
     // 계산값 88,000 < 최소 징수액 100,000 → 0
     expect(result.withholdingKrw).toBe(0);
@@ -140,7 +143,7 @@ describe("applyTaxRule", () => {
       1_000_000,
       rule,
       { paymentDate: PAYMENT_DATE, evidenceDate: EVIDENCE_DATE },
-      { getSettingValue },
+      { getSettingValue: getSettingValue as never },
     );
     // 1,000,000 * 0.0885 = 88,500 (10원 단위라 절사 방식에 따라 달라지지 않음 — 이미 배수)
     expect(result.withholdingKrw).toBe(88_500);
@@ -152,7 +155,7 @@ describe("applyTaxRule", () => {
       1_000_000,
       COMPANY_BORNE_RULE,
       { paymentDate: PAYMENT_DATE, evidenceDate: EVIDENCE_DATE },
-      { getSettingValue },
+      { getSettingValue: getSettingValue as never },
     );
     expect(result.companyBorneKrw).toBe(88_000);
     expect(result.payableKrw).toBe(1_000_000);
@@ -164,7 +167,7 @@ describe("applyTaxRule", () => {
       1_000_000,
       COMPANY_BORNE_RULE,
       { paymentDate: PAYMENT_DATE, evidenceDate: EVIDENCE_DATE },
-      { getSettingValue },
+      { getSettingValue: getSettingValue as never },
     );
     // gross = 1,000,000 / (1 - 0.088) = 1,096,491.2... → 대납액 = gross - supply
     expect(result.companyBorneKrw).toBeGreaterThan(88_000);
@@ -177,7 +180,7 @@ describe("applyTaxRule", () => {
       1_000_000,
       WITHHOLDING_RULE,
       { paymentDate: PAYMENT_DATE, evidenceDate: EVIDENCE_DATE },
-      { getSettingValue },
+      { getSettingValue: getSettingValue as never },
     );
     const missingAsOf = getSettingValue.mock.calls.filter(([, opts]) => !opts || opts.asOf === undefined);
     // basis-date 설명용 조회(단순값)만 asOf 없이 불린다 — 나머지는 전부 asOf를 넘긴다.

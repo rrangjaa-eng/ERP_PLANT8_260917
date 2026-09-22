@@ -4,6 +4,9 @@
 
 .sheet {
   position: fixed;
+  /* 네이티브 dialog:modal의 브라우저 기본값이 inset-block(위아래)을 모두 0으로
+     준다 — 위쪽을 풀어야 시트가 아래에만 붙는다(F-04, 260922-o2b). */
+  inset-block-start: auto;
   inset-block-end: 0;
   inset-inline: 0;
   width: 100%;

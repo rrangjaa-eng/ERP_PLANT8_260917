@@ -158,4 +158,37 @@ test.describe("폰 375 공통 셸 (성공 기준 3 · §6-0 폰 전략 · §10 �
     await page.goto("/login");
     await expect(page.getByRole("navigation", { name: "하단 탭" })).toHaveCount(0);
   });
+
+  // F-04(260922-o2b) — SYSTEM.md §7-8 「시트(폰): 하단에서 올라옴」. 네이티브
+  // dialog:modal의 브라우저 기본 inset-block(위아래 0)이 남아 있으면 시트가
+  // 위쪽에도 붙는다.
+  test("「더보기」 시트가 뷰포트 아래 끝에 붙는다(F-04)", async ({ page }) => {
+    await loginAsEmployee(page);
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "더보기" }).click();
+    const sheet = page.getByRole("dialog", { name: "더보기" });
+    await expect(sheet).toBeVisible();
+
+    const box = await sheet.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.y).toBeGreaterThan(0);
+    expect(Math.abs(box!.y + box!.height - 800)).toBeLessThanOrEqual(1);
+  });
+
+  // F-05 부분(260922-o2b) — SYSTEM.md §3·§10 폰 44×44 터치 목표.
+  test("사용자 메뉴 트리거가 44×44 이상이고 상단 바를 넘치지 않는다(F-05)", async ({ page }) => {
+    await loginAsEmployee(page);
+    await page.goto("/");
+
+    const trigger = page.locator('header button[aria-haspopup="menu"]');
+    const triggerBox = await trigger.boundingBox();
+    expect(triggerBox).not.toBeNull();
+    expect(triggerBox!.width).toBeGreaterThanOrEqual(44);
+    expect(triggerBox!.height).toBeGreaterThanOrEqual(44);
+
+    const headerBox = await page.locator("header").boundingBox();
+    expect(headerBox).not.toBeNull();
+    expect(triggerBox!.y + triggerBox!.height).toBeLessThanOrEqual(headerBox!.y + headerBox!.height);
+  });
 });

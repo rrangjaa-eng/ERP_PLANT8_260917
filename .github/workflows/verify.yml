@@ -3,10 +3,10 @@ name: verify
 # 사람 판정 중 "GCP 권한만 있으면 되는" 항목을 키 없이 닫는다. 조직 정책
 # iam.disableServiceAccountKeyCreation이 SA 키 생성을 막으므로(2026-09-22 실측)
 # Claude 세션이 gcloud를 직접 쓰지 않고, WIF로 붙는 이 워크플로를 띄워 로그를 읽는다.
-#   policies   — 조직 정책 4개 원문 + 런타임·배포 SA의 프로젝트 역할 (01-UAT 8)
-#   alert-test — backup-failed 경보 필터에 맞는 합성 ERROR 로그 1건 (01-UAT 7)
-# 필요한 역할(gha-deployer): policies → roles/orgpolicy.policyViewer(조직 수준)·
-# roles/iam.securityReviewer, alert-test → roles/logging.logWriter.
+#   policies — 조직 정책 4개 원문 + 런타임·배포 SA의 프로젝트 역할 (01-UAT 8)
+# 필요한 역할(gha-deployer, 둘 다 읽기 전용): roles/orgpolicy.policyViewer(조직 수준)·
+# roles/iam.securityReviewer. 쓰기 권한은 주지 않는다(2026-09-22 사용자 결정) —
+# 백업 실패 경보 테스트(01-UAT 7)는 그래서 여기 없고 콘솔의 "테스트 알림 보내기"로 한다.
 on:
   workflow_dispatch:
     inputs:
@@ -15,14 +15,6 @@ on:
         description: "점검 항목"
         options:
           - policies
-          - alert-test
-      env:
-        type: choice
-        description: "대상 환경(alert-test 전용)"
-        default: staging
-        options:
-          - staging
-          - production
 
 permissions:
   contents: read
@@ -42,7 +34,6 @@ jobs:
       - shell: bash
         env:
           INPUT_CHECK: ${{ inputs.check }}
-          INPUT_ENV: ${{ inputs.env }}
           PROJECT: ${{ vars.GCP_PROJECT_ID }}
           REGION: ${{ vars.GCP_REGION }}
         run: bash scripts/verify-gcp.sh

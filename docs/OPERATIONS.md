@@ -148,11 +148,11 @@ account:reset --email …` / `pnpm account:unlock --email …`. 운영에서는 
 프로덕션 화면을 직접 확인해야 할 때는 `account.yml`(action=create, role=role-sysadmin)로
 `claude-verify-<YYYYMMDD>@plant8.co.kr` 관리자 계정을 만들어 쓰고, 검증이 끝나면 같은
 워크플로의 `reset`으로 세션을 만료시킨 뒤 `/admin/people`에서 보관한다. 실계정 비밀번호를
-세션에 넘기지 않는다. GCP 쪽 점검(조직 정책·SA 역할 원문, 백업 실패 경보 합성 테스트)은
+세션에 넘기지 않는다. GCP 쪽 점검(조직 정책·SA 역할 원문)은
 세션이 gcloud를 직접 쓰지 않고 `verify.yml`(workflow_dispatch, WIF)을 띄워 로그를 읽는다 —
-조직 정책 `iam.disableServiceAccountKeyCreation`이 SA 키 생성을 막기 때문이다. `policies`는
-gha-deployer에 `roles/orgpolicy.policyViewer`(조직 수준)·`roles/iam.securityReviewer`,
-`alert-test`는 `roles/logging.logWriter`가 있어야 통과한다.
+조직 정책 `iam.disableServiceAccountKeyCreation`이 SA 키 생성을 막기 때문이다. gha-deployer에
+읽기 전용 두 역할 `roles/orgpolicy.policyViewer`(조직 수준)·`roles/iam.securityReviewer`만
+준다(쓰기 권한 없음, 2026-09-22 결정). 백업 실패 경보 테스트는 콘솔 "테스트 알림 보내기"로 한다.
 
 ## 8. 최초 1회 부트스트랩 (D-02)
 

@@ -264,13 +264,11 @@ describe("deploy 워크플로 — ci-guard와 동일한 push 하위 명령 부�
 describe("verify.yml", () => {
   const verify = readWorkflow("verify.yml");
 
-  it("workflow_dispatch inputs check(policies|alert-test)/env(staging|production)가 있다", () => {
+  it("workflow_dispatch input check(policies)만 있다 — 쓰기 권한이 필요한 점검은 두지 않는다", () => {
     expect(verify).toContain("workflow_dispatch:");
     expect(verify).toContain("check:");
     expect(verify).toContain("- policies");
-    expect(verify).toContain("- alert-test");
-    expect(verify).toContain("- staging");
-    expect(verify).toContain("- production");
+    expect(verify).not.toContain("alert-test");
   });
 
   it("deploy.yml과 같은 WIF 인증을 쓰고 permissions에 id-token: write와 contents: read가 있다", () => {
@@ -281,7 +279,6 @@ describe("verify.yml", () => {
 
   it("입력을 env로 넘겨 scripts/verify-gcp.sh에 위임한다(T-1-32)", () => {
     expect(verify).toContain("INPUT_CHECK: ${{ inputs.check }}");
-    expect(verify).toContain("INPUT_ENV: ${{ inputs.env }}");
     expect(verify).toContain("scripts/verify-gcp.sh");
     expect(verify).not.toMatch(/run:.*\$\{\{\s*inputs\./);
   });
@@ -304,12 +301,8 @@ describe("scripts/verify-gcp.sh", () => {
     expect(script).toContain("gha-deployer");
   });
 
-  it("alert-test는 backup-failed.json.tpl 필터에 맞는 합성 ERROR 로그 1건만 쓰고 그 사실을 본문에 남긴다", () => {
-    expect(script).toContain("entries:write");
-    expect(script).toContain('"type": "cloudsql_database"');
-    expect(script).toContain('"severity": "ERROR"');
-    expect(script).toMatch(/backup/);
-    expect(script).toContain("SYNTHETIC");
+  it("로그를 쓰거나 리소스를 바꾸는 명령이 없다(읽기 전용 역할만 받는다)", () => {
+    expect(script).not.toMatch(/entries:write|logging write|add-iam-policy-binding|secrets versions add|run deploy/);
   });
 
   it("실패를 || true로 삼키지 않고 마지막에 실패 수로 종료한다", () => {

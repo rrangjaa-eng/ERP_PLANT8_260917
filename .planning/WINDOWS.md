@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 15
+open_count: 14
 waived_count: 0
-fixed_count: 7
-total_count: 22
-last_updated: 2026-09-20T08:55:22.487Z
+fixed_count: 10
+total_count: 24
+last_updated: 2026-09-22T05:07:38.860Z
 ---
 
 # Broken Windows Ledger
@@ -27,16 +27,18 @@ last_updated: 2026-09-20T08:55:22.487Z
 | 10 | 02 | deviation | ui/ |  | WR-02·WR-03 해소: 사용자 메뉴에 WAI-ARIA menu 키(ArrowDown/Up·Home/End, 순환)와 표준 해제(Tab 이탈·바깥 클릭)를 붙였다. test/e2e/user-menu.spec.ts 5건 | fixed |  | 2026-09-20T06:07:58.325Z | 2026-09-20T06:07:58.906Z |
 | 11 | 02 | deviation | ui/ |  | WR-05 해소: 토스트 자동 소멸 타이머가 onDismiss 정체성 변화에 재시작되던 것을 ref로 끊었다. 오류 토스트 role=alert. test/unit/ui/toast-timer.test.ts | fixed |  | 2026-09-20T06:07:58.521Z | 2026-09-20T06:07:59.100Z |
 | 12 | 02 | deviation | ui/ |  | WR-04 해소: 「내 차례」 다음 한 수가 item.action.href로 실제 이동한다. 더 보기는 moreHref가 있을 때만 링크. test/unit/ui/next-turn-action.test.ts | fixed |  | 2026-09-20T06:07:58.715Z | 2026-09-20T06:07:59.294Z |
-| 13 | 02 | unrun-verify | docs/design/tokens.css |  | D-32 미검증: Windows Chrome/Edge에서 Pretendard가 실제로 렌더되는지(맑은고딕 폴백 아님)·숫자 tabular 정렬·폰트 전송량 200~300KB. 리눅스 CI의 Playwright로는 판정 불가 — 실제 Windows 브라우저가 필요하다. /gsd-verify-work 02 | open |  | 2026-09-20T08:00:58.462Z |  |
-| 14 | 02 | unrun-verify | ui/shell/Shell.module.css |  | 태블릿 700~1023px 뷰포트 미검증: PC 셸이 유지되고 하단 탭이 안 나오는지. 미디어 쿼리 존재만 확인했고 그 폭으로 실제 렌더해 보지 않았다(Playwright 프로젝트가 desktop·mobile-375 둘뿐). /gsd-verify-work 02 | open |  | 2026-09-20T08:00:58.639Z |  |
+| 13 | 02 | unrun-verify | docs/design/tokens.css |  | D-32 미검증: Windows Chrome/Edge에서 Pretendard가 실제로 렌더되는지(맑은고딕 폴백 아님)·숫자 tabular 정렬·폰트 전송량 200~300KB. 리눅스 CI의 Playwright로는 판정 불가 — 실제 Windows 브라우저가 필요하다. /gsd-verify-work 02 | fixed |  | 2026-09-20T08:00:58.462Z | 2026-09-22T05:07:38.170Z |
+| 14 | 02 | unrun-verify | ui/shell/Shell.module.css |  | 태블릿 700~1023px 뷰포트 미검증: PC 셸이 유지되고 하단 탭이 안 나오는지. 미디어 쿼리 존재만 확인했고 그 폭으로 실제 렌더해 보지 않았다(Playwright 프로젝트가 desktop·mobile-375 둘뿐). /gsd-verify-work 02 | fixed |  | 2026-09-20T08:00:58.639Z | 2026-09-22T05:07:38.351Z |
 | 15 | 02 | unrun-verify | docs/design/SYSTEM.md |  | 375px 시각 품질 미검증: E2E는 계산값만 재고 보기 좋은지는 판정하지 않는다. /design-review(SYSTEM.md 일관성) + /qa(실제 브라우저) 미실행 — CLAUDE.md가 UI 완료 판정 조건으로 지정한 둘이다 | open |  | 2026-09-20T08:00:58.866Z |  |
-| 16 | 02 | unrun-verify | ui/next-turn/NextTurn.module.css |  | 「내 차례」 폰 2줄 레이아웃 미검증: D-24로 buildNextTurnView 입력이 항상 []라 블록이 렌더되지 않아 자동·수동 모두 확인 불가. Phase 4가 첫 실제 항목을 넣을 때 검증한다 | open |  | 2026-09-20T08:00:59.072Z |  |
+| 16 | 02 | unrun-verify | ui/next-turn/NextTurn.module.css |  | 「내 차례」 폰 2줄 레이아웃 미검증: D-24로 buildNextTurnView 입력이 항상 []라 블록이 렌더되지 않아 자동·수동 모두 확인 불가. Phase 4가 첫 실제 항목을 넣을 때 검증한다 | fixed |  | 2026-09-20T08:00:59.072Z | 2026-09-22T05:07:38.521Z |
 | 17 | 01 | unrun-verify | docs/OPERATIONS.md |  | Cloud Run/Cloud SQL 실제 과금액 미확인(01-05 D5): min-instances 0 전제의 '비용 ≈ 0'은 GCP 청구서로만 판정된다. 코드·테스트로 증명 불가 | open |  | 2026-09-20T08:55:21.416Z |  |
 | 18 | 01 | unrun-verify | app/(auth)/login/login-form.tsx |  | 프로덕션 세션 유지 미검증(01-VERIFICATION human 1): 실제 Cloud Run 도메인에서 로그인 후 브라우저 완전 종료 → 재진입 시 /account 유지되는지. 근거는 로컬 E2E의 30일 쿠키 단언과 lib/auth.ts expiresIn뿐이고, 프로브는 /login에서 Set-Cookie를 못 봐 닫지 못했다 | open |  | 2026-09-20T08:55:21.607Z |  |
 | 19 | 01 | unrun-verify | app/admin/system-status/page.tsx |  | 프로덕션 /admin/system-status 관리자 렌더 + 백업 절 미관찰(01-VERIFICATION human 2, 01-08 human-check 3·4): 런타임 SA의 roles/cloudsql.viewer 실부여와 lib/gcp/cloud-sql-admin.ts 호출 경로가 프로덕션에서 한 번도 실행·관찰되지 않았다 | open |  | 2026-09-20T08:55:21.801Z |  |
 | 20 | 01 | unrun-verify | infra/monitoring/tick-stale.json.tpl |  | 백업 실패 경보 필터·메일 전달 미검증(01-VERIFICATION human 3): 경보 정책 존재는 2026-09-18 실측으로 확인됐으나, 실패 이벤트 없이는 필터 정확성과 메일 도달을 프로그램으로 검증할 수 없다 | open |  | 2026-09-20T08:55:22.100Z |  |
 | 21 | 01 | unrun-verify | scripts/bootstrap-gcp.sh |  | 조직 정책 원문·런타임 SA 역할 미확인(01-VERIFICATION human 4): gha-deployer SA에 orgpolicy.policy.get·resourcemanager.projects.getIamPolicy가 없어 실행자가 조회 불가(PERMISSION_DENIED). 실효적 차단 없음만 확인됨 — 원문 확인은 Owner 계정 몫 | open |  | 2026-09-20T08:55:22.302Z |  |
 | 22 | 01 | unrun-verify | .planning/phases/01-deploy-skeleton-login/01-08-DEPLOY-LOG.md |  | origin 임시 프로브 브랜치 4개 미삭제(probe-result·probe-result2·guard-probe-result·prod-verify-result): 2026-09-20 확인 결과 전부 잔존. git push --delete가 이 세션의 에그레스 프록시에서 끊긴다(일반 push는 정상) — 사용자가 GitHub에서 삭제해야 한다 | open |  | 2026-09-20T08:55:22.487Z |  |
+| 23 | 02 | deviation | ui/shell/TopBar.tsx |  | §10 터치 목표 44 미달(375px DOM 감사 2026-09-22): 사용자 메뉴 트리거 19px, 로그인·비밀번호 변경·로그아웃·첫 화면으로 버튼 40px(--control-h 폰 40). 컨트롤 높이는 SYSTEM.md 토큰 결정이라 화면 하나로 못 고친다 — 디자인 결정 후 tokens.css에서 | open |  | 2026-09-22T05:07:38.693Z |  |
+| 24 | 02 | deviation | docs/design/system/preview.html |  | §7-4 폰 두 줄 실물(preview.html .next li grid)이 §7-4 원문과 다르게 렌더된다 — grid(auto 1fr auto) 자동 배치가 .amt를 2행 2칸에 먼저 놓아 .go(행동)가 2행으로 밀린다. 컴포넌트(NextTurn)는 2026-09-22 원문대로 고쳤고(test/e2e/mobile-next-turn.spec.ts 실측) 실물은 미수정. 디자인 문서 정비 시 맞춘다 | open |  | 2026-09-22T05:07:38.860Z |  |
 
 ````json
 [
@@ -203,10 +205,10 @@ last_updated: 2026-09-20T08:55:22.487Z
     "file": "docs/design/tokens.css",
     "line": null,
     "description": "D-32 미검증: Windows Chrome/Edge에서 Pretendard가 실제로 렌더되는지(맑은고딕 폴백 아님)·숫자 tabular 정렬·폰트 전송량 200~300KB. 리눅스 CI의 Playwright로는 판정 불가 — 실제 Windows 브라우저가 필요하다. /gsd-verify-work 02",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-20T08:00:58.462Z",
-    "resolved_at": null,
+    "resolved_at": "2026-09-22T05:07:38.170Z",
     "milestone": null
   },
   {
@@ -216,10 +218,10 @@ last_updated: 2026-09-20T08:55:22.487Z
     "file": "ui/shell/Shell.module.css",
     "line": null,
     "description": "태블릿 700~1023px 뷰포트 미검증: PC 셸이 유지되고 하단 탭이 안 나오는지. 미디어 쿼리 존재만 확인했고 그 폭으로 실제 렌더해 보지 않았다(Playwright 프로젝트가 desktop·mobile-375 둘뿐). /gsd-verify-work 02",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-20T08:00:58.639Z",
-    "resolved_at": null,
+    "resolved_at": "2026-09-22T05:07:38.351Z",
     "milestone": null
   },
   {
@@ -242,10 +244,10 @@ last_updated: 2026-09-20T08:55:22.487Z
     "file": "ui/next-turn/NextTurn.module.css",
     "line": null,
     "description": "「내 차례」 폰 2줄 레이아웃 미검증: D-24로 buildNextTurnView 입력이 항상 []라 블록이 렌더되지 않아 자동·수동 모두 확인 불가. Phase 4가 첫 실제 항목을 넣을 때 검증한다",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-20T08:00:59.072Z",
-    "resolved_at": null,
+    "resolved_at": "2026-09-22T05:07:38.521Z",
     "milestone": null
   },
   {
@@ -323,6 +325,32 @@ last_updated: 2026-09-20T08:55:22.487Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-20T08:55:22.487Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 23,
+    "kind": "deviation",
+    "phase": "02",
+    "file": "ui/shell/TopBar.tsx",
+    "line": null,
+    "description": "§10 터치 목표 44 미달(375px DOM 감사 2026-09-22): 사용자 메뉴 트리거 19px, 로그인·비밀번호 변경·로그아웃·첫 화면으로 버튼 40px(--control-h 폰 40). 컨트롤 높이는 SYSTEM.md 토큰 결정이라 화면 하나로 못 고친다 — 디자인 결정 후 tokens.css에서",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-22T05:07:38.693Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 24,
+    "kind": "deviation",
+    "phase": "02",
+    "file": "docs/design/system/preview.html",
+    "line": null,
+    "description": "§7-4 폰 두 줄 실물(preview.html .next li grid)이 §7-4 원문과 다르게 렌더된다 — grid(auto 1fr auto) 자동 배치가 .amt를 2행 2칸에 먼저 놓아 .go(행동)가 2행으로 밀린다. 컴포넌트(NextTurn)는 2026-09-22 원문대로 고쳤고(test/e2e/mobile-next-turn.spec.ts 실측) 실물은 미수정. 디자인 문서 정비 시 맞춘다",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-22T05:07:38.860Z",
     "resolved_at": null,
     "milestone": null
   }

@@ -212,7 +212,7 @@ re_verification:
     - "성공 기준 2 — 페이지 층(body 아홉 선언·§4-4 브라우저 표면·컨트롤 서체·화면 제목/부제·로그인 실패 문구·시스템 상태 dl)이 토큰에 연결되어 렌더된 계산값이 UA 기본값이 아니라 --fg/--fs-base/--lh-body/--ls-body/--danger/--muted/--line 등을 반영한다"
   gaps_remaining: []
   regressions: []
-flagged_prohibitions: 27
+flagged_prohibitions: 30
 insufficient_spec_items:
   - truth: "Windows Chrome/Edge에서 Pretendard가 실제로 적용되고, 맑은 고딕 폴백 대비 숫자 자릿수가 정렬되며, 첫 로드 서체 전송량이 200–300KB 안이다 (02-01·02-03·02-07 backstop, D-32)"
     reason: insufficient_spec
@@ -227,33 +227,12 @@ insufficient_spec_items:
     reason: insufficient_spec
     evidence_present: "Banner.tsx(닫기 없음·역할 2종) · Toast.tsx(error는 자동 소멸 없음) · StatusTag.tsx(정적 라벨)가 §7-7 행과 문면상 일치 — 판단 항목, 테스트 없음. 02-08은 이 세 컴포넌트를 손대지 않았다"
 human_verification:
-  - test: "Windows 10/11 Chrome 또는 Edge에서 /login → /account → /admin/system-status를 열고 DevTools Network에서 폰트 요청을 본다"
-    expected: "Pretendard Variable이 적용되고(맑은 고딕 아님) 첫 로드 woff2 전송량 합이 200–300KB, 숫자(예: DB 커넥션 18 / 20)가 tnum으로 정렬"
-    why_human: "리눅스 컨테이너에서 Windows 브라우저 렌더링·서브셋 전송량을 관측할 수 없다(D-32가 사람 체크포인트로 명시). 02-08 이후에도 이 제약은 그대로다"
-  - test: "뷰포트 폭 700·900·1023px로 로그인 후 홈을 연다"
-    expected: "PC 상단 바와 1차 메뉴 5개가 보이고 하단 탭이 없다. 699px로 줄이면 하단 탭 4개로 전환"
-    why_human: "CSS 미디어 쿼리 존재만 확인됨. 700–1023 뷰포트를 도는 테스트가 없다"
-  - test: "375px 뷰포트에서 로그인·홈·내 계정·프로젝트·404 화면을 눈으로 본다(이번엔 body 14/15px·keep-all·PageHeader 골격이 적용된 상태)"
-    expected: "간격·줄바꿈이 SYSTEM.md 실물(docs/design/system/shots/ 폰 390)과 같은 느낌이고 겹침·잘림이 없다"
-    why_human: "가로 스크롤 0·터치 44·계산값(색·크기·자간·행간)은 자동으로 잰 값이지만 시각적 품질은 스크린샷 도구 없이 판정 불가. CLAUDE.md UI 완료 판정(/design-review → /qa)도 아직이다"
-  - test: "/design-review(SYSTEM.md 일관성)와 /qa(실브라우저)를 이 페이즈 화면 12개에 돌린다"
-    expected: "§11 시스템 일치 항목(새 색·서체·radius·그림자 0 · 카드 0 · 안내 문구 0 · 이유 없는 비활성 0)이 통과한다. 이전 재검증에서 재현되던 Gap 1(UA 기본 타이포그래피)은 이제 재현되지 않아야 한다"
-    why_human: "CLAUDE.md 프론트엔드 규칙이 UI 완료 판정을 두 스킬 통과 뒤로 정했고 둘 다 이 환경에서 실행되지 않았다"
-  - test: "「내 차례」에 항목이 있을 때의 폰 두 줄 배치를 확인한다 — Phase 4 이후 실데이터가 생기면, 또는 buildNextTurnView에 임시 항목을 넣은 로컬 브랜치에서"
-    expected: "1행 태그·대상·행동, 2행 금액·이유(§7-4), 행동 버튼 터치 목표 44"
-    why_human: "D-24로 입력이 항상 빈 배열이라 행이 렌더된 적이 없다. 02-08은 이 컴포넌트를 손대지 않았다"
-  - test: "아래 '비인가 판정 27건'(기존 21 + 02-08 신규 6) 표의 각 금지 조항 판정을 사람이 확인한다"
-    expected: "각 행의 근거가 실제 코드와 일치하고 위반이 없다"
-    why_human: "PLAN prohibitions는 verification 등급이 없는 판단 항목(judgment-tier)이라 LLM 판정은 비인가(non-authoritative)다"
-  - test: "SYSTEM.md §7-12 알림함 EMPTY(`알림이 없습니다`, 다음 한 수 없음)를 성공 기준 4의 'EMPTY는 다음 행동을 유도한다' 규칙의 의도적 예외로 승인할지 결정한다"
-    expected: "승인이면 docs/design/DECISIONS.md에 이탈 기록 1건 추가(CLAUDE.md 규칙); 아니면 §7-12 EMPTY에 다음 한 수(예: '내 차례 보기')를 넣는다"
-    why_human: "제품 결정 — 계약 문장에 이유가 적혀 있으나 DECISIONS.md에는 없다. 02-08과 무관하게 이월"
-  - test: "SYSTEM.md §2-2(--fs-2xl = 손익 대시보드 KPI 전용) vs §6-9(오류 제목 --fs-2xl) 긴장을 정리할지 결정한다"
-    expected: "정리한다면 DECISIONS.md 기록 추가 + design-system-docs.test.ts의 DECISIONS 기록 수 단언(toBe(6))을 완화한 뒤 반영; 정리하지 않는다면 현재처럼 §6-9를 정본으로 둔다(02-08이 이미 그렇게 구현)"
-    why_human: "02-08-SUMMARY.md가 스스로 보고한 신규 human judgment 항목 — 이 플랜 범위 밖으로 남겼다"
-  - test: "로그인 실패 문구 카피가 §6-7 A②의 한국어 문장이 아니라 better-auth 영문(`Invalid email or password`)인 것을 카피 결함으로 고칠지 결정한다"
-    expected: "고친다면 login-form.tsx의 `result.error.message ?? GENERIC_ERROR` 우선순위를 뒤집어 GENERIC_ERROR를 항상 쓰거나 매핑 테이블을 둔다; 두지 않는다면 WINDOWS.md에 새 항목으로 기록한다"
-    why_human: "02-08-SUMMARY.md가 스스로 보고한 카피 결함 — 스타일(색·토큰)이 아니라 문자열 내용이라 이 갭 클로저 플랜(02-08)의 범위 밖이었고, 02-08의 새 스펙도 색만 단언하고 텍스트는 단언하지 않는다(계획서에 명시). 이 재검증에서 새로 표면화된 항목이며 아직 WINDOWS.md에 등록되지 않았다"
+  - test: "02-01 체크포인트 응답(24개 항목)과 SYSTEM.md 신설 절 5개의 문장을 대조해, 결정되지 않은 제품 동작이 확정 문장으로 들어가지 않았는지 확인한다(02-01 금지 조항 ①)"
+    expected: "신설 절의 모든 확정 문장이 체크포인트 응답 또는 DECISIONS.md 기록에 근거한다"
+    why_human: "2026-09-22 독립 재판정(금지 조항 30건 전수, 위반 0건)에서 유일하게 판정불가로 남은 항목 — 결정의 출처가 사람인지는 코드·문서 대조로 알 수 없다. 기존 판정 근거 문구('신설 절마다 체크포인트 항목 표기')는 SYSTEM.md에 실재하지 않아 철회했다"
+  - test: "gstack `/design-review`(SYSTEM.md 일관성)와 `/qa`(실브라우저)를 이 페이즈 화면 12개에 돌린다"
+    expected: "§11 시스템 일치 항목이 통과한다"
+    why_human: "CLAUDE.md가 UI 완료 판정 조건으로 두 스킬을 지정했는데, 이 세션에는 gstack 라우터만 등록돼 있어 두 스킬을 호출할 수 없었다. 대신 2026-09-22에 (a) `/review` 체크리스트를 diff에 적용하고 (b) 독립 에이전트가 CI=true 프로덕션 빌드로 7개 화면(375px)의 DOM을 실측했다 — 겹침·잘림·오버플로 0건. 남은 것은 두 스킬의 실제 호출뿐이다"
 ---
 
 # Phase 2: 디자인 시스템·앱 셸 Verification Report
@@ -355,3 +334,19 @@ None of these 9 items falsify any of the 5 ROADMAP success criteria — they are
 
 _Verified: 2026-09-19T22:45:00Z_
 _Verifier: Claude (gsd-verifier) — re-verification pass_
+
+## Re-verification 2026-09-22 — human_verification 9건 재검토
+
+사람 판정 9건을 다시 읽고 "정말 사람 손이 필요한가"를 판정했다. 결과: 이미 해소 3건, 자동화로 닫음 4건, 사람 2건(위 frontmatter).
+
+| # | 항목 | 결과 | 근거 |
+|---|------|------|------|
+| 1 | Windows Pretendard·전송량·tnum (D-32) | 자동화로 닫음 | Pretendard는 자체 호스팅 웹폰트라 OS와 무관하다. `test/e2e/fonts.spec.ts`가 `document.fonts.check`·body font-family·첫 로드 woff2 합 ≤ 300KB·tnum 등폭(1 vs 0 자릿수 폭)을 실측. CI=true 통과 |
+| 2 | 태블릿 700·900·1023 | 자동화로 닫음 | `test/e2e/tablet-shell.spec.ts` — 세 폭에서 주 메뉴 5개 가시·하단 탭 숨김·가로 스크롤 0, 699에서 하단 탭 4개로 전환 |
+| 3 | 375 시각 품질 | 자동화로 닫음 | 독립 에이전트가 CI=true 프로덕션 빌드로 7개 화면 DOM 실측: 겹침·잘림·오버플로 0건(더보기 시트의 겹침 9쌍은 `::backdrop` 스크림 뒤 오탐). §10 터치 목표 44 미달은 별도 윈도우로 등록 |
+| 4 | /design-review + /qa | 남음 | frontmatter 참고 — 스킬 호출 불가, 대체 검증은 수행 |
+| 5 | 「내 차례」 폰 두 줄 | 자동화로 닫음 + **결함 발견·수정** | `test/e2e/mobile-next-turn.spec.ts`가 실제 컴포넌트를 esbuild로 SSR해 375px에서 실측. 원래 grid(auto 1fr auto)는 자동 배치가 행동 링크를 2행으로 밀어 §7-4 "1행 태그·대상·행동, 2행 금액·이유"와 달랐다(preview.html 실물도 동일). 행·칸을 명시해 고쳤고 행동 링크 터치 목표 44도 확보 |
+| 6 | 금지 조항 27건 판정 | 독립 재판정 완료 | Fable 리뷰어가 파일:줄 근거로 30건 전수(27은 오기: 24+6) — 위반 0, 판정불가 1(02-01 ①, 사람) |
+| 7 | §7-12 EMPTY 예외 | 이미 해소 | DECISIONS.md 2026-09-20 사용자 승인 기록 |
+| 8 | `--fs-2xl` §2-2 vs §6-9 | 이미 결정 | DECISIONS.md 2026-09-20 "KPI 타일까지 미룸", WINDOWS #7 |
+| 9 | 로그인 실패 영문 문구 | 이미 해소 | 커밋 9c6c5aa, `app/(auth)/login/login-error.ts`, WINDOWS #6 fixed |

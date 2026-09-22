@@ -95,6 +95,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - **모델 선택**: 점검·계획·기획·판단·검토는 Opus 5로 한다. Fable 5는 정말 필요한 순간에만 쓴다 — 아키텍처·보안처럼 되돌리기 어려운 결정, Opus 5가 두 번 이상 틀리거나 판단이 갈리는 문제, 사용자가 명시로 요청한 때. 나머지(조사·탐색·코드 실행·정리·이관·문서 생성 등)는 작업에 알맞은 지능을 골라, 오류가 나지 않는 조건으로 필요한 지능만큼만 쓴다(Sonnet → Haiku 순으로 낮춰 본다). 서브에이전트를 띄울 때는 `model`을 반드시 명시하고, GSD `model_profile`은 `adaptive`로 둔다
 - 파일은 Grep으로 위치 찾고 필요한 범위만 Read. 500줄 이상은 range 필수
 - 테스트·빌드 출력은 요약만. 실패 시 실패 부분만 인용
+- **토큰을 아낀다.** 이미 읽은 파일·이미 받은 도구 결과를 다시 조회하지 않는다. 나머지 수단은 위 세 줄(위임·범위 Read·출력 요약)이다
 - 페이즈 끝나면 `/compact` 대신 새 세션. 재개는 `/gsd-progress`
 - 반복 규칙(포맷·린트·테스트)은 문장이 아니라 hooks(`.claude/settings.json`)로
 - 응답은 짧게. 결과와 다음 행동만

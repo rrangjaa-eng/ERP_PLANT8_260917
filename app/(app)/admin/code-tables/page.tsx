@@ -116,7 +116,7 @@ export default async function CodeTablesPage({
         />
       ) : (
         <table className={styles.table}>
-          <caption className="sr-only">코드표</caption>
+          <caption className="sr-only">{`코드표 · ${currentLabel}`}</caption>
           <thead>
             <tr>
               <th scope="col">값</th>

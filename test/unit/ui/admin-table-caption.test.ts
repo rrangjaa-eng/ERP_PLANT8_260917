@@ -49,6 +49,15 @@ describe.each(cases)("$name 화면 — <table>에 시각적으로 숨긴 caption
   });
 });
 
+describe("코드표 화면 — caption이 tableKey에 따라 서로 다른 표를 구분한다(WR-06, 260922-i3k 리뷰)", () => {
+  const source = read("app", "(app)", "admin", "code-tables", "page.tsx");
+
+  it("caption이 currentLabel(화면 부제)을 참조한다 — 고정 문자열 「코드표」만이 아니다", () => {
+    const match = source.match(/<caption[^>]*>([\s\S]*?)<\/caption>/);
+    expect(match?.[1] ?? "").toContain("currentLabel");
+  });
+});
+
 describe("코드표 화면 — 머리글 <th> 전부에 scope=\"col\"이 있다(A-M3)", () => {
   const source = read("app", "(app)", "admin", "code-tables", "page.tsx");
 

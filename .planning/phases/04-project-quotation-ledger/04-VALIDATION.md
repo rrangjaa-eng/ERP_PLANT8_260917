@@ -3,7 +3,7 @@ phase: "04"
 slug: "project-quotation-ledger"
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
 status: draft
-nyquist_compliant: false
+nyquist_compliant: true
 wave_0_complete: false
 created: "2026-09-21"
 ---
@@ -42,28 +42,28 @@ created: "2026-09-21"
 
 ## Per-Task Verification Map
 
-플랜이 아직 없으므로 Task ID 열은 계획 단계에서 채운다. 요구사항 → 테스트 계층 대응은 확정이다.
+계획 완료(13플랜). 아래 표의 각 요구사항을 다루는 플랜을 「Plan」 열에 적었다.
 
-| Requirement | Behavior | Test Type | Automated Command | File Exists |
-|---|---|---|---|---|
-| PROJ-01 | 프로젝트 번호 원자적 증가 · 동시 제출에 중복 없음 | integration | `pnpm vitest run --project integration -t "document counter"` | ❌ W0 |
-| PROJ-02 | 견적가·실행가 입력 시 차익을 서버가 계산 · 브라우저 값 미저장 | unit + integration | `pnpm vitest run --project unit -t "quote-lines"` | ❌ W0 |
-| PROJ-03 | 계약금액 → 부가세·합계 서버 계산 · 입금액 → 공급가 역산 | unit | `pnpm vitest run --project unit -t "grossFromTotal"` | ❌ W0 |
-| PROJ-04 | 상태 전이 게이트(수주중→진행 · 수주중→미수주 · 미수주→진행 · 진행→완료) | unit | `pnpm vitest run --project unit -t "rules.gate"` | ❌ W0 |
-| PROJ-05 | 이전 프로젝트·견적 줄 복사와 기본값 채움 | integration | `pnpm vitest run --project integration -t "project copy"` | ❌ W0 |
-| PROJ-07 | 고객 승인 전 지출결의·구매 요청 비활성 (게이트 경유) | integration + e2e | `pnpm vitest run --project integration -t "quote approval gate"` | ❌ W0 |
-| ADMN-09 | 문서 번호 서식 설정 키 등록·읽힘 | unit | `pnpm vitest run --project unit -t "registry-coverage"` | ✅ 기존 테스트가 새 키를 자동 검사 |
-| UX-04 | 잘못된 입력이 서버 검증으로 안내 · 저장 실패·중복 저장·입력값 유실 없음 | integration + e2e | `pnpm vitest run --project integration -t "quote-lines batch save"` | ❌ W0 |
-| UX-05 | 키보드만으로 견적 줄 입력(Tab/Enter/방향키/⌘C·V/Esc/⌘S) | e2e | `CI=true pnpm playwright test test/e2e/quote-grid-keyboard.spec.ts` | ❌ W0 |
-| RSV-01 | 리저브 입금·출금·잔액 계산 · 음수 잔액 DB 제약 거부 | integration | `pnpm vitest run --project integration -t "reserve ledger"` | ❌ W0 |
-| FX-01 | 통화 선택 시 `exchange_rates` 최신 행이 기본값으로 채워짐 | integration | `pnpm vitest run --project integration -t "exchange rate default"` | ❌ W0 |
+| Requirement | Plan | Behavior | Test Type | Automated Command | File Exists |
+|---|---|---|---|---|---|
+| PROJ-01 | 04-04 · 04-05 · 04-09 · 04-11 | 프로젝트 번호 원자적 증가 · 동시 제출에 중복 없음 | integration | `pnpm vitest run --project integration -t "document counter"` | ❌ W0 |
+| PROJ-02 | 04-05 · 04-09 · 04-12 | 견적가·실행가 입력 시 차익을 서버가 계산 · 브라우저 값 미저장 | unit + integration | `pnpm vitest run --project unit -t "quote-lines"` | ❌ W0 |
+| PROJ-03 | 04-03 · 04-12 | 계약금액 → 부가세·합계 서버 계산 · 입금액 → 공급가 역산 | unit | `pnpm vitest run --project unit -t "grossFromTotal"` | ❌ W0 |
+| PROJ-04 | 04-04 · 04-05 · 04-12 | 상태 전이 게이트(수주중→진행 · 수주중→미수주 · 미수주→진행 · 진행→완료) | unit | `pnpm vitest run --project unit -t "rules.gate"` | ❌ W0 |
+| PROJ-05 | 04-09 · 04-11 | 이전 프로젝트·견적 줄 복사와 기본값 채움 | integration | `pnpm vitest run --project integration -t "project copy"` | ❌ W0 |
+| PROJ-07 | 04-04 · 04-09 · 04-12 | 고객 승인 전 지출결의·구매 요청 비활성 (게이트 경유) | integration + e2e | `pnpm vitest run --project integration -t "quote approval gate"` | ❌ W0 |
+| ADMN-09 | 04-04 | 문서 번호 서식 설정 키 등록·읽힘 | unit | `pnpm vitest run --project unit -t "registry-coverage"` | ✅ 기존 테스트가 새 키를 자동 검사 |
+| UX-04 | 04-09 · 04-12 | 잘못된 입력이 서버 검증으로 안내 · 저장 실패·중복 저장·입력값 유실 없음 | integration + e2e | `pnpm vitest run --project integration -t "quote-lines batch save"` | ❌ W0 |
+| UX-05 | 04-10 · 04-12 | 키보드만으로 견적 줄 입력(Tab/Enter/방향키/⌘C·V/Esc/⌘S) | e2e | `CI=true pnpm playwright test test/e2e/quote-grid-keyboard.spec.ts` | ❌ W0 |
+| RSV-01 | 04-05 · 04-13 | 리저브 입금·출금·잔액 계산 · 음수 잔액 DB 제약 거부 | integration | `pnpm vitest run --project integration -t "reserve ledger"` | ❌ W0 |
+| FX-01 | 04-03 · 04-09 | 통화 선택 시 `exchange_rates` 최신 행이 기본값으로 채워짐 | integration | `pnpm vitest run --project integration -t "exchange rate default"` | ❌ W0 |
 
 ---
 
 ## Wave 0 Requirements
 
-- [ ] `domain/money/index.test.ts` — `round`/`toKrw`/`splitWithRemainder`/`grossFromTotal`/`applyTaxRule` 단위 테스트(세금 규칙 4종 × 절사 표 기반). D-53의 최소단위 정수 표현을 고정한다
-- [ ] `domain/rules/gate.test.ts` — 게이트 규칙 단위 테스트. D-56의 `{ allowed, reason, ruleKey }` 반환 형태와 D-43의 수주중 면제를 고정한다
+- [ ] `test/unit/money/index.test.ts` + `test/unit/money/tax-rule.test.ts` — `round`/`toKrw`/`splitWithRemainder`/`grossFromTotal`/`applyTaxRule` 단위 테스트(세금 규칙 4종 × 절사 표 기반). D-53의 최소단위 정수 표현을 고정한다. **경로 정정(계획 04-03)**: `vitest.config.ts`의 unit project `include`가 `test/unit/**/*.test.ts`뿐이라 `domain/money/index.test.ts`에 두면 러너가 잡지 않는다(실측). 이 저장소에 코로케이트 테스트는 0건이다
+- [ ] `test/unit/rules/gate.test.ts` — 게이트 규칙 단위 테스트. D-56의 `{ allowed, reason, ruleKey }` 반환 형태와 D-43의 수주중 면제를 고정한다. **경로 정정 이유는 위와 같다**
 - [ ] **`test/integration/document-counters.test.ts` 갱신 (blocking)** — `test/integration/document-counters.test.ts:40-43`이 `Object.keys(documentCountersRepo).sort()`를 `["findDocumentCounter","upsertDocumentCounter"]`로 **정확히** 단언한다(실측 확인). 원자적 증가 함수를 더하는 커밋이 이 단언을 함께 고치지 않으면 CI가 즉시 빨개진다
 - [ ] `test/integration/document-counters.test.ts` — 동시 증가(트랜잭션 2개) 통합 테스트 추가
 - [ ] `test/integration/quote-lines-conflict.test.ts` — D-48 조건부 `updatedAt` 충돌 감지
@@ -86,11 +86,16 @@ created: "2026-09-21"
 
 ## Validation Sign-Off
 
-- [ ] 모든 태스크에 `<automated>` verify 또는 Wave 0 의존이 있다
-- [ ] 샘플링 연속성: 자동 검증 없는 태스크가 3연속으로 오지 않는다
-- [ ] Wave 0가 MISSING 참조를 전부 덮는다
-- [ ] watch 모드 플래그 없음
-- [ ] 피드백 지연 < 60s (unit 단계)
-- [ ] `nyquist_compliant: true`를 frontmatter에 설정
+- [x] 모든 태스크에 `<automated>` verify가 있다 — 37개 태스크 전부
+- [x] 샘플링 연속성: 자동 검증 없는 태스크가 0개다
+- [x] Wave 0가 MISSING 참조를 전부 덮는다 — 각 테스트 파일이 그것을 쓰는 플랜의 태스크에서 「먼저 만든다(RED 확인)」로 생성된다
+- [x] watch 모드 플래그 없음 — 전부 `vitest run` · `playwright test`
+- [x] 피드백 지연 < 60s (unit 단계)
+- [x] `nyquist_compliant: true`
 
-**Approval:** pending
+**추가 제약 셋(계획 단계 실측)**
+1. **RTL이 없다.** unit project가 `environment: "node"`이고 `@testing-library/react`가 미설치이며 D-45가 새 의존성 0을 요구한다. 그래서 컴포넌트 검증을 ① 순수 모듈로 뽑아 진짜 단위 테스트 ② 렌더 문자열·CSS는 소스 단언(`toast-timer.test.ts`·`system-md-compliance.test.ts` 선례) ③ 실제 DOM은 `CI=true` E2E 셋으로 갈랐다. 04-08·04-10이 계약의 무게를 의도적으로 순수 모듈(`column-fold.ts` · `grid-keys.ts` · `tsv.ts`)로 옮긴 이유가 이것이다
+2. **테스트 파일은 전부 `test/` 아래다.** 코로케이트 테스트가 이 저장소에 0건이고 unit project의 `include`가 그것을 잡지 않는다
+3. **`db/migrations/`를 건드리는 플랜은 04-05 하나다.** 같은 웨이브의 두 플랜이 `pnpm db:generate`를 돌리면 파일 번호가 충돌한다
+
+**Approval:** approved — 13플랜 전부에 `<automated>` verify 존재 확인(2026-09-22)

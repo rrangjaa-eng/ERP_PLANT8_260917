@@ -103,4 +103,29 @@ test.describe("PC 사용자 메뉴 → /admin 인덱스로 클릭만으로 관�
       await expect(page.getByRole("link", { name: label, exact: true })).toBeVisible();
     }
   });
+
+  // WR-04·WR-05 회귀 방지 — 지금까지 위 세 테스트는 전부 sysadmin(권한표 전 항목
+  // 허용)이라 MENUS × can() 필터·groups.length === 0 → notFound()는 한 번도
+  // 실행되지 않았다(role-menu.test.ts의 adminIndexGroups 단위 테스트는 이 화면
+  // 자체를 렌더하지 않는다). 관리자 메뉴가 0개인 계급(기획 PM, seed에서 admin.*
+  // view 권한을 전혀 받지 않는다)으로 실제 화면을 눌러 확인한다.
+  test("관리자 메뉴가 0개인 계급(기획 PM)은 사용자 메뉴에 「관리」가 없고 /admin은 404다", async ({
+    page,
+  }) => {
+    const employee = await createFixtureUser({ roleId: "role-pm" });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(employee.email);
+    await page.getByLabel("비밀번호").fill(employee.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.getByRole("button", { name: "E2E Employee" }).click();
+    const menu = page.getByRole("menu");
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: "관리", exact: true })).toHaveCount(0);
+
+    const response = await page.goto("/admin");
+    expect(response?.status()).toBe(404);
+  });
 });

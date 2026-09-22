@@ -10,6 +10,9 @@
   "enabledPlugins": {
     "superpowers@superpowers-marketplace": true
   },
+  "env": {
+    "BASH_MAX_TIMEOUT_MS": "1200000"
+  },
   "hooks": {
     "SessionStart": [
       {

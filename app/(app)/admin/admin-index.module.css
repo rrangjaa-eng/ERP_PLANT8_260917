@@ -8,6 +8,10 @@
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   color: var(--muted);
+  /* §7-3 그룹 머리글 행(SYSTEM.md 「위 12px 여백, 아래 1px --line-strong」)의
+     아래 선. 이게 없으면 항목 사이 --line 잔선과 무게가 같아 세 그룹이
+     시각적으로 갈라지지 않는다. */
+  border-bottom: var(--line-w) solid var(--line-strong);
 }
 
 .list {

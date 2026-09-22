@@ -28,7 +28,7 @@ export function AccountNumberCell({
   });
 
   if (!masked) {
-    return <span className={styles.masked} />;
+    return <span className={styles.masked}>—</span>;
   }
 
   const display = revealed ?? masked;

@@ -179,3 +179,37 @@ test.describe("거래처 수정 왕복 (MAST-01 · M-5)", () => {
     await expect(page.getByText(after)).toHaveCount(0);
   });
 });
+
+// 260922-o2b 후속(/review + 독립 DOM 감사) — SYSTEM.md §2-4 「값이 없으면 —
+// 하나. 빈칸을 두지 않는다」. account-number.tsx의 AccountNumberCell이
+// masked가 빈 문자열("" — 계좌번호 미등록)일 때 빈 <span/>을 그려 빈칸으로
+// 보였다.
+test.describe("거래처 목록 — 계좌번호 없음 빈 칸 em dash (§2-4 후속)", () => {
+  test("계좌번호 없이 등록한 거래처의 계좌 칸이 빈칸이 아니라 —를 보인다", async ({ page }) => {
+    const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto("/admin/vendors");
+    await page.getByRole("link", { name: "거래처 등록" }).click();
+
+    const vendorName = `E2E계좌없음-${Date.now()}`;
+    await page.getByLabel("이름").fill(vendorName);
+    await page.getByRole("button", { name: "거래처 등록" }).click();
+    await expect(page.getByText(vendorName)).toBeVisible();
+
+    const row = page.locator("tr", { hasText: vendorName });
+    const accountCell = row.locator("td").nth(3);
+    await expect(accountCell).toHaveText("—");
+    // 계좌번호가 없으므로 「번호 보기」 버튼도 렌더되지 않는다(해제할 값이 없다).
+    await expect(row.getByRole("button", { name: "번호 보기" })).toHaveCount(0);
+
+    // 정리 — 계좌번호 없는 거래처는 표를 넓히지 않지만, 목록을 늘리지 않는다.
+    await row.getByRole("button", { name: "숨기기" }).click();
+    await expect(page.getByText(vendorName)).toHaveCount(0);
+  });
+});

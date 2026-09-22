@@ -240,6 +240,34 @@ describe("adminIndexGroups — 「관리」 인덱스 3그룹 (SYSTEM.md §6-10 
     expect(coveredKeys).toEqual(new Set(ADMIN_MENU_KEYS));
   });
 
+  // WR-07(260922-i3k 리뷰) 회귀 방지 — 위 검증은 라벨 집합·href 정규식·href에서
+  // 역산한 키 집합을 각각 따로 본다. 같은 그룹 안 두 항목의 href만 서로 맞바꿔도
+  // (예: 사람 → /admin/vendors, 거래처 → /admin/people) 세 축 어디도 깨지지
+  // 않는다 — 이 테스트는 "이 라벨의 href는 이것"이라는 짝을 직접 단언한다.
+  const KEY_BY_LABEL: Record<string, string> = {
+    사람: "admin.people",
+    거래처: "admin.vendors",
+    "법인카드 마스터": "admin.corp-cards",
+    코드표: "admin.code-tables",
+    권한표: "admin.permissions",
+    "정보 노출표": "admin.visibility",
+    "시스템 설정": "admin.settings",
+    "시스템 상태": "admin.system-status",
+    "행동 로그": "admin.action-log",
+    보관함: "admin.archive",
+  };
+
+  it("항목마다 라벨과 href가 정확히 짝지어져 있다 — 같은 그룹 안 두 항목의 href를 맞바꿔도 잡아낸다", () => {
+    const groups = adminIndexGroups({ roleId: SYSADMIN_ROLE_ID, allowedMenus: ADMIN_MENU_KEYS });
+    const allItems = groups.flatMap((group) => group.items);
+    expect(allItems).toHaveLength(Object.keys(KEY_BY_LABEL).length);
+    for (const item of allItems) {
+      const key = KEY_BY_LABEL[item.label];
+      if (!key) throw new Error(`KEY_BY_LABEL에 라벨 '${item.label}'이 없다`);
+      expect(item.href).toBe(`/admin/${key.slice("admin.".length)}`);
+    }
+  });
+
   it("admin.settings(관리자용 설정 화면)는 사용자 자신의 「설정」(/settings)과 라벨·경로가 다르다", () => {
     const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ["admin.settings"] };
     const entry = adminIndexGroups(viewer)[0]?.items[0];

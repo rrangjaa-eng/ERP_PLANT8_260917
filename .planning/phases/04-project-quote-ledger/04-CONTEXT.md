@@ -1,0 +1,207 @@
+# Phase 4: 프로젝트·견적 원장 - Context
+
+**Gathered:** 2026-09-22
+**Status:** Ready for planning
+
+<domain>
+## Phase Boundary
+
+기획 PM이 프로젝트를 등록하고 엑셀처럼 견적 줄을 입력하면 차익이 서버에서 계산되고, 사전 견적(총 매출 예상가) → 상세 견적 차수와 고객 승인 게이트, 매출 칸, 수주중 → 진행 → 완료(정산) + 미수주 상태 전환까지 프로젝트의 돈 뼈대가 선다. 모든 돈 칸은 `domain/money` 하나의 금액 모델(통화·환율·원화 환산액)을 쓰고, 게이트 판정은 `domain/rules.gate` 하나를 지난다. 경영관리는 클라이언트별 리저브 대장을 기록한다. 인트라넷 추출·변환 스크립트(`scripts/migrate/` extract·transform)가 이 페이즈에서 시작되어 실제 데이터가 픽스처가 된다.
+
+요구사항 11개: PROJ-01·02·03·04·05·07, ADMN-09, UX-04·05, RSV-01, FX-01. 성공 기준 7개는 `.planning/ROADMAP.md` Phase 4 절.
+
+**범위 밖:** 지출결의 문서 자체(Phase 5), 지급·증빙·법인카드(Phase 6), 정산 결재 문서(Phase 5 D3), 미결 점검(PROJ-06, Phase 6), 손익 계산·effectiveCost(Phase 9), 리저브 충당(RSV-02, Phase 9), 커스텀 필드 관리 UI(Phase 10), 적재·검증·전환(Phase 8), 관리자 폼 8개의 `ui/form` 이관(Phase 7).
+
+**로드맵과 다른 점 — 계획 전에 반영해야 할 것:** 사용자가 `docs/inputs/phase-04-project-quote.md` §1의 요구사항 보강 후보를 **반영**으로 확정했다(D-41). `/gsd-plan-phase 4` 전에 REQUIREMENTS.md PROJ-04·EXP-08·PNL-07과 ROADMAP.md Phase 4 성공 기준 4를 `gsd_run`으로 고친다(수동 편집 금지).
+
+</domain>
+
+<decisions>
+## Implementation Decisions
+
+Phase 1의 D-01~D-18, Phase 2의 D-19~D-32, Phase 3의 D-33~D-40은 그대로 유효하다. 번호를 이어 붙인다. 이번 논의는 사용자가 다섯 영역 44문항에 직접 답했다(2026-09-22). 권장안 외의 선택은 항목에 표시한다.
+
+### 프로젝트 상태 흐름
+
+- **D-41:** **프로젝트 상태는 수주중 → 진행 → 완료(정산) + 미수주 네 가지다.** `docs/inputs/phase-04-project-quote.md` §1의 보강 후보를 반영한다. 상태 값은 Phase 3 코드표 `project_status`에 두고, 상태 전이 규칙은 코드 층(`domain/`)이다. 수주중에 쌓인 비용은 진행으로 바뀌면 그대로 프로젝트 비용이 되고, 미수주로 닫히면 팀 손익의 미수주 비용이 된다(Phase 10). — **Reversibility:** costly — REQUIREMENTS PROJ-04·EXP-08·PNL-07과 ROADMAP 기준 4를 고치고, Phase 5·9·10의 게이트·손익 경로가 이 네 상태를 전제한다.
+- **D-42:** **프로젝트 번호는 등록 시 부여한다**(수주중 포함). 미수주 건은 결번이 되며 결번 허용은 ROADMAP 기준 1의 확정 규약이다. 부여는 `document_counters` 행 잠금(`UPDATE … RETURNING`)이며 지출결의 번호(Phase 5)와 같은 카운터를 쓴다.
+- **D-43:** **수주중 상태에서는 고객 승인 게이트를 걸지 않는다.** `rules.gate`가 `ctx.status === '수주중'`이면 고객 승인 규칙을 통과시킨다. 수주 비용(PT 제작비 등)은 어느 줄에서든 지출결의로 나갈 수 있다(Phase 5). 진행으로 바뀌는 순간부터 현재 차수의 승인 여부가 게이트에 걸린다.
+- **D-44:** **미수주 → 진행 복귀를 허용한다.** 번호·견적 줄·비용이 그대로 살아나고 상태 변경 이력은 행동 로그에 남는다. 팀 손익(Phase 10)은 현재 상태 기준으로 계산한다.
+- **D-45:** **미수주는 잠기지 않는다**(권장안 아님 — 사용자 선택). 미수주 뒤에도 PM이 지출결의를 올릴 수 있다(뒤늦게 도착하는 PT 청구서 등). 잠기는 상태는 완료(정산) 하나뿐이다.
+- **D-46:** **상태 전환 주체는 팀장 이상이다** — 수주중 → 진행, 수주중 → 미수주, 진행 → 완료 전부(권장안 아님 — 사용자가 "각 기획팀의 팀장까지만"을 골랐다). PM은 전환할 수 없다. 권한표 '상태 변경' 동작의 기본값이 팀장·본부 책임자·대표·경영관리다. Phase 5가 완료 전환을 정산 결재 문서(D3: 경영관리 기안 → 대표 승인)로 바꿀 때 전환 함수는 그대로 두고 호출자만 결재 승인으로 바꾼다 — **그때 기안자 정의(D3의 경영관리 vs 이 결정의 팀장)를 사용자에게 다시 확인해야 한다.**
+- **D-47:** **완료(정산) 뒤 경영관리가 고칠 수 있는 것**(권장안보다 넓음 — 사용자 선택): ① 매출 발행·입금 줄(D-57), ② 결재 통과 건의 지급 완료 처리(Phase 6), ③ '견적 외 비용' 종류의 줄 추가로 원가 보정(D-48). 견적 줄 편집·PM의 새 지출결의는 잠긴다. 완료 잠금 게이트에 "경영관리의 견적 외 비용 줄 추가" 예외가 있고, 이 예외도 `rules.gate`를 지난다.
+- **D-48:** **완료·미수주 뒤 원가 보정 줄은 '견적 외 비용' 줄과 같은 종류다.** 견적가 0인 견적 줄의 한 종류 하나로 통일하고 별도 '조정' 종류를 두지 않는다. 완료된 프로젝트에서는 경영관리만 이 종류를 추가할 수 있다. 실행가 음수를 허용한다(환불·할인, EXP-14).
+- **D-49:** **수주중 단계에서 기간(시작일·종료일)은 선택이고, 수주중 → 진행 전환이 기간 입력을 요구한다**(게이트 규칙). `docs/inputs` §9의 "기간 필수"는 진행부터 적용된다. 연도 귀속·종료 알림이 종료일을 쓰므로 진행 이후에는 반드시 있다.
+- **D-50:** **상태 변경 이력은 행동 로그(`action_log`)에 '상태 변경' 종류로만 남긴다.** 프로젝트 상세에는 현재 상태 + 마지막 변경일만. 새 표·새 섹션 없음.
+- **D-51:** **프로젝트 목록(§6-1)의 기본 보기는 전체 상태, 그룹은 종료일 기준 월별이다**(권장안 아님 — 사용자 선택). 상태 필터는 표 위 한 줄. 인트라넷과 가장 비슷한 보기다. 125건이 한 번에 열리므로 「더 보기 50건」 3차 버튼(§6-1)을 쓴다.
+
+### 차수와 줄의 연결
+
+- **D-52:** **사전 견적 = 프로젝트의 총 매출 예상가 한 칸이다**(사용자 정정, "맞다" 확인). 견적 줄이 없는 프로젝트 속성이고, 등록 폼에서 선택 입력이며, `domain/money` 금액 모델을 쓴다. 고객 승인 표시가 없고 이 칸에서 지출결의를 올릴 수 없다. **"차수"는 상세 견적 1차·2차부터만 세고, PROJ-07의 "차수마다 고객 승인 표시"는 상세 차수에만 적용한다.** 진행 중 손익 분모는 상세 차수가 없을 때 이 값을 쓴다(Phase 9).
+- **D-53:** **새 차수는 이전 차수 전체 복사 후 편집이다.** §6-2의 「복사해 새 차수」 버튼 하나. 복사된 줄은 원본 줄 id를 계보(`copied_from_line_id`)로 가진다. 빈 차수는 만들지 않는다. 차수 되돌리기는 불가(`docs/inputs` §2 확정).
+- **D-54:** **최신 차수만 '현재 차수'다.** 지출결의·합계·손익은 전부 현재 차수 기준이고, 최신 차수가 미승인이면 그 프로젝트의 지출이 승인 표시까지 멈춘다. 승인 차수와 편집 중 차수가 동시에 살아 있는 상태는 없다. 게이트 규칙이 하나로 단순해지고 승인을 덜 받으려는 습관을 막는다. — **Reversibility:** costly — Phase 5·6·9가 "현재 차수 = 최신 차수" 하나를 전제한다.
+- **D-55:** **이전 차수 줄의 지출결의·증빙은 계보로 현재 차수의 대응 줄에 이어 보인다.** 문서 행은 옮기지 않는다. 손익 비용 우선순위(증빙 > 승인액 > 실행가)도 계보를 따라 대응 줄에서 계산된다(Phase 9). 새 차수에서 지운 줄의 문서는 '견적 외 비용'처럼 프로젝트에 남는다.
+- **D-56:** 차수의 **고객 승인 표시는 담당 PM이 승인일과 함께 켠다**(결재 없음, 행동 로그). 승인 증빙 첨부는 선택(Phase 6). **취소는 그 차수에 연결 문서(지출결의·구매 요청)가 없을 때만** 가능하고, 있으면 새 차수로 고친다. 연결 문서 없는 줄 삭제는 Phase 3 보관함 규약(`archived_at`)이고, 연결 문서 있는 줄은 PROJ-02대로 '취소' 상태(견적가 0)만이다. 표의 Delete 키 = 확인 모달 후 보관. **견적 번호 `26001-1차`는 표시용 파생값**(프로젝트 번호 + 차수 순번)이며 카운터·저장 컬럼이 없다.
+
+### 매출 칸·리저브 대장
+
+- **D-57:** **매출 칸의 작성 주체가 갈린다:** 계약 금액(공급가액)은 PM, 세금계산서 발행과 입금은 경영관리. 권한표 동작 둘(매출 계약 쓰기 / 매출 정산 쓰기). 발행액·입금액은 정보 노출표 항목(기획본부 기본 숨김). 위치는 §6-2대로 프로젝트 상세의 섹션이다.
+- **D-58:** **발행과 입금은 각각 줄 목록이다**(날짜·금액·메모). PROJ-03의 "최소 칸"은 지키되 분할 입금(계약금·잔금)을 메모로 때우지 않는다. 입금 합계가 발행액과 다르면 미수 표시. 발행액은 공급가액 입력 + 부가세·합계 서버 계산, 입금액만 통장 합계 입력 + `grossFromTotal()` 역산 + 차이 표시(ROADMAP 기준 5). 매출·조정은 음수 허용.
+- **D-59:** **리저브 대장은 손익 메뉴 안의 화면 하나(`/pnl/reserves`)다.** 손익 메뉴는 D-23 역할→메뉴 매핑상 경영관리·대표·팀장만 보므로 "기획본부 기본 숨김"이 메뉴 수준에서 맞고, Phase 9의 매출 충당(RSV-02)이 같은 자리에 붙는다.
+- **D-60:** 리저브 줄 = 날짜·입출금 구분·금액(Money 모델)·프로젝트(선택)·메모 **+ 증빙 종류(Phase 3 코드표)·세금계산서 번호**(권장안보다 넓음 — 사용자 선택). 잔액은 서버 계산 열. 증빙 첨부는 Phase 6. **직접 수정 허용(행동 로그), 삭제는 보관함, 수정·삭제 뒤 어느 날짜든 잔액이 음수가 되면 서버가 거부하고 이유를 보인다**(잔액 음수 금지 DB 제약 = `docs/inputs` §6 확정).
+
+### 엑셀식 표(§7-3)
+
+- **D-61:** **표는 자체 구현이다.** HTML table + 키보드 포커스 이동·범위 선택·붙여넣기를 직접 쓴다. 새 런타임 의존성 0(D-19·D-25·D-39의 연장). 근거: §7-3 계약(sticky 머리글·오류 셀 inset 선·외화 2행·폰 칸 접기)이 이미 상세해 그대로 만들 수 있고, 규모가 열 10여 개·줄 수십 개라 가상 스크롤이 필요 없으며, 완성 그리드는 토큰·마크업 계약(D-20 stylelint)과 싸운다. — **Reversibility:** costly — 이후 페이즈의 표(법인카드·목표)가 이 컴포넌트를 쓴다.
+- **D-62:** **대분류 = 그룹 머리글, 소분류 = 줄의 열 하나**(코드표 자동완성). 대분류는 소분류에서 파생되고 그룹 안에서 새 줄을 만들면 대분류가 채워진다. 그룹 순서는 코드표 `sort_order`, 줄 순서는 입력 순서 값 + Alt+↑/↓ 이동.
+- **D-63:** **견적가 = 수량(기본 1) × 단가, 서버 계산·저장.** 실행가는 금액 한 칸. 차익 = 견적가 − 실행가도 서버 계산. 브라우저 계산값은 저장되지 않는다(PROJ-02). 이전 데이터는 수량 1·단가 = 옛 금액으로 변환.
+- **D-64:** 열 구성: 번호 · 소분류 · 항목 · 거래처(선택, 비우면 `—`) · 수량 · 단가 · 견적가 · 실행가 · 차익 · 상태 · 비고. **거래처는 줄에서 선택이고 지출결의·구매 요청을 올릴 때 게이트가 요구한다**(Phase 5). **상태 열과 상태 태그(§7-5)는 지금 만들고 값은 미착수·취소 둘**이며, 지출결의 중·증빙 없음·지급 완료는 Phase 5·6이 연결 문서에서 파생한다(저장 상태 아님). **비고는 자유 텍스트 한 열**, PC 말줄임·폰 P3. 외화 편집은 §7-3대로 외화 금액·환율 두 칸이고 원화는 계산값이다. 폰 P1은 항목·실행가·상태(§6-2).
+- **D-65:** **충돌 감지는 줄 단위 `version`이다.** 저장 시 읽은 버전과 다르면 그 줄만 충돌 표시(실제 바뀐 값·사람·시각, §7-3 문구). 충돌이 하나라도 있으면 §7-3대로 전부 거부.
+- **D-66:** **연결 문서가 있는 줄의 금액 셀(수량·단가·실행가·환율)은 읽기 전용이다**(항목명·비고는 편집 가능). 고치려면 새 차수. 260907의 "제출 후 실행가 잠김"과 같고, Phase 5의 "분할 회차 합계 ≤ 실행가" 규칙과 어긋나지 않는다.
+- **D-67:** **엑셀 붙여넣기를 지원한다.** 클립보드 TSV를 활성 셀부터 오른쪽·아래로 채우고, 숫자는 쉼표·공백 제거, 문자 열은 그대로, 표를 넘으면 새 줄 자동(§7-3). PM이 엑셀로 만든 견적을 옮기는 가장 빠른 길이다.
+- **D-68:** **미저장 편집은 이탈 경고(`beforeunload`) + 브라우저 저장소 임시 보관이다.** 다시 열면 「저장 안 한 편집 N칸 · 복원 / 버림」. 서버 초안 없음. UX-04 "입력값 유실 없음"을 직접 만족한다.
+- **D-69:** **폰에서 줄을 탭하면 열리는 시트(§7-8)는 보기 + 「지출결의 올리기」(Phase 5에서 활성)만이다.** 편집은 PC(§6-2 "폰 셀 편집 없음" 유지).
+
+### 프로젝트 복사·환율
+
+- **D-70:** **프로젝트 복사는 기본 정보(클라이언트·팀·PM·프로젝트명) + 현재 차수 줄(금액 포함)이다.** 새 프로젝트는 상세 1차·미승인·수주중으로 시작한다. 기간·번호·사전 견적·매출 칸·연결 문서·줄 계보는 따라오지 않는다. 다른 프로젝트의 줄은 표 간 범위 복사·붙여넣기(D-67)로 가져오며 별도 가져오기 모달은 없다(PROJ-05 충족).
+- **D-71:** **통화별 최근 환율 설정 키는 단일값·통화별 키(`fx.recent_rate.USD`)이고, 환율을 적은 모든 저장(견적 줄·매출·리저브, 이후 지출결의·카드)에서 자동 갱신된다.** 환율 칸을 건드리지 않은 저장은 갱신하지 않는다. 관리자는 설정 화면에서도 고친다. 이력형이 아닌 이유: 실제 환율은 각 행에 저장되므로 키는 기본값일 뿐이다. 통화는 USD + KRW(`docs/inputs` §7), 통화 추가는 키 추가.
+
+### 이전 데이터 추출·변환
+
+- **D-72:** **extract의 입력은 MySQL 덤프 파일이다.** 리포 밖 경로를 환경 변수(`INTRANET_DUMP_PATH`)로 받는다. 네트워크·계정 불필요, 재실행 결정적. 인트라넷 RDS 직접 접속은 하지 않는다(고정 IP 없음, 드라이버 의존성). Phase 8 델타 이전은 새 덤프로.
+- **D-73:** **amount_basis 판정은 스크립트 규칙 + 경영관리 확인이다.** 스크립트가 규칙(지급액÷견적가 비율 1.1 근접 등)으로 행마다 공급가/합계/불명을 적고 불명 목록을 보고서로 낸다. 경영관리가 표본 20~30건을 위하고와 대조해 규칙을 확정한다(플랜의 사람 체크포인트). 불명은 '계산 불가'로 남긴다(Eng OV-7).
+- **D-74:** **결과는 표별 JSON 픽스처(리포 커밋, 개인정보 열 제외) + Markdown 보고서**(행수·amount_basis 분포·외화 건수·불명 목록). Phase 8이 같은 보고서 형식에 load·verify를 덧붙인다. 이전 문서 번호는 옛 id에서 결정적으로 파생(예약 범위).
+
+### Claude's Discretion
+
+사용자가 "Claude 재량"으로 남긴 것(2026-09-22):
+
+- **페이즈 크기** — Phase 3 D-33 선례를 따른다: 쪼개지 않고 `/gsd-plan-phase 4`가 5플랜 상한을 넘겨 5~7플랜으로 나뉘는 것을 허용한다. ROADMAP Overview의 "5플랜을 넘기면 리저브 대장(RSV-01)을 별도 페이즈로 뗀다"는 실제로 7플랜을 넘길 때만 발동한다. 절단선은 리저브 대장(D-59·D-60) 하나로 고정.
+- **`ui/form`·`ui/select` 제작 범위** — Phase 3 이월(A-H2·A-H3, `03-OPEN-ITEMS.md`). 프로젝트 등록 폼이 §6-3 폼 템플릿(폼 max 720·칸 폭 280/480/200·라벨 왼쪽 96)과 §7-2 오류 표시(네이티브 `required` 위임 걷어내기)를 `ui/form`·`ui/select`로 만든다. 관리자 폼 8개와 `/account` 이관은 Phase 7이다. 이 페이즈에서 만드는 폼(프로젝트 등록·매출 줄·리저브 줄)만 새 컴포넌트를 쓴다.
+- **문서 번호 서식 설정 키 형태**(ADMN-09) — 문서 종류별 키 묶음 대 JSON 한 개. 서식은 `docs/inputs` §5(260907 안: `26001` · `26001-0001` · `26GA-0007` · `26001-C0001` · `26001-K0001`)를 시드로. 서식을 바꿔도 매긴 번호는 유지, 연도 전환 시 순번 리셋은 `document_counters.period`가 담당.
+- 견적 줄·프로젝트·리저브 표의 `custom_fields` JSONB 적용 방식(Phase 3 규약: 저장 전 zod 조립 검증·GIN 인덱스, 관리 UI 없음).
+- 목록·검색 인덱스 목록(`docs/ARCHITECTURE.md`에 적는다, 300줄 상한), p99 500ms 측정 방법, 요청 본문 1MB 한도 위치.
+- `domain/money` 함수 시그니처 세부(`Money` branded 타입·`round`·`toKrw`·`splitWithRemainder`·`grossFromTotal`·`applyTaxRule`)와 `getSettingValue(def, {asOf})` 호출 시 기준일 결정(ARCHITECTURE §4-2: 원천징수·회사대납 = 지급일, 부가세 = 증빙일).
+- `rules.gate(doc, rule, ctx)` 시그니처와 규칙 등록 방식(고객 승인·완료 잠금·수주중 예외·기간 필수·거래처 필수를 이 페이즈가 등록, 증빙 필수·마감·legacy 면제는 이후 페이즈).
+- 표 컴포넌트의 파일 배치·서버/클라이언트 분할·범위 선택 모델, 브라우저 임시 보관의 키 설계.
+- 프로젝트 상세(§6-2)의 섹션 순서(차수·매출·연결 문서 자리), 네 숫자 줄(PNL-01)은 Phase 9까지 비워 둔다.
+
+### Reviewed Todos (not folded)
+- "Phase 3 실행 전 결정 4건의 확정 답 (전부 A)" — Phase 3 체크포인트 답변 기록이라 Phase 4와 무관(사용자 확인 2026-09-22).
+
+</decisions>
+
+<canonical_refs>
+## Canonical References
+
+**Downstream agents MUST read these before planning or implementing.**
+
+### 이 페이즈의 범위·기준
+- `.planning/ROADMAP.md` — Phase 4 절(성공 기준 7개 + 트레일링 문단), Overview의 리저브·외화 배치 문단과 5플랜 상한 규칙, Phase 3 절의 핵심 스키마 규약 문단(보관함·행동 로그·`custom_fields`·문서 번호 카운터)
+- `.planning/REQUIREMENTS.md` — PROJ-01·02·03·04·05·07, ADMN-09, UX-04·05, RSV-01, FX-01, PNL-09(공급가액 기준), EXP-14(음수 규칙). **D-41이 PROJ-04·EXP-08·PNL-07 보강을 요구한다**
+- `docs/inputs/phase-04-project-quote.md` — **사용자 문답 확정값.** §1 상태 4단계(D-41이 채택), §2 차수 되돌리기 불가, §3 게이트 기본 켬, §4 매출 칸, §5 문서 번호 서식(260907 안), §6 리저브(만료 없음·잔액 음수 금지), §7 외화(USD만·최근 환율 = 마지막 입력값), §8 '견적 외 비용', §9 등록 필수 칸
+- `docs/inputs/README.md` — 세 층(마스터 데이터 / 설정 키 기본값 / 코드) 구분과 인스턴스 복제 원칙. 상태 전이·비용 우선순위는 코드 층
+
+### 아키텍처·단일 지점
+- `docs/ARCHITECTURE.md` — §2(`domain/money`·`domain/rules.gate` 자리), §4-1(판정 4함수·`scopeFor` 서술자·`project()` 출구), §4-2(`getSettingValue(def, {asOf})` 계약 — 이 페이즈가 기준일을 넘긴다), §4-5(`custom_fields` 규약), §4-6(문서 번호 카운터 표 — 증가·잠금은 이 페이즈), §8 린트 규칙(`plant8/money-boundary`가 이미 켜져 있고 모듈만 없다), §10. 300줄 상한(`test/unit/docs-limits.test.ts`)
+- `docs/designs/plant8-erp-roadmap-eng-review-260917.md` — Issue 3·8·9·10·13(money·gate·카운터·custom_fields), OV-7(amount_basis)·OV-8(외화 건수)
+- `docs/designs/plant8-erp-roadmap-ceo-review-260917.md` — D4(원화 정수·서버 단일 반올림·분할 보정), OV-1(추출·변환은 Phase 4부터), OV-7(표 구현 선택은 Phase 4 계획)
+- `.planning/research/ERP260907-CONTEXT.md` · `docs/research/erp260907-money-flow.md` — 260907의 업무 규칙(실행가 잠김·견적 줄 = 예정 비용의 유일한 그릇). **화면·정보구조는 참고 금지**
+- `docs/research/repo-audit-260917.md` §1b — 인트라넷 표·행수(`QUOTATION_LINE` 1,379·`fone_project` 125·분류 16/113), 덤프 파일명 `db_backup_260915.sql`, 차익 불일치 66줄
+
+### 디자인
+- `docs/design/SYSTEM.md` — §2-4 숫자·금액·날짜 형식(외화 두 줄 병기·`계산 불가`), §6-1 목록 = 원장(그룹 머리글·더 보기 50건·필터 한 줄·등록은 `?new=1` 토글), §6-2 상세 = 견적 원장(섹션 구조·힌트 줄·폰 칸 접기), §6-3 폼 템플릿(`ui/form` 계약의 출처), §7-2 입력·오류, **§7-3 표 = D-61~D-69의 계약 전문**, §7-5 상태 태그, §7-7 다섯 상태, §7-8 모달·시트(폰 행 시트), §7-9 단축키 힌트 줄, §10 접근성(`role=grid`), §11 검증 목록
+- `docs/design/tokens.css` — 유일한 토큰 출처(D-21). 새 색·서체·radius 금지(stylelint, D-20)
+- `docs/design/DECISIONS.md` — 시스템 이탈 기록처. 표 구현 중 §7-3과 어긋나면 먼저 여기에 기록하고 SYSTEM.md를 고친다(D-27)
+- `docs/DESIGN.md` §4 — 새 화면·컴포넌트 절차
+
+### 앞 페이즈의 잠긴 결정·이월
+- `.planning/phases/03-permissions-settings-masters/03-CONTEXT.md` — D-35(can/visible 독립), D-38(누수 스캔 레지스트리 — 이 페이즈의 액션·DTO 전부 등록), D-39·D-40(표는 Phase 4, 격자는 별개)
+- `.planning/phases/03-permissions-settings-masters/03-OPEN-ITEMS.md` — **Phase 4로 미룬 것:** 폰 375px 표 칸 접기(DOM 감사 2·6·7), `ui/form`·`ui/select` 제작(A-H2·A-H3), /review M-4·L-1, /cso R2·R3·R5. 이 페이즈 계획이 이것들을 어디에 넣는지 명시해야 한다
+- `.planning/phases/02-design-system-app-shell/02-CONTEXT.md` — D-19(CSS Modules), D-22(빈 라우트 EMPTY — `app/(app)/projects/page.tsx`가 이 페이즈의 자리), D-23(역할→메뉴, D-59가 의존), D-25·D-26(`ui/` 경계)
+- `.planning/phases/01-deploy-skeleton-login/01-CONTEXT.md` — 리뷰 확정 재량(CI는 `pull_request`만, `.planning/**`·`docs/**`만 바뀐 PR은 CI 건너뜀)
+
+### 스키마·설정 코드
+- `db/schema/document-counters.ts` · `repositories/document-counters.ts` — 규약만 있는 표(`(counter_key, period)` PK, `value`). 증가 함수 없음
+- `db/schema/code-tables.ts` — `code_items.tax_rule` jsonb(`domain/code-tables/tax-rule.ts`의 `taxRuleSchema`가 정본) — `applyTaxRule()`이 읽는다
+- `domain/settings/keys.ts` · `domain/settings/registry.ts` — `tax.*` 14개(세율·기준일·절사·최소 징수), `project.complete_override.*` 3개(Phase 6용). 이 페이즈가 더할 키: 문서 번호 서식(ADMN-09), `fx.recent_rate.<통화>`(D-71), 고객 승인 게이트 on/off(PROJ-07)
+- `db/schema/field-definitions.ts` · `domain/custom-fields/build-schema.ts` — `custom_fields` 검증 조립
+- `domain/org/index.ts` `teamAtDate()` — 사용일 시점 팀(Phase 5·10이 쓴다, 이 페이즈는 프로젝트 팀 FK만)
+- `.squawk.toml` — 예외 4건. 새 표는 GIN 인덱스를 생성 마이그레이션에 포함(§4-5)
+
+</canonical_refs>
+
+<code_context>
+## Existing Code Insights
+
+### Reusable Assets
+- `lib/actions/client.ts`(`authedActionClient`) — 모든 Server Action 진입점. 이 페이즈의 액션(프로젝트·차수·줄 일괄 저장·상태 전환·매출·리저브)이 전부 여기서 만들어지고 D-38 누수 스캔 레지스트리에 등록된다
+- `domain/permissions`의 `can`/`visible`/`scopeFor` + `project(viewer, row, dto)` — 리저브·매출 금액의 정보 노출표 항목(D-57·D-59), 팀장 자기 팀 범위(`scopeFor`)
+- `domain/settings/registry.ts` `getSettingValue(def, {asOf})` — `applyTaxRule()`의 세율 조회. 비이력 키(`fx.recent_rate.*`)도 같은 함수
+- `repositories/document-counters.ts` — 읽기·upsert만. 이 페이즈가 트랜잭션 안 `UPDATE … RETURNING` 증가 함수를 더한다(동시 제출 통합 테스트 필수, Issue 10)
+- `domain/archive`(보관함) · `domain/action-log` — 줄 보관(D-56), 리저브 삭제(D-60), 상태 변경 기록(D-50)
+- `ui/` 13종: `input/TextField`(`aria-invalid`·`aria-describedby` 이미 구현 — 네이티브 `required` 위임만 걷어낸다), `status-tag`(D-64 상태 열), `page-header`, `list-empty`, `next-turn`, `toast`, `banner`, `kv-list`, `history-list`
+- `app/(app)/projects/page.tsx` — D-22의 EMPTY 자리. 이 페이즈가 표를 꽂는다. `app/(app)/pnl/page.tsx` 아래에 `/pnl/reserves`(D-59)
+- `test/unit/eslint-rules/money-boundary.test.ts` + `fixtures/domain/money/index.ts` — 린트는 켜져 있고 실제 `domain/money`는 없다. 픽스처의 `Money` 모양이 시작점
+- `scripts/`(`seed-master.ts`·`settings-import.ts`·`migrate-runner.ts`) — tsx 스크립트 관례. `scripts/migrate/extract.ts`·`transform.ts`가 같은 결
+- `test/integration/document-counters.test.ts` · `custom-fields.test.ts` — 확장할 통합 테스트
+
+### Established Patterns
+- 4계층 + `ui` 경계를 `eslint-plugin-boundaries`가 강제. `domain`은 `db`를 import할 수 없다 — `scopeFor`가 서술자를 돌려주는 이유. 표 컬럼 참조는 리포지토리에서만
+- `plant8/money-boundary`(type-aware) — `domain/money` 밖 `Money` 산술 금지. 견적가·차익·원화 환산·부가세·역산 전부 이 모듈 함수 호출
+- `plant8/repository-viewer-param` — 리포지토리 export 첫 인자 viewer
+- 커스텀 필드: 서버 액션이 저장 전 `buildCustomFieldsSchema(defs)`로 `.strict()` 검증
+- 테스트 3계층: 새 domain 모듈(money·gate·상태 전이) = 단위, 새 액션·DTO = 통합 + 누수 생성, 새 화면 흐름(프로젝트 등록 → 줄 입력 → 저장 → 승인 → 완료) = E2E 1개 이상. `CI=true` 프로덕션 빌드로 판정
+- 화면 검증 순서(CLAUDE.md): 싼 게이트 → 독립 DOM 감사(별도 에이전트, `CI=true`) → 수정 → 전체 게이트 한 번
+- 커밋: 영어 접두어 + 한국어 본문, 한 커밋 한 의도. 새 의존성 없음(D-61)
+- CI는 `pull_request`만, `.planning/**`·`docs/**`만 바뀐 PR은 건너뜀 — REQUIREMENTS·ROADMAP 보강 커밋(D-41)만으로는 CI가 돌지 않는다
+
+### Integration Points
+- `db/schema/` 신규: `projects`(상태·번호·사전 견적 Money·기간·`custom_fields`·`version`), `quote_revisions`(차수·승인 표시·승인일·승인자), `quote_lines`(소분류·항목·거래처·수량·단가·견적가·실행가·차익·비고·상태·순서·`copied_from_line_id`·`version`·Money 컬럼 묶음·`custom_fields`·`archived_at`), `revenue_entries`(발행·입금 줄), `reserve_entries`(리저브 줄) — 전부 `source`('demo'/'intranet') 컬럼(Eng OV-1)
+- `domain/money` · `domain/rules` 신규 — ARCHITECTURE §2가 예고한 자리. Phase 5·6·9·11은 참조만
+- `domain/settings/keys.ts` — 키 추가(D-71, ADMN-09, 게이트 on/off). 설정 화면(Phase 3)에 자동으로 노출된다
+- `ui/table`(가칭)·`ui/form`·`ui/select` 신규 — §7-3·§6-3·§7-2 계약. Phase 7이 관리자 폼 8개를 `ui/form`으로 이관
+- `ui/shell/role-menu.ts` — 손익 메뉴에 리저브 항목(D-59). 셸 컴포넌트는 건드리지 않는다(D-23)
+- `docs/ARCHITECTURE.md` — money·gate·인덱스 목록·카운터 증가 규약 추가(300줄 상한 안에서)
+- Phase 5가 붙는 지점: 줄의 「지출결의 올리기」(⌘E·폰 시트), 거래처 필수 게이트, 완료 전환의 정산 결재 호출자 교체(D-46 재확인)
+- Phase 8이 붙는 지점: `scripts/migrate/` load·verify, 보고서 형식(D-74), `source='intranet'`
+
+</code_context>
+
+<specifics>
+## Specific Ideas
+
+- **인트라넷보다 못하면 안 된다.** 사용자가 목록 기본 보기를 "전체·월별 그룹"(D-51)으로 고른 이유는 인트라넷과 같은 감각이다. 표는 엑셀 붙여넣기(D-67)까지 지원해 PM이 이미 쓰는 엑셀 견적을 그대로 옮긴다.
+- **잠금은 완료 하나뿐.** 미수주(D-45)는 잠기지 않고, 완료 뒤에도 경영관리는 입금·지급·견적 외 비용 줄을 고친다(D-47). "규칙으로 막되 현실의 뒤늦은 청구서를 못 넣게 하지는 않는다."
+- **차수는 한 방향.** 되돌리기 없음, 새 차수는 전체 복사, 최신 차수만 현재, 승인 취소는 문서 없을 때만(D-53~D-56). 고치려면 항상 "새 차수"다.
+- **상태 전환은 팀장의 일**(D-46). PM은 등록·입력·승인 표시까지, 수주·미수주·완료 판단은 팀장 이상.
+- 사전 견적은 "총 매출 예상가"라는 사용자 용어를 화면 라벨에 그대로 쓴다(D-52).
+- 부수 요청(토론 중, 2026-09-22): ① Codex CLI를 SessionStart 훅에 설치하고 로그인 토큰을 시크릿으로 주입 — 이 CONTEXT 커밋 직후 별도 작업. ② 클라우드 세션에서 인트라넷 실시간 조회는 환경 네트워크 허용 목록 + 환경 변수(`INTRANET_URL`·`INTRANET_USER`·`INTRANET_PASSWORD`) + `/browse` — 환경 설정은 사용자가 claude.ai에서 한다. 추출 스크립트 입력은 덤프 파일이다(D-72).
+
+</specifics>
+
+<deferred>
+## Deferred Ideas
+
+- **REQUIREMENTS·ROADMAP 보강(D-41)** — `/gsd-plan-phase 4` 전에 `gsd_run`으로 PROJ-04(상태 4단계), EXP-08(수주중 프로젝트 경로 추가), PNL-07(용어 '미수주 비용'), ROADMAP Phase 4 기준 4(수주중 → 진행·미수주 전환 게이트)를 고친다. 이 토론의 산출물이 아니라 다음 명령의 첫 일이다
+- **완료 전환의 정산 결재 기안자**(D-46 vs D3) — Phase 5 토론에서 사용자 재확인
+- **수주중 프로젝트의 비용 표시**(팀 손익의 미수주 비용) — Phase 10
+- **진행 중 손익 분모에 사전 견적 fallback** — Phase 9(D-52)
+- **리저브 충당 → 매출 반영**(RSV-02) — Phase 9, D-59의 같은 화면
+- **승인 증빙 첨부·리저브 증빙 첨부** — Phase 6(첨부 저장)
+- **관리자 폼 8개·`/account`의 `ui/form` 이관** — Phase 7(03-OPEN-ITEMS A-H2·A-H3)
+- **폰 375px 관리자 표 칸 접기** — 이 페이즈의 표 컴포넌트가 §7-3 칸 접기를 구현하면 관리자 표 이관은 Phase 7 검수에서
+- **통화 추가(USD 외)** — 키 추가로. 실시간 환율 API는 Out of Scope
+- **Codex CLI SessionStart 훅 + 토큰 시크릿** — 사용자 요청, 이 커밋 직후 별도 작업(위 specifics)
+- **클라우드 세션 인트라넷 접근 환경 설정** — 사용자가 claude.ai 환경 설정에서(위 specifics)
+
+### Reviewed Todos (not folded)
+- "Phase 3 실행 전 결정 4건의 확정 답 (전부 A)" — Phase 3 전용, Phase 4 무관
+
+</deferred>
+
+---
+
+*Phase: 04-project-quote-ledger*
+*Context gathered: 2026-09-22*

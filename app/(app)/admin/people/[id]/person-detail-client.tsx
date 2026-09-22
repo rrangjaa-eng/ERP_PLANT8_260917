@@ -11,22 +11,19 @@ function errorMessageOf(result: { serverError?: unknown; validationErrors?: unkn
   return null;
 }
 
-export function PersonDetailClient({
+// SYSTEM.md §3 「단일 기둥 최대 폭」은 데이터 표를 제외한다 — 계급 변경은
+// page.tsx의 .single-column 안에, 발령 이력(표)은 PersonHistorySection으로
+// 나눠 .single-column 밖에 둔다(260922-o2b 후속).
+export function PersonRoleChange({
   userId,
   roles,
   currentRoleId,
-  teamOptions,
-  entries,
 }: {
   userId: string;
   roles: { id: string; name: string }[];
   currentRoleId: string | null;
-  teamOptions: { value: string; label: string }[];
-  entries: HistoryEntry[];
 }) {
   const { execute: executeRoleChange, result: roleResult } = useAction(changePersonRoleAction);
-  const { executeAsync: executeAssign } = useAction(assignTeamAction);
-  const { executeAsync: executeCancel } = useAction(cancelAssignmentAction);
 
   const roleError = errorMessageOf(roleResult);
 
@@ -48,23 +45,38 @@ export function PersonDetailClient({
         </select>
       </div>
       {roleError ? <p className={styles.registeredHint}>{roleError}</p> : null}
-
-      <HistoryList
-        entries={entries}
-        valueKind={{ kind: "enum", options: teamOptions }}
-        idPrefix={`person-team-history-${userId}`}
-        caption="소속 발령 이력"
-        onAdd={async ({ effectiveFrom, value }) => {
-          const result = await executeAssign({ userId, teamId: value, effectiveFrom });
-          const message = errorMessageOf(result ?? {});
-          if (message) throw new Error(message);
-        }}
-        onCancel={async (effectiveFrom) => {
-          const result = await executeCancel({ userId, effectiveFrom });
-          const message = errorMessageOf(result ?? {});
-          if (message) throw new Error(message);
-        }}
-      />
     </>
+  );
+}
+
+export function PersonHistorySection({
+  userId,
+  teamOptions,
+  entries,
+}: {
+  userId: string;
+  teamOptions: { value: string; label: string }[];
+  entries: HistoryEntry[];
+}) {
+  const { executeAsync: executeAssign } = useAction(assignTeamAction);
+  const { executeAsync: executeCancel } = useAction(cancelAssignmentAction);
+
+  return (
+    <HistoryList
+      entries={entries}
+      valueKind={{ kind: "enum", options: teamOptions }}
+      idPrefix={`person-team-history-${userId}`}
+      caption="소속 발령 이력"
+      onAdd={async ({ effectiveFrom, value }) => {
+        const result = await executeAssign({ userId, teamId: value, effectiveFrom });
+        const message = errorMessageOf(result ?? {});
+        if (message) throw new Error(message);
+      }}
+      onCancel={async (effectiveFrom) => {
+        const result = await executeCancel({ userId, effectiveFrom });
+        const message = errorMessageOf(result ?? {});
+        if (message) throw new Error(message);
+      }}
+    />
   );
 }

@@ -7,7 +7,7 @@ import { listOrgUnits, listTeams } from "@/domain/org";
 import { KvList } from "@/ui/kv-list/KvList";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import type { HistoryEntry } from "@/ui/history-list/HistoryList";
-import { PersonDetailClient } from "./person-detail-client";
+import { PersonRoleChange, PersonHistorySection } from "./person-detail-client";
 
 export const dynamic = "force-dynamic";
 
@@ -74,14 +74,11 @@ export default async function PersonDetailPage({ params }: { params: Promise<{ i
           ]}
         />
 
-        <PersonDetailClient
-          userId={detail.person.id}
-          roles={roles}
-          currentRoleId={detail.person.roleId}
-          teamOptions={teamOptions}
-          entries={entries}
-        />
+        <PersonRoleChange userId={detail.person.id} roles={roles} currentRoleId={detail.person.roleId} />
       </div>
+
+      {/* §3 데이터 표 예외 — 발령 이력 표는 .single-column 밖, 전체 폭(260922-o2b 후속). */}
+      <PersonHistorySection userId={detail.person.id} teamOptions={teamOptions} entries={entries} />
     </>
   );
 }

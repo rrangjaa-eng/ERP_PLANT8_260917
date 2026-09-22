@@ -84,6 +84,35 @@ test.describe("단일 기둥 최대 폭 — 관리자 화면·폼 전면 적용 
     await expectSingleColumn(page, page.locator("#person-role-change"));
   });
 
+  // 260922-o2b 후속(/review + 독립 DOM 감사) — SYSTEM.md §3 「단일 기둥 최대
+  // 폭」은 데이터 표를 제외한다. 발령 이력 표(HistoryList, PersonDetailClient
+  // 경유)가 .single-column 안에 있었다 — 표가 데이터 표라는 예외를 어긴다.
+  test("사람 상세의 발령 이력 표는 main 안에 있지만 .single-column 밖이다 (§3 데이터 표 예외)", async ({
+    page,
+  }) => {
+    await loginAs(page, SYSADMIN_ROLE_ID);
+    await page.goto("/admin/people");
+    await page.getByRole("link", { name: "사람 등록" }).click();
+
+    const email = `single-column-history-${Date.now()}@example.test`;
+    await page.getByLabel("이름").fill("단일기둥이력");
+    await page.getByLabel("이메일").fill(email);
+    await page.getByLabel("계급").selectOption(DEFAULT_ROLE_ID);
+    await page.getByLabel("팀").selectOption({ label: "기획본부 · 기획1팀" });
+    await page.getByLabel("발령일").fill("2026-01-01");
+    await page.getByRole("button", { name: "사람 등록" }).click();
+    await expect(page.getByText(`초기 비밀번호 — ${email}`)).toBeVisible();
+
+    await page.goto("/admin/people");
+    await page.locator("tr", { hasText: email }).getByRole("link", { name: "상세" }).click();
+    await expect(page).toHaveURL(/\/admin\/people\/.+/);
+
+    // 발령 이력이 하나 있어 HistoryList가 <table>을 그린다(비어 있으면
+    // ListEmpty로 대체된다 — 등록 시 팀·발령일을 채워 그 경우를 피한다).
+    await expect(page.locator("main table")).toHaveCount(1);
+    await expect(page.locator(".single-column table")).toHaveCount(0);
+  });
+
   test("/admin/people/org의 최상위 main ul과 #org-unit-form이 720px 이하로 main h1과 같은 x에서 시작한다", async ({
     page,
   }) => {

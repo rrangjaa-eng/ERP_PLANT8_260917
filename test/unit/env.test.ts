@@ -21,6 +21,7 @@ const ENV_KEYS = [
   "LOCKOUT_WINDOW_MINUTES",
   "RATE_LIMIT_LOGIN_MAX",
   "APP_DATA_KEY_v1",
+  "APP_DATA_KEY_v2",
   "SMTP_HOST",
   "SMTP_USER",
   "SMTP_PASSWORD",
@@ -96,6 +97,33 @@ describe("lib/env", () => {
     process.env.BETTER_AUTH_SECRET = "a".repeat(32);
 
     await expect(import("@/lib/env")).rejects.toThrow();
+  });
+
+  // 03-VERIFICATION 사람 판정 2: "Secret Manager의 app-data-key-v1이 32바이트인지"는
+  // 코드로 판정할 수 없었다(lib/env.ts가 선택 문자열이라 값이 틀려도 앱이 뜨고,
+  // 거래처 저장 시점에야 fail-closed 500이 난다). 값이 있으면 부팅 시점에 길이를
+  // 검증해 배포 스모크에서 바로 드러나게 한다 — 사람이 gcloud로 볼 필요가 없어진다.
+  // Cloud Run Job(migrate·account·seed)은 이 키를 받지 않으므로 존재는 강제하지 않는다.
+  it("APP_DATA_KEY_v1이 base64 32바이트가 아니면 throw한다(값이 있을 때만)", async () => {
+    process.env.DATABASE_URL = "postgres://erp:erp@127.0.0.1:5432/erp";
+    process.env.APP_DATA_KEY_v1 = Buffer.alloc(48, 1).toString("base64");
+
+    await expect(import("@/lib/env")).rejects.toThrow(/APP_DATA_KEY_v1/);
+  });
+
+  it("APP_DATA_KEY_v2가 base64 32바이트가 아니면 throw한다", async () => {
+    process.env.DATABASE_URL = "postgres://erp:erp@127.0.0.1:5432/erp";
+    process.env.APP_DATA_KEY_v2 = Buffer.alloc(16, 1).toString("base64");
+
+    await expect(import("@/lib/env")).rejects.toThrow(/APP_DATA_KEY_v2/);
+  });
+
+  it("APP_DATA_KEY_v1이 base64 32바이트면 파싱 성공한다", async () => {
+    process.env.DATABASE_URL = "postgres://erp:erp@127.0.0.1:5432/erp";
+    process.env.APP_DATA_KEY_v1 = Buffer.alloc(32, 1).toString("base64");
+
+    const { env } = await import("@/lib/env");
+    expect(env.APP_DATA_KEY_v1).toBeDefined();
   });
 
   it("에러 메시지는 키 이름만 담고 값은 담지 않는다", async () => {

@@ -144,6 +144,16 @@ account:reset --email …` / `pnpm account:unlock --email …`. 운영에서는 
 안 보여도 `reset`을 다시 돌리지 말고 완료를 기다린다 — 재실행하면 전 세션이 다시 만료되고
 새 임시 비밀번호가 또 발급된다.
 
+**Claude 검증 계정(2026-09-22 사용자 승인).** Claude Code 클라우드 세션이 스테이징·
+프로덕션 화면을 직접 확인해야 할 때는 `account.yml`(action=create, role=role-sysadmin)로
+`claude-verify-<YYYYMMDD>@plant8.co.kr` 관리자 계정을 만들어 쓰고, 검증이 끝나면 같은
+워크플로의 `reset`으로 세션을 만료시킨 뒤 `/admin/people`에서 보관한다. 실계정 비밀번호를
+세션에 넘기지 않는다. GCP 쪽 점검(조직 정책·SA 역할 원문)은
+세션이 gcloud를 직접 쓰지 않고 `verify.yml`(workflow_dispatch, WIF)을 띄워 로그를 읽는다 —
+조직 정책 `iam.disableServiceAccountKeyCreation`이 SA 키 생성을 막기 때문이다. gha-deployer에
+읽기 전용 두 역할 `roles/orgpolicy.policyViewer`(조직 수준)·`roles/iam.securityReviewer`만
+준다(쓰기 권한 없음, 2026-09-22 결정). 백업 실패 경보 테스트는 콘솔 "테스트 알림 보내기"로 한다.
+
 ## 8. 최초 1회 부트스트랩 (D-02)
 
 사용자가 Cloud Shell에서 **`scripts/bootstrap-gcp.sh`**를 1회 실행한다 — 단일 파일이라
@@ -166,14 +176,16 @@ WIF 풀·프로바이더, 서비스 계정 3개(배포자 + 환경별 런타임 
 손으로 맞춘다.
 
 **`app-data-key-v1`은 base64로 인코딩된 정확히 32바이트여야 한다**(`lib/crypto.ts`
-`APP_DATA_KEY_BYTES`, aes-256-gcm 키 길이 — 길이가 다르면 `keyFor()`가 쓰기 전에
-즉시 예외를 던진다). `_ensure_secret`은 ENABLED 버전이 이미 있으면 새로 만들지
-않으므로, 이 계약이 생기기 전(03-06 이전)에 배포된 환경은 `deploy.sh`를 다시 돌려도
+`APP_DATA_KEY_BYTES`, aes-256-gcm 키 길이). 길이가 다르면 `lib/env.ts`가 **부팅 시점에**
+거부해 그 리비전은 뜨지 않고 `deploy.sh` 스모크가 실패한다(값이 없으면 통과 — Job은
+이 키를 받지 않는다). `keyFor()`의 같은 검사는 두 번째 방어선이다. `_ensure_secret`은
+ENABLED 버전이 이미 있으면 새로 만들지 않으므로, 이 계약이 생기기 전(03-06 이전)에 배포된 환경은 `deploy.sh`를 다시 돌려도
 고쳐지지 않는다 — 실제로 01-07·01-08에서 만든 `app-data-key-v1-staging`·
 `app-data-key-v1-prod`가 옛 코드(`openssl rand -base64 48`, 48바이트)로 생성돼 이
-상태다. 다만 길이가 틀린 키로는 `encrypt()`/`decrypt()`가 애초에 실행되지 않으므로
-(fail-closed), 이 48바이트 버전으로 실제 암호화에 성공한 데이터는 존재할 수 없다 —
-새 버전을 추가해도 잃을 데이터가 없다. 고치는 법(추가만 하고 옛 버전은 지우지
+상태였다 — **2026-09-22 실측으로 두 환경 모두 `latest`가 32바이트임을 확인했다**
+(`gcloud secrets versions access latest … | base64 -d | wc -c`). 길이가 틀린 키로는
+`encrypt()`/`decrypt()`가 애초에 실행되지 않으므로(fail-closed) 옛 버전으로 암호화에
+성공한 데이터는 존재할 수 없다. 다시 틀어지면 고치는 법(추가만 하고 옛 버전은 지우지
 않는다):
 
 ```bash

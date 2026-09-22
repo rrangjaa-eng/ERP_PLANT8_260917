@@ -256,3 +256,57 @@ describe("deploy 워크플로 — ci-guard와 동일한 push 하위 명령 부�
     }
   });
 });
+
+// verify.yml — 사람 판정 중 "GCP 권한만 있으면 되는" 항목(조직 정책·SA 역할 원문,
+// 백업 실패 경보 필터·메일)을 키 없이 닫는 경로. 조직 정책
+// iam.disableServiceAccountKeyCreation이 SA 키 생성을 막으므로(2026-09-22 실측)
+// 세션이 직접 gcloud를 쓰는 대신, 이미 WIF로 붙는 GitHub Actions를 띄우고 로그를 읽는다.
+describe("verify.yml", () => {
+  const verify = readWorkflow("verify.yml");
+
+  it("workflow_dispatch input check(policies)만 있다 — 쓰기 권한이 필요한 점검은 두지 않는다", () => {
+    expect(verify).toContain("workflow_dispatch:");
+    expect(verify).toContain("check:");
+    expect(verify).toContain("- policies");
+    expect(verify).not.toContain("alert-test");
+  });
+
+  it("deploy.yml과 같은 WIF 인증을 쓰고 permissions에 id-token: write와 contents: read가 있다", () => {
+    expect(verify).toContain("workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/erp-repo");
+    expect(verify).toContain("id-token: write");
+    expect(verify).toContain("contents: read");
+  });
+
+  it("입력을 env로 넘겨 scripts/verify-gcp.sh에 위임한다(T-1-32)", () => {
+    expect(verify).toContain("INPUT_CHECK: ${{ inputs.check }}");
+    expect(verify).toContain("scripts/verify-gcp.sh");
+    expect(verify).not.toMatch(/run:.*\$\{\{\s*inputs\./);
+  });
+
+  it("실제 프로젝트 번호·이메일 등 식별자를 담지 않는다", () => {
+    expect(verify).not.toMatch(/[0-9]{12}/);
+    expect(verify).not.toMatch(/@gmail\.com/);
+  });
+});
+
+describe("scripts/verify-gcp.sh", () => {
+  const script = readFileSync(resolve(process.cwd(), "scripts/verify-gcp.sh"), "utf8");
+
+  it("policies는 bootstrap-gcp.sh와 같은 조직 정책 4개와 런타임·배포 SA의 역할을 읽는다", () => {
+    for (const c of ["iam.allowedPolicyMemberDomains", "run.allowedIngress", "compute.restrictVpcPeering", "iam.workloadIdentityPoolProviders"]) {
+      expect(script).toContain(c);
+    }
+    expect(script).toContain("get-iam-policy");
+    expect(script).toContain("runtime_sa");
+    expect(script).toContain("gha-deployer");
+  });
+
+  it("로그를 쓰거나 리소스를 바꾸는 명령이 없다(읽기 전용 역할만 받는다)", () => {
+    expect(script).not.toMatch(/entries:write|logging write|add-iam-policy-binding|secrets versions add|run deploy/);
+  });
+
+  it("실패를 || true로 삼키지 않고 마지막에 실패 수로 종료한다", () => {
+    expect(script).not.toMatch(/\|\|\s*true/);
+    expect(script).toMatch(/exit\s+"?\$?\{?FAILED/);
+  });
+});

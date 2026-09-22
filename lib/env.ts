@@ -98,6 +98,20 @@ const envSchema = rawSchema.superRefine((data, ctx) => {
       });
     }
   }
+  // 03-06 암호화 키는 base64 32바이트(aes-256-gcm)여야 한다. lib/crypto.ts의
+  // keyFor()가 쓰기 시점에 같은 검사를 하지만, 그때는 이미 배포가 끝나 사용자가
+  // 500을 본 뒤다 — 값이 설정돼 있으면 부팅에서 미리 거른다(배포 스모크에서
+  // 바로 실패). Cloud Run Job은 이 키를 받지 않으므로 존재 자체는 강제하지 않는다.
+  for (const key of ["APP_DATA_KEY_v1", "APP_DATA_KEY_v2"] as const) {
+    const value = data[key];
+    if (value !== undefined && Buffer.from(value, "base64").length !== 32) {
+      ctx.addIssue({
+        code: "custom",
+        path: [key],
+        message: `${key} must be base64-encoded 32 bytes`,
+      });
+    }
+  }
   if (data.AUTH_PROVIDER === "google") {
     if (!data.GOOGLE_CLIENT_ID) {
       ctx.addIssue({

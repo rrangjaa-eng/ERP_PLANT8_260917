@@ -389,12 +389,9 @@ deferred:
     addressed_in: "후속(미지정)"
     evidence: "`03-OPEN-ITEMS.md` 「수정 화면 리뷰·DOM 감사에서 나온 것」 절이 근거와 함께 「고치지 않고 남긴 것」으로 기록했다. 전부 Low, 데이터 손상 없음"
 human_verification:
-  - test: "스테이징 배포 파이프라인 로그에서 `db-bootstrap → migrate → seed` 세 Job의 결과를 확인하고, 시스템 관리자로 스테이징 `/admin/permissions`에 들어가 격자가 채워진 상태로 보이는지 본다 (`plant8-staging-seed` 로그에 `seed complete: … permissions=45 …`)"
-    expected: "세 Job이 순서대로 exit 0이고 권한표 격자가 빈 칸 없이 렌더된다"
-    why_human: "Cloud Run Job 환경(외부 node_modules·커넥터·Secret)에서 번들이 같은 결과를 내는지는 실제 배포 로그로만 확인된다. 코드 쪽 배선(`scripts/build-cli.mjs` · `scripts/deploy.sh:358·372·392·666-668` · `test/unit/deploy/cli-bundle.test.ts`)은 이번에도 실재를 확인했다. **이 컨테이너의 네트워크 정책이 `*.run.app` CONNECT에 403을 돌려줘 스테이징 호스트에 닿을 수 없다** — 여기서는 닫을 수 없다. (3회차가 기대에 넣었던 `plant8-staging-account` Job은 배포 파이프라인에 없다 — 삭제했다)"
-  - test: "GCP Secret Manager의 staging·prod `app-data-key-v1` 값이 base64 디코드 시 32바이트인지 확인한다"
-    expected: "두 환경 모두 32바이트. 아니면 거래처 계좌번호 저장이 fail-closed로 500이 된다"
-    why_human: "`lib/env.ts`가 `APP_DATA_KEY_v1`을 선택 문자열로 두어 값이 없어도 앱이 뜨므로 코드만으로는 시크릿 존재·길이를 판정할 수 없다(03-SECURITY T-03-41 수락의 전제). GCP 콘솔·gcloud 접근이 필요하고 이 컨테이너에서는 막혀 있다"
+  - test: "스테이징 `/admin/permissions`에 시스템 관리자로 들어가 권한표 격자가 빈 칸 없이 채워진 상태로 보이는지 본다"
+    expected: "격자가 빈 칸 없이 렌더된다"
+    why_human: "세 Job(db-bootstrap → migrate → seed)의 exit 0은 2026-09-22 GitHub Actions deploy run #37(35620678515) staging 잡 로그로 확인했다(bootstrap-2tk4j · migrate-4bz7x · seed-pd4fc 모두 successfully completed, quick probe / 307 · /login 200 · /api/health 200). 화면 렌더만 남았고 이 컨테이너는 `*.run.app`에 닿지 못한다. Secret Manager `app-data-key-v1` 길이(사람 판정 2)는 2026-09-22 Cloud Shell 실측으로 staging·prod 모두 32바이트를 확인해 닫았고, `lib/env.ts` 부팅 검사가 이후 재발을 막는다. (3회차 문서의 '`plant8-staging-account` Job은 파이프라인에 없다'는 오기 — 같은 로그에 배포돼 있다)"
 ---
 
 # Phase 3: 권한·설정·마스터 (관리자 운영 콘솔) 검증 보고서 — 4회차 재검증

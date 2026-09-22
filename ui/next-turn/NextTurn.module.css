@@ -61,26 +61,42 @@
   margin-top: var(--s-2);
 }
 
-/* 폰: 두 줄(1행 태그·대상·행동, 2행 금액·이유) — preview.html의 검증된 grid
-   배치를 그대로 옮긴다(02-PATTERNS.md 포팅 원칙). */
+/* 폰: 두 줄(1행 태그·대상·행동, 2행 금액·이유) — §7-4 원문 그대로.
+   preview.html의 grid(auto 1fr auto)는 .amt가 2행 2칸을 먼저 차지해 자동 배치가
+   .action(3칸)까지 2행으로 밀어낸다 — 실측(test/e2e/mobile-next-turn.spec.ts)으로
+   드러난 결함이라 행·칸을 전부 명시한다. .grow는 풀어서(display:contents) 대상과
+   이유가 각자 칸에 놓이고, 2행은 금액(auto) · 이유(1fr) 순이다. */
 @media (max-width: 699.98px) {
   .item {
     display: grid;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: auto auto 1fr auto;
     column-gap: var(--s-3);
     row-gap: 2px;
     align-items: baseline;
   }
 
+  .tagSlot {
+    grid-row: 1;
+    grid-column: 1;
+  }
+
   .grow {
-    grid-column: 2;
+    display: contents;
+  }
+
+  .label {
+    grid-row: 1;
+    grid-column: 2 / 4;
+    min-width: 0;
   }
 
   .action {
-    grid-column: 3;
+    grid-row: 1;
+    grid-column: 4;
   }
 
   .amt {
+    grid-row: 2;
     grid-column: 2;
     min-width: 0;
     text-align: left;
@@ -89,8 +105,17 @@
   }
 
   .why {
-    display: block;
+    grid-row: 2;
+    grid-column: 3;
+    min-width: 0;
     font-size: var(--fs-sm);
+  }
+
+  /* §10 터치 목표 44 — 글자 위치는 그대로 두고 닿는 영역만 위아래로 늘린다. */
+  .action .tertiary {
+    display: inline-block;
+    padding: 13px 0;
+    margin: -13px 0;
   }
 }
 

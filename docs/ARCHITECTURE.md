@@ -138,6 +138,33 @@ document-counters.ts`는 읽기와 upsert만 두고 증가 함수를 두지 않�
 (`"2026"`), `counterKey="project"`의 번호 서식은 연도 뒤 두 자리 + 순번
 세 자리(`26001`, `domain/document-numbering`).
 
+**서식 설정(04-05, ADMN-09):** 접두어·연도 자릿수·순번 자릿수·구분자·순번
+시작값 다섯은 상수가 아니라 `domain/settings/keys.ts`의
+`document_number.project.*` 단순값 키다 — 관리자가 설정 화면에서 바꾸면
+그 뒤 새로 매긴 번호에만 반영되고 이미 매긴 번호는 그대로다(과거 시점
+조회가 필요 없어 이력형이 아니다). 서식 조립은 `domain/document-numbering`의
+순수 함수 `documentNumberFormat`이 맡고, `formatDocumentNumber`가 설정
+조회로 그 함수를 감싼다.
+
+## 4-7. 목록·검색 인덱스(Phase 4, 04-05)
+
+`/projects` 목록·필터·정렬이 쓰는 인덱스는 마이그레이션 0009가 만든 것과
+정확히 같다(더 만들 예정인 인덱스는 적지 않는다):
+
+| 표 | 인덱스 | 쓰임 |
+|---|---|---|
+| `projects` | `projects_status_idx`(status) | 상태 필터 |
+| `projects` | `projects_end_date_idx`(end_date) | 월별 그룹·정렬 기본값(종료일) |
+| `projects` | `projects_client_id_idx`(client_id) | 클라이언트 조인 |
+| `projects` | `projects_team_id_idx`(team_id) | 팀 필터 |
+| `quote_revisions` | `quote_revisions_project_id_idx`(project_id) | 현재 차수(최신 seq) 조회 |
+| `quote_lines` | `quote_lines_revision_sort_idx`(revision_id, sort_order) | 현재 차수의 줄 합계(집계) |
+
+**p99 500ms(ROADMAP 기준 1) 측정 방법:** 실제 데이터 규모가 있어야 의미
+있는 측정이라 이 페이즈는 측정하지 않는다(`04-VALIDATION.md`
+Manual-Only) — Phase 8 데이터 이전 리허설에서 실이관 규모로 `/projects`
+p99를 재고 이 표의 인덱스로 충분한지 재확인한다.
+
 ## 5. DB·마이그레이션
 
 `drizzle-kit generate` → Squawk(`.squawk.toml`, `pnpm lint:sql`) → `scripts/migrate-runner.ts`

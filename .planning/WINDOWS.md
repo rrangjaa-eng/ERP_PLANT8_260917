@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 13
+open_count: 14
 waived_count: 0
 fixed_count: 13
-total_count: 26
-last_updated: 2026-09-22T21:35:03.481Z
+total_count: 27
+last_updated: 2026-09-22T22:32:21.535Z
 ---
 
 # Broken Windows Ledger
@@ -41,6 +41,7 @@ last_updated: 2026-09-22T21:35:03.481Z
 | 24 | 02 | deviation | docs/design/system/preview.html |  | §7-4 폰 두 줄 실물(preview.html .next li grid)이 §7-4 원문과 다르게 렌더된다 — grid(auto 1fr auto) 자동 배치가 .amt를 2행 2칸에 먼저 놓아 .go(행동)가 2행으로 밀린다. 컴포넌트(NextTurn)는 2026-09-22 원문대로 고쳤고(test/e2e/mobile-next-turn.spec.ts 실측) 실물은 미수정. 디자인 문서 정비 시 맞춘다 | open |  | 2026-09-22T05:07:38.860Z |  |
 | 25 | 04 | unrun-verify | test/e2e/action-log.spec.ts |  | 04-01: 전체 E2E 스위트 동시 실행 시 간헐적 실패(단독 실행은 통과) — Excel BOM·corp-cards·master-edit·org, 웹서버 stream 오류 의심, 04-01 범위 밖 | open |  | 2026-09-22T20:41:47.158Z |  |
 | 26 | 04 | stub | app/(app)/projects/[id]/revenue-section.tsx |  | 발행·입금 줄은 스키마·domain 계층이 이미 임의 통화를 지원하나 UI는 KRW 입력만 제공한다(계약 금액·견적 단가는 통화 Select+환율 완비) — 04-04 이후 외화 입금 실사례가 나오면 마저 채운다 | open |  | 2026-09-22T21:35:03.481Z |  |
+| 27 | 04 | stub | app/(app)/projects/projects-table.tsx |  | 열 머리글 클릭 정렬·aria-sort 미구현 — ui/table/Table.tsx가 04-04 소유 파일이라 이 플랜은 건드리지 않는다(서버 정렬 자체는 구현·테스트됨, URL 파라미터 직접 내비게이션으로 검증) | open |  | 2026-09-22T22:32:21.535Z |  |
 
 ````json
 [
@@ -379,6 +380,19 @@ last_updated: 2026-09-22T21:35:03.481Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-22T21:35:03.481Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 27,
+    "kind": "stub",
+    "phase": "04",
+    "file": "app/(app)/projects/projects-table.tsx",
+    "line": null,
+    "description": "열 머리글 클릭 정렬·aria-sort 미구현 — ui/table/Table.tsx가 04-04 소유 파일이라 이 플랜은 건드리지 않는다(서버 정렬 자체는 구현·테스트됨, URL 파라미터 직접 내비게이션으로 검증)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-22T22:32:21.535Z",
     "resolved_at": null,
     "milestone": null
   }

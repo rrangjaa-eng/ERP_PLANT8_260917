@@ -1,5 +1,6 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
+import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { scopeFor } from "@/domain/permissions/scope-for";
 import { project, type DtoSpec } from "@/domain/permissions/project";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
@@ -9,11 +10,22 @@ import { buildCustomFieldsSchema, type FieldDefType } from "@/domain/custom-fiel
 import { allocateDocumentNumber } from "@/domain/document-numbering";
 import { withTransaction } from "@/lib/db-transaction";
 import {
-  listProjects as repoListProjects,
+  listProjectsPage as repoListProjectsPage,
+  aggregateProjects as repoAggregateProjects,
   findProjectById as repoFindProjectById,
   insertProject as repoInsertProject,
+  PROJECT_SORT_KEYS,
+  type ProjectListFilter,
+  type ProjectListRow,
+  type ProjectSort,
+  type ProjectSortKey,
   type ProjectRow,
 } from "@/repositories/projects";
+
+// app 계층은 repositories를 직접 import할 수 없다(boundaries) — 목록
+// 화면(page.tsx)이 정렬 키 허용 목록을 검증하려면 domain을 거쳐야 한다.
+export { PROJECT_SORT_KEYS };
+export type { ProjectSortKey };
 import { insertQuoteRevision as repoInsertQuoteRevision } from "@/repositories/quote-revisions";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
 
@@ -86,10 +98,117 @@ async function validatedCustomFields(
   return schema.parse(input ?? {}) as Record<string, unknown>;
 }
 
-export async function listProjects(viewer: Viewer): Promise<ProjectDto[]> {
+// 04-05 — 목록 항목 Dto. 프로젝트 구조 정보(project.value, staffDefault
+// true)와 견적·실행가·차익(quote.amount, 계급별 서버 부재) 두 정보 항목이
+// 섞인다 — 후자 셋은 project()가 필드 단위로 판정해 DTO 키 자체를 뺀다
+// (빈 값이 아니라 필드 부재, S1 must_have).
+export type ProjectListItemDto = {
+  id: string;
+  number: string;
+  name: string;
+  status: string;
+  startDate: string | null;
+  endDate: string | null;
+  clientName: string;
+  teamName: string;
+  pmUserName: string;
+  quoteAmountKrw?: number;
+  executionAmountKrw?: number;
+  profitKrw?: number;
+};
+
+export type ProjectListItemWithGroup = ProjectListItemDto & { groupLabel: string };
+
+const PROJECT_LIST_DTO_SPEC: DtoSpec<ProjectListRow, ProjectListItemDto> = {
+  fields: [
+    { key: "id", from: "id", infoItem: "project.value" },
+    { key: "number", from: "number", infoItem: "project.value" },
+    { key: "name", from: "name", infoItem: "project.value" },
+    { key: "status", from: "status", infoItem: "project.value" },
+    { key: "startDate", from: "startDate", infoItem: "project.value" },
+    { key: "endDate", from: "endDate", infoItem: "project.value" },
+    { key: "clientName", from: "clientName", infoItem: "project.value" },
+    { key: "teamName", from: "teamName", infoItem: "project.value" },
+    { key: "pmUserName", from: "pmUserName", infoItem: "project.value" },
+    { key: "quoteAmountKrw", from: "quoteAmountKrw", infoItem: "quote.amount" },
+    { key: "executionAmountKrw", from: "executionAmountKrw", infoItem: "quote.amount" },
+    { key: "profitKrw", from: "profitKrw", infoItem: "quote.amount" },
+  ],
+};
+
+registerDto({
+  name: "ProjectListItemDto",
+  fields: PROJECT_LIST_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
+});
+
+export const PROJECT_LIST_DEFAULT_LIMIT = 50;
+// T-04-32 — 「더 보기」 개수 파라미터 상한. 이보다 큰 값이 와도 상한으로
+// 떨어뜨린다 — 한 요청이 전체 행을 끌어오지 못하게 한다.
+export const PROJECT_LIST_MAX_LIMIT = 1000;
+
+function normalizeSort(sort?: { key?: string; direction?: string }): ProjectSort {
+  const requestedKey = sort?.key;
+  const key: ProjectSortKey = (PROJECT_SORT_KEYS as readonly string[]).includes(requestedKey ?? "")
+    ? (requestedKey as ProjectSortKey)
+    : "endDate";
+  const direction = sort?.direction === "desc" ? "desc" : "asc";
+  return { key, direction };
+}
+
+// 종료일 기준 월, 없으면 「기간 미정」 — 리포지토리 정렬이 이미 이 그룹을
+// 맨 아래·월 단위로 묶어 보내므로 여기서는 라벨만 파생한다(월 계산은
+// 하되 재정렬은 하지 않는다 — 화면 컴포넌트에는 이 계산조차 없다).
+function monthGroupLabel(endDate: string | null): string {
+  return endDate ? endDate.slice(0, 7) : "기간 미정";
+}
+
+export type ListProjectsOptions = {
+  filter?: ProjectListFilter;
+  sort?: { key?: string; direction?: string };
+  limit?: number;
+};
+
+// PROJ-01 — 04-05 Task 1 ②: 필터(상태·팀·연도·검색어)·정렬·페이지 인자를
+// 받아 목록을 돌려준다. 그룹 나누기(종료일 월, 기간 미정)는 여기서
+// 끝난다 — 화면은 `groupLabel`을 읽기만 한다.
+export async function listProjects(
+  viewer: Viewer,
+  opts?: ListProjectsOptions,
+): Promise<ProjectListItemWithGroup[]> {
   const scope = await scopeFor(viewer, PROJECT_ENTITY);
-  const rows = await repoListProjects(viewer, { scope });
-  return Promise.all(rows.map((row) => project(viewer, row, PROJECT_DTO_SPEC))) as Promise<ProjectDto[]>;
+  const sort = normalizeSort(opts?.sort);
+  const limit = Math.min(Math.max(opts?.limit ?? PROJECT_LIST_DEFAULT_LIMIT, 1), PROJECT_LIST_MAX_LIMIT);
+  const rows = await repoListProjectsPage(viewer, { scope, filter: opts?.filter ?? {}, sort, limit });
+  const dtos = (await Promise.all(
+    rows.map((row) => project(viewer, row, PROJECT_LIST_DTO_SPEC)),
+  )) as ProjectListItemDto[];
+  return dtos.map((dto) => ({ ...dto, groupLabel: monthGroupLabel(dto.endDate) }));
+}
+
+export type ProjectAggregateDto = {
+  count: number;
+  quoteAmountKrw?: number;
+  executionAmountKrw?: number;
+  profitKrw?: number;
+};
+
+// 04-05 Task 1 ①: 집계 — 목록과 같은 필터를 쓰는 별도의 쿼리 한 번(T-04-28).
+// 견적·실행가·차익 셋을 개별 판정하지 않고 표 단위(quote.amount) 하나로
+// 게이트한다 — 04-02 발행·입금 선례와 같은 결.
+export async function aggregateProjects(
+  viewer: Viewer,
+  filter?: ProjectListFilter,
+): Promise<ProjectAggregateDto> {
+  const scope = await scopeFor(viewer, PROJECT_ENTITY);
+  const agg = await repoAggregateProjects(viewer, { scope, filter: filter ?? {} });
+  const canSeeAmount = await defaultVisible(viewer, "quote.amount");
+  if (!canSeeAmount) return { count: agg.count };
+  return {
+    count: agg.count,
+    quoteAmountKrw: agg.quoteAmountKrw,
+    executionAmountKrw: agg.executionAmountKrw,
+    profitKrw: agg.profitKrw,
+  };
 }
 
 export async function findProject(viewer: Viewer, id: string): Promise<ProjectDto | null> {

@@ -73,7 +73,7 @@
 | `--line-ui` | `#7C8A86` | 입력 테두리 · 체크박스 · 아이콘 등 **인식해야 하는 UI 경계** | on `--bg` 3.6 · on `--g-50` 3.2 (UI 3:1 통과) |
 | `--line-strong` | `--g-900` | 강한 구분선 2px(섹션 시작·합계 위) · 2차 버튼 테두리 | 14.3 |
 | `--bar` / `--bar-fg` / `--bar-muted` | `--g-900` / `--g-100` / `--g-300` | 상단 바와 그 위 글자 | 11.3 / 7.0 |
-| `--focus` | `--g-700` | `:focus-visible` 외곽선 2px, offset 2px | 8.9 |
+| `--focus` | `--g-700` | `:focus-visible` 외곽선 2px, offset 2px(전체 폭 목록 행만 inset — §4-4) | 8.9 |
 | `--scrim` | `rgba(0,33,28,.45)` | 모달·시트 뒤 가림막. 유일한 반투명 |
 
 비활성(disabled) 텍스트는 `--faint` on `--surface`(4.95)로 WCAG AA(4.5:1)를 통과한다. 비활성 버튼은 이유를 옆에 글자로 쓴다(§7-1).
@@ -227,7 +227,7 @@ body { font-family: var(--font-sans); }
 | 네이티브 체크박스·라디오·진행 `accent-color` | `--accent` |
 | 스크롤바 `scrollbar-color` | `--line-ui` on `--bg`, `scrollbar-width: thin`. 커스텀 스크롤바 그리지 않는다 |
 | 3차 버튼 밑줄 | `text-underline-offset: 2px`, 두께 1px → hover 2px |
-| 포커스 링 | `:focus-visible` 2px `--focus` offset 2px. `:focus`(마우스)에는 링 없음 |
+| 포커스 링 | `:focus-visible` 2px `--focus` offset 2px. `:focus`(마우스)에는 링 없음. **예외 — 전체 폭 목록 행**(행 자체가 링크이고 좌우 여백이 없는 것: 「더보기」 시트 목록 행 · 폰 하단 탭 · 「관리」 인덱스 항목 행)은 `outline-offset`을 안쪽으로 준다(`calc(-1 * var(--focus-w))`) — 바깥에 링을 그릴 여백이 없어 잘리거나 옆 행 경계와 겹치기 때문이다. 굵기·색·표시 조건은 같다(2026-09-22 DECISIONS.md) |
 | 탭 크기 `tab-size` | 4 (코드표·문서 번호 모노 없음이라 거의 안 쓰임) |
 
 브라우저 기본값이 남은 곳이 「조립된 화면」의 가장 싼 티다. 위 값은 `tokens.css`의 `--sel-bg` 등을 그대로 쓴다.

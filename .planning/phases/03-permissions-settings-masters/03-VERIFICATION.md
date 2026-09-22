@@ -1,7 +1,7 @@
 ---
 phase: 03-permissions-settings-masters
-verified: 2026-09-21T14:42:42Z
-status: human_needed
+verified: 2026-09-22T06:23:57Z
+status: passed
 score: 6/6 must-haves verified
 covered_digest: "v1:sha256:ac0eee5312f2a6d657e787754d66baeb861e776e65507f604cb421326a2ad247"
 covered_files:
@@ -388,10 +388,13 @@ deferred:
   - truth: "`03-REVIEW-2.md` Low 4건(untrim 재저장 로그 중복 · 보관 검사-쓰기 비원자성 · `CardOwnerForm` validationErrors 미표시 · 없는 id 수정이 성공으로 보임)"
     addressed_in: "후속(미지정)"
     evidence: "`03-OPEN-ITEMS.md` 「수정 화면 리뷰·DOM 감사에서 나온 것」 절이 근거와 함께 「고치지 않고 남긴 것」으로 기록했다. 전부 Low, 데이터 손상 없음"
-human_verification:
+human_verification: []
+closed_human_items:
   - test: "스테이징 `/admin/permissions`에 시스템 관리자로 들어가 권한표 격자가 빈 칸 없이 채워진 상태로 보이는지 본다"
     expected: "격자가 빈 칸 없이 렌더된다"
-    why_human: "세 Job(db-bootstrap → migrate → seed)의 exit 0은 2026-09-22 GitHub Actions deploy run #37(35620678515) staging 잡 로그로 확인했다(bootstrap-2tk4j · migrate-4bz7x · seed-pd4fc 모두 successfully completed, quick probe / 307 · /login 200 · /api/health 200). 화면 렌더만 남았고 이 컨테이너는 `*.run.app`에 닿지 못한다. Secret Manager `app-data-key-v1` 길이(사람 판정 2)는 2026-09-22 Cloud Shell 실측으로 staging·prod 모두 32바이트를 확인해 닫았고, `lib/env.ts` 부팅 검사가 이후 재발을 막는다. (3회차 문서의 '`plant8-staging-account` Job은 파이프라인에 없다'는 오기 — 같은 로그에 배포돼 있다)"
+    result: pass
+    evidence: "2026-09-22 스테이징(plant8-staging-67rumhdgba-du.a.run.app, deploy run #38 · SHA 6ad58fd)에 account.yml run #12로 만든 claude-verify-20260922@plant8.co.kr(role-sysadmin)로 로그인해 GET /admin/permissions → 200. SSR 표 실측: caption 「계급별 메뉴 접근 권한표」, 행 5(대표 · 본부 책임자 · 팀장 · 기획 PM · 시스템 관리자) × 열 45, 셀 225개 전부 체크박스 포함, 빈 셀 0, 체크 45(seed permissions=45와 일치). 이 세션의 Chromium이 프록시 CA를 신뢰하지 못해 Node fetch(TLS 검증 유지)로 SSR HTML을 파싱했다. 계정은 reset(run #15)으로 세션 만료."
+    why_human_was: "세 Job(db-bootstrap → migrate → seed)의 exit 0은 2026-09-22 GitHub Actions deploy run #37(35620678515) staging 잡 로그로 확인했다(bootstrap-2tk4j · migrate-4bz7x · seed-pd4fc 모두 successfully completed, quick probe / 307 · /login 200 · /api/health 200). 화면 렌더만 남았고 이 컨테이너는 `*.run.app`에 닿지 못한다. Secret Manager `app-data-key-v1` 길이(사람 판정 2)는 2026-09-22 Cloud Shell 실측으로 staging·prod 모두 32바이트를 확인해 닫았고, `lib/env.ts` 부팅 검사가 이후 재발을 막는다. (3회차 문서의 '`plant8-staging-account` Job은 파이프라인에 없다'는 오기 — 같은 로그에 배포돼 있다)"
 ---
 
 # Phase 3: 권한·설정·마스터 (관리자 운영 콘솔) 검증 보고서 — 4회차 재검증
@@ -516,7 +519,7 @@ human_verification:
 
 ### Human Verification Required
 
-이 환경에서 코드로 닫을 수 없는 항목 **2건만** 남았다. 둘 다 GCP 접근이 필요하고, 이 컨테이너의 프록시가 `*.run.app` CONNECT에 403을 돌려줘 스테이징 호스트에 닿을 수 없다.
+이 환경에서 코드로 닫을 수 없던 항목 2건은 2026-09-22에 모두 닫혔다 — 1번은 스테이징 실측(아래 evidence, frontmatter `closed_human_items`), 2번은 Cloud Shell 실측(32바이트). 남은 사람 판정은 없다.
 
 #### 1. 스테이징 배포 Job 3종 + `/admin/permissions` 격자
 

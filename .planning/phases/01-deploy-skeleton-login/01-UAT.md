@@ -3,12 +3,12 @@ status: partial
 phase: 01-deploy-skeleton-login
 source: [01-01-SUMMARY.md, 01-02-SUMMARY.md, 01-03-SUMMARY.md, 01-04-SUMMARY.md, 01-05-SUMMARY.md, 01-06-SUMMARY.md, 01-07-SUMMARY.md, 01-08-SUMMARY.md]
 started: 2026-09-20T08:32:45Z
-updated: 2026-09-20T08:55:55Z
+updated: 2026-09-22T06:23:57.707Z
 ---
 
 ## Current Test
 
-[testing paused — 6 items outstanding]
+[testing paused — 3 items outstanding]
 
 ## Tests
 
@@ -38,15 +38,15 @@ evidence: "01-07·01-08이 남긴 실측 3건이 현재 스크립트에 그대�
 
 ### 5. 프로덕션 세션 유지 — 브라우저 종료 후 재진입 (VERIFICATION human 1)
 expected: 프로덕션 URL에서 관리자로 로그인한 뒤 브라우저를 완전히 종료하고 다시 열어 /account에 바로 들어가진다. 실제 Cloud Run 도메인에서 쿠키 속성(Secure/SameSite/만료 30일)이 같게 내려오는지는 브라우저로만 확인 가능 — 프로브는 /login에서 Set-Cookie를 못 봐 닫지 못했다.
-result: blocked
-blocked_by: physical-device
-reason: "실제 브라우저에서 프로덕션 로그인 후 완전 종료 → 재진입이 필요. 실행자 세션은 *.run.app에 프록시로 막혀 있다. WINDOWS.md 등록"
+result: pass
+source: executor-verified
+evidence: "2026-09-22 프로덕션(plant8-prod-67rumhdgba-du.a.run.app, SHA ed2fbc56)에 account.yml run #14로 만든 claude-verify-20260922@plant8.co.kr(--admin)로 실측. POST /api/auth/sign-in/email 200, Set-Cookie: `__Secure-erp.session_token=…; Max-Age=2592000(30일); Path=/; HttpOnly; Secure; SameSite=Lax` — 실제 Cloud Run 도메인에서는 쿠키 이름에 `__Secure-` 접두어가 붙는다(로컬 http의 erp.session_token과 다름). 저장한 쿠키만 들고 새 클라이언트로 GET /account → 200, 이메일 렌더(리다이렉트 없음) = 브라우저 완전 종료·재진입 상당. 제약: 이 세션의 Chromium은 에그레스 프록시 CA를 신뢰하지 못해 실제 브라우저 대신 Node fetch(NODE_EXTRA_CA_CERTS, TLS 검증 유지)로 HTTP 수준 실측했다 — 쿠키 속성·세션 유지는 이 수준에서 판정된다. 계정은 account.yml reset으로 세션 만료(run #16)."
 
 ### 6. 프로덕션 /admin/system-status 관리자 렌더 + 백업 절 (VERIFICATION human 2)
 expected: 프로덕션에서 관리자로 /admin/system-status를 열면 배포 SHA(ed2fbc56)·DB 커넥션 n / 25·마지막 백업 절이 보인다. 2026-09-19 18:00 UTC 첫 자동 백업 이후 다시 열면 백업이 '성공 + 시각'으로 바뀐다. 런타임 SA의 roles/cloudsql.viewer 실부여와 Cloud SQL Admin API 호출 경로가 프로덕션에서 처음 관찰된다.
-result: blocked
-blocked_by: physical-device
-reason: "프로덕션 관리자 로그인 + 브라우저 렌더 관찰 필요, 첫 자동 백업 이후 재확인도 필요. WINDOWS.md 등록"
+result: pass
+source: executor-verified
+evidence: "2026-09-22 같은 관리자 세션으로 프로덕션 GET /admin/system-status → 200. 렌더된 dl 원문: 「배포 버전 SHA: ed2fbc56 배포 시각: 2026-09-18T18:26:47Z 환경: prod / DB 커넥션 2 / 25 / 마지막 백업 SUCCESSFUL · 2026-09-21T19:04:34.964Z」. 즉 런타임 SA의 cloudsql.viewer와 lib/gcp/cloud-sql-admin.ts 호출 경로가 프로덕션에서 실제로 동작해 자동 백업(첫 백업 이후)이 '성공 + 시각'으로 보였다. 제약은 5번과 같다(HTTP 수준 실측, SSR HTML 파싱)."
 
 ### 7. 백업 실패 경보 필터·메일 전달 (VERIFICATION human 3)
 expected: 백업 실패 경보 정책의 필터가 실제 이벤트를 잡고 이메일이 배달된다. 정책 존재는 2026-09-18 실측으로 확인됐지만, 실패 이벤트 없이는 필터 정확성과 메일 전달을 프로그램으로 검증할 수 없다.

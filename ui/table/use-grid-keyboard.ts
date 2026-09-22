@@ -16,8 +16,9 @@ export type GridKeyboardHandlers = {
   onEscape?: (pos: GridPosition, wasEditing: boolean) => void;
   /** Delete — 편집 중이 아닐 때만: 줄 삭제 확인 모달을 연다. */
   onDeleteRow?: (rowIndex: number) => void;
-  /** ⌘/Ctrl+Enter — 새 줄. */
-  onNewRow?: () => void;
+  /** ⌘/Ctrl+Enter — 새 줄. 현재 포커스 행 인덱스를 넘긴다(D-62: 그 줄의
+   * 그룹 대분류를 물려받아야 한다 — 어느 그룹 안에서 눌렀는지 알아야 한다). */
+  onNewRow?: (currentRowIndex: number) => void;
   /** ⌘/Ctrl+D — 줄 복제. */
   onDuplicateRow?: (rowIndex: number) => void;
   /** Alt+↑/↓ — 줄 이동. */
@@ -99,7 +100,7 @@ export function useGridKeyboard({
 
     if (meta && (event.key === "Enter" || event.key === "NumpadEnter")) {
       event.preventDefault();
-      handlers.onNewRow?.();
+      handlers.onNewRow?.(pos.row);
       return;
     }
     if (meta && (event.key === "d" || event.key === "D")) {

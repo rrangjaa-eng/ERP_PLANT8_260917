@@ -16,7 +16,8 @@ import { useGridKeyboard, type GridPosition } from "./use-grid-keyboard";
 // 붙여넣기 + 셀 오류·충돌 렌더가 활성화된다(§7-3 (아)).
 export type TableKeyboardHandlers<Row> = {
   onDeleteRow?: (row: Row) => void;
-  onNewRow?: () => void;
+  /** ⌘/Ctrl+Enter — 새 줄. 포커스가 있던 행을 넘긴다(그룹 대분류 상속, D-62). */
+  onNewRow?: (currentRow?: Row) => void;
   onDuplicateRow?: (row: Row) => void;
   onMoveRow?: (row: Row, direction: "up" | "down") => void;
   onSave?: () => void;
@@ -140,7 +141,10 @@ export function Table<Row>({
         const row = flatRows[rowIndex];
         if (row) keyboard?.onDeleteRow?.(row);
       },
-      onNewRow: () => keyboard?.onNewRow?.(),
+      onNewRow: (rowIndex) => {
+        const row = flatRows[rowIndex];
+        keyboard?.onNewRow?.(row);
+      },
       onDuplicateRow: (rowIndex) => {
         const row = flatRows[rowIndex];
         if (row) keyboard?.onDuplicateRow?.(row);

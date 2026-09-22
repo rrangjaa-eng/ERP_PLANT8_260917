@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -15,6 +15,15 @@ export async function listQuoteLinesByRevision(viewer: Viewer, revisionId: strin
     .from(quoteLines)
     .where(eq(quoteLines.revisionId, revisionId))
     .orderBy(quoteLines.sortOrder);
+}
+
+// 04-04 Task 2 ① — 배치 저장이 쓰기 전에 현재 값·버전을 한 번에 읽는다
+// (버전 비교 → 셀 단위 충돌 판정의 입력). db.transaction의 tx로 불러야
+// 같은 트랜잭션 안에서 읽고-비교하고-쓴다(격리 수준 안에서 일관된 스냅샷).
+export async function findQuoteLinesByIds(viewer: Viewer, ids: string[], tx: DbOrTx = db): Promise<QuoteLineRow[]> {
+  void viewer;
+  if (ids.length === 0) return [];
+  return tx.select().from(quoteLines).where(inArray(quoteLines.id, ids));
 }
 
 export async function findQuoteLineById(viewer: Viewer, id: string): Promise<QuoteLineRow | null> {

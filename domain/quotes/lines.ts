@@ -15,6 +15,7 @@ import {
   listQuoteLinesByRevision as repoListQuoteLinesByRevision,
   insertQuoteLine as repoInsertQuoteLine,
   updateQuoteLineIfVersionMatches as repoUpdateQuoteLineIfVersionMatches,
+  findQuoteLinesByIds as repoFindQuoteLinesByIds,
   type QuoteLineRow,
 } from "@/repositories/quote-lines";
 import {
@@ -178,6 +179,22 @@ export async function listQuoteLines(viewer: Viewer, revisionId: string): Promis
 // 화면이 보내는 줄 하나 — id가 있으면 기존 줄 갱신(version 필수), 없으면
 // 새 줄. **quoteAmountKrw·profitKrw 필드를 받지 않는다** — 클라이언트가
 // 뭘 보내든 서버는 이 타입에 없는 값을 읽지 않는다(PROJ-02, D-63).
+// 04-04 Task 2 ② — 이 줄을 불러왔을 때(version을 읽은 시점) 클라이언트가
+// 본 값의 스냅샷. `id`가 있는 기존 줄에서만 의미가 있고, 저장 시점 버전이
+// 그대로면 쓰이지 않는다. 버전이 달라졌을 때만 이 값과 서버의 현재 값을
+// 셀 단위로 비교해 **실제로 달라진 셀만** 충돌로 판정한다(D-65) — 그냥
+// "버전이 다르다"만으로 그 줄 전체를 충돌 처리하지 않는다.
+export type QuoteLineBaseline = {
+  subcategory: string;
+  itemName: string;
+  vendorId: string | null;
+  quantity: number;
+  unitPriceAmountKrw: number;
+  executionAmountKrw: number;
+  lineStatus: string;
+  note: string | null;
+};
+
 export type QuoteLineWriteRow = {
   id?: string;
   version?: number;
@@ -193,7 +210,103 @@ export type QuoteLineWriteRow = {
   lineStatus?: string;
   note?: string | null;
   customFields?: Record<string, unknown>;
+  baseline?: QuoteLineBaseline;
 };
+
+type CompareField = keyof QuoteLineBaseline;
+
+const FIELD_LABELS: Record<CompareField, string> = {
+  subcategory: "소분류",
+  itemName: "항목",
+  vendorId: "거래처",
+  quantity: "수량",
+  unitPriceAmountKrw: "단가",
+  executionAmountKrw: "실행가",
+  lineStatus: "상태",
+  note: "비고",
+};
+
+const COMPARE_FIELDS: CompareField[] = [
+  "subcategory",
+  "itemName",
+  "vendorId",
+  "quantity",
+  "unitPriceAmountKrw",
+  "executionAmountKrw",
+  "lineStatus",
+  "note",
+];
+
+function currentFieldValue(row: QuoteLineRow, field: CompareField): string | number | null {
+  switch (field) {
+    case "subcategory":
+      return row.subcategory;
+    case "itemName":
+      return row.itemName;
+    case "vendorId":
+      return row.vendorId;
+    case "quantity":
+      return Number(row.quantity);
+    case "unitPriceAmountKrw":
+      return row.unitPriceAmountKrw;
+    case "executionAmountKrw":
+      return row.executionAmountKrw;
+    case "lineStatus":
+      return row.lineStatus;
+    case "note":
+      return row.note;
+  }
+}
+
+function formatFieldValue(field: CompareField, value: string | number | null): string {
+  if (field === "unitPriceAmountKrw" || field === "executionAmountKrw") {
+    return Number(value ?? 0).toLocaleString("ko-KR");
+  }
+  return value === null || value === "" ? "—" : String(value);
+}
+
+// PROJ-02·D-65 — 줄 버전 충돌·셀 단위 판정 결과. `reason`은 Copywriting
+// Contract "Error — 셀(충돌)" 형식 그대로: "다른 사람이 HH:mm에 값으로
+// 바꿈 · 덮어쓰기 / 그 값으로".
+export type CellConflict = {
+  rowId: string;
+  field: CompareField;
+  label: string;
+  reason: string;
+  theirValue: string;
+};
+
+export type CellFormatError = {
+  rowIndex: number;
+  rowId?: string;
+  field: string;
+  label: string;
+  reason: string;
+};
+
+// PROJ-02·D-65·UX-04 — 배치 저장이 충돌·형식 오류를 이유로 전부 거부할 때
+// 던지는 구조화된 오류. `.message`는 next-safe-action의 handleServerError를
+// 거쳐 화면 alert 문자열이 되고, `.conflicts`/`.formatErrors`는 이 함수를
+// 직접 호출하는(도메인 계층) 테스트가 셀 단위 판정을 검증할 때 쓴다.
+export class SaveRejectedError extends UserFacingError {
+  readonly conflicts: CellConflict[];
+  readonly formatErrors: CellFormatError[];
+
+  constructor(conflicts: CellConflict[], formatErrors: CellFormatError[]) {
+    const summaryParts: string[] = [];
+    if (conflicts.length > 0) {
+      const rowCount = new Set(conflicts.map((c) => c.rowId)).size;
+      summaryParts.push(`충돌 ${rowCount}줄 · 전부 거부`);
+    }
+    if (formatErrors.length > 0) {
+      summaryParts.push(`오류 ${formatErrors.length}칸 · 전부 거부`);
+    }
+    const detail = [...conflicts, ...formatErrors].map((issue) => `[${issue.label}] ${issue.reason}`).join(" · ");
+    super(`${summaryParts.join(" · ")}${detail ? " · " + detail : ""}`);
+    this.conflicts = conflicts;
+    this.formatErrors = formatErrors;
+  }
+}
 
 export type QuoteLineComputedAmounts = {
   unitPriceColumns: ReturnType<typeof moneyToColumns>;
@@ -263,6 +376,100 @@ export async function saveQuoteLines(
 
   const customFieldsSchema = await quoteLineCustomFieldsSchema(viewer);
 
+  // 04-04 Task 2 ② — 쓰기 전에 판정·비교를 전부 끝낸다: (a) 현재 행을 한
+  // 번에 읽어 버전 비교 → (b) 버전이 다른 줄은 baseline과 현재 값을 셀
+  // 단위로 비교해 **실제로 달라진 셀만** 충돌로 모은다 → (c) 형식 오류를
+  // 모은다 → (d) 하나라도 있으면 **아무것도 쓰지 않고** 거부한다(D-65,
+  // UX-04 "전부 저장 또는 전부 거부"). 이 읽기는 composite 저장(tx 인자로
+  // 넘어온 외부 트랜잭션)과 같은 커넥션에서 일관되게 읽도록 tx를 그대로
+  // 넘긴다(undefined면 리포지토리 기본값 db).
+  const existingIds = rows.map((row) => row.id).filter((id): id is string => id !== undefined);
+  const currentRowsById = new Map(
+    (await repoFindQuoteLinesByIds(viewer, existingIds, tx)).map((row) => [row.id, row] as const),
+  );
+
+  const conflicts: CellConflict[] = [];
+  const formatErrors: CellFormatError[] = [];
+
+  rows.forEach((input, rowIndex) => {
+    if (input.quantity !== undefined && input.quantity <= 0) {
+      formatErrors.push({
+        rowIndex,
+        rowId: input.id,
+        field: "quantity",
+        label: "수량",
+        reason: "숫자가 아닙니다 · 0보다 큰 수를 적어 주세요",
+      });
+    }
+    if (input.unitPrice.amount < 0) {
+      formatErrors.push({
+        rowIndex,
+        rowId: input.id,
+        field: "unitPrice",
+        label: "단가",
+        reason: "숫자가 아닙니다 · 12,400,000처럼 적어 주세요",
+      });
+    }
+    if (input.execution.amount < 0) {
+      formatErrors.push({
+        rowIndex,
+        rowId: input.id,
+        field: "execution",
+        label: "실행가",
+        reason: "숫자가 아닙니다 · 12,400,000처럼 적어 주세요",
+      });
+    }
+
+    if (!input.id) return; // 새 줄은 버전 충돌 대상이 아니다.
+    if (input.version === undefined) {
+      throw new UserFacingError("기존 줄을 저장하려면 버전 정보가 필요합니다 · 화면을 새로고침해 주세요");
+    }
+    const current = currentRowsById.get(input.id);
+    if (!current) {
+      throw new UserFacingError("줄을 찾을 수 없습니다 · 화면을 새로고침해 주세요");
+    }
+    if (current.version === input.version) return; // 버전이 같으면 충돌 없음.
+
+    if (!input.baseline) {
+      // 방어적 폴백 — 정상 클라이언트는 항상 baseline을 함께 보낸다.
+      // 셀 단위 비교 근거가 없으면 줄 전체를 충돌로 본다(과거 동작과
+      // 동일하게 안전한 쪽으로 거부).
+      conflicts.push({
+        rowId: input.id,
+        field: "itemName",
+        label: FIELD_LABELS.itemName,
+        reason: "다른 사람이 이 줄을 바꿨습니다 · 덮어쓰기 / 그 값으로",
+        theirValue: current.itemName,
+      });
+      return;
+    }
+
+    const changedAt = current.updatedAt.toLocaleTimeString("ko-KR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: "Asia/Seoul",
+    });
+
+    for (const field of COMPARE_FIELDS) {
+      const baselineValue = input.baseline[field];
+      const currentValue = currentFieldValue(current, field);
+      if (baselineValue === currentValue) continue; // 값이 실제로 같으면 충돌이 아니다.
+      const theirValue = formatFieldValue(field, currentValue);
+      conflicts.push({
+        rowId: input.id,
+        field,
+        label: FIELD_LABELS[field],
+        reason: `다른 사람이 ${changedAt}에 ${theirValue}으로 바꿈 · 덮어쓰기 / 그 값으로`,
+        theirValue,
+      });
+    }
+  });
+
+  if (conflicts.length > 0 || formatErrors.length > 0) {
+    throw new SaveRejectedError(conflicts, formatErrors);
+  }
+
   const runSave = async (innerTx: DbOrTx): Promise<QuoteLineRow[]> => {
     const results: QuoteLineRow[] = [];
 
@@ -299,13 +506,24 @@ export async function saveQuoteLines(
       };
 
       if (input.id) {
-        if (input.version === undefined) {
-          throw new UserFacingError("기존 줄을 저장하려면 버전 정보가 필요합니다 · 화면을 새로고침해 주세요");
-        }
-        const updated = await repoUpdateQuoteLineIfVersionMatches(viewer, input.id, input.version, payload, innerTx);
+        // input.version은 위 사전 판정에서 undefined가 아님을 이미 확인했다.
+        const updated = await repoUpdateQuoteLineIfVersionMatches(viewer, input.id, input.version!, payload, innerTx);
         if (!updated) {
-          throw new UserFacingError(
-            `다른 사람이 먼저 이 줄을 바꿨습니다 · 덮어쓰기 / 그 값으로(줄 ${input.id})`,
+          // 사전 판정과 실제 쓰기 사이의 드문 경합(다른 트랜잭션이 그
+          // 사이 커밋) — 같은 구조화 오류로 거부한다. 이 시점엔 아직
+          // 아무것도 커밋되지 않았으므로(트랜잭션 안) 이 throw가 전체를
+          // 되돌린다.
+          throw new SaveRejectedError(
+            [
+              {
+                rowId: input.id,
+                field: "itemName",
+                label: FIELD_LABELS.itemName,
+                reason: "다른 사람이 방금 이 줄을 바꿨습니다 · 덮어쓰기 / 그 값으로",
+                theirValue: "",
+              },
+            ],
+            [],
           );
         }
         results.push(updated);

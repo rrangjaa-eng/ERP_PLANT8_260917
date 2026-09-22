@@ -222,6 +222,69 @@ export const PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE: SettingDef<boolean> =
   readBy: { phase: "6" },
 };
 
+// 04-05(ADMN-09) — 프로젝트 문서 번호 서식. 문서 종류별 키 묶음(Claude
+// 재량 항목, `domain/document-numbering/index.ts` 머리 주석에 근거 셋
+// 기록) — 접두어·연도 자릿수·순번 자릿수·구분자·순번 시작값 다섯 다
+// 단순값이다(서식을 바꿔도 이미 매긴 번호는 그대로라 과거 시점 조회가
+// 필요 없다). 기본값은 `docs/inputs/phase-04-project-quote.md` §5가
+// 확정한 프로젝트 서식(`26001` — 접두어 없음·연도 뒤 2자리·순번 3자리·
+// 구분자 없음·순번 1부터)과 정확히 같다. 지출결의·연차·카드·구매 요청
+// 서식 키는 그 문서가 생기는 페이즈가 `document_number.<종류>.*` 같은
+// 형태로 이 파일에 더한다.
+export const DOCUMENT_NUMBER_PROJECT_PREFIX: SettingDef<string> = {
+  key: "document_number.project.prefix",
+  kind: "simple",
+  schema: z.string(),
+  label: "프로젝트 번호 접두어",
+  hint: "번호 맨 앞에 붙는 문자열입니다(기본값은 없음).",
+  namespace: "문서 번호",
+  default: "",
+};
+
+export const DOCUMENT_NUMBER_PROJECT_YEAR_DIGITS: SettingDef<number> = {
+  key: "document_number.project.year_digits",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1).max(4),
+  label: "프로젝트 번호 연도 자릿수",
+  hint: "연도를 뒤에서부터 이 자릿수만큼 씁니다(기본 2 → 26).",
+  namespace: "문서 번호",
+  default: 2,
+};
+
+export const DOCUMENT_NUMBER_PROJECT_SEQ_DIGITS: SettingDef<number> = {
+  key: "document_number.project.seq_digits",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1),
+  label: "프로젝트 번호 순번 자릿수",
+  hint: "순번을 이 자릿수만큼 0으로 채웁니다(넘치면 자릿수가 늘어나고 잘리지 않습니다).",
+  namespace: "문서 번호",
+  default: 3,
+};
+
+// 기본값이 빈 문자열이다 — 확정된 프로젝트 서식(`26001`)이 연도와 순번
+// 사이에 구분자를 두지 않는다. z.string()은 값 자체(빈 문자열 포함)를
+// 허용하고, 키가 아예 비어 값이 없는 상태(undefined)만 막는다 — 빈
+// 문자열을 거부하면 이 기본 서식 자체가 저장 불가능해진다.
+export const DOCUMENT_NUMBER_PROJECT_SEPARATOR: SettingDef<string> = {
+  key: "document_number.project.separator",
+  kind: "simple",
+  schema: z.string(),
+  label: "프로젝트 번호 구분자",
+  hint: "연도와 순번 사이에 넣을 문자입니다(기본값은 없음).",
+  namespace: "문서 번호",
+  default: "",
+};
+
+export const DOCUMENT_NUMBER_PROJECT_SEQ_START: SettingDef<number> = {
+  key: "document_number.project.seq_start",
+  kind: "simple",
+  schema: z.coerce.number().int().min(0),
+  label: "프로젝트 번호 순번 시작값",
+  hint: "연도가 바뀌어 순번이 다시 시작할 때의 첫 값입니다(기본 1).",
+  namespace: "문서 번호",
+  default: 1,
+};
+
 export const PNL_START_GATE_WEEKS_AFTER_CUTOVER: SettingDef<number> = {
   key: "pnl.start_gate.weeks_after_cutover",
   kind: "simple",
@@ -253,6 +316,11 @@ export const SETTING_DEFS: SettingDef<unknown>[] = [
   TAX_ROUNDING_WITHHOLDING_UNIT,
   TAX_ROUNDING_MIN_WITHHOLDING,
   FX_RECENT_RATE_USD,
+  DOCUMENT_NUMBER_PROJECT_PREFIX,
+  DOCUMENT_NUMBER_PROJECT_YEAR_DIGITS,
+  DOCUMENT_NUMBER_PROJECT_SEQ_DIGITS,
+  DOCUMENT_NUMBER_PROJECT_SEPARATOR,
+  DOCUMENT_NUMBER_PROJECT_SEQ_START,
   PROJECT_FORCE_COMPLETE_ALLOW_OPEN_EXPENSES,
   PROJECT_FORCE_COMPLETE_ALLOW_UNMATCHED_ESTIMATE_LINES,
   PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE,

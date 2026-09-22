@@ -5,9 +5,9 @@
 .groupLabel {
   margin: 0;
   padding: var(--s-3) 0 var(--s-1);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
-  color: var(--faint);
+  color: var(--muted);
 }
 
 .list {
@@ -30,7 +30,7 @@
   gap: var(--s-3);
   width: 100%;
   min-height: var(--touch-min);
-  padding: 0 var(--pad-page);
+  padding: 0;
   border: 0;
   background: none;
   color: var(--fg);

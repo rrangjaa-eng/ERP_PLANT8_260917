@@ -22,6 +22,11 @@
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR\"/scripts/dev-db.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/scripts/setup-gcloud.sh",
+            "timeout": 180
           }
         ]
       }

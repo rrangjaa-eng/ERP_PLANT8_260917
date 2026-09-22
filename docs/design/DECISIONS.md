@@ -410,7 +410,7 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 
 **같이 고친 것**: §6-0 (a)(사용자 진입점 문장), §6-0 「더보기」 시트 항목, §6-8 진입점 문장(시스템 상태 화면), §7-8 「더보기」 시트 항목.
 
-**범위**: 문서(`SYSTEM.md`) + `ui/shell/role-menu.ts`·`ui/shell/MoreSheet.tsx`·`app/(app)/admin/page.tsx`.
+**범위**: 문서(`SYSTEM.md`) + `ui/shell/role-menu.ts`·`ui/shell/MoreSheet.tsx`·`ui/shell/TopBar.tsx`(주석만 변경)·`app/(app)/admin/page.tsx`·`app/(app)/admin/admin-index.module.css`(신설).
 
 **D-17과의 관계**: 이 결정은 D-17(권한 없는 리소스는 404)을 바꾸지 않는다 — `/admin` 인덱스 자체도 볼 항목이 0개면 404다.
 

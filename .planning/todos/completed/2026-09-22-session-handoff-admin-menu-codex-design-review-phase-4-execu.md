@@ -4,12 +4,16 @@ title: 새 세션 인수인계 — 관리자 메뉴 → 코덱스 디자인 리�
 area: planning
 severity: minor
 files:
+
   - ui/shell/role-menu.ts
   - ui/shell/MoreSheet.tsx
   - docs/design/SYSTEM.md
   - docs/design/DECISIONS.md
   - test/unit/ui/role-menu.test.ts
   - .planning/phases/04-project-quote-ledger/
+
+completed: 2026-09-22
+status: completed
 ---
 
 ## Problem
@@ -57,6 +61,7 @@ Phase 4는 **계획만** 끝났고 실행은 아직이다. 사용자 결정으�
 7플랜 / 4웨이브. 실행 후 Post-build 넷 필수이며, 권한·외부 입력을 건드리므로 **`/cso` 포함**.
 
 **실행 전 알아야 할 체크포인트:**
+
 - `04-01` Task 1 — 일방통행 결정 7건 묶음(`checkpoint:decision`, blocking). `A`로 답하면 전체 권고 채택
 - `04-03` — `autonomous: false`. 인트라넷 덤프 경로 필요(`checkpoint:human-action`) + `amount_basis` 규칙을 경영관리가 표본 대조(`checkpoint:human-verify`). **「보류」면 ROADMAP 성공 기준 7이 미착수로 남고 페이즈는 6/7로 끝난다**(플랜에 명시됨)
 - `04-04` Task 3 — 실제 Excel 3×3 붙여넣기(`checkpoint:human-verify`)

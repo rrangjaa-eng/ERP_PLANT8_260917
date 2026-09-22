@@ -283,6 +283,7 @@ export function RevenueSection({
             getRowId={(row) => row.clientKey}
             emptyMessage="입금 줄이 없습니다"
             emptyAction={canWriteEntries ? { label: "입금 줄 추가", onClick: onAddPaid } : undefined}
+            alwaysShowFooter
             footer={
               <tr>
                 <td colSpan={paidColumns.length - 1} className={styles.footerCell}>

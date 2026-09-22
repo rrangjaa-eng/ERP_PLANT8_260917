@@ -19,6 +19,12 @@ export type TableProps<Row> = {
   emptyAction?: { label: string; onClick: () => void };
   footer?: ReactNode;
   onCellCommit?: (rowId: string, columnKey: string, value: string) => void;
+  /**
+   * 04-02(U-3 계획 단계 판단) — 행이 0개일 때도 `footer`를 함께 렌더한다.
+   * 기본은 false(기존 표의 EMPTY 단독 렌더 유지) — 입금 줄 표처럼 EMPTY
+   * 상태에서도 합계 행에 미수 금액을 보여야 하는 표만 켠다.
+   */
+  alwaysShowFooter?: boolean;
 };
 
 type ActiveCell = { rowId: string; columnKey: string } | null;
@@ -45,6 +51,7 @@ export function Table<Row>({
   emptyAction,
   footer,
   onCellCommit,
+  alwaysShowFooter,
 }: TableProps<Row>) {
   const [activeCell, setActiveCell] = useState<ActiveCell>(null);
 
@@ -70,6 +77,7 @@ export function Table<Row>({
             </td>
           </tr>
         </tbody>
+        {alwaysShowFooter && footer ? <tfoot aria-live="polite">{footer}</tfoot> : null}
       </table>
     );
   }

@@ -43,7 +43,9 @@ export function NextTurn({ view, moreHref }: NextTurnProps) {
               <StatusTag kind={TAG_KIND[item.tag]}>{item.tag}</StatusTag>
             </span>
             <span className={styles.grow}>
-              {item.label}
+              {/* 대상은 자기 span을 가진다 — 폰(§7-4 두 줄)에서 .grow가 display:contents로
+                  풀리면 대상과 이유가 각자 그리드 칸에 놓여야 하기 때문이다. */}
+              <span className={styles.label}>{item.label}</span>
               <span className={styles.why}> · {item.reason}</span>
             </span>
             <span className={styles.amt}>{item.amount.toLocaleString("ko-KR")}</span>

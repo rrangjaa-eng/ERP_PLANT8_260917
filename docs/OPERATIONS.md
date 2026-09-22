@@ -166,9 +166,10 @@ WIF 풀·프로바이더, 서비스 계정 3개(배포자 + 환경별 런타임 
 손으로 맞춘다.
 
 **`app-data-key-v1`은 base64로 인코딩된 정확히 32바이트여야 한다**(`lib/crypto.ts`
-`APP_DATA_KEY_BYTES`, aes-256-gcm 키 길이 — 길이가 다르면 `keyFor()`가 쓰기 전에
-즉시 예외를 던진다). `_ensure_secret`은 ENABLED 버전이 이미 있으면 새로 만들지
-않으므로, 이 계약이 생기기 전(03-06 이전)에 배포된 환경은 `deploy.sh`를 다시 돌려도
+`APP_DATA_KEY_BYTES`, aes-256-gcm 키 길이). 길이가 다르면 `lib/env.ts`가 **부팅 시점에**
+거부해 그 리비전은 뜨지 않고 `deploy.sh` 스모크가 실패한다(값이 없으면 통과 — Job은
+이 키를 받지 않는다). `keyFor()`의 같은 검사는 두 번째 방어선이다. `_ensure_secret`은
+ENABLED 버전이 이미 있으면 새로 만들지 않으므로, 이 계약이 생기기 전(03-06 이전)에 배포된 환경은 `deploy.sh`를 다시 돌려도
 고쳐지지 않는다 — 실제로 01-07·01-08에서 만든 `app-data-key-v1-staging`·
 `app-data-key-v1-prod`가 옛 코드(`openssl rand -base64 48`, 48바이트)로 생성돼 이
 상태다. 다만 길이가 틀린 키로는 `encrypt()`/`decrypt()`가 애초에 실행되지 않으므로

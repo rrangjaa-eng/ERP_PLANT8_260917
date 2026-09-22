@@ -69,10 +69,12 @@ describe("lib/crypto", () => {
     expect(() => decrypt(stored)).toThrow();
   });
 
-  it("키 길이가 32바이트가 아니면 암호화가 즉시 예외를 던지며 메시지가 길이 문제를 가리킨다", async () => {
+  // lib/env.ts가 부팅 시점에 같은 길이 검사를 먼저 하므로(03-VERIFICATION 사람
+  // 판정 2 해소), 길이가 틀린 키는 encrypt()에 닿기 전 모듈 로드에서 키 이름과
+  // 함께 거부된다. keyFor()의 검사는 두 번째 방어선으로 남는다.
+  it("키 길이가 32바이트가 아니면 모듈 로드에서 즉시 예외를 던지며 메시지가 키 이름을 가리킨다", async () => {
     process.env.APP_DATA_KEY_v1 = Buffer.alloc(16, 1).toString("base64");
-    const { encrypt } = await loadCrypto();
-    expect(() => encrypt("x")).toThrow(/길이/);
+    await expect(loadCrypto()).rejects.toThrow(/APP_DATA_KEY_v1/);
   });
 
   it("암호문 조각을 한 글자라도 바꾸면 복호화가 인증 태그 검증에서 실패한다", async () => {

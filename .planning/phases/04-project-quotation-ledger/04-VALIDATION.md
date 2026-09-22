@@ -71,6 +71,11 @@ created: "2026-09-21"
 - [ ] `test/unit/design-tokens-usage.test.ts` — D-61. 사용처 0인 토큰을 잡되 감시 범위는 `app/**` + `ui/**`. `--form-max`가 오늘 RED여야 한다
 - [ ] `test/unit/migrate/extract-allowlist.test.ts` — D-57a. 허용목록 밖 표·DB를 만나면 extract가 실패하는지
 - [ ] `test/unit/source-column-coverage.test.ts` — D-58. 이전 대상 업무 표가 `source`·`source_id`를 빠뜨리면 잡는다
+- [ ] `test/unit/ui/no-raw-datalist.test.ts` — D-83. `app/**`에 자동완성 목록 요소 리터럴이 0개임을 단언한다. 04-07에서 **첫 실행부터 초록**이고(그때 `app/`에 해당 화면이 없다) 04-11·04-12·04-13이 화면을 만들 때 실제로 일한다
+- [ ] `test/unit/migrate/transform-schema-parity.test.ts` — B9. 변환 출력 키가 `db/schema/*.ts` 컬럼 이름의 부분집합인지. 04-06이 웨이브 3으로 옮겨진 이유가 이 대조를 실제 파일로 하기 위해서다
+- [ ] `test/unit/migrate/planning-leak.test.ts` — N5 · D-57. 커밋되는 `04-06-SUMMARY.md`·`04-VERIFICATION.md`에 실데이터 유래 값이 없음을 단언한다
+- [ ] `test/e2e/fixtures.ts` 확장(04-02) — B7. 콘솔 오류·페이지 예외를 자동 수집해 0을 단언하는 `test`. 이 저장소의 37개 스펙 중 그것을 보는 스펙이 **0개**였다(실측). 이 페이즈의 새 스펙 전부가 이것을 쓴다
+- [ ] `test/e2e/top-bar-hydration.spec.ts` — B7. 상단 바가 hydration 오류 없이 뜨는지
 
 ---
 
@@ -80,7 +85,9 @@ created: "2026-09-21"
 |---|---|---|---|
 | 목록 응답 p99 500ms | PROJ-01 (ROADMAP 기준 1) | 부하 특성이라 단위 테스트로 못 고정한다. 125건 규모에서는 자명하나 수치가 기준에 못박혀 있다 | 시드된 개발 DB에서 목록 화면을 재고 결과를 `04-VERIFICATION.md`에 적는다 |
 | 엑셀 붙여넣기가 실제 스프레드시트에서 온 TSV로 동작 | UX-05 | Playwright의 합성 클립보드가 실제 Excel·Google Sheets의 TSV 형태와 다를 수 있다 | 실제 시트에서 범위를 복사해 견적 줄 표에 붙여넣는다 |
-| transform의 `amount_basis` 판정이 실데이터에서 맞는지 | ROADMAP 기준 7 | 실데이터가 public 레포 밖에 있어 CI가 볼 수 없다(D-57) | 로컬에서 `PLANT8_INTRANET_BACKUP_260915` 덤프로 돌리고 보고서를 눈으로 본다. 보고서는 커밋하지 않는다 |
+| transform의 `amount_basis` 판정이 실데이터에서 맞는지 | ROADMAP 기준 7 | 실데이터가 public 레포 밖에 있어 CI가 볼 수 없다(D-57) | 로컬에서 `PLANT8_INTRANET_BACKUP_260915` 덤프로 돌리고 보고서를 눈으로 본다. 보고서는 커밋하지 않는다. **`04-06-SUMMARY.md`·`04-VERIFICATION.md`에는 판정(맞다/틀리다)과 규칙 이름만 적고 값·건수·금액을 적지 않는다** — `test/unit/migrate/planning-leak.test.ts`가 그것을 강제한다(N5) |
+| 스테이징 배포 후 검증 | D-86 · ROADMAP 기준 1·4·6 | **이 컨테이너는 프록시가 `*.run.app`을 403으로 막아 실행할 수 없다.** 안 도는 것을 자동 태스크로 적으면 실행자가 습관적으로 건너뛴다 — 그래서 p99·TSV와 같은 수동 항목으로 둔다(D-86) | 웨이브 6이 끝난 뒤 `/ship` **전에** 스테이징에 배포하고 5분/1시간 두 시점에 확인한다: ① 마이그레이션 Job이 표 다섯을 만들고 CHECK·부분 UNIQUE 인덱스가 실제로 섰는지 ② 코드표 상태 항목이 정확히 넷인지 ③ 프로젝트 등록 → 번호 부여 → 목록 합계가 화면에서 맞는지 ④ 다차수 프로젝트의 합계가 배수가 아닌지(B1) ⑤ 리저브 출금 거부 문구가 §8-3 형식인지 ⑥ 상단 바에서 콘솔 오류가 0건인지(B7) ⑦ 구/신 리비전 공존 창에서 구코드 화면이 깨지지 않는지. 결과를 `04-VERIFICATION.md`에 항목별 통과/불통과로 적는다 — **값은 적지 않는다**(D-57 · N5). 근거: Phase 3에서 사용자가 결함 3건을 스테이징에서 먼저 찾았고 그 공백이 여기다 |
+| `project_status` 재시드 롤백 절차 | D-86 · D-63 | 실제 Cloud SQL 되돌림을 이 컨테이너에서 실행할 수 없고, 되돌림은 장애 시에만 도는 경로라 상시 자동화 대상이 아니다 | 이 페이즈의 **유일한 비가산 단계**다 — 표 다섯 생성은 가산적이지만 코드표 재시드는 기존 다섯 행 중 겹치지 않는 넷을 건드린다(D-63 · 04-05 Task 1). `04-VERIFICATION.md`에 절차를 단계로 적는다: ① 재시드가 그 넷을 어떻게 처리했는지(삭제/보관/방치 중 04-05가 고른 것)와 값 목록 ② 이전 리비전으로 트래픽을 되돌린 뒤 구코드 `pnpm db:seed`가 그 넷을 자동 복구하는지, 아니면 수기 단계가 필요한지 ③ 자동 복구되는 경우 **중복이 생기지 않음**을 무엇으로 확인하는지(`seedCodeItem`의 멱등성과 그 근거 좌표). 스테이징 검증과 같은 자리에서 사람이 한 번 읽고 확인한다 |
 
 ---
 
@@ -93,9 +100,10 @@ created: "2026-09-21"
 - [x] 피드백 지연 < 60s (unit 단계)
 - [x] `nyquist_compliant: true`
 
-**추가 제약 셋(계획 단계 실측)**
+**추가 제약 넷(계획 단계 실측 + CEO 심층 검토 반영)**
 1. **RTL이 없다.** unit project가 `environment: "node"`이고 `@testing-library/react`가 미설치이며 D-45가 새 의존성 0을 요구한다. 그래서 컴포넌트 검증을 ① 순수 모듈로 뽑아 진짜 단위 테스트 ② 렌더 문자열·CSS는 소스 단언(`toast-timer.test.ts`·`system-md-compliance.test.ts` 선례) ③ 실제 DOM은 `CI=true` E2E 셋으로 갈랐다. 04-08·04-10이 계약의 무게를 의도적으로 순수 모듈(`column-fold.ts` · `grid-keys.ts` · `tsv.ts`)로 옮긴 이유가 이것이다
 2. **테스트 파일은 전부 `test/` 아래다.** 코로케이트 테스트가 이 저장소에 0건이고 unit project의 `include`가 그것을 잡지 않는다
 3. **`db/migrations/`를 건드리는 플랜은 04-05 하나다.** 같은 웨이브의 두 플랜이 `pnpm db:generate`를 돌리면 파일 번호가 충돌한다
+4. **04-06은 웨이브 3이다**(CEO 심층 검토 B9). 파일 공유는 0이지만 변환 출력이 04-05의 실제 컬럼 모양과 04-03의 실제 시그니처에 맞아야 하고, 04-05 Task 2가 그 컬럼 모양들을 실행자 재량으로 남겼기 때문에 플랜 마크다운을 읽는 것으로는 맞출 수 없다. 웨이브 3의 폭은 넷(06·07·08·09)이고 웨이브 2의 다섯을 넘지 않는다
 
 **Approval:** approved — 13플랜 전부에 `<automated>` verify 존재 확인(2026-09-22)

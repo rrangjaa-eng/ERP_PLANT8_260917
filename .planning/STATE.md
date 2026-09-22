@@ -32,7 +32,7 @@ Phase: 04 (project-quote-ledger) — READY TO EXECUTE
 Current Plan: 1
 Total Plans in Phase: 7
 Status: Ready to execute
-Last activity: 2026-09-22 - Completed quick task 260922-c04: Codex CLI SessionStart 훅 설치 + CODEX_AUTH_JSON_B64 자격 주입
+Last activity: 2026-09-22 - Completed quick task 260922-i3k: 관리자 메뉴 정리(옵션 B) + A-M3 표 캡션
 
 Progress: [█░░░░░░░░░] 9%
 
@@ -147,7 +147,9 @@ Recent decisions affecting current work:
 ### Pending Todos
 
 - [2026-09-20] [planning] Phase 3 실행 전 결정 4건의 확정 답 (전부 A) — [todo file](.planning/todos/pending/2026-09-20-phase-3-checkpoint-answers.md) — Needs `/gsd-execute-phase 3` 실행 중 각 체크포인트에서 **`A`** 라고 답한다.
+- [2026-09-22] [planning] Phase 4 U-2·U-4 UI 결정 확정 답 (U-5는 귀결) — [todo file](.planning/todos/pending/2026-09-22-phase-4-u-2-u-4-ui.md) — Needs ### U-2ⓐ — 최신이면서 고객 승인까지 된 차수의 S5 상태 열 = `승인`만 (`success`).
 - [2026-09-22] [planning] 새 세션 인수인계 — 관리자 메뉴 → 코덱스 디자인 리뷰 → Phase 4 실행 — [todo file](.planning/todos/pending/2026-09-22-session-handoff-admin-menu-codex-design-review-phase-4-execu.md) — Needs 세 가지를 이 순서로 한다.
+- [2026-09-22] [docs] 한 칸짜리 목록·폼의 최대 폭이 전역으로 규정돼 있지 않다 — [todo file](.planning/todos/pending/2026-09-22-single-column-max-width.md) — Needs `/admin` 하나만 좁히는 것은 CLAUDE.md의 「화면 하나만 예외 금지」에 정면으로.
 
 ### Blockers/Concerns
 
@@ -164,6 +166,7 @@ Recent decisions affecting current work:
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260922-c04 | Codex CLI SessionStart 훅 설치 + CODEX_AUTH_JSON_B64 자격 주입 | 2026-09-22 | 4b5f8ea | [260922-c04-codex-cli-sessionstart-codex-auth-json-b](./quick/260922-c04-codex-cli-sessionstart-codex-auth-json-b/) |
+| 260922-i3k | 관리자 메뉴 정리(옵션 B: 「관리」 한 줄 + /admin 인덱스 3그룹) + A-M3 표 캡션 | 2026-09-22 | 811243e | [260922-i3k-b-admin-3-a-m3](./quick/260922-i3k-b-admin-3-a-m3/) |
 
 ### Roadmap Evolution
 

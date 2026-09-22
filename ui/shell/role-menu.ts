@@ -28,16 +28,21 @@ export type BottomTab = { label: string } & ({ kind: "link"; href: string } | { 
 export type RoleMenu = {
   /** SYSTEM.md §6-0 1차 메뉴 5개 — 대응 화면 유무와 무관하게 역할과 상관없이 항상 다섯 전부(D-22). */
   topBarMenu: MenuLink[];
-  /** SYSTEM.md §6-0 (a) PC 사용자 메뉴 + §6-8/각 관리자 화면 절 · §7-8 관리자용
-   * 「더보기」 시트 — 권한표에서 view 권한이 있는 admin.* 메뉴만, ADMIN_MENUS
-   * 순서대로. 하나도 없으면 빈 배열(D-17을 admin.system-status 하나에서 admin.*
-   * 전체로 일반화했다, 네비게이션 공백 수정 2026-09-21). */
+  /** SYSTEM.md §6-0 (a) PC 사용자 메뉴 · §7-8 「더보기」 시트의 「관리」 한 줄 —
+   * 권한표에서 view 권한이 있는 admin.* 메뉴가 하나라도 있으면 `[{ label: "관리",
+   * href: "/admin" }]`, 없으면 `[]`. 개별 관리자 화면 이름·그룹은 이 필드가 아니라
+   * `adminIndexGroups`가 담당한다(「관리」 한 줄로 접기, 2026-09-22 quick/260922-i3k,
+   * 사용자 결정 옵션 B — SYSTEM.md §6-0 (a)·§6-10). */
   adminMenu: MenuLink[];
   /** SYSTEM.md §6-0 (a) PC 사용자 메뉴 · §7-8 「더보기」 시트의 「계정」 그룹. */
   accountGroup: AccountEntry[];
   /** SYSTEM.md §6-0 폰 하단 탭 — 정확히 4개, 4번째는 항상 「더보기」(시트를 여는 동작, 라우트 아님). */
   bottomTabs: BottomTab[];
 };
+
+/** SYSTEM.md §6-10 「관리」 인덱스 화면의 그룹 하나 — 그룹 라벨 + 그 그룹에 속한
+ * 관리자 화면 항목(허용된 것만). 항목이 0개인 그룹은 배열에 아예 나타나지 않는다. */
+export type AdminMenuGroup = { label: string; items: MenuLink[] };
 
 // 1차 메뉴 다섯의 URL 정본(이 페이즈의 유일한 출처). 02-05가 정확히 이 다섯 경로로
 // 화면을 만들고, 그 플랜의 라우트 대조 검증이 이 목록과 실제 라우트를 맞춰 본다 —
@@ -50,29 +55,68 @@ const TOP_BAR_MENU: readonly MenuLink[] = [
   { label: "손익", href: "/pnl" },
 ];
 
-// D-17 → 네비게이션 공백 수정(2026-09-21): 관리자 화면 10종(§6-8 시스템 상태 +
-// Phase 3의 나머지 9개) 전부 — PC 사용자 메뉴(§6-0 (a))와 관리자용 「더보기」
-// 시트(§7-8) 둘 다의 진입점이다. key는 domain/permissions/menus.ts MENUS의
-// admin.* 키와 같은 문자열이어야 하고, href는 실제 라우트 디렉터리
-// app/(app)/admin/<name>/과 대조해 확정했다(2026-09-21, 열 개 전부 확인) —
-// `ui`는 domain을 import할 수 없어(D-26) 이 목록은 이 파일 안에 복제된
-// 상수다. 여기 키가 MENUS와 어긋나면 그 항목의 진입점이 절대 나타나지 않고,
-// href가 실제 라우트와 어긋나면 링크가 404로 간다.
+// D-17 → 「관리」 한 줄로 접기(2026-09-22, quick/260922-i3k, 사용자 결정 옵션 B):
+// 관리자 화면 10종(§6-8 시스템 상태 + Phase 3의 나머지 9개) 전부 — 개별 이름은
+// PC 사용자 메뉴·「더보기」 시트에 더 이상 나오지 않고, 두 표면 모두 「관리」 한
+// 줄(/admin)만 보여준다. 개별 화면·순서·그룹은 `/admin` 인덱스 화면
+// (app/(app)/admin/page.tsx)이 adminIndexGroups로 받는다. key는
+// domain/permissions/menus.ts MENUS의 admin.* 키와 같은 문자열이어야 하고,
+// href는 실제 라우트 디렉터리 app/(app)/admin/<name>/과 대조해 확정했다
+// (2026-09-21, 열 개 전부 확인) — `ui`는 domain을 import할 수 없어(D-26) 이
+// 목록은 이 파일 안에 복제된 상수다. 여기 키가 MENUS와 어긋나면 그 항목의
+// 진입점이 절대 나타나지 않고, href가 실제 라우트와 어긋나면 링크가 404로 간다.
+//
+// 배열 순서와 group은 SYSTEM.md §6-10 표(정본)와 원소 단위로 같아야 한다 —
+// role-menu.test.ts가 그 표를 읽어 adminIndexGroups 결과와 대조한다.
 //
 // admin.settings의 라벨은 "시스템 설정"이다 — 아래 SETTINGS_ENTRY(/settings,
 // 사용자 자신의 설정)와 "설정"으로 같은 라벨을 쓰면 관리자 화면에 두 항목이
 // 동시에 보일 때 사용자가 둘을 구분할 수 없다.
-const ADMIN_MENUS: ReadonlyArray<{ key: string; label: string; href: string }> = [
-  { key: "admin.system-status", label: "시스템 상태", href: "/admin/system-status" },
-  { key: "admin.code-tables", label: "코드표", href: "/admin/code-tables" },
-  { key: "admin.people", label: "사람", href: "/admin/people" },
-  { key: "admin.vendors", label: "거래처", href: "/admin/vendors" },
-  { key: "admin.corp-cards", label: "법인카드 마스터", href: "/admin/corp-cards" },
-  { key: "admin.permissions", label: "권한표", href: "/admin/permissions" },
-  { key: "admin.visibility", label: "정보 노출표", href: "/admin/visibility" },
-  { key: "admin.settings", label: "시스템 설정", href: "/admin/settings" },
-  { key: "admin.action-log", label: "행동 로그", href: "/admin/action-log" },
-  { key: "admin.archive", label: "보관함", href: "/admin/archive" },
+const ADMIN_GROUP_MASTER = "마스터";
+const ADMIN_GROUP_SETTINGS_PERMISSIONS = "설정·권한";
+const ADMIN_GROUP_OPERATIONS = "운영 기록";
+
+const ADMIN_MENUS: ReadonlyArray<{ key: string; label: string; href: string; group: string }> = [
+  { key: "admin.people", label: "사람", href: "/admin/people", group: ADMIN_GROUP_MASTER },
+  { key: "admin.vendors", label: "거래처", href: "/admin/vendors", group: ADMIN_GROUP_MASTER },
+  {
+    key: "admin.corp-cards",
+    label: "법인카드 마스터",
+    href: "/admin/corp-cards",
+    group: ADMIN_GROUP_MASTER,
+  },
+  { key: "admin.code-tables", label: "코드표", href: "/admin/code-tables", group: ADMIN_GROUP_MASTER },
+  {
+    key: "admin.permissions",
+    label: "권한표",
+    href: "/admin/permissions",
+    group: ADMIN_GROUP_SETTINGS_PERMISSIONS,
+  },
+  {
+    key: "admin.visibility",
+    label: "정보 노출표",
+    href: "/admin/visibility",
+    group: ADMIN_GROUP_SETTINGS_PERMISSIONS,
+  },
+  {
+    key: "admin.settings",
+    label: "시스템 설정",
+    href: "/admin/settings",
+    group: ADMIN_GROUP_SETTINGS_PERMISSIONS,
+  },
+  {
+    key: "admin.system-status",
+    label: "시스템 상태",
+    href: "/admin/system-status",
+    group: ADMIN_GROUP_OPERATIONS,
+  },
+  {
+    key: "admin.action-log",
+    label: "행동 로그",
+    href: "/admin/action-log",
+    group: ADMIN_GROUP_OPERATIONS,
+  },
+  { key: "admin.archive", label: "보관함", href: "/admin/archive", group: ADMIN_GROUP_OPERATIONS },
 ];
 
 // 02-01 체크포인트 항목 H① 확정 — 「설정」은 실제 라우트(02-05가 /settings를 만든다).
@@ -81,13 +125,29 @@ const ADMIN_MENUS: ReadonlyArray<{ key: string; label: string; href: string }> =
 // 통과/실패가 갈리므로, 문서를 바꾸고 이 상수를 잊으면 테스트가 즉시 알린다.
 const SETTINGS_ENTRY: AccountEntry = { kind: "link", label: "설정", href: "/settings" };
 
-/** allowedMenus에 있는 admin.* 메뉴만, ADMIN_MENUS 순서 그대로 골라낸다 — 순서는
- * allowedMenus의 순서와 무관하다(레이아웃 쪽 계산 순서에 기대지 않는 순수 함수). */
+/** allowedMenus에 admin.* 메뉴가 하나라도 있으면 「관리」 한 줄, 없으면 빈 배열
+ * (「관리」 한 줄로 접기 — 개별 화면 이름은 adminIndexGroups가 담당). */
 function buildAdminMenu(viewer: RoleMenuViewer): MenuLink[] {
-  return ADMIN_MENUS.filter((menu) => viewer.allowedMenus.includes(menu.key)).map(({ label, href }) => ({
-    label,
-    href,
-  }));
+  const hasAnyAdminMenu = ADMIN_MENUS.some((menu) => viewer.allowedMenus.includes(menu.key));
+  return hasAnyAdminMenu ? [{ label: "관리", href: "/admin" }] : [];
+}
+
+/** SYSTEM.md §6-10 「관리」 인덱스 화면의 그룹 3개 — allowedMenus에 있는 admin.*
+ * 메뉴만 ADMIN_MENUS 순서 그대로 그룹별로 묶는다. 순서는 allowedMenus의 순서와
+ * 무관하다(순수 함수). 항목이 0개인 그룹은 결과 배열에 나타나지 않는다 — 서버가
+ * 거른 목록을 그대로 렌더할 app/(app)/admin/page.tsx가 빈 그룹 머리글을 찍지
+ * 않아도 되게 한다. */
+export function adminIndexGroups(viewer: RoleMenuViewer): AdminMenuGroup[] {
+  const allowed = ADMIN_MENUS.filter((menu) => viewer.allowedMenus.includes(menu.key));
+  const groupOrder = [ADMIN_GROUP_MASTER, ADMIN_GROUP_SETTINGS_PERMISSIONS, ADMIN_GROUP_OPERATIONS];
+  return groupOrder
+    .map((label) => ({
+      label,
+      items: allowed
+        .filter((menu) => menu.group === label)
+        .map(({ label: itemLabel, href }) => ({ label: itemLabel, href })),
+    }))
+    .filter((group) => group.items.length > 0);
 }
 
 function buildAccountGroup(): AccountEntry[] {

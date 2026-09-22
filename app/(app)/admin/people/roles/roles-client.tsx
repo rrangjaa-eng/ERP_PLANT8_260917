@@ -124,6 +124,7 @@ export function RolesClient({
         <ListEmpty message="등록된 계급이 없습니다" action={{ label: "계급 추가", href: NEW_HREF }} />
       ) : (
       <table className={styles.table}>
+        <caption className="sr-only">계급</caption>
         <thead>
           <tr>
             <th scope="col">이름</th>

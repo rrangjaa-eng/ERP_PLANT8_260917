@@ -44,6 +44,13 @@ export type HistoryListProps = {
    * 간다.
    */
   idPrefix: string;
+  /**
+   * A-M3(§10 접근성 계약): 시각적으로 숨긴 <caption>에 쓸 표 이름. 한 화면에
+   * HistoryList가 여러 개(설정 화면의 이력형 키마다 하나) 또는 다른 의미(사람
+   * 상세의 소속 발령 이력)로 렌더될 수 있어 컴포넌트가 이름을 지어낼 수 없다 —
+   * idPrefix와 같은 이유로 호출부가 넘긴다.
+   */
+  caption: string;
 };
 
 function defaultValueFor(kind: HistoryValueKind): string {
@@ -116,6 +123,7 @@ export function HistoryList({
   errorMessage,
   onRetry,
   idPrefix,
+  caption,
 }: HistoryListProps) {
   const [adding, setAdding] = useState(false);
   const [effectiveFrom, setEffectiveFrom] = useState("");
@@ -217,6 +225,7 @@ export function HistoryList({
   return (
     <div className={styles.wrap}>
       <table className={styles.table}>
+        <caption className="sr-only">{caption}</caption>
         <thead>
           <tr>
             <th scope="col">적용 시작일</th>

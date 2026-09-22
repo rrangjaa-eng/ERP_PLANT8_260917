@@ -1,0 +1,54 @@
+/* SYSTEM.md §6-10 「관리」 인덱스 화면. 그룹 머리글은 §7-3 그룹 머리글 행과
+   같은 결, 항목은 §7-8 시트 목록 행과 같은 높이의 링크 — ui/shell/MoreSheet.module.css
+   의 .group·.list·.link 규칙을 그 토큰 그대로 옮겨 쓴다. 카드 없음, 아이콘 없음. */
+
+.groupLabel {
+  margin: 0;
+  padding: var(--s-3) 0 var(--s-1);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  /* §7-3 그룹 머리글 행(SYSTEM.md 「위 12px 여백, 아래 1px --line-strong」)의
+     아래 선. 이게 없으면 항목 사이 --line 잔선과 무게가 같아 세 그룹이
+     시각적으로 갈라지지 않는다. */
+  border-bottom: var(--line-w) solid var(--line-strong);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.list li {
+  border-bottom: var(--line-w) solid var(--line);
+}
+
+.list li:last-child {
+  border-bottom: 0;
+}
+
+.link {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  min-height: var(--touch-min);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font-size: var(--fs-base);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.link:hover {
+  background: var(--surface);
+}
+
+.link:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: calc(-1 * var(--focus-w));
+}

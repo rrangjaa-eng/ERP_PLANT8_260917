@@ -24,9 +24,10 @@ export type MoreSheetProps = {
   /** 하단 탭에 없는 1차 메뉴 — BottomTabs.tsx가 계산해 넘긴다. */
   moreMenu: MenuLink[];
   accountGroup: AccountEntry[];
-  /** roleMenu(viewer).adminMenu — 허용된 admin.* 메뉴 전부. SYSTEM.md §6-8·§7-8이
-   * 말하는 "관리자용 「더보기」 시트"는 이 목록이 하나 이상일 때의 이 시트다
-   * (D-17 일반화, 네비게이션 공백 수정 2026-09-21). */
+  /** roleMenu(viewer).adminMenu — 권한표에서 view 권한이 있는 admin.* 메뉴가
+   * 하나라도 있으면 「관리」 한 줄, 없으면 빈 배열. 그룹 머리글 없이 목록 행
+   * 하나로 렌더한다(SYSTEM.md §7-8, 「관리」 한 줄로 접기 2026-09-22). 개별
+   * 관리자 화면 이름은 이 시트가 아니라 /admin 인덱스(§6-10)에서 고른다. */
   adminMenu: MenuLink[];
   triggerRef: React.RefObject<HTMLButtonElement | null>;
 };
@@ -117,24 +118,17 @@ export function MoreSheet({ open, onClose, moreMenu, accountGroup, adminMenu, tr
             </a>
           </li>
         ))}
-        {adminMenu.length > 0 ? (
-          <>
-            <li className={styles.group} role="presentation">
-              관리자
-            </li>
-            {adminMenu.map((item) => (
-              <li key={item.href}>
-                <a
-                  href={item.href}
-                  className={styles.link}
-                  ref={item.href === firstRowHref ? firstItemRef : undefined}
-                >
-                  {item.label}
-                </a>
-              </li>
-            ))}
-          </>
-        ) : null}
+        {adminMenu.map((item) => (
+          <li key={item.href}>
+            <a
+              href={item.href}
+              className={styles.link}
+              ref={item.href === firstRowHref ? firstItemRef : undefined}
+            >
+              {item.label}
+            </a>
+          </li>
+        ))}
         <li className={styles.group} role="presentation">
           계정
         </li>

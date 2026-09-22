@@ -116,15 +116,16 @@ export default async function CodeTablesPage({
         />
       ) : (
         <table className={styles.table}>
+          <caption className="sr-only">{`코드표 · ${currentLabel}`}</caption>
           <thead>
             <tr>
-              <th>값</th>
-              <th>이름</th>
-              <th>정렬</th>
-              <th>상태</th>
+              <th scope="col">값</th>
+              <th scope="col">이름</th>
+              <th scope="col">정렬</th>
+              <th scope="col">상태</th>
               {/* 칸을 비우면서 머리글만 남기면 빈 칸이 생긴다 — 법인카드
                   화면과 같은 조건으로 머리글까지 감춘다. */}
-              {canWrite || canArchive ? <th>동작</th> : null}
+              {canWrite || canArchive ? <th scope="col">동작</th> : null}
             </tr>
           </thead>
           <tbody>

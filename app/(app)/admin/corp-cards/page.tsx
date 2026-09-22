@@ -143,6 +143,7 @@ export default async function CorpCardsPage({
         />
       ) : (
         <table className={styles.table}>
+          <caption className="sr-only">법인카드</caption>
           <thead>
             <tr>
               <th scope="col">발급사</th>

@@ -23,7 +23,7 @@ domain/         순수 비즈니스 로직 · viewer 기반 권한 판단
   │    Money 브랜드 · round/toKrw/moneyFromRow/moneyToColumns/quoteAmount/profit/
   │    splitWithRemainder/grossFromTotal, domain/money/tax.ts의 applyTaxRule(세금
   │    규칙 4종), domain/money/currency.ts의 recentFxRate/rememberFxRate(통화별
-  │    최근 환율). 기준일 규약(04-2): 원천징수·회사 대납=지급일, 부가세=증빙일
+  │    최근 환율). 기준일 규약(§4-2): 원천징수·회사 대납=지급일, 부가세=증빙일
   ├─ domain/rules/gate.ts         모든 게이트(고객 승인·증빙 필수·마감)의 유일한
   │    지점(Phase 4, 04-01) — gate/registerGateRule/listGateRules, 미등록 규칙은 던진다.
   │    domain/rules/register.ts가 규칙을 등록하는 사이드이펙트 모듈

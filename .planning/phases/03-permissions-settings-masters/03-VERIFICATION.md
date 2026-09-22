@@ -1,7 +1,7 @@
 ---
 phase: 03-permissions-settings-masters
-verified: 2026-09-21T14:42:42Z
-status: human_needed
+verified: 2026-09-22T06:23:57Z
+status: passed
 score: 6/6 must-haves verified
 covered_digest: "v1:sha256:ac0eee5312f2a6d657e787754d66baeb861e776e65507f604cb421326a2ad247"
 covered_files:
@@ -325,8 +325,8 @@ overrides_applied: 0
 re_verification:
   previous_status: human_needed
   previous_score: 13/13
-  previous_verified: 2026-09-21T12:05:40Z
-  round: 4
+  previous_verified: 2026-09-21T14:42:42Z
+  round: 5
   gaps_closed:
     - "거래처 수정 왕복 화면 경로 — `test/e2e/vendors.spec.ts:123` 「거래처 수정 왕복 (MAST-01 · M-5)」 + `test/e2e/vendor-edit.spec.ts` (보관된 거래처의 `?editId=` 차단). 3회차 human item 3이 닫혔다"
     - "코드표 `value` 불변 결정의 계획 기록 — `03-OPEN-ITEMS.md:111` 「결정 기록 — MAST-04 「수정」의 범위 (2026-09-21)」. 3회차 human item 4가 닫혔다"
@@ -392,14 +392,16 @@ human_verification:
   - test: "스테이징 `/admin/permissions`에 시스템 관리자로 들어가 권한표 격자가 빈 칸 없이 채워진 상태로 보이는지 본다"
     expected: "격자가 빈 칸 없이 렌더된다"
     why_human: "세 Job(db-bootstrap → migrate → seed)의 exit 0은 2026-09-22 GitHub Actions deploy run #37(35620678515) staging 잡 로그로 확인했다(bootstrap-2tk4j · migrate-4bz7x · seed-pd4fc 모두 successfully completed, quick probe / 307 · /login 200 · /api/health 200). 화면 렌더만 남았고 이 컨테이너는 `*.run.app`에 닿지 못한다. Secret Manager `app-data-key-v1` 길이(사람 판정 2)는 2026-09-22 Cloud Shell 실측으로 staging·prod 모두 32바이트를 확인해 닫았고, `lib/env.ts` 부팅 검사가 이후 재발을 막는다. (3회차 문서의 '`plant8-staging-account` Job은 파이프라인에 없다'는 오기 — 같은 로그에 배포돼 있다)"
+    status: resolved
+    resolution: "2026-09-22 스테이징(plant8-staging-67rumhdgba-du.a.run.app, deploy run #38 · SHA 6ad58fd)에 account.yml run #12로 만든 claude-verify-20260922@plant8.co.kr(role-sysadmin)로 로그인해 GET /admin/permissions → 200. SSR 표 실측: caption 「계급별 메뉴 접근 권한표」, 행 5(대표 · 본부 책임자 · 팀장 · 기획 PM · 시스템 관리자) × 열 45, 셀 225개 전부 체크박스 포함, 빈 셀 0, 체크 45(seed permissions=45와 일치). 이 세션의 Chromium이 프록시 CA를 신뢰하지 못해 Node fetch(TLS 검증 유지)로 SSR HTML을 파싱했다. 계정은 reset(run #15)으로 세션 만료."
 ---
 
 # Phase 3: 권한·설정·마스터 (관리자 운영 콘솔) 검증 보고서 — 4회차 재검증
 
 **Phase Goal:** 관리자가 코드 수정 없이 사람·계급·본부·팀·권한표·정보 노출표·설정·코드표·거래처·법인카드를 화면에서 등록하고, 이후 모든 화면·API가 이 권한·설정 위에 얹힌다. 이 페이즈는 메커니즘과 마스터를 세우는 데서 끝나며, 전 메뉴 대상 검수는 Phase 7 끝에서 한다
-**Verified:** 2026-09-21T14:42:42Z
-**Status:** human_needed
-**Re-verification:** Yes — 4회차. 브랜치 `claude/phase-3-verification-review-43x53f`, HEAD `62d4c8c`, 작업 트리 깨끗
+**Verified:** 2026-09-22T06:23:57Z (4회차 본문 2026-09-21T14:42:42Z + 사람 판정 2건 실측 닫힘)
+**Status:** passed
+**Re-verification:** Yes — 4회차(브랜치 `claude/phase-3-verification-review-43x53f`, HEAD `62d4c8c`)의 사람 판정 2건을 2026-09-22 실측으로 닫아 5회차로 마감
 
 **이 라운드의 전제:** 3회차 보고서(`03-VERIFICATION.md`, 12:05:40Z)의 주장은 상속하지 않고 코드에서 다시 유도했다. 그 결과 3회차 보고서가 **틀렸거나 낡은 항목 5건**을 찾았다 — frontmatter `re_verification.corrections_to_previous_report` 참조.
 
@@ -516,27 +518,29 @@ human_verification:
 
 ### Human Verification Required
 
-이 환경에서 코드로 닫을 수 없는 항목 **2건만** 남았다. 둘 다 GCP 접근이 필요하고, 이 컨테이너의 프록시가 `*.run.app` CONNECT에 403을 돌려줘 스테이징 호스트에 닿을 수 없다.
+이 환경에서 코드로 닫을 수 없던 항목 2건은 2026-09-22에 모두 닫혔다 — 1번은 스테이징 실측(아래 Result, frontmatter `human_verification[0].resolution`), 2번은 Cloud Shell 실측(32바이트). 남은 사람 판정은 없다.
 
 #### 1. 스테이징 배포 Job 3종 + `/admin/permissions` 격자
 
 **Test:** 스테이징 배포 로그에서 `db-bootstrap → migrate → seed` 순서와 결과를 확인하고(`plant8-staging-seed` 로그에 `seed complete: … permissions=45 …`), 시스템 관리자로 스테이징 `/admin/permissions`에 들어간다
 **Expected:** 세 Job이 순서대로 exit 0이고 권한표 격자가 채워진 상태로 보인다
-**Why human:** Cloud Run Job 환경에서 번들이 같은 결과를 내는지는 실제 배포 로그로만 확인된다. 코드 쪽 배선은 재확인했다. **3회차가 이 항목에 넣었던 `plant8-staging-account` Job exit 0 기대는 삭제했다 — 그 Job은 배포 파이프라인에 존재하지 않는다.**
+**Why human:** Cloud Run Job 환경에서 번들이 같은 결과를 내는지는 실제 배포 로그로만 확인된다. 코드 쪽 배선은 재확인했다. **3회차가 이 항목에 넣었던 `plant8-staging-account` Job exit 0 기대는 삭제했다 — 그 Job은 `deploy.sh:349`가 배포(`jobs deploy`)만 하고 파이프라인에서 실행(`jobs execute`)하지 않으므로 배포 로그에 exit 0이 나올 수 없다(4회차 본문의 「존재하지 않는다」는 오기 — 배포는 된다, 실행만 account.yml 몫).**
+**Result (2026-09-22):** pass — deploy run #38 staging 잡 로그에서 migrate-g8wnq · seed-98tzx successfully completed. 스테이징 `/admin/permissions` SSR 실측: 「계급별 메뉴 접근 권한표」 5행 × 45열, 셀 225개 전부 체크박스, 빈 셀 0, 체크 45(seed permissions=45). 상세는 frontmatter `resolution`.
 
 #### 2. Secret Manager `app-data-key-v1` 32바이트
 
 **Test:** staging·prod `app-data-key-v1` 값을 base64 디코드해 32바이트인지 확인한다
 **Expected:** 두 환경 모두 32바이트
 **Why human:** `lib/env.ts`가 키를 선택 문자열로 두어 값이 없어도 앱이 뜬다 — 코드만으로 시크릿 존재·길이를 판정할 수 없다
+**Result (2026-09-22):** pass — Cloud Shell 실측으로 staging·prod 모두 32바이트 확인(커밋 34f9154). 이후 재발은 `lib/env.ts` 부팅 검사가 막는다.
 
 ### Gaps Summary
 
-**gap 없음.** ROADMAP 성공 기준 6개가 모두 코드와 실제로 돌린 테스트로 뒷받침되고, Phase 3에 매핑된 요구사항 13개가 모두 충족됐다. 3회차가 남긴 human 항목 6건 중 4건(거래처 수정 왕복 · `value` 불변 결정 기록 · 설정 화면 문구 · React taint 편차)은 닫혔고, 1건(account Job)은 **전제가 틀려 삭제**했으며, 남은 것은 GCP 접근이 필요한 2건뿐이다.
+**gap 없음.** ROADMAP 성공 기준 6개가 모두 코드와 실제로 돌린 테스트로 뒷받침되고, Phase 3에 매핑된 요구사항 13개가 모두 충족됐다. 3회차가 남긴 human 항목 6건 중 4건(거래처 수정 왕복 · `value` 불변 결정 기록 · 설정 화면 문구 · React taint 편차)은 닫혔고, 1건(account Job)은 **기대가 틀려 삭제**했으며(Job은 배포되지만 파이프라인에서 실행되지 않는다), GCP 접근이 필요했던 2건은 2026-09-22 실측으로 닫혔다. 남은 사람 판정은 없다.
 
 남은 위험은 gap이 아니라 advisory 7건이다 — 그중 **F3(행동 로그 CSV 수식 주입)**이 실제 공격 경로를 가진 유일한 항목이고 한 함수 수정으로 끝난다. F1은 /cso가 매긴 High보다 낮게 봐야 한다(실배포 경로에서는 `deploy.sh`가 `APP_ENV`와 시크릿을 모두 주입한다). F4는 요구사항 ADMN-10 원문과 **일치**하므로 결함이 아니다. 별개로 `03-OPEN-ITEMS.md:32`가 존재하지 않는 커밋을 인용해 감사 추적이 끊겨 있다 — 두 글자 수정이 필요하다.
 
 ---
 
-_Verified: 2026-09-21T14:42:42Z_
-_Verifier: Claude (gsd-verifier), 4회차 재검증_
+_Verified: 2026-09-22T06:23:57Z (4회차 본문 2026-09-21T14:42:42Z)_
+_Verifier: Claude (gsd-verifier), 4회차 재검증 · 사람 판정 닫힘 5회차_

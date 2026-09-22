@@ -13,7 +13,7 @@ read -r -d '' CHECKLIST <<'EOF' || true
 4. TDD: 실패 테스트(RED 확인) → 최소 구현 → 리팩터. 실제 실행 확인 없이 "완료" 금지.
 5. 로컬 dev 통과는 완료 신호가 아니다 — CI=true로 확인한다.
 6. 화면 검증 순서: 싼 게이트(lint·typecheck·build) → 독립 DOM 감사 → 수정 → 전체 게이트 한 번.
-7. 서브에이전트는 model을 명시한다. 판단·검토·계획은 Fable 5.
+7. 서브에이전트는 model을 명시한다. 판단·검토·계획은 Opus 5. Fable 5는 정말 필요한 순간(되돌리기 어려운 결정·Opus 5가 갈리는 문제·명시 요청)에만.
 8. 금지: .planning/ 수동 편집 · git push --force · 프로덕션 DB 직접 명령 · CLAUDE.md 임의 수정.
 EOF
 

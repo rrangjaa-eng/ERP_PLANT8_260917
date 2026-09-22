@@ -29,12 +29,13 @@ export type TopBarProps = {
 };
 
 // §6-0 (a): PC 사용자 메뉴는 「내 정보 · 로그아웃(권한표에서 view 권한이 있는
-// admin.* 메뉴가 있으면 그 위에 전부)」다. D-17을 admin.system-status 하나에서
-// role-menu.ts의 adminMenu(admin.* 전체)로 일반화했다(네비게이션 공백 수정,
-// 2026-09-21). 「설정」은 §7-8 「더보기」 시트 전용 — role-menu.ts의 accountGroup은
-// 두 표면이 공유하는 정본이고, 어느 항목이 어느 표면에 보이는지는 각 표면
-// 컴포넌트가 href로 가른다(라벨 문자열이 아니라 URL로 판별해 역할 분기와 무관하게
-// 안정적이다).
+// 관리자 화면이 하나라도 있으면 그 위에 「관리」 한 줄)」다. 관리자 진입점은
+// 「관리」 한 줄뿐이고, 개별 관리자 화면(시스템 상태 · 코드표 · 권한표 …)의
+// 이름은 /admin 인덱스(§6-10)에서 고른다(「관리」 한 줄로 접기 2026-09-22,
+// quick/260922-i3k). 「설정」은 §7-8 「더보기」 시트 전용 — role-menu.ts의
+// accountGroup은 두 표면이 공유하는 정본이고, 어느 항목이 어느 표면에 보이는지는
+// 각 표면 컴포넌트가 href로 가른다(라벨 문자열이 아니라 URL로 판별해 역할 분기와
+// 무관하게 안정적이다).
 function isSettingsEntry(entry: AccountEntry): boolean {
   return entry.kind === "link" && entry.href === "/settings";
 }

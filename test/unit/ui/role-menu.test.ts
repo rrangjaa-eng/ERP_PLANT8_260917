@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { roleMenu, type RoleMenuViewer } from "../../../ui/shell/role-menu";
+import { adminIndexGroups, roleMenu, type RoleMenuViewer } from "../../../ui/shell/role-menu";
 
 // D-23의 계약 고정: 역할 → (상단 바 메뉴, 폰 하단 탭, 계정 그룹, 관리자 메뉴 진입점)
 // 매핑이 순수 함수 한 곳에 데이터로 있는지를 검증한다. 계정 그룹 항목 이름과 폰 하단
@@ -12,11 +12,12 @@ import { roleMenu, type RoleMenuViewer } from "../../../ui/shell/role-menu";
 // 아니라 app/(app)/layout.tsx가 can()으로 미리 계산한 allowedMenus를 읽는다 —
 // 이 파일은 그 계산 결과를 흉내낸 데이터만 넘긴다(ui는 domain을 import할 수 없다).
 //
-// 네비게이션 공백 수정(2026-09-21): Phase 3이 관리자 화면 9개를 더 만들었지만
-// role-menu.ts는 "admin.system-status" 하나만 진입점으로 뚫려 있었다(나머지는
-// 주소를 직접 입력해야만 닿을 수 있었다). systemStatus: MenuLink | null 하나를
-// adminMenu: MenuLink[]로 일반화해 allowedMenus에 있는 admin.* 키 전부가 보이게
-// 한다(SYSTEM.md §6-0 (a) · §6-8 · §7-8 — PC 사용자 메뉴와 관리자용 「더보기」 시트).
+// 「관리」 한 줄로 접기(2026-09-22, quick/260922-i3k, 사용자 결정 옵션 B): 관리자
+// 화면 10개의 개별 이름을 PC 사용자 메뉴·「더보기」 시트에 나열하던 것을 그만두고,
+// adminMenu는 이제 "허용된 admin.* 메뉴가 하나라도 있으면 { label: "관리",
+// href: "/admin" } 한 줄"로 접힌다. 개별 화면 이름·순서는 새 `adminIndexGroups`가
+// SYSTEM.md §6-10 표(정본)를 그대로 옮긴 세 그룹으로 돌려준다 — `/admin` 인덱스
+// 화면(app/(app)/admin/page.tsx)이 그 결과로 렌더한다.
 
 function readSystemDoc(): string {
   return readFileSync(resolve(process.cwd(), "docs", "design", "SYSTEM.md"), "utf8");
@@ -57,6 +58,37 @@ function expectedBottomTabRow(doc: string, role: string): string[] {
     .filter((cell) => cell.length > 0);
   // cells[0]은 계급 이름, 나머지 넷이 탭 1~4다.
   return cells.slice(1);
+}
+
+type ExpectedAdminIndexGroup = { label: string; items: string[] };
+
+/** SYSTEM.md §6-10의 그룹 표(| 그룹 | 항목 |)를 읽어 그룹 라벨·항목 목록을 돌려준다.
+ * 구분선(`---`)과 머리글 행(첫 칸이 `그룹`)은 걸러낸다 — 이 표가 §6-10의 정본이라
+ * adminIndexGroups는 이 결과와 원소 단위로 같아야 한다(role-menu.ts를 하드코딩
+ * 기준으로 쓰지 않는다). */
+function expectedAdminIndexGroups(doc: string): ExpectedAdminIndexGroup[] {
+  const sec = section(doc, "### 6-10", "## 7. 컴포넌트 규칙");
+  const rows = sec
+    .split("\n")
+    .filter((line) => line.trim().startsWith("|"))
+    .filter((line) => !line.includes("---"))
+    .map((line) => line.split("|").map((cell) => cell.trim()).filter((cell) => cell.length > 0))
+    .filter((cells) => cells[0] !== "그룹");
+  if (rows.length === 0) {
+    throw new Error("SYSTEM.md §6-10에서 그룹 표를 찾을 수 없다");
+  }
+  return rows.map((cells) => {
+    const [label, itemsCell] = cells;
+    if (!label || !itemsCell) {
+      throw new Error(`SYSTEM.md §6-10 표 행을 해석할 수 없다: ${cells.join(" | ")}`);
+    }
+    return { label, items: itemsCell.split("·").map((item) => item.trim()) };
+  });
+}
+
+/** app/(app)/admin/page.tsx(「관리」 인덱스 라우트)가 실재하는지. */
+function adminIndexPageExists(): boolean {
+  return existsSync(resolve(process.cwd(), "app", "(app)", "admin", "page.tsx"));
 }
 
 // SYSTEM.md §6-0 표의 계급 이름(한글) ↔ domain/permissions/roles.ts SEED_ROLES 식별자.
@@ -115,16 +147,17 @@ function adminRouteExists(key: string): boolean {
   return existsSync(resolve(process.cwd(), "app", "(app)", "admin", name, "page.tsx"));
 }
 
-describe("roleMenu — 관리자 메뉴 진입점 (D-17 일반화, D-36 이후 allowedMenus 기준)", () => {
-  it("전제 확인: 위에 복제한 admin.* 키 10개 전부 실제 라우트 디렉터리가 있다", () => {
+describe("roleMenu — 관리자 메뉴 진입점 (「관리」 한 줄로 접힘, D-17)", () => {
+  it("전제 확인: 위에 복제한 admin.* 키 10개 전부 실제 라우트 디렉터리가 있고, /admin 인덱스 라우트도 있다", () => {
     expect(ADMIN_MENU_KEYS.length).toBe(10);
     for (const key of ADMIN_MENU_KEYS) {
       expect(adminRouteExists(key)).toBe(true);
     }
+    expect(adminIndexPageExists()).toBe(true);
   });
 
-  it("allowedMenus에 admin.system-status가 있으면 관리자 메뉴에 그 항목이 있다", () => {
-    expect(roleMenu(ADMIN).adminMenu).toContainEqual({ label: "시스템 상태", href: "/admin/system-status" });
+  it("allowedMenus에 admin.system-status 하나만 있어도 관리자 메뉴는 정확히 「관리」 한 줄이다", () => {
+    expect(roleMenu(ADMIN).adminMenu).toEqual([{ label: "관리", href: "/admin" }]);
   });
 
   it("allowedMenus가 비어 있으면 관리자 메뉴도 비어 있다", () => {
@@ -136,34 +169,83 @@ describe("roleMenu — 관리자 메뉴 진입점 (D-17 일반화, D-36 이후 a
     expect(roleMenu(sysadminWithoutPermission).adminMenu).toEqual([]);
   });
 
-  it.each(ADMIN_MENU_KEYS)("%s 하나만 허용돼도 관리자 메뉴에 그 항목 하나만 나타난다", (key) => {
+  it.each(ADMIN_MENU_KEYS)("%s 하나만 허용돼도 관리자 메뉴는 여전히 「관리」 한 줄이다", (key) => {
     const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [key] };
-    const name = key.slice("admin.".length);
-    expect(roleMenu(viewer).adminMenu).toHaveLength(1);
-    expect(roleMenu(viewer).adminMenu[0]?.href).toBe(`/admin/${name}`);
+    expect(roleMenu(viewer).adminMenu).toEqual([{ label: "관리", href: "/admin" }]);
   });
 
-  it("allowedMenus에 admin.* 키 10개가 전부 있으면 관리자 메뉴도 10개다", () => {
+  it("allowedMenus에 admin.* 키 10개가 전부 있어도 관리자 메뉴는 여전히 「관리」 한 줄이다(개별 화면 이름은 adminIndexGroups가 담당)", () => {
     const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ADMIN_MENU_KEYS };
-    const menu = roleMenu(viewer).adminMenu;
-    expect(menu).toHaveLength(10);
-    expect(new Set(menu.map((item) => item.href))).toEqual(
-      new Set(ADMIN_MENU_KEYS.map((key) => `/admin/${key.slice("admin.".length)}`)),
-    );
-  });
-
-  it("admin.settings(관리자용 설정 화면)는 사용자 자신의 「설정」(/settings)과 라벨·경로가 다르다", () => {
-    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ["admin.settings"] };
-    const entry = roleMenu(viewer).adminMenu[0];
-    expect(entry?.href).toBe("/admin/settings");
-    expect(entry?.href).not.toBe("/settings");
-    expect(entry?.label).not.toBe("설정");
+    expect(roleMenu(viewer).adminMenu).toEqual([{ label: "관리", href: "/admin" }]);
   });
 
   it("허용된 관리자 메뉴는 매번 같은 순서로 나온다(allowedMenus의 순서와 무관, 순수 함수)", () => {
     const forward: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [...ADMIN_MENU_KEYS] };
     const reversed: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [...ADMIN_MENU_KEYS].reverse() };
     expect(roleMenu(forward).adminMenu).toEqual(roleMenu(reversed).adminMenu);
+  });
+});
+
+describe("adminIndexGroups — 「관리」 인덱스 3그룹 (SYSTEM.md §6-10 표가 정본)", () => {
+  const expectedGroups = expectedAdminIndexGroups(SYSTEM);
+
+  it("전제 확인: SYSTEM.md §6-10 표에서 그룹 3개를 읽었고 항목 합이 admin.* 키 10개와 같다", () => {
+    expect(expectedGroups).toHaveLength(3);
+    const totalItems = expectedGroups.reduce((sum, group) => sum + group.items.length, 0);
+    expect(totalItems).toBe(ADMIN_MENU_KEYS.length);
+  });
+
+  it("10개 전부 허용이면 그룹 3개, 라벨·항목 순서가 SYSTEM.md §6-10 표와 원소 단위로 같다", () => {
+    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ADMIN_MENU_KEYS };
+    const groups = adminIndexGroups(viewer);
+    expect(groups.map((group) => group.label)).toEqual(expectedGroups.map((group) => group.label));
+    groups.forEach((group, index) => {
+      expect(group.items.map((item) => item.label)).toEqual(expectedGroups[index]?.items);
+    });
+  });
+
+  it("빈 allowedMenus면 []다", () => {
+    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [] };
+    expect(adminIndexGroups(viewer)).toEqual([]);
+  });
+
+  it("한 그룹의 항목만 허용되면 그 그룹 하나만 돌아온다(빈 그룹은 배열에 없다)", () => {
+    const full = adminIndexGroups({ roleId: SYSADMIN_ROLE_ID, allowedMenus: ADMIN_MENU_KEYS });
+    const masterGroup = full.find((group) => group.label === "마스터");
+    if (!masterGroup) throw new Error("전체 허용 시 「마스터」 그룹이 없다 — 전제가 깨졌다");
+    const masterKeys = masterGroup.items.map((item) => `admin.${item.href.slice("/admin/".length)}`);
+
+    const filtered = adminIndexGroups({ roleId: SYSADMIN_ROLE_ID, allowedMenus: masterKeys });
+
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]).toEqual(masterGroup);
+  });
+
+  it("allowedMenus의 순서를 뒤집어도 결과가 같다(순수 함수)", () => {
+    const forward = adminIndexGroups({ roleId: SYSADMIN_ROLE_ID, allowedMenus: [...ADMIN_MENU_KEYS] });
+    const reversed = adminIndexGroups({
+      roleId: SYSADMIN_ROLE_ID,
+      allowedMenus: [...ADMIN_MENU_KEYS].reverse(),
+    });
+    expect(forward).toEqual(reversed);
+  });
+
+  it("모든 항목 href가 /admin/<키 뒤쪽 이름>이고, 세 그룹의 합집합이 admin.* 키 10개를 빠짐없이 덮는다", () => {
+    const groups = adminIndexGroups({ roleId: SYSADMIN_ROLE_ID, allowedMenus: ADMIN_MENU_KEYS });
+    const allItems = groups.flatMap((group) => group.items);
+    for (const item of allItems) {
+      expect(item.href).toMatch(/^\/admin\/[a-z-]+$/);
+    }
+    const coveredKeys = new Set(allItems.map((item) => `admin.${item.href.slice("/admin/".length)}`));
+    expect(coveredKeys).toEqual(new Set(ADMIN_MENU_KEYS));
+  });
+
+  it("admin.settings(관리자용 설정 화면)는 사용자 자신의 「설정」(/settings)과 라벨·경로가 다르다", () => {
+    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ["admin.settings"] };
+    const entry = adminIndexGroups(viewer)[0]?.items[0];
+    expect(entry?.href).toBe("/admin/settings");
+    expect(entry?.href).not.toBe("/settings");
+    expect(entry?.label).not.toBe("설정");
   });
 });
 
@@ -233,5 +315,6 @@ describe("roleMenu — 순수 함수 (부작용 없음, §6-0 셸 절이 이 계
   it("SYSTEM.md §6-0 절이 실제로 이 계약들의 근거 문장을 담고 있다(전제 확인)", () => {
     expect(SHELL_SECTION).toContain("PC 상단 바 우측 사용자 진입점");
     expect(SHELL_SECTION).toContain("시스템 상태");
+    expect(SHELL_SECTION).toContain("「관리」");
   });
 });

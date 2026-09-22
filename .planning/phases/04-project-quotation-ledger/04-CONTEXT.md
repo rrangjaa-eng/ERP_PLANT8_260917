@@ -334,6 +334,52 @@ F9 리저브 0건은 §7-7 EMPTY로 닫힘 · F10 `04-RESEARCH.md:156`의 `navig
   `grid-keys.ts` · `tsv.ts`로 일부러 밀어내 단위 테스트가 가능하게 했고, 04-10의 계약 테스트는
   `Grid.tsx`에 키 매칭 분기가 **없음**을 단언한다.
 
+### 계획 검수가 올린 것 (2026-09-22, blocker 1 · warning 3)
+
+- **D-78 (blocker — 상태 저장 문자열의 단일 정본):** **`projects.status`의 네 값은
+  `pitching` · `in_progress` · `settled` · `lost`다.** D-41·D-63이 한글 라벨 넷만 고정하고 영문
+  식별자를 어디에도 못박지 않았고(확인), 04-04 Task 3과 04-05 Task 1이 **같은 웨이브에서
+  `depends_on` 없이 각자 「고른다」**. 갈라지면 CHECK 제약이 도메인의 모든 상태 전이를 거부해
+  PROJ-04가 전멸하는데 **Wave 2의 어느 verify도 잡지 못하고** 증상이 Wave 3에서 원인과 떨어져
+  나타난다. 값 선택 근거:
+  - `in_progress` — Phase 3 시드(`domain/seed/index.ts:19-25`)에 이미 있다. 바뀌는 값을 하나 줄인다
+  - `pitching` — `docs/inputs/phase-04-project-quote.md` §1이 수주중을 「제안·PT 단계」로 정의한다
+  - `settled` — D-41이 「완료**(정산)**」이라 적었고 시드의 `done`은 정산을 잃는다. 어차피
+    재시드하므로 정밀도를 택한다
+  - `lost` — 표준 파이프라인 용어이고 `pitching`과 짝이 맞는다
+  - **Phase 8에 매핑 제약이 없다** — `fone_project`에 상태 컬럼이 아예 없다(실측). 옛 값에 맞출
+    필요가 없다.
+
+  **강제 지점(속성):** `ProjectStatus` 유니언 리터럴과 최신 마이그레이션의
+  `CHECK (status IN (…))` 목록을 파싱해 **집합 동일성을 단언하는 검사**를 둔다. 라벨만 맞추고
+  검사를 빼면 이 blocker가 그대로 남는다.
+
+- **D-79 (warning 2 — 1MB 한도):** ROADMAP 기준 1의 「요청 본문 1MB 한도」는 **오늘 Next 16
+  기본값으로 충족돼 있다** — `node_modules/next/dist/docs/01-app/02-guides/server-actions.md:83`
+  「Action requests are capped at 1MB by default」이고 `next.config.ts`에 `bodySizeLimit`이 없다
+  (둘 다 실측). 다만 그 사실이 산출물에 없고 되돌리는 변경을 막는 것도 없다. **`docs/ARCHITECTURE.md`에
+  한 줄 + `next.config.ts`에 `serverActions.bodySizeLimit` 상향이 없음을 단언하는 검사**를 둔다.
+
+- **W1 (04-11의 인덱스·문서 수정 경로):** 04-11:225가 인덱스 추가와 `docs/ARCHITECTURE.md` 수정을
+  하겠다고 적었으나 그 플랜의 `files_modified`에 둘 다 없고, `04-VALIDATION.md:99`가 「`db/migrations/`를
+  건드리는 플랜은 04-05 하나」로 제약했다. **04-11은 인덱스를 추가할 수 없다.** 04-05:146이 이미
+  목록·검색 경로 다섯을 덮으므로 04-11:225를 「부족하면 SUMMARY에 올려 후속 처리」로 고치고,
+  `docs/ARCHITECTURE.md`를 04-11 `files_modified`에 더한다(같은 웨이브 04-10이 그 파일을 안 건드린다).
+
+- **W3 (TDD 속성 누락 17건):** 검수가 「거짓 주장이 아니라 정직한 생략」으로 판정했다 — RTL 부재가
+  실측 근거이고 순수 모듈·도메인 태스크 20개는 전부 `tdd="true"`로 테스트 선행이다. 다만 **E2E는
+  RTL과 무관하므로 테스트 선행이 가능하다**: 04-11·04-12·04-13의 E2E 스펙 셋(`projects.spec.ts` ·
+  `quote-grid-keyboard.spec.ts` · `reserve.spec.ts`)을 화면 구현 **앞**에 RED로 쓰고 `tdd="true"`를
+  단다. 소스 단언 테스트는 현 순서를 유지하되 그 이유를 태스크에 한 줄 적는다.
+
+- **info 3 (Wave 1에 게이트 없음):** W2~W6은 전부 웨이브 종료 게이트를 명명하는데 04-01만 없다.
+  04-01은 `Dockerfile` 환경 검사와 계좌번호 마스킹 해제를 건드린다 — CLAUDE.md 기준으로 **`/cso`가
+  선택이 아니다.** W1에 단독 플랜이라 다른 플랜이 대신 적어 주지 못한다.
+
+- **info 1·2:** `ui/confirm` 계약 검사 위임 목록에 04-11을 더한다(「이전 프로젝트에서 복사」 시트가
+  사용처다). 04-02의 `files_modified`에서 **승인된 `04-UI-SPEC.md`를 뺀다** — 실행 산출물이 승인된
+  계약을 고치면 감사 흔적이 흐려진다.
+
 ### Claude's Discretion
 
 - **`Money`의 객체 모양** — 통화·외화금액·환율·환산액을 담은 단일 객체로 갈지, 금액만 브랜디드

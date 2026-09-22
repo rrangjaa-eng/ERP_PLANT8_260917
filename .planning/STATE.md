@@ -4,7 +4,7 @@ current_phase: 04
 current_phase_name: project-quote-ledger
 current_plan: 1
 status: executing
-stopped_at: "Phase 4 계획 완료 (7플랜/4웨이브, PR #34 머지) — 인수인계 투두 순서대로 진행"
+stopped_at: "quick 260922-i3k 완료·머지(PR #36, a224b1b). 다음은 새 세션에서 코덱스 전체 통합 디자인 리뷰 → /gsd-execute-phase 4 — 인수인계 투두 참조"
 last_updated: "2026-09-22T12:46:05.169Z"
 last_activity: 2026-09-22
 last_activity_desc: Phase 03 marked complete
@@ -147,6 +147,7 @@ Recent decisions affecting current work:
 ### Pending Todos
 
 - [2026-09-20] [planning] Phase 3 실행 전 결정 4건의 확정 답 (전부 A) — [todo file](.planning/todos/pending/2026-09-20-phase-3-checkpoint-answers.md) — Needs `/gsd-execute-phase 3` 실행 중 각 체크포인트에서 **`A`** 라고 답한다.
+- [2026-09-22] [planning] 새 세션 인수인계 — 코덱스 전체 통합 디자인 리뷰 → Phase 4 실행 — [todo file](.planning/todos/pending/2026-09-22-handoff-codex-design-review-then-phase-4.md) — Needs 이 순서로 한다.
 - [2026-09-22] [planning] Phase 4 U-2·U-4 UI 결정 확정 답 (U-5는 귀결) — [todo file](.planning/todos/pending/2026-09-22-phase-4-u-2-u-4-ui.md) — Needs ### U-2ⓐ — 최신이면서 고객 승인까지 된 차수의 S5 상태 열 = `승인`만 (`success`).
 - [2026-09-22] [planning] 새 세션 인수인계 — 관리자 메뉴 → 코덱스 디자인 리뷰 → Phase 4 실행 — [todo file](.planning/todos/pending/2026-09-22-session-handoff-admin-menu-codex-design-review-phase-4-execu.md) — Needs 세 가지를 이 순서로 한다.
 - [2026-09-22] [docs] 한 칸짜리 목록·폼의 최대 폭이 전역으로 규정돼 있지 않다 — [todo file](.planning/todos/pending/2026-09-22-single-column-max-width.md) — Needs `/admin` 하나만 좁히는 것은 CLAUDE.md의 「화면 하나만 예외 금지」에 정면으로.

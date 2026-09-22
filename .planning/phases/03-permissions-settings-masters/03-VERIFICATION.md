@@ -391,10 +391,7 @@ deferred:
 human_verification:
   - test: "스테이징 `/admin/permissions`에 시스템 관리자로 들어가 권한표 격자가 빈 칸 없이 채워진 상태로 보이는지 본다"
     expected: "격자가 빈 칸 없이 렌더된다"
-    why_human: "세 Job(db-bootstrap → migrate → seed)의 exit 0은 2026-09-22 GitHub Actions deploy run #37(35620678515) staging 잡 로그로 확인했다(bootstrap-2tk4j · migrate-4bz7x · seed-pd4fc 모두 successfully completed, quick probe / 307 · /login 200 · /api/health 200). 화면 렌더만 남았고 이 컨테이너는 `*.run.app`에 닿지 못한다. (3회차 문서의 '`plant8-staging-account` Job은 파이프라인에 없다'는 오기 — 같은 로그에 배포돼 있다)"
-  - test: "이 변경이 머지된 뒤 첫 스테이징 배포(deploy.yml)와 다음 프로덕션 승격이 스모크까지 성공하는지 본다"
-    expected: "두 배포 모두 success. 실패하면 로그의 `Invalid environment variables: APP_DATA_KEY_v1`이 원인이고 docs/OPERATIONS.md의 32바이트 재발급 절차를 따른다"
-    why_human: "Secret Manager 값의 길이를 이 컨테이너에서 볼 수 없어, 2026-09-22에 `lib/env.ts`가 부팅 시점에 APP_DATA_KEY_v1/v2의 base64 32바이트를 검증하도록 바꿨다(test/unit/env.test.ts). 이제 판정은 사람이 아니라 배포 스모크가 한다 — 남은 것은 그 배포 이벤트를 한 번 지켜보는 일이다"
+    why_human: "세 Job(db-bootstrap → migrate → seed)의 exit 0은 2026-09-22 GitHub Actions deploy run #37(35620678515) staging 잡 로그로 확인했다(bootstrap-2tk4j · migrate-4bz7x · seed-pd4fc 모두 successfully completed, quick probe / 307 · /login 200 · /api/health 200). 화면 렌더만 남았고 이 컨테이너는 `*.run.app`에 닿지 못한다. Secret Manager `app-data-key-v1` 길이(사람 판정 2)는 2026-09-22 Cloud Shell 실측으로 staging·prod 모두 32바이트를 확인해 닫았고, `lib/env.ts` 부팅 검사가 이후 재발을 막는다. (3회차 문서의 '`plant8-staging-account` Job은 파이프라인에 없다'는 오기 — 같은 로그에 배포돼 있다)"
 ---
 
 # Phase 3: 권한·설정·마스터 (관리자 운영 콘솔) 검증 보고서 — 4회차 재검증

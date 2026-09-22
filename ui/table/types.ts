@@ -30,6 +30,13 @@ export type TableColumn<Row> = {
   editability?: (row: Row) => CellEditability;
   /** 편집 렌더 — editability가 "edit"이고 이 열이 편집 중일 때. 없으면 읽기 렌더만 쓴다. */
   editCell?: (row: Row, ctx: { onCommit: (value: string) => void; onCancel: () => void }) => ReactNode;
+  /**
+   * 04-02 Task 2 ④ — 금액 셀의 두 줄 병기(§2-4). 외화가 있는 행 등 보조
+   * 정보가 있을 때만 값을 돌려준다(null/undefined/빈 문자열이면 1행만
+   * 렌더된다 — 고정 행 높이가 없다). 편집 중(입력 요소가 뜬 상태)에는
+   * 렌더하지 않는다 — 3행으로 늘리지 않는다는 계약을 지킨다.
+   */
+  secondaryLine?: (row: Row) => ReactNode;
 };
 
 export type TableGroup<Row> = {

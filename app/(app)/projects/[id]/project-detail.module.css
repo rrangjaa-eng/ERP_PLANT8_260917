@@ -74,3 +74,32 @@
   font-weight: var(--fw-medium);
   cursor: pointer;
 }
+
+/* 04-02 — §6-2 섹션 순서 ② 매출. 섹션 시작은 2px 강한 선(§3 「섹션 사이」). */
+.section {
+  margin-top: var(--s-6);
+  padding-top: var(--s-3);
+  border-top: var(--line-w-strong) solid var(--line-strong);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+}
+
+.sectionSubtitle {
+  margin: var(--s-1) 0 var(--s-4);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.contractForm {
+  margin-bottom: var(--s-6);
+}
+
+.contractRow {
+  display: flex;
+  gap: var(--s-2);
+  align-items: center;
+}

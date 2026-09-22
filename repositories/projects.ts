@@ -49,6 +49,10 @@ export type ProjectInsertInput = {
   preEstimateForeignAmount: string | null;
   preEstimateFxRate: string;
   preEstimateAmountKrw: number;
+  contractCurrency: string;
+  contractForeignAmount: string | null;
+  contractFxRate: string;
+  contractAmountKrw: number;
   source?: string;
   customFields?: Record<string, unknown>;
 };
@@ -72,10 +76,43 @@ export async function insertProject(viewer: Viewer, input: ProjectInsertInput, t
       preEstimateForeignAmount: input.preEstimateForeignAmount,
       preEstimateFxRate: input.preEstimateFxRate,
       preEstimateAmountKrw: input.preEstimateAmountKrw,
+      contractCurrency: input.contractCurrency,
+      contractForeignAmount: input.contractForeignAmount,
+      contractFxRate: input.contractFxRate,
+      contractAmountKrw: input.contractAmountKrw,
       source: input.source ?? "demo",
       customFields: input.customFields ?? {},
     })
     .returning();
   if (!row) throw new Error("projects insert가 행을 반환하지 않았습니다.");
   return row;
+}
+
+export type ProjectContractUpdateInput = {
+  contractCurrency: string;
+  contractForeignAmount: string | null;
+  contractFxRate: string;
+  contractAmountKrw: number;
+};
+
+// 04-02(D-57) — 계약 금액 칸 하나만 갱신한다. 낙관적 잠금은 두지 않는다
+// (칸 하나이고 PM 한 명만 쓰기 권한을 갖는다 — 견적 줄·매출 줄처럼 여러
+// 사람이 동시에 같은 셀을 다투는 표가 아니다).
+export async function updateProjectContract(
+  viewer: Viewer,
+  id: string,
+  input: ProjectContractUpdateInput,
+  tx: DbOrTx = db,
+): Promise<void> {
+  void viewer;
+  await tx
+    .update(projects)
+    .set({
+      contractCurrency: input.contractCurrency,
+      contractForeignAmount: input.contractForeignAmount,
+      contractFxRate: input.contractFxRate,
+      contractAmountKrw: input.contractAmountKrw,
+      updatedAt: new Date(),
+    })
+    .where(eq(projects.id, id));
 }

@@ -37,6 +37,15 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 04-02 Task 2 ④ — 금액 셀 보조 줄(§2-4 외화 두 줄 병기 · 입금 셀 공급가액
+   역산). 외화가 있는 행만 이 줄이 생겨 행 높이가 그 셀을 따른다 — 고정
+   행 높이가 없다. */
+.cellSecondary {
+  margin-top: var(--s-1);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
 .groupRow td {
   padding-top: var(--s-3);
 }

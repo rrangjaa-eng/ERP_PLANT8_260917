@@ -4,13 +4,15 @@ import { can } from "@/domain/permissions/can";
 import { findProject } from "@/domain/projects";
 import { listProjectFormReferences } from "@/domain/projects/references";
 import { getCurrentQuoteRevision, listQuoteLines } from "@/domain/quotes/lines";
+import { listRevenue } from "@/domain/revenue";
+import { recentFxRate } from "@/domain/money/currency";
 import { gate } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import { QuoteLedger } from "./quote-table";
 
 // SYSTEM.md §6-2 상세 화면 — 이 리포의 첫 목록/상세 분리 화면. 네 숫자 줄
-// (PNL-01)·매출 섹션·차수 섹션의 마크업은 이 플랜에 없다(04-02/04-06/04-09).
-// WR-07: 인증 검사를 이 페이지가 직접 한다.
+// (PNL-01)·차수 섹션의 마크업은 이 플랜에 없다(04-06/04-09). 매출 섹션은
+// 04-02가 더한다. WR-07: 인증 검사를 이 페이지가 직접 한다.
 export const dynamic = "force-dynamic";
 
 const STATUS_LABELS: Record<string, string> = {
@@ -29,8 +31,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const project = await findProject(session.viewer, id);
   if (!project) notFound();
 
-  const [canWrite, revision] = await Promise.all([
+  const [canWrite, canWriteEntries, revision] = await Promise.all([
     can(session.viewer, "projects", "write"),
+    can(session.viewer, "projects.revenue", "write"),
     getCurrentQuoteRevision(session.viewer, project.id),
   ]);
 
@@ -43,13 +46,16 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const gateDecision = await gate(project, "project.completed-lock", { status: project.status });
   const editable = canWrite && gateDecision.allowed;
 
-  const [lines, references] = await Promise.all([
+  const [lines, references, revenue, usdDefaultFxRate] = await Promise.all([
     listQuoteLines(session.viewer, revision.id),
     canWrite ? listProjectFormReferences(session.viewer) : Promise.resolve(null),
+    listRevenue(session.viewer, project.id),
+    recentFxRate("USD"),
   ]);
 
   return (
     <QuoteLedger
+      projectId={project.id}
       projectName={project.name}
       projectNumber={project.number}
       revisionSeq={revision.seq}
@@ -59,6 +65,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       vendors={references?.vendors ?? []}
       subcategories={references?.subcategories ?? []}
       editable={editable}
+      revenue={revenue}
+      canWriteContract={canWrite}
+      canWriteEntries={canWriteEntries}
+      usdDefaultFxRate={usdDefaultFxRate}
+      contractVatKrw={revenue.contract?.vatKrw ?? 0}
+      contractTotalKrw={revenue.contract?.totalKrw ?? 0}
     />
   );
 }

@@ -95,7 +95,15 @@ export function Table<Row>({
       });
     }
 
-    return column.cell(row);
+    const primary = column.cell(row);
+    const secondary = column.secondaryLine?.(row);
+    if (secondary === null || secondary === undefined || secondary === "") return primary;
+    return (
+      <>
+        <div>{primary}</div>
+        <div className={styles.cellSecondary}>{secondary}</div>
+      </>
+    );
   }
 
   return (

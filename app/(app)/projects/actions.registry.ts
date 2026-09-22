@@ -10,7 +10,7 @@ registerAction({
 });
 
 registerAction({
-  name: "saveQuoteLinesAction",
+  name: "saveProjectLedgerAction",
   menu: "projects",
   action: "write",
   dtoName: "QuoteLineDto",

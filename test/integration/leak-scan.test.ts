@@ -21,6 +21,7 @@ import "@/domain/people";
 import "@/domain/vendors";
 import "@/domain/projects";
 import "@/domain/quotes/lines";
+import "@/domain/revenue";
 import "@/domain/action-log/export";
 import "@/domain/archive";
 import "@/app/(app)/admin/code-tables/actions.registry";

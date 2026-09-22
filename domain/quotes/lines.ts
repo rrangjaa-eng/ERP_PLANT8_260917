@@ -9,6 +9,7 @@ import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import { moneyFromRow, moneyToColumns, quoteAmount, profit, type Money, type Currency } from "@/domain/money";
 import { withTransaction } from "@/lib/db-transaction";
+import type { DbOrTx } from "@/repositories/document-counters";
 import {
   listQuoteLinesByRevision as repoListQuoteLinesByRevision,
   insertQuoteLine as repoInsertQuoteLine,
@@ -231,12 +232,15 @@ export type QuoteLineWriteDeps = {
 // PROJ-02·D-65·D-66: 배치 저장 — 게이트 판정(완료 잠금) → 클라이언트가
 // 보낸 견적가·차익 필드는 애초에 타입에 없어 읽을 수 없다 → domain/money로
 // 재계산 → 한 트랜잭션으로 UPSERT(버전 불일치는 예외로 트랜잭션 전체를
-// 되돌린다 — "전부 저장 또는 전부 거부") → recordAction.
+// 되돌린다 — "전부 저장 또는 전부 거부") → recordAction. `tx`를 받으면
+// (04-02: 매출 섹션과 한 화면·한 버튼·한 트랜잭션으로 묶는
+// domain/projects/ledger.ts) 새 트랜잭션을 열지 않고 그 tx 안에서 쓴다.
 export async function saveQuoteLines(
   viewer: Viewer,
   revisionId: string,
   rows: QuoteLineWriteRow[],
   deps?: Partial<QuoteLineWriteDeps>,
+  tx?: DbOrTx,
 ): Promise<SaveQuoteLinesResult> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, PROJECTS_MENU, "write"))) {
@@ -256,7 +260,7 @@ export async function saveQuoteLines(
 
   const customFieldsSchema = await quoteLineCustomFieldsSchema(viewer);
 
-  const savedRows = await withTransaction(async (tx) => {
+  const runSave = async (innerTx: DbOrTx): Promise<QuoteLineRow[]> => {
     const results: QuoteLineRow[] = [];
 
     for (const [index, input] of rows.entries()) {
@@ -289,7 +293,7 @@ export async function saveQuoteLines(
         if (input.version === undefined) {
           throw new UserFacingError("기존 줄을 저장하려면 버전 정보가 필요합니다 · 화면을 새로고침해 주세요");
         }
-        const updated = await repoUpdateQuoteLineIfVersionMatches(viewer, input.id, input.version, payload, tx);
+        const updated = await repoUpdateQuoteLineIfVersionMatches(viewer, input.id, input.version, payload, innerTx);
         if (!updated) {
           throw new UserFacingError(
             `다른 사람이 먼저 이 줄을 바꿨습니다 · 덮어쓰기 / 그 값으로(줄 ${input.id})`,
@@ -297,13 +301,15 @@ export async function saveQuoteLines(
         }
         results.push(updated);
       } else {
-        const inserted = await repoInsertQuoteLine(viewer, { revisionId, ...payload, customFields }, tx);
+        const inserted = await repoInsertQuoteLine(viewer, { revisionId, ...payload, customFields }, innerTx);
         results.push(inserted);
       }
     }
 
     return results;
-  });
+  };
+
+  const savedRows = tx ? await runSave(tx) : await withTransaction(runSave);
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, {

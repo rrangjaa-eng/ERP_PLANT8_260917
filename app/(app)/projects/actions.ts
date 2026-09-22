@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
 import { createProject } from "@/domain/projects";
-import { saveQuoteLines } from "@/domain/quotes/lines";
+import { saveProjectLedger } from "@/domain/projects/ledger";
 import "./actions.registry";
 
 // PROJ-01·PROJ-02: domain/projects·domain/quotes/lines만 부른다. 등록은
@@ -41,32 +41,60 @@ export const createProjectAction = authedActionClient
     return { project };
   });
 
-// D-63·D-65: 클라이언트가 견적가·차익·원화 환산액 필드를 실어 보내도 이
-// 스키마에 그 필드가 없어 애초에 파싱되지 않는다 — domain 층이
-// computeQuoteLineAmounts로 다시 계산한다(PROJ-02).
-export const saveQuoteLinesAction = authedActionClient
+const revenueEntryRowSchema = z.object({
+  id: z.string().optional(),
+  version: z.number().optional(),
+  entryDate: z.string().min(1, "날짜를 입력하세요."),
+  amount: moneyInputSchema,
+  fxRateTouched: z.boolean().optional(),
+  note: z.string().optional(),
+});
+
+// D-63·D-65: 클라이언트가 견적가·차익·원화 환산액·부가세·공급가 역산 필드를
+// 실어 보내도 이 스키마에 그 필드가 없어 애초에 파싱되지 않는다 — domain
+// 층이 domain/money로 다시 계산한다(PROJ-02·04-02 §7-3 (사)). 04-02 Task 2
+// ⑥·⑧ — 화면의 1차 「일괄 저장」 하나가 견적 줄 + 매출(계약 금액·발행·
+// 입금)을 같은 트랜잭션으로 저장한다. 새 1차 버튼을 만들지 않는다
+// (saveQuoteLinesAction을 이 액션으로 흡수).
+export const saveProjectLedgerAction = authedActionClient
   .schema(
     z.object({
-      revisionId: z.string().min(1),
-      rows: z.array(
-        z.object({
-          id: z.string().optional(),
-          version: z.number().optional(),
-          sortOrder: z.number().optional(),
-          subcategory: z.string().min(1, "소분류를 고르세요."),
-          itemName: z.string().min(1, "항목명을 입력하세요."),
-          vendorId: z.string().optional(),
-          quantity: z.coerce.number().optional(),
-          unitPrice: moneyInputSchema,
-          execution: moneyInputSchema,
-          lineStatus: z.string().optional(),
-          note: z.string().optional(),
-        }),
-      ),
+      projectId: z.string().min(1),
+      quoteLines: z
+        .object({
+          revisionId: z.string().min(1),
+          rows: z.array(
+            z.object({
+              id: z.string().optional(),
+              version: z.number().optional(),
+              sortOrder: z.number().optional(),
+              subcategory: z.string().min(1, "소분류를 고르세요."),
+              itemName: z.string().min(1, "항목명을 입력하세요."),
+              vendorId: z.string().optional(),
+              quantity: z.coerce.number().optional(),
+              unitPrice: moneyInputSchema,
+              execution: moneyInputSchema,
+              lineStatus: z.string().optional(),
+              note: z.string().optional(),
+            }),
+          ),
+        })
+        .optional(),
+      revenue: z
+        .object({
+          contract: moneyInputSchema.optional(),
+          contractFxRateTouched: z.boolean().optional(),
+          issuedEntries: z.array(revenueEntryRowSchema).optional(),
+          paidEntries: z.array(revenueEntryRowSchema).optional(),
+        })
+        .optional(),
     }),
   )
   .action(async ({ parsedInput, ctx }) => {
-    const result = await saveQuoteLines(ctx.viewer, parsedInput.revisionId, parsedInput.rows);
+    const result = await saveProjectLedger(ctx.viewer, parsedInput.projectId, {
+      quoteLines: parsedInput.quoteLines,
+      revenue: parsedInput.revenue,
+    });
     revalidatePath("/projects");
     return result;
   });

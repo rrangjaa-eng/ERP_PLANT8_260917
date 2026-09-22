@@ -144,6 +144,13 @@ account:reset --email …` / `pnpm account:unlock --email …`. 운영에서는 
 안 보여도 `reset`을 다시 돌리지 말고 완료를 기다린다 — 재실행하면 전 세션이 다시 만료되고
 새 임시 비밀번호가 또 발급된다.
 
+**Claude 검증 계정(2026-09-22 사용자 승인).** Claude Code 클라우드 세션이 스테이징·
+프로덕션 화면을 직접 확인해야 할 때는 `account.yml`(action=create, role=role-sysadmin)로
+`claude-verify-<YYYYMMDD>@plant8.co.kr` 관리자 계정을 만들어 쓰고, 검증이 끝나면 같은
+워크플로의 `reset`으로 세션을 만료시킨 뒤 `/admin/people`에서 보관한다. 실계정 비밀번호를
+세션에 넘기지 않는다. 세션의 gcloud는 `scripts/setup-gcloud.sh`(SessionStart 훅)가
+환경 변수 `GCP_VERIFIER_SA_KEY_B64`(읽기 전용 SA `plant8-verifier` 키의 base64)로 준비한다.
+
 ## 8. 최초 1회 부트스트랩 (D-02)
 
 사용자가 Cloud Shell에서 **`scripts/bootstrap-gcp.sh`**를 1회 실행한다 — 단일 파일이라

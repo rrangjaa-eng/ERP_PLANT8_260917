@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import Link from "next/link";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { MENUS } from "@/domain/permissions/menus";
@@ -37,9 +38,9 @@ export default async function AdminIndexPage() {
           <ul className={styles.list}>
             {group.items.map((item) => (
               <li key={item.href}>
-                <a href={item.href} className={styles.link}>
+                <Link href={item.href} className={styles.link}>
                   {item.label}
-                </a>
+                </Link>
               </li>
             ))}
           </ul>

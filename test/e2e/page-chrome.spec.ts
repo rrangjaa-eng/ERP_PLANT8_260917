@@ -104,7 +104,11 @@ test.describe("전역 포커스 링 (02-08 Task 1, §4-4)", () => {
     await loginAs(page, DEFAULT_ROLE_ID);
     await page.goto("/projects");
 
-    const link = page.getByRole("link", { name: "지출결의 보기" });
+    // Phase 4(04-01): /projects의 EMPTY 다음 한 수가 "지출결의 보기"(임시
+    // 자리표시자)에서 "프로젝트 등록"(실제 등록 동선)으로 바뀌었다 — 이
+    // 테스트는 "컴포넌트 포커스 스타일이 없는 3차 링크" 아무거나 검증하면
+    // 충분하므로 같은 화면의 새 링크로 옮긴다.
+    const link = page.getByRole("link", { name: "프로젝트 등록" });
     await link.focus();
 
     await expect(link).toHaveCSS("outline-style", "solid");

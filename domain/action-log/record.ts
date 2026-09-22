@@ -26,6 +26,10 @@ export const CORE_ACTION_TYPES = [
   "excel_export",
   "mask_reveal",
   "action_log_prune",
+  // Phase 4 Task 1 ③(D-50): 상태 변경 이력은 행동 로그에 이 종류로만 남긴다.
+  // ACTION_TYPE_LABELS·ALWAYS_ON_ACTION_TYPES 두 배열도 같은 변경에서 함께
+  // 고친다(04-RESEARCH.md Pitfall 2 — 하나만 고치면 조용히 어긋난다).
+  "status_change",
 ] as const;
 
 export type CoreActionType = (typeof CORE_ACTION_TYPES)[number];
@@ -53,11 +57,19 @@ export const ACTION_TYPE_LABELS: Record<CoreActionType, string> = {
   excel_export: "Excel 내보내기",
   mask_reveal: "마스킹 해제",
   action_log_prune: "행동 로그 정리",
+  status_change: "상태 변경",
 };
 
 // OPS-05: Excel 내보내기·마스킹 해제·행동 로그 정리는 설정으로 못 끄는 핵심
 // 로그다 — 설정 조회 결과와 무관하게 항상 기록한다.
-export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = ["excel_export", "mask_reveal", "action_log_prune"];
+export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = [
+  "excel_export",
+  "mask_reveal",
+  "action_log_prune",
+  // D-50: 상태 변경 이력은 끌 수 없다 — 설정으로 끄면 상세의 「마지막
+  // 변경일」이 조용히 빈다.
+  "status_change",
+];
 
 export class UnknownActionTypeError extends UserFacingError {}
 

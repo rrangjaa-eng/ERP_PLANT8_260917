@@ -1,0 +1,76 @@
+/* SYSTEM.md §6-2 상세 화면 + §7-3 보강. 색·서체·radius는 tokens.css 변수만(D-20). */
+
+/* U-1(04-01 계획 단계 판단): 머리 줄은 flex-wrap으로 줄바꿈한다 — 좁은
+   폭에서 제목·부제·상태 태그가 위에 남고 버튼군이 아래 줄로 내려간다.
+   버튼은 숨기거나 접지 않는다(이 화면의 버튼은 이 화면에서만 닿는
+   다음 한 수라 폰에서 숨기면 도달 불가가 된다). 가로 스크롤을 만들지
+   않는다(S11) — 표 네 곳뿐 아니라 이 머리 줄에도 건다. */
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+.titleBlock {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.headerActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.cellSelect,
+.cellInput,
+.cellInputNumeric {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 var(--s-1);
+  border: 0;
+  border-bottom: var(--line-w) solid var(--accent);
+  background: var(--g-50);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+}
+
+.cellInputNumeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cellSelect:focus-visible,
+.cellInput:focus-visible,
+.cellInputNumeric:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.footerCell {
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  color: var(--fg);
+  font-weight: var(--fw-bold);
+}
+
+.savedTag {
+  margin-left: var(--s-3);
+  color: var(--success);
+  font-weight: var(--fw-medium);
+}
+
+.addLineButton {
+  margin-top: var(--s-3);
+  border: 0;
+  border-bottom: var(--line-w) solid var(--accent);
+  background: none;
+  color: var(--accent);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+}

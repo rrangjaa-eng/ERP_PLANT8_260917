@@ -15,13 +15,29 @@ import { seedTeam } from "@/repositories/teams";
 // 보장하는 "설정 화면에 EMPTY 상태가 발생하지 않는다"가 실제로 성립한다.
 const SEED_HISTORIZED_EFFECTIVE_FROM = "2000-01-01";
 
-// 프로젝트 상태 코드표 시드(ROADMAP MAST-04) — 기획·진행·보류·완료·취소.
+// 프로젝트 상태 코드표 시드(D-41, Phase 4 Task 1 ④) — 수주중·진행·완료(정산)·
+// 미수주 네 값. 옛 다섯 값(planning/on_hold/done/cancelled + 이 목록에 없던
+// in_progress도 값 자체는 그대로)은 db/migrations/0009_project_quote_ledger_spine.sql이
+// DELETE/INSERT로 이미 교체했다 — 이 상수는 그 마이그레이션이 못 닿는
+// 경로(멱등 재시드·픽스처 DB)에서도 같은 네 값이 나오게 하는 정본이다.
 const PROJECT_STATUS_CODES = [
-  { value: "planning", label: "기획", sortOrder: 0 },
+  { value: "bidding", label: "수주중", sortOrder: 0 },
   { value: "in_progress", label: "진행", sortOrder: 1 },
-  { value: "on_hold", label: "보류", sortOrder: 2 },
-  { value: "done", label: "완료", sortOrder: 3 },
-  { value: "cancelled", label: "취소", sortOrder: 4 },
+  { value: "settled", label: "완료(정산)", sortOrder: 2 },
+  { value: "lost", label: "미수주", sortOrder: 3 },
+];
+
+// D-62: 견적 줄 대분류 = 그룹 머리글(소분류에서 파생), 그룹 순서는
+// `sort_order`. Phase 3은 `code_items`의 메커니즘만 세웠고 이 표(견적
+// 소분류)는 Phase 4가 처음 쓴다 — REQUIREMENTS.md·`docs/inputs`가 이름을
+// 확정하지 않아 인트라넷 실무에서 흔한 대분류 네 가지로 우선 시드한다.
+// 관리자가 화면(04-05 이후)에서 언제든 늘리거나 이름을 바꿀 수 있다 —
+// 시드는 출발점일 뿐 정본이 아니다(evidence_type과 같은 결).
+const QUOTE_SUBCATEGORY_CODES = [
+  { value: "stage_construction", label: "무대·시공", sortOrder: 0 },
+  { value: "print_production", label: "인쇄·제작", sortOrder: 1 },
+  { value: "staffing", label: "인력", sortOrder: 2 },
+  { value: "etc", label: "기타", sortOrder: 3 },
 ];
 
 // EXP-15·MAST-01: 증빙 종류 코드표 시드 — REQUIREMENTS.md가 열거한 일곱 종류와
@@ -127,6 +143,25 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
     }
   }
 
+  // Phase 4(04-01): 기획 PM(DEFAULT_ROLE_ID)의 기본 업무 메뉴 — "projects"
+  // 보기·쓰기. `app/(app)/projects/page.tsx`가 이 페이즈에서 `can(viewer,
+  // "projects", "view")` 게이트를 얻는다(admin/vendors 선례). 관리자 메뉴와
+  // 달리 이 메뉴는 PM의 일상 업무라 admin.*처럼 관리자가 권한표에서 매번
+  // 켜야 하는 빈 기본값으로 두지 않는다 — 이미 여러 기존 E2E(page-chrome·
+  // mobile-page-chrome·a11y·mobile-list-empty)가 role-pm의 `/projects` 접근을
+  // 전제하고 있고(게이트가 없던 시절부터), 이 시드가 없으면 이 플랜이 추가하는
+  // 게이트가 그 전제를 조용히 깬다.
+  for (const action of ["view", "write"] as const) {
+    await upsertPermission(viewer, {
+      roleId: DEFAULT_ROLE_ID,
+      menu: "projects",
+      action,
+      allowed: true,
+      updatedBy: null,
+    });
+    permissionsCount++;
+  }
+
   let visibilityCount = 0;
   for (const item of INFO_ITEMS) {
     await upsertVisibility(viewer, {
@@ -151,6 +186,10 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
   }
   for (const code of EVIDENCE_TYPE_CODES) {
     const inserted = await seedCodeItem(viewer, { tableKey: "evidence_type", ...code });
+    if (inserted) codeItemsCount++;
+  }
+  for (const code of QUOTE_SUBCATEGORY_CODES) {
+    const inserted = await seedCodeItem(viewer, { tableKey: "quote_subcategory", ...code });
     if (inserted) codeItemsCount++;
   }
 

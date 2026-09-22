@@ -19,8 +19,14 @@ app/            화면 · Server Action(authedActionClient만) · 라우트 핸�
   │  ← DTO만 통과(app은 repositories/db를 직접 import 금지, lint)
   ▼
 domain/         순수 비즈니스 로직 · viewer 기반 권한 판단
-  ├─ domain/money        모든 금액 산술의 유일한 지점(Phase 4) — round/toKrw/tax/gross
-  ├─ domain/rules.gate   모든 게이트(고객 승인·증빙 필수·마감)의 유일한 지점(Phase 4)
+  ├─ domain/money/index.ts        모든 금액 산술의 유일한 지점(Phase 4, 04-01) —
+  │    Money 브랜드 · round/toKrw/moneyFromRow/moneyToColumns/quoteAmount/profit
+  │    (splitWithRemainder·grossFromTotal·applyTaxRule은 04-02가 채운다)
+  ├─ domain/rules/gate.ts         모든 게이트(고객 승인·증빙 필수·마감)의 유일한
+  │    지점(Phase 4, 04-01) — gate/registerGateRule/listGateRules, 미등록 규칙은 던진다.
+  │    domain/rules/register.ts가 규칙을 등록하는 사이드이펙트 모듈
+  ├─ domain/document-numbering/index.ts  문서 번호 부여 — 카운터 원자 증가 + 서식
+  │    조립(allocateDocumentNumber/formatDocumentNumber, Phase 4, 04-01)
   └─ project(viewer, dto)  domain 출구 — repositories 행 객체를 DTO로 투영(Phase 3)
   ▼
 repositories/   Drizzle 쿼리. 모든 export 함수 첫 인자는 viewer(lint), 전체 컬럼 반환
@@ -123,6 +129,12 @@ GIN 인덱스를 포함한다** — 기존 마스터 표(`roles`·`code_items`·
 `document_counters`((counterKey, period) 복합 PK) — **이 표는 규약만 세운다.
 실제 번호 부여(원자적 증가)와 행 잠금은 Phase 4다.** `repositories/
 document-counters.ts`는 읽기와 upsert만 두고 증가 함수를 두지 않는다.
+
+**증가 규약(04-01):** `repositories/document-counters.ts`의 `allocateNumber`가
+`UPDATE … RETURNING`으로 원자 증가한다 — 반드시 문서 INSERT와 같은
+`db.transaction`(tx) 안에서 불린다. `period`는 서기 연도 네 자리 문자열
+(`"2026"`), `counterKey="project"`의 번호 서식은 연도 뒤 두 자리 + 순번
+세 자리(`26001`, `domain/document-numbering`).
 
 ## 5. DB·마이그레이션
 

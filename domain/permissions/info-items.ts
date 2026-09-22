@@ -34,6 +34,18 @@ export const INFO_ITEMS: InfoItemDef[] = [
   // 없지만, 마스킹 해제(평문)는 위의 vendor.account_number_unmasked가
   // 전담한다.
   { key: "vendor.value", label: "거래처 정보", staffDefault: true },
+  // Phase 4(04-01, Rule 2): 프로젝트 구조 정보(번호·이름·클라이언트·담당
+  // PM·팀·상태·기간 등) — vendor.value·person.value와 같은 결로 인트라넷
+  // 수준 구조 정보라 기본값 참. 플랜이 명시한 항목은 quote.amount 하나뿐이나
+  // ProjectDto 전체가 걸릴 정보 항목이 없으면 project(viewer, row, spec)
+  // 투영이 모든 계급에서 0필드를 돌려주는 조용한 결함이 된다(정보 노출표
+  // 행이 없으면 visible()은 기본 거부) — 구조적으로 필요해 함께 등록한다.
+  { key: "project.value", label: "프로젝트 정보", staffDefault: true },
+  // PROJ-02: 견적·실행가·차익 열. 기획 PM이 매일 다루는 자기 프로젝트의
+  // 숫자라 기본값 참(위 vendor.amount처럼 대표 전용으로 막지 않는다) —
+  // 손익 숫자(pnl.amount)와는 다른 항목이다(견적 줄 = 계획값, 손익 = 확정
+  // 비용 기준 결과값, Phase 9).
+  { key: "quote.amount", label: "견적·실행가·차익", staffDefault: true },
   // ADMN-12(03-07): 보관함 목록 항목 — 여러 마스터 표를 섞어 보여주는
   // 화면이라 특정 표 전용 항목(예: vendor.value)으로는 게이트할 수 없다.
   // 관리자 전용 화면이라 기본값은 거짓(새 기능 정보는 기본 숨김).

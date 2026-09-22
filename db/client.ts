@@ -42,6 +42,11 @@ export const pool: Pool = await createPool();
 
 export const db = drizzle(pool, { schema });
 
+// Phase 4(04-01): db.transaction(cb)의 tx 인자(PgTransaction)는 db와 같은
+// 쿼리 빌더 메서드를 갖지만 `$client: Pool`이 없어 `typeof db` 전체와
+// 구조적으로 다르다 — repositories 함수가 db·tx 양쪽을 다 받는 공용 타입.
+export type DbOrTx = Pick<typeof db, "insert" | "update" | "select">;
+
 export async function closeDb(): Promise<void> {
   // pool.end()가 거부해도 커넥터는 반드시 닫는다 — finally가 아니면 풀 종료
   // 실패 한 번에 갱신 타이머가 살아남아 고치려던 누수가 그대로 돌아온다.

@@ -112,6 +112,12 @@ test.describe("단일 기둥 최대 폭 — 관리자 화면·폼 전면 적용 
     // ListEmpty로 대체된다 — 등록 시 팀·발령일을 채워 그 경우를 피한다).
     await expect(page.locator("main table")).toHaveCount(1);
     await expect(page.locator(".single-column table")).toHaveCount(0);
+
+    // /design-review 발견 2 — SYSTEM.md §7-14 이력 목록은 §6-3 폼 화면의 한
+    // 섹션(2px 선으로 시작)에 열린다. 기존 표만 있고 여는 제목이 없었다 —
+    // /admin/settings의 §7-14 이력 섹션과 같은 패턴(이 앱의 소속 발령 이력
+    // caption과 같은 문구 「소속 발령 이력」).
+    await expect(page.getByRole("heading", { name: "소속 발령 이력", level: 2 })).toBeVisible();
   });
 
   test("/admin/people/org의 최상위 main ul과 #org-unit-form이 720px 이하로 main h1과 같은 x에서 시작한다", async ({

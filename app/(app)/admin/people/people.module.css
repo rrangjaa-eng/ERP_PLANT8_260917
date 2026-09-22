@@ -139,3 +139,18 @@
   font-size: var(--fs-sm);
   color: var(--danger);
 }
+
+/* /design-review 발견 2 — SYSTEM.md §7-14 이력 목록은 §6-3 폼 화면의 한
+   섹션(2px 선으로 시작)에 연다. settings.module.css .section·.sectionTitle과
+   같은 결(§6-3 「섹션 사이: 2px 강한 선 위 --s-6, 아래 --s-3」). */
+.historySection {
+  border-top: var(--line-w-strong) solid var(--line-strong);
+  padding-top: var(--s-6);
+  margin-top: var(--s-6);
+}
+
+.historySectionTitle {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  margin: 0 0 var(--s-4) 0;
+}

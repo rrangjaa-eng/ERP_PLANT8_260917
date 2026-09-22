@@ -62,21 +62,24 @@ export function PersonHistorySection({
   const { executeAsync: executeCancel } = useAction(cancelAssignmentAction);
 
   return (
-    <HistoryList
-      entries={entries}
-      valueKind={{ kind: "enum", options: teamOptions }}
-      idPrefix={`person-team-history-${userId}`}
-      caption="소속 발령 이력"
-      onAdd={async ({ effectiveFrom, value }) => {
-        const result = await executeAssign({ userId, teamId: value, effectiveFrom });
-        const message = errorMessageOf(result ?? {});
-        if (message) throw new Error(message);
-      }}
-      onCancel={async (effectiveFrom) => {
-        const result = await executeCancel({ userId, effectiveFrom });
-        const message = errorMessageOf(result ?? {});
-        if (message) throw new Error(message);
-      }}
-    />
+    <section className={styles.historySection}>
+      <h2 className={styles.historySectionTitle}>소속 발령 이력</h2>
+      <HistoryList
+        entries={entries}
+        valueKind={{ kind: "enum", options: teamOptions }}
+        idPrefix={`person-team-history-${userId}`}
+        caption="소속 발령 이력"
+        onAdd={async ({ effectiveFrom, value }) => {
+          const result = await executeAssign({ userId, teamId: value, effectiveFrom });
+          const message = errorMessageOf(result ?? {});
+          if (message) throw new Error(message);
+        }}
+        onCancel={async (effectiveFrom) => {
+          const result = await executeCancel({ userId, effectiveFrom });
+          const message = errorMessageOf(result ?? {});
+          if (message) throw new Error(message);
+        }}
+      />
+    </section>
   );
 }

@@ -46,3 +46,13 @@ export type TableGroup<Row> = {
 };
 
 export type SortState = { key: string; direction: "asc" | "desc" } | null;
+
+// 04-04(§7-3 보강 (나)(다)) — 셀 오류·버전 충돌. 충돌은 오류 셀과 같은 고정
+// 모양이고, 이유 한 줄 + 다음 한 수(3차 버튼)를 함께 지닌다(D-65).
+export type CellIssueAction = { label: string; onClick: () => void };
+
+export type CellIssue = {
+  kind: "error" | "conflict";
+  message: string;
+  actions?: CellIssueAction[];
+};

@@ -2,13 +2,28 @@
 
 import { Fragment, useState, type ReactNode } from "react";
 import styles from "./Table.module.css";
-import type { CellEditability, TableColumn } from "./types";
+import type { CellEditability, CellIssue, TableColumn } from "./types";
+import { useGridKeyboard, type GridPosition } from "./use-grid-keyboard";
 
-// SYSTEM.md §7-3 + 보강 (가)~(아) — 편집/읽기 겸용 표의 첫 형태(D-61).
-// **렌더 형태는 서버가 보낸 셀 편집 가능성에서 파생된다 — 모드를 켜고 끄는
-// prop이 없다**(가). 편집은 한 칸 클릭/Enter 진입 + Esc 되돌리기 + dirty
-// 표시 + 화면 1차 「일괄 저장」까지만(04-04가 방향키 로빙·범위 선택·
-// 붙여넣기·충돌 렌더·미저장 복원을 더한다).
+// SYSTEM.md §7-3 + 보강 (가)~(아) — 편집/읽기 겸용 표. **렌더 형태는 서버가
+// 보낸 셀 편집 가능성에서 파생된다 — 모드를 켜고 끄는 prop이 없다**(가).
+//
+// 04-04 — `enableGridKeyboard`는 **opt-in**이다(기본 false). 켜지 않은 표는
+// 04-01/04-02가 만든 기존 동작(편집 가능 셀마다 tabIndex=0, 로빙 없음)을
+// 그대로 유지한다 — revenue-section.tsx·관리자 표 등 이 플랜이 건드리지
+// 않는 소비자의 회귀를 막는다(범위 경계). 켜면 표 전체가 탭 정지 1개인
+// 로빙 tabIndex + 방향키 + Esc + Delete + 새 줄 + 줄 복제 + 줄 이동 +
+// 붙여넣기 + 셀 오류·충돌 렌더가 활성화된다(§7-3 (아)).
+export type TableKeyboardHandlers<Row> = {
+  onDeleteRow?: (row: Row) => void;
+  onNewRow?: () => void;
+  onDuplicateRow?: (row: Row) => void;
+  onMoveRow?: (row: Row, direction: "up" | "down") => void;
+  onSave?: () => void;
+  /** 편집 중 Esc — 그 셀 값을 되돌린다(커밋 없이 편집을 닫는다). */
+  onEscapeCell?: (row: Row, columnKey: string) => void;
+};
+
 export type TableProps<Row> = {
   caption: string;
   columns: TableColumn<Row>[];
@@ -25,6 +40,19 @@ export type TableProps<Row> = {
    * 상태에서도 합계 행에 미수 금액을 보여야 하는 표만 켠다.
    */
   alwaysShowFooter?: boolean;
+  /** 04-04 — role="grid" 키보드 계약을 켠다(opt-in, 기본 false). */
+  enableGridKeyboard?: boolean;
+  keyboard?: TableKeyboardHandlers<Row>;
+  /** 04-04(다) — 활성(포커스) 셀에서 붙여넣기가 발생하면 위임한다. */
+  onPasteAtCell?: (row: Row, columnKey: string, clipboardText: string) => void;
+  /** 04-04(나)(다) — 셀 오류·충돌(있으면 고정 오류 모양 + aria-invalid). */
+  cellIssue?: (row: Row, columnKey: string) => CellIssue | undefined;
+  /** 04-04(바) — 폰에서 줄을 탭하면 호출된다(RowSheet를 여는 신호). */
+  onRowTap?: (row: Row) => void;
+  /** 04-04 — dirty(미저장 편집) 셀 고정 표시(좌측 인셋 선). */
+  cellDirty?: (row: Row, columnKey: string) => boolean;
+  /** 04-04 — 저장 성공 직후 600ms 틴트(Copywriting SUCCESS 행). */
+  cellSaved?: (row: Row, columnKey: string) => boolean;
 };
 
 type ActiveCell = { rowId: string; columnKey: string } | null;
@@ -52,6 +80,13 @@ export function Table<Row>({
   footer,
   onCellCommit,
   alwaysShowFooter,
+  enableGridKeyboard = false,
+  keyboard,
+  onPasteAtCell,
+  cellIssue,
+  onRowTap,
+  cellDirty,
+  cellSaved,
 }: TableProps<Row>) {
   const [activeCell, setActiveCell] = useState<ActiveCell>(null);
 
@@ -60,6 +95,63 @@ export function Table<Row>({
   const hasEditableCell = rows.some((row) =>
     columns.some((column) => (column.editability?.(row) ?? "readonly") === "edit"),
   );
+
+  const groups = groupRows(rows, groupBy);
+  // 그룹 머리글 행은 이 평탄화 목록에 들어오지 않는다 — 로빙 tabIndex·방향키
+  // 좌표 체계가 데이터 행만 센다(방향키가 그룹 머리글을 "건너뛴다"는 (라)
+  // 요구가 저절로 성립한다).
+  const flatRows: Row[] = groups.flatMap((group) => group.rows);
+
+  function cellEditability(column: TableColumn<Row>, row: Row): CellEditability {
+    return column.editability?.(row) ?? "readonly";
+  }
+
+  const keyboardState = useGridKeyboard({
+    rowCount: flatRows.length,
+    colCount: columns.length,
+    isEditableCell: (pos: GridPosition) => {
+      const row = flatRows[pos.row];
+      const column = columns[pos.col];
+      if (!row || !column) return false;
+      return cellEditability(column, row) === "edit";
+    },
+    isEditing: (pos: GridPosition) => {
+      const row = flatRows[pos.row];
+      const column = columns[pos.col];
+      if (!row || !column) return false;
+      return activeCell?.rowId === getRowId(row) && activeCell.columnKey === column.key;
+    },
+    handlers: {
+      onEnterEdit: (pos) => {
+        const row = flatRows[pos.row];
+        const column = columns[pos.col];
+        if (!row || !column) return;
+        setActiveCell({ rowId: getRowId(row), columnKey: column.key });
+      },
+      onEscape: (pos, wasEditing) => {
+        const row = flatRows[pos.row];
+        const column = columns[pos.col];
+        if (wasEditing) {
+          setActiveCell(null);
+          if (row && column) keyboard?.onEscapeCell?.(row, column.key);
+        }
+      },
+      onDeleteRow: (rowIndex) => {
+        const row = flatRows[rowIndex];
+        if (row) keyboard?.onDeleteRow?.(row);
+      },
+      onNewRow: () => keyboard?.onNewRow?.(),
+      onDuplicateRow: (rowIndex) => {
+        const row = flatRows[rowIndex];
+        if (row) keyboard?.onDuplicateRow?.(row);
+      },
+      onMoveRow: (rowIndex, direction) => {
+        const row = flatRows[rowIndex];
+        if (row) keyboard?.onMoveRow?.(row, direction);
+      },
+      onSave: () => keyboard?.onSave?.(),
+    },
+  });
 
   if (rows.length === 0) {
     return (
@@ -80,12 +172,6 @@ export function Table<Row>({
         {alwaysShowFooter && footer ? <tfoot aria-live="polite">{footer}</tfoot> : null}
       </table>
     );
-  }
-
-  const groups = groupRows(rows, groupBy);
-
-  function cellEditability(column: TableColumn<Row>, row: Row): CellEditability {
-    return column.editability?.(row) ?? "readonly";
   }
 
   function renderCell(column: TableColumn<Row>, row: Row) {
@@ -114,10 +200,22 @@ export function Table<Row>({
     );
   }
 
+  function handleTablePaste(event: React.ClipboardEvent<HTMLTableElement>) {
+    if (!enableGridKeyboard || !onPasteAtCell) return;
+    const row = flatRows[keyboardState.focus.row];
+    const column = columns[keyboardState.focus.col];
+    if (!row || !column) return;
+    const text = event.clipboardData?.getData("text/plain");
+    if (!text) return;
+    event.preventDefault();
+    onPasteAtCell(row, column.key, text);
+  }
+
   return (
     <table
       className={[styles.table, hasEditableCell ? styles.editable : styles.readonly].join(" ")}
       role={hasEditableCell ? "grid" : undefined}
+      onPaste={enableGridKeyboard ? handleTablePaste : undefined}
     >
       <caption className="sr-only">{caption}</caption>
       <thead>
@@ -146,6 +244,7 @@ export function Table<Row>({
           ) : null}
           {group.rows.map((row) => {
             const rowId = getRowId(row);
+            const flatRowIndex = flatRows.indexOf(row);
             // 편집 가능 열은 summary가 있을 때만 접힌 줄에 낀다 — 그러지
             // 않으면 같은 입력 요소가 주 행·접힌 줄 두 곳에 동시에
             // 마운트된다(중복 aria-label, 상태 불일치).
@@ -158,44 +257,106 @@ export function Table<Row>({
             return (
               <Fragment key={rowId}>
                 <tr>
-                  {columns.map((column) => {
+                  {columns.map((column, colIndex) => {
                     const editability = cellEditability(column, row);
                     const isEditableColumn = editability === "edit";
+                    const pos: GridPosition = { row: flatRowIndex, col: colIndex };
+                    const isFocusPos =
+                      enableGridKeyboard && keyboardState.focus.row === pos.row && keyboardState.focus.col === pos.col;
+                    const issue = cellIssue?.(row, column.key);
+                    const issueId = issue ? `${rowId}-${column.key}-issue` : undefined;
+
                     return (
                       <td
                         key={column.key}
                         role={hasEditableCell ? "gridcell" : undefined}
                         aria-readonly={hasEditableCell ? editability !== "edit" : undefined}
-                        tabIndex={hasEditableCell && isEditableColumn ? 0 : undefined}
+                        aria-invalid={issue ? true : undefined}
+                        aria-describedby={issueId}
+                        tabIndex={
+                          enableGridKeyboard
+                            ? isFocusPos
+                              ? 0
+                              : -1
+                            : hasEditableCell && isEditableColumn
+                              ? 0
+                              : undefined
+                        }
                         className={[
                           styles.cell,
                           styles[`prio-${column.priority}`],
                           column.align === "right" ? styles.alignRight : "",
                           isEditableColumn ? styles.editableCell : "",
                           editability === "locked" ? styles.lockedCell : "",
+                          issue ? (issue.kind === "conflict" ? styles.conflictCell : styles.errorCell) : "",
+                          enableGridKeyboard && keyboardState.isInSelection(pos) ? styles.selectedCell : "",
+                          !issue && cellDirty?.(row, column.key) ? styles.dirtyCell : "",
+                          cellSaved?.(row, column.key) ? styles.savedTint : "",
                         ].join(" ")}
                         onClick={() => {
+                          if (enableGridKeyboard) keyboardState.setFocus(pos);
                           if (isEditableColumn && column.editCell) setActiveCell({ rowId, columnKey: column.key });
                         }}
-                        onKeyDown={(event) => {
-                          if ((event.key === "Enter" || event.key === " ") && isEditableColumn && column.editCell) {
-                            event.preventDefault();
-                            setActiveCell({ rowId, columnKey: column.key });
-                          }
+                        onFocus={() => {
+                          if (enableGridKeyboard) keyboardState.setFocus(pos);
                         }}
+                        onKeyDown={
+                          enableGridKeyboard
+                            ? (event) => keyboardState.handleKeyDown(event, pos)
+                            : (event) => {
+                                if ((event.key === "Enter" || event.key === " ") && isEditableColumn && column.editCell) {
+                                  event.preventDefault();
+                                  setActiveCell({ rowId, columnKey: column.key });
+                                }
+                              }
+                        }
                       >
                         {renderCell(column, row)}
+                        {issue ? (
+                          <p id={issueId} className={styles.issueReason}>
+                            {issue.message}
+                            {issue.actions?.map((action) => (
+                              <button key={action.label} type="button" className={styles.issueAction} onClick={action.onClick}>
+                                {action.label}
+                              </button>
+                            ))}
+                          </p>
+                        ) : null}
                       </td>
                     );
                   })}
                 </tr>
                 {p2Values.length > 0 ? (
-                  <tr className={styles.collapsedRow} aria-hidden="true">
-                    <td colSpan={columns.length} className={styles.collapsedCell}>
-                      {p2Values.map((value, index) => (
-                        <span key={index}>{index > 0 ? " · " : ""}{value}</span>
-                      ))}
-                    </td>
+                  <tr
+                    className={styles.collapsedRow}
+                    aria-hidden={onRowTap ? undefined : "true"}
+                  >
+                    {onRowTap ? (
+                      <td
+                        colSpan={columns.length}
+                        className={styles.collapsedCell}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`${rowId} 상세 보기`}
+                        onClick={() => onRowTap(row)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            onRowTap(row);
+                          }
+                        }}
+                      >
+                        {p2Values.map((value, index) => (
+                          <span key={index}>{index > 0 ? " · " : ""}{value}</span>
+                        ))}
+                      </td>
+                    ) : (
+                      <td colSpan={columns.length} className={styles.collapsedCell}>
+                        {p2Values.map((value, index) => (
+                          <span key={index}>{index > 0 ? " · " : ""}{value}</span>
+                        ))}
+                      </td>
+                    )}
                   </tr>
                 ) : null}
               </Fragment>

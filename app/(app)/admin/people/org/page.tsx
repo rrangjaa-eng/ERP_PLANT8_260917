@@ -34,7 +34,9 @@ export default async function OrgPage({
   return (
     <>
       <PageHeader title="조직" />
-      <OrgClient orgUnits={orgUnits} teams={teams} canArchive={canArchive} newForm={newForm} />
+      <div className="single-column">
+        <OrgClient orgUnits={orgUnits} teams={teams} canArchive={canArchive} newForm={newForm} />
+      </div>
     </>
   );
 }

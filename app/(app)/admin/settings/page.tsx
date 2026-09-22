@@ -88,7 +88,9 @@ export default async function SettingsPage() {
   return (
     <>
       <PageHeader title="설정" />
-      <SettingsFormClient sections={sections} />
+      <div className="single-column">
+        <SettingsFormClient sections={sections} />
+      </div>
     </>
   );
 }

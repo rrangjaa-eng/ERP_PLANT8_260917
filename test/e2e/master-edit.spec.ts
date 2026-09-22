@@ -87,8 +87,11 @@ test.describe("법인카드 소유자 수정 (성공 기준 5 「수정」)", ()
 
     const updatedRow = page.getByRole("row", { name: new RegExp(label) });
     await expect(updatedRow.getByRole("cell", { name: "팀", exact: true })).toBeVisible();
-    // kind만 바뀌고 소유 칸이 "—"로 남으면 안 된다(결함 3의 회귀).
-    await expect(updatedRow.getByRole("cell", { name: "—", exact: true })).toHaveCount(0);
+    // kind만 바뀌고 소유 칸이 "—"로 남으면 안 된다(결함 3의 회귀). F-08 뒤에는
+    // 정상 상태 칸도 "—"가 되므로 행 전체가 아니라 소유 열(발급사·뒤 4자리·
+    // 별칭·종류·소유·상태 순서의 5번째, 0-index 4)로 한정한다 — 상태 칸의
+    // —와 분리하려고 소유 열로 한정.
+    await expect(updatedRow.getByRole("cell").nth(4)).not.toHaveText("—");
   });
 
   // /review H-1 주장: 종류를 바꾸면 React가 <select> 노드를 재사용해

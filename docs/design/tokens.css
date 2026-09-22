@@ -113,8 +113,9 @@
   --cell-pad-x:    8px;
   --row-min:       36px;         /* 폰 44px */
   --label-w:       96px;         /* PC 폼 라벨 열 */
-  --form-max:      720px;
+  --form-max:      720px;  /* 단일 기둥 최대 폭: 폼·설정 필드 묶음·dl·계층/링크 목록(SYSTEM.md §3). 표·매트릭스·대시보드 제외 */
   --modal-w:       480px;
+  --auth-max:      360px;  /* 로그인(§6-7) 틀 최대 폭 — 셸 없는 인증 폼 */
 
   --control-h:     32px;   /* 버튼·입력 PC. 폰 40px, 외부 수령자 48px */
   --touch-min:     44px;

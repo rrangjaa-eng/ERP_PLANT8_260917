@@ -158,4 +158,101 @@ test.describe("폰 375 공통 셸 (성공 기준 3 · §6-0 폰 전략 · §10 �
     await page.goto("/login");
     await expect(page.getByRole("navigation", { name: "하단 탭" })).toHaveCount(0);
   });
+
+  // F-04(260922-o2b) — SYSTEM.md §7-8 「시트(폰): 하단에서 올라옴」. 네이티브
+  // dialog:modal의 브라우저 기본 inset-block(위아래 0)이 남아 있으면 시트가
+  // 위쪽에도 붙는다.
+  test("「더보기」 시트가 뷰포트 아래 끝에 붙는다(F-04)", async ({ page }) => {
+    await loginAsEmployee(page);
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "더보기" }).click();
+    const sheet = page.getByRole("dialog", { name: "더보기" });
+    await expect(sheet).toBeVisible();
+
+    const box = await sheet.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.y).toBeGreaterThan(0);
+    expect(Math.abs(box!.y + box!.height - 800)).toBeLessThanOrEqual(1);
+  });
+
+  // F-05 부분(260922-o2b) — SYSTEM.md §3·§10 폰 44×44 터치 목표.
+  test("사용자 메뉴 트리거가 44×44 이상이고 상단 바를 넘치지 않는다(F-05)", async ({ page }) => {
+    await loginAsEmployee(page);
+    await page.goto("/");
+
+    const trigger = page.locator('header button[aria-haspopup="menu"]');
+    const triggerBox = await trigger.boundingBox();
+    expect(triggerBox).not.toBeNull();
+    expect(triggerBox!.width).toBeGreaterThanOrEqual(44);
+    expect(triggerBox!.height).toBeGreaterThanOrEqual(44);
+
+    const headerBox = await page.locator("header").boundingBox();
+    expect(headerBox).not.toBeNull();
+    expect(triggerBox!.y + triggerBox!.height).toBeLessThanOrEqual(headerBox!.y + headerBox!.height);
+  });
+
+  // /design-review 발견 1 — 폰 사용자 메뉴(TopBar 트리거가 여는 메뉴, F-05 트리거
+  // 자체는 위에서 이미 44×44를 확인한다)의 항목이 12px/400으로 35px 높이였다.
+  // §3·§10 폰 터치 목표 44×44는 트리거뿐 아니라 열리는 항목에도 적용된다.
+  test("사용자 메뉴 항목의 터치 목표가 44 이상이고 글자 크기가 --fs-base다", async ({ page }) => {
+    await loginAsEmployee(page);
+    await page.goto("/");
+
+    await page.locator('header button[aria-haspopup="menu"]').click();
+    const items = page.getByRole("menuitem");
+    const count = await items.count();
+    expect(count).toBeGreaterThan(0);
+
+    const expectedFontSize = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--fs-base").trim(),
+    );
+
+    for (let i = 0; i < count; i += 1) {
+      const item = items.nth(i);
+      const box = await item.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+      const fontSize = await item.evaluate((el) => getComputedStyle(el).fontSize);
+      expect(fontSize).toBe(expectedFontSize);
+    }
+  });
+
+  // /design-review 발견 3 — 「더보기」 시트 그룹 머리글("계정")이 11px(--fs-xs)로
+  // 렌더됐다. SYSTEM.md §6-10이 admin-index.module.css .groupLabel에 적용한
+  // §7-3 그룹 머리글 행 규칙(--fs-sm)과 같은 값이어야 한다.
+  test("더보기 시트 그룹 머리글 글자 크기가 --fs-sm이다(§7-3 그룹 머리글 행)", async ({ page }) => {
+    await loginAsEmployee(page);
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "더보기" }).click();
+    const sheet = page.getByRole("dialog", { name: "더보기" });
+    await expect(sheet).toBeVisible();
+
+    const groupHeader = sheet.locator('li[role="presentation"]').first();
+    await expect(groupHeader).toHaveText("계정");
+
+    const expectedFontSize = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--fs-sm").trim(),
+    );
+    const fontSize = await groupHeader.evaluate((el) => getComputedStyle(el).fontSize);
+    expect(fontSize).toBe(expectedFontSize);
+  });
+
+  // /design-review 발견 4 — SYSTEM.md §6-7 로그인 화면 실물 스케치는 제출 버튼이
+  // 폼 가운데 온다. 폰 375에서도 같은 계약이다(셸 없는 화면이라 폰·PC 공통 틀).
+  test("로그인 버튼이 폼 안에서 가운데 정렬된다(§6-7)", async ({ page }) => {
+    await page.goto("/login");
+
+    const form = page.locator("form");
+    const button = page.getByRole("button", { name: "로그인" });
+    const formBox = await form.boundingBox();
+    const buttonBox = await button.boundingBox();
+    expect(formBox).not.toBeNull();
+    expect(buttonBox).not.toBeNull();
+
+    const formCenterX = formBox!.x + formBox!.width / 2;
+    const buttonCenterX = buttonBox!.x + buttonBox!.width / 2;
+    expect(Math.abs(formCenterX - buttonCenterX)).toBeLessThanOrEqual(1);
+  });
 });

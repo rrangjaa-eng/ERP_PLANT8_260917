@@ -1,7 +1,6 @@
 /* SYSTEM.md §6-7 — 셸 없는 화면 골격. 색·서체·radius는 토큰 참조만 쓴다(D-20).
-   최대 폭은 새 값을 만들지 않고 tokens.css의 기존 폭 토큰(--modal-w, 480)을
-   재사용한다 — 로그인 폼은 --form-max(720, 다항목 업무 폼)보다 --modal-w처럼
-   단일 목적의 좁은 컨테이너에 가깝다. */
+   최대 폭은 §6-7의 360 = --auth-max(2026-09-22 DECISIONS.md) — 480 모달 폭
+   (--modal-w) 재사용은 기록 없는 이탈이었다. */
 
 .page {
   display: flex;
@@ -13,7 +12,7 @@
 
 .frame {
   width: 100%;
-  max-width: var(--modal-w);
+  max-width: var(--auth-max);
 }
 
 .mark {

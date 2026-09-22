@@ -70,4 +70,43 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
     const gap = second!.x - (first!.x + first!.width);
     expect(gap).toBeGreaterThan(0);
   });
+
+  // F-07·F-08(260922-o2b) — SYSTEM.md §2-4 「모든 숫자 칸은 우측 정렬,
+  // tabular-nums, nowrap」·「값이 없으면 — 하나」. 시드 코드(project_status)는
+  // 전부 정상 상태라 상태 칸이 빈칸이었다.
+  test("「정렬」 칸이 우측 정렬·tabular-nums·nowrap이고 「상태」 칸에 —가 있다", async ({ page }) => {
+    const admin = await createFixtureUser({ roleId: "role-sysadmin" });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto("/admin/code-tables");
+
+    const table = page.locator("main table").first();
+    const headerCells = table.locator("thead th");
+    const headerTexts = await headerCells.allTextContents();
+    const sortColIndex = headerTexts.findIndex((text) => text.trim() === "정렬");
+    const statusColIndex = headerTexts.findIndex((text) => text.trim() === "상태");
+    expect(sortColIndex).toBeGreaterThanOrEqual(0);
+    expect(statusColIndex).toBeGreaterThanOrEqual(0);
+
+    const sortTh = headerCells.nth(sortColIndex);
+    await expect(sortTh).toHaveCSS("text-align", "right");
+    await expect(sortTh).toHaveCSS("white-space", "nowrap");
+    const sortThFontVariant = await sortTh.evaluate((el) => getComputedStyle(el).fontVariantNumeric);
+    expect(sortThFontVariant).toContain("tabular-nums");
+
+    const firstRow = table.locator("tbody tr").first();
+    const sortTd = firstRow.locator("td").nth(sortColIndex);
+    await expect(sortTd).toHaveCSS("text-align", "right");
+    await expect(sortTd).toHaveCSS("white-space", "nowrap");
+    const sortTdFontVariant = await sortTd.evaluate((el) => getComputedStyle(el).fontVariantNumeric);
+    expect(sortTdFontVariant).toContain("tabular-nums");
+
+    const emDashStatusCells = table.locator(`tbody tr td:nth-child(${statusColIndex + 1})`).filter({ hasText: "—" });
+    expect(await emDashStatusCells.count()).toBeGreaterThan(0);
+  });
 });

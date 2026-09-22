@@ -1,0 +1,11 @@
+/* SYSTEM.md §2-2 --fs-lg(18/1.4/700) · §2-3 제목 자간 -0.02em · §3 섹션 사이
+   위 --s-6·아래 --s-3(F-10, 260922-o2b). 색·서체·radius는 tokens.css 변수만
+   (D-20). 선은 추가하지 않는다(§3 섹션 규칙은 2px 선 있는 섹션 전용). */
+
+.sectionTitle {
+  margin: var(--s-6) 0 var(--s-3);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-head);
+  letter-spacing: var(--ls-head);
+}

@@ -57,7 +57,7 @@ export function CardForm({
   }
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit} id="corp-card-form">
+    <form ref={formRef} onSubmit={handleSubmit} id="corp-card-form" className="single-column">
       <TextField
         id="issuer"
         name="issuer"
@@ -168,7 +168,7 @@ export function CardOwnerForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} id="corp-card-owner-form">
+    <form onSubmit={handleSubmit} id="corp-card-owner-form" className="single-column">
       <p className={styles.hint}>{card.label} 소유자 변경</p>
 
       <div className={styles.selectLabel}>

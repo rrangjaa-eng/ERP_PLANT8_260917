@@ -39,3 +39,17 @@ test.describe("폰 375 /admin/people 「상세」 링크 터치 목표 (defect 4
     expect(box!.height).toBeGreaterThanOrEqual(44);
   });
 });
+
+test.describe("폰 375 사람 상세 발령 이력 섹션 제목 (/design-review 발견 2)", () => {
+  // SYSTEM.md §7-14 이력 목록은 §6-3 폼 화면의 한 섹션(2px 선으로 시작)에
+  // 열린다 — /admin/settings의 §7-14 이력 섹션과 같은 패턴.
+  test("발령 이력 표 위에 「소속 발령 이력」 제목이 보인다", async ({ page }) => {
+    await loginAs(page);
+    await page.goto("/admin/people");
+
+    await page.getByRole("link", { name: "상세" }).first().click();
+    await expect(page).toHaveURL(/\/admin\/people\/.+/);
+
+    await expect(page.getByRole("heading", { name: "소속 발령 이력", level: 2 })).toBeVisible();
+  });
+});

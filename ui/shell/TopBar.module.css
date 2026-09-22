@@ -135,6 +135,23 @@
   .kbdWrap {
     display: none;
   }
+
+  /* §3·§10 폰 44×44 터치 목표(F-05, 260922-o2b) — 트리거가 padding:0·
+     --fs-sm이라 글자 줄 높이(약 19px)로 찌그러져 있었다. */
+  .userTrigger {
+    min-height: var(--touch-min);
+    min-width: var(--touch-min);
+  }
+
+  /* §3·§10 폰 44×44 터치 목표(/design-review 발견 1) — 열리는 메뉴 항목이
+     --fs-sm(12px) + 고정 패딩이라 35px로 찌그러져 있었다. MoreSheet.module.css
+     .link과 같은 결로 flex 중앙 정렬 + min-height, 글자는 --fs-base(폰 15px). */
+  .userMenuItem {
+    display: flex;
+    align-items: center;
+    min-height: var(--touch-min);
+    font-size: var(--fs-base);
+  }
 }
 
 /* WR-06 — 사용자 메뉴 안 로그아웃 실패 문구 자리. 색·서체는 FormAlert가 갖는다. */

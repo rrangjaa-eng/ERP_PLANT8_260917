@@ -68,3 +68,27 @@ test.describe("폰 375 하단 탭 현재 표시 (02-08 Task 3, WR-01)", () => {
     await expect(current).toHaveCount(0);
   });
 });
+
+// F-05 부분(260922-o2b) — SYSTEM.md §3·§10 폰 44×44 터치 목표 · §7-2 boolean
+// 「라벨 자체가 클릭 영역」. glyph(체크박스 자체)는 --icon-lg(20×20) 그대로다.
+test.describe("폰 375 설정 체크박스 터치 목표 (F-05)", () => {
+  test("체크박스를 가진 라벨이 높이 44 이상이고 체크박스 glyph는 20×20이다", async ({ page }) => {
+    await loginAs(page, SYSADMIN_ROLE_ID);
+    await page.goto("/admin/settings");
+
+    const checkboxLabels = page.locator("main label").filter({ has: page.locator('input[type="checkbox"]') });
+    const count = await checkboxLabels.count();
+    expect(count).toBeGreaterThan(0);
+
+    for (let i = 0; i < count; i += 1) {
+      const labelBox = await checkboxLabels.nth(i).boundingBox();
+      expect(labelBox).not.toBeNull();
+      expect(labelBox!.height).toBeGreaterThanOrEqual(44);
+
+      const checkboxBox = await checkboxLabels.nth(i).locator('input[type="checkbox"]').boundingBox();
+      expect(checkboxBox).not.toBeNull();
+      expect(checkboxBox!.width).toBeCloseTo(20, 0);
+      expect(checkboxBox!.height).toBeCloseTo(20, 0);
+    }
+  });
+});

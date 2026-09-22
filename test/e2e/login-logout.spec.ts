@@ -62,3 +62,21 @@ test.describe("로그인 → 세션 영속 → 로그아웃 (AUTH-02, D-07)", ()
     await expect(page).toHaveURL(/\/login$/);
   });
 });
+
+test.describe("로그인 버튼 위치 (/design-review 발견 4)", () => {
+  // SYSTEM.md §6-7 로그인 화면 실물 스케치는 제출 버튼이 폼 가운데 온다.
+  test("로그인 버튼이 폼 안에서 가운데 정렬된다(§6-7)", async ({ page }) => {
+    await page.goto("/login");
+
+    const form = page.locator("form");
+    const button = page.getByRole("button", { name: "로그인" });
+    const formBox = await form.boundingBox();
+    const buttonBox = await button.boundingBox();
+    expect(formBox).not.toBeNull();
+    expect(buttonBox).not.toBeNull();
+
+    const formCenterX = formBox!.x + formBox!.width / 2;
+    const buttonCenterX = buttonBox!.x + buttonBox!.width / 2;
+    expect(Math.abs(formCenterX - buttonCenterX)).toBeLessThanOrEqual(1);
+  });
+});

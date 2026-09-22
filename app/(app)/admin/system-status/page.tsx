@@ -33,43 +33,45 @@ export default async function SystemStatusPage() {
       <PageHeader title="시스템 상태" />
 
       {/* §6-8 B①: 라벨·값 목록(dl, §7-8 시트 상세와 같은 골격). */}
-      <KvList
-        items={[
-          {
-            label: "배포 버전",
-            value: (
-              <>
-                {status.version.sha.slice(0, 8)} · {status.version.deployedAt ?? "없음"} · {status.version.env}
-              </>
-            ),
-          },
-          {
-            label: "DB 커넥션",
-            // §6-8 B②: 확인 불가는 §7-5 상태 태그(muted)로 표시한다.
-            value:
-              "unavailable" in status.db ? (
-                <StatusTag kind="muted">확인 불가</StatusTag>
-              ) : (
+      <div className="single-column">
+        <KvList
+          items={[
+            {
+              label: "배포 버전",
+              value: (
                 <>
-                  {status.db.connections} / {status.db.maxConnections}
+                  {status.version.sha.slice(0, 8)} · {status.version.deployedAt ?? "없음"} · {status.version.env}
                 </>
               ),
-          },
-          {
-            label: "마지막 백업",
-            value:
-              status.backup.kind === "ok" ? (
-                <>
-                  {status.backup.status} · {status.backup.endTime ?? "종료 시각 없음"}
-                </>
-              ) : status.backup.kind === "none" ? (
-                "백업 없음 — 첫 자동 백업 전"
-              ) : (
-                <StatusTag kind="muted">확인 불가</StatusTag>
-              ),
-          },
-        ]}
-      />
+            },
+            {
+              label: "DB 커넥션",
+              // §6-8 B②: 확인 불가는 §7-5 상태 태그(muted)로 표시한다.
+              value:
+                "unavailable" in status.db ? (
+                  <StatusTag kind="muted">확인 불가</StatusTag>
+                ) : (
+                  <>
+                    {status.db.connections} / {status.db.maxConnections}
+                  </>
+                ),
+            },
+            {
+              label: "마지막 백업",
+              value:
+                status.backup.kind === "ok" ? (
+                  <>
+                    {status.backup.status} · {status.backup.endTime ?? "종료 시각 없음"}
+                  </>
+                ) : status.backup.kind === "none" ? (
+                  "백업 없음 — 첫 자동 백업 전"
+                ) : (
+                  <StatusTag kind="muted">확인 불가</StatusTag>
+                ),
+            },
+          ]}
+        />
+      </div>
     </>
   );
 }

@@ -68,3 +68,11 @@ button, input, select, textarea {
   white-space: nowrap;
   border: 0;
 }
+
+/* SYSTEM.md §3 「단일 기둥 최대 폭」 — 가로 비교가 목적이 아닌 한 열 콘텐츠
+   (폼·설정 필드 묶음·dl·계층/링크 목록)에 붙인다. 표·체크박스 매트릭스·
+   대시보드에는 붙이지 않는다(컨테이너 폭 그대로). */
+.single-column {
+  width: 100%;
+  max-width: var(--form-max);
+}

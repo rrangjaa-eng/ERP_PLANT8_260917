@@ -5,10 +5,10 @@ current_phase_name: project-quote-ledger
 current_plan: 1
 status: executing
 stopped_at: "quick 260922-i3k 완료·머지(PR #36, a224b1b). 다음은 새 세션에서 코덱스 전체 통합 디자인 리뷰 → /gsd-execute-phase 4 — 인수인계 투두 참조"
-last_updated: "2026-09-22T12:46:05.169Z"
+last_updated: "2026-09-22T18:02:59.649Z"
 last_activity: 2026-09-22
 last_activity_desc: Phase 03 marked complete
-state_head: 4cef57d90185258c7e9acb1e5f6dafc5859373d2
+state_head: c8b42b99a56840b83573de77f0133bedbd505353
 progress:
   total_phases: 11
   completed_phases: 1
@@ -167,6 +167,7 @@ Recent decisions affecting current work:
 |---|-------------|------|--------|-----------|
 | 260922-c04 | Codex CLI SessionStart 훅 설치 + CODEX_AUTH_JSON_B64 자격 주입 | 2026-09-22 | 4b5f8ea | [260922-c04-codex-cli-sessionstart-codex-auth-json-b](./quick/260922-c04-codex-cli-sessionstart-codex-auth-json-b/) |
 | 260922-i3k | 관리자 메뉴 정리(옵션 B: 「관리」 한 줄 + /admin 인덱스 3그룹) + A-M3 표 캡션 | 2026-09-22 | 811243e | [260922-i3k-b-admin-3-a-m3](./quick/260922-i3k-b-admin-3-a-m3/) |
+| 260922-o2b | 코덱스 통합 디자인 리뷰 반영(결정 불필요분 F-02·04·05·07·08·09·10) | 2026-09-22 | c8b42b9 | [260922-o2b-codex-design-review-fixes](./quick/260922-o2b-codex-design-review-fixes/) |
 
 ### Roadmap Evolution
 

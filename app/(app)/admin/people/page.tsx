@@ -91,7 +91,7 @@ export default async function PeoplePage({
                     <StatusTag kind="muted" variant="text">
                       보관됨
                     </StatusTag>
-                  ) : null}
+                  ) : "—"}
                 </td>
                 <td>
                   <Link href={`/admin/people/${person.id}`} className={styles.detailLink}>

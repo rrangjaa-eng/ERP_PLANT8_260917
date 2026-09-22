@@ -58,7 +58,7 @@ export function PersonForm({
 
   if (registered) {
     return (
-      <div className={styles.registeredPanel}>
+      <div className={`${styles.registeredPanel} single-column`}>
         <p className={styles.registeredLabel}>초기 비밀번호 — {registered.email}</p>
         <p className={styles.tempPassword}>{registered.tempPassword}</p>
         <p className={styles.registeredHint}>이 비밀번호는 다시 볼 수 없습니다 · 지금 전달하세요</p>
@@ -73,7 +73,7 @@ export function PersonForm({
   const emailError = result.validationErrors?.email?._errors?.[0];
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit} id="person-form">
+    <form ref={formRef} onSubmit={handleSubmit} id="person-form" className="single-column">
       <TextField id="name" name="name" label="이름" required error={nameError} />
       <TextField id="email" name="email" label="이메일" type="email" required error={emailError} />
       <div className={styles.selectLabel}>

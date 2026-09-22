@@ -11,22 +11,19 @@ function errorMessageOf(result: { serverError?: unknown; validationErrors?: unkn
   return null;
 }
 
-export function PersonDetailClient({
+// SYSTEM.md §3 「단일 기둥 최대 폭」은 데이터 표를 제외한다 — 계급 변경은
+// page.tsx의 .single-column 안에, 발령 이력(표)은 PersonHistorySection으로
+// 나눠 .single-column 밖에 둔다(260922-o2b 후속).
+export function PersonRoleChange({
   userId,
   roles,
   currentRoleId,
-  teamOptions,
-  entries,
 }: {
   userId: string;
   roles: { id: string; name: string }[];
   currentRoleId: string | null;
-  teamOptions: { value: string; label: string }[];
-  entries: HistoryEntry[];
 }) {
   const { execute: executeRoleChange, result: roleResult } = useAction(changePersonRoleAction);
-  const { executeAsync: executeAssign } = useAction(assignTeamAction);
-  const { executeAsync: executeCancel } = useAction(cancelAssignmentAction);
 
   const roleError = errorMessageOf(roleResult);
 
@@ -48,7 +45,25 @@ export function PersonDetailClient({
         </select>
       </div>
       {roleError ? <p className={styles.registeredHint}>{roleError}</p> : null}
+    </>
+  );
+}
 
+export function PersonHistorySection({
+  userId,
+  teamOptions,
+  entries,
+}: {
+  userId: string;
+  teamOptions: { value: string; label: string }[];
+  entries: HistoryEntry[];
+}) {
+  const { executeAsync: executeAssign } = useAction(assignTeamAction);
+  const { executeAsync: executeCancel } = useAction(cancelAssignmentAction);
+
+  return (
+    <section className={styles.historySection}>
+      <h2 className={styles.historySectionTitle}>소속 발령 이력</h2>
       <HistoryList
         entries={entries}
         valueKind={{ kind: "enum", options: teamOptions }}
@@ -65,6 +80,6 @@ export function PersonDetailClient({
           if (message) throw new Error(message);
         }}
       />
-    </>
+    </section>
   );
 }

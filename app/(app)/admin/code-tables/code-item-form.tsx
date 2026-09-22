@@ -44,7 +44,7 @@ export function CodeItemForm({ tableKey, cancelHref }: { tableKey: string; cance
   const labelError = result.validationErrors?.label?._errors?.[0];
 
   return (
-    <form ref={formRef} onSubmit={handleSubmit} id="code-item-form">
+    <form ref={formRef} onSubmit={handleSubmit} id="code-item-form" className="single-column">
       <TextField id="value" name="value" label="값" required error={valueError} />
       <TextField id="label" name="label" label="이름" required error={labelError} />
       <TextField id="sortOrder" name="sortOrder" label="정렬 순서" type="number" defaultValue={0} />

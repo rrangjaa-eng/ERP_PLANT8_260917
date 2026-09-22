@@ -4,6 +4,9 @@
 
 .sheet {
   position: fixed;
+  /* 네이티브 dialog:modal의 브라우저 기본값이 inset-block(위아래)을 모두 0으로
+     준다 — 위쪽을 풀어야 시트가 아래에만 붙는다(F-04, 260922-o2b). */
+  inset-block-start: auto;
   inset-block-end: 0;
   inset-inline: 0;
   width: 100%;
@@ -107,12 +110,15 @@
   outline-offset: calc(-1 * var(--focus-w));
 }
 
+/* /design-review 발견 3 — §7-3 그룹 머리글 행 규칙(--fs-sm --muted 600, 아래
+   1px --line-strong)을 그대로 쓴다. admin-index.module.css .groupLabel(§6-10)이
+   같은 규칙을 이미 옮겨 쓰고 있다 — 이 시트만 --fs-xs·--faint로 어긋나 있었다. */
 .group {
   padding: var(--s-3) var(--pad-page) var(--s-1);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
-  color: var(--faint);
-  border-bottom: 0;
+  color: var(--muted);
+  border-bottom: var(--line-w) solid var(--line-strong);
 }
 
 .searchRow {

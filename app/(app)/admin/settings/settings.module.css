@@ -80,3 +80,11 @@
 .exportRow {
   margin-bottom: var(--s-6);
 }
+
+/* §3·§10 폰 44×44 터치 목표(F-05, 260922-o2b) — §7-2 boolean 「라벨 자체가
+   클릭 영역」이라 라벨 높이를 키운다. glyph(--icon-lg, 20×20)는 그대로다. */
+@media (max-width: 699.98px) {
+  .checkboxLabel {
+    min-height: var(--touch-min);
+  }
+}

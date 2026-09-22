@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 04
 current_phase_name: 프로젝트·견적 원장
-current_plan: 1
+current_plan: 2
 status: executing
-stopped_at: "quick 260922-i3k 완료·머지(PR #36, a224b1b). 다음은 새 세션에서 코덱스 전체 통합 디자인 리뷰 → /gsd-execute-phase 4 — 인수인계 투두 참조"
-last_updated: "2026-09-22T19:10:58.283Z"
+stopped_at: Completed 04-01-PLAN.md (프로젝트·견적 원장 트레이서). PROJ-01/PROJ-02/UX-04는 형제 플랜 대기로 미완료 표시. 다음은 04-02.
+last_updated: "2026-09-22T20:49:29.474Z"
 last_activity: 2026-09-22
 last_activity_desc: Phase 04 execution started
-state_head: 52e3cb7f07026a70382fec7b51d0cc42d531e63c
+state_head: ea24b348dff8c03afedf896feeee46dcf5a996d6
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 30
-  completed_plans: 23
+  completed_plans: 24
   percent: 9
 ---
 
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 04 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 1
+Current Plan: 2
 Total Plans in Phase: 7
-Status: Executing Phase 04
+Status: Ready to execute
 Last activity: 2026-09-22 — Phase 04 execution started
 
 Progress: [█░░░░░░░░░] 9%
@@ -73,6 +73,7 @@ Progress: [█░░░░░░░░░] 9%
 | Phase 02 P06 | 20min | 3 tasks | 12 files |
 | Phase 02 P07 | 55min | 3 tasks | 10 files |
 | Phase 02 P08 | 16min | 3 tasks | 30 files |
+| Phase 04 P01 | 1h36m | 3 tasks | 54 files |
 
 ## Accumulated Context
 
@@ -143,6 +144,9 @@ Recent decisions affecting current work:
 - [Phase 02]: 02-07: 로그인 화면 axe page-has-heading-one 위반을 규칙 비활성 대신 화면 수정으로 해소 — app/globals.css에 .sr-only 유틸리티 추가, 스크린 리더 전용 h1 복원(시각 디자인 불변)
 - [Phase 02]: 화면 제목·부제는 전역 h1 규칙이 아니라 ui/page-header/PageHeader 컴포넌트다(구조 우연 회피)
 - [Phase 02]: font:inherit 축약은 D-20 stylelint 허용 목록과 충돌해 롱핸드(font-family/font-size/line-height:inherit/letter-spacing:inherit/color:inherit)로 편다
+- [Phase 04]: 마이그레이션 번호를 계획의 0004에서 실제 다음 번호 0009로 정정(Rule 1)
+- [Phase 04]: domain이 db를 직접 import하지 않도록 lib/db-transaction.ts(withTransaction) 래퍼 신설 — boundaries 규칙 준수(Rule 2)
+- [Phase 04]: role-pm 기본 권한에 projects 메뉴 view+write 추가, admin.vendors/admin.people은 열지 않고 domain/projects/references.ts로 참조 데이터만 좁게 노출
 
 ### Pending Todos
 
@@ -185,6 +189,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-22T10:27:47.976Z
-Stopped at: Phase 4 계획 완료 (7플랜/4웨이브, PR #34 머지) — 인수인계 투두 순서대로 진행
-Resume file: .planning/phases/04-project-quote-ledger/04-OPEN-ITEMS.md
+Last session: 2026-09-22T20:49:29.336Z
+Stopped at: Completed 04-01-PLAN.md (프로젝트·견적 원장 트레이서). PROJ-01/PROJ-02/UX-04는 형제 플랜 대기로 미완료 표시. 다음은 04-02.
+Resume file: None

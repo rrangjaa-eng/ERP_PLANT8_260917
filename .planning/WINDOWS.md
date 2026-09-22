@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 11
+open_count: 12
 waived_count: 0
 fixed_count: 13
-total_count: 24
-last_updated: 2026-09-22T06:23:58.442Z
+total_count: 25
+last_updated: 2026-09-22T20:41:47.158Z
 ---
 
 # Broken Windows Ledger
@@ -39,6 +39,7 @@ last_updated: 2026-09-22T06:23:58.442Z
 | 22 | 01 | unrun-verify | .planning/phases/01-deploy-skeleton-login/01-08-DEPLOY-LOG.md |  | origin 임시 프로브 브랜치 4개 미삭제(probe-result·probe-result2·guard-probe-result·prod-verify-result): 2026-09-20 확인 결과 전부 잔존. git push --delete가 이 세션의 에그레스 프록시에서 끊긴다(일반 push는 정상) — 사용자가 GitHub에서 삭제해야 한다 | open |  | 2026-09-20T08:55:22.487Z |  |
 | 23 | 02 | deviation | ui/shell/TopBar.tsx |  | §10 터치 목표 44 미달(375px DOM 감사 2026-09-22): 사용자 메뉴 트리거 19px, 로그인·비밀번호 변경·로그아웃·첫 화면으로 버튼 40px(--control-h 폰 40). 컨트롤 높이는 SYSTEM.md 토큰 결정이라 화면 하나로 못 고친다 — 디자인 결정 후 tokens.css에서 | open |  | 2026-09-22T05:07:38.693Z |  |
 | 24 | 02 | deviation | docs/design/system/preview.html |  | §7-4 폰 두 줄 실물(preview.html .next li grid)이 §7-4 원문과 다르게 렌더된다 — grid(auto 1fr auto) 자동 배치가 .amt를 2행 2칸에 먼저 놓아 .go(행동)가 2행으로 밀린다. 컴포넌트(NextTurn)는 2026-09-22 원문대로 고쳤고(test/e2e/mobile-next-turn.spec.ts 실측) 실물은 미수정. 디자인 문서 정비 시 맞춘다 | open |  | 2026-09-22T05:07:38.860Z |  |
+| 25 | 04 | unrun-verify | test/e2e/action-log.spec.ts |  | 04-01: 전체 E2E 스위트 동시 실행 시 간헐적 실패(단독 실행은 통과) — Excel BOM·corp-cards·master-edit·org, 웹서버 stream 오류 의심, 04-01 범위 밖 | open |  | 2026-09-22T20:41:47.158Z |  |
 
 ````json
 [
@@ -351,6 +352,19 @@ last_updated: 2026-09-22T06:23:58.442Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-22T05:07:38.860Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 25,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "test/e2e/action-log.spec.ts",
+    "line": null,
+    "description": "04-01: 전체 E2E 스위트 동시 실행 시 간헐적 실패(단독 실행은 통과) — Excel BOM·corp-cards·master-edit·org, 웹서버 stream 오류 의심, 04-01 범위 밖",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-22T20:41:47.158Z",
     "resolved_at": null,
     "milestone": null
   }

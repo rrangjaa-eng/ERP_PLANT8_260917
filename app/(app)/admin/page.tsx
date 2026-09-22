@@ -15,6 +15,8 @@ import styles from "./admin-index.module.css";
 // allowedMenus를 계산한다 — 같은 계산을 두 곳(레이아웃의 셸 메뉴, 이 화면의
 // 인덱스 그룹)에서 한다는 뜻이지만, 사용자 10~30명 사내 시스템이라 이 중복을
 // 캐시·공유 계산으로 최적화하지 않는다(03-02-PLAN.md ⑤와 같은 판단).
+export const dynamic = "force-dynamic";
+
 export default async function AdminIndexPage() {
   const session = await getSession();
   if (!session) redirect("/login");

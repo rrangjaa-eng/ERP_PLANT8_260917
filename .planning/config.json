@@ -89,5 +89,16 @@
     "source_grounding_authority": "grep"
   },
   "mode": "interactive",
-  "granularity": "standard"
+  "granularity": "standard",
+  "review": {
+    "default_reviewers": [
+      "codex"
+    ],
+    "models": {
+      "codex": "gpt-5.6-sol"
+    },
+    "effort": {
+      "codex": "xhigh"
+    }
+  }
 }

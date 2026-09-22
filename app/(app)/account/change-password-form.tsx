@@ -6,6 +6,7 @@ import { changePasswordAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
+import styles from "./account.module.css";
 
 function getStringField(formData: FormData, key: string): string {
   const value = formData.get(key);
@@ -33,7 +34,7 @@ export function ChangePasswordForm() {
 
   return (
     <form onSubmit={handleSubmit}>
-      <h2>비밀번호 변경</h2>
+      <h2 className={styles.sectionTitle}>비밀번호 변경</h2>
       <TextField
         id="currentPassword"
         name="currentPassword"

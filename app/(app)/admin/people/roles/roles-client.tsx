@@ -45,8 +45,8 @@ function RoleRow({ role, canArchive }: { role: RoleRowView; canArchive: boolean 
         />
         {renameResult.serverError ? <p className={styles.registeredHint}>{renameResult.serverError}</p> : null}
       </td>
-      <td>{role.isSeed ? "시드" : ""}</td>
-      <td>{role.sortOrder}</td>
+      <td>{role.isSeed ? "시드" : "—"}</td>
+      <td className={styles.num}>{role.sortOrder}</td>
       <td>
         {role.archivedAt ? (
           <StatusTag kind="muted" variant="text">
@@ -129,7 +129,7 @@ export function RolesClient({
           <tr>
             <th scope="col">이름</th>
             <th scope="col">시드 여부</th>
-            <th scope="col">정렬</th>
+            <th scope="col" className={styles.num}>정렬</th>
             <th scope="col">동작</th>
           </tr>
         </thead>

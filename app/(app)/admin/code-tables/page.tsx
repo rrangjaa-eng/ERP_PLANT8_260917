@@ -121,7 +121,7 @@ export default async function CodeTablesPage({
             <tr>
               <th scope="col">값</th>
               <th scope="col">이름</th>
-              <th scope="col">정렬</th>
+              <th scope="col" className={styles.num}>정렬</th>
               <th scope="col">상태</th>
               {/* 칸을 비우면서 머리글만 남기면 빈 칸이 생긴다 — 법인카드
                   화면과 같은 조건으로 머리글까지 감춘다. */}
@@ -142,7 +142,7 @@ export default async function CodeTablesPage({
                       <CodeItemLabelInput id={item.id} label={item.label} />
                     )}
                   </td>
-                  <td>{item.sortOrder}</td>
+                  <td className={styles.num}>{item.sortOrder}</td>
                   <td>
                     {item.archivedAt ? (
                       <StatusTag kind="muted" variant="text">
@@ -152,7 +152,7 @@ export default async function CodeTablesPage({
                       <StatusTag kind="muted" variant="text">
                         비활성
                       </StatusTag>
-                    ) : null}
+                    ) : "—"}
                   </td>
                   {/* 머리글과 같은 조건이어야 칸이 어긋나지 않는다. */}
                   {canWrite || canArchive ? (

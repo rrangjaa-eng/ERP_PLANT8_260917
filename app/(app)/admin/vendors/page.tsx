@@ -145,7 +145,7 @@ export default async function VendorsPage({
                     <StatusTag kind="muted" variant="text">
                       숨김
                     </StatusTag>
-                  ) : null}
+                  ) : "—"}
                 </td>
                 {canWrite || canArchive ? (
                   <td>

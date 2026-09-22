@@ -176,7 +176,7 @@ export default async function CorpCardsPage({
                     <StatusTag kind="muted" variant="text">
                       비활성
                     </StatusTag>
-                  ) : null}
+                  ) : "—"}
                 </td>
                 {canWrite || canArchive ? (
                   <td>

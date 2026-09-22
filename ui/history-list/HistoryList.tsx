@@ -229,7 +229,7 @@ export function HistoryList({
         <thead>
           <tr>
             <th scope="col">적용 시작일</th>
-            <th scope="col">값</th>
+            <th scope="col" className={valueKind.kind === "number" ? styles.num : undefined}>값</th>
             <th scope="col">상태</th>
             <th scope="col">동작</th>
           </tr>
@@ -239,7 +239,7 @@ export function HistoryList({
           {entries.map((entry) => (
             <tr key={entry.effectiveFrom}>
               <td>{entry.effectiveFrom}</td>
-              <td>{entry.displayValue}</td>
+              <td className={valueKind.kind === "number" ? styles.num : undefined}>{entry.displayValue}</td>
               <td>
                 {entry.status === "active" ? (
                   <StatusTag kind="success" variant="text">

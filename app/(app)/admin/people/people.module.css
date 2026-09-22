@@ -64,6 +64,14 @@
   background: var(--surface);
 }
 
+/* §2-4: 숫자 칸은 우측 정렬 + tabular-nums + nowrap(corp-cards .last4 선례). */
+.table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  letter-spacing: var(--ls-num);
+}
+
 /* §7-1 3차 버튼 — 위 .toggle과 같은 모양이다. 기본 규칙이 통째로 빠져 있어
    브라우저 기본 파랑(#0000EE) 14px 400으로 렌더됐다(design-review A-H4):
    관리자 화면 전체에서 팔레트 밖 색은 이 링크 하나뿐이었다(§11 「새 색 0개」). */

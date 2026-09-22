@@ -647,11 +647,17 @@ export function QuoteLedger({
           usdDefaultFxRate={usdDefaultFxRate}
           onCommit={(value) => {
             const parsed = JSON.parse(value) as { amount: number; currency: Currency; fxRate: number; fxRateTouched: boolean };
+            // 읽기 모드는 unitPriceAmountKrw를 보여준다(§2-4) — 서버가
+            // 최종 재계산하지만(D-63), 저장 전 화면이 스스로 낡은 값을
+            // 보여주지 않도록 클라이언트도 같은 공식(외화×환율/KRW=그대로)
+            // 으로 즉시 갱신한다.
+            const amountKrw = parsed.currency === "KRW" ? parsed.amount : Math.round(parsed.amount * parsed.fxRate);
             commitCell(row.clientKey, "unitPrice", {
               unitPriceAmount: parsed.amount,
               unitPriceCurrency: parsed.currency,
               unitPriceFxRate: parsed.fxRate,
               unitPriceFxRateTouched: parsed.fxRateTouched || row.unitPriceFxRateTouched,
+              unitPriceAmountKrw: amountKrw,
             });
             ctx.onCommit(value);
           }}
@@ -778,9 +784,15 @@ export function QuoteLedger({
           case "quantity":
             patch = { quantity: Number(value) || 0 };
             break;
-          case "unitPrice":
-            patch = { unitPriceAmount: Number(value) || 0, unitPriceCurrency: "KRW", unitPriceFxRate: 1 };
+          case "unitPrice": {
+            // 붙여넣기는 숫자 값 하나만 받는다 — 항상 KRW로 들어간다(외화
+            // 붙여넣기는 이 플랜 범위 밖, 04-02가 만든 통화 select로 직접
+            // 편집한다). amountKrw도 함께 갱신해야 읽기 모드 표시(§2-4)가
+            // 맞는다 — amount만 바꾸면 화면이 예전 amountKrw를 계속 보여준다.
+            const amount = Number(value) || 0;
+            patch = { unitPriceAmount: amount, unitPriceCurrency: "KRW", unitPriceFxRate: 1, unitPriceAmountKrw: amount };
             break;
+          }
           case "execution":
             patch = { executionAmount: Number(value) || 0 };
             break;
@@ -810,13 +822,11 @@ export function QuoteLedger({
 
   const saveDisabledReason = dirtyCount === 0 ? "바뀐 칸 없음 · 고칠 칸을 눌러 주세요" : undefined;
 
-  const rejectionSummary = result.serverError
-    ? errorCellCount > 0
-      ? `오류 ${errorCellCount}칸 · 전부 거부`
-      : result.serverError.includes("충돌")
-        ? result.serverError.split(" · ")[0]
-        : undefined
-    : undefined;
+  // 04-04 — 서버가 돌려준 문자열을 그대로 쓴다(화면이 이유를 새로 만들지
+  // 않는다, Task 2 acceptance criterion). errorCellCount>0이면 handleSave가
+  // execute()를 아예 부르지 않으므로(클라이언트 게이트) result.serverError는
+  // 그 경로에서 생기지 않는다 — 여기 남는 건 서버가 실제로 거부한 경우뿐이다.
+  const rejectionSummary = result.serverError ?? undefined;
 
   const openSheetRow = sheetRowKey ? lines.find((line) => line.clientKey === sheetRowKey) : undefined;
 

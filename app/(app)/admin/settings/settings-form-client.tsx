@@ -198,6 +198,7 @@ function HistorizedFieldEditor({
         entries={entries}
         valueKind={valueKind}
         idPrefix={`setting-history-${fieldKey}`}
+        caption={`${label} 이력`}
         onAdd={async ({ effectiveFrom, value }) => {
           const result = await executeAdd({ key: fieldKey, effectiveFrom, value });
           const message = errorMessageOf(result ?? {});

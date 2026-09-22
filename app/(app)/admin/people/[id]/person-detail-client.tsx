@@ -53,6 +53,7 @@ export function PersonDetailClient({
         entries={entries}
         valueKind={{ kind: "enum", options: teamOptions }}
         idPrefix={`person-team-history-${userId}`}
+        caption="소속 발령 이력"
         onAdd={async ({ effectiveFrom, value }) => {
           const result = await executeAssign({ userId, teamId: value, effectiveFrom });
           const message = errorMessageOf(result ?? {});

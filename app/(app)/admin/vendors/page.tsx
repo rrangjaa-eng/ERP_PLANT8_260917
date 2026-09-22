@@ -108,6 +108,7 @@ export default async function VendorsPage({
         />
       ) : (
         <table className={styles.table}>
+          <caption className="sr-only">거래처</caption>
           <thead>
             <tr>
               <th scope="col">이름</th>

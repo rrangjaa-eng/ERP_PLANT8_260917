@@ -68,6 +68,7 @@ export default async function PeoplePage({
         <ListEmpty message="등록된 사람이 없습니다" action={{ label: "사람 등록", href: "/admin/people?new=1#person-form" }} />
       ) : (
         <table className={styles.table}>
+          <caption className="sr-only">사람</caption>
           <thead>
             <tr>
               <th scope="col">이름</th>

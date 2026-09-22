@@ -297,11 +297,11 @@ coverage_id: D9
 ## Summary
 
 total: 47
-passed: 41
+passed: 44
 issues: 0
 pending: 0
 skipped: 0
-blocked: 6
+blocked: 3
 
 ## Gaps
 

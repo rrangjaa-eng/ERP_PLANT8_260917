@@ -176,15 +176,21 @@ human_verification:
   - test: "프로덕션 URL에서 관리자로 로그인한 뒤 브라우저를 완전히 종료하고 다시 열어 /account에 바로 들어가지는지 (01-07 human-check 5, 01-08-DEPLOY-LOG '5번은 프로브로 못 닫았다')"
     expected: "재로그인 없이 /account가 열리고 이메일이 보인다"
     why_human: "프로브는 로그인 전 /login에서 Set-Cookie를 볼 수 없었고, 실행자 세션은 *.run.app에 닿지 못한다. 근거는 로컬 E2E(login-logout.spec.ts 17행, 30일 쿠키 단언)와 lib/auth.ts expiresIn뿐 — 실제 Cloud Run 도메인에서 쿠키 속성(Secure/SameSite/만료)이 같게 내려오는지는 브라우저로만 확인 가능"
+    status: resolved
+    resolution: "2026-09-22 01-UAT 5 pass — 프로덕션 sign-in Set-Cookie `__Secure-erp.session_token; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax`, 쿠키만으로 새 클라이언트 GET /account 200. HTTP 수준 실측(Node fetch, TLS 검증 유지)"
   - test: "프로덕션에서 관리자로 /admin/system-status를 열어 배포 SHA(ed2fbc56)·DB 커넥션 n / 25·마지막 백업 절을 본다 — 2026-09-19 첫 자동 백업(18:00 UTC) 이후 다시 열어 백업이 '성공 + 시각'으로 바뀌는지 (01-08 human-check 3·4)"
     expected: "백업 절이 '확인 불가'(특히 permission 이유)가 아니라 오늘은 '백업 없음 — 첫 자동 백업 전', 내일은 'SUCCESSFUL · <시각>'"
     why_human: "01-08은 3번을 /api/health 프로브로 닫았지만 그것은 상태 화면이 아니다. 런타임 SA에 roles/cloudsql.viewer가 실제 부여됐는지는 '런타임 SA의 역할 목록 확인은 Owner 계정 몫'으로 미확인이고, Cloud SQL Admin API 호출 경로(lib/gcp/cloud-sql-admin.ts)는 프로덕션에서 한 번도 실행·관찰되지 않았다"
+    status: resolved
+    resolution: "2026-09-22 01-UAT 6 pass — 프로덕션 /admin/system-status 200: SHA ed2fbc56 · DB 커넥션 2 / 25 · 마지막 백업 SUCCESSFUL · 2026-09-21T19:04:34.964Z. cloudsql.viewer·Cloud SQL Admin 호출 경로가 프로덕션에서 동작함을 처음 관찰"
   - test: "GCP 콘솔 Monitoring → Alerting에서 [prod] Cloud SQL backup failed 정책의 필터가 첫 백업 이후 로그 탐색기의 실제 cloudsql_database 백업 로그 항목 형태와 맞는지 확인하고, 가능하면 알림 채널 테스트 발송으로 관리자 메일 도착을 확인 (01-08-DEPLOY-LOG '백업 경보 필터·실제 백업 확인')"
     expected: "필터가 실제 로그 항목과 일치하고 테스트 알림 메일이 ALERT_EMAIL로 도착"
     why_human: "정책 존재는 확인됐지만(2026-09-18 실측) 실패 이벤트 없이는 필터 정확성과 메일 전달을 프로그램적으로 검증할 수 없다"
   - test: "Owner 계정으로 조직 정책 원문(iam.allowedPolicyMemberDomains·run.allowedIngress)과 plant8-prod-runtime SA의 역할 목록을 확인 (01-07·01-08 이월)"
     expected: "allUsers 허용·비인증 ingress 허용이 정책 원문으로 확인되고, 런타임 SA에 cloudsql.client·secretAccessor·cloudsql.viewer(또는 backupRuns.list 포함 역할)가 있다"
     why_human: "gha-deployer SA에 orgpolicy.policy.get·resourcemanager.projects.getIamPolicy가 없어 실행자가 조회할 수 없었다(PERMISSION_DENIED). 실효적 차단 없음은 확인됨(allUsers run.invoker 보유, /login 200)"
+    status: resolved
+    resolution: "2026-09-22 01-UAT 8 pass — verify.yml(policies) run #1(WIF, 읽기 전용 역할)로 조직 정책 4개 실효값 allowAll, 런타임 SA 역할 5종 확인"
 ---
 
 # Phase 1: 배포 스켈레톤·로그인 Verification Report
@@ -352,10 +358,10 @@ human_verification:
 
 ### Human Verification Required
 
-1. **프로덕션 세션 유지(브라우저 종료 후 재진입)** — frontmatter human_verification 1
-2. **프로덕션 /admin/system-status 관리자 렌더 + 첫 백업 이후 백업 절** — human_verification 2 (01-08 human-check 3·4)
-3. **백업 실패 경보 필터·메일 전달** — human_verification 3
-4. **조직 정책 원문·런타임 SA 역할(Owner 계정)** — human_verification 4
+1. **프로덕션 세션 유지(브라우저 종료 후 재진입)** — frontmatter human_verification 1 — **닫힘 2026-09-22**(01-UAT 5)
+2. **프로덕션 /admin/system-status 관리자 렌더 + 첫 백업 이후 백업 절** — human_verification 2 (01-08 human-check 3·4) — **닫힘 2026-09-22**(01-UAT 6)
+3. **백업 실패 경보 필터·메일 전달** — human_verification 3 — 열림(콘솔 「테스트 알림 보내기」, 사람)
+4. **조직 정책 원문·런타임 SA 역할(Owner 계정)** — human_verification 4 — **닫힘 2026-09-22**(01-UAT 8, verify.yml)
 
 정리 항목(검증 대상 아님, 01-08 이월): orphan 결과 브랜치 4개 삭제(`probe-result`, `probe-result2`, `guard-probe-result`, `prod-verify-result`), 스테이징 태그 전용 트래픽 항목 4개 정리, 첫 청구서 확인(OPERATIONS §2 절차).
 
@@ -375,7 +381,7 @@ ROADMAP Phase 1 기준 6과 REQUIREMENTS OPS-01 본문을 이 문구로 갱신�
 
 **요구사항 표 불일치 2건도 정정했다(2026-09-19):** OPS-06·OPS-07은 Phase 1 담당분이 충족됐는데 REQUIREMENTS.md에서 Pending이었다. `gsd_run requirements mark-complete OPS-06,OPS-07`로 체크박스·추적표를 함께 Complete로 맞췄다. 뒤 페이즈가 이 화면·문서에 항목을 더하는 것은 OPS-01이 Phase 7에서 스케줄러 잡을 더하는 것과 같은 구조이며, OPS-01은 이미 Complete였다.
 
-**남은 것은 사람만 할 수 있는 확인 4건이다**(아래 Human Verification) — 프로덕션 브라우저 세션 유지, 첫 자동 백업 이후의 상태 화면 백업 절과 경보 필터, 조직 정책 원문·런타임 SA 역할. 어느 것도 ROADMAP 성공 기준 7개의 판정을 뒤집지 않으며, 셋은 실행자 세션의 권한·네트워크 밖이고 하나는 2026-09-19 18:00 UTC 첫 백업 이후에만 가능하다.
+**남은 것은 사람만 할 수 있는 확인 4건이었다**(아래 Human Verification) — 프로덕션 브라우저 세션 유지, 첫 자동 백업 이후의 상태 화면 백업 절과 경보 필터, 조직 정책 원문·런타임 SA 역할. 어느 것도 ROADMAP 성공 기준 7개의 판정을 뒤집지 않는다. 2026-09-22 기준 1·2·4는 실측으로 닫혔고(frontmatter `resolution`), 3(경보 필터·메일 전달)만 남았다.
 
 **다음 페이즈 영향:** Phase 2(디자인 시스템·앱 셸)는 배포 파이프라인·로그인 흐름에만 의존하며 둘 다 동작한다. 01-REVIEW.md의 MAJOR 8·MINOR 16은 전부 Phase 1 목표 밖이라 이 판정에 들어가지 않았고, 해당 페이즈에서 다룬다.
 

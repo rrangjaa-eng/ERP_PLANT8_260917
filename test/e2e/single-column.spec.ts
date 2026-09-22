@@ -15,13 +15,14 @@ async function loginAs(page: Page, roleId: string): Promise<{ email: string; pas
   return user;
 }
 
-// 뷰포트 폭 1280 전제로 폭 ≤ 720(그리고 > 0), x가 main h1의 x와 1px 안에서
-// 같음(왼쪽 정렬)을 확인한다. 태스크 2가 관리자 화면·폼 케이스에 재사용한다.
+// 뷰포트 폭 1280 전제로 폭이 --form-max(720px)와 1px 안에서 같음(단순
+// 상한이 아니라 실제로 그 값이 적용됐음을 확인), x가 main h1의 x와 1px
+// 안에서 같음(왼쪽 정렬)을 확인한다. 태스크 2가 관리자 화면·폼 케이스에
+// 재사용한다.
 async function expectSingleColumn(page: Page, locator: Locator): Promise<void> {
   const box = await locator.boundingBox();
   expect(box).not.toBeNull();
-  expect(box!.width).toBeGreaterThan(0);
-  expect(box!.width).toBeLessThanOrEqual(720);
+  expect(Math.abs(box!.width - 720)).toBeLessThanOrEqual(1);
 
   const h1Box = await page.locator("main h1").first().boundingBox();
   expect(h1Box).not.toBeNull();

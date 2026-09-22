@@ -77,6 +77,20 @@ export const saveProjectLedgerAction = authedActionClient
               execution: moneyInputSchema,
               lineStatus: z.string().optional(),
               note: z.string().optional(),
+              // 04-04 Task 2 ② — 이 줄을 불러왔을 때의 스냅샷(D-65 셀 단위
+              // 충돌 판정의 baseline). 기존 줄에서만 의미가 있다.
+              baseline: z
+                .object({
+                  subcategory: z.string(),
+                  itemName: z.string(),
+                  vendorId: z.string().nullable(),
+                  quantity: z.number(),
+                  unitPriceAmountKrw: z.number(),
+                  executionAmountKrw: z.number(),
+                  lineStatus: z.string(),
+                  note: z.string().nullable(),
+                })
+                .optional(),
             }),
           ),
         })

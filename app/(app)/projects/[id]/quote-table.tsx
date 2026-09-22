@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { saveProjectLedgerAction } from "../actions";
 import { PageHeader } from "@/ui/page-header/PageHeader";
@@ -9,8 +9,11 @@ import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { Table } from "@/ui/table/Table";
 import { Select } from "@/ui/select/Select";
-import type { TableColumn } from "@/ui/table/types";
-import type { QuoteLineDto } from "@/domain/quotes/lines";
+import { RowSheet } from "@/ui/table/RowSheet";
+import { useDirtyStorage } from "@/ui/table/use-dirty-storage";
+import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
+import type { TableColumn, CellIssue } from "@/ui/table/types";
+import type { QuoteLineDto, QuoteLineBaseline } from "@/domain/quotes/lines";
 import type { RevenueDto } from "@/domain/revenue";
 import type { Currency } from "@/domain/money";
 import { RevenueSection, type ContractDraft, type EntryDraft } from "./revenue-section";
@@ -38,12 +41,31 @@ type DraftLine = {
   lineStatus: string;
   note: string | null;
   dirty: boolean;
+  /** 04-04 — 이 줄을 불러왔을 때(또는 마지막 저장 성공 직후) 읽은 값의
+   * 스냅샷. 버전 충돌 판정의 baseline으로 저장 페이로드에 실린다(D-65).
+   * 새 줄(id 없음)에서는 쓰이지 않는다. */
+  baseline: QuoteLineBaseline;
+  /** 04-04 — 붙여넣기/저장이 남긴 셀별 오류(§7-3 (나)(다)). 키는 열 key. */
+  cellErrors: Record<string, string>;
 };
 
 const LINE_STATUS_LABELS: Record<string, string> = {
   not_started: "미착수",
   cancelled: "취소",
 };
+
+function baselineFromDto(dto: QuoteLineDto): QuoteLineBaseline {
+  return {
+    subcategory: dto.subcategory,
+    itemName: dto.itemName,
+    vendorId: dto.vendorId,
+    quantity: dto.quantity,
+    unitPriceAmountKrw: dto.unitPrice.amountKrw,
+    executionAmountKrw: dto.execution.amountKrw,
+    lineStatus: dto.lineStatus,
+    note: dto.note,
+  };
+}
 
 function fromDto(dto: QuoteLineDto): DraftLine {
   return {
@@ -65,6 +87,8 @@ function fromDto(dto: QuoteLineDto): DraftLine {
     lineStatus: dto.lineStatus,
     note: dto.note,
     dirty: false,
+    baseline: baselineFromDto(dto),
+    cellErrors: {},
   };
 }
 
@@ -86,6 +110,19 @@ function newDraftLine(defaultSubcategory: string): DraftLine {
     lineStatus: "not_started",
     note: null,
     dirty: true,
+    // 새 줄은 id가 없어 baseline이 저장 시 쓰이지 않는다 — 로드된 값이
+    // 아니므로 의미상 비운 값을 그대로 둔다.
+    baseline: {
+      subcategory: defaultSubcategory,
+      itemName: "",
+      vendorId: null,
+      quantity: 1,
+      unitPriceAmountKrw: 0,
+      executionAmountKrw: 0,
+      lineStatus: "not_started",
+      note: null,
+    },
+    cellErrors: {},
   };
 }
 
@@ -131,13 +168,149 @@ function newEntryDraft(): EntryDraft {
   };
 }
 
-// SYSTEM.md §6-2 + §7-3 보강 — 견적 원장 + 매출 섹션. 화면의 1차 「일괄
-// 저장 ⌘S N」 하나가 견적 줄 표 + 매출 섹션(계약 금액·발행·입금)의 dirty
-// 전부를 한 트랜잭션으로 저장한다(§7-3 (사), §7-15). **표는 항상 편집
-// 가능이다**(§7-3 "모드를 나누지 않는다") — editable=true인 동안 편집
-// 가능 셀이 인풋으로 렌더된다(한 칸 클릭 진입 대신 이 플랜은 always-on
-// 인풋으로 트레이서를 얇게 유지했다 — 방향키 로빙·Esc 되돌리기 전체는
-// 04-04). 계산 열(견적가·차익)은 누구에게나 항상 읽기 전용.
+// 04-04 — 클릭/Enter로 편집에 들어가는 한 칸짜리 텍스트/숫자 셀. 순수
+// 비제어 입력이라(값은 commit 시점에만 읽는다) 훅이 필요 없다 — 일반
+// 함수로 충분하다(Rules of Hooks 위반 없음).
+function textEditCell(opts: {
+  ariaLabel: string;
+  initialValue: string;
+  numeric?: boolean;
+  onCommit: (value: string) => void;
+}) {
+  return (
+    <input
+      aria-label={opts.ariaLabel}
+      type="text"
+      inputMode={opts.numeric ? "decimal" : undefined}
+      defaultValue={opts.initialValue}
+      autoFocus
+      className={opts.numeric ? styles.cellInputNumeric : styles.cellInput}
+      onBlur={(event) => opts.onCommit(event.currentTarget.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          opts.onCommit(event.currentTarget.value);
+        }
+      }}
+    />
+  );
+}
+
+function selectEditCell(opts: {
+  id: string;
+  ariaLabel: string;
+  initialValue: string;
+  options: { value: string; label: string }[];
+  onCommit: (value: string) => void;
+}) {
+  return (
+    <Select
+      id={opts.id}
+      aria-label={opts.ariaLabel}
+      defaultValue={opts.initialValue}
+      autoFocus
+      onChange={(event) => opts.onCommit(event.target.value)}
+      onBlur={(event) => opts.onCommit(event.currentTarget.value)}
+      options={opts.options}
+      className={styles.cellSelect}
+    />
+  );
+}
+
+// 04-04 — 단가 칸은 통화·금액·환율(비 KRW만) 세 조각이라 렌더 중 상태
+// 전환(통화 바꾸면 환율 칸이 나타난다)이 필요하다 — useState를 쓰려면
+// 진짜 컴포넌트여야 한다(column.editCell이 그냥 함수를 부르는 자리라도,
+// JSX 엘리먼트로 반환하면 그 자체가 안정된 컴포넌트 인스턴스가 된다).
+function UnitPriceEditCell({
+  rowKey,
+  initialAmount,
+  initialCurrency,
+  initialFxRate,
+  usdDefaultFxRate,
+  onCommit,
+}: {
+  rowKey: string;
+  initialAmount: number;
+  initialCurrency: Currency;
+  initialFxRate: number;
+  usdDefaultFxRate: number;
+  onCommit: (value: string) => void;
+}) {
+  const [currency, setCurrency] = useState<Currency>(initialCurrency);
+  const [fxRateTouched, setFxRateTouched] = useState(false);
+  const amountRef = useRef<HTMLInputElement>(null);
+  const fxRateRef = useRef<HTMLInputElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  function commit() {
+    const amount = Number(amountRef.current?.value ?? initialAmount) || 0;
+    const fxRate = currency === "KRW" ? 1 : Number(fxRateRef.current?.value ?? initialFxRate) || initialFxRate;
+    onCommit(JSON.stringify({ amount, currency, fxRate, fxRateTouched }));
+  }
+
+  function handleBlur(event: React.FocusEvent<HTMLElement>) {
+    const next = event.relatedTarget as Node | null;
+    if (!next || !wrapRef.current?.contains(next)) commit();
+  }
+
+  return (
+    <div className={styles.contractRow} ref={wrapRef}>
+      <Select
+        id={`unit-price-currency-edit-${rowKey}`}
+        aria-label="단가 통화"
+        value={currency}
+        onChange={(event) => setCurrency(event.target.value as Currency)}
+        onBlur={handleBlur}
+        options={[
+          { value: "KRW", label: "KRW" },
+          { value: "USD", label: "USD" },
+        ]}
+        className={styles.cellSelect}
+      />
+      <input
+        ref={amountRef}
+        aria-label="단가"
+        type="text"
+        inputMode="decimal"
+        defaultValue={initialAmount}
+        autoFocus
+        className={styles.cellInputNumeric}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit();
+          }
+        }}
+        onBlur={handleBlur}
+      />
+      {currency !== "KRW" ? (
+        <input
+          ref={fxRateRef}
+          aria-label="단가 환율"
+          type="text"
+          inputMode="decimal"
+          defaultValue={currency === initialCurrency ? initialFxRate : usdDefaultFxRate}
+          className={styles.cellInputNumeric}
+          onChange={() => setFxRateTouched(true)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commit();
+            }
+          }}
+          onBlur={handleBlur}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// SYSTEM.md §6-2 + §7-3 보강 (가)~(아) — 견적 원장 + 매출 섹션. 화면의 1차
+// 「일괄 저장 ⌘S N」 하나가 견적 줄 표 + 매출 섹션의 dirty 전부를 한
+// 트랜잭션으로 저장한다(§7-3 (사), §7-15). 04-04부터 표는 클릭/Enter로
+// 편집에 들어가는 진짜 grid 계약을 따른다(로빙 tabIndex · 방향키 · Esc ·
+// Delete · 붙여넣기 · 셀 오류·충돌 고정 렌더) — 04-01/04-02의 always-on
+// 인풋 트레이서를 여기서 완성한다.
 export function QuoteLedger({
   projectId,
   projectName,
@@ -180,6 +353,11 @@ export function QuoteLedger({
   const [contractVat, setContractVat] = useState({ vatKrw: contractVatKrw, totalKrw: contractTotalKrw });
   const [balanceKrw, setBalanceKrw] = useState<number | undefined>(revenue.balanceKrw);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [pasteWarning, setPasteWarning] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ clientKey: string; itemName: string; quoteAmountKrw: number } | null>(null);
+  const [sheetRowKey, setSheetRowKey] = useState<string | null>(null);
+
+  const dirtyStorage = useDirtyStorage(projectId, revisionId, 0);
 
   const { execute, result, isExecuting } = useAction(saveProjectLedgerAction, {
     onSuccess: ({ data }) => {
@@ -192,6 +370,7 @@ export function QuoteLedger({
         setBalanceKrw(data.revenue.balanceKrw);
       }
       setSavedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }));
+      dirtyStorage.clearAfterSave();
     },
   });
 
@@ -200,22 +379,88 @@ export function QuoteLedger({
   const paidDirtyCount = (paidEntries ?? []).filter((entry) => entry.dirty).length;
   const contractDirtyCount = contractDraft.dirty ? 1 : 0;
   const dirtyCount = quoteLinesDirtyCount + issuedDirtyCount + paidDirtyCount + contractDirtyCount;
+  const errorCellCount = lines.reduce((sum, line) => sum + Object.keys(line.cellErrors).length, 0);
 
   function updateLine(clientKey: string, patch: Partial<DraftLine>) {
+    setLines((prev) => prev.map((line) => (line.clientKey === clientKey ? { ...line, ...patch, dirty: true } : line)));
+  }
+
+  // 04-04(§7-3 (나)) — 특정 셀의 오류를 지운다(사용자가 그 셀을 직접
+  // 고쳤을 때). 오류는 다른 셀 편집으로 사라지지 않는다 — 그 셀 자신을
+  // 고쳐야만 지워진다.
+  function clearCellError(clientKey: string, columnKey: string) {
     setLines((prev) =>
-      prev.map((line) => (line.clientKey === clientKey ? { ...line, ...patch, dirty: true } : line)),
+      prev.map((line) => {
+        if (line.clientKey !== clientKey || !(columnKey in line.cellErrors)) return line;
+        const cellErrors = { ...line.cellErrors };
+        delete cellErrors[columnKey];
+        return { ...line, cellErrors };
+      }),
     );
   }
 
-  function addLine() {
-    setLines((prev) => [...prev, newDraftLine(subcategories[0]?.value ?? "")]);
+  function commitCell(clientKey: string, columnKey: string, patch: Partial<DraftLine>) {
+    clearCellError(clientKey, columnKey);
+    updateLine(clientKey, patch);
+  }
+
+  const addLine = useCallback(
+    (afterRow?: DraftLine) => {
+      const inheritedSubcategory = afterRow?.subcategory ?? subcategories[0]?.value ?? "";
+      setLines((prev) => [...prev, newDraftLine(inheritedSubcategory)]);
+    },
+    [subcategories],
+  );
+
+  function duplicateLine(clientKey: string) {
+    setLines((prev) => {
+      const source = prev.find((line) => line.clientKey === clientKey);
+      if (!source) return prev;
+      const copy: DraftLine = {
+        ...newDraftLine(source.subcategory),
+        itemName: source.itemName,
+        vendorId: source.vendorId,
+        quantity: source.quantity,
+        unitPriceAmount: source.unitPriceAmount,
+        unitPriceCurrency: source.unitPriceCurrency,
+        unitPriceFxRate: source.unitPriceFxRate,
+        executionAmount: source.executionAmount,
+        note: source.note,
+      };
+      const index = prev.findIndex((line) => line.clientKey === clientKey);
+      return [...prev.slice(0, index + 1), copy, ...prev.slice(index + 1)];
+    });
+  }
+
+  // 줄 이동(Alt+↑/↓). 그룹(대분류=소분류) 경계를 넘으면 소분류를 비운다
+  // (§7-3 (라)) — "비운다"는 이 표에 자유 텍스트 소분류가 없으므로 그 줄이
+  // 도착한 이웃 줄의 그룹을 새로 물려받는 것으로 구현한다(코드표 밖 값을
+  // 만들지 않기 위해, D-62).
+  function moveLine(clientKey: string, direction: "up" | "down") {
+    setLines((prev) => {
+      const index = prev.findIndex((line) => line.clientKey === clientKey);
+      if (index === -1) return prev;
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
+      const next = [...prev];
+      const moved = next[index]!;
+      const neighborGroup = next[targetIndex]!.subcategory;
+      next.splice(index, 1);
+      const crossedGroup = moved.subcategory !== neighborGroup;
+      next.splice(targetIndex, 0, { ...moved, subcategory: crossedGroup ? neighborGroup : moved.subcategory, dirty: true });
+      return next;
+    });
+  }
+
+  function confirmDeleteLine() {
+    if (!deleteConfirm) return;
+    setLines((prev) => prev.filter((line) => line.clientKey !== deleteConfirm.clientKey));
+    setDeleteConfirm(null);
   }
 
   function updateContract(patch: Partial<ContractDraft>) {
     setContractDraft((prev) => {
       const next = { ...prev, ...patch, dirty: true };
-      // 통화를 USD로 처음 바꾸면 환율 칸에 자리표시자가 아니라 실제 최근
-      // 환율 값을 채운다(D-71) — 이미 사용자가 손댄 값은 덮지 않는다.
       if (patch.currency === "USD" && prev.currency !== "USD" && !patch.fxRateTouched) {
         next.fxRate = usdDefaultFxRate;
       }
@@ -224,15 +469,11 @@ export function QuoteLedger({
   }
 
   function updateIssued(clientKey: string, patch: Partial<EntryDraft>) {
-    setIssuedEntries((prev) =>
-      prev?.map((entry) => (entry.clientKey === clientKey ? { ...entry, ...patch, dirty: true } : entry)),
-    );
+    setIssuedEntries((prev) => prev?.map((entry) => (entry.clientKey === clientKey ? { ...entry, ...patch, dirty: true } : entry)));
   }
 
   function updatePaid(clientKey: string, patch: Partial<EntryDraft>) {
-    setPaidEntries((prev) =>
-      prev?.map((entry) => (entry.clientKey === clientKey ? { ...entry, ...patch, dirty: true } : entry)),
-    );
+    setPaidEntries((prev) => prev?.map((entry) => (entry.clientKey === clientKey ? { ...entry, ...patch, dirty: true } : entry)));
   }
 
   function addIssued() {
@@ -244,6 +485,8 @@ export function QuoteLedger({
   }
 
   function handleSave() {
+    if (errorCellCount > 0) return; // §7-3 "오류가 한 칸이라도 있으면 화면 전체가 거부" — 서버에 보내지 않는다.
+
     const dirtyLines = lines.filter((line) => line.dirty);
     const dirtyIssued = (issuedEntries ?? []).filter((entry) => entry.dirty);
     const dirtyPaid = (paidEntries ?? []).filter((entry) => entry.dirty);
@@ -272,6 +515,7 @@ export function QuoteLedger({
                 execution: { currency: "KRW" as const, amount: line.executionAmount, fxRate: 1 },
                 lineStatus: line.lineStatus,
                 note: line.note ?? undefined,
+                baseline: line.id ? line.baseline : undefined,
               })),
             }
           : undefined,
@@ -322,56 +566,52 @@ export function QuoteLedger({
       header: "소분류",
       priority: "p3",
       editability: () => (editable ? "edit" : "locked"),
-      cell: (row) =>
-        editable ? (
-          <Select
-            id={`subcategory-${row.clientKey}`}
-            aria-label="소분류"
-            value={row.subcategory}
-            onChange={(event) => updateLine(row.clientKey, { subcategory: event.target.value })}
-            options={subcategories.map((option) => ({ value: option.value, label: option.label }))}
-            className={styles.cellSelect}
-          />
-        ) : (
-          subcategoryLabel(row.subcategory)
-        ),
+      cell: (row) => subcategoryLabel(row.subcategory),
+      editCell: (row, ctx) =>
+        selectEditCell({
+          id: `subcategory-edit-${row.clientKey}`,
+          ariaLabel: "소분류",
+          initialValue: row.subcategory,
+          options: subcategories.map((option) => ({ value: option.value, label: option.label })),
+          onCommit: (value) => {
+            commitCell(row.clientKey, "subcategory", { subcategory: value });
+            ctx.onCommit(value);
+          },
+        }),
     },
     {
       key: "itemName",
       header: "항목",
       priority: "p1",
       editability: () => (editable ? "edit" : "locked"),
-      cell: (row) =>
-        editable ? (
-          <input
-            aria-label="항목"
-            type="text"
-            value={row.itemName}
-            onChange={(event) => updateLine(row.clientKey, { itemName: event.target.value })}
-            className={styles.cellInput}
-          />
-        ) : (
-          row.itemName
-        ),
+      cell: (row) => row.itemName,
+      editCell: (row, ctx) =>
+        textEditCell({
+          ariaLabel: "항목",
+          initialValue: row.itemName,
+          onCommit: (value) => {
+            commitCell(row.clientKey, "itemName", { itemName: value });
+            ctx.onCommit(value);
+          },
+        }),
     },
     {
       key: "vendor",
       header: "거래처",
       priority: "p2",
       editability: () => (editable ? "edit" : "locked"),
-      cell: (row) =>
-        editable ? (
-          <Select
-            id={`vendor-${row.clientKey}`}
-            aria-label="거래처"
-            value={row.vendorId ?? ""}
-            onChange={(event) => updateLine(row.clientKey, { vendorId: event.target.value || null })}
-            options={vendors.map((option) => ({ value: option.id, label: option.name }))}
-            className={styles.cellSelect}
-          />
-        ) : (
-          vendorLabel(row.vendorId)
-        ),
+      cell: (row) => vendorLabel(row.vendorId),
+      editCell: (row, ctx) =>
+        selectEditCell({
+          id: `vendor-edit-${row.clientKey}`,
+          ariaLabel: "거래처",
+          initialValue: row.vendorId ?? "",
+          options: vendors.map((option) => ({ value: option.id, label: option.name })),
+          onCommit: (value) => {
+            commitCell(row.clientKey, "vendor", { vendorId: value || null });
+            ctx.onCommit(value);
+          },
+        }),
     },
     {
       key: "quantity",
@@ -379,19 +619,17 @@ export function QuoteLedger({
       priority: "p2",
       align: "right",
       editability: () => (editable ? "edit" : "locked"),
-      cell: (row) =>
-        editable ? (
-          <input
-            aria-label="수량"
-            type="text"
-            inputMode="decimal"
-            value={row.quantity}
-            onChange={(event) => updateLine(row.clientKey, { quantity: Number(event.target.value) || 0 })}
-            className={styles.cellInputNumeric}
-          />
-        ) : (
-          row.quantity
-        ),
+      cell: (row) => row.quantity,
+      editCell: (row, ctx) =>
+        textEditCell({
+          ariaLabel: "수량",
+          initialValue: String(row.quantity),
+          numeric: true,
+          onCommit: (value) => {
+            commitCell(row.clientKey, "quantity", { quantity: Number(value) || 0 });
+            ctx.onCommit(value);
+          },
+        }),
     },
     {
       key: "unitPrice",
@@ -399,57 +637,28 @@ export function QuoteLedger({
       priority: "p2",
       align: "right",
       editability: () => (editable ? "edit" : "locked"),
-      cell: (row) =>
-        editable ? (
-          <div className={styles.contractRow}>
-            <Select
-              id={`unit-price-currency-${row.clientKey}`}
-              aria-label="단가 통화"
-              value={row.unitPriceCurrency}
-              onChange={(event) => {
-                const currency = event.target.value as Currency;
-                updateLine(row.clientKey, {
-                  unitPriceCurrency: currency,
-                  unitPriceFxRate: currency === "USD" && row.unitPriceCurrency !== "USD" ? usdDefaultFxRate : row.unitPriceFxRate,
-                });
-              }}
-              options={[
-                { value: "KRW", label: "KRW" },
-                { value: "USD", label: "USD" },
-              ]}
-              className={styles.cellSelect}
-            />
-            <input
-              aria-label="단가"
-              type="text"
-              inputMode="decimal"
-              value={row.unitPriceAmount}
-              onChange={(event) => updateLine(row.clientKey, { unitPriceAmount: Number(event.target.value) || 0 })}
-              className={styles.cellInputNumeric}
-            />
-            {row.unitPriceCurrency !== "KRW" ? (
-              <input
-                aria-label="단가 환율"
-                type="text"
-                inputMode="decimal"
-                value={row.unitPriceFxRate}
-                onChange={(event) =>
-                  updateLine(row.clientKey, {
-                    unitPriceFxRate: Number(event.target.value) || 0,
-                    unitPriceFxRateTouched: true,
-                  })
-                }
-                className={styles.cellInputNumeric}
-              />
-            ) : null}
-          </div>
-        ) : (
-          formatKrw(row.unitPriceAmountKrw)
-        ),
+      cell: (row) => formatKrw(row.unitPriceAmountKrw),
+      editCell: (row, ctx) => (
+        <UnitPriceEditCell
+          rowKey={row.clientKey}
+          initialAmount={row.unitPriceAmount}
+          initialCurrency={row.unitPriceCurrency}
+          initialFxRate={row.unitPriceFxRate}
+          usdDefaultFxRate={usdDefaultFxRate}
+          onCommit={(value) => {
+            const parsed = JSON.parse(value) as { amount: number; currency: Currency; fxRate: number; fxRateTouched: boolean };
+            commitCell(row.clientKey, "unitPrice", {
+              unitPriceAmount: parsed.amount,
+              unitPriceCurrency: parsed.currency,
+              unitPriceFxRate: parsed.fxRate,
+              unitPriceFxRateTouched: parsed.fxRateTouched || row.unitPriceFxRateTouched,
+            });
+            ctx.onCommit(value);
+          }}
+        />
+      ),
       secondaryLine: (row) =>
-        !editable && row.unitPriceCurrency !== "KRW"
-          ? `${row.unitPriceCurrency} ${row.unitPriceAmount.toFixed(2)} @${row.unitPriceFxRate}`
-          : null,
+        row.unitPriceCurrency !== "KRW" ? `${row.unitPriceCurrency} ${row.unitPriceAmount.toFixed(2)} @${row.unitPriceFxRate}` : null,
     },
     {
       key: "quoteAmount",
@@ -465,19 +674,17 @@ export function QuoteLedger({
       priority: "p1",
       align: "right",
       editability: () => (editable ? "edit" : "locked"),
-      cell: (row) =>
-        editable ? (
-          <input
-            aria-label="실행가"
-            type="text"
-            inputMode="decimal"
-            value={row.executionAmount}
-            onChange={(event) => updateLine(row.clientKey, { executionAmount: Number(event.target.value) || 0 })}
-            className={styles.cellInputNumeric}
-          />
-        ) : (
-          formatKrw(row.executionAmount)
-        ),
+      cell: (row) => formatKrw(row.executionAmount),
+      editCell: (row, ctx) =>
+        textEditCell({
+          ariaLabel: "실행가",
+          initialValue: String(row.executionAmount),
+          numeric: true,
+          onCommit: (value) => {
+            commitCell(row.clientKey, "execution", { executionAmount: Number(value) || 0 });
+            ctx.onCommit(value);
+          },
+        }),
     },
     {
       key: "profit",
@@ -497,22 +704,121 @@ export function QuoteLedger({
       header: "비고",
       priority: "p3",
       editability: () => (editable ? "edit" : "locked"),
-      cell: (row) =>
-        editable ? (
-          <input
-            aria-label="비고"
-            type="text"
-            value={row.note ?? ""}
-            onChange={(event) => updateLine(row.clientKey, { note: event.target.value || null })}
-            className={styles.cellInput}
-          />
-        ) : (
-          (row.note ?? "—")
-        ),
+      cell: (row) => row.note ?? "—",
+      editCell: (row, ctx) =>
+        textEditCell({
+          ariaLabel: "비고",
+          initialValue: row.note ?? "",
+          onCommit: (value) => {
+            commitCell(row.clientKey, "note", { note: value || null });
+            ctx.onCommit(value);
+          },
+        }),
     },
   ];
 
-  const saveDisabledReason = dirtyCount === 0 ? "저장할 편집 없음 · 셀을 고치면 켜집니다" : undefined;
+  // 04-04(다) — 붙여넣기 열 정의. columns와 같은 순서·같은 길이여야 한다
+  // (Table이 colIndex로 이 둘을 함께 참조한다).
+  const pasteColumns: PasteColumn<DraftLine>[] = useMemo(
+    () => [
+      { key: "sort", kind: "text", isEditable: () => false },
+      {
+        key: "subcategory",
+        kind: "select",
+        options: subcategories.map((option) => ({ value: option.value, label: option.label })),
+        isEditable: () => editable,
+      },
+      { key: "itemName", kind: "text", isEditable: () => editable },
+      { key: "vendor", kind: "select", options: vendors.map((option) => ({ value: option.id, label: option.name })), isEditable: () => editable },
+      { key: "quantity", kind: "number", isEditable: () => editable },
+      { key: "unitPrice", kind: "number", isEditable: () => editable },
+      { key: "quoteAmount", kind: "text", isEditable: () => false },
+      { key: "execution", kind: "number", isEditable: () => editable },
+      { key: "profit", kind: "text", isEditable: () => false },
+      { key: "status", kind: "text", isEditable: () => false },
+      { key: "note", kind: "text", isEditable: () => editable },
+    ],
+    [editable, subcategories, vendors],
+  );
+
+  function handlePasteAtCell(row: DraftLine, columnKey: string, clipboardText: string) {
+    const rowIndex = lines.indexOf(row);
+    const colIndex = pasteColumns.findIndex((column) => column.key === columnKey);
+    if (rowIndex === -1 || colIndex === -1) return;
+
+    const result = applyPaste({ clipboardText, columns: pasteColumns, rows: lines, activeRowIndex: rowIndex, activeColIndex: colIndex });
+
+    setLines((prev) => {
+      const next = [...prev];
+      for (let i = 0; i < result.newRowsNeeded; i++) {
+        next.push(newDraftLine(subcategories[0]?.value ?? ""));
+      }
+      for (const cell of result.cells) {
+        const target = next[cell.rowIndex];
+        if (!target) continue;
+        const cellErrors = { ...target.cellErrors };
+        if (cell.result.status === "error") {
+          cellErrors[cell.columnKey] = cell.result.reason;
+          next[cell.rowIndex] = { ...target, cellErrors, dirty: true };
+          continue;
+        }
+        delete cellErrors[cell.columnKey];
+        const value = cell.result.value;
+        let patch: Partial<DraftLine> = {};
+        switch (cell.columnKey) {
+          case "subcategory":
+            patch = { subcategory: value };
+            break;
+          case "itemName":
+            patch = { itemName: value };
+            break;
+          case "vendor":
+            patch = { vendorId: value || null };
+            break;
+          case "quantity":
+            patch = { quantity: Number(value) || 0 };
+            break;
+          case "unitPrice":
+            patch = { unitPriceAmount: Number(value) || 0, unitPriceCurrency: "KRW", unitPriceFxRate: 1 };
+            break;
+          case "execution":
+            patch = { executionAmount: Number(value) || 0 };
+            break;
+          case "note":
+            patch = { note: value || null };
+            break;
+          default:
+            break;
+        }
+        next[cell.rowIndex] = { ...target, ...patch, cellErrors, dirty: true };
+      }
+      return next;
+    });
+
+    if (result.droppedColumnCount > 0) {
+      setPasteWarning(`붙여넣기 · 오른쪽 ${result.droppedColumnCount}칸 버림`);
+    } else {
+      setPasteWarning(null);
+    }
+  }
+
+  function cellIssueFor(row: DraftLine, columnKey: string): CellIssue | undefined {
+    const message = row.cellErrors[columnKey];
+    if (!message) return undefined;
+    return { kind: "error", message };
+  }
+
+  const saveDisabledReason = dirtyCount === 0 ? "바뀐 칸 없음 · 고칠 칸을 눌러 주세요" : undefined;
+
+  const rejectionSummary = result.serverError
+    ? errorCellCount > 0
+      ? `오류 ${errorCellCount}칸 · 전부 거부`
+      : result.serverError.includes("충돌")
+        ? result.serverError.split(" · ")[0]
+        : undefined
+    : undefined;
+
+  const openSheetRow = sheetRowKey ? lines.find((line) => line.clientKey === sheetRowKey) : undefined;
 
   return (
     <>
@@ -529,8 +835,8 @@ export function QuoteLedger({
               type="button"
               variant="primary"
               pending={isExecuting}
-              disabled={dirtyCount === 0}
-              disabledReason={saveDisabledReason}
+              disabled={dirtyCount === 0 || errorCellCount > 0}
+              disabledReason={errorCellCount > 0 ? `오류 ${errorCellCount}칸 · 고쳐야 저장됩니다` : saveDisabledReason}
               shortcut="⌘S"
               onClick={handleSave}
             >
@@ -540,6 +846,18 @@ export function QuoteLedger({
         </div>
       </div>
 
+      {dirtyStorage.restorableCount > 0 ? (
+        <p className={styles.restoreBanner}>
+          {`저장 안 한 편집 ${dirtyStorage.restorableCount}칸`}
+          <button type="button" className={styles.restoreAction} onClick={() => dirtyStorage.restore()}>
+            복원
+          </button>
+          <button type="button" className={styles.restoreAction} onClick={() => dirtyStorage.discard()}>
+            버림
+          </button>
+        </p>
+      ) : null}
+
       {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
 
       <Table
@@ -547,22 +865,77 @@ export function QuoteLedger({
         columns={columns}
         rows={lines}
         getRowId={(row) => row.clientKey}
+        groupBy={(row) => subcategoryLabel(row.subcategory)}
         emptyMessage="이 프로젝트에 견적 줄이 없습니다"
-        emptyAction={editable ? { label: "첫 줄 만들기 ⌘↵", onClick: addLine } : undefined}
+        emptyAction={editable ? { label: "첫 줄 만들기 ⌘↵", onClick: () => addLine() } : undefined}
+        enableGridKeyboard
+        keyboard={{
+          onDeleteRow: (row) => setDeleteConfirm({ clientKey: row.clientKey, itemName: row.itemName, quoteAmountKrw: row.quoteAmountKrw }),
+          onNewRow: (row) => addLine(row),
+          onDuplicateRow: (row) => duplicateLine(row.clientKey),
+          onMoveRow: (row, direction) => moveLine(row.clientKey, direction),
+          onSave: handleSave,
+        }}
+        onPasteAtCell={handlePasteAtCell}
+        cellIssue={cellIssueFor}
+        cellDirty={(row) => row.dirty}
+        onRowTap={(row) => setSheetRowKey(row.clientKey)}
         footer={
           <tr>
             <td colSpan={columns.length} className={styles.footerCell}>
               {`합계 (공급가액 · ${lines.length}줄)`}
               {savedAt ? <span className={styles.savedTag}> 저장됨 {savedAt}</span> : null}
+              {pasteWarning ? <span className={styles.pasteWarning}> {pasteWarning}</span> : null}
+              {rejectionSummary ? <span className={styles.rejectionSummary}> {rejectionSummary}</span> : null}
             </td>
           </tr>
         }
       />
 
+      {/* SYSTEM.md §7-9 — 편집용 표가 있는 화면 하단 힌트 줄, 정확히 7개, 폰에서 숨는다. */}
+      {editable ? (
+        <p className={styles.hintRow}>
+          이동 Tab ↑↓←→ · 범위 복사 ⌘C / 붙여넣기 ⌘V · 취소 Esc · 새 줄 ⌘↵ · 줄 이동 Alt↑↓ · 줄 복제 ⌘D · 저장 ⌘S
+        </p>
+      ) : null}
+
       {editable && lines.length > 0 ? (
-        <button type="button" className={styles.addLineButton} onClick={addLine}>
+        <button type="button" className={styles.addLineButton} onClick={() => addLine()}>
           줄 추가
         </button>
+      ) : null}
+
+      {deleteConfirm ? (
+        <DeleteLineDialog
+          itemName={deleteConfirm.itemName}
+          quoteAmountKrw={deleteConfirm.quoteAmountKrw}
+          onCancel={() => setDeleteConfirm(null)}
+          onConfirm={confirmDeleteLine}
+        />
+      ) : null}
+
+      {openSheetRow ? (
+        <RowSheet
+          open
+          onClose={() => setSheetRowKey(null)}
+          title={openSheetRow.itemName || "(항목명 없음)"}
+          subtitle={`${subcategoryLabel(openSheetRow.subcategory)} · ${vendorLabel(openSheetRow.vendorId)}`}
+          items={[
+            { label: "수량", value: openSheetRow.quantity },
+            { label: "단가", value: formatKrw(openSheetRow.unitPriceAmountKrw) },
+            { label: "견적가", value: formatKrw(openSheetRow.quoteAmountKrw) },
+            { label: "차익", value: formatKrw(openSheetRow.profitKrw) },
+            {
+              label: "환율",
+              value:
+                openSheetRow.unitPriceCurrency !== "KRW"
+                  ? `${openSheetRow.unitPriceCurrency} ${openSheetRow.unitPriceAmount.toFixed(2)} @${openSheetRow.unitPriceFxRate}`
+                  : "—",
+            },
+            { label: "비고", value: openSheetRow.note ?? "—" },
+            { label: "상태", value: LINE_STATUS_LABELS[openSheetRow.lineStatus] ?? openSheetRow.lineStatus },
+          ]}
+        />
       ) : null}
 
       <RevenueSection
@@ -583,3 +956,42 @@ export function QuoteLedger({
     </>
   );
 }
+
+// 04-04(아) — Delete 키·행동 줄의 줄 삭제 확인. 연결 문서가 없는 줄의
+// "삭제"만 이 페이즈 범위다(Copywriting Contract "Destructive — 견적 줄
+// 삭제"). 연결 문서가 있는 줄의 "취소" 갈래는 지출결의가 생기는 페이즈
+// (04-06 이후) 몫 — 이 DTO에는 아직 연결 문서 여부 필드가 없다.
+function DeleteLineDialog({
+  itemName,
+  quoteAmountKrw,
+  onCancel,
+  onConfirm,
+}: {
+  itemName: string;
+  quoteAmountKrw: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className={styles.dialogScrim} role="presentation">
+      <div role="alertdialog" aria-modal="true" aria-labelledby="delete-line-title" className={styles.dialog}>
+        <h2 id="delete-line-title" className={styles.dialogTitle}>
+          견적 줄 삭제
+        </h2>
+        <p className={styles.dialogSubtitle}>
+          {itemName || "(항목명 없음)"} · {formatKrw(quoteAmountKrw)}
+        </p>
+        <p className={styles.dialogBody}>보관함으로 이동합니다 · 관리자가 복원할 수 있습니다</p>
+        <div className={styles.dialogActions}>
+          <Button type="button" variant="primary" onClick={onConfirm}>
+            삭제
+          </Button>
+          <Button type="button" variant="tertiary" shortcut="Esc" onClick={onCancel}>
+            취소
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+

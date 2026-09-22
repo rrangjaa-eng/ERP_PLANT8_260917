@@ -231,3 +231,18 @@ account·db-bootstrap 넷만 자동 프로비저닝 단계라 Job으로 존재�
 **아무것도 쓰지 않는다**(단일 트랜잭션). 부분적으로만 유효한 파일을 넣으면 CLI가 실패한
 항목을 한 줄씩 나열하고 종료 코드 1로 끝난다 — 상태는 가져오기 전 그대로다. 파일이
 없거나 JSON이 아니거나 `settings` 필드가 없으면 사용법 오류(종료 코드 2)다.
+
+## 13. Codex 교차 리뷰
+
+`/gsd-review N --codex`는 `scripts/install-codex.sh`(SessionStart)로 Codex CLI를 설치한다.
+구독 자격은 PC 전용이라 아래로 옮긴다: 1) PC에서 `codex login`(브라우저) →
+`~/.codex/auth.json` 생성 2) base64 한 줄 변환:
+```bash
+base64 -w0 ~/.codex/auth.json                                            # Linux
+base64 -i ~/.codex/auth.json | tr -d '\n'                                # macOS
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("$env:USERPROFILE\.codex\auth.json"))  # PowerShell
+```
+3) claude.ai 환경(Environment) 변수 `CODEX_AUTH_JSON_B64`에 붙여넣기 4) 같은 환경 네트워크
+허용 목록에 `api.openai.com`·`chatgpt.com`·`auth.openai.com` 추가(빠지면 설치는 되지만
+리뷰 호출이 403) 5) 새 세션에서 `/gsd-review N --codex` 사용 6) 갱신 실패 시 2번을 다시 해
+값 교체 7) 토큰은 리포·커밋·문서에 절대 넣지 않는다.

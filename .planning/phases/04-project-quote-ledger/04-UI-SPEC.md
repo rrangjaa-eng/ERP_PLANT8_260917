@@ -253,6 +253,7 @@ muted: 닫힌 정상 결과 · 무효) — 프로젝트 목록 기본 보기가 
 | Empty — 리저브 | `리저브 기록이 없습니다 · 리저브 줄 추가` |
 | Error — 목록 / 상세 / 리저브 | `프로젝트 목록을 불러오지 못했습니다 · 다시 시도` / `견적 원장을 불러오지 못했습니다 · 다시 시도` / `리저브 대장을 불러오지 못했습니다 · 다시 시도` |
 | Error — 표 배치 저장 실패 | 합계 행 오른쪽 `오류 1칸 · 전부 거부`(`--danger`). 충돌이면 `충돌 1줄 · 전부 거부` |
+| Error — 표 배치 저장 실패(표 밖 칸 오류로 전부 거부, U-6) | 오류가 0칸인 표의 합계 행에는 `전부 거부 · 다른 칸 오류 1칸`(`--danger`) — 「오류 N칸」을 0으로 적지 않고 거부 사실과 원인이 이 표 밖에 있다는 것 둘 다를 말한다(04-04 Task 2 ⑤ 계획 단계 판단) |
 | Error — 셀(형식) | `숫자가 아닙니다 · 12,400,000처럼 적어 주세요` · `날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요` |
 | Error — 셀(환율) | `환율이 없습니다 · USD 환율을 적어 주세요`. 저장 전 표시값은 `계산 불가 · 환율 없음`(§2-4) |
 | Error — 셀(읽기 전용) | `지출결의 26001-0004 연결됨 · 고치려면 새 차수`(D-66) |
@@ -288,7 +289,7 @@ muted: 닫힌 정상 결과 · 무효) — 프로젝트 목록 기본 보기가 
 ## UI Considerations
 
 > UI-consideration probe(워크플로 9.5)가 올린 57건의 해소 결과다.
-> **resolved explicit 43 · resolved backstop 11 · unresolved 3.**
+> **resolved explicit 43 · resolved backstop 11 · unresolved 6.**
 > (+ 체커가 남긴 경계 3건은 프로브 항목 어디에도 대응하지 않아 맨 아래에 따로 적었다.)
 >
 > 이 절은 **상태 커버리지**만 다룬다 — EMPTY·ERROR **문구 자체**는 위 `## Copywriting Contract`에
@@ -856,7 +857,7 @@ muted: 닫힌 정상 결과 · 무효) — 프로젝트 목록 기본 보기가 
 
 **개정 기록 2026-09-22 (rev 3)** — UI-consideration probe 57건 해소. `## UI Considerations` 절을
 `## Copywriting Contract`과 `## SYSTEM.md §7 보강·신설 초안` 사이에 **추가만** 했다(다른 절은 한 줄도
-고치지 않았다 — 체커 승인 상태 유지). 결과 **explicit 43 · backstop 11 · unresolved 3**
-(S3 overflow 머리 줄 · S5 partial 상태 열 경계 · S6 zero-one-many 입금 0줄일 때의 미수 자리),
-+ 프로브 항목 밖 경계 3건(`N`=0 라벨 · 편집 셀 0인 사람의 1차 버튼 · 표 밖 오류 시 합계 행 문구).
-문구는 옮겨 적지 않고 Copywriting Contract 행을 가리키기만 했다.
+고치지 않았다 — 체커 승인 상태 유지). 결과 **explicit 43 · backstop 11 · unresolved 6**
+(S3 overflow 머리 줄 · S5 partial 상태 열 경계 · S6 zero-one-many 입금 0줄일 때의 미수 자리 3건)
++ 프로브 항목 밖 경계 3건(`N`=0 라벨 · 편집 셀 0인 사람의 1차 버튼 · 표 밖 오류 시 합계 행 문구) —
+두 괄호의 합이 6이다(U-1~U-6). 문구는 옮겨 적지 않고 Copywriting Contract 행을 가리키기만 했다.

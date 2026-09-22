@@ -46,15 +46,33 @@ test.describe("프로젝트 등록 → 견적 줄 저장 (Phase 4 트레이서)"
     await expect(page.getByText(/\d{5} · 상세 견적 1차/)).toBeVisible();
 
     // 견적 줄 표 — 첫 줄 만들기 → 소분류·항목·단가·실행가 입력 → 일괄 저장.
+    // 04-04부터 표는 클릭/Enter로 편집에 들어가는 grid다(§7-3 (가)) —
+    // 셀을 먼저 클릭해야 입력 요소가 나타난다(always-on 인풋이 아니다).
     await expect(page.getByText("이 프로젝트에 견적 줄이 없습니다")).toBeVisible();
     await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
 
-    await page.getByLabel("소분류").selectOption({ index: 1 });
-    await page.getByLabel("항목").fill("메인 스테이지 구조물 설치");
+    // 그룹 머리글 행(예: "무대·시공")도 <td>라 role="grid" 안에서는 암묵
+    // gridcell로 접근성 트리에 잡힌다 — 전역 nth()가 아니라 데이터 행
+    // (tbody의 두 번째 tr, 첫 번째는 그룹 머리글) 안에서만 셀을 센다.
+    const dataRow = page.locator("tbody tr").nth(1);
+    const gridcell = (index: number) => dataRow.getByRole("gridcell").nth(index);
+
+    await gridcell(1).click(); // 소분류
+    await gridcell(1).getByLabel("소분류").selectOption({ index: 1 });
+
+    await gridcell(2).click(); // 항목
+    await gridcell(2).getByLabel("항목").fill("메인 스테이지 구조물 설치");
+    await gridcell(2).getByLabel("항목").press("Enter");
+
+    await gridcell(5).click(); // 단가
     // 04-02가 「단가」 칸 옆에 통화 Select(aria-label "단가 통화")를 더해
     // getByLabel의 기본 부분일치가 둘을 함께 잡는다 — exact로 좁힌다.
-    await page.getByLabel("단가", { exact: true }).fill("1200000");
-    await page.getByLabel("실행가").fill("800000");
+    await gridcell(5).getByLabel("단가", { exact: true }).fill("1200000");
+    await gridcell(5).getByLabel("단가", { exact: true }).press("Enter");
+
+    await gridcell(7).click(); // 실행가
+    await gridcell(7).getByLabel("실행가").fill("800000");
+    await gridcell(7).getByLabel("실행가").press("Enter");
 
     await page.getByRole("button", { name: /일괄 저장/ }).click();
 

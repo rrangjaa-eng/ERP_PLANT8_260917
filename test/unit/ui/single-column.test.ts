@@ -93,3 +93,19 @@ describe("적용 대상 화면·폼 — className=\"single-column\"", () => {
     expect(source).toContain("single-column");
   });
 });
+
+// 260922-o2b 후속(/review + 독립 DOM 감사) — 파일 전체 toContain("single-column")은
+// 파일 안에 두 번째 이상 쓰인 폼이 빠져도(예: card-form.tsx는 CardForm에는
+// 있지만 CardOwnerForm에는 없어도) 통과한다. F-07(system-md-compliance.test.ts)과
+// 같은 방식으로 각 쓰임을 정규식으로 고정한다.
+describe("적용 대상 화면·폼 — 사용처별 single-column 고정 (F-02 후속)", () => {
+  it("card-form.tsx의 CardOwnerForm form이 single-column을 쓴다", () => {
+    const source = read("app", "(app)", "admin", "corp-cards", "card-form.tsx");
+    expect(source).toMatch(/id="corp-card-owner-form"\s+className="single-column"/);
+  });
+
+  it("person-form.tsx의 등록 결과 패널이 single-column을 쓴다", () => {
+    const source = read("app", "(app)", "admin", "people", "person-form.tsx");
+    expect(source).toMatch(/className=\{`\$\{styles\.registeredPanel\} single-column`\}/);
+  });
+});

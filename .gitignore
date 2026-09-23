@@ -21,6 +21,8 @@
 .claude/skills/gstack/bin/gstack-cso-watchdog*
 .claude/skills/gstack/bin/.gstack-cso-*
 .claude/skills/gstack/bin/gstack-global-discover*
+# install_pkgs.sh falls back to npm when bun install fails; gstack tracks bun.lock only
+.claude/skills/gstack/package-lock.json
 
 # Node
 node_modules/

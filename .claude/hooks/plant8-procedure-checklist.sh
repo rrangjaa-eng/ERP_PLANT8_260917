@@ -15,6 +15,8 @@ read -r -d '' CHECKLIST <<'EOF' || true
 6. 화면 검증 순서: 싼 게이트(lint·typecheck·build) → 독립 DOM 감사 → 수정 → 전체 게이트 한 번.
 7. 서브에이전트는 model을 명시한다. 판단·검토·계획은 Opus 5. Fable 5는 정말 필요한 순간(되돌리기 어려운 결정·Opus 5가 갈리는 문제·명시 요청)에만.
 8. 금지: .planning/ 수동 편집 · git push --force · 프로덕션 DB 직접 명령 · CLAUDE.md 임의 수정.
+9. 스킬을 먼저 부른다(hook이 막는다): 계획 /gsd-plan-phase · 실행 /gsd-execute-phase · UI 계약 /gsd-ui-phase — 워크플로 단계를 그대로 따르고 바꾸려면 먼저 승인. 코드 커밋 전 test-driven-development·verification-before-completion, 실패 뒤 systematic-debugging, 머지·페이즈 완료 전 /review·/qa.
+10. 플랜 하나가 끝나면(SUMMARY 생성 · 계획 완료) 이 세션에서 더 나아가지 않는다: 커밋·푸시 → /gsd-pause-work → 새 세션(/gsd-progress).
 EOF
 
 jq -nc --arg ctx "$CHECKLIST" \

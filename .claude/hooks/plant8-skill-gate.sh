@@ -8,11 +8,14 @@
 # 관문(첫 인자 = 이벤트):
 #   record-skill   PostToolUse(Skill)       — 호출한 스킬 이름을 기록
 #   record-prompt  UserPromptSubmit         — /gsd-… 같은 슬래시 명령을 기록
-#   agent          PreToolUse(Agent)        — gsd-* 에이전트는 맞는 /gsd-* 스킬을 부른 뒤에만
+#   agent          PreToolUse(Agent)        — gsd-* 에이전트는 맞는 /gsd-* 스킬을 부른 뒤에만,
+#                                            gsd-executor는 페이즈 계획 게이트(CEO·엔지·UI면 디자인 리뷰) 기록 뒤에만
 #   bash           PreToolUse(Bash)         — 코드 커밋은 TDD·검증 스킬 뒤에만, 페이즈 완료는 /review·/qa 뒤에만
-#   edit           PreToolUse(Edit|Write)   — 테스트·빌드 실패 뒤 코드 수정은 systematic-debugging 뒤에만
+#   edit           PreToolUse(Edit|Write)   — 코드 작성은 test-driven-development 뒤에만,
+#                                            테스트·빌드 실패 뒤 코드 수정은 systematic-debugging 뒤에만
 #   failure        PostToolUseFailure(Bash) — 테스트·빌드 실패를 표시
-#   merge          PreToolUse(PR 머지)      — /review·/qa 뒤에만
+#   merge          PreToolUse(PR 머지)      — 페이즈 기록에 /review·/qa가 있을 때만
+# 게이트 기록(.claude/gates/phase-NN.log)은 커밋해 세션을 넘어 남긴다.
 set -euo pipefail
 
 event="${1:-}"
@@ -34,6 +37,10 @@ record() {
   echo "$name" >> "$skills_file"
   echo "$name" >> "$session_skills"
   if [ "$name" = "systematic-debugging" ]; then rm -f "$debug_flag"; fi
+  if printf '%s' "$name" | grep -Eqx "$gate_skills"; then
+    mkdir -p "$(dirname "$gate_log")"
+    echo "$name $(date -u +%Y-%m-%dT%H:%MZ) session=$session" >> "$gate_log"
+  fi
 }
 
 has_skill() {  # $1 = 파일, $2.. = 허용 스킬(정규식 조각)
@@ -45,6 +52,15 @@ has_skill() {  # $1 = 파일, $2.. = 허용 스킬(정규식 조각)
 }
 
 deny() { echo "차단됨(스킬 관문): $1" >&2; exit 2; }
+
+# 게이트 스킬은 페이즈별로 리포 안(.claude/gates/phase-NN.log)에 남겨 세션을 넘어 확인한다.
+project="${CLAUDE_PROJECT_DIR:-.}"
+phase="$(sed -n 's/^current_phase: *"\{0,1\}\([0-9.]*\)"\{0,1\}$/\1/p' "$project/.planning/STATE.md" 2>/dev/null | head -n1)"
+phase_pad="$(printf '%02d' "${phase%%.*}" 2>/dev/null || echo "${phase:-00}")"
+gate_log="$project/.claude/gates/phase-${phase_pad}.log"
+gate_skills="plan-ceo-review|plan-eng-review|plan-design-review|review|qa|cso|design-review|gsd-verify-work|ship"
+phase_has_ui() { ls "$project"/.planning/phases/${phase_pad}-*/*-UI-SPEC.md >/dev/null 2>&1; }
+gate_has() { [ -f "$gate_log" ] && awk '{print $1}' "$gate_log" | grep -qx "$1"; }
 
 is_code_path() {  # 저장소 코드 경로(문서·계획 제외)
   grep -Eq '^(app|domain|repositories|ui|db|lib|components|scripts|test|e2e)/|\.(ts|tsx|js|mjs|cjs|sql|css)$'
@@ -79,6 +95,13 @@ case "$event" in
       gsd-debugger|gsd-debug-session-manager) need="gsd-debug" ;;
       *) need="gsd-[a-z0-9-]+" ;;
     esac
+    if [ "$sub" = "gsd-executor" ]; then
+      missing=""
+      gate_has plan-ceo-review || missing="$missing /plan-ceo-review"
+      gate_has plan-eng-review || missing="$missing /plan-eng-review"
+      phase_has_ui && ! gate_has plan-design-review && missing="$missing /plan-design-review"
+      [ -z "$missing" ] || deny "Phase ${phase_pad} 계획이 Pre-build 게이트를 통과하지 않았다(없음:${missing}). CLAUDE.md: 게이트를 통과한 계획만 Build로 넘긴다. 그 스킬들을 먼저 호출하라(기록: ${gate_log#"$project"/})."
+    fi
     has_skill "$session_skills" "$need" || deny "${sub}는 GSD 워크플로 안에서만 띄운다. 먼저 Skill 도구로 해당 스킬(${need//|/ 또는 })을 호출하고 그 워크플로의 단계를 그대로 따르라. 워크플로를 임의로 바꾸거나 건너뛰려면 먼저 사용자 승인을 받아라."
     ;;
 
@@ -86,8 +109,10 @@ case "$event" in
     cmd="$(printf '%s' "$payload" | jq -r '.tool_input.command // empty')"
     # 페이즈 완료 처리 — gstack Post-build 먼저
     if printf '%s' "$cmd" | grep -Eq 'gsd-tools\.cjs.*(phase complete|phase\.complete|milestone complete)'; then
-      has_skill "$session_skills" "review" && has_skill "$session_skills" "qa" \
-        || deny "페이즈 완료 전에 gstack Post-build를 실제로 호출하라: /review → /qa → (해당 시)/cso → /ship (CLAUDE.md Post-build)."
+      missing=""
+      for g in gsd-verify-work review qa; do gate_has "$g" || missing="$missing /$g"; done
+      phase_has_ui && ! gate_has design-review && missing="$missing /design-review"
+      [ -z "$missing" ] || deny "Phase ${phase_pad} 완료 전에 실제로 호출하라(없음:${missing}) — /gsd-verify-work, Post-build /review → /qa(UI면 /design-review) → (해당 시)/cso → /ship."
     fi
     # 코드 커밋 — superpowers TDD·검증 먼저
     if printf '%s' "$cmd" | grep -Eq '(^|[;&|[:space:]])git[[:space:]]+commit|gsd-tools\.cjs[^;&|]*[[:space:]]commit[[:space:]]'; then
@@ -112,15 +137,17 @@ case "$event" in
     ;;
 
   edit)
-    [ -f "$debug_flag" ] || exit 0
     path="$(printf '%s' "$payload" | jq -r '.tool_input.file_path // empty')"
     rel="${path#"${CLAUDE_PROJECT_DIR:-}"/}"
     printf '%s\n' "$rel" | is_code_path || exit 0
+    has_skill "$skills_file" "test-driven-development" \
+      || deny "코드를 쓰기 전에 Skill 도구로 test-driven-development를 호출하라(실패 테스트 → 최소 구현 → 리팩터). 호출 뒤 다시 시도하라."
+    [ -f "$debug_flag" ] || exit 0
     deny "테스트·빌드 실패 뒤 코드를 고치기 전에 Skill 도구로 systematic-debugging을 호출하라(재현 → 원인 → 수정 → 회귀 테스트)."
     ;;
 
   merge)
-    has_skill "$session_skills" "review" && has_skill "$session_skills" "qa" \
+    gate_has review && gate_has qa \
       || deny "PR 머지 전에 gstack Post-build를 실제로 호출하라: /review → /qa → (해당 시)/cso → /ship."
     ;;
 esac

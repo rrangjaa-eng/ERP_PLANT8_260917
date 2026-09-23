@@ -39,6 +39,10 @@ export async function recentFxRate(currency: Currency, deps?: Partial<CurrencyDe
 // 통과했다. KRW는 갱신 대상이 아니다(환율 1 고정).
 export async function rememberFxRate(currency: Currency, rate: number, deps?: Partial<CurrencyDeps>): Promise<void> {
   if (currency === "KRW") return;
+  // 잘못된 값(0 이하 등)은 저장하지 않는다 — 저장되면 설정 스키마
+  // (z.coerce.number().positive())를 어겨서 recentFxRate가 파싱 실패로
+  // 던지고, 그 값을 기다리는 화면이 전부 깨진다.
+  if (!FX_RECENT_RATE_USD.schema.safeParse(rate).success) return;
   const upsert = deps?.upsertSimpleValue ?? defaultUpsertSimpleValue;
   await upsert(SYSTEM_VIEWER, FX_RECENT_RATE_USD.key, rate, SYSTEM_VIEWER.id);
 }

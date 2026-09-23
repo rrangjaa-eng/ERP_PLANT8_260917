@@ -50,7 +50,11 @@ export function round(value: number, unit: RoundingUnit, method: RoundingMethod)
 // 통화·외화 금액·환율에서 원화 환산액(정수 원)을 계산한다. KRW는 fxRate가
 // 항상 1이라 amount 그대로 반올림된 값이 나온다 — 예외 분기가 없다.
 export function toKrw(input: MoneyInput): number {
-  return round(input.amount * input.fxRate, 1, "round");
+  // amount는 소수 2자리, fxRate는 소수 4자리로 저장된다 — 정수로 올려
+  // 곱한 뒤 나누면 부동소수점 오차(0.35×1350=472.49999999999994 등) 없이
+  // 정확한 값이 나온다.
+  const exact = (Math.round(input.amount * 100) * Math.round(input.fxRate * 10000)) / 1e6;
+  return round(exact, 1, "round");
 }
 
 // Drizzle numeric 컬럼이 돌려주는 문자열을 숫자로 바꾸는 **유일한 지점**.

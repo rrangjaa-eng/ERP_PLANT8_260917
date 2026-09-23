@@ -51,6 +51,27 @@ export async function upsertPermission(
     });
 }
 
+// 이미 있는 셀은 건드리지 않는다 — 시드가 반복 실행돼도 관리자가 권한표에서
+// 이미 끈 값을 되살리지 않기 위해(onConflictDoUpdate 대신 DoNothing).
+export async function insertPermissionIfAbsent(
+  viewer: Viewer,
+  input: { roleId: string; menu: string; action: string; allowed: boolean; updatedBy?: string | null },
+): Promise<void> {
+  void viewer;
+  await db
+    .insert(permissionMatrix)
+    .values({
+      roleId: input.roleId,
+      menu: input.menu,
+      action: input.action,
+      allowed: input.allowed,
+      updatedBy: input.updatedBy ?? null,
+    })
+    .onConflictDoNothing({
+      target: [permissionMatrix.roleId, permissionMatrix.menu, permissionMatrix.action],
+    });
+}
+
 export async function listPermissions(
   viewer: Viewer,
   opts?: { roleId?: string },

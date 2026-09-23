@@ -4,7 +4,7 @@ import { MENUS, PERMISSION_ACTIONS } from "@/domain/permissions/menus";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import { SETTING_DEFS } from "@/domain/settings/keys";
 import { seedRole } from "@/repositories/roles";
-import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { upsertPermission, upsertVisibility, insertPermissionIfAbsent } from "@/repositories/permissions";
 import { seedCodeItem } from "@/repositories/code-tables";
 import { seedSimpleValue, seedHistorizedValue } from "@/repositories/settings";
 import { seedOrgUnit, findOrgUnitByName } from "@/repositories/org-units";
@@ -152,7 +152,7 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
   // 전제하고 있고(게이트가 없던 시절부터), 이 시드가 없으면 이 플랜이 추가하는
   // 게이트가 그 전제를 조용히 깬다.
   for (const action of ["view", "write"] as const) {
-    await upsertPermission(viewer, {
+    await insertPermissionIfAbsent(viewer, {
       roleId: DEFAULT_ROLE_ID,
       menu: "projects",
       action,

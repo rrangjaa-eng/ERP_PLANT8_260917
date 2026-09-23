@@ -19,6 +19,7 @@ import { getSettingValue as defaultGetSettingValue } from "@/domain/settings/reg
 import { TAX_VAT_RATE, TAX_ROUNDING_VAT_UNIT } from "@/domain/settings/keys";
 import { withTransaction } from "@/lib/db-transaction";
 import type { DbOrTx } from "@/repositories/document-counters";
+import { scopeFor } from "@/domain/permissions/scope-for";
 import {
   findProjectById as repoFindProjectById,
   updateProjectContract as repoUpdateProjectContract,
@@ -36,6 +37,7 @@ export class ProjectNotFoundError extends UserFacingError {}
 const PROJECTS_MENU = "projects";
 const REVENUE_SETTLEMENT_MENU = "projects.revenue";
 const REVENUE_ENTITY = "revenue_entry";
+const PROJECT_ENTITY = "project";
 
 export type RevenueEntryKind = "issue" | "payment";
 
@@ -170,8 +172,15 @@ function toEntryDto(
 // 발행 줄은 순방향(공급가 → 부가세) 계산, 입금 줄은 역방향(통장 합계 →
 // 공급가) 계산이라 서로 다른 함수를 부른다.
 export async function listRevenue(viewer: Viewer, projectId: string, deps?: Partial<RevenueDeps>): Promise<RevenueDto> {
+  // domain/projects의 scope-aware findProject와 같은 검사(뷰 권한 + scope
+  // + 아카이브)를 여기서 다시 한다 — domain/projects ↔ domain/revenue
+  // 순환 import를 피하기 위한 최소 복제(도메인 4계층 원칙).
+  const scope = await scopeFor(viewer, PROJECT_ENTITY);
+  if (scope.rows === "none") throw new ProjectNotFoundError("존재하지 않는 프로젝트입니다.");
+
   const projectRow = await repoFindProjectById(viewer, projectId);
   if (!projectRow) throw new ProjectNotFoundError("존재하지 않는 프로젝트입니다.");
+  if (projectRow.archivedAt !== null && !scope.includeArchived) throw new ProjectNotFoundError("존재하지 않는 프로젝트입니다.");
 
   const contractMoney = moneyFromRow({
     currency: projectRow.contractCurrency,

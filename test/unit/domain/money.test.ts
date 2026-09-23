@@ -40,6 +40,10 @@ describe("toKrw", () => {
   it("KRW는 예외 경로가 아니라 환율 1인 Money다 — amount 그대로 5000이 나온다", () => {
     expect(toKrw({ currency: "KRW", amount: 5000, fxRate: 1 })).toBe(5000);
   });
+
+  it("부동소수점 오차로 내려가지 않는다 — 0.35 × 1350은 473", () => {
+    expect(toKrw({ currency: "USD", amount: 0.35, fxRate: 1350 })).toBe(473);
+  });
 });
 
 describe("moneyFromRow", () => {

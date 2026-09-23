@@ -11,6 +11,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createProject } from "@/domain/projects";
 import { listRevenue, saveRevenue } from "@/domain/revenue";
+import { saveProjectLedger } from "@/domain/projects/ledger";
 import { TAX_VAT_RATE, FX_RECENT_RATE_USD } from "@/domain/settings/keys";
 import { getSettingValue } from "@/domain/settings/registry";
 
@@ -212,5 +213,18 @@ describe("domain/revenue saveRevenue/listRevenue (Phase 4, 실제 Postgres)", ()
     await expect(
       saveRevenue(finance, project.id, { paidEntries: [{ id: entry.id, entryDate: "2026-09-01", amount: { currency: "KRW", amount: 3000, fxRate: 1 } }] }),
     ).rejects.toThrow("버전 정보");
+  });
+
+  it("projects view 권한이 없는 viewer는 listRevenue가 거부되고 saveProjectLedger(revenue:{})도 거부된다", async () => {
+    const { project } = await setupProject();
+    const { userId: noAccessUserId } = await createAccount(SYSTEM_VIEWER, {
+      email: `noaccess-${randomUUID()}@example.test`,
+      name: "통합테스트 권한없음",
+      roleId: "role-ceo",
+    });
+    const noAccess: Viewer = { id: noAccessUserId, roleId: "role-ceo" };
+
+    await expect(listRevenue(noAccess, project.id)).rejects.toThrow();
+    await expect(saveProjectLedger(noAccess, project.id, { revenue: {} })).rejects.toThrow();
   });
 });

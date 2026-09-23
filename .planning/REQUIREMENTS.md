@@ -115,13 +115,12 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **ADMN-11**: 영업일·공휴일: 법정 공휴일 규칙으로 매년 후보가 자동 생성되고 관리자가 검토·확정·수동 추가한다. 지급일·마감·알림 계산이 이 표를 쓴다
 - [ ] **ADMN-12**: "지우지 않는다": 사용자가 무엇을 삭제해도 보관함으로 이동하며, 관리자만 보관함에서 보고 복원할 수 있다. 삭제·복원은 행동 로그에 남는다
 
-### 데이터 이전·전환 (MIG)
+### 전환 (MIG)
 
-- [ ] **MIG-01**: 인트라넷 데이터를 옛 표 구조 그대로 가져오지 않고, 새 시스템의 표·코드표·상태·번호 서식에 맞게 변환해 입력한다. 원본 행마다 새 시스템의 대응 행이 있음을 검증한다(멱등·재실행). 적재와 검증은 단일 트랜잭션이며 검증 실패 시 ROLLBACK하고 migration_runs에 기록한다. 이전 행은 source='intranet'으로 표시된다. 적재는 (source, source_id) 키 upsert라 재실행·리허설이 안전하고, 이전 문서 번호는 옛 id에서 결정적으로 파생된다(예약 범위). 델타 이전 시 새 시스템에 이미 있는 유사 프로젝트(클라이언트·이름·기간)는 중복 후보로 표시된다. 추출·변환은 Phase 4부터 시작해 실제 데이터를 픽스처로 쓰며, 옛 금액의 공급가/합계 판정(표본 대조 + 행별 amount_basis, 불명은 '계산 불가')과 외화 건수 보고를 Phase 4 변환에서 한다
-- [ ] **MIG-02**: 차익 불일치(66줄)·고아 견적 줄(5)은 고치지 않고 표시만 한다
-- [ ] **MIG-03**: 결재 상태를 인트라넷 3단 → 새 4단으로 매핑하고, 법인카드 433건의 견적 줄 연결을 유지한다. 이전 행은 편집되기 전까지 새 규칙(고객 승인 게이트, 증빙 필수, 결재 마감, 알림)에서 면제되고 연도 귀속일은 종료일로 둔다. 완료된 옛 프로젝트는 일괄 '이전 완료' 처리한다
-- [ ] **MIG-04**: 평문 비밀번호는 이전하지 않고 계정을 새로 발급한다
-- [ ] **MIG-05**: 리허설을 반복한 뒤 전환일에 인트라넷을 조회 전용으로 바꾸고 새 시스템만 입력한다. 리허설은 source='intranet' 행을 upsert로 재적재하고(삭제 없음) 설정·권한은 보존하며, 전환 전 새 시스템 입력은 source='demo'뿐이고(실제 업무 입력 없음) demo 행은 전환일에 삭제한다. 전환 착수 조건은 회사 GCP에서 배포 스크립트 1회 성공이고, 전환일에는 그 사이 인트라넷에 쌓인 델타만 이전한다
+데이터 이전은 없다(2026-09-23 사용자 결정). MIG-01~03은 Out of Scope로 옮겼다.
+
+- [ ] **MIG-04**: 인트라넷 비밀번호(평문)는 어떤 형태로도 가져오지 않고, 직원 계정은 새 시스템에서 새로 발급한다
+- [ ] **MIG-05**: 전환은 시스템이 완성되는 대로 연중에 한다(연도 경계를 기다리지 않음). 마스터(거래처·클라이언트·직원·법인카드·분류)는 관리자가 관리 화면에서 손으로 입력한다. 전환 전 새 시스템의 업무 입력은 source='demo'뿐이고(실제 업무 입력 없음) demo 행은 전환일에 삭제하며, 마스터·설정·권한은 남는다. 전환일에 인트라넷을 조회 전용으로 바꾸고 그날부터 새 시스템만 입력한다(2026-09-23 재정의 — 리허설 재적재·델타 이전 삭제)
 
 ### 배포·운영 (OPS)
 
@@ -130,7 +129,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **OPS-03**: DB가 자동 백업되고 복원 절차가 문서화되며 복원 리허설을 1회 한다
 - [x] **OPS-04**: 린트(`any` 금지)·타입체크·핵심 흐름(로그인→지출결의→결재→손익) 통합 테스트가 CI에서 돈다. ESLint import 경계(app↛repositories/db, domain↛app, repository는 viewer 필수)와 Server Action zod 검증 필수 린트가 포함된다
 - [ ] **OPS-05**: 직원 계정별 핵심 행동만 로그로 남긴다: 로그인, 문서 생성·제출·승인·반려·회수·삭제, 지급·구매 처리, 설정·권한 변경, 민감 정보(손익·인센티브·주민등록번호) 열람. 단순 조회·화면 이동 같은 잡음은 남기지 않는다. 관리자는 로그를 정리(수정·삭제)할 수 있다. Excel 내보내기와 마스킹 해제는 설정으로 끌 수 없는 핵심 로그다
-- [x] **OPS-06**: 관리자 시스템 상태 화면: 마지막 알림 tick·백업·이전 실행·계산 불가 건수·DB 커넥션·배포 버전을 보이고 한도 초과 시 배너가 뜬다. 서버 로그는 JSON 형식이다
+- [x] **OPS-06**: 관리자 시스템 상태 화면: 마지막 알림 tick·백업·복원 리허설·계산 불가 건수·DB 커넥션·배포 버전을 보이고 한도 초과 시 배너가 뜬다. 서버 로그는 JSON 형식이다 (2026-09-23: 데이터 이전이 없어 '이전 실행' 항목을 '복원 리허설'로 바꿈)
 - [x] **OPS-07**: `docs/ARCHITECTURE.md`·`docs/OPERATIONS.md`(런북 포함)를 Phase 1 산출물로 만들고 페이즈마다 갱신한다(각 300줄 상한)
 
 ### 기획본부 편의·디자인 (UX)
@@ -163,7 +162,10 @@ Explicitly excluded. Documented to prevent scope creep.
 | 260907 코드 재사용 | 63만 줄·미결 54건 상속 불가. 용어·규칙 참고만 |
 | 발주 순간 폰 입력("발주됨" 상태) | 사용자 결정: 필요 없음. 비용은 견적 실행가 → 지출결의 → 증빙으로 충분 |
 | 고정 데모 일정 | 기한 없음 |
-| 인트라넷 지속 미러링 | 일회 이전 + 리허설. 병행 기간에도 입력은 새 시스템만 |
+| 인트라넷 지속 미러링 | 데이터 이전 자체가 없다(아래 MIG-01~03). 전환일부터 입력은 새 시스템만, 인트라넷은 조회 전용 |
+| MIG-01 인트라넷 데이터 변환·적재·검증(멱등 upsert·`migration_runs`·`amount_basis`·결정적 번호·중복 후보) | 2026-09-23 사용자 결정 — 데이터 이전 없음. 옛 구조(상태 컬럼 없이 Y/N 승인 표시 4개, 견적 줄 = 단가 × 수량 × 일수, 프로젝트 번호 9개를 22개 프로젝트가 공유, 금액이 공급가인지 합계인지 불명)가 새 구조와 달라 단계마다 변환 규칙과 사람 확인이 필요했다. 마스터 포함 전부 새 시스템에 손으로 입력하고 인트라넷은 과거 조회용 |
+| MIG-02 차익 불일치 66줄·고아 견적 줄 5건 표시 | 2026-09-23 — 이전할 데이터가 없어 해당 없음(MIG-01과 같은 결정) |
+| MIG-03 결재 상태 3단→4단 매핑·법인카드 433건 연결 유지·이전 행 새 규칙 면제(`legacy_exempt`)·'이전 완료' 일괄 처리 | 2026-09-23 — 이전할 데이터가 없어 해당 없음(MIG-01과 같은 결정) |
 | 홈택스 API 연동 | 인증서·세무 규정 의존, 비개발자 유지 불가. 파일 첨부로 충분 |
 | 구매 요청의 결재선 | 구매 요청은 결재 없는 경량 흐름(경영관리가 처리). 협력사 발주는 지출결의로 |
 | 매출·수금 전체 대장(세금계산서 발행·수금 관리 모듈) | 핵심은 나간 돈. 매출 최소 칸 + 클라이언트별 리저브 대장만 |
@@ -255,9 +257,6 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ADMN-10 | Phase 3 | Pending |
 | ADMN-11 | Phase 7 | Pending |
 | ADMN-12 | Phase 3 | Pending |
-| MIG-01 | Phase 8 | Pending |
-| MIG-02 | Phase 8 | Pending |
-| MIG-03 | Phase 8 | Pending |
 | MIG-04 | Phase 8 | Pending |
 | MIG-05 | Phase 8 | Pending |
 | OPS-01 | Phase 1 | Complete |
@@ -276,12 +275,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 **Coverage:**
 
-- v1 requirements: 89 total
-- Mapped to phases: 89
+- v1 requirements: 86 total (2026-09-23: MIG-01~03 → Out of Scope, 89 → 86)
+- Mapped to phases: 86
 - Unmapped: 0 ✓
 
-**By phase:** 1 (9) · 2 (1) · 3 (13) · 4 (11) · 5 (13) · 6 (10) · 7 (7) · 8 (6) · 9 (10) · 10 (5) · 11 (4)
+**By phase:** 1 (9) · 2 (1) · 3 (13) · 4 (11) · 5 (13) · 6 (10) · 7 (7) · 8 (3) · 9 (10) · 10 (5) · 11 (4)
 
 ---
 *Requirements defined: 2026-09-17*
-*Last updated: 2026-09-17 after /plan-ceo-review (23 findings + D3·D4·D5 + OV-1..8 folded in; OPS-06·OPS-07 added; OV-3 redefined → EXP-15 증빙 종류별 세금 자동 계산; CERT-01 QR 진입; EXP-16 경영관리 카드 사용 대리 등록·개인 비용 팀 귀속·경품 대납 세금 비용 포함; 89/89 mapped; /plan-eng-review decisions 1–15 + OV-1..8 folded: 본부·계급×조직 범위·자기 승인, 세율 기준일·절사, effectiveCost 식 공유, upsert 이전·결정적 번호·amount_basis·중복 후보, demo 입력; roadmap Phase 6 split per Eng OV-6 → 11 phases, traceability renumbered: old 6 → 6/7, old 7~10 → 8~11; 회사 GCP Phase 1부터)*
+*Last updated: 2026-09-23 — 데이터 이전 제외(사용자 결정): MIG-01·02·03 → Out of Scope, MIG-04·05를 수기 입력 전환으로 재정의, OPS-06 '이전 실행' → '복원 리허설', 인트라넷 미러링 사유 정정, v1 89 → 86 (86/86 mapped)*
+*Earlier update: 2026-09-17 after /plan-ceo-review (23 findings + D3·D4·D5 + OV-1..8 folded in; OPS-06·OPS-07 added; OV-3 redefined → EXP-15 증빙 종류별 세금 자동 계산; CERT-01 QR 진입; EXP-16 경영관리 카드 사용 대리 등록·개인 비용 팀 귀속·경품 대납 세금 비용 포함; 89/89 mapped; /plan-eng-review decisions 1–15 + OV-1..8 folded: 본부·계급×조직 범위·자기 승인, 세율 기준일·절사, effectiveCost 식 공유, upsert 이전·결정적 번호·amount_basis·중복 후보, demo 입력; roadmap Phase 6 split per Eng OV-6 → 11 phases, traceability renumbered: old 6 → 6/7, old 7~10 → 8~11; 회사 GCP Phase 1부터)*

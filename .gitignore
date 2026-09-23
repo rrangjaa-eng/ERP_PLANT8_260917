@@ -43,3 +43,9 @@ deploy.log
 # (.claude/gsd-core/bin/lib/milestone-lock.cjs, #3311). Machine- and
 # session-specific runtime state, not source — same class as the entries above.
 .planning/milestone.lock
+
+# Phase 4 인트라넷 마이그레이션(D-72, T-04-15): 덤프 원본과 extract.ts의 원시
+# JSON은 개인정보를 그대로 담고 있어 리포에 들어오면 안 된다. 커밋 대상은
+# transform.ts(Task 3)의 변환 결과(test/fixtures/intranet/)뿐이다.
+db_backup_*.sql
+scripts/migrate/.raw/

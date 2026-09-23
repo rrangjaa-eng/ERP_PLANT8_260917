@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: "Phase 4 UI-SPEC rev 5 approved — next: /gsd-plan-phase 4 (재계획: 디자인 리뷰 DR-1~38 반영)"
-last_updated: "2026-09-23T14:16:45.407Z"
+stopped_at: Completed 04-04-PLAN.md
+last_updated: "2026-09-23T14:29:34.252Z"
 last_activity: 2026-09-22
 last_activity_desc: Phase 04 execution started
-state_head: 4f248a7fa22d8350af1161aeb0f05cae7cba6997
+state_head: 98acc745155b77b991a8f50c7c78f2834d7c2a89
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 58
-  completed_plans: 26
+  completed_plans: 27
   percent: 9
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 4 (프로젝트·견적 원장) — READY TO EXECUTE
-Current Plan: 4
+Current Plan: 5
 Total Plans in Phase: 26
 Status: Ready to execute
 Last activity: 2026-09-22 — Phase 04 execution started
@@ -76,6 +76,7 @@ Progress: [█░░░░░░░░░] 9%
 | Phase 04 P01 | 1h36m | 3 tasks | 54 files |
 | Phase 04 P02 | 1h10m | 3 tasks | 36 files |
 | Phase 04 P05 | 1h2m | 2 tasks | 16 files |
+| Phase 04 P04 | 35min | 3 tasks | 21 files |
 
 ## Accumulated Context
 
@@ -155,6 +156,10 @@ Recent decisions affecting current work:
 - [Phase 04]: [Phase 04]: 04-05: 서식 키 형태 = 문서 종류별 키 묶음(document_number.project.*), JSON 한 개가 아니다 — 설정 화면의 필드 단위 렌더·검증, Phase 5·6·11의 확장 용이성 근거 셋
 - [Phase 04]: [Phase 04]: 04-05: 리포지토리 공유 필터 함수(projectFilterConditions)로 목록/집계 쿼리가 같은 행만 세게 강제 — 집계는 pool.query 스파이로 SQL 왕복 한 번임을 실측. 정렬은 종료일 월 그룹 안에서만 순서를 바꾼다(그룹 macro 구조 유지)
 - [Phase 04]: [Phase 04]: 04-05: 열 머리글 클릭 정렬·aria-sort는 ui/table/Table.tsx(04-04 소유, 같은 웨이브)를 건드리지 않고 서버 정렬만 구현·검증(WINDOWS.md stub #27) — 클릭 UI는 04-04 이후 후속 작업
+- [Phase 4]: A-M3 (ㄱ) 채택 — 관리자 표 6종 캡션은 이미 완료돼 있어 확인만 함(admin/ diff 0줄)
+- [Phase 4]: U-6 문구: 전부 거부 · 다른 칸 오류 N칸(오류 0을 0칸으로 적지 않는다)
+- [Phase 4]: 요청 본문 한도는 lib/actions/client.ts 미들웨어 한 자리(256KB)에만 둔다
+- [Phase 4]: 실제 Windows Excel은 줄바꿈 있는 칸만 인용하고 따옴표만 있는 칸은 원문 그대로 쓴다 — parseTsv를 이 규칙에 맞춤(04-RESEARCH.md 가정 A3 대체)
 
 ### Pending Todos
 
@@ -197,6 +202,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-23T14:16:45.228Z
-Stopped at: Phase 4 UI-SPEC rev 5 approved — next: /gsd-plan-phase 4 (재계획: 디자인 리뷰 DR-1~38 반영)
-Resume file: .planning/phases/04-project-quote-ledger/04-UI-SPEC.md
+Last session: 2026-09-23T14:29:34.050Z
+Stopped at: Completed 04-04-PLAN.md
+Resume file: None

@@ -1,0 +1,43 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-23T11:39:30.486Z",
+  "phase": "4",
+  "phase_name": "프로젝트·견적 원장",
+  "phase_dir": ".planning/phases/04-project-quote-ledger",
+  "plan": "04-04",
+  "task": 3,
+  "total_tasks": 3,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "04-01 실행", "status": "done", "commit": "62e572d"},
+    {"id": 2, "name": "04-02 실행", "status": "done", "commit": "920bfbc"},
+    {"id": 3, "name": "04-05 실행", "status": "done", "commit": "5317775"},
+    {"id": 4, "name": "04-04 Task 1~2 (Task 3 사람 확인 대기)", "status": "in_progress", "progress": "코드 완료, 엑셀 붙여넣기 사람 확인만 남음"},
+    {"id": 5, "name": "discuss 갱신 D-75~D-95 · UI-SPEC rev 4 · research 갱신", "status": "done", "commit": "6db00e3"},
+    {"id": 6, "name": "/plan-ceo-review (HOLD SCOPE) + 플랜 반영", "status": "done", "commit": "5767a9c"},
+    {"id": 7, "name": "/plan-eng-review (D1~D12, Codex outside voice) + 플랜 반영 + 계획 검사 통과", "status": "done", "commit": "bcc4413"}
+  ],
+  "remaining_tasks": [
+    {"id": 8, "name": "/plan-design-review (CLAUDE.md Pre-build 게이트 4)", "status": "not_started"},
+    {"id": 9, "name": "/gsd-execute-phase 4 — 미실행 플랜 31개(04-06~04-32, 04-40~04-42), 웨이브 3~25", "status": "not_started"},
+    {"id": 10, "name": "Post-build: /review → /qa → /cso(정적, Docker 없음 명시) → /ship", "status": "not_started"},
+    {"id": 11, "name": "퀵 태스크: 디자인 잔여 F-01/F-03/F-05/F-06/F-07(KST·분)", "status": "not_started"}
+  ],
+  "blockers": [],
+  "async_jobs": [],
+  "human_actions_pending": [
+    {"action": "04-04 Task 3: 실제 엑셀에서 견적 표로 붙여넣기 확인 — 「같다」 또는 원본→화면 쌍으로 답", "context": "04-04 체크포인트(human-verify). 견적 표를 고치는 뒤 플랜(04-21 이후)은 이 확인 뒤에 실행", "blocking": true},
+    {"action": "GitHub에서 원격 브랜치 backup/04-01-wip, backup/04-05-wip-2230 삭제", "context": "세션에서 원격 삭제가 실패함(remote end hung up)", "blocking": false},
+    {"action": "프로덕션 배포 전 Docker Desktop 있는 PC에서 /cso 전체 스캔", "context": "클라우드 세션은 dockerd 시작이 막혀 스캐너 이미지 점검 불가", "blocking": false}
+  ],
+  "decisions": [
+    {"decision": "실행은 순차(파일 안 겹치는 플랜만 가끔 병렬). 웨이브 단위 전면 병렬·E2E 포트 분리는 사용자가 취소", "rationale": "사용자 지시 「네가 진행하던 방식으로」", "phase": "4"},
+    {"decision": "Phase 5 논의를 새 세션에서 하는 안은 취소", "rationale": "사용자 지시", "phase": "4"},
+    {"decision": "모델 배분: 계획·검토·잠금/마이그레이션/권한 실행 Opus, 단순 UI·문서 실행 Sonnet, 가벼운 조회 Haiku", "rationale": "사용자 지시 「각 작업에 필요한만큼의 지능」", "phase": "4"},
+    {"decision": "엔지니어링 리뷰 D1~D12 확정(D8은 가리기 철회 — 활동 기록은 기본적으로 관리자만 봄)", "rationale": "docs/designs/plant8-erp-phase4-eng-review-260923.md Decision ledger", "phase": "4"},
+    {"decision": "리저브 수정 기록은 document_update(관리자가 끌 수 있음) 유지", "rationale": "사용자 지시 「리저브는 현재 방식으로」", "phase": "4"}
+  ],
+  "uncommitted_files": [],
+  "next_action": "새 세션에서 /gsd-progress → /plan-design-review (Phase 4 UI 플랜 대상) → 통과 후 /gsd-execute-phase 4",
+  "context_notes": "Phase 4 계획은 CEO·엔지니어링 리뷰와 계획 검사(2회)를 통과했다(bcc4413). PR #38 draft, CI 녹색. 04-03은 보류. 마이그레이션 순서 0011 04-10 → 0012 04-06 → 0013 04-27 → 0014 04-13 → 0015 04-41 → 0016 04-07. Phase 4는 PR #38 하나로만 배포(중간 배포 금지, 04-31이 deploy.yml ref-guard 추가)."
+}

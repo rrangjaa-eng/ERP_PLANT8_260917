@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, codeItems, quoteLines, revenueEntries, teams } from "@/db/schema";
+import { actionLog, codeItems, projects, quoteLines, revenueEntries, teams } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
@@ -97,5 +97,18 @@ describe("저장 경로의 소속 검사(/review PR #38)", () => {
 
     expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, a.revision.id))).toHaveLength(0);
     expect(await db.select().from(actionLog).where(eq(actionLog.entityId, a.revision.id))).toHaveLength(0);
+  });
+  it("볼 수 없는 보관 프로젝트에는 일괄 저장이 거부되고 계약 금액이 바뀌지 않는다(/cso 14b1ae15)", async () => {
+    const a = await setupProject();
+    const pm = { id: a.pmUserId, roleId: DEFAULT_ROLE_ID };
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, a.project.id));
+
+    await expect(
+      saveProjectLedger(pm, a.project.id, {
+        quoteLines: { revisionId: a.revision.id, rows: [{ subcategory: a.subcategoryValue, itemName: "보관 뒤 줄", unitPrice: krw(1), execution: krw(0) }] },
+      }),
+    ).rejects.toThrow();
+
+    expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, a.revision.id))).toHaveLength(0);
   });
 });

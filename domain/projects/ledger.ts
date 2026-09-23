@@ -5,6 +5,7 @@ import { saveRevenue, listRevenue, type SaveRevenueInput, type RevenueDto } from
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { findQuoteRevisionById } from "@/repositories/quote-revisions";
 import { recordAction } from "@/domain/action-log/record";
+import { findProject } from "@/domain/projects";
 
 // 04-02 Task 2 ⑥ — 상세 화면의 1차 「일괄 저장」 하나가 견적 줄 + 매출
 // 섹션(계약 금액·발행 줄·입금 줄)의 dirty 전부를 **같은 트랜잭션**으로
@@ -27,6 +28,12 @@ export async function saveProjectLedger(
   projectId: string,
   input: SaveProjectLedgerInput,
 ): Promise<SaveProjectLedgerResult> {
+  // 볼 수 없는 프로젝트(보기 권한·범위 밖, 권한 없는 보관 프로젝트)에는 쓰지
+  // 않는다 — 조회 화면과 같은 findProject로 판정한다(/cso 14b1ae15).
+  if (!(await findProject(viewer, projectId))) {
+    throw new UserFacingError("존재하지 않는 프로젝트입니다.");
+  }
+
   // 견적 줄의 차수가 이 프로젝트의 것인지 먼저 확인한다 — 아니면 매출·감사
   // 기록은 이 프로젝트로, 견적 줄은 다른 프로젝트로 섞여 저장된다.
   if (input.quoteLines) {

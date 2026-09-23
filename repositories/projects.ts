@@ -195,9 +195,9 @@ export async function aggregateProjects(
   const [row] = await db
     .select({
       count: sql<number>`count(*)::int`,
-      quoteAmountKrw: sql<number>`coalesce(sum(coalesce(${lineSums.quoteSum}, 0)), 0)::int`,
-      executionAmountKrw: sql<number>`coalesce(sum(coalesce(${lineSums.executionSum}, 0)), 0)::int`,
-      profitKrw: sql<number>`coalesce(sum(coalesce(${lineSums.profitSum}, 0)), 0)::int`,
+      quoteAmountKrw: sql<number>`coalesce(sum(coalesce(${lineSums.quoteSum}, 0)), 0)::bigint`.mapWith(Number),
+      executionAmountKrw: sql<number>`coalesce(sum(coalesce(${lineSums.executionSum}, 0)), 0)::bigint`.mapWith(Number),
+      profitKrw: sql<number>`coalesce(sum(coalesce(${lineSums.profitSum}, 0)), 0)::bigint`.mapWith(Number),
     })
     .from(projects)
     .leftJoin(vendors, eq(vendors.id, projects.clientId))

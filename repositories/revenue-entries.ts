@@ -72,6 +72,7 @@ export async function updateRevenueEntryIfVersionMatches(
   viewer: Viewer,
   id: string,
   expectedVersion: number,
+  owner: { projectId: string; kind: RevenueEntryRow["kind"] },
   input: RevenueEntryUpdateInput,
   tx: DbOrTx = db,
 ): Promise<RevenueEntryRow | null> {
@@ -88,7 +89,14 @@ export async function updateRevenueEntryIfVersionMatches(
       version: sql`${revenueEntries.version} + 1`,
       updatedAt: new Date(),
     })
-    .where(and(eq(revenueEntries.id, id), eq(revenueEntries.version, expectedVersion)))
+    .where(
+      and(
+        eq(revenueEntries.id, id),
+        eq(revenueEntries.version, expectedVersion),
+        eq(revenueEntries.projectId, owner.projectId),
+        eq(revenueEntries.kind, owner.kind),
+      ),
+    )
     .returning();
   return row ?? null;
 }

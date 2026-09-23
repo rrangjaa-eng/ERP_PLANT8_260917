@@ -187,4 +187,30 @@ describe("domain/revenue saveRevenue/listRevenue (Phase 4, 실제 Postgres)", ()
       saveRevenue(finance, project.id, { contract: { currency: "KRW", amount: 1_000_000, fxRate: 1 } }),
     ).rejects.toThrow();
   });
+  it("이미 바뀐 매출 줄을 옛 버전으로 저장하면 거부되고 값은 그대로다", async () => {
+    const { project } = await setupProject();
+    const finance = await createFinanceViewer();
+    const first = await saveRevenue(finance, project.id, { paidEntries: [{ entryDate: "2026-09-01", amount: { currency: "KRW", amount: 1000, fxRate: 1 } }] });
+    const entry = first?.paidEntries?.[0];
+    if (!entry) throw new Error("매출 줄 저장 실패");
+    await saveRevenue(finance, project.id, { paidEntries: [{ id: entry.id, version: entry.version, entryDate: "2026-09-01", amount: { currency: "KRW", amount: 2000, fxRate: 1 } }] });
+
+    await expect(
+      saveRevenue(finance, project.id, { paidEntries: [{ id: entry.id, version: entry.version, entryDate: "2026-09-01", amount: { currency: "KRW", amount: 3000, fxRate: 1 } }] }),
+    ).rejects.toThrow("먼저 이 줄");
+    const [row] = await db.select().from(revenueEntries).where(eq(revenueEntries.id, entry.id));
+    expect(Number(row?.amountAmountKrw)).toBe(2000);
+  });
+
+  it("기존 매출 줄을 버전 없이 저장하면 거부된다", async () => {
+    const { project } = await setupProject();
+    const finance = await createFinanceViewer();
+    const first = await saveRevenue(finance, project.id, { paidEntries: [{ entryDate: "2026-09-01", amount: { currency: "KRW", amount: 1000, fxRate: 1 } }] });
+    const entry = first?.paidEntries?.[0];
+    if (!entry) throw new Error("매출 줄 저장 실패");
+
+    await expect(
+      saveRevenue(finance, project.id, { paidEntries: [{ id: entry.id, entryDate: "2026-09-01", amount: { currency: "KRW", amount: 3000, fxRate: 1 } }] }),
+    ).rejects.toThrow("버전 정보");
+  });
 });

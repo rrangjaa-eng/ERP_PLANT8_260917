@@ -96,6 +96,18 @@ describe("domain/projects listProjects/aggregateProjects (Phase 4, 실제 Postgr
     expect(aggregate.quoteAmountKrw).toBeGreaterThanOrEqual(1_000_000);
   });
 
+  it("(a2) 합계가 int 범위(약 21억 원)를 넘어도 오류 없이 정확히 나온다", async () => {
+    const marker = `큰합계-${randomUUID().slice(0, 8)}`;
+    const viewer = pmViewer((await setupProject()).pmUserId);
+    for (const unitPrice of [1_500_000_000, 1_500_000_000]) {
+      const { project } = await setupProject({ endDate: "2026-10-01", namePrefix: marker });
+      await addQuoteLine(project.id, { quantity: 1, unitPrice, execution: 0 });
+    }
+
+    const aggregate = await aggregateProjects(viewer, { search: marker });
+    expect(aggregate.quoteAmountKrw).toBe(3_000_000_000);
+  });
+
   it("(b) 합계가 렌더된 페이지 크기와 무관하다 — 1건만 렌더돼도 전체 합", async () => {
     const marker = `합계테스트-${randomUUID().slice(0, 8)}`;
     const viewer = pmViewer((await setupProject()).pmUserId);

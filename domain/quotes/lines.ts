@@ -425,7 +425,9 @@ export async function saveQuoteLines(
       throw new UserFacingError("기존 줄을 저장하려면 버전 정보가 필요합니다 · 화면을 새로고침해 주세요");
     }
     const current = currentRowsById.get(input.id);
-    if (!current) {
+    // 다른 차수(다른 프로젝트 포함)의 줄 id는 이 차수에서 없는 줄로 본다 —
+    // 권한·완료 잠금 판정은 요청한 차수 기준이므로 그 밖의 줄은 쓰면 안 된다.
+    if (!current || current.revisionId !== revisionId) {
       throw new UserFacingError("줄을 찾을 수 없습니다 · 화면을 새로고침해 주세요");
     }
     if (current.version === input.version) return; // 버전이 같으면 충돌 없음.

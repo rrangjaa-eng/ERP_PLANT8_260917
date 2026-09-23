@@ -69,7 +69,7 @@
 
 .editableCell:focus-visible {
   outline: var(--focus-w) solid var(--focus);
-  outline-offset: -2px;
+  outline-offset: calc(-1 * var(--focus-w));
 }
 
 .lockedCell {

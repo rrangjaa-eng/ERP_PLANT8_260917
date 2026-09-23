@@ -271,7 +271,14 @@ async function saveEntries(
       if (input.version === undefined) {
         throw new UserFacingError("기존 줄을 저장하려면 버전 정보가 필요합니다 · 화면을 새로고침해 주세요");
       }
-      const updated = await repoUpdateRevenueEntryIfVersionMatches(viewer, input.id, input.version, payload, tx);
+      const updated = await repoUpdateRevenueEntryIfVersionMatches(
+        viewer,
+        input.id,
+        input.version,
+        { projectId, kind },
+        payload,
+        tx,
+      );
       if (!updated) {
         throw new UserFacingError(`다른 사람이 먼저 이 줄을 바꿨습니다 · 덮어쓰기 / 그 값으로(줄 ${input.id})`);
       }

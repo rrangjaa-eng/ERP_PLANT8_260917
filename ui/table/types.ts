@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 
 // SYSTEM.md §7-3 + 보강 (가)~(아) — Phase 4가 만드는 편집/읽기 겸용 표의
 // 첫 형태(D-61: 자체 구현). 이 파일은 컴포넌트가 받는 데이터 모양만 정의한다
-// — 키보드 로빙·범위 선택·붙여넣기·충돌 렌더·미저장 복원은 04-04가 더한다.
+// — 키보드 로빙·범위 선택·붙여넣기·충돌 렌더·미저장 복원은 use-grid-keyboard·
+// use-clipboard-paste·use-dirty-storage(04-04)가 맡는다.
 
 // (가) 셀 편집 가능성 3단계 — 서버가 셀마다 판정해 보낸다(클라이언트 추론 금지).
 export type CellEditability = "edit" | "readonly" | "locked";

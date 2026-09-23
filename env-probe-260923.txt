@@ -1,0 +1,24 @@
+env-probe-260923 — 클라우드 환경 자동 점검 결과 (2026-09-23)
+
+1. git branch --show-current (점검 시작 시점): claude/gsd-progress-e1nzgu
+2. git log --oneline -1: 414af10 fix: narrow plan-phase completion detection to the gsd-tools call
+3. git log --oneline -1 origin/claude/gsd-progress-e1nzgu: 414af10 fix: narrow plan-phase completion detection to the gsd-tools call
+4. node -v: v22.22.2
+5. pnpm -v: 10.33.0
+6. ls node_modules | wc -l: 27
+7. pg_isready -h 127.0.0.1 -p 5432: 127.0.0.1:5432 - accepting connections
+8. ls ~/.claude/skills/gstack/review/SKILL.md ~/.claude/skills/gstack/qa/SKILL.md: 둘 다 존재
+   - /root/.claude/skills/gstack/qa/SKILL.md
+   - /root/.claude/skills/gstack/review/SKILL.md
+9. codex --version: codex-cli 0.155.1
+10. node .claude/gsd-core/bin/gsd-tools.cjs query roadmap get-phase 4 --pick phase_name: 프로젝트·견적 원장
+11. /tmp 훅 산출물:
+    - /tmp/plant8-claude-md-reminder/: 56a9d57f-b64c-5225-adbf-3cdb9738bbfe-main (존재)
+    - /tmp/plant8-skill-gate/: 비어 있음
+12. 세션 시작 훅 결과 (SessionStart:startup):
+    - dev-db: success — ready at postgres://erp:erp@127.0.0.1:5432/erp (+erp_test)
+    - install-codex: success — restored /root/.codex/auth.json (네트워크 allowlist 안내: api.openai.com, chatgpt.com, auth.openai.com 필요)
+    - pnpm install: success — lockfile up to date, 602 packages 설치/재사용
+    - install-gstack: success — gstack 1.88.1.0 설치 (team mode)
+
+참고: 지시받은 브랜치 claude/env-probe-260923 는 원격/로컬에 존재하지 않아 origin/main 기준으로 새로 생성함.

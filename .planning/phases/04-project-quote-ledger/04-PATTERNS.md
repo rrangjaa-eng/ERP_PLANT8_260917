@@ -1,6 +1,6 @@
 # Phase 4: 프로젝트·견적 원장 - Pattern Map
 
-**Mapped:** 2026-09-22
+**Mapped:** 2026-09-22 (updated 2026-09-23 — see appended D-75~D-95 section)
 **Files analyzed:** ~30 (schema 5 + repositories 5 + domain modules 6 + actions/pages ~8 + ui/table 5 + scripts 2 + tests ~7)
 **Analogs found:** 24 / 30 (no-analog files listed below are genuinely new patterns per RESEARCH.md)
 
@@ -388,3 +388,125 @@ Apply: `?new=1`/`?editId=` toggle convention (D-22, D-39) — reuse directly for
 **Analog search scope:** `db/schema/`, `repositories/`, `domain/` (vendors, code-tables, settings, corp-cards, action-log, permissions), `app/(app)/admin/vendors/`, `test/unit/`, `test/integration/`, `eslint/rules/`
 **Files scanned:** ~20 read in full, ~15 more located via Glob/Grep but not needed (stopped once 3-5 strong matches per role were found)
 **Pattern extraction date:** 2026-09-22
+
+---
+
+## 2026-09-23 추가 — D-75~D-95
+
+**Appended:** 2026-09-23. Source: `04-CONTEXT.md` §「2026-09-23 추가 결정」(D-75~D-95), `04-RESEARCH.md` §「2026-09-23 추가 연구 — D-75~D-95」, `04-UI-SPEC.md` rev 4 (S12/S13/S14/S15 + SYSTEM.md revision list). The mappings above (04-01/02/05 output) stay valid verbatim — this section only adds new file→analog assignments for files not yet created, and resolves RESEARCH.md Gaps with direct code reads.
+
+### Resolved Gaps (direct code reads, this session)
+
+| Gap (from RESEARCH.md) | Answer | Evidence |
+|---|---|---|
+| Exact action name for contract/revenue write | **`saveProjectLedgerAction`** (single combined action for quoteLines + revenue, incl. `revenue.contract`) — there is no separate "매출 계약 쓰기" action | `app/(app)/projects/actions.ts:59` `export const saveProjectLedgerAction = authedActionClient...`; `revenue: z.object({ contract: moneyInputSchema.optional(), contractFxRateTouched: ..., issuedEntries: ..., paidEntries: ... })` at lines 97-104 |
+| Does `ui/table` keyboard handler check `ctrlKey` vs `metaKey`? | **Already checks both** — A10 in RESEARCH.md is WRONG. D-94 is display-string-only work (no handler bug). | `ui/table/use-grid-keyboard.ts:92` `const meta = event.metaKey \|\| event.ctrlKey;` |
+| `use-dirty-storage` key design (row-id vs page-index) | **Neither — key is `projectId + revisionId` (scopeId + subScopeId), not row-id or page-index.** Page-based slicing (D-91) therefore does NOT require a dirty-storage key redesign — edits are already keyed at the revision level, not per-page. | `ui/table/use-dirty-storage.ts:19-23` `dirtyStorageKey(scopeId, subScopeId)` returns `` `${STORAGE_PREFIX}:${scopeId}:${subScopeId}` ``; header comment: "키는 **프로젝트 id + 차수 id**(다른 표는 화면 id)로 만들어 다른 프로젝트·표의 편집이 섞이지 않는다" |
+| `listProjectsPage` pagination shape (LIMIT/OFFSET vs count-refetch) | **Confirmed count-refetch, no OFFSET at all.** A11 in RESEARCH.md is confirmed correct — real work needed for D-91. | `repositories/projects.ts:129-170` — signature `opts: { scope, filter, sort, limit: number }`, only `.limit(opts.limit)` used, no `.offset(...)` anywhere in the file (grep 0 hits) |
+| `CodeItemLabelInput` location | `app/(app)/admin/code-tables/code-item-form.tsx:70` — confirmed, A9 correct | `export function CodeItemLabelInput({ id, label }: { id: string; label: string })`, blur-save via `useAction(updateCodeItemLabelAction, { onError: revert to server value, onSuccess: clear error })` |
+
+### File Classification (new/modified for D-75~D-95)
+
+| New/Modified File | Role | Data Flow | Closest Analog | Match Quality |
+|---|---|---|---|---|
+| `db/migrations/0011_project_status_five_values.sql` | migration | batch (data remap) | `db/migrations/0009_project_quote_ledger_spine.sql` (guard-pattern only, NOT the empty-table precondition — see Pitfall 6) | role-match |
+| `db/migrations/0012_drop_contract_columns.sql` (or same batch as 0011, plan decides) | migration | batch | `db/migrations/0009...sql` lock-timeout convention (`SET LOCAL lock_timeout = '1s'`) | role-match |
+| `db/migrations/00xx_code_items_description.sql` | migration | batch | `db/migrations/0009...sql` `ALTER TABLE ... ADD COLUMN` style | role-match |
+| `domain/rules/register.ts` — replace `project.completed-lock` binary rule | domain | event-driven | itself (existing file, lines 17-24) — must be **replaced**, not patched (Pitfall 5) | exact (same file, structural rewrite) |
+| `domain/projects/auto-transition.ts` (new) | domain | event-driven / batch (idempotent UPDATE...WHERE) | `domain/action-log/record.ts:135-137` (SYSTEM_VIEWER actor=null pattern) + `domain/settings/registry.ts` `findEffectiveValue(..., asOf)` deps-injection-for-time convention | role-match (no exact analog exists; this is the first `now`-injected domain function) |
+| `domain/quotes/lines.ts` — extend `saveQuoteLines` gate call for D-78/D-83/D-86 | domain | event-driven | itself (existing file, line 372 gate call + line 447-452 `toLocaleTimeString(..., {timeZone:"Asia/Seoul"})` KST convention to imitate for D-76) | exact |
+| `domain/settings/keys.ts` — add `quote_line.max_per_revision` | config | CRUD | existing `fx.recent_rate.USD` simple-kind key (`domain/settings/keys.ts`) | exact |
+| `db/schema/quote-lines.ts` — add `is_adjustment boolean default false` | model | CRUD | existing `line_status` column definition, `db/migrations/0009...sql:62` | exact |
+| `app/(app)/projects/[id]/revenue-section.tsx` — remove `Form.Field id="contract-amount"`, replace with derived `KvList` | component | request-response | itself (existing file) — replace 3-input block with `KvList` pattern already used elsewhere in same file for read-only display | exact |
+| `repositories/projects.ts` `listProjectsPage`/`aggregateProjects` — real OFFSET pagination + revenue SUM + OVERLAPS filter + attribution-year aggregate param | repository | CRUD (batch aggregate) | itself (existing file, `projectFilterConditions` shared-filter pattern, lines ~127-181) — extend, don't replace | exact |
+| `ui/pagination/Pagination.tsx` (new) | component | request-response (GET `?page=N`) + event-driven (in-page button nav for quote table) | none in `ui/` today — nearest precedent is `ui/table` button-driven state (`use-grid-keyboard.ts`) for the in-page variant, and standard `<a href>` links for list/reserve variant | no analog (new) |
+| `ui/table/use-grid-keyboard.ts` — page-boundary arrow-key behavior | component | event-driven | itself (existing file) — extend only, `event.metaKey \|\| event.ctrlKey` line 92 already correct, no rewrite needed there | exact |
+| `ui/table/use-clipboard-paste.ts` — page-spanning paste + 300-line cap rejection | component | event-driven | itself (existing file) + `domain/quotes/lines.ts` server-side reject-whole-batch precedent (D-67 "조용히 버리지 않는다") | exact |
+| `app/(app)/admin/code-tables/code-item-form.tsx` — new `CodeItemDescriptionInput` sibling to `CodeItemLabelInput` | component | request-response (blur-save) | `CodeItemLabelInput` itself, lines 70-93 (same file) — copy verbatim pattern, new field | exact |
+| `lib/format-number.ts` (new) | utility | transform | none exists; call sites to migrate: `ui/next-turn/NextTurn.tsx`, `app/(app)/projects/[id]/quote-table.tsx`, `app/(app)/projects/[id]/revenue-section.tsx`, `app/(app)/projects/projects-table.tsx` (their current inline `toLocaleString`/`toFixed` calls are the spec for what the new module must replace) | no analog (new), but 4 concrete call sites to grep for exact replacement points |
+| `ui/input/TextField.tsx` — add comma-insertion `onChange` variant | component | event-driven | itself (existing file, already has `aria-invalid`/`aria-describedby`) — additive variant only | exact |
+| `ui/shell/TopBar.tsx:138` — `⌘K` → `Ctrl+K` | component | request-response (static label) | itself, single-line string swap | exact |
+| `app/(app)/projects/project-form.tsx:103` — `shortcut="⌘↵"` → `"Ctrl+Enter"` | component | request-response | itself | exact |
+| `app/(app)/projects/[id]/quote-table.tsx:309,850,880,908` — `shortcut="⌘S"` etc. → `Ctrl+...` | component | request-response | itself | exact |
+| `docs/design/DECISIONS.md`, `docs/design/SYSTEM.md` §7-1/§7-3/§6/§2-4/§7-7 | docs | n/a | existing DECISIONS.md → SYSTEM.md two-step edit order already established (D-27 convention) | exact |
+| `ui/next-turn/NextTurn.tsx` | component | request-response | itself — inline number formatting call site for D-95 migration to `lib/format-number.ts` | exact |
+
+### Pattern Assignments (new files only; existing-file edits use the file's own established pattern per table above)
+
+#### `domain/projects/auto-transition.ts` (domain, event-driven, idempotent)
+
+**Analog:** `domain/action-log/record.ts:135-137` + `domain/settings/registry.ts` `asOf` convention
+
+```typescript
+// domain/action-log/record.ts:135-137 — actor=null for system-triggered actions
+// 시스템 주체(SYSTEM_VIEWER)의 행동은 actorId가 null이다 — users 표에 없는
+// id를 FK로 넣지 않는다
+```
+`domain/viewer.ts:8-14` defines `SYSTEM_VIEWER` for exactly this ("CLI·훅·Job·healthz 프로브 전용"). Use it as the action-log actor for D-76 auto-settlement — no new concept needed.
+
+**Time-injection convention** (repo has zero `vi.useFakeTimers`/`MockDate` usage — do not introduce it): follow `saveQuoteLines(viewer, revisionId, rows, deps?)`'s `deps` param pattern — `applyAutoSettlement(projectId, { now }: { now?: () => Date } = {})`.
+
+**Idempotency:** rely on `UPDATE ... WHERE status='in_progress' AND end_date < <KST-adjusted date>` — the WHERE clause itself makes re-invocation a no-op (0 rows), no separate dedup check needed.
+
+**KST boundary — do not use bare `CURRENT_DATE`** (Pitfall 7): existing KST-formatting precedent is `domain/quotes/lines.ts:447-452`'s `toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul" })`, but that's app-layer string formatting, not a DB-layer date comparison — the actual comparison must explicitly convert timezone (`(now() AT TIME ZONE 'Asia/Seoul')::date`), since server `timezone` setting was not verified this session (Gap, still open — confirm with `SHOW timezone;` before writing the migration/query).
+
+---
+
+#### `domain/rules/register.ts` — gate replacement (Pitfall 5)
+
+**Do not patch the existing binary rule.** Current code:
+```typescript
+// domain/rules/register.ts:17-24 (current, to be replaced not extended)
+// gate rule "project.completed-lock": ctx.status !== "settled" ⇒ pass
+```
+D-78 requires 3-way editability (전체 편집 / 실행가만 / 전체 잠금) plus a D-83 adjustment-line exception that ignores status entirely. The gate's return type (currently boolean `allowed`) must become tri-state, or the rule must accept the set of fields being saved in `ctx` and reject only disallowed fields. `domain/quotes/lines.ts:372` is the single call site to update.
+
+---
+
+#### `ui/pagination/Pagination.tsx` (new, no analog)
+
+No existing `ui/` component does page navigation. Two call patterns must both be supported per UI-SPEC S12: (a) project list / reserve ledger — plain `<a href="?page=N&...">` GET navigation; (b) quote line table — in-page `<button>` state change (client-side slicing of an already-fully-loaded ≤300-row array, confirmed by RESEARCH.md §7 — **not server pagination** for quote lines, only for the project list). Build as a single presentational component accepting either an `href`-builder or an `onPageChange` callback.
+
+---
+
+#### `lib/format-number.ts` (new, no analog)
+
+Four call sites currently do inline `toLocaleString`/`toFixed` and must be migrated to import from this module: `ui/next-turn/NextTurn.tsx`, `app/(app)/projects/[id]/quote-table.tsx`, `app/(app)/projects/[id]/revenue-section.tsx`, `app/(app)/projects/projects-table.tsx`. (`domain/money/index.ts` and `domain/quotes/lines.ts`'s `toFixed` calls are serialization-for-storage, NOT display formatting — do not touch those, per RESEARCH.md §9.) Comma auto-insertion on typing belongs in `ui/input/TextField.tsx` as an additive `onChange` wrapper/variant, not per-screen handlers (D-95 explicit "화면마다 따로 구현하지 않는다").
+
+---
+
+## Shared Patterns (D-75~D-95 additions)
+
+### Migration guard pattern (reuse, do NOT reuse blindly — Pitfall 6)
+**Source:** `db/migrations/0009_project_quote_ledger_spine.sql` — `DO $$ ... RAISE EXCEPTION` structure.
+**Apply to:** 0011 (status 5-value remap), with a critical deviation — 0009's guard assumed an *empty* `projects` table; 0011 must instead guard on `code_items` having exactly the 4 known D-41 values (not on `projects` being empty) and use UPDATE-based remap, never DELETE-without-remap (orphans a `text` column with no FK).
+
+### System-actor pattern (reuse as-is)
+**Source:** `domain/viewer.ts:8-14` `SYSTEM_VIEWER` + `domain/action-log/record.ts:135-137`.
+**Apply to:** `domain/projects/auto-transition.ts` (D-76 auto-settlement actor).
+
+### Deps-injected time (reuse as-is, do not introduce `vi.useFakeTimers`)
+**Source:** `domain/quotes/lines.ts` `saveQuoteLines(viewer, revisionId, rows, deps?)` deps-param convention.
+**Apply to:** `applyAutoSettlement(projectId, { now }?)`.
+
+### Table-level info exposure (reuse as-is, only a default value flips)
+**Source:** `domain/permissions/info-items.ts:51-55` — `staffDefault` boolean flips the whole DTO array in/out, no per-column masking code exists or is needed.
+**Apply to:** D-85 (`revenue.issued_amount` `staffDefault: false → true`). Update `test/integration/revenue-entries.test.ts` case (d) expectations accordingly — do not delete the test, change its assertion (発행 now visible, 입금 stays hidden).
+
+### Inline blur-save code table field (reuse as-is)
+**Source:** `app/(app)/admin/code-tables/code-item-form.tsx:70-93` `CodeItemLabelInput`.
+**Apply to:** new `description` field editor for D-93 — copy the `useAction(...).onError → revert to server value` / `onSuccess → clear error` structure verbatim, new action `updateCodeItemDescriptionAction`.
+
+## No Analog Found (D-75~D-95 additions)
+
+| File | Role | Data Flow | Reason |
+|------|------|-----------|--------|
+| `ui/pagination/Pagination.tsx` | component | request-response + event-driven | No page-navigation component exists anywhere in `ui/`; must support both GET-link and in-page-button modes in one component (UI-SPEC S12 requirement) |
+| `lib/format-number.ts` | utility | transform | No shared number-formatting module exists; four screens currently duplicate `toLocaleString`/`toFixed` inline |
+| `domain/projects/auto-transition.ts` | domain | event-driven (time-triggered, read-path side-effect) | No existing domain function performs a write-on-read idempotent status transition; nearest partial precedents (SYSTEM_VIEWER, deps-injected `now`) are borrowed from two different files, not one |
+
+## Metadata (this appended section)
+
+**Analog search scope (2026-09-23 addendum):** `app/(app)/projects/actions.ts`, `app/(app)/admin/code-tables/code-item-form.tsx`, `ui/table/use-grid-keyboard.ts`, `ui/table/use-dirty-storage.ts`, `repositories/projects.ts`, `domain/action-log/record.ts`, `domain/viewer.ts`, `domain/rules/register.ts` (all read directly this session to resolve RESEARCH.md Gaps)
+**Files scanned:** 8 read directly (targeted grep+range-read, no re-reads), plus RESEARCH.md §1-10 (already-verified content from prior session, not re-read via code)
+**Pattern extraction date:** 2026-09-23

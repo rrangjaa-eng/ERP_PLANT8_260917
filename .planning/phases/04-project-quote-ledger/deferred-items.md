@@ -48,3 +48,27 @@ early.`가 전체 스위트 실행 중 로그에 여러 번 나타난다 — `pn
 `Rule N`의 "직접 원인이 된 것만 고친다" 경계 밖이다. 재현하려면 전체
 스위트를 반복 실행하고 `[WebServer] ⨯ Error: The destination stream
 closed early.` 발생 빈도와 실패 스펙의 상관관계를 확인한다.
+
+## 04-04 실행 중 재관찰(같은 종류, 같은 범위 밖 판단)
+
+`pnpm test`(전체) 1회 실행에서 `mobile-list-empty.spec.ts`(§3
+design-review H-1, `/projects` EMPTY 상태 터치 타깃)가 "링크 상자를 잴 수
+없다"로 실패했다 — 이 플랜이 만든 quote-table.spec.ts·기존
+project-register.spec.ts가 동시에 대량의 프로젝트를 만들어 `/projects`가
+그 워커가 열람할 시점엔 더 이상 EMPTY가 아니었을 가능성이 높다(이
+스펙·`ui/list-empty`·`filter-bar.tsx` 전부 이 플랜이 건드리지 않은
+파일).
+
+재현을 위해 `desktop` 프로젝트만 단독으로 다시 돌렸더니(같은 세션,
+`mobile-list-empty`는 `desktop`에 의존) 이번엔 **다른** 두 스펙
+(`action-log.spec.ts`의 Excel BOM 바이트 불일치, `corp-cards.spec.ts`의
+strict-mode 중복 텍스트)이 실패했다 — 둘 다 이 플랜이 건드리지 않은
+화면이고 매 실행마다 실패 지점이 바뀐다는 점에서 위 04-01 관찰과 같은
+`[WebServer] ⨯ Error: The destination stream closed early.` 계열
+인프라 문제로 판단한다.
+
+**이 플랜에서 확인한 것(문제 없음):** 이 플랜이 만들거나 고친 스펙만
+따로 묶어(`quote-table.spec.ts` · `project-register.spec.ts` ·
+`revenue-section.spec.ts` · `projects-list.spec.ts` · `page-chrome.spec.ts`)
+같은 세션에서 두 번 돌렸고 매번 전부(19/19, 23/23) 통과했다. `pnpm
+test:unit`(736건)·`pnpm test:integration`(1013건)도 전부 통과, 0 실패.

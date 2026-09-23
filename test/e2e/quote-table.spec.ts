@@ -182,4 +182,66 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await expect(sheetButtons).toHaveCount(1);
     await expect(sheetButtons.first()).toHaveAccessibleName("닫기");
   });
+
+  test("(g) 실제 엑셀(Windows, 2026-09-23 캡처) 인코딩을 붙여넣고 저장·새로고침해도 원본이 보존된다", async ({ page }) => {
+    await loginAndOpenProject(page);
+
+    await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
+    // 각 데이터 행 뒤에 폰 전용 접힌 요약 행이 데스크톱에서도 DOM에 숨어
+    // 있다(display:none) — tbody tr는 그 둘을 번갈아 담으므로 데이터 행
+    // 인덱스는 짝수 오프셋이다.
+    const gridcell = (rowIndex: number, colIndex: number) =>
+      page
+        .locator("tbody tr")
+        .nth(1 + rowIndex * 2)
+        .getByRole("gridcell")
+        .nth(colIndex);
+
+    // 04-04 Task 3 인간 확인 — 실제 Windows Excel(2026-09-23 캡처) clipboard
+    // text/plain 원문에서 헤더 행 + 번호 열을 뺀 3×3(항목·수량·단가). 그리드의
+    // 실제 열 순서는 소분류(1)·항목(2)·거래처(3)·수량(4)·단가(5)라 텍스트
+    // 열(항목)과 숫자 열 둘(수량·단가)이 인접하지 않는다(거래처 select 셀이
+    // 사이에 있다 — 목록 밖 문자열이 떨어지면 오류 셀이 된다) — 그래서 실제
+    // 열에 대응하는 칸만 두 번에 나눠 주입한다(04-04-SUMMARY.md에 매핑 기록).
+    const itemNamePaste = '무대 설치\n"대형" 현수막\n"비고 첫 줄\r\n둘째 줄"';
+    const numberPaste = "2\t 1,200,000 \n5\t 35,000 \n1\t₩450,000 ";
+
+    await gridcell(0, 2).focus(); // 항목 — 아래로 넘쳐 2줄이 자동으로 생긴다.
+    await pasteIntoFocusedCell(page, itemNamePaste);
+
+    await gridcell(0, 4).focus(); // 수량 → 단가로 오른쪽까지 채운다.
+    await pasteIntoFocusedCell(page, numberPaste);
+
+    async function assertValues() {
+      // 따옴표만 있고 줄바꿈이 없는 칸은 따옴표가 그대로 남는다(지워지지도,
+      // 두 개가 되지도 않는다).
+      await expect(gridcell(0, 2)).toHaveText("무대 설치");
+      expect(await gridcell(1, 2).textContent()).toBe('"대형" 현수막');
+
+      // 줄바꿈이 있던 칸은 한 칸으로 들어가고 CRLF가 아니라 LF 하나만 남는다.
+      const row3ItemText = await gridcell(2, 2).textContent();
+      expect(row3ItemText).not.toContain("\r");
+      expect(row3ItemText).toBe("비고 첫 줄\n둘째 줄");
+
+      // 쉼표·공백·통화 기호가 섞인 금액이 숫자로 읽힌다.
+      await expect(gridcell(0, 4)).toHaveText("2");
+      await expect(gridcell(0, 5)).toHaveText("1,200,000");
+      await expect(gridcell(1, 4)).toHaveText("5");
+      await expect(gridcell(1, 5)).toHaveText("35,000");
+      await expect(gridcell(2, 4)).toHaveText("1");
+      await expect(gridcell(2, 5)).toHaveText("450,000");
+    }
+
+    await assertValues();
+
+    const saveButton = page.getByRole("button", { name: /일괄 저장/ });
+    await expect(saveButton).toBeEnabled();
+    await saveButton.click();
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+
+    // 저장 후 다시 열어도(새로고침 — 서버 왕복) 같은 값이다.
+    await page.reload();
+    await expect(page.locator("tbody tr").nth(1)).toBeVisible();
+    await assertValues();
+  });
 });

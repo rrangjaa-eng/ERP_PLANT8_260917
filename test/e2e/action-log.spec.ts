@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { test, expect } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
+import { recordAction } from "@/domain/action-log/record";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
 
 // ADMN-10·OPS-05: 필터 → 내보내기 → 정리 → 정리가 다시 로그에 남는 end-to-end.
 test.describe("행동 로그 화면 (ADMN-10, OPS-05)", () => {
@@ -42,6 +44,18 @@ test.describe("행동 로그 화면 (ADMN-10, OPS-05)", () => {
     await page.goto("/admin/action-log?actionType=document_create");
     await expect(page.getByRole("cell", { name: "문서 생성" }).first()).toBeVisible();
 
+    // 내보낼 본문이 1024자를 넘게 한다. React Flight는 1024자 이상 문자열을
+    // 별도 텍스트 청크로 보내고, 브라우저의 TextDecoder가 그 청크 맨 앞 BOM을
+    // 떼어 낸다 — 1023자는 BOM이 남고 1024자부터 사라진다(실측). 이 행이
+    // 없으면 파일 크기가 다른 스펙이 쌓은 「문서 생성」 행 수에 달려, 이
+    // 결함이 스위트 순서에 따라 드러났다 숨었다 한다. 이 행도 아래 정리에서
+    // 함께 정리된다.
+    await recordAction(SYSTEM_VIEWER, {
+      actionType: "document_create",
+      entity: "code_items",
+      detail: { padding: "가".repeat(1100) },
+    });
+
     // Excel 내보내기 — 파일 다운로드를 일으킨다.
     const downloadPromise = page.waitForEvent("download");
     await page.getByRole("button", { name: "Excel 내보내기" }).click();
@@ -57,6 +71,12 @@ test.describe("행동 로그 화면 (ADMN-10, OPS-05)", () => {
     const bytes = await readFile(downloadPath);
     expect(bytes.subarray(0, 3).toString("hex")).toBe("efbbbf");
 
+    // 이 테스트가 만든 행(대상 칸에 고유 값)만 본다. 「문서 생성」 목록 전체는
+    // 다른 워커가 정리 직후에도 계속 채우는 공유 erp_test의 표라, 「0건」을
+    // 기대하면 그 사이에 들어온 남의 행 하나로 깨진다.
+    const ownRow = page.getByRole("cell", { name: codeValue });
+    await expect(ownRow).toBeVisible();
+
     // 정리 — 두 단계 제출. 첫 클릭이 확인 줄을 열고, 확인 문구가 정리 기록이
     // 남는다는 사실을 명시한다.
     await page.getByRole("button", { name: "정리" }).click();
@@ -64,7 +84,7 @@ test.describe("행동 로그 화면 (ADMN-10, OPS-05)", () => {
     await page.getByRole("button", { name: "정리" }).click();
 
     // 정리 후 같은 필터에서 빠진다.
-    await expect(page.getByText("조건에 맞는 건이 없습니다")).toBeVisible();
+    await expect(ownRow).toHaveCount(0);
 
     // 필터를 지우면 정리 기록 자체가 새 행(행동 로그 정리)으로 보인다.
     await page.getByRole("link", { name: "필터 지우기" }).first().click();
@@ -122,11 +142,15 @@ test.describe("행동 로그 화면 (ADMN-10, OPS-05)", () => {
     expect(download.suggestedFilename()).toMatch(/^action-log-.*\.csv$/);
     await expect(page.getByText("Excel 내보내기 · 실패 · 다시 시도")).toHaveCount(0);
 
+    // 위 테스트와 같은 이유로 이 테스트가 만든 행만 본다(공유 erp_test).
+    const ownRow = page.getByRole("cell", { name: codeValue });
+    await expect(ownRow).toBeVisible();
+
     await page.getByRole("button", { name: "정리" }).click();
     await expect(page.getByText(/건을 정리합니다 · 정리 기록은 남습니다/)).toBeVisible();
     await page.getByRole("button", { name: "정리" }).click();
     await expect(page.getByText("정리하지 못했습니다 · 다시 시도")).toHaveCount(0);
-    await expect(page.getByRole("cell", { name: "문서 생성" })).toHaveCount(0);
+    await expect(ownRow).toHaveCount(0);
   });
 
   // OPS-05는 행동 로그에 남길 핵심 행동으로 「로그인」을 명시한다. record.ts의

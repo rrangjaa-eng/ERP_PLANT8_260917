@@ -28,8 +28,6 @@
     "account:create": "node --env-file-if-exists=.env.local --import tsx scripts/account-cli.ts create",
     "account:reset": "node --env-file-if-exists=.env.local --import tsx scripts/account-cli.ts reset",
     "account:unlock": "node --env-file-if-exists=.env.local --import tsx scripts/account-cli.ts unlock",
-    "migrate:dump-schema": "node --env-file-if-exists=.env.local --import tsx scripts/migrate/dump-schema.ts",
-    "migrate:extract": "node --env-file-if-exists=.env.local --import tsx scripts/migrate/extract.ts",
     "deploy": "bash scripts/deploy.sh",
     "rollback": "bash scripts/rollback.sh",
     "db:reset:test": "bash scripts/reset-test-db.sh",

@@ -43,8 +43,11 @@ boundary_text() {
 1. verification-before-completion 스킬로 방금 끝난 결과를 확인한다.
 2. 남은 변경을 커밋하고 푸시한다(훅 우회 금지).
 3. /gsd-pause-work로 인계 문서를 만들고 커밋·푸시한다.
-4. 새 세션은 직접 만들지 않는다(create_session으로 만든 세션은 클라우드 환경을 제대로 불러오지 못했다 — 사용자 지적 2026-09-23). 사용자가 같은 환경에서 새 세션을 열도록, 붙여 넣을 첫 메시지를 코드 블록 하나로 준다: 브랜치 이름·쓸 PR 번호·"/gsd-progress로 재개"·다음에 할 플랜.
-5. 이 세션의 작업을 끝낸다.
+4. 다음 세션을 만든다 — mcp__Claude_Code_Remote__create_session에 아래를 모두 명시한다(하나라도 빠지면 환경이 제대로 뜨지 않는다 — 2026-09-23 시험으로 확인):
+   environment_id = 이 세션의 environment_id(get_session으로 확인, plant8 환경), source_url = 이 리포 URL, source_revision = 현재 브랜치, outcome_branch = 현재 브랜치(같은 PR을 계속 쓴다), model = 이 세션과 같은 모델.
+   prompt에는: "/gsd-progress로 재개하라. 다음은 {다음 플랜 또는 단계}. 브랜치 {브랜치}, PR #{번호}를 계속 쓴다. 플랜 하나가 끝나면 같은 방식으로 다음 세션을 만들어 넘긴다."
+   create_session 도구가 없는 환경이면 사용자에게 붙여 넣을 첫 메시지를 코드 블록 하나로 준다.
+5. 새 세션 id를 사용자에게 알리고 이 세션의 작업을 끝낸다.
 EOF
 }
 

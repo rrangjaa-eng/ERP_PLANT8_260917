@@ -6,8 +6,9 @@
 #
 # 플랜 종료로 보는 것(메인 에이전트 기준):
 #   - 이 세션 시작 뒤 새 `.planning/phases/*/*-SUMMARY.md`가 생김(플랜 실행 완료)
+#   - 이 세션 시작 뒤 새 `.planning/quick/*/*-SUMMARY.md`가 생김(/gsd-quick 완료, D-03)
 #   - `state.planned-phase` 실행(/gsd-plan-phase 13b — 계획 완료)
-#   - 이 세션에서 게이트 리뷰를 시작했고 그 보고서가 커밋됨(D-01)
+#   - 이 세션에서 게이트 리뷰를 시작했고 그 보고서(docs/designs/*review*)가 커밋됨(D-01)
 #
 # 동작(첫 인자 = 이벤트):
 #   session-start : 지금 있는 SUMMARY 목록을 기준으로 저장(재개 때는 기준이 없을 때만)
@@ -35,16 +36,37 @@ gate_reviews="plan-ceo-review|plan-eng-review|plan-design-review"
 normalize() { sed -e 's/^\///' -e 's/^[^:]*://' -e 's/[[:space:]].*$//'; }
 
 list_summaries() {
-  find "$project/.planning/phases" -name '*-SUMMARY.md' -type f 2>/dev/null | sort
+  { find "$project/.planning/phases" "$project/.planning/quick" -name '*-SUMMARY.md' -type f 2>/dev/null || true; } | sort
 }
 
-# 이 세션에서 시작된 게이트 리뷰 이름을 한 줄에 하나씩 출력한다(없으면 아무것도 안 씀).
-gate_reviews_started() {
+# 이 세션에서 시작된 게이트 리뷰의 로그 줄(스킬 이름 · 시각 · session=)을 모두 출력한다.
+gate_review_lines() {
   local f
   for f in "$project"/.claude/gates/phase-*.log; do
     [ -e "$f" ] || continue
     grep -E "^(${gate_reviews}) [^ ]+ session=${session}([[:space:]]|\$)" "$f" 2>/dev/null || true
-  done | awk '{print $1}' | sort -u
+  done
+}
+
+# 이 세션에서 시작된 게이트 리뷰 이름을 한 줄에 하나씩 출력한다(없으면 아무것도 안 씀).
+gate_reviews_started() {
+  gate_review_lines | awk '{print $1}' | sort -u
+}
+
+# 게이트 리뷰가 끝났으면(리뷰 시작 이후 docs/designs/*review* 보고서 커밋) 시작된
+# 이름을 "/name1 /name2" 형태로 출력한다. 안 끝났으면 아무것도 안 쓴다.
+gate_review_done() {
+  local start end names
+  names="$(gate_reviews_started)"
+  [ -n "$names" ] || return 0
+  start="$(gate_review_lines | awk '{print $2}' | sort | head -n1)"
+  [ -n "$start" ] || return 0
+  end="$(TZ=UTC git -C "$project" log -1 --date=format-local:%Y-%m-%dT%H:%MZ --format=%cd -- 'docs/designs/*review*' 2>/dev/null || true)"
+  [ -n "$end" ] || return 0
+  if [[ "$end" < "$start" ]]; then
+    return 0
+  fi
+  printf '%s\n' "$names" | sed 's#^#/#' | tr '\n' ' ' | sed 's/ *$//'
 }
 
 new_summaries() {
@@ -88,6 +110,8 @@ case "$event" in
     what=""
     [ -n "$done_plans" ] && what="플랜 종료: ${done_plans}"
     [ -f "$flag_plan_phase" ] && what="${what:+$what · }계획(/gsd-plan-phase) 완료 — 13b 뒤 남은 13c~14단계는 끝내고, 15단계 자동 실행 대신 새 세션으로"
+    review_done="$(gate_review_done)"
+    [ -n "$review_done" ] && what="${what:+$what · }게이트 리뷰 종료(${review_done}) — 남은 정리(보고서·게이트 기록 커밋·푸시)만 끝내고, 다음 게이트 리뷰·계획·실행은 새 세션으로"
     [ -n "$what" ] || exit 0
     key="$(printf '%s' "$what" | md5sum | cut -d' ' -f1)"
     grep -qx "$key" "$announced" 2>/dev/null && exit 0
@@ -132,10 +156,11 @@ case "$event" in
 
   stop)
     done_plans="$(new_summaries)"
-    { [ -n "$done_plans" ] || [ -f "$flag_plan_phase" ]; } || exit 0
+    review_done="$(gate_review_done)"
+    { [ -n "$done_plans" ] || [ -f "$flag_plan_phase" ] || [ -n "$review_done" ]; } || exit 0
     [ -f "$stop_reminded" ] && exit 0
     touch "$stop_reminded"
-    jq -nc --arg reason "$(boundary_text "${done_plans:+플랜 종료: $done_plans}${done_plans:+ · }계획/실행 경계 — 인계를 마쳤는지 확인")
+    jq -nc --arg reason "$(boundary_text "${review_done:+게이트 리뷰 종료: $review_done · }${done_plans:+플랜 종료: $done_plans}${done_plans:+ · }계획/실행 경계 — 인계를 마쳤는지 확인")
 이미 1~5를 모두 마쳤다면 그렇다고 한 줄로 말하고 끝내라." \
       '{decision:"block", reason:$reason}'
     ;;

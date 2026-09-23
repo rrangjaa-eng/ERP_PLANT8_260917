@@ -114,6 +114,16 @@ payload_tool() {
   jq -nc --arg s "$session" --arg t "$tool" '{session_id:$s, tool_name:$t}'
 }
 
+payload_session_start() {
+  local session="$1" source="${2:-startup}"
+  jq -nc --arg s "$session" --arg src "$source" '{session_id:$s, source:$src}'
+}
+
+payload_session() {
+  local session="$1"
+  jq -nc --arg s "$session" '{session_id:$s}'
+}
+
 record_skill() {
   local project="$1" session="$2" skill="$3" agent="${4:-}"
   local payload
@@ -193,6 +203,102 @@ hook plant8-session-boundary.sh pre-tool "$(payload_agent "$S4" gsd-executor)" "
 expect_rc "existing: first Agent gsd-executor -> exit 0" 0 "$HOOK_RC"
 hook plant8-session-boundary.sh pre-tool "$(payload_agent "$S4" gsd-executor)" "$proj4"
 expect_rc "existing: second Agent gsd-executor -> exit 0 (D-04 lives in skill-gate)" 0 "$HOOK_RC"
+
+# ---------------------------------------------------------------------------
+# D-01, review not yet done (fresh project, session G)
+projG="$(new_project)"
+G="sid-d01-done-$$"
+hook plant8-session-boundary.sh session-start "$(payload_session_start "$G" startup)" "$projG"
+record_skill "$projG" "$G" plan-ceo-review
+
+hook plant8-session-boundary.sh post-tool "$(payload_tool "$G" Read)" "$projG"
+expect_empty "D-01 review not done: post-tool empty" "$HOOK_STDOUT"
+
+hook plant8-session-boundary.sh stop "$(payload_session "$G")" "$projG"
+expect_rc "D-01 review not done: stop exit 0" 0 "$HOOK_RC"
+expect_empty "D-01 review not done: stop empty stdout" "$HOOK_STDOUT"
+
+# D-01, review done (same project, session G)
+echo "review" > "$projG/docs/designs/x-ceo-review-test.md"
+git -C "$projG" add docs/designs/x-ceo-review-test.md
+git -C "$projG" commit -q -m "docs: ceo review report"
+
+hook plant8-session-boundary.sh post-tool "$(payload_tool "$G" Read)" "$projG"
+expect_contains "D-01 review done: post-tool announces 게이트 리뷰 종료" "$HOOK_STDOUT" "게이트 리뷰 종료"
+expect_contains "D-01 review done: post-tool mentions /plan-ceo-review" "$HOOK_STDOUT" "/plan-ceo-review"
+
+hook plant8-session-boundary.sh post-tool "$(payload_tool "$G" Read)" "$projG"
+expect_empty "D-01 review done: second post-tool empty (announced once)" "$HOOK_STDOUT"
+
+hook plant8-session-boundary.sh stop "$(payload_session "$G")" "$projG"
+expect_contains "D-01 review done: stop decision block" "$HOOK_STDOUT" '"decision":"block"'
+expect_contains "D-01 review done: stop reason mentions 게이트 리뷰 종료" "$HOOK_STDOUT" "게이트 리뷰 종료"
+
+hook plant8-session-boundary.sh stop "$(payload_session "$G")" "$projG"
+expect_empty "D-01 review done: second stop empty" "$HOOK_STDOUT"
+
+# ---------------------------------------------------------------------------
+# D-01, older report commits don't count
+projOld="$(new_project)"
+Sold="sid-d01-old-$$"
+echo "review" > "$projOld/docs/designs/old-review.md"
+git -C "$projOld" add docs/designs/old-review.md
+GIT_COMMITTER_DATE="2000-01-01T00:00:00Z" GIT_AUTHOR_DATE="2000-01-01T00:00:00Z" \
+  git -C "$projOld" commit -q -m "docs: old review report"
+record_skill "$projOld" "$Sold" plan-ceo-review
+
+hook plant8-session-boundary.sh post-tool "$(payload_tool "$Sold" Read)" "$projOld"
+expect_empty "D-01 older report commit doesn't count: post-tool empty" "$HOOK_STDOUT"
+
+hook plant8-session-boundary.sh stop "$(payload_session "$Sold")" "$projOld"
+expect_empty "D-01 older report commit doesn't count: stop empty" "$HOOK_STDOUT"
+
+# ---------------------------------------------------------------------------
+# D-03, new quick SUMMARY
+projQ="$(new_project)"
+Q="sid-d03-quick-$$"
+hook plant8-session-boundary.sh session-start "$(payload_session_start "$Q" startup)" "$projQ"
+mkdir -p "$projQ/.planning/quick/260101-abc-x"
+echo "summary" > "$projQ/.planning/quick/260101-abc-x/260101-abc-SUMMARY.md"
+
+hook plant8-session-boundary.sh post-tool "$(payload_tool "$Q" Read)" "$projQ"
+expect_contains "D-03 new quick SUMMARY: post-tool announces" "$HOOK_STDOUT" "260101-abc"
+
+hook plant8-session-boundary.sh pre-tool "$(payload_agent "$Q" gsd-executor)" "$projQ"
+expect_rc "D-03 new quick SUMMARY: pre-tool blocks gsd-executor" 2 "$HOOK_RC"
+expect_contains "D-03 new quick SUMMARY: pre-tool message" "$HOOK_STDERR" "이미 플랜이 끝났다"
+
+hook plant8-session-boundary.sh stop "$(payload_session "$Q")" "$projQ"
+expect_contains "D-03 new quick SUMMARY: stop blocks once" "$HOOK_STDOUT" '"decision":"block"'
+hook plant8-session-boundary.sh stop "$(payload_session "$Q")" "$projQ"
+expect_empty "D-03 new quick SUMMARY: second stop empty" "$HOOK_STDOUT"
+
+# D-03, quick SUMMARY that existed before session start
+projQ2="$(new_project)"
+mkdir -p "$projQ2/.planning/quick/260102-xyz-y"
+echo "summary" > "$projQ2/.planning/quick/260102-xyz-y/260102-xyz-SUMMARY.md"
+Q2="sid-d03-baseline-$$"
+hook plant8-session-boundary.sh session-start "$(payload_session_start "$Q2" startup)" "$projQ2"
+hook plant8-session-boundary.sh post-tool "$(payload_tool "$Q2" Read)" "$projQ2"
+expect_empty "D-03 pre-existing quick SUMMARY not announced" "$HOOK_STDOUT"
+
+# D-03, missing quick dir
+projQ3="$(new_project)"
+rm -rf "$projQ3/.planning/quick"
+Q3="sid-d03-missing-$$"
+hook plant8-session-boundary.sh session-start "$(payload_session_start "$Q3" startup)" "$projQ3"
+expect_rc "D-03 missing quick dir: session-start exit 0" 0 "$HOOK_RC"
+expect_rc "D-03 missing quick dir: baseline file written" 0 "$([ -f "${TMPDIR}/plant8-session-boundary/${Q3}.baseline" ] && echo 0 || echo 1)"
+
+# ---------------------------------------------------------------------------
+# Existing behavior still holds: new phase SUMMARY still announces
+projE="$(new_project)"
+E="sid-existing-phase-summary-$$"
+hook plant8-session-boundary.sh session-start "$(payload_session_start "$E" startup)" "$projE"
+mkdir -p "$projE/.planning/phases/04-test"
+echo "summary" > "$projE/.planning/phases/04-test/04-01-SUMMARY.md"
+hook plant8-session-boundary.sh post-tool "$(payload_tool "$E" Read)" "$projE"
+expect_contains "existing: phase SUMMARY still announces 04-01" "$HOOK_STDOUT" "04-01"
 
 # ---------------------------------------------------------------------------
 # Wiring: settings.json has PreToolUse matcher Skill -> session-boundary pre-tool

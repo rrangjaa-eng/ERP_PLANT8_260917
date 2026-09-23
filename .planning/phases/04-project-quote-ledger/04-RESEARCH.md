@@ -1,6 +1,7 @@
 # Phase 4: 프로젝트·견적 원장 - Research
 
 **Researched:** 2026-09-22
+**Updated:** 2026-09-23 — 04-01·02·05 실행 뒤 사용자가 화면을 보고 확정한 D-75~D-95(상태 다섯 값·자동 정산·조정 줄·계약 금액 삭제·발행액 공개·목록 개정·페이지네이션·코드표 설명·Ctrl 표기·숫자 서식)를 「2026-09-23 추가 연구」 절에 추가했다. 아래 원 절(D-41~D-74 대상)은 재작성하지 않고 그대로 유효하다 — 이 갱신이 대체하는 부분은 새 절이 명시적으로 표시한다.
 **Domain:** 금액 도메인 모델(`domain/money`) · 단일 게이트(`domain/rules.gate`) · 엑셀식 편집 표(자체 구현) · Postgres 카운터 동시성 · 인트라넷 추출 스크립트
 **Confidence:** MEDIUM (구현 패턴은 리포에서 직접 읽어 HIGH, 인트라넷 원본 스키마 세부는 문서에 없어 LOW — Gaps 참고)
 
@@ -664,3 +665,256 @@ export function computeLineAmounts(quantity: number, unitPrice: number, executio
 
 **Research date:** 2026-09-22
 **Valid until:** 이 페이즈 계획·실행 기간 동안 유효(리포 내부 패턴은 코드가 바뀌지 않는 한 안정적, 30일 추정). 외부 라이브러리 관련 내용 없음(신규 의존성 0)이라 외부 변화 리스크 낮음.
+
+---
+
+## 2026-09-23 추가 연구 — D-75~D-95
+
+**추가 연구일:** 2026-09-23 · **트리거:** `04-CONTEXT.md` 「2026-09-23 추가 결정」(D-75~D-95) + `04-UI-SPEC.md` rev 4(승인, 2026-09-23) — 04-01·04-02·04-05 실행 완료, 04-04는 Task 3 사람 확인 대기(`53f7d01..302eb84`), 04-03·04-06·04-07은 미착수. **이 절이 바꾸는 계획 범위:** 04-06은 전면 재계획 대상(옛 "완료(정산) 네 상태" 모델 전체가 D-75~D-82로 대체됨), 04-02·04-05는 보완 플랜 필요(계약 금액 제거·발행액 공개·목록 개정), 04-04는 소규모 보완(페이지네이션 경계의 키보드·붙여넣기 상호작용) 가능성, 04-07(리저브)은 D-91의 50건 페이지만 영향받고 나머지는 무관. 새 표면 셋(Pagination·상세 기간 칸·코드표 설명)과 전역 규칙 둘(Ctrl 표기·숫자 쉼표)이 신설된다.
+
+**이 절의 확신도:** MEDIUM — 코드 경로(현재 스키마·게이트·정보 노출표·설정 레지스트리)는 이 세션에서 직접 읽어 HIGH, 자동화 인프라(D-76 스케줄링)와 데이터 마이그레이션 원격측정(운영 DB의 실제 `settled` 행 존재 여부)은 이 세션에서 관측할 수 없어 LOW.
+
+### 1. D-75 — 상태 다섯 값 마이그레이션
+
+**현재 상태(네 값)** [VERIFIED: db/migrations/0009_project_quote_ledger_spine.sql:119-123]:
+```sql
+INSERT INTO "code_items" ("table_key", "value", "label", "sort_order") VALUES
+  ('project_status', 'bidding', '수주중', 0),
+  ('project_status', 'in_progress', '진행', 1),
+  ('project_status', 'settled', '완료(정산)', 2),
+  ('project_status', 'lost', '미수주', 3)
+```
+`projects.status`는 `text` 컬럼, 기본값 `'bidding'` [VERIFIED: db/schema/projects.ts:28 `status: text("status").notNull().default("bidding")`].
+
+**이 값을 읽는 코드 경로 전부**(grep 실측, `settled`/`bidding`/`lost` 리터럴 또는 `완료(정산)` 문자열 사용):
+- `domain/rules/register.ts:17-24` — 게이트 규칙 `project.completed-lock`이 `ctx.status !== "settled"`이면 통과시킨다. **이 한 줄이 D-75의 핵심 리스크다** — 다섯 상태에서는 "정산"(제한적 편집 허용, D-78)과 "완료"(전체 잠금, D-47·D-79)가 서로 다른 잠금 정도를 가지므로, `settled` 하나로 뭉뚱그린 이 판정은 그대로 쓸 수 없다.
+- `domain/quotes/lines.ts:372` — `gate(projectRow, "project.completed-lock", { status: projectRow.status })` 호출 지점. 저장 게이트가 이 규칙 하나만 거친다.
+- `domain/projects/index.ts:267` — `createProject`가 신규 프로젝트 상태를 하드코딩 `"bidding"`으로 INSERT(수주중은 값이 안 바뀌므로 영향 없음).
+- `app/(app)/projects/[id]/page.tsx`, `app/(app)/projects/page.tsx`, `app/(app)/projects/projects-table.tsx` — `STATUS_LABELS`/`STATUS_TAG_KIND` 로컬 맵(04-05 SUMMARY가 명시한 패턴)이 각 파일에 반복돼 있다. 다섯 값으로 확장하고 `정산` 색을 `--warning`으로 바꿔야 한다(UI-SPEC Color 절 §7-5 재개정).
+- `domain/seed/index.ts`, `domain/permissions/role-name.ts` — 시드·역할 라벨 쪽 참조(권한표 기본값에 "상태 변경" 동작을 어느 계급에 채울지가 D-79로 "대표·시스템 관리자만"으로 좁아지므로 시드 갱신 필요).
+- 테스트: `test/integration/quote-lines.test.ts`, `test/integration/projects-list.test.ts`, `test/unit/domain/rules-gate.test.ts`, `test/unit/import-cycles.test.ts` — 전부 `settled`/`완료(정산)` 문자열을 픽스처·단언에 쓴다. 다섯 값 마이그레이션은 이 네 파일 전부를 건드리는 회귀다.
+
+**마이그레이션 전략** — 0009는 이미 로컬·테스트 DB에 적용됐으므로(D-75 원문) **고쳐 쓰지 않는다.** 다음 자유 번호는 `0011`(`db/migrations/0000_init.sql` ~ `0010_revenue_entries.sql` 열 개가 이미 존재 [VERIFIED: `ls db/migrations/*.sql`]).
+
+0009의 가드 패턴(DO $$ … RAISE EXCEPTION, 조용히 지우지 않고 전제가 깨지면 마이그레이션 전체를 되돌림)을 재사용하되, **0009와 달리 `projects` 표가 비어 있다는 전제를 쓸 수 없다** — 04-01·04-02·04-05가 이미 E2E·수동 확인 과정에서 `source='demo'` 프로젝트 행을 만들었고(04-01 SUMMARY "erp_test에 남아 있던 8개의 이전 세션 잔여 프로젝트 행"), Eng OV-1 규약상 실제 전환 전까지는 전부 `source='demo'`이지만 개발 DB 자체는 비어 있지 않다. 새 마이그레이션은 **값 재매핑(UPDATE)** 이어야지 0009처럼 "표가 비어 있지 않으면 중단"으로 막을 수 없다(그러면 04-01 이후 어떤 dev/test DB에서도 이 마이그레이션이 통과하지 못한다).
+
+권장 가드 형태(0009 정신 계승, [ASSUMED] — 계획 단계가 확정):
+```sql
+-- 전제: code_items.project_status가 정확히 D-41의 네 값(bidding/in_progress/settled/lost)이다.
+-- 이미 다섯 값이거나 낯선 값이 있으면(누가 손으로 더했거나 이 마이그레이션이 이미 부분 적용됐으면)
+-- 지우지 않고 RAISE EXCEPTION으로 중단한다.
+DO $$
+DECLARE stray_count integer;
+BEGIN
+  SELECT count(*) INTO stray_count FROM code_items
+    WHERE table_key = 'project_status'
+      AND value NOT IN ('bidding', 'in_progress', 'settled', 'lost');
+  IF stray_count > 0 THEN
+    RAISE EXCEPTION 'project_status에 D-41 네 값 밖의 항목이 %건 있습니다 — 이미 다섯 값으로 옮겨졌거나 손으로 더해진 값일 수 있어 중단합니다.', stray_count;
+  END IF;
+END $$;
+```
+이어서 `code_items`에 새 값 INSERT(`정산`·`완료`), 기존 `settled` 항목의 `label`을 갱신하지 않고 **비활성화**(`active=false`, ADMN-12 되돌리기 쉬운 상태 플래그 — `code_items.ts` 헤더 주석이 이미 이 메커니즘을 "숨김/비활성"으로 문서화함 [VERIFIED: db/schema/code-tables.ts:2-3]) 하거나 완전히 DELETE — 계획이 고른다. **`projects.status = 'settled'`인 기존 행은 반드시 UPDATE로 재매핑**해야 한다(DELETE만 하고 재매핑을 빠뜨리면 FK 없는 `text` 컬럼이라 오류 없이 조용히 orphan 값이 남는다 — code_items 참조 무결성이 DB 제약이 아니라 애플리케이션 계약이라는 뜻).
+
+**재매핑 방향(`settled` → 정산 or 완료)은 D-75가 명시적으로 계획에 맡겼다.** 이 세션의 권장(ASSUMED, 사용자 확인 권장): 모든 현재 데이터가 `source='demo'`이고 Phase 8 전환 시 삭제 대상이므로(Eng OV-1) 실제 업무 의미를 보존할 필요가 없다 — 기존 `settled`(옛 "완료(정산)", 잠금 상태)의 코드적 의미가 새 다섯 상태 중 **완료**(전체 잠금, D-47·D-79)에 더 가까우므로 `UPDATE projects SET status = '<완료의 새 코드값>' WHERE status = 'settled'`를 권장한다. 새 코드값 문자열 자체(`'completed'`/`'closed'` 등, 정산은 `'invoicing'`/`'settling'` 등)는 계획이 정한다 — 기존 `'settled'`를 정산에 재사용하면 `domain/rules/register.ts`의 `ctx.status !== "settled"` 분기를 "정산이면 부분 허용, 완료면 전체 잠금"으로 다시 써야 하므로, 신규 두 값(정산·완료)을 모두 새 문자열로 도입하고 `settled`는 폐기(재매핑 뒤 미사용)하는 편이 게이트 로직을 더 명확하게 만든다.
+
+**Pitfall(신규):** `project.completed-lock` 게이트 규칙 하나가 지금 "잠금 여부"만 이진 판정한다. D-78(정산=실행가만 편집)·D-83(조정 줄은 상태 무관)이 들어오면 이 규칙은 최소 3단계(전체 편집/실행가만/전체 잠금) + 조정 줄 예외를 판정해야 한다 — 04-06 계획은 이 규칙을 **교체**해야지 `settled` 조건 하나만 갈아 끼우는 패치로는 D-78의 "나머지 잠김" 요구를 만족하지 못한다.
+
+### 2. D-76 — 진행→정산 자동 전환, 스케줄링 인프라
+
+**Cloud Scheduler는 이 리포에 아직 없다.** `scripts/deploy.sh`는 `gcloud run jobs deploy`로 Cloud Run **Job**(예약 실행이 아니라 수동/CI 트리거) 넷을 배포한다 — `db-bootstrap`·`migrate`·`seed`·`account` [VERIFIED: scripts/deploy.sh:325-392, `gcloud run jobs deploy`/`gcloud run jobs execute` 호출부]. `gcloud scheduler` 호출은 스크립트 어디에도 없다(grep 0건). `/internal/` 라우트도 없다(`find app -iname "*internal*"` 0건). CLAUDE.md가 스택 설명에 "Cloud Scheduler"를 나열하지만 [CITED: CLAUDE.md 스택 줄] 이는 Phase 7의 알림 tick 설계(`docs/inputs/phase-07-schedule-notify.md:43` "Cloud Scheduler가 `/internal/notify-tick` 단일 엔드포인트 호출", `docs/designs/plant8-erp-roadmap-eng-review-260917.md:105` 같은 구조)를 가리키는 목표 상태 문서이지, 지금 존재하는 인프라가 아니다.
+
+**결론(ASSUMED, 확인 체크포인트 권장): D-76은 Phase 4에서 읽기 시점 판정으로 구현하고 Cloud Scheduler 신설은 Phase 7로 미룬다.** 근거: (a) D-76 원문이 "실행 방식은 계획이 정하되 멱등이어야 한다"고 명시적으로 재량을 남겼다, (b) Cloud Scheduler 신설은 OIDC 서비스 계정·IAM 바인딩·`deploy.sh` 확장·`/internal/` 인증 미들웨어까지 딸린 새 인프라 캡슬화 작업이고 Phase 7이 어차피 이 인프라를 지어야 한다(`docs/inputs/phase-07-schedule-notify.md`) — Phase 4에서 절반만 짓고 Phase 7이 다시 손대는 것보다 Phase 4는 순수 도메인 로직(멱등 판정 함수)만 만들고 Phase 7이 그 함수를 스케줄러가 호출하는 얇은 배선을 얹는 편이 중복이 적다, (c) UI-SPEC S7 전이표가 "진행→정산은 **버튼 없음** — 태그·부제가 바뀔 뿐"이라고 명시해 사용자가 거는 기대가 "화면을 열면 최신 상태가 보인다"이지 "정확히 자정에 배치가 돈다"가 아니다.
+
+**구현 패턴(권장, ASSUMED):**
+```typescript
+// domain/projects/auto-transition.ts (신규, 계획 예시)
+// UPDATE ... WHERE status='in_progress' AND end_date < CURRENT_DATE 자체가
+// 멱등성을 보장한다 — 이미 정산으로 바뀐 행은 WHERE 절에 걸리지 않아
+// 두 번째 호출은 0행 영향으로 조용히 끝난다. 별도 dedup 로그 검사가 불필요.
+export async function applyAutoSettlement(projectId: string): Promise<boolean> {
+  const updated = await repoTransitionIfOverdue(projectId); // UPDATE...RETURNING, 0 or 1 row
+  if (updated) {
+    await recordAction(SYSTEM_VIEWER, { actionType: "status_change", entity: "project", entityId: projectId });
+  }
+  return updated;
+}
+```
+`domain/action-log/record.ts:135-137`이 이미 `viewer.id === SYSTEM_VIEWER.id`일 때 `actorId: null`을 쓰도록 되어 있다 — "행동 로그 행위자 = 시스템"(D-76)을 위한 배선이 **이미 존재한다** [VERIFIED: domain/action-log/record.ts:135-137, 정확히 이 용도로 만들어진 주석: "시스템 주체(SYSTEM_VIEWER)의 행동은 actorId가 null이다 — users 표에 없는 id를 FK로 넣지 않는다"]. `domain/viewer.ts:8-14`의 `SYSTEM_VIEWER` 자체가 "CLI·훅·Job·healthz 프로브 전용 — 사람이 아닌 시스템 주체가 리포지토리를 호출할 때 쓴다"고 정의돼 있어 [VERIFIED: domain/viewer.ts:8-14] D-76의 "행위자는 시스템"에 정확히 대응한다 — 새 개념을 만들 필요가 없다.
+
+**호출 지점(계획이 정함, ASSUMED):** `findProject`(상세 조회)와 `listProjects`(목록 조회) 양쪽에서 반환 직전에 `applyAutoSettlement`를 호출하는 안과, SQL `CASE WHEN` 파생(쓰지 않고 표시만 정산으로 보여주되 실제 컬럼은 안 바꾸는 안) 둘을 계획이 비교해야 한다. 전자는 "화면을 열면 실제로 DB가 바뀐다"(다른 조회도 일관되게 최신값을 본다) 장점이 있고, 후자는 쓰기 부작용 없는 조회를 유지하지만 두 곳(SQL CASE + 실제 UPDATE 배치)의 판정 로직이 갈릴 위험이 있다. **권장: 전자**(조회 시점 UPDATE) — 이 프로젝트의 기존 패턴(`domain/money/currency.ts`의 `rememberFxRate`처럼 읽기 흐름 중 부작용 쓰기를 허용하는 선례)과 결이 맞고, `UPDATE...WHERE` 자체가 원자적이라 경쟁 조건이 없다.
+
+**시간 동결 테스트 패턴 — 리포에 선례가 없다.** `test/`에 `vi.useFakeTimers`·`vi.setSystemTime`·`MockDate` 사용 0건(grep 실측). 이 프로젝트의 기존 관례는 시스템 시계를 직접 mock하지 않고 **함수에 `deps` 주입으로 `now`를 넘긴다**(예: `saveQuoteLines(viewer, revisionId, rows, deps?)`의 `deps.can`/`deps.recordAction` 패턴, `domain/settings/registry.ts`의 `findEffectiveValue(..., asOf)`). D-76의 "종료일 다음 날 00:00 KST" 경계 테스트도 같은 결로 `applyAutoSettlement(projectId, { now }: { now?: () => Date } = {})`처럼 시간 소스를 주입받게 짜는 편이 리포 관례와 일치하고 `vi.useFakeTimers`(글로벌 타이머 mock, 다른 병렬 테스트와 간섭 위험)보다 안전하다.
+
+**KST 자정 경계 계산 — 기존 패턴 재사용.** `saveQuoteLines`의 `changedAt` 포맷이 이미 `toLocaleTimeString("ko-KR", { timeZone: "Asia/Seoul" })`을 쓴다 [VERIFIED: domain/quotes/lines.ts:447-452]. "종료일 다음 날" 판정도 같은 타임존 문자열 비교(`end_date`가 `date` 컬럼이라 시각 정보가 없으므로 `CURRENT_DATE AT TIME ZONE 'Asia/Seoul'`류의 SQL 비교, 또는 애플리케이션에서 KST 자정 기준 `YYYY-MM-DD` 문자열 비교)로 처리하는 편이 기존 관례와 맞는다 — Postgres 서버 타임존이 UTC일 가능성이 높으므로(확인 필요, Gap으로 남김) `end_date < CURRENT_DATE`만 쓰면 UTC 자정 기준이 되어 KST와 최대 9시간 어긋난다.
+
+**Gap:** 이 세션은 Postgres 서버(Cloud SQL 서울/로컬 dev DB)의 `timezone` 설정을 확인하지 않았다 — 계획 단계에서 `SHOW timezone;` 또는 `SELECT current_setting('TIMEZONE');`으로 실측 필요.
+
+### 3. D-78/D-83/D-86 — 정산 상태 편집 범위·조정 줄·300줄 상한
+
+**현재 편집 가능성 판정 지점** — `saveQuoteLines`(`domain/quotes/lines.ts`)는 지금 게이트를 **한 번**만 거친다(위 §1의 `project.completed-lock`, 전체 편집 가능/전체 잠금 이진 판정). 셀 단위 판정(D-66, 연결 문서 있는 줄의 금액 셀 읽기 전용)은 **04-06이 아직 구현하지 않았다** — 04-06-PLAN.md Task 2 ③이 "판정 로직과 거부 경로는 지금 완성하되 판정 입력(연결 문서 조회)은 Phase 5가 채운다"로 이미 이 구조를 예고해 뒀다. D-78(정산 = 실행가만)은 이 기존 계획의 셀 단계 판정에 **세 번째 축**(프로젝트 상태)을 더하는 형태가 된다 — PM 관점에서 셀 편집 가능성은 이제 (프로젝트 상태 × 연결 문서 유무 × 조정 줄 여부)의 조합이다. 04-06 재계획은 04-01/04-04가 만든 `QuoteLineDto`에 서버가 셀별 `editability: "edit" | "readonly" | "locked"`를 붙여 보내는 단일 함수(D-66이 이미 예고한 자리)로 이 세 축을 한 곳에서 합쳐야 한다 — 화면(`quote-table.tsx`)이나 클라이언트가 상태 문자열을 보고 스스로 판정하면 UX-06·ROADMAP 기준 3 위반이다.
+
+**300줄 상한 — 설정 키 패턴.** `domain/settings/keys.ts`는 이미 `document_number.project.*`(문서 종류별 키 묶음, [VERIFIED: domain/settings/keys.ts:235-296])·`fx.recent_rate.USD`(단순값)·`ACTION_LOG_OPTIONAL_TYPES`(배열 단순값) 세 가지 형태의 `SettingDef`를 갖고 있다. `SettingKind`는 `"simple" | "historized"` 둘뿐이고 [VERIFIED: domain/settings/registry.ts:26] 300줄 상한은 세율처럼 "적용 시작일이 있는" 값이 아니므로 **simple**이 맞다. 권장 키 형태(ASSUMED): `quote_line.max_per_revision`(namespace 예: "견적 표"), `schema: z.coerce.number().int().min(1)`, `default: 300`. 계획의 "Claude's Discretion" 항목이던 문서 번호 서식 키 형태(문서 종류별 묶음 vs JSON 한 개)와 같은 논쟁이 이 키에는 적용되지 않는다 — 단일 스칼라 값이라 형태 선택 여지가 없다.
+
+**붙여넣기 상한 거부 — 기존 붙여넣기 파서 확장 지점.** `ui/table/parse-tsv.ts`(04-04 산출물)가 이미 TSV 파싱을 담당한다 [VERIFIED: 04-04 커밋 로그 `f8a7d45 feat(04-04): quote table keyboard grid, clipboard paste, dirty storage, phone row sheet`]. D-86의 "상한을 넘기는 붙여넣기는 한 칸도 바꾸지 않고 전부 거부"는 붙여넣기 결과 행 수를 계산한 뒤 (현재 줄 수 + 붙여넣기로 늘어날 줄 수) > 상한이면 즉시 거부하는 로직을 클라이언트(즉각 피드백)와 서버(`saveQuoteLines`, 최종 방어선) 양쪽에 둬야 한다 — 04-01 Pitfall 4가 이미 경고한 "raw string 경계는 타입이 아니라 설계로 지켜야 한다"와 같은 결로, 클라이언트 판정만 믿으면 안 된다.
+
+**「조정」 줄 — D-48과의 관계(계획이 정할 것, D-83 원문이 명시).** 현재 `line_status` 컬럼 값은 `not_started`(미착수)·`cancelled`(취소) 둘뿐 [VERIFIED: db/migrations/0009_project_quote_ledger_spine.sql:62 `"line_status" text DEFAULT 'not_started' NOT NULL`, D-64 "상태 값은 이 페이즈에서 미착수·취소 둘뿐"]. 조정 줄은 D-48의 '견적 외 비용'(견적가 0, 소분류가 그 이름)과 데이터 모델을 공유할지 별도로 `subcategory`(또는 새 불리언 `is_adjustment`) 컬럼으로 가를지 D-83이 계획에 맡겼다. UI-SPEC S4가 "맨 아래 고정 그룹 `조정`" — 견적 외 비용 그룹과는 별개 그룹으로 렌더하도록 요구하므로([VERIFIED: 04-UI-SPEC.md:1128-1136]), `subcategory` 값만으로 그루핑하는 현재 구조(D-62 "대분류는 소분류에서 파생")라면 조정 줄은 `subcategory`에 "조정"류의 새 코드표 값을 갖거나, 별도 불리언 컬럼을 두고 그룹 파생 로직에서 그 컬럼을 최우선으로 검사하는 두 갈래다. **권장(ASSUMED):** 별도 불리언 컬럼(`is_adjustment boolean default false`)을 신설 — 이유는 (a) 그룹 머리글 파생이 `subcategory` 텍스트 매칭이 아니라 명시적 플래그가 되어 코드표 값이 바뀌어도 깨지지 않고, (b) 경영관리만 쓰기 가능이라는 권한 경계(D-83 "PM은 조정 줄을 고치거나 지울 수 없다")를 게이트 규칙이 `is_adjustment` 컬럼 하나로 판정할 수 있어 소분류 문자열 비교보다 견고하다, (c) 복사 제외(⚠ UI Considerations "조정 줄과 복사") 로직도 이 플래그 하나로 필터링된다.
+
+### 4. D-84 — 계약 금액 칸 제거
+
+**현재 상태:** `projects.contract_*` 4컬럼(통화·외화 금액·환율·원화 환산액, `moneyColumns("contract")`)이 migration 0010에 있다 [VERIFIED: db/schema/projects.ts:34-37 `...moneyColumns("contract")`, key-decisions 04-02-SUMMARY.md "revenue_entries는 신규 표라 문제 없지만 migration 0010이 기존 non-empty projects 표에 NOT NULL contract_amount_krw 컬럼을 추가"]. `app/(app)/projects/[id]/revenue-section.tsx`에 `Form.Field id="contract-amount"` + 통화·금액·환율 입력 셋이 있다(UI-SPEC이 명시적으로 이 셋을 "실물에서 걷어낼 것"으로 지목함 — 04-UI-SPEC.md:1207-1208).
+
+**제거 범위(계획이 정함, D-84 원문):**
+1. **컬럼:** 새 마이그레이션(0011 이후 번호, D-75 마이그레이션과 같은 배치인지 별도인지는 계획 판단)으로 `ALTER TABLE projects DROP COLUMN contract_currency, DROP COLUMN contract_foreign_amount, DROP COLUMN contract_fx_rate, DROP COLUMN contract_amount_krw` — 0009·0010의 락 타임아웃 관례(`SET LOCAL lock_timeout = '1s'`)를 유지해야 한다(칼럼 드롭도 짧게라도 락을 잡는다). **DROP COLUMN이 데이터 손실이므로** 계획이 "실제로 삭제" vs "미사용 컬럼으로 방치 후 다음 정리 페이즈에서 삭제" 중 고를 여지가 있다 — CONTEXT.md는 "제거하거나 파생 표시로 바꾼다"고 both 옵션을 열어 뒀다.
+2. **UI:** `revenue-section.tsx`의 `Form.Field id="contract-amount"` 셋 제거, `KvList` 파생 표시(현재 차수 견적 합계, 고객 승인 여부 조건부)로 교체.
+3. **권한:** `domain/permissions/menus.ts`의 `projects.revenue`(경영관리 발행·입금 쓰기) 메뉴와 별개로 "매출 계약 쓰기"라는 이름의 동작이 실제로 코드에 있는지 이 세션에서 찾지 못했다(04-02 SUMMARY의 key-decisions는 "계약 금액은 기존 `projects` write(PM)를 그대로 쓴다"고 명시 — 즉 **별도 권한 동작이 아니라 프로젝트 메뉴의 기존 `write`를 썼다**). 따라서 D-84의 "'매출 계약 쓰기' 권한 동작도 함께 정리"는 실제로는 "`revenue-section.tsx`의 `saveContractAction`류 서버 액션과 그 액션이 `actions.registry.ts`에 등록한 항목을 제거"로 귀결될 가능성이 높다 — **계획 단계에서 `app/(app)/projects/actions.ts`·`actions.registry.ts`를 직접 열어 실제 액션 이름을 확인해야 한다**(이 세션은 파일을 읽지 않았다, Gap).
+4. **파생 계산:** "현재 차수의 고객 승인 표시된 견적 합계"는 `domain/quotes/revisions.ts`(04-06이 만들 `currentRevision`)와 `quote_lines.quote_amount_krw` 합계 SUM 쿼리 조합이다 — 이미 04-05가 만든 `aggregateProjects`의 SUM 패턴과 같은 형태를 재사용할 수 있다.
+
+### 5. D-85 — 발행액 노출 전환
+
+**정보 노출표 현재 값** [VERIFIED: domain/permissions/info-items.ts:51-55, 원문 인용]:
+```
+// 경영관리 전용 정보다. domain/revenue가 이 항목이 불통과면 DTO 배열
+// (issuedEntries/paidEntries) 자체를 뺀다(열 단위 마스킹이 아니라 표 단위).
+{ key: "revenue.issued_amount", label: "매출 발행액", staffDefault: false },
+{ key: "revenue.paid_amount", label: "매출 입금액", staffDefault: false },
+```
+D-85는 `revenue.issued_amount`의 `staffDefault`만 `false → true`로 바꾸고 `revenue.paid_amount`는 그대로 둔다. **화면 분기가 전혀 필요 없다** — 04-02 SUMMARY의 key-decisions가 이미 "정보 노출 표 단위 배제 — `project()`가 `from` 키 존재 여부와 무관하게 `visible()` 실패 필드를 결과에서 빼는 기존 동작을 그대로 써서 배열 필드 자체를 계급별로 통째로 숨긴다(열 단위 마스킹이 아니라 표 단위)"라고 확인한 패턴이 `staffDefault` 값 하나만 바뀌면 그대로 "기획본부에게 발행 배열은 오고 입금 배열은 안 오는" 상태를 만든다.
+
+**영향받는 테스트:** `test/integration/revenue-entries.test.ts#(d)`(04-02가 명시적으로 "발행액·입금액이 기획본부에게 표 단위로 빠진다"를 검증하는 케이스, [VERIFIED: 04-02-SUMMARY.md coverage D3]) — 이 단언이 지금은 "발행·입금 둘 다 숨김"을 가정하고 있을 것이므로 "발행은 보임, 입금만 숨김"으로 **다시 써야 한다**(기존 케이스를 지우는 게 아니라 기대값을 바꾸는 수정). `revenue-section.tsx`의 EMPTY 문구(Copywriting "Empty — 발행 줄 / 입금 줄")도 UI-SPEC이 이미 "발행 `· 발행은 경영관리`(기획본부 **포함**, D-85)"로 rev 4에서 갱신해 뒀다 — 화면 문구 변경은 이미 명세됐고 남은 일은 권한 값과 테스트 기대값 정정뿐이다.
+
+**주의(Pitfall 후보):** 관리자가 실제 운영에서 이미 특정 계급의 `revenue.issued_amount` 권한을 수동으로 켜 뒀다면(설정 화면에서), `staffDefault` 변경은 새로 시드되는 역할에만 적용되고 **기존 역할의 저장된 권한 값에는 소급 적용되지 않는다**(이 프로젝트의 권한표는 역할별로 저장된 명시값이지 `staffDefault`를 매번 읽는 라이브 fallback이 아닐 가능성이 높다 — 이 세션은 `domain/permissions/scope-for.ts`·권한 저장 스키마를 이번 조사에서 재확인하지 않았다, Gap). 데이터가 전부 `source='demo'`인 현재로서는 실무 영향이 없지만, 계획은 이 값이 "새 시드 기본값"인지 "기존 역할도 소급 갱신하는 마이그레이션이 필요한지"를 구분해야 한다.
+
+### 6. D-87~D-91 — 목록 개정
+
+**현재 쿼리 구조** [VERIFIED: 04-05-SUMMARY.md patterns, repositories/projects.ts] — `listProjectsPage`·`aggregateProjects`가 `projectFilterConditions` 공유 함수로 같은 필터를 쓰고, `selectDistinctOn(quoteRevisions.projectId ORDER BY seq DESC)`로 현재 차수를 파생 조인하며, `quote_lines` 합계 서브쿼리를 붙인다. 그룹은 "SQL 1차 정렬(종료일 IS NULL → 월 → 요청 정렬 키)"로 만들어지고 domain은 라벨만 파생한다. 필터는 현재 상태·팀·**연도**(종료일 기준, 기본값 "전체")·검색어 넷이다.
+
+**D-87(클라이언트 열·매출/견적/실행가/수익금/수익률 다섯 금액 열):**
+- 클라이언트는 이미 목록 쿼리가 조인해서 가져온다(`clientName` DTO 필드가 이미 있음, [VERIFIED: domain/projects/index.ts:112 `clientName: string`]) — 04-05가 부제로 두던 것을 별도 열로 옮기는 것은 **순수 렌더링 변경**(쿼리 변경 없음).
+- 매출(발행 합계) — 신규. `revenue_entries` 표를 프로젝트별로 SUM하는 서브쿼리를 `listProjectsPage`/`aggregateProjects`에 추가해야 한다. 04-02의 `revenue-entries.ts` 리포지토리가 이미 발행/입금 목록 조회는 갖고 있지만 **프로젝트 목록 화면을 위한 집계**(전 프로젝트에 대한 SUM 한 번)는 아직 없다 — 04-05의 견적/실행가 합계 서브쿼리와 같은 패턴을 반복해야 한다.
+- 수익금 = "발행 전에는 견적−실행가, 발행 줄이 하나라도 있으면 발행 합계−실행가" — 이 조건 분기(EXISTS 발행 줄)는 SQL `CASE WHEN EXISTS (SELECT 1 FROM revenue_entries WHERE ...) THEN ... ELSE ... END`로 표현 가능하지만, 04-05 key-decisions가 이미 "money 셋(견적·실행가·차익)에 계급별 시각적 fallback을 구현하지 않았다 — 항목을 쪼개는 것은 아키텍처 변경(Rule 4)"이라고 못박은 전례가 있다 — D-87의 "기준 표시"(견적/발행 중 어느 것을 썼는지)는 **같은 `quote.amount` 정보 항목**으로 묶을지 별도 항목으로 쪼갤지 계획이 재검토해야 한다(D-87이 명시적으로 "행이 어느 기준을 쓰는지 알 수 있게 표시"를 요구하므로 최소한 DTO에 `basis: "quote" | "issued"` 필드가 필요하다).
+
+**D-89(올해 기본 + 겹침 필터):** 현재 연도 필터는 "종료일이 그 연도"인 단일 연도 매칭이다(04-05 key-decisions "연도 필터는 종료일 기준"). D-89는 **기간 겹침**(프로젝트 기간이 보기 범위와 겹치면 보임)으로 바뀐다 — SQL 조건이 `end_date BETWEEN 연도시작 AND 연도끝`에서 `(start_date, end_date) OVERLAPS (범위시작, 범위끝)` 형태(Postgres `OVERLAPS` 연산자 또는 `start_date <= 범위끝 AND (end_date IS NULL OR end_date >= 범위시작)`)로 바뀐다. **기간 없는 행(수주중)의 겹침 판정**은 UI-SPEC S1이 이미 "⚠ unresolved" 플래그로 남겨 둔 문제다([VERIFIED: 04-UI-SPEC.md:423] "권장 기본값: 수주중은 보기 범위와 무관하게 항상 보이고, 그 밖의 기간 미정 행은 등록일이 보기 범위 안일 때만 보인다") — 계획이 이 권장값을 받아들이거나 사용자에게 재확인해야 한다.
+
+**D-90(귀속 연도 = 종료일, 제외 건수):** 목록이 여러 연도에 걸쳐 같은 행을 중복 표시하되 합계는 "귀속 연도"(종료일 소속 연도)에만 전액 넣는다는 것은 **SQL 집계가 "화면에 보이는 필터 조건"과 "합계에 포함되는 조건"을 분리**해야 한다는 뜻이다 — `aggregateProjects`는 지금 "필터와 같은 조건"을 그대로 SUM한다(04-05 patterns "목록 쿼리와 집계 쿼리가 이 함수 하나만 호출해 서로 다른 조건을 쓰는 경로를 원천적으로 없앤다"). D-90은 이 불변식을 깨야 한다 — 집계는 "필터 조건 AND 귀속 연도 = 보기 연도"라는 **추가 조건**을 얹어야 하고, "제외 건수"(필터에는 걸리지만 합계에서는 빠지는 행 수)를 **별도로 세야** 한다. 04-05가 세운 "필터 공유 함수 하나" 원칙은 유지하되, 집계 함수에 "귀속 연도 조건을 추가로 적용할지" 파라미터를 더하는 형태가 자연스럽다(파라미터가 없으면 목록과 똑같이 필터만 적용해 기존 사용처 하위 호환).
+
+**D-91(번호 페이지):** 04-05가 만든 `PROJECT_LIST_DEFAULT_LIMIT`(50)·`PROJECT_LIST_MAX_LIMIT`(1000)와 "더 보기"(count 파라미터, offset 없이 limit만 늘리는 방식) [VERIFIED: domain/projects/index.ts:144-147, 04-05-SUMMARY.md D1] 를 **진짜 페이지네이션**(offset 기반 `page` 파라미터)으로 바꿔야 한다. 04-05가 "더 보기"를 `count` 파라미터(누적 개수)로 짰다면 이는 매번 "0부터 N개"를 다시 읽는 방식이라 실제 오프셋 페이지네이션과 다르다 — `page=3`이 "51~100번째"가 아니라 "0~150번째를 다시 읽고 화면에서 51~100만 보여주는" 형태였다면 성능·구현이 달라진다. **이 세션은 04-05의 실제 리포지토리 쿼리(offset vs count)를 정확히 읽지 않았다 — 계획 단계에서 `repositories/projects.ts`의 `listProjectsPage` 실제 SQL(`LIMIT`/`OFFSET` 유무)을 확인해야 한다(Gap).** `ui/pagination`은 신규 컴포넌트이고(§9 아래) 목록·리저브는 `<a href="?page=N&…">` GET 이동, 견적 줄 표는 `<button>` 화면 안 전환(다른 메커니즘) — 하나의 컴포넌트가 두 가지 네비게이션 방식을 다 지원해야 한다(UI-SPEC S12 원문).
+
+### 7. D-91 — 견적 줄 30줄 페이지와 키보드 그리드 상호작용
+
+`ui/table`의 키보드 훅 셋(`use-grid-keyboard.ts`·`use-clipboard-paste.ts`·`use-dirty-storage.ts`, 전부 04-04 산출물)은 지금 **한 화면에 로드된 전체 줄**을 대상으로 동작한다고 가정할 가능성이 높다(04-04 계획서가 "페이지" 개념을 몰랐던 시점에 작성됨). D-91이 요구하는 페이지 경계 규칙(UI-SPEC §7-3 (자) 신설, "키보드·범위·붙여넣기·새 줄·오류 이동" 계약)은 04-04가 만든 세 훅에 **전부 손을 대야 한다**:
+- `use-grid-keyboard.ts` — 방향키가 페이지 경계에서 다음/이전 페이지로 넘어가는지, 아니면 그 페이지 안에서만 순환하는지(UI-SPEC은 "페이지 경계를 어떻게 넘는지는 계획·UI 계약이 정한다"로 위임 — 미확정).
+- `use-clipboard-paste.ts` — 붙여넣기가 페이지를 넘는 줄 수를 요구하면(예: 30줄 페이지에서 25번째 줄에 40줄을 붙여넣기) 새 줄이 다음 페이지로 넘어가야 하는데, "표를 넘으면 새 줄 자동"(D-67)이 이제 "페이지를 넘으면"과 "표(전체 차수)를 넘으면" 두 가지 경계를 가진다 — 데이터 모델은 여전히 전체 줄(최대 300)을 한 번에 서버에서 받아 **클라이언트 메모리에서 30줄 단위로 나눠 보여주는 것**(UI-SPEC S12 "견적 줄 표는 이미 받은 줄을 화면 안에서 나누므로 로딩 구간이 없다")이 확인된 설계다 — 서버 페이지네이션이 아니라 **클라이언트 사이드 슬라이싱**이다. 이는 붙여넣기·저장 로직 자체(전체 줄 배열을 다루는 `saveQuoteLines`)에는 영향이 없고 **렌더링 계층(30줄씩 자르는 뷰)만** 새로 필요하다는 뜻 — Pitfall로 원 리서치에 없던 긍정적 발견: 300줄 상한(D-86)이 이미 있어 "한 번에 최대 300줄을 받아 클라이언트에서 자른다"는 접근의 페이로드 크기가 통제돼 있다(300줄 × 11열 정도는 무시할 만한 크기).
+- `use-dirty-storage.ts` — 미저장 편집 브라우저 저장(D-68)이 페이지 전환에도 살아남아야 한다(D-91 원문 "dirty·오류·충돌 표시는 페이지를 오가도 남는다") — 저장 키가 이미 줄 id 기반이면 영향 없고, 페이지 인덱스 기반이면 재설계가 필요하다(이 세션은 실제 스토리지 키 설계를 읽지 않았다, Gap — `ui/table/use-dirty-storage.ts` 직접 확인 필요).
+
+### 8. D-93 — 코드표 값 설명
+
+**현재 스키마에 설명 칸이 없다** [VERIFIED: db/schema/code-tables.ts 전문 — 컬럼은 `id, tableKey, value, label, sortOrder, active, customFields, taxRule, archivedAt, archivedBy, createdAt, updatedAt`뿐, `description` 없음]. 새 마이그레이션으로 `ALTER TABLE code_items ADD COLUMN description text`(nullable, 기본값 없음 — 기존 행은 전부 `—`로 렌더, D-93 "설명이 없는 값은 힌트 줄 자체가 없다"). 40자 상한은 zod 서버 검증(`z.string().max(40)`)이지 DB 제약(CHECK)일 필요는 없다 — 기존 패턴(설정 `hint` 필드가 "최대 한 줄" 같은 애플리케이션 레벨 관례이지 DB CHECK가 아님, [VERIFIED: domain/settings/registry.ts:31 주석])과 일치한다.
+
+**관리 UI 패턴 — `CodeItemLabelInput` 재사용.** UI-SPEC S14가 "이름 칸과 같은 인라인 편집(blur 저장, 실패 시 서버 값으로 되돌림)"을 명시하며 이 컴포넌트 이름을 직접 지목했다 [VERIFIED: 04-UI-SPEC.md:1369]. 이 세션은 `CodeItemLabelInput`의 실제 파일 위치를 확인하지 않았다(Gap — `app/(app)/admin/code-tables/` 아래 있을 것으로 추정, [ASSUMED]) — 계획 단계에서 이 컴포넌트를 찾아 `description` 필드에 맞는 두 번째 인라인 편집 인스턴스를 만드는 것이 "새 패턴을 발명하지 않는" 가장 저렴한 경로다.
+
+**값을 고르는 자리(Select)의 힌트 — 04-06 이후의 일반 과제.** D-93의 "고르는 자리에서도 설명을 볼 수 있게"는 `ui/select/Select`(04-01 산출물) 자체에 옵션 설명을 붙이는 기능이 아니라(§7-2 "커스텀 드롭다운 만들지 않는다" — 네이티브 `<select>`는 옵션에 설명을 표시할 표준 방법이 없다), UI-SPEC S14가 이미 정확히 규정한 대로 **컨트롤 바로 아래 `Form.Hint` 한 줄**(값이 바뀌면 클라이언트 상태로 즉시 갱신)로 구현한다 — 이는 `ui/select/Select`를 감싸는 상위 컴포넌트(화면별 소분류/증빙종류 Select)가 선택된 값에 대응하는 설명을 코드 항목 목록에서 찾아 렌더하는 **순수 클라이언트 로직**이다(새 서버 조회 없음 — 코드 항목 전체 목록이 이미 옵션 자체를 채우려고 클라이언트에 로드돼 있다).
+
+### 9. D-94/D-95 — 전역 Ctrl 표기·숫자 서식
+
+**`⌘` 사용처(grep 실측, 7파일):**
+- `ui/shell/TopBar.tsx:138` — `<kbd>⌘K</kbd>`(검색 단축키 힌트, 02 페이즈 산출물)
+- `ui/table/use-grid-keyboard.ts:19,22,26` — 주석 안 표기(코드 동작에는 영향 없음, 문서 정정만)
+- `ui/table/parse-tsv.ts:77` — 주석
+- `ui/table/Table.tsx:19` — 주석
+- `app/(app)/projects/project-form.tsx:103` — `shortcut="⌘↵"` prop 값(실제 화면 렌더)
+- `app/(app)/projects/[id]/quote-table.tsx:309,850,880,908` — `shortcut="⌘S"` prop 값 + `emptyAction` 라벨 문자열 + 힌트 줄 문자열(전부 실제 렌더)
+- `test/e2e/quote-table.spec.ts:90` — 테스트 주석
+
+**Ctrl 동작 자체는 이미 구현돼 있다.** `Button` 컴포넌트의 `shortcut` prop은 **표시 문자열**일 뿐이고, 키보드 이벤트 리스너(`use-grid-keyboard.ts` 등)는 `event.metaKey || event.ctrlKey` 형태로 이미 두 플랫폼을 다 받고 있을 가능성이 높다(macOS 개발 관례상 흔한 패턴) — **이 세션은 실제 이벤트 핸들러 코드(`if (e.metaKey ...)` 조건)를 열어 확인하지 않았다(Gap, 계획 단계 필수 확인 사항).** D-94가 "표기와 동작 모두"를 요구하므로, 만약 핸들러가 `metaKey`만 검사하고 `ctrlKey`를 검사하지 않는다면(Windows에서 Ctrl 키를 눌러도 아무 일도 안 일어남) 이는 **표기 변경만으로는 해결되지 않는 기능 버그**다. 계획의 첫 태스크가 `grep -rn "metaKey" ui/table/ app/` 로 실제 조건문을 확인해야 한다.
+
+**`toLocaleString`/`toFixed` 숫자 표시 사용처(grep 실측, UI-SPEC이 이미 정확히 인용한 목록과 일치 — 독립 검증 완료):** `ui/next-turn/NextTurn.tsx`, `app/(app)/projects/[id]/quote-table.tsx`, `app/(app)/projects/[id]/revenue-section.tsx`, `app/(app)/projects/projects-table.tsx`, `domain/money/index.ts`, `domain/quotes/lines.ts`. UI-SPEC이 이미 구분해 뒀듯 `domain/money`·`domain/quotes/lines.ts`의 `toFixed`는 **저장 직렬화용**(DB에 보낼 문자열 조립)이라 D-95 표시 서식 통합 대상이 **아니다** — 표시 서식 통합은 화면 파일 넷(`NextTurn`·`quote-table`·`revenue-section`·`projects-table`)만 대상이다.
+
+**단일 포맷 모듈 설계(ASSUMED, 계획이 확정):** `lib/format-number.ts`(또는 `ui/format/`) 신규 — `formatKrw(n)`(쉼표, 소수 없음), `formatForeign(n, currency)`(`USD 1,000.00`), `formatFxRate(n)`(끝 0 제거, 최대 4자리), `formatQuantity(n)`(끝 0 제거, 최대 2자리), `formatPercent(n)`(소수 1자리). 입력 칸의 "타이핑 중 쉼표 자동 삽입"은 `ui/input/TextField`(04-01 산출물, 이미 `aria-invalid`/`aria-describedby` 구현)에 새 variant나 `onChange` 포맷팅 래퍼를 더하는 형태가 기존 컴포넌트 경계(D-19·D-25)와 맞는다 — 화면마다 개별 `onChange` 핸들러를 짜지 않는다(D-95 원문 "화면마다 따로 구현하지 않는다").
+
+### 10. REQUIREMENTS·ROADMAP 2차 보강
+
+**PROJ-04 현재 문구(REQUIREMENTS.md:29):** "프로젝트 상태는 수주중 → 진행 → 완료(정산)와 미수주 **네** 가지다 … 전환은 수주중 → 진행, 수주중 → 미수주, 진행 → 완료(정산), 미수주 → 진행 복귀이고 …" [VERIFIED: .planning/REQUIREMENTS.md:29] — D-75~D-82로 완전히 대체된 문구다. 다섯 상태·자동 전이(진행→정산)·PM 결재 없는 대표 직접 전환(정산→완료) 등을 반영해야 한다.
+
+**ROADMAP Phase 4 성공 기준 4 현재 문구:** "프로젝트에 계약 금액·세금계산서 발행일/발행액·입금일/입금액을 적을 수 있고, 상태 전환 수주중 → 진행·수주중 → 미수주·진행 → 완료(정산)·미수주 → 진행 복귀가 전부 3의 게이트를 지난다. 잠기는 상태는 완료(정산) 하나뿐이라 …" [VERIFIED: .planning/ROADMAP.md, "### Phase 4" 절 기준 4] — **"계약 금액을 적을 수 있고"는 D-84로 정반대(계약 금액 입력 칸 자체가 없어짐)가 됐고**, 전환 목록도 다섯 상태 기준으로 다시 써야 한다. ROADMAP Goal 문단("수주중→진행→완료(정산) + 미수주")도 같이 갱신 대상.
+
+**절차:** 04-CONTEXT.md Deferred 절이 이미 "보완 계획이 `gsd_run`으로 고친다(수동 편집 금지)"를 명시했다 — 1차 보강(D-41, `edd0d73` 커밋)과 같은 절차를 반복한다. **REQUIREMENTS.md는 PROJ-04뿐 아니라 PROJ-03(계약 금액 언급, [VERIFIED: .planning/REQUIREMENTS.md:28 "프로젝트에 매출 최소 칸(계약 금액, 세금계산서 발행일·발행액, 입금일·입금액)을 기록한다 … 별도 매출 모듈은 없다"])도 D-84로 인해 "계약 금액" 문구를 파생 표시로 정정해야 한다** — 이 세션이 새로 발견한 2차 영향 범위다(사용자가 명시한 "PROJ-04·ROADMAP 기준 4"보다 넓을 수 있음, 계획 검토에서 확인 권장).
+
+### 신규 Pitfalls
+
+**Pitfall 5: `project.completed-lock` 게이트 규칙의 이진 판정이 D-78·D-83과 구조적으로 맞지 않는다.**
+**What goes wrong:** 04-06을 "옛 계획에 D-75~D-95만 끼워 넣는" 방식으로 패치하면, `ctx.status !== "settled"`를 `ctx.status !== "settled" && ctx.status !== "completed"`처럼 조건만 늘리는 미봉책이 나오기 쉽다 — 이러면 정산 상태에서 "실행가만 편집 가능"이라는 D-78의 3단계 요구를 표현할 수 없다(지금 반환 타입은 `allowed: true/false` 이진이라 "일부만 허용"을 못 담는다).
+**Why it happens:** 04-01이 이 규칙을 만들 때는 네 상태·이진 잠금 모델(D-41)만 존재했다.
+**How to avoid:** 04-06 재계획은 게이트 반환 타입 자체를 확장(`allowed: true | false | "partial"` 또는 셀별 editability를 돌려주는 새 규칙 이름)하거나, "저장 시도된 필드 집합"을 `ctx`에 실어 규칙이 "이 필드들 중 허용 안 된 것이 있으면 거부"로 판정하는 형태로 바꿔야 한다.
+**Warning signs:** 정산 상태에서 실행가 셀만 저장했는데도 게이트가 전체 거부하거나, 반대로 수량·단가까지 저장이 통과되는 회귀.
+
+**Pitfall 6: D-75 마이그레이션이 0009처럼 "표가 비어 있다" 전제를 재사용하면 dev/test DB 전부에서 실패한다.**
+**What goes wrong:** 0009의 가드는 "projects 표에 이미 행이 있으면 중단"이었다 — 이 정확한 패턴을 그대로 복사하면 04-01 이후 어떤 DB(로컬 dev·CI·erp_test)에도 이미 프로젝트 데모 행이 있으므로 새 마이그레이션이 매번 실패한다.
+**Why it happens:** 0009는 "신규 표 생성 + 코드표 초기 시드"라 표가 비어 있는 것이 자연스러운 전제였지만, D-75는 "이미 사용 중인 표의 값 재매핑"이라 전제가 다르다.
+**How to avoid:** 위 §1의 가드 패턴처럼 "code_items가 정확히 네 값인가"만 확인하고 `projects` 표 자체는 검사하지 않되, 값 재매핑은 DELETE가 아니라 UPDATE로 처리한다.
+**Warning signs:** `pnpm db:migrate`가 로컬에서는 되는데(빈 DB) CI나 다른 개발자 환경(demo 데이터 있음)에서 `RAISE EXCEPTION`으로 막힘.
+
+**Pitfall 7: D-76 자동 전환을 읽기 시점에 구현하면서 KST 자정을 서버 타임존(UTC 추정)으로 계산.**
+**What goes wrong:** `end_date < CURRENT_DATE`를 그대로 쓰면 Postgres 서버가 UTC 타임존일 때(Cloud SQL 기본값이 흔히 UTC) 실제 KST 자정과 최대 9시간 어긋난 시점에 전환이 발생한다 — 예를 들어 한국 시간 09:00(=UTC 전날 24:00 직후)에 `CURRENT_DATE`가 이미 넘어가 버려 KST로는 아직 자정 전인데 정산으로 바뀔 수 있다.
+**Why it happens:** `date` 컬럼과 `CURRENT_DATE`는 서버 세션 타임존을 따르고, 이 프로젝트의 다른 KST 표시 로직(`toLocaleTimeString(..., { timeZone: "Asia/Seoul" })`)은 전부 애플리케이션 레이어에서 처리하지 DB 레이어에서 타임존 변환을 하지 않는다.
+**How to avoid:** 계획 단계에서 서버 `timezone` 설정을 확인(Gap, 위 §2)하고, 필요하면 `(end_date + interval '1 day') <= (now() AT TIME ZONE 'Asia/Seoul')::date` 형태로 명시적 타임존 변환을 건다.
+**Warning signs:** 통합 테스트가 UTC 기준 시각으로 작성되어 KST 경계 근처(오전 0~9시)의 버그를 못 잡음.
+
+### Validation Architecture 추가분
+
+| Req/결정 ID | Behavior | Test Type | Automated Command | File Exists? |
+|---|---|---|---|---|
+| D-75 | 5개 code_items 값·기존 settled 행 재매핑이 새 마이그레이션으로 이뤄지고 0009는 그대로다 | integration | `pnpm lint:sql && pnpm db:migrate` | ❌ Wave 0(새 마이그레이션 파일) |
+| D-76 | 진행 상태·종료일 지난 프로젝트를 조회하면 정산으로 바뀌고 같은 날 재조회해도 행동 로그가 한 줄이다(멱등) | unit(주입된 `now`) + integration | `pnpm vitest run --project unit domain/projects/auto-transition` | ❌ Wave 0 |
+| D-78 | 정산 상태에서 실행가 저장은 통과, 수량·단가·항목 저장은 거부된다(같은 배치 안에 섞이면 전부 거부) | unit + integration | `pnpm vitest run --project integration quote-lines` | ❌ Wave 0(기존 파일 확장) |
+| D-83 | 경영관리가 아닌 사용자의 조정 줄 저장이 거부되고, 경영관리는 상태 무관하게 통과한다 | unit + integration | 〃 | ❌ Wave 0 |
+| D-86 | 300줄 도달 시 줄 추가·붙여넣기가 서버에서도 거부된다(클라이언트 우회 흉내) | integration | 〃 | ❌ Wave 0 |
+| D-84 | `projects.contract_*` 참조가 코드에서 사라지고 계약 금액이 SUM 파생값으로 응답된다 | integration | `pnpm vitest run --project integration projects` | ❌ Wave 0 |
+| D-85 | 기획본부 viewer로 조회하면 발행 배열은 오고 입금 배열은 빠진다(기존 revenue-entries.test.ts#(d) 기대값 수정) | integration | `pnpm vitest run --project integration revenue-entries` | 기존 파일 수정 |
+| D-87~90 | 겹침 필터·귀속 연도 합계·제외 건수가 집계 쿼리 한 번으로 나온다(04-05 공유 필터 원칙 유지 확인) | integration | `pnpm vitest run --project integration projects-list` | 기존 파일 확장 |
+| D-91(목록) | `page=3` 요청이 올바른 offset을 반환한다(범위 밖 페이지는 마지막 페이지로) | integration | 〃 | 기존 파일 확장 |
+| D-91(견적 줄) | 31번째 줄부터 클라이언트 페이지 나눔이 그룹 머리글을 반복하고 저장 거부 시 오류 페이지로 자동 이동한다 | E2E | `pnpm playwright test quote-table` | 기존 스펙 확장 |
+| D-93 | 코드표 설명 40자 초과 저장이 서버에서 거부된다 | unit + integration | `pnpm vitest run --project integration code-tables` | 기존 파일 확장 |
+| D-94 | Ctrl 키 이벤트가 Mac(metaKey)·Windows(ctrlKey) 둘 다에서 같은 동작을 일으킨다 | E2E(키 이벤트 시뮬레이션) | `pnpm playwright test quote-table` | 기존 스펙 확장 |
+| D-95 | 원화·외화·환율·수량이 화면마다 같은 포맷 모듈을 거쳐 렌더된다(회귀 방지용 스냅샷 또는 유닛) | unit | `pnpm vitest run --project unit lib/format-number` | ❌ Wave 0 |
+
+### 추가 Assumptions Log
+
+| # | Claim | Section | Risk if Wrong |
+|---|---|---|---|
+| A7 | 기존 `settled` 행을 "완료"(새 값)로 재매핑하는 것이 "정산"보다 안전하다 | §1 D-75 | D-75가 이미 계획 재량으로 명시했으므로 계획이 반대로 정해도 무방 — 이 세션의 권장은 참고용 |
+| A8 | D-76은 Cloud Scheduler 없이 읽기 시점 판정으로 구현해야 한다(Phase 7로 인프라 이관) | §2 D-76 | 사용자가 Phase 4에서 실제 배치 정합성(뷰 없이도 자정에 정확히 전환)을 요구하면 이 권장은 틀리고 Cloud Scheduler를 앞당겨 지어야 한다 — 확인 체크포인트 필요 |
+| A9 | `CodeItemLabelInput`이라는 이름의 컴포넌트가 실제로 `app/(app)/admin/code-tables/` 아래 존재한다 | §8 D-93 | UI-SPEC 원문이 이 이름을 인용했을 뿐 이 세션이 파일을 직접 열지 않았다 — 실제로는 다른 이름일 수 있음 |
+| A10 | `ui/table`의 키보드 이벤트 핸들러가 이미 `metaKey`만 검사하고 `ctrlKey`는 검사하지 않는다 | §9 D-94 | 실제로는 이미 둘 다 검사하고 있어 D-94가 표기만 바꾸면 끝나는 작업일 수도 있음 — 계획 단계 첫 확인 사항 |
+| A11 | `listProjectsPage`가 현재 offset 기반이 아니라 "count까지 다시 읽기" 형태일 가능성이 있다 | §6 D-91 | 실제로 이미 LIMIT/OFFSET이면 D-91 작업량이 이 리서치의 추정보다 적음 |
+
+### 추가 Sources
+
+**Primary(HIGH — 이 세션에서 직접 읽음, 신규):**
+- `db/migrations/0009_project_quote_ledger_spine.sql`(전문), `db/schema/projects.ts`, `db/schema/code-tables.ts`(전문) — 현재 상태 값·코드표 스키마
+- `domain/rules/gate.ts`(전문), `domain/rules/register.ts`(전문) — 게이트 단일 진입점의 현재 반환 타입(이진)과 등록된 유일한 규칙
+- `domain/quotes/lines.ts`(전문) — 셀 단계 판정 부재 확인, `saveQuoteLines`의 게이트 호출 지점, KST 포맷 기존 패턴(`changedAt`)
+- `domain/action-log/record.ts:120-144`, `domain/viewer.ts`(전문) — `SYSTEM_VIEWER`가 D-76의 "행위자=시스템" 요구에 이미 대응하는 기존 메커니즘임을 확인
+- `domain/permissions/info-items.ts`(전문) — `revenue.issued_amount`/`revenue.paid_amount` 현재 `staffDefault` 값
+- `domain/settings/registry.ts:1-40`, `domain/settings/keys.ts`(발췌) — `SettingDef`/`SettingKind` 형태, 300줄 상한 키가 따라야 할 패턴
+- `db/schema/money-columns.ts`(전문) — `moneyColumns()` 헬퍼가 실제로 프로덕션에서 `preEstimate`·`contract` 두 접두어로 이미 동작 중임을 확인(원 리서치 A1 assumption을 사실상 해소)
+- `scripts/deploy.sh:325-392`(발췌) — Cloud Run Job 배포 패턴(Cloud Scheduler는 없음)
+- `.planning/phases/04-project-quote-ledger/04-06-PLAN.md`(전문) — 재계획 대상 플랜의 현재 범위, D-66 셀 단계 판정이 이미 "Phase 5가 조회 지점을 채운다"로 설계돼 있음을 확인
+- `.planning/REQUIREMENTS.md:26-31`, `.planning/ROADMAP.md`(Phase 4 절) — PROJ-04 등 2차 보강 대상 정확한 현재 문구
+- `04-01-SUMMARY.md`·`04-02-SUMMARY.md`·`04-05-SUMMARY.md`(전문) — 이미 구현된 패턴(옵션 tx 합성, 표 단위 정보 노출 배제, 공유 필터 함수, offset/count 목록 방식) 확인
+- `.planning/phases/04-project-quote-ledger/04-UI-SPEC.md`(rev 4 전문, S1·S4·S6·S7·S12~S15 및 Component Inventory·Color·Copywriting 절) — 신규 표면 셋(Pagination·기간 칸·코드표 설명)의 정확한 계약, UI-SPEC 자체가 남긴 6개의 "⚠ unresolved" 플래그(정산 구조 잠금·조정 줄과 복사·진행 상태 수동 전환·기간을 누가 고치나·기간 미정 겹침 판정 등)
+
+**Secondary(MEDIUM — grep으로 확인한 코드 실측, 원문 인용 없이 존재/부재만 확인):**
+- `⌘` 사용처 7파일, `toLocaleString`/`toFixed` 사용처 6파일(UI-SPEC 인용과 독립적으로 재확인, 정확히 일치)
+- `vi.useFakeTimers`/`MockDate` 리포 내 사용 0건(시간 동결 테스트 선례 없음 확인)
+- `gcloud scheduler` 리포 내 참조 0건, `find app -iname "*internal*"` 0건(Cloud Scheduler·내부 엔드포인트 미착수 확인)
+
+**Tertiary(LOW — 이 세션에서 검증하지 않음, Gap으로 명시):**
+- Postgres 서버(로컬 dev·Cloud SQL) 타임존 설정
+- `app/(app)/projects/actions.ts`·`actions.registry.ts`의 실제 "매출 계약 쓰기" 액션 이름
+- `ui/table/use-grid-keyboard.ts` 등의 실제 `metaKey`/`ctrlKey` 이벤트 조건문
+- `ui/table/use-dirty-storage.ts`의 실제 브라우저 저장소 키 설계(줄 id 기반인지 페이지 인덱스 기반인지)
+- `repositories/projects.ts`의 `listProjectsPage` 실제 SQL이 `LIMIT/OFFSET`인지 "count까지 재조회"인지
+- `CodeItemLabelInput` 컴포넌트의 실제 파일 위치·시그니처
+
+**추가분 유효기간:** 04-06·04-02 보완·04-05 보완 플랜 수립 기간 동안 유효. 04-04 완료(Task 3 사람 확인 통과) 뒤 `ui/table` 훅 셋의 실제 형태가 이 절의 §7·§9 Gap 다수를 해소할 수 있으므로, 04-04가 완료되면 이 절의 Gap 목록을 재확인 권장.

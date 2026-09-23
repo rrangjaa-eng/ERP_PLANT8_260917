@@ -9,8 +9,13 @@
 #   record-skill   PostToolUse(Skill)       — 호출한 스킬 이름을 기록
 #   record-prompt  UserPromptSubmit         — /gsd-… 같은 슬래시 명령을 기록
 #   agent          PreToolUse(Agent)        — gsd-* 에이전트는 맞는 /gsd-* 스킬을 부른 뒤에만,
-#                                            gsd-executor는 페이즈 계획 게이트(CEO·엔지·UI면 디자인 리뷰) 기록 뒤에만
-#   bash           PreToolUse(Bash)         — 코드 커밋은 TDD·검증 스킬 뒤에만, 페이즈 완료는 /review·/qa 뒤에만
+#                                            gsd-executor는 페이즈 계획 게이트(CEO·엔지·UI면 디자인 리뷰) 기록 뒤에만.
+#                                            검사를 모두 통과한 메인 에이전트 gsd-executor 디스패치는 세션당
+#                                            한 번만(D-04, 사용자 결정 2026-09-23) — 검사가 마지막이라 거부된
+#                                            디스패치는 그 한 번을 쓰지 않는다
+#   bash           PreToolUse(Bash)         — 모든 커밋(문서 포함)은 verification-before-completion 뒤에만,
+#                                            코드 커밋은 test-driven-development도 더해서(D-02, 사용자 결정
+#                                            2026-09-23). 페이즈 완료는 /review·/qa 뒤에만
 #   edit           PreToolUse(Edit|Write)   — 코드 작성은 test-driven-development 뒤에만,
 #                                            테스트·빌드 실패 뒤 코드 수정은 systematic-debugging 뒤에만
 #   failure        PostToolUseFailure(Bash) — 테스트·빌드 실패를 표시
@@ -28,6 +33,7 @@ mkdir -p "$state_dir"
 skills_file="$state_dir/${session}-${agent}.skills"      # 이 에이전트가 부른 스킬
 session_skills="$state_dir/${session}.skills"           # 세션 전체(메인 + 서브)
 debug_flag="$state_dir/${session}-${agent}.debug-required"
+executor_flag="$state_dir/${session}.executor-dispatched"  # D-04: 세션당 gsd-executor 한 번
 
 normalize() { sed -e 's/^\///' -e 's/^[^:]*://' -e 's/[[:space:]].*$//'; }
 
@@ -103,6 +109,11 @@ case "$event" in
       [ -z "$missing" ] || deny "Phase ${phase_pad} 계획이 Pre-build 게이트를 통과하지 않았다(없음:${missing}). CLAUDE.md: 게이트를 통과한 계획만 Build로 넘긴다. 그 스킬들을 먼저 호출하라(기록: ${gate_log#"$project"/})."
     fi
     has_skill "$session_skills" "$need" || deny "${sub}는 GSD 워크플로 안에서만 띄운다. 먼저 Skill 도구로 해당 스킬(${need//|/ 또는 })을 호출하고 그 워크플로의 단계를 그대로 따르라. 워크플로를 임의로 바꾸거나 건너뛰려면 먼저 사용자 승인을 받아라."
+    if [ "$sub" = "gsd-executor" ]; then
+      if ! ( set -o noclobber; : > "$executor_flag" ) 2>/dev/null; then
+        deny "이 세션에서 이미 gsd-executor를 띄웠다 — 세션 하나에 플랜 하나. 다음 플랜(같은 웨이브의 병렬 플랜, 체크포인트 이어가기 포함)은 새 세션에서 실행한다 — 커밋·푸시 → /gsd-pause-work → 새 세션(/gsd-progress)."
+      fi
+    fi
     ;;
 
   bash)
@@ -114,7 +125,7 @@ case "$event" in
       phase_has_ui && ! gate_has design-review && missing="$missing /design-review"
       [ -z "$missing" ] || deny "Phase ${phase_pad} 완료 전에 실제로 호출하라(없음:${missing}) — /gsd-verify-work, Post-build /review → /qa(UI면 /design-review) → (해당 시)/cso → /ship."
     fi
-    # 코드 커밋 — superpowers TDD·검증 먼저
+    # 커밋 — 문서·계획 포함 전부 verification-before-completion 먼저, 코드 경로는 TDD도 더해서
     if printf '%s' "$cmd" | grep -Eq '(^|[;&|[:space:]])git[[:space:]]+commit|gsd-tools\.cjs[^;&|]*[[:space:]]commit[[:space:]]'; then
       cwd="$(printf '%s' "$payload" | jq -r '.cwd // empty')"
       [ -n "$cwd" ] || cwd="${CLAUDE_PROJECT_DIR:-.}"
@@ -124,6 +135,9 @@ case "$event" in
       if printf '%s\n' "$files" | is_code_path; then
         has_skill "$skills_file" "test-driven-development" && has_skill "$skills_file" "verification-before-completion" \
           || deny "코드 커밋 전에 superpowers 스킬을 이 에이전트에서 호출하라: 구현 전 test-driven-development, 완료·커밋 전 verification-before-completion (Skill 도구). 호출 뒤 커밋을 다시 시도하라."
+      else
+        has_skill "$skills_file" "verification-before-completion" \
+          || deny "커밋 전에 superpowers 스킬을 이 에이전트에서 호출하라: 완료·커밋 전 verification-before-completion (Skill 도구). 문서·계획 커밋도 같다. 호출 뒤 커밋을 다시 시도하라."
       fi
     fi
     ;;

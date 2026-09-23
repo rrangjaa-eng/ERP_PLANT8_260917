@@ -61,7 +61,7 @@ case "$event" in
   post-tool)
     [ -z "$agent" ] || exit 0
     tool="$(printf '%s' "$payload" | jq -r '.tool_name // empty')"
-    if [ "$tool" = "Bash" ] && printf '%s' "$payload" | jq -r '.tool_input.command // empty' | grep -q 'state\.planned-phase'; then
+    if [ "$tool" = "Bash" ] && printf '%s' "$payload" | jq -r '.tool_input.command // empty' | grep -Eq 'gsd-tools\.cjs[^;&|]*state\.planned-phase'; then
       touch "$flag_plan_phase"
     fi
     done_plans="$(new_summaries)"

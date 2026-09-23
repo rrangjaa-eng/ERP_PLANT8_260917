@@ -9,18 +9,8 @@
 .gsd/
 .planning/**/.review-fix-recovery-pending.json
 
-# gstack vendored copy: never commit installs or build output
-.claude/skills/gstack/node_modules/
-.claude/skills/gstack/browse/dist/
-.claude/skills/gstack/design/dist/
-.claude/skills/gstack/make-pdf/dist/
-.claude/skills/gstack/.gstack/
-.claude/skills/gstack/.env
-.claude/skills/gstack/bin/gstack-cso-launcher*
-.claude/skills/gstack/bin/gstack-cso-core*
-.claude/skills/gstack/bin/gstack-cso-watchdog*
-.claude/skills/gstack/bin/.gstack-cso-*
-.claude/skills/gstack/bin/gstack-global-discover*
+# gstack: team mode — global install (~/.claude/skills/gstack), never vendored
+.claude/skills/gstack/
 
 # Node
 node_modules/

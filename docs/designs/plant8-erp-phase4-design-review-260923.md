@@ -10,7 +10,7 @@
 
 - 분류: OPERATE(업무 앱). HARD REJECTION 0건(두 모델 일치). 시각 방향은 적합하다.
 - 핵심 문제: 스펙이 CEO 결정(D5~D21)보다 오래돼 **검수 기준이 둘**이 됐고, 편집을 잃는 경로 셋(저장 중 입력, 새 차수, 상태 변경)이 남아 있었다.
-- 쟁점 34개(Opus 16 + Codex 12, 중복 병합, critical 4 · high 11 · medium 16 · low 3). 34개 모두 사용자가 하나씩 골랐다(4개씩 9차례).
+- 쟁점 34개(Opus 16 + Codex 12, 중복 병합, critical 4 · high 11 · medium 16 · low 3). 34개 모두 사용자가 하나씩 골랐다(4개씩 9차례). rev 5 작성 중 드러난 후속 쟁점 4개(35~38)도 사용자가 정했다.
 - **전역 원칙(사용자 지시, P0):** 관리자 메뉴 밖에서는 안내 문구를 최소로 하고 동작·행동 유도·화면 표시로 이끈다. rev 5 전체에 적용하고, 이미 정한 항목 중 문구가 들어간 것(4·6·9·16·17·21)도 이 원칙으로 옮긴다 — 문구는 가장 짧게, 되도록 셀 표시·잠긴 모양·버튼 상태로 대신한다. 관리자 화면(코드표 등)은 예외.
 
 ## 점수
@@ -29,7 +29,7 @@
 
 rev 4 체커 7차원 재판정(Opus): Copywriting FAIL · Visuals PASS(플래그) · Color FAIL(진행 바 `--accent` 충돌, D17 기록만 있음) · Typography PASS · Spacing PASS · Registry PASS · Inventory FAIL. 세 FAIL은 1·10·12·21번 결정과 rev 5가 해소한다.
 
-## 결정 원장 (34건, 전부 사용자 선택)
+## 결정 원장 (38건, 전부 사용자 선택)
 
 | # | 등급 | 쟁점 | 결정 |
 |---|---|---|---|
@@ -67,6 +67,10 @@ rev 4 체커 7차원 재판정(Opus): Copywriting FAIL · Visuals PASS(플래그
 | 32 | low | 클라이언트 열 `max-width: 6em` 말줄임(`:986`) | **32A** keep-all 두 줄 허용 |
 | 33 | low | C-27(PC 쪽 번호 생략)이 04-29 코드에는 있고 DECISIONS·§7-16에는 없음 | **33A** 04-29 Task 3 기록과 §7-16에 폰 규칙과 함께 기록 |
 | 34 | low | 목록 상태 글자 `--fs-xs` 아래 `종료일 지남`이 `--fs-sm`(`:1018`) | **34A** `--fs-xs` 400, 색 `--warning` 유지 |
+| 35 | 후속(rev 5) | 22번의 범위 — rev 5는 권한이 없는 줄(PM의 조정 줄)에만 「문구 없이 동작으로」를 적용했고, 지출결의 연결·정산·승인으로 잠긴 칸은 편집 시도 시 짧은 이유 한 줄 + 붙여넣기 오류 칸을 유지 | **35A** rev 5대로 유지 |
+| 36 | 후속(rev 5) | 14번(열 접기)의 부작용 — 700~1023px에서 수량·단가·비고(P3)가 숨어 표에서 편집 불가, 리저브는 클라이언트 열이 숨어 「리저브 줄 추가」가 빠짐 | **36A** 표 편집·줄 추가는 1024px 이상. 700~1023px은 보기 + 표 밖 칸(기간·예상가)만, 편집 컨트롤은 렌더하지 않음(24번 폰 규칙과 같은 방식) |
+| 37 | 후속(rev 5) | 28번에서 생긴 총 매출 예상가 칸의 수정 권한 미정(rev 5 S17 ⚠) | **37A** 기간 칸과 같은 권한 함수 |
+| 38 | 후속(rev 5) | 8번의 부작용 — 정산·완료인데 발행 줄이 0개면 수익금이 −실행가, 수익률 `—` | **38A** 발행 기준은 「정산·완료 + 발행 줄 1개 이상」일 때만. 발행이 없으면 견적 기준(매출 칸은 `—`) |
 
 ## 반영 경로 (이 순서로)
 
@@ -219,7 +223,7 @@ Recommendation: 출시 승인을 보류하고 편집 보존·현행 동작 계�
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | ISSUES OPEN (반영 완료) | mode: HOLD_SCOPE, 19 critical gaps (`plant8-erp-phase4-ceo-review-260923.md`) |
 | Outside Review | codex (`/plan-design-review` design voice) | Independent 2nd opinion | 1 | completed | 12 findings (critical 2 · high 5 · medium 5) — 결정 3·4·6·8·9·15·26~30에 반영 |
 | Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | ISSUES OPEN (결정 완료, 플랜 반영 확인 대기) | 75 issues, 9 critical gaps (`plant8-erp-phase4-eng-review-260923.md`) |
-| Design Review | `/plan-design-review` | UI/UX gaps | 1 | CLEAR (결정 34건 완료, rev 5·재계획 반영 대기) | score: 4/10 → 8/10, 34 decisions |
+| Design Review | `/plan-design-review` | UI/UX gaps | 1 | CLEAR (결정 38건 완료, rev 5·재계획 반영 대기) | score: 4/10 → 8/10, 38 decisions (34 + 후속 4) |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
 
 - **OUTSIDE COVERAGE:** codex · design · completed · 12 findings(편집 보존 2 · 검수 기준 이중화 · 상태 전환 dirty · 수익금 기준 · 계산값 상한 · 375 배치 · 폰 첫 화면 · 등록 Esc · 예상가 표시 · 코드표 입력 소실 · 연도·기간 빈 상태). HARD REJECTION 0.

@@ -222,6 +222,7 @@ export async function openInbox(
     SELECT (opened.at AT TIME ZONE 'UTC') AS opened_at, page.*
     FROM opened
     LEFT JOIN page ON true
+    ORDER BY page.created_at DESC NULLS LAST, page.id DESC
   `);
 
   const openedAtRaw = result.rows[0]?.opened_at;

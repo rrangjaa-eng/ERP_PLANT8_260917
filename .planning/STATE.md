@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 04
 current_phase_name: 프로젝트·견적 원장
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Completed 04-06-PLAN.md
-last_updated: "2026-09-24T21:33:41.922Z"
+stopped_at: Completed 04-09-PLAN.md
+last_updated: "2026-09-24T23:11:22.304Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 04 execution started
-state_head: f265219ac15c057b69f8b48ba61aaee8b58b42f5
+state_head: 57a48adc3bbab366e17956e7012ae4c62e3df682
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 65
-  completed_plans: 37
+  completed_plans: 38
   percent: 6
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 04 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 3
+Current Plan: 4
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-24 — Phase 04 execution started
@@ -87,6 +87,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P28 | 44 min | 3 tasks | 11 files |
 | Phase 04 P29 | 55min | 3 tasks | 11 files |
 | Phase 04 P06 | 27min | 2 tasks | 13 files |
+| Phase 04 P09 | 85min | 3 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -204,6 +205,8 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-29: ENG-D11 — 04-08이 §7-16에 적기로 했던 생략 규칙 기본 문장(PC 7쪽/8쪽)이 실제 SYSTEM.md에 없어 04-29가 기본 문장까지 함께 추가하고 회귀 테스트로 고정
 - [Phase 04]: 04-06: 프로젝트 상태 다섯 값(bidding·in_progress·settling·completed·lost), 옛 settled는 0012가 completed로 재매핑 — 0012 전진 전용·rollback-floor 표시
 - [Phase 04]: 04-06: 완료 잠금 게이트는 project.line-edit(완료 → 「완료 · 견적 줄 잠김」, 미수주 포함 나머지 통과) — project.completed-lock 삭제
+- [Phase 04]: 04-09: lib/format-number.ts is the single source of truth for numeric display + comma-input formatting; only FX_RECENT_RATE_USD gets numberKind in settings
+- [Phase 04]: 04-09: useCommaInput pre-formats initial value through the typed path so reload/reopen never shows uncomma'd text
 
 ### Pending Todos
 
@@ -221,6 +224,7 @@ Recent decisions affecting current work:
 - [All]: 과잉 설계 재발 방지 — 페이즈마다 "인트라넷보다 못한가"로 검증하고, 실제 사용자 로그인·입력이 있어야 완료로 본다
 - [Phase 2]: `docs/design/`(SYSTEM.md 725줄·tokens.css·DECISIONS.md·BRIEF.md·EXPLORE.md)은 **이미 있다**(2026-09-18 확인). Phase 2는 이 시스템을 앱 셸·임시 화면에 적용하는 일이며, 새 화면은 SYSTEM.md 기준을 따르고 시스템을 벗어나면 DECISIONS.md에 이유를 남긴 뒤 SYSTEM.md를 고친다
 - [Phase 2] 02-02: ci.yml/deploy.yml paths+! 트리거 실제 동작 미검증 — tokens.css 단독 PR이 CI를 타는지, 일반 소스 PR도 여전히 타는지 GitHub에서 사람이 확인해야 한다. (2)가 실패하면 즉시 paths-ignore로 되돌린다
+- 04-09 S15 backstop DOM audit (coverage D4) was self-performed by the executor, not a separate sub-agent as the plan's Task 3 ⑥ requires — orchestrator should confirm or dispatch an independent check before /gsd-verify-work
 
 ### Quick Tasks Completed
 
@@ -259,6 +263,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T21:33:41.721Z
-Stopped at: Completed 04-06-PLAN.md
+Last session: 2026-09-24T23:11:22.105Z
+Stopped at: Completed 04-09-PLAN.md
 Resume file: None

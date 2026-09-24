@@ -125,14 +125,24 @@ test.describe("배지 상태 전부와 이동 갱신 (Task 3 · D-4219 개정 ·
       await route.continue();
     });
 
+    const requestFailed = page.waitForEvent(
+      "requestfailed",
+      (request) => request.method() === "POST" && !!request.headers()["next-action"],
+    );
+
     await page.getByRole("link", { name: "PLANT8 내 차례" }).click();
     await expect(page).toHaveURL(/\/$/);
 
     // 붙잡힌 동안에도 배지 1이 그대로다(빈 배지·0이 아니다).
     await expect(trigger.locator('[aria-hidden="true"]')).toHaveText("1");
 
-    // 1초 뒤 요청이 끊겨도(route.abort) 배지는 여전히 1이다.
-    await expect(trigger.locator('[aria-hidden="true"]')).toHaveText("1", { timeout: 3000 });
+    // route.abort()가 실제로 끝날 때까지 기다린 뒤에 판정한다(1초 타임아웃에
+    // 기대어 넘어가지 않는다).
+    await requestFailed;
+
+    // 요청이 끊겨도 배지 값(및 접근 가능 이름)은 여전히 이전 값 1이다.
+    await expect(trigger.locator('[aria-hidden="true"]')).toHaveText("1");
+    await expect(page.getByRole("button", { name: /안 읽은 알림 1건/ })).toBeVisible();
     expect(intercepted).toBe(true);
 
     await page.unroute("**/*");

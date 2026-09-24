@@ -1,4 +1,4 @@
-import { and, eq, lte, desc } from "drizzle-orm";
+import { and, eq, inArray, lte, desc } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
 import { teamMemberships } from "@/db/schema";
@@ -20,6 +20,21 @@ export async function findMembershipAtDate(
     .orderBy(desc(teamMemberships.effectiveFrom))
     .limit(1);
   return row ?? null;
+}
+
+// 사람별로 발령일 ≤ date 중 가장 늦은 한 행을 한 번에 가져온다(목록 N+1
+// 제거, 이슈 #56). unique(userId, effectiveFrom)이라 결정적이다.
+export async function findMembershipsAtDate(
+  viewer: Viewer,
+  userIds: string[],
+  date: string,
+): Promise<TeamMembershipRow[]> {
+  if (userIds.length === 0) return [];
+  return db
+    .selectDistinctOn([teamMemberships.userId])
+    .from(teamMemberships)
+    .where(and(inArray(teamMemberships.userId, userIds), lte(teamMemberships.effectiveFrom, date)))
+    .orderBy(teamMemberships.userId, desc(teamMemberships.effectiveFrom));
 }
 
 // 발령일 내림차순 — 두 번 조회에서 순서가 같다(정렬 키가 결정적).

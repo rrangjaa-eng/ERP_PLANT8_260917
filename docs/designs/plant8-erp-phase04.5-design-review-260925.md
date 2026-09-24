@@ -135,6 +135,7 @@
 - **D7 — 02·04·05·06·07·08:** OPEN 표기 정리 — 2-A·2-B·5-A·5-B·편차-04a/04b/06a·08-OPEN 3을 「디자인 리뷰 해소(이 문서 R1~R9 + Codex 대조)」로 바꾸고, 07 L85·L386의 넘김 목록을 U1·U2 결과로 교체.
 - **D8 — 04 (Codex MINOR):** L197 `ListEmpty` — 폼이 열려 있으면(`?new=1`) 「등록된 화면 항목이 없습니다」 한 줄만(쓰기 권한 없을 때와 같은 변형), 링크 없음. E2E 단언 한 줄: 정의 0건 + `?new=1`에서 「화면 항목 추가」 링크 0개.
 - **D9 — 02 (Codex MINOR):** L155 새 선택지 Enter — `event.nativeEvent.isComposing`이면 무시(한글 조합 확정 Enter 제외). 02 소스 검사 단위에 조건 1건(`isComposing` 문자열 존재). E2E 추가 없음(Playwright IME 재현 불안정).
+- D10 — 05 (Codex t1t2-3 MINOR, 설계 리뷰 밖에서 이월): 한 SELECT 게이트를 실행 SQL 계측으로 보강.
 
 ## 미룬 것 (TODO 제안 — 관리자 마스터·SYSTEM 공통이라 이 페이즈에서 한 화면만 바꾸지 않음)
 - TODO-1 폼 제출 뒤 서버 오류의 스크린리더 알림(SYSTEM.md §10 개정 필요). 이유: 지금은 `aria-describedby`라 1차에 다시 포커스해야 읽힘.
@@ -188,6 +189,7 @@
 - 구현 과제 D1~D9 — 다음 세션에서 /gsd-plan-phase 수정 + 검사기 + Codex(바뀐 부분)로 반영
 - OUTSIDE COVERAGE: Codex completed (codex exec, read-only) · CROSS-MODEL: Opus + Codex + Fable 판단
 - VERDICT: 조건부 통과 — D1~D9 반영과 U1·U2 결정 뒤 Codex 바뀐 부분 「막는 문제 없음」이면 승인
+- 반영(2026-09-25): D1~D10 플랜 반영, Opus 교차 검토 2회차·Fable 최종 전체 「막는 문제 없음」 — Codex 조건은 한도로 보류, 풀리면 재확인
 
 **UNRESOLVED DECISIONS:**
 - U1 재시도로 풀리지 않는 저장 오류의 다음 행동 — 결정 카드 게시, 답이 없으면 권장 A(「새로 불러오기」 + 1차 비활성)

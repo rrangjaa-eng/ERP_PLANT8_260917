@@ -2,7 +2,7 @@
 
 > **Codex 대신 Opus 독립 검토(Codex 한도 9/29) — 한도 풀리면 Codex 재확인 필요**
 
-- 대상: `.planning/phases/04.5-custom-field-admin/04.5-0{1,2,4,5,6,7,8,9}-PLAN.md`의 커밋 전 변경(디자인 리뷰 `docs/designs/plant8-erp-phase04.5-design-review-260925.md` 「구현 과제」 D1~D9 + D10)
+- 대상: `.planning/phases/04.5-custom-field-admin/04.5-0{1,2,4,5,6,7,8,9}-PLAN.md`의 커밋 전 변경(디자인 리뷰 `docs/designs/plant8-erp-phase04.5-design-review-260925.md` 「구현 과제」 D1~D9 + Codex t1t2-3 MINOR(D10))
 - 범위: 바뀐 부분과 그 변경이 깨뜨리는 곳. 확정 결정(U1-A, U2-A, T2 「저장 때 다시 확인」, D3 두 단계 — 05 계약은 일부러 그대로)과 어긋나는 것은 지적하지 않았다.
 - 방법: 플랜 문장을 실제 코드와 대조했다. `domain/vendors/index.ts` 248·292·301, `app/(app)/admin/archive/archive-table.tsx` 71, `app/(app)/admin/vendors/page.tsx` 65·80, `ui/button/Button.tsx`(`disabledReason`), `lib/actions/*`, `db/client.ts`(`DbOrTx`), `node_modules/drizzle-orm/logger.d.ts`, `test/e2e/vendors.spec.ts` 72–107, `test/e2e/archive.spec.ts` 55, `domain/archive/index.ts`, `domain/permissions/{can,visible,info-items}.ts`, `repositories/{roles,permissions}.ts`, `docs/design/SYSTEM.md` 669·986·992, `app/globals.css` 51, `ui/button/Button.module.css`
 
@@ -19,7 +19,7 @@
 | D7 | 반영됨(참고 1건) | 09 L108 머리말 「OPEN — /plan-design-review」가 남음. 항목 2는 해소로 적혀 있고 D7 대상도 아니라 참고로만 둔다 |
 | D8 (04) | 반영됨 | 빈 분기는 소스 검사가 고정하고, E2E는 건수와 무관한 결과를 단언한다(워커 병렬로 0건을 만들 수 없음 — 타당) |
 | D9 (02) | 반영됨 | `nativeEvent.isComposing` 소스 검사. `test/unit/ui/next-turn-action.test.ts` 선례 있음 |
-| D10 (05) | 실행 가능 | `db/client.ts:44`가 `pool`을 export하고 `DbOrTx = Pick<typeof db, "insert"|"update"|"select">`(48행)이다. `drizzle(pool, { schema, logger: { logQuery } })`의 반환형이 이 Pick을 만족한다. drizzle 0.45 pg 방언은 소문자 `select … left join`을 내고, `logQuery(query, params)` 계약(`logger.d.ts:3`)에 인자 하나짜리 함수를 넘겨도 된다. `Promise.all` 두 조회로 바꾸면 기록이 2개가 되므로 제대로 된 이유로 빨개진다 |
+| D10 (05) | 실행 가능 | `db/client.ts:41`가 `pool`을 export하고 `DbOrTx = Pick<typeof db, "insert"|"update"|"select">`(48행)이다. `drizzle(pool, { schema, logger: { logQuery } })`의 반환형이 이 Pick을 만족한다. drizzle 0.45 pg 방언은 소문자 `select … left join`을 내고, `logQuery(query, params)` 계약(`logger.d.ts:3`)에 인자 하나짜리 함수를 넘겨도 된다. `Promise.all` 두 조회로 바꾸면 기록이 2개가 되므로 제대로 된 이유로 빨개진다 |
 
 ## 지적
 
@@ -28,8 +28,8 @@
   - `.planning/phases/04.5-custom-field-admin/04.5-04-PLAN.md:189`: 임시 계급 준비는 `setPermissionCell`뿐이다(`admin.archive` view·write + `admin.field-definitions` view). 그런 다음 「`/admin/archive`에서 B 행(표시 이름 「화면 항목」 · 이름 B)이 보이고」를 단언한다. 188행(①)과 04 전체에 `upsertVisibility`나 `archive.value`가 한 번도 나오지 않는다(grep 0건).
   - `domain/archive/index.ts:102-110`: `ARCHIVE_ENTRY_DTO_SPEC`의 모든 필드(`entity`·`label`·`id`·`name`…)가 `infoItem: "archive.value"`로 투영된다. `domain/permissions/project.ts:30-31`은 보이지 않는 필드를 뺀다.
   - `domain/permissions/visible.ts`: 「행이 없으면 false — 새 기능 정보는 기본 숨김」. `domain/permissions/info-items.ts:59`: `archive.value`는 `staffDefault: false`다. `repositories/roles.ts:34-45`의 `insertRole`은 노출 행을 만들지 않는다.
-  - 결과: 임시 계급의 보관함 행은 이름·종류가 빈 칸으로 렌더된다(`app/(app)/admin/archive/page.tsx` → `archive-table.tsx:61-62`). 그래서 `locator("tr", { hasText: B })`가 행을 찾지 못한다. 「복원」을 눌러도 `entity`·`id`가 `undefined`로 넘어가 zod 검증 실패가 된다. 어느 쪽이든 「권한 거부」가 아닌 이유로 빨갛거나 엉뚱하게 초록이다. `test/e2e/vendors.spec.ts:75`의 선례도 임시 계급에 `upsertVisibility(… "vendor.value" …)`를 따로 넣는다.
-- 수정: 04 L189(과 L188의 계급 준비 문장)에 「`upsertVisibility(SYSTEM_VIEWER, { roleId: 임시 계급, infoItem: "archive.value", visible: true })` — `vendors.spec.ts:75` 선례」를 더한다. 같은 줄에 「보관함 행이 이름 B와 종류 「화면 항목」을 보인다」는 선행 단언도 둔다. 그래야 실패 이유가 권한 거부 하나로 좁혀진다.
+  - 결과: 임시 계급의 보관함 행은 이름·종류가 빈 칸으로 렌더된다(`app/(app)/admin/archive/page.tsx` → `archive-table.tsx:61-62`). 그래서 `locator("tr", { hasText: B })`가 행을 찾지 못한다. 「복원」을 눌러도 `entity`·`id`가 `undefined`로 넘어가 zod 검증 실패가 된다. 어느 쪽이든 「권한 거부」가 아닌 이유로 빨갛거나 엉뚱하게 초록이다. `test/e2e/vendors.spec.ts:74`의 선례도 임시 계급에 `upsertVisibility(… "vendor.value" …)`를 따로 넣는다.
+- 수정: 04 L189(과 L188의 계급 준비 문장)에 「`upsertVisibility(SYSTEM_VIEWER, { roleId: 임시 계급, infoItem: "archive.value", visible: true })` — `vendors.spec.ts:74` 선례」를 더한다. 같은 줄에 「보관함 행이 이름 B와 종류 「화면 항목」을 보인다」는 선행 단언도 둔다. 그래야 실패 이유가 권한 거부 하나로 좁혀진다.
 
 ### [MINOR] m-1 — 02 `summary` CSS 게이트가 같은 플랜의 지시와 모순된다
 - 근거: `04.5-02-PLAN.md:258`이 `cursor: pointer`, `width: fit-content`, `border-bottom: var(--line-w) solid var(--accent)`(키워드 `solid`)를 지시한다. 그런데 `04.5-02-PLAN.md:271`의 수용 기준은 「`summary` 규칙의 선언 값이 `var(--…)` 토큰뿐」이다. 글자 그대로 실행하면 지시대로 쓴 CSS가 게이트에서 빨개진다.
@@ -54,7 +54,7 @@
 
 | 지적 | 상태 | 근거 file:line |
 |---|---|---|
-| B-1 `archive.value` 노출 행 | **RESOLVED** | `04.5-04-PLAN.md:188`: 임시 계급 준비에 `upsertVisibility(… "archive.value" …)`를 더했다. `repositories/permissions.ts`의 `upsertVisibility(viewer, { roleId, infoItem, visible })` 모양이고 `vendors.spec.ts:75` 선례와 같다. `04.5-04-PLAN.md:189`: 복원 전에 이름 B와 「화면 항목」을 먼저 단언하므로 실패 이유가 권한 거부 하나로 좁혀진다 |
+| B-1 `archive.value` 노출 행 | **RESOLVED** | `04.5-04-PLAN.md:188`: 임시 계급 준비에 `upsertVisibility(… "archive.value" …)`를 더했다. `repositories/permissions.ts`의 `upsertVisibility(viewer, { roleId, infoItem, visible })` 모양이고 `vendors.spec.ts:74` 선례와 같다. `04.5-04-PLAN.md:189`: 복원 전에 이름 B와 「화면 항목」을 먼저 단언하므로 실패 이유가 권한 거부 하나로 좁혀진다 |
 | m-1 게이트·지시 모순 | **RESOLVED** | `04.5-02-PLAN.md:271`: 색·크기·굵기·선 두께·최소 높이만 토큰으로 요구하고, `pointer`·`fit-content`·`solid`를 명시로 허용한다. 258행 지시와 모순이 없다 |
 | m-2 폰 터치 목표 | **RESOLVED** | `04.5-02-PLAN.md:258`: 폰 미디어 쿼리에 `min-height: var(--touch-min)`을 두고 `display`는 바꾸지 않는다. `02:271`에 grep 게이트, `04.5-07-PLAN.md:205`에 폰 폭 높이 44 이상 실측, `04.5-09-PLAN.md:152`의 SYSTEM 한 줄에도 반영했다. `min-height`는 `display: list-item`에도 적용되므로 표식 유지와 충돌하지 않는다 |
 | m-3 트랜잭션 안 문구 | **RESOLVED** | `04.5-05-PLAN.md:241`: 메시지를 301행 원문 그대로로 고정했다(계약은 그대로). `04.5-06-PLAN.md:129`: `new ArchivedVendorError("…")` 호출이 2개 이상이고 인자가 전부 원인 표의 키여야 한다. 06(wave 6)은 05(wave 5) 뒤에 돌므로 호출 2개 전제가 성립한다 |

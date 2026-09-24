@@ -437,7 +437,7 @@ deploy_service() {
 
   local deployed_at
   deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  local env_vars="APP_ENV=${ENV},APP_GIT_SHA=${SHA},APP_DEPLOYED_AT=${deployed_at},CLOUD_SQL_CONNECTION_NAME=${CONN_NAME},DB_IAM_USER=${iam_user},DB_NAME=${DB_NAME},DB_POOL_MAX=${DB_POOL_MAX},BETTER_AUTH_URL=${SERVICE_URL},AUTH_PROVIDER=email,GCP_PROJECT_ID=${PROJECT},CLOUD_SQL_INSTANCE_ID=${instance}"
+  local env_vars="APP_ENV=${ENV},APP_GIT_SHA=${SHA},APP_DEPLOYED_AT=${deployed_at},CLOUD_SQL_CONNECTION_NAME=${CONN_NAME},DB_IAM_USER=${iam_user},DB_NAME=${DB_NAME},DB_POOL_MAX=${DB_POOL_MAX},BETTER_AUTH_URL=${SERVICE_URL},AUTH_PROVIDER=email,GCP_PROJECT_ID=${PROJECT},CLOUD_SQL_INSTANCE_ID=${instance},NOTIFY_TICK_SCHEDULER_SA=$(scheduler_sa "$ENV")@${PROJECT}.iam.gserviceaccount.com"
   local secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest,APP_DATA_KEY_v1=${app_data_key_secret}:latest,SMTP_HOST=${smtp_host_secret}:latest,SMTP_USER=${smtp_user_secret}:latest,SMTP_PASSWORD=${smtp_password_secret}:latest,SMTP_FROM=${smtp_from_secret}:latest"
 
   # 신규·기존 서비스 모두 바로 100% 트래픽으로 배포한다(--no-traffic/--tag
@@ -491,6 +491,28 @@ deploy_service() {
     run gcloud run services update "$svc" --region="$REGION" --project="$PROJECT" \
       --update-env-vars="BETTER_AUTH_URL=${SERVICE_URL}"
   fi
+}
+
+# 04.2-04(NOTI-04): 매일 09:00 KST에 스케줄러가 전용 SA의 OIDC 토큰으로
+# notify-tick을 부른다. audience는 경로 없는 SERVICE_URL(= BETTER_AUTH_URL)이라
+# 서비스 배포로 SERVICE_URL이 확정된 뒤에만 만든다. 재시도는 끈다 — 남은 건은
+# 운영자가 같은 날 수동 실행으로 잇는다(D-4202).
+ensure_scheduler() {
+  STAGE=ensure_scheduler
+  local job sa_email verb
+  job="$(scheduler_job "$ENV")"
+  sa_email="$(scheduler_sa "$ENV")@${PROJECT}.iam.gserviceaccount.com"
+  verb=create
+  if run gcloud scheduler jobs describe "$job" --location="$REGION" --project="$PROJECT" >/dev/null 2>&1; then
+    verb=update
+  fi
+  run gcloud scheduler jobs "$verb" http "$job" \
+    --location="$REGION" --project="$PROJECT" \
+    --schedule="0 9 * * *" --time-zone="Asia/Seoul" \
+    --uri="${SERVICE_URL}/internal/notify-tick" --http-method=POST \
+    --oidc-service-account-email="$sa_email" \
+    --oidc-token-audience="$SERVICE_URL" \
+    --max-retry-attempts=0 --attempt-deadline=180s
 }
 
 # 스모크가 실패하면 서비스 상태·IAM 정책을 같이 남긴다 — 다음에 다른
@@ -667,6 +689,7 @@ main() {
   run_migrate
   run_seed
   deploy_service
+  ensure_scheduler
   ensure_alerts
   smoke
   map_domain

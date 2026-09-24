@@ -35,7 +35,9 @@ export function ProjectsFilterBar({
   const formRef = useRef<HTMLFormElement>(null);
 
   return (
-    <form ref={formRef} method="get" className={styles.filterFields} aria-label="프로젝트 필터">
+    // autoComplete="off": 이 폼 제출은 전체 페이지 이동이라, 뒤로 가기 때
+    // 브라우저가 떠나기 직전 고른 값을 칸에 되살려 URL과 어긋난다(/qa ISSUE-001).
+    <form ref={formRef} method="get" autoComplete="off" className={styles.filterFields} aria-label="프로젝트 필터">
       <div className={styles.selectLabel}>
         <label htmlFor="status">상태</label>
         <select

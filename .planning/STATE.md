@@ -5,16 +5,16 @@ current_phase_name: 프로젝트·견적 원장
 current_plan: 5
 status: executing
 stopped_at: Completed 04-04-PLAN.md
-last_updated: "2026-09-24T09:33:55.781Z"
+last_updated: "2026-09-24T09:58:15.545Z"
 last_activity: 2026-09-22
 last_activity_desc: Phase 04 execution started
-state_head: 2daba4498697a37035a352266d58f7b7ce6c7b67
+state_head: 4d5b89c1fbc833d4b0f480ba6463565b482712ee
 progress:
-  total_phases: 15
+  total_phases: 16
   completed_phases: 1
   total_plans: 61
   completed_plans: 27
-  percent: 7
+  percent: 6
 ---
 
 # Project State
@@ -34,7 +34,7 @@ Total Plans in Phase: 26
 Status: Ready to execute
 Last activity: 2026-09-22 — Phase 04 execution started
 
-Progress: [█░░░░░░░░░] 7%
+Progress: [█░░░░░░░░░] 6%
 
 ## Performance Metrics
 
@@ -200,6 +200,10 @@ Recent decisions affecting current work:
 - Phase 11 edited: edited fields: goal, depends_on, requirements, success_criteria (CERT-01·CERT-02와 기준 2·3을 Phase 04.3으로 옮김)
 - Phase 04.4 inserted after Phase 4: 복원 리허설·로그인 상태 — Phase 8에서 Phase 4 원장에 기대지 않는 복원 리허설 워크플로·복원 절차 문서·상태 화면 항목·사람 목록 로그인 상태 표시를 떼어 Phase 4와 병렬 진행(사용자 결정 2026-09-24)
 - Phase 8 edited: edited fields: goal, depends_on, requirements, success_criteria (OPS-03과 기준 5·기준 2의 표시를 Phase 04.4로 옮김)
+- Phase 04.5 inserted after Phase 4: 화면 항목 관리 — Phase 10에서 Phase 4 폼 코드·Phase 9 손익에 기대지 않는 커스텀 필드 관리 화면·칸 정의 저장 구조·보관(D10-12)·정보 노출표 자동 등록(D10-13)을 떼어 Phase 4와 병렬 진행(사용자 결정 2026-09-24)
+- Phase 10 edited: edited fields: depends_on, success_criteria (기준 4의 관리 화면·보관·노출표 등록을 Phase 04.5로 옮김, ADMN-07은 Phase 10에 남김)
+- Phase 04.5 edited: edited fields: goal, depends_on, requirements, success_criteria (/review 반영: 거래처 대상만 켜고 프로젝트·견적 줄 대상은 Phase 10, 보관 선택지·보이지 않는 칸 값 보존, 노출표 행 기본값 방식, Phase 4 겹침 파일 추가)
+- Phase 10 edited: edited fields: success_criteria (/review 반영: 프로젝트·견적 줄 대상 켜기와 칸별 판정·값 보존 적용을 Phase 10 기준 4에 명시)
 
 ## Deferred Items
 

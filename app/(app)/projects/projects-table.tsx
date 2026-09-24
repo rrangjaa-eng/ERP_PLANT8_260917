@@ -6,6 +6,7 @@ import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
 import { StatusTag, type StatusTagKind } from "@/ui/status-tag/StatusTag";
 import type { ProjectListItemWithGroup, ProjectAggregateDto } from "@/domain/projects";
+import { formatKrw } from "@/lib/format-number";
 import styles from "./projects.module.css";
 
 // SYSTEM.md §6-1 · 04-UI-SPEC S1 — 목록 표. `ui/table`을 **읽기 형태**로
@@ -27,10 +28,6 @@ const STATUS_TAG_KIND: Record<string, StatusTagKind> = {
   settled: "success",
   lost: "muted",
 };
-
-function formatKrw(value: number): string {
-  return value.toLocaleString("ko-KR");
-}
 
 // ISO "YYYY-MM-DD" → "MM-DD". 값이 없으면 §2-4 "값이 있는데 비어 있는 칸만
 // —"를 따라 — 기간 필드 자체는 항상 DTO에 실리므로(project.value, 계급

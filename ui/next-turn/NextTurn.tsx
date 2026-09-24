@@ -1,4 +1,5 @@
 import { StatusTag, type StatusTagKind } from "@/ui/status-tag/StatusTag";
+import { formatKrw } from "@/lib/format-number";
 import type { NextTurnTag, NextTurnView } from "./build-next-turn-view";
 import styles from "./NextTurn.module.css";
 
@@ -48,7 +49,7 @@ export function NextTurn({ view, moreHref }: NextTurnProps) {
               <span className={styles.label}>{item.label}</span>
               <span className={styles.why}> · {item.reason}</span>
             </span>
-            <span className={styles.amt}>{item.amount.toLocaleString("ko-KR")}</span>
+            <span className={styles.amt}>{formatKrw(item.amount)}</span>
             <span className={styles.action}>
               {/* WR-04: §10 — 페이지 이동은 <a>다. ListEmpty의 3차 링크와 같은 모양. */}
               <a href={item.action.href} className={styles.tertiary}>

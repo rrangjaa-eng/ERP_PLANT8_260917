@@ -11,6 +11,7 @@ import "@/domain/rules/register";
 import { moneyFromRow, moneyToColumns, quoteAmount, profit, type Money, type Currency } from "@/domain/money";
 import { rememberFxRate } from "@/domain/money/currency";
 import { withTransaction } from "@/lib/db-transaction";
+import { formatKrw } from "@/lib/format-number";
 import type { DbOrTx } from "@/repositories/document-counters";
 import {
   listQuoteLinesByRevision as repoListQuoteLinesByRevision,
@@ -261,7 +262,7 @@ function currentFieldValue(row: QuoteLineRow, field: CompareField): string | num
 
 function formatFieldValue(field: CompareField, value: string | number | null): string {
   if (field === "unitPriceAmountKrw" || field === "executionAmountKrw") {
-    return Number(value ?? 0).toLocaleString("ko-KR");
+    return formatKrw(Number(value ?? 0));
   }
   return value === null || value === "" ? "—" : String(value);
 }

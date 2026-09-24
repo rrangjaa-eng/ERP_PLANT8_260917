@@ -1,5 +1,7 @@
 // SYSTEM.md §7-16 「생략」 규칙의 순수 계산 — 컴포넌트(Pagination.tsx)는 이
 // 함수가 돌려준 창을 렌더만 한다(계산하지 않는다).
+import { formatCount } from "@/lib/format-number";
+
 export type PageWindowItem = number | "gap";
 
 const WIDE_THRESHOLD = 7;
@@ -44,8 +46,6 @@ export function pageWindow(
   return items;
 }
 
-const numberFormat = new Intl.NumberFormat("ko-KR");
-
 export function pageRangeText({
   page,
   pageSize,
@@ -59,5 +59,5 @@ export function pageRangeText({
 }): string {
   const start = (page - 1) * pageSize + 1;
   const end = Math.min(page * pageSize, total);
-  return `${numberFormat.format(start)}–${numberFormat.format(end)} / ${numberFormat.format(total)}${unit}`;
+  return `${formatCount(start)}–${formatCount(end)} / ${formatCount(total)}${unit}`;
 }

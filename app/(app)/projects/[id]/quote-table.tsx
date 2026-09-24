@@ -14,7 +14,7 @@ import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { useDirtyStorage } from "@/ui/table/use-dirty-storage";
 import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
 import { normalizeNumericPaste } from "@/ui/table/parse-tsv";
-import { formatForeignLine } from "@/lib/format-number";
+import { formatKrw, formatForeignLine } from "@/lib/format-number";
 import type { TableColumn, CellIssue } from "@/ui/table/types";
 import type { QuoteLineDto, QuoteLineBaseline } from "@/domain/quotes/lines";
 import type { RevenueDto } from "@/domain/revenue";
@@ -214,11 +214,6 @@ function newDraftLine(defaultSubcategory: string): DraftLine {
     cellErrors: {},
     cellConflicts: {},
   };
-}
-
-// 금액을 볼 수 없는 직급은 금액 필드 없이 줄을 받는다 — "—"로 보인다.
-function formatKrw(value: number | undefined): string {
-  return value === undefined ? "—" : value.toLocaleString("ko-KR");
 }
 
 function contractFromDto(revenue: RevenueDto): ContractDraft {
@@ -1161,7 +1156,7 @@ export function QuoteLedger({
         open={deleteConfirm !== null}
         onClose={() => setDeleteConfirm(null)}
         title="견적 줄 삭제"
-        subtitle={`${deleteConfirm?.itemName || "(항목명 없음)"} · ${formatKrw(deleteConfirm?.quoteAmountKrw)}`}
+        subtitle={`${deleteConfirm?.itemName || "(항목명 없음)"} · ${deleteConfirm ? formatKrw(deleteConfirm.quoteAmountKrw) : "—"}`}
         resultLines={["보관함으로 옮겨짐 · 복원은 관리자"]}
         primary={{ label: "견적 줄 삭제", onConfirm: confirmDeleteLine }}
       />

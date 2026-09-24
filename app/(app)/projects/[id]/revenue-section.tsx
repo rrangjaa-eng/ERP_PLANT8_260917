@@ -5,6 +5,7 @@ import { Table } from "@/ui/table/Table";
 import { Select } from "@/ui/select/Select";
 import { Form } from "@/ui/form/Form";
 import { normalizeNumericPaste } from "@/ui/table/parse-tsv";
+import { formatKrw } from "@/lib/format-number";
 import type { TableColumn } from "@/ui/table/types";
 import type { Currency } from "@/domain/money";
 import styles from "./project-detail.module.css";
@@ -30,10 +31,6 @@ export type EntryDraft = {
   vatKrw?: number | null;
   totalKrw?: number | null;
 };
-
-function formatKrw(value: number): string {
-  return value.toLocaleString("ko-KR");
-}
 
 function contractHintText(vatKrw: number, totalKrw: number): string {
   return `부가세 10% ${formatKrw(vatKrw)} · 합계 ${formatKrw(totalKrw)} · 서버 계산`;

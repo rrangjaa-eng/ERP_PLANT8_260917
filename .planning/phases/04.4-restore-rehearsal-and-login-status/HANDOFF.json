@@ -40,5 +40,5 @@
   ],
   "uncommitted_files": [],
   "next_action": "/gsd-plan-phase 04.4 리비전으로 eng review 막는 문제 4건 반영(docs/designs/plant8-erp-phase04.4-eng-review-260925.md)",
-  "context_notes": "Codex 한도 2026-09-29까지 막힘 → 교차 검토는 Fable. STATE.md·루트 HANDOFF.json 건드리지 않음."
+  "context_notes": "Codex 한도 2026-09-29까지 막힘 → 교차 검토는 Opus(Fable은 최종 전체 1회). STATE.md·루트 HANDOFF.json 건드리지 않음."
 }

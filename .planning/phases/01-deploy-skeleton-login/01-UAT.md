@@ -3,7 +3,7 @@ status: partial
 phase: 01-deploy-skeleton-login
 source: [01-01-SUMMARY.md, 01-02-SUMMARY.md, 01-03-SUMMARY.md, 01-04-SUMMARY.md, 01-05-SUMMARY.md, 01-06-SUMMARY.md, 01-07-SUMMARY.md, 01-08-SUMMARY.md]
 started: 2026-09-20T08:32:45Z
-updated: 2026-09-22T06:23:57.707Z
+updated: 2026-09-24T12:30:00Z
 ---
 
 ## Current Test
@@ -52,7 +52,7 @@ evidence: "2026-09-22 같은 관리자 세션으로 프로덕션 GET /admin/syst
 expected: 백업 실패 경보 정책의 필터가 실제 이벤트를 잡고 이메일이 배달된다. 정책 존재는 2026-09-18 실측으로 확인됐지만, 실패 이벤트 없이는 필터 정확성과 메일 전달을 프로그램으로 검증할 수 없다.
 result: blocked
 blocked_by: third-party
-reason: "백업 실패 이벤트가 실제로 발생해야 필터·메일 도달을 판정할 수 있다. WINDOWS.md 등록"
+reason: "메일 경로는 확인됨: 2026-09-24 21:15 KST 사용자가 Cloud Shell에서 합성 ERROR 로그(jsonPayload.message=\"backup failed - SYNTHETIC alert test\", plant8-staging-db)를 써서 [staging] 경보 메일이 조직 알림 메일함에 도착했다(캡처, Gmail 포럼 탭). 남은 것: 합성 로그는 필터의 jsonPayload.message 분기만 태웠다 — 실제 Cloud SQL 백업 실패 로그가 이 필터(methodName/message·severity>=ERROR)에 맞는지와 [prod] 정책은 미검증. 실제 실패 이벤트가 있어야 판정 가능. WINDOWS #20 유지"
 
 ### 8. 조직 정책 원문·런타임 SA 역할 확인 (VERIFICATION human 4)
 expected: Owner 계정으로 조직 정책 4건의 원문과 런타임 SA의 역할 목록을 직접 조회해 실효적 차단이 없음을 원문으로 확인한다. gha-deployer SA에는 orgpolicy.policy.get·resourcemanager.projects.getIamPolicy가 없어 실행자가 조회할 수 없었다(PERMISSION_DENIED).

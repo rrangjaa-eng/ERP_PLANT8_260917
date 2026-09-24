@@ -154,7 +154,12 @@ export function ExportButton({ filter }: { filter: ActionLogFilterPayload }) {
   const { execute, isExecuting } = useAction(exportActionLogAction, {
     onSuccess: ({ data }) => {
       if (!data) return;
-      const blob = new Blob([data.body], { type: data.contentType });
+      // 서버가 붙인 BOM이 여기까지 온다고 믿지 않는다 — React Flight는 1024자
+      // 이상 문자열을 별도 텍스트 청크로 보내고, 그 청크를 읽는 TextDecoder가
+      // 맨 앞 U+FEFF를 떼어 낸다. BOM이 남는 건 짧은 파일뿐이라 실제 크기의
+      // 로그는 Excel에서 한글이 깨진다. 없으면 여기서 다시 붙인다.
+      const body = data.body.startsWith("\uFEFF") ? data.body : `\uFEFF${data.body}`;
+      const blob = new Blob([body], { type: data.contentType });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;

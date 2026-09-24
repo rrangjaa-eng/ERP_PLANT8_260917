@@ -11,6 +11,12 @@ export type MenuDef = { key: string; label: string };
 
 export const MENUS: MenuDef[] = [
   { key: "projects", label: "프로젝트" },
+  // 04-02(D-57): 매출 섹션 쓰기 주체가 갈린다 — 계약 금액은 기존
+  // "projects" 메뉴의 write(PM)를 그대로 쓰고, 세금계산서 발행·입금 줄은
+  // 이 새 메뉴의 write로 별도 게이트한다("경영관리"는 이 milestone의
+  // SEED_ROLES 5종에 없는 조직상 역할이라 권한표에서 관리자가 실제
+  // 담당 계급에 배정한다 — 코드에 역할 이름을 박지 않는다).
+  { key: "projects.revenue", label: "매출 정산" },
   { key: "expenses", label: "지출결의" },
   { key: "cards", label: "법인카드" },
   { key: "approvals", label: "결재함" },

@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 04
-current_phase_name: project-quote-ledger
-current_plan: 1
+current_phase: 4
+current_phase_name: 프로젝트·견적 원장
+current_plan: 5
 status: executing
-stopped_at: "quick 260922-i3k 완료·머지(PR #36, a224b1b). 다음은 새 세션에서 코덱스 전체 통합 디자인 리뷰 → /gsd-execute-phase 4 — 인수인계 투두 참조"
-last_updated: "2026-09-22T18:02:59.649Z"
+stopped_at: Completed 04-04-PLAN.md
+last_updated: "2026-09-23T17:53:58.931Z"
 last_activity: 2026-09-22
-last_activity_desc: Phase 03 marked complete
-state_head: c8b42b99a56840b83573de77f0133bedbd505353
+last_activity_desc: Phase 04 execution started
+state_head: 542cafdbd8c3e81ff3df44fd6ae1612e55deee3a
 progress:
   total_phases: 11
   completed_phases: 1
-  total_plans: 30
-  completed_plans: 23
+  total_plans: 61
+  completed_plans: 27
   percent: 9
 ---
 
@@ -24,15 +24,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-17)
 
 **Core value:** 기획본부와 경영관리본부가 프로젝트마다 같은 숫자(견적·예상 비용·확정 비용·손익)를 본다. 기획본부는 계산식·근거 없이 결과 숫자로 납득하고, 경영관리·대표는 근거 줄까지 본다.
-**Current focus:** Phase 03 — 권한·설정·마스터 (관리자 운영 콘솔)
+**Current focus:** Phase 04 — 프로젝트·견적 원장
 
 ## Current Position
 
-Phase: 04 (project-quote-ledger) — READY TO EXECUTE
-Current Plan: 1
-Total Plans in Phase: 7
+Phase: 4 (프로젝트·견적 원장) — READY TO EXECUTE
+Current Plan: 5
+Total Plans in Phase: 26
 Status: Ready to execute
-Last activity: 2026-09-22 - Completed quick task 260922-i3k: 관리자 메뉴 정리(옵션 B) + A-M3 표 캡션
+Last activity: 2026-09-22 — Phase 04 execution started
 
 Progress: [█░░░░░░░░░] 9%
 
@@ -73,6 +73,10 @@ Progress: [█░░░░░░░░░] 9%
 | Phase 02 P06 | 20min | 3 tasks | 12 files |
 | Phase 02 P07 | 55min | 3 tasks | 10 files |
 | Phase 02 P08 | 16min | 3 tasks | 30 files |
+| Phase 04 P01 | 1h36m | 3 tasks | 54 files |
+| Phase 04 P02 | 1h10m | 3 tasks | 36 files |
+| Phase 04 P05 | 1h2m | 2 tasks | 16 files |
+| Phase 04 P04 | 35min | 3 tasks | 21 files |
 
 ## Accumulated Context
 
@@ -143,6 +147,20 @@ Recent decisions affecting current work:
 - [Phase 02]: 02-07: 로그인 화면 axe page-has-heading-one 위반을 규칙 비활성 대신 화면 수정으로 해소 — app/globals.css에 .sr-only 유틸리티 추가, 스크린 리더 전용 h1 복원(시각 디자인 불변)
 - [Phase 02]: 화면 제목·부제는 전역 h1 규칙이 아니라 ui/page-header/PageHeader 컴포넌트다(구조 우연 회피)
 - [Phase 02]: font:inherit 축약은 D-20 stylelint 허용 목록과 충돌해 롱핸드(font-family/font-size/line-height:inherit/letter-spacing:inherit/color:inherit)로 편다
+- [Phase 04]: 마이그레이션 번호를 계획의 0004에서 실제 다음 번호 0009로 정정(Rule 1)
+- [Phase 04]: domain이 db를 직접 import하지 않도록 lib/db-transaction.ts(withTransaction) 래퍼 신설 — boundaries 규칙 준수(Rule 2)
+- [Phase 04]: role-pm 기본 권한에 projects 메뉴 view+write 추가, admin.vendors/admin.people은 열지 않고 domain/projects/references.ts로 참조 데이터만 좁게 노출
+- [Phase 04]: 04-02: applyTaxRule은 세율·절사 단위·최소 징수액을 settings registry에서 기준일과 함께 읽고, 절사 방식만 코드표 rule에서 읽는다(Task 1 action 원문 + readBy 표시 11개 소비 강제 기준)
+- [Phase 04]: 04-02: 새 메뉴 projects.revenue(write)로 발행·입금 쓰기를 게이트 — 경영관리는 SEED_ROLES 5종에 없어 코드에 역할명을 박지 않고 관리자가 권한표에서 배정한다(D-57). 계약 금액은 기존 projects write(PM)
+- [Phase 04]: 04-02: saveQuoteLines·saveRevenue에 옵션 tx 파라미터를 더해 domain/projects/ledger.ts가 견적 줄+매출을 한 트랜잭션·한 저장 버튼으로 묶는다(§7-3 전부 저장/전부 거부)
+- [Phase 04]: [Phase 04]: 04-05: 서식 키 형태 = 문서 종류별 키 묶음(document_number.project.*), JSON 한 개가 아니다 — 설정 화면의 필드 단위 렌더·검증, Phase 5·6·11의 확장 용이성 근거 셋
+- [Phase 04]: [Phase 04]: 04-05: 리포지토리 공유 필터 함수(projectFilterConditions)로 목록/집계 쿼리가 같은 행만 세게 강제 — 집계는 pool.query 스파이로 SQL 왕복 한 번임을 실측. 정렬은 종료일 월 그룹 안에서만 순서를 바꾼다(그룹 macro 구조 유지)
+- [Phase 04]: [Phase 04]: 04-05: 열 머리글 클릭 정렬·aria-sort는 ui/table/Table.tsx(04-04 소유, 같은 웨이브)를 건드리지 않고 서버 정렬만 구현·검증(WINDOWS.md stub #27) — 클릭 UI는 04-04 이후 후속 작업
+- [Phase 4]: A-M3 (ㄱ) 채택 — 관리자 표 6종 캡션은 이미 완료돼 있어 확인만 함(admin/ diff 0줄)
+- [Phase 4]: U-6 문구: 전부 거부 · 다른 칸 오류 N칸(오류 0을 0칸으로 적지 않는다)
+- [Phase 4]: 요청 본문 한도는 lib/actions/client.ts 미들웨어 한 자리(256KB)에만 둔다
+- [Phase 4]: 실제 Windows Excel은 줄바꿈 있는 칸만 인용하고 따옴표만 있는 칸은 원문 그대로 쓴다 — parseTsv를 이 규칙에 맞춤(04-RESEARCH.md 가정 A3 대체)
+- [Phase 4]: 데이터 이전 없음(사용자 결정 2026-09-23) — 인트라넷 데이터는 이전하지 않고 마스터(거래처·클라이언트·직원·법인카드·분류) 포함 전부 새 시스템에 손으로 입력한다. 시스템이 완성되는 대로 연중에 전환하고(연도 경계 아님) 인트라넷은 과거 조회 전용. REQUIREMENTS MIG-01~03 → Out of Scope(v1 89 → 86), MIG-04·05 재정의, OPS-06 '이전 실행' → '복원 리허설'. ROADMAP Phase 8 = 전환(마스터 수기 입력·계정 발급·demo 삭제·전환일 체크리스트·백업/복원 리허설). 04-03 철회(플랜 삭제, 추출 스크립트는 6b7519f로 되돌림), Phase 4 성공 기준 7 철회. 손익(Phase 9·10)은 전환 데이터부터이며 2026년 숫자는 두 시스템에 나뉜다(사용자 수용). 앞의 [CEO 리뷰 OV-1]·[Roadmap] 데이터 이전·[Eng 리뷰 OV-1]의 델타 이전 부분을 대체 — 옛 구조(상태 컬럼 없이 Y/N 승인 표시 4개, 견적 줄 = 단가×수량×일수, 프로젝트 번호 9개를 22개 프로젝트가 공유, 금액이 공급가인지 합계인지 불명)가 새 구조와 달라 단계마다 변환 규칙과 사람 확인이 필요했다
 
 ### Pending Todos
 
@@ -168,6 +186,7 @@ Recent decisions affecting current work:
 | 260922-c04 | Codex CLI SessionStart 훅 설치 + CODEX_AUTH_JSON_B64 자격 주입 | 2026-09-22 | 4b5f8ea | [260922-c04-codex-cli-sessionstart-codex-auth-json-b](./quick/260922-c04-codex-cli-sessionstart-codex-auth-json-b/) |
 | 260922-i3k | 관리자 메뉴 정리(옵션 B: 「관리」 한 줄 + /admin 인덱스 3그룹) + A-M3 표 캡션 | 2026-09-22 | 811243e | [260922-i3k-b-admin-3-a-m3](./quick/260922-i3k-b-admin-3-a-m3/) |
 | 260922-o2b | 코덱스 통합 디자인 리뷰 반영(결정 불필요분 F-02·04·05·07·08·09·10) | 2026-09-22 | c8b42b9 | [260922-o2b-codex-design-review-fixes](./quick/260922-o2b-codex-design-review-fixes/) |
+| 260923-odg | hook 보강: 게이트 리뷰 종료·quick 완료 = 세션 경계, 문서 커밋도 검증 스킬, 세션당 executor 1회 | 2026-09-23 | 542cafd | [260923-odg-hook](./quick/260923-odg-hook/) |
 
 ### Roadmap Evolution
 
@@ -185,6 +204,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-22T10:27:47.976Z
-Stopped at: Phase 4 계획 완료 (7플랜/4웨이브, PR #34 머지) — 인수인계 투두 순서대로 진행
-Resume file: .planning/phases/04-project-quote-ledger/04-OPEN-ITEMS.md
+Last session: 2026-09-23T14:29:34.050Z
+Stopped at: Completed 04-04-PLAN.md
+Resume file: None

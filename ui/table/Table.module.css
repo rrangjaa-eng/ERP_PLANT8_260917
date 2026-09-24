@@ -1,0 +1,189 @@
+/* SYSTEM.md §7-3 + 보강 (가)~(아) — 표. 색·서체·radius는 토큰만(D-20). */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-base);
+}
+
+.headerCell {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+  background: var(--bg);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-align: left;
+}
+
+/* (가) — 편집 가능한 셀이 하나라도 있으면 --g-100 + --g-950 머리글(편집
+   가능 신호). 읽기 표는 흰 바탕 그대로다. */
+.editable .headerCell {
+  background: var(--g-100);
+  color: var(--g-950);
+}
+
+.cell {
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w) solid var(--line);
+  vertical-align: top;
+}
+
+.alignRight {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 04-02 Task 2 ④ — 금액 셀 보조 줄(§2-4 외화 두 줄 병기 · 입금 셀 공급가액
+   역산). 외화가 있는 행만 이 줄이 생겨 행 높이가 그 셀을 따른다 — 고정
+   행 높이가 없다. */
+.cellSecondary {
+  margin-top: var(--s-1);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.groupRow td {
+  padding-top: var(--s-3);
+}
+
+.groupHeader {
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+/* (가) 편집 단계 — 편집 가능 셀만 상호작용 신호(커서 + 포커스 링). 읽기
+   전용·잠김 셀은 값만, 배경 없음(§7-3 (가) 표). */
+.editableCell {
+  cursor: pointer;
+}
+
+.editableCell:hover {
+  background: var(--surface);
+}
+
+.editableCell:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: calc(-1 * var(--focus-w));
+}
+
+.lockedCell {
+  color: var(--muted);
+}
+
+/* 04-04(§7-3 보강 (나)(다)) — 오류·충돌 셀. 다른 셀을 편집해도 남는
+   **고정** 모양(깜빡이지 않는다) — 배경 + 좌측 인셋 선(tokens.css
+   --inset-error). 충돌도 같은 모양을 쓴다(§7-3 (나) 원문). */
+.errorCell,
+.conflictCell {
+  background: var(--danger-weak);
+  box-shadow: var(--inset-error);
+}
+
+.issueReason {
+  margin: var(--s-1) 0 0;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+.issueAction {
+  margin-left: var(--s-2);
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* 04-04(아) — 범위 선택(앵커 셀 + 현재 셀). */
+.selectedCell {
+  background: var(--accent-weak);
+}
+
+/* 04-04(아) — 로빙 tabIndex 포커스는 편집 가능 여부와 무관하게 보여야
+   한다(§10 접근성) — 기존 .editableCell:focus-visible만으로는 읽기
+   전용·잠김 셀에 포커스 링이 없었다. */
+.cell:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: calc(-1 * var(--focus-w));
+}
+
+/* 04-04 — dirty(미저장 편집) 셀의 고정 표시(D-68 저장 전) + 저장 성공
+   600ms 틴트. prefers-reduced-motion에서는 틴트 애니메이션을 끈다
+   (그대로 색만 없앤다 — 값 자체 표시는 그대로 유지). */
+.dirtyCell {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.savedTint {
+  animation: savedTintFlash 600ms ease-out;
+}
+
+@keyframes savedTintFlash {
+  from {
+    background: var(--accent-weak);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .savedTint {
+    animation: none;
+  }
+}
+
+.collapsedRow {
+  display: none;
+}
+
+.collapsedCell {
+  padding: 0 var(--cell-pad-x) var(--cell-pad-y);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.emptyCell {
+  padding: var(--s-6) var(--cell-pad-x);
+  color: var(--muted);
+  font-size: var(--fs-base);
+  text-align: left;
+}
+
+.emptyAction {
+  margin-left: var(--s-2);
+  border: 0;
+  border-bottom: var(--line-w) solid var(--accent);
+  background: none;
+  color: var(--accent);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+}
+
+/* §7-3 폰 전략 — P1만 열로 남고 P2는 행 아래 접힌 줄, P3은 숨는다. 가로
+   스크롤을 만들지 않는다(S11). */
+@media (max-width: 699.98px) {
+  .prio-p2,
+  .prio-p3 {
+    display: none;
+  }
+
+  .collapsedRow {
+    display: table-row;
+  }
+
+  .cell,
+  .headerCell {
+    padding: var(--cell-pad-y) var(--cell-pad-x);
+  }
+}

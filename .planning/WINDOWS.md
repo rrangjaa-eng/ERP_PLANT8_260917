@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 11
+open_count: 18
 waived_count: 0
 fixed_count: 13
-total_count: 24
-last_updated: 2026-09-22T06:23:58.442Z
+total_count: 31
+last_updated: 2026-09-23T00:14:23.543Z
 ---
 
 # Broken Windows Ledger
@@ -39,6 +39,13 @@ last_updated: 2026-09-22T06:23:58.442Z
 | 22 | 01 | unrun-verify | .planning/phases/01-deploy-skeleton-login/01-08-DEPLOY-LOG.md |  | origin 임시 프로브 브랜치 4개 미삭제(probe-result·probe-result2·guard-probe-result·prod-verify-result): 2026-09-20 확인 결과 전부 잔존. git push --delete가 이 세션의 에그레스 프록시에서 끊긴다(일반 push는 정상) — 사용자가 GitHub에서 삭제해야 한다 | open |  | 2026-09-20T08:55:22.487Z |  |
 | 23 | 02 | deviation | ui/shell/TopBar.tsx |  | §10 터치 목표 44 미달(375px DOM 감사 2026-09-22): 사용자 메뉴 트리거 19px, 로그인·비밀번호 변경·로그아웃·첫 화면으로 버튼 40px(--control-h 폰 40). 컨트롤 높이는 SYSTEM.md 토큰 결정이라 화면 하나로 못 고친다 — 디자인 결정 후 tokens.css에서 | open |  | 2026-09-22T05:07:38.693Z |  |
 | 24 | 02 | deviation | docs/design/system/preview.html |  | §7-4 폰 두 줄 실물(preview.html .next li grid)이 §7-4 원문과 다르게 렌더된다 — grid(auto 1fr auto) 자동 배치가 .amt를 2행 2칸에 먼저 놓아 .go(행동)가 2행으로 밀린다. 컴포넌트(NextTurn)는 2026-09-22 원문대로 고쳤고(test/e2e/mobile-next-turn.spec.ts 실측) 실물은 미수정. 디자인 문서 정비 시 맞춘다 | open |  | 2026-09-22T05:07:38.860Z |  |
+| 25 | 04 | unrun-verify | test/e2e/action-log.spec.ts |  | 04-01: 전체 E2E 스위트 동시 실행 시 간헐적 실패(단독 실행은 통과) — Excel BOM·corp-cards·master-edit·org, 웹서버 stream 오류 의심, 04-01 범위 밖 | open |  | 2026-09-22T20:41:47.158Z |  |
+| 26 | 04 | stub | app/(app)/projects/[id]/revenue-section.tsx |  | 발행·입금 줄은 스키마·domain 계층이 이미 임의 통화를 지원하나 UI는 KRW 입력만 제공한다(계약 금액·견적 단가는 통화 Select+환율 완비) — 04-04 이후 외화 입금 실사례가 나오면 마저 채운다 | open |  | 2026-09-22T21:35:03.481Z |  |
+| 27 | 04 | stub | app/(app)/projects/projects-table.tsx |  | 열 머리글 클릭 정렬·aria-sort 미구현 — ui/table/Table.tsx가 04-04 소유 파일이라 이 플랜은 건드리지 않는다(서버 정렬 자체는 구현·테스트됨, URL 파라미터 직접 내비게이션으로 검증) | open |  | 2026-09-22T22:32:21.535Z |  |
+| 28 | 04 | stub | app/(app)/projects/[id]/quote-table.tsx |  | 버전 충돌은 화면 전체 alert/합계 행에 서버 메시지로만 뜬다 — §7-3 (나)가 요구하는 셀별 고정 오류 모양·「덮어쓰기 / 그 값으로」 3차 버튼(per-cell)은 Table.tsx의 cellIssue.actions API로만 배선되어 있고 quote-table.tsx가 아직 채우지 않았다(구조화된 conflicts가 action 경계를 못 넘는다 — SaveRejectedError.message만 next-safe-action의 serverError로 전달된다) | open |  | 2026-09-22T23:52:05.361Z |  |
+| 29 | 04 | stub | app/(app)/projects/[id]/quote-table.tsx |  | ⌘Enter 새 줄은 그룹의 소분류를 물려받지만 배열 끝에 추가되고(그룹 안 위치로 스플라이스되지 않는다) 그 셀이 자동으로 편집 상태로 열리지 않는다 — Table이 로빙 포커스 상태를 내부 소유해 quote-table.tsx가 저장 직후 특정 셀에 포커스를 강제할 API가 없다. Alt+↑↓ 줄 이동이 그룹 경계를 넘을 때도 같은 이유로 그 셀이 자동으로 열리지 않는다(소분류는 이웃 그룹 값을 물려받는다) | open |  | 2026-09-22T23:52:13.717Z |  |
+| 30 | 04 | stub | app/(app)/projects/[id]/quote-table.tsx |  | 셀 편집 가능성이 편집/잠김 이진 판정이다 — §7-3 (가)의 3단계 중 '읽기 전용'(연결 문서가 있는 줄의 금액 셀, D-66)은 이 페이즈의 QuoteLineDto에 연결 문서 여부 필드가 아직 없어 구현하지 않았다(지출결의가 생기는 이후 페이즈 몫). 줄 삭제 확인 모달도 '삭제'(연결 문서 없음) 갈래만 있고 '취소'(연결 문서 있음) 갈래는 같은 이유로 없다 | open |  | 2026-09-22T23:52:13.942Z |  |
+| 31 | 04 | unrun-verify | test/e2e/mobile-list-empty.spec.ts |  | 04-04: pnpm test(전체 스위트) 1회 실행에서 이 스펙이 실패(다른 워커가 동시에 만든 프로젝트로 /projects EMPTY 가정이 깨짐 추정) — 04-01(WINDOWS #25)과 같은 종류의 전체 스위트 동시 실행 인프라 문제, 04-04가 건드린 파일과 무관. 단독 재실행에서는 desktop 프로젝트가 매번 다른 무관 스펙(action-log·corp-cards)에서 실패해 셰어드 DB 경합으로 판단. 이 플랜 소유 스펙만 묶어 2회 재실행하면 전부(19/19, 23/23) 통과 — deferred-items.md 04-04 절 참고 | open |  | 2026-09-23T00:14:23.543Z |  |
 
 ````json
 [
@@ -351,6 +358,97 @@ last_updated: 2026-09-22T06:23:58.442Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-22T05:07:38.860Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 25,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "test/e2e/action-log.spec.ts",
+    "line": null,
+    "description": "04-01: 전체 E2E 스위트 동시 실행 시 간헐적 실패(단독 실행은 통과) — Excel BOM·corp-cards·master-edit·org, 웹서버 stream 오류 의심, 04-01 범위 밖",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-22T20:41:47.158Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 26,
+    "kind": "stub",
+    "phase": "04",
+    "file": "app/(app)/projects/[id]/revenue-section.tsx",
+    "line": null,
+    "description": "발행·입금 줄은 스키마·domain 계층이 이미 임의 통화를 지원하나 UI는 KRW 입력만 제공한다(계약 금액·견적 단가는 통화 Select+환율 완비) — 04-04 이후 외화 입금 실사례가 나오면 마저 채운다",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-22T21:35:03.481Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 27,
+    "kind": "stub",
+    "phase": "04",
+    "file": "app/(app)/projects/projects-table.tsx",
+    "line": null,
+    "description": "열 머리글 클릭 정렬·aria-sort 미구현 — ui/table/Table.tsx가 04-04 소유 파일이라 이 플랜은 건드리지 않는다(서버 정렬 자체는 구현·테스트됨, URL 파라미터 직접 내비게이션으로 검증)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-22T22:32:21.535Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 28,
+    "kind": "stub",
+    "phase": "04",
+    "file": "app/(app)/projects/[id]/quote-table.tsx",
+    "line": null,
+    "description": "버전 충돌은 화면 전체 alert/합계 행에 서버 메시지로만 뜬다 — §7-3 (나)가 요구하는 셀별 고정 오류 모양·「덮어쓰기 / 그 값으로」 3차 버튼(per-cell)은 Table.tsx의 cellIssue.actions API로만 배선되어 있고 quote-table.tsx가 아직 채우지 않았다(구조화된 conflicts가 action 경계를 못 넘는다 — SaveRejectedError.message만 next-safe-action의 serverError로 전달된다)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-22T23:52:05.361Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 29,
+    "kind": "stub",
+    "phase": "04",
+    "file": "app/(app)/projects/[id]/quote-table.tsx",
+    "line": null,
+    "description": "⌘Enter 새 줄은 그룹의 소분류를 물려받지만 배열 끝에 추가되고(그룹 안 위치로 스플라이스되지 않는다) 그 셀이 자동으로 편집 상태로 열리지 않는다 — Table이 로빙 포커스 상태를 내부 소유해 quote-table.tsx가 저장 직후 특정 셀에 포커스를 강제할 API가 없다. Alt+↑↓ 줄 이동이 그룹 경계를 넘을 때도 같은 이유로 그 셀이 자동으로 열리지 않는다(소분류는 이웃 그룹 값을 물려받는다)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-22T23:52:13.717Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 30,
+    "kind": "stub",
+    "phase": "04",
+    "file": "app/(app)/projects/[id]/quote-table.tsx",
+    "line": null,
+    "description": "셀 편집 가능성이 편집/잠김 이진 판정이다 — §7-3 (가)의 3단계 중 '읽기 전용'(연결 문서가 있는 줄의 금액 셀, D-66)은 이 페이즈의 QuoteLineDto에 연결 문서 여부 필드가 아직 없어 구현하지 않았다(지출결의가 생기는 이후 페이즈 몫). 줄 삭제 확인 모달도 '삭제'(연결 문서 없음) 갈래만 있고 '취소'(연결 문서 있음) 갈래는 같은 이유로 없다",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-22T23:52:13.942Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 31,
+    "kind": "unrun-verify",
+    "phase": "04",
+    "file": "test/e2e/mobile-list-empty.spec.ts",
+    "line": null,
+    "description": "04-04: pnpm test(전체 스위트) 1회 실행에서 이 스펙이 실패(다른 워커가 동시에 만든 프로젝트로 /projects EMPTY 가정이 깨짐 추정) — 04-01(WINDOWS #25)과 같은 종류의 전체 스위트 동시 실행 인프라 문제, 04-04가 건드린 파일과 무관. 단독 재실행에서는 desktop 프로젝트가 매번 다른 무관 스펙(action-log·corp-cards)에서 실패해 셰어드 DB 경합으로 판단. 이 플랜 소유 스펙만 묶어 2회 재실행하면 전부(19/19, 23/23) 통과 — deferred-items.md 04-04 절 참고",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-23T00:14:23.543Z",
     "resolved_at": null,
     "milestone": null
   }

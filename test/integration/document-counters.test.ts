@@ -4,9 +4,10 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 
 const { findDocumentCounter, upsertDocumentCounter } = documentCountersRepo;
 
-// ROADMAP 트레일링 스키마 규약 — 문서 번호 카운터 표는 규약만 세운다. 실제
-// 번호 부여(원자적 증가)와 행 잠금은 Phase 4다. 이 테스트는 표 존재·복합
-// PK 동작·증가 함수의 부재만 증명한다.
+// ROADMAP 트레일링 스키마 규약 — 문서 번호 카운터 표는 규약만 세운다. 이
+// 테스트는 표 존재·복합 PK 동작을 증명한다. 원자적 증가(`allocateNumber`)는
+// Phase 4(04-01)가 더했다 — 그 동시성 증명은
+// `document-counters-concurrency.test.ts`(Issue 10).
 describe("document counters (ROADMAP 트레일링 스키마 규약, 실제 Postgres)", () => {
   it("표가 존재하고 upsert로 행을 만들 수 있다", async () => {
     await upsertDocumentCounter(SYSTEM_VIEWER, { counterKey: "expense", period: "2026", value: 0 });
@@ -37,8 +38,8 @@ describe("document counters (ROADMAP 트레일링 스키마 규약, 실제 Postg
     expect(row).toBeNull();
   });
 
-  it("원자적 증가 함수가 이 리포지토리에 없다(Phase 4 경계) — 읽기·upsert 두 함수만 export된다", () => {
+  it("Phase 4(04-01)가 원자적 증가 함수를 더해 정확히 세 함수를 export한다", () => {
     const exportedNames = Object.keys(documentCountersRepo).sort();
-    expect(exportedNames).toEqual(["findDocumentCounter", "upsertDocumentCounter"]);
+    expect(exportedNames).toEqual(["allocateNumber", "findDocumentCounter", "upsertDocumentCounter"]);
   });
 });

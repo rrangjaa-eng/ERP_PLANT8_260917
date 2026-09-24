@@ -63,7 +63,6 @@ export const TAX_VAT_RATE: SettingDef<number> = {
   hint: "적용 시작일부터 이 비율로 부가세를 계산합니다.",
   namespace: "세율",
   default: 0.1,
-  readBy: { phase: "4" },
 };
 
 export const TAX_WITHHOLDING_OTHER_INCOME_RATE: SettingDef<number> = {
@@ -74,7 +73,6 @@ export const TAX_WITHHOLDING_OTHER_INCOME_RATE: SettingDef<number> = {
   hint: "기타소득 지급액에서 이 비율만큼 원천징수합니다.",
   namespace: "세율",
   default: 0.088,
-  readBy: { phase: "4" },
 };
 
 export const TAX_WITHHOLDING_BUSINESS_INCOME_RATE: SettingDef<number> = {
@@ -85,7 +83,6 @@ export const TAX_WITHHOLDING_BUSINESS_INCOME_RATE: SettingDef<number> = {
   hint: "사업소득 지급액에서 이 비율만큼 원천징수합니다.",
   namespace: "세율",
   default: 0.033,
-  readBy: { phase: "4" },
 };
 
 export const TAX_WITHHOLDING_OTHER_INCOME_EXEMPT_THRESHOLD: SettingDef<number> = {
@@ -96,7 +93,6 @@ export const TAX_WITHHOLDING_OTHER_INCOME_EXEMPT_THRESHOLD: SettingDef<number> =
   hint: "지급액이 이 금액 이하이면 원천징수하지 않습니다.",
   namespace: "세율",
   default: 125000,
-  readBy: { phase: "4" },
 };
 
 export const TAX_COMPANY_BORNE_RATE: SettingDef<number> = {
@@ -107,7 +103,6 @@ export const TAX_COMPANY_BORNE_RATE: SettingDef<number> = {
   hint: "회사가 대신 부담하는 세금의 비율입니다.",
   namespace: "세율",
   default: 0.088,
-  readBy: { phase: "4" },
 };
 
 export const TAX_COMPANY_BORNE_METHOD_VALUES = ["flat", "gross_up"] as const;
@@ -121,7 +116,6 @@ export const TAX_COMPANY_BORNE_METHOD: SettingDef<TaxCompanyBorneMethod> = {
   hint: "단순 비율(flat) 또는 gross-up 중 하나를 고릅니다.",
   namespace: "세율",
   default: "flat",
-  readBy: { phase: "4" },
 };
 
 // 규칙 종류별 적용 기준일(Eng OV-5) — 이 설정은 "어느 날짜 필드를 기준으로
@@ -138,7 +132,6 @@ export const TAX_BASIS_DATE_WITHHOLDING: SettingDef<TaxBasisDate> = {
   hint: "지급일(미지급이면 지급 예정일)을 기준으로 세율을 조회합니다.",
   namespace: "세율",
   default: "payment_date",
-  readBy: { phase: "4" },
 };
 
 export const TAX_BASIS_DATE_VAT: SettingDef<TaxBasisDate> = {
@@ -149,7 +142,6 @@ export const TAX_BASIS_DATE_VAT: SettingDef<TaxBasisDate> = {
   hint: "증빙일(없으면 작성일)을 기준으로 세율을 조회합니다.",
   namespace: "세율",
   default: "evidence_date",
-  readBy: { phase: "4" },
 };
 
 export const TAX_ROUNDING_VAT_UNIT: SettingDef<number> = {
@@ -160,7 +152,6 @@ export const TAX_ROUNDING_VAT_UNIT: SettingDef<number> = {
   hint: "이 단위 미만은 절사합니다.",
   namespace: "절사",
   default: 1,
-  readBy: { phase: "4" },
 };
 
 export const TAX_ROUNDING_WITHHOLDING_UNIT: SettingDef<number> = {
@@ -171,7 +162,6 @@ export const TAX_ROUNDING_WITHHOLDING_UNIT: SettingDef<number> = {
   hint: "이 단위 미만은 절사합니다.",
   namespace: "절사",
   default: 10,
-  readBy: { phase: "4" },
 };
 
 export const TAX_ROUNDING_MIN_WITHHOLDING: SettingDef<number> = {
@@ -182,7 +172,19 @@ export const TAX_ROUNDING_MIN_WITHHOLDING: SettingDef<number> = {
   hint: "이 금액 미만이면 원천징수하지 않습니다.",
   namespace: "절사",
   default: 0,
-  readBy: { phase: "4" },
+};
+
+// 04-02 Task 1 ③(D-71) — 통화별 최근 환율. 실제 환율은 견적 줄·매출 각
+// 행에 저장되므로 이 키는 새 외화 줄의 환율 칸 기본값일 뿐이다(정본이
+// 아니다). KRW는 키를 만들지 않는다 — 환율 1로 고정(domain/money/currency.ts).
+export const FX_RECENT_RATE_USD: SettingDef<number> = {
+  key: "fx.recent_rate.USD",
+  kind: "simple",
+  schema: z.coerce.number().positive(),
+  label: "USD 최근 환율",
+  hint: "새 외화 줄의 환율 칸 기본값입니다 — 환율을 적은 저장마다 갱신됩니다.",
+  namespace: "환율",
+  default: 1300,
 };
 
 // 완료 처리 강행 허용 — 점검 항목별 boolean 셋(03-CONTEXT.md Claude's
@@ -220,6 +222,69 @@ export const PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE: SettingDef<boolean> =
   readBy: { phase: "6" },
 };
 
+// 04-05(ADMN-09) — 프로젝트 문서 번호 서식. 문서 종류별 키 묶음(Claude
+// 재량 항목, `domain/document-numbering/index.ts` 머리 주석에 근거 셋
+// 기록) — 접두어·연도 자릿수·순번 자릿수·구분자·순번 시작값 다섯 다
+// 단순값이다(서식을 바꿔도 이미 매긴 번호는 그대로라 과거 시점 조회가
+// 필요 없다). 기본값은 `docs/inputs/phase-04-project-quote.md` §5가
+// 확정한 프로젝트 서식(`26001` — 접두어 없음·연도 뒤 2자리·순번 3자리·
+// 구분자 없음·순번 1부터)과 정확히 같다. 지출결의·연차·카드·구매 요청
+// 서식 키는 그 문서가 생기는 페이즈가 `document_number.<종류>.*` 같은
+// 형태로 이 파일에 더한다.
+export const DOCUMENT_NUMBER_PROJECT_PREFIX: SettingDef<string> = {
+  key: "document_number.project.prefix",
+  kind: "simple",
+  schema: z.string(),
+  label: "프로젝트 번호 접두어",
+  hint: "번호 맨 앞에 붙는 문자열입니다(기본값은 없음).",
+  namespace: "문서 번호",
+  default: "",
+};
+
+export const DOCUMENT_NUMBER_PROJECT_YEAR_DIGITS: SettingDef<number> = {
+  key: "document_number.project.year_digits",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1).max(4),
+  label: "프로젝트 번호 연도 자릿수",
+  hint: "연도를 뒤에서부터 이 자릿수만큼 씁니다(기본 2 → 26).",
+  namespace: "문서 번호",
+  default: 2,
+};
+
+export const DOCUMENT_NUMBER_PROJECT_SEQ_DIGITS: SettingDef<number> = {
+  key: "document_number.project.seq_digits",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1),
+  label: "프로젝트 번호 순번 자릿수",
+  hint: "순번을 이 자릿수만큼 0으로 채웁니다(넘치면 자릿수가 늘어나고 잘리지 않습니다).",
+  namespace: "문서 번호",
+  default: 3,
+};
+
+// 기본값이 빈 문자열이다 — 확정된 프로젝트 서식(`26001`)이 연도와 순번
+// 사이에 구분자를 두지 않는다. z.string()은 값 자체(빈 문자열 포함)를
+// 허용하고, 키가 아예 비어 값이 없는 상태(undefined)만 막는다 — 빈
+// 문자열을 거부하면 이 기본 서식 자체가 저장 불가능해진다.
+export const DOCUMENT_NUMBER_PROJECT_SEPARATOR: SettingDef<string> = {
+  key: "document_number.project.separator",
+  kind: "simple",
+  schema: z.string(),
+  label: "프로젝트 번호 구분자",
+  hint: "연도와 순번 사이에 넣을 문자입니다(기본값은 없음).",
+  namespace: "문서 번호",
+  default: "",
+};
+
+export const DOCUMENT_NUMBER_PROJECT_SEQ_START: SettingDef<number> = {
+  key: "document_number.project.seq_start",
+  kind: "simple",
+  schema: z.coerce.number().int().min(0),
+  label: "프로젝트 번호 순번 시작값",
+  hint: "연도가 바뀌어 순번이 다시 시작할 때의 첫 값입니다(기본 1).",
+  namespace: "문서 번호",
+  default: 1,
+};
+
 export const PNL_START_GATE_WEEKS_AFTER_CUTOVER: SettingDef<number> = {
   key: "pnl.start_gate.weeks_after_cutover",
   kind: "simple",
@@ -250,6 +315,12 @@ export const SETTING_DEFS: SettingDef<unknown>[] = [
   TAX_ROUNDING_VAT_UNIT,
   TAX_ROUNDING_WITHHOLDING_UNIT,
   TAX_ROUNDING_MIN_WITHHOLDING,
+  FX_RECENT_RATE_USD,
+  DOCUMENT_NUMBER_PROJECT_PREFIX,
+  DOCUMENT_NUMBER_PROJECT_YEAR_DIGITS,
+  DOCUMENT_NUMBER_PROJECT_SEQ_DIGITS,
+  DOCUMENT_NUMBER_PROJECT_SEPARATOR,
+  DOCUMENT_NUMBER_PROJECT_SEQ_START,
   PROJECT_FORCE_COMPLETE_ALLOW_OPEN_EXPENSES,
   PROJECT_FORCE_COMPLETE_ALLOW_UNMATCHED_ESTIMATE_LINES,
   PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE,

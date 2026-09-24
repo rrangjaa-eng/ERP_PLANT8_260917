@@ -1,0 +1,305 @@
+import { randomUUID } from "node:crypto";
+import { test, expect, type Page } from "@playwright/test";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { insertVendor } from "@/repositories/vendors";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { createAccount } from "@/domain/auth/accounts";
+import { createProject } from "@/domain/projects";
+import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
+import { db } from "@/db/client";
+import { teams } from "@/db/schema";
+
+// 04-04 Task 3 — 견적 줄 표의 키보드 계약·범위 선택·붙여넣기·전부 거부를
+// E2E로 증명한다. 실제 엑셀 붙여넣기(인용 규칙)는 자동화가 닿지 못해
+// 사람 확인으로 넘긴다(04-VALIDATION.md Manual-Only Verifications) — 이
+// 스펙은 그 앞단계인 "브라우저 클립보드 이벤트가 표에 정확히 반영되는지"
+// 까지만 증명한다.
+
+async function loginAndOpenProject(page: Page): Promise<{ projectId: string }> {
+  const client = await insertVendor(SYSTEM_VIEWER, {
+    name: `E2Equote클라이언트-${Date.now()}`,
+    normalizedName: `e2equote클라이언트-${Date.now()}`,
+  });
+  const email = `e2e-quote-${randomUUID()}@example.test`;
+  const { userId: pmUserId, tempPassword } = await createAccount(SYSTEM_VIEWER, {
+    email,
+    name: "E2E Employee",
+    roleId: DEFAULT_ROLE_ID,
+  });
+  const [team] = await db.select().from(teams).limit(1);
+  if (!team) throw new Error("시드된 팀이 없습니다");
+
+  const projectName = `E2Equote프로젝트-${Date.now()}`;
+  const project = await createProject(SYSTEM_VIEWER, {
+    clientId: client.id,
+    teamId: team.id,
+    pmUserId,
+    name: projectName,
+  });
+
+  await page.goto("/login");
+  await page.getByLabel("이메일").fill(email);
+  await page.getByLabel("비밀번호").fill(tempPassword);
+  await page.getByRole("button", { name: "로그인" }).click();
+  await expect(page).toHaveURL(/\/account$/);
+
+  await page.goto(`/projects/${project.id}`);
+  await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+
+  return { projectId: project.id };
+}
+
+async function pasteIntoFocusedCell(page: Page, text: string) {
+  await page.evaluate((clipboardText) => {
+    const el = document.activeElement;
+    const dt = new DataTransfer();
+    dt.setData("text/plain", clipboardText);
+    const event = new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true });
+    el?.dispatchEvent(event);
+  }, text);
+}
+
+test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(04-04)", () => {
+  test("(a) 마우스 클릭 없이 키보드만으로 줄 하나를 끝까지 입력하고 저장한다", async ({ page }) => {
+    await loginAndOpenProject(page);
+
+    const emptyButton = page.getByRole("button", { name: /첫 줄 만들기/ });
+    await emptyButton.focus();
+    await page.keyboard.press("Enter"); // 클릭 호출 없이 첫 줄을 만든다.
+
+    const dataRow = page.locator("tbody tr").nth(1);
+    const gridcell = (index: number) => dataRow.getByRole("gridcell").nth(index);
+
+    // 항목(2) — Enter로 편집 진입 → 타이핑 → Enter로 커밋.
+    await gridcell(2).focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("키보드로만 적은 항목");
+    await page.keyboard.press("Enter");
+
+    // 단가(5) — 금액만 입력(통화는 기본 KRW를 그대로 둔다).
+    await gridcell(5).focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("1200000");
+    await page.keyboard.press("Enter");
+
+    // 실행가(7).
+    await gridcell(7).focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("800000");
+    await page.keyboard.press("Enter");
+
+    // 저장 — ⌘S/Ctrl+S(그리드에 포커스가 있는 채로).
+    await gridcell(7).focus();
+    await page.keyboard.press("Control+s");
+
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+    await expect(page.getByText("1,200,000").first()).toBeVisible();
+    await expect(page.getByText("400,000").first()).toBeVisible(); // 차익 = 1,200,000 - 800,000
+  });
+
+  test("(b) 클립보드 여러 칸 붙여넣기가 활성 셀부터 오른쪽·아래로 채운다", async ({ page }) => {
+    await loginAndOpenProject(page);
+
+    await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
+    const dataRow = page.locator("tbody tr").nth(1);
+    const gridcell = (index: number) => dataRow.getByRole("gridcell").nth(index);
+
+    // 항목(2)에 한 칸, 수량(4)부터 오른쪽으로 "수량\t단가" 두 칸 — 활성
+    // 셀에서 오른쪽·아래로 채워지는 것을 두 자리에서 각각 확인한다.
+    await gridcell(2).focus();
+    await pasteIntoFocusedCell(page, "붙여넣은 항목");
+    await expect(page.getByText("붙여넣은 항목")).toBeVisible();
+
+    await gridcell(4).focus();
+    await pasteIntoFocusedCell(page, "7\t50000");
+
+    await expect(gridcell(4)).toHaveText("7"); // 수량
+    await expect(gridcell(5)).toHaveText("50,000"); // 단가(KRW 서식)
+  });
+
+  test("(c)(d)(e) 숫자 아닌 값을 숫자 열에 붙여넣으면 오류로 고정되고 저장이 전부 거부되며, 다른 셀 편집값은 남는다", async ({ page }) => {
+    await loginAndOpenProject(page);
+
+    await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
+    const dataRow = page.locator("tbody tr").nth(1);
+    const gridcell = (index: number) => dataRow.getByRole("gridcell").nth(index);
+
+    // 항목을 먼저 채운다(UX-04 — 오류 뒤에도 이 값이 남아야 한다).
+    await gridcell(2).focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("오류 검증용 항목");
+    await page.keyboard.press("Enter");
+
+    // 단가에 숫자가 아닌 값을 붙여넣는다 — 오류 셀로 고정되어야 한다.
+    await gridcell(5).focus();
+    await pasteIntoFocusedCell(page, "숫자아님");
+
+    await expect(gridcell(5)).toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByText(/숫자가 아닙니다/)).toBeVisible();
+
+    // (c) 저장 버튼 자체가 오류 이유와 함께 비활성 — 서버 왕복 없이 거부.
+    const saveButton = page.getByRole("button", { name: /일괄 저장/ });
+    await expect(saveButton).toBeDisabled();
+    await expect(page.getByText(/오류.*고쳐야 저장됩니다/)).toBeVisible();
+
+    // (e) 항목 편집값은 오류가 있어도 그대로 남아 있다.
+    await expect(page.getByText("오류 검증용 항목")).toBeVisible();
+
+    // (d) 오류를 고치면 저장이 다시 가능해지고 전부 반영된다.
+    await gridcell(5).focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("1500000");
+    await page.keyboard.press("Enter");
+
+    await expect(gridcell(5)).not.toHaveAttribute("aria-invalid", "true");
+    await expect(saveButton).toBeEnabled();
+    await saveButton.click();
+
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+    await expect(page.getByText("1,500,000").first()).toBeVisible();
+  });
+
+  test("F2 — 항목을 비운 채 저장하면 next-safe-action 검증 오류가 화면에 alert로 보인다", async ({ page }) => {
+    await loginAndOpenProject(page);
+
+    await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
+    const dataRow = page.locator("tbody tr").nth(1);
+    const gridcell = (index: number) => dataRow.getByRole("gridcell").nth(index);
+
+    // 단가만 채우고 항목(2)은 비워 둔다 — 서버 스키마의 itemName.min(1)이
+    // 거부해야 한다(클라이언트 게이트는 빈 값 자체를 막지 않는다).
+    await gridcell(5).focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("1200000");
+    await page.keyboard.press("Enter");
+
+    const saveButton = page.getByRole("button", { name: /일괄 저장/ });
+    await expect(saveButton).toBeEnabled();
+    await saveButton.click();
+
+    // role=alert는 Next.js 라우트 안내에도 있어 문구로 좁힌다.
+    await expect(page.getByRole("alert").filter({ hasText: "저장하지 못했습니다 · 입력값을 확인하세요" })).toBeVisible();
+  });
+
+  test("(f) 폰 뷰포트에서 줄을 탭하면 행 시트가 열리고 행동 줄이 없다", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 800 });
+    await loginAndOpenProject(page);
+
+    await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
+
+    const dataRow = page.locator("tbody tr").nth(1);
+    await dataRow.locator("td[role='gridcell']").nth(2).click();
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("폰 시트 확인용 항목");
+    await page.keyboard.press("Enter");
+
+    // 접힌 요약 행(P2/P3 값)이 폰에서만 렌더되고 탭하면 시트가 열린다.
+    const collapsedRow = page.locator('[role="button"][aria-label*="상세 보기"]');
+    await collapsedRow.click();
+
+    const sheet = page.getByRole("dialog", { name: /폰 시트 확인용 항목|항목명 없음/ });
+    await expect(sheet).toBeVisible();
+    // 행동 줄이 없다 — 시트 안에 button 요소가 "닫기" 하나뿐이다.
+    const sheetButtons = sheet.getByRole("button");
+    await expect(sheetButtons).toHaveCount(1);
+    await expect(sheetButtons.first()).toHaveAccessibleName("닫기");
+  });
+
+  test("(g) 실제 엑셀(Windows, 2026-09-23 캡처) 인코딩을 붙여넣고 저장·새로고침해도 원본이 보존된다", async ({ page }) => {
+    await loginAndOpenProject(page);
+
+    await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
+    // 각 데이터 행 뒤에 폰 전용 접힌 요약 행이 데스크톱에서도 DOM에 숨어
+    // 있다(display:none) — tbody tr는 그 둘을 번갈아 담으므로 데이터 행
+    // 인덱스는 짝수 오프셋이다.
+    const gridcell = (rowIndex: number, colIndex: number) =>
+      page
+        .locator("tbody tr")
+        .nth(1 + rowIndex * 2)
+        .getByRole("gridcell")
+        .nth(colIndex);
+
+    // 04-04 Task 3 인간 확인 — 실제 Windows Excel(2026-09-23 캡처) clipboard
+    // text/plain 원문에서 헤더 행 + 번호 열을 뺀 3×3(항목·수량·단가). 그리드의
+    // 실제 열 순서는 소분류(1)·항목(2)·거래처(3)·수량(4)·단가(5)라 텍스트
+    // 열(항목)과 숫자 열 둘(수량·단가)이 인접하지 않는다(거래처 select 셀이
+    // 사이에 있다 — 목록 밖 문자열이 떨어지면 오류 셀이 된다) — 그래서 실제
+    // 열에 대응하는 칸만 두 번에 나눠 주입한다(04-04-SUMMARY.md에 매핑 기록).
+    const itemNamePaste = '무대 설치\n"대형" 현수막\n"비고 첫 줄\r\n둘째 줄"';
+    const numberPaste = "2\t 1,200,000 \n5\t 35,000 \n1\t₩450,000 ";
+
+    await gridcell(0, 2).focus(); // 항목 — 아래로 넘쳐 2줄이 자동으로 생긴다.
+    await pasteIntoFocusedCell(page, itemNamePaste);
+
+    await gridcell(0, 4).focus(); // 수량 → 단가로 오른쪽까지 채운다.
+    await pasteIntoFocusedCell(page, numberPaste);
+
+    async function assertValues() {
+      // 따옴표만 있고 줄바꿈이 없는 칸은 따옴표가 그대로 남는다(지워지지도,
+      // 두 개가 되지도 않는다).
+      await expect(gridcell(0, 2)).toHaveText("무대 설치");
+      expect(await gridcell(1, 2).textContent()).toBe('"대형" 현수막');
+
+      // 줄바꿈이 있던 칸은 한 칸으로 들어가고 CRLF가 아니라 LF 하나만 남는다.
+      const row3ItemText = await gridcell(2, 2).textContent();
+      expect(row3ItemText).not.toContain("\r");
+      expect(row3ItemText).toBe("비고 첫 줄\n둘째 줄");
+
+      // 쉼표·공백·통화 기호가 섞인 금액이 숫자로 읽힌다.
+      await expect(gridcell(0, 4)).toHaveText("2");
+      await expect(gridcell(0, 5)).toHaveText("1,200,000");
+      await expect(gridcell(1, 4)).toHaveText("5");
+      await expect(gridcell(1, 5)).toHaveText("35,000");
+      await expect(gridcell(2, 4)).toHaveText("1");
+      await expect(gridcell(2, 5)).toHaveText("450,000");
+    }
+
+    await assertValues();
+
+    const saveButton = page.getByRole("button", { name: /일괄 저장/ });
+    await expect(saveButton).toBeEnabled();
+    await saveButton.click();
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+
+    // 저장 후 다시 열어도(새로고침 — 서버 왕복) 같은 값이다.
+    await page.reload();
+    await expect(page.locator("tbody tr").nth(1)).toBeVisible();
+    await assertValues();
+  });
+  test("금액을 볼 수 없는 직급은 상세 화면이 오류 없이 열리고 금액은 —, 표는 편집할 수 없다(/ship 리뷰)", async ({ page }) => {
+    // role-ceo에 프로젝트 보기·쓰기와 project.value만 주고 quote.amount는 주지 않는다 — PM 역할을 건드리지 않아 다른 테스트와 격리된다.
+    await upsertPermission(SYSTEM_VIEWER, { roleId: "role-ceo", menu: "projects", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: "role-ceo", menu: "projects", action: "write", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: "role-ceo", infoItem: "project.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: "role-ceo", infoItem: "quote.amount", visible: false });
+
+    const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E금액숨김-${Date.now()}`, normalizedName: `e2e금액숨김-${Date.now()}` });
+    const { userId: pmUserId } = await createAccount(SYSTEM_VIEWER, { email: `e2e-pm-${randomUUID()}@example.test`, name: "E2E PM", roleId: DEFAULT_ROLE_ID });
+    const [team] = await db.select().from(teams).limit(1);
+    if (!team) throw new Error("시드된 팀이 없습니다");
+    const projectName = `E2E금액숨김프로젝트-${Date.now()}`;
+    const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId, name: projectName });
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("1차 차수가 없습니다");
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+      { subcategory: "sub-a", itemName: "숨김 줄", unitPrice: { currency: "KRW", amount: 1000, fxRate: 1 }, execution: { currency: "KRW", amount: 0, fxRate: 1 } },
+    ]);
+
+    const email = `e2e-ceo-${randomUUID()}@example.test`;
+    const { tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 금액숨김", roleId: "role-ceo" });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(email);
+    await page.getByLabel("비밀번호").fill(tempPassword);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+    await expect(page.getByText("숨김 줄")).toBeVisible();
+    await expect(page.getByText("1,000")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "줄 추가", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /첫 줄 만들기/ })).toHaveCount(0);
+  });
+});

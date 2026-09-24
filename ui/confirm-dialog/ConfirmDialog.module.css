@@ -1,0 +1,217 @@
+/* SYSTEM.md §7-17(⑮) — 공용 확인 모달·시트. PC(≥700)는 폭 --modal-w
+   모달, 폰(<700)은 §7-8 시트 골격(머리 고정 + 닫기 x, 본문 스크롤 최대
+   85vh, 행동 줄 --touch-min). 색·서체·radius는 토큰 참조만 쓴다(D-20). */
+
+.dialog {
+  width: 100%;
+  max-width: var(--modal-w);
+  margin: auto;
+  padding: 0;
+  border: var(--line-w-strong) solid var(--line-strong);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.dialog::backdrop {
+  background: var(--scrim);
+}
+
+.hd {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: var(--s-4) var(--s-4) 0;
+}
+
+.titleBlock {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-head);
+  word-break: keep-all;
+}
+
+.subtitle {
+  margin: var(--s-1) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  word-break: keep-all;
+}
+
+/* PC에는 닫기 x가 없다(§7-8 PC 모달 — 2차 「취소 Esc」·가림막·Esc로만
+   닫는다). 폰 시트 머리에서만 보인다. display: none은 접근성 트리에서도
+   빠져 PC에서 탭 순서에 남지 않는다. */
+.close {
+  display: none;
+}
+
+.body {
+  padding: var(--s-3) var(--s-4);
+}
+
+.resultLines {
+  margin: 0 0 var(--s-3);
+}
+
+.resultLine {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.evidence {
+  margin-bottom: var(--s-3);
+}
+
+.options {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.optionButton {
+  display: block;
+  width: 100%;
+  padding: var(--s-2) 0;
+  border: 0;
+  border-bottom: var(--line-w) solid var(--line);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.optionButton[aria-disabled="true"] {
+  cursor: not-allowed;
+  color: var(--faint);
+}
+
+.optionLabel {
+  display: block;
+  color: var(--fg);
+  font-size: var(--fs-base);
+}
+
+.optionDescription {
+  display: block;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4) var(--s-4);
+}
+
+.reason {
+  margin-right: auto;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+.reasonInfo {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.nextStep {
+  margin-right: var(--s-2);
+}
+
+.primaryWrap,
+.secondaryWrap {
+  display: contents;
+}
+
+@media (max-width: 699.98px) {
+  .dialog {
+    position: fixed;
+    inset-block-start: auto;
+    inset-block-end: 0;
+    inset-inline: 0;
+    width: 100%;
+    max-width: none;
+    max-height: 85vh;
+    margin: 0;
+    border: 0;
+    border-top: var(--line-w-strong) solid var(--line-strong);
+  }
+
+  .hd {
+    padding: var(--s-3) var(--pad-page) var(--s-2);
+    border-bottom: var(--line-w) solid var(--line);
+  }
+
+  .close {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: var(--touch-min);
+    height: var(--touch-min);
+    margin: calc(var(--s-2) * -1) calc(var(--s-3) * -1) 0 0;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+  }
+
+  .body {
+    overflow-y: auto;
+    padding: var(--s-3) var(--pad-page);
+  }
+
+  .actions {
+    padding: var(--s-3) var(--pad-page) var(--s-4);
+  }
+
+  /* §7-8 시트 행동 줄 — 1차가 2차의 두 배 폭, 버튼 높이 --touch-min.
+     Button.tsx 내부 span·button은 이 모듈 밖 클래스라 요소 선택자로
+     닿는다(클래스 선택자만 CSS Modules가 네임스페이스한다). */
+  .primaryWrap,
+  .secondaryWrap {
+    display: block;
+  }
+
+  .primaryWrap > span,
+  .secondaryWrap > span {
+    display: flex;
+  }
+
+  .primaryWrap > span > button,
+  .secondaryWrap > span > button {
+    width: 100%;
+    height: var(--touch-min);
+  }
+
+  .primaryWrap {
+    flex: 2;
+  }
+
+  .secondaryWrap {
+    flex: 1;
+  }
+}
+
+.closeIcon {
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+  stroke: currentColor;
+  stroke-width: var(--icon-stroke);
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

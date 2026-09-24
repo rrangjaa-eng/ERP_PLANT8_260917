@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 4
+current_phase: 04
 current_phase_name: 프로젝트·견적 원장
-current_plan: 5
+current_plan: 2
 status: executing
-stopped_at: Completed 04-28-PLAN.md
-last_updated: "2026-09-24T16:19:27.386Z"
+stopped_at: Completed 04-29-PLAN.md
+last_updated: "2026-09-24T18:21:31.487Z"
 last_activity: 2026-09-24
-last_activity_desc: Phase 4 execution started
-state_head: b14fc24778782a302d0906d462a926f88f685374
+last_activity_desc: Phase 04 execution started
+state_head: c7dd99e7cd09b9d4eed22a31c10bc3dadc116c0f
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 65
-  completed_plans: 35
+  completed_plans: 36
   percent: 6
 ---
 
@@ -24,15 +24,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-17)
 
 **Core value:** 기획본부와 경영관리본부가 프로젝트마다 같은 숫자(견적·예상 비용·확정 비용·손익)를 본다. 기획본부는 계산식·근거 없이 결과 숫자로 납득하고, 경영관리·대표는 근거 줄까지 본다.
-**Current focus:** Phase 4 — 프로젝트·견적 원장
+**Current focus:** Phase 04 — 프로젝트·견적 원장
 
 ## Current Position
 
-Phase: 4 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 5
+Phase: 04 (프로젝트·견적 원장) — EXECUTING
+Current Plan: 2
 Total Plans in Phase: 42
 Status: Ready to execute
-Last activity: 2026-09-24 — Phase 4 execution started
+Last activity: 2026-09-24 — Phase 04 execution started
 
 Progress: [█░░░░░░░░░] 6%
 
@@ -85,6 +85,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P46 | 58min | 2 tasks | 15 files |
 | Phase 04 P25 | 17 min | 2 tasks | 8 files |
 | Phase 04 P28 | 44 min | 3 tasks | 11 files |
+| Phase 04 P29 | 55min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -198,6 +199,8 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-28: 견적 표 힌트 줄은 지금 되는 키 여섯 항목(Tab·Ctrl+C·저장 제외) — 04-04가 둘을 배선하지 않았다(toTsv 호출처 0)
 - [Phase 04]: 04-28: 거부 봉투는 SaveRejectedError만 잡아 { rejected: { summary, cells } } — 뒤 플랜은 도메인 항목만 더하고 열 대응은 quote-table FIELD_TO_COLUMN
 - [Phase 04]: 04-28: 격자 DOM 포커스 따라가기는 좌표가 실제로 바뀔 때만(첫 렌더 제외) — 하이드레이션 전 포커스를 빼앗지 않는다
+- [Phase 04]: 04-29: pageWindow의 넓은 창(threshold 7)·폰 창(threshold 5, compact)을 하나의 파라미터화 알고리즘으로 구현해 C-27(한 쪽 틈은 번호) 로직을 중복 없이 공유
+- [Phase 04]: 04-29: ENG-D11 — 04-08이 §7-16에 적기로 했던 생략 규칙 기본 문장(PC 7쪽/8쪽)이 실제 SYSTEM.md에 없어 04-29가 기본 문장까지 함께 추가하고 회귀 테스트로 고정
 
 ### Pending Todos
 
@@ -253,6 +256,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T16:19:10.897Z
-Stopped at: Completed 04-28-PLAN.md
+Last session: 2026-09-24T18:21:31.338Z
+Stopped at: Completed 04-29-PLAN.md
 Resume file: None

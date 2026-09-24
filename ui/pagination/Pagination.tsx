@@ -66,6 +66,26 @@ export function Pagination(props: PaginationProps) {
     );
   }
 
+  // 넓은 창(PC ≥700)과 폰 창(<700)을 한 <nav> 안에 둘 다 렌더한다 — Pagination.module.css가
+  // 700 중단점에서 하나만 보이게 한다(display: none은 접근성 트리·탭 순서에서도 빠져
+  // 보이는 목록 하나만 읽힌다, §7-16 DR-33). 범위 글자·이전·다음은 하나씩이라 이 목록
+  // 밖에서 공유한다.
+  function renderWindow(items: ReturnType<typeof pageWindow>, className: string | undefined) {
+    return (
+      <span className={className}>
+        {items.map((item, i) =>
+          item === "gap" ? (
+            <span key={`gap-${i}`} className={styles.gap}>
+              …
+            </span>
+          ) : (
+            renderNumber(item)
+          ),
+        )}
+      </span>
+    );
+  }
+
   function renderNav(direction: "prev" | "next") {
     const target = direction === "prev" ? page - 1 : page + 1;
     if (target < 1 || target > pageCount) return null;
@@ -95,15 +115,8 @@ export function Pagination(props: PaginationProps) {
       <span className={styles.range}>{rangeText}</span>
       <span className={styles.pages}>
         {renderNav("prev")}
-        {pageWindow(page, pageCount).map((item, i) =>
-          item === "gap" ? (
-            <span key={`gap-${i}`} className={styles.gap}>
-              …
-            </span>
-          ) : (
-            renderNumber(item)
-          ),
-        )}
+        {renderWindow(pageWindow(page, pageCount), styles.wideWindow)}
+        {renderWindow(pageWindow(page, pageCount, { compact: true }), styles.compactWindow)}
         {renderNav("next")}
       </span>
     </nav>

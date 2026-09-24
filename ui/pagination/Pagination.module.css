@@ -20,6 +20,27 @@
   gap: var(--s-2);
 }
 
+/* 넓은 창(PC ≥700)·폰 창(<700) — 700 중단점에서 하나만 보인다. display: none은
+   접근성 트리·탭 순서에서도 빠져 보이는 목록 하나만 읽힌다(§7-16 DR-33). */
+.wideWindow,
+.compactWindow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+@media (max-width: 699.98px) {
+  .wideWindow {
+    display: none;
+  }
+}
+
+@media (min-width: 700px) {
+  .compactWindow {
+    display: none;
+  }
+}
+
 /* 번호·이전·다음 = 3차(글자 --accent + 밑줄) — ListEmpty .tertiary 선례. */
 .navLink,
 .pageLink {

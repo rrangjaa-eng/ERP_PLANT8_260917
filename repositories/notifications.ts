@@ -207,7 +207,7 @@ export async function openInbox(
            FROM opened
            WHERE notification_log.recipient_id = ${opts.recipientId}
              AND notification_log.read_at IS NULL
-             AND notification_log.created_at >= ${opts.retentionFrom}
+             AND notification_log.created_at >= ${opts.retentionFrom.toISOString()}::timestamp
            RETURNING notification_log.id
          ),
          page AS (
@@ -215,7 +215,7 @@ export async function openInbox(
                   (id IN (SELECT id FROM marked)) AS was_marked
            FROM notification_log
            WHERE recipient_id = ${opts.recipientId}
-             AND created_at >= ${opts.retentionFrom}
+             AND created_at >= ${opts.retentionFrom.toISOString()}::timestamp
            ORDER BY created_at DESC, id DESC
            LIMIT ${opts.limit}
          )

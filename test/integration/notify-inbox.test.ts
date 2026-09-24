@@ -5,7 +5,7 @@ import { z } from "zod";
 import { db, pool } from "@/db/client";
 import { notificationLog } from "@/db/schema";
 import { createAccount } from "@/domain/auth/accounts";
-import { countMyUnread, listMyNotifications, openMyInbox } from "@/domain/notify/inbox";
+import { countMyUnread, INBOX_RETENTION_DAYS, listMyNotifications, openMyInbox } from "@/domain/notify/inbox";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { env } from "@/lib/env";
 
@@ -294,5 +294,35 @@ describe("알림함 경계 (D-4218)", () => {
       cursor: { createdAt: "2026-09-24T00:00:00.123Z", id: "42" },
     });
     expect(ok.success).toBe(true);
+  });
+
+  // 참고1: openInbox의 원시 SQL은 retentionFrom(JS Date)을 그대로 바인딩해서
+  // 프로세스 TZ가 UTC가 아니면(예: Asia/Seoul) pg 드라이버가 로컬 벽시계로
+  // 바꿔 보관 기간 경계가 최대 9시간 어긋난다. countMyUnread(drizzle 빌더,
+  // UTC로 정확히 바인딩)와 openMyInbox(원시 SQL)가 같은 now에 같은 경계 행을
+  // 다르게 셀 때 이 버그가 드러난다. 이 테스트는 TZ=Asia/Seoul로 실행해야
+  // 실패를 재현한다.
+  it("경계 행(90일 창 안쪽, TZ 어긋남 폭 안)은 countMyUnread와 openMyInbox가 같은 결과를 낸다", async () => {
+    const user = await createUser("inbox-boundary");
+    const now = new Date();
+    // 보관 기간 경계에서 4시간 안쪽 — TZ 오프셋(9시간)보다 작아 버그가 있으면
+    // 경계 밖으로 밀려난다.
+    const createdAt = new Date(now.getTime() - INBOX_RETENTION_DAYS * 24 * 60 * 60 * 1000 + 4 * 60 * 60 * 1000);
+    await db.insert(notificationLog).values({
+      conditionKind: "test",
+      entity: "test",
+      entityId: `boundary-${randomUUID()}`,
+      recipientId: user,
+      round: 1,
+      referenceDate: "2026-01-01",
+      message: "경계 알림",
+      createdAt,
+    });
+
+    const unread = await countMyUnread({ id: user, roleId: null }, { now: () => now });
+    expect(unread).toBe(1);
+
+    const opened = await openMyInbox({ id: user, roleId: null }, { now: () => now });
+    expect(opened.rows).toHaveLength(1);
   });
 });

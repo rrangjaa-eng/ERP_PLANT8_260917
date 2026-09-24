@@ -35,6 +35,7 @@
 .alignRight {
   text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* 04-02 Task 2 ④ — 금액 셀 보조 줄(§2-4 외화 두 줄 병기 · 입금 셀 공급가액
@@ -44,6 +45,7 @@
   margin-top: var(--s-1);
   color: var(--muted);
   font-size: var(--fs-sm);
+  white-space: nowrap;
 }
 
 .groupRow td {

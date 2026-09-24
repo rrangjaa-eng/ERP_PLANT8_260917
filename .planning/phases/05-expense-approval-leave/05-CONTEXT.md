@@ -103,6 +103,7 @@
 - 매출 세금계산서 발행 요청 흐름 → Phase 6 (D-99)
 - 정산 단계 마감 점검 → Phase 6 PROJ-06 (D-100)
 - 연차 수당 금액 정산 → 범위 밖 (D-97)
+- 계획 때 맞출 것(뒤 페이즈 논의에서 생김): 회사 대납 세금 기본값이 코드 쪽 단순 비율 8.8%와 Phase 11 D-1105(22%·역산)로 갈린다, Phase 6 D-607로 카드 사용은 EXP-15 「공급가액만 입력」의 예외다 — `.planning/phases/11-other-income-certificate/11-CONTEXT.md`, `.planning/phases/06-payment-evidence-cards/06-CONTEXT.md`
 
 </deferred>
 

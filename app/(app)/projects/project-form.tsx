@@ -1,7 +1,7 @@
 "use client";
 
 import type { FormEvent, KeyboardEvent } from "react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { createProjectAction } from "./actions";
@@ -9,6 +9,7 @@ import { Form } from "@/ui/form/Form";
 import { Select } from "@/ui/select/Select";
 import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
+import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { isCtrlCombo } from "@/lib/shortcut";
 import styles from "./projects.module.css";
 
@@ -36,6 +37,12 @@ function isFormPristine(initial: Record<string, string>, current: Record<string,
   return PRISTINE_FIELDS.every((key) => initial[key] === current[key]);
 }
 
+// 04-46 Task 2(⑤, DR-27) — 「입력 버리기」 확인 부제의 칸 수. isFormPristine과
+// 같은 비교에서 다른 칸만 센다.
+function countDifferences(initial: Record<string, string>, current: Record<string, string>): number {
+  return PRISTINE_FIELDS.filter((key) => initial[key] !== current[key]).length;
+}
+
 // SYSTEM.md §7-15 — 프로젝트 등록 폼. 필수 넷(클라이언트·프로젝트명·담당
 // PM·팀), 기간은 선택(D-49). 상태·번호는 폼에 없다 — 등록은 항상
 // 수주중이고 번호는 서버가 매긴다(D-42). `noValidate`는 `Form`이 이미
@@ -61,6 +68,9 @@ export function ProjectForm({
   // Esc(DR-27) 판정 — 렌더 때 한 번 기록한 값 스냅숏. 복사 등록으로 칸이
   // 채워져 있으면 그 값이 「처음 연 값」이 된다.
   const initialValuesRef = useRef<Record<string, string> | null>(null);
+  // 04-46 Task 2(⑤, DR-27) — 입력이 있는 폼의 Esc·「취소 Esc」가 여는 확인.
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const [discardFieldCount, setDiscardFieldCount] = useState(0);
 
   const { execute, result, isExecuting } = useAction(createProjectAction, {
     onSuccess: ({ data }) => {
@@ -110,11 +120,28 @@ export function ProjectForm({
       const initial = initialValuesRef.current;
       if (!initial) return;
       const current = snapshotFormValues(new FormData(event.currentTarget));
-      // 값이 하나라도 다르면 이 플랜은 아무것도 하지 않는다 — 입력 버리기
-      // 확인은 04-46이 ui/confirm-dialog로 붙인다.
       if (isFormPristine(initial, current)) {
         router.push(cancelHref);
+      } else {
+        // 04-46 Task 2(⑤, DR-27) — 값이 하나라도 다르면 「입력 버리기」 확인을 연다.
+        setDiscardFieldCount(countDifferences(initial, current));
+        setDiscardOpen(true);
       }
+    }
+  }
+
+  // 04-46 Task 2(⑤, DR-27) — 버튼 줄의 2차 「취소 Esc」도 같은 판정을 탄다.
+  function handleCancelClick() {
+    if (isExecuting) return;
+    const form = document.getElementById("project-form");
+    const initial = initialValuesRef.current;
+    if (!(form instanceof HTMLFormElement) || !initial) return;
+    const current = snapshotFormValues(new FormData(form));
+    if (isFormPristine(initial, current)) {
+      router.push(cancelHref);
+    } else {
+      setDiscardFieldCount(countDifferences(initial, current));
+      setDiscardOpen(true);
     }
   }
 
@@ -129,50 +156,62 @@ export function ProjectForm({
   const blockedReason = [clientError, nameError, pmError, teamError].filter(Boolean)[0];
 
   return (
-    <Form id="project-form" onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
-      <Form.Field id="clientId" label="클라이언트" width="select">
-        <Select id="clientId" name="clientId" options={clients.map((c) => ({ value: c.id, label: c.name }))} error={clientError} />
-      </Form.Field>
+    <>
+      <Form id="project-form" onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
+        <Form.Field id="clientId" label="클라이언트" width="select">
+          <Select id="clientId" name="clientId" options={clients.map((c) => ({ value: c.id, label: c.name }))} error={clientError} />
+        </Form.Field>
 
-      <Form.Field id="name" label="프로젝트명" width="long">
-        <input
-          id="name"
-          name="name"
-          type="text"
-          className={styles.textInput}
-          autoComplete="off"
-          aria-describedby={nameError ? "name-error" : undefined}
-        />
-        {nameError ? <Form.Error id="name-error">{nameError}</Form.Error> : null}
-      </Form.Field>
+        <Form.Field id="name" label="프로젝트명" width="long">
+          <input
+            id="name"
+            name="name"
+            type="text"
+            className={styles.textInput}
+            autoComplete="off"
+            aria-describedby={nameError ? "name-error" : undefined}
+          />
+          {nameError ? <Form.Error id="name-error">{nameError}</Form.Error> : null}
+        </Form.Field>
 
-      <Form.Field id="pmUserId" label="담당 PM" width="select">
-        <Select id="pmUserId" name="pmUserId" options={pmUsers.map((u) => ({ value: u.id, label: u.name }))} error={pmError} />
-      </Form.Field>
+        <Form.Field id="pmUserId" label="담당 PM" width="select">
+          <Select id="pmUserId" name="pmUserId" options={pmUsers.map((u) => ({ value: u.id, label: u.name }))} error={pmError} />
+        </Form.Field>
 
-      <Form.Field id="teamId" label="팀" width="select">
-        <Select id="teamId" name="teamId" options={teams.map((t) => ({ value: t.id, label: t.name }))} error={teamError} />
-      </Form.Field>
+        <Form.Field id="teamId" label="팀" width="select">
+          <Select id="teamId" name="teamId" options={teams.map((t) => ({ value: t.id, label: t.name }))} error={teamError} />
+        </Form.Field>
 
-      <Form.Field id="startDate" label="시작일" width="short">
-        <input id="startDate" name="startDate" type="date" className={styles.textInput} />
-      </Form.Field>
+        <Form.Field id="startDate" label="시작일" width="short">
+          <input id="startDate" name="startDate" type="date" className={styles.textInput} />
+        </Form.Field>
 
-      <Form.Field id="endDate" label="종료일" width="short">
-        <input id="endDate" name="endDate" type="date" className={styles.textInput} />
-      </Form.Field>
+        <Form.Field id="endDate" label="종료일" width="short">
+          <input id="endDate" name="endDate" type="date" className={styles.textInput} />
+        </Form.Field>
 
-      {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
+        {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
 
-      <Form.Actions>
-        <Button type="submit" variant="primary" pending={isExecuting} shortcut="Ctrl+Enter">
-          프로젝트 등록
-        </Button>
-        {blockedReason ? <span className={styles.blockedReason}>{blockedReason}</span> : null}
-        <a href={cancelHref} className={styles.toggle}>
-          취소 Esc
-        </a>
-      </Form.Actions>
-    </Form>
+        <Form.Actions>
+          <Button type="submit" variant="primary" pending={isExecuting} shortcut="Ctrl+Enter">
+            프로젝트 등록
+          </Button>
+          {blockedReason ? <span className={styles.blockedReason}>{blockedReason}</span> : null}
+          <Button variant="secondary" shortcut="Esc" disabled={isExecuting} onClick={handleCancelClick}>
+            취소
+          </Button>
+        </Form.Actions>
+      </Form>
+
+      {/* 04-46 Task 2(⑤, DR-27) — <form> 밖(형제)에 렌더해 다이얼로그 안의
+          Esc·Enter가 폼 keydown·폼 제출로 가지 않게 한다. */}
+      <ConfirmDialog
+        open={discardOpen}
+        onClose={() => setDiscardOpen(false)}
+        title="입력 버리기"
+        subtitle={`프로젝트 등록 · ${discardFieldCount}칸`}
+        primary={{ label: "입력 버리기", onConfirm: () => router.push(cancelHref) }}
+      />
+    </>
   );
 }

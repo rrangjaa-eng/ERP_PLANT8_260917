@@ -285,12 +285,43 @@ describe("docs/design/SYSTEM.md — 2026-09-23 개정(04-08)", () => {
     expect(sec).toContain("새 쪽의 활성 셀");
   });
 
-  it("DECISIONS.md에 2026-09-23 Phase 4(04-08) 항목이 15건이다(② + ①③④⑤⑥⑧⑨⑩⑪⑫⑬⑭⑯ + 진행 막대 기록 — 04-46 뒤 17건)", () => {
+  it("DECISIONS.md에 2026-09-23 Phase 4(04-08) 항목이 16건이다(② + ①③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑯ + 진행 막대 기록 — 04-46 Task 2 뒤 17건)", () => {
     const count = (DECISIONS.match(/^## 2026-09-23 — Phase 4\(04-08\)/gm) ?? []).length;
-    expect(count).toBe(15);
+    expect(count).toBe(16);
   });
 
   it("DECISIONS.md ④ 머리글에 `D-78 개정(CEO-D10·D12)`이 있다", () => {
     expect(DECISIONS).toContain("D-78 개정(CEO-D10·D12)");
+  });
+});
+
+// docs/design/SYSTEM.md · ui/button/Button.tsx — 2026-09-24 개정(04-46 Task 1, ⑦)
+//
+// 위 describe(04-08)가 담당하지 않는 「재실행 가능한 확인」 11·12(Button.tsx의
+// reasonTone·aria-disabled)와 ⑦의 §7-1 `--muted`·aria-disabled 문장을 여기서
+// 단언한다 — DR-10 · DR-11, 교차 그룹 계약 1.
+describe("docs/design/SYSTEM.md · ui/button/Button.tsx — 2026-09-24 개정(04-46, ⑦)", () => {
+  const BUTTON_TSX = readFileSync(resolve(process.cwd(), "ui", "button", "Button.tsx"), "utf8");
+
+  it("§7-1에 정상 상태 이유는 `--muted`라는 문장이 있다(U-4)", () => {
+    expect(SYSTEM).toContain("정상 상태(예: 저장할 편집 없음)의 이유는 `--muted`로 쓴다");
+  });
+
+  it("§7-1·§10에 `aria-disabled` 문장이 있다(DR-11)", () => {
+    expect(SYSTEM).toContain('네이티브 `disabled`가 아니라 `aria-disabled="true"`다');
+    expect(SYSTEM).toContain("그 버튼은 `aria-disabled`여야 한다");
+  });
+
+  it("Button.tsx에 `reasonTone`이 1개 이상이다(재실행 확인 11)", () => {
+    expect((BUTTON_TSX.match(/reasonTone/g) ?? []).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("Button.tsx에 `aria-disabled`가 1개 이상이다(재실행 확인 12)", () => {
+    expect((BUTTON_TSX.match(/aria-disabled/g) ?? []).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("Button.tsx가 <button>에 네이티브 disabled 속성을 넘기지 않는다", () => {
+    expect(BUTTON_TSX).not.toMatch(/disabled=\{isDisabled\}/);
+    expect(BUTTON_TSX).not.toMatch(/<button[\s\S]*?\sdisabled=\{/);
   });
 });

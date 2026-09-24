@@ -682,6 +682,8 @@ PC · 폰 공통 (최대 폭 360, 가운데 정렬)
 - **1차 버튼(`--accent` 면) 위의 `kbd` 테두리는 기본 규칙(`1px --line`)이 아니라 `1px var(--on-accent-weak)`를 쓴다** — 어두운 면 위에서 밝은 회색 `--line`은 보이지 않는다. 실물(`system/preview.html`)의 `rgba(255,255,255,.5)` 리터럴을 값 그대로 옮긴 토큰이다(`tokens.css`, D-20 stylelint 리터럴 금지를 새 토큰으로 통과)
 - 건수가 있으면 라벨 뒤에 숫자: `일괄 저장 3`
 - **비활성 버튼은 이유를 옆에 글자로 쓴다.** `--surface` 면 + `--faint` 글자 + `cursor: not-allowed`. 이유 텍스트 `--fs-sm --danger` + 다음 한 수 3차 버튼. 이유 없는 비활성 버튼은 금지(UX-06)
+- **막힘이 아닌 정상 상태(예: 저장할 편집 없음)의 이유는 `--muted`로 쓴다**(U-4). `ui/button`의 `reasonTone: "block" | "info"`(기본 `block`)가 이 두 색을 고른다 — `block` = `--danger`, `info` = `--muted`(DR-10 — 문서와 같은 커밋의 코드가 이 계약을 구현한다)
+- **이유가 있는 비활성과 진행 중 버튼은 네이티브 `disabled`가 아니라 `aria-disabled="true"`다** — 탭 순서에 남아 포커스되고 클릭·Enter는 무시한다. 버튼의 `aria-describedby`가 이유 글자를 가리킨다(DR-11)
 - 위험 행동(삭제·반려)은 색이 아니라 **확인 모달**로 구분한다. 붉은 버튼 없음
 - **진행 중(서버 액션 대기)**: 누른 버튼은 비활성 + 라벨 뒤 `…`(`일괄 저장…`), 같은 폼의 다른 버튼도 비활성. 300ms 넘으면 상단 바 아래 2px 진행 바(§7-7 LOADING). 스피너 없음. 응답이 오면 라벨 자리에 결과(§7-7 SUCCESS) 또는 이유(ERROR)
 - 버튼 라벨 = 실제 동작(§8). `확인` `제출` 같은 빈 라벨 금지
@@ -1092,7 +1094,7 @@ dirty 셀이 하나라도 있으면 `beforeunload`로 이탈을 경고한다. �
 
 - 랜드마크: `<header>`(상단 바) · `<nav aria-label="주 메뉴">` · `<main>` · 폰 `<nav aria-label="하단 탭">`. 첫 포커스 요소는 「본문으로 건너뛰기」 스킵 링크(포커스 시에만 보임, 1차 버튼 모양)
 - 표: 읽기용은 `<table>` + `<caption>`(시각적으로 숨김). 편집용은 `role="grid"`, 셀 `role="gridcell"`, 활성 셀 `aria-selected`, 편집 중 `aria-readonly="false"`. 오류 셀 `aria-invalid="true"` + `aria-describedby`로 이유 연결
-- 실시간 알림: 합계 행의 저장 결과와 토스트는 `aria-live="polite"`, 제출 불가 이유는 `role="alert"`가 아니라 버튼의 `aria-describedby`(사용자가 누르기 전에 읽힌다)
+- 실시간 알림: 합계 행의 저장 결과와 토스트는 `aria-live="polite"`, 제출 불가 이유는 `role="alert"`가 아니라 버튼의 `aria-describedby`(사용자가 누르기 전에 읽힌다)(그래서 그 버튼은 `aria-disabled`여야 한다 — 네이티브 `disabled`는 탭 순서에서 빠져 이유가 읽히지 않는다)
 - 색은 의미의 유일한 매체가 아니다: 상태는 항상 **글자**(태그·상태 열)다. 오류 셀은 배경 + 좌측 선 + 이유 텍스트 셋
 - 포커스 순서 = 시각 순서. 모달·시트는 포커스 트랩 + Esc + 닫힐 때 원래 요소로 복귀
 - 아이콘 단독 버튼 `aria-label`. 3차 버튼은 `<button>`(페이지 이동이면 `<a>`)

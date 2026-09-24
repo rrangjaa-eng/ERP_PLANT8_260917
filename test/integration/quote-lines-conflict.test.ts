@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { describe, expect, it, vi } from "vitest";
+import { eq, sql } from "drizzle-orm";
+
+// 04-28 — 쓰기 시점 경합(사전 판정 통과 뒤 다른 커밋)을 결정적으로 만들기
+// 위해 버전 조건 UPDATE만 감싼다. 기본 동작은 실제 함수 그대로다.
+vi.mock("@/repositories/quote-lines", async () => {
+  const actual = await vi.importActual<typeof import("@/repositories/quote-lines")>("@/repositories/quote-lines");
+  return { ...actual, updateQuoteLineIfVersionMatches: vi.fn(actual.updateQuoteLineIfVersionMatches) };
+});
+
 import { db } from "@/db/client";
 import { quoteLines, codeItems, teams, actionLog } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -9,6 +17,7 @@ import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines, SaveRejectedError, type QuoteLineBaseline } from "@/domain/quotes/lines";
+import { updateQuoteLineIfVersionMatches } from "@/repositories/quote-lines";
 import { checkPayloadSize, MAX_ACTION_PAYLOAD_BYTES } from "@/lib/actions/payload-size";
 
 async function setupProject() {
@@ -162,6 +171,58 @@ describe("domain/quotes/lines saveQuoteLines — 배치 충돌·전부 거부(04
     expect(freshB[0]?.itemName).toBe("B");
     expect(freshB[0]?.unitPriceAmountKrw).toBe(9_800_000);
     expect(freshC[0]?.itemName).toBe("C");
+  });
+
+  it("(e) 사전 판정 뒤 쓰기 직전에 다른 저장이 커밋되면(쓰기 시점 경합) 서버의 실제 값·버전으로 달라진 칸만 충돌로 담긴다", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const created = await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+      { subcategory: subcategoryValue, itemName: "A", unitPrice: { currency: "KRW", amount: 1_000_000, fxRate: 1 }, execution: { currency: "KRW", amount: 0, fxRate: 1 } },
+    ]);
+    const [lineA] = created.lines;
+    if (!lineA) throw new Error("setup 실패");
+
+    // 버전 조건 UPDATE 직전에 다른 커넥션(자동 커밋)이 단가만 바꿔 커밋한다 —
+    // 사전 판정은 이미 통과했으므로 실제 쓰기가 0행을 돌려주는 경합 경로다.
+    const actual = await vi.importActual<typeof import("@/repositories/quote-lines")>("@/repositories/quote-lines");
+    vi.mocked(updateQuoteLineIfVersionMatches).mockImplementationOnce(async (viewer, id, expectedVersion, input, tx) => {
+      await db
+        .update(quoteLines)
+        .set({ unitPriceAmountKrw: 7_700_000, version: sql`${quoteLines.version} + 1`, updatedAt: new Date() })
+        .where(eq(quoteLines.id, id));
+      return actual.updateQuoteLineIfVersionMatches(viewer, id, expectedVersion, input, tx);
+    });
+
+    const baseline: QuoteLineBaseline = {
+      subcategory: lineA.subcategory,
+      itemName: lineA.itemName,
+      vendorId: lineA.vendorId,
+      quantity: lineA.quantity,
+      unitPriceAmountKrw: lineA.unitPrice.amountKrw,
+      executionAmountKrw: lineA.execution.amountKrw,
+      lineStatus: lineA.lineStatus,
+      note: lineA.note,
+    };
+    const attempt = saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+      { id: lineA.id, version: lineA.version, subcategory: lineA.subcategory, itemName: "A 수정", unitPrice: { currency: "KRW", amount: 1_000_000, fxRate: 1 }, execution: { currency: "KRW", amount: 0, fxRate: 1 }, baseline },
+    ]);
+
+    const rejected = await attempt.then(
+      () => {
+        throw new Error("이 지점에 도달하면 안 된다");
+      },
+      (error: unknown) => error,
+    );
+    expect(rejected).toBeInstanceOf(SaveRejectedError);
+    const conflicts = (rejected as SaveRejectedError).conflicts;
+    // 내 값(itemName)이 아니라 다른 사람이 실제로 바꾼 칸(단가)만, 서버 값·버전으로.
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]?.field).toBe("unitPriceAmountKrw");
+    expect(conflicts[0]?.theirRaw).toBe(7_700_000);
+    expect(conflicts[0]?.theirVersion).toBe(lineA.version + 1);
+
+    const [fresh] = await db.select().from(quoteLines).where(eq(quoteLines.id, lineA.id));
+    expect(fresh?.itemName).toBe("A");
+    expect(fresh?.unitPriceAmountKrw).toBe(7_700_000);
   });
 
   it("(d) 한 줄에 형식 오류(quantity <= 0)가 있으면 나머지 줄도 저장되지 않고 응답이 오류 좌표를 담는다", async () => {

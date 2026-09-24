@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 04-08-PLAN.md
-last_updated: "2026-09-24T06:56:23.183Z"
+stopped_at: Completed 04-32-PLAN.md
+last_updated: "2026-09-24T08:12:46.239Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 4 execution started
-state_head: eccc194642db0413a196a3e0c965964435a8d607
+state_head: 518ad0fcdce71f14967a7e002aeecb0a72159719
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 65
-  completed_plans: 29
+  completed_plans: 30
   percent: 9
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 4 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-24 — Phase 4 execution started
@@ -79,6 +79,7 @@ Progress: [█░░░░░░░░░] 9%
 | Phase 04 P04 | 35min | 3 tasks | 21 files |
 | Phase 04 P50 | 15min | 2 tasks | 6 files |
 | Phase 04 P08 | 41min | 2 tasks | 10 files |
+| Phase 04 P32 | 55min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -172,6 +173,8 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-08: SYSTEM.md §7-3 (가) 잠김 정의는 D-78 개정(CEO-D10·D12) — 정산 프로젝트의 줄 추가는 렌더한다
 - [Phase 4]: 04-08: SYSTEM.md §7-4 대기 태그 색을 §7-5 의미 목록에 맞춰 accent→muted로 정정
 - [Phase 4]: 04-08: 플랜의 baseline 커밋 d6b41cf가 저장소에 없어(환경 불일치) 실제 04-08 시작 시점 HEAD인 b0fc281을 tokens.css/package.json/pnpm-lock.yaml 불변 검증 기준으로 대신 썼다
+- [Phase 4]: 04-32: withTimeoutConversion을 lib/db-transaction.ts에서 분리 — withTransaction 안의 db.transaction()뿐 아니라 saveProjectLedger 전체(04-02)에도 씌워 트랜잭션 밖 풀 읽기의 원시 pg-pool 시간 초과 누수를 막았다(ENG-D11, tx-safety.test.ts (c) 실측)
+- [Phase 4]: 04-32: project()/projectMany의 infoItem 배열 판별은 Array.isArray가 아니라 typeof ref === "string" — Array.isArray는 string | readonly string[] 유니언을 any[]로 좁혀 lint 오류를 낸다(실측)
 
 ### Pending Todos
 
@@ -215,6 +218,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T06:56:23.004Z
-Stopped at: Completed 04-08-PLAN.md
+Last session: 2026-09-24T08:12:46.054Z
+Stopped at: Completed 04-32-PLAN.md
 Resume file: None

@@ -27,6 +27,7 @@ project="${CLAUDE_PROJECT_DIR:-.}"
 state_dir="${TMPDIR:-/tmp}/plant8-session-boundary"
 mkdir -p "$state_dir"
 baseline="$state_dir/${session}.baseline"
+branch_file="$state_dir/${session}.branch"
 flag_plan_phase="$state_dir/${session}.plan-phase-done"
 announced="$state_dir/${session}.announced"
 stop_reminded="$state_dir/${session}.stop-reminded"
@@ -37,6 +38,30 @@ normalize() { sed -e 's/^\///' -e 's/^[^:]*://' -e 's/[[:space:]].*$//'; }
 
 list_summaries() {
   { find "$project/.planning/phases" "$project/.planning/quick" -name '*-SUMMARY.md' -type f 2>/dev/null || true; } | sort
+}
+
+current_branch() {
+  git -C "$project" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown"
+}
+
+# 세션이 시작된 뒤 브랜치를 바꿨는지 본다(브랜치 기록이 없는 옛 형식 베이스라인도
+# 바뀐 것으로 취급). 바뀌었고 이 세션이 아직 아무 경계도 넘지 않았으면(SUMMARY도,
+# 계획 완료 플래그도 없음) 베이스라인을 지금 브랜치 기준으로 다시 잡는다 — 그
+# 브랜치에 이미 있던, 다른 세션이 끝낸 플랜이 이 세션의 것으로 잡히지 않게.
+# 이미 경계를 넘었다면 다시 잡지 않는다(브랜치를 바꿔 카운트를 초기화하지 못하게).
+maybe_rebase_baseline_for_branch() {
+  [ -f "$baseline" ] || return 0
+  local recorded cur
+  cur="$(current_branch)"
+  recorded=""
+  [ -f "$branch_file" ] && recorded="$(cat "$branch_file")"
+  if [ "$recorded" = "$cur" ]; then
+    return 0
+  fi
+  if [ ! -f "$flag_plan_phase" ] && [ ! -s "$announced" ]; then
+    list_summaries > "$baseline"
+  fi
+  printf '%s' "$cur" > "$branch_file"
 }
 
 # 이 세션에서 시작된 게이트 리뷰의 로그 줄(스킬 이름 · 시각 · session=)을 모두 출력한다.
@@ -95,6 +120,7 @@ case "$event" in
     source="$(printf '%s' "$payload" | jq -r '.source // "startup"')"
     if [ "$source" = "startup" ] || [ ! -f "$baseline" ]; then
       list_summaries > "$baseline"
+      current_branch > "$branch_file"
       rm -f "$flag_plan_phase" "$announced" "$stop_reminded"
     fi
     exit 0
@@ -102,6 +128,7 @@ case "$event" in
 
   post-tool)
     [ -z "$agent" ] || exit 0
+    maybe_rebase_baseline_for_branch
     tool="$(printf '%s' "$payload" | jq -r '.tool_name // empty')"
     if [ "$tool" = "Bash" ] && printf '%s' "$payload" | jq -r '.tool_input.command // empty' | grep -Eq 'gsd-tools\.cjs[^;&|]*state\.planned-phase'; then
       touch "$flag_plan_phase"
@@ -146,6 +173,7 @@ case "$event" in
     fi
 
     [ "$subagent" = "gsd-executor" ] || exit 0
+    maybe_rebase_baseline_for_branch
     done_plans="$(new_summaries)"
     if [ -n "$done_plans" ] || [ -f "$flag_plan_phase" ]; then
       echo "차단됨: 이 세션에서 이미 플랜이 끝났다(${done_plans:-계획 완료}). 다음 플랜 실행은 새 세션에서 한다 — 커밋·푸시 → /gsd-pause-work → 새 세션(/gsd-progress)." >&2

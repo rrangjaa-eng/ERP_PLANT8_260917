@@ -165,6 +165,7 @@ Recent decisions affecting current work:
 - [Phase 4]: 04 plan-phase 13a 결정 커버리지 override: D-72·D-73·D-74(인트라넷 데이터 추출·변환)는 플랜 미인용으로 통과 — 2026-09-23 사용자 결정(데이터 이관 없음, 04-03 철회)으로 CONTEXT에 이미 대체 표시된 결정 — 사용자 선택 2026-09-24(AskUserQuestion: 그대로 진행). verify-phase에서 다시 보이도록 기록
 - [Phase 4]: [Phase 4] 04-50: 스키마 하한 = 체크아웃의 가장 최신 `-- rollback-floor:` 마이그레이션을 더한 커밋. rollback.sh가 그 커밋을 조상으로 갖지 않는 배포로는 트래픽을 옮기지 않는다(fail-closed, 우회 옵션 없음)
 - [Phase 4]: [Phase 4] 04-50: ENG-D12 deploy.yml main 전용 ref-guard를 04-31 Task 2에서 이 플랜(묶음 ② 첫 웨이브)으로 옮겼다 — 하한 판정이 main 이력을 전제한다
+- [Phase 4]: 04 열린 질문 사용자 답: ① 줄당 원화 > 2,147,483,647 → (b) bigint 전환(04-07 Task 0 = b: 0016에서 KRW 금액 컬럼 bigint + rollback-floor 마커) ② 채번 순번 시작값 하향 충돌 → (a) 설정 검증(현재 발급 최대 이하 값 거부, 04-51 Task 1 = a) — 사용자 결정 2026-09-24(세션 C 채팅). 04-07·04-51 checkpoint:decision은 실행 때 이 답을 적용한다
 
 ### Pending Todos
 

@@ -362,22 +362,48 @@ Plans:
 **UI hint**: yes
 
 Plans:
+**Wave 1**
 
 - [ ] 04.2-01-PLAN.md — 트레이서: `/internal/notify-tick` → advisory lock tick → `notification_log`·실행 기록, 배치 상한·종류별 격리·이어받기 (W1)
 - [ ] 04.2-02-PLAN.md — 공휴일 규칙 생성(음력 내장 표 2025–2035·시행일별 법정 공휴일·대체공휴일)과 영업일·N영업일 순수 함수, 공식 달력 대조 체크포인트 (W1)
-- [ ] 04.2-03-PLAN.md — D-712 계정 잠금 행동 로그(실패 기록과 한 트랜잭션) + 잠금 문구가 설정 분(`auth.lockout.window_minutes`)을 읽음, 끌 수 없는 행동 종류 셋 (W3)
 - [ ] 04.2-04-PLAN.md — deploy.sh 스케줄러 잡·서비스 계정·OIDC 우회 거부·401 스모크, tick 정체 경보 25시간 켜기, 저널 가드 (W1)
+- [ ] 04.2-15-PLAN.md — SMTP 발송 어댑터(거부·결과 불명·발송 마감 분류, 오류 비노출)와 묶음 메일 모양, `nodemailer` 패키지 확인 체크포인트 (W1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 04.2-05-PLAN.md — OIDC 거부 경로 전부·환경 변수 연결·실제 기본 설정 실측·재생 보장 (W2)
 - [ ] 04.2-06-PLAN.md — 공휴일 표·연도 확정 표, 후보 지연 생성(수동 날짜가 대체일을 막음), 필요한 해만 읽는 영업일 함수를 tick에 연결 (W2)
 - [ ] 04.2-07-PLAN.md — 트레이서: 알림함 한 스냅샷 열기·키셋 목록, 경로 변경 때 갱신되는 미읽음 배지 (W2)
-- [ ] 04.2-08-PLAN.md — D-712 잠금 해제 로그(한 트랜잭션) + CLI 운영자 신원(`github.actor`) (W4)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 04.2-03-PLAN.md — D-712 계정 잠금 행동 로그(실패 기록과 한 트랜잭션) + 잠금 문구가 설정 분(`auth.lockout.window_minutes`)을 읽음, 끌 수 없는 행동 종류 셋 (W3)
 - [ ] 04.2-09-PLAN.md — 알림함 메뉴 항목·목록 다섯 상태, DECISIONS 한 항목 + SYSTEM.md 수정 제안 #2~#7 (W3)
 - [ ] 04.2-10-PLAN.md — 하루 한 통 묶음 이메일(한 묶음씩 선점·결과 불명 기록·로그 비노출·실행 예산) (W3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 04.2-08-PLAN.md — D-712 잠금 해제 로그(한 트랜잭션) + CLI 운영자 신원(`github.actor`) (W4)
 - [ ] 04.2-11-PLAN.md — 공휴일 관리 화면 `/admin/holidays` 트레이서: 후보 표·연도 확정(범위·완결 검사 + 행동 로그 한 트랜잭션), SYSTEM.md #1 (W4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 04.2-12-PLAN.md — 임시공휴일·선거일 추가·수동 미래 행 삭제(미래 대체일 재계산 + 행동 로그 한 트랜잭션), 폰 칸 접기 (W5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 04.2-13-PLAN.md — 시스템 상태 `알림 발송`·`이메일` 줄과 관리자 배너 둘(공휴일 확정 요청·이메일 발송 실패/결과 불명) (W6)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
 - [ ] 04.2-14-PLAN.md — [BLOCKING] main 합친 뒤 마이그레이션 재생성(목록 삭제·두 DB 적용·두 번 실행), REQUIREMENTS·ROADMAP 추적 이동, ARCHITECTURE 표기, 전체 게이트 (W7)
-- [ ] 04.2-15-PLAN.md — SMTP 발송 어댑터(거부·결과 불명·발송 마감 분류, 오류 비노출)와 묶음 메일 모양, `nodemailer` 패키지 확인 체크포인트 (W1)
+
+**Cross-cutting constraints:**
+
+- addBusinessDays(d, N)은 N=0이면 d가 영업일일 때 d 자신이고, 연말을 넘는 계산(12/31 + 1영업일)은 다음 해 표(확정 또는 후보)를 읽는다. 내장 음력 표 범위 밖 연도 요청은 조용히 틀린 값 대신 오류를 낸다
+- 잠금 행동 로그의 행위자는 시스템(actorId null)이고 대상 이메일은 detail에 남으며, 해제 로그의 행위자는 해제한 관리자다
+- 화면 검토에 Codex(GPT) 적대적 디자인 검토 한 번이 들어가고 그 출력 원문이 SUMMARY에 붙는다 — codex가 실행되지 않으면 그 사실과 오류를 적고 다른 검토로 대신하지 않는다(소유자 지시)
+- 그날 새 알림이 없는 사람에게는 메일을 보내지 않고, SMTP 환경 변수 4개 중 하나라도 비면 메일 0통·관리자 시스템 상태 「미설정」이다
 
 논의 결과는 `.planning/phases/07-schedule-notify-audit/07-CONTEXT.md`의 이미 확정된 입력(공휴일 표·발송 방식·이메일)과 D-705(후보 표 계산·확정 요청 배너)·D-706·D-709(비영업일 미발송)·D-711·D-712를 그대로 쓴다. 이 페이즈에는 아직 CONTEXT가 없고 plan-phase는 07-CONTEXT를 자동으로 읽지 않으므로, 계획 전에 위 결정을 `04.2-CONTEXT.md`로 옮긴다(다시 묻지 않는다). 계획 단계에서 정할 것: REQUIREMENTS 추적표의 네 항목을 Phase 04.2로 옮기는 일, Phase 4·04.1과 병렬로 만든 마이그레이션을 합치는 방식(번호는 생성기가 붙이고, 머지 직전 origin/main을 합친 뒤 이 페이즈의 마이그레이션·스냅숏·journal 항목을 지우고 `pnpm db:generate`로 다시 만든다 — 번호나 `_journal.json`을 손으로 고치지 않는다), `notification_log` 유니크 키가 Phase 7 독촉(D-707·D-708: 회차·받는 사람)을 막지 않는 모양, 건수 상한과 사람별 하루 한 통 묶음을 함께 지키는 방식(상한을 넘긴 건을 언제 보내는지 포함), 공휴일 후보를 매년 만드는 계기, `/internal/notify-tick` 경로가 Cloud Run 엣지에서 살아남는지. 알림함은 SYSTEM.md §7-12 계약이 있고 공휴일 관리 화면만 정본이 없어 `/gsd-ui-phase 04.2`로 먼저 세운다.
 

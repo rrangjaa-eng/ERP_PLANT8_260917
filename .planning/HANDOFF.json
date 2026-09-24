@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-24T09:01:36.572Z",
+  "timestamp": "2026-09-24T12:21:17.999Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -98,17 +98,34 @@
       "name": "[세션 G] 04-43 실행 — REQUIREMENTS PROJ-03·04 + ROADMAP 기준 4 (D16 2차 보강). executor 1111278·e97b39b·24229ab. 오케스트레이터 검토: diff 세 줄뿐·D-75~D-84 일치·코드 변경 0·검증 4개 재실행 초록. 전체 게이트 CI=true: 단위 791·통합 1036·E2E 170, lint·typecheck·lint:sql 0",
       "status": "done",
       "commit": "24229ab"
+    },
+    {
+      "id": 16,
+      "name": "세션 H: 04-10 코드표 값 설명",
+      "status": "done",
+      "commit": "92a33ff"
+    },
+    {
+      "id": 17,
+      "name": "세션 I: 04-46 Button aria-disabled·reasonTone + ui/confirm-dialog + 입력 버리기, DOM 감사 PASS, 전체 게이트 CI=true 초록(819/1056/190), Tab 가두기 조임 cae45c0, 코드표 E2E 경합 수정 3eb8dd6",
+      "status": "done",
+      "commit": "e79c67b"
     }
   ],
   "remaining_tasks": [
     {
-      "id": 14,
-      "name": "/gsd-execute-phase 4 — 플랜마다 새 세션. 다음 04-10(웨이브 4) → 04-46 …. 묶음 끝(04-23·04-41·04-31) 뒤 Post-build + 머지, 다음 묶음은 새 PR",
+      "id": 1,
+      "name": "/gsd-execute-phase 4 — 남은 32개, 세션마다 한 플랜. 다음 웨이브 5: 04-25(권장) · 04-28 · 04-29",
       "status": "not_started"
     },
     {
-      "id": 15,
-      "name": "Phase 4 종료: /gsd-verify-work → /review → /qa(+/design-review) → /cso → /ship",
+      "id": 2,
+      "name": "04-12·04-30 실행 때 04-46 E2E quote-table.spec.ts (h)에 일괄 저장 건수 +1 단언을 되살린다(04-46-SUMMARY 편차 #2, WINDOWS #32)",
+      "status": "not_started"
+    },
+    {
+      "id": 3,
+      "name": "묶음 끝(04-23·04-41·04-31) Post-build + 머지, Phase 4 종료 검증",
       "status": "not_started"
     }
   ],
@@ -256,11 +273,21 @@
       "decision": "[세션 G 판단·알림] detached HEAD 재부착 · 격리 none(base-check 자동 강등) · 실행 컨텍스트 executor Read · 문서 전용 플랜이라 DOM 감사 없음 · 전체 게이트를 executor와 병행으로 띄웠다가 「같은 작업 트리 동시 사용 금지」 제약에 걸려 즉시 중지, executor 종료 뒤 한 번 실행",
       "rationale": "워크플로 5.6 병합 뒤 게이트 + 인계 제약 준수",
       "phase": "4"
+    },
+    {
+      "decision": "04-46 +1 단언은 04-12/04-30로 이월, PLAN 본문은 고치지 않고 SUMMARY·WINDOWS #32·인계문으로 추적",
+      "rationale": "confirmDeleteLine 재사용 지시로 dirty가 오르지 않음. .planning 수동 편집 금지 — 코디네이터 동의 2026-09-24",
+      "phase": "4"
+    },
+    {
+      "decision": "DOM 감사 PC 행동 줄 절대 y 차이(15.59px)는 PASS",
+      "rationale": "S16 「높이가 내용을 따르고」 — 세로 가운데 모달이라 절대 y는 내용 높이에 따라 움직임, 다이얼로그 안 하단 고정은 유지",
+      "phase": "4"
     }
   ],
   "uncommitted_files": [],
-  "next_action": "세션 H: git status -sb(브랜치 붙음 확인) → /gsd-progress → /gsd-execute-phase 4 로 04-10(웨이브 4) 한 플랜만 실행. 끝나면 커밋·푸시 → /gsd-pause-work → 같은 설정으로 다음 세션(04-46).",
-  "context_notes": "세션 F는 04-32 한 플랜만 했다. 커밋 뒤 단계의 오류 문구(저장됐지만 감사 기록·스냅샷 실패 시 무엇을 보여줄지)는 기록에 없는 결정이라 새 문구를 만들지 않고 이전 동작(일반 오류)으로 두었다 — 04-12·04-22가 recordAction을 tx 안으로 옮기면 남는 것은 listRevenue 스냅샷뿐. executor 메모: gsd check tdd-red-evidence가 Vitest tap 출력을 못 읽음(도구 틈, 범위 밖).",
+  "next_action": "세션 J — git status -sb → /gsd-progress → /gsd-execute-phase 4 로 웨이브 5의 04-25 한 플랜만 실행. 끝나면 커밋·푸시 → PR #40 CI 확인 → /gsd-pause-work → 코디네이터에 다음 세션 요청(04-28 또는 04-29).",
+  "context_notes": "세션 I는 04-46 한 플랜. 04-46이 Button·ui/confirm-dialog 계약 주인이라 뒤 웨이브 소비처가 이 위에 선다. PR #40 CI는 6af9f59에서 code-tables 경합으로 빨강 → 3eb8dd6에서 고침(테스트만). 세션 F는 04-32 한 플랜만 했다. 커밋 뒤 단계의 오류 문구(저장됐지만 감사 기록·스냅샷 실패 시 무엇을 보여줄지)는 기록에 없는 결정이라 새 문구를 만들지 않고 이전 동작(일반 오류)으로 두었다 — 04-12·04-22가 recordAction을 tx 안으로 옮기면 남는 것은 listRevenue 스냅샷뿐. executor 메모: gsd check tdd-red-evidence가 Vitest tap 출력을 못 읽음(도구 틈, 범위 밖).",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"

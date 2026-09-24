@@ -1,3 +1,4 @@
+import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -49,9 +50,15 @@ async function resetTestSchema(pool: Pool): Promise<void> {
 // Fast Refresh 리마운트가 첫 브라우저 테스트의 클라이언트 네비게이션과 겹치면
 // 간헐적으로 실패한다. webServer가 뜬 뒤(globalSetup은 webServer 준비 이후 실행)
 // 실제 테스트가 쓰는 라우트를 한 번씩 미리 요청해 컴파일을 끝내 둔다.
+//
+// 위 세 라우트만으로는 모자랐다 — 전체 스위트(개발 서버)에서 상세 화면
+// (/projects/[id]·/admin/people/[id])의 첫 컴파일이 워커 둘의 부하 속에서 5초를
+// 넘겨 toHaveURL(기본 5초)이 떨어졌다(trace: RSC 요청 5022ms). 로그인 없이
+// 요청해도 라우트는 컴파일되므로(307로 돌아와도 2.5초 → 0.1초 실측) app/의
+// page.tsx를 전부 한 번씩 요청한다. 동적 조각은 아무 값으로 채운다.
 async function warmUpDevServer(): Promise<void> {
   const baseURL = process.env.BETTER_AUTH_URL ?? "http://127.0.0.1:3100";
-  const routes = ["/login", "/account", "/api/auth/get-session"];
+  const routes = ["/login", "/account", "/api/auth/get-session", ...appPageRoutes()];
   for (const route of routes) {
     try {
       await fetch(`${baseURL}${route}`, { redirect: "manual" });
@@ -61,3 +68,15 @@ async function warmUpDevServer(): Promise<void> {
   }
 }
 
+function appPageRoutes(): string[] {
+  return readdirSync(resolve(process.cwd(), "app"), { recursive: true, encoding: "utf8" })
+    .filter((file) => file.endsWith("page.tsx"))
+    .map((file) =>
+      `/${file}`
+        .replace(/\\/g, "/")
+        .replace(/\/page\.tsx$/, "")
+        .replace(/\/\([^/]+\)/g, "")
+        .replace(/\[[^\]]+\]/g, "e2e-warmup"),
+    )
+    .map((route) => route || "/");
+}

@@ -1,11 +1,13 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { Client, type PoolClient } from "pg";
 import { describe, expect, it, vi } from "vitest";
 import { db } from "@/db/client";
 import { DbDeadlineError, withDeadlineTransaction } from "@/db/deadline-transaction";
 import { NOTIFY_TICK_BATCH_MAX } from "@/domain/settings/keys";
 import { setSettingValue } from "@/domain/settings/registry";
-import { notificationLog, notifyTickRuns } from "@/db/schema";
+import { holidays, holidayYearGenerations, notificationLog, notifyTickRuns } from "@/db/schema";
+import { INITIAL_MANUAL_HOLIDAYS } from "@/domain/holidays/rules";
+import { OFFICIAL_2026, type OfficialHoliday } from "@/test/unit/holidays/official-calendar";
 import { log } from "@/lib/log";
 import { createAccount } from "@/domain/auth/accounts";
 import { runTick } from "@/domain/notify/tick";
@@ -469,4 +471,68 @@ describe("클라이언트 마감 트랜잭션", () => {
     },
     15_000,
   );
+});
+
+async function holidayRowsOf(year: number): Promise<{ date: string; kind: string }[]> {
+  return db
+    .select({ date: holidays.date, kind: holidays.kind })
+    .from(holidays)
+    .where(and(gte(holidays.date, `${year}-01-01`), lte(holidays.date, `${year}-12-31`)))
+    .orderBy(holidays.date);
+}
+
+function expectedRowsOf(year: number, official: readonly OfficialHoliday[]): { date: string; kind: string }[] {
+  return [
+    ...official.map(({ date, kind }) => ({ date, kind })),
+    ...INITIAL_MANUAL_HOLIDAYS.filter((h) => h.date.startsWith(`${year}-`)).map(({ date, kind }) => ({ date, kind })),
+  ].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+describe("공휴일 tick (D-709)", () => {
+  it("빈 표에서 2026-09-25(추석) tick → 2026 후보를 먼저 채우고 비영업일로 sent 0, 평가 없음", async () => {
+    const a = await createUser("chuseok-a");
+    const kind = createTestConditionKind([occ(a, "T-1", "2026-09-24")]);
+    const result = await runTick({ conditionKinds: [kind], now: kst("2026-09-25") });
+    expect(result).toMatchObject({ status: "ok", sent: 0, skipped: 0, remaining: 0, businessDay: false });
+    expect(kind.evaluations()).toBe(0);
+    const runs = await tickRuns();
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.businessDay).toBe(false);
+    expect(await holidayRowsOf(2026)).toEqual(expectedRowsOf(2026, OFFICIAL_2026));
+  });
+
+  it("2026-10-05(대체공휴일 월) sent 0 → 2026-10-07(수) sent 1", async () => {
+    const a = await createUser("substitute-a");
+    const kind = createTestConditionKind([occ(a, "T-1", "2026-09-24")]);
+    expect(await runTick({ conditionKinds: [kind], now: kst("2026-10-05") })).toMatchObject({
+      status: "ok",
+      sent: 0,
+      businessDay: false,
+    });
+    expect(await runTick({ conditionKinds: [kind], now: kst("2026-10-07") })).toMatchObject({
+      status: "ok",
+      sent: 1,
+      businessDay: true,
+    });
+  });
+
+  it("2026년 초기 수동 공휴일 날짜의 tick → sent 0", async () => {
+    const manual2026 = INITIAL_MANUAL_HOLIDAYS.filter((h) => h.date.startsWith("2026-"));
+    expect(manual2026.length).toBeGreaterThan(0);
+    const a = await createUser("manual-a");
+    for (const holiday of manual2026) {
+      const kind = createTestConditionKind([occ(a, `T-${holiday.date}`, holiday.date)]);
+      expect(await runTick({ conditionKinds: [kind], now: kst(holiday.date) })).toMatchObject({
+        status: "ok",
+        sent: 0,
+        businessDay: false,
+      });
+    }
+  });
+
+  it("첫 tick 뒤 holiday_year_generations에 2026 행이 있다", async () => {
+    await runTick({ conditionKinds: [createTestConditionKind([])], now: kst("2026-09-25") });
+    const generations = await db.select({ year: holidayYearGenerations.year }).from(holidayYearGenerations);
+    expect(generations.map((row) => row.year)).toContain(2026);
+  });
 });

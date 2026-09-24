@@ -1,5 +1,7 @@
 import { log } from "@/lib/log";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { toKstDate } from "@/domain/holidays/business-day";
+import { isBusinessDayKst } from "@/domain/holidays/calendar";
 import { CONDITION_KINDS, type ConditionKind } from "@/domain/notify/condition-kinds";
 import { NOTIFY_TICK_BATCH_MAX } from "@/domain/settings/keys";
 import { getSettingValue } from "@/domain/settings/registry";
@@ -34,17 +36,6 @@ export type TickResult =
     }
   | { status: "locked" };
 
-// KST 날짜 문자열(YYYY-MM-DD). 04.2-06이 04.2-02의 toKstDate로 바꾸고 이 도우미를 지운다.
-function kstDateOf(now: Date): string {
-  return new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
-
-// 이 플랜 시점의 영업일 = KST 월~금. 공휴일 판정은 04.2-06이 이 주입 자리를 바꿔 끼운다.
-function isKstWeekday(kstDate: string): Promise<boolean> {
-  const day = new Date(`${kstDate}T00:00:00Z`).getUTCDay();
-  return Promise.resolve(day >= 1 && day <= 5);
-}
-
 function dedupKeyString(key: DedupKey): string {
   return JSON.stringify([key.conditionKind, key.entity, key.entityId, key.recipientId, key.round]);
 }
@@ -60,18 +51,19 @@ function oldestFirst(a: NotificationInsert, b: NotificationInsert): number {
 export async function runTick(deps?: Partial<TickDeps>): Promise<TickResult> {
   const now = deps?.now ?? (() => new Date());
   const conditionKinds = deps?.conditionKinds ?? CONDITION_KINDS;
-  const isBusinessDay = deps?.isBusinessDay ?? isKstWeekday;
+  const isBusinessDay = deps?.isBusinessDay ?? isBusinessDayKst;
   const batchMax = deps?.batchMax ?? (() => getSettingValue(NOTIFY_TICK_BATCH_MAX));
   const txDeadlineMs = deps?.txDeadlineMs ?? NOTIFY_TX_DEADLINE_MS;
 
   const startedAt = now();
-  const today = kstDateOf(startedAt);
+  const today = toKstDate(startedAt);
   const max = await batchMax();
+  // 잠금 트랜잭션을 열기 전에 판정한다 — 후보 생성이 tick 잠금 트랜잭션을 늘리지 않게.
+  const businessDay = await isBusinessDay(today);
 
   const locked = await withNotifyTickLock(
     SYSTEM_VIEWER,
     async (tx) => {
-      const businessDay = await isBusinessDay(today);
       let sent = 0;
       let skipped = 0;
       let remaining = 0;
@@ -130,14 +122,14 @@ export async function runTick(deps?: Partial<TickDeps>): Promise<TickResult> {
         },
         tx,
       );
-      return { sent, skipped, remaining, businessDay, incompleteRecipientIds, runId };
+      return { sent, skipped, remaining, incompleteRecipientIds, runId };
     },
     { deadlineMs: txDeadlineMs },
   );
 
   if (!locked.acquired) return { status: "locked" };
 
-  const { sent, skipped, remaining, businessDay, incompleteRecipientIds, runId } = locked.value;
+  const { sent, skipped, remaining, incompleteRecipientIds, runId } = locked.value;
   log.info("notify.tick", { ok: true, sent, skipped, remaining, businessDay });
   return { status: "ok", sent, skipped, remaining, businessDay, incompleteRecipientIds, runId };
 }

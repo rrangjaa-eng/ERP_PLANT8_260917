@@ -2,13 +2,14 @@ import type { Viewer } from "@/domain/viewer";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { scopeFor } from "@/domain/permissions/scope-for";
-import { project, type DtoSpec } from "@/domain/permissions/project";
+import { project, type DtoSpec, type ProjectDeps } from "@/domain/permissions/project";
+import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { createAccount as defaultCreateAccount } from "@/domain/auth/accounts";
 import { archive as defaultArchive } from "@/domain/archive";
 import { revokeAllSessions as defaultRevokeAllSessions } from "@/domain/auth/password";
-import { findRoleById as defaultFindRoleById } from "@/repositories/roles";
+import { findRoleById as defaultFindRoleById, findRolesByIds as defaultFindRolesByIds } from "@/repositories/roles";
 import { findTeamById as defaultFindTeamById } from "@/repositories/teams";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import {
@@ -19,9 +20,11 @@ import {
 } from "@/repositories/users";
 import {
   teamAtDate as defaultTeamAtDate,
+  teamsAtDate as defaultTeamsAtDate,
   assignTeam as defaultAssignTeam,
   listAssignments as defaultListAssignments,
   type TeamAssignmentDto,
+  type TeamDto,
 } from "@/domain/org";
 
 export class ForbiddenError extends UserFacingError {}
@@ -71,26 +74,77 @@ registerDto({
   fields: PERSON_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
 });
 
+// 목록과 상세가 같은 곳에서 source를 합성하고 투영한다(테스트 2의 deep-equal
+// 보장). deps.visible로 호출자가 노출 판정을 메모이즈할 수 있다.
+async function projectPerson(
+  viewer: Viewer,
+  row: UserRow,
+  team: TeamDto | null | undefined,
+  roleName: string | null,
+  deps?: Partial<ProjectDeps>,
+): Promise<PersonDto> {
+  const source: PersonSource = {
+    ...row,
+    roleName,
+    currentTeamId: team?.id ?? null,
+    currentTeamName: team?.name ?? null,
+  };
+  return (await project(viewer, source, PERSON_DTO_SPEC, deps)) as PersonDto;
+}
+
 async function toPersonDto(viewer: Viewer, row: UserRow): Promise<PersonDto> {
   const [team, role] = await Promise.all([
     defaultTeamAtDate(viewer, row.id, todayIsoDate()),
     row.roleId ? defaultFindRoleById(viewer, row.roleId) : Promise.resolve(null),
   ]);
-  const source: PersonSource = {
-    ...row,
-    roleName: role?.name ?? null,
-    currentTeamId: team?.id ?? null,
-    currentTeamName: team?.name ?? null,
-  };
-  return (await project(viewer, source, PERSON_DTO_SPEC)) as PersonDto;
+  return projectPerson(viewer, row, team, role?.name ?? null);
 }
 
+// 이슈 #56: 사람마다 팀·계급·노출표를 따로 조회하던 N+1을 묶음 조회 + 호출
+// 한정 메모로 바꿨다.
 // 사람 목록 — 행 필터 서술자를 따르고 보관된 사람은 보관함 권한 없이는
 // 보이지 않는다(scopeFor(viewer, "user")가 Phase 1 자리표시를 대신한다).
 export async function listPeople(viewer: Viewer): Promise<PersonDto[]> {
   const scope = await scopeFor(viewer, "user");
   const rows = await repoListUsers(viewer, { scope, includeArchived: scope.includeArchived });
-  return Promise.all(rows.map((row) => toPersonDto(viewer, row)));
+
+  // viewer가 호출 동안 고정이라 infoItem만 키로 쓴다. 캐시는 이 함수 호출
+  // 안에만 있고 모듈 전역에 두지 않는다(T-q56-01) — 다른 viewer·계급의
+  // 판정이 섞이거나 노출표 변경 뒤 낡은 판정이 쓰이는 것을 막는다.
+  const visibleCache = new Map<string, Promise<boolean>>();
+  const memoizedVisible = (v: Viewer, infoItem: string): Promise<boolean> => {
+    let cached = visibleCache.get(infoItem);
+    if (!cached) {
+      cached = defaultVisible(v, infoItem);
+      visibleCache.set(infoItem, cached);
+    }
+    return cached;
+  };
+
+  const today = todayIsoDate();
+  const roleIds = [...new Set(rows.map((row) => row.roleId).filter((id): id is string => id !== null))];
+  const [teamMap, roleRows] = await Promise.all([
+    defaultTeamsAtDate(
+      viewer,
+      rows.map((row) => row.id),
+      today,
+      { visible: memoizedVisible },
+    ),
+    defaultFindRolesByIds(viewer, roleIds),
+  ]);
+  const roleNameMap = new Map(roleRows.map((role) => [role.id, role.name]));
+
+  return Promise.all(
+    rows.map((row) =>
+      projectPerson(
+        viewer,
+        row,
+        teamMap.get(row.id),
+        row.roleId ? (roleNameMap.get(row.roleId) ?? null) : null,
+        { visible: memoizedVisible },
+      ),
+    ),
+  );
 }
 
 export async function getPerson(

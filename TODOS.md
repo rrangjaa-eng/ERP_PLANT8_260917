@@ -53,3 +53,55 @@
 **Depends on:** Phase 7 Scheduler 기반
 
 ## Completed
+
+## Design review 이연(2026-09-24 /design-review, Phase 2 화면)
+
+리포트: `~/.gstack/projects/rrangjaa-eng-ERP_PLANT8_260917/designs/design-audit-20260924/design-audit-127.0.0.1.md`
+
+### FINDING-001 PC에서 「내 차례」(`/`)로 돌아가는 길이 없다
+
+**What:** PC 상단 바 워드마크가 링크가 아니고 1차 메뉴 5개·사용자 메뉴에 「내 차례」가 없다. 로그인은 `/account`로 착지한다. 워드마크를 `/` 링크로 할지, 메뉴 앞에 「내 차례」를 둘지 SYSTEM.md §6-0에서 정한다.
+
+**Why:** PC 사용자가 URL을 치지 않으면 첫 화면에 닿지 못한다(High, 1440·768 실측). 폰은 하단 탭 1번이 있어 문제없다.
+
+**Context:** `test/e2e/keyboard-nav.spec.ts:135-153`이 Tab 순서 「스킵 링크 → 프로젝트」를 고정하므로 결정과 함께 그 테스트를 고친다.
+
+**Effort:** S
+**Priority:** P1
+**Depends on:** SYSTEM.md §6-0 결정
+
+### FINDING-006 `/projects` 로딩 뼈대의 300ms 지연 표시
+
+**What:** `app/(app)/projects/loading.tsx` 뼈대가 지연 없이 약 90ms 번쩍이고, 모양(표 머리글 + 3행 + 합계)이 실제 EMPTY 화면(필터 + 한 줄)과 달라 한 번 튄다. §7-7 「300ms 안에 끝나면 아무것도 보이지 않게」를 지킬 공용 수단을 §5에 정하고 모든 `loading.tsx`에 적용한다.
+
+**Why:** 계약 위반이 실측됐다(Medium).
+
+**Context:** 지연 수단(`animation-delay` 등)이 §5 모션 허용 목록에 없어 시스템 결정이 먼저다.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** SYSTEM.md §5·§7-7 결정
+
+### FINDING-007 `/account` 서버 오류를 칸에 묶기
+
+**What:** 「현재 비밀번호가 올바르지 않습니다.」가 칸 아래 12px가 아니라 폼 아래 14px 전역 줄이고 `#currentPassword`에 `aria-invalid`가 없다(§7-2). 이월 M-2·A-H3과 함께 폼 이관 때 처리한다.
+
+**Why:** 어느 칸이 틀렸는지 칸이 말하지 않는다(Medium).
+
+**Context:** 서버 문구는 `test/e2e/change-password.spec.ts` 계약이다. `03-OPEN-ITEMS.md`의 A-H3·M-1·M-2 일정(제작 Phase 4 · 이관 Phase 7)을 따른다.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** Phase 4 `ui/form`
+
+### 공유 Button `.tertiary` 밑줄을 글자 밑줄로
+
+**What:** `ui/button/Button.module.css:52-81`의 3차 버튼이 `border-bottom` 밑줄이라 폰 44px 상자에서 글자와 떨어진다. FINDING-005(`ListEmpty`, 고침 `2342b01`)와 같은 수정(`text-decoration: underline` + `--underline-offset`)을 관리자·Phase 4 화면을 잰 뒤 적용한다.
+
+**Why:** §4-4 3차 버튼 밑줄 규칙과 다르고 화면마다 밑줄 방식이 갈린다.
+
+**Context:** Phase 2 화면에는 렌더되지 않아 이번 리뷰 범위 밖이었다.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None

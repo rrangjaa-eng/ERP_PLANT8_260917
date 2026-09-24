@@ -17,11 +17,19 @@ export type InboxListProps = {
   initialRows: InboxRowView[];
 };
 
-function formatTime(iso: string): string {
-  const date = new Date(iso);
-  const hh = String(date.getHours()).padStart(2, "0");
-  const mm = String(date.getMinutes()).padStart(2, "0");
-  return `${hh}:${mm}`;
+const KST_TIME = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+export function formatTime(iso: string): string {
+  const parts = { hour: "", minute: "" };
+  for (const part of KST_TIME.formatToParts(new Date(iso))) {
+    if (part.type in parts) parts[part.type as keyof typeof parts] = part.value;
+  }
+  return `${parts.hour}:${parts.minute}`;
 }
 
 // D-4218: 마운트 때 한 번 openInboxAction()을 불러 받은 {openedAt, rows}로 행을

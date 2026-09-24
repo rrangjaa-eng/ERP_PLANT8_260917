@@ -154,12 +154,12 @@ describe("docs/design/DECISIONS.md — 2026-09-19 기록", () => {
 // 태스크·플랜의 테스트가 맡는다 — 조용히 빠진 줄이 없도록 담당표를 남긴다:
 //
 //   2·3(앱 코드 글리프·metaKey)         → 04-28 test/unit/ui/shortcut-notation.test.ts
-//   9의 `### 7-17`·11·12(Button.tsx)   → 04-46(같은 test/unit/design-system-docs.test.ts에 추가)
+//   9의 `### 7-17`·11·12(Button.tsx)   → 04-46(아래 describe에 추가 — Task 1은 11·12, Task 2는 `### 7-17`)
 //   14(`6쪽부터` 폰 페이지 줄 창)         → 04-29 Task 3(DR-33)
 //
-// 이 태스크 몫: 1·4·5·6·7·8·9(### 7-16만)·10·13·15~26 + 글리프 넷(⌘·↵·⌥·⇧) 0 +
+// 이 태스크 몫: 1·4·5·6·7·8·9(### 7-16)·10·13·15~26 + 글리프 넷(⌘·↵·⌥·⇧) 0 +
 // §6-2 스케치 여섯 낱말 + (가) 잠김 행 셋째 칸 세 문자열 + §7-16 next/link·「새 쪽의
-// 활성 셀」 + DECISIONS 번호별 머리글(15건 — 04-46이 17건으로 늘린다).
+// 활성 셀」 + DECISIONS 번호별 머리글(15건 — 04-46 Task 1·2가 17건으로 늘렸다).
 describe("docs/design/SYSTEM.md — 2026-09-23 개정(04-08)", () => {
   it("맥 글리프(⌘·↵·⌥·⇧)가 0개다(항목 1, 넷으로 넓혀 — D-94)", () => {
     for (const glyph of ["⌘", "↵", "⌥", "⇧"]) {
@@ -194,9 +194,9 @@ describe("docs/design/SYSTEM.md — 2026-09-23 개정(04-08)", () => {
     expect(line).not.toContain("accent");
   });
 
-  it("`### 7-16` 머리글이 정확히 한 줄이고 `### 7-17`은 아직 없다(항목 9, ⑧ — 7-17은 04-46)", () => {
+  it("`### 7-16`·`### 7-17` 머리글이 각 정확히 한 줄이다(항목 9, ⑧·⑮ — 7-17은 04-46 Task 2)", () => {
     expect((SYSTEM.match(/^### 7-16/gm) ?? []).length).toBe(1);
-    expect((SYSTEM.match(/^### 7-17/gm) ?? []).length).toBe(0);
+    expect((SYSTEM.match(/^### 7-17/gm) ?? []).length).toBe(1);
   });
 
   it("합계 범위 문구(`편집 표의 합계 행` · `편집 표 합계 행 위`)가 2개 이상이다(항목 10, ③)", () => {
@@ -285,9 +285,9 @@ describe("docs/design/SYSTEM.md — 2026-09-23 개정(04-08)", () => {
     expect(sec).toContain("새 쪽의 활성 셀");
   });
 
-  it("DECISIONS.md에 2026-09-23 Phase 4(04-08) 항목이 16건이다(② + ①③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑯ + 진행 막대 기록 — 04-46 Task 2 뒤 17건)", () => {
+  it("DECISIONS.md에 2026-09-23 Phase 4(04-08) 항목이 17건이다(② + ①③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯ + 진행 막대 기록)", () => {
     const count = (DECISIONS.match(/^## 2026-09-23 — Phase 4\(04-08\)/gm) ?? []).length;
-    expect(count).toBe(16);
+    expect(count).toBe(17);
   });
 
   it("DECISIONS.md ④ 머리글에 `D-78 개정(CEO-D10·D12)`이 있다", () => {
@@ -323,5 +323,20 @@ describe("docs/design/SYSTEM.md · ui/button/Button.tsx — 2026-09-24 개정(04
   it("Button.tsx가 <button>에 네이티브 disabled 속성을 넘기지 않는다", () => {
     expect(BUTTON_TSX).not.toMatch(/disabled=\{isDisabled\}/);
     expect(BUTTON_TSX).not.toMatch(/<button[\s\S]*?\sdisabled=\{/);
+  });
+});
+
+// docs/design/SYSTEM.md — 2026-09-24 개정(04-46 Task 2, ⑮) — §7-17 신설 +
+// §7-8 한 줄. DECISIONS 17건 단언은 위(04-08 describe)에서 이미 한다.
+describe("docs/design/SYSTEM.md — 2026-09-24 개정(04-46, ⑮)", () => {
+  it("§7-17 절에 확인 근거·막힘 이유·2차 라벨 자동 파생 문장이 있다", () => {
+    const sec = section(SYSTEM, "### 7-17", "## 8. 카피 규칙");
+    expect(sec).toContain("확인 근거 한 칸");
+    expect(sec).toContain("reasonTone");
+    expect(sec).toContain("2차 라벨은 1차 라벨에서 자동 파생된다");
+  });
+
+  it("§7-8에 「모달·시트는 §7-17 컴포넌트로 만든다」 문장이 있다", () => {
+    expect(SYSTEM).toContain("모달·시트는 §7-17 컴포넌트로 만든다");
   });
 });

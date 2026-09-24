@@ -162,7 +162,7 @@ describe("formatNumberInput — 타이핑 중 쉼표 삽입 + 커서 보존", ()
   });
 
   it("- 는 맨 앞 하나만 받는다(가운데·중복 - 는 무시된다)", () => {
-    const result = formatNumberInput({ raw: "12-3", caret: 4, kind: "krw", prev: "12" });
+    const result = formatNumberInput({ raw: "12-3", caret: 4, kind: "krw", prev: "123" });
     expect(result.text).toBe("123");
   });
 

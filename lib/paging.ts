@@ -5,6 +5,7 @@ export const QUOTE_TABLE_PAGE_SIZE = 30;
 
 // 범위 밖·형식 오류 쪽 번호를 1쪽 또는 마지막 쪽으로 보정한다.
 export function clampPage(raw: string | number | undefined, pageCount: number): number {
+  if (typeof raw === "string" && !/^[0-9]+$/.test(raw)) return 1;
   const n = typeof raw === "number" ? raw : Number(raw);
   if (raw === undefined || !Number.isInteger(n) || n < 1) return 1;
   const max = Math.max(pageCount, 1);

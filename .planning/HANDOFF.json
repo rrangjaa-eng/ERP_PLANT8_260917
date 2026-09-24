@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-24T12:18:17.899Z",
+  "timestamp": "2026-09-24T12:36:44.894Z",
   "phase": "04.1",
   "phase_name": "approvals-leave",
   "phase_dir": ".planning/phases/04.1-approvals-leave",
@@ -16,26 +16,29 @@
     { "id": 5, "name": "/plan-ceo-review report", "status": "done", "commit": "486b356" },
     { "id": 6, "name": "CEO review applied via gsd-planner revision", "status": "done", "commit": "60593aa" },
     { "id": 7, "name": "Codex cross-AI review (/gsd-review --codex, REVIEWS.md)", "status": "done", "commit": "1b86370" },
-    { "id": 8, "name": "checker + Codex findings, D-96 service year, new migration rule; checker iteration 2 passed (0 blockers, 0 warnings, 1 info), requirements 5/5", "status": "done", "commit": "9097173" }
+    { "id": 8, "name": "checker + Codex findings, D-96 service year, new migration rule; checker iteration 2 passed", "status": "done", "commit": "9097173" },
+    { "id": 9, "name": "/plan-eng-review + Codex adversarial review (3 shards): 9 blockers, 25 directives, prior-finding table", "status": "done", "commit": "9e13798" }
   ],
   "remaining_tasks": [
-    { "id": 9, "name": "/plan-eng-review + Codex adversarial review (new session)", "status": "not_started" },
-    { "id": 10, "name": "apply eng review (next session)", "status": "not_started" },
+    { "id": 10, "name": "apply eng review directives 1-25 via /gsd-plan-phase 04.1 revision, checker, Codex re-review until no blockers (new session)", "status": "not_started" },
     { "id": 11, "name": "/plan-design-review + Codex design review (new session), then apply", "status": "not_started" },
     { "id": 12, "name": "merge origin/main, /review, PR #60 ready, ask execute card", "status": "not_started" }
   ],
   "blockers": [],
   "async_jobs": [],
-  "human_actions_pending": [],
+  "human_actions_pending": [
+    { "action": "Answer card: annual leave granted on Jan 1 of the year after hire (A full 15 days, recommended / B prorated)", "context": "docs/inputs/phase-05-approval.md:75 left it to the user; plan 04.1-03 assumption 1 uses A", "blocking": false }
+  ],
   "decisions": [
     { "decision": "STATE.md untouched (13b/13c skipped)", "rationale": "Phase 4 session owns current phase", "phase": "04.1" },
     { "decision": "serial plan chain 01>03>02>04>05>06>07", "rationale": "shared local DB", "phase": "04.1" },
-    { "decision": "no reserved migration numbers; use db:generate numbers on the branch, regenerate after merging origin/main (04.1-07 T1)", "rationale": "coordinator rule 11:52; guard test enforces contiguity", "phase": "04.1" },
-    { "decision": "CEO-5 one approval per person per round (user card A, 10:39)", "rationale": "user choice", "phase": "04.1" },
-    { "decision": "D-96 first-year monthly leave counted from hire date, 1/completed month, max 11, not cut at Dec 31", "rationale": "user 11:42", "phase": "04.1" },
-    { "decision": "monthly and annual balances never shown as one combined total", "rationale": "user 11:43", "phase": "04.1" }
+    { "decision": "no reserved migration numbers and no merge-order constraint; regenerate after merging origin/main (04.1-07 T1)", "rationale": "coordinator rule 20:52 KST", "phase": "04.1" },
+    { "decision": "CEO-5 one approval per person per round", "rationale": "user choice", "phase": "04.1" },
+    { "decision": "D-96 first-year monthly leave from hire date, max 11, stops at resignation", "rationale": "user 20:42 KST", "phase": "04.1" },
+    { "decision": "monthly and annual balances never shown as one combined total", "rationale": "user 20:43 KST", "phase": "04.1" },
+    { "decision": "eng review: 4 Codex blockers downgraded (monthly 0 display, reseed visibility, guard schema check, 07 journal restore)", "rationale": "verified against code/rules; see report", "phase": "04.1" }
   ],
   "uncommitted_files": [],
-  "next_action": "New session: /plan-eng-review with Codex adversarial review (verify codex exec runs), report docs/designs/plant8-erp-phase04.1-eng-review-260924.md, commit, push, /gsd-pause-work",
-  "context_notes": "Branch claude/phase-04.1-plan-1iqtwe, draft PR #60. Session boundary after each gate review (D-01). Replies in Korean. Checker info: 04.1-01 provides text (line ~148) and T-04.1-05 describe journal guard with idx/tag/when only; add snapshot/no-orphan conditions during eng-review apply."
+  "next_action": "New session: /gsd-progress, confirm commit 9e13798 is on the working branch, then /gsd-plan-phase 04.1 revision applying docs/designs/plant8-erp-phase04.1-eng-review-260924.md directives 1-25, checker, Codex re-review until no blockers",
+  "context_notes": "Plan PR #60 on claude/phase-04.1-plan-1iqtwe; eng review on claude/phase-04.1-plan-1iqtwe-e92rcy as draft PR #64 (base = PR #60 branch). Session boundary after each gate review (D-01). Replies in Korean, times in KST. Also apply the old checker info: 04.1-01 provides (~L148) and T-04.1-05 (~L511) should mention snapshot-exists and no-orphan guard conditions."
 }

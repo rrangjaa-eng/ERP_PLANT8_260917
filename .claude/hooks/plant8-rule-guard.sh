@@ -14,11 +14,14 @@
 #      접두어 자체가 없으면 차단하되 Merge/Revert 제목, -m/-F 없는 commit, -F 파일은 항상 통과.
 #   4) Codex 해제 시각은 KST로 본다.
 set -uo pipefail
+# 로케일 고정: 셸·grep·sed는 바이트 단위(C)로 돌리고, 한글 판정은 모두 jq(항상 UTF-8)로 한다.
+# 사용자 로케일(C.UTF-8 등)에 따라 결과가 바뀌지 않게 한다.
+export LC_ALL=C
 
 PROJECT="${CLAUDE_PROJECT_DIR:-.}"
 NOW_EPOCH="${PLANT8_NOW:-$(date +%s 2>/dev/null || echo 0)}"
+[[ "$NOW_EPOCH" =~ ^[0-9]+$ ]] || NOW_EPOCH=0
 CODEX_UNTIL="${PLANT8_CODEX_BLOCK_UNTIL:-2026-09-29T07:13:00+09:00}"
-CODEX_UNTIL_EPOCH="$(date -d "$CODEX_UNTIL" +%s 2>/dev/null || echo 0)"
 
 payload="$(cat 2>/dev/null)"
 [ -n "${payload:-}" ] || exit 0
@@ -26,15 +29,35 @@ payload="$(cat 2>/dev/null)"
 tool="$(printf '%s' "$payload" | jq -r '.tool_name // empty' 2>/dev/null)"
 [ -n "${tool:-}" ] || exit 0
 
+emit_warning() {  # $1=경고 본문(여러 줄)
+  jq -nc --arg c "$1" '{hookSpecificOutput:{hookEventName:"PreToolUse",additionalContext:$c}}' 2>/dev/null
+}
+
+# GNU date·sed가 없으면(macOS·BSD 기기) 판정이 틀어지므로 막지 않고 경고만 한다.
+if ! date -d @0 +%s >/dev/null 2>&1 || ! sed --version >/dev/null 2>&1; then
+  emit_warning "[규칙 경고]
+- GNU date/sed가 없어 규칙 훅(plant8-rule-guard) 검사를 건너뛰었다. 지침(CLAUDE.md)을 직접 지켜라."
+  exit 0
+fi
+CODEX_UNTIL_EPOCH="$(date -d "$CODEX_UNTIL" +%s 2>/dev/null || echo 0)"
+
 WARNS=()
 warn() { WARNS+=("$1"); }
-block() { echo "차단됨(규칙): $1" >&2; exit 2; }
+# DOWNGRADE=1이면(명령 해석이 불확실할 때) 차단 대신 경고로 낮춘다.
+DOWNGRADE=0
+block() {
+  if [ "$DOWNGRADE" = "1" ]; then
+    warn "(명령 해석이 불확실해 경고만) $1"
+    return 0
+  fi
+  echo "차단됨(규칙): $1" >&2
+  exit 2
+}
 finish() {
   if [ "${#WARNS[@]}" -gt 0 ]; then
     local joined="" w
     for w in "${WARNS[@]}"; do joined="${joined}- ${w}\n"; done
-    jq -nc --arg c "$(printf '[규칙 경고]\n%b' "$joined")" \
-      '{hookSpecificOutput:{hookEventName:"PreToolUse",additionalContext:$c}}' 2>/dev/null
+    emit_warning "$(printf '[규칙 경고]\n%b' "$joined")"
   fi
   exit 0
 }
@@ -43,140 +66,92 @@ codex_active() {
   [ "${PLANT8_CODEX_ALLOW:-0}" != "1" ] && [ "$NOW_EPOCH" -lt "$CODEX_UNTIL_EPOCH" ] 2>/dev/null
 }
 
-# 명령어 "위치" 판정: 인자·문자열 속 단어(grep codex, echo "npm install")는 안 걸린다.
-cmdword() {
-  local cmd="$1" word="$2"
-  [[ "$cmd" =~ (^|[\;\&\|\(\`]|\$\()[[:space:]]*((env|nohup|time|timeout[[:space:]]+[^[:space:]]+|sudo)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]+[[:space:]]+)*([^[:space:]]*/)?($word)([[:space:]]|$) ]]
-}
-
-is_git_push() {
-  [[ "$1" =~ (^|[\;\&\|\(\`]|\$\()[[:space:]]*git[[:space:]]+push([[:space:]]|$) ]]
-}
-
-is_git_commit() {
-  [[ "$1" =~ (^|[\;\&\|\(\`]|\$\()[[:space:]]*git[[:space:]]+commit([[:space:]]|$) ]]
-}
-
 CODEX_MSG='Codex는 한도로 2026-09-29 07:13 KST까지 호출 금지(지침 §3). 대신 Opus 독립 검토를 하고 "한도 풀리면 Codex 재확인 필요"를 기록하라. 재시도하지 마라.'
 
-# --- 사용자 글 추출 (R7·R8) -------------------------------------------------
-# transcript에서 사람이 직접 친 글만 뽑는다: <wake> 봉투면 from="human" 메시지 +
-# 코디네이터 중계 <cited author="user">, 봉투 없고 origin.kind==human이면 전체,
-# 그 외엔 <cited author="user">만. 카드 버튼 누름("Pressed the button")은 제외.
-extract_between() {  # $1=단일 줄 텍스트, $2=\K를 쓴 PCRE
-  printf '%s' "$1" | grep -oP "$2" 2>/dev/null
-}
+# --- 사용자 승인 판정 (R7·R8) ------------------------------------------------
+# 사람 글로 인정하는 것은 두 가지뿐이다.
+#   (a) origin.kind=="human"인 user 항목의 <wake> 봉투 속 <message from="human"> (외부 이벤트 wake 제외)
+#       — 봉투가 없으면 그 항목 전체(사람이 직접 친 글)
+#   (b) 코디네이터 중계(<relay from="coordinator">/<coordinator-relay>, isMeta·projects-relay 포함)의
+#       줄 머리 <cited author="user">
+# 서브에이전트 보고(<agent-message>, origin peer), task-notification·Monitor 출력, tool_result,
+# assistant 항목, 사이드체인은 절대 인정하지 않는다. 카드 버튼 누름도 제외.
+# 문장 단위로 보고, 질문(?, 될까, 돼?)·부정(하지 마, 안 돼, 말고, 금지, 나중에)은 승인이 아니다.
+# 속도: grep으로 후보 줄만 거른 뒤 jq 한 번으로 판정한다(40MB 트랜스크립트도 10초 안).
+APPROVAL_JQ='
+def epoch: (. // "") | tostring | sub("\\.[0-9]+"; "") | (try fromdateiso8601 catch 0);
+def trim: sub("^\\s+"; "") | sub("\\s+$"; "");
+def body: .message.content as $c
+  | if ($c|type) == "string" then $c
+    elif ($c|type) == "array" then ([$c[]? | select(type == "object" and .type == "text") | (.text // "") | strings] | join("\n"))
+    else "" end;
+def frags:
+  select(type == "object" and .type == "user" and .isSidechain != true)
+  | (.origin.kind // "") as $k | (.origin.subkind // "") as $sk
+  | body as $b | (.timestamp | epoch) as $ts
+  | ($b | sub("^\\s+"; "")) as $lb
+  | ( if $k == "human" and ($b | test("<wake")) then
+        if ($b | test("<event[\\s>]|reason=\"external-event\"")) then empty
+        else $b | match("<message\\b(?=[^>]*\\bfrom=\"human\")[^>]*>([\\s\\S]*?)</message>"; "g") | .captures[0].string end
+      elif ($sk == "projects-relay" or ($k != "peer" and $k != "task-notification"))
+           and ($lb | test("^(<relay from=\"coordinator\"|<coordinator-relay|A message from this project)"))
+           and ($b | test("<agent-message|<task-notification") | not) then
+        $b | match("(?:^|\\n)[ \\t]*<cited\\b([^>]*)>([\\s\\S]*?)</cited>"; "g")
+           | select(.captures[0].string | test("\\bauthor=\"user\"")) | .captures[1].string
+      elif $k == "human" then $b
+      else empty end )
+  | trim | select(. != "" and (startswith("Pressed the button") | not))
+  | {ts: $ts, text: .};
+def sentences: gsub("(?<p>[.!?。？\\n])"; "\(.p)\u0001") | split("\u0001") | map(trim) | map(select(. != ""));
+def isq: test("[?？]$") or test("될까|되나|돼\\s*[?？]|할까|(어|아|여|쳐|해|꿔|워)도\\s*(돼|되|괜찮)");
+def isneg: test("지\\s*마|말고|말아|안\\s*(돼|되|된|할|해)|않|금지|나중에|보류|멈춰|취소");
+def merge_sent: test("머지\\s*해(줘|주세요|요|라|버려)?(?![도야선서])") and (isq | not) and (isneg | not);
+def hook_sent: test("훅|설정|편집") and test("넣어|고쳐|걸어|수정|추가|만들어|허용|바꿔|반영|진행") and (isq | not) and (isneg | not);
+def nums: [match("#\\s*([0-9]+)|([0-9]+)\\s*번|(?i:pr)\\s*([0-9]+)"; "g") | [.captures[].string | select(. != null)][0]];
+def merge_calls: select(type == "object" and .type == "assistant") | (.timestamp | epoch) as $ts
+  | .message.content[]? | select(type == "object" and .type == "tool_use")
+  | select(.name == "mcp__github__merge_pull_request" or .name == "mcp__github__enable_pr_auto_merge"
+      or (.name == "Bash" and ((.input.command // "") | tostring
+          | test("\\bgh\\b[^\\n;&|]*\\bpr\\s+merge\\b") or (test("pulls/[0-9]+/merge") and test("(-X|--method)[\\s=]*PUT"; "i")))))
+  | {id: .id, ts: $ts};
+def ok_results: select(type == "object" and .type == "user") | .message.content[]?
+  | select(type == "object" and .type == "tool_result" and (.is_error != true)) | .tool_use_id;
+[inputs | fromjson? ] as $e
+| [ $e[] | frags ] as $f
+| if $mode == "hook" then
+    (if any($f[]; .text | sentences | any(.[]; hook_sent)) then "1" else "0" end)
+  else
+    [ $e[] | ok_results ] as $ok
+    | ([ $e[] | merge_calls | select(.id as $i | any($ok[]; . == $i)) | .ts ] | max // 0) as $lm
+    | [ $f[] | select(.text | sentences | any(.[]; merge_sent)) ] as $apps
+    | any($apps[]; (.text | nums) as $n
+        | if ($n | length) > 0 then ($prn != "" and any($n[]; . == $prn)) else ($lm == 0 or .ts > $lm) end) as $A
+    | any($f[]; .ts > 0 and (.text | test("잘게|잘테니|자러")) and ($now - .ts) >= 0 and ($now - .ts) <= 36000) as $Z
+    | "\(if $A then 1 else 0 end) \(if $Z then 1 else 0 end)"
+  end
+'
 
-user_fragments() {  # $1=transcript path; "TS<TAB>TEXT" 줄들을 순서대로 찍는다
-  local transcript="$1"
-  [ -n "${transcript:-}" ] && [ -r "$transcript" ] || return 1
-  jq -R 'fromjson? // empty' "$transcript" 2>/dev/null | jq -r '
-    select(.type=="user" and (.isSidechain!=true) and (.isMeta!=true))
-    | ( if (.message.content|type)=="string" then .message.content
-        elif (.message.content|type)=="array" then
-          ([.message.content[]? | select(.type!="tool_result") | (.text // "")] | join(""))
-        else "" end ) as $body
-    | select($body != "")
-    | [(.timestamp // ""), (.origin.kind // ""), $body] | @tsv
-  ' 2>/dev/null | while IFS=$'\t' read -r ts origin body; do
-      if printf '%s' "$body" | grep -q '<wake'; then
-        extract_between "$body" '<message(?=[^>]*\bfrom="human")[^>]*>\K.*?(?=</message>)' | while IFS= read -r frag; do
-          printf '%s\t%s\n' "$ts" "$frag"
-        done
-        extract_between "$body" '<cited(?=[^>]*\bauthor="user")[^>]*>\K.*?(?=</cited>)' | while IFS= read -r frag; do
-          printf '%s\t%s\n' "$ts" "$frag"
-        done
-      elif [ "$origin" = "human" ]; then
-        printf '%s\t%s\n' "$ts" "$body"
-      else
-        extract_between "$body" '<cited(?=[^>]*\bauthor="user")[^>]*>\K.*?(?=</cited>)' | while IFS= read -r frag; do
-          printf '%s\t%s\n' "$ts" "$frag"
-        done
-      fi
-    done | grep -Pv '^[^\t]*\tPressed the button' 2>/dev/null
-}
-
-# --- R8: 훅·settings 승인 ---------------------------------------------------
-# 사용자 결정 5: 「훅」+(넣어/고쳐/걸어/수정/추가/만들어) 있으면 승인. 물음표로
-# 끝나는 조각(질문)은 승인으로 치지 않는다.
-hook_approved_frag() {
-  local text="$1" trimmed
-  trimmed="${text%"${text##*[![:space:]]}"}"
-  case "$trimmed" in
-    *\?) return 1 ;;
-  esac
-  printf '%s' "$text" | grep -Eq '훅[^$]{0,30}(넣어|고쳐|걸어|수정|추가|만들어)' 2>/dev/null
-}
-
-hook_approved() {
-  local transcript="$1" ts text
-  [ -n "${transcript:-}" ] && [ -r "$transcript" ] || return 1
-  while IFS=$'\t' read -r ts text; do
-    [ -n "$text" ] || continue
-    hook_approved_frag "$text" && return 0
-  done < <(user_fragments "$transcript")
-  return 1
-}
-
-# --- R7: 머지 승인 -----------------------------------------------------------
-last_merge_ts() {
-  local transcript="$1"
-  jq -R 'fromjson? // empty' "$transcript" 2>/dev/null | jq -s -r '
-    ( [ .[] | select(.type=="assistant") | . as $a
-        | ($a.message.content[]? | select(.type=="tool_use" and (.name=="mcp__github__merge_pull_request")))
-        | {tuid: .id, ts: $a.timestamp} ] ) as $calls
-    | ( [ .[] | select(.type=="user") | (.message.content[]? // empty) | select(.type=="tool_result")
-        | {tuid: .tool_use_id, err: (.is_error // false)} ] ) as $results
-    | ( [ $calls[] as $c | $results[] | select(.tuid==$c.tuid and (.err|not)) | $c.ts ] | sort | last // "" )
-  ' 2>/dev/null
-}
-
-merge_approved() {  # $1=transcript, $2=pr number(있을 수 있음)
-  local transcript="$1" prn="$2"
-  local ts text last_ts="" last_text="" found=0
-  local approve_re='머지[[:space:]]?해(줘|주세요|요|라)?([^도야?]|$)'
-  while IFS=$'\t' read -r ts text; do
-    [ -n "$text" ] || continue
-    if printf '%s' "$text" | grep -Eq "$approve_re" 2>/dev/null; then
-      last_ts="$ts"; last_text="$text"; found=1
+approval_query() {  # $1=transcript $2=hook|merge $3=pr번호 → hook: "1|0", merge: "승인 잘게"(각 1|0)
+  local t="$1" mode="$2" prn="${3:-}" cand mc="" res="" ids
+  [ -n "${t:-}" ] && [ -r "$t" ] || { echo ""; return; }
+  cand="$(grep -E '"kind": ?"human"|relay' "$t" 2>/dev/null)"
+  if [ "$mode" = "merge" ]; then
+    mc="$(grep -E 'merge' "$t" 2>/dev/null | grep -F '"tool_use"')"
+    ids="$(printf '%s\n' "$mc" | jq -Rr 'fromjson? | select(.type=="assistant") | .message.content[]? | select(.type=="tool_use") | .id // empty' 2>/dev/null)"
+    if [ -n "$ids" ]; then
+      res="$(grep -F -f <(printf '%s\n' "$ids" | sed 's/.*/"&"/') "$t" 2>/dev/null | grep -F '"tool_result"')"
     fi
-  done < <(user_fragments "$transcript")
-  [ "$found" -eq 1 ] || return 1
-  local num
-  num="$(printf '%s' "$last_text" | grep -oE '#[0-9]+' | head -1 | tr -d '#')"
-  if [ -n "$num" ]; then
-    [ -n "$prn" ] && [ "$num" = "$prn" ] && return 0
-    return 1
   fi
-  # 번호 없는 승인: 그 뒤로 성공한 머지가 없어야 재사용이 아니다
-  local lm lm_ep last_ep
-  lm="$(last_merge_ts "$transcript")"
-  [ -n "$lm" ] || return 0
-  [ -n "$last_ts" ] || return 0
-  lm_ep="$(date -d "$lm" +%s 2>/dev/null || echo 0)"
-  last_ep="$(date -d "$last_ts" +%s 2>/dev/null || echo 0)"
-  [ "$last_ep" -gt "$lm_ep" ] && return 0
-  return 1
+  printf '%s\n%s\n%s\n' "$cand" "$mc" "$res" \
+    | jq -Rnr --arg mode "$mode" --arg prn "$prn" --argjson now "$NOW_EPOCH" "$APPROVAL_JQ" 2>/dev/null
 }
 
-zalge_recent() {
-  local transcript="$1" ts text ep
-  while IFS=$'\t' read -r ts text; do
-    [ -n "$text" ] || continue
-    if printf '%s' "$text" | grep -Eq '잘게|잘테니|자러' 2>/dev/null; then
-      ep="$(date -d "$ts" +%s 2>/dev/null || echo 0)"
-      if [ "$ep" -gt 0 ] && [ $((NOW_EPOCH - ep)) -ge 0 ] && [ $((NOW_EPOCH - ep)) -le 36000 ]; then
-        return 0
-      fi
-    fi
-  done < <(user_fragments "$transcript")
-  return 1
+hook_approved() {  # $1=transcript
+  [ "$(approval_query "$1" hook)" = "1" ]
 }
 
-kst_night_now() {
-  local h
-  h="$(TZ=Asia/Seoul date -d "@$NOW_EPOCH" +%H 2>/dev/null)"
-  [ -n "$h" ] && [ "$((10#$h))" -lt 8 ]
+kst_night_now() {  # tzdata 없이 epoch 계산(KST=UTC+9)
+  [ $(( (NOW_EPOCH + 32400) / 3600 % 24 )) -lt 8 ]
 }
 
 R7_APPROVE_MSG='머지는 사용자가 채팅에 「머지해」를 직접 쳤을 때만 한다(지침 §6). 변경 요약·위험·판정을 올리고 「머지해」를 받아라. 카드 버튼·질문은 승인이 아니다.'
@@ -184,19 +159,429 @@ R7_NOTRANSCRIPT_MSG='머지 승인을 확인할 수 없다(트랜스크립트 �
 R7_NIGHT_WARN='밤 자동 머지: 승인 없이 진행 전 7개 확인 — CI 초록·충돌 없음·Codex 포함 게이트·/review 막는 지적 없음·마이그레이션 재생성+가드 테스트·운영 배포/데이터 변경 없음·남은 사람 확인 없음, 머지 후 채팅 기록.'
 
 r7_check() {  # $1=pr번호(비어 있을 수 있음)
-  local prn="$1" transcript
+  local prn="$1" transcript r
   transcript="$(printf '%s' "$payload" | jq -r '.transcript_path // empty' 2>/dev/null)"
   if [ -z "${transcript:-}" ] || [ ! -r "$transcript" ]; then
     block "$R7_NOTRANSCRIPT_MSG"
+    return 0
   fi
-  merge_approved "$transcript" "$prn" && return 0
+  r="$(approval_query "$transcript" merge "$prn")"
+  [ "${r%% *}" = "1" ] && return 0
   if ! codex_active; then
-    if zalge_recent "$transcript" || kst_night_now; then
+    if [ "${r#* }" = "1" ] || kst_night_now; then
       warn "$R7_NIGHT_WARN"
       return 0
     fi
   fi
   block "$R7_APPROVE_MSG"
+}
+
+# --- Bash 명령 해석 -----------------------------------------------------------
+# 따옴표·heredoc 본문·주석을 아는 토크나이저. 한 줄 = 단순 명령 하나(;, &&, ||, |, &, 괄호,
+# 백틱, $( 로 나눔), 단어는 \037로 구분, 단어 속 줄바꿈은 \036, 리다이렉션 연산자는 \002 접두.
+# 큰따옴표 속 $(...) 내용은 \003 줄로 따로 내보낸다(경고용 재검사). 따옴표가 안 닫히면 \004 줄.
+TOKENIZER='
+BEGIN { RS = "\001"; SEP = "\037"; NLC = "\036"; OPC = "\002" }
+function addc(ch) { word = word ch; inword = 1 }
+function flush_word() { if (inword) { seg = seg (nw ? SEP : "") word; nw++ } word = ""; inword = 0 }
+function flush_seg() { flush_word(); if (nw > 0) { gsub(/\n/, NLC, seg); print seg } seg = ""; nw = 0 }
+function emit_op(o) { flush_word(); seg = seg (nw ? SEP : "") OPC o; nw++ }
+function read_delim(   d, c, qq) {
+  while (i <= n && (substr(s, i, 1) == " " || substr(s, i, 1) == "\t")) i++
+  d = ""; qq = ""
+  while (i <= n) {
+    c = substr(s, i, 1)
+    if (qq != "") { if (c == qq) qq = ""; else d = d c; i++; continue }
+    if (c == "\047" || c == "\"") { qq = c; i++; continue }
+    if (c == "\\") { i++; continue }
+    if (c ~ /[ \t\n;&|()<>]/) break
+    d = d c; i++
+  }
+  return d
+}
+function add_heredoc(   dash, d) {
+  dash = 0; if (substr(s, i, 1) == "-") { dash = 1; i++ }
+  d = read_delim(); if (d != "") { nhd++; hd[nhd] = d; hdash[nhd] = dash }
+}
+function skip_heredocs(   k, line, e, t) {
+  for (k = 1; k <= nhd; k++) {
+    while (i <= n) {
+      e = index(substr(s, i), "\n")
+      if (e == 0) { line = substr(s, i); i = n + 1 } else { line = substr(s, i, e - 1); i += e }
+      t = line; if (hdash[k]) sub(/^\t+/, "", t)
+      if (t == hd[k]) break
+    }
+  }
+  nhd = 0
+}
+function scan_cmdsub(   depth, c, q2, start) {
+  depth = 1; q2 = ""; start = i
+  while (i <= n) {
+    c = substr(s, i, 1)
+    if (q2 == "\047") { if (c == "\047") q2 = ""; i++; continue }
+    if (q2 == "\"") { if (c == "\\") { i += 2; continue } if (c == "\"") q2 = ""; i++; continue }
+    if (c == "\\") { i += 2; continue }
+    if (c == "\047" || c == "\"") { q2 = c; i++; continue }
+    if (c == "<" && substr(s, i + 1, 1) == "<" && substr(s, i + 2, 1) != "<") { i += 2; add_heredoc(); continue }
+    if (c == "\n") { i++; if (nhd > 0) skip_heredocs(); continue }
+    if (c == "(") depth++
+    else if (c == ")") { depth--; if (depth == 0) { i++; return substr(s, start, i - 1 - start) } }
+    i++
+  }
+  uncertain = 1
+  return substr(s, start)
+}
+{
+  s = $0; n = length(s); i = 1; q = ""; word = ""; inword = 0; seg = ""; nw = 0; nhd = 0; nsubs = 0; uncertain = 0
+  while (i <= n) {
+    c = substr(s, i, 1)
+    if (q == "\047") { if (c == "\047") q = ""; else word = word c; i++; continue }
+    if (q == "\"") {
+      if (c == "\\") {
+        d = substr(s, i + 1, 1)
+        if (d == "\n") { i += 2; continue }
+        if (d == "\\" || d == "\"" || d == "$" || d == "`") { word = word d; i += 2; continue }
+        word = word c; i++; continue
+      }
+      if (c == "$" && substr(s, i + 1, 1) == "(") {
+        i += 2; t = scan_cmdsub(); word = word "$(" t ")"
+        gsub(/\n/, NLC, t); subs[++nsubs] = t; continue
+      }
+      if (c == "\"") q = ""; else word = word c
+      i++; continue
+    }
+    if (c == "\\") { d = substr(s, i + 1, 1); i += 2; if (d != "\n") addc(d); continue }
+    if (c == "\047" || c == "\"") { q = c; inword = 1; i++; continue }
+    if (c == "#" && !inword) { while (i <= n && substr(s, i, 1) != "\n") i++; continue }
+    if (c == "\n") { flush_seg(); i++; if (nhd > 0) skip_heredocs(); continue }
+    if (c == " " || c == "\t") { flush_word(); i++; continue }
+    if (c == "&" && substr(s, i + 1, 1) == ">") { i += 2; if (substr(s, i, 1) == ">") i++; emit_op(">"); continue }
+    if (c == "<" && substr(s, i + 1, 2) == "<<") { i += 3; emit_op("<<<"); continue }
+    if (c == "<" && substr(s, i + 1, 1) == "<") { flush_word(); i += 2; add_heredoc(); continue }
+    if (c == ">" || c == "<") {
+      if (inword && word ~ /^[0-9]+$/) { word = ""; inword = 0 } else flush_word()
+      o = c; i++
+      if (substr(s, i, 1) == ">") { o = o ">"; i++ } else if (substr(s, i, 1) == "|") i++
+      if (substr(s, i, 1) == "&") { i++; while (i <= n && substr(s, i, 1) ~ /[0-9-]/) i++; continue }
+      emit_op(o); continue
+    }
+    if (c == "$" && substr(s, i + 1, 1) == "(") { flush_seg(); i += 2; continue }
+    if (c ~ /[;|&()`]/) { flush_seg(); i++; continue }
+    addc(c); i++
+  }
+  if (q != "") uncertain = 1
+  flush_seg()
+  for (k = 1; k <= nsubs; k++) print "\003" subs[k]
+  if (uncertain) print "\004"
+}'
+
+HOOK_PATH_RE='(^|/)\.claude/(hooks/|settings)'
+HOOK_APPROVAL_MSG='훅 스크립트·settings.json 수정은 사용자가 채팅에 직접 친 승인이 필요하다(지침 §3, 카드 선택 불인정). 무엇을 왜 바꾸는지 말하고 「훅 고쳐」 같은 승인을 받아라.'
+CLAUDE_MD_MSG='CLAUDE.md는 사용자가 직접 관리한다. Bash로 우회하지 말고 바꿀 문장과 위치를 사용자에게 주고 직접 붙여 넣게 하라.'
+PNPM_ONLY_MSG='이 저장소는 pnpm만 쓴다(CLAUDE.md §1). pnpm install / pnpm add로 바꿔라. 새 의존성이면 이유 한 줄 + 사용자 승인 먼저(§5).'
+DRAFT_MSG='PR은 draft로 연다(지침 §9). draft: true / --draft를 붙여 다시 호출하라.'
+READY_WARN='draft 해제(ready)는 사용자 확인 뒤에(지침 §9). 게이트가 끝났는지 확인하라.'
+
+is_claude_md() { case "$1" in CLAUDE.md|*/CLAUDE.md) return 0 ;; esac; return 1; }
+is_hook_path() { [[ "$1" =~ $HOOK_PATH_RE ]]; }
+
+# 파일 쓰기 대상 검사: CLAUDE.md는 항상 차단, 훅·settings는 승인 없으면 차단.
+check_write_target() {
+  if is_claude_md "$1"; then block "$CLAUDE_MD_MSG"; fi
+  if is_hook_path "$1"; then
+    hook_approved "$(printf '%s' "$payload" | jq -r '.transcript_path // empty' 2>/dev/null)" || block "$HOOK_APPROVAL_MSG"
+  fi
+}
+
+check_push() {
+  local force=0 lease=0 main=0 skip=0 dd=0 a r dst
+  local -a pos=()
+  for a in "$@"; do
+    if [ "$skip" -eq 1 ]; then skip=0; continue; fi
+    if [ "$dd" -eq 0 ]; then
+      case "$a" in
+        --) dd=1; continue ;;
+        --force-with-lease*|--force-if-includes) lease=1; continue ;;
+        --force) force=1; continue ;;
+        --repo|--push-option|--receive-pack|--exec) skip=1; continue ;;
+        --*) continue ;;
+        -*) [[ "$a" =~ ^-[A-Za-z]*f ]] && force=1
+            [[ "$a" =~ o$ ]] && skip=1
+            continue ;;
+      esac
+    fi
+    pos+=("$a")
+  done
+  for r in "${pos[@]:1}"; do
+    case "$r" in +*) force=1 ;; esac
+    dst="${r#+}"; dst="${dst##*:}"; dst="${dst#refs/heads/}"
+    case "$dst" in main|master) main=1 ;; esac
+  done
+  if [ "$force" -eq 1 ]; then
+    block "git push --force 금지(CLAUDE.md §2). 되돌려야 하면 새 커밋으로 하고, 정말 필요하면 사용자에게 이유를 말하고 승인받아라."
+  elif [ "$lease" -eq 1 ]; then
+    warn "git push --force-with-lease/--force-if-includes는 경고만: 정말 필요한지 확인하라(CLAUDE.md §2)."
+  fi
+  if [ "$main" -eq 1 ]; then
+    block "main에 직접 푸시하지 않는다(지침 §9 자기 브랜치에만). PR로 올리고 「머지해」를 받아라."
+  fi
+}
+
+check_commit() {
+  local -a A=("$@")
+  local n=$# i=0 a have=0 skip=0 msg="" body j ch rest
+  while [ "$i" -lt "$n" ]; do
+    a="${A[$i]}"
+    case "$a" in
+      --) break ;;
+      -m|--message) if [ "$have" -eq 0 ]; then msg="${A[$((i + 1))]:-}"; have=1; fi; i=$((i + 2)); continue ;;
+      --message=*) if [ "$have" -eq 0 ]; then msg="${a#--message=}"; have=1; fi ;;
+      -F|--file|-C|-c|-t|--template|--reuse-message|--reedit-message) skip=1; i=$((i + 2)); continue ;;
+      --file=*|--template=*|--reuse-message=*|--reedit-message=*|--fixup*|--squash*|--no-edit) skip=1 ;;
+      --*) ;;
+      -?*)
+        body="${a#-}"
+        for ((j = 0; j < ${#body}; j++)); do
+          ch="${body:j:1}"; rest="${body:j+1}"
+          case "$ch" in
+            m) if [ "$have" -eq 0 ]; then
+                 if [ -n "$rest" ]; then msg="$rest"; else msg="${A[$((i + 1))]:-}"; i=$((i + 1)); fi
+                 have=1
+               fi
+               break ;;
+            F|C|c|t) skip=1; [ -n "$rest" ] || i=$((i + 1)); break ;;
+          esac
+        done ;;
+    esac
+    i=$((i + 1))
+  done
+  [ "$skip" -eq 0 ] && [ "$have" -eq 1 ] || return 0
+  msg="${msg//$'\036'/$'\n'}"
+  local title delim re_hd
+  title="$(printf '%s\n' "$msg" | awk 'NF { print; exit }')"
+  title="${title#"${title%%[![:space:]]*}"}"
+  re_hd='^\$\(cat[[:space:]]*<<-?[[:space:]]*["'"'"']?([A-Za-z_][A-Za-z0-9_]*)'
+  if [[ "$title" =~ $re_hd ]]; then
+    delim="${BASH_REMATCH[1]}"
+    title="$(printf '%s\n' "$msg" | awk -v d="$delim" 'NR == 1 { next } NF { if ($0 == d) exit; print; exit }')"
+    title="${title#"${title%%[![:space:]]*}"}"
+  elif [[ "$title" == \$* ]]; then
+    return 0   # 변수·명령 치환 메시지: 판정 불가
+  fi
+  [ -n "$title" ] || return 0
+  case "$title" in
+    Merge\ *|Revert\ *) return 0 ;;
+  esac
+  if ! printf '%s' "$title" | grep -Eq '^[A-Za-z]+(\([^)]*\))?!?: .+' 2>/dev/null; then
+    block "커밋 제목은 영어 접두어 + 짧은 요약(docs:/feat:/fix:/chore:), 본문은 한국어(CLAUDE.md §5)."
+  else
+    case "$(printf '%s' "$title" | grep -oE '^[A-Za-z]+' 2>/dev/null)" in
+      docs|feat|fix|chore) ;;
+      *) warn "커밋 접두어는 docs/feat/fix/chore 권장(CLAUDE.md §5). 나머지는 확인만." ;;
+    esac
+  fi
+}
+
+check_git() {
+  local -a A=("$@")
+  local n=$# i=0 a
+  while [ "$i" -lt "$n" ]; do
+    case "${A[$i]}" in
+      -C|-c|--git-dir|--work-tree|--namespace|--exec-path|--config-env) i=$((i + 2)) ;;
+      -*) i=$((i + 1)) ;;
+      *) break ;;
+    esac
+  done
+  local sub="${A[$i]:-}"
+  local -a R=("${A[@]:i+1}")
+  case "$sub" in
+    push) check_push "${R[@]}" ;;
+    commit) check_commit "${R[@]}" ;;
+    checkout|restore|apply)
+      for a in "${R[@]}"; do
+        if is_hook_path "$a"; then
+          warn "훅·settings 파일을 cp/mv/rm/chmod/git checkout으로 건드렸다 — 원본 복사가 아니라면 승인 필요(지침 §3)."
+          break
+        fi
+      done ;;
+  esac
+}
+
+check_gh() {
+  local -a A=()
+  local skip=0 a prn="" draft=0 put=0 path=""
+  for a in "$@"; do
+    if [ "$skip" -eq 1 ]; then skip=0; continue; fi
+    case "$a" in
+      -R|--repo) skip=1; continue ;;
+      --repo=*|-R?*) continue ;;
+    esac
+    A+=("$a")
+  done
+  if [ "${A[0]:-}" = "pr" ]; then
+    case "${A[1]:-}" in
+      merge)
+        for a in "${A[@]:2}"; do
+          if [[ "$a" =~ ^#?([0-9]+)$ ]] || [[ "$a" =~ /pull/([0-9]+) ]]; then prn="${BASH_REMATCH[1]}"; break; fi
+        done
+        r7_check "$prn" ;;
+      create)
+        for a in "${A[@]:2}"; do
+          case "$a" in --draft|--draft=true|-d) draft=1 ;; esac
+        done
+        [ "$draft" -eq 1 ] || block "$DRAFT_MSG" ;;
+      ready)
+        for a in "${A[@]:2}"; do [ "$a" = "--undo" ] && return 0; done
+        warn "$READY_WARN" ;;
+    esac
+  elif [ "${A[0]:-}" = "api" ]; then
+    for a in "${A[@]:1}"; do
+      case "$a" in
+        -XPUT|-Xput|--method=PUT|--method=put) put=1 ;;
+        PUT|put) put=1 ;;
+      esac
+      [[ "$a" =~ pulls/([0-9]+)/merge ]] && path="${BASH_REMATCH[1]}"
+    done
+    if [ -n "$path" ] && [ "$put" -eq 1 ]; then r7_check "$path"; fi
+  fi
+}
+
+# 한 단순 명령 검사. $1=토크나이저 한 줄, $2=깊이
+check_segment() {
+  local -a W=() ARGS=() REDIRS=()
+  local depth="$2" k=0 n w cmd a op="" pending=0
+  IFS=$'\037' read -r -a W <<< "$1"
+  n=${#W[@]}
+  while [ "$k" -lt "$n" ]; do
+    w="${W[$k]}"
+    case "$w" in
+      '{'|'}'|'!'|if|then|elif|else|do|while|until|nohup|time|exec|builtin) k=$((k + 1)); continue ;;
+      env|sudo|nice)
+        k=$((k + 1))
+        while [ "$k" -lt "$n" ] && { [[ "${W[$k]}" == -* ]] || [[ "${W[$k]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; }; do k=$((k + 1)); done
+        continue ;;
+      timeout)
+        k=$((k + 1))
+        while [ "$k" -lt "$n" ] && [[ "${W[$k]}" == -* ]]; do k=$((k + 1)); done
+        k=$((k + 1)); continue ;;
+    esac
+    if [[ "$w" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then k=$((k + 1)); continue; fi
+    break
+  done
+  [ "$k" -lt "$n" ] || return 0
+  cmd="${W[$k]##*/}"
+  for a in "${W[@]:k+1}"; do
+    if [ "$pending" -eq 1 ]; then
+      pending=0
+      case "$op" in '>'|'>>') REDIRS+=("${a//$'\036'/$'\n'}") ;; esac
+      continue
+    fi
+    if [[ "$a" == $'\002'* ]]; then op="${a#?}"; pending=1; continue; fi
+    ARGS+=("$a")
+  done
+
+  for a in "${REDIRS[@]}"; do check_write_target "$a"; done
+
+  case "$cmd" in
+    git) check_git "${ARGS[@]}" ;;
+    gh) check_gh "${ARGS[@]}" ;;
+    codex)
+      if codex_active; then
+        case "${ARGS[0]:-}" in
+          --version|-V|--help|-h|login) ;;
+          *) block "$CODEX_MSG" ;;
+        esac
+      fi ;;
+    npx|bunx|pnpm|npm)
+      # 실행(npx, bunx, pnpm dlx/exec, npm exec)만 막는다 — 설치는 Codex 호출이 아니다.
+      if codex_active && { [ "$cmd" = npx ] || [ "$cmd" = bunx ] || [[ "${ARGS[0]:-}" =~ ^(dlx|exec|x)$ ]]; }; then
+        for a in "${ARGS[@]}"; do
+          case "$a" in @openai/codex|@openai/codex@*) block "$CODEX_MSG" ;; esac
+        done
+      fi ;;&
+    npm)
+      local sub=""
+      for a in "${ARGS[@]}"; do case "$a" in -*) ;; *) sub="$a"; break ;; esac; done
+      case "$sub" in
+        install|i|ci|add|uninstall|remove|rm|update|up)
+          local global=0
+          for a in "${ARGS[@]}"; do case "$a" in -g|--global) global=1 ;; esac; done
+          if [ "$global" -eq 1 ]; then
+            warn "npm -g 전역 설치는 pnpm dlx 사용을 검토하라(CLAUDE.md §1)."
+          else
+            block "$PNPM_ONLY_MSG"
+          fi ;;
+      esac ;;
+    yarn)
+      case "${ARGS[0]:-}" in --version|-v) ;; *) block "$PNPM_ONLY_MSG" ;; esac ;;
+    bun)
+      case "${ARGS[0]:-}" in add|install|i|remove) block "$PNPM_ONLY_MSG" ;; esac ;;
+    npx)
+      warn "npx 대신 pnpm dlx / pnpm exec를 검토하라(CLAUDE.md §1)." ;;
+    pnpm)
+      case "${ARGS[0]:-}" in
+        add|install|i)
+          for a in "${ARGS[@]:1}"; do
+            case "$a" in -*) ;; *) warn "새 의존성은 이유 한 줄 + 사용자 승인 후(CLAUDE.md §5)."; break ;; esac
+          done ;;
+      esac ;;
+    tee)
+      for a in "${ARGS[@]}"; do case "$a" in -*) ;; *) check_write_target "$a" ;; esac; done ;;
+    sed|perl)
+      local inplace=0
+      for a in "${ARGS[@]}"; do [[ "$a" =~ ^(-[A-Za-z]*i|--in-place) ]] && inplace=1; done
+      if [ "$inplace" -eq 1 ]; then
+        for a in "${ARGS[@]}"; do case "$a" in -*) ;; *) check_write_target "$a" ;; esac; done
+      fi ;;
+    cp|mv|rm|chmod)
+      local -a P=()
+      for a in "${ARGS[@]}"; do case "$a" in -*) ;; *) P+=("$a") ;; esac; done
+      if [ "${#P[@]}" -gt 0 ] && { [ "$cmd" = cp ] || [ "$cmd" = mv ]; } && is_claude_md "${P[${#P[@]}-1]}"; then
+        block "$CLAUDE_MD_MSG"
+      fi
+      for a in "${P[@]}"; do
+        if is_hook_path "$a"; then
+          warn "훅·settings 파일을 cp/mv/rm/chmod/git checkout으로 건드렸다 — 원본 복사가 아니라면 승인 필요(지침 §3)."
+          break
+        fi
+      done ;;
+    bash|sh|zsh|eval)
+      # 셸 문자열 안의 명령은 확실히 판정할 수 없다 — 같은 검사를 경고로만 한다.
+      local inner="" seen_c=0
+      if [ "$cmd" = eval ]; then
+        inner="${ARGS[*]}"
+      else
+        for a in "${ARGS[@]}"; do
+          if [ "$seen_c" -eq 1 ]; then inner="$a"; break; fi
+          [[ "$a" =~ ^-[A-Za-z]*c[A-Za-z]*$ ]] && seen_c=1
+        done
+      fi
+      if [ -n "$inner" ] && [ "$depth" -lt 2 ]; then
+        local saved="$DOWNGRADE"
+        DOWNGRADE=1
+        analyze_bash "${inner//$'\036'/$'\n'}" $((depth + 1))
+        DOWNGRADE="$saved"
+      fi ;;
+  esac
+}
+
+analyze_bash() {  # $1=명령 문자열, $2=깊이
+  local cmd="$1" depth="${2:-0}" line saved="$DOWNGRADE" unc=0
+  local -a segs=() subs=()
+  while IFS= read -r line; do
+    case "$line" in
+      $'\004') unc=1 ;;
+      $'\003'*) subs+=("${line#?}") ;;
+      *) segs+=("$line") ;;
+    esac
+  done < <(printf '%s' "$cmd" | awk "$TOKENIZER" 2>/dev/null)
+  [ "$unc" -eq 1 ] && DOWNGRADE=1
+  for line in "${segs[@]}"; do check_segment "$line" "$depth"; done
+  if [ "$depth" -lt 2 ]; then
+    DOWNGRADE=1
+    for line in "${subs[@]}"; do analyze_bash "${line//$'\036'/$'\n'}" $((depth + 1)); done
+  fi
+  DOWNGRADE="$saved"
 }
 
 # --- R4: 사용자에게 보이는 글 한국어 -----------------------------------------
@@ -212,9 +597,10 @@ clean_field() {
   s="$(printf '%s' "$s" | sed -E 's/\b[A-Z]{2,}[0-9]*\b//g' 2>/dev/null || printf '%s' "$s")"
   printf '%s' "$s"
 }
-count_hangul_chars() { printf '%s' "$1" | grep -oE '[가-힣ㄱ-ㅎㅏ-ㅣ]' 2>/dev/null | wc -l | tr -d ' '; }
+# 한글 판정은 jq(Oniguruma, 항상 UTF-8)로 한다 — grep 범위식은 로케일마다 결과가 다르다.
+count_hangul_chars() { printf '%s' "$1" | jq -Rrs '[match("[가-힣ㄱ-ㅎㅏ-ㅣ]"; "g")] | length' 2>/dev/null || echo 0; }
 count_word_tokens() { printf '%s' "$1" | grep -oE '[A-Za-z]{2,}' 2>/dev/null | wc -l | tr -d ' '; }
-count_hangul_tokens() { printf '%s' "$1" | tr ' ' '\n' | grep -c '[가-힣ㄱ-ㅎㅏ-ㅣ]' 2>/dev/null || true; }
+count_hangul_tokens() { printf '%s' "$1" | jq -Rrs '[splits("[ \n]+") | select(test("[가-힣ㄱ-ㅎㅏ-ㅣ]"))] | length' 2>/dev/null || echo 0; }
 
 R4_KOREAN_ONLY_MSG='사용자에게 보이는 글(답글·상태·카드)은 한국어로 쓴다(지침·메모 korean-only-user-text). 한국어로 다시 써서 호출하라. 코드·경로·URL은 그대로 둬도 된다.'
 
@@ -259,7 +645,7 @@ r4_check() {  # $1=필드들(줄마다 base64로 인코딩된 값), $2=목록 �
 
   if [ -n "$list_text" ]; then
     local list_lines
-    list_lines="$(printf '%s\n' "$list_text" | grep -Ec '^[[:space:]]*(\(?[a-dA-D]\)|[a-dA-D][.:]|[①②③④]|\(?[1-4]\))[[:space:]]' 2>/dev/null || echo 0)"
+    list_lines="$(printf '%s\n' "$list_text" | grep -Ec '^[[:space:]]*(\(?[a-dA-D]\)|[a-dA-D][.:]|①|②|③|④|\(?[1-4]\))[[:space:]]' 2>/dev/null || true)"
     if [ "$list_lines" -ge 2 ] && printf '%s' "$list_text" | grep -q '?'; then
       warn "결정은 ask_decision 카드로 한 질문씩(지침 §6)."
     fi
@@ -303,7 +689,7 @@ case "$tool" in
         gsd-review|gsd-plan-review-convergence)
           if printf '%s' "$args" | grep -Eq -- '--codex' 2>/dev/null; then
             block "$CODEX_MSG"
-          elif ! printf '%s' "$args" | grep -Eq -- '--all|--claude' 2>/dev/null; then
+          elif ! printf '%s' "$args" | grep -Eq -- '--claude' 2>/dev/null; then
             warn "기본 리뷰어에 Codex가 있으면 실제 codex 호출은 막힌다. --claude 레인만 쓰거나 Opus 독립 검토로."
           fi
           ;;
@@ -314,79 +700,9 @@ case "$tool" in
   Bash)
     cmd="$(printf '%s' "$payload" | jq -r '.tool_input.command // empty' 2>/dev/null)"
 
-    # R3: Codex
-    if codex_active; then
-      if cmdword "$cmd" 'codex'; then
-        if ! printf '%s' "$cmd" | grep -Eq 'codex[[:space:]]+(--version|-V|--help|-h)([[:space:]]|$)' 2>/dev/null; then
-          block "$CODEX_MSG"
-        fi
-      elif printf '%s' "$cmd" | grep -Eq 'npx[[:space:]]+(-y[[:space:]]+)?@openai/codex' 2>/dev/null; then
-        block "$CODEX_MSG"
-      fi
-    fi
-
-    # R5: 패키지 매니저 · 의존성
-    if cmdword "$cmd" 'npm'; then
-      if printf '%s' "$cmd" | grep -Eq 'npm[[:space:]]+(install|i|ci|add|uninstall|remove|rm|update|up)([[:space:]]|$)' 2>/dev/null; then
-        if printf '%s' "$cmd" | grep -Eq -- '(-g|--global)' 2>/dev/null; then
-          warn "npm -g 전역 설치는 pnpm dlx 사용을 검토하라(CLAUDE.md §1)."
-        else
-          block "이 저장소는 pnpm만 쓴다(CLAUDE.md §1). pnpm install / pnpm add로 바꿔라. 새 의존성이면 이유 한 줄 + 사용자 승인 먼저(§5)."
-        fi
-      fi
-    fi
-    if cmdword "$cmd" 'yarn' && ! printf '%s' "$cmd" | grep -Eq 'yarn[[:space:]]+--version' 2>/dev/null; then
-      block "이 저장소는 pnpm만 쓴다(CLAUDE.md §1). pnpm install / pnpm add로 바꿔라. 새 의존성이면 이유 한 줄 + 사용자 승인 먼저(§5)."
-    fi
-    if cmdword "$cmd" 'bun' && printf '%s' "$cmd" | grep -Eq 'bun[[:space:]]+(add|install|i|remove)([[:space:]]|$)' 2>/dev/null; then
-      block "이 저장소는 pnpm만 쓴다(CLAUDE.md §1). pnpm install / pnpm add로 바꿔라. 새 의존성이면 이유 한 줄 + 사용자 승인 먼저(§5)."
-    fi
-    if cmdword "$cmd" 'npx'; then
-      warn "npx 대신 pnpm dlx / pnpm exec를 검토하라(CLAUDE.md §1)."
-    fi
-    if cmdword "$cmd" 'pnpm' && printf '%s' "$cmd" | grep -Eq 'pnpm[[:space:]]+(add|install)[[:space:]]+[^-][^[:space:]]*' 2>/dev/null; then
-      warn "새 의존성은 이유 한 줄 + 사용자 승인 후(CLAUDE.md §5)."
-    fi
-
-    # R6: git push
-    if is_git_push "$cmd"; then
-      if printf '%s' "$cmd" | grep -Eq -- '--force-with-lease|--force-if-includes' 2>/dev/null; then
-        warn "git push --force-with-lease/--force-if-includes는 경고만: 정말 필요한지 확인하라(CLAUDE.md §2)."
-      elif printf '%s' "$cmd" | grep -Eq -- '(^|[[:space:]])(--force|-[a-zA-Z]*f[a-zA-Z]*)([[:space:]]|$)' 2>/dev/null \
-        || printf '%s' "$cmd" | grep -Eq '[[:space:]]\+[^[:space:]]*:' 2>/dev/null; then
-        block "git push --force 금지(CLAUDE.md §2). 되돌려야 하면 새 커밋으로 하고, 정말 필요하면 사용자에게 이유를 말하고 승인받아라."
-      fi
-      if printf '%s' "$cmd" | grep -Eq '(origin|upstream)?[[:space:]]+(main|master)([[:space:]]|$)|:[[:space:]]*(refs/heads/)?(main|master)([[:space:]]|$)' 2>/dev/null; then
-        block "main에 직접 푸시하지 않는다(지침 §9 자기 브랜치에만). PR로 올리고 「머지해」를 받아라."
-      fi
-    fi
-
-    # R7: gh pr merge / gh api .../pulls/N/merge
-    if printf '%s' "$cmd" | grep -Eq '(^|[\;\&\|])[[:space:]]*gh[[:space:]]+pr[[:space:]]+merge([[:space:]]|$)' 2>/dev/null; then
-      prn="$(printf '%s' "$cmd" | grep -oE 'pr[[:space:]]+merge[[:space:]]+[0-9]+' | grep -oE '[0-9]+$')"
-      r7_check "$prn"
-    elif printf '%s' "$cmd" | grep -Eq 'gh[[:space:]]+api.*pulls/[0-9]+/merge' 2>/dev/null; then
-      prn="$(printf '%s' "$cmd" | grep -oE 'pulls/[0-9]+/merge' | grep -oE '[0-9]+')"
-      r7_check "$prn"
-    fi
-
-    # R8: 훅·settings 우회 수정, CLAUDE.md 우회 수정
-    if printf '%s' "$cmd" | grep -Eq '\.claude/(hooks/|settings)' 2>/dev/null; then
-      is_write=0
-      if printf '%s' "$cmd" | grep -Eq '(>{1,2}|tee([[:space:]]+-a)?)[[:space:]]*["'"'"']?[^ ;|&]*\.claude/(hooks/|settings)' 2>/dev/null; then is_write=1; fi
-      if printf '%s' "$cmd" | grep -Eq '(sed|perl)[[:space:]]+-[a-z]*i[^;|&]*\.claude/(hooks/|settings)' 2>/dev/null; then is_write=1; fi
-      if [ "$is_write" -eq 1 ]; then
-        transcript="$(printf '%s' "$payload" | jq -r '.transcript_path // empty' 2>/dev/null)"
-        hook_approved "$transcript" || block "훅 스크립트·settings.json 수정은 사용자가 채팅에 직접 친 승인이 필요하다(지침 §3, 카드 선택 불인정). 무엇을 왜 바꾸는지 말하고 「훅 고쳐」 같은 승인을 받아라."
-      elif printf '%s' "$cmd" | grep -Eq '(^|[\;\&\|]|[[:space:]])(cp|mv|rm|chmod)([[:space:]]|$)|git[[:space:]]+(checkout|restore|apply)' 2>/dev/null; then
-        warn "훅·settings 파일을 cp/mv/rm/chmod/git checkout으로 건드렸다 — 원본 복사가 아니라면 승인 필요(지침 §3)."
-      fi
-    fi
-    if printf '%s' "$cmd" | grep -Eq '(>{1,2}|tee([[:space:]]+-a)?)[[:space:]]*["'"'"']?[^ ;|&]*CLAUDE\.md' 2>/dev/null \
-      || printf '%s' "$cmd" | grep -Eq '(sed|perl)[[:space:]]+-[a-z]*i[^;|&]*CLAUDE\.md' 2>/dev/null \
-      || printf '%s' "$cmd" | grep -Eq '(cp|mv)[^;|&]*[[:space:]][^ ]*CLAUDE\.md[[:space:]]*($|[;&|])' 2>/dev/null; then
-      block "CLAUDE.md는 사용자가 직접 관리한다. Bash로 우회하지 말고 바꿀 문장과 위치를 사용자에게 주고 직접 붙여 넣게 하라."
-    fi
+    # R3 Codex · R5 패키지 매니저 · R6 push · R7 머지 · R8 훅/CLAUDE.md 쓰기 · R11 draft · R12 커밋 제목:
+    # 명령을 단순 명령 단위로 나눠 해당 명령의 인자만 본다(따옴표·heredoc·주석 속 글은 무시).
+    analyze_bash "$cmd" 0
 
     # R10: 프로덕션 DB · 출력 저장
     if printf '%s' "$cmd" | grep -Eq 'gcloud[[:space:]]+sql[[:space:]]+(connect|import|export|databases|users|instances[[:space:]]+(patch|delete|restart))' 2>/dev/null \
@@ -408,50 +724,10 @@ case "$tool" in
       fi
     fi
 
-    # R11: PR draft (Bash gh pr create)
-    if printf '%s' "$cmd" | grep -Eq '(^|[\;\&\|])[[:space:]]*gh[[:space:]]+pr[[:space:]]+create([[:space:]]|$)' 2>/dev/null; then
-      if ! printf '%s' "$cmd" | grep -Eq -- '--draft|(^|[[:space:]])-d([[:space:]]|$)' 2>/dev/null; then
-        block "PR은 draft로 연다(지침 §9). draft: true / --draft를 붙여 다시 호출하라."
-      fi
-    fi
-
-    # R12: 커밋 제목
-    if is_git_commit "$cmd"; then
-      if printf '%s' "$cmd" | grep -Eq -- '--no-edit' 2>/dev/null \
-        || ! printf '%s' "$cmd" | grep -Eq -- '(-m[[:space:]]|-F[[:space:]])' 2>/dev/null; then
-        :
-      elif printf '%s' "$cmd" | grep -Eq -- '-F[[:space:]]' 2>/dev/null; then
-        :
-      else
-        title=""
-        if printf '%s' "$cmd" | grep -q -- "<<'\\?EOF'\\?"; then
-          title="$(printf '%s' "$cmd" | awk '/<<.?EOF.?$/{f=1;next} f{ if (NF==0) next; print; exit }')"
-        else
-          title="$(printf '%s' "$cmd" | grep -oP -- '-m[[:space:]]+"\K[^"]*' 2>/dev/null | head -1)"
-          [ -n "$title" ] || title="$(printf '%s' "$cmd" | grep -oP -- "-m[[:space:]]+'\K[^']*" 2>/dev/null | head -1)"
-        fi
-        if [ -n "$title" ]; then
-          case "$title" in
-            Merge\ *|Revert\ *) ;;
-            *)
-              if ! printf '%s' "$title" | grep -Eq '^[A-Za-z]+(\([^)]*\))?!?: .+' 2>/dev/null; then
-                block "커밋 제목은 영어 접두어 + 짧은 요약(docs:/feat:/fix:/chore:), 본문은 한국어(CLAUDE.md §5)."
-              else
-                prefix="$(printf '%s' "$title" | grep -oE '^[A-Za-z]+' 2>/dev/null)"
-                case "$prefix" in
-                  docs|feat|fix|chore) ;;
-                  *) warn "커밋 접두어는 docs/feat/fix/chore 권장(CLAUDE.md §5). 나머지는 확인만." ;;
-                esac
-              fi
-              ;;
-          esac
-        fi
-      fi
-    fi
     ;;
 
   Write|Edit|NotebookEdit)
-    fp="$(printf '%s' "$payload" | jq -r '.tool_input.file_path // empty' 2>/dev/null)"
+    fp="$(printf '%s' "$payload" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty' 2>/dev/null)"
     if printf '%s' "$fp" | grep -Eq '(^|/)\.claude/(hooks/|settings(\.local)?\.json$)' 2>/dev/null; then
       transcript="$(printf '%s' "$payload" | jq -r '.transcript_path // empty' 2>/dev/null)"
       hook_approved "$transcript" || block "훅 스크립트·settings.json 수정은 사용자가 채팅에 직접 친 승인이 필요하다(지침 §3, 카드 선택 불인정). 무엇을 왜 바꾸는지 말하고 「훅 고쳐」 같은 승인을 받아라."
@@ -517,8 +793,13 @@ case "$tool" in
   mcp__github__create_pull_request)
     draft="$(printf '%s' "$payload" | jq -r '.tool_input.draft // empty' 2>/dev/null)"
     if [ "$draft" != "true" ]; then
-      block "PR은 draft로 연다(지침 §9). draft: true / --draft를 붙여 다시 호출하라."
+      block "$DRAFT_MSG"
     fi
+    ;;
+
+  mcp__github__update_pull_request)
+    draft="$(printf '%s' "$payload" | jq -r '.tool_input.draft | if . == false then "false" else "" end' 2>/dev/null)"
+    [ "$draft" = "false" ] && warn "$READY_WARN"
     ;;
 
 esac

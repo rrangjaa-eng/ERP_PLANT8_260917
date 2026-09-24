@@ -317,6 +317,40 @@ hook plant8-skill-gate.sh agent "$(payload_agent "$P5b" gsd-executor)" "$projP5"
 expect_rc "04.1 executor: 04.1 UI-SPEC 있으면 디자인 리뷰 필요 -> exit 2" 2 "$HOOK_RC"
 expect_contains "04.1 executor: plan-design-review 요구" "$HOOK_STDERR" "/plan-design-review"
 
+# 소수점 페이즈는 /plan-ceo-review 없이 실행 가능(사용자 결정 2026-09-24 22:04 KST), 엔지 리뷰는 그대로 필요
+projP14="$(new_project)"
+P14="sid-dec-noceo-$$"
+mkdir -p "$projP14/.planning/phases/04.2-test"
+hook plant8-skill-gate.sh record-skill "$(payload_skill_args "$P14" gsd-execute-phase 04.2)" "$projP14"
+hook plant8-skill-gate.sh agent "$(payload_agent "$P14" gsd-executor)" "$projP14"
+expect_rc "04.2 executor: 엔지 리뷰 없음 -> exit 2" 2 "$HOOK_RC"
+expect_contains "04.2 executor: plan-eng-review 요구" "$HOOK_STDERR" "/plan-eng-review"
+expect_not_contains "04.2 executor: plan-ceo-review는 요구 안 함" "$HOOK_STDERR" "/plan-ceo-review"
+record_skill "$projP14" "$P14" plan-eng-review
+hook plant8-skill-gate.sh agent "$(payload_agent "$P14" gsd-executor)" "$projP14"
+expect_rc "04.2 executor: CEO 리뷰 없이 엔지 리뷰만으로 -> exit 0" 0 "$HOOK_RC"
+
+# 정수 페이즈는 여전히 /plan-ceo-review 필요
+projP15="$(new_project)"
+P15="sid-int-noceo-$$"
+hook plant8-skill-gate.sh record-skill "$(payload_skill_args "$P15" gsd-execute-phase 4)" "$projP15"
+record_skill "$projP15" "$P15" plan-eng-review
+hook plant8-skill-gate.sh agent "$(payload_agent "$P15" gsd-executor)" "$projP15"
+expect_rc "04 executor: CEO 리뷰 없음 -> exit 2" 2 "$HOOK_RC"
+expect_contains "04 executor: plan-ceo-review 요구" "$HOOK_STDERR" "/plan-ceo-review"
+
+# 소수 부분이 없거나 0인 페이즈(4. · 4.0)는 소수점 페이즈가 아니다 — CEO 리뷰 필요
+for bad in "4." "4.0"; do
+  projP16="$(new_project)"
+  P16="sid-bad-dec-$$-$bad"
+  printf 'current_phase: %s\n' "$bad" > "$projP16/.planning/STATE.md"
+  hook plant8-skill-gate.sh record-skill "$(payload_skill "$P16" gsd-execute-phase)" "$projP16"
+  record_skill "$projP16" "$P16" plan-eng-review
+  hook plant8-skill-gate.sh agent "$(payload_agent "$P16" gsd-executor)" "$projP16"
+  expect_rc "STATE $bad executor: CEO 리뷰 없음 -> exit 2" 2 "$HOOK_RC"
+  expect_contains "STATE $bad executor: plan-ceo-review 요구" "$HOOK_STDERR" "/plan-ceo-review"
+done
+
 # Phase 4 동작은 그대로: 인자 4 → phase-04.log (STATE가 달라도 인자가 이긴다), 인자 없음 → STATE
 projP6="$(new_project)"
 P6="sid-dec-p4-$$"

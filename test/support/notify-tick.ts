@@ -57,7 +57,8 @@ export type TestTokenClaims = {
   iss?: string;
   aud?: string;
   email?: string;
-  email_verified?: boolean;
+  // 문자열 "true"는 거부 케이스(04.2-05 — `=== true`만 통과)를 만들기 위해 허용한다.
+  email_verified?: boolean | string;
   iat?: number;
   exp?: number;
 };
@@ -65,13 +66,13 @@ export type TestTokenClaims = {
 // RS256 테스트 토큰 서명기 — 실제 Google 인증서 대신 이 키 한 쌍의 공개키를
 // getCerts로 돌려준다(kid "test-kid").
 export function createTestSigner(): {
-  sign: (claims: TestTokenClaims & { aud: string; email: string }) => string;
+  sign: (claims: TestTokenClaims & { aud: string }) => string;
   getCerts: () => Promise<Certificates>;
 } {
   const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
   const publicPem = publicKey.export({ format: "pem", type: "spki" }).toString();
 
-  function sign(claims: TestTokenClaims & { aud: string; email: string }): string {
+  function sign(claims: TestTokenClaims & { aud: string }): string {
     const now = Math.floor(Date.now() / 1000);
     const header = { alg: "RS256", kid: "test-kid", typ: "JWT" };
     const payload = {

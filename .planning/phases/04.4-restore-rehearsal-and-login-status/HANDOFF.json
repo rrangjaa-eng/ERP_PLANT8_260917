@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-24T18:05:00Z",
+  "timestamp": "2026-09-24T18:17:29Z",
   "phase": "04.4",
   "phase_name": "restore-rehearsal-and-login-status",
   "phase_dir": ".planning/phases/04.4-restore-rehearsal-and-login-status",
@@ -14,17 +14,23 @@
       "name": "plan-eng-review 04.4",
       "status": "done",
       "commit": "9b8694e"
+    },
+    {
+      "id": 2,
+      "name": "막는 문제 4건(E-10,E-16,E-18,E-20) 플랜 반영 + 검사기(통과) + Opus 독립 교차 검토(막는 문제 없음)",
+      "status": "done",
+      "commit": "dcd9130"
     }
   ],
   "remaining_tasks": [
     {
-      "id": 2,
-      "name": "막는 문제 4건(E-10,E-16,E-18,E-20) 플랜 반영 + 검사기 + Fable 확인",
+      "id": 3,
+      "name": "plan-design-review 04.4 (+ Opus 독립 교차 검토, Codex 대신)",
       "status": "not_started"
     },
     {
-      "id": 3,
-      "name": "plan-design-review 04.4",
+      "id": 4,
+      "name": "한도 풀린 뒤(2026-09-29~) Codex 재확인: eng 리비전(dcd9130)",
       "status": "not_started"
     }
   ],
@@ -39,6 +45,6 @@
     }
   ],
   "uncommitted_files": [],
-  "next_action": "/gsd-plan-phase 04.4 리비전으로 eng review 막는 문제 4건 반영(docs/designs/plant8-erp-phase04.4-eng-review-260925.md)",
-  "context_notes": "Codex 한도 2026-09-29까지 막힘 → 교차 검토는 Opus(Fable은 최종 전체 1회). STATE.md·루트 HANDOFF.json 건드리지 않음."
+  "next_action": "새 세션에서 /plan-design-review 04.4 (UI-SPEC 있음) + Opus 독립 교차 검토. 먼저 /gsd-progress 04.4로 게이트 기록 파일 이름 확인",
+  "context_notes": "Codex 한도 2026-09-29까지 → 교차 검토는 Opus, Fable은 최종 전체 1회. 결과: /mnt/project-files/04.4-gates/checker-rev1.md, opus-cross-r1.md(참고 7건). STATE.md·루트 HANDOFF.json 건드리지 않음."
 }

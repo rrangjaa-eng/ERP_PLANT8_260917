@@ -171,8 +171,8 @@ describe("마이그레이션 업그레이드 — 옛 데이터 위 적용, 재�
       { id: ID.bidding, number: "OLD-4", status: "bidding", version: 1 },
       { id: ID.lost, number: "OLD-5", status: "lost", version: 3 },
     ]);
-    const { rows: lines } = await pool.query<{ item_name: string }>(`SELECT item_name FROM quote_lines ORDER BY item_name`);
-    expect(lines.map((line) => line.item_name)).toEqual(["옛 잠금 A 줄", "옛 잠금 B 줄", "진행 줄"].sort());
+    const { rows: lines } = await pool.query<{ item_name: string }>(`SELECT item_name FROM quote_lines`);
+    expect(lines.map((line) => line.item_name).sort()).toEqual(["옛 잠금 A 줄", "옛 잠금 B 줄", "진행 줄"].sort());
     expect(await readStatusCodes(pool)).toEqual(FIVE_STATUS_CODES);
   });
 

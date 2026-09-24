@@ -456,17 +456,16 @@ export function QuoteLedger({
 
   // 엔지 리뷰 C §1 P1 — 저장 래치. 같은 틱에 두 번 들어오는 저장(Ctrl+S
   // 연타)은 isExecuting이 아직 거짓인 렌더에서 처리되므로 동기 래치로 막는다.
-  // 액션의 성공·실패 콜백에서 내린다.
+  // 성공·실패·navigation 오류(redirect/notFound) 모두에서 부르는 onSettled에서 내린다.
   const savingRef = useRef(false);
   // 04-28 — 저장 요청에 실어 보낸 줄(clientKey) 순서 스냅숏. 봉투의 rowIndex가 이 순서다.
   const sentLineKeysRef = useRef<string[]>([]);
 
   const { execute, result, isExecuting } = useAction(saveProjectLedgerAction, {
-    onError: () => {
+    onSettled: () => {
       savingRef.current = false;
     },
     onSuccess: ({ data }) => {
-      savingRef.current = false;
       if (data && "rejected" in data) {
         applyRejectedCells(data.rejected.cells);
         return; // 전부 거부 — 줄 교체·저장됨·보관본 지우기를 하지 않는다.

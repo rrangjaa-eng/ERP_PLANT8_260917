@@ -80,7 +80,12 @@ test.describe("폰 375 /admin/code-tables 설명 접힌 줄 (S14 overflow)", () 
     expect(descriptionBox!.width).toBeGreaterThan(nameBox!.width);
 
     // P3: 값·정렬·동작 열(머리글과 칸)이 숨는다. P2는 라벨 없이 값만이라
-    // 「설명」 머리글도 없다.
+    // 「설명」 머리글도 없다. P1 머리글(이름·상태)이 보이는 것부터 확인해
+    // 표 역할이 살아 있음을 고정한다 — 역할이 사라지면 아래 숨김 단언이
+    // 빈 목록에 대해 참이 되어 버린다.
+    for (const header of ["이름", "상태"]) {
+      await expect(page.getByRole("columnheader", { name: header, exact: true })).toBeVisible();
+    }
     for (const header of ["값", "설명", "정렬", "동작"]) {
       await expect(page.getByRole("columnheader", { name: header, exact: true })).toBeHidden();
     }

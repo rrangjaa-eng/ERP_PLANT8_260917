@@ -103,10 +103,10 @@ describe("domain/quotes/lines saveQuoteLines (Phase 4, 실제 Postgres)", () => 
     ).rejects.toThrow();
   });
 
-  it("(c) 완료(정산) 프로젝트의 줄 저장이 게이트 이유 문자열과 함께 거부된다", async () => {
+  it("(c) 완료 프로젝트의 줄 저장이 게이트 이유 문자열과 함께 거부된다", async () => {
     const { project, revision, subcategoryValue } = await setupProject();
 
-    await db.update(projects).set({ status: "settled" }).where(eq(projects.id, project.id));
+    await db.update(projects).set({ status: "completed" }).where(eq(projects.id, project.id));
 
     const attempt = saveQuoteLines(SYSTEM_VIEWER, revision.id, [
       {
@@ -119,7 +119,24 @@ describe("domain/quotes/lines saveQuoteLines (Phase 4, 실제 Postgres)", () => 
 
     await expect(attempt).rejects.toBeInstanceOf(GateBlockedError);
     await expect(attempt).rejects.toBeInstanceOf(UserFacingError);
-    await expect(attempt).rejects.toThrow("완료(정산)");
+    await expect(attempt).rejects.toThrow("완료 · 견적 줄 잠김");
+  });
+
+  it("(c2) 미수주 프로젝트의 줄 저장은 막히지 않는다(D-45)", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+
+    await db.update(projects).set({ status: "lost" }).where(eq(projects.id, project.id));
+
+    const { lines } = await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+      {
+        subcategory: subcategoryValue,
+        itemName: "미수주 뒤 도착한 청구",
+        unitPrice: { currency: "KRW", amount: 100_000, fxRate: 1 },
+        execution: { currency: "KRW", amount: 30_000, fxRate: 1 },
+      },
+    ]);
+
+    expect(lines.map((line) => line.itemName)).toEqual(["미수주 뒤 도착한 청구"]);
   });
 
   it("(d) 연결된 줄이 있는 차수를 지우려 하면 실제 외래키 제약(RESTRICT)이 막는다", async () => {

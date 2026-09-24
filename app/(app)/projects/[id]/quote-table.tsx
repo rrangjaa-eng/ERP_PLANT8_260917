@@ -14,7 +14,7 @@ import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { useDirtyStorage } from "@/ui/table/use-dirty-storage";
 import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
 import { normalizeNumericPaste } from "@/ui/table/parse-tsv";
-import { formatKrw, formatForeignLine, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
+import { formatKrw, formatForeignLine, formatQuantity, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import type { TableColumn, CellIssue } from "@/ui/table/types";
 import type { QuoteLineDto, QuoteLineBaseline } from "@/domain/quotes/lines";
@@ -852,7 +852,9 @@ export function QuoteLedger({
       priority: "p2",
       align: "right",
       editability: () => (editable ? "edit" : "locked"),
-      cell: (row) => row.quantity,
+      // D-95 — 읽기 모드도 쉼표 서식을 쓴다(04-09 Task 3 편차, 수량 칸이
+      // 이관에서 빠져 있었다).
+      cell: (row) => formatQuantity(row.quantity),
       editCell: (row, ctx) => (
         <NumericEditCell
           ariaLabel="수량"

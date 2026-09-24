@@ -43,17 +43,22 @@ export function CodeItemForm({ tableKey, cancelHref }: { tableKey: string; cance
       value: getStringField(formData, "value"),
       label: getStringField(formData, "label"),
       sortOrder: Number(getStringField(formData, "sortOrder") || "0"),
+      description: getStringField(formData, "description"),
     });
   }
 
   const valueError = result.validationErrors?.value?._errors?.[0];
   const labelError = result.validationErrors?.label?._errors?.[0];
+  const descriptionError = result.validationErrors?.description?._errors?.[0];
 
   return (
     <form ref={formRef} onSubmit={handleSubmit} id="code-item-form" className="single-column">
       <TextField id="value" name="value" label="값" required error={valueError} />
       <TextField id="label" name="label" label="이름" required error={labelError} />
       <TextField id="sortOrder" name="sortOrder" label="정렬 순서" type="number" defaultValue={0} />
+      {/* S14 「코드 추가」 설명 칸(Task 2 ②) — 선택(required 없음). 40자
+          검증은 domain(createCodeItem)이 한다. */}
+      <TextField id="description" name="description" label="설명" error={descriptionError} />
       {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
       <div className={styles.formActions}>
         <Button type="submit" variant="primary" pending={isExecuting}>

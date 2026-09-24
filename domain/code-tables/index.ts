@@ -95,15 +95,19 @@ export async function listCodeItems(
 }
 
 // 쓰기는 코드표 메뉴의 쓰기 권한을 먼저 확인하고 실패 시 ForbiddenError, 성공
-// 시 recordAction으로 document_create를 남긴다.
+// 시 recordAction으로 document_create를 남긴다. description(Task 2 — 「코드
+// 추가」 폼 선택 칸)은 updateCodeItemDescription과 같은 규칙(normalizeDescription)
+// 으로 검증한다.
 export async function createCodeItem(
   viewer: Viewer,
-  input: { tableKey: string; value: string; label: string; sortOrder?: number },
+  input: { tableKey: string; value: string; label: string; sortOrder?: number; description?: string },
 ): Promise<CodeItemDto> {
   const allowed = await can(viewer, "admin.code-tables", "write");
   if (!allowed) throw new ForbiddenError("코드표 항목 추가 권한이 없습니다.");
 
-  const row = await repoInsertCodeItem(viewer, input);
+  const description = normalizeDescription(input.description ?? "");
+
+  const row = await repoInsertCodeItem(viewer, { ...input, description });
   await recordAction(viewer, { actionType: "document_create", entity: "code_items", entityId: row.id });
 
   return (await project(viewer, row, CODE_ITEM_DTO_SPEC)) as CodeItemDto;

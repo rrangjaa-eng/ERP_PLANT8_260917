@@ -236,4 +236,22 @@ test.describe("코드표 항목 설명 (D-93, UI-SPEC rev 5 S14, DR-29)", () => 
     const colSpanAttr = await taxRuleRow.locator("td[colspan]").getAttribute("colspan");
     expect(Number(colSpanAttr)).toBe(headerCount);
   });
+
+  // Task 2 ③ — 「코드 추가」 폼에서 설명과 함께 추가하면 목록에 그 설명이 있다.
+  test("「코드 추가」 폼에서 설명과 함께 추가하면 목록에 반영된다", async ({ page }) => {
+    await loginAsSysadmin(page);
+
+    const stamp = Date.now();
+    const value = `e2e-desc-create-${stamp}`;
+    const label = `추가시설명-${stamp}`;
+
+    await page.goto("/admin/code-tables?new=1");
+    await page.getByLabel("값").fill(value);
+    await page.getByLabel("이름", { exact: true }).fill(label);
+    await page.getByLabel("설명", { exact: true }).fill("추가 폼에서 적은 설명");
+    await page.getByRole("button", { name: "코드 추가" }).click();
+
+    await expect(page.getByRole("cell", { name: value })).toBeVisible();
+    await expect(page.getByLabel(`${label} 설명`)).toHaveValue("추가 폼에서 적은 설명");
+  });
 });

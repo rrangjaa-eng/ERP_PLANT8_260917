@@ -25,6 +25,8 @@ export const createCodeItemAction = authedActionClient
       value: z.string().min(1, "값을 입력하세요."),
       label: z.string().min(1, "이름을 입력하세요."),
       sortOrder: z.coerce.number().int().default(0),
+      // 04-10(D-93): 「코드 추가」 폼 선택 칸 — 길이 검증은 domain이 한다.
+      description: z.string().optional(),
     }),
   )
   .action(async ({ parsedInput, ctx }) => {

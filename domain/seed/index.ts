@@ -20,11 +20,15 @@ const SEED_HISTORIZED_EFFECTIVE_FROM = "2000-01-01";
 // in_progress도 값 자체는 그대로)은 db/migrations/0009_project_quote_ledger_spine.sql이
 // DELETE/INSERT로 이미 교체했다 — 이 상수는 그 마이그레이션이 못 닿는
 // 경로(멱등 재시드·픽스처 DB)에서도 같은 네 값이 나오게 하는 정본이다.
+// 04-10(D-93): 설명 문장은 db/migrations/0011_code_item_descriptions.sql의
+// description IS NULL UPDATE 문과 글자 그대로 같아야 한다(대조 검증: Task 2
+// verify) — 새 DB(이 시드)와 기존 DB(그 마이그레이션)가 같은 설명으로
+// 시작한다. settled(완료·정산)는 04-06이 넣는다 — 여기 없다.
 const PROJECT_STATUS_CODES = [
-  { value: "bidding", label: "수주중", sortOrder: 0 },
-  { value: "in_progress", label: "진행", sortOrder: 1 },
+  { value: "bidding", label: "수주중", sortOrder: 0, description: "제안·PT 단계 · 쌓인 비용은 진행 뒤 프로젝트 비용" },
+  { value: "in_progress", label: "진행", sortOrder: 1, description: "수주 확정 · 종료일 다음 날 자동으로 정산" },
   { value: "settled", label: "완료(정산)", sortOrder: 2 },
-  { value: "lost", label: "미수주", sortOrder: 3 },
+  { value: "lost", label: "미수주", sortOrder: 3, description: "수주 실패 · 쌓인 비용은 팀 미수주 비용" },
 ];
 
 // D-62: 견적 줄 대분류 = 그룹 머리글(소분류에서 파생), 그룹 순서는
@@ -34,10 +38,10 @@ const PROJECT_STATUS_CODES = [
 // 관리자가 화면(04-05 이후)에서 언제든 늘리거나 이름을 바꿀 수 있다 —
 // 시드는 출발점일 뿐 정본이 아니다(evidence_type과 같은 결).
 const QUOTE_SUBCATEGORY_CODES = [
-  { value: "stage_construction", label: "무대·시공", sortOrder: 0 },
-  { value: "print_production", label: "인쇄·제작", sortOrder: 1 },
-  { value: "staffing", label: "인력", sortOrder: 2 },
-  { value: "etc", label: "기타", sortOrder: 3 },
+  { value: "stage_construction", label: "무대·시공", sortOrder: 0, description: "무대·부스 설치와 철거 공사" },
+  { value: "print_production", label: "인쇄·제작", sortOrder: 1, description: "현수막·배너·인쇄물·소품 제작" },
+  { value: "staffing", label: "인력", sortOrder: 2, description: "진행요원·MC·모델 등 사람 비용" },
+  { value: "etc", label: "기타", sortOrder: 3, description: "위 분류에 들지 않는 비용" },
 ];
 
 // EXP-15·MAST-01: 증빙 종류 코드표 시드 — REQUIREMENTS.md가 열거한 일곱 종류와
@@ -50,11 +54,13 @@ const EVIDENCE_TYPE_CODES: {
   label: string;
   sortOrder: number;
   taxRule: Record<string, unknown>;
+  description: string;
 }[] = [
   {
     value: "tax_invoice",
     label: "세금계산서",
     sortOrder: 0,
+    description: "과세 거래 · 부가세가 붙는 세금계산서",
     taxRule: {
       ruleKind: "vat_surcharge",
       roundingUnit: 1,
@@ -63,13 +69,14 @@ const EVIDENCE_TYPE_CODES: {
       basisDate: "evidence_date",
     },
   },
-  { value: "invoice", label: "계산서", sortOrder: 1, taxRule: { ruleKind: "none" } },
-  { value: "card_receipt", label: "카드 전표", sortOrder: 2, taxRule: { ruleKind: "none" } },
-  { value: "cash_receipt", label: "현금영수증", sortOrder: 3, taxRule: { ruleKind: "none" } },
+  { value: "invoice", label: "계산서", sortOrder: 1, description: "면세 거래 · 부가세 없는 계산서", taxRule: { ruleKind: "none" } },
+  { value: "card_receipt", label: "카드 전표", sortOrder: 2, description: "법인카드 결제 전표", taxRule: { ruleKind: "none" } },
+  { value: "cash_receipt", label: "현금영수증", sortOrder: 3, description: "지출 증빙용 현금영수증", taxRule: { ruleKind: "none" } },
   {
     value: "other_income",
     label: "기타소득",
     sortOrder: 4,
+    description: "강사료·경품 등 일시 소득 · 원천징수 대상",
     taxRule: {
       ruleKind: "withholding",
       roundingUnit: 10,
@@ -82,6 +89,7 @@ const EVIDENCE_TYPE_CODES: {
     value: "business_income",
     label: "사업소득",
     sortOrder: 5,
+    description: "프리랜서 용역 대가 · 원천징수 대상",
     taxRule: {
       ruleKind: "withholding",
       roundingUnit: 10,
@@ -90,7 +98,7 @@ const EVIDENCE_TYPE_CODES: {
       basisDate: "payment_date",
     },
   },
-  { value: "overseas_invoice", label: "해외 인보이스", sortOrder: 6, taxRule: { ruleKind: "none" } },
+  { value: "overseas_invoice", label: "해외 인보이스", sortOrder: 6, description: "해외 거래처 인보이스 · 부가세 없음", taxRule: { ruleKind: "none" } },
 ];
 
 // MAST-02: 본부·팀 최소 시드 — PROJECT.md가 실명으로 쓰는 두 본부(기획본부·

@@ -97,10 +97,10 @@ R1·R2·R3 → #1 결정으로 대체 · R4 확장(#8·#12) · R5 보완(#9) · 
 
 ## Implementation Tasks
 
-- [ ] **T1 (P1)** — UI-SPEC 개정: #1~#5·#7~#15·#17·#18 반영(R1~R14) · `/gsd-ui-phase 04.2`
-- [ ] **T2 (P1)** — 플랜 수정: 04.2-12 R 표·44px 합격선·삭제 흐름, 04.2-09 rowgroup·더 보기 상태, 04.2-13:126·145·185, 04.2-15 메일 순서 · `/gsd-plan-phase 04.2`
-- [ ] **T3 (P2)** — VALIDATION 표 재생성 · 같은 세션
-- [ ] **T4 (P1)** — Codex 2회차 → 최종 전체 Codex 「막는 문제 없음」
+- [x] **T1 (P1)** — UI-SPEC 개정: #1~#5·#7~#15·#17·#18 반영(R1~R14) · `/gsd-ui-phase 04.2`
+- [x] **T2 (P1)** — 플랜 수정: 04.2-12 R 표·44px 합격선·삭제 흐름, 04.2-09 rowgroup·더 보기 상태, 04.2-13:126·145·185, 04.2-15 메일 순서 · `/gsd-plan-phase 04.2`
+- [x] **T3 (P2)** — VALIDATION 표 재생성 · 같은 세션
+- [ ] **T4 (P1)** — Codex 2회차 → 최종 전체 Codex 「막는 문제 없음」 (2·3회차 완료, 3회차 「막는 문제 없음」; 최종 전체 Codex 남음)
 
 ## GSTACK REVIEW REPORT
 
@@ -117,3 +117,10 @@ R1·R2·R3 → #1 결정으로 대체 · R4 확장(#8·#12) · R5 보완(#9) · 
 - **VERDICT:** ENG CLEARED(계획 수정 뒤). DESIGN 미통과 — UI-SPEC 개정 + 플랜 수정 + Codex 2회차 필요.
 
 **UNRESOLVED DECISIONS:** 없음 — #1 공휴일 삭제는 사용자가 카드에서 「되돌리기」를 골랐다(2026-09-25 KST).
+
+
+## 반영 결과 (2026-09-25 KST)
+
+- UI-SPEC 개정 62d1392(UI 검사기 승인), 플랜 7개 수정·VALIDATION 재생성 38c7d56(플랜 검사기 통과), Codex 2회차 후속 0291f3a.
+- Codex 2회차: 1회차 B1·B2·B3·B5·R1~R10 해결, 새 막는 문제 0, B4·B6 남음 → Fable 판단(B4 비차단, B6 실제·작은 수정) → 반영 → Codex 3회차 「막는 문제 없음」. 원문 `/mnt/project-files/04.2-gates/codex-design-r2.md`·`codex-design-r3.md`·`checker-design-r2.md`.
+- 남은 것: 최종 전체 Codex(승인 직전 1회) → /review(문서) → PR #54 설명.

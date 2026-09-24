@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useState, type ReactNode } from "react";
+import { isCtrlCombo } from "@/lib/shortcut";
 import styles from "./Table.module.css";
 import type { CellEditability, CellIssue, TableColumn } from "./types";
 import { useGridKeyboard, type GridPosition } from "./use-grid-keyboard";
@@ -16,7 +17,7 @@ import { useGridKeyboard, type GridPosition } from "./use-grid-keyboard";
 // 붙여넣기 + 셀 오류·충돌 렌더가 활성화된다(§7-3 (아)).
 export type TableKeyboardHandlers<Row> = {
   onDeleteRow?: (row: Row) => void;
-  /** ⌘/Ctrl+Enter — 새 줄. 포커스가 있던 행을 넘긴다(그룹 대분류 상속, D-62). */
+  /** Ctrl+Enter — 새 줄. 포커스가 있던 행을 넘긴다(그룹 대분류 상속, D-62). */
   onNewRow?: (currentRow?: Row) => void;
   onDuplicateRow?: (row: Row) => void;
   onMoveRow?: (row: Row, direction: "up" | "down") => void;
@@ -32,7 +33,7 @@ export type TableProps<Row> = {
   getRowId: (row: Row) => string;
   groupBy?: (row: Row) => string;
   emptyMessage?: string;
-  emptyAction?: { label: string; onClick: () => void };
+  emptyAction?: { label: string; onClick: () => void; shortcut?: string };
   footer?: ReactNode;
   onCellCommit?: (rowId: string, columnKey: string, value: string) => void;
   /**
@@ -166,8 +167,20 @@ export function Table<Row>({
             <td className={styles.emptyCell}>
               <span>{emptyMessage ?? "데이터가 없습니다"}</span>
               {emptyAction ? (
-                <button type="button" className={styles.emptyAction} onClick={emptyAction.onClick}>
+                <button
+                  type="button"
+                  className={styles.emptyAction}
+                  onClick={emptyAction.onClick}
+                  onKeyDown={(event) => {
+                    // 04-28 — 표시한 kbd(Ctrl+Enter)가 실제로 동작한다(C-07).
+                    if (emptyAction.shortcut === "Ctrl+Enter" && isCtrlCombo(event, "Enter")) {
+                      event.preventDefault();
+                      emptyAction.onClick();
+                    }
+                  }}
+                >
                   {emptyAction.label}
+                  {emptyAction.shortcut ? <kbd className={styles.emptyActionKbd}>{emptyAction.shortcut}</kbd> : null}
                 </button>
               ) : null}
             </td>

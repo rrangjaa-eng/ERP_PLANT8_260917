@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { isCtrlCombo } from "@/lib/shortcut";
 
 // SYSTEM.md §7-3 보강 (아) — `role="grid"` 키보드 계약. 표 전체가 탭 정지
 // **1개**이고(로빙 tabindex — 이 훅이 관리하는 `focus` 좌표만 tabIndex=0),
@@ -16,14 +17,14 @@ export type GridKeyboardHandlers = {
   onEscape?: (pos: GridPosition, wasEditing: boolean) => void;
   /** Delete — 편집 중이 아닐 때만: 줄 삭제 확인 모달을 연다. */
   onDeleteRow?: (rowIndex: number) => void;
-  /** ⌘/Ctrl+Enter — 새 줄. 현재 포커스 행 인덱스를 넘긴다(D-62: 그 줄의
+  /** Ctrl+Enter — 새 줄. 현재 포커스 행 인덱스를 넘긴다(D-62: 그 줄의
    * 그룹 대분류를 물려받아야 한다 — 어느 그룹 안에서 눌렀는지 알아야 한다). */
   onNewRow?: (currentRowIndex: number) => void;
-  /** ⌘/Ctrl+D — 줄 복제. */
+  /** Ctrl+D — 줄 복제. */
   onDuplicateRow?: (rowIndex: number) => void;
   /** Alt+↑/↓ — 줄 이동. */
   onMoveRow?: (rowIndex: number, direction: "up" | "down") => void;
-  /** ⌘/Ctrl+S — 일괄 저장. */
+  /** Ctrl+S — 일괄 저장. */
   onSave?: () => void;
 };
 
@@ -89,7 +90,6 @@ export function useGridKeyboard({
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLElement>, pos: GridPosition) {
     const editing = isEditing(pos);
-    const meta = event.metaKey || event.ctrlKey;
 
     // 줄 이동은 방향키보다 먼저 판정한다(Alt+↑/↓가 일반 방향키 이동과 겹친다).
     if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
@@ -98,19 +98,15 @@ export function useGridKeyboard({
       return;
     }
 
-    if (meta && (event.key === "Enter" || event.key === "NumpadEnter")) {
+    // D-94 · 엔지 리뷰 C §1 P1 — 앱이 쓰는 세 조합은 Ctrl 전용이고 판정은
+    // isCtrlCombo 하나다(자동 반복·한글 조합 중이면 거짓 — 무시). 무시할 때도
+    // 브라우저 기본 동작(페이지 저장 창 등)은 막는다. 편집 중 Ctrl+C·V·A는
+    // 여기 걸리지 않아 입력의 기본 동작 그대로다.
+    if (event.ctrlKey && ["enter", "d", "s"].includes(event.key.toLowerCase())) {
       event.preventDefault();
-      handlers.onNewRow?.(pos.row);
-      return;
-    }
-    if (meta && (event.key === "d" || event.key === "D")) {
-      event.preventDefault();
-      handlers.onDuplicateRow?.(pos.row);
-      return;
-    }
-    if (meta && (event.key === "s" || event.key === "S")) {
-      event.preventDefault();
-      handlers.onSave?.();
+      if (isCtrlCombo(event, "Enter")) handlers.onNewRow?.(pos.row);
+      else if (isCtrlCombo(event, "d")) handlers.onDuplicateRow?.(pos.row);
+      else if (isCtrlCombo(event, "s")) handlers.onSave?.();
       return;
     }
 

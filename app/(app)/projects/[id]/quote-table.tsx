@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useMemo, useRef, useState } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { saveProjectLedgerAction } from "../actions";
 import { PageHeader } from "@/ui/page-header/PageHeader";
@@ -50,6 +50,18 @@ type DraftLine = {
   /** 04-04 — 붙여넣기/저장이 남긴 셀별 오류(§7-3 (나)(다)). 키는 열 key. */
   cellErrors: Record<string, string>;
 };
+
+// 04-28(C-07 ② · DR-31) — 견적 표 힌트 줄. 지금 실제로 되는 키만 적는다 —
+// Tab 편집 이동·Ctrl+C 복사는 04-19가 배선하며 여기 더한다. 저장은 1차 버튼
+// kbd가 말하므로 적지 않는다.
+const QUOTE_HINT_ITEMS: { label: string; keys: string }[] = [
+  { label: "이동", keys: "↑↓←→" },
+  { label: "붙여넣기", keys: "Ctrl+V" },
+  { label: "취소", keys: "Esc" },
+  { label: "새 줄", keys: "Ctrl+Enter" },
+  { label: "줄 이동", keys: "Alt+↑↓" },
+  { label: "줄 복제", keys: "Ctrl+D" },
+];
 
 const LINE_STATUS_LABELS: Record<string, string> = {
   not_started: "미착수",
@@ -314,7 +326,7 @@ function UnitPriceEditCell({
 }
 
 // SYSTEM.md §6-2 + §7-3 보강 (가)~(아) — 견적 원장 + 매출 섹션. 화면의 1차
-// 「일괄 저장 ⌘S N」 하나가 견적 줄 표 + 매출 섹션의 dirty 전부를 한
+// 「일괄 저장 Ctrl+S N」 하나가 견적 줄 표 + 매출 섹션의 dirty 전부를 한
 // 트랜잭션으로 저장한다(§7-3 (사), §7-15). 04-04부터 표는 클릭/Enter로
 // 편집에 들어가는 진짜 grid 계약을 따른다(로빙 tabIndex · 방향키 · Esc ·
 // Delete · 붙여넣기 · 셀 오류·충돌 고정 렌더) — 04-01/04-02의 always-on
@@ -367,8 +379,17 @@ export function QuoteLedger({
 
   const dirtyStorage = useDirtyStorage(projectId, revisionId, 0);
 
+  // 엔지 리뷰 C §1 P1 — 저장 래치. 같은 틱에 두 번 들어오는 저장(Ctrl+S
+  // 연타)은 isExecuting이 아직 거짓인 렌더에서 처리되므로 동기 래치로 막는다.
+  // 액션의 성공·실패 콜백에서 내린다.
+  const savingRef = useRef(false);
+
   const { execute, result, isExecuting } = useAction(saveProjectLedgerAction, {
+    onError: () => {
+      savingRef.current = false;
+    },
     onSuccess: ({ data }) => {
+      savingRef.current = false;
       if (data?.quoteLines?.lines) setLines(data.quoteLines.lines.map(fromDto));
       if (data?.revenue) {
         setContractDraft(contractFromDto(data.revenue));
@@ -512,7 +533,9 @@ export function QuoteLedger({
   }
 
   function handleSave() {
+    if (savingRef.current || isExecuting) return; // 버튼·키보드 두 경로가 여기서 한 번만 보낸다.
     if (errorCellCount > 0) return; // §7-3 "오류가 한 칸이라도 있으면 화면 전체가 거부" — 서버에 보내지 않는다.
+    savingRef.current = true;
 
     const dirtyLines = lines.filter((line) => line.dirty);
     const dirtyIssued = (issuedEntries ?? []).filter((entry) => entry.dirty);
@@ -903,7 +926,7 @@ export function QuoteLedger({
               pending={isExecuting}
               disabled={dirtyCount === 0 || errorCellCount > 0}
               disabledReason={errorCellCount > 0 ? `오류 ${errorCellCount}칸 · 고쳐야 저장됩니다` : saveDisabledReason}
-              shortcut="⌘S"
+              shortcut="Ctrl+S"
               onClick={handleSave}
             >
               일괄 저장{dirtyCount > 0 ? ` ${dirtyCount}` : ""}
@@ -933,7 +956,7 @@ export function QuoteLedger({
         getRowId={(row) => row.clientKey}
         groupBy={(row) => subcategoryLabel(row.subcategory)}
         emptyMessage="이 프로젝트에 견적 줄이 없습니다"
-        emptyAction={editable ? { label: "첫 줄 만들기 ⌘↵", onClick: () => addLine() } : undefined}
+        emptyAction={editable ? { label: "첫 줄 만들기", shortcut: "Ctrl+Enter", onClick: () => addLine() } : undefined}
         enableGridKeyboard
         keyboard={{
           onDeleteRow: (row) => setDeleteConfirm({ clientKey: row.clientKey, itemName: row.itemName, quoteAmountKrw: row.quoteAmountKrw }),
@@ -958,10 +981,15 @@ export function QuoteLedger({
         }
       />
 
-      {/* SYSTEM.md §7-9 — 편집용 표가 있는 화면 하단 힌트 줄, 정확히 7개, 폰에서 숨는다. */}
+      {/* SYSTEM.md §7-9 개정 ⑬ — 견적 표 아래 힌트 줄(라벨 kbd 묶음), 폰에서 숨는다. */}
       {editable ? (
         <p className={styles.hintRow}>
-          이동 Tab ↑↓←→ · 범위 복사 ⌘C / 붙여넣기 ⌘V · 취소 Esc · 새 줄 ⌘↵ · 줄 이동 Alt↑↓ · 줄 복제 ⌘D · 저장 ⌘S
+          {QUOTE_HINT_ITEMS.map((item, index) => (
+            <Fragment key={item.label}>
+              {index > 0 ? " · " : ""}
+              {item.label} <kbd>{item.keys}</kbd>
+            </Fragment>
+          ))}
         </p>
       ) : null}
 

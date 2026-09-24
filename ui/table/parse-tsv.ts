@@ -111,7 +111,7 @@ function escapeField(field: string): string {
 }
 
 /**
- * 2차원 배열을 TSV 텍스트로 되돌린다(⌘C 범위 복사가 클립보드에 쓰는 형식
+ * 2차원 배열을 TSV 텍스트로 되돌린다(Ctrl+C 범위 복사가 클립보드에 쓰는 형식
  * — D-70·PROJ-05: 다른 프로젝트의 표에 그대로 붙는다).
  */
 export function toTsv(rows: string[][]): string {

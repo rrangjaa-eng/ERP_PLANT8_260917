@@ -170,6 +170,17 @@
   cursor: pointer;
 }
 
+/* 04-28 — EMPTY 3차 라벨 오른쪽 kbd(Button .kbd와 같은 토큰) */
+.emptyActionKbd {
+  margin-left: var(--s-1);
+  border: var(--line-w) solid var(--line);
+  color: var(--faint);
+  padding: 0 var(--s-1);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-head);
+}
+
 /* §7-3 폰 전략 — P1만 열로 남고 P2는 행 아래 접힌 줄, P3은 숨는다. 가로
    스크롤을 만들지 않는다(S11). */
 @media (max-width: 699.98px) {

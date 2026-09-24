@@ -28,12 +28,14 @@ export async function saveProjectLedger(
   projectId: string,
   input: SaveProjectLedgerInput,
 ): Promise<SaveProjectLedgerResult> {
-  // ENG-D11(04-32 실측): 트랜잭션을 열기 전(findProject·findQuoteRevisionById)과
-  // 연 뒤(listRevenue)의 읽기도 풀 db로 돈다 — withTransaction과 같은 시간
-  // 초과 판정·UserFacing 변환을 이 함수 전체에 씌워, 경합 중 어느 지점에서
-  // 실패해도 원시 pg-pool 오류가 아니라 같은 문구로 끝나게 한다
-  // (tx-safety.test.ts (c) — 04-02가 만든 이 파일의 결함, 04-32가 고침).
-  return withTimeoutConversion(async () => {
+  // ENG-D11(04-32 실측): 트랜잭션을 열기 전(findProject·findQuoteRevisionById)의
+  // 읽기도 풀 db로 돈다 — withTransaction과 같은 시간 초과 판정·UserFacing
+  // 변환을 커밋까지 씌워, 경합 중 저장 전에 실패하면 원시 pg-pool 오류가
+  // 아니라 같은 문구로 끝나게 한다(tx-safety.test.ts (c) — 04-02가 만든 이
+  // 파일의 결함, 04-32가 고침). 커밋 뒤 단계(감사 기록·스냅샷)는 씌우지
+  // 않는다 — 이미 저장됐는데 「다시 저장」을 시키면 새 줄이 두 번 들어간다
+  // (tx-safety.test.ts (d)).
+  const { quoteLinesResult, pendingActions } = await withTimeoutConversion(async () => {
     // 볼 수 없는 프로젝트(보기 권한·범위 밖, 권한 없는 보관 프로젝트)에는
     // 쓰지 않는다 — 조회 화면과 같은 findProject로 판정한다(/cso 14b1ae15).
     if (!(await findProject(viewer, projectId))) {
@@ -66,12 +68,13 @@ export async function saveProjectLedger(
       if (input.revenue) await saveRevenue(viewer, projectId, input.revenue, deferRecord, tx);
       return { quoteLinesResult };
     });
-    for (const entry of pendingActions) await recordAction(viewer, entry);
-
-    // 트랜잭션 커밋 뒤 스냅샷을 새로 읽는다 — saveRevenue가 tx 안에서 커밋
-    // 전 listRevenue를 부르면 자기 자신의 쓰기를 보지 못한다(격리).
-    const revenueResult = input.revenue ? await listRevenue(viewer, projectId) : null;
-
-    return { quoteLines: quoteLinesResult, revenue: revenueResult };
+    return { quoteLinesResult, pendingActions };
   });
+  for (const entry of pendingActions) await recordAction(viewer, entry);
+
+  // 트랜잭션 커밋 뒤 스냅샷을 새로 읽는다 — saveRevenue가 tx 안에서 커밋
+  // 전 listRevenue를 부르면 자기 자신의 쓰기를 보지 못한다(격리).
+  const revenueResult = input.revenue ? await listRevenue(viewer, projectId) : null;
+
+  return { quoteLines: quoteLinesResult, revenue: revenueResult };
 }

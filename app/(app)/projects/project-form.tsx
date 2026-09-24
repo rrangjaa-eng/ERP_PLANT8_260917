@@ -119,6 +119,15 @@ export function ProjectForm({
       if (event.defaultPrevented || event.nativeEvent.isComposing || isExecuting) return;
       const initial = initialValuesRef.current;
       if (!initial) return;
+      // 04-46 편차(Rule 1 — ENG-D11) — 이 브라우저 기본 동작(Escape가 열린
+      // 최상위 모달을 닫는다)을 막아 둔다. 막지 않으면 이 Escape 한 번이
+      // 폼 처리(아래 setDiscardOpen(true))로 ConfirmDialog를 연 직후, 같은
+      // keydown의 브라우저 기본 처리가 방금 연 다이얼로그를 즉시 다시
+      // 닫아버린다(showModal()이 React의 동기 discrete-event 플러시 안에서
+      // 실행돼 같은 이벤트 턴에 dialog가 이미 open 상태가 되기 때문 —
+      // 실측: ConfirmDialog effect가 open:true 뒤 바로 open:false로
+      // 두 번 연달아 불렸다). Ctrl+Enter 갈래는 이미 이 줄이 있다.
+      event.preventDefault();
       const current = snapshotFormValues(new FormData(event.currentTarget));
       if (isFormPristine(initial, current)) {
         router.push(cancelHref);

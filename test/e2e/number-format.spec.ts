@@ -348,4 +348,41 @@ test.describe("숫자 서식(D-95, 04-09)", () => {
     await expect(page.locator("tbody tr").nth(1)).toBeVisible();
     await expect(dataRow.getByRole("gridcell").nth(5)).toHaveText("1,000,000");
   });
+
+  // 리뷰 후속 — 환율 칸을 지우고 '-' 하나만 남기면 parseNumberInput이
+  // NaN을 돌려준다. `?? initialFxRate`는 null만 대체하고 NaN은 그대로
+  // 통과시켜 커밋 값이 NaN이 됐다(F3와 같은 결의 결함, C-02 정신을
+  // 어긴다) — JSON.stringify가 NaN을 null로 바꿔 화면엔 환율 자리가
+  // "—"로 보인다. 환율은 이전 값으로 남아야 한다.
+  test("(g) 단가 환율 칸을 지우고 '-'만 남기면 이전 환율로 남는다(빈 값이 아니다)", async ({ page }) => {
+    await loginAndOpenProject(page);
+
+    await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
+    const dataRow = page.locator("tbody tr").nth(1);
+    const gridcell = (index: number) => dataRow.getByRole("gridcell").nth(index);
+
+    await gridcell(2).focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("환율 하이픈 확인용 항목");
+    await page.keyboard.press("Enter");
+
+    await gridcell(5).focus();
+    await page.keyboard.press("Enter");
+    await page.getByLabel("단가 통화").selectOption("USD");
+
+    const amountInput = page.getByLabel("단가", { exact: true });
+    await amountInput.click();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("4400");
+
+    const fxRateInput = page.getByLabel("단가 환율");
+    const initialFxRateText = await fxRateInput.inputValue();
+    await fxRateInput.click();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.press("Delete");
+    await page.keyboard.type("-");
+    await fxRateInput.press("Enter");
+
+    await expect(page.getByText(`USD 4,400.00 @${initialFxRateText}`)).toBeVisible();
+  });
 });

@@ -4,7 +4,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { isCtrlCombo } from "@/lib/shortcut";
 import styles from "./Table.module.css";
 import type { CellEditability, CellIssue, TableColumn } from "./types";
-import { useGridKeyboard, type GridPosition } from "./use-grid-keyboard";
+import { conflictFocusTransition, useGridKeyboard, type ConflictFocusState, type GridPosition } from "./use-grid-keyboard";
 
 // SYSTEM.md §7-3 + 보강 (가)~(아) — 편집/읽기 겸용 표. **렌더 형태는 서버가
 // 보낸 셀 편집 가능성에서 파생된다 — 모드를 켜고 끄는 prop이 없다**(가).
@@ -189,6 +189,30 @@ export function Table<Row>({
     tableRef.current?.querySelector<HTMLElement>("td[data-grid-focus]")?.focus();
   }, [activeCell]);
 
+  // 04-28(DR-25) — 충돌 셀(3차 버튼 둘) 안의 키. 처리했으면 true, 격자 기본
+  // 처리에 맡길 키면 false. 버튼은 tabindex=-1이라 격자의 탭 정지는 1개 그대로다.
+  function handleConflictKey(event: React.KeyboardEvent<HTMLTableCellElement>, issue: CellIssue | undefined): boolean {
+    const actions = issue?.kind === "conflict" ? issue.actions : undefined;
+    if (!actions || actions.length !== 2 || event.ctrlKey || event.altKey) return false;
+    const cell = event.currentTarget;
+    const buttons = Array.from(cell.querySelectorAll<HTMLButtonElement>("button[data-issue-action]"));
+    const buttonIndex = buttons.indexOf(event.target as HTMLButtonElement);
+    let state: ConflictFocusState;
+    if (buttonIndex !== -1) state = { at: "action", index: buttonIndex };
+    else if (event.target === cell) state = { at: "cell" };
+    else return false;
+    const next = conflictFocusTransition(state, event.key);
+    if (!next) return false;
+    event.preventDefault();
+    if (next.at === "action") {
+      buttons[next.index]?.focus();
+    } else {
+      if (next.pressed !== undefined) actions[next.pressed]?.onClick();
+      cell.focus();
+    }
+    return true;
+  }
+
   if (rows.length === 0) {
     return (
       <table className={styles.table}>
@@ -352,7 +376,10 @@ export function Table<Row>({
                         }}
                         onKeyDown={
                           enableGridKeyboard
-                            ? (event) => keyboardState.handleKeyDown(event, pos)
+                            ? (event) => {
+                                if (handleConflictKey(event, issue)) return;
+                                keyboardState.handleKeyDown(event, pos);
+                              }
                             : (event) => {
                                 if ((event.key === "Enter" || event.key === " ") && isEditableColumn && column.editCell) {
                                   event.preventDefault();
@@ -365,10 +392,25 @@ export function Table<Row>({
                         {issue ? (
                           <p id={issueId} className={styles.issueReason}>
                             {issue.message}
-                            {issue.actions?.map((action) => (
-                              <button key={action.label} type="button" className={styles.issueAction} onClick={action.onClick}>
-                                {action.label}
-                              </button>
+                            {issue.actions?.map((action, index) => (
+                              <Fragment key={action.label}>
+                                {index === 0 ? " · " : " / "}
+                                <button
+                                  type="button"
+                                  tabIndex={-1}
+                                  data-issue-action=""
+                                  className={styles.issueAction}
+                                  onClick={(event) => {
+                                    // 셀 클릭(편집 진입)으로 번지지 않게 하고, 누른 뒤 포커스는 그 셀로.
+                                    event.stopPropagation();
+                                    const cell = event.currentTarget.closest("td");
+                                    action.onClick();
+                                    cell?.focus();
+                                  }}
+                                >
+                                  {action.label}
+                                </button>
+                              </Fragment>
                             ))}
                           </p>
                         ) : null}

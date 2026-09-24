@@ -275,6 +275,9 @@ export type CellConflict = {
   label: string;
   reason: string;
   theirValue: string;
+  /** 04-28 거부 봉투 — 서버 현재 원값(표시 글자 theirValue와 별개)과 그 줄의 서버 현재 version. */
+  theirRaw: string | number | null;
+  theirVersion: number;
 };
 
 export type CellFormatError = {
@@ -292,6 +295,8 @@ export type CellFormatError = {
 export class SaveRejectedError extends UserFacingError {
   readonly conflicts: CellConflict[];
   readonly formatErrors: CellFormatError[];
+  /** 04-28 — 합계 행 요약(`충돌 N줄 · 전부 거부` / `오류 N칸 · 전부 거부`). */
+  readonly summary: string;
 
   constructor(conflicts: CellConflict[], formatErrors: CellFormatError[]) {
     const summaryParts: string[] = [];
@@ -302,8 +307,10 @@ export class SaveRejectedError extends UserFacingError {
     if (formatErrors.length > 0) {
       summaryParts.push(`오류 ${formatErrors.length}칸 · 전부 거부`);
     }
+    const summary = summaryParts.join(" · ");
     const detail = [...conflicts, ...formatErrors].map((issue) => `[${issue.label}] ${issue.reason}`).join(" · ");
-    super(`${summaryParts.join(" · ")}${detail ? " · " + detail : ""}`);
+    super(`${summary}${detail ? " · " + detail : ""}`);
+    this.summary = summary;
     this.conflicts = conflicts;
     this.formatErrors = formatErrors;
   }
@@ -448,6 +455,8 @@ export async function saveQuoteLines(
         label: FIELD_LABELS.itemName,
         reason: "다른 사람이 이 줄을 바꿨습니다 · 덮어쓰기 / 그 값으로",
         theirValue: current.itemName,
+        theirRaw: current.itemName,
+        theirVersion: current.version,
       });
       return;
     }
@@ -470,6 +479,8 @@ export async function saveQuoteLines(
         label: FIELD_LABELS[field],
         reason: `다른 사람이 ${changedAt}에 ${theirValue}으로 바꿈 · 덮어쓰기 / 그 값으로`,
         theirValue,
+        theirRaw: currentValue,
+        theirVersion: current.version,
       });
     }
   });
@@ -529,6 +540,11 @@ export async function saveQuoteLines(
                 label: FIELD_LABELS.itemName,
                 reason: "다른 사람이 방금 이 줄을 바꿨습니다 · 덮어쓰기 / 그 값으로",
                 theirValue: "",
+                // 04-28 — 경합 시점엔 서버 현재 값을 모른다. 기준을 올리지 않는
+                // 값(내 값·내 version)을 실어, 해소 뒤 다음 저장이 사전 판정에서
+                // 실제 칸 단위 충돌로 다시 거부되게 한다.
+                theirRaw: input.itemName,
+                theirVersion: input.version!,
               },
             ],
             [],

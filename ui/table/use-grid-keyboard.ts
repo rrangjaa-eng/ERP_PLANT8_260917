@@ -49,6 +49,36 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+// 04-28(DR-25) — 충돌 셀 키보드. 셀에서 Enter → 셀 안 두 3차 버튼 중 첫째
+// (「덮어쓰기」), 버튼 위 ←/→는 둘 사이(끝에서 멈춤), Enter/Space는 그 버튼을
+// 누르고 셀로, Esc는 누르지 않고 셀로. 버튼 위 ↑/↓는 격자 이동 없이 그대로.
+// null이면 격자 기본 처리에 맡긴다. 04-19가 포커스를 { rowId, colKey }로 바꿀 때
+// 이 전이를 그대로 옮긴다.
+export type ConflictFocusState = { at: "cell" } | { at: "action"; index: number };
+export type ConflictFocusResult = { at: "cell"; pressed?: number } | { at: "action"; index: number };
+
+const CONFLICT_ACTION_COUNT = 2;
+
+export function conflictFocusTransition(state: ConflictFocusState, key: string): ConflictFocusResult | null {
+  if (state.at === "cell") return key === "Enter" ? { at: "action", index: 0 } : null;
+  switch (key) {
+    case "ArrowRight":
+      return { at: "action", index: Math.min(state.index + 1, CONFLICT_ACTION_COUNT - 1) };
+    case "ArrowLeft":
+      return { at: "action", index: Math.max(state.index - 1, 0) };
+    case "ArrowUp":
+    case "ArrowDown":
+      return { at: "action", index: state.index };
+    case "Escape":
+      return { at: "cell" };
+    case "Enter":
+    case " ":
+      return { at: "cell", pressed: state.index };
+    default:
+      return null;
+  }
+}
+
 export function useGridKeyboard({
   rowCount,
   colCount,

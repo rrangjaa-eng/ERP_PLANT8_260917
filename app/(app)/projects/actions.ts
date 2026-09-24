@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
 import { createProject } from "@/domain/projects";
 import { saveProjectLedger } from "@/domain/projects/ledger";
+import { SaveRejectedError } from "@/domain/quotes/lines";
 import "./actions.registry";
 
 // PROJ-01·PROJ-02: domain/projects·domain/quotes/lines만 부른다. 등록은
@@ -106,10 +107,41 @@ export const saveProjectLedgerAction = authedActionClient
     }),
   )
   .action(async ({ parsedInput, ctx }) => {
-    const result = await saveProjectLedger(ctx.viewer, parsedInput.projectId, {
-      quoteLines: parsedInput.quoteLines,
-      revenue: parsedInput.revenue,
-    });
+    let result: Awaited<ReturnType<typeof saveProjectLedger>>;
+    try {
+      result = await saveProjectLedger(ctx.viewer, parsedInput.projectId, {
+        quoteLines: parsedInput.quoteLines,
+        revenue: parsedInput.revenue,
+      });
+    } catch (error) {
+      // 04-28 거부 봉투 — SaveRejectedError만 칸 좌표로 돌려준다(도메인이 쓰기 전에
+      // 던지고 트랜잭션은 이미 되돌렸다 — 커밋 뒤에는 생기지 않는다). 칸은 이 사람이
+      // 이번 요청에 실어 보낸 줄의 편집 칸에서만 생겨(편집·금액 권한 판정 뒤) 새로
+      // 드러나는 정보가 없다. 그 밖의 오류는 지금처럼 던져 serverError가 된다.
+      if (!(error instanceof SaveRejectedError)) throw error;
+      return {
+        rejected: {
+          summary: error.summary,
+          cells: [
+            ...error.conflicts.map((conflict) => ({
+              rowId: conflict.rowId,
+              field: conflict.field,
+              kind: "conflict" as const,
+              reason: conflict.reason,
+              theirRaw: conflict.theirRaw,
+              theirVersion: conflict.theirVersion,
+            })),
+            ...error.formatErrors.map((formatError) => ({
+              rowId: formatError.rowId,
+              rowIndex: formatError.rowIndex,
+              field: formatError.field,
+              kind: "error" as const,
+              reason: formatError.reason,
+            })),
+          ],
+        },
+      };
+    }
     revalidatePath("/projects");
     return result;
   });

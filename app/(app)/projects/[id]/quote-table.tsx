@@ -49,7 +49,29 @@ type DraftLine = {
   baseline: QuoteLineBaseline;
   /** 04-04 — 붙여넣기/저장이 남긴 셀별 오류(§7-3 (나)(다)). 키는 열 key. */
   cellErrors: Record<string, string>;
+  /** 04-28 — 저장 거부 봉투의 충돌 칸(§7-3 (나), D-65). 키는 열 key. */
+  cellConflicts: Record<string, CellConflictDraft>;
 };
+
+type CellConflictDraft = { field: string; reason: string; theirRaw: string | number | null; theirVersion: number };
+
+// 04-28 거부 봉투 — 도메인 필드 → 표 열 key 대응 한 표(충돌은 CompareField,
+// 형식 오류는 입력 필드 이름으로 온다).
+const FIELD_TO_COLUMN: Record<string, string> = {
+  subcategory: "subcategory",
+  itemName: "itemName",
+  vendorId: "vendor",
+  quantity: "quantity",
+  unitPriceAmountKrw: "unitPrice",
+  unitPrice: "unitPrice",
+  executionAmountKrw: "execution",
+  execution: "execution",
+  lineStatus: "status",
+  note: "note",
+};
+
+// 충돌 이유 문자열 끝의 행동 글자 — 셀에서는 이 둘이 3차 버튼으로 그려진다.
+const CONFLICT_ACTIONS_SUFFIX = " · 덮어쓰기 / 그 값으로";
 
 // 04-28(C-07 ② · DR-31) — 견적 표 힌트 줄. 지금 실제로 되는 키만 적는다 —
 // Tab 편집 이동·Ctrl+C 복사는 04-19가 배선하며 여기 더한다. 저장은 1차 버튼
@@ -67,6 +89,55 @@ const LINE_STATUS_LABELS: Record<string, string> = {
   not_started: "미착수",
   cancelled: "취소",
 };
+
+// 04-28 — 서버 현재 원값을 그 칸의 baseline과(「그 값으로」일 때) 줄 값으로.
+// 금액은 원화 원값이다.
+function theirValuePatch(
+  current: QuoteLineBaseline,
+  field: string,
+  raw: string | number | null,
+): { baseline: QuoteLineBaseline; value: Partial<DraftLine> } {
+  const text = raw === null ? null : String(raw);
+  switch (field) {
+    case "subcategory":
+      return { baseline: { ...current, subcategory: text ?? "" }, value: { subcategory: text ?? "" } };
+    case "itemName":
+      return { baseline: { ...current, itemName: text ?? "" }, value: { itemName: text ?? "" } };
+    case "vendorId":
+      return { baseline: { ...current, vendorId: text }, value: { vendorId: text } };
+    case "quantity":
+      return { baseline: { ...current, quantity: Number(raw) }, value: { quantity: Number(raw) } };
+    case "unitPriceAmountKrw": {
+      const amount = Number(raw);
+      return {
+        baseline: { ...current, unitPriceAmountKrw: amount },
+        value: { unitPriceAmount: amount, unitPriceCurrency: "KRW", unitPriceFxRate: 1, unitPriceAmountKrw: amount },
+      };
+    }
+    case "executionAmountKrw":
+      return { baseline: { ...current, executionAmountKrw: Number(raw) }, value: { executionAmount: Number(raw) } };
+    case "lineStatus":
+      return { baseline: { ...current, lineStatus: text ?? "" }, value: { lineStatus: text ?? "" } };
+    case "note":
+      return { baseline: { ...current, note: text }, value: { note: text } };
+    default:
+      return { baseline: current, value: {} };
+  }
+}
+
+function lineDiffersFromBaseline(line: DraftLine): boolean {
+  const base = line.baseline;
+  return (
+    line.subcategory !== base.subcategory ||
+    line.itemName !== base.itemName ||
+    line.vendorId !== base.vendorId ||
+    line.quantity !== base.quantity ||
+    line.unitPriceAmountKrw !== base.unitPriceAmountKrw ||
+    line.executionAmount !== base.executionAmountKrw ||
+    line.lineStatus !== base.lineStatus ||
+    line.note !== base.note
+  );
+}
 
 function baselineFromDto(dto: QuoteLineDto): QuoteLineBaseline {
   return {
@@ -103,6 +174,7 @@ function fromDto(dto: QuoteLineDto): DraftLine {
     dirty: false,
     baseline: baselineFromDto(dto),
     cellErrors: {},
+    cellConflicts: {},
   };
 }
 
@@ -137,6 +209,7 @@ function newDraftLine(defaultSubcategory: string): DraftLine {
       note: null,
     },
     cellErrors: {},
+    cellConflicts: {},
   };
 }
 
@@ -383,6 +456,8 @@ export function QuoteLedger({
   // 연타)은 isExecuting이 아직 거짓인 렌더에서 처리되므로 동기 래치로 막는다.
   // 액션의 성공·실패 콜백에서 내린다.
   const savingRef = useRef(false);
+  // 04-28 — 저장 요청에 실어 보낸 줄(clientKey) 순서 스냅숏. 봉투의 rowIndex가 이 순서다.
+  const sentLineKeysRef = useRef<string[]>([]);
 
   const { execute, result, isExecuting } = useAction(saveProjectLedgerAction, {
     onError: () => {
@@ -390,6 +465,10 @@ export function QuoteLedger({
     },
     onSuccess: ({ data }) => {
       savingRef.current = false;
+      if (data && "rejected" in data) {
+        applyRejectedCells(data.rejected.cells);
+        return; // 전부 거부 — 줄 교체·저장됨·보관본 지우기를 하지 않는다.
+      }
       if (data?.quoteLines?.lines) setLines(data.quoteLines.lines.map(fromDto));
       if (data?.revenue) {
         setContractDraft(contractFromDto(data.revenue));
@@ -408,7 +487,11 @@ export function QuoteLedger({
   const paidDirtyCount = (paidEntries ?? []).filter((entry) => entry.dirty).length;
   const contractDirtyCount = contractDraft.dirty ? 1 : 0;
   const dirtyCount = quoteLinesDirtyCount + issuedDirtyCount + paidDirtyCount + contractDirtyCount;
-  const errorCellCount = lines.reduce((sum, line) => sum + Object.keys(line.cellErrors).length, 0);
+  // 해소되지 않은 충돌 칸도 함께 센다 — 충돌이 남은 채 서버를 부르지 않는다.
+  const errorCellCount = lines.reduce(
+    (sum, line) => sum + Object.keys(line.cellErrors).length + Object.keys(line.cellConflicts).length,
+    0,
+  );
 
   function updateLine(clientKey: string, patch: Partial<DraftLine>) {
     setLines((prev) => prev.map((line) => (line.clientKey === clientKey ? { ...line, ...patch, dirty: true } : line)));
@@ -420,10 +503,12 @@ export function QuoteLedger({
   function clearCellError(clientKey: string, columnKey: string) {
     setLines((prev) =>
       prev.map((line) => {
-        if (line.clientKey !== clientKey || !(columnKey in line.cellErrors)) return line;
+        if (line.clientKey !== clientKey || !(columnKey in line.cellErrors || columnKey in line.cellConflicts)) return line;
         const cellErrors = { ...line.cellErrors };
         delete cellErrors[columnKey];
-        return { ...line, cellErrors };
+        const cellConflicts = { ...line.cellConflicts };
+        delete cellConflicts[columnKey];
+        return { ...line, cellErrors, cellConflicts };
       }),
     );
   }
@@ -538,6 +623,7 @@ export function QuoteLedger({
     savingRef.current = true;
 
     const dirtyLines = lines.filter((line) => line.dirty);
+    sentLineKeysRef.current = dirtyLines.map((line) => line.clientKey);
     const dirtyIssued = (issuedEntries ?? []).filter((entry) => entry.dirty);
     const dirtyPaid = (paidEntries ?? []).filter((entry) => entry.dirty);
 
@@ -836,9 +922,11 @@ export function QuoteLedger({
         const target = next[cell.rowIndex];
         if (!target) continue;
         const cellErrors = { ...target.cellErrors };
+        const cellConflicts = { ...target.cellConflicts };
+        delete cellConflicts[cell.columnKey];
         if (cell.result.status === "error") {
           cellErrors[cell.columnKey] = cell.result.reason;
-          next[cell.rowIndex] = { ...target, cellErrors, dirty: true };
+          next[cell.rowIndex] = { ...target, cellErrors, cellConflicts, dirty: true };
           continue;
         }
         delete cellErrors[cell.columnKey];
@@ -875,7 +963,7 @@ export function QuoteLedger({
           default:
             break;
         }
-        next[cell.rowIndex] = { ...target, ...patch, cellErrors, dirty: true };
+        next[cell.rowIndex] = { ...target, ...patch, cellErrors, cellConflicts, dirty: true };
       }
       return next;
     });
@@ -887,10 +975,73 @@ export function QuoteLedger({
     }
   }
 
+  // 04-28 — 거부 봉투의 칸을 줄·열에 붙인다. 줄은 rowId가 있으면 그 id,
+  // 없으면(새 줄) 보낸 줄 스냅숏의 rowIndex로 찾는다.
+  function applyRejectedCells(
+    cells: { rowId?: string; rowIndex?: number; field: string; kind: "conflict" | "error"; reason: string; theirRaw?: string | number | null; theirVersion?: number }[],
+  ) {
+    const sentKeys = sentLineKeysRef.current;
+    setLines((prev) =>
+      prev.map((line) => {
+        const mine = cells.filter((cell) =>
+          cell.rowId ? cell.rowId === line.id : cell.rowIndex !== undefined && sentKeys[cell.rowIndex] === line.clientKey,
+        );
+        if (mine.length === 0) return line;
+        const cellErrors = { ...line.cellErrors };
+        const cellConflicts = { ...line.cellConflicts };
+        for (const cell of mine) {
+          const column = FIELD_TO_COLUMN[cell.field];
+          if (!column) continue;
+          if (cell.kind === "conflict") {
+            cellConflicts[column] = {
+              field: cell.field,
+              reason: cell.reason,
+              theirRaw: cell.theirRaw ?? null,
+              theirVersion: cell.theirVersion ?? line.version ?? 0,
+            };
+          } else {
+            cellErrors[column] = cell.reason;
+          }
+        }
+        return { ...line, cellErrors, cellConflicts };
+      }),
+    );
+  }
+
+  // 04-28(D-65) — 「덮어쓰기」는 내 값을 남기고, 「그 값으로」는 그 칸을 서버
+  // 값으로 바꾼다. 둘 다 그 줄의 version과 그 칸의 baseline을 서버 현재로 올려
+  // 다음 저장이 그 칸에서 다시 충돌하지 않는다.
+  function resolveConflict(clientKey: string, columnKey: string, choice: "mine" | "theirs") {
+    setLines((prev) =>
+      prev.map((line) => {
+        const conflict = line.cellConflicts[columnKey];
+        if (line.clientKey !== clientKey || !conflict) return line;
+        const cellConflicts = { ...line.cellConflicts };
+        delete cellConflicts[columnKey];
+        const { baseline, value } = theirValuePatch(line.baseline, conflict.field, conflict.theirRaw);
+        const next: DraftLine = { ...line, version: conflict.theirVersion, baseline, cellConflicts };
+        if (choice === "mine") return next;
+        const taken = { ...next, ...value };
+        return { ...taken, dirty: lineDiffersFromBaseline(taken) || Object.keys(taken.cellErrors).length > 0 };
+      }),
+    );
+  }
+
   function cellIssueFor(row: DraftLine, columnKey: string): CellIssue | undefined {
     const message = row.cellErrors[columnKey];
-    if (!message) return undefined;
-    return { kind: "error", message };
+    if (message) return { kind: "error", message };
+    const conflict = row.cellConflicts[columnKey];
+    if (!conflict) return undefined;
+    return {
+      kind: "conflict",
+      message: conflict.reason.endsWith(CONFLICT_ACTIONS_SUFFIX)
+        ? conflict.reason.slice(0, -CONFLICT_ACTIONS_SUFFIX.length)
+        : conflict.reason,
+      actions: [
+        { label: "덮어쓰기", onClick: () => resolveConflict(row.clientKey, columnKey, "mine") },
+        { label: "그 값으로", onClick: () => resolveConflict(row.clientKey, columnKey, "theirs") },
+      ],
+    };
   }
 
   const saveDisabledReason = dirtyCount === 0 ? "바뀐 칸 없음 · 고칠 칸을 눌러 주세요" : undefined;
@@ -901,7 +1052,12 @@ export function QuoteLedger({
   // 그 경로에서 생기지 않는다 — 여기 남는 건 서버가 실제로 거부한 경우뿐이다.
   // F2 — next-safe-action의 validationErrors(예: 항목명 빈 값)는 serverError와
   // 달리 조용히 무시되고 있었다 — 같은 요약 자리에 일반 문구로 띄운다.
-  const rejectionSummary = result.serverError ?? (result.validationErrors ? "저장하지 못했습니다 · 입력값을 확인하세요" : undefined);
+  // 04-28 — 거부 봉투가 있으면 그 요약(`충돌 N줄 · 전부 거부` / `오류 N칸 · 전부 거부`).
+  const rejectedEnvelope = result.data && "rejected" in result.data ? result.data.rejected : undefined;
+  const rejectionSummary =
+    rejectedEnvelope?.summary ??
+    result.serverError ??
+    (result.validationErrors ? "저장하지 못했습니다 · 입력값을 확인하세요" : undefined);
   // F2 — 계약 금액(revenue.contract) 아래에 붙는 필드 오류만 <RevenueSection>에 넘긴다.
   const contractError = result.validationErrors?.revenue?.contract
     ? "저장하지 못했습니다 · 입력값을 확인하세요"

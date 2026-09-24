@@ -2,6 +2,7 @@ import { log } from "@/lib/log";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { toKstDate } from "@/domain/holidays/business-day";
 import { isBusinessDayKst } from "@/domain/holidays/calendar";
+import { ensureHolidayCandidates } from "@/domain/holidays/candidates";
 import { CONDITION_KINDS, type ConditionKind } from "@/domain/notify/condition-kinds";
 import { NOTIFY_TICK_BATCH_MAX } from "@/domain/settings/keys";
 import { getSettingValue } from "@/domain/settings/registry";
@@ -60,6 +61,16 @@ export async function runTick(deps?: Partial<TickDeps>): Promise<TickResult> {
   const max = await batchMax();
   // 잠금 트랜잭션을 열기 전에 판정한다 — 후보 생성이 tick 잠금 트랜잭션을 늘리지 않게.
   const businessDay = await isBusinessDay(today);
+  // 다음 해 후보도 미리 시도한다 — 실패(예: 음력 표 밖)는 경고만 남기고 tick은 계속한다.
+  const nextYear = Number(today.slice(0, 4)) + 1;
+  try {
+    await ensureHolidayCandidates(nextYear);
+  } catch (error) {
+    log.warn("holiday.candidates_failed", {
+      year: nextYear,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
 
   const locked = await withNotifyTickLock(
     SYSTEM_VIEWER,

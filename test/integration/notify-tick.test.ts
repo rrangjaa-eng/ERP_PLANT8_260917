@@ -530,6 +530,32 @@ describe("공휴일 tick (D-709)", () => {
     }
   });
 
+  it("다음 해(2036)가 음력 표 밖이어도 2035-10-10 tick은 끝까지 가고 holiday.candidates_failed 경고 1회 · 2026-10-07 tick 뒤 2027 행이 있다", async () => {
+    const warn = vi.spyOn(log, "warn");
+    try {
+      const result = await runTick({ conditionKinds: [createTestConditionKind([])], now: kst("2035-10-10") });
+      expect(result).toMatchObject({ status: "ok" });
+      const failed = warn.mock.calls.filter(([event]) => event === "holiday.candidates_failed");
+      expect(failed).toHaveLength(1);
+      expect(failed[0]?.[1]).toMatchObject({ year: 2036 });
+    } finally {
+      warn.mockRestore();
+    }
+    await runTick({ conditionKinds: [createTestConditionKind([])], now: kst(WED) });
+    const generations = await db.select({ year: holidayYearGenerations.year }).from(holidayYearGenerations);
+    expect(generations.map((row) => row.year)).toContain(2027);
+    expect((await holidayRowsOf(2027)).length).toBeGreaterThan(0);
+  });
+
+  it("공휴일(추석 연휴)에 기한이 된 발생은 09-24·09-25 tick에서 나가지 않고 09-28(월) tick에서 나간다", async () => {
+    const a = await createUser("holiday-due-a");
+    const kind = createTestConditionKind([occ(a, "T-1", "2026-09-24")]);
+    expect(await runTick({ conditionKinds: [kind], now: kst("2026-09-24") })).toMatchObject({ sent: 0 });
+    expect(await runTick({ conditionKinds: [kind], now: kst("2026-09-25") })).toMatchObject({ sent: 0 });
+    expect(await runTick({ conditionKinds: [kind], now: kst("2026-09-28") })).toMatchObject({ sent: 1 });
+    expect(await rowsFor(a)).toHaveLength(1);
+  });
+
   it("첫 tick 뒤 holiday_year_generations에 2026 행이 있다", async () => {
     await runTick({ conditionKinds: [createTestConditionKind([])], now: kst("2026-09-25") });
     const generations = await db.select({ year: holidayYearGenerations.year }).from(holidayYearGenerations);

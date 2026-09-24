@@ -61,7 +61,7 @@
 | EXP-06 | 결재 통과 안 한 지출결의는 지급 완료 불가, 지급 완료된 견적 줄은 잠김(이중 지급 방지) | `domain/rules/gate.ts`의 기존 게이트 패턴(`project.completed-lock` 선례) 재사용 — `payment.approval-required` 신규 등록. A-606(결재 상태값)이 전제 |
 | EXP-07 | 카드 사용은 견적 줄/견적 외 비용/팀 비용 중 하나 연결 필수, 이중 계산 서버 차단 | D-609 게이트(`card.dual-link-block`), Pitfall 3(서버 판정 필수) |
 | EXP-09 | 경영관리 지급 완료 처리, 실제 이체액(합계) 입력 → 공급가 역산, 차이 표시 | `domain/money.grossFromTotal()`(코드 예시 포함), D-604·D-605 |
-| EXP-10 | 온라인 구매 요청 흐름(문 가르기·신청/구매완료/취소, 결재 없음) | A-612(카운터 키), D-609 온라인구매 협력사 설정 키, `document_counters` 재사용 |
+| EXP-10 | 온라인 구매 요청 흐름(문 가르기·신청/구매완료/취소, 결재 없음) | A-612(카운터 키), 06-CONTEXT.md 14행(입력 §8, 온라인구매 협력사 설정 키), `document_counters` 재사용 |
 | EXP-13 | 선결제 표시·사유 필수, 14일 기한 초과는 독촉만(처리 안 막음) | `domain/settings/keys.ts` 신규 키(14일), 독촉 알림 자체는 Phase 7 |
 | EXP-16 | 경영관리의 법인카드 사용 대리 등록, PM 화면 "경영관리 등록" 표시 | A-611(신규 스키마), D-608 |
 | EVID-02 | 증빙 필수 규칙 on/off(기본 켬), 선결제·면제 예외 | `domain/rules/gate.ts` 신규 규칙, D-603 |
@@ -308,6 +308,7 @@ export function grossFromTotal(totalKrw: number, vatRate: number, unit: Rounding
 // Phase 6 domain/payments가 실제 이체액(totalKrw)을 받아 이 함수로 공급가를
 // 역산하고, 계산값(문서의 payable)과 차이가 있으면 D-605대로 사유를 필수로 받는다.
 ```
+**원천징수는 이 함수가 다루지 않는다:** `grossFromTotal(이체액, -세율, …)`은 원천징수 규칙의 보통 경우만 맞고, 면세 기준(`tax.ts:95-103`)·최소 징수액(`tax.ts:106-107`)이 원천징수를 0으로 만든 경우에는 틀린다. 원천징수 역산은 이 함수로 풀리지 않으며 계획으로 미룬다(06-UI-SPEC.md UA-619).
 
 ### 입금액 역산 시 "재계산 오차는 조정하지 않는다"는 계약을 그대로 따르는 예
 ```typescript

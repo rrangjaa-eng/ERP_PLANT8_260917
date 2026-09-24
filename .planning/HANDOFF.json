@@ -39,6 +39,6 @@
     { "decision": "eng review: 4 Codex blockers downgraded (monthly 0 display, reseed visibility, guard schema check, 07 journal restore)", "rationale": "verified against code/rules; see report", "phase": "04.1" }
   ],
   "uncommitted_files": [],
-  "next_action": "New session: /gsd-progress, confirm commit 9e13798 is on the working branch, then /gsd-plan-phase 04.1 revision applying docs/designs/plant8-erp-phase04.1-eng-review-260924.md directives 1-25, checker, Codex re-review until no blockers",
-  "context_notes": "Plan PR #60 on claude/phase-04.1-plan-1iqtwe; eng review on claude/phase-04.1-plan-1iqtwe-e92rcy as draft PR #64 (base = PR #60 branch). Session boundary after each gate review (D-01). Replies in Korean, times in KST. Also apply the old checker info: 04.1-01 provides (~L148) and T-04.1-05 (~L511) should mention snapshot-exists and no-orphan guard conditions."
+  "next_action": "New session: /gsd-progress, confirm commit 9e13798 is on the PR #60 branch, then /gsd-plan-phase 04.1 revision applying docs/designs/plant8-erp-phase04.1-eng-review-260924.md directives 1-25, checker, Codex re-review until no blockers",
+  "context_notes": "Plan PR #60 on claude/phase-04.1-plan-1iqtwe now contains the eng review commits (fast-forwarded); PR #64 closed as empty. Session boundary after each gate review (D-01). Replies in Korean, times in KST. Also apply the old checker info: 04.1-01 provides (~L148) and T-04.1-05 (~L511) should mention snapshot-exists and no-orphan guard conditions."
 }

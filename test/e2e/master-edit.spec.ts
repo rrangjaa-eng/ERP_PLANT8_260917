@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
-import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 
 // 재검증(2026-09-21)이 찾은 미달 2건 — 둘 다 「수정」 진입점이 없었다.
 //
@@ -129,6 +129,50 @@ test.describe("법인카드 소유자 수정 (성공 기준 5 「수정」)", ()
     await page.getByRole("button", { name: "소유자 변경" }).click();
     const afterRow = page.getByRole("row", { name: new RegExp(`전환대상-${stamp}`) });
     await expect(afterRow.getByRole("cell", { name: "개인", exact: true })).toBeVisible();
+  });
+
+  // /review 지적: 소지자가 보관(퇴사)되면 선택 후보(page.tsx)에서 빠져
+  // defaultValue에 맞는 항목이 없고, 브라우저가 첫 사람을 골라 그 사람이 현재
+  // 소지자처럼 보였다 → 그대로 저장하면 카드가 넘어갔다. 칸은 비어 있어야 한다.
+  test("소지자가 퇴사한 카드를 수정으로 열면 소지자 칸이 비어 있다", async ({ page }) => {
+    await loginAsSysadmin(page);
+
+    const stamp = Date.now();
+    const holderName = `퇴사소지자-${stamp}`;
+    await page.goto("/admin/people");
+    await page.getByRole("link", { name: "사람 등록" }).click();
+    await page.getByLabel("이름").fill(holderName);
+    await page.getByLabel("이메일").fill(`e2e-left-holder-${stamp}@example.test`);
+    await page.getByLabel("계급").selectOption(DEFAULT_ROLE_ID);
+    await page.getByRole("button", { name: "사람 등록" }).click();
+    await expect(page.getByText(/초기 비밀번호 — /)).toBeVisible();
+
+    await page.goto("/admin/corp-cards?new=1");
+    await page.getByLabel("발급사").fill(`퇴사카드사-${stamp}`);
+    await page.getByLabel("뒤 4자리").fill(String(Math.floor(1000 + Math.random() * 9000)));
+    await page.getByLabel("별칭").fill(`퇴사대상-${stamp}`);
+    await page.getByLabel("소지자").selectOption({ label: holderName });
+    await page.getByRole("button", { name: "법인카드 등록" }).click();
+    await expect(page.getByRole("row", { name: new RegExp(`퇴사대상-${stamp}`) })).toBeVisible();
+
+    // 소지자를 보관(퇴사)한다 — 두 단계 삭제.
+    await page.goto("/admin/people");
+    const personRow = page.getByRole("row", { name: new RegExp(holderName) });
+    await personRow.getByRole("button", { name: "삭제" }).click();
+    await personRow.getByRole("button", { name: "삭제" }).click();
+    await expect(personRow.getByText("보관됨")).toBeVisible();
+
+    await page.goto("/admin/corp-cards");
+    const row = page.getByRole("row", { name: new RegExp(`퇴사대상-${stamp}`) });
+    await row.getByRole("link", { name: "수정" }).click();
+    await expect(page).toHaveURL(/[?&]editId=/);
+
+    const state = await page.getByLabel("소지자").evaluate((el) => {
+      const select = el as HTMLSelectElement;
+      return { value: select.value, valid: select.checkValidity() };
+    });
+    expect(state.value).toBe("");
+    expect(state.valid).toBe(false);
   });
 
   test("보관된 카드에는 「수정」 링크가 없다", async ({ page }) => {

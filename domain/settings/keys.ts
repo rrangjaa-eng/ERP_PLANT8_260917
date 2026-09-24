@@ -184,6 +184,7 @@ export const FX_RECENT_RATE_USD: SettingDef<number> = {
   label: "USD 최근 환율",
   hint: "새 외화 줄의 환율 칸 기본값입니다 — 환율을 적은 저장마다 갱신됩니다.",
   namespace: "환율",
+  numberKind: "fxRate",
   default: 1300,
 };
 

@@ -17,6 +17,8 @@ import {
 
 export type CandidateDeps = { now?: () => Date };
 
+export type RecomputeDeps = { insertSubstituteRows?: typeof insertSubstituteRows };
+
 // 표를 바꾸는 모든 길(후보 생성 · 수동 추가·삭제와 재계산 · 연도 확정)이 이 안에서만 돈다.
 export async function withHolidayCalendarLock<T>(fn: (tx: DbOrTx) => Promise<T>): Promise<T> {
   return withHolidayCalendarTx(SYSTEM_VIEWER, fn);
@@ -32,6 +34,7 @@ async function allocateSubstitutes(
     today: string;
     generatingYear?: number;
     generatedYears?: readonly number[];
+    insertSubstituteRows?: typeof insertSubstituteRows;
   },
 ): Promise<void> {
   const years = (opts.generatedYears ?? (await findGeneratedYears(SYSTEM_VIEWER, tx)))
@@ -67,7 +70,7 @@ async function allocateSubstitutes(
     }
   }
 
-  await insertSubstituteRows(SYSTEM_VIEWER, rows, tx);
+  await (opts.insertSubstituteRows ?? insertSubstituteRows)(SYSTEM_VIEWER, rows, tx);
 }
 
 // 부르는 쪽이 달력 잠금을 잡은 트랜잭션 안에서 부른다. 그 해 생성 표시가 있으면
@@ -97,4 +100,19 @@ export async function ensureHolidayCandidatesLocked(year: number, tx: DbOrTx, de
 export async function ensureHolidayCandidates(year: number, deps?: CandidateDeps): Promise<void> {
   if (await findYearGeneration(SYSTEM_VIEWER, year)) return;
   await withHolidayCalendarLock((tx) => ensureHolidayCandidatesLocked(year, tx, deps));
+}
+
+// 수동 날짜가 바뀐 해 Y에 대해 부르는 쪽(04.2-12)이 달력 잠금 트랜잭션 안에서 Y - 1로 한 번 부른다 —
+// 원래 해 Y-1부터 표 끝까지 미래 대체일(today 뒤)만 다시 정한다. 지난 대체일은 소급해 바꾸지 않는다.
+export async function recomputeFutureSubstitutes(
+  fromOriginYear: number,
+  opts: { today: string },
+  tx: DbOrTx,
+  deps?: RecomputeDeps,
+): Promise<void> {
+  await allocateSubstitutes(tx, {
+    fromOriginYear,
+    today: opts.today,
+    insertSubstituteRows: deps?.insertSubstituteRows,
+  });
 }

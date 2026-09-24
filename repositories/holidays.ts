@@ -1,7 +1,8 @@
 import { and, asc, eq, gt, gte, inArray, lt, lte, or, sql } from "drizzle-orm";
+import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { withDeadlineTransaction } from "@/db/deadline-transaction";
-import { holidays, holidayYearGenerations } from "@/db/schema";
+import { holidays, holidayYearConfirmations, holidayYearGenerations, users } from "@/db/schema";
 import type { HolidayKind } from "@/domain/holidays/rules";
 import type { Viewer } from "@/domain/viewer";
 
@@ -13,6 +14,10 @@ export const HOLIDAY_READ_DEADLINE_MS = 5_000;
 
 // 달력 잠금 트랜잭션의 클라이언트 마감 — 잠금 대기 5 + 문장 여섯 × 5.
 export const HOLIDAY_TX_DEADLINE_MS = 35_000;
+
+export type HolidayRow = InferSelectModel<typeof holidays>;
+
+export type HolidayYearConfirmationRow = InferSelectModel<typeof holidayYearConfirmations>;
 
 export type HolidayRowInsert = { date: string; name: string; kind: HolidayKind; createdBy?: string | null };
 
@@ -178,4 +183,80 @@ export async function findBlockingDates(
     }
   }
   return { manual, substitutes };
+}
+
+// 관리자 화면(04.2-11·12)용 — 날짜 오름차순, 만든 사람 이름(규칙·초기 행은 null).
+export async function listHolidaysForYear(
+  viewer: Viewer,
+  year: number,
+): Promise<(HolidayRow & { createdByName: string | null })[]> {
+  void viewer;
+  const rows = await db
+    .select({ holiday: holidays, createdByName: users.name })
+    .from(holidays)
+    .leftJoin(users, eq(users.id, holidays.createdBy))
+    .where(yearRange(year))
+    .orderBy(asc(holidays.date));
+  return rows.map((row) => ({ ...row.holiday, createdByName: row.createdByName }));
+}
+
+export async function listHolidayYears(viewer: Viewer): Promise<number[]> {
+  void viewer;
+  const year = sql<number>`extract(year from ${holidays.date})::int`;
+  const rows = await db.selectDistinct({ year }).from(holidays).orderBy(year);
+  return rows.map((row) => row.year);
+}
+
+export async function findYearConfirmation(
+  viewer: Viewer,
+  year: number,
+  tx: DbOrTx = db,
+): Promise<HolidayYearConfirmationRow | null> {
+  void viewer;
+  const [row] = await tx
+    .select()
+    .from(holidayYearConfirmations)
+    .where(eq(holidayYearConfirmations.year, year))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function insertYearConfirmation(
+  viewer: Viewer,
+  row: { year: number; confirmedBy: string },
+  tx: DbOrTx = db,
+): Promise<boolean> {
+  void viewer;
+  const inserted = await tx
+    .insert(holidayYearConfirmations)
+    .values(row)
+    .onConflictDoNothing()
+    .returning({ year: holidayYearConfirmations.year });
+  return inserted.length > 0;
+}
+
+export async function insertManualHoliday(
+  viewer: Viewer,
+  row: { date: string; name: string; kind: "temporary" | "election"; createdBy: string | null },
+  tx: DbOrTx = db,
+): Promise<boolean> {
+  void viewer;
+  const inserted = await tx
+    .insert(holidays)
+    .values(row)
+    .onConflictDoNothing({ target: holidays.date })
+    .returning({ id: holidays.id });
+  return inserted.length > 0;
+}
+
+export async function findHolidayByDate(viewer: Viewer, date: string, tx: DbOrTx = db): Promise<HolidayRow | null> {
+  void viewer;
+  const [row] = await tx.select().from(holidays).where(eq(holidays.date, date)).limit(1);
+  return row ?? null;
+}
+
+export async function deleteHolidayById(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<HolidayRow | null> {
+  void viewer;
+  const [row] = await tx.delete(holidays).where(eq(holidays.id, id)).returning();
+  return row ?? null;
 }

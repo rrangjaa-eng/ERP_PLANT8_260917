@@ -16,13 +16,13 @@ export type NextTurnProps = {
 };
 
 // §7-4: 태그 순서 고정(막힘 → 오늘 → 결재 → 대기)의 색 대응 — 막힘 danger,
-// 오늘 warning, 결재·대기 둘 다 accent(문서 원문 그대로, §7-5의 일반 규칙이 아니라
-// 이 블록 전용 색 대응이다).
+// 오늘 warning, 결재 accent. 대기는 §7-5 의미 목록(muted)을 따른다 —
+// 같은 낱말이 블록마다 다른 색을 갖지 않는다(개정 ⑩, 04-08 Task 2).
 const TAG_KIND: Record<NextTurnTag, StatusTagKind> = {
   막힘: "danger",
   오늘: "warning",
   결재: "accent",
-  대기: "accent",
+  대기: "muted",
 };
 
 export function NextTurn({ view, moreHref }: NextTurnProps) {

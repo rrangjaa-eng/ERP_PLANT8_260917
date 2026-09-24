@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { AccountEntry, MenuLink } from "./role-menu";
 import { isCurrentPath } from "./current-path";
@@ -118,9 +119,19 @@ export function TopBar({ topBarMenu, adminMenu, accountGroup, userName }: TopBar
   // 별도 처리 없이 빈 자리가 생기지 않는다(D-22).
   return (
     <header className={styles.bar}>
-      <span className={styles.mark}>
-        PL<i className={styles.leaf}>A</i>NT8
-      </span>
+      {/* §6-0 PC에 「내 차례」로 돌아갈 길이 없던 문제(/design-review FINDING-001).
+          사용자 결정 2026-09-24: 워드마크 = 홈 링크(웹 관례). 키보드도 같은
+          길이어야 한다(§11 「마우스 없이」) — tabIndex={-1} 우회 금지. 기존
+          span(styles.mark · 안의 styles.leaf i)은 그대로 두고 감싸기만 한다 —
+          flex 컨테이너로 바꾸면 PL·A·NT8이 익명 flex 항목으로 쪼개져 글자
+          모양(커닝)이 바뀔 수 있어서다. 평범한 `<a>`는 계획 의도였으나
+          `@next/next/no-html-link-for-pages` 린트가 내부 페이지로의 리터럴
+          href="/"를 막아 next/link로 바꿨다(렌더 결과는 여전히 <a>). */}
+      <Link href="/" className={styles.markLink} aria-label="PLANT8 내 차례">
+        <span className={styles.mark}>
+          PL<i className={styles.leaf}>A</i>NT8
+        </span>
+      </Link>
       <nav aria-label="주 메뉴" className={styles.nav}>
         {topBarMenu.map((item) => (
           <a

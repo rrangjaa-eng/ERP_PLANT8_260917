@@ -20,21 +20,24 @@
   color: var(--danger);
 }
 
-/* EMPTY의 다음 한 수 = 3차 버튼(§7-1) 모양의 링크. */
+/* EMPTY의 다음 한 수 = 3차 버튼(§7-1) 모양의 링크. 밑줄은 §4-4대로 글자
+   밑줄(offset 2px, 1px → hover 2px)이다 — border-bottom이면 아래 폰 44px
+   상자의 바닥에 붙어 글자에서 12px 떠 있었다(/design-review FINDING-005). */
 .tertiary {
   border: 0;
-  border-bottom: var(--line-w) solid var(--accent);
   background: none;
   padding: 0;
   color: var(--accent);
   font-weight: var(--fw-medium);
   font-size: var(--fs-base);
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
   cursor: pointer;
 }
 
 .tertiary:hover {
-  border-bottom-width: var(--line-w-strong);
+  text-decoration-thickness: var(--line-w-strong);
 }
 
 /* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. 이 링크는 밑줄만 있는

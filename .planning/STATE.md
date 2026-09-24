@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: Completed 04-25-PLAN.md
-last_updated: "2026-09-24T14:16:11.446Z"
+stopped_at: Completed 04-28-PLAN.md
+last_updated: "2026-09-24T16:19:27.386Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 4 execution started
-state_head: 89e5d600ad436204b43191cd817b7193e6c090a1
+state_head: b14fc24778782a302d0906d462a926f88f685374
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 65
-  completed_plans: 34
+  completed_plans: 35
   percent: 6
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 4 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 4
+Current Plan: 5
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-24 — Phase 4 execution started
@@ -84,6 +84,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P10 | 105min | 2 tasks | 14 files |
 | Phase 04 P46 | 58min | 2 tasks | 15 files |
 | Phase 04 P25 | 17 min | 2 tasks | 8 files |
+| Phase 04 P28 | 44 min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -194,6 +195,9 @@ Recent decisions affecting current work:
 - [Phase 4]: 등록 폼 Escape 핸들러에 preventDefault 추가 — 같은 키 입력이 방금 연 ConfirmDialog를 즉시 닫는 버그 수정
 - [Phase 04]: 04-25: Select가 SelectHint를 내보내 관리자 폼의 네이티브 select도 같은 설명 힌트 줄을 쓴다(A-H2 이관 전) — vendors.module.css .hint는 PC 라벨 열 들여쓰기가 걸려 라벨 위 select 아래에 맞지 않는다
 - [Phase 04]: 04-25: 폰 칸 접기(§7-3) 첫 CSS 선례 — tr 2열 격자, P2 칸 grid-row 2 전체 폭, P3 nth-child 숨김, 상태 열 폭 고정 — 칸을 두 번 렌더하지 않고 자리만 옮긴다(S14 overflow 사용자 확정)
+- [Phase 04]: 04-28: 견적 표 힌트 줄은 지금 되는 키 여섯 항목(Tab·Ctrl+C·저장 제외) — 04-04가 둘을 배선하지 않았다(toTsv 호출처 0)
+- [Phase 04]: 04-28: 거부 봉투는 SaveRejectedError만 잡아 { rejected: { summary, cells } } — 뒤 플랜은 도메인 항목만 더하고 열 대응은 quote-table FIELD_TO_COLUMN
+- [Phase 04]: 04-28: 격자 DOM 포커스 따라가기는 좌표가 실제로 바뀔 때만(첫 렌더 제외) — 하이드레이션 전 포커스를 빼앗지 않는다
 
 ### Pending Todos
 
@@ -248,6 +252,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T14:16:04.064Z
-Stopped at: Completed 04-25-PLAN.md
+Last session: 2026-09-24T16:19:10.897Z
+Stopped at: Completed 04-28-PLAN.md
 Resume file: None

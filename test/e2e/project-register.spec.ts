@@ -230,15 +230,60 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     await expect(page).toHaveURL(/\/projects$/);
   });
 
-  test("(c2) 프로젝트명 한 칸을 적은 뒤 Escape를 누르면 폼이 그대로이고 적은 값이 남는다(UX-04, 04-46 전 — 입력 손실 없음)", async ({
+  test("(c2) 프로젝트명 한 칸을 적은 뒤 Escape를 누르면 「입력 버리기」 확인이 열리고, 2차로 닫으면 값이 남으며, 다시 눌러 1차를 확정하면 목록으로 간다(UX-04 · DR-27, 04-46)", async ({
     page,
   }) => {
     await loginAndOpenForm(page);
     const projectName = `E2EEsc유지-${Date.now()}`;
-    await page.getByLabel("프로젝트명").fill(projectName);
+    const nameField = page.getByLabel("프로젝트명");
+    await nameField.fill(projectName);
 
     await page.keyboard.press("Escape");
 
+    const dialog = page.getByRole("dialog", { name: "입력 버리기" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText("프로젝트 등록 · 1칸")).toBeVisible();
+    const primaryButton = dialog.getByRole("button", { name: "입력 버리기" });
+    await expect(primaryButton).toBeFocused();
+
+    // Escape(= 2차) — 폼이 그대로이고 값이 남으며 포커스가 프로젝트명 칸으로 돌아온다.
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(page).toHaveURL(/\/projects\?new=1/);
+    await expect(nameField).toHaveValue(projectName);
+    await expect(nameField).toBeFocused();
+
+    // 다시 Escape → 1차 확정 → 목록 주소.
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeVisible();
+    await primaryButton.click();
+    await expect(page).toHaveURL(/\/projects$/);
+  });
+
+  test("(c3) 빈 폼에서 2차 「취소 Esc」 버튼을 클릭하면 확인 없이 바로 목록으로 간다(DR-27 빈 폼 갈래)", async ({
+    page,
+  }) => {
+    await loginAndOpenForm(page);
+
+    await page.getByRole("button", { name: /취소/ }).click();
+
+    await expect(page).toHaveURL(/\/projects$/);
+  });
+
+  test("(c4) 클라이언트 선택 목록을 연 채 Escape를 누르면 목록만 닫히고 폼이 유지된다(DR-27 — 내부 컨트롤 먼저)", async ({
+    page,
+  }) => {
+    await loginAndOpenForm(page);
+    const projectName = `E2E선택목록Esc-${Date.now()}`;
+    await page.getByLabel("프로젝트명").fill(projectName);
+
+    const clientSelect = page.getByLabel("클라이언트");
+    await clientSelect.click(); // 네이티브 <select> 드롭다운을 연다.
+    await page.keyboard.press("Escape");
+
+    // 「내부 컨트롤 먼저」 — 열린 네이티브 목록이 Esc를 먼저 처리했으면
+    // 폼은 그대로이고(「입력 버리기」 확인이 뜨지 않는다) 값도 남는다.
+    await expect(page.getByRole("dialog", { name: "입력 버리기" })).toBeHidden();
     await expect(page).toHaveURL(/\/projects\?new=1/);
     await expect(page.getByLabel("프로젝트명")).toHaveValue(projectName);
   });

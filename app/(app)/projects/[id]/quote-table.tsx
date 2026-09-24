@@ -14,6 +14,7 @@ import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { useDirtyStorage } from "@/ui/table/use-dirty-storage";
 import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
 import { normalizeNumericPaste } from "@/ui/table/parse-tsv";
+import { formatForeignLine } from "@/lib/format-number";
 import type { TableColumn, CellIssue } from "@/ui/table/types";
 import type { QuoteLineDto, QuoteLineBaseline } from "@/domain/quotes/lines";
 import type { RevenueDto } from "@/domain/revenue";
@@ -824,7 +825,7 @@ export function QuoteLedger({
         />
       ),
       secondaryLine: (row) =>
-        row.unitPriceCurrency !== "KRW" ? `${row.unitPriceCurrency} ${row.unitPriceAmount.toFixed(2)} @${row.unitPriceFxRate}` : null,
+        formatForeignLine({ currency: row.unitPriceCurrency, amount: row.unitPriceAmount, fxRate: row.unitPriceFxRate }),
     },
     {
       key: "quoteAmount",
@@ -1179,9 +1180,11 @@ export function QuoteLedger({
             {
               label: "환율",
               value:
-                openSheetRow.unitPriceCurrency !== "KRW"
-                  ? `${openSheetRow.unitPriceCurrency} ${openSheetRow.unitPriceAmount.toFixed(2)} @${openSheetRow.unitPriceFxRate}`
-                  : "—",
+                formatForeignLine({
+                  currency: openSheetRow.unitPriceCurrency,
+                  amount: openSheetRow.unitPriceAmount,
+                  fxRate: openSheetRow.unitPriceFxRate,
+                }) ?? "—",
             },
             { label: "비고", value: openSheetRow.note ?? "—" },
             { label: "상태", value: LINE_STATUS_LABELS[openSheetRow.lineStatus] ?? openSheetRow.lineStatus },

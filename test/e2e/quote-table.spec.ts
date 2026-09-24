@@ -352,6 +352,19 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await expect(dialog).toBeVisible();
     await expect(primaryButton).toBeFocused();
 
+    // Esc 직후 곧바로 Delete(CI 실패 재현) — 브라우저는 close()에서 포커스를
+    // 셀로 바로 돌려주지만 close 이벤트는 따로 줄 선 작업이라, 입력 작업이
+    // 먼저 처리되면 Delete가 닫힘 이벤트보다 앞선다. 그래도 확인은 다시 열려야 한다.
+    await dialog.evaluate(async (node) => {
+      node.dispatchEvent(new Event("cancel", { cancelable: true }));
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+      const cell = document.activeElement;
+      if (!(cell instanceof HTMLElement) || node.contains(cell)) throw new Error("포커스가 셀로 돌아오지 않았다");
+      cell.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true }));
+    });
+    await expect(dialog).toBeVisible();
+    await expect(primaryButton).toBeFocused();
+
     // 04-46 편차(SUMMARY 「계약 1 편차」 옆에 별도로 기록) — behavior 원문은
     // "일괄 저장 건수 +1"을 요구하지만, 이 플랜은 ④에서 confirmDeleteLine을
     // "기존 확인 처리기" 그대로 재사용한다(plan action ④). 그 함수는 줄을

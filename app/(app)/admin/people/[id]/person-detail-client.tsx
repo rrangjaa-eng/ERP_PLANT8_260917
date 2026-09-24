@@ -26,6 +26,9 @@ export function PersonRoleChange({
   const { execute: executeRoleChange, result: roleResult } = useAction(changePersonRoleAction);
 
   const roleError = errorMessageOf(roleResult);
+  // 보관된 계급은 roles에서 빠진다 — 맞는 항목이 없으면 브라우저가 첫 계급을
+  // 골라 현재 계급처럼 보이므로 빈 값(「계급 선택」)에서 시작한다.
+  const hasCurrentRole = roles.some((role) => role.id === currentRoleId);
 
   return (
     <>
@@ -34,9 +37,14 @@ export function PersonRoleChange({
         <select
           id="person-role-change"
           className={styles.select}
-          defaultValue={currentRoleId ?? ""}
+          defaultValue={hasCurrentRole ? (currentRoleId ?? "") : ""}
           onChange={(event) => executeRoleChange({ userId, roleId: event.target.value })}
         >
+          {hasCurrentRole ? null : (
+            <option value="" disabled>
+              계급 선택
+            </option>
+          )}
           {roles.map((role) => (
             <option key={role.id} value={role.id}>
               {role.name}

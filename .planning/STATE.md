@@ -10,7 +10,7 @@ last_activity: 2026-09-24
 last_activity_desc: Phase 4 execution started
 state_head: 1277d55df0a2342f574869d9e882b19a2a62bc87
 progress:
-  total_phases: 11
+  total_phases: 14
   completed_phases: 1
   total_plans: 65
   completed_plans: 32
@@ -34,7 +34,7 @@ Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-24 — Phase 4 execution started
 
-Progress: [█░░░░░░░░░] 9%
+Progress: [█░░░░░░░░░] 7%
 
 ## Performance Metrics
 
@@ -213,6 +213,11 @@ Recent decisions affecting current work:
 - Phase 7 edited: 성공 기준 5에 관리자 화면 7개의 ui/form·ui/select 이관(design-review A-H2·A-H3 이월) 추가
 - Phase 3 edited: 성공 기준 2의 2차 방어를 React taint API에서 컴파일 타임 커스텀 린트(plant8/no-row-type-escape)로 갱신 — react 안정 채널에 experimental_taint 부재
 - Phase 4 edited: edited fields: goal, success_criteria (D-41: 수주중·미수주 상태 추가)
+- Phase 04.1 inserted after Phase 4: 결재 모듈·연차 — Phase 5에서 Phase 4 미완성 코드에 기대지 않는 부분을 떼어 Phase 4와 병렬 진행(사용자 결정 2026-09-24)
+- Phase 04.2 inserted after Phase 4: 알림·공휴일 기반 — Phase 7에서 Phase 4~6 미완성 데이터에 기대지 않는 공휴일 표·알림함·이메일·notify-tick·잠금 행동 로그를 떼어 Phase 4와 병렬 진행(사용자 결정 2026-09-24)
+- Phase 7 edited: edited fields: depends_on, requirements, success_criteria (ADMN-11·NOTI-01·NOTI-02·NOTI-04와 기준 2·4를 Phase 04.2로 옮김)
+- Phase 04.3 inserted after Phase 4: QR 확인증 접수 — Phase 11에서 경품 지출결의·세금 제안에 기대지 않는 행사 QR·당첨자 등록·수령자 제출·주민등록번호 암호화·열람·파기·경영관리 정정·인쇄물·/cso 두 번을 떼어 Phase 4와 병렬 진행(사용자 결정 2026-09-24)
+- Phase 11 edited: edited fields: goal, depends_on, requirements, success_criteria (CERT-01·CERT-02와 기준 2·3을 Phase 04.3으로 옮김)
 
 ## Deferred Items
 

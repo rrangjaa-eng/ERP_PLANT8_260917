@@ -1,3 +1,4 @@
+import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -8,6 +9,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 export default async function globalSetup(): Promise<void> {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   try {
+    await resetTestSchema(pool);
     const db = drizzle(pool);
     await migrate(db, { migrationsFolder: resolve(process.cwd(), "db/migrations") });
   } finally {
@@ -30,13 +32,35 @@ export default async function globalSetup(): Promise<void> {
   await warmUpDevServer();
 }
 
+// 매 실행을 빈 erp_test에서 시작한다. 비우지 않으면 앞 실행(또는 CI에서 먼저
+// 도는 통합 테스트)이 남긴 행이 목록에 섞인다 — corp-cards.spec.ts를 DB를
+// 비우지 않고 두 번 돌리면 2회차가 「개인카드1」 두 행으로 strict mode에 걸린다.
+// DATABASE_URL이 _test DB가 아니면 지우지 않고 멈춘다(개발 DB 보호).
+async function resetTestSchema(pool: Pool): Promise<void> {
+  const dbName = new URL(process.env.DATABASE_URL ?? "").pathname.slice(1);
+  if (!dbName.endsWith("_test")) {
+    throw new Error(`E2E는 _test DB에서만 돈다(지금: ${dbName}) — 비우기를 거부한다.`);
+  }
+  // 문장 여러 개를 한 번에 보내면 한 트랜잭션으로 돈다 — 중간에 끊겨도
+  // public 스키마가 없는 상태로 남지 않는다.
+  await pool.query(
+    "DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public",
+  );
+}
+
 // Next dev(Turbopack)는 라우트를 첫 요청 시점에 컴파일한다 — 그 컴파일 지연 중
 // Fast Refresh 리마운트가 첫 브라우저 테스트의 클라이언트 네비게이션과 겹치면
 // 간헐적으로 실패한다. webServer가 뜬 뒤(globalSetup은 webServer 준비 이후 실행)
 // 실제 테스트가 쓰는 라우트를 한 번씩 미리 요청해 컴파일을 끝내 둔다.
+//
+// 위 세 라우트만으로는 모자랐다 — 전체 스위트(개발 서버)에서 상세 화면
+// (/projects/[id]·/admin/people/[id])의 첫 컴파일이 워커 둘의 부하 속에서 5초를
+// 넘겨 toHaveURL(기본 5초)이 떨어졌다(trace: RSC 요청 5022ms). 로그인 없이
+// 요청해도 라우트는 컴파일되므로(307로 돌아와도 2.5초 → 0.1초 실측) app/의
+// page.tsx를 전부 한 번씩 요청한다. 동적 조각은 아무 값으로 채운다.
 async function warmUpDevServer(): Promise<void> {
   const baseURL = process.env.BETTER_AUTH_URL ?? "http://127.0.0.1:3100";
-  const routes = ["/login", "/account", "/api/auth/get-session"];
+  const routes = ["/login", "/account", "/api/auth/get-session", ...appPageRoutes()];
   for (const route of routes) {
     try {
       await fetch(`${baseURL}${route}`, { redirect: "manual" });
@@ -44,4 +68,17 @@ async function warmUpDevServer(): Promise<void> {
       // 워밍업 실패는 무시한다 — 각 테스트가 자체적으로 재시도 가능한 타임아웃을 쓴다.
     }
   }
+}
+
+function appPageRoutes(): string[] {
+  return readdirSync(resolve(process.cwd(), "app"), { recursive: true, encoding: "utf8" })
+    .filter((file) => file.endsWith("page.tsx"))
+    .map((file) =>
+      `/${file}`
+        .replace(/\\/g, "/")
+        .replace(/\/page\.tsx$/, "")
+        .replace(/\/\([^/]+\)/g, "")
+        .replace(/\[[^\]]+\]/g, "e2e-warmup"),
+    )
+    .map((route) => route || "/");
 }

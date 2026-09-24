@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
@@ -109,5 +109,137 @@ test.describe("프로젝트 등록 → 견적 줄 저장 (Phase 4 트레이서)"
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
     expect(overflow).toBeLessThanOrEqual(0);
+  });
+});
+
+// Phase 4 04-08 Task 1 — D-94(단축키 Windows Ctrl) · CEO 리뷰 C-06(연타·이중
+// 등록) · C-07(적힌 단축키 배선) · 엔지 리뷰 C §1 P2(성공 뒤 이동 지연 중
+// 재입력). project-form.tsx의 Ctrl+Enter 제출·Esc 취소가 실제로 동작하고
+// 연타·지연 재입력이 두 번째 제출을 만들지 않는지를 검증한다.
+test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phase 4 04-08 Task 1)", () => {
+  async function loginAndOpenForm(page: Page): Promise<void> {
+    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(pm.email);
+    await page.getByLabel("비밀번호").fill(pm.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto("/projects?new=1");
+    // 키보드 단축키(Ctrl+Enter·Esc)는 클라이언트 컴포넌트 하이드레이션
+    // 뒤에야 배선된다. 필드를 먼저 채우는 케이스(a·b·b2)는 그 자체로
+    // 충분한 지연을 주지만, 아무 선행 조작 없이 곧바로 키를 누르는
+    // 케이스(c)는 하이드레이션 전에 이벤트가 지나가 버릴 수 있어 실측
+    // 확인 뒤 이 대기를 추가했다(systematic-debugging).
+    await page.waitForLoadState("networkidle");
+  }
+
+  // 필수 네 칸(클라이언트·프로젝트명·담당 PM·팀)을 채우고 마지막 칸(팀
+  // select)에 포커스를 남긴다 — 이후 마우스 클릭 없이 그 칸에서
+  // Control+Enter를 누른다.
+  async function fillRequiredFields(page: Page, vendorName: string, projectName: string) {
+    await page.getByLabel("클라이언트").selectOption({ label: vendorName });
+    await page.getByLabel("프로젝트명").fill(projectName);
+    await page.getByLabel("담당 PM").selectOption({ index: 1 });
+    const teamSelect = page.getByLabel("팀");
+    await teamSelect.selectOption({ index: 1 });
+    return teamSelect;
+  }
+
+  test("(a) 마우스 클릭 없이 마지막 칸에서 Control+Enter를 누르면 상세로 이동하고 번호가 부여된다", async ({
+    page,
+  }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2ECtrlEnter클라이언트-${Date.now()}`,
+      normalizedName: `e2ectrlenter클라이언트-${Date.now()}`,
+    });
+    await loginAndOpenForm(page);
+    const projectName = `E2ECtrlEnter-${Date.now()}`;
+    const teamSelect = await fillRequiredFields(page, vendor.name, projectName);
+
+    await teamSelect.press("Control+Enter");
+
+    await expect(page).toHaveURL(/\/projects\/.+/);
+    await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+    await expect(page.getByText(/\d{5} · 상세 견적 1차/)).toBeVisible();
+  });
+
+  test("(b) Control+Enter를 빠르게 두 번 누르면 상세로 한 번만 이동하고 같은 이름 프로젝트가 정확히 1건이다(C-06)", async ({
+    page,
+  }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2E연타클라이언트-${Date.now()}`,
+      normalizedName: `e2e연타클라이언트-${Date.now()}`,
+    });
+    await loginAndOpenForm(page);
+    const projectName = `E2E연타-${Date.now()}`;
+    const teamSelect = await fillRequiredFields(page, vendor.name, projectName);
+
+    await teamSelect.press("Control+Enter");
+    await teamSelect.press("Control+Enter");
+
+    await expect(page).toHaveURL(/\/projects\/.+/);
+    await page.goto(`/projects?q=${encodeURIComponent(projectName)}`);
+    await expect(page.getByText(projectName, { exact: true })).toHaveCount(1);
+  });
+
+  test("(b2) 성공 뒤 상세 이동이 지연되는 사이 다시 눌러도 같은 이름 프로젝트가 정확히 1건이다(엔지 리뷰 C 공백 9)", async ({
+    page,
+  }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2E지연클라이언트-${Date.now()}`,
+      normalizedName: `e2e지연클라이언트-${Date.now()}`,
+    });
+    await loginAndOpenForm(page);
+    const projectName = `E2E지연-${Date.now()}`;
+    const teamSelect = await fillRequiredFields(page, vendor.name, projectName);
+
+    // 상세 이동 RSC 요청(Next.js가 붙이는 rsc 헤더가 있는 /projects/{id}
+    // 요청)을 약속이 풀릴 때까지 붙잡는다 — 고정 지연(timeout)이 아니라
+    // 요청 자체를 붙잡는 결정적 방식이다.
+    let releaseNav: () => void = () => {};
+    const navGate = new Promise<void>((resolve) => {
+      releaseNav = resolve;
+    });
+    await page.route(/\/projects\/[^/?]+(\?.*)?$/, async (route) => {
+      if (route.request().headers()["rsc"]) {
+        await navGate;
+      }
+      await route.continue();
+    });
+
+    await teamSelect.press("Control+Enter");
+    // 액션 응답은 왔지만(폼이 아직 보인다) 이동은 붙잡혀 있는 상태에서
+    // 다시 누른다 — submittedRef 래치가 이 두 번째 제출을 막아야 한다.
+    await expect(page.getByRole("button", { name: "프로젝트 등록" })).toBeVisible();
+    await teamSelect.press("Control+Enter");
+    releaseNav();
+
+    await expect(page).toHaveURL(/\/projects\/.+/);
+    await page.goto(`/projects?q=${encodeURIComponent(projectName)}`);
+    await expect(page.getByText(projectName, { exact: true })).toHaveCount(1);
+  });
+
+  test("(c) 빈 폼의 칸에서 Escape를 누르면 등록 폼이 닫힌 목록 주소로 간다(C-07, DR-27 빈 폼 갈래)", async ({
+    page,
+  }) => {
+    await loginAndOpenForm(page);
+    await page.getByLabel("프로젝트명").focus();
+
+    await page.keyboard.press("Escape");
+
+    await expect(page).toHaveURL(/\/projects$/);
+  });
+
+  test("(c2) 프로젝트명 한 칸을 적은 뒤 Escape를 누르면 폼이 그대로이고 적은 값이 남는다(UX-04, 04-46 전 — 입력 손실 없음)", async ({
+    page,
+  }) => {
+    await loginAndOpenForm(page);
+    const projectName = `E2EEsc유지-${Date.now()}`;
+    await page.getByLabel("프로젝트명").fill(projectName);
+
+    await page.keyboard.press("Escape");
+
+    await expect(page).toHaveURL(/\/projects\?new=1/);
+    await expect(page.getByLabel("프로젝트명")).toHaveValue(projectName);
   });
 });

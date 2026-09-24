@@ -1,6 +1,7 @@
 "use client";
 
-import type { FormEvent } from "react";
+import type { FormEvent, KeyboardEvent } from "react";
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { createProjectAction } from "./actions";
@@ -8,6 +9,7 @@ import { Form } from "@/ui/form/Form";
 import { Select } from "@/ui/select/Select";
 import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
+import { isCtrlCombo } from "@/lib/shortcut";
 import styles from "./projects.module.css";
 
 export type ProjectFormOption = { id: string; name: string };
@@ -15,6 +17,23 @@ export type ProjectFormOption = { id: string; name: string };
 function getStringField(formData: FormData, key: string): string {
   const value = formData.get(key);
   return typeof value === "string" ? value : "";
+}
+
+// Esc(DR-27) 판정에 쓰는 칸 목록 — 이 칸들의 값이 처음 연 값과 하나라도
+// 다르면 입력이 있다고 본다. isFormPristine은 04-46의 「취소 Esc」 버튼·
+// 확인 모달 부제의 칸 수 계산이 같은 비교를 쓴다.
+const PRISTINE_FIELDS = ["clientId", "name", "pmUserId", "teamId", "startDate", "endDate"] as const;
+
+function snapshotFormValues(formData: FormData): Record<string, string> {
+  const values: Record<string, string> = {};
+  for (const key of PRISTINE_FIELDS) {
+    values[key] = getStringField(formData, key);
+  }
+  return values;
+}
+
+function isFormPristine(initial: Record<string, string>, current: Record<string, string>): boolean {
+  return PRISTINE_FIELDS.every((key) => initial[key] === current[key]);
 }
 
 // SYSTEM.md §7-15 — 프로젝트 등록 폼. 필수 넷(클라이언트·프로젝트명·담당
@@ -34,14 +53,35 @@ export function ProjectForm({
 }) {
   const router = useRouter();
 
+  // C-06 · 엔지 리뷰 C §1 P2 — 제출 래치. 성공 뒤 상세로 이동하기 전까지
+  // isExecuting은 이미 거짓으로 돌아오므로 그 가드만으로는 이동 지연 사이의
+  // 두 번째 제출을 막지 못한다. 래치는 오류(검증·서버) 응답에서만 내리고,
+  // 성공이면 이동할 때까지 서 있는다(컴포넌트가 언마운트된다).
+  const submittedRef = useRef(false);
+  // Esc(DR-27) 판정 — 렌더 때 한 번 기록한 값 스냅숏. 복사 등록으로 칸이
+  // 채워져 있으면 그 값이 「처음 연 값」이 된다.
+  const initialValuesRef = useRef<Record<string, string> | null>(null);
+
   const { execute, result, isExecuting } = useAction(createProjectAction, {
     onSuccess: ({ data }) => {
       if (data?.project) router.push(`/projects/${data.project.id}`);
     },
+    onError: () => {
+      submittedRef.current = false;
+    },
   });
+
+  useEffect(() => {
+    const form = document.getElementById("project-form");
+    if (form instanceof HTMLFormElement) {
+      initialValuesRef.current = snapshotFormValues(new FormData(form));
+    }
+  }, []);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submittedRef.current || isExecuting) return;
+    submittedRef.current = true;
     const formData = new FormData(event.currentTarget);
     execute({
       clientId: getStringField(formData, "clientId"),
@@ -51,6 +91,31 @@ export function ProjectForm({
       startDate: getStringField(formData, "startDate") || undefined,
       endDate: getStringField(formData, "endDate") || undefined,
     });
+  }
+
+  // D-94 · C-07 ① · DR-27 — Ctrl+Enter 제출과 Esc 취소를 한 keydown에서
+  // 배선한다. 둘 다 폼 표준 제출·표준 라우터 이동을 부르고 새 경로를
+  // 만들지 않는다.
+  function handleKeyDown(event: KeyboardEvent<HTMLFormElement>) {
+    if (isCtrlCombo(event, "Enter")) {
+      if (isExecuting || submittedRef.current) return;
+      event.preventDefault();
+      event.currentTarget.requestSubmit();
+      return;
+    }
+    if (event.key === "Escape") {
+      // 열린 네이티브 선택 목록·자동 완성이 이벤트를 이미 처리했으면(DR-27
+      // 「내부 컨트롤 먼저」) 이 폼은 아무것도 하지 않는다.
+      if (event.defaultPrevented || event.nativeEvent.isComposing || isExecuting) return;
+      const initial = initialValuesRef.current;
+      if (!initial) return;
+      const current = snapshotFormValues(new FormData(event.currentTarget));
+      // 값이 하나라도 다르면 이 플랜은 아무것도 하지 않는다 — 입력 버리기
+      // 확인은 04-46이 ui/confirm-dialog로 붙인다.
+      if (isFormPristine(initial, current)) {
+        router.push(cancelHref);
+      }
+    }
   }
 
   const clientError = result.validationErrors?.clientId?._errors?.[0];
@@ -64,7 +129,7 @@ export function ProjectForm({
   const blockedReason = [clientError, nameError, pmError, teamError].filter(Boolean)[0];
 
   return (
-    <Form id="project-form" onSubmit={handleSubmit}>
+    <Form id="project-form" onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
       <Form.Field id="clientId" label="클라이언트" width="select">
         <Select id="clientId" name="clientId" options={clients.map((c) => ({ value: c.id, label: c.name }))} error={clientError} />
       </Form.Field>
@@ -100,7 +165,7 @@ export function ProjectForm({
       {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
 
       <Form.Actions>
-        <Button type="submit" variant="primary" pending={isExecuting} shortcut="⌘↵">
+        <Button type="submit" variant="primary" pending={isExecuting} shortcut="Ctrl+Enter">
           프로젝트 등록
         </Button>
         {blockedReason ? <span className={styles.blockedReason}>{blockedReason}</span> : null}

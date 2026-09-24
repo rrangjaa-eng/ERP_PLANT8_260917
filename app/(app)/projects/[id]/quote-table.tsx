@@ -43,6 +43,8 @@ type DraftLine = {
   lineStatus: string;
   note: string | null;
   dirty: boolean;
+  /** 04-28 — Alt+↑↓로 옮겨진 줄. 값 비교로는 드러나지 않는 남은 변경이다. */
+  moved?: true;
   /** 04-04 — 이 줄을 불러왔을 때(또는 마지막 저장 성공 직후) 읽은 값의
    * 스냅샷. 버전 충돌 판정의 baseline으로 저장 페이로드에 실린다(D-65).
    * 새 줄(id 없음)에서는 쓰이지 않는다. */
@@ -580,7 +582,7 @@ export function QuoteLedger({
       const neighborGroup = next[targetIndex]!.subcategory;
       next.splice(index, 1);
       const crossedGroup = moved.subcategory !== neighborGroup;
-      next.splice(targetIndex, 0, { ...moved, subcategory: crossedGroup ? neighborGroup : moved.subcategory, dirty: true });
+      next.splice(targetIndex, 0, { ...moved, subcategory: crossedGroup ? neighborGroup : moved.subcategory, dirty: true, moved: true });
       return next;
     });
   }
@@ -1022,7 +1024,7 @@ export function QuoteLedger({
         const next: DraftLine = { ...line, version: conflict.theirVersion, baseline, cellConflicts };
         if (choice === "mine") return next;
         const taken = { ...next, ...value };
-        return { ...taken, dirty: lineDiffersFromBaseline(taken) || Object.keys(taken.cellErrors).length > 0 };
+        return { ...taken, dirty: lineDiffersFromBaseline(taken) || Object.keys(taken.cellErrors).length > 0 || taken.moved === true };
       }),
     );
   }

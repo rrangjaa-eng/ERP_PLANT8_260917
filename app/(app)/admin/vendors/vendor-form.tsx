@@ -8,11 +8,12 @@ import { createVendorAction, updateVendorAction, setVendorHiddenAction, archiveV
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
+import { SelectHint } from "@/ui/select/Select";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import { maskTail4 } from "@/lib/crypto";
 import styles from "./vendors.module.css";
 
-export type EvidenceTypeOption = { value: string; label: string };
+export type EvidenceTypeOption = { value: string; label: string; description: string | null };
 export type VendorFieldDefinition = {
   id: string;
   key: string;
@@ -71,12 +72,17 @@ export function VendorForm({
   const formRef = useRef<HTMLFormElement>(null);
   const [duplicateCount, setDuplicateCount] = useState<number | null>(null);
   const [clearAccountNumber, setClearAccountNumber] = useState(false);
+  // 04-25(D-93 · S14): 고른 증빙 종류의 설명 한 줄. select는 비제어 그대로
+  // 두고 고른 값만 따라간다(등록 성공 시 formRef.reset()과 같이 비운다).
+  const [evidenceType, setEvidenceType] = useState(editing?.defaultEvidenceType ?? "");
+  const evidenceTypeDescription = evidenceTypes.find((option) => option.value === evidenceType)?.description;
 
   // 두 액션 모두 훅 규칙대로 매 렌더 무조건 호출하고, isEditing으로 어느
   // 쪽 결과를 화면에 쓸지만 고른다(조건부 훅 호출 금지).
   const createState = useAction(createVendorAction, {
     onSuccess: ({ data }) => {
       formRef.current?.reset();
+      setEvidenceType("");
       setDuplicateCount(data?.duplicateCount ?? 0);
     },
   });
@@ -148,6 +154,8 @@ export function VendorForm({
           name="defaultEvidenceType"
           className={styles.select}
           defaultValue={editing?.defaultEvidenceType ?? ""}
+          onChange={(event) => setEvidenceType(event.target.value)}
+          aria-describedby={evidenceTypeDescription ? "defaultEvidenceType-hint" : undefined}
         >
           <option value="">선택 없음</option>
           {evidenceTypes.map((option) => (
@@ -156,6 +164,9 @@ export function VendorForm({
             </option>
           ))}
         </select>
+        {evidenceTypeDescription ? (
+          <SelectHint id="defaultEvidenceType-hint">{evidenceTypeDescription}</SelectHint>
+        ) : null}
       </div>
 
       <TextField id="accountBank" name="accountBank" label="계좌 은행" defaultValue={editing?.accountBank ?? undefined} />

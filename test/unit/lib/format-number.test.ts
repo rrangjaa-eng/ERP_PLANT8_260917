@@ -161,6 +161,18 @@ describe("formatNumberInput — 타이핑 중 쉼표 삽입 + 커서 보존", ()
     expect(formatNumberInput({ raw: "1234", caret: 1, kind: "krw", prev: "1,234" })).toEqual({ text: "234", caret: 0 });
   });
 
+  it("Backspace로 '-'를 지워도 숫자가 그대로 남는다(쉼표 뒤 규칙이 '-' 삭제에는 적용되지 않는다)", () => {
+    expect(formatNumberInput({ raw: "1,234", caret: 0, kind: "krw", prev: "-1,234" })).toEqual({
+      text: "1,234",
+      caret: 0,
+    });
+  });
+
+  it("Backspace로 '.'을 지워도 숫자가 그대로 남는다(쉼표 뒤 규칙이 '.' 삭제에는 적용되지 않는다)", () => {
+    const result = formatNumberInput({ raw: "4,40050", caret: 5, kind: "foreign", prev: "4,400.50" });
+    expect(result.text).toBe("440,050");
+  });
+
   it("- 는 맨 앞 하나만 받는다(가운데·중복 - 는 무시된다)", () => {
     const result = formatNumberInput({ raw: "12-3", caret: 4, kind: "krw", prev: "123" });
     expect(result.text).toBe("123");

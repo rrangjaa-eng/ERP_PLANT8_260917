@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { setEvidenceTypeTaxRuleAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
+import { parseNumberInput } from "@/lib/format-number";
 import styles from "./code-tables.module.css";
 
 type RuleKind = "none" | "vat_surcharge" | "withholding" | "company_borne";
@@ -118,10 +119,9 @@ export function EvidenceTypeFields({ itemId, initialValue }: { itemId: string; i
             id={`min-withholding-${itemId}`}
             name={`min-withholding-${itemId}`}
             label="최소 징수액"
-            type="number"
-            numeric
+            numberKind="krw"
             defaultValue={value.minWithholdingAmount ?? 0}
-            onBlur={(event) => save({ ...value, minWithholdingAmount: Number(event.target.value) || 0 })}
+            onBlur={(event) => save({ ...value, minWithholdingAmount: parseNumberInput(event.target.value) ?? 0 })}
           />
 
           <div className={styles.selectLabel}>

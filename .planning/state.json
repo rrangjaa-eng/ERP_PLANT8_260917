@@ -40,7 +40,7 @@
     },
     {
       "number": "8",
-      "name": "데이터 이전·전환",
+      "name": "전환",
       "status": "pending"
     },
     {
@@ -64,5 +64,5 @@
     "label": "Advance to the next step",
     "reason": "Phase 4 of 11 · 9% · executing"
   },
-  "updated_at": "2026-09-23T14:29:07.342Z"
+  "updated_at": "2026-09-24T08:34:49.210Z"
 }

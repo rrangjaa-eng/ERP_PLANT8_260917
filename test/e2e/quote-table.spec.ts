@@ -721,6 +721,41 @@ test.describe("견적 줄 표 — 저장 거부 봉투 → 충돌 셀·서버 �
     await contextB.close();
   });
 
+  test("옮긴 줄의 충돌을 「그 값으로」 풀어도 그 줄은 옮김 때문에 저장 대상으로 남는다", async ({ page, browser, baseURL }) => {
+    const opened = await openProjectWithSavedLines(page, [
+      { subcategory: "stage_construction", itemName: "옮길 줄", amount: 5000000, execution: 1000000 },
+      { subcategory: "stage_construction", itemName: "제자리 줄", amount: 2000000, execution: 500000 },
+    ]);
+
+    const contextB = await browser.newContext({ baseURL });
+    const pageB = await contextB.newPage();
+    await pageB.goto("/login");
+    await pageB.getByLabel("이메일").fill(opened.email);
+    await pageB.getByLabel("비밀번호").fill(opened.password);
+    await pageB.getByRole("button", { name: "로그인" }).click();
+    await expect(pageB).toHaveURL(/\/account$/);
+    await pageB.goto(`/projects/${opened.projectId}`);
+    await expect(quoteDataRows(pageB)).toHaveCount(2);
+    await editTextCell(pageB, 0, 7, "9800000");
+    await saveWithKeyboard(pageB, 0, 7);
+    await expect(pageB.getByText(/저장됨/)).toBeVisible();
+    await contextB.close();
+
+    // A가 첫 줄을 Alt+↓로 옮기고 같은 줄 실행가도 고쳐 저장 → 충돌.
+    await quoteCell(page, 0, 2).focus();
+    await page.keyboard.press("Alt+ArrowDown");
+    await expect(quoteCell(page, 1, 2)).toHaveText("옮길 줄");
+    await editTextCell(page, 1, 7, "7000000");
+    await saveWithKeyboard(page, 1, 7);
+    const conflictCell = quoteCell(page, 1, 7);
+    await expect(conflictCell).toHaveAttribute("aria-invalid", "true");
+
+    await conflictCell.getByRole("button", { name: "그 값으로" }).click();
+    await expect(conflictCell).toHaveText("9,800,000");
+    await expect(conflictCell).not.toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeEnabled();
+  });
+
   test("수량 0을 저장하면 서버 형식 오류가 그 셀에 고정되고, 고치면 풀린다", async ({ page }) => {
     await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "수량 확인 줄", amount: 1000 }]);
 

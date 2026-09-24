@@ -88,7 +88,9 @@
   color: var(--bar-fg);
   font-size: var(--fs-sm);
   cursor: pointer;
-  padding: 0;
+  /* 메뉴 링크(.navLink)와 같은 9px — 히트 영역이 글자 줄 19px에서 바 높이 37px로
+     (/design-review FINDING-003, §10 PC 컨트롤 32 하한). */
+  padding: 9px 0;
 }
 
 /* 이미 --bar-fg라 색으로는 hover를 못 보인다 — §4-4 3차 버튼과 같은 밑줄로. */
@@ -104,7 +106,8 @@
 
 .userMenu {
   position: absolute;
-  top: calc(100% + var(--s-2));
+  /* 트리거가 바 높이만큼 커졌으므로 간격 없이 바 바로 아래(이전과 같은 자리). */
+  top: 100%;
   right: 0;
   min-width: 160px;
   margin: 0;
@@ -153,6 +156,11 @@
   .userTrigger {
     min-height: var(--touch-min);
     min-width: var(--touch-min);
+  }
+
+  /* 폰 트리거는 44라 메뉴 자리를 예전 그대로(바 아래 --s-2) 둔다. */
+  .userMenu {
+    top: calc(100% + var(--s-2));
   }
 
   /* §3·§10 폰 44×44 터치 목표(/design-review 발견 1) — 열리는 메뉴 항목이

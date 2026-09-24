@@ -1,0 +1,141 @@
+# Phase 11: 기타소득 확인증 - Context
+
+**Gathered:** 2026-09-24
+**Status:** Ready for planning
+
+<domain>
+## Phase Boundary
+
+경품 당첨자(외부 수령자)가 행사 QR을 폰으로 찍고 로그인 없이 들어와 목록에서 자기 이름을 고르고 전화번호 뒤 4자리로 확인한 뒤, 본인 정보(이름·주민등록번호·연락처, 택배면 주소)와 개인정보 동의·터치 서명을 제출한다. 제출된 확인증은 그 경품 지출결의에 자동으로 붙고, 경품에 대한 회사 대납 세금이 제안되어 경영관리가 확정한다. 주민등록번호는 앱 단 암호화·권한자 열람·열람 기록·보존 기간 뒤 파기를 지킨다. `/cso` 통과 전에는 프로덕션에서 꺼져 있다. 요구사항: CERT-01, CERT-02, CERT-03, CERT-04 (`.planning/ROADMAP.md` Phase 11 기준 1~4).
+
+범위 밖: 현금 개인 지급(계좌 입력) 확인증(D-1101), 확인증 PDF(CERT-05, v2), 본인인증 API(v2), 확인증 미기입 재촉 알림(Deferred 참고).
+
+**로드맵 문구와 달라진 점(계획 단계에서 `gsd_run`으로 ROADMAP·REQUIREMENTS 문구를 맞춘다):**
+- ROADMAP Goal·기준 2와 CERT-01의 「계좌 입력」「지급 금액·소득 종류·원천징수액을 미리 채워 보여 줌」은 D-1101(경품만, 2026-09-18 화면 결정)로 대체한다. 수령자 화면에는 경품명만 보인다.
+- 「QR(1회성 링크)」「링크는 1회 제출 후 만료」는 D-1102(행사당 QR 하나, 사람마다 1회 제출)로 대체한다.
+- CERT-04의 「기본 기타소득 8.8%·면제 지급액 125,000원 이하」「확정하면 지급액에 반영」은 경품에 대해 D-1105(회사 대납 22%·역산·시가 5만원 이하 면제, 확정하면 회사 대납 세금으로 비용에 반영)로 대체한다.
+
+</domain>
+
+<decisions>
+## Implementation Decisions
+
+결정 번호는 병렬로 논의 중인 다른 페이즈와 겹치지 않게 11xx를 쓴다.
+
+### 이미 확정된 입력 (다시 묻지 않음 — 출처가 정본)
+- 수령자 화면 골격·문구·다섯 상태: `docs/design/SYSTEM.md` §6-5, 실물 `docs/design/system/external-cert.html` (2026-09-18 `docs/design/DECISIONS.md` 「외부 수령자 화면 실물 확정」). 경품 블록은 경품명 한 줄, 시가·원천징수·지급액·계좌 없음. 원천징수·지급명세서라는 단어는 수령자 화면에 쓰지 않는다
+- 주소 칸은 택배일 때만(담당자가 정함, 현장 기본) — DECISIONS 9/18 #2
+- 주민등록번호 확인 = 서버 검사 규칙만(형식·실제 날짜·성별 코드·2020-10 이전 발급분 검증번호). 신분증 첨부·본인인증 없음 — DECISIONS 9/18 #3
+- 개인정보 동의 = 서명 위 체크박스 + 요약 문장 + 「전문 보기」, 문장은 법무 확인 전 초안(근거법령·보관기간 자리표·제공처 국세청만) — DECISIONS 9/18 #4, 260907 3-18
+- 주민등록번호 저장 = Phase 3 `lib/crypto.ts` `encrypt()/decrypt()`(`v1:` 키 버전 접두어). `/cso` 통과 뒤 키 보관을 Cloud KMS 봉투 암호화로 승격하되 헬퍼 인터페이스·접두어는 그대로 — ROADMAP 기준 3, Issue 7
+- 열람: 기본은 뒷자리 마스킹, 전체 보기는 경영관리만(대표도 불가), 전체 보기마다 행동 로그(`mask_reveal`, 끌 수 없는 핵심 로그 OPS-05) — 260907 3-18·권한 예외
+- 개인정보취급자(경영관리) 전용 비활동 세션 만료 2시간(10분~2시간 범위만 조정) — 260907 권한 예외. `/cso`가 조정할 수 있다
+- 링크 만료 기본 72시간, 전화번호 뒤 4자리 5회 틀리면 3분 잠금, 사람마다 1회 제출 — 260907 3-18·설정 항목(확인증 탭)
+- 파기 시점 = 제출한 해 종료 + 법정 신고기한 + 보존 기간(설정, 기본 5년). 파기 시 이름·전화·주민등록번호·주소·서명 이미지를 지우고 줄(건수·금액·연결)은 세무 기록으로 남긴다. DB를 먼저 비우고 파일을 나중에 지운다. 확인증은 보관함(soft delete) 예외 — 반드시 지운다 — 260907 3-18·기본 정책
+- 확인증 PDF(CERT-05)는 v2. v1에서 수령자는 인쇄물을 보지 않는다 — DECISIONS 9/18
+- 세금 계산은 `domain/money.applyTaxRule()` 호출 하나. 세율·면제 기준은 이력형 설정 — ROADMAP 기준 4, PNL-09
+- 기능 플래그: `/cso` 결과가 반영되기 전 프로덕션에서 꺼져 있다 — ROADMAP 기준 1
+
+### 받는 대상
+- **D-1101:** **확인증은 경품(현물) 수령자에게만 받는다.** 수령자 화면은 SYSTEM §6-5 그대로이며 계좌·지급액 칸이 없다. 현금 개인 지급(사업소득·현금 기타소득)은 확인증 없이 기존 지출결의·거래처 흐름(Phase 5·6)으로 처리한다. — **Reversibility:** costly — 나중에 현금 지급을 받으려면 계좌 칸이 붙은 화면 변형(SYSTEM 개정)과 계좌 암호화 필드·동의 문구 수집 항목이 함께 늘어난다
+
+### 링크와 수령자 찾기
+- **D-1102:** **QR 링크는 행사(경품 지출결의)당 하나이고 여러 명이 같이 쓴다.** 한 사람은 한 번만 제출할 수 있고, 제출하면 그 사람 자리만 닫힌다. 링크 전체는 만료 시간(기본 72시간)이 지나거나, 등록된 당첨자가 모두 제출하거나, 담당자가 닫으면 닫힌다. — **Reversibility:** costly — 링크 모델(행사 단위 토큰 + 사람별 제출 상태)이 스키마·E2E·`/cso` 위협 모델의 기준이 된다
+- **D-1103:** **담당자가 당첨자 목록(이름·전화번호·경품명·수량·현장/택배)을 미리 넣고, 수령자는 QR로 들어와 목록에서 자기 이름을 고른 뒤 전화번호 뒤 4자리로 확인한다**(260907 방식). 확인이 끝나야 §6-5 입력 폼이 열린다. 현장/택배는 사람마다 정한다(DECISIONS 9/18 #2의 「링크를 만들 때」가 「당첨자를 등록할 때」로 바뀐다). — **Reversibility:** costly — 수령자 흐름에 선택·확인 단계가 붙어 SYSTEM §6-5 개정이 필요하다
+
+### 지출결의 연결
+- **D-1104:** **행사 QR은 경품 지출결의 화면에서 만든다.** 만들 때 당첨자 목록을 넣고, 제출된 확인증은 그 지출결의에 자동으로 붙는다. 지출결의 하나에 확인증 여러 장이다. 따로 모았다가 나중에 연결하는 경로는 두지 않는다.
+
+### 세금
+- **D-1105:** **경품 확인증은 회사 대납(company_borne) 규칙으로 계산하고, 기본값을 세율 22% · 역산(gross-up) · 시가 5만원 이하 면제로 둔다**(260907과 같은 값). 제안 금액 = 1인 경품 시가 합계 기준, 경영관리가 확정하면 회사 대납 세금으로 그 프로젝트 비용에 든다(PNL-02, 현물이라 수령자 지급액에서 빼지 않는다). 지금 설정 기본값(`tax.company_borne.rate` 0.088·`tax.company_borne.method` flat)과 면제 기준이 없는 회사 대납 계산을 이 결정에 맞춘다. **22%가 맞다는 해석(경품은 필요경비 없음)은 Claude의 추론이며 세무 확인을 전제로 한다** — 값은 이력형 설정이라 경영관리가 바꿀 수 있다. — **Reversibility:** reversible — 설정값이라 새 적용 시작일 행으로 바꾼다
+
+### 제출 후 정정
+- **D-1106:** **제출 내용이 틀리면 경영관리가 내부 화면에서 직접 고친다**(주민등록번호 포함). 고칠 때마다 행동 로그에 누가·언제·어느 칸을 고쳤는지 남기되 주민등록번호 평문은 로그에 담지 않는다. 서명 이미지는 고칠 수 없다(수령자 본인의 것). 주민등록번호를 고치려면 전체 보기 권한이 있어야 한다.
+
+### 보안 감사
+- **D-1107:** **`/cso`를 두 번 한다.** `/gsd-plan-phase 11`과 계획 게이트 뒤 설계(계획) 감사를 한 번 하고 결과를 계획에 반영한 뒤 실행하며, 구현 뒤 Post-build `/cso`를 한 번 더 한다. 둘 다 통과해야 프로덕션 플래그를 켠다. 설계 감사는 특히 행사당 공유 링크(D-1102)의 노출 범위, 목록에 보이는 당첨자 이름(D-1103), 뒤 4자리 추측 공격, 직원의 주민등록번호 수정(D-1106)을 본다
+
+### 인쇄물
+- **D-1108:** **세무 보관용 확인증 인쇄물(SYSTEM §6-6 「기타소득 지급 확인증」)을 이번 페이즈에 만든다.** 경영관리만 연다. 주민등록번호는 인쇄물에서도 뒷자리 마스킹(§6-6). PDF 파일 저장은 v2(CERT-05)
+
+### Claude's Discretion
+- 목록에 보이는 당첨자 이름의 가림 방식(예: 가운데 글자 마스킹)과 목록 크기 — `/gsd-ui-phase 11`·설계 `/cso`에서 정한다
+- 확인 단계 뒤 폼의 「이름」 칸을 등록된 이름으로 미리 채울지 — UI 계약에서 정한다
+- 행사 QR을 만들 수 있는 지출결의 상태(제출 뒤부터를 기본으로 계획이 정한다)와 만들 수 있는 사람(지출결의 작성자·경영관리를 기본으로)
+- 경품 증빙 종류 코드(회사 대납 규칙을 가진 「경품」 항목) 시드 추가 여부와 이름
+- 파기 실행 방식(Cloud Scheduler 작업 또는 수동 스크립트), 서명 이미지 저장 위치(비공개 GCS 버킷 경로)
+- 토큰 형식·길이, 속도 제한 세부
+
+</decisions>
+
+<canonical_refs>
+## Canonical References
+
+**Downstream agents MUST read these before planning or implementing.**
+
+### 범위·요구사항
+- `.planning/ROADMAP.md` Phase 11 (Goal, 기준 1~4, 계좌 암호화 비고) — 범위 정본(위 「로드맵 문구와 달라진 점」 셋은 이 문서가 대체)
+- `.planning/REQUIREMENTS.md` — CERT-01~04, CERT-05(v2), EXP-15, EXP-16, PNL-02, PNL-09, OPS-05
+- `.planning/PROJECT.md` — 개인정보 제약(`/cso` 필수), 사용자 표(외부 인력)
+
+### 업무 규칙 (260907 채택본)
+- `.planning/research/ERP260907-CONTEXT.md` §3-18 확인증, §3 기본 정책(보관함 예외·파기 순서), 권한 예외(주민번호 2단계 권한·개인정보취급자 세션), §5 설정 항목(확인증 탭), 원천징수 규칙(22% 역산·5만원 면제)
+- `.planning/research/ARCHITECTURE.md` §PII 암호화·보존/파기, `.planning/research/SUMMARY.md` Phase 11
+
+### 화면
+- `docs/design/SYSTEM.md` §6-5(외부 수령자 화면) · §6-6(인쇄 템플릿) — D-1103 선택·확인 단계는 `docs/DESIGN.md` §4 절차로 SYSTEM·DECISIONS에 더한다
+- `docs/design/DECISIONS.md` 2026-09-18 「외부 수령자 화면 실물 확정」, 인쇄물 재디자인 결정
+- `docs/design/system/external-cert.html`, `docs/design/system/print-cert.html`
+
+### 선행 결정
+- `.planning/phases/03-permissions-settings-masters/03-CONTEXT.md` — 암호화 헬퍼·마스킹 해제·정보 항목·행동 로그·설정 레지스트리
+- Phase 5 `05-CONTEXT.md`(PR #41) — D-101 세율 기준일(원천징수·회사 대납 = 지급일, 미지급이면 지급 예정일)
+- Phase 4 `04-CONTEXT.md`(브랜치 `claude/gsd-progress-e1nzgu` 최신본) — `domain/money` 시그니처
+
+</canonical_refs>
+
+<code_context>
+## Existing Code Insights
+
+### Reusable Assets
+- `lib/crypto.ts` `encrypt()/decrypt()`(AES-256-GCM, `v1:<iv>:<tag>:<ct>`, fail-closed), `scripts/rotate-key.ts` 키 회전
+- `domain/vendors/index.ts` — 계좌번호 마스킹 해제 패턴(`REVEAL_INFO_ITEM` + `mask_reveal` 로그). 주민등록번호 전체 보기가 같은 틀을 쓴다
+- `domain/permissions/info-items.ts`(`vendor.account_number_unmasked` 선례), `domain/action-log/record.ts`(`mask_reveal`)
+- `domain/money/tax.ts` `applyTaxRule()` — `company_borne`의 flat / gross-up 계산이 이미 있다. 면제 기준은 `withholding`에만 있다
+- `domain/settings/keys.ts` — `tax.company_borne.rate`(기본 0.088), `tax.company_borne.method`(기본 flat), 세율 기준일·절사 단위
+- `domain/seed/index.ts` — 증빙 종류 시드 7개(경품 항목 없음)
+- `domain/archive/` — 보관함. 확인증 개인정보 파기는 이 예외
+
+### Established Patterns
+- 4계층 `app/ → domain/ → repositories/(viewer 필수) → db/`, DTO 투영, 금액 산술은 `domain/money` 밖 금지(린트)
+- 설정은 이력형(적용 시작일) — 기본값 변경은 새 행으로
+
+### Integration Points
+- `proxy.ts` matcher는 `/api/auth/:path*`만 — 로그인 없는 외부 경로(`/c/:token`류)는 앱 세션 로직과 분리된 별도 인증 경로로 둔다(FEATURES.md: 기존 세션 재사용 금지)
+- 경품 지출결의 상세 화면(Phase 5) — 행사 QR 만들기·당첨자 등록·확인증 목록 자리
+- 프로덕션 기능 플래그용 설정 키는 아직 없다
+
+</code_context>
+
+<specifics>
+## Specific Ideas
+
+- 사용자: 「기타소득 확인증은 거의 경품이 나가고 현금은 나가지 않는다」(2026-09-18) — D-1101의 근거
+- 행사 현장에서 QR 하나를 걸어 두고 당첨자들이 각자 찍는 흐름(260907 방식)을 택했다 — D-1102·D-1103
+
+</specifics>
+
+<deferred>
+## Deferred Ideas
+
+- 현금 개인 지급(계좌 입력) 확인증 → 백로그 (D-1101)
+- 확인증 PDF 저장·수령자 PDF 링크 → v2 CERT-05
+- 본인인증 API → v2 후보 (DECISIONS 9/18 #3)
+- 확인증 미기입 재촉(행사 전 매일, 260907 재촉 5종 중 하나) → 알림 틀은 Phase 7 소관. Phase 7이 먼저 끝나므로 이 재촉 종류를 붙일지는 Phase 11 계획 때 Phase 7 결과를 보고 정한다
+- 22% 해석의 세무 확인 → 사용자(경영관리) 할 일
+
+</deferred>
+
+---
+
+*Phase: 11-other-income-certificate*

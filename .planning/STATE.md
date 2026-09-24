@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 04
 current_phase_name: 프로젝트·견적 원장
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 04-29-PLAN.md
-last_updated: "2026-09-24T18:21:31.487Z"
+stopped_at: Completed 04-06-PLAN.md
+last_updated: "2026-09-24T21:33:41.922Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 04 execution started
-state_head: c7dd99e7cd09b9d4eed22a31c10bc3dadc116c0f
+state_head: f265219ac15c057b69f8b48ba61aaee8b58b42f5
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 65
-  completed_plans: 36
+  completed_plans: 37
   percent: 6
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 04 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-24 — Phase 04 execution started
@@ -86,6 +86,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P25 | 17 min | 2 tasks | 8 files |
 | Phase 04 P28 | 44 min | 3 tasks | 11 files |
 | Phase 04 P29 | 55min | 3 tasks | 11 files |
+| Phase 04 P06 | 27min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -201,6 +202,8 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-28: 격자 DOM 포커스 따라가기는 좌표가 실제로 바뀔 때만(첫 렌더 제외) — 하이드레이션 전 포커스를 빼앗지 않는다
 - [Phase 04]: 04-29: pageWindow의 넓은 창(threshold 7)·폰 창(threshold 5, compact)을 하나의 파라미터화 알고리즘으로 구현해 C-27(한 쪽 틈은 번호) 로직을 중복 없이 공유
 - [Phase 04]: 04-29: ENG-D11 — 04-08이 §7-16에 적기로 했던 생략 규칙 기본 문장(PC 7쪽/8쪽)이 실제 SYSTEM.md에 없어 04-29가 기본 문장까지 함께 추가하고 회귀 테스트로 고정
+- [Phase 04]: 04-06: 프로젝트 상태 다섯 값(bidding·in_progress·settling·completed·lost), 옛 settled는 0012가 completed로 재매핑 — 0012 전진 전용·rollback-floor 표시
+- [Phase 04]: 04-06: 완료 잠금 게이트는 project.line-edit(완료 → 「완료 · 견적 줄 잠김」, 미수주 포함 나머지 통과) — project.completed-lock 삭제
 
 ### Pending Todos
 
@@ -256,6 +259,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T18:21:31.338Z
-Stopped at: Completed 04-29-PLAN.md
+Last session: 2026-09-24T21:33:41.721Z
+Stopped at: Completed 04-06-PLAN.md
 Resume file: None

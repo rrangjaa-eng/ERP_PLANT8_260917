@@ -60,3 +60,149 @@ test.describe("알림함 트레이서 — tick → 배지 1 → 열람 → 배�
     await expect(rowAfterReload).not.toContainText("안 읽음");
   });
 });
+
+test.describe("배지 상태 전부와 이동 갱신 (Task 3 · D-4219 개정 · #4 R13 · #18)", () => {
+  // 이 셸에서 실제 next/link의 <Link>는 TopBar.tsx의 워드마크 하나뿐이다(1차
+  // 메뉴·하단 탭·사용자 메뉴 항목은 전부 생 <a href> — 각 이동이 문서를 새로
+  // 불러온다). 그래서 "셸 내비의 Link로 이동"을 증명하려면 워드마크(href="/")를
+  // 쓴다 — 로그인 뒤 도착하는 /account에서 그 Link로 /로 이동한다.
+  test("로그인한 세션에서 새 알림이 생기고 Link로 이동하면 새로 고침 없이 배지가 맞아진다(Codex #19)", async ({
+    page,
+  }) => {
+    const user = await createEmployee();
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(user.email);
+    await page.getByLabel("비밀번호").fill(user.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    // 로그인 뒤에야 알림을 만든다 — 로그인 전에 만들면 Codex #19(이동 중 갱신)를
+    // 놓치고 첫 서버 조회만 증명하게 된다.
+    const kind = createTestConditionKind([
+      testCandidate({ recipientId: user.userId, entityId: randomUUID(), referenceDate: "2026-01-01" }),
+    ]);
+    await tickOnce(kind);
+
+    await expect(page.getByRole("button", { name: /안 읽은 알림/ })).toHaveCount(0);
+
+    await page.getByRole("link", { name: "PLANT8 내 차례" }).click();
+    await expect(page).toHaveURL(/\/$/);
+
+    const trigger = page.getByRole("button", { name: /안 읽은 알림 1건/ });
+    await expect(trigger).toBeVisible();
+    await expect(trigger.locator('[aria-hidden="true"]')).toHaveText("1");
+  });
+
+  test("다시 받는 동안·실패 때 배지는 이전 값을 유지한다(#4 · R13)", async ({ page }) => {
+    const user = await createEmployee();
+    const kind = createTestConditionKind([
+      testCandidate({ recipientId: user.userId, entityId: randomUUID(), referenceDate: "2026-01-01" }),
+    ]);
+    await tickOnce(kind);
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(user.email);
+    await page.getByLabel("비밀번호").fill(user.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    const trigger = page.getByRole("button", { name: /안 읽은 알림 1건/ });
+    await expect(trigger).toBeVisible();
+    await expect(trigger.locator('[aria-hidden="true"]')).toHaveText("1");
+
+    // 배지 다시 받기(Next-Action POST) 하나만 1초 붙잡았다가 끊는다 — 다른
+    // 요청(문서·정적 자산)은 그대로 흘려보낸다.
+    let intercepted = false;
+    await page.route("**/*", async (route) => {
+      const request = route.request();
+      if (!intercepted && request.method() === "POST" && request.headers()["next-action"]) {
+        intercepted = true;
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await route.abort();
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.getByRole("link", { name: "PLANT8 내 차례" }).click();
+    await expect(page).toHaveURL(/\/$/);
+
+    // 붙잡힌 동안에도 배지 1이 그대로다(빈 배지·0이 아니다).
+    await expect(trigger.locator('[aria-hidden="true"]')).toHaveText("1");
+
+    // 1초 뒤 요청이 끊겨도(route.abort) 배지는 여전히 1이다.
+    await expect(trigger.locator('[aria-hidden="true"]')).toHaveText("1", { timeout: 3000 });
+    expect(intercepted).toBe(true);
+
+    await page.unroute("**/*");
+  });
+
+  test("100건 이상은 보이는 배지 99+, 접근 가능 이름은 실제 수 100건이다(#18)", async ({ page }) => {
+    const user = await createEmployee();
+    const candidates = Array.from({ length: 100 }, (_, i) =>
+      testCandidate({
+        recipientId: user.userId,
+        entityId: `${randomUUID()}-${i}`,
+        referenceDate: "2026-01-01",
+      }),
+    );
+    const kind = createTestConditionKind(candidates);
+    await tickOnce(kind);
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(user.email);
+    await page.getByLabel("비밀번호").fill(user.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    // 접근 가능 이름은 unreadCountLabel의 "99+"가 아니라 실제 수다.
+    const trigger = page.getByRole("button", { name: /안 읽은 알림 100건/ });
+    await expect(trigger).toBeVisible();
+    await expect(trigger.locator('[aria-hidden="true"]')).toHaveText("99+");
+  });
+
+  test.describe("폰 375 배지 넘침 (S1-a · §10 터치 목표)", () => {
+    test.use({ viewport: { width: 375, height: 800 } });
+
+    test("20자 한글·영문 혼용 이름 + 배지가 트리거 안에서 한 줄로 보이고 트리거는 44×44 이상이다", async ({
+      page,
+    }) => {
+      const longName = `${"가".repeat(10)}abcdefghij`;
+      const email = `e2e-notify-long-${randomUUID()}@example.test`;
+      const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, {
+        email,
+        name: longName,
+        roleId: DEFAULT_ROLE_ID,
+      });
+      const kind = createTestConditionKind([
+        testCandidate({ recipientId: userId, entityId: randomUUID(), referenceDate: "2026-01-01" }),
+      ]);
+      await tickOnce(kind);
+
+      await page.goto("/login");
+      await page.getByLabel("이메일").fill(email);
+      await page.getByLabel("비밀번호").fill(tempPassword);
+      await page.getByRole("button", { name: "로그인" }).click();
+      await expect(page).toHaveURL(/\/account$/);
+
+      const trigger = page.locator('header button[aria-haspopup="menu"]');
+      const triggerBox = await trigger.boundingBox();
+      expect(triggerBox).not.toBeNull();
+      expect(triggerBox!.width).toBeGreaterThanOrEqual(44);
+      expect(triggerBox!.height).toBeGreaterThanOrEqual(44);
+
+      const badge = trigger.locator('[aria-hidden="true"]');
+      await expect(badge).toBeVisible();
+      const badgeBox = await badge.boundingBox();
+      expect(badgeBox).not.toBeNull();
+
+      // 배지 오른쪽 끝이 트리거 경계 안(±1px 오차 허용)이다.
+      expect(badgeBox!.x + badgeBox!.width).toBeLessThanOrEqual(triggerBox!.x + triggerBox!.width + 1);
+
+      // 배지 글자가 줄바꿈 없이 한 줄이다.
+      const whiteSpace = await badge.evaluate((el) => getComputedStyle(el).whiteSpace);
+      expect(whiteSpace).toBe("nowrap");
+    });
+  });
+});

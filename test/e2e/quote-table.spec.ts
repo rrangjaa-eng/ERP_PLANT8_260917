@@ -471,8 +471,13 @@ function isServerAction(request: { method: () => string; headers: () => Record<s
 }
 
 async function editTextCell(page: Page, rowIndex: number, colIndex: number, text: string) {
-  await quoteCell(page, rowIndex, colIndex).focus();
-  await page.keyboard.press("Enter");
+  const cell = quoteCell(page, rowIndex, colIndex);
+  // 편집 입력이 실제로 열렸는지 확인한다 — 하이드레이션 전에 누른 Enter는 사라진다.
+  await expect(async () => {
+    await cell.focus();
+    await page.keyboard.press("Enter");
+    await expect(cell.locator("input")).toBeFocused({ timeout: 1000 });
+  }).toPass();
   await page.keyboard.press("Control+a");
   await page.keyboard.type(text);
   await page.keyboard.press("Enter");

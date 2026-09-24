@@ -168,7 +168,13 @@ export function Table<Row>({
   // 포커스는 옛 셀에 남아 「이동 ↑↓←→」가 동작하지 않았다. 표 안에 포커스가
   // 있을 때 좌표가 바뀌면 그 셀로 포커스를 옮긴다(편집 중 입력 요소는 건드리지 않는다).
   const tableRef = useRef<HTMLTableElement>(null);
+  // 좌표가 실제로 바뀔 때만 옮긴다 — 첫 렌더(하이드레이션)에서 옮기면 그 전에
+  // 사용자가 둔 포커스를 (0,0)으로 빼앗는다.
+  const lastFocusRef = useRef(`${keyboardState.focus.row}:${keyboardState.focus.col}`);
   useEffect(() => {
+    const key = `${keyboardState.focus.row}:${keyboardState.focus.col}`;
+    if (lastFocusRef.current === key) return;
+    lastFocusRef.current = key;
     if (!enableGridKeyboard) return;
     const table = tableRef.current;
     const active = document.activeElement;

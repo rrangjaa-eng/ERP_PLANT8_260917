@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { isCtrlCombo } from "@/lib/shortcut";
 import styles from "./Table.module.css";
 import type { CellEditability, CellIssue, TableColumn } from "./types";
@@ -108,6 +108,11 @@ export function Table<Row>({
     return column.editability?.(row) ?? "readonly";
   }
 
+  // 04-28 — 편집 중 Esc로 입력 요소가 사라지면 포커스가 <body>로 빠져 표
+  // 키보드가 끊긴다. 입력 요소가 내려간 뒤 그 셀로 포커스를 돌려준다(먼저
+  // 옮기면 입력의 blur 커밋이 취소를 덮는다).
+  const refocusCellRef = useRef(false);
+
   const keyboardState = useGridKeyboard({
     rowCount: flatRows.length,
     colCount: columns.length,
@@ -134,6 +139,7 @@ export function Table<Row>({
         const row = flatRows[pos.row];
         const column = columns[pos.col];
         if (wasEditing) {
+          refocusCellRef.current = true;
           setActiveCell(null);
           if (row && column) keyboard?.onEscapeCell?.(row, column.key);
         }
@@ -157,6 +163,25 @@ export function Table<Row>({
       onSave: () => keyboard?.onSave?.(),
     },
   });
+
+  // 04-28(앞 플랜 결함 — 04-04) — 방향키가 로빙 좌표(tabIndex)만 옮기고 DOM
+  // 포커스는 옛 셀에 남아 「이동 ↑↓←→」가 동작하지 않았다. 표 안에 포커스가
+  // 있을 때 좌표가 바뀌면 그 셀로 포커스를 옮긴다(편집 중 입력 요소는 건드리지 않는다).
+  const tableRef = useRef<HTMLTableElement>(null);
+  useEffect(() => {
+    if (!enableGridKeyboard) return;
+    const table = tableRef.current;
+    const active = document.activeElement;
+    if (!table || !active || !table.contains(active)) return;
+    const target = table.querySelector<HTMLElement>("td[data-grid-focus]");
+    if (target && !target.contains(active)) target.focus();
+  }, [enableGridKeyboard, keyboardState.focus.row, keyboardState.focus.col]);
+
+  useEffect(() => {
+    if (!refocusCellRef.current || activeCell) return;
+    refocusCellRef.current = false;
+    tableRef.current?.querySelector<HTMLElement>("td[data-grid-focus]")?.focus();
+  }, [activeCell]);
 
   if (rows.length === 0) {
     return (
@@ -230,6 +255,7 @@ export function Table<Row>({
 
   return (
     <table
+      ref={tableRef}
       className={[styles.table, hasEditableCell ? styles.editable : styles.readonly].join(" ")}
       role={hasEditableCell ? "grid" : undefined}
       onPaste={enableGridKeyboard ? handleTablePaste : undefined}
@@ -290,6 +316,7 @@ export function Table<Row>({
                         aria-readonly={hasEditableCell ? editability !== "edit" : undefined}
                         aria-invalid={issue ? true : undefined}
                         aria-describedby={issueId}
+                        data-grid-focus={isFocusPos ? "" : undefined}
                         tabIndex={
                           enableGridKeyboard
                             ? isFocusPos

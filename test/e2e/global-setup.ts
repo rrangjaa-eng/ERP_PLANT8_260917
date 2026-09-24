@@ -8,6 +8,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 export default async function globalSetup(): Promise<void> {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   try {
+    await resetTestSchema(pool);
     const db = drizzle(pool);
     await migrate(db, { migrationsFolder: resolve(process.cwd(), "db/migrations") });
   } finally {
@@ -30,6 +31,20 @@ export default async function globalSetup(): Promise<void> {
   await warmUpDevServer();
 }
 
+// 매 실행을 빈 erp_test에서 시작한다. 비우지 않으면 앞 실행(또는 CI에서 먼저
+// 도는 통합 테스트)이 남긴 행이 목록에 섞인다 — corp-cards.spec.ts를 DB를
+// 비우지 않고 두 번 돌리면 2회차가 「개인카드1」 두 행으로 strict mode에 걸린다.
+// DATABASE_URL이 _test DB가 아니면 지우지 않고 멈춘다(개발 DB 보호).
+async function resetTestSchema(pool: Pool): Promise<void> {
+  const dbName = new URL(process.env.DATABASE_URL ?? "").pathname.slice(1);
+  if (!dbName.endsWith("_test")) {
+    throw new Error(`E2E는 _test DB에서만 돈다(지금: ${dbName}) — 비우기를 거부한다.`);
+  }
+  await pool.query("DROP SCHEMA IF EXISTS drizzle CASCADE");
+  await pool.query("DROP SCHEMA public CASCADE");
+  await pool.query("CREATE SCHEMA public");
+}
+
 // Next dev(Turbopack)는 라우트를 첫 요청 시점에 컴파일한다 — 그 컴파일 지연 중
 // Fast Refresh 리마운트가 첫 브라우저 테스트의 클라이언트 네비게이션과 겹치면
 // 간헐적으로 실패한다. webServer가 뜬 뒤(globalSetup은 webServer 준비 이후 실행)
@@ -45,3 +60,4 @@ async function warmUpDevServer(): Promise<void> {
     }
   }
 }
+

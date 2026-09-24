@@ -5,6 +5,7 @@
 - 모드: HOLD SCOPE(범위는 CEO 리뷰에서 확정. 이 리뷰는 실행 가능성·정합성·테스트만 본다)
 - 검토자: Claude(plan-eng-review) + Outside Voice Codex(`codex exec`, read-only, 3갈래 병렬, 21:24~21:30 KST, 세 갈래 모두 EXIT 0)
 - 시각은 모두 한국 시각(KST)
+- 게이트 기록: 스킬 게이트 훅이 페이즈 인자 없이 STATE.md(Phase 4)를 따라 `.claude/gates/phase-04.log`에 `plan-eng-review` 줄을 적었다. 그 줄을 `git checkout`으로 되돌리고 **같은 줄을 손으로** `.claude/gates/phase-04.1.log`에 옮겨 적었다(훅 스크립트는 건드리지 않음)
 
 ## 결론
 
@@ -165,7 +166,7 @@ State: 스레드 카드로 질문함(21:33 KST). 답 전까지 A로 진행.
 
 **OUTSIDE COVERAGE / CROSS-MODEL:** Codex 3갈래가 7개 플랜 전부와 기존 코드를 봤다. 두 모델이 겹친 지적 1건(과거 연도 설정, A·B), Claude만 찾은 것 2건(병합 순서 전제, `insertVisibilityIfAbsent` 이중 정의), Codex만 찾은 것 중 확인 7건.
 
-**VERDICT:** 막는 문제 있음(9건). 다음 세션이 반영 지시 1~25를 `/gsd-plan-phase 04.1` 수정 회차로 넣고 → 체커 → Codex 재검토를 「막는 문제 없음」까지 반복한 뒤 /plan-design-review + Codex로 간다.
+**VERDICT:** 막는 문제 있음(9건). 다음 세션이 반영 지시 1~25를 `/gsd-plan-phase 04.1` 수정 회차로 넣고 → 체커 → Codex 재검토를 「막는 문제 없음」까지 반복한 뒤, 수정본에 /plan-ceo-review(이전 CEO 리뷰는 Outside Voice 미실행)와 /plan-eng-review를 각각 실제 Codex와 함께 다시 돌리고 /plan-design-review + Codex로 간다.
 
 **UNRESOLVED DECISIONS:**
 - R1 입사 다음 해 연차 부여량 — 사용자 카드 답 대기, 기본값 A(전부 15일)로 진행

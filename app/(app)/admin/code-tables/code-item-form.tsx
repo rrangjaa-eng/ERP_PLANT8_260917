@@ -161,12 +161,19 @@ export function CodeItemDescriptionInput({
           aria-label={`${label} 설명`}
           aria-invalid={errorText ? true : undefined}
           aria-describedby={describedBy}
+          placeholder="—"
           value={value}
           onChange={(event) => setValue(event.target.value)}
           onBlur={() => {
             // C-13: 빈 값도 저장한다 — 이름 칸의 「비어 있지 않고 바뀌었을
-            // 때만」 가드를 베끼면 설명을 지울 수 없다.
-            if (value.trim() !== (description ?? "")) execute({ id, description: value });
+            // 때만」 가드를 베끼면 설명을 지울 수 없다. 값이 서버 값과 이미
+            // 같으면(예: 오류 뒤 서버 값으로 직접 되돌려 쳤을 때) 저장할
+            // 것이 없다 — 화면에 보이는 값이 이미 맞으므로 오류 줄도 지운다.
+            if (value.trim() !== (description ?? "")) {
+              execute({ id, description: value });
+            } else {
+              setErrorText(undefined);
+            }
           }}
           onKeyDown={(event) => {
             // Esc(조합 중 아님)만 서버 값으로 되돌린다 — onError는 되돌리지

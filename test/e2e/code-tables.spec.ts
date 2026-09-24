@@ -216,12 +216,13 @@ test.describe("코드표 항목 설명 (D-93, UI-SPEC rev 5 S14, DR-29)", () => 
     await descriptionInputAgain.blur();
 
     await page.reload();
-    const table = page.locator("main table").first();
-    const headerTexts = await table.locator("thead th").allTextContents();
-    const descColIndex = headerTexts.findIndex((text) => text.trim() === "설명");
-    expect(descColIndex).toBeGreaterThanOrEqual(0);
-    const row = table.locator("tbody tr", { hasText: value }).first();
-    await expect(row.locator("td").nth(descColIndex)).toHaveText("—");
+    // 값이 지워졌다는 증거는 DB에서 다시 읽은 입력값이 빈 문자열이라는
+    // 것이다(DB가 null이 아니면 옛 값이 그대로 보인다) — 관리자(canWrite)는
+    // 화면에서 계속 편집 가능한 입력칸을 보므로 정적 「—」 글자가 아니라
+    // 빈 칸 + placeholder 「—」(S14 「값이 없으면 — 하나」와 같은 시각).
+    const descriptionInputAfterClear = page.getByLabel(`${label} 설명`);
+    await expect(descriptionInputAfterClear).toHaveValue("");
+    await expect(descriptionInputAfterClear).toHaveAttribute("placeholder", "—");
   });
 
   // (d) 증빙 종류 표의 세금 규칙 행 colSpan이 새 열 수와 맞는다 — 머리글

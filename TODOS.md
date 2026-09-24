@@ -105,3 +105,79 @@
 **Effort:** S
 **Priority:** P3
 **Depends on:** None
+
+## QA 이연(2026-09-24 /qa, Phase 2 화면)
+
+`/qa`가 찾았지만 기존 테스트 수정·시스템 결정이 먼저라 고치지 않은 결함이다. 고친 것: ISSUE-001(`/projects` 필터 칸이 URL과 어긋남, `01c3b6c`).
+
+### ISSUE-002 `/projects?new=1`에서 `id="teamId"`가 두 개
+
+**What:** 등록 폼(`project-form.tsx:88-89`)과 필터(`filter-bar.tsx`)가 둘 다 `id="teamId"`를 쓴다. 폼이 열리면 필터 「팀」 select는 접근 이름이 비고, 폼 select는 「팀 팀」으로 읽히며, 필터 라벨을 눌러도 폼 칸으로 간다.
+
+**Why:** 스크린 리더 사용자가 필터 칸을 식별할 수 없다(Accessibility, Medium).
+
+**Context:** id를 고치면 필터 칸도 「팀」 라벨을 얻어 `test/e2e/project-register.spec.ts:30·102`의 `getByLabel("팀")`이 두 요소에 걸려 strict 모드로 실패한다 — 기존 테스트 수정이 필요해 이번 QA에서 미뤘다. 그 스펙을 폼 범위 로케이터로 바꾸는 것과 함께 고친다.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** `project-register.spec.ts` 로케이터 수정 승인
+
+### ISSUE-003 폰에서 시트로 가는 화면은 현재 위치 표시가 없다
+
+**What:** 375에서 하단 탭에 없는 화면(PM의 `/cards`·`/approvals`·`/pnl`·`/account`·`/settings`, 시스템 관리자의 `/projects` 등)에 있으면 하단 탭·「더보기」 시트 어디에도 `aria-current`가 없다.
+
+**Why:** §2 포인트 색 ⑤ 「현재 위치」가 폰에서 절반 화면에만 있다(UX, Low).
+
+**Context:** 「더보기」 탭에 표시할지, 시트 행에 표시할지 §6-0·§7-8 결정이 먼저다.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** SYSTEM.md §6-0 결정
+
+### ISSUE-004 PC에서 `/settings`로 가는 길이 없다
+
+**What:** 폰 「더보기」 시트에는 「설정」이 있는데 PC 사용자 메뉴는 §6-0 (a)대로 관리 · 내 정보 · 로그아웃뿐이다.
+
+**Why:** PC 사용자는 URL을 직접 쳐야 설정 화면에 닿는다(UX, Low). FINDING-001과 같은 결.
+
+**Context:** §6-0 (a) 사용자 메뉴 구성 결정이 먼저다.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** SYSTEM.md §6-0 (a) 결정
+
+### ISSUE-005 잠금 문구의 「15분」이 설정값과 따로 논다
+
+**What:** `domain/auth/locked-message.ts`의 문구가 「15분 뒤」로 고정인데 잠금 창은 설정 레지스트리 `auth.lockout.window_minutes`에서 바뀐다.
+
+**Why:** 관리자가 창을 바꾸면 잠긴 사용자가 틀린 대기 시간을 본다(Content, Low).
+
+**Context:** 문구는 클라이언트 번들 제약으로 import 없는 잎 모듈이고 `login-error.ts`가 정확 대조한다. 문구를 동적으로 하려면 대조 방식부터 바꿔야 하고 인증 영역이라 `/cso` 대상이다.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** 문구 정책 결정
+
+### ISSUE-006 로그인한 채 `/login`을 열면 로그인 폼이 그대로 보인다
+
+**What:** 세션이 있는 사용자가 `/login`에 가면 리디렉션 없이 폼이 뜬다.
+
+**Why:** 이미 로그인한 사람에게 필요 없는 화면이다(UX, Low).
+
+**Context:** §6-7 로그인 화면 규정에 이 경우가 없다.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** SYSTEM.md §6-7 결정
+
+### `/admin/action-log` 필터도 ISSUE-001과 같은 뿌리
+
+**What:** `app/(app)/admin/action-log/filter-bar.tsx`가 같은 네이티브 GET + `defaultValue` 패턴이라 「필터 지우기」·뒤로 가기 뒤 칸이 URL과 어긋날 수 있다(Phase 3 관리자 화면이라 이번 QA 범위 밖, 실측 안 함).
+
+**Why:** 목록은 필터 없이 그려지는데 칸은 이전 값을 보인다.
+
+**Context:** ISSUE-001 수정(`01c3b6c`: `key` + `autoComplete="off"`)을 그대로 적용하면 된다. 실측 뒤 적용할 것.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None

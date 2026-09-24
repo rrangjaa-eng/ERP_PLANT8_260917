@@ -94,6 +94,21 @@ function jobLine(log: string, jobSuffix: string): string {
   return line;
 }
 
+// 04.2-04 Task 1: 스케줄러 잡 인자 계약 — create·update가 같은 인자를 쓴다.
+function expectSchedulerArgs(line: string, serviceUrl: string): void {
+  expect(line).toContain("--schedule=0 9 * * *");
+  expect(line).toContain("--time-zone=Asia/Seoul");
+  expect(line).toContain(`--uri=${serviceUrl}/internal/notify-tick `);
+  expect(line).toContain("--http-method=POST");
+  expect(line).toContain("--oidc-service-account-email=plant8-staging-scheduler@test-proj.iam.gserviceaccount.com");
+  // audience는 경로·끝 슬래시 없는 서비스 URL(= BETTER_AUTH_URL)이다.
+  expect(line.match(/--oidc-token-audience=(\S+)/)?.[1]).toBe(serviceUrl);
+  expect(line).toContain("--max-retry-attempts=0");
+  expect(line).toContain("--attempt-deadline=180s");
+  expect(line).toContain("--location=asia-northeast3");
+  expect(line).toContain("--project=test-proj");
+}
+
 describe("deploy.sh — 새 프로젝트(시나리오 1)", () => {
   let repoDir: string;
   beforeEach(() => {
@@ -192,6 +207,28 @@ describe("deploy.sh — 새 프로젝트(시나리오 1)", () => {
     const healthLine = r.log.split("\n").find((l) => l.includes("/api/health"));
     expect(healthLine).toContain("https://plant8-staging-67rumhdgba-du.a.run.app/api/health");
   });
+
+  it("잡이 없으면 서비스 배포 뒤 notify-tick 스케줄러 잡을 매일 09:00 KST·OIDC로 만든다(04.2-04)", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
+    expect(r.status).toBe(0);
+    const lines = r.log.split("\n");
+
+    const describeIdx = lineIndex(r.log, "scheduler jobs describe plant8-staging-notify-tick");
+    expect(describeIdx).toBeGreaterThan(-1);
+    // SERVICE_URL이 확정된 뒤(서비스 배포 뒤)에만 잡을 만든다.
+    expect(describeIdx).toBeGreaterThan(lineIndex(r.log, "run deploy plant8-staging "));
+
+    const createLines = lines.filter((l) => l.startsWith("scheduler jobs create http plant8-staging-notify-tick "));
+    expect(createLines).toHaveLength(1);
+    expect(lines.findIndex((l) => l.startsWith("scheduler jobs create http"))).toBeGreaterThan(describeIdx);
+    expect(r.log).not.toContain("scheduler jobs update");
+    const serviceUrl = r.stdout.trim().split("\n").at(-1)!.replace(/^SERVICE_URL=/, "");
+    expectSchedulerArgs(createLines[0]!, serviceUrl);
+
+    // 앱은 누가 불러야 하는지 안다 — 기대 호출자 이메일이 서비스 env에 들어간다.
+    const deployLine = lines.find((l) => l.startsWith("run deploy plant8-staging "));
+    expect(deployLine).toContain("NOTIFY_TICK_SCHEDULER_SA=plant8-staging-scheduler@test-proj.iam.gserviceaccount.com");
+  });
 });
 
 describe("deploy.sh — 기존 서비스·이미지(시나리오 2)", () => {
@@ -254,6 +291,28 @@ describe("deploy.sh — 기존 서비스·이미지(시나리오 2)", () => {
 
     expect(r.stderr).toContain("using actual status.url");
     expect(r.stdout.trim().split("\n").at(-1)).toBe("SERVICE_URL=https://plant8-staging-abc123-du.a.run.app");
+  });
+
+  it("잡이 이미 있으면 create가 아니라 update http로 같은 인자를 다시 적용한다(04.2-04)", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: {
+        "service-exists": true,
+        "image-exists": true,
+        "describe-url": "https://plant8-staging-abc123-du.a.run.app",
+        "scheduler-job": true,
+      },
+    });
+    expect(r.status).toBe(0);
+    const lines = r.log.split("\n");
+    expect(r.log).not.toContain("scheduler jobs create");
+    const updateLines = lines.filter((l) => l.startsWith("scheduler jobs update http plant8-staging-notify-tick "));
+    expect(updateLines).toHaveLength(1);
+    expectSchedulerArgs(updateLines[0]!, "https://plant8-staging-abc123-du.a.run.app");
+    expect(lineIndex(r.log, "scheduler jobs describe plant8-staging-notify-tick")).toBeGreaterThan(
+      lineIndex(r.log, "run deploy plant8-staging "),
+    );
+    const deployLine = lines.find((l) => l.startsWith("run deploy plant8-staging "));
+    expect(deployLine).toContain("NOTIFY_TICK_SCHEDULER_SA=plant8-staging-scheduler@test-proj.iam.gserviceaccount.com");
   });
 });
 

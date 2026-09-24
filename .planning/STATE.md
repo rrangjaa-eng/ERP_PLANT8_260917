@@ -5,12 +5,12 @@ current_phase_name: 프로젝트·견적 원장
 current_plan: 5
 status: executing
 stopped_at: Completed 04-04-PLAN.md
-last_updated: "2026-09-24T09:10:32.995Z"
+last_updated: "2026-09-24T09:33:55.781Z"
 last_activity: 2026-09-22
 last_activity_desc: Phase 04 execution started
-state_head: 82b86de6a9efeff9a64631622d2be27bd092bf3c
+state_head: 2daba4498697a37035a352266d58f7b7ce6c7b67
 progress:
-  total_phases: 14
+  total_phases: 15
   completed_phases: 1
   total_plans: 61
   completed_plans: 27
@@ -198,6 +198,8 @@ Recent decisions affecting current work:
 - Phase 7 edited: edited fields: depends_on, requirements, success_criteria (ADMN-11·NOTI-01·NOTI-02·NOTI-04와 기준 2·4를 Phase 04.2로 옮김)
 - Phase 04.3 inserted after Phase 4: QR 확인증 접수 — Phase 11에서 경품 지출결의·세금 제안에 기대지 않는 행사 QR·당첨자 등록·수령자 제출·주민등록번호 암호화·열람·파기·경영관리 정정·인쇄물·/cso 두 번을 떼어 Phase 4와 병렬 진행(사용자 결정 2026-09-24)
 - Phase 11 edited: edited fields: goal, depends_on, requirements, success_criteria (CERT-01·CERT-02와 기준 2·3을 Phase 04.3으로 옮김)
+- Phase 04.4 inserted after Phase 4: 복원 리허설·로그인 상태 — Phase 8에서 Phase 4 원장에 기대지 않는 복원 리허설 워크플로·복원 절차 문서·상태 화면 항목·사람 목록 로그인 상태 표시를 떼어 Phase 4와 병렬 진행(사용자 결정 2026-09-24)
+- Phase 8 edited: edited fields: goal, depends_on, requirements, success_criteria (OPS-03과 기준 5·기준 2의 표시를 Phase 04.4로 옮김)
 
 ## Deferred Items
 

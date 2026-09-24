@@ -346,6 +346,50 @@ export function computeQuoteLineAmounts(input: {
   };
 }
 
+// 04-04 Task 2 ② — 버전이 다른 줄 하나의 칸 단위 충돌. baseline과 서버
+// 현재 값이 실제로 다른 칸만 담는다. baseline이 없으면(방어적 폴백 — 정상
+// 클라이언트는 항상 보낸다) 줄 전체를 itemName 한 칸의 충돌로 본다.
+function cellConflictsFor(rowId: string, baseline: QuoteLineBaseline | undefined, current: QuoteLineRow): CellConflict[] {
+  if (!baseline) {
+    return [
+      {
+        rowId,
+        field: "itemName",
+        label: FIELD_LABELS.itemName,
+        reason: "다른 사람이 이 줄을 바꿨습니다 · 덮어쓰기 / 그 값으로",
+        theirValue: current.itemName,
+        theirRaw: current.itemName,
+        theirVersion: current.version,
+      },
+    ];
+  }
+
+  const changedAt = current.updatedAt.toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Seoul",
+  });
+
+  const conflicts: CellConflict[] = [];
+  for (const field of COMPARE_FIELDS) {
+    const baselineValue = baseline[field];
+    const currentValue = currentFieldValue(current, field);
+    if (baselineValue === currentValue) continue; // 값이 실제로 같으면 충돌이 아니다.
+    const theirValue = formatFieldValue(field, currentValue);
+    conflicts.push({
+      rowId,
+      field,
+      label: FIELD_LABELS[field],
+      reason: `다른 사람이 ${changedAt}에 ${theirValue}으로 바꿈 · 덮어쓰기 / 그 값으로`,
+      theirValue,
+      theirRaw: currentValue,
+      theirVersion: current.version,
+    });
+  }
+  return conflicts;
+}
+
 export type SaveQuoteLinesResult = { lines: QuoteLineDto[] };
 
 export type QuoteLineWriteDeps = {
@@ -445,44 +489,7 @@ export async function saveQuoteLines(
     }
     if (current.version === input.version) return; // 버전이 같으면 충돌 없음.
 
-    if (!input.baseline) {
-      // 방어적 폴백 — 정상 클라이언트는 항상 baseline을 함께 보낸다.
-      // 셀 단위 비교 근거가 없으면 줄 전체를 충돌로 본다(과거 동작과
-      // 동일하게 안전한 쪽으로 거부).
-      conflicts.push({
-        rowId: input.id,
-        field: "itemName",
-        label: FIELD_LABELS.itemName,
-        reason: "다른 사람이 이 줄을 바꿨습니다 · 덮어쓰기 / 그 값으로",
-        theirValue: current.itemName,
-        theirRaw: current.itemName,
-        theirVersion: current.version,
-      });
-      return;
-    }
-
-    const changedAt = current.updatedAt.toLocaleTimeString("ko-KR", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-      timeZone: "Asia/Seoul",
-    });
-
-    for (const field of COMPARE_FIELDS) {
-      const baselineValue = input.baseline[field];
-      const currentValue = currentFieldValue(current, field);
-      if (baselineValue === currentValue) continue; // 값이 실제로 같으면 충돌이 아니다.
-      const theirValue = formatFieldValue(field, currentValue);
-      conflicts.push({
-        rowId: input.id,
-        field,
-        label: FIELD_LABELS[field],
-        reason: `다른 사람이 ${changedAt}에 ${theirValue}으로 바꿈 · 덮어쓰기 / 그 값으로`,
-        theirValue,
-        theirRaw: currentValue,
-        theirVersion: current.version,
-      });
-    }
+    conflicts.push(...cellConflictsFor(input.id, input.baseline, current));
   });
 
   if (conflicts.length > 0 || formatErrors.length > 0) {
@@ -532,21 +539,15 @@ export async function saveQuoteLines(
           // 사이 커밋) — 같은 구조화 오류로 거부한다. 이 시점엔 아직
           // 아무것도 커밋되지 않았으므로(트랜잭션 안) 이 throw가 전체를
           // 되돌린다.
+          // 04-28 — 같은 트랜잭션에서 서버 현재 행을 다시 읽어, 사전 판정과
+          // 같은 규칙으로 실제로 달라진 칸만 서버 값·버전으로 싣는다.
+          const [current] = await repoFindQuoteLinesByIds(viewer, [input.id], innerTx);
+          if (!current || current.revisionId !== revisionId) {
+            throw new UserFacingError("줄을 찾을 수 없습니다 · 화면을 새로고침해 주세요");
+          }
+          const raceConflicts = cellConflictsFor(input.id, input.baseline, current);
           throw new SaveRejectedError(
-            [
-              {
-                rowId: input.id,
-                field: "itemName",
-                label: FIELD_LABELS.itemName,
-                reason: "다른 사람이 방금 이 줄을 바꿨습니다 · 덮어쓰기 / 그 값으로",
-                theirValue: "",
-                // 04-28 — 경합 시점엔 서버 현재 값을 모른다. 기준을 올리지 않는
-                // 값(내 값·내 version)을 실어, 해소 뒤 다음 저장이 사전 판정에서
-                // 실제 칸 단위 충돌로 다시 거부되게 한다.
-                theirRaw: input.itemName,
-                theirVersion: input.version!,
-              },
-            ],
+            raceConflicts.length > 0 ? raceConflicts : cellConflictsFor(input.id, undefined, current),
             [],
           );
         }

@@ -32,6 +32,8 @@ const ENV_KEYS = [
   "APP_DEPLOYED_AT",
   "MAX_INSTANCES",
   "STATUS_CONN_BANNER_RATIO",
+  "NOTIFY_TICK_SCHEDULER_SA",
+  "NOTIFY_TICK_OIDC_DISABLED",
 ] as const;
 
 let saved: Record<string, string | undefined>;
@@ -141,5 +143,40 @@ describe("lib/env", () => {
 
     expect(message).toContain("GOOGLE_CLIENT_SECRET");
     expect(message).not.toContain("super-secret-client-id-value");
+  });
+
+  // 04.2-05: tick OIDC 검증 끄기는 로컬에서만 — 로컬 밖이면 부팅이 실패한다
+  // (deploy.sh exit 2와 이중 차단).
+  it("APP_ENV=staging에 NOTIFY_TICK_OIDC_DISABLED가 있으면 throw한다", async () => {
+    process.env.DATABASE_URL = "postgres://erp:erp@127.0.0.1:5432/erp";
+    process.env.APP_ENV = "staging";
+    process.env.BETTER_AUTH_SECRET = "a".repeat(32);
+    process.env.BETTER_AUTH_URL = "https://example.com";
+    process.env.NOTIFY_TICK_OIDC_DISABLED = "1";
+
+    await expect(import("@/lib/env")).rejects.toThrow(/NOTIFY_TICK_OIDC_DISABLED/);
+  });
+
+  it("APP_ENV=local이면 NOTIFY_TICK_OIDC_DISABLED가 있어도 파싱 성공한다", async () => {
+    process.env.DATABASE_URL = "postgres://erp:erp@127.0.0.1:5432/erp";
+    process.env.NOTIFY_TICK_OIDC_DISABLED = "1";
+
+    const { env } = await import("@/lib/env");
+    expect(env.NOTIFY_TICK_OIDC_DISABLED).toBe("1");
+  });
+
+  it("NOTIFY_TICK_SCHEDULER_SA·NOTIFY_TICK_OIDC_DISABLED는 선택값이고 SA 값을 읽는다", async () => {
+    process.env.DATABASE_URL = "postgres://erp:erp@127.0.0.1:5432/erp";
+    const { env: bare } = await import("@/lib/env");
+    expect(bare.NOTIFY_TICK_SCHEDULER_SA).toBeUndefined();
+    expect(bare.NOTIFY_TICK_OIDC_DISABLED).toBeUndefined();
+
+    vi.resetModules();
+    process.env.APP_ENV = "prod";
+    process.env.BETTER_AUTH_SECRET = "a".repeat(32);
+    process.env.BETTER_AUTH_URL = "https://example.com";
+    process.env.NOTIFY_TICK_SCHEDULER_SA = "s@x.iam.gserviceaccount.com";
+    const { env } = await import("@/lib/env");
+    expect(env.NOTIFY_TICK_SCHEDULER_SA).toBe("s@x.iam.gserviceaccount.com");
   });
 });

@@ -327,13 +327,21 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     // 같다) — 이 한 단계는 트랩이 깨진 것이 아니라 body는 인터랙션 요소가
     // 아니므로 허용한다. 실제로 지켜야 할 계약은 "다이얼로그 밖의 다른
     // 버튼·링크·입력으로 넘어가지 않는다"이다.
+    // body에 머무는 것은 한 단계뿐이다 — body 다음 Tab은 반드시 다이얼로그 안으로
+    // 돌아와야 하고, 다이얼로그 밖의 요소는 한 번도 포커스되지 않는다.
+    let previous: "inside" | "body" | "outside" = "inside";
+    let insideSteps = 0;
     for (let i = 0; i < 6; i++) {
       await page.keyboard.press("Tab");
-      const insideOrNeutral = await dialog.evaluate(
-        (node) => node.contains(document.activeElement) || document.activeElement === document.body,
+      const where = await dialog.evaluate((node) =>
+        node.contains(document.activeElement) ? "inside" : document.activeElement === document.body ? "body" : "outside",
       );
-      expect(insideOrNeutral).toBe(true);
+      expect(where).not.toBe("outside");
+      if (where === "body") expect(previous).toBe("inside");
+      if (where === "inside") insideSteps++;
+      previous = where;
     }
+    expect(insideSteps).toBeGreaterThanOrEqual(4);
 
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();

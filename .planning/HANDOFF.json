@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-24T08:39:25.518Z",
+  "timestamp": "2026-09-24T09:01:36.572Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -92,12 +92,18 @@
       "name": "[세션 F] 04-32 실행 — withTransaction lock_timeout 5s·풀 connectionTimeoutMillis 5000·시간 초과 UserFacing 변환, recordAction/appendActionLog/findSimpleValue tx, ARCHITECTURE §4-8, project() 항목당 한 번·projectMany·all-of. executor b395483·ce424ab(RED)·c9e70ea·af47867(RED)·518ad0f·34986bc. 오케스트레이터: RED 두 건 별도 워크트리 재현(2 실패·3+1 실패), diff 실제 저장소 대입 검토에서 결함 발견 — executor의 ENG-D11 편차가 saveProjectLedger 전체(커밋 뒤 recordAction·listRevenue 포함)를 시간 초과 변환으로 감싸 이미 저장된 뒤 「잠시 뒤 다시 저장」을 띄움(새 줄 중복 저장, UX-04) → systematic-debugging·TDD로 RED 2bea596(tx-safety (d)) · fix 4f54fcf(변환을 커밋 전까지로). tx-safety 5회 연속 초록. 의존성 객체·lock d6b41cf와 동일, 금지 4파일 diff 0. 전체 게이트 CI=true: 단위 791·통합 1036·E2E 170, lint·typecheck·lint:sql 0. 웨이브 후 게이트 훅 3개 차단 없음. 푸시 4f54fcf",
       "status": "done",
       "commit": "4f54fcf"
+    },
+    {
+      "id": 15,
+      "name": "[세션 G] 04-43 실행 — REQUIREMENTS PROJ-03·04 + ROADMAP 기준 4 (D16 2차 보강). executor 1111278·e97b39b·24229ab. 오케스트레이터 검토: diff 세 줄뿐·D-75~D-84 일치·코드 변경 0·검증 4개 재실행 초록. 전체 게이트 CI=true: 단위 791·통합 1036·E2E 170, lint·typecheck·lint:sql 0",
+      "status": "done",
+      "commit": "24229ab"
     }
   ],
   "remaining_tasks": [
     {
       "id": 14,
-      "name": "/gsd-execute-phase 4 — 플랜마다 새 세션. 다음 04-32(웨이브 3) → 04-43 → 04-10 …. 묶음 끝(04-23·04-41·04-31) 뒤 Post-build + 머지, 다음 묶음은 새 PR",
+      "name": "/gsd-execute-phase 4 — 플랜마다 새 세션. 다음 04-10(웨이브 4) → 04-46 …. 묶음 끝(04-23·04-41·04-31) 뒤 Post-build + 머지, 다음 묶음은 새 PR",
       "status": "not_started"
     },
     {
@@ -142,6 +148,11 @@
     {
       "action": "플래너 판단 확인: ②/③ 경계 04-23 뒤(04-26 뒤도 가능), ENG-D12 04-50 이동(실행 완료), QA 해석(날짜 순서→04-15, 폰 편집→04-49)",
       "context": "기록 밖 판단",
+      "blocking": false
+    },
+    {
+      "action": "04-43-SUMMARY 「남은 낡은 문구」 5자리(ROADMAP Goal·기준 1·기준 5·트레일링 문단, REQUIREMENTS PROJ-06의 완료(정산))를 /gsd-phase 편집으로 고칠지 결정",
+      "context": "사용자 D16은 세 곳만 승인 — 나머지는 수동 편집 금지라 남겨 둠",
       "blocking": false
     }
   ],
@@ -240,12 +251,15 @@
       "decision": "[세션 F] saveProjectLedger의 시간 초과 → UserFacing 변환은 커밋 전(권한 확인 읽기 + 트랜잭션)까지만. 커밋 뒤 오류는 04-32 이전처럼 그대로(일반 오류 문구) — 새 문구 결정 없음",
       "rationale": "커밋 뒤 「다시 저장」은 새 줄 중복 저장(UX-04). 04-32-SUMMARY 편차 2(「함수 전체 감싸기」)는 4f54fcf로 바뀜 — .planning 수동 편집 금지라 SUMMARY는 두고 여기 정정 기록. /review 때 참고",
       "phase": "4"
+    },
+    {
+      "decision": "[세션 G 판단·알림] detached HEAD 재부착 · 격리 none(base-check 자동 강등) · 실행 컨텍스트 executor Read · 문서 전용 플랜이라 DOM 감사 없음 · 전체 게이트를 executor와 병행으로 띄웠다가 「같은 작업 트리 동시 사용 금지」 제약에 걸려 즉시 중지, executor 종료 뒤 한 번 실행",
+      "rationale": "워크플로 5.6 병합 뒤 게이트 + 인계 제약 준수",
+      "phase": "4"
     }
   ],
-  "uncommitted_files": [
-    " M .planning/state.json"
-  ],
-  "next_action": "세션 G: git status -sb(브랜치 붙음 확인) → /gsd-progress → /gsd-execute-phase 4 로 04-43(웨이브 3) 한 플랜만 실행. 끝나면 커밋·푸시 → /gsd-pause-work → 같은 설정으로 다음 세션(04-10).",
+  "uncommitted_files": [],
+  "next_action": "세션 H: git status -sb(브랜치 붙음 확인) → /gsd-progress → /gsd-execute-phase 4 로 04-10(웨이브 4) 한 플랜만 실행. 끝나면 커밋·푸시 → /gsd-pause-work → 같은 설정으로 다음 세션(04-46).",
   "context_notes": "세션 F는 04-32 한 플랜만 했다. 커밋 뒤 단계의 오류 문구(저장됐지만 감사 기록·스냅샷 실패 시 무엇을 보여줄지)는 기록에 없는 결정이라 새 문구를 만들지 않고 이전 동작(일반 오류)으로 두었다 — 04-12·04-22가 recordAction을 tx 안으로 옮기면 남는 것은 listRevenue 스냅샷뿐. executor 메모: gsd check tdd-red-evidence가 Vitest tap 출력을 못 읽음(도구 틈, 범위 밖).",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",

@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 6
+current_plan: 2
 status: executing
-stopped_at: Completed 04-50-PLAN.md
-last_updated: "2026-09-24T05:50:00.254Z"
-last_activity: 2026-09-22
-last_activity_desc: Phase 04 execution started
-state_head: 21b0f00bc73c387a099355f10831ec897532c116
+stopped_at: Completed 04-08-PLAN.md
+last_updated: "2026-09-24T06:56:23.183Z"
+last_activity: 2026-09-24
+last_activity_desc: Phase 4 execution started
+state_head: eccc194642db0413a196a3e0c965964435a8d607
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 65
-  completed_plans: 28
+  completed_plans: 29
   percent: 9
 ---
 
@@ -24,15 +24,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-17)
 
 **Core value:** 기획본부와 경영관리본부가 프로젝트마다 같은 숫자(견적·예상 비용·확정 비용·손익)를 본다. 기획본부는 계산식·근거 없이 결과 숫자로 납득하고, 경영관리·대표는 근거 줄까지 본다.
-**Current focus:** Phase 04 — 프로젝트·견적 원장
+**Current focus:** Phase 4 — 프로젝트·견적 원장
 
 ## Current Position
 
-Phase: 4 (프로젝트·견적 원장) — READY TO EXECUTE
-Current Plan: 6
+Phase: 4 (프로젝트·견적 원장) — EXECUTING
+Current Plan: 2
 Total Plans in Phase: 42
 Status: Ready to execute
-Last activity: 2026-09-22 — Phase 04 execution started
+Last activity: 2026-09-24 — Phase 4 execution started
 
 Progress: [█░░░░░░░░░] 9%
 
@@ -78,6 +78,7 @@ Progress: [█░░░░░░░░░] 9%
 | Phase 04 P05 | 1h2m | 2 tasks | 16 files |
 | Phase 04 P04 | 35min | 3 tasks | 21 files |
 | Phase 04 P50 | 15min | 2 tasks | 6 files |
+| Phase 04 P08 | 41min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -166,6 +167,11 @@ Recent decisions affecting current work:
 - [Phase 4]: [Phase 4] 04-50: 스키마 하한 = 체크아웃의 가장 최신 `-- rollback-floor:` 마이그레이션을 더한 커밋. rollback.sh가 그 커밋을 조상으로 갖지 않는 배포로는 트래픽을 옮기지 않는다(fail-closed, 우회 옵션 없음)
 - [Phase 4]: [Phase 4] 04-50: ENG-D12 deploy.yml main 전용 ref-guard를 04-31 Task 2에서 이 플랜(묶음 ② 첫 웨이브)으로 옮겼다 — 하한 판정이 main 이력을 전제한다
 - [Phase 4]: 04 열린 질문 사용자 답: ① 줄당 원화 > 2,147,483,647 → (b) bigint 전환(04-07 Task 0 = b: 0016에서 KRW 금액 컬럼 bigint + rollback-floor 마커) ② 채번 순번 시작값 하향 충돌 → (a) 설정 검증(현재 발급 최대 이하 값 거부, 04-51 Task 1 = a) — 사용자 결정 2026-09-24(세션 C 채팅). 04-07·04-51 checkpoint:decision은 실행 때 이 답을 적용한다
+- [Phase 4]: 04-08: 단축키 표기·동작은 Windows Ctrl(D-94) — metaKey를 읽지 않는다
+- [Phase 4]: 04-08: 등록 폼 제출 이중 방지는 submittedRef 래치로 — isExecuting 가드만으로는 성공 뒤 이동 지연 중 재입력을 못 막는다(엔지 리뷰 C §1 P2)
+- [Phase 4]: 04-08: SYSTEM.md §7-3 (가) 잠김 정의는 D-78 개정(CEO-D10·D12) — 정산 프로젝트의 줄 추가는 렌더한다
+- [Phase 4]: 04-08: SYSTEM.md §7-4 대기 태그 색을 §7-5 의미 목록에 맞춰 accent→muted로 정정
+- [Phase 4]: 04-08: 플랜의 baseline 커밋 d6b41cf가 저장소에 없어(환경 불일치) 실제 04-08 시작 시점 HEAD인 b0fc281을 tokens.css/package.json/pnpm-lock.yaml 불변 검증 기준으로 대신 썼다
 
 ### Pending Todos
 
@@ -209,6 +215,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T05:50:00.122Z
-Stopped at: Completed 04-50-PLAN.md
+Last session: 2026-09-24T06:56:23.004Z
+Stopped at: Completed 04-08-PLAN.md
 Resume file: None

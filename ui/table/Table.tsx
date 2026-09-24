@@ -274,6 +274,11 @@ export function Table<Row>({
 
   function handleTablePaste(event: React.ClipboardEvent<HTMLTableElement>) {
     if (!enableGridKeyboard || !onPasteAtCell) return;
+    // 편집 중인 셀의 <input>·<textarea>에서 bubbling된 paste는 그 칸의
+    // 네이티브 붙여넣기(값 그대로 들어가 onChange가 처리)로 두고, 표
+    // 수준 TSV 붙여넣기로 가로채지 않는다.
+    const target = event.target as HTMLElement | null;
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
     const row = flatRows[keyboardState.focus.row];
     const column = columns[keyboardState.focus.col];
     if (!row || !column) return;

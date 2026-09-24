@@ -41,6 +41,9 @@ async function createScratchDb(): Promise<Pool> {
   const url = new URL(baseUrl);
   url.pathname = `/${name}`;
   const pool = new Pool({ connectionString: url.toString() });
+  // pool.end()는 클라이언트 소켓이 닫히기 전에 끝나, 뒤따르는 DROP ... WITH (FORCE)가
+  // 남은 백엔드를 끊으면 pg가 57P01을 error 이벤트로 올린다(CI run 328) — 정리 중 일이라 삼킨다.
+  pool.on("error", () => undefined);
   scratch.push({ name, pool });
   return pool;
 }

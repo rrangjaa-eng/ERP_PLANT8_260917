@@ -545,3 +545,75 @@ test.describe("견적 줄 표 — Ctrl 전용 단축키·힌트 줄·이중 저�
     await expect(quoteDataRows(page)).toHaveCount(2);
   });
 });
+
+test.describe("견적 줄 표 — 힌트 줄·1차·EMPTY에 적힌 조합이 전부 동작한다(04-28 Task 2 · C-07 · T17)", () => {
+  test("힌트 줄 여섯 조합과 1차 kbd Ctrl+S를 차례로 눌러 적힌 결과를 단언한다", async ({ page }) => {
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await openProjectWithSavedLines(page, [
+      { subcategory: "stage_construction", itemName: "무대 줄1", amount: 1000 },
+      { subcategory: "stage_construction", itemName: "무대 줄2", amount: 2000 },
+      { subcategory: "print_production", itemName: "인쇄 줄", amount: 3000 },
+    ]);
+    await expect(quoteDataRows(page)).toHaveCount(3);
+
+    // 이동 ↑↓←→ — 활성 셀 좌표가 방향키대로 움직인다.
+    await quoteCell(page, 0, 2).focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(quoteCell(page, 1, 2)).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(quoteCell(page, 1, 3)).toBeFocused();
+    await page.keyboard.press("ArrowLeft");
+    await expect(quoteCell(page, 1, 2)).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect(quoteCell(page, 0, 2)).toBeFocused();
+
+    // 붙여넣기 Ctrl+V — 클립보드 값이 활성 셀에 들어간다.
+    await page.evaluate(() => navigator.clipboard.writeText("7"));
+    await quoteCell(page, 2, 4).focus();
+    await page.keyboard.press("Control+v");
+    await expect(quoteCell(page, 2, 4)).toHaveText("7");
+
+    // 취소 Esc — 편집 중 값이 되돌아가고 포커스는 그 셀에 남는다.
+    await quoteCell(page, 0, 2).focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("취소될 값");
+    await page.keyboard.press("Escape");
+    await expect(quoteCell(page, 0, 2)).toHaveText("무대 줄1");
+    await expect(quoteCell(page, 0, 2)).toBeFocused();
+
+    // 줄 이동 Alt+↑↓ — 같은 그룹 안 순서가 바뀐다.
+    await quoteCell(page, 1, 2).focus();
+    await page.keyboard.press("Alt+ArrowUp");
+    await expect(quoteCell(page, 0, 2)).toHaveText("무대 줄2");
+    await expect(quoteCell(page, 1, 2)).toHaveText("무대 줄1");
+
+    // 줄 복제 Ctrl+D — 줄 수 +1, 값이 복제된다.
+    await quoteCell(page, 2, 2).focus();
+    await page.keyboard.press("Control+d");
+    await expect(quoteDataRows(page)).toHaveCount(4);
+    await expect(quoteCell(page, 3, 2)).toHaveText("인쇄 줄");
+
+    // 새 줄 Ctrl+Enter — 줄 수 +1.
+    await quoteCell(page, 0, 2).focus();
+    await page.keyboard.press("Control+Enter");
+    await expect(quoteDataRows(page)).toHaveCount(5);
+    await editTextCell(page, 2, 2, "새 줄 항목");
+
+    // 1차 kbd Ctrl+S — 저장된다(힌트 줄에는 없다).
+    await quoteCell(page, 0, 2).focus();
+    const saved = page.waitForResponse((response) => isServerAction(response.request()));
+    await page.keyboard.press("Control+s");
+    await saved;
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+  });
+
+  test("0줄 EMPTY의 3차 「첫 줄 만들기」 kbd Ctrl+Enter로 첫 줄이 정확히 하나 생긴다", async ({ page }) => {
+    await openProjectWithSavedLines(page, []);
+    const emptyAction = page.getByRole("button", { name: /첫 줄 만들기/ });
+    await expect(emptyAction.locator("kbd")).toHaveText("Ctrl+Enter");
+    await emptyAction.focus();
+    await page.keyboard.press("Control+Enter");
+    await expect(quoteDataRows(page)).toHaveCount(1);
+  });
+});

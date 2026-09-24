@@ -152,6 +152,10 @@ None - no external service configuration required.
 - T-04-372(배포 창 — migrate 뒤 새 리비전 100% 전 옛 리비전이 새 스키마 위에서 도는 구간)는 이 플랜이 DECISIONS에 사실만 기록했다. 처리(프로덕션 승격 시각 선택 등)는 계획대로 묶음 ②·③ `/ship` 전에 사용자 확인이 필요하다(objective의 계획 인계 질문 — 아직 미결).
 - `/gsd-verify-work`가 rollback.sh의 unit 검증과 deploy.yml의 텍스트 메타 검증을 재확인할 수 있다. 이 플랜은 실제 GCP 호출을 하지 않았으므로 스테이징 실동작 확인은 별도(Post-build `/qa`/배포 단계)에서 이뤄진다.
 
+## Self-Check: PASSED
+
+All 6 modified source/doc files and 5 commits (5a55b2c, 0b85305, 7a72883, a2cfd47, 21b0f00) verified present on disk / in `git log --oneline --all`.
+
 ---
 *Phase: 04-project-quote-ledger*
 *Plan: 50*

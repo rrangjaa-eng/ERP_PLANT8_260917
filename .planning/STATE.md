@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 5
+current_plan: 6
 status: executing
-stopped_at: Completed 04-04-PLAN.md
-last_updated: "2026-09-24T05:29:39.585Z"
+stopped_at: Completed 04-50-PLAN.md
+last_updated: "2026-09-24T05:50:00.254Z"
 last_activity: 2026-09-22
 last_activity_desc: Phase 04 execution started
-state_head: ecbd3d3c90415db34fbd1b4c06f2c8b2695d0e51
+state_head: 21b0f00bc73c387a099355f10831ec897532c116
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 65
-  completed_plans: 27
+  completed_plans: 28
   percent: 9
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 4 (프로젝트·견적 원장) — READY TO EXECUTE
-Current Plan: 5
+Current Plan: 6
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-22 — Phase 04 execution started
@@ -77,6 +77,7 @@ Progress: [█░░░░░░░░░] 9%
 | Phase 04 P02 | 1h10m | 3 tasks | 36 files |
 | Phase 04 P05 | 1h2m | 2 tasks | 16 files |
 | Phase 04 P04 | 35min | 3 tasks | 21 files |
+| Phase 04 P50 | 15min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -162,6 +163,8 @@ Recent decisions affecting current work:
 - [Phase 4]: 실제 Windows Excel은 줄바꿈 있는 칸만 인용하고 따옴표만 있는 칸은 원문 그대로 쓴다 — parseTsv를 이 규칙에 맞춤(04-RESEARCH.md 가정 A3 대체)
 - [Phase 4]: 데이터 이전 없음(사용자 결정 2026-09-23) — 인트라넷 데이터는 이전하지 않고 마스터(거래처·클라이언트·직원·법인카드·분류) 포함 전부 새 시스템에 손으로 입력한다. 시스템이 완성되는 대로 연중에 전환하고(연도 경계 아님) 인트라넷은 과거 조회 전용. REQUIREMENTS MIG-01~03 → Out of Scope(v1 89 → 86), MIG-04·05 재정의, OPS-06 '이전 실행' → '복원 리허설'. ROADMAP Phase 8 = 전환(마스터 수기 입력·계정 발급·demo 삭제·전환일 체크리스트·백업/복원 리허설). 04-03 철회(플랜 삭제, 추출 스크립트는 6b7519f로 되돌림), Phase 4 성공 기준 7 철회. 손익(Phase 9·10)은 전환 데이터부터이며 2026년 숫자는 두 시스템에 나뉜다(사용자 수용). 앞의 [CEO 리뷰 OV-1]·[Roadmap] 데이터 이전·[Eng 리뷰 OV-1]의 델타 이전 부분을 대체 — 옛 구조(상태 컬럼 없이 Y/N 승인 표시 4개, 견적 줄 = 단가×수량×일수, 프로젝트 번호 9개를 22개 프로젝트가 공유, 금액이 공급가인지 합계인지 불명)가 새 구조와 달라 단계마다 변환 규칙과 사람 확인이 필요했다
 - [Phase 4]: 04 plan-phase 13a 결정 커버리지 override: D-72·D-73·D-74(인트라넷 데이터 추출·변환)는 플랜 미인용으로 통과 — 2026-09-23 사용자 결정(데이터 이관 없음, 04-03 철회)으로 CONTEXT에 이미 대체 표시된 결정 — 사용자 선택 2026-09-24(AskUserQuestion: 그대로 진행). verify-phase에서 다시 보이도록 기록
+- [Phase 4]: [Phase 4] 04-50: 스키마 하한 = 체크아웃의 가장 최신 `-- rollback-floor:` 마이그레이션을 더한 커밋. rollback.sh가 그 커밋을 조상으로 갖지 않는 배포로는 트래픽을 옮기지 않는다(fail-closed, 우회 옵션 없음)
+- [Phase 4]: [Phase 4] 04-50: ENG-D12 deploy.yml main 전용 ref-guard를 04-31 Task 2에서 이 플랜(묶음 ② 첫 웨이브)으로 옮겼다 — 하한 판정이 main 이력을 전제한다
 
 ### Pending Todos
 
@@ -205,6 +208,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-23T14:29:34.050Z
-Stopped at: Completed 04-04-PLAN.md
+Last session: 2026-09-24T05:50:00.122Z
+Stopped at: Completed 04-50-PLAN.md
 Resume file: None

@@ -181,6 +181,20 @@ describe("스키마 하한(E2-04)", () => {
     repoDir = setupRepo();
   });
 
+  it("표시 없는 마이그레이션만 있으면(지금 저장소 상태) 판정 없이 되돌린다", () => {
+    const prev = headSha(repoDir);
+    const serving = commitFile(repoDir, "db/migrations/0000_init.sql", "create table t (id int);\n");
+
+    const r = rollback(repoDir, {
+      revisions: ["v2", "v1"],
+      serving: "v2",
+      revisionShas: { v2: serving, v1: prev },
+    });
+
+    expect(r.status).toBe(0);
+    expect(r.log).toContain("--to-revisions=v1=100");
+  });
+
   it("하한 아래(0012 이전) 후보로는 트래픽을 옮기지 않는다", () => {
     const beforeFloor = headSha(repoDir); // C1 — init, 하한 이전
     const floorSha = commitFile(repoDir, "db/migrations/0012_x.sql", "-- rollback-floor: 상태 재매핑\n"); // C2

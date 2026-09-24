@@ -1,4 +1,4 @@
-import { and, eq, isNull, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, isNotNull } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
 import { roles } from "@/db/schema";
@@ -20,6 +20,14 @@ export async function findRoleById(viewer: Viewer, id: string): Promise<RoleRow 
   void viewer;
   const [row] = await db.select().from(roles).where(eq(roles.id, id)).limit(1);
   return row ?? null;
+}
+
+// 목록 묶음 조회(이슈 #56) — findRoleById와 같은 의미로 보관 여부로 거르지
+// 않는다. ids가 비면 조회 없이 []를 돌려준다.
+export async function findRolesByIds(viewer: Viewer, ids: string[]): Promise<RoleRow[]> {
+  void viewer;
+  if (ids.length === 0) return [];
+  return db.select().from(roles).where(inArray(roles.id, ids));
 }
 
 // 같은 이름 중복은 name UNIQUE 제약이 거부한다(NFC 정규화 후 비교, D-33①).

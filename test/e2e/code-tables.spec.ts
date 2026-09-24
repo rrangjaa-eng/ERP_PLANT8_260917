@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 
 test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 코드에 계급 이름 분기 없음)", () => {
@@ -108,5 +108,132 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
 
     const emDashStatusCells = table.locator(`tbody tr td:nth-child(${statusColIndex + 1})`).filter({ hasText: "—" });
     expect(await emDashStatusCells.count()).toBeGreaterThan(0);
+  });
+});
+
+// 04-10(D-93 · DR-29) — 코드표 값 설명. 표가 값·이름·설명·정렬·상태·동작
+// 여섯 열이 됐다(objective 메모 (a) 회귀 대상).
+test.describe("코드표 항목 설명 (D-93, UI-SPEC rev 5 S14, DR-29)", () => {
+  async function loginAsSysadmin(page: Page): Promise<void> {
+    const admin = await createFixtureUser({ roleId: "role-sysadmin" });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+  }
+
+  // (a) 설명을 고치고 다른 칸을 눌러 저장한 뒤 새로 고쳐도 값이 남는다.
+  test("설명을 고치고 포커스를 옮기면 저장되고 새로 고쳐도 남는다", async ({ page }) => {
+    await loginAsSysadmin(page);
+
+    const stamp = Date.now();
+    const value = `e2e-desc-${stamp}`;
+    const label = `설명대상-${stamp}`;
+
+    await page.goto("/admin/code-tables?new=1");
+    await page.getByLabel("값").fill(value);
+    await page.getByLabel("이름", { exact: true }).fill(label);
+    await page.getByRole("button", { name: "코드 추가" }).click();
+    await expect(page.getByRole("cell", { name: value })).toBeVisible();
+
+    const descriptionInput = page.getByLabel(`${label} 설명`);
+    await descriptionInput.fill("무대·부스 설치와 철거 공사");
+    await descriptionInput.blur();
+    await expect(page.getByText("설명이 40자를 넘습니다", { exact: false })).toHaveCount(0);
+
+    await page.reload();
+    await expect(page.getByLabel(`${label} 설명`)).toHaveValue("무대·부스 설치와 철거 공사");
+  });
+
+  // (b) 41자 입력 → blur → 오류 한 줄 + 41/40 + 값이 41자 그대로(DR-29) →
+  // 한 글자 지우고 blur → 오류·글자 수 사라지고 새로 고쳐도 40자 값 →
+  // 다시 41자로 고친 뒤 Escape → 서버 값(40자)으로 돌아가고 오류 없음.
+  test("41자 설명은 거부되고 입력이 남는다 — Esc만 서버 값으로 되돌린다", async ({ page }) => {
+    await loginAsSysadmin(page);
+
+    const stamp = Date.now();
+    const value = `e2e-desc40-${stamp}`;
+    const label = `40자대상-${stamp}`;
+    const forty = "가".repeat(40);
+    const fortyOne = "가".repeat(41);
+
+    await page.goto("/admin/code-tables?new=1");
+    await page.getByLabel("값").fill(value);
+    await page.getByLabel("이름", { exact: true }).fill(label);
+    await page.getByRole("button", { name: "코드 추가" }).click();
+    await expect(page.getByRole("cell", { name: value })).toBeVisible();
+
+    const descriptionInput = page.getByLabel(`${label} 설명`);
+    await descriptionInput.fill(forty);
+    await descriptionInput.blur();
+    await expect(page.getByText("설명이 40자를 넘습니다", { exact: false })).toHaveCount(0);
+
+    await descriptionInput.fill(fortyOne);
+    await descriptionInput.blur();
+    await expect(page.getByText("설명이 40자를 넘습니다 · 한 문장으로 줄여 주세요")).toBeVisible();
+    await expect(page.getByText("41/40")).toBeVisible();
+    await expect(descriptionInput).toHaveValue(fortyOne);
+
+    // 한 글자 지우고 blur — 오류·글자 수가 사라지고 새로 고쳐도 40자 값.
+    await descriptionInput.fill(forty);
+    await descriptionInput.blur();
+    await expect(page.getByText("설명이 40자를 넘습니다", { exact: false })).toHaveCount(0);
+    await expect(page.getByText("41/40")).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByLabel(`${label} 설명`)).toHaveValue(forty);
+
+    // 다시 41자로 고친 뒤 Escape — 서버 값(40자)으로 돌아가고 오류가 없다.
+    const descriptionInputAfterReload = page.getByLabel(`${label} 설명`);
+    await descriptionInputAfterReload.fill(fortyOne);
+    await descriptionInputAfterReload.press("Escape");
+    await expect(descriptionInputAfterReload).toHaveValue(forty);
+    await expect(page.getByText("설명이 40자를 넘습니다", { exact: false })).toHaveCount(0);
+  });
+
+  // (c) 설명을 지우고 blur → 새로 고쳐도 설명 칸이 비고 읽기 표시가 —다(C-13).
+  test("설명을 지우면 null로 저장되고 새로 고쳐도 —다", async ({ page }) => {
+    await loginAsSysadmin(page);
+
+    const stamp = Date.now();
+    const value = `e2e-desc-clear-${stamp}`;
+    const label = `지우기대상-${stamp}`;
+
+    await page.goto("/admin/code-tables?new=1");
+    await page.getByLabel("값").fill(value);
+    await page.getByLabel("이름", { exact: true }).fill(label);
+    await page.getByRole("button", { name: "코드 추가" }).click();
+    await expect(page.getByRole("cell", { name: value })).toBeVisible();
+
+    const descriptionInput = page.getByLabel(`${label} 설명`);
+    await descriptionInput.fill("지울 설명");
+    await descriptionInput.blur();
+    await page.reload();
+    await expect(page.getByLabel(`${label} 설명`)).toHaveValue("지울 설명");
+
+    const descriptionInputAgain = page.getByLabel(`${label} 설명`);
+    await descriptionInputAgain.fill("");
+    await descriptionInputAgain.blur();
+
+    await page.reload();
+    const table = page.locator("main table").first();
+    const headerTexts = await table.locator("thead th").allTextContents();
+    const descColIndex = headerTexts.findIndex((text) => text.trim() === "설명");
+    expect(descColIndex).toBeGreaterThanOrEqual(0);
+    const row = table.locator("tbody tr", { hasText: value }).first();
+    await expect(row.locator("td").nth(descColIndex)).toHaveText("—");
+  });
+
+  // (d) 증빙 종류 표의 세금 규칙 행 colSpan이 새 열 수와 맞는다 — 머리글
+  // 개수와 합친 행의 colSpan이 같아야 표가 안 넓어진다.
+  test("증빙 종류 표의 세금 규칙 행 colSpan이 여섯 열(동작 있음)과 맞는다", async ({ page }) => {
+    await loginAsSysadmin(page);
+
+    await page.goto("/admin/code-tables?tableKey=evidence_type");
+    const table = page.locator("main table").first();
+    const headerCount = await table.locator("thead th").count();
+    const taxRuleRow = table.locator("tbody tr").filter({ has: page.locator("td[colspan]") }).first();
+    const colSpanAttr = await taxRuleRow.locator("td[colspan]").getAttribute("colspan");
+    expect(Number(colSpanAttr)).toBe(headerCount);
   });
 });

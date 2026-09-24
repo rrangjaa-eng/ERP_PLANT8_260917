@@ -6,6 +6,7 @@ import { recordAction } from "@/domain/action-log/record";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
+import { CODE_ITEM_DESCRIPTION_MAX } from "@/domain/code-tables/description-max";
 import {
   listCodeItems as repoListCodeItems,
   insertCodeItem as repoInsertCodeItem,
@@ -29,8 +30,10 @@ export class ArchivedCodeItemError extends UserFacingError {}
 const EVIDENCE_TYPE_TABLE_KEY = "evidence_type";
 
 // 04-10(D-93): 코드표 설명 40자 상한 — 서버 판정, DB CHECK 아님(설정 hint와
-// 같은 결). .length(UTF-16 단위)로 센다 — 한글은 글자당 1.
-export const CODE_ITEM_DESCRIPTION_MAX = 40;
+// 같은 결). .length(UTF-16 단위)로 센다 — 한글은 글자당 1. 값 자체는
+// description-max.ts(잎 모듈)에 있다 — 클라이언트 컴포넌트가 이 파일 전체
+// (server-only db 의존 체인)를 번들에 끌어들이지 않고 상수만 쓸 수 있게.
+export { CODE_ITEM_DESCRIPTION_MAX };
 
 // MAST-04: 코드표 항목 DTO. id·tableKey·sortOrder·active·archivedAt은
 // "code_item.value" 정보 항목(구조/식별 정보) 아래, label만 별도

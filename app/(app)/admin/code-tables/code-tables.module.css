@@ -118,6 +118,19 @@
   color: var(--danger);
 }
 
+/* 04-10(D-93 · DR-29) — 설명 칸: 입력 + 40자 초과 글자 수를 한 줄에. */
+.descriptionCell {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.descriptionCount {
+  font-size: var(--fs-sm);
+  color: var(--danger);
+  white-space: nowrap;
+}
+
 .select {
   height: var(--control-h);
   border: var(--line-w) solid var(--line-ui);

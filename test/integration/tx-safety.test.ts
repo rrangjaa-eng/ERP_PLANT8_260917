@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { db, pool } from "@/db/client";
-import { projects, codeItems, teams } from "@/db/schema";
+import { projects, codeItems, teams, quoteLines } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
@@ -93,6 +93,54 @@ describe("잠금·풀 시간 제한(ENG-D3 ①)", () => {
         // B가 끝난 뒤에야 A를 되돌린다 — A가 먼저 풀리면 잠금 대기 자체가 사라진다.
         await clientA.query("ROLLBACK");
         clientA.release();
+      }
+    },
+    15_000,
+  );
+
+  it(
+    "(d) 커밋 뒤 단계(감사 기록)의 풀 시간 초과는 「잠시 뒤 다시 저장」으로 바꾸지 않는다 — 이미 저장됐다",
+    async () => {
+      const { project, revision, subcategoryValue } = await setupProject();
+
+      vi.resetModules();
+      vi.doMock("@/domain/action-log/record", async (importOriginal) => ({
+        ...(await importOriginal<typeof import("@/domain/action-log/record")>()),
+        recordAction: () => Promise.reject(new Error("timeout exceeded when trying to connect")),
+      }));
+
+      const isolatedClient = await import("@/db/client");
+      try {
+        const { saveProjectLedger } = await import("@/domain/projects/ledger");
+        const { UserFacingError: IsolatedUserFacingError } = await import("@/lib/actions/user-facing-error");
+        const itemName = `커밋 뒤 실패-${randomUUID()}`;
+
+        const outcome = await saveProjectLedger(SYSTEM_VIEWER, project.id, {
+          quoteLines: {
+            revisionId: revision.id,
+            rows: [
+              {
+                subcategory: subcategoryValue,
+                itemName,
+                quantity: 1,
+                unitPrice: { currency: "KRW" as const, amount: 100_000, fxRate: 1 },
+                execution: { currency: "KRW" as const, amount: 80_000, fxRate: 1 },
+              },
+            ],
+          },
+        }).then(
+          () => null,
+          (error: unknown) => error,
+        );
+
+        expect(outcome).toBeInstanceOf(Error);
+        expect(outcome).not.toBeInstanceOf(IsolatedUserFacingError);
+        const saved = await db.select().from(quoteLines).where(eq(quoteLines.itemName, itemName));
+        expect(saved).toHaveLength(1);
+      } finally {
+        await isolatedClient.closeDb();
+        vi.doUnmock("@/domain/action-log/record");
+        vi.resetModules();
       }
     },
     15_000,

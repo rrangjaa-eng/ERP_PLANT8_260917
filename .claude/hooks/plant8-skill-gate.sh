@@ -6,8 +6,8 @@
 #
 # 기록(세션 · 에이전트별): Skill 도구 호출, 사용자가 친 /슬래시 명령.
 # 관문(첫 인자 = 이벤트):
-#   record-skill   PostToolUse(Skill)       — 호출한 스킬 이름을 기록
-#   record-prompt  UserPromptSubmit         — /gsd-… 같은 슬래시 명령을 기록
+#   record-skill   PostToolUse(Skill)       — 호출한 스킬 이름을 기록(GSD 페이즈 스킬의 페이즈 인자는 세션 페이즈로)
+#   record-prompt  UserPromptSubmit         — /gsd-… 같은 슬래시 명령을 기록(페이즈 인자도 같다)
 #   agent          PreToolUse(Agent)        — gsd-* 에이전트는 맞는 /gsd-* 스킬을 부른 뒤에만,
 #                                            gsd-executor는 페이즈 계획 게이트(CEO·엔지·UI면 디자인 리뷰) 기록 뒤에만.
 #                                            검사를 모두 통과한 메인 에이전트 gsd-executor 디스패치는 세션당
@@ -20,7 +20,7 @@
 #                                            테스트·빌드 실패 뒤 코드 수정은 systematic-debugging 뒤에만
 #   failure        PostToolUseFailure(Bash) — 테스트·빌드 실패를 표시
 #   merge          PreToolUse(PR 머지)      — 페이즈 기록에 /review·/qa가 있을 때만
-# 게이트 기록(.claude/gates/phase-NN.log)은 커밋해 세션을 넘어 남긴다.
+# 게이트 기록(.claude/gates/phase-NN[.N].log)은 커밋해 세션을 넘어 남긴다.
 set -euo pipefail
 
 event="${1:-}"
@@ -59,21 +59,21 @@ has_skill() {  # $1 = 파일, $2.. = 허용 스킬(정규식 조각)
 
 deny() { echo "차단됨(스킬 관문): $1" >&2; exit 2; }
 
-# 게이트 스킬은 페이즈별로 리포 안(.claude/gates/phase-NN.log)에 남겨 세션을 넘어 확인한다.
+# 게이트 스킬은 페이즈별로 리포 안(.claude/gates/phase-NN[.N].log)에 남겨 세션을 넘어 확인한다.
 project="${CLAUDE_PROJECT_DIR:-.}"
 # 페이즈: 이 세션에서 부른 GSD 페이즈 스킬의 인자(예: /gsd-execute-phase 04.1)가 우선, 없으면 STATE.md.
 # 병렬 소수점 페이즈(04.1 …)는 STATE의 현재 페이즈(4)를 바꾸지 않으므로 인자로만 알 수 있다.
 session_phase_file="$state_dir/${session}.phase"
 case "$event" in
   record-skill) invocation="$(printf '%s' "$payload" | jq -r '"\(.tool_input.skill // "") \(.tool_input.args // "")"')" ;;
-  record-prompt) invocation="$(printf '%s' "$payload" | jq -r '.prompt // empty' | head -n1)" ;;
+  record-prompt) invocation="$(printf '%s' "$payload" | jq -r '.prompt // empty' | head -n1 | grep '^/' || true)" ;;
   *) invocation="" ;;
 esac
 arg_phase="$(printf '%s\n' "$invocation" \
   | grep -oE '^/?([^:[:space:]]+:)?gsd-([a-z-]+-phase|verify-work|code-review|ui-review|add-tests)[[:space:]]+[0-9]+(\.[0-9]+)*([[:space:]]|$)' \
-  | awk '{print $2}' || true)"
-[ -z "$arg_phase" ] || echo "$arg_phase" > "$session_phase_file"
-phase="$(cat "$session_phase_file" 2>/dev/null || sed -n 's/^current_phase: *"\{0,1\}\([0-9.]*\)"\{0,1\}$/\1/p' "$project/.planning/STATE.md" 2>/dev/null | head -n1)"
+  | awk '{print $2}' | head -n1 || true)"
+[ -z "$arg_phase" ] || { echo "$arg_phase" > "$session_phase_file.$$" && mv "$session_phase_file.$$" "$session_phase_file"; }
+phase="$( { [ -s "$session_phase_file" ] && cat "$session_phase_file"; } || sed -n 's/^current_phase: *"\{0,1\}\([0-9.]*\)"\{0,1\}$/\1/p' "$project/.planning/STATE.md" 2>/dev/null | head -n1)"
 phase_int="${phase%%.*}"
 phase_pad="$(printf '%02d' "$((10#${phase_int:-0}))")${phase#"$phase_int"}"  # 4 → 04, 4.1 · 04.1 → 04.1
 gate_log="$project/.claude/gates/phase-${phase_pad}.log"

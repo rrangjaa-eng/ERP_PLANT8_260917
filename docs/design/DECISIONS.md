@@ -766,3 +766,15 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **버린 대안**: 이유 텍스트 색을 그대로 두고 문구만 다듬는다 — 정상/막힘 구분이 색으로 전달되지 않는다. 진행 중에만 네이티브 `disabled`를 유지한다 — 저장 중 포커스가 body로 떨어져 다음 Tab이 화면 맨 위로 돌아간다.
 
 **범위**: `docs/design/SYSTEM.md` §7-1 · §10. 코드 `ui/button/Button.tsx`·`Button.module.css`(같은 커밋 — DR-10, 문서만 고치면 실물이 기록 없는 이탈이다). 실행은 04-46.
+
+---
+
+## 2026-09-23 — Phase 4(04-08) ⑮: §7-17 확인 모달 ui/confirm-dialog (DR-12 · DR-20 · DR-27)
+
+**결정**: §7-8의 PC 모달과 폰 위험 행동 시트를 공용 컴포넌트 `ui/confirm-dialog/ConfirmDialog` 하나로 만든다. 네이티브 `<dialog>` + `showModal()`(포커스 트랩 · `::backdrop` = `--scrim` · Esc). 슬롯: 제목(= 실제 동작) · 부제(대상 한 줄) · 결과 줄 0~3 · 확인 근거 한 칸(사유 또는 날짜, ⑭ 예외) · 막힘 이유(1차 왼쪽, `reasonTone`) + 다음 한 수 3차(`nextStep`) · 2차 · 1차(`Ctrl+Enter` kbd, 생략하면 목록형 — 행이 행동). 2차 라벨은 1차 라벨에서 자동 파생(1차에 「취소」가 있으면 `닫기 Esc`, 아니면 `취소 Esc`). 옛 div 삭제 확인(`DeleteLineDialog`)을 이 컴포넌트로 옮긴다. 막힘 자리에 선택 prop `reasonTone`·`nextStep`을 더했다 — 계약 2의 필수 모양(`{ label, shortcut?, onConfirm, pending?, disabledReason? }`)의 뜻은 바꾸지 않는다. 04-46이 실행.
+
+**왜**: 확인 모달 11개 이상을 화면마다 따로 만들고 있었고, 기존 `DeleteLineDialog`는 `<div>`라 포커스 가두기·Esc·첫 포커스·폰 시트가 없었다(§10 접근성 계약 위반). 두 곳 이상에서 쓰이므로 `DESIGN.md` §4 규칙 3의 새 컴포넌트 조건을 만족한다.
+
+**버린 대안**: 화면마다 확인 모달을 계속 각자 만든다 — 옛 `DeleteLineDialog`의 결함(포커스 가두기 없음)이 뒤 플랜의 확인 모달 열한 곳에 그대로 복제된다.
+
+**범위**: `docs/design/SYSTEM.md` §7-17 신설 · §7-8 한 줄. 코드 `ui/confirm-dialog/ConfirmDialog.tsx`·`ConfirmDialog.module.css`(신규), `app/(app)/projects/[id]/quote-table.tsx`(옛 `DeleteLineDialog` 이관), `app/(app)/projects/project-form.tsx`(입력 버리기 확인, DR-27).

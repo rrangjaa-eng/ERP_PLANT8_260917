@@ -10,6 +10,7 @@ import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { Table } from "@/ui/table/Table";
 import { Select } from "@/ui/select/Select";
 import { RowSheet } from "@/ui/table/RowSheet";
+import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { useDirtyStorage } from "@/ui/table/use-dirty-storage";
 import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
 import { normalizeNumericPaste } from "@/ui/table/parse-tsv";
@@ -970,14 +971,14 @@ export function QuoteLedger({
         </button>
       ) : null}
 
-      {deleteConfirm ? (
-        <DeleteLineDialog
-          itemName={deleteConfirm.itemName}
-          quoteAmountKrw={deleteConfirm.quoteAmountKrw}
-          onCancel={() => setDeleteConfirm(null)}
-          onConfirm={confirmDeleteLine}
-        />
-      ) : null}
+      <ConfirmDialog
+        open={deleteConfirm !== null}
+        onClose={() => setDeleteConfirm(null)}
+        title="견적 줄 삭제"
+        subtitle={`${deleteConfirm?.itemName || "(항목명 없음)"} · ${formatKrw(deleteConfirm?.quoteAmountKrw)}`}
+        resultLines={["보관함으로 옮겨짐 · 복원은 관리자"]}
+        primary={{ label: "견적 줄 삭제", onConfirm: confirmDeleteLine }}
+      />
 
       {openSheetRow ? (
         <RowSheet
@@ -1020,44 +1021,6 @@ export function QuoteLedger({
         balanceKrw={balanceKrw}
       />
     </>
-  );
-}
-
-// 04-04(아) — Delete 키·행동 줄의 줄 삭제 확인. 연결 문서가 없는 줄의
-// "삭제"만 이 페이즈 범위다(Copywriting Contract "Destructive — 견적 줄
-// 삭제"). 연결 문서가 있는 줄의 "취소" 갈래는 지출결의가 생기는 페이즈
-// (04-06 이후) 몫 — 이 DTO에는 아직 연결 문서 여부 필드가 없다.
-function DeleteLineDialog({
-  itemName,
-  quoteAmountKrw,
-  onCancel,
-  onConfirm,
-}: {
-  itemName: string;
-  quoteAmountKrw: number;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <div className={styles.dialogScrim} role="presentation">
-      <div role="alertdialog" aria-modal="true" aria-labelledby="delete-line-title" className={styles.dialog}>
-        <h2 id="delete-line-title" className={styles.dialogTitle}>
-          견적 줄 삭제
-        </h2>
-        <p className={styles.dialogSubtitle}>
-          {itemName || "(항목명 없음)"} · {formatKrw(quoteAmountKrw)}
-        </p>
-        <p className={styles.dialogBody}>보관함으로 이동합니다 · 관리자가 복원할 수 있습니다</p>
-        <div className={styles.dialogActions}>
-          <Button type="button" variant="primary" onClick={onConfirm}>
-            삭제
-          </Button>
-          <Button type="button" variant="tertiary" shortcut="Esc" onClick={onCancel}>
-            취소
-          </Button>
-        </div>
-      </div>
-    </div>
   );
 }
 

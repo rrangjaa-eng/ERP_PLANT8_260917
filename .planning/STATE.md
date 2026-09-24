@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 4
+current_plan: 2
 status: executing
-stopped_at: Completed 04-43-PLAN.md
-last_updated: "2026-09-24T08:46:58.061Z"
+stopped_at: Completed 04-10-PLAN.md
+last_updated: "2026-09-24T10:00:50.032Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 4 execution started
-state_head: 1111278eab3e9ac4a887569b33eccccaa0027799
+state_head: 1277d55df0a2342f574869d9e882b19a2a62bc87
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 65
-  completed_plans: 30
+  completed_plans: 32
   percent: 9
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 4 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 4
+Current Plan: 2
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-24 — Phase 4 execution started
@@ -81,6 +81,7 @@ Progress: [█░░░░░░░░░] 9%
 | Phase 04 P08 | 41min | 2 tasks | 10 files |
 | Phase 04 P32 | 55min | 3 tasks | 13 files |
 | Phase 04 P43 | 10min | 1 tasks | 2 files |
+| Phase 04 P10 | 105min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -177,6 +178,9 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-32: withTimeoutConversion을 lib/db-transaction.ts에서 분리 — withTransaction 안의 db.transaction()뿐 아니라 saveProjectLedger 전체(04-02)에도 씌워 트랜잭션 밖 풀 읽기의 원시 pg-pool 시간 초과 누수를 막았다(ENG-D11, tx-safety.test.ts (c) 실측)
 - [Phase 4]: 04-32: project()/projectMany의 infoItem 배열 판별은 Array.isArray가 아니라 typeof ref === "string" — Array.isArray는 string | readonly string[] 유니언을 any[]로 좁혀 lint 오류를 낸다(실측)
 - [Phase 4]: [Phase 04]: 04-43: D16 승인 세 곳(PROJ-04·PROJ-03·ROADMAP 기준 4)만 D-75~D-84 모델로 갱신, ROADMAP Goal·기준 1·5·트레일링·PROJ-06의 낡은 문구는 SUMMARY 표로 남겨 사용자가 /gsd-phase 편집 여부를 정한다
+- [Phase 4]: 04-10: 마이그레이션 번호 0011이 계획 번호와 일치(생성기가 직전 최고 idx+1을 그대로 줬다)
+- [Phase 4]: 04-10: CODE_ITEM_DESCRIPTION_MAX는 .length(UTF-16 단위)로 센다 — 한글은 글자당 1
+- [Phase 4]: 04-10: server-only 의존 체인이 있는 domain 모듈의 클라이언트 소비 상수는 잎(leaf) 모듈로 분리한다(domain/code-tables/description-max.ts)
 
 ### Pending Todos
 
@@ -220,6 +224,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T08:46:57.891Z
-Stopped at: Completed 04-43-PLAN.md
+Last session: 2026-09-24T10:00:49.814Z
+Stopped at: Completed 04-10-PLAN.md
 Resume file: None

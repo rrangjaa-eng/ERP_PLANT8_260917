@@ -301,6 +301,59 @@ hook plant8-session-boundary.sh post-tool "$(payload_tool "$E" Read)" "$projE"
 expect_contains "existing: phase SUMMARY still announces 04-01" "$HOOK_STDOUT" "04-01"
 
 # ---------------------------------------------------------------------------
+# Branch-switch: baseline taken on main, then session checks out a branch that
+# already has SUMMARYs finished by earlier sessions -> those must not block
+# this session's first gsd-executor dispatch or be announced as "new".
+projB="$(new_project)"
+B="sid-branch-switch-$$"
+hook plant8-session-boundary.sh session-start "$(payload_session_start "$B" startup)" "$projB"
+git -C "$projB" checkout -qb phase-branch
+mkdir -p "$projB/.planning/phases/04-test"
+echo "summary" > "$projB/.planning/phases/04-test/04-08-SUMMARY.md"
+echo "summary" > "$projB/.planning/phases/04-test/04-10-SUMMARY.md"
+
+hook plant8-session-boundary.sh post-tool "$(payload_tool "$B" Read)" "$projB"
+expect_empty "branch-switch: pre-existing branch SUMMARYs not announced" "$HOOK_STDOUT"
+
+hook plant8-session-boundary.sh pre-tool "$(payload_agent "$B" gsd-executor)" "$projB"
+expect_rc "branch-switch: gsd-executor not blocked by branch's own finished plans" 0 "$HOOK_RC"
+
+# After the rebase, a genuinely new SUMMARY from this session must still block.
+echo "summary" > "$projB/.planning/phases/04-test/04-25-SUMMARY.md"
+hook plant8-session-boundary.sh post-tool "$(payload_tool "$B" Read)" "$projB"
+expect_contains "branch-switch: own new SUMMARY still announces after rebase" "$HOOK_STDOUT" "04-25"
+
+hook plant8-session-boundary.sh pre-tool "$(payload_agent "$B" gsd-executor)" "$projB"
+expect_rc "branch-switch: own new SUMMARY still blocks gsd-executor" 2 "$HOOK_RC"
+
+# Once a boundary was already crossed this session, switching branches again
+# must not reset the count (D-01 must still hold).
+projB2="$(new_project)"
+B2="sid-branch-switch-noreset-$$"
+hook plant8-session-boundary.sh session-start "$(payload_session_start "$B2" startup)" "$projB2"
+mkdir -p "$projB2/.planning/phases/04-test"
+echo "summary" > "$projB2/.planning/phases/04-test/04-01-SUMMARY.md"
+hook plant8-session-boundary.sh post-tool "$(payload_tool "$B2" Read)" "$projB2"
+expect_contains "branch-switch-noreset: own SUMMARY announced on main" "$HOOK_STDOUT" "04-01"
+
+git -C "$projB2" checkout -qb phase-branch2
+echo "summary" > "$projB2/.planning/phases/04-test/04-40-SUMMARY.md"
+hook plant8-session-boundary.sh pre-tool "$(payload_agent "$B2" gsd-executor)" "$projB2"
+expect_rc "branch-switch-noreset: gsd-executor still blocked after switch" 2 "$HOOK_RC"
+
+# Old-format baseline (no recorded branch) is treated the same as a mismatch:
+# a switch is detected and, with no boundary crossed yet, the baseline rebases.
+projB3="$(new_project)"
+B3="sid-branch-switch-oldformat-$$"
+hook plant8-session-boundary.sh session-start "$(payload_session_start "$B3" startup)" "$projB3"
+rm -f "${TMPDIR}/plant8-session-boundary/${B3}.branch"
+git -C "$projB3" checkout -qb phase-branch3
+mkdir -p "$projB3/.planning/phases/04-test"
+echo "summary" > "$projB3/.planning/phases/04-test/04-08-SUMMARY.md"
+hook plant8-session-boundary.sh post-tool "$(payload_tool "$B3" Read)" "$projB3"
+expect_empty "branch-switch old-format baseline: pre-existing SUMMARY not announced" "$HOOK_STDOUT"
+
+# ---------------------------------------------------------------------------
 # Wiring: settings.json has PreToolUse matcher Skill -> session-boundary pre-tool
 WIRED="$(jq -e '[.hooks.PreToolUse[]? | select(.matcher=="Skill") | .hooks[]? | select(.command | test("plant8-session-boundary\\.sh pre-tool"))] | length > 0' "$REPO/.claude/settings.json" 2>/dev/null)"
 [ "$WIRED" = "true" ] || WIRED="false"

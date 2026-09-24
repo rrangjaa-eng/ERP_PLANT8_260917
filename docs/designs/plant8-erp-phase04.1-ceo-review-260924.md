@@ -6,7 +6,7 @@
 
 ## 요약
 
-범위를 바꾸는 항목은 없다. 치명 공백 둘: (1) 관리자가 결재 단계를 모두 끄거나 팀장이 기안하고 2~4단을 끈 경우 **결재자 0명으로 최종 승인**되는 경로(CEO-1, 입력 §2 「결재 없이 통과하는 문서는 없다」 위반), (2) 「오늘」·회계연도·번호 연도가 UTC로 계산되어 한국 시간 0~9시에 조용히 틀린다(CEO-11). 나머지 21건은 경고다. 사용자 선택 셋(CEO-5·10·20) 가운데 CEO-5는 카드로 물었고, CEO-10·20은 기본값을 적고 배포 때 다시 묻는다.
+범위를 바꾸는 항목은 없다. 치명 공백 둘: (1) 관리자가 결재 단계를 모두 끄거나 팀장이 기안하고 2~4단을 끈 경우 **결재자 0명으로 최종 승인**되는 경로(CEO-1, 입력 §2 「결재 없이 통과하는 문서는 없다」 위반), (2) 「오늘」·회계연도·번호 연도가 UTC로 계산되어 한국 시간 0~9시에 조용히 틀린다(CEO-11). 나머지 21건은 경고다. 사용자 선택 셋(CEO-5·10·20) 가운데 CEO-5는 카드로 물어 A「한 번만」으로 확정됐고, CEO-10·20은 기본값을 적고 배포 때 다시 묻는다.
 
 ## 발견과 결정
 
@@ -16,7 +16,7 @@
 | CEO-2 | 경고 | 01·02 | 트랜잭션 안에서 전역 풀 조회(04-32 §4-8 규약 위반, 풀 고갈) | 수용: 설정·조직 스냅숏·권한은 트랜잭션 전에 읽고, 안에서는 tx 리포지토리만, 번호 할당은 마지막 |
 | CEO-3 | 경고 | 01·02·04·05 | 문서 종류 등록이 side-effect import 순서에 기댐 | 수용: `app/(app)/document-kinds.ts` 한 곳 + 가드 단위 테스트 |
 | CEO-4 | 경고 | 03·05 | `domain/leave/index.ts` ↔ `balance-service.ts` 순환 import | 수용: `domain/leave/access.ts`로 노출 규칙 분리 |
-| CEO-5 | 경고 | 01 T3 | 한 사람이 같은 차수에서 두 단계를 승인 | **사용자 카드**(기본값 A: 이번 차수 승인자는 뒤 단계 후보에서 제외, 비면 빈 자리) |
+| CEO-5 | 경고 | 01 T3 | 한 사람이 같은 차수에서 두 단계를 승인 | **사용자 결정 A「한 번만」(2026-09-24 10:39 카드)**: 이번 차수 승인자는 뒤 단계 후보에서 제외, 비면 빈 자리 |
 | CEO-6 | 경고 | 01·02 | 승인·회수 판정/쓰기 순서 미정 → 진 쪽이 틀린 문구·원시 오류 | 수용: 버전 → 종결 → 후보 → UPDATE 먼저 → 단계 기록 순서 고정 + 폴백 경합·중복 재제출 테스트 |
 | CEO-7 | 경고 | 01 | 3단 `org_unit_id` 설정 없으면 모든 신청이 원시 오류 | 수용: 없으면 ""로 읽어 빈 자리 처리 + 단위·통합 |
 | CEO-8 | 경고 | 01·02 | 비후보 승인·반려 거부 테스트 없음 | 수용: 거부 3종, 단계 행 0, 버전 불변 단언 |
@@ -39,7 +39,7 @@
 ## 반영 지시 (다음 세션이 `/gsd-plan-phase 04.1` 수정 경로로 적용)
 
 1. 위 표의 「수용」·「기본값」 항목을 해당 플랜의 must_haves·task·acceptance·verify에 반영한다. 세부 증거·검증 명령은 부록의 각 CEO-n과 「Implementation Tasks」 목록에 있다.
-2. CEO-5는 카드 답이 오기 전까지 기본값 A로 넣고 「사용자 카드 대기 — 기본값 A」라고 적어 한 줄로 바꿀 수 있게 한다.
+2. CEO-5는 사용자가 카드에서 A「한 번만」을 골랐다(2026-09-24 10:39) — 확정 결정으로 넣는다.
 3. 직렬 체인·마이그레이션 예약(0017~0020, 「병렬 머지 시 drizzle _journal.json 재번호 필요」)·Deferred 구분은 그대로 둔다. 플랜당 태스크 4개 이하.
 4. 반영 뒤 gsd-plan-checker로 재검증하고, 이어서 `/plan-eng-review` → `/plan-design-review`를 각각 새 세션에서 한다(세션 경계 훅 D-01).
 
@@ -764,7 +764,7 @@ JSONL task artifact: **not persisted** (review-only run; no plan/report write pe
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | issues_open | mode: HOLD_SCOPE, 2 critical gaps (23건: 치명 2 · 경고 21, 20건 수용 · 기본값 2 · 카드 1) |
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | issues_open | mode: HOLD_SCOPE, 2 critical gaps (23건: 치명 2 · 경고 21, 20건 수용 · 기본값 2 · 사용자 결정 1) |
 | Outside Review | codex (plan-ceo-review) | Independent 2nd opinion | 0 | unavailable | codex not_authed — no completed external review; 인증된 새 세션에서 실행 예정 |
 | Eng Review | `/plan-eng-review` | Architecture & tests (required) | 0 | — | 아직 안 함 |
 | Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | 아직 안 함 |
@@ -774,5 +774,4 @@ JSONL task artifact: **not persisted** (review-only run; no plan/report write pe
 
 **VERDICT:** CEO 조건부 통과 — 반영 지시 1~4를 적용한 뒤 체커로 재검증. eng review required.
 
-**UNRESOLVED DECISIONS:**
-- CEO-5 한 사람이 두 단계에 걸릴 때 한 번만 승인할지(사용자 카드 대기, 기본값 A)
+NO UNRESOLVED DECISIONS

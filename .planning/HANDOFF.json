@@ -9,29 +9,89 @@
   "total_tasks": 0,
   "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "research + validation", "status": "done", "commit": "b8396a9"},
-    {"id": 2, "name": "UI-SPEC (/gsd-ui-phase)", "status": "done", "commit": "58e8ffd"},
-    {"id": 3, "name": "patterns", "status": "done", "commit": "3ac48c1"},
-    {"id": 4, "name": "7 plans + traceability move + 2 checker rounds", "status": "done", "commit": "eefaa57"},
-    {"id": 5, "name": "/plan-ceo-review report", "status": "done", "commit": "486b356"}
+    {
+      "id": 1,
+      "name": "research + validation",
+      "status": "done",
+      "commit": "b8396a9"
+    },
+    {
+      "id": 2,
+      "name": "UI-SPEC (/gsd-ui-phase)",
+      "status": "done",
+      "commit": "58e8ffd"
+    },
+    {
+      "id": 3,
+      "name": "patterns",
+      "status": "done",
+      "commit": "3ac48c1"
+    },
+    {
+      "id": 4,
+      "name": "7 plans + traceability move + 2 checker rounds",
+      "status": "done",
+      "commit": "eefaa57"
+    },
+    {
+      "id": 5,
+      "name": "/plan-ceo-review report",
+      "status": "done",
+      "commit": "486b356"
+    }
   ],
   "remaining_tasks": [
-    {"id": 6, "name": "apply CEO review via /gsd-plan-phase 04.1 revision + checker + Codex", "status": "not_started"},
-    {"id": 7, "name": "/plan-eng-review (new session)", "status": "not_started"},
-    {"id": 8, "name": "/plan-design-review + Codex design review (new session)", "status": "not_started"},
-    {"id": 9, "name": "merge origin/main, update PR #60, ask execute card", "status": "not_started"}
+    {
+      "id": 6,
+      "name": "apply CEO review via /gsd-plan-phase 04.1 revision + checker + Codex",
+      "status": "not_started"
+    },
+    {
+      "id": 7,
+      "name": "/plan-eng-review (new session)",
+      "status": "not_started"
+    },
+    {
+      "id": 8,
+      "name": "/plan-design-review + Codex design review (new session)",
+      "status": "not_started"
+    },
+    {
+      "id": 9,
+      "name": "merge origin/main, update PR #60, ask execute card",
+      "status": "not_started"
+    }
   ],
   "blockers": [
-    {"description": "codex not_authed in the 10:36 session; coordinator runs Codex in an authenticated session", "type": "external", "workaround": "do not substitute another reviewer; report 미실행"}
+    {
+      "description": "codex not_authed in the 10:36 session; coordinator runs Codex in an authenticated session",
+      "type": "external",
+      "workaround": "do not substitute another reviewer; report 미실행"
+    }
   ],
   "async_jobs": [],
-  "human_actions_pending": [
-    {"action": "answer CEO-5 card (one approval per person per round)", "context": "default A applied until answered", "blocking": false}
-  ],
+  "human_actions_pending": [],
   "decisions": [
-    {"decision": "STATE.md untouched", "rationale": "Phase 4 session owns current phase", "phase": "04.1"},
-    {"decision": "serial plan chain 01>03>02>04>05>06>07", "rationale": "shared local DB", "phase": "04.1"},
-    {"decision": "migrations reserved 0017-0020, regenerate before merge in 04.1-07 T1", "rationale": "drizzle skips older when", "phase": "04.1"}
+    {
+      "decision": "STATE.md untouched",
+      "rationale": "Phase 4 session owns current phase",
+      "phase": "04.1"
+    },
+    {
+      "decision": "serial plan chain 01>03>02>04>05>06>07",
+      "rationale": "shared local DB",
+      "phase": "04.1"
+    },
+    {
+      "decision": "migrations reserved 0017-0020, regenerate before merge in 04.1-07 T1",
+      "rationale": "drizzle skips older when",
+      "phase": "04.1"
+    },
+    {
+      "decision": "CEO-5 one approval per person per round (user card A, 10:39)",
+      "rationale": "user choice",
+      "phase": "04.1"
+    }
   ],
   "uncommitted_files": [],
   "next_action": "Invoke /gsd-plan-phase 04.1 and revise existing plans with docs/designs/plant8-erp-phase04.1-ceo-review-260924.md, then gsd-plan-checker",

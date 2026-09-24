@@ -21,3 +21,7 @@
 10. 06 S9: `addLeaveAdjustment`는 연차에 `fiscalYear`가 필요한데 S9에 연도 칸이 없다 — 보이는 연도를 넘길지, 연도 선택을 더할지 정해야 한다.
 11. UI-SPEC 새 문구 3개(S8 지난 연도 저장 거부 · S9 입사일 없음 · S9 월차 소멸 조정) — /plan-design-review 때 반영.
 12. 03 테스트 사례 목록은 03 보고서 참고: first-year-accrual(비례·퇴직·D4) · balance(ENG-13·D3) · leave-balance 통합 · effective-from-rule 단위 · settings-export (e)~(h).
+
+## 교차 메모 반영(2회, 22:45 KST) — 01·02·05
+- X-1 walkRoute `at` 전 호출 · X-2 `setupOrphanFinal()` + 고아 최종 기안자 회수 · X-3 폴백 후보 = 관련자 · X-4 종결 상태도 관련자 판정
+- 새 사례: resolve-step 「폴백 자리의 폴백 후보는 지금 담당」 · approvals-route-fixed 「고아 최종 문서의 기안자 회수 성공」 · approvals-concurrency 「폴백 후보는 관련자」

@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-24T17:57:14.208Z",
+  "timestamp": "2026-09-24T21:05:50.431Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -116,12 +116,24 @@
       "name": "세션 J: 04-25 코드표 값 설명 폰 P2 행 접기 + 하위분류 설명 전달. executor Opus, 격리 강제 none(dispatch-isolation --force-isolation none, 설정 기본 worktree를 명시로 강등, main 작업트리 순차 실행). 허용 편차 1건(vendors/page.tsx 한 줄). 독립 Sonnet DOM 감사(S14 백스톱, 1280·1024·375) 전부 PASS. 전체 게이트 CI=true: 단위 819·통합 1058·E2E 192. PR #40 CI 초록(fc1bfd8, quality·integration-e2e)",
       "status": "done",
       "commit": "fc1bfd8"
+    },
+    {
+      "id": 19,
+      "name": "세션 K: 04-28 견적 표 Ctrl 전용 단축키·저장 래치·힌트 줄·저장 거부 봉투. executor Opus, 격리 none. Opus 검토 수정 3건(02a8b23~95a4dcd). 독립 DOM 감사 8/8 PASS. 전체 게이트 CI=true: 단위 837·통합 1061·E2E 200",
+      "status": "done",
+      "commit": "1026713"
+    },
+    {
+      "id": 20,
+      "name": "세션 L: 04-29 공용 페이지 나눔 ui/pagination·lib/kst-date·lib/paging + SYSTEM.md §7-16. executor Sonnet, 격리 none. TDD RED 확인, 편차 1건(ENG-D11). Opus 검토 수정 2건(8b32c68·bf5f33d). 전체 CI=true: 단위 903·통합 1061, E2E 156 통과·1 실패(04-29 무관 기존 결함, master-edit-team-select-bug.md)·43 미실행. 푸시 bf5f33d",
+      "status": "done",
+      "commit": "bf5f33d"
     }
   ],
   "remaining_tasks": [
     {
       "id": 1,
-      "name": "/gsd-execute-phase 4 — 남은 31개, 세션마다 한 플랜. 다음 웨이브 5: 04-28(다음, /mnt/project-files/phase4-prep/04-28.md 먼저 읽기) · 04-29",
+      "name": "/gsd-execute-phase 4 — 남은 29개, 세션마다 한 플랜. 다음 웨이브 6: 04-06(다음, /mnt/project-files/phase4-prep/04-06.md 먼저 읽기), 이어서 웨이브 7 04-09·04-27",
       "status": "not_started"
     },
     {
@@ -325,11 +337,23 @@
       "decision": "[사용자 2026-09-24 KST, 04-28부터] 캐시-읽기 절약 운영: 스레드 메인 세션은 지휘만 한다 — 파일 읽기·코딩·테스트·SUMMARY 작성·푸시·CI 감시는 전부 서브에이전트가 수행하고 ~10줄 요약만 돌려준다. 명령은 묶어서 보낸다. 상태 체크리스트는 단계가 바뀔 때만 갱신한다. 기다리는 동안 반복 폴링하지 않는다",
       "rationale": "사용자 지시 2026-09-24 KST — 토큰·캐시 절약. 04-28 세션부터 이 방식으로 작업해야 함",
       "phase": "4"
+    },
+    {
+      "decision": "긴 테스트를 서브에이전트에 맡길 때는 단계별 전경(foreground, timeout 지정) 실행을 명시하고, 끝난 뒤 결과가 몇 분 안에 오는지 본다",
+      "rationale": "세션 L: 전체 게이트 작업자가 실제 테스트는 5분 남짓 걸렸는데 2.5시간 뒤에야 보고함",
+      "phase": "4"
+    },
+    {
+      "decision": "간헐 실패 E2E는 원인 없이 넘기지 않고 대기(waitForResponse/URL 전환 등)를 넣어 결정적으로 만든 뒤 재판정한다",
+      "rationale": "세션 L: master-edit.spec.ts:103이 경쟁으로 가려 온 법인카드 수정 폼 팀 칸 기본값 결함을 대기 추가로 5/5 재현 — 04-29 범위 밖이라 이 세션에서 고치지 않고 코디네이터에 별도 요청",
+      "phase": "4"
     }
   ],
-  "uncommitted_files": [],
-  "next_action": "새 세션 L: /gsd-progress → /gsd-execute-phase 4 로 04-29만 실행(먼저 /mnt/project-files/phase4-prep/04-29.md). 브랜치 claude/gsd-progress-e1nzgu, PR #40, 푸시는 git push origin HEAD:claude/gsd-progress-e1nzgu",
-  "context_notes": "세션 K가 04-28 완료(전체 게이트 CI=true 통과, DOM 감사 PASS). 04-28 알려진 범위 밖: Alt+↑↓ 순서 저장 안 됨 → 04-12·04-30.",
+  "uncommitted_files": [
+    ".planning/phases/04-project-quote-ledger/.continue-here.md"
+  ],
+  "next_action": "새 세션 M: /gsd-progress → /gsd-execute-phase 4 로 04-06만 실행(먼저 /mnt/project-files/phase4-prep/04-06.md). 브랜치 claude/gsd-progress-e1nzgu, PR #40, 푸시는 git push origin HEAD:claude/gsd-progress-e1nzgu",
+  "context_notes": "세션 L이 04-29 완료(전체 게이트 CI=true, E2E 1건 실패는 04-29 무관 기존 결함 — master-edit-team-select-bug.md 참조, 코디네이터에 별도 요청 필요). 04-28 알려진 범위 밖: Alt+↑↓ 순서 저장 안 됨 → 04-12·04-30.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"

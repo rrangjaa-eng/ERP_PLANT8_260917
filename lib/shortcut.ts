@@ -10,6 +10,10 @@ export type CtrlComboEvent = {
   nativeEvent?: { isComposing?: boolean };
 };
 
-export function isCtrlCombo(_event: CtrlComboEvent, _key: string): boolean {
-  return false;
+export function isCtrlCombo(event: CtrlComboEvent, key: string): boolean {
+  if (!event.ctrlKey) return false;
+  if (event.key.toLowerCase() !== key.toLowerCase()) return false;
+  if (event.repeat) return false;
+  if (event.isComposing || event.nativeEvent?.isComposing) return false;
+  return true;
 }

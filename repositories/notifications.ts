@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { db } from "@/db/client";
+import { withDeadlineTransaction, type DeadlineTx } from "@/db/deadline-transaction";
 import { notificationLog, notifyTickRuns } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
@@ -7,8 +7,11 @@ import type { Viewer } from "@/domain/viewer";
 // advisory lock은 아직 없다). 04.2-10의 이메일 선점이 같은 키를 기다리는 형으로 잡는다.
 export const NOTIFY_TICK_LOCK_KEY = 420_401;
 
-// db.transaction 콜백 인자 — 공용 DbOrTx는 execute가 없어 넓히지 않고 지역 타입을 쓴다.
-export type NotifyTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+// tick 잠금 트랜잭션의 클라이언트 마감 — 풀 대기 5 + 25 = 04.2-10 예산의 tick 잠금 몫 30초.
+export const NOTIFY_TX_DEADLINE_MS = 25_000;
+
+// 마감 트랜잭션 콜백 인자 — 공용 DbOrTx는 execute가 없어 넓히지 않고 지역 타입을 쓴다.
+export type NotifyTx = DeadlineTx;
 
 export type DedupKey = {
   conditionKind: string;
@@ -22,13 +25,15 @@ export type NotificationInsert = DedupKey & { referenceDate: string; message: st
 
 // tick 전체(평가·삽입·실행 기록)를 시도형 advisory lock을 잡은 한 트랜잭션에서
 // 돌린다. 잠금은 트랜잭션 종료로 저절로 풀린다. 문장 대기 한도 5s(문장 다섯
-// 이하 × 5초 — 04.2-10 실행 예산의 tick 잠금 몫).
+// 이하 × 5초 — 04.2-10 실행 예산의 tick 잠금 몫). BEGIN~COMMIT·ROLLBACK 전체는
+// 클라이언트 마감 안에서 돈다 — 응답이 멈추면 연결을 파기하고 DbDeadlineError.
 export async function withNotifyTickLock<T>(
   viewer: Viewer,
   fn: (tx: NotifyTx) => Promise<T>,
+  opts?: { deadlineMs?: number },
 ): Promise<{ acquired: false } | { acquired: true; value: T }> {
   void viewer;
-  return db.transaction(async (tx) => {
+  return withDeadlineTransaction(opts?.deadlineMs ?? NOTIFY_TX_DEADLINE_MS, async (tx) => {
     await tx.execute(sql`SET LOCAL statement_timeout = '5s'`);
     await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
     const result = await tx.execute<{ ok: boolean }>(

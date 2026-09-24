@@ -296,6 +296,18 @@ export const PNL_START_GATE_WEEKS_AFTER_CUTOVER: SettingDef<number> = {
   readBy: { phase: "9" },
 };
 
+// Phase 04.2(D-4202): tick 한 번이 새로 만드는 알림 수의 상한. 최대 5,000 —
+// 삽입 한 문장의 바인드 인자가 행마다 7개라 35,000 < PostgreSQL 한도 65,535.
+export const NOTIFY_TICK_BATCH_MAX: SettingDef<number> = {
+  key: "notify.tick.batch_max",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1).max(5000),
+  label: "알림 발송 건수 상한",
+  hint: "한 번의 알림 발송에서 새로 만드는 알림 수의 상한입니다. 한 사람의 이메일은 그 사람의 알림이 다 만들어진 뒤 한 통으로 갑니다.",
+  namespace: "알림 발송",
+  default: 200,
+};
+
 // 등록 키 전부를 순회할 수 있게 하나의 배열로 모은다 — 설정 화면·내보내기·
 // 미사용 키 검출이 이 배열 하나만 본다. 값 타입이 키마다 달라 SettingDef<T>의
 // 제네릭 T를 소거한다(unknown으로 widen) — 런타임 동작은 각 키의
@@ -325,4 +337,5 @@ export const SETTING_DEFS: SettingDef<unknown>[] = [
   PROJECT_FORCE_COMPLETE_ALLOW_UNMATCHED_ESTIMATE_LINES,
   PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE,
   PNL_START_GATE_WEEKS_AFTER_CUTOVER,
+  NOTIFY_TICK_BATCH_MAX,
 ];

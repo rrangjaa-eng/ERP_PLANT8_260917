@@ -115,7 +115,10 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       ) : null}
 
       <div className={styles.filterRow}>
+        {/* select의 defaultValue는 마운트 뒤 바뀌어도 칸에 반영되지 않는다 —
+            「필터 지우기」·뒤로 가기로 URL이 바뀌면 key로 새로 마운트한다(/qa ISSUE-001). */}
         <ProjectsFilterBar
+          key={`${status ?? ""}|${teamId ?? ""}|${year ?? ""}|${search ?? ""}`}
           teams={references.teams}
           statusOptions={STATUS_OPTIONS}
           yearOptions={yearOptions()}

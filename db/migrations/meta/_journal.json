@@ -78,6 +78,13 @@
       "when": 1790112092466,
       "tag": "0010_revenue_entries",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790241279781,
+      "tag": "0011_code_item_descriptions",
+      "breakpoints": true
     }
   ]
 }

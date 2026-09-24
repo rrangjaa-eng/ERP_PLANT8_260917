@@ -18,6 +18,10 @@ export const codeItems = pgTable(
     tableKey: text("table_key").notNull(),
     value: text("value").notNull(),
     label: text("label").notNull(),
+    // 04-10(D-93): 코드표 값 한 문장 설명. NULL 허용, 기본값 없음 — 40자
+    // 상한은 DB CHECK가 아니라 서버 검증(domain/code-tables의
+    // CODE_ITEM_DESCRIPTION_MAX)이다. 설정 `hint`와 같은 결(RESEARCH §8).
+    description: text("description"),
     sortOrder: integer("sort_order").notNull().default(0),
     active: boolean("active").notNull().default(true),
     customFields: jsonb("custom_fields").notNull().default({}),

@@ -11,6 +11,7 @@ import {
   insertCodeItem as repoInsertCodeItem,
   setCodeItemActive as repoSetCodeItemActive,
   updateCodeItemLabel as repoUpdateCodeItemLabel,
+  updateCodeItemDescription as repoUpdateCodeItemDescription,
   findCodeItemById as repoFindCodeItemById,
   setCodeItemTaxRule as repoSetCodeItemTaxRule,
   type CodeItemRow,
@@ -27,6 +28,10 @@ export class ArchivedCodeItemError extends UserFacingError {}
 
 const EVIDENCE_TYPE_TABLE_KEY = "evidence_type";
 
+// 04-10(D-93): 코드표 설명 40자 상한 — 서버 판정, DB CHECK 아님(설정 hint와
+// 같은 결). .length(UTF-16 단위)로 센다 — 한글은 글자당 1.
+export const CODE_ITEM_DESCRIPTION_MAX = 40;
+
 // MAST-04: 코드표 항목 DTO. id·tableKey·sortOrder·active·archivedAt은
 // "code_item.value" 정보 항목(구조/식별 정보) 아래, label만 별도
 // "code_item.label" 정보 항목으로 가른다(judgment — SUMMARY 참고). 서버가
@@ -42,6 +47,9 @@ export type CodeItemDto = {
   // evidence_type이 아닌 코드표 항목은 항상 null(컬럼 자체가 그 항목엔
   // 비어 있다).
   taxRule: TaxRule | null;
+  // 04-10(D-93): 값 한 문장 설명. 없으면 null(화면은 「—」). label과 같은
+  // 정보 항목으로 게이트한다(새 정보 항목을 만들지 않는다).
+  description: string | null;
 };
 
 export const CODE_ITEM_DTO_SPEC: DtoSpec<CodeItemRow, CodeItemDto> = {
@@ -50,6 +58,7 @@ export const CODE_ITEM_DTO_SPEC: DtoSpec<CodeItemRow, CodeItemDto> = {
     { key: "tableKey", from: "tableKey", infoItem: "code_item.value" },
     { key: "value", from: "value", infoItem: "code_item.value" },
     { key: "label", from: "label", infoItem: "code_item.label" },
+    { key: "description", from: "description", infoItem: "code_item.label" },
     { key: "sortOrder", from: "sortOrder", infoItem: "code_item.value" },
     { key: "active", from: "active", infoItem: "code_item.value" },
     { key: "archivedAt", from: "archivedAt", infoItem: "code_item.value" },
@@ -144,6 +153,22 @@ export async function updateCodeItemLabel(
   await repoUpdateCodeItemLabel(viewer, id, trimmed);
   // 수정은 생성이 아니다 — updateVendor·updateCorpCardOwner와 같은 종류로 남긴다.
   await recordAction(viewer, { actionType: "document_update", entity: "code_items", entityId: id });
+
+  const updated = await repoFindCodeItemById(viewer, id);
+  return updated ? ((await project(viewer, updated, CODE_ITEM_DTO_SPEC)) as CodeItemDto) : null;
+}
+
+// 04-10(D-93) RED 스텁 — 권한·보관 가드·40자 검증·빈 값→null·행동 로그가
+// 아직 없다. GREEN 커밋에서 updateCodeItemLabel과 같은 순서로 채운다.
+export async function updateCodeItemDescription(
+  viewer: Viewer,
+  id: string,
+  description: string,
+): Promise<CodeItemDto | null> {
+  const current = await repoFindCodeItemById(viewer, id);
+  if (!current) return null;
+
+  await repoUpdateCodeItemDescription(viewer, id, description);
 
   const updated = await repoFindCodeItemById(viewer, id);
   return updated ? ((await project(viewer, updated, CODE_ITEM_DTO_SPEC)) as CodeItemDto) : null;

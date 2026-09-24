@@ -404,11 +404,26 @@ Plans:
   4. 사람 목록(`/admin/people`)에 「첫 로그인 전」·「임시 비밀번호 사용 중」 표시가 SYSTEM.md의 기존 배지·표 규약으로 보인다(D8-07). 「임시 비밀번호 사용 중」은 `users.password_is_temporary`로 판정하고, 「첫 로그인 전」은 새로 기록하는 칸(예: 첫 로그인 시각)으로 판정한다 — `sessions` 행은 로그아웃·재발급 때 지워지므로 판정 근거로 쓰지 않는다. 비밀번호 변경 강제는 없다(D-08 유지). 사람 목록 조회에 사람별 쿼리를 더하지 않는다(issue #56). 통합 테스트: 발급 직후 → 두 표시, 첫 로그인 → 「첫 로그인 전」 사라짐, 비밀번호 변경 → 「임시 비밀번호」 사라짐, 관리자 재발급(`account.yml reset`) → 「임시 비밀번호」 다시 표시
   5. 새 액션·DTO(사람 목록 DTO에 더하는 칸 포함)는 누수 스캔 생성기에 등록되고, 새 마이그레이션은 Phase 4(0011~0016)와 병렬 페이즈(04.1~04.3)의 번호와 겹치지 않게 계획 단계에서 정하며, 머지 직전에 main을 합치고 자기 마이그레이션을 지운 뒤 `pnpm db:generate`를 다시 돌린다
 
-**Plans:** 0 plans
+**Plans:** 5 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 04.4 to break down)
+*(웨이브마다 플랜 하나 — 통합·E2E가 같은 로컬 DB `erp`/`erp_test`를 쓰고 마이그레이션 journal을 이어 쓰므로 한 줄 체인으로 직렬 실행한다. 마이그레이션은 처음부터 예약 범위 0030~0034)*
+
+Wave 1
+- [ ] 04.4-01-PLAN.md — 리허설 결과 기록·표시 트레이서: `restore_rehearsals` 표(0030), CLI `record` → 상태 화면 「복원 리허설」 한 줄(기록 없음·확인 불가·성공·실패+실행 기록 링크), journal 가드, SYSTEM.md §6-8(D8-08)
+
+Wave 2 *(blocked on Wave 1)*
+- [ ] 04.4-02-PLAN.md — 복원본 확인: CLI `verify`(대상 가드 · 마이그레이션 알려진 접두 · 핵심 표 목록 `RESTORE_CHECK_TABLES`), Cloud Run Job `plant8-{env}-restore` 배포·번들(D8-08)
+
+Wave 3 *(blocked on Wave 2)*
+- [ ] 04.4-03-PLAN.md — 리허설 워크플로: `restore-rehearsal.yml` + `scripts/restore-rehearsal.sh`(이름 가드 · 임시 인스턴스 생성·복원·확인·정확한 이름 삭제·기록, production 확인 입력), 가짜 gcloud 테스트, OPERATIONS §14 백업·복원(D8-08)
+
+Wave 4 *(blocked on Wave 3)*
+- [ ] 04.4-04-PLAN.md — 사람 목록 로그인 상태: `users.first_login_at`(0031, 백필 포함), 로그인 훅, DTO 두 필드, 「첫 로그인 전」·「임시 비밀번호 사용 중」 배지, 폰 세로 쌓기, SYSTEM.md §7-5·DECISIONS.md(D8-07)
+
+Wave 5 *(blocked on Wave 4)*
+- [ ] 04.4-05-PLAN.md — 병합 직전 + 실제 1회: origin/main 병합 → 04.4 마이그레이션 하나로 재생성해 다시 0030 → 전체 게이트 CI=true → (Post-build·/ship·staging 배포 뒤) 사용자가 staging 리허설 1회 실행(checkpoint)
 
 결정은 `.planning/phases/04.4-restore-rehearsal-and-login-status/04.4-CONTEXT.md`에 옮겨 두었다(Phase 8 논의 D8-07·D8-08과 이미 확정된 입력). 계획 단계에서 정할 것: REQUIREMENTS 추적표의 OPS-03을 Phase 04.4로 옮기는 일, 복원본 확인 항목의 정확한 목록(그때 main에 있는 표 기준 — Phase 4 표가 아직 없을 수 있다), 리허설 결과를 기록하는 곳(운영 DB 한 줄을 Cloud Run Job으로 쓰기 대 GCS 파일), 스테이징과 프로덕션 중 어디서 돌릴지(프로덕션 인스턴스가 아직 없으면 스테이징으로 증명하고 전환 전 프로덕션 확인은 Phase 8 체크리스트가 맡는다), 「첫 로그인 전」 기록 칸의 모양과 재발급 뒤 다시 보일지, 마이그레이션 번호, 사람 목록 표시의 UI 계약(기존 배지 규약으로 충분한지 `/gsd-ui-phase 04.4`가 필요한지). ROADMAP Coverage 표·Phase 목록 요약 줄·REQUIREMENTS 추적표는 04.1~04.3과 같이 계획 단계에서 함께 맞춘다.
 
@@ -584,10 +599,11 @@ v1 요구사항 86개 전부가 정확히 한 페이즈에 속한다(2026-09-23:
 | 2 | 1 | UX-01 |
 | 3 | 13 | ADMN-01, ADMN-02, ADMN-03, ADMN-05, ADMN-06, ADMN-08, ADMN-10, ADMN-12, OPS-05, MAST-01, MAST-02, MAST-03, MAST-04 |
 | 4 | 11 | PROJ-01, PROJ-02, PROJ-03, PROJ-04, PROJ-05, PROJ-07, ADMN-09, UX-04, UX-05, RSV-01, FX-01 |
+| 04.4 | 1 | OPS-03 |
 | 5 | 13 | EXP-01, EXP-02, EXP-03, EXP-04, EXP-05, EXP-08, EXP-14, EXP-15, EVID-01, ADMN-04, LEAV-01, UX-03, UX-06 |
 | 6 | 10 | EXP-06, EXP-07, EXP-09, EXP-10, EXP-13, EXP-16, EVID-02, EVID-03, EVID-04, PROJ-06 |
 | 7 | 7 | EXP-11, EXP-12, ADMN-11, NOTI-01, NOTI-02, NOTI-03, NOTI-04 |
-| 8 | 3 | MIG-04, MIG-05, OPS-03 |
+| 8 | 2 | MIG-04, MIG-05 |
 | 9 | 10 | PNL-01, PNL-02, PNL-03, PNL-04, PNL-05, PNL-06, PNL-08, PNL-09, UX-02, RSV-02 |
 | 10 | 5 | PNL-07, GOAL-01, GOAL-02, GOAL-03, ADMN-07 |
 | 11 | 4 | CERT-01, CERT-02, CERT-03, CERT-04 |

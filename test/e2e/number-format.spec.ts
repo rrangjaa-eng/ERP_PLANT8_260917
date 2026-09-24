@@ -376,13 +376,14 @@ test.describe("숫자 서식(D-95, 04-09)", () => {
     await page.keyboard.type("4400");
 
     const fxRateInput = page.getByLabel("단가 환율");
-    const initialFxRateText = await fxRateInput.inputValue();
     await fxRateInput.click();
     await page.keyboard.press("Control+a");
     await page.keyboard.press("Delete");
     await page.keyboard.type("-");
     await fxRateInput.press("Enter");
 
-    await expect(page.getByText(`USD 4,400.00 @${initialFxRateText}`)).toBeVisible();
+    // 새 줄의 원래 환율(1, KRW 기본값)로 남는다 — NaN이 JSON.stringify에
+    // 실려 null이 되고 "@—"로 비는 대신, 커밋 전 줄 값으로 유지된다.
+    await expect(page.getByText("USD 4,400.00 @1")).toBeVisible();
   });
 });

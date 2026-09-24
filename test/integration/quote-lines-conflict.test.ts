@@ -143,6 +143,11 @@ describe("domain/quotes/lines saveQuoteLines — 배치 충돌·전부 거부(04
       expect(rejected.conflicts[0]?.field).toBe("unitPriceAmountKrw");
       expect(rejected.conflicts[0]?.reason).toContain("9,800,000");
       expect(rejected.conflicts[0]?.reason).toContain("덮어쓰기 / 그 값으로");
+      // 04-28 거부 봉투 — 서버 현재 원값·그 줄의 서버 현재 version, 합계 행 요약.
+      expect(rejected.conflicts[0]?.theirRaw).toBe(9_800_000);
+      expect(rejected.conflicts[0]?.theirVersion).toBe(lineB.version + 1);
+      expect(rejected.summary).toBe("충돌 1줄 · 전부 거부");
+      expect(rejected.message.startsWith("충돌 1줄 · 전부 거부 · [단가] 다른 사람이 ")).toBe(true); // message는 그대로다.
     }
 
     // DB를 다시 읽어 세 줄 모두 이번 시도로 바뀌지 않았음을 단언한다
@@ -175,6 +180,8 @@ describe("domain/quotes/lines saveQuoteLines — 배치 충돌·전부 거부(04
       expect(rejected.formatErrors).toHaveLength(1);
       expect(rejected.formatErrors[0]?.field).toBe("quantity");
       expect(rejected.formatErrors[0]?.rowIndex).toBe(1);
+      expect(rejected.summary).toBe("오류 1칸 · 전부 거부"); // 04-28 거부 봉투 요약.
+      expect(rejected.message).toBe("오류 1칸 · 전부 거부 · [수량] 숫자가 아닙니다 · 0보다 큰 수를 적어 주세요");
     }
 
     const rows = await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id));

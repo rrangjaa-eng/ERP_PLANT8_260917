@@ -617,3 +617,119 @@ test.describe("견적 줄 표 — 힌트 줄·1차·EMPTY에 적힌 조합이 �
     await expect(quoteDataRows(page)).toHaveCount(1);
   });
 });
+
+async function saveWithKeyboard(page: Page, rowIndex: number, colIndex: number) {
+  await quoteCell(page, rowIndex, colIndex).focus();
+  const responded = page.waitForResponse((response) => isServerAction(response.request()));
+  await page.keyboard.press("Control+s");
+  await responded;
+}
+
+test.describe("견적 줄 표 — 저장 거부 봉투 → 충돌 셀·서버 형식 오류 셀(04-28 Task 3 · DR-25)", () => {
+  test("두 창 충돌 → 충돌 셀 → 키보드만으로 「그 값으로」·「덮어쓰기」 해소", async ({ page, browser, baseURL }) => {
+    const opened = await openProjectWithSavedLines(page, [
+      { subcategory: "stage_construction", itemName: "충돌 줄", amount: 5000000, execution: 1000000 },
+      { subcategory: "stage_construction", itemName: "다른 줄", amount: 2000000, execution: 500000 },
+    ]);
+
+    // 같은 담당 PM의 두 번째 창(B).
+    const contextB = await browser.newContext({ baseURL });
+    const pageB = await contextB.newPage();
+    await pageB.goto("/login");
+    await pageB.getByLabel("이메일").fill(opened.email);
+    await pageB.getByLabel("비밀번호").fill(opened.password);
+    await pageB.getByRole("button", { name: "로그인" }).click();
+    await expect(pageB).toHaveURL(/\/account$/);
+    await pageB.goto(`/projects/${opened.projectId}`);
+    await expect(quoteDataRows(pageB)).toHaveCount(2);
+
+    // B가 첫 줄 실행가를 9,800,000으로 저장한다.
+    await editTextCell(pageB, 0, 7, "9800000");
+    await saveWithKeyboard(pageB, 0, 7);
+    await expect(pageB.getByText(/저장됨/)).toBeVisible();
+
+    // A가 같은 줄 실행가와 다른 줄 항목을 고쳐 저장 → 전부 거부.
+    await editTextCell(page, 0, 7, "7000000");
+    await editTextCell(page, 1, 2, "다른 줄 수정");
+    await saveWithKeyboard(page, 0, 7);
+
+    const conflictCell = quoteCell(page, 0, 7);
+    await expect(conflictCell).toHaveAttribute("aria-invalid", "true");
+    await expect(conflictCell).toContainText(/다른 사람이 \d{2}:\d{2}에 9,800,000으로 바꿈 · 덮어쓰기 \/ 그 값으로/);
+    await expect(quoteTable(page).locator("tfoot")).toContainText("충돌 1줄 · 전부 거부");
+    await expect(quoteCell(page, 1, 2)).toHaveText("다른 줄 수정"); // 다른 셀 편집값은 그대로.
+    const overwrite = conflictCell.getByRole("button", { name: "덮어쓰기" });
+    const takeTheirs = conflictCell.getByRole("button", { name: "그 값으로" });
+    await expect(overwrite).toHaveAttribute("tabindex", "-1");
+    await expect(takeTheirs).toHaveAttribute("tabindex", "-1");
+    await expect(quoteTable(page).locator('[tabindex="0"][role="gridcell"]')).toHaveCount(1);
+
+    // Enter → 「덮어쓰기」 → → 「그 값으로」 → Esc → 셀(누르지 않음).
+    await conflictCell.focus();
+    await page.keyboard.press("Enter");
+    await expect(overwrite).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(takeTheirs).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(conflictCell).toBeFocused();
+    await expect(conflictCell).toHaveAttribute("aria-invalid", "true");
+
+    // Enter → → → Enter = 「그 값으로」.
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter");
+    await expect(conflictCell).toHaveText("9,800,000");
+    await expect(conflictCell).not.toHaveAttribute("aria-invalid", "true");
+    await expect(conflictCell).toBeFocused();
+
+    await saveWithKeyboard(page, 0, 7);
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+    await page.reload();
+    await expect(quoteCell(page, 0, 7)).toHaveText("9,800,000");
+    await expect(quoteCell(page, 1, 2)).toHaveText("다른 줄 수정");
+
+    // 다른 줄로 한 번 더 — 이번엔 「덮어쓰기」(A의 값이 남는다).
+    await pageB.reload();
+    await expect(quoteDataRows(pageB)).toHaveCount(2);
+    await editTextCell(pageB, 1, 7, "600000");
+    await saveWithKeyboard(pageB, 1, 7);
+    await expect(pageB.getByText(/저장됨/)).toBeVisible();
+
+    await editTextCell(page, 1, 7, "650000");
+    await saveWithKeyboard(page, 1, 7);
+    const secondConflict = quoteCell(page, 1, 7);
+    await expect(secondConflict).toHaveAttribute("aria-invalid", "true");
+    await expect(secondConflict).toContainText("600,000으로 바꿈");
+    await secondConflict.focus();
+    await page.keyboard.press("Enter");
+    await expect(secondConflict.getByRole("button", { name: "덮어쓰기" })).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(secondConflict).not.toHaveAttribute("aria-invalid", "true");
+    await expect(secondConflict).toHaveText("650,000");
+    await expect(secondConflict).toBeFocused();
+
+    await saveWithKeyboard(page, 1, 7);
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+    await page.reload();
+    await expect(quoteCell(page, 1, 7)).toHaveText("650,000");
+
+    await contextB.close();
+  });
+
+  test("수량 0을 저장하면 서버 형식 오류가 그 셀에 고정되고, 고치면 풀린다", async ({ page }) => {
+    await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "수량 확인 줄", amount: 1000 }]);
+
+    await editTextCell(page, 0, 4, "0");
+    await saveWithKeyboard(page, 0, 4);
+
+    const quantityCell = quoteCell(page, 0, 4);
+    await expect(quantityCell).toHaveAttribute("aria-invalid", "true");
+    await expect(quantityCell).toContainText("0보다 큰 수를 적어 주세요");
+    await expect(quoteTable(page).locator("tfoot")).toContainText("오류 1칸 · 전부 거부");
+
+    await editTextCell(page, 0, 4, "2");
+    await expect(quantityCell).not.toHaveAttribute("aria-invalid", "true");
+    await expect(quantityCell).toHaveText("2");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeEnabled();
+  });
+});

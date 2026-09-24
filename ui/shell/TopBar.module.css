@@ -38,6 +38,12 @@
   padding: 9px 0;
   color: var(--bar-muted);
   text-decoration: none;
+  transition: color var(--dur-hover) var(--ease-out);
+}
+
+/* §5 hover 120ms(/design-review FINDING-002) — 현재 메뉴와 같은 --bar-fg로 밝힌다. */
+.navLink:hover {
+  color: var(--bar-fg);
 }
 
 .navLink[aria-current="page"] {
@@ -83,6 +89,12 @@
   font-size: var(--fs-sm);
   cursor: pointer;
   padding: 0;
+}
+
+/* 이미 --bar-fg라 색으로는 hover를 못 보인다 — §4-4 3차 버튼과 같은 밑줄로. */
+.userTrigger:hover {
+  text-decoration: underline;
+  text-underline-offset: var(--underline-offset);
 }
 
 .userTrigger:focus-visible {

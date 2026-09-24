@@ -358,12 +358,21 @@ Plans:
   4. Cloud Scheduler가 부르는(발송 시각 오전 9시, 07-CONTEXT 입력 §4) 단일 엔드포인트(`/internal/notify-tick`)로 동작한다. 호출은 Google OIDC ID 토큰을 검증하고(audience = 서비스 URL, 이메일 = 스케줄러 서비스 계정; 실패 401 + 로그), tick은 advisory lock으로 동시 실행을 막으며(2A), 건수 상한(설정)만큼 배치로 처리하고 `{sent, skipped, remaining}`을 응답해 남은 건은 다음 tick이 잇는다. notification_log 유니크 제약(INSERT … ON CONFLICT DO NOTHING)으로 같은 건은 두 번 발송되지 않고(NOTI-04), tick 날이 비영업일이면 아무것도 보내지 않고 끝난다(D-709). 알림 조건 종류는 코드에 등록하는 틀로 두고 이 페이즈는 테스트 전용 조건 종류로 tick을 증명한다 — 실제 조건 종류·기본 규칙·규칙 관리 화면은 Phase 7(NOTI-03). 스케줄러 잡·서비스 계정은 deploy.sh가 만들고, OIDC 검증을 끄는 환경 변수가 있으면 배포가 거부된다(Issue 6). 통합 테스트: 토큰 없음 → 401, 상한 초과 시 remaining > 0 뒤 다음 tick 완료, 재실행 멱등, 공휴일 날짜 → `{sent: 0}`. 관리자 시스템 상태 화면에 마지막 tick 시각·결과가 더해진다(18A)
   5. 계정 잠금과 잠금 해제가 행동 로그에 남는다(D-712, Phase 1 성공 기준 2의 미이행분). 잠금은 로그인 전에 일어나 행위자 표현(시스템 행위자 + 대상 이메일 등)은 계획이 정한다. 통합 테스트: 로그인 N회 실패 → 잠금 행동 로그 1건, 관리자 해제 → 해제 행동 로그 1건. 새 액션·DTO(알림함·공휴일)는 누수 스캔 생성기에 등록된다
 
-**Plans:** 0 plans
+**Plans:** 10 plans
 **UI hint**: yes
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 04.2 to break down)
+- [ ] 04.2-01-PLAN.md — 트레이서: OIDC 검증 `/internal/notify-tick` → advisory lock tick → `notification_log` → 알림함 읽기, 배치 상한·종류별 격리 (W1)
+- [ ] 04.2-02-PLAN.md — 공휴일 규칙 생성(음력 내장 표 2025–2035·대체공휴일)과 영업일·N영업일 순수 함수 (W1)
+- [ ] 04.2-03-PLAN.md — D-712 계정 잠금·해제 행동 로그 + 잠금 문구가 설정 분(`auth.lockout.window_minutes`)을 읽음 (W1)
+- [ ] 04.2-04-PLAN.md — deploy.sh 스케줄러 잡·서비스 계정·OIDC 우회 거부·401 스모크, tick 정체 경보 25시간 켜기 (W1)
+- [ ] 04.2-05-PLAN.md — 공휴일 표·연도 확정 표, 후보 지연 생성, 표를 읽는 영업일 함수를 tick에 연결 (W2)
+- [ ] 04.2-06-PLAN.md — 알림함 화면·상단 바 미읽음 배지·열면 읽음, SYSTEM.md 수정 제안 #2~#7 (W2)
+- [ ] 04.2-07-PLAN.md — 공휴일 관리 화면 `/admin/holidays`(연도 확정·임시공휴일·선거일 추가·수동 미래 행 삭제), SYSTEM.md #1 (W3)
+- [ ] 04.2-08-PLAN.md — 하루 한 통 묶음 이메일(nodemailer 어댑터·SMTP 미설정이면 알림함만·재시도 0), 패키지 확인 체크포인트 (W3)
+- [ ] 04.2-09-PLAN.md — 시스템 상태 `알림 발송`·`이메일` 줄과 관리자 배너 둘(공휴일 확정 요청·이메일 발송 실패) (W4)
+- [ ] 04.2-10-PLAN.md — [BLOCKING] main 합친 뒤 마이그레이션 재생성, REQUIREMENTS·ROADMAP 추적 이동, ARCHITECTURE 표기, 전체 게이트 (W5)
 
 논의 결과는 `.planning/phases/07-schedule-notify-audit/07-CONTEXT.md`의 이미 확정된 입력(공휴일 표·발송 방식·이메일)과 D-705(후보 표 계산·확정 요청 배너)·D-706·D-709(비영업일 미발송)·D-711·D-712를 그대로 쓴다. 이 페이즈에는 아직 CONTEXT가 없고 plan-phase는 07-CONTEXT를 자동으로 읽지 않으므로, 계획 전에 위 결정을 `04.2-CONTEXT.md`로 옮긴다(다시 묻지 않는다). 계획 단계에서 정할 것: REQUIREMENTS 추적표의 네 항목을 Phase 04.2로 옮기는 일, Phase 4(0011~0016)·04.1과 겹치지 않는 마이그레이션 번호와 `_journal.json` 충돌을 푸는 방식, `notification_log` 유니크 키가 Phase 7 독촉(D-707·D-708: 회차·받는 사람)을 막지 않는 모양, 건수 상한과 사람별 하루 한 통 묶음을 함께 지키는 방식(상한을 넘긴 건을 언제 보내는지 포함), 공휴일 후보를 매년 만드는 계기, `/internal/notify-tick` 경로가 Cloud Run 엣지에서 살아남는지. 알림함은 SYSTEM.md §7-12 계약이 있고 공휴일 관리 화면만 정본이 없어 `/gsd-ui-phase 04.2`로 먼저 세운다.
 

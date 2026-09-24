@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 04-10-PLAN.md
-last_updated: "2026-09-24T10:22:16.396Z"
+stopped_at: Completed 04-46-PLAN.md
+last_updated: "2026-09-24T11:54:56.288Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 4 execution started
-state_head: af6144012bd86db0c429cb29edf85067dafa4068
+state_head: 2d5cd82ca4b138248e250d355a94b676e17209b5
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 65
-  completed_plans: 32
+  completed_plans: 33
   percent: 6
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 4 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-24 — Phase 4 execution started
@@ -82,6 +82,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P32 | 55min | 3 tasks | 13 files |
 | Phase 04 P43 | 10min | 1 tasks | 2 files |
 | Phase 04 P10 | 105min | 2 tasks | 14 files |
+| Phase 04 P46 | 58min | 2 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -186,6 +187,10 @@ Recent decisions affecting current work:
 - [Phase 4]: 플래너 판단 인정: ②/③ 경계 04-23 뒤 · ENG-D12 04-50 이동 · QA 날짜 순서→04-15 · 폰 편집→04-49 — 사용자 결정 2026-09-24 세션 H
 - [Phase 4]: 04-43 남은 낡은 문구 5자리는 Phase 4 /gsd-verify-work 직전에 /gsd-phase 편집으로 고침 — 사용자 결정 2026-09-24 세션 H
 - [Phase 4]: QA 16건 유실 인정 — 묶음 ② /qa가 다시 훑고 키보드 포커스(탭 순서·포커스 표시·복귀)를 점검 항목으로 둠 — 사용자 결정 2026-09-24 세션 H
+- [Phase 4]: Button pending 상태도 aria-disabled(rev 5) — 계약 1 요약과 다름, 소비 API는 동일
+- [Phase 4]: ConfirmDialog primary에 reasonTone·nextStep 선택 확장, options 행 모양 {label, description?, onSelect} 확정
+- [Phase 4]: confirmDeleteLine 기존 로직 재사용(서버 삭제 신호 없음) — 견적 줄 삭제 서버 반영은 후속 플랜
+- [Phase 4]: 등록 폼 Escape 핸들러에 preventDefault 추가 — 같은 키 입력이 방금 연 ConfirmDialog를 즉시 닫는 버그 수정
 
 ### Pending Todos
 
@@ -240,6 +245,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T10:00:49.814Z
-Stopped at: Completed 04-10-PLAN.md
+Last session: 2026-09-24T11:54:56.132Z
+Stopped at: Completed 04-46-PLAN.md
 Resume file: None

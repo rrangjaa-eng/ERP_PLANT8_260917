@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-24T04:12:47.827Z",
+  "timestamp": "2026-09-24T05:31:11.265Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -68,17 +68,18 @@
       "name": "[세션 B] PR #38 Post-build(/review·/qa+디자인 DOM 감사·/cso·/ship) → main 머지. 수정: IDOR 3건·감사 기록 롤백·합계 bigint(b0b6cf7), 조회 누수·환율0·시드 권한·금액숨김·반올림(a283a5c), 보관 프로젝트 쓰기(a6ce3ff), 금액 0·10배·100배 저장·저장 오류 미표시·목록 쉼표(229b33d), 금액숨김 직급 저장 시 단가 0 덮어씀(5b6b0c5), 문서(121d955). CI 초록 후 머지 3c1b015",
       "status": "done",
       "commit": "3c1b015"
+    },
+    {
+      "id": 11,
+      "name": "[세션 C] /gsd-plan-phase 4 — 반영 지시 1~13·묶음 경계(② w2~18 끝 04-23 / ③ w19~24 끝 04-41 / ④ w25~30 끝 04-31)·04-48/49/50/51 신설·알려진 문제 배정·열린 질문 2개 checkpoint(04-07·04-51). 체커 2회차 통과. draft PR #40",
+      "status": "done",
+      "commit": "a4d1f29"
     }
   ],
   "remaining_tasks": [
     {
-      "id": 11,
-      "name": "[세션 C] /gsd-plan-phase 4 — 브랜치 claude/gsd-progress-e1nzgu를 최신 main에서 다시 시작(이 인계 커밋은 cherry-pick), 새 PR. 반영 지시 1~13(eng r2) + 묶음별 머지 경계 + PR #38 본문 '알려진 문제' 표(QA 남은 16건·Codex 후속·seq_start 충돌·21억 초과)를 해당 플랜에 배정",
-      "status": "not_started"
-    },
-    {
       "id": 12,
-      "name": "/gsd-execute-phase 4 — 플랜마다 새 세션, 묶음이 끝날 때마다 Post-build + 머지(새 PR)",
+      "name": "/gsd-execute-phase 4 — 플랜마다 새 세션, 첫 플랜 04-50. 묶음 끝(04-23·04-41·04-31) 뒤 Post-build + 머지, 다음 묶음은 새 PR",
       "status": "not_started"
     },
     {
@@ -87,7 +88,18 @@
       "status": "not_started"
     }
   ],
-  "blockers": [],
+  "blockers": [
+    {
+      "description": "04-07 Task 0 결정 ①: 줄당 원화 > 2,147,483,647 — (a) integer 유지+서버 검증 (b) bigint(0016)",
+      "type": "human_action",
+      "workaround": "웨이브 28에서 멈춤, 앞 묶음은 진행 가능"
+    },
+    {
+      "description": "04-51 Task 1 결정 ②: 채번 시작값 하향 충돌 — (a) 설정 검증 거부 (b) 카운터 보정",
+      "type": "human_action",
+      "workaround": "웨이브 29에서 멈춤"
+    }
+  ],
   "async_jobs": [],
   "human_actions_pending": [
     {
@@ -103,6 +115,26 @@
     {
       "action": "/cso 미평가 범위(의존성·CI/CD·인프라·git 이력) 재감사",
       "context": "PR #38 /cso는 diff 정적 PARTIAL(run 1790189154262-c090f651571dd2c3). Docker 전체 검사와 함께",
+      "blocking": false
+    },
+    {
+      "action": "배포 창 판단(T-04-372/T-04-86): migrate가 트래픽 전환 전에 돌아 옛 코드가 새 스키마(0012·0015) 위에서 몇 분 동작",
+      "context": "묶음 ② /ship 전, ③ /ship 전",
+      "blocking": false
+    },
+    {
+      "action": "스테이징 DB 0010 계약 컬럼이 데모 값뿐인지 확인",
+      "context": "04-41 가드 전제, 묶음 ③ 전",
+      "blocking": false
+    },
+    {
+      "action": "플래너 판단 확인: ②/③ 경계 04-23 뒤(04-26 뒤도 가능), ENG-D12 04-50 이동, QA 해석(날짜 순서→04-15, 폰 편집→04-49)",
+      "context": "기록 밖 판단",
+      "blocking": false
+    },
+    {
+      "action": "QA 남은 16건 세부 목록 유실 — 「키보드 포커스 F1」 포함 재진술 요청",
+      "context": "세션 B 컨테이너에만 있었음",
       "blocking": false
     }
   ],
@@ -156,13 +188,23 @@
       "decision": "/ship의 VERSION·CHANGELOG 단계는 이 저장소에 적용하지 않음(파일 없음, 새 관례 도입 안 함)",
       "rationale": "CLAUDE.md 기존 관례 우선",
       "phase": "4"
+    },
+    {
+      "decision": "원격 브랜치 인계 커밋은 강제 푸시 대신 병합(ecbd3d3)",
+      "rationale": "CLAUDE.md git push --force 금지",
+      "phase": "4"
+    },
+    {
+      "decision": "13a 결정 커버리지 D-72·73·74 override(철회된 이관 결정)",
+      "rationale": "사용자 선택 2026-09-24",
+      "phase": "4"
     }
   ],
   "uncommitted_files": [],
-  "next_action": "세션 C: git fetch origin main && git checkout -B claude/gsd-progress-e1nzgu origin/main && git cherry-pick <이 인계 커밋> → /gsd-progress → /gsd-plan-phase 4 (새 PR)",
-  "context_notes": "리뷰 결과: docs/designs/plant8-erp-phase4-ceo-review-260923-r2.md, docs/designs/plant8-erp-phase4-eng-review-260923-r2.md(반영 지시 1~13이 정본 — 04-17 Task3→04-48, 04-30 Task3→04-49, 04-26 의존 04-49·웨이브 15 이후 +1, 04-18 의존 04-48·04-47, 04-03 문구 정리, 04-11 테스트, 04-31 E2E 플레이크·rollback.sh 스키마 하한 가드(E2-04), 04-41 0015 가드, U-2·UI-SPEC 인용, RESEARCH Q1·Q3 해소·Q2 무의미, ROADMAP 분모 36/40, OPEN-ITEMS 첫 줄). 계약 칸 삭제는 0015(04-41), 마지막 게이트는 04-31. 머지 묶음 경계는 C-26(04-17~19 한 배포)과 마이그레이션+의존 코드 동일 묶음을 지켜야 하고, 배포가 여러 번이라 E2-04 롤백 가드가 더 중요해짐. PR #38 diff의 56만 줄 삭제는 gstack 사본 제거(690848f, 의도됨). PR 본문은 낡음(7플랜/4웨이브, ①~⑤는 CONTEXT에서 확정·④→D-75). 인계 시점 CI(14ef895): quality 통과, integration-e2e 진행 중. 세션 clone은 얕음(depth 50) → main과 비교하려면 git fetch --unshallow. plan-phase를 읽으며 확인한 것(세션 C용): §5.1 RESEARCH 있음 → 기존 사용(VALIDATION.md 보존), §6 기존 플랜 있음 → 이전 결정(리뷰 반영·분할)에 해당하는 선택은 '기존 유지 + 추가/수정', 체커 모델은 CLAUDE.md(점검=Opus)와 config(haiku)가 다름 → CLAUDE.md 우선, §7.8 PATTERNS.md 있음 → 재사용, §7.95 spec-less probe 실행. [세션 B 추가] PR #38 머지 완료(3c1b015). 후속 플랜에 배정할 알려진 문제는 PR #38 본문 표가 정본. 교훈: 병렬 에이전트가 같은 작업 트리·erp_test DB·next build를 공유하면 충돌(SNAPSHOT_RACE, 빌드 락) — /cso는 별도 worktree, E2E·통합은 한 번에 하나. 서브에이전트의 'RED 확인' 보고는 믿지 말고 수정만 stash해 직접 재현(F2 E2E가 role=alert를 넓게 잡아 가짜 통과한 사례).",
+  "next_action": "세션 D: /gsd-progress → /gsd-execute-phase 4 로 04-50 한 플랜 실행 → 커밋·푸시 → /gsd-pause-work → 같은 설정으로 다음 세션",
+  "context_notes": "세션 C(2026-09-24) 재계획 완료. 플랜 42(실행 4·남은 38). PR #40 draft(묶음 ② 2/4) 구독 중. hook 머지 관문은 페이즈 단위 gate 로그만 봐서 묶음 ②·③ 머지 때 PR #38 기록으로 통과될 수 있음 — 묶음마다 Post-build 실제 실행 필요. 정지 감시는 출력 JSONL에 프롬프트 문구가 들어가 거짓 양성(세션 C). [이전] 리뷰 결과: docs/designs/plant8-erp-phase4-ceo-review-260923-r2.md, docs/designs/plant8-erp-phase4-eng-review-260923-r2.md(반영 지시 1~13이 정본 — 04-17 Task3→04-48, 04-30 Task3→04-49, 04-26 의존 04-49·웨이브 15 이후 +1, 04-18 의존 04-48·04-47, 04-03 문구 정리, 04-11 테스트, 04-31 E2E 플레이크·rollback.sh 스키마 하한 가드(E2-04), 04-41 0015 가드, U-2·UI-SPEC 인용, RESEARCH Q1·Q3 해소·Q2 무의미, ROADMAP 분모 36/40, OPEN-ITEMS 첫 줄). 계약 칸 삭제는 0015(04-41), 마지막 게이트는 04-31. 머지 묶음 경계는 C-26(04-17~19 한 배포)과 마이그레이션+의존 코드 동일 묶음을 지켜야 하고, 배포가 여러 번이라 E2-04 롤백 가드가 더 중요해짐. PR #38 diff의 56만 줄 삭제는 gstack 사본 제거(690848f, 의도됨). PR 본문은 낡음(7플랜/4웨이브, ①~⑤는 CONTEXT에서 확정·④→D-75). 인계 시점 CI(14ef895): quality 통과, integration-e2e 진행 중. 세션 clone은 얕음(depth 50) → main과 비교하려면 git fetch --unshallow. plan-phase를 읽으며 확인한 것(세션 C용): §5.1 RESEARCH 있음 → 기존 사용(VALIDATION.md 보존), §6 기존 플랜 있음 → 이전 결정(리뷰 반영·분할)에 해당하는 선택은 '기존 유지 + 추가/수정', 체커 모델은 CLAUDE.md(점검=Opus)와 config(haiku)가 다름 → CLAUDE.md 우선, §7.8 PATTERNS.md 있음 → 재사용, §7.95 spec-less probe 실행. [세션 B 추가] PR #38 머지 완료(3c1b015). 후속 플랜에 배정할 알려진 문제는 PR #38 본문 표가 정본. 교훈: 병렬 에이전트가 같은 작업 트리·erp_test DB·next build를 공유하면 충돌(SNAPSHOT_RACE, 빌드 락) — /cso는 별도 worktree, E2E·통합은 한 번에 하나. 서브에이전트의 'RED 확인' 보고는 믿지 말고 수정만 stash해 직접 재현(F2 E2E가 role=alert를 넓게 잡아 가짜 통과한 사례).",
   "open_questions": [
-    "줄당 21억 원 초과 금액: 결정 ①(정수 원 int 컬럼) 유지 vs bigint 전환 — 사용자 결정 필요",
-    "채번 seq_start를 낮추면 번호 충돌 — 설정 검증(현재 최대 이하 금지) vs 카운터 보정 — 결정 필요"
+    "04-07: 줄당 21억 원 초과 int vs bigint",
+    "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"
   ]
 }

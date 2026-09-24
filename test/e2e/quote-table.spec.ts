@@ -268,6 +268,97 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await expect(page.locator("tbody tr").nth(1)).toBeVisible();
     await assertValues();
   });
+  test("(h) 저장된 줄에서 Delete → ui/confirm-dialog 확인 → 포커스·Tab 가두기·Esc 복귀 → 재삭제로 삭제 확정(04-46)", async ({ page }) => {
+    const client = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2E삭제확인-${Date.now()}`,
+      normalizedName: `e2e삭제확인-${Date.now()}`,
+    });
+    const email = `e2e-delete-${randomUUID()}@example.test`;
+    const { userId: pmUserId, tempPassword } = await createAccount(SYSTEM_VIEWER, {
+      email,
+      name: "E2E Delete",
+      roleId: DEFAULT_ROLE_ID,
+    });
+    const [team] = await db.select().from(teams).limit(1);
+    if (!team) throw new Error("시드된 팀이 없습니다");
+
+    const projectName = `E2E삭제확인프로젝트-${Date.now()}`;
+    const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId, name: projectName });
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("1차 차수가 없습니다");
+    // 저장된 줄(id가 있는 줄)을 도메인 함수로 미리 만든다 — UI로 만들면
+    // 아직 dirty·id 없는 새 줄이라 "저장된 줄에서 Delete" 전제와 다르다.
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+      {
+        subcategory: "sub-a",
+        itemName: "삭제 대상 줄",
+        unitPrice: { currency: "KRW", amount: 1000000, fxRate: 1 },
+        execution: { currency: "KRW", amount: 0, fxRate: 1 },
+      },
+    ]);
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(email);
+    await page.getByLabel("비밀번호").fill(tempPassword);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+
+    const dataRow = page.locator("tbody tr").nth(1);
+    const gridcell = (index: number) => dataRow.getByRole("gridcell").nth(index);
+    const itemCell = gridcell(2);
+
+    await itemCell.focus();
+    await page.keyboard.press("Delete");
+
+    const dialog = page.getByRole("dialog", { name: "견적 줄 삭제" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText("보관함으로 옮겨짐 · 복원은 관리자")).toBeVisible();
+    const primaryButton = dialog.getByRole("button", { name: "견적 줄 삭제" });
+    await expect(primaryButton).toBeFocused();
+
+    // Tab이 다이얼로그 밖의 다른 인터랙션 요소로 나가지 않는다 — 네이티브
+    // showModal()의 포커스 가두기를 확인한다. Chromium은 마지막 포커스
+    // 가능 요소 다음 Tab에서 잠깐 activeElement를 <body>(포커스 없음 상태)로
+    // 돌렸다가 그다음 Tab에서 다이얼로그 첫 요소로 되돌아온다(실측 확인,
+    // 최소 재현 `<dialog><button>a</button><button>b</button></dialog>`도
+    // 같다) — 이 한 단계는 트랩이 깨진 것이 아니라 body는 인터랙션 요소가
+    // 아니므로 허용한다. 실제로 지켜야 할 계약은 "다이얼로그 밖의 다른
+    // 버튼·링크·입력으로 넘어가지 않는다"이다.
+    for (let i = 0; i < 6; i++) {
+      await page.keyboard.press("Tab");
+      const insideOrNeutral = await dialog.evaluate(
+        (node) => node.contains(document.activeElement) || document.activeElement === document.body,
+      );
+      expect(insideOrNeutral).toBe(true);
+    }
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(itemCell).toBeFocused();
+
+    // 다시 Delete → 1차 확인.
+    await page.keyboard.press("Delete");
+    await expect(dialog).toBeVisible();
+    await expect(primaryButton).toBeFocused();
+
+    // 04-46 편차(SUMMARY 「계약 1 편차」 옆에 별도로 기록) — behavior 원문은
+    // "일괄 저장 건수 +1"을 요구하지만, 이 플랜은 ④에서 confirmDeleteLine을
+    // "기존 확인 처리기" 그대로 재사용한다(plan action ④). 그 함수는 줄을
+    // 로컬 상태에서 지울 뿐 dirty로 표시하지 않고, 삭제를 서버에 보내는
+    // 경로(quote_lines.archivedAt/archivedBy 컬럼은 있으나 saveQuoteLines에
+    // 쓰는 곳이 없다)도 이 플랜의 파일 목록(ui/app만)에 없다 — 실측 확인:
+    // 확정 클릭 뒤 "일괄 저장"은 여전히 비활성(dirtyCount 0)이다. 견적 줄
+    // 삭제의 실제 서버 반영(archivedAt 기록)은 이 플랜 밖의 새 도메인 작업
+    // 이라 여기서는 계약(모달 UI·포커스·Esc)만 굳히고 dirty 집계는 손대지
+    // 않는다.
+    await primaryButton.click();
+    await expect(dialog).toBeHidden();
+    await expect(itemCell).toBeHidden();
+  });
+
   test("금액을 볼 수 없는 직급은 상세 화면이 오류 없이 열리고 금액은 —, 표는 편집할 수 없다(/ship 리뷰)", async ({ page }) => {
     // role-ceo에 프로젝트 보기·쓰기와 project.value만 주고 quote.amount는 주지 않는다 — PM 역할을 건드리지 않아 다른 테스트와 격리된다.
     await upsertPermission(SYSTEM_VIEWER, { roleId: "role-ceo", menu: "projects", action: "view", allowed: true });

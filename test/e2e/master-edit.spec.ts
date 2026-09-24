@@ -94,12 +94,11 @@ test.describe("법인카드 소유자 수정 (성공 기준 5 「수정」)", ()
     await expect(updatedRow.getByRole("cell").nth(4)).not.toHaveText("—");
   });
 
-  // /review H-1 주장: 종류를 바꾸면 React가 <select> 노드를 재사용해
-  // defaultValue를 다시 적용하지 않고, 브라우저가 자리표시자를 건너뛰어 첫
-  // 팀을 자동 선택한다 → 팀을 고르지 않아도 저장된다. 실측으로 반증됐다
-  // (value "" · selectedIndex 0 「팀 선택」 · checkValidity false).
-  // 위 왕복 테스트는 종류 전환 직후 {index:1}을 고르므로 이 경로를 덮지
-  // 못한다 — 그 지적은 맞았고, 그래서 이 단언을 따로 둔다.
+  // /review H-1: 종류를 바꾸면 React가 <select> 노드를 재사용해 defaultValue를
+  // 다시 적용하지 않고, 브라우저가 첫 팀을 자동 선택한다 → 팀을 고르지 않아도
+  // 저장된다. 예전 「반증」은 「수정」 클릭 뒤 URL 전환을 안 기다려 등록 폼을
+  // 잰 결과였다 — 그래서 URL을 기다린 뒤 잰다. 위 왕복 테스트는 {index:1}을
+  // 고르므로 이 경로를 덮지 못한다.
   test("종류를 팀으로 바꾸고 팀을 고르지 않으면 제출이 막힌다", async ({ page }) => {
     await loginAsSysadmin(page);
 
@@ -114,6 +113,7 @@ test.describe("법인카드 소유자 수정 (성공 기준 5 「수정」)", ()
     const row = page.getByRole("row", { name: new RegExp(`전환대상-${stamp}`) });
     await expect(row).toBeVisible();
     await row.getByRole("link", { name: "수정" }).click();
+    await expect(page).toHaveURL(/[?&]editId=/);
 
     // 종류만 바꾸고 팀 선택은 건드리지 않는다.
     await page.getByLabel("종류").selectOption("team");

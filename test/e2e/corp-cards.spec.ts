@@ -86,6 +86,29 @@ test.describe("법인카드 관리 화면 (MAST-03)", () => {
     await expect(page.getByText("개인카드1")).toBeVisible();
   });
 
+  // 소지자를 고른 뒤 종류를 팀으로 바꾸면 팀 칸이 첫 팀으로 저절로 골라지던
+  // 결함의 회귀 — 팀 칸은 빈 값으로 남아 제출이 막혀야 한다.
+  test("소지자를 고른 뒤 종류를 팀으로 바꾸면 팀 칸은 비어 있다", async ({ page }) => {
+    const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto("/admin/corp-cards?new=1");
+    await page.getByLabel("소지자").selectOption({ index: 1 });
+    await page.getByLabel("종류").selectOption("team");
+
+    const state = await page.getByLabel("팀").evaluate((el) => {
+      const select = el as HTMLSelectElement;
+      return { value: select.value, valid: select.checkValidity() };
+    });
+    expect(state.value).toBe("");
+    expect(state.valid).toBe(false);
+  });
+
   test("기본 계급(기획 PM)으로는 법인카드 화면이 404다", async ({ page }) => {
     const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
 

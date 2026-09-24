@@ -116,7 +116,8 @@ case "$event" in
     esac
     if [ "$sub" = "gsd-executor" ]; then
       missing=""
-      gate_has plan-ceo-review || missing="$missing /plan-ceo-review"
+      # 소수점 페이즈(04.1 …)는 /plan-ceo-review 생략(사용자 결정 2026-09-24 22:04 KST)
+      case "$phase" in *.*) ;; *) gate_has plan-ceo-review || missing="$missing /plan-ceo-review" ;; esac
       gate_has plan-eng-review || missing="$missing /plan-eng-review"
       phase_has_ui && ! gate_has plan-design-review && missing="$missing /plan-design-review"
       [ -z "$missing" ] || deny "Phase ${phase_pad} 계획이 Pre-build 게이트를 통과하지 않았다(없음:${missing}). CLAUDE.md: 게이트를 통과한 계획만 Build로 넘긴다. 그 스킬들을 먼저 호출하라(기록: ${gate_log#"$project"/})."

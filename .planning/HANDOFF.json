@@ -1,44 +1,40 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-24T12:36:44.894Z",
+  "timestamp": "2026-09-24T16:52:39.824Z",
   "phase": "04.1",
   "phase_name": "approvals-leave",
   "phase_dir": ".planning/phases/04.1-approvals-leave",
-  "plan": 0,
-  "task": 0,
-  "total_tasks": 0,
+  "plan": null,
+  "task": null,
+  "total_tasks": null,
   "status": "paused",
   "completed_tasks": [
-    { "id": 1, "name": "research + validation", "status": "done", "commit": "b8396a9" },
-    { "id": 2, "name": "UI-SPEC (/gsd-ui-phase)", "status": "done", "commit": "58e8ffd" },
-    { "id": 3, "name": "patterns", "status": "done", "commit": "3ac48c1" },
-    { "id": 4, "name": "7 plans + traceability move + 2 checker rounds", "status": "done", "commit": "eefaa57" },
-    { "id": 5, "name": "/plan-ceo-review report", "status": "done", "commit": "486b356" },
-    { "id": 6, "name": "CEO review applied via gsd-planner revision", "status": "done", "commit": "60593aa" },
-    { "id": 7, "name": "Codex cross-AI review (/gsd-review --codex, REVIEWS.md)", "status": "done", "commit": "1b86370" },
-    { "id": 8, "name": "checker + Codex findings, D-96 service year, new migration rule; checker iteration 2 passed", "status": "done", "commit": "9097173" },
-    { "id": 9, "name": "/plan-eng-review + Codex adversarial review (3 shards): 9 blockers, 25 directives, prior-finding table", "status": "done", "commit": "9e13798" }
+    {"id": 1, "name": "eng-review 반영 수정 회차 1 (막는 9 + 10~25)", "status": "done", "commit": "b3a0c68"},
+    {"id": 2, "name": "교차 메모 X-1~X-5 · VALIDATION", "status": "done", "commit": "5987a71"},
+    {"id": 3, "name": "플랜 검사기 1회차 (0 막는 문제)", "status": "done", "commit": "70b94e1"},
+    {"id": 4, "name": "origin/main 병합", "status": "done", "commit": "562dfd2"},
+    {"id": 5, "name": "Codex 1회차 3갈래 → 반영 · 검사기 2회차 0 · Codex 2회차 → 반영", "status": "done", "commit": "5b380d4"},
+    {"id": 6, "name": "전체 Codex 1·2·3차 → 반영", "status": "done", "commit": "e48ffc2"},
+    {"id": 7, "name": "바뀐 갈래 B·C Codex 4차 = 0 · 0 (A는 3차 0, 이후 불변)", "status": "done", "commit": "cac9674"}
   ],
   "remaining_tasks": [
-    { "id": 10, "name": "apply eng review directives 1-25 via /gsd-plan-phase 04.1 revision, checker, Codex re-review until no blockers (new session)", "status": "not_started" },
-    { "id": 11, "name": "re-run /plan-ceo-review and /plan-eng-review on the revised plans, each with real Codex (separate sessions); then /plan-design-review + Codex design review, then apply", "status": "not_started" },
-    { "id": 12, "name": "merge origin/main, /review, PR #60 ready, ask execute card", "status": "not_started" }
+    {"id": 8, "name": "/plan-eng-review 04.1 (새 세션, 소수점 페이즈라 CEO 리뷰 생략 — skill-gate 훅이 자동 면제)", "status": "not_started"},
+    {"id": 9, "name": "/plan-design-review 04.1 + Codex (UI-SPEC에 누적 메모 반영)", "status": "not_started"},
+    {"id": 10, "name": "/review → PR #60 설명", "status": "not_started"}
   ],
   "blockers": [],
   "async_jobs": [],
-  "human_actions_pending": [
-    { "action": "Answer card: annual leave granted on Jan 1 of the year after hire (A full 15 days, recommended / B prorated)", "context": "docs/inputs/phase-05-approval.md:75 left it to the user; plan 04.1-03 assumption 1 uses A", "blocking": false }
-  ],
+  "human_actions_pending": [],
   "decisions": [
-    { "decision": "STATE.md untouched (13b/13c skipped)", "rationale": "Phase 4 session owns current phase", "phase": "04.1" },
-    { "decision": "serial plan chain 01>03>02>04>05>06>07", "rationale": "shared local DB", "phase": "04.1" },
-    { "decision": "no reserved migration numbers and no merge-order constraint; regenerate after merging origin/main (04.1-07 T1)", "rationale": "coordinator rule 20:52 KST", "phase": "04.1" },
-    { "decision": "CEO-5 one approval per person per round", "rationale": "user choice", "phase": "04.1" },
-    { "decision": "D-96 first-year monthly leave from hire date, max 11, stops at resignation", "rationale": "user 20:42 KST", "phase": "04.1" },
-    { "decision": "monthly and annual balances never shown as one combined total", "rationale": "user 20:43 KST", "phase": "04.1" },
-    { "decision": "eng review: 4 Codex blockers downgraded (monthly 0 display, reseed visibility, guard schema check, 07 journal restore)", "rationale": "verified against code/rules; see report", "phase": "04.1" }
+    {"decision": "D5 입사 다음 해 연차 = 근무 기간 비례(0.25일 올림)", "rationale": "사용자 카드 B 2026-09-24 21:45 KST", "phase": "04.1"},
+    {"decision": "조정 기록 읽기 = admin.people view, 추가 폼만 write", "rationale": "보기 전용 관리자도 기록을 본다(기존 truth 유지)", "phase": "04.1"},
+    {"decision": "기안자가 지금 담당이면 가능 행동 = 승인 + 회수(반려 없음, 서버도 거부)", "rationale": "회수가 같은 목적 — 결정 최소화", "phase": "04.1"},
+    {"decision": "미리보기: approval.value 숨김이면 이름 없음, role.value 숨김이면 라벨 `N단`", "rationale": "정보 노출 투영 + 줄이 비지 않게", "phase": "04.1"},
+    {"decision": "월차 조정 불가 시 옵션 숨김 + 한 줄(공용 Select 변경 없음)", "rationale": "화면 사용성 원칙 · 컴포넌트 변경 최소", "phase": "04.1"},
+    {"decision": "퇴직 줄은 섹션 연도 = 퇴직 연도일 때만; 섹션 연도는 서버가 한 번 정함", "rationale": "잔고·기록·조정 연도 일치", "phase": "04.1"},
+    {"decision": "B-F04(설정 화면 보기 전용 편집 컨트롤)·A-FF01(시드가 노출 설정 되돌림)은 범위 밖", "rationale": "기존 화면 전체의 선행 문제 · Phase 4 04-20 몫", "phase": "04.1"}
   ],
   "uncommitted_files": [],
-  "next_action": "New session: /gsd-progress, confirm commit 9e13798 is on the PR #60 branch, then /gsd-plan-phase 04.1 revision applying docs/designs/plant8-erp-phase04.1-eng-review-260924.md directives 1-25, checker, Codex re-review until no blockers",
-  "context_notes": "Plan PR #60 on claude/phase-04.1-plan-1iqtwe now contains the eng review commits (fast-forwarded); PR #64 closed as empty. Session boundary after each gate review (D-01). Replies in Korean, times in KST. Also apply the old checker info: 04.1-01 provides (~L148) and T-04.1-05 (~L511) should mention snapshot-exists and no-orphan guard conditions."
+  "next_action": "새 세션에서 /plan-eng-review 04.1 — docs/designs/phase04.1-revision-260924/tests-01-and-open-notes.md 끝 「멈춘 곳」과 round2-brief.md 끝 판정부터 읽는다",
+  "context_notes": "Codex 원문은 docs/designs/phase04.1-revision-260924/codex-*.md. UI-SPEC 반영 목록은 tests-01-and-open-notes.md 마지막 절. STATE.md 현재 페이즈는 건드리지 않았다."
 }

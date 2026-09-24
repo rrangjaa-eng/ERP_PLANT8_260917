@@ -54,21 +54,15 @@
 
 ## Completed
 
+### FINDING-001 PC에서 「내 차례」(`/`)로 돌아가는 길이 없다
+
+상단 바 워드마크를 `/` 링크(aria-label 「PLANT8 내 차례」)로 만들었다. Tab 순서는 스킵 링크 → 워드마크 → 프로젝트.
+
+**Completed:** 2026-09-24 (`257c2ab`, 회귀 테스트 `test/e2e/wordmark-home.spec.ts`·`mobile-wordmark-home.spec.ts`)
+
 ## Design review 이연(2026-09-24 /design-review, Phase 2 화면)
 
 리포트: `~/.gstack/projects/rrangjaa-eng-ERP_PLANT8_260917/designs/design-audit-20260924/design-audit-127.0.0.1.md`
-
-### FINDING-001 PC에서 「내 차례」(`/`)로 돌아가는 길이 없다
-
-**What:** PC 상단 바 워드마크가 링크가 아니고 1차 메뉴 5개·사용자 메뉴에 「내 차례」가 없다. 로그인은 `/account`로 착지한다. 워드마크를 `/` 링크로 할지, 메뉴 앞에 「내 차례」를 둘지 SYSTEM.md §6-0에서 정한다.
-
-**Why:** PC 사용자가 URL을 치지 않으면 첫 화면에 닿지 못한다(High, 1440·768 실측). 폰은 하단 탭 1번이 있어 문제없다.
-
-**Context:** `test/e2e/keyboard-nav.spec.ts:135-153`이 Tab 순서 「스킵 링크 → 프로젝트」를 고정하므로 결정과 함께 그 테스트를 고친다.
-
-**Effort:** S
-**Priority:** P1
-**Depends on:** SYSTEM.md §6-0 결정
 
 ### FINDING-006 `/projects` 로딩 뼈대의 300ms 지연 표시
 
@@ -138,7 +132,7 @@
 
 **What:** 폰 「더보기」 시트에는 「설정」이 있는데 PC 사용자 메뉴는 §6-0 (a)대로 관리 · 내 정보 · 로그아웃뿐이다.
 
-**Why:** PC 사용자는 URL을 직접 쳐야 설정 화면에 닿는다(UX, Low). FINDING-001과 같은 결.
+**Why:** PC 사용자는 URL을 직접 쳐야 설정 화면에 닿는다(UX, Low). FINDING-001(해결: `257c2ab`)과 같은 결.
 
 **Context:** §6-0 (a) 사용자 메뉴 구성 결정이 먼저다.
 
@@ -181,3 +175,15 @@
 **Effort:** S
 **Priority:** P2
 **Depends on:** None
+
+### 상단 바 포커스 링이 위아래로 잘린다
+
+**What:** 워드마크·사용자 트리거·메뉴 링크가 바 높이(PC 38px)를 거의 다 채우고 링은 `outline-offset: var(--focus-offset)`(2px, 바깥)이라, 링 윗변은 화면 밖(바가 sticky top:0)이고 아랫변은 흰 본문 위의 --bar-fg라 거의 안 보인다. 좌우 변만 보인다.
+
+**Why:** 포커스 위치는 알 수 있지만 링이 온전하지 않다(/review 2026-09-24, 신뢰도 중간 — 실측 필요).
+
+**Context:** 바 안쪽 링(`outline-offset: calc(-1 * var(--focus-w))`)으로 바꾸면 풀리지만 SYSTEM.md가 링 offset을 2px로 정하고 안쪽 링은 전폭 목록 행에만 둔다 — DECISIONS.md 기록과 SYSTEM.md 수정이 먼저다. `.navLink`는 이번 PR 전부터 같은 모양이다.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** SYSTEM.md 포커스 링 규정 결정

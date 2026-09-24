@@ -265,4 +265,39 @@ test.describe("코드표 항목 설명 (D-93, UI-SPEC rev 5 S14, DR-29)", () => 
     await expect(page.getByRole("cell", { name: value })).toBeVisible();
     await expect(page.getByLabel(`${label} 설명`)).toHaveValue("추가 폼에서 적은 설명");
   });
+
+  // 리뷰 후속 — 증빙 종류 세금 규칙의 「최소 징수액」 칸도 parseNumberInput(...) ??
+  // 0이 NaN을 통과시킨다. 칸을 지우고 '-'만 남기고 블러하면 서버로 의미
+  // 없는 NaN 요청이 나간다 — 고친 뒤엔 그 블러가 서버 액션을 부르지 않는다.
+  test("「최소 징수액」 칸을 지우고 '-'만 남기면 서버 액션을 부르지 않는다", async ({ page }) => {
+    await loginAsSysadmin(page);
+
+    const stamp = Date.now();
+    const value = `e2e-tax-${stamp}`;
+    const label = `세금규칙대상-${stamp}`;
+
+    await page.goto("/admin/code-tables?tableKey=evidence_type&new=1");
+    await page.getByLabel("값").fill(value);
+    await page.getByLabel("이름", { exact: true }).fill(label);
+    await page.getByRole("button", { name: "코드 추가" }).click();
+    await expect(page.getByRole("cell", { name: value })).toBeVisible();
+
+    const row = page.getByRole("row").filter({ has: page.getByRole("cell", { name: value }) });
+    const taxRuleRow = row.locator("xpath=following-sibling::tr[1]");
+    await taxRuleRow.getByLabel("규칙 종류").selectOption("withholding");
+
+    const minWithholdingInput = taxRuleRow.getByLabel("최소 징수액");
+    await minWithholdingInput.click();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.press("Delete");
+    await page.keyboard.type("-");
+
+    let actionRequests = 0;
+    page.on("request", (request) => {
+      if (request.method() === "POST" && request.headers()["next-action"] !== undefined) actionRequests++;
+    });
+    await minWithholdingInput.blur();
+    await page.waitForTimeout(500);
+    expect(actionRequests).toBe(0);
+  });
 });

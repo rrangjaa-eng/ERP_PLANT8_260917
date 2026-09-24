@@ -1,5 +1,6 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
+import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { project, type DtoSpec } from "@/domain/permissions/project";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { registerDto } from "@/domain/permissions/dto-registry";
@@ -361,6 +362,11 @@ export async function saveQuoteLines(
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, PROJECTS_MENU, "write"))) {
     throw new ForbiddenError("견적 줄 저장 권한이 없습니다.");
+  }
+  // 금액을 볼 수 없는 사람은 줄을 저장하지 못한다 — 화면은 금액 없이 줄을
+  // 받으므로, 저장을 허용하면 단가·실행가가 0으로 덮인다(/ship 리뷰).
+  if (!(await defaultVisible(viewer, "quote.amount"))) {
+    throw new ForbiddenError("견적 금액을 볼 수 없어 견적 줄을 저장할 수 없습니다.");
   }
 
   const revision = await repoFindQuoteRevisionById(viewer, revisionId);

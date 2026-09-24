@@ -127,8 +127,9 @@ function newDraftLine(defaultSubcategory: string): DraftLine {
   };
 }
 
-function formatKrw(value: number): string {
-  return value.toLocaleString("ko-KR");
+// 금액을 볼 수 없는 직급은 금액 필드 없이 줄을 받는다 — "—"로 보인다.
+function formatKrw(value: number | undefined): string {
+  return value === undefined ? "—" : value.toLocaleString("ko-KR");
 }
 
 function contractFromDto(revenue: RevenueDto): ContractDraft {

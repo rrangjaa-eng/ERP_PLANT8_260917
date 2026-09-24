@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
+import { visible } from "@/domain/permissions/visible";
 import { findProject } from "@/domain/projects";
 import { listProjectFormReferences } from "@/domain/projects/references";
 import { getCurrentQuoteRevision, listQuoteLines } from "@/domain/quotes/lines";
@@ -44,7 +45,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   // (가) 셀 편집 가능성은 서버가 판정해 보낸다 — 화면은 project.status
   // 문자열을 다시 해석하지 않고 이 판정 결과(boolean)만 받는다.
   const gateDecision = await gate(project, "project.completed-lock", { status: project.status });
-  const editable = canWrite && gateDecision.allowed;
+  // 금액을 볼 수 없으면 표를 편집하지 않는다 — 서버도 저장을 거부한다(saveQuoteLines).
+  const editable = canWrite && gateDecision.allowed && (await visible(session.viewer, "quote.amount"));
 
   const [lines, references, revenue, usdDefaultFxRate] = await Promise.all([
     listQuoteLines(session.viewer, revision.id),

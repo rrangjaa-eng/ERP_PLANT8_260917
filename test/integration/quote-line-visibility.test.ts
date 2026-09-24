@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { codeItems, teams } from "@/db/schema";
+import { codeItems, quoteLines, teams } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
@@ -35,6 +35,11 @@ async function setupProject() {
 const krw = (amount: number) => ({ currency: "KRW" as const, amount, fxRate: 1 });
 
 describe("quote.amount를 꺼도 견적 줄의 id·itemName은 남는다", () => {
+  // 공유 역할(DEFAULT_ROLE_ID)의 노출표를 바꾸므로 매 테스트 뒤 되돌린다 — 다른 테스트와 격리.
+  afterEach(async () => {
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, infoItem: "quote.amount", visible: true });
+  });
+
   it("quote.amount visibility가 false여도 listQuoteLines는 id·itemName이 있는 행을 돌려준다", async () => {
     const { revision, subcategoryValue } = await setupProject();
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
@@ -49,5 +54,26 @@ describe("quote.amount를 꺼도 견적 줄의 id·itemName은 남는다", () =>
     expect(rows[0]?.id).toBeTruthy();
     expect(rows[0]?.itemName).toBe("항목A");
     expect(rows[0]?.unitPrice).toBeUndefined();
+  });
+  it("quote.amount를 볼 수 없는 사람의 견적 줄 저장은 거부되고 금액이 0으로 덮이지 않는다(/ship 리뷰)", async () => {
+    const { revision, pmUserId, subcategoryValue } = await setupProject();
+    const saved = await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+      { subcategory: subcategoryValue, itemName: "항목A", unitPrice: krw(100), execution: krw(50) },
+    ]);
+    const line = saved.lines[0];
+    if (!line) throw new Error("줄 저장 실패");
+
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, infoItem: "quote.amount", visible: false });
+    const pm = { id: pmUserId, roleId: DEFAULT_ROLE_ID };
+
+    await expect(
+      saveQuoteLines(pm, revision.id, [
+        { id: line.id, version: line.version, subcategory: subcategoryValue, itemName: "이름만 바꿈", unitPrice: krw(0), execution: krw(0) },
+      ]),
+    ).rejects.toThrow();
+
+    const [row] = await db.select().from(quoteLines).where(eq(quoteLines.id, line.id));
+    expect(row?.itemName).toBe("항목A");
+    expect(Number(row?.unitPriceAmountKrw)).toBe(100);
   });
 });

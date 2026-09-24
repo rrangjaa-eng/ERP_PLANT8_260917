@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { createProject } from "@/domain/projects";
+import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { db } from "@/db/client";
 import { teams } from "@/db/schema";
 
@@ -265,5 +267,39 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await page.reload();
     await expect(page.locator("tbody tr").nth(1)).toBeVisible();
     await assertValues();
+  });
+  test("금액을 볼 수 없는 직급은 상세 화면이 오류 없이 열리고 금액은 —, 표는 편집할 수 없다(/ship 리뷰)", async ({ page }) => {
+    // role-ceo에 프로젝트 보기·쓰기와 project.value만 주고 quote.amount는 주지 않는다 — PM 역할을 건드리지 않아 다른 테스트와 격리된다.
+    await upsertPermission(SYSTEM_VIEWER, { roleId: "role-ceo", menu: "projects", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: "role-ceo", menu: "projects", action: "write", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: "role-ceo", infoItem: "project.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: "role-ceo", infoItem: "quote.amount", visible: false });
+
+    const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E금액숨김-${Date.now()}`, normalizedName: `e2e금액숨김-${Date.now()}` });
+    const { userId: pmUserId } = await createAccount(SYSTEM_VIEWER, { email: `e2e-pm-${randomUUID()}@example.test`, name: "E2E PM", roleId: DEFAULT_ROLE_ID });
+    const [team] = await db.select().from(teams).limit(1);
+    if (!team) throw new Error("시드된 팀이 없습니다");
+    const projectName = `E2E금액숨김프로젝트-${Date.now()}`;
+    const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId, name: projectName });
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("1차 차수가 없습니다");
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+      { subcategory: "sub-a", itemName: "숨김 줄", unitPrice: { currency: "KRW", amount: 1000, fxRate: 1 }, execution: { currency: "KRW", amount: 0, fxRate: 1 } },
+    ]);
+
+    const email = `e2e-ceo-${randomUUID()}@example.test`;
+    const { tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 금액숨김", roleId: "role-ceo" });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(email);
+    await page.getByLabel("비밀번호").fill(tempPassword);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+    await expect(page.getByText("숨김 줄")).toBeVisible();
+    await expect(page.getByText("1,000")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "줄 추가", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /첫 줄 만들기/ })).toHaveCount(0);
   });
 });

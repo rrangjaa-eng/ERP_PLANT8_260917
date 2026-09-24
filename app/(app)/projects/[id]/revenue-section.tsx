@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Table } from "@/ui/table/Table";
 import { Select } from "@/ui/select/Select";
 import { Form } from "@/ui/form/Form";
-import { normalizeNumericPaste } from "@/ui/table/parse-tsv";
-import { formatKrw } from "@/lib/format-number";
+import { formatKrw, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
+import { useCommaInput } from "@/ui/input/use-comma-input";
 import type { TableColumn } from "@/ui/table/types";
 import type { Currency } from "@/domain/money";
 import styles from "./project-detail.module.css";
@@ -39,73 +39,94 @@ function contractHintText(vatKrw: number, totalKrw: number): string {
 // F4 — 이 표·폼의 금액 입력은 모두 `value={숫자}`로 매 렌더 값을 되돌리는
 // 통제 입력이었다 — 쉼표("1,500,000")는 Number()가 조용히 0으로 읽고,
 // 소수점("1234.")은 다음 렌더에서 지워져(Number("1234.")===1234) 이어 치는
-// 자리수가 정수 뒤에 그대로 붙었다("1234.56"→123456). 타이핑 중엔 원문
-// 텍스트를 그대로 보여주고, blur/Enter에서만 공용 파서(normalizeNumericPaste,
-// 쉼표·공백·통화 기호 제거)로 읽어 커밋한다 — 숫자가 아니면 조용히 0을
-// 쓰지 않고 이전 값으로 되돌린다.
+// 자리수가 정수 뒤에 그대로 붙었다("1234.56"→123456). 04-09부터 useCommaInput이
+// 타이핑 중 쉼표를 넣고 커서를 지킨다(UI-SPEC S15) — 숫자가 아닌 통째 입력은
+// 훅이 스스로 거부한다(C-02).
 function amountText(value: number): string {
   return value === 0 ? "" : String(value);
 }
 
+// useCommaInput은 자기 상태를 가진 칸이라(제어 대상이 rawValue가 아니라
+// 훅 내부 text) 부모가 value를 바꿔도 저절로 반영되지 않는다. 우리가 직접
+// onCommit한 값(committedValue)과 새 value가 다르면 서버 재조회 같은 외부
+// 변경이라는 뜻이라 key를 바꿔 다시 마운트해 새 초깃값을 반영한다 — 우리가
+// 커밋한 값의 메아리일 때는 다시 마운트하지 않는다(타이핑 중 커서 보존).
+// 렌더 중 "prop 변화에 맞춰 state 조정" 패턴(PermissionGrid.tsx 선례) — ref를
+// 렌더 중에 바꾸면 안 되므로(react-hooks/refs) useState를 쓴다.
 function AmountInput({
   ariaLabel,
   value,
+  kind = "krw",
   onCommit,
   className,
 }: {
   ariaLabel: string;
   value: number;
+  kind?: NumberInputKind;
   onCommit: (amount: number) => void;
   className?: string;
 }) {
-  // 0은 빈 칸으로 보여 준다 — "0"이 미리 들어 있으면 그 앞에 입력이 붙어
-  // "1,500,0000"처럼 금액이 10배가 된다(/qa F4 재현).
-  const [text, setText] = useState(amountText(value));
-  // 커밋 후(또는 서버 재조회로) value가 바뀔 때만 text를 되돌린다 — 타이핑
-  // 도중엔 value가 그대로라 이 분기를 타지 않는다. effect 안 setState는
-  // 불필요한 연쇄 렌더를 만든다(react-hooks/set-state-in-effect) — 렌더 중
-  // "prop 변화에 맞춰 state 조정" 패턴(PermissionGrid.tsx 선례)을 쓴다.
-  const [prevValue, setPrevValue] = useState(value);
-  if (value !== prevValue) {
-    setPrevValue(value);
-    setText(amountText(value));
-  }
-
-  function commit() {
-    const parsed = normalizeNumericPaste(text);
-    if (parsed === null) {
-      setText(amountText(value));
-      return;
-    }
-    onCommit(parsed);
+  const [committedValue, setCommittedValue] = useState(value);
+  const [mountKey, setMountKey] = useState(0);
+  if (value !== committedValue) {
+    setCommittedValue(value);
+    setMountKey((key) => key + 1);
   }
 
   return (
-    <input
-      aria-label={ariaLabel}
-      type="text"
-      inputMode="decimal"
-      value={text}
-      onChange={(event) => {
-        // 해석되는 값은 입력하는 즉시 반영한다 — blur에서만 반영하면 저장
-        // 버튼이 입력 중에 활성화되지 않는다. prevValue를 먼저 맞춰 두어
-        // "1234."처럼 입력 중인 원문이 되돌려지지 않게 한다.
-        setText(event.target.value);
-        const parsed = event.target.value.trim() === "" ? 0 : normalizeNumericPaste(event.target.value);
-        if (parsed !== null && parsed !== value) {
-          setPrevValue(parsed);
-          onCommit(parsed);
-        }
-      }}
-      onBlur={commit}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") {
-          event.preventDefault();
-          commit();
-        }
-      }}
+    <AmountInputField
+      key={mountKey}
+      ariaLabel={ariaLabel}
+      initialValue={amountText(value)}
+      kind={kind}
       className={className}
+      onCommit={(amount) => {
+        setCommittedValue(amount);
+        onCommit(amount);
+      }}
     />
+  );
+}
+
+function AmountInputField({
+  ariaLabel,
+  initialValue,
+  kind,
+  className,
+  onCommit,
+}: {
+  ariaLabel: string;
+  initialValue: string;
+  kind: NumberInputKind;
+  className?: string;
+  onCommit: (amount: number) => void;
+}) {
+  const { inputRef, value, onChange, error, rawValue } = useCommaInput(kind, initialValue);
+
+  // 해석되는 값은 입력하는 즉시 반영한다(F4) — blur에서만 반영하면 저장
+  // 버튼이 입력 중에 활성화되지 않는다. 빈 칸은 0으로 커밋한다.
+  // onCommit은 호출부가 매 렌더 새로 만드는 인라인 함수라 deps에 넣으면
+  // rawValue가 그대로인데도 반복 커밋된다(무한 렌더로 이어진다) — 값이
+  // 실제로 바뀔 때만 부모에 알리면 된다.
+  useEffect(() => {
+    const parsed = rawValue === "" ? 0 : parseNumberInput(rawValue);
+    if (parsed !== null && Number.isFinite(parsed)) onCommit(parsed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawValue]);
+
+  return (
+    <>
+      <input
+        ref={inputRef}
+        aria-label={ariaLabel}
+        type="text"
+        inputMode={kind === "krw" ? "numeric" : "decimal"}
+        value={value}
+        onChange={onChange}
+        className={className}
+      />
+      {error ? <p className={styles.cellEditError}>{error}</p> : null}
+    </>
   );
 }
 
@@ -295,6 +316,7 @@ export function RevenueSection({
               <AmountInput
                 ariaLabel="계약 금액"
                 value={contractDraft.amount}
+                kind={contractDraft.currency === "KRW" ? "krw" : "foreign"}
                 onCommit={(amount) => onContractChange({ amount })}
                 className={styles.cellInputNumeric}
               />
@@ -305,6 +327,7 @@ export function RevenueSection({
               <AmountInput
                 ariaLabel="계약 금액 환율"
                 value={contractDraft.fxRate}
+                kind="fxRate"
                 onCommit={(fxRate) => onContractChange({ fxRate, fxRateTouched: true })}
                 className={styles.cellInputNumeric}
               />

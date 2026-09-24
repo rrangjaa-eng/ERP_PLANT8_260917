@@ -25,3 +25,8 @@
 ## 교차 메모 반영(2회, 22:45 KST) — 01·02·05
 - X-1 walkRoute `at` 전 호출 · X-2 `setupOrphanFinal()` + 고아 최종 기안자 회수 · X-3 폴백 후보 = 관련자 · X-4 종결 상태도 관련자 판정
 - 새 사례: resolve-step 「폴백 자리의 폴백 후보는 지금 담당」 · approvals-route-fixed 「고아 최종 문서의 기안자 회수 성공」 · approvals-concurrency 「폴백 후보는 관련자」
+
+## 멈춘 곳 (2026-09-24 22:52 KST, 사용 한도로 코디네이터 지시)
+- 끝남: 수정 회차 1(b3a0c68) · 교차 메모 X-1~X-5 · 06 S9 · VALIDATION(5987a71)
+- 진행 중이던 것: 플랜 검사기 1회차(결과 → checker-round1.md). Codex는 인증·모델 확인만 하고 **실행 전**에 멈춤
+- 다음(00:50 KST 뒤): Codex 3갈래(A 01·03 / B 02·04·05 / C 06·07·교차, 막는 문제마다 파일:줄 근거) → Sonnet 1차 대조 → 검사기+Codex 지적 한 번에 수정 → 2회차부터 바뀐 부분만 → 마지막 전체 Codex 한 번 → /gsd-pause-work → 기술 리뷰 세션 요청(04.1은 CEO 리뷰 생략)

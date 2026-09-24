@@ -414,18 +414,21 @@ Wave 1
 - [ ] 04.4-01-PLAN.md — 리허설 결과 기록·표시 트레이서: `restore_rehearsals` 표, DB 없는 CLI `record` → 상태 화면 「복원 리허설」 한 줄(기록 없음·확인 불가·성공·실패+실행 기록 링크, 쓰기·읽기 검증·시간 제한), journal 가드(main 또는 04.1 파일 그대로)(D8-08)
 
 Wave 2 *(blocked on Wave 1)*
-- [ ] 04.4-02-PLAN.md — 복원본 확인: CLI `verify`(대상 가드 · 마이그레이션 알려진 접두 · 핵심 표 목록 `RESTORE_CHECK_TABLES`), Cloud Run Job `plant8-{env}-restore` 배포·번들(D8-08)
+- [ ] 04.4-02-PLAN.md — 복원본 확인: CLI `verify`(대상 가드 · 마이그레이션 알려진 접두 · 핵심 표 목록 `RESTORE_CHECK_TABLES`), Cloud Run Job `plant8-{env}-restore` 배포·번들(DB 없는 진입점 번들 확인)(D8-08)
 
 Wave 3 *(blocked on Wave 2)*
-- [ ] 04.4-03-PLAN.md — 리허설 워크플로: `restore-rehearsal.yml` + `scripts/restore-rehearsal.sh`(이름 가드 · 임시 인스턴스 생성·복원·확인·정확한 이름 삭제·기록, production 확인 입력), 가짜 gcloud 테스트, OPERATIONS §14 백업·복원(D8-08)
+- [ ] 04.4-03-PLAN.md — 리허설 워크플로: `restore-rehearsal.yml` + `scripts/restore-rehearsal.sh`(이름 가드 · 고아 점검 · 임시 인스턴스 생성·복원·확인 · 작업 대기·재시도 삭제 · 한 번만 기록하는 finalize, 결과 단계 우선순위 정리 > 복원 > 검증, production 확인 입력), 가짜 gcloud 테스트, OPERATIONS §14 · `docs/RESTORE.md` 사고 복원 런북(D8-08)
 
 Wave 4 *(blocked on Wave 3)*
-- [ ] 04.4-04-PLAN.md — 사람 목록 로그인 상태: `users.first_login_at`(0031, 백필 포함), 로그인 훅, DTO 두 필드, 「첫 로그인 전」·「임시 비밀번호 사용 중」 배지, 폰 세로 쌓기, SYSTEM.md §7-5·DECISIONS.md(D8-07)
+- [ ] 04.4-04-PLAN.md — 사람 목록 로그인 상태 데이터: `users.first_login_at`(백필 포함 — 두 로그인 기록 중 더 이른 것), 세션 생성 훅(`databaseHooks.session.create.after`), DTO 두 필드 · 요청 단위 노출 판정, `personLoginStatus` 판정, 업그레이드 픽스처(D8-07)
 
 Wave 5 *(blocked on Wave 4)*
-- [ ] 04.4-05-PLAN.md — 병합 직전 + 실제 1회: origin/main 병합 → 04.4 마이그레이션 하나로 재생성해 다시 0030 → 전체 게이트 CI=true → (Post-build·/ship·staging 배포 뒤) 사용자가 staging 리허설 1회 실행(checkpoint)
+- [ ] 04.4-05-PLAN.md — 화면 마감: 상태 화면 「복원 리허설」 행 모양 · 사람 목록 배지 렌더 · 행 머리글 · 폰 칸 접기(`.peopleTable`, `--lh-table`) · E2E, SYSTEM.md §6-8·§7-5·§7-3 · DECISIONS.md(D8-07 · D8-08)
 
-결정은 `.planning/phases/04.4-restore-rehearsal-and-login-status/04.4-CONTEXT.md`에 옮겨 두었다(Phase 8 논의 D8-07·D8-08과 이미 확정된 입력). 계획 단계에서 정할 것: REQUIREMENTS 추적표의 OPS-03을 Phase 04.4로 옮기는 일, 복원본 확인 항목의 정확한 목록(그때 main에 있는 표 기준 — Phase 4 표가 아직 없을 수 있다), 리허설 결과를 기록하는 곳(운영 DB 한 줄을 Cloud Run Job으로 쓰기 대 GCS 파일), 스테이징과 프로덕션 중 어디서 돌릴지(프로덕션 인스턴스가 아직 없으면 스테이징으로 증명하고 전환 전 프로덕션 확인은 Phase 8 체크리스트가 맡는다), 「첫 로그인 전」 기록 칸의 모양과 재발급 뒤 다시 보일지, 마이그레이션 번호, 사람 목록 표시의 UI 계약(기존 배지 규약으로 충분한지 `/gsd-ui-phase 04.4`가 필요한지). ROADMAP Coverage 표·Phase 목록 요약 줄·REQUIREMENTS 추적표는 04.1~04.3과 같이 계획 단계에서 함께 맞춘다.
+Wave 6 *(blocked on Wave 5)*
+- [ ] 04.4-06-PLAN.md — 병합 직전 + 실제 1회: origin/main 병합 → 04.4 마이그레이션을 지우고 `pnpm db:generate` 한 번으로 재생성(main 마지막+1) · 백필 다시 붙이기 → 독립 DOM 감사 · 전체 게이트 CI=true → (Post-build·/ship·staging 배포 뒤) 사용자가 staging 리허설 1회 실행(checkpoint)
+
+결정은 `.planning/phases/04.4-restore-rehearsal-and-login-status/04.4-CONTEXT.md`에 옮겨 두었다(Phase 8 논의 D8-07·D8-08과 이미 확정된 입력). 계획 단계에서 정할 것: REQUIREMENTS 추적표의 OPS-03을 Phase 04.4로 옮기는 일, 복원본 확인 항목의 정확한 목록(그때 main에 있는 표 기준 — Phase 4 표가 아직 없을 수 있다), 리허설 결과를 기록하는 곳(운영 DB 한 줄을 Cloud Run Job으로 쓰기 대 GCS 파일), 스테이징과 프로덕션 중 어디서 돌릴지(프로덕션 인스턴스가 아직 없으면 스테이징으로 증명하고 전환 전 프로덕션 확인은 Phase 8 체크리스트가 맡는다), 「첫 로그인 전」 기록 칸의 모양과 재발급 뒤 다시 보일지, 마이그레이션 번호(브랜치는 db:generate가 준 번호, 머지 직전 재생성으로 main 마지막+1 — 기준 5), 사람 목록 표시의 UI 계약(기존 배지 규약으로 충분한지 `/gsd-ui-phase 04.4`가 필요한지). ROADMAP Coverage 표·Phase 목록 요약 줄·REQUIREMENTS 추적표는 04.1~04.3과 같이 계획 단계에서 함께 맞춘다.
 
 ### Phase 5: 지출결의·결재·연차
 

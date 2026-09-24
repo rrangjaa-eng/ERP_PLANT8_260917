@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { AccountEntry, MenuLink } from "./role-menu";
+import { NOTIFICATIONS_HREF, type AccountEntry, type MenuLink } from "./role-menu";
 import { isCurrentPath } from "./current-path";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { useLogout } from "@/ui/logout/use-logout";
@@ -40,6 +40,15 @@ export type TopBarProps = {
 // 무관하게 안정적이다).
 function isSettingsEntry(entry: AccountEntry): boolean {
   return entry.kind === "link" && entry.href === "/settings";
+}
+
+// 04.2-09 Task 1(S1-b): 「알림함」 항목 라벨 뒤에 건수를 붙인다. NOTIFICATIONS_HREF로
+// 판별한다(라벨 문자열이 아니라 URL로 — 위 isSettingsEntry와 같은 이유).
+function menuItemLabel(entry: AccountEntry | MenuLink, badgeLabel: string | null): string {
+  if ("href" in entry && entry.href === NOTIFICATIONS_HREF && badgeLabel) {
+    return `${entry.label} ${badgeLabel}`;
+  }
+  return entry.label;
 }
 
 export function TopBar({ topBarMenu, adminMenu, accountGroup, userName }: TopBarProps) {
@@ -183,7 +192,7 @@ export function TopBar({ topBarMenu, adminMenu, accountGroup, userName }: TopBar
                       ref={index === 0 ? (firstItemRef as React.RefObject<HTMLAnchorElement>) : undefined}
                       onClick={close}
                     >
-                      {item.entry.label}
+                      {menuItemLabel(item.entry, badgeLabel)}
                     </a>
                   ) : (
                     <button

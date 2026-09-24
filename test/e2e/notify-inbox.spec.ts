@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { test, expect } from "@playwright/test";
 import { createAccount } from "@/domain/auth/accounts";
-import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { runTick, type TickResult } from "@/domain/notify/tick";
 import { createTestConditionKind, testCandidate, type TestConditionKind } from "@/test/support/notify-tick";
@@ -22,6 +22,16 @@ async function createEmployee(): Promise<{ email: string; password: string; user
     email,
     name: "E2E Employee",
     roleId: DEFAULT_ROLE_ID,
+  });
+  return { email, password: tempPassword, userId };
+}
+
+async function createAdmin(): Promise<{ email: string; password: string; userId: string }> {
+  const email = `e2e-notify-admin-${randomUUID()}@example.test`;
+  const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, {
+    email,
+    name: "E2E Admin",
+    roleId: SYSADMIN_ROLE_ID,
   });
   return { email, password: tempPassword, userId };
 }
@@ -58,6 +68,52 @@ test.describe("알림함 트레이서 — tick → 배지 1 → 열람 → 배�
     await page.reload();
     const rowAfterReload = page.locator("table tbody tr").filter({ hasText: entityId });
     await expect(rowAfterReload).not.toContainText("안 읽음");
+  });
+});
+
+test.describe("PC 사용자 메뉴 — 「알림함 N」 (04.2-09 Task 1 · S1-b)", () => {
+  test("직원 — 사용자 메뉴 첫 항목이 알림함 1이고 누르면 /notifications로 간다(관리 권한 없음)", async ({
+    page,
+  }) => {
+    const user = await createEmployee();
+    const kind = createTestConditionKind([
+      testCandidate({ recipientId: user.userId, entityId: randomUUID(), referenceDate: "2026-01-01" }),
+    ]);
+    await tickOnce(kind);
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(user.email);
+    await page.getByLabel("비밀번호").fill(user.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    const trigger = page.locator('header button[aria-haspopup="menu"]');
+    await trigger.click();
+    const items = page.getByRole("menuitem");
+    await expect(items.first()).toHaveText("알림함 1");
+
+    await items.first().click();
+    await expect(page).toHaveURL(/\/notifications$/);
+  });
+
+  test("관리자 — 사용자 메뉴 순서가 「관리」 다음 「알림함 1」이다", async ({ page }) => {
+    const admin = await createAdmin();
+    const kind = createTestConditionKind([
+      testCandidate({ recipientId: admin.userId, entityId: randomUUID(), referenceDate: "2026-01-01" }),
+    ]);
+    await tickOnce(kind);
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    const trigger = page.locator('header button[aria-haspopup="menu"]');
+    await trigger.click();
+    const items = page.getByRole("menuitem");
+    await expect(items.nth(0)).toHaveText("관리");
+    await expect(items.nth(1)).toHaveText("알림함 1");
   });
 });
 

@@ -125,6 +125,11 @@ const ADMIN_MENUS: ReadonlyArray<{ key: string; label: string; href: string; gro
 // 통과/실패가 갈리므로, 문서를 바꾸고 이 상수를 잊으면 테스트가 즉시 알린다.
 const SETTINGS_ENTRY: AccountEntry = { kind: "link", label: "설정", href: "/settings" };
 
+// 04.2-09 Task 1 — SYSTEM.md §6-0 (a)·§7-8 「계정」 그룹 맨 앞 「알림함」(S1-b).
+// 상단 바 트리거 배지(§7-12 S1-a)는 TopBar.tsx가 useUnreadCount()로 별도로 붙인다 —
+// 이 상수는 라우트와 라벨 정본일 뿐 건수를 담지 않는다.
+export const NOTIFICATIONS_HREF = "/notifications";
+
 /** allowedMenus에 admin.* 메뉴가 하나라도 있으면 「관리」 한 줄, 없으면 빈 배열
  * (「관리」 한 줄로 접기 — 개별 화면 이름은 adminIndexGroups가 담당). */
 function buildAdminMenu(viewer: RoleMenuViewer): MenuLink[] {
@@ -152,6 +157,7 @@ export function adminIndexGroups(viewer: RoleMenuViewer): AdminMenuGroup[] {
 
 function buildAccountGroup(): AccountEntry[] {
   return [
+    { kind: "link", label: "알림함", href: NOTIFICATIONS_HREF },
     { kind: "link", label: "내 정보", href: "/account" },
     SETTINGS_ENTRY,
     { kind: "action", label: "로그아웃", action: "logout" },

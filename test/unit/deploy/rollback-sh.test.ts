@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, cpSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 
 // scripts/rollback.sh — 현재 100% 서빙 중인 리비전보다 오래된 최신 리비전으로
@@ -154,5 +154,121 @@ describe("rollback.sh", () => {
   it("서빙 리비전 조회는 status.traffic(JSON) 기준이다", () => {
     const rollbackSh = readFileSync(join(repoDir, "scripts/rollback.sh"), "utf8");
     expect(rollbackSh).toContain("status.traffic");
+  });
+});
+
+// db/migrations/*.sql 첫 줄에 `-- rollback-floor: <이유>`가 있는 가장 최신 파일을
+// 더한 커밋을 스키마 하한으로 삼는다(엔지 r2 E2-04). 후보(PREV)의 APP_GIT_SHA가 그
+// 커밋을 조상으로 갖지 않으면(또는 SHA가 없거나 이력에 없으면) update-traffic 전에
+// 거부한다.
+function headSha(repoDir: string): string {
+  const result = spawnSync("git", ["rev-parse", "HEAD"], { cwd: repoDir, encoding: "utf8" });
+  return result.stdout.trim();
+}
+
+function commitFile(repoDir: string, path: string, content: string): string {
+  const fullPath = join(repoDir, path);
+  mkdirSync(dirname(fullPath), { recursive: true });
+  writeFileSync(fullPath, content);
+  sh("git", ["add", "-A"], repoDir);
+  sh("git", ["commit", "-q", "-m", `add ${path}`], repoDir);
+  return headSha(repoDir);
+}
+
+describe("스키마 하한(E2-04)", () => {
+  let repoDir: string;
+  beforeEach(() => {
+    repoDir = setupRepo();
+  });
+
+  it("하한 아래(0012 이전) 후보로는 트래픽을 옮기지 않는다", () => {
+    const beforeFloor = headSha(repoDir); // C1 — init, 하한 이전
+    const floorSha = commitFile(repoDir, "db/migrations/0012_x.sql", "-- rollback-floor: 상태 재매핑\n"); // C2
+    const serving = commitFile(repoDir, "src/noop.txt", "noop"); // C3
+
+    const r = rollback(repoDir, {
+      revisions: ["v2", "v1"],
+      serving: "v2",
+      revisionShas: { v2: serving, v1: beforeFloor },
+    });
+
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("0012_x.sql");
+    expect(r.stderr).toContain(floorSha);
+    expect(r.stderr).toContain("v1");
+    expect(r.stderr).toContain("DECISIONS.md");
+    expect(r.log).not.toContain("update-traffic");
+  });
+
+  it("하한 커밋을 포함하는(그 자체이거나 뒤인) 후보는 허용한다", () => {
+    const beforeFloor = headSha(repoDir);
+    void beforeFloor;
+    const floorSha = commitFile(repoDir, "db/migrations/0012_x.sql", "-- rollback-floor: 상태 재매핑\n"); // C2
+    const serving = commitFile(repoDir, "src/noop.txt", "noop"); // C3
+
+    const r = rollback(repoDir, {
+      revisions: ["v2", "v1"],
+      serving: "v2",
+      revisionShas: { v2: serving, v1: floorSha },
+    });
+
+    expect(r.status).toBe(0);
+    expect(r.log).toContain("--to-revisions=v1=100");
+  });
+
+  it("후보에 APP_GIT_SHA가 없으면 거부한다", () => {
+    commitFile(repoDir, "db/migrations/0012_x.sql", "-- rollback-floor: 상태 재매핑\n"); // C2
+    const serving = commitFile(repoDir, "src/noop.txt", "noop"); // C3
+
+    const r = rollback(repoDir, {
+      revisions: ["v2", "v1"],
+      serving: "v2",
+      revisionShas: { v2: serving }, // v1은 SHA 없음
+    });
+
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("APP_GIT_SHA");
+    expect(r.stderr).toContain("0012_x.sql");
+    expect(r.log).not.toContain("update-traffic");
+  });
+
+  it("후보 SHA가 로컬 git 이력에 없으면 거부한다(최신 main 체크아웃에서 다시)", () => {
+    commitFile(repoDir, "db/migrations/0012_x.sql", "-- rollback-floor: 상태 재매핑\n"); // C2
+    const serving = commitFile(repoDir, "src/noop.txt", "noop"); // C3
+    const unknownSha = "1234567890abcdef1234567890abcdef12345678";
+
+    const r = rollback(repoDir, {
+      revisions: ["v2", "v1"],
+      serving: "v2",
+      revisionShas: { v2: serving, v1: unknownSha },
+    });
+
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("git fetch");
+    expect(r.log).not.toContain("update-traffic");
+  });
+
+  it("표시 둘(0012·0015) — 가장 최신 표시가 하한이다", () => {
+    commitFile(repoDir, "db/migrations/0012_x.sql", "-- rollback-floor: 상태 재매핑\n"); // C2
+    const midSha = commitFile(repoDir, "src/noop1.txt", "noop"); // C3
+    const floor0015Sha = commitFile(repoDir, "db/migrations/0015_y.sql", "-- rollback-floor: 계약 컬럼 삭제\n"); // C4
+    const serving = commitFile(repoDir, "src/noop2.txt", "noop"); // C5
+
+    const rejected = rollback(repoDir, {
+      revisions: ["v3", "v2", "v1"],
+      serving: "v3",
+      revisionShas: { v3: serving, v2: midSha },
+    });
+    expect(rejected.status).toBe(1);
+    expect(rejected.stderr).toContain("0015_y.sql");
+    expect(rejected.log).not.toContain("update-traffic");
+
+    const allowed = rollback(repoDir, {
+      revisions: ["v3", "v2", "v1"],
+      serving: "v3",
+      revisionShas: { v3: serving, v2: floor0015Sha },
+    });
+    expect(allowed.status).toBe(0);
+    expect(allowed.log).toContain("--to-revisions=v2=100");
   });
 });

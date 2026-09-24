@@ -158,7 +158,13 @@ function SimpleFieldEditor({
           label={label}
           numberKind={descriptor.numberKind}
           defaultValue={text}
-          onBlur={(event) => execute({ key: fieldKey, value: parseNumberInput(event.target.value) ?? 0 })}
+          onBlur={(event) => {
+            const parsed = parseNumberInput(event.target.value);
+            // "-"·"." 만 남은 칸은 NaN이다 — 0으로 대체하지 않고(??는
+            // null만 대체한다) 이전 값을 유지한 채 저장을 건너뛴다.
+            if (parsed !== null && !Number.isFinite(parsed)) return;
+            execute({ key: fieldKey, value: parsed ?? 0 });
+          }}
           error={error ?? undefined}
         />
         {hint ? <p className={styles.hint}>{hint}</p> : null}

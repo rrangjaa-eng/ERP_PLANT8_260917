@@ -1,10 +1,10 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-24T21:05:50.431Z",
+  "timestamp": "2026-09-24T21:37:16.318Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
-  "plan": 29,
+  "plan": 9,
   "task": null,
   "total_tasks": null,
   "status": "paused",
@@ -128,6 +128,12 @@
       "name": "세션 L: 04-29 공용 페이지 나눔 ui/pagination·lib/kst-date·lib/paging + SYSTEM.md §7-16. executor Sonnet, 격리 none. TDD RED 확인, 편차 1건(ENG-D11). Opus 검토 수정 2건(8b32c68·bf5f33d). 전체 CI=true: 단위 903·통합 1061, E2E 156 통과·1 실패(04-29 무관 기존 결함, master-edit-team-select-bug.md)·43 미실행. 푸시 bf5f33d",
       "status": "done",
       "commit": "bf5f33d"
+    },
+    {
+      "id": 21,
+      "name": "04-06 프로젝트 상태 다섯 값·project.line-edit",
+      "status": "done",
+      "commit": "9b8fd63"
     }
   ],
   "remaining_tasks": [
@@ -349,10 +355,8 @@
       "phase": "4"
     }
   ],
-  "uncommitted_files": [
-    ".planning/phases/04-project-quote-ledger/.continue-here.md"
-  ],
-  "next_action": "새 세션 M: /gsd-progress → /gsd-execute-phase 4 로 04-06만 실행(먼저 /mnt/project-files/phase4-prep/04-06.md). 브랜치 claude/gsd-progress-e1nzgu, PR #40, 푸시는 git push origin HEAD:claude/gsd-progress-e1nzgu",
+  "uncommitted_files": [],
+  "next_action": "새 세션 N: /gsd-progress → /gsd-execute-phase 4 로 04-09만 실행(먼저 /mnt/project-files/phase4-prep/04-09.md). 그다음 04-27, 04-20. 브랜치 claude/gsd-progress-e1nzgu, PR #40, 푸시는 git push origin HEAD:claude/gsd-progress-e1nzgu",
   "context_notes": "세션 L이 04-29 완료(전체 게이트 CI=true, E2E 1건 실패는 04-29 무관 기존 결함 — master-edit-team-select-bug.md 참조, 코디네이터에 별도 요청 필요). 04-28 알려진 범위 밖: Alt+↑↓ 순서 저장 안 됨 → 04-12·04-30.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",

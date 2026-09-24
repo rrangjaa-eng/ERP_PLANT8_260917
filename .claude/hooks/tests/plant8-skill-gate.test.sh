@@ -339,6 +339,18 @@ hook plant8-skill-gate.sh agent "$(payload_agent "$P15" gsd-executor)" "$projP15
 expect_rc "04 executor: CEO 리뷰 없음 -> exit 2" 2 "$HOOK_RC"
 expect_contains "04 executor: plan-ceo-review 요구" "$HOOK_STDERR" "/plan-ceo-review"
 
+# 소수 부분이 없거나 0인 페이즈(4. · 4.0)는 소수점 페이즈가 아니다 — CEO 리뷰 필요
+for bad in "4." "4.0"; do
+  projP16="$(new_project)"
+  P16="sid-bad-dec-$$-$bad"
+  printf 'current_phase: %s\n' "$bad" > "$projP16/.planning/STATE.md"
+  hook plant8-skill-gate.sh record-skill "$(payload_skill "$P16" gsd-execute-phase)" "$projP16"
+  record_skill "$projP16" "$P16" plan-eng-review
+  hook plant8-skill-gate.sh agent "$(payload_agent "$P16" gsd-executor)" "$projP16"
+  expect_rc "STATE $bad executor: CEO 리뷰 없음 -> exit 2" 2 "$HOOK_RC"
+  expect_contains "STATE $bad executor: plan-ceo-review 요구" "$HOOK_STDERR" "/plan-ceo-review"
+done
+
 # Phase 4 동작은 그대로: 인자 4 → phase-04.log (STATE가 달라도 인자가 이긴다), 인자 없음 → STATE
 projP6="$(new_project)"
 P6="sid-dec-p4-$$"

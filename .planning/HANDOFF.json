@@ -21,7 +21,7 @@
   ],
   "remaining_tasks": [
     { "id": 10, "name": "apply eng review directives 1-25 via /gsd-plan-phase 04.1 revision, checker, Codex re-review until no blockers (new session)", "status": "not_started" },
-    { "id": 11, "name": "/plan-design-review + Codex design review (new session), then apply", "status": "not_started" },
+    { "id": 11, "name": "re-run /plan-ceo-review and /plan-eng-review on the revised plans, each with real Codex (separate sessions); then /plan-design-review + Codex design review, then apply", "status": "not_started" },
     { "id": 12, "name": "merge origin/main, /review, PR #60 ready, ask execute card", "status": "not_started" }
   ],
   "blockers": [],

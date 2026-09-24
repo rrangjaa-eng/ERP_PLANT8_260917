@@ -74,6 +74,10 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   const primaryWrapRef = useRef<HTMLSpanElement>(null);
   const firstOptionRef = useRef<HTMLButtonElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  // close()가 부르는 close 이벤트는 따로 줄 선 작업이라, 입력 작업(예: Esc
+  // 직후의 Delete)이 그보다 먼저 처리될 수 있다. 이 컴포넌트가 직접 닫을 때는
+  // 바로 마무리하고, 뒤늦게 오는 그 close 이벤트 한 번은 건너뛴다.
+  const closedByUsRef = useRef(false);
   const titleId = useId();
 
   const submitting = Boolean(primary?.pending);
@@ -105,7 +109,23 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  function closeNow() {
+    const dialog = dialogRef.current;
+    if (!dialog?.open) return;
+    dialog.close();
+    closedByUsRef.current = true;
+    finishClose();
+  }
+
   function handleDialogClose() {
+    if (closedByUsRef.current) {
+      closedByUsRef.current = false;
+      return;
+    }
+    finishClose();
+  }
+
+  function finishClose() {
     onClose();
     const trigger = previouslyFocusedRef.current;
     if (trigger && document.contains(trigger)) {
@@ -119,7 +139,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     // 네이티브 Esc(cancel 이벤트) — 제출 중에는 무시한다.
     event.preventDefault();
     if (submitting) return;
-    dialogRef.current?.close();
+    closeNow();
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLDialogElement>) {
@@ -132,13 +152,13 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   function handleBackdropClick(event: React.MouseEvent<HTMLDialogElement>) {
     // dialog 요소 자체를 눌렀을 때만 가림막 클릭이다(내용 클릭과 구분).
     if (event.target === dialogRef.current && !submitting) {
-      dialogRef.current?.close();
+      closeNow();
     }
   }
 
   function handleCloseButtonClick() {
     if (submitting) return;
-    dialogRef.current?.close();
+    closeNow();
   }
 
   const resolvedSecondaryLabel = secondaryLabel ?? (primary ? secondaryLabelFor(primary.label) : "닫기");
@@ -243,7 +263,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
               disabled={submitting}
               onClick={() => {
                 if (submitting) return;
-                dialogRef.current?.close();
+                closeNow();
               }}
             >
               {resolvedSecondaryLabel}

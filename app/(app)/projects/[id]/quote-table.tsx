@@ -428,7 +428,8 @@ function UnitPriceEditCell({
     // 쓰지 않고 이전 값을 유지한 채 amountValid=false로 알려 호출부가 오류 셀로 고정한다.
     const parsedAmount = parseNumberInput(amountRawValue);
     const amountValid = parsedAmount !== null && Number.isFinite(parsedAmount);
-    const fxRate = currency === "KRW" ? 1 : (parseNumberInput(fxRateRawRef.current) ?? initialFxRate);
+    const parsedFxRate = parseNumberInput(fxRateRawRef.current);
+    const fxRate = currency === "KRW" ? 1 : parsedFxRate !== null && Number.isFinite(parsedFxRate) ? parsedFxRate : initialFxRate;
     onCommit(
       JSON.stringify({
         amount: amountValid ? parsedAmount : initialAmount,

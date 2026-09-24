@@ -14,6 +14,7 @@ import {
   formatNumberInput,
   numberInputRejectionReason,
 } from "@/lib/format-number";
+import { normalizeNumericPaste } from "@/ui/table/parse-tsv";
 
 function read(...parts: string[]): string {
   return readFileSync(resolve(process.cwd(), ...parts), "utf8");
@@ -129,6 +130,32 @@ describe("parseNumberInput", () => {
 
   it("숫자가 아니면 NaN을 그대로 돌려준다(대체값 없음)", () => {
     expect(parseNumberInput("1,2a")).toBeNaN();
+  });
+});
+
+// 엔지 리뷰 A P3 — normalizeNumericPaste(ui/table/parse-tsv.ts)가 stripNumberInput을
+// 부르게 바꾼 뒤에도 04-04가 사람 확인까지 거친 붙여넣기 정규화 결과가 한
+// 글자도 바뀌지 않아야 한다. 이 표가 그 결과를 고정한다.
+describe("normalizeNumericPaste — 04-04 붙여넣기 정규화 결과 고정(stripNumberInput 이관 후)", () => {
+  it("쉼표·공백·통화 기호(₩$¥￦)를 지우고 숫자로 읽는다", () => {
+    expect(normalizeNumericPaste("1,200,000")).toBe(1200000);
+    expect(normalizeNumericPaste(" 1200000 ")).toBe(1200000);
+    expect(normalizeNumericPaste("₩1,200,000")).toBe(1200000);
+    expect(normalizeNumericPaste("$4,400.00")).toBe(4400);
+    expect(normalizeNumericPaste("¥1,000")).toBe(1000);
+    expect(normalizeNumericPaste("￦1,000")).toBe(1000);
+  });
+
+  it("음수·소수를 읽는다", () => {
+    expect(normalizeNumericPaste("-1,200")).toBe(-1200);
+    expect(normalizeNumericPaste("1318.1818")).toBe(1318.1818);
+  });
+
+  it("빈 값·문자 섞인 값은 null이다", () => {
+    expect(normalizeNumericPaste("")).toBe(null);
+    expect(normalizeNumericPaste("   ")).toBe(null);
+    expect(normalizeNumericPaste("1,2a")).toBe(null);
+    expect(normalizeNumericPaste("abc")).toBe(null);
   });
 });
 

@@ -1,3 +1,5 @@
+import { stripNumberInput } from "@/lib/format-number";
+
 // SYSTEM.md §7-3 보강 (다) — 클립보드 TSV 붙여넣기 정규화(D-67).
 // 04-RESEARCH.md Pattern 4의 상태 기계 파서. 단순 `text.split("\t").split("\n")`은
 // 비고(자유 텍스트) 열의 실제 줄바꿈에서 행을 잘못 가른다 — 이 표에 그런 값이
@@ -120,12 +122,12 @@ export function toTsv(rows: string[][]): string {
 
 // SYSTEM.md §7-3 보강 (다) — 숫자 열 붙여넣기: 쉼표·공백·통화 기호를 지운
 // 뒤 숫자로 읽는다. 그래도 숫자가 아니면 null(호출부가 오류 셀로 고정한다
-// — 조용히 버리지 않는다).
-const CURRENCY_OR_SEPARATOR = /[,\s₩$¥￦]/g;
+// — 조용히 버리지 않는다). 제거 규칙은 `stripNumberInput`(lib/format-number.ts)
+// 하나다 — 04-09 엔지 리뷰 A P3, 입력 쉼표 도우미와 같은 구현을 쓴다.
 const NUMERIC_PATTERN = /^-?\d+(\.\d+)?$/;
 
 export function normalizeNumericPaste(raw: string): number | null {
-  const stripped = raw.replace(CURRENCY_OR_SEPARATOR, "");
+  const stripped = stripNumberInput(raw);
   if (stripped === "" || !NUMERIC_PATTERN.test(stripped)) return null;
   const value = Number(stripped);
   return Number.isFinite(value) ? value : null;

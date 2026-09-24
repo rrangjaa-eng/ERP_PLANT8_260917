@@ -328,17 +328,13 @@ test.describe("숫자 서식(D-95, 04-09)", () => {
     const amountInput = page.getByLabel("단가", { exact: true });
     await expect(amountInput).toHaveValue("1,000,000");
 
-    // 이 칸엔 onPaste 처리기가 없다 — 값이 통째로 바뀌는 진짜 붙여넣기와
-    // 같은 모양(네이티브 value setter + input 이벤트)으로 React의 onChange를
-    // 직접 태운다. 샌드박스 헤드리스 브라우저는 OS 클립보드로 가는 실제
-    // Ctrl+V를 보장하지 않는다 — pasteIntoFocusedCell(quote-table.spec.ts)의
-    // 합성 ClipboardEvent와 같은 결의 선택이다(그 헬퍼는 표 칸 자체의
-    // paste 리스너를 겨눈다, 이건 <input> 리스너가 없어 값+input 이벤트로 겨눈다).
+    // 편집기 <input> 안에서 진짜 클립보드 붙여넣기(Ctrl+V)를 겪는다 — 표
+    // 수준 onPaste(TSV 붙여넣기)가 편집 중인 입력 칸의 paste까지 삼키면
+    // 이 붙여넣기가 아무 효과도 내지 못한다.
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
     await amountInput.click();
-    await amountInput.evaluate((el: HTMLInputElement, text: string) => {
-      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(el, text);
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-    }, "1,234.56");
+    await page.evaluate(() => navigator.clipboard.writeText("1,234.56"));
+    await page.keyboard.press("ControlOrMeta+v");
 
     await expect(amountInput).toHaveValue("1,000,000");
     await expect(page.getByText("원화는 소수점 없이 적어 주세요")).toBeVisible();

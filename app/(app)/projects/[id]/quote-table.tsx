@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { saveProjectLedgerAction } from "../actions";
 import { PageHeader } from "@/ui/page-header/PageHeader";
@@ -14,7 +14,8 @@ import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { useDirtyStorage } from "@/ui/table/use-dirty-storage";
 import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
 import { normalizeNumericPaste } from "@/ui/table/parse-tsv";
-import { formatKrw, formatForeignLine } from "@/lib/format-number";
+import { formatKrw, formatForeignLine, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
+import { useCommaInput } from "@/ui/input/use-comma-input";
 import type { TableColumn, CellIssue } from "@/ui/table/types";
 import type { QuoteLineDto, QuoteLineBaseline } from "@/domain/quotes/lines";
 import type { RevenueDto } from "@/domain/revenue";
@@ -254,23 +255,17 @@ function newEntryDraft(): EntryDraft {
   };
 }
 
-// 04-04 — 클릭/Enter로 편집에 들어가는 한 칸짜리 텍스트/숫자 셀. 순수
-// 비제어 입력이라(값은 commit 시점에만 읽는다) 훅이 필요 없다 — 일반
-// 함수로 충분하다(Rules of Hooks 위반 없음).
-function textEditCell(opts: {
-  ariaLabel: string;
-  initialValue: string;
-  numeric?: boolean;
-  onCommit: (value: string) => void;
-}) {
+// 04-04 — 클릭/Enter로 편집에 들어가는 한 칸짜리 텍스트 셀. 순수 비제어
+// 입력이라(값은 commit 시점에만 읽는다) 훅이 필요 없다 — 일반 함수로
+// 충분하다(Rules of Hooks 위반 없음).
+function textEditCell(opts: { ariaLabel: string; initialValue: string; onCommit: (value: string) => void }) {
   return (
     <input
       aria-label={opts.ariaLabel}
       type="text"
-      inputMode={opts.numeric ? "decimal" : undefined}
       defaultValue={opts.initialValue}
       autoFocus
-      className={opts.numeric ? styles.cellInputNumeric : styles.cellInput}
+      className={styles.cellInput}
       onBlur={(event) => opts.onCommit(event.currentTarget.value)}
       onKeyDown={(event) => {
         if (event.key === "Enter") {
@@ -279,6 +274,46 @@ function textEditCell(opts: {
         }
       }}
     />
+  );
+}
+
+// 04-09 — 숫자 칸(수량·실행가)의 편집기. useCommaInput으로 타이핑 중
+// 쉼표를 넣고(UI-SPEC S15), 붙여넣기·자동완성 거부 문구를 칸 바로 아래
+// 한 줄로 보여준다(C-02). 커밋 값은 쉼표 없는 rawValue다.
+function NumericEditCell({
+  ariaLabel,
+  initialValue,
+  kind,
+  onCommit,
+}: {
+  ariaLabel: string;
+  initialValue: string;
+  kind: NumberInputKind;
+  onCommit: (value: string) => void;
+}) {
+  const { inputRef, value, onChange, error, rawValue } = useCommaInput(kind, initialValue);
+
+  return (
+    <>
+      <input
+        ref={inputRef}
+        aria-label={ariaLabel}
+        type="text"
+        inputMode={kind === "krw" ? "numeric" : "decimal"}
+        value={value}
+        onChange={onChange}
+        autoFocus
+        className={styles.cellInputNumeric}
+        onBlur={() => onCommit(rawValue)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            onCommit(rawValue);
+          }
+        }}
+      />
+      {error ? <p className={styles.cellEditError}>{error}</p> : null}
+    </>
   );
 }
 
@@ -299,6 +334,56 @@ function selectEditCell(opts: {
       onBlur={(event) => opts.onCommit(event.currentTarget.value)}
       options={opts.options}
       className={styles.cellSelect}
+    />
+  );
+}
+
+// 04-09 — UnitPriceEditCell의 환율 칸. 통화가 KRW↔USD로 바뀌면 이 컴포넌트
+// 자체가 마운트·언마운트된다(currency !== "KRW" 조건부 렌더) — useCommaInput은
+// Rules of Hooks 때문에 조건부로 켤 수 없으니, 다시 나타날 때 initialValue를
+// 새로 반영하려면(기존 uncontrolled defaultValue와 같은 동작) 컴포넌트 자체를
+// 다시 마운트하는 쪽이 자연스럽다.
+function FxRateEditInput({
+  initialValue,
+  onState,
+  onTouched,
+  onEnter,
+  onBlur,
+}: {
+  initialValue: number;
+  onState: (state: { raw: string; error: string | null }) => void;
+  onTouched: () => void;
+  onEnter: () => void;
+  onBlur: (event: React.FocusEvent<HTMLElement>) => void;
+}) {
+  const { inputRef, value, onChange, rawValue, error } = useCommaInput("fxRate", String(initialValue));
+
+  // 부모의 commit()이 통화 select·단가·환율 세 조각을 한 번에 묶어 커밋해야
+  // 하므로, 어느 칸에서 blur가 나든 최신 rawValue·error를 부모가 갖고 있게
+  // 렌더마다 흘려보낸다.
+  useEffect(() => {
+    onState({ raw: rawValue, error });
+  }, [rawValue, error, onState]);
+
+  return (
+    <input
+      ref={inputRef}
+      aria-label="단가 환율"
+      type="text"
+      inputMode="decimal"
+      value={value}
+      onChange={(event) => {
+        onChange(event);
+        onTouched();
+      }}
+      className={styles.cellInputNumeric}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          onEnter();
+        }
+      }}
+      onBlur={onBlur}
     />
   );
 }
@@ -324,19 +409,35 @@ function UnitPriceEditCell({
 }) {
   const [currency, setCurrency] = useState<Currency>(initialCurrency);
   const [fxRateTouched, setFxRateTouched] = useState(false);
-  const amountRef = useRef<HTMLInputElement>(null);
-  const fxRateRef = useRef<HTMLInputElement>(null);
+  const [fxRateError, setFxRateError] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const fxRateRawRef = useRef(String(initialFxRate));
+
+  const amountKind: NumberInputKind = currency === "KRW" ? "krw" : "foreign";
+  const {
+    inputRef: amountInputRef,
+    value: amountValue,
+    onChange: amountOnChange,
+    error: amountError,
+    rawValue: amountRawValue,
+  } = useCommaInput(amountKind, String(initialAmount));
 
   function commit() {
-    // F3 — `Number(value) || 0`은 "1,000,000"을 조용히 0으로 만든다. 붙여넣기와
-    // 같은 파서(normalizeNumericPaste)로 읽고, 숫자가 아니면 0을 쓰지 않고
-    // 이전 값을 유지한 채 amountValid=false로 알려 호출부가 오류 셀로 고정한다.
-    const amountRaw = amountRef.current?.value ?? String(initialAmount);
-    const parsedAmount = normalizeNumericPaste(amountRaw);
-    const fxRate =
-      currency === "KRW" ? 1 : (normalizeNumericPaste(fxRateRef.current?.value ?? String(initialFxRate)) ?? initialFxRate);
-    onCommit(JSON.stringify({ amount: parsedAmount ?? initialAmount, amountValid: parsedAmount !== null, currency, fxRate, fxRateTouched }));
+    // F3 — `Number(...)`에 0 대체를 붙이면 "1,000,000"이 조용히 0이 된다. 쉼표
+    // 없는 rawValue를 parseNumberInput으로 읽고, 숫자가 아니면(빈 칸 포함) 0을
+    // 쓰지 않고 이전 값을 유지한 채 amountValid=false로 알려 호출부가 오류 셀로 고정한다.
+    const parsedAmount = parseNumberInput(amountRawValue);
+    const amountValid = parsedAmount !== null && Number.isFinite(parsedAmount);
+    const fxRate = currency === "KRW" ? 1 : (parseNumberInput(fxRateRawRef.current) ?? initialFxRate);
+    onCommit(
+      JSON.stringify({
+        amount: amountValid ? parsedAmount : initialAmount,
+        amountValid,
+        currency,
+        fxRate,
+        fxRateTouched,
+      }),
+    );
   }
 
   function handleBlur(event: React.FocusEvent<HTMLElement>) {
@@ -345,44 +446,29 @@ function UnitPriceEditCell({
   }
 
   return (
-    <div className={styles.contractRow} ref={wrapRef}>
-      <Select
-        id={`unit-price-currency-edit-${rowKey}`}
-        aria-label="단가 통화"
-        value={currency}
-        onChange={(event) => setCurrency(event.target.value as Currency)}
-        onBlur={handleBlur}
-        options={[
-          { value: "KRW", label: "KRW" },
-          { value: "USD", label: "USD" },
-        ]}
-        className={styles.cellSelect}
-      />
-      <input
-        ref={amountRef}
-        aria-label="단가"
-        type="text"
-        inputMode="decimal"
-        defaultValue={initialAmount}
-        autoFocus
-        className={styles.cellInputNumeric}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            commit();
-          }
-        }}
-        onBlur={handleBlur}
-      />
-      {currency !== "KRW" ? (
+    <div ref={wrapRef}>
+      <div className={styles.contractRow}>
+        <Select
+          id={`unit-price-currency-edit-${rowKey}`}
+          aria-label="단가 통화"
+          value={currency}
+          onChange={(event) => setCurrency(event.target.value as Currency)}
+          onBlur={handleBlur}
+          options={[
+            { value: "KRW", label: "KRW" },
+            { value: "USD", label: "USD" },
+          ]}
+          className={styles.cellSelect}
+        />
         <input
-          ref={fxRateRef}
-          aria-label="단가 환율"
+          ref={amountInputRef}
+          aria-label="단가"
           type="text"
-          inputMode="decimal"
-          defaultValue={currency === initialCurrency ? initialFxRate : usdDefaultFxRate}
+          inputMode={amountKind === "krw" ? "numeric" : "decimal"}
+          value={amountValue}
+          onChange={amountOnChange}
+          autoFocus
           className={styles.cellInputNumeric}
-          onChange={() => setFxRateTouched(true)}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
@@ -391,7 +477,21 @@ function UnitPriceEditCell({
           }}
           onBlur={handleBlur}
         />
-      ) : null}
+        {currency !== "KRW" ? (
+          <FxRateEditInput
+            initialValue={currency === initialCurrency ? initialFxRate : usdDefaultFxRate}
+            onState={({ raw, error }) => {
+              fxRateRawRef.current = raw;
+              setFxRateError(error);
+            }}
+            onTouched={() => setFxRateTouched(true)}
+            onEnter={commit}
+            onBlur={handleBlur}
+          />
+        ) : null}
+      </div>
+      {amountError ? <p className={styles.cellEditError}>{amountError}</p> : null}
+      {fxRateError ? <p className={styles.cellEditError}>{fxRateError}</p> : null}
     </div>
   );
 }
@@ -515,8 +615,8 @@ export function QuoteLedger({
     updateLine(clientKey, patch);
   }
 
-  // F3 — 타이핑한 숫자 칸 커밋. `Number(value) || 0`은 "1,000,000"을 조용히
-  // 0으로 만든다 — 붙여넣기와 같은 파서(normalizeNumericPaste)로 읽고,
+  // F3 — 타이핑한 숫자 칸 커밋. `Number(...)`에 0 대체를 붙이면 "1,000,000"이
+  // 조용히 0이 된다 — 붙여넣기와 같은 파서(normalizeNumericPaste)로 읽고,
   // 숫자가 아니면 0을 쓰지 않고 붙여넣기와 같은 오류 셀로 고정한다(기존
   // 값은 그대로 둔다).
   function commitNumericCell(clientKey: string, columnKey: string, rawValue: string, apply: (num: number) => Partial<DraftLine>) {
@@ -753,16 +853,17 @@ export function QuoteLedger({
       align: "right",
       editability: () => (editable ? "edit" : "locked"),
       cell: (row) => row.quantity,
-      editCell: (row, ctx) =>
-        textEditCell({
-          ariaLabel: "수량",
-          initialValue: String(row.quantity),
-          numeric: true,
-          onCommit: (value) => {
+      editCell: (row, ctx) => (
+        <NumericEditCell
+          ariaLabel="수량"
+          initialValue={String(row.quantity)}
+          kind="quantity"
+          onCommit={(value) => {
             commitNumericCell(row.clientKey, "quantity", value, (num) => ({ quantity: num }));
             ctx.onCommit(value);
-          },
-        }),
+          }}
+        />
+      ),
     },
     {
       key: "unitPrice",
@@ -837,16 +938,17 @@ export function QuoteLedger({
       align: "right",
       editability: () => (editable ? "edit" : "locked"),
       cell: (row) => formatKrw(row.executionAmount),
-      editCell: (row, ctx) =>
-        textEditCell({
-          ariaLabel: "실행가",
-          initialValue: String(row.executionAmount),
-          numeric: true,
-          onCommit: (value) => {
+      editCell: (row, ctx) => (
+        <NumericEditCell
+          ariaLabel="실행가"
+          initialValue={String(row.executionAmount)}
+          kind="krw"
+          onCommit={(value) => {
             commitNumericCell(row.clientKey, "execution", value, (num) => ({ executionAmount: num }));
             ctx.onCommit(value);
-          },
-        }),
+          }}
+        />
+      ),
     },
     {
       key: "profit",
@@ -940,19 +1042,22 @@ export function QuoteLedger({
             patch = { vendorId: value || null };
             break;
           case "quantity":
-            patch = { quantity: Number(value) || 0 };
+            // 04-09 — value는 applyPaste가 이미 normalizeNumericPaste로 검증한
+            // 문자열이다(status "ok"인 number 열만 여기 온다) — `|| 0` 대체 없이
+            // 그대로 읽는다(CEO C-02, 붙여넣기 파서가 이미 유한한 숫자를 보장한다).
+            patch = { quantity: Number(value) };
             break;
           case "unitPrice": {
             // 붙여넣기는 숫자 값 하나만 받는다 — 항상 KRW로 들어간다(외화
             // 붙여넣기는 이 플랜 범위 밖, 04-02가 만든 통화 select로 직접
             // 편집한다). amountKrw도 함께 갱신해야 읽기 모드 표시(§2-4)가
             // 맞는다 — amount만 바꾸면 화면이 예전 amountKrw를 계속 보여준다.
-            const amount = Number(value) || 0;
+            const amount = Number(value);
             patch = { unitPriceAmount: amount, unitPriceCurrency: "KRW", unitPriceFxRate: 1, unitPriceAmountKrw: amount };
             break;
           }
           case "execution":
-            patch = { executionAmount: Number(value) || 0 };
+            patch = { executionAmount: Number(value) };
             break;
           case "note":
             patch = { note: value || null };

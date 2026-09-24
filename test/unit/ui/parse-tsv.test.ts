@@ -103,4 +103,21 @@ describe("normalizeNumericPaste", () => {
   it('"1234.56" → 1234.56', () => {
     expect(normalizeNumericPaste("1234.56")).toBe(1234.56);
   });
+
+  // 04-09 — 제거 규칙이 lib/format-number.ts의 stripNumberInput 호출로
+  // 바뀐 뒤에도(엔지 리뷰 A P3) 04-04가 사람 확인까지 거친 결과가 그대로다.
+  it('"$4,400.00" → 4400 · "¥1,000" → 1000 · "￦1,000" → 1000(통화 기호 전부 제거)', () => {
+    expect(normalizeNumericPaste("$4,400.00")).toBe(4400);
+    expect(normalizeNumericPaste("¥1,000")).toBe(1000);
+    expect(normalizeNumericPaste("￦1,000")).toBe(1000);
+  });
+
+  it('"-1,200" → -1200(음수)', () => {
+    expect(normalizeNumericPaste("-1,200")).toBe(-1200);
+  });
+
+  it("공백만 있는 값·빈 문자열은 null이다", () => {
+    expect(normalizeNumericPaste("")).toBeNull();
+    expect(normalizeNumericPaste("   ")).toBeNull();
+  });
 });

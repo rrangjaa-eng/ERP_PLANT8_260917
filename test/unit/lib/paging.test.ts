@@ -32,6 +32,26 @@ describe("clampPage — 범위 밖 쪽 번호 보정", () => {
   it('clampPage("2.5", 3) → 1(정수가 아니면 1쪽)', () => {
     expect(clampPage("2.5", 3)).toBe(1);
   });
+
+  it('clampPage(" 3 ", 5) → 1(앞뒤 공백은 정수 문자열이 아니다)', () => {
+    expect(clampPage(" 3 ", 5)).toBe(1);
+  });
+
+  it('clampPage("1e1", 5) → 1(지수 표기는 정수 문자열이 아니다)', () => {
+    expect(clampPage("1e1", 5)).toBe(1);
+  });
+
+  it('clampPage("0x2", 5) → 1(16진 표기는 정수 문자열이 아니다)', () => {
+    expect(clampPage("0x2", 5)).toBe(1);
+  });
+
+  it('clampPage("+2", 5) → 1(부호는 정수 문자열이 아니다)', () => {
+    expect(clampPage("+2", 5)).toBe(1);
+  });
+
+  it('clampPage("2.0", 5) → 1(소수점 표기는 정수 문자열이 아니다)', () => {
+    expect(clampPage("2.0", 5)).toBe(1);
+  });
 });
 
 describe("pageCountFrom — 쪽 수", () => {

@@ -335,12 +335,27 @@ Plans:
   3. 결재자는 결재 대기함에서 폰으로 승인·반려(사유 자유 입력 필수, 기안자에게 복귀)하고 기안자는 회수한다(EXP-05). 상태 문서는 version 컬럼 낙관적 잠금으로 승인↔회수·승인↔반려 동시 조작을 막고 두 순서 모두 통합 테스트로 증명된다. 연차 신청 → 결재자 폰 승인 흐름이 Playwright E2E로 CI에 있다
   4. 직원이 종일·반차·반반차·재택 중 하나로 연차를 신청하면 승인 시 잔여 일수(1 / 0.5 / 0.25, 재택은 차감 없이 기록)가 차감된다. 회계연도 연차는 관리자가 연 1회 설정하고 이월은 없으며, 잔여를 넘는 신청은 막지 않고 신청 창·결재 옆판에 남은/결재 중/이번 신청 일수로 경고한다. 입사한 해에는 법정 월차가 별도 잔고로 자동 적립되고(Phase 5 D-96), 퇴직 시에는 잔여 일수만 보인다(D-97) (LEAV-01)
   5. 새 액션·DTO(결재·연차)는 누수 스캔 생성기에 등록되고 결재 동작은 행동 로그에 남는다
-**Plans:** 0 plans
+**Plans:** 7 plans
 **UI hint**: yes
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 04.1 to break down)
+Wave 1
+- [ ] 04.1-01-PLAN.md — 결재 엔진 트레이서: 표 3개 + leave_requests, nextStep·walkRoute, 연차 제출→승인(통합), 설정 키 22개, [BLOCKING] 마이그레이션 + journal 가드, 결재선 가장자리 규칙
+
+Wave 2 *(blocked on Wave 1)*
+- [ ] 04.1-02-PLAN.md — 화면 트레이서(/leave/new → /approvals 승인 E2E) + 반려·회수·다시 신청 + 동시 조작 두 순서(EXP-03·EXP-05)
+- [ ] 04.1-03-PLAN.md — 연차 잔고: 부여(grant) 모델, 입사 첫해 월차 D-96, 퇴직 D-97, 조정, [BLOCKING] 마이그레이션(LEAV-01)
+- [ ] 04.1-04-PLAN.md — 결재선 설정 화면: 이름 옵션·동적 옵션·부서 없음 경고·연차 일수 1월 1일 규칙(ADMN-04)
+
+Wave 3 *(blocked on Wave 2)*
+- [ ] 04.1-05-PLAN.md — 결재 화면 완성: 폰 결재 시트 E2E, 문서 화면 행동 줄, 반려/회수 확인, ui/approval-route, SYSTEM.md A3(EXP-05)
+
+Wave 4 *(blocked on Wave 3)*
+- [ ] 04.1-06-PLAN.md — 연차 화면 완성: 계정 그룹 「연차」(A1), /leave 목록(A4), 완성형 신청 폼, 관리자 사람 상세 연차 섹션 · 등록 입사일
+
+Wave 5 *(blocked on Wave 4)*
+- [ ] 04.1-07-PLAN.md — 병합 직전: origin/main 병합 → 04.1 마이그레이션 재생성 → 전체 게이트 CI=true
 
 논의 결과는 `.planning/phases/05-expense-approval-leave/05-CONTEXT.md`의 결재·연차 결정(입력 §1~§5, D-96·D-97, Claude's Discretion의 결재 표 세부)을 그대로 쓴다. 계획 단계에서 정할 것: REQUIREMENTS 추적표의 다섯 항목을 Phase 04.1로 옮기는 일, Phase 4가 마이그레이션 0011~0016을 쓸 예정이라 이 페이즈 마이그레이션 번호와 `_journal.json` 충돌을 푸는 방식.
 
@@ -510,7 +525,8 @@ v1 요구사항 86개 전부가 정확히 한 페이즈에 속한다(2026-09-23:
 | 2 | 1 | UX-01 |
 | 3 | 13 | ADMN-01, ADMN-02, ADMN-03, ADMN-05, ADMN-06, ADMN-08, ADMN-10, ADMN-12, OPS-05, MAST-01, MAST-02, MAST-03, MAST-04 |
 | 4 | 11 | PROJ-01, PROJ-02, PROJ-03, PROJ-04, PROJ-05, PROJ-07, ADMN-09, UX-04, UX-05, RSV-01, FX-01 |
-| 5 | 13 | EXP-01, EXP-02, EXP-03, EXP-04, EXP-05, EXP-08, EXP-14, EXP-15, EVID-01, ADMN-04, LEAV-01, UX-03, UX-06 |
+| 04.1 | 5 | EXP-03, EXP-04, EXP-05, LEAV-01, ADMN-04 (결재 부분 — 알림 시점은 Phase 7, 세율·수식은 Phase 5) |
+| 5 | 8 | EXP-01, EXP-02, EXP-08, EXP-14, EXP-15, EVID-01, UX-03, UX-06 |
 | 6 | 10 | EXP-06, EXP-07, EXP-09, EXP-10, EXP-13, EXP-16, EVID-02, EVID-03, EVID-04, PROJ-06 |
 | 7 | 7 | EXP-11, EXP-12, ADMN-11, NOTI-01, NOTI-02, NOTI-03, NOTI-04 |
 | 8 | 3 | MIG-04, MIG-05, OPS-03 |

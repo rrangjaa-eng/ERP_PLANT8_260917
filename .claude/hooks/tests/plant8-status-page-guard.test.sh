@@ -196,6 +196,68 @@ add "$(tool_use mcp__hearthbot__start_thread_session '{"prompt":"x"}')"
 run_hook "$(stop_payload)"
 expect_block "tolerates junk lines"
 
+# 13. isMeta 스킬 본문(배열 text)은 턴 경계가 아님 -> 막음
+new_transcript; coordinator_history
+add "$(user_prompt '새 스레드 열어')"
+add "$(tool_use mcp__hearthbot__start_thread_session '{"prompt":"x"}')"
+add "$(tool_result)"
+add "$(jq -nc '{type:"user",isMeta:true,message:{role:"user",content:[{type:"text",text:"Base directory for this skill: /x"}]}}')"
+add "$(assistant_text '끝')"
+run_hook "$(stop_payload)"
+expect_block "isMeta skill body not a turn boundary"
+
+# 14. Stop hook feedback(isMeta 문자열)은 턴 경계가 아님 -> 막음
+new_transcript; coordinator_history
+add "$(user_prompt '머지해')"
+add "$(tool_use mcp__github__merge_pull_request '{"pullNumber":3}')"
+add "$(tool_result)"
+add "$(jq -nc '{type:"user",isMeta:true,message:{role:"user",content:"Stop hook feedback:\n[x.sh]: commit"}}')"
+run_hook "$(stop_payload)"
+expect_block "isMeta stop hook feedback not a turn boundary"
+
+# 15. 서브에이전트(isSidechain)·압축 요약(isCompactSummary) 항목은 턴 경계가 아님 -> 막음
+new_transcript; coordinator_history
+add "$(user_prompt '정리해')"
+add "$(tool_use mcp__hearthbot__set_thread_resolved '{"thread_id":"cmsg_1","resolved":true}')"
+add "$(tool_result)"
+add "$(jq -nc '{type:"user",isSidechain:true,message:{role:"user",content:"서브에이전트 지시"}}')"
+add "$(jq -nc '{type:"user",isCompactSummary:true,message:{role:"user",content:"This session is being continued"}}')"
+run_hook "$(stop_payload)"
+expect_block "sidechain and compact summary not turn boundaries"
+
+# 16. 실제 형식: promptId가 턴을 가른다. 이전 턴(P1)의 현황표 갱신이
+#     새 턴(P2, isMeta 서브에이전트 인계로 시작)의 머지를 덮지 않는다 -> 막음
+new_transcript; coordinator_history
+add "$(jq -nc '{type:"user",promptId:"P1",message:{role:"user",content:"새 스레드 열어"}}')"
+add "$(tool_use mcp__hearthbot__start_thread_session '{"prompt":"x"}')"
+add "$(tool_use mcp__hearthbot__update_status_page '{"markdown":"x"}')"
+add "$(jq -nc '{type:"user",promptId:"P1",message:{role:"user",content:[{type:"tool_result",tool_use_id:"x",content:"ok"}]}}')"
+add "$(jq -nc '{type:"user",promptId:"P2",isMeta:true,message:{role:"user",content:"Another Claude session sent a message: 끝"}}')"
+add "$(tool_use mcp__github__merge_pull_request '{"pullNumber":3}')"
+add "$(jq -nc '{type:"user",promptId:"P2",message:{role:"user",content:[{type:"tool_result",tool_use_id:"x",content:"ok"}]}}')"
+add "$(jq -nc '{type:"user",promptId:"P2",isMeta:true,message:{role:"user",content:[{type:"text",text:"Base directory for this skill: /x"}]}}')"
+run_hook "$(stop_payload)"
+expect_block "promptId turn (isMeta peer start) with merge"
+
+# 17. 같은 형식, 새 턴(P2)에 트리거 없음 -> 통과
+new_transcript; coordinator_history
+add "$(jq -nc '{type:"user",promptId:"P1",message:{role:"user",content:"새 스레드 열어"}}')"
+add "$(tool_use mcp__hearthbot__start_thread_session '{"prompt":"x"}')"
+add "$(jq -nc '{type:"user",promptId:"P2",isMeta:true,message:{role:"user",content:"Another Claude session sent a message: 끝"}}')"
+add "$(assistant_text '확인')"
+run_hook "$(stop_payload)"
+expect_pass "promptId turn without trigger"
+
+# 18. 같은 턴: 현황표 갱신 -> 스킬 본문(isMeta) -> 해결 처리 -> 통과(갱신이 같은 턴)
+new_transcript; coordinator_history
+add "$(user_prompt '정리해')"
+add "$(tool_use mcp__hearthbot__update_status_page '{"markdown":"x"}')"
+add "$(tool_result)"
+add "$(jq -nc '{type:"user",isMeta:true,message:{role:"user",content:[{type:"text",text:"Base directory for this skill: /x"}]}}')"
+add "$(tool_use mcp__hearthbot__set_thread_resolved '{"thread_id":"cmsg_1","resolved":true}')"
+run_hook "$(stop_payload)"
+expect_pass "status page before skill body in same turn"
+
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
 exit 0

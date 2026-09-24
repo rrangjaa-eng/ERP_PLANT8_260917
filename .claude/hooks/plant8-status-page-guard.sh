@@ -7,7 +7,9 @@
 # 조정 세션 판별: transcript 어디에든 update_status_page·post_message·
 # start_thread_session·message_thread 사용이 있어야 한다. 스레드 세션도
 # set_thread_resolved를 쓰므로 그것만으로는 조정 세션으로 보지 않는다.
-# 이번 턴: 마지막 "진짜" 사용자 프롬프트(tool_result가 아닌 user 항목) 뒤.
+# 이번 턴: 마지막 user 항목의 promptId를 처음 가진 항목부터(한 턴의 tool_result·
+# 스킬 본문·Stop 훅 피드백은 같은 promptId). promptId가 없으면 마지막 "진짜"
+# 사용자 프롬프트(tool_result·isMeta·isSidechain·isCompactSummary가 아닌 user 항목) 뒤.
 set -euo pipefail
 
 payload="$(cat)"
@@ -19,7 +21,8 @@ verdict="$(jq -R 'fromjson? // empty' "$transcript" | jq -rs '
   def uses: [.[] | select(.type == "assistant") | .message.content
              | if type == "array" then .[] else empty end
              | select(type == "object" and .type == "tool_use")];
-  def real_prompt: .type == "user" and (.message.content
+  def real_prompt: .type == "user" and .isMeta != true and .isSidechain != true
+    and .isCompactSummary != true and (.message.content
       | if type == "string" then true
         elif type == "array" then all(.[]; (type == "object" and .type == "tool_result") | not)
         else false end);
@@ -28,8 +31,14 @@ verdict="$(jq -R 'fromjson? // empty' "$transcript" | jq -rs '
                    or . == "mcp__hearthbot__start_thread_session" or . == "mcp__hearthbot__message_thread")) | not
     then "pass"
     else
-      ([to_entries[] | select(.value | real_prompt) | .key] | last // -1) as $last
-      | (.[($last + 1):] | uses) as $turn
+      [to_entries[] | select(.value.type == "user" and .value.isSidechain != true
+                             and (.value.promptId | type) == "string")] as $pe
+      | (if ($pe | length) > 0
+         then ($pe[-1].value.promptId) as $pid
+              | ([$pe[] | select(.value.promptId == $pid) | .key] | first)
+         else ([to_entries[] | select(.value | real_prompt) | .key] | last // -1) + 1
+         end) as $start
+      | (.[$start:] | uses) as $turn
       | if ($turn | any(.name == "mcp__hearthbot__update_status_page")) then "pass"
         elif ($turn | any(
                .name == "mcp__hearthbot__start_thread_session"

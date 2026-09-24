@@ -224,6 +224,7 @@ Recent decisions affecting current work:
 | 260922-i3k | 관리자 메뉴 정리(옵션 B: 「관리」 한 줄 + /admin 인덱스 3그룹) + A-M3 표 캡션 | 2026-09-22 | 811243e | [260922-i3k-b-admin-3-a-m3](./quick/260922-i3k-b-admin-3-a-m3/) |
 | 260922-o2b | 코덱스 통합 디자인 리뷰 반영(결정 불필요분 F-02·04·05·07·08·09·10) | 2026-09-22 | c8b42b9 | [260922-o2b-codex-design-review-fixes](./quick/260922-o2b-codex-design-review-fixes/) |
 | 260923-odg | hook 보강: 게이트 리뷰 종료·quick 완료 = 세션 경계, 문서 커밋도 검증 스킬, 세션당 executor 1회 | 2026-09-23 | 542cafd | [260923-odg-hook](./quick/260923-odg-hook/) |
+| 260924-hgx | 이슈 #56 사람 목록 N+1 조회 제거 | 2026-09-24 | a637516 | [260924-hgx-admin-people-list-n-1-query-fix-issue-56](./quick/260924-hgx-admin-people-list-n-1-query-fix-issue-56/) |
 
 ### Roadmap Evolution
 

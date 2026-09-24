@@ -206,7 +206,7 @@ openssl rand -base64 32 | gcloud secrets versions add app-data-key-v1-prod    --
 
 ## 10. 상태 화면
 
-`/admin/system-status`(관리자 전용, 직원은 404) — 배포 버전(git SHA + 배포 시각), DB
+`/admin/system-status`(권한표의 시스템 상태 보기 권한이 있는 계급만, 권한이 없으면 404) — 배포 버전(git SHA + 배포 시각), DB
 커넥션 수/한도, 마지막 백업(ok/none/확인 불가). 커넥션 비율이 80% 이상이면 배너.
 로컬처럼 GCP 조회가 안 되면 "확인 불가"로 표시한다(D-18).
 

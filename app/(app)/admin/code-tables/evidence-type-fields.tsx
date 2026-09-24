@@ -121,7 +121,13 @@ export function EvidenceTypeFields({ itemId, initialValue }: { itemId: string; i
             label="최소 징수액"
             numberKind="krw"
             defaultValue={value.minWithholdingAmount ?? 0}
-            onBlur={(event) => save({ ...value, minWithholdingAmount: parseNumberInput(event.target.value) ?? 0 })}
+            onBlur={(event) => {
+              const parsed = parseNumberInput(event.target.value);
+              // "-"·"." 만 남은 칸은 NaN이다 — 0으로 대체하지 않고(??는
+              // null만 대체한다) 이전 값을 유지한 채 저장을 건너뛴다.
+              if (parsed !== null && !Number.isFinite(parsed)) return;
+              save({ ...value, minWithholdingAmount: parsed ?? 0 });
+            }}
           />
 
           <div className={styles.selectLabel}>

@@ -1,9 +1,9 @@
 ---
 phase: 03-permissions-settings-masters
-verified: 2026-09-24T08:15:00Z
+verified: 2026-09-24T09:41:40Z
 status: human_needed
 score: 6/6 must-haves verified
-covered_digest: "v1:sha256:865987593f0a61524d818b72a8f5e33eee7983cb7ecd3ad0ccfdd5d024eeea10"
+covered_digest: "v1:sha256:9ec23c7132194aaf985360606b6c6b825fda66e75613491b06cbf440d20ae7a3"
 covered_files:
   - ".github/workflows/account.yml"
   - ".planning/REQUIREMENTS.md"
@@ -339,9 +339,10 @@ re_verification:
   previous_score: 6/6
   previous_verified: 2026-09-22T06:23:57Z
   round: 6
-  head: "3c1b015 (claude/project-thread-pajnzt == origin/main, PR #38 머지 후)"
+  head: "2d7f73e (claude/project-thread-pajnzt — 3c1b015 위에 /design-review·/qa·quick 260924-cj5 커밋 70e3449..2d7f73e)"
   trigger: "verification status = stale — 이전 보고서 covered_files 중 57개가 06:23:57Z 이후 바뀜(quick 260922-i3k·260922-o2b 관리자 화면 정돈, Phase 4 PR #38)"
   what_changed:
+    - "6회차 보정(2026-09-24T09:35Z, HEAD 2d7f73e): 1c93526 이후 covered_files 중 3개가 바뀌어 stale — `ui/shell/TopBar.tsx`(워드마크를 `next/link` 「PLANT8 내 차례」 홈 링크로 감쌈, FINDING-001) · `ui/list-empty/ListEmpty.module.css`(EMPTY 다음 한 수 링크 밑줄을 border에서 text-decoration으로, FINDING-005) · `test/e2e/keyboard-nav.spec.ts`(Tab 순서 기대에 워드마크 추가). 셋 다 표시·포커스 순서 변경이다 — TopBar diff의 +/- 줄에 `adminMenu`·`role-menu`·`can(` 0건, 관리자 메뉴 배선(`TopBar.tsx:27·52`)·`role-menu.ts`·`admin/page.tsx`·판정 함수 무변경. 성공 기준 6개·artifact·key link 판정에 영향 없음. 같은 범위의 나머지 변경(`app/(app)/account/*`·`app/(app)/projects/filter-bar.tsx`·`TopBar.module.css`·새 E2E 5개·TODOS.md)은 Phase 3 covered 밖"
     - "관리자 화면 10종의 진입점이 PC 사용자 메뉴·「더보기」 시트에서 「관리」 한 줄(/admin)로 접히고 새 `app/(app)/admin/page.tsx` 인덱스가 `can(viewer, menu, view)`로 그룹을 거른다(0그룹이면 404) — quick 260922-i3k"
     - "관리자 화면 표시 정돈(단일 기둥 폭 `.single-column`, 빈 칸 `—`, `<th scope=col>`, sr-only caption, 코드표 「정렬」 열 제거) — quick 260922-o2b. 권한 게이트(`can()`/`canWrite`/`canArchive`) 줄은 한 줄도 빠지지 않았다(diff 전수 grep)"
     - "Phase 4: `MENUS`에 `projects.revenue`, `INFO_ITEMS`에 `project.value`·`quote.amount`·`revenue.issued_amount`·`revenue.paid_amount`, `scopeFor` ENTITY_MENUS에 `project`·`quote_line`, `CORE_ACTION_TYPES`·`ALWAYS_ON_ACTION_TYPES`에 `status_change`, 설정 키 6개 추가 + 세율·절사 키 11개의 `readBy: { phase: \"4\" }` 제거(이제 `domain/money/tax.ts` 등이 실제로 읽는다), `repositories/document-counters.allocateNumber`(원자적 증가), 시드에 `insertPermissionIfAbsent`(기획 PM `projects` view·write)와 `quote_subcategory` 코드표, 마이그레이션 0009가 `project_status` 코드표를 네 값으로 교체(전제 위반 시 RAISE EXCEPTION)"
@@ -406,7 +407,7 @@ human_verification:
 # Phase 3: 권한·설정·마스터 (관리자 운영 콘솔) 검증 보고서 — 6회차 재검증
 
 **Phase Goal:** 관리자가 코드 수정 없이 사람·계급·본부·팀·권한표·정보 노출표·설정·코드표·거래처·법인카드를 화면에서 등록하고, 이후 모든 화면·API가 이 권한·설정 위에 얹힌다. 이 페이즈는 메커니즘과 마스터를 세우는 데서 끝나며, 전 메뉴 대상 검수는 Phase 7 끝에서 한다
-**Verified:** 2026-09-24T08:15:00Z (코드 판정 07:53:19Z + 로컬 전체 게이트 07:48–08:10Z)
+**Verified:** 2026-09-24T09:41:40Z (코드 판정 07:53:19Z + 로컬 전체 게이트 07:48–08:10Z @3c1b015 + 2d7f73e 영향 판정 09:35Z + 2d7f73e 전체 게이트 green)
 **Status:** human_needed — 코드·게이트 기준 gap·회귀 0. 남은 것은 PR #38 뒤 스테이징 실측 1건
 **Re-verification:** Yes — 5회차(passed, 2026-09-22T06:23:57Z)가 stale이 되어 HEAD `3c1b015`(PR #38 머지) 기준으로 다시 했다
 
@@ -415,6 +416,8 @@ human_verification:
 ## 로컬 게이트
 
 HEAD `3c1b015`, 이 컨테이너, 2026-09-24 07:48–08:10Z. 오케스트레이터가 돌렸고 검증자가 로그(`int.log`·`unit.log`·`e2e.log`) 꼬리의 합계를 직접 확인했다.
+
+**HEAD `2d7f73e` 재실행(오케스트레이터 보고, 전체 게이트 green):** lint exit 0 · typecheck exit 0 · unit **743/743** · 통합 **1027/1027** · `CI=true` Playwright E2E **176 passed**(3.6m, exit 0 — 3c1b015의 165에서 워드마크·디자인 리뷰·/qa 회귀 스펙 11건 증가). 3c1b015 → 2d7f73e 사이 Phase 3 covered 변경은 워드마크 링크·EMPTY 링크 밑줄·Tab 순서 기대 셋뿐이고 domain·repositories·db·관리자 화면·판정 함수에 닿지 않는다. 아래 truth 판정은 이 HEAD의 통합·E2E green으로도 뒷받침되며, 새 워드마크 링크의 Tab 순서는 `keyboard-nav.spec.ts`가 E2E에서 고정한다(green).
 
 | 게이트 | 명령 | 결과 |
 | ------ | ---- | ---- |
@@ -584,5 +587,5 @@ status가 passed가 아니라 human_needed인 이유는 코드 결함이 아니�
 
 ---
 
-_Verified: 2026-09-24T08:15:00Z_
-_Verifier: Claude (gsd-verifier), 6회차 재검증 (HEAD 3c1b015)_
+_Verified: 2026-09-24T09:41:40Z_
+_Verifier: Claude (gsd-verifier), 6회차 재검증 (HEAD 3c1b015, 2d7f73e 영향 판정 보정)_

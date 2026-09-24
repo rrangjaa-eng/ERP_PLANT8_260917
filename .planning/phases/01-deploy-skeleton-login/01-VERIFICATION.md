@@ -1,8 +1,8 @@
 ---
 phase: 01-deploy-skeleton-login
-verified: 2026-09-24T07:52:40Z
+verified: 2026-09-24T09:35:01Z
 status: human_needed
-verdict: PASS (코드 + 로컬 전체 게이트) — 사람 확인 3건 남음
+verdict: PASS (코드 + 2d7f73e 로컬 전체 게이트) — 사람 확인 3건 남음
 score: 7/7 must-haves verified
 covered_files:
   - .github/workflows/account.yml
@@ -154,7 +154,7 @@ covered_files:
   - ui/shell/MoreSheet.tsx
   - ui/shell/TopBar.tsx
   - ui/shell/role-menu.ts
-covered_digest: "v1:sha256:c7309bada90a0beee01e31f423d1ccdf416da8b51f2515543116ebb1b527aa29"
+covered_digest: "v1:sha256:b35f6cde93a69758b3e72d43dde909474e6db975d88817d9d54811b342a17a02"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
@@ -176,6 +176,8 @@ re_verification:
   gaps_closed: []
   gaps_remaining: []
   regressions: []
+  follow_up_2d7f73e:
+    - "2026-09-24 재확인: 70e3449..2d7f73e(/design-review·/qa 수정)가 covered 파일 2개를 바꿨다. app/(app)/account/page.tsx — LogoutButton을 div.accountActions로 감쌌을 뿐(렌더·배선 불변). ui/shell/TopBar.tsx — 워드마크를 next/link href=\"/\"(aria-label 「PLANT8 내 차례」)로 감쌌을 뿐, useLogout(116행)·logout 호출(183행) 불변. Phase 1 truth·artifact 영향 없음"
   deferred_closed:
     - "SC2/AUTH-02 어느 화면에서든 로그아웃 — Phase 2 앱 셸이 (app) 그룹 모든 화면에 사용자 메뉴(상단 바)·「더보기」 시트의 「로그아웃」을 넣었다(ui/shell/role-menu.ts buildAccountGroup 157행, TopBar.tsx·MoreSheet.tsx → ui/logout/use-logout.ts → authClient.signOut)"
     - "SC2 잠금 N·15분 설정 키 — domain/settings/keys.ts 14~32행 AUTH_LOCKOUT_THRESHOLD·AUTH_LOCKOUT_WINDOW_MINUTES, domain/auth/lockout.ts lockoutConfig()가 레지스트리를 읽는다"
@@ -218,7 +220,7 @@ human_verification:
 # Phase 1: 배포 스켈레톤·로그인 재검증 보고서
 
 **Phase Goal:** 관리자(사용자 본인)가 배포 스크립트 한 번으로 회사 GCP 프로젝트에 띄운 서울 리전 Cloud Run 앱에 직원 계정으로 로그인해 비밀번호를 바꾸고 로그아웃한다 — 기능보다 "배포된다"를 먼저 증명한다. 4계층 앱 구조·배포 파이프라인·롤백·경보·3계층 테스트 골격·운영 문서·시스템 상태 화면 뼈대가 이 페이즈의 산출물
-**Verified:** 2026-09-24T07:52:40Z (HEAD `3c1b015`, 브랜치 `claude/project-thread-pajnzt` = origin/main)
+**Verified:** 2026-09-24T09:35:01Z (HEAD `2d7f73e`, 브랜치 `claude/project-thread-pajnzt`; 처음 재검증 2026-09-24T07:52:40Z는 `3c1b015` 기준)
 **Status:** human_needed
 **Verdict:** 코드와 로컬 전체 게이트(lint·typecheck·lint:sql·단위·통합·E2E `CI=true`, 전부 exit 0) 기준 성공 기준 7/7 충족, 회귀 없음. 사람 확인 3건이 열려 있다(백업 경보 필터·메일 = 사용자 몫, 현재 main 배포 실측, SC2 행동 로그 이월 재배정 결정).
 **Re-verification:** Yes — 이전 판정 `passed`(2026-09-19T03:31:45Z)가 stale이 되어 현재 작업 트리로 전부 다시 도출했다. 이전 보고서의 주장은 그대로 쓰지 않았다
@@ -318,7 +320,7 @@ human_verification:
 | Phase 1 단위 표면 | `pnpm vitest run --project unit test/unit/deploy/ ci-guard pool-rule lockout docs-limits env account-cli system-status password auth-provider log client-ip eslint-rules/ dockerfile` | 23 files, 238 passed | ✓ PASS |
 | 플랜 artifact·key-link | `gsd-tools query verify.artifacts/key-links` × 8 | 46/48 · 26/29, 미확인 전부 경로 이동·이름 결정으로 설명됨 | ✓ |
 | 테스트 존재 | grep 열거 | lockout A~D, rate-limit 3, login-logout 4, change-password 1, system-status 2, logout-failure 4 | ✓ |
-| 통합·E2E·lint·typecheck·lint:sql | 로컬 전체 게이트(아래) | 전부 exit 0 | ✓ PASS (인용) |
+| 통합·E2E·lint·typecheck·lint:sql | 로컬 전체 게이트(아래) | 3c1b015·2d7f73e 모두 전부 exit 0 (2d7f73e: 단위 743 · 통합 1027 · E2E 176) | ✓ PASS (인용) |
 
 ### 로컬 게이트
 
@@ -332,6 +334,8 @@ HEAD `3c1b015`, 이 컨테이너, 2026-09-24 07:48–08:10Z. 오케스트레이�
 | 단위 | `pnpm test:unit` | 76 files / 743 passed |
 | 통합 | `pnpm test:integration` | 38 files / 1027 passed |
 | E2E | `pnpm test:e2e:ci` (db:reset:test + `CI=true` 프로덕션 빌드) | 165 passed, 0 failed, 0 flaky (3.7m) |
+
+**2d7f73e 재확인(2026-09-24, 오케스트레이터 실행):** `pnpm lint` exit 0 · `pnpm typecheck` exit 0 · `pnpm test:unit` 743/743 passed · `pnpm test:integration` 1027/1027 passed · `CI=true` Playwright E2E 176 passed (3.6m, exit 0). 검증자는 DB·포트 경합 때문에 통합·E2E를 직접 돌리지 않았고 결과를 인용한다. 3c1b015→2d7f73e 사이 Phase 1 covered 파일 변경은 `app/(app)/account/page.tsx`(로그아웃 버튼 래퍼 div)와 `ui/shell/TopBar.tsx`(워드마크 홈 링크) 둘뿐이고 로그인·비밀번호 변경·로그아웃 배선은 그대로다. 검증자 직접 실행: `vitest run --project unit test/unit/docs-limits.test.ts` 26 passed.
 
 판정 영향: 통합(lockout A~D·rate-limit 3·auth·system-status)과 E2E(login-logout·change-password·system-status·logout-failure)가 전부 포함돼 통과했으므로 SC2·SC3·SC7의 행위 근거가 채워졌다. `CI=true` 프로덕션 빌드로 돈 E2E이므로 CLAUDE.md의 완료 판정 조건도 충족한다. 판정은 바뀌지 않는다 — 7/7, 남은 것은 사람 확인 3건.
 
@@ -381,9 +385,9 @@ Decision coverage는 다시 확인하지 못했다 — `check.decision-coverage-
 
 **회귀 없음.** Phase 1 이후 233개 커밋이 Phase 1 파일 약 60개를 바꿨지만, 전부 계약을 넓히거나(권한표 게이트, 보관 사용자 차단, 설정 레지스트리, seed Job, 오류 문구 화이트리스트) 파일을 옮긴 것(앱 셸 라우트 그룹)이다. 성공 기준 7개를 약하게 만든 변경은 찾지 못했다. 이전 이월 3건 중 2건(어디서든 로그아웃, 잠금 설정 키)은 코드로 해소됐다.
 
-**남은 것은 사람 확인 3건이다.** 경보 메일은 사용자 몫이고, HEAD 배포 실측은 실제 URL이 필요하며, 잠금·해제 행동 로그는 이월 대상이던 Phase 3이 받지 않은 채 끝나 재배정 결정이 필요하다. 셋 다 페이즈 목표(배포·로그인·비밀번호 변경·로그아웃)를 뒤집지 않는다. 로컬 전체 게이트(단위 743·통합 1027·E2E 165, `CI=true`)는 전부 통과했다.
+**남은 것은 사람 확인 3건이다.** 경보 메일은 사용자 몫이고, HEAD 배포 실측은 실제 URL이 필요하며, 잠금·해제 행동 로그는 이월 대상이던 Phase 3이 받지 않은 채 끝나 재배정 결정이 필요하다. 셋 다 페이즈 목표(배포·로그인·비밀번호 변경·로그아웃)를 뒤집지 않는다. 로컬 전체 게이트(단위 743·통합 1027·E2E 165, `CI=true`)는 3c1b015에서 전부 통과했고, 2d7f73e에서도 전부 통과했다(단위 743·통합 1027·E2E 176, `CI=true`). 3c1b015 이후 변경(/design-review·/qa 수정)은 Phase 1 truth에 영향이 없다.
 
 ---
 
-_Verified: 2026-09-24T07:52:40Z (재검증; 이전 2026-09-18T19:09:12Z · SC6 재검증 2026-09-19T03:31:45Z)_
+_Verified: 2026-09-24T09:35:01Z (2d7f73e 재확인; 첫 재검증 2026-09-24T07:52:40Z; 이전 2026-09-18T19:09:12Z · SC6 재검증 2026-09-19T03:31:45Z)_
 _Verifier: Claude (gsd-verifier)_

@@ -160,6 +160,7 @@ describe("recentFxRate / rememberFxRate", () => {
       "fx.recent_rate.USD",
       1318.1818,
       expect.anything(),
+      undefined,
     );
   });
 

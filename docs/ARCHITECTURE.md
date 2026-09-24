@@ -231,7 +231,7 @@ domain 모듈 = 단위, 새 액션·DTO = 통합(+Phase 3부터 누수 생성), 
   레지스트리, 암호화 헬퍼(`APP_DATA_KEY_v1` 사용 시작), 행동 로그 표, 계급 5종.
   03-01이 트레이서(판정 4함수 + 행동 로그 + 보관함 + 코드표 화면 1개)로 착수 —
   나머지 여섯 플랜은 이 경로 위의 확장
-- **Phase 4:** `domain/money`·`domain/rules.gate` 실제 구현(현재는 린트 규칙 자리만),
+- **Phase 4:** `domain/money`·`domain/rules.gate`·문서 번호 채번은 구현됨(§4) — 남은 것:
   프로젝트·견적 원장, 통화·리저브 대장
 - **Phase 7:** 이메일 발송 활성화(SMTP 4개 변수 실사용), 알림 tick(현재 경보는
   `enabled: false`)

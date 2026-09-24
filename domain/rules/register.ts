@@ -1,27 +1,11 @@
 import { registerGateRule } from "@/domain/rules/gate";
 
-// Phase 4 Task 2 ⑥ — 이 플랜이 등록하는 게이트 규칙은 하나뿐이다
-// (`project.completed-lock`). 나머지(고객 승인·기간 필수 등)는 04-06.
+// Phase 4의 프로젝트 게이트 규칙을 등록하는 한 곳 — 규칙마다 등록한 플랜을
+// 주석 한 줄로 적는다(`project.line-edit` 04-06, 뒤 규칙은 04-20·04-22·
+// 04-12·04-26·그룹 B).
 //
-// D-47: 완료(정산) 뒤에도 경영관리가 '견적 외 비용' 줄로 원가를 보정할 수
-// 있다 — 그 예외 자리가 `ctx.actorCanAddOutOfQuoteLine`이다. 실제로 그
-// 플래그를 누구에게 참으로 세울지(경영관리 계급 판정)는 04-06이 채운다.
-// 이 플랜은 게이트 판정 형태만 잠근다.
-export type ProjectCompletedLockCtx = {
-  status: string;
-  actorCanAddOutOfQuoteLine?: boolean;
-};
-
 // side-effect import 모듈 — `import "@/domain/rules/register"`로 불러
 // 등록만 일으킨다(도메인 등록 사이드이펙트 모듈 규약).
-registerGateRule<unknown, ProjectCompletedLockCtx>({
-  name: "project.completed-lock",
-  check: (_doc, ctx) => {
-    if (ctx.status !== "settled") return { allowed: true };
-    if (ctx.actorCanAddOutOfQuoteLine) return { allowed: true };
-    return { allowed: false, reason: "완료(정산) · 견적 줄이 잠김" };
-  },
-});
 
 // 04-06(D-47·D-75) — 완료 프로젝트의 견적 줄을 잠근다. 나머지 네 상태는
 // 통과한다 — 미수주도 잠그지 않는다(D-45). 정산의 셀 범위는 04-12가 넓힌다.

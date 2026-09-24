@@ -1,7 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { test, expect } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
-import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { setPermissionCell } from "@/domain/permissions/matrix";
+import { insertRole, setRoleArchived } from "@/repositories/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 
 // 03-UI-SPEC: 쓰기 권한이 없는 계급에는 "이유 있는 비활성" 대신 "버튼 자체가
@@ -10,20 +11,18 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 // 13개를 실측했다. 도메인이 거부하므로 데이터는 안전하지만, 사용자는 고칠 수
 // 있다고 믿고 고쳤다가 실패 문구를 본다.
 test("보기 권한만 있는 계급의 코드표 화면에는 편집 수단이 0개다", async ({ page }) => {
-  const viewer = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
-
+  // 기획 PM(role-pm)의 칸을 켜면 같은 순간 다른 워커의 code-tables.spec.ts
+  // 「기획 PM은 404」가 200을 받는다(두 파일을 겹쳐 돌리면 8/8 재현) — 이
+  // 테스트만 쓰는 임시 계급에 보기만 준다(permissions-grid.spec.ts와 같은 방식).
+  const tempRoleId = `role-e2e-cgate-${randomUUID()}`;
+  await insertRole(SYSTEM_VIEWER, { id: tempRoleId, name: `E2E 임시 계급 ${tempRoleId.slice(-12)}`, sortOrder: 99 });
   await setPermissionCell(SYSTEM_VIEWER, {
-    roleId: DEFAULT_ROLE_ID,
+    roleId: tempRoleId,
     menu: "admin.code-tables",
     action: "view",
     allowed: true,
   });
-  await setPermissionCell(SYSTEM_VIEWER, {
-    roleId: DEFAULT_ROLE_ID,
-    menu: "admin.code-tables",
-    action: "write",
-    allowed: false,
-  });
+  const viewer = await createFixtureUser({ roleId: tempRoleId });
 
   try {
     await page.goto("/login");
@@ -58,11 +57,6 @@ test("보기 권한만 있는 계급의 코드표 화면에는 편집 수단이 
     await expect(page.locator("#main-content table input")).toHaveCount(0);
     await expect(page.locator("#main-content table select")).toHaveCount(0);
   } finally {
-    await setPermissionCell(SYSTEM_VIEWER, {
-      roleId: DEFAULT_ROLE_ID,
-      menu: "admin.code-tables",
-      action: "view",
-      allowed: false,
-    });
+    await setRoleArchived(SYSTEM_VIEWER, tempRoleId, true);
   }
 });

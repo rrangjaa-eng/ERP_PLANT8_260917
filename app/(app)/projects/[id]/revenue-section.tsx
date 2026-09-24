@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Table } from "@/ui/table/Table";
 import { Select } from "@/ui/select/Select";
 import { Form } from "@/ui/form/Form";
@@ -102,6 +102,12 @@ function AmountInputField({
   onCommit: (amount: number) => void;
 }) {
   const { inputRef, value, onChange, error, rawValue } = useCommaInput(kind, initialValue);
+  // 마지막으로 부모에 알린 rawValue — 이 칸의 초깃값에서 시작한다. "마운트
+  // 직후 첫 실행은 건너뛴다" 플래그 대신 값 비교를 쓴다: dev Strict Mode는
+  // 마운트 직후 이 effect를 두 번 부르므로(같은 인스턴스, cleanup 없이 재실행)
+  // "이번이 첫 실행인가"로는 두 번째 호출을 걸러내지 못한다 — 실제로 값이
+  // 바뀌었을 때만 커밋하면 몇 번을 다시 불려도 안전하다(멱등).
+  const lastCommittedRawRef = useRef(initialValue);
 
   // 해석되는 값은 입력하는 즉시 반영한다(F4) — blur에서만 반영하면 저장
   // 버튼이 입력 중에 활성화되지 않는다. 빈 칸은 0으로 커밋한다.
@@ -109,6 +115,8 @@ function AmountInputField({
   // rawValue가 그대로인데도 반복 커밋된다(무한 렌더로 이어진다) — 값이
   // 실제로 바뀔 때만 부모에 알리면 된다.
   useEffect(() => {
+    if (rawValue === lastCommittedRawRef.current) return;
+    lastCommittedRawRef.current = rawValue;
     const parsed = rawValue === "" ? 0 : parseNumberInput(rawValue);
     if (parsed !== null && Number.isFinite(parsed)) onCommit(parsed);
     // eslint-disable-next-line react-hooks/exhaustive-deps

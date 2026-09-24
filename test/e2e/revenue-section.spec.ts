@@ -99,6 +99,8 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
   // 쉼표는 Number()가 조용히 0으로 읽고, USD 소수점은 다음 렌더에서
   // "."이 지워져 뒷자리가 정수 뒤에 붙었다(1234.56→123456). `.fill()`은
   // 값을 한 번에 밀어넣어 이 버그를 재현하지 못하므로 한 글자씩 타이핑한다.
+  // 04-09부터 칸은 타이핑 중에도 쉼표를 넣어 보여준다(D-95) — 저장·새로고침
+  // 뒤 값 단언도 쉼표 서식(그대로 남는지 확인하는 것이 이 테스트의 목적).
   test("F4 — 타이핑으로 쉼표·소수점을 넣은 계약 금액이 저장·새로고침 후에도 보존된다", async ({ page }) => {
     const vendor = await insertVendor(SYSTEM_VIEWER, {
       name: `E2E매출타이핑클라이언트-${Date.now()}`,
@@ -128,7 +130,7 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     await expect(page.getByText("부가세 10% 150,000 · 합계 1,650,000 · 서버 계산")).toBeVisible();
 
     await page.reload();
-    await expect(amountInput).toHaveValue("1500000");
+    await expect(amountInput).toHaveValue("1,500,000");
     await expect(page.getByText("부가세 10% 150,000 · 합계 1,650,000 · 서버 계산")).toBeVisible();
 
     // USD로 바꾸고 소수점을 타이핑한다 — "."이 도중에 지워지면 안 된다.
@@ -137,9 +139,9 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     await page.keyboard.press("Control+a");
     await page.keyboard.type("1234.56");
     await page.getByRole("button", { name: /일괄 저장/ }).click();
-    await expect(amountInput).toHaveValue("1234.56");
+    await expect(amountInput).toHaveValue("1,234.56");
 
     await page.reload();
-    await expect(amountInput).toHaveValue("1234.56");
+    await expect(amountInput).toHaveValue("1,234.56");
   });
 });

@@ -19,7 +19,11 @@ export type UseCommaInputResult = {
 };
 
 export function useCommaInput(kind: NumberInputKind, initial: string): UseCommaInputResult {
-  const [text, setText] = useState(initial);
+  // 초깃값도 처음부터 쉼표가 들어간 채로 보인다 — 그렇지 않으면 칸을 다시
+  // 열거나 새로고침한 직후엔 쉼표 없는 원문이 보이다가 사용자가 한 글자
+  // 쳐야만 쉼표가 붙는다(D-95, 04-09 E2E 회귀). raw 그대로를 "타이핑"
+  // 경로에 한 번 통과시켜 같은 그룹핑 규칙을 쓴다.
+  const [text, setText] = useState(() => formatNumberInput({ raw: initial, caret: initial.length, kind }).text);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const pendingCaretRef = useRef<number | null>(null);

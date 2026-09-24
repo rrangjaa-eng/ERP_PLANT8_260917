@@ -5,16 +5,16 @@ current_phase_name: 프로젝트·견적 원장
 current_plan: 2
 status: executing
 stopped_at: Completed 04-10-PLAN.md
-last_updated: "2026-09-24T10:00:50.032Z"
+last_updated: "2026-09-24T10:22:16.396Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 4 execution started
-state_head: 1277d55df0a2342f574869d9e882b19a2a62bc87
+state_head: af6144012bd86db0c429cb29edf85067dafa4068
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 65
   completed_plans: 32
-  percent: 9
+  percent: 6
 ---
 
 # Project State
@@ -181,6 +181,11 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-10: 마이그레이션 번호 0011이 계획 번호와 일치(생성기가 직전 최고 idx+1을 그대로 줬다)
 - [Phase 4]: 04-10: CODE_ITEM_DESCRIPTION_MAX는 .length(UTF-16 단위)로 센다 — 한글은 글자당 1
 - [Phase 4]: 04-10: server-only 의존 체인이 있는 domain 모듈의 클라이언트 소비 상수는 잎(leaf) 모듈로 분리한다(domain/code-tables/description-max.ts)
+- [Phase 4]: 배포 창(T-04-372/T-04-86): 묶음 ②·③ 모두 업무 시간 밖에 프로덕션 승격, migrate 뒤 몇 분 오류는 수용(코드 변경 없음) — 사용자 결정 2026-09-24 세션 H(AskUserQuestion)
+- [Phase 4]: A-12 수용: 묶음 ② 배포 동안 완료 프로젝트 계약 금액 편집 가능 상태 유지, 묶음 ③ 끝(04-41)에서 해소 — 사용자 결정 2026-09-24 세션 H
+- [Phase 4]: 플래너 판단 인정: ②/③ 경계 04-23 뒤 · ENG-D12 04-50 이동 · QA 날짜 순서→04-15 · 폰 편집→04-49 — 사용자 결정 2026-09-24 세션 H
+- [Phase 4]: 04-43 남은 낡은 문구 5자리는 Phase 4 /gsd-verify-work 직전에 /gsd-phase 편집으로 고침 — 사용자 결정 2026-09-24 세션 H
+- [Phase 4]: QA 16건 유실 인정 — 묶음 ② /qa가 다시 훑고 키보드 포커스(탭 순서·포커스 표시·복귀)를 점검 항목으로 둠 — 사용자 결정 2026-09-24 세션 H
 
 ### Pending Todos
 

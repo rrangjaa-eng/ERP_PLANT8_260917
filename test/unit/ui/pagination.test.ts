@@ -74,9 +74,9 @@ describe("Pagination — 정적 렌더(§7-16 계약)", () => {
     expect(last).not.toContain("다음");
   });
 
-  it("현재 번호는 링크·버튼이 아니고 aria-current=\"page\"가 하나만 있다", () => {
+  it("현재 번호는 링크·버튼이 아니고 aria-current=\"page\"가 있다(넓은 창 · 폰 창 각 하나, Task 3 이중 렌더)", () => {
     const html = render(baseHref);
-    expect((html.match(/aria-current="page"/g) ?? []).length).toBe(1);
+    expect((html.match(/aria-current="page"/g) ?? []).length).toBe(2);
     expect(html).not.toMatch(/<(?:a|button)[^>]*aria-current="page"/);
   });
 
@@ -122,5 +122,53 @@ describe("Pagination — 정적 렌더(§7-16 계약)", () => {
     expect(html).toContain(styles.gap);
     const gapMatch = html.match(new RegExp(`<[^>]*class="${styles.gap}"[^>]*>([^<]*)<`));
     expect(gapMatch?.[1]).toBe("…");
+  });
+});
+
+describe("pageWindow — 폰 창(5쪽 이하 전부, 6쪽부터 첫·현재·끝, compact:true, 엔지 리뷰 C P3)", () => {
+  it.each([
+    [4, 5, [1, 2, 3, 4, 5]],
+    [6, 12, [1, "gap", 6, "gap", 12]],
+    [1, 12, [1, "gap", 12]],
+    [3, 12, [1, 2, 3, "gap", 12]],
+    [4, 6, [1, "gap", 4, 5, 6]],
+  ] as const)("pageWindow(%i, %i, { compact: true })", (page, pageCount, expected) => {
+    expect(pageWindow(page, pageCount, { compact: true })).toEqual(expected);
+  });
+
+  it("compact 없으면 넓은 창(Task 1)과 같다(무변경)", () => {
+    expect(pageWindow(5, 12)).toEqual([1, "gap", 4, 5, 6, "gap", 12]);
+  });
+});
+
+describe("Pagination — 넓은 창·폰 창 이중 렌더(DR-33, 700 중단점)", () => {
+  function render(props: PaginationProps) {
+    return renderToStaticMarkup(createElement(Pagination, props));
+  }
+
+  const props: PaginationProps = {
+    label: "목록",
+    page: 6,
+    pageCount: 12,
+    rangeText: "251–300 / 590건",
+    href: (p: number) => `/list?page=${p}`,
+  };
+
+  it("넓은 창 목록과 폰 창 목록이 각각 하나씩 렌더된다", () => {
+    const html = render(props);
+    expect(html).toContain(`class="${styles.wideWindow}"`);
+    expect(html).toContain(`class="${styles.compactWindow}"`);
+  });
+
+  it("두 목록 모두 현재 번호에 aria-current=\"page\"가 있다(총 2개)", () => {
+    const html = render(props);
+    expect((html.match(/aria-current="page"/g) ?? []).length).toBe(2);
+  });
+
+  it("이전·다음·범위 글자는 하나씩이다(목록마다 중복되지 않는다)", () => {
+    const html = render(props);
+    expect((html.match(/이전/g) ?? []).length).toBe(1);
+    expect((html.match(/다음/g) ?? []).length).toBe(1);
+    expect((html.match(new RegExp(`class="${styles.range}"`, "g")) ?? []).length).toBe(1);
   });
 });

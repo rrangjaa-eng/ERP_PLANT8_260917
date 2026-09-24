@@ -1,5 +1,5 @@
 import type { Viewer } from "@/domain/viewer";
-import { withTransaction } from "@/lib/db-transaction";
+import { withTransaction, withTimeoutConversion } from "@/lib/db-transaction";
 import { saveQuoteLines, type QuoteLineWriteRow, type SaveQuoteLinesResult } from "@/domain/quotes/lines";
 import { saveRevenue, listRevenue, type SaveRevenueInput, type RevenueDto } from "@/domain/revenue";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -28,43 +28,50 @@ export async function saveProjectLedger(
   projectId: string,
   input: SaveProjectLedgerInput,
 ): Promise<SaveProjectLedgerResult> {
-  // 볼 수 없는 프로젝트(보기 권한·범위 밖, 권한 없는 보관 프로젝트)에는 쓰지
-  // 않는다 — 조회 화면과 같은 findProject로 판정한다(/cso 14b1ae15).
-  if (!(await findProject(viewer, projectId))) {
-    throw new UserFacingError("존재하지 않는 프로젝트입니다.");
-  }
-
-  // 견적 줄의 차수가 이 프로젝트의 것인지 먼저 확인한다 — 아니면 매출·감사
-  // 기록은 이 프로젝트로, 견적 줄은 다른 프로젝트로 섞여 저장된다.
-  if (input.quoteLines) {
-    const revision = await findQuoteRevisionById(viewer, input.quoteLines.revisionId);
-    if (!revision || revision.projectId !== projectId) {
-      throw new UserFacingError("견적 차수를 찾을 수 없습니다 · 화면을 새로고침해 주세요");
+  // ENG-D11(04-32 실측): 트랜잭션을 열기 전(findProject·findQuoteRevisionById)과
+  // 연 뒤(listRevenue)의 읽기도 풀 db로 돈다 — withTransaction과 같은 시간
+  // 초과 판정·UserFacing 변환을 이 함수 전체에 씌워, 경합 중 어느 지점에서
+  // 실패해도 원시 pg-pool 오류가 아니라 같은 문구로 끝나게 한다
+  // (tx-safety.test.ts (c) — 04-02가 만든 이 파일의 결함, 04-32가 고침).
+  return withTimeoutConversion(async () => {
+    // 볼 수 없는 프로젝트(보기 권한·범위 밖, 권한 없는 보관 프로젝트)에는
+    // 쓰지 않는다 — 조회 화면과 같은 findProject로 판정한다(/cso 14b1ae15).
+    if (!(await findProject(viewer, projectId))) {
+      throw new UserFacingError("존재하지 않는 프로젝트입니다.");
     }
-  }
 
-  // 감사 기록은 트랜잭션 밖 커넥션으로 쓰인다 — 안에서 바로 남기면 뒤쪽
-  // 저장이 거부돼 롤백돼도 기록만 남는다. 모았다가 커밋 뒤에 남긴다.
-  const pendingActions: Parameters<typeof recordAction>[1][] = [];
-  const deferRecord = {
-    recordAction: (_viewer: Viewer, entry: Parameters<typeof recordAction>[1]): Promise<void> => {
-      pendingActions.push(entry);
-      return Promise.resolve();
-    },
-  };
+    // 견적 줄의 차수가 이 프로젝트의 것인지 먼저 확인한다 — 아니면 매출·감사
+    // 기록은 이 프로젝트로, 견적 줄은 다른 프로젝트로 섞여 저장된다.
+    if (input.quoteLines) {
+      const revision = await findQuoteRevisionById(viewer, input.quoteLines.revisionId);
+      if (!revision || revision.projectId !== projectId) {
+        throw new UserFacingError("견적 차수를 찾을 수 없습니다 · 화면을 새로고침해 주세요");
+      }
+    }
 
-  const { quoteLinesResult } = await withTransaction(async (tx) => {
-    const quoteLinesResult = input.quoteLines
-      ? await saveQuoteLines(viewer, input.quoteLines.revisionId, input.quoteLines.rows, deferRecord, tx)
-      : null;
-    if (input.revenue) await saveRevenue(viewer, projectId, input.revenue, deferRecord, tx);
-    return { quoteLinesResult };
+    // 감사 기록은 트랜잭션 밖 커넥션으로 쓰인다 — 안에서 바로 남기면 뒤쪽
+    // 저장이 거부돼 롤백돼도 기록만 남는다. 모았다가 커밋 뒤에 남긴다.
+    const pendingActions: Parameters<typeof recordAction>[1][] = [];
+    const deferRecord = {
+      recordAction: (_viewer: Viewer, entry: Parameters<typeof recordAction>[1]): Promise<void> => {
+        pendingActions.push(entry);
+        return Promise.resolve();
+      },
+    };
+
+    const { quoteLinesResult } = await withTransaction(async (tx) => {
+      const quoteLinesResult = input.quoteLines
+        ? await saveQuoteLines(viewer, input.quoteLines.revisionId, input.quoteLines.rows, deferRecord, tx)
+        : null;
+      if (input.revenue) await saveRevenue(viewer, projectId, input.revenue, deferRecord, tx);
+      return { quoteLinesResult };
+    });
+    for (const entry of pendingActions) await recordAction(viewer, entry);
+
+    // 트랜잭션 커밋 뒤 스냅샷을 새로 읽는다 — saveRevenue가 tx 안에서 커밋
+    // 전 listRevenue를 부르면 자기 자신의 쓰기를 보지 못한다(격리).
+    const revenueResult = input.revenue ? await listRevenue(viewer, projectId) : null;
+
+    return { quoteLines: quoteLinesResult, revenue: revenueResult };
   });
-  for (const entry of pendingActions) await recordAction(viewer, entry);
-
-  // 트랜잭션 커밋 뒤 스냅샷을 새로 읽는다 — saveRevenue가 tx 안에서 커밋
-  // 전 listRevenue를 부르면 자기 자신의 쓰기를 보지 못한다(격리).
-  const revenueResult = input.revenue ? await listRevenue(viewer, projectId) : null;
-
-  return { quoteLines: quoteLinesResult, revenue: revenueResult };
 }

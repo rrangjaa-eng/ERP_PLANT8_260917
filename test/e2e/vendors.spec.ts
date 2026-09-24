@@ -1,7 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { test, expect } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
-import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { setPermissionCell } from "@/domain/permissions/matrix";
+import { insertRole, setRoleArchived } from "@/repositories/roles";
+import { upsertVisibility } from "@/repositories/permissions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 
 // MAST-01: 거래처를 등록하고, 계좌번호가 뒤 4자리만 보이며, 마스킹 해제
@@ -62,10 +65,17 @@ test.describe("거래처 관리 화면 (MAST-01)", () => {
     await expect(page.locator("tr", { hasText: vendorName }).getByText("숨김")).toBeVisible();
 
     // 마스킹 해제 권한이 없는 계급 — 거래처 보기 권한만 켠 상태.
-    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    // 기획 PM(role-pm)의 칸을 켜면 같은 순간 다른 워커의 admin-nav.spec.ts
+    // 「기획 PM은 /admin 404」가 깨진다(겹쳐 돌리면 재현) — 이 테스트만 쓰는
+    // 임시 계급을 쓴다(permissions-grid.spec.ts와 같은 방식).
+    const tempRoleId = `role-e2e-vendors-${randomUUID()}`;
+    await insertRole(SYSTEM_VIEWER, { id: tempRoleId, name: `E2E 임시 계급 ${tempRoleId.slice(-12)}`, sortOrder: 99 });
+    // 기획 PM은 시드에서 거래처 정보(vendor.value)를 볼 수 있다 — 임시 계급도 같게.
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: tempRoleId, infoItem: "vendor.value", visible: true });
+    const pm = await createFixtureUser({ roleId: tempRoleId });
     try {
       await setPermissionCell(SYSTEM_VIEWER, {
-        roleId: DEFAULT_ROLE_ID,
+        roleId: tempRoleId,
         menu: "admin.vendors",
         action: "view",
         allowed: true,
@@ -89,7 +99,7 @@ test.describe("거래처 관리 화면 (MAST-01)", () => {
 
       // 거래처 보기 권한도 끄면 404.
       await setPermissionCell(SYSTEM_VIEWER, {
-        roleId: DEFAULT_ROLE_ID,
+        roleId: tempRoleId,
         menu: "admin.vendors",
         action: "view",
         allowed: false,
@@ -99,14 +109,7 @@ test.describe("거래처 관리 화면 (MAST-01)", () => {
 
       if (pmContext) await pmContext.close();
     } finally {
-      // 원상복구 — 다른 스펙 파일이 role-pm의 admin.vendors 상태에 기대는
-      // 것은 없지만(grep 확인), 시드 기본값(거짓)으로 되돌려 둔다.
-      await setPermissionCell(SYSTEM_VIEWER, {
-        roleId: DEFAULT_ROLE_ID,
-        menu: "admin.vendors",
-        action: "view",
-        allowed: false,
-      });
+      await setRoleArchived(SYSTEM_VIEWER, tempRoleId, true);
     }
   });
 });

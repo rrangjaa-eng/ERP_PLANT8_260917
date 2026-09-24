@@ -150,9 +150,9 @@ export async function listProjectsPage(
       clientName: vendors.name,
       teamName: teams.name,
       pmUserName: users.name,
-      quoteAmountKrw: sql<number>`coalesce(${lineSums.quoteSum}, 0)`,
-      executionAmountKrw: sql<number>`coalesce(${lineSums.executionSum}, 0)`,
-      profitKrw: sql<number>`coalesce(${lineSums.profitSum}, 0)`,
+      quoteAmountKrw: sql<number>`coalesce(${lineSums.quoteSum}, 0)::bigint`.mapWith(Number),
+      executionAmountKrw: sql<number>`coalesce(${lineSums.executionSum}, 0)::bigint`.mapWith(Number),
+      profitKrw: sql<number>`coalesce(${lineSums.profitSum}, 0)::bigint`.mapWith(Number),
     })
     .from(projects)
     .leftJoin(vendors, eq(vendors.id, projects.clientId))

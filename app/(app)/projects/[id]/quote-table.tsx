@@ -12,6 +12,7 @@ import { Select } from "@/ui/select/Select";
 import { RowSheet } from "@/ui/table/RowSheet";
 import { useDirtyStorage } from "@/ui/table/use-dirty-storage";
 import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
+import { normalizeNumericPaste } from "@/ui/table/parse-tsv";
 import type { TableColumn, CellIssue } from "@/ui/table/types";
 import type { QuoteLineDto, QuoteLineBaseline } from "@/domain/quotes/lines";
 import type { RevenueDto } from "@/domain/revenue";
@@ -243,9 +244,14 @@ function UnitPriceEditCell({
   const wrapRef = useRef<HTMLDivElement>(null);
 
   function commit() {
-    const amount = Number(amountRef.current?.value ?? initialAmount) || 0;
-    const fxRate = currency === "KRW" ? 1 : Number(fxRateRef.current?.value ?? initialFxRate) || initialFxRate;
-    onCommit(JSON.stringify({ amount, currency, fxRate, fxRateTouched }));
+    // F3 — `Number(value) || 0`은 "1,000,000"을 조용히 0으로 만든다. 붙여넣기와
+    // 같은 파서(normalizeNumericPaste)로 읽고, 숫자가 아니면 0을 쓰지 않고
+    // 이전 값을 유지한 채 amountValid=false로 알려 호출부가 오류 셀로 고정한다.
+    const amountRaw = amountRef.current?.value ?? String(initialAmount);
+    const parsedAmount = normalizeNumericPaste(amountRaw);
+    const fxRate =
+      currency === "KRW" ? 1 : (normalizeNumericPaste(fxRateRef.current?.value ?? String(initialFxRate)) ?? initialFxRate);
+    onCommit(JSON.stringify({ amount: parsedAmount ?? initialAmount, amountValid: parsedAmount !== null, currency, fxRate, fxRateTouched }));
   }
 
   function handleBlur(event: React.FocusEvent<HTMLElement>) {
@@ -402,6 +408,25 @@ export function QuoteLedger({
   function commitCell(clientKey: string, columnKey: string, patch: Partial<DraftLine>) {
     clearCellError(clientKey, columnKey);
     updateLine(clientKey, patch);
+  }
+
+  // F3 — 타이핑한 숫자 칸 커밋. `Number(value) || 0`은 "1,000,000"을 조용히
+  // 0으로 만든다 — 붙여넣기와 같은 파서(normalizeNumericPaste)로 읽고,
+  // 숫자가 아니면 0을 쓰지 않고 붙여넣기와 같은 오류 셀로 고정한다(기존
+  // 값은 그대로 둔다).
+  function commitNumericCell(clientKey: string, columnKey: string, rawValue: string, apply: (num: number) => Partial<DraftLine>) {
+    const parsed = normalizeNumericPaste(rawValue);
+    if (parsed === null) {
+      setLines((prev) =>
+        prev.map((line) =>
+          line.clientKey === clientKey
+            ? { ...line, cellErrors: { ...line.cellErrors, [columnKey]: "숫자가 아닙니다 · 12,400,000처럼 적어 주세요" }, dirty: true }
+            : line,
+        ),
+      );
+      return;
+    }
+    commitCell(clientKey, columnKey, apply(parsed));
   }
 
   const addLine = useCallback(
@@ -626,7 +651,7 @@ export function QuoteLedger({
           initialValue: String(row.quantity),
           numeric: true,
           onCommit: (value) => {
-            commitCell(row.clientKey, "quantity", { quantity: Number(value) || 0 });
+            commitNumericCell(row.clientKey, "quantity", value, (num) => ({ quantity: num }));
             ctx.onCommit(value);
           },
         }),
@@ -646,7 +671,30 @@ export function QuoteLedger({
           initialFxRate={row.unitPriceFxRate}
           usdDefaultFxRate={usdDefaultFxRate}
           onCommit={(value) => {
-            const parsed = JSON.parse(value) as { amount: number; currency: Currency; fxRate: number; fxRateTouched: boolean };
+            const parsed = JSON.parse(value) as {
+              amount: number;
+              amountValid: boolean;
+              currency: Currency;
+              fxRate: number;
+              fxRateTouched: boolean;
+            };
+            // F3 — 숫자가 아닌 값을 쳤으면 조용히 0으로 쓰지 않는다. 붙여넣기와
+            // 같은 오류 셀로 고정하고(이전 값은 그대로 둔다) 커밋을 끝낸다.
+            if (!parsed.amountValid) {
+              setLines((prev) =>
+                prev.map((line) =>
+                  line.clientKey === row.clientKey
+                    ? {
+                        ...line,
+                        cellErrors: { ...line.cellErrors, unitPrice: "숫자가 아닙니다 · 12,400,000처럼 적어 주세요" },
+                        dirty: true,
+                      }
+                    : line,
+                ),
+              );
+              ctx.onCommit(value);
+              return;
+            }
             // 읽기 모드는 unitPriceAmountKrw를 보여준다(§2-4) — 서버가
             // 최종 재계산하지만(D-63), 저장 전 화면이 스스로 낡은 값을
             // 보여주지 않도록 클라이언트도 같은 공식(외화×환율/KRW=그대로)
@@ -687,7 +735,7 @@ export function QuoteLedger({
           initialValue: String(row.executionAmount),
           numeric: true,
           onCommit: (value) => {
-            commitCell(row.clientKey, "execution", { executionAmount: Number(value) || 0 });
+            commitNumericCell(row.clientKey, "execution", value, (num) => ({ executionAmount: num }));
             ctx.onCommit(value);
           },
         }),
@@ -826,7 +874,13 @@ export function QuoteLedger({
   // 않는다, Task 2 acceptance criterion). errorCellCount>0이면 handleSave가
   // execute()를 아예 부르지 않으므로(클라이언트 게이트) result.serverError는
   // 그 경로에서 생기지 않는다 — 여기 남는 건 서버가 실제로 거부한 경우뿐이다.
-  const rejectionSummary = result.serverError ?? undefined;
+  // F2 — next-safe-action의 validationErrors(예: 항목명 빈 값)는 serverError와
+  // 달리 조용히 무시되고 있었다 — 같은 요약 자리에 일반 문구로 띄운다.
+  const rejectionSummary = result.serverError ?? (result.validationErrors ? "저장하지 못했습니다 · 입력값을 확인하세요" : undefined);
+  // F2 — 계약 금액(revenue.contract) 아래에 붙는 필드 오류만 <RevenueSection>에 넘긴다.
+  const contractError = result.validationErrors?.revenue?.contract
+    ? "저장하지 못했습니다 · 입력값을 확인하세요"
+    : undefined;
 
   const openSheetRow = sheetRowKey ? lines.find((line) => line.clientKey === sheetRowKey) : undefined;
 
@@ -868,7 +922,7 @@ export function QuoteLedger({
         </p>
       ) : null}
 
-      {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
+      {rejectionSummary ? <FormAlert>{rejectionSummary}</FormAlert> : null}
 
       <Table
         caption="견적 줄"
@@ -951,6 +1005,7 @@ export function QuoteLedger({
       <RevenueSection
         contractDraft={contractDraft}
         onContractChange={updateContract}
+        contractError={contractError}
         contractVatKrw={contractVat.vatKrw}
         contractTotalKrw={contractVat.totalKrw}
         canWriteContract={canWriteContract}

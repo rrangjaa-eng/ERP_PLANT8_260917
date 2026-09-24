@@ -168,6 +168,17 @@ describe("domain/projects listProjects/aggregateProjects (Phase 4, 실제 Postgr
     expect(aggregate.count).toBe(1);
   });
 
+  it("(f) 목록 행의 금액 합계가 문자열이 아니라 숫자다(F8 — pg numeric/bigint 왕복)", async () => {
+    const { project, pmUserId } = await setupProject({ endDate: "2026-09-18" });
+    await addQuoteLine(project.id, { quantity: 1, unitPrice: 1_200_000, execution: 400_000 });
+    const viewer = pmViewer(pmUserId);
+
+    const [row] = await listProjects(viewer, { filter: { search: project.number } });
+    expect(row).toBeTruthy();
+    expect(typeof row!.quoteAmountKrw).toBe("number");
+    expect(row!.quoteAmountKrw).toBe(1_200_000);
+  });
+
   it("(e) 종료일 없는 건은 「기간 미정」 그룹으로 간다", async () => {
     const { project, pmUserId } = await setupProject({ endDate: null });
     const viewer = pmViewer(pmUserId);

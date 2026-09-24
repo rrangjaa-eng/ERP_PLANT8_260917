@@ -92,4 +92,15 @@ describe("normalizeNumericPaste", () => {
   it('"약 120만"은 숫자가 아니다 — null(오류 셀 신호, 조용히 버리지 않는다)', () => {
     expect(normalizeNumericPaste("약 120만")).toBeNull();
   });
+
+  // F3 — 견적 표 타이핑 커밋도 이 파서를 재사용한다(quote-table.tsx). 쉼표
+  // 천 단위 구분과 소수점(USD 단가 등)이 `Number(value) || 0`처럼 0으로
+  // 뭉개지지 않는지 확인한다.
+  it('"1,000,000" → 1000000', () => {
+    expect(normalizeNumericPaste("1,000,000")).toBe(1_000_000);
+  });
+
+  it('"1234.56" → 1234.56', () => {
+    expect(normalizeNumericPaste("1234.56")).toBe(1234.56);
+  });
 });

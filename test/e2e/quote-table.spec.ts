@@ -159,6 +159,28 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await expect(page.getByText("1,500,000").first()).toBeVisible();
   });
 
+  test("F2 — 항목을 비운 채 저장하면 next-safe-action 검증 오류가 화면에 alert로 보인다", async ({ page }) => {
+    await loginAndOpenProject(page);
+
+    await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
+    const dataRow = page.locator("tbody tr").nth(1);
+    const gridcell = (index: number) => dataRow.getByRole("gridcell").nth(index);
+
+    // 단가만 채우고 항목(2)은 비워 둔다 — 서버 스키마의 itemName.min(1)이
+    // 거부해야 한다(클라이언트 게이트는 빈 값 자체를 막지 않는다).
+    await gridcell(5).focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("1200000");
+    await page.keyboard.press("Enter");
+
+    const saveButton = page.getByRole("button", { name: /일괄 저장/ });
+    await expect(saveButton).toBeEnabled();
+    await saveButton.click();
+
+    // role=alert는 Next.js 라우트 안내에도 있어 문구로 좁힌다.
+    await expect(page.getByRole("alert").filter({ hasText: "저장하지 못했습니다 · 입력값을 확인하세요" })).toBeVisible();
+  });
+
   test("(f) 폰 뷰포트에서 줄을 탭하면 행 시트가 열리고 행동 줄이 없다", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 800 });
     await loginAndOpenProject(page);

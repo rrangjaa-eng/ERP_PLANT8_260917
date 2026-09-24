@@ -94,4 +94,52 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     await expect(page.getByText("공급가액 5,000,000")).toHaveCount(0);
     await expect(page.getByText("미수 5,000,000")).toHaveCount(0);
   });
+
+  // F4 — 계약 금액이 `value={숫자}`로 매 렌더 되돌려지는 통제 입력이라
+  // 쉼표는 Number()가 조용히 0으로 읽고, USD 소수점은 다음 렌더에서
+  // "."이 지워져 뒷자리가 정수 뒤에 붙었다(1234.56→123456). `.fill()`은
+  // 값을 한 번에 밀어넣어 이 버그를 재현하지 못하므로 한 글자씩 타이핑한다.
+  test("F4 — 타이핑으로 쉼표·소수점을 넣은 계약 금액이 저장·새로고침 후에도 보존된다", async ({ page }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2E매출타이핑클라이언트-${Date.now()}`,
+      normalizedName: `e2e매출타이핑클라이언트-${Date.now()}`,
+    });
+    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(pm.email);
+    await page.getByLabel("비밀번호").fill(pm.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto("/projects?new=1");
+    await page.getByLabel("클라이언트").selectOption({ label: vendor.name });
+    await page.getByLabel("팀").selectOption({ index: 1 });
+    await page.getByLabel("담당 PM").selectOption({ index: 1 });
+    const projectName = `E2E수익타이핑-${Date.now()}`;
+    await page.getByLabel("프로젝트명").fill(projectName);
+    await page.getByRole("button", { name: "프로젝트 등록" }).click();
+    await expect(page).toHaveURL(/\/projects\/.+/);
+
+    const amountInput = page.getByLabel("계약 금액", { exact: true });
+    await amountInput.click();
+    await page.keyboard.type("1,500,000");
+    await page.getByRole("button", { name: /일괄 저장/ }).click();
+    await expect(page.getByText("부가세 10% 150,000 · 합계 1,650,000 · 서버 계산")).toBeVisible();
+
+    await page.reload();
+    await expect(amountInput).toHaveValue("1500000");
+    await expect(page.getByText("부가세 10% 150,000 · 합계 1,650,000 · 서버 계산")).toBeVisible();
+
+    // USD로 바꾸고 소수점을 타이핑한다 — "."이 도중에 지워지면 안 된다.
+    await page.getByLabel("계약 금액 통화").selectOption("USD");
+    await amountInput.click();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("1234.56");
+    await page.getByRole("button", { name: /일괄 저장/ }).click();
+    await expect(amountInput).toHaveValue("1234.56");
+
+    await page.reload();
+    await expect(amountInput).toHaveValue("1234.56");
+  });
 });

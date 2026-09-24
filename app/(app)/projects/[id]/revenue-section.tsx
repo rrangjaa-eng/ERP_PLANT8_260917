@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { Table } from "@/ui/table/Table";
 import { Select } from "@/ui/select/Select";
 import { Form } from "@/ui/form/Form";
+import { normalizeNumericPaste } from "@/ui/table/parse-tsv";
 import type { TableColumn } from "@/ui/table/types";
 import type { Currency } from "@/domain/money";
 import styles from "./project-detail.module.css";
@@ -35,6 +37,79 @@ function formatKrw(value: number): string {
 
 function contractHintText(vatKrw: number, totalKrw: number): string {
   return `부가세 10% ${formatKrw(vatKrw)} · 합계 ${formatKrw(totalKrw)} · 서버 계산`;
+}
+
+// F4 — 이 표·폼의 금액 입력은 모두 `value={숫자}`로 매 렌더 값을 되돌리는
+// 통제 입력이었다 — 쉼표("1,500,000")는 Number()가 조용히 0으로 읽고,
+// 소수점("1234.")은 다음 렌더에서 지워져(Number("1234.")===1234) 이어 치는
+// 자리수가 정수 뒤에 그대로 붙었다("1234.56"→123456). 타이핑 중엔 원문
+// 텍스트를 그대로 보여주고, blur/Enter에서만 공용 파서(normalizeNumericPaste,
+// 쉼표·공백·통화 기호 제거)로 읽어 커밋한다 — 숫자가 아니면 조용히 0을
+// 쓰지 않고 이전 값으로 되돌린다.
+function amountText(value: number): string {
+  return value === 0 ? "" : String(value);
+}
+
+function AmountInput({
+  ariaLabel,
+  value,
+  onCommit,
+  className,
+}: {
+  ariaLabel: string;
+  value: number;
+  onCommit: (amount: number) => void;
+  className?: string;
+}) {
+  // 0은 빈 칸으로 보여 준다 — "0"이 미리 들어 있으면 그 앞에 입력이 붙어
+  // "1,500,0000"처럼 금액이 10배가 된다(/qa F4 재현).
+  const [text, setText] = useState(amountText(value));
+  // 커밋 후(또는 서버 재조회로) value가 바뀔 때만 text를 되돌린다 — 타이핑
+  // 도중엔 value가 그대로라 이 분기를 타지 않는다. effect 안 setState는
+  // 불필요한 연쇄 렌더를 만든다(react-hooks/set-state-in-effect) — 렌더 중
+  // "prop 변화에 맞춰 state 조정" 패턴(PermissionGrid.tsx 선례)을 쓴다.
+  const [prevValue, setPrevValue] = useState(value);
+  if (value !== prevValue) {
+    setPrevValue(value);
+    setText(amountText(value));
+  }
+
+  function commit() {
+    const parsed = normalizeNumericPaste(text);
+    if (parsed === null) {
+      setText(amountText(value));
+      return;
+    }
+    onCommit(parsed);
+  }
+
+  return (
+    <input
+      aria-label={ariaLabel}
+      type="text"
+      inputMode="decimal"
+      value={text}
+      onChange={(event) => {
+        // 해석되는 값은 입력하는 즉시 반영한다 — blur에서만 반영하면 저장
+        // 버튼이 입력 중에 활성화되지 않는다. prevValue를 먼저 맞춰 두어
+        // "1234."처럼 입력 중인 원문이 되돌려지지 않게 한다.
+        setText(event.target.value);
+        const parsed = event.target.value.trim() === "" ? 0 : normalizeNumericPaste(event.target.value);
+        if (parsed !== null && parsed !== value) {
+          setPrevValue(parsed);
+          onCommit(parsed);
+        }
+      }}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          commit();
+        }
+      }}
+      className={className}
+    />
+  );
 }
 
 // SYSTEM.md §6-2 S6 — 매출 섹션. 계약 금액 단일 칸 폼(Form.Actions 없음,
@@ -100,12 +175,10 @@ export function RevenueSection({
       editability: () => (canWriteEntries ? "edit" : "locked"),
       cell: (row) =>
         canWriteEntries ? (
-          <input
-            aria-label="발행액"
-            type="text"
-            inputMode="decimal"
+          <AmountInput
+            ariaLabel="발행액"
             value={row.amount}
-            onChange={(event) => onIssuedChange(row.clientKey, { amount: Number(event.target.value) || 0 })}
+            onCommit={(amount) => onIssuedChange(row.clientKey, { amount })}
             className={styles.cellInputNumeric}
           />
         ) : (
@@ -159,12 +232,10 @@ export function RevenueSection({
       editability: () => (canWriteEntries ? "edit" : "locked"),
       cell: (row) =>
         canWriteEntries ? (
-          <input
-            aria-label="입금액"
-            type="text"
-            inputMode="decimal"
+          <AmountInput
+            ariaLabel="입금액"
             value={row.amount}
-            onChange={(event) => onPaidChange(row.clientKey, { amount: Number(event.target.value) || 0 })}
+            onCommit={(amount) => onPaidChange(row.clientKey, { amount })}
             className={styles.cellInputNumeric}
           />
         ) : (
@@ -224,26 +295,20 @@ export function RevenueSection({
               />
             ) : null}
             {canWriteContract ? (
-              <input
-                aria-label="계약 금액"
-                type="text"
-                inputMode="decimal"
+              <AmountInput
+                ariaLabel="계약 금액"
                 value={contractDraft.amount}
-                onChange={(event) => onContractChange({ amount: Number(event.target.value) || 0 })}
+                onCommit={(amount) => onContractChange({ amount })}
                 className={styles.cellInputNumeric}
               />
             ) : (
               <span>{formatKrw(contractDraft.amount)}</span>
             )}
             {canWriteContract && contractDraft.currency !== "KRW" ? (
-              <input
-                aria-label="계약 금액 환율"
-                type="text"
-                inputMode="decimal"
+              <AmountInput
+                ariaLabel="계약 금액 환율"
                 value={contractDraft.fxRate}
-                onChange={(event) =>
-                  onContractChange({ fxRate: Number(event.target.value) || 0, fxRateTouched: true })
-                }
+                onCommit={(fxRate) => onContractChange({ fxRate, fxRateTouched: true })}
                 className={styles.cellInputNumeric}
               />
             ) : null}

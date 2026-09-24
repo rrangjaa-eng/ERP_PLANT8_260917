@@ -125,6 +125,47 @@ describe("deploy.yml", () => {
     expect(guard).not.toMatch(/[0-9]{12}/);
   });
 
+  // ENG-D12(04-50) — main이 아닌 ref의 workflow_dispatch가 클라우드 인증 전에 실패한다.
+  it("staging·production 블록에 id: ref-guard가 각각 하나 있고 id: auth보다 앞이다(인증 전에 멈춘다)", () => {
+    const stagingStart = deploy.indexOf("\n  staging:");
+    const productionStart = deploy.indexOf("\n  production:");
+    const stagingBlock = deploy.slice(stagingStart, productionStart);
+    const productionBlock = deploy.slice(productionStart);
+
+    for (const block of [stagingBlock, productionBlock]) {
+      const guardCount = (block.match(/id: ref-guard/g) ?? []).length;
+      expect(guardCount).toBe(1);
+      const guardIndex = block.indexOf("id: ref-guard");
+      const authIndex = block.indexOf("id: auth");
+      expect(authIndex).toBeGreaterThan(-1);
+      expect(guardIndex).toBeGreaterThan(-1);
+      expect(guardIndex).toBeLessThan(authIndex);
+    }
+  });
+
+  it("ref-guard는 env REF로 github.ref를 받고, run: 본문은 $REF만 읽어 refs/heads/main이 아니면 exit 1한다", () => {
+    const stagingStart = deploy.indexOf("\n  staging:");
+    const productionStart = deploy.indexOf("\n  production:");
+    const stagingBlock = deploy.slice(stagingStart, productionStart);
+    const productionBlock = deploy.slice(productionStart);
+
+    for (const block of [stagingBlock, productionBlock]) {
+      const guardStart = block.indexOf("id: ref-guard");
+      expect(guardStart).toBeGreaterThan(-1);
+      const nextStepStart = block.indexOf("\n      - ", guardStart);
+      const guardStep = nextStepStart === -1 ? block.slice(guardStart) : block.slice(guardStart, nextStepStart);
+
+      expect(guardStep).toContain("REF: ${{ github.ref }}");
+      expect(guardStep).toContain("refs/heads/main");
+      expect(guardStep).toContain("exit 1");
+
+      // ref 값은 env로만 들어온다 — run: 본문에 ${{ 표현식 보간이 없다(T-1-32).
+      const runIndex = guardStep.indexOf("run:");
+      expect(runIndex).toBeGreaterThan(-1);
+      expect(guardStep.slice(runIndex)).not.toContain("${{");
+    }
+  });
+
   it("두 잡 모두 scripts/deploy.sh를 실행하고, staging은 --sha github.sha, production은 --env prod --sha steps.guard.outputs.sha를 쓴다", () => {
     const stagingStart = deploy.indexOf("\n  staging:");
     const productionStart = deploy.indexOf("\n  production:");

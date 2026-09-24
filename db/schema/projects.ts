@@ -24,7 +24,7 @@ export const projects = pgTable(
       .notNull()
       .references(() => users.id),
     name: text("name").notNull(),
-    // D-41: bidding(수주중) · in_progress(진행) · settled(완료(정산)) · lost(미수주).
+    // D-75: bidding(수주중) · in_progress(진행) · settling(정산) · completed(완료) · lost(미수주).
     status: text("status").notNull().default("bidding"),
     // D-49: 수주중 단계는 기간이 선택이다 — nullable, 진행 전환 게이트가 시점을 담당(04-06).
     startDate: date("start_date"),

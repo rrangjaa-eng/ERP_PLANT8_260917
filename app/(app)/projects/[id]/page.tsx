@@ -44,7 +44,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
   // (가) 셀 편집 가능성은 서버가 판정해 보낸다 — 화면은 project.status
   // 문자열을 다시 해석하지 않고 이 판정 결과(boolean)만 받는다.
-  const gateDecision = await gate(project, "project.completed-lock", { status: project.status });
+  const gateDecision = await gate(project, "project.line-edit", { status: project.status });
   // 금액을 볼 수 없으면 표를 편집하지 않는다 — 서버도 저장을 거부한다(saveQuoteLines).
   const editable = canWrite && gateDecision.allowed && (await visible(session.viewer, "quote.amount"));
 

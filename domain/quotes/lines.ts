@@ -426,7 +426,7 @@ export async function saveQuoteLines(
   const projectRow = await repoFindProjectById(viewer, revision.projectId);
   if (!projectRow) throw new RevisionNotFoundError("연결된 프로젝트를 찾을 수 없습니다.");
 
-  const decision = await gate(projectRow, "project.completed-lock", { status: projectRow.status });
+  const decision = await gate(projectRow, "project.line-edit", { status: projectRow.status });
   if (!decision.allowed) {
     throw new GateBlockedError(decision.reason);
   }

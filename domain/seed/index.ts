@@ -15,20 +15,23 @@ import { seedTeam } from "@/repositories/teams";
 // 보장하는 "설정 화면에 EMPTY 상태가 발생하지 않는다"가 실제로 성립한다.
 const SEED_HISTORIZED_EFFECTIVE_FROM = "2000-01-01";
 
-// 프로젝트 상태 코드표 시드(D-41, Phase 4 Task 1 ④) — 수주중·진행·완료(정산)·
-// 미수주 네 값. 옛 다섯 값(planning/on_hold/done/cancelled + 이 목록에 없던
+// 프로젝트 상태 코드표 시드(D-41 → D-75, 04-06) — 수주중·진행·정산·완료·
+// 미수주 다섯 값. 옛 다섯 값(planning/on_hold/done/cancelled + 이 목록에 없던
 // in_progress도 값 자체는 그대로)은 db/migrations/0009_project_quote_ledger_spine.sql이
 // DELETE/INSERT로 이미 교체했다 — 이 상수는 그 마이그레이션이 못 닿는
-// 경로(멱등 재시드·픽스처 DB)에서도 같은 네 값이 나오게 하는 정본이다.
+// 경로(멱등 재시드·픽스처 DB)에서도 같은 값이 나오게 하는 정본이다.
 // 04-10(D-93): 설명 문장은 db/migrations/0011_code_item_descriptions.sql의
 // description IS NULL UPDATE 문과 글자 그대로 같아야 한다(대조 검증: Task 2
 // verify) — 새 DB(이 시드)와 기존 DB(그 마이그레이션)가 같은 설명으로
-// 시작한다. settled(완료·정산)는 04-06이 넣는다 — 여기 없다.
+// 시작한다. 04-06(D-75): 다섯 값 — settling(정산)·completed(완료)의 라벨·정렬·
+// 설명과 lost의 정렬 4는 db/migrations/0012_project_status_five_values.sql과
+// 글자 그대로 같다.
 const PROJECT_STATUS_CODES = [
   { value: "bidding", label: "수주중", sortOrder: 0, description: "제안·PT 단계 · 쌓인 비용은 진행 뒤 프로젝트 비용" },
   { value: "in_progress", label: "진행", sortOrder: 1, description: "수주 확정 · 종료일 다음 날 자동으로 정산" },
-  { value: "settled", label: "완료(정산)", sortOrder: 2 },
-  { value: "lost", label: "미수주", sortOrder: 3, description: "수주 실패 · 쌓인 비용은 팀 미수주 비용" },
+  { value: "settling", label: "정산", sortOrder: 2, description: "행사 종료 · 발행 요청과 증빙 첨부를 마치는 단계" },
+  { value: "completed", label: "완료", sortOrder: 3, description: "정산 마감 · 견적 줄이 잠기고 되돌리기 없음" },
+  { value: "lost", label: "미수주", sortOrder: 4, description: "수주 실패 · 쌓인 비용은 팀 미수주 비용" },
 ];
 
 // D-62: 견적 줄 대분류 = 그룹 머리글(소분류에서 파생), 그룹 순서는

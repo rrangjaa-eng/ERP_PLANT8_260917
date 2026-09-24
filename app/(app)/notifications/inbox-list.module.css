@@ -1,0 +1,37 @@
+/* SYSTEM.md §6-1 목록 + §7-3 그룹 머리글 행 모양(admin/people/people.module.css
+   .table 선례) · §4-3 인셋 선 허용 목록(안 읽음 좌측 인셋). 색·서체·radius는
+   토큰 참조만 쓴다(D-20). */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  text-align: left;
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+  white-space: nowrap;
+}
+
+.table td {
+  min-height: var(--row-min);
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  font-size: var(--fs-base);
+  border-bottom: var(--line-w) solid var(--line);
+}
+
+/* S1-c 안 읽음: 첫 칸 좌측 인셋 선(§7-12 E① · §4-3 허용 목록). */
+.unread td:first-child {
+  box-shadow: inset 2px 0 0 var(--line-strong);
+}
+
+/* S1-c 시각 칸: 오른쪽 정렬 · tabular-nums · nowrap(§2-4 숫자 칸 규칙과 같은 결). */
+.time {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

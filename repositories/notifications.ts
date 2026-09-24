@@ -1,4 +1,5 @@
-import { sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
+import { db } from "@/db/client";
 import { withDeadlineTransaction, type DeadlineTx } from "@/db/deadline-transaction";
 import { notificationLog, notifyTickRuns } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
@@ -103,6 +104,145 @@ export async function insertNotifications(
     })
     .returning({ id: notificationLog.id });
   return inserted.map((row) => row.id);
+}
+
+// ── 알림함 읽기 (04.2-07, D-4218) ──────────────────────────────────────
+
+export type InboxCursor = { createdAt: string; id: string };
+
+export type InboxRow = {
+  id: number;
+  message: string;
+  createdAt: Date;
+  readAt: Date | null;
+  emailStatus: string;
+};
+
+// (created_at, id) 키셋 — 페이지 사이 삽입에도 중복·누락이 없다(D-4218 · Codex #20).
+// 정렬은 항상 created_at DESC, id DESC. viewer는 다른 저장소 함수와 같은 자리를
+// 지키려는 인자다(여기서는 쓰지 않는다) — 받는 사람은 opts.recipientId로만 정해진다.
+export async function listInbox(
+  viewer: Viewer,
+  opts: { recipientId: string; retentionFrom: Date; limit: number; cursor?: InboxCursor },
+): Promise<InboxRow[]> {
+  void viewer;
+  const conditions = [
+    eq(notificationLog.recipientId, opts.recipientId),
+    gte(notificationLog.createdAt, opts.retentionFrom),
+  ];
+  if (opts.cursor) {
+    conditions.push(
+      sql`(${notificationLog.createdAt}, ${notificationLog.id}) < (${opts.cursor.createdAt}::timestamp, ${Number(opts.cursor.id)}::bigint)`,
+    );
+  }
+  return db
+    .select({
+      id: notificationLog.id,
+      message: notificationLog.message,
+      createdAt: notificationLog.createdAt,
+      readAt: notificationLog.readAt,
+      emailStatus: notificationLog.emailStatus,
+    })
+    .from(notificationLog)
+    .where(and(...conditions))
+    .orderBy(desc(notificationLog.createdAt), desc(notificationLog.id))
+    .limit(opts.limit);
+}
+
+export async function countUnread(
+  viewer: Viewer,
+  opts: { recipientId: string; retentionFrom: Date },
+): Promise<number> {
+  void viewer;
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(notificationLog)
+    .where(
+      and(
+        eq(notificationLog.recipientId, opts.recipientId),
+        gte(notificationLog.createdAt, opts.retentionFrom),
+        isNull(notificationLog.readAt),
+      ),
+    );
+  return row?.count ?? 0;
+}
+
+export type OpenInboxResult = {
+  openedAt: Date;
+  rows: Array<InboxRow & { wasMarked: boolean }>;
+};
+
+// db.execute(원시 SQL)는 drizzle의 스키마 매핑을 거치지 않아 pg 드라이버가 준
+// 문자열을 그대로 돌려준다(select() 빌더 경로만 컬럼 타입으로 Date 변환한다,
+// 실측). 이 칸들은 DB 세션이 UTC라(now()가 '+00') 리터럴을 그대로 UTC로 읽으면
+// 된다(04.2-01 D-4218이 이미 전제하는 것과 같은 가정).
+function parsePgTimestamp(value: string): Date {
+  const iso = value.replace(" ", "T");
+  return new Date(iso.endsWith("Z") || iso.includes("+") ? iso : `${iso}Z`);
+}
+
+// 한 문장 열기(D-4218 · Codex #20): WITH opened AS (SELECT now()), marked AS
+// (UPDATE … RETURNING id) 뒤에 첫 페이지를 SELECT한다 — UPDATE와 SELECT가 같은
+// 스냅샷을 본다(READ COMMITTED에서도 한 문장 안의 CTE는 한 스냅샷을 공유한다).
+// opened를 notification_log와 LEFT JOIN해서, 이 받는 사람에게 알림이 하나도
+// 없어도(page가 0행) opened_at 행 하나는 항상 돌려준다.
+export async function openInbox(
+  viewer: Viewer,
+  opts: { recipientId: string; retentionFrom: Date; limit: number },
+): Promise<OpenInboxResult> {
+  void viewer;
+  const result = await db.execute<{
+    opened_at: string;
+    id: number | null;
+    message: string | null;
+    created_at: string | null;
+    read_at: string | null;
+    email_status: string | null;
+    was_marked: boolean | null;
+  }>(sql`
+    WITH opened AS (SELECT now() AS at),
+         marked AS (
+           UPDATE notification_log
+           SET read_at = opened.at
+           FROM opened
+           WHERE notification_log.recipient_id = ${opts.recipientId}
+             AND notification_log.read_at IS NULL
+             AND notification_log.created_at >= ${opts.retentionFrom}
+           RETURNING notification_log.id
+         ),
+         page AS (
+           SELECT id, message, created_at, read_at, email_status,
+                  (id IN (SELECT id FROM marked)) AS was_marked
+           FROM notification_log
+           WHERE recipient_id = ${opts.recipientId}
+             AND created_at >= ${opts.retentionFrom}
+           ORDER BY created_at DESC, id DESC
+           LIMIT ${opts.limit}
+         )
+    SELECT (opened.at AT TIME ZONE 'UTC') AS opened_at, page.*
+    FROM opened
+    LEFT JOIN page ON true
+  `);
+
+  const openedAtRaw = result.rows[0]?.opened_at;
+  if (!openedAtRaw) throw new Error("openInbox: opened.at 행이 없습니다(항상 1행이어야 한다).");
+  const openedAt = parsePgTimestamp(openedAtRaw);
+
+  const rows = result.rows
+    .filter(
+      (row): row is typeof row & { id: number; message: string; created_at: string; email_status: string } =>
+        row.id !== null,
+    )
+    .map((row) => ({
+      id: row.id,
+      message: row.message,
+      createdAt: parsePgTimestamp(row.created_at),
+      readAt: row.read_at ? parsePgTimestamp(row.read_at) : null,
+      emailStatus: row.email_status,
+      wasMarked: row.was_marked === true,
+    }));
+
+  return { openedAt, rows };
 }
 
 export async function insertTickRun(

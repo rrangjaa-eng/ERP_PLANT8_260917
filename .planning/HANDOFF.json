@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-24T16:52:39.824Z",
+  "timestamp": "2026-09-24T17:24:29.579Z",
   "phase": "04.1",
   "phase_name": "approvals-leave",
   "phase_dir": ".planning/phases/04.1-approvals-leave",
@@ -9,32 +9,118 @@
   "total_tasks": null,
   "status": "paused",
   "completed_tasks": [
-    {"id": 1, "name": "eng-review 반영 수정 회차 1 (막는 9 + 10~25)", "status": "done", "commit": "b3a0c68"},
-    {"id": 2, "name": "교차 메모 X-1~X-5 · VALIDATION", "status": "done", "commit": "5987a71"},
-    {"id": 3, "name": "플랜 검사기 1회차 (0 막는 문제)", "status": "done", "commit": "70b94e1"},
-    {"id": 4, "name": "origin/main 병합", "status": "done", "commit": "562dfd2"},
-    {"id": 5, "name": "Codex 1회차 3갈래 → 반영 · 검사기 2회차 0 · Codex 2회차 → 반영", "status": "done", "commit": "5b380d4"},
-    {"id": 6, "name": "전체 Codex 1·2·3차 → 반영", "status": "done", "commit": "e48ffc2"},
-    {"id": 7, "name": "바뀐 갈래 B·C Codex 4차 = 0 · 0 (A는 3차 0, 이후 불변)", "status": "done", "commit": "cac9674"}
+    {
+      "id": 1,
+      "name": "eng-review 반영 수정 회차 1 (막는 9 + 10~25)",
+      "status": "done",
+      "commit": "b3a0c68"
+    },
+    {
+      "id": 2,
+      "name": "교차 메모 X-1~X-5 · VALIDATION",
+      "status": "done",
+      "commit": "5987a71"
+    },
+    {
+      "id": 3,
+      "name": "플랜 검사기 1회차 (0 막는 문제)",
+      "status": "done",
+      "commit": "70b94e1"
+    },
+    {
+      "id": 4,
+      "name": "origin/main 병합",
+      "status": "done",
+      "commit": "562dfd2"
+    },
+    {
+      "id": 5,
+      "name": "Codex 1회차 3갈래 → 반영 · 검사기 2회차 0 · Codex 2회차 → 반영",
+      "status": "done",
+      "commit": "5b380d4"
+    },
+    {
+      "id": 6,
+      "name": "전체 Codex 1·2·3차 → 반영",
+      "status": "done",
+      "commit": "e48ffc2"
+    },
+    {
+      "id": 7,
+      "name": "바뀐 갈래 B·C Codex 4차 = 0 · 0 (A는 3차 0, 이후 불변)",
+      "status": "done",
+      "commit": "cac9674"
+    },
+    {
+      "id": 8,
+      "name": "/plan-eng-review 04.1 (새 세션, 소수점 페이즈라 CEO 리뷰 생략 — skill-gate 훅이 자동 면제)",
+      "status": "done",
+      "commit": "4078bd8"
+    }
   ],
   "remaining_tasks": [
-    {"id": 8, "name": "/plan-eng-review 04.1 (새 세션, 소수점 페이즈라 CEO 리뷰 생략 — skill-gate 훅이 자동 면제)", "status": "not_started"},
-    {"id": 9, "name": "/plan-design-review 04.1 + Codex (UI-SPEC에 누적 메모 반영)", "status": "not_started"},
-    {"id": 10, "name": "/review → PR #60 설명", "status": "not_started"}
+    {
+      "id": 8.5,
+      "name": "eng-review 2회차 반영 수정 회차: 막는 C-01 + 경고 6 + P2 12 (T1~T19) → 플랜 체커 + Codex(바뀐 부분) → 최종 전체 Codex 「막는 문제 없음」",
+      "status": "not_started"
+    },
+    {
+      "id": 9,
+      "name": "/plan-design-review 04.1 + Codex (UI-SPEC에 누적 메모 반영)",
+      "status": "not_started"
+    },
+    {
+      "id": 10,
+      "name": "/review → PR #60 설명",
+      "status": "not_started"
+    }
   ],
   "blockers": [],
   "async_jobs": [],
   "human_actions_pending": [],
   "decisions": [
-    {"decision": "D5 입사 다음 해 연차 = 근무 기간 비례(0.25일 올림)", "rationale": "사용자 카드 B 2026-09-24 21:45 KST", "phase": "04.1"},
-    {"decision": "조정 기록 읽기 = admin.people view, 추가 폼만 write", "rationale": "보기 전용 관리자도 기록을 본다(기존 truth 유지)", "phase": "04.1"},
-    {"decision": "기안자가 지금 담당이면 가능 행동 = 승인 + 회수(반려 없음, 서버도 거부)", "rationale": "회수가 같은 목적 — 결정 최소화", "phase": "04.1"},
-    {"decision": "미리보기: approval.value 숨김이면 이름 없음, role.value 숨김이면 라벨 `N단`", "rationale": "정보 노출 투영 + 줄이 비지 않게", "phase": "04.1"},
-    {"decision": "월차 조정 불가 시 옵션 숨김 + 한 줄(공용 Select 변경 없음)", "rationale": "화면 사용성 원칙 · 컴포넌트 변경 최소", "phase": "04.1"},
-    {"decision": "퇴직 줄은 섹션 연도 = 퇴직 연도일 때만; 섹션 연도는 서버가 한 번 정함", "rationale": "잔고·기록·조정 연도 일치", "phase": "04.1"},
-    {"decision": "B-F04(설정 화면 보기 전용 편집 컨트롤)·A-FF01(시드가 노출 설정 되돌림)은 범위 밖", "rationale": "기존 화면 전체의 선행 문제 · Phase 4 04-20 몫", "phase": "04.1"}
+    {
+      "decision": "D5 입사 다음 해 연차 = 근무 기간 비례(0.25일 올림)",
+      "rationale": "사용자 카드 B 2026-09-24 21:45 KST",
+      "phase": "04.1"
+    },
+    {
+      "decision": "조정 기록 읽기 = admin.people view, 추가 폼만 write",
+      "rationale": "보기 전용 관리자도 기록을 본다(기존 truth 유지)",
+      "phase": "04.1"
+    },
+    {
+      "decision": "기안자가 지금 담당이면 가능 행동 = 승인 + 회수(반려 없음, 서버도 거부)",
+      "rationale": "회수가 같은 목적 — 결정 최소화",
+      "phase": "04.1"
+    },
+    {
+      "decision": "미리보기: approval.value 숨김이면 이름 없음, role.value 숨김이면 라벨 `N단`",
+      "rationale": "정보 노출 투영 + 줄이 비지 않게",
+      "phase": "04.1"
+    },
+    {
+      "decision": "월차 조정 불가 시 옵션 숨김 + 한 줄(공용 Select 변경 없음)",
+      "rationale": "화면 사용성 원칙 · 컴포넌트 변경 최소",
+      "phase": "04.1"
+    },
+    {
+      "decision": "퇴직 줄은 섹션 연도 = 퇴직 연도일 때만; 섹션 연도는 서버가 한 번 정함",
+      "rationale": "잔고·기록·조정 연도 일치",
+      "phase": "04.1"
+    },
+    {
+      "decision": "B-F04(설정 화면 보기 전용 편집 컨트롤)·A-FF01(시드가 노출 설정 되돌림)은 범위 밖",
+      "rationale": "기존 화면 전체의 선행 문제 · Phase 4 04-20 몫",
+      "phase": "04.1"
+    },
+    {
+      "decision": "eng-review 2회차 심각도는 Fable 판정: 막는 1(C-01) · 경고 6 · 참고 2(C-N02 증분 마이그레이션, B-A2 새 환경 복원 거부)",
+      "rationale": "프로젝트 지침 §3 ④ Codex 결과 판단 = Fable; B-A2는 ENG-5 편차의 파생이라 번복하지 않음",
+      "phase": "04.1"
+    }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션에서 /plan-eng-review 04.1 — docs/designs/phase04.1-revision-260924/tests-01-and-open-notes.md 끝 「멈춘 곳」과 round2-brief.md 끝 판정부터 읽는다",
-  "context_notes": "Codex 원문은 docs/designs/phase04.1-revision-260924/codex-*.md. UI-SPEC 반영 목록은 tests-01-and-open-notes.md 마지막 절. STATE.md 현재 페이즈는 건드리지 않았다."
+  "next_action": "새 세션에서 /gsd-plan-phase 04.1 수정 회차 — docs/designs/plant8-erp-phase04.1-eng-review2-260925.md 「반영 지시」·「Implementation Tasks」(T1~T19)부터 읽고, 근거는 docs/designs/phase04.1-eng-review2-260925/(eng-A·B·C, judge, codex-triage)",
+  "context_notes": "관문 기록 훅이 plan-eng-review를 STATE 현재 페이즈(4) 로그에 적어 .claude/gates/phase-04.1.log로 옮겼다(4078bd8). STATE.md 현재 페이즈는 안 건드림. 참고 2건은 반영 선택."
 }

@@ -9,23 +9,25 @@ import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
 import { createProject } from "@/domain/projects";
 
-// createProject가 withTransaction 안에서 allocateDocumentNumber(카운터 행
-// 잠금, tx)를 부르고 그 다음 formatDocumentNumber → loadDocumentNumberFormat
-// → getSettingValue 5회를 **전역 풀**(repositories/settings.ts의 db, tx
-// 아님)로 호출한다. 풀 커넥션 수(N = pool.options.max)만큼 createProject를
-// 동시에 부르면: 각 호출이 카운터 행 잠금을 잡은 트랜잭션 하나씩을 열어
-// 풀 커넥션을 모두 점유하고, 잠금을 잡은 첫 트랜잭션이 설정값을 읽으려고
-// 풀에서 커넥션을 하나 더 빌리려 하지만 남은 커넥션이 없다 — 애플리케이션
+// 과거 버그: createProject의 트랜잭션이 카운터 행 잠금을 쥔 채로
+// formatDocumentNumber → loadDocumentNumberFormat → getSettingValue를
+// **전역 풀**(repositories/settings.ts의 db, tx 아님)로 호출했다. 풀
+// 커넥션 수(N = pool.options.max)만큼 createProject를 동시에 부르면:
+// 각 호출이 카운터 행 잠금을 잡은 트랜잭션 하나씩을 열어 풀 커넥션을
+// 모두 점유하고, 잠금을 잡은 첫 트랜잭션이 설정값을 읽으려고 풀에서
+// 커넥션을 하나 더 빌리려 하지만 남은 커넥션이 없다 — 애플리케이션
 // 레벨 교착으로 영원히 멈춘다(Postgres는 이 교착을 볼 수 없다, 잠금은
 // 커넥션 안에서 걸렸지 커넥션 자체를 기다리는 게 아니라서).
 //
-// 타이밍에 기대는 "N개 동시에 쏘고 기대하기"는 이 프로젝트에서 금지 —
-// 대신 별도 pg Client로 카운터 행을 직접 잠가 두고, pg_stat_activity로
-// 풀의 모든 커넥션이 실제로 그 잠금 대기 상태에 들어갈 때까지 기다린 뒤
-// (=결정적으로 교착 조건을 만든 뒤) 잠금을 풀어 검증한다.
-describe("createProject 동시 호출 — 풀 소진 애플리케이션 교착 (가설 재현)", () => {
+// 이 테스트는 그 회귀를 막는 가드다. 타이밍에 기대는 "N개 동시에 쏘고
+// 기대하기"는 이 프로젝트에서 금지 — 대신 별도 pg Client(풀 밖 커넥션)
+// 로 카운터 행을 직접 잠가 두고, pg_stat_activity로 풀의 모든 커넥션이
+// (다른 잠금이 아니라) 정확히 이 lockClient에 의해 차단된 상태에
+// 들어갈 때까지 기다린 뒤(=결정적으로 교착 조건을 만든 뒤) 잠금을 풀어
+// 검증한다.
+describe("createProject 동시 호출 — 풀 소진 애플리케이션 교착 회귀 가드", () => {
   it(
-    "풀 크기만큼 동시에 createProject를 부르면 모두 제한 시간 안에 서로 다른 번호로 끝난다",
+    "카운터 행 잠금을 쥔 외부 커넥션이 풀 전체를 막아도, 잠금 해제 후 모두 제한 시간 안에 서로 다른 번호로 끝난다",
     async () => {
       const poolMax = pool.options.max ?? 0;
       expect(poolMax).toBeGreaterThanOrEqual(2);
@@ -60,14 +62,22 @@ describe("createProject 동시 호출 — 풀 소진 애플리케이션 교착 (
       const lockClient = new Client({ connectionString: process.env.DATABASE_URL });
       await lockClient.connect();
 
+      let calls: ReturnType<typeof createProject>[] = [];
+      let txOpen = false;
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
       try {
         await lockClient.query("BEGIN");
+        txOpen = true;
+        const { rows: pidRows } = await lockClient.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+        const lockPid = pidRows[0]?.pid;
+        if (lockPid === undefined) throw new Error("lockClient의 pg_backend_pid()를 읽지 못했다");
         await lockClient.query(
           `SELECT value FROM document_counters WHERE counter_key = $1 AND period = $2 FOR UPDATE`,
           ["project", period],
         );
 
-        const calls = Array.from({ length: poolMax }, (_, i) =>
+        calls = Array.from({ length: poolMax }, (_, i) =>
           createProject(SYSTEM_VIEWER, {
             clientId: client.id,
             teamId: team.id,
@@ -76,16 +86,25 @@ describe("createProject 동시 호출 — 풀 소진 애플리케이션 교착 (
           }),
         );
 
-        // 풀의 모든 커넥션이 위 카운터 행 잠금을 기다릴 때까지 폴링한다
-        // (bounded) — 도달하지 못하면 교착 조건 자체를 못 만든 것이니
-        // 명확한 이유로 실패시킨다.
-        const maxAttempts = 100;
+        // 풀의 모든 커넥션이 정확히 이 lockClient(lockPid)에 의해 차단된
+        // 상태가 될 때까지 폴링한다(bounded, 약 4초) — 도달하지 못하면
+        // 교착 조건 자체를 못 만든 것이니 명확한 이유로 실패시킨다.
+        const maxAttempts = 40;
         const intervalMs = 100;
         let waitingCount = 0;
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          // 행 잠금 대기열은 FIFO라 pg_blocking_pids()는 대기열에서 바로
+          // 앞선 세션만 돌려준다(2번째 이후 대기자는 lockPid가 아니라
+          // 그 앞의 대기자를 가리킨다) — lockPid까지 재귀로 따라가야
+          // "이 lockClient 때문에 막힌" 커넥션을 빠짐없이 센다.
           const { rows } = await lockClient.query<{ count: string }>(
-            `SELECT count(*)::text AS count FROM pg_stat_activity
-             WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()`,
+            `WITH RECURSIVE blocked_by(pid, blocker) AS (
+               SELECT pid, unnest(pg_blocking_pids(pid)) FROM pg_stat_activity WHERE pid <> pg_backend_pid()
+               UNION
+               SELECT b.pid, unnest(pg_blocking_pids(b.blocker)) FROM blocked_by b
+             )
+             SELECT count(DISTINCT pid)::text AS count FROM blocked_by WHERE blocker = $1`,
+            [lockPid],
           );
           waitingCount = Number(rows[0]?.count ?? 0);
           if (waitingCount >= poolMax) break;
@@ -98,20 +117,29 @@ describe("createProject 동시 호출 — 풀 소진 애플리케이션 교착 (
 
         // 이제 풀의 모든 커넥션이 잠금 대기 중 — 잠금을 풀어야만 진행된다.
         await lockClient.query("COMMIT");
+        txOpen = false;
 
-        const timeout = new Promise<never>((_, reject) =>
-          setTimeout(
+        const timeout = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(
             () => reject(new Error(`createProject ${poolMax}건 동시 호출이 10초 안에 끝나지 않았다(교착)`)),
             10_000,
-          ),
-        );
+          );
+        });
 
         const results = await Promise.race([Promise.all(calls), timeout]);
+        clearTimeout(timeoutId);
 
         const numbers = results.map((p) => p.number);
         expect(new Set(numbers).size).toBe(poolMax);
       } finally {
+        clearTimeout(timeoutId);
+        if (txOpen) {
+          await lockClient.query("ROLLBACK").catch(() => {});
+        }
         await lockClient.end();
+        // 타임아웃으로 레이스에서 패배했더라도 calls의 프라미스들이
+        // 처리되지 않은 채 남지 않도록 정리한다(unhandled rejection 방지).
+        await Promise.allSettled(calls);
       }
     },
     30_000,

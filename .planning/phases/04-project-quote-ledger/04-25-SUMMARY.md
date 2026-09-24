@@ -214,6 +214,15 @@ frontmatter `key-decisions` 참고.
 ## Self-Check: PASSED
 - 수정 파일 8개 존재 확인, 커밋 `b2a14e5`·`0530be3`·`ae60c4c`·`6e3d4b7` 존재 확인, `c5cc502..HEAD` 4 커밋
 
+## 독립 DOM 감사 (S14 backstop)
+별도 Sonnet 에이전트가 CI=true 프로덕션 빌드에서 DOM 실측.
+- A(40자 설명: 거래처 힌트 1280·1024 한 줄 getClientRects=1, 375 줄바꿈·말줄임 없음; 코드표 설명 칸 keep-all, 1280 scrollWidth 640=clientWidth, 1024 508=508, 375 두 줄 줄바꿈) PASS
+- B(375 설명 한 번·이름 아래 전체 폭, 값·설명·정렬·동작 머리 숨김, 가로 스크롤 0: scrollWidth 375=clientWidth 375, 표 347px) PASS
+- C(1280 설명 0·1·전부 7개에서 이름·상태 열 x·폭 변화 0px, 기준 ≤2px) PASS
+- D(설명 없는 값 선택 시 힌트 요소 0개) PASS
+- 참고: 쓰기 권한 사용자는 설명이 인라인 입력칸이라 keep-all 판정은 읽기 전용 역할로 쟀다(page.tsx:150-153)
+- 전체 게이트 CI=true pnpm test 통과(unit 819/819, integration 1058/1058, e2e 192/192)
+
 ---
 *Phase: 04-project-quote-ledger*
 *Completed: 2026-09-24*

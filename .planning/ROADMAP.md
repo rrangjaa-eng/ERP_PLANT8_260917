@@ -340,22 +340,28 @@ Plans:
 
 Plans:
 
+*(웨이브마다 플랜 하나 — 모든 플랜이 같은 로컬 DB `erp`/`erp_test`에서 통합·E2E를 돌려 한 줄 체인으로 직렬 실행한다)*
+
 Wave 1
 - [ ] 04.1-01-PLAN.md — 결재 엔진 트레이서: 표 3개 + leave_requests, nextStep·walkRoute, 연차 제출→승인(통합), 설정 키 22개, [BLOCKING] 마이그레이션 + journal 가드, 결재선 가장자리 규칙
 
 Wave 2 *(blocked on Wave 1)*
-- [ ] 04.1-02-PLAN.md — 화면 트레이서(/leave/new → /approvals 승인 E2E) + 반려·회수·다시 신청 + 동시 조작 두 순서(EXP-03·EXP-05)
 - [ ] 04.1-03-PLAN.md — 연차 잔고: 부여(grant) 모델, 입사 첫해 월차 D-96, 퇴직 D-97, 조정, [BLOCKING] 마이그레이션(LEAV-01)
-- [ ] 04.1-04-PLAN.md — 결재선 설정 화면: 이름 옵션·동적 옵션·부서 없음 경고·연차 일수 1월 1일 규칙(ADMN-04)
 
 Wave 3 *(blocked on Wave 2)*
-- [ ] 04.1-05-PLAN.md — 결재 화면 완성: 폰 결재 시트 E2E, 문서 화면 행동 줄, 반려/회수 확인, ui/approval-route, SYSTEM.md A3(EXP-05)
+- [ ] 04.1-02-PLAN.md — 화면 트레이서(/leave/new → /approvals 승인 E2E) + 반려·회수·다시 신청 + 동시 조작 두 순서(EXP-03·EXP-05)
 
 Wave 4 *(blocked on Wave 3)*
-- [ ] 04.1-06-PLAN.md — 연차 화면 완성: 계정 그룹 「연차」(A1), /leave 목록(A4), 완성형 신청 폼, 관리자 사람 상세 연차 섹션 · 등록 입사일
+- [ ] 04.1-04-PLAN.md — 결재선 설정 화면: 이름 옵션·동적 옵션·부서 없음 경고·연차 일수 1월 1일 규칙(ADMN-04 결재 부분)
 
 Wave 5 *(blocked on Wave 4)*
-- [ ] 04.1-07-PLAN.md — 병합 직전: origin/main 병합 → 04.1 마이그레이션 재생성 → 전체 게이트 CI=true
+- [ ] 04.1-05-PLAN.md — 결재 화면 완성: 폰 결재 시트 E2E, 문서 화면 행동 줄, 반려/회수 확인, ui/approval-route, SYSTEM.md A3(EXP-05)
+
+Wave 6 *(blocked on Wave 5)*
+- [ ] 04.1-06-PLAN.md — 연차 화면 완성: 계정 그룹 「연차」(A1), /leave 목록(A4), 완성형 신청 폼, 관리자 사람 상세 연차 섹션 · 등록 입사일
+
+Wave 7 *(blocked on Wave 6)*
+- [ ] 04.1-07-PLAN.md — 병합 직전: origin/main 병합 → 04.1 마이그레이션 재생성(예약 0017~0020, 결과 tag 보고) → 전체 게이트 CI=true
 
 논의 결과는 `.planning/phases/05-expense-approval-leave/05-CONTEXT.md`의 결재·연차 결정(입력 §1~§5, D-96·D-97, Claude's Discretion의 결재 표 세부)을 그대로 쓴다. 계획 단계에서 정할 것: REQUIREMENTS 추적표의 다섯 항목을 Phase 04.1로 옮기는 일, Phase 4가 마이그레이션 0011~0016을 쓸 예정이라 이 페이즈 마이그레이션 번호와 `_journal.json` 충돌을 푸는 방식.
 

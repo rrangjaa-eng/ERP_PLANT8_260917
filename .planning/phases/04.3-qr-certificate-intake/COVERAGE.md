@@ -12,7 +12,7 @@
 | objects.insert (multipart upload) | OPT-OUT | not needed — 서명 PNG는 메타데이터 없이 본문만 올리므로 simple upload 하나로 충분하다 |
 | objects.insert (resumable upload) | OPT-OUT | not needed — 서명 PNG는 수십 KB이고 서버 액션 본문 한도(256KB) 안이라 재개형 업로드가 필요 없다 |
 | objects.get (메타데이터만, `alt=json`) | OPT-OUT | not needed — 객체 키와 존재 여부는 DB(`cert_submissions.signature_key`)가 정본이다 |
-| objects.list | OPT-OUT | not needed — 파기는 DB에 적힌 키만 지운다. 버킷을 훑어 고아 객체를 찾는 작업은 범위 밖이다(실패한 트랜잭션의 고아는 그 자리에서 지운다) |
+| objects.list | OPT-OUT | not needed — DB가 모르는 객체가 생기지 않게 막으므로 버킷을 훑지 않는다: 업로드 **전에** 의도 행(`cert_signature_uploads`, 규약 C3 · 04.3-02)을 커밋하고 제출 트랜잭션이 그 행을 지운다. 업로드 직후 프로세스 종료 · 보상 삭제 실패로 남은 객체는 24시간 넘은 의도 행의 키로 파기 Job이 `objects.delete`한다(04.3-12). 파기는 확인증의 `signature_key`와 의도 행의 키만 지운다 |
 | objects.patch / objects.update | OPT-OUT | not needed — 서명 이미지는 고칠 수 없다(D-1106). 메타데이터를 바꿀 일이 없다 |
 | objects.copy / objects.rewrite | OPT-OUT | not needed — 객체를 옮기거나 복제하지 않는다. 키 형식이 바뀌어도 새로 올린다 |
 | objects.compose | OPT-OUT | not needed — 조각 업로드를 쓰지 않는다 |
@@ -43,7 +43,7 @@
 | projects.locations.keyRings.cryptoKeys.encrypt | OPT-OUT | not needed at runtime — 데이터 키 감싸기는 키를 만들 때 한 번 `scripts/deploy.sh`가 `gcloud kms encrypt`로 한다. 런타임 서비스 계정에는 복호화 역할만 준다 |
 | projects.locations.keyRings.create / cryptoKeys.create | OPT-OUT | not needed at runtime — `scripts/deploy.sh`가 `gcloud kms keyrings create` / `keys create`로 만든다 |
 | cryptoKeys.get / cryptoKeys.list / keyRings.get / keyRings.list | OPT-OUT | not needed — 키 이름은 환경 변수 `APP_DATA_KEY_KMS_KEY` 하나로 받는다 |
-| cryptoKeys.patch / cryptoKeys.updatePrimaryVersion | OPT-OUT | not needed — KMS 키 버전 회전은 GCP가 관리하고, 데이터 키 회전은 기존 `v1:`→`v2:` 절차(`pnpm db:rotate-key`)가 맡는다 |
+| cryptoKeys.patch / cryptoKeys.updatePrimaryVersion | OPT-OUT | not needed — KMS 키 버전 회전은 GCP가 관리하고, 데이터 키 회전은 `pnpm db:rotate-key`가 맡는다 — 04.3-08이 KMS 감싼 키 경로와 `rrn_encrypted` · `token_encrypted` 대상을 더한다 |
 | cryptoKeyVersions.* (create / destroy / restore / get / list / import) | OPT-OUT | not needed — 키 버전 수명 주기는 앱 밖의 운영 작업이다 |
 | cryptoKeys.getIamPolicy / setIamPolicy / testIamPermissions | OPT-OUT | not needed at runtime — `roles/cloudkms.cryptoKeyDecrypter` 바인딩은 `scripts/deploy.sh`가 건다 |
 | cryptoKeys.rawEncrypt / rawDecrypt | OPT-OUT | not needed — 대칭 `ENCRYPT_DECRYPT` 키의 표준 encrypt/decrypt만 쓴다 |

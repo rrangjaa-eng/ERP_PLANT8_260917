@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-24T10:36:11.631Z",
+  "timestamp": "2026-09-24T12:18:17.899Z",
   "phase": "04.1",
   "phase_name": "approvals-leave",
   "phase_dir": ".planning/phases/04.1-approvals-leave",
@@ -9,91 +9,33 @@
   "total_tasks": 0,
   "status": "paused",
   "completed_tasks": [
-    {
-      "id": 1,
-      "name": "research + validation",
-      "status": "done",
-      "commit": "b8396a9"
-    },
-    {
-      "id": 2,
-      "name": "UI-SPEC (/gsd-ui-phase)",
-      "status": "done",
-      "commit": "58e8ffd"
-    },
-    {
-      "id": 3,
-      "name": "patterns",
-      "status": "done",
-      "commit": "3ac48c1"
-    },
-    {
-      "id": 4,
-      "name": "7 plans + traceability move + 2 checker rounds",
-      "status": "done",
-      "commit": "eefaa57"
-    },
-    {
-      "id": 5,
-      "name": "/plan-ceo-review report",
-      "status": "done",
-      "commit": "486b356"
-    }
+    { "id": 1, "name": "research + validation", "status": "done", "commit": "b8396a9" },
+    { "id": 2, "name": "UI-SPEC (/gsd-ui-phase)", "status": "done", "commit": "58e8ffd" },
+    { "id": 3, "name": "patterns", "status": "done", "commit": "3ac48c1" },
+    { "id": 4, "name": "7 plans + traceability move + 2 checker rounds", "status": "done", "commit": "eefaa57" },
+    { "id": 5, "name": "/plan-ceo-review report", "status": "done", "commit": "486b356" },
+    { "id": 6, "name": "CEO review applied via gsd-planner revision", "status": "done", "commit": "60593aa" },
+    { "id": 7, "name": "Codex cross-AI review (/gsd-review --codex, REVIEWS.md)", "status": "done", "commit": "1b86370" },
+    { "id": 8, "name": "checker + Codex findings, D-96 service year, new migration rule; checker iteration 2 passed (0 blockers, 0 warnings, 1 info), requirements 5/5", "status": "done", "commit": "9097173" }
   ],
   "remaining_tasks": [
-    {
-      "id": 6,
-      "name": "apply CEO review via /gsd-plan-phase 04.1 revision + checker + Codex",
-      "status": "not_started"
-    },
-    {
-      "id": 7,
-      "name": "/plan-eng-review (new session)",
-      "status": "not_started"
-    },
-    {
-      "id": 8,
-      "name": "/plan-design-review + Codex design review (new session)",
-      "status": "not_started"
-    },
-    {
-      "id": 9,
-      "name": "merge origin/main, update PR #60, ask execute card",
-      "status": "not_started"
-    }
+    { "id": 9, "name": "/plan-eng-review + Codex adversarial review (new session)", "status": "not_started" },
+    { "id": 10, "name": "apply eng review (next session)", "status": "not_started" },
+    { "id": 11, "name": "/plan-design-review + Codex design review (new session), then apply", "status": "not_started" },
+    { "id": 12, "name": "merge origin/main, /review, PR #60 ready, ask execute card", "status": "not_started" }
   ],
-  "blockers": [
-    {
-      "description": "codex not_authed in the 10:36 session; coordinator runs Codex in an authenticated session",
-      "type": "external",
-      "workaround": "do not substitute another reviewer; report 미실행"
-    }
-  ],
+  "blockers": [],
   "async_jobs": [],
   "human_actions_pending": [],
   "decisions": [
-    {
-      "decision": "STATE.md untouched",
-      "rationale": "Phase 4 session owns current phase",
-      "phase": "04.1"
-    },
-    {
-      "decision": "serial plan chain 01>03>02>04>05>06>07",
-      "rationale": "shared local DB",
-      "phase": "04.1"
-    },
-    {
-      "decision": "migrations reserved 0017-0020, regenerate before merge in 04.1-07 T1",
-      "rationale": "drizzle skips older when",
-      "phase": "04.1"
-    },
-    {
-      "decision": "CEO-5 one approval per person per round (user card A, 10:39)",
-      "rationale": "user choice",
-      "phase": "04.1"
-    }
+    { "decision": "STATE.md untouched (13b/13c skipped)", "rationale": "Phase 4 session owns current phase", "phase": "04.1" },
+    { "decision": "serial plan chain 01>03>02>04>05>06>07", "rationale": "shared local DB", "phase": "04.1" },
+    { "decision": "no reserved migration numbers; use db:generate numbers on the branch, regenerate after merging origin/main (04.1-07 T1)", "rationale": "coordinator rule 11:52; guard test enforces contiguity", "phase": "04.1" },
+    { "decision": "CEO-5 one approval per person per round (user card A, 10:39)", "rationale": "user choice", "phase": "04.1" },
+    { "decision": "D-96 first-year monthly leave counted from hire date, 1/completed month, max 11, not cut at Dec 31", "rationale": "user 11:42", "phase": "04.1" },
+    { "decision": "monthly and annual balances never shown as one combined total", "rationale": "user 11:43", "phase": "04.1" }
   ],
   "uncommitted_files": [],
-  "next_action": "Invoke /gsd-plan-phase 04.1 and revise existing plans with docs/designs/plant8-erp-phase04.1-ceo-review-260924.md, then gsd-plan-checker",
-  "context_notes": "Branch claude/phase-04.1-plan-1iqtwe, draft PR #60. Session boundary after each gate review (D-01). Replies in Korean."
+  "next_action": "New session: /plan-eng-review with Codex adversarial review (verify codex exec runs), report docs/designs/plant8-erp-phase04.1-eng-review-260924.md, commit, push, /gsd-pause-work",
+  "context_notes": "Branch claude/phase-04.1-plan-1iqtwe, draft PR #60. Session boundary after each gate review (D-01). Replies in Korean. Checker info: 04.1-01 provides text (line ~148) and T-04.1-05 describe journal guard with idx/tag/when only; add snapshot/no-orphan conditions during eng-review apply."
 }

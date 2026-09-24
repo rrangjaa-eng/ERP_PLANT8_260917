@@ -41,9 +41,11 @@ async function resetTestSchema(pool: Pool): Promise<void> {
   if (!dbName.endsWith("_test")) {
     throw new Error(`E2E는 _test DB에서만 돈다(지금: ${dbName}) — 비우기를 거부한다.`);
   }
-  await pool.query("DROP SCHEMA IF EXISTS drizzle CASCADE");
-  await pool.query("DROP SCHEMA public CASCADE");
-  await pool.query("CREATE SCHEMA public");
+  // 문장 여러 개를 한 번에 보내면 한 트랜잭션으로 돈다 — 중간에 끊겨도
+  // public 스키마가 없는 상태로 남지 않는다.
+  await pool.query(
+    "DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public",
+  );
 }
 
 // Next dev(Turbopack)는 라우트를 첫 요청 시점에 컴파일한다 — 그 컴파일 지연 중

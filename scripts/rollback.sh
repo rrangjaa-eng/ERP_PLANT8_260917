@@ -129,7 +129,8 @@ fi
 FLOOR_FILE=""
 if [ -d "$ROOT_DIR/db/migrations" ]; then
   FLOOR_FILE="$( (grep -l '^-- rollback-floor:' "$ROOT_DIR"/db/migrations/*.sql 2>/dev/null || true) \
-    | xargs -n1 basename 2>/dev/null | sort | tail -n1)"
+    | sort | tail -n1)"
+  FLOOR_FILE="${FLOOR_FILE##*/}"
 fi
 
 if [ -n "$FLOOR_FILE" ]; then

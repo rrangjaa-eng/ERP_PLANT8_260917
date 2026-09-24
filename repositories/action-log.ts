@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, isNull, lte, ne } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, type DbOrTx } from "@/db/client";
 import { actionLog } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
@@ -17,6 +17,9 @@ export type ActionLogFilterInput = {
 
 // append-only — 이 함수 외에 action_log를 겨냥한 INSERT는 이 리포에 없다. UPDATE/
 // DELETE 문은 존재하지 않는다(ADMN-12·OPS-05).
+//
+// Phase 4(04-32, ENG-D3 ①): 선택 tx — 잠근 트랜잭션 안에서 로그를 남기면
+// 그 tx로 쓴다(풀 연결을 하나 더 잡지 않는다). 없으면 지금처럼 풀 db.
 export async function appendActionLog(
   viewer: Viewer,
   entry: {
@@ -28,9 +31,10 @@ export async function appendActionLog(
     documentId: string | null;
     detail: Record<string, unknown>;
   },
+  tx?: DbOrTx,
 ): Promise<ActionLogRow> {
   void viewer;
-  const [row] = await db.insert(actionLog).values(entry).returning();
+  const [row] = await (tx ?? db).insert(actionLog).values(entry).returning();
   if (!row) throw new Error("action_log insert가 행을 반환하지 않았습니다.");
   return row;
 }

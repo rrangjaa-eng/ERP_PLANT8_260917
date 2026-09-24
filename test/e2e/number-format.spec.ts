@@ -336,8 +336,7 @@ test.describe("숫자 서식(D-95, 04-09)", () => {
     // paste 리스너를 겨눈다, 이건 <input> 리스너가 없어 값+input 이벤트로 겨눈다).
     await amountInput.click();
     await amountInput.evaluate((el: HTMLInputElement, text: string) => {
-      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!;
-      setter.call(el, text);
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")!.set!.call(el, text);
       el.dispatchEvent(new Event("input", { bubbles: true }));
     }, "1,234.56");
 

@@ -89,7 +89,7 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await page.keyboard.type("800000");
     await page.keyboard.press("Enter");
 
-    // 저장 — ⌘S/Ctrl+S(그리드에 포커스가 있는 채로).
+    // 저장 — Ctrl+S(그리드에 포커스가 있는 채로).
     await gridcell(7).focus();
     await page.keyboard.press("Control+s");
 
@@ -413,5 +413,135 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await expect(page.getByText("1,000")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "줄 추가", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /첫 줄 만들기/ })).toHaveCount(0);
+  });
+});
+
+// 04-28 — 저장된 줄을 도메인 함수로 미리 만든 프로젝트를 기획 PM으로 연다.
+async function openProjectWithSavedLines(
+  page: Page,
+  rows: { subcategory: string; itemName: string; amount: number; execution?: number }[],
+): Promise<{ projectId: string; revisionId: string; email: string; password: string }> {
+  const stamp = `${Date.now()}-${randomUUID().slice(0, 6)}`;
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E단축키-${stamp}`, normalizedName: `e2e단축키-${stamp}` });
+  const email = `e2e-shortcut-${randomUUID()}@example.test`;
+  const { userId: pmUserId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E Shortcut", roleId: DEFAULT_ROLE_ID });
+  const [team] = await db.select().from(teams).limit(1);
+  if (!team) throw new Error("시드된 팀이 없습니다");
+  const projectName = `E2E단축키프로젝트-${stamp}`;
+  const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId, name: projectName });
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+  if (!revision) throw new Error("1차 차수가 없습니다");
+  if (rows.length > 0) {
+    await saveQuoteLines(
+      SYSTEM_VIEWER,
+      revision.id,
+      rows.map((row) => ({
+        subcategory: row.subcategory,
+        itemName: row.itemName,
+        unitPrice: { currency: "KRW" as const, amount: row.amount, fxRate: 1 },
+        execution: { currency: "KRW" as const, amount: row.execution ?? 0, fxRate: 1 },
+      })),
+    );
+  }
+
+  await page.goto("/login");
+  await page.getByLabel("이메일").fill(email);
+  await page.getByLabel("비밀번호").fill(tempPassword);
+  await page.getByRole("button", { name: "로그인" }).click();
+  await expect(page).toHaveURL(/\/account$/);
+  await page.goto(`/projects/${project.id}`);
+  await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+  return { projectId: project.id, revisionId: revision.id, email, password: tempPassword };
+}
+
+function quoteTable(page: Page) {
+  return page.locator("table", { has: page.locator("caption", { hasText: /^견적 줄$/ }) });
+}
+
+function quoteDataRows(page: Page) {
+  return quoteTable(page).locator('tbody tr:has(td[role="gridcell"])');
+}
+
+function quoteCell(page: Page, rowIndex: number, colIndex: number) {
+  return quoteDataRows(page).nth(rowIndex).getByRole("gridcell").nth(colIndex);
+}
+
+function isServerAction(request: { method: () => string; headers: () => Record<string, string> }) {
+  return request.method() === "POST" && request.headers()["next-action"] !== undefined;
+}
+
+async function editTextCell(page: Page, rowIndex: number, colIndex: number, text: string) {
+  await quoteCell(page, rowIndex, colIndex).focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Control+a");
+  await page.keyboard.type(text);
+  await page.keyboard.press("Enter");
+}
+
+test.describe("견적 줄 표 — Ctrl 전용 단축키·힌트 줄·이중 저장 없음(04-28 Task 1)", () => {
+  test("(a)(b) Meta+s는 저장하지 않고 Control+s는 저장한다", async ({ page }) => {
+    await openProjectWithSavedLines(page, [{ subcategory: "sub-a", itemName: "메타 키 확인 줄", amount: 1000000 }]);
+    let actionRequests = 0;
+    page.on("request", (request) => {
+      if (isServerAction(request)) actionRequests++;
+    });
+
+    await editTextCell(page, 0, 2, "메타 키로는 저장 안 됨");
+    await quoteCell(page, 0, 2).focus();
+
+    // (a) Mac 메타 키 조합 — 아무 일도 일어나지 않는다(D-94 「동작도 Ctrl」).
+    await page.keyboard.press("Meta+s");
+    await page.waitForTimeout(500); // 부정 단언 — 요청이 나가지 않음을 잠시 지켜본다.
+    expect(actionRequests).toBe(0);
+    await expect(page.getByText(/저장됨/)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+
+    // (b) Ctrl+S — 저장된다.
+    const saved = page.waitForResponse((response) => isServerAction(response.request()));
+    await page.keyboard.press("Control+s");
+    await saved;
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+    expect(actionRequests).toBe(1);
+  });
+
+  test("(c) 힌트 줄은 지금 되는 키 여섯 항목의 라벨 kbd 묶음이고 저장 항목이 없다", async ({ page }) => {
+    await openProjectWithSavedLines(page, [{ subcategory: "sub-a", itemName: "힌트 줄 확인", amount: 1000 }]);
+
+    const hintRow = page.locator("p", { hasText: "줄 복제" });
+    await expect(hintRow).toHaveCount(1);
+    await expect(hintRow).toHaveText(
+      "이동 ↑↓←→ · 붙여넣기 Ctrl+V · 취소 Esc · 새 줄 Ctrl+Enter · 줄 이동 Alt+↑↓ · 줄 복제 Ctrl+D",
+    );
+    await expect(hintRow.locator("kbd")).toHaveText(["↑↓←→", "Ctrl+V", "Esc", "Ctrl+Enter", "Alt+↑↓", "Ctrl+D"]);
+    await expect(hintRow).not.toContainText("저장");
+
+    // 1차 버튼 kbd가 저장 단축키를 말한다(힌트 줄과 두 자리에 쓰지 않는다).
+    await expect(page.getByRole("button", { name: /일괄 저장/ }).locator("kbd")).toHaveText("Ctrl+S");
+  });
+
+  test("(d) 새 줄 + Control+s 두 번 빠르게 → 새로 고친 뒤 줄 수가 정확히 +1", async ({ page }) => {
+    await openProjectWithSavedLines(page, [{ subcategory: "sub-a", itemName: "기존 줄", amount: 1000 }]);
+    await expect(quoteDataRows(page)).toHaveCount(1);
+    let actionRequests = 0;
+    page.on("request", (request) => {
+      if (isServerAction(request)) actionRequests++;
+    });
+
+    await quoteCell(page, 0, 2).focus();
+    await page.keyboard.press("Control+Enter");
+    await expect(quoteDataRows(page)).toHaveCount(2);
+    await editTextCell(page, 1, 2, "두 번 눌러도 한 줄");
+
+    await quoteCell(page, 1, 2).focus();
+    const saved = page.waitForResponse((response) => isServerAction(response.request()));
+    await page.keyboard.press("Control+s");
+    await page.keyboard.press("Control+s");
+    await saved;
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+    expect(actionRequests).toBe(1);
+
+    await page.reload();
+    await expect(quoteDataRows(page).first()).toBeVisible();
+    await expect(quoteDataRows(page)).toHaveCount(2);
   });
 });

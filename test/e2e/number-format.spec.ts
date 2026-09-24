@@ -156,6 +156,36 @@ test.describe("숫자 서식(D-95, 04-09)", () => {
     await expect(fxInput).toHaveValue("1,318.1818");
   });
 
+  // 리뷰 후속 — 설정 화면 number 칸도 parseNumberInput(...) ?? 0이 NaN을
+  // 그대로 통과시켜 '-'만 남기고 블러하면 서버로 NaN이 나갔다(서버 zod가
+  // 최종적으로 막긴 하지만 의미 없는 요청이 나간다). 고친 뒤에는 이
+  // 블러가 애초에 서버 액션을 부르지 않는다(이전 값 유지, 회귀 검증은
+  // 요청 여부로 잰다).
+  test("(h) 설정 화면 USD 최근 환율 칸을 지우고 '-'만 남기면 서버 액션을 부르지 않는다", async ({ page }) => {
+    const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto("/admin/settings");
+    const fxInput = page.getByLabel("USD 최근 환율");
+    await fxInput.click();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.press("Delete");
+    await page.keyboard.type("-");
+
+    let actionRequests = 0;
+    page.on("request", (request) => {
+      if (request.method() === "POST" && request.headers()["next-action"] !== undefined) actionRequests++;
+    });
+    await fxInput.blur();
+    await page.waitForTimeout(500);
+    expect(actionRequests).toBe(0);
+  });
+
   // Task 3 ⑤(c) — 수량 칸(C-02).
   test("(c) 수량 셀에 1200을 치면 1,200이고 저장·새로고침 뒤에도 1,200이다", async ({ page }) => {
     await loginAndOpenProject(page);

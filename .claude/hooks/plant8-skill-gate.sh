@@ -61,8 +61,21 @@ deny() { echo "차단됨(스킬 관문): $1" >&2; exit 2; }
 
 # 게이트 스킬은 페이즈별로 리포 안(.claude/gates/phase-NN.log)에 남겨 세션을 넘어 확인한다.
 project="${CLAUDE_PROJECT_DIR:-.}"
-phase="$(sed -n 's/^current_phase: *"\{0,1\}\([0-9.]*\)"\{0,1\}$/\1/p' "$project/.planning/STATE.md" 2>/dev/null | head -n1)"
-phase_pad="$(printf '%02d' "${phase%%.*}" 2>/dev/null || echo "${phase:-00}")"
+# 페이즈: 이 세션에서 부른 GSD 페이즈 스킬의 인자(예: /gsd-execute-phase 04.1)가 우선, 없으면 STATE.md.
+# 병렬 소수점 페이즈(04.1 …)는 STATE의 현재 페이즈(4)를 바꾸지 않으므로 인자로만 알 수 있다.
+session_phase_file="$state_dir/${session}.phase"
+case "$event" in
+  record-skill) invocation="$(printf '%s' "$payload" | jq -r '"\(.tool_input.skill // "") \(.tool_input.args // "")"')" ;;
+  record-prompt) invocation="$(printf '%s' "$payload" | jq -r '.prompt // empty' | head -n1)" ;;
+  *) invocation="" ;;
+esac
+arg_phase="$(printf '%s\n' "$invocation" \
+  | grep -oE '^/?([^:[:space:]]+:)?gsd-([a-z-]+-phase|verify-work|code-review|ui-review|add-tests)[[:space:]]+[0-9]+(\.[0-9]+)*([[:space:]]|$)' \
+  | awk '{print $2}' || true)"
+[ -z "$arg_phase" ] || echo "$arg_phase" > "$session_phase_file"
+phase="$(cat "$session_phase_file" 2>/dev/null || sed -n 's/^current_phase: *"\{0,1\}\([0-9.]*\)"\{0,1\}$/\1/p' "$project/.planning/STATE.md" 2>/dev/null | head -n1)"
+phase_int="${phase%%.*}"
+phase_pad="$(printf '%02d' "$((10#${phase_int:-0}))")${phase#"$phase_int"}"  # 4 → 04, 4.1 · 04.1 → 04.1
 gate_log="$project/.claude/gates/phase-${phase_pad}.log"
 gate_skills="plan-ceo-review|plan-eng-review|plan-design-review|review|qa|cso|design-review|gsd-verify-work|ship"
 phase_has_ui() { ls "$project"/.planning/phases/${phase_pad}-*/*-UI-SPEC.md >/dev/null 2>&1; }

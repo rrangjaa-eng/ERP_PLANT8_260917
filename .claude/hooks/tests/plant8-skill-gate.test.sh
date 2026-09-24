@@ -250,6 +250,90 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# 소수점 페이즈(04.1 …)는 Phase 4 로그와 섞이지 않는다
+# payload: Skill 도구 호출(args 포함)
+payload_skill_args() {
+  jq -nc --arg s "$1" --arg sk "$2" --arg ar "$3" \
+    '{session_id:$s, tool_name:"Skill", tool_input:{skill:$sk, args:$ar}}'
+}
+gate_lines() { cat "$1/.claude/gates/phase-$2.log" 2>/dev/null | awk '{print $1}' | tr '\n' ' '; }
+
+# STATE current_phase가 소수점이면 그 페이즈 로그에 쓴다
+projP1="$(new_project)"
+P1="sid-dec-state-$$"
+printf 'current_phase: 04.1\n' > "$projP1/.planning/STATE.md"
+record_skill "$projP1" "$P1" review
+expect_contains "STATE 04.1: review가 phase-04.1.log에" "$(gate_lines "$projP1" 04.1)" "review"
+expect_not_contains "STATE 04.1: phase-04.log에는 없음" "$(gate_lines "$projP1" 04)" "review"
+
+# STATE는 4(Phase 4 외부 세션)인데 이 세션은 GSD 스킬 인자로 04.3을 다룬다
+projP2="$(new_project)"
+P2="sid-dec-args-$$"
+hook plant8-skill-gate.sh record-skill "$(payload_skill_args "$P2" gsd-execute-phase 04.3)" "$projP2"
+record_skill "$projP2" "$P2" cso
+expect_contains "args 04.3: cso가 phase-04.3.log에" "$(gate_lines "$projP2" 04.3)" "cso"
+expect_not_contains "args 04.3: phase-04.log에는 없음" "$(gate_lines "$projP2" 04)" "cso"
+
+# 사용자가 친 슬래시 명령의 페이즈 인자도 같다
+projP3="$(new_project)"
+P3="sid-dec-prompt-$$"
+hook plant8-skill-gate.sh record-prompt "$(jq -nc --arg s "$P3" '{session_id:$s, prompt:"/gsd-plan-phase 04.2 --skip-research"}')" "$projP3"
+record_skill "$projP3" "$P3" plan-ceo-review
+expect_contains "prompt 04.2: plan-ceo-review가 phase-04.2.log에" "$(gate_lines "$projP3" 04.2)" "plan-ceo-review"
+
+# Phase 4의 게이트 기록은 04.1 게이트를 통과시키지 않는다
+projP4="$(new_project)"
+P4="sid-dec-gate-$$"
+mkdir -p "$projP4/.planning/phases/04.1-test"
+write_gate_line "$projP4" plan-ceo-review "old-phase4"
+write_gate_line "$projP4" plan-eng-review "old-phase4"
+write_gate_line "$projP4" review "old-phase4"
+write_gate_line "$projP4" qa "old-phase4"
+hook plant8-skill-gate.sh record-skill "$(payload_skill_args "$P4" gsd-execute-phase 04.1)" "$projP4"
+hook plant8-skill-gate.sh agent "$(payload_agent "$P4" gsd-executor)" "$projP4"
+expect_rc "04.1 executor: Phase 4 게이트 기록으로 통과 안 함 -> exit 2" 2 "$HOOK_RC"
+expect_contains "04.1 executor: 메시지에 Phase 04.1" "$HOOK_STDERR" "Phase 04.1"
+hook plant8-skill-gate.sh merge "$(jq -nc --arg s "$P4" '{session_id:$s}')" "$projP4"
+expect_rc "04.1 merge: Phase 4 review·qa로 통과 안 함 -> exit 2" 2 "$HOOK_RC"
+record_skill "$projP4" "$P4" plan-ceo-review
+record_skill "$projP4" "$P4" plan-eng-review
+hook plant8-skill-gate.sh agent "$(payload_agent "$P4" gsd-executor)" "$projP4"
+expect_rc "04.1 executor: 04.1 게이트 기록 뒤 -> exit 0" 0 "$HOOK_RC"
+
+# 04.1의 UI 판정은 04.1 폴더만 본다(Phase 4 UI-SPEC은 무관)
+projP5="$(new_project)"
+P5="sid-dec-ui-$$"
+mkdir -p "$projP5/.planning/phases/04.1-test"
+: > "$projP5/.planning/phases/04-test/04-UI-SPEC.md"
+hook plant8-skill-gate.sh record-skill "$(payload_skill_args "$P5" gsd-execute-phase 04.1)" "$projP5"
+record_skill "$projP5" "$P5" plan-ceo-review
+record_skill "$projP5" "$P5" plan-eng-review
+hook plant8-skill-gate.sh agent "$(payload_agent "$P5" gsd-executor)" "$projP5"
+expect_rc "04.1 executor: UI-SPEC 없는 04.1은 디자인 리뷰 불요 -> exit 0" 0 "$HOOK_RC"
+: > "$projP5/.planning/phases/04.1-test/04.1-UI-SPEC.md"
+P5b="sid-dec-ui-b-$$"
+hook plant8-skill-gate.sh record-skill "$(payload_skill_args "$P5b" gsd-execute-phase 04.1)" "$projP5"
+hook plant8-skill-gate.sh agent "$(payload_agent "$P5b" gsd-executor)" "$projP5"
+expect_rc "04.1 executor: 04.1 UI-SPEC 있으면 디자인 리뷰 필요 -> exit 2" 2 "$HOOK_RC"
+expect_contains "04.1 executor: plan-design-review 요구" "$HOOK_STDERR" "/plan-design-review"
+
+# Phase 4 동작은 그대로: 인자 4 또는 인자 없음 → phase-04.log
+projP6="$(new_project)"
+P6="sid-dec-p4-$$"
+hook plant8-skill-gate.sh record-skill "$(payload_skill_args "$P6" gsd-execute-phase 4)" "$projP6"
+record_skill "$projP6" "$P6" review
+record_skill "$projP6" "sid-dec-p4-noarg-$$" qa
+expect_contains "Phase 4: review가 phase-04.log에" "$(gate_lines "$projP6" 04)" "review"
+expect_contains "Phase 4: 인자 없는 세션 qa도 phase-04.log에" "$(gate_lines "$projP6" 04)" "qa"
+
+# 페이즈를 받지 않는 GSD 스킬의 숫자 인자는 페이즈로 보지 않는다
+projP7="$(new_project)"
+P7="sid-dec-quick-$$"
+hook plant8-skill-gate.sh record-skill "$(payload_skill_args "$P7" gsd-quick "3 buttons fix")" "$projP7"
+record_skill "$projP7" "$P7" review
+expect_contains "gsd-quick 3: review는 STATE 페이즈(04)에" "$(gate_lines "$projP7" 04)" "review"
+
+# ---------------------------------------------------------------------------
 # Isolation: real gate logs unchanged
 REAL_GATES_AFTER="$(gates_checksum)"
 if [ "$REAL_GATES_BEFORE" = "$REAL_GATES_AFTER" ]; then

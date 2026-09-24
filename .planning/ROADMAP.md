@@ -378,7 +378,7 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [ ] 04.2-03-PLAN.md — D-712 계정 잠금 행동 로그(실패 기록과 한 트랜잭션) + 잠금 문구가 설정 분(`auth.lockout.window_minutes`)을 읽음, 끌 수 없는 행동 종류 셋 (W3)
-- [ ] 04.2-09-PLAN.md — 알림함 메뉴 항목·목록 다섯 상태, DECISIONS 한 항목 + SYSTEM.md 수정 제안 #2~#7 (W3)
+- [ ] 04.2-09-PLAN.md — 알림함 메뉴 항목·목록 다섯 상태, DECISIONS 한 항목 + SYSTEM.md 수정 제안 #2~#8 (W3)
 - [ ] 04.2-10-PLAN.md — 하루 한 통 묶음 이메일(한 묶음씩 선점·결과 불명 기록·로그 비노출·실행 예산) (W3)
 
 **Wave 4** *(blocked on Wave 3 completion)*

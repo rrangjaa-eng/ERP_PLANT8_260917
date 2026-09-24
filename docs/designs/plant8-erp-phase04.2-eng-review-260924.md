@@ -58,3 +58,9 @@ Opus 판정: 아래 7건 모두 저장소 근거를 직접 확인해 **막는 �
 
 **UNRESOLVED DECISIONS:**
 - 스킬 관문 훅은 gsd-executor 실행 전 phase-04.2.log에 plan-ceo-review를 요구하나 소수점 페이즈는 CEO 검토 생략(사용자 결정 대기, 이 세션에서 건드리지 않음)
+
+## 반영 결과 (후속)
+
+- E1~E7: f662fe1에서 플랜 수정 반영, 검사기 2회차 막는 문제 없음, Codex 2회차(4건 해결)·3회차(모니터링) 막는 문제 없음.
+- 예약 마이그레이션 번호 문구: 같은 커밋에서 CONTEXT·RESEARCH 정리(예약 번호 없음, `pnpm db:generate` 재생성, 가드 `test/unit/db/migration-journal.test.ts`).
+- 위 UNRESOLVED 결정: 소수점 페이즈 plan-ceo-review 관문 면제로 해소(main a65c383, PR #68).

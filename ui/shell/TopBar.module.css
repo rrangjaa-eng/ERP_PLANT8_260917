@@ -29,6 +29,28 @@
   font-style: normal;
 }
 
+/* 히트 영역 = 바 높이(PC 38 · 폰 44, align-self: stretch)로 §10 PC 32 하한과
+   폰 44×44를 한 규칙으로 만족한다 — 폰 전용 미디어 쿼리가 필요 없다. */
+.markLink {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  color: var(--bg);
+  text-decoration: none;
+}
+
+/* 이미 --bg(가장 밝은 색)라 색으로는 hover를 못 보인다 — .userTrigger와 같은 밑줄로. */
+.markLink:hover {
+  text-decoration: underline;
+  text-underline-offset: var(--underline-offset);
+}
+
+/* 전역 :focus-visible은 딥그린 바 위에서 보이지 않는다 — .navLink와 같은 --bar-fg 링으로 덮는다. */
+.markLink:focus-visible {
+  outline: var(--focus-w) solid var(--bar-fg);
+  outline-offset: var(--focus-offset);
+}
+
 .nav {
   display: flex;
   gap: var(--s-4);

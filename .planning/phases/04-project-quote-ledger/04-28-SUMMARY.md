@@ -253,3 +253,22 @@ None - no external service configuration required.
 *Completed: 2026-09-24*
 
 ## Self-Check: PASSED
+
+## 오케스트레이터 검증 (세션 K)
+
+- **main 병합:** origin/main 0dab476(PR #65 포함)을 병합 커밋 17a45e9로 넣음. 충돌은 `.planning/STATE.md` 머리 필드 하나였고, 04-28 쪽을 유지함.
+- **Opus diff 검토:** 막는 문제 없음. 고칠 것 3건을 TDD로 수정함.
+  - 02a8b23(RED)·87d0699: 쓰기 시점 경합 경로가 서버 현재 행을 같은 트랜잭션에서 다시 읽음. 실제로 달라진 칸만 서버 값·버전으로 싣도록 `cellConflictsFor`로 사전 판정과 규칙을 통일함. 편차 5의 알려진 제한은 해소됨.
+  - c874345(RED)·d68dfa2: 「그 값으로」 뒤에도 Alt+↑↓로 옮긴 줄이 dirty로 남음(`moved` 표시).
+  - 95a4dcd: 저장 래치를 `onSettled`에서 내림. navigation 오류(redirect·notFound)로 끝나도 래치가 풀림. 이 경로를 싸게 재현할 방법이 없어 RED 테스트는 없음.
+- **독립 DOM 감사** (Sonnet, CI=true 프로덕션 빌드, 1280·1024·375 실측): 8개 항목 모두 PASS.
+  - 힌트 줄: 1개, kbd 여섯 개가 순서대로 일치, 매출 표에는 0개.
+  - 단축키 표기: 1차 버튼 Ctrl+S, EMPTY 버튼 Ctrl+Enter(누르면 줄 0→1).
+  - 충돌 셀: 버튼 2개 tabindex=-1(덮어쓰기 → 그 값으로), 격자 탭 정지 1개, tfoot에 「충돌 1줄 · 전부 거부」.
+  - 충돌 셀 키보드: Enter/→/Esc 흐름과 「그 값으로」 뒤 저장 요청 1건.
+  - 이유 줄: 셀 안에서 줄바꿈(오른쪽 끝 758.48 ≤ 셀 오른쪽 766.48), 가로 스크롤 0, `.issueAction` margin-left 8px.
+  - 375 너비: 힌트 줄 display:none.
+  - 저장 요청: Ctrl+S 연타 1건, Meta+S 0건.
+  - 감사 한계: 키 자동 반복 이벤트는 Playwright가 보내지 않아 연타로 대신함.
+- **전체 게이트 `CI=true pnpm test` (95a4dcd):** 단위 837 · 통합 1061 · E2E 200 전부 통과. lint·typecheck 0.
+- **범위 밖 발견:** Alt+↑↓로 바꾼 순서는 저장되지 않음. 클라이언트가 `sortOrder`를 보내지 않음. 04-12(서버 `order[]`)와 04-30(클라이언트 순서 전송)이 맡은 범위라 이 플랜에서는 고치지 않음.

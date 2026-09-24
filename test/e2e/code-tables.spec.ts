@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 
 test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 코드에 계급 이름 분기 없음)", () => {
@@ -123,6 +123,16 @@ test.describe("코드표 항목 설명 (D-93, UI-SPEC rev 5 S14, DR-29)", () => 
     await expect(page).toHaveURL(/\/account$/);
   }
 
+  // blur 저장은 화면에 성공 표시가 없다 — 서버 액션 응답을 기다리지 않고
+  // 새로 고치면 진행 중 요청이 끊겨 값이 남지 않는다(CI 경합).
+  async function blurAndWaitForSave(page: Page, input: Locator) {
+    const saved = page.waitForResponse(
+      (response) => response.request().method() === "POST" && response.url().includes("/admin/code-tables"),
+    );
+    await input.blur();
+    await saved;
+  }
+
   // (a) 설명을 고치고 다른 칸을 눌러 저장한 뒤 새로 고쳐도 값이 남는다.
   test("설명을 고치고 포커스를 옮기면 저장되고 새로 고쳐도 남는다", async ({ page }) => {
     await loginAsSysadmin(page);
@@ -139,7 +149,7 @@ test.describe("코드표 항목 설명 (D-93, UI-SPEC rev 5 S14, DR-29)", () => 
 
     const descriptionInput = page.getByLabel(`${label} 설명`);
     await descriptionInput.fill("무대·부스 설치와 철거 공사");
-    await descriptionInput.blur();
+    await blurAndWaitForSave(page, descriptionInput);
     await expect(page.getByText("설명이 40자를 넘습니다", { exact: false })).toHaveCount(0);
 
     await page.reload();
@@ -207,13 +217,13 @@ test.describe("코드표 항목 설명 (D-93, UI-SPEC rev 5 S14, DR-29)", () => 
 
     const descriptionInput = page.getByLabel(`${label} 설명`);
     await descriptionInput.fill("지울 설명");
-    await descriptionInput.blur();
+    await blurAndWaitForSave(page, descriptionInput);
     await page.reload();
     await expect(page.getByLabel(`${label} 설명`)).toHaveValue("지울 설명");
 
     const descriptionInputAgain = page.getByLabel(`${label} 설명`);
     await descriptionInputAgain.fill("");
-    await descriptionInputAgain.blur();
+    await blurAndWaitForSave(page, descriptionInputAgain);
 
     await page.reload();
     // 값이 지워졌다는 증거는 DB에서 다시 읽은 입력값이 빈 문자열이라는

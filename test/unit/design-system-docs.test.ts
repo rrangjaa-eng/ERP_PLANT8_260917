@@ -340,3 +340,37 @@ describe("docs/design/SYSTEM.md — 2026-09-24 개정(04-46, ⑮)", () => {
     expect(SYSTEM).toContain("모달·시트는 §7-17 컴포넌트로 만든다");
   });
 });
+
+// docs/design/SYSTEM.md · docs/design/DECISIONS.md — 2026-09-23 개정(04-29,
+// DR-33) — §7-16 「생략」 규칙. 04-08 담당표(150행 부근) 14번 「6쪽부터」가
+// 이 describe로 덮인다. ENG-D11: PC 생략 규칙의 기본 문장(7쪽/8쪽)도 04-08이
+// 실제로는 §7-16에 적지 않아(DECISIONS ⑧ 「결정」 본문에도 없다) 여기서 함께
+// 고정한다(회귀 테스트).
+describe("docs/design/SYSTEM.md · DECISIONS.md — 2026-09-23 개정(04-29, DR-33)", () => {
+  it("§7-16에 PC 생략 규칙 기본 문장이 있다(ENG-D11 회귀 — 04-08이 빠뜨렸던 문장)", () => {
+    const sec = section(SYSTEM, "### 7-16", "## 8. 카피 규칙");
+    expect(sec).toContain("PC는 7쪽 이하면 전부, 8쪽 이상이면 첫 · 끝 · 현재 ±1과 사이");
+  });
+
+  it("§7-16에 C-27 문장(건너뛸 쪽이 정확히 하나면 그 번호)이 있다", () => {
+    const sec = section(SYSTEM, "### 7-16", "## 8. 카피 규칙");
+    expect(sec).toContain("건너뛸 쪽이 정확히 하나면 `…` 대신 그 번호를 보인다");
+    expect(sec).toContain("1 2 3 4 5 … 12");
+    expect(sec).toContain("1 … 8 9 10 11 12");
+  });
+
+  it("§7-16에 폰 6쪽부터 첫·현재·끝 문장이 있다(04-08 「재실행 가능한 확인」 14번)", () => {
+    const sec = section(SYSTEM, "### 7-16", "## 8. 카피 규칙");
+    expect(sec).toContain("6쪽부터 첫 · 현재 · 끝");
+  });
+
+  it("DECISIONS.md에 2026-09-23 Phase 4(04-29) 머리글이 한 줄이고 C-27·6쪽부터를 함께 말한다(DR-33)", () => {
+    const heading = "## 2026-09-23 — Phase 4(04-29)";
+    expect((DECISIONS.match(/^## 2026-09-23 — Phase 4\(04-29\)/gm) ?? []).length).toBe(1);
+    const start = DECISIONS.indexOf(heading);
+    const nextHeadingIndex = DECISIONS.indexOf("\n## ", start + 1);
+    const entry = DECISIONS.slice(start, nextHeadingIndex === -1 ? undefined : nextHeadingIndex);
+    expect(entry).toContain("C-27");
+    expect(entry).toContain("6쪽부터");
+  });
+});

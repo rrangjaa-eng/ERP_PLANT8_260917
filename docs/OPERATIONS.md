@@ -125,7 +125,7 @@ GitHub Environments·승인 버튼은 없다(D-05, 무료 플랜 비공개 저�
 | 경보 | 대응 |
 |---|---|
 | 5xx > 5% | 최근 배포를 의심 → `rollback.sh` 검토, Cloud Logging에서 오류 확인 |
-| Cloud SQL 백업 실패 | Cloud SQL 콘솔에서 확인, 수동 백업 실행. 이 필터는 실제 실패 없이는 검증 불가 — 01-08이 첫 백업 뒤 검증됨/미검증을 이 표에 적는다. 미검증인 동안은 상태 화면 "마지막 백업"을 주 1회 눈으로 확인 |
+| Cloud SQL 백업 실패 | Cloud SQL 콘솔에서 확인, 수동 백업 실행. 정책→채널→메일 경로는 스테이징 합성 로그로 검증됨(2026-09-24, §7 끝의 방법). 실제 백업 실패 로그가 이 필터에 맞는지는 실패 없이는 검증 불가 — 미검증인 동안은 상태 화면 "마지막 백업"을 주 1회 눈으로 확인 |
 | notify tick 24h 미성공 | Phase 7까지 `enabled: false`(tick 자체가 없다) |
 
 알림 채널은 환경 변수 **`ALERT_EMAIL`** 하나 — 스테이징·프로덕션 모두 같은 주소, 정책
@@ -152,7 +152,22 @@ account:reset --email …` / `pnpm account:unlock --email …`. 운영에서는 
 세션이 gcloud를 직접 쓰지 않고 `verify.yml`(workflow_dispatch, WIF)을 띄워 로그를 읽는다 —
 조직 정책 `iam.disableServiceAccountKeyCreation`이 SA 키 생성을 막기 때문이다. gha-deployer에
 읽기 전용 두 역할 `roles/orgpolicy.policyViewer`(조직 수준)·`roles/iam.securityReviewer`만
-준다(쓰기 권한 없음, 2026-09-22 결정). 백업 실패 경보 테스트는 콘솔 "테스트 알림 보내기"로 한다.
+준다(쓰기 권한 없음, 2026-09-22 결정).
+
+백업 실패 경보 테스트: 이메일 채널에는 콘솔 "테스트 알림 보내기"가 없다. Owner 계정의
+Cloud Shell에서 경보 필터의 `jsonPayload.message` 분기에 맞는 합성 ERROR 로그 한 줄을
+쓴다(DB·백업은 건드리지 않는다). 이것은 정책→채널→메일 경로만 확인한다 — 실제 실패 로그가
+필터에 맞는지는 확인하지 않는다. `P`에는 GitHub 변수 `GCP_PROJECT_ID` 값을 넣는다. `{}`는
+로그가 써졌다는 뜻일 뿐이고, 판정은 몇 분 안에 `[staging] Cloud SQL backup failed` 메일이
+오는지로 한다. 정책의 `notificationRateLimit`이 3600s라 테스트 뒤 한 시간 안의 실제 실패는
+메일이 안 온다 — 백업 시간대를 피하고, 열린 사건(incident)은 콘솔에서 닫는다. 메일이 그룹
+주소를 거치면 Gmail이 **포럼** 탭으로 분류할 수 있으니 필터로 받은편지함에 고정한다(2026-09-24 실측).
+
+```bash
+P=<GCP_PROJECT_ID 값>; curl -sS -X POST https://logging.googleapis.com/v2/entries:write \
+  -H "Authorization: Bearer $(gcloud auth print-access-token)" -H "Content-Type: application/json" \
+  -d '{"entries":[{"logName":"projects/'"$P"'/logs/plant8-alert-test","resource":{"type":"cloudsql_database","labels":{"project_id":"'"$P"'","database_id":"'"$P"':plant8-staging-db","region":"asia-northeast3"}},"severity":"ERROR","jsonPayload":{"message":"backup failed - SYNTHETIC alert test"}}]}'
+```
 
 ## 8. 최초 1회 부트스트랩 (D-02)
 

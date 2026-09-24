@@ -1,7 +1,7 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { scopeFor } from "@/domain/permissions/scope-for";
-import { project, type DtoSpec } from "@/domain/permissions/project";
+import { project, type DtoSpec, type ProjectDeps } from "@/domain/permissions/project";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -15,12 +15,14 @@ import {
 import {
   listTeams as repoListTeams,
   findTeamById as defaultFindTeamById,
+  findTeamsByIds as defaultFindTeamsByIds,
   insertTeam as repoInsertTeam,
   renameTeam as repoRenameTeam,
   type TeamRow,
 } from "@/repositories/teams";
 import {
   findMembershipAtDate as defaultFindMembershipAtDate,
+  findMembershipsAtDate as defaultFindMembershipsAtDate,
   listMemberships as repoListMemberships,
   insertMembership as repoInsertMembership,
   deleteMembership as repoDeleteMembership,
@@ -201,6 +203,32 @@ export async function teamAtDate(
 
   const projectFn = deps?.project ?? project;
   return (await projectFn(viewer, team, TEAM_DTO_SPEC)) as TeamDto;
+}
+
+// teamAtDate의 묶음판. deps.visible로 호출자가 노출 판정을 메모이즈할 수 있다.
+export async function teamsAtDate(
+  viewer: Viewer,
+  userIds: string[],
+  date: string,
+  deps?: Partial<ProjectDeps>,
+): Promise<Map<string, TeamDto>> {
+  const memberships = await defaultFindMembershipsAtDate(viewer, userIds, date);
+  const teamIds = [...new Set(memberships.map((m) => m.teamId))];
+  const teams = await defaultFindTeamsByIds(viewer, teamIds);
+
+  const teamDtoById = new Map<string, TeamDto>();
+  await Promise.all(
+    teams.map(async (team) => {
+      teamDtoById.set(team.id, (await project(viewer, team, TEAM_DTO_SPEC, deps)) as TeamDto);
+    }),
+  );
+
+  const result = new Map<string, TeamDto>();
+  for (const membership of memberships) {
+    const teamDto = teamDtoById.get(membership.teamId);
+    if (teamDto) result.set(membership.userId, teamDto);
+  }
+  return result;
 }
 
 export type AssignTeamDeps = {

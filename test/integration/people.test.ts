@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
-import { db } from "@/db/client";
+import { describe, expect, it, vi } from "vitest";
+import { db, pool } from "@/db/client";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -13,7 +13,7 @@ import {
   ForbiddenError,
   SelfRoleChangeError,
 } from "@/domain/people";
-import { createOrgUnit, createTeam } from "@/domain/org";
+import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { queryActionLog } from "@/repositories/action-log";
 
 async function makeTestTeam(): Promise<string> {
@@ -142,5 +142,73 @@ describe("people (MAST-02, 실제 Postgres) — 등록 · 계정 · 발령", () 
     const pmView = await listPeople(pmViewer);
     // role-pm 계급은 시드에서 admin.people 보기 권한이 없다 — 빈 목록이다.
     expect(pmView.length).toBe(0);
+  });
+});
+
+// 이슈 #56: 목록이 사람마다 팀·계급·노출표를 따로 조회해(N+1) 사람이 늘수록 느려졌다.
+describe("listPeople — 조회 횟수와 현재 소속(이슈 #56)", () => {
+  it("사람이 늘어도 DB 조회 횟수가 그대로다", async () => {
+    const teamId = await makeTestTeam();
+    const countQueries = async () => {
+      const spy = vi.spyOn(pool, "query");
+      await listPeople(SYSTEM_VIEWER);
+      const calls = spy.mock.calls.length;
+      spy.mockRestore();
+      return calls;
+    };
+
+    const register = (i: number) =>
+      registerPerson(SYSTEM_VIEWER, {
+        name: `조회수-${i}`,
+        email: `${randomUUID()}@test.local`,
+        roleId: DEFAULT_ROLE_ID,
+        teamId,
+        effectiveFrom: "2026-01-01",
+      });
+
+    // 테스트마다 표를 비우므로 한 명은 먼저 넣어 둔다 — 빈 목록은 조회를 건너뛴다.
+    await register(0);
+    const before = await countQueries();
+    for (let i = 1; i <= 3; i++) {
+      await register(i);
+    }
+    const after = await countQueries();
+
+    expect(after).toBe(before);
+  });
+
+  it("현재 소속은 오늘까지 발령된 가장 최근 팀이고 미래 발령은 아직 반영되지 않는다", async () => {
+    const oldTeamId = await makeTestTeam();
+    const currentTeamId = await makeTestTeam();
+    const futureTeamId = await makeTestTeam();
+    const { userId } = await registerPerson(SYSTEM_VIEWER, {
+      name: "발령이력",
+      email: `${randomUUID()}@test.local`,
+      roleId: DEFAULT_ROLE_ID,
+      teamId: oldTeamId,
+      effectiveFrom: "2020-01-01",
+    });
+    await assignTeam(SYSTEM_VIEWER, { userId, teamId: currentTeamId, effectiveFrom: "2021-06-01" });
+    await assignTeam(SYSTEM_VIEWER, { userId, teamId: futureTeamId, effectiveFrom: "2999-01-01" });
+    const { userId: noTeamUserId } = await registerPerson(SYSTEM_VIEWER, {
+      name: "발령없음",
+      email: `${randomUUID()}@test.local`,
+      roleId: SYSADMIN_ROLE_ID,
+    });
+
+    const people = await listPeople(SYSTEM_VIEWER);
+    const person = people.find((p) => p.id === userId);
+    const noTeam = people.find((p) => p.id === noTeamUserId);
+
+    expect(person?.currentTeamId).toBe(currentTeamId);
+    expect(person?.currentTeamName).toMatch(/^팀-/);
+    expect(person?.roleId).toBe(DEFAULT_ROLE_ID);
+    expect(person?.roleName).toBeTruthy();
+    expect(noTeam?.currentTeamId).toBeNull();
+    expect(noTeam?.currentTeamName).toBeNull();
+    expect(noTeam?.roleId).toBe(SYSADMIN_ROLE_ID);
+    // 목록 결과는 한 사람 상세(getPerson)와 같은 DTO여야 한다.
+    const detail = await getPerson(SYSTEM_VIEWER, userId);
+    expect(person).toEqual(detail?.person);
   });
 });

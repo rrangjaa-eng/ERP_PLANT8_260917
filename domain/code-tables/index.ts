@@ -158,17 +158,39 @@ export async function updateCodeItemLabel(
   return updated ? ((await project(viewer, updated, CODE_ITEM_DTO_SPEC)) as CodeItemDto) : null;
 }
 
-// 04-10(D-93) RED 스텁 — 권한·보관 가드·40자 검증·빈 값→null·행동 로그가
-// 아직 없다. GREEN 커밋에서 updateCodeItemLabel과 같은 순서로 채운다.
+// 04-10(D-93) · Copywriting 「Error — 코드표 설명(관리자)」: 공백만 있는 값은
+// null(지우기, C-13), 40자를 넘으면 서버 문구 그대로 거부한다. createCodeItem
+// (Task 2 「코드 추가」 설명 칸)도 같은 규칙을 쓴다.
+function normalizeDescription(description: string): string | null {
+  const trimmed = description.trim();
+  if (trimmed === "") return null;
+  if (trimmed.length > CODE_ITEM_DESCRIPTION_MAX) {
+    throw new UserFacingError("설명이 40자를 넘습니다 · 한 문장으로 줄여 주세요");
+  }
+  return trimmed;
+}
+
+// MAST-04 결(updateCodeItemLabel)과 같은 권한 판정·보관 가드·행동 로그
+// 순서지만 저장 조건이 다르다(C-13) — 빈 값도 저장한다(null로, 지우기).
+// 실패해도 화면 입력은 되돌리지 않는다(DR-29, code-item-form.tsx 몫).
 export async function updateCodeItemDescription(
   viewer: Viewer,
   id: string,
   description: string,
 ): Promise<CodeItemDto | null> {
+  const allowed = await can(viewer, "admin.code-tables", "write");
+  if (!allowed) throw new ForbiddenError("코드표 항목 설명 변경 권한이 없습니다.");
+
+  const normalized = normalizeDescription(description);
+
   const current = await repoFindCodeItemById(viewer, id);
   if (!current) return null;
+  if (current.archivedAt !== null) {
+    throw new ArchivedCodeItemError("보관된 코드표 항목은 수정할 수 없습니다 · 먼저 복원해 주세요.");
+  }
 
-  await repoUpdateCodeItemDescription(viewer, id, description);
+  await repoUpdateCodeItemDescription(viewer, id, normalized);
+  await recordAction(viewer, { actionType: "document_update", entity: "code_items", entityId: id });
 
   const updated = await repoFindCodeItemById(viewer, id);
   return updated ? ((await project(viewer, updated, CODE_ITEM_DTO_SPEC)) as CodeItemDto) : null;

@@ -36,5 +36,5 @@ image_path()      { echo "$3-docker.pkg.dev/$2/$AR_REPO/app:$1"; }   # sha proje
 alert_channel()   { echo "ERP Alerts ($1)"; }
 policy_5xx()      { echo "[$1] 5xx ratio > 5%"; }
 policy_backup()   { echo "[$1] Cloud SQL backup failed"; }
-policy_tick()     { echo "[$1] notify tick stale 23h30m"; }
+policy_tick()     { echo "[$1] notify tick stale 25h"; }
 tick_metric()     { echo "notify_tick_success_$1"; }

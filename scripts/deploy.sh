@@ -3,7 +3,7 @@ set -euo pipefail
 set -o errtrace  # ERR 트랩이 함수 안에서도 발동하도록(그렇지 않으면 STAGE 메시지가 나오지 않는다)
 
 # scripts/deploy.sh — OPS-01: 인프라 ensure(멱등) → 이미지(SHA 태그) → Job 3개 →
-# 리비전 배포(신규·기존 모두 바로 100% 트래픽) → 경보 3개 upsert → 스모크 3종
+# 리비전 배포(신규·기존 모두 바로 100% 트래픽) → 스케줄러 잡 → 경보 3개 upsert → 스모크 4종
 # (실제 서비스 주소로). 원래는 기존 서비스 업데이트를 0%(카나리)로 몰래
 # 올려 전용 URL로 미리 검증한 뒤 승격하는 절차였는데, 그 전용 URL이 실제
 # 스테이징에서 반복적으로(4회 연속) 15분 넘게 라우팅되지 않았다
@@ -130,6 +130,16 @@ require_clean_tree() {
   fi
 }
 
+# 04.2-04(Issue 6): OIDC 검증을 끄는 변수가 배포 셸에 있으면 어떤 gcloud 호출보다
+# 먼저 거부한다 — 앱 쪽 비로컬 부팅 거부(lib/env.ts)와 이중 차단이다.
+refuse_oidc_bypass() {
+  STAGE=refuse_oidc_bypass
+  if [ -n "${NOTIFY_TICK_OIDC_DISABLED:-}" ]; then
+    echo "refusing to deploy: NOTIFY_TICK_OIDC_DISABLED is set (OIDC verification must stay on outside local)" >&2
+    exit 2
+  fi
+}
+
 resolve_project_number() {
   STAGE=resolve_project_number
   PROJECT_NUMBER="$(run gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
@@ -155,7 +165,7 @@ ensure_apis() {
   run gcloud services enable \
     run.googleapis.com sqladmin.googleapis.com secretmanager.googleapis.com \
     artifactregistry.googleapis.com monitoring.googleapis.com logging.googleapis.com \
-    compute.googleapis.com servicenetworking.googleapis.com \
+    compute.googleapis.com servicenetworking.googleapis.com cloudscheduler.googleapis.com \
     --project="$PROJECT"
 }
 
@@ -569,6 +579,7 @@ smoke() {
       -H "Origin: ${SERVICE_URL}" -H 'content-type: application/json' \
       -d '{"email":"smoke@example.invalid","password":"smoke-not-a-password"}' \
       "${target}/api/auth/sign-in/email"
+    run curl -s -o /dev/null -w '%{http_code}' -X POST "${target}/internal/notify-tick"
     return 0
   fi
 
@@ -603,6 +614,17 @@ smoke() {
       smoke_failed "sign-in probe returned $signin_code (expected a 4xx)"
       ;;
   esac
+
+  # D-4214: 토큰 없는 호출은 앱이 401로 거부해야 한다. 404는 Cloud Run 엣지가
+  # 경로를 먹은 것(/healthz 전례), 그 밖(2xx 등)은 검증이 꺼졌거나 라우트 실패다.
+  local tick_code
+  tick_code="$(run curl -s -o /dev/null -w '%{http_code}' -X POST "${target}/internal/notify-tick")"
+  if [ "$tick_code" = "404" ]; then
+    smoke_failed "/internal/notify-tick returned 404 — Cloud Run edge ate the path"
+  fi
+  if [ "$tick_code" != "401" ]; then
+    smoke_failed "/internal/notify-tick returned $tick_code without a token (expected 401 — OIDC verification must be on)"
+  fi
 }
 
 ensure_alerts() {
@@ -674,6 +696,7 @@ map_domain() {
 
 main() {
   parse_args "$@"
+  refuse_oidc_bypass
   require_clean_tree
   resolve_project_number
   require_prod_image

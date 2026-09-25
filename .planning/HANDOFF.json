@@ -1,10 +1,10 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-24T21:37:16.318Z",
+  "timestamp": "2026-09-25T00:33:10.356Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
-  "plan": 9,
+  "plan": 27,
   "task": null,
   "total_tasks": null,
   "status": "paused",
@@ -134,12 +134,18 @@
       "name": "04-06 프로젝트 상태 다섯 값·project.line-edit",
       "status": "done",
       "commit": "9b8fd63"
+    },
+    {
+      "id": 22,
+      "name": "[세션 N] 04-09 숫자 표시·쉼표 입력(D-95). executor 커밋 15개(b64d01a…57a48ad, SUMMARY f0592ce). Opus 검토 결함 1(‘-’·‘.’ 삭제 시 숫자 삭제) + 독립 DOM 감사 결함(숫자 셀 줄바꿈 S15, 표 안 Ctrl+V 막힘) + NaN 저장 → 수정 cba99c0…8ffc9be, SUMMARY 1e25f4c. main 병합 0d05fb7(충돌 1건, 마이그레이션 변화 없음). 추가 77a9cf8(고정 대기 제거)·d81391f·a09fa5a(375px 공급가액 보조 줄 넘침). CI 수정 92c30cb·6b5da59(04-06 업그레이드 테스트: en_US.utf8 vs C.UTF-8 정렬, pg-pool end() 타이밍). 전체 게이트 CI=true(병합 후, 77a9cf8 이전): 단위 949·통합 1066·E2E 211, 이후 대상 스펙 재실행 통과",
+      "status": "done",
+      "commit": "a09fa5a"
     }
   ],
   "remaining_tasks": [
     {
       "id": 1,
-      "name": "/gsd-execute-phase 4 — 남은 29개, 세션마다 한 플랜. 다음 웨이브 6: 04-06(다음, /mnt/project-files/phase4-prep/04-06.md 먼저 읽기), 이어서 웨이브 7 04-09·04-27",
+      "name": "/gsd-execute-phase 4 — 남은 27개, 세션마다 한 플랜. 다음 웨이브 7: 04-27(다음, /mnt/project-files/phase4-prep/04-27.md 먼저 읽기), 이어서 웨이브 8 04-20",
       "status": "not_started"
     },
     {
@@ -173,6 +179,21 @@
       "description": "04-25 감사가 로컬 erp_test DB에 zz* evidence_type 행 + 보관된 임시 역할 1개를 남김(로컬 전용)",
       "type": "technical",
       "workaround": "필요 시 별도로 정리, 배포 DB에는 없음"
+    },
+    {
+      "description": "[세션 N] 입금·발행액 9,999,999,999 이상 저장 시 일반 오류 알림(서버 로그 없음, 원인 미조사 — int 열 한계 추정)",
+      "type": "technical",
+      "workaround": "원인 미조사, 후속 세션에서 조사 필요"
+    },
+    {
+      "description": "[세션 N] 320px 프로젝트 상세 화면 가로 넘침(scrollWidth 362)",
+      "type": "technical",
+      "workaround": "미수정, 후속 세션에서 조사 필요"
+    },
+    {
+      "description": "[세션 N] 04-09-SUMMARY 「남긴 후속」 6건: 통화 전환 시 KRW 칸 소수 유지, 거절된 붙여넣기 뒤 캐럿 위치, CommaTextField numeric prop 누수, 앞자리 0 서식, Enter 확정 뒤 포커스가 body로 이동, RED 선행 없는 커밋 3개. Table.module.css:48 낡은 주석",
+      "type": "technical",
+      "workaround": "범위 밖, 후속 플랜에서 처리"
     }
   ],
   "async_jobs": [],
@@ -353,11 +374,21 @@
       "decision": "간헐 실패 E2E는 원인 없이 넘기지 않고 대기(waitForResponse/URL 전환 등)를 넣어 결정적으로 만든 뒤 재판정한다",
       "rationale": "세션 L: master-edit.spec.ts:103이 경쟁으로 가려 온 법인카드 수정 폼 팀 칸 기본값 결함을 대기 추가로 5/5 재현 — 04-29 범위 밖이라 이 세션에서 고치지 않고 코디네이터에 별도 요청",
       "phase": "4"
+    },
+    {
+      "decision": "[세션 N] 04-09 executor가 d6b41cf를 다시 「없음」으로 보고 기준을 merge-base로 바꾸려 함 — 오케스트레이터가 deepen으로 존재 확인 후 d6b41cf 대비 package.json·lock 변화 없음 재확인, 원래 기준 유지. D4 DOM 감사는 실행자가 아닌 별도 Opus 에이전트로 독립 수행해 숫자 셀 줄바꿈·표 안 붙여넣기 결함을 찾음",
+      "rationale": "세션 E와 같은 얕은 clone 오판이 실행자 프롬프트에 deepen 절차를 넣은 뒤에도 재발 — 오케스트레이터가 기준 커밋을 직접 확인해야 함을 재확인. 독립 감사는 항상 오케스트레이터가 띄운다",
+      "phase": "4"
+    },
+    {
+      "decision": "[세션 N] CI DB 정렬 규칙(en_US.utf8) vs 로컬(C.UTF-8) 불일치로 ORDER BY 한글 문자열 단언을 JS sort로 교체(92c30cb). pg-pool end()가 소켓 종료 전에 끝나는 문제로 DROP DATABASE WITH (FORCE) 전 임시 풀에 error 처리기 추가(6b5da59)",
+      "rationale": "04-06 업그레이드 테스트가 CI에서만 실패 — 환경별 정렬 규칙·소켓 타이밍 차이가 원인",
+      "phase": "4"
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션 N: /gsd-progress → /gsd-execute-phase 4 로 04-09만 실행(먼저 /mnt/project-files/phase4-prep/04-09.md). 그다음 04-27, 04-20. 브랜치 claude/gsd-progress-e1nzgu, PR #40, 푸시는 git push origin HEAD:claude/gsd-progress-e1nzgu",
-  "context_notes": "세션 L이 04-29 완료(전체 게이트 CI=true, E2E 1건 실패는 04-29 무관 기존 결함 — master-edit-team-select-bug.md 참조, 코디네이터에 별도 요청 필요). 04-28 알려진 범위 밖: Alt+↑↓ 순서 저장 안 됨 → 04-12·04-30.",
+  "next_action": "새 세션 O: git status -sb → /mnt/project-files/phase4-prep/04-27.md 읽기 → /gsd-execute-phase 4로 04-27만 실행(먼저 PR #40 CI, a09fa5a 기준, 확인). 그다음 04-20. 브랜치 claude/gsd-progress-e1nzgu, PR #40, 푸시는 git push origin HEAD:claude/gsd-progress-e1nzgu",
+  "context_notes": "세션 N이 04-09 완료(전체 게이트 CI=true 단위 949·통합 1066·E2E 211, 병합 후 77a9cf8 이전 — 이후 대상 스펙 재실행 통과). 04-28 알려진 범위 밖: Alt+↑↓ 순서 저장 안 됨 → 04-12·04-30.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"

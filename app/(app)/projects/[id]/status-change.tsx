@@ -7,6 +7,7 @@ import { changeProjectStatusAction } from "../actions";
 import { Button } from "@/ui/button/Button";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
+import type { PeriodRights } from "@/domain/projects/period";
 import { unsavedEditsReason } from "./unsaved-edits";
 
 // 04-21(PROJ-04 · S7) — 상세 머리 줄의 「상태 바꾸기」. 갈 곳·막힘 이유는 서버가
@@ -35,11 +36,16 @@ export type StatusChangeProps = {
   endDateBeforeToday: boolean;
   currentRevisionSeq: number;
   currentRevisionApproved: boolean;
+  /** 04-44(S7) — 기간 권리(서버 계산). none이면 모달의 「기간 적기」·「기간 바꾸기」 없이 글자만. */
+  periodRights: PeriodRights;
+  /** 04-44 — 머리 줄 기간 칸을 연다(QuoteLedger의 openPeriodField). */
+  onOpenPeriodField?: (focus: "start" | "end") => void;
 };
 
 type Step = { kind: "closed" } | { kind: "pick" } | { kind: "confirm"; to: ProjectStatus };
 
 const REVERT_LABEL = "진행으로 되돌리기";
+const END_PASSED_LINE = "종료일 지남 · 바로 정산";
 
 function approvalLine(props: StatusChangeProps): string[] {
   return props.currentRevisionApproved ? [] : [`${props.currentRevisionSeq}차 고객 승인 전 · 진행부터 지출결의 멈춤`];
@@ -49,14 +55,14 @@ function approvalLine(props: StatusChangeProps): string[] {
 function progressResultLines(props: StatusChangeProps): string[] {
   const lines: string[] = [];
   if (props.endDate === null) lines.push("종료일 없음 · 시작일로 저장");
-  if (props.endDateBeforeToday) lines.push("종료일 지남 · 바로 정산");
+  if (props.endDateBeforeToday) lines.push(END_PASSED_LINE);
   else if (props.endDate !== null) lines.push(`기간 ${props.startDate ?? ""} ~ ${props.endDate} · ${props.settleOn ?? ""} 정산`);
   return [...lines, ...approvalLine(props)];
 }
 
 function confirmCopy(props: StatusChangeProps, to: ProjectStatus): { label: string; resultLines: string[] } | null {
   if (to === "in_progress" && props.from === "lost") {
-    const lines = props.endDateBeforeToday ? ["종료일 지남 · 바로 정산"] : [];
+    const lines = props.endDateBeforeToday ? [END_PASSED_LINE] : [];
     return { label: REVERT_LABEL, resultLines: [...lines, ...approvalLine(props)] };
   }
   if (to === "in_progress") return { label: "진행으로 바꾸기", resultLines: progressResultLines(props) };
@@ -139,13 +145,46 @@ export function StatusChange({
     else setStep({ kind: "pick" });
   }
 
+  // 04-44 — 모달의 「기간 적기」·「기간 바꾸기」가 고른 칸. 모달이 닫히며(onClose 뒤) 포커스를 트리거로 돌려놓으므로
+  // 칸은 그 다음 차례에 연다.
+  const periodFocusAfterCloseRef = useRef<"start" | "end" | null>(null);
+
   function closeConfirm() {
     setRejection(null);
     setStep((current) => (current.kind === "confirm" ? { kind: "closed" } : current));
+    const focus = periodFocusAfterCloseRef.current;
+    periodFocusAfterCloseRef.current = null;
+    if (focus) queueMicrotask(() => props.onOpenPeriodField?.(focus));
   }
 
   const target = step.kind === "confirm" ? props.destinations.find((d) => d.value === step.to) : undefined;
   const copy = step.kind === "confirm" ? confirmCopy(props, step.to) : null;
+
+  // 04-44(S7 · S13) — 모달을 닫고 머리 줄 기간 칸으로 간다. 권리가 없으면 3차를 그리지 않는다(글자만).
+  const openPeriodField = props.periodRights !== "none" ? props.onOpenPeriodField : undefined;
+  function goToPeriod(focus: "start" | "end") {
+    periodFocusAfterCloseRef.current = focus;
+    setStep({ kind: "closed" });
+  }
+  const resultLines = copy?.resultLines.map((line) =>
+    line === END_PASSED_LINE && openPeriodField ? (
+      <>
+        <span>{line}</span>{" "}
+        <Button type="button" variant="tertiary" onClick={() => goToPeriod("end")}>
+          기간 바꾸기
+        </Button>
+      </>
+    ) : (
+      line
+    ),
+  );
+  // 시작일 게이트(D-82)로 막힌 진행 전환 — 막힘 이유 옆 3차 「기간 적기」.
+  const startDateStep =
+    step.kind === "confirm" && step.to === "in_progress" && props.startDate === null && target?.blockedReason && openPeriodField ? (
+      <Button type="button" variant="tertiary" onClick={() => goToPeriod("start")}>
+        기간 적기
+      </Button>
+    ) : undefined;
 
   return (
     <>
@@ -177,7 +216,7 @@ export function StatusChange({
         onClose={closeConfirm}
         title={copy?.label ?? ""}
         subtitle={props.projectLabel}
-        resultLines={copy?.resultLines}
+        resultLines={resultLines}
         primary={{
           label: copy?.label ?? "",
           onConfirm: () => {
@@ -185,6 +224,7 @@ export function StatusChange({
           },
           pending: isExecuting,
           disabledReason: rejection ?? target?.blockedReason ?? undefined,
+          nextStep: startDateStep,
         }}
       />
     </>

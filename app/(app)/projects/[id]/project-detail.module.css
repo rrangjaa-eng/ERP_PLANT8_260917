@@ -63,11 +63,16 @@
   }
 
   .titleBlock p {
+    order: 2;
+  }
+
+  /* 04-44(DR-26) — 부제 첫 항목은 `기간 …` + 「기간 바꾸기」, 나머지 부제는 그 아래. */
+  .titleBlock .periodLead {
     order: 1;
   }
 
   .headerActions {
-    order: 2;
+    order: 3;
   }
 
   .moreToggle {

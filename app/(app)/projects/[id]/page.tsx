@@ -111,6 +111,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           endDateBeforeToday: savedEndDate !== null && savedEndDate < kstToday(new Date()),
           currentRevisionSeq: revision.seq,
           currentRevisionApproved: revision.approved,
+          periodRights,
         };
 
   // 04-11(D-81): 종료일이 지난 수주중 — 상태를 바꿀 수 있으면 글자만, 없으면 담당 팀장 이름을 붙인다.

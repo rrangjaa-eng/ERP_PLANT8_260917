@@ -914,6 +914,8 @@ export function QuoteLedger({
   function openPeriodField(focus: "start" | "end") {
     setPeriodFocus(focus);
     setPeriodDraft((prev) => prev ?? { start: periodBaseline.startDate ?? "", end: periodBaseline.endDate ?? "" });
+    // 칸이 이미 열려 있으면 PeriodField의 포커스 effect가 다시 돌지 않는다 — 그 칸으로 바로 간다.
+    document.getElementById(`period-${focus}`)?.focus();
   }
 
   // A-34 — 묶음이 닫히면 포커스가 그 칸을 연 3차로 돌아온다.
@@ -1632,7 +1634,7 @@ export function QuoteLedger({
           <PageHeader title={projectName} subtitle={subtitle} />
           {/* S13 — 칸이 열린 동안 기간 글자와 「기간 바꾸기」는 숨는다(같은 값을 두 번 보이지 않는다). */}
           {periodDraft ? null : (
-            <p className={styles.periodLine}>
+            <p className={`${styles.periodLine} ${styles.periodLead}`}>
               <span>{periodText(periodBaseline.startDate, periodBaseline.endDate)}</span>
               {period.rights !== "none" ? (
                 <Button id={PERIOD_TRIGGER_ID} type="button" variant="tertiary" onClick={() => openPeriodField("start")}>
@@ -1662,7 +1664,12 @@ export function QuoteLedger({
         <div className={styles.headerActions}>
           <HeaderCopyActions />
           {statusChange ? (
-            <StatusChange {...statusChange} dirtyCount={dirtyCount} onChanged={setStatusToast} />
+            <StatusChange
+              {...statusChange}
+              dirtyCount={dirtyCount}
+              onChanged={setStatusToast}
+              onOpenPeriodField={openPeriodField}
+            />
           ) : null}
           {canSave ? (
             <Button

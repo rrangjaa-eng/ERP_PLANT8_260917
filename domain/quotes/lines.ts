@@ -25,7 +25,17 @@ import {
   type QuoteLineField,
   type QuoteLineKind,
 } from "@/domain/quotes/edit-scope";
-import { moneyFromRow, moneyToColumns, quoteAmount, profit, type Money, type Currency } from "@/domain/money";
+import {
+  moneyFromRow,
+  moneyToColumns,
+  normalizeMoneyInput,
+  MoneyInputError,
+  quoteAmount,
+  quoteAmountWithinBound,
+  profit,
+  type Money,
+  type Currency,
+} from "@/domain/money";
 import { rememberFxRate as defaultRememberFxRate } from "@/domain/money/currency";
 import { log } from "@/lib/log";
 import { withTransaction } from "@/lib/db-transaction";
@@ -719,6 +729,32 @@ const CELL_LABELS: Record<QuoteLineField, string> = {
   note: "비고",
 };
 
+// UI-SPEC rev 5 `Error — 셀(금액 범위, 04-40 · DR-9)` — 계산값 상한은 수량·단가 두 칸 모두.
+const QUOTE_AMOUNT_OVER = "견적가가 상한을 넘습니다 · 수량이나 단가를 고쳐 주세요";
+
+// 04-40(엔지니어링 리뷰 B §2 · DR-9) — 단가·실행가를 한 규칙으로 정규화하고(거부는 그 칸의 셀 오류), 수량 × 단가의 계산
+// 견적가가 저장 상한 밖이면 수량·단가 두 칸 오류. 쓰기 전에 판정해 PG 22003이 화면에 닿지 않는다.
+function normalizeLineMoney(row: QuoteLineWriteRow, rowIndex: number): { row: QuoteLineWriteRow; errors: CellFormatError[] } {
+  const errors: CellFormatError[] = [];
+  const normalize = (field: "unitPrice" | "execution") => {
+    try {
+      return normalizeMoneyInput(row[field]);
+    } catch (error) {
+      if (!(error instanceof MoneyInputError)) throw error;
+      errors.push({ rowIndex, rowId: row.id, field, label: CELL_LABELS[field], reason: error.message });
+      return row[field];
+    }
+  };
+  const unitPrice = normalize("unitPrice");
+  const execution = normalize("execution");
+  if (errors.length === 0 && !quoteAmountWithinBound(row.quantity, unitPrice)) {
+    for (const field of ["quantity", "unitPrice"] as const) {
+      errors.push({ rowIndex, rowId: row.id, field, label: CELL_LABELS[field], reason: QUOTE_AMOUNT_OVER });
+    }
+  }
+  return { row: { ...row, unitPrice, execution }, errors };
+}
+
 export type FxToRemember = { currency: Currency; rate: number };
 
 // ② 트랜잭션 안 쓰기 단계의 결과 — 커밋 뒤 단계(투영·최근 환율 기억)의 입력.
@@ -837,8 +873,14 @@ export async function writeQuoteLinesInTx(
       const resolved = resolveLineKind(requested, current && lineKindOf(current));
       if (resolved === null) deny(LINE_EDIT_RULE, new UserFacingError(KIND_CHANGED));
       const kind = resolved ?? lineKindOf(current!);
-      const row = normalizeForKind(requested, kind);
-      formatErrors.push(...quoteLineFormatErrors(row, rowIndex, kind));
+      const kindRow = normalizeForKind(requested, kind);
+      formatErrors.push(...quoteLineFormatErrors(kindRow, rowIndex, kind));
+      const money = normalizeLineMoney(kindRow, rowIndex);
+      if (money.errors.length > 0) {
+        formatErrors.push(...money.errors);
+        continue;
+      }
+      const row = money.row;
       const payload = writePayload(row);
       const customFields = customFieldsSchema.parse(row.customFields ?? {}) as Record<string, unknown>;
       const entry = { input: row, kind, payload, customFields, unchanged: false };

@@ -38,7 +38,7 @@ import { saveProjectLedgerAction } from "@/app/(app)/projects/actions";
 // 04-40(W3) — 거부 봉투를 액션으로 직접 확인하는 케이스용 세션. 이 파일의 다른 케이스는 액션을 부르지 않는다.
 vi.mock("@/lib/viewer", async () => {
   const { SYSTEM_VIEWER: viewer } = await import("@/domain/viewer");
-  return { getSession: async () => ({ viewer, user: { id: viewer.id } }) };
+  return { getSession: () => Promise.resolve({ viewer, user: { id: viewer.id } }) };
 });
 
 const QUOTE_LINE_ENTITY = "quote_line";
@@ -1235,7 +1235,7 @@ describe("계산 견적가 상한(04-40 · DR-9)", () => {
 
   it("(d3) saveProjectLedgerAction의 봉투가 { rejected: { summary: 「오류 2칸 · 전부 거부」, cells } }이고 그 줄의 quantity·unitPrice 두 칸이 있다(W3)", async () => {
     const { project, revision, subcategoryValue } = await setupProject();
-    const over = newRow(subcategoryValue, { quantity: 3, unitPrice: krw(1_000_000_000) });
+    const over = { id: randomUUID(), isNew: true as const, subcategory: subcategoryValue, itemName: `상한-${randomUUID()}`, quantity: 3, unitPrice: krw(1_000_000_000), execution: krw(10_000) };
 
     const result = await saveProjectLedgerAction({ projectId: project.id, seenStatus: "bidding", quoteLines: { revisionId: revision.id, rows: [over] } });
 

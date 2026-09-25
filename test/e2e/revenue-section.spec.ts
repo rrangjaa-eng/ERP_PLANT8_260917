@@ -148,4 +148,76 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     await page.reload();
     await expect(amountInput).toHaveValue("1,234.56");
   });
+
+  // 04-09 S15 — 숫자 열(.alignRight)의 nowrap이 입금 셀 둘째 줄 「공급가액 … ·
+  // 서버 계산」 전체에 상속돼, 10자리 공급가액이면 입금 표가 375px 폭을
+  // 넘었다(측정: 문서 scrollWidth 386). 숫자는 꺾지 않고 묶음 사이에서만
+  // 줄바꿈해야 한다(SYSTEM.md 숫자 칸 · 외화 2행 규칙).
+  test("375px에서 10자리 공급가액 보조 줄이 문서 가로 넘침 없이 숫자를 한 줄로 유지한다", async ({ page }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2E매출폭클라이언트-${Date.now()}`,
+      normalizedName: `e2e매출폭클라이언트-${Date.now()}`,
+    });
+    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    await grantFinanceRole();
+    const finance = await createFixtureUser({ roleId: "role-ceo" });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(pm.email);
+    await page.getByLabel("비밀번호").fill(pm.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto("/projects?new=1");
+    await page.getByLabel("클라이언트").selectOption({ label: vendor.name });
+    await page.getByLabel("팀").selectOption({ index: 1 });
+    await page.getByLabel("담당 PM").selectOption({ index: 1 });
+    await page.getByLabel("프로젝트명").fill(`E2E매출폭-${Date.now()}`);
+    await page.getByRole("button", { name: "프로젝트 등록" }).click();
+    await expect(page).toHaveURL(/\/projects\/.+/);
+    const projectUrl = page.url();
+
+    await page.getByLabel("계약 금액", { exact: true }).fill("2000000000");
+    await page.getByRole("button", { name: /일괄 저장/ }).click();
+    await expect(page.getByText("부가세 10% 200,000,000 · 합계 2,200,000,000 · 서버 계산")).toBeVisible();
+
+    await page.goto("/account");
+    await page.getByRole("button", { name: "로그아웃" }).click();
+    await expect(page).toHaveURL(/\/login$/);
+    await page.getByLabel("이메일").fill(finance.email);
+    await page.getByLabel("비밀번호").fill(finance.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto(projectUrl);
+    await page.getByRole("button", { name: "입금 줄 추가" }).click();
+    await page.getByLabel("입금일").fill("2026-09-05");
+    await page.getByLabel("입금액").fill("2000000000");
+    await page.getByRole("button", { name: /일괄 저장/ }).click();
+    await expect(page.getByText("공급가액 1,818,181,818 · 서버 계산")).toBeVisible();
+
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto(projectUrl);
+    await page.evaluate(() => document.fonts.ready);
+    const number = page.getByText("1,818,181,818", { exact: false }).last();
+    await expect(number).toBeVisible();
+    const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(scrollWidth).toBe(clientWidth);
+    const numberLineCount = await page.evaluate(() => {
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const at = node.textContent?.indexOf("1,818,181,818") ?? -1;
+        if (at < 0) continue;
+        const range = document.createRange();
+        range.setStart(node, at);
+        range.setEnd(node, at + "1,818,181,818".length);
+        return new Set([...range.getClientRects()].map((rect) => Math.round(rect.top))).size;
+      }
+      return 0;
+    });
+    expect(numberLineCount).toBe(1);
+  });
 });

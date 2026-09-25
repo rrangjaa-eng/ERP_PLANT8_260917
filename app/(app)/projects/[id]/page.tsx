@@ -5,6 +5,7 @@ import { visible } from "@/domain/permissions/visible";
 import { findProject } from "@/domain/projects";
 import { listProjectFormReferences } from "@/domain/projects/references";
 import { getCurrentQuoteRevision, listQuoteLines } from "@/domain/quotes/lines";
+import { listRevisionSummaries } from "@/domain/quotes/revisions";
 import { listRevenue } from "@/domain/revenue";
 import { recentFxRate } from "@/domain/money/currency";
 import { getSettingValue } from "@/domain/settings/registry";
@@ -29,6 +30,7 @@ import { addDays, kstToday } from "@/lib/kst-date";
 import { PROJECT_STATUS_TAG_KIND } from "../status-display";
 import { QuoteLedger } from "./quote-table";
 import type { StatusChangeProps } from "./status-change";
+import type { NewRevisionProps } from "./revision-dialogs";
 
 // SYSTEM.md §6-2 상세 화면 — 이 리포의 첫 목록/상세 분리 화면. 네 숫자 줄
 // (PNL-01)·차수 섹션의 마크업은 이 플랜에 없다(04-06/04-09). 매출 섹션은
@@ -100,7 +102,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   });
   // 04-44(DR-37) — 총 매출 예상가는 기간과 같은 권리 + 금액 노출(볼 수 없는 값은 고칠 수 없다).
   const canEditPreEstimate = periodRights !== "none" && canSeeAmount;
-  const [lines, references, revenue, usdDefaultFxRate, destinations, catalog, statusSince, lineCap] = await Promise.all([
+  const [lines, references, revenue, usdDefaultFxRate, destinations, catalog, statusSince, lineCap, revisionSummaries] = await Promise.all([
     listQuoteLines(session.viewer, revision.id, { status: project.status, canWrite: canEditLines, canAdjust: canAdjustLines }),
     // 04-23(CEO 리뷰 B-23) — 조정 권한만 있어도 조정 줄의 거래처 칸을 고른다.
     canWrite || canAdjust ? listProjectFormReferences(session.viewer) : Promise.resolve(null),
@@ -111,7 +113,21 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     lastStatusChangeOn(session.viewer, project),
     // 04-26(D-86) — 화면의 상한 판정과 문구의 숫자는 서버 게이트가 읽는 같은 설정 값이다.
     getSettingValue(QUOTE_LINE_MAX_PER_REVISION),
+    // 04-24(S5 · D-53) — 차수 요약(최신 순번부터). 현재 차수 행의 줄 수가 새 차수 다이얼로그의 {k}다.
+    listRevisionSummaries(session.viewer, project.id),
   ]);
+  const currentSummary = revisionSummaries.find((row) => row.revisionId === revision.id);
+
+  // 04-24(D-53 · CEO-D10 · B-02) — 「복사해 새 차수」 렌더 조건은 새 차수 게이트의 입력과 같은 canCreateRevision 하나다.
+  const newRevision: NewRevisionProps | null = structuralEditability({ status: project.status, canWrite }).newRevision
+    ? {
+        projectId: project.id,
+        revisionId: revision.id,
+        seq: revision.seq,
+        lineCount: currentSummary?.lineCount ?? 0,
+        adjustmentCount: lines.filter((line) => line.lineKind === "adjustment").length,
+      }
+    : null;
 
   // A-12: 1차 「일괄 저장」은 이 화면에서 쓸 수 있는 칸이 하나라도 있을 때만 — 판정은 서버가 칸마다 한다.
   // 04-30 — 표 항은 「편집 가능 셀이 하나라도 있거나 줄을 추가할 수 있음」(셀 단계·구조에서 온다).
@@ -176,6 +192,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       statusLabel={statusLabel}
       statusTagKind={PROJECT_STATUS_TAG_KIND[status]}
       statusChange={statusChange}
+      newRevision={newRevision}
       endDateNote={endDateNote}
       revisionId={revision.id}
       initialLines={lines}

@@ -95,6 +95,12 @@ function isServerAction(request: { method: () => string; headers: () => Record<s
   return request.method() === "POST" && request.headers()["next-action"] !== undefined;
 }
 
+async function expectDescribedBy(page: Page, button: Locator, text: string) {
+  const ids = ((await button.getAttribute("aria-describedby")) ?? "").split(" ").filter(Boolean);
+  const texts = await Promise.all(ids.map((id) => page.locator(`[id="${id}"]`).textContent()));
+  expect(texts).toContain(text);
+}
+
 async function revisionCount(projectId: string): Promise<number> {
   return (await db.select().from(quoteRevisions).where(eq(quoteRevisions.projectId, projectId))).length;
 }
@@ -160,10 +166,9 @@ test.describe("복사해 새 차수 (04-24 Task 1 — B-02 · B-03 · DR-6)", ()
     const primary = dialog.getByRole("button", { name: /새 차수 만들기/ });
     await expect(primary).toBeFocused();
     await expect(primary).toHaveAttribute("aria-disabled", "true");
-    const reason = dialog.getByText("저장 안 한 편집 1칸 · 먼저 일괄 저장", { exact: true });
-    await expect(reason).toBeVisible();
-    const describedBy = (await primary.getAttribute("aria-describedby")) ?? "";
-    expect(describedBy.split(" ")).toContain(await reason.getAttribute("id"));
+    // 막힘 이유는 1차 왼쪽 한 자리에 보이고, 1차의 aria-describedby는 같은 글자의 설명 요소를 가리킨다(04-46 계약 2).
+    await expect(dialog.getByText("저장 안 한 편집 1칸 · 먼저 일괄 저장", { exact: true }).filter({ visible: true })).toHaveCount(1);
+    await expectDescribedBy(page, primary, "저장 안 한 편집 1칸 · 먼저 일괄 저장");
 
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
@@ -196,7 +201,7 @@ test.describe("복사해 새 차수 (04-24 Task 1 — B-02 · B-03 · DR-6)", ()
     const rejected = page.waitForResponse((response) => isServerAction(response.request()));
     await dialog.getByRole("button", { name: /새 차수 만들기/ }).click();
     await rejected;
-    await expect(dialog.getByText("복사할 견적 줄 없음 · 첫 줄 만들기", { exact: true })).toBeVisible();
+    await expect(dialog.getByText("복사할 견적 줄 없음 · 첫 줄 만들기", { exact: true }).filter({ visible: true })).toHaveCount(1);
     await expect(dialog).toBeVisible();
     await expect(page.getByRole("status").filter({ hasText: "새 차수 만들기" })).toHaveCount(0);
     expect(await revisionCount(project.id)).toBe(1);

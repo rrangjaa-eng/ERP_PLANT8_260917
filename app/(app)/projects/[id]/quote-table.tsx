@@ -38,6 +38,7 @@ import type { RevenueDto } from "@/domain/revenue";
 import type { Currency, Money } from "@/domain/money";
 import { RevenueSection, type ContractDraft, type EntryDraft } from "./revenue-section";
 import { StatusChange, type StatusChangeProps } from "./status-change";
+import { NewRevisionDialog, type NewRevisionProps } from "./revision-dialogs";
 import { PeriodField, periodText, type PeriodDraft, type PeriodFieldError } from "./period-field";
 import type { PeriodRights } from "@/domain/projects/period";
 import {
@@ -800,6 +801,7 @@ export function QuoteLedger({
   statusLabel,
   statusTagKind,
   statusChange,
+  newRevision,
   endDateNote,
   revisionId,
   initialLines,
@@ -837,6 +839,8 @@ export function QuoteLedger({
   statusLabel: string;
   statusTagKind: StatusTagKind;
   statusChange: StatusChangeProps | null;
+  /** 04-24(D-53 · CEO-D10) — 「복사해 새 차수」. 서버 canCreateRevision이 거짓이면 null(버튼 없음). */
+  newRevision: NewRevisionProps | null;
   /** D-81 `종료일 지남`(또는 `· 팀장 {이름}`) — 서버가 만든다. 없으면 null. */
   endDateNote: string | null;
   revisionId: string;
@@ -1100,8 +1104,11 @@ export function QuoteLedger({
   // 서버 props로 되돌리고 보관본의 칸 수를 다시 읽어 복원 줄을 띄운다. 기간 저장 성공으로 상태가
   // 바뀐 경우도 여기를 지나지만 저장 성공이 이미 보관본을 지웠으므로 복원 줄이 없다.
   const [renderedStatus, setRenderedStatus] = useState(status);
-  if (renderedStatus !== status) {
+  // 04-24 — 새 차수가 생겨 서버가 다른 차수를 보내면(router.refresh) 같은 경로로 새 차수의 줄로 다시 그린다.
+  const [renderedRevisionId, setRenderedRevisionId] = useState(revisionId);
+  if (renderedStatus !== status || renderedRevisionId !== revisionId) {
     setRenderedStatus(status);
+    setRenderedRevisionId(revisionId);
     setSeenStatus(status);
     setLines(initialLines.map(fromDto));
     setArchivedLineIds([]);
@@ -1953,7 +1960,9 @@ export function QuoteLedger({
           {endDateNote ? <span className={styles.endDateNote}>{endDateNote}</span> : null}
         </span>
         <div className={styles.headerActions}>
-          <HeaderCopyActions />
+          <HeaderCopyActions>
+            {newRevision ? <NewRevisionDialog {...newRevision} dirtyCount={dirtyCount} onCreated={setStatusToast} /> : null}
+          </HeaderCopyActions>
           {statusChange ? (
             <StatusChange
               {...statusChange}

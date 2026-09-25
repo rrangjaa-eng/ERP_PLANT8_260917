@@ -1,10 +1,10 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-25T11:13:16.912Z",
+  "timestamp": "2026-09-25T12:39:59.808Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
-  "plan": 30,
+  "plan": 49,
   "task": null,
   "total_tasks": null,
   "status": "paused",
@@ -182,12 +182,18 @@
       "name": "[세션 T] 04-12 실행(웨이브 13) — 정산 견적 줄 칸 범위(실행가·새 줄만) · 세 단계 저장(잠근 tx 안 풀 호출 없음) · 새 줄 재전송 ON CONFLICT · 순서 · 보관/복원 tx · denyWrite. executor Opus. 커밋 80ce0b7·ba3cafd·63ee5e0·6fb63c0·1cfbb37·e13d0e4·5d490d2·37982ae → 검토 수정 d2c7ccd·7dff0a4·2932c9c·42b48c0·68b092c·aae8520·ce37af5. 독립 DOM 감사(/mnt/project-files/phase4-prep/04-12-dom-audit.md): 진행·완료·넘침 PASS, 정산 칸별 잠김 FAIL — 화면 배선은 04-30 소관(04-30-PLAN:29), 서버는 거부. Opus 검토(04-12-review-opus.md) BLOCKING 0 · SHOULD-FIX 6(S1·S2·S3·S5·S6 수정, S4는 플랜:170대로 기록) · NIT 10(1 반영). 전체 게이트 CI=true(ce37af5): 단위 1161 · 통합 1226 · E2E 246 통과, lint·typecheck·lint:sql 0. 스킬 호출 기록 /mnt/project-files/phase4-prep/04-12-skill-calls.md. Codex 재확인 한도 풀리면 필요. 진행 22/42",
       "status": "done",
       "commit": "ce37af5"
+    },
+    {
+      "id": 30,
+      "name": "[세션 U] 04-30 실행(웨이브 14) — 정산 견적 줄 칸별 편집(서버 DTO cellEditability, page.tsx 한 boolean 뭉개기 제거 → 04-12 DOM 감사 FAIL 해소) · 구조 컨트롤 · 정산 새 줄(수량1·단가0 잠금) · 표 위 잠김 줄 · 잠긴 칸 이유 줄 · 힌트 줄 · EMPTY 변형 · 삭제/취소 모달 · 순서 전송 · 열린 편집기 값 Ctrl+S 커밋. executor Opus. 커밋 1fd4a4d·77d82a2·8bfe103·ed68368·5dc15aa(executor) → 6c33240(metaKey 제거) → 검토 반영 569c610·6c995f7·4d9dca0·e2ecc57·ceca8cf·b2cd0d7(SUMMARY) → 9b90265 origin/main 병합(roles.spec.ts 충돌 해소, 두 describe 모두 유지). 독립 DOM 감사(/mnt/project-files/phase4-prep/04-30-dom-audit.md, Opus, CI=true 1280) PASS 23 · FAIL 1(기존 React #418 수화 오류, 04-22부터, 04-30 결함 아님) · INFO 5. Opus 검토(/mnt/project-files/phase4-prep/04-30-review-opus.md) BLOCKING 1 · SHOULD-FIX 6 · NIT 6 — B-1·S-1·S-2·S-3·S-6 반영, S-4·S-5 이월(04-49). 병합 후 lint·tsc·단위 1174·CI=true roles 4/4. 스킬 호출 기록 /mnt/project-files/phase4-prep/04-30-skill-calls.md: 검토 수정자가 커밋 6개 중 5개 앞에 verification 호출 없음. 진행 23/42",
+      "status": "done",
+      "commit": "9b90265"
     }
   ],
   "remaining_tasks": [
     {
       "id": 1,
-      "name": "/gsd-execute-phase 4 — 남은 22개, 세션마다 한 플랜. 다음 웨이브 12: 04-44(04-22에 의존) — 머리 줄 DOM 감사(1280·1024·375)도 04-44에서",
+      "name": "/gsd-execute-phase 4 --wave 15 — 04-49 한 플랜만(04-30 위): 저장 중 잠금 DR-3, 폭 규칙 DR-14·24·36, 복원 줄, S-5 버튼 모양, 독립 DOM 감사 1280·1024·1000·375 + 전체 게이트",
       "status": "not_started"
     },
     {
@@ -469,8 +475,8 @@
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션 — git status -sb → /gsd-progress → /gsd-execute-phase 4로 04-30 한 플랜만(웨이브 14, 04-12 위). 04-30은 정산 칸별 잠김 화면 배선(04-12 DOM 감사 FAIL 항목)과 DR-36(1024 미만 보기 전용) 확인을 반드시 닫는다.",
-  "context_notes": "세션 S가 04-22 완료(20/42, 웨이브 11). 팀장 기간 권리는 projects.period. 실행자 Opus, 리뷰 Opus(Codex 한도로 대체 — 한도 풀리면 Codex 재확인 필요). 04-22는 머리 줄 DOM 감사를 04-44로 넘김(플랜 본문). 세션 R이 04-11 완료(19/42, 웨이브 10). 실행자 Opus. 독립 DOM 감사 6/6 PASS. Opus 검토 BLOCKING 0·SHOULD-FIX 2·NIT 9, NIT1만 f47550a로 수정·나머지 이월. 전체 게이트 CI=true 단위 1079·통합 1139·E2E 230. Codex 재확인 한도 풀리면 필요. phase-plan-index 기준 다음 runnable은 04-22(웨이브 11, deps=[04-11] 충족) — 단 팀장 projects write 권한 사용자 결정이 먼저 필요(blocking human action). 04-25에서 넘어온 열린 항목(UX-04 완료 표시, 오류/힌트 동시 셀 E2E, 하위분류 설명 배선)과 04-46 +1 단언 이월은 그대로 유효.",
+  "next_action": "새 세션 — git status -sb → /gsd-progress → /gsd-execute-phase 4 --wave 15로 04-49 한 플랜만(04-30 위: 저장 중 잠금 DR-3, 폭 규칙 DR-14·24·36, 복원 줄, S-5 버튼 모양, 독립 DOM 감사 1280·1024·1000·375 + 전체 게이트). PR #40, 브랜치 claude/gsd-progress-e1nzgu.",
+  "context_notes": "세션 S가 04-22 완료(20/42, 웨이브 11). 팀장 기간 권리는 projects.period. 실행자 Opus, 리뷰 Opus(Codex 한도로 대체 — 한도 풀리면 Codex 재확인 필요). 04-22는 머리 줄 DOM 감사를 04-44로 넘김(플랜 본문). 세션 R이 04-11 완료(19/42, 웨이브 10). 실행자 Opus. 독립 DOM 감사 6/6 PASS. Opus 검토 BLOCKING 0·SHOULD-FIX 2·NIT 9, NIT1만 f47550a로 수정·나머지 이월. 전체 게이트 CI=true 단위 1079·통합 1139·E2E 230. Codex 재확인 한도 풀리면 필요. phase-plan-index 기준 다음 runnable은 04-22(웨이브 11, deps=[04-11] 충족) — 단 팀장 projects write 권한 사용자 결정이 먼저 필요(blocking human action). 04-25에서 넘어온 열린 항목(UX-04 완료 표시, 오류/힌트 동시 셀 E2E, 하위분류 설명 배선)과 04-46 +1 단언 이월은 그대로 유효. 세션 U가 04-30 완료(23/42, 웨이브 14). 정산 칸별 잠김 화면 배선을 끝내 04-12 DOM 감사 FAIL을 해소했고, 9b90265로 origin/main과 병합까지 마쳐 푸시됨. 검토 수정자 커밋 5개 중 verification 호출 누락(스킬 기록으로 확인) — 다음 세션은 수정자 위임 시 커밋마다 직접 대조할 것. S-4(연결 문서 E2E)·S-5(편집기 열린 동안 버튼 모양)는 04-49로 이월.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"

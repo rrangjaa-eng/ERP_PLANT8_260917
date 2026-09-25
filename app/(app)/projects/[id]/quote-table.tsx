@@ -37,6 +37,7 @@ import {
 import type { RevenueDto } from "@/domain/revenue";
 import type { Currency, Money } from "@/domain/money";
 import { RevenueSection, type ContractDraft, type EntryDraft } from "./revenue-section";
+import { PreviousRevisionDraftRow } from "./previous-revision";
 import { StatusChange, type StatusChangeProps } from "./status-change";
 import { CustomerApprovalLine, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
 import { PeriodField, periodText, type PeriodDraft, type PeriodFieldError } from "./period-field";
@@ -388,7 +389,7 @@ function unitPricePatch(price: StoredUnitPrice): Partial<DraftLine> {
 }
 
 // 보관본의 한 칸을 그 줄의 patch로. 모양이 맞지 않는 값(이전 버전이 쓴 값)은 버린다.
-function restoredCellPatch(column: string, value: unknown): Partial<DraftLine> | null {
+export function restoredCellPatch(column: string, value: unknown): Partial<DraftLine> | null {
   switch (column) {
     case "subcategory":
       return typeof value === "string" ? { subcategory: value } : null;
@@ -809,6 +810,7 @@ export function QuoteLedger({
   newRevision,
   customerApproval,
   approvedSeq,
+  revisions,
   endDateNote,
   revisionId,
   initialLines,
@@ -852,6 +854,8 @@ export function QuoteLedger({
   customerApproval: CustomerApprovalProps;
   /** 04-24(ENG-D7) — 현재 차수가 고객 승인됐으면 그 순번(표 위 잠김 줄 — tableLockLine). */
   approvedSeq: number | null;
+  /** 04-24(DR-4) — 이 프로젝트의 차수 id·순번(서버 요약) — 다른 차수 보관본을 `{n}차`로 읽는다. */
+  revisions: { id: string; seq: number }[];
   /** D-81 `종료일 지남`(또는 `· 팀장 {이름}`) — 서버가 만든다. 없으면 null. */
   endDateNote: string | null;
   revisionId: string;
@@ -2060,6 +2064,13 @@ export function QuoteLedger({
       ) : null}
 
       {/* 04-30(DR-31) — 표 위 한 줄 순서: 현재 차수 복원 줄 → (이전 차수 복원 줄 — 04-24) → 잠김 줄. */}
+      <PreviousRevisionDraftRow
+        key={revisionId}
+        projectId={projectId}
+        currentRevisionId={revisionId}
+        revisions={revisions}
+        references={{ subcategories, vendors }}
+      />
       {lockLine ? <p className={styles.lockLine}>{lockLine}</p> : null}
 
       {rejectionSummary ? <FormAlert>{rejectionSummary}</FormAlert> : null}

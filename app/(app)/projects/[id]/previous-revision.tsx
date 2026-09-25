@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { listRevisionLinesAction } from "../actions";
 import type { QuoteLineDto } from "@/domain/quotes/lines";
 import { QUOTE_LINE_KINDS, type QuoteLineKind } from "@/domain/quotes/edit-scope";
@@ -8,7 +8,9 @@ import { formatForeignLine, formatKrw, formatQuantity } from "@/lib/format-numbe
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
-import { byKind, lineStatusLabel, quoteLineGroupLabel, type QuoteTableCodeOption, type QuoteTableOption } from "./quote-table";
+import { toTsv } from "@/ui/table/parse-tsv";
+import { clearDirtyEdits, findOtherRevisionDrafts, loadDirtyEdits, type EnumerableDirtyStorage } from "@/ui/table/use-dirty-storage";
+import { byKind, lineStatusLabel, quoteLineGroupLabel, restoredCellPatch, type QuoteTableCodeOption, type QuoteTableOption } from "./quote-table";
 import styles from "./project-detail.module.css";
 
 // 04-24(DR-13 · S5 · W1) — 이전 차수 읽기 섹션과 견적 줄 읽기 열. 원장(QuoteLedger)과 상태를 나누지 않는다 —
@@ -224,5 +226,190 @@ function PreviousRevisionSkeleton() {
         ))}
       </tbody>
     </table>
+  );
+}
+
+// ── 04-24(DR-4 · W1) — 견적 줄 복사 형식과 이전 차수 보관본 복원 줄 ─────────────────────────────────────────────
+
+/** 앱 형식 — 줄마다 `{ currency }`(04-19 격자 복사가 같은 함수를 쓴다). */
+export function quoteLineClipboardMeta(rows: QuoteLineCopyRow[]): string {
+  return JSON.stringify(rows.map((row) => ({ currency: row.unitPriceCurrency })));
+}
+
+/** 견적 줄 복사의 유일한 직렬화 — `tsv`는 읽기 열 순서의 `copyText`, `json`은 앱 형식. */
+export function quoteLineClipboard(rows: QuoteLineCopyRow[], references: QuoteLineReadReferences): { tsv: string; json: string } {
+  const columns = quoteLineReadColumns<QuoteLineCopyRow>(references, (row) => rows.indexOf(row) + 1);
+  return { tsv: toTsv(rows.map((row) => columns.map((column) => column.copyText(row)))), json: quoteLineClipboardMeta(rows) };
+}
+
+const NEW_LINE_FIELDS = [
+  ["subcategory", "subcategory"],
+  ["itemName", "itemName"],
+  ["vendorId", "vendor"],
+  ["quantity", "quantity"],
+  ["unitPrice", "unitPrice"],
+  ["execution", "execution"],
+  ["lineStatus", "status"],
+  ["note", "note"],
+] as const;
+
+// 보관본(D-68 모양)을 그 차수 줄 위에 덮는다 — 보관된 편집이 있는 줄만, 보관본에만 있는 새 줄은 보관값만.
+// 계산 열(견적가·차익)은 표와 같이 저장 전에 다시 계산하지 않는다.
+function draftCopyRows(rows: ReadRow[], edits: Record<string, unknown>): QuoteLineCopyRow[] {
+  const patched = new Map<string, QuoteLineCopyRow>();
+  const added: QuoteLineCopyRow[] = [];
+  for (const [key, value] of Object.entries(edits)) {
+    const cut = key.lastIndexOf(":");
+    const owner = key.slice(0, cut);
+    const column = key.slice(cut + 1);
+    if (column === "new") {
+      if (typeof value !== "object" || value === null) continue;
+      const stored = value as Record<string, unknown>;
+      let row: QuoteLineCopyRow = {
+        lineKind: QUOTE_LINE_KINDS.find((kind) => kind === stored.lineKind) ?? "quote",
+        subcategory: "",
+        itemName: "",
+        vendorId: null,
+        quantity: 1,
+        unitPriceAmount: 0,
+        unitPriceCurrency: "KRW",
+        unitPriceFxRate: 1,
+        unitPriceAmountKrw: 0,
+        quoteAmountKrw: 0,
+        executionAmount: 0,
+        profitKrw: 0,
+        lineStatus: "not_started",
+        note: null,
+      };
+      for (const [field, storedColumn] of NEW_LINE_FIELDS) row = { ...row, ...restoredCellPatch(storedColumn, stored[field]) };
+      added.push(row);
+      continue;
+    }
+    const base = patched.get(owner) ?? rows.find((row) => row.id === owner);
+    const patch = restoredCellPatch(column, value);
+    if (base && patch) patched.set(owner, { ...base, ...patch });
+  }
+  return [...rows.filter((row) => patched.has(row.id)).map((row) => patched.get(row.id)!), ...added];
+}
+
+function browserStorage(): EnumerableDirtyStorage | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+type RevisionRef = { id: string; seq: number };
+type Draft = { revisionId: string; seq: number; count: number };
+
+function readDrafts(projectId: string, currentRevisionId: string, revisions: RevisionRef[]): Draft[] {
+  const storage = browserStorage();
+  if (!storage) return [];
+  return findOtherRevisionDrafts(storage, projectId, currentRevisionId)
+    .flatMap((draft) => {
+      const revision = revisions.find((candidate) => candidate.id === draft.revisionId);
+      return revision ? [{ ...draft, seq: revision.seq }] : [];
+    })
+    .sort((a, b) => b.seq - a.seq);
+}
+
+const subscribeNothing = () => () => {};
+
+// S18 · DR-4 · DR-31 — 표 위 한 줄(현재 차수 복원 줄 뒤 · 잠김 줄 앞). 가장 큰 순번 하나만. 현재 차수에 자동으로
+// 합치지 않는다(줄 id가 다르다) — 「복사」와 「버림」만 있다.
+export function PreviousRevisionDraftRow({
+  projectId,
+  currentRevisionId,
+  revisions,
+  references,
+}: {
+  projectId: string;
+  currentRevisionId: string;
+  revisions: RevisionRef[];
+  references: QuoteLineReadReferences;
+}) {
+  const [drafts, setDrafts] = useState(() => readDrafts(projectId, currentRevisionId, revisions));
+  // 서버·수화 첫 렌더는 저장소를 모른다 — 수화 뒤에만 그린다(use-dirty-storage와 같은 이유, React #418).
+  const hydrated = useSyncExternalStore(subscribeNothing, () => true, () => false);
+  const [rowsBySeq, setRowsBySeq] = useState<Record<number, ReadRow[]>>({});
+  const [fetchRound, setFetchRound] = useState(0);
+  const [copyResult, setCopyResult] = useState<{ seq: number; ok: boolean } | null>(null);
+  const top = hydrated ? drafts[0] : undefined;
+  const topSeq = top?.seq;
+
+  // 클릭 처리기 안에서 동기로 복사하려고 그 차수 줄을 미리 받아 둔다.
+  useEffect(() => {
+    if (topSeq === undefined || rowsBySeq[topSeq]) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await listRevisionLinesAction({ projectId, revisionSeq: topSeq });
+        if (!cancelled && result?.data) {
+          const rows = byKind(result.data.map(readRow));
+          setRowsBySeq((prev) => ({ ...prev, [topSeq]: rows }));
+        }
+      } catch {
+        // 받지 못하면 「복사」가 `복사하지 못함`을 보이고 다시 누를 때 다시 받는다.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, topSeq, rowsBySeq, fetchRound]);
+
+  if (!top) return null;
+
+  function copy(draft: Draft) {
+    const storage = browserStorage();
+    const edits = storage ? loadDirtyEdits(storage, projectId, draft.revisionId) : null;
+    const rows = rowsBySeq[draft.seq];
+    let ok = false;
+    if (edits && rows) {
+      const { tsv, json } = quoteLineClipboard(draftCopyRows(rows, edits), references);
+      const onCopy = (event: ClipboardEvent) => {
+        event.clipboardData?.setData("text/plain", tsv);
+        event.clipboardData?.setData("application/x-plant8-quote-lines+json", json);
+        event.preventDefault();
+      };
+      document.addEventListener("copy", onCopy, { once: true });
+      try {
+        ok = document.execCommand("copy");
+      } catch {
+        ok = false;
+      }
+      document.removeEventListener("copy", onCopy);
+    } else {
+      setFetchRound((round) => round + 1);
+    }
+    setCopyResult({ seq: draft.seq, ok });
+  }
+
+  function discard(draft: Draft) {
+    const storage = browserStorage();
+    if (storage) clearDirtyEdits(storage, projectId, draft.revisionId);
+    setDrafts((prev) => prev.filter((candidate) => candidate.revisionId !== draft.revisionId));
+    setCopyResult(null);
+  }
+
+  const result = copyResult?.seq === top.seq ? copyResult : null;
+  return (
+    <p className={styles.restoreBanner}>
+      <span>{`${top.seq}차 저장 안 한 편집 ${top.count}칸`}</span>
+      <span className={styles.restoreActions}>
+        {result?.ok ? (
+          <span className={styles.savedTag}>{`복사됨 ${top.count}칸`}</span>
+        ) : (
+          <button type="button" className={styles.restoreAction} onClick={() => copy(top)}>
+            복사
+          </button>
+        )}
+        {result && !result.ok ? <span className={styles.rejectionSummary}>복사하지 못함</span> : null}
+        <button type="button" className={styles.restoreAction} onClick={() => discard(top)}>
+          버림
+        </button>
+      </span>
+    </p>
   );
 }

@@ -763,8 +763,11 @@ test.describe("이전 차수 보관본 복원 줄 (04-24 Task 4 — DR-4 · DR-3
     await expect(tabB.getByText(`${project.number} · 상세 견적 2차`, { exact: true })).toBeVisible();
     await tabB.close();
 
+    // 복원 줄이 보이면 그 차수 줄을 한 번 받아 둔다(「복사」가 클릭 안에서 동기로 쓴다) — 그 응답을 기다린다.
+    const linesLoaded = page.waitForResponse((response) => isServerAction(response.request()));
     await page.reload();
     await expect(page.getByText(`${project.number} · 상세 견적 2차`, { exact: true })).toBeVisible();
+    await linesLoaded;
     const row = previousDraftRow(page, 1);
     await expect(row).toHaveText(/^1차 저장 안 한 편집 1칸/);
     await expect(row.getByRole("button", { name: "복사" })).toBeVisible();
@@ -806,7 +809,10 @@ test.describe("이전 차수 보관본 복원 줄 (04-24 Task 4 — DR-4 · DR-3
     const [lineId] = await lineIdsOf(project.revisionId);
     await login(page, pm);
     await seedDraft(page, project.id, project.revisionId, { [`${lineId}:itemName`]: "보관된 항목" });
+    // 줄을 받은 뒤라야 실패가 execCommand 때문임을 본다(받기 전 클릭도 같은 글자다).
+    const linesLoaded = page.waitForResponse((response) => isServerAction(response.request()));
     await page.goto(`/projects/${project.id}`);
+    await linesLoaded;
 
     const row = previousDraftRow(page, 1);
     await expect(row).toHaveText(/^1차 저장 안 한 편집 1칸/);

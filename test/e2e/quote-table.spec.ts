@@ -94,8 +94,9 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await page.keyboard.press("Control+s");
 
     await expect(page.getByText(/저장됨/)).toBeVisible();
-    await expect(page.getByText("1,200,000").first()).toBeVisible();
-    await expect(page.getByText("400,000").first()).toBeVisible(); // 차익 = 1,200,000 - 800,000
+    // 04-24 — 머리 줄의 닫힌 승인 다이얼로그 부제에도 합계가 있어 표 안에서 찾는다.
+    await expect(page.locator("table").getByText("1,200,000").first()).toBeVisible();
+    await expect(page.locator("table").getByText("400,000").first()).toBeVisible(); // 차익 = 1,200,000 - 800,000
   });
 
   test("(b) 클립보드 여러 칸 붙여넣기가 활성 셀부터 오른쪽·아래로 채운다", async ({ page }) => {

@@ -225,6 +225,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       newRevision={newRevision}
       customerApproval={customerApproval}
       approvedSeq={approvedSeq}
+      revisions={revisionSummaries.flatMap((row) => (row.revisionId && row.seq !== undefined ? [{ id: row.revisionId, seq: row.seq }] : []))}
       endDateNote={endDateNote}
       revisionId={revision.id}
       initialLines={lines}

@@ -65,6 +65,28 @@ export function readRestorableCount(storage: DirtyStorageLike | null, scopeId: s
   return countDirtyEdits(loadDirtyEdits(storage, scopeId, subScopeId));
 }
 
+// 04-24(DR-4) — 키를 훑을 수 있는 저장소(window.localStorage가 만족한다).
+export type EnumerableDirtyStorage = DirtyStorageLike & { readonly length: number; key(index: number): string | null };
+
+// 04-24(DR-4 · S18) — 같은 프로젝트의 다른 차수 보관본. 현재 차수 키·다른 프로젝트·손상 JSON·빈 보관본은 뺀다.
+export function findOtherRevisionDrafts(
+  storage: EnumerableDirtyStorage,
+  scopeId: string,
+  currentSubScopeId: string,
+): { revisionId: string; count: number }[] {
+  const prefix = dirtyStorageKey(scopeId, "");
+  const drafts: { revisionId: string; count: number }[] = [];
+  for (let index = 0; index < storage.length; index++) {
+    const key = storage.key(index);
+    if (!key?.startsWith(prefix)) continue;
+    const revisionId = key.slice(prefix.length);
+    if (revisionId === currentSubScopeId) continue;
+    const count = countDirtyEdits(loadDirtyEdits(storage, scopeId, revisionId));
+    if (count > 0) drafts.push({ revisionId, count });
+  }
+  return drafts;
+}
+
 export type UseDirtyStorageResult = {
   /** 다시 열었을 때 보관된 편집이 있으면 그 칸 수(표 위 한 줄 배너 트리거). */
   restorableCount: number;

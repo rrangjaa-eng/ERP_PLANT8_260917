@@ -18,6 +18,11 @@ export function smtpConnectionOptions(config: SmtpConfig): SMTPConnectionOptions
   };
 }
 
+export function emailErrorCode(err: unknown): string {
+  void err;
+  return "";
+}
+
 export function createSmtpSender(
   config: SmtpConfig,
   deps: { connectionOptions?: Partial<SMTPConnectionOptions> } = {},

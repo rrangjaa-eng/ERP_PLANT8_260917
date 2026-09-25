@@ -1,6 +1,8 @@
 import { env } from "@/lib/env";
 import { createSmtpSender } from "@/lib/email/smtp-sender";
 
+export { emailErrorCode } from "@/lib/email/smtp-sender";
+
 // 이메일 포트(NOTI-02). send는 SMTP 오류로 던지지 않고 결과 셋 중 하나를 돌려준다
 // (D-4216) — rejected는 확실히 가지 않음, indeterminate는 갔는지 알 수 없음(RFC 5321
 // §4.5.3.2.6). 두 실패 모두 자동 재발송 대상이 아니다(D-4213).

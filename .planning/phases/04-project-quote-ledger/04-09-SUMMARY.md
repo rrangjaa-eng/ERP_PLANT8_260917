@@ -239,5 +239,41 @@ None - no external service configuration required.
 All 4 created/key files confirmed present (`lib/format-number.ts`, `ui/input/use-comma-input.ts`, `test/unit/lib/format-number.test.ts`, this SUMMARY.md) and all 15 task commit hashes confirmed present in `git log --all`.
 
 ---
+
+## 리뷰 후 수정 (Opus 검토·독립 DOM 감사)
+
+Opus 검토(독립 DOM 감사 포함, 결과는 위 D4 항목 참고)가 찾은 결함 넷을 각각 RED(실패 테스트) → GREEN(수정) 커밋 쌍으로 고쳤다.
+
+1. **BLOCKING — `lib/format-number.ts` 쉼표 뒤 Backspace 규칙이 `-`·`.` 삭제에도 발동** — 지워진 글자가 실제로 쉼표(`,`)일 때만 "숫자 하나 더 지우기" 보정을 적용하도록 `removedChar` 헬퍼로 가드했다. `-1,234`에서 `-` 삭제 → `1,234`(기존 `234`), `4,400.50`에서 `.` 삭제 → `440,050`(기존 `44,050`).
+   - RED: `cba99c0` · GREEN: `2fed1ff`
+
+2. **BLOCKING — `ui/table/Table.tsx`의 표 수준 `onPaste`가 편집 중인 셀 `<input>`의 실제 Ctrl+V까지 삼킴** — `handleTablePaste`가 `event.target`이 `INPUT`·`TEXTAREA`면 표 수준 TSV 붙여넣기를 건너뛰도록 가드했다. E2E (f)를 가짜 value-setter+input 이벤트 대신 `clipboard-read`/`clipboard-write` 권한 + `navigator.clipboard.writeText` + `ControlOrMeta+V`(실제 붙여넣기)로 교체 — 수정 전엔 거부 문구가 뜨지 않고 조용히 아무 일도 없었다(RED).
+   - RED: `5c142c9` · GREEN: `055fe65`
+   - 기존 표 TSV 붙여넣기 E2E(`quote-table.spec.ts`)·단위 테스트 전부 회귀 없이 초록.
+
+3. **BLOCKING(S15) — `ui/table/Table.module.css`의 `.alignRight`·`.cellSecondary`가 `white-space`를 지정하지 않아 375px에서 13자리 근처 원화 값이 두 줄로 꺾임** — `.alignRight`에 `white-space: nowrap`을 더했다. `.cellSecondary`는 처음엔 같이 `nowrap`을 더했으나(첫 커밋), `CI=true` 프로덕션 빌드로 전체 게이트를 돌리는 과정에서 `white-space`가 상속 속성이라 이 중복 선언이 align 없는 셀(예: `/projects` 프로젝트명 아래 거래처명)의 보조 줄까지 줄바꿈을 잃게 해 375px에서 **문서 전체 가로 오버플로**를 새로 만든 것을 발견 — 그 선언을 지우고 `.alignRight` 상속에만 맡기는 후속 수정을 했다(로컬 dev 서버에선 간헐적으로만 드러나 웹폰트 로딩 타이밍 때문에 놓치기 쉬웠다 — `document.fonts.ready` 대기를 테스트에 더해 재현을 고정했다).
+   - E2E(신규 `test/e2e/projects-list-number-nowrap.spec.ts`): RED `6ccf55c` · GREEN(1차, `.alignRight`+`.cellSecondary` 둘 다 nowrap) `a920cf5` · GREEN(후속, `.cellSecondary` 중복 nowrap 제거 + 폰트 대기) `d63da59`
+   - `CI=true`로 1280·1024·375 세 폭 모두 `scrollWidth === clientWidth` 확인(5회 연속 재실행으로 안정성 확인).
+
+4. **Correctness — 단가 환율·설정·증빙 세금 규칙 number 칸에서 `-`·`.`만 남으면 `parseNumberInput(...) ?? 대체값`이 `NaN`을 그대로 통과시킴**(`??`는 `null`만 대체하고 `NaN`은 대체하지 않는다) — 세 자리 모두 `Number.isFinite` 가드를 추가해 `NaN`이면 이전 값을 유지(quote-table.tsx) 또는 저장을 건너뛴다(settings-form-client.tsx·evidence-type-fields.tsx, 새 도움말 문구 없이 기존 무효 처리 관례 재사용).
+   - `app/(app)/projects/[id]/quote-table.tsx`(단가 환율 431행 근처): RED `1684792` → 기대값 정정 `050ea4d` · GREEN `7a5262c`(커밋 `df7caf9`에 잘못 포함됐던 diff를 여기서 실제로 반영)
+   - `app/(app)/admin/settings/settings-form-client.tsx`(162행 근처): RED `a4c9e3a` · GREEN `df7caf9`
+   - `app/(app)/admin/code-tables/evidence-type-fields.tsx`(124행 근처, 최소 징수액): RED `63464df` · GREEN `8ffc9be`
+   - 세 회귀 테스트 모두 "서버 액션이 부르지 않는다/이전 값이 남는다"를 실측으로 단언(next-action 요청 카운트 또는 화면 값).
+
+### 남긴 채(이번엔 고치지 않은) 후속 항목
+
+- 통화를 KRW로 바꿔도 원화 칸이 소수를 유지(`quote-table.tsx:423`, `revenue-section.tsx:327`)
+- 거부된 붙여넣기 뒤 커서 위치
+- `CommaTextField`가 `numeric` prop을 `<input>`에 그대로 넘김(`ui/input/TextField.tsx:61-73`)
+- 앞자리 0(`0012`→`0,012`)
+- Enter 커밋 뒤 포커스가 `<body>`로 떨어짐(기존 결함)
+- 트레이서 `b64d01a`와 수정 `7a947e7`/`c0ef602`가 RED-먼저 커밋 없이 만들어짐
+
+### 감사 주체
+
+D4(S15 backstop DOM 감사) 위 결과는 독립 Opus 에이전트가 `CI=true`로 별도 수행했다.
+
+---
 *Phase: 04-project-quote-ledger*
 *Completed: 2026-09-24*

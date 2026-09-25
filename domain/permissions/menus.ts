@@ -25,6 +25,9 @@ export const MENUS: MenuDef[] = [
   // 04-22(사용자 결정 2026-09-25 「기간만 수정」): 팀장 이상이 프로젝트 시작일·종료일만 고치는
   // 권한 — "projects" 쓰기(견적 줄·매출 등)는 주지 않는다.
   { key: "projects.period", label: "프로젝트 기간 변경" },
+  // 04-13(D-83): 경영관리의 원가 보정(조정 줄) — 프로젝트 상태와 무관하게 조정 줄만 만들고 고친다. 매출 기록
+  // (projects.revenue)과 다른 일이라 따로 두고, 시드 계급에 경영관리가 없어 기본값은 아무에게도 켜지 않는다.
+  { key: "projects.adjustment", label: "견적 조정 줄" },
   { key: "expenses", label: "지출결의" },
   { key: "cards", label: "법인카드" },
   { key: "approvals", label: "결재함" },

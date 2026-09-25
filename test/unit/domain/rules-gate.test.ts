@@ -34,8 +34,11 @@ describe("domain/rules/gate", () => {
   // 04-12(D-78 · 사용자 D10·D12) — 셀 단위 판정. 바뀐 칸마다 lineCellEditability를 본다.
   describe("project.line-edit (D-47·D-45·D-75·D-78)", () => {
     const update = (fields: string[]) => ({ kind: "update" as const, fields });
+    // 04-13 — 견적 줄(quote)을 `projects` 쓰기가 있는 사람이 고칠 때(조정 권한 없음).
+    const actor = { lineKind: "quote" as const, actorCanWrite: true, actorCanAdjust: false };
     const ctx = (status: string, fields: string[], linked: { hasLinkedDocuments: boolean; linkedDocumentNumber?: string } = { hasLinkedDocuments: false }) => ({
       status,
+      ...actor,
       ...linked,
       change: update(fields),
     });
@@ -77,13 +80,13 @@ describe("domain/rules/gate", () => {
 
     it("완료에서 새 줄(insert)은 「완료 · 견적 줄 잠김」", async () => {
       await expect(
-        gate({}, "project.line-edit", { status: "completed", hasLinkedDocuments: false, change: { kind: "insert", quoteCellsZero: true } }),
+        gate({}, "project.line-edit", { status: "completed", ...actor, hasLinkedDocuments: false, change: { kind: "insert", quoteCellsZero: true } }),
       ).resolves.toEqual({ allowed: false, reason: "완료 · 견적 줄 잠김" });
     });
 
     // 04-12 Task 2(사용자 D10·D12) — 구조 판정.
     const structural = (status: string, change: ProjectLineEditCtx["change"], hasLinkedDocuments = false) =>
-      gate({}, "project.line-edit", { status, hasLinkedDocuments, change });
+      gate({}, "project.line-edit", { status, ...actor, hasLinkedDocuments, change });
 
     it("정산 + insert(견적 칸 0)는 통과, 견적 칸이 0이 아니면 「정산 · 새 줄은 실행가만」", async () => {
       await expect(structural("settling", { kind: "insert", quoteCellsZero: true })).resolves.toEqual({ allowed: true });

@@ -73,6 +73,8 @@ export type QuoteLineInsertInput = {
   quoteAmountKrw: number;
   profitKrw: number;
   lineStatus: string;
+  // 04-13 — 줄 종류(없으면 DB 기본값 quote). 새 줄에서만 쓴다 — 갱신은 이 칸을 쓰지 않는다.
+  lineKind?: string;
   note?: string | null;
   copiedFromLineId?: string | null;
   source?: string;
@@ -108,6 +110,7 @@ export async function insertQuoteLineIfAbsent(
       quoteAmountKrw: input.quoteAmountKrw,
       profitKrw: input.profitKrw,
       lineStatus: input.lineStatus,
+      ...(input.lineKind ? { lineKind: input.lineKind } : {}),
       note: input.note ?? null,
       copiedFromLineId: input.copiedFromLineId ?? null,
       source: input.source ?? "demo",
@@ -178,7 +181,7 @@ export async function setQuoteLineArchived(viewer: Viewer, id: string, value: bo
 }
 
 // 04-12(A-03) — 순서는 셀 갱신이 쓰지 않는다(기존 줄의 sort_order는 그대로).
-export type QuoteLineUpdateInput = Omit<QuoteLineInsertInput, "id" | "revisionId" | "sortOrder" | "copiedFromLineId" | "source">;
+export type QuoteLineUpdateInput = Omit<QuoteLineInsertInput, "id" | "revisionId" | "sortOrder" | "lineKind" | "copiedFromLineId" | "source">;
 
 // D-65: 줄 버전 충돌 — 저장 요청이 읽은 버전과 다르면 UPDATE가 0행을
 // 돌려준다(WHERE version = expectedVersion). null은 "충돌 또는 존재하지

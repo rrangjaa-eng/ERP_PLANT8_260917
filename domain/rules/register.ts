@@ -6,23 +6,31 @@ import {
   quoteLockReason,
   structuralEditability,
   type QuoteLineField,
+  type QuoteLineKind,
 } from "@/domain/quotes/edit-scope";
 
 // Phase 4의 프로젝트 게이트 규칙을 등록하는 한 곳 — 규칙마다 등록한 플랜을
-// 주석 한 줄로 적는다(`project.line-edit` 04-06, 뒤 규칙은 04-20·04-22·
-// 04-12·04-26·그룹 B).
+// 주석 한 줄로 적는다: `project.line-edit`(04-06 · 04-12 · 04-13), `quote.line-cap`(04-26),
+// `project.transition`(04-20), `project.period-edit`(04-22), `project.pre-estimate-edit`(04-44),
+// `project.start-date-required`(04-20).
 //
 // side-effect import 모듈 — `import "@/domain/rules/register"`로 불러
 // 등록만 일으킨다(도메인 등록 사이드이펙트 모듈 규약).
 
-// 04-06(D-47·D-75) — 완료 프로젝트의 견적 줄을 잠근다. 나머지 네 상태는
+// 04-06(D-75) — 완료 프로젝트의 견적 줄을 잠근다. 나머지 네 상태는
 // 통과한다 — 미수주도 잠그지 않는다(D-45).
 // 04-12(D-78 · 사용자 D10·D12 · D-66) — 셀 단위로 넓힌다. `update`는 바뀐 칸마다 DTO와 같은
 // lineCellEditability를 보고, 잠김이면 quoteLockReason(표 위 한 줄과 한 문자열 — DR-2), 읽기 전용이면
 // linkedDocumentReason. 구조 변경은 structuralEditability(사용자 D10)로 — 정산의 새 줄은 견적 칸 0일 때만(D12),
 // 연결 문서가 있는 줄은 보관 대신 취소(D-66). 보관함 복원은 그 상태에서 줄을 더하는 것과 같다(정산은 견적가 0만).
+// 04-13(D-83 · D-48) — 줄 종류와 권한 축. 조정 줄은 상태를 보지 않고 `projects.adjustment` 쓰기로만 판정하고,
+// 견적 줄·견적 외 비용은 `projects` 쓰기가 있어야 한다 —
+// 입구가 두 권한 중 하나로 열리므로 줄마다 여기서 막는다. 권한 사실은 호출자가 트랜잭션 전에 읽어 넘긴다.
 export type ProjectLineEditCtx = {
   status: string;
+  lineKind: QuoteLineKind;
+  actorCanWrite: boolean;
+  actorCanAdjust: boolean;
   hasLinkedDocuments: boolean;
   linkedDocumentNumber?: string;
   change:
@@ -35,10 +43,24 @@ export type ProjectLineEditCtx = {
 const SETTLING_STRUCTURE_DENIED = "정산 · 줄 삭제·이동 없음";
 const SETTLING_INSERT_DENIED = "정산 · 새 줄은 실행가만";
 const LINKED_ARCHIVE_DENIED = "연결 문서 있음 · 삭제 대신 취소";
+// 방어 문구(화면은 이 요청을 만들지 않는다 — 위조·오래된 페이로드로만 닿는다, DR-22 · DR-35).
+const ADJUSTMENT_DENIED = "조정 줄 · 경영관리만";
+const WRITE_DENIED = "견적 줄 · 쓰기 권한 없음";
+
+function adjustmentAllowed(ctx: ProjectLineEditCtx): boolean {
+  const scope = { status: ctx.status, canWrite: ctx.actorCanWrite, lineKind: "adjustment" as const, canAdjust: ctx.actorCanAdjust };
+  if (ctx.change.kind === "update") {
+    const cells = lineCellEditability({ ...scope, hasLinkedDocuments: ctx.hasLinkedDocuments, isNewLine: false });
+    return ctx.change.fields.every((field) => cells[field] === "edit");
+  }
+  return structuralEditability(scope)[ctx.change.kind === "restore" ? "insert" : ctx.change.kind];
+}
 
 registerGateRule<unknown, ProjectLineEditCtx>({
   name: "project.line-edit",
   check: (_doc, ctx) => {
+    if (ctx.lineKind === "adjustment") return adjustmentAllowed(ctx) ? { allowed: true } : { allowed: false, reason: ADJUSTMENT_DENIED };
+    if (!ctx.actorCanWrite) return { allowed: false, reason: WRITE_DENIED };
     const lockReason = quoteLockReason({ status: ctx.status });
     if (ctx.change.kind === "update") {
       const cells = lineCellEditability({
@@ -46,6 +68,7 @@ registerGateRule<unknown, ProjectLineEditCtx>({
         canWrite: true,
         hasLinkedDocuments: ctx.hasLinkedDocuments,
         isNewLine: false,
+        lineKind: ctx.lineKind,
       });
       for (const field of ctx.change.fields) {
         if (cells[field] === "readonly") return { allowed: false, reason: linkedDocumentReason(ctx.linkedDocumentNumber ?? "") };

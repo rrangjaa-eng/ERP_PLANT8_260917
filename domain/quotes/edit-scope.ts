@@ -9,6 +9,10 @@ export type QuoteCellEditability = "edit" | "readonly" | "locked";
 export const QUOTE_LINE_STATUSES = ["not_started", "cancelled"] as const;
 export type QuoteLineStatus = (typeof QUOTE_LINE_STATUSES)[number];
 
+// 04-13(D-48 · D-83) — 줄 종류. 새 줄에서만 정해지고 바뀌지 않는다(`quote_lines.line_kind`).
+export const QUOTE_LINE_KINDS = ["quote", "out_of_quote", "adjustment"] as const;
+export type QuoteLineKind = (typeof QUOTE_LINE_KINDS)[number];
+
 export const QUOTE_LINE_FIELDS = [
   "subcategory",
   "itemName",
@@ -27,14 +31,23 @@ export const QUOTE_FIELDS_LOCKED_IN_SETTLING_INSERT = ["quantity", "unitPrice", 
 // D-66 — 연결 문서가 있는 줄의 금액 칸은 읽기 전용이다(환율은 단가·실행가 칸에 들어 있다).
 const LINKED_READONLY_FIELDS: readonly QuoteLineField[] = ["quantity", "unitPrice", "execution"];
 
+// 04-13(D-83) — 조정 줄에서 조정 권한이 있는 사람이 고치는 칸. 소분류·수량·단가·상태는 서버가 고정값으로 쓴다.
+const ADJUSTMENT_EDIT_FIELDS: readonly QuoteLineField[] = ["itemName", "vendorId", "execution", "note"];
+
 export type LineEditScopeInput = {
   status: string;
   canWrite: boolean;
   hasLinkedDocuments: boolean;
   isNewLine: boolean;
+  /** 04-13 — 없으면 견적 줄(quote). */
+  lineKind?: QuoteLineKind;
+  /** 04-13(D-83) — 권한표 `projects.adjustment` 쓰기. 조정 줄은 상태를 보지 않고 이것으로만 판정한다. */
+  canAdjust?: boolean;
 };
 
 function cellLevel(input: LineEditScopeInput, field: QuoteLineField): QuoteCellEditability {
+  // DR-22 — 권한 밖 조정 줄은 이유 글자 없이 잠김이다(이유 문자열은 quoteLockReason이 상태로만 만든다).
+  if (input.lineKind === "adjustment") return input.canAdjust && ADJUSTMENT_EDIT_FIELDS.includes(field) ? "edit" : "locked";
   if (!input.canWrite || input.status === "completed") return "locked";
   if (input.hasLinkedDocuments && LINKED_READONLY_FIELDS.includes(field)) return "readonly";
   if (input.status === "settling") {
@@ -56,7 +69,17 @@ export function lineCellEditability(input: LineEditScopeInput): Record<QuoteLine
 // `newRevision`은 새 차수 게이트(04-14)의 입력이다.
 export type StructuralEditability = { insert: boolean; archive: boolean; reorder: boolean; duplicate: boolean; newRevision: boolean };
 
-export function structuralEditability(input: { status: string; canWrite: boolean }): StructuralEditability {
+export function structuralEditability(input: {
+  status: string;
+  canWrite: boolean;
+  lineKind?: QuoteLineKind;
+  canAdjust?: boolean;
+}): StructuralEditability {
+  // 04-13(D-83) — 조정 줄은 상태와 무관하게 조정 권한으로 추가·삭제만 한다(조정 그룹 안 고정 순서 — 이동·복제 없음).
+  if (input.lineKind === "adjustment") {
+    const canAdjust = input.canAdjust === true;
+    return { insert: canAdjust, archive: canAdjust, reorder: false, duplicate: false, newRevision: false };
+  }
   const open = input.canWrite && input.status !== "completed" && input.status !== "settling";
   const insert = input.canWrite && input.status !== "completed";
   return { insert, archive: open, reorder: open, duplicate: open, newRevision: open };

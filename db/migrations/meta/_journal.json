@@ -99,6 +99,13 @@
       "when": 1790298799744,
       "tag": "0013_role_work_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790353949229,
+      "tag": "0014_quote_line_kind",
+      "breakpoints": true
     }
   ]
 }

@@ -484,8 +484,10 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await executionCell.getByLabel("실행가").press("Enter");
 
     await expect(trigger).toHaveAttribute("aria-disabled", "true");
-    const reason = page.getByText("저장 안 한 편집 1칸 · 먼저 일괄 저장", { exact: true });
-    await expect(reason).toBeVisible();
+    // 04-24 — 닫힌 「복사해 새 차수」 다이얼로그(<dialog>, 보이지 않고 읽히지 않음)의 1차도 같은 DR-6 이유를 DOM에 갖는다(B-03).
+    // 보이는 이유는 「상태 바꾸기」 옆 하나뿐이다.
+    const reason = page.getByText("저장 안 한 편집 1칸 · 먼저 일괄 저장", { exact: true }).filter({ visible: true });
+    await expect(reason).toHaveCount(1);
     const describedBy = (await trigger.getAttribute("aria-describedby")) ?? "";
     expect(describedBy.split(" ")).toContain(await reason.getAttribute("id"));
     await trigger.click({ force: true });

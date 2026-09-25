@@ -190,17 +190,11 @@ frontmatter `key-decisions` 참고. 문구는 UI-SPEC rev 5 원문 그대로 썼
 - (c4) 간헐 실패 1회 — 위 편차 2로 원인·수정. 같은 모양의 위험(`.focus()` 직후 키·붙여넣기)은 다른 스펙에도 있다(예: quote-table.spec.ts의 `pasteIntoFocusedCell` 호출). 줄 수가 적어 수화가 빨라 드러나지 않을 뿐이다 — 이 플랜 범위 밖이라 고치지 않았다(아래 이월).
 - 같은 tx 규약: 이 플랜이 더한 조회는 전부 `tx`를 받는다(`repoFindQuoteLinesByIds(…, tx)` · `repoCountActiveLinesByRevision(…, tx)`). 설정 조회 두 곳(`prepareQuoteLineSave`·`restoreQuoteLine`)은 `withTransaction` 콜백 밖이다(Grep 확인). `domain/projects/ledger.ts`·`quotes/lines.ts`의 알려진 교착 후속 건은 건드리지 않았고 악화시키지 않았다.
 
-## 독립 DOM 감사 · 전체 게이트
+## 독립 DOM 감사 · 전체 게이트 · 교차 검토
 
-Task 2 ③의 독립 DOM 감사(S4 partial 상한 — 1280 · 1024 · 375)와 `CI=true pnpm test` 전체 게이트는 **오케스트레이터가 이어서 돌린다**(이 실행의 범위 규칙). 감사가 볼 화면·상태:
-
-- 진행(in_progress) 프로젝트, PM 로그인, 차수에 줄 300(SQL `generate_series`, 전역 설정 변경 없음):
-  - **1280 · 1024**: 「줄 추가」 `aria-disabled="true"` · 옆 이유 `300줄 상한 · 상한은 관리자 설정`(--danger)이 잘리지 않음 · 버튼 `aria-describedby` → 이유 id
-  - 같은 폭에서 칸 포커스 후 Ctrl+Enter → 합계 행 오른쪽 `300줄 상한 · 상한은 관리자 설정`이 잘리지 않음(합계 라벨·견적·차익 합계와 한 줄)
-  - 줄 299에서 마지막 줄 항목 칸에 3줄 TSV 붙여넣기 → 합계 행 `붙여넣기 전부 거부 · 300줄 상한을 1줄 넘음`이 잘리지 않음
-  - **375**: 「줄 추가」가 없고(04-49 폭 규칙) 합계 행 글자가 잘리지 않음
-  - 세 폭 모두 문서 가로 스크롤 0
-- 이 실행에서 돌린 것: `pnpm lint` 0 · `pnpm typecheck` 0 · `pnpm build` 0 · 통합(quote-line-cap · settings · quote-lines · tx-safety) 65 passed · 단위 1178 passed · E2E quote-edit-scope 35 passed · quote-table 16 passed(dev 서버). cap1~3은 CI=true 빌드에서도 한 번 돌렸다(구현 전 RED 확인 목적 — cap1 통과)
+- **독립 DOM 감사**(별도 Opus 에이전트, `CI=true` 프로덕션 빌드, 1280 · 1024 · 375, 계산 스타일·aria·박스만 실측 — 스크린샷 육안 판정 없음, 보고서 `/mnt/project-files/phase4-prep/04-26-dom-audit.md`): **PASS 35 · FAIL 0 · INFO 6**. 375에서는 단축키·붙여넣기 상한 상태를 설계상 만들 수 없다(`quote-table.tsx:1983` · `1986` · `1995`가 `editableWidth`(≥1024)일 때만 `onNewRow`·`onDuplicateRow`·`onPasteAtCell`을 연결한다). INFO 1건: 375에서 수화 전 서버 렌더가 편집 표(비활성 「줄 추가」·300 gridcell)를 잠깐 그렸다가 지운다 — 04-49 영역이라 이월.
+- **전체 게이트**: `bash scripts/reset-test-db.sh && CI=true pnpm test` — ec539c5에서 초록. 단위 1178 · 통합 1235 · E2E 288.
+- **교차 검토**(Codex 대체 Opus — Codex 한도 09-29 해제, 재확인 필요, 보고서 `/mnt/project-files/phase4-prep/04-26-review-opus.md`): **BLOCKING 0 · SHOULD-FIX 1 · NIT 5**. S-1(E2E cap2의 Ctrl+D 단언이 앞선 Ctrl+Enter 문구로 이미 참이라 공허함)을 커밋 d1bff01(Ctrl+D 앞에서 Ctrl+S로 저장을 시도해 문구를 지우고, 고정 대기 없이 사라짐을 단언한 뒤 Ctrl+D로 다시 뜨는지 본다)로 반영. NIT 5건은 이월(보고서 참조): 되살린 편집은 화면 상한 판정을 거치지 않는다(서버가 막아 안전) · 한 배치 안에서 새 줄 id가 겹치면 두 번 세어 보수적으로 거부한다 · 통합 (9)의 「두 순서 모두」가 사실상 같은 순서를 두 번 돈다 · 충돌과 상한 초과가 한 저장에 함께 있으면 상한 문구만 보인다 · DOM 감사·전체 게이트 결과를 SUMMARY에 반영(이번에 반영 완료).
 
 ## Deferred Items
 
@@ -220,7 +214,7 @@ None - no external service configuration required.
 ## Next Phase Readiness
 
 - 04-13(조정·견적 외 비용 줄)은 같은 `quote.line-cap` 셈을 지난다 — 그 플랜의 통합 테스트가 조정 줄이 셈에 들어가는지 단언한다
-- 오케스트레이터: 독립 DOM 감사 → 전체 게이트 → 리뷰 뒤 STATE/ROADMAP 반영
+- 독립 DOM 감사 → 전체 게이트 → 교차 검토 반영 완료. STATE/ROADMAP 반영은 남음.
 
 ## Self-Check: PASSED
 

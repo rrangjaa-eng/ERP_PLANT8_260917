@@ -163,6 +163,7 @@ export function RevenueSection({
   canWriteEntries,
   balanceKrw,
   saveLocked = false,
+  editableWidth = true,
 }: {
   contractDraft: ContractDraft;
   onContractChange: (patch: Partial<ContractDraft>) => void;
@@ -180,7 +181,10 @@ export function RevenueSection({
   balanceKrw: number | undefined;
   /** 04-49(DR-3 · 계약 3) — 저장 요청 중. 칸은 값을 보인 채 readOnly, 추가·통화 바꾸기는 무동작이다. */
   saveLocked?: boolean;
+  /** 04-49(DR-36) — 1024 미만이면 발행·입금 표는 보기 전용(추가 버튼 없음, EMPTY는 사실만). */
+  editableWidth?: boolean;
 }) {
+  const canEditEntries = canWriteEntries && editableWidth;
   const tablesVisible = issuedEntries !== undefined && paidEntries !== undefined;
 
   const issuedColumns: TableColumn<EntryDraft>[] = [
@@ -188,9 +192,9 @@ export function RevenueSection({
       key: "entryDate",
       header: "발행일",
       priority: "p1",
-      editability: () => (canWriteEntries ? "edit" : "locked"),
+      editability: () => (canEditEntries ? "edit" : "locked"),
       cell: (row) =>
-        canWriteEntries ? (
+        canEditEntries ? (
           <input
             aria-label="발행일"
             type="date"
@@ -208,9 +212,9 @@ export function RevenueSection({
       header: "발행액",
       priority: "p1",
       align: "right",
-      editability: () => (canWriteEntries ? "edit" : "locked"),
+      editability: () => (canEditEntries ? "edit" : "locked"),
       cell: (row) =>
-        canWriteEntries ? (
+        canEditEntries ? (
           <AmountInput
             readOnly={saveLocked}
             ariaLabel="발행액"
@@ -226,9 +230,9 @@ export function RevenueSection({
       key: "note",
       header: "메모",
       priority: "p2",
-      editability: () => (canWriteEntries ? "edit" : "locked"),
+      editability: () => (canEditEntries ? "edit" : "locked"),
       cell: (row) =>
-        canWriteEntries ? (
+        canEditEntries ? (
           <input
             aria-label="메모"
             type="text"
@@ -248,9 +252,9 @@ export function RevenueSection({
       key: "entryDate",
       header: "입금일",
       priority: "p1",
-      editability: () => (canWriteEntries ? "edit" : "locked"),
+      editability: () => (canEditEntries ? "edit" : "locked"),
       cell: (row) =>
-        canWriteEntries ? (
+        canEditEntries ? (
           <input
             aria-label="입금일"
             type="date"
@@ -268,9 +272,9 @@ export function RevenueSection({
       header: "입금액",
       priority: "p1",
       align: "right",
-      editability: () => (canWriteEntries ? "edit" : "locked"),
+      editability: () => (canEditEntries ? "edit" : "locked"),
       cell: (row) =>
-        canWriteEntries ? (
+        canEditEntries ? (
           <AmountInput
             readOnly={saveLocked}
             ariaLabel="입금액"
@@ -294,9 +298,9 @@ export function RevenueSection({
       key: "note",
       header: "메모",
       priority: "p2",
-      editability: () => (canWriteEntries ? "edit" : "locked"),
+      editability: () => (canEditEntries ? "edit" : "locked"),
       cell: (row) =>
-        canWriteEntries ? (
+        canEditEntries ? (
           <input
             aria-label="메모"
             type="text"
@@ -377,7 +381,7 @@ export function RevenueSection({
             rows={issuedEntries ?? []}
             getRowId={(row) => row.clientKey}
             emptyMessage="발행한 세금계산서가 없습니다"
-            emptyAction={canWriteEntries ? { label: "발행 줄 추가", onClick: onAddIssued } : undefined}
+            emptyAction={canEditEntries ? { label: "발행 줄 추가", onClick: onAddIssued } : undefined}
             saveLocked={saveLocked}
             footer={
               <tr>
@@ -387,7 +391,7 @@ export function RevenueSection({
               </tr>
             }
           />
-          {canWriteEntries && (issuedEntries ?? []).length > 0 ? (
+          {canEditEntries && (issuedEntries ?? []).length > 0 ? (
             <button type="button" className={styles.addLineButton} onClick={() => (saveLocked ? undefined : onAddIssued())}>
               발행 줄 추가
             </button>
@@ -399,7 +403,7 @@ export function RevenueSection({
             rows={paidEntries ?? []}
             getRowId={(row) => row.clientKey}
             emptyMessage="입금 줄이 없습니다"
-            emptyAction={canWriteEntries ? { label: "입금 줄 추가", onClick: onAddPaid } : undefined}
+            emptyAction={canEditEntries ? { label: "입금 줄 추가", onClick: onAddPaid } : undefined}
             saveLocked={saveLocked}
             alwaysShowFooter
             footer={
@@ -411,7 +415,7 @@ export function RevenueSection({
               </tr>
             }
           />
-          {canWriteEntries && (paidEntries ?? []).length > 0 ? (
+          {canEditEntries && (paidEntries ?? []).length > 0 ? (
             <button type="button" className={styles.addLineButton} onClick={() => (saveLocked ? undefined : onAddPaid())}>
               입금 줄 추가
             </button>

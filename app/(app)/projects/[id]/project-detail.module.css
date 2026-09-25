@@ -174,10 +174,22 @@
 
 /* 04-04(§7-3 보강 (마)) — 미저장 편집 복원 줄. 표 위 한 줄(전역 배너가
    아니다 — §7-11과 구분). */
+/* 04-49(S18 overflow) — 복원 줄은 제 줄(블록). 글자는 keep-all로 줄바꿈하고, 두 3차는 한 묶음이라 함께 다음 줄로 간다. */
 .restoreBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--s-2);
   margin: var(--s-2) 0;
-  color: var(--fg);
+  color: var(--muted);
   font-size: var(--fs-sm);
+  word-break: keep-all;
+}
+
+.restoreActions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: var(--s-2);
 }
 
 /* 04-30(DR-2 · DR-31) — 표 위 잠김 줄. 복원 줄 다음, 잠긴 셀 편집 시도의 이유와 같은 문자열. */
@@ -188,7 +200,6 @@
 }
 
 .restoreAction {
-  margin-left: var(--s-2);
   border: 0;
   background: none;
   color: var(--accent);
@@ -235,6 +246,35 @@
   white-space: nowrap;
 }
 
+/* 04-49(DR-14) — 외화 2행(`USD 4,400.00` · `@1,318.1818`). 1280 미만에서만 두 묶음 사이에서 줄바꿈한다. */
+.fxGroups > span {
+  white-space: nowrap;
+}
+
+@media (max-width: 1279.98px) {
+  .fxGroups {
+    white-space: normal;
+  }
+}
+
+/* 04-49(DR-14) — 숨은 금액 열의 합계(합계 행 라벨 뒤). 1024~1279 = 차익, 700~1023 = 견적 · 차익. */
+.footerQuoteSum,
+.footerProfitSum {
+  display: none;
+}
+
+@media (min-width: 700px) and (max-width: 1279.98px) {
+  .footerProfitSum {
+    display: inline;
+  }
+}
+
+@media (min-width: 700px) and (max-width: 1023.98px) {
+  .footerQuoteSum {
+    display: inline;
+  }
+}
+
 .hintRow kbd {
   padding: 0 4px;
   border: var(--line-w) solid var(--line);
@@ -244,6 +284,11 @@
 @media (max-width: 699.98px) {
   .hintRow {
     display: none;
+  }
+
+  /* 04-49(S18) — 폰에서 복원·버림은 터치 최소 높이. */
+  .restoreAction {
+    min-height: var(--touch-min);
   }
 }
 

@@ -187,6 +187,19 @@
   line-height: var(--lh-head);
 }
 
+/* 04-49(DR-14) — 좁은 PC 열 접기(TableColumn.collapseBelow). 숨은 열은 DOM에 남아 논리 열 순서를 지킨다. */
+@media (max-width: 1279.98px) {
+  .collapse-1280 {
+    display: none;
+  }
+}
+
+@media (max-width: 1023.98px) {
+  .collapse-1024 {
+    display: none;
+  }
+}
+
 /* §7-3 폰 전략 — P1만 열로 남고 P2는 행 아래 접힌 줄, P3은 숨는다. 가로
    스크롤을 만들지 않는다(S11). */
 @media (max-width: 699.98px) {

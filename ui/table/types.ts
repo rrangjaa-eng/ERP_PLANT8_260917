@@ -38,6 +38,11 @@ export type TableColumn<Row> = {
    * 렌더하지 않는다 — 3행으로 늘리지 않는다는 계약을 지킨다.
    */
   secondaryLine?: (row: Row) => ReactNode;
+  /**
+   * 04-49(DR-14) — 좁은 PC 열 접기. 그 폭 **미만**에서 숨는다(1024 미만은 1280 열도 숨는다). 숨은 열은 방향키가
+   * 건너뛰고, 붙여넣기의 논리 열 순서에는 남는다. 폰(<700)은 priority 규칙이 따로 접는다.
+   */
+  collapseBelow?: 1280 | 1024;
 };
 
 export type TableGroup<Row> = {

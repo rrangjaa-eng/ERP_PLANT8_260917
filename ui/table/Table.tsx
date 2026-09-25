@@ -4,6 +4,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { isCtrlCombo } from "@/lib/shortcut";
 import styles from "./Table.module.css";
 import { isGridActionAllowed } from "./save-lock";
+import { useMinWidth } from "./use-editable-width";
 import type { CellEditability, CellIssue, TableColumn } from "./types";
 import { conflictFocusTransition, useGridKeyboard, type ConflictFocusState, type GridPosition } from "./use-grid-keyboard";
 
@@ -108,6 +109,12 @@ export function Table<Row>({
 }: TableProps<Row>) {
   const [activeCell, setActiveCell] = useState<ActiveCell>(null);
   const allowed = (action: Parameters<typeof isGridActionAllowed>[0]) => isGridActionAllowed(action, { saveLocked });
+  // 04-49(DR-14) — collapseBelow로 숨은 열(CSS와 같은 폭 판정). 방향키가 건너뛴다.
+  const atLeast1280 = useMinWidth(1280);
+  const atLeast1024 = useMinWidth(1024);
+  const isHiddenColumn = (column: TableColumn<Row> | undefined) =>
+    (column?.collapseBelow === 1280 && !atLeast1280) || (column?.collapseBelow !== undefined && !atLeast1024);
+  const collapseClass = (column: TableColumn<Row>) => (column.collapseBelow ? styles[`collapse-${column.collapseBelow}`] : "");
 
   // (가) — 편집 가능한 셀이 하나라도 있으면 role="grid" + --g-100 머리글,
   // 하나도 없으면 <table> + 시각적으로 숨긴 <caption> + 흰 머리글.
@@ -152,6 +159,7 @@ export function Table<Row>({
       return activeCell?.rowId === getRowId(row) && activeCell.columnKey === column.key;
     },
     saveLocked,
+    isHiddenCol: (col) => isHiddenColumn(columns[col]),
     handlers: {
       onEnterEdit: (pos) => {
         const row = flatRows[pos.row];
@@ -363,9 +371,12 @@ export function Table<Row>({
             <th
               key={column.key}
               scope="col"
-              className={[styles.headerCell, styles[`prio-${column.priority}`], column.align === "right" ? styles.alignRight : ""].join(
-                " ",
-              )}
+              className={[
+                styles.headerCell,
+                styles[`prio-${column.priority}`],
+                collapseClass(column),
+                column.align === "right" ? styles.alignRight : "",
+              ].join(" ")}
             >
               {column.header}
             </th>
@@ -426,6 +437,7 @@ export function Table<Row>({
                         className={[
                           styles.cell,
                           styles[`prio-${column.priority}`],
+                          collapseClass(column),
                           column.align === "right" ? styles.alignRight : "",
                           isEditableColumn ? styles.editableCell : "",
                           editability === "locked" ? styles.lockedCell : "",

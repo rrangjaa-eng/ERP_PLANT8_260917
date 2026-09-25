@@ -14,11 +14,12 @@ import { RowSheet } from "@/ui/table/RowSheet";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Toast } from "@/ui/toast/Toast";
 import { useDirtyStorage } from "@/ui/table/use-dirty-storage";
+import { useEditableWidth } from "@/ui/table/use-editable-width";
 import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
 import { normalizeNumericPaste } from "@/ui/table/parse-tsv";
 import { formatKrw, formatForeignLine, formatQuantity, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
 import { useCommaInput } from "@/ui/input/use-comma-input";
-import type { TableColumn, CellIssue } from "@/ui/table/types";
+import type { TableColumn, CellIssue, CellEditability } from "@/ui/table/types";
 import type { QuoteLineDto, QuoteLineBaseline } from "@/domain/quotes/lines";
 import {
   QUOTE_LINE_STATUSES,
@@ -1333,6 +1334,8 @@ export function QuoteLedger({
   const saveLocked = isExecuting;
   // 04-30 리뷰 S-5 — 셀 편집기가 열린 동안에는 1차를 누르면 그 값이 커밋되고 저장된다 — 비활성으로 보이지 않는다.
   const [cellEditing, setCellEditing] = useState(false);
+  // 04-49(DR-14 · DR-24 · DR-36 · 계약 6) — 1024 미만이면 견적 줄 표·매출 표는 보기 전용이다(표 밖 칸만 편집).
+  const editableWidth = useEditableWidth();
 
   // 04-30(엔지 r2 분할안) — 키보드 Ctrl+S는 표가 열린 셀 편집기를 먼저 커밋(blur)한 뒤 부른다. 그 커밋이
   // 상태에 반영된 다음 렌더에서 저장해야 활성 셀의 마지막 값이 페이로드에 든다.
@@ -1345,11 +1348,15 @@ export function QuoteLedger({
   const vendorLabel = (id: string | null) => (id ? (vendors.find((v) => v.id === id)?.name ?? id) : "—");
   const subcategoryLabel = (value: string) => subcategories.find((option) => option.value === value)?.label ?? value;
 
+  // 04-49(DR-36) — 1024 미만이면 셀 편집 가능성을 전부 거둬 캡션 있는 읽기 표로 그린다(dirty 인셋은 그대로).
+  const atWidth = (level: CellEditability): CellEditability => (editableWidth ? level : "readonly");
+
   const columns: TableColumn<DraftLine>[] = [
     {
       key: "sort",
       header: "번호",
       priority: "p3",
+      collapseBelow: 1280,
       align: "left",
       cell: (row) => lines.indexOf(row) + 1,
     },
@@ -1357,7 +1364,7 @@ export function QuoteLedger({
       key: "subcategory",
       header: "소분류",
       priority: "p3",
-      editability: (row) => row.cells.subcategory,
+      editability: (row) => atWidth(row.cells.subcategory),
       cell: (row) => subcategoryLabel(row.subcategory),
       editCell: (row, ctx) =>
         selectEditCell({
@@ -1375,7 +1382,7 @@ export function QuoteLedger({
       key: "itemName",
       header: "항목",
       priority: "p1",
-      editability: (row) => row.cells.itemName,
+      editability: (row) => atWidth(row.cells.itemName),
       cell: (row) => row.itemName,
       editCell: (row, ctx) =>
         textEditCell({
@@ -1391,7 +1398,7 @@ export function QuoteLedger({
       key: "vendor",
       header: "거래처",
       priority: "p2",
-      editability: (row) => row.cells.vendorId,
+      editability: (row) => atWidth(row.cells.vendorId),
       cell: (row) => vendorLabel(row.vendorId),
       editCell: (row, ctx) =>
         selectEditCell({
@@ -1409,8 +1416,9 @@ export function QuoteLedger({
       key: "quantity",
       header: "수량",
       priority: "p2",
+      collapseBelow: 1024,
       align: "right",
-      editability: (row) => row.cells.quantity,
+      editability: (row) => atWidth(row.cells.quantity),
       // D-95 — 읽기 모드도 쉼표 서식을 쓴다(04-09 Task 3 편차, 수량 칸이
       // 이관에서 빠져 있었다).
       cell: (row) => formatQuantity(row.quantity),
@@ -1430,8 +1438,9 @@ export function QuoteLedger({
       key: "unitPrice",
       header: "단가",
       priority: "p2",
+      collapseBelow: 1024,
       align: "right",
-      editability: (row) => row.cells.unitPrice,
+      editability: (row) => atWidth(row.cells.unitPrice),
       cell: (row) => formatKrw(row.unitPriceAmountKrw),
       editCell: (row, ctx) => (
         <UnitPriceEditCell
@@ -1481,13 +1490,23 @@ export function QuoteLedger({
           }}
         />
       ),
-      secondaryLine: (row) =>
-        formatForeignLine({ currency: row.unitPriceCurrency, amount: row.unitPriceAmount, fxRate: row.unitPriceFxRate }),
+      secondaryLine: (row) => {
+        const line = formatForeignLine({ currency: row.unitPriceCurrency, amount: row.unitPriceAmount, fxRate: row.unitPriceFxRate });
+        if (!line) return null;
+        // 04-49(DR-14) — `USD 4,400.00`과 `@1,318.1818` 두 묶음(1280 미만에서 그 사이에서만 줄바꿈).
+        const at = line.indexOf(" @");
+        return (
+          <span className={styles.fxGroups}>
+            <span>{line.slice(0, at)}</span> <span>{line.slice(at + 1)}</span>
+          </span>
+        );
+      },
     },
     {
       key: "quoteAmount",
       header: "견적가",
       priority: "p2",
+      collapseBelow: 1024,
       align: "right",
       // 계산 열 — 누구에게나 항상 읽기 전용(D-63).
       cell: (row) => formatKrw(row.quoteAmountKrw),
@@ -1497,7 +1516,7 @@ export function QuoteLedger({
       header: "실행가",
       priority: "p1",
       align: "right",
-      editability: (row) => row.cells.execution,
+      editability: (row) => atWidth(row.cells.execution),
       cell: (row) => formatKrw(row.executionAmount),
       editCell: (row, ctx) => (
         <NumericEditCell
@@ -1515,6 +1534,7 @@ export function QuoteLedger({
       key: "profit",
       header: "차익",
       priority: "p2",
+      collapseBelow: 1280,
       align: "right",
       cell: (row) => formatKrw(row.profitKrw),
     },
@@ -1528,7 +1548,8 @@ export function QuoteLedger({
       key: "note",
       header: "비고",
       priority: "p3",
-      editability: (row) => row.cells.note,
+      collapseBelow: 1024,
+      editability: (row) => atWidth(row.cells.note),
       cell: (row) => row.note ?? "—",
       editCell: (row, ctx) =>
         textEditCell({
@@ -1840,7 +1861,8 @@ export function QuoteLedger({
               onOpenPeriodField={openPeriodField}
             />
           ) : null}
-          {canSave ? (
+          {/* 04-49(후속 결정 R1) — 1024 미만에서는 dirty가 하나라도 있을 때만(복원한 표 칸 포함, 같은 dirty 셈). */}
+          {canSave && (editableWidth || dirtyCount > 0) ? (
             <Button
               type="button"
               variant="primary"
@@ -1888,13 +1910,15 @@ export function QuoteLedger({
 
       {dirtyStorage.restorableCount > 0 ? (
         <p className={styles.restoreBanner}>
-          {`저장 안 한 편집 ${dirtyStorage.restorableCount}칸`}
-          <button type="button" className={styles.restoreAction} onClick={restoreEdits}>
-            복원
-          </button>
-          <button type="button" className={styles.restoreAction} onClick={() => dirtyStorage.discard()}>
-            버림
-          </button>
+          <span>{`저장 안 한 편집 ${dirtyStorage.restorableCount}칸`}</span>
+          <span className={styles.restoreActions}>
+            <button type="button" className={styles.restoreAction} onClick={restoreEdits}>
+              복원
+            </button>
+            <button type="button" className={styles.restoreAction} onClick={() => dirtyStorage.discard()}>
+              버림
+            </button>
+          </span>
         </p>
       ) : null}
 
@@ -1911,7 +1935,7 @@ export function QuoteLedger({
         groupBy={(row) => subcategoryLabel(row.subcategory)}
         emptyMessage={emptyState.message}
         emptyAction={
-          emptyState.action?.kind === "addLine"
+          emptyState.action?.kind === "addLine" && editableWidth
             ? { label: emptyState.action.label, shortcut: "Ctrl+Enter", onClick: () => addLine() }
             : emptyState.action?.kind === "openPeriodEnd"
               ? { label: emptyState.action.label, onClick: () => openPeriodField("end") }
@@ -1922,7 +1946,7 @@ export function QuoteLedger({
         onEditingChange={setCellEditing}
         // 04-30(사용자 D10) — 할 수 없는 구조 동작은 키도 무동작이다(서버 structuralEditability).
         keyboard={{
-          onDeleteRow: structural.archive
+          onDeleteRow: structural.archive && editableWidth
             ? (row) =>
                 setDeleteConfirm({
                   clientKey: row.clientKey,
@@ -1931,13 +1955,13 @@ export function QuoteLedger({
                   linked: row.hasLinkedDocuments,
                 })
             : undefined,
-          onNewRow: structural.insert ? (row) => addLine(row) : undefined,
-          onDuplicateRow: structural.duplicate ? (row) => duplicateLine(row.clientKey) : undefined,
-          onMoveRow: structural.reorder ? (row, direction) => moveLine(row.clientKey, direction) : undefined,
+          onNewRow: structural.insert && editableWidth ? (row) => addLine(row) : undefined,
+          onDuplicateRow: structural.duplicate && editableWidth ? (row) => duplicateLine(row.clientKey) : undefined,
+          onMoveRow: structural.reorder && editableWidth ? (row, direction) => moveLine(row.clientKey, direction) : undefined,
           onSave: () => setSaveRequests((count) => count + 1),
         }}
         onBlockedEdit={showBlockedReason}
-        onPasteAtCell={handlePasteAtCell}
+        onPasteAtCell={editableWidth ? handlePasteAtCell : undefined}
         cellIssue={cellIssueFor}
         cellDirty={(row) => row.dirty}
         onRowTap={(row) => setSheetRowKey(row.clientKey)}
@@ -1945,6 +1969,9 @@ export function QuoteLedger({
           <tr>
             <td colSpan={columns.length} className={styles.footerCell}>
               {`합계 (공급가액 · ${lines.length}줄)`}
+              {/* 04-49(DR-14) — 숨은 금액 열의 합계는 그 폭에서만 라벨 뒤에(1024~1279 차익, 700~1023 견적 · 차익). */}
+              <span className={styles.footerQuoteSum}> {`견적 ${formatKrw(lines.reduce((sum, line) => sum + line.quoteAmountKrw, 0))} ·`}</span>
+              <span className={styles.footerProfitSum}> {`차익 ${formatKrw(lines.reduce((sum, line) => sum + line.profitKrw, 0))}`}</span>
               {savedAt ? <span className={styles.savedTag}> 저장됨 {savedAt}</span> : null}
               {pasteWarning ? <span className={styles.pasteWarning}> {pasteWarning}</span> : null}
               {rejectionSummary ? <span className={styles.rejectionSummary}> {rejectionSummary}</span> : null}
@@ -1954,7 +1981,7 @@ export function QuoteLedger({
       />
 
       {/* SYSTEM.md §7-9 개정 ⑬ — 견적 표 아래 힌트 줄(라벨 kbd 묶음), 폰에서 숨는다. */}
-      {lines.some((line) => Object.values(line.cells).includes("edit")) ? (
+      {editableWidth && lines.some((line) => Object.values(line.cells).includes("edit")) ? (
         <p className={styles.hintRow}>
           {hintItems.map((item, index) => (
             <Fragment key={item.label}>
@@ -1965,7 +1992,7 @@ export function QuoteLedger({
         </p>
       ) : null}
 
-      {structural.insert && lines.length > 0 ? (
+      {structural.insert && editableWidth && lines.length > 0 ? (
         <button type="button" className={styles.addLineButton} onClick={() => (saveLocked ? undefined : addLine())}>
           줄 추가
         </button>
@@ -2022,6 +2049,7 @@ export function QuoteLedger({
         canWriteEntries={canWriteEntries}
         balanceKrw={balanceKrw}
         saveLocked={saveLocked}
+        editableWidth={editableWidth}
       />
 
       {statusToast ? <Toast message={statusToast} onDismiss={() => setStatusToast(null)} /> : null}

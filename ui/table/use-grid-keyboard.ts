@@ -40,6 +40,8 @@ export type UseGridKeyboardParams = {
   isBlockedCell?: (pos: GridPosition) => boolean;
   /** 04-49(DR-3) — 저장 요청 중. 편집 진입·구조·저장 키는 무동작이고 방향키·범위 선택은 된다. */
   saveLocked?: boolean;
+  /** 04-49(DR-14) — 좁은 PC에서 숨은 열. 방향키가 건너뛰고 로빙 탭 정지도 보이는 열에 둔다. */
+  isHiddenCol?: (col: number) => boolean;
   handlers: GridKeyboardHandlers;
 };
 
@@ -93,9 +95,20 @@ export function useGridKeyboard({
   isEditing,
   isBlockedCell,
   saveLocked = false,
+  isHiddenCol = () => false,
   handlers,
 }: UseGridKeyboardParams): UseGridKeyboardResult {
-  const [focus, setFocusState] = useState<GridPosition>({ row: 0, col: 0 });
+  const [storedFocus, setFocusState] = useState<GridPosition>({ row: 0, col: 0 });
+  // 탭 정지가 숨은 열에 있으면(첫 칸 번호 등) 가장 가까운 보이는 열로 옮겨 보인다.
+  const focus: GridPosition = isHiddenCol(storedFocus.col)
+    ? { row: storedFocus.row, col: nearestVisibleCol(storedFocus.col) }
+    : storedFocus;
+
+  function nearestVisibleCol(col: number): number {
+    for (let next = col; next < colCount; next++) if (!isHiddenCol(next)) return next;
+    for (let next = col; next >= 0; next--) if (!isHiddenCol(next)) return next;
+    return col;
+  }
   const [selectionAnchor, setSelectionAnchor] = useState<GridPosition | null>(null);
 
   function setFocus(pos: GridPosition) {
@@ -118,7 +131,13 @@ export function useGridKeyboard({
 
   function moveFocus(rowDelta: number, colDelta: number, extendSelection: boolean, from: GridPosition) {
     if (rowCount === 0 || colCount === 0) return;
-    const next = { row: clamp(from.row + rowDelta, 0, rowCount - 1), col: clamp(from.col + colDelta, 0, colCount - 1) };
+    let col = clamp(from.col + colDelta, 0, colCount - 1);
+    // 04-49(DR-14) — 숨은 열은 건너뛴다. 끝까지 숨은 열뿐이면 제자리.
+    while (colDelta !== 0 && col !== from.col && isHiddenCol(col)) {
+      const step = Math.sign(colDelta);
+      col = col + step < 0 || col + step >= colCount ? from.col : col + step;
+    }
+    const next = { row: clamp(from.row + rowDelta, 0, rowCount - 1), col };
     if (extendSelection) {
       setSelectionAnchor((anchor) => anchor ?? from);
     } else {

@@ -1,16 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { asc, eq, notInArray } from "drizzle-orm";
+import { and, asc, eq, notInArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { codeItems, projects, quoteLines, teams } from "@/db/schema";
-import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { actionLog, codeItems, projects, quoteLines, teams } from "@/db/schema";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
-import { createProject } from "@/domain/projects";
+import { createProject, findProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
+import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
+import { changeProjectStatus } from "@/domain/projects/status";
 
 // 04-06(D-75) — 프로젝트 상태 다섯 값. 04-20·04-21이 같은 파일에 전환
 // describe를 더한다. 이 목록은 db/migrations/0012_project_status_five_values.sql
@@ -128,5 +130,98 @@ describe("프로젝트 상태 다섯 값 (04-06, D-75)", () => {
       .orderBy(asc(quoteLines.id));
     expect(after).toEqual(before);
     expect(after.map((line) => line.itemName)).toEqual(["상태 바꾸기 전 줄"]);
+  });
+});
+
+// 04-20 — 사람의 전환. 발령일은 늘 과거인 고정 날짜로 둔다(자정 경계에서
+// 테스트가 흔들리지 않게 — 오늘(KST) 발령 이력 판정은 그 날짜 이후 전부 같다).
+const PAST_ASSIGNMENT_DATE = "2020-01-01";
+
+async function makeTeam(): Promise<string> {
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `본부-${randomUUID()}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `팀-${randomUUID()}` });
+  return team.id;
+}
+
+async function makeActor(roleId: string, teamId?: string, effectiveFrom = PAST_ASSIGNMENT_DATE): Promise<Viewer> {
+  const { userId } = await createAccount(SYSTEM_VIEWER, {
+    email: `actor-${randomUUID()}@example.test`,
+    name: "상태 전환 테스트 사람",
+    roleId,
+  });
+  if (teamId) await assignTeam(SYSTEM_VIEWER, { userId, teamId, effectiveFrom });
+  return { id: userId, roleId };
+}
+
+async function makeStatusProject(input: {
+  teamId: string;
+  status: string;
+  startDate?: string | null;
+  endDate?: string | null;
+}) {
+  const client = await insertVendor(SYSTEM_VIEWER, {
+    name: `거래처-${randomUUID()}`,
+    normalizedName: `거래처-${randomUUID()}`,
+  });
+  const pm = await makeActor(DEFAULT_ROLE_ID, input.teamId);
+  const created = await createProject(SYSTEM_VIEWER, {
+    clientId: client.id,
+    teamId: input.teamId,
+    pmUserId: pm.id,
+    name: `전환-${randomUUID()}`,
+    startDate: input.startDate ?? null,
+    endDate: input.endDate ?? null,
+  });
+  await db.update(projects).set({ status: input.status }).where(eq(projects.id, created.id));
+  return { projectId: created.id, pm };
+}
+
+async function reloadProject(projectId: string) {
+  const [row] = await db.select().from(projects).where(eq(projects.id, projectId));
+  if (!row) throw new Error("프로젝트 행이 없습니다");
+  return row;
+}
+
+async function statusLogs(projectId: string) {
+  return db
+    .select()
+    .from(actionLog)
+    .where(and(eq(actionLog.entityId, projectId), eq(actionLog.actionType, "status_change")));
+}
+
+describe("사람의 상태 전환 트레이서 — 시드만 있는 DB (04-20, ENG-D2)", () => {
+  // 이 describe는 권한·노출을 손으로 켜지 않는다 — 시드(setup.ts의 seedMasterData)가
+  // 만든 권한표·노출표만으로 돈다.
+  it("자기 팀 팀장이 시작일만 있는 수주중 프로젝트를 진행으로 바꾸면 상태·종료일·로그 한 줄이 남고 상세를 본다", async () => {
+    const teamA = await makeTeam();
+    const lead = await makeActor("role-team-lead", teamA);
+    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+
+    await changeProjectStatus(lead, projectId, { from: "bidding", to: "in_progress" });
+
+    const row = await reloadProject(projectId);
+    expect(row.status).toBe("in_progress");
+    expect(row.endDate).toBe("2026-10-01");
+    const logs = await statusLogs(projectId);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.actorId).toBe(lead.id);
+    expect(logs[0]?.detail).toEqual({ from: "bidding", to: "in_progress", trigger: "manual" });
+
+    const detail = await findProject(lead, projectId);
+    expect(detail?.number).toBe(row.number);
+    expect(detail?.name).toBe(row.name);
+  });
+
+  it("담당 PM이 changeProjectStatus를 직접 불러도 권한 거부이고 상태·로그가 그대로다", async () => {
+    const teamA = await makeTeam();
+    const { projectId, pm } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+    const before = await reloadProject(projectId);
+
+    const attempt = changeProjectStatus(pm, projectId, { from: "bidding", to: "in_progress" });
+    await expect(attempt).rejects.toBeInstanceOf(GateBlockedError);
+    await expect(attempt).rejects.toThrow("상태 바꾸기 권한 없음");
+
+    expect(await reloadProject(projectId)).toEqual(before);
+    expect(await statusLogs(projectId)).toEqual([]);
   });
 });

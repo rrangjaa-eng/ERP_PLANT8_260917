@@ -31,6 +31,15 @@ import { changeProjectStatus } from "@/domain/projects/status";
 import type { Viewer } from "@/domain/viewer";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { deferred, waitForLockWaiter } from "./lock-race";
+import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
+import { revenueEntries } from "@/db/schema";
+import { saveProjectLedgerAction } from "@/app/(app)/projects/actions";
+
+// 04-40(W3) — 거부 봉투를 액션으로 직접 확인하는 케이스용 세션. 이 파일의 다른 케이스는 액션을 부르지 않는다.
+vi.mock("@/lib/viewer", async () => {
+  const { SYSTEM_VIEWER: viewer } = await import("@/domain/viewer");
+  return { getSession: async () => ({ viewer, user: { id: viewer.id } }) };
+});
 
 const QUOTE_LINE_ENTITY = "quote_line";
 
@@ -1030,5 +1039,215 @@ describe("합성 저장(엔지 리뷰 A §1 P2 · ENG-D6)", () => {
       const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
       expect(row).toMatchObject({ status: "in_progress", endDate });
     }
+  });
+});
+
+// 04-40(B-01 · A-14) — 차수가 둘 이상일 때만 드러나는 소속·일치 경우. 검사는 04-12(줄 소속)·04-22(프로젝트-차수 일치)의
+// 것이고 이 describe는 그 증명과 「write.denied 정확히 한 번 · 금액 키 없음」만 더한다.
+describe("여러 차수 소속·일치(04-40 · B-01 · A-14)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const MISMATCH = "차수와 프로젝트가 맞지 않음 · 새로 고침";
+  const noAmountKeys = (fields: Record<string, unknown> | undefined) => !Object.keys(fields ?? {}).some((key) => /amount|krw/i.test(key));
+
+  async function withSecondRevision() {
+    const setup = await setupProject();
+    const first = await seedLine(setup.revision.id, setup.subcategoryValue, { sortOrder: 0, itemName: `1차 줄-${randomUUID()}` });
+    const { revisionId: secondId } = await createRevisionFromCurrent(SYSTEM_VIEWER, { projectId: setup.project.id, fromRevisionId: setup.revision.id });
+    const [second] = await db.select().from(quoteLines).where(eq(quoteLines.revisionId, secondId));
+    if (!second) throw new Error("2차 줄이 없습니다");
+    return { ...setup, first, secondId, second };
+  }
+
+  it("(m1) 2차(현재) 저장에 같은 프로젝트 1차 줄 id 하나가 섞이면 배치 전부 거부 · 두 차수 무변경 · write.denied 한 번", async () => {
+    const { first, secondId, second } = await withSecondRevision();
+    const warn = vi.spyOn(log, "warn");
+
+    await expect(
+      saveQuoteLines(SYSTEM_VIEWER, secondId, { rows: [asInput(second, { execution: krw(70_000) }), asInput(first, { execution: krw(80_000) })] }),
+    ).rejects.toThrow(MISMATCH);
+
+    expect((await reloadLine(first.id)).executionAmountKrw).toBe(first.executionAmountKrw);
+    expect((await reloadLine(second.id)).executionAmountKrw).toBe(second.executionAmountKrw);
+    const denied = deniedCalls(warn);
+    expect(denied).toHaveLength(1);
+    expect(denied[0]?.rule).toBe("quote.line-membership");
+    expect(noAmountKeys(denied[0])).toBe(true);
+  });
+
+  it("(m2) 진행 프로젝트 저장에 완료 프로젝트의 줄 id를 섞으면 같은 거부 — 완료 잠금을 남의 줄로 비켜 가지 못한다", async () => {
+    const open = await setupProject();
+    const done = await setupProject();
+    await setStatus(open.project.id, "in_progress");
+    await setStatus(done.project.id, "completed");
+    const own = await seedLine(open.revision.id, open.subcategoryValue, { sortOrder: 0, itemName: `진행 줄-${randomUUID()}` });
+    const foreign = await seedLine(done.revision.id, done.subcategoryValue, { sortOrder: 0, itemName: `완료 줄-${randomUUID()}` });
+    const warn = vi.spyOn(log, "warn");
+
+    await expect(
+      saveQuoteLines(SYSTEM_VIEWER, open.revision.id, { rows: [asInput(own, { execution: krw(70_000) }), asInput(foreign, { execution: krw(1) })] }),
+    ).rejects.toThrow(MISMATCH);
+
+    expect((await reloadLine(foreign.id)).executionAmountKrw).toBe(foreign.executionAmountKrw);
+    expect((await reloadLine(own.id)).executionAmountKrw).toBe(own.executionAmountKrw);
+    const denied = deniedCalls(warn);
+    expect(denied).toHaveLength(1);
+    expect(noAmountKeys(denied[0])).toBe(true);
+  });
+
+  it("(m3) A의 합성 저장에 B의 현재(2차) 차수를 실으면 「차수와 프로젝트가 맞지 않음」 · A·B 견적 줄과 A 매출 무변경 · write.denied 한 번(quote.revision-project)", async () => {
+    const a = await setupProject();
+    const b = await withSecondRevision();
+    const warn = vi.spyOn(log, "warn");
+
+    await expect(
+      saveProjectLedger(SYSTEM_VIEWER, a.project.id, {
+        seenStatus: "bidding",
+        quoteLines: { revisionId: b.secondId, rows: [asInput(b.second, { execution: krw(70_000) })] },
+        revenue: { issuedEntries: [{ entryDate: "2026-09-01", amount: krw(1_000_000) }] },
+      }),
+    ).rejects.toThrow(MISMATCH);
+
+    expect((await reloadLine(b.second.id)).executionAmountKrw).toBe(b.second.executionAmountKrw);
+    expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, a.revision.id))).toHaveLength(0);
+    expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, a.project.id))).toHaveLength(0);
+    const denied = deniedCalls(warn);
+    expect(denied).toHaveLength(1);
+    expect(denied[0]?.rule).toBe("quote.revision-project");
+    expect(noAmountKeys(denied[0])).toBe(true);
+  });
+});
+
+// PG 오류(22003 등)가 원인 사슬 어디에도 없어야 한다 — 거부는 쓰기 전의 셀 오류다.
+function pgCodes(error: unknown): string[] {
+  const codes: string[] = [];
+  let current: unknown = error;
+  while (current && typeof current === "object") {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string") codes.push(code);
+    current = (current as { cause?: unknown }).cause;
+  }
+  return codes;
+}
+
+async function rejectionOf(promise: Promise<unknown>): Promise<SaveRejectedError> {
+  const outcome = await promise.then(
+    () => new Error("거부되지 않았다"),
+    (error: unknown) => error,
+  );
+  expect(pgCodes(outcome)).toEqual([]);
+  expect(outcome).toBeInstanceOf(SaveRejectedError);
+  return outcome as SaveRejectedError;
+}
+
+// 04-40(엔지니어링 리뷰 B §2) — 견적 줄 금액 입력은 normalizeMoneyInput을 지나고 거부는 그 칸의 셀 오류다.
+describe("금액 입력 정규화(04-40 · B §2)", () => {
+  it("(n1) KRW 단가에 환율 1,350을 실어도 원화 = 금액 × 1 · 환율 1로 저장된다", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const row = newRow(subcategoryValue, { quantity: 2, unitPrice: { currency: "KRW", amount: 5000, fxRate: 1350 } });
+
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [row] });
+
+    const saved = await reloadLine(row.id);
+    expect(saved.unitPriceFxRate).toBe("1.0000");
+    expect(saved.unitPriceAmountKrw).toBe(5000);
+    expect(saved.quoteAmountKrw).toBe(10_000);
+  });
+
+  it("(n2) USD 단가 환율 0은 그 칸의 셀 오류 「환율은 0보다 커야 합니다 · 환율을 고쳐 주세요」 · 배치 전부 거부", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const ok = newRow(subcategoryValue);
+    const bad = newRow(subcategoryValue, { unitPrice: { currency: "USD", amount: 100, fxRate: 0 } });
+
+    const error = await rejectionOf(saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [ok, bad] }));
+
+    expect(error.formatErrors).toContainEqual(expect.objectContaining({ rowId: bad.id, field: "unitPrice", reason: "환율은 0보다 커야 합니다 · 환율을 고쳐 주세요" }));
+    expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id))).toHaveLength(0);
+  });
+
+  it("(n3) 원화 환산이 범위를 넘는 단가는 그 칸 셀 오류 「금액이 상한을 넘습니다 · 2,147,483,647원 이하」 — PG 22003으로 새지 않는다", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const bad = newRow(subcategoryValue, { unitPrice: krw(3_000_000_000) });
+
+    const error = await rejectionOf(saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [bad] }));
+
+    expect(error.formatErrors).toContainEqual(expect.objectContaining({ rowId: bad.id, field: "unitPrice", reason: "금액이 상한을 넘습니다 · 2,147,483,647원 이하" }));
+    expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id))).toHaveLength(0);
+  });
+});
+
+// 04-40(DR-9) — 수량 × 단가의 계산 견적가가 quote_amount_krw 상한을 넘으면 수량·단가 두 칸 셀 오류로 쓰기 전에 거부한다.
+describe("계산 견적가 상한(04-40 · DR-9)", () => {
+  const OVER = "견적가가 상한을 넘습니다 · 수량이나 단가를 고쳐 주세요";
+
+  function overBatch(subcategory: string) {
+    const ok = newRow(subcategory, { unitPrice: krw(100_000) });
+    const over = newRow(subcategory, { quantity: 3, unitPrice: krw(1_000_000_000) });
+    return { ok, over };
+  }
+
+  function expectTwoCells(error: SaveRejectedError, rowId: string) {
+    const cells = error.formatErrors.filter((cell) => cell.rowId === rowId);
+    expect(cells.map((cell) => cell.field).sort()).toEqual(["quantity", "unitPrice"]);
+    expect(cells.every((cell) => cell.reason === OVER)).toBe(true);
+  }
+
+  it("(d1) 단독 저장: 수량 3 × 단가 10억 줄은 수량·단가 두 칸 오류 · PG 오류 아님 · 같은 배치의 정상 줄도 쓰이지 않는다", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const { ok, over } = overBatch(subcategoryValue);
+
+    const error = await rejectionOf(saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [ok, over] }));
+
+    expectTwoCells(error, over.id);
+    expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id))).toHaveLength(0);
+  });
+
+  it("(d1b) 기존 줄을 수량 3 × 단가 10억으로 고친 저장도 두 칸 오류 · 줄 값 그대로", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const line = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: `상한 줄-${randomUUID()}` });
+
+    const error = await rejectionOf(saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [asInput(line, { quantity: 3, unitPrice: krw(1_000_000_000) })] }));
+
+    expectTwoCells(error, line.id);
+    const after = await reloadLine(line.id);
+    expect(after.quoteAmountKrw).toBe(line.quoteAmountKrw);
+    expect(after.version).toBe(line.version);
+  });
+
+  it("(d2) 원장 합성 저장(견적 줄 + 매출 발행 줄)도 같은 두 칸 오류 · 매출 발행 줄 무변경", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const { ok, over } = overBatch(subcategoryValue);
+
+    const error = await rejectionOf(
+      saveProjectLedger(SYSTEM_VIEWER, project.id, {
+        seenStatus: "bidding",
+        quoteLines: { revisionId: revision.id, rows: [ok, over] },
+        revenue: { issuedEntries: [{ entryDate: "2026-09-01", amount: krw(1_000_000) }] },
+      }),
+    );
+
+    expectTwoCells(error, over.id);
+    expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id))).toHaveLength(0);
+    expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, project.id))).toHaveLength(0);
+  });
+
+  it("(d3) saveProjectLedgerAction의 봉투가 { rejected: { summary: 「오류 2칸 · 전부 거부」, cells } }이고 그 줄의 quantity·unitPrice 두 칸이 있다(W3)", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const over = newRow(subcategoryValue, { quantity: 3, unitPrice: krw(1_000_000_000) });
+
+    const result = await saveProjectLedgerAction({ projectId: project.id, seenStatus: "bidding", quoteLines: { revisionId: revision.id, rows: [over] } });
+
+    const data = result?.data;
+    if (!data || !("rejected" in data)) throw new Error(`거부 봉투가 아니다: ${JSON.stringify(result)}`);
+    expect(data.rejected.summary).toBe("오류 2칸 · 전부 거부");
+    expect(data.rejected.cells).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ rowId: over.id, field: "quantity", kind: "error", reason: OVER }),
+        expect.objectContaining({ rowId: over.id, field: "unitPrice", kind: "error", reason: OVER }),
+      ]),
+    );
+    expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id))).toHaveLength(0);
   });
 });

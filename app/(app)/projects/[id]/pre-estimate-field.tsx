@@ -1,9 +1,16 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Form } from "@/ui/form/Form";
 import { Select } from "@/ui/select/Select";
-import { formatForeignLine, formatKrw, formatNumberInput, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
+import {
+  formatForeignLine,
+  formatKrw,
+  formatNumberInput,
+  numberInputRejectionReason,
+  parseNumberInput,
+  type NumberInputKind,
+} from "@/lib/format-number";
 import { validatePreEstimateChange, type PreEstimateFieldError } from "@/domain/projects/pre-estimate";
 import type { Currency, Money } from "@/domain/money";
 import styles from "./project-detail.module.css";
@@ -58,12 +65,13 @@ export function fxRateTouched(draft: PreEstimateDraft, baseline: PreEstimateDraf
 }
 
 // 쉼표 입력 칸(S15) — 값은 부모가 갖는다(Esc 되돌리기·복원이 칸을 다시 채운다). 커서는 형식 적용 뒤 되돌린다.
+// 제어형이 필요해 useCommaInput(비제어)을 쓰지 않지만 거부 이유는 같은 numberInputRejectionReason으로 보인다.
 function CommaInput({
   id,
   kind,
   value,
   dirty,
-  error,
+  error: fieldError,
   focusOnMount,
   onChange,
   onKeyDown,
@@ -79,6 +87,9 @@ function CommaInput({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const pendingCaretRef = useRef<number | null>(null);
+  // 거부 이유는 그 글자를 거부한 값에만 붙는다 — Esc·복원으로 값이 바뀌면 사라진다.
+  const [rejection, setRejection] = useState<{ value: string; reason: string } | null>(null);
+  const error = rejection?.value === value ? rejection.reason : fieldError;
 
   useEffect(() => {
     if (focusOnMount) inputRef.current?.focus();
@@ -106,6 +117,7 @@ function CommaInput({
         onChange={(event) => {
           const raw = event.target.value;
           const result = formatNumberInput({ raw, caret: event.target.selectionStart ?? raw.length, kind, prev: value });
+          setRejection(result.rejected ? { value: result.text, reason: numberInputRejectionReason(kind, result.rejected) } : null);
           pendingCaretRef.current = result.caret;
           onChange(result.text);
         }}

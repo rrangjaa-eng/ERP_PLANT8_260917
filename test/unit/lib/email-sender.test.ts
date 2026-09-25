@@ -300,12 +300,14 @@ const digestMessage = {
 };
 
 describe("createSmtpSender — 결과 분류", () => {
-  it("아무도 듣지 않는 포트면 rejected·ECONNECTION이다", async () => {
+  // nodemailer 10은 TCP 연결 거부(ECONNREFUSED)를 ESOCKET으로 적는다(smtp-connection
+  // _onConnectionSocketError) — 계획의 ECONNECTION 예상은 라이브러리 실측과 달랐다.
+  it("아무도 듣지 않는 포트면 rejected·ESOCKET이다", async () => {
     const port = await unusedPort();
 
     const result = await senderFor(port).send(digestMessage, { signal: AbortSignal.timeout(5000) });
 
-    expect(result).toEqual({ outcome: "rejected", code: "ECONNECTION" });
+    expect(result).toEqual({ outcome: "rejected", code: "ESOCKET" });
   });
 
   it("AUTH에 535면 rejected·EAUTH다", async () => {

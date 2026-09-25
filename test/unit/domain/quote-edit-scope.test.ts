@@ -343,3 +343,50 @@ describe("project.line-edit 게이트 — 조정 줄(04-13 · D-83)", () => {
     await expect(adjustmentInsert("completed", true)).resolves.toEqual({ allowed: true });
   });
 });
+
+// 04-23(D-83 · UI-SPEC rev 5 Copywriting `Empty — 견적 줄 표` · P0) — 표 위 한 줄 · EMPTY · 힌트 줄의 조정 권한 축.
+describe("조정 권한 축 — 표 위 한 줄 · EMPTY · 힌트 줄(04-23)", () => {
+  const message = "이 프로젝트에 견적 줄이 없습니다";
+  const adjustAction = { message, action: { kind: "addAdjustment", label: "조정 줄 추가" } };
+
+  it("완료 + 조정 권한자(조정 행이 편집 셀인 격자) → `완료 · 견적 줄 잠김`, 편집 셀 0인 PM의 읽기 표 → 줄 없음", () => {
+    expect(tableLockLine({ status: "completed", hasEditableCells: true, lineCount: 3 })).toBe("완료 · 견적 줄 잠김");
+    expect(tableLockLine({ status: "completed", hasEditableCells: false, lineCount: 3 })).toBeNull();
+  });
+
+  it("완료 + 조정 권한 → 「조정 줄 추가」", () => {
+    expect(quoteTableEmptyState({ status: "completed", canAddLine: false, canAdjust: true, periodRights: "none", pmName: "김담당" })).toEqual(adjustAction);
+  });
+
+  it("진행 + 줄 추가 권한 + 조정 권한 → 「첫 줄 만들기」(①이 이긴다)", () => {
+    expect(quoteTableEmptyState({ status: "in_progress", canAddLine: true, canAdjust: true, periodRights: "pm", pmName: "김담당" }).action?.kind).toBe("addLine");
+  });
+
+  it("정산 + 줄 추가 권한(사용자 D10) + 조정 권한 → 「첫 줄 만들기」(①)", () => {
+    expect(quoteTableEmptyState({ status: "settling", canAddLine: true, canAdjust: true, periodRights: "pm", pmName: "김담당" }).action?.kind).toBe("addLine");
+  });
+
+  it("정산 + 조정 권한만(쓰기 없음 · 기간 권리 없음) → 「조정 줄 추가」", () => {
+    expect(quoteTableEmptyState({ status: "settling", canAddLine: false, canAdjust: true, periodRights: "none", pmName: "김담당" })).toEqual(adjustAction);
+  });
+
+  it("조정 권한이 기간 바꾸기(③)보다 앞선다 — 정산 팀장이 조정 권한도 가지면 「조정 줄 추가」", () => {
+    expect(quoteTableEmptyState({ status: "settling", canAddLine: false, canAdjust: true, periodRights: "lead", pmName: "김담당" })).toEqual(adjustAction);
+  });
+
+  it("조정 권한이 없으면 04-30 규칙 그대로(완료는 사실만)", () => {
+    expect(quoteTableEmptyState({ status: "completed", canAddLine: false, canAdjust: false, periodRights: "none", pmName: "김담당" })).toEqual({ message });
+  });
+
+  it("조정 권한만 있는 사람의 힌트 줄에 새 줄·줄 이동·줄 복제가 없다(조정 줄은 버튼으로만 추가 · 이동·복제 불가)", () => {
+    const all: QuoteHintKey[] = ["move", "paste", "cancel", "newRow", "moveRow", "duplicateRow", "save"];
+    expect(visibleHintKeys(all, structuralEditability({ status: "in_progress", canWrite: false }))).toEqual(["move", "paste", "cancel"]);
+    expect(structuralEditability({ status: "in_progress", canWrite: false, lineKind: "adjustment", canAdjust: true })).toEqual({
+      insert: true,
+      archive: true,
+      reorder: false,
+      duplicate: false,
+      newRevision: false,
+    });
+  });
+});

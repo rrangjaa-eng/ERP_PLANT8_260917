@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { codeItems, projects } from "@/db/schema";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
+import { listArchive } from "@/domain/archive";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
@@ -117,6 +118,48 @@ function groupHeaders(page: Page): Locator {
   return page.locator("tbody tr[class*='groupRow'] td");
 }
 
+const CAP_REASON = "300줄 상한 · 상한은 관리자 설정";
+const EMPTY_MESSAGE = "이 프로젝트에 견적 줄이 없습니다";
+
+// 수화 전에 준 포커스는 격자가 받지 못한다 — 그 셀이 탭 정지가 될 때까지 다시 준다(quote-edit-scope.spec.ts와 같다).
+async function focusGridCell(target: Locator) {
+  await expect(async () => {
+    await target.evaluate((element) => (element as HTMLElement).blur());
+    await target.focus();
+    await expect(target).toHaveAttribute("tabindex", "0", { timeout: 1_000 });
+  }).toPass();
+}
+
+async function pasteIntoFocusedCell(page: Page, text: string) {
+  await page.evaluate((clipboardText) => {
+    const dt = new DataTransfer();
+    dt.setData("text/plain", clipboardText);
+    document.activeElement?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+  }, text);
+}
+
+// 조정 줄과 견적 줄이 있는 프로젝트를 담당 PM 또는 경영관리로 연다.
+async function openProject(page: Page, input: { as: "pm" | "adjuster"; status: string; endDate: string; lines: SeedLine[] }) {
+  const team = await makeTeam();
+  const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+  const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: input.status, endDate: input.endDate, lines: input.lines });
+  await login(page, input.as === "pm" ? pm : await makeAdjuster(team));
+  await page.goto(`/projects/${project.id}`);
+  await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
+  return project;
+}
+
+async function fillLinesBySql(projectId: string, count: number) {
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, projectId);
+  if (!revision) throw new Error("1차 차수가 없습니다");
+  const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+  if (!subcategory) throw new Error("소분류 코드가 없습니다");
+  await db.execute(sql`
+    INSERT INTO quote_lines (revision_id, sort_order, subcategory, item_name, unit_price_amount_krw, execution_amount_krw, quote_amount_krw, profit_krw)
+    SELECT ${revision.id}, g, ${subcategory.value}, '상한 줄 ' || g, 1000, 500, 1000, 500 FROM generate_series(1, ${count}) AS g
+  `);
+}
+
 test.describe("견적 줄 종류 — 조정 · 견적 외 비용 화면 (04-23, PROJ-02 · D-83 · D-48)", () => {
   test("트레이서 — 조정 권한만 있는 경영관리가 완료 프로젝트에 거래처를 고른 조정 줄을 넣으면 맨 아래 조정 그룹 · 합계 · 목록에 반영된다", async ({ page }) => {
     // 1100 — 합계 행에 차익 합계가 보이는 폭(1024 이상이라 편집 폭이다).
@@ -182,5 +225,176 @@ test.describe("견적 줄 종류 — 조정 · 견적 외 비용 화면 (04-23, 
 
     await page.goto(`/projects?q=${encodeURIComponent(project.name)}`);
     await expect(page.getByText(/실행가 270,000/)).toBeVisible();
+  });
+  test("PM — 완료 프로젝트의 조정 행이 같은 표 맨 아래 조정 그룹에 보이고 「조정 줄 추가」가 없다(T-04-66)", async ({ page }) => {
+    await openProject(page, {
+      as: "pm",
+      status: "completed",
+      endDate: addDays(TODAY, -20),
+      lines: [
+        { itemName: "완료 견적 줄", unitPrice: 100_000, execution: 50_000 },
+        { itemName: "완료 조정 줄", unitPrice: 0, execution: 30_000, lineKind: "adjustment" },
+      ],
+    });
+    await expect(dataRows(page)).toHaveCount(2);
+    await expect(groupHeaders(page).last()).toHaveText("조정");
+    await expect(cell(page, 1, COL.itemName)).toHaveText("완료 조정 줄");
+    await expect(cell(page, 1, COL.execution)).toHaveText("30,000");
+    await expect(cell(page, 1, COL.quantity)).toHaveText("—");
+    await expect(cell(page, 1, COL.unitPrice)).toHaveText("—");
+    await expect(cell(page, 1, COL.quoteAmount)).toHaveText("0");
+    await expect(cell(page, 1, COL.status)).toHaveText("—");
+    await expect(page.getByRole("button", { name: "조정 줄 추가" })).toHaveCount(0);
+  });
+
+  test("PM — 진행 프로젝트의 조정 행(권한 밖 줄)은 Enter·클릭·Delete·Alt+↑↓에 아무 일도 없고 이유 글자·오류 표시가 없다(DR-22 · B-31)", async ({ page }) => {
+    await openProject(page, {
+      as: "pm",
+      status: "in_progress",
+      endDate: addDays(TODAY, 10),
+      lines: [
+        { itemName: "진행 견적 줄", unitPrice: 100_000, execution: 50_000 },
+        { itemName: "진행 조정 줄", unitPrice: 0, execution: 70_000, lineKind: "adjustment" },
+      ],
+    });
+    await expect(page.getByRole("grid")).toBeVisible();
+    const adjustmentRow = dataRows(page).nth(1);
+
+    await focusGridCell(cell(page, 1, COL.execution));
+    await page.keyboard.press("Enter");
+    await cell(page, 1, COL.itemName).click();
+    await focusGridCell(cell(page, 1, COL.execution));
+    await page.keyboard.press("Delete");
+    // 견적 줄을 아래로 옮겨도 조정 그룹을 넘지 않는다(고정 그룹).
+    await focusGridCell(cell(page, 0, COL.execution));
+    await page.keyboard.press("Alt+ArrowDown");
+    // 키가 처리된 뒤를 긍정 신호로 잡는다 — 견적 줄 실행가 편집기가 열리고 닫힌 다음에 부정 단언을 한다.
+    await focusGridCell(cell(page, 0, COL.execution));
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("textbox", { name: "실행가" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("textbox", { name: "실행가" })).toHaveCount(0);
+
+    await expect(page.getByRole("grid", { name: "견적 줄" }).getByRole("textbox")).toHaveCount(0);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(dataRows(page)).toHaveCount(2);
+    await expect(cell(page, 0, COL.itemName)).toHaveText("진행 견적 줄");
+    await expect(cell(page, 1, COL.itemName)).toHaveText("진행 조정 줄");
+    await expect(adjustmentRow.locator("[class*='issueReason']")).toHaveCount(0);
+    await expect(adjustmentRow.locator("[aria-invalid='true']")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /일괄 저장 \d/ })).toHaveCount(0);
+  });
+
+  test("PM — 정산 붙여넣기는 조정 칸을 건너뛰어 요약에만 세고, 같은 붙여넣기의 정산 잠긴 칸은 이유가 붙은 오류 셀이다(DR-22 · DR-35)", async ({ page }) => {
+    await openProject(page, {
+      as: "pm",
+      status: "settling",
+      endDate: addDays(TODAY, -3),
+      lines: [
+        { itemName: "정산 견적 줄", unitPrice: 100_000, execution: 50_000 },
+        { itemName: "정산 조정 줄", unitPrice: 0, execution: 40_000, lineKind: "adjustment" },
+      ],
+    });
+    await focusGridCell(cell(page, 0, COL.quantity));
+    await pasteIntoFocusedCell(page, "2\t3000\n4\t5000");
+
+    await expect(cell(page, 0, COL.quantity)).toHaveAttribute("aria-invalid", "true");
+    await expect(cell(page, 0, COL.quantity)).toContainText("정산 · 실행가와 새 줄만");
+    await expect(cell(page, 1, COL.quantity)).not.toHaveAttribute("aria-invalid", "true");
+    await expect(cell(page, 1, COL.unitPrice)).not.toHaveAttribute("aria-invalid", "true");
+    await expect(cell(page, 1, COL.quantity)).toHaveText("—");
+    await expect(cell(page, 1, COL.execution)).toHaveText("40,000");
+    await expect(dataRows(page).nth(1).locator("[class*='issueReason']")).toHaveCount(0);
+    await expect(page.locator("tfoot")).toContainText("조정 줄 2칸 건너뜀");
+  });
+
+  test("경영관리 — 조정 행 Delete는 `ui/confirm-dialog` 조정 줄 삭제 확인이고, 1차 뒤 저장하면 보관함에 견적 줄로 간다(DR-12)", async ({ page }) => {
+    const itemName = `삭제할 조정 줄 ${randomUUID().slice(0, 6)}`;
+    await openProject(page, {
+      as: "adjuster",
+      status: "in_progress",
+      endDate: addDays(TODAY, 10),
+      lines: [
+        { itemName: "남는 견적 줄", unitPrice: 100_000, execution: 50_000 },
+        { itemName, unitPrice: 0, execution: 45_000, lineKind: "adjustment" },
+      ],
+    });
+    const trigger = cell(page, 1, COL.execution);
+    await focusGridCell(trigger);
+    await page.keyboard.press("Delete");
+    const dialog = page.getByRole("dialog", { name: "조정 줄 삭제" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(`${itemName} · 45,000`);
+    await expect(dialog).toContainText("보관함으로 옮겨짐 · 복원은 관리자");
+    const primary = dialog.getByRole("button", { name: "조정 줄 삭제" });
+    await expect(primary).toBeFocused();
+    await expect(dialog.getByRole("button", { name: /취소/ })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+
+    await page.keyboard.press("Delete");
+    await dialog.getByRole("button", { name: "조정 줄 삭제" }).click();
+    await expect(dataRows(page)).toHaveCount(1);
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+    const saved = waitForSaveResponse(page);
+    await page.getByRole("button", { name: /일괄 저장 1/ }).click();
+    await saved;
+    await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
+
+    const archived = await listArchive(SYSTEM_VIEWER);
+    expect(archived.find((entry) => entry.name === itemName)?.label).toBe("견적 줄");
+  });
+
+  test("경영관리 — 줄 수가 상한(300)이면 「조정 줄 추가」가 aria-disabled이고 상한 이유를 aria-describedby로 가리킨다", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "completed", endDate: addDays(TODAY, -20), lines: [] });
+    await fillLinesBySql(project.id, 300);
+    await login(page, await makeAdjuster(team));
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
+
+    const addButton = page.getByRole("button", { name: "조정 줄 추가" });
+    await expect(addButton).toHaveAttribute("aria-disabled", "true");
+    const reason = page.getByText(CAP_REASON, { exact: true });
+    await expect(reason).toBeVisible();
+    const reasonId = await reason.getAttribute("id");
+    expect(reasonId).toBeTruthy();
+    expect((await addButton.getAttribute("aria-describedby"))?.split(" ")).toContain(reasonId);
+  });
+
+  test("경영관리 — 0줄 완료 표의 EMPTY는 1000에서 사실만, 1280에서 「조정 줄 추가」이고 누르면 조정 줄 실행가 칸이 열린다", async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await openProject(page, { as: "adjuster", status: "completed", endDate: addDays(TODAY, -20), lines: [] });
+    await expect(page.getByText(EMPTY_MESSAGE)).toBeVisible();
+    await expect(page.getByRole("button", { name: "조정 줄 추가" })).toHaveCount(0);
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.getByRole("button", { name: "조정 줄 추가" }).click();
+    await expect(page.getByRole("textbox", { name: "실행가" })).toBeFocused();
+    await expect(groupHeaders(page).last()).toHaveText("조정");
+    // 조정 행이 편집 셀인 격자 — 완료 표 위 잠김 줄이 나타난다(P0).
+    await expect(page.getByText("완료 · 견적 줄 잠김", { exact: true })).toBeVisible();
+  });
+
+  test("경영관리 — 저장 안 한 새 조정 줄을 새로 고친 뒤 「복원」하면 조정 그룹에 조정 줄로 돌아온다", async ({ page }) => {
+    await openProject(page, {
+      as: "adjuster",
+      status: "completed",
+      endDate: addDays(TODAY, -20),
+      lines: [{ itemName: "복원 견적 줄", unitPrice: 100_000, execution: 50_000 }],
+    });
+    await page.getByRole("button", { name: "조정 줄 추가" }).click();
+    await page.getByRole("textbox", { name: "실행가" }).fill("88000");
+    await page.keyboard.press("Enter");
+    await expect(cell(page, 1, COL.execution)).toHaveText("88,000");
+
+    await page.reload();
+    await page.getByRole("button", { name: "복원" }).click();
+    await expect(dataRows(page)).toHaveCount(2);
+    await expect(groupHeaders(page).last()).toHaveText("조정");
+    await expect(cell(page, 1, COL.subcategory)).toHaveText("조정");
+    await expect(cell(page, 1, COL.execution)).toHaveText("88,000");
   });
 });

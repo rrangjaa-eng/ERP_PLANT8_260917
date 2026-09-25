@@ -797,7 +797,15 @@ export async function writeQuoteLinesInTx(
   }[] = [];
 
   if (!denial) {
-    if (order === "reorder") await judgeStructure(null, "quote", { kind: "reorder" });
+    if (order === "reorder") {
+      await judgeStructure(null, "quote", { kind: "reorder" });
+      // 04-13 검토 S3 — 조정 줄은 고정 순서(구조 판정 reorder 불가): 남는 기존 줄 사이의 자리가 바뀐 조정 줄이 있으면 거부.
+      const keptIds = activeBefore.map((row) => row.id).filter((id) => !archivedIds.includes(id));
+      const keptSet = new Set(keptIds);
+      const keptInOrder = input.order!.filter((id) => keptSet.has(id));
+      const movedAdjustment = activeBefore.find((row) => lineKindOf(row) === "adjustment" && keptIds.indexOf(row.id) !== keptInOrder.indexOf(row.id));
+      if (movedAdjustment) await judgeStructure(movedAdjustment.id, "adjustment", { kind: "reorder" });
+    }
     for (const id of archivedIds) {
       const archived = currentById.get(id);
       if (archived) await judgeStructure(id, lineKindOf(archived), { kind: "archive" });

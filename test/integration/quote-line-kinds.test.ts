@@ -382,6 +382,28 @@ describe("조정 줄 권한 · PM 거부 · 보관 · 복원(04-13 Task 2 · D-8
     expect(returned && Object.values(returned.cellEditability).every((cell) => cell === "locked")).toBe(true);
   });
 
+  it("(k12) 조정 줄의 위치를 바꾸는 순서는 「조정 줄 · 경영관리만」으로 거부 · write.denied 한 번 · 순서 그대로, 견적 줄끼리의 이동은 통과(검토 S3 · 조정 그룹 고정 순서)", async () => {
+    const { project, revisionId, pm } = await setupProject();
+    const first = await seedLine(revisionId, "quote");
+    const second = await seedLine(revisionId, "quote");
+    const adjustment = await seedLine(revisionId, "adjustment", { execution: -10_000 });
+    for (const [index, row] of [first, second, adjustment].entries()) {
+      await db.update(quoteLines).set({ sortOrder: index }).where(eq(quoteLines.id, row.id));
+    }
+    await setStatus(project.id, "in_progress");
+    const sortOrders = async () => Promise.all([first, second, adjustment].map(async (row) => (await reload(row.id)).sortOrder));
+    const warn = vi.spyOn(log, "warn");
+
+    await expect(saveQuoteLines(pm, revisionId, { rows: [], order: [adjustment.id, first.id, second.id] })).rejects.toThrow(
+      "조정 줄 · 경영관리만",
+    );
+    expect(await sortOrders()).toEqual([0, 1, 2]);
+    expectOneDenied(warn, { viewerId: pm.id, projectId: project.id, revisionId });
+
+    await saveQuoteLines(pm, revisionId, { rows: [], order: [second.id, first.id, adjustment.id] });
+    expect(await sortOrders()).toEqual([1, 0, 2]);
+  });
+
   it("(k7) 기존 조정 줄에 lineKind quote를 실어 보내면 「줄 종류는 바뀌지 않음 · 새로 고침」으로 거부되고 종류는 그대로다", async () => {
     const { project, revisionId } = await setupProject();
     const adjustment = await seedLine(revisionId, "adjustment", { execution: -10_000 });

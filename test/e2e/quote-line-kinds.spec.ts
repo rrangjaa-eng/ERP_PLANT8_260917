@@ -397,4 +397,113 @@ test.describe("견적 줄 종류 — 조정 · 견적 외 비용 화면 (04-23, 
     await expect(cell(page, 1, COL.subcategory)).toHaveText("조정");
     await expect(cell(page, 1, COL.execution)).toHaveText("88,000");
   });
+  test("PM — 진행에서 「견적 외 비용 줄 추가」로 만든 줄은 견적 외 비용 그룹 · 견적가 0 · 실행가 −50,000으로 저장되고, 복제해도 같은 그룹이다(D-48)", async ({ page }) => {
+    await openProject(page, {
+      as: "pm",
+      status: "in_progress",
+      endDate: addDays(TODAY, 10),
+      lines: [{ itemName: "진행 견적 줄", unitPrice: 100_000, execution: 50_000 }],
+    });
+    await page.getByRole("button", { name: "견적 외 비용 줄 추가" }).click();
+    // 새 줄의 항목 칸이 열린다.
+    const itemInput = page.getByRole("textbox", { name: "항목", exact: true });
+    await expect(itemInput).toBeFocused();
+    await itemInput.fill("현장 식대 환급");
+    await page.keyboard.press("Enter");
+    await expect(groupHeaders(page).last()).toHaveText("견적 외 비용");
+    await expect(cell(page, 1, COL.subcategory)).toHaveText("견적 외 비용");
+    await expect(cell(page, 1, COL.quantity)).toHaveText("—");
+    await expect(cell(page, 1, COL.unitPrice)).toHaveText("—");
+    await expect(cell(page, 1, COL.quantity)).toHaveAttribute("aria-readonly", "true");
+
+    await focusGridCell(cell(page, 1, COL.execution));
+    await page.keyboard.press("Enter");
+    await page.getByRole("textbox", { name: "실행가" }).fill("-50000");
+    await page.keyboard.press("Enter");
+
+    const saved = waitForSaveResponse(page);
+    await focusGridCell(cell(page, 1, COL.execution));
+    await page.keyboard.press("Control+s");
+    await saved;
+    await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
+
+    await page.reload();
+    await expect(groupHeaders(page).last()).toHaveText("견적 외 비용");
+    await expect(cell(page, 1, COL.itemName)).toHaveText("현장 식대 환급");
+    await expect(cell(page, 1, COL.quoteAmount)).toHaveText("0");
+    await expect(cell(page, 1, COL.execution)).toHaveText("-50,000");
+
+    // 복제(Ctrl+D)도 견적 외 비용 줄이다.
+    await focusGridCell(cell(page, 1, COL.execution));
+    await page.keyboard.press("Control+d");
+    await expect(dataRows(page)).toHaveCount(3);
+    await expect(groupHeaders(page)).toHaveCount(2);
+    await expect(cell(page, 2, COL.subcategory)).toHaveText("견적 외 비용");
+  });
+
+  test("PM — 정산에서도 「견적 외 비용 줄 추가」가 있고 만든 줄은 수량·단가 「—」 · 실행가 −30,000으로 저장된다(사용자 D10·D12)", async ({ page }) => {
+    await openProject(page, {
+      as: "pm",
+      status: "settling",
+      endDate: addDays(TODAY, -3),
+      lines: [{ itemName: "정산 견적 줄", unitPrice: 100_000, execution: 50_000 }],
+    });
+    await page.getByRole("button", { name: "견적 외 비용 줄 추가" }).click();
+    await page.getByRole("textbox", { name: "항목", exact: true }).fill("정산 추가 비용");
+    await page.keyboard.press("Enter");
+    await expect(cell(page, 1, COL.quantity)).toHaveText("—");
+    await expect(cell(page, 1, COL.unitPrice)).toHaveText("—");
+    await focusGridCell(cell(page, 1, COL.execution));
+    await page.keyboard.press("Enter");
+    await page.getByRole("textbox", { name: "실행가" }).fill("-30000");
+    await page.keyboard.press("Enter");
+
+    const saved = waitForSaveResponse(page);
+    await focusGridCell(cell(page, 1, COL.execution));
+    await page.keyboard.press("Control+s");
+    await saved;
+    await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
+
+    await page.reload();
+    await expect(groupHeaders(page).last()).toHaveText("견적 외 비용");
+    await expect(cell(page, 1, COL.execution)).toHaveText("-30,000");
+    await expect(cell(page, 1, COL.quoteAmount)).toHaveText("0");
+  });
+
+  test("PM — 완료 프로젝트에는 「견적 외 비용 줄 추가」가 없다", async ({ page }) => {
+    await openProject(page, {
+      as: "pm",
+      status: "completed",
+      endDate: addDays(TODAY, -20),
+      lines: [{ itemName: "완료 견적 줄", unitPrice: 100_000, execution: 50_000 }],
+    });
+    await expect(dataRows(page)).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "견적 외 비용 줄 추가" })).toHaveCount(0);
+  });
+
+  test("소분류 칸을 편집하는 동안 고른 소분류의 코드표 설명이 셀 아래 한 줄로 보이고, 편집을 끝내면 사라진다(D-93)", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const project = await makeProject({
+      teamId: team,
+      pmUserId: pm.userId,
+      status: "in_progress",
+      endDate: addDays(TODAY, 10),
+      lines: [{ itemName: "설명 견적 줄", unitPrice: 100_000, execution: 50_000 }],
+    });
+    const description = project.subcategory.description;
+    expect(description).toBeTruthy();
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
+
+    await expect(page.getByText(description ?? "", { exact: true })).toHaveCount(0);
+    await focusGridCell(cell(page, 0, COL.subcategory));
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("combobox", { name: "소분류" })).toBeVisible();
+    await expect(cell(page, 0, COL.subcategory).getByText(description ?? "", { exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("combobox", { name: "소분류" })).toHaveCount(0);
+    await expect(page.getByText(description ?? "", { exact: true })).toHaveCount(0);
+  });
 });

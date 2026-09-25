@@ -10,7 +10,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createProject, listProjects } from "@/domain/projects";
-import { getCurrentQuoteRevision, saveQuoteLines, type QuoteLineWriteRow } from "@/domain/quotes/lines";
+import { getCurrentQuoteRevision, listQuoteLines, saveQuoteLines, type QuoteLineWriteRow } from "@/domain/quotes/lines";
 import { restore } from "@/domain/archive";
 import { listArchivedAcrossEntities } from "@/repositories/archive";
 import { log } from "@/lib/log";
@@ -355,6 +355,31 @@ describe("조정 줄 권한 · PM 거부 · 보관 · 복원(04-13 Task 2 · D-8
     await expect(saveQuoteLines(adjuster, revisionId, { rows: [], archivedLineIds: [quote.id] })).rejects.toThrow("견적 줄 · 쓰기 권한 없음");
     expect(deniedCalls(archiveWarn)).toHaveLength(1);
     expect((await reload(quote.id)).archivedAt).toBeNull();
+  });
+
+  it("(k10) 상세 DTO — 조정 권한 없는 PM에게 조정 줄은 전 칸 잠김 · 이유 없음, 조정 권한이면 항목·거래처·실행가·비고 편집(검토 S2)", async () => {
+    const { project, revisionId } = await setupProject();
+    const adjustment = await seedLine(revisionId, "adjustment", { execution: -10_000 });
+    await setStatus(project.id, "in_progress");
+
+    const [asPm] = await listQuoteLines(SYSTEM_VIEWER, revisionId, { status: "in_progress", canWrite: true, canAdjust: false });
+    expect(asPm?.id).toBe(adjustment.id);
+    expect(Object.values(asPm!.cellEditability).every((cell) => cell === "locked")).toBe(true);
+    expect(asPm?.readonlyReason).toBeNull();
+
+    const [asAdjuster] = await listQuoteLines(SYSTEM_VIEWER, revisionId, { status: "in_progress", canWrite: false, canAdjust: true });
+    expect(asAdjuster?.cellEditability).toMatchObject({ itemName: "edit", vendorId: "edit", execution: "edit", note: "edit" });
+  });
+
+  it("(k11) 저장 응답 — 조정 권한만 있는 사람에게 견적 줄은 전 칸 잠김으로 온다(검토 S2)", async () => {
+    const { project, revisionId } = await setupProject();
+    const quote = await seedLine(revisionId, "quote");
+    await setStatus(project.id, "in_progress");
+
+    const { lines } = await saveQuoteLines(await makeViewer(adjusterMenus), revisionId, { rows: [adjustmentLine(-3_000)] });
+
+    const returned = lines.find((line) => line.id === quote.id);
+    expect(returned && Object.values(returned.cellEditability).every((cell) => cell === "locked")).toBe(true);
   });
 
   it("(k7) 기존 조정 줄에 lineKind quote를 실어 보내면 「줄 종류는 바뀌지 않음 · 새로 고침」으로 거부되고 종류는 그대로다", async () => {

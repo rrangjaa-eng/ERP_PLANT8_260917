@@ -1,10 +1,10 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-25T00:33:10.356Z",
+  "timestamp": "2026-09-25T01:35:37.923Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
-  "plan": 27,
+  "plan": 20,
   "task": null,
   "total_tasks": null,
   "status": "paused",
@@ -140,12 +140,18 @@
       "name": "[세션 N] 04-09 숫자 표시·쉼표 입력(D-95). executor 커밋 15개(b64d01a…57a48ad, SUMMARY f0592ce). Opus 검토 결함 1(‘-’·‘.’ 삭제 시 숫자 삭제) + 독립 DOM 감사 결함(숫자 셀 줄바꿈 S15, 표 안 Ctrl+V 막힘) + NaN 저장 → 수정 cba99c0…8ffc9be, SUMMARY 1e25f4c. main 병합 0d05fb7(충돌 1건, 마이그레이션 변화 없음). 추가 77a9cf8(고정 대기 제거)·d81391f·a09fa5a(375px 공급가액 보조 줄 넘침). CI 수정 92c30cb·6b5da59(04-06 업그레이드 테스트: en_US.utf8 vs C.UTF-8 정렬, pg-pool end() 타이밍). 전체 게이트 CI=true(병합 후, 77a9cf8 이전): 단위 949·통합 1066·E2E 211, 이후 대상 스펙 재실행 통과",
       "status": "done",
       "commit": "a09fa5a"
+    },
+    {
+      "id": 23,
+      "name": "[세션 O] 04-27 계급 업무 범위(team|company)·0013_role_work_scope·계급 화면 선택 칸. RED 97bb210·4f2dfe4 → feat 5caf481, SUMMARY 10843c3·72129ea. 독립 DOM 감사 결함 0, Opus 검토 막음 0·중요 0·참고 8. 전체 게이트 CI=true: 단위 949·통합 1083·E2E 215, lint·typecheck·lint:sql 0. 앞서 PR #40 CI(master-edit 팀 칸 자동 선택)는 a8c95fa로 수정, run 349 초록",
+      "status": "done",
+      "commit": "72129ea"
     }
   ],
   "remaining_tasks": [
     {
       "id": 1,
-      "name": "/gsd-execute-phase 4 — 남은 27개, 세션마다 한 플랜. 다음 웨이브 7: 04-27(다음, /mnt/project-files/phase4-prep/04-27.md 먼저 읽기), 이어서 웨이브 8 04-20",
+      "name": "/gsd-execute-phase 4 — 남은 26개, 세션마다 한 플랜. 다음 웨이브 8: 04-20(다음). 04-20 SUMMARY에 「비시드 계급(예: 경영관리)은 자기 팀으로 시작 — 관리자가 전사로 바꿔야 함」 알림을 같이 적는다",
       "status": "not_started"
     },
     {
@@ -194,6 +200,11 @@
       "description": "[세션 N] 04-09-SUMMARY 「남긴 후속」 6건: 통화 전환 시 KRW 칸 소수 유지, 거절된 붙여넣기 뒤 캐럿 위치, CommaTextField numeric prop 누수, 앞자리 0 서식, Enter 확정 뒤 포커스가 body로 이동, RED 선행 없는 커밋 3개. Table.module.css:48 낡은 주석",
       "type": "technical",
       "workaround": "범위 밖, 후속 플랜에서 처리"
+    },
+    {
+      "description": "[세션 O] 04-27 참고 8건(/mnt/project-files/phase4-prep/04-27-review-opus.md): 값 변경·로그가 한 트랜잭션 아님(renameRole과 같음), 보관 계급도 서버 직접 호출로 변경 가능, 보관 행 비활성 분기는 화면에 보관 계급이 안 나와 실행 안 됨, 0013 업그레이드 자동 테스트 없음 등",
+      "type": "technical",
+      "workaround": "막는 문제 아님, 후속 플랜에서 판단"
     }
   ],
   "async_jobs": [],
@@ -236,6 +247,11 @@
     {
       "action": "04-43-SUMMARY 「남은 낡은 문구」 5자리(ROADMAP Goal·기준 1·기준 5·트레일링 문단, REQUIREMENTS PROJ-06의 완료(정산))를 /gsd-phase 편집으로 고칠지 결정",
       "context": "사용자 D16은 세 곳만 승인 — 나머지는 수동 편집 금지라 남겨 둠",
+      "blocking": false
+    },
+    {
+      "action": "Codex 재확인: 04-27 검토(Opus로 대체)",
+      "context": "Codex 한도 09-29 이후",
       "blocking": false
     }
   ],
@@ -387,8 +403,8 @@
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션 O: git status -sb → /mnt/project-files/phase4-prep/04-27.md 읽기 → /gsd-execute-phase 4로 04-27만 실행(먼저 PR #40 CI, a09fa5a 기준, 확인). 그다음 04-20. 브랜치 claude/gsd-progress-e1nzgu, PR #40, 푸시는 git push origin HEAD:claude/gsd-progress-e1nzgu",
-  "context_notes": "세션 N이 04-09 완료(전체 게이트 CI=true 단위 949·통합 1066·E2E 211, 병합 후 77a9cf8 이전 — 이후 대상 스펙 재실행 통과). 04-28 알려진 범위 밖: Alt+↑↓ 순서 저장 안 됨 → 04-12·04-30.",
+  "next_action": "새 세션 P: git status -sb → /gsd-execute-phase 4로 04-20 한 플랜만 실행(먼저 PR #40 CI 72129ea 확인). 브랜치 claude/gsd-progress-e1nzgu, PR #40, 푸시는 git push origin HEAD:claude/gsd-progress-e1nzgu",
+  "context_notes": "세션 O가 04-27 완료(16/42). 전체 게이트 CI=true 단위 949·통합 1083·E2E 215. 실행자 Opus(DB·마이그레이션 규칙), 격리 none(origin/HEAD 미해결로 자동 순차). 04-28 알려진 범위 밖: Alt+↑↓ 순서 저장 안 됨 → 04-12·04-30.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"

@@ -158,6 +158,8 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(headerTag(page, "진행")).toBeVisible();
     await expect(page.getByText(`${projectNumber} · 상세 견적 1차 · 진행 ${TODAY}`, { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "상태 바꾸기" })).toHaveCount(0);
+    // S16 — 전환 성공으로 트리거가 사라졌으면 포커스는 머리 줄 제목으로 돌아온다.
+    await expect(page.getByRole("heading", { name: projectName })).toBeFocused();
   });
 
   test("(b) 팀장이 미수주로 닫고, 승인 전이라 「진행으로 되돌리기」가 확인 모달을 거쳐 진행으로 (DR-7 · DR-21)", async ({ page }) => {
@@ -214,6 +216,8 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(page.getByText(`진행으로 되돌리기 · ${project.number}`, { exact: true })).toBeVisible();
     await expect(headerTag(page, "진행")).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
+    // S16 — 즉시 경로도 트리거가 사라지면 포커스는 머리 줄 제목으로.
+    await expect(page.getByRole("heading", { name: project.name })).toBeFocused();
   });
 
   test("(b3) 승인됐지만 종료일이 지난 미수주는 확인 모달 결과 줄 「종료일 지남 · 바로 정산」 (DR-7)", async ({ page }) => {

@@ -1,10 +1,10 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-25T03:01:26.731Z",
+  "timestamp": "2026-09-25T04:08:52.128Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
-  "plan": 21,
+  "plan": 11,
   "task": null,
   "total_tasks": null,
   "status": "paused",
@@ -152,12 +152,18 @@
       "name": "[세션 P] 04-20 실행(웨이브 8) — 사람 상태 전환 PROJ-04 일부·권한표 메뉴 projects.status/projects.complete·팀장 자기 팀 범위 actorCoversProjectTeam·FOR UPDATE 잠금+조건부 UPDATE+로그 한 트랜잭션·denyWrite·시드 「없을 때만」 권한·노출(시스템 관리자만 upsert) — PR #38 알려진 문제 「배포마다 노출표 되돌림」 닫힘. executor Opus, 격리 none(worktree base-check fork-ref-unknown 자동 강등). 커밋 RED 70b9897→GREEN 22abaf5(Task1)·RED 00f87bc→GREEN 3823ee3(Task2)·e8fa3f6(Task3 테스트만, 노출 되돌림 회귀는 옛 upsertVisibility로 되돌려 RED 확인)·SUMMARY abe1f74·STATE/ROADMAP 27a5cf9·state.json 1d16193. 편차 9건(SUMMARY: role-ceo 시드 없음 가정하던 통합 테스트 3곳 준비 코드 변경·단언 불변, roles.ts 상수 3개, denyWrite err.constructor.name, evaluateTransition·loadStatusChangeFacts export, 기준 d6b41cf 얕은 clone → deepen 뒤 확인). Opus 독립 검토(/mnt/project-files/phase4-prep/04-20-review-opus.md): 막음 0·중요 1(M1 권한 판정 전에 오래된 from 검사 → 권한 없는 사람이 틀린 from으로 상태 값을 알아냄) → 110c8cd로 수정(잠근 뒤 project.transition 먼저, RED 확인 통합 테스트)·참고 7건은 파일에 남김(미수정, 한도 풀리면 Codex 재확인). 전체 게이트 1차 CI=true: 단위1047·통합1106 통과, E2E permissions-grid.spec.ts:172 단독 실패(04-20 메뉴 2개로 표 폭 2,515px > .wrap 1,240px, 휠 좌표가 .wrap 밖 → 앱 결함 아님) → 86d078b로 좌표를 .wrap 중앙으로 수정(단언 불변, 변이 2개로 실패 확인). 전체 게이트 최종 CI=true(110c8cd): 단위1047·통합1107·E2E215 통과, lint·typecheck 0, lint:sql 0(1차). 진행 17/42",
       "status": "done",
       "commit": "1d16193"
+    },
+    {
+      "id": 25,
+      "name": "[세션 Q] 04-21 실행(웨이브 9) 단일 플랜. executor Opus, 격리 none(dispatch-isolation --force-isolation none, main 작업트리 순차), 실행 컨텍스트 executor Read(세션 I·J와 동일). 커밋 916035b·bf0fb2e·c820cc4·b19ff10·00d9c85·e4d6e20·3e3ad22·1865707·8e44b7a(executor) → 검토 수정 548e7af·43fa92c·4e17605·457253b → STATE/state.json 1e28b1d. Opus 독립 검토(/mnt/project-files/phase4-prep/04-21-review-opus.md): B1(포커스 복귀 안 됨) → 43fa92c로 수정, S1(stale-from 회귀 E2E 없음) → 4e17605로 추가. 독립 DOM 감사(/mnt/project-files/phase4-prep/04-21-dom-audit.md) 1280·1024·375 전부 PASS — 「더보기」 펼침·375 미저장 편집 머리글 2건은 04-24/04-15 뒤 재감사 필요. Codex 교차 검토는 한도로 미실행(한도 풀리면 재확인). 전체 게이트 CI=true(457253b): lint·typecheck·lint:sql 0, 단위 1055·통합 1114·E2E 227 통과. 진행 18/42",
+      "status": "done",
+      "commit": "457253b"
     }
   ],
   "remaining_tasks": [
     {
       "id": 1,
-      "name": "/gsd-execute-phase 4 — 남은 25개, 세션마다 한 플랜. 다음 웨이브 9: 04-21(다음)",
+      "name": "/gsd-execute-phase 4 — 남은 24개, 세션마다 한 플랜. 다음 웨이브 10: 04-11(다음)",
       "status": "not_started"
     },
     {
@@ -211,6 +217,16 @@
       "description": "[세션 O] 04-27 참고 8건(/mnt/project-files/phase4-prep/04-27-review-opus.md): 값 변경·로그가 한 트랜잭션 아님(renameRole과 같음), 보관 계급도 서버 직접 호출로 변경 가능, 보관 행 비활성 분기는 화면에 보관 계급이 안 나와 실행 안 됨, 0013 업그레이드 자동 테스트 없음 등",
       "type": "technical",
       "workaround": "막는 문제 아님, 후속 플랜에서 판단"
+    },
+    {
+      "description": "[세션 Q] PR #40이 main 7e70f31과 병합 충돌(HANDOFF.json·ROADMAP.md·docs/design/DECISIONS.md) — CI가 PR에서 돌지 않음",
+      "type": "process",
+      "workaround": "다음 플랜(04-11) 전에 코디네이터가 별도 세션에서 main 병합을 끝낸다"
+    },
+    {
+      "description": "[세션 Q] 04-22 전 사용자 결정 필요: 팀장 시드에 projects write 권한이 없어(domain/seed/index.ts:194-201) 「팀장이 종료일을 당긴다」(CEO-D13)가 막힘 — 팀장에 projects write를 주거나, 기간만 허용하는 권한을 새로 만들지 선택",
+      "type": "product",
+      "workaround": "04-22 실행 세션 전에 사용자 답 필요, 그때까지 보류"
     }
   ],
   "async_jobs": [],
@@ -406,11 +422,16 @@
       "decision": "[세션 N] CI DB 정렬 규칙(en_US.utf8) vs 로컬(C.UTF-8) 불일치로 ORDER BY 한글 문자열 단언을 JS sort로 교체(92c30cb). pg-pool end()가 소켓 종료 전에 끝나는 문제로 DROP DATABASE WITH (FORCE) 전 임시 풀에 error 처리기 추가(6b5da59)",
       "rationale": "04-06 업그레이드 테스트가 CI에서만 실패 — 환경별 정렬 규칙·소켓 타이밍 차이가 원인",
       "phase": "4"
+    },
+    {
+      "decision": "[세션 Q, 신규 경계 사례] 「실행자 SUMMARY가 없는 테스트를 있다고 적음」 — 04-21 executor SUMMARY 편차 5가 stale-rejection E2E를 작성했다고 적었지만 실제로는 없었고, Opus 검토(S1)가 잡아 4e17605로 추가",
+      "rationale": "검토자는 SUMMARY의 테스트 주장을 스펙 파일 대조 없이 믿으면 안 됨 — 이후 검토는 각 SUMMARY 테스트 주장을 스펙 파일에서 직접 확인한다",
+      "phase": "4"
     }
   ],
   "uncommitted_files": [],
-  "next_action": "세션 Q(새 세션) — git status -sb → PR #40 CI(1d16193) 확인 → /gsd-execute-phase 4로 04-21 한 플랜만 실행(웨이브 9). /mnt/project-files/phase4-prep/04-21.md가 있으면 먼저 읽는다. 브랜치 claude/gsd-progress-e1nzgu, PR #40, 푸시는 git push origin HEAD:claude/gsd-progress-e1nzgu",
-  "context_notes": "세션 P가 04-20 완료(17/42). 전체 게이트 CI=true 단위 1047·통합 1107·E2E 215. 실행자 Opus, 격리 none(worktree base-check fork-ref-unknown 자동 강등). Opus 독립 검토 중요 1건(M1, 권한 판정보다 먼저 도는 상태 검사)을 110c8cd로 수정. E2E permissions-grid.spec.ts:172는 표 폭 확대로 인한 좌표 문제(앱 결함 아님)로 86d078b에서 수정. 다음 웨이브 9: 04-21.",
+  "next_action": "세션 R(새 세션) — 먼저 코디네이터의 main 병합 세션이 끝났는지 확인(PR #40 mergeable) → git status -sb → /gsd-execute-phase 4로 04-11 한 플랜만(웨이브 10). /mnt/project-files/phase4-prep/04-11.md 있으면 먼저 읽기.",
+  "context_notes": "세션 Q가 04-21 완료(18/42). 전체 게이트 CI=true 단위 1055·통합 1114·E2E 227. 실행자 Opus, 격리 none(dispatch-isolation --force-isolation none, main 작업트리 순차), 실행 컨텍스트 executor Read. Opus 독립 검토 B1(포커스 복귀)·S1(stale-from E2E 누락)을 43fa92c·4e17605로 수정. Codex 교차 검토 한도로 미실행. PR #40이 main과 충돌(HANDOFF.json·ROADMAP.md·docs/design/DECISIONS.md) — 다음 플랜 전 코디네이터가 별도 세션에서 병합. 04-22 전 팀장 projects write 권한 사용자 결정 필요. 다음 웨이브 10: 04-11.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"

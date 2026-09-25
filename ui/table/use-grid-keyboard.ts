@@ -147,8 +147,6 @@ export function useGridKeyboard({
   }
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLElement>, pos: GridPosition) {
-    // 04-49 — 한글 조합 중인 키는 격자 동작을 시작하지 않는다(조합 확정 Enter가 편집을 열지 않게).
-    if (event.nativeEvent.isComposing) return;
     const editing = isEditing(pos);
     const allowed = (action: Parameters<typeof isGridActionAllowed>[0]) => isGridActionAllowed(action, { saveLocked });
 
@@ -174,6 +172,9 @@ export function useGridKeyboard({
       }
       return;
     }
+
+    // 04-49 — 한글 조합 중인 키는 격자 동작을 시작하지 않는다(조합 확정 Enter가 편집을 열지 않게). Ctrl 조합은 위에서 기본 동작을 막았다(리뷰 S-1).
+    if (event.nativeEvent.isComposing) return;
 
     if (editing) {
       // 편집 중에는 이 훅이 방향키·Delete를 가로채지 않는다 — 입력 요소

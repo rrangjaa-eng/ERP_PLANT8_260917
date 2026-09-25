@@ -14,6 +14,7 @@ import {
 } from "@/domain/projects";
 import { listProjectFormReferences } from "@/domain/projects/references";
 import { listProjectStatusCatalog } from "@/domain/projects/status";
+import { recentFxRate } from "@/domain/money/currency";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { ProjectForm } from "./project-form";
@@ -84,13 +85,15 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   // 04-11(A-07): 자동 정산 판정은 목록 요청당 한 번, 목록·합계를 나란히 읽기 전에(04-17이
   // loadProjectList 안으로 옮긴다).
   await settleForProjectList(session.viewer);
-  const [references, canWrite, rows, aggregate, copySource] = await Promise.all([
+  const [references, canWrite, rows, aggregate, copySource, usdDefaultFxRate] = await Promise.all([
     listProjectFormReferences(session.viewer),
     can(session.viewer, "projects", "write"),
     listProjects(session.viewer, { filter, sort: { key: sortKey, direction: sortDirection }, limit: count }),
     aggregateProjects(session.viewer, filter),
     // 04-15(D-70 · S2) — 복사 등록 미리 채우기. 범위 밖 · 보관 · 없는 출처면 null → 일반 등록 폼.
     showCreateForm && params.copyFrom ? getProjectCopySource(session.viewer, params.copyFrom) : Promise.resolve(null),
+    // 04-15(D-71) — 총 매출 예상가 USD 환율 칸 기본값(설정의 실제 값).
+    showCreateForm ? recentFxRate("USD") : Promise.resolve(1),
   ]);
 
   const canSeeAmount = aggregate.quoteAmountKrw !== undefined;
@@ -119,6 +122,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           teams={references.teams}
           pmUsers={references.pmUsers}
           cancelHref={projectsHref()}
+          usdDefaultFxRate={usdDefaultFxRate}
         />
       ) : null}
 

@@ -87,6 +87,12 @@ export function validatePeriodChange(input: {
   return [];
 }
 
+// 04-15(PR #38 /qa 「날짜 순서」) — 등록(수주중)의 기간 판정. 상세 기간 칸과 같은 판정 · 같은 문구 한 곳을 쓴다 —
+// 수주중에는 진행 이후 규칙(시작일 필수 · PM 종료일 제한)이 걸리지 않아 형식 · 달력 · 순서만 남는다(권리 · 오늘 날짜는 쓰이지 않는다).
+export function validateNewProjectPeriod(input: { start: string | null; end: string | null }): PeriodFieldError[] {
+  return validatePeriodChange({ status: "bidding", rights: "none", start: input.start, end: input.end, todayKst: "", teamLeadName: null });
+}
+
 // 결과 미리보기 한 줄(Form.Hint) — 저장될 값으로 판정한다(서버 저장과 같은 resolvePeriodSave).
 export function previewPeriodChange(input: {
   status: ProjectStatus;

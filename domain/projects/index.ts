@@ -11,7 +11,10 @@ import { allocateDocumentNumber, loadDocumentNumberFormat } from "@/domain/docum
 import { withTransaction } from "@/lib/db-transaction";
 import { kstYear } from "@/lib/kst-date";
 import { applyAutoSettlement, type AutoSettlementDeps } from "@/domain/projects/auto-transition";
-import { moneyFromRow, type Money } from "@/domain/money";
+import { moneyFromRow, moneyToColumns, normalizeMoneyInput, MoneyInputError, type Currency, type Money, type MoneyInput } from "@/domain/money";
+import { validatePreEstimateChange } from "@/domain/projects/pre-estimate";
+import { validateNewProjectPeriod } from "@/domain/projects/period";
+import { rememberFxAfterCommit } from "@/domain/quotes/lines";
 import {
   listProjectsPage as repoListProjectsPage,
   aggregateProjects as repoAggregateProjects,
@@ -286,7 +289,47 @@ export type ProjectInput = {
   customFields?: Record<string, unknown>;
   // 04-15(D-70) — 복사 등록의 출처 프로젝트 id. 현재 차수의 견적 줄 구조만 새 1차로 온다.
   copyFromProjectId?: string;
+  // 04-15(D-52 · D-71) — 총 매출 예상가(사전 견적). 없으면 04-01 기본 저장(원화 0 · KRW · 환율 1).
+  preEstimate?: { currency: Currency; amount: number; fxRate: number | null };
+  // 환율 칸을 실제로 고쳤을 때만 최근 환율 설정을 갱신한다(T-04-11).
+  preEstimateFxRateTouched?: boolean;
 };
+
+// 04-15(B-17 · PR #38) — 등록 입력의 칸 오류. 화면이 칸 아래 Form.Error와 1차 옆 한 줄로 그린다.
+export type ProjectInputFieldError = {
+  field: "startDate" | "endDate" | "preEstimateAmount" | "preEstimateFxRate";
+  reason: string;
+};
+
+export class ProjectInputRejectedError extends UserFacingError {
+  constructor(readonly errors: ProjectInputFieldError[]) {
+    super(errors[0]?.reason ?? "등록하지 못했습니다");
+  }
+}
+
+// 기간은 04-22 판정, 총 매출 예상가는 04-44 칸 판정(부호 · 숫자) 뒤 04-40 금액 입력 한 규칙(KRW 환율 1 · USD 환율 > 0 ·
+// 정수 범위) — 이 파일에 따로 검사하지 않는다. 통과하면 저장할 금액을 돌려준다.
+function validateProjectInput(input: ProjectInput): { errors: ProjectInputFieldError[]; preEstimate: MoneyInput | null } {
+  const errors: ProjectInputFieldError[] = validateNewProjectPeriod({ start: input.startDate ?? null, end: input.endDate ?? null }).map(
+    (error) => ({ field: error.field === "start" ? "startDate" : "endDate", reason: error.reason }),
+  );
+  if (!input.preEstimate) return { errors, preEstimate: null };
+  const fieldErrors = validatePreEstimateChange(input.preEstimate);
+  if (fieldErrors.length > 0) {
+    for (const error of fieldErrors) {
+      errors.push({ field: error.field === "amount" ? "preEstimateAmount" : "preEstimateFxRate", reason: error.reason });
+    }
+    return { errors, preEstimate: null };
+  }
+  try {
+    const preEstimate = normalizeMoneyInput({ ...input.preEstimate, fxRate: input.preEstimate.fxRate ?? 1 });
+    return { errors, preEstimate };
+  } catch (error) {
+    if (!(error instanceof MoneyInputError)) throw error;
+    errors.push({ field: error.reason === "fx-rate" ? "preEstimateFxRate" : "preEstimateAmount", reason: error.message });
+    return { errors, preEstimate: null };
+  }
+}
 
 const COPY_SOURCE_RULE = "project.copy-source";
 const COPY_SOURCE_MISSING = "복사할 프로젝트 없음 · 새로 고침";
@@ -339,6 +382,10 @@ export async function createProject(
     throw new ForbiddenError("프로젝트 등록 권한이 없습니다.");
   }
 
+  const { errors: inputErrors, preEstimate } = validateProjectInput(input);
+  if (inputErrors.length > 0) throw new ProjectInputRejectedError(inputErrors);
+  const preEstimateColumns = preEstimate ? moneyToColumns(preEstimate) : null;
+
   const customFields = await validatedCustomFields(viewer, input.customFields);
   // C-17: 번호 연도는 KST — 1월 1일 00:00~09:00(KST) 등록도 새해 번호다.
   const year = kstYear(deps?.now?.() ?? new Date());
@@ -369,10 +416,10 @@ export async function createProject(
         status: "bidding",
         startDate: input.startDate ?? null,
         endDate: input.endDate ?? null,
-        preEstimateCurrency: "KRW",
-        preEstimateForeignAmount: null,
-        preEstimateFxRate: "1.0000",
-        preEstimateAmountKrw: 0,
+        preEstimateCurrency: preEstimateColumns?.currency ?? "KRW",
+        preEstimateForeignAmount: preEstimateColumns?.foreignAmount ?? null,
+        preEstimateFxRate: preEstimateColumns?.fxRate ?? "1.0000",
+        preEstimateAmountKrw: preEstimateColumns?.amountKrw ?? 0,
         contractCurrency: "KRW",
         contractForeignAmount: null,
         contractFxRate: "1.0000",
@@ -396,6 +443,11 @@ export async function createProject(
     }
     return { row, copiedLineCount: copied };
   });
+
+  // D-71 · 04-32 규칙 — 최근 환율은 등록 트랜잭션이 커밋된 뒤 한 번만(거부 · 롤백된 등록은 여기 오지 않는다).
+  if (input.preEstimateFxRateTouched && preEstimate && preEstimate.currency !== "KRW") {
+    await rememberFxAfterCommit([{ currency: preEstimate.currency, rate: preEstimate.fxRate }]);
+  }
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, {

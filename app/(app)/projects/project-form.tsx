@@ -11,7 +11,9 @@ import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { isCtrlCombo } from "@/lib/shortcut";
-import type { ProjectCopySource } from "@/domain/projects";
+import type { ProjectCopySource, ProjectInputFieldError } from "@/domain/projects";
+import type { Currency } from "@/domain/money";
+import { useCommaInput } from "@/ui/input/use-comma-input";
 import styles from "./projects.module.css";
 
 export type ProjectFormOption = { id: string; name: string };
@@ -24,7 +26,25 @@ function getStringField(formData: FormData, key: string): string {
 // Esc(DR-27) 판정에 쓰는 칸 목록 — 이 칸들의 값이 처음 연 값과 하나라도
 // 다르면 입력이 있다고 본다. isFormPristine은 04-46의 「취소 Esc」 버튼·
 // 확인 모달 부제의 칸 수 계산이 같은 비교를 쓴다.
-const PRISTINE_FIELDS = ["clientId", "name", "pmUserId", "teamId", "startDate", "endDate"] as const;
+const PRISTINE_FIELDS = [
+  "clientId",
+  "name",
+  "pmUserId",
+  "teamId",
+  "startDate",
+  "endDate",
+  "preEstimateAmount",
+  "preEstimateCurrency",
+  "preEstimateFxRate",
+] as const;
+
+// 04-15 — 1차 옆 `등록하지 못했습니다 · {칸} {n}칸`의 칸 이름(라벨 그대로).
+const FIELD_LABELS: Record<ProjectInputFieldError["field"], string> = {
+  startDate: "시작일",
+  endDate: "종료일",
+  preEstimateAmount: "총 매출 예상가",
+  preEstimateFxRate: "총 매출 예상가",
+};
 
 function snapshotFormValues(formData: FormData): Record<string, string> {
   const values: Record<string, string> = {};
@@ -53,12 +73,15 @@ export function ProjectForm({
   teams,
   pmUsers,
   cancelHref,
+  usdDefaultFxRate,
   copySource = null,
 }: {
   clients: ProjectFormOption[];
   teams: ProjectFormOption[];
   pmUsers: ProjectFormOption[];
   cancelHref: string;
+  /** 04-15(D-71) — 통화를 USD로 고르면 환율 칸의 기본값(설정의 최근 USD 환율 실제 값). */
+  usdDefaultFxRate: number;
   /** 04-15(D-70) — 복사 등록이면 출처 기본 정보(미리 채움 = Esc 판정의 처음 값, DR-27)와 줄 수. */
   copySource?: (ProjectCopySource & { projectId: string }) | null;
 }) {
@@ -76,9 +99,28 @@ export function ProjectForm({
   const [discardOpen, setDiscardOpen] = useState(false);
   const [discardFieldCount, setDiscardFieldCount] = useState(0);
 
+  // 04-15(D-52 · S2) — 총 매출 예상가(금액 + 통화 + 환율). 금액 칸은 04-09 쉼표 입력, KRW면 환율 칸이 숨는다.
+  const [preEstimateCurrency, setPreEstimateCurrency] = useState<Currency>("KRW");
+  const {
+    inputRef: amountRef,
+    value: amountText,
+    onChange: onAmountChange,
+    error: amountInputError,
+    rawValue: amountRawValue,
+  } = useCommaInput(preEstimateCurrency === "KRW" ? "krw" : "foreign", "");
+  const {
+    inputRef: fxRateRef,
+    value: fxRateText,
+    onChange: onFxRateChange,
+    error: fxRateInputError,
+    rawValue: fxRateRawValue,
+  } = useCommaInput("fxRate", String(usdDefaultFxRate));
+
   const { execute, result, isExecuting } = useAction(createProjectAction, {
     onSuccess: ({ data }) => {
-      if (data?.project) router.push(`/projects/${data.project.id}`);
+      if (data && "project" in data) router.push(`/projects/${data.project.id}`);
+      // 칸 거부(rejected)면 이동하지 않는다 — 래치를 내려 다시 제출할 수 있게 한다.
+      else submittedRef.current = false;
     },
     onError: () => {
       submittedRef.current = false;
@@ -97,6 +139,9 @@ export function ProjectForm({
     if (submittedRef.current || isExecuting) return;
     submittedRef.current = true;
     const formData = new FormData(event.currentTarget);
+    const amountRaw = getStringField(formData, "preEstimateAmount");
+    const currency: Currency = getStringField(formData, "preEstimateCurrency") === "USD" ? "USD" : "KRW";
+    const fxRaw = getStringField(formData, "preEstimateFxRate");
     execute({
       clientId: getStringField(formData, "clientId"),
       name: getStringField(formData, "name"),
@@ -105,6 +150,12 @@ export function ProjectForm({
       startDate: getStringField(formData, "startDate") || undefined,
       endDate: getStringField(formData, "endDate") || undefined,
       copyFromProjectId: getStringField(formData, "copyFromProjectId") || undefined,
+      // 빈 금액 칸은 보내지 않는다 — 04-01 기본 저장(원화 0 · KRW · 환율 1, B-37).
+      preEstimate:
+        amountRaw === ""
+          ? undefined
+          : { currency, amount: Number(amountRaw), fxRate: currency === "KRW" ? 1 : fxRaw === "" ? null : Number(fxRaw) },
+      preEstimateFxRateTouched: currency !== "KRW" && fxRaw !== initialValuesRef.current?.preEstimateFxRate,
     });
   }
 
@@ -163,11 +214,32 @@ export function ProjectForm({
   const nameError = result.validationErrors?.name?._errors?.[0];
   const pmError = result.validationErrors?.pmUserId?._errors?.[0];
   const teamError = result.validationErrors?.teamId?._errors?.[0];
+  // 04-15 — 칸 거부(서버 domain)와 스키마의 총 매출 예상가 칸 오류. 둘 다 같은 칸 아래에 그린다.
+  const rejectedErrors = result.data && "rejected" in result.data ? result.data.rejected.errors : [];
+  const rejectedOf = (field: ProjectInputFieldError["field"]) => rejectedErrors.find((error) => error.field === field)?.reason;
+  const preEstimateErrors = result.validationErrors?.preEstimate;
+  const startDateError = rejectedOf("startDate");
+  const endDateError = rejectedOf("endDate");
+  const amountError =
+    amountInputError ?? preEstimateErrors?.amount?._errors?.[0] ?? rejectedOf("preEstimateAmount");
+  const fxRateError =
+    fxRateInputError ?? preEstimateErrors?.fxRate?._errors?.[0] ?? rejectedOf("preEstimateFxRate");
+  const submitFieldErrors: ProjectInputFieldError["field"][] = [
+    ...(startDateError ? (["startDate"] as const) : []),
+    ...(endDateError ? (["endDate"] as const) : []),
+    ...(preEstimateErrors?.amount?._errors?.[0] || rejectedOf("preEstimateAmount") ? (["preEstimateAmount"] as const) : []),
+    ...(preEstimateErrors?.fxRate?._errors?.[0] || rejectedOf("preEstimateFxRate") ? (["preEstimateFxRate"] as const) : []),
+  ];
 
   // §7-15 검증 관문 — 필수인데 비면 제출 버튼이 이유를 말한다(막힘 자리는
   // 서버 응답 없이도 클라이언트 상태로 계산할 수 있지만, 이 플랜은
   // 서버 오류 문구를 그대로 옆에 붙이는 것으로 같은 계약을 만족한다).
-  const blockedReason = [clientError, nameError, pmError, teamError].filter(Boolean)[0];
+  // 04-15 — 필수 칸이 아닌 칸 거부는 Copywriting `Error — 등록 폼 제출` 한 줄(`등록하지 못했습니다 · 총 매출 예상가 1칸`).
+  const firstSubmitField = submitFieldErrors[0];
+  const submitReason = firstSubmitField
+    ? `등록하지 못했습니다 · ${FIELD_LABELS[firstSubmitField]} ${submitFieldErrors.length}칸`
+    : undefined;
+  const blockedReason = [clientError, nameError, pmError, teamError, submitReason].filter(Boolean)[0];
 
   return (
     <>
@@ -220,12 +292,78 @@ export function ProjectForm({
         </Form.Field>
 
         <Form.Field id="startDate" label="시작일" width="short">
-          <input id="startDate" name="startDate" type="date" className={styles.textInput} />
+          <input
+            id="startDate"
+            name="startDate"
+            type="date"
+            className={styles.textInput}
+            aria-invalid={startDateError ? true : undefined}
+            aria-describedby={startDateError ? "startDate-error" : undefined}
+          />
+          {startDateError ? <Form.Error id="startDate-error">{startDateError}</Form.Error> : null}
         </Form.Field>
 
         <Form.Field id="endDate" label="종료일" width="short">
-          <input id="endDate" name="endDate" type="date" className={styles.textInput} />
+          <input
+            id="endDate"
+            name="endDate"
+            type="date"
+            className={styles.textInput}
+            aria-invalid={endDateError ? true : undefined}
+            aria-describedby={endDateError ? "endDate-error" : undefined}
+          />
+          {endDateError ? <Form.Error id="endDate-error">{endDateError}</Form.Error> : null}
         </Form.Field>
+
+        <Form.Field id="preEstimateAmount" label="총 매출 예상가" width="short">
+          <input
+            id="preEstimateAmount"
+            ref={amountRef}
+            type="text"
+            inputMode={preEstimateCurrency === "KRW" ? "numeric" : "decimal"}
+            autoComplete="off"
+            className={`${styles.textInput} ${styles.numericInput}`}
+            value={amountText}
+            onChange={onAmountChange}
+            aria-invalid={amountError ? true : undefined}
+            aria-describedby={amountError ? "preEstimateAmount-error" : undefined}
+          />
+          <input type="hidden" name="preEstimateAmount" value={amountRawValue} readOnly />
+          {amountError ? <Form.Error id="preEstimateAmount-error">{amountError}</Form.Error> : null}
+        </Form.Field>
+
+        <Form.Field id="preEstimateCurrency" label="통화" width="select">
+          <Select
+            id="preEstimateCurrency"
+            name="preEstimateCurrency"
+            value={preEstimateCurrency}
+            options={[
+              { value: "KRW", label: "KRW" },
+              { value: "USD", label: "USD" },
+            ]}
+            onChange={(event) => setPreEstimateCurrency(event.target.value === "USD" ? "USD" : "KRW")}
+          />
+        </Form.Field>
+
+        {/* KRW는 환율 1이라 칸이 숨는다. 값은 숨은 칸으로 늘 실어 Esc 판정(처음 연 값)이 통화 전환만 센다. */}
+        {preEstimateCurrency === "KRW" ? null : (
+          <Form.Field id="preEstimateFxRate" label="환율" width="short">
+            <input
+              id="preEstimateFxRate"
+              ref={fxRateRef}
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
+              className={`${styles.textInput} ${styles.numericInput}`}
+              value={fxRateText}
+              onChange={onFxRateChange}
+              aria-invalid={fxRateError ? true : undefined}
+              aria-describedby={fxRateError ? "preEstimateFxRate-error" : undefined}
+            />
+            {fxRateError ? <Form.Error id="preEstimateFxRate-error">{fxRateError}</Form.Error> : null}
+          </Form.Field>
+        )}
+        <input type="hidden" name="preEstimateFxRate" value={fxRateRawValue} readOnly />
 
         {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
 

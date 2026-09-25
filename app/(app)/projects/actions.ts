@@ -4,14 +4,14 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
-import { createProject } from "@/domain/projects";
+import { createProject, ProjectInputRejectedError, type ProjectInputFieldError } from "@/domain/projects";
 import {
   PeriodRejectedError,
   PreEstimateRejectedError,
   saveProjectLedger,
   type PeriodFieldError,
 } from "@/domain/projects/ledger";
-import type { PreEstimateFieldError } from "@/domain/projects/pre-estimate";
+import { validatePreEstimateChange, type PreEstimateFieldError } from "@/domain/projects/pre-estimate";
 import { quoteLinesInputSchema, SaveRejectedError } from "@/domain/quotes/lines";
 import {
   createRevisionFromCurrent,
@@ -49,21 +49,49 @@ export const createProjectAction = authedActionClient
       endDate: z.string().optional(),
       // 04-15(D-70) — 복사 등록의 출처. 행 범위 · 보관 판정은 domain이 한다.
       copyFromProjectId: z.string().max(64).optional(),
+      // 04-15(D-52 · B-17) — 총 매출 예상가. 부호 · 환율 > 0은 여기서 먼저 거르고(같은 칸 판정 · 같은 문구),
+      // KRW 환율 1 고정 · 범위는 domain이 04-40 금액 입력 규칙으로 한다.
+      preEstimate: z
+        .object({
+          currency: currencySchema,
+          amount: z.union([z.number(), z.nan()]),
+          fxRate: z.union([z.number(), z.nan()]).nullable(),
+        })
+        .superRefine((value, refine) => {
+          for (const error of validatePreEstimateChange(value)) {
+            refine.addIssue({ code: "custom", path: [error.field], message: error.reason });
+          }
+        })
+        .optional(),
+      preEstimateFxRateTouched: z.boolean().optional(),
     }),
   )
   .action(async ({ parsedInput, ctx }) => {
-    const project = await createProject(ctx.viewer, {
-      clientId: parsedInput.clientId,
-      name: parsedInput.name,
-      pmUserId: parsedInput.pmUserId,
-      teamId: parsedInput.teamId,
-      startDate: parsedInput.startDate || undefined,
-      endDate: parsedInput.endDate || undefined,
-      copyFromProjectId: parsedInput.copyFromProjectId || undefined,
-    });
+    let project: Awaited<ReturnType<typeof createProject>>;
+    try {
+      project = await createProject(ctx.viewer, {
+        clientId: parsedInput.clientId,
+        name: parsedInput.name,
+        pmUserId: parsedInput.pmUserId,
+        teamId: parsedInput.teamId,
+        startDate: parsedInput.startDate || undefined,
+        endDate: parsedInput.endDate || undefined,
+        copyFromProjectId: parsedInput.copyFromProjectId || undefined,
+        preEstimate: parsedInput.preEstimate,
+        preEstimateFxRateTouched: parsedInput.preEstimateFxRateTouched,
+      });
+    } catch (error) {
+      // 04-15 — 기간 · 총 매출 예상가 칸 거부는 칸 오류로 돌려준다(쓰기 전에 던진다 — 행이 없다).
+      if (error instanceof ProjectInputRejectedError) return projectInputRejected(error);
+      throw error;
+    }
     revalidatePath("/projects");
     return { project };
   });
+
+function projectInputRejected(error: ProjectInputRejectedError): { rejected: { errors: ProjectInputFieldError[] } } {
+  return { rejected: { errors: error.errors } };
+}
 
 // 04-22 — 기간 칸. 날짜 형식·달력 검사는 domain이 칸 오류 문구로 한다(스키마는 길이만 막는다).
 // 기준값은 서버가 렌더한 값이라 형식을 여기서 고정한다.

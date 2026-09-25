@@ -391,3 +391,57 @@ describe("조정 권한 축 — 표 위 한 줄 · EMPTY · 힌트 줄(04-23)", 
     });
   });
 });
+
+// 04-40(사용자 D7 · B-07 A · ENG-D7 · DR-2 · W5) — 승인된 현재 차수 축. 이유 우선순위 완료 > 정산 > 연결 문서 > 승인.
+describe("승인 차수 축(approvedSeq)", () => {
+  const approved = { ...base, status: "in_progress", lineKind: "quote" as const, approvedSeq: 2 };
+
+  it("기존 견적 줄: 수량·단가·상태·소분류 locked, 실행가·항목·거래처·비고 edit(ENG-D7)", () => {
+    const cells = lineCellEditability(approved);
+    expect(fieldsAt(cells, "locked")).toEqual(["lineStatus", "quantity", "subcategory", "unitPrice"]);
+    expect(fieldsAt(cells, "edit")).toEqual(["execution", "itemName", "note", "vendorId"]);
+  });
+
+  it("approvedSeq: null이면 전부 edit", () => {
+    expect(fieldsAt(lineCellEditability({ ...approved, approvedSeq: null }), "edit")).toHaveLength(8);
+  });
+
+  it("새 견적 줄: 수량·단가·상태 locked(정산 새 줄과 같은 칸), 소분류는 고른다", () => {
+    const cells = lineCellEditability({ ...approved, isNewLine: true });
+    expect(fieldsAt(cells, "locked")).toEqual(["lineStatus", "quantity", "unitPrice"]);
+    expect(cells.subcategory).toBe("edit");
+  });
+
+  it("정산 + 승인은 정산 규칙 그대로(실행가만) · 연결 문서는 읽기 전용이 이긴다", () => {
+    expect(fieldsAt(lineCellEditability({ ...approved, status: "settling" }), "edit")).toEqual(["execution"]);
+    const linked = lineCellEditability({ ...approved, hasLinkedDocuments: true });
+    expect(linked.quantity).toBe("readonly");
+    expect(linked.unitPrice).toBe("readonly");
+    expect(linked.subcategory).toBe("locked");
+  });
+
+  it("견적 외 비용·조정 줄은 승인과 무관(04-13 규칙 그대로)", () => {
+    for (const lineKind of ["out_of_quote", "adjustment"] as const) {
+      const withApproval = lineCellEditability({ ...approved, lineKind, canAdjust: true });
+      const without = lineCellEditability({ ...approved, lineKind, canAdjust: true, approvedSeq: null });
+      expect(withApproval).toEqual(without);
+    }
+  });
+
+  it("quoteLockReason: 승인 문구 · 정산·완료가 이긴다 · 미승인은 null", () => {
+    expect(quoteLockReason({ status: "in_progress", approvedSeq: 2 })).toBe("2차 고객 승인됨 · 고치려면 새 차수");
+    expect(quoteLockReason({ status: "bidding", approvedSeq: 1 })).toBe("1차 고객 승인됨 · 고치려면 새 차수");
+    expect(quoteLockReason({ status: "lost", approvedSeq: 3 })).toBe("3차 고객 승인됨 · 고치려면 새 차수");
+    expect(quoteLockReason({ status: "settling", approvedSeq: 2 })).toBe("정산 · 실행가와 새 줄만");
+    expect(quoteLockReason({ status: "completed", approvedSeq: 2 })).toBe("완료 · 견적 줄 잠김");
+    expect(quoteLockReason({ status: "in_progress", approvedSeq: null })).toBeNull();
+  });
+
+  it("tableLockLine은 quoteLockReason과 같은 문자열(W5) · 정산·완료는 그 상태 문구", () => {
+    expect(tableLockLine({ status: "in_progress", approvedSeq: 2, hasEditableCells: true, lineCount: 2 })).toBe(
+      quoteLockReason({ status: "in_progress", approvedSeq: 2 }),
+    );
+    expect(tableLockLine({ status: "settling", approvedSeq: 2, hasEditableCells: true, lineCount: 2 })).toBe("정산 · 실행가와 새 줄만");
+    expect(tableLockLine({ status: "in_progress", approvedSeq: 2, hasEditableCells: true, lineCount: 0 })).toBeNull();
+  });
+});

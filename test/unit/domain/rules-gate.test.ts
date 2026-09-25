@@ -375,3 +375,50 @@ describe("denyWrite — 거부 운영 로그 한 함수 (D19 · 엔지 리뷰 B)
     expect(entry).not.toHaveProperty("amountKrw");
   });
 });
+
+// 04-40(사용자 D7 · OV-1 · ENG-D7 · GAP 1 · W5) — 승인된 현재 차수의 project.line-edit. 이유는 quoteLockReason 결과.
+describe("project.line-edit — 승인 차수(04-40)", () => {
+  const LOCKED = "2차 고객 승인됨 · 고치려면 새 차수";
+  const approvedCtx = (change: ProjectLineEditCtx["change"]): ProjectLineEditCtx => ({
+    status: "in_progress",
+    lineKind: "quote",
+    actorCanWrite: true,
+    actorCanAdjust: false,
+    hasLinkedDocuments: false,
+    approvedSeq: 2,
+    change,
+  });
+  const check = (change: ProjectLineEditCtx["change"]) => gate({}, "project.line-edit", approvedCtx(change));
+  const denied = { allowed: false, reason: LOCKED };
+
+  it("수량 · 소분류(ENG-D7) 변경은 승인 문구로 거부", async () => {
+    await expect(check({ kind: "update", fields: ["quantity"], quoteAmountUnchanged: true })).resolves.toEqual(denied);
+    await expect(check({ kind: "update", fields: ["subcategory"], quoteAmountUnchanged: true })).resolves.toEqual(denied);
+  });
+
+  it("실행가만 바꾸고 견적가가 그대로면 통과", async () => {
+    await expect(check({ kind: "update", fields: ["execution"], quoteAmountUnchanged: true })).resolves.toEqual({ allowed: true });
+  });
+
+  it("다시 계산한 견적가 ≠ 저장값이면 바뀐 칸에 단가가 없어도 거부(GAP 1)", async () => {
+    await expect(check({ kind: "update", fields: ["execution"], quoteAmountUnchanged: false })).resolves.toEqual(denied);
+  });
+
+  it("견적 칸이 0이 아닌 새 줄은 거부 · 견적 칸 0 새 줄은 통과", async () => {
+    await expect(check({ kind: "insert", quoteCellsZero: false })).resolves.toEqual(denied);
+    await expect(check({ kind: "insert", quoteCellsZero: true })).resolves.toEqual({ allowed: true });
+  });
+
+  it("견적가가 있는 줄 보관은 거부 · 견적가 0 줄 보관은 통과", async () => {
+    await expect(check({ kind: "archive", quoteAmountZero: false })).resolves.toEqual(denied);
+    await expect(check({ kind: "archive", quoteAmountZero: true })).resolves.toEqual({ allowed: true });
+  });
+
+  it("견적가가 있는 줄 복원은 거부", async () => {
+    await expect(check({ kind: "restore", quoteAmountZero: false })).resolves.toEqual(denied);
+  });
+
+  it("승인이 없으면 같은 수량 변경은 통과", async () => {
+    await expect(gate({}, "project.line-edit", { ...approvedCtx({ kind: "update", fields: ["quantity"], quoteAmountUnchanged: true }), approvedSeq: null })).resolves.toEqual({ allowed: true });
+  });
+});

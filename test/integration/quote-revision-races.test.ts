@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { db, pool } from "@/db/client";
-import { codeItems, quoteLines, revenueEntries, teams } from "@/db/schema";
+import { codeItems, quoteLines, quoteRevisions, revenueEntries, teams } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
@@ -10,7 +10,9 @@ import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines, type QuoteLineWriteRow } from "@/domain/quotes/lines";
-import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
+import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
+import { approvalBasis } from "@/repositories/quote-revisions";
+import { kstToday } from "@/lib/kst-date";
 import { saveProjectLedger } from "@/domain/projects/ledger";
 import { log } from "@/lib/log";
 import { deferred, waitForLockWaiter } from "./lock-race";
@@ -185,5 +187,76 @@ describe("새 차수 대 줄 저장 — 두 연결 결정적 경합(04-40 · OV-
     const denied = deniedCalls(warn);
     expect(denied).toHaveLength(1);
     expect(denied[0]).toMatchObject({ rule: "quote.current-revision", projectId, revisionId });
+  });
+});
+
+const APPROVED_LOCK = "1차 고객 승인됨 · 고치려면 새 차수";
+const BASIS_CHANGED = "견적이 바뀜 · 새로 고침";
+
+async function basisNow(revisionId: string) {
+  const basis = await approvalBasis(SYSTEM_VIEWER, revisionId);
+  return { approvedOn: kstToday(), seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken };
+}
+
+async function approvedAt(revisionId: string): Promise<Date | null> {
+  const [row] = await db.select().from(quoteRevisions).where(eq(quoteRevisions.id, revisionId));
+  return row?.customerApprovedAt ?? null;
+}
+
+describe("승인 대 줄 저장 — 두 연결 결정적 경합(04-40 · OV-3 · B-07 · ENG-D9)", () => {
+  it("(C) 승인이 잠금을 쥔 동안 온 수량 저장은 기다렸다가 승인 문구로 거부된다", async () => {
+    const { pm, revisionId, line } = await setup();
+    const hold = holdAfterLock();
+
+    const approving = setCustomerApproval(pm, revisionId, await basisNow(revisionId), { afterLock: hold.afterLock });
+    await hold.locked.promise;
+    const saving = saveQuoteLines(SYSTEM_VIEWER, revisionId, { rows: [asInput(line, { quantity: 2 })] });
+    await confirmWaiterThenRelease(hold.release);
+
+    const [approved, saved] = await Promise.allSettled([approving, saving]);
+    expect(approved.status).toBe("fulfilled");
+    expect(saved.status).toBe("rejected");
+    if (saved.status === "rejected") expect(String(saved.reason)).toContain(APPROVED_LOCK);
+    const [after] = await linesOf(revisionId);
+    expect(after?.quantity).toBe(line.quantity);
+    expect(after?.quoteAmountKrw).toBe(100_000);
+  });
+
+  it("(C') 승인이 잠금을 쥔 동안 온 실행가만 바꾼 저장은 기다렸다가 통과한다", async () => {
+    const { pm, revisionId, line } = await setup();
+    const hold = holdAfterLock();
+
+    const approving = setCustomerApproval(pm, revisionId, await basisNow(revisionId), { afterLock: hold.afterLock });
+    await hold.locked.promise;
+    const saving = saveQuoteLines(SYSTEM_VIEWER, revisionId, { rows: [asInput(line, { execution: krw(70_000) })] });
+    await confirmWaiterThenRelease(hold.release);
+
+    const [approved, saved] = await Promise.allSettled([approving, saving]);
+    expect(approved.status).toBe("fulfilled");
+    expect(saved.status).toBe("fulfilled");
+    expect((await linesOf(revisionId))[0]?.executionAmountKrw).toBe(70_000);
+  });
+
+  it("(D) 저장이 잠금을 쥔 동안 저장 전에 읽은 기준값으로 온 승인은 「견적이 바뀜 · 새로 고침」으로 거부 · 미승인 그대로 → 새 기준값이면 저장 뒤 합계를 승인", async () => {
+    const { pm, revisionId, line } = await setup();
+    const staleBasis = await basisNow(revisionId);
+    const hold = holdAfterLock();
+
+    const saving = saveQuoteLines(SYSTEM_VIEWER, revisionId, { rows: [asInput(line, { quantity: 2 })] }, { afterLock: hold.afterLock });
+    await hold.locked.promise;
+    const approving = setCustomerApproval(pm, revisionId, staleBasis);
+    await confirmWaiterThenRelease(hold.release);
+
+    const [saved, approved] = await Promise.allSettled([saving, approving]);
+    expect(saved.status).toBe("fulfilled");
+    expect(approved.status).toBe("rejected");
+    if (approved.status === "rejected") expect(String(approved.reason)).toContain(BASIS_CHANGED);
+    expect(await approvedAt(revisionId)).toBeNull();
+
+    const fresh = await basisNow(revisionId);
+    expect(fresh.seenTotalKrw).toBe(200_000);
+    await setCustomerApproval(pm, revisionId, fresh);
+    expect(await approvedAt(revisionId)).toBeInstanceOf(Date);
+    expect((await approvalBasis(SYSTEM_VIEWER, revisionId)).totalKrw).toBe(200_000);
   });
 });

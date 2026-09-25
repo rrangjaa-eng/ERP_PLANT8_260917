@@ -199,3 +199,43 @@ test.describe("저장 중 잠금(DR-3)", () => {
     await expect(page.getByRole("textbox", { name: "실행가" })).toBeVisible();
   });
 });
+
+// 04-49(04-22 이월 · 04-30 DOM 감사 12b) — 저장 안 한 편집을 남긴 채 새로 고치면 복원 줄이 서버 HTML과 첫 클라이언트
+// 렌더에서 같아야 한다(React #418 수화 불일치 없음). 프로덕션 빌드에서는 `Minified React error #418`로 나온다.
+test.describe("복원 줄 수화(#418)", () => {
+  test("저장 안 한 편집을 남기고 새로 고치면 복원 줄이 보이고 수화 오류가 없다", async ({ page }) => {
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E본부-${randomUUID()}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E팀-${randomUUID().slice(0, 8)}` });
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E수화-${randomUUID()}`, normalizedName: `e2e수화-${randomUUID()}` });
+    const name = `E2E수화-${randomUUID().slice(0, 8)}`;
+    const project = await createProject(SYSTEM_VIEWER, { clientId: vendor.id, teamId: team.id, pmUserId: pm.userId, name });
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("차수가 없습니다");
+    const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+    if (!subcategory) throw new Error("시드된 소분류가 없습니다");
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
+      { id: randomUUID(), isNew: true, subcategory: subcategory.value, itemName: "수화 줄", quantity: 1, unitPrice: { currency: "KRW", amount: 1_000_000, fxRate: 1 }, execution: { currency: "KRW", amount: 500_000, fxRate: 1 } },
+    ] });
+
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name })).toBeVisible();
+    const executionCell = page.locator("tbody tr").filter({ hasText: "수화 줄" }).getByRole("gridcell").nth(7);
+    await executionCell.focus();
+    await page.keyboard.press("Enter");
+    await page.getByRole("textbox", { name: "실행가" }).fill("777000");
+    await page.keyboard.press("Enter");
+    await expect(executionCell).toHaveText("777,000");
+
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    await page.reload();
+    await expect(page.locator("p").getByText("저장 안 한 편집 1칸")).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    expect(errors.filter((text) => /#418|Hydration|hydrat/i.test(text))).toEqual([]);
+  });
+});

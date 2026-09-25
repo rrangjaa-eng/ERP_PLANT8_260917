@@ -39,8 +39,10 @@ function groupByKstDate(rows: InboxRowView[]): Group[] {
   return groups;
 }
 
-// 올해 날짜는 MM-DD, 다른 해는 YYYY-MM-DD(S1-c · UI-SPEC :196).
-function formatGroupLabel(date: string, referenceYear: string): string {
+// 올해 날짜는 MM-DD, 다른 해는 YYYY-MM-DD(S1-c · UI-SPEC :196). 04.2-09 Task 3
+// 사후 수정(Opus 편차 판정 (b)) — 다른 해 분기는 90일 보관 창 안에서 E2E로
+// 재현하기 어려워 export해 단위 테스트로 덮는다.
+export function formatGroupLabel(date: string, referenceYear: string): string {
   return date.startsWith(`${referenceYear}-`) ? date.slice(5) : date;
 }
 
@@ -61,23 +63,36 @@ export function InboxList({ initialRows, initialHasMore, initialReferenceYear }:
   // setState를 부르지 않는다, react-hooks/set-state-in-effect).
   const pendingFocusIdRef = useRef<string | null>(null);
 
+  // M4(04.2-09 Task 3 사후 수정, Opus 적대적 디자인 검토) — dev StrictMode는
+  // 이 effect를 mount→cleanup→mount로 두 번 돌린다. 기존 cancelled 플래그만
+  // 쓰면 두 번째 마운트가 openInboxAction()을 또 불러 서버를 두 번 열게
+  // 된다(첫 호출이 읽은 행의 readAt과 두 번째 호출의 openedAt이 달라져
+  // S1-d 인셋·배지가 사라진다). hasOpenedRef로 실제 요청은 한 번만 시작하고,
+  // unmountedRef는 그 요청이 끝날 때 컴포넌트가 정말 떠났는지만 본다(다음
+  // 마운트가 다시 false로 되돌린다 — StrictMode의 가짜 cleanup은 건너뛴다).
+  const hasOpenedRef = useRef(false);
+  const unmountedRef = useRef(false);
+
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const result = await openInboxAction();
-        if (cancelled || !result?.data) return;
-        setRows(result.data.rows);
-        setHasMore(result.data.hasMore);
-        setOpenedAt(result.data.openedAt);
-        setReferenceYear(toKstDate(new Date(result.data.openedAt)).slice(0, 4));
-        refresh();
-      } catch {
-        // 읽음 처리 실패 — 화면은 초기 rows 그대로, 배지만 이전 값으로 남는다.
-      }
-    })();
+    unmountedRef.current = false;
+    if (!hasOpenedRef.current) {
+      hasOpenedRef.current = true;
+      void (async () => {
+        try {
+          const result = await openInboxAction();
+          if (unmountedRef.current || !result?.data) return;
+          setRows(result.data.rows);
+          setHasMore(result.data.hasMore);
+          setOpenedAt(result.data.openedAt);
+          setReferenceYear(toKstDate(new Date(result.data.openedAt)).slice(0, 4));
+          refresh();
+        } catch {
+          // 읽음 처리 실패 — 화면은 초기 rows 그대로, 배지만 이전 값으로 남는다.
+        }
+      })();
+    }
     return () => {
-      cancelled = true;
+      unmountedRef.current = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 마운트 때 한 번만.
   }, []);
@@ -89,9 +104,26 @@ export function InboxList({ initialRows, initialHasMore, initialReferenceYear }:
     pendingFocusIdRef.current = null;
   }, [rows]);
 
-  const { execute, isExecuting, hasErrored } = useAction(loadMoreInboxAction, {
+  // M2 + L1(04.2-09 Task 3 사후 수정, Opus 적대적 디자인 검토) — next-safe-action의
+  // hasErrored는 status가 "executing"이 되면 곧바로 거짓이 된다(재시도 요청
+  // 중에도 실패 상태를 보여야 한다는 플랜 계약과 어긋난다). showRetry로 직접
+  // 들고 있는다. shouldRefocusLoadMoreRef는 요청이 끝난 뒤 남은 버튼(더 보기
+  // 또는 다시 시도)에 포커스를 되돌리려는 의도를 기억한다 — Button의 pending은
+  // 네이티브 disabled라 브라우저가 요청 중 포커스를 문서로 돌리기 때문이다.
+  // 마지막 쪽(hasMore=false)이면 버튼 자체가 사라지므로 여긴 손대지 않고
+  // 위 rows 포커스 effect가 새 행으로 옮긴다.
+  const [showRetry, setShowRetry] = useState(false);
+  const loadMoreContainerRef = useRef<HTMLElement | null>(null);
+  const shouldRefocusLoadMoreRef = useRef(false);
+  const wasExecutingRef = useRef(false);
+
+  const { execute, isExecuting } = useAction(loadMoreInboxAction, {
+    onError: () => {
+      setShowRetry(true);
+    },
     onSuccess: ({ data }) => {
       if (!data) return;
+      setShowRetry(false);
       const firstNewRow = data.rows[0];
       if (!data.hasMore && firstNewRow) pendingFocusIdRef.current = firstNewRow.id;
       setRows((previous) => [...previous, ...data.rows]);
@@ -99,11 +131,20 @@ export function InboxList({ initialRows, initialHasMore, initialReferenceYear }:
     },
   });
 
+  useEffect(() => {
+    if (wasExecutingRef.current && !isExecuting && shouldRefocusLoadMoreRef.current) {
+      shouldRefocusLoadMoreRef.current = false;
+      loadMoreContainerRef.current?.querySelector("button")?.focus();
+    }
+    wasExecutingRef.current = isExecuting;
+  }, [isExecuting]);
+
   const groups = groupByKstDate(rows);
   const lastRow = rows[rows.length - 1];
 
   function loadMore(): void {
     if (!lastRow) return;
+    shouldRefocusLoadMoreRef.current = true;
     execute({ cursor: { createdAt: lastRow.createdAt, id: lastRow.id } });
   }
 
@@ -114,7 +155,10 @@ export function InboxList({ initialRows, initialHasMore, initialReferenceYear }:
         <thead>
           <tr>
             <th scope="col">내용</th>
-            <th scope="col">시각</th>
+            {/* L2(04.2-09 Task 3 사후 수정) — 값 칸(.time)이 오른쪽 정렬이라 머리글도 맞춘다. */}
+            <th scope="col" className={styles.time}>
+              시각
+            </th>
           </tr>
         </thead>
         {groups.map((group) => (
@@ -153,17 +197,29 @@ export function InboxList({ initialRows, initialHasMore, initialReferenceYear }:
         ))}
       </table>
       {hasMore ? (
-        hasErrored ? (
-          <p className={styles.loadMoreError}>
+        showRetry ? (
+          <p
+            ref={(el) => {
+              loadMoreContainerRef.current = el;
+            }}
+            className={styles.loadMoreError}
+            role="status"
+          >
             <span>불러오지 못했습니다</span>
             <Button variant="tertiary" pending={isExecuting} onClick={loadMore}>
               다시 시도
             </Button>
           </p>
         ) : (
-          <Button variant="tertiary" pending={isExecuting} onClick={loadMore}>
-            더 보기 50건
-          </Button>
+          <span
+            ref={(el) => {
+              loadMoreContainerRef.current = el;
+            }}
+          >
+            <Button variant="tertiary" pending={isExecuting} onClick={loadMore}>
+              더 보기 50건
+            </Button>
+          </span>
         )
       ) : null}
     </>

@@ -407,14 +407,18 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await cell(page, 2, COL.itemName).focus();
     await page.keyboard.press("Alt+ArrowUp");
     expect(await itemNames(page)).toEqual(["순서 1", "순서 3", "순서 2"]);
+    const moved = page.waitForRequest((req) => isSaveAction(req.method(), req.headers()));
     await saveWithKeyboard(page, cell(page, 0, COL.itemName));
+    expect((await moved).postData() ?? "").toMatch(/"order":\[/);
     await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
 
     await page.reload();
     expect(await itemNames(page)).toEqual(["순서 1", "순서 3", "순서 2"]);
 
     await typeInto(page, cell(page, 0, COL.execution), "실행가", "11000");
+    const editOnly = page.waitForRequest((req) => isSaveAction(req.method(), req.headers()));
     await saveWithKeyboard(page, cell(page, 0, COL.execution));
+    expect((await editOnly).postData() ?? "").not.toMatch(/"order":\[/);
     await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
     await page.reload();
     expect(await itemNames(page)).toEqual(["순서 1", "순서 3", "순서 2"]);
@@ -457,7 +461,9 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await page.getByRole("dialog", { name: "견적 줄 삭제" }).getByRole("button", { name: "견적 줄 삭제" }).click();
     await page.getByRole("button", { name: "줄 추가" }).click();
     await typeInto(page, dataRows(page).last().getByRole("gridcell").nth(COL.itemName), "항목", "새 끝 줄");
+    const appended = page.waitForRequest((req) => isSaveAction(req.method(), req.headers()));
     await saveWithKeyboard(page, cell(page, 0, COL.itemName));
+    expect((await appended).postData() ?? "").not.toMatch(/"order":\[/);
     await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
 
     await page.reload();

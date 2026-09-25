@@ -3,10 +3,11 @@
 import { Children, Fragment, useCallback, useEffect, useEffectEvent, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { saveProjectLedgerAction } from "../actions";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { StatusTag, type StatusTagKind } from "@/ui/status-tag/StatusTag";
-import { Button } from "@/ui/button/Button";
+import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { Table } from "@/ui/table/Table";
 import { Select } from "@/ui/select/Select";
@@ -810,6 +811,7 @@ export function QuoteLedger({
   statusTagKind,
   statusChange,
   newRevision,
+  copyProjectHref,
   customerApproval,
   approvedSeq,
   revisions,
@@ -852,6 +854,8 @@ export function QuoteLedger({
   statusChange: StatusChangeProps | null;
   /** 04-24(D-53 · CEO-D10) — 「복사해 새 차수」. 서버 canCreateRevision이 거짓이면 null(버튼 없음). */
   newRevision: NewRevisionProps | null;
+  /** 04-15(D-70) — 「프로젝트 복사」가 여는 복사 등록 폼 주소. projects 쓰기가 없으면 null(링크 없음). */
+  copyProjectHref: string | null;
   /** 04-24(D-56 · CEO-D19) — 부제 옆 고객 승인 줄(글자·버튼 모두 서버 판정). */
   customerApproval: CustomerApprovalProps;
   /** 04-24(ENG-D7) — 현재 차수가 고객 승인됐으면 그 순번(표 위 잠김 줄 — tableLockLine). */
@@ -1995,6 +1999,11 @@ export function QuoteLedger({
         <div className={styles.headerActions}>
           <HeaderCopyActions>
             {newRevision ? <NewRevisionDialog {...newRevision} dirtyCount={dirtyCount} onCreated={setStatusToast} /> : null}
+            {copyProjectHref ? (
+              <Link href={copyProjectHref} className={buttonLinkClassName()}>
+                프로젝트 복사
+              </Link>
+            ) : null}
           </HeaderCopyActions>
           {statusChange ? (
             <StatusChange

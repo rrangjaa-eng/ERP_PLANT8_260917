@@ -27,6 +27,11 @@ export type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "disable
   children: ReactNode;
 };
 
+// 04-15(§7-1 — 이동은 링크) — 페이지 이동을 버튼 위계로 보일 때 링크(<a>)에 같은 클래스를 준다.
+export function buttonLinkClassName(variant: ButtonVariant = "secondary"): string {
+  return `${styles.btn} ${styles[variant]}`;
+}
+
 export function Button({
   variant = "secondary",
   pending = false,

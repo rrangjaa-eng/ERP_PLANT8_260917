@@ -11,6 +11,7 @@ import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { isCtrlCombo } from "@/lib/shortcut";
+import type { ProjectCopySource } from "@/domain/projects";
 import styles from "./projects.module.css";
 
 export type ProjectFormOption = { id: string; name: string };
@@ -52,11 +53,14 @@ export function ProjectForm({
   teams,
   pmUsers,
   cancelHref,
+  copySource = null,
 }: {
   clients: ProjectFormOption[];
   teams: ProjectFormOption[];
   pmUsers: ProjectFormOption[];
   cancelHref: string;
+  /** 04-15(D-70) — 복사 등록이면 출처 기본 정보(미리 채움 = Esc 판정의 처음 값, DR-27)와 줄 수. */
+  copySource?: (ProjectCopySource & { projectId: string }) | null;
 }) {
   const router = useRouter();
 
@@ -100,6 +104,7 @@ export function ProjectForm({
       teamId: getStringField(formData, "teamId"),
       startDate: getStringField(formData, "startDate") || undefined,
       endDate: getStringField(formData, "endDate") || undefined,
+      copyFromProjectId: getStringField(formData, "copyFromProjectId") || undefined,
     });
   }
 
@@ -166,9 +171,19 @@ export function ProjectForm({
 
   return (
     <>
+      {copySource ? (
+        <p className={styles.copySource}>{`${copySource.number} ${copySource.name}에서 복사 · ${copySource.lineCount}줄`}</p>
+      ) : null}
       <Form id="project-form" onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
+        {copySource ? <input type="hidden" name="copyFromProjectId" value={copySource.projectId} /> : null}
         <Form.Field id="clientId" label="클라이언트" width="select">
-          <Select id="clientId" name="clientId" options={clients.map((c) => ({ value: c.id, label: c.name }))} error={clientError} />
+          <Select
+            id="clientId"
+            name="clientId"
+            options={clients.map((c) => ({ value: c.id, label: c.name }))}
+            defaultValue={copySource?.clientId}
+            error={clientError}
+          />
         </Form.Field>
 
         <Form.Field id="name" label="프로젝트명" width="long">
@@ -178,17 +193,30 @@ export function ProjectForm({
             type="text"
             className={styles.textInput}
             autoComplete="off"
+            defaultValue={copySource?.name}
             aria-describedby={nameError ? "name-error" : undefined}
           />
           {nameError ? <Form.Error id="name-error">{nameError}</Form.Error> : null}
         </Form.Field>
 
         <Form.Field id="pmUserId" label="담당 PM" width="select">
-          <Select id="pmUserId" name="pmUserId" options={pmUsers.map((u) => ({ value: u.id, label: u.name }))} error={pmError} />
+          <Select
+            id="pmUserId"
+            name="pmUserId"
+            options={pmUsers.map((u) => ({ value: u.id, label: u.name }))}
+            defaultValue={copySource?.pmUserId}
+            error={pmError}
+          />
         </Form.Field>
 
         <Form.Field id="teamId" label="팀" width="select">
-          <Select id="teamId" name="teamId" options={teams.map((t) => ({ value: t.id, label: t.name }))} error={teamError} />
+          <Select
+            id="teamId"
+            name="teamId"
+            options={teams.map((t) => ({ value: t.id, label: t.name }))}
+            defaultValue={copySource?.teamId}
+            error={teamError}
+          />
         </Form.Field>
 
         <Form.Field id="startDate" label="시작일" width="short">

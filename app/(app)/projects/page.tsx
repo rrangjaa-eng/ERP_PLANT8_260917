@@ -6,6 +6,7 @@ import {
   listProjects,
   aggregateProjects,
   settleForProjectList,
+  getProjectCopySource,
   PROJECT_LIST_DEFAULT_LIMIT,
   PROJECT_LIST_MAX_LIMIT,
   PROJECT_SORT_KEYS,
@@ -41,6 +42,7 @@ function isValidSortKey(value: string | undefined): value is ProjectSortKey {
 
 type ProjectsSearchParams = {
   new?: string;
+  copyFrom?: string;
   status?: string;
   teamId?: string;
   year?: string;
@@ -82,11 +84,13 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   // 04-11(A-07): 자동 정산 판정은 목록 요청당 한 번, 목록·합계를 나란히 읽기 전에(04-17이
   // loadProjectList 안으로 옮긴다).
   await settleForProjectList(session.viewer);
-  const [references, canWrite, rows, aggregate] = await Promise.all([
+  const [references, canWrite, rows, aggregate, copySource] = await Promise.all([
     listProjectFormReferences(session.viewer),
     can(session.viewer, "projects", "write"),
     listProjects(session.viewer, { filter, sort: { key: sortKey, direction: sortDirection }, limit: count }),
     aggregateProjects(session.viewer, filter),
+    // 04-15(D-70 · S2) — 복사 등록 미리 채우기. 범위 밖 · 보관 · 없는 출처면 null → 일반 등록 폼.
+    showCreateForm && params.copyFrom ? getProjectCopySource(session.viewer, params.copyFrom) : Promise.resolve(null),
   ]);
 
   const canSeeAmount = aggregate.quoteAmountKrw !== undefined;
@@ -109,6 +113,8 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           렌더하지 않는다 — 한 화면에 1차는 하나다. */}
       {canWrite && showCreateForm ? (
         <ProjectForm
+          key={copySource && params.copyFrom ? `copy-${params.copyFrom}` : "new"}
+          copySource={copySource && params.copyFrom ? { ...copySource, projectId: params.copyFrom } : null}
           clients={references.clients}
           teams={references.teams}
           pmUsers={references.pmUsers}

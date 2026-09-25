@@ -95,7 +95,7 @@ async function setupOriginal() {
     subcategory: subcategory.value,
     itemName: "무대 설치",
     vendorId: vendor.id,
-    quantity: 2,
+    quantity: "2",
     unitPriceAmountKrw: 300_000,
     quoteAmountKrw: 600_000,
     executionAmountKrw: 250_000,

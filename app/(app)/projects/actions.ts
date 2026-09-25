@@ -47,6 +47,8 @@ export const createProjectAction = authedActionClient
       teamId: z.string().min(1, "팀을 고르세요."),
       startDate: z.string().optional(),
       endDate: z.string().optional(),
+      // 04-15(D-70) — 복사 등록의 출처. 행 범위 · 보관 판정은 domain이 한다.
+      copyFromProjectId: z.string().max(64).optional(),
     }),
   )
   .action(async ({ parsedInput, ctx }) => {
@@ -57,6 +59,7 @@ export const createProjectAction = authedActionClient
       teamId: parsedInput.teamId,
       startDate: parsedInput.startDate || undefined,
       endDate: parsedInput.endDate || undefined,
+      copyFromProjectId: parsedInput.copyFromProjectId || undefined,
     });
     revalidatePath("/projects");
     return { project };

@@ -1,4 +1,4 @@
-import { and, eq, getTableColumns, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, getTableColumns, inArray, isNotNull, isNull, ne } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -227,21 +227,33 @@ export async function updateQuoteLineIfVersionMatches(
 // 04-14(D-53 · D-48) — 새 차수가 복사하는 줄: 보관되지 않은 견적 줄·견적 외 비용(조정 줄은 옮긴다).
 const COPYABLE_KINDS = ["quote", "out_of_quote"];
 
-export async function countCopyableLines(viewer: Viewer, revisionId: string, tx: DbOrTx = db): Promise<number> {
+// 04-15(CEO 리뷰 B-32) — 프로젝트 복사는 취소 상태 줄을 빼고 센다(`excludeCancelled`). 새 차수는 취소 줄도 센다.
+function copyableLineConditions(revisionId: string, excludeCancelled: boolean) {
+  const conditions = [eq(quoteLines.revisionId, revisionId), isNull(quoteLines.archivedAt), inArray(quoteLines.lineKind, COPYABLE_KINDS)];
+  if (excludeCancelled) conditions.push(ne(quoteLines.lineStatus, "cancelled"));
+  return and(...conditions);
+}
+
+export async function countCopyableLines(
+  viewer: Viewer,
+  revisionId: string,
+  tx: DbOrTx = db,
+  opts: { excludeCancelled?: boolean } = {},
+): Promise<number> {
   void viewer;
   const [row] = await tx
     .select({ count: sql<number>`count(*)::int` })
     .from(quoteLines)
-    .where(and(eq(quoteLines.revisionId, revisionId), isNull(quoteLines.archivedAt), inArray(quoteLines.lineKind, COPYABLE_KINDS)));
+    .where(copyableLineConditions(revisionId, opts.excludeCancelled ?? false));
   return row?.count ?? 0;
 }
 
 // 04-14(D-53 · CEO 리뷰 B-32 · 엔지 리뷰 GAP 5b) — INSERT…SELECT 한 문장. 새 id·새 차수·version 1·새 시각만 바꾸고
 // 나머지 컬럼은 표 정의 전체를 원본에서 그대로 옮긴다(컬럼이 늘어도 빠지지 않는다). `withLineage`면 계보에 원본 id
-// (04-15의 프로젝트 복사는 false). 넣은 행 수를 돌려준다.
+// (04-15의 프로젝트 복사는 false · 취소 줄 제외 `excludeCancelled`). 넣은 행 수를 돌려준다.
 export async function copyQuoteLines(
   viewer: Viewer,
-  input: { fromRevisionId: string; toRevisionId: string; withLineage: boolean },
+  input: { fromRevisionId: string; toRevisionId: string; withLineage: boolean; excludeCancelled?: boolean },
   tx: DbOrTx,
 ): Promise<number> {
   void viewer;
@@ -259,9 +271,7 @@ export async function copyQuoteLines(
           updatedAt: sql`now()`.as("updated_at"),
         })
         .from(quoteLines)
-        .where(
-          and(eq(quoteLines.revisionId, input.fromRevisionId), isNull(quoteLines.archivedAt), inArray(quoteLines.lineKind, COPYABLE_KINDS)),
-        ),
+        .where(copyableLineConditions(input.fromRevisionId, input.excludeCancelled ?? false)),
     )
     .returning({ id: quoteLines.id });
   return rows.length;

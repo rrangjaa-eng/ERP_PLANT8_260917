@@ -29,7 +29,12 @@ import {
 // 화면(page.tsx)이 정렬 키 허용 목록을 검증하려면 domain을 거쳐야 한다.
 export { PROJECT_SORT_KEYS };
 export type { ProjectSortKey };
-import { insertQuoteRevision as repoInsertQuoteRevision } from "@/repositories/quote-revisions";
+import {
+  insertQuoteRevision as repoInsertQuoteRevision,
+  findLatestQuoteRevision as repoFindLatestQuoteRevision,
+} from "@/repositories/quote-revisions";
+import { copyQuoteLines as repoCopyQuoteLines, countCopyableLines as repoCountCopyableLines } from "@/repositories/quote-lines";
+import { denyWrite } from "@/domain/rules/deny-write";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
 
 export class ForbiddenError extends UserFacingError {}
@@ -38,6 +43,9 @@ export class ForbiddenError extends UserFacingError {}
 // createProject/조회만 두고, 프로젝트 수정·상태 전환은 04-06이 이 클래스를
 // 실제로 throw하는 함수(updateProject 등)를 채운다.
 export class CompletedProjectError extends UserFacingError {}
+// 04-15(D-70 · 사용자 D19-3 · B-26) — 복사 출처가 없거나 보는 사람의 행 범위 밖이거나 보관됐다. 셋을 가르지 않는다
+// (볼 수 없는 프로젝트의 존재를 드러내지 않는다).
+export class CopySourceMissingError extends UserFacingError {}
 
 const PROJECTS_MENU = "projects";
 const PROJECT_ENTITY = "project";
@@ -276,7 +284,40 @@ export type ProjectInput = {
   startDate?: string | null;
   endDate?: string | null;
   customFields?: Record<string, unknown>;
+  // 04-15(D-70) — 복사 등록의 출처 프로젝트 id. 현재 차수의 견적 줄 구조만 새 1차로 온다.
+  copyFromProjectId?: string;
 };
+
+const COPY_SOURCE_RULE = "project.copy-source";
+const COPY_SOURCE_MISSING = "복사할 프로젝트 없음 · 새로 고침";
+
+// 04-15 — 복사 출처는 보는 사람의 행 범위 안 · 보관 안 된 프로젝트만. 보관함을 볼 수 있어도 보관된 프로젝트는 출처가 아니다.
+async function findCopySourceRow(viewer: Viewer, id: string): Promise<ProjectRow | null> {
+  const scope = await scopeFor(viewer, PROJECT_ENTITY);
+  if (scope.rows === "none" || !UUID_SHAPE.test(id)) return null;
+  const row = await repoFindProjectById(viewer, id);
+  if (!row || row.archivedAt !== null) return null;
+  return row;
+}
+
+export type ProjectCopySource = {
+  number: string;
+  name: string;
+  clientId: string;
+  teamId: string;
+  pmUserId: string;
+  /** 복사될 줄 수 — 현재 차수의 견적 줄 · 견적 외 비용(보관 · 취소 제외, 복사와 같은 기준). */
+  lineCount: number;
+};
+
+// 04-15(D-70 · S2) — 복사 등록 폼의 미리 채우기와 출처 한 줄 `{번호} {프로젝트명}에서 복사 · {k}줄`. 범위 밖이면 null.
+export async function getProjectCopySource(viewer: Viewer, id: string): Promise<ProjectCopySource | null> {
+  const row = await findCopySourceRow(viewer, id);
+  if (!row) return null;
+  const revision = await repoFindLatestQuoteRevision(viewer, row.id);
+  const lineCount = revision ? await repoCountCopyableLines(viewer, revision.id, undefined, { excludeCancelled: true }) : 0;
+  return { number: row.number, name: row.name, clientId: row.clientId, teamId: row.teamId, pmUserId: row.pmUserId, lineCount };
+}
 
 export type ProjectWriteDeps = {
   can: typeof defaultCan;
@@ -305,7 +346,13 @@ export async function createProject(
   // 막는다(domain/document-numbering/index.ts의 allocateDocumentNumber 주석 참고).
   const format = await loadDocumentNumberFormat(PROJECT_NUMBER_COUNTER_KEY);
 
-  const created = await withTransaction(async (tx) => {
+  // 04-15(04-32 규칙) — 복사 출처 판정은 번호 부여 트랜잭션 앞에서 한다(잠금 안에서 전역 db를 부르지 않는다).
+  const copySourceId = input.copyFromProjectId;
+  if (copySourceId !== undefined && !(await findCopySourceRow(viewer, copySourceId))) {
+    denyWrite(viewer, COPY_SOURCE_RULE, { sourceProjectId: copySourceId }, new CopySourceMissingError(COPY_SOURCE_MISSING));
+  }
+
+  const { row: created, copiedLineCount } = await withTransaction(async (tx) => {
     const { number } = await allocateDocumentNumber(
       viewer,
       { counterKey: PROJECT_NUMBER_COUNTER_KEY, year, format },
@@ -334,12 +381,29 @@ export async function createProject(
       },
       tx,
     );
-    await repoInsertQuoteRevision(viewer, { projectId: row.id, seq: 1 }, tx);
-    return row;
+    const firstRevision = await repoInsertQuoteRevision(viewer, { projectId: row.id, seq: 1 }, tx);
+    // 04-15(D-70 · B-32) — 출처 현재 차수의 견적 줄 구조를 새 1차로(04-14 복사 한 문장, 계보 없음 · 취소 줄 제외).
+    let copied: number | null = null;
+    if (copySourceId !== undefined) {
+      const sourceRevision = await repoFindLatestQuoteRevision(viewer, copySourceId, tx);
+      copied = sourceRevision
+        ? await repoCopyQuoteLines(
+            viewer,
+            { fromRevisionId: sourceRevision.id, toRevisionId: firstRevision.id, withLineage: false, excludeCancelled: true },
+            tx,
+          )
+        : 0;
+    }
+    return { row, copiedLineCount: copied };
   });
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
-  await recordAction(viewer, { actionType: "document_create", entity: PROJECT_ENTITY, entityId: created.id });
+  await recordAction(viewer, {
+    actionType: "document_create",
+    entity: PROJECT_ENTITY,
+    entityId: created.id,
+    ...(copiedLineCount !== null ? { detail: { copiedFromProjectId: copySourceId, copiedLineCount } } : {}),
+  });
 
   return (await project(viewer, withPreEstimate(created), PROJECT_DTO_SPEC)) as ProjectDto;
 }

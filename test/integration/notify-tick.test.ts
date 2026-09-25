@@ -61,8 +61,8 @@ describe("notify-tick 트레이서", () => {
     const aRows = await rowsFor(userA);
     expect(aRows).toHaveLength(1);
     expect(aRows[0]?.message).toBe("테스트 알림 · T-0001");
-    // 이메일 단계가 없는 이 시점의 값 — 04.2-10이 skipped_no_smtp로 바꾼다.
-    expect(aRows[0]?.emailStatus).toBe("pending");
+    // 04.2-10 이메일 단계 — SMTP 없는 테스트 환경(발송기 null)이라 skipped_no_smtp.
+    expect(aRows[0]?.emailStatus).toBe("skipped_no_smtp");
     expect(await rowsFor(userB)).toHaveLength(0);
 
     const second = await handleNotifyTick(tickRequest(token), deps);

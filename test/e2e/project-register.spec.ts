@@ -3,6 +3,7 @@ import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { addDays, kstToday } from "@/lib/kst-date";
 
 // Phase 4 Task 2 ⑭ — 트레이서의 한 경로 스모크: 기획 PM 로그인 → 등록 →
 // 번호 부여 → 상세 → 견적 줄 서버 계산 저장. 필수 칸 유실 시 입력값 보존
@@ -288,5 +289,66 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     await expect(page.getByRole("dialog", { name: "입력 버리기" })).toBeHidden();
     await expect(page).toHaveURL(/\/projects\?new=1/);
     await expect(page.getByLabel("프로젝트명")).toHaveValue(projectName);
+  });
+  // 04-15 Task 2(D-52 · D-95 · S2) — 총 매출 예상가 칸. 저장 값은 통합 테스트(project-copy.test.ts)가 DB로 단언한다.
+  test("(d1) 총 매출 예상가에 120000000을 치면 칸에 120,000,000이 보이고 등록이 성공한다", async ({ page }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2E예상가클라이언트-${Date.now()}`,
+      normalizedName: `e2e예상가클라이언트-${Date.now()}`,
+    });
+    await loginAndOpenForm(page);
+    const projectName = `E2E예상가-${Date.now()}`;
+    await fillRequiredFields(page, vendor.name, projectName);
+    const amount = page.getByLabel("총 매출 예상가");
+    await amount.fill("120000000");
+    await expect(amount).toHaveValue("120,000,000");
+
+    await amount.press("Control+Enter");
+
+    await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+    await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+  });
+
+  test("(d2) 음수 총 매출 예상가를 제출하면 칸 아래와 1차 옆에 이유가 보이고 다른 칸 입력이 남는다", async ({ page }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2E음수클라이언트-${Date.now()}`,
+      normalizedName: `e2e음수클라이언트-${Date.now()}`,
+    });
+    await loginAndOpenForm(page);
+    const projectName = `E2E음수-${Date.now()}`;
+    await fillRequiredFields(page, vendor.name, projectName);
+    const amount = page.getByLabel("총 매출 예상가");
+    await amount.fill("-5000");
+
+    await amount.press("Control+Enter");
+
+    const form = page.locator("#project-form");
+    await expect(form.getByText("총 매출 예상가는 0 이상 · 금액을 고쳐 주세요", { exact: true })).toBeVisible();
+    await expect(form.getByText("등록하지 못했습니다 · 총 매출 예상가 1칸", { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/projects\?new=1/);
+    await expect(page.getByLabel("프로젝트명")).toHaveValue(projectName);
+    await expect(amount).toHaveValue("-5,000");
+  });
+
+  test("(d3) 종료일이 시작일보다 앞이면 종료일 칸 아래에 이유가 보이고 프로젝트가 생기지 않는다(PR #38 「날짜 순서」)", async ({ page }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2E날짜순서클라이언트-${Date.now()}`,
+      normalizedName: `e2e날짜순서클라이언트-${Date.now()}`,
+    });
+    await loginAndOpenForm(page);
+    const projectName = `E2E날짜순서-${Date.now()}`;
+    await fillRequiredFields(page, vendor.name, projectName);
+    const today = kstToday(new Date());
+    await page.getByLabel("시작일").fill(addDays(today, 5));
+    const endDate = page.getByLabel("종료일");
+    await endDate.fill(addDays(today, 1));
+
+    await endDate.press("Control+Enter");
+
+    await expect(
+      page.locator("#project-form").getByText("종료일이 시작일보다 빠릅니다 · 종료일을 고쳐 주세요", { exact: true }),
+    ).toBeVisible();
+    await page.goto(`/projects?q=${encodeURIComponent(projectName)}`);
+    await expect(page.getByText("조건에 맞는 프로젝트가 없습니다")).toBeVisible();
   });
 });

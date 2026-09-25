@@ -8,7 +8,10 @@ import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
-import { createProject, getProjectCopySource } from "@/domain/projects";
+import { createProject, getProjectCopySource, ProjectInputRejectedError, type ProjectInput } from "@/domain/projects";
+import { rememberFxRate } from "@/domain/money/currency";
+import { getSettingValue } from "@/domain/settings/registry";
+import { FX_RECENT_RATE_USD } from "@/domain/settings/keys";
 import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
 import { log } from "@/lib/log";
 
@@ -280,5 +283,114 @@ describe("프로젝트 복사 등록(04-15 Task 1 · D-70, 실제 Postgres)", ()
       expect(await db.select().from(projects).where(eq(projects.name, name))).toHaveLength(0);
       expect(await getProjectCopySource(pm, copyFromProjectId)).toBeNull();
     }
+  });
+});
+
+// 04-15 Task 2(D-52 · D-71 · CEO 리뷰 B-17 · 엔지 리뷰 B §1 · §2 · PR #38 「날짜 순서」) — 등록 폼의 총 매출 예상가와 등록 기간 검증.
+describe("등록의 총 매출 예상가 · 기간 검증(04-15 Task 2, 실제 Postgres)", () => {
+  async function setupRegistration() {
+    const pm = await makeViewer(writerMenus);
+    const client = await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}`, normalizedName: `거래처-${randomUUID()}` });
+    const [team] = await db.select().from(teams).limit(1);
+    if (!team) throw new Error("시드된 팀이 없습니다");
+    const base = (): ProjectInput => ({ clientId: client.id, teamId: team.id, pmUserId: pm.id, name: `등록-${randomUUID()}` });
+    return { pm, base };
+  }
+
+  async function rowOf(projectId: string) {
+    const [row] = await db.select().from(projects).where(eq(projects.id, projectId));
+    if (!row) throw new Error("프로젝트 행이 없습니다");
+    return row;
+  }
+
+  async function expectRejected(pm: Viewer, input: ProjectInput, field: string, reason: string) {
+    const error = await createProject(pm, input).then(
+      () => null,
+      (caught: unknown) => caught,
+    );
+    expect(error).toBeInstanceOf(ProjectInputRejectedError);
+    expect((error as ProjectInputRejectedError).errors).toEqual([{ field, reason }]);
+    expect(await db.select().from(projects).where(eq(projects.name, input.name))).toHaveLength(0);
+  }
+
+  it("(p1) KRW 120,000,000 → 원화 120000000 · KRW · 환율 1로 저장된다", async () => {
+    const { pm, base } = await setupRegistration();
+    const created = await createProject(pm, { ...base(), preEstimate: { currency: "KRW", amount: 120_000_000, fxRate: 1 } });
+    const row = await rowOf(created.id);
+    expect(row.preEstimateAmountKrw).toBe(120_000_000);
+    expect(row.preEstimateCurrency).toBe("KRW");
+    expect(row.preEstimateFxRate).toBe("1.0000");
+    expect(row.preEstimateForeignAmount).toBeNull();
+  });
+
+  it("(p2) KRW에 환율 1,350을 실은 위조 요청도 원화 120,000,000 · 환율 1로 저장된다(B-17)", async () => {
+    const { pm, base } = await setupRegistration();
+    const created = await createProject(pm, { ...base(), preEstimate: { currency: "KRW", amount: 120_000_000, fxRate: 1350 } });
+    const row = await rowOf(created.id);
+    expect(row.preEstimateAmountKrw).toBe(120_000_000);
+    expect(row.preEstimateFxRate).toBe("1.0000");
+  });
+
+  it("(p3) USD 100,000 · 환율 1,350 → 외화 · 환율 · 원화 환산액 저장, 환율을 고친 저장만 fx.recent_rate.USD를 갱신한다", async () => {
+    const { pm, base } = await setupRegistration();
+    await rememberFxRate("USD", 1111);
+
+    const untouched = await createProject(pm, { ...base(), preEstimate: { currency: "USD", amount: 100_000, fxRate: 1400 } });
+    expect((await rowOf(untouched.id)).preEstimateAmountKrw).toBe(140_000_000);
+    expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(1111);
+
+    const created = await createProject(pm, {
+      ...base(),
+      preEstimate: { currency: "USD", amount: 100_000, fxRate: 1350 },
+      preEstimateFxRateTouched: true,
+    });
+    const row = await rowOf(created.id);
+    expect(row.preEstimateCurrency).toBe("USD");
+    expect(row.preEstimateForeignAmount).toBe("100000.00");
+    expect(row.preEstimateFxRate).toBe("1350.0000");
+    expect(row.preEstimateAmountKrw).toBe(135_000_000);
+    expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(1350);
+  });
+
+  it("(p4) USD 환율 0 · 음수 금액 · 원화 환산 상한 넘김은 그 칸의 한국어 이유로 거부되고 행이 없다 — 거부된 환율 고친 USD 등록은 최근 환율을 바꾸지 않는다", async () => {
+    const { pm, base } = await setupRegistration();
+    await rememberFxRate("USD", 1111);
+
+    await expectRejected(
+      pm,
+      { ...base(), preEstimate: { currency: "USD", amount: 100, fxRate: 0 }, preEstimateFxRateTouched: true },
+      "preEstimateFxRate",
+      "환율은 0보다 커야 합니다 · 환율을 고쳐 주세요",
+    );
+    await expectRejected(pm, { ...base(), preEstimate: { currency: "KRW", amount: -1, fxRate: 1 } }, "preEstimateAmount", "총 매출 예상가는 0 이상 · 금액을 고쳐 주세요");
+    await expectRejected(
+      pm,
+      { ...base(), preEstimate: { currency: "KRW", amount: 2_147_483_648, fxRate: 1 } },
+      "preEstimateAmount",
+      "금액이 상한을 넘습니다 · 2,147,483,647원 이하",
+    );
+    await expectRejected(
+      pm,
+      { ...base(), preEstimate: { currency: "USD", amount: 2_000_000, fxRate: 1350 }, preEstimateFxRateTouched: true },
+      "preEstimateAmount",
+      "금액이 상한을 넘습니다 · 2,147,483,647원 이하",
+    );
+    expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(1111);
+  });
+
+  it("(p5) 등록의 종료일이 시작일보다 앞이거나 날짜가 아니면 04-22와 같은 문구의 칸 오류로 거부되고 행이 없다(PR #38 「날짜 순서」)", async () => {
+    const { pm, base } = await setupRegistration();
+    await expectRejected(pm, { ...base(), startDate: "2026-09-20", endDate: "2026-09-10" }, "endDate", "종료일이 시작일보다 빠릅니다 · 종료일을 고쳐 주세요");
+    await expectRejected(pm, { ...base(), startDate: "2026-02-30" }, "startDate", "날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요");
+  });
+
+  it("(p6) 총 매출 예상가를 비우면 04-01 기본 저장(원화 0 · KRW · 환율 1)과 같다(B-37)", async () => {
+    const { pm, base } = await setupRegistration();
+    const created = await createProject(pm, base());
+    const row = await rowOf(created.id);
+    expect(row.preEstimateAmountKrw).toBe(0);
+    expect(row.preEstimateCurrency).toBe("KRW");
+    expect(row.preEstimateFxRate).toBe("1.0000");
+    expect(row.preEstimateForeignAmount).toBeNull();
   });
 });

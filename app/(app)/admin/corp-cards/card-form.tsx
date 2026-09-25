@@ -89,8 +89,9 @@ export function CardForm({
         </select>
       </div>
 
+      {/* key로 칸을 새로 만든다 — 아래 CardOwnerForm과 같은 이유. */}
       {kind === "personal" ? (
-        <div className={styles.selectLabel}>
+        <div key="personal" className={styles.selectLabel}>
           <label htmlFor="holderUserId">소지자</label>
           <select id="holderUserId" name="holderUserId" className={styles.select} required defaultValue="">
             <option value="" disabled>
@@ -104,7 +105,7 @@ export function CardForm({
           </select>
         </div>
       ) : (
-        <div className={styles.selectLabel}>
+        <div key="team" className={styles.selectLabel}>
           <label htmlFor="teamId">팀</label>
           <select id="teamId" name="teamId" className={styles.select} required defaultValue="">
             <option value="" disabled>
@@ -184,15 +185,18 @@ export function CardOwnerForm({
         </select>
       </div>
 
+      {/* key로 칸을 새로 만든다 — 같은 <select> 노드를 재사용하면 defaultValue가
+          다시 적용되지 않아 브라우저가 첫 항목을 골라 버린다. 보관된(퇴사·해체)
+          소유자는 후보에 없으므로 같은 이유로 빈 값에서 시작한다. */}
       {kind === "personal" ? (
-        <div className={styles.selectLabel}>
+        <div key="personal" className={styles.selectLabel}>
           <label htmlFor="owner-holderUserId">소지자</label>
           <select
             id="owner-holderUserId"
             name="holderUserId"
             className={styles.select}
             required
-            defaultValue={card.holderUserId ?? ""}
+            defaultValue={holders.some((holder) => holder.id === card.holderUserId) ? (card.holderUserId ?? "") : ""}
           >
             <option value="" disabled>
               소지자 선택
@@ -205,14 +209,14 @@ export function CardOwnerForm({
           </select>
         </div>
       ) : (
-        <div className={styles.selectLabel}>
+        <div key="team" className={styles.selectLabel}>
           <label htmlFor="owner-teamId">팀</label>
           <select
             id="owner-teamId"
             name="teamId"
             className={styles.select}
             required
-            defaultValue={card.teamId ?? ""}
+            defaultValue={teams.some((team) => team.id === card.teamId) ? (card.teamId ?? "") : ""}
           >
             <option value="" disabled>
               팀 선택

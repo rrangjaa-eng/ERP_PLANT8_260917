@@ -140,12 +140,14 @@ describe("조정 줄 트레이서(04-13 Task 1 · D-83, 실제 Postgres)", () =>
     expect(await listedExecution(project.number)).toBe(280_000);
   });
 
-  it("(t3) 조정 권한이 없는 담당 PM이 같은 조정 새 줄을 보내면 「조정 줄 · 경영관리만」으로 거부되고 DB는 그대로다", async () => {
+  it("(t3) 조정 권한이 없는 담당 PM이 같은 조정 새 줄을 보내면 「조정 줄 · 경영관리만」으로 거부되고 DB는 그대로다 · write.denied 한 번", async () => {
     const { project, revisionId, pm } = await setupProject();
     await setStatus(project.id, "in_progress");
+    const warn = vi.spyOn(log, "warn");
 
     await expect(saveQuoteLines(pm, revisionId, { rows: [adjustmentLine(-120_000)] })).rejects.toThrow("조정 줄 · 경영관리만");
     expect(await linesOf(revisionId)).toHaveLength(0);
+    expectOneDenied(warn, { viewerId: pm.id, projectId: project.id, revisionId });
   });
 });
 
@@ -210,6 +212,14 @@ function deniedCalls(spy: { mock: { calls: unknown[][] } }) {
 
 const AMOUNT_KEY = /amount|krw|execution|price|profit/i;
 
+// 04-13 검토 S1 — 조정 줄 규칙 거부는 denyWrite 한 지점을 지나 write.denied 한 줄(금액 키 없음)을 남긴다.
+function expectOneDenied(spy: { mock: { calls: unknown[][] } }, ids: { viewerId: string; projectId: string; revisionId: string }) {
+  const denied = deniedCalls(spy);
+  expect(denied).toHaveLength(1);
+  expect(denied[0]).toMatchObject({ ...ids, rule: "project.line-edit" });
+  expect(Object.keys(denied[0]!).filter((key) => AMOUNT_KEY.test(key))).toEqual([]);
+}
+
 function newRow(kind: SeedKind, execution: number, patch: Partial<QuoteLineWriteRow> = {}): QuoteLineWriteRow {
   return {
     id: randomUUID(),
@@ -268,13 +278,16 @@ describe("조정 줄 권한 · PM 거부 · 보관 · 복원(04-13 Task 2 · D-8
     expect(Object.keys(denied[0]!).filter((key) => AMOUNT_KEY.test(key))).toEqual([]);
   });
 
-  it("(k2) 담당 PM의 조정 줄 보관 요청은 거부되고, 경영관리의 조정 줄 보관은 통과해 보관함에 「견적 줄」로 보인다", async () => {
+  it("(k2) 담당 PM의 조정 줄 보관 요청은 거부되고(write.denied 한 번), 경영관리의 조정 줄 보관은 통과해 보관함에 「견적 줄」로 보인다", async () => {
     const { project, revisionId, pm } = await setupProject();
     const adjustment = await seedLine(revisionId, "adjustment", { execution: -10_000 });
     await setStatus(project.id, "completed");
+    const warn = vi.spyOn(log, "warn");
 
     await expect(saveQuoteLines(pm, revisionId, { rows: [], archivedLineIds: [adjustment.id] })).rejects.toThrow("조정 줄 · 경영관리만");
     expect((await reload(adjustment.id)).archivedAt).toBeNull();
+    expectOneDenied(warn, { viewerId: pm.id, projectId: project.id, revisionId });
+    warn.mockRestore();
 
     await saveQuoteLines(await makeViewer(adjusterMenus), revisionId, { rows: [], archivedLineIds: [adjustment.id] });
     expect((await reload(adjustment.id)).archivedAt).toBeInstanceOf(Date);
@@ -312,15 +325,18 @@ describe("조정 줄 권한 · PM 거부 · 보관 · 복원(04-13 Task 2 · D-8
     expect(await activeCount(revisionId)).toBe(3);
   });
 
-  it("(k5) 조정 권한만 있는 사람이 견적 줄을 바꾸면 거부된다", async () => {
+  it("(k5) 조정 권한만 있는 사람이 견적 줄을 바꾸면 거부된다 · write.denied 한 번", async () => {
     const { project, revisionId } = await setupProject();
     const quote = await seedLine(revisionId, "quote");
     await setStatus(project.id, "in_progress");
+    const adjuster = await makeViewer(adjusterMenus);
+    const warn = vi.spyOn(log, "warn");
 
-    await expect(
-      saveQuoteLines(await makeViewer(adjusterMenus), revisionId, { rows: [asInput(quote, { note: "경영관리가 고침" })] }),
-    ).rejects.toThrow("견적 줄 · 쓰기 권한 없음");
+    await expect(saveQuoteLines(adjuster, revisionId, { rows: [asInput(quote, { note: "경영관리가 고침" })] })).rejects.toThrow(
+      "견적 줄 · 쓰기 권한 없음",
+    );
     expect((await reload(quote.id)).note).toBeNull();
+    expectOneDenied(warn, { viewerId: adjuster.id, projectId: project.id, revisionId });
   });
 
   it("(k6) 조정 권한만 있는 사람의 새 견적 줄 · 견적 줄 보관은 각각 거부 · DB 무변경 · write.denied 한 번(GAP 2)", async () => {

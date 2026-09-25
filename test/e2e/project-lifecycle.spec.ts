@@ -189,6 +189,8 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(headerTag(page, "미수주")).toBeVisible();
 
     await expect(page.getByRole("button", { name: "상태 바꾸기" })).toHaveCount(0);
+    // S16 — 트리거가 남아 있으면(라벨만 「진행으로 되돌리기」로 바뀜) 포커스는 트리거로.
+    await expect(page.getByRole("button", { name: "진행으로 되돌리기" })).toBeFocused();
     await page.getByRole("button", { name: "진행으로 되돌리기" }).click();
     const revert = page.getByRole("dialog", { name: "진행으로 되돌리기" });
     await expect(revert.getByText("1차 고객 승인 전 · 진행부터 지출결의 멈춤", { exact: true })).toBeVisible();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { changeProjectStatusAction } from "../actions";
@@ -82,12 +82,21 @@ export function StatusChange({
   const submittingRef = useRef(false);
   // 성공 토스트 = 누른 버튼 라벨 · 번호(DR-21) — 제출하는 순간의 라벨을 둔다.
   const submittedLabelRef = useRef("");
+  // 전환 성공 뒤 새로 고침으로 이 컴포넌트(트리거)가 사라지면 포커스를 머리 줄 제목으로(S16).
+  const succeededRef = useRef(false);
+  useEffect(
+    () => () => {
+      if (succeededRef.current) document.querySelector<HTMLElement>("h1")?.focus();
+    },
+    [],
+  );
 
   const { execute, isExecuting } = useAction(changeProjectStatusAction, {
     onSettled: () => {
       submittingRef.current = false;
     },
     onSuccess: () => {
+      succeededRef.current = true;
       setStep({ kind: "closed" });
       onChanged(`${submittedLabelRef.current} · ${props.projectNumber}`);
       router.refresh();
@@ -101,6 +110,7 @@ export function StatusChange({
   function submit(to: ProjectStatus, label: string) {
     if (submittingRef.current) return;
     submittingRef.current = true;
+    succeededRef.current = false;
     submittedLabelRef.current = label;
     execute({ projectId: props.projectId, from: props.from, to });
   }

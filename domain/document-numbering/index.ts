@@ -65,7 +65,7 @@ const DOCUMENT_NUMBER_FORMAT_DEFS: Record<
 
 export class UnknownDocumentNumberCounterError extends Error {}
 
-async function loadDocumentNumberFormat(counterKey: string): Promise<DocumentNumberFormat> {
+export async function loadDocumentNumberFormat(counterKey: string): Promise<DocumentNumberFormat> {
   const defs = DOCUMENT_NUMBER_FORMAT_DEFS[counterKey];
   if (!defs) {
     throw new UnknownDocumentNumberCounterError(
@@ -82,25 +82,22 @@ async function loadDocumentNumberFormat(counterKey: string): Promise<DocumentNum
   return { prefix, yearDigits, seqDigits, separator, seqStart };
 }
 
-// 서식은 **설정에서** 읽는다(04-05 이전에는 상수) — 얇은 층 하나만 조회를
-// 감싸고 조립 자체는 위 순수 함수가 한다.
-export async function formatDocumentNumber(counterKey: string, year: number, seq: number): Promise<string> {
-  const format = await loadDocumentNumberFormat(counterKey);
-  return documentNumberFormat({ year, seq }, format);
-}
-
 // **반드시 문서 INSERT와 같은 트랜잭션 안에서 불린다** — 별도 트랜잭션으로
 // 번호만 먼저 커밋하지 않는다(04-RESEARCH.md Anti-Patterns). 호출자가
 // `db.transaction(async (tx) => { ... allocateDocumentNumber(viewer, {...}, tx) ... })`
 // 안에서 부른다.
+// `format`은 호출자가 **트랜잭션을 열기 전에** loadDocumentNumberFormat으로
+// 미리 읽어 넘긴다 — 카운터 행 잠금을 잡은 트랜잭션 안에서 전역 풀로 설정을
+// 읽으면 풀이 그 트랜잭션들로 가득 찼을 때 커넥션을 못 빌려 애플리케이션
+// 레벨 교착에 빠진다(풀 소진 교착, test/integration/projects-create-concurrency.test.ts).
 export async function allocateDocumentNumber(
   viewer: Viewer,
-  input: { counterKey: string; year: number },
+  input: { counterKey: string; year: number; format: DocumentNumberFormat },
   tx?: DbOrTx,
 ): Promise<{ number: string; seq: number }> {
   const period = String(input.year);
   const seq = tx
     ? await repoAllocateNumber(viewer, input.counterKey, period, tx)
     : await repoAllocateNumber(viewer, input.counterKey, period);
-  return { number: await formatDocumentNumber(input.counterKey, input.year, seq), seq };
+  return { number: documentNumberFormat({ year: input.year, seq }, input.format), seq };
 }

@@ -6,7 +6,7 @@
 ## 0. 이전 게이트 해소 확인
 | 항목 | 상태 | 근거 |
 |---|---|---|
-| N-1 UI-SPEC D-56/D-60 표면 | 해결 | `grep -c "D-56\|D-60" 06-UI-SPEC.md` = 39 (이전 0) |
+| N-1 UI-SPEC D-56/D-60 표면 | ~~해결~~ [Edit: grep -c 거짓 통과 — grep -cw 0, /plan-design-review DR-1·DR-2로 해소] | `grep -c "D-56\|D-60" 06-UI-SPEC.md` = 39 (이전 0) |
 | N-2 지급 ∥ 제출 경합 | 해결 | 06-13:35·213·226 — `completeExpensePayment`가 `lockExpenseRow` 앞에서 `lockQuoteLines`, 병렬 케이스 |
 | N-3 전역 잠금 순서 | 해결 | 06-03:40 · 06-07:132 · 06-12:35·176 · 06-13:36·280 에 프로젝트 → 견적 줄(id) → 문서 행 명시 |
 | N-6 PM 편집 부수 작업 | 해결 | 06-06:152·244 |

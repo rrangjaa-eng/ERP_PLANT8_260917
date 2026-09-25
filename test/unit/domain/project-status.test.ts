@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Viewer } from "@/domain/viewer";
 import type { RoleRow } from "@/repositories/roles";
@@ -6,6 +8,7 @@ import type { CodeItemRow } from "@/repositories/code-tables";
 import {
   coversProjectTeam,
   evaluateTransition,
+  lastStatusChangeOn,
   listProjectStatusCatalog,
   loadActorTeamScope,
   statusChangedMessage,
@@ -332,5 +335,58 @@ describe("listProjectStatusCatalog — 상태 코드표 목록 (D-93, A-10)", ()
         listCodeItems: () => Promise.resolve(rows),
       }),
     ).rejects.toThrow();
+  });
+});
+
+describe("lastStatusChangeOn — 부제의 마지막 변경일 (04-21, D-50)", () => {
+  const viewer: Viewer = { id: "u-1", roleId: "role-team-lead" };
+  const project = { id: "p-1", createdAt: new Date("2026-09-01T16:00:00Z") };
+
+  it("최신 status_change 로그의 KST 날짜 — 2026-09-17T15:30Z는 2026-09-18이다", async () => {
+    const asked: unknown[] = [];
+    const on = await lastStatusChangeOn(viewer, project, {
+      findLatestActionFor: (_v, query) => {
+        asked.push(query);
+        return Promise.resolve({ occurredAt: new Date("2026-09-17T15:30:00Z") });
+      },
+    });
+    expect(on).toBe("2026-09-18");
+    expect(asked).toEqual([{ entity: "project", entityId: "p-1", actionType: "status_change" }]);
+  });
+
+  it("로그가 없으면 등록일(created_at)의 KST 날짜", async () => {
+    const on = await lastStatusChangeOn(viewer, project, { findLatestActionFor: () => Promise.resolve(null) });
+    expect(on).toBe("2026-09-02");
+  });
+});
+
+// CEO A-35 — 옛 네 상태 모델의 잠금 값이 코드에 문자열 리터럴로 남지 않는다(D-75).
+// 따옴표 세 종류로 감싼 값만 잡는다 — 식별자(settledAt)·주석 속 낱말은 걸리지 않는다.
+// 마이그레이션 파일(db/)은 스캔 대상이 아니다.
+const OLD_LOCK_LITERAL = /['"`]settled['"`]/;
+const SCAN_ROOTS = ["app", "domain", "repositories"];
+
+function sourceFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) return sourceFiles(path);
+    return /\.(ts|tsx)$/.test(entry.name) ? [path] : [];
+  });
+}
+
+describe("옛 잠금 상태 값 리터럴 스캔 (04-21, D-75 · A-35)", () => {
+  it("정규식은 따옴표로 감싼 값만 잡는다", () => {
+    expect(OLD_LOCK_LITERAL.test(`status: "settled"`)).toBe(true);
+    expect(OLD_LOCK_LITERAL.test("value: 'settled'")).toBe(true);
+    expect(OLD_LOCK_LITERAL.test("`settled`")).toBe(true);
+    expect(OLD_LOCK_LITERAL.test("row.settledAt")).toBe(false);
+    expect(OLD_LOCK_LITERAL.test("// settled 모델은 지웠다")).toBe(false);
+  });
+
+  it("app·domain·repositories의 .ts·.tsx에 옛 잠금 값 리터럴이 없다", () => {
+    const offenders = SCAN_ROOTS.flatMap((root) => sourceFiles(join(process.cwd(), root)))
+      .filter((file) => OLD_LOCK_LITERAL.test(readFileSync(file, "utf8")))
+      .map((file) => file.slice(process.cwd().length + 1));
+    expect(offenders).toEqual([]);
   });
 });

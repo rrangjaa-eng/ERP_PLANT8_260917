@@ -12,7 +12,15 @@ import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
-import { changeProjectStatus, listProjectStatusCatalog, loadStatusChangeFacts } from "@/domain/projects/status";
+import {
+  changeProjectStatus,
+  lastStatusChangeOn,
+  listProjectStatusCatalog,
+  loadStatusChangeFacts,
+} from "@/domain/projects/status";
+import { recordAction } from "@/domain/action-log/record";
+import { findLatestActionFor } from "@/repositories/action-log";
+import { kstDateOf } from "@/lib/kst-date";
 import { setPermissionCell, setVisibilityCell } from "@/domain/permissions/matrix";
 import { seedMasterData } from "@/domain/seed";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
@@ -589,5 +597,75 @@ describe("원자성·경합·시드 보존(A-01·A-11·OV-3·A-05·ENG-D3 ③·A
 
     expect((await reloadProject(projectId)).status).toBe("bidding");
     expect(await statusLogs(projectId)).toEqual([]);
+  });
+});
+
+describe("부제의 마지막 변경일 (04-21, D-50 · CEO A-30 · 엔지 리뷰 A 공백 6)", () => {
+  it("(i) 전환 뒤에는 최신 status_change 로그의 KST 날짜, 전환 없는 프로젝트는 등록일, 최신 로그가 정리 표시여도 그 날짜", async () => {
+    const teamA = await makeTeam();
+    const lead = await makeActor("role-team-lead", teamA);
+
+    const untouched = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+    const untouchedDto = await findProject(lead, untouched.projectId);
+    if (!untouchedDto) throw new Error("팀장이 상세를 보지 못했습니다");
+    const untouchedRow = await reloadProject(untouched.projectId);
+    expect(await lastStatusChangeOn(lead, untouchedDto)).toBe(kstDateOf(untouchedRow.createdAt));
+
+    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+    await changeProjectStatus(lead, projectId, { from: "bidding", to: "in_progress" });
+    const [log] = await statusLogs(projectId);
+    if (!log) throw new Error("status_change 로그가 없습니다");
+    // 등록일(오늘)과 다른 날로 옮겨 두 갈래를 구분한다 — 2026-08-31T20:00Z = KST 2026-09-01.
+    await db.update(actionLog).set({ occurredAt: new Date("2026-08-31T20:00:00Z") }).where(eq(actionLog.seq, log.seq));
+    const dto = await findProject(lead, projectId);
+    if (!dto) throw new Error("팀장이 상세를 보지 못했습니다");
+    expect(await lastStatusChangeOn(lead, dto)).toBe("2026-09-01");
+
+    await db
+      .update(actionLog)
+      .set({ prunedAt: new Date(), prunedBy: SYSTEM_VIEWER.id })
+      .where(eq(actionLog.seq, log.seq));
+    expect(await lastStatusChangeOn(lead, dto)).toBe("2026-09-01");
+  });
+
+  it("(i2) 한 트랜잭션의 두 status_change(시스템 자동 정산 → 사람 전환)는 occurred_at이 같고 seq가 큰 사람 줄이 최신이다", async () => {
+    const teamA = await makeTeam();
+    const lead = await makeActor("role-team-lead", teamA);
+    const { projectId } = await makeStatusProject({ teamId: teamA, status: "in_progress", startDate: "2026-09-01" });
+
+    await withTransaction(async (tx) => {
+      await recordAction(
+        SYSTEM_VIEWER,
+        {
+          actionType: "status_change",
+          entity: "project",
+          entityId: projectId,
+          detail: { from: "in_progress", to: "settling", trigger: "auto", effectiveOn: "2026-09-17" },
+        },
+        { tx },
+      );
+      await recordAction(
+        lead,
+        {
+          actionType: "status_change",
+          entity: "project",
+          entityId: projectId,
+          detail: { from: "settling", to: "in_progress", trigger: "manual" },
+        },
+        { tx },
+      );
+    });
+
+    const logs = await statusLogs(projectId);
+    expect(logs).toHaveLength(2);
+    expect(logs[0]?.occurredAt.getTime()).toBe(logs[1]?.occurredAt.getTime());
+
+    const latest = await findLatestActionFor(lead, { entity: "project", entityId: projectId, actionType: "status_change" });
+    expect(latest?.actorId).toBe(lead.id);
+    expect(latest?.detail).toEqual({ from: "settling", to: "in_progress", trigger: "manual" });
+
+    const dto = await findProject(lead, projectId);
+    if (!dto || !latest) throw new Error("준비 실패");
+    expect(await lastStatusChangeOn(lead, dto)).toBe(kstDateOf(latest.occurredAt));
   });
 });

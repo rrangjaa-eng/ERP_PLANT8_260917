@@ -84,3 +84,28 @@ test.describe("폰 「더보기」 시트 계정 그룹 — 「알림함 N」 (0
     await expect(page).toHaveURL(/\/notifications$/);
   });
 });
+
+test.describe("알림함 목록 완성 — 폰 375 (Task 3 · S1-inbox-list/long-text)", () => {
+  test("40자 이상 내용이 줄바꿈되고 가로 스크롤이 없다", async ({ page }) => {
+    const user = await createEmployee();
+    const entityId = `${"긴".repeat(45)}-${randomUUID()}`;
+    const kind = createTestConditionKind([
+      testCandidate({ recipientId: user.userId, entityId, referenceDate: "2026-01-01" }),
+    ]);
+    await tickOnce(kind);
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(user.email);
+    await page.getByLabel("비밀번호").fill(user.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto("/notifications");
+    await expect(page.getByText(`테스트 알림 · ${entityId}`)).toBeVisible();
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(1);
+  });
+});

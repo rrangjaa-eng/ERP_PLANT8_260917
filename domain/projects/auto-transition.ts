@@ -131,6 +131,8 @@ export async function loadProjectForGate(
     { expectedStatus: AUTO_SETTLE.from, status: AUTO_SETTLE.to, fillEndDateFromStart: false },
     opts.tx,
   );
+  // 잠근 행이라 0행일 수 없다 — 깨지면 로그만 남기지 않고 던져 tx를 되돌린다(fail-closed).
+  if (!settled) throw new Error("project.auto_settle_gate_no_row");
   const latest = await findLatestAction(
     viewer,
     { entity: PROJECT_ENTITY, entityId: projectId, actionType: "status_change" },
@@ -154,6 +156,5 @@ export async function loadProjectForGate(
     },
     { tx: opts.tx },
   );
-  // 잠근 행이라 조건부 UPDATE는 항상 한 행을 바꾼다.
-  return settled ?? row;
+  return settled;
 }

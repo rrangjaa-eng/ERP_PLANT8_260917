@@ -413,7 +413,7 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
     await expect(page.getByRole("button", { name: "총 매출 예상가 바꾸기" })).toBeFocused();
   });
 
-  test("(9b) 금액 칸에 거부되는 글자(원화 소수점)를 치면 칸 아래 S15 이유가 보이고 값은 그대로 · Esc로 되돌리면 이유도 사라진다(리뷰 S-2)", async ({ page }) => {
+  test("(9b) 금액 칸에 거부되는 값(원화 소수점)을 넣으면 칸 아래 S15 이유가 보이고 값은 그대로 · Esc로 되돌리면 이유도 사라진다(리뷰 S-2)", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team);
     const lead = await makeAccount("role-team-lead", team, `팀장${randomUUID().slice(0, 6)}`);
@@ -424,7 +424,8 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
     await page.getByRole("button", { name: "총 매출 예상가 바꾸기" }).click();
     const amount = page.getByLabel("총 매출 예상가", { exact: true });
     await amount.fill("12000");
-    await amount.press(".");
+    // S15 — 한 글자 입력은 조용히 거른다. 거부 이유는 붙여넣기처럼 한 번에 들어온 값에 붙는다(number-format (편집기 붙여넣기)와 같다).
+    await amount.fill("1,234.56");
 
     await expect(amount).toHaveValue("12,000");
     await expect(page.getByText("원화는 소수점 없이 적어 주세요", { exact: true })).toBeVisible();

@@ -33,12 +33,17 @@ export async function findRolesByIds(viewer: Viewer, ids: string[]): Promise<Rol
 // 같은 이름 중복은 name UNIQUE 제약이 거부한다(NFC 정규화 후 비교, D-33①).
 export async function insertRole(
   viewer: Viewer,
-  input: { id: string; name: string; sortOrder?: number },
+  input: { id: string; name: string; sortOrder?: number; workScope?: string },
 ): Promise<RoleRow> {
   void viewer;
   const [row] = await db
     .insert(roles)
-    .values({ id: input.id, name: normalizeRoleName(input.name), sortOrder: input.sortOrder ?? 0 })
+    .values({
+      id: input.id,
+      name: normalizeRoleName(input.name),
+      sortOrder: input.sortOrder ?? 0,
+      workScope: input.workScope,
+    })
     .returning();
   if (!row) throw new Error("roles insert가 행을 반환하지 않았습니다.");
   return row;
@@ -50,6 +55,11 @@ export async function renameRole(viewer: Viewer, id: string, name: string): Prom
     .update(roles)
     .set({ name: normalizeRoleName(name), updatedAt: new Date() })
     .where(eq(roles.id, id));
+}
+
+export async function setRoleWorkScope(viewer: Viewer, id: string, workScope: string): Promise<void> {
+  void viewer;
+  await db.update(roles).set({ workScope, updatedAt: new Date() }).where(eq(roles.id, id));
 }
 
 // 보관·복원 둘 다 조건부 UPDATE로 멱등·경합 안전을 확보한다 — archived_at이 이미
@@ -71,12 +81,18 @@ export async function setRoleArchived(viewer: Viewer, id: string, value: boolean
 // 멱등 시드 전용 — 이미 있으면 건드리지 않는다(onConflictDoNothing).
 export async function seedRole(
   viewer: Viewer,
-  input: { id: string; name: string; isSeed: boolean; sortOrder: number },
+  input: { id: string; name: string; isSeed: boolean; sortOrder: number; workScope: string },
 ): Promise<boolean> {
   void viewer;
   const inserted = await db
     .insert(roles)
-    .values({ id: input.id, name: input.name, isSeed: input.isSeed, sortOrder: input.sortOrder })
+    .values({
+      id: input.id,
+      name: input.name,
+      isSeed: input.isSeed,
+      sortOrder: input.sortOrder,
+      workScope: input.workScope,
+    })
     .onConflictDoNothing({ target: roles.id })
     .returning({ id: roles.id });
   return inserted.length > 0;

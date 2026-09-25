@@ -11,20 +11,26 @@ import {
   listRoles as repoListRoles,
   insertRole as repoInsertRole,
   renameRole as repoRenameRole,
+  setRoleWorkScope as repoSetRoleWorkScope,
   type RoleRow,
 } from "@/repositories/roles";
 
 // ADMN-08: 계급 5종 시드 상수. Task 1 결정(옵션 A, 03-01-DECISION-TASK1.md ①) —
 // 이름은 데이터라 화면에서 바꿀 수 있지만 식별자 문자열은 영구다. 시드 권한표와
 // 이후 페이즈의 테스트 픽스처가 이 문자열을 참조한다.
-export type SeedRole = { id: string; name: string; isSeed: true; sortOrder: number };
+// 04-27(D11·D20): 업무 범위 — team(자기 팀) · company(전사). 순위가 아니다(비교 없음).
+export const ROLE_WORK_SCOPES = ["team", "company"] as const;
+export type RoleWorkScope = (typeof ROLE_WORK_SCOPES)[number];
 
+export type SeedRole = { id: string; name: string; isSeed: true; sortOrder: number; workScope: RoleWorkScope };
+
+// 업무 범위 값은 마이그레이션 0013의 UPDATE와 같다 — 새 DB(시드)와 기존 DB(마이그레이션)가 같은 값을 갖는다.
 export const SEED_ROLES: SeedRole[] = [
-  { id: "role-ceo", name: "대표", isSeed: true, sortOrder: 0 },
-  { id: "role-division-head", name: "본부 책임자", isSeed: true, sortOrder: 1 },
-  { id: "role-team-lead", name: "팀장", isSeed: true, sortOrder: 2 },
-  { id: "role-pm", name: "기획 PM", isSeed: true, sortOrder: 3 },
-  { id: "role-sysadmin", name: "시스템 관리자", isSeed: true, sortOrder: 4 },
+  { id: "role-ceo", name: "대표", isSeed: true, sortOrder: 0, workScope: "company" },
+  { id: "role-division-head", name: "본부 책임자", isSeed: true, sortOrder: 1, workScope: "company" },
+  { id: "role-team-lead", name: "팀장", isSeed: true, sortOrder: 2, workScope: "team" },
+  { id: "role-pm", name: "기획 PM", isSeed: true, sortOrder: 3, workScope: "team" },
+  { id: "role-sysadmin", name: "시스템 관리자", isSeed: true, sortOrder: 4, workScope: "company" },
 ];
 
 export { normalizeRoleName };
@@ -59,6 +65,7 @@ export type RoleDto = {
   name: string;
   isSeed: boolean;
   sortOrder: number;
+  workScope: RoleWorkScope;
   archivedAt: Date | null;
 };
 
@@ -68,6 +75,7 @@ export const ROLE_DTO_SPEC: DtoSpec<RoleRow, RoleDto> = {
     { key: "name", from: "name", infoItem: "role.value" },
     { key: "isSeed", from: "isSeed", infoItem: "role.value" },
     { key: "sortOrder", from: "sortOrder", infoItem: "role.value" },
+    { key: "workScope", from: "workScope", infoItem: "role.value" },
     { key: "archivedAt", from: "archivedAt", infoItem: "role.value" },
   ],
 };
@@ -129,4 +137,29 @@ export async function renameRole(
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "permission_change", entity: "roles", entityId: id });
+}
+
+export async function setRoleWorkScope(
+  viewer: Viewer,
+  id: string,
+  workScope: RoleWorkScope,
+  deps?: Partial<RoleWriteDeps>,
+): Promise<void> {
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, PEOPLE_MENU, "write"))) {
+    throw new ForbiddenError("계급 업무 범위 변경 권한이 없습니다.");
+  }
+
+  const row = await defaultFindRoleById(viewer, id);
+  if (!row) throw new UserFacingError("계급을 찾을 수 없습니다.");
+
+  await repoSetRoleWorkScope(viewer, id, workScope);
+
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  await recordAction(viewer, {
+    actionType: "permission_change",
+    entity: "roles",
+    entityId: id,
+    detail: { workScope: { from: row.workScope, to: workScope } },
+  });
 }

@@ -92,6 +92,13 @@
       "when": 1790284363239,
       "tag": "0012_project_status_five_values",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790298799744,
+      "tag": "0013_role_work_scope",
+      "breakpoints": true
     }
   ]
 }

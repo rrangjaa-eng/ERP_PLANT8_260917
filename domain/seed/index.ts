@@ -136,6 +136,7 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
       name: role.name,
       isSeed: role.isSeed,
       sortOrder: role.sortOrder,
+      workScope: role.workScope,
     });
     if (inserted) rolesCount++;
   }

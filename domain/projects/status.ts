@@ -256,6 +256,13 @@ export async function changeProjectStatus(
     }
     await deps?.afterLock?.();
 
+    // 권한(메뉴·팀 범위)을 from 불일치보다 먼저 판정한다 — 불일치 문구에는 지금
+    // 상태가 실려, 권한 없는 사람이 틀린 from으로 상태를 알아낼 수 있다(04-20 리뷰 M1).
+    const authz = await evaluateTransition({ ...row, status: input.from }, input.to, facts);
+    if (!authz.allowed && authz.rule === TRANSITION_RULE) {
+      denyWrite(viewer, authz.rule, ids, new GateBlockedError(authz.reason));
+    }
+
     const statusChanged = () =>
       new StatusChangedError(statusChangedMessage(facts.labels[row.status] ?? row.status, "새로 고침"), row.status);
     if (row.status !== input.from) denyWrite(viewer, "project.status-current", ids, statusChanged());

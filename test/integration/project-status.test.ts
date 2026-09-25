@@ -442,6 +442,26 @@ describe("원자성·경합·시드 보존(A-01·A-11·OV-3·A-05·ENG-D3 ③·A
     expect(await statusLogs(projectId)).toHaveLength(1);
   });
 
+  it("M1 — 전환 권한이 없는 담당 PM·다른 팀 팀장이 틀린 from을 보내도 권한 거부이고 문구에 지금 상태가 없다", async () => {
+    const teamA = await makeTeam();
+    const teamB = await makeTeam();
+    const otherLead = await makeActor("role-team-lead", teamB);
+    const { projectId, pm } = await makeStatusProject({ teamId: teamA, status: "lost", startDate: "2026-10-01" });
+
+    for (const [actor, reason] of [
+      [pm, "상태 바꾸기 권한 없음"],
+      [otherLead, "다른 팀 프로젝트 · 상태 바꾸기 권한 없음"],
+    ] as const) {
+      const attempt = changeProjectStatus(actor, projectId, { from: "bidding", to: "in_progress" });
+      await expect(attempt).rejects.toBeInstanceOf(GateBlockedError);
+      await expect(attempt).rejects.toThrow(reason);
+      await expect(attempt).rejects.not.toThrow("미수주");
+    }
+
+    expect((await reloadProject(projectId)).status).toBe("lost");
+    expect(await statusLogs(projectId)).toEqual([]);
+  });
+
   it("OV-3 — A가 잠금을 쥔 동안 B는 잠금을 기다리고, A를 풀면 A만 커밋되고 B는 from 불일치로 거부된다", async () => {
     const teamA = await makeTeam();
     const leadA = await makeActor("role-team-lead", teamA);

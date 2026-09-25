@@ -509,7 +509,7 @@ export async function saveQuoteLines(
       // D-71 — 환율 칸을 실제로 고친 저장에서만 그 통화의 최근 환율
       // 설정을 갱신한다(T-04-11과 같은 결). 건드리지 않은 저장은 갱신하지 않는다.
       if (unitPriceColumns.currency !== "KRW" && input.unitPriceFxRateTouched) {
-        await rememberFxRate(unitPriceColumns.currency, Number(unitPriceColumns.fxRate));
+        await rememberFxRate(unitPriceColumns.currency, Number(unitPriceColumns.fxRate), undefined, innerTx);
       }
 
       const payload = {

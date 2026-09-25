@@ -7,7 +7,7 @@ import { recordAction as defaultRecordAction } from "@/domain/action-log/record"
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { buildCustomFieldsSchema, type FieldDefType } from "@/domain/custom-fields/build-schema";
-import { allocateDocumentNumber } from "@/domain/document-numbering";
+import { allocateDocumentNumber, loadDocumentNumberFormat } from "@/domain/document-numbering";
 import { withTransaction } from "@/lib/db-transaction";
 import {
   listProjectsPage as repoListProjectsPage,
@@ -255,9 +255,16 @@ export async function createProject(
 
   const customFields = await validatedCustomFields(viewer, input.customFields);
   const year = new Date().getFullYear();
+  // 서식 설정은 트랜잭션을 열기 전에 읽는다 — 풀 소진 애플리케이션 교착을
+  // 막는다(domain/document-numbering/index.ts의 allocateDocumentNumber 주석 참고).
+  const format = await loadDocumentNumberFormat(PROJECT_NUMBER_COUNTER_KEY);
 
   const created = await withTransaction(async (tx) => {
-    const { number } = await allocateDocumentNumber(viewer, { counterKey: PROJECT_NUMBER_COUNTER_KEY, year }, tx);
+    const { number } = await allocateDocumentNumber(
+      viewer,
+      { counterKey: PROJECT_NUMBER_COUNTER_KEY, year, format },
+      tx,
+    );
     const row = await repoInsertProject(
       viewer,
       {

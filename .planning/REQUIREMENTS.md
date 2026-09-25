@@ -203,9 +203,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PROJ-07 | Phase 4 | Pending |
 | EXP-01 | Phase 5 | Pending |
 | EXP-02 | Phase 5 | Pending |
-| EXP-03 | Phase 5 | Pending |
-| EXP-04 | Phase 5 | Pending |
-| EXP-05 | Phase 5 | Pending |
+| EXP-03 | Phase 04.1 | Pending |
+| EXP-04 | Phase 04.1 | Pending |
+| EXP-05 | Phase 04.1 | Pending |
 | EXP-06 | Phase 6 | Pending |
 | EXP-07 | Phase 6 | Pending |
 | EXP-08 | Phase 5 | Pending |
@@ -240,7 +240,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | NOTI-02 | Phase 7 | Pending |
 | NOTI-03 | Phase 7 | Pending |
 | NOTI-04 | Phase 7 | Pending |
-| LEAV-01 | Phase 5 | Pending |
+| LEAV-01 | Phase 04.1 | Pending |
 | CERT-01 | Phase 11 | Pending |
 | CERT-02 | Phase 11 | Pending |
 | CERT-03 | Phase 11 | Pending |
@@ -248,7 +248,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ADMN-01 | Phase 3 | Pending |
 | ADMN-02 | Phase 3 | Pending |
 | ADMN-03 | Phase 3 | Pending |
-| ADMN-04 | Phase 5 | Pending |
+| ADMN-04 | Phase 04.1 (결재 부분 — 단계·담당 계급·조직 범위·규칙 on/off·문서 종류별 자기 승인 + 연차 연간 일수. 알림 시점·대상은 Phase 7, 세율·수식은 Phase 5) | Pending |
 | ADMN-05 | Phase 3 | Pending |
 | ADMN-06 | Phase 3 | Pending |
 | ADMN-07 | Phase 10 | Pending |
@@ -261,10 +261,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MIG-05 | Phase 8 | Pending |
 | OPS-01 | Phase 1 | Complete |
 | OPS-02 | Phase 1 | Complete |
-| OPS-03 | Phase 8 | Pending |
+| OPS-03 | Phase 04.4 | Pending |
 | OPS-04 | Phase 1 | Complete |
 | OPS-05 | Phase 3 | Pending |
-| OPS-06 | Phase 1 | Complete |
+| OPS-06 | Phase 1 (상태 화면 「복원 리허설」 항목은 Phase 04.4가 구현) | Complete |
 | OPS-07 | Phase 1 | Complete |
 | UX-01 | Phase 2 | Complete |
 | UX-02 | Phase 9 | Pending |
@@ -279,7 +279,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 - Mapped to phases: 86
 - Unmapped: 0 ✓
 
-**By phase:** 1 (9) · 2 (1) · 3 (13) · 4 (11) · 5 (13) · 6 (10) · 7 (7) · 8 (3) · 9 (10) · 10 (5) · 11 (4)
+**By phase:** 1 (9) · 2 (1) · 3 (13) · 4 (11) · 04.1 (5) · 04.4 (1) · 5 (8) · 6 (10) · 7 (7) · 8 (2) · 9 (10) · 10 (5) · 11 (4)
 
 ---
 *Requirements defined: 2026-09-17*

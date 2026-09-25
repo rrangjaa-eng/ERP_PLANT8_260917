@@ -20,7 +20,15 @@ import { seedMasterData } from "@/domain/seed";
 import { findPermission } from "@/repositories/permissions";
 import { log } from "@/lib/log";
 import { addDays, kstDayStart, kstToday } from "@/lib/kst-date";
+import { gate } from "@/domain/rules/gate";
 import { deferred, waitForLockWaiter } from "./lock-race";
+
+// S1(04-22 리뷰): 견적 줄 게이트가 어느 행으로 판정했는지 보려고 gate를 통과형 스파이로 감싼다 —
+// 판정 결과는 원본 그대로다. 견적 줄 로그는 커밋 뒤에 남아 seq로는 순서를 증명할 수 없다.
+vi.mock("@/domain/rules/gate", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/domain/rules/gate")>();
+  return { ...actual, gate: vi.fn(actual.gate) };
+});
 
 // 04-22(D-80 · D-82 · CEO A-01·A-02·A-13·A-14·A-16·A-22·OV-5 · ENG-D6 · DR-6 · 엔지 리뷰 A §1 P1 ·
 // 사용자 결정 2026-09-25 「기간만 수정」) — 기간 칸이 합류한 합성 저장을 실제 DB에서 본다. 로그 단언은
@@ -418,15 +426,24 @@ describe("기간 저장 — 행위자 · 권리 · 검증 (04-22 Task 2)", () =>
     expect(row.endDate).toBe(newEnd);
   });
 
-  it("(n) 기간 쓰기 → 재판정 → 견적 줄: 시스템 정산 로그의 seq가 견적 줄 document_update의 seq보다 작다(ENG-D6)", async () => {
+  it("(n) 기간 쓰기 → 재판정 → 견적 줄: 견적 줄 게이트는 트랜잭션 안의 새 행(정산)으로 판정하고, 시스템 정산 로그의 seq가 견적 줄 document_update의 seq보다 작다(ENG-D6)", async () => {
     const s = await setup({ status: "in_progress", startDate: addDays(TODAY, -10), endDate: addDays(TODAY, 5) });
     const admin = await companyViewer("role-sysadmin");
+    const lines = await newLine(s, `순서-${randomUUID()}`);
+    vi.mocked(gate).mockClear();
 
     await saveProjectLedger(admin, s.projectId, {
       seenStatus: "in_progress",
       period: period(s, { endDate: addDays(TODAY, -1) }),
-      quoteLines: await newLine(s, `순서-${randomUUID()}`),
+      quoteLines: lines,
     });
+
+    // 견적 줄 게이트는 트랜잭션 안의 새 행(기간 쓰기 + 재판정 정산)으로 판정한다 — 커밋된 옛 행이 아니다.
+    const lineGateCalls = vi.mocked(gate).mock.calls.filter(([, rule]) => rule === "project.line-edit");
+    expect(lineGateCalls).toHaveLength(1);
+    const [lineDoc, , lineCtx] = lineGateCalls[0]!;
+    expect(lineCtx).toEqual({ status: "settling" });
+    expect(lineDoc).toMatchObject({ status: "settling", endDate: addDays(TODAY, -1) });
 
     const [settle] = await logs(s.projectId, "status_change");
     const [lineLog] = await db

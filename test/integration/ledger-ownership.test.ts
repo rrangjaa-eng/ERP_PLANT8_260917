@@ -77,6 +77,7 @@ describe("저장 경로의 소속 검사(/review PR #38)", () => {
 
     await expect(
       saveProjectLedger(SYSTEM_VIEWER, a.project.id, {
+        seenStatus: "bidding",
         quoteLines: { revisionId: b.revision.id, rows: [{ subcategory: b.subcategoryValue, itemName: "섞임", unitPrice: krw(1), execution: krw(0) }] },
       }),
     ).rejects.toThrow();
@@ -90,6 +91,7 @@ describe("저장 경로의 소속 검사(/review PR #38)", () => {
 
     await expect(
       saveProjectLedger(pm, a.project.id, {
+        seenStatus: "bidding",
         quoteLines: { revisionId: a.revision.id, rows: [{ subcategory: a.subcategoryValue, itemName: "줄", unitPrice: krw(1), execution: krw(0) }] },
         revenue: { paidEntries: [{ entryDate: "2026-09-01", amount: krw(1) }] },
       }),
@@ -105,6 +107,7 @@ describe("저장 경로의 소속 검사(/review PR #38)", () => {
 
     await expect(
       saveProjectLedger(pm, a.project.id, {
+        seenStatus: "bidding",
         quoteLines: { revisionId: a.revision.id, rows: [{ subcategory: a.subcategoryValue, itemName: "보관 뒤 줄", unitPrice: krw(1), execution: krw(0) }] },
       }),
     ).rejects.toThrow();

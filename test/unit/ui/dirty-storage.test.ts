@@ -5,6 +5,7 @@ import {
   loadDirtyEdits,
   clearDirtyEdits,
   countDirtyEdits,
+  readRestorableCount,
   type DirtyStorageLike,
 } from "@/ui/table/use-dirty-storage";
 
@@ -69,5 +70,21 @@ describe("saveDirtyEdits / loadDirtyEdits / clearDirtyEdits", () => {
     const storage = createFakeStorage();
     storage.setItem(dirtyStorageKey("project-1", "revision-1"), "{ this is not json");
     expect(loadDirtyEdits(storage, "project-1", "revision-1")).toBeNull();
+  });
+});
+
+// 04-22(D-68 · DR-6) — 상태 바뀜 거부 뒤 화면이 서버 값으로 다시 그려지면 복원 줄 수를 저장소에서
+// 다시 읽는다(useDirtyStorage의 recount가 이 함수를 쓴다). 서버 값으로 다시 그리는 것은 저장소를
+// 건드리지 않으므로 편집 순간 보관한 칸 수가 그대로 돌아온다.
+describe("readRestorableCount — recount", () => {
+  it("저장소에 편집 3칸이 있으면 3을 다시 읽는다", () => {
+    const storage = createFakeStorage();
+    saveDirtyEdits(storage, "project-1", "revision-1", { "line-1:itemName": "A", "line-1:quantity": 2, "period:end": "2026-10-01" });
+    expect(readRestorableCount(storage, "project-1", "revision-1")).toBe(3);
+  });
+
+  it("보관본이 없거나 저장소가 없으면 0", () => {
+    expect(readRestorableCount(createFakeStorage(), "project-1", "revision-1")).toBe(0);
+    expect(readRestorableCount(null, "project-1", "revision-1")).toBe(0);
   });
 });

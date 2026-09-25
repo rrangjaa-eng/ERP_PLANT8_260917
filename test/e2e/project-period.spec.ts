@@ -199,4 +199,70 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     expect(row?.status).toBe("in_progress");
     expect(row?.endDate).toBe(secondEnd);
   });
+
+  test("(4) 진행의 담당 PM이 종료일을 어제로 앞당기면 칸 아래 「앞당기기는 팀장 {이름}」 + 표 합계 행 「전부 거부 · 다른 칸 오류 1칸」", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const leadName = `팀장${randomUUID().slice(0, 6)}`;
+    await makeAccount("role-team-lead", team, leadName);
+    const endDate = addDays(TODAY, 5);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "in_progress", endDate });
+
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    await page.getByLabel("종료일").fill(addDays(TODAY, -1));
+    const saving = waitForSaveAction(page);
+    await page.getByRole("button", { name: /일괄 저장 1/ }).click();
+    await saving;
+
+    const endInput = page.getByLabel("종료일");
+    await expect(endInput).toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByText(`종료일이 오늘보다 빠름 · 앞당기기는 팀장 ${leadName}`, { exact: true })).toBeVisible();
+    await expect(page.locator("tfoot").getByText("전부 거부 · 다른 칸 오류 1칸")).toBeVisible();
+    const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
+    expect(row?.endDate).toBe(endDate);
+    expect(row?.status).toBe("in_progress");
+  });
+
+  test("(5) 팀장이 진행의 종료일을 어제로 적으면 「저장하면 정산이 됨」 힌트 → 저장 → 정산 태그", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const lead = await makeAccount("role-team-lead", team, `팀장${randomUUID().slice(0, 6)}`);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "in_progress", endDate: addDays(TODAY, 5) });
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await expect(headerTag(page, "진행")).toBeVisible();
+    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    await page.getByLabel("종료일").fill(addDays(TODAY, -1));
+    await expect(page.getByText("저장하면 정산이 됨", { exact: true })).toBeVisible();
+    const saving = waitForSaveAction(page);
+    await page.getByLabel("종료일").press("Control+s");
+    await saving;
+
+    await expect(headerTag(page, "정산")).toBeVisible();
+  });
+
+  test("(6) 기간 칸의 Esc는 편집 값을 되돌리고, 원래 값이면 묶음을 닫아 포커스가 「기간 바꾸기」로 돌아온다", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const endDate = addDays(TODAY, 5);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "bidding", endDate });
+
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    const endInput = page.getByLabel("종료일");
+    await endInput.fill(addDays(TODAY, 8));
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+
+    await endInput.press("Escape");
+    await expect(endInput).toHaveValue(endDate);
+    await expect(page.getByText("바뀐 칸 없음", { exact: true })).toBeVisible();
+
+    await endInput.press("Escape");
+    await expect(page.getByLabel("종료일")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "기간 바꾸기" })).toBeFocused();
+  });
 });

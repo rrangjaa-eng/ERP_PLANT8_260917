@@ -228,6 +228,6 @@ describe("domain/revenue saveRevenue/listRevenue (Phase 4, 실제 Postgres)", ()
     const noAccess: Viewer = { id: noAccessUserId, roleId: role.id };
 
     await expect(listRevenue(noAccess, project.id)).rejects.toThrow();
-    await expect(saveProjectLedger(noAccess, project.id, { revenue: {} })).rejects.toThrow();
+    await expect(saveProjectLedger(noAccess, project.id, { seenStatus: "bidding", revenue: {} })).rejects.toThrow();
   });
 });

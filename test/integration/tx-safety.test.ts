@@ -116,6 +116,7 @@ describe("잠금·풀 시간 제한(ENG-D3 ①)", () => {
         const itemName = `커밋 뒤 실패-${randomUUID()}`;
 
         const outcome = await saveProjectLedger(SYSTEM_VIEWER, project.id, {
+          seenStatus: "bidding",
           quoteLines: {
             revisionId: revision.id,
             rows: [
@@ -182,12 +183,15 @@ describe("잠금·풀 시간 제한(ENG-D3 ①)", () => {
           const start = Date.now();
           const results = await Promise.allSettled([
             saveProjectLedger(SYSTEM_VIEWER, project.id, {
+              seenStatus: "bidding",
               quoteLines: { revisionId: revision.id, rows: [makeRow("A")] },
             }),
             saveProjectLedger(SYSTEM_VIEWER, project.id, {
+              seenStatus: "bidding",
               quoteLines: { revisionId: revision.id, rows: [makeRow("B")] },
             }),
             saveProjectLedger(SYSTEM_VIEWER, project.id, {
+              seenStatus: "bidding",
               quoteLines: { revisionId: revision.id, rows: [makeRow("C")] },
             }),
           ]);
@@ -203,6 +207,58 @@ describe("잠금·풀 시간 제한(ENG-D3 ①)", () => {
           await clientModule.closeDb();
         } finally {
           process.env.DB_POOL_MAX = previousPoolMax;
+        }
+      },
+      15_000,
+    );
+  });
+
+  describe("풀 2 · 동시 기간 저장 셋(04-22)", () => {
+    // 기간이 실린 합성 저장은 권리의 사실을 트랜잭션 전에 읽고 트랜잭션 안에서는 tx만 쓴다
+    // (ARCHITECTURE §4-8 · ENG-D3 ①) — 풀 크기 2에서도 셋 다 성공한다.
+    it(
+      "(f) 풀 크기 2에서 서로 다른 세 프로젝트에 기간만 실은 saveProjectLedger 셋을 동시에 보내면 10초 안에 셋 다 성공",
+      async () => {
+        const startDate = "2099-01-01";
+        const endDate = "2099-01-10";
+        const setups = await Promise.all([setupProject(), setupProject(), setupProject()]);
+        for (const { project } of setups) {
+          await db.update(projects).set({ status: "in_progress", startDate, endDate }).where(eq(projects.id, project.id));
+        }
+
+        const previousPoolMax = process.env.DB_POOL_MAX;
+        process.env.DB_POOL_MAX = "2";
+        vi.resetModules();
+
+        try {
+          const clientModule = await import("@/db/client");
+          const smallPool = clientModule.pool as unknown as { options: { max: number } };
+          expect(smallPool.options.max).toBe(2);
+
+          const { saveProjectLedger } = await import("@/domain/projects/ledger");
+
+          const start = Date.now();
+          const results = await Promise.allSettled(
+            setups.map(({ project }) =>
+              saveProjectLedger(SYSTEM_VIEWER, project.id, {
+                seenStatus: "in_progress",
+                period: { startDate, endDate: "2099-01-20", baseline: { startDate, endDate } },
+              }),
+            ),
+          );
+          const elapsed = Date.now() - start;
+
+          expect(elapsed).toBeLessThan(10_000);
+          expect(results.map((result) => (result.status === "rejected" ? String(result.reason) : "ok"))).toEqual(["ok", "ok", "ok"]);
+
+          await clientModule.closeDb();
+        } finally {
+          process.env.DB_POOL_MAX = previousPoolMax;
+        }
+
+        for (const { project } of setups) {
+          const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
+          expect(row?.endDate).toBe("2099-01-20");
         }
       },
       15_000,

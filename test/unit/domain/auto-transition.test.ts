@@ -2,7 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import type { RecordActionEntry } from "@/domain/action-log/record";
-import { applyAutoSettlement, effectiveOnFor, type AutoSettlementDeps } from "@/domain/projects/auto-transition";
+import type { ProjectRow } from "@/repositories/projects";
+import {
+  applyAutoSettlement,
+  effectiveOnFor,
+  loadProjectForGate,
+  type AutoSettlementDeps,
+  type ProjectGateDeps,
+} from "@/domain/projects/auto-transition";
 
 // 04-11(D-76 · CEO A-01·A-08·A-15) — 진행 → 정산 자동 전환의 도메인 판정. DB 없이
 // 트랜잭션(커밋·롤백)·리포지토리·로그를 메모리 가짜로 두고, 날짜 경계·멱등·발효일·
@@ -178,5 +185,103 @@ describe("effectiveOnFor — max(종료일 + 1, 직전 변경일) (A-08)", () =>
 
   it("직전 변경 기록이 없으면 종료일 + 1(월말 넘김 포함)", () => {
     expect(effectiveOnFor({ endDate: "2026-09-30", lastChangeOn: null })).toBe("2026-10-01");
+  });
+});
+
+// ── 쓰기 입구(04-11 Task 2 · A-33 · OV-5) ──────────────────────────────────────
+// 잠근 행을 같은 tx에서 판정한다. 실패는 삼키지 않는다(fail-closed).
+function lockedRow(overrides: Partial<ProjectRow>): ProjectRow {
+  return {
+    id: "p",
+    status: "in_progress",
+    endDate: "2026-09-17",
+    archivedAt: null,
+    ...overrides,
+  } as ProjectRow;
+}
+
+function gateDeps(row: ProjectRow | null, latest: { occurredAt: Date } | null = null) {
+  const calls: string[] = [];
+  const logged: LoggedAction[] = [];
+  const deps: Partial<ProjectGateDeps> = {
+    lockProject: (_viewer, id, tx) => {
+      calls.push(`lock:${id}:${tx === FAKE_TX}`);
+      return Promise.resolve(row);
+    },
+    updateStatus: (_viewer, id, input, tx) => {
+      calls.push(`update:${id}:${input.expectedStatus}->${input.status}:${tx === FAKE_TX}`);
+      return Promise.resolve(row ? { ...row, status: input.status } : null);
+    },
+    findLatestAction: (_viewer, query, tx) => {
+      calls.push(`latest:${query.entityId}:${tx === FAKE_TX}`);
+      return Promise.resolve(latest as Awaited<ReturnType<ProjectGateDeps["findLatestAction"]>>);
+    },
+    recordAction: (viewer, entry, recordDeps) => {
+      calls.push(`log:${recordDeps?.tx === FAKE_TX}`);
+      logged.push({ viewer, entry });
+      return Promise.resolve();
+    },
+  };
+  return { deps, calls, logged };
+}
+
+describe("loadProjectForGate — 잠금 안 선판정 (A-33 · OV-5)", () => {
+  const viewer: Viewer = { id: "lead", roleId: "role-team-lead" };
+
+  it("잠근 행이 지난 진행이면 같은 tx에서 정산으로 바꾸고 시스템 로그를 남긴 뒤 정산 행을 돌려준다", async () => {
+    const { deps, calls, logged } = gateDeps(lockedRow({}), { occurredAt: new Date("2026-09-01T00:00:00Z") });
+    const afterLock = vi.fn(() => {
+      calls.push("afterLock");
+      return Promise.resolve();
+    });
+
+    const row = await loadProjectForGate(viewer, "p", { now: () => AFTER_MIDNIGHT, tx: FAKE_TX, afterLock }, deps);
+
+    expect(row?.status).toBe("settling");
+    expect(calls).toEqual(["lock:p:true", "afterLock", "update:p:in_progress->settling:true", "latest:p:true", "log:true"]);
+    expect(logged).toEqual([
+      {
+        viewer: SYSTEM_VIEWER,
+        entry: {
+          actionType: "status_change",
+          entity: "project",
+          entityId: "p",
+          detail: { from: "in_progress", to: "settling", trigger: "end_date_passed", effectiveOn: "2026-09-18" },
+        },
+      },
+    ]);
+  });
+
+  it("판정 대상이 아니면(종료일 = 오늘 · 수주중 · 종료일 없음 · 보관) 잠근 행을 그대로 돌려주고 쓰지 않는다", async () => {
+    for (const overrides of [
+      { endDate: "2026-09-18" },
+      { status: "bidding", endDate: "2026-09-01" },
+      { endDate: null },
+      { archivedAt: new Date("2026-09-01T00:00:00Z") },
+    ]) {
+      const locked = lockedRow(overrides);
+      const { deps, calls, logged } = gateDeps(locked);
+      const row = await loadProjectForGate(viewer, "p", { now: () => AFTER_MIDNIGHT, tx: FAKE_TX }, deps);
+      expect(row).toBe(locked);
+      expect(calls).toEqual(["lock:p:true"]);
+      expect(logged).toEqual([]);
+    }
+  });
+
+  it("없는 id는 null이다", async () => {
+    const { deps } = gateDeps(null);
+    expect(await loadProjectForGate(viewer, "missing", { now: () => AFTER_MIDNIGHT, tx: FAKE_TX }, deps)).toBeNull();
+  });
+
+  it("로그 쓰기가 던지면 그대로 던진다(fail-closed)", async () => {
+    const { deps } = gateDeps(lockedRow({}));
+    await expect(
+      loadProjectForGate(
+        viewer,
+        "p",
+        { now: () => AFTER_MIDNIGHT, tx: FAKE_TX },
+        { ...deps, recordAction: () => Promise.reject(new Error("로그 쓰기 실패")) },
+      ),
+    ).rejects.toThrow("로그 쓰기 실패");
   });
 });

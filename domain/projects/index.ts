@@ -238,6 +238,11 @@ export async function findProject(
   return (await project(viewer, row, PROJECT_DTO_SPEC)) as ProjectDto;
 }
 
+export async function settleForProjectList(viewer: Viewer, deps?: Partial<AutoSettlementDeps>): Promise<void> {
+  void viewer;
+  void deps;
+}
+
 export type ProjectInput = {
   clientId: string;
   teamId: string;

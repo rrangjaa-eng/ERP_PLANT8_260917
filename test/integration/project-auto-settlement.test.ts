@@ -2,15 +2,18 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { db, pool } from "@/db/client";
-import { actionLog, projects, teams } from "@/db/schema";
+import { actionLog, documentCounters, projects, teams } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
-import { createProject, findProject } from "@/domain/projects";
-import { lastStatusChangeOn } from "@/domain/projects/status";
-import { applyAutoSettlement } from "@/domain/projects/auto-transition";
+import { aggregateProjects, createProject, findProject, listProjects, settleForProjectList } from "@/domain/projects";
+import { changeProjectStatus, lastStatusChangeOn } from "@/domain/projects/status";
+import { applyAutoSettlement, loadProjectForGate } from "@/domain/projects/auto-transition";
+import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
+import { withTransaction } from "@/lib/db-transaction";
 import { addDays, kstToday } from "@/lib/kst-date";
+import { deferred } from "./lock-race";
 
 // 04-11(D-76 · CEO A-01·A-08·A-15·A-29·OV-5 · 엔지 리뷰 A P3) — 진행 → 정산 자동 전환을
 // 실제 DB에서 본다. 로그 단언은 「그 프로젝트의 그 전환(진행 → 정산) 1회당 한 줄」로 센다 —
@@ -32,6 +35,7 @@ async function makeProject(input: {
   status: string;
   endDate: string | null;
   archived?: boolean;
+  teamId?: string;
 }): Promise<string> {
   const client = await insertVendor(SYSTEM_VIEWER, {
     name: `거래처-${randomUUID()}`,
@@ -42,7 +46,7 @@ async function makeProject(input: {
   const pm = await makeViewer(DEFAULT_ROLE_ID);
   const created = await createProject(SYSTEM_VIEWER, {
     clientId: client.id,
-    teamId: team.id,
+    teamId: input.teamId ?? team.id,
     pmUserId: pm.id,
     name: `자동 정산-${randomUUID()}`,
     startDate: input.endDate,
@@ -224,5 +228,189 @@ describe("상세 읽기의 선판정 · 발효일 · 실패 격리 (04-11 Task 1
     expect(lines.filter((line) => line.event === "project.auto_settle_failed")).toEqual([]);
     expect(await statusOf(projectId)).toBe("in_progress");
     expect(await settleLogs(projectId)).toEqual([]);
+  });
+});
+
+// 발령일은 과거 고정 날짜 — 오늘(KST) 발령 판정이 자정 경계에서 흔들리지 않게(04-20 선례).
+async function makeTeamWithLead(): Promise<{ teamId: string; lead: Viewer }> {
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `본부-${randomUUID()}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `팀-${randomUUID()}` });
+  const lead = await makeViewer("role-team-lead");
+  await assignTeam(SYSTEM_VIEWER, { userId: lead.id, teamId: team.id, effectiveFrom: "2020-01-01" });
+  return { teamId: team.id, lead };
+}
+
+async function allStatusLogs(projectId: string) {
+  return db
+    .select()
+    .from(actionLog)
+    .where(and(eq(actionLog.entityId, projectId), eq(actionLog.actionType, "status_change")));
+}
+
+describe("목록 요청의 판정 한 번 · 보기 권한 (04-11 Task 2 ② · A-07 · 엔지 리뷰 A P3)", () => {
+  it("(f) settleForProjectList 뒤 listProjects가 지난 진행을 정산으로 돌려준다", async () => {
+    const viewer = await makeViewer(DEFAULT_ROLE_ID);
+    const projectId = await makeProject({ status: "in_progress", endDate: addDays(kstToday(new Date()), -1) });
+
+    await settleForProjectList(viewer);
+    const rows = await listProjects(viewer, {});
+
+    expect(rows.find((row) => row.id === projectId)?.status).toBe("settling");
+    expect(await settleLogs(projectId)).toHaveLength(1);
+  });
+
+  it("(f2) settleForProjectList 없이 listProjects·aggregateProjects만 부르면 지난 진행은 진행 그대로다", async () => {
+    const viewer = await makeViewer(DEFAULT_ROLE_ID);
+    const projectId = await makeProject({ status: "in_progress", endDate: addDays(kstToday(new Date()), -1) });
+
+    const [rows, aggregate] = await Promise.all([
+      listProjects(viewer, {}),
+      aggregateProjects(viewer, { status: "in_progress" }),
+    ]);
+
+    expect(rows.find((row) => row.id === projectId)?.status).toBe("in_progress");
+    expect(aggregate.count).toBe(1);
+    expect(await statusOf(projectId)).toBe("in_progress");
+    expect(await settleLogs(projectId)).toEqual([]);
+  });
+
+  it("(f3) settleForProjectList 한 번 뒤 정산 목록 건수와 합계 건수가 같다", async () => {
+    const viewer = await makeViewer(DEFAULT_ROLE_ID);
+    const yesterday = addDays(kstToday(new Date()), -1);
+    await makeProject({ status: "in_progress", endDate: yesterday });
+    await makeProject({ status: "in_progress", endDate: addDays(yesterday, -5) });
+    await makeProject({ status: "settling", endDate: addDays(yesterday, -9) });
+
+    await settleForProjectList(viewer);
+    const [rows, aggregate] = await Promise.all([
+      listProjects(viewer, { filter: { status: "settling" } }),
+      aggregateProjects(viewer, { status: "settling" }),
+    ]);
+
+    expect(rows).toHaveLength(3);
+    expect(aggregate.count).toBe(rows.length);
+  });
+
+  it("(f4) projects 보기 권한이 없는 viewer의 settleForProjectList는 판정하지 않는다", async () => {
+    const noView = await makeViewer(null);
+    const projectId = await makeProject({ status: "in_progress", endDate: addDays(kstToday(new Date()), -1) });
+
+    await settleForProjectList(noView);
+
+    expect(await statusOf(projectId)).toBe("in_progress");
+    expect(await settleLogs(projectId)).toEqual([]);
+  });
+});
+
+describe("쓰기 경로의 잠금 안 선판정 · 경합 · 번호 연도 (04-11 Task 2 ③④ · OV-5 · C-17 · E2-07)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("(h) 자정을 넘긴 뒤의 정산 → 완료 요청은 잠금 안에서 먼저 정산으로 판정돼 통과하고 로그는 시스템 1줄 + 사람 1줄이다", async () => {
+    const ceo = await makeViewer("role-ceo");
+    const projectId = await makeProject({ status: "in_progress", endDate: "2026-09-17" });
+
+    await changeProjectStatus(ceo, projectId, { from: "settling", to: "completed" }, { now: () => AFTER_MIDNIGHT });
+
+    expect(await statusOf(projectId)).toBe("completed");
+    const logs = await allStatusLogs(projectId);
+    expect(logs).toHaveLength(2);
+    const system = logs.filter((log) => log.actorId === null);
+    expect(system.map((log) => log.detail)).toEqual([
+      { from: "in_progress", to: "settling", trigger: "end_date_passed", effectiveOn: "2026-09-18" },
+    ]);
+    const human = logs.filter((log) => log.actorId === ceo.id);
+    expect(human.map((log) => log.detail)).toEqual([{ from: "settling", to: "completed", trigger: "manual" }]);
+  });
+
+  it("(i) 쓰기가 행을 잠근 동안 상세 읽기는 기다리지 않고 저장된 상태로 돌아오고, 쓰기를 풀면 쓰기 쪽이 정산한다 · 로그 1줄", async () => {
+    const viewer = await makeViewer(DEFAULT_ROLE_ID);
+    const projectId = await makeProject({ status: "in_progress", endDate: addDays(kstToday(new Date()), -1) });
+
+    const locked = deferred();
+    const release = deferred();
+    const writer = withTransaction(async (tx) => {
+      const row = await loadProjectForGate(viewer, projectId, {
+        tx,
+        afterLock: async () => {
+          locked.resolve();
+          await release.promise;
+        },
+      });
+      return row?.status;
+    });
+    await locked.promise;
+
+    const lines = captureLogLines();
+    let reader: Awaited<ReturnType<typeof findProject>>;
+    try {
+      // 잠긴 행을 기다리면 lock_timeout(5s) 뒤 실패 로그가 남는다 — 그 로그가 없고 반환이 쓰기 해제 전이다.
+      reader = await findProject(viewer, projectId);
+    } finally {
+      release.resolve();
+    }
+    vi.restoreAllMocks();
+
+    expect(reader?.status).toBe("in_progress");
+    expect(lines.filter((line) => line.event === "project.auto_settle_failed")).toEqual([]);
+    expect(await writer).toBe("settling");
+    expect(await statusOf(projectId)).toBe("settling");
+    expect(await settleLogs(projectId)).toHaveLength(1);
+  });
+
+  it("(j) 잠금 안 판정의 로그 쓰기가 실패하면 상태 전환도 던지고 상태·로그가 그대로다(fail-closed)", async () => {
+    const ceo = await makeViewer("role-ceo");
+    const projectId = await makeProject({ status: "in_progress", endDate: "2026-09-17" });
+
+    await expect(
+      changeProjectStatus(
+        ceo,
+        projectId,
+        { from: "settling", to: "completed" },
+        { now: () => AFTER_MIDNIGHT, recordAction: () => Promise.reject(new Error("로그 쓰기 실패")) },
+      ),
+    ).rejects.toThrow("로그 쓰기 실패");
+
+    expect(await statusOf(projectId)).toBe("in_progress");
+    expect(await allStatusLogs(projectId)).toEqual([]);
+  });
+
+  it("(k) KST 1월 1일 00:30(UTC 12/31 15:30)에 등록하면 번호 연도가 새해다", async () => {
+    const client = await insertVendor(SYSTEM_VIEWER, {
+      name: `거래처-${randomUUID()}`,
+      normalizedName: `거래처-${randomUUID()}`,
+    });
+    const [team] = await db.select().from(teams).limit(1);
+    if (!team) throw new Error("시드된 팀이 없습니다");
+    const pm = await makeViewer(DEFAULT_ROLE_ID);
+
+    await createProject(
+      SYSTEM_VIEWER,
+      { clientId: client.id, teamId: team.id, pmUserId: pm.id, name: `새해-${randomUUID()}` },
+      { now: () => new Date("2026-12-31T15:30:00Z") },
+    );
+
+    const counters = await db.select().from(documentCounters).where(eq(documentCounters.counterKey, "project"));
+    expect(counters.map((counter) => counter.period)).toEqual(["2027"]);
+  });
+
+  it("(l) 오래된 화면의 전환이 거부되면 잠금 안 정산도 함께 롤백되고, 다음 목록 읽기가 정산하며 그 전환 로그는 1줄이다", async () => {
+    const { teamId, lead } = await makeTeamWithLead();
+    const projectId = await makeProject({ status: "in_progress", endDate: addDays(kstToday(new Date()), -1), teamId });
+
+    await expect(changeProjectStatus(lead, projectId, { from: "bidding", to: "lost" })).rejects.toThrow(
+      "상태가 정산으로 바뀜 · 새로 고침",
+    );
+    expect(await statusOf(projectId)).toBe("in_progress");
+    expect(await allStatusLogs(projectId)).toEqual([]);
+
+    await settleForProjectList(lead);
+    const rows = await listProjects(lead, {});
+
+    expect(rows.find((row) => row.id === projectId)?.status).toBe("settling");
+    const logs = await settleLogs(projectId);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.actorId).toBeNull();
   });
 });

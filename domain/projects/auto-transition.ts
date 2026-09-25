@@ -1,10 +1,17 @@
-import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { AUTO_TRANSITIONS } from "@/domain/projects/status-transitions";
 import { withTransaction } from "@/lib/db-transaction";
 import { addDays, kstDateOf, kstToday } from "@/lib/kst-date";
 import { log } from "@/lib/log";
-import { settleOverdueProjects } from "@/repositories/projects";
+import {
+  lockProjectForWrite,
+  settleOverdueProjects,
+  updateProjectStatusIfCurrent,
+  type ProjectRow,
+} from "@/repositories/projects";
+import { findLatestActionFor } from "@/repositories/action-log";
+import type { DbOrTx } from "@/repositories/document-counters";
 
 // 04-11(D-76 · D-50 · CEO A-01·A-08·A-15·A-39·OV-5 · 사용자 D19) — 진행 → 정산 자동 전환.
 // 읽기 시점 판정이다. 읽기용 입구(applyAutoSettlement)는 짧은 별도 트랜잭션에서 잠긴 행을
@@ -82,4 +89,24 @@ export async function applyAutoSettlement(
     logger.error("project.auto_settle_failed", { projectIds: opts.projectIds ?? null, reason: failureReason(error) });
     return [];
   }
+}
+
+export type ProjectGateDeps = {
+  lockProject: typeof lockProjectForWrite;
+  updateStatus: typeof updateProjectStatusIfCurrent;
+  findLatestAction: typeof findLatestActionFor;
+  recordAction: typeof defaultRecordAction;
+};
+
+export async function loadProjectForGate(
+  viewer: Viewer,
+  projectId: string,
+  opts: { now?: () => Date; tx: DbOrTx; afterLock?: () => Promise<void> },
+  deps?: Partial<ProjectGateDeps>,
+): Promise<ProjectRow | null> {
+  void viewer;
+  void projectId;
+  void opts;
+  void deps;
+  return null;
 }

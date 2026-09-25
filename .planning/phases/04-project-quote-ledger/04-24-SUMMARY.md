@@ -159,6 +159,34 @@ completed: 2026-09-25
 - 복원 줄 「복사」는 그 차수 줄을 받기 전(로드 직후 수백 ms)에 누르면 `복사하지 못함`이고 다시 누르면 된다(계획대로) — 사용감 점검 대상.
 - 읽기 표 30줄 쪽 나눔 · 쪽 전환 제목 포커스는 04-19 몫(W2).
 
+## 검토 반영
+
+> Opus 검토(Codex 대체) — 한도 풀리면 Codex 재확인 필요. 입력: `04-24-review-opus.md`(BLOCKING 1 · SHOULD-FIX 5 · NIT 8), 독립 DOM 감사 `04-24-dom-audit.md`(FAIL 0).
+
+| 항목 | 판정 | 반영 | 커밋 |
+|---|---|---|---|
+| B1 이전 차수 보관본이 기간·총 매출 예상가 칸까지 세고, 빈 복사를 `복사됨 N칸`으로 보임 | 코드로 확인 — 맞음 | 권장안 1을 골랐다. `findOtherRevisionDrafts`가 공유 owner(`period`·`preEstimate` — `quote-table.tsx`의 `PROJECT_EDIT_OWNERS`) 칸을 세지 않는다. `carrySharedEdits`가 다른 차수 보관본의 그 칸을 현재 차수 보관본으로 옮기고(현재 차수 값이 이김) 옛 키에서 지운다 — 이전 차수 복원 줄이 마운트 때 부르고 옮겼으면 현재 차수 복원 줄이 다시 센다. 자동 병합이 아니라 기존 「복원 / 버림」으로 준다(DR-4 「자동으로 합치지 않는다」는 줄 id가 다른 줄 칸 얘기이고, 기간·예상가는 차수와 무관한 프로젝트 칸이라 UX-04 「입력 유실 없음」을 지키는 최소 경로). 옮길 줄이 0이면 「복사」는 `복사하지 못함` | 79f1df9(RED) · 687916f |
+| S1 저장 뒤 금액 단언이 아무 표나 봄 | 맞음 | quote-table.spec · project-register.spec 세 단언을 캡션 `견적 줄` 표로 좁힘(제품 코드 변경 없음 — RED 단계 없음, 3/3 통과) | adfaaa8 |
+| S2 줄을 받기 전 「복사」가 `복사하지 못함` | 맞음 | 받는 동안 `복사…` · aria-disabled(ui/button pending 모양) · 누름 무시. `복사하지 못함`은 받기 실패 뒤 누름과 execCommand 실패 때만. 기존 E2E의 waitForResponse를 빼고 「복사」가 켜질 때까지 기다림 | f530306(RED) · 7dc8508 |
+| S3 빠진 E2E 셋 | 맞음 | (a) 다른 탭 선점 → `다른 사람이 먼저 새 차수를 만듦 · 새로 고침` 막힘 자리 (b) 자기 저장 직후 승인 제출 통과 (c) quote.amount 못 보는 담당 PM에게 「고객 승인 표시」 없음. 제품 코드가 이미 맞아 변이(거부 null · 기준값 고정 · 합계 키 검사 제거)로 세 테스트가 실패함을 확인한 뒤 되돌림 | a3f1685 |
+| S4 표시 번호 `26001-2차` · 승인 줄 자리 | 코드 변경 안 함 | **사용자 결정 항목** — PLAN truth(부제에 `quoteDisplayNumber`)와 UI-SPEC 적용 규칙 S3(부제 `26001 · 상세 견적 2차 · 고객 승인 …`)가 충돌한다. 현재 구현은 번호 없음 + 승인 글자가 부제 아래 별도 줄. `/gsd-verify-work` 또는 04-OPEN-ITEMS에서 결정 뒤 고친다 | — |
+| S5 서버 거부가 아닌 실패가 다이얼로그에 안 보임 | 맞음 | 세 다이얼로그 onError가 serverError가 없으면 `처리하지 못함 · 닫고 다시 시도`를 1차 왼쪽 막힘 자리에 보인다. **UI-SPEC에 없는 문구** — status-change.tsx에도 공통 폴백이 없고 rev 5 Copywriting에 이 자리의 일반 실패 문구가 없다. 1차는 그 이유로 막히고 다이얼로그를 닫았다 다시 열면 풀리므로 문구가 그 행동을 말한다. UI-SPEC Copywriting에 행 추가 필요 | 9dfd1c7(RED) · dd8f829 |
+| N3 로딩 섹션 aria-busy | 맞음(일부) | 이전 차수 읽기 섹션이 받는 동안 `aria-busy="true"`. 뼈대 CSS를 `ui/table`로 올리는 것은 요청받지 않은 이동이라 이월 | 71e7c0f(RED) · b45a70a |
+| CI(PR #40, 7e5c057) project-lifecycle (i) strict mode 위반 | 원인 확인 | 닫힌 「복사해 새 차수」 `<dialog>`(보이지 않고 접근성 트리에 없음)의 1차도 같은 DR-6 이유를 DOM에 가진다(B-03 — 플랜대로). 앱 결함이 아니라 페이지 전체 글자 로케이터의 모호함 → 보이는 이유 정확히 1개 + 「상태 바꾸기」 aria-describedby가 그 id를 가리킴으로 좁힘 | e9aa74e |
+
+**이월한 NIT(코드 변경 없음):**
+- N1 더블클릭 E2E의 요청 수 단언(`>= 1`)이 클라이언트 래치를 증명하지 못함 — 1차 직후 `…`/aria-disabled 단언이나 route 요청 수 ≤ 1로 좁히기.
+- N2 「차수 열기」 `aria-controls`가 닫힌 동안 없는 id를 가리킴 — 섹션을 늘 렌더하고 `hidden`으로.
+- N3 나머지 — `.previousSkeleton` 뼈대를 `ui/table` LOADING으로 올리기(04-19 또는 후속).
+- N4 `계산 불가 · 환율 없음` 배지 — 현재 도달 불가(단가 DTO fxRate 필수), 환율 없는 줄이 생기는 페이즈에서.
+- N5 `quote-table.tsx` ↔ `previous-revision.tsx` 순환 import(B1 수정으로 `PROJECT_EDIT_OWNERS` 하나가 더 건너간다 — 렌더·effect 시점에만 쓰여 동작) — 04-19에서 공용 헬퍼 파일로 옮길지 검토.
+- N6 복사 줄의 계산 열이 보관값을 반영하지 않음 — 04-19 격자 복사와 같은 규칙으로.
+- N7 `승인일이 오늘보다 늦음 · 날짜를 고쳐 주세요`가 UI-SPEC rev 5에 없음 — Copywriting에 행 추가.
+- N8 서버 거부 뒤 1차가 계속 막힘(승인일을 고치면 풀림) — §7 사용성 점검 대상. S5 폴백도 같은 막힘을 쓴다.
+- 위 「열린 항목」의 「복원 줄 「복사」를 받기 전에 누르면 `복사하지 못함`」은 S2로 닫혔다.
+
+**게이트(검토 반영 뒤 한 번):** `pnpm lint` 0 · `pnpm typecheck` 0 · `pnpm lint:sql` 0 issues · `CI=true pnpm test` — 단위 94파일 1273 통과 · 통합 52파일 1382 통과 · E2E 331 통과(실패 0).
+
 ## Self-Check: PASSED
 
 - 생성 파일 존재: revision-dialogs.tsx · revision-section.tsx · previous-revision.tsx · quote-revisions.spec.ts — FOUND

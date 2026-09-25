@@ -739,6 +739,31 @@ test.describe("차수 섹션과 이전 차수 읽기 섹션 (04-24 Task 3 — S5
     expect(page.url()).toBe(url);
   });
 
+  test("줄을 받는 동안 이전 차수 읽기 섹션은 aria-busy이고, 받으면 풀린다(검토 N3)", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "받는 중 섹션 줄", unitPrice: 1_000_000, execution: 400_000 }] });
+    await copyRevision(project.id, project.revisionId);
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await expect(quoteRows(page)).toHaveCount(1);
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(`**/projects/${project.id}`, async (route) => {
+      if (isServerAction(route.request())) await held;
+      await route.continue();
+    });
+
+    await revisionTable(page).getByRole("button", { name: "차수 열기" }).click();
+    const section = page.locator("section", { has: page.getByRole("heading", { name: "상세 견적 1차", exact: true }) });
+    await expect(section).toHaveAttribute("aria-busy", "true");
+    release();
+    await expect(previousTable(page, 1)).toBeVisible();
+    await expect(section).not.toHaveAttribute("aria-busy", "true");
+  });
+
   test("첫 요청이 끊기면 섹션 자리에 `1차 불러오지 못함` + 「다시 시도」, 원장 무영향 → 다시 시도하면 읽기 표", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);

@@ -1589,11 +1589,13 @@ export function QuoteLedger({
     const colIndex = pasteColumns.findIndex((column) => column.key === columnKey);
     if (rowIndex === -1 || colIndex === -1) return;
 
-    const result = applyPaste({ clipboardText, columns: pasteColumns, rows: lines, activeRowIndex: rowIndex, activeColIndex: colIndex });
+    // 새로 생길 줄은 「줄 추가」와 같은 셀 단계(newLineCells)로 판정한다 — 정산 새 줄의 수량·단가는 잠김이다.
+    const newRow = newDraftLine(subcategories[0]?.value ?? "", newLineCells);
+    const result = applyPaste({ clipboardText, columns: pasteColumns, rows: lines, activeRowIndex: rowIndex, activeColIndex: colIndex, newRow });
     // DR-35 — 잠긴·읽기 전용 셀에 떨어진 값의 오류 이유는 그 셀의 편집 시도 이유와 같은 문자열이다.
     const blockedReasons = new Map<string, string>();
     for (const cell of result.cells) {
-      const target = lines[cell.rowIndex];
+      const target = lines[cell.rowIndex] ?? newRow;
       const column = pasteColumns.find((candidate) => candidate.key === cell.columnKey);
       if (cell.result.status !== "error" || !target || !column || column.isEditable(target)) continue;
       const reason = blockedReasonFor(target, cell.columnKey);

@@ -343,6 +343,23 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await expect(unitPrice.getByText(SETTLING_REASON, { exact: true })).toBeVisible();
   });
 
+  test("(c4) 정산 PM이 표 끝을 넘겨 붙여넣으면 새 줄의 잠긴 수량·단가 칸은 같은 이유의 오류 셀이고 값은 1 · 0 그대로다", async ({ page }) => {
+    await openAsPm(page, "settling", addDays(TODAY, -3), [{ itemName: "정산 붙여넣기 줄", unitPrice: 100_000, execution: 50_000 }]);
+
+    await cell(page, 0, COL.quantity).focus();
+    await pasteIntoFocusedCell(page, "3\t5000\n4\t6000");
+    await expect(dataRows(page)).toHaveCount(2);
+
+    const added = dataRows(page).nth(1);
+    for (const col of [COL.quantity, COL.unitPrice]) {
+      await expect(added.getByRole("gridcell").nth(col)).toHaveAttribute("aria-invalid", "true");
+      await expect(added.getByRole("gridcell").nth(col).getByText(SETTLING_REASON, { exact: true })).toBeVisible();
+    }
+    // 견적가 열은 저장 전에 다시 계산되지 않는다 — 값은 잠긴 칸 글자 첫머리로 본다(뒤에 이유 줄이 붙는다).
+    await expect(added.getByRole("gridcell").nth(COL.quantity)).toHaveText(/^1(?!\d)/);
+    await expect(added.getByRole("gridcell").nth(COL.unitPrice)).toHaveText(/^0(?!\d)/);
+  });
+
   test("(c3) 완료 프로젝트를 PM이 열면 표 위 잠김 줄과 힌트 줄이 없다", async ({ page }) => {
     await openAsPm(page, "completed", addDays(TODAY, -20), [{ itemName: "완료 힌트 줄", unitPrice: 100_000, execution: 50_000 }]);
     await expect(page.getByRole("table", { name: "견적 줄" }).getByText("완료 힌트 줄")).toBeVisible();

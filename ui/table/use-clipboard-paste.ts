@@ -16,7 +16,7 @@ export type PasteColumn<Row> = {
   kind: PasteColumnKind;
   /** kind === "select"일 때만 — 옵션 라벨/값과 대조한다. */
   options?: { value: string; label: string }[];
-  /** 기존 행에서만 호출된다 — 붙여넣기로 새로 생긴 행은 항상 편집 가능하다. */
+  /** 기존 행, 그리고 newRow가 있으면 붙여넣기로 새로 생길 행(newRow)에 호출된다. */
   isEditable: (row: Row) => boolean;
 };
 
@@ -39,8 +39,10 @@ export function applyPaste<Row>(params: {
   rows: Row[];
   activeRowIndex: number;
   activeColIndex: number;
+  /** 붙여넣기로 새로 생길 줄의 모양 — 없으면 새 줄은 모든 칸이 편집 가능하다. */
+  newRow?: Row;
 }): ApplyPasteResult {
-  const { clipboardText, columns, rows, activeRowIndex, activeColIndex } = params;
+  const { clipboardText, columns, rows, activeRowIndex, activeColIndex, newRow } = params;
   const parsed = parseTsv(clipboardText);
   const cells: PasteCell[] = [];
   let droppedColumnCount = 0;
@@ -50,9 +52,8 @@ export function applyPaste<Row>(params: {
 
   parsed.forEach((pastedRow, rOffset) => {
     const rowIndex = activeRowIndex + rOffset;
-    // undefined면 붙여넣기로 새로 생기는 줄이다 — 새 draft 줄은 항상 편집
-    // 가능하므로 존재하는 행에서만 isEditable을 묻는다.
-    const row: Row | undefined = rowIndex < rows.length ? rows[rowIndex] : undefined;
+    // 붙여넣기로 새로 생기는 줄은 newRow로 묻는다 — newRow가 없으면 undefined(항상 편집 가능).
+    const row: Row | undefined = rowIndex < rows.length ? rows[rowIndex] : newRow;
 
     pastedRow.forEach((rawValue, cOffset) => {
       const colIndex = activeColIndex + cOffset;

@@ -21,9 +21,8 @@ function currentRevisionsSubquery() {
     .as("current_revisions");
 }
 
-// 현재 차수의 견적 줄 합계(견적가·실행가·차익) — revision_id당 한 행. 상태
-// (미착수/취소)와 무관하게 전 줄을 더한다 — `[id]/quote-table.tsx`의 합계
-// 행(공급가액 · N줄)이 이미 같은 규칙(전 줄 포함)이다.
+// 현재 차수의 견적 줄 합계(견적가·실행가·차익) — revision_id당 한 행. 보관된 줄은 빼고
+// 취소 줄은 견적가 0으로 더한다(04-12 · A-04 — 취소 줄의 견적가 열이 이미 0이다).
 function lineSumsSubquery() {
   return db
     .select({
@@ -33,6 +32,7 @@ function lineSumsSubquery() {
       profitSum: sql<number>`coalesce(sum(${quoteLines.profitKrw}), 0)`.as("profit_sum"),
     })
     .from(quoteLines)
+    .where(isNull(quoteLines.archivedAt))
     .groupBy(quoteLines.revisionId)
     .as("line_sums");
 }

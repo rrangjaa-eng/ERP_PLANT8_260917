@@ -52,6 +52,36 @@ export function lineCellEditability(input: LineEditScopeInput): Record<QuoteLine
   return cells;
 }
 
+// 사용자 D10 — 줄 구조 변경(새 줄·보관·순서 이동·복제·새 차수). 정산은 새 줄만, 완료·쓰기 없음은 전부 막는다.
+// `newRevision`은 새 차수 게이트(04-14)의 입력이다.
+export type StructuralEditability = { insert: boolean; archive: boolean; reorder: boolean; duplicate: boolean; newRevision: boolean };
+
+export function structuralEditability(input: { status: string; canWrite: boolean }): StructuralEditability {
+  const open = input.canWrite && input.status !== "completed" && input.status !== "settling";
+  const insert = input.canWrite && input.status !== "completed";
+  return { insert, archive: open, reorder: open, duplicate: open, newRevision: open };
+}
+
+// 사용자 D12 · 엔지 리뷰 A §2 P1 — 정산 새 줄의 견적 칸 0: 원화 단가 0 · 수량이 비었거나 1(견적가가 0이 되는 조합).
+// 수량 0은 받지 않는다(수량 > 0 검증을 느슨하게 하지 않는다).
+export function quoteCellsZero(input: { quantity?: number; unitPrice: { currency: string; amount: number; fxRate: number } }): boolean {
+  return input.unitPrice.currency === "KRW" && input.unitPrice.amount === 0 && (input.quantity === undefined || input.quantity === 1);
+}
+
+// 엔지 리뷰 A §2 P2 — `order`(저장 뒤 활성 줄 전체의 표시 순서)가 「현재 활성 줄 − 보관 + 새 줄」과 같은 집합인지,
+// 기존 줄의 상대 순서가 바뀌었는지. 새 줄은 어디에 끼어도 `insertOnly`다.
+export type OrderChange = "mismatch" | "insertOnly" | "reorder";
+
+export function orderChange(current: readonly string[], order: readonly string[], changes: { archivedIds: readonly string[]; newIds: readonly string[] }): OrderChange {
+  const archived = new Set(changes.archivedIds);
+  const kept = current.filter((id) => !archived.has(id));
+  const expected = new Set([...kept, ...changes.newIds]);
+  if (order.length !== expected.size || new Set(order).size !== order.length || order.some((id) => !expected.has(id))) return "mismatch";
+  const keptSet = new Set(kept);
+  const keptInOrder = order.filter((id) => keptSet.has(id));
+  return keptInOrder.every((id, index) => id === kept[index]) ? "insertOnly" : "reorder";
+}
+
 // DR-2 — 잠긴 칸의 거부 이유 = 표 위 한 줄. 이 문자열은 이 함수만 만든다(우선순위 완료 > 정산 > 승인 — 승인 문구는 04-14).
 export function quoteLockReason(input: { status: string }): string | null {
   if (input.status === "completed") return "완료 · 견적 줄 잠김";

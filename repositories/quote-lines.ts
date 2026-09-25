@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -9,13 +9,13 @@ import type { DbOrTx } from "@/repositories/document-counters";
 export type QuoteLineRow = InferSelectModel<typeof quoteLines>;
 
 // 04-12(A-03 · 엔지 리뷰 A §2 P2) — 표시 순서는 sort_order, 같은 값이면 줄 id(두 번 읽어도 같은 순서).
-// 잠근 트랜잭션 안(저장 결과 목록)에서는 tx로 부른다.
+// 잠근 트랜잭션 안(저장 결과 목록)에서는 tx로 부른다. 보관된 줄은 빠진다(A-04).
 export async function listQuoteLinesByRevision(viewer: Viewer, revisionId: string, tx: DbOrTx = db): Promise<QuoteLineRow[]> {
   void viewer;
   return tx
     .select()
     .from(quoteLines)
-    .where(eq(quoteLines.revisionId, revisionId))
+    .where(and(eq(quoteLines.revisionId, revisionId), isNull(quoteLines.archivedAt)))
     .orderBy(quoteLines.sortOrder, quoteLines.id);
 }
 
@@ -69,11 +69,13 @@ export type QuoteLineInsertInput = {
   customFields?: Record<string, unknown>;
 };
 
-export async function insertQuoteLine(
+// 04-12(ENG-D10) — 새 줄 멱등 삽입. 같은 id가 이미 있으면 아무것도 쓰지 않고 null — 호출자가 그 id를 다시 읽어
+// 재전송(같은 값)·불일치·소속을 판정한다.
+export async function insertQuoteLineIfAbsent(
   viewer: Viewer,
   input: QuoteLineInsertInput,
   tx: DbOrTx = db,
-): Promise<QuoteLineRow> {
+): Promise<QuoteLineRow | null> {
   void viewer;
   const [row] = await tx
     .insert(quoteLines)
@@ -101,9 +103,57 @@ export async function insertQuoteLine(
       source: input.source ?? "demo",
       customFields: input.customFields ?? {},
     })
+    .onConflictDoNothing({ target: quoteLines.id })
     .returning();
-  if (!row) throw new Error("quote_lines insert가 행을 반환하지 않았습니다.");
-  return row;
+  return row ?? null;
+}
+
+// 04-12(엔지 리뷰 A §2 P2) — 표시 순서만 다시 쓴다. 셀 충돌 판정 대상이 아니라 version을 올리지 않는다.
+// 호출자는 값이 바뀐 줄만 넘긴다.
+export async function setQuoteLineSortOrders(
+  viewer: Viewer,
+  revisionId: string,
+  pairs: { id: string; sortOrder: number }[],
+  tx: DbOrTx = db,
+): Promise<void> {
+  void viewer;
+  for (const pair of pairs) {
+    await tx
+      .update(quoteLines)
+      .set({ sortOrder: pair.sortOrder })
+      .where(and(eq(quoteLines.id, pair.id), eq(quoteLines.revisionId, revisionId)));
+  }
+}
+
+// 04-12(D-56 · A-04) — 그 차수 소속이고 아직 보관되지 않은 줄만 보관한다. 보관한 행 수를 돌려준다.
+export async function archiveQuoteLines(
+  viewer: Viewer,
+  input: { ids: string[]; revisionId: string; archivedBy: string; archivedAt: Date },
+  tx: DbOrTx = db,
+): Promise<number> {
+  void viewer;
+  if (input.ids.length === 0) return 0;
+  const rows = await tx
+    .update(quoteLines)
+    .set({ archivedAt: input.archivedAt, archivedBy: input.archivedBy })
+    .where(and(inArray(quoteLines.id, input.ids), eq(quoteLines.revisionId, input.revisionId), isNull(quoteLines.archivedAt)))
+    .returning({ id: quoteLines.id });
+  return rows.length;
+}
+
+// 보관함 등록(repositories/archive.ts)의 범용 보관·해제 — 다른 표와 같은 조건부 UPDATE(멱등).
+export async function setQuoteLineArchived(viewer: Viewer, id: string, value: boolean): Promise<void> {
+  if (value) {
+    await db
+      .update(quoteLines)
+      .set({ archivedAt: new Date(), archivedBy: viewer.id })
+      .where(and(eq(quoteLines.id, id), isNull(quoteLines.archivedAt)));
+  } else {
+    await db
+      .update(quoteLines)
+      .set({ archivedAt: null, archivedBy: null })
+      .where(and(eq(quoteLines.id, id), isNotNull(quoteLines.archivedAt)));
+  }
 }
 
 // 04-12(A-03) — 순서는 셀 갱신이 쓰지 않는다(기존 줄의 sort_order는 그대로).

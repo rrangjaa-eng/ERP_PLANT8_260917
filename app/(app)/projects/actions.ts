@@ -12,7 +12,7 @@ import {
   type PeriodFieldError,
 } from "@/domain/projects/ledger";
 import type { PreEstimateFieldError } from "@/domain/projects/pre-estimate";
-import { SaveRejectedError } from "@/domain/quotes/lines";
+import { quoteLinesInputSchema, SaveRejectedError } from "@/domain/quotes/lines";
 import {
   changeProjectStatus,
   listProjectStatusCatalog,
@@ -98,44 +98,11 @@ function statusChanged(message: string): { statusChanged: { message: string } } 
 export const saveProjectLedgerAction = authedActionClient
   .schema(
     z.object({
-      projectId: z.string().min(1),
+      projectId: z.string().uuid(),
       // DR-6 · 계약 4 — 화면이 본 상태(필수).
       seenStatus: z.enum(PROJECT_STATUSES),
-      quoteLines: z
-        .object({
-          revisionId: z.string().min(1),
-          rows: z.array(
-            z.object({
-              id: z.string().optional(),
-              version: z.number().optional(),
-              sortOrder: z.number().optional(),
-              subcategory: z.string().min(1, "소분류를 고르세요."),
-              itemName: z.string().min(1, "항목명을 입력하세요."),
-              vendorId: z.string().optional(),
-              quantity: z.coerce.number().optional(),
-              unitPrice: moneyInputSchema,
-              unitPriceFxRateTouched: z.boolean().optional(),
-              execution: moneyInputSchema,
-              lineStatus: z.string().optional(),
-              note: z.string().optional(),
-              // 04-04 Task 2 ② — 이 줄을 불러왔을 때의 스냅샷(D-65 셀 단위
-              // 충돌 판정의 baseline). 기존 줄에서만 의미가 있다.
-              baseline: z
-                .object({
-                  subcategory: z.string(),
-                  itemName: z.string(),
-                  vendorId: z.string().nullable(),
-                  quantity: z.number(),
-                  unitPriceAmountKrw: z.number(),
-                  executionAmountKrw: z.number(),
-                  lineStatus: z.string(),
-                  note: z.string().nullable(),
-                })
-                .optional(),
-            }),
-          ),
-        })
-        .optional(),
+      // 04-12(A-37) — 줄 상태 enum · 줄·보관·순서 id uuid(스키마는 domain/quotes/lines).
+      quoteLines: quoteLinesInputSchema.optional(),
       revenue: z
         .object({
           contract: moneyInputSchema.optional(),

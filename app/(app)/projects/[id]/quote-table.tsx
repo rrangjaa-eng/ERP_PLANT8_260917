@@ -20,6 +20,7 @@ import { formatKrw, formatForeignLine, formatQuantity, parseNumberInput, type Nu
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import type { TableColumn, CellIssue } from "@/ui/table/types";
 import type { QuoteLineDto, QuoteLineBaseline } from "@/domain/quotes/lines";
+import type { QuoteLineStatus } from "@/domain/quotes/edit-scope";
 import type { RevenueDto } from "@/domain/revenue";
 import type { Currency, Money } from "@/domain/money";
 import { RevenueSection, type ContractDraft, type EntryDraft } from "./revenue-section";
@@ -1194,9 +1195,13 @@ export function QuoteLedger({
                 },
                 unitPriceFxRateTouched: line.unitPriceFxRateTouched,
                 execution: { currency: "KRW" as const, amount: line.executionAmount, fxRate: 1 },
-                lineStatus: line.lineStatus,
+                // 04-12(A-37) — 서버가 줄 상태를 QUOTE_LINE_STATUSES로 검증한다(화면 타입 좁히기는 04-30).
+                lineStatus: line.lineStatus as QuoteLineStatus,
                 note: line.note ?? undefined,
-                baseline: line.id ? line.baseline : undefined,
+                baseline:
+                  line.id && line.baseline
+                    ? { ...line.baseline, lineStatus: line.baseline.lineStatus as QuoteLineStatus }
+                    : undefined,
               })),
             }
           : undefined,

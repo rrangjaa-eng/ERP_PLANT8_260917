@@ -4,6 +4,7 @@ import {
   lineCellEditability,
   linkedDocumentReason,
   quoteLockReason,
+  structuralEditability,
   type QuoteLineField,
 } from "@/domain/quotes/edit-scope";
 
@@ -18,13 +19,21 @@ import {
 // 통과한다 — 미수주도 잠그지 않는다(D-45).
 // 04-12(D-78 · 사용자 D10·D12 · D-66) — 셀 단위로 넓힌다. `update`는 바뀐 칸마다 DTO와 같은
 // lineCellEditability를 보고, 잠김이면 quoteLockReason(표 위 한 줄과 한 문자열 — DR-2), 읽기 전용이면
-// linkedDocumentReason. 구조 변경(insert 등)은 완료만 거부한다.
+// linkedDocumentReason. 구조 변경은 structuralEditability(사용자 D10)로 — 정산의 새 줄은 견적 칸 0일 때만(D12),
+// 연결 문서가 있는 줄은 보관 대신 취소(D-66).
 export type ProjectLineEditCtx = {
   status: string;
   hasLinkedDocuments: boolean;
   linkedDocumentNumber?: string;
-  change: { kind: "update"; fields: QuoteLineField[] } | { kind: "insert"; quoteCellsZero: boolean };
+  change:
+    | { kind: "update"; fields: QuoteLineField[] }
+    | { kind: "insert"; quoteCellsZero: boolean }
+    | { kind: "archive" | "reorder" | "duplicate" };
 };
+
+const SETTLING_STRUCTURE_DENIED = "정산 · 줄 삭제·이동 없음";
+const SETTLING_INSERT_DENIED = "정산 · 새 줄은 실행가만";
+const LINKED_ARCHIVE_DENIED = "연결 문서 있음 · 삭제 대신 취소";
 
 registerGateRule<unknown, ProjectLineEditCtx>({
   name: "project.line-edit",
@@ -43,7 +52,14 @@ registerGateRule<unknown, ProjectLineEditCtx>({
       }
       return { allowed: true };
     }
-    if (ctx.status === "completed" && lockReason) return { allowed: false, reason: lockReason };
+    const kind = ctx.change.kind;
+    if (!structuralEditability({ status: ctx.status, canWrite: true })[kind]) {
+      return { allowed: false, reason: ctx.status === "settling" ? SETTLING_STRUCTURE_DENIED : (lockReason ?? SETTLING_STRUCTURE_DENIED) };
+    }
+    if (ctx.change.kind === "insert" && ctx.status === "settling" && !ctx.change.quoteCellsZero) {
+      return { allowed: false, reason: SETTLING_INSERT_DENIED };
+    }
+    if (kind === "archive" && ctx.hasLinkedDocuments) return { allowed: false, reason: LINKED_ARCHIVE_DENIED };
     return { allowed: true };
   },
 });

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { visible as defaultVisible } from "@/domain/permissions/visible";
@@ -11,7 +12,16 @@ import "@/domain/rules/register";
 import type { ProjectLineEditCtx } from "@/domain/rules/register";
 import { denyWrite } from "@/domain/rules/deny-write";
 import { loadProjectForGate } from "@/domain/projects/auto-transition";
-import { lineCellEditability, QUOTE_LINE_FIELDS, type QuoteCellEditability, type QuoteLineField } from "@/domain/quotes/edit-scope";
+import {
+  lineCellEditability,
+  linkedDocumentReason,
+  orderChange,
+  quoteCellsZero,
+  QUOTE_LINE_FIELDS,
+  QUOTE_LINE_STATUSES,
+  type QuoteCellEditability,
+  type QuoteLineField,
+} from "@/domain/quotes/edit-scope";
 import { moneyFromRow, moneyToColumns, quoteAmount, profit, type Money, type Currency } from "@/domain/money";
 import { rememberFxRate as defaultRememberFxRate } from "@/domain/money/currency";
 import { log } from "@/lib/log";
@@ -20,9 +30,12 @@ import { formatKrw } from "@/lib/format-number";
 import type { DbOrTx } from "@/repositories/document-counters";
 import {
   listQuoteLinesByRevision as repoListQuoteLinesByRevision,
-  insertQuoteLine as repoInsertQuoteLine,
+  insertQuoteLineIfAbsent as repoInsertQuoteLineIfAbsent,
   updateQuoteLineIfVersionMatches as repoUpdateQuoteLineIfVersionMatches,
   findQuoteLinesByIds as repoFindQuoteLinesByIds,
+  findQuoteLineById as repoFindQuoteLineById,
+  setQuoteLineSortOrders as repoSetQuoteLineSortOrders,
+  archiveQuoteLines as repoArchiveQuoteLines,
   type QuoteLineRow,
 } from "@/repositories/quote-lines";
 import {
@@ -66,9 +79,17 @@ type QuoteLineProjectable = {
   version: number;
   customFields: Record<string, unknown>;
   cellEditability: Record<QuoteLineField, QuoteCellEditability>;
+  hasLinkedDocuments: boolean;
+  readonlyReason: string | null;
 };
 
-function toProjectable(row: QuoteLineRow, cellEditability: Record<QuoteLineField, QuoteCellEditability>): QuoteLineProjectable {
+type LineEditFacts = {
+  cellEditability: Record<QuoteLineField, QuoteCellEditability>;
+  hasLinkedDocuments: boolean;
+  readonlyReason: string | null;
+};
+
+function toProjectable(row: QuoteLineRow, facts: LineEditFacts): QuoteLineProjectable {
   return {
     id: row.id,
     revisionId: row.revisionId,
@@ -100,7 +121,7 @@ function toProjectable(row: QuoteLineRow, cellEditability: Record<QuoteLineField
     copiedFromLineId: row.copiedFromLineId,
     version: row.version,
     customFields: row.customFields as Record<string, unknown>,
-    cellEditability,
+    ...facts,
   };
 }
 
@@ -125,6 +146,9 @@ export type QuoteLineDto = {
   customFields: Record<string, unknown>;
   // 04-12(D-78) — 칸마다 서버가 판정한 편집 단계(화면 반영은 04-30).
   cellEditability: Record<QuoteLineField, QuoteCellEditability>;
+  // 04-12(D-66 · DR-35) — 연결 문서가 있는 줄의 읽기 전용 이유(04-30이 편집 시도의 이유 줄로 쓴다).
+  hasLinkedDocuments: boolean;
+  readonlyReason: string | null;
 };
 
 export const QUOTE_LINE_DTO_SPEC: DtoSpec<QuoteLineProjectable, QuoteLineDto> = {
@@ -146,6 +170,8 @@ export const QUOTE_LINE_DTO_SPEC: DtoSpec<QuoteLineProjectable, QuoteLineDto> = 
     { key: "version", from: "version", infoItem: "project.value" },
     { key: "customFields", from: "customFields", infoItem: "project.value" },
     { key: "cellEditability", from: "cellEditability", infoItem: "project.value" },
+    { key: "hasLinkedDocuments", from: "hasLinkedDocuments", infoItem: "project.value" },
+    { key: "readonlyReason", from: "readonlyReason", infoItem: "project.value" },
   ],
 };
 
@@ -184,14 +210,38 @@ export async function getCurrentQuoteRevision(
 // 한 번(노출 조회가 줄 수가 아니라 정보 항목 수만큼).
 export type QuoteLineListCtx = { status: string; canWrite: boolean };
 
-async function projectLines(viewer: Viewer, rows: QuoteLineRow[], ctx: QuoteLineListCtx): Promise<QuoteLineDto[]> {
-  const cells = lineCellEditability({ status: ctx.status, canWrite: ctx.canWrite, hasLinkedDocuments: false, isNewLine: false });
-  return (await projectMany(viewer, rows.map((row) => toProjectable(row, cells)), QUOTE_LINE_DTO_SPEC)) as QuoteLineDto[];
+// D-66 — 줄마다 연결된 지출결의(번호). 이 페이즈에는 지출결의가 없어 빈 결과다 — Phase 5가 이 함수만 채운다.
+// 저장 트랜잭션 안에서도 불리므로 tx를 받는다.
+export type LinkedDocumentsByLine = Map<string, { number: string }[]>;
+
+export function linkedDocumentsByLine(viewer: Viewer, revisionId: string, tx?: DbOrTx): Promise<LinkedDocumentsByLine> {
+  void viewer;
+  void revisionId;
+  void tx;
+  return Promise.resolve(new Map<string, { number: string }[]>());
+}
+
+async function projectLines(
+  viewer: Viewer,
+  rows: QuoteLineRow[],
+  ctx: QuoteLineListCtx,
+  linked: LinkedDocumentsByLine,
+): Promise<QuoteLineDto[]> {
+  const projectables = rows.map((row) => {
+    const firstLinked = linked.get(row.id)?.[0];
+    const hasLinkedDocuments = firstLinked !== undefined;
+    return toProjectable(row, {
+      cellEditability: lineCellEditability({ status: ctx.status, canWrite: ctx.canWrite, hasLinkedDocuments, isNewLine: false }),
+      hasLinkedDocuments,
+      readonlyReason: firstLinked ? linkedDocumentReason(firstLinked.number) : null,
+    });
+  });
+  return (await projectMany(viewer, projectables, QUOTE_LINE_DTO_SPEC)) as QuoteLineDto[];
 }
 
 export async function listQuoteLines(viewer: Viewer, revisionId: string, ctx: QuoteLineListCtx): Promise<QuoteLineDto[]> {
   const rows = await repoListQuoteLinesByRevision(viewer, revisionId);
-  return projectLines(viewer, rows, ctx);
+  return projectLines(viewer, rows, ctx, await linkedDocumentsByLine(viewer, revisionId));
 }
 
 // 화면이 보내는 줄 하나 — 모든 줄이 id(uuid)를 싣는다. `isNew`면 화면이 만든 id로 넣는 새 줄
@@ -216,6 +266,8 @@ export type QuoteLineBaseline = {
 export type QuoteLineWriteRow = {
   id: string;
   isNew?: true;
+  /** 04-12(사용자 D10) — 이 새 줄이 어느 줄의 복제인지(게이트의 `duplicate` 판정). */
+  duplicatedFrom?: string;
   version?: number;
   subcategory: string;
   itemName: string;
@@ -345,14 +397,16 @@ export type QuoteLineComputedAmounts = {
 // (`{quantity, unitPrice, execution}`)에는 애초에 quoteAmountKrw·profitKrw
 // 필드가 없다 — 클라이언트가 그 값을 실어 보내도(조작된 raw 페이로드를
 // 흉내낸 호출이라도) 이 함수는 읽지 않고 domain/money로 다시 계산한다.
+// 04-12(PROJ-02) — 취소 줄의 견적가는 0이다(수량·단가 열은 이력으로 그대로 둔다).
 export function computeQuoteLineAmounts(input: {
   quantity?: number;
   unitPrice: MoneyInputDto;
   execution: MoneyInputDto;
+  lineStatus?: string;
 }): QuoteLineComputedAmounts {
   const unitPriceMoney = moneyFromRow(moneyToColumns(input.unitPrice));
   const executionMoney = moneyFromRow(moneyToColumns(input.execution));
-  const quoteAmountKrw = quoteAmount(input.quantity, unitPriceMoney);
+  const quoteAmountKrw = input.lineStatus === "cancelled" ? 0 : quoteAmount(input.quantity, unitPriceMoney);
   const profitKrw = profit(quoteAmountKrw, executionMoney);
 
   return {
@@ -410,8 +464,58 @@ function cellConflictsFor(rowId: string, baseline: QuoteLineBaseline | undefined
 
 export type SaveQuoteLinesResult = { lines: QuoteLineDto[] };
 
-// 저장 입력 — 차수의 줄 배치.
-export type QuoteLinesWriteInput = { rows: QuoteLineWriteRow[] };
+// 저장 입력 — 차수의 줄 배치. `order`는 저장 뒤 활성 줄 전체의 표시 순서(보관할 줄 제외 · 새 줄 포함),
+// `archivedLineIds`는 이번 저장에서 지울(보관할) 줄(엔지 리뷰 A §2 P2 · D-56).
+export type QuoteLinesWriteInput = { rows: QuoteLineWriteRow[]; order?: string[]; archivedLineIds?: string[] };
+
+// A-37 — 화면 입력 검증. 줄 상태는 QUOTE_LINE_STATUSES만, 줄·보관·순서 id는 uuid. 줄 id가 없는 새 줄은
+// 04-30이 화면 uuid를 싣기 전까지의 과도기다(액션이 서버 uuid를 붙인다). 기존 줄은 version을 싣는다.
+const quoteLineMoneyInputSchema = z.object({
+  currency: z.enum(["KRW", "USD"]),
+  amount: z.coerce.number(),
+  fxRate: z.coerce.number(),
+});
+
+export const quoteLineRowInputSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+    isNew: z.literal(true).optional(),
+    duplicatedFrom: z.string().uuid().optional(),
+    version: z.number().optional(),
+    subcategory: z.string().min(1, "소분류를 고르세요."),
+    itemName: z.string().min(1, "항목명을 입력하세요."),
+    vendorId: z.string().optional(),
+    quantity: z.coerce.number().optional(),
+    unitPrice: quoteLineMoneyInputSchema,
+    unitPriceFxRateTouched: z.boolean().optional(),
+    execution: quoteLineMoneyInputSchema,
+    lineStatus: z.enum(QUOTE_LINE_STATUSES).optional(),
+    note: z.string().optional(),
+    // 04-04 Task 2 ② — 이 줄을 불러왔을 때의 스냅샷(D-65 셀 단위 충돌 판정의 baseline). 기존 줄에서만 의미가 있다.
+    baseline: z
+      .object({
+        subcategory: z.string(),
+        itemName: z.string(),
+        vendorId: z.string().nullable(),
+        quantity: z.number(),
+        unitPriceAmountKrw: z.number(),
+        executionAmountKrw: z.number(),
+        lineStatus: z.enum(QUOTE_LINE_STATUSES),
+        note: z.string().nullable(),
+      })
+      .optional(),
+  })
+  .refine((row) => row.id === undefined || row.isNew === true || row.version !== undefined, {
+    message: "기존 줄을 저장하려면 버전 정보가 필요합니다 · 화면을 새로고침해 주세요",
+    path: ["version"],
+  });
+
+export const quoteLinesInputSchema = z.object({
+  revisionId: z.string().min(1),
+  rows: z.array(quoteLineRowInputSchema),
+  order: z.array(z.string().uuid()).optional(),
+  archivedLineIds: z.array(z.string().uuid()).optional(),
+});
 
 export type QuoteLineWriteDeps = {
   can: typeof defaultCan;
@@ -424,8 +528,13 @@ export type QuoteLineWriteDeps = {
 
 const LINE_EDIT_RULE = "project.line-edit";
 const MEMBERSHIP_RULE = "quote.line-membership";
-// UI-SPEC rev 5 `Error — 저장(순서·소속, 방어)`.
+const REPLAY_RULE = "quote.line-replay";
+// UI-SPEC rev 5 `Error — 저장(순서·소속, 방어)` · `Error — 저장(재전송 불일치, ENG-D10)`.
 const MEMBERSHIP_MISMATCH = "차수와 프로젝트가 맞지 않음 · 새로 고침";
+const ORDER_MISMATCH = "줄 순서가 맞지 않음 · 새로 고침";
+const REPLAY_MISMATCH = "이미 저장된 줄과 값이 다름 · 새로 고침";
+// rev 5에 없는 방어 문구(화면은 이 요청을 만들지 않는다) — 보관된 줄 id를 고치는 요청.
+const ARCHIVED_LINE = "보관된 줄 · 새로 고침";
 
 type QuoteLineCustomFieldsSchema = Awaited<ReturnType<typeof quoteLineCustomFieldsSchema>>;
 
@@ -501,6 +610,12 @@ function changedFields(current: QuoteLineRow, payload: QuoteLineWritePayload): Q
   return QUOTE_LINE_FIELDS.filter((field) => FIELD_COLUMNS[field].some((column) => current[column] !== payload[column]));
 }
 
+// ENG-D10 재전송 판정 — 사용자 정의 필드도 값이 같아야 같은 줄이다(jsonb는 키 순서를 바꾼다).
+function sameCustomFields(stored: unknown, next: Record<string, unknown>): boolean {
+  const canonical = (value: Record<string, unknown>) => JSON.stringify(Object.keys(value).sort().map((key) => [key, value[key]]));
+  return canonical((stored ?? {}) as Record<string, unknown>) === canonical(next);
+}
+
 function rowFormatErrors(input: QuoteLineWriteRow, rowIndex: number): CellFormatError[] {
   const errors: CellFormatError[] = [];
   if (input.quantity !== undefined && input.quantity <= 0) {
@@ -532,15 +647,18 @@ export type FxToRemember = { currency: Currency; rate: number };
 export type WrittenQuoteLines = {
   projectStatus: string;
   activeRows: QuoteLineRow[];
+  linkedDocuments: LinkedDocumentsByLine;
   fxToRemember: FxToRemember[];
 };
 
-// ② 트랜잭션 안(A-06 · OV-3 · A-21 · A-03 · B-01 · B-26) — 순서: (a) 프로젝트 행 배타 잠금(loadProjectForGate —
-// 합성 저장에서는 재판정 뒤 새 행) (b) 줄 소속(그 차수의 줄만) (c) 줄마다 쓰기 페이로드를 먼저 만들고 DB 현재 값과
-// 비교해 바뀐 칸 (d) 버전 충돌·형식 오류·게이트(바뀐 칸이 있는 줄만) — 게이트·소속 거부는 denyWrite 한 지점에서
-// 전부 거부, 형식·충돌은 로그 없이 전부 거부 (e) 쓰기 — 기존 줄의 sort_order는 그대로, 새 줄은 차수 끝(max + 1)
+// ② 트랜잭션 안(A-06 · OV-3 · A-21 · A-03 · B-01 · B-26 · D10 · ENG-D10) — 순서: (a) 프로젝트 행 배타 잠금
+// (loadProjectForGate — 합성 저장에서는 재판정 뒤 새 행)과 연결 문서 (b) 줄 소속(고칠 줄·보관할 줄이 그 차수의
+// 활성 줄인가)과 순서(`order` 집합) (c) 구조 판정(순서 이동·보관·새 줄·복제)과 줄마다 쓰기 페이로드를 먼저 만들어
+// DB 현재 값과 비교한 바뀐 칸 (d) 버전 충돌·형식 오류·칸 게이트(바뀐 칸이 있는 줄만) — 게이트·소속 거부는
+// denyWrite 한 지점에서 전부 거부, 형식·충돌은 로그 없이 전부 거부 (e) 쓰기 — 새 줄은 화면 id로 멱등 삽입(이미
+// 있으면 재전송 판정), 기존 줄의 sort_order는 `order`가 있을 때만 다시 쓴다(version 그대로), 보관도 같은 tx
 // (f) 행동 로그(같은 tx — 되돌린 저장은 로그도 없다) (g) 활성 줄 전체. 이 단계는 풀을 부르지 않는다 — 모든
-// 리포지토리 호출이 tx를 받는다.
+// 리포지토리 호출이 tx를 받는다. 04-26의 줄 수 상한은 재전송 판정 뒤 실제로 새로 들어갈 줄 수를 센다.
 export async function writeQuoteLinesInTx(
   viewer: Viewer,
   prepared: PreparedQuoteLineSave,
@@ -550,22 +668,48 @@ export async function writeQuoteLinesInTx(
 ): Promise<WrittenQuoteLines> {
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   const { revisionId, projectId, customFieldsSchema } = prepared;
-  const denyIds = { projectId, revisionId, lineIds: input.rows.map((row) => row.id) };
+  const archivedIds = [...new Set(input.archivedLineIds ?? [])];
+  const lineIds = input.rows.map((row) => row.id);
+  const denyIds = { projectId, revisionId, lineIds: [...lineIds, ...archivedIds] };
 
   // (a)
   const projectRow = await loadProjectForGate(viewer, projectId, { now: deps?.now, tx, afterLock: deps?.afterLock }, { recordAction });
   if (!projectRow) throw new RevisionNotFoundError("연결된 프로젝트를 찾을 수 없습니다.");
   const status = projectRow.status;
+  const linkedDocuments = await linkedDocumentsByLine(viewer, revisionId, tx);
+  const lineCtx = (lineId: string | null, change: ProjectLineEditCtx["change"]): ProjectLineEditCtx => {
+    const firstLinked = lineId ? linkedDocuments.get(lineId)?.[0] : undefined;
+    return firstLinked
+      ? { status, hasLinkedDocuments: true, linkedDocumentNumber: firstLinked.number, change }
+      : { status, hasLinkedDocuments: false, change };
+  };
 
   // (b)
-  const existingIds = [...new Set(input.rows.filter((row) => !row.isNew).map((row) => row.id))];
+  const existingIds = [...new Set([...input.rows.filter((row) => !row.isNew).map((row) => row.id), ...archivedIds])];
   const currentRows = await repoFindQuoteLinesByIds(viewer, existingIds, { revisionId }, tx);
   const currentById = new Map(currentRows.map((row) => [row.id, row] as const));
+  const activeBefore = await repoListQuoteLinesByRevision(viewer, revisionId, tx);
+  const order = input.order
+    ? orderChange(
+        activeBefore.map((row) => row.id),
+        input.order,
+        { archivedIds, newIds: input.rows.filter((row) => row.isNew).map((row) => row.id) },
+      )
+    : null;
 
-  let denial: { rule: string; error: Error } | null = null;
-  if (currentRows.length !== existingIds.length) {
-    denial = { rule: MEMBERSHIP_RULE, error: new UserFacingError(MEMBERSHIP_MISMATCH) };
-  }
+  let denial = null as { rule: string; error: Error } | null;
+  const deny = (rule: string, error: Error) => {
+    denial ??= { rule, error };
+  };
+  if (currentRows.length !== existingIds.length) deny(MEMBERSHIP_RULE, new UserFacingError(MEMBERSHIP_MISMATCH));
+  else if (currentRows.some((row) => row.archivedAt !== null)) deny(MEMBERSHIP_RULE, new UserFacingError(ARCHIVED_LINE));
+  else if (order === "mismatch") deny(MEMBERSHIP_RULE, new UserFacingError(ORDER_MISMATCH));
+
+  // 구조 거부는 칸 오류가 아니라 게이트 이유 그대로 전체 거부한다.
+  const judgeStructure = async (lineId: string | null, change: ProjectLineEditCtx["change"]) => {
+    const decision = await gate(projectRow, LINE_EDIT_RULE, lineCtx(lineId, change));
+    if (!decision.allowed) deny(LINE_EDIT_RULE, new GateBlockedError(decision.reason));
+  };
 
   // (c)(d)
   const conflicts: CellConflict[] = [];
@@ -574,6 +718,9 @@ export async function writeQuoteLinesInTx(
   const planned: { input: QuoteLineWriteRow; payload: QuoteLineWritePayload; customFields: Record<string, unknown> }[] = [];
 
   if (!denial) {
+    if (order === "reorder") await judgeStructure(null, { kind: "reorder" });
+    for (const id of archivedIds) await judgeStructure(id, { kind: "archive" });
+
     for (const [rowIndex, row] of input.rows.entries()) {
       formatErrors.push(...rowFormatErrors(row, rowIndex));
       const payload = writePayload(row);
@@ -581,9 +728,7 @@ export async function writeQuoteLinesInTx(
       planned.push({ input: row, payload, customFields });
 
       if (row.isNew) {
-        const ctx = { status, hasLinkedDocuments: false, change: { kind: "insert", quoteCellsZero: false } } satisfies ProjectLineEditCtx;
-        const decision = await gate(projectRow, LINE_EDIT_RULE, ctx);
-        if (!decision.allowed && !denial) denial = { rule: LINE_EDIT_RULE, error: new GateBlockedError(decision.reason) };
+        await judgeStructure(null, row.duplicatedFrom ? { kind: "duplicate" } : { kind: "insert", quoteCellsZero: quoteCellsZero(row) });
         continue;
       }
 
@@ -596,14 +741,11 @@ export async function writeQuoteLinesInTx(
 
       // 바뀐 칸마다 판정해 칸 오류로 싣는다(이유 = 표 위 한 줄과 같은 문자열). 바뀐 칸이 없으면 게이트를 부르지 않는다.
       for (const field of changedFields(current, payload)) {
-        const ctx = { status, hasLinkedDocuments: false, change: { kind: "update", fields: [field] } } satisfies ProjectLineEditCtx;
-        const decision = await gate(projectRow, LINE_EDIT_RULE, ctx);
+        const decision = await gate(projectRow, LINE_EDIT_RULE, lineCtx(row.id, { kind: "update", fields: [field] }));
         if (!decision.allowed) gateErrors.push({ rowIndex, rowId: row.id, field, label: CELL_LABELS[field], reason: decision.reason });
       }
     }
-    if (!denial && gateErrors.length > 0) {
-      denial = { rule: LINE_EDIT_RULE, error: new SaveRejectedError(conflicts, [...formatErrors, ...gateErrors]) };
-    }
+    if (gateErrors.length > 0) deny(LINE_EDIT_RULE, new SaveRejectedError(conflicts, [...formatErrors, ...gateErrors]));
   }
 
   // B-26 — 게이트·소속 거부의 한 지점(운영 로그 write.denied, 금액 없음). 뒤 플랜의 규칙도 이 지점을 지난다.
@@ -611,7 +753,7 @@ export async function writeQuoteLinesInTx(
   if (conflicts.length > 0 || formatErrors.length > 0) throw new SaveRejectedError(conflicts, formatErrors);
 
   // (e)
-  const activeBefore = await repoListQuoteLinesByRevision(viewer, revisionId, tx);
+  const position = input.order ? new Map(input.order.map((id, index) => [id, index] as const)) : null;
   let nextSortOrder = activeBefore.reduce((max, row) => Math.max(max, row.sortOrder), -1) + 1;
   const fxToRemember: FxToRemember[] = [];
 
@@ -622,8 +764,21 @@ export async function writeQuoteLinesInTx(
     }
 
     if (row.isNew) {
-      await repoInsertQuoteLine(viewer, { id: row.id, revisionId, sortOrder: nextSortOrder, ...payload, customFields }, tx);
-      nextSortOrder += 1;
+      const sortOrder = position?.get(row.id) ?? nextSortOrder;
+      const inserted = await repoInsertQuoteLineIfAbsent(viewer, { id: row.id, revisionId, sortOrder, ...payload, customFields }, tx);
+      if (inserted) {
+        if (!position) nextSortOrder += 1;
+        continue;
+      }
+      // ENG-D10 — 이미 있는 id: 같은 차수의 활성 줄이고 값이 같으면 응답을 잃은 재전송(no-op), 값이 다르면 불일치,
+      // 다른 차수·보관된 줄이면 소속 거부.
+      const stored = await repoFindQuoteLineById(viewer, row.id, tx);
+      if (!stored || stored.revisionId !== revisionId || stored.archivedAt !== null) {
+        denyWrite(viewer, MEMBERSHIP_RULE, denyIds, new UserFacingError(MEMBERSHIP_MISMATCH));
+      }
+      if (changedFields(stored, payload).length > 0 || !sameCustomFields(stored.customFields, customFields)) {
+        denyWrite(viewer, REPLAY_RULE, denyIds, new UserFacingError(REPLAY_MISMATCH));
+      }
       continue;
     }
 
@@ -639,15 +794,34 @@ export async function writeQuoteLinesInTx(
     }
   }
 
+  if (position) {
+    const moved = activeBefore.filter((row) => position.has(row.id) && position.get(row.id) !== row.sortOrder);
+    await repoSetQuoteLineSortOrders(viewer, revisionId, moved.map((row) => ({ id: row.id, sortOrder: position.get(row.id)! })), tx);
+  }
+
+  // D-56 · A-04 — 삭제는 같은 트랜잭션의 보관이다.
+  const archivedCount = await repoArchiveQuoteLines(viewer, { ids: archivedIds, revisionId, archivedBy: viewer.id, archivedAt: new Date() }, tx);
+  if (archivedCount !== archivedIds.length) throw new UserFacingError(ARCHIVED_LINE);
+
   // (f) 엔지 리뷰 A §1 P2 — 같은 tx(합성 저장이 뒤에서 거부되면 이 로그도 되돌아간다).
   await recordAction(
     viewer,
-    { actionType: "document_update", entity: QUOTE_LINE_ENTITY, entityId: revisionId, detail: { lineIds: denyIds.lineIds } },
+    {
+      actionType: "document_update",
+      entity: QUOTE_LINE_ENTITY,
+      entityId: revisionId,
+      detail: archivedIds.length > 0 ? { lineIds, archivedLineIds: archivedIds } : { lineIds },
+    },
     { tx },
   );
 
   // (g) 엔지 리뷰 A §2 P2 — 결과는 차수의 활성 줄 전체(표시 순서).
-  return { projectStatus: status, activeRows: await repoListQuoteLinesByRevision(viewer, revisionId, tx), fxToRemember };
+  return {
+    projectStatus: status,
+    activeRows: await repoListQuoteLinesByRevision(viewer, revisionId, tx),
+    linkedDocuments,
+    fxToRemember,
+  };
 }
 
 // ③ 커밋 뒤 — 최근 환율 기억(편의 기억 — 실패해도 저장은 끝났다, 오류 로그만).
@@ -666,7 +840,9 @@ export async function rememberFxAfterCommit(
 
 // ③ 커밋 뒤 — projectMany 투영(ENG-D3 ②). 쓰기를 통과한 사람이라 쓰기 권한 참.
 export async function finishQuoteLineSave(viewer: Viewer, written: WrittenQuoteLines): Promise<SaveQuoteLinesResult> {
-  return { lines: await projectLines(viewer, written.activeRows, { status: written.projectStatus, canWrite: true }) };
+  return {
+    lines: await projectLines(viewer, written.activeRows, { status: written.projectStatus, canWrite: true }, written.linkedDocuments),
+  };
 }
 
 // PROJ-02·D-65·D-66·UX-04 — 단독 배치 저장. 세 단계를 차례로 부른다(합성 저장은 domain/projects/ledger.ts가

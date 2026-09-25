@@ -706,7 +706,7 @@ describe("보관·취소(D-56·A-04)", () => {
     expect(quoteLineRowInputSchema.safeParse({ ...valid, lineStatus: "아무글자" }).success).toBe(false);
     expect(quoteLineRowInputSchema.safeParse({ ...valid, lineStatus: "cancelled" }).success).toBe(true);
     expect(quoteLineRowInputSchema.safeParse({ ...valid, id: "x" }).success).toBe(false);
-    const { isNew: _isNew, ...withoutIsNew } = valid;
+    const withoutIsNew = { ...valid, isNew: undefined };
     expect(quoteLineRowInputSchema.safeParse(withoutIsNew).success).toBe(false);
     expect(quoteLineRowInputSchema.safeParse({ ...withoutIsNew, version: 1 }).success).toBe(true);
     const lines = { revisionId: randomUUID(), rows: [valid] };

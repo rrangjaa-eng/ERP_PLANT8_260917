@@ -469,7 +469,9 @@ describe("기간 저장 — 행위자 · 권리 · 검증 (04-22 Task 2)", () =>
   it("(n) 기간 쓰기 → 재판정 → 견적 줄: 견적 줄 게이트는 트랜잭션 안의 새 행(정산)으로 판정하고, 시스템 정산 로그의 seq가 견적 줄 document_update의 seq보다 작다(ENG-D6)", async () => {
     const s = await setup({ status: "in_progress", startDate: addDays(TODAY, -10), endDate: addDays(TODAY, 5) });
     const admin = await companyViewer("role-sysadmin");
+    // 정산이 되는 저장이라 새 줄은 견적 칸 0(원화 단가 0 · 수량 1)만 들어간다(04-12 · 사용자 D12).
     const lines = await newLine(s, `순서-${randomUUID()}`);
+    lines.rows = lines.rows.map((row) => ({ ...row, unitPrice: { currency: "KRW", amount: 0, fxRate: 1 } }));
     vi.mocked(gate).mockClear();
 
     await saveProjectLedger(admin, s.projectId, {
@@ -482,7 +484,7 @@ describe("기간 저장 — 행위자 · 권리 · 검증 (04-22 Task 2)", () =>
     const lineGateCalls = vi.mocked(gate).mock.calls.filter(([, rule]) => rule === "project.line-edit");
     expect(lineGateCalls).toHaveLength(1);
     const [lineDoc, , lineCtx] = lineGateCalls[0]!;
-    expect(lineCtx).toEqual({ status: "settling", hasLinkedDocuments: false, change: { kind: "insert", quoteCellsZero: false } });
+    expect(lineCtx).toEqual({ status: "settling", hasLinkedDocuments: false, change: { kind: "insert", quoteCellsZero: true } });
     expect(lineDoc).toMatchObject({ status: "settling", endDate: addDays(TODAY, -1) });
 
     const [settle] = await logs(s.projectId, "status_change");

@@ -294,3 +294,10 @@ frontmatter `key-decisions` 참조.
   - N7 — 기존 줄 삭제가 서버로 가지 않아 복원 뒤 지운 줄이 되살아나 보인다 → 소유 플랜 지정 필요.
 - 검증: lint · typecheck · lint:sql 통과. 통합 project-period 26/26 · tx-safety 6/6 · project-auto-settlement 22/22 · quote-lines 6/6 · project-status 22/22. 단위 70/70. E2E(CI=true) project-period 8/8 · ledger-save-flow 1/1.
 - **한도 풀리면 Codex 재확인 필요.**
+
+## 전체 게이트 (오케스트레이터)
+
+- 1차 `CI=true pnpm test`: 단위 1건 실패 — `test/unit/ui/shortcut-notation.test.ts`(D-94) 「메타 키 참조 0개」가 `period-field.tsx`의 `event.metaKey`를 잡음. 다른 편집기(`ui/table/use-grid-keyboard.ts`)처럼 Ctrl만 보도록 625ef89로 고침.
+- 2차 `CI=true pnpm test`(HEAD 625ef89): 단위 1120/1120 · 통합 1166/1166 · E2E 236/236 통과, exit 0.
+- 독립 DOM 감사는 이 플랜에서 하지 않음 — 플랜 본문대로 머리 줄 DOM 감사(1280·1024·375)는 기간 칸·총 매출 예상가 칸이 모두 선 04-44에서 한 번 한다.
+- 한도 풀리면 Codex 재확인 필요.

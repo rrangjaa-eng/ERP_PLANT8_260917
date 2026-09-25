@@ -271,7 +271,7 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     ]);
     await expect(dataRows(page)).toHaveCount(2);
 
-    await expect(page.getByRole("button", { name: /삭제|복제|줄 이동/ })).toHaveCount(0);
+    // 줄 삭제·이동·복제는 버튼이 아니라 키와 힌트 줄 kbd다 — 진행 표에는 이 kbd가 있다.
     await expect(page.locator("kbd", { hasText: "Alt+↑↓" })).toHaveCount(0);
     await expect(page.locator("kbd", { hasText: "Ctrl+D" })).toHaveCount(0);
 
@@ -279,6 +279,12 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await page.keyboard.press("Delete");
     await page.keyboard.press("Alt+ArrowDown");
     await page.keyboard.press("Control+d");
+    // 세 키가 처리된 뒤를 긍정 신호로 잡는다 — 실행가 편집기가 열리고 닫힌 다음에야 부정 단언을 한다.
+    await cell(page, 0, COL.execution).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("textbox", { name: "실행가" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("textbox", { name: "실행가" })).toHaveCount(0);
 
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(dataRows(page)).toHaveCount(2);

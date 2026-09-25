@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, getTableColumns, inArray, isNotNull, isNull } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -222,4 +222,63 @@ export async function updateQuoteLineIfVersionMatches(
     )
     .returning();
   return row ?? null;
+}
+
+// 04-14(D-53 · D-48) — 새 차수가 복사하는 줄: 보관되지 않은 견적 줄·견적 외 비용(조정 줄은 옮긴다).
+const COPYABLE_KINDS = ["quote", "out_of_quote"];
+
+export async function countCopyableLines(viewer: Viewer, revisionId: string, tx: DbOrTx = db): Promise<number> {
+  void viewer;
+  const [row] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(quoteLines)
+    .where(and(eq(quoteLines.revisionId, revisionId), isNull(quoteLines.archivedAt), inArray(quoteLines.lineKind, COPYABLE_KINDS)));
+  return row?.count ?? 0;
+}
+
+// 04-14(D-53 · CEO 리뷰 B-32 · 엔지 리뷰 GAP 5b) — INSERT…SELECT 한 문장. 새 id·새 차수·version 1·새 시각만 바꾸고
+// 나머지 컬럼은 표 정의 전체를 원본에서 그대로 옮긴다(컬럼이 늘어도 빠지지 않는다). `withLineage`면 계보에 원본 id
+// (04-15의 프로젝트 복사는 false). 넣은 행 수를 돌려준다.
+export async function copyQuoteLines(
+  viewer: Viewer,
+  input: { fromRevisionId: string; toRevisionId: string; withLineage: boolean },
+  tx: DbOrTx,
+): Promise<number> {
+  void viewer;
+  const rows = await tx
+    .insert(quoteLines)
+    .select(
+      tx
+        .select({
+          ...getTableColumns(quoteLines),
+          id: sql`gen_random_uuid()`.as("id"),
+          revisionId: sql`${input.toRevisionId}::uuid`.as("revision_id"),
+          copiedFromLineId: (input.withLineage ? sql`${quoteLines.id}` : sql`null::uuid`).as("copied_from_line_id"),
+          version: sql`1`.as("version"),
+          createdAt: sql`now()`.as("created_at"),
+          updatedAt: sql`now()`.as("updated_at"),
+        })
+        .from(quoteLines)
+        .where(
+          and(eq(quoteLines.revisionId, input.fromRevisionId), isNull(quoteLines.archivedAt), inArray(quoteLines.lineKind, COPYABLE_KINDS)),
+        ),
+    )
+    .returning({ id: quoteLines.id });
+  return rows.length;
+}
+
+// 04-14(D-87 · 사용자 D19-10 · CEO 리뷰 B-21) — 조정 줄은 복사하지 않고 새 현재 차수로 옮긴다. 보관된 조정 줄까지
+// 전부(두고 가면 나중 복원이 이전 차수에 되살린다). 옮긴 행 수를 돌려준다.
+export async function moveAdjustmentLines(
+  viewer: Viewer,
+  input: { fromRevisionId: string; toRevisionId: string },
+  tx: DbOrTx,
+): Promise<number> {
+  void viewer;
+  const rows = await tx
+    .update(quoteLines)
+    .set({ revisionId: input.toRevisionId, version: sql`${quoteLines.version} + 1`, updatedAt: new Date() })
+    .where(and(eq(quoteLines.revisionId, input.fromRevisionId), eq(quoteLines.lineKind, "adjustment")))
+    .returning({ id: quoteLines.id });
+  return rows.length;
 }

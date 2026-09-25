@@ -199,6 +199,43 @@ describe("project.start-date-required (D-82)", () => {
   });
 });
 
+// 04-14(D-53 · 사용자 D10) — 새 차수. 수주중·진행·미수주 + 쓰기만 열린다. 정산의 새 줄은 열렸어도 새 차수는 닫힌다.
+describe("quote.revision-create (D-53 · D10)", () => {
+  const ctx = (status: string, copyableLineCount = 3, canCreateRevision = status !== "settling" && status !== "completed") => ({
+    status,
+    copyableLineCount,
+    canCreateRevision,
+  });
+
+  it("정산은 「정산 · 새 차수 없음」", async () => {
+    await expect(gate({}, "quote.revision-create", ctx("settling"))).resolves.toEqual({ allowed: false, reason: "정산 · 새 차수 없음" });
+  });
+
+  it("완료는 「완료 · 견적 줄 잠김」", async () => {
+    await expect(gate({}, "quote.revision-create", ctx("completed"))).resolves.toEqual({ allowed: false, reason: "완료 · 견적 줄 잠김" });
+  });
+
+  it("복사할 견적 줄이 0개면 「복사할 견적 줄 없음 · 첫 줄 만들기」", async () => {
+    await expect(gate({}, "quote.revision-create", ctx("in_progress", 0))).resolves.toEqual({
+      allowed: false,
+      reason: "복사할 견적 줄 없음 · 첫 줄 만들기",
+    });
+  });
+
+  it("쓰기가 없으면(열린 상태여도) 「견적 줄 · 쓰기 권한 없음」", async () => {
+    await expect(gate({}, "quote.revision-create", ctx("in_progress", 3, false))).resolves.toEqual({
+      allowed: false,
+      reason: "견적 줄 · 쓰기 권한 없음",
+    });
+  });
+
+  it("수주중·진행·미수주 + 줄 있음 + 쓰기는 통과한다", async () => {
+    for (const status of ["bidding", "in_progress", "lost"]) {
+      await expect(gate({}, "quote.revision-create", ctx(status))).resolves.toEqual({ allowed: true });
+    }
+  });
+});
+
 describe("denyWrite — 거부 운영 로그 한 함수 (D19 · 엔지 리뷰 B)", () => {
   afterEach(() => {
     vi.restoreAllMocks();

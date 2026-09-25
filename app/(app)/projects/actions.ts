@@ -13,6 +13,7 @@ import {
 } from "@/domain/projects/ledger";
 import type { PreEstimateFieldError } from "@/domain/projects/pre-estimate";
 import { quoteLinesInputSchema, SaveRejectedError } from "@/domain/quotes/lines";
+import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
 import {
   changeProjectStatus,
   listProjectStatusCatalog,
@@ -204,4 +205,22 @@ export const changeProjectStatusAction = authedActionClient
     await changeProjectStatus(ctx.viewer, parsedInput.projectId, { from: parsedInput.from, to: parsedInput.to });
     revalidatePath("/projects");
     return { status: parsedInput.to };
+  });
+
+// 04-14(D-53 · CEO 리뷰 B-02): 새 차수 — 화면이 보던 차수 id를 싣는다(모달·버튼은 04-24). 판정(보던 차수 · 상태 ·
+// 빈 차수 · 권한)은 전부 domain이 하고, 거부 문구가 그대로 serverError로 나간다.
+export const createRevisionAction = authedActionClient
+  .schema(
+    z.object({
+      projectId: z.string().uuid(),
+      fromRevisionId: z.string().uuid(),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    const created = await createRevisionFromCurrent(ctx.viewer, {
+      projectId: parsedInput.projectId,
+      fromRevisionId: parsedInput.fromRevisionId,
+    });
+    revalidatePath("/projects");
+    return created;
   });

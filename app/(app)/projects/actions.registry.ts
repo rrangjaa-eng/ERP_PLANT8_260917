@@ -24,3 +24,11 @@ registerAction({
   action: "write",
   dtoName: null,
 });
+
+// 04-14: 새 차수 — 차수 id·순번만 돌려준다(DTO 없음).
+registerAction({
+  name: "createRevisionAction",
+  menu: "projects",
+  action: "write",
+  dtoName: null,
+});

@@ -12,7 +12,7 @@ import {
 // Phase 4의 프로젝트 게이트 규칙을 등록하는 한 곳 — 규칙마다 등록한 플랜을
 // 주석 한 줄로 적는다: `project.line-edit`(04-06 · 04-12 · 04-13), `quote.line-cap`(04-26),
 // `project.transition`(04-20), `project.period-edit`(04-22), `project.pre-estimate-edit`(04-44),
-// `project.start-date-required`(04-20).
+// `project.start-date-required`(04-20), `quote.revision-create`(04-14).
 //
 // side-effect import 모듈 — `import "@/domain/rules/register"`로 불러
 // 등록만 일으킨다(도메인 등록 사이드이펙트 모듈 규약).
@@ -168,5 +168,22 @@ registerGateRule<unknown, ProjectStartDateRequiredCtx>({
   check: (_doc, ctx) => {
     if (ctx.to !== "in_progress" || ctx.startDate) return { allowed: true };
     return { allowed: false, reason: "시작일 없음 · 기간 적기" };
+  },
+});
+
+// 04-14(D-53 · 사용자 D10 · UI-SPEC rev 5 `막힘 — 새 차수(빈 차수)`) — 새 차수. `canCreateRevision`은
+// structuralEditability(…).newRevision(수주중·진행·미수주 + `projects` 쓰기)이고, 복사할 견적 줄 수는 호출자가 잠근
+// 트랜잭션 안에서 센 값이다. 정산은 새 줄이 열렸어도 새 차수는 닫힌다(방어 문구 — 화면은 버튼을 그리지 않는다).
+export type QuoteRevisionCreateCtx = { canCreateRevision: boolean; copyableLineCount: number; status: string };
+
+registerGateRule<unknown, QuoteRevisionCreateCtx>({
+  name: "quote.revision-create",
+  check: (_doc, ctx) => {
+    if (!ctx.canCreateRevision) {
+      if (ctx.status === "settling") return { allowed: false, reason: "정산 · 새 차수 없음" };
+      return { allowed: false, reason: quoteLockReason({ status: ctx.status }) ?? WRITE_DENIED };
+    }
+    if (ctx.copyableLineCount === 0) return { allowed: false, reason: "복사할 견적 줄 없음 · 첫 줄 만들기" };
+    return { allowed: true };
   },
 });

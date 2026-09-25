@@ -39,9 +39,10 @@ export async function listQuoteRevisionsByProject(viewer: Viewer, projectId: str
 }
 
 // D-54: 최신 차수만 '현재 차수'. seq가 가장 큰 행.
-export async function findLatestQuoteRevision(viewer: Viewer, projectId: string): Promise<QuoteRevisionRow | null> {
+// 04-14 — 잠근 트랜잭션 안(새 차수·승인)에서는 tx로 부른다.
+export async function findLatestQuoteRevision(viewer: Viewer, projectId: string, tx: DbOrTx = db): Promise<QuoteRevisionRow | null> {
   void viewer;
-  const [row] = await db
+  const [row] = await tx
     .select()
     .from(quoteRevisions)
     .where(eq(quoteRevisions.projectId, projectId))
@@ -50,9 +51,9 @@ export async function findLatestQuoteRevision(viewer: Viewer, projectId: string)
   return row ?? null;
 }
 
-export async function findQuoteRevisionById(viewer: Viewer, id: string): Promise<QuoteRevisionRow | null> {
+export async function findQuoteRevisionById(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<QuoteRevisionRow | null> {
   void viewer;
-  const [row] = await db.select().from(quoteRevisions).where(eq(quoteRevisions.id, id)).limit(1);
+  const [row] = await tx.select().from(quoteRevisions).where(eq(quoteRevisions.id, id)).limit(1);
   return row ?? null;
 }
 
@@ -68,4 +69,16 @@ export async function findQuoteRevisionByProjectAndSeq(
     .where(and(eq(quoteRevisions.projectId, projectId), eq(quoteRevisions.seq, seq)))
     .limit(1);
   return row ?? null;
+}
+
+// 04-14(D-53) — 새 차수 행. `(project_id, seq)` 유일 제약 위반(23505 · quote_revisions_project_seq_key)은 호출자가 잡는다.
+export async function insertRevision(
+  viewer: Viewer,
+  input: { projectId: string; seq: number },
+  tx: DbOrTx,
+): Promise<QuoteRevisionRow> {
+  void viewer;
+  const [row] = await tx.insert(quoteRevisions).values({ projectId: input.projectId, seq: input.seq }).returning();
+  if (!row) throw new Error("quote_revisions insert가 행을 반환하지 않았습니다.");
+  return row;
 }

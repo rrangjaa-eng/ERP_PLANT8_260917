@@ -1827,7 +1827,7 @@ export function QuoteLedger({
             <p className={`${styles.periodLine} ${styles.periodLead}`}>
               <span>{periodText(periodBaseline.startDate, periodBaseline.endDate)}</span>
               {period.rights !== "none" ? (
-                <Button id={PERIOD_TRIGGER_ID} type="button" variant="tertiary" onClick={() => openPeriodField("start")}>
+                <Button id={PERIOD_TRIGGER_ID} type="button" variant="tertiary" onClick={() => (saveLocked ? undefined : openPeriodField("start"))}>
                   기간 바꾸기
                 </Button>
               ) : null}
@@ -1838,7 +1838,7 @@ export function QuoteLedger({
             <p className={styles.periodLine}>
               <span>{preEstimateText(preEstimateBase)}</span>
               {preEstimate.canEdit ? (
-                <Button id={PRE_ESTIMATE_TRIGGER_ID} type="button" variant="tertiary" onClick={openPreEstimateField}>
+                <Button id={PRE_ESTIMATE_TRIGGER_ID} type="button" variant="tertiary" onClick={() => (saveLocked ? undefined : openPreEstimateField())}>
                   총 매출 예상가 바꾸기
                 </Button>
               ) : null}
@@ -1913,10 +1913,10 @@ export function QuoteLedger({
         <p className={styles.restoreBanner}>
           <span>{`저장 안 한 편집 ${dirtyStorage.restorableCount}칸`}</span>
           <span className={styles.restoreActions}>
-            <button type="button" className={styles.restoreAction} onClick={restoreEdits}>
+            <button type="button" className={styles.restoreAction} onClick={() => (saveLocked ? undefined : restoreEdits())}>
               복원
             </button>
-            <button type="button" className={styles.restoreAction} onClick={() => dirtyStorage.discard()}>
+            <button type="button" className={styles.restoreAction} onClick={() => (saveLocked ? undefined : dirtyStorage.discard())}>
               버림
             </button>
           </span>

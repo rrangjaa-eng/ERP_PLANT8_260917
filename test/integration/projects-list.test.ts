@@ -10,7 +10,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createProject, listProjects, aggregateProjects } from "@/domain/projects";
 import { aggregateProjects as repoAggregateProjects } from "@/repositories/projects";
-import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
+import { getCurrentQuoteRevision, listQuoteLines, saveQuoteLines } from "@/domain/quotes/lines";
 
 async function setupProject(opts?: { endDate?: string | null; teamId?: string; namePrefix?: string }) {
   const client = await insertVendor(SYSTEM_VIEWER, {
@@ -193,5 +193,35 @@ describe("domain/projects listProjects/aggregateProjects (Phase 4, 실제 Postgr
 
     const [row] = await listProjects(viewer, { filter: { search: project.number } });
     expect(row?.groupLabel).toBe("2026-09");
+  });
+
+  // 04-13(D-83 · D-87 · 금지 항목) — 모든 종류의 줄이 저장 → 상세 합계 → 목록 집계를 같은 금액으로 지난다.
+  // 목록 SUM은 bigint라 문자열로 올 수 있어 값만 숫자로 비교한다(B-18 — 타입 단언은 04-17 C-01이 더한다).
+  it("(g) 한 차수의 견적 줄 · 견적 외 비용 · 조정 줄 실행가 합이 상세 합계 · 목록 · 집계에서 같다", async () => {
+    const { project } = await setupProject({ endDate: "2026-09-25" });
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("현재 차수를 찾지 못했습니다");
+    const line = (lineKind: "quote" | "out_of_quote" | "adjustment", execution: number) => ({
+      id: randomUUID(),
+      isNew: true as const,
+      lineKind,
+      subcategory: lineKind === "quote" ? "sub-a" : "",
+      itemName: `${lineKind} 줄`,
+      unitPrice: { currency: "KRW" as const, amount: lineKind === "quote" ? 1_000_000 : 0, fxRate: 1 },
+      execution: { currency: "KRW" as const, amount: execution, fxRate: 1 },
+    });
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+      rows: [line("quote", 400_000), line("out_of_quote", 70_000), line("adjustment", -120_000)],
+    });
+    const expected = 400_000 + 70_000 - 120_000;
+
+    const detail = await listQuoteLines(SYSTEM_VIEWER, revision.id, { status: project.status, canWrite: true, canAdjust: true });
+    expect(detail.map((row) => row.lineKind).sort()).toEqual(["adjustment", "out_of_quote", "quote"]);
+    expect(detail.reduce((sum, row) => sum + row.execution.amountKrw, 0)).toBe(expected);
+
+    const [listed] = await listProjects(SYSTEM_VIEWER, { filter: { search: project.number } });
+    expect(Number(listed?.executionAmountKrw)).toBe(expected);
+    const aggregate = await aggregateProjects(SYSTEM_VIEWER, { search: project.number });
+    expect(Number(aggregate.executionAmountKrw)).toBe(expected);
   });
 });

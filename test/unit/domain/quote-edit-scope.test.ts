@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { gate } from "@/domain/rules/gate";
+import "@/domain/rules/register";
+import type { ProjectLineEditCtx } from "@/domain/rules/register";
 import {
   QUOTE_LINE_FIELDS,
+  QUOTE_LINE_KINDS,
   QUOTE_LINE_STATUSES,
   lineCellEditability,
   linkedDocumentReason,
@@ -252,5 +256,90 @@ describe("visibleHintKeys — 힌트 줄 거르기", () => {
       "moveRow",
       "duplicateRow",
     ]);
+  });
+});
+
+// 04-13(D-83 · D-48 · 사용자 D10·D12) — 줄 종류 × 조정 권한 결정표. 조정 줄은 상태를 보지 않고 조정 권한으로만,
+// 견적 외 비용은 견적 줄의 상태 규칙을 따르되 수량·단가가 늘 잠김(견적가 0).
+describe("줄 종류 축 결정표(04-13)", () => {
+  it("조정 줄 + 조정 권한 + 완료: 항목·거래처·실행가·비고 edit, 소분류·수량·단가·상태 locked", () => {
+    const cells = lineCellEditability({ ...base, status: "completed", lineKind: "adjustment", canAdjust: true });
+    expect(fieldsAt(cells, "edit")).toEqual(["execution", "itemName", "note", "vendorId"]);
+    expect(fieldsAt(cells, "locked")).toEqual(["lineStatus", "quantity", "subcategory", "unitPrice"]);
+  });
+
+  it("조정 줄 + 조정 권한 없음(담당 PM): 어느 상태든 전부 locked", () => {
+    for (const status of ["bidding", "in_progress", "settling", "completed", "lost"]) {
+      const cells = lineCellEditability({ ...base, status, lineKind: "adjustment", canAdjust: false });
+      expect(fieldsAt(cells, "locked")).toHaveLength(QUOTE_LINE_FIELDS.length);
+    }
+  });
+
+  it("조정 줄 구조: 조정 권한 + 정산·완료 → 추가·삭제 가능, 이동·복제 불가 / 권한 없음 → 전부 불가", () => {
+    for (const status of ["settling", "completed"]) {
+      expect(structuralEditability({ status, canWrite: false, lineKind: "adjustment", canAdjust: true })).toMatchObject({
+        insert: true,
+        archive: true,
+        reorder: false,
+        duplicate: false,
+      });
+    }
+    expect(structuralEditability({ status: "in_progress", canWrite: true, lineKind: "adjustment", canAdjust: false })).toMatchObject({
+      insert: false,
+      archive: false,
+      reorder: false,
+    });
+  });
+
+  it("견적 외 비용 + 진행: 추가 가능, 수량·단가 locked, 나머지 edit", () => {
+    expect(structuralEditability({ status: "in_progress", canWrite: true, lineKind: "out_of_quote" }).insert).toBe(true);
+    for (const isNewLine of [false, true]) {
+      const cells = lineCellEditability({ ...base, status: "in_progress", isNewLine, lineKind: "out_of_quote" });
+      expect(fieldsAt(cells, "locked")).toEqual(["quantity", "unitPrice"]);
+    }
+  });
+
+  it("견적 외 비용 + 정산: 추가 가능 · 실행가 edit · 수량·단가 locked · 삭제·이동 불가(D10·D12)", () => {
+    expect(structuralEditability({ status: "settling", canWrite: true, lineKind: "out_of_quote" })).toMatchObject({
+      insert: true,
+      archive: false,
+      reorder: false,
+    });
+    const existing = lineCellEditability({ ...base, status: "settling", lineKind: "out_of_quote" });
+    expect(fieldsAt(existing, "edit")).toEqual(["execution"]);
+    const inserted = lineCellEditability({ ...base, status: "settling", isNewLine: true, lineKind: "out_of_quote" });
+    expect(inserted.execution).toBe("edit");
+    expect(inserted.quantity).toBe("locked");
+    expect(inserted.unitPrice).toBe("locked");
+  });
+
+  it("견적 외 비용 + 완료: 셀·구조 전부 잠김", () => {
+    const cells = lineCellEditability({ ...base, status: "completed", lineKind: "out_of_quote" });
+    expect(fieldsAt(cells, "locked")).toHaveLength(QUOTE_LINE_FIELDS.length);
+    expect(Object.values(structuralEditability({ status: "completed", canWrite: true, lineKind: "out_of_quote" })).some(Boolean)).toBe(false);
+  });
+
+  it("QUOTE_LINE_KINDS는 견적 줄 · 견적 외 비용 · 조정 세 값", () => {
+    expect(QUOTE_LINE_KINDS).toEqual(["quote", "out_of_quote", "adjustment"]);
+  });
+});
+
+describe("project.line-edit 게이트 — 조정 줄(04-13 · D-83)", () => {
+  const adjustmentInsert = (status: string, actorCanAdjust: boolean) =>
+    gate({}, "project.line-edit", {
+      status,
+      lineKind: "adjustment",
+      actorCanWrite: true,
+      actorCanAdjust,
+      hasLinkedDocuments: false,
+      change: { kind: "insert", quoteCellsZero: true },
+    } satisfies ProjectLineEditCtx);
+
+  it("조정 줄 insert + 조정 권한 없음 → 「조정 줄 · 경영관리만」", async () => {
+    await expect(adjustmentInsert("in_progress", false)).resolves.toEqual({ allowed: false, reason: "조정 줄 · 경영관리만" });
+  });
+
+  it("조정 줄 insert + 조정 권한 + 완료 → 통과(상태를 보지 않는다)", async () => {
+    await expect(adjustmentInsert("completed", true)).resolves.toEqual({ allowed: true });
   });
 });

@@ -235,6 +235,19 @@ export const PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE: SettingDef<boolean> =
   readBy: { phase: "6" },
 };
 
+// 04-14(D-43 · ROADMAP 기준 3) — 고객 승인 게이트(`quote.customer-approval`). 끄면 현재 차수가 미승인이어도
+// 지출결의를 올린다. Phase 5 지출결의가 읽는다.
+export const PROJECT_CUSTOMER_APPROVAL_GATE: SettingDef<boolean> = {
+  key: "project.customer_approval_gate",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "고객 승인 게이트",
+  hint: "끄면 고객 승인 전 차수에서도 지출결의를 올릴 수 있음",
+  namespace: "프로젝트",
+  default: true,
+  readBy: { phase: "5" },
+};
+
 // 04-05(ADMN-09) — 프로젝트 문서 번호 서식. 문서 종류별 키 묶음(Claude
 // 재량 항목, `domain/document-numbering/index.ts` 머리 주석에 근거 셋
 // 기록) — 접두어·연도 자릿수·순번 자릿수·구분자·순번 시작값 다섯 다
@@ -338,5 +351,6 @@ export const SETTING_DEFS: SettingDef<unknown>[] = [
   PROJECT_FORCE_COMPLETE_ALLOW_OPEN_EXPENSES,
   PROJECT_FORCE_COMPLETE_ALLOW_UNMATCHED_ESTIMATE_LINES,
   PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE,
+  PROJECT_CUSTOMER_APPROVAL_GATE,
   PNL_START_GATE_WEEKS_AFTER_CUTOVER,
 ];

@@ -32,3 +32,11 @@ registerAction({
   action: "write",
   dtoName: null,
 });
+
+// 04-14: 고객 승인 표시 — 차수 id·순번·승인일만 돌려준다(DTO 없음). 담당 PM 판정은 domain 게이트.
+registerAction({
+  name: "setCustomerApprovalAction",
+  menu: "projects",
+  action: "write",
+  dtoName: null,
+});

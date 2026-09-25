@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, codeItems, projects, quoteLines, quoteRevisions, teams } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
@@ -8,10 +8,13 @@ import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
-import { insertRevision } from "@/repositories/quote-revisions";
+import { approvalBasis, insertRevision } from "@/repositories/quote-revisions";
 import { createProject, listProjects } from "@/domain/projects";
 import { getCurrentQuoteRevision, listQuoteLines } from "@/domain/quotes/lines";
-import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
+import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
+import { gate } from "@/domain/rules/gate";
+import { getSettingValue } from "@/domain/settings/registry";
+import { PROJECT_CUSTOMER_APPROVAL_GATE } from "@/domain/settings/keys";
 import { restore } from "@/domain/archive";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { log } from "@/lib/log";
@@ -42,8 +45,8 @@ const writerMenus: Menu[] = [
   { menu: "projects", action: "write" },
 ];
 
-async function setupProject() {
-  const pm = await makeViewer(writerMenus);
+async function setupProject(pmMenus: Menu[] = writerMenus) {
+  const pm = await makeViewer(pmMenus);
   const client = await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}`, normalizedName: `거래처-${randomUUID()}` });
   const [team] = await db.select().from(teams).limit(1);
   if (!team) throw new Error("시드된 팀이 없습니다");
@@ -316,5 +319,205 @@ describe("새 차수 트레이서(04-14 Task 1 · D-53, 실제 Postgres)", () =>
       }),
     ).rejects.toBe(other);
     expect(await revisionCount(project.id)).toBe(1);
+  });
+});
+
+// 04-14 Task 2(D-56 · B-25 · B-30 · ENG-D4 · ENG-D9 · 사용자 D19-9) — 고객 승인 표시와 취소. 켜기는 전부 그 순간의
+// approvalBasis에서 기준값을 받아 싣는다.
+const NOW = () => new Date("2026-09-20T03:00:00.000Z"); // KST 2026-09-20 12:00
+
+async function basisOf(revisionId: string) {
+  const basis = await approvalBasis(SYSTEM_VIEWER, revisionId);
+  return { seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken };
+}
+
+async function approve(viewer: Viewer, revisionId: string, approvedOn = "2026-09-19", deps: Parameters<typeof setCustomerApproval>[3] = {}) {
+  return setCustomerApproval(viewer, revisionId, { approvedOn, ...(await basisOf(revisionId)) }, { now: NOW, ...deps });
+}
+
+async function approvalOf(revisionId: string) {
+  const [row] = await db.select().from(quoteRevisions).where(eq(quoteRevisions.id, revisionId));
+  return { at: row?.customerApprovedAt ?? null, by: row?.customerApprovedBy ?? null };
+}
+
+const NOT_ASSIGNED = "고객 승인 표시는 담당 PM만";
+
+describe("고객 승인 표시(04-14 Task 2 · D-56, 실제 Postgres)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("(a1) 담당 PM이 진행에서 2026-09-19로 켠다 — 저장 순간 2026-09-18T15:00:00Z · 승인자 · 응답 승인일 · 행동 로그 document_update(B-25 · B-30)", async () => {
+    const { project, revisionId, pm } = await setupProject();
+    await insertLine(revisionId);
+    await setStatus(project.id, "in_progress");
+
+    const result = await approve(pm, revisionId, "2026-09-19");
+
+    expect(result).toEqual({ revisionId, seq: 1, approvedOn: "2026-09-19" });
+    const stored = await approvalOf(revisionId);
+    expect(stored.at?.toISOString()).toBe("2026-09-18T15:00:00.000Z");
+    expect(stored.by).toBe(pm.id);
+    const logs = await db
+      .select()
+      .from(actionLog)
+      .where(and(eq(actionLog.entity, "quote_revision"), eq(actionLog.entityId, revisionId)));
+    expect(logs.map((row) => [row.actionType, row.detail])).toEqual([
+      ["document_update", { kind: "customer_approval", revisionSeq: 1, approvedOn: "2026-09-19" }],
+    ]);
+  });
+
+  it("(a2) 담당이 아닌 쓰기 권한자 · 쓰기를 거둔 담당 PM은 「고객 승인 표시는 담당 PM만」 + write.denied 한 번씩(B-30)", async () => {
+    const { revisionId } = await setupProject();
+    await insertLine(revisionId);
+    const warn = vi.spyOn(log, "warn");
+    await expect(approve(await makeViewer(writerMenus), revisionId)).rejects.toThrow(NOT_ASSIGNED);
+
+    const readOnlyPm = await setupProject([{ menu: "projects", action: "view" }]);
+    await insertLine(readOnlyPm.revisionId);
+    await expect(approve(readOnlyPm.pm, readOnlyPm.revisionId)).rejects.toThrow(NOT_ASSIGNED);
+
+    expect(await approvalOf(revisionId)).toEqual({ at: null, by: null });
+    expect(await approvalOf(readOnlyPm.revisionId)).toEqual({ at: null, by: null });
+    expect(deniedWarnings(warn.mock.calls)).toHaveLength(2);
+  });
+
+  it("(a3) 완료에서는 켜기·끄기 모두 「완료 · 견적 줄 잠김」이고 승인일은 그대로 남는다(D19-9)", async () => {
+    const { project, revisionId, pm } = await setupProject();
+    await insertLine(revisionId);
+    await approve(pm, revisionId, "2026-09-18");
+    await setStatus(project.id, "completed");
+
+    await expect(setCustomerApproval(pm, revisionId, null, { now: NOW })).rejects.toThrow("완료 · 견적 줄 잠김");
+    await expect(approve(pm, revisionId, "2026-09-19")).rejects.toThrow("완료 · 견적 줄 잠김");
+
+    expect((await approvalOf(revisionId)).at?.toISOString()).toBe("2026-09-17T15:00:00.000Z");
+  });
+
+  it("(a4) 정산에서는 켜기가 통과한다(D19-9)", async () => {
+    const { project, revisionId, pm } = await setupProject();
+    await insertLine(revisionId);
+    await setStatus(project.id, "settling");
+    await approve(pm, revisionId);
+    expect((await approvalOf(revisionId)).by).toBe(pm.id);
+  });
+
+  it("(a5) 이전 차수 켜기는 「다른 사람이 새 차수를 만듦 · 새로 고침」", async () => {
+    const { project, revisionId, pm } = await setupProject();
+    await insertLine(revisionId);
+    await createRevisionFromCurrent(pm, { projectId: project.id, fromRevisionId: revisionId });
+    await expect(approve(pm, revisionId)).rejects.toThrow("다른 사람이 새 차수를 만듦 · 새로 고침");
+    expect(await approvalOf(revisionId)).toEqual({ at: null, by: null });
+  });
+
+  it("(a6) 끄기: 연결 문서가 있으면 「연결 문서 있음 · 고치려면 새 차수」, 없으면 둘 다 비우고 로그 cleared", async () => {
+    const { revisionId, pm } = await setupProject();
+    const line = await insertLine(revisionId);
+    await approve(pm, revisionId);
+    const linked = () => Promise.resolve(new Map([[line.id, [{ number: "EX-26-0001" }]]]));
+
+    await expect(setCustomerApproval(pm, revisionId, null, { now: NOW, linkedDocuments: linked })).rejects.toThrow(
+      "연결 문서 있음 · 고치려면 새 차수",
+    );
+    expect((await approvalOf(revisionId)).by).toBe(pm.id);
+
+    const result = await setCustomerApproval(pm, revisionId, null, { now: NOW });
+    expect(result).toEqual({ revisionId, seq: 1, approvedOn: null });
+    expect(await approvalOf(revisionId)).toEqual({ at: null, by: null });
+    const [latest] = await db
+      .select()
+      .from(actionLog)
+      .where(and(eq(actionLog.entity, "quote_revision"), eq(actionLog.entityId, revisionId)))
+      .orderBy(sql`${actionLog.seq} desc`)
+      .limit(1);
+    expect(latest?.detail).toEqual({ kind: "customer_approval", revisionSeq: 1, cleared: true });
+  });
+
+  it("(a7) 오늘(KST)보다 늦은 승인일은 「승인일이 오늘보다 늦음 · 날짜를 고쳐 주세요」", async () => {
+    const { revisionId, pm } = await setupProject();
+    await insertLine(revisionId);
+    await expect(approve(pm, revisionId, "2026-09-21")).rejects.toThrow("승인일이 오늘보다 늦음 · 날짜를 고쳐 주세요");
+    await approve(pm, revisionId, "2026-09-20");
+    expect((await approvalOf(revisionId)).by).toBe(pm.id);
+  });
+
+  it("(a8) 견적 줄 0개 차수(줄 없음 · 조정 줄만 · 보관 줄만)의 켜기는 「승인할 견적 줄이 없음 · 첫 줄 만들기」(ENG-D4)", async () => {
+    const empty = await setupProject();
+    await expect(approve(empty.pm, empty.revisionId)).rejects.toThrow("승인할 견적 줄이 없음 · 첫 줄 만들기");
+
+    const adjustmentOnly = await setupProject();
+    await insertLine(adjustmentOnly.revisionId, adjustmentPatch(-5_000));
+    await expect(approve(adjustmentOnly.pm, adjustmentOnly.revisionId)).rejects.toThrow("승인할 견적 줄이 없음 · 첫 줄 만들기");
+
+    const archivedOnly = await setupProject();
+    await insertLine(archivedOnly.revisionId, { archivedAt: new Date(), archivedBy: archivedOnly.pm.id });
+    await expect(approve(archivedOnly.pm, archivedOnly.revisionId)).rejects.toThrow("승인할 견적 줄이 없음 · 첫 줄 만들기");
+
+    for (const setup of [empty, adjustmentOnly, archivedOnly]) expect(await approvalOf(setup.revisionId)).toEqual({ at: null, by: null });
+  });
+
+  it("(a9) 옛 기준값의 켜기는 「견적이 바뀜 · 새로 고침」 — 수량 저장·실행가만 저장·토큰만 다름은 거부, 조정 줄만 더하면 통과(ENG-D9)", async () => {
+    const { revisionId, pm } = await setupProject();
+    const line = await insertLine(revisionId);
+    const warn = vi.spyOn(log, "warn");
+    const opts = { now: NOW };
+
+    // 다른 사람이 수량을 고쳐 저장(버전 증가 · 견적가 변경).
+    const seen = await basisOf(revisionId);
+    await db
+      .update(quoteLines)
+      .set({ quantity: "2.00", quoteAmountKrw: 200_000, profitKrw: 160_000, version: sql`${quoteLines.version} + 1` })
+      .where(eq(quoteLines.id, line.id));
+    await expect(setCustomerApproval(pm, revisionId, { approvedOn: "2026-09-19", ...seen }, opts)).rejects.toThrow("견적이 바뀜 · 새로 고침");
+    expect(await approvalOf(revisionId)).toEqual({ at: null, by: null });
+    expect(deniedWarnings(warn.mock.calls)).toHaveLength(1);
+
+    await setCustomerApproval(pm, revisionId, { approvedOn: "2026-09-19", ...(await basisOf(revisionId)) }, opts);
+    expect((await approvalOf(revisionId)).by).toBe(pm.id);
+    await setCustomerApproval(pm, revisionId, null, opts);
+
+    // 실행가만 고친 저장도 줄 버전을 올린다 — 보수적으로 거부.
+    const beforeExecution = await basisOf(revisionId);
+    await db
+      .update(quoteLines)
+      .set({ executionAmountKrw: 50_000, profitKrw: 150_000, version: sql`${quoteLines.version} + 1` })
+      .where(eq(quoteLines.id, line.id));
+    expect((await basisOf(revisionId)).seenTotalKrw).toBe(beforeExecution.seenTotalKrw);
+    await expect(setCustomerApproval(pm, revisionId, { approvedOn: "2026-09-19", ...beforeExecution }, opts)).rejects.toThrow(
+      "견적이 바뀜 · 새로 고침",
+    );
+
+    // 합계는 맞고 토큰만 다름 → 거부.
+    const current = await basisOf(revisionId);
+    await expect(
+      setCustomerApproval(pm, revisionId, { approvedOn: "2026-09-19", seenTotalKrw: current.seenTotalKrw, contentToken: "0".repeat(32) }, opts),
+    ).rejects.toThrow("견적이 바뀜 · 새로 고침");
+
+    // 조정 줄만 더한 저장은 토큰 밖 — 옛 기준값 그대로 통과.
+    await insertLine(revisionId, adjustmentPatch(-7_000));
+    await setCustomerApproval(pm, revisionId, { approvedOn: "2026-09-19", ...current }, opts);
+    expect((await approvalOf(revisionId)).by).toBe(pm.id);
+  });
+
+  it("(a10) 게이트는 이전 승인 차수를 대신 보지 않는다 — 1차 승인 + 2차 미승인이면 quote.customer-approval 거부(D-54 · 금지 항목)", async () => {
+    const { project, revisionId, pm } = await setupProject();
+    await insertLine(revisionId);
+    await setStatus(project.id, "in_progress");
+    await approve(pm, revisionId);
+    await createRevisionFromCurrent(pm, { projectId: project.id, fromRevisionId: revisionId });
+
+    const current = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!current) throw new Error("현재 차수가 없습니다");
+    expect(current.seq).toBe(2);
+    const decision = await gate(project, "quote.customer-approval", {
+      status: "in_progress",
+      revisionSeq: current.seq,
+      revisionApproved: current.approved,
+      gateEnabled: await getSettingValue(PROJECT_CUSTOMER_APPROVAL_GATE),
+      actorIsAssignedPm: true,
+      pmName: "차수 테스트 사람",
+    });
+    expect(decision).toEqual({ allowed: false, reason: "2차 고객 승인 전 · 고객 승인 표시" });
+    expect((await approvalOf(revisionId)).by).toBe(pm.id);
   });
 });

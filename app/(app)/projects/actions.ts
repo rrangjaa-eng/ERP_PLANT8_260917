@@ -13,7 +13,7 @@ import {
 } from "@/domain/projects/ledger";
 import type { PreEstimateFieldError } from "@/domain/projects/pre-estimate";
 import { quoteLinesInputSchema, SaveRejectedError } from "@/domain/quotes/lines";
-import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
+import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
 import {
   changeProjectStatus,
   listProjectStatusCatalog,
@@ -223,4 +223,25 @@ export const createRevisionAction = authedActionClient
     });
     revalidatePath("/projects");
     return created;
+  });
+
+// 04-14(D-56 · ENG-D9 · B-25): 차수의 고객 승인 표시 — 켜기는 승인일(YYYY-MM-DD, 잘못된 날짜가 PG 오류로 가지 않게
+// 형식을 여기서 막는다)과 PM이 본 기준값(견적 합계 · 내용 토큰)이 필수, 끄기는 null. 모달은 04-24.
+export const setCustomerApprovalAction = authedActionClient
+  .schema(
+    z.object({
+      revisionId: z.string().uuid(),
+      approval: z
+        .object({
+          approvedOn: z.iso.date(),
+          seenTotalKrw: z.number().int(),
+          contentToken: z.string().length(32),
+        })
+        .nullable(),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    const result = await setCustomerApproval(ctx.viewer, parsedInput.revisionId, parsedInput.approval);
+    revalidatePath("/projects");
+    return result;
   });

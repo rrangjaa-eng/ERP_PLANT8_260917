@@ -236,6 +236,108 @@ describe("quote.revision-create (D-53 · D10)", () => {
   });
 });
 
+// 04-14(D-43 · 사용자 D8 · D-54 · ROADMAP 기준 3) — 고객 승인 게이트. 이 페이즈에 호출자가 없다(Phase 5 지출결의).
+describe("quote.customer-approval (D-43 · D8)", () => {
+  const ctx = (status: string, patch: Partial<{ revisionApproved: boolean; gateEnabled: boolean; actorIsAssignedPm: boolean }> = {}) => ({
+    status,
+    revisionSeq: 2,
+    revisionApproved: false,
+    gateEnabled: true,
+    actorIsAssignedPm: false,
+    pmName: "김기획",
+    ...patch,
+  });
+
+  it("수주중·미수주는 미승인이어도 통과한다(D-43 · 사용자 D8)", async () => {
+    await expect(gate({}, "quote.customer-approval", ctx("bidding"))).resolves.toEqual({ allowed: true });
+    await expect(gate({}, "quote.customer-approval", ctx("lost"))).resolves.toEqual({ allowed: true });
+  });
+
+  it("진행 + 미승인: 담당 PM에게 「{n}차 고객 승인 전 · 고객 승인 표시」, 그 밖 「{n}차 고객 승인 전 · 담당 PM {이름}」", async () => {
+    await expect(gate({}, "quote.customer-approval", ctx("in_progress", { actorIsAssignedPm: true }))).resolves.toEqual({
+      allowed: false,
+      reason: "2차 고객 승인 전 · 고객 승인 표시",
+    });
+    await expect(gate({}, "quote.customer-approval", ctx("in_progress"))).resolves.toEqual({
+      allowed: false,
+      reason: "2차 고객 승인 전 · 담당 PM 김기획",
+    });
+  });
+
+  it("진행 + 승인은 통과, 설정을 끄면 미승인도 통과", async () => {
+    await expect(gate({}, "quote.customer-approval", ctx("in_progress", { revisionApproved: true }))).resolves.toEqual({ allowed: true });
+    await expect(gate({}, "quote.customer-approval", ctx("in_progress", { gateEnabled: false }))).resolves.toEqual({ allowed: true });
+  });
+
+  it("정산·완료 + 미승인은 거부한다", async () => {
+    for (const status of ["settling", "completed"]) {
+      await expect(gate({}, "quote.customer-approval", ctx(status))).resolves.toEqual({
+        allowed: false,
+        reason: "2차 고객 승인 전 · 담당 PM 김기획",
+      });
+    }
+  });
+});
+
+// 04-14(D-56 · B-30 · ENG-D4 · ENG-D9 · 사용자 D19-9) — 승인 표시 켜기·끄기. 우선순위: 담당·권한 → 완료 → 현재 차수 →
+// 빈 차수 → 기준값 → 연결 문서.
+describe("quote.approval-toggle (D-56 · B-30 · ENG-D4 · ENG-D9)", () => {
+  const base = {
+    turningOn: true,
+    status: "in_progress",
+    actorIsAssignedPm: true,
+    actorCanWrite: true,
+    isCurrentRevision: true,
+    approvableLineCount: 3,
+    basisMatches: true,
+    hasLinkedDocuments: false,
+  };
+  const check = (patch: Partial<typeof base>) => gate({}, "quote.approval-toggle", { ...base, ...patch });
+  const denied = (reason: string) => ({ allowed: false, reason });
+
+  it("담당 PM + 진행 + 켜기는 통과, 정산 + 켜기도 통과(D19-9)", async () => {
+    await expect(check({})).resolves.toEqual({ allowed: true });
+    await expect(check({ status: "settling" })).resolves.toEqual({ allowed: true });
+  });
+
+  it("담당이 아니거나 쓰기가 없으면 「고객 승인 표시는 담당 PM만」 — 다른 조건보다 먼저", async () => {
+    await expect(check({ actorIsAssignedPm: false, status: "completed" })).resolves.toEqual(denied("고객 승인 표시는 담당 PM만"));
+    await expect(check({ actorCanWrite: false })).resolves.toEqual(denied("고객 승인 표시는 담당 PM만"));
+  });
+
+  it("완료는 켜기·끄기 모두 「완료 · 견적 줄 잠김」", async () => {
+    await expect(check({ status: "completed", isCurrentRevision: false })).resolves.toEqual(denied("완료 · 견적 줄 잠김"));
+    await expect(check({ status: "completed", turningOn: false })).resolves.toEqual(denied("완료 · 견적 줄 잠김"));
+  });
+
+  it("현재 차수가 아니면 「다른 사람이 새 차수를 만듦 · 새로 고침」 — 빈 차수·기준값보다 먼저", async () => {
+    await expect(check({ isCurrentRevision: false, approvableLineCount: 0, basisMatches: false })).resolves.toEqual(
+      denied("다른 사람이 새 차수를 만듦 · 새로 고침"),
+    );
+  });
+
+  it("켜기 + 견적 줄 0개는 「승인할 견적 줄이 없음 · 첫 줄 만들기」(ENG-D4) — 기준값보다 먼저", async () => {
+    await expect(check({ approvableLineCount: 0, basisMatches: false })).resolves.toEqual(denied("승인할 견적 줄이 없음 · 첫 줄 만들기"));
+  });
+
+  it("켜기 + 기준값 불일치는 「견적이 바뀜 · 새로 고침」(ENG-D9)", async () => {
+    await expect(check({ basisMatches: false })).resolves.toEqual(denied("견적이 바뀜 · 새로 고침"));
+  });
+
+  it("끄기는 줄 수·기준값을 보지 않고, 연결 문서가 있으면 「연결 문서 있음 · 고치려면 새 차수」", async () => {
+    await expect(check({ turningOn: false, approvableLineCount: 0, basisMatches: false })).resolves.toEqual({ allowed: true });
+    await expect(check({ turningOn: false, hasLinkedDocuments: true })).resolves.toEqual(denied("연결 문서 있음 · 고치려면 새 차수"));
+  });
+});
+
+// 04-14(D-64) — 거래처 필수. 이 페이즈 호출자 없음(Phase 5 지출결의·구매 요청).
+describe("quote.vendor-required (D-64)", () => {
+  it("거래처가 없으면 「거래처 없음 · 거래처 고르기」, 있으면 통과", async () => {
+    await expect(gate({}, "quote.vendor-required", { vendorId: null })).resolves.toEqual({ allowed: false, reason: "거래처 없음 · 거래처 고르기" });
+    await expect(gate({}, "quote.vendor-required", { vendorId: "v-1" })).resolves.toEqual({ allowed: true });
+  });
+});
+
 describe("denyWrite — 거부 운영 로그 한 함수 (D19 · 엔지 리뷰 B)", () => {
   afterEach(() => {
     vi.restoreAllMocks();

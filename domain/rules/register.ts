@@ -12,7 +12,7 @@ import {
 // Phase 4의 프로젝트 게이트 규칙을 등록하는 한 곳 — 규칙마다 등록한 플랜을
 // 주석 한 줄로 적는다: `project.line-edit`(04-06 · 04-12 · 04-13), `quote.line-cap`(04-26),
 // `project.transition`(04-20), `project.period-edit`(04-22), `project.pre-estimate-edit`(04-44),
-// `project.start-date-required`(04-20), `quote.revision-create`(04-14).
+// `project.start-date-required`(04-20), `quote.revision-create`·`quote.customer-approval`·`quote.approval-toggle`·`quote.vendor-required`(04-14).
 //
 // side-effect import 모듈 — `import "@/domain/rules/register"`로 불러
 // 등록만 일으킨다(도메인 등록 사이드이펙트 모듈 규약).
@@ -186,4 +186,67 @@ registerGateRule<unknown, QuoteRevisionCreateCtx>({
     if (ctx.copyableLineCount === 0) return { allowed: false, reason: "복사할 견적 줄 없음 · 첫 줄 만들기" };
     return { allowed: true };
   },
+});
+
+// 04-14(D-43 · D-54 · ROADMAP 기준 3 · PROJ-07) — 고객 승인 게이트. 현재 차수(최신 순번 하나)가 미승인이면 지출 동작을
+// 막는다 — 이전 승인 차수를 대신 보지 않는다. 설정 `project.customer_approval_gate`를 끄면 통과한다. 이 페이즈에는
+// 호출자가 없다 — Phase 5 지출결의가 부른다.
+// 사용자 D8(CEO 리뷰 B-08): D-43 원문은 수주중만 면제였지만 미수주도 면제한다(뒤늦은 PT 청구서 · 승인 차수가 거의 없음).
+export type QuoteCustomerApprovalCtx = {
+  status: string;
+  revisionSeq: number;
+  revisionApproved: boolean;
+  gateEnabled: boolean;
+  actorIsAssignedPm: boolean;
+  pmName: string;
+};
+
+const CUSTOMER_APPROVAL_EXEMPT_STATUSES = ["bidding", "lost"];
+
+registerGateRule<unknown, QuoteCustomerApprovalCtx>({
+  name: "quote.customer-approval",
+  check: (_doc, ctx) => {
+    if (!ctx.gateEnabled || ctx.revisionApproved || CUSTOMER_APPROVAL_EXEMPT_STATUSES.includes(ctx.status)) return { allowed: true };
+    const next = ctx.actorIsAssignedPm ? "고객 승인 표시" : `담당 PM ${ctx.pmName}`;
+    return { allowed: false, reason: `${ctx.revisionSeq}차 고객 승인 전 · ${next}` };
+  },
+});
+
+// 04-14(D-56 · CEO 리뷰 B-30 · ENG-D4 · ENG-D9 · 사용자 D19-9) — 차수의 고객 승인 표시 켜기·끄기. 담당 PM이면서
+// `projects` 쓰기가 있어야 하고, 완료에서는 바뀌지 않는다(정산은 된다). 켜기만 견적 줄 수(빈 차수)·기준값(PM이 본
+// 합계·내용 토큰)을 보고, 끄기만 연결 문서를 본다. 우선순위: 담당·권한 → 완료 → 현재 차수 → 빈 차수 → 기준값 → 연결 문서.
+export type QuoteApprovalToggleCtx = {
+  turningOn: boolean;
+  status: string;
+  actorIsAssignedPm: boolean;
+  actorCanWrite: boolean;
+  isCurrentRevision: boolean;
+  approvableLineCount: number;
+  basisMatches: boolean;
+  hasLinkedDocuments: boolean;
+};
+
+registerGateRule<unknown, QuoteApprovalToggleCtx>({
+  name: "quote.approval-toggle",
+  check: (_doc, ctx) => {
+    // 방어 문구(rev 5 밖 — 화면은 담당 PM에게만 버튼을 그린다).
+    if (!ctx.actorIsAssignedPm || !ctx.actorCanWrite) return { allowed: false, reason: "고객 승인 표시는 담당 PM만" };
+    if (ctx.status === "completed") return { allowed: false, reason: "완료 · 견적 줄 잠김" };
+    if (!ctx.isCurrentRevision) return { allowed: false, reason: "다른 사람이 새 차수를 만듦 · 새로 고침" };
+    if (ctx.turningOn) {
+      if (ctx.approvableLineCount === 0) return { allowed: false, reason: "승인할 견적 줄이 없음 · 첫 줄 만들기" };
+      if (!ctx.basisMatches) return { allowed: false, reason: "견적이 바뀜 · 새로 고침" };
+      return { allowed: true };
+    }
+    if (ctx.hasLinkedDocuments) return { allowed: false, reason: "연결 문서 있음 · 고치려면 새 차수" };
+    return { allowed: true };
+  },
+});
+
+// 04-14(D-64) — 거래처 필수. Phase 5 지출결의·구매 요청이 부른다(이 페이즈 호출자 없음).
+export type QuoteVendorRequiredCtx = { vendorId: string | null };
+
+registerGateRule<unknown, QuoteVendorRequiredCtx>({
+  name: "quote.vendor-required",
+  check: (_doc, ctx) => (ctx.vendorId ? { allowed: true } : { allowed: false, reason: "거래처 없음 · 거래처 고르기" }),
 });

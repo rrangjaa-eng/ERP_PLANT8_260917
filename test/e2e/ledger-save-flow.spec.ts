@@ -291,6 +291,42 @@ test.describe("저장 중 잠금 — 복원 줄·표 밖 칸 여는 버튼(리�
   });
 });
 
+test.describe("저장 중 잠금 — 구조 키·붙여넣기·실패 뒤 해제(리뷰 S-2)", () => {
+  test("요청 중 Delete·Ctrl+Enter·Ctrl+D·Alt+↓·붙여넣기는 줄과 값을 바꾸지 않고, 실패 응답 뒤 잠금이 풀린다", async ({ page }) => {
+    const { grid, dataRows, execution, holdSaves, saves, fail } = await openLockProject(page);
+    const itemNames = () => dataRows.locator("td:nth-child(3)").allTextContents();
+    await editExecution(page, execution(0), "777000");
+    const before = await itemNames();
+
+    await holdSaves();
+    await execution(0).focus();
+    await page.keyboard.press("Control+s");
+    await expect(grid).toHaveAttribute("aria-busy", "true");
+    await expect.poll(() => saves.count).toBe(1);
+
+    await execution(1).focus();
+    await page.keyboard.press("Delete");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.keyboard.press("Control+Enter");
+    await page.keyboard.press("Control+d");
+    await page.keyboard.press("Alt+ArrowUp");
+    await page.evaluate(() => {
+      const dt = new DataTransfer();
+      dt.setData("text/plain", "123456");
+      document.activeElement?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    });
+    await page.waitForTimeout(300);
+    expect(await itemNames()).toEqual(before);
+    await expect(execution(1)).toHaveText("900,000");
+
+    fail();
+    await expect(grid).not.toHaveAttribute("aria-busy", "true");
+    await execution(1).focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("textbox", { name: "실행가" })).toBeVisible();
+  });
+});
+
 // 04-49(04-22 이월 · 04-30 DOM 감사 12b) — 저장 안 한 편집을 남긴 채 새로 고치면 복원 줄이 서버 HTML과 첫 클라이언트
 // 렌더에서 같아야 한다(React #418 수화 불일치 없음). 프로덕션 빌드에서는 `Minified React error #418`로 나온다.
 test.describe("복원 줄 수화(#418)", () => {

@@ -282,4 +282,31 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     });
     expect(await amountCell.evaluate((el) => getComputedStyle(el).color)).not.toBe(muted);
   });
+
+  test("(리뷰 S-2) 저장 요청 중 발행액 칸은 값을 보인 채 읽기 전용이고 「발행 줄 추가」는 무동작이다", async ({ page }) => {
+    const projectUrl = await openWithIssuedEntry(page);
+    await page.goto(projectUrl);
+    const amount = page.getByLabel("발행액");
+    await amount.fill("4000000");
+
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/*", async (route) => {
+      const request = route.request();
+      if (request.method() === "POST" && request.headers()["next-action"] !== undefined) await held;
+      await route.continue();
+    });
+    await page.getByRole("button", { name: /일괄 저장/ }).click();
+    await expect(page.getByRole("button", { name: /일괄 저장/ })).toContainText("…");
+
+    await expect(amount).toHaveAttribute("readonly", "");
+    await page.getByRole("button", { name: "발행 줄 추가" }).click();
+    await expect(page.getByLabel("발행액")).toHaveCount(1);
+
+    release();
+    await expect(page.getByText("바뀐 칸 없음", { exact: true })).toBeVisible();
+    await expect(amount).not.toHaveAttribute("readonly", "");
+  });
 });

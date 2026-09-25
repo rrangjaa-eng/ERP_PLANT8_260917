@@ -195,7 +195,7 @@ const BASIS_CHANGED = "견적이 바뀜 · 새로 고침";
 
 async function basisNow(revisionId: string) {
   const basis = await approvalBasis(SYSTEM_VIEWER, revisionId);
-  return { approvedOn: kstToday(), seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken };
+  return { approvedOn: kstToday(new Date()), seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken };
 }
 
 async function approvedAt(revisionId: string): Promise<Date | null> {

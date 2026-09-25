@@ -33,11 +33,15 @@ export type ProjectLineEditCtx = {
   actorCanAdjust: boolean;
   hasLinkedDocuments: boolean;
   linkedDocumentNumber?: string;
+  /** 04-40(사용자 D7 · OV-1) — 현재 차수가 고객 승인됐으면 그 순번. 견적 줄의 합계를 바꾸는 조작을 막는다. */
+  approvedSeq?: number | null;
   change:
-    | { kind: "update"; fields: QuoteLineField[] }
+    // 04-40(GAP 1) — quoteAmountUnchanged: 서버가 다시 계산한 견적가 = 저장된 견적가. 승인 차수에서는 참이어야 통과한다.
+    | { kind: "update"; fields: QuoteLineField[]; quoteAmountUnchanged?: boolean }
     | { kind: "insert"; quoteCellsZero: boolean }
     | { kind: "restore"; quoteAmountZero: boolean }
-    | { kind: "archive" | "reorder" | "duplicate" };
+    | { kind: "archive"; quoteAmountZero?: boolean }
+    | { kind: "reorder" | "duplicate" };
 };
 
 const SETTLING_STRUCTURE_DENIED = "정산 · 줄 삭제·이동 없음";
@@ -61,7 +65,10 @@ registerGateRule<unknown, ProjectLineEditCtx>({
   check: (_doc, ctx) => {
     if (ctx.lineKind === "adjustment") return adjustmentAllowed(ctx) ? { allowed: true } : { allowed: false, reason: ADJUSTMENT_DENIED };
     if (!ctx.actorCanWrite) return { allowed: false, reason: WRITE_DENIED };
-    const lockReason = quoteLockReason({ status: ctx.status });
+    const approvedSeq = ctx.approvedSeq ?? null;
+    const lockReason = quoteLockReason({ status: ctx.status, approvedSeq });
+    // 04-40 — 승인 차수의 견적 줄은 합계를 바꾸는 조작을 막는다(이유는 quoteLockReason — 리터럴 없음, W5).
+    const approvalLocks = approvedSeq !== null && ctx.lineKind === "quote" && lockReason !== null;
     if (ctx.change.kind === "update") {
       const cells = lineCellEditability({
         status: ctx.status,
@@ -69,11 +76,13 @@ registerGateRule<unknown, ProjectLineEditCtx>({
         hasLinkedDocuments: ctx.hasLinkedDocuments,
         isNewLine: false,
         lineKind: ctx.lineKind,
+        approvedSeq,
       });
       for (const field of ctx.change.fields) {
         if (cells[field] === "readonly") return { allowed: false, reason: linkedDocumentReason(ctx.linkedDocumentNumber ?? "") };
         if (cells[field] === "locked" && lockReason) return { allowed: false, reason: lockReason };
       }
+      if (approvalLocks && ctx.change.quoteAmountUnchanged !== true) return { allowed: false, reason: lockReason };
       return { allowed: true };
     }
     const kind = ctx.change.kind;
@@ -87,6 +96,12 @@ registerGateRule<unknown, ProjectLineEditCtx>({
       return { allowed: false, reason: SETTLING_INSERT_DENIED };
     }
     if (kind === "archive" && ctx.hasLinkedDocuments) return { allowed: false, reason: LINKED_ARCHIVE_DENIED };
+    if (approvalLocks) {
+      if (ctx.change.kind === "insert" && !ctx.change.quoteCellsZero) return { allowed: false, reason: lockReason };
+      if ((ctx.change.kind === "archive" || ctx.change.kind === "restore") && ctx.change.quoteAmountZero !== true) {
+        return { allowed: false, reason: lockReason };
+      }
+    }
     return { allowed: true };
   },
 });

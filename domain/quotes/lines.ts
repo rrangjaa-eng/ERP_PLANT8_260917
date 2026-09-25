@@ -235,7 +235,8 @@ export async function getCurrentQuoteRevision(
 // 한 번(노출 조회가 줄 수가 아니라 정보 항목 수만큼).
 // 04-13(D-83) — `canAdjust`는 권한표 `projects.adjustment` 쓰기(없으면 조정 줄은 잠김).
 // 04-14(GAP 5c · DR-13) — `locked`는 이전 차수 잠김 조회: 모든 줄의 모든 셀이 `locked`(쓰기·조정 권한과 무관).
-export type QuoteLineListCtx = { status: string; canWrite: boolean; canAdjust?: boolean; locked?: boolean };
+// 04-40 — `approvedSeq`는 그 차수가 고객 승인됐으면 순번(승인 차수 견적 칸 잠금).
+export type QuoteLineListCtx = { status: string; canWrite: boolean; canAdjust?: boolean; locked?: boolean; approvedSeq?: number | null };
 
 // D-66 — 줄마다 연결된 지출결의(번호). 이 페이즈에는 지출결의가 없어 빈 결과다 — Phase 5가 이 함수만 채운다.
 // 저장 트랜잭션 안에서도 불리므로 tx를 받는다.
@@ -272,6 +273,7 @@ async function projectLines(
         isNewLine: false,
         lineKind: lineKindOf(row),
         canAdjust: ctx.locked ? false : (ctx.canAdjust ?? false),
+        approvedSeq: ctx.approvedSeq ?? null,
       }),
       hasLinkedDocuments,
       readonlyReason: firstLinked ? linkedDocumentReason(firstLinked.number) : null,
@@ -281,8 +283,9 @@ async function projectLines(
 }
 
 export async function listQuoteLines(viewer: Viewer, revisionId: string, ctx: QuoteLineListCtx): Promise<QuoteLineDto[]> {
-  const rows = await repoListQuoteLinesByRevision(viewer, revisionId);
-  return projectLines(viewer, rows, ctx, await linkedDocumentsByLine(viewer, revisionId));
+  const [rows, revision] = await Promise.all([repoListQuoteLinesByRevision(viewer, revisionId), repoFindQuoteRevisionById(viewer, revisionId)]);
+  const approvedSeq = revision?.customerApprovedAt ? revision.seq : null;
+  return projectLines(viewer, rows, { ...ctx, approvedSeq }, await linkedDocumentsByLine(viewer, revisionId));
 }
 
 // 화면이 보내는 줄 하나 — 모든 줄이 id(uuid)를 싣는다. `isNew`면 화면이 만든 id로 넣는 새 줄
@@ -585,6 +588,8 @@ const LINE_CAP_RULE = "quote.line-cap";
 const CURRENT_REVISION_RULE = "quote.current-revision";
 // UI-SPEC rev 5 — 보낸 차수가 잠금 뒤 다시 읽은 최신 차수가 아니다(04-40 · B-01).
 const STALE_REVISION = "다른 사람이 새 차수를 만듦 · 새로 고침";
+// 보관함 복원(관리자 화면 — P0 예외) — 현재 차수가 아닌 차수의 줄.
+const PAST_REVISION_RESTORE = "이전 차수의 줄은 복원할 수 없습니다 · 현재 차수에서 새로 만들어 주세요";
 // UI-SPEC rev 5 `Error — 저장(순서·소속, 방어)` · `Error — 저장(재전송 불일치, ENG-D10)`.
 const MEMBERSHIP_MISMATCH = "차수와 프로젝트가 맞지 않음 · 새로 고침";
 const ORDER_MISMATCH = "줄 순서가 맞지 않음 · 새로 고침";
@@ -760,6 +765,7 @@ export type FxToRemember = { currency: Currency; rate: number };
 // ② 트랜잭션 안 쓰기 단계의 결과 — 커밋 뒤 단계(투영·최근 환율 기억)의 입력.
 export type WrittenQuoteLines = {
   projectStatus: string;
+  approvedSeq: number | null;
   canWrite: boolean;
   canAdjust: boolean;
   activeRows: QuoteLineRow[];
@@ -794,11 +800,13 @@ export async function writeQuoteLinesInTx(
   // 04-40(B-01) — 현재 차수 재확인은 잠금 뒤 같은 tx로(단독 저장·합성 저장 공통). 아무것도 쓰기 전에 전부 거부한다.
   const latest = await repoFindLatestQuoteRevision(viewer, projectId, tx);
   if (latest?.id !== revisionId) denyWrite(viewer, CURRENT_REVISION_RULE, { projectId, revisionId }, new UserFacingError(STALE_REVISION));
+  // 04-40(사용자 D7 · OV-1) — 승인 차수 축은 같은 tx로 읽은 현재 차수에서만 파생된다(따로 저장하지 않는다).
+  const approvedSeq = latest.customerApprovedAt !== null ? latest.seq : null;
   const status = projectRow.status;
   const linkedDocuments = await linkedDocumentsByLine(viewer, revisionId, tx);
   const lineCtx = (lineId: string | null, lineKind: QuoteLineKind, change: ProjectLineEditCtx["change"]): ProjectLineEditCtx => {
     const firstLinked = lineId ? linkedDocuments.get(lineId)?.[0] : undefined;
-    const actor = { lineKind, actorCanWrite: canWrite, actorCanAdjust: canAdjust };
+    const actor = { lineKind, actorCanWrite: canWrite, actorCanAdjust: canAdjust, approvedSeq };
     return firstLinked
       ? { status, ...actor, hasLinkedDocuments: true, linkedDocumentNumber: firstLinked.number, change }
       : { status, ...actor, hasLinkedDocuments: false, change };
@@ -864,7 +872,7 @@ export async function writeQuoteLinesInTx(
     }
     for (const id of archivedIds) {
       const archived = currentById.get(id);
-      if (archived) await judgeStructure(id, lineKindOf(archived), { kind: "archive" });
+      if (archived) await judgeStructure(id, lineKindOf(archived), { kind: "archive", quoteAmountZero: archived.quoteAmountKrw === 0 });
     }
 
     for (const [rowIndex, requested] of input.rows.entries()) {
@@ -887,7 +895,10 @@ export async function writeQuoteLinesInTx(
       planned.push(entry);
 
       if (row.isNew) {
-        await judgeStructure(null, kind, row.duplicatedFrom ? { kind: "duplicate" } : { kind: "insert", quoteCellsZero: quoteCellsZero(row) });
+        const insert = { kind: "insert", quoteCellsZero: quoteCellsZero(row) } as const;
+        await judgeStructure(null, kind, row.duplicatedFrom ? { kind: "duplicate" } : insert);
+        // 04-40(OV-1) — 승인 차수의 복제도 새 줄이다: 견적 칸이 0이 아니면 합계를 바꾼다.
+        if (row.duplicatedFrom && approvedSeq !== null) await judgeStructure(null, kind, insert);
         continue;
       }
 
@@ -900,8 +911,10 @@ export async function writeQuoteLinesInTx(
       // 바뀐 칸마다 판정해 칸 오류로 싣는다(이유 = 표 위 한 줄과 같은 문자열). 바뀐 칸이 없으면 게이트를 부르지 않는다.
       const changed = changedFields(current, payload);
       entry.unchanged = changed.length === 0;
+      // 04-40(GAP 1) — 기준은 잠금 뒤 같은 tx로 읽은 행의 견적가(페이로드 baseline이 아니다).
+      const quoteAmountUnchanged = payload.quoteAmountKrw === current.quoteAmountKrw;
       for (const field of changed) {
-        const decision = await gate(projectRow, LINE_EDIT_RULE, lineCtx(row.id, kind, { kind: "update", fields: [field] }));
+        const decision = await gate(projectRow, LINE_EDIT_RULE, lineCtx(row.id, kind, { kind: "update", fields: [field], quoteAmountUnchanged }));
         if (!decision.allowed) gateErrors.push({ rowIndex, rowId: row.id, field, label: CELL_LABELS[field], reason: decision.reason });
       }
     }
@@ -995,6 +1008,7 @@ export async function writeQuoteLinesInTx(
   // (g) 엔지 리뷰 A §2 P2 — 결과는 차수의 활성 줄 전체(표시 순서).
   return {
     projectStatus: status,
+    approvedSeq,
     canWrite,
     canAdjust,
     activeRows: await repoListQuoteLinesByRevision(viewer, revisionId, tx),
@@ -1023,7 +1037,7 @@ export async function finishQuoteLineSave(viewer: Viewer, written: WrittenQuoteL
     lines: await projectLines(
       viewer,
       written.activeRows,
-      { status: written.projectStatus, canWrite: written.canWrite, canAdjust: written.canAdjust },
+      { status: written.projectStatus, canWrite: written.canWrite, canAdjust: written.canAdjust, approvedSeq: written.approvedSeq },
       written.linkedDocuments,
     ),
   };
@@ -1056,12 +1070,15 @@ export async function restoreQuoteLine(
     if (current.archivedAt === null) return;
 
     const firstLinked = (await linkedDocumentsByLine(viewer, current.revisionId, tx)).get(id)?.[0];
+    // 04-40(OV-2 · B-01) — 잠금 뒤 같은 tx로 읽은 현재 차수: 이전 차수 줄은 되살리지 않고, 승인 차수는 합계를 바꾸는 복원을 막는다.
+    const latest = await repoFindLatestQuoteRevision(viewer, revision.projectId, tx);
+    const approvedSeq = latest?.customerApprovedAt ? latest.seq : null;
     const change = { kind: "restore", quoteAmountZero: current.quoteAmountKrw === 0 } as const;
-    const actor = { lineKind: lineKindOf(current), actorCanWrite: canWrite, actorCanAdjust: canAdjust };
+    const actor = { lineKind: lineKindOf(current), actorCanWrite: canWrite, actorCanAdjust: canAdjust, approvedSeq };
     const ctx: ProjectLineEditCtx = firstLinked
       ? { status: projectRow.status, ...actor, hasLinkedDocuments: true, linkedDocumentNumber: firstLinked.number, change }
       : { status: projectRow.status, ...actor, hasLinkedDocuments: false, change };
-    const decision = await gate(projectRow, LINE_EDIT_RULE, ctx);
+    const decision = latest?.id !== current.revisionId ? { allowed: false, reason: PAST_REVISION_RESTORE } : await gate(projectRow, LINE_EDIT_RULE, ctx);
     if (!decision.allowed) {
       denyWrite(viewer, LINE_EDIT_RULE, { projectId: revision.projectId, revisionId: current.revisionId, lineIds: [id] }, new GateBlockedError(decision.reason));
     }

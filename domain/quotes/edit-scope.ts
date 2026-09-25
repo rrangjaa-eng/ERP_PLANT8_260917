@@ -34,6 +34,9 @@ const LINKED_READONLY_FIELDS: readonly QuoteLineField[] = ["quantity", "unitPric
 // 04-13(D-83) — 조정 줄에서 조정 권한이 있는 사람이 고치는 칸. 소분류·수량·단가·상태는 서버가 고정값으로 쓴다.
 const ADJUSTMENT_EDIT_FIELDS: readonly QuoteLineField[] = ["itemName", "vendorId", "execution", "note"];
 
+// 04-40(사용자 D7 · ENG-D7) — 승인된 현재 차수에서 기존 견적 줄의 잠김 칸. 새 줄은 정산 새 줄과 같은 칸(소분류는 고른다).
+const APPROVED_LOCKED_FIELDS: readonly QuoteLineField[] = ["quantity", "unitPrice", "lineStatus", "subcategory"];
+
 export type LineEditScopeInput = {
   status: string;
   canWrite: boolean;
@@ -43,6 +46,8 @@ export type LineEditScopeInput = {
   lineKind?: QuoteLineKind;
   /** 04-13(D-83) — 권한표 `projects.adjustment` 쓰기. 조정 줄은 상태를 보지 않고 이것으로만 판정한다. */
   canAdjust?: boolean;
+  /** 04-40 — 현재 차수가 고객 승인됐으면 그 순번(없으면 미승인). 견적 줄에만 적용된다. */
+  approvedSeq?: number | null;
 };
 
 function cellLevel(input: LineEditScopeInput, field: QuoteLineField): QuoteCellEditability {
@@ -58,6 +63,10 @@ function cellLevel(input: LineEditScopeInput, field: QuoteLineField): QuoteCellE
       return (QUOTE_FIELDS_LOCKED_IN_SETTLING_INSERT as readonly QuoteLineField[]).includes(field) ? "locked" : "edit";
     }
     return field === "execution" ? "edit" : "locked";
+  }
+  if (input.approvedSeq != null && (input.lineKind ?? "quote") === "quote") {
+    const locked: readonly QuoteLineField[] = input.isNewLine ? QUOTE_FIELDS_LOCKED_IN_SETTLING_INSERT : APPROVED_LOCKED_FIELDS;
+    if (locked.includes(field)) return "locked";
   }
   return "edit";
 }
@@ -114,10 +123,11 @@ export function orderChange(current: readonly string[], order: readonly string[]
   return keptInOrder.every((id, index) => id === kept[index]) ? "insertOnly" : "reorder";
 }
 
-// DR-2 — 잠긴 칸의 거부 이유 = 표 위 한 줄. 이 문자열은 이 함수만 만든다(우선순위 완료 > 정산 > 승인 — 승인 문구는 04-14).
-export function quoteLockReason(input: { status: string }): string | null {
+// DR-2 — 잠긴 칸의 거부 이유 = 표 위 한 줄. 이 문자열은 이 함수만 만든다(우선순위 완료 > 정산 > 승인 — 승인 문구는 04-40).
+export function quoteLockReason(input: { status: string; approvedSeq?: number | null }): string | null {
   if (input.status === "completed") return "완료 · 견적 줄 잠김";
   if (input.status === "settling") return "정산 · 실행가와 새 줄만";
+  if (input.approvedSeq != null) return `${input.approvedSeq}차 고객 승인됨 · 고치려면 새 차수`;
   return null;
 }
 
@@ -129,9 +139,9 @@ export function linkedDocumentReason(number: string): string {
 
 // 04-30(DR-2 · P0) — 표 위 잠김 줄. 잠긴 셀 편집 시도의 이유와 한 문자열이다(quoteLockReason). 줄이 0개이거나
 // 편집 셀이 0인 읽기 표(완료를 보는 PM)에는 그리지 않는다.
-export function tableLockLine(input: { status: string; hasEditableCells: boolean; lineCount: number }): string | null {
+export function tableLockLine(input: { status: string; approvedSeq?: number | null; hasEditableCells: boolean; lineCount: number }): string | null {
   if (input.lineCount === 0 || !input.hasEditableCells) return null;
-  return quoteLockReason({ status: input.status });
+  return quoteLockReason({ status: input.status, approvedSeq: input.approvedSeq });
 }
 
 // 04-30(UI-SPEC rev 5 Copywriting `Empty — 견적 줄 표`) — 0줄 표의 한 줄. 다음 한 수는 그 사람에게 실제로 렌더되는

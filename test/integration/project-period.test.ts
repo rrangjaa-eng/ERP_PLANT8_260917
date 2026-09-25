@@ -490,6 +490,7 @@ describe("기간 저장 — 행위자 · 권리 · 검증 (04-22 Task 2)", () =>
       actorCanWrite: true,
       actorCanAdjust: true,
       hasLinkedDocuments: false,
+      approvedSeq: null,
       change: { kind: "insert", quoteCellsZero: true },
     });
     expect(lineDoc).toMatchObject({ status: "settling", endDate: addDays(TODAY, -1) });

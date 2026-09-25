@@ -175,12 +175,17 @@ case "$event" in
     ;;
 
   merge)
-    # 문서만 바꾼 PR(.planning/·docs/·.claude/gates/·*.md)은 /qa 면제(사용자 승인 2026-09-25).
-    # 파일 목록을 못 읽으면 문서만으로 보지 않는다.
-    pr="$(printf '%s' "$payload" | jq -r '.tool_input | "repos/\(.owner // "")/\(.repo // "")/pulls/\(.pullNumber // "")/files"')"
-    pr_files="$(gh api "$pr" --paginate --jq '.[].filename' 2>/dev/null || true)"
+    # 문서만 바꾼 PR(.planning/·docs/·.claude/gates/·*.md, 단 CLAUDE.md와 .claude/ 아래 .md 제외)은
+    # /qa 면제(사용자 승인 2026-09-25). 목록을 못 읽거나 받은 수가 changed_files와 다르면 문서만으로
+    # 보지 않는다. 이름 바꾸기는 옛 경로도 본다. 판정은 파이프 없이(SIGPIPE가 결과를 뒤집지 않게).
+    pr="$(printf '%s' "$payload" | jq -r '.tool_input | "repos/\(.owner // "")/\(.repo // "")/pulls/\(.pullNumber // "")"')"
+    pr_files="$(gh api "$pr/files" --paginate --jq '.[] | [.filename, .previous_filename // empty] | @tsv' 2>/dev/null || true)"
+    pr_changed="$(gh api "$pr" --jq '.changed_files' 2>/dev/null || true)"
     docs_only=0
-    [ -n "$pr_files" ] && ! printf '%s\n' "$pr_files" | grep -Evq '^(\.planning/|docs/|\.claude/gates/)|\.md$' && docs_only=1
+    if [ -n "$pr_files" ] && [ "$(grep -c . <<<"$pr_files")" = "$pr_changed" ]; then
+      awk -F'\t' '{ for (i = 1; i <= NF; i++) if (!($i ~ /^(\.planning|docs|\.claude\/gates)\// || ($i ~ /\.md$/ && $i !~ /^\.claude\// && $i !~ /(^|\/)CLAUDE\.md$/))) bad = 1 }
+                  END { exit bad }' <<<"$pr_files" && docs_only=1
+    fi
     gate_has review && { [ "$docs_only" = 1 ] || gate_has qa; } \
       || deny "PR 머지 전에 gstack Post-build를 실제로 호출하라: /review → /qa(문서만 바뀐 PR은 면제) → (해당 시)/cso → /ship."
     ;;

@@ -30,7 +30,8 @@ import { addDays, kstToday } from "@/lib/kst-date";
 import { PROJECT_STATUS_TAG_KIND } from "../status-display";
 import { QuoteLedger } from "./quote-table";
 import type { StatusChangeProps } from "./status-change";
-import type { NewRevisionProps } from "./revision-dialogs";
+import type { CustomerApprovalProps, NewRevisionProps } from "./revision-dialogs";
+import { getPerson } from "@/domain/people";
 
 // SYSTEM.md §6-2 상세 화면 — 이 리포의 첫 목록/상세 분리 화면. 네 숫자 줄
 // (PNL-01)·차수 섹션의 마크업은 이 플랜에 없다(04-06/04-09). 매출 섹션은
@@ -71,7 +72,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const canSeeAmount = await visible(session.viewer, "quote.amount");
   const canEditLines = canWrite && canSeeAmount;
   const structural = structuralEditability({ status: project.status, canWrite: canEditLines });
-  const newLineCells = lineCellEditability({ status: project.status, canWrite: canEditLines, hasLinkedDocuments: false, isNewLine: true });
+  // 04-24(ENG-D7) — 승인 차수의 새 줄은 수량·단가가 잠긴 채 생긴다(기존 줄은 DTO의 칸 단계 — 04-40).
+  const approvedSeq = revision.approved ? revision.seq : null;
+  const newLineCells = lineCellEditability({ status: project.status, canWrite: canEditLines, hasLinkedDocuments: false, isNewLine: true, approvedSeq });
   // 04-23(D-48) — 견적 외 비용 새 줄은 견적 줄 구조(structural.insert)로 만들고 수량·단가가 늘 잠긴다.
   const outOfQuoteLineCells = lineCellEditability({
     status: project.status,
@@ -128,6 +131,31 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         adjustmentCount: lines.filter((line) => line.lineKind === "adjustment").length,
       }
     : null;
+
+  // 04-24(D-56 · CEO-D19 · 리뷰 B-30 · ENG-D9) — 고객 승인 줄. 버튼은 담당 PM + projects 쓰기 + 완료 아님 + 현재 차수
+  // 요약 행에 합계 키가 있을 때(견적 금액을 볼 때)만. 승인일 글자는 서버가 만든 KST 날짜 문자열 그대로(B-25).
+  const approvedBy = currentSummary?.approvedBy ?? null;
+  const approverName = approvedBy ? ((await getPerson(session.viewer, approvedBy))?.person.name ?? null) : null;
+  const approvalText = currentSummary?.approvedOn
+    ? [`고객 승인 ${currentSummary.approvedOn}`, approverName].filter(Boolean).join(" ")
+    : null;
+  const seenTotalKrw = currentSummary?.totalKrw;
+  const contentToken = currentSummary?.contentToken;
+  const canToggleApproval = project.pmUserId === session.viewer.id && canWrite && status !== "completed";
+  const customerApproval: CustomerApprovalProps = {
+    revisionId: revision.id,
+    seq: revision.seq,
+    approvalText,
+    approvedOn: currentSummary?.approvedOn ?? null,
+    control:
+      !canToggleApproval || seenTotalKrw === undefined || contentToken === undefined
+      ? null
+      : !revision.approved
+        ? { kind: "approve", totalKrw: seenTotalKrw, contentToken, todayKst }
+        : lines.some((line) => line.hasLinkedDocuments)
+          ? null
+          : { kind: "cancel" },
+  };
 
   // A-12: 1차 「일괄 저장」은 이 화면에서 쓸 수 있는 칸이 하나라도 있을 때만 — 판정은 서버가 칸마다 한다.
   // 04-30 — 표 항은 「편집 가능 셀이 하나라도 있거나 줄을 추가할 수 있음」(셀 단계·구조에서 온다).
@@ -193,6 +221,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       statusTagKind={PROJECT_STATUS_TAG_KIND[status]}
       statusChange={statusChange}
       newRevision={newRevision}
+      customerApproval={customerApproval}
+      approvedSeq={approvedSeq}
       endDateNote={endDateNote}
       revisionId={revision.id}
       initialLines={lines}
@@ -204,7 +234,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       adjustmentLineCells={adjustmentLineCells}
       outOfQuoteLineCells={outOfQuoteLineCells}
       lineCap={lineCap}
-      lockReason={quoteLockReason({ status: project.status })}
+      lockReason={quoteLockReason({ status: project.status, approvedSeq })}
       emptyState={quoteTableEmptyState({
         status: project.status,
         canAddLine: structural.insert,

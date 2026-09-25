@@ -20,6 +20,11 @@ export type ConfirmDialogPrimary = {
   reasonTone?: ButtonReasonTone;
   /** 막힘 이유 옆에 두는 다음 한 수 3차(예: 04-21 「기간 적기」). */
   nextStep?: ReactNode;
+  /**
+   * 04-24 — 이유가 이미 근거 칸 아래(Form.Error)에 있을 때 그 요소의 id. 1차를 막고 aria-describedby로 그 글자를
+   * 가리키며, 1차 왼쪽 이유 자리에는 다시 쓰지 않는다(같은 사실을 두 자리에 쓰지 않는다). disabledReason이 먼저다.
+   */
+  blockedBy?: string;
 };
 
 export type ConfirmDialogOption = {
@@ -143,7 +148,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLDialogElement>) {
-    if (primary && !submitting && !primary.disabledReason && isCtrlCombo(event, "Enter")) {
+    if (primary && !submitting && !primary.disabledReason && !primary.blockedBy && isCtrlCombo(event, "Enter")) {
       event.preventDefault();
       primary.onConfirm();
     }
@@ -249,8 +254,9 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
                 variant="primary"
                 shortcut={primary.shortcut ?? "Ctrl+Enter"}
                 pending={primary.pending}
-                disabled={Boolean(primary.disabledReason)}
+                disabled={Boolean(primary.disabledReason || primary.blockedBy)}
                 disabledReason={primary.disabledReason}
+                aria-describedby={primary.disabledReason ? undefined : primary.blockedBy}
                 reasonTone={primary.reasonTone}
                 onClick={primary.onConfirm}
               >

@@ -45,7 +45,7 @@ export function resolvePeriodSave(input: {
 }
 
 // A-22: 형식(YYYY-MM-DD) 뒤 달력 왕복 — 2026-02-30은 UTC로 3월 2일이 되어 되돌아오지 않는다.
-function isCalendarDate(value: string): boolean {
+export function isCalendarDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const [year, month, day] = value.split("-").map(Number) as [number, number, number];
   return new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10) === value;
@@ -53,7 +53,7 @@ function isCalendarDate(value: string): boolean {
 
 export type PeriodFieldError = { field: "start" | "end"; reason: string };
 
-const FORMAT_ERROR = "날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요";
+export const FORMAT_ERROR = "날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요";
 
 // 칸별 오류 — 형식은 입력 칸 값으로, 나머지는 저장될 값(resolvePeriodSave 결과)으로 판정한다(A-02:
 // 종료일을 비워 과거 시작일로 저장되게 하는 우회도 「종료일이 오늘보다 빠름」이다).

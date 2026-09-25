@@ -158,7 +158,8 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await saveButton.click();
 
     await expect(page.getByText(/저장됨/)).toBeVisible();
-    await expect(page.getByText("1,500,000").first()).toBeVisible();
+    // 04-24 — 머리 줄의 닫힌 승인 다이얼로그 부제에도 합계가 있어 표 안에서 찾는다.
+    await expect(page.locator("table").getByText("1,500,000").first()).toBeVisible();
   });
 
   test("F2 — 항목을 비운 채 저장하면 next-safe-action 검증 오류가 화면에 alert로 보인다", async ({ page }) => {

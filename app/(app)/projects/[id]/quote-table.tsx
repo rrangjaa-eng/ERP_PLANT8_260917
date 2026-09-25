@@ -38,7 +38,7 @@ import type { RevenueDto } from "@/domain/revenue";
 import type { Currency, Money } from "@/domain/money";
 import { RevenueSection, type ContractDraft, type EntryDraft } from "./revenue-section";
 import { StatusChange, type StatusChangeProps } from "./status-change";
-import { NewRevisionDialog, type NewRevisionProps } from "./revision-dialogs";
+import { CustomerApprovalLine, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
 import { PeriodField, periodText, type PeriodDraft, type PeriodFieldError } from "./period-field";
 import type { PeriodRights } from "@/domain/projects/period";
 import {
@@ -802,6 +802,8 @@ export function QuoteLedger({
   statusTagKind,
   statusChange,
   newRevision,
+  customerApproval,
+  approvedSeq,
   endDateNote,
   revisionId,
   initialLines,
@@ -841,6 +843,10 @@ export function QuoteLedger({
   statusChange: StatusChangeProps | null;
   /** 04-24(D-53 · CEO-D10) — 「복사해 새 차수」. 서버 canCreateRevision이 거짓이면 null(버튼 없음). */
   newRevision: NewRevisionProps | null;
+  /** 04-24(D-56 · CEO-D19) — 부제 옆 고객 승인 줄(글자·버튼 모두 서버 판정). */
+  customerApproval: CustomerApprovalProps;
+  /** 04-24(ENG-D7) — 현재 차수가 고객 승인됐으면 그 순번(표 위 잠김 줄 — tableLockLine). */
+  approvedSeq: number | null;
   /** D-81 `종료일 지남`(또는 `· 팀장 {이름}`) — 서버가 만든다. 없으면 null. */
   endDateNote: string | null;
   revisionId: string;
@@ -1106,6 +1112,7 @@ export function QuoteLedger({
   const [renderedStatus, setRenderedStatus] = useState(status);
   // 04-24 — 새 차수가 생겨 서버가 다른 차수를 보내면(router.refresh) 같은 경로로 새 차수의 줄로 다시 그린다.
   const [renderedRevisionId, setRenderedRevisionId] = useState(revisionId);
+  const [renderedApprovedSeq, setRenderedApprovedSeq] = useState(approvedSeq);
   if (renderedStatus !== status || renderedRevisionId !== revisionId) {
     setRenderedStatus(status);
     setRenderedRevisionId(revisionId);
@@ -1123,7 +1130,20 @@ export function QuoteLedger({
     setPreEstimateBase(preEstimate.value);
     setPreEstimateDraft(null);
     setPreEstimateErrors([]);
+    setRenderedApprovedSeq(approvedSeq);
     dirtyStorage.recount();
+  }
+  // 04-24(ENG-D7) — 승인 표시·취소 뒤 새로 고침은 칸 단계만 바꾼다(편집 값은 그대로): 기존 줄은 서버 DTO,
+  // 저장 전 새 견적 줄은 서버가 다시 계산한 newLineCells.
+  if (renderedApprovedSeq !== approvedSeq) {
+    setRenderedApprovedSeq(approvedSeq);
+    setLines((prev) =>
+      prev.map((line) => {
+        if (line.isNew) return line.lineKind === "quote" ? { ...line, cells: newLineCells } : line;
+        const dto = initialLines.find((row) => row.id === line.id);
+        return dto ? { ...line, cells: dto.cellEditability } : line;
+      }),
+    );
   }
 
   function restoreEdits() {
@@ -1882,6 +1902,7 @@ export function QuoteLedger({
   // 04-30(DR-2) — 표 위 잠김 줄은 지금 줄로 판정한다(0줄 표에서 첫 줄을 만들면 나타난다).
   const lockLine = tableLockLine({
     status,
+    approvedSeq,
     hasEditableCells: lines.some((line) => Object.values(line.cells).includes("edit")),
     lineCount: lines.length,
   });
@@ -1929,6 +1950,7 @@ export function QuoteLedger({
       <div className={styles.header}>
         <div className={styles.titleBlock}>
           <PageHeader title={projectName} subtitle={subtitle} />
+          <CustomerApprovalLine {...customerApproval} className={styles.periodLine} dirtyCount={dirtyCount} />
           {/* S13 — 칸이 열린 동안 기간 글자와 「기간 바꾸기」는 숨는다(같은 값을 두 번 보이지 않는다). */}
           {periodDraft ? null : (
             <p className={`${styles.periodLine} ${styles.periodLead}`}>

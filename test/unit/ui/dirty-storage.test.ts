@@ -6,7 +6,9 @@ import {
   clearDirtyEdits,
   countDirtyEdits,
   readRestorableCount,
+  findOtherRevisionDrafts,
   type DirtyStorageLike,
+  type EnumerableDirtyStorage,
 } from "@/ui/table/use-dirty-storage";
 
 // 04-04 Task 1 ④ — 미저장 편집의 브라우저 임시 보관(D-68). 키는 프로젝트
@@ -86,5 +88,51 @@ describe("readRestorableCount — recount", () => {
   it("보관본이 없거나 저장소가 없으면 0", () => {
     expect(readRestorableCount(createFakeStorage(), "project-1", "revision-1")).toBe(0);
     expect(readRestorableCount(null, "project-1", "revision-1")).toBe(0);
+  });
+});
+
+// 04-24(DR-4) — 같은 프로젝트의 다른 차수 보관본 찾기. localStorage처럼 키를 훑을 수 있는 저장소 더블.
+function createEnumerableStorage(entries: Record<string, string>): EnumerableDirtyStorage {
+  const map = new Map(Object.entries(entries));
+  return {
+    getItem: (key) => map.get(key) ?? null,
+    setItem: (key, value) => {
+      map.set(key, value);
+    },
+    removeItem: (key) => {
+      map.delete(key);
+    },
+    get length() {
+      return map.size;
+    },
+    key: (index) => [...map.keys()][index] ?? null,
+  };
+}
+
+describe("findOtherRevisionDrafts — 이전 차수 보관본(04-24 DR-4)", () => {
+  it("같은 프로젝트의 다른 차수 중 칸이 있는 보관본만 — 현재 차수·다른 프로젝트·손상 JSON·빈 객체·다른 접두는 뺀다", () => {
+    const storage = createEnumerableStorage({
+      [dirtyStorageKey("P", "R1")]: JSON.stringify({ "line-1:itemName": "고친 항목", "line-1:note": "비고" }),
+      [dirtyStorageKey("P", "R2")]: JSON.stringify({ "line-9:itemName": "현재 차수" }),
+      [dirtyStorageKey("Q", "R9")]: JSON.stringify({ "line-3:itemName": "다른 프로젝트" }),
+      [dirtyStorageKey("P", "R3")]: "{not json",
+      [dirtyStorageKey("P", "R4")]: JSON.stringify({}),
+      "other-prefix:P:R5": JSON.stringify({ "line-5:itemName": "다른 접두" }),
+    });
+    expect(findOtherRevisionDrafts(storage, "P", "R2")).toEqual([{ revisionId: "R1", count: 2 }]);
+  });
+
+  it("저장소 항목이 0개면 빈 배열", () => {
+    expect(findOtherRevisionDrafts(createEnumerableStorage({}), "P", "R2")).toEqual([]);
+  });
+
+  it("그 차수 보관본은 기존 clearDirtyEdits로 지우고 현재 차수 키는 그대로다", () => {
+    const storage = createEnumerableStorage({
+      [dirtyStorageKey("P", "R1")]: JSON.stringify({ "line-1:itemName": "고친 항목" }),
+      [dirtyStorageKey("P", "R2")]: JSON.stringify({ "line-9:itemName": "현재 차수" }),
+    });
+    clearDirtyEdits(storage, "P", "R1");
+    expect(findOtherRevisionDrafts(storage, "P", "R2")).toEqual([]);
+    expect(loadDirtyEdits(storage, "P", "R2")).toEqual({ "line-9:itemName": "현재 차수" });
   });
 });

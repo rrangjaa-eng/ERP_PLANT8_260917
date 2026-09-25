@@ -42,7 +42,8 @@ async function login(page: Page, account: Account) {
 
 // 줄은 수주중(생성 직후)에 도메인 함수로 넣고 그 뒤 상태를 DB에 둔다(quote-line-kinds.spec.ts와 같은 준비).
 async function makeProject(input: { teamId: string; pmUserId: string; status?: string; lines: SeedLine[] }) {
-  const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E차수거래처-${randomUUID()}`, normalizedName: `e2e차수거래처-${randomUUID()}` });
+  const clientName = `E2E차수거래처-${randomUUID()}`;
+  const client = { ...(await insertVendor(SYSTEM_VIEWER, { name: clientName, normalizedName: clientName.toLowerCase() })), name: clientName };
   const name = `E2E차수-${randomUUID().slice(0, 8)}`;
   const created = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: input.teamId, pmUserId: input.pmUserId, name });
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, created.id);
@@ -64,7 +65,7 @@ async function makeProject(input: { teamId: string; pmUserId: string; status?: s
     });
   }
   if (input.status) await db.update(projects).set({ status: input.status }).where(eq(projects.id, created.id));
-  return { id: created.id, number: created.number, name, revisionId: revision.id };
+  return { id: created.id, number: created.number, name, revisionId: revision.id, clientId: client.id, clientName: client.name };
 }
 
 function quoteTable(page: Page): Locator {
@@ -700,5 +701,165 @@ test.describe("차수 섹션과 이전 차수 읽기 섹션 (04-24 Task 3 — S5
     const heading = page.getByRole("heading", { name: "상세 견적 1차", exact: true });
     await expect(heading).toBeFocused();
     await expect(page.locator("section", { has: heading }).getByRole("button")).toHaveCount(0);
+  });
+});
+
+// 04-24 Task 4 — 이전 차수 보관본(D-68 모양: `{줄 id}:{열}` → 값). 준비는 같은 보관소 키에 직접 쓴다.
+async function lineIdsOf(revisionId: string): Promise<string[]> {
+  return (await db.select({ id: quoteLines.id }).from(quoteLines).where(eq(quoteLines.revisionId, revisionId))).map((row) => row.id);
+}
+
+async function seedDraft(page: Page, projectId: string, revisionId: string, edits: Record<string, unknown>) {
+  await page.evaluate(
+    ([key, value]) => window.localStorage.setItem(key, value),
+    [`quote-ledger:dirty:${projectId}:${revisionId}`, JSON.stringify(edits)] as const,
+  );
+}
+
+async function storedDraftKeys(page: Page): Promise<string[]> {
+  return page.evaluate(() => Object.keys(window.localStorage).filter((key) => key.startsWith("quote-ledger:dirty:")));
+}
+
+// 앱의 「복사」가 쓰는 두 형식을 window의 copy 리스너로 읽는다(클립보드 권한 불필요).
+async function captureCopies(page: Page) {
+  await page.evaluate(() => {
+    const target = window as unknown as { __copies: { text: string; json: string }[] };
+    target.__copies = [];
+    window.addEventListener("copy", (event) => {
+      target.__copies.push({
+        text: event.clipboardData?.getData("text/plain") ?? "",
+        json: event.clipboardData?.getData("application/x-plant8-quote-lines+json") ?? "",
+      });
+    });
+  });
+}
+
+async function copiesOf(page: Page): Promise<{ text: string; json: string }[]> {
+  return page.evaluate(() => (window as unknown as { __copies: { text: string; json: string }[] }).__copies);
+}
+
+function previousDraftRow(page: Page, seq: number): Locator {
+  return page.locator("p", { hasText: new RegExp(`^${seq}차 저장 안 한 편집`) });
+}
+
+test.describe("이전 차수 보관본 복원 줄 (04-24 Task 4 — DR-4 · DR-31)", () => {
+  test("두 탭: A의 미저장 편집이 B의 새 차수로 밀려나면 A에 `1차 저장 안 한 편집 1칸 · 복사 / 버림` → 복사 → 2차 표에 붙여넣기 → 버림", async ({ page, context }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "1차 항목", unitPrice: 1_000_000, execution: 400_000 }] });
+    await db.update(quoteLines).set({ vendorId: project.clientId }).where(eq(quoteLines.revisionId, project.revisionId));
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await editTextCell(page, 0, COL.itemName, "고친 1차 항목");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+    await expect.poll(() => storedDraftKeys(page)).toEqual([`quote-ledger:dirty:${project.id}:${project.revisionId}`]);
+
+    const tabB = await context.newPage();
+    await tabB.goto(`/projects/${project.id}`);
+    await tabB.getByRole("button", { name: "복사해 새 차수" }).click();
+    const created = tabB.waitForResponse((response) => isServerAction(response.request()));
+    await tabB.getByRole("dialog", { name: "복사해 새 차수" }).getByRole("button", { name: /새 차수 만들기/ }).click();
+    await created;
+    await expect(tabB.getByText(`${project.number} · 상세 견적 2차`, { exact: true })).toBeVisible();
+    await tabB.close();
+
+    await page.reload();
+    await expect(page.getByText(`${project.number} · 상세 견적 2차`, { exact: true })).toBeVisible();
+    const row = previousDraftRow(page, 1);
+    await expect(row).toHaveText(/^1차 저장 안 한 편집 1칸/);
+    await expect(row.getByRole("button", { name: "복사" })).toBeVisible();
+    await expect(row.getByRole("button", { name: "버림" })).toBeVisible();
+
+    await captureCopies(page);
+    await row.getByRole("button", { name: "복사" }).click();
+    await expect(row.getByText("복사됨 1칸", { exact: true })).toBeVisible();
+    await expect(row).toBeVisible();
+    const [copied] = await copiesOf(page);
+    expect(copied).toBeDefined();
+    expect(JSON.parse(copied!.json)).toEqual([{ currency: "KRW" }]);
+    const lines = copied!.text.split("\n").filter(Boolean);
+    expect(lines).toHaveLength(1);
+    const cells = lines[0]!.split("\t");
+    expect(cells[2]).toBe("고친 1차 항목");
+
+    // 입력 열(소분류 → 단가)만 text/plain으로 — 계산 열 무시 규칙(04-47)에 기대지 않는다.
+    await quoteCell(page, 0, COL.subcategory).focus();
+    await page.evaluate((text) => {
+      const dt = new DataTransfer();
+      dt.setData("text/plain", text);
+      document.activeElement?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+    }, cells.slice(1, 6).join("\t"));
+    await expect(quoteCell(page, 0, COL.itemName)).toHaveText(/^고친 1차 항목/);
+    await expect(page.getByRole("button", { name: /일괄 저장 [1-9]/ })).toBeVisible();
+    await expect(quoteTable(page).locator('[aria-invalid="true"]')).toHaveCount(0);
+
+    await row.getByRole("button", { name: "버림" }).click();
+    await expect(previousDraftRow(page, 1)).toHaveCount(0);
+    expect(await storedDraftKeys(page)).not.toContain(`quote-ledger:dirty:${project.id}:${project.revisionId}`);
+  });
+
+  test("execCommand가 거짓이면 「복사」 옆 `복사하지 못함`, 줄·보관본 그대로 · 이전 차수 읽기 섹션에는 복원 줄이 없다", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "실패 줄", unitPrice: 1_000_000, execution: 400_000 }] });
+    await copyRevision(project.id, project.revisionId);
+    const [lineId] = await lineIdsOf(project.revisionId);
+    await login(page, pm);
+    await seedDraft(page, project.id, project.revisionId, { [`${lineId}:itemName`]: "보관된 항목" });
+    await page.goto(`/projects/${project.id}`);
+
+    const row = previousDraftRow(page, 1);
+    await expect(row).toHaveText(/^1차 저장 안 한 편집 1칸/);
+    await page.evaluate(() => {
+      document.execCommand = () => false;
+    });
+    await row.getByRole("button", { name: "복사" }).click();
+    await expect(row.getByText("복사하지 못함", { exact: true })).toBeVisible();
+    await expect(row.getByText("복사됨", { exact: false })).toHaveCount(0);
+    expect(await storedDraftKeys(page)).toContain(`quote-ledger:dirty:${project.id}:${project.revisionId}`);
+
+    await revisionTable(page).locator("tbody").getByRole("button").click();
+    const heading = page.getByRole("heading", { name: "상세 견적 1차", exact: true });
+    await expect(previousTable(page, 1)).toBeVisible();
+    await expect(page.locator("section", { has: heading }).getByText(/저장 안 한 편집/)).toHaveCount(0);
+  });
+
+  test("다른 차수 보관본이 둘(1차·2차, 현재 3차)이면 `2차 …` 하나 · 순서 현재 복원 → 이전 차수 → 잠김 · 버리면 `1차 …`", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "셋째 차수 줄", unitPrice: 1_000_000, execution: 400_000 }] });
+    const second = await copyRevision(project.id, project.revisionId);
+    const third = await copyRevision(project.id, second);
+    await approveInDb(third, pm.userId);
+    const [first1] = await lineIdsOf(project.revisionId);
+    const [second1] = await lineIdsOf(second);
+    const [third1] = await lineIdsOf(third);
+    await login(page, pm);
+    await seedDraft(page, project.id, project.revisionId, { [`${first1}:itemName`]: "1차 보관" });
+    await seedDraft(page, project.id, second, { [`${second1}:itemName`]: "2차 보관", [`${second1}:note`]: "2차 비고" });
+    await seedDraft(page, project.id, third, { [`${third1}:execution`]: 500_000 });
+    await page.goto(`/projects/${project.id}`);
+
+    const current = page.locator("p", { hasText: /^저장 안 한 편집 1칸/ });
+    const previous = previousDraftRow(page, 2);
+    const lock = page.getByText("3차 고객 승인됨 · 고치려면 새 차수", { exact: true });
+    await expect(current).toBeVisible();
+    await expect(previous).toHaveText(/^2차 저장 안 한 편집 2칸/);
+    await expect(previousDraftRow(page, 1)).toHaveCount(0);
+    await expect(lock).toBeVisible();
+    const order = await page.evaluate(
+      ([a, b, c]) => {
+        const find = (text: string) => Array.from(document.querySelectorAll("p")).find((node) => node.textContent?.startsWith(text));
+        const [x, y, z] = [find(a), find(b), find(c)];
+        if (!x || !y || !z) return false;
+        return Boolean(x.compareDocumentPosition(y) & Node.DOCUMENT_POSITION_FOLLOWING) && Boolean(y.compareDocumentPosition(z) & Node.DOCUMENT_POSITION_FOLLOWING);
+      },
+      ["저장 안 한 편집 1칸", "2차 저장 안 한 편집", "3차 고객 승인됨"] as const,
+    );
+    expect(order).toBe(true);
+
+    await previous.getByRole("button", { name: "버림" }).click();
+    await expect(previousDraftRow(page, 2)).toHaveCount(0);
+    await expect(previousDraftRow(page, 1)).toHaveText(/^1차 저장 안 한 편집 1칸/);
   });
 });

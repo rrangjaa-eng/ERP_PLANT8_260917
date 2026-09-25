@@ -21,7 +21,7 @@ import {
 import { recentFxRate, rememberFxRate } from "@/domain/money/currency";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { recordAction } from "@/domain/action-log/record";
-import { setPermissionCell } from "@/domain/permissions/matrix";
+import { setPermissionCell, setVisibilityCell } from "@/domain/permissions/matrix";
 import { seedMasterData } from "@/domain/seed";
 import { findPermission } from "@/repositories/permissions";
 import { log } from "@/lib/log";
@@ -682,6 +682,32 @@ describe("총 매출 예상가 저장 (04-44)", () => {
     expect(denied[0]?.rule).toBe("project.pre-estimate-edit");
     expect(Object.keys(denied[0] ?? {}).some((key) => /amount|fx|currency/i.test(key))).toBe(false);
     expect(await logs(s.projectId, "document_update")).toHaveLength(0);
+  });
+
+  it("(o2b) 기간 권리는 있지만 금액(quote.amount)을 볼 수 없는 팀장이 보낸 총 매출 예상가 저장은 거부 · DB 무변경 · write.denied 한 번 · DTO에 preEstimate 없음(DR-37, 리뷰 S-3)", async () => {
+    const s = await setup({ status: "bidding", startDate: null, endDate: FAR });
+    await setVisibilityCell(SYSTEM_VIEWER, { roleId: "role-team-lead", infoItem: "quote.amount", visible: false });
+    try {
+      const warn = vi.spyOn(log, "warn");
+
+      const outcome = await saveProjectLedger(s.lead, s.projectId, {
+        seenStatus: "bidding",
+        preEstimate: { currency: "KRW", amount: 70_000_000, fxRate: 1, fxRateTouched: false },
+      }).catch((error: unknown) => error);
+
+      expect(outcome).toBeInstanceOf(PreEstimateRejectedError);
+      expect((outcome as PreEstimateRejectedError).errors).toEqual([{ field: "amount", reason: "총 매출 예상가 바꾸기 권한 없음" }]);
+      expect((await reload(s.projectId)).preEstimateAmountKrw).toBe(0);
+      const denied = deniedCalls(warn);
+      expect(denied).toHaveLength(1);
+      expect(denied[0]?.rule).toBe("project.pre-estimate-edit");
+      expect(await logs(s.projectId, "document_update")).toHaveLength(0);
+      const dto = await findProject(s.lead, s.projectId);
+      expect(dto).toBeDefined();
+      expect(dto?.preEstimate).toBeUndefined();
+    } finally {
+      await setVisibilityCell(SYSTEM_VIEWER, { roleId: "role-team-lead", infoItem: "quote.amount", visible: true });
+    }
   });
 
   it("(o3) 음수 금액과 견적 줄 변경을 한 저장에 실으면 칸 오류로 전부 거부 — 둘 다 저장되지 않는다", async () => {

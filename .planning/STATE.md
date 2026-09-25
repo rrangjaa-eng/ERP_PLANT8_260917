@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 3
+current_plan: 2
 status: executing
-stopped_at: Completed 04-23-PLAN.md (DOM 감사·CI=true 전체 게이트는 오케스트레이터 대기)
-last_updated: "2026-09-25T18:32:53.160Z"
+stopped_at: Completed 04-14-PLAN.md (CI=true 전체 게이트는 오케스트레이터 대기)
+last_updated: "2026-09-25T19:39:32.112Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 4 execution started
-state_head: f4af02376a323e3f770e45da1bf39a0ae5590c03
+state_head: bc5a9091b8344cfcfeb2d9d48975f088644173ce
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 115
-  completed_plans: 50
+  completed_plans: 51
   percent: 6
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 4 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 3
+Current Plan: 2
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-25 — Phase 4 execution started
@@ -99,6 +99,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P26 | 93min | 2 tasks | 10 files |
 | Phase 04 P13 | 38 min | 2 tasks | 15 files |
 | Phase 04 P23 | 34 min | 3 tasks | 8 files |
+| Phase 04 P14 | 30min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -239,6 +240,9 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-13: 조정·견적 외 비용 줄은 서버가 수량 1·원화 단가 0·소분류=종류 값으로 정규화(견적가 0), 실행가 음수는 이 두 종류만
 - [Phase 04]: 04-23: 화면 줄 상태를 종류 순서(견적 → 견적 외 비용 → 조정)로 늘 정렬 — 새 견적 줄이 조정 줄 앞 자리로 insertOnly order와 함께 저장된다
 - [Phase 04]: 04-23: 줄 수 상한에서 이유 글자는 첫 추가 버튼 옆 한 번만, 뒤따르는 추가 버튼은 그리지 않는다(projects 쓰기+조정 권한 동시 보유자는 조정 줄 추가가 사라짐 — 코디네이터 확인 필요)
+- [Phase 04]: 04-14: 고객 승인 게이트 quote.customer-approval은 수주중·미수주를 규칙 안에서 면제(사용자 D8)
+- [Phase 04]: 04-14: 이전 차수 잠김 조회는 listQuoteLines ctx.locked + 새 입구 listRevisionLines(projectId, revisionSeq) — 기존 listQuoteLines 호출자 보존
+- [Phase 04]: 04-14: 승인 기준값 = 견적 합계 + md5 내용 토큰(견적 줄·견적 외 비용, 보관 포함, 조정 줄 제외) — 리포지토리 sql 조각 하나를 approvalBasis·summarizeRevisions가 공유
 
 ### Pending Todos
 
@@ -295,6 +299,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-25T18:32:39.636Z
-Stopped at: Completed 04-23-PLAN.md (DOM 감사·CI=true 전체 게이트는 오케스트레이터 대기)
+Last session: 2026-09-25T19:39:16.205Z
+Stopped at: Completed 04-14-PLAN.md (CI=true 전체 게이트는 오케스트레이터 대기)
 Resume file: None

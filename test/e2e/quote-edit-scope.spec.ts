@@ -329,7 +329,7 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
   test("(b) 정산 PM이 「줄 추가」로 만든 새 줄은 수량 1 · 단가 0이 잠겨 있고, 항목·실행가만 적어 저장하면 견적가 0으로 남는다", async ({ page }) => {
     await openAsPm(page, "settling", addDays(TODAY, -3), [{ itemName: "정산 기존 줄", unitPrice: 300_000, execution: 200_000 }]);
 
-    await page.getByRole("button", { name: "줄 추가" }).click();
+    await page.getByRole("button", { name: "줄 추가", exact: true }).click();
     await expect(dataRows(page)).toHaveCount(2);
     const last = dataRows(page).last();
     const lastCell = (col: number) => last.getByRole("gridcell").nth(col);
@@ -500,7 +500,7 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await cell(page, 1, COL.itemName).focus();
     await page.keyboard.press("Delete");
     await page.getByRole("dialog", { name: "견적 줄 삭제" }).getByRole("button", { name: "견적 줄 삭제" }).click();
-    await page.getByRole("button", { name: "줄 추가" }).click();
+    await page.getByRole("button", { name: "줄 추가", exact: true }).click();
     await typeInto(page, dataRows(page).last().getByRole("gridcell").nth(COL.itemName), "항목", "새 끝 줄");
     const appended = page.waitForRequest((req) => isSaveAction(req.method(), req.headers()));
     await saveWithKeyboard(page, cell(page, 0, COL.itemName));
@@ -516,7 +516,7 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
       { itemName: "재전송 기존 줄", unitPrice: 100_000, execution: 10_000 },
     ]);
 
-    await page.getByRole("button", { name: "줄 추가" }).click();
+    await page.getByRole("button", { name: "줄 추가", exact: true }).click();
     await typeInto(page, dataRows(page).last().getByRole("gridcell").nth(COL.itemName), "항목", "재전송 새 줄");
 
     let dropped = false;
@@ -561,7 +561,7 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     const { project } = await openAsPm(page, "in_progress", addDays(TODAY, 10), [
       { itemName: "복원 기존 줄", unitPrice: 100_000, execution: 50_000 },
     ]);
-    await page.getByRole("button", { name: "줄 추가" }).click();
+    await page.getByRole("button", { name: "줄 추가", exact: true }).click();
     const added = () => dataRows(page).nth(1).getByRole("gridcell");
     await typeInto(page, added().nth(COL.itemName), "항목", "복원 새 줄");
     await typeInto(page, added().nth(COL.quantity), "수량", "3");

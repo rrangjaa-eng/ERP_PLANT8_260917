@@ -70,6 +70,14 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const canEditLines = canWrite && canSeeAmount;
   const structural = structuralEditability({ status: project.status, canWrite: canEditLines });
   const newLineCells = lineCellEditability({ status: project.status, canWrite: canEditLines, hasLinkedDocuments: false, isNewLine: true });
+  // 04-23(D-48) — 견적 외 비용 새 줄은 견적 줄 구조(structural.insert)로 만들고 수량·단가가 늘 잠긴다.
+  const outOfQuoteLineCells = lineCellEditability({
+    status: project.status,
+    canWrite: canEditLines,
+    hasLinkedDocuments: false,
+    isNewLine: true,
+    lineKind: "out_of_quote",
+  });
   const canAdjustLines = canAdjust && canSeeAmount;
   const adjustmentStructural = structuralEditability({ status: project.status, canWrite: canEditLines, lineKind: "adjustment", canAdjust: canAdjustLines });
   const adjustmentLineCells = lineCellEditability({
@@ -177,6 +185,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       newLineCells={newLineCells}
       adjustmentStructural={adjustmentStructural}
       adjustmentLineCells={adjustmentLineCells}
+      outOfQuoteLineCells={outOfQuoteLineCells}
       lineCap={lineCap}
       lockReason={quoteLockReason({ status: project.status })}
       emptyState={quoteTableEmptyState({

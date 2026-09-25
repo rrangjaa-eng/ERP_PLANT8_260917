@@ -9,7 +9,7 @@ import { listRevenue } from "@/domain/revenue";
 import { recentFxRate } from "@/domain/money/currency";
 import { gate } from "@/domain/rules/gate";
 import "@/domain/rules/register";
-import { listProjectStatusCatalog, statusDestinations } from "@/domain/projects/status";
+import { lastStatusChangeOn, listProjectStatusCatalog, statusDestinations } from "@/domain/projects/status";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { PROJECT_STATUS_TAG_KIND } from "../status-display";
@@ -49,18 +49,20 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   // 금액을 볼 수 없으면 표를 편집하지 않는다 — 서버도 저장을 거부한다(saveQuoteLines).
   const editable = canWrite && gateDecision.allowed && (await visible(session.viewer, "quote.amount"));
 
-  const [lines, references, revenue, usdDefaultFxRate, destinations, catalog] = await Promise.all([
+  const [lines, references, revenue, usdDefaultFxRate, destinations, catalog, statusSince] = await Promise.all([
     listQuoteLines(session.viewer, revision.id),
     canWrite ? listProjectFormReferences(session.viewer) : Promise.resolve(null),
     listRevenue(session.viewer, project.id),
     recentFxRate("USD"),
     statusDestinations(session.viewer, project),
     listProjectStatusCatalog(session.viewer),
+    lastStatusChangeOn(session.viewer, project),
   ]);
 
   // 04-21(S3·S7) — 갈 곳이 없으면 「상태 바꾸기」를 렌더하지 않는다(비활성 버튼이 아니다).
   // 화면은 상태 문자열로 권한을 추론하지 않고 서버의 갈 곳 목록만 본다.
   const catalogEntry = (value: string) => catalog.find((entry) => entry.value === value);
+  const statusLabel = catalogEntry(status)?.label ?? status;
   const savedEndDate = project.endDate ?? project.startDate;
   const statusChange: StatusChangeProps | null =
     destinations.length === 0
@@ -88,9 +90,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     <QuoteLedger
       projectId={project.id}
       projectName={project.name}
-      projectNumber={project.number}
-      revisionSeq={revision.seq}
-      statusLabel={catalogEntry(status)?.label ?? status}
+      subtitle={`${project.number} · 상세 견적 ${revision.seq}차 · ${statusLabel} ${statusSince}`}
+      statusLabel={statusLabel}
       statusTagKind={PROJECT_STATUS_TAG_KIND[status]}
       statusChange={statusChange}
       revisionId={revision.id}

@@ -508,8 +508,7 @@ function UnitPriceEditCell({
 export function QuoteLedger({
   projectId,
   projectName,
-  projectNumber,
-  revisionSeq,
+  subtitle,
   statusLabel,
   statusTagKind,
   statusChange,
@@ -527,8 +526,8 @@ export function QuoteLedger({
 }: {
   projectId: string;
   projectName: string;
-  projectNumber: string;
-  revisionSeq: number;
+  /** `{번호} · 상세 견적 {n}차 · {상태} {마지막 변경일}` — 서버가 만든다(D-50). */
+  subtitle: string;
   statusLabel: string;
   statusTagKind: StatusTagKind;
   statusChange: StatusChangeProps | null;
@@ -1181,7 +1180,7 @@ export function QuoteLedger({
     <>
       <div className={styles.header}>
         <div className={styles.titleBlock}>
-          <PageHeader title={projectName} subtitle={`${projectNumber} · 상세 견적 ${revisionSeq}차`} />
+          <PageHeader title={projectName} subtitle={subtitle} />
         </div>
         <div className={styles.headerActions}>
           <StatusTag kind={statusTagKind} variant="tag">

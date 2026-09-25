@@ -38,19 +38,33 @@ export type StatusChangeProps = {
 
 type Step = { kind: "closed" } | { kind: "pick" } | { kind: "confirm"; to: ProjectStatus };
 
+const REVERT_LABEL = "진행으로 되돌리기";
+
+function approvalLine(props: StatusChangeProps): string[] {
+  return props.currentRevisionApproved ? [] : [`${props.currentRevisionSeq}차 고객 승인 전 · 진행부터 지출결의 멈춤`];
+}
+
+// UI-SPEC rev 5 Copywriting 「확인 — 진행으로 바꾸기 · 진행으로 되돌리기」 — 해당하는 것만, 최대 셋.
 function progressResultLines(props: StatusChangeProps): string[] {
   const lines: string[] = [];
   if (props.endDate === null) lines.push("종료일 없음 · 시작일로 저장");
   if (props.endDateBeforeToday) lines.push("종료일 지남 · 바로 정산");
   else if (props.endDate !== null) lines.push(`기간 ${props.startDate ?? ""} ~ ${props.endDate} · ${props.settleOn ?? ""} 정산`);
-  if (!props.currentRevisionApproved) {
-    lines.push(`${props.currentRevisionSeq}차 고객 승인 전 · 진행부터 지출결의 멈춤`);
-  }
-  return lines;
+  return [...lines, ...approvalLine(props)];
 }
 
 function confirmCopy(props: StatusChangeProps, to: ProjectStatus): { label: string; resultLines: string[] } | null {
+  if (to === "in_progress" && props.from === "lost") {
+    const lines = props.endDateBeforeToday ? ["종료일 지남 · 바로 정산"] : [];
+    return { label: REVERT_LABEL, resultLines: [...lines, ...approvalLine(props)] };
+  }
   if (to === "in_progress") return { label: "진행으로 바꾸기", resultLines: progressResultLines(props) };
+  if (to === "lost") {
+    return { label: "미수주로 닫기", resultLines: ["쌓인 비용이 팀 미수주 비용이 됨 · 진행으로 되돌리기 있음"] };
+  }
+  if (to === "completed") {
+    return { label: "완료로 바꾸기", resultLines: ["견적 줄 잠김 · 새 지출결의 받지 않음 · 되돌리기 없음"] };
+  }
   return null;
 }
 
@@ -91,9 +105,18 @@ export function StatusChange({ onChanged, ...props }: StatusChangeProps & { onCh
     setStep({ kind: "confirm", to });
   }
 
+  // 미수주에서는 갈 곳이 진행 하나라 버튼이 곧 동작이다(DR-7) — 종료일이 지났거나 현재 차수가
+  // 승인 전이면 확인 모달을 거치고, 아니면 즉시 전환한다(잃는 것이 없다, D-44).
+  const reverting = props.from === "lost";
+  const [only] = props.destinations;
+  const revertNeedsConfirm = props.endDateBeforeToday || !props.currentRevisionApproved;
+  const immediateBlockedReason = reverting && !revertNeedsConfirm ? (only?.blockedReason ?? null) : null;
+
   function handleTrigger() {
-    const [only] = props.destinations;
-    if (props.destinations.length === 1 && only) openFor(only.value);
+    if (reverting && only && !revertNeedsConfirm) {
+      setRejection(null);
+      submit(only.value, REVERT_LABEL);
+    } else if (props.destinations.length === 1 && only) openFor(only.value);
     else setStep({ kind: "pick" });
   }
 
@@ -107,8 +130,15 @@ export function StatusChange({ onChanged, ...props }: StatusChangeProps & { onCh
 
   return (
     <>
-      <Button type="button" variant="secondary" onClick={handleTrigger}>
-        상태 바꾸기
+      <Button
+        type="button"
+        variant="secondary"
+        onClick={handleTrigger}
+        pending={reverting && step.kind === "closed" && isExecuting}
+        disabled={immediateBlockedReason !== null || (step.kind === "closed" && rejection !== null)}
+        disabledReason={step.kind === "closed" ? (rejection ?? immediateBlockedReason ?? undefined) : undefined}
+      >
+        {reverting ? REVERT_LABEL : "상태 바꾸기"}
       </Button>
 
       <ConfirmDialog

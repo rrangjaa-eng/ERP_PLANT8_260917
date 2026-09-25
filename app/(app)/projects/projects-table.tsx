@@ -4,31 +4,16 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
-import { StatusTag, type StatusTagKind } from "@/ui/status-tag/StatusTag";
+import { StatusTag } from "@/ui/status-tag/StatusTag";
 import type { ProjectListItemWithGroup, ProjectAggregateDto } from "@/domain/projects";
+import type { ProjectStatus } from "@/domain/projects/status-transitions";
+import { PROJECT_STATUS_TAG_KIND } from "./status-display";
 import { formatKrw } from "@/lib/format-number";
 import styles from "./projects.module.css";
 
 // SYSTEM.md §6-1 · 04-UI-SPEC S1 — 목록 표. `ui/table`을 **읽기 형태**로
 // 쓴다(편집 가능 셀 0개, D-61 (가)). 이 파일은 04-04가 고치는 ui/table
 // 디렉터리를 건드리지 않는다(같은 웨이브, 이 플랜의 <probe_fallback>).
-const STATUS_LABELS: Record<string, string> = {
-  bidding: "수주중",
-  in_progress: "진행",
-  settled: "완료(정산)",
-  lost: "미수주",
-};
-
-// §7-5 보강 다섯 낱말(진행→accent·완료(정산)→success·미수주→muted) +
-// 수주중은 다섯 낱말 목록 밖이라 기존 「대기·미착수」와 같은 결로 muted를
-// 쓴다(이 플랜의 판단, SUMMARY에 기록).
-const STATUS_TAG_KIND: Record<string, StatusTagKind> = {
-  bidding: "muted",
-  in_progress: "accent",
-  settled: "success",
-  lost: "muted",
-};
-
 // ISO "YYYY-MM-DD" → "MM-DD". 값이 없으면 §2-4 "값이 있는데 비어 있는 칸만
 // —"를 따라 — 기간 필드 자체는 항상 DTO에 실리므로(project.value, 계급
 // 무관 노출) 부재가 아니라 빈 값이다.
@@ -46,11 +31,14 @@ export function ProjectsTable({
   aggregate,
   loadMoreHref,
   canSeeAmount,
+  statusLabels,
 }: {
   rows: ProjectListItemWithGroup[];
   aggregate: ProjectAggregateDto;
   loadMoreHref: string | null;
   canSeeAmount: boolean;
+  /** 코드표 라벨(서버) — 값 → 라벨. */
+  statusLabels: Record<string, string>;
 }) {
   const moneyColumns: TableColumn<ProjectListItemWithGroup>[] = canSeeAmount
     ? [
@@ -106,8 +94,8 @@ export function ProjectsTable({
       header: "상태",
       priority: "p1",
       cell: (row) => (
-        <StatusTag kind={STATUS_TAG_KIND[row.status] ?? "muted"} variant="text">
-          {STATUS_LABELS[row.status] ?? row.status}
+        <StatusTag kind={PROJECT_STATUS_TAG_KIND[row.status as ProjectStatus] ?? "muted"} variant="text">
+          {statusLabels[row.status] ?? row.status}
         </StatusTag>
       ),
     },

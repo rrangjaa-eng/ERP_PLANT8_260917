@@ -60,6 +60,30 @@ export async function queryActionLog(
     .orderBy(actionLog.occurredAt, actionLog.seq);
 }
 
+// 04-21(D-50): 한 대상의 최신 로그 한 줄 — 상세 부제의 마지막 상태 변경일. 정리 표시 행도
+// 읽는다(CEO A-30 — 거르면 정리 뒤 부제가 조용히 등록일로 돌아간다). 같은 트랜잭션의 두 줄은
+// occurred_at이 같으므로 seq로도 정렬한다. 선택 tx — 잠근 트랜잭션 안에서 읽을 때(04-11).
+export async function findLatestActionFor(
+  viewer: Viewer,
+  query: { entity: string; entityId: string; actionType: string },
+  tx?: DbOrTx,
+): Promise<ActionLogRow | null> {
+  void viewer;
+  const [row] = await (tx ?? db)
+    .select()
+    .from(actionLog)
+    .where(
+      and(
+        eq(actionLog.entity, query.entity),
+        eq(actionLog.entityId, query.entityId),
+        eq(actionLog.actionType, query.actionType),
+      ),
+    )
+    .orderBy(desc(actionLog.occurredAt), desc(actionLog.seq))
+    .limit(1);
+  return row ?? null;
+}
+
 // 03-07: 행동 로그 화면·내보내기가 쓰는 네 축(사람·기간·행동 종류·문서) +
 // 정리 포함 여부 필터. 기본은 정리되지 않은 행만(prunedAt IS NULL). 정렬은
 // 발생 시각 내림차순(최신 순), 같으면 seq(단조 증가 기본키) 내림차순 — 두

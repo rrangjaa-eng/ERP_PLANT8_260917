@@ -11,6 +11,7 @@ import {
   type ProjectSortKey,
 } from "@/domain/projects";
 import { listProjectFormReferences } from "@/domain/projects/references";
+import { listProjectStatusCatalog } from "@/domain/projects/status";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { ProjectForm } from "./project-form";
@@ -22,14 +23,7 @@ import styles from "./projects.module.css";
 export const dynamic = "force-dynamic";
 
 // 04-05 — 04-01의 트레이서 목록(무필터·무그룹)을 완성한다: 월별 그룹·상태
-// 필터 한 줄·정렬·더 보기·전체 집계 합계(S1).
-const STATUS_OPTIONS: ProjectFilterOption[] = [
-  { value: "bidding", label: "수주중" },
-  { value: "in_progress", label: "진행" },
-  { value: "settled", label: "완료(정산)" },
-  { value: "lost", label: "미수주" },
-];
-const VALID_STATUS_VALUES = new Set(STATUS_OPTIONS.map((option) => option.value));
+// 필터 한 줄·정렬·더 보기·전체 집계 합계(S1). 04-21 — 상태 값·라벨은 코드표(D-75).
 
 function projectsHref(opts?: { isNew?: boolean }): string {
   return opts?.isNew ? "/projects?new=1#project-form" : "/projects";
@@ -62,10 +56,14 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
 
   const params = await searchParams;
   const showCreateForm = params.new === "1";
+  const statusOptions: ProjectFilterOption[] = (await listProjectStatusCatalog(session.viewer)).map(
+    ({ value, label }) => ({ value, label }),
+  );
 
   // 네이티브 GET 폼이 빈 칸까지 `status=&...`로 실으므로 여기서 한 번만
   // undefined로 정규화한다(action-log/page.tsx와 같은 이유).
-  const status = params.status && VALID_STATUS_VALUES.has(params.status) ? params.status : undefined;
+  const status =
+    params.status && statusOptions.some((option) => option.value === params.status) ? params.status : undefined;
   const teamId = params.teamId || undefined;
   const year = params.year && /^\d{4}$/.test(params.year) ? Number(params.year) : undefined;
   const search = params.q || undefined;
@@ -120,7 +118,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         <ProjectsFilterBar
           key={`${status ?? ""}|${teamId ?? ""}|${year ?? ""}|${search ?? ""}`}
           teams={references.teams}
-          statusOptions={STATUS_OPTIONS}
+          statusOptions={statusOptions}
           yearOptions={yearOptions()}
           defaultValues={{ status, teamId, year: year ? String(year) : undefined, q: search }}
           hasFilter={hasFilter}
@@ -143,7 +141,13 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       ) : aggregate.count === 0 ? (
         <ListEmpty message="조건에 맞는 프로젝트가 없습니다" action={{ label: "필터 지우기", href: "/projects" }} />
       ) : (
-        <ProjectsTable rows={rows} aggregate={aggregate} loadMoreHref={loadMoreHref} canSeeAmount={canSeeAmount} />
+        <ProjectsTable
+          rows={rows}
+          aggregate={aggregate}
+          loadMoreHref={loadMoreHref}
+          canSeeAmount={canSeeAmount}
+          statusLabels={Object.fromEntries(statusOptions.map((option) => [option.value, option.label]))}
+        />
       )}
     </>
   );

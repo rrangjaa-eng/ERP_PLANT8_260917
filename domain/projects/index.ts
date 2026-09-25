@@ -57,6 +57,7 @@ export type ProjectDto = {
   customFields: Record<string, unknown>;
   version: number;
   archivedAt: Date | null;
+  createdAt: Date;
 };
 
 export const PROJECT_DTO_SPEC: DtoSpec<ProjectRow, ProjectDto> = {
@@ -74,6 +75,7 @@ export const PROJECT_DTO_SPEC: DtoSpec<ProjectRow, ProjectDto> = {
     { key: "customFields", from: "customFields", infoItem: "project.value" },
     { key: "version", from: "version", infoItem: "project.value" },
     { key: "archivedAt", from: "archivedAt", infoItem: "project.value" },
+    { key: "createdAt", from: "createdAt", infoItem: "project.value" },
   ],
 };
 

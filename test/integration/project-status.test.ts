@@ -667,5 +667,38 @@ describe("부제의 마지막 변경일 (04-21, D-50 · CEO A-30 · 엔지 리�
     const dto = await findProject(lead, projectId);
     if (!dto || !latest) throw new Error("준비 실패");
     expect(await lastStatusChangeOn(lead, dto)).toBe(kstDateOf(latest.occurredAt));
+
+    // 삽입 순서와 seq가 어긋나도 seq가 큰 줄이다 — 위 경우는 인덱스 역순 스캔이 우연히 나중 삽입을
+    // 먼저 돌려줘 seq 정렬이 빠져도 통과한다(변이로 확인). 큰 seq를 먼저 넣어 그 우연을 없앤다.
+    const adversarial = await makeStatusProject({ teamId: teamA, status: "in_progress", startDate: "2026-09-01" });
+    const bigSeq = Number.MAX_SAFE_INTEGER - Math.floor(Math.random() * 1_000_000);
+    await withTransaction(async (tx) => {
+      await tx.insert(actionLog).values({
+        seq: bigSeq,
+        actorId: lead.id,
+        actorRoleId: lead.roleId,
+        actionType: "status_change",
+        entity: "project",
+        entityId: adversarial.projectId,
+        documentId: null,
+        detail: { from: "settling", to: "in_progress", trigger: "manual" },
+      });
+      await recordAction(
+        SYSTEM_VIEWER,
+        {
+          actionType: "status_change",
+          entity: "project",
+          entityId: adversarial.projectId,
+          detail: { from: "in_progress", to: "settling", trigger: "auto", effectiveOn: "2026-09-17" },
+        },
+        { tx },
+      );
+    });
+    const adversarialLatest = await findLatestActionFor(lead, {
+      entity: "project",
+      entityId: adversarial.projectId,
+      actionType: "status_change",
+    });
+    expect(adversarialLatest?.seq).toBe(bigSeq);
   });
 });

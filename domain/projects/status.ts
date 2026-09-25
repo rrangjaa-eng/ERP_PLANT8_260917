@@ -8,13 +8,14 @@ import "@/domain/rules/register";
 import { denyWrite } from "@/domain/rules/deny-write";
 import { ALLOWED_TRANSITIONS, PROJECT_STATUSES, type ProjectStatus } from "@/domain/projects/status-transitions";
 import { withTransaction } from "@/lib/db-transaction";
-import { kstToday } from "@/lib/kst-date";
+import { kstDateOf, kstToday } from "@/lib/kst-date";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { findRoleById as defaultFindRoleById } from "@/repositories/roles";
 import { findMembershipAtDate as defaultFindMembershipAtDate } from "@/repositories/team-memberships";
 import { lockProjectForWrite, updateProjectStatusIfCurrent } from "@/repositories/projects";
 import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 import type { DbOrTx } from "@/repositories/document-counters";
+import { findLatestActionFor as defaultFindLatestActionFor } from "@/repositories/action-log";
 
 // 04-20(PROJ-04 · D-44·D-46·D-75·D-79·D-82) — 사람의 상태 전환 넷의 서버 쪽.
 // 상태 이름 비교는 전이표(status-transitions.ts)와 게이트 규칙(rules/register.ts)
@@ -222,6 +223,24 @@ async function loadActorFacts(viewer: Viewer, deps?: Partial<StatusChangeFactDep
     loadActorTeamScope(viewer, { todayKst: kstToday(now()) }, deps),
   ]);
   return { menus: { status, complete }, teamScope };
+}
+
+// ── 마지막 상태 변경일(D-50 · S3 부제) ──────────────────────────────────────
+// 최신 status_change 로그 한 줄의 KST 날짜, 없으면 등록일. 이력 표를 만들지 않는다 —
+// 행위자도 싣지 않는다(T-04-39: 사람별 집계 화면이 되지 않게).
+type LatestActionFinder = (
+  viewer: Viewer,
+  query: { entity: string; entityId: string; actionType: string },
+) => Promise<{ occurredAt: Date } | null>;
+
+export async function lastStatusChangeOn(
+  viewer: Viewer,
+  project: { id: string; createdAt: Date },
+  deps?: { findLatestActionFor?: LatestActionFinder },
+): Promise<string> {
+  const findLatest = deps?.findLatestActionFor ?? defaultFindLatestActionFor;
+  const latest = await findLatest(viewer, { entity: PROJECT_ENTITY, entityId: project.id, actionType: "status_change" });
+  return kstDateOf(latest?.occurredAt ?? project.createdAt);
 }
 
 // ── 전환 ───────────────────────────────────────────────────────────────────

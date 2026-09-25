@@ -275,3 +275,22 @@ frontmatter `key-decisions` 참조.
 - 생성 파일 5개 존재 확인
 - 커밋 fc52150 · 49c2603 · 404fb1b · d105dfe 존재 확인
 - `git rev-list --count 8c3ede0..HEAD` = 4
+
+## 리뷰 반영
+
+- Opus 독립 검토(`phase4-prep/04-22-review-opus.md`): BLOCKING 0 · SHOULD-FIX 5 · NIT 7.
+- **S1 반영** — 견적 줄 게이트가 트랜잭션 안의 새 행(기간 쓰기·재판정 뒤)으로 판정한다(`findProjectById`가 tx를 받음). 통합 (n)이 gate 호출의 행·ctx(`settling`)를 단언하도록 조였고, 줄 저장을 기간 쓰기 앞으로 옮긴 변이에서 실패함을 확인했다. RED 9bd3134 · GREEN a138b25.
+- **S4 반영** — 기간 거부 문구의 팀장 이름을 `projects.period` 쓰기 보유자에서 찾는다. `teamLeadCandidatesAtDate`에 `menu`(기본 `projects.status`, 04-11 안내 뜻 유지). 통합 (b3)(b4). RED 16fb3a1 · GREEN 31a2249. 편차 6의 걱정은 이로써 닫힌다.
+- **S5 반영** — 화면의 `seenStatus`를 저장 결과로 갱신한다. E2E (3b)가 RSC 새로 고침을 붙잡아 둘째 저장을 재현하고, `seenStatus: status` 변이에서 실패함을 확인했다. RED 7636ac0 · 테스트 정리 f5a9dc5 · GREEN c2d72ee.
+- 넘김(미반영):
+  - S2 — 복원이 줄 version·기간 기준값을 보관하지 않아 동료 변경을 조용히 덮을 수 있다 → 04-30/04-49 truths에 명시.
+  - S3 — DR-6 거부 뒤 매출 편집(계약·발행·입금)이 보관 없이 사라진다 → 그룹 B 또는 04-30 truths로.
+  - N1 — `seenStatus` 비교가 쓰기 권한 판정보다 앞(누출 없음).
+  - N2 — `ledger-save-flow.spec.ts` 끝의 `page.reload()`가 이탈 경고로 무의미할 수 있다.
+  - N3 — 트랜잭션 안 `StatusChangedError` 메시지에 상태 코드값이 들어간다.
+  - N4 — `closePeriodFieldAfterSave`의 `setTimeout(600)` 정리 누락.
+  - N5 — `PeriodField`의 `inputMode="numeric"`(모바일 `-` 없음) → 04-44 DOM 감사에서.
+  - N6 — 완료 프로젝트에서 계약 칸 편집 가능 조건과 `canSave` 불일치 → 04-12.
+  - N7 — 기존 줄 삭제가 서버로 가지 않아 복원 뒤 지운 줄이 되살아나 보인다 → 소유 플랜 지정 필요.
+- 검증: lint · typecheck · lint:sql 통과. 통합 project-period 26/26 · tx-safety 6/6 · project-auto-settlement 22/22 · quote-lines 6/6 · project-status 22/22. 단위 70/70. E2E(CI=true) project-period 8/8 · ledger-save-flow 1/1.
+- **한도 풀리면 Codex 재확인 필요.**

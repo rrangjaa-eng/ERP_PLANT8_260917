@@ -335,14 +335,35 @@ Plans:
   3. 결재자는 결재 대기함에서 폰으로 승인·반려(사유 자유 입력 필수, 기안자에게 복귀)하고 기안자는 회수한다(EXP-05). 상태 문서는 version 컬럼 낙관적 잠금으로 승인↔회수·승인↔반려 동시 조작을 막고 두 순서 모두 통합 테스트로 증명된다. 연차 신청 → 결재자 폰 승인 흐름이 Playwright E2E로 CI에 있다
   4. 직원이 종일·반차·반반차·재택 중 하나로 연차를 신청하면 승인 시 잔여 일수(1 / 0.5 / 0.25, 재택은 차감 없이 기록)가 차감된다. 회계연도 연차는 관리자가 연 1회 설정하고 이월은 없으며, 잔여를 넘는 신청은 막지 않고 신청 창·결재 옆판에 남은/결재 중/이번 신청 일수로 경고한다. 입사한 해에는 법정 월차가 별도 잔고로 자동 적립되고(Phase 5 D-96), 퇴직 시에는 잔여 일수만 보인다(D-97) (LEAV-01)
   5. 새 액션·DTO(결재·연차)는 누수 스캔 생성기에 등록되고 결재 동작은 행동 로그에 남는다
-**Plans:** 0 plans
+**Plans:** 7 plans
 **UI hint**: yes
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 04.1 to break down)
+*(웨이브마다 플랜 하나 — 모든 플랜이 같은 로컬 DB `erp`/`erp_test`에서 통합·E2E를 돌려 한 줄 체인으로 직렬 실행한다)*
 
-논의 결과는 `.planning/phases/05-expense-approval-leave/05-CONTEXT.md`의 결재·연차 결정(입력 §1~§5, D-96·D-97, Claude's Discretion의 결재 표 세부)을 그대로 쓴다. 계획 단계에서 정할 것: REQUIREMENTS 추적표의 다섯 항목을 Phase 04.1로 옮기는 일, Phase 4가 마이그레이션 0011~0016을 쓸 예정이라 이 페이즈 마이그레이션 번호와 `_journal.json` 충돌을 푸는 방식.
+Wave 1
+- [ ] 04.1-01-PLAN.md — 결재 엔진 트레이서: 표 3개 + leave_requests, nextStep·walkRoute, 연차 제출→승인(통합), 설정 키 22개, [BLOCKING] 마이그레이션 + journal 가드, 결재선 가장자리 규칙
+
+Wave 2 *(blocked on Wave 1)*
+- [ ] 04.1-03-PLAN.md — 연차 잔고: 부여(grant) 모델, 입사 첫해 월차 D-96, 입사 다음 해 연차 입사 연도 근무 기간 비례(0.25일 올림 — 사용자 결정 2026-09-24 카드 B), 퇴직 D-97, 조정, [BLOCKING] 마이그레이션(LEAV-01)
+
+Wave 3 *(blocked on Wave 2)*
+- [ ] 04.1-02-PLAN.md — 화면 트레이서(/leave/new → /approvals 승인 E2E) + 반려·회수·다시 신청 + 동시 조작 두 순서(EXP-03·EXP-05)
+
+Wave 4 *(blocked on Wave 3)*
+- [ ] 04.1-04-PLAN.md — 결재선 설정 화면: 이름 옵션·동적 옵션·부서 없음 경고·연차 일수 1월 1일 규칙(ADMN-04 결재 부분)
+
+Wave 5 *(blocked on Wave 4)*
+- [ ] 04.1-05-PLAN.md — 결재 화면 완성: 폰 결재 시트 E2E, 문서 화면 행동 줄, 반려/회수 확인, ui/approval-route, SYSTEM.md A3(EXP-05)
+
+Wave 6 *(blocked on Wave 5)*
+- [ ] 04.1-06-PLAN.md — 연차 화면 완성: 계정 그룹 「연차」(A1), /leave 목록(A4), 완성형 신청 폼, 관리자 사람 상세 연차 섹션 · 등록 입사일
+
+Wave 7 *(blocked on Wave 6)*
+- [ ] 04.1-07-PLAN.md — 병합 직전: origin/main을 받아 병합 → 04.1 자기 마이그레이션 삭제 → `pnpm db:generate` 재생성(번호 = main 마지막 + 1, 받은 tag 보고 · 번호 범위·병합 순서 제약 없음) → 전체 게이트 CI=true
+
+논의 결과는 `.planning/phases/05-expense-approval-leave/05-CONTEXT.md`의 결재·연차 결정(입력 §1~§5, D-96·D-97, Claude's Discretion의 결재 표 세부)을 그대로 쓴다. 계획 단계에서 정할 것: REQUIREMENTS 추적표의 다섯 항목을 Phase 04.1로 옮기는 일, 마이그레이션 번호와 `_journal.json` 충돌을 푸는 방식 — 정해졌다(규칙 개정 2026-09-24 20:52 KST): 브랜치에서는 `pnpm db:generate`가 준 번호를 그대로 쓰고, 병합 직전 `origin/main`을 병합한 뒤 자기 마이그레이션(SQL · 스냅숏 · journal 항목)을 지우고 `pnpm db:generate`로 다시 만들어 번호가 main 마지막 + 1이 된다. 페이즈별 예약 번호 범위와 Phase 4와의 병합 순서 제약은 없다(04.1-07).
 
 ### Phase 04.2: 알림·공휴일 기반 (INSERTED)
 
@@ -358,14 +379,54 @@ Plans:
   4. Cloud Scheduler가 부르는(발송 시각 오전 9시, 07-CONTEXT 입력 §4) 단일 엔드포인트(`/internal/notify-tick`)로 동작한다. 호출은 Google OIDC ID 토큰을 검증하고(audience = 서비스 URL, 이메일 = 스케줄러 서비스 계정; 실패 401 + 로그), tick은 advisory lock으로 동시 실행을 막으며(2A), 건수 상한(설정)만큼 배치로 처리하고 `{sent, skipped, remaining}`을 응답해 남은 건은 다음 tick이 잇는다. notification_log 유니크 제약(INSERT … ON CONFLICT DO NOTHING)으로 같은 건은 두 번 발송되지 않고(NOTI-04), tick 날이 비영업일이면 아무것도 보내지 않고 끝난다(D-709). 알림 조건 종류는 코드에 등록하는 틀로 두고 이 페이즈는 테스트 전용 조건 종류로 tick을 증명한다 — 실제 조건 종류·기본 규칙·규칙 관리 화면은 Phase 7(NOTI-03). 스케줄러 잡·서비스 계정은 deploy.sh가 만들고, OIDC 검증을 끄는 환경 변수가 있으면 배포가 거부된다(Issue 6). 통합 테스트: 토큰 없음 → 401, 상한 초과 시 remaining > 0 뒤 다음 tick 완료, 재실행 멱등, 공휴일 날짜 → `{sent: 0}`. 관리자 시스템 상태 화면에 마지막 tick 시각·결과가 더해진다(18A)
   5. 계정 잠금과 잠금 해제가 행동 로그에 남는다(D-712, Phase 1 성공 기준 2의 미이행분). 잠금은 로그인 전에 일어나 행위자 표현(시스템 행위자 + 대상 이메일 등)은 계획이 정한다. 통합 테스트: 로그인 N회 실패 → 잠금 행동 로그 1건, 관리자 해제 → 해제 행동 로그 1건. 새 액션·DTO(알림함·공휴일)는 누수 스캔 생성기에 등록된다
 
-**Plans:** 0 plans
+**Plans:** 15 plans
 **UI hint**: yes
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 04.2 to break down)
+- [ ] 04.2-01-PLAN.md — 트레이서: `/internal/notify-tick` → advisory lock tick → `notification_log`·실행 기록, 배치 상한·종류별 격리·이어받기 (W1)
+- [ ] 04.2-02-PLAN.md — 공휴일 규칙 생성(음력 내장 표 2025–2035·시행일별 법정 공휴일·대체공휴일)과 영업일·N영업일 순수 함수, 공식 달력 대조 체크포인트 (W1)
+- [ ] 04.2-04-PLAN.md — deploy.sh 스케줄러 잡·서비스 계정·OIDC 우회 거부·401 스모크, tick 정체 경보 25시간 켜기, 저널 가드 (W1)
+- [ ] 04.2-15-PLAN.md — SMTP 발송 어댑터(거부·결과 불명·발송 마감 분류, 오류 비노출)와 묶음 메일 모양, `nodemailer` 패키지 확인 체크포인트 (W1)
 
-논의 결과는 `.planning/phases/07-schedule-notify-audit/07-CONTEXT.md`의 이미 확정된 입력(공휴일 표·발송 방식·이메일)과 D-705(후보 표 계산·확정 요청 배너)·D-706·D-709(비영업일 미발송)·D-711·D-712를 그대로 쓴다. 이 페이즈에는 아직 CONTEXT가 없고 plan-phase는 07-CONTEXT를 자동으로 읽지 않으므로, 계획 전에 위 결정을 `04.2-CONTEXT.md`로 옮긴다(다시 묻지 않는다). 계획 단계에서 정할 것: REQUIREMENTS 추적표의 네 항목을 Phase 04.2로 옮기는 일, Phase 4(0011~0016)·04.1과 겹치지 않는 마이그레이션 번호와 `_journal.json` 충돌을 푸는 방식, `notification_log` 유니크 키가 Phase 7 독촉(D-707·D-708: 회차·받는 사람)을 막지 않는 모양, 건수 상한과 사람별 하루 한 통 묶음을 함께 지키는 방식(상한을 넘긴 건을 언제 보내는지 포함), 공휴일 후보를 매년 만드는 계기, `/internal/notify-tick` 경로가 Cloud Run 엣지에서 살아남는지. 알림함은 SYSTEM.md §7-12 계약이 있고 공휴일 관리 화면만 정본이 없어 `/gsd-ui-phase 04.2`로 먼저 세운다.
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 04.2-05-PLAN.md — OIDC 거부 경로 전부·환경 변수 연결·실제 기본 설정 실측·재생 보장 (W2)
+- [ ] 04.2-06-PLAN.md — 공휴일 표·연도 확정 표, 후보 지연 생성(수동 날짜가 대체일을 막음), 필요한 해만 읽는 영업일 함수를 tick에 연결 (W2)
+- [ ] 04.2-07-PLAN.md — 트레이서: 알림함 한 스냅샷 열기·키셋 목록, 경로 변경 때 갱신되는 미읽음 배지 (W2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 04.2-03-PLAN.md — D-712 계정 잠금 행동 로그(실패 기록과 한 트랜잭션) + 잠금 문구가 설정 분(`auth.lockout.window_minutes`)을 읽음, 끌 수 없는 행동 종류 셋 (W3)
+- [ ] 04.2-09-PLAN.md — 알림함 메뉴 항목·목록 다섯 상태, DECISIONS 한 항목 + SYSTEM.md 수정 제안 #2~#8 (W3)
+- [ ] 04.2-10-PLAN.md — 하루 한 통 묶음 이메일(한 묶음씩 선점·결과 불명 기록·로그 비노출·실행 예산) (W3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 04.2-08-PLAN.md — D-712 잠금 해제 로그(한 트랜잭션) + CLI 운영자 신원(`github.actor`) (W4)
+- [ ] 04.2-11-PLAN.md — 공휴일 관리 화면 `/admin/holidays` 트레이서: 후보 표·연도 확정(범위·완결 검사 + 행동 로그 한 트랜잭션), SYSTEM.md #1 (W4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 04.2-12-PLAN.md — 임시공휴일·선거일 추가·수동 미래 행 삭제(미래 대체일 재계산 + 행동 로그 한 트랜잭션), 폰 칸 접기 (W5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 04.2-13-PLAN.md — 시스템 상태 `알림 발송`·`이메일` 줄과 관리자 배너 둘(공휴일 확정 요청·이메일 발송 실패/결과 불명) (W6)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 04.2-14-PLAN.md — [BLOCKING] main 합친 뒤 마이그레이션 재생성(목록 삭제·두 DB 적용·두 번 실행), REQUIREMENTS·ROADMAP 추적 이동, ARCHITECTURE 표기, 전체 게이트 (W7)
+
+**Cross-cutting constraints:**
+
+- addBusinessDays(d, N)은 N=0이면 d가 영업일일 때 d 자신이고, 연말을 넘는 계산(12/31 + 1영업일)은 다음 해 표(확정 또는 후보)를 읽는다. 내장 음력 표 범위 밖 연도 요청은 조용히 틀린 값 대신 오류를 낸다
+- 잠금 행동 로그의 행위자는 시스템(actorId null)이고 대상 이메일은 detail에 남으며, 해제 로그의 행위자는 해제한 관리자다
+- 화면 검토에 Codex(GPT) 적대적 디자인 검토 한 번이 들어가고 그 출력 원문이 SUMMARY에 붙는다 — codex가 실행되지 않으면 그 사실과 오류를 적고 다른 검토로 대신하지 않는다(소유자 지시)
+- 그날 새 알림이 없는 사람에게는 메일을 보내지 않고, SMTP 환경 변수 4개 중 하나라도 비면 메일 0통·관리자 시스템 상태 「미설정」이다
+
+논의 결과는 `.planning/phases/07-schedule-notify-audit/07-CONTEXT.md`의 이미 확정된 입력(공휴일 표·발송 방식·이메일)과 D-705(후보 표 계산·확정 요청 배너)·D-706·D-709(비영업일 미발송)·D-711·D-712를 그대로 쓴다. 이 페이즈에는 아직 CONTEXT가 없고 plan-phase는 07-CONTEXT를 자동으로 읽지 않으므로, 계획 전에 위 결정을 `04.2-CONTEXT.md`로 옮긴다(다시 묻지 않는다). 계획 단계에서 정할 것: REQUIREMENTS 추적표의 네 항목을 Phase 04.2로 옮기는 일, Phase 4·04.1과 병렬로 만든 마이그레이션을 합치는 방식(번호는 생성기가 붙이고, 머지 직전 origin/main을 합친 뒤 이 페이즈의 마이그레이션·스냅숏·journal 항목을 지우고 `pnpm db:generate`로 다시 만든다 — 번호나 `_journal.json`을 손으로 고치지 않는다), `notification_log` 유니크 키가 Phase 7 독촉(D-707·D-708: 회차·받는 사람)을 막지 않는 모양, 건수 상한과 사람별 하루 한 통 묶음을 함께 지키는 방식(상한을 넘긴 건을 언제 보내는지 포함), 공휴일 후보를 매년 만드는 계기, `/internal/notify-tick` 경로가 Cloud Run 엣지에서 살아남는지. 알림함은 SYSTEM.md §7-12 계약이 있고 공휴일 관리 화면만 정본이 없어 `/gsd-ui-phase 04.2`로 먼저 세운다.
 
 ### Phase 04.3: QR 확인증 접수 (INSERTED)
 
@@ -617,7 +678,8 @@ v1 요구사항 86개 전부가 정확히 한 페이즈에 속한다(2026-09-23:
 | 2 | 1 | UX-01 |
 | 3 | 13 | ADMN-01, ADMN-02, ADMN-03, ADMN-05, ADMN-06, ADMN-08, ADMN-10, ADMN-12, OPS-05, MAST-01, MAST-02, MAST-03, MAST-04 |
 | 4 | 11 | PROJ-01, PROJ-02, PROJ-03, PROJ-04, PROJ-05, PROJ-07, ADMN-09, UX-04, UX-05, RSV-01, FX-01 |
-| 5 | 13 | EXP-01, EXP-02, EXP-03, EXP-04, EXP-05, EXP-08, EXP-14, EXP-15, EVID-01, ADMN-04, LEAV-01, UX-03, UX-06 |
+| 04.1 | 5 | EXP-03, EXP-04, EXP-05, LEAV-01, ADMN-04 (결재 부분 — 알림 시점은 Phase 7, 세율·수식은 Phase 5) |
+| 5 | 8 | EXP-01, EXP-02, EXP-08, EXP-14, EXP-15, EVID-01, UX-03, UX-06 |
 | 6 | 10 | EXP-06, EXP-07, EXP-09, EXP-10, EXP-13, EXP-16, EVID-02, EVID-03, EVID-04, PROJ-06 |
 | 7 | 7 | EXP-11, EXP-12, ADMN-11, NOTI-01, NOTI-02, NOTI-03, NOTI-04 |
 | 8 | 3 | MIG-04, MIG-05, OPS-03 |

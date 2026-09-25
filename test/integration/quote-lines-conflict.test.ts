@@ -68,7 +68,8 @@ describe("domain/quotes/lines saveQuoteLines — 배치 충돌·전부 거부(04
     expect(result.lines).toHaveLength(3);
     for (const line of result.lines) expect(line.version).toBe(1);
 
-    // 방금 만든 버전으로 다시 저장 — 버전이 일치하므로 충돌 없이 통과하고 1씩 오른다.
+    // 방금 만든 버전으로 항목명을 고쳐 다시 저장 — 버전이 일치하므로 충돌 없이 통과하고 1씩 오른다
+    // (04-12 검토 S1 — 값이 그대로인 줄은 쓰지 않으므로 한 칸을 고친다).
     const resaved = await saveQuoteLines(
       SYSTEM_VIEWER,
       revision.id,
@@ -76,7 +77,7 @@ describe("domain/quotes/lines saveQuoteLines — 배치 충돌·전부 거부(04
         id: line.id,
         version: line.version,
         subcategory: line.subcategory,
-        itemName: line.itemName,
+        itemName: `${line.itemName} 고침`,
         unitPrice: { currency: "KRW", amount: line.unitPrice.amount, fxRate: 1 },
         execution: { currency: "KRW", amount: 0, fxRate: 1 },
         baseline: {

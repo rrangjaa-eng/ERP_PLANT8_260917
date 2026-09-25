@@ -716,7 +716,8 @@ export async function writeQuoteLinesInTx(
   const conflicts: CellConflict[] = [];
   const formatErrors: CellFormatError[] = [];
   const gateErrors: CellFormatError[] = [];
-  const planned: { input: QuoteLineWriteRow; payload: QuoteLineWritePayload; customFields: Record<string, unknown> }[] = [];
+  // unchanged — DB 현재 값과 바뀐 칸이 없는 기존 줄(A-21). 쓰지 않는다(version·로그 그대로 — 완료 줄도 잠김 그대로).
+  const planned: { input: QuoteLineWriteRow; payload: QuoteLineWritePayload; customFields: Record<string, unknown>; unchanged: boolean }[] = [];
 
   if (!denial) {
     if (order === "reorder") await judgeStructure(null, { kind: "reorder" });
@@ -726,7 +727,8 @@ export async function writeQuoteLinesInTx(
       formatErrors.push(...rowFormatErrors(row, rowIndex));
       const payload = writePayload(row);
       const customFields = customFieldsSchema.parse(row.customFields ?? {}) as Record<string, unknown>;
-      planned.push({ input: row, payload, customFields });
+      const entry = { input: row, payload, customFields, unchanged: false };
+      planned.push(entry);
 
       if (row.isNew) {
         await judgeStructure(null, row.duplicatedFrom ? { kind: "duplicate" } : { kind: "insert", quoteCellsZero: quoteCellsZero(row) });
@@ -741,7 +743,9 @@ export async function writeQuoteLinesInTx(
       if (current.version !== row.version) conflicts.push(...cellConflictsFor(row.id, row.baseline, current));
 
       // 바뀐 칸마다 판정해 칸 오류로 싣는다(이유 = 표 위 한 줄과 같은 문자열). 바뀐 칸이 없으면 게이트를 부르지 않는다.
-      for (const field of changedFields(current, payload)) {
+      const changed = changedFields(current, payload);
+      entry.unchanged = changed.length === 0;
+      for (const field of changed) {
         const decision = await gate(projectRow, LINE_EDIT_RULE, lineCtx(row.id, { kind: "update", fields: [field] }));
         if (!decision.allowed) gateErrors.push({ rowIndex, rowId: row.id, field, label: CELL_LABELS[field], reason: decision.reason });
       }
@@ -760,7 +764,7 @@ export async function writeQuoteLinesInTx(
   // 실제로 쓴 것(삽입·갱신·순서·보관)이 없으면 로그도 남기지 않는다 — 재전송 no-op은 아무것도 하지 않는다.
   let wrote = false;
 
-  for (const { input: row, payload, customFields } of planned) {
+  for (const { input: row, payload, customFields, unchanged } of planned) {
     // D-71 — 환율 칸을 실제로 고친 저장에서만 그 통화의 최근 환율을 기억한다(커밋 뒤 — 트랜잭션을 연 쪽이).
     if (payload.unitPriceCurrency !== "KRW" && row.unitPriceFxRateTouched) {
       fxToRemember.push({ currency: payload.unitPriceCurrency, rate: Number(payload.unitPriceFxRate) });
@@ -786,6 +790,7 @@ export async function writeQuoteLinesInTx(
       continue;
     }
 
+    if (unchanged) continue;
     // input.version은 위 판정에서 undefined가 아님을 이미 확인했다.
     const updated = await repoUpdateQuoteLineIfVersionMatches(viewer, row.id, row.version!, { revisionId }, payload, tx);
     if (!updated) {

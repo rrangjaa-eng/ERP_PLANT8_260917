@@ -356,6 +356,23 @@ describe("정산 편집 매트릭스(D10·D12)", () => {
     expect((await reloadLine(target.id)).note).toBeNull();
   });
 
+  it("(c3) 완료에서 값이 그대로인 줄을 다시 보낸 저장은 아무것도 쓰지 않는다 — version·updated_at·문서 수정 로그 그대로(D-47)", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const target = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "완료 그대로" });
+    await setStatus(project.id, "completed");
+    const logsBefore = await actionCount(QUOTE_LINE_ENTITY, revision.id, "document_update");
+
+    await saveProjectLedger(SYSTEM_VIEWER, project.id, {
+      seenStatus: "completed",
+      quoteLines: { revisionId: revision.id, rows: [asInput(target)] },
+    });
+
+    const row = await reloadLine(target.id);
+    expect(row.version).toBe(target.version);
+    expect(row.updatedAt).toEqual(target.updatedAt);
+    expect(await actionCount(QUOTE_LINE_ENTITY, revision.id, "document_update")).toBe(logsBefore);
+  });
+
   it("(d) 정산에서 환율 1350·수량 2·비고 undefined를 실어 실행가만 바꾼 저장은 헛거부되지 않는다(A-21)", async () => {
     const { project, revision, subcategoryValue } = await setupProject();
     const target = await seedLine(revision.id, subcategoryValue, {

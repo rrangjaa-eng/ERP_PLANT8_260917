@@ -4,13 +4,14 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useAction } from "next-safe-action/hooks";
 import { saveProjectLedgerAction } from "../actions";
 import { PageHeader } from "@/ui/page-header/PageHeader";
-import { StatusTag } from "@/ui/status-tag/StatusTag";
+import { StatusTag, type StatusTagKind } from "@/ui/status-tag/StatusTag";
 import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { Table } from "@/ui/table/Table";
 import { Select } from "@/ui/select/Select";
 import { RowSheet } from "@/ui/table/RowSheet";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
+import { Toast } from "@/ui/toast/Toast";
 import { useDirtyStorage } from "@/ui/table/use-dirty-storage";
 import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
 import { normalizeNumericPaste } from "@/ui/table/parse-tsv";
@@ -21,6 +22,7 @@ import type { QuoteLineDto, QuoteLineBaseline } from "@/domain/quotes/lines";
 import type { RevenueDto } from "@/domain/revenue";
 import type { Currency } from "@/domain/money";
 import { RevenueSection, type ContractDraft, type EntryDraft } from "./revenue-section";
+import { StatusChange, type StatusChangeProps } from "./status-change";
 import styles from "./project-detail.module.css";
 
 export type QuoteTableOption = { id: string; name: string };
@@ -509,6 +511,8 @@ export function QuoteLedger({
   projectNumber,
   revisionSeq,
   statusLabel,
+  statusTagKind,
+  statusChange,
   revisionId,
   initialLines,
   vendors,
@@ -526,6 +530,8 @@ export function QuoteLedger({
   projectNumber: string;
   revisionSeq: number;
   statusLabel: string;
+  statusTagKind: StatusTagKind;
+  statusChange: StatusChangeProps | null;
   revisionId: string;
   initialLines: QuoteLineDto[];
   vendors: QuoteTableOption[];
@@ -548,6 +554,7 @@ export function QuoteLedger({
   const [pasteWarning, setPasteWarning] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ clientKey: string; itemName: string; quoteAmountKrw: number } | null>(null);
   const [sheetRowKey, setSheetRowKey] = useState<string | null>(null);
+  const [statusToast, setStatusToast] = useState<string | null>(null);
 
   const dirtyStorage = useDirtyStorage(projectId, revisionId, 0);
 
@@ -1177,9 +1184,10 @@ export function QuoteLedger({
           <PageHeader title={projectName} subtitle={`${projectNumber} · 상세 견적 ${revisionSeq}차`} />
         </div>
         <div className={styles.headerActions}>
-          <StatusTag kind="muted" variant="tag">
+          <StatusTag kind={statusTagKind} variant="tag">
             {statusLabel}
           </StatusTag>
+          {statusChange ? <StatusChange {...statusChange} onChanged={setStatusToast} /> : null}
           {editable || canWriteContract || canWriteEntries ? (
             <Button
               type="button"
@@ -1311,6 +1319,8 @@ export function QuoteLedger({
         canWriteEntries={canWriteEntries}
         balanceKrw={balanceKrw}
       />
+
+      {statusToast ? <Toast message={statusToast} onDismiss={() => setStatusToast(null)} /> : null}
     </>
   );
 }

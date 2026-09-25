@@ -160,7 +160,7 @@ async function quoteLineCustomFieldsSchema(viewer: Viewer) {
 // D-54: 최신 차수만 '현재 차수'. 상세 화면이 이 함수로 그 차수의 id를
 // 얻어 listQuoteLines/saveQuoteLines에 넘긴다. 차수 자체의 전체 DTO(승인
 // 표시·차수 목록)는 04-02가 만든다 — 이 플랜은 id·seq만 최소로 돌려준다.
-export type CurrentQuoteRevisionInfo = { id: string; seq: number };
+export type CurrentQuoteRevisionInfo = { id: string; seq: number; approved: boolean };
 
 export async function getCurrentQuoteRevision(
   viewer: Viewer,
@@ -168,7 +168,7 @@ export async function getCurrentQuoteRevision(
 ): Promise<CurrentQuoteRevisionInfo | null> {
   const revision = await repoFindLatestQuoteRevision(viewer, projectId);
   if (!revision) return null;
-  return { id: revision.id, seq: revision.seq };
+  return { id: revision.id, seq: revision.seq, approved: revision.customerApprovedAt !== null };
 }
 
 export async function listQuoteLines(viewer: Viewer, revisionId: string): Promise<QuoteLineDto[]> {

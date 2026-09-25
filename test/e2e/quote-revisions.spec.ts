@@ -830,6 +830,44 @@ test.describe("이전 차수 보관본 복원 줄 (04-24 Task 4 — DR-4 · DR-3
     await expect(page.locator("section", { has: heading }).getByText(/저장 안 한 편집/)).toHaveCount(0);
   });
 
+  test("차수와 무관한 기간 칸만 든 이전 차수 보관본은 이전 차수 줄이 아니라 현재 차수 복원 줄로 돌아온다(검토 B1)", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "기간 줄", unitPrice: 1_000_000, execution: 400_000 }] });
+    await copyRevision(project.id, project.revisionId);
+    const end = addDays(TODAY, 40);
+    await login(page, pm);
+    await seedDraft(page, project.id, project.revisionId, { "period:end": end });
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByText(`${project.number} · 상세 견적 2차`, { exact: true })).toBeVisible();
+
+    const current = page.locator("p", { hasText: /^저장 안 한 편집 1칸/ });
+    await expect(current).toBeVisible();
+    await expect(previousDraftRow(page, 1)).toHaveCount(0);
+    await current.getByRole("button", { name: "복원" }).click();
+    await expect(page.getByLabel("종료일")).toHaveValue(end);
+  });
+
+  test("이전 차수 보관본의 줄이 그 차수에 하나도 없으면 「복사」는 `복사하지 못함` — 빈 복사를 성공으로 보이지 않는다(검토 B1)", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "남은 줄", unitPrice: 1_000_000, execution: 400_000 }] });
+    await copyRevision(project.id, project.revisionId);
+    await login(page, pm);
+    await seedDraft(page, project.id, project.revisionId, { [`${randomUUID()}:itemName`]: "없는 줄의 편집" });
+    const linesLoaded = page.waitForResponse((response) => isServerAction(response.request()));
+    await page.goto(`/projects/${project.id}`);
+    await linesLoaded;
+
+    const row = previousDraftRow(page, 1);
+    await expect(row).toHaveText(/^1차 저장 안 한 편집 1칸/);
+    const copy = row.getByRole("button", { name: "복사" });
+    await expect(copy).not.toHaveAttribute("aria-disabled", "true");
+    await copy.click();
+    await expect(row.getByText("복사하지 못함", { exact: true })).toBeVisible();
+    await expect(row.getByText(/복사됨/)).toHaveCount(0);
+  });
+
   test("다른 차수 보관본이 둘(1차·2차, 현재 3차)이면 `2차 …` 하나 · 순서 현재 복원 → 이전 차수 → 잠김 · 버리면 `1차 …`", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);

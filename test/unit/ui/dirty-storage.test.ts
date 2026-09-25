@@ -7,6 +7,7 @@ import {
   countDirtyEdits,
   readRestorableCount,
   findOtherRevisionDrafts,
+  carrySharedEdits,
   type DirtyStorageLike,
   type EnumerableDirtyStorage,
 } from "@/ui/table/use-dirty-storage";
@@ -134,5 +135,43 @@ describe("findOtherRevisionDrafts — 이전 차수 보관본(04-24 DR-4)", () =
     clearDirtyEdits(storage, "P", "R1");
     expect(findOtherRevisionDrafts(storage, "P", "R2")).toEqual([]);
     expect(loadDirtyEdits(storage, "P", "R2")).toEqual({ "line-9:itemName": "현재 차수" });
+  });
+});
+
+describe("차수와 무관한 칸(프로젝트 칸)은 이전 차수 보관본으로 세지 않고 현재 차수 보관본으로 옮긴다(04-24 검토 B1)", () => {
+  const SHARED = ["period", "preEstimate"] as const;
+
+  it("findOtherRevisionDrafts는 공유 owner 칸을 세지 않는다 — 공유 칸만 든 보관본은 빠진다", () => {
+    const storage = createEnumerableStorage({
+      [dirtyStorageKey("P", "R1")]: JSON.stringify({ "period:start": "2026-10-01" }),
+      [dirtyStorageKey("P", "R0")]: JSON.stringify({ "line-1:itemName": "고친 항목", "preEstimate:amount": "1,000" }),
+    });
+    expect(findOtherRevisionDrafts(storage, "P", "R2", SHARED)).toEqual([{ revisionId: "R0", count: 1 }]);
+  });
+
+  it("carrySharedEdits는 다른 차수의 공유 칸을 현재 차수 키로 옮기고 옛 키에서 지운다 — 현재 차수 값이 이기고, 빈 옛 키는 없어진다", () => {
+    const storage = createEnumerableStorage({
+      [dirtyStorageKey("P", "R1")]: JSON.stringify({ "period:start": "2026-10-01", "period:end": "2026-10-31" }),
+      [dirtyStorageKey("P", "R0")]: JSON.stringify({ "line-1:itemName": "고친 항목", "preEstimate:amount": "1,000" }),
+      [dirtyStorageKey("P", "R2")]: JSON.stringify({ "period:end": "2026-11-30" }),
+      [dirtyStorageKey("Q", "R9")]: JSON.stringify({ "period:start": "2026-01-01" }),
+    });
+    expect(carrySharedEdits(storage, "P", "R2", SHARED)).toBe(3);
+    expect(loadDirtyEdits(storage, "P", "R2")).toEqual({
+      "period:start": "2026-10-01",
+      "period:end": "2026-11-30",
+      "preEstimate:amount": "1,000",
+    });
+    expect(loadDirtyEdits(storage, "P", "R1")).toBeNull();
+    expect(loadDirtyEdits(storage, "P", "R0")).toEqual({ "line-1:itemName": "고친 항목" });
+    expect(loadDirtyEdits(storage, "Q", "R9")).toEqual({ "period:start": "2026-01-01" });
+  });
+
+  it("옮길 칸이 없으면 0이고 저장소는 그대로다", () => {
+    const storage = createEnumerableStorage({
+      [dirtyStorageKey("P", "R1")]: JSON.stringify({ "line-1:itemName": "고친 항목" }),
+    });
+    expect(carrySharedEdits(storage, "P", "R2", SHARED)).toBe(0);
+    expect(loadDirtyEdits(storage, "P", "R2")).toBeNull();
   });
 });

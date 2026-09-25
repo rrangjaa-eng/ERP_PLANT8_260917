@@ -19,7 +19,7 @@
 #   edit           PreToolUse(Edit|Write)   — 코드 작성은 test-driven-development 뒤에만,
 #                                            테스트·빌드 실패 뒤 코드 수정은 systematic-debugging 뒤에만
 #   failure        PostToolUseFailure(Bash) — 테스트·빌드 실패를 표시
-#   merge          PreToolUse(PR 머지)      — 페이즈 기록에 /review·/qa가 있을 때만
+#   merge          PreToolUse(PR 머지)      — 페이즈 기록에 /review·/qa가 있을 때만(문서만 바뀐 PR은 /review만)
 # 게이트 기록(.claude/gates/phase-NN[.N].log)은 커밋해 세션을 넘어 남긴다.
 set -euo pipefail
 
@@ -175,8 +175,14 @@ case "$event" in
     ;;
 
   merge)
-    gate_has review && gate_has qa \
-      || deny "PR 머지 전에 gstack Post-build를 실제로 호출하라: /review → /qa → (해당 시)/cso → /ship."
+    # 문서만 바꾼 PR(.planning/·docs/·.claude/gates/·*.md)은 /qa 면제(사용자 승인 2026-09-25).
+    # 파일 목록을 못 읽으면 문서만으로 보지 않는다.
+    pr="$(printf '%s' "$payload" | jq -r '.tool_input | "repos/\(.owner // "")/\(.repo // "")/pulls/\(.pullNumber // "")/files"')"
+    pr_files="$(gh api "$pr" --paginate --jq '.[].filename' 2>/dev/null || true)"
+    docs_only=0
+    [ -n "$pr_files" ] && ! printf '%s\n' "$pr_files" | grep -Evq '^(\.planning/|docs/|\.claude/gates/)|\.md$' && docs_only=1
+    gate_has review && { [ "$docs_only" = 1 ] || gate_has qa; } \
+      || deny "PR 머지 전에 gstack Post-build를 실제로 호출하라: /review → /qa(문서만 바뀐 PR은 면제) → (해당 시)/cso → /ship."
     ;;
 esac
 exit 0

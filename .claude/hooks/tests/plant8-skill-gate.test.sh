@@ -422,6 +422,51 @@ record_skill "$projP7" "$P7" review
 expect_contains "gsd-quick 3: review는 STATE 페이즈(04)에" "$(gate_lines "$projP7" 04)" "review"
 
 # ---------------------------------------------------------------------------
+# merge: 문서만 바꾼 PR은 /qa 면제(/review는 그대로), 파일 목록을 못 읽으면 /qa 요구
+GH_STUB_DIR="$TMPDIR/gh-stub"
+mkdir -p "$GH_STUB_DIR"
+cat > "$GH_STUB_DIR/gh" <<'STUB'
+#!/usr/bin/env bash
+[ "${GH_STUB_RC:-0}" = "0" ] || exit "$GH_STUB_RC"
+printf '%s\n' "$GH_STUB_FILES"
+STUB
+chmod +x "$GH_STUB_DIR/gh"
+payload_merge() {
+  jq -nc --arg s "$1" '{session_id:$s, tool_name:"mcp__github__merge_pull_request", tool_input:{owner:"o", repo:"r", pullNumber:7}}'
+}
+merge_hook() {  # $1=session $2=project $3=files(줄바꿈) $4=gh rc
+  local errfile
+  errfile="$(mktemp "$TMPDIR/stderr.XXXXXX")"
+  HOOK_STDOUT="$(payload_merge "$1" | PATH="$GH_STUB_DIR:$PATH" GH_STUB_FILES="$3" GH_STUB_RC="${4:-0}" \
+    CLAUDE_PROJECT_DIR="$2" bash "$HOOKS/plant8-skill-gate.sh" merge 2>"$errfile")"
+  HOOK_RC=$?
+  HOOK_STDERR="$(cat "$errfile")"
+  rm -f "$errfile"
+}
+projM="$(new_project)"
+M="sid-merge-$$"
+write_gate_line "$projM" review "$M"
+DOC_FILES=$'.planning/phases/04-test/04-01-PLAN.md\ndocs/ARCHITECTURE.md\n.claude/gates/phase-04.log\nREADME.md'
+merge_hook "$M" "$projM" "$DOC_FILES"
+expect_rc "merge: 문서만 바뀐 PR + review만 -> 통과" 0 "$HOOK_RC"
+merge_hook "$M" "$projM" $'docs/x.md\napp/page.tsx'
+expect_rc "merge: 코드 파일 섞인 PR + review만 -> exit 2" 2 "$HOOK_RC"
+merge_hook "$M" "$projM" $'docs/x.md\n.claude/hooks/plant8-skill-gate.sh'
+expect_rc "merge: 훅 .sh 섞인 PR + review만 -> exit 2" 2 "$HOOK_RC"
+merge_hook "$M" "$projM" "$DOC_FILES" 1
+expect_rc "merge: 파일 목록 못 읽음 + review만 -> exit 2" 2 "$HOOK_RC"
+merge_hook "$M" "$projM" ""
+expect_rc "merge: 빈 파일 목록 + review만 -> exit 2" 2 "$HOOK_RC"
+projM2="$(new_project)"
+M2="sid-merge2-$$"
+merge_hook "$M2" "$projM2" "$DOC_FILES"
+expect_rc "merge: 문서만 바뀐 PR이어도 review 없으면 -> exit 2" 2 "$HOOK_RC"
+write_gate_line "$projM2" review "$M2"
+write_gate_line "$projM2" qa "$M2"
+merge_hook "$M2" "$projM2" $'app/page.tsx'
+expect_rc "merge: 코드 PR + review·qa -> 통과" 0 "$HOOK_RC"
+
+# ---------------------------------------------------------------------------
 # Isolation: real gate logs unchanged
 REAL_GATES_AFTER="$(gates_checksum)"
 if [ "$REAL_GATES_BEFORE" = "$REAL_GATES_AFTER" ]; then

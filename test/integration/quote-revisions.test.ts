@@ -291,11 +291,16 @@ describe("새 차수 트레이서(04-14 Task 1 · D-53, 실제 Postgres)", () =>
     const { project, revisionId } = await setupProject();
     await insertLine(revisionId);
     const viewerOnly = await makeViewer([{ menu: "projects", action: "view" }]);
-    await expect(createRevisionFromCurrent(viewerOnly, { projectId: project.id, fromRevisionId: revisionId })).rejects.toBeInstanceOf(UserFacingError);
+    const warn = vi.spyOn(log, "warn");
+    const denied = createRevisionFromCurrent(viewerOnly, { projectId: project.id, fromRevisionId: revisionId });
+    await expect(denied).rejects.toBeInstanceOf(UserFacingError);
+    await expect(denied).rejects.toThrow("견적 줄 · 쓰기 권한 없음");
+    expect(deniedWarnings(warn.mock.calls)).toHaveLength(1);
     const stranger = await makeViewer([]);
     await expect(createRevisionFromCurrent(stranger, { projectId: project.id, fromRevisionId: revisionId })).rejects.toThrow(
       "존재하지 않는 프로젝트입니다.",
     );
+    expect(deniedWarnings(warn.mock.calls)).toHaveLength(2);
     expect(await revisionCount(project.id)).toBe(1);
   });
 
@@ -452,6 +457,7 @@ describe("고객 승인 표시(04-14 Task 2 · D-56, 실제 Postgres)", () => {
 
   it("(a8) 견적 줄 0개 차수(줄 없음 · 조정 줄만 · 보관 줄만)의 켜기는 「승인할 견적 줄이 없음 · 첫 줄 만들기」(ENG-D4)", async () => {
     const empty = await setupProject();
+    const warn = vi.spyOn(log, "warn");
     await expect(approve(empty.pm, empty.revisionId)).rejects.toThrow("승인할 견적 줄이 없음 · 첫 줄 만들기");
 
     const adjustmentOnly = await setupProject();
@@ -463,6 +469,7 @@ describe("고객 승인 표시(04-14 Task 2 · D-56, 실제 Postgres)", () => {
     await expect(approve(archivedOnly.pm, archivedOnly.revisionId)).rejects.toThrow("승인할 견적 줄이 없음 · 첫 줄 만들기");
 
     for (const setup of [empty, adjustmentOnly, archivedOnly]) expect(await approvalOf(setup.revisionId)).toEqual({ at: null, by: null });
+    expect(deniedWarnings(warn.mock.calls)).toHaveLength(3);
   });
 
   it("(a9) 옛 기준값의 켜기는 「견적이 바뀜 · 새로 고침」 — 수량 저장·실행가만 저장·토큰만 다름은 거부, 조정 줄만 더하면 통과(ENG-D9)", async () => {
@@ -581,12 +588,13 @@ describe("차수 요약 · 이전 차수 잠김 조회(04-14 Task 3, 실제 Post
     await insertLine(revisionId);
     const hidden = await makeViewer(readerMenus, ["project.value"]);
 
-    const [row] = await listRevisionSummaries(hidden, project.id);
+    const rows = await listRevisionSummaries(hidden, project.id);
 
-    expect(row).toBeTruthy();
-    expect(Object.keys(row ?? {})).not.toContain("totalKrw");
-    expect(row).toMatchObject({ seq: 1, lineCount: 1, statusWord: "현재" });
-    expect(Object.keys(row ?? {})).toEqual(expect.arrayContaining(["revisionId", "seq", "createdOn", "lineCount", "statusWord", "contentToken"]));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ seq: 1, lineCount: 1, statusWord: "현재" });
+    for (const row of rows) {
+      expect(Object.keys(row).sort()).toEqual(["approvedBy", "approvedOn", "contentToken", "createdOn", "lineCount", "revisionId", "seq", "statusWord"]);
+    }
   });
 
   it("(s5) 차수 요약도 findProject 기준 — 보관된 프로젝트(보관함 권한 없음) · 없는 프로젝트는 빈 목록", async () => {

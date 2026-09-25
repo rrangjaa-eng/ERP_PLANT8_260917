@@ -15,6 +15,10 @@ import styles from "./project-detail.module.css";
 // 04-24(PROJ-05 · PROJ-07 · DR-12) — 상세 머리 줄의 차수 확인 다이얼로그. 전부 ui/confirm-dialog이고, 렌더 조건·
 // 줄 수·기준값은 서버가 계산해 넘긴다(page.tsx) — 이 파일은 그 값과 서버 거부 문자열을 그대로 그린다.
 
+// 검토 S5 — 서버 거부 문자열이 없는 실패(요청 끊김 · 검증 오류). UI-SPEC rev 5에 없는 문구다(SUMMARY 「검토 반영」).
+// 1차는 이 이유로 막히고, 다이얼로그를 닫고 다시 열면 풀린다(트리거가 rejection을 지운다).
+const REQUEST_FAILED = "처리하지 못함 · 닫고 다시 시도";
+
 export type NewRevisionProps = {
   projectId: string;
   /** 화면이 보고 있는 현재 차수 id — 액션의 fromRevisionId(B-02). */
@@ -50,7 +54,7 @@ export function NewRevisionDialog({
     },
     onError: ({ error }) => {
       // 서버 문자열 그대로(빈 차수 · 다른 사람이 먼저 새 차수) — 다이얼로그는 열린 채, 토스트 없음.
-      setRejection(error.serverError ?? null);
+      setRejection(error.serverError ?? REQUEST_FAILED);
     },
   });
 
@@ -179,7 +183,7 @@ function ApprovalDialog({
     },
     onError: ({ error }) => {
       // 서버 문자열 그대로(빈 차수 · 견적이 바뀜 · 미래 날짜) — 다이얼로그는 열린 채.
-      setRejection(error.serverError ?? null);
+      setRejection(error.serverError ?? REQUEST_FAILED);
     },
   });
 
@@ -276,7 +280,7 @@ function ApprovalCancelDialog({
       router.refresh();
     },
     onError: ({ error }) => {
-      setRejection(error.serverError ?? null);
+      setRejection(error.serverError ?? REQUEST_FAILED);
     },
   });
 

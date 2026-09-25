@@ -34,6 +34,7 @@ import {
   preEstimateDraftFrom,
   preEstimateText,
   type PreEstimateDraft,
+  type PreEstimateFieldError,
 } from "./pre-estimate-field";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import styles from "./project-detail.module.css";
@@ -237,7 +238,8 @@ function newDraftLine(defaultSubcategory: string): DraftLine {
 }
 
 // 04-22(D-68) — 미저장 보관본의 모양. 기존 줄은 `{줄 id}:{열 키}` → 값, 새 줄은
-// `{clientKey}:new` → 줄 전체(04-30이 화면 uuid로 바꾼다), 기간 칸은 `period:start`·`period:end`.
+// `{clientKey}:new` → 줄 전체(04-30이 화면 uuid로 바꾼다), 기간 칸은 `period:start`·`period:end`,
+// 총 매출 예상가 칸(04-44)은 `preEstimate:amount`·`preEstimate:currency`·`preEstimate:fxRate`(칸 글자 그대로).
 type StoredUnitPrice = { amount: number; currency: Currency; fxRate: number };
 type StoredNewLine = {
   subcategory: string;
@@ -254,6 +256,8 @@ function editsSnapshot(
   lines: DraftLine[],
   period: PeriodDraft | null,
   periodBase: { startDate: string | null; endDate: string | null },
+  preEstimate: PreEstimateDraft | null,
+  preEstimateBase: PreEstimateDraft | null,
 ): Record<string, unknown> {
   const edits: Record<string, unknown> = {};
   for (const line of lines) {
@@ -285,6 +289,11 @@ function editsSnapshot(
   if (period) {
     if (period.start !== (periodBase.startDate ?? "")) edits["period:start"] = period.start;
     if (period.end !== (periodBase.endDate ?? "")) edits["period:end"] = period.end;
+  }
+  if (preEstimate && preEstimateBase) {
+    if (preEstimate.amount !== preEstimateBase.amount) edits["preEstimate:amount"] = preEstimate.amount;
+    if (preEstimate.currency !== preEstimateBase.currency) edits["preEstimate:currency"] = preEstimate.currency;
+    if (preEstimate.currency !== "KRW" && preEstimate.fxRate !== preEstimateBase.fxRate) edits["preEstimate:fxRate"] = preEstimate.fxRate;
   }
   return edits;
 }
@@ -354,21 +363,29 @@ function restoredNewLine(value: unknown, defaultSubcategory: string): DraftLine 
   return line;
 }
 
-// 「복원」 — 돌려받은 편집을 dirty 모양으로 병합한다(기존 줄 칸 덮기 · 새 줄 끝에 다시 만들기 · 기간 칸 값).
+// 「복원」 — 돌려받은 편집을 dirty 모양으로 병합한다(기존 줄 칸 덮기 · 새 줄 끝에 다시 만들기 · 기간 칸 값 ·
+// 총 매출 예상가 칸 값).
 function mergeRestoredEdits(
   lines: DraftLine[],
   edits: Record<string, unknown>,
   defaultSubcategory: string,
-): { lines: DraftLine[]; period: { start?: string; end?: string } } {
+): { lines: DraftLine[]; period: { start?: string; end?: string }; preEstimate: Partial<PreEstimateDraft> } {
   let next = lines;
   const added: DraftLine[] = [];
   const period: { start?: string; end?: string } = {};
+  const preEstimate: Partial<PreEstimateDraft> = {};
   for (const [key, value] of Object.entries(edits)) {
     const cut = key.lastIndexOf(":");
     const owner = key.slice(0, cut);
     const column = key.slice(cut + 1);
     if (owner === "period") {
       if (typeof value === "string" && (column === "start" || column === "end")) period[column] = value;
+      continue;
+    }
+    if (owner === "preEstimate") {
+      if (typeof value !== "string") continue;
+      if (column === "amount" || column === "fxRate") preEstimate[column] = value;
+      if (column === "currency" && (value === "KRW" || value === "USD")) preEstimate.currency = value;
       continue;
     }
     if (column === "new") {
@@ -380,7 +397,7 @@ function mergeRestoredEdits(
     if (!patch) continue;
     next = next.map((line) => (line.id === owner ? { ...line, ...patch, dirty: true } : line));
   }
-  return { lines: [...next, ...added], period };
+  return { lines: [...next, ...added], period, preEstimate };
 }
 
 function contractFromDto(revenue: RevenueDto): ContractDraft {
@@ -770,6 +787,7 @@ export function QuoteLedger({
   const [preEstimateBase, setPreEstimateBase] = useState<Money | null>(preEstimate.value);
   const [preEstimateDraft, setPreEstimateDraft] = useState<PreEstimateDraft | null>(null);
   const [preEstimateSaved, setPreEstimateSaved] = useState(false);
+  const [preEstimateErrors, setPreEstimateErrors] = useState<PreEstimateFieldError[]>([]);
   // 리뷰 S5 — 저장이 상태를 바꾸면(정산 → 진행) router.refresh가 오기 전의 다음 저장도 새 상태를 싣는다.
   const [seenStatus, setSeenStatus] = useState(status);
   const router = useRouter();
@@ -800,7 +818,12 @@ export function QuoteLedger({
       }
       if (data && "periodRejected" in data) {
         setPeriodErrors(data.periodRejected.errors);
+        setPreEstimateErrors(data.periodRejected.preEstimateErrors);
         return; // 기간 칸 오류로 전부 거부.
+      }
+      if (data && "preEstimateRejected" in data) {
+        setPreEstimateErrors(data.preEstimateRejected.errors);
+        return; // 총 매출 예상가 칸 오류로 전부 거부.
       }
       if (data?.quoteLines?.lines) setLines(data.quoteLines.lines.map(fromDto));
       if (data?.revenue) {
@@ -814,6 +837,7 @@ export function QuoteLedger({
         const saved = data.project;
         setPeriodBaseline({ startDate: saved.startDate, endDate: saved.endDate });
         setPeriodErrors([]);
+        setPreEstimateErrors([]);
         setSeenStatus(saved.status as ProjectStatus); // projects.status 열은 text — 값은 PROJECT_STATUSES 중 하나다.
         if (periodDraft) closePeriodFieldAfterSave();
         if (saved.preEstimate) setPreEstimateBase(saved.preEstimate);
@@ -861,6 +885,30 @@ export function QuoteLedger({
   function openPreEstimateField() {
     setPreEstimateDraft((prev) => prev ?? preEstimateBaselineDraft);
   }
+
+  function changePreEstimate(next: PreEstimateDraft) {
+    persistPendingRef.current = true;
+    setPreEstimateErrors([]);
+    setPreEstimateDraft(next);
+  }
+
+  // S17 — Esc는 편집 중 값을 되돌리고, 칸이 모두 원래 값이면 묶음을 닫는다(기간 칸과 같은 규칙).
+  function escapePreEstimate() {
+    persistPendingRef.current = true;
+    setPreEstimateErrors([]);
+    setPreEstimateDraft(preEstimateDirty > 0 ? preEstimateBaselineDraft : null);
+  }
+
+  // 묶음이 닫히면 포커스가 「총 매출 예상가 바꾸기」로 돌아온다.
+  const preEstimateWasOpenRef = useRef(false);
+  useEffect(() => {
+    if (preEstimateDraft) {
+      preEstimateWasOpenRef.current = true;
+    } else if (preEstimateWasOpenRef.current) {
+      preEstimateWasOpenRef.current = false;
+      document.getElementById(PRE_ESTIMATE_TRIGGER_ID)?.focus();
+    }
+  }, [preEstimateDraft]);
 
   // 04-44의 상태 모달 3차 · 04-30의 EMPTY 「기간 바꾸기」가 이 함수로 칸을 연다.
   function openPeriodField(focus: "start" | "end") {
@@ -914,8 +962,10 @@ export function QuoteLedger({
   useEffect(() => {
     if (!persistPendingRef.current) return;
     persistPendingRef.current = false;
-    persist(editsSnapshot(lines, periodDraft, periodBaseline));
-  }, [lines, periodDraft, periodBaseline, persist]);
+    persist(editsSnapshot(lines, periodDraft, periodBaseline, preEstimateDraft, preEstimateBaselineDraft));
+    // preEstimateBaselineDraft는 preEstimateBase에서 매 렌더 새로 만든다 — 원본 상태를 deps로 둔다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lines, periodDraft, periodBaseline, preEstimateDraft, preEstimateBase, persist]);
 
   // DR-6 — 상태 바뀜 거부 뒤 router.refresh()가 새 status를 내려보내면 화면 편집(줄·매출·기간 칸)을
   // 서버 props로 되돌리고 보관본의 칸 수를 다시 읽어 복원 줄을 띄운다. 기간 저장 성공으로 상태가
@@ -935,6 +985,7 @@ export function QuoteLedger({
     setPeriodErrors([]);
     setPreEstimateBase(preEstimate.value);
     setPreEstimateDraft(null);
+    setPreEstimateErrors([]);
     dirtyStorage.recount();
   }
 
@@ -949,6 +1000,9 @@ export function QuoteLedger({
         start: restored.period.start ?? periodBaseline.startDate ?? "",
         end: restored.period.end ?? periodBaseline.endDate ?? "",
       });
+    }
+    if (preEstimateBaselineDraft && Object.keys(restored.preEstimate).length > 0) {
+      setPreEstimateDraft({ ...preEstimateBaselineDraft, ...restored.preEstimate });
     }
   }
   // 해소되지 않은 충돌 칸도 함께 센다 — 충돌이 남은 채 서버를 부르지 않는다.
@@ -1548,11 +1602,14 @@ export function QuoteLedger({
   // 달리 조용히 무시되고 있었다 — 같은 요약 자리에 일반 문구로 띄운다.
   // 04-28 — 거부 봉투가 있으면 그 요약(`충돌 N줄 · 전부 거부` / `오류 N칸 · 전부 거부`).
   const rejectedEnvelope = result.data && "rejected" in result.data ? result.data.rejected : undefined;
-  // U-6 — 표 밖 칸(기간 칸) 오류로 전부 거부되면 합계 행에 그 칸 수를 붙인다.
-  const periodRejectedSummary =
+  // U-6 — 표 밖 칸(기간 · 총 매출 예상가) 오류로 전부 거부되면 합계 행에 그 칸 수를 붙인다.
+  const outsideErrorCount =
     result.data && "periodRejected" in result.data
-      ? `전부 거부 · 다른 칸 오류 ${result.data.periodRejected.errors.length}칸`
-      : undefined;
+      ? result.data.periodRejected.errors.length + result.data.periodRejected.preEstimateErrors.length
+      : result.data && "preEstimateRejected" in result.data
+        ? result.data.preEstimateRejected.errors.length
+        : 0;
+  const periodRejectedSummary = outsideErrorCount > 0 ? `전부 거부 · 다른 칸 오류 ${outsideErrorCount}칸` : undefined;
   // DR-6 — 상태 바뀜 거부 문구(서버가 statusChangedMessage로 만든다). 다시 그린 뒤에도 남는다.
   const statusChangedSummary = result.data && "statusChanged" in result.data ? result.data.statusChanged.message : undefined;
   const rejectionSummary =
@@ -1643,8 +1700,10 @@ export function QuoteLedger({
         <PreEstimateField
           draft={preEstimateDraft}
           baseline={preEstimateBaselineDraft}
+          serverErrors={preEstimateErrors}
           saved={preEstimateSaved}
-          onChange={setPreEstimateDraft}
+          onChange={changePreEstimate}
+          onEscape={escapePreEstimate}
           onSave={handleSave}
         />
       ) : null}

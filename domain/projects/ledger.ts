@@ -22,6 +22,8 @@ import {
 import { validatePreEstimateChange, type PreEstimateFieldError } from "@/domain/projects/pre-estimate";
 import { moneyFromRow, moneyToColumns, type Currency, type Money } from "@/domain/money";
 import { projectResponsibles } from "@/domain/projects/responsibles";
+import { rememberFxRate as defaultRememberFxRate } from "@/domain/money/currency";
+import { log } from "@/lib/log";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { kstToday } from "@/lib/kst-date";
 import {
@@ -76,9 +78,13 @@ export type SaveProjectLedgerResult = {
 
 export type { PeriodFieldError };
 
-// 기간 칸 거부 — 칸 오류를 싣고 저장 전체를 되돌린다(표 쪽은 저장하지 않는다).
+// 기간 칸 거부 — 칸 오류를 싣고 저장 전체를 되돌린다(표 쪽은 저장하지 않는다). 같은 저장의 총 매출 예상가 칸
+// 오류도 함께 싣는다(04-44 · U-6 — 표 밖 칸 오류를 모아 한 번에 거부).
 export class PeriodRejectedError extends UserFacingError {
-  constructor(readonly errors: PeriodFieldError[]) {
+  constructor(
+    readonly errors: PeriodFieldError[],
+    readonly preEstimateErrors: PreEstimateFieldError[] = [],
+  ) {
     super(errors[0]?.reason ?? "기간 바꾸기 권한 없음");
   }
 }
@@ -96,6 +102,8 @@ export type SaveProjectLedgerDeps = {
   recordAction: typeof defaultRecordAction;
   // 테스트 전용 — 잠금 획득 직후 호출(경합 재현, sleep 없이).
   afterLock: () => Promise<void>;
+  // 04-44 — 커밋 뒤 최근 환율 기억. 테스트가 실패를 주입한다.
+  rememberFxRate: typeof defaultRememberFxRate;
 };
 
 const PROJECT_ENTITY = "project";
@@ -199,6 +207,7 @@ export async function saveProjectLedger(
         : "none";
 
       // ② 기간 판정·쓰기.
+      let periodRejection: PeriodFieldError[] | null = null;
       if (input.period && periodFacts) {
         const period = input.period;
         const conflict = locked.startDate !== period.baseline.startDate || locked.endDate !== period.baseline.endDate;
@@ -213,26 +222,27 @@ export async function saveProjectLedger(
               teamLeadName: periodFacts.teamLeadName,
             });
         const decision = await gate(locked, PERIOD_RULE, { rights, errors });
-        if (!decision.allowed) {
-          denyWrite(
-            viewer,
-            PERIOD_RULE,
-            { projectId },
-            new PeriodRejectedError(rights === "none" ? [{ field: "end", reason: decision.reason }] : errors),
-          );
-        }
+        if (!decision.allowed) periodRejection = rights === "none" ? [{ field: "end", reason: decision.reason }] : errors;
       }
 
       // ②' 총 매출 예상가 판정 — 기간 판정 바로 뒤, 같은 잠근 행·같은 권리(DR-37)와 트랜잭션 전 노출 사실로.
       const preEstimate = input.preEstimate;
+      let preEstimateRejection: PreEstimateFieldError[] | null = null;
       if (preEstimate) {
+        const canSeeAmount = periodFacts?.canSeeAmount ?? false;
         const errors: PreEstimateFieldError[] = validatePreEstimateChange(preEstimate);
-        const decision = await gate(locked, PRE_ESTIMATE_RULE, {
-          rights,
-          canSeeAmount: periodFacts?.canSeeAmount ?? false,
-          errors,
-        });
-        if (!decision.allowed) throw new UserFacingError(decision.reason);
+        const decision = await gate(locked, PRE_ESTIMATE_RULE, { rights, canSeeAmount, errors });
+        if (!decision.allowed) {
+          preEstimateRejection = rights === "none" || !canSeeAmount ? [{ field: "amount", reason: decision.reason }] : errors;
+        }
+      }
+
+      // U-6 — 표 밖 칸(기간 · 총 매출 예상가) 오류는 모아 한 번에 거부한다. write.denied는 한 번.
+      if (periodRejection) {
+        denyWrite(viewer, PERIOD_RULE, { projectId }, new PeriodRejectedError(periodRejection, preEstimateRejection ?? []));
+      }
+      if (preEstimateRejection) {
+        denyWrite(viewer, PRE_ESTIMATE_RULE, { projectId }, new PreEstimateRejectedError(preEstimateRejection));
       }
 
       // A-16: 누가 무엇을 바꿨는지 — 바뀐 칸만 싣는다(총 매출 예상가는 금액 없이 표시만). 같은 tx, 한 줄.
@@ -336,6 +346,17 @@ export async function saveProjectLedger(
     });
     return { ...inTx, pendingActions };
   });
+
+  // D-71 · ENG-D3 ① — 최근 환율은 커밋 뒤에만 기억한다(거부·롤백된 저장은 여기 오지 않는다). 실패해도 저장은
+  // 이미 끝났다 — 오류 로그만 남긴다.
+  const savedPreEstimate = project.preEstimate;
+  if (input.preEstimate?.fxRateTouched && savedPreEstimate && savedPreEstimate.currency !== "KRW") {
+    try {
+      await (deps?.rememberFxRate ?? defaultRememberFxRate)(savedPreEstimate.currency, savedPreEstimate.fxRate);
+    } catch {
+      log.error("fx.remember_failed", { currency: savedPreEstimate.currency });
+    }
+  }
   for (const entry of pendingActions) await defaultRecordAction(viewer, entry);
 
   // 트랜잭션 커밋 뒤 스냅샷을 새로 읽는다 — saveRevenue가 tx 안에서 커밋

@@ -4,7 +4,13 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
 import { createProject } from "@/domain/projects";
-import { PeriodRejectedError, saveProjectLedger, type PeriodFieldError } from "@/domain/projects/ledger";
+import {
+  PeriodRejectedError,
+  PreEstimateRejectedError,
+  saveProjectLedger,
+  type PeriodFieldError,
+} from "@/domain/projects/ledger";
+import type { PreEstimateFieldError } from "@/domain/projects/pre-estimate";
 import { SaveRejectedError } from "@/domain/quotes/lines";
 import {
   changeProjectStatus,
@@ -74,8 +80,14 @@ const revenueEntryRowSchema = z.object({
 // (saveQuoteLinesAction을 이 액션으로 흡수).
 // 봉투를 함수 반환값으로 만든다 — 객체 리터럴 반환끼리는 서로의 키를 `?: undefined`로 채워
 // 화면의 `"rejected" in data` 좁히기가 풀린다.
-function periodRejected(error: PeriodRejectedError): { periodRejected: { errors: PeriodFieldError[] } } {
-  return { periodRejected: { errors: error.errors } };
+function periodRejected(
+  error: PeriodRejectedError,
+): { periodRejected: { errors: PeriodFieldError[]; preEstimateErrors: PreEstimateFieldError[] } } {
+  return { periodRejected: { errors: error.errors, preEstimateErrors: error.preEstimateErrors } };
+}
+
+function preEstimateRejected(error: PreEstimateRejectedError): { preEstimateRejected: { errors: PreEstimateFieldError[] } } {
+  return { preEstimateRejected: { errors: error.errors } };
 }
 
 function statusChanged(message: string): { statusChanged: { message: string } } {
@@ -162,6 +174,8 @@ export const saveProjectLedgerAction = authedActionClient
     } catch (error) {
       // 04-22 — 기간 칸 거부는 칸 오류로 돌려준다(화면이 칸 아래 Form.Error로 그린다).
       if (error instanceof PeriodRejectedError) return periodRejected(error);
+      // 04-44 — 총 매출 예상가 칸 거부도 칸 오류로(칸 아래 Form.Error).
+      if (error instanceof PreEstimateRejectedError) return preEstimateRejected(error);
       // DR-6 — 상태 바뀜 전부 거부. 트랜잭션은 이미 롤백됐다 — 라벨은 그 뒤 트랜잭션 밖에서 코드표로 찾는다.
       // 화면이 오류 문자열을 해석하지 않게 데이터로 돌려준다.
       if (error instanceof StatusChangedError) {

@@ -119,24 +119,34 @@ function CommaInput({
 export function PreEstimateField({
   draft,
   baseline,
+  serverErrors,
   saved,
   onChange,
+  onEscape,
   onSave,
 }: {
   draft: PreEstimateDraft;
   baseline: PreEstimateDraft;
+  /** 저장이 거부된 칸 오류(서버 문자열 그대로). 있으면 입력 중 검증보다 먼저 보인다. */
+  serverErrors: PreEstimateFieldError[];
   /** 저장 성공 직후 600ms 틴트(S17) — 닫히기 직전 신호. */
   saved: boolean;
   onChange: (next: PreEstimateDraft) => void;
+  onEscape: () => void;
   onSave: () => void;
 }) {
   // 칸 오류는 서버 저장과 같은 함수로 만든다(문구를 화면에서 새로 만들지 않는다).
-  const errors = validatePreEstimateChange(parsePreEstimateDraft(draft));
+  const errors = serverErrors.length > 0 ? serverErrors : validatePreEstimateChange(parsePreEstimateDraft(draft));
   const errorOf = (field: PreEstimateFieldError["field"]) => errors.find((entry) => entry.field === field)?.reason;
 
   function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
     if (event.key === "Enter") {
       event.preventDefault();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onEscape();
       return;
     }
     if (event.ctrlKey && event.key.toLowerCase() === "s") {

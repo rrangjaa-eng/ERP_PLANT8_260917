@@ -652,6 +652,24 @@ describe("순서·재전송(엔지 리뷰 A · ENG-D10)", () => {
   });
 });
 
+describe("재전송 — 보관된 줄(ENG-D10 · 검토 S5)", () => {
+  it("(w4) 저장 뒤 보관된 새 줄을 같은 id·같은 값으로 isNew 재전송하면 소속 거부로 전부 거부되고 줄은 보관 그대로다", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const row = newRow(subcategoryValue, { itemName: "보관될 새 줄" });
+    await saveProjectLedger(SYSTEM_VIEWER, project.id, { seenStatus: "bidding", quoteLines: { revisionId: revision.id, rows: [row] } });
+    await saveProjectLedger(SYSTEM_VIEWER, project.id, {
+      seenStatus: "bidding",
+      quoteLines: { revisionId: revision.id, rows: [], archivedLineIds: [row.id] },
+    });
+
+    await expect(
+      saveProjectLedger(SYSTEM_VIEWER, project.id, { seenStatus: "bidding", quoteLines: { revisionId: revision.id, rows: [row] } }),
+    ).rejects.toThrow("차수와 프로젝트가 맞지 않음 · 새로 고침");
+    expect((await reloadLine(row.id)).archivedAt).toBeInstanceOf(Date);
+    expect(await activeIds(revision.id)).toEqual([]);
+  });
+});
+
 describe("보관·취소(D-56·A-04)", () => {
   it("(k) 수주중에서 보관한 줄은 DB에 남아 archived_at이 채워지고 보관함에 나오며, 줄 목록·프로젝트 목록·합계에서 빠진다", async () => {
     const { project, revision, subcategoryValue } = await setupProject();

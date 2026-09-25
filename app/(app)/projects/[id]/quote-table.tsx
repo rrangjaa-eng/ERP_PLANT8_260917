@@ -308,6 +308,8 @@ function newDraftLine(defaultSubcategory: string, cells: LineCells, id: string =
 // 04-22(D-68) — 미저장 보관본의 모양. 기존 줄은 `{줄 id}:{열 키}` → 값, 새 줄은
 // `{화면 uuid}:new` → 줄 전체(04-30 — ENG-D10), 기간 칸은 `period:start`·`period:end`,
 // 총 매출 예상가 칸(04-44)은 `preEstimate:amount`·`preEstimate:currency`·`preEstimate:fxRate`(칸 글자 그대로).
+// 검토 B1 — 기간·총 매출 예상가 칸은 차수가 아니라 프로젝트의 칸이다(다른 차수 보관본에서 현재 차수로 옮긴다).
+export const PROJECT_EDIT_OWNERS = ["period", "preEstimate"] as const;
 type StoredUnitPrice = { amount: number; currency: Currency; fxRate: number };
 type StoredNewLine = {
   lineKind: QuoteLineKind;
@@ -2070,6 +2072,7 @@ export function QuoteLedger({
         currentRevisionId={revisionId}
         revisions={revisions}
         references={{ subcategories, vendors }}
+        onSharedEditsCarried={dirtyStorage.recount}
       />
       {lockLine ? <p className={styles.lockLine}>{lockLine}</p> : null}
 

@@ -9,8 +9,8 @@ import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
 import { toTsv } from "@/ui/table/parse-tsv";
-import { clearDirtyEdits, findOtherRevisionDrafts, loadDirtyEdits, type EnumerableDirtyStorage } from "@/ui/table/use-dirty-storage";
-import { byKind, lineStatusLabel, quoteLineGroupLabel, restoredCellPatch, type QuoteTableCodeOption, type QuoteTableOption } from "./quote-table";
+import { carrySharedEdits, clearDirtyEdits, findOtherRevisionDrafts, loadDirtyEdits, type EnumerableDirtyStorage } from "@/ui/table/use-dirty-storage";
+import { byKind, lineStatusLabel, PROJECT_EDIT_OWNERS, quoteLineGroupLabel, restoredCellPatch, type QuoteTableCodeOption, type QuoteTableOption } from "./quote-table";
 import styles from "./project-detail.module.css";
 
 // 04-24(DR-13 · S5 · W1) — 이전 차수 읽기 섹션과 견적 줄 읽기 열. 원장(QuoteLedger)과 상태를 나누지 않는다 —
@@ -307,7 +307,7 @@ type Draft = { revisionId: string; seq: number; count: number };
 function readDrafts(projectId: string, currentRevisionId: string, revisions: RevisionRef[]): Draft[] {
   const storage = browserStorage();
   if (!storage) return [];
-  return findOtherRevisionDrafts(storage, projectId, currentRevisionId)
+  return findOtherRevisionDrafts(storage, projectId, currentRevisionId, PROJECT_EDIT_OWNERS)
     .flatMap((draft) => {
       const revision = revisions.find((candidate) => candidate.id === draft.revisionId);
       return revision ? [{ ...draft, seq: revision.seq }] : [];
@@ -324,11 +324,14 @@ export function PreviousRevisionDraftRow({
   currentRevisionId,
   revisions,
   references,
+  onSharedEditsCarried,
 }: {
   projectId: string;
   currentRevisionId: string;
   revisions: RevisionRef[];
   references: QuoteLineReadReferences;
+  /** 검토 B1 — 다른 차수 보관본의 기간·총 매출 예상가 칸을 현재 차수 보관본으로 옮겼을 때(현재 차수 복원 줄이 다시 센다). */
+  onSharedEditsCarried: () => void;
 }) {
   const [drafts, setDrafts] = useState(() => readDrafts(projectId, currentRevisionId, revisions));
   // 서버·수화 첫 렌더는 저장소를 모른다 — 수화 뒤에만 그린다(use-dirty-storage와 같은 이유, React #418).
@@ -338,6 +341,12 @@ export function PreviousRevisionDraftRow({
   const [copyResult, setCopyResult] = useState<{ seq: number; ok: boolean } | null>(null);
   const top = hydrated ? drafts[0] : undefined;
   const topSeq = top?.seq;
+
+  // 검토 B1 — 차수와 무관한 칸은 이 줄이 아니라 현재 차수 복원 줄(「복원」)로 돌려준다.
+  useEffect(() => {
+    const storage = browserStorage();
+    if (storage && carrySharedEdits(storage, projectId, currentRevisionId, PROJECT_EDIT_OWNERS) > 0) onSharedEditsCarried();
+  }, [projectId, currentRevisionId, onSharedEditsCarried]);
 
   // 클릭 처리기 안에서 동기로 복사하려고 그 차수 줄을 미리 받아 둔다.
   useEffect(() => {
@@ -366,8 +375,10 @@ export function PreviousRevisionDraftRow({
     const edits = storage ? loadDirtyEdits(storage, projectId, draft.revisionId) : null;
     const rows = rowsBySeq[draft.seq];
     let ok = false;
-    if (edits && rows) {
-      const { tsv, json } = quoteLineClipboard(draftCopyRows(rows, edits), references);
+    const copyRows = edits && rows ? draftCopyRows(rows, edits) : [];
+    // 검토 B1 — 옮길 줄이 0이면 빈 복사를 성공으로 보이지 않는다.
+    if (copyRows.length > 0) {
+      const { tsv, json } = quoteLineClipboard(copyRows, references);
       const onCopy = (event: ClipboardEvent) => {
         event.clipboardData?.setData("text/plain", tsv);
         event.clipboardData?.setData("application/x-plant8-quote-lines+json", json);
@@ -380,7 +391,7 @@ export function PreviousRevisionDraftRow({
         ok = false;
       }
       document.removeEventListener("copy", onCopy);
-    } else {
+    } else if (!rows) {
       setFetchRound((round) => round + 1);
     }
     setCopyResult({ seq: draft.seq, ok });

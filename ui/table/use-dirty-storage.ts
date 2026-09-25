@@ -68,23 +68,67 @@ export function readRestorableCount(storage: DirtyStorageLike | null, scopeId: s
 // 04-24(DR-4) — 키를 훑을 수 있는 저장소(window.localStorage가 만족한다).
 export type EnumerableDirtyStorage = DirtyStorageLike & { readonly length: number; key(index: number): string | null };
 
+function otherSubScopeIds(storage: EnumerableDirtyStorage, scopeId: string, currentSubScopeId: string): string[] {
+  const prefix = dirtyStorageKey(scopeId, "");
+  const ids: string[] = [];
+  for (let index = 0; index < storage.length; index++) {
+    const key = storage.key(index);
+    if (!key?.startsWith(prefix)) continue;
+    const subScopeId = key.slice(prefix.length);
+    if (subScopeId !== currentSubScopeId) ids.push(subScopeId);
+  }
+  return ids;
+}
+
+function isSharedKey(key: string, sharedOwners: readonly string[]): boolean {
+  return sharedOwners.includes(key.slice(0, key.lastIndexOf(":")));
+}
+
 // 04-24(DR-4 · S18) — 같은 프로젝트의 다른 차수 보관본. 현재 차수 키·다른 프로젝트·손상 JSON·빈 보관본은 뺀다.
+// 검토 B1 — 차수와 무관한 칸(owner가 sharedOwners)은 세지 않는다 — 그 칸은 carrySharedEdits가 현재 차수로 옮긴다.
 export function findOtherRevisionDrafts(
   storage: EnumerableDirtyStorage,
   scopeId: string,
   currentSubScopeId: string,
+  sharedOwners: readonly string[] = [],
 ): { revisionId: string; count: number }[] {
-  const prefix = dirtyStorageKey(scopeId, "");
   const drafts: { revisionId: string; count: number }[] = [];
-  for (let index = 0; index < storage.length; index++) {
-    const key = storage.key(index);
-    if (!key?.startsWith(prefix)) continue;
-    const revisionId = key.slice(prefix.length);
-    if (revisionId === currentSubScopeId) continue;
-    const count = countDirtyEdits(loadDirtyEdits(storage, scopeId, revisionId));
+  for (const revisionId of otherSubScopeIds(storage, scopeId, currentSubScopeId)) {
+    const edits = loadDirtyEdits(storage, scopeId, revisionId) ?? {};
+    const count = Object.keys(edits).filter((key) => !isSharedKey(key, sharedOwners)).length;
     if (count > 0) drafts.push({ revisionId, count });
   }
   return drafts;
+}
+
+// 04-24 검토 B1 — 다른 차수 보관본의 공유 칸을 현재 차수 보관본으로 옮긴다(현재 차수 값이 이기고, 그다음은 먼저 읽은 값).
+// 옮긴 칸은 옛 키에서 지운다 — 빈 옛 키는 없어진다. 옛 키에서 뺀 칸 수를 돌려준다(0보다 크면 현재 차수 복원 줄이 다시 센다).
+export function carrySharedEdits(
+  storage: EnumerableDirtyStorage,
+  scopeId: string,
+  currentSubScopeId: string,
+  sharedOwners: readonly string[],
+): number {
+  const current = loadDirtyEdits(storage, scopeId, currentSubScopeId) ?? {};
+  let moved = 0;
+  for (const revisionId of otherSubScopeIds(storage, scopeId, currentSubScopeId)) {
+    const edits = loadDirtyEdits(storage, scopeId, revisionId);
+    if (!edits) continue;
+    const kept: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(edits)) {
+      if (!isSharedKey(key, sharedOwners)) {
+        kept[key] = value;
+        continue;
+      }
+      if (!(key in current)) current[key] = value;
+      moved++;
+    }
+    if (Object.keys(kept).length === Object.keys(edits).length) continue;
+    if (Object.keys(kept).length === 0) clearDirtyEdits(storage, scopeId, revisionId);
+    else saveDirtyEdits(storage, scopeId, revisionId, kept);
+  }
+  if (moved > 0) saveDirtyEdits(storage, scopeId, currentSubScopeId, current);
+  return moved;
 }
 
 export type UseDirtyStorageResult = {

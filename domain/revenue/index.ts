@@ -356,7 +356,8 @@ export async function saveRevenue(
     // 최신 스냅샷을 만들지 않는다. 커밋 뒤 스냅샷은 합성 호출자가 새로
     // 조회한다.
     await runSave(tx);
-    await recordAction(viewer, { actionType: "document_update", entity: REVENUE_ENTITY, entityId: projectId });
+    // 04-12(엔지 리뷰 A §1 P2) — 같은 tx로 남긴다(합성 저장이 뒤에서 거부되면 로그도 되돌아간다).
+    await recordAction(viewer, { actionType: "document_update", entity: REVENUE_ENTITY, entityId: projectId }, { tx });
     return null;
   }
 

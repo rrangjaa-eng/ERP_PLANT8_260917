@@ -20,7 +20,7 @@ import {
 // 04-12(D-78 · 사용자 D10·D12 · D-66) — 셀 단위로 넓힌다. `update`는 바뀐 칸마다 DTO와 같은
 // lineCellEditability를 보고, 잠김이면 quoteLockReason(표 위 한 줄과 한 문자열 — DR-2), 읽기 전용이면
 // linkedDocumentReason. 구조 변경은 structuralEditability(사용자 D10)로 — 정산의 새 줄은 견적 칸 0일 때만(D12),
-// 연결 문서가 있는 줄은 보관 대신 취소(D-66).
+// 연결 문서가 있는 줄은 보관 대신 취소(D-66). 보관함 복원은 그 상태에서 줄을 더하는 것과 같다(정산은 견적가 0만).
 export type ProjectLineEditCtx = {
   status: string;
   hasLinkedDocuments: boolean;
@@ -28,6 +28,7 @@ export type ProjectLineEditCtx = {
   change:
     | { kind: "update"; fields: QuoteLineField[] }
     | { kind: "insert"; quoteCellsZero: boolean }
+    | { kind: "restore"; quoteAmountZero: boolean }
     | { kind: "archive" | "reorder" | "duplicate" };
 };
 
@@ -53,10 +54,13 @@ registerGateRule<unknown, ProjectLineEditCtx>({
       return { allowed: true };
     }
     const kind = ctx.change.kind;
-    if (!structuralEditability({ status: ctx.status, canWrite: true })[kind]) {
+    if (!structuralEditability({ status: ctx.status, canWrite: true })[kind === "restore" ? "insert" : kind]) {
       return { allowed: false, reason: ctx.status === "settling" ? SETTLING_STRUCTURE_DENIED : (lockReason ?? SETTLING_STRUCTURE_DENIED) };
     }
     if (ctx.change.kind === "insert" && ctx.status === "settling" && !ctx.change.quoteCellsZero) {
+      return { allowed: false, reason: SETTLING_INSERT_DENIED };
+    }
+    if (ctx.change.kind === "restore" && ctx.status === "settling" && !ctx.change.quoteAmountZero) {
       return { allowed: false, reason: SETTLING_INSERT_DENIED };
     }
     if (kind === "archive" && ctx.hasLinkedDocuments) return { allowed: false, reason: LINKED_ARCHIVE_DENIED };

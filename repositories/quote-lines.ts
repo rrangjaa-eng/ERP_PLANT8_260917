@@ -141,6 +141,17 @@ export async function archiveQuoteLines(
   return rows.length;
 }
 
+// 04-12(A-19 · OV-2) — 보관 해제(도메인 복원 restoreQuoteLine이 잠근 tx로 부른다). 해제한 행이 없으면 null.
+export async function restoreQuoteLineRow(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<QuoteLineRow | null> {
+  void viewer;
+  const [row] = await tx
+    .update(quoteLines)
+    .set({ archivedAt: null, archivedBy: null })
+    .where(and(eq(quoteLines.id, id), isNotNull(quoteLines.archivedAt)))
+    .returning();
+  return row ?? null;
+}
+
 // 보관함 등록(repositories/archive.ts)의 범용 보관·해제 — 다른 표와 같은 조건부 UPDATE(멱등).
 export async function setQuoteLineArchived(viewer: Viewer, id: string, value: boolean): Promise<void> {
   if (value) {

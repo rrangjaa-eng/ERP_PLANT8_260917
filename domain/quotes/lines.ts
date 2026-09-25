@@ -36,6 +36,7 @@ import {
   findQuoteLineById as repoFindQuoteLineById,
   setQuoteLineSortOrders as repoSetQuoteLineSortOrders,
   archiveQuoteLines as repoArchiveQuoteLines,
+  restoreQuoteLineRow as repoRestoreQuoteLineRow,
   type QuoteLineRow,
 } from "@/repositories/quote-lines";
 import {
@@ -843,6 +844,43 @@ export async function finishQuoteLineSave(viewer: Viewer, written: WrittenQuoteL
   return {
     lines: await projectLines(viewer, written.activeRows, { status: written.projectStatus, canWrite: true }, written.linkedDocuments),
   };
+}
+
+// 04-12(A-19 · OV-2) — 보관함의 견적 줄 복원. 저장과 같은 규칙(project.line-edit `restore`)을 한 트랜잭션에서
+// 지난다: 트랜잭션 전에 권한과 줄·차수의 프로젝트(바뀌지 않는 사실)를 읽고, 안에서 프로젝트 행을 잠근 뒤 줄을 다시
+// 읽어 판정 → 보관 해제 → 복원 로그. 이미 복원된 줄은 아무것도 하지 않는다(범용 복원과 같은 멱등).
+export async function restoreQuoteLine(
+  viewer: Viewer,
+  id: string,
+  deps?: Partial<Pick<QuoteLineWriteDeps, "can" | "now" | "afterLock" | "recordAction">>,
+): Promise<void> {
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, PROJECTS_MENU, "write"))) throw new ForbiddenError("견적 줄 복원 권한이 없습니다.");
+  const line = await repoFindQuoteLineById(viewer, id);
+  const revision = line ? await repoFindQuoteRevisionById(viewer, line.revisionId) : null;
+  if (!line || !revision) throw new RevisionNotFoundError("대상을 찾을 수 없습니다.");
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+
+  await withTransaction(async (tx) => {
+    const projectRow = await loadProjectForGate(viewer, revision.projectId, { now: deps?.now, tx, afterLock: deps?.afterLock }, { recordAction });
+    if (!projectRow) throw new RevisionNotFoundError("연결된 프로젝트를 찾을 수 없습니다.");
+    const current = await repoFindQuoteLineById(viewer, id, tx);
+    if (!current || current.revisionId !== line.revisionId) throw new UserFacingError(MEMBERSHIP_MISMATCH);
+    if (current.archivedAt === null) return;
+
+    const firstLinked = (await linkedDocumentsByLine(viewer, current.revisionId, tx)).get(id)?.[0];
+    const change = { kind: "restore", quoteAmountZero: current.quoteAmountKrw === 0 } as const;
+    const ctx: ProjectLineEditCtx = firstLinked
+      ? { status: projectRow.status, hasLinkedDocuments: true, linkedDocumentNumber: firstLinked.number, change }
+      : { status: projectRow.status, hasLinkedDocuments: false, change };
+    const decision = await gate(projectRow, LINE_EDIT_RULE, ctx);
+    if (!decision.allowed) {
+      denyWrite(viewer, LINE_EDIT_RULE, { projectId: revision.projectId, revisionId: current.revisionId, lineIds: [id] }, new GateBlockedError(decision.reason));
+    }
+
+    if (!(await repoRestoreQuoteLineRow(viewer, id, tx))) throw new UserFacingError(MEMBERSHIP_MISMATCH);
+    await recordAction(viewer, { actionType: "restore", entity: QUOTE_LINE_ENTITY, entityId: id }, { tx });
+  });
 }
 
 // PROJ-02·D-65·D-66·UX-04 — 단독 배치 저장. 세 단계를 차례로 부른다(합성 저장은 domain/projects/ledger.ts가

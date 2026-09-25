@@ -130,10 +130,10 @@ export async function saveProjectLedger(
 
   // ENG-D11(04-32 실측): 트랜잭션을 열기 전의 읽기도 풀 db로 돈다 — withTransaction과 같은 시간
   // 초과 판정·UserFacing 변환을 커밋까지 씌워, 경합 중 저장 전에 실패하면 원시 pg-pool 오류가
-  // 아니라 같은 문구로 끝나게 한다(tx-safety.test.ts (c)). 커밋 뒤 단계(감사 기록·스냅샷)는
+  // 아니라 같은 문구로 끝나게 한다(tx-safety.test.ts (c)). 커밋 뒤 단계(환율 기억·투영·스냅샷)는
   // 씌우지 않는다 — 이미 저장됐는데 「다시 저장」을 시키면 새 줄이 두 번 들어간다
   // (tx-safety.test.ts (d)).
-  const { quoteLinesWritten, pendingActions, project } = await withTimeoutConversion(async () => {
+  const { quoteLinesWritten, project } = await withTimeoutConversion(async () => {
     // 볼 수 없는 프로젝트(보기 권한·범위 밖, 권한 없는 보관 프로젝트)에는 쓰지 않는다 — 조회
     // 화면(findProject)과 같은 조건이다(/cso 14b1ae15). 04-22(A-13): findProject는 풀에서 자동
     // 정산을 따로 커밋하므로 부르지 않는다 — 판정은 트랜잭션 안 잠금 읽기가 한다.
@@ -180,15 +180,6 @@ export async function saveProjectLedger(
           })()
         : null;
 
-    // 감사 기록은 트랜잭션 밖 커넥션으로 쓰인다 — 안에서 바로 남기면 뒤쪽
-    // 저장이 거부돼 롤백돼도 기록만 남는다. 모았다가 커밋 뒤에 남긴다.
-    const pendingActions: Parameters<typeof defaultRecordAction>[1][] = [];
-    const deferRecord = {
-      recordAction: (_viewer: Viewer, entry: Parameters<typeof defaultRecordAction>[1]): Promise<void> => {
-        pendingActions.push(entry);
-        return Promise.resolve();
-      },
-    };
 
     const inTx = await withTransaction(async (tx) => {
       // ① 잠금 읽기 + 자동 전환 선판정 — 같은 tx(A-13).
@@ -350,7 +341,7 @@ export async function saveProjectLedger(
               { now, recordAction },
             )
           : null;
-      if (input.revenue) await saveRevenue(viewer, projectId, input.revenue, deferRecord, tx);
+      if (input.revenue) await saveRevenue(viewer, projectId, input.revenue, { recordAction }, tx);
       return {
         quoteLinesWritten,
         project: {
@@ -361,7 +352,7 @@ export async function saveProjectLedger(
         },
       };
     });
-    return { ...inTx, pendingActions };
+    return inTx;
   });
 
   // D-71 · ENG-D3 ① — 최근 환율은 커밋 뒤에만 기억한다(거부·롤백된 저장은 여기 오지 않는다). 견적 줄 쓰기 단계가
@@ -372,7 +363,6 @@ export async function saveProjectLedger(
     fxToRemember.push({ currency: savedPreEstimate.currency, rate: savedPreEstimate.fxRate });
   }
   await rememberFxAfterCommit(fxToRemember, deps?.rememberFxRate);
-  for (const entry of pendingActions) await defaultRecordAction(viewer, entry);
 
   // 트랜잭션 커밋 뒤 스냅샷을 새로 읽는다 — saveRevenue가 tx 안에서 커밋
   // 전 listRevenue를 부르면 자기 자신의 쓰기를 보지 못한다(격리).

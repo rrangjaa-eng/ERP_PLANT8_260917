@@ -178,6 +178,7 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     },
   },
   // 04-12(D-56 · A-04) — 견적 줄 삭제는 보관이다(저장 트랜잭션 안에서 domain/quotes/lines가 보관한다).
+  // 복원은 이 항목의 setArchived를 타지 않는다 — domain/archive의 DOMAIN_RESTORERS가 restoreQuoteLine에 맡긴다.
   {
     entity: "quote_line",
     label: "견적 줄",

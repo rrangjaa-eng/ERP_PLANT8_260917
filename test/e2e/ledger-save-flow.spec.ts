@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { codeItems, quoteLines } from "@/db/schema";
+import { codeItems, projects, quoteLines } from "@/db/schema";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
@@ -10,7 +10,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { insertVendor } from "@/repositories/vendors";
-import { kstToday } from "@/lib/kst-date";
+import { addDays, kstToday } from "@/lib/kst-date";
 
 // 04-22(S19 · DR-6 · D-68) — 저장 흐름. 화면이 본 상태와 서버 상태가 다르면 저장 전체가 거부되고, 화면이
 // 새 상태로 다시 그려지며, 편집은 브라우저 보관본에서 복원 줄로 돌아온다. 04-30이 저장 중 잠금 케이스를
@@ -98,5 +98,104 @@ test.describe("저장 흐름 (04-22, S19)", () => {
     await expect(page.getByRole("heading", { name })).toBeVisible();
     const [saved] = await db.select().from(quoteLines).where(eq(quoteLines.itemName, firstItem));
     expect(Number(saved?.executionAmountKrw)).toBe(500_000);
+  });
+});
+
+// 04-49(DR-3 · 계약 3) — 저장 요청 동안 화면의 편집기는 보이되 편집에 들어가지 않는다. 응답이 표를 서버 목록으로
+// 다시 그리므로 그 사이 입력은 사라진다 — 입력 자체를 막는다. 서버 액션 요청을 붙잡아 「요청 중」을 만든다.
+test.describe("저장 중 잠금(DR-3)", () => {
+  test("요청 중에는 셀·기간 칸이 편집에 들어가지 않고 이동만 되며, 연타 Ctrl+S는 요청 하나, 응답 뒤 다시 편집된다", async ({ page }) => {
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E본부-${randomUUID()}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E팀-${randomUUID().slice(0, 8)}` });
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E저장잠금-${randomUUID()}`, normalizedName: `e2e저장잠금-${randomUUID()}` });
+    const name = `E2E저장잠금-${randomUUID().slice(0, 8)}`;
+    const project = await createProject(SYSTEM_VIEWER, {
+      clientId: vendor.id,
+      teamId: team.id,
+      pmUserId: pm.userId,
+      name,
+      startDate: addDays(TODAY, -10),
+      endDate: addDays(TODAY, 10),
+    });
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("차수가 없습니다");
+    const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+    if (!subcategory) throw new Error("시드된 소분류가 없습니다");
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
+      { id: randomUUID(), isNew: true, subcategory: subcategory.value, itemName: "잠금 첫 줄", quantity: 1, unitPrice: { currency: "KRW", amount: 1_000_000, fxRate: 1 }, execution: { currency: "KRW", amount: 500_000, fxRate: 1 } },
+      { id: randomUUID(), isNew: true, subcategory: subcategory.value, itemName: "잠금 둘째 줄", quantity: 1, unitPrice: { currency: "KRW", amount: 2_000_000, fxRate: 1 }, execution: { currency: "KRW", amount: 900_000, fxRate: 1 } },
+    ] });
+    await db.update(projects).set({ status: "in_progress" }).where(eq(projects.id, project.id));
+
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name })).toBeVisible();
+
+    const grid = page.getByRole("grid", { name: "견적 줄" });
+    const dataRows = grid.locator('tbody tr:has(> td[role="gridcell"])');
+    const firstExecution = dataRows.nth(0).getByRole("gridcell").nth(7);
+    const secondExecution = dataRows.nth(1).getByRole("gridcell").nth(7);
+
+    await firstExecution.focus();
+    await page.keyboard.press("Enter");
+    await page.getByRole("textbox", { name: "실행가" }).fill("777000");
+    await page.keyboard.press("Enter");
+    await expect(firstExecution).toHaveText("777,000");
+
+    // 기간 칸을 열어 둔다(표 밖 칸도 잠긴다).
+    await page.locator("#period-open").click();
+    await page.locator("#period-end").fill(addDays(TODAY, 12));
+    await expect(page.getByRole("button", { name: /일괄 저장 2/ })).toBeVisible();
+
+    // 서버 액션 요청을 풀어 줄 때까지 붙잡는다.
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let saveRequestCount = 0;
+    await page.route("**/*", async (route) => {
+      const request = route.request();
+      if (request.method() === "POST" && request.headers()["next-action"] !== undefined) {
+        saveRequestCount += 1;
+        await held;
+      }
+      await route.continue();
+    });
+
+    await firstExecution.focus();
+    await page.keyboard.press("Control+s");
+    const primary = page.getByRole("button", { name: /일괄 저장/ });
+    await expect(primary).toContainText("…");
+    await expect(grid).toHaveAttribute("aria-busy", "true");
+    await expect(grid).toHaveAttribute("role", "grid");
+    await expect.poll(() => saveRequestCount).toBe(1);
+
+    // 편집 진입 없음 — Enter · 글자 · 클릭.
+    await secondExecution.focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("9");
+    await expect(page.getByRole("textbox", { name: "실행가" })).toHaveCount(0);
+    await secondExecution.click();
+    await expect(page.getByRole("textbox", { name: "실행가" })).toHaveCount(0);
+    await expect(secondExecution).toHaveText("900,000");
+    // 이동은 된다.
+    await page.keyboard.press("ArrowUp");
+    await expect(firstExecution).toBeFocused();
+    // 기간 칸은 값을 보인 채 읽기 전용.
+    await expect(page.locator("#period-end")).toHaveAttribute("readonly", "");
+    await expect(page.locator("#period-end")).toHaveValue(addDays(TODAY, 12));
+    // 연타 Ctrl+S는 두 번째 요청을 만들지 않는다.
+    await page.keyboard.press("Control+s");
+    await page.waitForTimeout(300);
+    expect(saveRequestCount).toBe(1);
+
+    release();
+    await expect(page.locator("tfoot").getByText(/저장됨/).first()).toBeVisible();
+    expect(saveRequestCount).toBe(1);
+    await expect(grid).not.toHaveAttribute("aria-busy", "true");
+    await secondExecution.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("textbox", { name: "실행가" })).toBeVisible();
   });
 });

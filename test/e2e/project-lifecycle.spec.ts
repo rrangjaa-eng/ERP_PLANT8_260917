@@ -332,6 +332,43 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(headerTag(page, "수주중")).toBeVisible();
   });
 
+  test("(a2) 모달이 열린 사이 상태가 바뀌면 거부 — 서버 문자열이 1차 왼쪽에, 모달 유지·토스트 없음 (A-34)", async ({
+    page,
+  }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const lead = await makeAccount("role-team-lead", team.id);
+    const project = await makeProject({
+      teamId: team.id,
+      pmUserId: pm.userId,
+      status: "bidding",
+      startDate: addDays(TODAY, 7),
+      endDate: null,
+      approved: false,
+    });
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await page.getByRole("button", { name: "상태 바꾸기" }).click();
+    await page.getByRole("dialog", { name: "상태 바꾸기" }).getByRole("button", { name: /^진행/ }).click();
+    const confirm = page.getByRole("dialog", { name: "진행으로 바꾸기" });
+    const primary = confirm.getByRole("button", { name: /^진행으로 바꾸기/ });
+    await expect(primary).not.toHaveAttribute("aria-disabled", "true");
+
+    // 화면이 본 상태(from = 수주중)와 달라지게 다른 곳에서 미수주로 바꿔 둔다.
+    await db.update(projects).set({ status: "lost" }).where(eq(projects.id, project.id));
+    await primary.click();
+
+    await expect(confirm).toBeVisible();
+    const reason = confirm.getByText("상태가 미수주로 바뀜 · 새로 고침", { exact: true }).filter({ visible: true });
+    await expect(reason).toHaveCount(1);
+    await expect(primary).toHaveAttribute("aria-disabled", "true");
+    const reasonBox = await reason.boundingBox();
+    const primaryBox = await primary.boundingBox();
+    expect(reasonBox && primaryBox && reasonBox.x + reasonBox.width <= primaryBox.x).toBe(true);
+    await expect(page.getByText(/진행으로 바꾸기 · /)).toHaveCount(0);
+  });
+
   test("(e) 진행 프로젝트는 누구에게도 「상태 바꾸기」·「진행으로 되돌리기」가 없다 (CEO-D13)", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);

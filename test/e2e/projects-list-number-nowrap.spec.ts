@@ -81,6 +81,9 @@ test.describe("숫자 열 nowrap — /projects 견적 (S15 backstop)", () => {
     for (const width of [375, 1024, 1280]) {
       await page.setViewportSize({ width, height: 800 });
       await page.goto(`/projects?q=${encodeURIComponent(marker)}`);
+      // 웹폰트가 늦게 바뀌면 자간이 달라져 폭 측정이 흔들린다 — 폰트가
+      // 자리 잡은 뒤 잰다(실측: 대기 없이 재면 간헐적으로 어긋났다).
+      await page.evaluate(() => document.fonts.ready);
       const { scrollWidth, clientWidth } = await page.evaluate(() => ({
         scrollWidth: document.documentElement.scrollWidth,
         clientWidth: document.documentElement.clientWidth,

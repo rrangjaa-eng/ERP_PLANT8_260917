@@ -45,7 +45,11 @@
   margin-top: var(--s-1);
   color: var(--muted);
   font-size: var(--fs-sm);
-  white-space: nowrap;
+  /* white-space는 상속이다 — .alignRight(td)가 nowrap이면 그 안의 보조
+     줄(외화 2행 등 숫자)도 같이 nowrap이 된다. 여기서 다시 nowrap을
+     선언하면 align이 없는 셀(예: 프로젝트명 아래 거래처명)의 보조 줄까지
+     줄바꿈을 잃어 375px에서 가로 오버플로가 났다(측정 확인) — 그래서
+     이 규칙 자체를 없앤다. */
 }
 
 .groupRow td {

@@ -140,6 +140,10 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     await page.keyboard.type("1234.56");
     await page.getByRole("button", { name: /일괄 저장/ }).click();
     await expect(amountInput).toHaveValue("1,234.56");
+    // 입력칸 값은 타이핑 직후부터 이미 "1,234.56"이라 저장 완료 신호가 아니다 —
+    // 서버 응답으로 dirty가 비워져야 뜨는 비활성 사유를 기다린 뒤 새로고침한다
+    // (아니면 reload가 진행 중인 저장 요청을 끊어 1500000이 남는다).
+    await expect(page.getByText("바뀐 칸 없음 · 고칠 칸을 눌러 주세요")).toBeVisible();
 
     await page.reload();
     await expect(amountInput).toHaveValue("1,234.56");

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { and, asc, eq, notInArray } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, pool } from "@/db/client";
 import { actionLog, codeItems, projects, quoteLines, teams } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
@@ -12,8 +12,13 @@ import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
-import { changeProjectStatus, listProjectStatusCatalog } from "@/domain/projects/status";
-import { setVisibilityCell } from "@/domain/permissions/matrix";
+import { changeProjectStatus, listProjectStatusCatalog, loadStatusChangeFacts } from "@/domain/projects/status";
+import { setPermissionCell, setVisibilityCell } from "@/domain/permissions/matrix";
+import { seedMasterData } from "@/domain/seed";
+import { INFO_ITEMS } from "@/domain/permissions/info-items";
+import { findPermission, findVisibility } from "@/repositories/permissions";
+import { withTransaction } from "@/lib/db-transaction";
+import { deferred, waitForLockWaiter } from "./lock-race";
 
 // 04-06(D-75) — 프로젝트 상태 다섯 값. 04-20·04-21이 같은 파일에 전환
 // describe를 더한다. 이 목록은 db/migrations/0012_project_status_five_values.sql
@@ -392,5 +397,177 @@ describe("사람의 전환 넷 · 팀 범위 · 완료 주체 · 코드표 목�
 
     await changeProjectStatus(lead, projectId, { from: "bidding", to: "lost" });
     expect((await reloadProject(projectId)).status).toBe("lost");
+  });
+});
+
+describe("원자성·경합·시드 보존(A-01·A-11·OV-3·A-05·ENG-D3 ③·A-23)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("A-01 — 로그 쓰기가 실패하면 상태·version·로그가 전부 그대로다", async () => {
+    const teamA = await makeTeam();
+    const lead = await makeActor("role-team-lead", teamA);
+    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+    const before = await reloadProject(projectId);
+
+    await expect(
+      changeProjectStatus(
+        lead,
+        projectId,
+        { from: "bidding", to: "in_progress" },
+        { recordAction: () => Promise.reject(new Error("로그 쓰기 실패")) },
+      ),
+    ).rejects.toThrow("로그 쓰기 실패");
+
+    const after = await reloadProject(projectId);
+    expect(after.status).toBe("bidding");
+    expect(after.version).toBe(before.version);
+    expect(after.endDate).toBeNull();
+    expect(await statusLogs(projectId)).toEqual([]);
+  });
+
+  it("A-11 — 동료가 미수주로 닫은 뒤 오래된 화면의 수주중 → 진행은 「상태가 미수주로 바뀜 · 새로 고침」이고 되살아나지 않는다", async () => {
+    const teamA = await makeTeam();
+    const lead = await makeActor("role-team-lead", teamA);
+    const colleague = await makeActor("role-team-lead", teamA);
+    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+
+    await changeProjectStatus(colleague, projectId, { from: "bidding", to: "lost" });
+    await expect(changeProjectStatus(lead, projectId, { from: "bidding", to: "in_progress" })).rejects.toThrow(
+      "상태가 미수주로 바뀜 · 새로 고침",
+    );
+
+    expect((await reloadProject(projectId)).status).toBe("lost");
+    expect(await statusLogs(projectId)).toHaveLength(1);
+  });
+
+  it("OV-3 — A가 잠금을 쥔 동안 B는 잠금을 기다리고, A를 풀면 A만 커밋되고 B는 from 불일치로 거부된다", async () => {
+    const teamA = await makeTeam();
+    const leadA = await makeActor("role-team-lead", teamA);
+    const leadB = await makeActor("role-team-lead", teamA);
+    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+
+    const locked = deferred();
+    const release = deferred();
+    const first = changeProjectStatus(
+      leadA,
+      projectId,
+      { from: "bidding", to: "in_progress" },
+      {
+        afterLock: async () => {
+          locked.resolve();
+          await release.promise;
+        },
+      },
+    );
+    await locked.promise;
+
+    const second = changeProjectStatus(leadB, projectId, { from: "bidding", to: "lost" });
+    try {
+      await waitForLockWaiter(pool);
+    } finally {
+      // 대기 확인이 실패해도 A를 풀어 잠금을 쥔 연결이 뒤 테스트를 막지 않게 한다.
+      release.resolve();
+    }
+
+    const [a, b] = await Promise.allSettled([first, second]);
+    expect(a.status).toBe("fulfilled");
+    expect(b.status).toBe("rejected");
+    if (b.status === "rejected") expect(String(b.reason)).toContain("상태가 진행으로 바뀜 · 새로 고침");
+
+    expect((await reloadProject(projectId)).status).toBe("in_progress");
+    const logs = await statusLogs(projectId);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.actorId).toBe(leadA.id);
+  });
+
+  it("A-05 — 빈 DB의 첫 시드가 전환 권한을 켜고, 관리자가 끈 팀장 projects.status는 재시드 뒤에도 꺼져 있다", async () => {
+    for (const roleId of ["role-team-lead", "role-division-head", "role-ceo"]) {
+      expect((await findPermission(SYSTEM_VIEWER, roleId, "projects", "view"))?.allowed).toBe(true);
+      expect((await findPermission(SYSTEM_VIEWER, roleId, "projects.status", "write"))?.allowed).toBe(true);
+    }
+    expect((await findPermission(SYSTEM_VIEWER, "role-ceo", "projects.complete", "write"))?.allowed).toBe(true);
+    expect(await findPermission(SYSTEM_VIEWER, "role-team-lead", "projects.complete", "write")).toBeNull();
+
+    await setPermissionCell(SYSTEM_VIEWER, {
+      roleId: "role-team-lead",
+      menu: "projects.status",
+      action: "write",
+      allowed: false,
+    });
+    await seedMasterData(SYSTEM_VIEWER);
+
+    expect((await findPermission(SYSTEM_VIEWER, "role-team-lead", "projects.status", "write"))?.allowed).toBe(false);
+  });
+
+  it("ENG-D3 ③ — 첫 시드의 노출 기본값, 관리자가 끈 기획 PM quote.amount·대표 revenue.issued_amount는 재시드 뒤에도 꺼져 있고 시스템 관리자 항목은 재시드가 켠다", async () => {
+    for (const item of INFO_ITEMS) {
+      for (const roleId of ["role-team-lead", "role-division-head"]) {
+        expect((await findVisibility(SYSTEM_VIEWER, roleId, item.key))?.visible).toBe(item.staffDefault);
+      }
+      expect((await findVisibility(SYSTEM_VIEWER, "role-ceo", item.key))?.visible).toBe(
+        item.staffDefault || item.key.startsWith("revenue."),
+      );
+    }
+
+    await setVisibilityCell(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, infoItem: "quote.amount", visible: false });
+    await setVisibilityCell(SYSTEM_VIEWER, { roleId: "role-ceo", infoItem: "revenue.issued_amount", visible: false });
+    await setVisibilityCell(SYSTEM_VIEWER, { roleId: "role-sysadmin", infoItem: "archive.value", visible: false });
+    await seedMasterData(SYSTEM_VIEWER);
+
+    expect((await findVisibility(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "quote.amount"))?.visible).toBe(false);
+    expect((await findVisibility(SYSTEM_VIEWER, "role-ceo", "revenue.issued_amount"))?.visible).toBe(false);
+    expect((await findVisibility(SYSTEM_VIEWER, "role-sysadmin", "archive.value"))?.visible).toBe(true);
+  });
+
+  it("거부 운영 로그 — 권한 없는 전환 한 번에 write.denied 한 줄(규칙·프로젝트 id·from·to, 이유 문자열·금액 키 없음)", async () => {
+    const teamA = await makeTeam();
+    const { projectId, pm } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+
+    const lines: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((line: string) => {
+      lines.push(line);
+    });
+    await expect(changeProjectStatus(pm, projectId, { from: "bidding", to: "in_progress" })).rejects.toThrow(
+      "상태 바꾸기 권한 없음",
+    );
+    vi.restoreAllMocks();
+
+    const denied = lines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((entry) => entry.event === "write.denied");
+    expect(denied).toHaveLength(1);
+    const { severity, message, time, event, ...fields } = denied[0] ?? {};
+    void severity;
+    void message;
+    void time;
+    void event;
+    expect(fields).toEqual({
+      viewerId: pm.id,
+      rule: "project.transition",
+      errorName: "GateBlockedError",
+      projectId,
+      from: "bidding",
+      to: "in_progress",
+    });
+    expect(JSON.stringify(denied[0])).not.toContain("권한 없음");
+  });
+
+  it("A-23 — 바깥 트랜잭션을 넘기고 그 트랜잭션을 되돌리면 상태·로그가 둘 다 없다", async () => {
+    const teamA = await makeTeam();
+    const lead = await makeActor("role-team-lead", teamA);
+    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+    const facts = await loadStatusChangeFacts(lead);
+
+    await expect(
+      withTransaction(async (tx) => {
+        await changeProjectStatus(lead, projectId, { from: "bidding", to: "in_progress" }, { tx, facts });
+        throw new Error("결재 되돌림");
+      }),
+    ).rejects.toThrow("결재 되돌림");
+
+    expect((await reloadProject(projectId)).status).toBe("bidding");
+    expect(await statusLogs(projectId)).toEqual([]);
   });
 });

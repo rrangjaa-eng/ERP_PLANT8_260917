@@ -208,4 +208,63 @@ describe("잠금·풀 시간 제한(ENG-D3 ①)", () => {
       15_000,
     );
   });
+
+  describe("풀 2 · 동시 상태 전환 셋(04-20)", () => {
+    // 전환 함수가 트랜잭션 전에 사실(행 범위·메뉴 권한·업무 범위·라벨)을 읽고
+    // 트랜잭션 안에서는 tx만 쓴다는 규약(ARCHITECTURE §4-8)의 통합 증명.
+    it(
+      "(e) 풀 크기 2에서 같은 수주중 프로젝트에 수주중 → 진행 셋을 동시에 보내면 10초 안에 한 건 성공 · 두 건 「상태가 진행으로 바뀜 · 새로 고침」, 시간 초과 0",
+      async () => {
+        const { project } = await setupProject();
+        await db.update(projects).set({ startDate: "2026-10-01" }).where(eq(projects.id, project.id));
+        const { userId } = await createAccount(SYSTEM_VIEWER, {
+          email: `division-${randomUUID()}@example.test`,
+          name: "통합테스트 본부 책임자",
+          roleId: "role-division-head",
+        });
+        const divisionHead = { id: userId, roleId: "role-division-head" };
+
+        const previousPoolMax = process.env.DB_POOL_MAX;
+        process.env.DB_POOL_MAX = "2";
+        vi.resetModules();
+
+        try {
+          const clientModule = await import("@/db/client");
+          const smallPool = clientModule.pool as unknown as { options: { max: number } };
+          expect(smallPool.options.max).toBe(2);
+
+          const { changeProjectStatus } = await import("@/domain/projects/status");
+          const { UserFacingError: IsolatedUserFacingError } = await import("@/lib/actions/user-facing-error");
+
+          const input = { from: "bidding", to: "in_progress" } as const;
+          const start = Date.now();
+          const results = await Promise.allSettled([
+            changeProjectStatus(divisionHead, project.id, input),
+            changeProjectStatus(divisionHead, project.id, input),
+            changeProjectStatus(divisionHead, project.id, input),
+          ]);
+          const elapsed = Date.now() - start;
+
+          expect(elapsed).toBeLessThan(10_000);
+          const fulfilled = results.filter((result) => result.status === "fulfilled");
+          const rejected = results.flatMap((result): unknown[] => (result.status === "rejected" ? [result.reason as unknown] : []));
+          expect(fulfilled).toHaveLength(1);
+          expect(rejected).toHaveLength(2);
+          for (const reason of rejected) {
+            expect(reason).toBeInstanceOf(IsolatedUserFacingError);
+            expect(String(reason)).toContain("상태가 진행으로 바뀜 · 새로 고침");
+            expect(String(reason)).not.toContain("다른 저장이 끝나지 않음");
+          }
+
+          await clientModule.closeDb();
+        } finally {
+          process.env.DB_POOL_MAX = previousPoolMax;
+        }
+
+        const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
+        expect(row?.status).toBe("in_progress");
+      },
+      15_000,
+    );
+  });
 });

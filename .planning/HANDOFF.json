@@ -1,10 +1,10 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-25T01:35:37.923Z",
+  "timestamp": "2026-09-25T03:01:26.731Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
-  "plan": 20,
+  "plan": 21,
   "task": null,
   "total_tasks": null,
   "status": "paused",
@@ -146,12 +146,18 @@
       "name": "[세션 O] 04-27 계급 업무 범위(team|company)·0013_role_work_scope·계급 화면 선택 칸. RED 97bb210·4f2dfe4 → feat 5caf481, SUMMARY 10843c3·72129ea. 독립 DOM 감사 결함 0, Opus 검토 막음 0·중요 0·참고 8. 전체 게이트 CI=true: 단위 949·통합 1083·E2E 215, lint·typecheck·lint:sql 0. 앞서 PR #40 CI(master-edit 팀 칸 자동 선택)는 a8c95fa로 수정, run 349 초록",
       "status": "done",
       "commit": "72129ea"
+    },
+    {
+      "id": 24,
+      "name": "[세션 P] 04-20 실행(웨이브 8) — 사람 상태 전환 PROJ-04 일부·권한표 메뉴 projects.status/projects.complete·팀장 자기 팀 범위 actorCoversProjectTeam·FOR UPDATE 잠금+조건부 UPDATE+로그 한 트랜잭션·denyWrite·시드 「없을 때만」 권한·노출(시스템 관리자만 upsert) — PR #38 알려진 문제 「배포마다 노출표 되돌림」 닫힘. executor Opus, 격리 none(worktree base-check fork-ref-unknown 자동 강등). 커밋 RED 70b9897→GREEN 22abaf5(Task1)·RED 00f87bc→GREEN 3823ee3(Task2)·e8fa3f6(Task3 테스트만, 노출 되돌림 회귀는 옛 upsertVisibility로 되돌려 RED 확인)·SUMMARY abe1f74·STATE/ROADMAP 27a5cf9·state.json 1d16193. 편차 9건(SUMMARY: role-ceo 시드 없음 가정하던 통합 테스트 3곳 준비 코드 변경·단언 불변, roles.ts 상수 3개, denyWrite err.constructor.name, evaluateTransition·loadStatusChangeFacts export, 기준 d6b41cf 얕은 clone → deepen 뒤 확인). Opus 독립 검토(/mnt/project-files/phase4-prep/04-20-review-opus.md): 막음 0·중요 1(M1 권한 판정 전에 오래된 from 검사 → 권한 없는 사람이 틀린 from으로 상태 값을 알아냄) → 110c8cd로 수정(잠근 뒤 project.transition 먼저, RED 확인 통합 테스트)·참고 7건은 파일에 남김(미수정, 한도 풀리면 Codex 재확인). 전체 게이트 1차 CI=true: 단위1047·통합1106 통과, E2E permissions-grid.spec.ts:172 단독 실패(04-20 메뉴 2개로 표 폭 2,515px > .wrap 1,240px, 휠 좌표가 .wrap 밖 → 앱 결함 아님) → 86d078b로 좌표를 .wrap 중앙으로 수정(단언 불변, 변이 2개로 실패 확인). 전체 게이트 최종 CI=true(110c8cd): 단위1047·통합1107·E2E215 통과, lint·typecheck 0, lint:sql 0(1차). 진행 17/42",
+      "status": "done",
+      "commit": "1d16193"
     }
   ],
   "remaining_tasks": [
     {
       "id": 1,
-      "name": "/gsd-execute-phase 4 — 남은 26개, 세션마다 한 플랜. 다음 웨이브 8: 04-20(다음). 04-20 SUMMARY에 「비시드 계급(예: 경영관리)은 자기 팀으로 시작 — 관리자가 전사로 바꿔야 함」 알림을 같이 적는다",
+      "name": "/gsd-execute-phase 4 — 남은 25개, 세션마다 한 플랜. 다음 웨이브 9: 04-21(다음)",
       "status": "not_started"
     },
     {
@@ -403,8 +409,8 @@
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션 P: git status -sb → /gsd-execute-phase 4로 04-20 한 플랜만 실행(먼저 PR #40 CI 72129ea 확인). 브랜치 claude/gsd-progress-e1nzgu, PR #40, 푸시는 git push origin HEAD:claude/gsd-progress-e1nzgu",
-  "context_notes": "세션 O가 04-27 완료(16/42). 전체 게이트 CI=true 단위 949·통합 1083·E2E 215. 실행자 Opus(DB·마이그레이션 규칙), 격리 none(origin/HEAD 미해결로 자동 순차). 04-28 알려진 범위 밖: Alt+↑↓ 순서 저장 안 됨 → 04-12·04-30.",
+  "next_action": "세션 Q(새 세션) — git status -sb → PR #40 CI(1d16193) 확인 → /gsd-execute-phase 4로 04-21 한 플랜만 실행(웨이브 9). /mnt/project-files/phase4-prep/04-21.md가 있으면 먼저 읽는다. 브랜치 claude/gsd-progress-e1nzgu, PR #40, 푸시는 git push origin HEAD:claude/gsd-progress-e1nzgu",
+  "context_notes": "세션 P가 04-20 완료(17/42). 전체 게이트 CI=true 단위 1047·통합 1107·E2E 215. 실행자 Opus, 격리 none(worktree base-check fork-ref-unknown 자동 강등). Opus 독립 검토 중요 1건(M1, 권한 판정보다 먼저 도는 상태 검사)을 110c8cd로 수정. E2E permissions-grid.spec.ts:172는 표 폭 확대로 인한 좌표 문제(앱 결함 아님)로 86d078b에서 수정. 다음 웨이브 9: 04-21.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"

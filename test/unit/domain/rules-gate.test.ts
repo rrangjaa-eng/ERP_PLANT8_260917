@@ -30,30 +30,54 @@ describe("domain/rules/gate", () => {
     expect(listGateRules()).not.toContain("project.completed-lock");
   });
 
-  describe("project.line-edit (D-47·D-45·D-75)", () => {
-    it("완료 상태면 「완료 · 견적 줄 잠김」으로 거부한다", async () => {
-      const decision = await gate({}, "project.line-edit", { status: "completed" });
-      expect(decision).toEqual({ allowed: false, reason: "완료 · 견적 줄 잠김" });
+  // 04-12(D-78 · 사용자 D10·D12) — 셀 단위 판정. 바뀐 칸마다 lineCellEditability를 본다.
+  describe("project.line-edit (D-47·D-45·D-75·D-78)", () => {
+    const update = (fields: string[]) => ({ kind: "update" as const, fields });
+    const ctx = (status: string, fields: string[], linked: { hasLinkedDocuments: boolean; linkedDocumentNumber?: string } = { hasLinkedDocuments: false }) => ({
+      status,
+      ...linked,
+      change: update(fields),
     });
 
-    it("수주중 상태면 통과한다", async () => {
-      const decision = await gate({}, "project.line-edit", { status: "bidding" });
-      expect(decision).toEqual({ allowed: true });
+    it("정산 + 실행가만 바꾼 저장은 통과한다", async () => {
+      await expect(gate({}, "project.line-edit", ctx("settling", ["execution"]))).resolves.toEqual({ allowed: true });
     });
 
-    it("진행 상태면 통과한다", async () => {
-      const decision = await gate({}, "project.line-edit", { status: "in_progress" });
-      expect(decision).toEqual({ allowed: true });
+    it("정산 + 실행가·단가를 바꾸면 「정산 · 실행가와 새 줄만」", async () => {
+      await expect(gate({}, "project.line-edit", ctx("settling", ["execution", "unitPrice"]))).resolves.toEqual({
+        allowed: false,
+        reason: "정산 · 실행가와 새 줄만",
+      });
     });
 
-    it("정산 상태면 통과한다(셀 범위는 04-12)", async () => {
-      const decision = await gate({}, "project.line-edit", { status: "settling" });
-      expect(decision).toEqual({ allowed: true });
+    it("완료 + 비고만 바꿔도 「완료 · 견적 줄 잠김」", async () => {
+      await expect(gate({}, "project.line-edit", ctx("completed", ["note"]))).resolves.toEqual({
+        allowed: false,
+        reason: "완료 · 견적 줄 잠김",
+      });
     });
 
-    it("미수주 상태면 잠그지 않고 통과한다(D-45)", async () => {
-      const decision = await gate({}, "project.line-edit", { status: "lost" });
-      expect(decision).toEqual({ allowed: true });
+    it("진행 + 연결 문서 + 수량이면 「지출결의 {번호} 연결됨 · 고치려면 새 차수」", async () => {
+      const decision = await gate(
+        {},
+        "project.line-edit",
+        ctx("in_progress", ["quantity"], { hasLinkedDocuments: true, linkedDocumentNumber: "26001-0004" }),
+      );
+      expect(decision).toEqual({ allowed: false, reason: "지출결의 26001-0004 연결됨 · 고치려면 새 차수" });
+    });
+
+    it("수주중·진행·미수주는 모든 칸이 통과한다(D-45)", async () => {
+      for (const status of ["bidding", "in_progress", "lost"]) {
+        await expect(
+          gate({}, "project.line-edit", ctx(status, ["subcategory", "itemName", "quantity", "unitPrice", "execution", "note"])),
+        ).resolves.toEqual({ allowed: true });
+      }
+    });
+
+    it("완료에서 새 줄(insert)은 「완료 · 견적 줄 잠김」", async () => {
+      await expect(
+        gate({}, "project.line-edit", { status: "completed", hasLinkedDocuments: false, change: { kind: "insert", quoteCellsZero: true } }),
+      ).resolves.toEqual({ allowed: false, reason: "완료 · 견적 줄 잠김" });
     });
   });
 });

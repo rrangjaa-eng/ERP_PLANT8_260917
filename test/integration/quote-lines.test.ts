@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { projects, quoteRevisions, quoteLines, codeItems, teams } from "@/db/schema";
@@ -9,7 +9,9 @@ import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
 import { insertFieldDefinition } from "@/repositories/field-definitions";
 import { createProject } from "@/domain/projects";
-import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
+import { getCurrentQuoteRevision, saveQuoteLines, SaveRejectedError, type QuoteLineWriteRow } from "@/domain/quotes/lines";
+import { saveProjectLedger } from "@/domain/projects/ledger";
+import { log } from "@/lib/log";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { getSettingValue } from "@/domain/settings/registry";
@@ -195,5 +197,216 @@ describe("domain/quotes/lines saveQuoteLines (Phase 4, 실제 Postgres)", () => 
       },
     ]);
     expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(1350.25);
+  });
+});
+
+// ── 04-12(D-78 · 사용자 D10·D12 · CEO A-03·A-21·B-01 · 엔지 리뷰 A §2 P2) ──────────────────────
+type SeedLine = {
+  sortOrder: number;
+  itemName: string;
+  quantity?: string;
+  unitPrice?: { currency: "KRW" | "USD"; foreignAmount: string | null; fxRate: string; amountKrw: number };
+  executionKrw?: number;
+  note?: string | null;
+};
+
+async function seedLine(revisionId: string, subcategory: string, line: SeedLine) {
+  const unitPrice = line.unitPrice ?? { currency: "KRW" as const, foreignAmount: null, fxRate: "1.0000", amountKrw: 100_000 };
+  const quantity = line.quantity ?? "1.00";
+  const quoteAmountKrw = Math.round(Number(quantity) * unitPrice.amountKrw);
+  const executionKrw = line.executionKrw ?? 50_000;
+  const [row] = await db
+    .insert(quoteLines)
+    .values({
+      revisionId,
+      sortOrder: line.sortOrder,
+      subcategory,
+      itemName: line.itemName,
+      quantity,
+      unitPriceCurrency: unitPrice.currency,
+      unitPriceForeignAmount: unitPrice.foreignAmount,
+      unitPriceFxRate: unitPrice.fxRate,
+      unitPriceAmountKrw: unitPrice.amountKrw,
+      executionCurrency: "KRW",
+      executionForeignAmount: null,
+      executionFxRate: "1.0000",
+      executionAmountKrw: executionKrw,
+      quoteAmountKrw,
+      profitKrw: quoteAmountKrw - executionKrw,
+      note: line.note ?? null,
+    })
+    .returning();
+  if (!row) throw new Error("줄 준비 실패");
+  return row;
+}
+
+async function setStatus(projectId: string, status: string) {
+  await db.update(projects).set({ status }).where(eq(projects.id, projectId));
+}
+
+async function reloadLine(id: string) {
+  const [row] = await db.select().from(quoteLines).where(eq(quoteLines.id, id));
+  if (!row) throw new Error("줄이 없습니다");
+  return row;
+}
+
+// 기존 줄을 DB 값 그대로 싣고 바꿀 칸만 덮는다(화면이 보내는 모양).
+function asInput(row: typeof quoteLines.$inferSelect, patch: Partial<QuoteLineWriteRow> = {}): QuoteLineWriteRow {
+  return {
+    id: row.id,
+    version: row.version,
+    subcategory: row.subcategory,
+    itemName: row.itemName,
+    quantity: Number(row.quantity),
+    unitPrice: {
+      currency: row.unitPriceCurrency as "KRW" | "USD",
+      amount: row.unitPriceCurrency === "KRW" ? row.unitPriceAmountKrw : Number(row.unitPriceForeignAmount),
+      fxRate: Number(row.unitPriceFxRate),
+    },
+    execution: { currency: "KRW", amount: row.executionAmountKrw, fxRate: 1 },
+    lineStatus: row.lineStatus,
+    ...patch,
+  };
+}
+
+function deniedCalls(spy: { mock: { calls: unknown[][] } }) {
+  return spy.mock.calls.filter(([event]) => event === "write.denied").map(([, fields]) => fields as Record<string, unknown>);
+}
+
+describe("정산 편집 매트릭스(D10·D12)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("(a) 정산 프로젝트에서 실행가만 바꾼 저장은 통과하고 그 줄의 sort_order는 그대로다(A-03)", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "첫 줄" });
+    const target = await seedLine(revision.id, subcategoryValue, { sortOrder: 5, itemName: "실행가 고칠 줄" });
+    await setStatus(project.id, "settling");
+
+    await saveProjectLedger(SYSTEM_VIEWER, project.id, {
+      seenStatus: "settling",
+      quoteLines: { revisionId: revision.id, rows: [asInput(target, { execution: { currency: "KRW", amount: 70_000, fxRate: 1 } })] },
+    });
+
+    const after = await reloadLine(target.id);
+    expect(after.executionAmountKrw).toBe(70_000);
+    expect(after.sortOrder).toBe(5);
+  });
+
+  it("(b) 정산에서 단가를 같이 바꾼 조작 페이로드는 전부 거부되고 write.denied가 한 번, 금액 키가 없다(B-26)", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const target = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "조작 대상" });
+    await setStatus(project.id, "settling");
+    const warn = vi.spyOn(log, "warn");
+
+    const outcome = await saveProjectLedger(SYSTEM_VIEWER, project.id, {
+      seenStatus: "settling",
+      quoteLines: {
+        revisionId: revision.id,
+        rows: [
+          asInput(target, {
+            unitPrice: { currency: "KRW", amount: 999_000, fxRate: 1 },
+            execution: { currency: "KRW", amount: 70_000, fxRate: 1 },
+          }),
+        ],
+      },
+    }).then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+    expect(outcome).toBeInstanceOf(SaveRejectedError);
+    expect(String(outcome)).toContain("정산 · 실행가와 새 줄만");
+    const after = await reloadLine(target.id);
+    expect(after.unitPriceAmountKrw).toBe(100_000);
+    expect(after.executionAmountKrw).toBe(50_000);
+    const denied = deniedCalls(warn);
+    expect(denied).toHaveLength(1);
+    expect(denied[0]).toMatchObject({ rule: "project.line-edit", projectId: project.id, revisionId: revision.id });
+    expect(Object.keys(denied[0] ?? {}).filter((key) => /amount|krw|price|execution/i.test(key))).toEqual([]);
+  });
+
+  it("(c) 완료에서 비고만 바꾼 저장도 「완료 · 견적 줄 잠김」으로 거부된다", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const target = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "완료 줄" });
+    await setStatus(project.id, "completed");
+
+    const attempt = saveProjectLedger(SYSTEM_VIEWER, project.id, {
+      seenStatus: "completed",
+      quoteLines: { revisionId: revision.id, rows: [asInput(target, { note: "완료 뒤 비고" })] },
+    });
+
+    await expect(attempt).rejects.toThrow("완료 · 견적 줄 잠김");
+    expect((await reloadLine(target.id)).note).toBeNull();
+  });
+
+  it("(d) 정산에서 환율 1350·수량 2·비고 undefined를 실어 실행가만 바꾼 저장은 헛거부되지 않는다(A-21)", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const target = await seedLine(revision.id, subcategoryValue, {
+      sortOrder: 0,
+      itemName: "외화 줄",
+      quantity: "2.00",
+      unitPrice: { currency: "USD", foreignAmount: "100.00", fxRate: "1350.0000", amountKrw: 135_000 },
+      note: null,
+    });
+    await setStatus(project.id, "settling");
+
+    await saveProjectLedger(SYSTEM_VIEWER, project.id, {
+      seenStatus: "settling",
+      quoteLines: {
+        revisionId: revision.id,
+        rows: [
+          asInput(target, {
+            quantity: 2,
+            unitPrice: { currency: "USD", amount: 100, fxRate: 1350 },
+            note: undefined,
+            execution: { currency: "KRW", amount: 90_000, fxRate: 1 },
+          }),
+        ],
+      },
+    });
+
+    const after = await reloadLine(target.id);
+    expect(after.executionAmountKrw).toBe(90_000);
+    expect(after.unitPriceFxRate).toBe("1350.0000");
+  });
+
+  it("(e) 진행에서 3줄 중 3번째 줄만 고쳐 저장해도 세 줄 순서가 그대로이고 결과 lines가 3줄이다", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const first = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "하나" });
+    const second = await seedLine(revision.id, subcategoryValue, { sortOrder: 1, itemName: "둘" });
+    const third = await seedLine(revision.id, subcategoryValue, { sortOrder: 2, itemName: "셋" });
+    await setStatus(project.id, "in_progress");
+
+    const result = await saveProjectLedger(SYSTEM_VIEWER, project.id, {
+      seenStatus: "in_progress",
+      quoteLines: { revisionId: revision.id, rows: [asInput(third, { itemName: "셋 고침" })] },
+    });
+
+    expect(result.quoteLines?.lines.map((line) => line.id)).toEqual([first.id, second.id, third.id]);
+    expect(result.quoteLines?.lines.map((line) => line.itemName)).toEqual(["하나", "둘", "셋 고침"]);
+    expect((await reloadLine(third.id)).sortOrder).toBe(2);
+  });
+
+  it("(f) 다른 프로젝트 줄 id를 섞은 배치는 전부 거부되고 두 프로젝트 줄이 그대로다(B-01)", async () => {
+    const a = await setupProject();
+    const b = await setupProject();
+    const own = await seedLine(a.revision.id, a.subcategoryValue, { sortOrder: 0, itemName: "A 줄" });
+    const foreign = await seedLine(b.revision.id, b.subcategoryValue, { sortOrder: 0, itemName: "B 줄" });
+    const warn = vi.spyOn(log, "warn");
+
+    const attempt = saveProjectLedger(SYSTEM_VIEWER, a.project.id, {
+      seenStatus: "bidding",
+      quoteLines: {
+        revisionId: a.revision.id,
+        rows: [asInput(own, { itemName: "A 고침" }), asInput(foreign, { itemName: "탈취" })],
+      },
+    });
+
+    await expect(attempt).rejects.toThrow("차수와 프로젝트가 맞지 않음 · 새로 고침");
+    expect((await reloadLine(own.id)).itemName).toBe("A 줄");
+    expect((await reloadLine(foreign.id)).itemName).toBe("B 줄");
+    expect(deniedCalls(warn).map((fields) => fields.rule)).toEqual(["quote.line-membership"]);
   });
 });

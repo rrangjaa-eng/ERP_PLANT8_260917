@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Completed 04-44-PLAN.md
-last_updated: "2026-09-25T08:47:09.854Z"
+stopped_at: Completed 04-12-PLAN.md
+last_updated: "2026-09-25T10:38:19.412Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 4 execution started
-state_head: 7f525ce22f5300def11b6b5386aee7f4ce3a7480
+state_head: 5d490d2b07509dfc12a867e3a3543d00f703820c
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 115
-  completed_plans: 44
+  completed_plans: 45
   percent: 6
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 4 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 3
+Current Plan: 4
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-25 — Phase 4 execution started
@@ -93,6 +93,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P21 | 66min | 3 tasks | 20 files |
 | Phase 04 P11 | 32 min | 3 tasks | 14 files |
 | Phase 04 P44 | 39min | 3 tasks | 14 files |
+| Phase 04 P12 | 78min | 3 tasks | 30 files |
 
 ## Accumulated Context
 
@@ -221,6 +222,9 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-22 팀장 기간 권리: 팀장(팀장 이상)은 프로젝트 시작일·종료일만 고칠 수 있는 별도 권한을 받는다. projects 쓰기 전체는 주지 않으며 견적 줄 등 나머지 수정은 지금처럼 막힌다 — 사용자 결정 2026-09-25 15:29 KST(04-21 스레드 카드 「기간만 수정」) — 04-20 시드가 팀장에게 projects.view·projects.status 쓰기만 줘서 04-22 종료일 흐름(CEO-D13)이 막혔고, 가장 좁은 권한을 택함. 기각: projects 쓰기 전체 부여 / 현행 유지
 - [Phase 4]: 04-44: 총 매출 예상가 권리 = periodEditRights≠none 그리고 quote.amount 노출, 기간과 모은 거부(U-6), 나중 저장이 이김·0=미입력, USD 환율 기억은 커밋 뒤
 - [Phase 4]: 04-44: 모달 3차가 모달 밖 칸으로 포커스를 옮길 때는 ConfirmDialog onClose 다음 마이크로태스크에서 연다
+- [Phase 4]: 04-12: 정산 새 줄의 견적 칸 0 = 원화 단가 0 · 수량 없음 또는 1(수량 > 0 검증 유지)
+- [Phase 4]: 04-12: 순서 불일치·보관된 줄 수정은 quote.line-membership으로 denyWrite
+- [Phase 4]: 04-12: 보관함 복원은 restore()의 보관함 권한 뒤 DOMAIN_RESTORERS → restoreQuoteLine(projects 쓰기 재확인, 이미 복원된 줄은 멱등)
 
 ### Pending Todos
 
@@ -277,6 +281,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-25T08:47:09.580Z
-Stopped at: Completed 04-44-PLAN.md
+Last session: 2026-09-25T10:38:19.154Z
+Stopped at: Completed 04-12-PLAN.md
 Resume file: None

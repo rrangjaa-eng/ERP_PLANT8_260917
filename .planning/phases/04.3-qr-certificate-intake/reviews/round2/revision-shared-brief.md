@@ -1,0 +1,22 @@
+# Phase 04.3 plan revision — shared brief for all three revision planners (binding)
+
+Inputs:
+- Plan checker (round 1, targeted): see the per-group item lists in your prompt.
+- Codex adversarial plan review: /tmp/claude-0/-home-user-ERP-PLANT8-260917/d28e9027-e530-5dd6-92c3-054ee58a2d38/scratchpad/codex-plan.txt (27 findings; each has plan file:line + repo file:line evidence). Treat each finding's described property as binding `required_property`; its suggestion is a non-binding fix_hint. Verify against the cited repo files first; if a finding is factually wrong, leave the plan and say so with evidence.
+- Binding orchestrator facts: /tmp/claude-0/-home-user-ERP-PLANT8-260917/d28e9027-e530-5dd6-92c3-054ee58a2d38/scratchpad/planner-orchestrator-facts.md (section 2 migration numbers is REPLACED by: no reserved numbers; branch uses whatever `pnpm db:generate` produces; right before merge restore origin/main's db/migrations exactly, delete nothing of main's, then regenerate this phase's migration so it becomes main's last+1; verify on a separate empty DB; guard test test/unit/db/migration-journal.test.ts).
+- Locked decisions: 04.3-CONTEXT.md. Final UI contract: 04.3-UI-SPEC.md (d138427).
+
+WORK STYLE (binding, the previous single reviser was lost to context compaction before writing anything):
+- Edit ONLY the files assigned to your group. Write each fix to the file IMMEDIATELY after deciding it (one finding or one plan at a time). Never batch edits until the end.
+- Do NOT split plans or renumber them; do not change wave numbers or depends_on unless a finding requires it (then say so). Address the checker's scope warning by tightening dense actions (clear sub-steps), not by splitting.
+- Read only what you need: your plans, the cited repo lines, the relevant CONTEXT/UI-SPEC sections.
+- After your edits: run for each of your plans `node .claude/gsd-core/bin/gsd-tools.cjs frontmatter validate <file> --schema plan` and `node .claude/gsd-core/bin/gsd-tools.cjs verify plan-structure <file>` and fix errors.
+- Do not commit. Return: one line per assigned finding (fixed / partly / not a real issue + why) and the list of files changed.
+
+CROSS-GROUP CONVENTIONS (all groups must use these exact names so plans agree):
+- C1 Feature gate: plan 02 defines `isCertFeatureEnabled()` in domain/certs (env gate `CERT_FEATURE_ALLOWED` must be "true" AND setting `cert.enabled` true). Production deploy never sets the env var before Phase 11, so the settings toggle alone cannot enable it; the settings row is hidden/refused when the env gate is off. EVERY cert page, route handler (incl. /print/certs/[id]) and EVERY cert server action (public and internal) calls a shared guard `assertCertFeatureEnabled()` first and returns not-found; each plan that adds an action/route adds a direct-POST test proving the guard (not only a page 404 test).
+- C2 PII-safe errors: plan 02 changes the shared server-error path so that for cert actions (or globally if simpler and safe) the logged error drops `Error.message`/SQL params and logs only code/name; test injects a DB error carrying PII and asserts the log line has none.
+- C3 Signature upload intent: plan 02 schema adds table `cert_signature_uploads(object_key PK, created_at)`; submit inserts the intent row BEFORE uploading to GCS and deletes it in the same transaction that saves the submission; plan 12 purge deletes GCS objects for intent rows older than 24h (and the rows). This closes the orphan-object hole.
+- C4 E2E isolation: plan 02 creates `test/e2e/helpers/cert.ts` (enable feature + contact phone once via a dedicated setup, create uniquely named events per test, never assert global emptiness of the event list; cert specs use `test.describe.configure({ mode: 'serial' })` and live in one Playwright project so they never interleave). Other plans' E2E specs must use this helper and must not toggle global cert settings themselves.
+- C5 Brute force: in addition to the locked 5 fails → 3 min lock, plan 03 adds a per-row cumulative cap (e.g. 20 misses total → hard lock until staff reset in I3) and a per-event + per-IP rate limit on public cert actions, with attack tests.
+- C6 Transactions: recordAction has no tx param until 04-32 lands. Where a log must be atomic with a data change (corrections, purge), write both through one repository-level transaction for this phase (append-only use of the action_log table via a new repository function), with a failure test that proves rollback; note the 04-32 follow-up.

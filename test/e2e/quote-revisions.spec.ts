@@ -459,6 +459,42 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
     await expect(page.getByText(`고객 승인 ${TODAY} ${PM_NAME}`, { exact: true })).toBeVisible();
   });
 
+  test("서버 거부가 아닌 실패(요청 끊김)는 세 다이얼로그 모두 1차 왼쪽 막힘 자리에 `처리하지 못함 · 닫고 다시 시도`(검토 S5)", async ({ page }) => {
+    const FAILED = "처리하지 못함 · 닫고 다시 시도";
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "끊김 줄", unitPrice: 1_000_000, execution: 400_000 }] });
+    await login(page, pm);
+    await page.route(`**/projects/${project.id}`, async (route) => {
+      if (isServerAction(route.request())) await route.abort();
+      else await route.continue();
+    });
+    await page.goto(`/projects/${project.id}`);
+    await expect(quoteRows(page)).toHaveCount(1);
+
+    await page.getByRole("button", { name: "복사해 새 차수" }).click();
+    let dialog = page.getByRole("dialog", { name: "복사해 새 차수" });
+    await dialog.getByRole("button", { name: /새 차수 만들기/ }).click();
+    await expect(dialog.getByText(FAILED, { exact: true }).filter({ visible: true })).toHaveCount(1);
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+
+    dialog = await openApprovalDialog(page);
+    await dialog.getByRole("button", { name: /고객 승인 표시/ }).click();
+    await expect(dialog.getByText(FAILED, { exact: true }).filter({ visible: true })).toHaveCount(1);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+
+    await approveInDb(project.revisionId, pm.userId);
+    await page.reload();
+    await page.getByRole("button", { name: "승인 표시 취소", exact: true }).click();
+    dialog = page.getByRole("dialog", { name: "고객 승인 표시 취소" });
+    await dialog.getByRole("button", { name: /승인 표시 취소/ }).click();
+    await expect(dialog.getByText(FAILED, { exact: true }).filter({ visible: true })).toHaveCount(1);
+    expect(await revisionCount(project.id)).toBe(1);
+  });
+
   test("견적 줄 0개 차수의 승인은 `승인할 견적 줄이 없음 · 첫 줄 만들기`로 막힌다(ENG-D4)", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);

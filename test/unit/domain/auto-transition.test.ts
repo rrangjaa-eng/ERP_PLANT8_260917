@@ -3,6 +3,8 @@ import type { DbOrTx } from "@/repositories/document-counters";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import type { RecordActionEntry } from "@/domain/action-log/record";
 import type { ProjectRow } from "@/repositories/projects";
+import { isEndDatePassed } from "@/domain/projects/status";
+import { projectResponsibles } from "@/domain/projects/responsibles";
 import {
   applyAutoSettlement,
   effectiveOnFor,
@@ -283,5 +285,61 @@ describe("loadProjectForGate — 잠금 안 선판정 (A-33 · OV-5)", () => {
         { ...deps, recordAction: () => Promise.reject(new Error("로그 쓰기 실패")) },
       ),
     ).rejects.toThrow("로그 쓰기 실패");
+  });
+});
+
+// ── 종료일 지남(D-81) · 담당자 이름 출처(04-11 Task 3 · 사용자 D20) ────────────────
+// 「종료일 = 오늘」 경계는 여기(단위)에서만 본다(A-18 — E2E는 오늘에서 떨어진 날짜만).
+describe("isEndDatePassed — 결정표 (D-81)", () => {
+  const todayKst = "2026-09-18";
+  const cases: { status: string; endDate: string | null; expected: boolean }[] = [
+    { status: "bidding", endDate: "2026-09-17", expected: true },
+    { status: "bidding", endDate: "2026-09-18", expected: false },
+    { status: "bidding", endDate: "2026-09-19", expected: false },
+    { status: "bidding", endDate: null, expected: false },
+    { status: "in_progress", endDate: "2026-09-01", expected: false },
+    { status: "settling", endDate: "2026-09-01", expected: false },
+    { status: "completed", endDate: "2026-09-01", expected: false },
+    { status: "lost", endDate: "2026-09-01", expected: false },
+  ];
+  for (const { status, endDate, expected } of cases) {
+    it(`${status} · 종료일 ${endDate ?? "없음"} · 오늘 ${todayKst} → ${expected}`, () => {
+      expect(isEndDatePassed({ status, endDate, todayKst })).toBe(expected);
+    });
+  }
+});
+
+describe("projectResponsibles — 팀장 = 업무 범위 team + projects.status 쓰기 후보의 이름순 첫 사람 (D20)", () => {
+  const viewer: Viewer = { id: "pm", roleId: "role-pm" };
+  const project = { teamId: "team-a", pmUserId: "pm-user" };
+
+  function deps(candidates: { userId: string; name: string }[]) {
+    const queries: { teamId: string; date: string }[] = [];
+    return {
+      queries,
+      deps: {
+        now: () => AFTER_MIDNIGHT,
+        teamLeadCandidatesAtDate: (_viewer: Viewer, input: { teamId: string; date: string }) => {
+          queries.push(input);
+          return Promise.resolve(candidates);
+        },
+        findPmName: (_viewer: Viewer, userId: string) => Promise.resolve(userId === "pm-user" ? "박서연" : null),
+      },
+    };
+  }
+
+  it("후보가 둘이면 이름순 첫 사람이고, 후보 쿼리는 프로젝트 팀 · 오늘(KST)로 한 번이다", async () => {
+    const { deps: stub, queries } = deps([
+      { userId: "u2", name: "한지민" },
+      { userId: "u1", name: "김도윤" },
+    ]);
+
+    expect(await projectResponsibles(viewer, project, stub)).toEqual({ pmName: "박서연", teamLeadName: "김도윤" });
+    expect(queries).toEqual([{ teamId: "team-a", date: "2026-09-18" }]);
+  });
+
+  it("같은 팀에 업무 범위 company 계급만 있어 후보가 없으면 teamLeadName은 null이다", async () => {
+    const { deps: stub } = deps([]);
+    expect(await projectResponsibles(viewer, project, stub)).toEqual({ pmName: "박서연", teamLeadName: null });
   });
 });

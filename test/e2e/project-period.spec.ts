@@ -112,4 +112,41 @@ test.describe("날짜로 움직이는 상세 (04-11, PROJ-04)", () => {
     expect(await hasTokenColor(tag, "--warning")).toBe(true);
     await expect(page.getByText(`${project.number} · 상세 견적 1차 · 정산 ${TODAY}`, { exact: true })).toBeVisible();
   });
+  // D-81 — 종료일이 지난 수주중은 자동으로 바뀌지 않고, 상태 태그 오른쪽 `--fs-sm --warning` 글자로 보인다.
+  test("(2) 종료일이 지난 수주중 — 상태를 바꿀 수 있는 팀장에게는 「종료일 지남」 글자만, 담당 PM에게는 「종료일 지남 · 팀장 {이름}」", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const leadName = `팀장${randomUUID().slice(0, 6)}`;
+    const lead = await makeAccount("role-team-lead", team, leadName);
+    const project = await makeProject({
+      teamId: team,
+      pmUserId: pm.userId,
+      status: "bidding",
+      endDate: addDays(TODAY, -3),
+    });
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
+    await expect(headerTag(page, "수주중")).toBeVisible();
+    await expect(page.getByRole("button", { name: "상태 바꾸기" })).toBeVisible();
+    const leadNote = headerTag(page, "종료일 지남");
+    await expect(leadNote).toBeVisible();
+    expect(await hasTokenColor(leadNote, "--warning")).toBe(true);
+    // 태그가 아니라 글자다 — 테두리가 없다.
+    expect(await leadNote.evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe("0px");
+    await expect(page.getByText(/종료일 지남 · 팀장/)).toHaveCount(0);
+
+    await page.goto("/account");
+    await page.getByRole("button", { name: "로그아웃" }).click();
+    await expect(page).toHaveURL(/\/login$/);
+
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
+    await expect(page.getByRole("button", { name: "상태 바꾸기" })).toHaveCount(0);
+    const pmNote = headerTag(page, `종료일 지남 · 팀장 ${leadName}`);
+    await expect(pmNote).toBeVisible();
+    expect(await hasTokenColor(pmNote, "--warning")).toBe(true);
+  });
 });

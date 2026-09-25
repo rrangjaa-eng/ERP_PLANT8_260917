@@ -1,6 +1,6 @@
 import { and, eq, inArray, lte, desc } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, type DbOrTx } from "@/db/client";
 import { teamMemberships } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
@@ -75,4 +75,15 @@ export async function deleteMembership(viewer: Viewer, userId: string, effective
     .where(and(eq(teamMemberships.userId, userId), eq(teamMemberships.effectiveFrom, effectiveFrom)))
     .returning({ id: teamMemberships.id });
   return deleted.length;
+}
+
+export async function teamLeadCandidatesAtDate(
+  viewer: Viewer,
+  input: { teamId: string; date: string },
+  tx?: DbOrTx,
+): Promise<{ userId: string; name: string }[]> {
+  void viewer;
+  void input;
+  void tx;
+  return [];
 }

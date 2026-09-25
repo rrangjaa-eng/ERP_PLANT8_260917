@@ -326,3 +326,8 @@ export async function changeProjectStatus(
   if (deps?.tx) await run(deps.tx);
   else await withTransaction(run);
 }
+
+export function isEndDatePassed(input: { status: string; endDate: string | null; todayKst: string }): boolean {
+  void input;
+  return false;
+}

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { db, pool } from "@/db/client";
-import { actionLog, documentCounters, projects, teams } from "@/db/schema";
+import { actionLog, documentCounters, projects, teams, users } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
@@ -12,6 +12,9 @@ import { changeProjectStatus, lastStatusChangeOn } from "@/domain/projects/statu
 import { applyAutoSettlement, loadProjectForGate } from "@/domain/projects/auto-transition";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { withTransaction } from "@/lib/db-transaction";
+import { setPermissionCell } from "@/domain/permissions/matrix";
+import { projectResponsibles } from "@/domain/projects/responsibles";
+import { teamLeadCandidatesAtDate } from "@/repositories/team-memberships";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { deferred } from "./lock-race";
 
@@ -412,5 +415,74 @@ describe("쓰기 경로의 잠금 안 선판정 · 경합 · 번호 연도 (04-1
     const logs = await settleLogs(projectId);
     expect(logs).toHaveLength(1);
     expect(logs[0]?.actorId).toBeNull();
+  });
+});
+
+describe("팀장 이름 출처 — teamLeadCandidatesAtDate 한 쿼리 (04-11 Task 3 · 사용자 D20 · 엔지 리뷰 A §1 P2)", () => {
+  async function namedViewer(roleId: string, name: string, teamId: string, effectiveFrom = "2020-01-01"): Promise<Viewer> {
+    const { userId } = await createAccount(SYSTEM_VIEWER, {
+      email: `lead-${randomUUID()}@example.test`,
+      name,
+      roleId,
+    });
+    await assignTeam(SYSTEM_VIEWER, { userId, teamId, effectiveFrom });
+    return { id: userId, roleId };
+  }
+
+  async function freshTeam(): Promise<string> {
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `본부-${randomUUID()}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `팀-${randomUUID()}` });
+    return team.id;
+  }
+
+  it("후보는 오늘 그 팀에 발령된 업무 범위 team + projects.status 쓰기 계급뿐이고, 여럿이면 이름순 첫 사람이 팀장이다", async () => {
+    const teamId = await freshTeam();
+    const today = kstToday(new Date());
+    await namedViewer("role-team-lead", "하팀장", teamId);
+    await namedViewer("role-team-lead", "가팀장", teamId);
+    await namedViewer("role-division-head", "나본부장", teamId); // 업무 범위 company — 후보 아님
+    await namedViewer(DEFAULT_ROLE_ID, "다피엠", teamId); // projects.status 쓰기 없음 — 후보 아님
+    const pm = await makeViewer(DEFAULT_ROLE_ID);
+
+    const candidates = await teamLeadCandidatesAtDate(SYSTEM_VIEWER, { teamId, date: today });
+    expect(candidates.map((candidate) => candidate.name).sort((a, b) => a.localeCompare(b, "ko"))).toEqual([
+      "가팀장",
+      "하팀장",
+    ]);
+    expect((await projectResponsibles(pm, { teamId, pmUserId: pm.id })).teamLeadName).toBe("가팀장");
+  });
+
+  it("보관된 옛 팀장은 후보가 아니다 — 다른 팀장이 있으면 그 이름, 없으면 null", async () => {
+    const teamId = await freshTeam();
+    const pm = await makeViewer(DEFAULT_ROLE_ID);
+    const oldLead = await namedViewer("role-team-lead", "가옛팀장", teamId);
+    await db.update(users).set({ archivedAt: new Date() }).where(eq(users.id, oldLead.id));
+
+    expect((await projectResponsibles(pm, { teamId, pmUserId: pm.id })).teamLeadName).toBeNull();
+
+    await namedViewer("role-team-lead", "하새팀장", teamId);
+    expect((await projectResponsibles(pm, { teamId, pmUserId: pm.id })).teamLeadName).toBe("하새팀장");
+  });
+
+  it("어제 다른 팀으로 옮긴 팀장은 오늘 옛 팀의 후보가 아니다", async () => {
+    const teamId = await freshTeam();
+    const otherTeamId = await freshTeam();
+    const today = kstToday(new Date());
+    const lead = await namedViewer("role-team-lead", "가옮긴팀장", teamId);
+    await assignTeam(SYSTEM_VIEWER, { userId: lead.id, teamId: otherTeamId, effectiveFrom: addDays(today, -1) });
+
+    expect(await teamLeadCandidatesAtDate(SYSTEM_VIEWER, { teamId, date: today })).toEqual([]);
+    expect((await teamLeadCandidatesAtDate(SYSTEM_VIEWER, { teamId: otherTeamId, date: today })).map((c) => c.name)).toEqual([
+      "가옮긴팀장",
+    ]);
+  });
+
+  it("권한표에서 projects.status 쓰기를 끈 계급의 사람은 후보가 아니다", async () => {
+    const teamId = await freshTeam();
+    const today = kstToday(new Date());
+    await namedViewer("role-team-lead", "가팀장", teamId);
+    await setPermissionCell(SYSTEM_VIEWER, { roleId: "role-team-lead", menu: "projects.status", action: "write", allowed: false });
+
+    expect(await teamLeadCandidatesAtDate(SYSTEM_VIEWER, { teamId, date: today })).toEqual([]);
   });
 });

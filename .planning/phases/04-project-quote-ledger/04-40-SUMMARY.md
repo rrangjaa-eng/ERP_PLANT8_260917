@@ -280,3 +280,23 @@ None - no external service configuration required.
 ---
 *Phase: 04-project-quote-ledger*
 *Completed: 2026-09-25*
+
+## 검토 반영 (Opus, Codex 대체 — 한도 풀리면 Codex 재확인 필요)
+
+리뷰: `/mnt/project-files/phase4-prep/04-40-review-opus.md` — **BLOCKING 0 · SHOULD-FIX 1 · NIT 7**
+
+**SHOULD-FIX 1 — 원화 밖 숫자 컬럼 overflow(PG 22003 → 500) 고침.** 네 입력 모두 실제 저장 경로(`saveQuoteLines`)에서 22003으로 재현(RED `fdb8e00`) 뒤 셀 오류로 막음(`6254858`):
+- 환율 `numeric(12,4)` ≥ 10^8 → `normalizeMoneyInput` `range` 「환율이 상한을 넘습니다 · 환율을 고쳐 주세요」(USD 0 · 환율 10억)
+- 외화 금액 `numeric(14,2)` |x| ≥ 10^12 → `range` 「외화 금액이 상한을 넘습니다 · 금액을 고쳐 주세요」(USD 1조 · 환율 0.0001)
+- 수량 `numeric(12,2)` (toFixed(2) 뒤) ≥ 10^10 → 수량 칸 「수량이 상한을 넘습니다 · 수량을 고쳐 주세요」
+- 차익 `profit_krw integer` 범위 밖 → 실행가 칸 「차익이 상한을 넘습니다 · 실행가를 고쳐 주세요」(견적 외 비용 실행가 −2,147,483,648)
+- 네 문구는 UI-SPEC rev 5 Copywriting에 없는 새 글자(기존 「… 상한을 넘습니다 · …을 고쳐 주세요」 틀) — UI-SPEC 반영 필요. 환율·외화 판정은 `normalizeMoneyInput` 안이라 총 매출 예상가·매출·리저브도 같이 막힌다.
+
+**NIT 7 — 이월(고치지 않음):**
+1. 복원·현재 차수 재확인의 상태 판정이 줄 종류별 권한(`actorCanWrite`)보다 먼저 — 「잠금 → 권한 → 상태」 문자 그대로 아님
+2. `quote.current-revision` 거부 로그에 줄 id 없음(`denyIds` 사용 권함)
+3. 범용 `archive(…, "quote_line", …)` 경로가 잠금·게이트 없이 보관 — 현재 도달 불가 잠복 우회
+4. GAP 1(`quoteAmountUnchanged`) 통합 증거 약함 — 소수 3자리 수량 + 실행가 변경 케이스 필요
+5. KRW 소수 금액이 조용히 반올림 — 「조용히 반올림하지 않는다」 주석이 과장
+6. `hasAtMostDecimals` 절대 오차 1e-6 — 큰 외화 금액의 정상 소수 2자리 오거부 가능(현재 도달 불가)
+7. KRW인데 환율 ≠ 1인 데모 줄은 승인 차수에서 실행가도 못 고침 — 이관 시 환율 1 보정 필요 여부 확인

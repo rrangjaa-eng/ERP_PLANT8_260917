@@ -1328,6 +1328,10 @@ export function QuoteLedger({
     });
   }
 
+  // 04-49(DR-3 · 계약 3) — 저장 요청 동안 화면의 편집기(견적 줄 표 · 매출 표 · 기간 칸 · 총 매출 예상가 칸)는 보이되 편집에
+  // 들어가지 않는다. 응답이 오면(성공·실패·거부 모두) isExecuting이 풀려 곧바로 다시 편집된다.
+  const saveLocked = isExecuting;
+
   // 04-30(엔지 r2 분할안) — 키보드 Ctrl+S는 표가 열린 셀 편집기를 먼저 커밋(blur)한 뒤 부른다. 그 커밋이
   // 상태에 반영된 다음 렌더에서 저장해야 활성 셀의 마지막 값이 페이로드에 든다.
   const [saveRequests, setSaveRequests] = useState(0);
@@ -1863,6 +1867,7 @@ export function QuoteLedger({
           onChange={changePeriod}
           onEscape={escapePeriod}
           onSave={handleSave}
+          saveLocked={saveLocked}
         />
       ) : null}
 
@@ -1875,6 +1880,7 @@ export function QuoteLedger({
           onChange={changePreEstimate}
           onEscape={escapePreEstimate}
           onSave={handleSave}
+          saveLocked={saveLocked}
         />
       ) : null}
 
@@ -1910,6 +1916,7 @@ export function QuoteLedger({
               : undefined
         }
         enableGridKeyboard
+        saveLocked={saveLocked}
         // 04-30(사용자 D10) — 할 수 없는 구조 동작은 키도 무동작이다(서버 structuralEditability).
         keyboard={{
           onDeleteRow: structural.archive
@@ -1956,7 +1963,7 @@ export function QuoteLedger({
       ) : null}
 
       {structural.insert && lines.length > 0 ? (
-        <button type="button" className={styles.addLineButton} onClick={() => addLine()}>
+        <button type="button" className={styles.addLineButton} onClick={() => (saveLocked ? undefined : addLine())}>
           줄 추가
         </button>
       ) : null}
@@ -2011,6 +2018,7 @@ export function QuoteLedger({
         onAddPaid={addPaid}
         canWriteEntries={canWriteEntries}
         balanceKrw={balanceKrw}
+        saveLocked={saveLocked}
       />
 
       {statusToast ? <Toast message={statusToast} onDismiss={() => setStatusToast(null)} /> : null}

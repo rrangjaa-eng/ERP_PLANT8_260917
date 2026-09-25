@@ -73,6 +73,7 @@ function CommaInput({
   dirty,
   error: fieldError,
   focusOnMount,
+  readOnly,
   onChange,
   onKeyDown,
 }: {
@@ -82,6 +83,7 @@ function CommaInput({
   dirty: boolean;
   error: string | undefined;
   focusOnMount: boolean;
+  readOnly: boolean;
   onChange: (text: string) => void;
   onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
 }) {
@@ -111,6 +113,7 @@ function CommaInput({
         inputMode={kind === "krw" ? "numeric" : "decimal"}
         autoComplete="off"
         value={value}
+        readOnly={readOnly}
         aria-invalid={error ? "true" : undefined}
         aria-describedby={error ? `${id}-error` : undefined}
         className={dirty ? `${styles.periodInput} ${styles.periodInputDirty}` : styles.periodInput}
@@ -136,6 +139,7 @@ export function PreEstimateField({
   onChange,
   onEscape,
   onSave,
+  saveLocked = false,
 }: {
   draft: PreEstimateDraft;
   baseline: PreEstimateDraft;
@@ -146,6 +150,8 @@ export function PreEstimateField({
   onChange: (next: PreEstimateDraft) => void;
   onEscape: () => void;
   onSave: () => void;
+  /** 04-49(DR-3) — 저장 요청 중. 칸은 값·포커스를 둔 채 readOnly, 통화 바꾸기·Esc 되돌리기는 무동작이다. */
+  saveLocked?: boolean;
 }) {
   // 칸 오류는 서버 저장과 같은 함수로 만든다(문구를 화면에서 새로 만들지 않는다).
   const errors = serverErrors.length > 0 ? serverErrors : validatePreEstimateChange(parsePreEstimateDraft(draft));
@@ -158,7 +164,7 @@ export function PreEstimateField({
     }
     if (event.key === "Escape") {
       event.preventDefault();
-      onEscape();
+      if (!saveLocked) onEscape();
       return;
     }
     if (event.ctrlKey && event.key.toLowerCase() === "s") {
@@ -180,6 +186,7 @@ export function PreEstimateField({
           dirty={draft.amount !== baseline.amount}
           error={errorOf("amount")}
           focusOnMount
+          readOnly={saveLocked}
           onChange={(amount) => onChange({ ...draft, amount })}
           onKeyDown={handleKeyDown}
         />
@@ -195,6 +202,7 @@ export function PreEstimateField({
           className={draft.currency !== baseline.currency ? styles.periodInputDirty : undefined}
           onChange={(event) => {
             const currency = event.target.value;
+            if (saveLocked) return;
             if (currency === "KRW" || currency === "USD") onChange({ ...draft, currency });
           }}
           onKeyDown={handleKeyDown}
@@ -209,6 +217,7 @@ export function PreEstimateField({
             dirty={draft.fxRate !== baseline.fxRate}
             error={errorOf("fxRate")}
             focusOnMount={false}
+            readOnly={saveLocked}
             onChange={(fxRate) => onChange({ ...draft, fxRate })}
             onKeyDown={handleKeyDown}
           />

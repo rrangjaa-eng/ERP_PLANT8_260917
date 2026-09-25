@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { isCtrlCombo } from "@/lib/shortcut";
 import styles from "./Table.module.css";
+import { isGridActionAllowed } from "./save-lock";
 import type { CellEditability, CellIssue, TableColumn } from "./types";
 import { conflictFocusTransition, useGridKeyboard, type ConflictFocusState, type GridPosition } from "./use-grid-keyboard";
 
@@ -60,6 +61,11 @@ export type TableProps<Row> = {
    * 편집 모드를 열지 않고(줄 삭제도 하지 않고) 이것만 부른다. 이유 표시는 호출부가 cellIssue `reason`으로 한다.
    */
   onBlockedEdit?: (row: Row, columnKey: string) => void;
+  /**
+   * 04-49(DR-3 · 계약 3) — 저장 요청 중. 격자 모양은 그대로 두고 `aria-busy`만 붙이며, 편집 진입·붙여넣기·구조·저장
+   * 동작을 `isGridActionAllowed`로 거른다(방향키·범위 선택은 된다).
+   */
+  saveLocked?: boolean;
 };
 
 type ActiveCell = { rowId: string; columnKey: string } | null;
@@ -95,8 +101,10 @@ export function Table<Row>({
   cellDirty,
   cellSaved,
   onBlockedEdit,
+  saveLocked = false,
 }: TableProps<Row>) {
   const [activeCell, setActiveCell] = useState<ActiveCell>(null);
+  const allowed = (action: Parameters<typeof isGridActionAllowed>[0]) => isGridActionAllowed(action, { saveLocked });
 
   // (가) — 편집 가능한 셀이 하나라도 있으면 role="grid" + --g-100 머리글,
   // 하나도 없으면 <table> + 시각적으로 숨긴 <caption> + 흰 머리글.
@@ -140,6 +148,7 @@ export function Table<Row>({
       if (!row || !column) return false;
       return activeCell?.rowId === getRowId(row) && activeCell.columnKey === column.key;
     },
+    saveLocked,
     handlers: {
       onEnterEdit: (pos) => {
         const row = flatRows[pos.row];
@@ -211,6 +220,15 @@ export function Table<Row>({
     if (target && !target.contains(active)) target.focus();
   }, [enableGridKeyboard, keyboardState.focus.row, keyboardState.focus.col]);
 
+  // 04-49 — 잠금이 걸리는 순간 표 안에 열려 있던 편집기는 버리지 않고 blur(커밋 입구)로 닫는다.
+  useEffect(() => {
+    if (!saveLocked) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active.matches("input, textarea, select") && tableRef.current?.contains(active)) {
+      active.blur();
+    }
+  }, [saveLocked]);
+
   useEffect(() => {
     if (!refocusCellRef.current || activeCell) return;
     refocusCellRef.current = false;
@@ -243,7 +261,7 @@ export function Table<Row>({
 
   if (rows.length === 0) {
     return (
-      <table className={styles.table}>
+      <table className={styles.table} aria-busy={saveLocked ? true : undefined}>
         <caption className="sr-only">{caption}</caption>
         <tbody>
           <tr>
@@ -253,12 +271,14 @@ export function Table<Row>({
                 <button
                   type="button"
                   className={styles.emptyAction}
-                  onClick={emptyAction.onClick}
+                  onClick={() => {
+                    if (allowed("newRow")) emptyAction.onClick();
+                  }}
                   onKeyDown={(event) => {
                     // 04-28 — 표시한 kbd(Ctrl+Enter)가 실제로 동작한다(C-07).
                     if (emptyAction.shortcut === "Ctrl+Enter" && isCtrlCombo(event, "Enter")) {
                       event.preventDefault();
-                      emptyAction.onClick();
+                      if (allowed("newRow")) emptyAction.onClick();
                     }
                   }}
                 >
@@ -302,6 +322,10 @@ export function Table<Row>({
 
   function handleTablePaste(event: React.ClipboardEvent<HTMLTableElement>) {
     if (!enableGridKeyboard || !onPasteAtCell) return;
+    if (!allowed("paste")) {
+      event.preventDefault();
+      return;
+    }
     // 편집 중인 셀의 <input>·<textarea>에서 bubbling된 paste는 그 칸의
     // 네이티브 붙여넣기(값 그대로 들어가 onChange가 처리)로 두고, 표
     // 수준 TSV 붙여넣기로 가로채지 않는다.
@@ -321,6 +345,7 @@ export function Table<Row>({
       ref={tableRef}
       className={[styles.table, hasEditableCell ? styles.editable : styles.readonly].join(" ")}
       role={hasEditableCell ? "grid" : undefined}
+      aria-busy={saveLocked ? true : undefined}
       onPaste={enableGridKeyboard ? handleTablePaste : undefined}
     >
       <caption className="sr-only">{caption}</caption>
@@ -403,7 +428,9 @@ export function Table<Row>({
                         ].join(" ")}
                         onClick={() => {
                           if (enableGridKeyboard) keyboardState.setFocus(pos);
-                          if (isEditableColumn && column.editCell) setActiveCell({ rowId, columnKey: column.key });
+                          if (isEditableColumn && column.editCell && allowed("enterEdit")) {
+                            setActiveCell({ rowId, columnKey: column.key });
+                          }
                         }}
                         onFocus={() => {
                           if (enableGridKeyboard) keyboardState.setFocus(pos);
@@ -415,7 +442,7 @@ export function Table<Row>({
                                 keyboardState.handleKeyDown(event, pos);
                               }
                             : (event) => {
-                                if ((event.key === "Enter" || event.key === " ") && isEditableColumn && column.editCell) {
+                                if ((event.key === "Enter" || event.key === " ") && isEditableColumn && column.editCell && allowed("enterEdit")) {
                                   event.preventDefault();
                                   setActiveCell({ rowId, columnKey: column.key });
                                 }

@@ -59,12 +59,14 @@ function AmountInput({
   kind = "krw",
   onCommit,
   className,
+  readOnly,
 }: {
   ariaLabel: string;
   value: number;
   kind?: NumberInputKind;
   onCommit: (amount: number) => void;
   className?: string;
+  readOnly: boolean;
 }) {
   const [committedValue, setCommittedValue] = useState(value);
   const [mountKey, setMountKey] = useState(0);
@@ -80,6 +82,7 @@ function AmountInput({
       initialValue={amountText(value)}
       kind={kind}
       className={className}
+      readOnly={readOnly}
       onCommit={(amount) => {
         setCommittedValue(amount);
         onCommit(amount);
@@ -93,12 +96,14 @@ function AmountInputField({
   initialValue,
   kind,
   className,
+  readOnly,
   onCommit,
 }: {
   ariaLabel: string;
   initialValue: string;
   kind: NumberInputKind;
   className?: string;
+  readOnly: boolean;
   onCommit: (amount: number) => void;
 }) {
   const { inputRef, value, onChange, error, rawValue } = useCommaInput(kind, initialValue);
@@ -130,6 +135,7 @@ function AmountInputField({
         type="text"
         inputMode={kind === "krw" ? "numeric" : "decimal"}
         value={value}
+        readOnly={readOnly}
         onChange={onChange}
         className={className}
       />
@@ -156,6 +162,7 @@ export function RevenueSection({
   onAddPaid,
   canWriteEntries,
   balanceKrw,
+  saveLocked = false,
 }: {
   contractDraft: ContractDraft;
   onContractChange: (patch: Partial<ContractDraft>) => void;
@@ -171,6 +178,8 @@ export function RevenueSection({
   onAddPaid: () => void;
   canWriteEntries: boolean;
   balanceKrw: number | undefined;
+  /** 04-49(DR-3 · 계약 3) — 저장 요청 중. 칸은 값을 보인 채 readOnly, 추가·통화 바꾸기는 무동작이다. */
+  saveLocked?: boolean;
 }) {
   const tablesVisible = issuedEntries !== undefined && paidEntries !== undefined;
 
@@ -188,6 +197,7 @@ export function RevenueSection({
             value={row.entryDate}
             onChange={(event) => onIssuedChange(row.clientKey, { entryDate: event.target.value })}
             className={styles.cellInput}
+            readOnly={saveLocked}
           />
         ) : (
           row.entryDate
@@ -202,6 +212,7 @@ export function RevenueSection({
       cell: (row) =>
         canWriteEntries ? (
           <AmountInput
+            readOnly={saveLocked}
             ariaLabel="발행액"
             value={row.amount}
             onCommit={(amount) => onIssuedChange(row.clientKey, { amount })}
@@ -224,6 +235,7 @@ export function RevenueSection({
             value={row.note ?? ""}
             onChange={(event) => onIssuedChange(row.clientKey, { note: event.target.value || null })}
             className={styles.cellInput}
+            readOnly={saveLocked}
           />
         ) : (
           (row.note ?? "—")
@@ -245,6 +257,7 @@ export function RevenueSection({
             value={row.entryDate}
             onChange={(event) => onPaidChange(row.clientKey, { entryDate: event.target.value })}
             className={styles.cellInput}
+            readOnly={saveLocked}
           />
         ) : (
           row.entryDate
@@ -259,6 +272,7 @@ export function RevenueSection({
       cell: (row) =>
         canWriteEntries ? (
           <AmountInput
+            readOnly={saveLocked}
             ariaLabel="입금액"
             value={row.amount}
             onCommit={(amount) => onPaidChange(row.clientKey, { amount })}
@@ -289,6 +303,7 @@ export function RevenueSection({
             value={row.note ?? ""}
             onChange={(event) => onPaidChange(row.clientKey, { note: event.target.value || null })}
             className={styles.cellInput}
+            readOnly={saveLocked}
           />
         ) : (
           (row.note ?? "—")
@@ -316,7 +331,9 @@ export function RevenueSection({
                 id="contract-currency"
                 aria-label="계약 금액 통화"
                 value={contractDraft.currency}
-                onChange={(event) => onContractChange({ currency: event.target.value as Currency, fxRateTouched: false })}
+                onChange={(event) => {
+                  if (!saveLocked) onContractChange({ currency: event.target.value as Currency, fxRateTouched: false });
+                }}
                 options={[
                   { value: "KRW", label: "KRW" },
                   { value: "USD", label: "USD" },
@@ -326,6 +343,7 @@ export function RevenueSection({
             ) : null}
             {canWriteContract ? (
               <AmountInput
+                readOnly={saveLocked}
                 ariaLabel="계약 금액"
                 value={contractDraft.amount}
                 kind={contractDraft.currency === "KRW" ? "krw" : "foreign"}
@@ -337,6 +355,7 @@ export function RevenueSection({
             )}
             {canWriteContract && contractDraft.currency !== "KRW" ? (
               <AmountInput
+                readOnly={saveLocked}
                 ariaLabel="계약 금액 환율"
                 value={contractDraft.fxRate}
                 kind="fxRate"
@@ -359,6 +378,7 @@ export function RevenueSection({
             getRowId={(row) => row.clientKey}
             emptyMessage="발행한 세금계산서가 없습니다"
             emptyAction={canWriteEntries ? { label: "발행 줄 추가", onClick: onAddIssued } : undefined}
+            saveLocked={saveLocked}
             footer={
               <tr>
                 <td colSpan={issuedColumns.length} className={styles.footerCell}>
@@ -368,7 +388,7 @@ export function RevenueSection({
             }
           />
           {canWriteEntries && (issuedEntries ?? []).length > 0 ? (
-            <button type="button" className={styles.addLineButton} onClick={onAddIssued}>
+            <button type="button" className={styles.addLineButton} onClick={() => (saveLocked ? undefined : onAddIssued())}>
               발행 줄 추가
             </button>
           ) : null}
@@ -380,6 +400,7 @@ export function RevenueSection({
             getRowId={(row) => row.clientKey}
             emptyMessage="입금 줄이 없습니다"
             emptyAction={canWriteEntries ? { label: "입금 줄 추가", onClick: onAddPaid } : undefined}
+            saveLocked={saveLocked}
             alwaysShowFooter
             footer={
               <tr>
@@ -391,7 +412,7 @@ export function RevenueSection({
             }
           />
           {canWriteEntries && (paidEntries ?? []).length > 0 ? (
-            <button type="button" className={styles.addLineButton} onClick={onAddPaid}>
+            <button type="button" className={styles.addLineButton} onClick={() => (saveLocked ? undefined : onAddPaid())}>
               입금 줄 추가
             </button>
           ) : null}

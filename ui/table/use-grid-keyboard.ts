@@ -2,6 +2,7 @@
 
 import { useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { isCtrlCombo } from "@/lib/shortcut";
+import { isGridActionAllowed } from "./save-lock";
 
 // SYSTEM.md §7-3 보강 (아) — `role="grid"` 키보드 계약. 표 전체가 탭 정지
 // **1개**이고(로빙 tabindex — 이 훅이 관리하는 `focus` 좌표만 tabIndex=0),
@@ -37,6 +38,8 @@ export type UseGridKeyboardParams = {
   isEditing: (pos: GridPosition) => boolean;
   /** 04-30(DR-35) — 편집기가 있는 열인데 이 셀은 편집 단계가 아니다(잠김·읽기 전용). */
   isBlockedCell?: (pos: GridPosition) => boolean;
+  /** 04-49(DR-3) — 저장 요청 중. 편집 진입·구조·저장 키는 무동작이고 방향키·범위 선택은 된다. */
+  saveLocked?: boolean;
   handlers: GridKeyboardHandlers;
 };
 
@@ -89,6 +92,7 @@ export function useGridKeyboard({
   isEditableCell,
   isEditing,
   isBlockedCell,
+  saveLocked = false,
   handlers,
 }: UseGridKeyboardParams): UseGridKeyboardResult {
   const [focus, setFocusState] = useState<GridPosition>({ row: 0, col: 0 });
@@ -124,12 +128,15 @@ export function useGridKeyboard({
   }
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLElement>, pos: GridPosition) {
+    // 04-49 — 한글 조합 중인 키는 격자 동작을 시작하지 않는다(조합 확정 Enter가 편집을 열지 않게).
+    if (event.nativeEvent.isComposing) return;
     const editing = isEditing(pos);
+    const allowed = (action: Parameters<typeof isGridActionAllowed>[0]) => isGridActionAllowed(action, { saveLocked });
 
     // 줄 이동은 방향키보다 먼저 판정한다(Alt+↑/↓가 일반 방향키 이동과 겹친다).
     if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
       event.preventDefault();
-      handlers.onMoveRow?.(pos.row, event.key === "ArrowUp" ? "up" : "down");
+      if (allowed("moveRow")) handlers.onMoveRow?.(pos.row, event.key === "ArrowUp" ? "up" : "down");
       return;
     }
 
@@ -139,9 +146,13 @@ export function useGridKeyboard({
     // 여기 걸리지 않아 입력의 기본 동작 그대로다.
     if (event.ctrlKey && ["enter", "d", "s"].includes(event.key.toLowerCase())) {
       event.preventDefault();
-      if (isCtrlCombo(event, "Enter")) handlers.onNewRow?.(pos.row);
-      else if (isCtrlCombo(event, "d")) handlers.onDuplicateRow?.(pos.row);
-      else if (isCtrlCombo(event, "s")) handlers.onSave?.();
+      if (isCtrlCombo(event, "Enter")) {
+        if (allowed("newRow")) handlers.onNewRow?.(pos.row);
+      } else if (isCtrlCombo(event, "d")) {
+        if (allowed("duplicateRow")) handlers.onDuplicateRow?.(pos.row);
+      } else if (isCtrlCombo(event, "s")) {
+        if (allowed("save")) handlers.onSave?.();
+      }
       return;
     }
 
@@ -179,7 +190,7 @@ export function useGridKeyboard({
       case " ":
         if (isEditableCell(pos)) {
           event.preventDefault();
-          handlers.onEnterEdit?.(pos);
+          if (allowed("enterEdit")) handlers.onEnterEdit?.(pos);
         } else if (blocked) {
           event.preventDefault();
           handlers.onBlockedEdit?.(pos);
@@ -194,7 +205,7 @@ export function useGridKeyboard({
       case "Backspace":
         event.preventDefault();
         if (blocked) handlers.onBlockedEdit?.(pos);
-        else handlers.onDeleteRow?.(pos.row);
+        else if (allowed("deleteRow")) handlers.onDeleteRow?.(pos.row);
         break;
       default:
         // 글자 입력(한 글자 키, 조합 키 없음) — 막힌 셀이면 이유만.

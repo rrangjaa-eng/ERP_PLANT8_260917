@@ -23,6 +23,7 @@ export function PeriodField({
   onChange,
   onEscape,
   onSave,
+  saveLocked = false,
 }: {
   draft: PeriodDraft;
   baseline: PeriodDraft;
@@ -35,6 +36,8 @@ export function PeriodField({
   onChange: (next: PeriodDraft) => void;
   onEscape: () => void;
   onSave: () => void;
+  /** 04-49(DR-3) — 저장 요청 중. 두 칸은 값·포커스를 둔 채 readOnly가 되고 Esc 되돌리기도 무동작이다. */
+  saveLocked?: boolean;
 }) {
   const startRef = useRef<HTMLInputElement>(null);
   const endRef = useRef<HTMLInputElement>(null);
@@ -58,7 +61,7 @@ export function PeriodField({
     }
     if (event.key === "Escape") {
       event.preventDefault();
-      onEscape();
+      if (!saveLocked) onEscape();
       return;
     }
     if (event.ctrlKey && event.key.toLowerCase() === "s") {
@@ -91,6 +94,7 @@ export function PeriodField({
               autoComplete="off"
               placeholder="2026-09-18"
               value={draft[field.key]}
+              readOnly={saveLocked}
               aria-invalid={error ? "true" : undefined}
               aria-describedby={error ? `${id}-error` : undefined}
               className={dirty ? `${styles.periodInput} ${styles.periodInputDirty}` : styles.periodInput}

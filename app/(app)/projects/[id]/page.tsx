@@ -129,7 +129,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       preEstimate={{ value: project.preEstimate ?? null, canEdit: canEditPreEstimate }}
       canSave={canSave}
       projectName={project.name}
-      subtitle={`${project.number} · 상세 견적 ${revision.seq}차 · ${statusLabel} ${statusSince}`}
+      subtitle={`${project.number} · 상세 견적 ${revision.seq}차`}
+      statusSinceText={`${statusLabel} ${statusSince}`}
       statusLabel={statusLabel}
       statusTagKind={PROJECT_STATUS_TAG_KIND[status]}
       statusChange={statusChange}

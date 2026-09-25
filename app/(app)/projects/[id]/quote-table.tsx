@@ -721,6 +721,7 @@ export function QuoteLedger({
   canSave,
   projectName,
   subtitle,
+  statusSinceText,
   statusLabel,
   statusTagKind,
   statusChange,
@@ -747,8 +748,10 @@ export function QuoteLedger({
   /** 04-22(A-12) — 1차 「일괄 저장」 렌더 조건(서버 계산). */
   canSave: boolean;
   projectName: string;
-  /** `{번호} · 상세 견적 {n}차 · {상태} {마지막 변경일}` — 서버가 만든다(D-50). */
+  /** `{번호} · 상세 견적 {n}차` — 서버가 만든다. */
   subtitle: string;
+  /** `{상태} {마지막 변경일}`(D-50) — 부제 마지막 항목. 총 매출 예상가 뒤에 온다(UI-SPEC S3). */
+  statusSinceText: string;
   statusLabel: string;
   statusTagKind: StatusTagKind;
   statusChange: StatusChangeProps | null;
@@ -1654,6 +1657,7 @@ export function QuoteLedger({
               ) : null}
             </p>
           )}
+          <p className={styles.periodLine}>{statusSinceText}</p>
         </div>
         <span className={styles.statusLine}>
           <StatusTag kind={statusTagKind} variant="tag">

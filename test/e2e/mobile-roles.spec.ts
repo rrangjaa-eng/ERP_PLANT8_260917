@@ -53,7 +53,7 @@ test.describe("폰 375 /admin/people/roles 가로 스크롤 금지 · 머리글 
 
     const headers = page.locator("th");
     const count = await headers.count();
-    expect(count).toBe(4);
+    expect(count).toBe(5);
     for (let i = 0; i < count; i += 1) {
       const lineCount = await headers.nth(i).evaluate((el) => {
         const range = document.createRange();

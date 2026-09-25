@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 
 // SYSTEM.md §7-3 보강 (마) — 미저장 편집 복원(D-68). dirty 셀이 하나라도
 // 있으면 이탈을 경고하고, 편집은 브라우저 저장소에 임시 보관한다. 키는
@@ -90,6 +90,9 @@ function browserStorage(): DirtyStorageLike | null {
   }
 }
 
+// 04-49(#418) — 수화가 끝났는가. 서버 렌더와 수화 중 첫 렌더는 거짓(저장소를 모른다), 그 뒤는 참이다.
+const subscribeNothing = () => () => {};
+
 export function useDirtyStorage(scopeId: string, subScopeId: string, dirtyCount: number): UseDirtyStorageResult {
   // 지연 초기화(lazy initializer) — 마운트 시점 한 번만 저장소를 읽는다.
   // useEffect + setState로 하면 "마운트 뒤 setState"가 불필요한 캐스케이드
@@ -97,7 +100,11 @@ export function useDirtyStorage(scopeId: string, subScopeId: string, dirtyCount:
   // 동기화할 대상이 아니라 세션 시작 시점의 스냅샷 한 번이면 충분하다(이후
   // 편집이 같은 키에 계속 쓰여도 배너 숫자는 바뀌지 않는다 — "복원 대상"은
   // 이전 세션이 남긴 것이지 지금 편집 중인 것이 아니다).
-  const [restorableCount, setRestorableCount] = useState(() => readRestorableCount(browserStorage(), scopeId, subScopeId));
+  const [storedCount, setRestorableCount] = useState(() => readRestorableCount(browserStorage(), scopeId, subScopeId));
+  // 서버는 저장소를 읽지 못해 0으로 그린다 — 수화 중 첫 렌더도 0으로 맞춰 복원 줄의 서버 HTML과 어긋나지 않게 하고,
+  // 수화 뒤에 마운트 때 읽은 칸 수를 보인다(React #418).
+  const hydrated = useSyncExternalStore(subscribeNothing, () => true, () => false);
+  const restorableCount = hydrated ? storedCount : 0;
 
   useEffect(() => {
     if (typeof window === "undefined") return;

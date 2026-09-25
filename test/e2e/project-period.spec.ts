@@ -61,6 +61,13 @@ async function makeProject(input: {
   return { id: created.id, number: created.number, name };
 }
 
+// 서버 액션(일괄 저장) 응답 — 저장 성공 신호가 화면 글자 변화뿐일 때 먼저 기다린다.
+function waitForSaveAction(page: Page) {
+  return page.waitForResponse(
+    (response) => response.request().method() === "POST" && response.request().headers()["next-action"] !== undefined,
+  );
+}
+
 function headerTag(page: Page, label: string): Locator {
   return page.getByText(label, { exact: true }).filter({ visible: true });
 }
@@ -148,5 +155,48 @@ test.describe("날짜로 움직이는 상세 (04-11, PROJ-04)", () => {
     const pmNote = headerTag(page, `종료일 지남 · 팀장 ${leadName}`);
     await expect(pmNote).toBeVisible();
     expect(await hasTokenColor(pmNote, "--warning")).toBe(true);
+  });
+});
+
+// 04-22(D-80 · S13 · 엔지 리뷰 A P1 · ENG-D2 · 사용자 결정 2026-09-25 「기간만 수정」) — 상세 기간 칸.
+// 계급 권한·정보 노출을 손으로 켜지 않는다 — 시드(04-20 · 04-22 projects.period)만으로 팀장이 고친다.
+test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
+  test("(3) 같은 팀 팀장이 정산 프로젝트의 종료일을 늦추면 진행으로 돌아가고, 새로 고치지 않은 둘째 기간 저장도 통과한다", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const lead = await makeAccount("role-team-lead", team, `팀장${randomUUID().slice(0, 6)}`);
+    const endDate = addDays(TODAY, -1);
+    const startDate = addDays(endDate, -3);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "settling", endDate });
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
+    await expect(headerTag(page, "정산")).toBeVisible();
+    await expect(page.getByText(`기간 ${startDate} ~ ${endDate}`, { exact: true })).toBeVisible();
+
+    const firstEnd = addDays(TODAY, 7);
+    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    await page.getByLabel("종료일").fill(firstEnd);
+    await expect(page.getByText("저장하면 진행으로 돌아감", { exact: true })).toBeVisible();
+    const firstSave = waitForSaveAction(page);
+    await page.getByRole("button", { name: /일괄 저장 1/ }).click();
+    await firstSave;
+
+    await expect(headerTag(page, "진행")).toBeVisible();
+    await expect(page.getByText(`기간 ${startDate} ~ ${firstEnd}`, { exact: true })).toBeVisible();
+
+    const secondEnd = addDays(TODAY, 9);
+    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    await page.getByLabel("종료일").fill(secondEnd);
+    const secondSave = waitForSaveAction(page);
+    await page.getByRole("button", { name: /일괄 저장 1/ }).click();
+    await secondSave;
+
+    await expect(page.getByText(`기간 ${startDate} ~ ${secondEnd}`, { exact: true })).toBeVisible();
+    await expect(page.getByText("다른 사람이 먼저 기간을 바꿈 · 새로 고침")).toHaveCount(0);
+    const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
+    expect(row?.status).toBe("in_progress");
+    expect(row?.endDate).toBe(secondEnd);
   });
 });

@@ -6,7 +6,7 @@ import { codeItems, projects, quoteLines, quoteRevisions } from "@/db/schema";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
-import { customerApprovalColumns } from "@/domain/quotes/revisions";
+import { createRevisionFromCurrent, customerApprovalColumns } from "@/domain/quotes/revisions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
@@ -475,5 +475,228 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
     await expect(page.getByRole("button", { name: "고객 승인 표시", exact: true })).toBeVisible();
     await expect(quoteCell(page, 0, COL.quantity)).toHaveAttribute("aria-readonly", "false");
     await expect(page.getByText(APPROVED_REASON, { exact: true })).toHaveCount(0);
+  });
+});
+
+// 04-24 Task 3 — 차수 준비. 줄이 없는 차수는 DB 행으로(준비 SQL), 줄을 복사하는 차수는 도메인 함수로 만든다.
+async function addEmptyRevision(projectId: string, seq: number): Promise<string> {
+  const [row] = await db.insert(quoteRevisions).values({ projectId, seq }).returning({ id: quoteRevisions.id });
+  if (!row) throw new Error("차수를 넣지 못했습니다");
+  return row.id;
+}
+
+async function copyRevision(projectId: string, fromRevisionId: string): Promise<string> {
+  return (await createRevisionFromCurrent(SYSTEM_VIEWER, { projectId, fromRevisionId })).revisionId;
+}
+
+function revisionTable(page: Page): Locator {
+  return page.locator("table", { has: page.locator("caption", { hasText: /^차수$/ }) });
+}
+
+function previousTable(page: Page, seq: number): Locator {
+  return page.locator("table", { has: page.locator("caption", { hasText: new RegExp(`^상세 견적 ${seq}차 견적 줄$`) }) });
+}
+
+// 데이터 행(칸이 둘 이상)의 칸 글자. 그룹 머리·폰 접힌 줄(칸 하나)은 뺀다.
+async function dataRowTexts(table: Locator): Promise<string[][]> {
+  return table.locator("tbody tr").evaluateAll((rows) =>
+    rows
+      .filter((row) => (row as HTMLTableRowElement).cells.length > 1)
+      .map((row) => Array.from((row as HTMLTableRowElement).cells).map((cell) => (cell.textContent ?? "").trim())),
+  );
+}
+
+test.describe("차수 섹션과 이전 차수 읽기 섹션 (04-24 Task 3 — S5 · U-2 · DR-13)", () => {
+  test("차수 셋(1차 승인 · 2차 · 3차 최신) → 3차·2차·1차, 상태 현재·빈 칸·승인, 3차 동작 빈 칸 · 차수 하나면 「차수 열기」 없음", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "차수 줄", unitPrice: 100_000, execution: 50_000 }] });
+    await approveInDb(project.revisionId, pm.userId);
+    await addEmptyRevision(project.id, 2);
+    await addEmptyRevision(project.id, 3);
+    const single = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "한 차수 줄", unitPrice: 100_000, execution: 50_000 }] });
+    await login(page, pm);
+
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name: "차수", exact: true })).toBeVisible();
+    const table = revisionTable(page);
+    await expect(table).toBeVisible();
+    await expect(table).not.toHaveAttribute("role", "grid");
+    const rows = await dataRowTexts(table);
+    expect(rows.map((cells) => cells[0])).toEqual(["3차", "2차", "1차"]);
+    expect(rows.map((cells) => cells[4])).toEqual(["현재", "", "승인"]);
+    expect(rows[0]?.[5]).toBe("");
+    const openButtons = table.getByRole("button", { name: "차수 열기" });
+    await expect(openButtons).toHaveCount(2);
+    await expect(openButtons.first()).toHaveAttribute("aria-expanded", "false");
+
+    await page.goto(`/projects/${single.id}`);
+    await expect(revisionTable(page)).toBeVisible();
+    await expect(page.getByRole("button", { name: "차수 열기" })).toHaveCount(0);
+  });
+
+  test("U-2 ⓐ·ⓑ — 최신이면서 승인된 2차는 `승인`만, 1차는 빈 칸 · 폰 접힌 줄이 빈 상태 자리를 건너뛴다", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "U-2 줄", unitPrice: 100_000, execution: 50_000 }] });
+    const second = await addEmptyRevision(project.id, 2);
+    await approveInDb(second, pm.userId);
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+
+    const table = revisionTable(page);
+    const rows = await dataRowTexts(table);
+    expect(rows.map((cells) => cells[4])).toEqual(["승인", ""]);
+    expect(rows[0]?.[5]).toBe("");
+    await expect(table.getByText("현재", { exact: true })).toHaveCount(0);
+
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.reload();
+    const folded = await revisionTable(page)
+      .locator("tbody tr")
+      .evaluateAll((trs) =>
+        trs.filter((row) => (row as HTMLTableRowElement).cells.length === 1).map((row) => (row.textContent ?? "").trim()),
+      );
+    expect(folded.every((text) => !text.startsWith("·"))).toBe(true);
+    expect(folded).toContain(`${TODAY} · 1줄`);
+  });
+
+  test("「차수 열기」 → 버튼 토글 · 제목 포커스 · 캡션 읽기 표(편집·저장 없음) · 머리글 순서 · 한 번에 하나 · 닫으면 버튼 포커스 · 다시 열어도 요청 없음", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({
+      teamId: team.id,
+      pmUserId: pm.userId,
+      lines: [
+        { itemName: "1차 무대", unitPrice: 1_000_000, execution: 600_000 },
+        { itemName: "1차 조명", unitPrice: 500_000, execution: 300_000 },
+      ],
+    });
+    const second = await copyRevision(project.id, project.revisionId);
+    await copyRevision(project.id, second);
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await expect(quoteRows(page)).toHaveCount(2);
+
+    const table = revisionTable(page);
+    const rowOf = (seq: number) => table.locator("tbody tr").filter({ has: page.getByRole("cell", { name: `${seq}차`, exact: true }) });
+    let requests = 0;
+    page.on("request", (request) => {
+      if (isServerAction(request)) requests++;
+    });
+
+    const open1 = rowOf(1).getByRole("button");
+    await open1.click();
+    await expect(open1).toHaveAttribute("aria-expanded", "true");
+    await expect(open1).toHaveText("차수 닫기");
+    const heading1 = page.getByRole("heading", { name: "상세 견적 1차", exact: true });
+    await expect(heading1).toBeFocused();
+    const readTable = previousTable(page, 1);
+    await expect(readTable).toBeVisible();
+    await expect(readTable).not.toHaveAttribute("role", "grid");
+    await expect(readTable.getByText("1차 무대", { exact: true })).toBeVisible();
+    const controls = await open1.getAttribute("aria-controls");
+    expect(controls).toBeTruthy();
+    const section = page.locator(`[id="${controls}"]`).locator("xpath=ancestor-or-self::section[1]");
+    await expect(section.locator("input, select, textarea")).toHaveCount(0);
+    await expect(section.getByRole("button")).toHaveCount(0);
+    await expect(section.getByText("조정", { exact: true })).toHaveCount(0);
+    const currentHeaders = await quoteTable(page).locator("thead th").allTextContents();
+    expect(await readTable.locator("thead th").allTextContents()).toEqual(currentHeaders);
+    expect(requests).toBe(1);
+
+    const open2 = rowOf(2).getByRole("button");
+    await open2.click();
+    await expect(page.getByRole("heading", { name: "상세 견적 2차", exact: true })).toBeFocused();
+    await expect(heading1).toHaveCount(0);
+    await expect(open1).toHaveText("차수 열기");
+    await expect(open1).toHaveAttribute("aria-expanded", "false");
+
+    await open2.click();
+    await expect(page.getByRole("heading", { name: "상세 견적 2차", exact: true })).toHaveCount(0);
+    await expect(open2).toBeFocused();
+    await expect(open2).toHaveText("차수 열기");
+
+    const before = requests;
+    await open1.click();
+    await expect(previousTable(page, 1)).toBeVisible();
+    await expect(readTable.getByText("1차 무대", { exact: true })).toBeVisible();
+    expect(requests).toBe(before);
+  });
+
+  test("현재 표 셀 하나를 고친 채 차수를 열고 닫아도 「일괄 저장 1」 · 고친 값 · URL 그대로(DR-13)", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "원장 줄", unitPrice: 1_000_000, execution: 400_000 }] });
+    await copyRevision(project.id, project.revisionId);
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await editTextCell(page, 0, COL.itemName, "고친 원장 줄");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+    const url = page.url();
+
+    const toggle = revisionTable(page).getByRole("button", { name: "차수 열기" });
+    await toggle.click();
+    await expect(previousTable(page, 1)).toBeVisible();
+    await toggle.click();
+    await expect(previousTable(page, 1)).toHaveCount(0);
+
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+    await expect(quoteCell(page, 0, COL.itemName)).toHaveText(/^고친 원장 줄/);
+    expect(page.url()).toBe(url);
+  });
+
+  test("첫 요청이 끊기면 섹션 자리에 `1차 불러오지 못함` + 「다시 시도」, 원장 무영향 → 다시 시도하면 읽기 표", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "오류 확인 줄", unitPrice: 1_000_000, execution: 400_000 }] });
+    await copyRevision(project.id, project.revisionId);
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await expect(quoteRows(page)).toHaveCount(1);
+
+    let aborted = false;
+    await page.route(`**/projects/${project.id}`, async (route) => {
+      if (!aborted && isServerAction(route.request())) {
+        aborted = true;
+        await route.abort();
+        return;
+      }
+      await route.continue();
+    });
+
+    await revisionTable(page).getByRole("button", { name: "차수 열기" }).click();
+    await expect(page.getByText("1차 불러오지 못함", { exact: true })).toBeVisible();
+    await expect(previousTable(page, 1)).toHaveCount(0);
+    await expect(quoteRows(page)).toHaveCount(1);
+
+    await page.getByRole("button", { name: "다시 시도" }).click();
+    await expect(previousTable(page, 1)).toBeVisible();
+    await expect(page.getByText("1차 불러오지 못함", { exact: true })).toHaveCount(0);
+  });
+
+  test("31줄 이전 차수는 합계 행 `31줄` · 번호 1~31 · 0줄 이전 차수는 `이 차수에 견적 줄이 없습니다`(버튼 없음)", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const lines = Array.from({ length: 31 }, (_, index) => ({ itemName: `긴 차수 ${index + 1}`, unitPrice: 10_000, execution: 5_000 }));
+    const long = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines });
+    await copyRevision(long.id, long.revisionId);
+    const empty = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [] });
+    await addEmptyRevision(empty.id, 2);
+    await login(page, pm);
+
+    await page.goto(`/projects/${long.id}`);
+    await revisionTable(page).getByRole("button", { name: "차수 열기" }).click();
+    const readTable = previousTable(page, 1);
+    await expect(readTable.locator("tfoot")).toContainText("합계 (공급가액 · 31줄)");
+    const numbers = (await dataRowTexts(readTable)).map((cells) => cells[0]);
+    expect(numbers).toEqual(Array.from({ length: 31 }, (_, index) => String(index + 1)));
+
+    await page.goto(`/projects/${empty.id}`);
+    await revisionTable(page).getByRole("button", { name: "차수 열기" }).click();
+    await expect(page.getByText("이 차수에 견적 줄이 없습니다", { exact: true })).toBeVisible();
+    const heading = page.getByRole("heading", { name: "상세 견적 1차", exact: true });
+    await expect(heading).toBeFocused();
+    await expect(page.locator("section", { has: heading }).getByRole("button")).toHaveCount(0);
   });
 });

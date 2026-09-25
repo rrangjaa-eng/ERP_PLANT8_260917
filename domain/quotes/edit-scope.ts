@@ -99,3 +99,28 @@ export function quoteLockReason(input: { status: string }): string | null {
 export function linkedDocumentReason(number: string): string {
   return `지출결의 ${number} 연결됨 · 고치려면 새 차수`;
 }
+
+// 04-30 RED 스텁 — 시그니처만. 구현은 GREEN 커밋.
+export type QuoteHintKey = "move" | "paste" | "cancel" | "newRow" | "moveRow" | "duplicateRow" | "save";
+
+export function tableLockLine(input: { status: string; hasEditableCells: boolean; lineCount: number }): string | null {
+  void input;
+  return null;
+}
+
+export type QuoteTableEmptyState = { message: string; action?: { kind: "addLine" | "openPeriodEnd"; label: string } };
+
+export function quoteTableEmptyState(input: {
+  status: string;
+  canAddLine: boolean;
+  periodRights: "lead" | "pm" | "none";
+  pmName: string | null;
+}): QuoteTableEmptyState {
+  void input;
+  return { message: "" };
+}
+
+export function visibleHintKeys(allKeys: readonly QuoteHintKey[], structural: StructuralEditability): QuoteHintKey[] {
+  void structural;
+  return [...allKeys];
+}

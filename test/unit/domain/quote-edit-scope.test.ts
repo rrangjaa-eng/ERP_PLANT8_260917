@@ -7,7 +7,11 @@ import {
   orderChange,
   quoteCellsZero,
   quoteLockReason,
+  quoteTableEmptyState,
   structuralEditability,
+  tableLockLine,
+  visibleHintKeys,
+  type QuoteHintKey,
 } from "@/domain/quotes/edit-scope";
 
 // 04-12(D-78 · 사용자 D10·D12 · UI-SPEC rev 5 S4) — 셀 단계 결정표. 게이트 규칙과 DTO가 같은 함수를 부른다.
@@ -160,5 +164,93 @@ describe("orderChange — 순서 판정(엔지 리뷰 A §2 P2)", () => {
   it("기존 줄 상대 순서가 바뀌면 reorder", () => {
     expect(orderChange(["a", "b", "c"], ["b", "a", "c"], none)).toBe("reorder");
     expect(orderChange(["a", "b", "c"], ["c", "n", "a", "b"], { archivedIds: [], newIds: ["n"] })).toBe("reorder");
+  });
+});
+
+// 04-30(DR-2 · P0 · UI-SPEC rev 5 S4 「표 위 한 줄」) — 표 위 잠김 줄 = 잠긴 셀 이유(quoteLockReason) 한 문자열.
+describe("tableLockLine — 표 위 잠김 줄", () => {
+  it("정산 + 편집 셀 있음 + 줄 ≥ 1 → 정산 이유(quoteLockReason과 같은 문자열)", () => {
+    expect(tableLockLine({ status: "settling", hasEditableCells: true, lineCount: 2 })).toBe("정산 · 실행가와 새 줄만");
+    expect(tableLockLine({ status: "settling", hasEditableCells: true, lineCount: 2 })).toBe(quoteLockReason({ status: "settling" }));
+  });
+
+  it("완료 + 편집 셀 없음(PM 읽기 표) → null, 완료 + 편집 셀 있음(경영관리 격자) → 완료 이유", () => {
+    expect(tableLockLine({ status: "completed", hasEditableCells: false, lineCount: 3 })).toBeNull();
+    expect(tableLockLine({ status: "completed", hasEditableCells: true, lineCount: 3 })).toBe("완료 · 견적 줄 잠김");
+  });
+
+  it("줄 0개 → null(정산이어도)", () => {
+    expect(tableLockLine({ status: "settling", hasEditableCells: true, lineCount: 0 })).toBeNull();
+  });
+
+  it("수주중·진행·미수주 → null", () => {
+    for (const status of ["bidding", "in_progress", "lost"]) {
+      expect(tableLockLine({ status, hasEditableCells: true, lineCount: 2 })).toBeNull();
+    }
+  });
+});
+
+// 04-30(UI-SPEC rev 5 Copywriting `Empty — 견적 줄 표`) — 우선순위 ① 첫 줄 만들기 ③ 기간 바꾸기 ④ 담당 PM ⑤ 완료 사실.
+describe("quoteTableEmptyState — 0줄 표의 한 줄", () => {
+  const message = "이 프로젝트에 견적 줄이 없습니다";
+
+  it("줄을 추가할 수 있으면(진행·정산의 담당 PM) 「첫 줄 만들기」", () => {
+    for (const status of ["in_progress", "settling"]) {
+      expect(quoteTableEmptyState({ status, canAddLine: true, periodRights: "pm", pmName: "김담당" })).toEqual({
+        message,
+        action: { kind: "addLine", label: "첫 줄 만들기" },
+      });
+    }
+  });
+
+  it("줄 추가 가능이 기간 권리보다 우선", () => {
+    expect(quoteTableEmptyState({ status: "settling", canAddLine: true, periodRights: "lead", pmName: "김담당" }).action?.kind).toBe("addLine");
+  });
+
+  it("진행 + 줄 추가 불가 → 「· 담당 PM {이름}」(버튼 없음)", () => {
+    expect(quoteTableEmptyState({ status: "in_progress", canAddLine: false, periodRights: "lead", pmName: "김담당" })).toEqual({
+      message: `${message} · 담당 PM 김담당`,
+    });
+  });
+
+  it("정산 + 줄 추가 불가 + 기간 권리 lead → 「기간 바꾸기」(종료일 칸)", () => {
+    expect(quoteTableEmptyState({ status: "settling", canAddLine: false, periodRights: "lead", pmName: "김담당" })).toEqual({
+      message,
+      action: { kind: "openPeriodEnd", label: "기간 바꾸기" },
+    });
+  });
+
+  it("정산 + 줄 추가 불가 + 그 밖 → 「· 담당 PM {이름}」", () => {
+    expect(quoteTableEmptyState({ status: "settling", canAddLine: false, periodRights: "none", pmName: "김담당" })).toEqual({
+      message: `${message} · 담당 PM 김담당`,
+    });
+  });
+
+  it("완료 → 사실만(버튼·꼬리 없음)", () => {
+    expect(quoteTableEmptyState({ status: "completed", canAddLine: false, periodRights: "lead", pmName: "김담당" })).toEqual({ message });
+  });
+});
+
+// 04-30(C-07 · UI-SPEC rev 5 S4 「힌트 줄」) — 04-28 힌트 항목에서 그 사람에게 없는 구조 동작과 `저장`을 뺀다.
+describe("visibleHintKeys — 힌트 줄 거르기", () => {
+  const all: QuoteHintKey[] = ["move", "paste", "cancel", "newRow", "moveRow", "duplicateRow", "save"];
+
+  it("정산(새 줄만) → 줄 이동·줄 복제가 빠지고 새 줄은 남는다", () => {
+    expect(visibleHintKeys(all, structuralEditability({ status: "settling", canWrite: true }))).toEqual(["move", "paste", "cancel", "newRow"]);
+  });
+
+  it("완료(전부 거짓) → 새 줄·줄 이동·줄 복제가 빠진다", () => {
+    expect(visibleHintKeys(all, structuralEditability({ status: "completed", canWrite: true }))).toEqual(["move", "paste", "cancel"]);
+  });
+
+  it("진행 → 구조 키가 그대로, 어느 경우든 저장은 없다", () => {
+    expect(visibleHintKeys(all, structuralEditability({ status: "in_progress", canWrite: true }))).toEqual([
+      "move",
+      "paste",
+      "cancel",
+      "newRow",
+      "moveRow",
+      "duplicateRow",
+    ]);
   });
 });

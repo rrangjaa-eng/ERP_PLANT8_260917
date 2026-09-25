@@ -579,6 +579,18 @@ describe("차수 요약 · 이전 차수 잠김 조회(04-14 Task 3, 실제 Post
     expect(Object.keys(row ?? {})).toEqual(expect.arrayContaining(["revisionId", "seq", "createdOn", "lineCount", "statusWord", "contentToken"]));
   });
 
+  it("(s5) 차수 요약도 findProject 기준 — 보관된 프로젝트(보관함 권한 없음) · 없는 프로젝트는 빈 목록", async () => {
+    const { project, revisionId } = await setupProject();
+    await insertLine(revisionId);
+    const reader = await makeViewer(readerMenus);
+    expect(await listRevisionSummaries(reader, project.id)).toHaveLength(1);
+
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, project.id));
+
+    expect(await listRevisionSummaries(reader, project.id)).toEqual([]);
+    expect(await listRevisionSummaries(reader, randomUUID())).toEqual([]);
+  });
+
   it("(s3) 이전 차수 잠김 조회: 모든 줄의 모든 셀 locked(쓰기 권한자에게도) · 조정 줄 0 · 1차 줄 id · 숨긴 계급은 금액 키 없음 · 현재 이상·없는 순번은 현재 차수(GAP 5c)", async () => {
     const { project, revisionId, pm } = await setupProject();
     const first = [await insertLine(revisionId), await insertLine(revisionId, { lineKind: "out_of_quote", subcategory: "out_of_quote", quoteAmountKrw: 0, unitPriceAmountKrw: 0 })];

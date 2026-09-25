@@ -294,10 +294,10 @@ function toSummaryProjectable(row: RevisionSummaryRow, latestSeq: number): Revis
   };
 }
 
-// 차수 요약(최신 순번부터) — 한 번의 GROUP BY 쿼리, 합계는 리포지토리 경계에서 JS 숫자. 행 범위 밖이면 빈 목록.
+// 차수 요약(최신 순번부터) — 한 번의 GROUP BY 쿼리, 합계는 리포지토리 경계에서 JS 숫자. findProject가 못 보는
+// 프로젝트(행 범위 밖 · 없음 · 보관함 권한 없는 보관)면 빈 목록 — 이전 차수 잠김 조회와 같은 기준.
 export async function listRevisionSummaries(viewer: Viewer, projectId: string): Promise<Partial<RevisionSummaryDto>[]> {
-  const scope = await scopeFor(viewer, PROJECT_ENTITY);
-  if (scope.rows === "none") return [];
+  if (!(await findProject(viewer, projectId))) return [];
   const rows = await repoSummarizeRevisions(viewer, projectId);
   const latestSeq = Math.max(...rows.map((row) => row.seq));
   return projectMany(

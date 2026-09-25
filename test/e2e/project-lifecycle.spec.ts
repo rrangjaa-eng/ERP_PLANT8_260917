@@ -135,7 +135,8 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(page.getByText(new RegExp(`${projectNumber} · 상세 견적 1차`))).toBeVisible();
     await expect(headerTag(page, "수주중")).toBeVisible();
     // D-50 — 부제의 상태 항목은 현재 상태 + 마지막 변경일(변경 기록이 없으면 등록일).
-    await expect(page.getByText(`${projectNumber} · 상세 견적 1차 · 수주중 ${TODAY}`, { exact: true })).toBeVisible();
+    await expect(page.getByText(`${projectNumber} · 상세 견적 1차`, { exact: true })).toBeVisible();
+    await expect(page.getByText(`수주중 ${TODAY}`, { exact: true })).toBeVisible();
 
     await page.getByRole("button", { name: "상태 바꾸기" }).click();
     const picker = page.getByRole("dialog", { name: "상태 바꾸기" });
@@ -156,7 +157,8 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await confirm.getByRole("button", { name: /^진행으로 바꾸기/ }).click();
     await expect(page.getByText(`진행으로 바꾸기 · ${projectNumber}`, { exact: true })).toBeVisible();
     await expect(headerTag(page, "진행")).toBeVisible();
-    await expect(page.getByText(`${projectNumber} · 상세 견적 1차 · 진행 ${TODAY}`, { exact: true })).toBeVisible();
+    await expect(page.getByText(`${projectNumber} · 상세 견적 1차`, { exact: true })).toBeVisible();
+    await expect(page.getByText(`진행 ${TODAY}`, { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "상태 바꾸기" })).toHaveCount(0);
     // S16 — 전환 성공으로 트리거가 사라졌으면 포커스는 머리 줄 제목으로 돌아온다.
     await expect(page.getByRole("heading", { name: projectName })).toBeFocused();
@@ -518,7 +520,7 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await page.goto(`/projects/${project.id}`);
     const title = page.getByRole("heading", { name: project.name });
     const tag = headerTag(page, "수주중");
-    const subtitle = page.getByText(`${project.number} · 상세 견적 1차 · 수주중 ${TODAY}`, { exact: true });
+    const subtitle = page.getByText(`${project.number} · 상세 견적 1차`, { exact: true });
     const trigger = page.getByRole("button", { name: "상태 바꾸기" });
     await expect(trigger).toBeVisible();
 

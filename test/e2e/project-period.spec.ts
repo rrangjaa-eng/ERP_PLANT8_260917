@@ -119,7 +119,9 @@ test.describe("날짜로 움직이는 상세 (04-11, PROJ-04)", () => {
     const tag = headerTag(page, "정산");
     await expect(tag).toBeVisible();
     expect(await hasTokenColor(tag, "--warning")).toBe(true);
-    await expect(page.getByText(`${project.number} · 상세 견적 1차 · 정산 ${TODAY}`, { exact: true })).toBeVisible();
+    // 04-44 리뷰 S-1 — 상태 날짜는 부제 문자열 밖, 총 매출 예상가 뒤 항목이다(UI-SPEC S3).
+    await expect(page.getByText(`${project.number} · 상세 견적 1차`, { exact: true })).toBeVisible();
+    await expect(page.getByText(`정산 ${TODAY}`, { exact: true })).toBeVisible();
   });
   // D-81 — 종료일이 지난 수주중은 자동으로 바뀌지 않고, 상태 태그 오른쪽 `--fs-sm --warning` 글자로 보인다.
   test("(2) 종료일이 지난 수주중 — 상태를 바꿀 수 있는 팀장에게는 「종료일 지남」 글자만, 담당 PM에게는 「종료일 지남 · 팀장 {이름}」", async ({ page }) => {
@@ -494,7 +496,25 @@ test.describe("상태 모달 → 기간 칸 · 폰 부제 순서 (04-44, PROJ-04
     await expect(page.getByLabel("종료일")).toBeFocused();
   });
 
-  test("(14) 375×812에서 부제 첫 항목은 `기간 …`이고 나머지 부제(번호 · 차수 · 총 매출 예상가)가 그 아래다 (DR-26)", async ({ page }) => {
+  // UI-SPEC S3(:1122) · DR-26(:498, :1153) — `번호 · 차수 · … · 총 매출 예상가 … · 상태 날짜` 순서, 폰은 `기간 …`이 첫 항목.
+  async function headerItemTops(page: Page, project: { number: string }, endDate: string) {
+    const items = {
+      period: page.getByText(`기간 ${addDays(endDate, -3)} ~ ${endDate}`, { exact: true }),
+      subtitle: page.getByText(`${project.number} · 상세 견적 1차`, { exact: true }),
+      preEstimate: page.getByText("총 매출 예상가 —", { exact: true }),
+      statusDate: page.getByText(`수주중 ${TODAY}`, { exact: true }),
+    };
+    const tops: Record<string, number> = {};
+    for (const [key, locator] of Object.entries(items)) {
+      await expect(locator).toBeVisible();
+      const box = await locator.boundingBox();
+      if (!box) throw new Error(`${key} 항목이 보이지 않습니다`);
+      tops[key] = box.y;
+    }
+    return tops as Record<keyof typeof items, number>;
+  }
+
+  test("(14) 375×812에서 부제 첫 항목은 `기간 …`이고 나머지 부제(번호 · 차수 → 총 매출 예상가 → 상태 날짜)가 그 아래다 (DR-26)", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team);
@@ -504,21 +524,25 @@ test.describe("상태 모달 → 기간 칸 · 폰 부제 순서 (04-44, PROJ-04
 
     await login(page, lead);
     await page.goto(`/projects/${project.id}`);
-    const periodLine = page.getByText(`기간 ${addDays(endDate, -3)} ~ ${endDate}`, { exact: true });
-    const subtitle = page.getByText(new RegExp(`^${project.number} · 상세 견적 1차`));
-    const preEstimate = page.getByText("총 매출 예상가 —", { exact: true });
-    await expect(periodLine).toBeVisible();
-    await expect(subtitle).toBeVisible();
-    await expect(preEstimate).toBeVisible();
-    const [periodBox, subtitleBox, preEstimateBox] = await Promise.all([
-      periodLine.boundingBox(),
-      subtitle.boundingBox(),
-      preEstimate.boundingBox(),
-    ]);
-    if (!periodBox) throw new Error("기간 줄이 보이지 않습니다");
-    if (!subtitleBox) throw new Error("부제가 보이지 않습니다");
-    if (!preEstimateBox) throw new Error("총 매출 예상가 줄이 보이지 않습니다");
-    expect(periodBox.y).toBeLessThan(subtitleBox.y);
-    expect(periodBox.y).toBeLessThan(preEstimateBox.y);
+    const tops = await headerItemTops(page, project, endDate);
+    expect(tops.period).toBeLessThan(tops.subtitle);
+    expect(tops.subtitle).toBeLessThan(tops.preEstimate);
+    expect(tops.preEstimate).toBeLessThan(tops.statusDate);
+  });
+
+  test("(14b) 1280에서 부제 순서는 번호 · 차수 → 기간 → 총 매출 예상가 → 상태 날짜다 (UI-SPEC S3, 리뷰 S-1)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const lead = await makeAccount("role-team-lead", team, `팀장${randomUUID().slice(0, 6)}`);
+    const endDate = addDays(TODAY, 20);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "bidding", endDate });
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    const tops = await headerItemTops(page, project, endDate);
+    expect(tops.subtitle).toBeLessThan(tops.period);
+    expect(tops.period).toBeLessThan(tops.preEstimate);
+    expect(tops.preEstimate).toBeLessThan(tops.statusDate);
   });
 });

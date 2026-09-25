@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { projects, quoteRevisions } from "@/db/schema";
+import { actionLog, codeItems, projects, quoteRevisions } from "@/db/schema";
 import { createProject } from "@/domain/projects";
-import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
+import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
@@ -77,6 +78,21 @@ async function makeProject(input: {
       .where(eq(quoteRevisions.projectId, created.id));
   }
   return { id: created.id, number: created.number, name };
+}
+
+async function addQuoteLine(projectId: string): Promise<{ revisionId: string; subcategory: string }> {
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, projectId);
+  const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+  if (!revision || !subcategory) throw new Error("차수·소분류 준비 실패");
+  await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+    {
+      subcategory: subcategory.value,
+      itemName: "생애 E2E 줄",
+      unitPrice: { currency: "KRW", amount: 100_000, fxRate: 1 },
+      execution: { currency: "KRW", amount: 50_000, fxRate: 1 },
+    },
+  ]);
+  return { revisionId: revision.id, subcategory: subcategory.value };
 }
 
 function headerTag(page: Page, label: string) {
@@ -255,5 +271,229 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(page.getByText(`완료로 바꾸기 · ${project.number}`, { exact: true })).toBeVisible();
     await expect(headerTag(page, "완료")).toBeVisible();
     await expect(page.getByRole("button", { name: "상태 바꾸기" })).toHaveCount(0);
+
+    // (d) 완료 뒤 담당 PM의 견적 줄 저장은 04-06 규칙으로 거부된다(셀 단위 잠금 렌더는 04-30 —
+    // 지금 화면은 편집 칸을 내주지 않으므로 서버 쪽 저장을 직접 부른다).
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+    if (!revision || !subcategory) throw new Error("차수·소분류 준비 실패");
+    await expect(
+      saveQuoteLines({ id: pm.userId, roleId: DEFAULT_ROLE_ID }, revision.id, [
+        {
+          subcategory: subcategory.value,
+          itemName: "완료 뒤 줄",
+          unitPrice: { currency: "KRW", amount: 1_000, fxRate: 1 },
+          execution: { currency: "KRW", amount: 1_000, fxRate: 1 },
+        },
+      ]),
+    ).rejects.toThrow("완료 · 견적 줄 잠김");
+  });
+
+  test("(a) 시작일 없는 수주중에서 진행을 고르면 1차가 제출 전부터 막히고 게이트 문자열이 그대로, 모달 유지·토스트 없음", async ({
+    page,
+  }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const lead = await makeAccount("role-team-lead", team.id);
+    const project = await makeProject({
+      teamId: team.id,
+      pmUserId: pm.userId,
+      status: "bidding",
+      startDate: null,
+      endDate: null,
+      approved: false,
+    });
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await page.getByRole("button", { name: "상태 바꾸기" }).click();
+    await page.getByRole("dialog", { name: "상태 바꾸기" }).getByRole("button", { name: /^진행/ }).click();
+    const confirm = page.getByRole("dialog", { name: "진행으로 바꾸기" });
+    const primary = confirm.getByRole("button", { name: /^진행으로 바꾸기/ });
+    await expect(primary).toHaveAttribute("aria-disabled", "true");
+    // 막힘 이유는 1차 왼쪽에 한 번만 보이고(§7-17), 1차의 aria-describedby로 읽힌다.
+    const reason = confirm.getByText("시작일 없음 · 기간 적기", { exact: true }).filter({ visible: true });
+    await expect(reason).toHaveCount(1);
+    const reasonBox = await reason.boundingBox();
+    const primaryBox = await primary.boundingBox();
+    expect(reasonBox && primaryBox && reasonBox.x + reasonBox.width <= primaryBox.x).toBe(true);
+    const describedBy = (await primary.getAttribute("aria-describedby")) ?? "";
+    const description = await page.evaluate(
+      (ids) => ids.map((id) => document.getElementById(id)?.textContent ?? "").join(" "),
+      describedBy.split(" ").filter(Boolean),
+    );
+    expect(description).toBe("시작일 없음 · 기간 적기");
+
+    await primary.click();
+    await expect(confirm).toBeVisible();
+    await expect(page.getByText(/진행으로 바꾸기 · /)).toHaveCount(0);
+    await expect(headerTag(page, "수주중")).toBeVisible();
+  });
+
+  test("(e) 진행 프로젝트는 누구에게도 「상태 바꾸기」·「진행으로 되돌리기」가 없다 (CEO-D13)", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const lead = await makeAccount("role-team-lead", team.id);
+    const ceo = await makeAccount("role-ceo");
+    const project = await makeProject({
+      teamId: team.id,
+      pmUserId: pm.userId,
+      status: "in_progress",
+      startDate: TODAY,
+      endDate: addDays(TODAY, 7),
+      approved: true,
+    });
+
+    for (const account of [lead, ceo, pm]) {
+      await login(page, account);
+      await page.goto(`/projects/${project.id}`);
+      await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
+      await expect(headerTag(page, "진행")).toBeVisible();
+      await expect(page.getByRole("button", { name: "상태 바꾸기" })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "진행으로 되돌리기" })).toHaveCount(0);
+      await logout(page);
+    }
+  });
+
+  test("(g) 다른 팀 팀장에게는 「상태 바꾸기」가 없고 본부 책임자(전사)에게는 있다 (D11 · OV-4)", async ({ page }) => {
+    const team = await makeTeam();
+    const otherTeam = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const otherLead = await makeAccount("role-team-lead", otherTeam.id);
+    const divisionHead = await makeAccount("role-division-head");
+    const project = await makeProject({
+      teamId: team.id,
+      pmUserId: pm.userId,
+      status: "bidding",
+      startDate: addDays(TODAY, 7),
+      endDate: null,
+      approved: false,
+    });
+
+    await login(page, otherLead);
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
+    await expect(page.getByRole("button", { name: "상태 바꾸기" })).toHaveCount(0);
+    await logout(page);
+
+    await login(page, divisionHead);
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("button", { name: "상태 바꾸기" })).toBeVisible();
+  });
+
+  test("(h) 미수주로 닫기 1차를 dblclick해도 전환은 한 번 — 두 번째 요청·「상태가 … 바뀜」이 없다 (A-34)", async ({
+    page,
+  }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const lead = await makeAccount("role-team-lead", team.id);
+    const project = await makeProject({
+      teamId: team.id,
+      pmUserId: pm.userId,
+      status: "bidding",
+      startDate: addDays(TODAY, 7),
+      endDate: null,
+      approved: false,
+    });
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    const actionRequests: Promise<unknown>[] = [];
+    page.on("request", (request) => {
+      if (request.method() === "POST" && request.headers()["next-action"]) actionRequests.push(request.response());
+    });
+    await page.getByRole("button", { name: "상태 바꾸기" }).click();
+    await page.getByRole("dialog", { name: "상태 바꾸기" }).getByRole("button", { name: /^미수주/ }).click();
+    await page.getByRole("dialog", { name: "미수주로 닫기" }).getByRole("button", { name: /^미수주로 닫기/ }).dblclick();
+
+    await expect(page.getByText(`미수주로 닫기 · ${project.number}`, { exact: true })).toHaveCount(1);
+    await expect(headerTag(page, "미수주")).toBeVisible();
+    await Promise.all(actionRequests);
+    expect(actionRequests).toHaveLength(1);
+    await expect(page.getByText("상태가 미수주로 바뀜 · 새로 고침")).toHaveCount(0);
+    const logs = await db.select().from(actionLog).where(eq(actionLog.entityId, project.id));
+    expect(logs.filter((log) => log.actionType === "status_change")).toHaveLength(1);
+  });
+
+  test("(i) 미저장 편집이 있으면 「상태 바꾸기」 자체가 막히고, 저장하면 다시 켜진다 (DR-6)", async ({ page }) => {
+    // 견적 줄을 고치면서 상태도 바꿀 수 있는 시드 계급은 시스템 관리자뿐이다 — 팀장 시드에는
+    // projects 쓰기가 없다(04-20). 권한을 손으로 켜지 않는다(ENG-D2).
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const admin = await makeAccount(SYSADMIN_ROLE_ID);
+    const project = await makeProject({
+      teamId: team.id,
+      pmUserId: pm.userId,
+      status: "bidding",
+      startDate: addDays(TODAY, 7),
+      endDate: null,
+      approved: false,
+    });
+    await addQuoteLine(project.id);
+
+    await login(page, admin);
+    await page.goto(`/projects/${project.id}`);
+    const trigger = page.getByRole("button", { name: "상태 바꾸기" });
+    await expect(trigger).not.toHaveAttribute("aria-disabled", "true");
+
+    const dataRow = page.locator("tbody tr").nth(1);
+    const executionCell = dataRow.getByRole("gridcell").nth(7);
+    await executionCell.click();
+    await executionCell.getByLabel("실행가").fill("70000");
+    await executionCell.getByLabel("실행가").press("Enter");
+
+    await expect(trigger).toHaveAttribute("aria-disabled", "true");
+    const reason = page.getByText("저장 안 한 편집 1칸 · 먼저 일괄 저장", { exact: true });
+    await expect(reason).toBeVisible();
+    const describedBy = (await trigger.getAttribute("aria-describedby")) ?? "";
+    expect(describedBy.split(" ")).toContain(await reason.getAttribute("id"));
+    await trigger.click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    await page.keyboard.press("Control+s");
+    await expect(page.getByText(/저장됨 1줄/)).toBeVisible();
+    await expect(trigger).not.toHaveAttribute("aria-disabled", "true");
+    await trigger.click();
+    await expect(page.getByRole("dialog", { name: "상태 바꾸기" })).toBeVisible();
+  });
+
+  test("(f) 375px 머리 줄은 제목 → 상태 태그 → 부제 → 「상태 바꾸기」, 가로 스크롤 0, 「더보기」 없음 (DR-26)", async ({
+    page,
+  }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const lead = await makeAccount("role-team-lead", team.id);
+    const project = await makeProject({
+      teamId: team.id,
+      pmUserId: pm.userId,
+      status: "bidding",
+      startDate: addDays(TODAY, 7),
+      endDate: null,
+      approved: false,
+    });
+
+    await page.setViewportSize({ width: 375, height: 800 });
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    const title = page.getByRole("heading", { name: project.name });
+    const tag = headerTag(page, "수주중");
+    const subtitle = page.getByText(`${project.number} · 상세 견적 1차 · 수주중 ${TODAY}`, { exact: true });
+    const trigger = page.getByRole("button", { name: "상태 바꾸기" });
+    await expect(trigger).toBeVisible();
+
+    const tops: number[] = [];
+    for (const locator of [title, tag, subtitle, trigger]) {
+      const box = await locator.boundingBox();
+      if (!box) throw new Error("머리 줄 요소가 보이지 않습니다");
+      tops.push(box.y);
+    }
+    for (let index = 1; index < tops.length; index++) {
+      expect(tops[index]).toBeGreaterThan(tops[index - 1] ?? 0);
+    }
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBe(0);
+    await expect(page.getByRole("button", { name: "더보기" })).toHaveCount(0);
   });
 });

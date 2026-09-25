@@ -297,7 +297,19 @@ test.describe("코드표 항목 설명 (D-93, UI-SPEC rev 5 S14, DR-29)", () => 
       if (request.method() === "POST" && request.headers()["next-action"] !== undefined) actionRequests++;
     });
     await minWithholdingInput.blur();
-    await page.waitForTimeout(500);
-    expect(actionRequests).toBe(0);
+
+    // 대조 요청: 유효한 값을 넣고 블러해 저장 응답을 기다린다. 서버 액션은
+    // 순서대로 나가므로 '-' 블러가 요청을 보냈다면 이 응답 전에 이미 잡힌다.
+    await minWithholdingInput.click();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("4321");
+    const controlResponse = page.waitForResponse(
+      (response) =>
+        response.request().headers()["next-action"] !== undefined &&
+        (response.request().postData() ?? "").includes("4321"),
+    );
+    await minWithholdingInput.blur();
+    await controlResponse;
+    expect(actionRequests).toBe(1);
   });
 });

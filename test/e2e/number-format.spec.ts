@@ -172,6 +172,7 @@ test.describe("숫자 서식(D-95, 04-09)", () => {
 
     await page.goto("/admin/settings");
     const fxInput = page.getByLabel("USD 최근 환율");
+    const original = await fxInput.inputValue();
     await fxInput.click();
     await page.keyboard.press("Control+a");
     await page.keyboard.press("Delete");
@@ -182,8 +183,20 @@ test.describe("숫자 서식(D-95, 04-09)", () => {
       if (request.method() === "POST" && request.headers()["next-action"] !== undefined) actionRequests++;
     });
     await fxInput.blur();
-    await page.waitForTimeout(500);
-    expect(actionRequests).toBe(0);
+
+    // 대조 요청: 원래 값을 다시 넣고 블러해 저장 응답을 기다린다. 서버 액션은
+    // 순서대로 나가므로 '-' 블러가 요청을 보냈다면 이 응답 전에 이미 잡힌다.
+    await fxInput.click();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type(original);
+    const controlResponse = page.waitForResponse(
+      (response) =>
+        response.request().headers()["next-action"] !== undefined &&
+        (response.request().postData() ?? "").includes(original.replaceAll(",", "")),
+    );
+    await fxInput.blur();
+    await controlResponse;
+    expect(actionRequests).toBe(1);
   });
 
   // Task 3 ⑤(c) — 수량 칸(C-02).

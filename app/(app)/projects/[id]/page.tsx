@@ -73,6 +73,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   // 04-44(DR-37) — 총 매출 예상가는 기간과 같은 권리 + 금액 노출(볼 수 없는 값은 고칠 수 없다).
   const canEditPreEstimate = periodRights !== "none" && canSeeAmount;
   // A-12: 1차 「일괄 저장」은 이 화면에서 쓸 수 있는 칸이 하나라도 있을 때만 — 판정은 서버가 칸마다 한다.
+  // canEditPreEstimate는 periodRights 항에 이미 포함되지만 칸 목록을 드러내려고 둔다(명시용).
   const canSave =
     editable || periodRights !== "none" || canEditPreEstimate || canWriteEntries || (canWrite && status !== "completed");
 

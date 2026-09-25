@@ -881,7 +881,10 @@ export function QuoteLedger({
     }, 600);
   }
 
-  const preEstimateBaselineDraft = preEstimateBase ? preEstimateDraftFrom(preEstimateBase, usdDefaultFxRate) : null;
+  const preEstimateBaselineDraft = useMemo(
+    () => (preEstimateBase ? preEstimateDraftFrom(preEstimateBase, usdDefaultFxRate) : null),
+    [preEstimateBase, usdDefaultFxRate],
+  );
   const preEstimateDirty =
     preEstimateDraft && preEstimateBaselineDraft ? preEstimateDirtyCount(preEstimateDraft, preEstimateBaselineDraft) : 0;
 
@@ -968,9 +971,7 @@ export function QuoteLedger({
     if (!persistPendingRef.current) return;
     persistPendingRef.current = false;
     persist(editsSnapshot(lines, periodDraft, periodBaseline, preEstimateDraft, preEstimateBaselineDraft));
-    // preEstimateBaselineDraft는 preEstimateBase에서 매 렌더 새로 만든다 — 원본 상태를 deps로 둔다.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lines, periodDraft, periodBaseline, preEstimateDraft, preEstimateBase, persist]);
+  }, [lines, periodDraft, periodBaseline, preEstimateDraft, preEstimateBaselineDraft, persist]);
 
   // DR-6 — 상태 바뀜 거부 뒤 router.refresh()가 새 status를 내려보내면 화면 편집(줄·매출·기간 칸)을
   // 서버 props로 되돌리고 보관본의 칸 수를 다시 읽어 복원 줄을 띄운다. 기간 저장 성공으로 상태가

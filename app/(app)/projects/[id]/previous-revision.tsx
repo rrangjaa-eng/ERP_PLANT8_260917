@@ -338,6 +338,8 @@ export function PreviousRevisionDraftRow({
   const hydrated = useSyncExternalStore(subscribeNothing, () => true, () => false);
   const [rowsBySeq, setRowsBySeq] = useState<Record<number, ReadRow[]>>({});
   const [fetchRound, setFetchRound] = useState(0);
+  // 검토 S2 — 받기에 실패한 순번·회차. 받는 중과 실패를 가른다(받는 중에는 「복사」가 진행 중이다).
+  const [failedFetch, setFailedFetch] = useState<{ seq: number; round: number } | null>(null);
   const [copyResult, setCopyResult] = useState<{ seq: number; ok: boolean } | null>(null);
   const top = hydrated ? drafts[0] : undefined;
   const topSeq = top?.seq;
@@ -355,12 +357,16 @@ export function PreviousRevisionDraftRow({
     void (async () => {
       try {
         const result = await listRevisionLinesAction({ projectId, revisionSeq: topSeq });
-        if (!cancelled && result?.data) {
+        if (cancelled) return;
+        if (result?.data) {
           const rows = byKind(result.data.map(readRow));
           setRowsBySeq((prev) => ({ ...prev, [topSeq]: rows }));
+        } else {
+          setFailedFetch({ seq: topSeq, round: fetchRound });
         }
       } catch {
         // 받지 못하면 「복사」가 `복사하지 못함`을 보이고 다시 누를 때 다시 받는다.
+        if (!cancelled) setFailedFetch({ seq: topSeq, round: fetchRound });
       }
     })();
     return () => {
@@ -369,8 +375,10 @@ export function PreviousRevisionDraftRow({
   }, [projectId, topSeq, rowsBySeq, fetchRound]);
 
   if (!top) return null;
+  const fetching = !rowsBySeq[top.seq] && !(failedFetch?.seq === top.seq && failedFetch.round === fetchRound);
 
   function copy(draft: Draft) {
+    if (fetching) return;
     const storage = browserStorage();
     const edits = storage ? loadDirtyEdits(storage, projectId, draft.revisionId) : null;
     const rows = rowsBySeq[draft.seq];
@@ -411,6 +419,11 @@ export function PreviousRevisionDraftRow({
       <span className={styles.restoreActions}>
         {result?.ok ? (
           <span className={styles.savedTag}>{`복사됨 ${top.count}칸`}</span>
+        ) : fetching ? (
+          // 검토 S2 — 그 차수 줄을 받는 동안은 진행 중(ui/button의 pending과 같은 `…` · aria-disabled).
+          <button type="button" className={styles.restoreAction} aria-disabled="true">
+            복사<span aria-hidden="true">…</span>
+          </button>
         ) : (
           <button type="button" className={styles.restoreAction} onClick={() => copy(top)}>
             복사

@@ -886,7 +886,8 @@ test.describe("이전 차수 보관본 복원 줄 (04-24 Task 4 — DR-4 · DR-3
     const copy = row.getByRole("button", { name: "복사" });
     await expect(copy).toHaveAttribute("aria-disabled", "true");
     await expect(copy).toHaveText("복사…");
-    await copy.click();
+    // aria-disabled 버튼은 Playwright가 기다리므로 강제로 누른다 — 누름이 무시되는지 본다.
+    await copy.click({ force: true });
     await expect(row.getByText("복사하지 못함", { exact: true })).toHaveCount(0);
 
     release();

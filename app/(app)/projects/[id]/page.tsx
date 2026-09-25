@@ -7,6 +7,8 @@ import { listProjectFormReferences } from "@/domain/projects/references";
 import { getCurrentQuoteRevision, listQuoteLines } from "@/domain/quotes/lines";
 import { listRevenue } from "@/domain/revenue";
 import { recentFxRate } from "@/domain/money/currency";
+import { getSettingValue } from "@/domain/settings/registry";
+import { QUOTE_LINE_MAX_PER_REVISION } from "@/domain/settings/keys";
 import {
   lineCellEditability,
   quoteLockReason,
@@ -78,7 +80,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   });
   // 04-44(DR-37) — 총 매출 예상가는 기간과 같은 권리 + 금액 노출(볼 수 없는 값은 고칠 수 없다).
   const canEditPreEstimate = periodRights !== "none" && canSeeAmount;
-  const [lines, references, revenue, usdDefaultFxRate, destinations, catalog, statusSince] = await Promise.all([
+  const [lines, references, revenue, usdDefaultFxRate, destinations, catalog, statusSince, lineCap] = await Promise.all([
     listQuoteLines(session.viewer, revision.id, { status: project.status, canWrite: canEditLines }),
     canWrite ? listProjectFormReferences(session.viewer) : Promise.resolve(null),
     listRevenue(session.viewer, project.id),
@@ -86,6 +88,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     statusDestinations(session.viewer, project),
     listProjectStatusCatalog(session.viewer),
     lastStatusChangeOn(session.viewer, project),
+    // 04-26(D-86) — 화면의 상한 판정과 문구의 숫자는 서버 게이트가 읽는 같은 설정 값이다.
+    getSettingValue(QUOTE_LINE_MAX_PER_REVISION),
   ]);
 
   // A-12: 1차 「일괄 저장」은 이 화면에서 쓸 수 있는 칸이 하나라도 있을 때만 — 판정은 서버가 칸마다 한다.
@@ -157,6 +161,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       subcategories={references?.subcategories ?? []}
       structural={structural}
       newLineCells={newLineCells}
+      lineCap={lineCap}
       lockReason={quoteLockReason({ status: project.status })}
       emptyState={quoteTableEmptyState({
         status: project.status,

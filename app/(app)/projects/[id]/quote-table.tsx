@@ -785,6 +785,7 @@ export function QuoteLedger({
   subcategories,
   structural,
   newLineCells,
+  lineCap,
   lockReason,
   emptyState,
   revenue,
@@ -821,6 +822,8 @@ export function QuoteLedger({
   structural: StructuralEditability;
   /** 04-30(사용자 D12) — 저장 전 새 줄의 칸별 편집 단계(서버 lineCellEditability isNewLine). */
   newLineCells: LineCells;
+  /** 04-26(D-86) — 차수당 견적 줄 상한(서버 설정 quote_line.max_per_revision). */
+  lineCap: number;
   /** 04-30(DR-2 · DR-35) — 잠긴 셀 편집 시도의 이유(서버 quoteLockReason). */
   lockReason: string | null;
   /** 04-30 — 0줄 표의 한 줄과 다음 한 수(서버 quoteTableEmptyState). */
@@ -1337,6 +1340,9 @@ export function QuoteLedger({
   // 04-49(DR-14 · DR-24 · DR-36 · 계약 6) — 1024 미만이면 견적 줄 표·매출 표는 보기 전용이다(표 밖 칸만 편집).
   // 리뷰 B-1 — 편집기가 열린 동안 폭이 줄면 읽기 표 전환을 커밋(blur·Enter) 뒤로 미룬다(친 값을 버리지 않는다).
   const editableWidth = useEditableWidth() || cellEditing;
+  // 04-26(D-86) — 화면의 활성 줄(보관할 줄은 이미 빠져 있고 새 줄은 포함)이 상한이면 줄을 더하지 않는다.
+  const atLineCap = lines.length >= lineCap;
+  const lineCapReason = `${lineCap}줄 상한 · 상한은 관리자 설정`;
 
   // 04-30(엔지 r2 분할안) — 키보드 Ctrl+S는 표가 열린 셀 편집기를 먼저 커밋(blur)한 뒤 부른다. 그 커밋이
   // 상태에 반영된 다음 렌더에서 저장해야 활성 셀의 마지막 값이 페이로드에 든다.
@@ -1994,9 +2000,16 @@ export function QuoteLedger({
       ) : null}
 
       {structural.insert && editableWidth && lines.length > 0 ? (
-        <button type="button" className={styles.addLineButton} onClick={() => (saveLocked ? undefined : addLine())}>
-          줄 추가
-        </button>
+        <div className={styles.addLineButton}>
+          <Button
+            variant="tertiary"
+            disabled={atLineCap}
+            disabledReason={lineCapReason}
+            onClick={() => (saveLocked ? undefined : addLine())}
+          >
+            줄 추가
+          </Button>
+        </div>
       ) : null}
 
       <ConfirmDialog

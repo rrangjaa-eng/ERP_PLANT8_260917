@@ -188,6 +188,18 @@ export const FX_RECENT_RATE_USD: SettingDef<number> = {
   default: 1300,
 };
 
+// 04-26(D-86 · S4) — 한 차수에 둘 수 있는 견적 줄 수. 보관된 줄은 빼고 조정·견적 외 비용·취소 줄은 센다.
+// 서버 게이트 quote.line-cap과 견적 표(「줄 추가」·키·붙여넣기)가 같은 값을 쓴다 — 상한은 줄을 더할 때만 막는다.
+export const QUOTE_LINE_MAX_PER_REVISION: SettingDef<number> = {
+  key: "quote_line.max_per_revision",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1),
+  label: "차수당 견적 줄 상한",
+  hint: "한 차수에 둘 수 있는 견적 줄 수 — 조정·취소 줄 포함",
+  namespace: "견적 표",
+  default: 300,
+};
+
 // 완료 처리 강행 허용 — 점검 항목별 boolean 셋(03-CONTEXT.md Claude's
 // Discretion: on/off 하나가 아니라 점검 항목별로 넉넉하게).
 export const PROJECT_FORCE_COMPLETE_ALLOW_OPEN_EXPENSES: SettingDef<boolean> = {
@@ -317,6 +329,7 @@ export const SETTING_DEFS: SettingDef<unknown>[] = [
   TAX_ROUNDING_WITHHOLDING_UNIT,
   TAX_ROUNDING_MIN_WITHHOLDING,
   FX_RECENT_RATE_USD,
+  QUOTE_LINE_MAX_PER_REVISION,
   DOCUMENT_NUMBER_PROJECT_PREFIX,
   DOCUMENT_NUMBER_PROJECT_YEAR_DIGITS,
   DOCUMENT_NUMBER_PROJECT_SEQ_DIGITS,

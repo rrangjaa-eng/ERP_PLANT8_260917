@@ -132,15 +132,9 @@
   font-weight: var(--fw-medium);
 }
 
+/* 04-26 — 「줄 추가」는 3차 Button(비활성 이유 한 줄 포함)이고, 이 자리는 표와의 간격만 준다. */
 .addLineButton {
   margin-top: var(--s-3);
-  border: 0;
-  border-bottom: var(--line-w) solid var(--accent);
-  background: none;
-  color: var(--accent);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  cursor: pointer;
 }
 
 /* 04-02 — §6-2 섹션 순서 ② 매출. 섹션 시작은 2px 강한 선(§3 「섹션 사이」). */

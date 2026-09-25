@@ -9,7 +9,7 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { buildCustomFieldsSchema, type FieldDefType } from "@/domain/custom-fields/build-schema";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
-import type { ProjectLineEditCtx } from "@/domain/rules/register";
+import type { ProjectLineEditCtx, QuoteLineCapCtx } from "@/domain/rules/register";
 import { denyWrite } from "@/domain/rules/deny-write";
 import { loadProjectForGate } from "@/domain/projects/auto-transition";
 import {
@@ -37,6 +37,7 @@ import {
   setQuoteLineSortOrders as repoSetQuoteLineSortOrders,
   archiveQuoteLines as repoArchiveQuoteLines,
   restoreQuoteLineRow as repoRestoreQuoteLineRow,
+  countActiveLinesByRevision as repoCountActiveLinesByRevision,
   type QuoteLineRow,
 } from "@/repositories/quote-lines";
 import {
@@ -44,6 +45,8 @@ import {
   findLatestQuoteRevision as repoFindLatestQuoteRevision,
 } from "@/repositories/quote-revisions";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
+import { getSettingValue } from "@/domain/settings/registry";
+import { QUOTE_LINE_MAX_PER_REVISION } from "@/domain/settings/keys";
 
 export class ForbiddenError extends UserFacingError {}
 export class RevisionNotFoundError extends UserFacingError {}
@@ -530,6 +533,7 @@ export type QuoteLineWriteDeps = {
 const LINE_EDIT_RULE = "project.line-edit";
 const MEMBERSHIP_RULE = "quote.line-membership";
 const REPLAY_RULE = "quote.line-replay";
+const LINE_CAP_RULE = "quote.line-cap";
 // UI-SPEC rev 5 `Error — 저장(순서·소속, 방어)` · `Error — 저장(재전송 불일치, ENG-D10)`.
 const MEMBERSHIP_MISMATCH = "차수와 프로젝트가 맞지 않음 · 새로 고침";
 const ORDER_MISMATCH = "줄 순서가 맞지 않음 · 새로 고침";
@@ -540,11 +544,12 @@ const ARCHIVED_LINE = "보관된 줄 · 새로 고침";
 type QuoteLineCustomFieldsSchema = Awaited<ReturnType<typeof quoteLineCustomFieldsSchema>>;
 
 // ① 트랜잭션 전(ENG-D3 ① · ARCHITECTURE §4-8) — 잠근 행과 무관한 사실: 권한·금액 노출·차수의 프로젝트(바뀌지
-// 않는 사실)·사용자 정의 필드 스키마. 여기서만 풀을 부른다.
+// 않는 사실)·사용자 정의 필드 스키마·차수당 줄 상한(04-26 설정 값). 여기서만 풀을 부른다.
 export type PreparedQuoteLineSave = {
   revisionId: string;
   projectId: string;
   customFieldsSchema: QuoteLineCustomFieldsSchema;
+  lineCap: number;
 };
 
 export async function prepareQuoteLineSave(
@@ -565,7 +570,12 @@ export async function prepareQuoteLineSave(
   const revision = await repoFindQuoteRevisionById(viewer, revisionId);
   if (!revision) throw new RevisionNotFoundError("존재하지 않는 차수입니다.");
 
-  return { revisionId, projectId: revision.projectId, customFieldsSchema: await quoteLineCustomFieldsSchema(viewer) };
+  return {
+    revisionId,
+    projectId: revision.projectId,
+    customFieldsSchema: await quoteLineCustomFieldsSchema(viewer),
+    lineCap: await getSettingValue(QUOTE_LINE_MAX_PER_REVISION),
+  };
 }
 
 // 쓰기 페이로드 — 판정(바뀐 칸 비교)과 쓰기가 같은 정규화를 거친 값을 쓴다(A-21): 수량 고정 소수 · 금액 열
@@ -659,7 +669,7 @@ export type WrittenQuoteLines = {
 // denyWrite 한 지점에서 전부 거부, 형식·충돌은 로그 없이 전부 거부 (e) 쓰기 — 새 줄은 화면 id로 멱등 삽입(이미
 // 있으면 재전송 판정), 기존 줄의 sort_order는 `order`가 있을 때만 다시 쓴다(version 그대로), 보관도 같은 tx
 // (f) 행동 로그(같은 tx — 되돌린 저장은 로그도 없다) (g) 활성 줄 전체. 이 단계는 풀을 부르지 않는다 — 모든
-// 리포지토리 호출이 tx를 받는다. 04-26의 줄 수 상한은 재전송 판정 뒤 실제로 새로 들어갈 줄 수를 센다.
+// 리포지토리 호출이 tx를 받는다. 04-26의 줄 수 상한은 (d) 끝에서 실제로 새로 들어갈 줄 수를 센다.
 export async function writeQuoteLinesInTx(
   viewer: Viewer,
   prepared: PreparedQuoteLineSave,
@@ -668,7 +678,7 @@ export async function writeQuoteLinesInTx(
   deps?: Partial<Pick<QuoteLineWriteDeps, "now" | "afterLock" | "recordAction">>,
 ): Promise<WrittenQuoteLines> {
   const recordAction = deps?.recordAction ?? defaultRecordAction;
-  const { revisionId, projectId, customFieldsSchema } = prepared;
+  const { revisionId, projectId, customFieldsSchema, lineCap } = prepared;
   const archivedIds = [...new Set(input.archivedLineIds ?? [])];
   const lineIds = input.rows.map((row) => row.id);
   const denyIds = { projectId, revisionId, lineIds: [...lineIds, ...archivedIds] };
@@ -751,6 +761,16 @@ export async function writeQuoteLinesInTx(
       }
     }
     if (gateErrors.length > 0) deny(LINE_EDIT_RULE, new SaveRejectedError(conflicts, [...formatErrors, ...gateErrors]));
+
+    // 04-26(D-86 · A-36 · ENG-D10) — 잠금 뒤 센 활성 줄 − 이번에 보관할 활성 줄 + 실제로 새로 들어갈 줄(그 차수에 이미
+    // 있는 id는 응답을 잃은 재전송이라 새 줄이 아니다). 뒤에 온 저장은 앞 저장이 커밋한 줄까지 센다.
+    const newIds = input.rows.filter((row) => row.isNew).map((row) => row.id);
+    const presentIds = new Set((await repoFindQuoteLinesByIds(viewer, newIds, { revisionId }, tx)).map((row) => row.id));
+    const newLines = newIds.filter((id) => !presentIds.has(id)).length;
+    const archivingActive = archivedIds.filter((id) => currentById.get(id)?.archivedAt === null).length;
+    const capCtx: QuoteLineCapCtx = { newLines, countAfter: activeBefore.length - archivingActive + newLines, cap: lineCap };
+    const capDecision = await gate(projectRow, LINE_CAP_RULE, capCtx);
+    if (!capDecision.allowed) deny(LINE_CAP_RULE, new GateBlockedError(capDecision.reason));
   }
 
   // B-26 — 게이트·소속 거부의 한 지점(운영 로그 write.denied, 금액 없음). 뒤 플랜의 규칙도 이 지점을 지난다.
@@ -871,6 +891,8 @@ export async function restoreQuoteLine(
   const revision = line ? await repoFindQuoteRevisionById(viewer, line.revisionId) : null;
   if (!line || !revision) throw new RevisionNotFoundError("대상을 찾을 수 없습니다.");
   const recordAction = deps?.recordAction ?? defaultRecordAction;
+  // 04-26(A-19 · ENG-D3 ①) — 상한 값은 트랜잭션 전에 읽는다. 복원도 줄 하나를 더하는 것이라 같은 상한을 지난다.
+  const lineCap = await getSettingValue(QUOTE_LINE_MAX_PER_REVISION);
 
   await withTransaction(async (tx) => {
     const projectRow = await loadProjectForGate(viewer, revision.projectId, { now: deps?.now, tx, afterLock: deps?.afterLock }, { recordAction });
@@ -887,6 +909,11 @@ export async function restoreQuoteLine(
     const decision = await gate(projectRow, LINE_EDIT_RULE, ctx);
     if (!decision.allowed) {
       denyWrite(viewer, LINE_EDIT_RULE, { projectId: revision.projectId, revisionId: current.revisionId, lineIds: [id] }, new GateBlockedError(decision.reason));
+    }
+    const activeCount = await repoCountActiveLinesByRevision(viewer, current.revisionId, tx);
+    const capDecision = await gate(projectRow, LINE_CAP_RULE, { newLines: 1, countAfter: activeCount + 1, cap: lineCap } satisfies QuoteLineCapCtx);
+    if (!capDecision.allowed) {
+      denyWrite(viewer, LINE_CAP_RULE, { projectId: revision.projectId, revisionId: current.revisionId, lineIds: [id] }, new GateBlockedError(capDecision.reason));
     }
 
     if (!(await repoRestoreQuoteLineRow(viewer, id, tx))) throw new UserFacingError(MEMBERSHIP_MISMATCH);

@@ -68,6 +68,18 @@ registerGateRule<unknown, ProjectLineEditCtx>({
   },
 });
 
+// 04-26(D-86 · CEO A-19·A-20) — 차수당 견적 줄 상한. 줄을 더하는 저장·복원만 판정한다(newLines > 0) — 상한을
+// 지금 줄 수보다 낮춰도 기존 줄 고치기·보관은 통과한다. countAfter는 호출자가 잠근 트랜잭션 안에서 센 값이다.
+export type QuoteLineCapCtx = { newLines: number; countAfter: number; cap: number };
+
+registerGateRule<unknown, QuoteLineCapCtx>({
+  name: "quote.line-cap",
+  check: (_doc, ctx) => {
+    if (ctx.newLines > 0 && ctx.countAfter > ctx.cap) return { allowed: false, reason: `${ctx.cap}줄 상한을 넘음 · 전부 거부` };
+    return { allowed: true };
+  },
+});
+
 // 04-20(D-46·D-75·D-79 · 사용자 D11·D13·D20) — 사람의 전환. 전이표(04-06)에 없는
 // 쌍은 갈 수 없고, 쌍마다 정해진 메뉴 권한이 있어야 하며, 업무 범위가 그 프로젝트
 // 팀을 덮어야 한다. 권한 사실(메뉴·팀 범위)은 호출자가 읽어 넘긴다 — 규칙은 판정만.

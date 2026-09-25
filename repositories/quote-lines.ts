@@ -19,6 +19,16 @@ export async function listQuoteLinesByRevision(viewer: Viewer, revisionId: strin
     .orderBy(quoteLines.sortOrder, quoteLines.id);
 }
 
+// 04-26(D-86) — 차수의 활성 줄 수(보관 제외 — 취소 줄 포함). 상한 판정은 프로젝트 행을 잠근 tx로 부른다.
+export async function countActiveLinesByRevision(viewer: Viewer, revisionId: string, tx: DbOrTx = db): Promise<number> {
+  void viewer;
+  const [row] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(quoteLines)
+    .where(and(eq(quoteLines.revisionId, revisionId), isNull(quoteLines.archivedAt)));
+  return row?.count ?? 0;
+}
+
 // 04-04 Task 2 ① — 배치 저장이 쓰기 전에 현재 값·버전을 한 번에 읽는다
 // (버전 비교 → 셀 단위 충돌 판정의 입력). db.transaction의 tx로 불러야
 // 같은 트랜잭션 안에서 읽고-비교하고-쓴다(격리 수준 안에서 일관된 스냅샷).

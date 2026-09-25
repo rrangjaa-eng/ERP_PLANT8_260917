@@ -332,3 +332,35 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     await expect(page.getByRole("button", { name: "기간 바꾸기" })).toBeFocused();
   });
 });
+
+// 04-44(DR-28 · DR-37 · 계약 8 · S17) — 머리 줄 부제의 총 매출 예상가. 권리는 기간 칸과 같다. 계급 권한·정보
+// 노출은 시드 그대로 둔다(ENG-D2).
+test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
+  test("(7) 같은 팀 팀장이 수주중 프로젝트의 총 매출 예상가를 부제 3차로 열어 저장하면 부제가 새 값이고, 새로 고쳐도 같다 · 값이 0이면 「총 매출 예상가 —」", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const lead = await makeAccount("role-team-lead", team, `팀장${randomUUID().slice(0, 6)}`);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "bidding", endDate: addDays(TODAY, 20) });
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
+    await expect(page.getByText("총 매출 예상가 —", { exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: "총 매출 예상가 바꾸기" }).click();
+    const amount = page.getByLabel("총 매출 예상가", { exact: true });
+    await amount.fill("50000000");
+    await expect(amount).toHaveValue("50,000,000");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+    const saving = waitForSaveAction(page);
+    await amount.press("Control+s");
+    await saving;
+
+    await expect(page.getByText("총 매출 예상가 50,000,000", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("총 매출 예상가", { exact: true })).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByText("총 매출 예상가 50,000,000", { exact: true })).toBeVisible();
+    const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
+    expect(row?.preEstimateAmountKrw).toBe(50_000_000);
+  });
+});

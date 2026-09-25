@@ -635,3 +635,27 @@ describe("정산 대 종료일 연장 경합 (04-22 Task 2 · OV-5)", () => {
     ]);
   });
 });
+
+// 04-44(DR-28 · DR-37 · 계약 8 · S17) — 총 매출 예상가가 같은 합성 저장에 합류한다. 권리는 기간과 같은
+// periodEditRights + quote.amount 노출, 쓰기는 moneyToColumns를 지난다. 로그에는 금액을 싣지 않는다.
+describe("총 매출 예상가 저장 (04-44)", () => {
+  it("(o) 팀장이 수주중 프로젝트의 총 매출 예상가를 50,000,000으로 저장 → DB 값 · document_update detail preEstimateChanged · 금액 키 없음", async () => {
+    const s = await setup({ status: "bidding", startDate: null, endDate: FAR });
+
+    await saveProjectLedger(s.lead, s.projectId, {
+      seenStatus: "bidding",
+      preEstimate: { currency: "KRW", amount: 50_000_000, fxRate: 1, fxRateTouched: false },
+    });
+
+    const row = await reload(s.projectId);
+    expect(row.preEstimateCurrency).toBe("KRW");
+    expect(row.preEstimateAmountKrw).toBe(50_000_000);
+    expect(row.preEstimateForeignAmount).toBeNull();
+    expect((await findProject(s.lead, s.projectId))?.preEstimate).toMatchObject({ currency: "KRW", amount: 50_000_000, amountKrw: 50_000_000 });
+    const updates = await logs(s.projectId, "document_update");
+    expect(updates).toHaveLength(1);
+    expect(updates[0]?.actorId).toBe(s.lead.id);
+    expect(updates[0]?.detail).toEqual({ preEstimateChanged: true });
+    expect(JSON.stringify(updates[0]?.detail)).not.toMatch(/amount|50000000/i);
+  });
+});

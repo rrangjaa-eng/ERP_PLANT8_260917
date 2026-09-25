@@ -38,10 +38,11 @@ async function makeAccount(roleId: string, teamId: string, name = "E2E 줄 종�
   return { userId, email, password: tempPassword };
 }
 
-// 경영관리 — `projects` 보기 · `projects.adjustment` 쓰기만(`projects` 쓰기 없음).
-async function makeAdjuster(teamId: string): Promise<Account> {
+// 경영관리 — `projects` 보기 · `projects.adjustment` 쓰기만(`projects` 쓰기 없음). withProjectsWrite면 `projects` 쓰기도 준다(두 권한 보유자).
+async function makeAdjuster(teamId: string, withProjectsWrite = false): Promise<Account> {
   const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E경영관리-${randomUUID().slice(0, 8)}`, workScope: "company" });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+  if (withProjectsWrite) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "write", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.adjustment", action: "write", allowed: true });
   for (const infoItem of ["project.value", "quote.amount"]) {
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
@@ -362,6 +363,27 @@ test.describe("견적 줄 종류 — 조정 · 견적 외 비용 화면 (04-23, 
     const reasonId = await reason.getAttribute("id");
     expect(reasonId).toBeTruthy();
     expect((await addButton.getAttribute("aria-describedby"))?.split(" ")).toContain(reasonId);
+  });
+
+  test("`projects` 쓰기와 조정 권한을 함께 가진 사람 — 줄 수 상한(300)에서 「줄 추가」·「조정 줄 추가」가 둘 다 aria-disabled이고 상한 이유 한 줄을 함께 가리킨다(04-23 검토 S-3)", async ({ page }) => {
+    const team = await makeTeam();
+    const both = await makeAdjuster(team, true);
+    const project = await makeProject({ teamId: team, pmUserId: both.userId, status: "in_progress", endDate: addDays(TODAY, 10), lines: [] });
+    await fillLinesBySql(project.id, 300);
+    await login(page, both);
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
+
+    const reason = page.getByText(CAP_REASON, { exact: true });
+    await expect(reason).toHaveCount(1);
+    const reasonId = await reason.getAttribute("id");
+    expect(reasonId).toBeTruthy();
+    for (const name of ["줄 추가", "조정 줄 추가"]) {
+      const button = page.getByRole("button", { name, exact: true });
+      await expect(button).toHaveAttribute("aria-disabled", "true");
+      expect((await button.getAttribute("aria-describedby"))?.split(" ")).toContain(reasonId);
+    }
+    await expect(page.getByRole("button", { name: "견적 외 비용 줄 추가" })).toHaveCount(0);
   });
 
   test("경영관리 — 0줄 완료 표의 EMPTY는 1000에서 사실만, 1280에서 「조정 줄 추가」이고 누르면 조정 줄 실행가 칸이 열린다", async ({ page }) => {

@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Button, type ButtonProps } from "../../../ui/button/Button";
 import styles from "../../../ui/button/Button.module.css";
 
@@ -61,5 +61,24 @@ describe("Button — reasonTone · aria-disabled(⑦, DR-10 · DR-11)", () => {
     const reasonId = tokens.find((t) => t !== "external-hint");
     expect(reasonId).toBeDefined();
     expect(html).toContain(`id="${reasonId}"`);
+  });
+
+  it("reasonId를 주면 이유 요소의 id와 aria-describedby가 그 값이다 — 다른 버튼이 같은 이유를 가리킬 수 있다(04-23 검토 S-3)", () => {
+    const html = renderButton({ disabled: true, disabledReason: "300줄 상한", reasonId: "cap-reason" });
+
+    expect(html).toContain('id="cap-reason"');
+    expect(html).toContain('aria-describedby="cap-reason"');
+  });
+
+  it("disabledReason 없이 다른 요소의 이유를 aria-describedby로 가리키는 비활성 버튼은 경고하지 않는다(이유 글자는 한 번만)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const html = renderButton({ disabled: true, "aria-describedby": "cap-reason" });
+      expect(html).toContain('aria-disabled="true"');
+      expect(html).toContain('aria-describedby="cap-reason"');
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

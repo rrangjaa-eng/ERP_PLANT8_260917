@@ -1415,6 +1415,7 @@ export function QuoteLedger({
   // 04-26(D-86) — 화면의 활성 줄(보관할 줄은 이미 빠져 있고 새 줄은 포함)이 상한이면 줄을 더하지 않는다.
   const atLineCap = lines.length >= lineCap;
   const lineCapReason = `${lineCap}줄 상한 · 상한은 관리자 설정`;
+  const capReasonId = useId();
 
   // 04-30(엔지 r2 분할안) — 키보드 Ctrl+S는 표가 열린 셀 편집기를 먼저 커밋(blur)한 뒤 부른다. 그 커밋이
   // 상태에 반영된 다음 렌더에서 저장해야 활성 셀의 마지막 값이 페이로드에 든다.
@@ -2116,14 +2117,16 @@ export function QuoteLedger({
             <Button
               variant="tertiary"
               disabled={atLineCap}
-              disabledReason={lineCapReason}
+              // 04-23 검토 S-3 — 「조정 줄 추가」도 그려지면 상한 이유 글자는 그 옆 한 번만, 이 버튼은 그 글자를 가리킨다.
+              disabledReason={adjustmentStructural.insert ? undefined : lineCapReason}
+              aria-describedby={atLineCap && adjustmentStructural.insert ? capReasonId : undefined}
               onClick={() => (saveLocked ? undefined : addLine())}
             >
               줄 추가
             </Button>
           ) : null}
           {/* 04-23(D-48 · DR-36) — 「줄 추가」와 같은 구조 가능성(정산 포함, 완료 제외)·상한·폭. 새 줄의 항목 칸이 열린다. */}
-          {/* 상한이면 이유 글자는 첫 추가 버튼 옆 한 번만 — 뒤따르는 추가 버튼은 그리지 않는다. */}
+          {/* 상한이면 「견적 외 비용 줄 추가」는 그리지 않는다 — 이유 글자는 마지막 비활성 추가 버튼 옆 한 번만. */}
           {structural.insert && !atLineCap ? (
             <Button
               variant="tertiary"
@@ -2133,11 +2136,12 @@ export function QuoteLedger({
             </Button>
           ) : null}
           {/* 04-23(D-83 · DR-36) — 조정 권한자에게 상태와 무관하게, 1024 이상에서만. 새 줄의 실행가 칸이 열린다. */}
-          {adjustmentStructural.insert && !(atLineCap && structural.insert) ? (
+          {adjustmentStructural.insert ? (
             <Button
               variant="tertiary"
               disabled={atLineCap}
               disabledReason={lineCapReason}
+              reasonId={capReasonId}
               onClick={() => (saveLocked ? undefined : setOpenCell({ rowId: addLineToGroup("adjustment"), columnKey: "execution" }))}
             >
               조정 줄 추가

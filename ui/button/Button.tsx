@@ -18,6 +18,8 @@ export type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "disable
   disabled?: boolean;
   /** 비활성 사유 — 버튼 옆에 글자로 렌더되고 버튼의 aria-describedby가 그 글자를 가리킨다(§7-1). pending 중에는 렌더하지 않는다. */
   disabledReason?: string;
+  /** 이유 요소의 id — 주지 않으면 내부 id. 같은 이유를 다른 비활성 버튼이 aria-describedby로 가리킬 때 준다(04-23 검토 S-3). */
+  reasonId?: string;
   /** 비활성 사유의 색 — block(기본) = --danger, info = --muted(§7-1 개정 ⑦, DR-10, U-4). */
   reasonTone?: ButtonReasonTone;
   /** 단축키 표기, 라벨 오른쪽에 kbd로 병기(§7-1). */
@@ -30,6 +32,7 @@ export function Button({
   pending = false,
   disabled = false,
   disabledReason,
+  reasonId: givenReasonId,
   reasonTone = "block",
   shortcut,
   children,
@@ -40,11 +43,13 @@ export function Button({
   ...rest
 }: ButtonProps) {
   const inactive = pending || disabled;
-  const reasonId = useId();
+  const ownReasonId = useId();
+  const reasonId = givenReasonId ?? ownReasonId;
   const showReason = disabled && !pending && Boolean(disabledReason);
   const describedBy = [ariaDescribedBy, showReason ? reasonId : undefined].filter(Boolean).join(" ") || undefined;
 
-  if (process.env.NODE_ENV !== "production" && disabled && !pending && !disabledReason) {
+  // 다른 요소의 이유를 aria-describedby로 가리키면 이유 글자가 이미 화면에 한 번 있다.
+  if (process.env.NODE_ENV !== "production" && disabled && !pending && !disabledReason && !ariaDescribedBy) {
     // 이유 없는 비활성 버튼은 금지된다(UX-06, SYSTEM.md §7-1). 런타임 동작은 바꾸지 않고
     // 개발 중에만 알린다 — 이 파일에 예외 없이 색 리터럴을 두지 않는 것과 같은 종류의 계약.
 

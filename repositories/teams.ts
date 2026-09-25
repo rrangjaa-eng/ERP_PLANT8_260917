@@ -1,4 +1,4 @@
-import { and, eq, isNull, isNotNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, isNotNull } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
 import { teams } from "@/db/schema";
@@ -19,6 +19,13 @@ export async function listTeams(viewer: Viewer, opts: { scope: Scope }): Promise
 export async function findTeamById(viewer: Viewer, id: string): Promise<TeamRow | null> {
   const [row] = await db.select().from(teams).where(eq(teams.id, id)).limit(1);
   return row ?? null;
+}
+
+// 목록 묶음 조회(이슈 #56) — findTeamById와 같은 의미로 보관 여부로 거르지
+// 않는다. ids가 비면 조회 없이 []를 돌려준다.
+export async function findTeamsByIds(viewer: Viewer, ids: string[]): Promise<TeamRow[]> {
+  if (ids.length === 0) return [];
+  return db.select().from(teams).where(inArray(teams.id, ids));
 }
 
 // orgUnitId 미존재는 FK 제약이 거부한다 — insert 전 별도 확인은 domain이 한다

@@ -1,0 +1,32 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-24T13:03:15.038Z",
+  "phase": "quick-260924-hgx",
+  "phase_name": "이슈 #56 사람 목록 N+1 조회 제거",
+  "phase_dir": ".planning/quick/260924-hgx-admin-people-list-n-1-query-fix-issue-56",
+  "plan": 1,
+  "task": 2,
+  "total_tasks": 2,
+  "status": "paused",
+  "completed_tasks": [
+    {"id": 1, "name": "RED 확인 후 묶음 조회로 고치기", "status": "done", "commit": "a637516"},
+    {"id": 2, "name": "게이트(typecheck·lint·unit 743·integration 1029)와 커밋", "status": "done", "commit": "a637516"}
+  ],
+  "remaining_tasks": [
+    {"id": 3, "name": "/review (Post-build)", "status": "not_started"},
+    {"id": 4, "name": "/qa (코드만 바뀜, 화면 변경 없음 → /design-review 불필요)", "status": "not_started"},
+    {"id": 5, "name": "PR #65 CI 초록 확인", "status": "not_started"}
+  ],
+  "blockers": [
+    {"description": "5시간 사용량 한도 때문에 코디네이터가 00:50 KST까지 멈추라고 함", "type": "external", "workaround": "코디네이터 메시지 뒤 재개"}
+  ],
+  "async_jobs": [],
+  "human_actions_pending": [],
+  "decisions": [
+    {"decision": "visible() 메모는 listPeople 호출 한 번짜리 지역 캐시", "rationale": "다른 viewer·계급 판정 섞임 방지(T-q56-01)", "phase": "quick-260924-hgx"},
+    {"decision": "인계 파일을 루트 .planning/HANDOFF.json 대신 quick 폴더에 둠", "rationale": "루트 HANDOFF.json은 Phase 4(PR #40) 인계라 덮어쓰면 머지 때 Phase 4 상태가 사라짐", "phase": "quick-260924-hgx"}
+  ],
+  "uncommitted_files": [],
+  "next_action": "브랜치 claude/project-thread-ptivi4에서 /review 실행 → /qa → PR #65 CI 초록",
+  "context_notes": "실측: 190명 기준 수정 전 3043쿼리·495ms(동시 2요청 981ms), 수정 후 9쿼리·12ms(동시 25ms). STATE.md 현재 페이즈는 바꾸지 않는다."
+}

@@ -6,6 +6,7 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { findQuoteRevisionById } from "@/repositories/quote-revisions";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { can } from "@/domain/permissions/can";
+import { visible } from "@/domain/permissions/visible";
 import { scopeFor } from "@/domain/permissions/scope-for";
 import { gate } from "@/domain/rules/gate";
 import "@/domain/rules/register";
@@ -18,10 +19,17 @@ import {
   validatePeriodChange,
   type PeriodFieldError,
 } from "@/domain/projects/period";
+import { validatePreEstimateChange, type PreEstimateFieldError } from "@/domain/projects/pre-estimate";
+import { moneyFromRow, moneyToColumns, type Currency, type Money } from "@/domain/money";
 import { projectResponsibles } from "@/domain/projects/responsibles";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { kstToday } from "@/lib/kst-date";
-import { findProjectById, updateProjectPeriod, updateProjectStatusIfCurrent } from "@/repositories/projects";
+import {
+  findProjectById,
+  updateProjectPeriod,
+  updateProjectPreEstimate,
+  updateProjectStatusIfCurrent,
+} from "@/repositories/projects";
 
 // 04-02 Task 2 ⑥ — 상세 화면의 1차 「일괄 저장」 하나가 견적 줄 + 매출
 // 섹션(계약 금액·발행 줄·입금 줄)의 dirty 전부를 **같은 트랜잭션**으로
@@ -41,18 +49,29 @@ export type PeriodInput = {
   baseline: { startDate: string | null; endDate: string | null };
 };
 
+// 04-44(DR-28 · DR-37 · 계약 8) — 총 매출 예상가 칸. 동시 수정 기준값은 없다(나중 저장이 이긴다 — 사용자 2026-09-23).
+export type PreEstimateInput = {
+  currency: Currency;
+  amount: number;
+  fxRate: number | null;
+  // 환율 칸을 이번 저장에서 실제로 고쳤을 때만 true.
+  fxRateTouched: boolean;
+};
+
 export type SaveProjectLedgerInput = {
   // DR-6 · 계약 4 — 화면이 본 상태. 잠금 직후 첫 판정 행과 다르면 저장 전체를 거부한다.
   seenStatus: ProjectStatus;
   quoteLines?: { revisionId: string; rows: QuoteLineWriteRow[] };
   revenue?: SaveRevenueInput;
   period?: PeriodInput;
+  preEstimate?: PreEstimateInput;
 };
 
 export type SaveProjectLedgerResult = {
   quoteLines: SaveQuoteLinesResult | null;
   revenue: RevenueDto | null;
-  project: { status: string; startDate: string | null; endDate: string | null };
+  // preEstimate는 이번 저장에 실어 보낸(권리·노출을 통과한) 경우에만 싣는다.
+  project: { status: string; startDate: string | null; endDate: string | null; preEstimate?: Money };
 };
 
 export type { PeriodFieldError };
@@ -74,6 +93,7 @@ export type SaveProjectLedgerDeps = {
 
 const PROJECT_ENTITY = "project";
 const PERIOD_RULE = "project.period-edit";
+const PRE_ESTIMATE_RULE = "project.pre-estimate-edit";
 const PERIOD_CONFLICT = "다른 사람이 먼저 기간을 바꿈 · 새로 고침";
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -115,22 +135,25 @@ export async function saveProjectLedger(
       }
     }
 
-    // ENG-D3 ①: 기간 권리의 사실은 트랜잭션 전에 읽는다.
+    // ENG-D3 ①: 기간 권리의 사실은 트랜잭션 전에 읽는다. 총 매출 예상가도 같은 권리(periodEditRights —
+    // DR-37)라 기간 없이 총 매출 예상가만 실린 저장도 같은 사실과 quote.amount 노출을 여기서 읽는다(04-44).
     const todayKst = kstToday(now());
-    const periodFacts = input.period
-      ? await (async () => {
-          const [canWrite, canEditPeriod, teamScope] = await Promise.all([
-            can(viewer, "projects", "write"),
-            can(viewer, "projects.period", "write"),
-            loadActorTeamScope(viewer, { todayKst }),
-          ]);
-          // 거부 문구의 팀장 이름은 권리가 pm이 될 수 있는 사람(담당 PM)일 때만 읽는다.
-          const known = canWrite ? await findProjectById(viewer, projectId) : null;
-          const teamLeadName =
-            known && known.pmUserId === viewer.id ? (await projectResponsibles(viewer, known, { now }, { leadMenu: "projects.period" })).teamLeadName : null;
-          return { canWrite, canEditPeriod, teamScope, teamLeadName };
-        })()
-      : null;
+    const periodFacts =
+      input.period || input.preEstimate
+        ? await (async () => {
+            const [canWrite, canEditPeriod, teamScope, canSeeAmount] = await Promise.all([
+              can(viewer, "projects", "write"),
+              can(viewer, "projects.period", "write"),
+              loadActorTeamScope(viewer, { todayKst }),
+              input.preEstimate ? visible(viewer, "quote.amount") : Promise.resolve(false),
+            ]);
+            // 거부 문구의 팀장 이름은 기간 저장에서 권리가 pm이 될 수 있는 사람(담당 PM)일 때만 읽는다.
+            const known = input.period && canWrite ? await findProjectById(viewer, projectId) : null;
+            const teamLeadName =
+              known && known.pmUserId === viewer.id ? (await projectResponsibles(viewer, known, { now }, { leadMenu: "projects.period" })).teamLeadName : null;
+            return { canWrite, canEditPeriod, teamScope, teamLeadName, canSeeAmount };
+          })()
+        : null;
 
     // 감사 기록은 트랜잭션 밖 커넥션으로 쓰인다 — 안에서 바로 남기면 뒤쪽
     // 저장이 거부돼 롤백돼도 기록만 남는다. 모았다가 커밋 뒤에 남긴다.
@@ -156,18 +179,21 @@ export async function saveProjectLedger(
         throw new StatusChangedError(statusChangedMessage(locked.status, "전부 거부"), locked.status);
       }
       let current = locked;
+      let savedPreEstimate: Money | undefined;
+      const status = locked.status;
+      const rights = periodFacts
+        ? periodEditRights({
+            status,
+            isAssignedPm: locked.pmUserId === viewer.id,
+            canWrite: periodFacts.canWrite,
+            canEditPeriod: periodFacts.canEditPeriod,
+            actorCoversTeam: coversProjectTeam(periodFacts.teamScope, locked.teamId),
+          })
+        : "none";
 
       // ② 기간 판정·쓰기.
       if (input.period && periodFacts) {
         const period = input.period;
-        const status = locked.status;
-        const rights = periodEditRights({
-          status,
-          isAssignedPm: locked.pmUserId === viewer.id,
-          canWrite: periodFacts.canWrite,
-          canEditPeriod: periodFacts.canEditPeriod,
-          actorCoversTeam: coversProjectTeam(periodFacts.teamScope, locked.teamId),
-        });
         const conflict = locked.startDate !== period.baseline.startDate || locked.endDate !== period.baseline.endDate;
         const errors: PeriodFieldError[] = conflict
           ? [{ field: "end", reason: PERIOD_CONFLICT }]
@@ -188,8 +214,28 @@ export async function saveProjectLedger(
             new PeriodRejectedError(rights === "none" ? [{ field: "end", reason: decision.reason }] : errors),
           );
         }
+      }
 
-        const resolved = resolvePeriodSave({ status, newStart: period.startDate, newEnd: period.endDate, todayKst });
+      // ②' 총 매출 예상가 판정 — 기간 판정 바로 뒤, 같은 잠근 행·같은 권리(DR-37)와 트랜잭션 전 노출 사실로.
+      const preEstimate = input.preEstimate;
+      if (preEstimate) {
+        const errors: PreEstimateFieldError[] = validatePreEstimateChange(preEstimate);
+        const decision = await gate(locked, PRE_ESTIMATE_RULE, {
+          rights,
+          canSeeAmount: periodFacts?.canSeeAmount ?? false,
+          errors,
+        });
+        if (!decision.allowed) throw new UserFacingError(decision.reason);
+      }
+
+      // A-16: 누가 무엇을 바꿨는지 — 바뀐 칸만 싣는다(총 매출 예상가는 금액 없이 표시만). 같은 tx, 한 줄.
+      const changed: Record<string, unknown> = {};
+
+      const resolved = input.period
+        ? resolvePeriodSave({ status, newStart: input.period.startDate, newEnd: input.period.endDate, todayKst })
+        : null;
+      if (input.period && resolved) {
+        const period = input.period;
         const written = await updateProjectPeriod(
           viewer,
           projectId,
@@ -200,18 +246,39 @@ export async function saveProjectLedger(
         if (!written) throw new PeriodRejectedError([{ field: "end", reason: PERIOD_CONFLICT }]);
         current = written;
 
-        // A-16: 누가 무엇을 바꿨는지 — 바뀐 칸만 싣는다. 같은 tx.
-        const changed: Record<string, { from: string | null; to: string | null }> = {};
         if (locked.startDate !== written.startDate) changed.startDate = { from: locked.startDate, to: written.startDate };
         if (locked.endDate !== written.endDate) changed.endDate = { from: locked.endDate, to: written.endDate };
-        if (Object.keys(changed).length > 0) {
-          await recordAction(
-            viewer,
-            { actionType: "document_update", entity: PROJECT_ENTITY, entityId: projectId, detail: changed },
-            { tx },
-          );
-        }
+      }
 
+      // ③' 총 매출 예상가 쓰기 — 기간 쓰기 뒤. moneyToColumns를 지나 저장 규칙(04-40 normalizeMoneyInput)을 따른다.
+      if (preEstimate) {
+        const columns = moneyToColumns({
+          currency: preEstimate.currency,
+          amount: preEstimate.amount,
+          fxRate: preEstimate.currency === "KRW" ? 1 : (preEstimate.fxRate ?? 1),
+        });
+        const written = await updateProjectPreEstimate(viewer, projectId, columns, tx);
+        if (!written) throw new Error("project.pre_estimate_no_row");
+        savedPreEstimate = moneyFromRow(columns);
+        if (
+          locked.preEstimateCurrency !== columns.currency ||
+          locked.preEstimateForeignAmount !== columns.foreignAmount ||
+          locked.preEstimateFxRate !== columns.fxRate ||
+          locked.preEstimateAmountKrw !== columns.amountKrw
+        ) {
+          changed.preEstimateChanged = true;
+        }
+      }
+
+      if (Object.keys(changed).length > 0) {
+        await recordAction(
+          viewer,
+          { actionType: "document_update", entity: PROJECT_ENTITY, entityId: projectId, detail: changed },
+          { tx },
+        );
+      }
+
+      if (resolved) {
         if (resolved.statusChange) {
           const reverted = await updateProjectStatusIfCurrent(
             viewer,
@@ -252,7 +319,12 @@ export async function saveProjectLedger(
       if (input.revenue) await saveRevenue(viewer, projectId, input.revenue, deferRecord, tx);
       return {
         quoteLinesResult,
-        project: { status: current.status, startDate: current.startDate, endDate: current.endDate },
+        project: {
+          status: current.status,
+          startDate: current.startDate,
+          endDate: current.endDate,
+          ...(savedPreEstimate ? { preEstimate: savedPreEstimate } : {}),
+        },
       };
     });
     return { ...inTx, pendingActions };

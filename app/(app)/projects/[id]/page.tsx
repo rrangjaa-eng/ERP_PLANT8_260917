@@ -57,8 +57,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   // (가) 셀 편집 가능성은 서버가 판정해 보낸다 — 화면은 project.status
   // 문자열을 다시 해석하지 않고 이 판정 결과(boolean)만 받는다.
   const gateDecision = await gate(project, "project.line-edit", { status: project.status });
+  const canSeeAmount = await visible(session.viewer, "quote.amount");
   // 금액을 볼 수 없으면 표를 편집하지 않는다 — 서버도 저장을 거부한다(saveQuoteLines).
-  const editable = canWrite && gateDecision.allowed && (await visible(session.viewer, "quote.amount"));
+  const editable = canWrite && gateDecision.allowed && canSeeAmount;
 
   // 04-22(S13 · 사용자 D14·D11·D20 · 사용자 결정 2026-09-25 「기간만 수정」) — 기간 권리. 팀장 이상은
   // projects.period 쓰기 + 자기 팀, 담당 PM은 projects 쓰기가 있을 때만.
@@ -69,8 +70,11 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     canEditPeriod,
     actorCoversTeam,
   });
+  // 04-44(DR-37) — 총 매출 예상가는 기간과 같은 권리 + 금액 노출(볼 수 없는 값은 고칠 수 없다).
+  const canEditPreEstimate = periodRights !== "none" && canSeeAmount;
   // A-12: 1차 「일괄 저장」은 이 화면에서 쓸 수 있는 칸이 하나라도 있을 때만 — 판정은 서버가 칸마다 한다.
-  const canSave = editable || periodRights !== "none" || canWriteEntries || (canWrite && status !== "completed");
+  const canSave =
+    editable || periodRights !== "none" || canEditPreEstimate || canWriteEntries || (canWrite && status !== "completed");
 
   const [lines, references, revenue, usdDefaultFxRate, destinations, catalog, statusSince] = await Promise.all([
     listQuoteLines(session.viewer, revision.id),
@@ -121,6 +125,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       projectId={project.id}
       status={status}
       period={{ startDate: project.startDate, endDate: project.endDate, rights: periodRights, todayKst }}
+      preEstimate={{ value: project.preEstimate ?? null, canEdit: canEditPreEstimate }}
       canSave={canSave}
       projectName={project.name}
       subtitle={`${project.number} · 상세 견적 ${revision.seq}차 · ${statusLabel} ${statusSince}`}

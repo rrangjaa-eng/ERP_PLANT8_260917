@@ -21,11 +21,20 @@ import { useCommaInput } from "@/ui/input/use-comma-input";
 import type { TableColumn, CellIssue } from "@/ui/table/types";
 import type { QuoteLineDto, QuoteLineBaseline } from "@/domain/quotes/lines";
 import type { RevenueDto } from "@/domain/revenue";
-import type { Currency } from "@/domain/money";
+import type { Currency, Money } from "@/domain/money";
 import { RevenueSection, type ContractDraft, type EntryDraft } from "./revenue-section";
 import { StatusChange, type StatusChangeProps } from "./status-change";
 import { PeriodField, periodText, type PeriodDraft, type PeriodFieldError } from "./period-field";
 import type { PeriodRights } from "@/domain/projects/period";
+import {
+  PreEstimateField,
+  fxRateTouched,
+  parsePreEstimateDraft,
+  preEstimateDirtyCount,
+  preEstimateDraftFrom,
+  preEstimateText,
+  type PreEstimateDraft,
+} from "./pre-estimate-field";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import styles from "./project-detail.module.css";
 
@@ -82,6 +91,7 @@ const FIELD_TO_COLUMN: Record<string, string> = {
 
 // 04-22(A-34) — 기간 칸이 닫히면 포커스가 돌아올 3차 「기간 바꾸기」.
 const PERIOD_TRIGGER_ID = "period-open";
+const PRE_ESTIMATE_TRIGGER_ID = "pre-estimate-open";
 
 // 충돌 이유 문자열 끝의 행동 글자 — 셀에서는 이 둘이 3차 버튼으로 그려진다.
 const CONFLICT_ACTIONS_SUFFIX = " · 덮어쓰기 / 그 값으로";
@@ -690,6 +700,7 @@ export function QuoteLedger({
   projectId,
   status,
   period,
+  preEstimate,
   canSave,
   projectName,
   subtitle,
@@ -714,6 +725,8 @@ export function QuoteLedger({
   status: ProjectStatus;
   /** 04-22(S13) — 기간 칸. 권리는 서버가 판정한다(periodEditRights). */
   period: { startDate: string | null; endDate: string | null; rights: PeriodRights; todayKst: string };
+  /** 04-44(S17) — 총 매출 예상가. 값은 quote.amount를 볼 수 없으면 null, 권리는 서버가 판정한다(기간과 같은 권리 + 노출). */
+  preEstimate: { value: Money | null; canEdit: boolean };
   /** 04-22(A-12) — 1차 「일괄 저장」 렌더 조건(서버 계산). */
   canSave: boolean;
   projectName: string;
@@ -753,6 +766,10 @@ export function QuoteLedger({
   const [periodFocus, setPeriodFocus] = useState<"start" | "end">("start");
   const [periodErrors, setPeriodErrors] = useState<PeriodFieldError[]>([]);
   const [periodSaved, setPeriodSaved] = useState(false);
+  // 04-44(S17) — 총 매출 예상가 칸. 기준값은 서버 렌더 값 또는 직전 저장 결과(나중 저장이 이긴다 — 기준값 검사 없음).
+  const [preEstimateBase, setPreEstimateBase] = useState<Money | null>(preEstimate.value);
+  const [preEstimateDraft, setPreEstimateDraft] = useState<PreEstimateDraft | null>(null);
+  const [preEstimateSaved, setPreEstimateSaved] = useState(false);
   // 리뷰 S5 — 저장이 상태를 바꾸면(정산 → 진행) router.refresh가 오기 전의 다음 저장도 새 상태를 싣는다.
   const [seenStatus, setSeenStatus] = useState(status);
   const router = useRouter();
@@ -799,6 +816,8 @@ export function QuoteLedger({
         setPeriodErrors([]);
         setSeenStatus(saved.status as ProjectStatus); // projects.status 열은 text — 값은 PROJECT_STATUSES 중 하나다.
         if (periodDraft) closePeriodFieldAfterSave();
+        if (saved.preEstimate) setPreEstimateBase(saved.preEstimate);
+        if (preEstimateDraft) closePreEstimateFieldAfterSave();
         // 상태가 바뀌었으면(정산 → 진행 등) 서버가 계산하는 태그·권리·canSave를 다시 받는다.
         if (saved.status !== status) router.refresh();
       }
@@ -819,6 +838,28 @@ export function QuoteLedger({
       setPeriodSaved(false);
       setPeriodDraft(null);
     }, 600);
+  }
+
+  // S17 — 저장 성공: 기간 칸과 같은 600ms 틴트 뒤 닫힘(토스트 없음).
+  function closePreEstimateFieldAfterSave() {
+    const reduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) {
+      setPreEstimateDraft(null);
+      return;
+    }
+    setPreEstimateSaved(true);
+    window.setTimeout(() => {
+      setPreEstimateSaved(false);
+      setPreEstimateDraft(null);
+    }, 600);
+  }
+
+  const preEstimateBaselineDraft = preEstimateBase ? preEstimateDraftFrom(preEstimateBase, usdDefaultFxRate) : null;
+  const preEstimateDirty =
+    preEstimateDraft && preEstimateBaselineDraft ? preEstimateDirtyCount(preEstimateDraft, preEstimateBaselineDraft) : 0;
+
+  function openPreEstimateField() {
+    setPreEstimateDraft((prev) => prev ?? preEstimateBaselineDraft);
   }
 
   // 04-44의 상태 모달 3차 · 04-30의 EMPTY 「기간 바꾸기」가 이 함수로 칸을 연다.
@@ -865,7 +906,8 @@ export function QuoteLedger({
   const issuedDirtyCount = (issuedEntries ?? []).filter((entry) => entry.dirty).length;
   const paidDirtyCount = (paidEntries ?? []).filter((entry) => entry.dirty).length;
   const contractDirtyCount = contractDraft.dirty ? 1 : 0;
-  const dirtyCount = quoteLinesDirtyCount + issuedDirtyCount + paidDirtyCount + contractDirtyCount + periodDirtyCount;
+  const dirtyCount =
+    quoteLinesDirtyCount + issuedDirtyCount + paidDirtyCount + contractDirtyCount + periodDirtyCount + preEstimateDirty;
   const dirtyStorage = useDirtyStorage(projectId, revisionId, dirtyCount);
 
   const { persist } = dirtyStorage;
@@ -891,6 +933,8 @@ export function QuoteLedger({
     setPeriodBaseline({ startDate: period.startDate, endDate: period.endDate });
     setPeriodDraft(null);
     setPeriodErrors([]);
+    setPreEstimateBase(preEstimate.value);
+    setPreEstimateDraft(null);
     dirtyStorage.recount();
   }
 
@@ -1063,6 +1107,13 @@ export function QuoteLedger({
               startDate: periodDraft.start.trim() || null,
               endDate: periodDraft.end.trim() || null,
               baseline: periodBaseline,
+            }
+          : undefined,
+      preEstimate:
+        preEstimateDraft && preEstimateBaselineDraft && preEstimateDirty > 0
+          ? {
+              ...parsePreEstimateDraft(preEstimateDraft),
+              fxRateTouched: fxRateTouched(preEstimateDraft, preEstimateBaselineDraft),
             }
           : undefined,
       quoteLines:
@@ -1533,6 +1584,17 @@ export function QuoteLedger({
               ) : null}
             </p>
           )}
+          {/* S17 — 금액을 볼 수 없으면 줄이 없다. 칸이 열린 동안 값과 3차는 숨는다. */}
+          {preEstimateBase === null || preEstimateDraft ? null : (
+            <p className={styles.periodLine}>
+              <span>{preEstimateText(preEstimateBase)}</span>
+              {preEstimate.canEdit ? (
+                <Button id={PRE_ESTIMATE_TRIGGER_ID} type="button" variant="tertiary" onClick={openPreEstimateField}>
+                  총 매출 예상가 바꾸기
+                </Button>
+              ) : null}
+            </p>
+          )}
         </div>
         <span className={styles.statusLine}>
           <StatusTag kind={statusTagKind} variant="tag">
@@ -1573,6 +1635,16 @@ export function QuoteLedger({
           saved={periodSaved}
           onChange={changePeriod}
           onEscape={escapePeriod}
+          onSave={handleSave}
+        />
+      ) : null}
+
+      {preEstimateDraft && preEstimateBaselineDraft ? (
+        <PreEstimateField
+          draft={preEstimateDraft}
+          baseline={preEstimateBaselineDraft}
+          saved={preEstimateSaved}
+          onChange={setPreEstimateDraft}
           onSave={handleSave}
         />
       ) : null}

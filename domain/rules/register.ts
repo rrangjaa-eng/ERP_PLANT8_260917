@@ -57,6 +57,25 @@ registerGateRule<unknown, ProjectPeriodEditCtx>({
   },
 });
 
+// 04-44(DR-28 · DR-37 · 계약 8 · S17) — 총 매출 예상가 칸 저장. 권리는 기간과 같은 periodEditRights이고 금액을
+// 볼 수 없으면 고칠 수 없다(quote.amount). 권리 없음은 방어 문구(화면은 3차를 그리지 않는다 — 위조 요청으로만
+// 닿는다), 칸 오류가 있으면 첫 오류 이유.
+export type ProjectPreEstimateEditCtx = {
+  rights: "lead" | "pm" | "none";
+  canSeeAmount: boolean;
+  errors: { reason: string }[];
+};
+
+registerGateRule<unknown, ProjectPreEstimateEditCtx>({
+  name: "project.pre-estimate-edit",
+  check: (_doc, ctx) => {
+    if (ctx.rights === "none" || !ctx.canSeeAmount) return { allowed: false, reason: "총 매출 예상가 바꾸기 권한 없음" };
+    const [first] = ctx.errors;
+    if (first) return { allowed: false, reason: first.reason };
+    return { allowed: true };
+  },
+});
+
 // 04-20(D-82) — 진행으로 가는 전환은 시작일이 있어야 한다. 이 문자열은
 // statusDestinations의 blockedReason으로 화면에 그대로 간다(UI-SPEC rev 5 원문).
 export type ProjectStartDateRequiredCtx = { to: string; startDate: string | null };

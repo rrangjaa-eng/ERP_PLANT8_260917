@@ -138,6 +138,15 @@ export const saveProjectLedgerAction = authedActionClient
           baseline: z.object({ startDate: periodBaselineDateSchema, endDate: periodBaselineDateSchema }),
         })
         .optional(),
+      // 04-44 — 총 매출 예상가 칸. 숫자가 아닌 금액(NaN)도 받아 domain이 칸 오류 문구로 돌려준다.
+      preEstimate: z
+        .object({
+          currency: currencySchema,
+          amount: z.union([z.number(), z.nan()]),
+          fxRate: z.union([z.number(), z.nan()]).nullable(),
+          fxRateTouched: z.boolean(),
+        })
+        .optional(),
     }),
   )
   .action(async ({ parsedInput, ctx }) => {
@@ -148,6 +157,7 @@ export const saveProjectLedgerAction = authedActionClient
         quoteLines: parsedInput.quoteLines,
         revenue: parsedInput.revenue,
         period: parsedInput.period,
+        preEstimate: parsedInput.preEstimate,
       });
     } catch (error) {
       // 04-22 — 기간 칸 거부는 칸 오류로 돌려준다(화면이 칸 아래 Form.Error로 그린다).

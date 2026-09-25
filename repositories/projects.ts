@@ -359,6 +359,29 @@ export async function updateProjectPeriod(
   return row ?? null;
 }
 
+// 04-44(계약 8) — 총 매출 예상가 네 칸. 동시 수정 기준값은 두지 않는다(나중 저장이 이긴다 — 사용자 2026-09-23).
+// 호출자는 잠근 트랜잭션 안에서 부른다.
+export async function updateProjectPreEstimate(
+  viewer: Viewer,
+  id: string,
+  input: { currency: string; foreignAmount: string | null; fxRate: string; amountKrw: number },
+  tx: DbOrTx,
+): Promise<ProjectRow | null> {
+  void viewer;
+  const [row] = await tx
+    .update(projects)
+    .set({
+      preEstimateCurrency: input.currency,
+      preEstimateForeignAmount: input.foreignAmount,
+      preEstimateFxRate: input.fxRate,
+      preEstimateAmountKrw: input.amountKrw,
+      updatedAt: new Date(),
+    })
+    .where(eq(projects.id, id))
+    .returning();
+  return row ?? null;
+}
+
 export type SettledProjectRow = { id: string; endDate: string; lastChangeAt: Date | null };
 
 // 04-11(D-76 · OV-5 · Pitfall 7): 종료일이 지난 from 상태 프로젝트를 to로 바꾼다. 대상은

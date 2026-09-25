@@ -11,6 +11,7 @@ import { allocateDocumentNumber, loadDocumentNumberFormat } from "@/domain/docum
 import { withTransaction } from "@/lib/db-transaction";
 import { kstYear } from "@/lib/kst-date";
 import { applyAutoSettlement, type AutoSettlementDeps } from "@/domain/projects/auto-transition";
+import { moneyFromRow, type Money } from "@/domain/money";
 import {
   listProjectsPage as repoListProjectsPage,
   aggregateProjects as repoAggregateProjects,
@@ -44,7 +45,7 @@ const PROJECT_NUMBER_COUNTER_KEY = "project";
 
 // PROJ-01: 프로젝트 Dto. 이 플랜은 사전 견적(총 매출 예상가) Money 묶음을
 // 등록 폼에서 다루지 않는다(트레이서 슬라이스 — 04-02/04-05가 매출 칸을
-// 더한다) — DTO에서도 아직 노출하지 않는다.
+// 더한다). DTO 노출은 04-44가 더했다(preEstimate).
 export type ProjectDto = {
   id: string;
   number: string;
@@ -60,9 +61,26 @@ export type ProjectDto = {
   version: number;
   archivedAt: Date | null;
   createdAt: Date;
+  // 04-44(DR-28 · 계약 8) — 총 매출 예상가. 견적 금액과 같은 정보 항목이라 볼 수 없으면 키가 없다.
+  preEstimate?: Money;
 };
 
-export const PROJECT_DTO_SPEC: DtoSpec<ProjectRow, ProjectDto> = {
+// 04-44 — 행의 pre_estimate_* 네 칸을 Money 하나로 묶은 투영 원본.
+type ProjectDtoSource = ProjectRow & { preEstimate: Money };
+
+function withPreEstimate(row: ProjectRow): ProjectDtoSource {
+  return {
+    ...row,
+    preEstimate: moneyFromRow({
+      currency: row.preEstimateCurrency,
+      foreignAmount: row.preEstimateForeignAmount,
+      fxRate: row.preEstimateFxRate,
+      amountKrw: row.preEstimateAmountKrw,
+    }),
+  };
+}
+
+export const PROJECT_DTO_SPEC: DtoSpec<ProjectDtoSource, ProjectDto> = {
   fields: [
     { key: "id", from: "id", infoItem: "project.value" },
     { key: "number", from: "number", infoItem: "project.value" },
@@ -78,6 +96,7 @@ export const PROJECT_DTO_SPEC: DtoSpec<ProjectRow, ProjectDto> = {
     { key: "version", from: "version", infoItem: "project.value" },
     { key: "archivedAt", from: "archivedAt", infoItem: "project.value" },
     { key: "createdAt", from: "createdAt", infoItem: "project.value" },
+    { key: "preEstimate", from: "preEstimate", infoItem: "quote.amount" },
   ],
 };
 
@@ -236,7 +255,7 @@ export async function findProject(
   if (!row) return null;
   if (row.archivedAt !== null && !scope.includeArchived) return null;
 
-  return (await project(viewer, row, PROJECT_DTO_SPEC)) as ProjectDto;
+  return (await project(viewer, withPreEstimate(row), PROJECT_DTO_SPEC)) as ProjectDto;
 }
 
 // 04-11(A-07 · 엔지 리뷰 A P3): 목록 요청의 자동 정산 입구 — 요청당 한 번, 목록·합계를
@@ -322,5 +341,5 @@ export async function createProject(
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "document_create", entity: PROJECT_ENTITY, entityId: created.id });
 
-  return (await project(viewer, created, PROJECT_DTO_SPEC)) as ProjectDto;
+  return (await project(viewer, withPreEstimate(created), PROJECT_DTO_SPEC)) as ProjectDto;
 }

@@ -382,6 +382,12 @@ expect_true "main-merge: 알림에 병합된 SUMMARY는 없음" "$(printf '%s' "
 hook plant8-session-boundary.sh pre-tool "$(payload_agent "$Mg" gsd-executor)" "$projMg"
 expect_rc "main-merge: 이 세션이 만든 SUMMARY는 gsd-executor를 막음" 2 "$HOOK_RC"
 
+# 이 세션의 PR이 머지돼 자기 SUMMARY가 origin/main에 들어가도 계속 센다.
+git -C "$projMg" add .planning && git -C "$projMg" commit -qm "own plan"
+git -C "$projMg" update-ref refs/remotes/origin/main work
+hook plant8-session-boundary.sh pre-tool "$(payload_agent "$Mg" gsd-executor)" "$projMg"
+expect_rc "main-merge: 자기 SUMMARY가 main에 들어간 뒤에도 gsd-executor를 막음" 2 "$HOOK_RC"
+
 # ---------------------------------------------------------------------------
 # Wiring: settings.json has PreToolUse matcher Skill -> session-boundary pre-tool
 WIRED="$(jq -e '[.hooks.PreToolUse[]? | select(.matcher=="Skill") | .hooks[]? | select(.command | test("plant8-session-boundary\\.sh pre-tool"))] | length > 0' "$REPO/.claude/settings.json" 2>/dev/null)"

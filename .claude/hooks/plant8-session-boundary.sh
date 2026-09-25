@@ -31,6 +31,7 @@ branch_file="$state_dir/${session}.branch"
 flag_plan_phase="$state_dir/${session}.plan-phase-done"
 announced="$state_dir/${session}.announced"
 stop_reminded="$state_dir/${session}.stop-reminded"
+own="$state_dir/${session}.own"  # 처음 볼 때 main에 없던(이 세션이 만든) SUMMARY
 
 gate_reviews="plan-ceo-review|plan-eng-review|plan-design-review"
 
@@ -94,13 +95,18 @@ gate_review_done() {
   printf '%s\n' "$names" | sed 's#^#/#' | tr '\n' ' ' | sed 's/ *$//'
 }
 
-# 베이스라인 뒤 새로 보이는 SUMMARY 중 이미 origin/main에 있는 것(세션 도중 main 병합으로
-# 들어온 다른 플랜)은 뺀다. 이 세션이 만든 SUMMARY는 PR 머지 전까지 main에 없다.
+# 베이스라인 뒤 새로 보이는 SUMMARY를 처음 볼 때 origin/main에 이미 있으면 세션 도중 main 병합으로
+# 들어온 다른 플랜이라 뺀다. 없으면 이 세션 것으로 기록해, 나중에 PR 머지로 main에 들어가도 계속 센다.
 new_summaries() {
   [ -f "$baseline" ] || return 0
   local f
   comm -13 "$baseline" <(list_summaries) | while IFS= read -r f; do
-    [ -n "$(git -C "$project" ls-tree --name-only origin/main -- "${f#"$project"/}" 2>/dev/null)" ] || printf '%s\n' "$f"
+    if grep -Fqx "$f" "$own" 2>/dev/null; then
+      printf '%s\n' "$f"
+    elif [ -z "$(git -C "$project" ls-tree --name-only origin/main -- "${f#"$project"/}" 2>/dev/null)" ]; then
+      printf '%s\n' "$f" >> "$own"
+      printf '%s\n' "$f"
+    fi
   done | xargs -r -n1 basename | sed 's/-SUMMARY\.md$//' | tr '\n' ' '
 }
 
@@ -126,7 +132,7 @@ case "$event" in
     if [ "$source" = "startup" ] || [ ! -f "$baseline" ]; then
       list_summaries > "$baseline"
       current_branch > "$branch_file"
-      rm -f "$flag_plan_phase" "$announced" "$stop_reminded"
+      rm -f "$flag_plan_phase" "$announced" "$stop_reminded" "$own"
     fi
     exit 0
     ;;

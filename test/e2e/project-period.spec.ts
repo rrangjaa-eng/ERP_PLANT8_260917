@@ -437,3 +437,88 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
     await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
   });
 });
+
+// 04-44(S7 · S13 · DR-26) — 상태 모달의 막힘·종료일 지남이 머리 줄 기간 칸으로 이어진다. 시드 권한만 쓴다(ENG-D2).
+test.describe("상태 모달 → 기간 칸 · 폰 부제 순서 (04-44, PROJ-04)", () => {
+  test("(11) 시작일 없는 수주중에서 진행을 고르면 막힘 옆 3차 「기간 적기」 — 누르면 모달이 닫히고 시작일 칸에 포커스", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const lead = await makeAccount("role-team-lead", team, `팀장${randomUUID().slice(0, 6)}`);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "bidding", endDate: addDays(TODAY, 20) });
+    await db.update(projects).set({ startDate: null }).where(eq(projects.id, project.id));
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await page.getByRole("button", { name: "상태 바꾸기" }).click();
+    await page.getByRole("dialog", { name: "상태 바꾸기" }).getByRole("button", { name: /^진행/ }).click();
+    const confirm = page.getByRole("dialog", { name: "진행으로 바꾸기" });
+    await expect(confirm.getByText("시작일 없음 · 기간 적기", { exact: true }).filter({ visible: true })).toBeVisible();
+
+    await confirm.getByRole("button", { name: "기간 적기" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByLabel("시작일")).toBeFocused();
+  });
+
+  test("(12) 종료일이 지난 수주중을 진행으로 바꾸는 모달의 결과 줄 옆 3차 「기간 바꾸기」 — 누르면 모달이 닫히고 종료일 칸에 포커스", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const lead = await makeAccount("role-team-lead", team, `팀장${randomUUID().slice(0, 6)}`);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "bidding", endDate: addDays(TODAY, -3) });
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await page.getByRole("button", { name: "상태 바꾸기" }).click();
+    await page.getByRole("dialog", { name: "상태 바꾸기" }).getByRole("button", { name: /^진행/ }).click();
+    const confirm = page.getByRole("dialog", { name: "진행으로 바꾸기" });
+    await expect(confirm.getByText("종료일 지남 · 바로 정산", { exact: true })).toBeVisible();
+
+    await confirm.getByRole("button", { name: "기간 바꾸기" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByLabel("종료일")).toBeFocused();
+  });
+
+  test("(13) 종료일이 지난 미수주의 「진행으로 되돌리기」 모달도 결과 줄 3차 「기간 바꾸기」로 종료일 칸에 포커스", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const lead = await makeAccount("role-team-lead", team, `팀장${randomUUID().slice(0, 6)}`);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "lost", endDate: addDays(TODAY, -3) });
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await page.getByRole("button", { name: "진행으로 되돌리기" }).click();
+    const revert = page.getByRole("dialog", { name: "진행으로 되돌리기" });
+    await expect(revert.getByText("종료일 지남 · 바로 정산", { exact: true })).toBeVisible();
+
+    await revert.getByRole("button", { name: "기간 바꾸기" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByLabel("종료일")).toBeFocused();
+  });
+
+  test("(14) 375×812에서 부제 첫 항목은 `기간 …`이고 나머지 부제(번호 · 차수 · 총 매출 예상가)가 그 아래다 (DR-26)", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const lead = await makeAccount("role-team-lead", team, `팀장${randomUUID().slice(0, 6)}`);
+    const endDate = addDays(TODAY, 20);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "bidding", endDate });
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    const periodLine = page.getByText(`기간 ${addDays(endDate, -3)} ~ ${endDate}`, { exact: true });
+    const subtitle = page.getByText(new RegExp(`^${project.number} · 상세 견적 1차`));
+    const preEstimate = page.getByText("총 매출 예상가 —", { exact: true });
+    await expect(periodLine).toBeVisible();
+    await expect(subtitle).toBeVisible();
+    await expect(preEstimate).toBeVisible();
+    const [periodBox, subtitleBox, preEstimateBox] = await Promise.all([
+      periodLine.boundingBox(),
+      subtitle.boundingBox(),
+      preEstimate.boundingBox(),
+    ]);
+    if (!periodBox) throw new Error("기간 줄이 보이지 않습니다");
+    if (!subtitleBox) throw new Error("부제가 보이지 않습니다");
+    if (!preEstimateBox) throw new Error("총 매출 예상가 줄이 보이지 않습니다");
+    expect(periodBox.y).toBeLessThan(subtitleBox.y);
+    expect(periodBox.y).toBeLessThan(preEstimateBox.y);
+  });
+});

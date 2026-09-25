@@ -300,3 +300,33 @@ export async function updateProjectContract(
     })
     .where(eq(projects.id, id));
 }
+
+// 04-20(OV-3·A-11): 상태 전환의 배타 잠금 읽기 — 호출자가 연 트랜잭션 안에서만
+// 부른다(tx 필수). 행이 없으면 null.
+export async function lockProjectForWrite(viewer: Viewer, id: string, tx: DbOrTx): Promise<ProjectRow | null> {
+  void viewer;
+  const [row] = await tx.select().from(projects).where(eq(projects.id, id)).for("update");
+  return row ?? null;
+}
+
+// 04-20(D-82): 기대 상태일 때만 바꾼다(0행이면 null — 호출자가 동시 변경으로
+// 거부한다). 진행으로 가는 전환은 같은 문장에서 빈 종료일을 시작일로 채운다.
+export async function updateProjectStatusIfCurrent(
+  viewer: Viewer,
+  id: string,
+  input: { expectedStatus: string; status: string; fillEndDateFromStart: boolean },
+  tx: DbOrTx,
+): Promise<ProjectRow | null> {
+  void viewer;
+  const [row] = await tx
+    .update(projects)
+    .set({
+      status: input.status,
+      version: sql`${projects.version} + 1`,
+      updatedAt: new Date(),
+      ...(input.fillEndDateFromStart ? { endDate: sql`coalesce(${projects.endDate}, ${projects.startDate})` } : {}),
+    })
+    .where(and(eq(projects.id, id), eq(projects.status, input.expectedStatus)))
+    .returning();
+  return row ?? null;
+}

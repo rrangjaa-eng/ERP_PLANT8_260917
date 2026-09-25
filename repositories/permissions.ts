@@ -116,6 +116,26 @@ export async function upsertVisibility(
     });
 }
 
+// 04-20(ENG-D3 ③): insertPermissionIfAbsent와 같은 결 — 시드가 반복 실행돼도
+// 관리자가 노출표에서 이미 끈 값을 되살리지 않는다.
+export async function insertVisibilityIfAbsent(
+  viewer: Viewer,
+  input: { roleId: string; infoItem: string; visible: boolean; updatedBy?: string | null },
+): Promise<void> {
+  void viewer;
+  await db
+    .insert(visibilityMatrix)
+    .values({
+      roleId: input.roleId,
+      infoItem: input.infoItem,
+      visible: input.visible,
+      updatedBy: input.updatedBy ?? null,
+    })
+    .onConflictDoNothing({
+      target: [visibilityMatrix.roleId, visibilityMatrix.infoItem],
+    });
+}
+
 export async function listVisibility(
   viewer: Viewer,
   opts?: { roleId?: string },

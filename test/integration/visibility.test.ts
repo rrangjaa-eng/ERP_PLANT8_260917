@@ -7,6 +7,7 @@ import { CODE_ITEM_DTO_SPEC, createCodeItem } from "@/domain/code-tables";
 import { project, type DtoSpec } from "@/domain/permissions/project";
 import { upsertVisibility } from "@/repositories/permissions";
 import { insertCodeItem, type CodeItemRow } from "@/repositories/code-tables";
+import { insertRole } from "@/repositories/roles";
 
 const TABLE_KEY = `visibility_test_${randomUUID()}`;
 
@@ -42,10 +43,12 @@ describe("노출 판정의 실제 효과 (ADMN-02·ADMN-03)", () => {
 
   it("(c) 노출표에 행이 없는 계급은 그 필드를 못 받는다", async () => {
     const row = await insertCodeItem(SYSTEM_VIEWER, { tableKey: TABLE_KEY, value: "c", label: "C" });
-    // role-ceo는 domain/seed가 sysadmin·pm 둘만 채우므로 노출표 행이 전혀 없다.
-    const ceoViewer: Viewer = { id: "ceo-vis-tester", roleId: "role-ceo" };
+    // 04-20부터 시드가 시드 계급 다섯 전부에 노출 행을 넣는다 — 관리자가 새로 만든
+    // 계급은 시드가 건드리지 않아 노출표 행이 전혀 없다.
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `노출 없는 계급-${randomUUID()}` });
+    const noRowViewer: Viewer = { id: "no-row-vis-tester", roleId: role.id };
 
-    const dto = await project(ceoViewer, row, CODE_ITEM_DTO_SPEC);
+    const dto = await project(noRowViewer, row, CODE_ITEM_DTO_SPEC);
     expect(dto.value).toBeUndefined();
     expect(dto.label).toBeUndefined();
   });

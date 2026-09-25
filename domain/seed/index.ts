@@ -1,10 +1,22 @@
 import type { Viewer } from "@/domain/viewer";
-import { SEED_ROLES, SYSADMIN_ROLE_ID, DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import {
+  SEED_ROLES,
+  SYSADMIN_ROLE_ID,
+  DEFAULT_ROLE_ID,
+  CEO_ROLE_ID,
+  DIVISION_HEAD_ROLE_ID,
+  TEAM_LEAD_ROLE_ID,
+} from "@/domain/permissions/roles";
 import { MENUS, PERMISSION_ACTIONS } from "@/domain/permissions/menus";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import { SETTING_DEFS } from "@/domain/settings/keys";
 import { seedRole } from "@/repositories/roles";
-import { upsertPermission, upsertVisibility, insertPermissionIfAbsent } from "@/repositories/permissions";
+import {
+  upsertPermission,
+  upsertVisibility,
+  insertPermissionIfAbsent,
+  insertVisibilityIfAbsent,
+} from "@/repositories/permissions";
 import { seedCodeItem } from "@/repositories/code-tables";
 import { seedSimpleValue, seedHistorizedValue } from "@/repositories/settings";
 import { seedOrgUnit, findOrgUnitByName } from "@/repositories/org-units";
@@ -127,7 +139,8 @@ export type SeedResult = {
 // import하지 않는다(검증: Task 2 <verify> BOOTSTRAP LEAK 스캔).
 //
 // 두 번 호출해도 결과 상태가 같다(멱등) — ①은 onConflictDoNothing, ②·③은
-// onConflictDoUpdate(같은 값으로 갱신), ④는 onConflictDoNothing.
+// 시스템 관리자만 onConflictDoUpdate(같은 값으로 갱신)이고 나머지 계급은
+// onConflictDoNothing(04-20 — 관리자 변경 보존), ④는 onConflictDoNothing.
 export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
   let rolesCount = 0;
   for (const role of SEED_ROLES) {
@@ -174,6 +187,26 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
     permissionsCount++;
   }
 
+  // 04-20(D-46·D-79·A-05): 상태 전환 기본 권한 — 팀장·본부 책임자·대표는
+  // 프로젝트 화면(보기)과 수주중·미수주 전환(projects.status 쓰기), 대표는
+  // 정산 → 완료(projects.complete 쓰기)까지. 없을 때만 넣는다 — 관리자가 권한표에서
+  // 끈 값을 다음 배포의 시드가 되살리지 않는다.
+  const statusDefaults: { roleId: string; menu: string; action: "view" | "write" }[] = [
+    ...[TEAM_LEAD_ROLE_ID, DIVISION_HEAD_ROLE_ID, CEO_ROLE_ID].flatMap((roleId) => [
+      { roleId, menu: "projects", action: "view" as const },
+      { roleId, menu: "projects.status", action: "write" as const },
+    ]),
+    { roleId: CEO_ROLE_ID, menu: "projects.complete", action: "write" },
+  ];
+  for (const entry of statusDefaults) {
+    await insertPermissionIfAbsent(viewer, { ...entry, allowed: true, updatedBy: null });
+    permissionsCount++;
+  }
+
+  // 04-20(ENG-D2·ENG-D3 ③): 시스템 관리자만 전 항목을 매번 켜고, 나머지 계급은
+  // 없을 때만 넣는다 — 기획 PM·팀장·본부 책임자는 staffDefault, 대표는 그에 더해
+  // 매출(revenue.*) 항목까지. 관리자가 노출표에서 끈 값을 시드가 되살리지 않는다.
+  const staffDefaultRoles = [DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID, DIVISION_HEAD_ROLE_ID];
   let visibilityCount = 0;
   for (const item of INFO_ITEMS) {
     await upsertVisibility(viewer, {
@@ -182,13 +215,16 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
       visible: true,
       updatedBy: null,
     });
-    await upsertVisibility(viewer, {
-      roleId: DEFAULT_ROLE_ID,
+    for (const roleId of staffDefaultRoles) {
+      await insertVisibilityIfAbsent(viewer, { roleId, infoItem: item.key, visible: item.staffDefault, updatedBy: null });
+    }
+    await insertVisibilityIfAbsent(viewer, {
+      roleId: CEO_ROLE_ID,
       infoItem: item.key,
-      visible: item.staffDefault,
+      visible: item.staffDefault || item.key.startsWith("revenue."),
       updatedBy: null,
     });
-    visibilityCount += 2;
+    visibilityCount += 2 + staffDefaultRoles.length;
   }
 
   let codeItemsCount = 0;

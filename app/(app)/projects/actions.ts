@@ -6,6 +6,8 @@ import { authedActionClient } from "@/lib/actions/client";
 import { createProject } from "@/domain/projects";
 import { saveProjectLedger } from "@/domain/projects/ledger";
 import { SaveRejectedError } from "@/domain/quotes/lines";
+import { changeProjectStatus } from "@/domain/projects/status";
+import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
 import "./actions.registry";
 
 // PROJ-01·PROJ-02: domain/projects·domain/quotes/lines만 부른다. 등록은
@@ -144,4 +146,21 @@ export const saveProjectLedgerAction = authedActionClient
     }
     revalidatePath("/projects");
     return result;
+  });
+
+// 04-20(PROJ-04): 사람의 상태 전환 — 화면이 본 상태(from)와 목적지(to)를 싣는다.
+// 판정(전이표·권한·팀 범위·시작일·동시 변경)은 전부 domain이 하고, 거부 이유
+// 문자열이 그대로 serverError로 나간다.
+export const changeProjectStatusAction = authedActionClient
+  .schema(
+    z.object({
+      projectId: z.string().uuid(),
+      from: z.enum(PROJECT_STATUSES),
+      to: z.enum(PROJECT_STATUSES),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    await changeProjectStatus(ctx.viewer, parsedInput.projectId, { from: parsedInput.from, to: parsedInput.to });
+    revalidatePath("/projects");
+    return { status: parsedInput.to };
   });

@@ -17,6 +17,11 @@ export const MENUS: MenuDef[] = [
   // SEED_ROLES 5종에 없는 조직상 역할이라 권한표에서 관리자가 실제
   // 담당 계급에 배정한다 — 코드에 역할 이름을 박지 않는다).
   { key: "projects.revenue", label: "매출 정산" },
+  // 04-20(D-46·D-79): 사람의 상태 전환 주체가 둘로 갈린다 — 수주중·미수주의
+  // 전환은 "projects.status"(팀장 이상 + 계급 업무 범위), 정산 → 완료는
+  // "projects.complete"(대표 — Phase 5에서 결재 승인이 호출자가 된다).
+  { key: "projects.status", label: "프로젝트 상태 변경" },
+  { key: "projects.complete", label: "프로젝트 완료" },
   { key: "expenses", label: "지출결의" },
   { key: "cards", label: "법인카드" },
   { key: "approvals", label: "결재함" },

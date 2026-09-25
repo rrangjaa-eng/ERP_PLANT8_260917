@@ -59,10 +59,9 @@ async function addQuoteLine(
 
 const pmViewer = (userId: string): Viewer => ({ id: userId, roleId: DEFAULT_ROLE_ID });
 
-// role-ceo는 domain/seed가 sysadmin·pm 둘만 채우므로 기본 권한·노출표가
-// 전혀 없다(revenue-entries.test.ts와 같은 결) — projects view + project.value
-// 노출만 부여하고 quote.amount 노출은 **부여하지 않아** "금액 열이 서버에서
-// 아예 빠지는" 계급을 만든다(기본 구조 정보는 보이고 금액만 안 보이는 경우를
+// role-ceo에 projects view + project.value 노출을 주고 quote.amount 노출은
+// **끈다**(04-20부터 시드가 대표에게 staffDefault를 켜므로 명시로 끈다 —
+// e2e quote-table.spec.ts와 같은 결) — "금액 열이 서버에서 아예 빠지는" 계급을 만든다(기본 구조 정보는 보이고 금액만 안 보이는 경우를
 // 증명하기 위해 project.value는 켠다 — 안 켜면 행 전체가 빈 객체가 된다).
 async function createNoAmountViewer(): Promise<Viewer> {
   const { userId } = await createAccount(SYSTEM_VIEWER, {
@@ -72,6 +71,7 @@ async function createNoAmountViewer(): Promise<Viewer> {
   });
   await upsertPermission(SYSTEM_VIEWER, { roleId: "role-ceo", menu: "projects", action: "view", allowed: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId: "role-ceo", infoItem: "project.value", visible: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId: "role-ceo", infoItem: "quote.amount", visible: false });
   return { id: userId, roleId: "role-ceo" };
 }
 

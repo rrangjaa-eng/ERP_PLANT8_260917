@@ -37,6 +37,11 @@ export { normalizeRoleName };
 
 export const SYSADMIN_ROLE_ID = "role-sysadmin";
 
+// 04-20(D-46·D-79): 상태 전환 권한·노출 기본값을 시드가 넣는 계급들.
+export const CEO_ROLE_ID = "role-ceo";
+export const DIVISION_HEAD_ROLE_ID = "role-division-head";
+export const TEAM_LEAD_ROLE_ID = "role-team-lead";
+
 // 백필 규칙(Task 1 결정 ④)의 대상 — 관리자 여부 잔여 컬럼이 거짓인 행이 옮겨가는 기본 계급.
 export const DEFAULT_ROLE_ID = "role-pm";
 

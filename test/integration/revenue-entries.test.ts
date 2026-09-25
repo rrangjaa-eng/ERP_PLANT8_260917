@@ -9,6 +9,7 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { insertRole } from "@/repositories/roles";
 import { createProject } from "@/domain/projects";
 import { listRevenue, saveRevenue } from "@/domain/revenue";
 import { saveProjectLedger } from "@/domain/projects/ledger";
@@ -217,12 +218,14 @@ describe("domain/revenue saveRevenue/listRevenue (Phase 4, 실제 Postgres)", ()
 
   it("projects view 권한이 없는 viewer는 listRevenue가 거부되고 saveProjectLedger(revenue:{})도 거부된다", async () => {
     const { project } = await setupProject();
+    // 04-20부터 시드가 대표에게 projects 보기를 켠다 — 권한 행이 전혀 없는 새 계급을 쓴다.
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `권한 없는 계급-${randomUUID()}` });
     const { userId: noAccessUserId } = await createAccount(SYSTEM_VIEWER, {
       email: `noaccess-${randomUUID()}@example.test`,
       name: "통합테스트 권한없음",
-      roleId: "role-ceo",
+      roleId: role.id,
     });
-    const noAccess: Viewer = { id: noAccessUserId, roleId: "role-ceo" };
+    const noAccess: Viewer = { id: noAccessUserId, roleId: role.id };
 
     await expect(listRevenue(noAccess, project.id)).rejects.toThrow();
     await expect(saveProjectLedger(noAccess, project.id, { revenue: {} })).rejects.toThrow();

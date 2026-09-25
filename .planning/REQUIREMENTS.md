@@ -261,10 +261,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MIG-05 | Phase 8 | Pending |
 | OPS-01 | Phase 1 | Complete |
 | OPS-02 | Phase 1 | Complete |
-| OPS-03 | Phase 8 | Pending |
+| OPS-03 | Phase 04.4 | Pending |
 | OPS-04 | Phase 1 | Complete |
 | OPS-05 | Phase 3 | Pending |
-| OPS-06 | Phase 1 | Complete |
+| OPS-06 | Phase 1 (상태 화면 「복원 리허설」 항목은 Phase 04.4가 구현) | Complete |
 | OPS-07 | Phase 1 | Complete |
 | UX-01 | Phase 2 | Complete |
 | UX-02 | Phase 9 | Pending |
@@ -279,7 +279,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 - Mapped to phases: 86
 - Unmapped: 0 ✓
 
-**By phase:** 1 (9) · 2 (1) · 3 (13) · 4 (11) · 04.1 (5) · 5 (8) · 6 (10) · 7 (7) · 8 (3) · 9 (10) · 10 (5) · 11 (4)
+**By phase:** 1 (9) · 2 (1) · 3 (13) · 4 (11) · 04.1 (5) · 04.4 (1) · 5 (8) · 6 (10) · 7 (7) · 8 (2) · 9 (10) · 10 (5) · 11 (4)
 
 ---
 *Requirements defined: 2026-09-17*

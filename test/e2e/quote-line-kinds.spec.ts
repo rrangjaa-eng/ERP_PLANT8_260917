@@ -221,7 +221,7 @@ test.describe("견적 줄 종류 — 조정 · 견적 외 비용 화면 (04-23, 
     await expect(cell(page, adjustmentRow, COL.itemName)).toHaveText("외화 송금 수수료");
     await expect(cell(page, adjustmentRow, COL.vendor)).toHaveText(project.clientName);
     await expect(cell(page, adjustmentRow, COL.execution)).toHaveText("120,000");
-    // 실행가 +120,000 → 차익(견적 − 실행가) −120,000.
+    // 실행가 +120,000 → 차익(견적 − 실행가) 150,000 → 30,000.
     await expect(footer).toContainText("차익 30,000");
 
     await page.goto(`/projects?q=${encodeURIComponent(project.name)}`);

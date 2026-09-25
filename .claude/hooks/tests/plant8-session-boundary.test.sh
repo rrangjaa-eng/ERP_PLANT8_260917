@@ -354,6 +354,35 @@ hook plant8-session-boundary.sh post-tool "$(payload_tool "$B3" Read)" "$projB3"
 expect_empty "branch-switch old-format baseline: pre-existing SUMMARY not announced" "$HOOK_STDOUT"
 
 # ---------------------------------------------------------------------------
+# main 병합: 세션 도중 origin/main을 병합해 들어온 다른 플랜의 SUMMARY는 이 세션의
+# 플랜 종료로 세지 않는다. 이 세션이 새로 만든 SUMMARY는 그대로 센다.
+projMg="$(new_project)"
+Mg="sid-main-merge-$$"
+git -C "$projMg" branch -q -M main
+git -C "$projMg" checkout -qb work
+hook plant8-session-boundary.sh session-start "$(payload_session_start "$Mg" startup)" "$projMg"
+git -C "$projMg" checkout -q main
+echo "summary" > "$projMg/.planning/phases/04-test/04-30-SUMMARY.md"
+git -C "$projMg" add .planning && git -C "$projMg" commit -qm "other plan"
+git -C "$projMg" update-ref refs/remotes/origin/main main
+git -C "$projMg" checkout -q work
+git -C "$projMg" merge -q --no-edit origin/main
+
+hook plant8-session-boundary.sh post-tool "$(payload_tool "$Mg" Bash)" "$projMg"
+expect_empty "main-merge: 병합으로 들어온 SUMMARY는 알리지 않음" "$HOOK_STDOUT"
+hook plant8-session-boundary.sh pre-tool "$(payload_agent "$Mg" gsd-executor)" "$projMg"
+expect_rc "main-merge: 병합으로 들어온 SUMMARY는 gsd-executor를 막지 않음" 0 "$HOOK_RC"
+hook plant8-session-boundary.sh stop "$(payload_tool "$Mg" Stop)" "$projMg"
+expect_empty "main-merge: 병합으로 들어온 SUMMARY로 stop을 막지 않음" "$HOOK_STDOUT"
+
+echo "summary" > "$projMg/.planning/phases/04-test/04-31-SUMMARY.md"
+hook plant8-session-boundary.sh post-tool "$(payload_tool "$Mg" Write)" "$projMg"
+expect_contains "main-merge: 이 세션이 만든 SUMMARY는 알림" "$HOOK_STDOUT" "04-31"
+expect_true "main-merge: 알림에 병합된 SUMMARY는 없음" "$(printf '%s' "$HOOK_STDOUT" | grep -q '04-30' && echo false || echo true)"
+hook plant8-session-boundary.sh pre-tool "$(payload_agent "$Mg" gsd-executor)" "$projMg"
+expect_rc "main-merge: 이 세션이 만든 SUMMARY는 gsd-executor를 막음" 2 "$HOOK_RC"
+
+# ---------------------------------------------------------------------------
 # Wiring: settings.json has PreToolUse matcher Skill -> session-boundary pre-tool
 WIRED="$(jq -e '[.hooks.PreToolUse[]? | select(.matcher=="Skill") | .hooks[]? | select(.command | test("plant8-session-boundary\\.sh pre-tool"))] | length > 0' "$REPO/.claude/settings.json" 2>/dev/null)"
 [ "$WIRED" = "true" ] || WIRED="false"

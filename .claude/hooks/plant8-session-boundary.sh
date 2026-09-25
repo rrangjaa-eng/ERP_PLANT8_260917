@@ -94,9 +94,14 @@ gate_review_done() {
   printf '%s\n' "$names" | sed 's#^#/#' | tr '\n' ' ' | sed 's/ *$//'
 }
 
+# 베이스라인 뒤 새로 보이는 SUMMARY 중 이미 origin/main에 있는 것(세션 도중 main 병합으로
+# 들어온 다른 플랜)은 뺀다. 이 세션이 만든 SUMMARY는 PR 머지 전까지 main에 없다.
 new_summaries() {
   [ -f "$baseline" ] || return 0
-  comm -13 "$baseline" <(list_summaries) | xargs -r -n1 basename | sed 's/-SUMMARY\.md$//' | tr '\n' ' '
+  local f
+  comm -13 "$baseline" <(list_summaries) | while IFS= read -r f; do
+    [ -n "$(git -C "$project" ls-tree --name-only origin/main -- "${f#"$project"/}" 2>/dev/null)" ] || printf '%s\n' "$f"
+  done | xargs -r -n1 basename | sed 's/-SUMMARY\.md$//' | tr '\n' ' '
 }
 
 boundary_text() {

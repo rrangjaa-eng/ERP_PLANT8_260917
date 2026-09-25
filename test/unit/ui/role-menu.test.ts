@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { NOTIFICATIONS_HREF, adminIndexGroups, roleMenu, type RoleMenuViewer } from "../../../ui/shell/role-menu";
+import { notificationsMenuLabel } from "../../../ui/shell/unread-count";
 
 // D-23의 계약 고정: 역할 → (상단 바 메뉴, 폰 하단 탭, 계정 그룹, 관리자 메뉴 진입점)
 // 매핑이 순수 함수 한 곳에 데이터로 있는지를 검증한다. 계정 그룹 항목 이름과 폰 하단
@@ -344,6 +345,17 @@ describe("roleMenu — 계정 그룹 (SYSTEM.md 목록과 원소 단위로 같�
   it("accountGroup 라벨 순서가 SYSTEM.md 「계정」 그룹 목록과 원소 단위로 같다(순서 포함, 04.2-09 Task 1)", () => {
     const actualLabels = roleMenu(ADMIN).accountGroup.map((entry) => entry.label);
     expect(actualLabels).toEqual(expectedLabels);
+  });
+});
+
+describe("notificationsMenuLabel — 「알림함 N」 라벨 조립 (04.2-09 Task 2, unreadCountLabel과 결합)", () => {
+  it.each([
+    [0, "알림함"],
+    [1, "알림함 1"],
+    [99, "알림함 99"],
+    [100, "알림함 99+"],
+  ])("count=%d → %s", (count, expected) => {
+    expect(notificationsMenuLabel("알림함", count)).toBe(expected);
   });
 });
 

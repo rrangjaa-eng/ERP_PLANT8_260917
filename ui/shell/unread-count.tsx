@@ -32,6 +32,13 @@ export function unreadCountLabel(count: number | null): string | null {
   return String(count);
 }
 
+// 04.2-09 Task 2(S1-b): PC 사용자 메뉴·폰 「더보기」 시트가 공유하는 「알림함 N」
+// 메뉴 항목 라벨 조립 — unreadCountLabel이 없으면(0건) 접미사 없이 baseLabel 그대로다.
+export function notificationsMenuLabel(baseLabel: string, count: number | null): string {
+  const suffix = unreadCountLabel(count);
+  return suffix ? `${baseLabel} ${suffix}` : baseLabel;
+}
+
 type UnreadCountContextValue = { count: number | null; refresh: () => void };
 
 const UnreadCountContext = createContext<UnreadCountContextValue>({

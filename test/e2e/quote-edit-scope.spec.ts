@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { codeItems, projects } from "@/db/schema";
 import { createProject } from "@/domain/projects";
@@ -780,5 +780,53 @@ test.describe("폭 규칙 — 1024 미만 보기 전용 · 좁은 PC 열 접기 
     await expect(page.getByRole("grid", { name: "견적 줄" })).toHaveCount(0);
     await page.setViewportSize({ width: 1280, height: 800 });
     await expect(lineCell(page, "폭 첫 줄", COL.note)).toHaveText("폭 전환 비고");
+  });
+});
+
+// 04-26(D-86 · A-17) — 전역 상한 설정을 바꾸지 않는다. 기본 상한 300 그대로 준비 단계에서 SQL 한 문장으로 그 차수에
+// 줄을 채운다(병렬 스펙이 낮은 상한에 걸리지 않고, 실패해도 설정이 테스트 DB에 남지 않는다).
+const CAP_REASON = "300줄 상한 · 상한은 관리자 설정";
+
+async function fillLinesBySql(projectId: string, count: number) {
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, projectId);
+  if (!revision) throw new Error("1차 차수가 없습니다");
+  const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+  if (!subcategory) throw new Error("소분류 코드가 없습니다");
+  await db.execute(sql`
+    INSERT INTO quote_lines (revision_id, sort_order, subcategory, item_name, unit_price_amount_krw, execution_amount_krw, quote_amount_krw, profit_krw)
+    SELECT ${revision.id}, g, ${subcategory.value}, '상한 줄 ' || g, 1000, 500, 1000, 500 FROM generate_series(1, ${count}) AS g
+  `);
+}
+
+async function openCappedAsPm(page: Page, lineCount: number) {
+  const team = await makeTeam();
+  const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+  const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "in_progress", endDate: addDays(TODAY, 10) });
+  await fillLinesBySql(project.id, lineCount);
+  await login(page, pm);
+  await page.goto(`/projects/${project.id}`);
+  await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
+  // dev 서버에서 300줄 수화가 메인 스레드를 수 초 붙잡는다 — 이 한 번만 한도를 넓혀 행 수를 확인한 뒤 나머지를 단언한다.
+  await expect(dataRows(page)).toHaveCount(lineCount, { timeout: 60_000 });
+  return project;
+}
+
+test.describe("줄 수 상한 (04-26, D-86 · UX-04 · UX-05)", () => {
+  test("(cap1) 줄 300(기본 상한) — 「줄 추가」가 aria-disabled이고 이유 한 줄을 aria-describedby로 가리키며, 눌러도 줄이 늘지 않는다", async ({ page }) => {
+    // 300줄 상세는 dev 서버에서 30초 한도를 넘는다(실측 약 45초) — 시간 수치는 단언하지 않는다(ENG-D3 ②).
+    test.slow();
+    await openCappedAsPm(page, 300);
+
+    const addButton = page.getByRole("button", { name: "줄 추가", exact: true });
+    await expect(addButton).toHaveAttribute("aria-disabled", "true");
+    const reason = page.getByText(CAP_REASON, { exact: true });
+    await expect(reason).toBeVisible();
+    const reasonId = await reason.getAttribute("id");
+    expect(reasonId).toBeTruthy();
+    expect((await addButton.getAttribute("aria-describedby"))?.split(" ")).toContain(reasonId);
+
+    await addButton.click();
+    await expect(dataRows(page)).toHaveCount(300);
+    await expect(primarySave(page)).toHaveCount(0);
   });
 });

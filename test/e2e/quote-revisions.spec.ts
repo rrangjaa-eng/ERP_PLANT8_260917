@@ -11,6 +11,8 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { insertVendor } from "@/repositories/vendors";
+import { insertRole } from "@/repositories/roles";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { addDays, kstToday } from "@/lib/kst-date";
 
 // 04-24(PROJ-07 · PROJ-05 · UX-04) — 상세의 차수 화면: 「복사해 새 차수」 · 고객 승인 표시와 취소 · 차수 섹션 ·
@@ -209,6 +211,24 @@ test.describe("복사해 새 차수 (04-24 Task 1 — B-02 · B-03 · DR-6)", ()
     expect(await revisionCount(project.id)).toBe(1);
   });
 
+  test("다른 탭이 먼저 새 차수를 만들었으면 서버 거부 `다른 사람이 먼저 새 차수를 만듦 · 새로 고침`이 1차 왼쪽 막힘 자리에(B-02 · 검토 S3a)", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "선점 줄", unitPrice: 1_000_000, execution: 400_000 }] });
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await expect(quoteRows(page)).toHaveCount(1);
+    await copyRevision(project.id, project.revisionId);
+
+    await page.getByRole("button", { name: "복사해 새 차수" }).click();
+    const dialog = page.getByRole("dialog", { name: "복사해 새 차수" });
+    await submitAndWait(page, dialog.getByRole("button", { name: /새 차수 만들기/ }));
+    await expect(dialog.getByText("다른 사람이 먼저 새 차수를 만듦 · 새로 고침", { exact: true }).filter({ visible: true })).toHaveCount(1);
+    await expect(dialog).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "새 차수 만들기" })).toHaveCount(0);
+    expect(await revisionCount(project.id)).toBe(2);
+  });
+
   test("정산 프로젝트에는 「복사해 새 차수」가 없다(CEO-D10)", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
@@ -366,6 +386,40 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
     await expect(page.getByText(/저장됨/)).toBeVisible();
     dialog = await openApprovalDialog(page);
     await expect(dialog.getByRole("button", { name: /고객 승인 표시/ })).not.toHaveAttribute("aria-disabled", "true");
+  });
+
+  test("자기 저장 바로 뒤 승인 제출은 새 기준값으로 통과한다 — 저장이 다시 그린 합계·토큰을 싣는다(ENG-D9 · 검토 S3b)", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "저장 뒤 승인 줄", unitPrice: 1_000_000, execution: 400_000 }] });
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await editTextCell(page, 0, COL.quantity, "2");
+    await quoteCell(page, 0, COL.quantity).focus();
+    await page.keyboard.press("Control+s");
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+
+    const dialog = await openApprovalDialog(page);
+    await expect(dialog.getByText("상세 견적 1차 · 2,000,000", { exact: true })).toBeVisible();
+    await submitAndWait(page, dialog.getByRole("button", { name: /고객 승인 표시/ }));
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText(`고객 승인 ${TODAY} ${PM_NAME}`, { exact: true })).toBeVisible();
+  });
+
+  test("견적 금액(quote.amount)을 볼 수 없는 담당 PM에게는 「고객 승인 표시」가 없다(ENG-D9 · 검토 S3c)", async ({ page }) => {
+    const team = await makeTeam();
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E금액없음-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "write", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "quote.amount", visible: false });
+    const pm = await makeAccount(role.id, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "금액 숨김 줄", unitPrice: 1_000_000, execution: 400_000 }] });
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
+    await expect(page.getByText("금액 숨김 줄")).toBeVisible();
+    await expect(page.getByRole("button", { name: "고객 승인 표시", exact: true })).toHaveCount(0);
   });
 
   test("다른 사람이 그새 수량을 바꿔 저장하면 `견적이 바뀜 · 새로 고침`, 승인일 없음 → 새로 고친 뒤 통과(ENG-D9)", async ({ page }) => {

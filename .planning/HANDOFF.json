@@ -1,11 +1,11 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-25T14:34:45.827Z",
+  "timestamp": "2026-09-25T16:20:30.737Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
-  "plan": 49,
-  "task": 24,
+  "plan": 13,
+  "task": 25,
   "total_tasks": 42,
   "status": "paused",
   "completed_tasks": [
@@ -194,12 +194,18 @@
       "name": "[세션 V] 04-49 실행(웨이브 15) — 04-30 위: 저장 중 잠금 DR-3, 1024 미만 견적 표 보기 전용 DR-36/14/24, 좁은 PC 폭 칸 접기, 복원 줄 전체 폭, 폰 행 시트, React #418 수화 오류 수정(ui/table/use-dirty-storage.ts, useSyncExternalStore), S-5는 Table.onEditingChange로 해소, fx 1280 미만 2줄 가격 쌓기(ef6445f, 커밋 제목은 1024라 오기). 19개 커밋 d8d414e..8f446d3, PR #40. 독립 Opus DOM 감사(CI=true, 1280·1100·1024·1000·375): PASS 52 · FAIL 1(수정) — /mnt/project-files/phase4-prep/04-49-dom-audit.md. 전체 게이트 CI=true(ef6445f): 단위 1176 · 통합 1226 · E2E 279 통과. Opus 검토(/mnt/project-files/phase4-prep/04-49-review-opus.md) B1·S6·N7 → B-1·S-1·S-2·S-4·S-6 반영(75f9bcc·208358e·ceb871d·9d91cc0·a96bf4c), 반영 후 lint/typecheck/build/단위 1178 + CI=true 대상 E2E 4스펙 초록. 스킬 기록 /mnt/project-files/phase4-prep/04-49-skill-calls.md(커밋마다 verification 확인). 이월: S-3(Ctrl+C 복사 미구현, must_have truth 언급)·S-5(1280 단가 칸 truth vs backstop 충돌) 사용자 판단 필요. DOM 감사 INFO: 375에서 짧은 복원 문구로 버튼 두 개가 한 줄에 남음. Codex 09-29까지 한도, Opus로 교차 검토 대체. 진행 24/42",
       "status": "done",
       "commit": "8f446d3"
+    },
+    {
+      "id": 25,
+      "name": "[세션 W] 04-26 차수당 견적 줄 상한(웨이브 16) — 설정 키 quote_line.max_per_revision(룰 이름 quote.line-cap), 추가 때만 거부(잠금 뒤 tx 셈, 보관 제외)·복원·재전송 멱등·「줄 추가」 aria-disabled+이유·Ctrl+Enter/Ctrl+D 무동작·넘치는 붙여넣기 전부 거부. executor Opus. 커밋 c21473a(RED)·9fc70f2·1aa0b8f(RED)·c6ac896·fc58f7e·ec539c5(SUMMARY) → 검토 반영 d1bff01·203f61e → eb754df(STATE·ROADMAP). 독립 Opus DOM 감사 PASS 35·FAIL 0·INFO 6. Opus 검토(Codex 대체) BLOCKING 0·SHOULD-FIX 1(반영)·NIT 5 이월. 전체 게이트 CI=true 단위 1178·통합 1235·E2E 288. 진행 25/42",
+      "status": "done",
+      "commit": "eb754df"
     }
   ],
   "remaining_tasks": [
     {
       "id": 1,
-      "name": "/gsd-execute-phase 4 --wave 16 — 가장 낮은 미완 웨이브 한 플랜만(04-26으로 추정, 실행 전 depends_on·PLAN objective를 grep으로 재확인)",
+      "name": "/gsd-execute-phase 4 --wave 17 — 가장 낮은 미완 웨이브 한 플랜만(04-13으로 추정, 실행 전 depends_on·PLAN objective를 grep으로 재확인)",
       "status": "not_started"
     },
     {
@@ -501,8 +507,8 @@
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션 → git status -sb → /gsd-progress → /gsd-execute-phase 4 --wave 16으로 가장 낮은 미완 웨이브 한 플랜만(04-26으로 추정 — 실행 전 depends_on·PLAN objective를 grep으로 확인). PR #40, 브랜치 claude/gsd-progress-e1nzgu. main과 8f446d3 기준 충돌 없음.",
-  "context_notes": "세션 V가 04-49 완료(24/42, 웨이브 15, 04-30 위). 저장 중 잠금(DR-3)·1024 미만 견적 표 보기 전용(DR-36/14/24)·좁은 PC 폭 칸 접기·복원 줄 전체 폭·폰 행 시트를 마무리했고, 04-30이 남긴 React #418 수화 오류(use-dirty-storage.ts, useSyncExternalStore로 수정)와 S-5(Table.onEditingChange)도 이번에 해소. 19개 커밋 d8d414e..8f446d3. 독립 Opus DOM 감사 PASS 52·FAIL 1(수정) — 1280·1100·1024·1000·375. 전체 게이트 CI=true(ef6445f) 단위 1176·통합 1226·E2E 279. Opus 검토 B1·S6·N7 → 5건 반영, 이후 CI=true 대상 스펙 4개 초록. 스킬 호출 기록 확인함(커밋마다 verification) — 단, 기록 스크립트 자체가 printf 인자 처리 버그로 Skill 이름이 \"-\"로 시작하는 줄이 비어 보였음(발견·수정, decisions에 기록). fx 2줄 가격 쌓기 커밋 제목 오기(1024라 적었으나 실제 1280) 정정 기록. Codex 09-29까지 한도, 04-49도 Opus로 검토 대체 — 한도 풀리면 재확인 필요. 이월(사용자 판단 필요): S-3(Ctrl+C 복사 미구현, must_have truth 언급), S-5(1280 단가 칸 truth vs backstop 스펙 충돌). 이월(후속 플랜): 매출 표 입력 중 폭 1024 미만 하락 시 입력 유실 가능, 계약 입력 칸 1024 미만에서도 편집 가능(묶음 ③). 04-25·04-22에서 넘어온 이전 열린 항목(UX-04 완료 표시, 오류/힌트 동시 셀 E2E, 하위분류 설명 배선, S2·S3·N1~N7)은 그대로 유효 — 해당 플랜에서 처리 여부 재확인 필요. 04-46 +1 단언 복원 여부는 04-12·04-30 완료 기록에 언급이 없어 묶음 ② /review 때 실제로 됐는지 확인 필요(remaining_tasks id 6).",
+  "next_action": "새 세션 → git status -sb → /gsd-progress → /gsd-execute-phase 4 --wave 17으로 가장 낮은 미완 웨이브 한 플랜만(04-13으로 추정 — 실행 전 depends_on·PLAN objective를 grep으로 확인). PR #40, 브랜치 claude/gsd-progress-e1nzgu. main은 eb754df에 이미 포함(충돌 없음, 세션 W 확인).",
+  "context_notes": "세션 W가 04-26 완료(25/42, 웨이브 16, 04-30 위). 차수당 견적 줄 300줄 상한(D-86) — 설정 키 quote_line.max_per_revision, 서버 게이트 룰 quote.line-cap, 추가 시에만 거부(잠금 뒤 tx로 셈, 보관 제외)·복원·재전송 멱등·「줄 추가」 aria-disabled+이유·Ctrl+Enter/Ctrl+D 무동작·넘치는 붙여넣기 전부 거부. executor 커밋 c21473a(RED)·9fc70f2·1aa0b8f(RED)·c6ac896·fc58f7e·ec539c5(SUMMARY) → 검토 반영 d1bff01·203f61e → eb754df(STATE·ROADMAP). 독립 Opus DOM 감사 PASS 35·FAIL 0·INFO 6. Opus 검토(Codex 대체, 한도 풀리면 재확인) BLOCKING 0·SHOULD-FIX 1(d1bff01 반영)·NIT 5 이월(04-26-SUMMARY). 전체 게이트 CI=true: 단위 1178·통합 1235·E2E 288. 스킬 기록 /mnt/project-files/phase4-prep/04-26-skill-calls.md — 1aa0b8f·203f61e 직전 verification 누락 2건은 사후 호출·재검증으로 기록(HANDOFF anti-pattern 표 참고). 다음은 phase-plan-index 기준 가장 낮은 미완 웨이브 17 = 04-13(실행 전 확인 필요). 04-49 이월 항목(S-3·S-5 사용자 판단, 매출 표 1024 미만 입력 유실, 04-46 +1 단언 복원 확인)은 그대로 유효.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"

@@ -192,7 +192,7 @@ export function RevenueSection({
       key: "entryDate",
       header: "발행일",
       priority: "p1",
-      editability: () => (canEditEntries ? "edit" : "locked"),
+      editability: () => (canEditEntries ? "edit" : canWriteEntries ? "readonly" : "locked"),
       cell: (row) =>
         canEditEntries ? (
           <input
@@ -212,7 +212,7 @@ export function RevenueSection({
       header: "발행액",
       priority: "p1",
       align: "right",
-      editability: () => (canEditEntries ? "edit" : "locked"),
+      editability: () => (canEditEntries ? "edit" : canWriteEntries ? "readonly" : "locked"),
       cell: (row) =>
         canEditEntries ? (
           <AmountInput
@@ -230,7 +230,7 @@ export function RevenueSection({
       key: "note",
       header: "메모",
       priority: "p2",
-      editability: () => (canEditEntries ? "edit" : "locked"),
+      editability: () => (canEditEntries ? "edit" : canWriteEntries ? "readonly" : "locked"),
       cell: (row) =>
         canEditEntries ? (
           <input
@@ -252,7 +252,7 @@ export function RevenueSection({
       key: "entryDate",
       header: "입금일",
       priority: "p1",
-      editability: () => (canEditEntries ? "edit" : "locked"),
+      editability: () => (canEditEntries ? "edit" : canWriteEntries ? "readonly" : "locked"),
       cell: (row) =>
         canEditEntries ? (
           <input
@@ -272,7 +272,7 @@ export function RevenueSection({
       header: "입금액",
       priority: "p1",
       align: "right",
-      editability: () => (canEditEntries ? "edit" : "locked"),
+      editability: () => (canEditEntries ? "edit" : canWriteEntries ? "readonly" : "locked"),
       cell: (row) =>
         canEditEntries ? (
           <AmountInput
@@ -298,7 +298,7 @@ export function RevenueSection({
       key: "note",
       header: "메모",
       priority: "p2",
-      editability: () => (canEditEntries ? "edit" : "locked"),
+      editability: () => (canEditEntries ? "edit" : canWriteEntries ? "readonly" : "locked"),
       cell: (row) =>
         canEditEntries ? (
           <input

@@ -1,5 +1,10 @@
-import { test, expect } from "@playwright/test";
+import { randomUUID } from "node:crypto";
+import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
+import { createAccount } from "@/domain/auth/accounts";
+import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
+import { createProject } from "@/domain/projects";
+import { addDays, kstToday } from "@/lib/kst-date";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
@@ -18,6 +23,44 @@ async function grantFinanceRole() {
   await upsertVisibility(SYSTEM_VIEWER, { roleId: "role-ceo", infoItem: "project.value", visible: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId: "role-ceo", infoItem: "revenue.issued_amount", visible: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId: "role-ceo", infoItem: "revenue.paid_amount", visible: true });
+}
+
+// 04-49 — 경영관리 계정으로 발행 줄 하나를 저장해 둔 프로젝트를 연다(1280).
+async function openWithIssuedEntry(page: Page): Promise<string> {
+  const today = kstToday(new Date());
+  const vendor = await insertVendor(SYSTEM_VIEWER, {
+    name: `E2E매출폭규칙-${randomUUID()}`,
+    normalizedName: `e2e매출폭규칙-${randomUUID()}`,
+  });
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E본부-${randomUUID()}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E팀-${randomUUID().slice(0, 8)}` });
+  const pm = await createAccount(SYSTEM_VIEWER, { email: `e2e-rev-${randomUUID()}@example.test`, name: "E2E 매출 PM", roleId: DEFAULT_ROLE_ID });
+  await assignTeam(SYSTEM_VIEWER, { userId: pm.userId, teamId: team.id, effectiveFrom: today });
+  const project = await createProject(SYSTEM_VIEWER, {
+    clientId: vendor.id,
+    teamId: team.id,
+    pmUserId: pm.userId,
+    name: `E2E매출폭-${randomUUID().slice(0, 8)}`,
+    startDate: today,
+    endDate: addDays(today, 10),
+  });
+  await grantFinanceRole();
+  const finance = await createFixtureUser({ roleId: "role-ceo" });
+
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/login");
+  await page.getByLabel("이메일").fill(finance.email);
+  await page.getByLabel("비밀번호").fill(finance.password);
+  await page.getByRole("button", { name: "로그인" }).click();
+  await expect(page).toHaveURL(/\/account$/);
+  const projectUrl = `/projects/${project.id}`;
+  await page.goto(projectUrl);
+  await page.getByRole("button", { name: "발행 줄 추가" }).click();
+  await page.getByLabel("발행일").fill("2026-09-01");
+  await page.getByLabel("발행액").fill("3000000");
+  await page.getByRole("button", { name: /일괄 저장/ }).click();
+  await expect(page.getByText("바뀐 칸 없음", { exact: true })).toBeVisible();
+  return projectUrl;
 }
 
 test.describe("매출 섹션 (Phase 4 Task 3)", () => {
@@ -219,5 +262,24 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
       return 0;
     });
     expect(numberLineCount).toBe(1);
+  });
+
+  test("(리뷰 S-4) 1000에서 쓰기 권한자의 발행액 칸은 읽기 전용이고 권한 잠김(--muted)으로 흐려지지 않는다", async ({ page }) => {
+    const projectUrl = await openWithIssuedEntry(page);
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await page.goto(projectUrl);
+
+    const amountCell = page.getByRole("table", { name: "발행 줄" }).locator("tbody td").filter({ hasText: "3,000,000" }).first();
+    await expect(amountCell).toBeVisible();
+    await expect(page.getByRole("button", { name: "발행 줄 추가" })).toHaveCount(0);
+    const muted = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--muted)";
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    });
+    expect(await amountCell.evaluate((el) => getComputedStyle(el).color)).not.toBe(muted);
   });
 });

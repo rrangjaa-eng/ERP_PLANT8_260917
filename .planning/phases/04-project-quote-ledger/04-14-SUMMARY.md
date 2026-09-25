@@ -233,6 +233,17 @@ TDD: 태스크마다 실패 테스트를 먼저 쓰고, 실행 출력으로 RED�
 - 성능 TODO(엔지 리뷰 §4, 04-17 소유): `lineSumsSubquery`가 전 차수 줄을 묶는다.
 - 한도가 풀리면 Codex 재확인이 필요하다(이번 실행에서는 Codex를 호출하지 않음).
 
+## 검토 반영
+
+> Codex 한도로 Opus 검토 대체 — 한도 풀리면 Codex 재확인 필요. 검토 보고서: BLOCKING 0 · SHOULD-FIX 2 · NIT 9, 그리고 전체 게이트의 단위 실패 1건.
+
+- **전체 게이트 실패(import-cycles)** — `adbe0b2`: `resolveLinkedDocumentsByLineage`·`LineageLine`을 `domain/quotes/lineage.ts`로 옮겨 `lines.ts → revisions.ts → lines.ts` 런타임 순환을 끊었다. `revisions.ts`는 재export해 exports 계약을 지킨다. 동작 변화 없음(검토 NIT 1과 같은 항목).
+- **S1** — `ffe6ed5`: `listRevisionSummaries`가 `findProject`로 거른다. 없는 프로젝트·보관함 권한 없는 보관 프로젝트는 빈 목록(통합 (s5) RED → GREEN).
+- **S2** — `ade946e`: `customerApprovalGateCtx(viewer, project, { tx, gateEnabled, actorIsAssignedPm, pmName })`가 호출자 tx 안의 최신 차수로 `quote.customer-approval` ctx를 만든다. `getCurrentQuoteRevision`이 `tx`를 받는다(04-32). (a10)은 이 함수를 거치고, 같은 tx의 미커밋 3차가 최신으로 잡히는 것(전역 db가 아님)도 단언한다. Phase 5 지출결의는 잠근 tx 안에서 이 함수만 부른다.
+- **NIT 4·5** — `f94e6b1`: (r7) 문구·`write.denied` 개수, (a8) `write.denied` 셋, (s2) 모든 행의 정확한 키 집합. 로그 제거·정보 항목 변이로 세 테스트가 실패함을 확인한 뒤 원복했다.
+- **이월 NIT**: 2(계보 배선 주석) · 3(`currentSeq` 인자) · 6(액션 경로 E2E — 04-24) · 7(이미 미승인 끄기의 cleared 로그) · 8(`quote.amount` 못 보는 PM의 합계 탐침 — 서버 거부 검토) · 9(이전 차수 줄 복원 — 04-40 Task 3 ④, 머지 묶음 ③은 04-40 전 배포 금지 전제 유지).
+- **검증**: `pnpm lint` · `pnpm typecheck` · `pnpm lint:sql` 통과, 단위 `CI=true` 94파일 1236건 통과, 통합(파일별) quote-revisions 23 · quote-lines 38 · quote-line-kinds 21 · leak-scan 927 통과. E2E·전체 게이트는 돌리지 않았다.
+
 ## Self-Check: PASSED
 
 - 파일: `domain/quotes/revisions.ts` · `test/integration/quote-revisions.test.ts`(628행 ≥ 110) · `test/unit/domain/quote-revisions.test.ts`(81행 ≥ 30) — FOUND

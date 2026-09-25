@@ -157,3 +157,14 @@ actuals:
 
 - FOUND: test/e2e/quote-edit-scope.spec.ts · domain/quotes/edit-scope.ts · app/(app)/projects/[id]/quote-table.tsx
 - FOUND commits: 1fd4a4d · 77d82a2 · 8bfe103 · ed68368 (`git rev-list --count 8c31402..HEAD` = 4)
+
+## 검토 반영 (2026-09-25, 04-30-review-opus.md)
+
+- B-1 반영(569c610): 붙여넣기로 생길 새 줄을 newLineCells로 판정한다(`applyPaste`의 `newRow`). 정산 새 줄 수량·단가는 같은 이유의 오류 셀로 남는다. E2E (c4) RED → GREEN.
+- S-1 반영(6c995f7): 새 줄 복원은 지금 셀 단계가 edit인 칸만 덮는다. E2E (k) RED → GREEN. 남은 것: **기존 줄** 복원(`mergeRestoredEdits`의 `restoredCellPatch`)도 셀 단계를 보지 않는다(진행에서 고친 수량 → 정산 뒤 복원). 같은 갈라짐이라 후속 이월.
+- S-6 반영(4d9dca0): 견적 표가 `tableLockLine`을 지금 줄로 부른다. `lockLine` prop 삭제. E2E (g2) RED → GREEN.
+- S-2 반영(e2ecc57): (f)·(h)가 요청 본문의 `"order":[` 유무를 본다. 변이(order 늘 싣기)로 실패 확인.
+- S-3 반영(ceca8cf): (a)에 긍정 신호(실행가 편집기 열림·닫힘) 뒤 부정 단언. 공허한 버튼 단언 삭제. 변이(정산에서 구조 핸들러 켜기)로 실패 확인.
+- S-4 보류: 연결 문서 fixture를 만들 수 없다 — `linkedDocumentsByLine`이 Phase 5 전까지 빈 Map을 돌려주는 자리표시다. 가장 가까운 단위 테스트가 이미 있다(`confirm-dialog.test.ts` 「견적 줄 취소」→「닫기」, `quote-edit-scope.test.ts` `linkedDocumentReason`·연결 문서 readonly 셀). E2E (k-연결)는 Phase 5가 지출결의 연결을 채울 때 추가한다.
+- S-5 보류: 편집기가 열린 동안 1차 「일괄 저장」이 비활성으로 보이는 문제. must_have(44행)는 누르면 활성 셀 값이 커밋되는 동작이고 그 동작은 (e3)가 증명한다. 보이는 상태를 고치려면 `Table`에 편집 상태 콜백을 새로 두어야 해서 04-30 범위를 넘고, 저장 버튼 잠금(04-49 `saveLocked`)과 겹친다 — 04-49로 이월.
+- NIT 미반영(기록만): N-1 끝줄 복제의 order·`duplicatedFrom` · N-2 보관할 줄의 미저장 보관(04-22) · N-3 `focusout` 직접 구독 · N-4 같은 이름 「기간 바꾸기」 둘(04-49 감사) · N-5 page.tsx 주석 재서술 · N-6 `.lockLine` CSS(수용).

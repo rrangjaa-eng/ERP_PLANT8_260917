@@ -40,3 +40,11 @@ registerAction({
   action: "write",
   dtoName: null,
 });
+
+// 04-14(DR-13 · DR-4): 이전 차수 잠김 조회 — 보기 액션, 현재 차수 조회와 같은 QuoteLineDto 투영.
+registerAction({
+  name: "listRevisionLinesAction",
+  menu: "projects",
+  action: "view",
+  dtoName: "QuoteLineDto",
+});

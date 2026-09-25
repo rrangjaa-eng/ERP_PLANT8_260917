@@ -11,7 +11,15 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { approvalBasis, insertRevision } from "@/repositories/quote-revisions";
 import { createProject, listProjects } from "@/domain/projects";
 import { getCurrentQuoteRevision, listQuoteLines } from "@/domain/quotes/lines";
-import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
+import {
+  createRevisionFromCurrent,
+  listRevisionLines,
+  listRevisionSummaries,
+  revisionLinesInputSchema,
+  setCustomerApproval,
+} from "@/domain/quotes/revisions";
+import { ACTION_REGISTRY } from "@/lib/actions/registry";
+import "@/app/(app)/projects/actions.registry";
 import { gate } from "@/domain/rules/gate";
 import { getSettingValue } from "@/domain/settings/registry";
 import { PROJECT_CUSTOMER_APPROVAL_GATE } from "@/domain/settings/keys";
@@ -519,5 +527,102 @@ describe("고객 승인 표시(04-14 Task 2 · D-56, 실제 Postgres)", () => {
     });
     expect(decision).toEqual({ allowed: false, reason: "2차 고객 승인 전 · 고객 승인 표시" });
     expect((await approvalOf(revisionId)).by).toBe(pm.id);
+  });
+});
+
+// 04-14 Task 3(S5 · U-2 · B-18 · B-20 · ENG-D9 · GAP 5c · DR-4 · DR-13) — 차수 요약 · 이전 차수 잠김 조회 · 보기 액션.
+const readerMenus: Menu[] = [{ menu: "projects", action: "view" }];
+
+describe("차수 요약 · 이전 차수 잠김 조회(04-14 Task 3, 실제 Postgres)", () => {
+  it("(s1) 1차 승인 · 2차 미승인 · 3차 최신 → [현재, 빈 값, 승인] · 최신이 승인이면 `승인`만 · 합계는 숫자(15억 줄 둘) · 줄 수 · 차수 id · 토큰(ENG-D9)", async () => {
+    const { project, revisionId, pm } = await setupProject();
+    await insertLine(revisionId, { unitPriceAmountKrw: 1_500_000_000, quoteAmountKrw: 1_500_000_000, profitKrw: 1_499_960_000 });
+    await insertLine(revisionId, { unitPriceAmountKrw: 1_500_000_000, quoteAmountKrw: 1_500_000_000, profitKrw: 1_499_960_000 });
+    await insertLine(revisionId, { archivedAt: new Date(), archivedBy: pm.id });
+    await insertLine(revisionId, adjustmentPatch(-3_000));
+    await approve(pm, revisionId);
+    const second = await createRevisionFromCurrent(pm, { projectId: project.id, fromRevisionId: revisionId });
+    const third = await createRevisionFromCurrent(pm, { projectId: project.id, fromRevisionId: second.revisionId });
+
+    const summaries = await listRevisionSummaries(pm, project.id);
+
+    expect(summaries.map((row) => [row.seq, row.statusWord])).toEqual([
+      [3, "현재"],
+      [2, ""],
+      [1, "승인"],
+    ]);
+    expect(summaries.map((row) => row.revisionId)).toEqual([third.revisionId, second.revisionId, revisionId]);
+    for (const row of summaries) {
+      expect(typeof row.totalKrw).toBe("number");
+      expect(row.totalKrw).toBe(3_000_000_000);
+      expect(row.lineCount).toBe(2);
+      expect(row.createdOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+    expect(summaries[2]?.approvedOn).toBe("2026-09-19");
+    expect(summaries[0]?.contentToken).toBe((await approvalBasis(SYSTEM_VIEWER, third.revisionId)).contentToken);
+
+    await approve(pm, third.revisionId);
+    const [latest] = await listRevisionSummaries(pm, project.id);
+    expect(latest?.statusWord).toBe("승인");
+  });
+
+  it("(s2) quote.amount를 숨긴 계급은 요약 행에 합계 키가 없다 — 순번·생성일·줄 수·상태는 있다(B-20)", async () => {
+    const { project, revisionId } = await setupProject();
+    await insertLine(revisionId);
+    const hidden = await makeViewer(readerMenus, ["project.value"]);
+
+    const [row] = await listRevisionSummaries(hidden, project.id);
+
+    expect(row).toBeTruthy();
+    expect(Object.keys(row ?? {})).not.toContain("totalKrw");
+    expect(row).toMatchObject({ seq: 1, lineCount: 1, statusWord: "현재" });
+    expect(Object.keys(row ?? {})).toEqual(expect.arrayContaining(["revisionId", "seq", "createdOn", "lineCount", "statusWord", "contentToken"]));
+  });
+
+  it("(s3) 이전 차수 잠김 조회: 모든 줄의 모든 셀 locked(쓰기 권한자에게도) · 조정 줄 0 · 1차 줄 id · 숨긴 계급은 금액 키 없음 · 현재 이상·없는 순번은 현재 차수(GAP 5c)", async () => {
+    const { project, revisionId, pm } = await setupProject();
+    const first = [await insertLine(revisionId), await insertLine(revisionId, { lineKind: "out_of_quote", subcategory: "out_of_quote", quoteAmountKrw: 0, unitPriceAmountKrw: 0 })];
+    const adjustment = await insertLine(revisionId, adjustmentPatch(-4_000));
+    const second = await createRevisionFromCurrent(pm, { projectId: project.id, fromRevisionId: revisionId });
+
+    const locked = await listRevisionLines(pm, project.id, { revisionSeq: 1 });
+    expect(locked.map((line) => line.id).sort()).toEqual(first.map((line) => line.id).sort());
+    expect(locked.filter((line) => line.lineKind === "adjustment")).toHaveLength(0);
+    for (const line of locked) expect(new Set(Object.values(line.cellEditability))).toEqual(new Set(["locked"]));
+
+    const hidden = await makeViewer(readerMenus, ["project.value"]);
+    const hiddenLines = await listRevisionLines(hidden, project.id, { revisionSeq: 1 });
+    expect(hiddenLines).toHaveLength(2);
+    for (const line of hiddenLines) {
+      for (const key of ["unitPrice", "execution", "quoteAmountKrw", "profitKrw"]) expect(Object.keys(line)).not.toContain(key);
+    }
+    const hiddenCurrent = await listRevisionLines(hidden, project.id, { revisionSeq: 2 });
+    expect(Object.keys(hiddenCurrent[0] ?? {}).sort()).toEqual(Object.keys(hiddenLines[0] ?? {}).sort());
+
+    const secondIds = (await linesOf(second.revisionId)).map((row) => row.id).sort();
+    for (const seq of [2, 99]) {
+      const current = await listRevisionLines(pm, project.id, { revisionSeq: seq });
+      expect(current.map((line) => line.id).sort()).toEqual(secondIds);
+      expect(current.some((line) => line.id === adjustment.id)).toBe(true);
+      expect(current.some((line) => Object.values(line.cellEditability).includes("edit"))).toBe(true);
+    }
+  });
+
+  it("(s4) 보기 액션: 레지스트리 view·QuoteLineDto · 순번 스키마(0·음수·정수 아님 거부) · 행 범위 밖은 없는 프로젝트와 같이 거부(DR-13)", async () => {
+    expect(ACTION_REGISTRY.find((entry) => entry.name === "listRevisionLinesAction")).toEqual({
+      name: "listRevisionLinesAction",
+      menu: "projects",
+      action: "view",
+      dtoName: "QuoteLineDto",
+    });
+    const projectId = randomUUID();
+    for (const revisionSeq of [0, -1, 1.5]) expect(revisionLinesInputSchema.safeParse({ projectId, revisionSeq }).success).toBe(false);
+    expect(revisionLinesInputSchema.safeParse({ projectId, revisionSeq: 1 }).success).toBe(true);
+
+    const { project, revisionId } = await setupProject();
+    await insertLine(revisionId);
+    const stranger = await makeViewer([]);
+    await expect(listRevisionLines(stranger, project.id, { revisionSeq: 1 })).rejects.toThrow("존재하지 않는 프로젝트입니다.");
+    await expect(listRevisionLines(SYSTEM_VIEWER, randomUUID(), { revisionSeq: 1 })).rejects.toThrow("존재하지 않는 프로젝트입니다.");
   });
 });

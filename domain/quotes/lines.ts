@@ -12,6 +12,7 @@ import "@/domain/rules/register";
 import type { ProjectLineEditCtx, QuoteLineCapCtx } from "@/domain/rules/register";
 import { denyWrite } from "@/domain/rules/deny-write";
 import { loadProjectForGate } from "@/domain/projects/auto-transition";
+import { resolveLinkedDocumentsByLineage } from "@/domain/quotes/revisions";
 import {
   lineCellEditability,
   linkedDocumentReason,
@@ -221,17 +222,20 @@ export async function getCurrentQuoteRevision(
 // 04-12(D-78 · ENG-D3 ②) — 셀 단계는 게이트와 같은 lineCellEditability로 줄마다 계산하고, 투영은 projectMany
 // 한 번(노출 조회가 줄 수가 아니라 정보 항목 수만큼).
 // 04-13(D-83) — `canAdjust`는 권한표 `projects.adjustment` 쓰기(없으면 조정 줄은 잠김).
-export type QuoteLineListCtx = { status: string; canWrite: boolean; canAdjust?: boolean };
+// 04-14(GAP 5c · DR-13) — `locked`는 이전 차수 잠김 조회: 모든 줄의 모든 셀이 `locked`(쓰기·조정 권한과 무관).
+export type QuoteLineListCtx = { status: string; canWrite: boolean; canAdjust?: boolean; locked?: boolean };
 
 // D-66 — 줄마다 연결된 지출결의(번호). 이 페이즈에는 지출결의가 없어 빈 결과다 — Phase 5가 이 함수만 채운다.
 // 저장 트랜잭션 안에서도 불리므로 tx를 받는다.
 export type LinkedDocumentsByLine = Map<string, { number: string }[]>;
 
+// 04-14(D-55) — 문서 출처(Phase 5 — 줄 id별 문서)가 준 것을 계보 해석으로 현재 차수 줄에 잇는다. 조회 지점은 여전히 이
+// 함수 하나다. 이 페이즈는 출처가 빈 결과라 계보 줄을 읽지 않는다.
 export function linkedDocumentsByLine(viewer: Viewer, revisionId: string, tx?: DbOrTx): Promise<LinkedDocumentsByLine> {
   void viewer;
   void revisionId;
   void tx;
-  return Promise.resolve(new Map<string, { number: string }[]>());
+  return Promise.resolve(resolveLinkedDocumentsByLineage([], new Map<string, { number: string }[]>()).byCurrentLine);
 }
 
 // 04-13 — DB CHECK(quote_lines_line_kind_check)가 세 값만 받는다.
@@ -251,11 +255,11 @@ async function projectLines(
     return toProjectable(row, {
       cellEditability: lineCellEditability({
         status: ctx.status,
-        canWrite: ctx.canWrite,
+        canWrite: ctx.locked ? false : ctx.canWrite,
         hasLinkedDocuments,
         isNewLine: false,
         lineKind: lineKindOf(row),
-        canAdjust: ctx.canAdjust ?? false,
+        canAdjust: ctx.locked ? false : (ctx.canAdjust ?? false),
       }),
       hasLinkedDocuments,
       readonlyReason: firstLinked ? linkedDocumentReason(firstLinked.number) : null,

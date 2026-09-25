@@ -13,7 +13,12 @@ import {
 } from "@/domain/projects/ledger";
 import type { PreEstimateFieldError } from "@/domain/projects/pre-estimate";
 import { quoteLinesInputSchema, SaveRejectedError } from "@/domain/quotes/lines";
-import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
+import {
+  createRevisionFromCurrent,
+  listRevisionLines,
+  revisionLinesInputSchema,
+  setCustomerApproval,
+} from "@/domain/quotes/revisions";
 import {
   changeProjectStatus,
   listProjectStatusCatalog,
@@ -245,3 +250,10 @@ export const setCustomerApprovalAction = authedActionClient
     revalidatePath("/projects");
     return result;
   });
+
+// 04-14(DR-13 · DR-4): 이전 차수 잠김 조회 — 04-24의 이전 차수 읽기 섹션(처음 열 때만)과 복원 줄 「복사」가 부른다.
+// 원장 자체를 검색 파라미터로 바꿔치기하지 않는다. 행 범위·투영은 domain(listRevisionLines → listQuoteLines)이 하고 이
+// 액션은 결과를 그대로 돌려준다.
+export const listRevisionLinesAction = authedActionClient.schema(revisionLinesInputSchema).action(async ({ parsedInput, ctx }) => {
+  return listRevisionLines(ctx.viewer, parsedInput.projectId, { revisionSeq: parsedInput.revisionSeq });
+});

@@ -122,3 +122,29 @@ export async function setRevisionApproval(
     .set({ customerApprovedAt: input.customerApprovedAt, customerApprovedBy: input.customerApprovedBy, updatedAt: new Date() })
     .where(eq(quoteRevisions.id, revisionId));
 }
+
+// 04-14(S5 · CEO 리뷰 §7 · B-18 · ENG-D9) — 차수별 줄 수(견적 줄 + 견적 외 비용, 보관 제외) · 견적 합계 · 내용 토큰을
+// GROUP BY 한 번으로. 합계는 bigint를 JS 숫자로 바꿔 돌려준다(node-pg는 bigint를 문자열로 준다 — 04-17 C-01과 같은 규칙).
+export type RevisionSummaryRow = Pick<QuoteRevisionRow, "id" | "seq" | "createdAt" | "customerApprovedAt" | "customerApprovedBy"> &
+  ApprovalBasis & { lineCount: number };
+
+export async function summarizeRevisions(viewer: Viewer, projectId: string, tx: DbOrTx = db): Promise<RevisionSummaryRow[]> {
+  void viewer;
+  const rows = await tx
+    .select({
+      id: quoteRevisions.id,
+      seq: quoteRevisions.seq,
+      createdAt: quoteRevisions.createdAt,
+      customerApprovedAt: quoteRevisions.customerApprovedAt,
+      customerApprovedBy: quoteRevisions.customerApprovedBy,
+      totalKrw: APPROVABLE_TOTAL.mapWith(Number),
+      contentToken: CONTENT_TOKEN,
+      approvableLineCount: APPROVABLE_COUNT,
+    })
+    .from(quoteRevisions)
+    .leftJoin(quoteLines, eq(quoteLines.revisionId, quoteRevisions.id))
+    .where(eq(quoteRevisions.projectId, projectId))
+    .groupBy(quoteRevisions.id)
+    .orderBy(desc(quoteRevisions.seq));
+  return rows.map((row) => ({ ...row, lineCount: row.approvableLineCount }));
+}

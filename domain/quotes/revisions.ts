@@ -1,6 +1,11 @@
+import { z } from "zod";
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { scopeFor } from "@/domain/permissions/scope-for";
+import { visible as defaultVisible } from "@/domain/permissions/visible";
+import { projectMany, type DtoSpec } from "@/domain/permissions/project";
+import { registerDto } from "@/domain/permissions/dto-registry";
+import { findProject } from "@/domain/projects";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
@@ -9,7 +14,7 @@ import { denyWrite, type DenyWriteIds } from "@/domain/rules/deny-write";
 import { loadProjectForGate } from "@/domain/projects/auto-transition";
 import { ProjectNotFoundError } from "@/domain/projects/status";
 import { structuralEditability } from "@/domain/quotes/edit-scope";
-import { linkedDocumentsByLine } from "@/domain/quotes/lines";
+import { linkedDocumentsByLine, listQuoteLines, type QuoteLineDto } from "@/domain/quotes/lines";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
 import { isUniqueViolation } from "@/lib/pg-errors";
@@ -18,8 +23,11 @@ import {
   approvalBasis as repoApprovalBasis,
   findLatestQuoteRevision as repoFindLatestQuoteRevision,
   findQuoteRevisionById as repoFindQuoteRevisionById,
+  findQuoteRevisionByProjectAndSeq as repoFindQuoteRevisionByProjectAndSeq,
   insertRevision as repoInsertRevision,
   setRevisionApproval as repoSetRevisionApproval,
+  summarizeRevisions as repoSummarizeRevisions,
+  type RevisionSummaryRow,
 } from "@/repositories/quote-revisions";
 import {
   copyQuoteLines as repoCopyQuoteLines,
@@ -220,4 +228,132 @@ export async function setCustomerApproval(
     );
     return { revisionId, seq, approvedOn };
   });
+}
+
+// ── 표시 번호 · 계보 해석 · 차수 요약 · 이전 차수 잠김 조회(D-55 · D-56 · S5 · U-2 · DR-4 · DR-13) ─────────────────
+
+// D-56 — 견적 표시 번호 `26001-2차`. 저장 컬럼·카운터가 없다.
+export function quoteDisplayNumber(projectNumber: string, seq: number): string {
+  return `${projectNumber}-${seq}차`;
+}
+
+// D-55 · CEO 리뷰 B-33 — 이전 차수 줄의 연결 문서를 계보(copied_from_line_id) 사슬로 현재 차수(최신 순번) 줄에 잇는다.
+// 문서 행을 옮기지 않는다. 사슬에 닿지 않는 줄(새 차수에서 빠진 줄)의 문서는 `detached`로 따로 돌려준다 — 견적 외
+// 비용처럼 프로젝트에 남는다. 문서 출처가 Phase 5라 이 페이즈에는 순수 함수와 빈 결과뿐이다.
+export type LineageLine = { id: string; revisionSeq: number; copiedFromLineId: string | null };
+
+export function resolveLinkedDocumentsByLineage<Doc>(
+  lines: readonly LineageLine[],
+  docsByLineId: ReadonlyMap<string, readonly Doc[]>,
+): { byCurrentLine: Map<string, Doc[]>; detached: Doc[] } {
+  const byId = new Map(lines.map((line) => [line.id, line]));
+  const latestSeq = Math.max(...lines.map((line) => line.revisionSeq));
+  const reached = new Set<string>();
+  const byCurrentLine = new Map<string, Doc[]>();
+  for (const line of lines) {
+    if (line.revisionSeq !== latestSeq) continue;
+    const docs: Doc[] = [];
+    for (let cursor: LineageLine | undefined = line; cursor; cursor = cursor.copiedFromLineId ? byId.get(cursor.copiedFromLineId) : undefined) {
+      reached.add(cursor.id);
+      docs.push(...(docsByLineId.get(cursor.id) ?? []));
+    }
+    if (docs.length > 0) byCurrentLine.set(line.id, docs);
+  }
+  const detached = [...docsByLineId].filter(([lineId]) => !reached.has(lineId)).flatMap(([, docs]) => docs);
+  return { byCurrentLine, detached };
+}
+
+// S5 · U-2(사용자 확정) — 최신 미승인 `현재` · 승인 `승인`(최신이어도 `승인`만) · 승인 없이 지나간 이전 차수 빈 값.
+export function revisionStatusWord(input: { seq: number; latestSeq: number; approved: boolean }): "현재" | "승인" | "" {
+  if (input.approved) return "승인";
+  return input.seq === input.latestSeq ? "현재" : "";
+}
+
+// S5 · CEO 리뷰 B-18·B-20 · ENG-D9 · DR-4 — 차수 요약 한 행. 합계는 `quote.amount`, 나머지(내용 토큰 — 줄 id·버전의
+// 해시라 금액이 없다)는 `project.value`로 게이트한다. 차수 id는 04-24가 보관 키의 다른 차수를 `{n}차`로 읽는 데 쓴다.
+export type RevisionSummaryDto = {
+  revisionId: string;
+  seq: number;
+  createdOn: string;
+  lineCount: number;
+  totalKrw: number;
+  statusWord: "현재" | "승인" | "";
+  approvedOn: string | null;
+  approvedBy: string | null;
+  contentToken: string;
+};
+
+type RevisionSummaryProjectable = RevisionSummaryDto;
+
+export const REVISION_SUMMARY_DTO_SPEC: DtoSpec<RevisionSummaryProjectable, RevisionSummaryDto> = {
+  fields: [
+    { key: "revisionId", from: "revisionId", infoItem: "project.value" },
+    { key: "seq", from: "seq", infoItem: "project.value" },
+    { key: "createdOn", from: "createdOn", infoItem: "project.value" },
+    { key: "lineCount", from: "lineCount", infoItem: "project.value" },
+    { key: "totalKrw", from: "totalKrw", infoItem: "quote.amount" },
+    { key: "statusWord", from: "statusWord", infoItem: "project.value" },
+    { key: "approvedOn", from: "approvedOn", infoItem: "project.value" },
+    { key: "approvedBy", from: "approvedBy", infoItem: "project.value" },
+    { key: "contentToken", from: "contentToken", infoItem: "project.value" },
+  ],
+};
+
+registerDto({
+  name: "RevisionSummaryDto",
+  fields: REVISION_SUMMARY_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
+});
+
+function toSummaryProjectable(row: RevisionSummaryRow, latestSeq: number): RevisionSummaryProjectable {
+  return {
+    revisionId: row.id,
+    seq: row.seq,
+    createdOn: kstDateOf(row.createdAt),
+    lineCount: row.lineCount,
+    totalKrw: row.totalKrw,
+    statusWord: revisionStatusWord({ seq: row.seq, latestSeq, approved: row.customerApprovedAt !== null }),
+    approvedOn: approvedOnOf(row.customerApprovedAt),
+    approvedBy: row.customerApprovedBy,
+    contentToken: row.contentToken,
+  };
+}
+
+// 차수 요약(최신 순번부터) — 한 번의 GROUP BY 쿼리, 합계는 리포지토리 경계에서 JS 숫자. 행 범위 밖이면 빈 목록.
+export async function listRevisionSummaries(viewer: Viewer, projectId: string): Promise<Partial<RevisionSummaryDto>[]> {
+  const scope = await scopeFor(viewer, PROJECT_ENTITY);
+  if (scope.rows === "none") return [];
+  const rows = await repoSummarizeRevisions(viewer, projectId);
+  const latestSeq = Math.max(...rows.map((row) => row.seq));
+  return projectMany(
+    viewer,
+    rows.map((row) => toSummaryProjectable(row, latestSeq)),
+    REVISION_SUMMARY_DTO_SPEC,
+  );
+}
+
+// DR-13 · DR-4 · GAP 5c — 이전 차수 잠김 조회(보기 액션 listRevisionLinesAction의 domain 입구). 현재보다 작은 순번이면
+// 그 차수의 줄을 모든 셀 `locked`로(조정 줄은 새 차수로 옮겨 가 없다), 현재 이상·없는 순번이면 현재 차수 조회다. 행
+// 범위·투영은 findProject · listQuoteLines(QUOTE_LINE_DTO_SPEC)가 한다.
+export const revisionLinesInputSchema = z.object({
+  projectId: z.string().uuid(),
+  revisionSeq: z.number().int().positive(),
+});
+
+export async function listRevisionLines(viewer: Viewer, projectId: string, input: { revisionSeq: number }): Promise<QuoteLineDto[]> {
+  const project = await findProject(viewer, projectId);
+  if (!project) throw new ProjectNotFoundError(PROJECT_NOT_FOUND);
+  const current = await repoFindLatestQuoteRevision(viewer, projectId);
+  if (!current) throw new ProjectNotFoundError(PROJECT_NOT_FOUND);
+
+  if (input.revisionSeq < current.seq) {
+    const previous = await repoFindQuoteRevisionByProjectAndSeq(viewer, projectId, input.revisionSeq);
+    if (previous) return listQuoteLines(viewer, previous.id, { status: project.status, canWrite: false, locked: true });
+  }
+  // 현재 차수 — 상세 화면과 같은 판정(금액을 볼 수 없으면 편집하지 않는다).
+  const [canWrite, canAdjust, canSeeAmount] = await Promise.all([
+    defaultCan(viewer, PROJECTS_MENU, "write"),
+    defaultCan(viewer, "projects.adjustment", "write"),
+    defaultVisible(viewer, "quote.amount"),
+  ]);
+  return listQuoteLines(viewer, current.id, { status: project.status, canWrite: canWrite && canSeeAmount, canAdjust: canAdjust && canSeeAmount });
 }

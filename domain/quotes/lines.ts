@@ -12,7 +12,7 @@ import "@/domain/rules/register";
 import type { ProjectLineEditCtx, QuoteLineCapCtx } from "@/domain/rules/register";
 import { denyWrite } from "@/domain/rules/deny-write";
 import { loadProjectForGate } from "@/domain/projects/auto-transition";
-import { resolveLinkedDocumentsByLineage } from "@/domain/quotes/revisions";
+import { resolveLinkedDocumentsByLineage } from "@/domain/quotes/lineage";
 import {
   lineCellEditability,
   linkedDocumentReason,

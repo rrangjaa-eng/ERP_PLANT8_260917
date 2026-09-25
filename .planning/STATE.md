@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 current_phase: 4
-current_phase_name: project-quote-ledger
-current_plan: 4
+current_phase_name: 프로젝트·견적 원장
+current_plan: 2
 status: executing
-stopped_at: Completed 04-26-PLAN.md
-last_updated: "2026-09-25T16:17:40.091Z"
+stopped_at: Completed 04-13-PLAN.md
+last_updated: "2026-09-25T17:11:47.989Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 4 execution started
-state_head: 203f61e184a15827a8525c4dbc7be3f9c16149ac
+state_head: 0cdd9bc73a19942dc9d5a9fa5bdcb71e7f7f3296
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 115
-  completed_plans: 48
+  completed_plans: 49
   percent: 6
 ---
 
@@ -24,12 +24,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-17)
 
 **Core value:** 기획본부와 경영관리본부가 프로젝트마다 같은 숫자(견적·예상 비용·확정 비용·손익)를 본다. 기획본부는 계산식·근거 없이 결과 숫자로 납득하고, 경영관리·대표는 근거 줄까지 본다.
-**Current focus:** Phase 4 — project-quote-ledger
+**Current focus:** Phase 4 — 프로젝트·견적 원장
 
 ## Current Position
 
-Phase: 4 (project-quote-ledger) — EXECUTING
-Current Plan: 4
+Phase: 4 (프로젝트·견적 원장) — EXECUTING
+Current Plan: 2
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-25 — Phase 4 execution started
@@ -97,6 +97,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P30 | 39min | 2 tasks | 11 files |
 | Phase 04 P49 | 159min | 2 tasks | 17 files |
 | Phase 04 P26 | 93min | 2 tasks | 10 files |
+| Phase 04 P13 | 38 min | 2 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -232,6 +233,9 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-30: 잠긴 셀 이유는 CellIssue kind reason — aria-invalid·오류 칸 수에서 제외
 - [Phase 4]: 04-30: 줄 이동은 자리를 바꾼 두 줄 모두 dirty(A-03), order는 이동·가운데 삽입일 때만 한 번
 - [Phase 4]: 04-30: Ctrl+S는 열린 편집기를 blur 커밋 후 useEffectEvent로 저장
+- [Phase 04]: 04-13: 견적 줄 종류는 quote_lines.line_kind 한 컬럼(quote·out_of_quote·adjustment)이 정본 — 기존 줄 종류는 잠근 tx로 다시 읽은 DB 행, 새 줄만 요청 값
+- [Phase 04]: 04-13: 조정 줄은 projects.adjustment 쓰기로만 상태와 무관하게 판정, 견적 줄·견적 외 비용은 projects 쓰기 — 저장·복원 입구는 둘 중 하나, 줄마다 게이트(ctx lineKind·actorCanWrite·actorCanAdjust 필수)
+- [Phase 04]: 04-13: 조정·견적 외 비용 줄은 서버가 수량 1·원화 단가 0·소분류=종류 값으로 정규화(견적가 0), 실행가 음수는 이 두 종류만
 
 ### Pending Todos
 
@@ -288,6 +292,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-25T16:17:39.892Z
-Stopped at: Completed 04-26-PLAN.md
+Last session: 2026-09-25T17:11:32.338Z
+Stopped at: Completed 04-13-PLAN.md
 Resume file: None

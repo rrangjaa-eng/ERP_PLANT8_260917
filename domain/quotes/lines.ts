@@ -572,6 +572,9 @@ const LINE_EDIT_RULE = "project.line-edit";
 const MEMBERSHIP_RULE = "quote.line-membership";
 const REPLAY_RULE = "quote.line-replay";
 const LINE_CAP_RULE = "quote.line-cap";
+const CURRENT_REVISION_RULE = "quote.current-revision";
+// UI-SPEC rev 5 — 보낸 차수가 잠금 뒤 다시 읽은 최신 차수가 아니다(04-40 · B-01).
+const STALE_REVISION = "다른 사람이 새 차수를 만듦 · 새로 고침";
 // UI-SPEC rev 5 `Error — 저장(순서·소속, 방어)` · `Error — 저장(재전송 불일치, ENG-D10)`.
 const MEMBERSHIP_MISMATCH = "차수와 프로젝트가 맞지 않음 · 새로 고침";
 const ORDER_MISMATCH = "줄 순서가 맞지 않음 · 새로 고침";
@@ -752,6 +755,9 @@ export async function writeQuoteLinesInTx(
   // (a)
   const projectRow = await loadProjectForGate(viewer, projectId, { now: deps?.now, tx, afterLock: deps?.afterLock }, { recordAction });
   if (!projectRow) throw new RevisionNotFoundError("연결된 프로젝트를 찾을 수 없습니다.");
+  // 04-40(B-01) — 현재 차수 재확인은 잠금 뒤 같은 tx로(단독 저장·합성 저장 공통). 아무것도 쓰기 전에 전부 거부한다.
+  const latest = await repoFindLatestQuoteRevision(viewer, projectId, tx);
+  if (latest?.id !== revisionId) denyWrite(viewer, CURRENT_REVISION_RULE, { projectId, revisionId }, new UserFacingError(STALE_REVISION));
   const status = projectRow.status;
   const linkedDocuments = await linkedDocumentsByLine(viewer, revisionId, tx);
   const lineCtx = (lineId: string | null, lineKind: QuoteLineKind, change: ProjectLineEditCtx["change"]): ProjectLineEditCtx => {

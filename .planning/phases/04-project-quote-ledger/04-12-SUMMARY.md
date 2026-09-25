@@ -68,7 +68,7 @@ actuals:
 - Task 1: 단위 29/29 · 통합(quote-lines·conflict·leak-scan·project-period·tx-safety) 910/910 · tracer 게이트 재실행 910/910 · lint · typecheck 0
 - Task 2: 단위 47/47 · 통합 11파일 982/982 · lint · typecheck 0
 - Task 3: 단위 44/44 · 통합(quote-lines·archive·project-status·project-period·revenue-entries·tx-safety) 117/117 · 추가 7파일 908/908 · lint · typecheck · build · lint:sql 0
-- 뮤테이션: tx-safety (d)(커밋 뒤 단계를 시간 초과 변환으로 감싸면 빨강) · (m)(보관을 tx 밖으로 옮기면 빨강) · (t)(견적 줄 로그에서 `{ tx }`를 빼면 빨강)
+- 뮤테이션: tx-safety (d)(커밋 뒤 단계를 시간 초과 변환으로 감싸면 빨강) · quote-lines (m)(보관을 tx 밖으로 옮기면 빨강 — 검토 S6 뒤 성립, 아래 「검토 반영」) · quote-lines (t)(견적 줄 로그에서 `{ tx }`를 빼면 빨강)
 - 의존성: package.json·pnpm-lock.yaml이 d6b41cf와 같다
 - 전체 CI=true 게이트와 E2E는 오케스트레이터가 돌린다(이 실행자는 돌리지 않음)
 
@@ -111,6 +111,23 @@ actuals:
 | 파일 | 줄 | 이유 |
 |------|----|------|
 | domain/quotes/lines.ts | 218 | `linkedDocumentsByLine`가 빈 Map — 지출결의가 없는 페이즈라 의도된 조회 지점(Phase 5가 채움). WINDOWS.md에 기록 |
+
+## 검토 반영(Opus 독립 리뷰 `04-12-review-opus.md` — BLOCKING 0 · SHOULD-FIX 6 · NIT 10)
+
+| 항목 | 처리 | 커밋 | RED(실패 줄) |
+|------|------|------|--------------|
+| S3 재전송 no-op이 로그를 남김 | 삽입·갱신·순서·보관 중 실제로 쓴 것이 없으면 `document_update` 로그를 건너뜀. 통합 (w)에 로그 수 단언 | d2c7ccd | (w) `expected 2 to be 1` |
+| S1 완료 프로젝트에 값이 그대로인 줄이 쓰임 | 플랜 게이트 의미(A-21 — DB 현재 값과 정규화 값 비교, 바뀐 칸만 판정)대로 **거부가 아니라 no-op**: 바뀐 칸이 없는 기존 줄은 쓰지 않는다(version·updated_at·로그 그대로). 버전 충돌 판정은 04-04 그대로. 통합 (c3) 추가 · 04-04 충돌 (a)는 같은 값 재저장으로 버전 증가를 보던 전제라 항목명 한 칸을 고쳐 같은 의도 유지 | 7dff0a4 | (c3) `expected 2 to be 1`(version) |
+| S2 정산 새 줄 `lineStatus` 미판정 | `quoteCellsZero`에 상태(없음 · `not_started`) 조건 — DTO 잠김 칸과 같은 칸. 단위 케이스 · 통합 (h)에 취소 새 줄 | 2932c9c | 단위 `expected true to be false` · (h) `promise resolved … instead of rejecting` |
+| S4 섞인 배치 재전송 | **동작 그대로.** 플랜 04-12-PLAN.md:170 「기존 줄 수정이 섞인 배치의 재전송은 버전 충돌로 전부 거부되어 새 줄도 다시 들어가지 않는다(중복 0 — 충돌 표시로 끝나는 것은 04-04 동작 그대로)」. 재전송 멱등 계약(ENG-D10)은 **새 줄만** 덮는다 — 04-30·그룹 B는 이 범위를 전제로 한다 | — | — |
+| S5 보관된 줄 id `isNew` 재전송 테스트 없음 | 통합 (w4) 추가(새 줄 저장 → 보관 → 같은 페이로드 재전송 = 소속 거부 · 보관 그대로). 변이: `stored.archivedAt !== null` 조건 제거 → 빨강 → 복구 → 초록 | 42b48c0 | 변이 시 `promise resolved … instead of rejecting` |
+| S6 (m)이 보관 단계에 닿지 않음 | (m)에 사전 판정을 통과한 보관 저장 + `recordAction` 거부 → 보관 되돌아감 단언. 변이: 보관을 tx 대신 풀로 → 빨강 → 복구 → 초록. 위 「검증」의 (m)·(t) 위치 표기를 quote-lines로 고침 | 68b092c | 변이 시 `expected <날짜> to be null` |
+| NIT-7 page.tsx 고아 import | `import "@/domain/rules/register"` 제거(lines.ts가 등록을 불러옴) | aae8520 | 동작 변화 없음 — typecheck·lint |
+
+- 검증: 단위 quote-edit-scope 23/23 · 단위 전체 1161/1161 · 통합 quote-lines + quote-lines-conflict 45/45 · 관련 통합(tx-safety·project-period·ledger-ownership·fx-remember-concurrency·project-status·projects-list·quote-line-visibility·revenue-entries) S1 뒤 통과 · `pnpm lint` · `pnpm typecheck` · `pnpm lint:sql` 0. E2E·CI=true 전체 게이트는 돌리지 않음(오케스트레이터 몫).
+- 남긴 NIT(이월): 1 거부 지점 여럿(재전송 판정 `denyWrite` · 경합 경로 `MEMBERSHIP_MISMATCH`/`ARCHIVED_LINE`) · 2 범용 `archive(viewer, "quote_line", id)` 우회 경로 · 3 보관함 목록 팀 범위 · 4 복원 거부 `write.denied` 단언 없음 · 5 `duplicatedFrom` 검증 없음(04-30 계약에 「복제는 반드시 duplicatedFrom」) · 6 `revisionId`·`vendorId` uuid 검증 · 8 `prepareQuoteLineSave` 차수 재조회 · 9 04-30 전 정산 화면 불일치(04-30 수용 기준에 「정산 잠김 칸 거부는 표 위 한 줄」) · 10 합성 저장 `saveRevenue` `can()` 풀 호출(그룹 B — tx-safety (g) 매출 포함 변형).
+- 남은 틈(메모): 바뀐 칸 판정은 기존 줄의 사용자 정의 필드를 보지 않는다 — 기존 줄 갱신이 사용자 정의 필드를 쓰지 않으므로(repositories/quote-lines.ts update) 지금은 영향 없음.
+- 한도 풀리면 Codex 재확인 필요.
 
 ## Self-Check: PASSED
 

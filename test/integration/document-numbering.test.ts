@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { allocateDocumentNumber, UnknownDocumentNumberCounterError } from "@/domain/document-numbering";
+import {
+  allocateDocumentNumber,
+  loadDocumentNumberFormat,
+  UnknownDocumentNumberCounterError,
+} from "@/domain/document-numbering";
 import { setSettingValue } from "@/domain/settings/registry";
 import {
   DOCUMENT_NUMBER_PROJECT_PREFIX,
@@ -16,36 +20,42 @@ import {
 // 별도 복원이 필요 없다.
 describe("domain/document-numbering 서식 설정 (ADMN-09, 실제 Postgres)", () => {
   it("기본 서식으로 2026년 첫 프로젝트 번호는 26001이다", async () => {
-    const { number } = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026 });
+    const format = await loadDocumentNumberFormat("project");
+    const { number } = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026, format });
     expect(number).toBe("26001");
   });
 
   it("서식을 바꿔도 이미 매긴 번호는 그대로다 — 그 뒤 등록분에만 반영된다", async () => {
-    const first = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026 });
+    const firstFormat = await loadDocumentNumberFormat("project");
+    const first = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026, format: firstFormat });
     expect(first.number).toBe("26001");
 
     await setSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEQ_DIGITS, 4);
 
-    const second = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026 });
+    const secondFormat = await loadDocumentNumberFormat("project");
+    const second = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026, format: secondFormat });
     expect(second.number).toBe("260002");
     // 이미 매긴 번호는 재계산되지 않는다 — 첫 호출이 돌려준 값은 그대로다.
     expect(first.number).toBe("26001");
   });
 
   it("접두어를 넣으면 그 뒤 등록분에만 접두어가 붙는다", async () => {
-    const before = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026 });
+    const beforeFormat = await loadDocumentNumberFormat("project");
+    const before = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026, format: beforeFormat });
     expect(before.number).toBe("26001");
 
     await setSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_PREFIX, "PRJ");
-    const after = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026 });
+    const afterFormat = await loadDocumentNumberFormat("project");
+    const after = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026, format: afterFormat });
     expect(after.number).toBe("PRJ26002");
   });
 
   it("연도가 2027로 바뀌면 순번이 1부터 다시 시작해 27001이 나온다(카운터 기간 값이 담당)", async () => {
-    const y2026 = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026 });
+    const format = await loadDocumentNumberFormat("project");
+    const y2026 = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026, format });
     expect(y2026.number).toBe("26001");
 
-    const y2027 = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2027 });
+    const y2027 = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2027, format });
     expect(y2027.number).toBe("27001");
     expect(y2027.seq).toBe(1);
   });
@@ -53,7 +63,8 @@ describe("domain/document-numbering 서식 설정 (ADMN-09, 실제 Postgres)", (
   it("순번 자릿수 0은 저장이 거부되고 기존 서식이 유지된다", async () => {
     await expect(setSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEQ_DIGITS, 0)).rejects.toThrow();
 
-    const { number } = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026 });
+    const format = await loadDocumentNumberFormat("project");
+    const { number } = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026, format });
     expect(number).toBe("26001");
   });
 
@@ -70,14 +81,15 @@ describe("domain/document-numbering 서식 설정 (ADMN-09, 실제 Postgres)", (
   });
 
   it("등록되지 않은 counterKey로 부르면 조용히 통과하지 않고 오류가 난다", async () => {
-    await expect(
-      allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "unregistered-document-type", year: 2026 }),
-    ).rejects.toThrow(UnknownDocumentNumberCounterError);
+    await expect(loadDocumentNumberFormat("unregistered-document-type")).rejects.toThrow(
+      UnknownDocumentNumberCounterError,
+    );
   });
 
   it("구분자를 바꾼 뒤 등록분에 그 구분자가 반영된다", async () => {
     await setSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEPARATOR, "-");
-    const { number } = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026 });
+    const format = await loadDocumentNumberFormat("project");
+    const { number } = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026, format });
     expect(number).toBe("26-001");
   });
 });

@@ -182,6 +182,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       emptyState={quoteTableEmptyState({
         status: project.status,
         canAddLine: structural.insert,
+        canAdjust: adjustmentStructural.insert,
         periodRights,
         pmName: responsibles?.pmName ?? null,
       })}

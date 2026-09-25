@@ -134,18 +134,22 @@ export function tableLockLine(input: { status: string; hasEditableCells: boolean
 }
 
 // 04-30(UI-SPEC rev 5 Copywriting `Empty — 견적 줄 표`) — 0줄 표의 한 줄. 다음 한 수는 그 사람에게 실제로 렌더되는
-// 행동만: ① 첫 줄 만들기 ③ 기간 바꾸기(정산 · 기간 권리 lead) ④ 담당 PM {이름} ⑤ 완료는 사실만. ② 조정 줄 추가는 04-23.
-export type QuoteTableEmptyState = { message: string; action?: { kind: "addLine" | "openPeriodEnd"; label: string } };
+// 행동만: ① 첫 줄 만들기 ② 조정 줄 추가(04-23 — 조정 권한, 상태 무관) ③ 기간 바꾸기(정산 · 기간 권리 lead) ④ 담당 PM {이름}
+// ⑤ 완료는 사실만.
+export type QuoteTableEmptyState = { message: string; action?: { kind: "addLine" | "addAdjustment" | "openPeriodEnd"; label: string } };
 
 const EMPTY_TABLE_MESSAGE = "이 프로젝트에 견적 줄이 없습니다";
 
 export function quoteTableEmptyState(input: {
   status: string;
   canAddLine: boolean;
+  /** 04-23(D-83) — 조정 줄을 추가할 수 있음(없으면 조정 권한 없음). */
+  canAdjust?: boolean;
   periodRights: "lead" | "pm" | "none";
   pmName: string | null;
 }): QuoteTableEmptyState {
   if (input.canAddLine) return { message: EMPTY_TABLE_MESSAGE, action: { kind: "addLine", label: "첫 줄 만들기" } };
+  if (input.canAdjust) return { message: EMPTY_TABLE_MESSAGE, action: { kind: "addAdjustment", label: "조정 줄 추가" } };
   if (input.status === "completed") return { message: EMPTY_TABLE_MESSAGE };
   if (input.status === "settling" && input.periodRights === "lead") {
     return { message: EMPTY_TABLE_MESSAGE, action: { kind: "openPeriodEnd", label: "기간 바꾸기" } };

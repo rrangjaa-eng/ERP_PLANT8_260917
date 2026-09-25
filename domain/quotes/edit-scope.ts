@@ -63,9 +63,15 @@ export function structuralEditability(input: { status: string; canWrite: boolean
 }
 
 // 사용자 D12 · 엔지 리뷰 A §2 P1 — 정산 새 줄의 견적 칸 0: 원화 단가 0 · 수량이 비었거나 1(견적가가 0이 되는 조합).
-// 수량 0은 받지 않는다(수량 > 0 검증을 느슨하게 하지 않는다).
-export function quoteCellsZero(input: { quantity?: number; unitPrice: { currency: string; amount: number; fxRate: number } }): boolean {
-  return input.unitPrice.currency === "KRW" && input.unitPrice.amount === 0 && (input.quantity === undefined || input.quantity === 1);
+// 수량 0은 받지 않는다(수량 > 0 검증을 느슨하게 하지 않는다). 상태도 새 줄에서 잠김이라 비었거나 기본값이어야 한다
+// (QUOTE_FIELDS_LOCKED_IN_SETTLING_INSERT와 같은 칸 — 04-12 검토 S2).
+export function quoteCellsZero(input: { quantity?: number; unitPrice: { currency: string; amount: number; fxRate: number }; lineStatus?: string }): boolean {
+  return (
+    input.unitPrice.currency === "KRW" &&
+    input.unitPrice.amount === 0 &&
+    (input.quantity === undefined || input.quantity === 1) &&
+    (input.lineStatus === undefined || input.lineStatus === "not_started")
+  );
 }
 
 // 엔지 리뷰 A §2 P2 — `order`(저장 뒤 활성 줄 전체의 표시 순서)가 「현재 활성 줄 − 보관 + 새 줄」과 같은 집합인지,

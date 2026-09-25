@@ -460,12 +460,12 @@ describe("정산 편집 매트릭스(D10·D12)", () => {
     expect(row.executionAmountKrw).toBe(300_000);
   });
 
-  it("(h) 정산에서 단가 1,000원인 새 줄 · 수량 2인 새 줄은 각각 「정산 · 새 줄은 실행가만」으로 전부 거부된다", async () => {
+  it("(h) 정산에서 단가 1,000원인 새 줄 · 수량 2인 새 줄 · 상태가 취소인 새 줄은 각각 「정산 · 새 줄은 실행가만」으로 전부 거부된다", async () => {
     const { project, revision, subcategoryValue } = await setupProject();
     const existing = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "기존" });
     await setStatus(project.id, "settling");
 
-    for (const patch of [{ unitPrice: krw(1_000) }, { quantity: 2 }]) {
+    for (const patch of [{ unitPrice: krw(1_000) }, { quantity: 2 }, { lineStatus: "cancelled" }]) {
       const attempt = saveProjectLedger(SYSTEM_VIEWER, project.id, {
         seenStatus: "settling",
         quoteLines: {

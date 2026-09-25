@@ -135,6 +135,11 @@ describe("quoteCellsZero — 정산 새 줄의 견적 칸 0(엔지 리뷰 A §2 
   it("USD 단가 0 → 거짓", () => {
     expect(quoteCellsZero({ unitPrice: { currency: "USD", amount: 0, fxRate: 1300 } })).toBe(false);
   });
+
+  it("줄 상태는 없거나 기본값(not_started)일 때만 참 — 취소 → 거짓(검토 S2 · 새 줄 상태 칸 잠김)", () => {
+    expect(quoteCellsZero({ unitPrice: krw(0), lineStatus: "not_started" })).toBe(true);
+    expect(quoteCellsZero({ unitPrice: krw(0), lineStatus: "cancelled" })).toBe(false);
+  });
 });
 
 describe("orderChange — 순서 판정(엔지 리뷰 A §2 P2)", () => {

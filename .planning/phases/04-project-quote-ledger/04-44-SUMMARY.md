@@ -223,7 +223,7 @@ completed: 2026-09-25
   - N-5 USD 화면 경로 E2E · N-6 `fxRateTouched=false` 음성 케이스 · N-7 `openPeriodField` 게이트 순수 함수 단위 테스트 · N-9 「기간 적기 → 저장 → 다시 전환」 E2E — 테스트 추가 후속
   - N-8 기록용(조치 없음)
 - 검증(이 반영에서 새로 실행): lint · typecheck · lint:sql 통과 · 단위 1130 passed · 통합 project-period 33 passed · `CI=true` E2E project-period · project-lifecycle · project-register 39 passed.
-- 전체 게이트(CI=true): 오케스트레이터 기록 예정
+- 전체 게이트(CI=true, 4a9a052, 오케스트레이터): lint·typecheck·lint:sql 0 · 단위 1130 · 통합 1178 · E2E 246 전부 통과(실패 0 · 건너뜀 0).
 
 ## 남은 확인
 

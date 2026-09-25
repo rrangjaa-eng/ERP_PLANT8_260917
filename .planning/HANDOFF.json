@@ -1,11 +1,11 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-25T19:03:49.144Z",
+  "timestamp": "2026-09-25T20:06:44.793Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
-  "plan": 14,
-  "task": 27,
+  "plan": 40,
+  "task": 28,
   "total_tasks": 42,
   "status": "paused",
   "completed_tasks": [
@@ -212,6 +212,12 @@
       "name": "[세션 Y] 04-23 조정·견적 외 비용 줄 화면(웨이브 18) — 맨 아래 조정 그룹, 경영관리 「조정 줄 추가」·삭제 확인(ConfirmDialog), PM 권한 밖 줄(무반응·글자 없음·붙여넣기 건너뜀 요약), 「견적 외 비용 줄 추가」, 소분류 설명 힌트, page.tsx 서버 계산 조정 권한. executor Opus. 커밋 3b9f5ba·5566600·4ab5752·68b706b·7dcd737·3f7127c·f4af023·e0ffe3c → 검토 반영 55d34ce(S-1 조정 줄 순서를 조정 묶음 기준으로)·ae350e1(S-2)·fcc771b(S-3 상한 aria-disabled, ui/button reasonId)·1e4e5c3·a419a68. 독립 Sonnet DOM 감사 8/8 PASS. Opus 검토(Codex 대체) BLOCKING 0·SHOULD-FIX 3(반영)·NIT 6(1 반영). 전체 게이트 CI=true 단위 1207·통합 1263·E2E 301. 진행 27/42",
       "status": "done",
       "commit": "a419a68"
+    },
+    {
+      "id": 35,
+      "name": "04-14(웨이브 19) 실행 — 견적 새 차수·고객 승인 표시·차수 요약·이전 차수 잠긴 보기 + 검토 반영",
+      "status": "done",
+      "commit": "addcbe6"
     }
   ],
   "remaining_tasks": [
@@ -514,8 +520,8 @@
     }
   ],
   "uncommitted_files": [],
-  "next_action": "/gsd-execute-phase 4 --wave 19 (04-14)",
-  "context_notes": "세션 W가 04-26 완료(25/42, 웨이브 16, 04-30 위). 차수당 견적 줄 300줄 상한(D-86) — 설정 키 quote_line.max_per_revision, 서버 게이트 룰 quote.line-cap, 추가 시에만 거부(잠금 뒤 tx로 셈, 보관 제외)·복원·재전송 멱등·「줄 추가」 aria-disabled+이유·Ctrl+Enter/Ctrl+D 무동작·넘치는 붙여넣기 전부 거부. executor 커밋 c21473a(RED)·9fc70f2·1aa0b8f(RED)·c6ac896·fc58f7e·ec539c5(SUMMARY) → 검토 반영 d1bff01·203f61e → eb754df(STATE·ROADMAP). 독립 Opus DOM 감사 PASS 35·FAIL 0·INFO 6. Opus 검토(Codex 대체, 한도 풀리면 재확인) BLOCKING 0·SHOULD-FIX 1(d1bff01 반영)·NIT 5 이월(04-26-SUMMARY). 전체 게이트 CI=true: 단위 1178·통합 1235·E2E 288. 스킬 기록 /mnt/project-files/phase4-prep/04-26-skill-calls.md — 1aa0b8f·203f61e 직전 verification 누락 2건은 사후 호출·재검증으로 기록(HANDOFF anti-pattern 표 참고). 다음은 phase-plan-index 기준 가장 낮은 미완 웨이브 17 = 04-13(실행 전 확인 필요). 04-49 이월 항목(S-3·S-5 사용자 판단, 매출 표 1024 미만 입력 유실, 04-46 +1 단언 복원 확인)은 그대로 유효.",
+  "next_action": "/gsd-execute-phase 4 --wave 20 (04-40)",
+  "context_notes": "04-14 완료(28/42). 다음 04-40(웨이브 20, depends_on 04-14 충족). 04-40 전에는 보관함에서 이전 차수 줄 복원 구멍이 열려 있음(묶음 ③ 배포 금지). Codex 한도 — 한도 풀리면 04-14 Codex 재확인 필요. 세션 W가 04-26 완료(25/42, 웨이브 16, 04-30 위). 차수당 견적 줄 300줄 상한(D-86) — 설정 키 quote_line.max_per_revision, 서버 게이트 룰 quote.line-cap, 추가 시에만 거부(잠금 뒤 tx로 셈, 보관 제외)·복원·재전송 멱등·「줄 추가」 aria-disabled+이유·Ctrl+Enter/Ctrl+D 무동작·넘치는 붙여넣기 전부 거부. executor 커밋 c21473a(RED)·9fc70f2·1aa0b8f(RED)·c6ac896·fc58f7e·ec539c5(SUMMARY) → 검토 반영 d1bff01·203f61e → eb754df(STATE·ROADMAP). 독립 Opus DOM 감사 PASS 35·FAIL 0·INFO 6. Opus 검토(Codex 대체, 한도 풀리면 재확인) BLOCKING 0·SHOULD-FIX 1(d1bff01 반영)·NIT 5 이월(04-26-SUMMARY). 전체 게이트 CI=true: 단위 1178·통합 1235·E2E 288. 스킬 기록 /mnt/project-files/phase4-prep/04-26-skill-calls.md — 1aa0b8f·203f61e 직전 verification 누락 2건은 사후 호출·재검증으로 기록(HANDOFF anti-pattern 표 참고). 다음은 phase-plan-index 기준 가장 낮은 미완 웨이브 17 = 04-13(실행 전 확인 필요). 04-49 이월 항목(S-3·S-5 사용자 판단, 매출 표 1024 미만 입력 유실, 04-46 +1 단언 복원 확인)은 그대로 유효.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"

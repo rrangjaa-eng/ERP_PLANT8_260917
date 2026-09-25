@@ -100,15 +100,19 @@ export function linkedDocumentReason(number: string): string {
   return `지출결의 ${number} 연결됨 · 고치려면 새 차수`;
 }
 
-// 04-30 RED 스텁 — 시그니처만. 구현은 GREEN 커밋.
-export type QuoteHintKey = "move" | "paste" | "cancel" | "newRow" | "moveRow" | "duplicateRow" | "save";
 
+// 04-30(DR-2 · P0) — 표 위 잠김 줄. 잠긴 셀 편집 시도의 이유와 한 문자열이다(quoteLockReason). 줄이 0개이거나
+// 편집 셀이 0인 읽기 표(완료를 보는 PM)에는 그리지 않는다.
 export function tableLockLine(input: { status: string; hasEditableCells: boolean; lineCount: number }): string | null {
-  void input;
-  return null;
+  if (input.lineCount === 0 || !input.hasEditableCells) return null;
+  return quoteLockReason({ status: input.status });
 }
 
+// 04-30(UI-SPEC rev 5 Copywriting `Empty — 견적 줄 표`) — 0줄 표의 한 줄. 다음 한 수는 그 사람에게 실제로 렌더되는
+// 행동만: ① 첫 줄 만들기 ③ 기간 바꾸기(정산 · 기간 권리 lead) ④ 담당 PM {이름} ⑤ 완료는 사실만. ② 조정 줄 추가는 04-23.
 export type QuoteTableEmptyState = { message: string; action?: { kind: "addLine" | "openPeriodEnd"; label: string } };
+
+const EMPTY_TABLE_MESSAGE = "이 프로젝트에 견적 줄이 없습니다";
 
 export function quoteTableEmptyState(input: {
   status: string;
@@ -116,11 +120,28 @@ export function quoteTableEmptyState(input: {
   periodRights: "lead" | "pm" | "none";
   pmName: string | null;
 }): QuoteTableEmptyState {
-  void input;
-  return { message: "" };
+  if (input.canAddLine) return { message: EMPTY_TABLE_MESSAGE, action: { kind: "addLine", label: "첫 줄 만들기" } };
+  if (input.status === "completed") return { message: EMPTY_TABLE_MESSAGE };
+  if (input.status === "settling" && input.periodRights === "lead") {
+    return { message: EMPTY_TABLE_MESSAGE, action: { kind: "openPeriodEnd", label: "기간 바꾸기" } };
+  }
+  return { message: input.pmName ? `${EMPTY_TABLE_MESSAGE} · 담당 PM ${input.pmName}` : EMPTY_TABLE_MESSAGE };
 }
 
+// 04-30(C-07 · UI-SPEC rev 5 S4 「힌트 줄」) — 힌트 항목(04-28 배열의 키)에서 그 사람에게 없는 구조 동작과 `저장`
+// (1차 kbd가 말한다)을 뺀다.
+export type QuoteHintKey = "move" | "paste" | "cancel" | "newRow" | "moveRow" | "duplicateRow" | "save";
+
+const HINT_KEY_NEEDS: Partial<Record<QuoteHintKey, keyof StructuralEditability>> = {
+  newRow: "insert",
+  moveRow: "reorder",
+  duplicateRow: "duplicate",
+};
+
 export function visibleHintKeys(allKeys: readonly QuoteHintKey[], structural: StructuralEditability): QuoteHintKey[] {
-  void structural;
-  return [...allKeys];
+  return allKeys.filter((key) => {
+    if (key === "save") return false;
+    const need = HINT_KEY_NEEDS[key];
+    return need === undefined || structural[need];
+  });
 }

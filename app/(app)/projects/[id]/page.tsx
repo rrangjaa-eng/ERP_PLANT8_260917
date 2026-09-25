@@ -7,7 +7,13 @@ import { listProjectFormReferences } from "@/domain/projects/references";
 import { getCurrentQuoteRevision, listQuoteLines } from "@/domain/quotes/lines";
 import { listRevenue } from "@/domain/revenue";
 import { recentFxRate } from "@/domain/money/currency";
-import { lineCellEditability, structuralEditability } from "@/domain/quotes/edit-scope";
+import {
+  lineCellEditability,
+  quoteLockReason,
+  quoteTableEmptyState,
+  structuralEditability,
+  tableLockLine,
+} from "@/domain/quotes/edit-scope";
 import {
   actorCoversProjectTeam,
   isEndDatePassed,
@@ -124,10 +130,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         };
 
   // 04-11(D-81): 종료일이 지난 수주중 — 상태를 바꿀 수 있으면 글자만, 없으면 담당 팀장 이름을 붙인다.
-  // 이름은 쓰일 때만 조회한다(엔지 리뷰 A §1 P2).
+  // 이름은 쓰일 때만 조회한다(엔지 리뷰 A §1 P2) — 04-30: 표가 비었을 때(EMPTY `· 담당 PM {이름}`)도.
   const endDatePassed = isEndDatePassed({ status, endDate: project.endDate, todayKst: kstToday(new Date()) });
-  const teamLeadName =
-    endDatePassed && statusChange === null ? (await projectResponsibles(session.viewer, project)).teamLeadName : null;
+  const needsLeadName = endDatePassed && statusChange === null;
+  const responsibles =
+    needsLeadName || lines.length === 0 ? await projectResponsibles(session.viewer, project) : null;
+  const teamLeadName = needsLeadName ? (responsibles?.teamLeadName ?? null) : null;
   const endDateNote = !endDatePassed ? null : teamLeadName ? `종료일 지남 · 팀장 ${teamLeadName}` : "종료일 지남";
 
   return (
@@ -150,6 +158,14 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       subcategories={references?.subcategories ?? []}
       structural={structural}
       newLineCells={newLineCells}
+      lockReason={quoteLockReason({ status: project.status })}
+      lockLine={tableLockLine({ status: project.status, hasEditableCells: hasEditableCell, lineCount: lines.length })}
+      emptyState={quoteTableEmptyState({
+        status: project.status,
+        canAddLine: structural.insert,
+        periodRights,
+        pmName: responsibles?.pmName ?? null,
+      })}
       revenue={revenue}
       canWriteContract={canWrite}
       canWriteEntries={canWriteEntries}

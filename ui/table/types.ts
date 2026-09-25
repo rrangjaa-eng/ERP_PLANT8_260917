@@ -52,8 +52,10 @@ export type SortState = { key: string; direction: "asc" | "desc" } | null;
 // 모양이고, 이유 한 줄 + 다음 한 수(3차 버튼)를 함께 지닌다(D-65).
 export type CellIssueAction = { label: string; onClick: () => void };
 
+// 04-30(DR-35) — "reason"은 잠긴·읽기 전용 셀 편집 시도의 이유 한 줄이다. 같은 셀 아래 자리에 그리지만 고정
+// 오류가 아니다(오류 셀 모양·aria-invalid 없음 — 포커스가 셀을 떠나면 호출부가 지운다).
 export type CellIssue = {
-  kind: "error" | "conflict";
+  kind: "error" | "conflict" | "reason";
   message: string;
   actions?: CellIssueAction[];
 };

@@ -755,7 +755,8 @@ test.describe("견적 줄 표 — 저장 거부 봉투 → 충돌 셀·서버 �
     await conflictCell.getByRole("button", { name: "그 값으로" }).click();
     await expect(conflictCell).toHaveText("9,800,000");
     await expect(conflictCell).not.toHaveAttribute("aria-invalid", "true");
-    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeEnabled();
+    // 04-30(A-03) — 자리를 바꾼 두 줄이 모두 dirty다: 옮긴 줄이 저장 대상에 남아야 2(빠지면 제자리 줄만 1).
+    await expect(page.getByRole("button", { name: /일괄 저장 2/ })).toBeEnabled();
   });
 
   test("수량 0을 저장하면 서버 형식 오류가 그 셀에 고정되고, 고치면 풀린다", async ({ page }) => {

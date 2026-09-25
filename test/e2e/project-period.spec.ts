@@ -180,7 +180,8 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     await expect(page.getByText(`기간 ${startDate} ~ ${endDate}`, { exact: true })).toBeVisible();
 
     const firstEnd = addDays(TODAY, 7);
-    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    // 04-30 — 0줄 정산 표의 EMPTY도 팀장에게 「기간 바꾸기」를 둔다(같은 이름 둘) — 기간 칸의 여는 버튼을 id로 고른다.
+    await page.locator("#period-open").click();
     await page.getByLabel("종료일").fill(firstEnd);
     await expect(page.getByText("저장하면 진행으로 돌아감", { exact: true })).toBeVisible();
     const firstSave = waitForSaveAction(page);
@@ -191,7 +192,7 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     await expect(page.getByText(`기간 ${startDate} ~ ${firstEnd}`, { exact: true })).toBeVisible();
 
     const secondEnd = addDays(TODAY, 9);
-    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    await page.locator("#period-open").click();
     await page.getByLabel("종료일").fill(secondEnd);
     const secondSave = waitForSaveAction(page);
     await page.getByRole("button", { name: /일괄 저장 1/ }).click();
@@ -230,7 +231,7 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     });
 
     const firstEnd = addDays(TODAY, 7);
-    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    await page.locator("#period-open").click();
     await page.getByLabel("종료일").fill(firstEnd);
     const firstSave = waitForSaveAction(page);
     await page.getByRole("button", { name: /일괄 저장 1/ }).click();
@@ -238,7 +239,7 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     await expect(page.getByText(`기간 ${startDate} ~ ${firstEnd}`, { exact: true })).toBeVisible();
 
     const secondEnd = addDays(TODAY, 9);
-    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    await page.locator("#period-open").click();
     await page.getByLabel("종료일").fill(secondEnd);
     const secondSave = waitForSaveAction(page);
     await page.getByRole("button", { name: /일괄 저장 1/ }).click();

@@ -482,7 +482,7 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await typeInto(page, cell(page, 0, COL.execution), "실행가", "70000");
     await page.reload();
 
-    const restore = page.getByText("저장 안 한 편집 1칸");
+    const restore = page.locator("p", { hasText: "저장 안 한 편집 1칸" }); // dev 수화 오류 오버레이(04-22 기존 불일치)의 diff 글자와 겹치지 않게 배너 문단만
     const lock = page.getByText(SETTLING_REASON, { exact: true });
     await expect(restore).toBeVisible();
     await expect(lock).toBeVisible();

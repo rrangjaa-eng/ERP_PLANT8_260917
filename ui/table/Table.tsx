@@ -55,6 +55,11 @@ export type TableProps<Row> = {
   cellDirty?: (row: Row, columnKey: string) => boolean;
   /** 04-04 — 저장 성공 직후 600ms 틴트(Copywriting SUCCESS 행). */
   cellSaved?: (row: Row, columnKey: string) => boolean;
+  /**
+   * 04-30(DR-35) — 편집 셀이 있는 격자에서 편집기가 있는 열의 `edit`이 아닌 셀에 Enter·글자 입력·Delete가 오면
+   * 편집 모드를 열지 않고(줄 삭제도 하지 않고) 이것만 부른다. 이유 표시는 호출부가 cellIssue `reason`으로 한다.
+   */
+  onBlockedEdit?: (row: Row, columnKey: string) => void;
 };
 
 type ActiveCell = { rowId: string; columnKey: string } | null;
@@ -89,6 +94,7 @@ export function Table<Row>({
   onRowTap,
   cellDirty,
   cellSaved,
+  onBlockedEdit,
 }: TableProps<Row>) {
   const [activeCell, setActiveCell] = useState<ActiveCell>(null);
 
@@ -121,6 +127,12 @@ export function Table<Row>({
       const column = columns[pos.col];
       if (!row || !column) return false;
       return cellEditability(column, row) === "edit";
+    },
+    isBlockedCell: (pos: GridPosition) => {
+      const row = flatRows[pos.row];
+      const column = columns[pos.col];
+      if (!hasEditableCell || !row || !column || !column.editCell) return false;
+      return cellEditability(column, row) !== "edit";
     },
     isEditing: (pos: GridPosition) => {
       const row = flatRows[pos.row];
@@ -160,6 +172,13 @@ export function Table<Row>({
         const row = flatRows[rowIndex];
         if (row) keyboard?.onMoveRow?.(row, direction);
       },
+      onBlockedEdit: onBlockedEdit
+        ? (pos) => {
+            const row = flatRows[pos.row];
+            const column = columns[pos.col];
+            if (row && column) onBlockedEdit(row, column.key);
+          }
+        : undefined,
       onSave: () => {
         // 04-30(엔지 r2) — 열린 셀 편집기를 먼저 커밋한다. 편집기 blur는 Enter 커밋과 같은 onCommit 경로이고,
         // 커밋 뒤 포커스는 그 셀로 돌아온다. 저장 호출부는 이 커밋이 반영된 뒤 페이로드를 모은다.
@@ -352,13 +371,14 @@ export function Table<Row>({
                       enableGridKeyboard && keyboardState.focus.row === pos.row && keyboardState.focus.col === pos.col;
                     const issue = cellIssue?.(row, column.key);
                     const issueId = issue ? `${rowId}-${column.key}-issue` : undefined;
+                    const invalid = issue !== undefined && issue.kind !== "reason";
 
                     return (
                       <td
                         key={column.key}
                         role={hasEditableCell ? "gridcell" : undefined}
                         aria-readonly={hasEditableCell ? editability !== "edit" : undefined}
-                        aria-invalid={issue ? true : undefined}
+                        aria-invalid={invalid ? true : undefined}
                         aria-describedby={issueId}
                         data-grid-focus={isFocusPos ? "" : undefined}
                         tabIndex={
@@ -376,9 +396,9 @@ export function Table<Row>({
                           column.align === "right" ? styles.alignRight : "",
                           isEditableColumn ? styles.editableCell : "",
                           editability === "locked" ? styles.lockedCell : "",
-                          issue ? (issue.kind === "conflict" ? styles.conflictCell : styles.errorCell) : "",
+                          invalid ? (issue.kind === "conflict" ? styles.conflictCell : styles.errorCell) : "",
                           enableGridKeyboard && keyboardState.isInSelection(pos) ? styles.selectedCell : "",
-                          !issue && cellDirty?.(row, column.key) ? styles.dirtyCell : "",
+                          !invalid && cellDirty?.(row, column.key) ? styles.dirtyCell : "",
                           cellSaved?.(row, column.key) ? styles.savedTint : "",
                         ].join(" ")}
                         onClick={() => {

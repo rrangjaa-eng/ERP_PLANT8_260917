@@ -26,6 +26,8 @@ export type GridKeyboardHandlers = {
   onMoveRow?: (rowIndex: number, direction: "up" | "down") => void;
   /** Ctrl+S — 일괄 저장. */
   onSave?: () => void;
+  /** 04-30(DR-35) — 막힌 셀(isBlockedCell)의 Enter·글자 입력·Delete. 편집·줄 삭제 대신 이것만 부른다. */
+  onBlockedEdit?: (pos: GridPosition) => void;
 };
 
 export type UseGridKeyboardParams = {
@@ -33,6 +35,8 @@ export type UseGridKeyboardParams = {
   colCount: number;
   isEditableCell: (pos: GridPosition) => boolean;
   isEditing: (pos: GridPosition) => boolean;
+  /** 04-30(DR-35) — 편집기가 있는 열인데 이 셀은 편집 단계가 아니다(잠김·읽기 전용). */
+  isBlockedCell?: (pos: GridPosition) => boolean;
   handlers: GridKeyboardHandlers;
 };
 
@@ -84,6 +88,7 @@ export function useGridKeyboard({
   colCount,
   isEditableCell,
   isEditing,
+  isBlockedCell,
   handlers,
 }: UseGridKeyboardParams): UseGridKeyboardResult {
   const [focus, setFocusState] = useState<GridPosition>({ row: 0, col: 0 });
@@ -151,6 +156,8 @@ export function useGridKeyboard({
       return;
     }
 
+    const blocked = handlers.onBlockedEdit !== undefined && (isBlockedCell?.(pos) ?? false);
+
     switch (event.key) {
       case "ArrowUp":
         event.preventDefault();
@@ -173,6 +180,9 @@ export function useGridKeyboard({
         if (isEditableCell(pos)) {
           event.preventDefault();
           handlers.onEnterEdit?.(pos);
+        } else if (blocked) {
+          event.preventDefault();
+          handlers.onBlockedEdit?.(pos);
         }
         break;
       case "Escape":
@@ -183,9 +193,15 @@ export function useGridKeyboard({
       case "Delete":
       case "Backspace":
         event.preventDefault();
-        handlers.onDeleteRow?.(pos.row);
+        if (blocked) handlers.onBlockedEdit?.(pos);
+        else handlers.onDeleteRow?.(pos.row);
         break;
       default:
+        // 글자 입력(한 글자 키, 조합 키 없음) — 막힌 셀이면 이유만.
+        if (blocked && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+          event.preventDefault();
+          handlers.onBlockedEdit?.(pos);
+        }
         break;
     }
   }

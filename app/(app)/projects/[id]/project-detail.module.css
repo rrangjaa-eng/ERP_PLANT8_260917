@@ -180,6 +180,13 @@
   font-size: var(--fs-sm);
 }
 
+/* 04-30(DR-2 · DR-31) — 표 위 잠김 줄. 복원 줄 다음, 잠긴 셀 편집 시도의 이유와 같은 문자열. */
+.lockLine {
+  margin: var(--s-2) 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
 .restoreAction {
   margin-left: var(--s-2);
   border: 0;

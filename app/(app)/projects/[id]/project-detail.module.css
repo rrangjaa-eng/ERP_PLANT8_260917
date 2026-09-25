@@ -18,6 +18,19 @@
   flex: 1 1 auto;
 }
 
+/* 04-11(D-81) — 상태 태그 + `종료일 지남` 글자는 한 묶음(폰에서도 태그 바로 옆, DR-26). */
+.statusLine {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2);
+}
+
+.endDateNote {
+  font-size: var(--fs-sm);
+  color: var(--warning);
+}
+
 .headerActions {
   display: flex;
   flex-wrap: wrap;

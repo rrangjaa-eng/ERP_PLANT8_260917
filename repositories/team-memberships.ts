@@ -1,7 +1,7 @@
-import { and, eq, inArray, lte, desc } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte, desc } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { teamMemberships } from "@/db/schema";
+import { permissionMatrix, roles, teamMemberships, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
 export type TeamMembershipRow = InferSelectModel<typeof teamMemberships>;
@@ -77,13 +77,35 @@ export async function deleteMembership(viewer: Viewer, userId: string, effective
   return deleted.length;
 }
 
+// 04-11(사용자 D20 · 엔지 리뷰 A §1 P2): 팀장 후보 — date에 그 팀에 발령된 사람(사람마다 가장
+// 늦은 발령, findMembershipsAtDate와 같은 조건) 중 보관되지 않았고, 계급의 업무 범위가 team이며
+// 권한표에서 projects.status 쓰기가 허용된 사람. 한 문장이다(사람 × 발령 × 권한 N+1 없음).
+// 계급 이름·id를 박지 않는다. 이름순은 호출자가 JS로 정한다(DB 정렬 규칙이 환경마다 다르다).
 export async function teamLeadCandidatesAtDate(
   viewer: Viewer,
   input: { teamId: string; date: string },
   tx?: DbOrTx,
 ): Promise<{ userId: string; name: string }[]> {
   void viewer;
-  void input;
-  void tx;
-  return [];
+  const latest = db
+    .selectDistinctOn([teamMemberships.userId], { userId: teamMemberships.userId, teamId: teamMemberships.teamId })
+    .from(teamMemberships)
+    .where(lte(teamMemberships.effectiveFrom, input.date))
+    .orderBy(teamMemberships.userId, desc(teamMemberships.effectiveFrom))
+    .as("latest_memberships");
+  return (tx ?? db)
+    .select({ userId: users.id, name: users.name })
+    .from(latest)
+    .innerJoin(users, eq(users.id, latest.userId))
+    .innerJoin(roles, eq(roles.id, users.roleId))
+    .innerJoin(
+      permissionMatrix,
+      and(
+        eq(permissionMatrix.roleId, roles.id),
+        eq(permissionMatrix.menu, "projects.status"),
+        eq(permissionMatrix.action, "write"),
+        eq(permissionMatrix.allowed, true),
+      ),
+    )
+    .where(and(eq(latest.teamId, input.teamId), isNull(users.archivedAt), eq(roles.workScope, "team")));
 }

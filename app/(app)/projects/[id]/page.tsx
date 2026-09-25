@@ -9,7 +9,13 @@ import { listRevenue } from "@/domain/revenue";
 import { recentFxRate } from "@/domain/money/currency";
 import { gate } from "@/domain/rules/gate";
 import "@/domain/rules/register";
-import { lastStatusChangeOn, listProjectStatusCatalog, statusDestinations } from "@/domain/projects/status";
+import {
+  isEndDatePassed,
+  lastStatusChangeOn,
+  listProjectStatusCatalog,
+  statusDestinations,
+} from "@/domain/projects/status";
+import { projectResponsibles } from "@/domain/projects/responsibles";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { PROJECT_STATUS_TAG_KIND } from "../status-display";
@@ -86,6 +92,13 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
           currentRevisionApproved: revision.approved,
         };
 
+  // 04-11(D-81): 종료일이 지난 수주중 — 상태를 바꿀 수 있으면 글자만, 없으면 담당 팀장 이름을 붙인다.
+  // 이름은 쓰일 때만 조회한다(엔지 리뷰 A §1 P2).
+  const endDatePassed = isEndDatePassed({ status, endDate: project.endDate, todayKst: kstToday(new Date()) });
+  const teamLeadName =
+    endDatePassed && statusChange === null ? (await projectResponsibles(session.viewer, project)).teamLeadName : null;
+  const endDateNote = !endDatePassed ? null : teamLeadName ? `종료일 지남 · 팀장 ${teamLeadName}` : "종료일 지남";
+
   return (
     <QuoteLedger
       projectId={project.id}
@@ -94,6 +107,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       statusLabel={statusLabel}
       statusTagKind={PROJECT_STATUS_TAG_KIND[status]}
       statusChange={statusChange}
+      endDateNote={endDateNote}
       revisionId={revision.id}
       initialLines={lines}
       vendors={references?.vendors ?? []}

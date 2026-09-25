@@ -327,7 +327,9 @@ export async function changeProjectStatus(
   else await withTransaction(run);
 }
 
+// ── 종료일 지남(D-81 · UI-SPEC S3) ─────────────────────────────────────────────
+// 종료일이 지난 수주중은 자동으로 바뀌지 않고 표시만 한다. 종료일 = 오늘은 아직 아니다.
+// 상세 머리 줄(04-11) · 목록(04-18) · 상태 모달의 「기간 바꾸기」(04-44)가 같은 함수를 쓴다.
 export function isEndDatePassed(input: { status: string; endDate: string | null; todayKst: string }): boolean {
-  void input;
-  return false;
+  return input.status === "bidding" && input.endDate !== null && input.endDate < input.todayKst;
 }

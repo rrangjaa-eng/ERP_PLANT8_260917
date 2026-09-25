@@ -539,6 +539,7 @@ export function QuoteLedger({
   statusLabel,
   statusTagKind,
   statusChange,
+  endDateNote,
   revisionId,
   initialLines,
   vendors,
@@ -558,6 +559,8 @@ export function QuoteLedger({
   statusLabel: string;
   statusTagKind: StatusTagKind;
   statusChange: StatusChangeProps | null;
+  /** D-81 `종료일 지남`(또는 `· 팀장 {이름}`) — 서버가 만든다. 없으면 null. */
+  endDateNote: string | null;
   revisionId: string;
   initialLines: QuoteLineDto[];
   vendors: QuoteTableOption[];
@@ -1209,9 +1212,12 @@ export function QuoteLedger({
         <div className={styles.titleBlock}>
           <PageHeader title={projectName} subtitle={subtitle} />
         </div>
-        <StatusTag kind={statusTagKind} variant="tag">
-          {statusLabel}
-        </StatusTag>
+        <span className={styles.statusLine}>
+          <StatusTag kind={statusTagKind} variant="tag">
+            {statusLabel}
+          </StatusTag>
+          {endDateNote ? <span className={styles.endDateNote}>{endDateNote}</span> : null}
+        </span>
         <div className={styles.headerActions}>
           <HeaderCopyActions />
           {statusChange ? (

@@ -204,4 +204,30 @@ describe("마이그레이션 업그레이드 — 옛 데이터 위 적용, 재�
     const { rows } = await pool.query<{ count: string }>(`SELECT count(*) FROM drizzle.__drizzle_migrations`);
     expect(Number(rows[0]?.count)).toBe(through0011);
   });
+
+  it("(c) 0013 상태의 줄이 0014 뒤 line_kind = 'quote'이고, 세 값 밖의 종류는 CHECK가 거부한다(04-13 검토 S4)", async () => {
+    const pool = await createScratchDb();
+    await migrateTo(pool, countThrough("_role_work_scope"));
+
+    await insertParents(pool);
+    await insertProject(pool, ID.inProgress, "OLD-3", "in_progress", 1);
+    await insertLine(pool, ID.inProgress, "옛 줄");
+
+    await migrateTo(pool);
+
+    const { rows } = await pool.query<{ line_kind: string }>(`SELECT line_kind FROM quote_lines`);
+    expect(rows.map((row) => row.line_kind)).toEqual(["quote"]);
+
+    let caught: unknown;
+    try {
+      await pool.query(
+        `INSERT INTO quote_lines (revision_id, subcategory, item_name, unit_price_amount_krw, execution_amount_krw, quote_amount_krw, profit_krw, line_kind)
+         VALUES ($1, 'etc', '틀린 종류', 0, 0, 0, 0, 'bogus')`,
+        [ID.inProgress],
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(errorText(caught)).toContain("quote_lines_line_kind_check");
+  });
 });

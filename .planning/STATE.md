@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 04
 current_phase_name: 프로젝트·견적 원장
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 04-21-PLAN.md
-last_updated: "2026-09-25T04:06:33.409Z"
+stopped_at: Completed 04-11-PLAN.md
+last_updated: "2026-09-25T04:58:07.545Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 04 execution started
-state_head: 457253b3fe210672bf96e478ad6a620c8c307687
+state_head: 6f851f1328a2210bd0c6d134b1442de92c5a4716
 progress:
   total_phases: 16
   completed_phases: 1
-  total_plans: 80
-  completed_plans: 41
+  total_plans: 115
+  completed_plans: 42
   percent: 6
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 04 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-25 — Phase 04 execution started
@@ -91,6 +91,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P27 | 15 min | 2 tasks | 15 files |
 | Phase 04 P20 | 38min | 3 tasks | 18 files |
 | Phase 04 P21 | 66min | 3 tasks | 20 files |
+| Phase 04 P11 | 32 min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -214,6 +215,8 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-20: 전환 판정은 evaluateTransition 하나(게이트 두 규칙) — changeProjectStatus와 statusDestinations가 공유, 종료일 채움도 규칙에 물어 정함
 - [Phase 04]: 04-20: 시드는 시스템 관리자만 upsert, 나머지 계급의 권한·노출은 없을 때만(insertPermissionIfAbsent·insertVisibilityIfAbsent)
 - [Phase 04]: 04-20: Phase 5 결재 호출자는 loadStatusChangeFacts로 사실을 트랜잭션 전에 읽어 deps.facts·deps.tx로 changeProjectStatus를 부른다
+- [Phase 04]: 04-11: 잘못된 id 상세는 soft 404(HTTP 200 + noindex) — projects/loading.tsx 스트리밍 탓, 진짜 404는 loading 재배치·proxy 사용자 결정 필요
+- [Phase 04]: 04-11: 쓰기 경로는 lockProjectForWrite 대신 loadProjectForGate(잠금 안 자동 정산 판정, fail-closed), 목록은 settleForProjectList 요청당 한 번
 
 ### Pending Todos
 
@@ -270,6 +273,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-25T04:06:33.260Z
-Stopped at: Completed 04-21-PLAN.md
+Last session: 2026-09-25T04:58:07.294Z
+Stopped at: Completed 04-11-PLAN.md
 Resume file: None

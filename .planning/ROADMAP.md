@@ -205,7 +205,7 @@ Plans:
   6. 경영관리가 클라이언트별 리저브 대장에 입금·출금을 날짜순으로 기록하면 잔액이 서버 계산으로 보이고, 각 줄은 프로젝트에 연결할 수 있으며 5의 금액 모델(통화·환율·원화 환산액)로 적힌다. 리저브는 정보 노출표의 새 항목이라 기획본부에게는 기본 숨김이다. 프로젝트 매출을 리저브에서 충당하는 동작은 매출 기준이 생기는 Phase 9(RSV-02)에서 붙는다
   7. ~~인트라넷 추출·변환 스크립트(`scripts/migrate/`의 extract·transform)가 이 페이즈에서 시작되어, 실제 인트라넷 데이터(프로젝트·견적 줄)를 새 표 구조로 변환한 결과가 개발·테스트 픽스처로 쓰인다. 변환은 옛 금액이 공급가인지 합계(부가세 포함)인지를 표본 대조로 판정해 행마다 `amount_basis`를 적고 불명은 '계산 불가'로 두며(Eng OV-7), 외화 건수를 보고서에 한 줄로 낸다(Eng OV-8, 정보). 이전 문서의 번호는 옛 id에서 결정적으로 파생(예약 범위)되어 재실행해도 같다. 적재(load)·검증·전환은 Phase 8이다~~ — **철회(2026-09-23 사용자 결정: 데이터 이전 없음).** 04-03 플랜과 커밋된 추출 스크립트(`6b7519f`로 되돌림)가 함께 빠졌다
 
-**Plans**: 18/42 plans executed (미실행 38 / 전체 42 — 2026-09-24 엔지 리뷰 r2 반영 재계획: 04-17 → 04-17 + 04-48, 04-30 → 04-30 + 04-49 분할, E2-04 롤백 하한 가드 04-50 신설 · 체커 revision 1: 04-42 → 04-42 + 04-51(결정 ②) 분할)
+**Plans**: 19/42 plans executed (미실행 38 / 전체 42 — 2026-09-24 엔지 리뷰 r2 반영 재계획: 04-17 → 04-17 + 04-48, 04-30 → 04-30 + 04-49 분할, E2-04 롤백 하한 가드 04-50 신설 · 체커 revision 1: 04-42 → 04-42 + 04-51(결정 ②) 분할)
 
 **머지 묶음(사용자 결정 2026-09-23 — 엔지 리뷰 R11 「Phase 4 한 PR」 대체):** 묶음마다 PR 하나로 Post-build(/review → /qa(+ /design-review) → /cso → /ship) 뒤 main에 머지하고 다음 묶음을 시작한다. 경계 규칙 — C-26(04-17·04-48·04-18·04-19와 사이의 04-47은 한 배포) · 마이그레이션은 그것에 기대는 코드와 같은 묶음 · 웨이브 순서 그대로 · 묶음 끝 배포본의 돈·상태 뜻이 어긋나지 않음. 롤백 하한(`-- rollback-floor:` 0012·0015)과 main 전용 배포는 04-50이 묶음 ② 첫 웨이브(2)에서 세운다.
 
@@ -274,7 +274,7 @@ Plans:
 
 **Wave 10**
 
-- [ ] 04-11-PLAN.md — 진행→정산 자동 전환(D-76): 읽기 판정(SKIP LOCKED·실패 격리)·쓰기 잠금 안 판정·종료일 지남(D-81) · 잘못된 id 404 (W10)
+- [x] 04-11-PLAN.md — 진행→정산 자동 전환(D-76): 읽기 판정(SKIP LOCKED·실패 격리)·쓰기 잠금 안 판정·종료일 지남(D-81) · 잘못된 id 404 (W10)
 
 **Wave 11**
 
@@ -391,24 +391,31 @@ Plans:
 *(웨이브마다 플랜 하나 — 모든 플랜이 같은 로컬 DB `erp`/`erp_test`에서 통합·E2E를 돌려 한 줄 체인으로 직렬 실행한다)*
 
 Wave 1
+
 - [ ] 04.1-01-PLAN.md — 결재 엔진 트레이서: 표 3개 + leave_requests, nextStep·walkRoute, 연차 제출→승인(통합), 설정 키 22개, [BLOCKING] 마이그레이션 + journal 가드, 결재선 가장자리 규칙
 
 Wave 2 *(blocked on Wave 1)*
+
 - [ ] 04.1-03-PLAN.md — 연차 잔고: 부여(grant) 모델, 입사 첫해 월차 D-96, 입사 다음 해 연차 입사 연도 근무 기간 비례(0.25일 올림 — 사용자 결정 2026-09-24 카드 B), 퇴직 D-97, 조정, [BLOCKING] 마이그레이션(LEAV-01)
 
 Wave 3 *(blocked on Wave 2)*
+
 - [ ] 04.1-02-PLAN.md — 화면 트레이서(/leave/new → /approvals 승인 E2E) + 반려·회수·다시 신청 + 동시 조작 두 순서(EXP-03·EXP-05)
 
 Wave 4 *(blocked on Wave 3)*
+
 - [ ] 04.1-04-PLAN.md — 결재선 설정 화면: 이름 옵션·동적 옵션·부서 없음 경고·연차 일수 1월 1일 규칙(ADMN-04 결재 부분)
 
 Wave 5 *(blocked on Wave 4)*
+
 - [ ] 04.1-05-PLAN.md — 결재 화면 완성: 폰 결재 시트 E2E, 문서 화면 행동 줄, 반려/회수 확인, ui/approval-route, SYSTEM.md A3(EXP-05)
 
 Wave 6 *(blocked on Wave 5)*
+
 - [ ] 04.1-06-PLAN.md — 연차 화면 완성: 계정 그룹 「연차」(A1), /leave 목록(A4), 완성형 신청 폼, 관리자 사람 상세 연차 섹션 · 등록 입사일
 
 Wave 7 *(blocked on Wave 6)*
+
 - [ ] 04.1-07-PLAN.md — 병합 직전: origin/main을 받아 병합 → 04.1 자기 마이그레이션 삭제 → `pnpm db:generate` 재생성(번호 = main 마지막 + 1, 받은 tag 보고 · 번호 범위·병합 순서 제약 없음) → 전체 게이트 CI=true
 
 논의 결과는 `.planning/phases/05-expense-approval-leave/05-CONTEXT.md`의 결재·연차 결정(입력 §1~§5, D-96·D-97, Claude's Discretion의 결재 표 세부)을 그대로 쓴다. 계획 단계에서 정할 것: REQUIREMENTS 추적표의 다섯 항목을 Phase 04.1로 옮기는 일, 마이그레이션 번호와 `_journal.json` 충돌을 푸는 방식 — 정해졌다(규칙 개정 2026-09-24 20:52 KST): 브랜치에서는 `pnpm db:generate`가 준 번호를 그대로 쓰고, 병합 직전 `origin/main`을 병합한 뒤 자기 마이그레이션(SQL · 스냅숏 · journal 항목)을 지우고 `pnpm db:generate`로 다시 만들어 번호가 main 마지막 + 1이 된다. 페이즈별 예약 번호 범위와 Phase 4와의 병합 순서 제약은 없다(04.1-07).
@@ -520,21 +527,27 @@ Plans:
 *(웨이브마다 플랜 하나 — 통합·E2E가 같은 로컬 DB `erp`/`erp_test`를 쓰고 마이그레이션 journal을 이어 쓰므로 한 줄 체인으로 직렬 실행한다. 마이그레이션 번호는 브랜치에서 db:generate가 준 번호(브랜치 임시), 머지 직전 04.4-06의 재생성으로 main 마지막+1)*
 
 Wave 1
+
 - [ ] 04.4-01-PLAN.md — 리허설 결과 기록·표시 트레이서: `restore_rehearsals` 표, DB 없는 CLI `record` → 상태 화면 「복원 리허설」 한 줄(기록 없음·확인 불가·성공·실패+실행 기록 링크, 쓰기·읽기 검증·시간 제한), journal 가드(main 또는 04.1 파일 그대로)(D8-08)
 
 Wave 2 *(blocked on Wave 1)*
+
 - [ ] 04.4-02-PLAN.md — 복원본 확인: CLI `verify`(대상 가드 · 마이그레이션 알려진 접두 · 핵심 표 목록 `RESTORE_CHECK_TABLES`), Cloud Run Job `plant8-{env}-restore` 배포·번들(DB 없는 진입점 번들 확인)(D8-08)
 
 Wave 3 *(blocked on Wave 2)*
+
 - [ ] 04.4-03-PLAN.md — 리허설 워크플로: `restore-rehearsal.yml` + `scripts/restore-rehearsal.sh`(이름 가드 · 고아 점검 · 임시 인스턴스 생성·복원·확인 · 작업 대기·재시도 삭제 · 한 번만 기록하는 finalize, 결과 단계 우선순위 정리 > 복원 > 검증, production 확인 입력), 가짜 gcloud 테스트, OPERATIONS §14 · `docs/RESTORE.md` 사고 복원 런북(D8-08)
 
 Wave 4 *(blocked on Wave 3)*
+
 - [ ] 04.4-04-PLAN.md — 사람 목록 로그인 상태 데이터: `users.first_login_at`(백필 포함 — 두 로그인 기록 중 더 이른 것), 세션 생성 훅(`databaseHooks.session.create.after`), DTO 두 필드 · 요청 단위 노출 판정, `personLoginStatus` 판정, 업그레이드 픽스처(D8-07)
 
 Wave 5 *(blocked on Wave 4)*
+
 - [ ] 04.4-05-PLAN.md — 화면 마감: 상태 화면 「복원 리허설」 행 모양 · 사람 목록 배지 렌더 · 행 머리글 · 폰 칸 접기(`.peopleTable`, `--lh-table`) · E2E, SYSTEM.md §6-8·§7-5·§7-3 · DECISIONS.md(D8-07 · D8-08)
 
 Wave 6 *(blocked on Wave 5)*
+
 - [ ] 04.4-06-PLAN.md — 병합 직전 + 실제 1회: origin/main 병합 → 04.4 마이그레이션을 지우고 `pnpm db:generate` 한 번으로 재생성(main 마지막+1) · 백필 다시 붙이기 → 독립 DOM 감사 · 전체 게이트 CI=true → (Post-build·/ship·staging 배포 뒤) 사용자가 staging 리허설 1회 실행(checkpoint)
 
 결정은 `.planning/phases/04.4-restore-rehearsal-and-login-status/04.4-CONTEXT.md`에 옮겨 두었다(Phase 8 논의 D8-07·D8-08과 이미 확정된 입력). 계획 단계에서 정할 것: REQUIREMENTS 추적표의 OPS-03을 Phase 04.4로 옮기는 일, 복원본 확인 항목의 정확한 목록(그때 main에 있는 표 기준 — Phase 4 표가 아직 없을 수 있다), 리허설 결과를 기록하는 곳(운영 DB 한 줄을 Cloud Run Job으로 쓰기 대 GCS 파일), 스테이징과 프로덕션 중 어디서 돌릴지(프로덕션 인스턴스가 아직 없으면 스테이징으로 증명하고 전환 전 프로덕션 확인은 Phase 8 체크리스트가 맡는다), 「첫 로그인 전」 기록 칸의 모양과 재발급 뒤 다시 보일지, 마이그레이션 번호(브랜치는 db:generate가 준 번호, 머지 직전 재생성으로 main 마지막+1 — 기준 5), 사람 목록 표시의 UI 계약(기존 배지 규약으로 충분한지 `/gsd-ui-phase 04.4`가 필요한지). ROADMAP Coverage 표·Phase 목록 요약 줄·REQUIREMENTS 추적표는 04.1~04.3과 같이 계획 단계에서 함께 맞춘다.
@@ -725,7 +738,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 1. 배포 스켈레톤·로그인 | 8/8 | Complete    | 2026-09-19 |
 | 2. 디자인 시스템·앱 셸 | 8/8 | In Progress|  |
 | 3. 권한·설정·마스터 (관리자 운영 콘솔) | 0/TBD | Not started | - |
-| 4. 프로젝트·견적 원장 | 18/42 | In Progress|  |
+| 4. 프로젝트·견적 원장 | 19/42 | In Progress|  |
 | 5. 지출결의·결재·연차 | 0/TBD | Not started | - |
 | 6. 지급·증빙·법인카드·구매 요청 (경영관리) | 0/TBD | Not started | - |
 | 7. 공휴일·지급일·마감·알림 + 전 메뉴 권한 검수 | 0/TBD | Not started | - |

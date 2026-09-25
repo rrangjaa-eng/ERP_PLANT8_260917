@@ -243,6 +243,22 @@ describe("normalizeMoneyInput", () => {
     expect(fx.message).toBe("환율은 소수 4자리까지");
   });
 
+  it("(SF-1) 환율이 fx_rate numeric(12,4) 밖(≥ 10^8)이면 range — 원화 환산이 범위 안이어도 PG 22003으로 새지 않는다", () => {
+    const fx = rejection({ currency: "USD", amount: 0, fxRate: 1_000_000_000 });
+    expect(fx.reason).toBe("range");
+    expect(fx.message).toBe("환율이 상한을 넘습니다 · 환율을 고쳐 주세요");
+    expect(rejection({ currency: "USD", amount: 0, fxRate: 100_000_000 }).reason).toBe("range");
+    expect(normalizeMoneyInput({ currency: "USD", amount: 0, fxRate: 99_999_999.9999 }).fxRate).toBe(99_999_999.9999);
+  });
+
+  it("(SF-1) 외화 금액이 foreign_amount numeric(14,2) 밖(|x| ≥ 10^12)이면 range", () => {
+    const amount = rejection({ currency: "USD", amount: 1_000_000_000_000, fxRate: 0.0001 });
+    expect(amount.reason).toBe("range");
+    expect(amount.message).toBe("외화 금액이 상한을 넘습니다 · 금액을 고쳐 주세요");
+    expect(rejection({ currency: "USD", amount: -1_000_000_000_000, fxRate: 0.0001 }).reason).toBe("range");
+    expect(normalizeMoneyInput({ currency: "USD", amount: 999_999_999_999.99, fxRate: 0.0001 }).amount).toBe(999_999_999_999.99);
+  });
+
   it("moneyToColumns가 먼저 정규화한다 — KRW 위조 환율 1350은 원화 5000 · 환율 1.0000으로", () => {
     const columns = moneyToColumns({ currency: "KRW", amount: 5000, fxRate: 1350 });
     expect(columns.amountKrw).toBe(5000);

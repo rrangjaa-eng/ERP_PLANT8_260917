@@ -1178,6 +1178,39 @@ describe("금액 입력 정규화(04-40 · B §2)", () => {
   });
 });
 
+// 04-40 검토 SF-1 — 원화 컬럼 밖의 숫자 컬럼(환율 · 외화 금액 · 수량 · 차익)도 쓰기 전에 그 칸의 셀 오류로 거부한다(PG 22003 아님).
+describe("원화 밖 숫자 컬럼 범위(04-40 검토 SF-1)", () => {
+  async function expectCell(revisionId: string, bad: QuoteLineWriteRow, field: string, reason: string) {
+    const error = await rejectionOf(saveQuoteLines(SYSTEM_VIEWER, revisionId, { rows: [bad] }));
+    expect(error.formatErrors).toContainEqual(expect.objectContaining({ rowId: bad.id, field, reason }));
+    expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revisionId))).toHaveLength(0);
+  }
+
+  it("(o1) USD 단가 금액 0 · 환율 10억 → 단가 칸 「환율이 상한을 넘습니다 · 환율을 고쳐 주세요」", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const bad = newRow(subcategoryValue, { unitPrice: { currency: "USD", amount: 0, fxRate: 1_000_000_000 } });
+    await expectCell(revision.id, bad, "unitPrice", "환율이 상한을 넘습니다 · 환율을 고쳐 주세요");
+  });
+
+  it("(o2) USD 실행가 금액 1조 · 환율 0.0001 → 실행가 칸 「외화 금액이 상한을 넘습니다 · 금액을 고쳐 주세요」", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const bad = newRow(subcategoryValue, { execution: { currency: "USD", amount: 1_000_000_000_000, fxRate: 0.0001 } });
+    await expectCell(revision.id, bad, "execution", "외화 금액이 상한을 넘습니다 · 금액을 고쳐 주세요");
+  });
+
+  it("(o3) 수량 100억 · 단가 0 → 수량 칸 「수량이 상한을 넘습니다 · 수량을 고쳐 주세요」", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const bad = newRow(subcategoryValue, { quantity: 10_000_000_000, unitPrice: krw(0) });
+    await expectCell(revision.id, bad, "quantity", "수량이 상한을 넘습니다 · 수량을 고쳐 주세요");
+  });
+
+  it("(o4) 견적 외 비용 줄 실행가 −2,147,483,648 → 차익 2,147,483,648 — 실행가 칸 「차익이 상한을 넘습니다 · 실행가를 고쳐 주세요」", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const bad = newRow(subcategoryValue, { lineKind: "out_of_quote", execution: krw(-2_147_483_648) });
+    await expectCell(revision.id, bad, "execution", "차익이 상한을 넘습니다 · 실행가를 고쳐 주세요");
+  });
+});
+
 // 04-40(DR-9) — 수량 × 단가의 계산 견적가가 quote_amount_krw 상한을 넘으면 수량·단가 두 칸 셀 오류로 쓰기 전에 거부한다.
 describe("계산 견적가 상한(04-40 · DR-9)", () => {
   const OVER = "견적가가 상한을 넘습니다 · 수량이나 단가를 고쳐 주세요";

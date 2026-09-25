@@ -432,7 +432,10 @@ test.describe("알림함 목록 완성 (Task 3 · S1-c · S1-d)", () => {
       if (!intercepted && request.method() === "POST" && request.headers()["next-action"]) {
         intercepted = true;
         await new Promise((resolve) => setTimeout(resolve, 500));
-        await route.abort();
+        // 드물게 같은 요청이 다른 경로로 이미 처리돼(레이스) abort가 "Route is
+        // already handled" 예외를 던질 수 있다 — 진짜 판정은 아래 requestFailed
+        // 대기 + UI 단언이 한다(방어적으로만 삼킨다).
+        await route.abort().catch(() => {});
         return;
       }
       await route.continue();

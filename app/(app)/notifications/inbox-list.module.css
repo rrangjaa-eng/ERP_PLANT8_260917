@@ -35,3 +35,42 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* S1-c 내용 칸: 40자 이상도 줄바꿈되고 말줄임되지 않는다(§10 375px 넘침 없음). */
+.message {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* S1-c 이메일 발송 실패 보조 줄 — 외화 2행과 같은 모양. */
+.emailFailed {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+/* S1-c 날짜 그룹 머리글 행(§7-3 그룹 머리글 행 규칙 그대로). */
+.groupHeader {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  text-align: left;
+  padding: var(--s-3) var(--cell-pad-x) var(--cell-pad-y);
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+  white-space: nowrap;
+}
+
+/* §7-7 LOADING — projects 선례(반짝임·스피너 없음). */
+.skeletonRow td {
+  height: var(--row-min);
+  background: var(--surface);
+}
+
+/* S1-c 더 보기 실패 줄. */
+.loadMoreError {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--fs-sm);
+  color: var(--danger);
+  margin-top: var(--s-2);
+}

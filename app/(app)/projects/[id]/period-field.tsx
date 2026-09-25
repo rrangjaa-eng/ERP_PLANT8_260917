@@ -61,7 +61,7 @@ export function PeriodField({
       onEscape();
       return;
     }
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+    if (event.ctrlKey && event.key.toLowerCase() === "s") {
       event.preventDefault();
       onSave();
     }

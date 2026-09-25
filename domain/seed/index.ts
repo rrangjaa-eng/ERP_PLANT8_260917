@@ -190,11 +190,13 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
   // 04-20(D-46·D-79·A-05): 상태 전환 기본 권한 — 팀장·본부 책임자·대표는
   // 프로젝트 화면(보기)과 수주중·미수주 전환(projects.status 쓰기), 대표는
   // 정산 → 완료(projects.complete 쓰기)까지. 없을 때만 넣는다 — 관리자가 권한표에서
-  // 끈 값을 다음 배포의 시드가 되살리지 않는다.
+  // 끈 값을 다음 배포의 시드가 되살리지 않는다. 04-22(사용자 결정 2026-09-25): 같은 계급에
+  // 기간만 고치는 projects.period 쓰기를 더한다.
   const statusDefaults: { roleId: string; menu: string; action: "view" | "write" }[] = [
     ...[TEAM_LEAD_ROLE_ID, DIVISION_HEAD_ROLE_ID, CEO_ROLE_ID].flatMap((roleId) => [
       { roleId, menu: "projects", action: "view" as const },
       { roleId, menu: "projects.status", action: "write" as const },
+      { roleId, menu: "projects.period", action: "write" as const },
     ]),
     { roleId: CEO_ROLE_ID, menu: "projects.complete", action: "write" },
   ];

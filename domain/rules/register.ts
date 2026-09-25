@@ -42,6 +42,21 @@ registerGateRule<unknown, ProjectTransitionCtx>({
   },
 });
 
+// 04-22(D-80 · D-82 · S13) — 기간 칸 저장. 권리(domain/projects/period periodEditRights)와 칸 오류는
+// 호출자가 계산해 넘긴다. 권리가 없으면 방어 문구(화면은 권리 없는 사람에게 「기간 바꾸기」를 그리지
+// 않는다 — 위조 요청으로만 닿는다), 칸 오류가 있으면 첫 오류 이유.
+export type ProjectPeriodEditCtx = { rights: "lead" | "pm" | "none"; errors: { reason: string }[] };
+
+registerGateRule<unknown, ProjectPeriodEditCtx>({
+  name: "project.period-edit",
+  check: (_doc, ctx) => {
+    if (ctx.rights === "none") return { allowed: false, reason: "기간 바꾸기 권한 없음" };
+    const [first] = ctx.errors;
+    if (first) return { allowed: false, reason: first.reason };
+    return { allowed: true };
+  },
+});
+
 // 04-20(D-82) — 진행으로 가는 전환은 시작일이 있어야 한다. 이 문자열은
 // statusDestinations의 blockedReason으로 화면에 그대로 간다(UI-SPEC rev 5 원문).
 export type ProjectStartDateRequiredCtx = { to: string; startDate: string | null };

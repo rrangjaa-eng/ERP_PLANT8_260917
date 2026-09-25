@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
 import { createProject } from "@/domain/projects";
-import { saveProjectLedger } from "@/domain/projects/ledger";
+import { PeriodRejectedError, saveProjectLedger, type PeriodFieldError } from "@/domain/projects/ledger";
 import { SaveRejectedError } from "@/domain/quotes/lines";
 import { changeProjectStatus } from "@/domain/projects/status";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
@@ -44,6 +44,14 @@ export const createProjectAction = authedActionClient
     return { project };
   });
 
+// 04-22 — 기간 칸. 날짜 형식·달력 검사는 domain이 칸 오류 문구로 한다(스키마는 길이만 막는다).
+// 기준값은 서버가 렌더한 값이라 형식을 여기서 고정한다.
+const periodDateSchema = z.string().max(10).nullable();
+const periodBaselineDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .nullable();
+
 const revenueEntryRowSchema = z.object({
   id: z.string().optional(),
   version: z.number().optional(),
@@ -59,6 +67,12 @@ const revenueEntryRowSchema = z.object({
 // ⑥·⑧ — 화면의 1차 「일괄 저장」 하나가 견적 줄 + 매출(계약 금액·발행·
 // 입금)을 같은 트랜잭션으로 저장한다. 새 1차 버튼을 만들지 않는다
 // (saveQuoteLinesAction을 이 액션으로 흡수).
+// 봉투를 함수 반환값으로 만든다 — 객체 리터럴 반환끼리는 서로의 키를 `?: undefined`로 채워
+// 화면의 `"rejected" in data` 좁히기가 풀린다.
+function periodRejected(error: PeriodRejectedError): { periodRejected: { errors: PeriodFieldError[] } } {
+  return { periodRejected: { errors: error.errors } };
+}
+
 export const saveProjectLedgerAction = authedActionClient
   .schema(
     z.object({
@@ -106,6 +120,13 @@ export const saveProjectLedgerAction = authedActionClient
           paidEntries: z.array(revenueEntryRowSchema).optional(),
         })
         .optional(),
+      period: z
+        .object({
+          startDate: periodDateSchema,
+          endDate: periodDateSchema,
+          baseline: z.object({ startDate: periodBaselineDateSchema, endDate: periodBaselineDateSchema }),
+        })
+        .optional(),
     }),
   )
   .action(async ({ parsedInput, ctx }) => {
@@ -114,8 +135,11 @@ export const saveProjectLedgerAction = authedActionClient
       result = await saveProjectLedger(ctx.viewer, parsedInput.projectId, {
         quoteLines: parsedInput.quoteLines,
         revenue: parsedInput.revenue,
+        period: parsedInput.period,
       });
     } catch (error) {
+      // 04-22 — 기간 칸 거부는 칸 오류로 돌려준다(화면이 칸 아래 Form.Error로 그린다).
+      if (error instanceof PeriodRejectedError) return periodRejected(error);
       // 04-28 거부 봉투 — SaveRejectedError만 칸 좌표로 돌려준다(도메인이 쓰기 전에
       // 던지고 트랜잭션은 이미 되돌렸다 — 커밋 뒤에는 생기지 않는다). 칸은 이 사람이
       // 이번 요청에 실어 보낸 줄의 편집 칸에서만 생겨(편집·금액 권한 판정 뒤) 새로

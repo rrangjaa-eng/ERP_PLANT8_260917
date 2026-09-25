@@ -22,6 +22,9 @@ export const MENUS: MenuDef[] = [
   // "projects.complete"(대표 — Phase 5에서 결재 승인이 호출자가 된다).
   { key: "projects.status", label: "프로젝트 상태 변경" },
   { key: "projects.complete", label: "프로젝트 완료" },
+  // 04-22(사용자 결정 2026-09-25 「기간만 수정」): 팀장 이상이 프로젝트 시작일·종료일만 고치는
+  // 권한 — "projects" 쓰기(견적 줄·매출 등)는 주지 않는다.
+  { key: "projects.period", label: "프로젝트 기간 변경" },
   { key: "expenses", label: "지출결의" },
   { key: "cards", label: "법인카드" },
   { key: "approvals", label: "결재함" },

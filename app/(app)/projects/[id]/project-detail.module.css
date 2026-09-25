@@ -235,3 +235,50 @@
   }
 }
 
+
+/* 04-22(S13) — 부제의 기간 글자 + 3차 「기간 바꾸기」, 머리 줄 아래 기간 칸 묶음(Form.Actions 없음). */
+.periodLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2);
+  margin: var(--s-1) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.periodForm {
+  margin: var(--s-3) 0;
+  gap: var(--s-3);
+}
+
+.periodSaved {
+  background: var(--accent-weak);
+}
+
+.periodInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 var(--s-2);
+  border: var(--line-w) solid var(--line-ui);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  font-variant-numeric: tabular-nums;
+}
+
+.periodInput:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.periodInputDirty {
+  box-shadow: var(--inset-dirty);
+}
+
+.periodInput[aria-invalid="true"] {
+  border-color: var(--danger);
+}

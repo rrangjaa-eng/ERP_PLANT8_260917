@@ -2,6 +2,7 @@
 
 import { Children, Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAction } from "next-safe-action/hooks";
+import { useRouter } from "next/navigation";
 import { saveProjectLedgerAction } from "../actions";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { StatusTag, type StatusTagKind } from "@/ui/status-tag/StatusTag";
@@ -23,6 +24,9 @@ import type { RevenueDto } from "@/domain/revenue";
 import type { Currency } from "@/domain/money";
 import { RevenueSection, type ContractDraft, type EntryDraft } from "./revenue-section";
 import { StatusChange, type StatusChangeProps } from "./status-change";
+import { PeriodField, periodText, type PeriodDraft, type PeriodFieldError } from "./period-field";
+import type { PeriodRights } from "@/domain/projects/period";
+import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import styles from "./project-detail.module.css";
 
 export type QuoteTableOption = { id: string; name: string };
@@ -75,6 +79,9 @@ const FIELD_TO_COLUMN: Record<string, string> = {
   lineStatus: "status",
   note: "note",
 };
+
+// 04-22(A-34) — 기간 칸이 닫히면 포커스가 돌아올 3차 「기간 바꾸기」.
+const PERIOD_TRIGGER_ID = "period-open";
 
 // 충돌 이유 문자열 끝의 행동 글자 — 셀에서는 이 둘이 3차 버튼으로 그려진다.
 const CONFLICT_ACTIONS_SUFFIX = " · 덮어쓰기 / 그 값으로";
@@ -534,6 +541,9 @@ function HeaderCopyActions({ children }: { children?: ReactNode }) {
 // 인풋 트레이서를 여기서 완성한다.
 export function QuoteLedger({
   projectId,
+  status,
+  period,
+  canSave,
   projectName,
   subtitle,
   statusLabel,
@@ -553,6 +563,12 @@ export function QuoteLedger({
   contractTotalKrw,
 }: {
   projectId: string;
+  /** 화면이 본 상태 — 서버 값. */
+  status: ProjectStatus;
+  /** 04-22(S13) — 기간 칸. 권리는 서버가 판정한다(periodEditRights). */
+  period: { startDate: string | null; endDate: string | null; rights: PeriodRights; todayKst: string };
+  /** 04-22(A-12) — 1차 「일괄 저장」 렌더 조건(서버 계산). */
+  canSave: boolean;
   projectName: string;
   /** `{번호} · 상세 견적 {n}차 · {상태} {마지막 변경일}` — 서버가 만든다(D-50). */
   subtitle: string;
@@ -584,6 +600,13 @@ export function QuoteLedger({
   const [deleteConfirm, setDeleteConfirm] = useState<{ clientKey: string; itemName: string; quoteAmountKrw: number } | null>(null);
   const [sheetRowKey, setSheetRowKey] = useState<string | null>(null);
   const [statusToast, setStatusToast] = useState<string | null>(null);
+  // 04-22(S13) — 기간 칸. 기준값은 서버 렌더 값 또는 직전 저장 결과(엔지 리뷰 A §1 P1).
+  const [periodBaseline, setPeriodBaseline] = useState({ startDate: period.startDate, endDate: period.endDate });
+  const [periodDraft, setPeriodDraft] = useState<PeriodDraft | null>(null);
+  const [periodFocus, setPeriodFocus] = useState<"start" | "end">("start");
+  const [periodErrors, setPeriodErrors] = useState<PeriodFieldError[]>([]);
+  const [periodSaved, setPeriodSaved] = useState(false);
+  const router = useRouter();
 
   const dirtyStorage = useDirtyStorage(projectId, revisionId, 0);
 
@@ -603,6 +626,10 @@ export function QuoteLedger({
         applyRejectedCells(data.rejected.cells);
         return; // 전부 거부 — 줄 교체·저장됨·보관본 지우기를 하지 않는다.
       }
+      if (data && "periodRejected" in data) {
+        setPeriodErrors(data.periodRejected.errors);
+        return; // 기간 칸 오류로 전부 거부.
+      }
       if (data?.quoteLines?.lines) setLines(data.quoteLines.lines.map(fromDto));
       if (data?.revenue) {
         setContractDraft(contractFromDto(data.revenue));
@@ -611,16 +638,76 @@ export function QuoteLedger({
         if (data.revenue.contract) setContractVat({ vatKrw: data.revenue.contract.vatKrw, totalKrw: data.revenue.contract.totalKrw });
         setBalanceKrw(data.revenue.balanceKrw);
       }
+      if (data?.project) {
+        const saved = data.project;
+        setPeriodBaseline({ startDate: saved.startDate, endDate: saved.endDate });
+        setPeriodErrors([]);
+        if (periodDraft) closePeriodFieldAfterSave();
+        // 상태가 바뀌었으면(정산 → 진행 등) 서버가 계산하는 태그·권리·canSave를 다시 받는다.
+        if (saved.status !== status) router.refresh();
+      }
       setSavedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }));
       dirtyStorage.clearAfterSave();
     },
   });
 
+  // S13 — 저장 성공: 600ms --accent-weak 틴트 뒤 묶음이 닫힌다(prefers-reduced-motion이면 바로).
+  function closePeriodFieldAfterSave() {
+    const reduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) {
+      setPeriodDraft(null);
+      return;
+    }
+    setPeriodSaved(true);
+    window.setTimeout(() => {
+      setPeriodSaved(false);
+      setPeriodDraft(null);
+    }, 600);
+  }
+
+  // 04-44의 상태 모달 3차 · 04-30의 EMPTY 「기간 바꾸기」가 이 함수로 칸을 연다.
+  function openPeriodField(focus: "start" | "end") {
+    setPeriodFocus(focus);
+    setPeriodDraft((prev) => prev ?? { start: periodBaseline.startDate ?? "", end: periodBaseline.endDate ?? "" });
+  }
+
+  // A-34 — 묶음이 닫히면 포커스가 그 칸을 연 3차로 돌아온다.
+  const periodWasOpenRef = useRef(false);
+  useEffect(() => {
+    if (periodDraft) {
+      periodWasOpenRef.current = true;
+    } else if (periodWasOpenRef.current) {
+      periodWasOpenRef.current = false;
+      document.getElementById(PERIOD_TRIGGER_ID)?.focus();
+    }
+  }, [periodDraft]);
+
+  const periodBaselineDraft: PeriodDraft = { start: periodBaseline.startDate ?? "", end: periodBaseline.endDate ?? "" };
+  const periodDirtyCount = periodDraft
+    ? (periodDraft.start !== periodBaselineDraft.start ? 1 : 0) + (periodDraft.end !== periodBaselineDraft.end ? 1 : 0)
+    : 0;
+
+  function changePeriod(next: PeriodDraft) {
+    setPeriodErrors([]);
+    setPeriodDraft(next);
+  }
+
+  // S13 — Esc는 편집 중 값을 되돌리고, 두 칸이 모두 원래 값이면 묶음을 닫는다.
+  function escapePeriod() {
+    if (periodDirtyCount > 0) {
+      setPeriodDraft(periodBaselineDraft);
+      setPeriodErrors([]);
+      return;
+    }
+    setPeriodErrors([]);
+    setPeriodDraft(null);
+  }
+
   const quoteLinesDirtyCount = lines.filter((line) => line.dirty).length;
   const issuedDirtyCount = (issuedEntries ?? []).filter((entry) => entry.dirty).length;
   const paidDirtyCount = (paidEntries ?? []).filter((entry) => entry.dirty).length;
   const contractDirtyCount = contractDraft.dirty ? 1 : 0;
-  const dirtyCount = quoteLinesDirtyCount + issuedDirtyCount + paidDirtyCount + contractDirtyCount;
+  const dirtyCount = quoteLinesDirtyCount + issuedDirtyCount + paidDirtyCount + contractDirtyCount + periodDirtyCount;
   // 해소되지 않은 충돌 칸도 함께 센다 — 충돌이 남은 채 서버를 부르지 않는다.
   const errorCellCount = lines.reduce(
     (sum, line) => sum + Object.keys(line.cellErrors).length + Object.keys(line.cellConflicts).length,
@@ -765,6 +852,14 @@ export function QuoteLedger({
 
     execute({
       projectId,
+      period:
+        periodDraft && periodDirtyCount > 0
+          ? {
+              startDate: periodDraft.start.trim() || null,
+              endDate: periodDraft.end.trim() || null,
+              baseline: periodBaseline,
+            }
+          : undefined,
       quoteLines:
         dirtyLines.length > 0
           ? {
@@ -1185,7 +1280,7 @@ export function QuoteLedger({
     };
   }
 
-  const saveDisabledReason = dirtyCount === 0 ? "바뀐 칸 없음 · 고칠 칸을 눌러 주세요" : undefined;
+  const saveDisabledReason = dirtyCount === 0 ? "바뀐 칸 없음" : undefined;
 
   // 04-04 — 서버가 돌려준 문자열을 그대로 쓴다(화면이 이유를 새로 만들지
   // 않는다, Task 2 acceptance criterion). errorCellCount>0이면 handleSave가
@@ -1211,6 +1306,17 @@ export function QuoteLedger({
       <div className={styles.header}>
         <div className={styles.titleBlock}>
           <PageHeader title={projectName} subtitle={subtitle} />
+          {/* S13 — 칸이 열린 동안 기간 글자와 「기간 바꾸기」는 숨는다(같은 값을 두 번 보이지 않는다). */}
+          {periodDraft ? null : (
+            <p className={styles.periodLine}>
+              <span>{periodText(periodBaseline.startDate, periodBaseline.endDate)}</span>
+              {period.rights !== "none" ? (
+                <Button id={PERIOD_TRIGGER_ID} type="button" variant="tertiary" onClick={() => openPeriodField("start")}>
+                  기간 바꾸기
+                </Button>
+              ) : null}
+            </p>
+          )}
         </div>
         <span className={styles.statusLine}>
           <StatusTag kind={statusTagKind} variant="tag">
@@ -1223,13 +1329,14 @@ export function QuoteLedger({
           {statusChange ? (
             <StatusChange {...statusChange} dirtyCount={dirtyCount} onChanged={setStatusToast} />
           ) : null}
-          {editable || canWriteContract || canWriteEntries ? (
+          {canSave ? (
             <Button
               type="button"
               variant="primary"
               pending={isExecuting}
               disabled={dirtyCount === 0 || errorCellCount > 0}
               disabledReason={errorCellCount > 0 ? `오류 ${errorCellCount}칸 · 고쳐야 저장됩니다` : saveDisabledReason}
+              reasonTone={errorCellCount > 0 ? "block" : "info"}
               shortcut="Ctrl+S"
               onClick={handleSave}
             >
@@ -1238,6 +1345,21 @@ export function QuoteLedger({
           ) : null}
         </div>
       </div>
+
+      {periodDraft ? (
+        <PeriodField
+          draft={periodDraft}
+          baseline={periodBaselineDraft}
+          status={status}
+          todayKst={period.todayKst}
+          errors={periodErrors}
+          focusField={periodFocus}
+          saved={periodSaved}
+          onChange={changePeriod}
+          onEscape={escapePeriod}
+          onSave={handleSave}
+        />
+      ) : null}
 
       {dirtyStorage.restorableCount > 0 ? (
         <p className={styles.restoreBanner}>

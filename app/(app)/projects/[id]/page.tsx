@@ -10,12 +10,14 @@ import { recentFxRate } from "@/domain/money/currency";
 import { gate } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import {
+  actorCoversProjectTeam,
   isEndDatePassed,
   lastStatusChangeOn,
   listProjectStatusCatalog,
   statusDestinations,
 } from "@/domain/projects/status";
 import { projectResponsibles } from "@/domain/projects/responsibles";
+import { periodEditRights } from "@/domain/projects/period";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { PROJECT_STATUS_TAG_KIND } from "../status-display";
@@ -36,9 +38,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const project = await findProject(session.viewer, id);
   if (!project) notFound();
 
-  const [canWrite, canWriteEntries, revision] = await Promise.all([
+  const todayKst = kstToday(new Date());
+  const [canWrite, canWriteEntries, canEditPeriod, actorCoversTeam, revision] = await Promise.all([
     can(session.viewer, "projects", "write"),
     can(session.viewer, "projects.revenue", "write"),
+    can(session.viewer, "projects.period", "write"),
+    actorCoversProjectTeam(session.viewer, project, { todayKst }),
     getCurrentQuoteRevision(session.viewer, project.id),
   ]);
 
@@ -54,6 +59,18 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const gateDecision = await gate(project, "project.line-edit", { status: project.status });
   // 금액을 볼 수 없으면 표를 편집하지 않는다 — 서버도 저장을 거부한다(saveQuoteLines).
   const editable = canWrite && gateDecision.allowed && (await visible(session.viewer, "quote.amount"));
+
+  // 04-22(S13 · 사용자 D14·D11·D20 · 사용자 결정 2026-09-25 「기간만 수정」) — 기간 권리. 팀장 이상은
+  // projects.period 쓰기 + 자기 팀, 담당 PM은 projects 쓰기가 있을 때만.
+  const periodRights = periodEditRights({
+    status,
+    isAssignedPm: project.pmUserId === session.viewer.id,
+    canWrite,
+    canEditPeriod,
+    actorCoversTeam,
+  });
+  // A-12: 1차 「일괄 저장」은 이 화면에서 쓸 수 있는 칸이 하나라도 있을 때만 — 판정은 서버가 칸마다 한다.
+  const canSave = editable || periodRights !== "none" || canWriteEntries || (canWrite && status !== "completed");
 
   const [lines, references, revenue, usdDefaultFxRate, destinations, catalog, statusSince] = await Promise.all([
     listQuoteLines(session.viewer, revision.id),
@@ -102,6 +119,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   return (
     <QuoteLedger
       projectId={project.id}
+      status={status}
+      period={{ startDate: project.startDate, endDate: project.endDate, rights: periodRights, todayKst }}
+      canSave={canSave}
       projectName={project.name}
       subtitle={`${project.number} · 상세 견적 ${revision.seq}차 · ${statusLabel} ${statusSince}`}
       statusLabel={statusLabel}

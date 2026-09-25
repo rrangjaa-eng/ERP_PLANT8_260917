@@ -331,6 +331,34 @@ export async function updateProjectStatusIfCurrent(
   return row ?? null;
 }
 
+// 04-22(엔지 리뷰 A §1 P1): 기간 갱신 — 화면이 읽은 기간(expected)과 같을 때만 바꾼다(0행이면
+// null — 호출자가 동시 수정으로 거부한다). version은 판정에 쓰지 않는다(상태 변경·자동 정산도
+// 올리는 값이라 헛충돌이 된다).
+export async function updateProjectPeriod(
+  viewer: Viewer,
+  id: string,
+  input: {
+    startDate: string | null;
+    endDate: string | null;
+    expected: { startDate: string | null; endDate: string | null };
+  },
+  tx: DbOrTx,
+): Promise<ProjectRow | null> {
+  void viewer;
+  const [row] = await tx
+    .update(projects)
+    .set({ startDate: input.startDate, endDate: input.endDate, updatedAt: new Date() })
+    .where(
+      and(
+        eq(projects.id, id),
+        sql`${projects.startDate} IS NOT DISTINCT FROM ${input.expected.startDate}::date`,
+        sql`${projects.endDate} IS NOT DISTINCT FROM ${input.expected.endDate}::date`,
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
+
 export type SettledProjectRow = { id: string; endDate: string; lastChangeAt: Date | null };
 
 // 04-11(D-76 · OV-5 · Pitfall 7): 종료일이 지난 from 상태 프로젝트를 to로 바꾼다. 대상은

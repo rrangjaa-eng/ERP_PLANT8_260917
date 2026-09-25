@@ -1331,6 +1331,8 @@ export function QuoteLedger({
   // 04-49(DR-3 · 계약 3) — 저장 요청 동안 화면의 편집기(견적 줄 표 · 매출 표 · 기간 칸 · 총 매출 예상가 칸)는 보이되 편집에
   // 들어가지 않는다. 응답이 오면(성공·실패·거부 모두) isExecuting이 풀려 곧바로 다시 편집된다.
   const saveLocked = isExecuting;
+  // 04-30 리뷰 S-5 — 셀 편집기가 열린 동안에는 1차를 누르면 그 값이 커밋되고 저장된다 — 비활성으로 보이지 않는다.
+  const [cellEditing, setCellEditing] = useState(false);
 
   // 04-30(엔지 r2 분할안) — 키보드 Ctrl+S는 표가 열린 셀 편집기를 먼저 커밋(blur)한 뒤 부른다. 그 커밋이
   // 상태에 반영된 다음 렌더에서 저장해야 활성 셀의 마지막 값이 페이로드에 든다.
@@ -1746,7 +1748,7 @@ export function QuoteLedger({
     };
   }
 
-  const saveDisabledReason = dirtyCount === 0 ? "바뀐 칸 없음" : undefined;
+  const saveDisabledReason = dirtyCount === 0 && !cellEditing ? "바뀐 칸 없음" : undefined;
 
   // 04-30(DR-2) — 표 위 잠김 줄은 지금 줄로 판정한다(0줄 표에서 첫 줄을 만들면 나타난다).
   const lockLine = tableLockLine({
@@ -1843,7 +1845,7 @@ export function QuoteLedger({
               type="button"
               variant="primary"
               pending={isExecuting}
-              disabled={dirtyCount === 0 || errorCellCount > 0}
+              disabled={(dirtyCount === 0 && !cellEditing) || errorCellCount > 0}
               disabledReason={errorCellCount > 0 ? `오류 ${errorCellCount}칸 · 고쳐야 저장됩니다` : saveDisabledReason}
               reasonTone={errorCellCount > 0 ? "block" : "info"}
               shortcut="Ctrl+S"
@@ -1917,6 +1919,7 @@ export function QuoteLedger({
         }
         enableGridKeyboard
         saveLocked={saveLocked}
+        onEditingChange={setCellEditing}
         // 04-30(사용자 D10) — 할 수 없는 구조 동작은 키도 무동작이다(서버 structuralEditability).
         keyboard={{
           onDeleteRow: structural.archive

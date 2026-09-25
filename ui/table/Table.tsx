@@ -66,6 +66,8 @@ export type TableProps<Row> = {
    * 동작을 `isGridActionAllowed`로 거른다(방향키·범위 선택은 된다).
    */
   saveLocked?: boolean;
+  /** 04-49(04-30 리뷰 S-5) — 셀 편집기가 열리고 닫힐 때 알린다(열린 편집기 값은 아직 dirty에 들지 않는다). */
+  onEditingChange?: (editing: boolean) => void;
 };
 
 type ActiveCell = { rowId: string; columnKey: string } | null;
@@ -102,6 +104,7 @@ export function Table<Row>({
   cellSaved,
   onBlockedEdit,
   saveLocked = false,
+  onEditingChange,
 }: TableProps<Row>) {
   const [activeCell, setActiveCell] = useState<ActiveCell>(null);
   const allowed = (action: Parameters<typeof isGridActionAllowed>[0]) => isGridActionAllowed(action, { saveLocked });
@@ -219,6 +222,11 @@ export function Table<Row>({
     const target = table.querySelector<HTMLElement>("td[data-grid-focus]");
     if (target && !target.contains(active)) target.focus();
   }, [enableGridKeyboard, keyboardState.focus.row, keyboardState.focus.col]);
+
+  const editing = activeCell !== null;
+  useEffect(() => {
+    onEditingChange?.(editing);
+  }, [editing, onEditingChange]);
 
   // 04-49 — 잠금이 걸리는 순간 표 안에 열려 있던 편집기는 버리지 않고 blur(커밋 입구)로 닫는다.
   useEffect(() => {

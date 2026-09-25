@@ -114,6 +114,7 @@ describe("resolveLineKind — 줄 종류는 바뀌지 않는다(04-13)", () => {
 // 04-13(EXP-14) — 실행가 음수는 견적 외 비용·조정 줄만.
 describe("quoteLineFormatErrors — 종류별 음수 실행가(04-13)", () => {
   const line = (execution: number) => ({
+    id: "row-1",
     subcategory: "a",
     itemName: "항목",
     unitPrice: { currency: "KRW" as const, amount: 0, fxRate: 1 },

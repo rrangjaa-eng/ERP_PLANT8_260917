@@ -18,6 +18,7 @@ import {
   orderChange,
   quoteCellsZero,
   QUOTE_LINE_FIELDS,
+  QUOTE_LINE_KINDS,
   QUOTE_LINE_STATUSES,
   type QuoteCellEditability,
   type QuoteLineField,
@@ -508,7 +509,7 @@ export const quoteLineRowInputSchema = z
     isNew: z.literal(true).optional(),
     duplicatedFrom: z.string().uuid().optional(),
     version: z.number().optional(),
-    subcategory: z.string().min(1, "소분류를 고르세요."),
+    subcategory: z.string(),
     itemName: z.string().min(1, "항목명을 입력하세요."),
     vendorId: z.string().optional(),
     quantity: z.coerce.number().optional(),
@@ -516,6 +517,8 @@ export const quoteLineRowInputSchema = z
     unitPriceFxRateTouched: z.boolean().optional(),
     execution: quoteLineMoneyInputSchema,
     lineStatus: z.enum(QUOTE_LINE_STATUSES).optional(),
+    // 04-13 — 새 줄의 종류(기존 줄은 싣지 않는다 — 서버가 DB 종류를 쓴다).
+    lineKind: z.enum(QUOTE_LINE_KINDS).optional(),
     note: z.string().optional(),
     // 04-04 Task 2 ② — 이 줄을 불러왔을 때의 스냅샷(D-65 셀 단위 충돌 판정의 baseline). 기존 줄에서만 의미가 있다.
     baseline: z
@@ -534,6 +537,13 @@ export const quoteLineRowInputSchema = z
   .refine((row) => row.id === undefined || row.isNew === true || row.version !== undefined, {
     message: "기존 줄을 저장하려면 버전 정보가 필요합니다 · 화면을 새로고침해 주세요",
     path: ["version"],
+  })
+  // 04-13(엔지 리뷰 GAP 6) — 소분류는 견적 줄(종류 없음 = 기존 줄 포함)에서만 필수. 조정·견적 외 비용 줄의 소분류 칸은
+  // 서버가 종류 값으로 채운다.
+  .superRefine((row, ctx) => {
+    if ((row.lineKind === undefined || row.lineKind === "quote") && row.subcategory.length === 0) {
+      ctx.addIssue({ code: "custom", message: "소분류를 고르세요.", path: ["subcategory"] });
+    }
   });
 
 export const quoteLinesInputSchema = z.object({
@@ -562,6 +572,8 @@ const ORDER_MISMATCH = "줄 순서가 맞지 않음 · 새로 고침";
 const REPLAY_MISMATCH = "이미 저장된 줄과 값이 다름 · 새로 고침";
 // rev 5에 없는 방어 문구(화면은 이 요청을 만들지 않는다) — 보관된 줄 id를 고치는 요청.
 const ARCHIVED_LINE = "보관된 줄 · 새로 고침";
+// 04-13 rev 5에 없는 방어 문구 — 기존 줄에 저장된 것과 다른 종류를 실은 요청(T-04-64).
+const KIND_CHANGED = "줄 종류는 바뀌지 않음 · 새로 고침";
 
 type QuoteLineCustomFieldsSchema = Awaited<ReturnType<typeof quoteLineCustomFieldsSchema>>;
 
@@ -607,18 +619,20 @@ export async function prepareQuoteLineSave(
   };
 }
 
-// 04-13(D-83) — 조정 줄은 견적가 0: 서버가 수량 1 · 원화 단가 0 · 상태 미착수로 쓰고, 소분류 칸에는 종류 값을 적는다
-// (요청의 그 칸들은 읽지 않는다).
+// 04-13(D-83 · D-48) — 조정·견적 외 비용 줄은 견적가 0: 서버가 수량 1 · 원화 단가 0으로 쓰고, 소분류 칸에는 종류 값을
+// 적는다(요청의 그 칸들은 읽지 않는다). 조정 줄은 상태도 미착수로 고정한다(상태 칸이 없다).
 function normalizeForKind(row: QuoteLineWriteRow, kind: QuoteLineKind): QuoteLineWriteRow {
-  if (kind !== "adjustment") return row;
-  return {
-    ...row,
-    subcategory: kind,
-    quantity: 1,
-    unitPrice: { currency: "KRW", amount: 0, fxRate: 1 },
-    unitPriceFxRateTouched: false,
-    lineStatus: "not_started",
-  };
+  if (kind === "quote") return row;
+  const zeroQuote = { ...row, subcategory: kind, quantity: 1, unitPrice: { currency: "KRW" as const, amount: 0, fxRate: 1 }, unitPriceFxRateTouched: false };
+  return kind === "adjustment" ? { ...zeroQuote, lineStatus: "not_started" } : zeroQuote;
+}
+
+// 04-13(엔지 리뷰 B §2 · T-04-64) — 판정·저장이 보는 종류. 새 줄은 요청 값(없으면 quote), 기존 줄은 잠근 tx로 다시 읽은
+// DB 행의 종류다. 기존 줄에 다른 종류가 실려 오면 종류 변경 요청이라 null(거부).
+export function resolveLineKind(row: Pick<QuoteLineWriteRow, "isNew" | "lineKind">, storedKind: QuoteLineKind | undefined): QuoteLineKind | null {
+  if (row.isNew) return row.lineKind ?? "quote";
+  const stored = storedKind ?? "quote";
+  return row.lineKind === undefined || row.lineKind === stored ? stored : null;
 }
 
 // 쓰기 페이로드 — 판정(바뀐 칸 비교)과 쓰기가 같은 정규화를 거친 값을 쓴다(A-21): 수량 고정 소수 · 금액 열
@@ -671,7 +685,7 @@ function sameCustomFields(stored: unknown, next: Record<string, unknown>): boole
 }
 
 // EXP-14 — 실행가 음수는 견적 외 비용·조정 줄만 받는다.
-function rowFormatErrors(input: QuoteLineWriteRow, rowIndex: number, kind: QuoteLineKind): CellFormatError[] {
+export function quoteLineFormatErrors(input: QuoteLineWriteRow, rowIndex: number, kind: QuoteLineKind): CellFormatError[] {
   const errors: CellFormatError[] = [];
   if (input.quantity !== undefined && input.quantity <= 0) {
     errors.push({ rowIndex, rowId: input.id, field: "quantity", label: "수량", reason: "숫자가 아닙니다 · 0보다 큰 수를 적어 주세요" });
@@ -792,9 +806,11 @@ export async function writeQuoteLinesInTx(
     for (const [rowIndex, requested] of input.rows.entries()) {
       // 04-13 — 판정·저장이 보는 종류: 기존 줄은 잠근 tx로 다시 읽은 DB 행, 새 줄만 요청 값(없으면 quote).
       const current = requested.isNew ? undefined : currentById.get(requested.id);
-      const kind: QuoteLineKind = current ? lineKindOf(current) : (requested.lineKind ?? "quote");
+      const resolved = resolveLineKind(requested, current && lineKindOf(current));
+      if (resolved === null) deny(LINE_EDIT_RULE, new UserFacingError(KIND_CHANGED));
+      const kind = resolved ?? lineKindOf(current!);
       const row = normalizeForKind(requested, kind);
-      formatErrors.push(...rowFormatErrors(row, rowIndex, kind));
+      formatErrors.push(...quoteLineFormatErrors(row, rowIndex, kind));
       const payload = writePayload(row);
       const customFields = customFieldsSchema.parse(row.customFields ?? {}) as Record<string, unknown>;
       const entry = { input: row, kind, payload, customFields, unchanged: false };
@@ -952,7 +968,9 @@ export async function restoreQuoteLine(
   deps?: Partial<Pick<QuoteLineWriteDeps, "can" | "now" | "afterLock" | "recordAction">>,
 ): Promise<void> {
   const canFn = deps?.can ?? defaultCan;
-  if (!(await canFn(viewer, PROJECTS_MENU, "write"))) throw new ForbiddenError("견적 줄 복원 권한이 없습니다.");
+  // 04-13(OV-2 · D-83) — 입구는 저장과 같은 두 권한 중 하나. 보관된 줄의 종류로 게이트가 가른다(조정 줄은 조정 권한만).
+  const [canWrite, canAdjust] = await Promise.all([canFn(viewer, PROJECTS_MENU, "write"), canFn(viewer, ADJUSTMENT_MENU, "write")]);
+  if (!canWrite && !canAdjust) throw new ForbiddenError("견적 줄 복원 권한이 없습니다.");
   const line = await repoFindQuoteLineById(viewer, id);
   const revision = line ? await repoFindQuoteRevisionById(viewer, line.revisionId) : null;
   if (!line || !revision) throw new RevisionNotFoundError("대상을 찾을 수 없습니다.");
@@ -969,7 +987,7 @@ export async function restoreQuoteLine(
 
     const firstLinked = (await linkedDocumentsByLine(viewer, current.revisionId, tx)).get(id)?.[0];
     const change = { kind: "restore", quoteAmountZero: current.quoteAmountKrw === 0 } as const;
-    const actor = { lineKind: lineKindOf(current), actorCanWrite: true, actorCanAdjust: false };
+    const actor = { lineKind: lineKindOf(current), actorCanWrite: canWrite, actorCanAdjust: canAdjust };
     const ctx: ProjectLineEditCtx = firstLinked
       ? { status: projectRow.status, ...actor, hasLinkedDocuments: true, linkedDocumentNumber: firstLinked.number, change }
       : { status: projectRow.status, ...actor, hasLinkedDocuments: false, change };

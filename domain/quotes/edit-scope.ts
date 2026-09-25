@@ -49,6 +49,8 @@ function cellLevel(input: LineEditScopeInput, field: QuoteLineField): QuoteCellE
   // DR-22 — 권한 밖 조정 줄은 이유 글자 없이 잠김이다(이유 문자열은 quoteLockReason이 상태로만 만든다).
   if (input.lineKind === "adjustment") return input.canAdjust && ADJUSTMENT_EDIT_FIELDS.includes(field) ? "edit" : "locked";
   if (!input.canWrite || input.status === "completed") return "locked";
+  // 04-13(D-48) — 견적 외 비용은 견적가 0인 견적 줄이다: 수량·단가는 늘 잠김, 나머지는 견적 줄의 상태 규칙 그대로.
+  if (input.lineKind === "out_of_quote" && (field === "quantity" || field === "unitPrice")) return "locked";
   if (input.hasLinkedDocuments && LINKED_READONLY_FIELDS.includes(field)) return "readonly";
   if (input.status === "settling") {
     if (input.isNewLine) {

@@ -1,6 +1,6 @@
 import { and, desc, eq, lte } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, type DbOrTx } from "@/db/client";
 import { settingsSimple, settingsHistorized } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
@@ -21,9 +21,10 @@ export async function upsertSimpleValue(
   key: string,
   value: unknown,
   by: string | null,
+  tx: DbOrTx = db,
 ): Promise<void> {
   void viewer;
-  await db
+  await tx
     .insert(settingsSimple)
     .values({ key, value, updatedBy: by })
     .onConflictDoUpdate({

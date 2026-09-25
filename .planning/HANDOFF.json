@@ -1,10 +1,10 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-25T09:22:38.512Z",
+  "timestamp": "2026-09-25T11:13:16.912Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
-  "plan": 12,
+  "plan": 30,
   "task": null,
   "total_tasks": null,
   "status": "paused",
@@ -176,6 +176,12 @@
       "name": "[세션 S] 04-44 실행(웨이브 12) — 총 매출 예상가 칸 · 상태 모달 「기간 적기」/「기간 바꾸기」 연결 · 폰 부제 순서. executor Opus. 커밋 8f8e685·14a10f8·cd41ec0·e3c8bbe·5c7eab9·39ff3d9·7f525ce·6553c39(executor) → 검토 수정 f2cf213·8c7cdf2·f38f484·8c5d3ff·2cd962c·0307584·3561658·4a9a052(review fixes) → 66aefe4(gate record). 독립 DOM 감사 1280·1024·375 전부 PASS(/mnt/project-files/phase4-prep/04-44-dom-audit.md). Opus 검토(/mnt/project-files/phase4-prep/04-44-review-opus.md) BLOCKING 0 · SHOULD-FIX 4(전부 반영) · NIT 9(2 반영, 나머지 이월). 전체 게이트 CI=true: 단위 1130 · 통합 1178 · E2E 246 통과, lint·typecheck·lint:sql 0. Codex 재확인 한도 풀리면 필요. 진행 21/42",
       "status": "done",
       "commit": "66aefe4"
+    },
+    {
+      "id": 29,
+      "name": "[세션 T] 04-12 실행(웨이브 13) — 정산 견적 줄 칸 범위(실행가·새 줄만) · 세 단계 저장(잠근 tx 안 풀 호출 없음) · 새 줄 재전송 ON CONFLICT · 순서 · 보관/복원 tx · denyWrite. executor Opus. 커밋 80ce0b7·ba3cafd·63ee5e0·6fb63c0·1cfbb37·e13d0e4·5d490d2·37982ae → 검토 수정 d2c7ccd·7dff0a4·2932c9c·42b48c0·68b092c·aae8520·ce37af5. 독립 DOM 감사(/mnt/project-files/phase4-prep/04-12-dom-audit.md): 진행·완료·넘침 PASS, 정산 칸별 잠김 FAIL — 화면 배선은 04-30 소관(04-30-PLAN:29), 서버는 거부. Opus 검토(04-12-review-opus.md) BLOCKING 0 · SHOULD-FIX 6(S1·S2·S3·S5·S6 수정, S4는 플랜:170대로 기록) · NIT 10(1 반영). 전체 게이트 CI=true(ce37af5): 단위 1161 · 통합 1226 · E2E 246 통과, lint·typecheck·lint:sql 0. 스킬 호출 기록 /mnt/project-files/phase4-prep/04-12-skill-calls.md. Codex 재확인 한도 풀리면 필요. 진행 22/42",
+      "status": "done",
+      "commit": "ce37af5"
     }
   ],
   "remaining_tasks": [
@@ -463,7 +469,7 @@
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션 — git status -sb → /gsd-progress → /gsd-execute-phase 4로 04-12 한 플랜만(웨이브 13, 04-44 위).",
+  "next_action": "새 세션 — git status -sb → /gsd-progress → /gsd-execute-phase 4로 04-30 한 플랜만(웨이브 14, 04-12 위). 04-30은 정산 칸별 잠김 화면 배선(04-12 DOM 감사 FAIL 항목)과 DR-36(1024 미만 보기 전용) 확인을 반드시 닫는다.",
   "context_notes": "세션 S가 04-22 완료(20/42, 웨이브 11). 팀장 기간 권리는 projects.period. 실행자 Opus, 리뷰 Opus(Codex 한도로 대체 — 한도 풀리면 Codex 재확인 필요). 04-22는 머리 줄 DOM 감사를 04-44로 넘김(플랜 본문). 세션 R이 04-11 완료(19/42, 웨이브 10). 실행자 Opus. 독립 DOM 감사 6/6 PASS. Opus 검토 BLOCKING 0·SHOULD-FIX 2·NIT 9, NIT1만 f47550a로 수정·나머지 이월. 전체 게이트 CI=true 단위 1079·통합 1139·E2E 230. Codex 재확인 한도 풀리면 필요. phase-plan-index 기준 다음 runnable은 04-22(웨이브 11, deps=[04-11] 충족) — 단 팀장 projects write 권한 사용자 결정이 먼저 필요(blocking human action). 04-25에서 넘어온 열린 항목(UX-04 완료 표시, 오류/힌트 동시 셀 E2E, 하위분류 설명 배선)과 04-46 +1 단언 이월은 그대로 유효.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",

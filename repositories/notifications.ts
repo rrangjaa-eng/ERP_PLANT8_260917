@@ -1,7 +1,7 @@
-import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { withDeadlineTransaction, type DeadlineTx } from "@/db/deadline-transaction";
-import { notificationLog, notifyTickRuns } from "@/db/schema";
+import { notificationLog, notifyTickRuns, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
 // tick 잠금 키 — 저장소 안 다른 advisory lock과 겹치지 않는 값(이 리포에 다른
@@ -265,4 +265,139 @@ export async function insertTickRun(
   const [row] = await tx.insert(notifyTickRuns).values(run).returning({ id: notifyTickRuns.id });
   if (!row) throw new Error("notify_tick_runs insert가 행을 반환하지 않았습니다.");
   return row.id;
+}
+
+// ── 이메일 단계 (04.2-10, D-4203 · D-4216) ─────────────────────────────
+
+// 끝 표시·미설정 표시 트랜잭션의 클라이언트 마감 — 문장 하나 × 5초(풀 대기 5 + 5 = 10초).
+export const NOTIFY_SHORT_TX_DEADLINE_MS = 5_000;
+
+async function setEmailTxLimits(tx: NotifyTx): Promise<void> {
+  await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
+  await tx.execute(sql`SET LOCAL statement_timeout = '5s'`);
+}
+
+// D-711 · Codex #17: SMTP 미설정 — pending 전부를 skipped_no_smtp로. 발송 시도가 아니므로
+// email_attempted_at은 찍지 않는다(하루 한 통 판정에 세지 않는다).
+export async function markPendingEmailSkipped(viewer: Viewer, opts?: { deadlineMs?: number }): Promise<void> {
+  void viewer;
+  await withDeadlineTransaction(opts?.deadlineMs ?? NOTIFY_SHORT_TX_DEADLINE_MS, async (tx) => {
+    await setEmailTxLimits(tx);
+    await tx
+      .update(notificationLog)
+      .set({ emailStatus: "skipped_no_smtp" })
+      .where(eq(notificationLog.emailStatus, "pending"));
+  });
+}
+
+export type EmailBundle = {
+  recipientId: string;
+  email: string;
+  // 최신 먼저(created_at DESC, id DESC) — 알림함과 같은 순서.
+  rows: Array<{ id: number; message: string }>;
+};
+
+// D-4203: 받는 사람 한 명의 묶음을 선점한다. 알림함 삽입과 같은 tick 잠금 키를 기다리는
+// 형으로 잡아(Codex 3차 추가 #1) 미완 목록·평가 실패 표시와 행을 한 시점에서 읽는다.
+// 가장 최근 영업일 실행이 평가에 실패했으면 아무도 고르지 않는다(Codex 4차 E3).
+export async function claimNextEmailBundle(
+  viewer: Viewer,
+  opts: { runId: number; dayStart: Date; now: Date; deadlineMs?: number },
+): Promise<EmailBundle | null> {
+  void viewer;
+  return withDeadlineTransaction(opts.deadlineMs ?? NOTIFY_TX_DEADLINE_MS, async (tx) => {
+    await setEmailTxLimits(tx);
+    await tx.execute(sql`select pg_advisory_xact_lock(${NOTIFY_TICK_LOCK_KEY})`);
+
+    const latest = await tx.execute<{ incomplete_recipient_ids: string[]; evaluation_failed: boolean }>(sql`
+      select incomplete_recipient_ids, evaluation_failed
+      from notify_tick_runs
+      where business_day = true
+      order by id desc
+      limit 1
+    `);
+    const run = latest.rows[0];
+    if (run?.evaluation_failed) return null;
+    const incomplete = run?.incomplete_recipient_ids ?? [];
+
+    const claimed = await tx.execute<{ id: number; recipient_id: string; message: string }>(sql`
+      with target as (
+        select n.recipient_id
+        from notification_log n
+        join users u on u.id = n.recipient_id
+        where n.email_status = 'pending'
+          and u.archived_at is null
+          and not (n.recipient_id = any(${sql.param(incomplete)}::text[]))
+          and not exists (
+            select 1 from notification_log t
+            where t.recipient_id = n.recipient_id
+              and t.email_attempted_at >= ${opts.dayStart.toISOString()}::timestamp
+              and t.email_status in ('sending', 'sent', 'failed', 'unknown')
+          )
+        order by n.created_at, n.id
+        limit 1
+      ),
+      claimed as (
+        update notification_log
+        set email_status = 'sending', email_attempted_at = ${opts.now.toISOString()}::timestamp
+        where recipient_id = (select recipient_id from target)
+          and email_status = 'pending'
+        returning id, recipient_id, message, created_at
+      )
+      select id, recipient_id, message from claimed order by created_at desc, id desc
+    `);
+    const first = claimed.rows[0];
+    if (!first) return null;
+
+    await tx
+      .update(notifyTickRuns)
+      .set({ emailClaimed: sql`${notifyTickRuns.emailClaimed} + 1` })
+      .where(eq(notifyTickRuns.id, opts.runId));
+    const [user] = await tx.select({ email: users.email }).from(users).where(eq(users.id, first.recipient_id));
+    if (!user) throw new Error("claimNextEmailBundle: 받는 사람 행이 없습니다.");
+
+    return {
+      recipientId: first.recipient_id,
+      email: user.email,
+      rows: claimed.rows.map((row) => ({ id: Number(row.id), message: row.message })),
+    };
+  });
+}
+
+export type EmailOutcome = "sent" | "failed" | "unknown";
+
+// D-4216: 선점한 행의 결과와 실행 기록 건수를 한 트랜잭션으로 기록한다.
+export async function recordEmailOutcome(
+  viewer: Viewer,
+  opts: { runId: number; ids: readonly number[]; outcome: EmailOutcome; deadlineMs?: number },
+): Promise<void> {
+  void viewer;
+  const increment =
+    opts.outcome === "sent"
+      ? { emailSent: sql`${notifyTickRuns.emailSent} + 1` }
+      : opts.outcome === "failed"
+        ? { emailFailed: sql`${notifyTickRuns.emailFailed} + 1` }
+        : { emailUnknown: sql`${notifyTickRuns.emailUnknown} + 1` };
+  await withDeadlineTransaction(opts.deadlineMs ?? NOTIFY_TX_DEADLINE_MS, async (tx) => {
+    await setEmailTxLimits(tx);
+    await tx
+      .update(notificationLog)
+      .set({ emailStatus: opts.outcome })
+      .where(and(inArray(notificationLog.id, [...opts.ids]), eq(notificationLog.emailStatus, "sending")));
+    await tx
+      .update(notifyTickRuns)
+      .set(increment)
+      .where(eq(notifyTickRuns.id, opts.runId));
+  });
+}
+
+export async function finishEmailPhase(
+  viewer: Viewer,
+  opts: { runId: number; now: Date; deadlineMs?: number },
+): Promise<void> {
+  void viewer;
+  await withDeadlineTransaction(opts.deadlineMs ?? NOTIFY_SHORT_TX_DEADLINE_MS, async (tx) => {
+    await setEmailTxLimits(tx);
+    await tx.update(notifyTickRuns).set({ emailFinishedAt: opts.now }).where(eq(notifyTickRuns.id, opts.runId));
+  });
 }

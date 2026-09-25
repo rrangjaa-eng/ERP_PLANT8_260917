@@ -14,6 +14,11 @@ import * as schema from "./schema";
 // closeDb()가 닫을 수 있게 모듈 수준에 들고 있는다.
 let connector: Connector | null = null;
 
+// Phase 4(04-32, ENG-D3 ①): 풀이 비어 연결을 얻지 못하면 무한히 기다리지
+// 않는다 — 5초 뒤 실패시켜 lib/db-transaction.ts가 UserFacing 오류로 바꿀 수
+// 있게 한다(풀 대기 무한 방지).
+const POOL_CONNECTION_TIMEOUT_MS = 5000;
+
 async function createPool(): Promise<Pool> {
   if (env.CLOUD_SQL_CONNECTION_NAME) {
     connector = new Connector();
@@ -27,11 +32,13 @@ async function createPool(): Promise<Pool> {
       user: env.DB_IAM_USER,
       database: env.DB_NAME,
       max: env.DB_POOL_MAX,
+      connectionTimeoutMillis: POOL_CONNECTION_TIMEOUT_MS,
     });
   }
   return new Pool({
     connectionString: env.DATABASE_URL,
     max: env.DB_POOL_MAX,
+    connectionTimeoutMillis: POOL_CONNECTION_TIMEOUT_MS,
   });
 }
 

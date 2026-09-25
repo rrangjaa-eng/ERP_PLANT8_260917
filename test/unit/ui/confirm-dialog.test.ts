@@ -121,6 +121,15 @@ describe("ConfirmDialog — 정적 렌더(슬롯 · 파생 라벨 · 막힌 1차
     expect(html).not.toContain("Ctrl+Enter");
   });
 
+  it("목록형(options)도 2차 `취소 Esc`가 있다 — UI-SPEC rev 5 Copywriting 「상태 고르기 목록」(04-21)", () => {
+    const html = render({
+      title: "상태 바꾸기",
+      secondaryLabel: "취소",
+      options: [{ label: "진행", onSelect: () => {} }],
+    });
+    expect(html).toMatch(/<button[^>]*><span>취소<\/span><kbd[^>]*>Esc<\/kbd><\/button>/);
+  });
+
   it("폰 머리의 닫기 x에 aria-label=\"닫기\"가 있다", () => {
     const html = render({
       title: "견적 줄 삭제",

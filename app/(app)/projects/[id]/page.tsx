@@ -8,7 +8,6 @@ import { getCurrentQuoteRevision, listQuoteLines } from "@/domain/quotes/lines";
 import { listRevenue } from "@/domain/revenue";
 import { recentFxRate } from "@/domain/money/currency";
 import { lineCellEditability } from "@/domain/quotes/edit-scope";
-import "@/domain/rules/register";
 import {
   actorCoversProjectTeam,
   isEndDatePassed,

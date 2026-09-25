@@ -798,6 +798,16 @@ async function fillLinesBySql(projectId: string, count: number) {
   `);
 }
 
+// 300줄 표에서는 Playwright의 `:has()` 엔진(dataRows)이 행 수 한 번에 약 49초가 걸린다(브라우저 querySelectorAll은
+// 6ms — 실측). 상한 케이스는 브라우저가 직접 평가하는 XPath로 행·칸을 찾는다(같은 행·같은 칸 순서).
+function capRows(page: Page): Locator {
+  return page.locator('xpath=//tbody/tr[td[@role="gridcell"]]');
+}
+
+function capCell(page: Page, rowIndex: number, colIndex: number): Locator {
+  return capRows(page).nth(rowIndex).locator('xpath=./td[@role="gridcell"]').nth(colIndex);
+}
+
 async function openCappedAsPm(page: Page, lineCount: number) {
   const team = await makeTeam();
   const pm = await makeAccount(DEFAULT_ROLE_ID, team);
@@ -806,15 +816,12 @@ async function openCappedAsPm(page: Page, lineCount: number) {
   await login(page, pm);
   await page.goto(`/projects/${project.id}`);
   await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
-  // dev 서버에서 300줄 수화가 메인 스레드를 수 초 붙잡는다 — 이 한 번만 한도를 넓혀 행 수를 확인한 뒤 나머지를 단언한다.
-  await expect(dataRows(page)).toHaveCount(lineCount, { timeout: 60_000 });
+  await expect(capRows(page)).toHaveCount(lineCount);
   return project;
 }
 
 test.describe("줄 수 상한 (04-26, D-86 · UX-04 · UX-05)", () => {
   test("(cap1) 줄 300(기본 상한) — 「줄 추가」가 aria-disabled이고 이유 한 줄을 aria-describedby로 가리킨다", async ({ page }) => {
-    // 300줄 상세는 dev 서버에서 30초 한도를 넘는다(실측 약 45초) — 시간 수치는 단언하지 않는다(ENG-D3 ②).
-    test.slow();
     await openCappedAsPm(page, 300);
 
     const addButton = page.getByRole("button", { name: "줄 추가", exact: true });
@@ -824,5 +831,45 @@ test.describe("줄 수 상한 (04-26, D-86 · UX-04 · UX-05)", () => {
     const reasonId = await reason.getAttribute("id");
     expect(reasonId).toBeTruthy();
     expect((await addButton.getAttribute("aria-describedby"))?.split(" ")).toContain(reasonId);
+  });
+
+  test("(cap2) 줄 300에서 Ctrl+Enter·Ctrl+D는 줄을 만들지 않고 합계 행에 상한 이유를 적으며, 다음 저장 시도 뒤 그 글자가 없다", async ({ page }) => {
+    await openCappedAsPm(page, 300);
+    const footerNotice = page.locator("tfoot").getByText(CAP_REASON, { exact: true });
+
+    await capCell(page, 0, COL.itemName).focus();
+    await page.keyboard.press("Control+Enter");
+    await expect(footerNotice).toBeVisible();
+    await expect(capRows(page)).toHaveCount(300);
+
+    await capCell(page, 0, COL.itemName).focus();
+    await page.keyboard.press("Control+d");
+    await expect(footerNotice).toBeVisible();
+    await expect(capRows(page)).toHaveCount(300);
+    await expect(primarySave(page)).toHaveAttribute("aria-disabled", "true");
+
+    await typeInto(page, capCell(page, 0, COL.execution), "실행가", "700");
+    await saveWithKeyboard(page, capCell(page, 0, COL.itemName));
+    await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
+    await expect(footerNotice).toHaveCount(0);
+  });
+
+  test("(cap3) 줄 299의 마지막 줄에 세 줄짜리 TSV를 붙여 넣으면 한 칸도 바뀌지 않고 합계 행에 전부 거부 이유가 나오며, 다음 붙여넣기 때 사라진다", async ({ page }) => {
+    await openCappedAsPm(page, 299);
+    const lastItem = capCell(page, 298, COL.itemName);
+    await expect(lastItem).toHaveText("상한 줄 299");
+    const pasteNotice = page.locator("tfoot").getByText("붙여넣기 전부 거부 · 300줄 상한을 1줄 넘음", { exact: true });
+
+    await lastItem.focus();
+    await pasteIntoFocusedCell(page, "붙인 1\n붙인 2\n붙인 3");
+    await expect(pasteNotice).toBeVisible();
+    await expect(capRows(page)).toHaveCount(299);
+    await expect(lastItem).toHaveText("상한 줄 299");
+    await expect(primarySave(page)).toHaveAttribute("aria-disabled", "true");
+
+    await lastItem.focus();
+    await pasteIntoFocusedCell(page, "붙인 하나");
+    await expect(lastItem).toHaveText("붙인 하나");
+    await expect(pasteNotice).toHaveCount(0);
   });
 });

@@ -63,6 +63,28 @@ created: "2026-09-24"
 
 *(10개 행, 06-RESEARCH.md § Validation Architecture § Phase Requirements → Test Map을 그대로 옮김 — 새 테스트를 임의로 추가하지 않음)*
 
+### 「동시 6건」 — 커넥션 풀 교착 회귀 신호 (plan-eng-review 반영 · ENG E-1 · E-2 · CROSS E-1 · E-2 · E-3)
+
+규약: 「동시 6건」 = `Promise.all` 6건(`DB_POOL_MAX` 기본 5 초과 — `lib/env.ts:54`, 테스트는 `pool.options.max`를 읽는다). 판정 = 10초 제한 안에 모두 끝남 + 결과 정합. 각 플랜은 **RED를 먼저** 본다 — 트랜잭션 전 사전 조회(세율 · 서식 · 권한 · 강행 허용 설정)를 임시로 트랜잭션 콜백 안으로 되돌리면 타임아웃으로 빨갛고, 되돌린 뒤 녹색이다(SUMMARY에 RED · GREEN 한 줄씩). 근거 규약은 06-03 must_haves의 「tx 규약」(global-db-in-tx-audit, PR #75 · #77).
+
+| Plan · Task | Wave | 테스트 이름 | 파일 | Automated Command | 결과 정합 | File Exists |
+|-------------|------|-------------|------|-------------------|-----------|-------------|
+| 06-03 Task 2 | 2 | 「지급 완료 동시 6건」 | `test/integration/expense-payments-concurrency.test.ts`(신규) | `pnpm db:dev && pnpm vitest run --project integration test/integration/expense-payments-concurrency.test.ts` | 서로 다른 결재 통과 문서 6건 모두 지급 · 살아 있는 지급 기록 6건 · version 각 +1. PR #75 결정적 재현 꼴(풀 밖 `pg` Client가 행을 먼저 잠그고 `pg_blocking_pids`로 풀 전체가 막힌 것을 확인한 뒤 풂). 06-04 T2 · T3, 06-06 T3, 06-10 T2, 06-13(지급 경로에 견적 줄 잠금을 넣는 플랜 — CROSS-R1 B-1), 06-15 T1이 다시 돌린다 | ❌ W2 |
+| 06-08 Task 2 | 5 | 「동시 6건 번호 경합」 | `test/integration/purchase-requests.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/purchase-requests.test.ts -t "동시 6건 번호 경합"` | 같은 줄 구매 요청 6건 · 서로 다른 번호 6개 | ❌ W5 |
+| 06-12 Task 2 | 7 | 「구매 완료 동시 6건」 | `test/integration/purchase-requests.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/purchase-requests.test.ts -t "구매 완료 동시 6건"` | 하나만 성공 · 다섯 `이미 구매 완료 · 새로 고침` · 카드 사용 1건 | ❌ W7 |
+| 06-19 Task 1 | 10 | 「기안 동시 6건」 | `test/integration/pre-settle-check.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/pre-settle-check.test.ts -t "기안 동시 6건"` | 막힘 0 프로젝트 6개 기안 모두 끝남 | ❌ W10 |
+| 06-22 Task 1 | 11 | 「승인 동시 6건」 | `test/integration/pre-settle-check.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/pre-settle-check.test.ts -t "승인 동시 6건"` | 막힘 0 정산 결재 6건 승인 모두 끝남 | ❌ W11 |
+
+같은 검토에서 나온 동시성 · 멱등 · 사전 조회 신호(동시 6건 아님):
+
+| Plan · Task | 테스트 이름 | 파일 | Automated Command | File Exists |
+|-------------|-------------|------|-------------------|-------------|
+| 06-04 Task 3 (CROSS R-3) | 「잠금 뒤 게이트 재판정」 | `test/integration/expense-payments.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/expense-payments.test.ts -t "잠금 뒤 게이트 재판정"` | ❌ W3 |
+| 06-15 Task 2 (ENG E-5) | 「같은 요청 재전송 → 0건 추가 지급」 | `test/integration/payment-batch.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/payment-batch.test.ts -t "같은 요청 재전송"` | ❌ W8 |
+| 06-15 Task 2 (CROSS-R1 F-4 · CHK-R1 W1) | 「목록 지급 총액 = 단건 재계산」 · 「세율 읽기 횟수」 | `test/integration/payment-batch.test.ts` | `pnpm db:dev && pnpm vitest run --project integration test/integration/payment-batch.test.ts -t "목록 지급 총액"` | ❌ W8 |
+| 06-03 Task 1 (ENG E-2 · CROSS E-1) | `loadTaxRates` · `taxRatesReader` 단위(사전 조회 값만 읽고, 없는 기준일은 던진다) | `test/unit/domain/money-tax.test.ts`(기존 파일 확장) | `pnpm vitest run --project unit test/unit/domain/money-tax.test.ts` | ✅ 파일 있음 · 케이스 W2 |
+| 06-07 Task 1 (CROSS E-5) | `lockQuoteLinesQuery(...).toSQL()`에 `order by "quote_lines"."id"` + `for update` | `test/unit/repositories/quote-line-links-sql.test.ts`(신규) | `pnpm vitest run --project unit test/unit/repositories/quote-line-links-sql.test.ts` | ❌ W4 |
+
 ---
 
 ## Wave 0 Requirements

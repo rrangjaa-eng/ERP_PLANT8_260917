@@ -711,7 +711,7 @@ describe("보관·취소(D-56·A-04)", () => {
     expect((await reloadLine(line.id)).itemName).toBe("보관될 줄");
   });
 
-  it("(m) 버전 충돌로 거부된 배치에서는 함께 실은 보관도 일어나지 않는다", async () => {
+  it("(m) 버전 충돌로 거부된 배치에서는 함께 실은 보관도 일어나지 않고, 보관 뒤 같은 tx의 로그가 실패해도 보관이 되돌아간다", async () => {
     const { project, revision, subcategoryValue } = await setupProject();
     const toArchive = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "보관 시도" });
     const stale = await seedLine(revision.id, subcategoryValue, { sortOrder: 1, itemName: "낡은 줄" });
@@ -723,6 +723,12 @@ describe("보관·취소(D-56·A-04)", () => {
         quoteLines: { revisionId: revision.id, rows: [asInput(stale, { itemName: "고침" })], archivedLineIds: [toArchive.id] },
       }),
     ).rejects.toBeInstanceOf(SaveRejectedError);
+    expect((await reloadLine(toArchive.id)).archivedAt).toBeNull();
+
+    // 사전 판정을 통과해 보관 단계까지 간 뒤 로그(같은 tx)가 실패하면 보관도 되돌아간다 — 보관이 tx 밖이면 빨강(검토 S6).
+    await expect(
+      saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [], archivedLineIds: [toArchive.id] }, { recordAction: () => Promise.reject(new Error("로그 실패")) }),
+    ).rejects.toThrow("로그 실패");
     expect((await reloadLine(toArchive.id)).archivedAt).toBeNull();
   });
 

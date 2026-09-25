@@ -298,3 +298,15 @@ None - no external service configuration required.
 
 - 생성 파일 5개 존재: `domain/projects/auto-transition.ts` · `domain/projects/responsibles.ts` · `test/unit/domain/auto-transition.test.ts` · `test/integration/project-auto-settlement.test.ts` · `test/e2e/project-period.spec.ts`
 - 커밋 6개 이력에 있음: `aa0a7df` · `bf8fc47` · `96433ce` · `d5d5a59` · `23abcd4` · `371a94b`
+
+## 실행 후 검증 (Post-execution verification)
+
+- **독립 DOM 감사 6/6 PASS** — 1280·1024·375 × 팀장·담당 PM 시점, `CI=true`(프로덕션 빌드) DOM 실측. 가로 넘침 0, 375 순서(h1 ≤ 태그/글자 ≤ 첫 버튼) 통과, 토큰 일치. 수정 없음(`project-detail.module.css` 그대로). 파일: `/mnt/project-files/phase4-prep/04-11-dom-audit.md`
+- **Opus 코드 리뷰** — BLOCKING 0 · SHOULD-FIX 2 · NIT 9. 파일: `/mnt/project-files/phase4-prep/04-11-review-opus.md`
+  - S1(잘못된 id의 HTTP 404): 아래 soft-404 결정 참고.
+  - S2(화면 게이트 미완): 위 DOM 감사와 아래 전체 게이트로 닫음.
+  - NIT 1 고침: `loadProjectForGate`의 조건부 UPDATE가 0행이면 상태 변경 로그를 남기지 않고 던져 호출자 tx를 되돌린다(쓰기 경로 fail-closed — 읽기 경로 실패 격리 A-15는 `applyAutoSettlement`에만 해당해 그대로). RED 확인 후 고침: `5b32bb6` test · `f47550a` fix.
+  - NIT 2–9 보류(기록만): 2 scope 확인이 `none`까지만 · 3 `teamLeadCandidatesAtDate`의 쓰이지 않는 `tx?` · 4 `pmName` 조회 1회 낭비 · 5 보관 계급 미필터 · 6 SQL 안 `'project'` 리터럴 중복 · 7 게이트 미적용 쓰기 경로(`saveProjectLedger` — 04-12/04-22/04-14 몫, 머지 묶음 ② PR 전에 grep 확인) · 8 `captureLogLines`의 전 줄 `JSON.parse` · 9 상세 GET의 짧은 쓰기 tx.
+- **soft-404 결정:** 잘못된 id는 404 화면+noindex, HTTP 200 — loading.tsx 스트리밍 제약(Next 16 not-found.md·loading.md). 사용자 결정 카드 올림, 답 전까지 추천안(지금대로)으로 진행.
+- **전체 게이트(1회, 수정 후):** `pnpm lint && pnpm typecheck && pnpm lint:sql` 통과(squawk 0 issues) · `CI=true` 단위 88 파일/1079 통과 · 통합 46 파일/1139 통과 · E2E 230 통과(3.7m). 실패 0.
+- **한도 풀리면 Codex 재확인 필요.**

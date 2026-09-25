@@ -202,6 +202,55 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     expect(row?.endDate).toBe(secondEnd);
   });
 
+  test("(3b) 상태를 바꾼 기간 저장 뒤 새로 고침(router.refresh)이 오기 전의 둘째 저장도 「상태가 바뀜」으로 거부되지 않는다(리뷰 S5)", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const lead = await makeAccount("role-team-lead", team, `팀장${randomUUID().slice(0, 6)}`);
+    const endDate = addDays(TODAY, -1);
+    const startDate = addDays(endDate, -3);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "settling", endDate });
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await expect(headerTag(page, "정산")).toBeVisible();
+
+    // router.refresh()의 RSC 요청을 붙잡아 둔다 — 화면이 저장 결과만으로 둘째 저장을 보내는지 본다.
+    let releaseRefresh = () => {};
+    const refreshHeld = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    await page.route(`**/projects/${project.id}**`, async (route) => {
+      const request = route.request();
+      if (request.method() === "GET" && (request.headers()["rsc"] === "1" || request.url().includes("_rsc="))) {
+        await refreshHeld;
+      }
+      await route.continue();
+    });
+
+    const firstEnd = addDays(TODAY, 7);
+    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    await page.getByLabel("종료일").fill(firstEnd);
+    const firstSave = waitForSaveAction(page);
+    await page.getByRole("button", { name: /일괄 저장 1/ }).click();
+    await firstSave;
+    await expect(page.getByText(`기간 ${startDate} ~ ${firstEnd}`, { exact: true })).toBeVisible();
+
+    const secondEnd = addDays(TODAY, 9);
+    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    await page.getByLabel("종료일").fill(secondEnd);
+    const secondSave = waitForSaveAction(page);
+    await page.getByRole("button", { name: /일괄 저장 1/ }).click();
+    await secondSave;
+
+    const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
+    expect(row?.status).toBe("in_progress");
+    expect(row?.endDate).toBe(secondEnd);
+    await expect(page.getByText(/상태가 .+로 바뀜/)).toHaveCount(0);
+
+    releaseRefresh();
+    await page.unroute(`**/projects/${project.id}**`);
+  });
+
   test("(4) 진행의 담당 PM이 종료일을 어제로 앞당기면 칸 아래 「앞당기기는 팀장 {이름}」 + 표 합계 행 「전부 거부 · 다른 칸 오류 1칸」", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team);

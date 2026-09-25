@@ -248,7 +248,7 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     await expect(page.getByText(/상태가 .+로 바뀜/)).toHaveCount(0);
 
     releaseRefresh();
-    await page.unroute(`**/projects/${project.id}**`);
+    await expect(headerTag(page, "진행")).toBeVisible();
   });
 
   test("(4) 진행의 담당 PM이 종료일을 어제로 앞당기면 칸 아래 「앞당기기는 팀장 {이름}」 + 표 합계 행 「전부 거부 · 다른 칸 오류 1칸」", async ({ page }) => {

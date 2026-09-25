@@ -78,14 +78,17 @@ async function hasTokenColor(locator: Locator, token: string): Promise<boolean> 
 }
 
 test.describe("날짜로 움직이는 상세 (04-11, PROJ-04)", () => {
-  test("(0) 잘못된 모양의 id와 없는 uuid는 둘 다 404이고 오류 화면이 아니다 (PR #38 /qa)", async ({ page }) => {
+  // app/(app)/projects/loading.tsx가 이 세그먼트를 Suspense로 감싸 응답이 200으로 먼저 흐른다 —
+  // notFound()는 상태 코드를 바꾸지 못하고 404 화면 + noindex(soft 404)가 된다
+  // (node_modules/next/dist/docs/01-app/03-api-reference/04-functions/not-found.md 「status code」).
+  test("(0) 잘못된 모양의 id와 없는 uuid는 둘 다 404 화면(noindex)이고 오류 화면이 아니다 (PR #38 /qa)", async ({ page }) => {
     const pm = await makeAccount(DEFAULT_ROLE_ID, await makeTeam());
     await login(page, pm);
 
     for (const path of ["/projects/abc", `/projects/${randomUUID()}`]) {
-      const response = await page.goto(path);
-      expect(response?.status()).toBe(404);
+      await page.goto(path);
       await expect(page.getByRole("heading", { name: "페이지를 찾을 수 없습니다" })).toBeVisible();
+      await expect(page.locator('meta[name="robots"][content*="noindex"]').first()).toBeAttached();
       await expect(page.getByRole("heading", { name: "문제가 생겼습니다" })).toHaveCount(0);
     }
   });

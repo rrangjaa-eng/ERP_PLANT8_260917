@@ -1,7 +1,7 @@
-import { and, asc, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
-import { projects, quoteLines, quoteRevisions, teams, users, vendors } from "@/db/schema";
+import { actionLog, projects, quoteLines, quoteRevisions, teams, users, vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { Scope } from "@/domain/permissions/scope-for";
 import type { DbOrTx } from "@/repositories/document-counters";
@@ -329,4 +329,49 @@ export async function updateProjectStatusIfCurrent(
     .where(and(eq(projects.id, id), eq(projects.status, input.expectedStatus)))
     .returning();
   return row ?? null;
+}
+
+export type SettledProjectRow = { id: string; endDate: string; lastChangeAt: Date | null };
+
+// 04-11(D-76 · OV-5 · Pitfall 7): 종료일이 지난 from 상태 프로젝트를 to로 바꾼다. 대상은
+// FOR UPDATE SKIP LOCKED 하위 선택으로 잠근다 — 누가 저장·전환으로 잡은 행은 기다리지
+// 않고 건너뛴다(그 쓰기가 자기 잠금 안에서 같은 판정을 한다). 오늘(KST)은 인자로만
+// 받는다 — DB의 현재 날짜·서버 시간대를 쓰지 않는다. 바뀐 행마다 그 프로젝트의 직전
+// status_change 시각(발효일 계산용)을 같은 문장에서 돌려준다.
+export async function settleOverdueProjects(
+  viewer: Viewer,
+  input: { todayKst: string; projectIds?: string[]; from: string; to: string },
+  tx: DbOrTx,
+): Promise<SettledProjectRow[]> {
+  void viewer;
+  const targets = tx
+    .select({ id: projects.id })
+    .from(projects)
+    .where(
+      and(
+        eq(projects.status, input.from),
+        isNotNull(projects.endDate),
+        lt(projects.endDate, input.todayKst),
+        isNull(projects.archivedAt),
+        input.projectIds ? inArray(projects.id, input.projectIds) : undefined,
+      ),
+    )
+    .for("update", { skipLocked: true });
+
+  const rows = await tx
+    .update(projects)
+    .set({ status: input.to, version: sql`${projects.version} + 1`, updatedAt: new Date() })
+    .where(and(inArray(projects.id, targets), eq(projects.status, input.from)))
+    .returning({
+      id: projects.id,
+      endDate: projects.endDate,
+      lastChangeAt: sql<Date | null>`(
+        select max(${actionLog.occurredAt}) from ${actionLog}
+        where ${actionLog.entity} = 'project'
+          and ${actionLog.entityId} = ${projects.id}::text
+          and ${actionLog.actionType} = 'status_change'
+      )`.mapWith(actionLog.occurredAt),
+    });
+  // 하위 선택이 종료일 없는 행을 거르므로 endDate는 항상 있다 — 타입만 좁힌다.
+  return rows.flatMap((row) => (row.endDate === null ? [] : [{ id: row.id, endDate: row.endDate, lastChangeAt: row.lastChangeAt }]));
 }

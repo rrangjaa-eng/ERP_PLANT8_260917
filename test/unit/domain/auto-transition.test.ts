@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { DbOrTx } from "@/db/client";
+import type { DbOrTx } from "@/repositories/document-counters";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import type { RecordActionEntry } from "@/domain/action-log/record";
 import { applyAutoSettlement, effectiveOnFor, type AutoSettlementDeps } from "@/domain/projects/auto-transition";
@@ -29,7 +29,7 @@ function makeStore(initial: FakeProject[]) {
     return result;
   };
 
-  const settle: AutoSettlementDeps["settle"] = async (_viewer, input) => {
+  const settle: AutoSettlementDeps["settle"] = (_viewer, input) => {
     const targets = working.filter(
       (project) =>
         project.status === input.from &&
@@ -38,11 +38,14 @@ function makeStore(initial: FakeProject[]) {
         (input.projectIds === undefined || input.projectIds.includes(project.id)),
     );
     for (const project of targets) project.status = input.to;
-    return targets.map((project) => ({ id: project.id, endDate: project.endDate ?? "", lastChangeAt: project.lastChangeAt }));
+    return Promise.resolve(
+      targets.map((project) => ({ id: project.id, endDate: project.endDate ?? "", lastChangeAt: project.lastChangeAt })),
+    );
   };
 
-  const recordAction: AutoSettlementDeps["recordAction"] = async (viewer, entry) => {
+  const recordAction: AutoSettlementDeps["recordAction"] = (viewer, entry) => {
     workingLogs.push({ viewer, entry });
+    return Promise.resolve();
   };
 
   return {

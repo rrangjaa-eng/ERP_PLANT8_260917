@@ -19,3 +19,6 @@ export const ALLOWED_TRANSITIONS: readonly ProjectStatusTransition[] = [
   { from: "lost", to: "in_progress", menu: "projects.status" },
   { from: "settling", to: "completed", menu: "projects.complete" },
 ];
+
+// 04-11(D-76) — 날짜로 일어나는 자동 전환. 종료일 다음 날(KST)부터 진행은 정산이다.
+export const AUTO_TRANSITIONS = [{ from: "in_progress", to: "settling", trigger: "end_date_passed" }] as const;

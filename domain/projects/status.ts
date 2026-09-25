@@ -228,10 +228,16 @@ async function loadActorFacts(viewer: Viewer, deps?: Partial<StatusChangeFactDep
 // ── 마지막 상태 변경일(D-50 · S3 부제) ──────────────────────────────────────
 // 최신 status_change 로그 한 줄의 KST 날짜, 없으면 등록일. 이력 표를 만들지 않는다 —
 // 행위자도 싣지 않는다(T-04-39: 사람별 집계 화면이 되지 않게).
+// 04-11(D-76 · UI-SPEC S3): 자동 정산 로그는 판정이 돈 날이 아니라 detail의 발효일을 쓴다.
 type LatestActionFinder = (
   viewer: Viewer,
   query: { entity: string; entityId: string; actionType: string },
-) => Promise<{ occurredAt: Date } | null>;
+) => Promise<{ occurredAt: Date; detail?: unknown } | null>;
+
+function effectiveOnOf(detail: unknown): string | null {
+  const value = (detail as { effectiveOn?: unknown } | null | undefined)?.effectiveOn;
+  return typeof value === "string" ? value : null;
+}
 
 export async function lastStatusChangeOn(
   viewer: Viewer,
@@ -240,7 +246,8 @@ export async function lastStatusChangeOn(
 ): Promise<string> {
   const findLatest = deps?.findLatestActionFor ?? defaultFindLatestActionFor;
   const latest = await findLatest(viewer, { entity: PROJECT_ENTITY, entityId: project.id, actionType: "status_change" });
-  return kstDateOf(latest?.occurredAt ?? project.createdAt);
+  if (latest) return effectiveOnOf(latest.detail) ?? kstDateOf(latest.occurredAt);
+  return kstDateOf(project.createdAt);
 }
 
 // ── 전환 ───────────────────────────────────────────────────────────────────

@@ -9,6 +9,7 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { buildCustomFieldsSchema, type FieldDefType } from "@/domain/custom-fields/build-schema";
 import { allocateDocumentNumber, loadDocumentNumberFormat } from "@/domain/document-numbering";
 import { withTransaction } from "@/lib/db-transaction";
+import { applyAutoSettlement, type AutoSettlementDeps } from "@/domain/projects/auto-transition";
 import {
   listProjectsPage as repoListProjectsPage,
   aggregateProjects as repoAggregateProjects,
@@ -213,9 +214,22 @@ export async function aggregateProjects(
   };
 }
 
-export async function findProject(viewer: Viewer, id: string): Promise<ProjectDto | null> {
+// 프로젝트 id는 uuid다 — 모양이 아니면 쿼리 전에 「없음」(22P02로 오류 화면이 되지 않게, PR #38 /qa).
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// 04-11(D-76 · 엔지 리뷰 A P3): 행 범위와 id 모양을 확인한 뒤에만 자동 정산을 판정한다 —
+// 보기 권한 없는 요청과 틀린 URL id는 쓰기도 실패 로그도 만들지 않는다. 판정 실패는
+// applyAutoSettlement가 로그만 남기고 삼킨다(읽기는 저장된 상태로 계속된다).
+export async function findProject(
+  viewer: Viewer,
+  id: string,
+  deps?: { autoSettlement?: Partial<AutoSettlementDeps> },
+): Promise<ProjectDto | null> {
   const scope = await scopeFor(viewer, PROJECT_ENTITY);
   if (scope.rows === "none") return null;
+  if (!UUID_SHAPE.test(id)) return null;
+
+  await applyAutoSettlement({ projectIds: [id] }, deps?.autoSettlement);
 
   const row = await repoFindProjectById(viewer, id);
   if (!row) return null;

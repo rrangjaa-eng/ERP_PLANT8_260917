@@ -5,10 +5,10 @@ current_phase_name: 프로젝트·견적 원장
 current_plan: 3
 status: executing
 stopped_at: Completed 04-11-PLAN.md
-last_updated: "2026-09-25T04:58:07.545Z"
+last_updated: "2026-09-25T06:31:51.794Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 04 execution started
-state_head: 6f851f1328a2210bd0c6d134b1442de92c5a4716
+state_head: cc33b85463d65e2e1cdd6cdfe1eca213862cf922
 progress:
   total_phases: 16
   completed_phases: 1
@@ -217,6 +217,7 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-20: Phase 5 결재 호출자는 loadStatusChangeFacts로 사실을 트랜잭션 전에 읽어 deps.facts·deps.tx로 changeProjectStatus를 부른다
 - [Phase 04]: 04-11: 잘못된 id 상세는 soft 404(HTTP 200 + noindex) — projects/loading.tsx 스트리밍 탓, 진짜 404는 loading 재배치·proxy 사용자 결정 필요
 - [Phase 04]: 04-11: 쓰기 경로는 lockProjectForWrite 대신 loadProjectForGate(잠금 안 자동 정산 판정, fail-closed), 목록은 settleForProjectList 요청당 한 번
+- [Phase 4]: 04-22 팀장 기간 권리: 팀장(팀장 이상)은 프로젝트 시작일·종료일만 고칠 수 있는 별도 권한을 받는다. projects 쓰기 전체는 주지 않으며 견적 줄 등 나머지 수정은 지금처럼 막힌다 — 사용자 결정 2026-09-25 15:29 KST(04-21 스레드 카드 「기간만 수정」) — 04-20 시드가 팀장에게 projects.view·projects.status 쓰기만 줘서 04-22 종료일 흐름(CEO-D13)이 막혔고, 가장 좁은 권한을 택함. 기각: projects 쓰기 전체 부여 / 현행 유지
 
 ### Pending Todos
 

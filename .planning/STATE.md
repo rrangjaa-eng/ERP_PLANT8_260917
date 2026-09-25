@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 current_phase: 4
-current_phase_name: 프로젝트·견적 원장
-current_plan: 4
+current_phase_name: project-quote-ledger
+current_plan: 2
 status: executing
-stopped_at: Completed 04-12-PLAN.md
-last_updated: "2026-09-25T10:38:19.412Z"
+stopped_at: Completed 04-30-PLAN.md
+last_updated: "2026-09-25T11:57:58.221Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 4 execution started
-state_head: 5d490d2b07509dfc12a867e3a3543d00f703820c
+state_head: ed68368b134f9e0406a63e6ab0c606bf9a9022fd
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 115
-  completed_plans: 45
+  completed_plans: 46
   percent: 6
 ---
 
@@ -24,12 +24,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-17)
 
 **Core value:** 기획본부와 경영관리본부가 프로젝트마다 같은 숫자(견적·예상 비용·확정 비용·손익)를 본다. 기획본부는 계산식·근거 없이 결과 숫자로 납득하고, 경영관리·대표는 근거 줄까지 본다.
-**Current focus:** Phase 4 — 프로젝트·견적 원장
+**Current focus:** Phase 4 — project-quote-ledger
 
 ## Current Position
 
-Phase: 4 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 4
+Phase: 4 (project-quote-ledger) — EXECUTING
+Current Plan: 2
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-25 — Phase 4 execution started
@@ -94,6 +94,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P11 | 32 min | 3 tasks | 14 files |
 | Phase 04 P44 | 39min | 3 tasks | 14 files |
 | Phase 04 P12 | 78min | 3 tasks | 30 files |
+| Phase 04 P30 | 39min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -225,6 +226,10 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-12: 정산 새 줄의 견적 칸 0 = 원화 단가 0 · 수량 없음 또는 1(수량 > 0 검증 유지)
 - [Phase 4]: 04-12: 순서 불일치·보관된 줄 수정은 quote.line-membership으로 denyWrite
 - [Phase 4]: 04-12: 보관함 복원은 restore()의 보관함 권한 뒤 DOMAIN_RESTORERS → restoreQuoteLine(projects 쓰기 재확인, 이미 복원된 줄은 멱등)
+- [Phase 4]: 04-30: 정산 새 줄 셀 단계(newLineCells)는 page.tsx(서버)가 계산해 넘긴다 — 클라이언트는 lineCellEditability를 부르지 않는다
+- [Phase 4]: 04-30: 잠긴 셀 이유는 CellIssue kind reason — aria-invalid·오류 칸 수에서 제외
+- [Phase 4]: 04-30: 줄 이동은 자리를 바꾼 두 줄 모두 dirty(A-03), order는 이동·가운데 삽입일 때만 한 번
+- [Phase 4]: 04-30: Ctrl+S는 열린 편집기를 blur 커밋 후 useEffectEvent로 저장
 
 ### Pending Todos
 
@@ -281,6 +286,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-25T10:38:19.154Z
-Stopped at: Completed 04-12-PLAN.md
+Last session: 2026-09-25T11:57:57.990Z
+Stopped at: Completed 04-30-PLAN.md
 Resume file: None

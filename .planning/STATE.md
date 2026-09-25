@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 04
 current_phase_name: 프로젝트·견적 원장
-current_plan: 5
+current_plan: 2
 status: executing
-stopped_at: Completed 04-27-PLAN.md
-last_updated: "2026-09-25T01:22:00.646Z"
-last_activity: 2026-09-24
+stopped_at: Completed 04-20-PLAN.md
+last_updated: "2026-09-25T02:32:40.988Z"
+last_activity: 2026-09-25
 last_activity_desc: Phase 04 execution started
-state_head: 5caf481cfe036eca3aba0ea5569ce9d975f640b8
+state_head: abe1f74e172dde571a8db47e1de11f9eb002c6f4
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 80
-  completed_plans: 39
+  completed_plans: 40
   percent: 6
 ---
 
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 04 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 5
+Current Plan: 2
 Total Plans in Phase: 42
 Status: Ready to execute
-Last activity: 2026-09-24 — Phase 04 execution started
+Last activity: 2026-09-25 — Phase 04 execution started
 
 Progress: [█░░░░░░░░░] 6%
 
@@ -89,6 +89,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P06 | 27min | 2 tasks | 13 files |
 | Phase 04 P09 | 85min | 3 tasks | 20 files |
 | Phase 04 P27 | 15 min | 2 tasks | 15 files |
+| Phase 04 P20 | 38min | 3 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -209,6 +210,9 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-09: lib/format-number.ts is the single source of truth for numeric display + comma-input formatting; only FX_RECENT_RATE_USD gets numberKind in settings
 - [Phase 04]: 04-09: useCommaInput pre-formats initial value through the typed path so reload/reopen never shows uncomma'd text
 - [Phase 04]: 04-27: roles.work_scope(team/company, 기본 team) — 업무 범위는 순위도 보기 권한도 아닌 게이트 입력. 비시드 계급(경영관리 등)은 관리자가 계급 화면에서 전사로 바꿔야 한다
+- [Phase 04]: 04-20: 전환 판정은 evaluateTransition 하나(게이트 두 규칙) — changeProjectStatus와 statusDestinations가 공유, 종료일 채움도 규칙에 물어 정함
+- [Phase 04]: 04-20: 시드는 시스템 관리자만 upsert, 나머지 계급의 권한·노출은 없을 때만(insertPermissionIfAbsent·insertVisibilityIfAbsent)
+- [Phase 04]: 04-20: Phase 5 결재 호출자는 loadStatusChangeFacts로 사실을 트랜잭션 전에 읽어 deps.facts·deps.tx로 changeProjectStatus를 부른다
 
 ### Pending Todos
 
@@ -265,6 +269,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-25T01:22:00.476Z
-Stopped at: Completed 04-27-PLAN.md
+Last session: 2026-09-25T02:32:40.777Z
+Stopped at: Completed 04-20-PLAN.md
 Resume file: None

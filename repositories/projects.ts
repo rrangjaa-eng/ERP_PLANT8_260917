@@ -208,9 +208,9 @@ export async function aggregateProjects(
   return row ?? { count: 0, quoteAmountKrw: 0, executionAmountKrw: 0, profitKrw: 0 };
 }
 
-export async function findProjectById(viewer: Viewer, id: string): Promise<ProjectRow | null> {
+export async function findProjectById(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<ProjectRow | null> {
   void viewer;
-  const [row] = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
+  const [row] = await tx.select().from(projects).where(eq(projects.id, id)).limit(1);
   return row ?? null;
 }
 

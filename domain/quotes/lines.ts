@@ -424,7 +424,8 @@ export async function saveQuoteLines(
   const revision = await repoFindQuoteRevisionById(viewer, revisionId);
   if (!revision) throw new RevisionNotFoundError("존재하지 않는 차수입니다.");
 
-  const projectRow = await repoFindProjectById(viewer, revision.projectId);
+  // ENG-D6: 합성 저장(tx)에서는 같은 tx로 읽어 기간 쓰기·재판정이 만든 새 행으로 판정한다.
+  const projectRow = await repoFindProjectById(viewer, revision.projectId, tx);
   if (!projectRow) throw new RevisionNotFoundError("연결된 프로젝트를 찾을 수 없습니다.");
 
   const decision = await gate(projectRow, "project.line-edit", { status: projectRow.status });

@@ -235,42 +235,44 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
         ) : null}
       </div>
 
-      {primary ? (
-        <div className={styles.actions}>
-          {primary.disabledReason ? (
-            <span className={primary.reasonTone === "info" ? styles.reasonInfo : styles.reason}>
-              {primary.disabledReason}
+      <div className={styles.actions}>
+        {primary ? (
+          <>
+            {primary.disabledReason ? (
+              <span className={primary.reasonTone === "info" ? styles.reasonInfo : styles.reason}>
+                {primary.disabledReason}
+              </span>
+            ) : null}
+            {primary.nextStep ? <span className={styles.nextStep}>{primary.nextStep}</span> : null}
+            <span ref={primaryWrapRef} className={styles.primaryWrap}>
+              <Button
+                variant="primary"
+                shortcut={primary.shortcut ?? "Ctrl+Enter"}
+                pending={primary.pending}
+                disabled={Boolean(primary.disabledReason)}
+                disabledReason={primary.disabledReason}
+                reasonTone={primary.reasonTone}
+                onClick={primary.onConfirm}
+              >
+                {primary.label}
+              </Button>
             </span>
-          ) : null}
-          {primary.nextStep ? <span className={styles.nextStep}>{primary.nextStep}</span> : null}
-          <span ref={primaryWrapRef} className={styles.primaryWrap}>
-            <Button
-              variant="primary"
-              shortcut={primary.shortcut ?? "Ctrl+Enter"}
-              pending={primary.pending}
-              disabled={Boolean(primary.disabledReason)}
-              disabledReason={primary.disabledReason}
-              reasonTone={primary.reasonTone}
-              onClick={primary.onConfirm}
-            >
-              {primary.label}
-            </Button>
-          </span>
-          <span className={styles.secondaryWrap}>
-            <Button
-              variant="secondary"
-              shortcut="Esc"
-              disabled={submitting}
-              onClick={() => {
-                if (submitting) return;
-                closeNow();
-              }}
-            >
-              {resolvedSecondaryLabel}
-            </Button>
-          </span>
-        </div>
-      ) : null}
+          </>
+        ) : null}
+        <span className={styles.secondaryWrap}>
+          <Button
+            variant="secondary"
+            shortcut="Esc"
+            disabled={submitting}
+            onClick={() => {
+              if (submitting) return;
+              closeNow();
+            }}
+          >
+            {resolvedSecondaryLabel}
+          </Button>
+        </span>
+      </div>
     </dialog>
   );
 }

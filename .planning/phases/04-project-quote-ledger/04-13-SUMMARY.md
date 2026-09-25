@@ -74,8 +74,8 @@ coverage:
       - kind: other
         ref: "pnpm lint:sql (Found 0 issues in 15 files) · pnpm db:migrate · 번호 검증 node 명령(ok 0014_quote_line_kind) · git diff --stat d6b41cf -- .squawk.toml(빈 출력) · pnpm db:generate(No schema changes)"
         status: pass
-      - kind: unit
-        ref: "test/unit/db/migration-journal.test.ts"
+      - kind: integration
+        ref: "test/integration/migration-upgrade.test.ts(단독 실행 2/2 · 통합 전체 49파일 1257/1257)"
         status: pass
     human_judgment: false
   - id: D2
@@ -214,12 +214,15 @@ frontmatter `key-decisions` 참고. 새 방어 문구(UI-SPEC rev 5에 없음 �
 **4. [판정 범위] 조정 줄의 상태 칸도 서버가 미착수로 고정**
 - 플랜은 수량·단가·소분류 고정만 적었다. 조정 줄은 상태 칸이 잠김이라, 요청 값을 판정하면 경영관리에게도 이유가 맞지 않는 거부가 난다 — 다른 고정 칸처럼 서버 값으로 쓴다
 
-**5. [테스트 수정] Task 2 단위 테스트 도우미에 `id`를 더함**
+**5. [지시와 저장소의 차이] 지시에 있던 가드 테스트 `test/unit/db/migration-journal.test.ts`는 저장소에 없다**
+- journal을 읽는 테스트는 `test/integration/migration-upgrade.test.ts` 하나이고 통합 전체 실행에서 통과했다. 번호 규칙은 플랜의 node 검증 명령(`ok 0014_quote_line_kind`)으로 확인했다. 새 가드 테스트는 만들지 않았다(범위 밖)
+
+**6. [테스트 수정] Task 2 단위 테스트 도우미에 `id`를 더함**
 - RED 커밋의 `quoteLineFormatErrors` 테스트 입력에 `QuoteLineWriteRow` 필수 `id`가 없어 typecheck가 걸렸다. 입력 모양만 고쳤고 단언은 그대로다(578034f)
 
 ---
 
-**Total deviations:** 5(1 blocking, 1 계획-코드 차이, 1 순서, 1 판정 범위, 1 테스트 입력)
+**Total deviations:** 6(1 blocking, 1 계획-코드 차이, 1 순서, 1 판정 범위, 1 지시-저장소 차이, 1 테스트 입력)
 **Impact on plan:** 범위 확장 없음. 프로덕션 코드는 계획한 파일 안에서만 바꿨다.
 
 ## Issues Encountered

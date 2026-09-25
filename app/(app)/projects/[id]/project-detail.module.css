@@ -343,3 +343,35 @@
 .periodInput[aria-invalid="true"] {
   border-color: var(--danger);
 }
+
+/* 04-24(DR-13) — 이전 차수 읽기 섹션 제목(--fs-sm 600, 섹션의 2px --line-strong으로 시작). */
+.previousTitle {
+  margin: 0 0 var(--s-3);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+/* §7-7 LOADING — 머리글 + --surface 행 3개, 반짝임 없음. 300ms 안에 끝나면 보이지 않는다. */
+.previousSkeleton {
+  width: 100%;
+  border-collapse: collapse;
+  visibility: hidden;
+  animation: previousSkeletonReveal 0s linear 300ms forwards;
+}
+
+.previousSkeleton th {
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+}
+
+.previousSkeleton td {
+  height: var(--row-min);
+  background: var(--surface);
+  border-bottom: var(--line-w) solid var(--line);
+}
+
+@keyframes previousSkeletonReveal {
+  to {
+    visibility: visible;
+  }
+}

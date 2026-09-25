@@ -635,7 +635,9 @@ test.describe("차수 섹션과 이전 차수 읽기 섹션 (04-24 Task 3 — S5
     await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
     const url = page.url();
 
-    const toggle = revisionTable(page).getByRole("button", { name: "차수 열기" });
+    // 라벨이 「차수 닫기」로 바뀌므로 이름이 아니라 1차 행의 버튼으로 잡는다(이전 차수가 하나뿐이다).
+    const toggle = revisionTable(page).locator("tbody").getByRole("button");
+    await expect(toggle).toHaveText("차수 열기");
     await toggle.click();
     await expect(previousTable(page, 1)).toBeVisible();
     await toggle.click();

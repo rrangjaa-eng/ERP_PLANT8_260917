@@ -29,6 +29,7 @@ import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { PROJECT_STATUS_TAG_KIND } from "../status-display";
 import { QuoteLedger } from "./quote-table";
+import { RevisionSection } from "./revision-section";
 import type { StatusChangeProps } from "./status-change";
 import type { CustomerApprovalProps, NewRevisionProps } from "./revision-dialogs";
 import { getPerson } from "@/domain/people";
@@ -208,6 +209,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const endDateNote = !endDatePassed ? null : teamLeadName ? `종료일 지남 · 팀장 ${teamLeadName}` : "종료일 지남";
 
   return (
+    <>
     <QuoteLedger
       projectId={project.id}
       status={status}
@@ -249,5 +251,12 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       contractVatKrw={revenue.contract?.vatKrw ?? 0}
       contractTotalKrw={revenue.contract?.totalKrw ?? 0}
     />
+    {/* 04-24(S3 섹션 순서 ③ → ④) — 매출(원장 안 마지막 섹션) 뒤에 차수 섹션, 그 아래 이전 차수 읽기 섹션. */}
+    <RevisionSection
+      projectId={project.id}
+      summaries={revisionSummaries}
+      references={{ subcategories: references?.subcategories ?? [], vendors: references?.vendors ?? [] }}
+    />
+    </>
   );
 }

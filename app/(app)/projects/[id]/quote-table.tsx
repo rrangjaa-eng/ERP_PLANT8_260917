@@ -103,8 +103,13 @@ type LineCells = Record<QuoteLineField, QuoteCellEditability>;
 const KIND_ORDER: Record<QuoteLineKind, number> = { quote: 0, out_of_quote: 1, adjustment: 2 };
 const KIND_GROUP_LABELS: Record<Exclude<QuoteLineKind, "quote">, string> = { out_of_quote: "견적 외 비용", adjustment: "조정" };
 
-function byKind(lines: DraftLine[]): DraftLine[] {
+export function byKind<T extends { lineKind: QuoteLineKind }>(lines: T[]): T[] {
   return [...lines].sort((a, b) => KIND_ORDER[a.lineKind] - KIND_ORDER[b.lineKind]);
+}
+
+// 04-23 — 표의 그룹(견적 줄은 소분류, 나머지는 종류 이름). 04-24 — 이전 차수 읽기 표도 이 함수로 묶는다.
+export function quoteLineGroupLabel(row: { lineKind: QuoteLineKind; subcategory: string }, subcategoryLabel: (value: string) => string): string {
+  return row.lineKind === "quote" ? subcategoryLabel(row.subcategory) : KIND_GROUP_LABELS[row.lineKind];
 }
 
 type CellConflictDraft = { field: string; reason: string; theirRaw: string | number | null; theirVersion: number };
@@ -160,7 +165,7 @@ const LINE_STATUS_LABELS: Record<QuoteLineStatus, string> = {
   cancelled: "취소",
 };
 
-function lineStatusLabel(value: string): string {
+export function lineStatusLabel(value: string): string {
   const status = QUOTE_LINE_STATUSES.find((candidate) => candidate === value);
   return status ? LINE_STATUS_LABELS[status] : value;
 }
@@ -2064,7 +2069,7 @@ export function QuoteLedger({
         columns={columns}
         rows={lines}
         getRowId={(row) => row.clientKey}
-        groupBy={(row) => (row.lineKind === "quote" ? subcategoryLabel(row.subcategory) : KIND_GROUP_LABELS[row.lineKind])}
+        groupBy={(row) => quoteLineGroupLabel(row, subcategoryLabel)}
         openCell={openCell}
         emptyMessage={emptyState.message}
         emptyAction={

@@ -189,14 +189,40 @@ commits: 10
 
 ## 독립 DOM 감사 · 전체 게이트
 
-**오케스트레이터가 채움(대기)**
+**독립 DOM 감사**(별도 에이전트 · `CI=true` 프로덕션 빌드 · 1280/1100/1024/1000/375 · 계산 스타일·aria·bounding box만, 스크린샷 없음 — `/mnt/project-files/phase4-prep/04-49-dom-audit.md`)
+- 결과: **PASS 52 · FAIL 1**
+- FAIL 1: 1024~1279에서 외화 단가 열이 2행 전체 길이로 넓어짐(1024 th 253px 대 원화만 145px, 두 묶음이 같은 줄) → f690871(RED) · ef6445f(GREEN)로 고침. 1280 미만에서 두 묶음을 강제로 쌓는다.
+- INFO(판정 밖, 기록만)
+  - 단가 열 폭 1280: 외화 줄이 있으면 th 270px(원화만 153px). 스펙(1280 미만만 줄바꿈)대로이나 backstop 문장이 1280을 넣고 있어 둘이 맞지 않는다 → 아래 S-5(사용자 결정).
+  - 375 복원 줄 1칸일 때 글자와 버튼이 같은 줄. 「넘칠 때 내려감」이면 PASS, 「폰에서는 늘 다음 줄」이면 FAIL — 뜻 확인 필요.
+  - I-1 경영관리 EMPTY 「조정 줄 추가」 미구현(04-23 몫) · I-2 같은 팀 동료 PM도 「첫 줄 만들기」(현 권한 모델과 일치) · I-3 Tab은 격자 칸 이동 키가 아님(04-19 몫)
+  - I-4 375 복원·버림 폭 32px(높이만 44px) · I-5 저장 중 1차는 기존 비활성 모양 · I-6 범위 선택·`Ctrl+C` 측정 불가(아래 S-3)
+  - I-7 네트워크 실패 시 합계 행 오류 글자 없음(잠금은 풀림, 범위 밖) · I-8 복원 줄 ` · 복원 / 버림` 구분자는 글자로 안 그려짐(04-04 이후 같음) · I-9 #418 해소(모든 폭 콘솔 오류 0)
 
-- 독립 DOM 감사: 별도 에이전트가 `CI=true`로 1280 · 1024 · 375 · 1000을 감사한다.
-  - S4 backstop 넷: EMPTY 변형 × 상태 × 계급 · 0/1/6줄 합계 형식 · 가로 스크롤 0과 단가 열 폭 · 1024 미만 구조 컨트롤 부재
-  - S18 overflow: 복원 줄 렌더 · 375에서 `word-break: keep-all` · 두 3차가 같은 줄이고 44px 이상 · 가로 스크롤 0
-  - 저장 중 `aria-busy`
-  - 콘솔 오류 0(04-30 감사 12b — #418)
-- 전체 게이트: `bash scripts/reset-test-db.sh && CI=true pnpm test` 한 번.
+**전체 게이트**: `bash scripts/reset-test-db.sh && CI=true pnpm test` — ef6445f에서 **초록**. unit 1176 · integration 1226 · E2E 279.
+
+## 검토 반영
+
+Codex 교차 리뷰는 한도로 쓸 수 없어 Opus가 대신했다(`/mnt/project-files/phase4-prep/04-49-review-opus.md`, B 1 · S 6 · N 7). **한도 풀리면 Codex 재확인 필요.**
+
+| 항목 | 처리 | 커밋 |
+|------|------|------|
+| B-1 편집기를 연 채 폭이 1024 아래로 줄면 친 값이 사라짐 | 편집기가 열린 동안은 편집 가능 폭으로 본다(`useEditableWidth() \|\| cellEditing`). 회귀 E2E (o) 실행가 · (o2) 비고(숨는 열). RED `Expected: "555,000" Received: "600,000"` | 75f9bcc |
+| S-1 한글 조합 중 Ctrl+S가 브라우저 저장 창을 막지 않음(D-94 회귀) | `isComposing` 조기 반환을 Ctrl·Alt 처리 뒤로. 훅 단위 테스트 RED `expected false to be true` | 208358e |
+| S-2 저장 중 잠금 배선이 회귀 테스트로 묶이지 않음 | 붙잡은 요청 중 Delete·Ctrl+Enter·Ctrl+D·Alt+↑·붙여넣기 불변, 500 뒤 해제·재편집, 매출 발행액 readonly·「발행 줄 추가」 무동작 E2E. 배선 7곳을 하나씩 지우면 각각 실패(돌연변이 확인) | a96bf4c |
+| S-4 1024 미만 쓰기 권한자의 발행·입금 칸이 권한 잠김(--muted)으로 보임 | 여섯 곳 `canWriteEntries ? "readonly" : "locked"`. RED `Expected: not "rgb(78, 93, 89)"` | ceb871d |
+| S-6 저장 중 「복원」·「버림」·기간 바꾸기·총 매출 예상가 바꾸기가 잠기지 않음 | 「줄 추가」와 같은 무동작 가드. RED(「버림」 뒤 복원 줄 사라짐), 가드 넷을 하나씩 지우면 각각 실패 | 9d91cc0 |
+
+반박·열린 항목
+- B-1의 「숨는 열 편집기를 blur로 커밋하는 Table 효과」는 넣지 않았다. Chromium은 열이 `display:none`이 될 때 초점 요소에 blur를 스스로 보내 (o2)가 고치기 전에도 초록이었다 — 실패하는 테스트를 만들 수 없는 추측성 코드다. WebKit에서 blur가 오지 않아도 편집기는 열린 채 남고(값 보존) 다른 곳을 누르면 커밋된다.
+- S-2의 「연타 Ctrl+S 단언을 잠금에 의존하게」는 할 수 없다. `allowed("save")`를 지워도 `handleSave`의 `savingRef`·`isExecuting` 가드가 두 번째 요청을 막아 관찰할 차이가 없다(돌연변이 초록 확인). 단언은 그대로 둔다.
+- **S-3(사용자 결정)** must_have의 `Ctrl+C`는 구현이 없다. verify-work에서 해당 truth를 「범위 밖 — 복사 미구현」으로 낮추고 후속으로 등록할지 결정 필요.
+- **S-5(사용자 결정)** 1280 단가 열 폭: backstop에서 1280을 뺄지, 모든 폭에서 두 묶음을 쌓을지.
+- N-1 정정: ef6445f 제목 「1024 미만 …」은 틀렸다 — 강제 스택 규칙은 **1280 미만**에 적용된다(단가 열은 1024 미만에서 아예 숨는다). f690871·ef6445f 제목이 한국어인 것도 §5와 다르다. 히스토리는 다시 쓰지 않는다.
+- N 항목은 기록만: N-2 (n)을 1100에서도 단언 · N-3 잠금 해제와 onSuccess 사이 한 렌더(실손실 없음) · N-4 좁은 폭 수화 첫 프레임 레이아웃 이동 · N-5 호출처 없는 GridAction(S-3 결정 때 정리) · N-6 잠금 blur 효과 도달 테스트 없음 · N-7 1024 미만 서버 표 칸 오류는 그 폭에서 고칠 수 없음(04-16/후속 결정).
+- 같은 경로 기록: 매출 표 입력이 열린 채 폭이 1024 아래로 줄 때도 입력이 사라질 수 있다(매출 표는 `onEditingChange`를 보고하지 않는다). B-1 범위 밖이라 고치지 않았다.
+
+검증(검토 반영 뒤): `pnpm lint` 0 errors · `pnpm typecheck` 0 · `pnpm build` 성공 · 단위 18/18(grid-keyboard-composing · save-lock · conflict-focus) · `CI=true` E2E ledger-save-flow 5/5 · quote-edit-scope 32/32 · quote-table 16/16 · revenue-section 5/5.
 
 ## Deviations from Plan
 

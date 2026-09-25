@@ -288,14 +288,14 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     if (!revision) throw new Error("1차 차수가 없습니다");
     // 저장된 줄(id가 있는 줄)을 도메인 함수로 미리 만든다 — UI로 만들면
     // 아직 dirty·id 없는 새 줄이라 "저장된 줄에서 Delete" 전제와 다르다.
-    await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
       {
-        subcategory: "sub-a",
+        id: randomUUID(), isNew: true, subcategory: "sub-a",
         itemName: "삭제 대상 줄",
         unitPrice: { currency: "KRW", amount: 1000000, fxRate: 1 },
         execution: { currency: "KRW", amount: 0, fxRate: 1 },
       },
-    ]);
+    ] });
 
     await page.goto("/login");
     await page.getByLabel("이메일").fill(email);
@@ -395,9 +395,9 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId, name: projectName });
     const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
     if (!revision) throw new Error("1차 차수가 없습니다");
-    await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
-      { subcategory: "sub-a", itemName: "숨김 줄", unitPrice: { currency: "KRW", amount: 1000, fxRate: 1 }, execution: { currency: "KRW", amount: 0, fxRate: 1 } },
-    ]);
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
+      { id: randomUUID(), isNew: true, subcategory: "sub-a", itemName: "숨김 줄", unitPrice: { currency: "KRW", amount: 1000, fxRate: 1 }, execution: { currency: "KRW", amount: 0, fxRate: 1 } },
+    ] });
 
     const email = `e2e-ceo-${randomUUID()}@example.test`;
     const { tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 금액숨김", roleId: "role-ceo" });
@@ -435,12 +435,14 @@ async function openProjectWithSavedLines(
     await saveQuoteLines(
       SYSTEM_VIEWER,
       revision.id,
-      rows.map((row) => ({
+      { rows: rows.map((row) => ({
+        id: randomUUID(),
+        isNew: true as const,
         subcategory: row.subcategory,
         itemName: row.itemName,
         unitPrice: { currency: "KRW" as const, amount: row.amount, fxRate: 1 },
         execution: { currency: "KRW" as const, amount: row.execution ?? 0, fxRate: 1 },
-      })),
+      })) },
     );
   }
 

@@ -51,10 +51,10 @@ test.describe("저장 흐름 (04-22, S19)", () => {
     const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
     if (!subcategory) throw new Error("시드된 소분류가 없습니다");
     const firstItem = `첫 줄-${randomUUID().slice(0, 6)}`;
-    await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
-      { subcategory: subcategory.value, itemName: firstItem, quantity: 1, unitPrice: { currency: "KRW", amount: 1_000_000, fxRate: 1 }, execution: { currency: "KRW", amount: 500_000, fxRate: 1 } },
-      { subcategory: subcategory.value, itemName: `둘째 줄-${randomUUID().slice(0, 6)}`, quantity: 1, unitPrice: { currency: "KRW", amount: 2_000_000, fxRate: 1 }, execution: { currency: "KRW", amount: 900_000, fxRate: 1 } },
-    ]);
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
+      { id: randomUUID(), isNew: true, subcategory: subcategory.value, itemName: firstItem, quantity: 1, unitPrice: { currency: "KRW", amount: 1_000_000, fxRate: 1 }, execution: { currency: "KRW", amount: 500_000, fxRate: 1 } },
+      { id: randomUUID(), isNew: true, subcategory: subcategory.value, itemName: `둘째 줄-${randomUUID().slice(0, 6)}`, quantity: 1, unitPrice: { currency: "KRW", amount: 2_000_000, fxRate: 1 }, execution: { currency: "KRW", amount: 900_000, fxRate: 1 } },
+    ] });
 
     await login(page, pm);
     await page.goto(`/projects/${project.id}`);

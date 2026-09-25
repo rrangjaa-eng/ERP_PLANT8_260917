@@ -8,31 +8,44 @@ import type { DbOrTx } from "@/repositories/document-counters";
 
 export type QuoteLineRow = InferSelectModel<typeof quoteLines>;
 
-export async function listQuoteLinesByRevision(viewer: Viewer, revisionId: string): Promise<QuoteLineRow[]> {
+// 04-12(A-03 · 엔지 리뷰 A §2 P2) — 표시 순서는 sort_order, 같은 값이면 줄 id(두 번 읽어도 같은 순서).
+// 잠근 트랜잭션 안(저장 결과 목록)에서는 tx로 부른다.
+export async function listQuoteLinesByRevision(viewer: Viewer, revisionId: string, tx: DbOrTx = db): Promise<QuoteLineRow[]> {
   void viewer;
-  return db
+  return tx
     .select()
     .from(quoteLines)
     .where(eq(quoteLines.revisionId, revisionId))
-    .orderBy(quoteLines.sortOrder);
+    .orderBy(quoteLines.sortOrder, quoteLines.id);
 }
 
 // 04-04 Task 2 ① — 배치 저장이 쓰기 전에 현재 값·버전을 한 번에 읽는다
 // (버전 비교 → 셀 단위 충돌 판정의 입력). db.transaction의 tx로 불러야
 // 같은 트랜잭션 안에서 읽고-비교하고-쓴다(격리 수준 안에서 일관된 스냅샷).
-export async function findQuoteLinesByIds(viewer: Viewer, ids: string[], tx: DbOrTx = db): Promise<QuoteLineRow[]> {
+// 04-12(B-01 줄 소속) — 그 차수의 줄만 찾는다. 다른 차수·프로젝트의 id는 결과에 없다.
+export async function findQuoteLinesByIds(
+  viewer: Viewer,
+  ids: string[],
+  scope: { revisionId: string },
+  tx: DbOrTx = db,
+): Promise<QuoteLineRow[]> {
   void viewer;
   if (ids.length === 0) return [];
-  return tx.select().from(quoteLines).where(inArray(quoteLines.id, ids));
+  return tx
+    .select()
+    .from(quoteLines)
+    .where(and(inArray(quoteLines.id, ids), eq(quoteLines.revisionId, scope.revisionId)));
 }
 
-export async function findQuoteLineById(viewer: Viewer, id: string): Promise<QuoteLineRow | null> {
+export async function findQuoteLineById(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<QuoteLineRow | null> {
   void viewer;
-  const [row] = await db.select().from(quoteLines).where(eq(quoteLines.id, id)).limit(1);
+  const [row] = await tx.select().from(quoteLines).where(eq(quoteLines.id, id)).limit(1);
   return row ?? null;
 }
 
 export type QuoteLineInsertInput = {
+  // 04-12(ENG-D10) — 화면이 만든 줄 id. 없으면 DB 기본값.
+  id?: string;
   revisionId: string;
   sortOrder: number;
   subcategory: string;
@@ -65,6 +78,7 @@ export async function insertQuoteLine(
   const [row] = await tx
     .insert(quoteLines)
     .values({
+      ...(input.id ? { id: input.id } : {}),
       revisionId: input.revisionId,
       sortOrder: input.sortOrder,
       subcategory: input.subcategory,
@@ -92,7 +106,8 @@ export async function insertQuoteLine(
   return row;
 }
 
-export type QuoteLineUpdateInput = Omit<QuoteLineInsertInput, "revisionId" | "copiedFromLineId" | "source">;
+// 04-12(A-03) — 순서는 셀 갱신이 쓰지 않는다(기존 줄의 sort_order는 그대로).
+export type QuoteLineUpdateInput = Omit<QuoteLineInsertInput, "id" | "revisionId" | "sortOrder" | "copiedFromLineId" | "source">;
 
 // D-65: 줄 버전 충돌 — 저장 요청이 읽은 버전과 다르면 UPDATE가 0행을
 // 돌려준다(WHERE version = expectedVersion). null은 "충돌 또는 존재하지
@@ -101,6 +116,7 @@ export async function updateQuoteLineIfVersionMatches(
   viewer: Viewer,
   id: string,
   expectedVersion: number,
+  scope: { revisionId: string },
   input: QuoteLineUpdateInput,
   tx: DbOrTx = db,
 ): Promise<QuoteLineRow | null> {
@@ -108,7 +124,6 @@ export async function updateQuoteLineIfVersionMatches(
   const [row] = await tx
     .update(quoteLines)
     .set({
-      sortOrder: input.sortOrder,
       subcategory: input.subcategory,
       itemName: input.itemName,
       vendorId: input.vendorId ?? null,
@@ -128,7 +143,9 @@ export async function updateQuoteLineIfVersionMatches(
       version: sql`${quoteLines.version} + 1`,
       updatedAt: new Date(),
     })
-    .where(and(eq(quoteLines.id, id), eq(quoteLines.version, expectedVersion)))
+    .where(
+      and(eq(quoteLines.id, id), eq(quoteLines.revisionId, scope.revisionId), eq(quoteLines.version, expectedVersion)),
+    )
     .returning();
   return row ?? null;
 }

@@ -42,14 +42,14 @@ describe("quote.amount를 꺼도 견적 줄의 id·itemName은 남는다", () =>
 
   it("quote.amount visibility가 false여도 listQuoteLines는 id·itemName이 있는 행을 돌려준다", async () => {
     const { revision, subcategoryValue } = await setupProject();
-    await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
-      { subcategory: subcategoryValue, itemName: "항목A", unitPrice: krw(100), execution: krw(0) },
-    ]);
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
+      { id: randomUUID(), isNew: true, subcategory: subcategoryValue, itemName: "항목A", unitPrice: krw(100), execution: krw(0) },
+    ] });
 
     await upsertVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, infoItem: "quote.amount", visible: false });
     const pmViewer = { id: "pm-viewer", roleId: DEFAULT_ROLE_ID };
 
-    const rows = await listQuoteLines(pmViewer, revision.id);
+    const rows = await listQuoteLines(pmViewer, revision.id, { status: "bidding", canWrite: false });
     expect(rows).toHaveLength(1);
     expect(rows[0]?.id).toBeTruthy();
     expect(rows[0]?.itemName).toBe("항목A");
@@ -57,9 +57,9 @@ describe("quote.amount를 꺼도 견적 줄의 id·itemName은 남는다", () =>
   });
   it("quote.amount를 볼 수 없는 사람의 견적 줄 저장은 거부되고 금액이 0으로 덮이지 않는다(/ship 리뷰)", async () => {
     const { revision, pmUserId, subcategoryValue } = await setupProject();
-    const saved = await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
-      { subcategory: subcategoryValue, itemName: "항목A", unitPrice: krw(100), execution: krw(50) },
-    ]);
+    const saved = await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
+      { id: randomUUID(), isNew: true, subcategory: subcategoryValue, itemName: "항목A", unitPrice: krw(100), execution: krw(50) },
+    ] });
     const line = saved.lines[0];
     if (!line) throw new Error("줄 저장 실패");
 
@@ -67,9 +67,9 @@ describe("quote.amount를 꺼도 견적 줄의 id·itemName은 남는다", () =>
     const pm = { id: pmUserId, roleId: DEFAULT_ROLE_ID };
 
     await expect(
-      saveQuoteLines(pm, revision.id, [
+      saveQuoteLines(pm, revision.id, { rows: [
         { id: line.id, version: line.version, subcategory: subcategoryValue, itemName: "이름만 바꿈", unitPrice: krw(0), execution: krw(0) },
-      ]),
+      ] }),
     ).rejects.toThrow();
 
     const [row] = await db.select().from(quoteLines).where(eq(quoteLines.id, line.id));

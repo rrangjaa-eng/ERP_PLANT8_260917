@@ -46,15 +46,15 @@ async function addQuoteLine(
 ) {
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, projectId);
   if (!revision) throw new Error("현재 차수를 찾지 못했습니다");
-  await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+  await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
     {
-      subcategory: "sub-a",
+      id: randomUUID(), isNew: true, subcategory: "sub-a",
       itemName: "항목",
       quantity: amounts.quantity,
       unitPrice: { currency: "KRW", amount: amounts.unitPrice, fxRate: 1 },
       execution: { currency: "KRW", amount: amounts.execution, fxRate: 1 },
     },
-  ]);
+  ] });
 }
 
 const pmViewer = (userId: string): Viewer => ({ id: userId, roleId: DEFAULT_ROLE_ID });

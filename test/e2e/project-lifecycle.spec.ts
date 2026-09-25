@@ -84,14 +84,14 @@ async function addQuoteLine(projectId: string): Promise<{ revisionId: string; su
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, projectId);
   const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
   if (!revision || !subcategory) throw new Error("차수·소분류 준비 실패");
-  await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+  await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
     {
-      subcategory: subcategory.value,
+      id: randomUUID(), isNew: true, subcategory: subcategory.value,
       itemName: "생애 E2E 줄",
       unitPrice: { currency: "KRW", amount: 100_000, fxRate: 1 },
       execution: { currency: "KRW", amount: 50_000, fxRate: 1 },
     },
-  ]);
+  ] });
   return { revisionId: revision.id, subcategory: subcategory.value };
 }
 
@@ -286,14 +286,14 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
     if (!revision || !subcategory) throw new Error("차수·소분류 준비 실패");
     await expect(
-      saveQuoteLines({ id: pm.userId, roleId: DEFAULT_ROLE_ID }, revision.id, [
+      saveQuoteLines({ id: pm.userId, roleId: DEFAULT_ROLE_ID }, revision.id, { rows: [
         {
-          subcategory: subcategory.value,
+          id: randomUUID(), isNew: true, subcategory: subcategory.value,
           itemName: "완료 뒤 줄",
           unitPrice: { currency: "KRW", amount: 1_000, fxRate: 1 },
           execution: { currency: "KRW", amount: 1_000, fxRate: 1 },
         },
-      ]),
+      ] }),
     ).rejects.toThrow("완료 · 견적 줄 잠김");
   });
 

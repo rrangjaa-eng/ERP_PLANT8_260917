@@ -68,14 +68,14 @@ async function setupProjectWithLine(status: string) {
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
   if (!revision) throw new Error("createProject가 1차 차수를 만들지 않았습니다");
 
-  await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+  await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
     {
-      subcategory: subcategory.value,
+      id: randomUUID(), isNew: true, subcategory: subcategory.value,
       itemName: "상태 바꾸기 전 줄",
       unitPrice: { currency: "KRW", amount: 100_000, fxRate: 1 },
       execution: { currency: "KRW", amount: 50_000, fxRate: 1 },
     },
-  ]);
+  ] });
   await db.update(projects).set({ status }).where(eq(projects.id, project.id));
 
   return { project, revision, subcategoryValue: subcategory.value };
@@ -107,14 +107,14 @@ describe("프로젝트 상태 다섯 값 (04-06, D-75)", () => {
 
   it("(g) 미수주 프로젝트의 견적 줄 저장은 통과하고 완료 프로젝트의 저장은 「완료 · 견적 줄 잠김」으로 거부된다", async () => {
     const lost = await setupProjectWithLine("lost");
-    const saved = await saveQuoteLines(SYSTEM_VIEWER, lost.revision.id, [
+    const saved = await saveQuoteLines(SYSTEM_VIEWER, lost.revision.id, { rows: [
       {
-        subcategory: lost.subcategoryValue,
+        id: randomUUID(), isNew: true, subcategory: lost.subcategoryValue,
         itemName: "미수주 뒤 도착한 PT 제작비",
         unitPrice: { currency: "KRW", amount: 0, fxRate: 1 },
         execution: { currency: "KRW", amount: 300_000, fxRate: 1 },
       },
-    ]);
+    ] });
     expect(saved.lines.map((line) => line.itemName)).toContain("미수주 뒤 도착한 PT 제작비");
     const lostLines = await db.select().from(quoteLines).where(eq(quoteLines.revisionId, lost.revision.id));
     expect(lostLines.map((line) => line.itemName).sort()).toEqual(["미수주 뒤 도착한 PT 제작비", "상태 바꾸기 전 줄"].sort());
@@ -126,14 +126,14 @@ describe("프로젝트 상태 다섯 값 (04-06, D-75)", () => {
       .where(eq(quoteLines.revisionId, completed.revision.id))
       .orderBy(asc(quoteLines.id));
 
-    const attempt = saveQuoteLines(SYSTEM_VIEWER, completed.revision.id, [
+    const attempt = saveQuoteLines(SYSTEM_VIEWER, completed.revision.id, { rows: [
       {
-        subcategory: completed.subcategoryValue,
+        id: randomUUID(), isNew: true, subcategory: completed.subcategoryValue,
         itemName: "완료 뒤 시도",
         unitPrice: { currency: "KRW", amount: 100_000, fxRate: 1 },
         execution: { currency: "KRW", amount: 0, fxRate: 1 },
       },
-    ]);
+    ] });
     await expect(attempt).rejects.toBeInstanceOf(GateBlockedError);
     await expect(attempt).rejects.toThrow("완료 · 견적 줄 잠김");
 

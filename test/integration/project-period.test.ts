@@ -102,6 +102,8 @@ async function newLine(s: Setup, itemName: string): Promise<NonNullable<SaveProj
     revisionId: s.revisionId,
     rows: [
       {
+        id: randomUUID(),
+        isNew: true,
         subcategory: await subcategoryValue(),
         itemName,
         quantity: 1,
@@ -480,7 +482,7 @@ describe("기간 저장 — 행위자 · 권리 · 검증 (04-22 Task 2)", () =>
     const lineGateCalls = vi.mocked(gate).mock.calls.filter(([, rule]) => rule === "project.line-edit");
     expect(lineGateCalls).toHaveLength(1);
     const [lineDoc, , lineCtx] = lineGateCalls[0]!;
-    expect(lineCtx).toEqual({ status: "settling" });
+    expect(lineCtx).toEqual({ status: "settling", hasLinkedDocuments: false, change: { kind: "insert", quoteCellsZero: false } });
     expect(lineDoc).toMatchObject({ status: "settling", endDate: addDays(TODAY, -1) });
 
     const [settle] = await logs(s.projectId, "status_change");

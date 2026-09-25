@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { test, expect } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
@@ -36,29 +37,29 @@ test.describe("숫자 열 nowrap — /projects 견적 (S15 backstop)", () => {
     if (!revision) throw new Error("1차 차수가 없습니다");
     // amount_krw 열은 integer(T-04-160, 21억 상한)라 한 줄로 4.3B를 만들 수
     // 없다 — 합계(SUM)는 bigint라 세 줄로 나눠 목표 합계에 닿는다.
-    await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
       {
-        subcategory: "sub-a",
+        id: randomUUID(), isNew: true, subcategory: "sub-a",
         itemName: "nowrap 확인 줄1",
         quantity: 1,
         unitPrice: { currency: "KRW", amount: 2000000000, fxRate: 1 },
         execution: { currency: "KRW", amount: 0, fxRate: 1 },
       },
       {
-        subcategory: "sub-a",
+        id: randomUUID(), isNew: true, subcategory: "sub-a",
         itemName: "nowrap 확인 줄2",
         quantity: 1,
         unitPrice: { currency: "KRW", amount: 2000000000, fxRate: 1 },
         execution: { currency: "KRW", amount: 0, fxRate: 1 },
       },
       {
-        subcategory: "sub-a",
+        id: randomUUID(), isNew: true, subcategory: "sub-a",
         itemName: "nowrap 확인 줄3",
         quantity: 1,
         unitPrice: { currency: "KRW", amount: 318181799, fxRate: 1 },
         execution: { currency: "KRW", amount: 0, fxRate: 1 },
       },
-    ]);
+    ] });
 
     await page.goto("/login");
     await page.getByLabel("이메일").fill(pm.email);

@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
@@ -164,9 +165,15 @@ export const saveProjectLedgerAction = authedActionClient
   .action(async ({ parsedInput, ctx }) => {
     let result: Awaited<ReturnType<typeof saveProjectLedger>>;
     try {
+      const quoteLines = parsedInput.quoteLines;
       result = await saveProjectLedger(ctx.viewer, parsedInput.projectId, {
         seenStatus: parsedInput.seenStatus,
-        quoteLines: parsedInput.quoteLines,
+        // 04-12 과도기 — 도메인은 모든 줄에 id를 요구한다(ENG-D10). 화면이 새 줄 uuid를 싣기 전(04-30)에는 id 없는
+        // 새 줄에 서버가 uuid를 붙인다(재전송 멱등은 04-30의 화면 uuid부터).
+        quoteLines: quoteLines && {
+          ...quoteLines,
+          rows: quoteLines.rows.map(({ id, ...row }) => (id ? { ...row, id } : { ...row, id: randomUUID(), isNew: true as const })),
+        },
         revenue: parsedInput.revenue,
         period: parsedInput.period,
         preEstimate: parsedInput.preEstimate,

@@ -346,14 +346,14 @@ test.describe("숫자 서식(D-95, 04-09)", () => {
     const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId, name: projectName });
     const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
     if (!revision) throw new Error("1차 차수가 없습니다");
-    await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
       {
-        subcategory: "sub-a",
+        id: randomUUID(), isNew: true, subcategory: "sub-a",
         itemName: "원화 단가 거부 확인 줄",
         unitPrice: { currency: "KRW", amount: 1000000, fxRate: 1 },
         execution: { currency: "KRW", amount: 0, fxRate: 1 },
       },
-    ]);
+    ] });
 
     await page.goto("/login");
     await page.getByLabel("이메일").fill(email);

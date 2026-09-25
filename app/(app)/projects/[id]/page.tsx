@@ -7,7 +7,7 @@ import { listProjectFormReferences } from "@/domain/projects/references";
 import { getCurrentQuoteRevision, listQuoteLines } from "@/domain/quotes/lines";
 import { listRevenue } from "@/domain/revenue";
 import { recentFxRate } from "@/domain/money/currency";
-import { gate } from "@/domain/rules/gate";
+import { lineCellEditability } from "@/domain/quotes/edit-scope";
 import "@/domain/rules/register";
 import {
   actorCoversProjectTeam,
@@ -56,10 +56,11 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
 
   // (가) 셀 편집 가능성은 서버가 판정해 보낸다 — 화면은 project.status
   // 문자열을 다시 해석하지 않고 이 판정 결과(boolean)만 받는다.
-  const gateDecision = await gate(project, "project.line-edit", { status: project.status });
+  // 04-12 — 게이트와 같은 셀 단계 함수로 편집 칸이 하나라도 있는지 본다(셀별 반영은 04-30).
   const canSeeAmount = await visible(session.viewer, "quote.amount");
+  const lineCells = lineCellEditability({ status: project.status, canWrite, hasLinkedDocuments: false, isNewLine: false });
   // 금액을 볼 수 없으면 표를 편집하지 않는다 — 서버도 저장을 거부한다(saveQuoteLines).
-  const editable = canWrite && gateDecision.allowed && canSeeAmount;
+  const editable = canWrite && Object.values(lineCells).includes("edit") && canSeeAmount;
 
   // 04-22(S13 · 사용자 D14·D11·D20 · 사용자 결정 2026-09-25 「기간만 수정」) — 기간 권리. 팀장 이상은
   // projects.period 쓰기 + 자기 팀, 담당 PM은 projects 쓰기가 있을 때만.
@@ -78,7 +79,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     editable || periodRights !== "none" || canEditPreEstimate || canWriteEntries || (canWrite && status !== "completed");
 
   const [lines, references, revenue, usdDefaultFxRate, destinations, catalog, statusSince] = await Promise.all([
-    listQuoteLines(session.viewer, revision.id),
+    listQuoteLines(session.viewer, revision.id, { status: project.status, canWrite: canWrite && canSeeAmount }),
     canWrite ? listProjectFormReferences(session.viewer) : Promise.resolve(null),
     listRevenue(session.viewer, project.id),
     recentFxRate("USD"),

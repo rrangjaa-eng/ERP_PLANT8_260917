@@ -60,9 +60,9 @@ describe("domain/quotes/lines saveQuoteLines (Phase 4, 실제 Postgres)", () => 
   it("(a) 조작된 견적가·차익 값을 실은 페이로드로 저장해도 서버 재계산값이 저장된다", async () => {
     const { revision, subcategoryValue } = await setupProject();
 
-    const result = await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+    const result = await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
       {
-        subcategory: subcategoryValue,
+        id: randomUUID(), isNew: true, subcategory: subcategoryValue,
         itemName: "메인 스테이지 구조물 설치",
         quantity: 3,
         unitPrice: { currency: "KRW", amount: 1_200_000, fxRate: 1 },
@@ -70,7 +70,7 @@ describe("domain/quotes/lines saveQuoteLines (Phase 4, 실제 Postgres)", () => 
         // 타입에 없는 필드를 raw 객체로 흉내낸다 — 브라우저가 조작해 보낼 수 있는 값.
         ...({ quoteAmountKrw: 999_999_999, profitKrw: -999_999_999 } as Record<string, unknown>),
       },
-    ]);
+    ] });
 
     expect(result.lines).toHaveLength(1);
     expect(result.lines[0]?.quoteAmountKrw).toBe(3_600_000);
@@ -93,15 +93,15 @@ describe("domain/quotes/lines saveQuoteLines (Phase 4, 실제 Postgres)", () => 
     });
 
     await expect(
-      saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+      saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
         {
-          subcategory: subcategoryValue,
+          id: randomUUID(), isNew: true, subcategory: subcategoryValue,
           itemName: "항목",
           unitPrice: { currency: "KRW", amount: 100_000, fxRate: 1 },
           execution: { currency: "KRW", amount: 50_000, fxRate: 1 },
           customFields: { registeredKey: "값", unregisteredKey: "거부되어야 한다" },
         },
-      ]),
+      ] }),
     ).rejects.toThrow();
   });
 
@@ -110,14 +110,14 @@ describe("domain/quotes/lines saveQuoteLines (Phase 4, 실제 Postgres)", () => 
 
     await db.update(projects).set({ status: "completed" }).where(eq(projects.id, project.id));
 
-    const attempt = saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+    const attempt = saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
       {
-        subcategory: subcategoryValue,
+        id: randomUUID(), isNew: true, subcategory: subcategoryValue,
         itemName: "완료 후 시도",
         unitPrice: { currency: "KRW", amount: 100_000, fxRate: 1 },
         execution: { currency: "KRW", amount: 0, fxRate: 1 },
       },
-    ]);
+    ] });
 
     await expect(attempt).rejects.toBeInstanceOf(GateBlockedError);
     await expect(attempt).rejects.toBeInstanceOf(UserFacingError);
@@ -129,14 +129,14 @@ describe("domain/quotes/lines saveQuoteLines (Phase 4, 실제 Postgres)", () => 
 
     await db.update(projects).set({ status: "lost" }).where(eq(projects.id, project.id));
 
-    const { lines } = await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+    const { lines } = await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
       {
-        subcategory: subcategoryValue,
+        id: randomUUID(), isNew: true, subcategory: subcategoryValue,
         itemName: "미수주 뒤 도착한 청구",
         unitPrice: { currency: "KRW", amount: 100_000, fxRate: 1 },
         execution: { currency: "KRW", amount: 30_000, fxRate: 1 },
       },
-    ]);
+    ] });
 
     expect(lines.map((line) => line.itemName)).toEqual(["미수주 뒤 도착한 청구"]);
   });
@@ -144,14 +144,14 @@ describe("domain/quotes/lines saveQuoteLines (Phase 4, 실제 Postgres)", () => 
   it("(d) 연결된 줄이 있는 차수를 지우려 하면 실제 외래키 제약(RESTRICT)이 막는다", async () => {
     const { revision, subcategoryValue } = await setupProject();
 
-    await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
       {
-        subcategory: subcategoryValue,
+        id: randomUUID(), isNew: true, subcategory: subcategoryValue,
         itemName: "연결 문서 시뮬레이션 줄",
         unitPrice: { currency: "KRW", amount: 100_000, fxRate: 1 },
         execution: { currency: "KRW", amount: 0, fxRate: 1 },
       },
-    ]);
+    ] });
 
     // 모의 객체가 아니라 실제 DB 제약 동작 — quote_lines.revision_id는
     // onDelete: "restrict"라 연결된 줄이 있는 차수를 직접 지우면 Postgres가
@@ -175,27 +175,27 @@ describe("domain/quotes/lines saveQuoteLines (Phase 4, 실제 Postgres)", () => 
   it("(e) 단가 환율을 고쳐 저장하면 fx.recent_rate.USD가 갱신되고, 건드리지 않은 저장은 갱신하지 않는다", async () => {
     const { revision, subcategoryValue } = await setupProject();
 
-    await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
       {
-        subcategory: subcategoryValue,
+        id: randomUUID(), isNew: true, subcategory: subcategoryValue,
         itemName: "외화 줄",
         unitPrice: { currency: "USD", amount: 100, fxRate: 1350.25 },
         unitPriceFxRateTouched: true,
         execution: { currency: "KRW", amount: 0, fxRate: 1 },
       },
-    ]);
+    ] });
     expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(1350.25);
 
     // 다른 값으로 다시 저장하되 fxRateTouched: false — 설정이 그대로다.
-    await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
       {
-        subcategory: subcategoryValue,
+        id: randomUUID(), isNew: true, subcategory: subcategoryValue,
         itemName: "외화 줄 2",
         unitPrice: { currency: "USD", amount: 200, fxRate: 1400.0 },
         unitPriceFxRateTouched: false,
         execution: { currency: "KRW", amount: 0, fxRate: 1 },
       },
-    ]);
+    ] });
     expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(1350.25);
   });
 });

@@ -99,14 +99,14 @@ describe("잠금·풀 시간 제한(ENG-D3 ①)", () => {
   );
 
   it(
-    "(d) 커밋 뒤 단계(감사 기록)의 풀 시간 초과는 「잠시 뒤 다시 저장」으로 바꾸지 않는다 — 이미 저장됐다",
+    "(d) 커밋 뒤 단계(결과 투영)의 풀 시간 초과는 「잠시 뒤 다시 저장」으로 바꾸지 않는다 — 이미 저장됐다",
     async () => {
       const { project, revision, subcategoryValue } = await setupProject();
 
       vi.resetModules();
-      vi.doMock("@/domain/action-log/record", async (importOriginal) => ({
-        ...(await importOriginal<typeof import("@/domain/action-log/record")>()),
-        recordAction: () => Promise.reject(new Error("timeout exceeded when trying to connect")),
+      vi.doMock("@/domain/permissions/project", async (importOriginal) => ({
+        ...(await importOriginal<typeof import("@/domain/permissions/project")>()),
+        projectMany: () => Promise.reject(new Error("timeout exceeded when trying to connect")),
       }));
 
       const isolatedClient = await import("@/db/client");
@@ -121,7 +121,7 @@ describe("잠금·풀 시간 제한(ENG-D3 ①)", () => {
             revisionId: revision.id,
             rows: [
               {
-                subcategory: subcategoryValue,
+                id: randomUUID(), isNew: true, subcategory: subcategoryValue,
                 itemName,
                 quantity: 1,
                 unitPrice: { currency: "KRW" as const, amount: 100_000, fxRate: 1 },
@@ -140,7 +140,7 @@ describe("잠금·풀 시간 제한(ENG-D3 ①)", () => {
         expect(saved).toHaveLength(1);
       } finally {
         await isolatedClient.closeDb();
-        vi.doUnmock("@/domain/action-log/record");
+        vi.doUnmock("@/domain/permissions/project");
         vi.resetModules();
       }
     },
@@ -173,6 +173,8 @@ describe("잠금·풀 시간 제한(ENG-D3 ①)", () => {
           );
 
           const makeRow = (label: string) => ({
+            id: randomUUID(),
+            isNew: true as const,
             subcategory: subcategoryValue,
             itemName: `동시 저장 ${label}`,
             quantity: 1,

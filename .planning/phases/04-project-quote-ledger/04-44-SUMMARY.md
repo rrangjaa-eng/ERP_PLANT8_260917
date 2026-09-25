@@ -183,6 +183,7 @@ completed: 2026-09-25
 6. **총 매출 예상가는 부제 문자열 안이 아니라 부제 아래 별도 줄.**
    - 기존 부제 정확 일치 E2E를 깨지 않기 위해서다.
    - 그 결과 폰에서 총 매출 예상가 줄은 부제 항목 사이가 아니라 부제(상태 날짜 포함) 다음에 온다. 기간 줄이 첫 항목이라는 계약은 지킨다.
+   - **리뷰 S-1로 해소**(`0307584`): 상태 날짜를 부제 문자열에서 빼 총 매출 예상가 뒤 항목으로 그린다. 아래 「리뷰 반영」.
 7. **입력 중 칸 검증을 T1에 넣음.** 「화면이 `validatePreEstimateChange`를 import」 수용 기준을 트레이서에서 만족하려고 T2의 칸 오류 표시 일부가 앞당겨졌다.
 8. **`domain/projects/index.ts`의 낡은 주석 한 줄 갱신.** 「DTO 노출은 04-44가 더했다(preEstimate)」 — 이 플랜이 바꾼 사실에 맞췄다.
 9. **도달 불가 E2E — 「기간 권리 없는 사람의 모달은 글자만」.**
@@ -195,20 +196,40 @@ completed: 2026-09-25
 
 ## 독립 DOM 감사
 
-오케스트레이터가 별도 에이전트로 실행 — 결과는 이후 커밋에 기록.
+별도 에이전트가 `CI=true`(프로덕션 빌드)로 `getBoundingClientRect`·`scrollWidth`를 실측했다(스크린샷 육안 없음). 임시 스펙은 측정 뒤 삭제.
 
-- 폭: 1280 · 1024 · 375 (`CI=true`, DOM 실측 — 스크린샷 육안 금지)
-- 대상 truth(backstop):
-  - 기간 칸·총 매출 예상가 칸이 열려도 머리 줄 가로 스크롤 0이다.
-  - 칸 묶음은 머리 줄 아래에 붙는다.
-  - 375에서 칸 묶음은 전폭·라벨 위다.
-  - 375에서 부제 첫 항목은 `기간 …`이다.
-- 예상 파일: `app/(app)/projects/[id]/page.tsx` · `app/(app)/projects/[id]/quote-table.tsx` · `app/(app)/projects/[id]/pre-estimate-field.tsx` · `app/(app)/projects/[id]/period-field.tsx` · `app/(app)/projects/[id]/status-change.tsx` · `app/(app)/projects/[id]/project-detail.module.css`
+- 1280 · 1024 · 375 × (기간 칸만 · 총 매출 예상가 칸만 · 둘 다 열림): 문서·머리 줄 모두 `scrollWidth === clientWidth` — **전부 PASS**
+- 칸 묶음 top ≥ 머리 줄 bottom, 머리 줄 안 `<input>` 0개 — **전부 PASS**
+- 375: 칸 묶음 전폭(347 = 347) · 라벨이 입력 위 · 부제 첫 항목 `기간 …` — **PASS**
+- 보고만(넘김): N5 — `PeriodField` 시작일 입력이 `inputMode="numeric"`이라 모바일 키패드에 `-`가 없을 수 있다. 코드는 바꾸지 않았다.
+- 감사 시점의 사실 「총 매출 예상가가 상태 날짜 뒤」는 리뷰 S-1로 고쳤다. 고친 순서는 E2E (14)·(14b)가 375·1280에서 위치로 단언한다.
+
+## 리뷰 반영
+
+리뷰(Opus, BLOCKING 0 · SHOULD-FIX 4 · NIT 9) 반영. 테스트 커밋이 수정 커밋보다 먼저다.
+
+- **S-1 부제 순서** — UI-SPEC S3(:1122) · DR-26(:498, :1153)을 따른다(사양 우선, 사용자 결정 불필요).
+  - 테스트 `8c7cdf2`: E2E (14) 375 `기간 < 번호·차수 < 총 매출 예상가 < 상태 날짜`, (14b) 1280 `번호·차수 < 기간 < 총 매출 예상가 < 상태 날짜`. 부제 정확 일치 단언(period (1), lifecycle (a)·(f))은 부제와 상태 날짜 항목을 따로 본다. CI=true RED 5건 확인.
+  - 수정 `0307584`: 부제 문자열은 `번호 · 상세 견적 n차`, 상태 날짜(`{상태} {날짜}`)는 총 매출 예상가 줄 뒤 `.periodLine` 항목. PageHeader API · 토큰 · CSS 변경 없음.
+- **S-2 S15 거부 이유** — 총 매출 예상가·환율 칸이 `formatNumberInput`의 `rejected`를 버리던 것을 `numberInputRejectionReason`으로 칸 오류에 보인다(검증·서버 오류보다 먼저, 값이 바뀌면 사라짐).
+  - 테스트 `f38f484` → `8c5d3ff`(S15는 한 글자 입력을 조용히 거르고 한 번에 들어온 값에만 이유를 붙이므로 `fill("1,234.56")`로 조정, 수정 전 코드에서 RED 재확인) · 수정 `2cd962c`.
+  - 편차: Esc 되돌리기·복원 주입에 제어형 입력이 필요해 비제어 `useCommaInput`/`TextField numberKind`를 쓰지 않았다. 판정·문구는 같은 `lib/format-number` 함수다. 공용 훅에 제어형 옵션을 더하는 통합은 공용 컴포넌트 변경이라 넘김.
+- **S-3 노출 없는 저장 거부** — 통합 (o2b) `f2cf213`: 기간 권리는 있고 `quote.amount` 노출이 꺼진 팀장의 저장 → `PreEstimateRejectedError`(`총 매출 예상가 바꾸기 권한 없음`) · DB 무변경 · `write.denied` 1회 · `findProject` DTO에 `preEstimate` 없음. 코드가 이미 맞아 RED가 없어 변이로 확인했다(`register.ts`의 `|| !ctx.canSeeAmount` 제거 시 실패, 복원 시 통과).
+- **S-4 SUMMARY** — 이 절과 「독립 DOM 감사」 · 「남은 확인」 갱신.
+- **NIT 반영** `3561658`: N-2(useMemo로 `preEstimateBaselineDraft` deps 정확화, eslint-disable 삭제) · N-3(canSave 항 「명시용」 주석).
+- **NIT 넘김**:
+  - N-1 `ledger.ts:270` `normalizeMoneyInput` 주석과 정수 열 초과 시 일반 서버 오류 — 04-40 몫(이 반영에서 건드리지 않는 파일)
+  - N-4 `queueMicrotask`의 ConfirmDialog 동기 포커스 의존 · 제출 중 3차 비활성 — `status-change.tsx`/공용 컴포넌트 변경
+  - N-5 USD 화면 경로 E2E · N-6 `fxRateTouched=false` 음성 케이스 · N-7 `openPeriodField` 게이트 순수 함수 단위 테스트 · N-9 「기간 적기 → 저장 → 다시 전환」 E2E — 테스트 추가 후속
+  - N-8 기록용(조치 없음)
+- 검증(이 반영에서 새로 실행): lint · typecheck · lint:sql 통과 · 단위 1130 passed · 통합 project-period 33 passed · `CI=true` E2E project-period · project-lifecycle · project-register 39 passed.
+- 전체 게이트(CI=true): 오케스트레이터 기록 예정
 
 ## 남은 확인
 
 - 한도 풀리면 Codex 재확인 필요.
-- 위 9번(권리 없는 모달 글자만) — 시드로 닿지 않아 E2E 없음.
+- truth 9 「기간 권리가 없으면 3차 없이 글자만」 — 04-20 시드로는 도달할 수 없다(ENG-D2로 권한을 손으로 켜지 않음). 코드 조건 `periodRights !== "none"`(status-change.tsx)으로만 보장된다. 사용자 보고 대상.
+- PROJ-04는 열어 둔다 — `requirements.ready-ids`가 ready로 돌려주지 않아(다른 미완료 플랜이 선언 중) mark-complete를 부르지 않았다.
 
 ## Known Stubs
 

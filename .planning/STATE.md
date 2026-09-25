@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 3
+current_plan: 31
 status: executing
-stopped_at: Completed 04-40-PLAN.md
-last_updated: "2026-09-25T21:02:17.510Z"
+stopped_at: Completed 04-24-PLAN.md
+last_updated: "2026-09-25T22:32:02.514Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 4 execution started
-state_head: 067c44cea61657de88a2fb775ec0d26b26aa8bd0
+state_head: 085ad1494b8c9d510e88a5eba697f6d62a601113
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 115
-  completed_plans: 52
+  completed_plans: 53
   percent: 6
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 4 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 3
+Current Plan: 31
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-25 — Phase 4 execution started
@@ -101,6 +101,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P23 | 34 min | 3 tasks | 8 files |
 | Phase 04 P14 | 30min | 3 tasks | 12 files |
 | Phase 4 P40 | 48 min | 3 tasks | 11 files |
+| Phase 04 P24 | 66min | 4 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -247,6 +248,10 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-40: writeQuoteLinesInTx가 잠금 후 최신 차수를 재확인하고, 승인 차수는 quote 줄의 수량·단가·상태·세분류를 잠근다(견적가 불변만 허용)
 - [Phase 4]: 04-40: restoreQuoteLine은 현재 차수가 아닌 줄의 복원을 거부한다(04-14 이월 종결)
 - [Phase 4]: 04-40: normalizeMoneyInput이 KRW 열 범위·외화 소수 자리·환율을 검증하고, DR-9 견적가 상한은 수량·단가 두 칸 오류로 돌려준다
+- [Phase 4]: 04-24: 머리 줄 차수 버튼은 RSC가 함수 prop을 넘길 수 없어 직렬화 props 객체 + QuoteLedger 렌더(statusChange 선례)
+- [Phase 4]: 04-24: ConfirmDialog primary.blockedBy — 근거 칸 오류는 칸 아래 한 자리, 1차는 그 id를 aria-describedby로
+- [Phase 4]: 04-24: 승인 표시·취소 뒤 새로 고침은 칸 단계만 서버 값으로 갈고 편집 값은 유지
+- [Phase 4]: 04-24: 부제는 S3의 번호 · 상세 견적 n차 그대로 — 표시 번호 26001-2차는 부제에 넣지 않음(UI-SPEC 결정 필요)
 
 ### Pending Todos
 
@@ -303,6 +308,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-25T21:02:17.276Z
-Stopped at: Completed 04-40-PLAN.md
+Last session: 2026-09-25T22:32:02.272Z
+Stopped at: Completed 04-24-PLAN.md
 Resume file: None

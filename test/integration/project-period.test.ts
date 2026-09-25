@@ -185,6 +185,38 @@ describe("기간 저장 — 행위자 · 권리 · 검증 (04-22 Task 2)", () =>
     expect(await logs(s.projectId, "document_update")).toHaveLength(0);
   });
 
+  it("(b3) 거부 문구의 팀장 이름은 projects.period 쓰기 보유자에서 온다 — 팀장 계급의 projects.status를 꺼도 이름이 남는다(리뷰 S4)", async () => {
+    const s = await setup({ status: "in_progress", startDate: addDays(TODAY, -10), endDate: addDays(TODAY, 5) });
+    await setPermissionCell(SYSTEM_VIEWER, { roleId: "role-team-lead", menu: "projects.status", action: "write", allowed: false });
+    try {
+      const outcome = await saveProjectLedger(s.pm, s.projectId, {
+        seenStatus: "in_progress",
+        period: period(s, { endDate: addDays(TODAY, -1) }),
+      }).catch((error: unknown) => error);
+
+      expect((outcome as PeriodRejectedError).errors).toEqual([
+        { field: "end", reason: `종료일이 오늘보다 빠름 · 앞당기기는 팀장 ${s.leadName}` },
+      ]);
+    } finally {
+      await setPermissionCell(SYSTEM_VIEWER, { roleId: "role-team-lead", menu: "projects.status", action: "write", allowed: true });
+    }
+  });
+
+  it("(b4) 팀장 계급의 projects.period를 끄면 앞당길 수 없는 사람을 가리키지 않는다 — 이름 없이 거부(리뷰 S4)", async () => {
+    const s = await setup({ status: "in_progress", startDate: addDays(TODAY, -10), endDate: addDays(TODAY, 5) });
+    await setPermissionCell(SYSTEM_VIEWER, { roleId: "role-team-lead", menu: "projects.period", action: "write", allowed: false });
+    try {
+      const outcome = await saveProjectLedger(s.pm, s.projectId, {
+        seenStatus: "in_progress",
+        period: period(s, { endDate: addDays(TODAY, -1) }),
+      }).catch((error: unknown) => error);
+
+      expect((outcome as PeriodRejectedError).errors).toEqual([{ field: "end", reason: "종료일이 오늘보다 빠름" }]);
+    } finally {
+      await setPermissionCell(SYSTEM_VIEWER, { roleId: "role-team-lead", menu: "projects.period", action: "write", allowed: true });
+    }
+  });
+
   it("(b2) 진행의 담당 PM이 과거 시작일 프로젝트의 종료일을 비우면 거부되고 DB 무변경(A-02)", async () => {
     const s = await setup({ status: "in_progress", startDate: addDays(TODAY, -3), endDate: addDays(TODAY, 5) });
 

@@ -757,6 +757,8 @@ export async function writeQuoteLinesInTx(
   const position = input.order ? new Map(input.order.map((id, index) => [id, index] as const)) : null;
   let nextSortOrder = activeBefore.reduce((max, row) => Math.max(max, row.sortOrder), -1) + 1;
   const fxToRemember: FxToRemember[] = [];
+  // 실제로 쓴 것(삽입·갱신·순서·보관)이 없으면 로그도 남기지 않는다 — 재전송 no-op은 아무것도 하지 않는다.
+  let wrote = false;
 
   for (const { input: row, payload, customFields } of planned) {
     // D-71 — 환율 칸을 실제로 고친 저장에서만 그 통화의 최근 환율을 기억한다(커밋 뒤 — 트랜잭션을 연 쪽이).
@@ -768,6 +770,7 @@ export async function writeQuoteLinesInTx(
       const sortOrder = position?.get(row.id) ?? nextSortOrder;
       const inserted = await repoInsertQuoteLineIfAbsent(viewer, { id: row.id, revisionId, sortOrder, ...payload, customFields }, tx);
       if (inserted) {
+        wrote = true;
         if (!position) nextSortOrder += 1;
         continue;
       }
@@ -793,19 +796,22 @@ export async function writeQuoteLinesInTx(
       const raceConflicts = cellConflictsFor(row.id, row.baseline, current);
       throw new SaveRejectedError(raceConflicts.length > 0 ? raceConflicts : cellConflictsFor(row.id, undefined, current), []);
     }
+    wrote = true;
   }
 
   if (position) {
     const moved = activeBefore.filter((row) => position.has(row.id) && position.get(row.id) !== row.sortOrder);
     await repoSetQuoteLineSortOrders(viewer, revisionId, moved.map((row) => ({ id: row.id, sortOrder: position.get(row.id)! })), tx);
+    if (moved.length > 0) wrote = true;
   }
 
   // D-56 · A-04 — 삭제는 같은 트랜잭션의 보관이다.
   const archivedCount = await repoArchiveQuoteLines(viewer, { ids: archivedIds, revisionId, archivedBy: viewer.id, archivedAt: new Date() }, tx);
   if (archivedCount !== archivedIds.length) throw new UserFacingError(ARCHIVED_LINE);
+  if (archivedCount > 0) wrote = true;
 
   // (f) 엔지 리뷰 A §1 P2 — 같은 tx(합성 저장이 뒤에서 거부되면 이 로그도 되돌아간다).
-  await recordAction(
+  if (wrote) await recordAction(
     viewer,
     {
       actionType: "document_update",

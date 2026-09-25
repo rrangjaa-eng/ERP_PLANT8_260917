@@ -586,16 +586,18 @@ describe("순서·재전송(엔지 리뷰 A · ENG-D10)", () => {
     expect((await reloadLine(first.id)).itemName).toBe("하나");
   });
 
-  it("(w) 새 줄 둘을 실은 배치를 같은 id로 다시 보내면 둘째도 성공이고 줄은 두 개만 늘었다", async () => {
+  it("(w) 새 줄 둘을 실은 배치를 같은 id로 다시 보내면 둘째도 성공이고 줄은 두 개만 늘었으며 문서 수정 로그도 늘지 않는다", async () => {
     const { project, revision, subcategoryValue } = await setupProject();
     const batch = [newRow(subcategoryValue, { itemName: "재전송 하나", note: "" }), newRow(subcategoryValue, { itemName: "재전송 둘", quantity: 2, unitPrice: krw(5_000) })];
     const save = () =>
       saveProjectLedger(SYSTEM_VIEWER, project.id, { seenStatus: "bidding", quoteLines: { revisionId: revision.id, rows: batch } });
 
     await save();
+    const logsAfterFirst = await actionCount(QUOTE_LINE_ENTITY, revision.id, "document_update");
     const second = await save();
 
     expect(await activeIds(revision.id)).toHaveLength(2);
+    expect(await actionCount(QUOTE_LINE_ENTITY, revision.id, "document_update")).toBe(logsAfterFirst);
     expect(second.quoteLines?.lines.map((line) => line.id).sort()).toEqual(batch.map((row) => row.id).sort());
   });
 

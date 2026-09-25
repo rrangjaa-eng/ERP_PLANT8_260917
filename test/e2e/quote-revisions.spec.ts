@@ -763,14 +763,12 @@ test.describe("이전 차수 보관본 복원 줄 (04-24 Task 4 — DR-4 · DR-3
     await expect(tabB.getByText(`${project.number} · 상세 견적 2차`, { exact: true })).toBeVisible();
     await tabB.close();
 
-    // 복원 줄이 보이면 그 차수 줄을 한 번 받아 둔다(「복사」가 클릭 안에서 동기로 쓴다) — 그 응답을 기다린다.
-    const linesLoaded = page.waitForResponse((response) => isServerAction(response.request()));
     await page.reload();
     await expect(page.getByText(`${project.number} · 상세 견적 2차`, { exact: true })).toBeVisible();
-    await linesLoaded;
     const row = previousDraftRow(page, 1);
     await expect(row).toHaveText(/^1차 저장 안 한 편집 1칸/);
-    await expect(row.getByRole("button", { name: "복사" })).toBeVisible();
+    // 복원 줄이 보이면 그 차수 줄을 한 번 받아 둔다(「복사」가 클릭 안에서 동기로 쓴다) — 받는 동안 「복사」는 진행 중이다(검토 S2).
+    await expect(row.getByRole("button", { name: "복사" })).not.toHaveAttribute("aria-disabled", "true");
     await expect(row.getByRole("button", { name: "버림" })).toBeVisible();
 
     await captureCopies(page);
@@ -809,13 +807,12 @@ test.describe("이전 차수 보관본 복원 줄 (04-24 Task 4 — DR-4 · DR-3
     const [lineId] = await lineIdsOf(project.revisionId);
     await login(page, pm);
     await seedDraft(page, project.id, project.revisionId, { [`${lineId}:itemName`]: "보관된 항목" });
-    // 줄을 받은 뒤라야 실패가 execCommand 때문임을 본다(받기 전 클릭도 같은 글자다).
-    const linesLoaded = page.waitForResponse((response) => isServerAction(response.request()));
     await page.goto(`/projects/${project.id}`);
-    await linesLoaded;
 
     const row = previousDraftRow(page, 1);
     await expect(row).toHaveText(/^1차 저장 안 한 편집 1칸/);
+    // 줄을 받은 뒤라야 실패가 execCommand 때문임을 본다(받는 동안 「복사」는 진행 중 — 검토 S2).
+    await expect(row.getByRole("button", { name: "복사" })).not.toHaveAttribute("aria-disabled", "true");
     await page.evaluate(() => {
       document.execCommand = () => false;
     });
@@ -855,9 +852,7 @@ test.describe("이전 차수 보관본 복원 줄 (04-24 Task 4 — DR-4 · DR-3
     await copyRevision(project.id, project.revisionId);
     await login(page, pm);
     await seedDraft(page, project.id, project.revisionId, { [`${randomUUID()}:itemName`]: "없는 줄의 편집" });
-    const linesLoaded = page.waitForResponse((response) => isServerAction(response.request()));
     await page.goto(`/projects/${project.id}`);
-    await linesLoaded;
 
     const row = previousDraftRow(page, 1);
     await expect(row).toHaveText(/^1차 저장 안 한 편집 1칸/);
@@ -866,6 +861,39 @@ test.describe("이전 차수 보관본 복원 줄 (04-24 Task 4 — DR-4 · DR-3
     await copy.click();
     await expect(row.getByText("복사하지 못함", { exact: true })).toBeVisible();
     await expect(row.getByText(/복사됨/)).toHaveCount(0);
+  });
+
+  test("그 차수 줄을 받는 동안 「복사」는 진행 중(`…` · aria-disabled)이고 눌러도 `복사하지 못함`이 없다 — 받으면 켜진다(검토 S2)", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "받는 중 줄", unitPrice: 1_000_000, execution: 400_000 }] });
+    await copyRevision(project.id, project.revisionId);
+    const [lineId] = await lineIdsOf(project.revisionId);
+    await login(page, pm);
+    await seedDraft(page, project.id, project.revisionId, { [`${lineId}:itemName`]: "보관된 항목" });
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(`**/projects/${project.id}`, async (route) => {
+      if (isServerAction(route.request())) await held;
+      await route.continue();
+    });
+    await page.goto(`/projects/${project.id}`);
+
+    const row = previousDraftRow(page, 1);
+    await expect(row).toHaveText(/^1차 저장 안 한 편집 1칸/);
+    const copy = row.getByRole("button", { name: "복사" });
+    await expect(copy).toHaveAttribute("aria-disabled", "true");
+    await expect(copy).toHaveText("복사…");
+    await copy.click();
+    await expect(row.getByText("복사하지 못함", { exact: true })).toHaveCount(0);
+
+    release();
+    await expect(copy).not.toHaveAttribute("aria-disabled", "true");
+    await captureCopies(page);
+    await copy.click();
+    await expect(row.getByText("복사됨 1칸", { exact: true })).toBeVisible();
   });
 
   test("다른 차수 보관본이 둘(1차·2차, 현재 3차)이면 `2차 …` 하나 · 순서 현재 복원 → 이전 차수 → 잠김 · 버리면 `1차 …`", async ({ page }) => {

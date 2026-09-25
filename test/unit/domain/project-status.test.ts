@@ -42,7 +42,7 @@ function projectOf(status: ProjectStatus, startDate: string | null = "2026-10-01
   return { status, teamId: TEAM_A, startDate };
 }
 
-type Expected = "ok" | string;
+type Expected = string; // "ok" 또는 거부 이유 문자열
 
 // 전환 × 주체 결정표 — 시작일이 있는 팀 A 프로젝트.
 const TRANSITION_TABLE: { from: ProjectStatus; to: ProjectStatus; expect: Record<ActorName, Expected> }[] = [

@@ -6,7 +6,7 @@ import { recordAction as defaultRecordAction } from "@/domain/action-log/record"
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import { denyWrite } from "@/domain/rules/deny-write";
-import type { ProjectStatus } from "@/domain/projects/status-transitions";
+import { ALLOWED_TRANSITIONS, PROJECT_STATUSES, type ProjectStatus } from "@/domain/projects/status-transitions";
 import { withTransaction } from "@/lib/db-transaction";
 import { kstToday } from "@/lib/kst-date";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -28,6 +28,7 @@ const TRANSITION_RULE = "project.transition";
 const START_DATE_RULE = "project.start-date-required";
 
 export class ProjectNotFoundError extends UserFacingError {}
+export class ForbiddenError extends UserFacingError {}
 
 // 잠근 행의 상태가 화면이 본 상태(from)와 다르다 — 지금 상태 값을 싣는다.
 export class StatusChangedError extends UserFacingError {
@@ -105,13 +106,41 @@ export type StatusChangeFacts = {
   labels: Record<string, string>;
 };
 
-async function loadStatusLabels(viewer: Viewer): Promise<Record<string, string>> {
-  const rows = await repoListCodeItems(viewer, {
+// ── 상태 코드표 목록(D-93 · S7·S14 · A-10) ────────────────────────────────
+// references.ts 선례 — "projects" 보기 하나로 게이트하고 리포지토리를 행 범위
+// all로 부른다(코드표 관리 권한이 없는 팀장·대표에게도 온다). 관리자가 비활성으로
+// 돌린 값의 라벨도 찾고, 관리자가 더한 값은 싣지 않는다(PROJECT_STATUSES만).
+export type ProjectStatusCatalogEntry = { value: ProjectStatus; label: string; description: string | null };
+
+type CatalogDeps = { listCodeItems: typeof repoListCodeItems };
+
+async function readStatusCatalog(viewer: Viewer, deps?: Partial<CatalogDeps>): Promise<ProjectStatusCatalogEntry[]> {
+  const listCodeItems = deps?.listCodeItems ?? repoListCodeItems;
+  const rows = await listCodeItems(viewer, {
     tableKey: STATUS_TABLE_KEY,
     scope: { rows: "all", includeArchived: false },
     includeInactive: true,
   });
-  return Object.fromEntries(rows.map((row) => [row.value, row.label]));
+  const known: readonly string[] = PROJECT_STATUSES;
+  return rows
+    .filter((row) => known.includes(row.value))
+    .map((row) => ({ value: row.value as ProjectStatus, label: row.label, description: row.description }));
+}
+
+export async function listProjectStatusCatalog(
+  viewer: Viewer,
+  deps?: Partial<CatalogDeps & { can: typeof defaultCan }>,
+): Promise<ProjectStatusCatalogEntry[]> {
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, "projects", "view"))) {
+    throw new ForbiddenError("프로젝트 조회 권한이 없습니다.");
+  }
+  return readStatusCatalog(viewer, deps);
+}
+
+async function loadStatusLabels(viewer: Viewer): Promise<Record<string, string>> {
+  const catalog = await readStatusCatalog(viewer);
+  return Object.fromEntries(catalog.map((entry) => [entry.value, entry.label]));
 }
 
 export type StatusChangeFactDeps = TeamScopeDeps & {
@@ -125,16 +154,74 @@ export async function loadStatusChangeFacts(
   viewer: Viewer,
   deps?: Partial<StatusChangeFactDeps>,
 ): Promise<StatusChangeFacts> {
+  const [rowScope, actor, labels] = await Promise.all([
+    scopeFor(viewer, PROJECT_ENTITY, { can: deps?.can ?? defaultCan }),
+    loadActorFacts(viewer, deps),
+    loadStatusLabels(viewer),
+  ]);
+  return { rowScope, ...actor, labels };
+}
+
+// ── 판정(게이트 두 규칙) ─────────────────────────────────────────────────────
+// 전환 함수·갈 곳 목록이 같은 판정을 쓴다. 상태 이름 비교는 규칙 안에만 있다.
+export type ActorFacts = Pick<StatusChangeFacts, "menus" | "teamScope">;
+
+export type TransitionDecision =
+  | { allowed: true; fillEndDateFromStart: boolean }
+  | { allowed: false; rule: string; reason: string };
+
+export async function evaluateTransition(
+  project: { status: string; teamId: string; startDate: string | null },
+  to: ProjectStatus,
+  facts: ActorFacts,
+): Promise<TransitionDecision> {
+  const transition = await gate(project, TRANSITION_RULE, {
+    from: project.status,
+    to,
+    actorMenus: facts.menus,
+    actorCoversTeam: coversProjectTeam(facts.teamScope, project.teamId),
+  });
+  if (!transition.allowed) return { allowed: false, rule: TRANSITION_RULE, reason: transition.reason };
+
+  const period = await gate(project, START_DATE_RULE, { to, startDate: project.startDate });
+  if (!period.allowed) return { allowed: false, rule: START_DATE_RULE, reason: period.reason };
+
+  // 목적지가 기간을 요구하는지(D-82 — 진행)는 규칙이 정한다: 시작일 없이 물어 막히는
+  // 목적지면 빈 종료일을 같은 UPDATE에서 시작일로 채운다.
+  const needsPeriod = !(await gate(project, START_DATE_RULE, { to, startDate: null })).allowed;
+  return { allowed: true, fillEndDateFromStart: needsPeriod };
+}
+
+// ── 갈 곳 목록(S3·S7 · A-09) ────────────────────────────────────────────────
+// 그 사람이 지금 상태에서 갈 수 있는 곳과 서버가 판정한 막힘 이유(시작일 없음).
+// 권한·팀 범위가 없는 목적지는 싣지 않는다 — 비면 화면이 「상태 바꾸기」를 그리지 않는다.
+export type StatusDestination = { to: ProjectStatus; blockedReason: string | null };
+
+export async function statusDestinations(
+  viewer: Viewer,
+  project: { status: string; teamId: string; startDate: string | null },
+  deps?: Partial<StatusChangeFactDeps & { facts: ActorFacts }>,
+): Promise<StatusDestination[]> {
+  const facts = deps?.facts ?? (await loadActorFacts(viewer, deps));
+  const destinations: StatusDestination[] = [];
+  for (const transition of ALLOWED_TRANSITIONS) {
+    if (transition.from !== project.status) continue;
+    const decision = await evaluateTransition(project, transition.to, facts);
+    if (decision.allowed) destinations.push({ to: transition.to, blockedReason: null });
+    else if (decision.rule === START_DATE_RULE) destinations.push({ to: transition.to, blockedReason: decision.reason });
+  }
+  return destinations;
+}
+
+async function loadActorFacts(viewer: Viewer, deps?: Partial<StatusChangeFactDeps>): Promise<ActorFacts> {
   const canFn = deps?.can ?? defaultCan;
   const now = deps?.now ?? (() => new Date());
-  const [rowScope, status, complete, teamScope, labels] = await Promise.all([
-    scopeFor(viewer, PROJECT_ENTITY, { can: canFn }),
+  const [status, complete, teamScope] = await Promise.all([
     canFn(viewer, "projects.status", "write"),
     canFn(viewer, "projects.complete", "write"),
     loadActorTeamScope(viewer, { todayKst: kstToday(now()) }, deps),
-    loadStatusLabels(viewer),
   ]);
-  return { rowScope, menus: { status, complete }, teamScope, labels };
+  return { menus: { status, complete }, teamScope };
 }
 
 // ── 전환 ───────────────────────────────────────────────────────────────────
@@ -173,24 +260,13 @@ export async function changeProjectStatus(
       new StatusChangedError(statusChangedMessage(facts.labels[row.status] ?? row.status, "새로 고침"), row.status);
     if (row.status !== input.from) denyWrite(viewer, "project.status-current", ids, statusChanged());
 
-    const transition = await gate(row, TRANSITION_RULE, {
-      from: row.status,
-      to: input.to,
-      actorMenus: facts.menus,
-      actorCoversTeam: coversProjectTeam(facts.teamScope, row.teamId),
-    });
-    if (!transition.allowed) denyWrite(viewer, TRANSITION_RULE, ids, new GateBlockedError(transition.reason));
+    const decision = await evaluateTransition(row, input.to, facts);
+    if (!decision.allowed) denyWrite(viewer, decision.rule, ids, new GateBlockedError(decision.reason));
 
-    const period = await gate(row, START_DATE_RULE, { to: input.to, startDate: row.startDate });
-    if (!period.allowed) denyWrite(viewer, START_DATE_RULE, ids, new GateBlockedError(period.reason));
-
-    // 목적지가 기간을 요구하는지(D-82 — 진행)는 규칙이 정한다: 시작일 없이 물어 막히는
-    // 목적지면 빈 종료일을 같은 UPDATE에서 시작일로 채운다.
-    const needsPeriod = !(await gate(row, START_DATE_RULE, { to: input.to, startDate: null })).allowed;
     const updated = await updateProjectStatusIfCurrent(
       viewer,
       projectId,
-      { expectedStatus: input.from, status: input.to, fillEndDateFromStart: needsPeriod },
+      { expectedStatus: input.from, status: input.to, fillEndDateFromStart: decision.fillEndDateFromStart },
       tx,
     );
     if (!updated) denyWrite(viewer, "project.status-current", ids, statusChanged());

@@ -119,6 +119,17 @@ async function pasteIntoFocusedCell(page: Page, text: string) {
   }, text);
 }
 
+// 수화가 끝나기 전에 준 포커스는 React가 받지 못해 격자 포커스(roving tabindex)가 (0,0)에 남고, 그 뒤 붙여넣기·키는
+// (0,0)에서 처리된다(300줄 표에서 실측 — (c4)의 간헐 실패도 같은 모양). 그 셀이 탭 정지(tabindex 0)가 될 때까지 포커스를
+// 다시 준다 — 고정 대기가 아니라 격자가 포커스를 받은 사실을 확인한다.
+async function focusGridCell(target: Locator) {
+  await expect(async () => {
+    await target.evaluate((element) => (element as HTMLElement).blur());
+    await target.focus();
+    await expect(target).toHaveAttribute("tabindex", "0", { timeout: 1_000 });
+  }).toPass();
+}
+
 // 편집기를 열어 값을 적고 Enter로 커밋한다.
 async function typeInto(page: Page, target: Locator, label: string, value: string) {
   await target.focus();
@@ -376,7 +387,7 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
   test("(c4) 정산 PM이 표 끝을 넘겨 붙여넣으면 새 줄의 잠긴 수량·단가 칸은 같은 이유의 오류 셀이고 값은 1 · 0 그대로다", async ({ page }) => {
     await openAsPm(page, "settling", addDays(TODAY, -3), [{ itemName: "정산 붙여넣기 줄", unitPrice: 100_000, execution: 50_000 }]);
 
-    await cell(page, 0, COL.quantity).focus();
+    await focusGridCell(cell(page, 0, COL.quantity));
     await pasteIntoFocusedCell(page, "3\t5000\n4\t6000");
     await expect(dataRows(page)).toHaveCount(2);
 

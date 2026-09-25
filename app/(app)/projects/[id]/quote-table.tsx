@@ -753,6 +753,8 @@ export function QuoteLedger({
   const [periodFocus, setPeriodFocus] = useState<"start" | "end">("start");
   const [periodErrors, setPeriodErrors] = useState<PeriodFieldError[]>([]);
   const [periodSaved, setPeriodSaved] = useState(false);
+  // 리뷰 S5 — 저장이 상태를 바꾸면(정산 → 진행) router.refresh가 오기 전의 다음 저장도 새 상태를 싣는다.
+  const [seenStatus, setSeenStatus] = useState(status);
   const router = useRouter();
   // 04-22(D-68) — 사용자가 칸을 바꾼 순간에만 보관본을 쓴다. 편집 핸들러가 켜고, 상태가
   // 반영된 뒤 효과가 현재 편집 전체를 쓴다. 서버 값으로 다시 그리는 경로는 켜지 않는다.
@@ -795,6 +797,7 @@ export function QuoteLedger({
         const saved = data.project;
         setPeriodBaseline({ startDate: saved.startDate, endDate: saved.endDate });
         setPeriodErrors([]);
+        setSeenStatus(saved.status as ProjectStatus); // projects.status 열은 text — 값은 PROJECT_STATUSES 중 하나다.
         if (periodDraft) closePeriodFieldAfterSave();
         // 상태가 바뀌었으면(정산 → 진행 등) 서버가 계산하는 태그·권리·canSave를 다시 받는다.
         if (saved.status !== status) router.refresh();
@@ -878,6 +881,7 @@ export function QuoteLedger({
   const [renderedStatus, setRenderedStatus] = useState(status);
   if (renderedStatus !== status) {
     setRenderedStatus(status);
+    setSeenStatus(status);
     setLines(initialLines.map(fromDto));
     setContractDraft(contractFromDto(revenue));
     setIssuedEntries(entriesFromDto(revenue.issuedEntries));
@@ -1052,7 +1056,7 @@ export function QuoteLedger({
 
     execute({
       projectId,
-      seenStatus: status,
+      seenStatus,
       period:
         periodDraft && periodDirtyCount > 0
           ? {

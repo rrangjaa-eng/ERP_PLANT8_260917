@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 04-14-PLAN.md (CI=true 전체 게이트는 오케스트레이터 대기)
-last_updated: "2026-09-25T19:39:32.112Z"
+stopped_at: Completed 04-40-PLAN.md
+last_updated: "2026-09-25T21:02:17.510Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 4 execution started
-state_head: bc5a9091b8344cfcfeb2d9d48975f088644173ce
+state_head: 067c44cea61657de88a2fb775ec0d26b26aa8bd0
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 115
-  completed_plans: 51
+  completed_plans: 52
   percent: 6
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 4 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-25 — Phase 4 execution started
@@ -100,6 +100,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P13 | 38 min | 2 tasks | 15 files |
 | Phase 04 P23 | 34 min | 3 tasks | 8 files |
 | Phase 04 P14 | 30min | 3 tasks | 12 files |
+| Phase 4 P40 | 48 min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -243,6 +244,9 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-14: 고객 승인 게이트 quote.customer-approval은 수주중·미수주를 규칙 안에서 면제(사용자 D8)
 - [Phase 04]: 04-14: 이전 차수 잠김 조회는 listQuoteLines ctx.locked + 새 입구 listRevisionLines(projectId, revisionSeq) — 기존 listQuoteLines 호출자 보존
 - [Phase 04]: 04-14: 승인 기준값 = 견적 합계 + md5 내용 토큰(견적 줄·견적 외 비용, 보관 포함, 조정 줄 제외) — 리포지토리 sql 조각 하나를 approvalBasis·summarizeRevisions가 공유
+- [Phase 4]: 04-40: writeQuoteLinesInTx가 잠금 후 최신 차수를 재확인하고, 승인 차수는 quote 줄의 수량·단가·상태·세분류를 잠근다(견적가 불변만 허용)
+- [Phase 4]: 04-40: restoreQuoteLine은 현재 차수가 아닌 줄의 복원을 거부한다(04-14 이월 종결)
+- [Phase 4]: 04-40: normalizeMoneyInput이 KRW 열 범위·외화 소수 자리·환율을 검증하고, DR-9 견적가 상한은 수량·단가 두 칸 오류로 돌려준다
 
 ### Pending Todos
 
@@ -299,6 +303,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-25T19:39:16.205Z
-Stopped at: Completed 04-14-PLAN.md (CI=true 전체 게이트는 오케스트레이터 대기)
+Last session: 2026-09-25T21:02:17.276Z
+Stopped at: Completed 04-40-PLAN.md
 Resume file: None

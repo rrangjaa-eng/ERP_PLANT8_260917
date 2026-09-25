@@ -404,6 +404,16 @@ describe("조정 줄 권한 · PM 거부 · 보관 · 복원(04-13 Task 2 · D-8
     expect(await sortOrders()).toEqual([1, 0, 2]);
   });
 
+  it("(k13) 완료 프로젝트에서도 조정 권한만 있는 사람의 견적 줄 변경은 권한 이유로 거부된다(상태 이유가 새지 않음 · 검토 N5)", async () => {
+    const { project, revisionId } = await setupProject();
+    const quote = await seedLine(revisionId, "quote");
+    await setStatus(project.id, "completed");
+
+    await expect(
+      saveQuoteLines(await makeViewer(adjusterMenus), revisionId, { rows: [asInput(quote, { note: "경영관리가 고침" })] }),
+    ).rejects.toThrow("견적 줄 · 쓰기 권한 없음");
+  });
+
   it("(k7) 기존 조정 줄에 lineKind quote를 실어 보내면 「줄 종류는 바뀌지 않음 · 새로 고침」으로 거부되고 종류는 그대로다", async () => {
     const { project, revisionId } = await setupProject();
     const adjustment = await seedLine(revisionId, "adjustment", { execution: -10_000 });

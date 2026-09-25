@@ -32,6 +32,7 @@ import {
   MoneyInputError,
   quoteAmount,
   quoteAmountWithinBound,
+  withinKrwColumn,
   profit,
   type Money,
   type Currency,
@@ -708,11 +709,17 @@ function sameCustomFields(stored: unknown, next: Record<string, unknown>): boole
   return canonical((stored ?? {}) as Record<string, unknown>) === canonical(next);
 }
 
+// 04-40 검토 SF-1 — quantity numeric(12,2)의 정수부 한계(db/schema/quote-lines.ts). 저장은 toFixed(2) 뒤 값이다.
+const QUANTITY_COLUMN_LIMIT = 1e10;
+
 // EXP-14 — 실행가 음수는 견적 외 비용·조정 줄만 받는다.
 export function quoteLineFormatErrors(input: QuoteLineWriteRow, rowIndex: number, kind: QuoteLineKind): CellFormatError[] {
   const errors: CellFormatError[] = [];
   if (input.quantity !== undefined && input.quantity <= 0) {
     errors.push({ rowIndex, rowId: input.id, field: "quantity", label: "수량", reason: "숫자가 아닙니다 · 0보다 큰 수를 적어 주세요" });
+  }
+  if (input.quantity !== undefined && Number(input.quantity.toFixed(2)) >= QUANTITY_COLUMN_LIMIT) {
+    errors.push({ rowIndex, rowId: input.id, field: "quantity", label: "수량", reason: "수량이 상한을 넘습니다 · 수량을 고쳐 주세요" });
   }
   if (input.unitPrice.amount < 0) {
     errors.push({ rowIndex, rowId: input.id, field: "unitPrice", label: "단가", reason: "숫자가 아닙니다 · 12,400,000처럼 적어 주세요" });
@@ -756,6 +763,10 @@ function normalizeLineMoney(row: QuoteLineWriteRow, rowIndex: number): { row: Qu
     for (const field of ["quantity", "unitPrice"] as const) {
       errors.push({ rowIndex, rowId: row.id, field, label: CELL_LABELS[field], reason: QUOTE_AMOUNT_OVER });
     }
+  }
+  // 04-40 검토 SF-1 — 차익(견적가 − 실행가)도 profit_krw 정수 컬럼 안이어야 한다(견적가 0 줄의 음수 실행가 하한 등).
+  if (errors.length === 0 && !withinKrwColumn(computeQuoteLineAmounts({ ...row, unitPrice, execution }).profitKrw)) {
+    errors.push({ rowIndex, rowId: row.id, field: "execution", label: CELL_LABELS.execution, reason: "차익이 상한을 넘습니다 · 실행가를 고쳐 주세요" });
   }
   return { row: { ...row, unitPrice, execution }, errors };
 }

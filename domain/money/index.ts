@@ -62,6 +62,9 @@ export function toKrw(input: MoneyInput): number {
 // 04-40(엔지니어링 리뷰 B §2 · DR-9) — 원화 금액 컬럼(integer)의 범위. 금액 입력 범위와 계산 견적가 상한이 같은 두 상수를 쓴다.
 export const KRW_COLUMN_MIN = -2147483648;
 export const KRW_COLUMN_MAX = 2147483647;
+// 04-40 검토 SF-1 — 외화 금액 numeric(14,2) · 환율 numeric(12,4)의 정수부 한계(db/schema/money-columns.ts).
+const FOREIGN_AMOUNT_COLUMN_LIMIT = 1e12;
+const FX_RATE_COLUMN_LIMIT = 1e8;
 
 // UI-SPEC rev 5 Copywriting `Error — 셀(금액 범위)` · `Error — 셀(숫자 자리)` · `Error — 셀(형식)`.
 export type MoneyInputErrorReason = "fx-rate" | "range" | "not-finite" | "precision";
@@ -75,7 +78,7 @@ export class MoneyInputError extends UserFacingError {
   }
 }
 
-function withinKrwColumn(value: number): boolean {
+export function withinKrwColumn(value: number): boolean {
   return value >= KRW_COLUMN_MIN && value <= KRW_COLUMN_MAX;
 }
 
@@ -96,6 +99,8 @@ export function normalizeMoneyInput(input: MoneyInput): MoneyInput {
     }
     if (!hasAtMostDecimals(normalized.amount, 2)) throw new MoneyInputError("precision", "외화는 소수 2자리까지");
     if (!hasAtMostDecimals(normalized.fxRate, 4)) throw new MoneyInputError("precision", "환율은 소수 4자리까지");
+    if (normalized.fxRate >= FX_RATE_COLUMN_LIMIT) throw new MoneyInputError("range", "환율이 상한을 넘습니다 · 환율을 고쳐 주세요");
+    if (Math.abs(normalized.amount) >= FOREIGN_AMOUNT_COLUMN_LIMIT) throw new MoneyInputError("range", "외화 금액이 상한을 넘습니다 · 금액을 고쳐 주세요");
   }
   if (!withinKrwColumn(toKrw(normalized))) {
     throw new MoneyInputError("range", `금액이 상한을 넘습니다 · ${formatKrw(KRW_COLUMN_MAX)}원 이하`);

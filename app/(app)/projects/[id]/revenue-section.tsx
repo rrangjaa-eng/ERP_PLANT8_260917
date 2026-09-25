@@ -269,7 +269,11 @@ export function RevenueSection({
         ),
       secondaryLine: (row) =>
         row.computedGrossKrw !== null && row.computedGrossKrw !== undefined
-          ? `공급가액 ${formatKrw(row.computedGrossKrw)} · 서버 계산`
+          ? (
+              <span className={styles.secondaryGroups}>
+                <span>공급가액 {formatKrw(row.computedGrossKrw)}</span> <span>· 서버 계산</span>
+              </span>
+            )
           : null,
     },
     {

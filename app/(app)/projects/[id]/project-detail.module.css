@@ -149,6 +149,17 @@
   font-size: var(--fs-sm);
 }
 
+/* 입금 셀 둘째 줄 — 숫자 열(.alignRight)의 nowrap을 상속하면 줄 전체가 열
+   최소 폭이 돼 375px에서 표가 넘친다. 숫자 묶음은 꺾지 않고 두 묶음
+   사이에서만 줄바꿈한다(SYSTEM.md 숫자 칸 · 외화 2행 규칙과 같은 결). */
+.secondaryGroups {
+  white-space: normal;
+}
+
+.secondaryGroups > span {
+  white-space: nowrap;
+}
+
 .hintRow kbd {
   padding: 0 4px;
   border: var(--line-w) solid var(--line);

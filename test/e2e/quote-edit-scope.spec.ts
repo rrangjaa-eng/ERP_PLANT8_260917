@@ -43,7 +43,7 @@ async function login(page: Page, account: Account) {
   await expect(page).toHaveURL(/\/account$/);
 }
 
-type SeedLine = { itemName: string; unitPrice: number; execution: number };
+type SeedLine = { itemName: string; unitPrice: number; execution: number; unitPriceFx?: { currency: "USD"; fxRate: number } };
 
 // 줄은 수주중(생성 직후)일 때 도메인 함수로 넣고, 그 뒤 상태를 DB에 둔다(project-period.spec.ts와 같은 준비).
 async function makeProject(input: {
@@ -78,7 +78,9 @@ async function makeProject(input: {
         subcategory: subcategory.value,
         itemName: line.itemName,
         quantity: 1,
-        unitPrice: { currency: "KRW" as const, amount: line.unitPrice, fxRate: 1 },
+        unitPrice: line.unitPriceFx
+          ? { currency: line.unitPriceFx.currency, amount: line.unitPrice, fxRate: line.unitPriceFx.fxRate }
+          : { currency: "KRW" as const, amount: line.unitPrice, fxRate: 1 },
         execution: { currency: "KRW" as const, amount: line.execution, fxRate: 1 },
       })),
     });
@@ -730,5 +732,25 @@ test.describe("폭 규칙 — 1024 미만 보기 전용 · 좁은 PC 열 접기 
     await expect(lineCell(page, "폭 첫 줄", COL.execution)).toBeFocused();
     await expect(page.locator("tfoot").getByText(/차익 \d/)).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+
+  test("(n) 1024 — 외화 단가 2행은 두 묶음 사이에서만 줄바꾸고 단가 열이 원화만 있을 때 폭 근처로 묶인다 (DR-14)", async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 800 });
+    await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);
+    const krwWidth = await page.getByRole("columnheader", { name: "단가" }).evaluate((el) => el.getBoundingClientRect().width);
+
+    await page.context().clearCookies();
+    await openAsPm(page, "in_progress", addDays(TODAY, 10), [
+      ...TWO_LINES,
+      { itemName: "외화 줄", unitPrice: 4400, execution: 3_000_000, unitPriceFx: { currency: "USD", fxRate: 1318.1818 } },
+    ]);
+
+    const fxWidth = await page.getByRole("columnheader", { name: "단가" }).evaluate((el) => el.getBoundingClientRect().width);
+    // 두 묶음(`USD 4,400.00` · `@1,318.1818`)이 같은 줄이면 열이 그 합친 길이로 넓어진다 — 감사 FAIL(253px 대 145px).
+    const [group1, group2] = await lineCell(page, "외화 줄", COL.unitPrice)
+      .locator(`span > span`)
+      .evaluateAll((els) => els.map((el) => el.getBoundingClientRect().top));
+    expect(group1).not.toEqual(group2);
+    expect(fxWidth).toBeLessThanOrEqual(krwWidth + 40);
   });
 });

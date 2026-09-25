@@ -853,6 +853,10 @@ test.describe("줄 수 상한 (04-26, D-86 · UX-04 · UX-05)", () => {
     await expect(footerNotice).toBeVisible();
     await expect(capRows(page)).toHaveCount(300);
 
+    // 저장 시도는 상한 글자를 지운다(위 attemptSave/onSave 주석) — Ctrl+D의 단언을 Ctrl+Enter의 잔상과 분리한다.
+    await saveWithKeyboard(page, capCell(page, 0, COL.itemName));
+    await expect(footerNotice).toHaveCount(0);
+
     await focusGridCell(capCell(page, 0, COL.itemName));
     await page.keyboard.press("Control+d");
     await expect(footerNotice).toBeVisible();

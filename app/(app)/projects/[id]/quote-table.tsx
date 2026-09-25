@@ -843,6 +843,8 @@ export function QuoteLedger({
   const [balanceKrw, setBalanceKrw] = useState<number | undefined>(revenue.balanceKrw);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [pasteWarning, setPasteWarning] = useState<string | null>(null);
+  // 04-26(D-86 · DR-16) — 상한에서 막힌 키(Ctrl+Enter·Ctrl+D)·붙여넣기의 이유. 다음 저장 시도·다음 붙여넣기 때 지운다.
+  const [lineCapNotice, setLineCapNotice] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{
     clientKey: string;
     itemName: string;
@@ -1237,6 +1239,13 @@ export function QuoteLedger({
     setPaidEntries((prev) => [...(prev ?? []), newEntryDraft()]);
   }
 
+  // 04-26(DR-16) — 저장 시도(버튼·Ctrl+S·표 밖 칸의 저장)는 상한 글자를 먼저 지운다. 이벤트에서 부른다 — Ctrl+S는
+  // 셀 편집기 커밋 뒤 효과에서 handleSave를 부르므로 지우기는 키를 받은 쪽(onSave)이 한다.
+  function attemptSave() {
+    setLineCapNotice(null);
+    handleSave();
+  }
+
   function handleSave() {
     if (savingRef.current || isExecuting) return; // 버튼·키보드 두 경로가 여기서 한 번만 보낸다.
     if (errorCellCount > 0) return; // §7-3 "오류가 한 칸이라도 있으면 화면 전체가 거부" — 서버에 보내지 않는다.
@@ -1626,6 +1635,14 @@ export function QuoteLedger({
     // 새로 생길 줄은 「줄 추가」와 같은 셀 단계(newLineCells)로 판정한다 — 정산 새 줄의 수량·단가는 잠김이다.
     const newRow = newDraftLine(subcategories[0]?.value ?? "", newLineCells);
     const result = applyPaste({ clipboardText, columns: pasteColumns, rows: lines, activeRowIndex: rowIndex, activeColIndex: colIndex, newRow });
+    // 04-26(D-86) — 상한을 넘기는 붙여넣기는 견적을 자르지 않고 한 칸도 바꾸지 않은 채 전부 거부한다.
+    const overCap = lines.length + result.newRowsNeeded - lineCap;
+    if (result.newRowsNeeded > 0 && overCap > 0) {
+      setPasteWarning(null);
+      setLineCapNotice(`붙여넣기 전부 거부 · ${lineCap}줄 상한을 ${overCap}줄 넘음`);
+      return;
+    }
+    setLineCapNotice(null);
     // DR-35 — 잠긴·읽기 전용 셀에 떨어진 값의 오류 이유는 그 셀의 편집 시도 이유와 같은 문자열이다.
     const blockedReasons = new Map<string, string>();
     for (const cell of result.cells) {
@@ -1878,7 +1895,7 @@ export function QuoteLedger({
               disabledReason={errorCellCount > 0 ? `오류 ${errorCellCount}칸 · 고쳐야 저장됩니다` : saveDisabledReason}
               reasonTone={errorCellCount > 0 ? "block" : "info"}
               shortcut="Ctrl+S"
-              onClick={handleSave}
+              onClick={attemptSave}
             >
               일괄 저장{dirtyCount > 0 ? ` ${dirtyCount}` : ""}
             </Button>
@@ -1897,7 +1914,7 @@ export function QuoteLedger({
           saved={periodSaved}
           onChange={changePeriod}
           onEscape={escapePeriod}
-          onSave={handleSave}
+          onSave={attemptSave}
           saveLocked={saveLocked}
         />
       ) : null}
@@ -1910,7 +1927,7 @@ export function QuoteLedger({
           saved={preEstimateSaved}
           onChange={changePreEstimate}
           onEscape={escapePreEstimate}
-          onSave={handleSave}
+          onSave={attemptSave}
           saveLocked={saveLocked}
         />
       ) : null}
@@ -1962,10 +1979,17 @@ export function QuoteLedger({
                   linked: row.hasLinkedDocuments,
                 })
             : undefined,
-          onNewRow: structural.insert && editableWidth ? (row) => addLine(row) : undefined,
-          onDuplicateRow: structural.duplicate && editableWidth ? (row) => duplicateLine(row.clientKey) : undefined,
+          // 04-26(D-86) — 상한에서는 줄을 만들지 않고 합계 행에 이유를 적는다.
+          onNewRow: structural.insert && editableWidth ? (row) => (atLineCap ? setLineCapNotice(lineCapReason) : addLine(row)) : undefined,
+          onDuplicateRow:
+            structural.duplicate && editableWidth
+              ? (row) => (atLineCap ? setLineCapNotice(lineCapReason) : duplicateLine(row.clientKey))
+              : undefined,
           onMoveRow: structural.reorder && editableWidth ? (row, direction) => moveLine(row.clientKey, direction) : undefined,
-          onSave: () => setSaveRequests((count) => count + 1),
+          onSave: () => {
+            setLineCapNotice(null);
+            setSaveRequests((count) => count + 1);
+          },
         }}
         onBlockedEdit={showBlockedReason}
         onPasteAtCell={editableWidth ? handlePasteAtCell : undefined}
@@ -1981,6 +2005,7 @@ export function QuoteLedger({
               <span className={styles.footerProfitSum}> {`차익 ${formatKrw(lines.reduce((sum, line) => sum + line.profitKrw, 0))}`}</span>
               {savedAt ? <span className={styles.savedTag}> 저장됨 {savedAt}</span> : null}
               {pasteWarning ? <span className={styles.pasteWarning}> {pasteWarning}</span> : null}
+              {lineCapNotice ? <span className={styles.rejectionSummary}> {lineCapNotice}</span> : null}
               {rejectionSummary ? <span className={styles.rejectionSummary}> {rejectionSummary}</span> : null}
             </td>
           </tr>

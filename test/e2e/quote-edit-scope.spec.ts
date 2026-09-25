@@ -848,12 +848,12 @@ test.describe("줄 수 상한 (04-26, D-86 · UX-04 · UX-05)", () => {
     await openCappedAsPm(page, 300);
     const footerNotice = page.locator("tfoot").getByText(CAP_REASON, { exact: true });
 
-    await capCell(page, 0, COL.itemName).focus();
+    await focusGridCell(capCell(page, 0, COL.itemName));
     await page.keyboard.press("Control+Enter");
     await expect(footerNotice).toBeVisible();
     await expect(capRows(page)).toHaveCount(300);
 
-    await capCell(page, 0, COL.itemName).focus();
+    await focusGridCell(capCell(page, 0, COL.itemName));
     await page.keyboard.press("Control+d");
     await expect(footerNotice).toBeVisible();
     await expect(capRows(page)).toHaveCount(300);
@@ -871,14 +871,14 @@ test.describe("줄 수 상한 (04-26, D-86 · UX-04 · UX-05)", () => {
     await expect(lastItem).toHaveText("상한 줄 299");
     const pasteNotice = page.locator("tfoot").getByText("붙여넣기 전부 거부 · 300줄 상한을 1줄 넘음", { exact: true });
 
-    await lastItem.focus();
+    await focusGridCell(lastItem);
     await pasteIntoFocusedCell(page, "붙인 1\n붙인 2\n붙인 3");
     await expect(pasteNotice).toBeVisible();
     await expect(capRows(page)).toHaveCount(299);
     await expect(lastItem).toHaveText("상한 줄 299");
     await expect(primarySave(page)).toHaveAttribute("aria-disabled", "true");
 
-    await lastItem.focus();
+    await focusGridCell(lastItem);
     await pasteIntoFocusedCell(page, "붙인 하나");
     await expect(lastItem).toHaveText("붙인 하나");
     await expect(pasteNotice).toHaveCount(0);

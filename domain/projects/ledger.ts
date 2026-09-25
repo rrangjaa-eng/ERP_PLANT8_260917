@@ -127,7 +127,7 @@ export async function saveProjectLedger(
           // 거부 문구의 팀장 이름은 권리가 pm이 될 수 있는 사람(담당 PM)일 때만 읽는다.
           const known = canWrite ? await findProjectById(viewer, projectId) : null;
           const teamLeadName =
-            known && known.pmUserId === viewer.id ? (await projectResponsibles(viewer, known, { now })).teamLeadName : null;
+            known && known.pmUserId === viewer.id ? (await projectResponsibles(viewer, known, { now }, { leadMenu: "projects.period" })).teamLeadName : null;
           return { canWrite, canEditPeriod, teamScope, teamLeadName };
         })()
       : null;

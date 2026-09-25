@@ -21,13 +21,15 @@ export async function projectResponsibles(
   viewer: Viewer,
   project: { teamId: string; pmUserId: string },
   deps?: Partial<ProjectResponsiblesDeps>,
+  // 04-22(리뷰 S4): 기간 거부 문구는 기간 쓰기 보유자(projects.period)에서 팀장을 찾는다.
+  options?: { leadMenu?: "projects.status" | "projects.period" },
 ): Promise<{ pmName: string | null; teamLeadName: string | null }> {
   const now = deps?.now ?? (() => new Date());
   const findCandidates = deps?.teamLeadCandidatesAtDate ?? teamLeadCandidatesAtDate;
   const findPmName = deps?.findPmName ?? defaultFindPmName;
 
   const [candidates, pmName] = await Promise.all([
-    findCandidates(viewer, { teamId: project.teamId, date: kstToday(now()) }),
+    findCandidates(viewer, { teamId: project.teamId, date: kstToday(now()), menu: options?.leadMenu }),
     findPmName(viewer, project.pmUserId),
   ]);
   // 이름순 — DB 정렬 규칙(CI en_US.utf8 · 로컬 C.UTF-8)에 기대지 않는다.

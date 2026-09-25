@@ -81,9 +81,10 @@ export async function deleteMembership(viewer: Viewer, userId: string, effective
 // 늦은 발령, findMembershipsAtDate와 같은 조건) 중 보관되지 않았고, 계급의 업무 범위가 team이며
 // 권한표에서 projects.status 쓰기가 허용된 사람. 한 문장이다(사람 × 발령 × 권한 N+1 없음).
 // 계급 이름·id를 박지 않는다. 이름순은 호출자가 JS로 정한다(DB 정렬 규칙이 환경마다 다르다).
+// 04-22(리뷰 S4): 기간 앞당기기 문구는 menu "projects.period"로 기간 쓰기 보유자에서 찾는다.
 export async function teamLeadCandidatesAtDate(
   viewer: Viewer,
-  input: { teamId: string; date: string },
+  input: { teamId: string; date: string; menu?: "projects.status" | "projects.period" },
   tx?: DbOrTx,
 ): Promise<{ userId: string; name: string }[]> {
   void viewer;
@@ -102,7 +103,7 @@ export async function teamLeadCandidatesAtDate(
       permissionMatrix,
       and(
         eq(permissionMatrix.roleId, roles.id),
-        eq(permissionMatrix.menu, "projects.status"),
+        eq(permissionMatrix.menu, input.menu ?? "projects.status"),
         eq(permissionMatrix.action, "write"),
         eq(permissionMatrix.allowed, true),
       ),

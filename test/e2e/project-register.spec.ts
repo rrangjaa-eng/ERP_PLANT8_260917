@@ -78,9 +78,10 @@ test.describe("프로젝트 등록 → 견적 줄 저장 (Phase 4 트레이서)"
 
     // 견적가 = 수량(기본 1) × 단가 = 1,200,000, 차익 = 1,200,000 − 800,000 = 400,000.
     // 브라우저는 이 값을 계산해 보내지 않았다 — 서버가 domain/money로 계산해 돌려준 값이다.
-    // 04-24 — 머리 줄의 닫힌 승인 다이얼로그 부제에도 합계가 있어 표 안에서 찾는다.
-    await expect(page.locator("table").getByText("1,200,000").first()).toBeVisible();
-    await expect(page.locator("table").getByText("400,000").first()).toBeVisible();
+    // 04-24 — 승인 다이얼로그 부제·차수 표에도 합계가 있어 견적 줄 표 안에서 찾는다(검토 S1).
+    const quoteTable = page.locator("table", { has: page.locator("caption", { hasText: /^견적 줄$/ }) });
+    await expect(quoteTable.getByText("1,200,000").first()).toBeVisible();
+    await expect(quoteTable.getByText("400,000").first()).toBeVisible();
     await expect(page.getByText(/저장됨/)).toBeVisible();
   });
 

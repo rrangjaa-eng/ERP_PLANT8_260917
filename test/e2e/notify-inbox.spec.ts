@@ -357,6 +357,17 @@ test.describe("알림함 목록 완성 (Task 3 · S1-c · S1-d)", () => {
 
     const secondHeader = tbodies.nth(1).locator("tr").first().locator('th[scope="rowgroup"]');
     await expect(secondHeader).toHaveText(olderLabel);
+
+    // M1(04.2-09 Task 3 사후 수정 — Opus 적대적 디자인 검토): 그룹 머리글의
+    // 실제 렌더 값이 계약(§7-3 — 위 12px · 아래 1px --line-strong)과 같은지
+    // computed style로 잰다. `.table th`가 특이도로 덮어써 죽은 규칙이 되는
+    // 회귀를 막는다.
+    const firstHeaderStyle = await firstHeader.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return { paddingTop: style.paddingTop, borderBottomWidth: style.borderBottomWidth };
+    });
+    expect(firstHeaderStyle.paddingTop).toBe("12px");
+    expect(firstHeaderStyle.borderBottomWidth).toBe("1px");
   });
 
   test("email_status='failed' 행에만 이메일 발송 실패 보조 줄, 결과 불명(unknown)엔 없음", async ({ page }) => {
@@ -425,25 +436,34 @@ test.describe("알림함 목록 완성 (Task 3 · S1-c · S1-d)", () => {
     const loadMore = page.getByRole("button", { name: "더 보기 50건" });
     await expect(loadMore).toBeVisible();
 
-    // 「더 보기」 Next-Action POST 하나만 붙잡아 500ms 뒤 끊는다(실패 흉내).
+    // 「더 보기」 Next-Action POST만 골라(본문에 "cursor" — M5 수정, 04.2-09
+    // Task 3 사후: 마운트 때 openInboxAction·배지 다시 받기 POST와 섞이면
+    // 타이밍에 따라 엉뚱한 요청이 끊길 수 있었다) 500ms 뒤 HTTP 500으로
+    // 응답한다(route.fulfill — abort는 로컬호스트 keep-alive에서 간헐적으로
+    // 같은 요청을 다시 성공시켜 결정적이지 않았다).
     let intercepted = false;
     await page.route("**/*", async (route) => {
       const request = route.request();
-      if (!intercepted && request.method() === "POST" && request.headers()["next-action"]) {
+      const postData = request.postData() ?? "";
+      if (
+        !intercepted &&
+        request.method() === "POST" &&
+        request.headers()["next-action"] &&
+        postData.includes('"cursor"')
+      ) {
         intercepted = true;
         await new Promise((resolve) => setTimeout(resolve, 500));
-        // 드물게 같은 요청이 다른 경로로 이미 처리돼(레이스) abort가 "Route is
-        // already handled" 예외를 던질 수 있다 — 진짜 판정은 아래 requestFailed
-        // 대기 + UI 단언이 한다(방어적으로만 삼킨다).
-        await route.abort().catch(() => {});
+        await route.fulfill({ status: 500 });
         return;
       }
       await route.continue();
     });
 
-    const requestFailed = page.waitForEvent(
-      "requestfailed",
-      (request) => request.method() === "POST" && !!request.headers()["next-action"],
+    const failedResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        !!response.request().headers()["next-action"] &&
+        response.status() === 500,
     );
 
     await loadMore.click();
@@ -451,17 +471,42 @@ test.describe("알림함 목록 완성 (Task 3 · S1-c · S1-d)", () => {
     await expect(rows).toHaveCount(50);
     await expect(loadMore).toBeDisabled();
 
-    await requestFailed;
+    await failedResponse;
     await page.unroute("**/*");
 
     // 실패: 행은 그대로이고 버튼 자리가 오류 문구 + 「다시 시도」로 바뀐다.
+    // 오류 줄은 role="status"(M2 — 포커스를 잃어도 스크린 리더가 실패를 안다).
     await expect(rows).toHaveCount(50);
     await expect(page.getByText("불러오지 못했습니다")).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "불러오지 못했습니다" })).toBeVisible();
     const retry = page.getByRole("button", { name: "다시 시도" });
     await expect(retry).toBeVisible();
     await expect(loadMore).toHaveCount(0);
 
+    // 재시도 요청 중에도 라벨이 「다시 시도」로 남고 비활성이다(L1 — next-safe-action의
+    // status가 "executing"으로 바뀌면 hasErrored가 거짓이 되지만, 화면은 실패
+    // 상태를 유지해야 한다는 플랜 계약).
+    let retryIntercepted = false;
+    await page.route("**/*", async (route) => {
+      const request = route.request();
+      const postData = request.postData() ?? "";
+      if (
+        !retryIntercepted &&
+        request.method() === "POST" &&
+        request.headers()["next-action"] &&
+        postData.includes('"cursor"')
+      ) {
+        retryIntercepted = true;
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        await route.continue();
+        return;
+      }
+      await route.continue();
+    });
+
     await retry.click();
+    await expect(page.getByRole("button", { name: "다시 시도" })).toBeDisabled();
+    await page.unroute("**/*");
 
     // 성공: 51번째 행이 붙고, 같은 커서라 중복이 없으며, 버튼이 사라지고
     // 포커스가 새로 붙은 51번째 행으로 간다. 그 행도 이번 열기가 읽음
@@ -471,6 +516,80 @@ test.describe("알림함 목록 완성 (Task 3 · S1-c · S1-d)", () => {
     const lastRow = rows.last();
     await expect(lastRow).toBeFocused();
     await expect(lastRow).toContainText("안 읽음");
+  });
+
+  test("101건 — 더 보기 성공 뒤에도 hasMore면 포커스가 버튼에 남는다(M2)", async ({ page }) => {
+    const user = await createEmployee();
+    const candidates = Array.from({ length: 101 }, (_, i) =>
+      testCandidate({ recipientId: user.userId, entityId: `${randomUUID()}-${i}`, referenceDate: "2026-01-01" }),
+    );
+    const kind = createTestConditionKind(candidates);
+    await tickOnce(kind);
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(user.email);
+    await page.getByLabel("비밀번호").fill(user.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto("/notifications");
+    const rows = page.locator("table tbody tr[data-row]");
+    await expect(rows).toHaveCount(50);
+    const loadMore = page.getByRole("button", { name: "더 보기 50건" });
+    await loadMore.focus();
+    await loadMore.click();
+
+    // 성공(101건 중 50+50=100건까지만 붙어 hasMore가 아직 참) 뒤 버튼은 다시
+    // 켜지고, 포커스도 그 버튼으로 되돌아온다(Button의 pending은 네이티브
+    // disabled라 브라우저가 요청 중 포커스를 문서로 돌리기 때문).
+    await expect(rows).toHaveCount(100);
+    await expect(loadMore).toBeEnabled();
+    await expect(loadMore).toBeFocused();
+  });
+
+  test("읽음 처리 POST가 실패해도 화면 오류 없이 배지만 남는다(M4/S1-inbox-list error (c))", async ({ page }) => {
+    const user = await createEmployee();
+    const kind = createTestConditionKind([
+      testCandidate({ recipientId: user.userId, entityId: randomUUID(), referenceDate: "2026-01-01" }),
+    ]);
+    await tickOnce(kind);
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(user.email);
+    await page.getByLabel("비밀번호").fill(user.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    // 하드 내비게이션으로 들어가면(뒤 pathname이 앞과 같아 UnreadCountProvider의
+    // 경로-변경 갱신 effect가 발동하지 않는다) openInboxAction의 마운트 POST
+    // 하나만 깔끔하게 가로챌 수 있다(독립 DOM 감사 참고 — dom-audit-04.2-09.md).
+    let intercepted = false;
+    await page.route("**/*", async (route) => {
+      const request = route.request();
+      if (!intercepted && request.method() === "POST" && request.headers()["next-action"]) {
+        intercepted = true;
+        await route.fulfill({ status: 500 });
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.goto("/notifications");
+    const row = page.locator("table tbody tr[data-row]");
+    await expect(row).toHaveCount(1);
+
+    // 화면에 오류가 보이지 않는다 — role="alert" 안에 보이는 글자가 없고
+    // (Next.js 내장 AppRouterAnnouncer는 항상 마운트돼 있어 개수가 아니라
+    // 텍스트 유무로 판정한다), 본문에도 오류 낱말이 없다.
+    await expect(page.getByRole("alert")).toHaveText("");
+    await expect(page.getByText("불러오지 못했습니다")).toHaveCount(0);
+
+    // 배지·인셋은 그대로(열기 실패라 openedAt이 갱신되지 않아도 readAt===null
+    // 인 안 읽은 행은 여전히 안 읽음이다).
+    await expect(row).toContainText("안 읽음");
+    await expect(page.getByRole("button", { name: /안 읽은 알림 1건/ })).toBeVisible();
+
+    await page.unroute("**/*");
   });
 
   test("HTML 글자가 그대로 보이고 요소로 해석되지 않는다", async ({ page }) => {

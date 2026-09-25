@@ -264,7 +264,7 @@ async function saveEntries(
     const columns = moneyToColumns(input.amount);
 
     if (columns.currency !== "KRW" && input.fxRateTouched) {
-      await rememberFxRate(columns.currency, Number(columns.fxRate));
+      await rememberFxRate(columns.currency, Number(columns.fxRate), undefined, tx);
     }
 
     const payload = {
@@ -330,7 +330,7 @@ export async function saveRevenue(
     if (input.contract) {
       const columns = moneyToColumns(input.contract);
       if (columns.currency !== "KRW" && input.contractFxRateTouched) {
-        await rememberFxRate(columns.currency, Number(columns.fxRate));
+        await rememberFxRate(columns.currency, Number(columns.fxRate), undefined, innerTx);
       }
       await repoUpdateProjectContract(
         viewer,

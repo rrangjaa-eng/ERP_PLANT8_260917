@@ -5,6 +5,7 @@ import { getSettingValue as defaultGetSettingValue } from "@/domain/settings/reg
 import { upsertSimpleValue as defaultUpsertSimpleValue } from "@/repositories/settings";
 import { FX_RECENT_RATE_USD } from "@/domain/settings/keys";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import type { DbOrTx } from "@/repositories/document-counters";
 
 export const CURRENCIES = ["KRW", "USD"] as const;
 export type Currency = (typeof CURRENCIES)[number];
@@ -37,12 +38,20 @@ export async function recentFxRate(currency: Currency, deps?: Partial<CurrencyDe
 // 갱신은 "설정 화면에서 설정을 바꾸는 것"이 아니라 견적 줄·매출 저장의
 // 부수 효과이고, 그 저장은 이미 자신의 쓰기 권한(projects write 등)을
 // 통과했다. KRW는 갱신 대상이 아니다(환율 1 고정).
-export async function rememberFxRate(currency: Currency, rate: number, deps?: Partial<CurrencyDeps>): Promise<void> {
+// `tx`: 저장 트랜잭션 안에서 부를 때 그 트랜잭션으로 쓴다 — 전역 풀로
+// 쓰면 트랜잭션이 커넥션 하나를 쥔 채 두 번째를 기다려 풀이 교착되고,
+// 롤백돼도 설정만 남는다.
+export async function rememberFxRate(
+  currency: Currency,
+  rate: number,
+  deps?: Partial<CurrencyDeps>,
+  tx?: DbOrTx,
+): Promise<void> {
   if (currency === "KRW") return;
   // 잘못된 값(0 이하 등)은 저장하지 않는다 — 저장되면 설정 스키마
   // (z.coerce.number().positive())를 어겨서 recentFxRate가 파싱 실패로
   // 던지고, 그 값을 기다리는 화면이 전부 깨진다.
   if (!FX_RECENT_RATE_USD.schema.safeParse(rate).success) return;
   const upsert = deps?.upsertSimpleValue ?? defaultUpsertSimpleValue;
-  await upsert(SYSTEM_VIEWER, FX_RECENT_RATE_USD.key, rate, SYSTEM_VIEWER.id);
+  await upsert(SYSTEM_VIEWER, FX_RECENT_RATE_USD.key, rate, SYSTEM_VIEWER.id, tx);
 }

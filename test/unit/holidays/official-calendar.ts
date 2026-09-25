@@ -1,8 +1,8 @@
 // 2026·2027 공식 공휴일 목록(법정·대체) — 규칙 함수 결과가 아니라 손으로 적은 기대값이다. 선거일·임시공휴일은 뺐다.
-// 미확인 기본값 — 공식 출처(law.go.kr lsiSeq=285779, kasa.go.kr plcyBrfNo=431) 접속 불가, 코디네이터 지시로 카드 추천값(Codex 인용) 적용, 사용자 확인 필요
+// 사용자 확인(2026-09-25 카드) — 노동절·제헌절 2026부터 법정·대체 대상(「둘 다 공휴일」). 공식 출처(law.go.kr lsiSeq=285779, kasa.go.kr plcyBrfNo=431)는 이 컨테이너에서 접속 불가
 // 출처: https://www.law.go.kr/lsInfoP.do?lsiSeq=285779&viewCls=lsRvsDocInfoR (관공서의 공휴일에 관한 규정 제2·3조)
 // 출처: https://www.kasa.go.kr/prog/plcyBrf/brief/kor/sub01_01_04/view.do?plcyBrfNo=431 (우주항공청 월력요항)
-// 확인 날짜: 2026-09-25 (KST) · 확인한 사람: 미확인(사용자 확인 대기)
+// 확인 날짜: 2026-09-25 (KST) · 확인한 사람: 사용자 확인(2026-09-25 카드)
 export type OfficialHoliday = { date: string; name: string; kind: "statutory" | "substitute" };
 
 export const OFFICIAL_2026: readonly OfficialHoliday[] = [

@@ -12,7 +12,6 @@ import {
   quoteLockReason,
   quoteTableEmptyState,
   structuralEditability,
-  tableLockLine,
 } from "@/domain/quotes/edit-scope";
 import {
   actorCoversProjectTeam,
@@ -159,7 +158,6 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       structural={structural}
       newLineCells={newLineCells}
       lockReason={quoteLockReason({ status: project.status })}
-      lockLine={tableLockLine({ status: project.status, hasEditableCells: hasEditableCell, lineCount: lines.length })}
       emptyState={quoteTableEmptyState({
         status: project.status,
         canAddLine: structural.insert,

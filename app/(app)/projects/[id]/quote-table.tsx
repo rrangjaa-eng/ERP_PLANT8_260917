@@ -22,6 +22,7 @@ import type { TableColumn, CellIssue } from "@/ui/table/types";
 import type { QuoteLineDto, QuoteLineBaseline } from "@/domain/quotes/lines";
 import {
   QUOTE_LINE_STATUSES,
+  tableLockLine,
   visibleHintKeys,
   type QuoteCellEditability,
   type QuoteHintKey,
@@ -784,7 +785,6 @@ export function QuoteLedger({
   structural,
   newLineCells,
   lockReason,
-  lockLine,
   emptyState,
   revenue,
   canWriteContract,
@@ -822,8 +822,6 @@ export function QuoteLedger({
   newLineCells: LineCells;
   /** 04-30(DR-2 · DR-35) — 잠긴 셀 편집 시도의 이유(서버 quoteLockReason). */
   lockReason: string | null;
-  /** 04-30(DR-2) — 표 위 잠김 줄(서버 tableLockLine). 없으면 null. */
-  lockLine: string | null;
   /** 04-30 — 0줄 표의 한 줄과 다음 한 수(서버 quoteTableEmptyState). */
   emptyState: QuoteTableEmptyState;
   revenue: RevenueDto;
@@ -1746,6 +1744,13 @@ export function QuoteLedger({
 
   const saveDisabledReason = dirtyCount === 0 ? "바뀐 칸 없음" : undefined;
 
+  // 04-30(DR-2) — 표 위 잠김 줄은 지금 줄로 판정한다(0줄 표에서 첫 줄을 만들면 나타난다).
+  const lockLine = tableLockLine({
+    status,
+    hasEditableCells: lines.some((line) => Object.values(line.cells).includes("edit")),
+    lineCount: lines.length,
+  });
+
   // 04-04 — 서버가 돌려준 문자열을 그대로 쓴다(화면이 이유를 새로 만들지
   // 않는다, Task 2 acceptance criterion). errorCellCount>0이면 handleSave가
   // execute()를 아예 부르지 않으므로(클라이언트 게이트) result.serverError는
@@ -1886,7 +1891,7 @@ export function QuoteLedger({
       ) : null}
 
       {/* 04-30(DR-31) — 표 위 한 줄 순서: 현재 차수 복원 줄 → (이전 차수 복원 줄 — 04-24) → 잠김 줄. */}
-      {lockLine && lines.length > 0 ? <p className={styles.lockLine}>{lockLine}</p> : null}
+      {lockLine ? <p className={styles.lockLine}>{lockLine}</p> : null}
 
       {rejectionSummary ? <FormAlert>{rejectionSummary}</FormAlert> : null}
 

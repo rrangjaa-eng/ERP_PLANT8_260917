@@ -531,4 +531,12 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await expect(added().nth(COL.quantity)).toHaveText("1");
     await expect(added().nth(COL.unitPrice)).toHaveText("0");
   });
+
+  test("(g2) 0줄 정산 표에서 PM이 「첫 줄 만들기」를 누르면 표 위 잠김 줄이 나타난다(DR-2)", async ({ page }) => {
+    await openAsPm(page, "settling", addDays(TODAY, -3), []);
+    await expect(page.getByText(SETTLING_REASON, { exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
+    await expect(dataRows(page)).toHaveCount(1);
+    await expect(page.getByText(SETTLING_REASON, { exact: true })).toBeVisible();
+  });
 });

@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 04
 current_phase_name: 프로젝트·견적 원장
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: Completed 04-09-PLAN.md
-last_updated: "2026-09-24T23:11:22.304Z"
+stopped_at: Completed 04-27-PLAN.md
+last_updated: "2026-09-25T01:22:00.646Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 04 execution started
-state_head: 57a48adc3bbab366e17956e7012ae4c62e3df682
+state_head: 5caf481cfe036eca3aba0ea5569ce9d975f640b8
 progress:
   total_phases: 16
   completed_phases: 1
-  total_plans: 65
-  completed_plans: 38
+  total_plans: 80
+  completed_plans: 39
   percent: 6
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 04 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 4
+Current Plan: 5
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-24 — Phase 04 execution started
@@ -88,6 +88,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P29 | 55min | 3 tasks | 11 files |
 | Phase 04 P06 | 27min | 2 tasks | 13 files |
 | Phase 04 P09 | 85min | 3 tasks | 20 files |
+| Phase 04 P27 | 15 min | 2 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -207,6 +208,7 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-06: 완료 잠금 게이트는 project.line-edit(완료 → 「완료 · 견적 줄 잠김」, 미수주 포함 나머지 통과) — project.completed-lock 삭제
 - [Phase 04]: 04-09: lib/format-number.ts is the single source of truth for numeric display + comma-input formatting; only FX_RECENT_RATE_USD gets numberKind in settings
 - [Phase 04]: 04-09: useCommaInput pre-formats initial value through the typed path so reload/reopen never shows uncomma'd text
+- [Phase 04]: 04-27: roles.work_scope(team/company, 기본 team) — 업무 범위는 순위도 보기 권한도 아닌 게이트 입력. 비시드 계급(경영관리 등)은 관리자가 계급 화면에서 전사로 바꿔야 한다
 
 ### Pending Todos
 
@@ -263,6 +265,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T23:11:22.105Z
-Stopped at: Completed 04-09-PLAN.md
+Last session: 2026-09-25T01:22:00.476Z
+Stopped at: Completed 04-27-PLAN.md
 Resume file: None

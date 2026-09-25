@@ -83,6 +83,13 @@ export class PeriodRejectedError extends UserFacingError {
   }
 }
 
+// 04-44 — 총 매출 예상가 칸 거부.
+export class PreEstimateRejectedError extends UserFacingError {
+  constructor(readonly errors: PreEstimateFieldError[]) {
+    super(errors[0]?.reason ?? "총 매출 예상가 바꾸기 권한 없음");
+  }
+}
+
 export type SaveProjectLedgerDeps = {
   now: () => Date;
   // 트랜잭션 안의 행동 로그(기간 변경·되돌리기·같은 커밋의 자동 정산) — 테스트가 실패를 주입한다.

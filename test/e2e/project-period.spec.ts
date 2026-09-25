@@ -363,4 +363,77 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
     const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
     expect(row?.preEstimateAmountKrw).toBe(50_000_000);
   });
+
+  test("(8) 정산 프로젝트의 담당 PM에게는 값만 있고 「총 매출 예상가 바꾸기」가 없다(권리 none)", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "settling", endDate: addDays(TODAY, -1) });
+
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByText("총 매출 예상가 —", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "총 매출 예상가 바꾸기" })).toHaveCount(0);
+  });
+
+  test("(9) 음수 금액을 Ctrl+S로 저장하면 칸 아래 「0 이상」 + 견적 표 합계 행 「전부 거부 · 다른 칸 오류 1칸」 · Esc 두 번이면 묶음이 닫히고 포커스가 3차로", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const lead = await makeAccount("role-team-lead", team, `팀장${randomUUID().slice(0, 6)}`);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "bidding", endDate: addDays(TODAY, 20) });
+    // 합계 행이 있어야 U-6 거부 줄이 붙는다(빈 표에는 합계 행이 없다).
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("차수가 없습니다");
+    const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+    if (!subcategory) throw new Error("시드된 소분류가 없습니다");
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+      { subcategory: subcategory.value, itemName: "예상가 거부 줄", quantity: 1, unitPrice: { currency: "KRW", amount: 1_000_000, fxRate: 1 }, execution: { currency: "KRW", amount: 500_000, fxRate: 1 } },
+    ]);
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await page.getByRole("button", { name: "총 매출 예상가 바꾸기" }).click();
+    const amount = page.getByLabel("총 매출 예상가", { exact: true });
+    await amount.fill("-1");
+    const saving = waitForSaveAction(page);
+    await amount.press("Control+s");
+    await saving;
+
+    await expect(amount).toHaveAttribute("aria-invalid", "true");
+    await expect(page.getByText("총 매출 예상가는 0 이상 · 금액을 고쳐 주세요", { exact: true })).toBeVisible();
+    await expect(page.locator("tfoot").getByText("전부 거부 · 다른 칸 오류 1칸")).toBeVisible();
+    const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
+    expect(row?.preEstimateAmountKrw).toBe(0);
+
+    await amount.press("Escape");
+    await expect(amount).toHaveValue("");
+    await amount.press("Escape");
+    await expect(page.getByLabel("총 매출 예상가", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "총 매출 예상가 바꾸기" })).toBeFocused();
+  });
+
+  test("(10) 상태가 바뀌어 전부 거부된 뒤 「복원」은 총 매출 예상가 묶음을 열고 편집 값을 dirty로 되살린다(D-68)", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const lead = await makeAccount("role-team-lead", team, `팀장${randomUUID().slice(0, 6)}`);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "bidding", endDate: addDays(TODAY, 20) });
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await page.getByRole("button", { name: "총 매출 예상가 바꾸기" }).click();
+    const amount = page.getByLabel("총 매출 예상가", { exact: true });
+    await amount.fill("7000000");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+
+    // 그새 다른 사람이 미수주로 닫았다(화면이 본 상태와 다르다 — DR-6).
+    await db.update(projects).set({ status: "lost" }).where(eq(projects.id, project.id));
+    const saving = waitForSaveAction(page);
+    await amount.press("Control+s");
+    await saving;
+
+    await expect(headerTag(page, "미수주")).toBeVisible();
+    await expect(page.getByText("저장 안 한 편집 1칸")).toBeVisible();
+    await page.getByRole("button", { name: "복원" }).click();
+    await expect(page.getByLabel("총 매출 예상가", { exact: true })).toHaveValue("7,000,000");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+  });
 });

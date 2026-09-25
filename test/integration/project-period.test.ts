@@ -12,7 +12,13 @@ import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { changeProjectStatus, listProjectStatusCatalog, StatusChangedError, statusChangedMessage } from "@/domain/projects/status";
 import { applyAutoSettlement } from "@/domain/projects/auto-transition";
-import { PeriodRejectedError, saveProjectLedger, type SaveProjectLedgerInput } from "@/domain/projects/ledger";
+import {
+  PeriodRejectedError,
+  PreEstimateRejectedError,
+  saveProjectLedger,
+  type SaveProjectLedgerInput,
+} from "@/domain/projects/ledger";
+import { recentFxRate, rememberFxRate } from "@/domain/money/currency";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { recordAction } from "@/domain/action-log/record";
 import { setPermissionCell } from "@/domain/permissions/matrix";
@@ -657,5 +663,101 @@ describe("총 매출 예상가 저장 (04-44)", () => {
     expect(updates[0]?.actorId).toBe(s.lead.id);
     expect(updates[0]?.detail).toEqual({ preEstimateChanged: true });
     expect(JSON.stringify(updates[0]?.detail)).not.toMatch(/amount|50000000/i);
+  });
+
+  it("(o2) 정산 프로젝트의 담당 PM(권리 none)이 보낸 총 매출 예상가 저장은 「총 매출 예상가 바꾸기 권한 없음」 · DB 무변경 · write.denied 한 번(금액 키 없음)", async () => {
+    const s = await setup({ status: "settling", startDate: addDays(TODAY, -10), endDate: addDays(TODAY, -1) });
+    const warn = vi.spyOn(log, "warn");
+
+    const outcome = await saveProjectLedger(s.pm, s.projectId, {
+      seenStatus: "settling",
+      preEstimate: { currency: "KRW", amount: 70_000_000, fxRate: 1, fxRateTouched: false },
+    }).catch((error: unknown) => error);
+
+    expect(outcome).toBeInstanceOf(PreEstimateRejectedError);
+    expect((outcome as PreEstimateRejectedError).errors).toEqual([{ field: "amount", reason: "총 매출 예상가 바꾸기 권한 없음" }]);
+    expect((await reload(s.projectId)).preEstimateAmountKrw).toBe(0);
+    const denied = deniedCalls(warn);
+    expect(denied).toHaveLength(1);
+    expect(denied[0]?.rule).toBe("project.pre-estimate-edit");
+    expect(Object.keys(denied[0] ?? {}).some((key) => /amount|fx|currency/i.test(key))).toBe(false);
+    expect(await logs(s.projectId, "document_update")).toHaveLength(0);
+  });
+
+  it("(o3) 음수 금액과 견적 줄 변경을 한 저장에 실으면 칸 오류로 전부 거부 — 둘 다 저장되지 않는다", async () => {
+    const s = await setup({ status: "bidding", startDate: null, endDate: FAR });
+    const itemName = `예상가 거부 줄-${randomUUID()}`;
+
+    const outcome = await saveProjectLedger(s.pm, s.projectId, {
+      seenStatus: "bidding",
+      preEstimate: { currency: "KRW", amount: -1, fxRate: 1, fxRateTouched: false },
+      quoteLines: await newLine(s, itemName),
+    }).catch((error: unknown) => error);
+
+    expect(outcome).toBeInstanceOf(PreEstimateRejectedError);
+    expect((outcome as PreEstimateRejectedError).errors).toEqual([
+      { field: "amount", reason: "총 매출 예상가는 0 이상 · 금액을 고쳐 주세요" },
+    ]);
+    expect((await reload(s.projectId)).preEstimateAmountKrw).toBe(0);
+    expect(await linesNamed(itemName)).toHaveLength(0);
+  });
+
+  it("(o3b) 기간 칸 오류와 총 매출 예상가 칸 오류가 한 저장에 있으면 두 칸 오류를 모아 전부 거부한다(U-6)", async () => {
+    const s = await setup({ status: "bidding", startDate: addDays(TODAY, 1), endDate: FAR });
+
+    const outcome = await saveProjectLedger(s.pm, s.projectId, {
+      seenStatus: "bidding",
+      period: period(s, { endDate: TODAY }),
+      preEstimate: { currency: "USD", amount: 40_000, fxRate: 0, fxRateTouched: true },
+    }).catch((error: unknown) => error);
+
+    expect(outcome).toBeInstanceOf(PeriodRejectedError);
+    expect((outcome as PeriodRejectedError).errors).toEqual([
+      { field: "end", reason: "종료일이 시작일보다 빠릅니다 · 종료일을 고쳐 주세요" },
+    ]);
+    expect((outcome as PeriodRejectedError).preEstimateErrors).toEqual([
+      { field: "fxRate", reason: "환율은 0보다 커야 합니다 · 환율을 고쳐 주세요" },
+    ]);
+    const row = await reload(s.projectId);
+    expect(row.endDate).toBe(FAR);
+    expect(row.preEstimateCurrency).toBe("KRW");
+  });
+
+  it("(o4) USD 40,000 · 환율 1,350 · fxRateTouched 저장은 커밋 뒤 최근 환율이 1350이고, 거부된 저장은 키를 바꾸지 않는다", async () => {
+    const s = await setup({ status: "bidding", startDate: null, endDate: FAR });
+    await rememberFxRate("USD", 1300);
+
+    const rejected = await saveProjectLedger(s.lead, s.projectId, {
+      seenStatus: "bidding",
+      preEstimate: { currency: "USD", amount: -5, fxRate: 1400, fxRateTouched: true },
+    }).catch((error: unknown) => error);
+    expect(rejected).toBeInstanceOf(PreEstimateRejectedError);
+    expect(await recentFxRate("USD")).toBe(1300);
+
+    const result = await saveProjectLedger(s.lead, s.projectId, {
+      seenStatus: "bidding",
+      preEstimate: { currency: "USD", amount: 40_000, fxRate: 1350, fxRateTouched: true },
+    });
+
+    expect(result.project.preEstimate).toMatchObject({ currency: "USD", amount: 40_000, fxRate: 1350, amountKrw: 54_000_000 });
+    const row = await reload(s.projectId);
+    expect(row.preEstimateCurrency).toBe("USD");
+    expect(row.preEstimateAmountKrw).toBe(54_000_000);
+    expect(await recentFxRate("USD")).toBe(1350);
+  });
+
+  it("(o4b) 커밋 뒤 최근 환율 기억이 실패해도 저장은 성공하고 fx.remember_failed를 남긴다", async () => {
+    const s = await setup({ status: "bidding", startDate: null, endDate: FAR });
+    const error = vi.spyOn(log, "error");
+
+    await saveProjectLedger(
+      s.lead,
+      s.projectId,
+      { seenStatus: "bidding", preEstimate: { currency: "USD", amount: 1_000, fxRate: 1_320, fxRateTouched: true } },
+      { rememberFxRate: () => Promise.reject(new Error("설정 저장 실패")) },
+    );
+
+    expect((await reload(s.projectId)).preEstimateAmountKrw).toBe(1_320_000);
+    expect(error.mock.calls.filter((call) => call[0] === "fx.remember_failed")).toEqual([["fx.remember_failed", { currency: "USD" }]]);
   });
 });

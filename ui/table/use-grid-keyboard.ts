@@ -198,7 +198,7 @@ export function useGridKeyboard({
         break;
       default:
         // 글자 입력(한 글자 키, 조합 키 없음) — 막힌 셀이면 이유만.
-        if (blocked && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        if (blocked && event.key.length === 1 && !event.ctrlKey && !event.altKey) {
           event.preventDefault();
           handlers.onBlockedEdit?.(pos);
         }

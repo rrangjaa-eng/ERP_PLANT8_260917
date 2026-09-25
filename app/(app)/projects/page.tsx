@@ -5,6 +5,7 @@ import { can } from "@/domain/permissions/can";
 import {
   listProjects,
   aggregateProjects,
+  settleForProjectList,
   PROJECT_LIST_DEFAULT_LIMIT,
   PROJECT_LIST_MAX_LIMIT,
   PROJECT_SORT_KEYS,
@@ -78,6 +79,9 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const filter = { status, teamId, year, search };
   const hasFilter = Boolean(status || teamId || year || search);
 
+  // 04-11(A-07): 자동 정산 판정은 목록 요청당 한 번, 목록·합계를 나란히 읽기 전에(04-17이
+  // loadProjectList 안으로 옮긴다).
+  await settleForProjectList(session.viewer);
   const [references, canWrite, rows, aggregate] = await Promise.all([
     listProjectFormReferences(session.viewer),
     can(session.viewer, "projects", "write"),

@@ -9,6 +9,7 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { buildCustomFieldsSchema, type FieldDefType } from "@/domain/custom-fields/build-schema";
 import { allocateDocumentNumber, loadDocumentNumberFormat } from "@/domain/document-numbering";
 import { withTransaction } from "@/lib/db-transaction";
+import { kstYear } from "@/lib/kst-date";
 import { applyAutoSettlement, type AutoSettlementDeps } from "@/domain/projects/auto-transition";
 import {
   listProjectsPage as repoListProjectsPage,
@@ -238,9 +239,14 @@ export async function findProject(
   return (await project(viewer, row, PROJECT_DTO_SPEC)) as ProjectDto;
 }
 
+// 04-11(A-07 · 엔지 리뷰 A P3): 목록 요청의 자동 정산 입구 — 요청당 한 번, 목록·합계를
+// 나란히 읽기 전에 부른다. listProjects·aggregateProjects는 판정하지 않는다(두 호출이
+// SKIP LOCKED로 서로를 건너뛰면 목록과 합계의 정산 건수가 어긋난다). 보기 권한이 없으면
+// 아무것도 하지 않는다.
 export async function settleForProjectList(viewer: Viewer, deps?: Partial<AutoSettlementDeps>): Promise<void> {
-  void viewer;
-  void deps;
+  const scope = await scopeFor(viewer, PROJECT_ENTITY);
+  if (scope.rows === "none") return;
+  await applyAutoSettlement({}, deps);
 }
 
 export type ProjectInput = {
@@ -256,6 +262,7 @@ export type ProjectInput = {
 export type ProjectWriteDeps = {
   can: typeof defaultCan;
   recordAction: typeof defaultRecordAction;
+  now: () => Date;
 };
 
 // PROJ-01·D-42·D-53: 등록 — 권한 확인 → custom_fields 검증 → 같은
@@ -273,7 +280,8 @@ export async function createProject(
   }
 
   const customFields = await validatedCustomFields(viewer, input.customFields);
-  const year = new Date().getFullYear();
+  // C-17: 번호 연도는 KST — 1월 1일 00:00~09:00(KST) 등록도 새해 번호다.
+  const year = kstYear(deps?.now?.() ?? new Date());
   // 서식 설정은 트랜잭션을 열기 전에 읽는다 — 풀 소진 애플리케이션 교착을
   // 막는다(domain/document-numbering/index.ts의 allocateDocumentNumber 주석 참고).
   const format = await loadDocumentNumberFormat(PROJECT_NUMBER_COUNTER_KEY);

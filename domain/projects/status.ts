@@ -12,7 +12,8 @@ import { kstDateOf, kstToday } from "@/lib/kst-date";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { findRoleById as defaultFindRoleById } from "@/repositories/roles";
 import { findMembershipAtDate as defaultFindMembershipAtDate } from "@/repositories/team-memberships";
-import { lockProjectForWrite, updateProjectStatusIfCurrent } from "@/repositories/projects";
+import { updateProjectStatusIfCurrent } from "@/repositories/projects";
+import { loadProjectForGate } from "@/domain/projects/auto-transition";
 import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { findLatestActionFor as defaultFindLatestActionFor } from "@/repositories/action-log";
@@ -275,12 +276,18 @@ export async function changeProjectStatus(
   const recordAction = deps?.recordAction ?? defaultRecordAction;
 
   const run = async (tx: DbOrTx): Promise<void> => {
-    const row = await lockProjectForWrite(viewer, projectId, tx);
+    // 04-11(OV-5 · A-33): 잠금 안에서 자동 정산을 먼저 판정한다 — 자정을 넘겨 연 화면의
+    // 요청도 정산 기준으로 판정되고, 판정이 실패하면 전환도 실패한다(fail-closed).
+    const row = await loadProjectForGate(
+      viewer,
+      projectId,
+      { now: deps?.now, tx, afterLock: deps?.afterLock },
+      { recordAction },
+    );
     if (!row) throw new ProjectNotFoundError("존재하지 않는 프로젝트입니다.");
     if (row.archivedAt !== null && !facts.rowScope.includeArchived) {
       denyWrite(viewer, "projects.view", ids, new ProjectNotFoundError("존재하지 않는 프로젝트입니다."));
     }
-    await deps?.afterLock?.();
 
     // 권한(메뉴·팀 범위)을 from 불일치보다 먼저 판정한다 — 불일치 문구에는 지금
     // 상태가 실려, 권한 없는 사람이 틀린 from으로 상태를 알아낼 수 있다(04-20 리뷰 M1).

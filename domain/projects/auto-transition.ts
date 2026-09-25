@@ -98,15 +98,62 @@ export type ProjectGateDeps = {
   recordAction: typeof defaultRecordAction;
 };
 
+// 04-11(A-33 · OV-5 · T-04-162) — 쓰기 입구. 호출자가 연 트랜잭션에서 프로젝트 행을 배타
+// 잠금한 뒤, 그 행이 판정 대상이면 같은 tx로 정산하고 로그를 남긴 다음 판정 뒤 행을
+// 돌려준다. 실패는 삼키지 않는다(fail-closed). 화면이 본 상태와의 비교(from · seenStatus)는
+// 호출자가 이 반환 행으로 한다 — 스스로 거부하지 않는다(DR-6). 이 함수 안의 리포지토리
+// 호출은 전부 tx를 받는다(ARCHITECTURE §4-8 — 잠근 트랜잭션 안 풀 호출 금지).
 export async function loadProjectForGate(
   viewer: Viewer,
   projectId: string,
   opts: { now?: () => Date; tx: DbOrTx; afterLock?: () => Promise<void> },
   deps?: Partial<ProjectGateDeps>,
 ): Promise<ProjectRow | null> {
-  void viewer;
-  void projectId;
-  void opts;
-  void deps;
-  return null;
+  const lockProject = deps?.lockProject ?? lockProjectForWrite;
+  const updateStatus = deps?.updateStatus ?? updateProjectStatusIfCurrent;
+  const findLatestAction = deps?.findLatestAction ?? findLatestActionFor;
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  const now = opts.now ?? (() => new Date());
+
+  const row = await lockProject(viewer, projectId, opts.tx);
+  if (!row) return null;
+  await opts.afterLock?.();
+
+  // 읽기 입구의 SQL 조건(settleOverdueProjects)과 같다 — 진행 · 종료일 < 오늘(KST) · 보관 아님.
+  const endDate = row.endDate;
+  if (row.status !== AUTO_SETTLE.from || endDate === null || endDate >= kstToday(now()) || row.archivedAt !== null) {
+    return row;
+  }
+
+  const settled = await updateStatus(
+    viewer,
+    projectId,
+    { expectedStatus: AUTO_SETTLE.from, status: AUTO_SETTLE.to, fillEndDateFromStart: false },
+    opts.tx,
+  );
+  const latest = await findLatestAction(
+    viewer,
+    { entity: PROJECT_ENTITY, entityId: projectId, actionType: "status_change" },
+    opts.tx,
+  );
+  await recordAction(
+    SYSTEM_VIEWER,
+    {
+      actionType: "status_change",
+      entity: PROJECT_ENTITY,
+      entityId: projectId,
+      detail: {
+        from: AUTO_SETTLE.from,
+        to: AUTO_SETTLE.to,
+        trigger: AUTO_SETTLE.trigger,
+        effectiveOn: effectiveOnFor({
+          endDate,
+          lastChangeOn: latest ? kstDateOf(latest.occurredAt) : null,
+        }),
+      },
+    },
+    { tx: opts.tx },
+  );
+  // 잠근 행이라 조건부 UPDATE는 항상 한 행을 바꾼다.
+  return settled ?? row;
 }

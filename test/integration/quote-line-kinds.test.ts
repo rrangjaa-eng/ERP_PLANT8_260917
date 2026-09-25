@@ -404,6 +404,31 @@ describe("조정 줄 권한 · PM 거부 · 보관 · 복원(04-13 Task 2 · D-8
     expect(await sortOrders()).toEqual([1, 0, 2]);
   });
 
+  it("(k14) DB에서 조정 줄 뒤에 견적 줄이 있어도(화면은 조정 줄을 맨 아래로 그린다) 견적 줄 이동은 통과하고 조정 줄이 맨 아래로 간다, 조정 줄을 견적 줄 위로 올리거나 조정 줄끼리 뒤집는 순서는 여전히 거부된다(04-23 검토 S-1)", async () => {
+    const { project, revisionId, pm } = await setupProject();
+    const first = await seedLine(revisionId, "quote");
+    const adjustment = await seedLine(revisionId, "adjustment", { execution: -10_000 });
+    const second = await seedLine(revisionId, "quote");
+    const lastAdjustment = await seedLine(revisionId, "adjustment", { execution: -5_000 });
+    const seeded = [first, adjustment, second, lastAdjustment];
+    for (const [index, row] of seeded.entries()) {
+      await db.update(quoteLines).set({ sortOrder: index }).where(eq(quoteLines.id, row.id));
+    }
+    await setStatus(project.id, "in_progress");
+    const sortOrders = async () => Promise.all(seeded.map(async (row) => (await reload(row.id)).sortOrder));
+
+    await expect(saveQuoteLines(pm, revisionId, { rows: [], order: [adjustment.id, second.id, first.id, lastAdjustment.id] })).rejects.toThrow(
+      "조정 줄 · 경영관리만",
+    );
+    await expect(saveQuoteLines(pm, revisionId, { rows: [], order: [second.id, first.id, lastAdjustment.id, adjustment.id] })).rejects.toThrow(
+      "조정 줄 · 경영관리만",
+    );
+    expect(await sortOrders()).toEqual([0, 1, 2, 3]);
+
+    await saveQuoteLines(pm, revisionId, { rows: [], order: [second.id, first.id, adjustment.id, lastAdjustment.id] });
+    expect(await sortOrders()).toEqual([1, 2, 0, 3]);
+  });
+
   it("(k13) 완료 프로젝트에서도 조정 권한만 있는 사람의 견적 줄 변경은 권한 이유로 거부된다(상태 이유가 새지 않음 · 검토 N5)", async () => {
     const { project, revisionId } = await setupProject();
     const quote = await seedLine(revisionId, "quote");

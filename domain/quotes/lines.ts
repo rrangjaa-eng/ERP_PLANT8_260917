@@ -803,8 +803,16 @@ export async function writeQuoteLinesInTx(
       const keptIds = activeBefore.map((row) => row.id).filter((id) => !archivedIds.includes(id));
       const keptSet = new Set(keptIds);
       const keptInOrder = input.order!.filter((id) => keptSet.has(id));
-      const movedAdjustment = activeBefore.find((row) => lineKindOf(row) === "adjustment" && keptIds.indexOf(row.id) !== keptInOrder.indexOf(row.id));
-      if (movedAdjustment) await judgeStructure(movedAdjustment.id, "adjustment", { kind: "reorder" });
+      // 04-23 검토 S-1 — 화면은 조정 줄을 늘 맨 아래 그룹으로 그린다: 조정 줄끼리의 순서를 지킨 채 맨 아래로 모이는 순서는 이동이 아니다.
+      const adjustmentIds = new Set(activeBefore.filter((row) => lineKindOf(row) === "adjustment").map((row) => row.id));
+      const isAdjustment = (id: string) => adjustmentIds.has(id);
+      const adjustmentsBefore = keptIds.filter(isAdjustment);
+      const adjustmentsAfter = keptInOrder.filter(isAdjustment);
+      const atTail = keptInOrder.slice(keptInOrder.length - adjustmentsAfter.length).every(isAdjustment);
+      const movedAdjustment = adjustmentsBefore.find(
+        (id, index) => adjustmentsAfter[index] !== id || (!atTail && keptIds.indexOf(id) !== keptInOrder.indexOf(id)),
+      );
+      if (movedAdjustment) await judgeStructure(movedAdjustment, "adjustment", { kind: "reorder" });
     }
     for (const id of archivedIds) {
       const archived = currentById.get(id);

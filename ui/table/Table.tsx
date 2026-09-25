@@ -69,6 +69,8 @@ export type TableProps<Row> = {
   saveLocked?: boolean;
   /** 04-49(04-30 리뷰 S-5) — 셀 편집기가 열리고 닫힐 때 알린다(열린 편집기 값은 아직 dirty에 들지 않는다). */
   onEditingChange?: (editing: boolean) => void;
+  /** 04-23 — 호출부가 방금 만든 줄의 한 칸을 편집 상태로 연다(객체가 바뀔 때마다 한 번, 그 칸이 `edit`일 때만). */
+  openCell?: { rowId: string; columnKey: string } | null;
 };
 
 type ActiveCell = { rowId: string; columnKey: string } | null;
@@ -106,6 +108,7 @@ export function Table<Row>({
   onBlockedEdit,
   saveLocked = false,
   onEditingChange,
+  openCell,
 }: TableProps<Row>) {
   const [activeCell, setActiveCell] = useState<ActiveCell>(null);
   const allowed = (action: Parameters<typeof isGridActionAllowed>[0]) => isGridActionAllowed(action, { saveLocked });
@@ -230,6 +233,20 @@ export function Table<Row>({
     const target = table.querySelector<HTMLElement>("td[data-grid-focus]");
     if (target && !target.contains(active)) target.focus();
   }, [enableGridKeyboard, keyboardState.focus.row, keyboardState.focus.col]);
+
+  // 04-23 — 요청 객체가 바뀐 렌더에서 한 번 연다(렌더 중 상태 조정 — 효과 안 setState를 피한다).
+  const [seenOpenCell, setSeenOpenCell] = useState(openCell);
+  if (openCell !== seenOpenCell) {
+    setSeenOpenCell(openCell);
+    const rowIndex = openCell ? flatRows.findIndex((row) => getRowId(row) === openCell.rowId) : -1;
+    const colIndex = openCell ? columns.findIndex((column) => column.key === openCell.columnKey) : -1;
+    const row = flatRows[rowIndex];
+    const column = columns[colIndex];
+    if (openCell && row && column?.editCell && cellEditability(column, row) === "edit" && allowed("enterEdit")) {
+      keyboardState.setFocus({ row: rowIndex, col: colIndex });
+      setActiveCell(openCell);
+    }
+  }
 
   const editing = activeCell !== null;
   useEffect(() => {

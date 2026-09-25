@@ -22,12 +22,14 @@ import { useCommaInput } from "@/ui/input/use-comma-input";
 import type { TableColumn, CellIssue, CellEditability } from "@/ui/table/types";
 import type { QuoteLineDto, QuoteLineBaseline } from "@/domain/quotes/lines";
 import {
+  QUOTE_LINE_KINDS,
   QUOTE_LINE_STATUSES,
   tableLockLine,
   visibleHintKeys,
   type QuoteCellEditability,
   type QuoteHintKey,
   type QuoteLineField,
+  type QuoteLineKind,
   type QuoteLineStatus,
   type QuoteTableEmptyState,
   type StructuralEditability,
@@ -59,6 +61,8 @@ type DraftLine = {
   id?: string;
   /** 04-30(ENG-D10) — 화면이 만든 uuid로 아직 저장되지 않은 줄. 재전송에도 같은 id를 싣는다. */
   isNew?: true;
+  /** 04-23(D-83 · D-48) — 줄 종류(서버 DTO). 새 줄에서만 정해지고 바뀌지 않는다. */
+  lineKind: QuoteLineKind;
   version?: number;
   subcategory: string;
   itemName: string;
@@ -93,6 +97,14 @@ type DraftLine = {
 };
 
 type LineCells = Record<QuoteLineField, QuoteCellEditability>;
+
+// 04-23(D-83) — 표의 줄은 늘 견적 줄 → 견적 외 비용 → 조정 순서다(조정은 맨 아래 고정 그룹). 같은 종류 안의 순서는 그대로.
+const KIND_ORDER: Record<QuoteLineKind, number> = { quote: 0, out_of_quote: 1, adjustment: 2 };
+const KIND_GROUP_LABELS: Record<Exclude<QuoteLineKind, "quote">, string> = { out_of_quote: "견적 외 비용", adjustment: "조정" };
+
+function byKind(lines: DraftLine[]): DraftLine[] {
+  return [...lines].sort((a, b) => KIND_ORDER[a.lineKind] - KIND_ORDER[b.lineKind]);
+}
 
 type CellConflictDraft = { field: string; reason: string; theirRaw: string | number | null; theirVersion: number };
 
@@ -218,6 +230,7 @@ function fromDto(dto: QuoteLineDto): DraftLine {
   return {
     clientKey: dto.id,
     id: dto.id,
+    lineKind: QUOTE_LINE_KINDS.find((kind) => kind === dto.lineKind) ?? "quote",
     version: dto.version,
     subcategory: dto.subcategory,
     itemName: dto.itemName,
@@ -249,6 +262,7 @@ function newDraftLine(defaultSubcategory: string, cells: LineCells, id: string =
     clientKey: id,
     id,
     isNew: true,
+    lineKind: "quote",
     subcategory: defaultSubcategory,
     itemName: "",
     vendorId: null,
@@ -785,6 +799,8 @@ export function QuoteLedger({
   subcategories,
   structural,
   newLineCells,
+  adjustmentStructural,
+  adjustmentLineCells,
   lineCap,
   lockReason,
   emptyState,
@@ -822,6 +838,10 @@ export function QuoteLedger({
   structural: StructuralEditability;
   /** 04-30(사용자 D12) — 저장 전 새 줄의 칸별 편집 단계(서버 lineCellEditability isNewLine). */
   newLineCells: LineCells;
+  /** 04-23(D-83) — 조정 줄 구조(서버 structuralEditability, 조정 권한 `projects.adjustment` 쓰기). */
+  adjustmentStructural: StructuralEditability;
+  /** 04-23(D-83) — 저장 전 새 조정 줄의 칸별 편집 단계(서버 lineCellEditability). */
+  adjustmentLineCells: LineCells;
   /** 04-26(D-86) — 차수당 견적 줄 상한(서버 설정 quote_line.max_per_revision). */
   lineCap: number;
   /** 04-30(DR-2 · DR-35) — 잠긴 셀 편집 시도의 이유(서버 quoteLockReason). */
@@ -835,7 +855,15 @@ export function QuoteLedger({
   contractVatKrw: number;
   contractTotalKrw: number;
 }) {
-  const [lines, setLines] = useState<DraftLine[]>(() => initialLines.map(fromDto));
+  const [lines, setLinesState] = useState<DraftLine[]>(() => byKind(initialLines.map(fromDto)));
+  // 04-23 — 어느 경로로 줄을 바꿔도 종류 순서(조정 맨 아래)를 지킨다.
+  const setLines = useCallback(
+    (next: DraftLine[] | ((prev: DraftLine[]) => DraftLine[])) =>
+      setLinesState((prev) => byKind(typeof next === "function" ? next(prev) : next)),
+    [],
+  );
+  // 04-23 — 그룹 버튼으로 만든 새 줄의 첫 편집 칸(Table이 편집 상태로 연다).
+  const [openCell, setOpenCell] = useState<{ rowId: string; columnKey: string } | null>(null);
   const [contractDraft, setContractDraft] = useState<ContractDraft>(() => contractFromDto(revenue));
   const [issuedEntries, setIssuedEntries] = useState<EntryDraft[] | undefined>(() => entriesFromDto(revenue.issuedEntries));
   const [paidEntries, setPaidEntries] = useState<EntryDraft[] | undefined>(() => entriesFromDto(revenue.paidEntries));
@@ -1149,8 +1177,17 @@ export function QuoteLedger({
       persistPendingRef.current = true;
       setLines((prev) => [...prev, newDraftLine(inheritedSubcategory, newLineCells)]);
     },
-    [subcategories, newLineCells],
+    [subcategories, newLineCells, setLines],
   );
+
+  // 04-23(ENG-D10 · B-24) — 그룹을 정해 줄을 더하는 처리 지점 하나. 표의 새 줄 생성 함수(newDraftLine — 화면 uuid ·
+  // isNew)를 그대로 거치고 종류만 덧씌운다. 소분류는 빈 값으로 보낸다(서버가 종류 값을 적는다). 새 줄 id를 돌려준다.
+  function addLineToGroup(lineKind: "adjustment"): string {
+    const line: DraftLine = { ...newDraftLine("", adjustmentLineCells), lineKind };
+    persistPendingRef.current = true;
+    setLines((prev) => [...prev, line]);
+    return line.clientKey;
+  }
 
   function duplicateLine(clientKey: string) {
     persistPendingRef.current = true;
@@ -1292,6 +1329,7 @@ export function QuoteLedger({
                 id: line.id,
                 isNew: line.isNew,
                 version: line.isNew ? undefined : line.version,
+                lineKind: line.isNew ? line.lineKind : undefined,
                 subcategory: line.subcategory,
                 itemName: line.itemName,
                 vendorId: line.vendorId ?? undefined,
@@ -1381,7 +1419,7 @@ export function QuoteLedger({
       header: "소분류",
       priority: "p3",
       editability: (row) => atWidth(row.cells.subcategory),
-      cell: (row) => subcategoryLabel(row.subcategory),
+      cell: (row) => (row.lineKind === "quote" ? subcategoryLabel(row.subcategory) : KIND_GROUP_LABELS[row.lineKind]),
       editCell: (row, ctx) =>
         selectEditCell({
           id: `subcategory-edit-${row.clientKey}`,
@@ -1437,7 +1475,7 @@ export function QuoteLedger({
       editability: (row) => atWidth(row.cells.quantity),
       // D-95 — 읽기 모드도 쉼표 서식을 쓴다(04-09 Task 3 편차, 수량 칸이
       // 이관에서 빠져 있었다).
-      cell: (row) => formatQuantity(row.quantity),
+      cell: (row) => (row.lineKind === "adjustment" ? "—" : formatQuantity(row.quantity)),
       editCell: (row, ctx) => (
         <NumericEditCell
           ariaLabel="수량"
@@ -1457,7 +1495,7 @@ export function QuoteLedger({
       collapseBelow: 1024,
       align: "right",
       editability: (row) => atWidth(row.cells.unitPrice),
-      cell: (row) => formatKrw(row.unitPriceAmountKrw),
+      cell: (row) => (row.lineKind === "adjustment" ? "—" : formatKrw(row.unitPriceAmountKrw)),
       editCell: (row, ctx) => (
         <UnitPriceEditCell
           rowKey={row.clientKey}
@@ -1507,6 +1545,7 @@ export function QuoteLedger({
         />
       ),
       secondaryLine: (row) => {
+        if (row.lineKind !== "quote") return null;
         const line = formatForeignLine({ currency: row.unitPriceCurrency, amount: row.unitPriceAmount, fxRate: row.unitPriceFxRate });
         if (!line) return null;
         // 04-49(DR-14) — `USD 4,400.00`과 `@1,318.1818` 두 묶음(1280 미만에서 그 사이에서만 줄바꿈).
@@ -1558,7 +1597,7 @@ export function QuoteLedger({
       key: "status",
       header: "상태",
       priority: "p1",
-      cell: (row) => lineStatusLabel(row.lineStatus),
+      cell: (row) => (row.lineKind === "adjustment" ? "—" : lineStatusLabel(row.lineStatus)),
     },
     {
       key: "note",
@@ -1956,7 +1995,8 @@ export function QuoteLedger({
         columns={columns}
         rows={lines}
         getRowId={(row) => row.clientKey}
-        groupBy={(row) => subcategoryLabel(row.subcategory)}
+        groupBy={(row) => (row.lineKind === "quote" ? subcategoryLabel(row.subcategory) : KIND_GROUP_LABELS[row.lineKind])}
+        openCell={openCell}
         emptyMessage={emptyState.message}
         emptyAction={
           emptyState.action?.kind === "addLine" && editableWidth
@@ -2024,16 +2064,29 @@ export function QuoteLedger({
         </p>
       ) : null}
 
-      {structural.insert && editableWidth && lines.length > 0 ? (
+      {(structural.insert || adjustmentStructural.insert) && editableWidth && lines.length > 0 ? (
         <div className={styles.addLineButton}>
-          <Button
-            variant="tertiary"
-            disabled={atLineCap}
-            disabledReason={lineCapReason}
-            onClick={() => (saveLocked ? undefined : addLine())}
-          >
-            줄 추가
-          </Button>
+          {structural.insert ? (
+            <Button
+              variant="tertiary"
+              disabled={atLineCap}
+              disabledReason={lineCapReason}
+              onClick={() => (saveLocked ? undefined : addLine())}
+            >
+              줄 추가
+            </Button>
+          ) : null}
+          {/* 04-23(D-83 · DR-36) — 조정 권한자에게 상태와 무관하게, 1024 이상에서만. 새 줄의 실행가 칸이 열린다. */}
+          {adjustmentStructural.insert ? (
+            <Button
+              variant="tertiary"
+              disabled={atLineCap}
+              disabledReason={lineCapReason}
+              onClick={() => (saveLocked ? undefined : setOpenCell({ rowId: addLineToGroup("adjustment"), columnKey: "execution" }))}
+            >
+              조정 줄 추가
+            </Button>
+          ) : null}
         </div>
       ) : null}
 

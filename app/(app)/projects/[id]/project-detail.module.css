@@ -134,6 +134,9 @@
 
 /* 04-26 — 「줄 추가」는 3차 Button(비활성 이유 한 줄 포함)이고, 이 자리는 표와의 간격만 준다. */
 .addLineButton {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
   margin-top: var(--s-3);
 }
 

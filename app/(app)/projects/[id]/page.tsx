@@ -45,8 +45,10 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   if (!project) notFound();
 
   const todayKst = kstToday(new Date());
-  const [canWrite, canWriteEntries, canEditPeriod, actorCoversTeam, revision] = await Promise.all([
+  const [canWrite, canAdjust, canWriteEntries, canEditPeriod, actorCoversTeam, revision] = await Promise.all([
     can(session.viewer, "projects", "write"),
+    // 04-23(D-83) — 조정 줄 권한은 서버가 계산해 넘긴다(화면이 계급을 추론하지 않는다).
+    can(session.viewer, "projects.adjustment", "write"),
     can(session.viewer, "projects.revenue", "write"),
     can(session.viewer, "projects.period", "write"),
     actorCoversProjectTeam(session.viewer, project, { todayKst }),
@@ -68,6 +70,16 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const canEditLines = canWrite && canSeeAmount;
   const structural = structuralEditability({ status: project.status, canWrite: canEditLines });
   const newLineCells = lineCellEditability({ status: project.status, canWrite: canEditLines, hasLinkedDocuments: false, isNewLine: true });
+  const canAdjustLines = canAdjust && canSeeAmount;
+  const adjustmentStructural = structuralEditability({ status: project.status, canWrite: canEditLines, lineKind: "adjustment", canAdjust: canAdjustLines });
+  const adjustmentLineCells = lineCellEditability({
+    status: project.status,
+    canWrite: canEditLines,
+    hasLinkedDocuments: false,
+    isNewLine: true,
+    lineKind: "adjustment",
+    canAdjust: canAdjustLines,
+  });
 
   // 04-22(S13 · 사용자 D14·D11·D20 · 사용자 결정 2026-09-25 「기간만 수정」) — 기간 권리. 팀장 이상은
   // projects.period 쓰기 + 자기 팀, 담당 PM은 projects 쓰기가 있을 때만.
@@ -81,8 +93,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   // 04-44(DR-37) — 총 매출 예상가는 기간과 같은 권리 + 금액 노출(볼 수 없는 값은 고칠 수 없다).
   const canEditPreEstimate = periodRights !== "none" && canSeeAmount;
   const [lines, references, revenue, usdDefaultFxRate, destinations, catalog, statusSince, lineCap] = await Promise.all([
-    listQuoteLines(session.viewer, revision.id, { status: project.status, canWrite: canEditLines }),
-    canWrite ? listProjectFormReferences(session.viewer) : Promise.resolve(null),
+    listQuoteLines(session.viewer, revision.id, { status: project.status, canWrite: canEditLines, canAdjust: canAdjustLines }),
+    // 04-23(CEO 리뷰 B-23) — 조정 권한만 있어도 조정 줄의 거래처 칸을 고른다.
+    canWrite || canAdjust ? listProjectFormReferences(session.viewer) : Promise.resolve(null),
     listRevenue(session.viewer, project.id),
     recentFxRate("USD"),
     statusDestinations(session.viewer, project),
@@ -99,6 +112,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const canSave =
     hasEditableCell ||
     structural.insert ||
+    adjustmentStructural.insert ||
     periodRights !== "none" ||
     canEditPreEstimate ||
     canWriteEntries ||
@@ -161,6 +175,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       subcategories={references?.subcategories ?? []}
       structural={structural}
       newLineCells={newLineCells}
+      adjustmentStructural={adjustmentStructural}
+      adjustmentLineCells={adjustmentLineCells}
       lineCap={lineCap}
       lockReason={quoteLockReason({ status: project.status })}
       emptyState={quoteTableEmptyState({

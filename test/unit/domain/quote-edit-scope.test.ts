@@ -291,11 +291,11 @@ describe("줄 종류 축 결정표(04-13)", () => {
     });
   });
 
-  it("견적 외 비용 + 진행: 추가 가능, 수량·단가 locked, 나머지 edit", () => {
+  it("견적 외 비용 + 진행: 추가 가능, 소분류·수량·단가 locked(소분류는 읽기 전용 글자 — 04-23 검토 S-2), 나머지 edit", () => {
     expect(structuralEditability({ status: "in_progress", canWrite: true, lineKind: "out_of_quote" }).insert).toBe(true);
     for (const isNewLine of [false, true]) {
       const cells = lineCellEditability({ ...base, status: "in_progress", isNewLine, lineKind: "out_of_quote" });
-      expect(fieldsAt(cells, "locked")).toEqual(["quantity", "unitPrice"]);
+      expect(fieldsAt(cells, "locked")).toEqual(["quantity", "subcategory", "unitPrice"]);
     }
   });
 
@@ -311,6 +311,7 @@ describe("줄 종류 축 결정표(04-13)", () => {
     expect(inserted.execution).toBe("edit");
     expect(inserted.quantity).toBe("locked");
     expect(inserted.unitPrice).toBe("locked");
+    expect(inserted.subcategory).toBe("locked");
   });
 
   it("견적 외 비용 + 완료: 셀·구조 전부 잠김", () => {

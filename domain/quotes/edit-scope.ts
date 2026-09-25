@@ -50,7 +50,8 @@ function cellLevel(input: LineEditScopeInput, field: QuoteLineField): QuoteCellE
   if (input.lineKind === "adjustment") return input.canAdjust && ADJUSTMENT_EDIT_FIELDS.includes(field) ? "edit" : "locked";
   if (!input.canWrite || input.status === "completed") return "locked";
   // 04-13(D-48) — 견적 외 비용은 견적가 0인 견적 줄이다: 수량·단가는 늘 잠김, 나머지는 견적 줄의 상태 규칙 그대로.
-  if (input.lineKind === "out_of_quote" && (field === "quantity" || field === "unitPrice")) return "locked";
+  // 04-23 검토 S-2 — 소분류는 종류 값(`견적 외 비용`)을 읽기 전용 글자로만 그린다.
+  if (input.lineKind === "out_of_quote" && (field === "subcategory" || field === "quantity" || field === "unitPrice")) return "locked";
   if (input.hasLinkedDocuments && LINKED_READONLY_FIELDS.includes(field)) return "readonly";
   if (input.status === "settling") {
     if (input.isNewLine) {

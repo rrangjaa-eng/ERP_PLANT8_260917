@@ -44,6 +44,49 @@ export function resolvePeriodSave(input: {
   return { startDate, endDate };
 }
 
+// A-22: 형식(YYYY-MM-DD) 뒤 달력 왕복 — 2026-02-30은 UTC로 3월 2일이 되어 되돌아오지 않는다.
+function isCalendarDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number) as [number, number, number];
+  return new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10) === value;
+}
+
+export type PeriodFieldError = { field: "start" | "end"; reason: string };
+
+const FORMAT_ERROR = "날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요";
+
+// 칸별 오류 — 형식은 입력 칸 값으로, 나머지는 저장될 값(resolvePeriodSave 결과)으로 판정한다(A-02:
+// 종료일을 비워 과거 시작일로 저장되게 하는 우회도 「종료일이 오늘보다 빠름」이다).
+export function validatePeriodChange(input: {
+  status: ProjectStatus;
+  rights: PeriodRights;
+  start: string | null;
+  end: string | null;
+  todayKst: string;
+  teamLeadName: string | null;
+}): PeriodFieldError[] {
+  const formatErrors: PeriodFieldError[] = [];
+  if (input.start !== null && !isCalendarDate(input.start)) formatErrors.push({ field: "start", reason: FORMAT_ERROR });
+  if (input.end !== null && !isCalendarDate(input.end)) formatErrors.push({ field: "end", reason: FORMAT_ERROR });
+  if (formatErrors.length > 0) return formatErrors;
+
+  const resolved = resolvePeriodSave({ status: input.status, newStart: input.start, newEnd: input.end, todayKst: input.todayKst });
+  if (PROGRESSED.includes(input.status) && resolved.startDate === null) {
+    return [{ field: "start", reason: "진행부터는 시작일이 있어야 합니다 · 시작일을 적어 주세요" }];
+  }
+  if (resolved.startDate !== null && resolved.endDate !== null && resolved.endDate < resolved.startDate) {
+    return [{ field: "end", reason: "종료일이 시작일보다 빠릅니다 · 종료일을 고쳐 주세요" }];
+  }
+  // 상태 전환은 팀장의 일이다(D-46) — 진행의 PM은 기간 칸으로 정산을 일으킬 수 없다(CEO-D14).
+  if (input.status === "in_progress" && input.rights === "pm" && resolved.endDate !== null && resolved.endDate < input.todayKst) {
+    const reason = input.teamLeadName
+      ? `종료일이 오늘보다 빠름 · 앞당기기는 팀장 ${input.teamLeadName}`
+      : "종료일이 오늘보다 빠름";
+    return [{ field: "end", reason }];
+  }
+  return [];
+}
+
 // 결과 미리보기 한 줄(Form.Hint) — 저장될 값으로 판정한다(서버 저장과 같은 resolvePeriodSave).
 export function previewPeriodChange(input: {
   status: ProjectStatus;
@@ -51,7 +94,14 @@ export function previewPeriodChange(input: {
   newEnd: string | null;
   todayKst: string;
 }): string | null {
+  if ([input.newStart, input.newEnd].some((value) => value !== null && !isCalendarDate(value))) return null;
   const resolved = resolvePeriodSave(input);
   if (resolved.statusChange) return "저장하면 진행으로 돌아감";
+  if (input.status === "in_progress" && resolved.endDate !== null && resolved.endDate < input.todayKst) {
+    return "저장하면 정산이 됨";
+  }
+  if (PROGRESSED.includes(input.status) && input.newEnd === null && resolved.endDate !== null) {
+    return "종료일이 비어 시작일로 저장됨";
+  }
   return null;
 }

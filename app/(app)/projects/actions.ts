@@ -6,7 +6,12 @@ import { authedActionClient } from "@/lib/actions/client";
 import { createProject } from "@/domain/projects";
 import { PeriodRejectedError, saveProjectLedger, type PeriodFieldError } from "@/domain/projects/ledger";
 import { SaveRejectedError } from "@/domain/quotes/lines";
-import { changeProjectStatus } from "@/domain/projects/status";
+import {
+  changeProjectStatus,
+  listProjectStatusCatalog,
+  StatusChangedError,
+  statusChangedMessage,
+} from "@/domain/projects/status";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
 import "./actions.registry";
 
@@ -73,10 +78,16 @@ function periodRejected(error: PeriodRejectedError): { periodRejected: { errors:
   return { periodRejected: { errors: error.errors } };
 }
 
+function statusChanged(message: string): { statusChanged: { message: string } } {
+  return { statusChanged: { message } };
+}
+
 export const saveProjectLedgerAction = authedActionClient
   .schema(
     z.object({
       projectId: z.string().min(1),
+      // DR-6 · 계약 4 — 화면이 본 상태(필수).
+      seenStatus: z.enum(PROJECT_STATUSES),
       quoteLines: z
         .object({
           revisionId: z.string().min(1),
@@ -133,6 +144,7 @@ export const saveProjectLedgerAction = authedActionClient
     let result: Awaited<ReturnType<typeof saveProjectLedger>>;
     try {
       result = await saveProjectLedger(ctx.viewer, parsedInput.projectId, {
+        seenStatus: parsedInput.seenStatus,
         quoteLines: parsedInput.quoteLines,
         revenue: parsedInput.revenue,
         period: parsedInput.period,
@@ -140,6 +152,13 @@ export const saveProjectLedgerAction = authedActionClient
     } catch (error) {
       // 04-22 — 기간 칸 거부는 칸 오류로 돌려준다(화면이 칸 아래 Form.Error로 그린다).
       if (error instanceof PeriodRejectedError) return periodRejected(error);
+      // DR-6 — 상태 바뀜 전부 거부. 트랜잭션은 이미 롤백됐다 — 라벨은 그 뒤 트랜잭션 밖에서 코드표로 찾는다.
+      // 화면이 오류 문자열을 해석하지 않게 데이터로 돌려준다.
+      if (error instanceof StatusChangedError) {
+        const catalog = await listProjectStatusCatalog(ctx.viewer);
+        const label = catalog.find((entry) => entry.value === error.status)?.label ?? error.status;
+        return statusChanged(statusChangedMessage(label, "전부 거부"));
+      }
       // 04-28 거부 봉투 — SaveRejectedError만 칸 좌표로 돌려준다(도메인이 쓰기 전에
       // 던지고 트랜잭션은 이미 되돌렸다 — 커밋 뒤에는 생기지 않는다). 칸은 이 사람이
       // 이번 요청에 실어 보낸 줄의 편집 칸에서만 생겨(편집·금액 권한 판정 뒤) 새로

@@ -226,6 +226,153 @@ function newDraftLine(defaultSubcategory: string): DraftLine {
   };
 }
 
+// 04-22(D-68) — 미저장 보관본의 모양. 기존 줄은 `{줄 id}:{열 키}` → 값, 새 줄은
+// `{clientKey}:new` → 줄 전체(04-30이 화면 uuid로 바꾼다), 기간 칸은 `period:start`·`period:end`.
+type StoredUnitPrice = { amount: number; currency: Currency; fxRate: number };
+type StoredNewLine = {
+  subcategory: string;
+  itemName: string;
+  vendorId: string | null;
+  quantity: number;
+  unitPrice: StoredUnitPrice;
+  execution: number;
+  lineStatus: string;
+  note: string | null;
+};
+
+function editsSnapshot(
+  lines: DraftLine[],
+  period: PeriodDraft | null,
+  periodBase: { startDate: string | null; endDate: string | null },
+): Record<string, unknown> {
+  const edits: Record<string, unknown> = {};
+  for (const line of lines) {
+    const unitPrice: StoredUnitPrice = { amount: line.unitPriceAmount, currency: line.unitPriceCurrency, fxRate: line.unitPriceFxRate };
+    if (!line.id) {
+      const stored: StoredNewLine = {
+        subcategory: line.subcategory,
+        itemName: line.itemName,
+        vendorId: line.vendorId,
+        quantity: line.quantity,
+        unitPrice,
+        execution: line.executionAmount,
+        lineStatus: line.lineStatus,
+        note: line.note,
+      };
+      edits[`${line.clientKey}:new`] = stored;
+      continue;
+    }
+    const base = line.baseline;
+    if (line.subcategory !== base.subcategory) edits[`${line.id}:subcategory`] = line.subcategory;
+    if (line.itemName !== base.itemName) edits[`${line.id}:itemName`] = line.itemName;
+    if (line.vendorId !== base.vendorId) edits[`${line.id}:vendor`] = line.vendorId;
+    if (line.quantity !== base.quantity) edits[`${line.id}:quantity`] = line.quantity;
+    if (line.unitPriceAmountKrw !== base.unitPriceAmountKrw) edits[`${line.id}:unitPrice`] = unitPrice;
+    if (line.executionAmount !== base.executionAmountKrw) edits[`${line.id}:execution`] = line.executionAmount;
+    if (line.lineStatus !== base.lineStatus) edits[`${line.id}:status`] = line.lineStatus;
+    if (line.note !== base.note) edits[`${line.id}:note`] = line.note;
+  }
+  if (period) {
+    if (period.start !== (periodBase.startDate ?? "")) edits["period:start"] = period.start;
+    if (period.end !== (periodBase.endDate ?? "")) edits["period:end"] = period.end;
+  }
+  return edits;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readUnitPrice(value: unknown): StoredUnitPrice | null {
+  if (!isRecord(value)) return null;
+  const { amount, currency, fxRate } = value;
+  if (typeof amount !== "number" || typeof fxRate !== "number" || (currency !== "KRW" && currency !== "USD")) return null;
+  return { amount, currency, fxRate };
+}
+
+function unitPricePatch(price: StoredUnitPrice): Partial<DraftLine> {
+  return {
+    unitPriceAmount: price.amount,
+    unitPriceCurrency: price.currency,
+    unitPriceFxRate: price.fxRate,
+    unitPriceAmountKrw: price.currency === "KRW" ? price.amount : Math.round(price.amount * price.fxRate),
+  };
+}
+
+// 보관본의 한 칸을 그 줄의 patch로. 모양이 맞지 않는 값(이전 버전이 쓴 값)은 버린다.
+function restoredCellPatch(column: string, value: unknown): Partial<DraftLine> | null {
+  switch (column) {
+    case "subcategory":
+      return typeof value === "string" ? { subcategory: value } : null;
+    case "itemName":
+      return typeof value === "string" ? { itemName: value } : null;
+    case "vendor":
+      return typeof value === "string" || value === null ? { vendorId: value } : null;
+    case "quantity":
+      return typeof value === "number" ? { quantity: value } : null;
+    case "unitPrice": {
+      const price = readUnitPrice(value);
+      return price ? unitPricePatch(price) : null;
+    }
+    case "execution":
+      return typeof value === "number" ? { executionAmount: value } : null;
+    case "status":
+      return typeof value === "string" ? { lineStatus: value } : null;
+    case "note":
+      return typeof value === "string" || value === null ? { note: value } : null;
+    default:
+      return null;
+  }
+}
+
+function restoredNewLine(value: unknown, defaultSubcategory: string): DraftLine | null {
+  if (!isRecord(value)) return null;
+  let line = newDraftLine(defaultSubcategory);
+  for (const [field, column] of [
+    ["subcategory", "subcategory"],
+    ["itemName", "itemName"],
+    ["vendorId", "vendor"],
+    ["quantity", "quantity"],
+    ["unitPrice", "unitPrice"],
+    ["execution", "execution"],
+    ["lineStatus", "status"],
+    ["note", "note"],
+  ] as const) {
+    const patch = restoredCellPatch(column, value[field]);
+    if (patch) line = { ...line, ...patch };
+  }
+  return line;
+}
+
+// 「복원」 — 돌려받은 편집을 dirty 모양으로 병합한다(기존 줄 칸 덮기 · 새 줄 끝에 다시 만들기 · 기간 칸 값).
+function mergeRestoredEdits(
+  lines: DraftLine[],
+  edits: Record<string, unknown>,
+  defaultSubcategory: string,
+): { lines: DraftLine[]; period: { start?: string; end?: string } } {
+  let next = lines;
+  const added: DraftLine[] = [];
+  const period: { start?: string; end?: string } = {};
+  for (const [key, value] of Object.entries(edits)) {
+    const cut = key.lastIndexOf(":");
+    const owner = key.slice(0, cut);
+    const column = key.slice(cut + 1);
+    if (owner === "period") {
+      if (typeof value === "string" && (column === "start" || column === "end")) period[column] = value;
+      continue;
+    }
+    if (column === "new") {
+      const line = restoredNewLine(value, defaultSubcategory);
+      if (line) added.push(line);
+      continue;
+    }
+    const patch = restoredCellPatch(column, value);
+    if (!patch) continue;
+    next = next.map((line) => (line.id === owner ? { ...line, ...patch, dirty: true } : line));
+  }
+  return { lines: [...next, ...added], period };
+}
+
 function contractFromDto(revenue: RevenueDto): ContractDraft {
   const amount = revenue.contract?.amount;
   return {
@@ -607,8 +754,9 @@ export function QuoteLedger({
   const [periodErrors, setPeriodErrors] = useState<PeriodFieldError[]>([]);
   const [periodSaved, setPeriodSaved] = useState(false);
   const router = useRouter();
-
-  const dirtyStorage = useDirtyStorage(projectId, revisionId, 0);
+  // 04-22(D-68) — 사용자가 칸을 바꾼 순간에만 보관본을 쓴다. 편집 핸들러가 켜고, 상태가
+  // 반영된 뒤 효과가 현재 편집 전체를 쓴다. 서버 값으로 다시 그리는 경로는 켜지 않는다.
+  const persistPendingRef = useRef(false);
 
   // 엔지 리뷰 C §1 P1 — 저장 래치. 같은 틱에 두 번 들어오는 저장(Ctrl+S
   // 연타)은 isExecuting이 아직 거짓인 렌더에서 처리되므로 동기 래치로 막는다.
@@ -622,6 +770,11 @@ export function QuoteLedger({
       savingRef.current = false;
     },
     onSuccess: ({ data }) => {
+      if (data && "statusChanged" in data) {
+        // DR-6 — 보관본을 지우지 않은 채 서버가 새 상태·셀 단계·컨트롤을 다시 보내게 한다.
+        router.refresh();
+        return;
+      }
       if (data && "rejected" in data) {
         applyRejectedCells(data.rejected.cells);
         return; // 전부 거부 — 줄 교체·저장됨·보관본 지우기를 하지 않는다.
@@ -688,12 +841,14 @@ export function QuoteLedger({
     : 0;
 
   function changePeriod(next: PeriodDraft) {
+    persistPendingRef.current = true;
     setPeriodErrors([]);
     setPeriodDraft(next);
   }
 
   // S13 — Esc는 편집 중 값을 되돌리고, 두 칸이 모두 원래 값이면 묶음을 닫는다.
   function escapePeriod() {
+    persistPendingRef.current = true;
     if (periodDirtyCount > 0) {
       setPeriodDraft(periodBaselineDraft);
       setPeriodErrors([]);
@@ -708,6 +863,46 @@ export function QuoteLedger({
   const paidDirtyCount = (paidEntries ?? []).filter((entry) => entry.dirty).length;
   const contractDirtyCount = contractDraft.dirty ? 1 : 0;
   const dirtyCount = quoteLinesDirtyCount + issuedDirtyCount + paidDirtyCount + contractDirtyCount + periodDirtyCount;
+  const dirtyStorage = useDirtyStorage(projectId, revisionId, dirtyCount);
+
+  const { persist } = dirtyStorage;
+  useEffect(() => {
+    if (!persistPendingRef.current) return;
+    persistPendingRef.current = false;
+    persist(editsSnapshot(lines, periodDraft, periodBaseline));
+  }, [lines, periodDraft, periodBaseline, persist]);
+
+  // DR-6 — 상태 바뀜 거부 뒤 router.refresh()가 새 status를 내려보내면 화면 편집(줄·매출·기간 칸)을
+  // 서버 props로 되돌리고 보관본의 칸 수를 다시 읽어 복원 줄을 띄운다. 기간 저장 성공으로 상태가
+  // 바뀐 경우도 여기를 지나지만 저장 성공이 이미 보관본을 지웠으므로 복원 줄이 없다.
+  const [renderedStatus, setRenderedStatus] = useState(status);
+  if (renderedStatus !== status) {
+    setRenderedStatus(status);
+    setLines(initialLines.map(fromDto));
+    setContractDraft(contractFromDto(revenue));
+    setIssuedEntries(entriesFromDto(revenue.issuedEntries));
+    setPaidEntries(entriesFromDto(revenue.paidEntries));
+    setContractVat({ vatKrw: contractVatKrw, totalKrw: contractTotalKrw });
+    setBalanceKrw(revenue.balanceKrw);
+    setPeriodBaseline({ startDate: period.startDate, endDate: period.endDate });
+    setPeriodDraft(null);
+    setPeriodErrors([]);
+    dirtyStorage.recount();
+  }
+
+  function restoreEdits() {
+    const edits = dirtyStorage.restore();
+    if (!edits) return;
+    const restored = mergeRestoredEdits(lines, edits, subcategories[0]?.value ?? "");
+    setLines(restored.lines);
+    if (restored.period.start !== undefined || restored.period.end !== undefined) {
+      setPeriodFocus(restored.period.start !== undefined ? "start" : "end");
+      setPeriodDraft({
+        start: restored.period.start ?? periodBaseline.startDate ?? "",
+        end: restored.period.end ?? periodBaseline.endDate ?? "",
+      });
+    }
+  }
   // 해소되지 않은 충돌 칸도 함께 센다 — 충돌이 남은 채 서버를 부르지 않는다.
   const errorCellCount = lines.reduce(
     (sum, line) => sum + Object.keys(line.cellErrors).length + Object.keys(line.cellConflicts).length,
@@ -715,6 +910,7 @@ export function QuoteLedger({
   );
 
   function updateLine(clientKey: string, patch: Partial<DraftLine>) {
+    persistPendingRef.current = true;
     setLines((prev) => prev.map((line) => (line.clientKey === clientKey ? { ...line, ...patch, dirty: true } : line)));
   }
 
@@ -761,12 +957,14 @@ export function QuoteLedger({
   const addLine = useCallback(
     (afterRow?: DraftLine) => {
       const inheritedSubcategory = afterRow?.subcategory ?? subcategories[0]?.value ?? "";
+      persistPendingRef.current = true;
       setLines((prev) => [...prev, newDraftLine(inheritedSubcategory)]);
     },
     [subcategories],
   );
 
   function duplicateLine(clientKey: string) {
+    persistPendingRef.current = true;
     setLines((prev) => {
       const source = prev.find((line) => line.clientKey === clientKey);
       if (!source) return prev;
@@ -791,6 +989,7 @@ export function QuoteLedger({
   // 도착한 이웃 줄의 그룹을 새로 물려받는 것으로 구현한다(코드표 밖 값을
   // 만들지 않기 위해, D-62).
   function moveLine(clientKey: string, direction: "up" | "down") {
+    persistPendingRef.current = true;
     setLines((prev) => {
       const index = prev.findIndex((line) => line.clientKey === clientKey);
       if (index === -1) return prev;
@@ -808,6 +1007,7 @@ export function QuoteLedger({
 
   function confirmDeleteLine() {
     if (!deleteConfirm) return;
+    persistPendingRef.current = true;
     setLines((prev) => prev.filter((line) => line.clientKey !== deleteConfirm.clientKey));
     setDeleteConfirm(null);
   }
@@ -852,6 +1052,7 @@ export function QuoteLedger({
 
     execute({
       projectId,
+      seenStatus: status,
       period:
         periodDraft && periodDirtyCount > 0
           ? {
@@ -1146,6 +1347,7 @@ export function QuoteLedger({
 
     const result = applyPaste({ clipboardText, columns: pasteColumns, rows: lines, activeRowIndex: rowIndex, activeColIndex: colIndex });
 
+    persistPendingRef.current = true;
     setLines((prev) => {
       const next = [...prev];
       for (let i = 0; i < result.newRowsNeeded; i++) {
@@ -1248,6 +1450,7 @@ export function QuoteLedger({
   // 값으로 바꾼다. 둘 다 그 줄의 version과 그 칸의 baseline을 서버 현재로 올려
   // 다음 저장이 그 칸에서 다시 충돌하지 않는다.
   function resolveConflict(clientKey: string, columnKey: string, choice: "mine" | "theirs") {
+    persistPendingRef.current = true;
     setLines((prev) =>
       prev.map((line) => {
         const conflict = line.cellConflicts[columnKey];
@@ -1290,8 +1493,17 @@ export function QuoteLedger({
   // 달리 조용히 무시되고 있었다 — 같은 요약 자리에 일반 문구로 띄운다.
   // 04-28 — 거부 봉투가 있으면 그 요약(`충돌 N줄 · 전부 거부` / `오류 N칸 · 전부 거부`).
   const rejectedEnvelope = result.data && "rejected" in result.data ? result.data.rejected : undefined;
+  // U-6 — 표 밖 칸(기간 칸) 오류로 전부 거부되면 합계 행에 그 칸 수를 붙인다.
+  const periodRejectedSummary =
+    result.data && "periodRejected" in result.data
+      ? `전부 거부 · 다른 칸 오류 ${result.data.periodRejected.errors.length}칸`
+      : undefined;
+  // DR-6 — 상태 바뀜 거부 문구(서버가 statusChangedMessage로 만든다). 다시 그린 뒤에도 남는다.
+  const statusChangedSummary = result.data && "statusChanged" in result.data ? result.data.statusChanged.message : undefined;
   const rejectionSummary =
     rejectedEnvelope?.summary ??
+    periodRejectedSummary ??
+    statusChangedSummary ??
     result.serverError ??
     (result.validationErrors ? "저장하지 못했습니다 · 입력값을 확인하세요" : undefined);
   // F2 — 계약 금액(revenue.contract) 아래에 붙는 필드 오류만 <RevenueSection>에 넘긴다.
@@ -1364,7 +1576,7 @@ export function QuoteLedger({
       {dirtyStorage.restorableCount > 0 ? (
         <p className={styles.restoreBanner}>
           {`저장 안 한 편집 ${dirtyStorage.restorableCount}칸`}
-          <button type="button" className={styles.restoreAction} onClick={() => dirtyStorage.restore()}>
+          <button type="button" className={styles.restoreAction} onClick={restoreEdits}>
             복원
           </button>
           <button type="button" className={styles.restoreAction} onClick={() => dirtyStorage.discard()}>

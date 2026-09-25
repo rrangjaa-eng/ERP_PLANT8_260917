@@ -65,8 +65,10 @@ test.describe("저장 흐름 (04-22, S19)", () => {
     const executionCell = firstRow.getByRole("gridcell").nth(7);
     await executionCell.focus();
     await page.keyboard.press("Enter");
+    await page.keyboard.press("Control+a");
     await page.keyboard.type("777000");
     await page.keyboard.press("Enter");
+    await expect(executionCell).toHaveText("777,000");
     await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
 
     // 동료 팀장이 다른 브라우저 컨텍스트에서 같은 프로젝트를 미수주로 닫는다.

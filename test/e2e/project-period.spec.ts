@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { projects } from "@/db/schema";
+import { codeItems, projects } from "@/db/schema";
 import { createProject } from "@/domain/projects";
+import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
@@ -43,6 +44,7 @@ async function makeProject(input: {
   pmUserId: string;
   status: string;
   endDate: string;
+  startDate?: string;
 }): Promise<{ id: string; number: string; name: string }> {
   const vendor = await insertVendor(SYSTEM_VIEWER, {
     name: `E2E기간클라이언트-${randomUUID()}`,
@@ -54,7 +56,7 @@ async function makeProject(input: {
     teamId: input.teamId,
     pmUserId: input.pmUserId,
     name,
-    startDate: addDays(input.endDate, -3),
+    startDate: input.startDate ?? addDays(input.endDate, -3),
     endDate: input.endDate,
   });
   await db.update(projects).set({ status: input.status }).where(eq(projects.id, created.id));
@@ -206,7 +208,16 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     const leadName = `팀장${randomUUID().slice(0, 6)}`;
     await makeAccount("role-team-lead", team, leadName);
     const endDate = addDays(TODAY, 5);
-    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "in_progress", endDate });
+    // 시작일은 과거 — 어제로 앞당긴 종료일이 「시작일보다 빠름」이 아니라 「오늘보다 빠름」에 걸리게.
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "in_progress", endDate, startDate: addDays(TODAY, -3) });
+    // 합계 행이 있어야 U-6 거부 줄이 붙는다 — 견적 줄 하나를 둔다(빈 표에는 합계 행이 없다).
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("차수가 없습니다");
+    const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+    if (!subcategory) throw new Error("시드된 소분류가 없습니다");
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+      { subcategory: subcategory.value, itemName: "기간 거부 줄", quantity: 1, unitPrice: { currency: "KRW", amount: 1_000_000, fxRate: 1 }, execution: { currency: "KRW", amount: 500_000, fxRate: 1 } },
+    ]);
 
     await login(page, pm);
     await page.goto(`/projects/${project.id}`);
@@ -229,7 +240,13 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team);
     const lead = await makeAccount("role-team-lead", team, `팀장${randomUUID().slice(0, 6)}`);
-    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "in_progress", endDate: addDays(TODAY, 5) });
+    const project = await makeProject({
+      teamId: team,
+      pmUserId: pm.userId,
+      status: "in_progress",
+      endDate: addDays(TODAY, 5),
+      startDate: addDays(TODAY, -3),
+    });
 
     await login(page, lead);
     await page.goto(`/projects/${project.id}`);

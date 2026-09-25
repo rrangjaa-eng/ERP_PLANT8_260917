@@ -11,11 +11,17 @@ import { gate } from "@/domain/rules/gate";
 import "@/domain/rules/register";
 import { denyWrite } from "@/domain/rules/deny-write";
 import { loadProjectForGate } from "@/domain/projects/auto-transition";
-import { coversProjectTeam, loadActorTeamScope } from "@/domain/projects/status";
-import { periodEditRights, resolvePeriodSave } from "@/domain/projects/period";
+import { coversProjectTeam, loadActorTeamScope, StatusChangedError, statusChangedMessage } from "@/domain/projects/status";
+import {
+  periodEditRights,
+  resolvePeriodSave,
+  validatePeriodChange,
+  type PeriodFieldError,
+} from "@/domain/projects/period";
+import { projectResponsibles } from "@/domain/projects/responsibles";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { kstToday } from "@/lib/kst-date";
-import { updateProjectPeriod, updateProjectStatusIfCurrent } from "@/repositories/projects";
+import { findProjectById, updateProjectPeriod, updateProjectStatusIfCurrent } from "@/repositories/projects";
 
 // 04-02 Task 2 ⑥ — 상세 화면의 1차 「일괄 저장」 하나가 견적 줄 + 매출
 // 섹션(계약 금액·발행 줄·입금 줄)의 dirty 전부를 **같은 트랜잭션**으로
@@ -36,6 +42,8 @@ export type PeriodInput = {
 };
 
 export type SaveProjectLedgerInput = {
+  // DR-6 · 계약 4 — 화면이 본 상태. 잠금 직후 첫 판정 행과 다르면 저장 전체를 거부한다.
+  seenStatus: ProjectStatus;
   quoteLines?: { revisionId: string; rows: QuoteLineWriteRow[] };
   revenue?: SaveRevenueInput;
   period?: PeriodInput;
@@ -47,7 +55,7 @@ export type SaveProjectLedgerResult = {
   project: { status: string; startDate: string | null; endDate: string | null };
 };
 
-export type PeriodFieldError = { field: "start" | "end"; reason: string };
+export type { PeriodFieldError };
 
 // 기간 칸 거부 — 칸 오류를 싣고 저장 전체를 되돌린다(표 쪽은 저장하지 않는다).
 export class PeriodRejectedError extends UserFacingError {
@@ -116,7 +124,11 @@ export async function saveProjectLedger(
             can(viewer, "projects.period", "write"),
             loadActorTeamScope(viewer, { todayKst }),
           ]);
-          return { canWrite, canEditPeriod, teamScope };
+          // 거부 문구의 팀장 이름은 권리가 pm이 될 수 있는 사람(담당 PM)일 때만 읽는다.
+          const known = canWrite ? await findProjectById(viewer, projectId) : null;
+          const teamLeadName =
+            known && known.pmUserId === viewer.id ? (await projectResponsibles(viewer, known, { now })).teamLeadName : null;
+          return { canWrite, canEditPeriod, teamScope, teamLeadName };
         })()
       : null;
 
@@ -136,12 +148,19 @@ export async function saveProjectLedger(
       if (!locked || (locked.archivedAt !== null && !scope.includeArchived)) {
         throw new UserFacingError("존재하지 않는 프로젝트입니다.");
       }
+      // DR-6: 비교는 첫 판정 행(자정 자동 정산 반영)과 기간 쓰기 전에 한다 — 사람 자신의 기간 변경은
+      // 거부 사유가 아니다. 던지면 같은 tx의 자동 정산까지 전부 되돌아가고, 읽기 경로가 다음 렌더에
+      // 같은 판정을 다시 한다. 권한 위반이 아니라 write.denied를 남기지 않는다. 문구의 라벨은
+      // 롤백 뒤 액션이 코드표에서 찾는다.
+      if (locked.status !== input.seenStatus) {
+        throw new StatusChangedError(statusChangedMessage(locked.status, "전부 거부"), locked.status);
+      }
       let current = locked;
 
       // ② 기간 판정·쓰기.
       if (input.period && periodFacts) {
         const period = input.period;
-        const status = locked.status as ProjectStatus;
+        const status = locked.status;
         const rights = periodEditRights({
           status,
           isAssignedPm: locked.pmUserId === viewer.id,
@@ -150,7 +169,16 @@ export async function saveProjectLedger(
           actorCoversTeam: coversProjectTeam(periodFacts.teamScope, locked.teamId),
         });
         const conflict = locked.startDate !== period.baseline.startDate || locked.endDate !== period.baseline.endDate;
-        const errors: PeriodFieldError[] = conflict ? [{ field: "end", reason: PERIOD_CONFLICT }] : [];
+        const errors: PeriodFieldError[] = conflict
+          ? [{ field: "end", reason: PERIOD_CONFLICT }]
+          : validatePeriodChange({
+              status,
+              rights,
+              start: period.startDate,
+              end: period.endDate,
+              todayKst,
+              teamLeadName: periodFacts.teamLeadName,
+            });
         const decision = await gate(locked, PERIOD_RULE, { rights, errors });
         if (!decision.allowed) {
           denyWrite(
@@ -171,6 +199,18 @@ export async function saveProjectLedger(
         // 잠근 행이라 0행은 기준값이 어긋난 경우뿐이다(위에서 판정) — 이중 안전장치.
         if (!written) throw new PeriodRejectedError([{ field: "end", reason: PERIOD_CONFLICT }]);
         current = written;
+
+        // A-16: 누가 무엇을 바꿨는지 — 바뀐 칸만 싣는다. 같은 tx.
+        const changed: Record<string, { from: string | null; to: string | null }> = {};
+        if (locked.startDate !== written.startDate) changed.startDate = { from: locked.startDate, to: written.startDate };
+        if (locked.endDate !== written.endDate) changed.endDate = { from: locked.endDate, to: written.endDate };
+        if (Object.keys(changed).length > 0) {
+          await recordAction(
+            viewer,
+            { actionType: "document_update", entity: PROJECT_ENTITY, entityId: projectId, detail: changed },
+            { tx },
+          );
+        }
 
         if (resolved.statusChange) {
           const reverted = await updateProjectStatusIfCurrent(

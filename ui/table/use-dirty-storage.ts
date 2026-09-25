@@ -59,6 +59,12 @@ export function countDirtyEdits(edits: Record<string, unknown> | null): number {
   return Object.keys(edits).length;
 }
 
+// 04-22(D-68 · DR-6) — 복원 줄의 칸 수를 저장소에서 읽는다(마운트 때 한 번 · recount 때 다시).
+export function readRestorableCount(storage: DirtyStorageLike | null, scopeId: string, subScopeId: string): number {
+  if (!storage) return 0;
+  return countDirtyEdits(loadDirtyEdits(storage, scopeId, subScopeId));
+}
+
 export type UseDirtyStorageResult = {
   /** 다시 열었을 때 보관된 편집이 있으면 그 칸 수(표 위 한 줄 배너 트리거). */
   restorableCount: number;
@@ -70,6 +76,8 @@ export type UseDirtyStorageResult = {
   persist: (edits: Record<string, unknown>) => void;
   /** 저장 성공 — 서버 초안을 만들지 않고 보관만 지운다(D-68). */
   clearAfterSave: () => void;
+  /** 04-22 — 저장소를 다시 읽어 복원 줄 수를 갱신한다(상태 바뀜 거부 뒤 서버 값으로 다시 그린 때). */
+  recount: () => void;
 };
 
 // window가 없는 SSR/테스트 환경에서도 안전하게 no-op으로 동작한다.
@@ -89,11 +97,7 @@ export function useDirtyStorage(scopeId: string, subScopeId: string, dirtyCount:
   // 동기화할 대상이 아니라 세션 시작 시점의 스냅샷 한 번이면 충분하다(이후
   // 편집이 같은 키에 계속 쓰여도 배너 숫자는 바뀌지 않는다 — "복원 대상"은
   // 이전 세션이 남긴 것이지 지금 편집 중인 것이 아니다).
-  const [restorableCount, setRestorableCount] = useState(() => {
-    const storage = browserStorage();
-    if (!storage) return 0;
-    return countDirtyEdits(loadDirtyEdits(storage, scopeId, subScopeId));
-  });
+  const [restorableCount, setRestorableCount] = useState(() => readRestorableCount(browserStorage(), scopeId, subScopeId));
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -139,5 +143,9 @@ export function useDirtyStorage(scopeId: string, subScopeId: string, dirtyCount:
     if (storage) clearDirtyEdits(storage, scopeId, subScopeId);
   }, [scopeId, subScopeId]);
 
-  return { restorableCount, restore, discard, persist, clearAfterSave };
+  const recount = useCallback(() => {
+    setRestorableCount(readRestorableCount(browserStorage(), scopeId, subScopeId));
+  }, [scopeId, subScopeId]);
+
+  return { restorableCount, restore, discard, persist, clearAfterSave, recount };
 }

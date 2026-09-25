@@ -116,7 +116,7 @@ async function linesNamed(itemName: string) {
   return db.select().from(quoteLines).where(eq(quoteLines.itemName, itemName));
 }
 
-function deniedCalls(spy: ReturnType<typeof vi.spyOn>) {
+function deniedCalls(spy: { mock: { calls: unknown[][] } }) {
   return spy.mock.calls.filter((call) => call[0] === "write.denied").map((call) => call[1] as Record<string, unknown>);
 }
 

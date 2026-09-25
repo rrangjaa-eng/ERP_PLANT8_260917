@@ -286,6 +286,19 @@ describe("loadProjectForGate — 잠금 안 선판정 (A-33 · OV-5)", () => {
       ),
     ).rejects.toThrow("로그 쓰기 실패");
   });
+
+  it("조건부 UPDATE가 0행이면 로그를 남기지 않고 던진다(fail-closed)", async () => {
+    const { deps, logged } = gateDeps(lockedRow({}));
+    await expect(
+      loadProjectForGate(
+        viewer,
+        "p",
+        { now: () => AFTER_MIDNIGHT, tx: FAKE_TX },
+        { ...deps, updateStatus: () => Promise.resolve(null) },
+      ),
+    ).rejects.toThrow();
+    expect(logged).toEqual([]);
+  });
 });
 
 // ── 종료일 지남(D-81) · 담당자 이름 출처(04-11 Task 3 · 사용자 D20) ────────────────

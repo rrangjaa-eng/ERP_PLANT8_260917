@@ -722,10 +722,13 @@ test.describe("폭 규칙 — 1024 미만 보기 전용 · 좁은 PC 열 접기 
     await expect(page.getByRole("columnheader", { name: "차익" })).toBeHidden();
     await expect(page.getByRole("columnheader", { name: "실행가" })).toBeVisible();
 
-    await cell(page, 0, COL.execution).focus();
+    // 숨은 칸은 접근성 트리에서 빠진다 — DOM 위치(td)로 고른다.
+    await lineCell(page, "폭 첫 줄", COL.execution).focus();
     await page.keyboard.press("ArrowRight");
-    await expect(cell(page, 0, 9)).toBeFocused();
-    await expect(page.locator("tfoot").getByText(/^차익 /)).toBeVisible();
+    await expect(lineCell(page, "폭 첫 줄", 9)).toBeFocused();
+    await page.keyboard.press("ArrowLeft");
+    await expect(lineCell(page, "폭 첫 줄", COL.execution)).toBeFocused();
+    await expect(page.locator("tfoot").getByText(/차익 \d/)).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
 });

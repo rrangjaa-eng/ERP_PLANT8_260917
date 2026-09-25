@@ -99,3 +99,42 @@ test.describe("계급 업무 범위 칸 (04-27 · D11·D20)", () => {
     await expect(selectedLabel(page.getByLabel(`${tempRoleName} 업무 범위`))).toHaveText("자기 팀");
   });
 });
+
+// /review(PR #76) 지적: 계급이 보관되면 listRoles가 그 계급을 빼서 사람 상세의
+// 「계급 변경」 칸에 맞는 항목이 없고, 브라우저가 첫 계급을 골라 그 사람의
+// 현재 계급처럼 보였다. 칸은 빈 값(「계급 선택」)이어야 한다.
+test.describe("보관된 계급을 가진 사람의 상세 화면", () => {
+  test("계급 변경 칸이 첫 계급이 아니라 빈 값으로 보인다", async ({ page }) => {
+    await loginAs(page);
+
+    const stamp = Date.now();
+    const roleName = `E2E보관계급-${stamp}`;
+    await page.goto("/admin/people/roles?new=1");
+    await page.locator("#role-form").getByLabel("이름").fill(roleName);
+    await page.locator("#role-form button[type=submit]").click();
+    await expect(page.getByLabel(`${roleName} 이름`)).toBeVisible();
+
+    const personName = `보관계급사람-${stamp}`;
+    await page.goto("/admin/people");
+    await page.getByRole("link", { name: "사람 등록" }).click();
+    await page.getByLabel("이름").fill(personName);
+    await page.getByLabel("이메일").fill(`e2e-archived-role-${stamp}@example.test`);
+    await page.getByLabel("계급").selectOption({ label: roleName });
+    await page.getByRole("button", { name: "사람 등록" }).click();
+    await expect(page.getByText(/초기 비밀번호 — /)).toBeVisible();
+
+    // 계급을 보관한다 — 두 단계 삭제.
+    await page.goto("/admin/people/roles");
+    const roleRow = page.getByRole("row").filter({ has: page.getByLabel(`${roleName} 이름`) });
+    await roleRow.getByRole("button", { name: "삭제" }).click();
+    await roleRow.getByRole("button", { name: "삭제" }).click();
+    // 보관된 계급은 기본 목록에서 빠진다.
+    await expect(page.getByLabel(`${roleName} 이름`)).toHaveCount(0);
+
+    await page.goto("/admin/people");
+    await page.getByRole("row", { name: new RegExp(personName) }).getByRole("link", { name: "상세" }).click();
+
+    const state = await page.getByLabel("계급 변경").evaluate((el) => (el as HTMLSelectElement).value);
+    expect(state).toBe("");
+  });
+});

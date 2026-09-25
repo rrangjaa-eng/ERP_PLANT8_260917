@@ -1,4 +1,5 @@
-import type { EmailSender, SendOutcome } from "@/lib/email/sender";
+import { log } from "@/lib/log";
+import { emailErrorCode, type EmailSender, type SendOutcome } from "@/lib/email/sender";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { composeDigest } from "@/domain/notify/digest";
 import {
@@ -43,8 +44,10 @@ export type EmailPhaseDeps = {
 
 export type EmailPhaseResult = { emailSent: number; emailFailed: number; emailUnknown: number };
 
+// 포트 결과 → 행 상태(D-4216): rejected는 확정 실패, indeterminate는 결과 불명.
 function toOutcome(result: SendOutcome): EmailOutcome {
-  return result.outcome === "sent" ? "sent" : "unknown";
+  if (result.outcome === "sent") return "sent";
+  return result.outcome === "rejected" ? "failed" : "unknown";
 }
 
 // D-4203: 예산 안에서 「한 묶음 선점 → 발송(트랜잭션 밖) → 결과 기록」을 되풀이한다.
@@ -73,11 +76,21 @@ export async function runEmailPhase(input: EmailPhaseInput, deps: EmailPhaseDeps
       messages: bundle.rows.map((row) => row.message),
       serviceUrl: deps.serviceUrl,
     });
-    const sendResult = await deps.sender.send(
-      { to: bundle.email, ...digest },
-      { signal: AbortSignal.timeout(sendDeadlineMs) },
-    );
+    let sendResult: SendOutcome;
+    try {
+      sendResult = await deps.sender.send(
+        { to: bundle.email, ...digest },
+        { signal: AbortSignal.timeout(sendDeadlineMs) },
+      );
+    } catch (error) {
+      // 포트 계약 위반 — 갔을 수 있는 메일을 확정 실패로 적지 않는다. 예외 메시지는
+      // 주소·호스트·사용자·본문을 담을 수 있어 허용 목록 코드만 남긴다(Codex #5).
+      sendResult = { outcome: "indeterminate", code: emailErrorCode(error) };
+    }
     const outcome = toOutcome(sendResult);
+    // 로그 필드는 허용 목록 code뿐(Codex #5). 재시도는 없다(D-4213).
+    if (sendResult.outcome === "rejected") log.error("notify.email_failed", { code: sendResult.code });
+    if (sendResult.outcome === "indeterminate") log.warn("notify.email_unknown", { code: sendResult.code });
 
     await recordOutcome(SYSTEM_VIEWER, {
       runId: input.runId,
@@ -86,6 +99,7 @@ export async function runEmailPhase(input: EmailPhaseInput, deps: EmailPhaseDeps
       deadlineMs: deps.txDeadlineMs,
     });
     if (outcome === "sent") result.emailSent += 1;
+    else if (outcome === "failed") result.emailFailed += 1;
     else result.emailUnknown += 1;
   }
 

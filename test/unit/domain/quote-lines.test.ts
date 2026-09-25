@@ -23,6 +23,18 @@ describe("computeQuoteLineAmounts (PROJ-02, D-63)", () => {
     expect(result.profitKrw).toBe(800_000);
   });
 
+  it("취소 줄은 견적가 0, 차익 = −실행가(PROJ-02)", () => {
+    const result = computeQuoteLineAmounts({
+      quantity: 3,
+      unitPrice: { currency: "KRW", amount: 1_200_000, fxRate: 1 },
+      execution: { currency: "KRW", amount: 800_000, fxRate: 1 },
+      lineStatus: "cancelled",
+    });
+    expect(result.quoteAmountKrw).toBe(0);
+    expect(result.profitKrw).toBe(-800_000);
+    expect(result.unitPriceColumns.amountKrw).toBe(1_200_000);
+  });
+
   it("수량을 비우면 기본 1이 적용돼 단가가 곧 견적가다(D-63)", () => {
     const result = computeQuoteLineAmounts({
       unitPrice: { currency: "KRW", amount: 500_000, fxRate: 1 },

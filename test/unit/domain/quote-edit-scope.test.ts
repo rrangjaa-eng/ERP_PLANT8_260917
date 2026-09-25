@@ -4,7 +4,10 @@ import {
   QUOTE_LINE_STATUSES,
   lineCellEditability,
   linkedDocumentReason,
+  orderChange,
+  quoteCellsZero,
   quoteLockReason,
+  structuralEditability,
 } from "@/domain/quotes/edit-scope";
 
 // 04-12(D-78 · 사용자 D10·D12 · UI-SPEC rev 5 S4) — 셀 단계 결정표. 게이트 규칙과 DTO가 같은 함수를 부른다.
@@ -82,5 +85,75 @@ describe("잠김 이유 한 문자열(DR-2)", () => {
 describe("줄 상태 상수(엔지 리뷰 A P3)", () => {
   it("QUOTE_LINE_STATUSES는 미착수·취소 두 값", () => {
     expect([...QUOTE_LINE_STATUSES]).toEqual(["not_started", "cancelled"]);
+  });
+});
+
+describe("structuralEditability — 구조 판정(사용자 D10)", () => {
+  const all = { insert: true, archive: true, reorder: true, duplicate: true, newRevision: true };
+  const none = { insert: false, archive: false, reorder: false, duplicate: false, newRevision: false };
+
+  it("수주중·진행·미수주 + 쓰기는 전부 참", () => {
+    for (const status of ["bidding", "in_progress", "lost"]) {
+      expect(structuralEditability({ status, canWrite: true })).toEqual(all);
+    }
+  });
+
+  it("정산 + 쓰기는 insert만 참", () => {
+    expect(structuralEditability({ status: "settling", canWrite: true })).toEqual({ ...none, insert: true });
+  });
+
+  it("완료는 전부 거짓", () => {
+    expect(structuralEditability({ status: "completed", canWrite: true })).toEqual(none);
+  });
+
+  it("쓰기 없음은 전부 거짓", () => {
+    for (const status of ["bidding", "in_progress", "lost", "settling"]) {
+      expect(structuralEditability({ status, canWrite: false })).toEqual(none);
+    }
+  });
+});
+
+describe("quoteCellsZero — 정산 새 줄의 견적 칸 0(엔지 리뷰 A §2 P1)", () => {
+  const krw = (amount: number) => ({ currency: "KRW" as const, amount, fxRate: 1 });
+
+  it("원화 단가 0 · 수량 없음 → 참", () => {
+    expect(quoteCellsZero({ unitPrice: krw(0) })).toBe(true);
+  });
+
+  it("원화 단가 0 · 수량 1 → 참", () => {
+    expect(quoteCellsZero({ quantity: 1, unitPrice: krw(0) })).toBe(true);
+  });
+
+  it("원화 단가 0 · 수량 2 → 거짓", () => {
+    expect(quoteCellsZero({ quantity: 2, unitPrice: krw(0) })).toBe(false);
+  });
+
+  it("단가 1원 → 거짓", () => {
+    expect(quoteCellsZero({ unitPrice: krw(1) })).toBe(false);
+  });
+
+  it("USD 단가 0 → 거짓", () => {
+    expect(quoteCellsZero({ unitPrice: { currency: "USD", amount: 0, fxRate: 1300 } })).toBe(false);
+  });
+});
+
+describe("orderChange — 순서 판정(엔지 리뷰 A §2 P2)", () => {
+  const none = { archivedIds: [], newIds: [] };
+
+  it("집합이 다르면 mismatch — 빠진 줄 · 모르는 줄 · 보관할 줄이 남음", () => {
+    expect(orderChange(["a", "b", "c"], ["a", "b"], none)).toBe("mismatch");
+    expect(orderChange(["a", "b"], ["a", "b", "z"], none)).toBe("mismatch");
+    expect(orderChange(["a", "b"], ["a", "b"], { archivedIds: ["b"], newIds: [] })).toBe("mismatch");
+    expect(orderChange(["a", "b"], ["a", "a", "b"], none)).toBe("mismatch");
+  });
+
+  it("기존 줄 상대 순서가 같고 새 줄이 가운데면 insertOnly", () => {
+    expect(orderChange(["a", "b", "c"], ["a", "n", "b", "c"], { archivedIds: [], newIds: ["n"] })).toBe("insertOnly");
+    expect(orderChange(["a", "b", "c"], ["a", "c"], { archivedIds: ["b"], newIds: [] })).toBe("insertOnly");
+  });
+
+  it("기존 줄 상대 순서가 바뀌면 reorder", () => {
+    expect(orderChange(["a", "b", "c"], ["b", "a", "c"], none)).toBe("reorder");
+    expect(orderChange(["a", "b", "c"], ["c", "n", "a", "b"], { archivedIds: [], newIds: ["n"] })).toBe("reorder");
   });
 });

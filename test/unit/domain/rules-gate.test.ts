@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { gate, registerGateRule, listGateRules, UnknownGateRuleError, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
+import type { ProjectLineEditCtx } from "@/domain/rules/register";
 import { denyWrite, type DenyWriteIds } from "@/domain/rules/deny-write";
 
 // Phase 4 Task 2 ⑫ — 등록·판정·미등록 규칙 오류. register.ts를 side-effect
@@ -78,6 +79,44 @@ describe("domain/rules/gate", () => {
       await expect(
         gate({}, "project.line-edit", { status: "completed", hasLinkedDocuments: false, change: { kind: "insert", quoteCellsZero: true } }),
       ).resolves.toEqual({ allowed: false, reason: "완료 · 견적 줄 잠김" });
+    });
+
+    // 04-12 Task 2(사용자 D10·D12) — 구조 판정.
+    const structural = (status: string, change: ProjectLineEditCtx["change"], hasLinkedDocuments = false) =>
+      gate({}, "project.line-edit", { status, hasLinkedDocuments, change });
+
+    it("정산 + insert(견적 칸 0)는 통과, 견적 칸이 0이 아니면 「정산 · 새 줄은 실행가만」", async () => {
+      await expect(structural("settling", { kind: "insert", quoteCellsZero: true })).resolves.toEqual({ allowed: true });
+      await expect(structural("settling", { kind: "insert", quoteCellsZero: false })).resolves.toEqual({
+        allowed: false,
+        reason: "정산 · 새 줄은 실행가만",
+      });
+    });
+
+    it("정산 + archive·reorder·duplicate는 「정산 · 줄 삭제·이동 없음」", async () => {
+      for (const kind of ["archive", "reorder", "duplicate"] as const) {
+        await expect(structural("settling", { kind })).resolves.toEqual({ allowed: false, reason: "정산 · 줄 삭제·이동 없음" });
+      }
+    });
+
+    it("완료 + archive·reorder·duplicate는 「완료 · 견적 줄 잠김」", async () => {
+      for (const kind of ["archive", "reorder", "duplicate"] as const) {
+        await expect(structural("completed", { kind })).resolves.toEqual({ allowed: false, reason: "완료 · 견적 줄 잠김" });
+      }
+    });
+
+    it("진행 + 연결 문서 줄 archive는 「연결 문서 있음 · 삭제 대신 취소」, 연결 문서가 없으면 통과", async () => {
+      await expect(structural("in_progress", { kind: "archive" }, true)).resolves.toEqual({
+        allowed: false,
+        reason: "연결 문서 있음 · 삭제 대신 취소",
+      });
+      await expect(structural("in_progress", { kind: "archive" })).resolves.toEqual({ allowed: true });
+    });
+
+    it("진행 + insert(견적 칸 있음)·reorder·duplicate는 통과", async () => {
+      await expect(structural("in_progress", { kind: "insert", quoteCellsZero: false })).resolves.toEqual({ allowed: true });
+      await expect(structural("in_progress", { kind: "reorder" })).resolves.toEqual({ allowed: true });
+      await expect(structural("in_progress", { kind: "duplicate" })).resolves.toEqual({ allowed: true });
     });
   });
 });

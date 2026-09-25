@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { projects, quoteRevisions, quoteLines, codeItems, teams } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -8,14 +8,23 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
 import { insertFieldDefinition } from "@/repositories/field-definitions";
-import { createProject } from "@/domain/projects";
-import { getCurrentQuoteRevision, saveQuoteLines, SaveRejectedError, type QuoteLineWriteRow } from "@/domain/quotes/lines";
+import { aggregateProjects, createProject, listProjects } from "@/domain/projects";
+import {
+  getCurrentQuoteRevision,
+  listQuoteLines,
+  quoteLineRowInputSchema,
+  quoteLinesInputSchema,
+  saveQuoteLines,
+  SaveRejectedError,
+  type QuoteLineWriteRow,
+} from "@/domain/quotes/lines";
 import { saveProjectLedger } from "@/domain/projects/ledger";
 import { log } from "@/lib/log";
 import { GateBlockedError } from "@/domain/rules/gate";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { getSettingValue } from "@/domain/settings/registry";
 import { FX_RECENT_RATE_USD } from "@/domain/settings/keys";
+import { listArchivedAcrossEntities } from "@/repositories/archive";
 
 const QUOTE_LINE_ENTITY = "quote_line";
 
@@ -408,5 +417,301 @@ describe("정산 편집 매트릭스(D10·D12)", () => {
     expect((await reloadLine(own.id)).itemName).toBe("A 줄");
     expect((await reloadLine(foreign.id)).itemName).toBe("B 줄");
     expect(deniedCalls(warn).map((fields) => fields.rule)).toEqual(["quote.line-membership"]);
+  });
+
+  // 04-12 Task 2(사용자 D10·D12 · 엔지 리뷰 A §2 P1) — 정산 구조 판정.
+  it("(g) 정산에서 단가 원화 0 · 수량 없음인 새 줄(실행가 300,000)은 통과하고 DB에 수량 1 · 견적가 0 · 실행가 300,000", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const existing = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "기존" });
+    await setStatus(project.id, "settling");
+    const added = newRow(subcategoryValue, { itemName: "정산 추가 실행", execution: krw(300_000) });
+
+    await saveProjectLedger(SYSTEM_VIEWER, project.id, {
+      seenStatus: "settling",
+      quoteLines: { revisionId: revision.id, rows: [asInput(existing), added] },
+    });
+
+    const row = await reloadLine(added.id);
+    expect(row.quantity).toBe("1.00");
+    expect(row.quoteAmountKrw).toBe(0);
+    expect(row.executionAmountKrw).toBe(300_000);
+  });
+
+  it("(h) 정산에서 단가 1,000원인 새 줄 · 수량 2인 새 줄은 각각 「정산 · 새 줄은 실행가만」으로 전부 거부된다", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const existing = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "기존" });
+    await setStatus(project.id, "settling");
+
+    for (const patch of [{ unitPrice: krw(1_000) }, { quantity: 2 }]) {
+      const attempt = saveProjectLedger(SYSTEM_VIEWER, project.id, {
+        seenStatus: "settling",
+        quoteLines: {
+          revisionId: revision.id,
+          rows: [asInput(existing, { execution: krw(60_000) }), newRow(subcategoryValue, patch)],
+        },
+      });
+      await expect(attempt).rejects.toThrow("정산 · 새 줄은 실행가만");
+    }
+    expect(await activeIds(revision.id)).toEqual([existing.id]);
+    expect((await reloadLine(existing.id)).executionAmountKrw).toBe(50_000);
+  });
+
+  it("(i) 정산에서 보관·기존 줄 순서 바꾸기는 「정산 · 줄 삭제·이동 없음」, 기존 순서를 지키고 새 줄을 가운데 끼운 order는 통과", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const first = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "하나" });
+    const second = await seedLine(revision.id, subcategoryValue, { sortOrder: 1, itemName: "둘" });
+    await setStatus(project.id, "settling");
+
+    await expect(
+      saveProjectLedger(SYSTEM_VIEWER, project.id, {
+        seenStatus: "settling",
+        quoteLines: { revisionId: revision.id, rows: [], archivedLineIds: [second.id] },
+      }),
+    ).rejects.toThrow("정산 · 줄 삭제·이동 없음");
+    await expect(
+      saveProjectLedger(SYSTEM_VIEWER, project.id, {
+        seenStatus: "settling",
+        quoteLines: { revisionId: revision.id, rows: [], order: [second.id, first.id] },
+      }),
+    ).rejects.toThrow("정산 · 줄 삭제·이동 없음");
+    expect(await activeIds(revision.id)).toEqual([first.id, second.id]);
+
+    const middle = newRow(subcategoryValue, { itemName: "가운데" });
+    await saveProjectLedger(SYSTEM_VIEWER, project.id, {
+      seenStatus: "settling",
+      quoteLines: { revisionId: revision.id, rows: [middle], order: [first.id, middle.id, second.id] },
+    });
+    expect(await activeIds(revision.id)).toEqual([first.id, middle.id, second.id]);
+  });
+
+  it("(j) 완료에서 새 줄·보관은 「완료 · 견적 줄 잠김」으로 거부된다", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const existing = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "완료 줄" });
+    await setStatus(project.id, "completed");
+
+    await expect(
+      saveProjectLedger(SYSTEM_VIEWER, project.id, {
+        seenStatus: "completed",
+        quoteLines: { revisionId: revision.id, rows: [newRow(subcategoryValue)] },
+      }),
+    ).rejects.toThrow("완료 · 견적 줄 잠김");
+    await expect(
+      saveProjectLedger(SYSTEM_VIEWER, project.id, {
+        seenStatus: "completed",
+        quoteLines: { revisionId: revision.id, rows: [], archivedLineIds: [existing.id] },
+      }),
+    ).rejects.toThrow("완료 · 견적 줄 잠김");
+    expect(await activeIds(revision.id)).toEqual([existing.id]);
+  });
+});
+
+const krw = (amount: number) => ({ currency: "KRW" as const, amount, fxRate: 1 });
+
+// 화면이 만든 uuid를 실은 새 줄(ENG-D10). 기본은 정산에서도 통과하는 견적 칸 0(원화 단가 0 · 수량 없음).
+function newRow(subcategory: string, patch: Partial<QuoteLineWriteRow> = {}): QuoteLineWriteRow {
+  return { id: randomUUID(), isNew: true, subcategory, itemName: `새 줄-${randomUUID()}`, unitPrice: krw(0), execution: krw(10_000), ...patch };
+}
+
+async function activeIds(revisionId: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: quoteLines.id })
+    .from(quoteLines)
+    .where(and(eq(quoteLines.revisionId, revisionId), isNull(quoteLines.archivedAt)))
+    .orderBy(asc(quoteLines.sortOrder), asc(quoteLines.id));
+  return rows.map((row) => row.id);
+}
+
+async function listedIds(revisionId: string, status: string): Promise<string[]> {
+  return (await listQuoteLines(SYSTEM_VIEWER, revisionId, { status, canWrite: true })).map((line) => line.id);
+}
+
+describe("순서·재전송(엔지 리뷰 A · ENG-D10)", () => {
+  it("(u) 진행에서 한 줄을 가운데에 복제하고 다른 줄을 보관한 저장 뒤 두 번 읽어도 화면 순서와 같다", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const first = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "하나" });
+    const second = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "둘" });
+    const third = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "셋" });
+    await setStatus(project.id, "in_progress");
+    const [a, b] = [first, second, third].sort((x, y) => x.id.localeCompare(y.id));
+    const archived = [first, second, third].find((line) => line.id !== a!.id && line.id !== b!.id)!;
+    const copy = newRow(subcategoryValue, { itemName: `${b!.itemName} 복제`, duplicatedFrom: b!.id });
+    const screenOrder = [b!.id, copy.id, a!.id];
+
+    await saveProjectLedger(SYSTEM_VIEWER, project.id, {
+      seenStatus: "in_progress",
+      quoteLines: { revisionId: revision.id, rows: [copy], order: screenOrder, archivedLineIds: [archived.id] },
+    });
+
+    expect(await listedIds(revision.id, "in_progress")).toEqual(screenOrder);
+    expect(await listedIds(revision.id, "in_progress")).toEqual(screenOrder);
+    expect((await reloadLine(a!.id)).version).toBe(a!.version);
+  });
+
+  it("(u2) 보관 뒤 order 없이 새 줄을 더하면 그 줄이 마지막이다", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const first = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "하나" });
+    const last = await seedLine(revision.id, subcategoryValue, { sortOrder: 1, itemName: "마지막" });
+    await saveProjectLedger(SYSTEM_VIEWER, project.id, {
+      seenStatus: "bidding",
+      quoteLines: { revisionId: revision.id, rows: [], archivedLineIds: [last.id] },
+    });
+
+    const added = newRow(subcategoryValue);
+    await saveProjectLedger(SYSTEM_VIEWER, project.id, {
+      seenStatus: "bidding",
+      quoteLines: { revisionId: revision.id, rows: [added] },
+    });
+    expect(await activeIds(revision.id)).toEqual([first.id, added.id]);
+  });
+
+  it("(u3) order가 활성 줄 집합과 다르면 「줄 순서가 맞지 않음 · 새로 고침」으로 전부 거부된다", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const first = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "하나" });
+    const second = await seedLine(revision.id, subcategoryValue, { sortOrder: 1, itemName: "둘" });
+    const added = newRow(subcategoryValue);
+
+    await expect(
+      saveProjectLedger(SYSTEM_VIEWER, project.id, {
+        seenStatus: "bidding",
+        quoteLines: { revisionId: revision.id, rows: [asInput(first, { itemName: "고침" }), added], order: [second.id, added.id] },
+      }),
+    ).rejects.toThrow("줄 순서가 맞지 않음 · 새로 고침");
+    expect(await activeIds(revision.id)).toEqual([first.id, second.id]);
+    expect((await reloadLine(first.id)).itemName).toBe("하나");
+  });
+
+  it("(w) 새 줄 둘을 실은 배치를 같은 id로 다시 보내면 둘째도 성공이고 줄은 두 개만 늘었다", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const batch = [newRow(subcategoryValue, { itemName: "재전송 하나", note: "" }), newRow(subcategoryValue, { itemName: "재전송 둘", quantity: 2, unitPrice: krw(5_000) })];
+    const save = () =>
+      saveProjectLedger(SYSTEM_VIEWER, project.id, { seenStatus: "bidding", quoteLines: { revisionId: revision.id, rows: batch } });
+
+    await save();
+    const second = await save();
+
+    expect(await activeIds(revision.id)).toHaveLength(2);
+    expect(second.quoteLines?.lines.map((line) => line.id).sort()).toEqual(batch.map((row) => row.id).sort());
+  });
+
+  it("(w2) 다른 프로젝트 차수에 이미 있는 줄 id를 isNew로 실은 배치는 소속 거부로 전부 거부된다", async () => {
+    const a = await setupProject();
+    const b = await setupProject();
+    const foreign = await seedLine(b.revision.id, b.subcategoryValue, { sortOrder: 0, itemName: "B 줄" });
+    const own = newRow(a.subcategoryValue);
+
+    await expect(
+      saveProjectLedger(SYSTEM_VIEWER, a.project.id, {
+        seenStatus: "bidding",
+        quoteLines: { revisionId: a.revision.id, rows: [own, newRow(a.subcategoryValue, { id: foreign.id, itemName: "B 줄" })] },
+      }),
+    ).rejects.toThrow("차수와 프로젝트가 맞지 않음 · 새로 고침");
+    expect(await activeIds(a.revision.id)).toEqual([]);
+    expect((await reloadLine(foreign.id)).revisionId).toBe(b.revision.id);
+  });
+
+  it("(w3) 같은 id를 다른 실행가로 다시 보낸 배치는 「이미 저장된 줄과 값이 다름 · 새로 고침」으로 전부 거부되고 DB 값이 첫 저장 그대로다", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const row = newRow(subcategoryValue, { execution: krw(40_000) });
+    await saveProjectLedger(SYSTEM_VIEWER, project.id, { seenStatus: "bidding", quoteLines: { revisionId: revision.id, rows: [row] } });
+    const warn = vi.spyOn(log, "warn");
+
+    await expect(
+      saveProjectLedger(SYSTEM_VIEWER, project.id, {
+        seenStatus: "bidding",
+        quoteLines: { revisionId: revision.id, rows: [{ ...row, execution: krw(41_000) }] },
+      }),
+    ).rejects.toThrow("이미 저장된 줄과 값이 다름 · 새로 고침");
+    expect((await reloadLine(row.id)).executionAmountKrw).toBe(40_000);
+    expect(deniedCalls(warn).map((fields) => fields.rule)).toEqual(["quote.line-replay"]);
+    warn.mockRestore();
+  });
+});
+
+describe("보관·취소(D-56·A-04)", () => {
+  it("(k) 수주중에서 보관한 줄은 DB에 남아 archived_at이 채워지고 보관함에 나오며, 줄 목록·프로젝트 목록·합계에서 빠진다", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const kept = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "남는 줄", executionKrw: 30_000 });
+    const gone = await seedLine(revision.id, subcategoryValue, { sortOrder: 1, itemName: `보관 줄-${randomUUID()}`, executionKrw: 70_000 });
+
+    await saveProjectLedger(SYSTEM_VIEWER, project.id, {
+      seenStatus: "bidding",
+      quoteLines: { revisionId: revision.id, rows: [], archivedLineIds: [gone.id] },
+    });
+
+    const row = await reloadLine(gone.id);
+    expect(row.archivedAt).toBeInstanceOf(Date);
+    expect(row.archivedBy).toBe(SYSTEM_VIEWER.id);
+    const archivedList = await listArchivedAcrossEntities(SYSTEM_VIEWER);
+    expect(archivedList.find((item) => item.id === gone.id)).toMatchObject({ entity: "quote_line", label: "견적 줄", name: gone.itemName });
+    expect(await listedIds(revision.id, "bidding")).toEqual([kept.id]);
+
+    const [listed] = await listProjects(SYSTEM_VIEWER, { filter: { search: project.name } });
+    expect(listed).toMatchObject({ quoteAmountKrw: 100_000, executionAmountKrw: 30_000 });
+    const aggregate = await aggregateProjects(SYSTEM_VIEWER, { search: project.name });
+    expect(aggregate).toMatchObject({ count: 1, quoteAmountKrw: 100_000, executionAmountKrw: 30_000 });
+  });
+
+  it("(l) 보관된 줄 id로 고치는 배치는 「보관된 줄 · 새로 고침」으로 전부 거부된다", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const line = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "보관될 줄" });
+    await saveProjectLedger(SYSTEM_VIEWER, project.id, {
+      seenStatus: "bidding",
+      quoteLines: { revisionId: revision.id, rows: [], archivedLineIds: [line.id] },
+    });
+
+    await expect(
+      saveProjectLedger(SYSTEM_VIEWER, project.id, {
+        seenStatus: "bidding",
+        quoteLines: { revisionId: revision.id, rows: [asInput(line, { itemName: "보관 뒤 고침" })] },
+      }),
+    ).rejects.toThrow("보관된 줄 · 새로 고침");
+    expect((await reloadLine(line.id)).itemName).toBe("보관될 줄");
+  });
+
+  it("(m) 버전 충돌로 거부된 배치에서는 함께 실은 보관도 일어나지 않는다", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const toArchive = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "보관 시도" });
+    const stale = await seedLine(revision.id, subcategoryValue, { sortOrder: 1, itemName: "낡은 줄" });
+    await db.update(quoteLines).set({ version: stale.version + 1 }).where(eq(quoteLines.id, stale.id));
+
+    await expect(
+      saveProjectLedger(SYSTEM_VIEWER, project.id, {
+        seenStatus: "bidding",
+        quoteLines: { revisionId: revision.id, rows: [asInput(stale, { itemName: "고침" })], archivedLineIds: [toArchive.id] },
+      }),
+    ).rejects.toBeInstanceOf(SaveRejectedError);
+    expect((await reloadLine(toArchive.id)).archivedAt).toBeNull();
+  });
+
+  it("(n) 취소 줄의 견적가는 0이고 수량·단가 컬럼은 그대로다(PROJ-02)", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const line = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "취소할 줄", quantity: "2.00" });
+
+    await saveProjectLedger(SYSTEM_VIEWER, project.id, {
+      seenStatus: "bidding",
+      quoteLines: { revisionId: revision.id, rows: [asInput(line, { lineStatus: "cancelled" })] },
+    });
+
+    const row = await reloadLine(line.id);
+    expect(row.lineStatus).toBe("cancelled");
+    expect(row.quoteAmountKrw).toBe(0);
+    expect(row.profitKrw).toBe(-50_000);
+    expect(row.quantity).toBe("2.00");
+    expect(row.unitPriceAmountKrw).toBe(100_000);
+  });
+
+  it("(o) 줄 상태 「아무글자」·줄 id 「x」·보관 id 「x」 입력은 검증 오류다(A-37)", () => {
+    const valid = { id: randomUUID(), isNew: true, subcategory: "s", itemName: "항목", unitPrice: krw(0), execution: krw(0) };
+    expect(quoteLineRowInputSchema.safeParse(valid).success).toBe(true);
+    expect(quoteLineRowInputSchema.safeParse({ ...valid, lineStatus: "아무글자" }).success).toBe(false);
+    expect(quoteLineRowInputSchema.safeParse({ ...valid, lineStatus: "cancelled" }).success).toBe(true);
+    expect(quoteLineRowInputSchema.safeParse({ ...valid, id: "x" }).success).toBe(false);
+    const { isNew: _isNew, ...withoutIsNew } = valid;
+    expect(quoteLineRowInputSchema.safeParse(withoutIsNew).success).toBe(false);
+    expect(quoteLineRowInputSchema.safeParse({ ...withoutIsNew, version: 1 }).success).toBe(true);
+    const lines = { revisionId: randomUUID(), rows: [valid] };
+    expect(quoteLinesInputSchema.safeParse(lines).success).toBe(true);
+    expect(quoteLinesInputSchema.safeParse({ ...lines, archivedLineIds: ["x"] }).success).toBe(false);
+    expect(quoteLinesInputSchema.safeParse({ ...lines, order: ["x"] }).success).toBe(false);
   });
 });

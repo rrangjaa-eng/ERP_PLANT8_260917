@@ -75,7 +75,7 @@ coverage:
         ref: "pnpm lint:sql (Found 0 issues in 15 files) · pnpm db:migrate · 번호 검증 node 명령(ok 0014_quote_line_kind) · git diff --stat d6b41cf -- .squawk.toml(빈 출력) · pnpm db:generate(No schema changes)"
         status: pass
       - kind: integration
-        ref: "test/integration/migration-upgrade.test.ts(단독 실행 2/2 · 통합 전체 49파일 1257/1257)"
+        ref: "test/integration/migration-upgrade.test.ts — 처음에는 0014를 전체 적용 스모크로만 지났다((a)(b)는 0010·0011 단언, 검토 S4). 검토 뒤 (c) 「0013 상태의 줄 → 0014 뒤 line_kind = quote · 'bogus' INSERT는 quote_lines_line_kind_check 위반」을 더했다(64d4c42, 단독 3/3)"
         status: pass
     human_judgment: false
   - id: D2
@@ -234,8 +234,34 @@ frontmatter `key-decisions` 참고. 새 방어 문구(UI-SPEC rev 5에 없음 �
 - **04-49 이월: 매출 표 1024 미만 전환 시 열린 입력 유실 가능** — 이 플랜 범위 밖(오케스트레이터 지시로 유지)
 - **04-23(화면):** `app/(app)/projects/[id]/page.tsx`의 `listQuoteLines` 호출이 아직 `canAdjust`를 넘기지 않아, 경영관리도 상세 화면에서 조정 줄이 잠김으로 온다(기본값 false — 안전한 쪽). 04-23이 `can(viewer, "projects.adjustment", "write")`를 읽어 넘기고, 조정 권한만 있는 사람의 `canEditLines`·`structuralEditability`(조정 종류)도 그린다
 - 게이트 단독으로 보면 견적 외 비용의 수량·단가 변경은 진행 상태에서 이유 없이 통과한다(잠김이지만 상태 잠김 이유가 없어서). 저장 경로는 두 칸을 서버 값으로 정규화해 도달하지 않는다 — 게이트 자체를 막을지는 04-23 화면 작업 때 판단
-- 조정 줄이 섞인 표의 순서 이동: `reorder` 판정은 견적 줄 기준(조정 권한만 있는 사람은 순서를 못 바꾼다). 조정 그룹 고정 순서의 화면 쪽은 04-23
+- 조정 줄이 섞인 표의 순서 이동: 서버는 검토 S3 수정(6f7f5a0)으로 조정 줄의 자리를 바꾸는 `order`를 거부한다. 조정 그룹 고정 순서의 화면 쪽(Alt+↑↓가 조정 줄을 건너지 않음)은 04-23
 - 한도 풀리면 Codex 재확인 필요(이번 실행은 Codex 호출 없음)
+
+## 검토 뒤 수정(Opus 리뷰 · 2026-09-25)
+
+**검토 전 전체 게이트(8ca83ab, CI=true):** lint · typecheck · lint:sql 0건, 단위 1197 · 통합 1257 · E2E 288 전부 통과. 화면 변경이 없어 DOM 감사는 하지 않았다.
+
+**Opus 리뷰(`de1d3d8..8ca83ab`, 읽기 전용):** BLOCKING 0 · SHOULD-FIX 4 · NIT 7. 처분:
+
+| 항목 | 판정 | 처분 · 커밋 |
+|---|---|---|
+| S1 write.denied 단언 셋 누락(D4 과장) | 맞음 | t3 · k2 · k5에 `write.denied` 한 줄 · rule · 금액 키 없음 단언 — denyWrite→throw 변이에서 빨강 확인 · 65f590a |
+| S2 PM에게 조정 줄 「전부 잠김 · 이유 없음」 DTO 배선 미검증 | 맞음 | k10(listQuoteLines, 조정 권한 유무) · k11(저장 응답, 조정 권한만 → 견적 줄 전부 잠김) — `lineKind` 한 줄 삭제 · 응답 canWrite 고정 변이에서 빨강 · 3944e83 |
+| S3 순서 이동이 늘 견적 줄로 판정 — PM이 조정 줄 위치를 바꿈 | 맞음(서버 구멍) | 아래 결정대로 서버 거부 + k12(RED 먼저) · 6f7f5a0 |
+| S4 마이그레이션 0014 데이터 결과 미고정 · D1 참조 과장 | 맞음 | migration-upgrade (c) 추가(기본값·CHECK 두 변이에서 빨강) · 64d4c42, D1 문구 정정(이 커밋) |
+| N5 완료 상태에서 권한 → 상태 순서 미고정 | 맞음 | k13 — 완료 잠김을 권한 앞으로 옮긴 변이에서 빨강 · 4880c98 |
+| N6 상세 화면이 canAdjust를 넘기지 않음 | 확인만 | 04-23 PLAN ①이 `can(viewer, "projects.adjustment", "write")`를 넘기도록 이미 적고 있다 — 이 플랜에서 코드 변경 없음 |
+| N1 조정 줄 잠긴 칸은 거부가 아니라 정규화 | 이월 | `normalizeForKind` 주석이 이미 「요청의 그 칸들은 읽지 않는다」로 적고 있다. truth 문장과의 결 차이는 04-23 화면 작업 때 판단 |
+| N2 KIND_CHANGED가 UserFacingError(다른 게이트는 GateBlockedError) | 이월 | 액션 층 표시가 갈리는지 확인이 필요해 국소 변경이 아님 — 04-23 |
+| N3 `line_kind` 스키마에 `$type` 없음(캐스트·string 타입) | 이월 | 스키마 · 리포지토리 · DTO 세 층 변경이라 국소 변경이 아님 — 후속 플랜에서 판단 |
+| N4 조정 게이트가 연결 문서를 보지 않음 | 이월 | 지금은 조정 줄에 연결 문서 경로가 없다 — Phase 5(지출결의 연결) 이월 |
+| N7 게이트 단독으로 견적 외 비용 수량·단가 변경 통과 | 이월 | 기존 이월 항목과 같음 — 04-23 |
+
+**S3 결정(사용자 확인 필요):** 페이즈 문서에 기록된 결정이 있어 그것을 집행했다 — 04-13-PLAN 「조정 줄의 순서: 조정 그룹 안에서는 만든 순서이고 그룹 밖으로 옮길 수 없다(고정 그룹 — 구조 판정 `move` 불가)」, 04-23-PLAN 같은 가정, `structuralEditability` 조정 분기 `reorder: false`. 그래서 조정 권한이 있어도 조정 줄의 순서는 바꿀 수 없다(브리프의 대안 「조정 권한자만 이동 가능」이 아니라 기록된 「아무도 이동 불가」). 판정 방식: `order`가 `reorder`일 때 남는 기존 줄 사이에서 자리(인덱스)가 바뀐 조정 줄이 있으면 그 줄을 조정 종류 `reorder`로 게이트에 다시 판정 → `조정 줄 · 경영관리만`(denyWrite 한 지점, write.denied 한 줄). 견적 줄끼리의 이동은 그대로 통과. 한계: 견적 줄이 조정 줄을 건너가는 이동도 조정 줄의 자리를 바꾸므로 거부된다(고정 그룹이라 의도와 같음). `order` 없이 저장한 새 견적 줄이 조정 줄 뒤 sort_order를 받는 경우, 그 뒤 화면이 조정 그룹을 맨 아래로 모아 보낸 `order`는 거부될 수 있다 — 04-23이 조정 그룹을 그릴 때 새 줄 저장에 `order`를 싣거나 서버가 조정 줄을 끝에 두도록 할지 정해야 한다.
+
+**수정 뒤 검증:** lint · typecheck · lint:sql 0건, 단위 1197/1197, 통합(단독 실행) quote-line-kinds 20/20 · migration-upgrade 3/3 · quote-lines 38/38 · projects-list 9/9 · quote-line-cap 9/9 · archive 8/8 · leak-scan 867/867. 화면 변경이 없어 E2E는 돌리지 않았다.
+
+**Codex 재확인은 한도로 미실행 — 한도 풀리면 재확인 필요.**
 
 ## Known Stubs
 

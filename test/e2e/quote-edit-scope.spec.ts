@@ -264,6 +264,28 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await expect(cell(page, 0, COL.execution)).toHaveText("123,456");
   });
 
+  test("(S-5) 실행가 편집기를 연 동안 1차 「일괄 저장」은 비활성(「바뀐 칸 없음」)으로 보이지 않는다", async ({ page }) => {
+    await openAsPm(page, "in_progress", addDays(TODAY, 10), [
+      { itemName: "보이는 상태 줄", unitPrice: 2_000_000, execution: 1_000_000 },
+    ]);
+    const primary = page.getByRole("button", { name: /일괄 저장/ });
+    await expect(primary).toHaveAttribute("aria-disabled", "true");
+
+    await cell(page, 0, COL.execution).focus();
+    await page.keyboard.press("Enter");
+    const input = page.getByRole("textbox", { name: "실행가" });
+    await expect(input).toBeVisible();
+    await input.fill("555000");
+
+    await expect(primary).not.toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByText("바뀐 칸 없음")).toHaveCount(0);
+    // 누르면 열린 편집기가 커밋되고 저장된다(04-30 e3와 같은 동작).
+    const saved = waitForSaveResponse(page);
+    await primary.click();
+    await saved;
+    await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
+  });
+
   test("(a) 정산 PM 화면에 줄 삭제·이동·복제 컨트롤이 없고 Delete·Alt+ArrowDown·Control+d 뒤 줄 수·순서가 그대로다", async ({ page }) => {
     await openAsPm(page, "settling", addDays(TODAY, -3), [
       { itemName: "정산 가 줄", unitPrice: 100_000, execution: 50_000 },

@@ -113,6 +113,20 @@ describe("domain/rules/gate", () => {
       await expect(structural("in_progress", { kind: "archive" })).resolves.toEqual({ allowed: true });
     });
 
+    // 04-12 Task 3(A-19 · OV-2) — 보관함 복원은 그 상태에서 줄을 더하는 것과 같다.
+    it("복원: 완료는 「완료 · 견적 줄 잠김」, 정산은 견적가 0일 때만, 진행은 통과", async () => {
+      await expect(structural("completed", { kind: "restore", quoteAmountZero: true })).resolves.toEqual({
+        allowed: false,
+        reason: "완료 · 견적 줄 잠김",
+      });
+      await expect(structural("settling", { kind: "restore", quoteAmountZero: false })).resolves.toEqual({
+        allowed: false,
+        reason: "정산 · 새 줄은 실행가만",
+      });
+      await expect(structural("settling", { kind: "restore", quoteAmountZero: true })).resolves.toEqual({ allowed: true });
+      await expect(structural("in_progress", { kind: "restore", quoteAmountZero: false })).resolves.toEqual({ allowed: true });
+    });
+
     it("진행 + insert(견적 칸 있음)·reorder·duplicate는 통과", async () => {
       await expect(structural("in_progress", { kind: "insert", quoteCellsZero: false })).resolves.toEqual({ allowed: true });
       await expect(structural("in_progress", { kind: "reorder" })).resolves.toEqual({ allowed: true });

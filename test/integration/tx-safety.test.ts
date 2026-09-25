@@ -215,6 +215,56 @@ describe("잠금·풀 시간 제한(ENG-D3 ①)", () => {
     );
   });
 
+  describe("풀 2 · 동시 견적 줄 저장 셋(04-12 · ENG-D3 ①)", () => {
+    it(
+      "(g) 풀 크기 2에서 같은 프로젝트에 새 줄 하나씩 싣는 saveProjectLedger 셋을 동시에 보내면 10초 안에 셋 다 성공하고 줄이 셋 늘었다",
+      async () => {
+        const { project, revision, subcategoryValue } = await setupProject();
+
+        const previousPoolMax = process.env.DB_POOL_MAX;
+        process.env.DB_POOL_MAX = "2";
+        vi.resetModules();
+
+        try {
+          const clientModule = await import("@/db/client");
+          expect((clientModule.pool as unknown as { options: { max: number } }).options.max).toBe(2);
+          const { saveProjectLedger } = await import("@/domain/projects/ledger");
+
+          const save = (label: string) =>
+            saveProjectLedger(SYSTEM_VIEWER, project.id, {
+              seenStatus: "bidding",
+              quoteLines: {
+                revisionId: revision.id,
+                rows: [
+                  {
+                    id: randomUUID(),
+                    isNew: true as const,
+                    subcategory: subcategoryValue,
+                    itemName: `셋 다 성공 ${label}`,
+                    quantity: 1,
+                    unitPrice: { currency: "KRW" as const, amount: 100_000, fxRate: 1 },
+                    execution: { currency: "KRW" as const, amount: 80_000, fxRate: 1 },
+                  },
+                ],
+              },
+            });
+
+          const start = Date.now();
+          const results = await Promise.allSettled([save("A"), save("B"), save("C")]);
+          expect(Date.now() - start).toBeLessThan(10_000);
+          expect(results.map((result) => result.status)).toEqual(["fulfilled", "fulfilled", "fulfilled"]);
+          const lines = await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id));
+          expect(lines).toHaveLength(3);
+
+          await clientModule.closeDb();
+        } finally {
+          process.env.DB_POOL_MAX = previousPoolMax;
+        }
+      },
+      15_000,
+    );
+  });
+
   describe("풀 2 · 동시 기간 저장 셋(04-22)", () => {
     // 기간이 실린 합성 저장은 권리의 사실을 트랜잭션 전에 읽고 트랜잭션 안에서는 tx만 쓴다
     // (ARCHITECTURE §4-8 · ENG-D3 ①) — 풀 크기 2에서도 셋 다 성공한다.

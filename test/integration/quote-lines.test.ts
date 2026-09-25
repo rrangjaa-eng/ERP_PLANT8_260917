@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { and, asc, eq, isNull } from "drizzle-orm";
-import { db } from "@/db/client";
-import { projects, quoteRevisions, quoteLines, codeItems, teams } from "@/db/schema";
+import { db, pool } from "@/db/client";
+import { actionLog, projects, quoteRevisions, quoteLines, codeItems, teams } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
@@ -14,6 +14,7 @@ import {
   listQuoteLines,
   quoteLineRowInputSchema,
   quoteLinesInputSchema,
+  restoreQuoteLine,
   saveQuoteLines,
   SaveRejectedError,
   type QuoteLineWriteRow,
@@ -25,6 +26,11 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { getSettingValue } from "@/domain/settings/registry";
 import { FX_RECENT_RATE_USD } from "@/domain/settings/keys";
 import { listArchivedAcrossEntities } from "@/repositories/archive";
+import { restore } from "@/domain/archive";
+import { changeProjectStatus } from "@/domain/projects/status";
+import type { Viewer } from "@/domain/viewer";
+import { addDays, kstToday } from "@/lib/kst-date";
+import { deferred, waitForLockWaiter } from "./lock-race";
 
 const QUOTE_LINE_ENTITY = "quote_line";
 
@@ -713,5 +719,273 @@ describe("보관·취소(D-56·A-04)", () => {
     expect(quoteLinesInputSchema.safeParse(lines).success).toBe(true);
     expect(quoteLinesInputSchema.safeParse({ ...lines, archivedLineIds: ["x"] }).success).toBe(false);
     expect(quoteLinesInputSchema.safeParse({ ...lines, order: ["x"] }).success).toBe(false);
+  });
+});
+
+// ── 04-12 Task 3(A-19 · OV-2 · A-06 · OV-3 · 엔지 리뷰 A §1 P2 · ENG-D6) ─────────────────────────────
+async function makeViewer(roleId: string): Promise<Viewer> {
+  const { userId } = await createAccount(SYSTEM_VIEWER, { email: `q3-${randomUUID()}@example.test`, name: "견적 줄 테스트 사람", roleId });
+  return { id: userId, roleId };
+}
+
+async function archiveLine(id: string) {
+  await db.update(quoteLines).set({ archivedAt: new Date(), archivedBy: SYSTEM_VIEWER.id }).where(eq(quoteLines.id, id));
+}
+
+async function actionCount(entity: string, entityId: string, actionType: string): Promise<number> {
+  const rows = await db
+    .select({ seq: actionLog.seq })
+    .from(actionLog)
+    .where(and(eq(actionLog.entity, entity), eq(actionLog.entityId, entityId), eq(actionLog.actionType, actionType)));
+  return rows.length;
+}
+
+describe("보관함 복원(A-19 · OV-2)", () => {
+  it("(s1) 완료 프로젝트의 줄 복원은 「완료 · 견적 줄 잠김」으로 거부되고 줄은 보관 그대로다", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const line = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "완료 복원" });
+    await archiveLine(line.id);
+    await setStatus(project.id, "completed");
+
+    await expect(restore(SYSTEM_VIEWER, "quote_line", line.id)).rejects.toThrow("완료 · 견적 줄 잠김");
+    expect((await reloadLine(line.id)).archivedAt).toBeInstanceOf(Date);
+  });
+
+  it("(s2) 정산 프로젝트는 견적가가 있는 줄 복원을 「정산 · 새 줄은 실행가만」으로 거부하고 견적가 0 줄 복원은 통과시킨다", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const priced = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "견적가 있음" });
+    const zero = await seedLine(revision.id, subcategoryValue, {
+      sortOrder: 1,
+      itemName: "견적가 0",
+      unitPrice: { currency: "KRW", foreignAmount: null, fxRate: "1.0000", amountKrw: 0 },
+    });
+    await archiveLine(priced.id);
+    await archiveLine(zero.id);
+    await setStatus(project.id, "settling");
+
+    await expect(restore(SYSTEM_VIEWER, "quote_line", priced.id)).rejects.toThrow("정산 · 새 줄은 실행가만");
+    expect((await reloadLine(priced.id)).archivedAt).toBeInstanceOf(Date);
+    await restore(SYSTEM_VIEWER, "quote_line", zero.id);
+    expect((await reloadLine(zero.id)).archivedAt).toBeNull();
+  });
+
+  it("(s3) 진행 프로젝트의 줄 복원은 통과하고 복원 로그가 한 줄이다", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const line = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "진행 복원" });
+    await archiveLine(line.id);
+    await setStatus(project.id, "in_progress");
+
+    await restore(SYSTEM_VIEWER, "quote_line", line.id);
+
+    expect((await reloadLine(line.id)).archivedAt).toBeNull();
+    expect(await actionCount(QUOTE_LINE_ENTITY, line.id, "restore")).toBe(1);
+  });
+
+  it("(s4) 복원 로그가 실패하면 보관 해제도 되돌아간다(같은 트랜잭션)", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const line = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "로그 실패 복원" });
+    await archiveLine(line.id);
+    await setStatus(project.id, "in_progress");
+
+    await expect(
+      restoreQuoteLine(SYSTEM_VIEWER, line.id, { recordAction: () => Promise.reject(new Error("로그 실패")) }),
+    ).rejects.toThrow("로그 실패");
+    expect((await reloadLine(line.id)).archivedAt).toBeInstanceOf(Date);
+  });
+});
+
+describe("잠금·경합(A-06 · OV-3)", () => {
+  it("(p) 저장이 잠금을 쥔 동안 정산→완료 전환은 기다리고, 저장 커밋(실행가 반영) 뒤 완료된다", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const line = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "경합 p" });
+    await setStatus(project.id, "settling");
+    const ceo = await makeViewer("role-ceo");
+    const locked = deferred();
+    const release = deferred();
+
+    const save = saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [asInput(line, { execution: krw(70_000) })] }, {
+      afterLock: async () => {
+        locked.resolve();
+        await release.promise;
+      },
+    });
+    await locked.promise;
+    const complete = changeProjectStatus(ceo, project.id, { from: "settling", to: "completed" });
+    try {
+      await waitForLockWaiter(pool);
+    } finally {
+      release.resolve();
+    }
+
+    const [a, b] = await Promise.allSettled([save, complete]);
+    expect(a.status).toBe("fulfilled");
+    expect(b.status).toBe("fulfilled");
+    expect((await reloadLine(line.id)).executionAmountKrw).toBe(70_000);
+    const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
+    expect(row?.status).toBe("completed");
+  });
+
+  it("(q) 전환이 잠금을 쥔 동안 저장은 기다리고, 완료 커밋 뒤 저장은 「완료 · 견적 줄 잠김」으로 거부된다", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const line = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "경합 q" });
+    await setStatus(project.id, "settling");
+    const ceo = await makeViewer("role-ceo");
+    const locked = deferred();
+    const release = deferred();
+
+    const complete = changeProjectStatus(ceo, project.id, { from: "settling", to: "completed" }, {
+      afterLock: async () => {
+        locked.resolve();
+        await release.promise;
+      },
+    });
+    await locked.promise;
+    const save = saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [asInput(line, { execution: krw(70_000) })] });
+    try {
+      await waitForLockWaiter(pool);
+    } finally {
+      release.resolve();
+    }
+
+    const [b, a] = await Promise.allSettled([complete, save]);
+    expect(b.status).toBe("fulfilled");
+    expect(a.status).toBe("rejected");
+    if (a.status === "rejected") expect(String(a.reason)).toContain("완료 · 견적 줄 잠김");
+    expect((await reloadLine(line.id)).executionAmountKrw).toBe(50_000);
+  });
+
+  it("(r) 복원 대 전환 — 복원이 먼저 잠그면 복원 뒤 완료, 전환이 먼저 잠그면 복원은 「완료 · 견적 줄 잠김」", async () => {
+    const ceo = await makeViewer("role-ceo");
+    const zeroPrice = { currency: "KRW" as const, foreignAmount: null, fxRate: "1.0000", amountKrw: 0 };
+
+    // 복원 먼저
+    {
+      const { project, revision, subcategoryValue } = await setupProject();
+      const line = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "경합 r1", unitPrice: zeroPrice });
+      await archiveLine(line.id);
+      await setStatus(project.id, "settling");
+      const locked = deferred();
+      const release = deferred();
+      const restoring = restoreQuoteLine(SYSTEM_VIEWER, line.id, {
+        afterLock: async () => {
+          locked.resolve();
+          await release.promise;
+        },
+      });
+      await locked.promise;
+      const complete = changeProjectStatus(ceo, project.id, { from: "settling", to: "completed" });
+      try {
+        await waitForLockWaiter(pool);
+      } finally {
+        release.resolve();
+      }
+      const [a, b] = await Promise.allSettled([restoring, complete]);
+      expect(a.status).toBe("fulfilled");
+      expect(b.status).toBe("fulfilled");
+      expect((await reloadLine(line.id)).archivedAt).toBeNull();
+    }
+
+    // 전환 먼저
+    {
+      const { project, revision, subcategoryValue } = await setupProject();
+      const line = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "경합 r2", unitPrice: zeroPrice });
+      await archiveLine(line.id);
+      await setStatus(project.id, "settling");
+      const locked = deferred();
+      const release = deferred();
+      const complete = changeProjectStatus(ceo, project.id, { from: "settling", to: "completed" }, {
+        afterLock: async () => {
+          locked.resolve();
+          await release.promise;
+        },
+      });
+      await locked.promise;
+      const restoring = restoreQuoteLine(SYSTEM_VIEWER, line.id);
+      try {
+        await waitForLockWaiter(pool);
+      } finally {
+        release.resolve();
+      }
+      const [b, a] = await Promise.allSettled([complete, restoring]);
+      expect(b.status).toBe("fulfilled");
+      expect(a.status).toBe("rejected");
+      if (a.status === "rejected") expect(String(a.reason)).toContain("완료 · 견적 줄 잠김");
+      expect((await reloadLine(line.id)).archivedAt).toBeInstanceOf(Date);
+    }
+  });
+});
+
+describe("합성 저장(엔지 리뷰 A §1 P2 · ENG-D6)", () => {
+  it("(t) 유효한 견적 줄 변경과 거부되는 매출 줄을 한 합성 저장으로 보내면 전부 거부되고 견적 줄·매출 로그 수가 그대로다", async () => {
+    const { project, revision, subcategoryValue } = await setupProject();
+    const line = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "유령 로그" });
+    const quoteLogsBefore = await actionCount(QUOTE_LINE_ENTITY, revision.id, "document_update");
+    const revenueLogsBefore = await actionCount("revenue_entry", project.id, "document_update");
+
+    await expect(
+      saveProjectLedger(SYSTEM_VIEWER, project.id, {
+        seenStatus: "bidding",
+        quoteLines: { revisionId: revision.id, rows: [asInput(line, { itemName: "유령 로그 고침" })] },
+        revenue: { issuedEntries: [{ id: randomUUID(), entryDate: "2026-09-01", amount: krw(1_000_000) }] },
+      }),
+    ).rejects.toThrow("버전 정보");
+
+    expect((await reloadLine(line.id)).itemName).toBe("유령 로그");
+    expect(await actionCount(QUOTE_LINE_ENTITY, revision.id, "document_update")).toBe(quoteLogsBefore);
+    expect(await actionCount("revenue_entry", project.id, "document_update")).toBe(revenueLogsBefore);
+  });
+
+  it("(v) 종료일을 늦춰 정산을 진행으로 되돌리며 단가를 고친 저장은 통과하고, 종료일을 앞당겨 정산을 만들며 단가를 고친 저장은 전부 거부된다", async () => {
+    const now = new Date();
+    const today = kstToday(now);
+    const admin = await makeViewer("role-sysadmin");
+
+    // 늦추기 — 정산 → 진행(저장 뒤 상태로 판정) → 단가 수정 통과
+    {
+      const { project, revision, subcategoryValue } = await setupProject();
+      const [startDate, endDate] = [addDays(today, -10), addDays(today, -1)];
+      await db.update(projects).set({ status: "settling", startDate, endDate }).where(eq(projects.id, project.id));
+      const line = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "늦추기" });
+
+      await saveProjectLedger(
+        admin,
+        project.id,
+        {
+          seenStatus: "settling",
+          period: { startDate, endDate: addDays(today, 5), baseline: { startDate, endDate } },
+          quoteLines: { revisionId: revision.id, rows: [asInput(line, { unitPrice: krw(120_000) })] },
+        },
+        { now: () => now },
+      );
+
+      expect((await reloadLine(line.id)).unitPriceAmountKrw).toBe(120_000);
+      const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
+      expect(row).toMatchObject({ status: "in_progress", endDate: addDays(today, 5) });
+    }
+
+    // 앞당기기 — 진행 → 정산(저장 뒤 상태로 판정) → 단가 수정 거부 · 기간·상태·단가 무변경
+    {
+      const { project, revision, subcategoryValue } = await setupProject();
+      const [startDate, endDate] = [addDays(today, -10), addDays(today, 5)];
+      await db.update(projects).set({ status: "in_progress", startDate, endDate }).where(eq(projects.id, project.id));
+      const line = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: "앞당기기" });
+
+      await expect(
+        saveProjectLedger(
+          admin,
+          project.id,
+          {
+            seenStatus: "in_progress",
+            period: { startDate, endDate: addDays(today, -1), baseline: { startDate, endDate } },
+            quoteLines: { revisionId: revision.id, rows: [asInput(line, { unitPrice: krw(120_000) })] },
+          },
+          { now: () => now },
+        ),
+      ).rejects.toThrow("정산 · 실행가와 새 줄만");
+
+      expect((await reloadLine(line.id)).unitPriceAmountKrw).toBe(100_000);
+      const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
+      expect(row).toMatchObject({ status: "in_progress", endDate });
+    }
   });
 });

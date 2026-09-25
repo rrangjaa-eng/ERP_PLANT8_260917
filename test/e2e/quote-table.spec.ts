@@ -184,7 +184,7 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
   });
 
   test("(f) 폰 뷰포트에서 줄을 탭하면 행 시트가 열리고 행동 줄이 없다", async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 800 });
+    // 04-49(DR-24 · DR-36) — 1024 미만에서는 줄을 만들거나 셀을 고칠 수 없다 — 줄은 PC 폭에서 만들고 폰 폭으로 바꿔 읽는다.
     await loginAndOpenProject(page);
 
     await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
@@ -194,6 +194,7 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await page.keyboard.press("Enter");
     await page.keyboard.type("폰 시트 확인용 항목");
     await page.keyboard.press("Enter");
+    await page.setViewportSize({ width: 375, height: 800 });
 
     // 접힌 요약 행(P2/P3 값)이 폰에서만 렌더되고 탭하면 시트가 열린다.
     const collapsedRow = page.locator('[role="button"][aria-label*="상세 보기"]');

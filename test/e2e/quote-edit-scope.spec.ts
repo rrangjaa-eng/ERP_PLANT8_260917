@@ -574,3 +574,158 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await expect(page.getByText(SETTLING_REASON, { exact: true })).toBeVisible();
   });
 });
+
+// 04-49(DR-14 · DR-24 · DR-36 · 계약 6 · S18 · 후속 결정 R1) — 폭 규칙. 1024 미만에서 견적 줄 표는 보기 전용이고,
+// 1차는 dirty가 하나라도 있으면(복원한 표 칸 포함) 렌더되며, 현재 차수 복원 줄은 모든 폭에서 보인다.
+const TWO_LINES: SeedLine[] = [
+  { itemName: "폭 첫 줄", unitPrice: 1_000_000, execution: 600_000 },
+  { itemName: "폭 둘째 줄", unitPrice: 500_000, execution: 300_000 },
+];
+
+// 읽기 표·격자 모두에서 같은 줄의 칸(숨은 열도 DOM에 남아 논리 열 순서 그대로다).
+function lineCell(page: Page, itemName: string, colIndex: number): Locator {
+  return page.locator("tbody tr").filter({ hasText: itemName }).first().locator("td").nth(colIndex);
+}
+
+const hintRow = (page: Page) => page.locator("p", { has: page.locator("kbd", { hasText: "↑↓←→" }) });
+const primarySave = (page: Page) => page.getByRole("button", { name: /일괄 저장/ });
+
+async function changePeriodEnd(page: Page, value: string) {
+  await page.locator("#period-open").click();
+  await page.locator("#period-end").fill(value);
+}
+
+test.describe("폭 규칙 — 1024 미만 보기 전용 · 좁은 PC 열 접기 · 복원 줄 모든 폭 (04-49)", () => {
+  test("(k) 1000 — 견적 줄 표가 캡션 있는 읽기 표이고 줄 추가·힌트 줄·편집이 없으며, 1차는 기간 칸을 바꾸면 생긴다", async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);
+
+    await expect(page.getByRole("table", { name: "견적 줄" })).toBeVisible();
+    await expect(page.getByRole("grid", { name: "견적 줄" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "줄 추가", exact: true })).toHaveCount(0);
+    await expect(hintRow(page)).toHaveCount(0);
+    await lineCell(page, "폭 첫 줄", COL.execution).click();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("textbox", { name: "실행가" })).toHaveCount(0);
+
+    await expect(primarySave(page)).toHaveCount(0);
+    await changePeriodEnd(page, addDays(TODAY, 12));
+    await expect(primarySave(page)).toContainText("일괄 저장 1");
+  });
+
+  test("(k) 1000 — 0줄 진행 표의 EMPTY에 「첫 줄 만들기」가 없다", async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await openAsPm(page, "in_progress", addDays(TODAY, 10), []);
+    await expect(page.getByText(EMPTY_MESSAGE)).toBeVisible();
+    await expect(page.getByRole("button", { name: /첫 줄 만들기/ })).toHaveCount(0);
+  });
+
+  test("(l) 375 — 줄 추가가 없고 dirty 0이면 1차가 없으며, 기간 칸을 바꾸면 1차가 생긴다", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);
+
+    await expect(page.getByRole("grid", { name: "견적 줄" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "줄 추가", exact: true })).toHaveCount(0);
+    await expect(primarySave(page)).toHaveCount(0);
+    await changePeriodEnd(page, addDays(TODAY, 12));
+    await expect(primarySave(page)).toContainText("일괄 저장 1");
+  });
+
+  test("(l2) 375 — 기간 칸 편집을 남기고 새로 고치면 복원 줄(두 버튼 같은 줄 · 44px 이상), 「복원」 뒤 기간 칸과 1차 1", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);
+    const newEnd = addDays(TODAY, 10 + 10);
+    await changePeriodEnd(page, newEnd);
+    await expect(primarySave(page)).toContainText("일괄 저장 1");
+
+    await page.reload();
+    await expect(page.locator("p").getByText("저장 안 한 편집 1칸")).toBeVisible();
+    const restore = page.getByRole("button", { name: "복원", exact: true });
+    const discard = page.getByRole("button", { name: "버림", exact: true });
+    const restoreBox = await restore.boundingBox();
+    const discardBox = await discard.boundingBox();
+    expect(restoreBox && discardBox ? restoreBox.y === discardBox.y : false).toBe(true);
+    expect(restoreBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+    expect(discardBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+    await restore.click();
+    await expect(page.locator("#period-end")).toHaveValue(newEnd);
+    await expect(primarySave(page)).toContainText("일괄 저장 1");
+  });
+
+  test("(l2) 표 칸만 — 1280에서 실행가만 고친 채 375로 새로 고치면 「복원」 뒤 1차 1이 렌더되고 저장된다(R1)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);
+    await typeInto(page, cell(page, 0, COL.execution), "실행가", "654000");
+    await expect(primarySave(page)).toContainText("일괄 저장 1");
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.reload();
+    await expect(page.locator("p").getByText("저장 안 한 편집 1칸")).toBeVisible();
+    await expect(primarySave(page)).toHaveCount(0);
+    await page.getByRole("button", { name: "복원", exact: true }).click();
+    await expect(primarySave(page)).toContainText("일괄 저장 1");
+    const saved = waitForSaveResponse(page);
+    await primarySave(page).click();
+    await saved;
+    await expect(page.locator("tfoot").getByText(/저장됨/).first()).toBeVisible();
+
+    await page.reload();
+    await expect(lineCell(page, "폭 첫 줄", COL.execution)).toHaveText("654,000");
+  });
+
+  test("(l3) 1000 — 1280에서 고친 셀을 1000에서 복원하면 읽기 표에 dirty 인셋, 1차 1로 저장된다(R1)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);
+    await typeInto(page, cell(page, 0, COL.execution), "실행가", "611000");
+    await expect(primarySave(page)).toContainText("일괄 저장 1");
+
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await page.reload();
+    await expect(page.locator("p").getByText("저장 안 한 편집 1칸")).toBeVisible();
+    await page.getByRole("button", { name: "복원", exact: true }).click();
+    const restored = lineCell(page, "폭 첫 줄", COL.execution);
+    await expect(restored).toHaveText("611,000");
+    await expect(restored).toHaveCSS("box-shadow", /inset/);
+    await expect(page.getByRole("grid", { name: "견적 줄" })).toHaveCount(0);
+    await expect(primarySave(page)).toContainText("일괄 저장 1");
+
+    const saved = waitForSaveResponse(page);
+    await primarySave(page).click();
+    await saved;
+    await expect(page.locator("tfoot").getByText(/저장됨/).first()).toBeVisible();
+    await page.reload();
+    await expect(lineCell(page, "폭 첫 줄", COL.execution)).toHaveText("611,000");
+  });
+
+  test("(l4) 375 — 셀을 눌러도 편집 입력이 생기지 않고, 행을 탭하면 행 시트로 읽는다", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);
+
+    const table = page.getByRole("table", { name: "견적 줄" });
+    await lineCell(page, "폭 첫 줄", COL.execution).click();
+    await expect(table.locator("input, textarea, select, [contenteditable='true']")).toHaveCount(0);
+
+    await page.locator('[role="button"][aria-label*="상세 보기"]').first().click();
+    const sheet = page.getByRole("dialog");
+    await expect(sheet).toBeVisible();
+    await expect(sheet.locator("input, textarea, select, [contenteditable='true']")).toHaveCount(0);
+    await expect(table.locator("input, textarea, select, [contenteditable='true']")).toHaveCount(0);
+  });
+
+  test("(m) 1100 — 번호·차익 열이 숨고, 실행가에서 → 는 숨은 차익을 건너뛰어 상태로 가며, 합계 행에 차익 합계가 있다", async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 800 });
+    await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);
+
+    await expect(page.getByRole("columnheader", { name: "번호" })).toBeHidden();
+    await expect(page.getByRole("columnheader", { name: "차익" })).toBeHidden();
+    await expect(page.getByRole("columnheader", { name: "실행가" })).toBeVisible();
+
+    await cell(page, 0, COL.execution).focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(cell(page, 0, 9)).toBeFocused();
+    await expect(page.locator("tfoot").getByText(/^차익 /)).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+});

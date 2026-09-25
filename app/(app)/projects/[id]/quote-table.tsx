@@ -1335,7 +1335,8 @@ export function QuoteLedger({
   // 04-30 리뷰 S-5 — 셀 편집기가 열린 동안에는 1차를 누르면 그 값이 커밋되고 저장된다 — 비활성으로 보이지 않는다.
   const [cellEditing, setCellEditing] = useState(false);
   // 04-49(DR-14 · DR-24 · DR-36 · 계약 6) — 1024 미만이면 견적 줄 표·매출 표는 보기 전용이다(표 밖 칸만 편집).
-  const editableWidth = useEditableWidth();
+  // 리뷰 B-1 — 편집기가 열린 동안 폭이 줄면 읽기 표 전환을 커밋(blur·Enter) 뒤로 미룬다(친 값을 버리지 않는다).
+  const editableWidth = useEditableWidth() || cellEditing;
 
   // 04-30(엔지 r2 분할안) — 키보드 Ctrl+S는 표가 열린 셀 편집기를 먼저 커밋(blur)한 뒤 부른다. 그 커밋이
   // 상태에 반영된 다음 렌더에서 저장해야 활성 셀의 마지막 값이 페이로드에 든다.

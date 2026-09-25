@@ -753,4 +753,32 @@ test.describe("폭 규칙 — 1024 미만 보기 전용 · 좁은 PC 열 접기 
     expect(group1).not.toEqual(group2);
     expect(fxWidth).toBeLessThanOrEqual(krwWidth + 40);
   });
+
+  test("(o) 1280에서 실행가 편집기에 친 값은 1000으로 줄어도 사라지지 않고 Enter로 커밋된다(리뷰 B-1)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);
+    await lineCell(page, "폭 첫 줄", COL.execution).focus();
+    await page.keyboard.press("Enter");
+    await page.getByRole("textbox", { name: "실행가", exact: true }).fill("555000");
+
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await page.keyboard.press("Enter");
+    await expect(lineCell(page, "폭 첫 줄", COL.execution)).toHaveText("555,000");
+    await expect(primarySave(page)).toContainText("일괄 저장 1");
+    await expect(page.getByRole("grid", { name: "견적 줄" })).toHaveCount(0);
+  });
+
+  test("(o2) 1280에서 비고 편집기에 친 값은 1000에서 비고 열이 숨어도 커밋된다(리뷰 B-1)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);
+    await lineCell(page, "폭 첫 줄", COL.note).focus();
+    await page.keyboard.press("Enter");
+    await page.getByRole("textbox", { name: "비고", exact: true }).fill("폭 전환 비고");
+
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await expect(primarySave(page)).toContainText("일괄 저장 1");
+    await expect(page.getByRole("grid", { name: "견적 줄" })).toHaveCount(0);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(lineCell(page, "폭 첫 줄", COL.note)).toHaveText("폭 전환 비고");
+  });
 });

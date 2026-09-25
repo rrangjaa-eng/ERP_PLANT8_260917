@@ -136,6 +136,13 @@
   display: contents;
 }
 
+/* 04-21 — 막힘 이유는 위 .reason 한 자리(1차 왼쪽, §7-17)에만 보인다. Button이 스스로
+   그리는 이유 글자(버튼 오른쪽)는 숨기고 1차의 aria-describedby 대상으로만 남긴다 —
+   직접 가리킨 요소는 숨겨져도 설명으로 읽힌다. Button.tsx 내부 span이라 요소 선택자로 닿는다. */
+.primaryWrap > span > span {
+  display: none;
+}
+
 @media (max-width: 699.98px) {
   .dialog {
     position: fixed;

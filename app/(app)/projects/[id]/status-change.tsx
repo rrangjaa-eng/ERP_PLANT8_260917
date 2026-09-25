@@ -7,6 +7,7 @@ import { changeProjectStatusAction } from "../actions";
 import { Button } from "@/ui/button/Button";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
+import { unsavedEditsReason } from "./unsaved-edits";
 
 // 04-21(PROJ-04 · S7) — 상세 머리 줄의 「상태 바꾸기」. 갈 곳·막힘 이유는 서버가
 // 판정해 보낸다(04-20 statusDestinations) — 이 파일은 그 결과를 그대로 그린다.
@@ -68,7 +69,11 @@ function confirmCopy(props: StatusChangeProps, to: ProjectStatus): { label: stri
   return null;
 }
 
-export function StatusChange({ onChanged, ...props }: StatusChangeProps & { onChanged: (message: string) => void }) {
+export function StatusChange({
+  dirtyCount,
+  onChanged,
+  ...props
+}: StatusChangeProps & { dirtyCount: number; onChanged: (message: string) => void }) {
   const router = useRouter();
   const [step, setStep] = useState<Step>({ kind: "closed" });
   const [rejection, setRejection] = useState<string | null>(null);
@@ -111,6 +116,10 @@ export function StatusChange({ onChanged, ...props }: StatusChangeProps & { onCh
   const [only] = props.destinations;
   const revertNeedsConfirm = props.endDateBeforeToday || !props.currentRevisionApproved;
   const immediateBlockedReason = reverting && !revertNeedsConfirm ? (only?.blockedReason ?? null) : null;
+  // DR-6 — 미저장 편집이 있으면 트리거 자체가 막힌다(고르기 목록·확인 모달이 열리지 않는다).
+  // 트리거를 막는 이유가 시작일 게이트 이유보다 먼저다.
+  const triggerBlockedReason =
+    unsavedEditsReason(dirtyCount) ?? (step.kind === "closed" ? rejection : null) ?? immediateBlockedReason;
 
   function handleTrigger() {
     if (reverting && only && !revertNeedsConfirm) {
@@ -135,8 +144,8 @@ export function StatusChange({ onChanged, ...props }: StatusChangeProps & { onCh
         variant="secondary"
         onClick={handleTrigger}
         pending={reverting && step.kind === "closed" && isExecuting}
-        disabled={immediateBlockedReason !== null || (step.kind === "closed" && rejection !== null)}
-        disabledReason={step.kind === "closed" ? (rejection ?? immediateBlockedReason ?? undefined) : undefined}
+        disabled={triggerBlockedReason !== null}
+        disabledReason={triggerBlockedReason ?? undefined}
       >
         {reverting ? REVERT_LABEL : "상태 바꾸기"}
       </Button>

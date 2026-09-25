@@ -25,6 +25,56 @@
   gap: var(--s-3);
 }
 
+/* DR-26 — 복사·차수 묶음. PC(≥700)는 버튼군 안에 그대로, 「더보기」 없음. */
+.moreToggle {
+  display: none;
+}
+
+.copyActions {
+  display: contents;
+}
+
+/* DR-26 폰 첫 화면(<700): 제목 → 상태 태그 → 부제 → 버튼 줄. PageHeader의 제목·부제를
+   머리 줄의 직접 항목으로 풀어(display: contents) 순서를 다시 매긴다. 버튼 줄 끝의 2차
+   「더보기」는 묶음을 바로 아래 한 줄로 펼친다(시트 아님). */
+@media (max-width: 699.98px) {
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    margin-bottom: var(--s-4);
+  }
+
+  .titleBlock,
+  .titleBlock > div {
+    display: contents;
+  }
+
+  .titleBlock p {
+    order: 1;
+  }
+
+  .headerActions {
+    order: 2;
+  }
+
+  .moreToggle {
+    display: inline-flex;
+    order: 1;
+  }
+
+  .copyActions {
+    display: none;
+    order: 2;
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    gap: var(--s-3);
+  }
+
+  .copyActionsOpen {
+    display: flex;
+  }
+}
+
 .cellSelect,
 .cellInput,
 .cellInputNumeric {

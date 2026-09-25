@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Children, Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { saveProjectLedgerAction } from "../actions";
 import { PageHeader } from "@/ui/page-header/PageHeader";
@@ -496,6 +496,33 @@ function UnitPriceEditCell({
       {amountError ? <p className={styles.cellEditError}>{amountError}</p> : null}
       {fxRateError ? <p className={styles.cellEditError}>{fxRateError}</p> : null}
     </div>
+  );
+}
+
+// DR-26 — 머리 줄의 복사·차수 작업 묶음 자리. 그룹 B의 「복사해 새 차수」(04-24)·「프로젝트 복사」
+// (04-15)가 이 안에 버튼을 둔다. 폰(<700)에서는 자식이 있을 때만 2차 「더보기」로 접어 바로 아래 한
+// 줄로 펼치고, PC에서는 버튼군 안에 그대로 보인다. 자식이 없으면 아무것도 그리지 않는다.
+function HeaderCopyActions({ children }: { children?: ReactNode }) {
+  const [expanded, setExpanded] = useState(false);
+  const groupId = useId();
+  if (Children.toArray(children).length === 0) return null;
+  return (
+    <>
+      <span className={styles.moreToggle}>
+        <Button
+          type="button"
+          variant="secondary"
+          aria-expanded={expanded}
+          aria-controls={groupId}
+          onClick={() => setExpanded((open) => !open)}
+        >
+          더보기
+        </Button>
+      </span>
+      <div id={groupId} className={expanded ? `${styles.copyActions} ${styles.copyActionsOpen}` : styles.copyActions}>
+        {children}
+      </div>
+    </>
   );
 }
 
@@ -1182,11 +1209,14 @@ export function QuoteLedger({
         <div className={styles.titleBlock}>
           <PageHeader title={projectName} subtitle={subtitle} />
         </div>
+        <StatusTag kind={statusTagKind} variant="tag">
+          {statusLabel}
+        </StatusTag>
         <div className={styles.headerActions}>
-          <StatusTag kind={statusTagKind} variant="tag">
-            {statusLabel}
-          </StatusTag>
-          {statusChange ? <StatusChange {...statusChange} onChanged={setStatusToast} /> : null}
+          <HeaderCopyActions />
+          {statusChange ? (
+            <StatusChange {...statusChange} dirtyCount={dirtyCount} onChanged={setStatusToast} />
+          ) : null}
           {editable || canWriteContract || canWriteEntries ? (
             <Button
               type="button"

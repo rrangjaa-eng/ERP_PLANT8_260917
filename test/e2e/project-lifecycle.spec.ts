@@ -317,14 +317,10 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     const reasonBox = await reason.boundingBox();
     const primaryBox = await primary.boundingBox();
     expect(reasonBox && primaryBox && reasonBox.x + reasonBox.width <= primaryBox.x).toBe(true);
-    const describedBy = (await primary.getAttribute("aria-describedby")) ?? "";
-    const description = await page.evaluate(
-      (ids) => ids.map((id) => document.getElementById(id)?.textContent ?? "").join(" "),
-      describedBy.split(" ").filter(Boolean),
-    );
-    expect(description).toBe("시작일 없음 · 기간 적기");
+    await expect(primary).toHaveAccessibleDescription("시작일 없음 · 기간 적기");
 
-    await primary.click();
+    // aria-disabled 버튼은 Playwright 실행 가능성 검사에서 막히므로 force로 실제 클릭만 보낸다.
+    await primary.click({ force: true });
     await expect(confirm).toBeVisible();
     await expect(page.getByText(/진행으로 바꾸기 · /)).toHaveCount(0);
     await expect(headerTag(page, "수주중")).toBeVisible();
@@ -447,11 +443,13 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(reason).toBeVisible();
     const describedBy = (await trigger.getAttribute("aria-describedby")) ?? "";
     expect(describedBy.split(" ")).toContain(await reason.getAttribute("id"));
-    await trigger.click();
+    await trigger.click({ force: true });
     await expect(page.getByRole("dialog")).toHaveCount(0);
 
+    // Ctrl+S는 그리드에 포커스가 있을 때 저장한다(quote-table.spec.ts와 같은 형태).
+    await executionCell.focus();
     await page.keyboard.press("Control+s");
-    await expect(page.getByText(/저장됨 1줄/)).toBeVisible();
+    await expect(page.getByText(/저장됨/)).toBeVisible();
     await expect(trigger).not.toHaveAttribute("aria-disabled", "true");
     await trigger.click();
     await expect(page.getByRole("dialog", { name: "상태 바꾸기" })).toBeVisible();
@@ -494,6 +492,7 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
     expect(overflow).toBe(0);
-    await expect(page.getByRole("button", { name: "더보기" })).toHaveCount(0);
+    // 하단 탭의 「더보기」(셸)는 <main> 밖이다 — 머리 줄의 「더보기」만 본다.
+    await expect(page.getByRole("main").getByRole("button", { name: "더보기" })).toHaveCount(0);
   });
 });

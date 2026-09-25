@@ -1,0 +1,7 @@
+ROUND-3 DELTA review of Phase 04.5 plans (Next.js 16 / TypeScript / Drizzle / PostgreSQL READ COMMITTED). Your round-2 output: docs/reviews/phase-04.5/codex-plan-review-t1t2-2.md (tail: MAJOR "새 완화책도 서로 다른 시점의 노출 판정을 합친다", MINOR "domain의 tx = db 기본값").
+
+Change since round 2 (uncommitted, `git diff -- .planning/phases/04.5-custom-field-admin/`): plan 05 adds repository `readVendorFieldAccess(viewer, roleId|null, tx)` in repositories/permissions.ts — ONE SELECT over field_definitions LEFT JOIN two visibility_matrix aliases (cf.vendor.<key>, vendor.value) → {definitions, vendorValueVisible, visibleFieldKeys}; domain `vendorInputFieldKeys(viewer, tx?)` calls it once after `findVendorByIdForUpdate` in the same tx; domain has no `= db` default; 03's round-2 tx additions reverted; structure gate (one await), race test 「거래처 정보 끔 + 칸 켬」; T-04.5-44 row updated.
+
+Scope: (1) each round-2 finding RESOLVED / PARTIAL / OPEN with evidence; (2) new problems only in changed lines (e.g. is the single SELECT correct for missing visibility rows/null role/archived fields; does anything else in the save path still read definitions/visibility separately; layer rules eslint.config.mjs).
+Evidence rule: BLOCKER/MAJOR must cite plan file+line AND repo file:line for code claims; else [NOTE].
+Output: status table, then findings `[BLOCKER|MAJOR|MINOR|NOTE] title — evidence — fix`. End with exactly one line: `판정: 막는 문제 없음` or `판정: 막는 문제 있음 (N건)`. Do not modify files. Korean. Concise.

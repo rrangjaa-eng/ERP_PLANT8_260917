@@ -158,7 +158,7 @@ export function PreviousRevisionSection({
   const entry = entries[seq];
 
   return (
-    <section className={styles.section} aria-labelledby={headingId}>
+    <section className={styles.section} aria-labelledby={headingId} aria-busy={entry === undefined ? "true" : undefined}>
       <h2 id={headingId} ref={headingRef} tabIndex={-1} className={styles.previousTitle}>
         {`상세 견적 ${seq}차`}
       </h2>

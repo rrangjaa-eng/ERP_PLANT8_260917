@@ -1,6 +1,6 @@
 "use client";
 
-import { Children, Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { Children, Fragment, useCallback, useEffect, useEffectEvent, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { useRouter } from "next/navigation";
 import { saveProjectLedgerAction } from "../actions";
@@ -20,7 +20,7 @@ import { formatKrw, formatForeignLine, formatQuantity, parseNumberInput, type Nu
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import type { TableColumn, CellIssue } from "@/ui/table/types";
 import type { QuoteLineDto, QuoteLineBaseline } from "@/domain/quotes/lines";
-import type { QuoteLineStatus } from "@/domain/quotes/edit-scope";
+import { QUOTE_LINE_STATUSES, type QuoteCellEditability, type QuoteLineField, type QuoteLineStatus, type StructuralEditability } from "@/domain/quotes/edit-scope";
 import type { RevenueDto } from "@/domain/revenue";
 import type { Currency, Money } from "@/domain/money";
 import { RevenueSection, type ContractDraft, type EntryDraft } from "./revenue-section";
@@ -72,7 +72,11 @@ type DraftLine = {
   cellErrors: Record<string, string>;
   /** 04-28 — 저장 거부 봉투의 충돌 칸(§7-3 (나), D-65). 키는 열 key. */
   cellConflicts: Record<string, CellConflictDraft>;
+  /** 04-30(D-78) — 칸별 편집 단계. 기존 줄은 서버 DTO, 저장 전 새 줄은 서버가 넘긴 새 줄 판정. */
+  cells: Record<QuoteLineField, QuoteCellEditability>;
 };
+
+type LineCells = Record<QuoteLineField, QuoteCellEditability>;
 
 type CellConflictDraft = { field: string; reason: string; theirRaw: string | number | null; theirVersion: number };
 
@@ -110,10 +114,15 @@ const QUOTE_HINT_ITEMS: { label: string; keys: string }[] = [
   { label: "줄 복제", keys: "Ctrl+D" },
 ];
 
-const LINE_STATUS_LABELS: Record<string, string> = {
+const LINE_STATUS_LABELS: Record<QuoteLineStatus, string> = {
   not_started: "미착수",
   cancelled: "취소",
 };
+
+function lineStatusLabel(value: string): string {
+  const status = QUOTE_LINE_STATUSES.find((candidate) => candidate === value);
+  return status ? LINE_STATUS_LABELS[status] : value;
+}
 
 // 04-28 — 서버 현재 원값을 그 칸의 baseline과(「그 값으로」일 때) 줄 값으로.
 // 금액은 원화 원값이다.
@@ -200,10 +209,11 @@ function fromDto(dto: QuoteLineDto): DraftLine {
     baseline: baselineFromDto(dto),
     cellErrors: {},
     cellConflicts: {},
+    cells: dto.cellEditability,
   };
 }
 
-function newDraftLine(defaultSubcategory: string): DraftLine {
+function newDraftLine(defaultSubcategory: string, cells: LineCells): DraftLine {
   return {
     clientKey: `new-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     subcategory: defaultSubcategory,
@@ -235,6 +245,7 @@ function newDraftLine(defaultSubcategory: string): DraftLine {
     },
     cellErrors: {},
     cellConflicts: {},
+    cells,
   };
 }
 
@@ -345,9 +356,9 @@ function restoredCellPatch(column: string, value: unknown): Partial<DraftLine> |
   }
 }
 
-function restoredNewLine(value: unknown, defaultSubcategory: string): DraftLine | null {
+function restoredNewLine(value: unknown, defaultSubcategory: string, cells: LineCells): DraftLine | null {
   if (!isRecord(value)) return null;
-  let line = newDraftLine(defaultSubcategory);
+  let line = newDraftLine(defaultSubcategory, cells);
   for (const [field, column] of [
     ["subcategory", "subcategory"],
     ["itemName", "itemName"],
@@ -370,6 +381,7 @@ function mergeRestoredEdits(
   lines: DraftLine[],
   edits: Record<string, unknown>,
   defaultSubcategory: string,
+  newLineCells: LineCells,
 ): { lines: DraftLine[]; period: { start?: string; end?: string }; preEstimate: Partial<PreEstimateDraft> } {
   let next = lines;
   const added: DraftLine[] = [];
@@ -390,7 +402,7 @@ function mergeRestoredEdits(
       continue;
     }
     if (column === "new") {
-      const line = restoredNewLine(value, defaultSubcategory);
+      const line = restoredNewLine(value, defaultSubcategory, newLineCells);
       if (line) added.push(line);
       continue;
     }
@@ -731,7 +743,8 @@ export function QuoteLedger({
   initialLines,
   vendors,
   subcategories,
-  editable,
+  structural,
+  newLineCells,
   revenue,
   canWriteContract,
   canWriteEntries,
@@ -762,7 +775,10 @@ export function QuoteLedger({
   initialLines: QuoteLineDto[];
   vendors: QuoteTableOption[];
   subcategories: QuoteTableCodeOption[];
-  editable: boolean;
+  /** 04-30(사용자 D10) — 줄 구조 편집 가능성(서버 structuralEditability). */
+  structural: StructuralEditability;
+  /** 04-30(사용자 D12) — 저장 전 새 줄의 칸별 편집 단계(서버 lineCellEditability isNewLine). */
+  newLineCells: LineCells;
   revenue: RevenueDto;
   canWriteContract: boolean;
   canWriteEntries: boolean;
@@ -999,7 +1015,7 @@ export function QuoteLedger({
   function restoreEdits() {
     const edits = dirtyStorage.restore();
     if (!edits) return;
-    const restored = mergeRestoredEdits(lines, edits, subcategories[0]?.value ?? "");
+    const restored = mergeRestoredEdits(lines, edits, subcategories[0]?.value ?? "", newLineCells);
     setLines(restored.lines);
     if (restored.period.start !== undefined || restored.period.end !== undefined) {
       setPeriodFocus(restored.period.start !== undefined ? "start" : "end");
@@ -1067,9 +1083,9 @@ export function QuoteLedger({
     (afterRow?: DraftLine) => {
       const inheritedSubcategory = afterRow?.subcategory ?? subcategories[0]?.value ?? "";
       persistPendingRef.current = true;
-      setLines((prev) => [...prev, newDraftLine(inheritedSubcategory)]);
+      setLines((prev) => [...prev, newDraftLine(inheritedSubcategory, newLineCells)]);
     },
-    [subcategories],
+    [subcategories, newLineCells],
   );
 
   function duplicateLine(clientKey: string) {
@@ -1078,7 +1094,7 @@ export function QuoteLedger({
       const source = prev.find((line) => line.clientKey === clientKey);
       if (!source) return prev;
       const copy: DraftLine = {
-        ...newDraftLine(source.subcategory),
+        ...newDraftLine(source.subcategory, newLineCells),
         itemName: source.itemName,
         vendorId: source.vendorId,
         quantity: source.quantity,
@@ -1236,6 +1252,14 @@ export function QuoteLedger({
     });
   }
 
+  // 04-30(엔지 r2 분할안) — 키보드 Ctrl+S는 표가 열린 셀 편집기를 먼저 커밋(blur)한 뒤 부른다. 그 커밋이
+  // 상태에 반영된 다음 렌더에서 저장해야 활성 셀의 마지막 값이 페이로드에 든다.
+  const [saveRequests, setSaveRequests] = useState(0);
+  const saveAfterCommit = useEffectEvent(() => handleSave());
+  useEffect(() => {
+    if (saveRequests > 0) saveAfterCommit();
+  }, [saveRequests]);
+
   const vendorLabel = (id: string | null) => (id ? (vendors.find((v) => v.id === id)?.name ?? id) : "—");
   const subcategoryLabel = (value: string) => subcategories.find((option) => option.value === value)?.label ?? value;
 
@@ -1251,7 +1275,7 @@ export function QuoteLedger({
       key: "subcategory",
       header: "소분류",
       priority: "p3",
-      editability: () => (editable ? "edit" : "locked"),
+      editability: (row) => row.cells.subcategory,
       cell: (row) => subcategoryLabel(row.subcategory),
       editCell: (row, ctx) =>
         selectEditCell({
@@ -1269,7 +1293,7 @@ export function QuoteLedger({
       key: "itemName",
       header: "항목",
       priority: "p1",
-      editability: () => (editable ? "edit" : "locked"),
+      editability: (row) => row.cells.itemName,
       cell: (row) => row.itemName,
       editCell: (row, ctx) =>
         textEditCell({
@@ -1285,7 +1309,7 @@ export function QuoteLedger({
       key: "vendor",
       header: "거래처",
       priority: "p2",
-      editability: () => (editable ? "edit" : "locked"),
+      editability: (row) => row.cells.vendorId,
       cell: (row) => vendorLabel(row.vendorId),
       editCell: (row, ctx) =>
         selectEditCell({
@@ -1304,7 +1328,7 @@ export function QuoteLedger({
       header: "수량",
       priority: "p2",
       align: "right",
-      editability: () => (editable ? "edit" : "locked"),
+      editability: (row) => row.cells.quantity,
       // D-95 — 읽기 모드도 쉼표 서식을 쓴다(04-09 Task 3 편차, 수량 칸이
       // 이관에서 빠져 있었다).
       cell: (row) => formatQuantity(row.quantity),
@@ -1325,7 +1349,7 @@ export function QuoteLedger({
       header: "단가",
       priority: "p2",
       align: "right",
-      editability: () => (editable ? "edit" : "locked"),
+      editability: (row) => row.cells.unitPrice,
       cell: (row) => formatKrw(row.unitPriceAmountKrw),
       editCell: (row, ctx) => (
         <UnitPriceEditCell
@@ -1391,7 +1415,7 @@ export function QuoteLedger({
       header: "실행가",
       priority: "p1",
       align: "right",
-      editability: () => (editable ? "edit" : "locked"),
+      editability: (row) => row.cells.execution,
       cell: (row) => formatKrw(row.executionAmount),
       editCell: (row, ctx) => (
         <NumericEditCell
@@ -1416,13 +1440,13 @@ export function QuoteLedger({
       key: "status",
       header: "상태",
       priority: "p1",
-      cell: (row) => LINE_STATUS_LABELS[row.lineStatus] ?? row.lineStatus,
+      cell: (row) => lineStatusLabel(row.lineStatus),
     },
     {
       key: "note",
       header: "비고",
       priority: "p3",
-      editability: () => (editable ? "edit" : "locked"),
+      editability: (row) => row.cells.note,
       cell: (row) => row.note ?? "—",
       editCell: (row, ctx) =>
         textEditCell({
@@ -1445,19 +1469,24 @@ export function QuoteLedger({
         key: "subcategory",
         kind: "select",
         options: subcategories.map((option) => ({ value: option.value, label: option.label })),
-        isEditable: () => editable,
+        isEditable: (row) => row.cells.subcategory === "edit",
       },
-      { key: "itemName", kind: "text", isEditable: () => editable },
-      { key: "vendor", kind: "select", options: vendors.map((option) => ({ value: option.id, label: option.name })), isEditable: () => editable },
-      { key: "quantity", kind: "number", isEditable: () => editable },
-      { key: "unitPrice", kind: "number", isEditable: () => editable },
+      { key: "itemName", kind: "text", isEditable: (row) => row.cells.itemName === "edit" },
+      {
+        key: "vendor",
+        kind: "select",
+        options: vendors.map((option) => ({ value: option.id, label: option.name })),
+        isEditable: (row) => row.cells.vendorId === "edit",
+      },
+      { key: "quantity", kind: "number", isEditable: (row) => row.cells.quantity === "edit" },
+      { key: "unitPrice", kind: "number", isEditable: (row) => row.cells.unitPrice === "edit" },
       { key: "quoteAmount", kind: "text", isEditable: () => false },
-      { key: "execution", kind: "number", isEditable: () => editable },
+      { key: "execution", kind: "number", isEditable: (row) => row.cells.execution === "edit" },
       { key: "profit", kind: "text", isEditable: () => false },
       { key: "status", kind: "text", isEditable: () => false },
-      { key: "note", kind: "text", isEditable: () => editable },
+      { key: "note", kind: "text", isEditable: (row) => row.cells.note === "edit" },
     ],
-    [editable, subcategories, vendors],
+    [subcategories, vendors],
   );
 
   function handlePasteAtCell(row: DraftLine, columnKey: string, clipboardText: string) {
@@ -1471,7 +1500,7 @@ export function QuoteLedger({
     setLines((prev) => {
       const next = [...prev];
       for (let i = 0; i < result.newRowsNeeded; i++) {
-        next.push(newDraftLine(subcategories[0]?.value ?? ""));
+        next.push(newDraftLine(subcategories[0]?.value ?? "", newLineCells));
       }
       for (const cell of result.cells) {
         const target = next[cell.rowIndex];
@@ -1746,14 +1775,14 @@ export function QuoteLedger({
         getRowId={(row) => row.clientKey}
         groupBy={(row) => subcategoryLabel(row.subcategory)}
         emptyMessage="이 프로젝트에 견적 줄이 없습니다"
-        emptyAction={editable ? { label: "첫 줄 만들기", shortcut: "Ctrl+Enter", onClick: () => addLine() } : undefined}
+        emptyAction={structural.insert ? { label: "첫 줄 만들기", shortcut: "Ctrl+Enter", onClick: () => addLine() } : undefined}
         enableGridKeyboard
         keyboard={{
           onDeleteRow: (row) => setDeleteConfirm({ clientKey: row.clientKey, itemName: row.itemName, quoteAmountKrw: row.quoteAmountKrw }),
           onNewRow: (row) => addLine(row),
           onDuplicateRow: (row) => duplicateLine(row.clientKey),
           onMoveRow: (row, direction) => moveLine(row.clientKey, direction),
-          onSave: handleSave,
+          onSave: () => setSaveRequests((count) => count + 1),
         }}
         onPasteAtCell={handlePasteAtCell}
         cellIssue={cellIssueFor}
@@ -1772,7 +1801,7 @@ export function QuoteLedger({
       />
 
       {/* SYSTEM.md §7-9 개정 ⑬ — 견적 표 아래 힌트 줄(라벨 kbd 묶음), 폰에서 숨는다. */}
-      {editable ? (
+      {lines.some((line) => Object.values(line.cells).includes("edit")) || structural.insert ? (
         <p className={styles.hintRow}>
           {QUOTE_HINT_ITEMS.map((item, index) => (
             <Fragment key={item.label}>
@@ -1783,7 +1812,7 @@ export function QuoteLedger({
         </p>
       ) : null}
 
-      {editable && lines.length > 0 ? (
+      {structural.insert && lines.length > 0 ? (
         <button type="button" className={styles.addLineButton} onClick={() => addLine()}>
           줄 추가
         </button>
@@ -1819,7 +1848,7 @@ export function QuoteLedger({
                 }) ?? "—",
             },
             { label: "비고", value: openSheetRow.note ?? "—" },
-            { label: "상태", value: LINE_STATUS_LABELS[openSheetRow.lineStatus] ?? openSheetRow.lineStatus },
+            { label: "상태", value: lineStatusLabel(openSheetRow.lineStatus) },
           ]}
         />
       ) : null}

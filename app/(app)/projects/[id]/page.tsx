@@ -7,7 +7,7 @@ import { listProjectFormReferences } from "@/domain/projects/references";
 import { getCurrentQuoteRevision, listQuoteLines } from "@/domain/quotes/lines";
 import { listRevenue } from "@/domain/revenue";
 import { recentFxRate } from "@/domain/money/currency";
-import { lineCellEditability } from "@/domain/quotes/edit-scope";
+import { lineCellEditability, structuralEditability } from "@/domain/quotes/edit-scope";
 import {
   actorCoversProjectTeam,
   isEndDatePassed,
@@ -53,13 +53,14 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const status = PROJECT_STATUSES.find((value) => value === project.status);
   if (!status) notFound();
 
-  // (가) 셀 편집 가능성은 서버가 판정해 보낸다 — 화면은 project.status
-  // 문자열을 다시 해석하지 않고 이 판정 결과(boolean)만 받는다.
-  // 04-12 — 게이트와 같은 셀 단계 함수로 편집 칸이 하나라도 있는지 본다(셀별 반영은 04-30).
-  const canSeeAmount = await visible(session.viewer, "quote.amount");
-  const lineCells = lineCellEditability({ status: project.status, canWrite, hasLinkedDocuments: false, isNewLine: false });
+  // (가) 셀 편집 가능성은 서버가 판정해 보낸다 — 화면은 project.status 문자열을 다시 해석하지 않는다.
+  // 04-30(D-78) — 기존 줄은 DTO의 칸별 cellEditability, 저장 전 새 줄은 같은 함수의 isNewLine 판정,
+  // 줄 구조(추가·보관·이동·복제)는 structuralEditability 결과만 넘긴다.
   // 금액을 볼 수 없으면 표를 편집하지 않는다 — 서버도 저장을 거부한다(saveQuoteLines).
-  const editable = canWrite && Object.values(lineCells).includes("edit") && canSeeAmount;
+  const canSeeAmount = await visible(session.viewer, "quote.amount");
+  const canEditLines = canWrite && canSeeAmount;
+  const structural = structuralEditability({ status: project.status, canWrite: canEditLines });
+  const newLineCells = lineCellEditability({ status: project.status, canWrite: canEditLines, hasLinkedDocuments: false, isNewLine: true });
 
   // 04-22(S13 · 사용자 D14·D11·D20 · 사용자 결정 2026-09-25 「기간만 수정」) — 기간 권리. 팀장 이상은
   // projects.period 쓰기 + 자기 팀, 담당 PM은 projects 쓰기가 있을 때만.
@@ -72,13 +73,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   });
   // 04-44(DR-37) — 총 매출 예상가는 기간과 같은 권리 + 금액 노출(볼 수 없는 값은 고칠 수 없다).
   const canEditPreEstimate = periodRights !== "none" && canSeeAmount;
-  // A-12: 1차 「일괄 저장」은 이 화면에서 쓸 수 있는 칸이 하나라도 있을 때만 — 판정은 서버가 칸마다 한다.
-  // canEditPreEstimate는 periodRights 항에 이미 포함되지만 칸 목록을 드러내려고 둔다(명시용).
-  const canSave =
-    editable || periodRights !== "none" || canEditPreEstimate || canWriteEntries || (canWrite && status !== "completed");
-
   const [lines, references, revenue, usdDefaultFxRate, destinations, catalog, statusSince] = await Promise.all([
-    listQuoteLines(session.viewer, revision.id, { status: project.status, canWrite: canWrite && canSeeAmount }),
+    listQuoteLines(session.viewer, revision.id, { status: project.status, canWrite: canEditLines }),
     canWrite ? listProjectFormReferences(session.viewer) : Promise.resolve(null),
     listRevenue(session.viewer, project.id),
     recentFxRate("USD"),
@@ -86,6 +82,18 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     listProjectStatusCatalog(session.viewer),
     lastStatusChangeOn(session.viewer, project),
   ]);
+
+  // A-12: 1차 「일괄 저장」은 이 화면에서 쓸 수 있는 칸이 하나라도 있을 때만 — 판정은 서버가 칸마다 한다.
+  // 04-30 — 표 항은 「편집 가능 셀이 하나라도 있거나 줄을 추가할 수 있음」(셀 단계·구조에서 온다).
+  // canEditPreEstimate는 periodRights 항에 이미 포함되지만 칸 목록을 드러내려고 둔다(명시용).
+  const hasEditableCell = lines.some((line) => Object.values(line.cellEditability).includes("edit"));
+  const canSave =
+    hasEditableCell ||
+    structural.insert ||
+    periodRights !== "none" ||
+    canEditPreEstimate ||
+    canWriteEntries ||
+    (canWrite && status !== "completed");
 
   // 04-21(S3·S7) — 갈 곳이 없으면 「상태 바꾸기」를 렌더하지 않는다(비활성 버튼이 아니다).
   // 화면은 상태 문자열로 권한을 추론하지 않고 서버의 갈 곳 목록만 본다.
@@ -140,7 +148,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       initialLines={lines}
       vendors={references?.vendors ?? []}
       subcategories={references?.subcategories ?? []}
-      editable={editable}
+      structural={structural}
+      newLineCells={newLineCells}
       revenue={revenue}
       canWriteContract={canWrite}
       canWriteEntries={canWriteEntries}

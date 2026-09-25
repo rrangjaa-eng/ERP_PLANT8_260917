@@ -160,7 +160,16 @@ export function Table<Row>({
         const row = flatRows[rowIndex];
         if (row) keyboard?.onMoveRow?.(row, direction);
       },
-      onSave: () => keyboard?.onSave?.(),
+      onSave: () => {
+        // 04-30(엔지 r2) — 열린 셀 편집기를 먼저 커밋한다. 편집기 blur는 Enter 커밋과 같은 onCommit 경로이고,
+        // 커밋 뒤 포커스는 그 셀로 돌아온다. 저장 호출부는 이 커밋이 반영된 뒤 페이로드를 모은다.
+        const active = document.activeElement;
+        if (activeCell && active instanceof HTMLElement && tableRef.current?.contains(active)) {
+          refocusCellRef.current = true;
+          active.blur();
+        }
+        keyboard?.onSave?.();
+      },
     },
   });
 

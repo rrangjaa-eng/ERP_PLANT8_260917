@@ -405,6 +405,8 @@ function restoredNewLine(value: unknown, defaultSubcategory: string, cells: Line
     ["lineStatus", "status"],
     ["note", "note"],
   ] as const) {
+    // 지금 셀 단계에서 편집할 수 없는 칸(정산 새 줄의 수량·단가·상태)은 보관값을 넣지 않는다 — 기본값이 서버와 같다.
+    if (cells[field] !== "edit") continue;
     const patch = restoredCellPatch(column, value[field]);
     if (patch) line = { ...line, ...patch };
   }

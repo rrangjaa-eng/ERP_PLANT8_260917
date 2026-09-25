@@ -509,4 +509,26 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     );
     expect(restoreFirst).toBe(true);
   });
+
+  test("(k) 진행에서 적어 둔 새 줄(수량 3 · 단가 5,000)을 정산이 된 뒤 복원하면 잠긴 수량·단가는 1 · 0이다", async ({ page }) => {
+    const { project } = await openAsPm(page, "in_progress", addDays(TODAY, 10), [
+      { itemName: "복원 기존 줄", unitPrice: 100_000, execution: 50_000 },
+    ]);
+    await page.getByRole("button", { name: "줄 추가" }).click();
+    const added = () => dataRows(page).nth(1).getByRole("gridcell");
+    await typeInto(page, added().nth(COL.itemName), "항목", "복원 새 줄");
+    await typeInto(page, added().nth(COL.quantity), "수량", "3");
+    await typeInto(page, added().nth(COL.unitPrice), "단가", "5000");
+    await expect(added().nth(COL.quantity)).toHaveText("3");
+    await expect(added().nth(COL.unitPrice)).toHaveText("5,000");
+
+    await db.update(projects).set({ status: "settling" }).where(eq(projects.id, project.id));
+    await page.reload();
+    await page.getByRole("button", { name: "복원" }).click();
+
+    await expect(dataRows(page)).toHaveCount(2);
+    await expect(added().nth(COL.itemName)).toHaveText("복원 새 줄");
+    await expect(added().nth(COL.quantity)).toHaveText("1");
+    await expect(added().nth(COL.unitPrice)).toHaveText("0");
+  });
 });

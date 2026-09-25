@@ -13,6 +13,7 @@ import { createProject, listProjects } from "@/domain/projects";
 import { getCurrentQuoteRevision, listQuoteLines } from "@/domain/quotes/lines";
 import {
   createRevisionFromCurrent,
+  customerApprovalGateCtx,
   listRevisionLines,
   listRevisionSummaries,
   revisionLinesInputSchema,
@@ -507,26 +508,35 @@ describe("고객 승인 표시(04-14 Task 2 · D-56, 실제 Postgres)", () => {
     expect((await approvalOf(revisionId)).by).toBe(pm.id);
   });
 
-  it("(a10) 게이트는 이전 승인 차수를 대신 보지 않는다 — 1차 승인 + 2차 미승인이면 quote.customer-approval 거부(D-54 · 금지 항목)", async () => {
+  it("(a10) 게이트는 이전 승인 차수를 대신 보지 않는다 — 1차 승인 + 2차 미승인이면 quote.customer-approval 거부(D-54 · 금지 항목), ctx는 호출자 tx 안의 최신 차수로 만든다", async () => {
     const { project, revisionId, pm } = await setupProject();
     await insertLine(revisionId);
     await setStatus(project.id, "in_progress");
     await approve(pm, revisionId);
     await createRevisionFromCurrent(pm, { projectId: project.id, fromRevisionId: revisionId });
+    const gateEnabled = await getSettingValue(PROJECT_CUSTOMER_APPROVAL_GATE);
+    const lockedProject = { ...project, status: "in_progress" };
 
-    const current = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
-    if (!current) throw new Error("현재 차수가 없습니다");
-    expect(current.seq).toBe(2);
-    const decision = await gate(project, "quote.customer-approval", {
-      status: "in_progress",
-      revisionSeq: current.seq,
-      revisionApproved: current.approved,
-      gateEnabled: await getSettingValue(PROJECT_CUSTOMER_APPROVAL_GATE),
-      actorIsAssignedPm: true,
-      pmName: "차수 테스트 사람",
+    const decision = await db.transaction(async (tx) => {
+      const ctx = await customerApprovalGateCtx(SYSTEM_VIEWER, lockedProject, { tx, gateEnabled, actorIsAssignedPm: true, pmName: "차수 테스트 사람" });
+      expect(ctx).toEqual({ status: "in_progress", revisionSeq: 2, revisionApproved: false, gateEnabled, actorIsAssignedPm: true, pmName: "차수 테스트 사람" });
+      return gate(lockedProject, "quote.customer-approval", ctx);
     });
     expect(decision).toEqual({ allowed: false, reason: "2차 고객 승인 전 · 고객 승인 표시" });
     expect((await approvalOf(revisionId)).by).toBe(pm.id);
+
+    // 전역 db가 아니라 호출자 tx를 읽는다 — 같은 tx에서 아직 커밋 안 된 3차가 최신으로 잡힌다(04-32).
+    const rollback = new Error("rollback");
+    await expect(
+      db.transaction(async (tx) => {
+        await insertRevision(SYSTEM_VIEWER, { projectId: project.id, seq: 3 }, tx);
+        const ctx = await customerApprovalGateCtx(SYSTEM_VIEWER, lockedProject, { tx, gateEnabled, actorIsAssignedPm: false, pmName: "차수 테스트 사람" });
+        expect(ctx.revisionSeq).toBe(3);
+        await expect(gate(lockedProject, "quote.customer-approval", ctx)).resolves.toEqual({ allowed: false, reason: "3차 고객 승인 전 · 담당 PM 차수 테스트 사람" });
+        throw rollback;
+      }),
+    ).rejects.toBe(rollback);
+    expect(await revisionCount(project.id)).toBe(2);
   });
 });
 

@@ -9,15 +9,16 @@ import { findProject } from "@/domain/projects";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
-import type { QuoteApprovalToggleCtx, QuoteRevisionCreateCtx } from "@/domain/rules/register";
+import type { QuoteApprovalToggleCtx, QuoteCustomerApprovalCtx, QuoteRevisionCreateCtx } from "@/domain/rules/register";
 import { denyWrite, type DenyWriteIds } from "@/domain/rules/deny-write";
 import { loadProjectForGate } from "@/domain/projects/auto-transition";
 import { ProjectNotFoundError } from "@/domain/projects/status";
 import { structuralEditability } from "@/domain/quotes/edit-scope";
-import { linkedDocumentsByLine, listQuoteLines, type QuoteLineDto } from "@/domain/quotes/lines";
+import { getCurrentQuoteRevision, linkedDocumentsByLine, listQuoteLines, type QuoteLineDto } from "@/domain/quotes/lines";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
 import { isUniqueViolation } from "@/lib/pg-errors";
+import type { DbOrTx } from "@/repositories/document-counters";
 import { kstDateOf, kstDayStart, kstToday } from "@/lib/kst-date";
 import {
   approvalBasis as repoApprovalBasis,
@@ -233,6 +234,26 @@ export async function setCustomerApproval(
 // ── 표시 번호 · 계보 해석 · 차수 요약 · 이전 차수 잠김 조회(D-55 · D-56 · S5 · U-2 · DR-4 · DR-13) ─────────────────
 
 // D-56 — 견적 표시 번호 `26001-2차`. 저장 컬럼·카운터가 없다.
+// D-43 · D-54 — `quote.customer-approval`의 ctx를 만드는 한 곳. 「현재 차수가 승인됐는가」는 호출자 트랜잭션(프로젝트
+// 행을 잠근 tx) 안의 최신 차수로만 판정한다 — 이전 승인 차수를 대신 보지 않는다. 설정값·담당 여부는 호출자가 tx 앞에서
+// 읽어 넘긴다(04-32). 이 페이즈에는 호출자가 없고 Phase 5 지출결의가 부른다.
+export async function customerApprovalGateCtx(
+  viewer: Viewer,
+  project: { id: string; status: string },
+  input: { tx: DbOrTx; gateEnabled: boolean; actorIsAssignedPm: boolean; pmName: string },
+): Promise<QuoteCustomerApprovalCtx> {
+  const current = await getCurrentQuoteRevision(viewer, project.id, input.tx);
+  if (!current) throw new ProjectNotFoundError(PROJECT_NOT_FOUND);
+  return {
+    status: project.status,
+    revisionSeq: current.seq,
+    revisionApproved: current.approved,
+    gateEnabled: input.gateEnabled,
+    actorIsAssignedPm: input.actorIsAssignedPm,
+    pmName: input.pmName,
+  };
+}
+
 export function quoteDisplayNumber(projectNumber: string, seq: number): string {
   return `${projectNumber}-${seq}차`;
 }

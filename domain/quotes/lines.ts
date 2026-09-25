@@ -210,11 +210,13 @@ async function quoteLineCustomFieldsSchema(viewer: Viewer) {
 // 표시·차수 목록)는 04-02가 만든다 — 이 플랜은 id·seq만 최소로 돌려준다.
 export type CurrentQuoteRevisionInfo = { id: string; seq: number; approved: boolean };
 
+// 잠긴 트랜잭션 안에서 부를 때는 tx를 넘긴다(04-32 — 잠금 안 전역 db 호출 금지).
 export async function getCurrentQuoteRevision(
   viewer: Viewer,
   projectId: string,
+  tx?: DbOrTx,
 ): Promise<CurrentQuoteRevisionInfo | null> {
-  const revision = await repoFindLatestQuoteRevision(viewer, projectId);
+  const revision = await repoFindLatestQuoteRevision(viewer, projectId, tx);
   if (!revision) return null;
   return { id: revision.id, seq: revision.seq, approved: revision.customerApprovedAt !== null };
 }

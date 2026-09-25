@@ -472,6 +472,8 @@ merge_hook "$M" "$projM" "$DOC_FILES" 0 9
 expect_rc "merge: 받은 목록 수 != changed_files + review만 -> exit 2" 2 "$HOOK_RC"
 merge_hook "$M" "$projM" $'docs/x.md\ndocs/moved.md\tapp/moved.ts'
 expect_rc "merge: 코드를 문서로 이름 바꾼 PR + review만 -> exit 2" 2 "$HOOK_RC"
+merge_hook "$M" "$projM" 'docs/design/tokens.css'
+expect_rc "merge: docs/ 아래 .md 아닌 파일(tokens.css) + review만 -> exit 2" 2 "$HOOK_RC"
 projM2="$(new_project)"
 M2="sid-merge2-$$"
 merge_hook "$M2" "$projM2" "$DOC_FILES"

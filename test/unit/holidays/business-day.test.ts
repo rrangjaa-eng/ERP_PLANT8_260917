@@ -79,4 +79,12 @@ describe("KST 날짜·시각 문자열", () => {
     expect(formatKstMinute(instant)).toBe("2026-09-24 09:00");
     expect(formatKstTime(instant)).toBe("09:00");
   });
+
+  // 04.2-09 Task 3 사후 수정(Opus 편차 판정 (b)) — 삭제된
+  // inbox-list-format-time.test.ts가 덮지 않던 KST 자정 경계. hourCycle:
+  // "h23"이 없으면 자정이 "24:00"으로 나오는 회귀를 잡는다.
+  it("formatKstTime은 KST 자정 경계에서 24:00이 아니라 00:00이다", () => {
+    expect(formatKstTime(new Date("2026-09-24T15:00:00Z"))).toBe("00:00");
+    expect(formatKstTime(new Date("2026-09-24T14:59:00Z"))).toBe("23:59");
+  });
 });

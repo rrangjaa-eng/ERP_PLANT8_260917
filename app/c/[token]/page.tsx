@@ -14,7 +14,7 @@ export async function generateMetadata({ params }: { params: Promise<{ token: st
   const { token } = await params;
   const result = await loadIntakeOnce(token);
   return {
-    title: `${result.kind === "closed" ? "링크 닫힘" : "이름 고르기"} · 기타소득 지급 확인`,
+    title: `${result.kind === "closed" ? "링크 닫힘" : result.kind === "notFound" ? "링크 없음" : "이름 고르기"} · 기타소득 지급 확인`,
     robots: { index: false, follow: false },
   };
 }

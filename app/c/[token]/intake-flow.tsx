@@ -11,6 +11,7 @@ import {
   isDefiniteResult,
   recheckOutcome,
   resolveHistoryEntry,
+  submitBlockedReason,
   type HistoryStep,
   type RecheckTrigger,
 } from "./flow-rules";
@@ -518,7 +519,7 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
                 type="button"
                 data-row-id={row.rowId}
                 className={styles.pickRow}
-                disabled={pendingRowId !== null}
+                aria-disabled={pendingRowId !== null || undefined}
                 onClick={() => void pick(row)}
               >
                 <span>{row.maskedName}</span>
@@ -624,11 +625,13 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
                 등록한 번호가 다르면 {contactLine}에 전화해 주세요
               </p>
             ) : null}
-            {!disabled && step.line ? (
-              <p id={resultLineId} className={styles.blockedDanger}>
-                {LINE_TEXT[step.line]}
-              </p>
-            ) : null}
+            <div aria-live="polite">
+              {!disabled && step.line ? (
+                <p id={resultLineId} className={styles.blockedDanger}>
+                  {LINE_TEXT[step.line]}
+                </p>
+              ) : null}
+            </div>
             {/* 잠김 알림 묶음 — aria-live 없음(포커스 이동이 낭독을 대신한다, 4차). */}
             <div id={LOCK_GROUP_ID} tabIndex={-1}>
               {lock?.kind === "hard" ? (
@@ -771,12 +774,7 @@ function IntakeForm({
   if (!hasSignature) missingFields.push("서명");
 
   const canSubmit = missingFields.length === 0;
-  const blockedReason =
-    missingFields.length === 1 && missingFields[0] === "서명"
-      ? "서명을 해 주세요"
-      : missingFields.length > 0
-        ? `${missingFields.join(" · ")}을 채우면 제출할 수 있습니다`
-        : undefined;
+  const blockedReason = submitBlockedReason(missingFields);
 
   async function submit() {
     const signaturePngBase64 = signatureRef.current?.toPngBase64() ?? "";

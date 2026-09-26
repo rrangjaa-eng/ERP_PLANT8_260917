@@ -40,6 +40,16 @@ export function invalidSubmitField(fields: readonly string[]): "signature" | "ph
   return "rrn";
 }
 
+// E4 제출 막힘 이유 — 빈 칸만 나열하고 마지막 항목의 받침에 맞춰 을/를을 붙인다.
+export function submitBlockedReason(missing: readonly string[]): string | undefined {
+  if (missing.length === 0) return undefined;
+  if (missing.length === 1 && missing[0] === "서명") return "서명을 해 주세요";
+  const last = missing[missing.length - 1] ?? "";
+  const code = last.charCodeAt(last.length - 1) - 0xac00;
+  const particle = code >= 0 && code <= 11171 && code % 28 !== 0 ? "을" : "를";
+  return `${missing.join(" · ")}${particle} 채우면 제출할 수 있습니다`;
+}
+
 export type RecheckTrigger = "visible" | "button";
 export type RecheckOutcome = {
   next: "closed" | "open" | "shortLock" | "stay" | "networkError";

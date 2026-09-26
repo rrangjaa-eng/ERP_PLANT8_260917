@@ -12,6 +12,10 @@ test.describe.configure({ mode: "serial" });
 
 async function signAt(page: Page) {
   const canvas = page.getByRole("application", { name: "서명" });
+  // 폰 375×800에서는 sticky 제출 줄이 뷰포트 바닥에 붙어 캔버스 아래쪽과
+  // 겹칠 수 있다(문서 높이가 뷰포트보다 크다) — 맨 아래로 스크롤해 캔버스를
+  // sticky 줄 위 정상 위치로 옮긴 뒤 그린다(실제 사용자도 이렇게 본다).
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   const box = await canvas.boundingBox();
   if (!box) throw new Error("서명 캔버스를 찾지 못했다");
   const startX = box.x + box.width * 0.2;
@@ -46,22 +50,45 @@ test("QR 진입 → 이름 고르기 → 전화번호 확인 → 입력·서명 
   await expect(page.getByText("이름을 골라 주세요 · 2명")).toBeVisible();
   await expect(page.getByText("김*늘")).toBeVisible();
   await expect(page.getByText("이*윤")).toBeVisible();
+  // U12 — E2 문의 줄의 번호는 tel: 링크다.
+  await expect(page.locator('a[href="tel:021234567"]').first()).toBeVisible();
+  // U15 — 화면에 「이름」 단독 <label>이 없다(E3의 정적 이름표는 orphan label이 아니다).
+  await expect(page.locator("label", { hasText: /^이름$/ })).toHaveCount(0);
 
   await page.getByText("김*늘").click();
   await expect(page.getByLabel("전화번호 뒤 4자리")).toBeVisible();
+  // U14 — 이름 고르기를 지나도 제목(h1)이 그대로 있다.
+  await expect(page.getByRole("heading", { name: "기타소득 지급 확인" })).toBeVisible();
+  // U8 — 「다른 이름 고르기」는 ui/button Button(variant="tertiary")다.
+  await expect(page.getByRole("button", { name: "다른 이름 고르기" })).toHaveClass(/tertiary/);
   await page.getByLabel("전화번호 뒤 4자리").fill("7730");
+  // U1 — 「전화번호 확인」은 1차(primary) 버튼이다.
+  await expect(page.getByRole("button", { name: "전화번호 확인" })).toHaveClass(/primary/);
   await page.getByRole("button", { name: "전화번호 확인" }).click();
 
   await expect(page.getByText("갤럭시 탭 S10 1개")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "기타소득 지급 확인" })).toBeVisible();
+  // U12 — E4 경품 아래 문의 줄도 tel: 링크다.
+  await expect(page.locator('a[href="tel:021234567"]').first()).toBeVisible();
   await page.locator("#name").fill("김하늘");
   await page.locator("#rrn-front").fill("930412");
   await page.locator("#rrn-back").fill("2123458");
   await page.locator("#phone").fill("010-4821-7730");
   await page.getByRole("checkbox").check();
+  // U8 — 「전문 보기」도 Button(variant="tertiary")다.
+  await expect(page.getByRole("button", { name: "전문 보기" })).toHaveClass(/tertiary/);
   await signAt(page);
+  // U8 — 서명이 있으면 뜨는 「다시 쓰기」도 마찬가지다.
+  await expect(page.getByRole("button", { name: "다시 쓰기" })).toHaveClass(/tertiary/);
+  // U1 — 「확인증 제출」도 1차 버튼이다.
+  await expect(page.getByRole("button", { name: "확인증 제출" })).toHaveClass(/primary/);
   await page.getByRole("button", { name: "확인증 제출" }).click();
 
   await expect(page.getByText("제출되었습니다 · 다시 제출할 수 없습니다")).toBeVisible();
+  // U14 — 제출 뒤에도 제목이 그대로다.
+  await expect(page.getByRole("heading", { name: "기타소득 지급 확인" })).toBeVisible();
+  // U12 — E5 결과 블록의 연락 줄도 tel: 링크다.
+  await expect(page.locator('a[href="tel:021234567"]').first()).toBeVisible();
 
   // 새로 고침 → E2부터(메모리만) → 김*늘 → 7730 → 이미 제출하셨습니다
   await page.reload();
@@ -70,6 +97,36 @@ test("QR 진입 → 이름 고르기 → 전화번호 확인 → 입력·서명 
   await page.getByLabel("전화번호 뒤 4자리").fill("7730");
   await page.getByRole("button", { name: "전화번호 확인" }).click();
   await expect(page.getByText("이미 제출하셨습니다")).toBeVisible();
+  // U14 — E6-a에서도 제목이 그대로다.
+  await expect(page.getByRole("heading", { name: "기타소득 지급 확인" })).toBeVisible();
+});
+
+test("U6 — 이름을 고르는 동안 목록 전체가 비활성이고 누른 행에 …가 뜬다", async ({ page }) => {
+  const { link } = await createCertEvent({
+    name: "모바일E2E U6",
+    winners: [
+      { name: "강하준", phone: "010-1234-5678", prizeName: "무선 마우스", quantity: 1, delivery: "onsite" },
+      { name: "윤서아", phone: "010-8765-4321", prizeName: "무선 마우스", quantity: 1, delivery: "onsite" },
+    ],
+  });
+
+  await page.goto(link);
+  await expect(page.getByText("강*준")).toBeVisible();
+
+  await page.route(link, async (route, request) => {
+    if (request.method() === "POST") {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    await route.continue();
+  });
+
+  await page.getByRole("button", { name: "강*준" }).click();
+
+  await expect(page.getByRole("button", { name: "강*준" }).getByText("…")).toBeVisible();
+  await expect(page.getByRole("button", { name: "윤*아" })).toBeDisabled();
+
+  await page.unroute(link);
+  await expect(page.getByLabel("전화번호 뒤 4자리")).toBeVisible();
 });
 
 test("규약 C1 직접 POST — 기능이 꺼진 동안 진짜 요청을 다시 보내도 아무것도 읽거나 쓰지 않는다", async ({ page }) => {

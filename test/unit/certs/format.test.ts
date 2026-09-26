@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   formatContactPhone,
   formatPhone,
+  formatSubmittedAtKst,
   maskName,
   maskRrn,
   normalizeContactPhone,
@@ -86,6 +87,12 @@ describe("domain/certs/format", () => {
   describe("maskRrn", () => {
     it("앞 6 + 성별 코드 + 별 6개", () => {
       expect(maskRrn("9304122123458")).toBe("930412-2******");
+    });
+  });
+
+  describe("formatSubmittedAtKst (U13)", () => {
+    it("ISO 문자열을 KST 고정 YYYY-MM-DD HH:mm로 그린다(로케일 의존 없음)", () => {
+      expect(formatSubmittedAtKst("2026-09-20T09:42:00.000Z")).toBe("2026-09-20 18:42");
     });
   });
 });

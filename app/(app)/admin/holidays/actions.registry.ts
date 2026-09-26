@@ -8,3 +8,11 @@ registerAction({
   action: "write",
   dtoName: null,
 });
+
+// 04.2-12: 수동 추가(되돌리기도 같은 액션). 돌려주는 값은 날짜·연도뿐이다.
+registerAction({
+  name: "addHolidayAction",
+  menu: "admin.holidays",
+  action: "write",
+  dtoName: null,
+});

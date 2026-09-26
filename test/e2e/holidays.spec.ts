@@ -92,6 +92,9 @@ test.describe("공휴일 관리 /admin/holidays", () => {
       await expect(page.getByText(/^후보 · 공휴일 \d+일$/)).toBeVisible();
       await expect(page.getByRole("button", { name: /공휴일 확정/ })).toHaveCount(0);
       await expect(page.getByRole("columnheader", { name: "동작" })).toHaveCount(0);
+      await expect(page.getByRole("link", { name: "공휴일 추가" })).toHaveCount(0);
+      expect((await page.goto(`/admin/holidays?year=${NEXT_YEAR}&new=1`))?.status()).toBe(200);
+      await expect(page.getByLabel("날짜")).toHaveCount(0);
     } finally {
       await setRoleArchived(SYSTEM_VIEWER, tempRoleId, true);
     }
@@ -224,5 +227,60 @@ test.describe("공휴일 표·확정 버튼의 상태", () => {
     await expect(confirm).toHaveCount(0);
     await expect(page.getByText(/^확정 · .* · 공휴일 \d+일$/)).toBeVisible();
     await expect(page.getByText("확정하지 못했습니다 · 다시 시도", { exact: true })).toHaveCount(0);
+  });
+});
+
+// 04.2-12 Task 1 — 수동 추가 트레이서(UI-SPEC S2-d · Copywriting S2).
+const ADDED_DATE = `${NEXT_YEAR}-07-07`;
+const ADDED_NAME = "제22대 국회의원 선거일 테스트";
+
+function nextIsoDate(date: string): string {
+  const next = new Date(`${date}T00:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString().slice(0, 10);
+}
+
+test.describe("공휴일 추가(04.2-12)", () => {
+  test.beforeAll(async () => {
+    await resetConfirmation(NEXT_YEAR);
+    await db.delete(holidays).where(eq(holidays.date, ADDED_DATE));
+  });
+
+  test.afterAll(async () => {
+    await db.delete(holidays).where(eq(holidays.date, ADDED_DATE));
+  });
+
+  test("필터 줄 `공휴일 추가` → ?new=1 폼 → 미래 선거일 → 표에 새 행 + 토스트, 폼이 열린 동안 확정 버튼이 없다", async ({
+    page,
+  }) => {
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/holidays?year=${NEXT_YEAR}`);
+    await expect(page.getByRole("button", { name: `${NEXT_YEAR}년 공휴일 확정` })).toBeVisible();
+
+    await page.getByRole("link", { name: "공휴일 추가", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/holidays\\?year=${NEXT_YEAR}&new=1$`));
+    await expect(page.getByRole("link", { name: "공휴일 추가", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /공휴일 확정/ })).toHaveCount(0);
+
+    const date = page.getByLabel("날짜");
+    await expect(date).toHaveAttribute("type", "date");
+    await expect(date).toHaveAttribute("min", nextIsoDate(toKstDate(new Date())));
+    const kind = page.getByLabel("종류");
+    await expect(kind.locator("option")).toHaveText(["임시공휴일", "선거일"]);
+    await expect(kind).toHaveValue("temporary");
+
+    await date.fill(ADDED_DATE);
+    await kind.selectOption({ label: "선거일" });
+    await page.getByLabel("이름").fill(ADDED_NAME);
+    await page.getByRole("button", { name: "공휴일 추가", exact: true }).click();
+
+    await expect(page.getByText(`공휴일 추가 · ${ADDED_DATE} 추가됨`, { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/admin/holidays\\?year=${NEXT_YEAR}(&added=${ADDED_DATE})?$`));
+    await expect(page.getByLabel("날짜")).toHaveCount(0);
+    const cell = page.getByRole("cell", { name: ADDED_NAME, exact: true });
+    await expect(cell).toBeVisible();
+    expect(await cell.evaluate((el) => getComputedStyle(el).textOverflow)).not.toBe("ellipsis");
+    await expect(page.getByRole("button", { name: `${NEXT_YEAR}년 공휴일 확정` })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/admin/holidays\\?year=${NEXT_YEAR}$`), { timeout: 8000 });
   });
 });

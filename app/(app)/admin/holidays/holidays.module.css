@@ -5,6 +5,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: var(--s-4);
   margin: var(--s-3) 0;
 }
@@ -19,6 +20,14 @@
 }
 
 .yearLink {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: var(--underline-offset);
+}
+
+.addLink {
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   color: var(--accent);
@@ -94,8 +103,41 @@
   overflow-wrap: anywhere;
 }
 
+/* 04.2-12 추가 폼(S2-d) — ui/form 칸 안의 네이티브 입력·선택. projects.module.css
+   .textInput과 같은 모양(§7-2). */
+.form {
+  margin: var(--s-3) 0 var(--s-6);
+}
+
+.textInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 var(--s-2);
+  border: var(--line-w) solid var(--line-ui);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+}
+
+.textInput:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
 /* §3 터치 목표: 폰에서 짧은 글자 링크의 히트 영역만 44×44로 키운다. */
 @media (max-width: 699.98px) {
+  .addLink {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+    padding: 0 var(--s-2);
+  }
+
   .yearLink {
     display: inline-flex;
     align-items: center;

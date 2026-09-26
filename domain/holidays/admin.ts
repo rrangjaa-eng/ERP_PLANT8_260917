@@ -5,15 +5,19 @@ import { toKstDate } from "@/domain/holidays/business-day";
 import {
   ensureHolidayCandidates,
   ensureHolidayCandidatesLocked,
+  recomputeFutureSubstitutes,
   withHolidayCalendarLock,
 } from "@/domain/holidays/candidates";
 import { HOLIDAY_KIND_LABELS, LunarTableRangeError, type HolidayKind } from "@/domain/holidays/rules";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import type { DbOrTx } from "@/repositories/document-counters";
 import {
+  deleteHolidayById,
+  findHolidayByDate,
   findHolidayDates,
   findYearConfirmation,
   findYearGeneration,
+  insertManualHoliday,
   insertYearConfirmation,
   listHolidaysForYear,
   listHolidayYears,
@@ -152,5 +156,81 @@ export async function confirmHolidayYear(viewer: Viewer, year: number, deps?: Co
       },
       { tx },
     );
+  });
+}
+
+export class PastHolidayDateError extends UserFacingError {
+  constructor() {
+    super("오늘이나 지난 날짜입니다 · 내일 이후 날짜를 적어 주세요");
+  }
+}
+
+export class DuplicateHolidayError extends UserFacingError {
+  constructor(existingName: string) {
+    super(`이미 공휴일입니다(${existingName}) · 다른 날짜를 적어 주세요`);
+  }
+}
+
+export class HolidayNotDeletableError extends UserFacingError {}
+
+const MANUAL_KINDS: readonly HolidayKind[] = ["temporary", "election"];
+
+export type HolidayWriteDeps = {
+  now?: Date;
+  recordAction?: typeof defaultRecordAction;
+  recompute?: typeof recomputeFutureSubstitutes;
+};
+
+export type AddHolidayInput = { date: string; kind: HolidayKind; name: string };
+
+// D-4210 「추가」: 소급 금지(오늘·과거 거부)는 화면이 아니라 이 함수가 지킨다. 표는
+// 달력 잠금 트랜잭션 하나에서만 바뀐다 — 그 해 후보 보장 → 미래 대체일 자리면 그 행을
+// 비운다(규칙이 옮긴다) → 수동 행 → 원래 해 Y-1부터 표 끝까지 재계산 한 번 → 끌 수 없는
+// `holiday_change` 로그(D-4220). 로그가 실패하면 행과 재계산이 함께 되돌려진다.
+export async function addHoliday(
+  viewer: Viewer,
+  input: AddHolidayInput,
+  deps?: HolidayWriteDeps,
+): Promise<{ id: string; date: string; year: number }> {
+  if (!(await can(viewer, HOLIDAYS_MENU, "write"))) {
+    throw new HolidayForbiddenError("공휴일을 추가할 권한이 없습니다.");
+  }
+  if (!MANUAL_KINDS.includes(input.kind)) {
+    throw new UserFacingError("임시공휴일·선거일만 추가할 수 있습니다");
+  }
+  const now = deps?.now ?? new Date();
+  const today = toKstDate(now);
+  if (input.date <= today) throw new PastHolidayDateError();
+  const kind = input.kind as "temporary" | "election";
+  const year = Number(input.date.slice(0, 4));
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  const recompute = deps?.recompute ?? recomputeFutureSubstitutes;
+
+  return withHolidayCalendarLock(async (tx) => {
+    await ensureHolidayCandidatesLocked(year, tx, { now: () => now });
+    const existing = await findHolidayByDate(viewer, input.date, tx);
+    if (existing) {
+      if (existing.kind !== "substitute") throw new DuplicateHolidayError(existing.name);
+      await deleteHolidayById(viewer, existing.id, tx);
+    }
+    const inserted = await insertManualHoliday(
+      viewer,
+      { date: input.date, name: input.name, kind, createdBy: viewer.id },
+      tx,
+    );
+    const row = await findHolidayByDate(viewer, input.date, tx);
+    if (!inserted || !row) throw new DuplicateHolidayError(row?.name ?? "");
+    await recompute(year - 1, { today }, tx);
+    await recordAction(
+      viewer,
+      {
+        actionType: "holiday_change",
+        entity: "holiday",
+        entityId: row.id,
+        detail: { op: "add", date: input.date, name: input.name, kind },
+      },
+      { tx },
+    );
+    return { id: row.id, date: input.date, year };
   });
 }

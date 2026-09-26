@@ -291,6 +291,7 @@ Recent decisions affecting current work:
 | 260922-o2b | 코덱스 통합 디자인 리뷰 반영(결정 불필요분 F-02·04·05·07·08·09·10) | 2026-09-22 | c8b42b9 | [260922-o2b-codex-design-review-fixes](./quick/260922-o2b-codex-design-review-fixes/) |
 | 260923-odg | hook 보강: 게이트 리뷰 종료·quick 완료 = 세션 경계, 문서 커밋도 검증 스킬, 세션당 executor 1회 | 2026-09-23 | 542cafd | [260923-odg-hook](./quick/260923-odg-hook/) |
 | 260924-hgx | 이슈 #56 사람 목록 N+1 조회 제거 | 2026-09-24 | a637516 | [260924-hgx-admin-people-list-n-1-query-fix-issue-56](./quick/260924-hgx-admin-people-list-n-1-query-fix-issue-56/) |
+| 260926-fqc | 머지 훅: gh 없을 때도 문서 PR 판정(ls-remote PR 헤드 + 로컬 diff, 판정 못 하면 차단) | 2026-09-26 | 6f3943b | [260926-fqc-fix-merge-gate-docs-only-check-without-g](./quick/260926-fqc-fix-merge-gate-docs-only-check-without-g/) |
 
 ### Roadmap Evolution
 

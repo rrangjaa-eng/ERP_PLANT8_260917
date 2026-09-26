@@ -5,7 +5,7 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { insertRole } from "@/repositories/roles";
-import { upsertPermission } from "@/repositories/permissions";
+import { listPermissions, listVisibility, upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertVendor } from "@/repositories/vendors";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { addDays, kstToday } from "@/lib/kst-date";
@@ -399,8 +399,12 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
 test.describe("프로젝트 등록 폼 — 담당 PM · 팀 기본값 (결정 2)", () => {
   test("회사 범위 등록자가 폼을 열면 담당 PM은 본인, 팀은 본인 소속 팀이 골라져 있다", async ({ page }) => {
     const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E 회사 범위-${randomUUID().slice(0, 8)}`, workScope: "company" });
-    for (const action of ["view", "write"] as const) {
-      await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action, allowed: true });
+    // 기획 PM 권한·노출을 그대로 복사하고 업무 범위만 회사로 둔다.
+    for (const row of await listPermissions(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID })) {
+      await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: row.menu, action: row.action, allowed: row.allowed });
+    }
+    for (const row of await listVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID })) {
+      await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: row.infoItem, visible: row.visible });
     }
     const email = `e2e-defaults-${randomUUID()}@example.test`;
     const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 기본값 등록자", roleId: role.id });
@@ -415,7 +419,8 @@ test.describe("프로젝트 등록 폼 — 담당 PM · 팀 기본값 (결정 2)
     await expect(page).toHaveURL(/\/account$/);
     await page.goto("/projects?new=1");
 
-    await expect(page.locator("#pmUserId")).toHaveValue(userId);
-    await expect(page.locator("#teamId")).toHaveValue(team.id);
+    const form = page.locator("#project-form");
+    await expect(form.locator("#pmUserId")).toHaveValue(userId);
+    await expect(form.locator("#teamId")).toHaveValue(team.id);
   });
 });

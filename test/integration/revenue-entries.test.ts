@@ -777,15 +777,19 @@ describe("매출 쓰기 경로(04-41 · Codex #1 · ENG-D10)", () => {
       await expect(listRevenue(finance, project.id)).resolves.toBeDefined();
     });
 
-    it("액션 스키마가 YYYY-MM-DD가 아닌 entryDate를 입력 오류로 거부하고 줄을 저장하지 않는다", async () => {
+    // /qa ISSUE-002 — 빈 날짜·무효 날짜도 스키마 입력 오류가 아니라 거부 봉투의 날짜 칸으로 온다(화면이 그 셀에 그린다).
+    it.each(["", "infinity", "2026-02-30"])("액션에 entryDate %j → 거부 봉투의 그 줄 entryDate 칸 오류, 줄 0건", async (entryDate) => {
       const { project } = await setupProject();
+      const id = randomUUID();
       const result = await saveProjectLedgerAction({
         projectId: project.id,
         seenStatus: "bidding" as const,
-        revenue: { issuedEntries: [{ id: randomUUID(), isNew: true as const, entryDate: "infinity", amount: krw(1000) }] },
+        revenue: { paidEntries: [{ id, isNew: true as const, entryDate, amount: krw(1000) }] },
       });
 
-      expect(result?.validationErrors).toBeDefined();
+      const data = result?.data;
+      if (!data || !("rejected" in data)) throw new Error(`거부 봉투가 아니다: ${JSON.stringify(result)}`);
+      expect(data.rejected).toEqual({ summary: "오류 1칸 · 전부 거부", cells: [{ rowId: id, rowIndex: 0, field: "entryDate", kind: "error", reason: DATE_FORMAT }] });
       expect(await entriesOf(project.id)).toHaveLength(0);
     });
   });

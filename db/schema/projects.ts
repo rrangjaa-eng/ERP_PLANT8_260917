@@ -31,10 +31,6 @@ export const projects = pgTable(
     endDate: date("end_date"),
     // D-52: 사전 견적 = 프로젝트의 총 매출 예상가 한 칸(견적 줄 없는 프로젝트 속성, 선택 입력).
     ...moneyColumns("preEstimate"),
-    // 04-02(D-57): 매출 섹션의 계약 금액(공급가액) — PM이 쓰는 단일 칸. 부가세·
-    // 합계는 domain/revenue가 domain/money로 매번 계산해 화면에 보이고 저장하지
-    // 않는다(계약 금액 하나가 정본).
-    ...moneyColumns("contract"),
     // Eng OV-1: 전환 전 새 시스템 입력은 source='demo'뿐.
     source: text("source").notNull().default("demo"),
     customFields: jsonb("custom_fields").notNull().default({}),

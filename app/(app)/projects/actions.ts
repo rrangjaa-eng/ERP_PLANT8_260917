@@ -113,7 +113,7 @@ const revenueEntryRowSchema = z.object({
 // D-63·D-65: 클라이언트가 견적가·차익·원화 환산액·부가세·공급가 역산 필드를
 // 실어 보내도 이 스키마에 그 필드가 없어 애초에 파싱되지 않는다 — domain
 // 층이 domain/money로 다시 계산한다(PROJ-02·04-02 §7-3 (사)). 04-02 Task 2
-// ⑥·⑧ — 화면의 1차 「일괄 저장」 하나가 견적 줄 + 매출(계약 금액·발행·
+// ⑥·⑧ — 화면의 1차 「일괄 저장」 하나가 견적 줄 + 매출(발행·
 // 입금)을 같은 트랜잭션으로 저장한다. 새 1차 버튼을 만들지 않는다
 // (saveQuoteLinesAction을 이 액션으로 흡수).
 // 봉투를 함수 반환값으로 만든다 — 객체 리터럴 반환끼리는 서로의 키를 `?: undefined`로 채워
@@ -142,8 +142,6 @@ export const saveProjectLedgerAction = authedActionClient
       quoteLines: quoteLinesInputSchema.optional(),
       revenue: z
         .object({
-          contract: moneyInputSchema.optional(),
-          contractFxRateTouched: z.boolean().optional(),
           issuedEntries: z.array(revenueEntryRowSchema).optional(),
           paidEntries: z.array(revenueEntryRowSchema).optional(),
         })

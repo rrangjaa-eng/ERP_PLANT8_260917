@@ -21,10 +21,7 @@ import { withTransaction } from "@/lib/db-transaction";
 import { kstDateOf } from "@/lib/kst-date";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { scopeFor } from "@/domain/permissions/scope-for";
-import {
-  findProjectById as repoFindProjectById,
-  updateProjectContract as repoUpdateProjectContract,
-} from "@/repositories/projects";
+import { findProjectById as repoFindProjectById } from "@/repositories/projects";
 import {
   listRevenueEntriesByProject as repoListRevenueEntriesByProject,
   insertRevenueEntry as repoInsertRevenueEntry,
@@ -37,7 +34,6 @@ import { sumQuoteAmountByRevision as repoSumQuoteAmountByRevision } from "@/repo
 export class ForbiddenError extends UserFacingError {}
 export class ProjectNotFoundError extends UserFacingError {}
 
-const PROJECTS_MENU = "projects";
 const REVENUE_SETTLEMENT_MENU = "projects.revenue";
 const REVENUE_ENTITY = "revenue_entry";
 const PROJECT_ENTITY = "project";
@@ -266,9 +262,6 @@ export type RevenueEntryWriteRow = {
 };
 
 export type SaveRevenueInput = {
-  contract?: MoneyInputDto;
-  /** 환율 칸을 이번 저장에서 실제로 고쳤을 때만 true. */
-  contractFxRateTouched?: boolean;
   issuedEntries?: RevenueEntryWriteRow[];
   paidEntries?: RevenueEntryWriteRow[];
 };
@@ -326,10 +319,10 @@ async function saveEntries(
   return results;
 }
 
-// 04-02 Task 2 ③ — 쓰기는 칸별 주체가 갈린다(D-57): 계약 금액은 기존
-// "projects" write(PM), 발행·입금 줄은 새 "projects.revenue" write. 둘
-// 다 보내지 않은 그룹은 아예 건드리지 않는다 — 권한이 없는 그룹을 입력에
-// 실어 보내면 조용히 무시하지 않고 거부한다(T-04-10, 조작 방어).
+// 04-02 Task 2 ③ — 발행·입금 줄은 "projects.revenue" write로 쓴다. 보내지
+// 않은 그룹은 아예 건드리지 않는다 — 권한 없이 줄을 실어 보내면 조용히
+// 무시하지 않고 거부한다(T-04-10, 조작 방어). 계약 금액은 쓰지 않는다(04-41 ·
+// D-84 — 고객 승인된 현재 차수 합계에서 파생된다).
 // `tx`를 받으면(04-02: 견적 줄과 한 트랜잭션으로 묶는
 // domain/projects/ledger.ts) 새 트랜잭션을 열지 않는다.
 export async function saveRevenue(
@@ -341,11 +334,6 @@ export async function saveRevenue(
 ): Promise<RevenueDto | null> {
   const canFn = deps?.can ?? defaultCan;
 
-  if (input.contract) {
-    if (!(await canFn(viewer, PROJECTS_MENU, "write"))) {
-      throw new ForbiddenError("계약 금액 저장 권한이 없습니다.");
-    }
-  }
   if (input.issuedEntries || input.paidEntries) {
     if (!(await canFn(viewer, REVENUE_SETTLEMENT_MENU, "write"))) {
       throw new ForbiddenError("발행·입금 줄 저장 권한이 없습니다.");
@@ -353,23 +341,6 @@ export async function saveRevenue(
   }
 
   const runSave = async (innerTx: DbOrTx): Promise<void> => {
-    if (input.contract) {
-      const columns = moneyToColumns(input.contract);
-      if (columns.currency !== "KRW" && input.contractFxRateTouched) {
-        await rememberFxRate(columns.currency, Number(columns.fxRate), undefined, innerTx);
-      }
-      await repoUpdateProjectContract(
-        viewer,
-        projectId,
-        {
-          contractCurrency: columns.currency,
-          contractForeignAmount: columns.foreignAmount,
-          contractFxRate: columns.fxRate,
-          contractAmountKrw: columns.amountKrw,
-        },
-        innerTx,
-      );
-    }
     if (input.issuedEntries) await saveEntries(viewer, projectId, "issue", input.issuedEntries, innerTx);
     if (input.paidEntries) await saveEntries(viewer, projectId, "payment", input.paidEntries, innerTx);
   };

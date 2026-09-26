@@ -53,6 +53,9 @@ export function ProjectsFilterBar({
   const toRef = useRef<HTMLInputElement>(null);
   // 폰(<700) 「필터」 disclosure — 기본 접힘. 기간 칸 서버 오류가 있으면 오류 한 줄이 보이게 펼친 채 연다.
   const [expanded, setExpanded] = useState(Boolean(periodErrors.from || periodErrors.to));
+  // 검색 칸은 폰 자리(맨 위)와 PC 자리(기간 뒤) 둘에 그리고 700 중단점에서 하나만 보인다 — 두 칸이 한 값을 쓰고
+  // 제출 값은 숨은 `q` 하나로만 싣는다(보이지 않는 칸의 낡은 값이 실리지 않게).
+  const [query, setQuery] = useState(defaultValues.q ?? "");
   const summary = filterSummary({
     year: defaultValues.year === "all" ? "all" : Number(defaultValues.year),
     statusLabel: statusOptions.find((option) => option.value === defaultValues.status)?.label ?? "전체 상태",
@@ -86,6 +89,26 @@ export function ProjectsFilterBar({
     formRef.current?.requestSubmit();
   }
 
+  function searchField(id: string, slotClassName: string | undefined) {
+    return (
+      <div className={`${styles.selectLabel} ${styles.searchField} ${slotClassName ?? ""}`}>
+        <label htmlFor={id}>검색</label>
+        <input
+          id={id}
+          type="text"
+          className={styles.textInput}
+          value={query}
+          onChange={(event) => setQuery(event.currentTarget.value)}
+          onBlur={(event) => {
+            // 값이 바뀌었을 때만 제출한다(기간 묶음과 같은 규칙) — 그대로 나가면 Tab이 다음 컨트롤로 간다.
+            if (event.currentTarget.value !== (defaultValues.q ?? "")) formRef.current?.requestSubmit();
+          }}
+          onKeyDown={submitOnEnter}
+        />
+      </div>
+    );
+  }
+
   // 텍스트 칸이 여럿이고 제출 버튼이 없는 폼은 브라우저가 Enter로 제출하지 않는다 — Enter는 직접 제출한다.
   function submitOnEnter(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key !== "Enter") return;
@@ -97,26 +120,33 @@ export function ProjectsFilterBar({
     // autoComplete="off": 이 폼 제출은 전체 페이지 이동이라, 뒤로 가기 때
     // 브라우저가 떠나기 직전 고른 값을 칸에 되살려 URL과 어긋난다(/qa ISSUE-001).
     <form ref={formRef} method="get" autoComplete="off" className={styles.filterFields} aria-label="프로젝트 필터">
-      {/* DR-26 — 폰 첫 화면: 검색(전폭) → 「필터」 · 요약 · 1차 → (펼치면) 네 칸. PC(≥700)에서는 이 둘이 display: none이다. */}
-      <div className={styles.filterToggle}>
-        <Button
-          type="button"
-          className={styles.filterToggleButton}
-          aria-expanded={expanded}
-          aria-controls={FILTER_FIELDS_ID}
-          onClick={() => setExpanded((open) => !open)}
-        >
-          필터
-        </Button>
+      {/* DR-26 — 폰 첫 화면: 검색(전폭) → 「필터」 · 요약 · 1차 → (펼치면) 네 칸 → 필터 지우기. PC(≥700): 네 칸 → 검색 →
+          필터 지우기 → 1차. 포커스 순서 = 시각 순서(SYSTEM.md §10)라 CSS 순서 바꾸기 대신 DOM이 곧 순서다 — 검색과 1차는
+          폰 자리 · PC 자리 둘에 그리고 700 중단점에서 하나만 보인다(display: none — 탭 순서 · 접근성 트리에서도 빠진다,
+          Pagination 넓은 창 · 폰 창 선례). 「필터」 · 요약 줄은 폰에만 있다. */}
+      {searchField("q", styles.phoneSlot)}
+      <div className={styles.filterBar}>
+        <div>
+          <Button
+            type="button"
+            className={styles.filterToggleButton}
+            aria-expanded={expanded}
+            aria-controls={FILTER_FIELDS_ID}
+            onClick={() => setExpanded((open) => !open)}
+          >
+            필터
+          </Button>
+        </div>
+        <p className={styles.filterSummary} data-testid="filter-summary">
+          {summary.map((part, index) => (
+            <Fragment key={`${index}-${part}`}>
+              {index > 0 ? " · " : null}
+              <span className={styles.filterSummaryPart}>{part}</span>
+            </Fragment>
+          ))}
+        </p>
+        {primaryAction ? <div className={styles.primarySlot}>{primaryAction}</div> : null}
       </div>
-      <p className={styles.filterSummary} data-testid="filter-summary">
-        {summary.map((part, index) => (
-          <Fragment key={`${index}-${part}`}>
-            {index > 0 ? " · " : null}
-            <span className={styles.filterSummaryPart}>{part}</span>
-          </Fragment>
-        ))}
-      </p>
 
       <div id={FILTER_FIELDS_ID} className={styles.detailFields} data-open={expanded}>
         <div className={styles.selectLabel}>
@@ -218,21 +248,8 @@ export function ProjectsFilterBar({
         </div>
       </div>
 
-      <div className={`${styles.selectLabel} ${styles.searchField}`}>
-        <label htmlFor="q">검색</label>
-        <input
-          id="q"
-          name="q"
-          type="text"
-          className={styles.textInput}
-          defaultValue={defaultValues.q ?? ""}
-          onBlur={(event) => {
-            // 값이 바뀌었을 때만 제출한다(기간 묶음과 같은 규칙) — 그대로 나가면 Tab이 다음 컨트롤로 간다.
-            if (event.currentTarget.value !== (defaultValues.q ?? "")) formRef.current?.requestSubmit();
-          }}
-          onKeyDown={submitOnEnter}
-        />
-      </div>
+      {searchField("q-wide", styles.wideSlot)}
+      <input type="hidden" name="q" value={query} />
 
       {sort?.key ? <input type="hidden" name="sort" value={sort.key} /> : null}
       {sort?.dir ? <input type="hidden" name="dir" value={sort.dir} /> : null}
@@ -243,7 +260,7 @@ export function ProjectsFilterBar({
         </Link>
       ) : null}
 
-      {primaryAction ? <div className={styles.primarySlot}>{primaryAction}</div> : null}
+      {primaryAction ? <div className={`${styles.primarySlot} ${styles.wideSlot}`}>{primaryAction}</div> : null}
     </form>
   );
 }

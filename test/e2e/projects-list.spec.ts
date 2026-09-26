@@ -8,6 +8,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { teams, users } from "@/db/schema";
 import { createProject } from "@/domain/projects";
+import { createOrgUnit, createTeam } from "@/domain/org";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { kstToday, kstYear } from "@/lib/kst-date";
 
@@ -504,6 +505,26 @@ function visualOrderViolations(stops: FocusStop[]): string[] {
   return bad;
 }
 
+
+// 감사 F1 · F2 재현용 긴 팀 이름(24자). 다른 스펙의 폭 측정에 끼지 않게 테스트가 끝나면 보관한다.
+const LONG_TEAM_NAME = "경영관리본부기획운영지원팀서울북부권역제이파트";
+
+async function withLongTeam(run: (teamId: string) => Promise<void>) {
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E긴팀본부-${randomUUID().slice(0, 8)}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: LONG_TEAM_NAME });
+  try {
+    await run(team.id);
+  } finally {
+    await db.update(teams).set({ archivedAt: new Date(), archivedBy: "e2e" }).where(eq(teams.id, team.id));
+  }
+}
+
+type Box = { left: number; right: number; top: number; bottom: number };
+
+function overlaps(a: Box, b: Box): boolean {
+  return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+}
+
 test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)", () => {
   test("검색 칸에서 값을 바꾸지 않고 Tab으로 나가면 다시 로드되지 않고 다음 컨트롤로 간다(바꾸면 제출)", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -566,5 +587,70 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
     const wide = await tabWalk(page, 8);
     expect(wide.map((stop) => stop.name)).toEqual(["상태", "팀", "연도", "기간", "기간 끝", "검색", "필터 지우기", "프로젝트 등록"]);
     expect(visualOrderViolations(wide)).toEqual([]);
+  });
+
+  test("(F1) 폰 375 · 320에서 기간 · 긴 팀 이름 요약이 ` · `에서만 줄바꿈하고 「필터」 · 「프로젝트 등록」 · 「필터 지우기」와 겹치지 않는다", async ({ page }) => {
+    const year = kstYear(new Date());
+    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID, withTeam: true });
+    const pmUserId = await findUserIdByEmail(pm.email);
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E긴요약-${randomUUID()}`, normalizedName: `e2e긴요약-${randomUUID()}` });
+    await login(page, pm);
+    await withLongTeam(async (teamId) => {
+      // 목록이 비지 않아야 1차 「프로젝트 등록」이 필터 줄에 있다(none 갈래는 1차를 빼고 빈 행이 행동을 준다).
+      await createProject(SYSTEM_VIEWER, {
+        clientId: vendor.id,
+        teamId,
+        pmUserId,
+        name: `E2E긴요약-${randomUUID().slice(0, 8)}`,
+        startDate: `${year}-09-05`,
+        endDate: `${year}-09-20`,
+      });
+      for (const width of [375, 320]) {
+        await page.setViewportSize({ width, height: 812 });
+        await page.goto(`/projects?teamId=${teamId}&from=${year}-09-01&to=${year}-10-31`);
+        const summary = page.getByTestId("filter-summary");
+        // loading.tsx 스트리밍이 끝나 필터 줄이 드러난 뒤에 잰다.
+        await expect(summary).toBeVisible();
+        await expect(page.getByRole("link", { name: "프로젝트 등록" })).toBeVisible();
+        await expect(summary).toContainText(LONG_TEAM_NAME);
+        await expect(summary).toContainText(`${year}-09-01 ~ ${year}-10-31`);
+        const m = await page.evaluate(() => {
+          const box = (el: Element | null | undefined) => {
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+          };
+          const summaryEl = document.querySelector("[data-testid=filter-summary]")!;
+          const visible = (selector: string) =>
+            [...document.querySelectorAll(selector)].find((el) => el.getClientRects().length > 0 && (el as HTMLElement).offsetParent !== null);
+          const link = (text: string) => [...document.querySelectorAll("form a")].find((a) => a.textContent === text && a.getClientRects().length > 0);
+          return {
+            summary: box(summaryEl)!,
+            parts: [...summaryEl.querySelectorAll("span")].map((span) => ({ text: span.textContent, lines: span.getClientRects().length, ...box(span)! })),
+            ellipsis: getComputedStyle(summaryEl).textOverflow,
+            toggle: box(visible("button[aria-controls]")),
+            primary: box(link("프로젝트 등록")),
+            clear: box(link("필터 지우기")),
+            scrollWidth: document.documentElement.scrollWidth,
+            clientWidth: document.documentElement.clientWidth,
+          };
+        });
+        expect(m.scrollWidth, `${width} 가로 스크롤`).toBeLessThanOrEqual(m.clientWidth);
+        expect(m.ellipsis).not.toBe("ellipsis");
+        expect(m.primary, `${width} 1차`).not.toBeNull();
+        expect(m.clear, `${width} 필터 지우기`).not.toBeNull();
+        for (const part of m.parts) {
+          expect(part.lines, `${width} ${part.text} 값 안 줄바꿈`).toBe(1);
+          expect(part.left, `${width} ${part.text} 왼쪽`).toBeGreaterThanOrEqual(m.summary.left - 0.5);
+          expect(part.right, `${width} ${part.text} 요약 밖`).toBeLessThanOrEqual(m.summary.right + 0.5);
+          for (const [name, other] of [["필터", m.toggle], ["프로젝트 등록", m.primary], ["필터 지우기", m.clear]] as const) {
+            expect(other && overlaps(part, other), `${width} ${part.text} ↔ ${name}`).toBe(false);
+          }
+        }
+        for (const [name, other] of [["필터", m.toggle], ["프로젝트 등록", m.primary], ["필터 지우기", m.clear]] as const) {
+          expect(other && overlaps(m.summary, other), `${width} 요약 ↔ ${name}`).toBe(false);
+        }
+      }
+    });
   });
 });

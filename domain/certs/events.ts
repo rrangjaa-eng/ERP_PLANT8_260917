@@ -24,7 +24,7 @@ const createEventInputSchema = z.object({
     .array(
       z.object({
         name: z.string().min(1).max(40),
-        phone: z.string().refine((v) => normalizePhone(v) !== null, "휴대전화 형식이 아닙니다"),
+        phone: z.string().refine((v) => normalizePhone(v) !== null, "휴대전화 형식 아님 · 번호 확인"),
         distinguishLabel: z.string().max(10).optional(),
         prizeName: z.string().min(1).max(80),
         quantity: z.coerce.number().int().min(1),
@@ -51,7 +51,7 @@ export async function createEvent(
 ): Promise<CreateEventResult> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, CERT_EVENTS_MENU, "write"))) {
-    throw new ForbiddenError("확인증 행사 등록 권한이 없습니다.");
+    throw new ForbiddenError("확인증 행사 등록 권한 없음");
   }
 
   const parsed = createEventInputSchema.parse(input);

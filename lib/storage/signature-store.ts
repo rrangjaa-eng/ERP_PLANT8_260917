@@ -20,7 +20,7 @@ const KEY_PATTERN = /^signatures\/[A-Za-z0-9._/-]+$/;
 
 function assertValidKey(key: string): void {
   if (!KEY_PATTERN.test(key) || key.includes("..")) {
-    throw new InvalidSignatureKeyError(`서명 객체 키 형식이 올바르지 않습니다: ${key}`);
+    throw new InvalidSignatureKeyError(`서명 객체 키 형식 오류: ${key}`);
   }
 }
 
@@ -57,6 +57,6 @@ export function getSignatureStore(): SignatureStore {
     return cached;
   }
   throw new UnsupportedSignatureStoreDriverError(
-    `APP_ENV '${env.APP_ENV}'용 서명 저장소 드라이버가 없습니다 — 04.3-05가 GCS 드라이버를 더한다.`,
+    `APP_ENV '${env.APP_ENV}'용 서명 저장소 드라이버 없음 — 04.3-05가 GCS 드라이버를 더한다`,
   );
 }

@@ -1,7 +1,7 @@
 import type { DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import type { HalfPeriod, LeaveKind } from "@/domain/leave/days";
-import type { AnnualBalanceLine, MonthlyBalanceLine, ResignationBalance } from "@/domain/leave/balance";
+import type { AnnualBalanceLine, MonthlyBalanceLine, RequestBalance, ResignationBalance } from "@/domain/leave/balance";
 
 // 04.1(ROADMAP 기준 5): 연차 DTO — 필드 전부 leave.value.
 
@@ -70,14 +70,7 @@ export const LEAVE_BALANCE_DTO_SPEC: DtoSpec<LeaveBalanceDto, LeaveBalanceDto> =
 
 // 결재자 · 신청 미리보기용 잔고 행 재료(CEO-9) — 입사일 · 퇴직일 · 두 남음의 합계 필드가
 // 명세에 없다. `monthlyRemaining`은 월차 줄(D4)이 없거나 입사일이 없으면 null(ENG-11).
-export type LeaveRequestBalanceDto = {
-  annualRemaining: number;
-  monthlyRemaining: number | null;
-  pending: number;
-  thisRequest: number;
-  plannedDeduction: { monthly: number; annual: number };
-  over: number;
-};
+export type LeaveRequestBalanceDto = RequestBalance;
 
 export const LEAVE_REQUEST_BALANCE_DTO_SPEC: DtoSpec<LeaveRequestBalanceDto, LeaveRequestBalanceDto> = {
   fields: [
@@ -87,6 +80,27 @@ export const LEAVE_REQUEST_BALANCE_DTO_SPEC: DtoSpec<LeaveRequestBalanceDto, Lea
     { key: "thisRequest", from: "thisRequest", infoItem: "leave.value" },
     { key: "plannedDeduction", from: "plannedDeduction", infoItem: "leave.value" },
     { key: "over", from: "over", infoItem: "leave.value" },
+  ],
+};
+
+// 관리자 사람 상세의 조정 기록(CX-R2) — 사람 id · 작성자 id · 회계연도는 싣지 않는다.
+export type LeaveAdjustmentDto = {
+  id: string;
+  kind: "annual" | "monthly";
+  quarters: number;
+  reason: string;
+  createdAt: Date;
+  createdByName: string;
+};
+
+export const LEAVE_ADJUSTMENT_DTO_SPEC: DtoSpec<LeaveAdjustmentDto, LeaveAdjustmentDto> = {
+  fields: [
+    { key: "id", from: "id", infoItem: "leave.value" },
+    { key: "kind", from: "kind", infoItem: "leave.value" },
+    { key: "quarters", from: "quarters", infoItem: "leave.value" },
+    { key: "reason", from: "reason", infoItem: "leave.value" },
+    { key: "createdAt", from: "createdAt", infoItem: "leave.value" },
+    { key: "createdByName", from: "createdByName", infoItem: "leave.value" },
   ],
 };
 
@@ -103,4 +117,9 @@ registerDto({
 registerDto({
   name: "leaveRequestBalance",
   fields: LEAVE_REQUEST_BALANCE_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
+});
+
+registerDto({
+  name: "leaveAdjustment",
+  fields: LEAVE_ADJUSTMENT_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
 });

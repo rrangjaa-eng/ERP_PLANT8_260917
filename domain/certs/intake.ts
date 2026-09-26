@@ -17,6 +17,7 @@ import {
   VERIFY_RATE_WINDOW_MINUTES,
   certIpHash,
   evaluateVerifyAttempt,
+  eventBudgetExceeded,
   lockStatus,
   pruneIdemEntries,
   remainingSeconds,
@@ -371,6 +372,7 @@ export async function verifyLast4(
 
     // (f) 속도 제한 — 잠근 뒤 다시 센 값이 정본이다(동시 요청이 넘지 못한다).
     const counts = await countRecentMisses(SYSTEM_VIEWER, { eventId: event.id, ipHash, since }, tx);
+    if (eventBudgetExceeded(counts)) log.warn("cert.verify_event_budget_exceeded", { eventId: event.id });
     const scope = verifyBudgetScope(counts);
     if (scope) {
       log.warn("cert.verify_throttled", { scope, eventId: event.id });

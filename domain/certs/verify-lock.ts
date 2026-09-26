@@ -130,8 +130,16 @@ export function eventMissLimit(rosterSize: number): number {
 
 export type MissCounts = { eventMisses: number; ipMisses: number; rosterSize: number };
 
+export function eventBudgetExceeded(counts: MissCounts): boolean {
+  return counts.eventMisses >= eventMissLimit(counts.rosterSize);
+}
+
+// 행사 한도를 넘으면 이 창에 틀린 적 있는 IP만 막는다(/review 결정 A) — 한 공격
+// 소스가 행사 전체의 정상 수령자를 막지 못하게. 틀린 적 없는 IP는 판정받고, 한도
+// 초과는 경보(cert.verify_event_budget_exceeded)로 드러낸다. 자리별 잠금(5 · 누적
+// 20)은 그대로라 자리당 추측 상한은 바뀌지 않는다.
 export function verifyBudgetScope(counts: MissCounts): "event" | "ip" | null {
-  if (counts.eventMisses >= eventMissLimit(counts.rosterSize)) return "event";
+  if (eventBudgetExceeded(counts) && counts.ipMisses > 0) return "event";
   if (counts.ipMisses >= VERIFY_MISS_BUDGET_PER_IP) return "ip";
   return null;
 }

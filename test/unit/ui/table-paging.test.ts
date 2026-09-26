@@ -187,8 +187,6 @@ function renderGrid(opts: { editing: boolean; rowCount?: number }) {
   const calls: Calls = { edge: [], deleted: [], moved: [], tab: [], selectAll: 0 };
   let result: UseGridKeyboardResult | undefined;
   const params = {
-    rowCount,
-    colCount: 3,
     rowIds: Array.from({ length: rowCount }, (_, index) => `id-${index + 1}`),
     colKeys: ["sort", "itemName", "unitPrice"],
     isEditableCell: () => true,

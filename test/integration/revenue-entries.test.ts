@@ -761,6 +761,35 @@ describe("매출 쓰기 경로(04-41 · Codex #1 · ENG-D10)", () => {
     });
   });
 
+  describe("매출 줄 날짜 형식(/review 항목 4)", () => {
+    const DATE_FORMAT = "날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요";
+
+    it.each(["infinity", "today", "2026-02-30", "275761-01-01"])("entryDate %s → 날짜 칸 오류로 전부 거부, 줄 0건, listRevenue는 성공한다", async (entryDate) => {
+      const finance = await createFinanceViewer();
+      const { project } = await setupProject();
+      const id = randomUUID();
+
+      const error = await rejectionOf(saveRevenue(finance, project.id, { issuedEntries: [{ id, isNew: true, entryDate, amount: krw(1000) }] }));
+
+      expect(error).toBeInstanceOf(SaveRejectedError);
+      expect((error as SaveRejectedError).formatErrors).toEqual([{ rowIndex: 0, rowId: id, field: "entryDate", label: "날짜", reason: DATE_FORMAT }]);
+      expect(await entriesOf(project.id)).toHaveLength(0);
+      await expect(listRevenue(finance, project.id)).resolves.toBeDefined();
+    });
+
+    it("액션 스키마가 YYYY-MM-DD가 아닌 entryDate를 입력 오류로 거부하고 줄을 저장하지 않는다", async () => {
+      const { project } = await setupProject();
+      const result = await saveProjectLedgerAction({
+        projectId: project.id,
+        seenStatus: "bidding" as const,
+        revenue: { issuedEntries: [{ id: randomUUID(), isNew: true as const, entryDate: "infinity", amount: krw(1000) }] },
+      });
+
+      expect(result?.validationErrors).toBeDefined();
+      expect(await entriesOf(project.id)).toHaveLength(0);
+    });
+  });
+
   describe("커밋 뒤 환율 기억 · 권한 선계산(B §1 · 04-12 규약)", () => {
     it("환율을 고친 USD 발행 줄 뒤에 거부되는 줄이 있으면 전부 거부 · 최근 환율 무변경, 그 줄 하나만이면 커밋 뒤 1380", async () => {
       const finance = await createFinanceViewer();

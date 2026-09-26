@@ -2,3 +2,4 @@ plan-eng-review 2026-09-24T17:29Z session=50195a84-be56-579e-8965-97ce2623141b
 plan-design-review 2026-09-24T18:19Z session=068f204a-6835-51be-8f13-85c2e92f86de
 review 2026-09-24T21:04Z session=20c4b81e-15d8-5afa-8c2e-9b9c01f03d8d
 plan-ceo-review 2026-09-26T14:30Z session=25b14b16-1dd5-56a1-b5a9-e6ba8cbcbd89 (훅 미로드 세션이라 수동 기록 — 보고서 docs/designs/plant8-erp-phase04.4-ceo-review-260926.md, Codex 한도로 Opus 독립 검토 대체, 한도 풀리면 Codex 재확인 필요)
+cso 2026-09-26T18:40Z session=24d39879-c21f-5c08-96cc-9841082c00b3 (--diff base 1dcfd6a, gstack-cso run 1790448072693-baea2effa74a541f partial — 헬퍼 커버리지 제출이 스키마 오류로 1회 교정 후에도 거부됨, 스캐너 미실행. 지원 결함 0건 · 수정 커밋 없음. Codex 한도(9/29)로 Opus 독립 검토 대체 — critical/high/medium 0 · low 3, Codex 재확인 필요. 이월(Phase 8 전): ①verify 대상 환경(staging/prod)과 APP_ENV 일치 확인 ②정리 실패로 남은 임시 인스턴스(운영 사본) 보존 시간 상한·알림 ③restore Job의 BETTER_AUTH_SECRET 마운트 필요성 재검토 ④0018 백필이 로그인 기록 없는 비임시 계정을 now()로 채워 「로그인함」으로 보임(설계 의도, 문서화 후보) ⑤기존 기록: WIF ref 조건·리허설 전용 최소 권한 SA)

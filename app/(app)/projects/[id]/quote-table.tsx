@@ -325,7 +325,7 @@ type StoredNewLine = {
   note: string | null;
 };
 
-function editsSnapshot(
+export function editsSnapshot(
   lines: DraftLine[],
   period: PeriodDraft | null,
   periodBase: { startDate: string | null; endDate: string | null },
@@ -450,7 +450,7 @@ function restoredNewLine(value: unknown, defaultSubcategory: string, kindCells: 
 
 // 「복원」 — 돌려받은 편집을 dirty 모양으로 병합한다(기존 줄 칸 덮기 · 새 줄 끝에 다시 만들기 · 기간 칸 값 ·
 // 총 매출 예상가 칸 값).
-function mergeRestoredEdits(
+export function mergeRestoredEdits(
   lines: DraftLine[],
   edits: Record<string, unknown>,
   defaultSubcategory: string,

@@ -69,6 +69,13 @@ describe("saveDirtyEdits / loadDirtyEdits / clearDirtyEdits", () => {
     expect(countDirtyEdits(null)).toBe(0);
   });
 
+  it("검토 8 — 기준값 키(`{owner}:base`)는 칸으로 세지 않는다(현재·이전 차수 모두)", () => {
+    const edits = { "line-1:unitPrice": 5000, "line-1:base": { version: 1 }, "period:end": "2026-11-15", "period:base": {} };
+    expect(countDirtyEdits(edits)).toBe(2);
+    const storage = createEnumerableStorage({ [dirtyStorageKey("P", "R1")]: JSON.stringify(edits) });
+    expect(findOtherRevisionDrafts(storage, "P", "R2", ["period"])).toEqual([{ revisionId: "R1", count: 1 }]);
+  });
+
   it("저장된 값이 손상된 JSON이면 null로 안전하게 처리한다(조용히 크래시하지 않는다)", () => {
     const storage = createFakeStorage();
     storage.setItem(dirtyStorageKey("project-1", "revision-1"), "{ this is not json");

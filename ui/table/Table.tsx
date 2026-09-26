@@ -155,6 +155,8 @@ export function Table<Row>({
   }
   const pages = pagination ? splitPages(displayRows.map(getRowId), { pageSize: pagination.pageSize }) : null;
   const page = pages ? clampPage(requestedPage, pages.length) : 1;
+  // 리뷰 S-1 — 보정한 쪽을 요청 쪽에도 되돌린다(줄이 다시 늘 때 사라졌던 쪽으로 튀지 않게).
+  if (pages && page !== requestedPage) setRequestedPage(page);
   const pageIds = pages ? new Set(pages[page - 1]) : null;
   const groups = pageIds ? groupRows(displayRows.filter((row) => pageIds.has(getRowId(row))), groupBy) : allGroups;
   // 쪽을 바꾼 뒤에만 범위 글자를 읽는다(첫 렌더에는 비어 있다).

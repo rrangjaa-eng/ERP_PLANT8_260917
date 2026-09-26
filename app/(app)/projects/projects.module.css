@@ -11,10 +11,82 @@
 
 .filterFields {
   display: flex;
+  flex: 1 1 auto;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--s-4);
   max-width: 100%;
+}
+
+/* 04-48(DR-26) — PC(≥700)는 필터 한 줄 그대로: 네 칸 묶음은 레이아웃에서 사라지고(칸이 곧 줄의 항목),
+   「필터」 · 요약은 그리지 않는다(접근성 트리에서도 빠진다). 1차는 줄 오른쪽 끝. */
+.detailFields {
+  display: contents;
+}
+
+.filterFields .filterToggle,
+.filterFields .filterSummary {
+  display: none;
+}
+
+.primarySlot {
+  margin-left: auto;
+}
+
+@media (max-width: 699.98px) {
+  /* 폰 첫 화면: 검색(전폭) → 「필터」 · 요약 · 1차 한 줄 → (펼치면) 상태 · 팀 · 연도 · 기간 → 필터 지우기. */
+  .filterFields {
+    gap: var(--s-2) var(--s-3);
+  }
+
+  .searchField {
+    order: -2;
+    flex-basis: 100%;
+  }
+
+  .filterFields .filterToggle {
+    display: block;
+    order: -1;
+  }
+
+  /* §3 폰 터치 목표 44×44 — 공유 Button보다 한 단계 높은 선택자. */
+  .filterFields .filterToggleButton {
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+
+  .filterFields .filterSummary {
+    display: block;
+    order: -1;
+    flex: 1 1 0;
+    min-width: 0;
+    margin: 0;
+    align-self: center;
+    font-size: var(--fs-sm);
+    color: var(--muted);
+  }
+
+  .primarySlot {
+    order: -1;
+    align-self: center;
+  }
+
+  .detailFields {
+    display: flex;
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--s-2) var(--s-3);
+  }
+
+  .detailFields[data-open="false"] {
+    display: none;
+  }
+}
+
+/* 요약은 ` · ` 값 경계에서만 줄바꿈하고 값 안에서는 꺾지 않는다 · 말줄임 없음(UI-SPEC S1 long-text). */
+.filterSummaryPart {
+  white-space: nowrap;
 }
 
 .selectLabel {
@@ -192,13 +264,6 @@
 .periodCell,
 .attribution {
   white-space: nowrap;
-}
-
-.footerCell {
-  padding: var(--cell-pad-y) var(--cell-pad-x);
-  border-top: var(--line-w-strong) solid var(--line-strong);
-  color: var(--muted);
-  font-size: var(--fs-sm);
 }
 
 /* §7-7 LOADING — 반짝임(shimmer) 없는 정적 --surface 행. */

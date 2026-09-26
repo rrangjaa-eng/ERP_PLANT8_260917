@@ -221,7 +221,9 @@ export function reconcileListYear(input: { year: string | number; from?: string;
   return "all";
 }
 
-// (RED 골격 — 04-48 Task 3)
+// 04-48(DR-26) — 폰 필터 요약: 지금 필터 값만(라벨 없음), 화면이 ` · `로 잇는다. 기간은 적힌 값 그대로 끝에.
 export function filterSummary(input: { year: number | "all"; statusLabel: string; teamLabel: string; from?: string; to?: string }): string[] {
-  return [String(input.year)];
+  const parts = [input.year === "all" ? "전체 연도" : String(input.year), input.statusLabel, input.teamLabel];
+  if (input.from || input.to) parts.push(`${input.from || "—"} ~ ${input.to || "—"}`);
+  return parts;
 }

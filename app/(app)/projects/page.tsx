@@ -160,15 +160,16 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           sort={{ key: sortKey !== "endDate" ? sortKey : undefined, dir: sortDirection !== "asc" ? sortDirection : undefined }}
           hasFilter={hasFilter}
           periodErrors={periodErrors}
+          primaryAction={
+            // 볼 수 있는 프로젝트가 하나도 없으면(none) ListEmpty가 이미 같은 「프로젝트 등록」 행동을 준다 —
+            // vendors.tsx 선례와 같은 이유로 중복 CTA를 만들지 않는다. 나머지 두 빈 갈래에서는 1차가 그대로 있다.
+            canCreate && !showCreateForm && emptyKind !== "none" ? (
+              <Link href={projectsHref({ isNew: true })} className={styles.toggle}>
+                프로젝트 등록
+              </Link>
+            ) : null
+          }
         />
-        {/* 볼 수 있는 프로젝트가 하나도 없으면(none) ListEmpty가 이미 같은 「프로젝트 등록」
-            행동을 준다 — vendors.tsx 선례와 같은 이유로 여기서도 중복 CTA를
-            만들지 않는다. 나머지 두 빈 갈래에서는 1차가 그대로 있다. */}
-        {canCreate && !showCreateForm && emptyKind !== "none" ? (
-          <Link href={projectsHref({ isNew: true })} className={styles.toggle}>
-            프로젝트 등록
-          </Link>
-        ) : null}
       </div>
 
       {total > 0 ? <ListTotals totals={totals} /> : null}

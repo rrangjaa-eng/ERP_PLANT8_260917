@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, type FocusEvent, type KeyboardEvent } from "react";
+import { Fragment, useRef, useState, type FocusEvent, type KeyboardEvent, type ReactNode } from "react";
 import Link from "next/link";
-import { parseListPeriod, periodOverlapsYear } from "@/domain/projects/list-view";
+import { Button } from "@/ui/button/Button";
+import { filterSummary, parseListPeriod, periodOverlapsYear } from "@/domain/projects/list-view";
 import styles from "./projects.module.css";
 
 // SYSTEM.md §6-1 필터 한 줄 — 네이티브 GET 폼(action-log/filter-bar.tsx와
@@ -23,6 +24,8 @@ export type ProjectFilterValues = {
 
 export type ProjectFilterOption = { value: string; label: string };
 
+const FILTER_FIELDS_ID = "project-filter-fields";
+
 export function ProjectsFilterBar({
   teams,
   statusOptions,
@@ -31,6 +34,7 @@ export function ProjectsFilterBar({
   sort,
   hasFilter,
   periodErrors = {},
+  primaryAction,
 }: {
   teams: { id: string; name: string }[];
   statusOptions: ProjectFilterOption[];
@@ -41,10 +45,21 @@ export function ProjectsFilterBar({
   hasFilter: boolean;
   /** 04-48(UX-04) — 서버가 판정한 기간 칸 오류(칸 아래 한 줄). */
   periodErrors?: { from?: string; to?: string };
+  /** 04-48(DR-26) — 오른쪽 1차 「프로젝트 등록」 자리(없으면 비움). PC는 줄 끝, 폰은 「필터」 · 요약 줄 오른쪽. */
+  primaryAction?: ReactNode;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const fromRef = useRef<HTMLInputElement>(null);
   const toRef = useRef<HTMLInputElement>(null);
+  // 폰(<700) 「필터」 disclosure — 기본 접힘. 기간 칸 서버 오류가 있으면 오류 한 줄이 보이게 펼친 채 연다.
+  const [expanded, setExpanded] = useState(Boolean(periodErrors.from || periodErrors.to));
+  const summary = filterSummary({
+    year: defaultValues.year === "all" ? "all" : Number(defaultValues.year),
+    statusLabel: statusOptions.find((option) => option.value === defaultValues.status)?.label ?? "전체 상태",
+    teamLabel: teams.find((team) => team.id === defaultValues.teamId)?.name ?? "전체 팀",
+    from: defaultValues.from,
+    to: defaultValues.to,
+  });
 
   // 04-48(엔지 리뷰 C §2 P2) — 기간 두 칸은 묶음 단위로 제출한다: 묶음의 focusout(React onBlur는 focusout으로
   // 올라온다)에서 포커스가 두 칸 밖으로 나갈 때(relatedTarget)만, 값이 처음과 달라졌을 때만. 시작일 → Tab → 종료일
@@ -82,105 +97,128 @@ export function ProjectsFilterBar({
     // autoComplete="off": 이 폼 제출은 전체 페이지 이동이라, 뒤로 가기 때
     // 브라우저가 떠나기 직전 고른 값을 칸에 되살려 URL과 어긋난다(/qa ISSUE-001).
     <form ref={formRef} method="get" autoComplete="off" className={styles.filterFields} aria-label="프로젝트 필터">
-      <div className={styles.selectLabel}>
-        <label htmlFor="status">상태</label>
-        <select
-          id="status"
-          name="status"
-          className={styles.select}
-          defaultValue={defaultValues.status ?? ""}
-          onChange={() => formRef.current?.requestSubmit()}
+      {/* DR-26 — 폰 첫 화면: 검색(전폭) → 「필터」 · 요약 · 1차 → (펼치면) 네 칸. PC(≥700)에서는 이 둘이 display: none이다. */}
+      <div className={styles.filterToggle}>
+        <Button
+          type="button"
+          className={styles.filterToggleButton}
+          aria-expanded={expanded}
+          aria-controls={FILTER_FIELDS_ID}
+          onClick={() => setExpanded((open) => !open)}
         >
-          <option value="">전체 상태</option>
-          {statusOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+          필터
+        </Button>
       </div>
+      <p className={styles.filterSummary} data-testid="filter-summary">
+        {summary.map((part, index) => (
+          <Fragment key={`${index}-${part}`}>
+            {index > 0 ? " · " : null}
+            <span className={styles.filterSummaryPart}>{part}</span>
+          </Fragment>
+        ))}
+      </p>
 
-      <div className={styles.selectLabel}>
-        <label htmlFor="teamId">팀</label>
-        <select
-          id="teamId"
-          name="teamId"
-          className={styles.select}
-          defaultValue={defaultValues.teamId ?? ""}
-          onChange={() => formRef.current?.requestSubmit()}
-        >
-          <option value="">전체 팀</option>
-          {teams.map((team) => (
-            <option key={team.id} value={team.id}>
-              {team.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className={styles.selectLabel}>
-        <label htmlFor="year">연도</label>
-        <select
-          id="year"
-          name="year"
-          className={styles.select}
-          defaultValue={defaultValues.year}
-          onChange={(event) => onYearChange(event.currentTarget.value)}
-        >
-          <option value="all">전체 연도</option>
-          {yearOptions.map((year) => (
-            <option key={year} value={year}>
-              {year}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className={styles.selectLabel}>
-        <label htmlFor="from">기간</label>
-        <div className={styles.periodFields} onBlur={onPeriodFocusOut}>
-          <input
-            ref={fromRef}
-            id="from"
-            name="from"
-            type="text"
-            inputMode="numeric"
-            placeholder="2026-09-18"
-            className={`${styles.textInput} ${styles.periodInput}`}
-            defaultValue={defaultValues.from ?? ""}
-            aria-invalid={periodErrors.from ? true : undefined}
-            aria-describedby={periodErrors.from ? "from-error" : undefined}
-            onKeyDown={submitOnEnter}
-          />
-          <span aria-hidden="true">~</span>
-          <input
-            ref={toRef}
-            id="to"
-            name="to"
-            type="text"
-            inputMode="numeric"
-            placeholder="2026-09-18"
-            aria-label="기간 끝"
-            className={`${styles.textInput} ${styles.periodInput}`}
-            defaultValue={defaultValues.to ?? ""}
-            aria-invalid={periodErrors.to ? true : undefined}
-            aria-describedby={periodErrors.to ? "to-error" : undefined}
-            onKeyDown={submitOnEnter}
-          />
+      <div id={FILTER_FIELDS_ID} className={styles.detailFields} data-open={expanded}>
+        <div className={styles.selectLabel}>
+          <label htmlFor="status">상태</label>
+          <select
+            id="status"
+            name="status"
+            className={styles.select}
+            defaultValue={defaultValues.status ?? ""}
+            onChange={() => formRef.current?.requestSubmit()}
+          >
+            <option value="">전체 상태</option>
+            {statusOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
         </div>
-        {periodErrors.from ? (
-          <p id="from-error" className={styles.fieldError}>
-            {periodErrors.from}
-          </p>
-        ) : null}
-        {periodErrors.to ? (
-          <p id="to-error" className={styles.fieldError}>
-            {periodErrors.to}
-          </p>
-        ) : null}
+
+        <div className={styles.selectLabel}>
+          <label htmlFor="teamId">팀</label>
+          <select
+            id="teamId"
+            name="teamId"
+            className={styles.select}
+            defaultValue={defaultValues.teamId ?? ""}
+            onChange={() => formRef.current?.requestSubmit()}
+          >
+            <option value="">전체 팀</option>
+            {teams.map((team) => (
+              <option key={team.id} value={team.id}>
+                {team.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className={styles.selectLabel}>
+          <label htmlFor="year">연도</label>
+          <select
+            id="year"
+            name="year"
+            className={styles.select}
+            defaultValue={defaultValues.year}
+            onChange={(event) => onYearChange(event.currentTarget.value)}
+          >
+            <option value="all">전체 연도</option>
+            {yearOptions.map((year) => (
+              <option key={year} value={year}>
+                {year}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className={styles.selectLabel}>
+          <label htmlFor="from">기간</label>
+          <div className={styles.periodFields} onBlur={onPeriodFocusOut}>
+            <input
+              ref={fromRef}
+              id="from"
+              name="from"
+              type="text"
+              inputMode="numeric"
+              placeholder="2026-09-18"
+              className={`${styles.textInput} ${styles.periodInput}`}
+              defaultValue={defaultValues.from ?? ""}
+              aria-invalid={periodErrors.from ? true : undefined}
+              aria-describedby={periodErrors.from ? "from-error" : undefined}
+              onKeyDown={submitOnEnter}
+            />
+            <span aria-hidden="true">~</span>
+            <input
+              ref={toRef}
+              id="to"
+              name="to"
+              type="text"
+              inputMode="numeric"
+              placeholder="2026-09-18"
+              aria-label="기간 끝"
+              className={`${styles.textInput} ${styles.periodInput}`}
+              defaultValue={defaultValues.to ?? ""}
+              aria-invalid={periodErrors.to ? true : undefined}
+              aria-describedby={periodErrors.to ? "to-error" : undefined}
+              onKeyDown={submitOnEnter}
+            />
+          </div>
+          {periodErrors.from ? (
+            <p id="from-error" className={styles.fieldError}>
+              {periodErrors.from}
+            </p>
+          ) : null}
+          {periodErrors.to ? (
+            <p id="to-error" className={styles.fieldError}>
+              {periodErrors.to}
+            </p>
+          ) : null}
+        </div>
       </div>
 
-      <div className={styles.selectLabel}>
+      <div className={`${styles.selectLabel} ${styles.searchField}`}>
         <label htmlFor="q">검색</label>
         <input
           id="q"
@@ -201,6 +239,8 @@ export function ProjectsFilterBar({
           필터 지우기
         </Link>
       ) : null}
+
+      {primaryAction ? <div className={styles.primarySlot}>{primaryAction}</div> : null}
     </form>
   );
 }

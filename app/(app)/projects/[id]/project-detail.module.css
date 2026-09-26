@@ -159,8 +159,23 @@
   font-size: var(--fs-sm);
 }
 
-.contractForm {
+/* 04-16(D-84) — 파생 계약 금액 한 줄(KvList). 값은 --fs-base 700 숫자, 2행은 --fs-sm --muted. */
+.contractSummary {
   margin-bottom: var(--s-6);
+}
+
+.contractAmount {
+  display: block;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.contractNote {
+  display: block;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 .contractRow {

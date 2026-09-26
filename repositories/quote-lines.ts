@@ -29,6 +29,16 @@ export async function countActiveLinesByRevision(viewer: Viewer, revisionId: str
   return row?.count ?? 0;
 }
 
+// 04-16(D-84 · B-18) — 차수의 견적 합계(보관 제외). node-pg는 bigint를 문자열로 주므로 경계에서 숫자로 바꾼다.
+export async function sumQuoteAmountByRevision(viewer: Viewer, revisionId: string, tx: DbOrTx = db): Promise<number> {
+  void viewer;
+  const [row] = await tx
+    .select({ total: sql<number>`coalesce(sum(${quoteLines.quoteAmountKrw}), 0)::bigint`.mapWith(Number) })
+    .from(quoteLines)
+    .where(and(eq(quoteLines.revisionId, revisionId), isNull(quoteLines.archivedAt)));
+  return row?.total ?? 0;
+}
+
 // 04-04 Task 2 ① — 배치 저장이 쓰기 전에 현재 값·버전을 한 번에 읽는다
 // (버전 비교 → 셀 단위 충돌 판정의 입력). db.transaction의 tx로 불러야
 // 같은 트랜잭션 안에서 읽고-비교하고-쓴다(격리 수준 안에서 일관된 스냅샷).

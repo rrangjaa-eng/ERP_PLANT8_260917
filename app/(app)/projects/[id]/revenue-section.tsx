@@ -2,21 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Table } from "@/ui/table/Table";
-import { Select } from "@/ui/select/Select";
-import { Form } from "@/ui/form/Form";
+import { KvList } from "@/ui/kv-list/KvList";
 import { formatKrw, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import type { TableColumn } from "@/ui/table/types";
-import type { Currency } from "@/domain/money";
+import type { ContractInfo } from "@/domain/revenue";
 import styles from "./project-detail.module.css";
-
-export type ContractDraft = {
-  currency: Currency;
-  amount: number;
-  fxRate: number;
-  fxRateTouched: boolean;
-  dirty: boolean;
-};
 
 export type EntryDraft = {
   clientKey: string;
@@ -32,8 +23,30 @@ export type EntryDraft = {
   totalKrw?: number | null;
 };
 
-function contractHintText(vatKrw: number, totalKrw: number): string {
-  return `부가세 10% ${formatKrw(vatKrw)} · 합계 ${formatKrw(totalKrw)} · 서버 계산`;
+// 04-16(D-84) — 계약 금액은 입력이 아니라 서버가 파생한 값이다. 2행은 ` · ` 묶음 사이에서만 줄바꿈한다.
+function contractNoteGroups(contract: ContractInfo): string[] {
+  if (contract.amountKrw === null || contract.vatKrw === null || contract.totalKrw === null) {
+    return contract.pendingLabel ? [contract.pendingLabel] : [];
+  }
+  return [
+    `부가세 ${contract.vatRateLabel ?? ""} ${formatKrw(contract.vatKrw)}`,
+    `합계 ${formatKrw(contract.totalKrw)}`,
+    contract.sourceLabel ?? "",
+  ];
+}
+
+function ContractValue({ contract }: { contract: ContractInfo }) {
+  const groups = contractNoteGroups(contract);
+  return (
+    <>
+      <span className={styles.contractAmount}>{contract.amountKrw === null ? "—" : formatKrw(contract.amountKrw)}</span>
+      <span className={`${styles.contractNote} ${styles.secondaryGroups}`}>
+        {groups.map((group, index) => (
+          <span key={group}>{index === 0 ? group : ` · ${group}`}</span>
+        ))}
+      </span>
+    </>
+  );
 }
 
 // F4 — 이 표·폼의 금액 입력은 모두 `value={숫자}`로 매 렌더 값을 되돌리는
@@ -144,16 +157,10 @@ function AmountInputField({
   );
 }
 
-// SYSTEM.md §6-2 S6 — 매출 섹션. 계약 금액 단일 칸 폼(Form.Actions 없음,
-// §7-15 일반 규칙) + 발행·입금 두 편집 표. 표 단위 정보 노출(issuedEntries/
-// paidEntries가 undefined면 두 표를 렌더하지 않는다 — 기획본부 경로).
+// SYSTEM.md §6-2 S6 — 매출 섹션. 계약 금액 한 줄(KvList, 파생 값 — 04-16 D-84) + 발행·입금 두 편집 표.
+// 표 단위 정보 노출(issuedEntries/paidEntries가 undefined면 두 표를 렌더하지 않는다 — 기획본부 경로).
 export function RevenueSection({
-  contractDraft,
-  onContractChange,
-  contractVatKrw,
-  contractTotalKrw,
-  contractError,
-  canWriteContract,
+  contract,
   issuedEntries,
   paidEntries,
   onIssuedChange,
@@ -165,12 +172,8 @@ export function RevenueSection({
   saveLocked = false,
   editableWidth = true,
 }: {
-  contractDraft: ContractDraft;
-  onContractChange: (patch: Partial<ContractDraft>) => void;
-  contractVatKrw: number;
-  contractTotalKrw: number;
-  contractError?: string;
-  canWriteContract: boolean;
+  /** 04-16(B-19) — quote.amount를 볼 수 없으면 서버가 싣지 않는다(키 부재). */
+  contract: ContractInfo | undefined;
   issuedEntries: EntryDraft[] | undefined;
   paidEntries: EntryDraft[] | undefined;
   onIssuedChange: (clientKey: string, patch: Partial<EntryDraft>) => void;
@@ -327,51 +330,11 @@ export function RevenueSection({
       <h2 className={styles.sectionTitle}>매출</h2>
       <p className={styles.sectionSubtitle}>공급가액 기준 · 입금액만 통장 합계</p>
 
-      <form className={`${styles.contractForm} single-column`} onSubmit={(event) => event.preventDefault()}>
-        <Form.Field id="contract-amount" label="계약 금액" width="short">
-          <div className={styles.contractRow}>
-            {canWriteContract ? (
-              <Select
-                id="contract-currency"
-                aria-label="계약 금액 통화"
-                value={contractDraft.currency}
-                onChange={(event) => {
-                  if (!saveLocked) onContractChange({ currency: event.target.value as Currency, fxRateTouched: false });
-                }}
-                options={[
-                  { value: "KRW", label: "KRW" },
-                  { value: "USD", label: "USD" },
-                ]}
-                className={styles.cellSelect}
-              />
-            ) : null}
-            {canWriteContract ? (
-              <AmountInput
-                readOnly={saveLocked}
-                ariaLabel="계약 금액"
-                value={contractDraft.amount}
-                kind={contractDraft.currency === "KRW" ? "krw" : "foreign"}
-                onCommit={(amount) => onContractChange({ amount })}
-                className={styles.cellInputNumeric}
-              />
-            ) : (
-              <span>{formatKrw(contractDraft.amount)}</span>
-            )}
-            {canWriteContract && contractDraft.currency !== "KRW" ? (
-              <AmountInput
-                readOnly={saveLocked}
-                ariaLabel="계약 금액 환율"
-                value={contractDraft.fxRate}
-                kind="fxRate"
-                onCommit={(fxRate) => onContractChange({ fxRate, fxRateTouched: true })}
-                className={styles.cellInputNumeric}
-              />
-            ) : null}
-          </div>
-        </Form.Field>
-        <Form.Hint>{contractHintText(contractVatKrw, contractTotalKrw)}</Form.Hint>
-        {contractError ? <Form.Error>{contractError}</Form.Error> : null}
-      </form>
+      {contract ? (
+        <div className={styles.contractSummary}>
+          <KvList items={[{ label: "계약 금액", value: <ContractValue contract={contract} /> }]} />
+        </div>
+      ) : null}
 
       {tablesVisible ? (
         <>

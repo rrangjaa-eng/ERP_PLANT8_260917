@@ -18,6 +18,7 @@ import type { TaxRule } from "@/domain/code-tables/tax-rule";
 import { getSettingValue as defaultGetSettingValue } from "@/domain/settings/registry";
 import { TAX_VAT_RATE, TAX_ROUNDING_VAT_UNIT } from "@/domain/settings/keys";
 import { withTransaction } from "@/lib/db-transaction";
+import { kstDateOf } from "@/lib/kst-date";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { scopeFor } from "@/domain/permissions/scope-for";
 import {
@@ -30,6 +31,8 @@ import {
   updateRevenueEntryIfVersionMatches as repoUpdateRevenueEntryIfVersionMatches,
   type RevenueEntryRow,
 } from "@/repositories/revenue-entries";
+import { findLatestQuoteRevision as repoFindLatestQuoteRevision } from "@/repositories/quote-revisions";
+import { sumQuoteAmountByRevision as repoSumQuoteAmountByRevision } from "@/repositories/quote-lines";
 
 export class ForbiddenError extends UserFacingError {}
 export class ProjectNotFoundError extends UserFacingError {}
@@ -107,10 +110,15 @@ export type RevenueEntryDto = {
   version: number;
 };
 
+// 04-16(D-84) — 계약 금액은 입력이 아니라 고객 승인된 현재 차수의 견적 합계다. 미승인이면 금액 셋이 null이고
+// pendingLabel(`{n}차 고객 승인 전`)만 있다 — 이전 승인 차수의 합계로 대신하지 않는다.
 export type ContractInfo = {
-  amount: MoneyDto;
-  vatKrw: number;
-  totalKrw: number;
+  amountKrw: number | null;
+  vatKrw: number | null;
+  totalKrw: number | null;
+  vatRateLabel: string | null;
+  sourceLabel: string | null;
+  pendingLabel: string | null;
 };
 
 // project()가 필드 단위로 투영하는 대상. 배열 필드(issuedEntries·
@@ -130,7 +138,7 @@ export type RevenueDto = Partial<RevenueProjectable>;
 
 export const REVENUE_DTO_SPEC: DtoSpec<RevenueProjectable, RevenueDto> = {
   fields: [
-    { key: "contract", from: "contract", infoItem: "project.value" },
+    { key: "contract", from: "contract", infoItem: "quote.amount" },
     { key: "issuedEntries", from: "issuedEntries", infoItem: "revenue.issued_amount" },
     { key: "paidEntries", from: "paidEntries", infoItem: "revenue.paid_amount" },
     { key: "issuedTotalKrw", from: "issuedTotalKrw", infoItem: "revenue.paid_amount" },
@@ -168,7 +176,30 @@ function toEntryDto(
   };
 }
 
-// 04-02 Task 2 ③ — 계약 금액 + 발행·입금 두 표를 한 DTO로 합쳐 돌려준다.
+// 04-16(D-84 · B-27) — 현재 차수(최신 순번)가 승인됐으면 그 차수의 견적 합계와 승인일 기준 부가세. 기준일은 승인일의
+// KST 날짜를 UTC 자정으로 만든 값이다 — 저장된 순간(KST 00:00 = 전날 UTC 15:00)을 넘기면 설정 조회가 UTC 날짜로
+// 잘라 전날 세율을 쓴다(엔지니어링 리뷰 B §1, 발행 줄의 new Date(row.entryDate)와 같은 규칙).
+async function deriveContract(viewer: Viewer, projectId: string, deps?: Partial<RevenueDeps>): Promise<ContractInfo> {
+  const current = await repoFindLatestQuoteRevision(viewer, projectId);
+  if (!current) throw new ProjectNotFoundError("존재하지 않는 프로젝트입니다.");
+  if (current.customerApprovedAt === null) {
+    return { amountKrw: null, vatKrw: null, totalKrw: null, vatRateLabel: null, sourceLabel: null, pendingLabel: `${current.seq}차 고객 승인 전` };
+  }
+  const amountKrw = await repoSumQuoteAmountByRevision(viewer, current.id);
+  const asOf = new Date(kstDateOf(current.customerApprovedAt));
+  const vat = await computeVat(amountKrw, asOf, deps);
+  const vatRate = await (deps?.getSettingValue ?? defaultGetSettingValue)(TAX_VAT_RATE, { asOf });
+  return {
+    amountKrw,
+    vatKrw: vat.vatKrw,
+    totalKrw: vat.totalKrw,
+    vatRateLabel: `${Number((vatRate * 100).toFixed(2))}%`,
+    sourceLabel: `${current.seq}차 고객 승인 합계`,
+    pendingLabel: null,
+  };
+}
+
+// 04-02 Task 2 ③ — 파생 계약 금액(고객 승인된 현재 차수 합계) + 발행·입금 두 표를 한 DTO로 합쳐 돌려준다.
 // 발행 줄은 순방향(공급가 → 부가세) 계산, 입금 줄은 역방향(통장 합계 →
 // 공급가) 계산이라 서로 다른 함수를 부른다.
 export async function listRevenue(viewer: Viewer, projectId: string, deps?: Partial<RevenueDeps>): Promise<RevenueDto> {
@@ -182,14 +213,7 @@ export async function listRevenue(viewer: Viewer, projectId: string, deps?: Part
   if (!projectRow) throw new ProjectNotFoundError("존재하지 않는 프로젝트입니다.");
   if (projectRow.archivedAt !== null && !scope.includeArchived) throw new ProjectNotFoundError("존재하지 않는 프로젝트입니다.");
 
-  const contractMoney = moneyFromRow({
-    currency: projectRow.contractCurrency,
-    foreignAmount: projectRow.contractForeignAmount,
-    fxRate: projectRow.contractFxRate,
-    amountKrw: projectRow.contractAmountKrw,
-  });
-  const contractVat = await computeVat(contractMoney.amountKrw, new Date(), deps);
-  const contract: ContractInfo = { amount: moneyToDto(contractMoney), vatKrw: contractVat.vatKrw, totalKrw: contractVat.totalKrw };
+  const contract = await deriveContract(viewer, projectId, deps);
 
   const rows = await repoListRevenueEntriesByProject(viewer, projectId);
   const issuedRows = rows.filter((row) => row.kind === "issue");

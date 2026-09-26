@@ -168,8 +168,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     adjustmentStructural.insert ||
     periodRights !== "none" ||
     canEditPreEstimate ||
-    canWriteEntries ||
-    (canWrite && status !== "completed");
+    canWriteEntries;
 
   // 04-21(S3·S7) — 갈 곳이 없으면 「상태 바꾸기」를 렌더하지 않는다(비활성 버튼이 아니다).
   // 화면은 상태 문자열로 권한을 추론하지 않고 서버의 갈 곳 목록만 본다.
@@ -247,11 +246,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
         pmName: responsibles?.pmName ?? null,
       })}
       revenue={revenue}
-      canWriteContract={canWrite}
       canWriteEntries={canWriteEntries}
       usdDefaultFxRate={usdDefaultFxRate}
-      contractVatKrw={revenue.contract?.vatKrw ?? 0}
-      contractTotalKrw={revenue.contract?.totalKrw ?? 0}
     />
     {/* 04-24(S3 섹션 순서 ③ → ④) — 매출(원장 안 마지막 섹션) 뒤에 차수 섹션, 그 아래 이전 차수 읽기 섹션. */}
     <RevisionSection

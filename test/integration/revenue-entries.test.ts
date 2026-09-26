@@ -295,6 +295,7 @@ describe("파생 계약 금액 — 고객 승인된 현재 차수 합계 (04-16 
       amountKrw: 48_000_000,
       vatKrw: 4_800_000,
       totalKrw: 52_800_000,
+      vatRateLabel: "10%",
       sourceLabel: "2차 고객 승인 합계",
       pendingLabel: null,
     });
@@ -326,7 +327,14 @@ describe("파생 계약 금액 — 고객 승인된 현재 차수 합계 (04-16 
 
     const dto = await listRevenue(pm, project.id);
 
-    expect(dto.contract).toEqual({ amountKrw: null, vatKrw: null, totalKrw: null, sourceLabel: null, pendingLabel: "3차 고객 승인 전" });
+    expect(dto.contract).toEqual({
+      amountKrw: null,
+      vatKrw: null,
+      totalKrw: null,
+      vatRateLabel: null,
+      sourceLabel: null,
+      pendingLabel: "3차 고객 승인 전",
+    });
   });
 
   it("(B-27) 부가세 기준일은 승인일이다 — 승인 뒤 시행되는 새 세율은 이미 승인된 계약의 부가세를 바꾸지 않는다", async () => {
@@ -356,6 +364,7 @@ describe("파생 계약 금액 — 고객 승인된 현재 차수 합계 (04-16 
 
     expect(dto.contract?.vatKrw).toBe(9_600_000);
     expect(dto.contract?.totalKrw).toBe(57_600_000);
+    expect(dto.contract?.vatRateLabel).toBe("20%");
   });
 
   it("(B-19) quote.amount를 숨기고 project.value만 보이는 계급에게는 contract 키가 없다", async () => {

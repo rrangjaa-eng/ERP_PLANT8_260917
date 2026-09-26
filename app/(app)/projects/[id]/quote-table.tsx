@@ -37,7 +37,7 @@ import {
 } from "@/domain/quotes/edit-scope";
 import type { RevenueDto } from "@/domain/revenue";
 import type { Currency, Money } from "@/domain/money";
-import { RevenueSection, type ContractDraft, type EntryDraft } from "./revenue-section";
+import { RevenueSection, type EntryDraft } from "./revenue-section";
 import { PreviousRevisionDraftRow } from "./previous-revision";
 import { StatusChange, type StatusChangeProps } from "./status-change";
 import { CustomerApprovalLine, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
@@ -485,17 +485,6 @@ function mergeRestoredEdits(
   return { lines: [...next, ...added], period, preEstimate };
 }
 
-function contractFromDto(revenue: RevenueDto): ContractDraft {
-  const amount = revenue.contract?.amount;
-  return {
-    currency: amount?.currency ?? "KRW",
-    amount: amount?.amount ?? 0,
-    fxRate: amount?.fxRate ?? 1,
-    fxRateTouched: false,
-    dirty: false,
-  };
-}
-
 function entriesFromDto(entries: RevenueDto["issuedEntries"]): EntryDraft[] | undefined {
   if (entries === undefined) return undefined;
   return entries.map((entry) => ({
@@ -829,11 +818,8 @@ export function QuoteLedger({
   lockReason,
   emptyState,
   revenue,
-  canWriteContract,
   canWriteEntries,
   usdDefaultFxRate,
-  contractVatKrw,
-  contractTotalKrw,
 }: {
   projectId: string;
   /** 화면이 본 상태 — 서버 값. */
@@ -885,11 +871,8 @@ export function QuoteLedger({
   /** 04-30 — 0줄 표의 한 줄과 다음 한 수(서버 quoteTableEmptyState). */
   emptyState: QuoteTableEmptyState;
   revenue: RevenueDto;
-  canWriteContract: boolean;
   canWriteEntries: boolean;
   usdDefaultFxRate: number;
-  contractVatKrw: number;
-  contractTotalKrw: number;
 }) {
   const [lines, setLinesState] = useState<DraftLine[]>(() => byKind(initialLines.map(fromDto)));
   // 04-23 — 어느 경로로 줄을 바꿔도 종류 순서(조정 맨 아래)를 지킨다.
@@ -900,10 +883,8 @@ export function QuoteLedger({
   );
   // 04-23 — 그룹 버튼으로 만든 새 줄의 첫 편집 칸(Table이 편집 상태로 연다).
   const [openCell, setOpenCell] = useState<{ rowId: string; columnKey: string } | null>(null);
-  const [contractDraft, setContractDraft] = useState<ContractDraft>(() => contractFromDto(revenue));
   const [issuedEntries, setIssuedEntries] = useState<EntryDraft[] | undefined>(() => entriesFromDto(revenue.issuedEntries));
   const [paidEntries, setPaidEntries] = useState<EntryDraft[] | undefined>(() => entriesFromDto(revenue.paidEntries));
-  const [contractVat, setContractVat] = useState({ vatKrw: contractVatKrw, totalKrw: contractTotalKrw });
   const [balanceKrw, setBalanceKrw] = useState<number | undefined>(revenue.balanceKrw);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [pasteWarning, setPasteWarning] = useState<string | null>(null);
@@ -978,10 +959,8 @@ export function QuoteLedger({
         setArchivedLineIds([]);
       }
       if (data?.revenue) {
-        setContractDraft(contractFromDto(data.revenue));
         if (data.revenue.issuedEntries !== undefined) setIssuedEntries(entriesFromDto(data.revenue.issuedEntries));
         if (data.revenue.paidEntries !== undefined) setPaidEntries(entriesFromDto(data.revenue.paidEntries));
-        if (data.revenue.contract) setContractVat({ vatKrw: data.revenue.contract.vatKrw, totalKrw: data.revenue.contract.totalKrw });
         setBalanceKrw(data.revenue.balanceKrw);
       }
       if (data?.project) {
@@ -1109,9 +1088,7 @@ export function QuoteLedger({
   const quoteLinesDirtyCount = lines.filter((line) => line.dirty).length + archivedLineIds.length;
   const issuedDirtyCount = (issuedEntries ?? []).filter((entry) => entry.dirty).length;
   const paidDirtyCount = (paidEntries ?? []).filter((entry) => entry.dirty).length;
-  const contractDirtyCount = contractDraft.dirty ? 1 : 0;
-  const dirtyCount =
-    quoteLinesDirtyCount + issuedDirtyCount + paidDirtyCount + contractDirtyCount + periodDirtyCount + preEstimateDirty;
+  const dirtyCount = quoteLinesDirtyCount + issuedDirtyCount + paidDirtyCount + periodDirtyCount + preEstimateDirty;
   const dirtyStorage = useDirtyStorage(projectId, revisionId, dirtyCount);
 
   const { persist } = dirtyStorage;
@@ -1134,10 +1111,8 @@ export function QuoteLedger({
     setSeenStatus(status);
     setLines(initialLines.map(fromDto));
     setArchivedLineIds([]);
-    setContractDraft(contractFromDto(revenue));
     setIssuedEntries(entriesFromDto(revenue.issuedEntries));
     setPaidEntries(entriesFromDto(revenue.paidEntries));
-    setContractVat({ vatKrw: contractVatKrw, totalKrw: contractTotalKrw });
     setBalanceKrw(revenue.balanceKrw);
     setPeriodBaseline({ startDate: period.startDate, endDate: period.endDate });
     setPeriodDraft(null);
@@ -1317,16 +1292,6 @@ export function QuoteLedger({
     setDeleteConfirm(null);
   }
 
-  function updateContract(patch: Partial<ContractDraft>) {
-    setContractDraft((prev) => {
-      const next = { ...prev, ...patch, dirty: true };
-      if (patch.currency === "USD" && prev.currency !== "USD" && !patch.fxRateTouched) {
-        next.fxRate = usdDefaultFxRate;
-      }
-      return next;
-    });
-  }
-
   function updateIssued(clientKey: string, patch: Partial<EntryDraft>) {
     setIssuedEntries((prev) => prev?.map((entry) => (entry.clientKey === clientKey ? { ...entry, ...patch, dirty: true } : entry)));
   }
@@ -1360,7 +1325,7 @@ export function QuoteLedger({
     const dirtyIssued = (issuedEntries ?? []).filter((entry) => entry.dirty);
     const dirtyPaid = (paidEntries ?? []).filter((entry) => entry.dirty);
 
-    const hasRevenueChanges = contractDraft.dirty || dirtyIssued.length > 0 || dirtyPaid.length > 0;
+    const hasRevenueChanges = dirtyIssued.length > 0 || dirtyPaid.length > 0;
     // 04-30(엔지 리뷰 A §2 P2) — 순서는 두 가지로만 보낸다: 줄 이동·가운데 삽입·복제가 있으면 활성 줄 전체의 표시
     // 순서를 한 번, 아니면 싣지 않는다(서버가 새 줄을 끝에 붙인다). 보관할 줄은 이미 lines에서 빠져 있다.
     const needsOrder = lines.some(
@@ -1417,10 +1382,6 @@ export function QuoteLedger({
           : undefined,
       revenue: hasRevenueChanges
         ? {
-            contract: contractDraft.dirty
-              ? { currency: contractDraft.currency, amount: contractDraft.amount, fxRate: contractDraft.fxRate }
-              : undefined,
-            contractFxRateTouched: contractDraft.fxRateTouched,
             issuedEntries:
               dirtyIssued.length > 0
                 ? dirtyIssued.map((entry) => ({
@@ -1946,10 +1907,6 @@ export function QuoteLedger({
     statusChangedSummary ??
     result.serverError ??
     (result.validationErrors ? "저장하지 못했습니다 · 입력값을 확인하세요" : undefined);
-  // F2 — 계약 금액(revenue.contract) 아래에 붙는 필드 오류만 <RevenueSection>에 넘긴다.
-  const contractError = result.validationErrors?.revenue?.contract
-    ? "저장하지 못했습니다 · 입력값을 확인하세요"
-    : undefined;
 
   // 04-30(C-07) — 힌트 줄은 그 사람에게 실제로 되는 키만. 편집 셀이 없는 읽기 표에는 힌트 줄이 없다.
   const hintKeys = visibleHintKeys(
@@ -2251,12 +2208,7 @@ export function QuoteLedger({
       ) : null}
 
       <RevenueSection
-        contractDraft={contractDraft}
-        onContractChange={updateContract}
-        contractError={contractError}
-        contractVatKrw={contractVat.vatKrw}
-        contractTotalKrw={contractVat.totalKrw}
-        canWriteContract={canWriteContract}
+        contract={revenue.contract}
         issuedEntries={issuedEntries}
         paidEntries={paidEntries}
         onIssuedChange={updateIssued}

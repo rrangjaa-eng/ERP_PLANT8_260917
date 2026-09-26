@@ -970,3 +970,11 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **왜**: CLAUDE.md §7 「알 수 있는 값은 기본값으로 미리 채운다(내 팀)」. 대부분의 등록은 등록자가 자기 팀 프로젝트의 PM이다 — 매번 두 칸을 고르게 할 이유가 없다. PR #84(등록 팀 범위)가 옵션을 좁힌 뒤에 얹어야 목록 밖 값을 고르지 않는다.
 
 **범위**: `domain/projects/references.ts` · `app/(app)/projects/page.tsx` · `app/(app)/projects/project-form.tsx`. SYSTEM.md 문구는 바꾸지 않는다.
+
+## 2026-09-26 — 표 머리글 아래 선 두께: 2px가 정본(§4-2·§7-3 불일치 수정, /design-review)
+
+**결정**: 표 머리글(`<th>`) 아래 선은 **2px `--line-strong`**이다. §4-2(강한 선 표)는 이미 2px로 적혀 있었고, §7-3 「표」 절의 머리글 규칙만 `1px --line-strong`으로 어긋나 있었다 — §7-3 쪽을 §4-2에 맞춰 고친다.
+
+**왜**: people·vendors·holidays·notifications 네 표 모두 `.table th { border-bottom: var(--line-w-strong) solid var(--line-strong); }`(2px)로 이미 구현돼 있다. 코드가 맞고 문서(§7-3)가 어긋나 있었다 — 코드를 문서에 맞춰 2px→1px로 되돌리면 네 표를 전부 고쳐야 하고 §4-2와 다시 어긋난다.
+
+**범위**: `docs/design/SYSTEM.md` §7-3 머리글 규칙 문장만 고친다(2px로). 코드 변경 없음.

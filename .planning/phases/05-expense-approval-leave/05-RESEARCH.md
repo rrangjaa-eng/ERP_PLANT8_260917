@@ -595,31 +595,40 @@ registerDocumentKind({
 | A13 | 06-03 `pickTaxDates` 부가세 대체는 「작성일」(D-101)로 06 쪽을 맞춘다 | Pattern 2 | 06 M-9에서 06 문서 수정 |
 | A14 | `google-auth-library` 저장소 URL | Package Audit | 없음(기존 의존성) |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> 2026-09-26 `/gsd-plan-phase 5` 계획 단계에서 전부 닫혔다. 각 항목의 「RESOLVED」 줄이 정본이고 원래 물음 · 권고는 기록으로 남긴다.
 
 1. **04.1 엔진 덧붙임을 누가 소유하나**
    - What we know: 04.1은 미실행 · 미머지. 덧붙임 E1~E7은 04.1 파일(`domain/approvals/*`)을 고친다.
-   - What's unclear: 04.1 실행 전에 04.1 플랜에 넣을지, Phase 5 Wave 1로 둘지.
-   - Recommendation: **Phase 5 Wave 1**(04.1은 이미 7 플랜 · 리뷰를 통과한 계획 — 다시 열면 리뷰 비용). 단 04.1 SUMMARY가 나온 뒤 이름을 맞춘다.
+   - Recommendation(기록): Phase 5 Wave 1, 04.1 SUMMARY가 나온 뒤 이름을 맞춘다.
+   - **RESOLVED:** Phase 5 Wave 1이 소유한다(사용자 결정 2026-09-26 #4) — 04.1 기본 동작을 바꾸지 않는 선택 필드 · 선택 인자로만 더하고, 실행 착수 때 04.1 SUMMARY로 이름을 맞춘다 → `05-01-PLAN.md`(선행 게이트 P-1~P-4 · SUMMARY `name_map` · E1~E7).
 
 2. **지출결의 목록 가시성(PM = 자기 문서 vs 팀)**
-   - What we know: `scopeFor`는 메뉴 기준 `all`/`none`뿐 [VERIFIED: domain/permissions/scope-for.ts:11 — `export type Scope = { rows: "all" | "none"; includeArchived: boolean };`]. 계급 업무 범위는 `company` · `team` 둘이고 팀장 · 기획 PM 모두 `team` [VERIFIED: domain/permissions/roles.ts:29-33]. 팀장을 가리키는 열은 `teams`에 없다. UI S8은 「PM = 자기 문서, 팀장 = 자기 팀」.
-   - What's unclear: 역할 이름 하드코딩 없이 PM과 팀장을 가를 방법.
-   - Recommendation: 메뉴 키 `expenses.team`(view — 「팀 지출결의 보기」)을 더해 팀장 계급에 시드, 보임 = 기안자 ∪ 결재 관련자 ∪ (`expenses.team` view ∧ 귀속 팀 = 내 팀) ∪ (업무 범위 `company` ∧ `expenses` view). 작성 중은 기안자만. 기존 세분 메뉴 선례(`projects.status` · `projects.period`)와 같은 결. 계획 checkpoint로 사용자 확인.
+   - What we know: `scopeFor`는 `all`/`none`뿐, 팀장 · 기획 PM 모두 업무 범위 `team`.
+   - Recommendation(기록): 메뉴 키 `expenses.team`을 팀장 계급에 시드.
+   - **RESOLVED:** 새 메뉴 · 권한 키 `expenses.team`(팀장 = 자기 팀 문서, PM = 자기 문서), 팀장 계급에 기본 켜짐 시드 · 관리자가 바꿀 수 있음, 역할 이름 하드코딩 없음(사용자 결정 2026-09-26 #5) — 보임 = 기안자 ∪ 결재 관련자 ∪ (`expenses.team` ∧ 같은 팀) ∪ (업무 범위 `company` ∧ `expenses` 보기), 작성 중은 기안자만 → `05-08-PLAN.md`.
 
 3. **증빙 1개 이상이 제출 조건 — 06 `evidence.required` 설정과의 관계**
    - What we know: UI Assumptions #5 — 이 페이즈는 「파일 1개 이상」, 06이 `선결제` 예외를 연다.
-   - Recommendation: Phase 5 게이트 ⑧은 설정과 무관하게 고정. 06 계획이 설정으로 끌지 정한다.
+   - **RESOLVED:** Phase 5 제출 게이트 ⑧ `증빙 없음 · 증빙 올리기 Ctrl+U`는 설정과 무관한 고정 규칙(제출 트랜잭션 안 파일 수 ≥ 1)이다. 06이 같은 규칙 `expense.submit`에 `선결제` 예외를 끼우고, 06 `증빙 필수` 설정이 이 조건까지 끌지는 06 계획이 정한다 → `05-04-PLAN.md`(⑧) · `05-06-PLAN.md`(규칙 등록 · 순서).
 
 4. **외화 줄의 회차 상한 비교 통화**
-   - What we know: 실행가 · 지출결의 모두 금액 모델(통화 · 외화 · 환율 · 원화). 회차마다 환율이 다르면 원화 합이 실행가 원화를 넘을 수 있다.
-   - Recommendation: 문서 통화 = 줄 통화면 **원 통화 금액**으로, 다르면 원화로 비교(`domain/money` 함수 하나). 계획이 확정.
+   - What we know: 회차마다 환율이 다르면 원화 합이 실행가 원화를 넘을 수 있다.
+   - **RESOLVED(계획 재량):** `domain/money.remainingForInstallments(execution, others, current)` — 줄과 모든 대상 문서의 통화가 같으면 원래 통화 금액으로, 하나라도 다르면 원화로 비교한다 → `05-14-PLAN.md`(단위 · 통합 사례) · 함수는 `05-03-PLAN.md`.
 
 5. **상태 변경 로그 `trigger` 값**
    - What we know: `changeProjectStatus`는 로그 `trigger: "manual"` 고정.
-   - Recommendation: 선택 입력 `trigger?: "manual" | "approval"`(기본 manual) 한 줄 추가 — 행동 로그에서 결재 완료를 구분. 사소하지만 Phase 4 함수 변경이라 플랜에 명시.
+   - **RESOLVED(계획 재량):** 선택 입력 `trigger?: "manual" | "approval"`(기본 manual)을 더하고, 정산 결재 최종 승인 훅이 `approval`로 부른다. `via: "approval"` 전이는 `trigger` approval 없이 거부 → `05-11-PLAN.md`.
 
-6. **회사 대납 기본값 변경 시점(A6)** — 위 Pattern 2 권고대로 계획 checkpoint 한 번.
+6. **회사 대납 기본값 변경 시점(A6)**
+   - **RESOLVED:** 지금 바꾼다 — `tax.company_borne.rate` 0.22 · `tax.company_borne.method` `gross_up`(사용자 결정 2026-09-26 #7). 시가 5만원 이하 면제는 Phase 11(CERT-04)에 남는다 → `05-06-PLAN.md`.
+
+7. **(Assumptions A3 · A4) 문서 번호 꼴과 카운터 period**
+   - **RESOLVED:** 견적 줄 지출결의 = `{프로젝트 번호}-{순번 4자리}`(카운터 `expense` · period = 프로젝트 번호 — 「period는 연도」 규약의 첫 예외), 팀 비용 = `T{yy}-{순번 4자리}`(카운터 `expense_team` · 연도), 정산 결재 = 프로젝트 번호(카운터 없음, 프로젝트당 하나)(사용자 결정 2026-09-26 #6) → `05-03-PLAN.md` · `05-07-PLAN.md` · `05-11-PLAN.md`.
+
+8. **(Assumptions A8 · A9) 실제 GCS V4 서명 · 런타임 SA IAM 확인**
+   - **RESOLVED:** 로컬 · CI는 로컬 드라이버와 서명 배관 단위 테스트로, 실제 GCS 수락 · 자기 signBlob · 버킷 범위 역할 · 크기 초과 거부는 병합 · 마이그레이션 재생성 뒤 staging `checkpoint:human-verify`로 사람이 확인한다(사용자 결정 2026-09-26 Q7) → `05-12-PLAN.md`(드라이버 · 인프라) · `05-13-PLAN.md` Task 3.
 
 ## Environment Availability
 

@@ -52,6 +52,58 @@
 **Priority:** P2
 **Depends on:** Phase 7 Scheduler 기반
 
+## Phase 04.4 CEO 리뷰 이연(2026-09-26, Phase 8 전)
+
+리뷰 원문: `docs/designs/plant8-erp-phase04.4-ceo-review-260926.md`. 여섯 항목 모두 Phase 8(전환) 전에 처리한다.
+
+### 프로덕션 리허설 전 실입력 표를 확인 목록에 더하기 (CEO-3)
+
+**What:** `domain/ops/restore-check-tables.ts` `RESTORE_CHECK_TABLES`에 그때 main에 있는 직원 입력 표(프로젝트·견적 줄 등)를 「비어 있지 않음」으로 더한다.
+
+**Why:** 04.4의 목록은 시드가 채우는 표뿐이다. 그래서 프로덕션 리허설 성공이 「직원 입력이 복원된다」를 증명하지 못한다.
+
+**Effort:** S / S · **Priority:** P1 · **Depends on:** Phase 4 머지, 04.4 완료
+
+### GCP 예산 경보 등록 (CEO-4)
+
+**What:** D-06 상한($30)에 맞춘 GCP 예산 경보를 등록한다(부트스트랩 스크립트 또는 OPERATIONS §2 수동 절차).
+
+**Why:** 러너를 잃어 남은 리허설 임시 인스턴스(db-f1-micro)는 다음 수동 실행 때만 잡힌다. 한 달 남으면 상한의 약 1/3이 조용히 샌다. 지금 비용 확인은 매월 초 수동뿐이다.
+
+**Effort:** S / S · **Priority:** P2 · **Depends on:** 없음
+
+### 리허설 전용 최소 권한 SA·WIF ref 조건 (CEO-5)
+
+**What:** 리허설 워크플로가 `roles/cloudsql.admin` 배포 SA 대신 임시 인스턴스만 다루는 전용 SA를 쓰게 하고, WIF에 main ref 조건을 건다.
+
+**Why:** 04.4는 이 분리를 「Phase 8 후속」으로 미뤘는데(04.4-03 T-04.4-14), 플랜 본문 말고는 추적되는 곳이 없었다.
+
+**Effort:** M / S · **Priority:** P2 · **Depends on:** 04.4 완료
+
+### 프로덕션 리허설은 전환 최소 1주 전 (CEO-6)
+
+**What:** Phase 8 전환일 체크리스트에 「프로덕션 원본 리허설은 전환일이 아니라 최소 1주 전에 돌린다」를 넣는다.
+
+**Why:** 프로덕션 경로(`plant8-prod-restore`, 운영 IAM DB 사용자, 확인 입력)는 04.4에서 한 번도 실제로 돌지 않는다. 첫 실패를 고칠 시간이 필요하다.
+
+**Effort:** S / S · **Priority:** P1 · **Depends on:** Phase 8 계획
+
+### 체크리스트의 리허설 확인은 일시까지 본다 (CEO-7)
+
+**What:** Phase 8 체크리스트의 「복원 리허설 결과 확인」은 상태 화면 행의 결과뿐 아니라 일시가 그 리허설 날짜인지까지 본다.
+
+**Why:** 기록 전에 일찍 실패하면(WIF 인증 등) 화면에 이전 성공이 최신처럼 남는다(04.4 UI-SPEC 139행).
+
+**Effort:** S / S · **Priority:** P2 · **Depends on:** Phase 8 계획
+
+### PITR 켜기 사용자 결정 (CEO-8)
+
+**What:** 전환 전에 Cloud SQL PITR(바이너리 로그)을 켤지 사용자 결정 카드로 묻는다.
+
+**Why:** 지금 복원 단위는 하루 1회 자동 백업이라 RPO가 24시간이다. 돈 데이터로 전환한 뒤에는 하루치 지출결의를 잃을 수 있다. 작은 DB에서는 월 몇 달러 수준이다(D-06 상한 안에서 따져 본다).
+
+**Effort:** S / S · **Priority:** P1 · **Depends on:** 없음
+
 ## Completed
 
 ### FINDING-001 PC에서 「내 차례」(`/`)로 돌아가는 길이 없다

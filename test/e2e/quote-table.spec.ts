@@ -7,6 +7,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
+import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
 import { db } from "@/db/client";
 import { teams } from "@/db/schema";
 
@@ -777,5 +778,149 @@ test.describe("견적 줄 표 — 저장 거부 봉투 → 충돌 셀·서버 �
     await expect(quantityCell).not.toHaveAttribute("aria-invalid", "true");
     await expect(quantityCell).toHaveText("2");
     await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeEnabled();
+  });
+});
+
+// 04-19 Task 1 — 견적 줄 표의 30줄 쪽 나눔(D-91 · SYSTEM.md §7-3 (자) · DR-23 · DR-13). 45줄 = 두 소분류(A 20 · B 25).
+function fortyFiveLines() {
+  return [
+    ...Array.from({ length: 20 }, (_, index) => ({ subcategory: "stage_construction", itemName: `A줄${index + 1}`, amount: 1000 })),
+    ...Array.from({ length: 25 }, (_, index) => ({ subcategory: "print_production", itemName: `B줄${index + 1}`, amount: 2000 })),
+  ];
+}
+
+function pageNav(page: Page, label = "견적 줄") {
+  return page.getByRole("navigation", { name: `${label} 페이지`, exact: true });
+}
+
+async function editNumberCell(page: Page, rowIndex: number, colIndex: number, text: string) {
+  const cell = quoteCell(page, rowIndex, colIndex);
+  await expect(async () => {
+    await cell.focus();
+    await page.keyboard.press("Enter");
+    await expect(cell.locator("input")).toBeFocused({ timeout: 1000 });
+  }).toPass();
+  await page.keyboard.press("Control+a");
+  await page.keyboard.type(text);
+  await page.keyboard.press("Enter");
+}
+
+test.describe("견적 줄 표 — 30줄 쪽 나눔(04-19 Task 1 · D-91)", () => {
+  test("45줄은 30 · 15 두 쪽 · 2쪽 맨 위 그룹 머리글 반복 · 번호 31부터 · 합계는 어느 쪽이든 45줄 · URL 그대로 · 쪽 전환 뒤 포커스와 범위 읽기", async ({ page }) => {
+    await openProjectWithSavedLines(page, fortyFiveLines());
+    const table = quoteTable(page);
+    await expect(quoteDataRows(page)).toHaveCount(30);
+    await expect(table.locator("tfoot")).toContainText("합계 (공급가액 · 45줄)");
+    const nav = pageNav(page);
+    await expect(nav).toContainText("1–30 / 45줄");
+    const url = page.url();
+    const lastHeaderOnFirstPage = (await table.locator("tbody").last().locator("tr").first().textContent())?.trim();
+
+    // DR-23 — 1쪽 실행가 셀(7열)을 활성 열로 만든 뒤 번호 2를 누르면 2쪽 첫 줄의 같은 열로 포커스가 간다.
+    await quoteCell(page, 3, 7).focus();
+    const two = nav.getByRole("button", { name: "2", exact: true });
+    expect(await two.evaluate((element) => element.getAttribute("type"))).toBe("button");
+    await two.click();
+
+    await expect(quoteDataRows(page)).toHaveCount(15);
+    await expect(quoteCell(page, 0, 0)).toHaveText("31");
+    await expect(quoteCell(page, 0, 2)).toHaveText("B줄11");
+    await expect(quoteCell(page, 14, 0)).toHaveText("45");
+    expect((await table.locator("tbody").first().locator("tr").first().textContent())?.trim()).toBe(lastHeaderOnFirstPage);
+    await expect(table.locator("tfoot")).toContainText("합계 (공급가액 · 45줄)");
+    await expect(nav).toContainText("31–45 / 45줄");
+    await expect(nav.locator('[aria-current="page"]').first()).toHaveText("2");
+    expect(page.url()).toBe(url);
+    await expect(quoteCell(page, 0, 7)).toBeFocused();
+    // 캡션 옆(표 바로 앞) 시각적으로 숨긴 aria-live가 새 범위를 담는다.
+    const live = await table.evaluate((element) => {
+      const previous = element.previousElementSibling;
+      return { live: previous?.getAttribute("aria-live"), text: previous?.textContent };
+    });
+    expect(live).toEqual({ live: "polite", text: "31–45 / 45줄" });
+  });
+
+  test("(C-04) 그룹 A 끝 줄에서 새 줄 → 새 줄 번호 21 · B 첫 줄 22 · 번호가 끊기지 않는다", async ({ page }) => {
+    await openProjectWithSavedLines(page, fortyFiveLines());
+    await expect(quoteDataRows(page)).toHaveCount(30);
+    await quoteCell(page, 19, 2).focus();
+    await page.keyboard.press("Control+Enter");
+
+    await expect(quoteCell(page, 20, 0)).toHaveText("21");
+    await expect(quoteCell(page, 20, 2)).toHaveText("");
+    await expect(quoteCell(page, 21, 0)).toHaveText("22");
+    await expect(quoteCell(page, 21, 2)).toHaveText("B줄1");
+    await expect(quoteTable(page).locator("tfoot")).toContainText("합계 (공급가액 · 46줄)");
+  });
+
+  test("(금지 항목) 1쪽 한 줄과 2쪽 한 줄의 실행가를 고쳐 Control+s → 새로 고친 뒤 두 값이 다 저장돼 있다", async ({ page }) => {
+    await openProjectWithSavedLines(page, fortyFiveLines());
+    await expect(quoteDataRows(page)).toHaveCount(30);
+    await editNumberCell(page, 0, 7, "123456");
+    await expect(quoteCell(page, 0, 7)).toHaveText("123,456");
+
+    await pageNav(page).getByRole("button", { name: "2", exact: true }).click();
+    await expect(quoteCell(page, 0, 0)).toHaveText("31");
+    await editNumberCell(page, 0, 7, "654321");
+    await expect(quoteCell(page, 0, 7)).toHaveText("654,321");
+    await expect(page.getByRole("button", { name: /일괄 저장 2/ })).toBeVisible();
+
+    await quoteCell(page, 0, 7).focus();
+    const saved = page.waitForResponse((response) => isServerAction(response.request()));
+    await page.keyboard.press("Control+s");
+    await saved;
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+
+    await page.reload();
+    await expect(quoteCell(page, 0, 7)).toHaveText("123,456");
+    await pageNav(page).getByRole("button", { name: "2", exact: true }).click();
+    await expect(quoteCell(page, 0, 0)).toHaveText("31");
+    await expect(quoteCell(page, 0, 7)).toHaveText("654,321");
+  });
+
+  test("(공백 5) 31줄 2쪽에서 31번째 줄을 지우면 1쪽 30줄이 보이고 페이지 줄이 사라진다", async ({ page }) => {
+    await openProjectWithSavedLines(
+      page,
+      Array.from({ length: 31 }, (_, index) => ({ subcategory: "stage_construction", itemName: `줄${index + 1}`, amount: 1000 })),
+    );
+    await expect(pageNav(page)).toContainText("1–30 / 31줄");
+    await pageNav(page).getByRole("button", { name: "2", exact: true }).click();
+    await expect(quoteDataRows(page)).toHaveCount(1);
+    await quoteCell(page, 0, 2).focus();
+    await page.keyboard.press("Delete");
+    await page.getByRole("dialog").getByRole("button", { name: "견적 줄 삭제" }).click();
+
+    await expect(quoteDataRows(page)).toHaveCount(30);
+    await expect(quoteCell(page, 0, 2)).toHaveText("줄1");
+    await expect(pageNav(page)).toHaveCount(0);
+  });
+
+  test("(DR-13 · W2) 31줄 이전 차수 읽기 섹션도 30줄 쪽 — 번호 2 → 제목 포커스 · 2쪽 첫 번호 31 · 합계 31줄", async ({ page }) => {
+    const { projectId, revisionId } = await openProjectWithSavedLines(
+      page,
+      Array.from({ length: 31 }, (_, index) => ({ subcategory: "stage_construction", itemName: `이전줄${index + 1}`, amount: 1000 })),
+    );
+    await createRevisionFromCurrent(SYSTEM_VIEWER, { projectId, fromRevisionId: revisionId });
+    await page.reload();
+    const revisions = page.locator("table", { has: page.locator("caption", { hasText: /^차수$/ }) });
+    await revisions.getByRole("button", { name: "차수 열기" }).click();
+    const heading = page.getByRole("heading", { name: "상세 견적 1차", exact: true });
+    await expect(heading).toBeFocused();
+
+    const readTable = page.locator("table", { has: page.locator("caption", { hasText: /^상세 견적 1차 견적 줄$/ }) });
+    const nav = pageNav(page, "상세 견적 1차 견적 줄");
+    await expect(nav).toContainText("1–30 / 31줄");
+    await expect(readTable.locator("tfoot")).toContainText("합계 (공급가액 · 31줄)");
+    await nav.getByRole("button", { name: "2", exact: true }).click();
+
+    await expect(heading).toBeFocused();
+    await expect(nav).toContainText("31–31 / 31줄");
+    const firstCells = await readTable.locator("tbody tr").evaluateAll((rows) =>
+      rows
+        .filter((row) => (row as HTMLTableRowElement).cells.length > 1)
+        .map((row) => ((row as HTMLTableRowElement).cells[0]?.textContent ?? "").trim()),
+    );
+    expect(firstCells).toEqual(["31"]);
+    await expect(readTable.locator("tfoot")).toContainText("합계 (공급가액 · 31줄)");
   });
 });

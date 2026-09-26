@@ -175,3 +175,31 @@
 .resultMuted {
   color: var(--muted);
 }
+
+/* UI-SPEC E1 상단 바(layout.tsx) — 실물 external-cert.html `.bar`. 토큰만. */
+.bar {
+  display: flex;
+  align-items: center;
+  height: var(--touch-min);
+  padding: 0 var(--pad-page);
+  background: var(--bar);
+  color: var(--bar-fg);
+  font-size: var(--fs-sm);
+}
+
+.mark {
+  color: var(--bg);
+  font-weight: var(--fw-mark);
+  font-size: var(--fs-md);
+  letter-spacing: var(--ls-head);
+}
+
+.leaf {
+  color: var(--bar-leaf);
+  font-style: normal;
+}
+
+.barName {
+  margin-left: auto;
+  color: var(--bar-muted);
+}

@@ -242,9 +242,9 @@ function PreviousRevisionSkeleton() {
 
 // ── 04-24(DR-4 · W1) — 견적 줄 복사 형식과 이전 차수 보관본 복원 줄 ─────────────────────────────────────────────
 
-/** 앱 형식 — 줄마다 `{ currency }`(04-19 격자 복사가 같은 함수를 쓴다). */
+/** 앱 형식 — 줄마다 `{ currency, kind }`(04-19 격자 복사가 같은 함수를 쓴다 · kind는 /qa ISSUE-003). */
 export function quoteLineClipboardMeta(rows: QuoteLineCopyRow[]): string {
-  return JSON.stringify(rows.map((row) => ({ currency: row.unitPriceCurrency })));
+  return JSON.stringify(rows.map((row) => ({ currency: row.unitPriceCurrency, kind: row.lineKind })));
 }
 
 /** 견적 줄 복사의 유일한 직렬화 — `tsv`는 읽기 열 순서의 `copyText`, `json`은 앱 형식. */

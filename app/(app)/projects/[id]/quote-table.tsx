@@ -1903,7 +1903,11 @@ export function QuoteLedger({
     if (rowIndex === -1 || colIndex === -1) return [];
 
     // 새로 생길 줄은 「줄 추가」와 같은 셀 단계(newLineCells)로 판정한다 — 정산 새 줄의 수량·단가는 잠김이다.
-    const newRow = newDraftLine(subcategories[0]?.value ?? "", newLineCells);
+    // ISSUE-003(/qa) — 앱에서 복사한 견적 외 비용 줄은 같은 종류의 새 줄(「견적 외 비용 줄 추가」와 같은 모양)이 된다.
+    const newRow = (sourceKind: string | null): DraftLine =>
+      sourceKind === "out_of_quote"
+        ? { ...newDraftLine("", outOfQuoteLineCells), lineKind: "out_of_quote" }
+        : newDraftLine(subcategories[0]?.value ?? "", newLineCells);
     // 04-47(ENG-D5) — 계산 열은 열 정의의 pasteRole을 따른다(앱에서 복사한 붙여넣기에서만 무시).
     const roledColumns = pasteColumns.map((column, index) => ({ ...column, pasteRole: columns[index]?.pasteRole }));
     const applied = applyPaste({
@@ -1918,7 +1922,14 @@ export function QuoteLedger({
     // 04-23(DR-22 · DR-35) — 권한 밖 줄(조정 권한 없는 사람의 조정 줄)의 칸은 값도 오류도 두지 않고 건너뛰어 센다.
     const outsideRights = (cell: { rowIndex: number }) => !adjustmentStructural.insert && lines[cell.rowIndex]?.lineKind === "adjustment";
     const skippedCount = applied.cells.filter(outsideRights).length;
-    const result = { ...applied, cells: applied.cells.filter((cell) => !outsideRights(cell)) };
+    // ISSUE-003 — 새로 생기는 줄은 원본 종류로 만든다. 견적 외 비용 줄의 잠긴 칸(소분류·수량·단가)의 복사 글자는 종류 표시라 오류 없이 넘긴다.
+    const created = Array.from({ length: applied.newRowsNeeded }, (_, offset) => newRow(applied.sourceKinds?.[lines.length + offset - rowIndex] ?? null));
+    const kindFixed = (cell: { rowIndex: number; columnKey: string }) => {
+      const target = created[cell.rowIndex - lines.length];
+      const column = pasteColumns.find((candidate) => candidate.key === cell.columnKey);
+      return target?.lineKind === "out_of_quote" && column !== undefined && !column.isEditable(target);
+    };
+    const result = { ...applied, cells: applied.cells.filter((cell) => !outsideRights(cell) && !kindFixed(cell)) };
     // 04-26(D-86) — 상한을 넘기는 붙여넣기는 견적을 자르지 않고 한 칸도 바꾸지 않은 채 전부 거부한다.
     const overCap = lines.length + result.newRowsNeeded - lineCap;
     if (result.newRowsNeeded > 0 && overCap > 0) {
@@ -1928,8 +1939,7 @@ export function QuoteLedger({
     }
     setLineCapNotice(null);
     setSavedAt(null);
-    // 04-47(ENG-D10) — 표 끝을 넘어 생기는 줄도 새 줄 경로(newDraftLine — crypto.randomUUID() · isNew)로 만든다.
-    const created = Array.from({ length: result.newRowsNeeded }, () => newDraftLine(subcategories[0]?.value ?? "", newLineCells));
+    // 04-47(ENG-D10) — 표 끝을 넘어 생기는 줄도 새 줄 경로(newDraftLine — crypto.randomUUID() · isNew)로 만든다(위 created).
     const filledIds = Array.from({ length: result.rowCount }, (_, offset) => {
       const index = rowIndex + offset;
       return index < lines.length ? lines[index]!.clientKey : created[index - lines.length]!.clientKey;
@@ -1948,7 +1958,7 @@ export function QuoteLedger({
     // DR-35 — 잠긴·읽기 전용 셀에 떨어진 값의 오류 이유는 그 셀의 편집 시도 이유와 같은 문자열이다.
     const blockedReasons = new Map<string, string>();
     for (const cell of result.cells) {
-      const target = lines[cell.rowIndex] ?? newRow;
+      const target = lines[cell.rowIndex] ?? created[cell.rowIndex - lines.length];
       const column = pasteColumns.find((candidate) => candidate.key === cell.columnKey);
       if (cell.result.status !== "error" || !target || !column || column.isEditable(target)) continue;
       const reason = blockedReasonFor(target, cell.columnKey);

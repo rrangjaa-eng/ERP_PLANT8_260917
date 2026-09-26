@@ -38,6 +38,16 @@ function readSourceCurrencies(appMeta: string | null | undefined, rowCount: numb
   return currencies.every((currency): currency is string => currency !== null) ? currencies : null;
 }
 
+// /qa ISSUE-003 (a) — 앱 형식 줄의 종류(`kind`, 04-47 quoteLineClipboardMeta). 줄마다 없으면 null.
+function readSourceKinds(appMeta: string, rowCount: number): (string | null)[] {
+  const parsed: unknown = JSON.parse(appMeta);
+  const entries = Array.isArray(parsed) ? parsed : [];
+  return Array.from({ length: rowCount }, (_, index) => {
+    const entry: unknown = entries[index];
+    return typeof entry === "object" && entry !== null && "kind" in entry && typeof entry.kind === "string" ? entry.kind : null;
+  });
+}
+
 export type PasteColumn<Row> = {
   key: string;
   kind: PasteColumnKind;
@@ -68,6 +78,8 @@ export type ApplyPasteResult = {
   ignoredComputedCells: number;
   /** 04-47 — 앱 형식의 줄별 통화(없으면 null). */
   sourceCurrencies: string[] | null;
+  /** /qa ISSUE-003 — 앱 형식의 줄별 종류(앱 형식이 없으면 null, 줄에 종류가 없으면 그 칸 null). */
+  sourceKinds: (string | null)[] | null;
   /** 04-47 — 붙여넣은 줄 수. */
   rowCount: number;
 };
@@ -78,8 +90,8 @@ export function applyPaste<Row>(params: {
   rows: Row[];
   activeRowIndex: number;
   activeColIndex: number;
-  /** 붙여넣기로 새로 생길 줄의 모양 — 없으면 새 줄은 모든 칸이 편집 가능하다. */
-  newRow?: Row;
+  /** 붙여넣기로 새로 생길 줄의 모양 — 없으면 새 줄은 모든 칸이 편집 가능하다. 함수면 원본 줄 종류(sourceKinds)로 묻는다. */
+  newRow?: Row | ((sourceKind: string | null) => Row);
   /** 04-47 — 앱 전용 형식 원문(`readPasteClipboard`, 없으면 null). */
   appMeta?: string | null;
 }): ApplyPasteResult {
@@ -93,6 +105,7 @@ export function applyPaste<Row>(params: {
   let ignoredComputedCells = 0;
   const sourceCurrencies = wholeCurrencies ?? readSourceCurrencies(params.appMeta, parsed.length);
   const source = sourceCurrencies ? "app" : "external";
+  const sourceKinds = sourceCurrencies && params.appMeta ? readSourceKinds(params.appMeta, parsed.length) : null;
 
   const lastRowIndex = activeRowIndex + parsed.length - 1;
   const newRowsNeeded = Math.max(0, lastRowIndex - (rows.length - 1));
@@ -100,7 +113,8 @@ export function applyPaste<Row>(params: {
   parsed.forEach((pastedRow, rOffset) => {
     const rowIndex = activeRowIndex + rOffset;
     // 붙여넣기로 새로 생기는 줄은 newRow로 묻는다 — newRow가 없으면 undefined(항상 편집 가능).
-    const row: Row | undefined = rowIndex < rows.length ? rows[rowIndex] : newRow;
+    const row: Row | undefined =
+      rowIndex < rows.length ? rows[rowIndex] : typeof newRow === "function" ? (newRow as (sourceKind: string | null) => Row)(sourceKinds?.[rOffset] ?? null) : newRow;
 
     pastedRow.forEach((rawValue, cOffset) => {
       const colIndex = activeColIndex + cOffset;
@@ -156,7 +170,7 @@ export function applyPaste<Row>(params: {
     });
   });
 
-  return { cells, newRowsNeeded, droppedColumnCount, source, ignoredComputedCells, sourceCurrencies, rowCount: parsed.length };
+  return { cells, newRowsNeeded, droppedColumnCount, source, ignoredComputedCells, sourceCurrencies, sourceKinds, rowCount: parsed.length };
 }
 
 export type UseClipboardPasteParams<Row> = {

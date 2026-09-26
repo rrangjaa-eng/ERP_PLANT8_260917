@@ -1,0 +1,106 @@
+/* 04.2-UI-SPEC S2 — §6-1 목록 + §7-3 (가) 상태 한 줄로 조립(본보기 corp-cards).
+   색·서체·radius는 tokens.css 변수만 쓴다. */
+
+.filterRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-4);
+  margin: var(--s-3) 0;
+}
+
+.years {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.yearLink {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: var(--underline-offset);
+}
+
+.yearCurrent {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--fg);
+}
+
+/* §7-3 (가) 「잠김」 한 줄과 같은 모양 — 표 바로 위 --fs-sm --muted, 줄 끝에 1차 버튼. */
+.statusRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  margin: 0 0 var(--s-3);
+}
+
+.status {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.confirmError {
+  font-size: var(--fs-sm);
+  color: var(--danger);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  background: var(--bg);
+  text-align: left;
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+}
+
+.table td {
+  min-height: var(--row-min);
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  font-size: var(--fs-base);
+  border-bottom: var(--line-w) solid var(--line);
+}
+
+/* §2-4: 날짜는 같은 폭 숫자 — tabular-nums, 줄바꿈 없음. */
+.date {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 긴 이름(`제22대 국회의원 선거일`)은 줄바꿈하고 말줄임하지 않는다. */
+.name {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* §3 터치 목표: 폰에서 짧은 글자 링크의 히트 영역만 44×44로 키운다. */
+@media (max-width: 699.98px) {
+  .yearLink {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+}

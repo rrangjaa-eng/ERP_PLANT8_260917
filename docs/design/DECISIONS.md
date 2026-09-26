@@ -916,3 +916,11 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **왜**: CLAUDE.md §7 「알 수 있는 값은 기본값으로 미리 채운다(내 팀)」. 대부분의 등록은 등록자가 자기 팀 프로젝트의 PM이다 — 매번 두 칸을 고르게 할 이유가 없다. PR #84(등록 팀 범위)가 옵션을 좁힌 뒤에 얹어야 목록 밖 값을 고르지 않는다.
 
 **범위**: `domain/projects/references.ts` · `app/(app)/projects/page.tsx` · `app/(app)/projects/project-form.tsx`. SYSTEM.md 문구는 바꾸지 않는다.
+
+## 2026-09-26 — 견적 줄 표 붙여넣기 읽기 규칙 3건 (코디네이터 대리 결정 2026-09-26 · /qa ISSUE-003 · 004 · 011 (a))
+
+- **줄 종류(ISSUE-003)**: 앱 형식 `application/x-plant8-quote-lines+json`은 줄마다 `{ currency, kind }`를 싣고, 붙여넣기로 새로 생기는 줄은 원본과 같은 종류(견적 외 비용이면 견적 외 비용 줄)가 되며 그 줄의 잠긴 칸(소분류·수량·단가)의 종류 표시 글자는 오류 없이 넘긴다 — TSV 글자와 외부(엑셀) 붙여넣기는 그대로, 이미 있는 줄의 종류는 바꾸지 않는다.
+- **`원`(ISSUE-004)**: 숫자 칸 붙여넣기에서 앞뒤 `원`은 ₩$¥￦와 같은 통화 기호로 지운다(`1,234원` → 1234, `stripNumberInput` 공용 규칙).
+- **비고 `—`(ISSUE-011)**: 비고 칸에 붙인 `—`(앱의 빈 값 표시)는 빈 비고(null)로 읽는다 — 거래처 `—`(ISSUE-001)와 같다.
+
+**범위**: `ui/table/use-clipboard-paste.ts` · `lib/format-number.ts` · `app/(app)/projects/[id]/quote-table.tsx` · `app/(app)/projects/[id]/previous-revision.tsx`. SYSTEM.md 문구는 바꾸지 않는다.

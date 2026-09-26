@@ -7,6 +7,7 @@ import { authedActionClient } from "@/lib/actions/client";
 import {
   addHoliday,
   confirmHolidayYear,
+  deleteHoliday,
   DuplicateHolidayError,
   PastHolidayDateError,
 } from "@/domain/holidays/admin";
@@ -60,4 +61,15 @@ export const addHolidayAction = authedActionClient
       }
       throw error;
     }
+  });
+
+// 04.2-12: 수동 미래 행 삭제 — 확인 단계 없음(D-4209 개정). 규칙 행·오늘 이전 행 거부와
+// 대체일 재계산·로그는 도메인이 한다. 지운 행의 원래 값을 돌려줘 결과 줄 `되돌리기`가
+// addHolidayAction을 같은 값으로 부른다(되돌리기 전용 액션 없음).
+export const deleteHolidayAction = authedActionClient
+  .schema(z.object({ id: z.string().uuid() }))
+  .action(async ({ parsedInput, ctx }) => {
+    const result = await deleteHoliday(ctx.viewer, parsedInput.id);
+    revalidatePath("/admin/holidays");
+    return result;
   });

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, gte, lte } from "drizzle-orm";
+import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { db } from "@/db/client";
@@ -93,6 +93,7 @@ test.describe("공휴일 관리 /admin/holidays", () => {
       await expect(page.getByRole("button", { name: /공휴일 확정/ })).toHaveCount(0);
       await expect(page.getByRole("columnheader", { name: "동작" })).toHaveCount(0);
       await expect(page.getByRole("link", { name: "공휴일 추가" })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "삭제" })).toHaveCount(0);
       expect((await page.goto(`/admin/holidays?year=${NEXT_YEAR}&new=1`))?.status()).toBe(200);
       await expect(page.getByLabel("날짜")).toHaveCount(0);
     } finally {
@@ -143,7 +144,7 @@ test.describe("공휴일 표·확정 버튼의 상태", () => {
 
     const table = page.getByRole("table", { name: `${LONG_NAME_YEAR}년 공휴일` });
     await expect(table.locator("tbody tr")).toHaveCount(1);
-    await expect(table.locator("tbody tr td")).toHaveText(["04-12", "화", LONG_NAME, "선거일", ""]);
+    await expect(table.locator("tbody tr td")).toHaveText(["04-12", "화", LONG_NAME, "선거일", "삭제"]);
   });
 
   test("행이 없는 해(?year=1999)는 기본 연도로 떨어지고 후보를 만들지 않는다", async ({ page }) => {
@@ -282,5 +283,165 @@ test.describe("공휴일 추가(04.2-12)", () => {
     expect(await cell.evaluate((el) => getComputedStyle(el).textOverflow)).not.toBe("ellipsis");
     await expect(page.getByRole("button", { name: `${NEXT_YEAR}년 공휴일 확정` })).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`/admin/holidays\\?year=${NEXT_YEAR}$`), { timeout: 8000 });
+  });
+});
+
+// 04.2-12 Task 2 — 확인 없는 삭제 + 결과 줄 `되돌리기`(UI-SPEC S2-f · D-4209 개정 · #1).
+const ROW_A = { date: `${NEXT_YEAR}-07-08`, name: "임시공휴일 테스트 가" };
+const ROW_B = { date: `${NEXT_YEAR}-07-09`, name: "임시공휴일 테스트 나" };
+const OTHER_NAME = "다른 공휴일 테스트";
+
+async function resetDeleteRows(): Promise<void> {
+  await db.delete(holidays).where(inArray(holidays.date, [ROW_A.date, ROW_B.date]));
+  await db.insert(holidays).values([
+    { ...ROW_A, kind: "temporary" },
+    { ...ROW_B, kind: "temporary" },
+  ]);
+}
+
+// 다음 서버 액션 요청을 붙잡았다가 release()에 흘려보내거나(continue) 끊는다(abort).
+async function holdNextAction(page: Page, mode: "continue" | "abort"): Promise<() => void> {
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    if (request.method() !== "POST" || request.headers()["next-action"] === undefined) {
+      await route.continue();
+      return;
+    }
+    await held;
+    if (mode === "abort") await route.abort();
+    else await route.continue();
+  });
+  return release;
+}
+
+function rowOf(page: Page, name: string) {
+  return page.getByRole("table", { name: `${NEXT_YEAR}년 공휴일` }).locator("tbody tr", { hasText: name });
+}
+
+test.describe("공휴일 삭제 · 되돌리기(04.2-12)", () => {
+  test.beforeEach(async () => {
+    await resetConfirmation(NEXT_YEAR);
+    await resetDeleteRows();
+  });
+
+  test.afterAll(async () => {
+    await db.delete(holidays).where(inArray(holidays.date, [ROW_A.date, ROW_B.date]));
+  });
+
+  test("규칙 행엔 삭제가 없고, 삭제는 확인 없이 지워 결과 줄 + 되돌리기를 남기며, 되돌리기가 같은 값으로 행을 돌려놓는다", async ({
+    page,
+  }) => {
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/holidays?year=${NEXT_YEAR}`);
+
+    const ruleRow = page.getByRole("table", { name: `${NEXT_YEAR}년 공휴일` }).locator("tbody tr", { hasText: "10-03" });
+    await expect(ruleRow.first()).toBeVisible();
+    await expect(ruleRow.getByRole("button")).toHaveCount(0);
+    const deleteA = rowOf(page, ROW_A.name).getByRole("button", { name: "삭제" });
+    const deleteB = rowOf(page, ROW_B.name).getByRole("button", { name: "삭제" });
+    await expect(deleteA).toBeVisible();
+    await expect(deleteB).toBeVisible();
+
+    const before = await holidayCount(NEXT_YEAR);
+    const release = await holdNextAction(page, "continue");
+    await deleteA.click();
+    await expect(deleteA).toHaveText("삭제…");
+    await expect(deleteA).toHaveAttribute("aria-disabled", "true");
+    await expect(deleteB).toHaveText("삭제");
+    await expect(deleteB).not.toHaveAttribute("aria-disabled", "true");
+    release();
+
+    await expect(rowOf(page, ROW_A.name)).toHaveCount(0);
+    await expect(page.getByText(`후보 · 공휴일 ${before - 1}일`, { exact: true })).toBeVisible();
+    expect(await holidayCount(NEXT_YEAR)).toBe(before - 1);
+    const resultLine = page.getByRole("status").filter({ hasText: "삭제됨" });
+    await expect(resultLine).toHaveCount(1);
+    await expect(resultLine).toContainText(`${ROW_A.date} ${ROW_A.name} 삭제됨`);
+    const undo = resultLine.getByRole("button", { name: "되돌리기" });
+    await expect(undo).toBeFocused();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    // 화면의 1차 버튼은 확정 하나 — 삭제·되돌리기는 3차다.
+    const confirmBg = await page
+      .getByRole("button", { name: `${NEXT_YEAR}년 공휴일 확정` })
+      .evaluate((el) => getComputedStyle(el).backgroundColor);
+    const primaryCount = await page
+      .locator("main button")
+      .evaluateAll((buttons, bg) => buttons.filter((b) => getComputedStyle(b).backgroundColor === bg).length, confirmBg);
+    expect(primaryCount).toBe(1);
+
+    await deleteB.click();
+    await expect(rowOf(page, ROW_B.name)).toHaveCount(0);
+    await expect(resultLine).toHaveCount(1);
+    await expect(resultLine).toContainText(`${ROW_B.date} ${ROW_B.name} 삭제됨`);
+
+    await page.unroute("**/*");
+    const releaseUndo = await holdNextAction(page, "continue");
+    await resultLine.getByRole("button", { name: "되돌리기" }).click();
+    const undoPending = resultLine.getByRole("button", { name: "되돌리기" });
+    await expect(undoPending).toHaveText("되돌리기…");
+    await expect(undoPending).toHaveAttribute("aria-disabled", "true");
+    releaseUndo();
+
+    await expect(resultLine).toHaveCount(0);
+    const restored = rowOf(page, ROW_B.name);
+    await expect(restored).toContainText("임시공휴일");
+    await expect(restored.getByRole("button", { name: "삭제" })).toBeFocused();
+    await expect(page.getByText(`후보 · 공휴일 ${before - 1}일`, { exact: true })).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "추가됨" })).toHaveCount(0);
+  });
+
+  test("결과 줄은 연도를 바꾸거나 공휴일 추가 폼을 열면 사라진다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/holidays?year=${NEXT_YEAR}`);
+    const resultLine = page.getByRole("status").filter({ hasText: "삭제됨" });
+
+    await rowOf(page, ROW_A.name).getByRole("button", { name: "삭제" }).click();
+    await expect(resultLine).toHaveCount(1);
+    await page.getByRole("navigation", { name: "연도" }).getByRole("link", { name: `${THIS_YEAR}년` }).click();
+    await expect(page.getByRole("table", { name: `${THIS_YEAR}년 공휴일` })).toBeVisible();
+    await page.getByRole("navigation", { name: "연도" }).getByRole("link", { name: `${NEXT_YEAR}년` }).click();
+    await expect(page.getByRole("table", { name: `${NEXT_YEAR}년 공휴일` })).toBeVisible();
+    await expect(resultLine).toHaveCount(0);
+
+    await rowOf(page, ROW_B.name).getByRole("button", { name: "삭제" }).click();
+    await expect(resultLine).toHaveCount(1);
+    await page.getByRole("link", { name: "공휴일 추가", exact: true }).click();
+    await expect(page.getByLabel("날짜")).toBeVisible();
+    await expect(resultLine).toHaveCount(0);
+  });
+
+  test("삭제 요청이 끊기면 그 행에 실패 줄, 되돌리기가 끊기면 다시 시도, 그사이 다른 공휴일이 들어서면 거절 문구", async ({
+    page,
+  }) => {
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/holidays?year=${NEXT_YEAR}`);
+    const rowA = rowOf(page, ROW_A.name);
+
+    const releaseDelete = await holdNextAction(page, "abort");
+    await rowA.getByRole("button", { name: "삭제" }).click();
+    releaseDelete();
+    await expect(rowA.getByText("삭제하지 못했습니다 · 다시 시도", { exact: true })).toBeVisible();
+    await expect(rowA).toHaveCount(1);
+    await page.unroute("**/*");
+    await rowA.getByRole("button", { name: "삭제" }).click();
+    await expect(rowA).toHaveCount(0);
+
+    const resultLine = page.getByRole("status").filter({ hasText: /삭제됨|되돌리지 못했습니다/ });
+    const releaseUndo = await holdNextAction(page, "abort");
+    await resultLine.getByRole("button", { name: "되돌리기" }).click();
+    releaseUndo();
+    await expect(resultLine).toContainText("되돌리지 못했습니다 · 다시 시도");
+    await expect(resultLine.getByRole("button", { name: "되돌리기" })).toBeVisible();
+    await page.unroute("**/*");
+
+    await db.insert(holidays).values({ date: ROW_A.date, name: OTHER_NAME, kind: "temporary" });
+    await resultLine.getByRole("button", { name: "되돌리기" }).click();
+    await expect(resultLine).toContainText(`되돌리지 못했습니다 · 이미 공휴일입니다(${OTHER_NAME})`);
+    await expect(resultLine.getByRole("button", { name: "되돌리기" })).toHaveCount(0);
   });
 });

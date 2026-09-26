@@ -10,6 +10,8 @@ import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { ConfirmYear } from "./confirm-year";
 import { HolidayForm } from "./holiday-form";
 import { AddedToast } from "./added-toast";
+import { DeleteHoliday } from "./delete-holiday";
+import { DeleteUndoSection } from "./delete-undo";
 import styles from "./holidays.module.css";
 
 // ADMN-11(04.2-11) — 04.2-UI-SPEC S2. 캐시 없음(§7-7 관리자 마스터 화면 — 서버 렌더에 값이 들어 있다).
@@ -120,29 +122,33 @@ export default async function HolidaysPage({
             {!confirmed && canWrite && !showForm ? <ConfirmYear key={view.year} year={view.year} /> : null}
           </div>
 
-          <table className={styles.table}>
-            <caption className="sr-only">{`${view.year}년 공휴일`}</caption>
-            <thead>
-              <tr>
-                <th scope="col">날짜</th>
-                <th scope="col">요일</th>
-                <th scope="col">이름</th>
-                <th scope="col">구분</th>
-                {canWrite ? <th scope="col">동작</th> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {view.rows.map((row) => (
-                <tr key={row.id}>
-                  <td className={styles.date}>{row.monthDay}</td>
-                  <td>{row.weekday}</td>
-                  <td className={styles.name}>{row.name}</td>
-                  <td>{row.kindLabel}</td>
-                  {canWrite ? <td /> : null}
+          <DeleteUndoSection key={`${view.year}:${showForm ? "form" : "list"}`}>
+            <table className={styles.table}>
+              <caption className="sr-only">{`${view.year}년 공휴일`}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">날짜</th>
+                  <th scope="col">요일</th>
+                  <th scope="col">이름</th>
+                  <th scope="col">구분</th>
+                  {canWrite ? <th scope="col">동작</th> : null}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {view.rows.map((row) => (
+                  <tr key={row.id}>
+                    <td className={styles.date}>{row.monthDay}</td>
+                    <td>{row.weekday}</td>
+                    <td className={styles.name}>{row.name}</td>
+                    <td>{row.kindLabel}</td>
+                    {canWrite ? (
+                      <td>{row.deletable ? <DeleteHoliday id={row.id} date={row.date} /> : null}</td>
+                    ) : null}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </DeleteUndoSection>
         </>
       )}
 

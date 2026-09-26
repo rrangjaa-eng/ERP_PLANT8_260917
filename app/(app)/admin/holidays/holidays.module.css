@@ -103,6 +103,34 @@
   overflow-wrap: anywhere;
 }
 
+/* 04.2-12 삭제 결과 줄(S2-f) — 상태 줄과 표 사이 한 줄. 긴 이름은 줄바꿈하고 말줄임하지 않는다. */
+.undoLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0 0 var(--s-3);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.undoFailed {
+  color: var(--danger);
+}
+
+.rowAction {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.rowError {
+  font-size: var(--fs-sm);
+  color: var(--danger);
+}
+
 /* 04.2-12 추가 폼(S2-d) — ui/form 칸 안의 네이티브 입력·선택. projects.module.css
    .textInput과 같은 모양(§7-2). */
 .form {

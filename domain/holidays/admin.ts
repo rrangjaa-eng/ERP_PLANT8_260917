@@ -234,3 +234,46 @@ export async function addHoliday(
     return { id: row.id, date: input.date, year };
   });
 }
+
+export type DeleteHolidayResult =
+  | { deleted: true; date: string; name: string; kind: "temporary" | "election" }
+  | { deleted: false };
+
+// D-4210 「삭제」: 달력 잠금 트랜잭션 하나에서 행을 지우고(RETURNING) 규칙 행·오늘 이전
+// 행이면 던져 트랜잭션째 되돌린다(소급 금지 — T-4.2-77). 이미 지워진 행(동시 중복 삭제의
+// 뒤 사람)은 로그 없이 `{ deleted: false }`. 지운 날짜의 해 Y에 대해 원래 해 Y-1부터 표
+// 끝까지 재계산 한 번 → 원래 값을 실은 `holiday_change` op delete 로그(D-4220). 돌려준
+// 원래 값으로 결과 줄 `되돌리기`가 addHoliday를 다시 부른다(D-4209 개정).
+export async function deleteHoliday(
+  viewer: Viewer,
+  id: string,
+  deps?: HolidayWriteDeps,
+): Promise<DeleteHolidayResult> {
+  if (!(await can(viewer, HOLIDAYS_MENU, "write"))) {
+    throw new HolidayForbiddenError("공휴일을 삭제할 권한이 없습니다.");
+  }
+  const today = toKstDate(deps?.now ?? new Date());
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  const recompute = deps?.recompute ?? recomputeFutureSubstitutes;
+
+  return withHolidayCalendarLock(async (tx) => {
+    const row = await deleteHolidayById(viewer, id, tx);
+    if (!row) return { deleted: false };
+    if ((row.kind !== "temporary" && row.kind !== "election") || row.date <= today) {
+      throw new HolidayNotDeletableError("지울 수 없는 공휴일입니다 · 규칙 행이나 오늘 이전 행");
+    }
+    const kind = row.kind;
+    await recompute(Number(row.date.slice(0, 4)) - 1, { today }, tx);
+    await recordAction(
+      viewer,
+      {
+        actionType: "holiday_change",
+        entity: "holiday",
+        entityId: row.id,
+        detail: { op: "delete", date: row.date, name: row.name, kind },
+      },
+      { tx },
+    );
+    return { deleted: true, date: row.date, name: row.name, kind };
+  });
+}

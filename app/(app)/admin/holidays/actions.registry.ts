@@ -16,3 +16,11 @@ registerAction({
   action: "write",
   dtoName: null,
 });
+
+// 04.2-12: 수동 미래 행 삭제. 지운 행의 날짜·이름·구분만 돌려준다.
+registerAction({
+  name: "deleteHolidayAction",
+  menu: "admin.holidays",
+  action: "write",
+  dtoName: null,
+});

@@ -125,18 +125,13 @@ export default async function VendorsPage({
               const evidenceType = vendor.defaultEvidenceType
                 ? (evidenceTypeLabelByValue.get(vendor.defaultEvidenceType) ?? vendor.defaultEvidenceType)
                 : null;
-              const status = vendor.archivedAt ? (
-                <StatusTag kind="muted" variant="text">
-                  보관됨
-                </StatusTag>
-              ) : vendor.hidden ? (
-                <StatusTag kind="muted" variant="text">
-                  숨김
-                </StatusTag>
-              ) : null;
               // §7-3 폰 전략 — P1(이름·계좌·동작)만 열로 남고 나머지는 행 아래
               // 접힌 줄 하나로 들어간다(상세 화면이 없어 P3로 숨기지 않는다).
-              const folded = [vendor.businessNo, evidenceType, status].filter((value) => !!value);
+              const folded = [
+                vendor.businessNo,
+                evidenceType,
+                vendor.archivedAt ? "보관됨" : vendor.hidden ? "숨김" : null,
+              ].filter((value): value is string => !!value);
               return (
                 <Fragment key={vendor.id}>
                   <tr>
@@ -150,7 +145,17 @@ export default async function VendorsPage({
                         canReveal={canReveal}
                       />
                     </td>
-                    <td className={styles.p2}>{status ?? "—"}</td>
+                    <td className={styles.p2}>
+                      {vendor.archivedAt ? (
+                        <StatusTag kind="muted" variant="text">
+                          보관됨
+                        </StatusTag>
+                      ) : vendor.hidden ? (
+                        <StatusTag kind="muted" variant="text">
+                          숨김
+                        </StatusTag>
+                      ) : "—"}
+                    </td>
                     {canWrite || canArchive ? (
                       <td>
                         {vendor.archivedAt ? null : (
@@ -170,12 +175,7 @@ export default async function VendorsPage({
                   {folded.length > 0 ? (
                     <tr className={styles.collapsedRow}>
                       <td colSpan={canWrite || canArchive ? 6 : 5} className={styles.collapsedCell}>
-                        {folded.map((value, index) => (
-                          <span key={index}>
-                            {index > 0 ? " · " : ""}
-                            {value}
-                          </span>
-                        ))}
+                        {folded.join(" · ")}
                       </td>
                     </tr>
                   ) : null}

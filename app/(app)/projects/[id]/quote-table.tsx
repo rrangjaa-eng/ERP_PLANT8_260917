@@ -982,6 +982,8 @@ export function QuoteLedger({
   const [resplitKey, setResplitKey] = useState(0);
   // 04-47(B-24) — 그룹 버튼으로 만든 새 줄(표가 그 그룹 끝 쪽으로 옮긴다).
   const [revealRowId, setRevealRowId] = useState<string | null>(null);
+  // 04-47(DR-5 · 저장 거부) — 첫 오류로 이동 신호와 그 신호를 받을 표(견적 줄 · 발행 · 입금).
+  const [issueTarget, setIssueTarget] = useState<{ signal: number; table: "quote" | "issued" | "paid" } | null>(null);
   // 04-26(D-86 · DR-16) — 상한에서 막힌 키(Ctrl+Enter·Ctrl+D)·붙여넣기의 이유. 다음 저장 시도·다음 붙여넣기 때 지운다.
   const [lineCapNotice, setLineCapNotice] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -1026,6 +1028,20 @@ export function QuoteLedger({
   // 04-28 — 저장 요청에 실어 보낸 줄(clientKey) 순서 스냅숏. 봉투의 rowIndex가 이 순서다.
   const sentLineKeysRef = useRef<string[]>([]);
 
+  // 04-47 — 표 밖 칸 거부 뒤 그 칸(기간 → 총 매출 예상가)으로. 거부 응답이 올 때 칸은 열려 있다.
+  function focusOutsideError(period: PeriodFieldError[], preEstimate: PreEstimateFieldError[]) {
+    const periodError = period[0];
+    const preEstimateError = preEstimate[0];
+    const id = periodError
+      ? `period-${periodError.field}`
+      : preEstimateError
+        ? preEstimateError.field === "fxRate"
+          ? "pre-estimate-fx-rate"
+          : "pre-estimate-amount"
+        : null;
+    if (id) document.getElementById(id)?.focus();
+  }
+
   const { execute, result, isExecuting } = useAction(saveProjectLedgerAction, {
     onSettled: () => {
       savingRef.current = false;
@@ -1042,15 +1058,20 @@ export function QuoteLedger({
         setIssuedEntries((prev) => prev?.map((entry) => ({ ...entry, cellErrors: entry.id ? routed.issued[entry.id] : undefined })));
         setPaidEntries((prev) => prev?.map((entry) => ({ ...entry, cellErrors: entry.id ? routed.paid[entry.id] : undefined })));
         applyRejectedCells(routed.rest);
+        // 04-47 — 거부 뒤 첫 오류(견적 줄 표 → 발행 → 입금)의 쪽·셀로.
+        const table = routed.rest.length > 0 ? "quote" : Object.keys(routed.issued).length > 0 ? "issued" : Object.keys(routed.paid).length > 0 ? "paid" : null;
+        if (table) setIssueTarget((prev) => ({ signal: (prev?.signal ?? 0) + 1, table }));
         return; // 전부 거부 — 줄 교체·저장됨·보관본 지우기를 하지 않는다.
       }
       if (data && "periodRejected" in data) {
         setPeriodErrors(data.periodRejected.errors);
         setPreEstimateErrors(data.periodRejected.preEstimateErrors);
+        focusOutsideError(data.periodRejected.errors, data.periodRejected.preEstimateErrors);
         return; // 기간 칸 오류로 전부 거부.
       }
       if (data && "preEstimateRejected" in data) {
         setPreEstimateErrors(data.preEstimateRejected.errors);
+        focusOutsideError([], data.preEstimateRejected.errors);
         return; // 총 매출 예상가 칸 오류로 전부 거부.
       }
       if (data?.quoteLines?.lines) {
@@ -1263,10 +1284,21 @@ export function QuoteLedger({
       setPreEstimateDraft({ ...preEstimateBaselineDraft, ...restored.preEstimate });
     }
   }
-  // 해소되지 않은 충돌 칸도 함께 센다 — 충돌이 남은 채 서버를 부르지 않는다.
-  const errorCellCount =
-    lines.reduce((sum, line) => sum + Object.keys(line.cellErrors).length + Object.keys(line.cellConflicts).length, 0) +
-    [...(issuedEntries ?? []), ...(paidEntries ?? [])].reduce((sum, entry) => sum + Object.keys(entry.cellErrors ?? {}).length, 0);
+  // 04-47(DR-5) — 남은 고정 오류·해소되지 않은 충돌. 1차는 이것 때문에 비활성이 되지 않고, 누르면 서버를 부르지 않고 첫 오류로 간다.
+  const hasEntryError = (entries: EntryDraft[] | undefined) => (entries ?? []).some((entry) => Object.keys(entry.cellErrors ?? {}).length > 0);
+  const quoteHasIssue = lines.some((line) => Object.keys(line.cellErrors).length > 0 || Object.keys(line.cellConflicts).length > 0);
+
+  // 표 밖 칸(기간 → 총 매출 예상가) → 견적 줄 표 → 발행 표 → 입금 표 순서로 첫 오류에 포커스한다. 오류가 없으면 false.
+  function goToFirstIssue(): boolean {
+    if (periodErrors.length > 0 || preEstimateErrors.length > 0) {
+      focusOutsideError(periodErrors, preEstimateErrors);
+      return true;
+    }
+    const table = quoteHasIssue ? "quote" : hasEntryError(issuedEntries) ? "issued" : hasEntryError(paidEntries) ? "paid" : null;
+    if (!table) return false;
+    setIssueTarget((prev) => ({ signal: (prev?.signal ?? 0) + 1, table }));
+    return true;
+  }
 
   function updateLine(clientKey: string, patch: Partial<DraftLine>) {
     persistPendingRef.current = true;
@@ -1433,7 +1465,8 @@ export function QuoteLedger({
 
   function handleSave() {
     if (savingRef.current || isExecuting) return; // 버튼·키보드 두 경로가 여기서 한 번만 보낸다.
-    if (errorCellCount > 0) return; // §7-3 "오류가 한 칸이라도 있으면 화면 전체가 거부" — 서버에 보내지 않는다.
+    // §7-3 "오류가 한 칸이라도 있으면 화면 전체가 거부" — 서버에 보내지 않고 첫 오류로 간다(04-47 DR-5).
+    if (goToFirstIssue()) return;
     savingRef.current = true;
 
     const dirtyLines = lines.filter((line) => line.dirty);
@@ -2149,9 +2182,9 @@ export function QuoteLedger({
               type="button"
               variant="primary"
               pending={isExecuting}
-              disabled={(dirtyCount === 0 && !cellEditing) || errorCellCount > 0}
-              disabledReason={errorCellCount > 0 ? `오류 ${errorCellCount}칸 · 고쳐야 저장됩니다` : saveDisabledReason}
-              reasonTone={errorCellCount > 0 ? "block" : "info"}
+              disabled={dirtyCount === 0 && !cellEditing}
+              disabledReason={saveDisabledReason}
+              reasonTone="info"
               shortcut="Ctrl+S"
               onClick={attemptSave}
             >
@@ -2273,6 +2306,7 @@ export function QuoteLedger({
         }}
         onBlockedEdit={showBlockedReason}
         onPasteAtCell={editableWidth ? handlePasteAtCell : undefined}
+        firstIssueSignal={issueTarget?.table === "quote" ? issueTarget.signal : undefined}
         cellIssue={cellIssueFor}
         cellDirty={(row) => row.dirty}
         onRowTap={(row) => setSheetRowKey(row.clientKey)}
@@ -2396,6 +2430,7 @@ export function QuoteLedger({
         saveButtonId={saveButtonId}
         editableWidth={editableWidth}
         rejectedCells={{ issued: rejectedCells.issued, paid: rejectedCells.paid, total: rejectedCellTotal }}
+        firstIssue={issueTarget?.table === "issued" || issueTarget?.table === "paid" ? { signal: issueTarget.signal, table: issueTarget.table } : null}
         onSave={() => {
           clearAttemptNotices();
           setSaveRequests((count) => count + 1);

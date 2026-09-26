@@ -211,6 +211,7 @@ export function RevenueSection({
   saveButtonId,
   editableWidth = true,
   rejectedCells,
+  firstIssue,
   onSave,
 }: {
   /** 04-16(B-19) — quote.amount를 볼 수 없으면 서버가 싣지 않는다(키 부재). */
@@ -231,6 +232,8 @@ export function RevenueSection({
   editableWidth?: boolean;
   /** 04-16(B3 · R2) — 마지막 거부 봉투의 표별 칸 수. total은 표 밖 칸까지 센 전부다. */
   rejectedCells?: { issued: number; paid: number; total: number };
+  /** 04-47(DR-5 · B3) — 첫 오류로 이동 신호와 그 신호를 받을 표(첫 고정 오류 셀이 있는 표 — 발행이 먼저). */
+  firstIssue?: { signal: number; table: "issued" | "paid" } | null;
   /** 04-41 — 발행·입금 표 안의 Ctrl+S도 견적 표와 같은 일괄 저장이다. */
   onSave: () => void;
 }) {
@@ -402,6 +405,7 @@ export function RevenueSection({
             emptyAction={canEditEntries ? { label: "발행 줄 추가", onClick: onAddIssued } : undefined}
             saveLocked={saveLocked}
             cellIssue={entryCellIssue}
+            firstIssueSignal={firstIssue?.table === "issued" ? firstIssue.signal : undefined}
             alwaysShowFooter={issuedNote !== null}
             footer={
               <tr>
@@ -441,6 +445,7 @@ export function RevenueSection({
             emptyAction={canEditEntries ? { label: "입금 줄 추가", onClick: onAddPaid } : undefined}
             saveLocked={saveLocked}
             cellIssue={entryCellIssue}
+            firstIssueSignal={firstIssue?.table === "paid" ? firstIssue.signal : undefined}
             alwaysShowFooter
             footer={
               <tr>

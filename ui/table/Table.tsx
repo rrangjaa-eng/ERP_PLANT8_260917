@@ -116,6 +116,11 @@ export type TableProps<Row> = {
    * `openCell`로 열지 않으면 그 줄의 첫 편집 셀에 포커스한다.
    */
   revealRowId?: string | null;
+  /**
+   * 04-47(DR-5 · 저장 거부) — 값이 바뀌면 `cellIssue`가 오류·충돌(`error` · `conflict`)인 셀을 표시 순서로 훑어 첫 셀의 쪽으로 옮기고
+   * 그 셀(안에 입력이 있으면 그 입력)에 포커스한다. `reason`(잠긴 셀 편집 시도 이유)은 세지 않고, 찾은 셀이 없으면 아무것도 하지 않는다.
+   */
+  firstIssueSignal?: number;
 };
 
 type ActiveCell = { rowId: string; columnKey: string } | null;
@@ -160,6 +165,7 @@ export function Table<Row>({
   footerNotices,
   footerSuccess,
   revealRowId,
+  firstIssueSignal,
 }: TableProps<Row>) {
   const [activeCell, setActiveCell] = useState<ActiveCell>(null);
   const allowed = (action: Parameters<typeof isGridActionAllowed>[0]) => isGridActionAllowed(action, { saveLocked });
@@ -219,12 +225,38 @@ export function Table<Row>({
     }
   }
   const pages = pagination ? splitPages(displayIds, { pageSize: pagination.pageSize, pinned }) : null;
+  // 04-47(DR-5) — 첫 오류로 이동 신호. 고정 오류·충돌만 센다(reason은 아니다).
+  const isFixedIssue = (row: Row, columnKey: string) => {
+    const kind = cellIssue?.(row, columnKey)?.kind;
+    return kind === "error" || kind === "conflict";
+  };
+  const [seenIssueSignal, setSeenIssueSignal] = useState(firstIssueSignal);
+  let issueFocusId: string | null = null;
+  if (firstIssueSignal !== seenIssueSignal) {
+    setSeenIssueSignal(firstIssueSignal);
+    if (firstIssueSignal !== undefined) {
+      for (const row of displayRows) {
+        const column = columns.find((candidate) => isFixedIssue(row, candidate.key));
+        if (!column) continue;
+        const rowId = getRowId(row);
+        issueFocusId = `${rowId}-${column.key}-issue`;
+        const issuePage = pages ? pageOfRow(pages, rowId) : null;
+        if (issuePage !== null && issuePage !== targetPage) {
+          targetPage = issuePage;
+          setRequestedPage(issuePage);
+          setPageAnnounced(true);
+        }
+        break;
+      }
+    }
+  }
   const page = pages ? clampPage(targetPage, pages.length) : 1;
   // 리뷰 S-1 — 보정한 쪽을 요청 쪽에도 되돌린다(줄이 다시 늘 때 사라졌던 쪽으로 튀지 않게).
   if (pages && page !== targetPage) setRequestedPage(page);
   const pageIds = pages ? new Set(pages[page - 1]) : null;
   const groups = pageIds ? groupRows(displayRows.filter((row) => pageIds.has(getRowId(row))), groupBy) : allGroups;
-  const [focusRequest, setFocusRequest] = useState<{ kind: "cell" | "heading" } | null>(null);
+  const [focusRequest, setFocusRequest] = useState<{ kind: "cell" | "heading" } | { kind: "issue"; issueId: string } | null>(null);
+  if (issueFocusId !== null) setFocusRequest({ kind: "issue", issueId: issueFocusId });
   const captionRef = useRef<HTMLTableCaptionElement>(null);
   // 그룹 머리글 행은 이 평탄화 목록에 들어오지 않는다 — 로빙 tabIndex·방향키
   // 좌표 체계가 데이터 행만 센다(방향키가 그룹 머리글을 "건너뛴다"는 (라)
@@ -483,7 +515,11 @@ export function Table<Row>({
   useEffect(() => {
     if (!focusRequest) return;
     if (focusRequest.kind === "cell") tableRef.current?.querySelector<HTMLElement>("td[data-grid-focus]")?.focus();
-    else (focusHeadingId ? document.getElementById(focusHeadingId) : captionRef.current)?.focus();
+    else if (focusRequest.kind === "issue") {
+      // 04-47(DR-5) — 오류 셀. 칸 안에 입력이 있으면(매출 표) 그 입력으로.
+      const cell = tableRef.current?.querySelector<HTMLElement>(`td[aria-describedby="${CSS.escape(focusRequest.issueId)}"]`);
+      (cell?.querySelector<HTMLElement>("input, select, textarea") ?? cell)?.focus();
+    } else (focusHeadingId ? document.getElementById(focusHeadingId) : captionRef.current)?.focus();
   }, [focusRequest, focusHeadingId]);
 
   function changePage(next: number) {
@@ -671,6 +707,17 @@ export function Table<Row>({
     const reach = pages && filled ? Math.max(page, ...filled.map((id) => pageOfRow(pages, id) ?? page)) : page;
     setPasteReach(reach > page ? reach : null);
   }
+
+  // 04-47(S4 error) — 다른 쪽의 오류·충돌 칸 수(번호 옆 `오류 N`). 지금 쪽은 세지 않는다.
+  const pageErrorCounts: Record<number, number> = {};
+  pages?.forEach((pageIds, index) => {
+    if (index + 1 === page) return;
+    const count = pageIds.reduce((sum, rowId) => {
+      const row = rowById.get(rowId);
+      return sum + (row ? columns.filter((column) => isFixedIssue(row, column.key)).length : 0);
+    }, 0);
+    if (count > 0) pageErrorCounts[index + 1] = count;
+  });
 
   const rangeText = pagination
     ? pageRangeText({ page, pageSize: pagination.pageSize, total: displayRows.length, unit: pagination.unit })
@@ -878,7 +925,14 @@ export function Table<Row>({
         {footerContent ? <tfoot aria-live="polite">{footerContent}</tfoot> : null}
       </table>
       {pagination && pages ? (
-        <Pagination label={pagination.label} page={page} pageCount={pages.length} rangeText={rangeText} onPageChange={changePage} />
+        <Pagination
+          label={pagination.label}
+          page={page}
+          pageCount={pages.length}
+          rangeText={rangeText}
+          onPageChange={changePage}
+          errorCounts={pageErrorCounts}
+        />
       ) : null}
       {hint && hint.length > 0 ? (
         <p className={styles.hintRow}>

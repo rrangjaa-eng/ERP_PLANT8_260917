@@ -11,10 +11,90 @@
 
 .filterFields {
   display: flex;
+  flex: 1 1 auto;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--s-4);
   max-width: 100%;
+}
+
+/* 04-48(DR-26) — PC(≥700)는 필터 한 줄 그대로: 네 칸 묶음은 레이아웃에서 사라지고(칸이 곧 줄의 항목),
+   「필터」 · 요약 줄은 그리지 않는다(접근성 트리에서도 빠진다). 1차는 줄 오른쪽 끝.
+   포커스 순서 = 시각 순서(SYSTEM.md §10) — CSS order로 바꾸지 않는다. 검색 · 1차는 폰 자리(.phoneSlot)와
+   PC 자리(.wideSlot) 둘에 그리고 700 중단점에서 하나만 보인다(display: none — 탭 순서에서도 빠진다). */
+.detailFields {
+  display: contents;
+}
+
+.filterBar {
+  display: none;
+}
+
+.primarySlot {
+  margin-left: auto;
+}
+
+@media (min-width: 700px) {
+  .filterFields .phoneSlot {
+    display: none;
+  }
+}
+
+@media (max-width: 699.98px) {
+  /* 폰 첫 화면: 검색(전폭) → 「필터」 · 요약 · 1차 한 줄 → (펼치면) 상태 · 팀 · 연도 · 기간 → 필터 지우기. */
+  .filterFields {
+    gap: var(--s-2) var(--s-3);
+  }
+
+  .filterFields .wideSlot {
+    display: none;
+  }
+
+  .searchField {
+    flex-basis: 100%;
+  }
+
+  .filterBar {
+    display: flex;
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-2) var(--s-3);
+  }
+
+  /* §3 폰 터치 목표 44×44 — 공유 Button보다 한 단계 높은 선택자. */
+  .filterFields .filterToggleButton {
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+
+  /* 최소 폭은 기본값(auto = 가장 긴 값 조각) — 그보다 좁게 눌리지 않고, 자리가 모자라면 1차가 다음 줄로 내려간다(감사 F1). */
+  .filterSummary {
+    flex: 1 1 0;
+    margin: 0;
+    font-size: var(--fs-sm);
+    color: var(--muted);
+  }
+
+  /* §6-0 최소 폭 320 — 묶음이 가장 긴 팀 select만큼 커지지 않게(감사 F2). */
+  .detailFields {
+    display: flex;
+    flex-basis: 100%;
+    min-width: 0;
+    max-width: 100%;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--s-2) var(--s-3);
+  }
+
+  .detailFields[data-open="false"] {
+    display: none;
+  }
+}
+
+/* 요약은 ` · ` 값 경계에서만 줄바꿈하고 값 안에서는 꺾지 않는다 · 말줄임 없음(UI-SPEC S1 long-text). */
+.filterSummaryPart {
+  white-space: nowrap;
 }
 
 .selectLabel {
@@ -32,6 +112,7 @@
   height: var(--control-h);
   border: var(--line-w) solid var(--line-ui);
   background: var(--bg);
+  color: var(--fg);
   padding: 0 var(--s-2);
   font-size: var(--fs-base);
 }
@@ -41,7 +122,14 @@
   font-weight: var(--fw-medium);
   color: var(--accent);
   text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
   text-underline-offset: var(--underline-offset);
+}
+
+/* §4-4 · §7-1 3차 밑줄 1px → hover 2px(ui/pagination · ui/list-empty와 같다). */
+.toggle:hover,
+.link:hover {
+  text-decoration-thickness: var(--line-w-strong);
 }
 
 @media (max-width: 699.98px) {
@@ -83,6 +171,7 @@
 .link {
   color: var(--accent);
   text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
   text-underline-offset: var(--underline-offset);
 }
 
@@ -99,6 +188,11 @@
   font-size: var(--fs-base);
 }
 
+/* §7-2 자리표시자는 형식 예 — 공용 ui/input과 같은 --faint(UA 회색을 두지 않는다, §4-4). */
+.textInput::placeholder {
+  color: var(--faint);
+}
+
 .textInput[aria-invalid="true"] {
   border-color: var(--danger);
 }
@@ -108,38 +202,112 @@
   outline-offset: var(--focus-offset);
 }
 
+/* 04-48(D-89 · SYSTEM.md 개정 ③) — 목록 기간 필터 두 칸: 폭 10ch + 좌우 --cell-pad-x. 오류는 §7-2 테두리 + 아래 한 줄. */
+.periodFields {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  color: var(--fg);
+}
+
+.periodInput {
+  width: calc(10ch + 2 * var(--cell-pad-x));
+  padding: 0 var(--cell-pad-x);
+  font-variant-numeric: tabular-nums;
+}
+
+.periodInput[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.fieldError {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-regular);
+}
+
+/* 감사 F3 — PC 필터 한 줄은 칸 바닥 맞춤이다. 기간 오류 한 줄은 제 높이 + 라벨 묶음 간격(--s-1)만큼 음수 아래 여백으로 정렬 상자 밖(칸 아래)에
+   두어 다른 칸을 밀어 내리지 않고, 그 높이만큼 줄 간격 · 폼 아래 여백을 더해 다음 줄 · 합계 줄과 겹치지 않는다. */
+@media (min-width: 700px) {
+  /* 폭도 칸 묶음 계산에서 뺀다(inline-size 0 · 묶음 폭만큼 min) — 글꼴이 넓어도 묶음을 넓혀 뒤 칸을 밀지 않고, 한 줄로 오른쪽에 넘친다. */
+  .filterFields .fieldError {
+    margin-bottom: calc(-1 * (var(--fs-sm) * var(--lh-body) + var(--s-1)));
+    line-height: var(--lh-body);
+    inline-size: 0;
+    min-inline-size: 100%;
+    white-space: nowrap;
+  }
+
+  .filterFields:has(.fieldError) {
+    row-gap: calc(var(--s-4) + var(--fs-sm) * var(--lh-body) + var(--s-1));
+    padding-bottom: calc(var(--fs-sm) * var(--lh-body) + var(--s-1));
+  }
+}
+
 .blockedReason {
   color: var(--danger);
   font-size: var(--fs-sm);
 }
 
-/* 04-05 S1 — 「더 보기」는 3차 버튼(링크 스타일)이고 합계 줄 위에 온다.
-   `ui/table`의 `footer`(tfoot)가 표 맨 끝에만 렌더돼 그 사이에 낄 자리가
-   없어(04-04 소유 파일, 이 플랜은 건드리지 않는다) 둘 다 표 밖 줄로
-   그린다 — projects-table.tsx 참고. */
-.loadMore {
-  display: block;
-  margin: var(--s-3) 0;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--accent);
-  text-decoration: underline;
-  text-underline-offset: var(--underline-offset);
+/* 04-17(D-88 · S1) — 표 위 합계 줄. 카드·타일·배경 면 없이 한 줄, 아래 2px 선. 금액은 `라벨 값` 쌍 단위로 줄바꿈한다. */
+.totals {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2) var(--s-5);
+  margin: 0 0 var(--s-3);
+  padding: var(--s-2) 0;
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
 }
 
-.summaryRow {
-  padding: var(--cell-pad-y) var(--cell-pad-x);
-  border-top: var(--line-w-strong) solid var(--line-strong);
+.totalsTitle,
+.totalsPair dt {
+  margin: 0;
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   color: var(--muted);
 }
 
-.footerCell {
-  padding: var(--cell-pad-y) var(--cell-pad-x);
-  border-top: var(--line-w-strong) solid var(--line-strong);
-  color: var(--muted);
+.totalsPairs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2) var(--s-5);
+  margin: 0;
+}
+
+.totalsPair {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  white-space: nowrap;
+}
+
+.totalsPair dd {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.totalsExclusion {
+  margin: 0 0 0 auto;
   font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+@media (max-width: 699.98px) {
+  .totalsExclusion {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+}
+
+/* 04-17(D-90) — 기간 칸 2행 귀속 라벨 · 04-48(D-89) 기간 칸 1행. */
+.periodCell,
+.attribution {
+  white-space: nowrap;
 }
 
 /* §7-7 LOADING — 반짝임(shimmer) 없는 정적 --surface 행. */

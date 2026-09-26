@@ -1,6 +1,6 @@
 "use client";
 
-import { Children, Fragment, useCallback, useEffect, useEffectEvent, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { Children, useCallback, useEffect, useEffectEvent, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -17,9 +17,11 @@ import { Toast } from "@/ui/toast/Toast";
 import { useDirtyStorage } from "@/ui/table/use-dirty-storage";
 import { useEditableWidth } from "@/ui/table/use-editable-width";
 import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
+import type { FooterNoticeItem } from "@/ui/table/footer-notice";
 import { normalizeNumericPaste } from "@/ui/table/parse-tsv";
 import { formatKrw, formatForeignLine, formatQuantity, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
 import { kstToday } from "@/lib/kst-date";
+import { QUOTE_TABLE_PAGE_SIZE } from "@/lib/paging";
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import type { TableColumn, CellIssue, CellEditability } from "@/ui/table/types";
 import type { QuoteLineDto, QuoteLineBaseline } from "@/domain/quotes/lines";
@@ -40,7 +42,7 @@ import type { RevenueDto } from "@/domain/revenue";
 import type { Currency, Money } from "@/domain/money";
 import { RevenueSection, type EntryDraft } from "./revenue-section";
 import { otherCellsRejectedText, quoteTableRejectionText, routeRejectedRevenueCells } from "./revenue-cells";
-import { PreviousRevisionDraftRow } from "./previous-revision";
+import { PreviousRevisionDraftRow, quoteLineClipboardMeta, quoteLineReadColumns } from "./previous-revision";
 import { StatusChange, type StatusChangeProps } from "./status-change";
 import { CustomerApprovalLine, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
 import { PeriodField, periodText, type PeriodDraft, type PeriodFieldError } from "./period-field";
@@ -111,6 +113,23 @@ export function byKind<T extends { lineKind: QuoteLineKind }>(lines: T[]): T[] {
   return [...lines].sort((a, b) => KIND_ORDER[a.lineKind] - KIND_ORDER[b.lineKind]);
 }
 
+// 04-19(C-04) — 줄 순서 = 표시 순서. 종류 순서 뒤 표의 그룹(견적 줄은 소분류, 나머지는 종류)을 처음 나온 순서로 모은다 —
+// Table의 그룹 묶기와 같은 순서라 번호 열(`lines.indexOf(row) + 1`)이 표시 순서의 전체 번호가 되고 새 줄은 그 그룹 끝에 선다.
+function lineGroupKey(line: { lineKind: QuoteLineKind; subcategory: string }): string {
+  return line.lineKind === "quote" ? `quote:${line.subcategory}` : line.lineKind;
+}
+
+function displayOrder<T extends { lineKind: QuoteLineKind; subcategory: string }>(lines: T[]): T[] {
+  const groups = new Map<string, T[]>();
+  for (const line of byKind(lines)) {
+    const key = lineGroupKey(line);
+    const group = groups.get(key);
+    if (group) group.push(line);
+    else groups.set(key, [line]);
+  }
+  return [...groups.values()].flat();
+}
+
 // 04-23 — 표의 그룹(견적 줄은 소분류, 나머지는 종류 이름). 04-24 — 이전 차수 읽기 표도 이 함수로 묶는다.
 export function quoteLineGroupLabel(row: { lineKind: QuoteLineKind; subcategory: string }, subcategoryLabel: (value: string) => string): string {
   return row.lineKind === "quote" ? subcategoryLabel(row.subcategory) : KIND_GROUP_LABELS[row.lineKind];
@@ -152,11 +171,12 @@ const PRE_ESTIMATE_TRIGGER_ID = "pre-estimate-open";
 const CONFLICT_ACTIONS_SUFFIX = " · 덮어쓰기 / 그 값으로";
 
 // 04-28(C-07 ② · DR-31) — 견적 표 힌트 줄. 지금 실제로 되는 키만 적는다 —
-// Tab 편집 이동·Ctrl+C 복사는 04-19가 배선하며 여기 더한다. 저장은 1차 버튼
+// 04-19가 Tab 편집 이동·Ctrl+C 복사를 배선해 일곱 항목이다. 저장은 1차 버튼
 // kbd가 말하므로 적지 않는다.
 // 04-30 — 항목마다 key를 두어 구조 가능성으로 거른다(visibleHintKeys).
 const QUOTE_HINT_ITEMS: { key: QuoteHintKey; label: string; keys: string }[] = [
-  { key: "move", label: "이동", keys: "↑↓←→" },
+  { key: "move", label: "이동", keys: "Tab ↑↓←→" },
+  { key: "copy", label: "복사", keys: "Ctrl+C" },
   { key: "paste", label: "붙여넣기", keys: "Ctrl+V" },
   { key: "cancel", label: "취소", keys: "Esc" },
   { key: "newRow", label: "새 줄", keys: "Ctrl+Enter" },
@@ -937,11 +957,11 @@ export function QuoteLedger({
   canWriteEntries: boolean;
   usdDefaultFxRate: number;
 }) {
-  const [lines, setLinesState] = useState<DraftLine[]>(() => byKind(initialLines.map(fromDto)));
-  // 04-23 — 어느 경로로 줄을 바꿔도 종류 순서(조정 맨 아래)를 지킨다.
+  const [lines, setLinesState] = useState<DraftLine[]>(() => displayOrder(initialLines.map(fromDto)));
+  // 04-23 — 어느 경로로 줄을 바꿔도 종류 순서(조정 맨 아래)를 지킨다. 04-19(C-04) — 그룹도 표시 순서로 모은다.
   const setLines = useCallback(
     (next: DraftLine[] | ((prev: DraftLine[]) => DraftLine[])) =>
-      setLinesState((prev) => byKind(typeof next === "function" ? next(prev) : next)),
+      setLinesState((prev) => displayOrder(typeof next === "function" ? next(prev) : next)),
     [],
   );
   // 04-23 — 그룹 버튼으로 만든 새 줄의 첫 편집 칸(Table이 편집 상태로 연다).
@@ -955,9 +975,15 @@ export function QuoteLedger({
   };
   const [balanceKrw, setBalanceKrw] = useState<number | undefined>(revenue.balanceKrw);
   const [savedAt, setSavedAt] = useState<string | null>(null);
-  const [pasteWarning, setPasteWarning] = useState<string | null>(null);
-  // 04-23(DR-22) — 붙여넣기가 건너뛴 권한 밖 줄(조정 줄)의 칸 수(합계 행 muted 한 항목). 다음 붙여넣기 때 바뀐다.
-  const [pasteSkipped, setPasteSkipped] = useState<string | null>(null);
+  // 04-47(DR-16) — 합계 행 오른쪽의 붙여넣기 묶음(`붙여넣기 N줄` · 오른쪽 버림 · 외화 · 계산 열 무시 · 04-23 조정 줄 건너뜀).
+  // 다음 붙여넣기 때 바뀌고 다음 저장 시도 때 지운다.
+  const [pasteNotices, setPasteNotices] = useState<FooterNoticeItem[]>([]);
+  // 04-47(§7-3 (자)) — 저장 성공·서버 다시 불러오기에서 올린다. 표가 새 줄 고정을 비우고 30줄 단위로 다시 나눈다.
+  const [resplitKey, setResplitKey] = useState(0);
+  // 04-47(B-24) — 그룹 버튼으로 만든 새 줄(표가 그 그룹 끝 쪽으로 옮긴다).
+  const [revealRowId, setRevealRowId] = useState<string | null>(null);
+  // 04-47(DR-5 · 저장 거부) — 첫 오류로 이동 신호와 그 신호를 받을 표(견적 줄 · 발행 · 입금).
+  const [issueTarget, setIssueTarget] = useState<{ signal: number; table: "quote" | "issued" | "paid" } | null>(null);
   // 04-26(D-86 · DR-16) — 상한에서 막힌 키(Ctrl+Enter·Ctrl+D)·붙여넣기의 이유. 다음 저장 시도·다음 붙여넣기 때 지운다.
   const [lineCapNotice, setLineCapNotice] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -1004,6 +1030,20 @@ export function QuoteLedger({
   // 04-28 — 저장 요청에 실어 보낸 줄(clientKey) 순서 스냅숏. 봉투의 rowIndex가 이 순서다.
   const sentLineKeysRef = useRef<string[]>([]);
 
+  // 04-47 — 표 밖 칸 거부 뒤 그 칸(기간 → 총 매출 예상가)으로. 거부 응답이 올 때 칸은 열려 있다.
+  function focusOutsideError(period: PeriodFieldError[], preEstimate: PreEstimateFieldError[]) {
+    const periodError = period[0];
+    const preEstimateError = preEstimate[0];
+    const id = periodError
+      ? `period-${periodError.field}`
+      : preEstimateError
+        ? preEstimateError.field === "fxRate"
+          ? "pre-estimate-fx-rate"
+          : "pre-estimate-amount"
+        : null;
+    if (id) document.getElementById(id)?.focus();
+  }
+
   const { execute, result, isExecuting } = useAction(saveProjectLedgerAction, {
     onSettled: () => {
       savingRef.current = false;
@@ -1020,21 +1060,27 @@ export function QuoteLedger({
         setIssuedEntries((prev) => prev?.map((entry) => ({ ...entry, cellErrors: entry.id ? routed.issued[entry.id] : undefined })));
         setPaidEntries((prev) => prev?.map((entry) => ({ ...entry, cellErrors: entry.id ? routed.paid[entry.id] : undefined })));
         applyRejectedCells(routed.rest);
+        // 04-47 — 거부 뒤 첫 오류(견적 줄 표 → 발행 → 입금)의 쪽·셀로.
+        const table = routed.rest.length > 0 ? "quote" : Object.keys(routed.issued).length > 0 ? "issued" : Object.keys(routed.paid).length > 0 ? "paid" : null;
+        if (table) setIssueTarget((prev) => ({ signal: (prev?.signal ?? 0) + 1, table }));
         return; // 전부 거부 — 줄 교체·저장됨·보관본 지우기를 하지 않는다.
       }
       if (data && "periodRejected" in data) {
         setPeriodErrors(data.periodRejected.errors);
         setPreEstimateErrors(data.periodRejected.preEstimateErrors);
+        focusOutsideError(data.periodRejected.errors, data.periodRejected.preEstimateErrors);
         return; // 기간 칸 오류로 전부 거부.
       }
       if (data && "preEstimateRejected" in data) {
         setPreEstimateErrors(data.preEstimateRejected.errors);
+        focusOutsideError([], data.preEstimateRejected.errors);
         return; // 총 매출 예상가 칸 오류로 전부 거부.
       }
       if (data?.quoteLines?.lines) {
         setLines(data.quoteLines.lines.map(fromDto));
         setArchivedLineIds([]);
       }
+      setResplitKey((key) => key + 1);
       if (data?.revenue) {
         if (data.revenue.issuedEntries !== undefined) setIssuedEntries(entriesFromDto(data.revenue.issuedEntries));
         if (data.revenue.paidEntries !== undefined) setPaidEntries(entriesFromDto(data.revenue.paidEntries));
@@ -1201,6 +1247,7 @@ export function QuoteLedger({
     setPreEstimateDraft(null);
     setPreEstimateErrors([]);
     setRenderedApprovedSeq(approvedSeq);
+    setResplitKey((key) => key + 1);
     setDiscardedEdits(null);
     dirtyStorage.recount();
   }
@@ -1265,10 +1312,21 @@ export function QuoteLedger({
     }
     setDiscardedEdits(null);
   }
-  // 해소되지 않은 충돌 칸도 함께 센다 — 충돌이 남은 채 서버를 부르지 않는다.
-  const errorCellCount =
-    lines.reduce((sum, line) => sum + Object.keys(line.cellErrors).length + Object.keys(line.cellConflicts).length, 0) +
-    [...(issuedEntries ?? []), ...(paidEntries ?? [])].reduce((sum, entry) => sum + Object.keys(entry.cellErrors ?? {}).length, 0);
+  // 04-47(DR-5) — 남은 고정 오류·해소되지 않은 충돌. 1차는 이것 때문에 비활성이 되지 않고, 누르면 서버를 부르지 않고 첫 오류로 간다.
+  const hasEntryError = (entries: EntryDraft[] | undefined) => (entries ?? []).some((entry) => Object.keys(entry.cellErrors ?? {}).length > 0);
+  const quoteHasIssue = lines.some((line) => Object.keys(line.cellErrors).length > 0 || Object.keys(line.cellConflicts).length > 0);
+
+  // 표 밖 칸(기간 → 총 매출 예상가) → 견적 줄 표 → 발행 표 → 입금 표 순서로 첫 오류에 포커스한다. 오류가 없으면 false.
+  function goToFirstIssue(): boolean {
+    if (periodErrors.length > 0 || preEstimateErrors.length > 0) {
+      focusOutsideError(periodErrors, preEstimateErrors);
+      return true;
+    }
+    const table = quoteHasIssue ? "quote" : hasEntryError(issuedEntries) ? "issued" : hasEntryError(paidEntries) ? "paid" : null;
+    if (!table) return false;
+    setIssueTarget((prev) => ({ signal: (prev?.signal ?? 0) + 1, table }));
+    return true;
+  }
 
   function updateLine(clientKey: string, patch: Partial<DraftLine>) {
     persistPendingRef.current = true;
@@ -1331,6 +1389,7 @@ export function QuoteLedger({
     const line: DraftLine = { ...newDraftLine("", lineKind === "adjustment" ? adjustmentLineCells : outOfQuoteLineCells), lineKind };
     persistPendingRef.current = true;
     setLines((prev) => [...prev, line]);
+    setRevealRowId(line.clientKey);
     return line.clientKey;
   }
 
@@ -1358,10 +1417,7 @@ export function QuoteLedger({
     });
   }
 
-  // 줄 이동(Alt+↑/↓). 그룹(대분류=소분류) 경계를 넘으면 소분류를 비운다
-  // (§7-3 (라)) — "비운다"는 이 표에 자유 텍스트 소분류가 없으므로 그 줄이
-  // 도착한 이웃 줄의 그룹을 새로 물려받는 것으로 구현한다(코드표 밖 값을
-  // 만들지 않기 위해, D-62).
+  // 줄 이동(Alt+↑/↓). 04-19(C-04) — 같은 그룹 안에서만 움직인다(그룹 첫·끝 줄에서 그룹 밖으로는 무동작).
   function moveLine(clientKey: string, direction: "up" | "down") {
     persistPendingRef.current = true;
     setLines((prev) => {
@@ -1373,11 +1429,9 @@ export function QuoteLedger({
       const moved = next[index]!;
       const neighbor = next[targetIndex]!;
       // 04-23(D-83) — 조정 그룹은 맨 아래 고정이고, 종류 경계를 넘는 이동은 없다(서버도 조정 줄 자리 변경을 거부한다).
-      if (moved.lineKind === "adjustment" || neighbor.lineKind !== moved.lineKind) return prev;
-      const neighborGroup = neighbor.subcategory;
+      if (moved.lineKind === "adjustment" || lineGroupKey(neighbor) !== lineGroupKey(moved)) return prev;
       next.splice(index, 1);
-      const crossedGroup = moved.subcategory !== neighborGroup;
-      next.splice(targetIndex, 0, { ...moved, subcategory: crossedGroup ? neighborGroup : moved.subcategory, dirty: true, moved: true });
+      next.splice(targetIndex, 0, { ...moved, dirty: true, moved: true });
       // 04-30(A-03) — 자리를 바꾼 두 줄이 모두 dirty다.
       next[index] = { ...neighbor, dirty: true, moved: true };
       return next;
@@ -1426,13 +1480,21 @@ export function QuoteLedger({
   // 04-26(DR-16) — 저장 시도(버튼·Ctrl+S·표 밖 칸의 저장)는 상한 글자를 먼저 지운다. 이벤트에서 부른다 — Ctrl+S는
   // 셀 편집기 커밋 뒤 효과에서 handleSave를 부르므로 지우기는 키를 받은 쪽(onSave)이 한다.
   function attemptSave() {
-    setLineCapNotice(null);
+    clearAttemptNotices();
     handleSave();
+  }
+
+  // 04-47(DR-16) — 저장 시도(버튼·Ctrl+S·표 밖 칸·매출 표의 저장)는 붙여넣기·상한 조각과 직전 저장 결과를 지운다 — 이번 결과가 그 자리를 채운다.
+  function clearAttemptNotices() {
+    setLineCapNotice(null);
+    setPasteNotices([]);
+    setSavedAt(null);
   }
 
   function handleSave() {
     if (savingRef.current || isExecuting) return; // 버튼·키보드 두 경로가 여기서 한 번만 보낸다.
-    if (errorCellCount > 0) return; // §7-3 "오류가 한 칸이라도 있으면 화면 전체가 거부" — 서버에 보내지 않는다.
+    // §7-3 "오류가 한 칸이라도 있으면 화면 전체가 거부" — 서버에 보내지 않고 첫 오류로 간다(04-47 DR-5).
+    if (goToFirstIssue()) return;
     savingRef.current = true;
     // /review R-2 — 저장을 시작하면 되돌리기를 거둔다. 저장 중·저장 뒤에 옛 편집이 덮이지 않게.
     setDiscardedEdits(null);
@@ -1538,6 +1600,11 @@ export function QuoteLedger({
   const atLineCap = lines.length >= lineCap;
   const lineCapReason = `${lineCap}줄 상한 · 상한은 관리자 설정`;
   const capReasonId = useId();
+  // 04-47(DR-16) — 상한 이유는 합계 행 danger 항목이고, 직전 저장 결과(성공은 혼자 선다)를 지운다.
+  function showLineCapNotice(text: string) {
+    setSavedAt(null);
+    setLineCapNotice(text);
+  }
   // /design-review P-7 — 저장 중 비활성 추가 버튼(견적·매출 표)이 aria-describedby로 가리키는 일괄 저장 버튼.
   const saveButtonId = useId();
 
@@ -1562,6 +1629,7 @@ export function QuoteLedger({
       priority: "p3",
       collapseBelow: 1280,
       align: "left",
+      pasteRole: "computed",
       cell: (row) => lines.indexOf(row) + 1,
     },
     {
@@ -1716,6 +1784,7 @@ export function QuoteLedger({
       header: "견적가",
       priority: "p2",
       align: "right",
+      pasteRole: "computed",
       // 계산 열 — 누구에게나 항상 읽기 전용(D-63).
       cell: (row) => formatKrw(row.quoteAmountKrw),
     },
@@ -1744,12 +1813,14 @@ export function QuoteLedger({
       priority: "p2",
       collapseBelow: 1280,
       align: "right",
+      pasteRole: "computed",
       cell: (row) => formatKrw(row.profitKrw),
     },
     {
       key: "status",
       header: "상태",
       priority: "p1",
+      pasteRole: "computed",
       cell: (row) => (row.lineKind === "adjustment" ? "—" : lineStatusLabel(row.lineStatus)),
     },
     {
@@ -1770,6 +1841,11 @@ export function QuoteLedger({
         }),
     },
   ];
+  // 04-19 — 격자 Ctrl+C 글자는 04-24 읽기 열의 copyText(견적 줄 복사 글자의 유일한 정의)를 열 키로 붙인다.
+  const copyTextByKey = new Map(
+    quoteLineReadColumns<DraftLine>({ subcategories, vendors }, (row) => lines.indexOf(row) + 1).map((column) => [column.key, column.copyText]),
+  );
+  for (const column of columns) column.copyText = copyTextByKey.get(column.key);
 
   // 04-04(다) — 붙여넣기 열 정의. columns와 같은 순서·같은 길이여야 한다
   // (Table이 colIndex로 이 둘을 함께 참조한다).
@@ -1786,13 +1862,14 @@ export function QuoteLedger({
       {
         key: "vendor",
         kind: "select",
-        options: vendors.map((option) => ({ value: option.id, label: option.name })),
+        // ISSUE-001(/qa) — 거래처 없음의 복사 글자는 `—`(읽기 열 copyText)다. 붙일 때 빈 값으로 읽어 거래처를 비운다.
+        options: [{ value: "", label: "—" }, ...vendors.map((option) => ({ value: option.id, label: option.name }))],
         isEditable: (row) => row.cells.vendorId === "edit",
       },
       { key: "quantity", kind: "number", numberKind: "quantity", isEditable: (row) => row.cells.quantity === "edit" },
-      { key: "unitPrice", kind: "number", isEditable: (row) => row.cells.unitPrice === "edit" },
+      { key: "unitPrice", kind: "number", numberKind: "krw", isEditable: (row) => row.cells.unitPrice === "edit" },
       { key: "quoteAmount", kind: "text", isEditable: () => false },
-      { key: "execution", kind: "number", isEditable: (row) => row.cells.execution === "edit" },
+      { key: "execution", kind: "number", numberKind: "krw", isEditable: (row) => row.cells.execution === "edit" },
       { key: "profit", kind: "text", isEditable: () => false },
       { key: "status", kind: "text", isEditable: () => false },
       { key: "note", kind: "text", isEditable: (row) => row.cells.note === "edit" },
@@ -1820,31 +1897,68 @@ export function QuoteLedger({
     document.activeElement?.addEventListener("focusout", () => setBlockedReason(null), { once: true });
   }
 
-  function handlePasteAtCell(row: DraftLine, columnKey: string, clipboardText: string) {
+  function handlePasteAtCell(row: DraftLine, columnKey: string, clipboard: { text: string; appMeta: string | null }): string[] {
     const rowIndex = lines.indexOf(row);
     const colIndex = pasteColumns.findIndex((column) => column.key === columnKey);
-    if (rowIndex === -1 || colIndex === -1) return;
+    if (rowIndex === -1 || colIndex === -1) return [];
 
     // 새로 생길 줄은 「줄 추가」와 같은 셀 단계(newLineCells)로 판정한다 — 정산 새 줄의 수량·단가는 잠김이다.
-    const newRow = newDraftLine(subcategories[0]?.value ?? "", newLineCells);
-    const applied = applyPaste({ clipboardText, columns: pasteColumns, rows: lines, activeRowIndex: rowIndex, activeColIndex: colIndex, newRow });
+    // ISSUE-003(/qa) — 앱에서 복사한 견적 외 비용 줄은 같은 종류의 새 줄(「견적 외 비용 줄 추가」와 같은 모양)이 된다.
+    const newRow = (sourceKind: string | null): DraftLine =>
+      sourceKind === "out_of_quote"
+        ? { ...newDraftLine("", outOfQuoteLineCells), lineKind: "out_of_quote" }
+        : newDraftLine(subcategories[0]?.value ?? "", newLineCells);
+    // 04-47(ENG-D5) — 계산 열은 열 정의의 pasteRole을 따른다(앱에서 복사한 붙여넣기에서만 무시).
+    const roledColumns = pasteColumns.map((column, index) => ({ ...column, pasteRole: columns[index]?.pasteRole }));
+    const applied = applyPaste({
+      clipboardText: clipboard.text,
+      appMeta: clipboard.appMeta,
+      columns: roledColumns,
+      rows: lines,
+      activeRowIndex: rowIndex,
+      activeColIndex: colIndex,
+      newRow,
+    });
     // 04-23(DR-22 · DR-35) — 권한 밖 줄(조정 권한 없는 사람의 조정 줄)의 칸은 값도 오류도 두지 않고 건너뛰어 센다.
     const outsideRights = (cell: { rowIndex: number }) => !adjustmentStructural.insert && lines[cell.rowIndex]?.lineKind === "adjustment";
     const skippedCount = applied.cells.filter(outsideRights).length;
-    const result = { ...applied, cells: applied.cells.filter((cell) => !outsideRights(cell)) };
+    // ISSUE-003 — 새로 생기는 줄은 원본 종류로 만든다. 견적 외 비용 줄의 잠긴 칸(소분류·수량·단가)의 복사 글자는 종류 표시라 오류 없이 넘긴다.
+    const created = Array.from({ length: applied.newRowsNeeded }, (_, offset) => newRow(applied.sourceKinds?.[lines.length + offset - rowIndex] ?? null));
+    const kindFixed = (cell: { rowIndex: number; columnKey: string }) => {
+      const target = created[cell.rowIndex - lines.length];
+      const column = pasteColumns.find((candidate) => candidate.key === cell.columnKey);
+      return target?.lineKind === "out_of_quote" && column !== undefined && !column.isEditable(target);
+    };
+    const result = { ...applied, cells: applied.cells.filter((cell) => !outsideRights(cell) && !kindFixed(cell)) };
     // 04-26(D-86) — 상한을 넘기는 붙여넣기는 견적을 자르지 않고 한 칸도 바꾸지 않은 채 전부 거부한다.
     const overCap = lines.length + result.newRowsNeeded - lineCap;
     if (result.newRowsNeeded > 0 && overCap > 0) {
-      setPasteWarning(null);
-      setPasteSkipped(null);
-      setLineCapNotice(`붙여넣기 전부 거부 · ${lineCap}줄 상한을 ${overCap}줄 넘음`);
-      return;
+      setPasteNotices([]);
+      showLineCapNotice(`붙여넣기 전부 거부 · ${lineCap}줄 상한을 ${overCap}줄 넘음`);
+      return [];
     }
     setLineCapNotice(null);
+    setSavedAt(null);
+    // 04-47(ENG-D10) — 표 끝을 넘어 생기는 줄도 새 줄 경로(newDraftLine — crypto.randomUUID() · isNew)로 만든다(위 created).
+    const filledIds = Array.from({ length: result.rowCount }, (_, offset) => {
+      const index = rowIndex + offset;
+      return index < lines.length ? lines[index]!.clientKey : created[index - lines.length]!.clientKey;
+    });
+    // 04-47(사용자 D15) — 단가가 원화로 들어간 줄 중 원본(앱 형식)이 외화였거나 덮인 기존 줄이 외화였던 줄.
+    const foreignToKrw = new Set(
+      result.cells
+        .filter((cell) => cell.columnKey === "unitPrice" && cell.result.status === "ok")
+        .filter((cell) => {
+          const sourceCurrency = result.sourceCurrencies?.[cell.rowIndex - rowIndex];
+          const existing = lines[cell.rowIndex];
+          return (sourceCurrency !== undefined && sourceCurrency !== "KRW") || (existing !== undefined && existing.unitPriceCurrency !== "KRW");
+        })
+        .map((cell) => cell.rowIndex),
+    ).size;
     // DR-35 — 잠긴·읽기 전용 셀에 떨어진 값의 오류 이유는 그 셀의 편집 시도 이유와 같은 문자열이다.
     const blockedReasons = new Map<string, string>();
     for (const cell of result.cells) {
-      const target = lines[cell.rowIndex] ?? newRow;
+      const target = lines[cell.rowIndex] ?? created[cell.rowIndex - lines.length];
       const column = pasteColumns.find((candidate) => candidate.key === cell.columnKey);
       if (cell.result.status !== "error" || !target || !column || column.isEditable(target)) continue;
       const reason = blockedReasonFor(target, cell.columnKey);
@@ -1853,10 +1967,7 @@ export function QuoteLedger({
 
     persistPendingRef.current = true;
     setLines((prev) => {
-      const next = [...prev];
-      for (let i = 0; i < result.newRowsNeeded; i++) {
-        next.push(newDraftLine(subcategories[0]?.value ?? "", newLineCells));
-      }
+      const next = [...prev, ...created];
       for (const cell of result.cells) {
         const target = next[cell.rowIndex];
         if (!target) continue;
@@ -1900,7 +2011,8 @@ export function QuoteLedger({
             patch = { executionAmount: Number(value) };
             break;
           case "note":
-            patch = { note: value || null };
+            // ISSUE-011(/qa) — 빈 비고의 복사 글자는 `—`(읽기 열 copyText)다. 붙일 때 빈 비고로 읽는다.
+            patch = { note: value === "—" ? null : value || null };
             break;
           default:
             break;
@@ -1910,12 +2022,14 @@ export function QuoteLedger({
       return next;
     });
 
-    if (result.droppedColumnCount > 0) {
-      setPasteWarning(`붙여넣기 · 오른쪽 ${result.droppedColumnCount}칸 버림`);
-    } else {
-      setPasteWarning(null);
-    }
-    setPasteSkipped(skippedCount > 0 ? `조정 줄 ${skippedCount}칸 건너뜀` : null);
+    // 04-47(DR-16) — 붙여넣기 묶음. 0인 조각은 넣지 않는다(조각이 없으면 머리도 보이지 않는다 — composeFooterNotice).
+    const notices: FooterNoticeItem[] = [{ tone: "muted", text: `붙여넣기 ${result.rowCount}줄`, paste: "head" }];
+    if (result.droppedColumnCount > 0) notices.push({ tone: "warning", text: `오른쪽 ${result.droppedColumnCount}칸 버림`, paste: "piece" });
+    if (foreignToKrw > 0) notices.push({ tone: "warning", text: `외화 ${foreignToKrw}줄 원화로`, paste: "piece" });
+    if (result.ignoredComputedCells > 0) notices.push({ tone: "muted", text: `계산 열 ${result.ignoredComputedCells}칸 무시`, paste: "piece" });
+    if (skippedCount > 0) notices.push({ tone: "muted", text: `조정 줄 ${skippedCount}칸 건너뜀`, paste: "piece" });
+    setPasteNotices(notices);
+    return filledIds;
   }
 
   // 04-28 — 거부 봉투의 칸을 줄·열에 붙인다. 줄은 rowId가 있으면 그 id,
@@ -2044,6 +2158,13 @@ export function QuoteLedger({
   const quoteFooterSummary = rejectedEnvelope
     ? quoteTableRejectionText(rejectedEnvelope, revenueEntryIds, outsideErrorCount)
     : rejectionSummary;
+  // 04-47(DR-16) — 봉투 요약이 말하는 견적 줄 표의 오류 칸 · 충돌 줄 수. 표가 센 수와 다르면(거부 뒤 달라졌으면) 표가 센 수를 쓴다.
+  const quoteRejectedCount = routedRejection
+    ? {
+        errorCells: routedRejection.rest.filter((cell) => cell.kind === "error").length,
+        conflictRows: new Set(routedRejection.rest.filter((cell) => cell.kind === "conflict").map((cell) => cell.rowId)).size,
+      }
+    : undefined;
 
   // 04-30(C-07) — 힌트 줄은 그 사람에게 실제로 되는 키만. 편집 셀이 없는 읽기 표에는 힌트 줄이 없다.
   const hintKeys = visibleHintKeys(
@@ -2114,9 +2235,9 @@ export function QuoteLedger({
               type="button"
               variant="primary"
               pending={isExecuting}
-              disabled={(dirtyCount === 0 && !cellEditing) || errorCellCount > 0}
-              disabledReason={errorCellCount > 0 ? `오류 ${errorCellCount}칸 · 고친 뒤 저장` : saveDisabledReason}
-              reasonTone={errorCellCount > 0 ? "block" : "info"}
+              disabled={dirtyCount === 0 && !cellEditing}
+              disabledReason={saveDisabledReason}
+              reasonTone="info"
               shortcut="Ctrl+S"
               onClick={attemptSave}
             >
@@ -2189,6 +2310,11 @@ export function QuoteLedger({
         getRowId={(row) => row.clientKey}
         groupBy={(row) => quoteLineGroupLabel(row, subcategoryLabel)}
         openCell={openCell}
+        // 04-19(D-91) — 30줄 쪽은 Table이 자른다(이 파일은 전체 줄을 넘긴다). 새 차수로 다시 그리면 1쪽부터.
+        pagination={{ pageSize: QUOTE_TABLE_PAGE_SIZE, unit: "줄", label: "견적 줄", resetKey: renderedRevisionId, resplitKey }}
+        copyMeta={quoteLineClipboardMeta}
+        // SYSTEM.md §7-9 개정 ⑬ — 힌트 줄(라벨 kbd 묶음)은 표가 페이지 줄 다음에 그린다. 1024 미만에서 숨는다.
+        hint={editableWidth && lines.some((line) => Object.values(line.cells).includes("edit")) ? hintItems : undefined}
         emptyMessage={emptyState.message}
         emptyAction={
           emptyState.action?.kind === "addLine" && editableWidth
@@ -2220,50 +2346,45 @@ export function QuoteLedger({
               }
             : undefined,
           // 04-26(D-86) — 상한에서는 줄을 만들지 않고 합계 행에 이유를 적는다.
-          onNewRow: structural.insert && editableWidth ? (row) => (atLineCap ? setLineCapNotice(lineCapReason) : addLine(row)) : undefined,
+          onNewRow: structural.insert && editableWidth ? (row) => (atLineCap ? showLineCapNotice(lineCapReason) : addLine(row)) : undefined,
           onDuplicateRow:
             structural.duplicate && editableWidth
-              ? (row) => (atLineCap ? setLineCapNotice(lineCapReason) : duplicateLine(row.clientKey))
+              ? (row) => (atLineCap ? showLineCapNotice(lineCapReason) : duplicateLine(row.clientKey))
               : undefined,
           onMoveRow: structural.reorder && editableWidth ? (row, direction) => moveLine(row.clientKey, direction) : undefined,
           onSave: () => {
-            setLineCapNotice(null);
+            clearAttemptNotices();
             setSaveRequests((count) => count + 1);
           },
         }}
         onBlockedEdit={showBlockedReason}
         onPasteAtCell={editableWidth ? handlePasteAtCell : undefined}
+        firstIssueSignal={issueTarget?.table === "quote" ? issueTarget.signal : undefined}
         cellIssue={cellIssueFor}
         cellDirty={(row) => row.dirty}
         onRowTap={(row) => setSheetRowKey(row.clientKey)}
-        footer={
+        // 04-47(DR-16) — 합계 행 오른쪽 한 줄: 상한·거부 요약(danger) · 붙여넣기 묶음 · 저장 성공(혼자). 표가 조립해 넘겨준다.
+        footerNotices={[
+          ...(lineCapNotice ? [{ tone: "danger" as const, text: lineCapNotice }] : []),
+          ...(quoteFooterSummary
+            ? [{ tone: "danger" as const, text: quoteFooterSummary, ...(quoteRejectedCount ? { replacesIssueCount: quoteRejectedCount } : {}) }]
+            : []),
+          ...pasteNotices,
+        ]}
+        footerSuccess={savedAt ? `저장됨 ${savedAt}` : null}
+        revealRowId={revealRowId}
+        footer={(notice) => (
           <tr>
             <td colSpan={columns.length} className={styles.footerCell}>
               {`합계 (공급가액 · ${lines.length}줄)`}
               {/* 04-49(DR-14) — 숨은 금액 열의 합계는 그 폭에서만 라벨 뒤에(1024~1279 차익, 700~1023 견적 · 차익). */}
               <span className={styles.footerQuoteSum}> {`견적 ${formatKrw(lines.reduce((sum, line) => sum + line.quoteAmountKrw, 0))} ·`}</span>
               <span className={styles.footerProfitSum}> {`차익 ${formatKrw(lines.reduce((sum, line) => sum + line.profitKrw, 0))}`}</span>
-              {savedAt ? <span className={styles.savedTag}> 저장됨 {savedAt}</span> : null}
-              {pasteWarning ? <span className={styles.pasteWarning}> {pasteWarning}</span> : null}
-              {pasteSkipped ? <span className={styles.pasteSkipped}> {pasteSkipped}</span> : null}
-              {lineCapNotice ? <span className={styles.rejectionSummary}> {lineCapNotice}</span> : null}
-              {quoteFooterSummary ? <span className={styles.rejectionSummary}> {quoteFooterSummary}</span> : null}
+              {notice}
             </td>
           </tr>
-        }
+        )}
       />
-
-      {/* SYSTEM.md §7-9 개정 ⑬ — 견적 표 아래 힌트 줄(라벨 kbd 묶음), 폰에서 숨는다. */}
-      {editableWidth && lines.some((line) => Object.values(line.cells).includes("edit")) ? (
-        <p className={styles.hintRow}>
-          {hintItems.map((item, index) => (
-            <Fragment key={item.label}>
-              {index > 0 ? " · " : ""}
-              {item.label} <kbd>{item.keys}</kbd>
-            </Fragment>
-          ))}
-        </p>
-      ) : null}
 
       {(structural.insert || adjustmentStructural.insert) && editableWidth && lines.length > 0 ? (
         <div className={styles.addLineButton}>
@@ -2367,7 +2488,11 @@ export function QuoteLedger({
           conflictRows: rejectedCells.conflictRows,
           total: rejectedCellTotal,
         }}
-        onSave={() => setSaveRequests((count) => count + 1)}
+        firstIssue={issueTarget?.table === "issued" || issueTarget?.table === "paid" ? { signal: issueTarget.signal, table: issueTarget.table } : null}
+        onSave={() => {
+          clearAttemptNotices();
+          setSaveRequests((count) => count + 1);
+        }}
       />
 
       {statusToast && !discardedEdits ? <Toast message={statusToast} onDismiss={() => setStatusToast(null)} /> : null}

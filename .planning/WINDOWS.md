@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 19
+open_count: 20
 waived_count: 0
 fixed_count: 16
-total_count: 35
-last_updated: 2026-09-26T02:55:55.835Z
+total_count: 36
+last_updated: 2026-09-26T13:58:34.328Z
 ---
 
 # Broken Windows Ledger
@@ -50,6 +50,7 @@ last_updated: 2026-09-26T02:55:55.835Z
 | 33 | 4 | stub | domain/quotes/lines.ts | 218 | linkedDocumentsByLine가 빈 Map을 돌려줌 — 지출결의 연결 조회는 Phase 5가 채움(04-12 의도된 조회 지점) | open |  | 2026-09-25T10:37:19.987Z |  |
 | 34 | 4 | unrun-verify | app/(app)/projects/[id]/revenue-section.tsx |  | 04-16 Task 3 독립 DOM 감사(S6 backstop 1280·1024·375·1000) 미실행 — 실행자 환경에 서브에이전트 도구 없음 | fixed |  | 2026-09-26T02:08:24.175Z | 2026-09-26T02:55:50.359Z |
 | 35 | 4 | unrun-verify | test/e2e/revenue-section.spec.ts |  | 04-16 Task 3 verify 'CI=true pnpm test' 전체 게이트 미실행 — 디스패치가 전체 pnpm test를 금지(대상 스펙만 CI=true 44 passed) | fixed |  | 2026-09-26T02:08:24.365Z | 2026-09-26T02:55:55.835Z |
+| 36 | 4 | deviation | ui/table/Table.tsx |  | 04-47: 새 줄 고정으로 한 쪽이 30줄을 넘는 동안 페이지 줄 범위 글자(pageRangeText)는 쪽 크기 산술이라 실제 줄 수와 어긋날 수 있음(1쪽 31줄에 1–30 표기) — 저장·페이지 이동 뒤 재분할되면 맞음 | open |  | 2026-09-26T13:58:34.328Z |  |
 
 ````json
 [
@@ -506,6 +507,19 @@ last_updated: 2026-09-26T02:55:55.835Z
     "reason": "",
     "recorded_at": "2026-09-26T02:08:24.365Z",
     "resolved_at": "2026-09-26T02:55:55.835Z",
+    "milestone": null
+  },
+  {
+    "id": 36,
+    "kind": "deviation",
+    "phase": "4",
+    "file": "ui/table/Table.tsx",
+    "line": null,
+    "description": "04-47: 새 줄 고정으로 한 쪽이 30줄을 넘는 동안 페이지 줄 범위 글자(pageRangeText)는 쪽 크기 산술이라 실제 줄 수와 어긋날 수 있음(1쪽 31줄에 1–30 표기) — 저장·페이지 이동 뒤 재분할되면 맞음",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-26T13:58:34.328Z",
+    "resolved_at": null,
     "milestone": null
   }
 ]

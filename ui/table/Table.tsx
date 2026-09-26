@@ -1,9 +1,15 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { clampPage } from "@/lib/paging";
 import { isCtrlCombo } from "@/lib/shortcut";
+import { Pagination } from "@/ui/pagination/Pagination";
 import styles from "./Table.module.css";
+import { composeFooterNotice, withIssueCount, type FooterNoticeItem } from "./footer-notice";
+import { crossPageTarget, nextEditableCell, pageEntryFocus, pageOfRow, pinNewRows, splitPageRangeText, splitPages, type FocusCell } from "./paging";
+import { toTsv } from "./parse-tsv";
 import { isGridActionAllowed } from "./save-lock";
+import { readPasteClipboard } from "./use-clipboard-paste";
 import { useMinWidth } from "./use-editable-width";
 import type { CellEditability, CellIssue, TableColumn } from "./types";
 import { conflictFocusTransition, useGridKeyboard, type ConflictFocusState, type GridPosition } from "./use-grid-keyboard";
@@ -36,7 +42,15 @@ export type TableProps<Row> = {
   groupBy?: (row: Row) => string;
   emptyMessage?: string;
   emptyAction?: { label: string; onClick: () => void; shortcut?: string };
-  footer?: ReactNode;
+  /**
+   * 합계 행(`<tr>`). 04-47(DR-16) — 함수면 표가 조립한 합계 행 오른쪽 한 줄(`footerNotices`·`footerSuccess`·표가 세는 오류·충돌 ·
+   * 붙여넣기가 닿은 쪽)을 받아 그 행 안에 놓는다.
+   */
+  footer?: ReactNode | ((notice: ReactNode) => ReactNode);
+  /** 04-47(DR-16) — 합계 행 오른쪽 한 줄에 넣을 항목(붙여넣기·상한·거부 요약). 주면 표가 제 오류·충돌 칸 수도 센다. */
+  footerNotices?: FooterNoticeItem[];
+  /** 04-47(DR-16) — 저장 성공 글자. 있으면 합계 행 오른쪽은 이것 하나다. */
+  footerSuccess?: string | null;
   onCellCommit?: (rowId: string, columnKey: string, value: string) => void;
   /**
    * 04-02(U-3 계획 단계 판단) — 행이 0개일 때도 `footer`를 함께 렌더한다.
@@ -47,8 +61,11 @@ export type TableProps<Row> = {
   /** 04-04 — role="grid" 키보드 계약을 켠다(opt-in, 기본 false). */
   enableGridKeyboard?: boolean;
   keyboard?: TableKeyboardHandlers<Row>;
-  /** 04-04(다) — 활성(포커스) 셀에서 붙여넣기가 발생하면 위임한다. */
-  onPasteAtCell?: (row: Row, columnKey: string, clipboardText: string) => void;
+  /**
+   * 04-04(다) — 활성(포커스) 셀에서 붙여넣기가 발생하면 위임한다. 04-47 — 앱 전용 형식(`appMeta`)도 넘기고, 채운(바꾸거나 만든)
+   * 줄 id를 돌려받아 시작 쪽보다 뒤 쪽까지 닿았으면 합계 행에 `{k}쪽까지`를 더한다(`footerNotices`에 붙여넣기 머리가 있는 동안).
+   */
+  onPasteAtCell?: (row: Row, columnKey: string, clipboard: { text: string; appMeta: string | null }) => readonly string[] | void;
   /** 04-04(나)(다) — 셀 오류·충돌(있으면 고정 오류 모양 + aria-invalid). */
   cellIssue?: (row: Row, columnKey: string) => CellIssue | undefined;
   /** 04-04(바) — 폰에서 줄을 탭하면 호출된다(RowSheet를 여는 신호). */
@@ -71,6 +88,38 @@ export type TableProps<Row> = {
   onEditingChange?: (editing: boolean) => void;
   /** 04-23 — 호출부가 방금 만든 줄의 한 칸을 편집 상태로 연다(객체가 바뀔 때마다 한 번, 그 칸이 `edit`일 때만). */
   openCell?: { rowId: string; columnKey: string } | null;
+  /**
+   * 04-19(D-91 · §7-3 (자)) — 화면 안 쪽 나눔. 그룹 정렬 뒤 표시 순서로 `pageSize`줄씩 자르고 지금 쪽의 줄만 그룹을 다시
+   * 묶어 그린다(쪽마다 첫 줄의 그룹 머리글이 다시 나온다). 합계 행(`footer`)은 받은 그대로 모든 쪽에 — 표는 합계를 계산하지
+   * 않는다. 쪽 번호는 표 안 상태(URL 아님)이고 `resetKey`가 바뀌면 1쪽으로. 쪽을 바꾸면 새 쪽의 활성 셀(격자) 또는
+   * `focusHeadingId`(읽기 표 — 없으면 캡션)로 포커스한다(DR-23).
+   */
+  pagination?: {
+    pageSize: number;
+    unit: string;
+    label: string;
+    resetKey: string | number;
+    focusHeadingId?: string;
+    /**
+     * 04-47(§7-3 (자)) — 새 줄(직전 분할에 없던 줄 id)은 만들어질 때의 쪽에 고정된다. 이 값이 바뀌면(저장 성공 · 서버 다시
+     * 불러오기) 고정을 비우고 쪽 크기로 다시 나눈다. 사용자의 페이지 이동도 다시 나눈다.
+     */
+    resplitKey?: string | number;
+  };
+  /** 04-19 — 격자 Ctrl+C의 앱 형식(`application/x-plant8-quote-lines+json`). 복사한 줄을 받아 글자로. */
+  copyMeta?: (rows: Row[]) => string;
+  /** 04-19(§7-9) — 표 아래(페이지 줄 다음) 힌트 줄. 라벨 + kbd 묶음, 1024 미만에서 숨는다. */
+  hint?: { label: string; keys: string }[];
+  /**
+   * 04-47(B-24) — 그룹을 지정해 더한 새 줄. 바뀌면 그 줄의 표시 위치(그룹 끝)가 있는 쪽으로 옮기고 그 쪽에 고정한다. 같은 줄을
+   * `openCell`로 열지 않으면 그 줄의 첫 편집 셀에 포커스한다.
+   */
+  revealRowId?: string | null;
+  /**
+   * 04-47(DR-5 · 저장 거부) — 값이 바뀌면 `cellIssue`가 오류·충돌(`error` · `conflict`)인 셀을 표시 순서로 훑어 첫 셀의 쪽으로 옮기고
+   * 그 셀(안에 입력이 있으면 그 입력)에 포커스한다. `reason`(잠긴 셀 편집 시도 이유)은 세지 않고, 찾은 셀이 없으면 아무것도 하지 않는다.
+   */
+  firstIssueSignal?: number;
 };
 
 type ActiveCell = { rowId: string; columnKey: string } | null;
@@ -109,6 +158,13 @@ export function Table<Row>({
   saveLocked = false,
   onEditingChange,
   openCell,
+  pagination,
+  copyMeta,
+  hint,
+  footerNotices,
+  footerSuccess,
+  revealRowId,
+  firstIssueSignal,
 }: TableProps<Row>) {
   const [activeCell, setActiveCell] = useState<ActiveCell>(null);
   const allowed = (action: Parameters<typeof isGridActionAllowed>[0]) => isGridActionAllowed(action, { saveLocked });
@@ -125,11 +181,108 @@ export function Table<Row>({
     columns.some((column) => (column.editability?.(row) ?? "readonly") === "edit"),
   );
 
-  const groups = groupRows(rows, groupBy);
+  // 04-19 — 쪽 나눔은 그룹 정렬 뒤의 표시 순서를 자른다. 지금 쪽은 렌더마다 쪽 수 안으로 보정한다(clampPage — 04-29).
+  const allGroups = groupRows(rows, groupBy);
+  const displayRows = allGroups.flatMap((group) => group.rows);
+  const displayIds = displayRows.map(getRowId);
+  const [requestedPage, setRequestedPage] = useState(1);
+  // 쪽을 바꾼 뒤에만 범위 글자를 읽는다(첫 렌더에는 비어 있다).
+  const [pageAnnounced, setPageAnnounced] = useState(false);
+  // 04-47(§7-3 (자)) — 새 줄 고정. `known`은 직전 분할의 줄 id, `pinned`는 새 줄 → 만들어진 쪽.
+  const [pinState, setPinState] = useState<{ known: ReadonlySet<string>; pinned: Readonly<Record<string, number>>; resplitKey?: string | number }>(
+    () => ({ known: new Set(displayIds), pinned: {}, resplitKey: pagination?.resplitKey }),
+  );
+  let targetPage = requestedPage;
+  let pinned = pinState.pinned;
+  let revealFocusId: string | null = null;
+  const [seenResetKey, setSeenResetKey] = useState(pagination?.resetKey);
+  const [seenReveal, setSeenReveal] = useState(revealRowId);
+  if (pagination) {
+    const resplit = pagination.resetKey !== seenResetKey || pagination.resplitKey !== pinState.resplitKey;
+    if (pagination.resetKey !== seenResetKey) {
+      setSeenResetKey(pagination.resetKey);
+      setRequestedPage(1);
+      targetPage = 1;
+    }
+    if (resplit) pinned = {};
+    else if (displayIds.some((id) => !pinState.known.has(id))) pinned = pinNewRows({ ids: displayIds, known: pinState.known, pinned, page: requestedPage });
+    if (revealRowId !== seenReveal) {
+      setSeenReveal(revealRowId);
+      if (revealRowId && displayIds.includes(revealRowId)) {
+        const others = { ...pinned };
+        delete others[revealRowId];
+        const naturalPage = pageOfRow(splitPages(displayIds, { pageSize: pagination.pageSize, pinned: others }), revealRowId) ?? targetPage;
+        pinned = { ...others, [revealRowId]: naturalPage };
+        targetPage = naturalPage;
+        setRequestedPage(naturalPage);
+        setPageAnnounced(true);
+        if (openCell?.rowId !== revealRowId) revealFocusId = revealRowId;
+      }
+    }
+    if (resplit || pinned !== pinState.pinned || displayIds.some((id) => !pinState.known.has(id))) {
+      setPinState({ known: new Set(displayIds), pinned, resplitKey: pagination.resplitKey });
+    }
+  }
+  const pages = pagination ? splitPages(displayIds, { pageSize: pagination.pageSize, pinned }) : null;
+  // 04-47(DR-5) — 첫 오류로 이동 신호. 고정 오류·충돌만 센다(reason은 아니다).
+  const isFixedIssue = (row: Row, columnKey: string) => {
+    const kind = cellIssue?.(row, columnKey)?.kind;
+    return kind === "error" || kind === "conflict";
+  };
+  const [seenIssueSignal, setSeenIssueSignal] = useState(firstIssueSignal);
+  let issueFocusId: string | null = null;
+  // 폭 때문에 숨은 열(collapseBelow)의 오류면 그 칸에 포커스할 수 없다 — 격자는 그 줄의 보이는 P1 칸으로 간다.
+  let issueRowFocusId: string | null = null;
+  if (firstIssueSignal !== seenIssueSignal) {
+    setSeenIssueSignal(firstIssueSignal);
+    if (firstIssueSignal !== undefined) {
+      for (const row of displayRows) {
+        const column = columns.find((candidate) => isFixedIssue(row, candidate.key));
+        if (!column) continue;
+        const rowId = getRowId(row);
+        if (enableGridKeyboard && isHiddenColumn(column)) issueRowFocusId = rowId;
+        else issueFocusId = `${rowId}-${column.key}-issue`;
+        const issuePage = pages ? pageOfRow(pages, rowId) : null;
+        if (issuePage !== null && issuePage !== targetPage) {
+          targetPage = issuePage;
+          setRequestedPage(issuePage);
+          setPageAnnounced(true);
+        }
+        break;
+      }
+    }
+  }
+  const page = pages ? clampPage(targetPage, pages.length) : 1;
+  // 리뷰 S-1 — 보정한 쪽을 요청 쪽에도 되돌린다(줄이 다시 늘 때 사라졌던 쪽으로 튀지 않게).
+  if (pages && page !== targetPage) setRequestedPage(page);
+  const pageIds = pages ? new Set(pages[page - 1]) : null;
+  const groups = pageIds ? groupRows(displayRows.filter((row) => pageIds.has(getRowId(row))), groupBy) : allGroups;
+  const [focusRequest, setFocusRequest] = useState<{ kind: "cell" | "heading" } | { kind: "issue"; issueId: string } | null>(null);
+  if (issueFocusId !== null) setFocusRequest({ kind: "issue", issueId: issueFocusId });
+  const captionRef = useRef<HTMLTableCaptionElement>(null);
   // 그룹 머리글 행은 이 평탄화 목록에 들어오지 않는다 — 로빙 tabIndex·방향키
   // 좌표 체계가 데이터 행만 센다(방향키가 그룹 머리글을 "건너뛴다"는 (라)
   // 요구가 저절로 성립한다).
   const flatRows: Row[] = groups.flatMap((group) => group.rows);
+  const rowById = new Map(displayRows.map((row) => [getRowId(row), row]));
+  const findRow = (rowId: string) => flatRows.find((row) => getRowId(row) === rowId);
+
+  // 04-47(DR-16) — 붙여넣기가 닿은 마지막 쪽(시작 쪽보다 뒤일 때만). 호출부의 붙여넣기 머리가 지워지면(다음 저장 시도) 함께 지운다.
+  const [pasteReach, setPasteReach] = useState<number | null>(null);
+  const hasPasteHead = footerNotices?.some((item) => item.paste === "head") ?? false;
+  if (pasteReach !== null && !hasPasteHead) setPasteReach(null);
+
+  // 04-19(공백 4) — Alt+↑↓로 옮긴 줄이 다른 쪽으로 넘어가면 그 쪽으로 따라간다(포커스는 줄 id로 기억해 저절로 따라온다).
+  const [followRowId, setFollowRowId] = useState<string | null>(null);
+  if (followRowId !== null && pages) {
+    setFollowRowId(null);
+    const followPage = pageOfRow(pages, followRowId);
+    if (followPage !== null && followPage !== page) {
+      setRequestedPage(followPage);
+      setPageAnnounced(true);
+      setFocusRequest({ kind: "cell" });
+    }
+  }
 
   function cellEditability(column: TableColumn<Row>, row: Row): CellEditability {
     return column.editability?.(row) ?? "readonly";
@@ -140,9 +293,17 @@ export function Table<Row>({
   // 옮기면 입력의 blur 커밋이 취소를 덮는다).
   const refocusCellRef = useRef(false);
 
+  // 04-19 — Tab이 여는 셀: 편집기가 있고 지금 폭에서 보이는 `edit` 셀.
+  const isTabStop = (rowId: string, colKey: string) => {
+    const row = rowById.get(rowId);
+    const column = columns.find((candidate) => candidate.key === colKey);
+    return row !== undefined && column?.editCell !== undefined && !isHiddenColumn(column) && cellEditability(column, row) === "edit";
+  };
+  const colKeys = columns.map((column) => column.key);
+
   const keyboardState = useGridKeyboard({
-    rowCount: flatRows.length,
-    colCount: columns.length,
+    rowIds: flatRows.map(getRowId),
+    colKeys,
     isEditableCell: (pos: GridPosition) => {
       const row = flatRows[pos.row];
       const column = columns[pos.col];
@@ -179,21 +340,25 @@ export function Table<Row>({
           if (row && column) keyboard?.onEscapeCell?.(row, column.key);
         }
       },
-      onDeleteRow: (rowIndex) => {
-        const row = flatRows[rowIndex];
+      onCommitDown: () => {
+        refocusCellRef.current = true;
+      },
+      onDeleteRow: (rowId) => {
+        const row = findRow(rowId);
         if (row) keyboard?.onDeleteRow?.(row);
       },
-      onNewRow: (rowIndex) => {
-        const row = flatRows[rowIndex];
-        keyboard?.onNewRow?.(row);
+      onNewRow: (rowId) => {
+        keyboard?.onNewRow?.(rowId === undefined ? undefined : findRow(rowId));
       },
-      onDuplicateRow: (rowIndex) => {
-        const row = flatRows[rowIndex];
+      onDuplicateRow: (rowId) => {
+        const row = findRow(rowId);
         if (row) keyboard?.onDuplicateRow?.(row);
       },
-      onMoveRow: (rowIndex, direction) => {
-        const row = flatRows[rowIndex];
-        if (row) keyboard?.onMoveRow?.(row, direction);
+      onMoveRow: (rowId, direction) => {
+        const row = findRow(rowId);
+        if (!row || !keyboard?.onMoveRow) return;
+        keyboard.onMoveRow(row, direction);
+        if (pages) setFollowRowId(rowId);
       },
       onBlockedEdit: onBlockedEdit
         ? (pos) => {
@@ -213,7 +378,119 @@ export function Table<Row>({
         keyboard?.onSave?.();
       },
     },
+    // 04-19(C-18) — 쪽 끝을 넘는 ↑↓는 표시 순서의 옆 줄이 있는 쪽으로, 같은 열.
+    onEdgeExit: (direction, colKey) => {
+      if (!pages) return false;
+      const pageRowIds = pages[page - 1] ?? [];
+      const fromId = direction === "down" ? pageRowIds[pageRowIds.length - 1] : pageRowIds[0];
+      const target = fromId === undefined ? null : crossPageTarget({ ids: displayRows.map(getRowId), fromId, direction, pages });
+      if (!target) return false;
+      goToCell(target.page, { rowId: target.rowId, colKey });
+      return true;
+    },
+    // 04-19 — 편집 중 Tab: 칸 안에 다음 입력(단가의 통화·금액·환율)이 있으면 그리로, 아니면 값을 확정하고 옆 편집 셀을 연다.
+    onTab: (pos, direction) => {
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement)) return;
+      const inCell = Array.from(active.closest("td")?.querySelectorAll<HTMLElement>("input, select, textarea") ?? []);
+      const sibling = inCell[inCell.indexOf(active) + (direction === "forward" ? 1 : -1)];
+      if (sibling) {
+        sibling.focus();
+        return;
+      }
+      const from: FocusCell = { rowId: getRowId(flatRows[pos.row]!), colKey: colKeys[pos.col]! };
+      const next = nextEditableCell({ rowIds: flatRows.map(getRowId), colKeys, isEditable: isTabStop, from, direction });
+      let targetPage = page;
+      let target: FocusCell | undefined;
+      if ("crossPage" in next) {
+        targetPage = page + (next.crossPage === "next" ? 1 : -1);
+        const ids = pages?.[targetPage - 1] ?? [];
+        const scanRows = direction === "forward" ? ids : [...ids].reverse();
+        const scanCols = direction === "forward" ? colKeys : [...colKeys].reverse();
+        for (const rowId of scanRows) {
+          const colKey = scanCols.find((key) => isTabStop(rowId, key));
+          if (colKey !== undefined) {
+            target = { rowId, colKey };
+            break;
+          }
+        }
+      } else {
+        target = next;
+      }
+      if (!target) {
+        // 마지막(첫) 편집 셀 — 옆 셀이 없으면 값을 확정하고 포커스를 그 셀에 둔다(키는 이미 preventDefault).
+        refocusCellRef.current = true;
+        active.blur();
+        return;
+      }
+      active.blur();
+      if (targetPage !== page) {
+        setRequestedPage(targetPage);
+        setPageAnnounced(true);
+      }
+      keyboardState.setFocusCell(target);
+      if (allowed("enterEdit")) setActiveCell({ rowId: target.rowId, columnKey: target.colKey });
+      else setFocusRequest({ kind: "cell" });
+    },
   });
+
+  // 04-47(B-24) — 그룹 버튼의 새 줄을 호출부가 열지 않으면 그 줄의 첫 편집 셀로 포커스한다.
+  if (revealFocusId !== null) {
+    const revealRow = rowById.get(revealFocusId);
+    const colKey = revealRow ? columns.find((column) => !isHiddenColumn(column) && cellEditability(column, revealRow) === "edit")?.key : undefined;
+    if (colKey !== undefined) {
+      keyboardState.setFocusCell({ rowId: revealFocusId, colKey });
+      setFocusRequest({ kind: "cell" });
+    }
+  }
+
+  if (issueRowFocusId !== null) {
+    const colKey = columns.find((column) => column.priority === "p1" && !isHiddenColumn(column))?.key;
+    if (colKey !== undefined) {
+      keyboardState.setFocusCell({ rowId: issueRowFocusId, colKey });
+      setFocusRequest({ kind: "cell" });
+    }
+  }
+
+  function goToCell(nextPage: number, cell: FocusCell) {
+    setRequestedPage(nextPage);
+    setPageAnnounced(true);
+    keyboardState.setFocusCell(cell);
+    setFocusRequest({ kind: "cell" });
+  }
+
+  // 04-19 — Ctrl+C: 브라우저가 쏘는 네이티브 copy 이벤트에 격자 선택을 싣는다(Ctrl+A면 전체 줄, 범위면 쪽 안 사각형,
+  // 아니면 활성 셀). 글자는 열의 copyText(견적 표는 04-24 직렬화), 앱 형식은 copyMeta. 선택이 없으면 이벤트 대상이
+  // <body>라 document에서 받는다. 편집 중 입력·사용자가 끌어 고른 글자는 브라우저 기본 복사 그대로다.
+  const copyRef = useRef<(event: ClipboardEvent) => void>(() => {});
+  useEffect(() => {
+    copyRef.current = (event) => {
+      const table = tableRef.current;
+      const active = document.activeElement;
+      if (!enableGridKeyboard || !table || !active || !table.contains(active)) return;
+      if (active.matches("input, textarea, select") || !columns.some((column) => column.copyText)) return;
+      if (!keyboardState.allSelected && document.getSelection()?.isCollapsed === false) return;
+      let copyRows: Row[];
+      let copyColumns: TableColumn<Row>[];
+      if (keyboardState.allSelected) {
+        copyRows = displayRows;
+        copyColumns = columns;
+      } else {
+        const { focus } = keyboardState;
+        const anchor = keyboardState.selectionAnchor ?? focus;
+        copyRows = flatRows.slice(Math.min(anchor.row, focus.row), Math.max(anchor.row, focus.row) + 1);
+        copyColumns = columns.slice(Math.min(anchor.col, focus.col), Math.max(anchor.col, focus.col) + 1);
+      }
+      event.clipboardData?.setData("text/plain", toTsv(copyRows.map((row) => copyColumns.map((column) => column.copyText?.(row) ?? ""))));
+      if (copyMeta) event.clipboardData?.setData("application/x-plant8-quote-lines+json", copyMeta(copyRows));
+      event.preventDefault();
+    };
+  });
+  useEffect(() => {
+    const onCopy = (event: ClipboardEvent) => copyRef.current(event);
+    document.addEventListener("copy", onCopy);
+    return () => document.removeEventListener("copy", onCopy);
+  }, []);
 
   // 04-28(앞 플랜 결함 — 04-04) — 방향키가 로빙 좌표(tabIndex)만 옮기고 DOM
   // 포커스는 옛 셀에 남아 「이동 ↑↓←→」가 동작하지 않았다. 표 안에 포커스가
@@ -246,6 +523,41 @@ export function Table<Row>({
       keyboardState.setFocus({ row: rowIndex, col: colIndex });
       setActiveCell(openCell);
     }
+  }
+
+  // DR-23 — 쪽 번호를 누른 뒤 포커스가 body로 떨어지지 않게 새 쪽의 셀(격자) 또는 제목·캡션(읽기 표)으로 보낸다.
+  const focusHeadingId = pagination?.focusHeadingId;
+  useEffect(() => {
+    if (!focusRequest) return;
+    if (focusRequest.kind === "cell") tableRef.current?.querySelector<HTMLElement>("td[data-grid-focus]")?.focus();
+    else if (focusRequest.kind === "issue") {
+      // 04-47(DR-5) — 오류 셀. 칸 안에 입력이 있으면(매출 표) 그 입력으로.
+      const cell = tableRef.current?.querySelector<HTMLElement>(`td[aria-describedby="${CSS.escape(focusRequest.issueId)}"]`);
+      (cell?.querySelector<HTMLElement>("input, select, textarea") ?? cell)?.focus();
+    } else (focusHeadingId ? document.getElementById(focusHeadingId) : captionRef.current)?.focus();
+  }, [focusRequest, focusHeadingId]);
+
+  function changePage(next: number) {
+    if (!pages || !pagination) return;
+    setRequestedPage(next);
+    setPageAnnounced(true);
+    // 04-47(§7-3 (자)) — 사용자의 페이지 이동은 새 줄 고정을 비우고 쪽 크기로 다시 나눈다.
+    const resplitPages = splitPages(displayIds, { pageSize: pagination.pageSize });
+    setPinState({ known: new Set(displayIds), pinned: {}, resplitKey: pagination.resplitKey });
+    const nextIds = resplitPages[next - 1] ?? [];
+    const firstRow = displayRows.find((row) => getRowId(row) === nextIds[0]);
+    if (!enableGridKeyboard || !firstRow) {
+      setFocusRequest({ kind: "heading" });
+      return;
+    }
+    const lastColKey = columns[keyboardState.focus.col]?.key;
+    const editableColKeys = columns
+      .filter((column) => !isHiddenColumn(column) && cellEditability(column, firstRow) === "edit")
+      .map((column) => column.key);
+    // 편집 셀이 없는 격자(좁은 폭 보기 전용)도 로빙 격자이므로 같은 열 첫 줄로 간다.
+    const colKey = pageEntryFocus({ pageRowIds: nextIds, lastColKey, editableColKeys })?.colKey ?? lastColKey;
+    keyboardState.setFocusCell({ rowId: getRowId(firstRow), colKey: colKey ?? colKeys[0] ?? "" });
+    setFocusRequest({ kind: "cell" });
   }
 
   const editing = activeCell !== null;
@@ -292,6 +604,37 @@ export function Table<Row>({
     return true;
   }
 
+  // 04-47(DR-16) — 합계 행 오른쪽 한 줄. 표가 세는 오류·충돌(서버 거부 요약이 같은 수를 말하면 그 요약) + 호출부 항목 + 붙여넣기가 닿은 쪽.
+  let noticeContent: ReactNode = null;
+  if (footerNotices !== undefined || footerSuccess) {
+    let errorCells = 0;
+    const conflictRows = new Set<string>();
+    for (const row of displayRows) {
+      for (const column of columns) {
+        const kind = cellIssue?.(row, column.key)?.kind;
+        if (kind === "error") errorCells++;
+        if (kind === "conflict") conflictRows.add(getRowId(row));
+      }
+    }
+    const reachItem: FooterNoticeItem[] = pasteReach !== null && hasPasteHead ? [{ tone: "muted", text: `${pasteReach}쪽까지`, paste: "reach" }] : [];
+    const counted = withIssueCount(footerNotices ?? [], { errorCells, conflictRows: conflictRows.size });
+    const pieces = composeFooterNotice([...counted, ...reachItem], { successText: footerSuccess });
+    noticeContent =
+      pieces.length > 0 ? (
+        <span className={styles.footerNotice}>
+          {pieces.map((piece, index) => (
+            <Fragment key={index}>
+              {index > 0 ? " · " : null}
+              <span data-tone={piece.tone} className={`${styles.noticePiece} ${styles[`tone-${piece.tone}`]}`}>
+                {piece.text}
+              </span>
+            </Fragment>
+          ))}
+        </span>
+      ) : null;
+  }
+  const footerContent = typeof footer === "function" ? footer(noticeContent) : footer;
+
   if (rows.length === 0) {
     return (
       <table className={styles.table} aria-busy={saveLocked ? true : undefined}>
@@ -322,7 +665,7 @@ export function Table<Row>({
             </td>
           </tr>
         </tbody>
-        {alwaysShowFooter && footer ? <tfoot aria-live="polite">{footer}</tfoot> : null}
+        {alwaysShowFooter && footerContent ? <tfoot aria-live="polite">{footerContent}</tfoot> : null}
       </table>
     );
   }
@@ -366,201 +709,250 @@ export function Table<Row>({
     if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
     const row = flatRows[keyboardState.focus.row];
     const column = columns[keyboardState.focus.col];
-    if (!row || !column) return;
-    const text = event.clipboardData?.getData("text/plain");
-    if (!text) return;
+    if (!row || !column || !event.clipboardData) return;
+    const clipboard = readPasteClipboard(event.clipboardData);
+    if (!clipboard.text) return;
     event.preventDefault();
-    onPasteAtCell(row, column.key, text);
+    const filled = onPasteAtCell(row, column.key, clipboard);
+    // 04-47(§7-3 (자)) — 화면은 시작 쪽에 머문다. 채운 줄이 뒤 쪽까지 닿았으면 합계 행에 `{k}쪽까지`(새 줄은 시작 쪽에 고정된다).
+    const reach = pages && filled ? Math.max(page, ...filled.map((id) => pageOfRow(pages, id) ?? page)) : page;
+    setPasteReach(reach > page ? reach : null);
   }
 
+  // 04-47(S4 error) — 다른 쪽의 오류·충돌 칸 수(번호 옆 `오류 N`). 지금 쪽은 세지 않는다.
+  const pageErrorCounts: Record<number, number> = {};
+  pages?.forEach((pageIds, index) => {
+    if (index + 1 === page) return;
+    const count = pageIds.reduce((sum, rowId) => {
+      const row = rowById.get(rowId);
+      return sum + (row ? columns.filter((column) => isFixedIssue(row, column.key)).length : 0);
+    }, 0);
+    if (count > 0) pageErrorCounts[index + 1] = count;
+  });
+
+  const rangeText = pagination && pages ? splitPageRangeText({ pages, page, unit: pagination.unit }) : "";
+
   return (
-    <table
-      ref={tableRef}
-      className={[styles.table, hasEditableCell ? styles.editable : styles.readonly].join(" ")}
-      role={hasEditableCell ? "grid" : undefined}
-      aria-busy={saveLocked ? true : undefined}
-      onPaste={enableGridKeyboard ? handleTablePaste : undefined}
-    >
-      <caption className="sr-only">{caption}</caption>
-      <thead>
-        <tr>
-          {columns.map((column) => (
-            <th
-              key={column.key}
-              scope="col"
-              className={[
-                styles.headerCell,
-                styles[`prio-${column.priority}`],
-                collapseClass(column),
-                column.align === "right" ? styles.alignRight : "",
-              ].join(" ")}
-            >
-              {column.header}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      {groups.map((group, groupIndex) => (
-        <tbody key={group.header ?? `group-${groupIndex}`}>
-          {group.header !== null ? (
-            <tr className={styles.groupRow}>
-              <td colSpan={columns.length} className={styles.groupHeader}>
-                {group.header}
-              </td>
-            </tr>
-          ) : null}
-          {group.rows.map((row) => {
-            const rowId = getRowId(row);
-            const flatRowIndex = flatRows.indexOf(row);
-            // 편집 가능 열은 summary가 있을 때만 접힌 줄에 낀다 — 그러지
-            // 않으면 같은 입력 요소가 주 행·접힌 줄 두 곳에 동시에
-            // 마운트된다(중복 aria-label, 상태 불일치).
-            const p2Values = columns
-              .filter((column) => column.priority === "p2")
-              .filter((column) => cellEditability(column, row) !== "edit" || column.summary)
-              .map((column) => (column.summary ? column.summary(row) : column.cell(row)))
-              .filter((value): value is ReactNode => value !== null && value !== undefined && value !== "");
+    <>
+      {pagination ? (
+        <p className="sr-only" aria-live="polite">
+          {pageAnnounced ? rangeText : ""}
+        </p>
+      ) : null}
+      <table
+        ref={tableRef}
+        className={[styles.table, hasEditableCell ? styles.editable : styles.readonly].join(" ")}
+        role={hasEditableCell ? "grid" : undefined}
+        aria-busy={saveLocked ? true : undefined}
+        onPaste={enableGridKeyboard ? handleTablePaste : undefined}
+      >
+        <caption
+          ref={captionRef}
+          className="sr-only"
+          tabIndex={pagination && !focusHeadingId && !enableGridKeyboard ? -1 : undefined}
+        >
+          {caption}
+        </caption>
+        <thead>
+          <tr>
+            {columns.map((column) => (
+              <th
+                key={column.key}
+                scope="col"
+                className={[
+                  styles.headerCell,
+                  styles[`prio-${column.priority}`],
+                  collapseClass(column),
+                  column.align === "right" ? styles.alignRight : "",
+                ].join(" ")}
+              >
+                {column.header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        {groups.map((group, groupIndex) => (
+          <tbody key={group.header ?? `group-${groupIndex}`}>
+            {group.header !== null ? (
+              <tr className={styles.groupRow}>
+                <td colSpan={columns.length} className={styles.groupHeader}>
+                  {group.header}
+                </td>
+              </tr>
+            ) : null}
+            {group.rows.map((row) => {
+              const rowId = getRowId(row);
+              const flatRowIndex = flatRows.indexOf(row);
+              // 편집 가능 열은 summary가 있을 때만 접힌 줄에 낀다 — 그러지
+              // 않으면 같은 입력 요소가 주 행·접힌 줄 두 곳에 동시에
+              // 마운트된다(중복 aria-label, 상태 불일치).
+              const p2Values = columns
+                .filter((column) => column.priority === "p2")
+                .filter((column) => cellEditability(column, row) !== "edit" || column.summary)
+                .map((column) => (column.summary ? column.summary(row) : column.cell(row)))
+                .filter((value): value is ReactNode => value !== null && value !== undefined && value !== "");
 
-            return (
-              <Fragment key={rowId}>
-                <tr>
-                  {columns.map((column, colIndex) => {
-                    const editability = cellEditability(column, row);
-                    const isEditableColumn = editability === "edit";
-                    const pos: GridPosition = { row: flatRowIndex, col: colIndex };
-                    const isFocusPos =
-                      enableGridKeyboard && keyboardState.focus.row === pos.row && keyboardState.focus.col === pos.col;
-                    const issue = cellIssue?.(row, column.key);
-                    const issueId = issue ? `${rowId}-${column.key}-issue` : undefined;
-                    const invalid = issue !== undefined && issue.kind !== "reason";
+              return (
+                <Fragment key={rowId}>
+                  <tr>
+                    {columns.map((column, colIndex) => {
+                      const editability = cellEditability(column, row);
+                      const isEditableColumn = editability === "edit";
+                      const pos: GridPosition = { row: flatRowIndex, col: colIndex };
+                      const isFocusPos =
+                        enableGridKeyboard && keyboardState.focus.row === pos.row && keyboardState.focus.col === pos.col;
+                      const issue = cellIssue?.(row, column.key);
+                      const issueId = issue ? `${rowId}-${column.key}-issue` : undefined;
+                      const invalid = issue !== undefined && issue.kind !== "reason";
 
-                    return (
-                      <td
-                        key={column.key}
-                        role={hasEditableCell ? "gridcell" : undefined}
-                        aria-readonly={hasEditableCell ? editability !== "edit" : undefined}
-                        aria-invalid={invalid ? true : undefined}
-                        aria-describedby={issueId}
-                        data-grid-focus={isFocusPos ? "" : undefined}
-                        tabIndex={
-                          enableGridKeyboard
-                            ? isFocusPos
-                              ? 0
-                              : -1
-                            : hasEditableCell && isEditableColumn
-                              ? 0
-                              : undefined
-                        }
-                        className={[
-                          styles.cell,
-                          styles[`prio-${column.priority}`],
-                          collapseClass(column),
-                          column.align === "right" ? styles.alignRight : "",
-                          isEditableColumn ? styles.editableCell : "",
-                          editability === "locked" ? styles.lockedCell : "",
-                          invalid ? (issue.kind === "conflict" ? styles.conflictCell : styles.errorCell) : "",
-                          enableGridKeyboard && keyboardState.isInSelection(pos) ? styles.selectedCell : "",
-                          !invalid && cellDirty?.(row, column.key) ? styles.dirtyCell : "",
-                          cellSaved?.(row, column.key) ? styles.savedTint : "",
-                        ].join(" ")}
-                        onClick={() => {
-                          if (enableGridKeyboard) keyboardState.setFocus(pos);
-                          if (isEditableColumn && column.editCell && allowed("enterEdit")) {
-                            setActiveCell({ rowId, columnKey: column.key });
+                      return (
+                        <td
+                          key={column.key}
+                          role={hasEditableCell ? "gridcell" : undefined}
+                          aria-readonly={hasEditableCell ? editability !== "edit" : undefined}
+                          aria-invalid={invalid ? true : undefined}
+                          aria-describedby={issueId}
+                          data-grid-focus={isFocusPos ? "" : undefined}
+                          tabIndex={
+                            enableGridKeyboard
+                              ? isFocusPos
+                                ? 0
+                                : -1
+                              : hasEditableCell && isEditableColumn
+                                ? 0
+                                : undefined
                           }
-                        }}
-                        onFocus={() => {
-                          if (enableGridKeyboard) keyboardState.setFocus(pos);
-                        }}
-                        onKeyDown={
-                          enableGridKeyboard
-                            ? (event) => {
-                                if (handleConflictKey(event, issue)) return;
-                                keyboardState.handleKeyDown(event, pos);
-                              }
-                            : (event) => {
-                                // 04-41 — 격자 키보드를 켜지 않은 표도 onSave를 받으면 칸 안의 Ctrl+S가 저장이다(매출 표).
-                                if (keyboard?.onSave && isCtrlCombo(event, "s")) {
-                                  event.preventDefault();
-                                  if (allowed("save")) keyboard.onSave();
-                                  return;
+                          className={[
+                            styles.cell,
+                            styles[`prio-${column.priority}`],
+                            collapseClass(column),
+                            column.align === "right" ? styles.alignRight : "",
+                            isEditableColumn ? styles.editableCell : "",
+                            editability === "locked" ? styles.lockedCell : "",
+                            invalid ? (issue.kind === "conflict" ? styles.conflictCell : styles.errorCell) : "",
+                            enableGridKeyboard && keyboardState.isInSelection(pos) ? styles.selectedCell : "",
+                            !invalid && cellDirty?.(row, column.key) ? styles.dirtyCell : "",
+                            cellSaved?.(row, column.key) ? styles.savedTint : "",
+                          ].join(" ")}
+                          onClick={() => {
+                            if (enableGridKeyboard) keyboardState.setFocus(pos);
+                            if (isEditableColumn && column.editCell && allowed("enterEdit")) {
+                              setActiveCell({ rowId, columnKey: column.key });
+                            }
+                          }}
+                          onFocus={() => {
+                            if (enableGridKeyboard) keyboardState.setFocus(pos);
+                          }}
+                          onKeyDown={
+                            enableGridKeyboard
+                              ? (event) => {
+                                  if (handleConflictKey(event, issue)) return;
+                                  keyboardState.handleKeyDown(event, pos);
                                 }
-                                if ((event.key === "Enter" || event.key === " ") && isEditableColumn && column.editCell && allowed("enterEdit")) {
-                                  event.preventDefault();
-                                  setActiveCell({ rowId, columnKey: column.key });
+                              : (event) => {
+                                  // 04-41 — 격자 키보드를 켜지 않은 표도 onSave를 받으면 칸 안의 Ctrl+S가 저장이다(매출 표).
+                                  if (keyboard?.onSave && isCtrlCombo(event, "s")) {
+                                    event.preventDefault();
+                                    if (allowed("save")) keyboard.onSave();
+                                    return;
+                                  }
+                                  if ((event.key === "Enter" || event.key === " ") && isEditableColumn && column.editCell && allowed("enterEdit")) {
+                                    event.preventDefault();
+                                    setActiveCell({ rowId, columnKey: column.key });
+                                  }
                                 }
-                              }
-                        }
-                      >
-                        {renderCell(column, row)}
-                        {issue ? (
-                          <p id={issueId} className={styles.issueReason}>
-                            {issue.message}
-                            {issue.actions?.map((action, index) => (
-                              <Fragment key={action.label}>
-                                {index === 0 ? " · " : " / "}
-                                <button
-                                  type="button"
-                                  tabIndex={-1}
-                                  data-issue-action=""
-                                  className={styles.issueAction}
-                                  onClick={(event) => {
-                                    // 셀 클릭(편집 진입)으로 번지지 않게 하고, 누른 뒤 포커스는 그 셀로.
-                                    event.stopPropagation();
-                                    const cell = event.currentTarget.closest("td");
-                                    action.onClick();
-                                    cell?.focus();
-                                  }}
-                                >
-                                  {action.label}
-                                </button>
-                              </Fragment>
-                            ))}
-                          </p>
-                        ) : null}
-                      </td>
-                    );
-                  })}
-                </tr>
-                {p2Values.length > 0 ? (
-                  <tr
-                    className={styles.collapsedRow}
-                    aria-hidden={onRowTap ? undefined : "true"}
-                  >
-                    {onRowTap ? (
-                      <td
-                        colSpan={columns.length}
-                        className={styles.collapsedCell}
-                        role="button"
-                        tabIndex={0}
-                        aria-label={`${rowId} 상세 보기`}
-                        onClick={() => onRowTap(row)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            onRowTap(row);
                           }
-                        }}
-                      >
-                        {p2Values.map((value, index) => (
-                          <span key={index}>{index > 0 ? " · " : ""}{value}</span>
-                        ))}
-                      </td>
-                    ) : (
-                      <td colSpan={columns.length} className={styles.collapsedCell}>
-                        {p2Values.map((value, index) => (
-                          <span key={index}>{index > 0 ? " · " : ""}{value}</span>
-                        ))}
-                      </td>
-                    )}
+                        >
+                          {renderCell(column, row)}
+                          {issue ? (
+                            <p id={issueId} className={styles.issueReason}>
+                              {issue.message}
+                              {issue.actions?.map((action, index) => (
+                                <Fragment key={action.label}>
+                                  {index === 0 ? " · " : " / "}
+                                  <button
+                                    type="button"
+                                    tabIndex={-1}
+                                    data-issue-action=""
+                                    className={styles.issueAction}
+                                    onClick={(event) => {
+                                      // 셀 클릭(편집 진입)으로 번지지 않게 하고, 누른 뒤 포커스는 그 셀로.
+                                      event.stopPropagation();
+                                      const cell = event.currentTarget.closest("td");
+                                      action.onClick();
+                                      cell?.focus();
+                                    }}
+                                  >
+                                    {action.label}
+                                  </button>
+                                </Fragment>
+                              ))}
+                            </p>
+                          ) : null}
+                        </td>
+                      );
+                    })}
                   </tr>
-                ) : null}
-              </Fragment>
-            );
-          })}
-        </tbody>
-      ))}
-      {footer ? <tfoot aria-live="polite">{footer}</tfoot> : null}
-    </table>
+                  {p2Values.length > 0 ? (
+                    <tr
+                      className={styles.collapsedRow}
+                      aria-hidden={onRowTap ? undefined : "true"}
+                    >
+                      {onRowTap ? (
+                        <td
+                          colSpan={columns.length}
+                          className={styles.collapsedCell}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`${rowId} 상세 보기`}
+                          onClick={() => onRowTap(row)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              onRowTap(row);
+                            }
+                          }}
+                        >
+                          {p2Values.map((value, index) => (
+                            <span key={index}>{index > 0 ? " · " : ""}{value}</span>
+                          ))}
+                        </td>
+                      ) : (
+                        <td colSpan={columns.length} className={styles.collapsedCell}>
+                          {p2Values.map((value, index) => (
+                            <span key={index}>{index > 0 ? " · " : ""}{value}</span>
+                          ))}
+                        </td>
+                      )}
+                    </tr>
+                  ) : null}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        ))}
+        {footerContent ? <tfoot aria-live="polite">{footerContent}</tfoot> : null}
+      </table>
+      {pagination && pages ? (
+        <Pagination
+          label={pagination.label}
+          page={page}
+          pageCount={pages.length}
+          rangeText={rangeText}
+          onPageChange={changePage}
+          errorCounts={pageErrorCounts}
+        />
+      ) : null}
+      {hint && hint.length > 0 ? (
+        <p className={styles.hintRow}>
+          {hint.map((item, index) => (
+            <Fragment key={item.label}>
+              {index > 0 ? " · " : ""}
+              {item.label} <kbd>{item.keys}</kbd>
+            </Fragment>
+          ))}
+        </p>
+      ) : null}
+    </>
   );
 }

@@ -73,6 +73,28 @@ describe("parseTsv", () => {
   it("인용된 칸 안의 CRLF는 LF 하나로 정규화된다(캐리지 리턴이 값에 남지 않는다)", () => {
     expect(parseTsv('a\t"1행\r\n2행"\tb')).toEqual([["a", "1행\n2행", "b"]]);
   });
+
+  // 04-47(C-05) — 엑셀은 복사 영역 끝에 줄바꿈 하나를 붙인다. 그 하나는 빈 줄이 아니다(45줄 복사 = 45줄 붙여넣기).
+  it('끝 줄바꿈 하나(CRLF)는 빈 줄이 되지 않는다 — "a\\tb\\r\\n" → 한 줄', () => {
+    expect(parseTsv("a\tb\r\n")).toEqual([["a", "b"]]);
+  });
+
+  it('끝 줄바꿈 하나(LF)도 같다 — "a\\tb\\n" → 한 줄', () => {
+    expect(parseTsv("a\tb\n")).toEqual([["a", "b"]]);
+  });
+
+  it("끝 줄바꿈은 하나만 뗀다 — 두 번째 줄바꿈 앞의 빈 줄은 남는다", () => {
+    expect(parseTsv("a\tb\r\n\r\n")).toEqual([["a", "b"], [""]]);
+  });
+
+  it("45줄 + 끝 CRLF는 45줄이다", () => {
+    const text = Array.from({ length: 45 }, (_, index) => `항목${index + 1}\t${index + 1}`).join("\r\n") + "\r\n";
+    expect(parseTsv(text)).toHaveLength(45);
+  });
+
+  it("인용 칸이 끝 줄바꿈 바로 앞에 있어도 그 칸 안의 줄바꿈은 그대로다", () => {
+    expect(parseTsv('a\t"b\nc"\n')).toEqual([["a", "b\nc"]]);
+  });
 });
 
 // 04-04 Task 1 ③ — 숫자 열 붙여넣기 정규화(§7-3 (다)). 쉼표·공백·통화
@@ -111,6 +133,12 @@ describe("normalizeNumericPaste", () => {
     expect(normalizeNumericPaste("$4,400.00")).toBe(4400);
     expect(normalizeNumericPaste("¥1,000")).toBe(1000);
     expect(normalizeNumericPaste("￦1,000")).toBe(1000);
+  });
+
+  // /qa ISSUE-004 (a) — 한국 스프레드시트 `#,##0원` 표시값. 앞뒤 `원`은 통화 기호로 지운다.
+  it('"1,234원" → 1234 · "원1,234" → 1234(앞뒤 원은 통화 기호)', () => {
+    expect(normalizeNumericPaste("1,234원")).toBe(1234);
+    expect(normalizeNumericPaste("원1,234")).toBe(1234);
   });
 
   it('"-1,200" → -1200(음수)', () => {

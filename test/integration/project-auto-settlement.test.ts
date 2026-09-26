@@ -7,7 +7,8 @@ import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
-import { aggregateProjects, createProject, findProject, listProjects, settleForProjectList } from "@/domain/projects";
+import { createProject, findProject, loadProjectList, settleForProjectList } from "@/domain/projects";
+import { aggregateProjects as repoAggregateProjects, listProjectsPage as repoListProjectsPage } from "@/repositories/projects";
 import { changeProjectStatus, lastStatusChangeOn } from "@/domain/projects/status";
 import { applyAutoSettlement, loadProjectForGate } from "@/domain/projects/auto-transition";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
@@ -251,47 +252,43 @@ async function allStatusLogs(projectId: string) {
 }
 
 describe("목록 요청의 판정 한 번 · 보기 권한 (04-11 Task 2 ② · A-07 · 엔지 리뷰 A P3)", () => {
-  it("(f) settleForProjectList 뒤 listProjects가 지난 진행을 정산으로 돌려준다", async () => {
+  it("(f) loadProjectList가 판정을 먼저 한 번 하고 지난 진행을 정산으로 돌려준다", async () => {
     const viewer = await makeViewer(DEFAULT_ROLE_ID);
     const projectId = await makeProject({ status: "in_progress", endDate: addDays(kstToday(new Date()), -1) });
 
-    await settleForProjectList(viewer);
-    const rows = await listProjects(viewer, {});
+    const { rows } = await loadProjectList(viewer, { year: "all" });
 
     expect(rows.find((row) => row.id === projectId)?.status).toBe("settling");
     expect(await settleLogs(projectId)).toHaveLength(1);
   });
 
-  it("(f2) settleForProjectList 없이 listProjects·aggregateProjects만 부르면 지난 진행은 진행 그대로다", async () => {
-    const viewer = await makeViewer(DEFAULT_ROLE_ID);
+  it("(f2) 판정 없이 리포지토리 목록·집계만 부르면 지난 진행은 진행 그대로다(판정은 입구의 한 번뿐)", async () => {
+    await makeViewer(DEFAULT_ROLE_ID);
     const projectId = await makeProject({ status: "in_progress", endDate: addDays(kstToday(new Date()), -1) });
 
-    const [rows, aggregate] = await Promise.all([
-      listProjects(viewer, {}),
-      aggregateProjects(viewer, { status: "in_progress" }),
+    const scope = { rows: "all", includeArchived: false } as const;
+    const [rows, buckets] = await Promise.all([
+      repoListProjectsPage(SYSTEM_VIEWER, { scope, filter: {}, sort: { key: "endDate", direction: "asc" }, offset: 0, limit: 50 }),
+      repoAggregateProjects(SYSTEM_VIEWER, { scope, filter: { status: "in_progress" } }),
     ]);
 
     expect(rows.find((row) => row.id === projectId)?.status).toBe("in_progress");
-    expect(aggregate.count).toBe(1);
+    expect(buckets.reduce((sum, bucket) => sum + bucket.count, 0)).toBe(1);
     expect(await statusOf(projectId)).toBe("in_progress");
     expect(await settleLogs(projectId)).toEqual([]);
   });
 
-  it("(f3) settleForProjectList 한 번 뒤 정산 목록 건수와 합계 건수가 같다", async () => {
+  it("(f3) loadProjectList의 판정 한 번 뒤 정산 목록 건수와 합계 건수가 같다", async () => {
     const viewer = await makeViewer(DEFAULT_ROLE_ID);
     const yesterday = addDays(kstToday(new Date()), -1);
     await makeProject({ status: "in_progress", endDate: yesterday });
     await makeProject({ status: "in_progress", endDate: addDays(yesterday, -5) });
     await makeProject({ status: "settling", endDate: addDays(yesterday, -9) });
 
-    await settleForProjectList(viewer);
-    const [rows, aggregate] = await Promise.all([
-      listProjects(viewer, { filter: { status: "settling" } }),
-      aggregateProjects(viewer, { status: "settling" }),
-    ]);
+    const { rows, totals } = await loadProjectList(viewer, { year: "all", status: "settling" });
 
     expect(rows).toHaveLength(3);
-    expect(aggregate.count).toBe(rows.length);
+    expect(totals.count).toBe(rows.length);
   });
 
   it("(f4) projects 보기 권한이 없는 viewer의 settleForProjectList는 판정하지 않는다", async () => {
@@ -408,8 +405,7 @@ describe("쓰기 경로의 잠금 안 선판정 · 경합 · 번호 연도 (04-1
     expect(await statusOf(projectId)).toBe("in_progress");
     expect(await allStatusLogs(projectId)).toEqual([]);
 
-    await settleForProjectList(lead);
-    const rows = await listProjects(lead, {});
+    const { rows } = await loadProjectList(lead, { year: "all" });
 
     expect(rows.find((row) => row.id === projectId)?.status).toBe("settling");
     const logs = await settleLogs(projectId);

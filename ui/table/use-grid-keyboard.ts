@@ -2,6 +2,7 @@
 
 import { useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { isCtrlCombo } from "@/lib/shortcut";
+import { resolveFocus, type FocusCell } from "./paging";
 import { isGridActionAllowed } from "./save-lock";
 
 // SYSTEM.md §7-3 보강 (아) — `role="grid"` 키보드 계약. 표 전체가 탭 정지
@@ -16,24 +17,27 @@ export type GridKeyboardHandlers = {
   onEnterEdit?: (pos: GridPosition) => void;
   /** Esc — 편집 중이면 되돌리기, 아니면 범위 해제(호출부가 값 되돌리기를 한다). */
   onEscape?: (pos: GridPosition, wasEditing: boolean) => void;
-  /** Delete — 편집 중이 아닐 때만: 줄 삭제 확인 모달을 연다. */
-  onDeleteRow?: (rowIndex: number) => void;
-  /** Ctrl+Enter — 새 줄. 현재 포커스 행 인덱스를 넘긴다(D-62: 그 줄의
+  /** Delete — 편집 중이 아닐 때만: 줄 삭제 확인 모달을 연다. 04-19 — 줄 인덱스가 아니라 줄 id(쪽이 바뀌어도 같은 줄). */
+  onDeleteRow?: (rowId: string) => void;
+  /** Ctrl+Enter — 새 줄. 현재 포커스 줄 id를 넘긴다(D-62: 그 줄의
    * 그룹 대분류를 물려받아야 한다 — 어느 그룹 안에서 눌렀는지 알아야 한다). */
-  onNewRow?: (currentRowIndex: number) => void;
+  onNewRow?: (currentRowId: string | undefined) => void;
   /** Ctrl+D — 줄 복제. */
-  onDuplicateRow?: (rowIndex: number) => void;
+  onDuplicateRow?: (rowId: string) => void;
   /** Alt+↑/↓ — 줄 이동. */
-  onMoveRow?: (rowIndex: number, direction: "up" | "down") => void;
+  onMoveRow?: (rowId: string, direction: "up" | "down") => void;
   /** Ctrl+S — 일괄 저장. */
   onSave?: () => void;
+  /** 04-19 리뷰 B-1 — 편집 중 Enter(편집기가 이미 확정했다) 뒤 아래로 옮겼다. 호출부는 편집기가 내려간 뒤 셀로 포커스를 돌려준다. */
+  onCommitDown?: () => void;
   /** 04-30(DR-35) — 막힌 셀(isBlockedCell)의 Enter·글자 입력·Delete. 편집·줄 삭제 대신 이것만 부른다. */
   onBlockedEdit?: (pos: GridPosition) => void;
 };
 
 export type UseGridKeyboardParams = {
-  rowCount: number;
-  colCount: number;
+  /** 04-19(엔지 리뷰 C §1 P2) — 지금 쪽의 줄 id(표시 순서)·열 키. 포커스·범위 앵커는 인덱스가 아니라 이 둘로 기억한다. */
+  rowIds: readonly string[];
+  colKeys: readonly string[];
   isEditableCell: (pos: GridPosition) => boolean;
   isEditing: (pos: GridPosition) => boolean;
   /** 04-30(DR-35) — 편집기가 있는 열인데 이 셀은 편집 단계가 아니다(잠김·읽기 전용). */
@@ -42,13 +46,23 @@ export type UseGridKeyboardParams = {
   saveLocked?: boolean;
   /** 04-49(DR-14) — 좁은 PC에서 숨은 열. 방향키가 건너뛰고 로빙 탭 정지도 보이는 열에 둔다. */
   isHiddenCol?: (col: number) => boolean;
+  /** 04-19(C-18) — 쪽 첫 줄 ↑ · 끝 줄 ↓(Shift 없이). 옆 쪽으로 넘겼으면 true, 아니면 제자리. */
+  onEdgeExit?: (direction: "up" | "down", colKey: string) => boolean;
+  /** 04-19 — 편집 중이 아닐 때 Ctrl+A(표 전체 선택 — 지금 쪽 밖의 줄까지). */
+  onSelectAll?: () => void;
+  /** 04-19 — 편집 중 Tab/Shift+Tab(확정하고 옆 편집 셀로). 편집 중이 아니면 Tab은 표를 떠난다. */
+  onTab?: (pos: GridPosition, direction: "forward" | "backward") => void;
   handlers: GridKeyboardHandlers;
 };
 
 export type UseGridKeyboardResult = {
   focus: GridPosition;
   setFocus: (pos: GridPosition) => void;
+  /** 04-19 — 아직 그리지 않은 쪽의 셀로(쪽을 넘길 때). */
+  setFocusCell: (cell: FocusCell) => void;
   selectionAnchor: GridPosition | null;
+  /** 04-19 — Ctrl+A로 표 전체가 골라졌다(다른 이동·Esc로 풀린다). */
+  allSelected: boolean;
   clearSelection: () => void;
   isInSelection: (pos: GridPosition) => boolean;
   handleKeyDown: (event: ReactKeyboardEvent<HTMLElement>, pos: GridPosition) => void;
@@ -89,16 +103,25 @@ export function conflictFocusTransition(state: ConflictFocusState, key: string):
 }
 
 export function useGridKeyboard({
-  rowCount,
-  colCount,
+  rowIds,
+  colKeys,
   isEditableCell,
   isEditing,
   isBlockedCell,
   saveLocked = false,
   isHiddenCol = () => false,
+  onEdgeExit,
+  onSelectAll,
+  onTab,
   handlers,
 }: UseGridKeyboardParams): UseGridKeyboardResult {
-  const [storedFocus, setFocusState] = useState<GridPosition>({ row: 0, col: 0 });
+  const rowCount = rowIds.length;
+  const colCount = colKeys.length;
+  // 04-19 — 기억은 { rowId, colKey }, 좌표는 렌더마다 지금 쪽에서 다시 찾는다. 그 줄이 없어졌으면 기억할 때의 인덱스 자리.
+  const [stored, setStored] = useState<{ cell: FocusCell; at: GridPosition } | null>(null);
+  const storedFocus: GridPosition = stored
+    ? resolveFocus({ pageIds: rowIds, colKeys, focus: stored.cell, fallback: stored.at })
+    : { row: 0, col: 0 };
   // 탭 정지가 숨은 열에 있으면(첫 칸 번호 등) 가장 가까운 보이는 열로 옮겨 보인다.
   const focus: GridPosition = isHiddenCol(storedFocus.col)
     ? { row: storedFocus.row, col: nearestVisibleCol(storedFocus.col) }
@@ -109,18 +132,35 @@ export function useGridKeyboard({
     for (let next = col; next >= 0; next--) if (!isHiddenCol(next)) return next;
     return col;
   }
-  const [selectionAnchor, setSelectionAnchor] = useState<GridPosition | null>(null);
+  const [anchorCell, setAnchorCell] = useState<FocusCell | null>(null);
+  const anchorRow = anchorCell ? rowIds.indexOf(anchorCell.rowId) : -1;
+  const anchorCol = anchorCell ? colKeys.indexOf(anchorCell.colKey) : -1;
+  const selectionAnchor: GridPosition | null = anchorRow === -1 || anchorCol === -1 ? null : { row: anchorRow, col: anchorCol };
+  const [allSelected, setAllSelected] = useState(false);
+
+  function cellAt(pos: GridPosition): FocusCell {
+    return { rowId: rowIds[pos.row] ?? "", colKey: colKeys[pos.col] ?? "" };
+  }
 
   function setFocus(pos: GridPosition) {
-    setFocusState(pos);
-    setSelectionAnchor(null);
+    setStored({ cell: cellAt(pos), at: pos });
+    setAnchorCell(null);
+    setAllSelected(false);
+  }
+
+  function setFocusCell(cell: FocusCell) {
+    setStored({ cell, at: { row: 0, col: Math.max(0, colKeys.indexOf(cell.colKey)) } });
+    setAnchorCell(null);
+    setAllSelected(false);
   }
 
   function clearSelection() {
-    setSelectionAnchor(null);
+    setAnchorCell(null);
+    setAllSelected(false);
   }
 
   function isInSelection(pos: GridPosition): boolean {
+    if (allSelected) return true;
     if (!selectionAnchor) return false;
     const rowMin = Math.min(selectionAnchor.row, focus.row);
     const rowMax = Math.max(selectionAnchor.row, focus.row);
@@ -131,6 +171,9 @@ export function useGridKeyboard({
 
   function moveFocus(rowDelta: number, colDelta: number, extendSelection: boolean, from: GridPosition) {
     if (rowCount === 0 || colCount === 0) return;
+    // 04-19(C-18) — 쪽 끝을 넘는 ↑↓는 옆 쪽으로(호출부). Shift 범위는 쪽 안에서 멈춘다.
+    const beyond = from.row + rowDelta < 0 || from.row + rowDelta > rowCount - 1;
+    if (rowDelta !== 0 && beyond && !extendSelection && onEdgeExit?.(rowDelta < 0 ? "up" : "down", colKeys[from.col] ?? "")) return;
     let col = clamp(from.col + colDelta, 0, colCount - 1);
     // 04-49(DR-14) — 숨은 열은 건너뛴다. 끝까지 숨은 열뿐이면 제자리.
     while (colDelta !== 0 && col !== from.col && isHiddenCol(col)) {
@@ -139,11 +182,12 @@ export function useGridKeyboard({
     }
     const next = { row: clamp(from.row + rowDelta, 0, rowCount - 1), col };
     if (extendSelection) {
-      setSelectionAnchor((anchor) => anchor ?? from);
+      setAnchorCell((anchor) => anchor ?? cellAt(from));
     } else {
-      setSelectionAnchor(null);
+      setAnchorCell(null);
     }
-    setFocusState(next);
+    setAllSelected(false);
+    setStored({ cell: cellAt(next), at: next });
   }
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLElement>, pos: GridPosition) {
@@ -153,23 +197,44 @@ export function useGridKeyboard({
     // 줄 이동은 방향키보다 먼저 판정한다(Alt+↑/↓가 일반 방향키 이동과 겹친다).
     if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
       event.preventDefault();
-      if (allowed("moveRow")) handlers.onMoveRow?.(pos.row, event.key === "ArrowUp" ? "up" : "down");
+      const rowId = rowIds[pos.row];
+      if (allowed("moveRow") && rowId !== undefined) handlers.onMoveRow?.(rowId, event.key === "ArrowUp" ? "up" : "down");
       return;
     }
 
     // D-94 · 엔지 리뷰 C §1 P1 — 앱이 쓰는 세 조합은 Ctrl 전용이고 판정은
     // isCtrlCombo 하나다(자동 반복·한글 조합 중이면 거짓 — 무시). 무시할 때도
     // 브라우저 기본 동작(페이지 저장 창 등)은 막는다. 편집 중 Ctrl+C·V·A는
-    // 여기 걸리지 않아 입력의 기본 동작 그대로다.
+    // 여기 걸리지 않아 입력의 기본 동작 그대로다. 04-19 — 편집 중이 아닐 때 Ctrl+A는 표 전체 선택이고, Ctrl+C는
+    // 가로채지 않는다(브라우저가 쏘는 copy 이벤트를 Table이 받는다).
     if (event.ctrlKey && ["enter", "d", "s"].includes(event.key.toLowerCase())) {
       event.preventDefault();
       if (isCtrlCombo(event, "Enter")) {
-        if (allowed("newRow")) handlers.onNewRow?.(pos.row);
+        if (allowed("newRow")) handlers.onNewRow?.(rowIds[pos.row]);
       } else if (isCtrlCombo(event, "d")) {
-        if (allowed("duplicateRow")) handlers.onDuplicateRow?.(pos.row);
+        const rowId = rowIds[pos.row];
+        if (allowed("duplicateRow") && rowId !== undefined) handlers.onDuplicateRow?.(rowId);
       } else if (isCtrlCombo(event, "s")) {
         if (allowed("save")) handlers.onSave?.();
       }
+      return;
+    }
+
+    // 리뷰 N-1 — 자동 반복·조합 중 Ctrl+A도 기본 동작(페이지 전체 선택)은 막는다. 전체 선택은 isCtrlCombo일 때만.
+    if (!editing && event.ctrlKey && event.key.toLowerCase() === "a") {
+      event.preventDefault();
+      if (isCtrlCombo(event, "a")) {
+        setAnchorCell(null);
+        setAllSelected(true);
+        onSelectAll?.();
+      }
+      return;
+    }
+
+    // 04-19 — 편집 중 Tab/Shift+Tab은 확정하고 옆 편집 셀로(호출부). Tab은 조합을 끝내는 키라 조합 중이어도 여기서 처리한다(리뷰 S-2).
+    if (editing && event.key === "Tab" && !event.ctrlKey && !event.altKey) {
+      event.preventDefault();
+      onTab?.(pos, event.shiftKey ? "backward" : "forward");
       return;
     }
 
@@ -183,6 +248,10 @@ export function useGridKeyboard({
       if (event.key === "Escape") {
         event.preventDefault();
         handlers.onEscape?.(pos, true);
+      } else if (event.key === "Enter" && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+        // 04-19 리뷰 B-1 — 확정 후 아래(§7-3 「Enter 아래」). 쪽 마지막 줄이면 ↓와 같은 onEdgeExit로 다음 쪽.
+        handlers.onCommitDown?.();
+        moveFocus(1, 0, false, pos);
       }
       return;
     }
@@ -225,7 +294,7 @@ export function useGridKeyboard({
       case "Backspace":
         event.preventDefault();
         if (blocked) handlers.onBlockedEdit?.(pos);
-        else if (allowed("deleteRow")) handlers.onDeleteRow?.(pos.row);
+        else if (allowed("deleteRow") && rowIds[pos.row] !== undefined) handlers.onDeleteRow?.(rowIds[pos.row]!);
         break;
       default:
         // 글자 입력(한 글자 키, 조합 키 없음) — 막힌 셀이면 이유만.
@@ -237,5 +306,5 @@ export function useGridKeyboard({
     }
   }
 
-  return { focus, setFocus, selectionAnchor, clearSelection, isInSelection, handleKeyDown };
+  return { focus, setFocus, setFocusCell, selectionAnchor, allSelected, clearSelection, isInSelection, handleKeyDown };
 }

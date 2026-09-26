@@ -108,9 +108,9 @@ export const MAX_DECIMALS: Record<NumberInputKind, number> = {
   quantity: 2,
 };
 
-/** 쉼표·공백·통화 기호(₩$¥￦)를 지운다 — 서버·붙여넣기 공용 규칙. */
+/** 쉼표·공백·통화 기호(₩$¥￦, 앞뒤 `원`)를 지운다 — 서버·붙여넣기 공용 규칙. */
 export function stripNumberInput(text: string): string {
-  return text.replace(/[,\s₩$¥￦]/g, "");
+  return text.replace(/[,\s₩$¥￦]/g, "").replace(/^원|원$/g, "");
 }
 
 /** 쉼표 섞인 문자열을 숫자로 읽는다. 빈 문자열은 `null`, 숫자가 아니면

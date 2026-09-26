@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { kstYear } from "@/lib/kst-date";
 
 // Regression: ISSUE-001 — 「필터 지우기」·뒤로 가기로 URL 필터가 바뀌어도
 // 상태·연도 select가 이전 값을 그대로 보였다(목록은 필터 없이 그려지는데
@@ -27,13 +28,14 @@ test.describe("프로젝트 목록 필터 — URL과 필터 칸이 어긋나지 
     await expect(page.locator("#status")).toHaveValue("");
   });
 
-  test("뒤로 가기로 필터 없는 URL에 돌아오면 연도 칸도 비어 있다", async ({ page }) => {
+  test("뒤로 가기로 필터 없는 URL에 돌아오면 연도 칸도 기본값(올해)이다", async ({ page }) => {
     await page.goto("/projects");
     await page.locator("#year").selectOption({ index: 1 });
     await expect(page).toHaveURL(/year=\d{4}/);
 
     await page.goBack();
     await expect(page).toHaveURL(/\/projects$/);
-    await expect(page.locator("#year")).toHaveValue("");
+    // 04-17(D-89) — 조건 없는 URL의 연도 칸은 올해(KST)다.
+    await expect(page.locator("#year")).toHaveValue(String(kstYear(new Date())));
   });
 });

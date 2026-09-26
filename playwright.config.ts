@@ -49,6 +49,8 @@ export default defineConfig({
   globalSetup: "./test/e2e/global-setup.ts",
   fullyParallel: false,
   retries: 0,
+  // CI는 실패를 GitHub 주석으로도 남긴다 — 잡 로그를 못 여는 곳에서도 실패 테스트 이름을 API로 읽는다.
+  reporter: process.env.CI ? [["github"], ["dot"]] : "list",
   webServer: {
     command: process.env.CI ? "pnpm build && pnpm start" : "pnpm dev",
     url: "http://127.0.0.1:3100/api/health",

@@ -5,6 +5,7 @@ import { listRevisionLinesAction } from "../actions";
 import type { QuoteLineDto } from "@/domain/quotes/lines";
 import { QUOTE_LINE_KINDS, type QuoteLineKind } from "@/domain/quotes/edit-scope";
 import { formatForeignLine, formatKrw, formatQuantity } from "@/lib/format-number";
+import { QUOTE_TABLE_PAGE_SIZE } from "@/lib/paging";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
@@ -177,13 +178,23 @@ export function PreviousRevisionSection({
           }}
         />
       ) : (
-        <PreviousRevisionTable seq={seq} rows={entry.rows} references={references} />
+        <PreviousRevisionTable seq={seq} rows={entry.rows} references={references} headingId={headingId} />
       )}
     </section>
   );
 }
 
-function PreviousRevisionTable({ seq, rows, references }: { seq: number; rows: ReadRow[]; references: QuoteLineReadReferences }) {
+function PreviousRevisionTable({
+  seq,
+  rows,
+  references,
+  headingId,
+}: {
+  seq: number;
+  rows: ReadRow[];
+  references: QuoteLineReadReferences;
+  headingId: string;
+}) {
   const subcategoryLabel = (value: string) => references.subcategories.find((option) => option.value === value)?.label ?? value;
   const columns = quoteLineReadColumns<ReadRow>(references, (row) => rows.indexOf(row) + 1);
   return (
@@ -194,6 +205,8 @@ function PreviousRevisionTable({ seq, rows, references }: { seq: number; rows: R
       getRowId={(row) => row.id}
       groupBy={(row) => quoteLineGroupLabel(row, subcategoryLabel)}
       emptyMessage="이 차수에 견적 줄이 없습니다"
+      // 04-19(DR-13 · W2) — 쪽 나눔은 Table 한 구현. 쪽을 바꾸면 포커스는 섹션 제목으로.
+      pagination={{ pageSize: QUOTE_TABLE_PAGE_SIZE, unit: "줄", label: `상세 견적 ${seq}차 견적 줄`, resetKey: seq, focusHeadingId: headingId }}
       footer={
         <tr>
           <td colSpan={columns.length} className={styles.footerCell}>
@@ -229,9 +242,9 @@ function PreviousRevisionSkeleton() {
 
 // ── 04-24(DR-4 · W1) — 견적 줄 복사 형식과 이전 차수 보관본 복원 줄 ─────────────────────────────────────────────
 
-/** 앱 형식 — 줄마다 `{ currency }`(04-19 격자 복사가 같은 함수를 쓴다). */
+/** 앱 형식 — 줄마다 `{ currency, kind }`(04-19 격자 복사가 같은 함수를 쓴다 · kind는 /qa ISSUE-003). */
 export function quoteLineClipboardMeta(rows: QuoteLineCopyRow[]): string {
-  return JSON.stringify(rows.map((row) => ({ currency: row.unitPriceCurrency })));
+  return JSON.stringify(rows.map((row) => ({ currency: row.unitPriceCurrency, kind: row.lineKind })));
 }
 
 /** 견적 줄 복사의 유일한 직렬화 — `tsv`는 읽기 열 순서의 `copyText`, `json`은 앱 형식. */

@@ -1,8 +1,7 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
-import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { scopeFor } from "@/domain/permissions/scope-for";
-import { project, type DtoSpec } from "@/domain/permissions/project";
+import { project, projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -10,6 +9,24 @@ import { buildCustomFieldsSchema, type FieldDefType } from "@/domain/custom-fiel
 import { allocateDocumentNumber, loadDocumentNumberFormat } from "@/domain/document-numbering";
 import { withTransaction } from "@/lib/db-transaction";
 import { kstToday, kstYear } from "@/lib/kst-date";
+import { log } from "@/lib/log";
+import {
+  attributionLabel,
+  bucketTotal,
+  exclusionText,
+  firstListParam,
+  isTeamIdShape,
+  isUserFiltered,
+  listEmptyKind,
+  normalizeListParams,
+  resolveListPage,
+  parseListPeriod,
+  resolveListRange,
+  totalsTitle,
+  type ListEmptyKind,
+  type ListParam,
+  type ListPeriodErrors,
+} from "@/domain/projects/list-view";
 import { applyAutoSettlement, type AutoSettlementDeps } from "@/domain/projects/auto-transition";
 import { moneyFromRow, moneyToColumns, normalizeMoneyInput, MoneyInputError, type Currency, type Money, type MoneyInput } from "@/domain/money";
 import { validatePreEstimateChange } from "@/domain/projects/pre-estimate";
@@ -41,6 +58,7 @@ import { denyWrite } from "@/domain/rules/deny-write";
 import { coversProjectTeam, loadActorTeamScope } from "@/domain/projects/status";
 import { findMembershipAtDate } from "@/repositories/team-memberships";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
+import { listTeams as repoListTeams } from "@/repositories/teams";
 
 export class ForbiddenError extends UserFacingError {}
 // D-47 완료(정산) 뒤 잠김의 domain 가드 자리 — `domain/vendors`의
@@ -153,7 +171,8 @@ export type ProjectListItemDto = {
   profitKrw?: number;
 };
 
-export type ProjectListItemWithGroup = ProjectListItemDto & { groupLabel: string };
+// 04-17(D-90) — attributionLabel: 보기 범위 밖에서 끝나는 행의 기간 칸 2행(`2027 귀속`), 범위 안이면 null.
+export type ProjectListItemWithGroup = ProjectListItemDto & { groupLabel: string; attributionLabel: string | null };
 
 const PROJECT_LIST_DTO_SPEC: DtoSpec<ProjectListRow, ProjectListItemDto> = {
   fields: [
@@ -177,11 +196,6 @@ registerDto({
   fields: PROJECT_LIST_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
 });
 
-export const PROJECT_LIST_DEFAULT_LIMIT = 50;
-// T-04-32 — 「더 보기」 개수 파라미터 상한. 이보다 큰 값이 와도 상한으로
-// 떨어뜨린다 — 한 요청이 전체 행을 끌어오지 못하게 한다.
-export const PROJECT_LIST_MAX_LIMIT = 1000;
-
 function normalizeSort(sort?: { key?: string; direction?: string }): ProjectSort {
   const requestedKey = sort?.key;
   const key: ProjectSortKey = (PROJECT_SORT_KEYS as readonly string[]).includes(requestedKey ?? "")
@@ -198,52 +212,192 @@ function monthGroupLabel(endDate: string | null): string {
   return endDate ? endDate.slice(0, 7) : "기간 미정";
 }
 
-export type ListProjectsOptions = {
-  filter?: ProjectListFilter;
-  sort?: { key?: string; direction?: string };
-  limit?: number;
-};
-
-// PROJ-01 — 04-05 Task 1 ②: 필터(상태·팀·연도·검색어)·정렬·페이지 인자를
-// 받아 목록을 돌려준다. 그룹 나누기(종료일 월, 기간 미정)는 여기서
-// 끝난다 — 화면은 `groupLabel`을 읽기만 한다.
-export async function listProjects(
-  viewer: Viewer,
-  opts?: ListProjectsOptions,
-): Promise<ProjectListItemWithGroup[]> {
-  const scope = await scopeFor(viewer, PROJECT_ENTITY);
-  const sort = normalizeSort(opts?.sort);
-  const limit = Math.min(Math.max(opts?.limit ?? PROJECT_LIST_DEFAULT_LIMIT, 1), PROJECT_LIST_MAX_LIMIT);
-  const rows = await repoListProjectsPage(viewer, { scope, filter: opts?.filter ?? {}, sort, limit });
-  const dtos = (await Promise.all(
-    rows.map((row) => project(viewer, row, PROJECT_LIST_DTO_SPEC)),
-  )) as ProjectListItemDto[];
-  return dtos.map((dto) => ({ ...dto, groupLabel: monthGroupLabel(dto.endDate) }));
-}
-
-export type ProjectAggregateDto = {
+// 04-17(D-88 · CEO C-14 · ENG-D3 ②) — 표 위 합계 줄 DTO. 견적·실행가는 quote.amount, 매출은 revenue.issued_amount,
+// 수익금·수익률은 두 항목을 **모두** 볼 때만 싣는다(발행 기준 수익금 + 실행가 = 발행 합계 역산 차단 — all-of 명세).
+export type ProjectListTotals = {
+  title: string;
+  /** 합계에 든(귀속이 범위 안인) 행 수. */
   count: number;
+  exclusionText: string | null;
+  revenueKrw?: number;
   quoteAmountKrw?: number;
   executionAmountKrw?: number;
   profitKrw?: number;
+  /** Σ수익금 ÷ Σ기준 — Σ기준 ≤ 0이면 null. */
+  profitRate?: number | null;
 };
 
-// 04-05 Task 1 ①: 집계 — 목록과 같은 필터를 쓰는 별도의 쿼리 한 번(T-04-28).
-// 견적·실행가·차익 셋을 개별 판정하지 않고 표 단위(quote.amount) 하나로
-// 게이트한다 — 04-02 발행·입금 선례와 같은 결.
-export async function aggregateProjects(
+type ProjectListTotalsSource = Required<ProjectListTotals>;
+
+const PROFIT_INFO_ITEMS = ["quote.amount", "revenue.issued_amount"] as const;
+
+const PROJECT_LIST_TOTALS_DTO_SPEC: DtoSpec<ProjectListTotalsSource, ProjectListTotals> = {
+  fields: [
+    { key: "title", from: "title", infoItem: "project.value" },
+    { key: "count", from: "count", infoItem: "project.value" },
+    { key: "exclusionText", from: "exclusionText", infoItem: "project.value" },
+    { key: "revenueKrw", from: "revenueKrw", infoItem: "revenue.issued_amount" },
+    { key: "quoteAmountKrw", from: "quoteAmountKrw", infoItem: "quote.amount" },
+    { key: "executionAmountKrw", from: "executionAmountKrw", infoItem: "quote.amount" },
+    { key: "profitKrw", from: "profitKrw", infoItem: PROFIT_INFO_ITEMS },
+    { key: "profitRate", from: "profitRate", infoItem: PROFIT_INFO_ITEMS },
+  ],
+};
+
+registerDto({
+  name: "ProjectListTotals",
+  fields: PROJECT_LIST_TOTALS_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
+});
+
+export type ProjectListQuery = {
+  status?: string;
+  /** 상태 필터의 코드표 라벨 — 합계 제목 괄호에 쓴다. */
+  statusLabel?: string;
+  /** 04-48(C-08) — 아래 URL 값은 배열로도 오고 틀릴 수 있다. 입구에서 normalizeListParams로 정규화한다. */
+  teamId?: ListParam;
+  /** 없으면 올해(KST), `all`이면 범위 없음(D-89). 2000–2100 밖은 올해. */
+  year?: ListParam;
+  search?: ListParam;
+  /** 04-48 — 기간 필터 두 칸(URL 값 그대로, 서버가 parseListPeriod로 판정한다). */
+  from?: ListParam;
+  to?: ListParam;
+  sort?: { key?: string; direction?: string };
+  /** URL의 쪽 번호 그대로 — 숫자 아님·1 미만·범위 밖은 clampPage가 보정한다(D-91). */
+  page?: ListParam;
+};
+
+export type ProjectListResult = {
+  year: number | "all";
+  rows: ProjectListItemWithGroup[];
+  totals: ProjectListTotals;
+  /** 표에 보이는 전체 행 수(귀속 구간 전부). */
+  total: number;
+  /** 보정된 쪽 번호와 쪽 수(50건씩). */
+  page: number;
+  pageCount: number;
+  /** 04-48(UX-04) — 기간 칸별 서버 판정 오류. 하나라도 있으면 기간 필터를 적용하지 않았다. */
+  periodErrors: ListPeriodErrors;
+  /** 04-48 — 0건일 때만 빈 목록 세 갈래, 행이 있으면 null. */
+  emptyKind: ListEmptyKind | null;
+  /** 04-48 — 기본 보기(올해 · 전체 상태 · 전체 팀)와 다른 값이 있는가(「필터 지우기」 · 빈 갈래). */
+  hasFilter: boolean;
+  /** 04-48(C-08) — 정규화된 URL 값(필터 줄 · 페이지 줄이 이 값만 되돌려 쓴다). */
+  params: { teamId?: string; search?: string; from?: string; to?: string };
+};
+
+export type ProjectListDeps = {
+  now: () => Date;
+  scope: typeof scopeFor;
+  settle: (viewer: Viewer) => Promise<void>;
+  repo: { aggregate: typeof repoAggregateProjects; listPage: typeof repoListProjectsPage };
+  teams: typeof repoListTeams;
+};
+
+// 드리즐이 PG 오류를 cause로 감싼다 — 운영 로그에는 PG 코드만(필터 값·금액 없음).
+function pgErrorCode(error: unknown): string | null {
+  const cause = error instanceof Error ? (error as { cause?: unknown }).cause : undefined;
+  const code = (error as { code?: unknown } | null)?.code ?? (cause as { code?: unknown } | undefined)?.code;
+  return typeof code === "string" ? code : null;
+}
+
+// 04-17(PROJ-01 · D-88~D-90 · CEO C-09 · A-07 · 엔지 리뷰 C §1 P1) — 목록 화면의 유일한 입구. 자동 전환 판정을 먼저
+// 한 번(04-11, 실패해도 저장된 상태로 계속) → 집계 → 쪽 수·쪽 보정(D-91) → 그 쪽 목록 순으로 읽고(0건이면 목록을 읽지
+// 않는다), 행은 projectMany 투영만 넘긴다.
+export async function loadProjectList(
   viewer: Viewer,
-  filter?: ProjectListFilter,
-): Promise<ProjectAggregateDto> {
-  const scope = await scopeFor(viewer, PROJECT_ENTITY);
-  const agg = await repoAggregateProjects(viewer, { scope, filter: filter ?? {} });
-  const canSeeAmount = await defaultVisible(viewer, "quote.amount");
-  if (!canSeeAmount) return { count: agg.count };
+  query: ProjectListQuery,
+  deps?: Partial<ProjectListDeps>,
+): Promise<ProjectListResult> {
+  const now = deps?.now ?? (() => new Date());
+  const repo = deps?.repo ?? { aggregate: repoAggregateProjects, listPage: repoListProjectsPage };
+
+  await (deps?.settle ?? settleForProjectList)(viewer);
+  const scope = await (deps?.scope ?? scopeFor)(viewer, PROJECT_ENTITY);
+
+  // 04-48(C-08) — URL 값은 여기서 한 번 정규화한 뒤에만 쓴다(배열 첫 값 · 팀은 uuid 모양 + 고를 수 있는 팀 · 연도
+  // 2000–2100). 팀 목록은 필터 줄과 같은 조회이고, uuid 모양의 팀 값이 왔을 때만 읽는다.
+  const thisYear = kstYear(now());
+  const teamIds = isTeamIdShape(firstListParam(query.teamId))
+    ? (await (deps?.teams ?? repoListTeams)(viewer, { scope: { rows: "all", includeArchived: false } })).map((team) => team.id)
+    : [];
+  const params = normalizeListParams(
+    { status: query.status, teamId: query.teamId, year: query.year, q: query.search, from: query.from, to: query.to, page: query.page },
+    { teamIds, thisYear },
+  );
+  const year = params.year;
+  // UX-04 — 기간은 서버가 판정한다. 오류가 있으면 기간 없이 연도 범위만 쓴다.
+  const { period, errors: periodErrors } = parseListPeriod(params.from, params.to);
+  const range = resolveListRange({ year, ...(period ? { period } : {}) });
+  const filter: ProjectListFilter = {
+    status: params.status,
+    teamId: params.teamId,
+    search: params.q,
+    ...(range ? { range: { start: range.start, end: range.end } } : {}),
+  };
+  const sort = normalizeSort(query.sort);
+
+  let buckets: Awaited<ReturnType<typeof repoAggregateProjects>>;
+  let rows: ProjectListRow[] = [];
+  let paging: ReturnType<typeof resolveListPage>;
+  let visibleCount = 0;
+  try {
+    buckets = await repo.aggregate(viewer, { scope, filter });
+    paging = resolveListPage(buckets, params.page);
+    if (paging.total > 0) {
+      rows = await repo.listPage(viewer, { scope, filter, sort, offset: paging.offset, limit: paging.limit });
+    } else {
+      // 빈 갈래 판정(none)에만 쓰는 필터 없는 건수 — 0건일 때만 한 번 더 집계한다.
+      visibleCount = bucketTotal(await repo.aggregate(viewer, { scope, filter: {} }));
+    }
+  } catch (error) {
+    log.error("project.list_failed", { code: pgErrorCode(error) });
+    throw error;
+  }
+
+  const inBucket = buckets.find((bucket) => bucket.bucket === "in");
+  const undetermined = buckets.find((bucket) => bucket.bucket === "undetermined")?.count ?? 0;
+  const outside = buckets.filter((bucket) => bucket.bucket !== "in" && bucket.bucket !== "undetermined");
+  const exclusion =
+    range?.kind === "period"
+      ? exclusionText({ kind: "period", outside: outside.reduce((sum, bucket) => sum + bucket.count, 0), undetermined })
+      : exclusionText({
+          kind: "year",
+          byYear: Object.fromEntries(outside.map((bucket) => [Number(bucket.bucket), bucket.count])),
+          undetermined,
+        });
+  const count = inBucket?.count ?? 0;
+  const totals = (await project(
+    viewer,
+    {
+      title: totalsTitle({ statusLabel: query.statusLabel, range, count }),
+      count,
+      exclusionText: exclusion,
+      revenueKrw: inBucket?.revenueKrw ?? 0,
+      quoteAmountKrw: inBucket?.quoteAmountKrw ?? 0,
+      executionAmountKrw: inBucket?.executionAmountKrw ?? 0,
+      profitKrw: inBucket?.profitKrw ?? 0,
+      profitRate: inBucket?.profitRate ?? null,
+    },
+    PROJECT_LIST_TOTALS_DTO_SPEC,
+  )) as ProjectListTotals;
+
+  const dtos = (await projectMany(viewer, rows, PROJECT_LIST_DTO_SPEC)) as ProjectListItemDto[];
+  const hasFilter = isUserFiltered(params, thisYear);
   return {
-    count: agg.count,
-    quoteAmountKrw: agg.quoteAmountKrw,
-    executionAmountKrw: agg.executionAmountKrw,
-    profitKrw: agg.profitKrw,
+    year,
+    rows: dtos.map((dto) => ({
+      ...dto,
+      groupLabel: monthGroupLabel(dto.endDate),
+      attributionLabel: attributionLabel({ endDate: dto.endDate ?? null, range }),
+    })),
+    totals,
+    total: paging.total,
+    page: paging.page,
+    pageCount: paging.pageCount,
+    periodErrors,
+    emptyKind: listEmptyKind({ total: paging.total, userFiltered: hasFilter, visibleCount }),
+    hasFilter,
+    params: { teamId: params.teamId, search: params.q, from: params.from, to: params.to },
   };
 }
 
@@ -271,8 +425,8 @@ export async function findProject(
   return (await project(viewer, withPreEstimate(row), PROJECT_DTO_SPEC)) as ProjectDto;
 }
 
-// 04-11(A-07 · 엔지 리뷰 A P3): 목록 요청의 자동 정산 입구 — 요청당 한 번, 목록·합계를
-// 나란히 읽기 전에 부른다. listProjects·aggregateProjects는 판정하지 않는다(두 호출이
+// 04-11(A-07 · 엔지 리뷰 A P3): 목록 요청의 자동 정산 입구 — 요청당 한 번, loadProjectList가
+// 집계·목록을 읽기 전에 부른다. 리포지토리 목록·집계는 판정하지 않는다(두 읽기가
 // SKIP LOCKED로 서로를 건너뛰면 목록과 합계의 정산 건수가 어긋난다). 보기 권한이 없으면
 // 아무것도 하지 않는다.
 export async function settleForProjectList(viewer: Viewer, deps?: Partial<AutoSettlementDeps>): Promise<void> {

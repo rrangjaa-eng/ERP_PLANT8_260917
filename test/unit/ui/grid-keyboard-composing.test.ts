@@ -9,8 +9,8 @@ function renderKeyboard(editing: boolean, onSave: () => void): UseGridKeyboardRe
   let result: UseGridKeyboardResult | undefined;
   function Probe() {
     result = useGridKeyboard({
-      rowCount: 1,
-      colCount: 1,
+      rowIds: ["row-1"],
+      colKeys: ["col-1"],
       isEditableCell: () => true,
       isEditing: () => editing,
       handlers: { onSave },

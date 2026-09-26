@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, expectTypeOf, it } from "vitest";
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import type { DbOrTx } from "@/db/client";
 import { db } from "@/db/client";
 import { certEvents, certSignatureUploads, certSubmissions, certWinners } from "@/db/schema";
@@ -108,7 +108,39 @@ describe("확인증 공개 흐름 — 정상 제출·인증 거부", () => {
 });
 
 describe("확인증 공개 흐름 — 저장소 fail-closed 순서(S3)", () => {
-  it("주입한 저장소가 던지면 의도 행·제출 행이 모두 0이다(고아 없음)", async () => {
+  it("put이 실패하고 객체 삭제가 성공하면 delete가 그 키로 불리고 의도 행이 0이다", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    let deletedKey: string | undefined;
+    let threw: unknown;
+    try {
+      await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent), {
+        signatureStore: {
+          put: () => Promise.reject(new Error("저장소 사용 불가(주입)")),
+          get: () => Promise.resolve(null),
+          delete: (key) => {
+            deletedKey = key;
+            return Promise.resolve();
+          },
+        },
+      });
+    } catch (e) {
+      threw = e;
+    }
+
+    expect(threw).toBeInstanceOf(Error);
+    expect(deletedKey).toBeDefined();
+    expect(deletedKey).toMatch(new RegExp(`^signatures/${eventId}/${winnerId}-`));
+    const intents = await db.select().from(certSignatureUploads);
+    expect(intents).toHaveLength(0);
+    const submissions = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(submissions).toHaveLength(0);
+  });
+
+  it("put이 실패하고 객체 삭제도 실패하면(고아 객체일 수 있다) 의도 행 1이 남는다", async () => {
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
     const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
@@ -120,11 +152,42 @@ describe("확인증 공개 흐름 — 저장소 fail-closed 순서(S3)", () => {
         signatureStore: {
           put: () => Promise.reject(new Error("저장소 사용 불가(주입)")),
           get: () => Promise.resolve(null),
-          delete: () => Promise.resolve(),
+          delete: () => Promise.reject(new Error("객체 삭제 실패(주입)")),
         },
       });
     } catch (e) {
       threw = e;
+    }
+
+    expect(threw).toBeInstanceOf(Error);
+    const intents = await db.select().from(certSignatureUploads);
+    expect(intents).toHaveLength(1);
+    const submissions = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(submissions).toHaveLength(0);
+  });
+
+  it("저장소 자체가 없으면(주입 없음, non-local APP_ENV) 의도 행을 커밋하기 전에 던져 0행이다", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    // tx-safety.test.ts와 같은 격리 재-import 방식(codex A3) — env는 모듈
+    // 최상단에서 한 번만 읽히므로(lib/env.ts), APP_ENV를 non-local로 바꾼
+    // 채 모듈 그래프를 새로 불러야 getSignatureStore()가 실제로 던진다.
+    vi.stubEnv("APP_ENV", "staging");
+    vi.resetModules();
+    const isolatedClient = await import("@/db/client");
+    let threw: unknown;
+    try {
+      const { submitCertificate: isolatedSubmitCertificate } = await import("@/domain/certs/intake");
+      await isolatedSubmitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent));
+    } catch (e) {
+      threw = e;
+    } finally {
+      await isolatedClient.closeDb();
+      vi.unstubAllEnvs();
+      vi.resetModules();
     }
 
     expect(threw).toBeInstanceOf(Error);

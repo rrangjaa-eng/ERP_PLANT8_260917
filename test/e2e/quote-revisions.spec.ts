@@ -808,7 +808,7 @@ test.describe("차수 섹션과 이전 차수 읽기 섹션 (04-24 Task 3 — S5
     await expect(page.getByText("1차 불러오지 못함", { exact: true })).toHaveCount(0);
   });
 
-  test("31줄 이전 차수는 합계 행 `31줄` · 번호 1~31 · 0줄 이전 차수는 `이 차수에 견적 줄이 없습니다`(버튼 없음)", async ({ page }) => {
+  test("31줄 이전 차수는 합계 행 `31줄` · 번호 1~30 · 2쪽 31 · 0줄 이전 차수는 `이 차수에 견적 줄이 없습니다`(버튼 없음)", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
     const lines = Array.from({ length: 31 }, (_, index) => ({ itemName: `긴 차수 ${index + 1}`, unitPrice: 10_000, execution: 5_000 }));
@@ -822,8 +822,13 @@ test.describe("차수 섹션과 이전 차수 읽기 섹션 (04-24 Task 3 — S5
     await revisionTable(page).getByRole("button", { name: "차수 열기" }).click();
     const readTable = previousTable(page, 1);
     await expect(readTable.locator("tfoot")).toContainText("합계 (공급가액 · 31줄)");
+    // 04-19(W2) — 30줄 쪽 나눔: 1쪽 1~30, 2쪽 31(번호는 이어 센다).
     const numbers = (await dataRowTexts(readTable)).map((cells) => cells[0]);
-    expect(numbers).toEqual(Array.from({ length: 31 }, (_, index) => String(index + 1)));
+    expect(numbers).toEqual(Array.from({ length: 30 }, (_, index) => String(index + 1)));
+    await page.getByRole("navigation", { name: "상세 견적 1차 견적 줄 페이지", exact: true }).getByRole("button", { name: "2", exact: true }).click();
+    await expect(readTable.locator("tbody tr").first()).toBeVisible();
+    await expect.poll(async () => (await dataRowTexts(readTable)).map((cells) => cells[0])).toEqual(["31"]);
+    await expect(readTable.locator("tfoot")).toContainText("합계 (공급가액 · 31줄)");
 
     await page.goto(`/projects/${empty.id}`);
     await revisionTable(page).getByRole("button", { name: "차수 열기" }).click();

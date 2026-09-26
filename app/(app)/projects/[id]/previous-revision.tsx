@@ -5,6 +5,7 @@ import { listRevisionLinesAction } from "../actions";
 import type { QuoteLineDto } from "@/domain/quotes/lines";
 import { QUOTE_LINE_KINDS, type QuoteLineKind } from "@/domain/quotes/edit-scope";
 import { formatForeignLine, formatKrw, formatQuantity } from "@/lib/format-number";
+import { QUOTE_TABLE_PAGE_SIZE } from "@/lib/paging";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
@@ -179,13 +180,23 @@ export function PreviousRevisionSection({
           }}
         />
       ) : (
-        <PreviousRevisionTable seq={seq} rows={entry.rows} references={references} />
+        <PreviousRevisionTable seq={seq} rows={entry.rows} references={references} headingId={headingId} />
       )}
     </section>
   );
 }
 
-function PreviousRevisionTable({ seq, rows, references }: { seq: number; rows: ReadRow[]; references: QuoteLineReadReferences }) {
+function PreviousRevisionTable({
+  seq,
+  rows,
+  references,
+  headingId,
+}: {
+  seq: number;
+  rows: ReadRow[];
+  references: QuoteLineReadReferences;
+  headingId: string;
+}) {
   const subcategoryLabel = (value: string) => references.subcategories.find((option) => option.value === value)?.label ?? value;
   const columns = quoteLineReadColumns<ReadRow>(references, (row) => rows.indexOf(row) + 1);
   return (
@@ -196,6 +207,8 @@ function PreviousRevisionTable({ seq, rows, references }: { seq: number; rows: R
       getRowId={(row) => row.id}
       groupBy={(row) => quoteLineGroupLabel(row, subcategoryLabel)}
       emptyMessage="이 차수에 견적 줄이 없습니다"
+      // 04-19(DR-13 · W2) — 쪽 나눔은 Table 한 구현. 쪽을 바꾸면 포커스는 섹션 제목으로.
+      pagination={{ pageSize: QUOTE_TABLE_PAGE_SIZE, unit: "줄", label: `상세 견적 ${seq}차 견적 줄`, resetKey: seq, focusHeadingId: headingId }}
       footer={
         <tr>
           <td colSpan={columns.length} className={styles.footerCell}>

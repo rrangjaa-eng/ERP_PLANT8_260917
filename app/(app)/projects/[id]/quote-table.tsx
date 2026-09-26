@@ -20,6 +20,7 @@ import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
 import { normalizeNumericPaste } from "@/ui/table/parse-tsv";
 import { formatKrw, formatForeignLine, formatQuantity, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
 import { kstToday } from "@/lib/kst-date";
+import { QUOTE_TABLE_PAGE_SIZE } from "@/lib/paging";
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import type { TableColumn, CellIssue, CellEditability } from "@/ui/table/types";
 import type { QuoteLineDto, QuoteLineBaseline } from "@/domain/quotes/lines";
@@ -109,6 +110,23 @@ const KIND_GROUP_LABELS: Record<Exclude<QuoteLineKind, "quote">, string> = { out
 
 export function byKind<T extends { lineKind: QuoteLineKind }>(lines: T[]): T[] {
   return [...lines].sort((a, b) => KIND_ORDER[a.lineKind] - KIND_ORDER[b.lineKind]);
+}
+
+// 04-19(C-04) — 줄 순서 = 표시 순서. 종류 순서 뒤 표의 그룹(견적 줄은 소분류, 나머지는 종류)을 처음 나온 순서로 모은다 —
+// Table의 그룹 묶기와 같은 순서라 번호 열(`lines.indexOf(row) + 1`)이 표시 순서의 전체 번호가 되고 새 줄은 그 그룹 끝에 선다.
+function lineGroupKey(line: { lineKind: QuoteLineKind; subcategory: string }): string {
+  return line.lineKind === "quote" ? `quote:${line.subcategory}` : line.lineKind;
+}
+
+function displayOrder<T extends { lineKind: QuoteLineKind; subcategory: string }>(lines: T[]): T[] {
+  const groups = new Map<string, T[]>();
+  for (const line of byKind(lines)) {
+    const key = lineGroupKey(line);
+    const group = groups.get(key);
+    if (group) group.push(line);
+    else groups.set(key, [line]);
+  }
+  return [...groups.values()].flat();
 }
 
 // 04-23 — 표의 그룹(견적 줄은 소분류, 나머지는 종류 이름). 04-24 — 이전 차수 읽기 표도 이 함수로 묶는다.
@@ -937,11 +955,11 @@ export function QuoteLedger({
   canWriteEntries: boolean;
   usdDefaultFxRate: number;
 }) {
-  const [lines, setLinesState] = useState<DraftLine[]>(() => byKind(initialLines.map(fromDto)));
-  // 04-23 — 어느 경로로 줄을 바꿔도 종류 순서(조정 맨 아래)를 지킨다.
+  const [lines, setLinesState] = useState<DraftLine[]>(() => displayOrder(initialLines.map(fromDto)));
+  // 04-23 — 어느 경로로 줄을 바꿔도 종류 순서(조정 맨 아래)를 지킨다. 04-19(C-04) — 그룹도 표시 순서로 모은다.
   const setLines = useCallback(
     (next: DraftLine[] | ((prev: DraftLine[]) => DraftLine[])) =>
-      setLinesState((prev) => byKind(typeof next === "function" ? next(prev) : next)),
+      setLinesState((prev) => displayOrder(typeof next === "function" ? next(prev) : next)),
     [],
   );
   // 04-23 — 그룹 버튼으로 만든 새 줄의 첫 편집 칸(Table이 편집 상태로 연다).
@@ -1330,10 +1348,7 @@ export function QuoteLedger({
     });
   }
 
-  // 줄 이동(Alt+↑/↓). 그룹(대분류=소분류) 경계를 넘으면 소분류를 비운다
-  // (§7-3 (라)) — "비운다"는 이 표에 자유 텍스트 소분류가 없으므로 그 줄이
-  // 도착한 이웃 줄의 그룹을 새로 물려받는 것으로 구현한다(코드표 밖 값을
-  // 만들지 않기 위해, D-62).
+  // 줄 이동(Alt+↑/↓). 04-19(C-04) — 같은 그룹 안에서만 움직인다(그룹 첫·끝 줄에서 그룹 밖으로는 무동작).
   function moveLine(clientKey: string, direction: "up" | "down") {
     persistPendingRef.current = true;
     setLines((prev) => {
@@ -1345,11 +1360,9 @@ export function QuoteLedger({
       const moved = next[index]!;
       const neighbor = next[targetIndex]!;
       // 04-23(D-83) — 조정 그룹은 맨 아래 고정이고, 종류 경계를 넘는 이동은 없다(서버도 조정 줄 자리 변경을 거부한다).
-      if (moved.lineKind === "adjustment" || neighbor.lineKind !== moved.lineKind) return prev;
-      const neighborGroup = neighbor.subcategory;
+      if (moved.lineKind === "adjustment" || lineGroupKey(neighbor) !== lineGroupKey(moved)) return prev;
       next.splice(index, 1);
-      const crossedGroup = moved.subcategory !== neighborGroup;
-      next.splice(targetIndex, 0, { ...moved, subcategory: crossedGroup ? neighborGroup : moved.subcategory, dirty: true, moved: true });
+      next.splice(targetIndex, 0, { ...moved, dirty: true, moved: true });
       // 04-30(A-03) — 자리를 바꾼 두 줄이 모두 dirty다.
       next[index] = { ...neighbor, dirty: true, moved: true };
       return next;
@@ -2155,6 +2168,8 @@ export function QuoteLedger({
         getRowId={(row) => row.clientKey}
         groupBy={(row) => quoteLineGroupLabel(row, subcategoryLabel)}
         openCell={openCell}
+        // 04-19(D-91) — 30줄 쪽은 Table이 자른다(이 파일은 전체 줄을 넘긴다). 새 차수로 다시 그리면 1쪽부터.
+        pagination={{ pageSize: QUOTE_TABLE_PAGE_SIZE, unit: "줄", label: "견적 줄", resetKey: renderedRevisionId }}
         emptyMessage={emptyState.message}
         emptyAction={
           emptyState.action?.kind === "addLine" && editableWidth

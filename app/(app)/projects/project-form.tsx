@@ -76,6 +76,7 @@ export function ProjectForm({
   cancelHref,
   usdDefaultFxRate,
   copySource = null,
+  creatorDefaults = null,
 }: {
   clients: ProjectFormOption[];
   teams: ProjectFormOption[];
@@ -85,6 +86,8 @@ export function ProjectForm({
   usdDefaultFxRate: number;
   /** 04-15(D-70) — 복사 등록이면 출처 기본 정보(미리 채움 = Esc 판정의 처음 값, DR-27)와 줄 수. */
   copySource?: (ProjectCopySource & { projectId: string }) | null;
+  /** 결정 2 — 담당 PM은 등록하는 사람, 팀은 그 사람의 오늘 소속 팀. 좁힌 옵션에 없으면 빈 칸. */
+  creatorDefaults?: { pmUserId: string; teamId: string | null } | null;
 }) {
   const router = useRouter();
 
@@ -277,7 +280,11 @@ export function ProjectForm({
             id="pmUserId"
             name="pmUserId"
             options={pmUsers.map((u) => ({ value: u.id, label: u.name }))}
-            defaultValue={resolveDefaultOptionId(copySource?.pmUserId, pmUsers)}
+            defaultValue={resolveDefaultOptionId(
+              copySource?.pmUserId,
+              pmUsers,
+              resolveDefaultOptionId(creatorDefaults?.pmUserId, pmUsers),
+            )}
             error={pmError}
           />
         </Form.Field>
@@ -287,7 +294,11 @@ export function ProjectForm({
             id="teamId"
             name="teamId"
             options={teams.map((t) => ({ value: t.id, label: t.name }))}
-            defaultValue={resolveDefaultOptionId(copySource?.teamId, teams, teams.length === 1 ? teams[0]?.id : undefined)}
+            defaultValue={resolveDefaultOptionId(
+              copySource?.teamId,
+              teams,
+              resolveDefaultOptionId(creatorDefaults?.teamId ?? undefined, teams, teams.length === 1 ? teams[0]?.id : undefined),
+            )}
             error={teamError}
           />
         </Form.Field>

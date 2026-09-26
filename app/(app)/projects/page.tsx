@@ -12,7 +12,7 @@ import {
   PROJECT_SORT_KEYS,
   type ProjectSortKey,
 } from "@/domain/projects";
-import { listProjectFormReferences, scopeCreateFormReferences } from "@/domain/projects/references";
+import { listProjectFormReferences, loadCreatorDefaults, scopeCreateFormReferences } from "@/domain/projects/references";
 import { listProjectStatusCatalog } from "@/domain/projects/status";
 import { recentFxRate } from "@/domain/money/currency";
 import { kstToday } from "@/lib/kst-date";
@@ -105,6 +105,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   // 등록해도 서버가 항상 거부한다(팀 목록 0개) — §7 "할 수 없는 선택지는 보이지 않게".
   const canCreate = canWrite && scopedCreateReferences !== null && scopedCreateReferences.teams.length > 0;
   const createReferences = canCreate && showCreateForm ? scopedCreateReferences : null;
+  const creatorDefaults = createReferences ? await loadCreatorDefaults(session.viewer, { todayKst: kstToday(new Date()) }) : null;
 
   const canSeeAmount = aggregate.quoteAmountKrw !== undefined;
   const hasMore = rows.length < aggregate.count;
@@ -131,6 +132,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           clients={references.clients}
           teams={createReferences.teams}
           pmUsers={createReferences.pmUsers}
+          creatorDefaults={creatorDefaults}
           cancelHref={projectsHref()}
           usdDefaultFxRate={usdDefaultFxRate}
         />

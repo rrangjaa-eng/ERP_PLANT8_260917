@@ -5,7 +5,10 @@ import { listVendors as repoListVendors } from "@/repositories/vendors";
 import { listTeams as repoListTeams } from "@/repositories/teams";
 import { listUsers as repoListUsers } from "@/repositories/users";
 import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
-import { findMembershipsAtDate as repoFindMembershipsAtDate } from "@/repositories/team-memberships";
+import {
+  findMembershipAtDate as repoFindMembershipAtDate,
+  findMembershipsAtDate as repoFindMembershipsAtDate,
+} from "@/repositories/team-memberships";
 import { loadActorTeamScope } from "@/domain/projects/status";
 
 export class ForbiddenError extends UserFacingError {}
@@ -88,4 +91,14 @@ export async function scopeCreateFormReferences(
     teams: references.teams.filter((team) => team.id === scope.teamId),
     pmUsers: references.pmUsers.filter((user) => memberIds.has(user.id)),
   };
+}
+
+// 결정 2(사용자 결정 2026-09-26) — 등록 폼의 담당 PM·팀 기본값: 등록하는 사람과 그 사람의 오늘(KST) 소속 팀
+// (가장 최근 발령). 폼은 좁힌 옵션에 있을 때만 고른다 — 없으면 빈 칸.
+export async function loadCreatorDefaults(
+  viewer: Viewer,
+  opts: { todayKst: string },
+): Promise<{ pmUserId: string; teamId: string | null }> {
+  const membership = await repoFindMembershipAtDate(viewer, viewer.id, opts.todayKst);
+  return { pmUserId: viewer.id, teamId: membership?.teamId ?? null };
 }

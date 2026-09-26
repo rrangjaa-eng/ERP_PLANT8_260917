@@ -106,7 +106,8 @@ const revenueEntryRowSchema = z.object({
   id: z.string().uuid(),
   isNew: z.literal(true).optional(),
   version: z.number().optional(),
-  entryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "날짜 형식이 아닙니다."),
+  // /qa ISSUE-002 — 기간 칸처럼 스키마는 길이만 막고, 형식·달력 검사는 domain이 날짜 칸 오류(거부 봉투)로 한다.
+  entryDate: z.string().max(10),
   amount: moneyInputSchema,
   fxRateTouched: z.boolean().optional(),
   note: z.string().optional(),

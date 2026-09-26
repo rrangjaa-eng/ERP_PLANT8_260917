@@ -24,9 +24,10 @@ export async function upsertSimpleValue(
   key: string,
   value: unknown,
   by: string | null,
+  tx: DbOrTx = db,
 ): Promise<void> {
   void viewer;
-  await db
+  await tx
     .insert(settingsSimple)
     .values({ key, value, updatedBy: by })
     .onConflictDoUpdate({

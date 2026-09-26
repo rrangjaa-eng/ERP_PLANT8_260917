@@ -1,0 +1,35 @@
+IMPORTANT: Do NOT read or execute any files under ~/.claude/, ~/.agents/, .claude/skills/, or agents/. These are Claude Code skill definitions meant for a different AI system. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Do NOT modify agents/openai.yaml. Stay focused on the repository code only.
+
+Adversarial PLAN re-review, ROUND 2 (read-only), Phase 04.3 "QR 확인증 접수" of a Korean ERP (Next.js 16 App Router + next-safe-action, domain/ + repositories/ layers, Drizzle ORM, PostgreSQL, Cloud Run, GCS via google-auth-library REST, Cloud KMS envelope). Plans live in .planning/phases/04.3-qr-certificate-intake/. Ground truth: 04.3-CONTEXT.md (locked D-11xx decisions), 04.3-UI-SPEC.md (approved UI contract), 04.3-RESEARCH.md, CLAUDE.md, and the real repo code (lib/crypto.ts, lib/actions/client.ts, domain/, repositories/, db/schema, db/migrations, app/, ui/, scripts/, eslint.config.mjs, test/, playwright.config.ts, vitest.config.ts).
+Round 1 raised these findings (all plans were revised since):
+1. **BLOCKER — KMS 전환 후 서버가 기동하지 못한다.**  
+2. **BLOCKER — 기능을 꺼도 주민번호 열람·정정 액션이 열린다.**  
+3. **MAJOR — 개인정보가 DB 오류를 통해 서버 로그에 남는다.**  
+4. **MAJOR — 프로덕션 비활성화가 일반 설정 토글 하나로 해제된다.**  
+5. **MAJOR — ‘대표도 불가’를 기본 권한 꺼짐으로 대체했다.**  
+6. **MAJOR — 전화번호 확인 없이 제출 여부를 조회할 수 있다.**  
+7. **MAJOR — 제출 직전 링크 닫기·전화번호 변경을 우회하는 경합이 있다.**  
+8. **MAJOR — 뒤 4자리 추측 방어가 해결되지 않은 채 실행 계획에 남았다.**  
+9. **MAJOR — 확인 요청의 멱등성이 동시 요청·지연 재전송에서 깨진다.**  
+10. **MAJOR — KMS 전환 뒤 키 회전이 실패하고, 확인증 칼럼은 회전 대상에서도 빠진다.**  
+11. **MAJOR — 정정 저장과 필수 행동 로그가 원자적이지 않다.**  
+12. **MAJOR — GCS 고아 서명이 영구적으로 파기 대상에서 빠진다.**  
+13. **MAJOR — 파기와 전체 보기의 경합은 현재 순서로 차단되지 않는다.**  
+14. **MAJOR — 서명 없는 투명 PNG도 정상 확인증으로 저장된다.**  
+15. **MAJOR — 화면에서 동의한 보존 기간과 저장되는 기간이 달라질 수 있다.**  
+16. **MAJOR — 주민번호의 ‘발급일’을 ‘생년월일’로 잘못 치환했다.**  
+17. **MAJOR — 문의 전화 설정과 픽스처가 같은 계획의 정규화 함수에 거부된다.**  
+18. **MAJOR — 구별 표시의 개인정보 차단에서 정규화 규칙을 누락했다.**  
+19. **MAJOR — 파기 리포지토리는 지시대로 작성하면 lint에서 실패한다.**  
+20. **MAJOR — 마이그레이션 재생성 절차에 main 스냅샷 삭제 위험과 개발 데이터 삭제가 섞여 있다.**  
+21. **MAJOR — E2E 전체 실행에서 전역 설정과 행사 데이터가 충돌한다.**  
+22. **MAJOR — ‘누수 스캔 통과’를 실제 개인정보 비노출 검증으로 오인했다.**  
+23. **MAJOR — 최초 개인정보 접근에는 2시간 비활동 제한이 적용되지 않는다.**  
+24. **MAJOR — 핵심 트레이서가 TDD 순서를 명시적으로 뒤집는다.**  
+25. **MINOR — 승인된 ERROR·LOADING UI 일부가 실행 태스크에 없다.**  
+26. **MINOR — 인쇄 호출 횟수 테스트의 스파이가 새 탭에 설치되지 않는다.**  
+27. **MINOR — 허용 PNG 크기와 액션 본문 한도가 양립하지 않는다.**  
+Your job for your SHARD (below): (1) for each round-1 finding that touches your shard's plans, say FIXED / NOT FIXED / PARTIAL with plan file:line evidence; (2) find NEW problems where an executor following these plans literally will fail: nonexistent files/functions/signatures, wrong commands, tests with no real RED or asserting the wrong thing, wave/file-ownership conflicts, cross-plan name mismatches (e.g. assertCertFeatureEnabled in lib/certs/feature-guard.ts, isCertFeatureEnabled in domain/certs/feature.ts, test/e2e/helpers/cert.ts, cert_signature_uploads), security holes (unauthenticated public routes, last-4 brute force, token handling, RRN encryption/KMS, reveal logging, purge leaving PII, feature-flag bypass incl. print route and server actions, PII in logs), migration rule (no reserved numbers; regenerate right before merge; contiguous journal guard test), CLAUDE.md violations (TDD, pnpm, no any, only approved new deps qrcode/@types/qrcode, no @google-cloud/storage). Read other plans only as needed for cross-plan consistency.
+Rank BLOCKER / MAJOR / MINOR, cite plan file:line and repo file:line. No compliments. End with exactly "VERDICT: PASS" (no BLOCKER/MAJOR in your shard) or "VERDICT: FAIL". Answer in Korean.
+
+SHARD A: 04.3-01-PLAN.md, 04.3-02-PLAN.md, 04.3-13-PLAN.md, COVERAGE.md, and the RESEARCH/PATTERNS migration-rule text.

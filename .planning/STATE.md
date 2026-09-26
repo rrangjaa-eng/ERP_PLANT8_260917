@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 6
+current_plan: 5
 status: executing
-stopped_at: Completed 04.2-15-PLAN.md
-last_updated: "2026-09-25T02:33:19.223Z"
+stopped_at: Completed 04-04-PLAN.md
+last_updated: "2026-09-24T13:00:53.191Z"
 last_activity: 2026-09-22
 last_activity_desc: Phase 04 execution started
-state_head: 19977a11ab770bc0946e001371e19419491396ef
+state_head: a6375166b2704a13ae586b73a0ff3895ea1d4e1b
 progress:
   total_phases: 16
   completed_phases: 1
-  total_plans: 76
-  completed_plans: 35
+  total_plans: 61
+  completed_plans: 27
   percent: 6
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 4 (프로젝트·견적 원장) — READY TO EXECUTE
-Current Plan: 6
+Current Plan: 5
 Total Plans in Phase: 26
 Status: Ready to execute
 Last activity: 2026-09-22 — Phase 04 execution started
@@ -77,7 +77,6 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P02 | 1h10m | 3 tasks | 36 files |
 | Phase 04 P05 | 1h2m | 2 tasks | 16 files |
 | Phase 04 P04 | 35min | 3 tasks | 21 files |
-| Phase 04.2 P15 | 15min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -162,7 +161,6 @@ Recent decisions affecting current work:
 - [Phase 4]: 요청 본문 한도는 lib/actions/client.ts 미들웨어 한 자리(256KB)에만 둔다
 - [Phase 4]: 실제 Windows Excel은 줄바꿈 있는 칸만 인용하고 따옴표만 있는 칸은 원문 그대로 쓴다 — parseTsv를 이 규칙에 맞춤(04-RESEARCH.md 가정 A3 대체)
 - [Phase 4]: 데이터 이전 없음(사용자 결정 2026-09-23) — 인트라넷 데이터는 이전하지 않고 마스터(거래처·클라이언트·직원·법인카드·분류) 포함 전부 새 시스템에 손으로 입력한다. 시스템이 완성되는 대로 연중에 전환하고(연도 경계 아님) 인트라넷은 과거 조회 전용. REQUIREMENTS MIG-01~03 → Out of Scope(v1 89 → 86), MIG-04·05 재정의, OPS-06 '이전 실행' → '복원 리허설'. ROADMAP Phase 8 = 전환(마스터 수기 입력·계정 발급·demo 삭제·전환일 체크리스트·백업/복원 리허설). 04-03 철회(플랜 삭제, 추출 스크립트는 6b7519f로 되돌림), Phase 4 성공 기준 7 철회. 손익(Phase 9·10)은 전환 데이터부터이며 2026년 숫자는 두 시스템에 나뉜다(사용자 수용). 앞의 [CEO 리뷰 OV-1]·[Roadmap] 데이터 이전·[Eng 리뷰 OV-1]의 델타 이전 부분을 대체 — 옛 구조(상태 컬럼 없이 Y/N 승인 표시 4개, 견적 줄 = 단가×수량×일수, 프로젝트 번호 9개를 22개 프로젝트가 공유, 금액이 공급가인지 합계인지 불명)가 새 구조와 달라 단계마다 변환 규칙과 사람 확인이 필요했다
-- [Phase 4]: 04.2-15: SMTP 결과 셋 발송 단계는 원문 생성 뒤 connection.send 직전부터 · 연결 거부 코드는 nodemailer 실측 ESOCKET · emailErrorCode는 smtp-sender.ts에 두고 sender.ts가 재수출(런타임 순환 회피) · @types/nodemailer 미설치
 
 ### Pending Todos
 
@@ -218,6 +216,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-25T02:33:19.073Z
-Stopped at: Completed 04.2-15-PLAN.md
+Last session: 2026-09-23T14:29:34.050Z
+Stopped at: Completed 04-04-PLAN.md
 Resume file: None

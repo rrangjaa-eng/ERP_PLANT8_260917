@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { APP_CLIPBOARD_FORMAT, applyPaste, readPasteClipboard, type PasteColumn } from "@/ui/table/use-clipboard-paste";
+import { toTsv } from "@/ui/table/parse-tsv";
 
 // 04-47(C-03 · 사용자 D15 · ENG-D5) — 붙여넣기 결정표. 계산 열(번호·견적가·차익·상태)은 앱에서 복사한 붙여넣기
 // (클립보드에 application/x-plant8-quote-lines+json이 있을 때)에만 값을 넣지 않고 무시해 센다. 그 밖(엑셀)은 04-04처럼
@@ -133,5 +134,25 @@ describe("applyPaste — 원본 통화 · 줄 수 · 끝 줄바꿈", () => {
     const result = applyPaste({ clipboardText: text, columns: COLUMNS, rows: [{}], activeRowIndex: 0, activeColIndex: 2 });
     expect(result.rowCount).toBe(45);
     expect(result.newRowsNeeded).toBe(44);
+  });
+
+  it("앱에서 복사한 한 열 두 줄의 마지막 칸이 비었으면(toTsv → `x\\n`) 두 줄이 앱 형식으로 들어가 둘째 칸을 비운다", () => {
+    const text = toTsv([["x"], [""]]);
+    expect(text).toBe("x\n");
+    const result = applyPaste({
+      clipboardText: text,
+      appMeta: '[{"currency":"USD"},{"currency":"KRW"}]',
+      columns: COLUMNS,
+      rows: [{}, {}],
+      activeRowIndex: 0,
+      activeColIndex: 10,
+    });
+    expect(result.rowCount).toBe(2);
+    expect(result.source).toBe("app");
+    expect(result.sourceCurrencies).toEqual(["USD", "KRW"]);
+    expect(result.cells).toEqual([
+      { rowIndex: 0, columnKey: "note", result: { status: "ok", value: "x" } },
+      { rowIndex: 1, columnKey: "note", result: { status: "ok", value: "" } },
+    ]);
   });
 });

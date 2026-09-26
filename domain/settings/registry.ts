@@ -266,7 +266,7 @@ export type SimpleSettingValues<Defs extends readonly SettingDef<unknown>[]> = {
 // 이력형이 섞이면 거부한다.
 export async function getSimpleSettingValues<const Defs extends readonly SettingDef<unknown>[]>(
   defs: Defs,
-  deps?: { findSimpleValues?: typeof defaultFindSimpleValues },
+  deps?: Partial<Pick<RegistryDeps, "findSimpleValue">> & { findSimpleValues?: typeof defaultFindSimpleValues },
 ): Promise<SimpleSettingValues<Defs>> {
   const historized = defs.find((def) => def.kind !== "simple");
   if (historized) {

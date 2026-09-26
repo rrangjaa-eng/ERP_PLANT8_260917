@@ -27,7 +27,6 @@ import { allocateDocumentNumber, loadDocumentNumberFormat } from "@/domain/docum
 import { prepareSubmission, registerDocumentKind, submitDocument, type RouteConfig, type RouteSettingDefs } from "@/domain/approvals";
 import type { DescribeDeps, RouteConfigStep } from "@/domain/approvals/kinds";
 import type { TxLogDeps } from "@/domain/approvals/tx-log";
-import type { findSimpleValues } from "@/repositories/settings";
 import {
   findLeaveRequestById,
   findLeaveRequestsByIds,
@@ -95,7 +94,9 @@ function required<T>(value: T | undefined, key: string): T {
 
 // 17키를 getSimpleSettingValues **한 번**(SELECT 한 문장)으로 읽어 객체 하나로
 // 조립한다 — 키마다 따로 읽으면 그 사이의 관리자 저장이 섞인다(Codex HIGH 스냅숏).
-export async function loadLeaveRouteConfig(deps?: { findSimpleValues?: typeof findSimpleValues }): Promise<RouteConfig> {
+// 기본값 없는 org_unit_id 키(지금은 3단)에 행이 없으면 ""(특정 부서 없음 — 그 단계는
+// 빈 자리)로 읽는다 — 연차 신청·미리보기가 원시 오류로 막히지 않는다(CEO-7).
+export async function loadLeaveRouteConfig(deps?: Parameters<typeof getSimpleSettingValues>[1]): Promise<RouteConfig> {
   const values = await getSimpleSettingValues(LEAVE_ROUTE_DEFS, deps);
   const byKey = new Map(LEAVE_ROUTE_DEFS.map((def, i) => [def.key, values[i]]));
   const read = <T>(def: { key: string }): T | undefined => byKey.get(def.key) as T | undefined;
@@ -104,7 +105,7 @@ export async function loadLeaveRouteConfig(deps?: { findSimpleValues?: typeof fi
     enabled: required(read<boolean>(step.enabled), step.enabled.key),
     roleId: required(read<string>(step.roleId), step.roleId.key),
     scope: required(read<RouteConfigStep["scope"]>(step.scope), step.scope.key),
-    orgUnitId: required(read<string>(step.orgUnitId), step.orgUnitId.key),
+    orgUnitId: read<string>(step.orgUnitId) ?? "",
   }));
   const selfApproval = required(read<RouteConfig["selfApproval"]>(APPROVAL_ROUTE_LEAVE_SELF_APPROVAL), APPROVAL_ROUTE_LEAVE_SELF_APPROVAL.key);
   return { selfApproval, steps };

@@ -116,13 +116,15 @@ function describeHolders(names: string[]): string {
   return `${names[0]} 외 ${names.length - 1}명`;
 }
 
+// 결재선 한 차수를 처리 기록 뒤 첫 단계부터 훑는다. 동작의 유일한 정의는 04.1-01
+// Task 3 ②의 결정표(R1~R6 · W1~W13)다. 후보 = 담당 − 기안자 − 이 차수 승인자.
 export function walkRoute(input: WalkRouteInput): WalkRouteResult {
   const steps = [...input.steps].sort((a, b) => a.stepIndex - b.stepIndex);
+  const approvers = new Set(steps.filter((s) => s.action === "approved" && s.actedBy !== null).map((s) => s.actedBy as string));
   const display: DisplayStep[] = [];
   const holderUnion = new Set<string>();
   let current: WalkOutcome | null = null;
   let emptyAfterLastAction = false;
-  let approvals = 0;
 
   for (const step of steps) {
     const holders = resolveHolders(step, input.snapshot);
@@ -138,23 +140,37 @@ export function walkRoute(input: WalkRouteInput): WalkRouteResult {
     };
 
     if (step.action !== null) {
-      if (step.action === "approved") approvals++;
       emptyAfterLastAction = false;
       display.push({ ...base, state: step.action, holderIds: [], holderNames: step.actedByName ?? "" });
       continue;
     }
 
-    const candidates = holders.filter((h) => h.id !== input.drafterId);
+    const candidates = holders.filter((h) => h.id !== input.drafterId && !approvers.has(h.id));
+    const drafter = holders.find((h) => h.id === input.drafterId);
+    let chosen: SnapshotPerson[] = candidates;
+    let selfApprove = false;
     if (candidates.length === 0) {
-      if (current === null) emptyAfterLastAction = true;
-      display.push({ ...base, state: "empty", holderIds: [], holderNames: "" });
-      continue;
+      if (drafter && input.selfApproval === "skip") {
+        // W4 — 기안자 자기 승인 없음: 통과로 보고 다음 단계로(승인으로도 빈 자리로도 세지 않는다).
+        display.push({ ...base, state: "skipped_self", holderIds: [], holderNames: "" });
+        continue;
+      }
+      if (drafter && !approvers.has(drafter.id)) {
+        // W5 — 본인 승인: 기안자 단독 후보.
+        chosen = [drafter];
+        selfApprove = true;
+      } else {
+        // W2 · W3 · W6 — 빈 자리.
+        if (current === null) emptyAfterLastAction = true;
+        display.push({ ...base, state: "empty", holderIds: [], holderNames: "" });
+        continue;
+      }
     }
 
-    const holderNames = describeHolders(candidates.map((c) => c.name));
-    const holderIds = candidates.map((c) => c.id);
+    const holderIds = chosen.map((c) => c.id);
+    const holderNames = describeHolders(chosen.map((c) => c.name));
     if (current === null) {
-      current = { kind: "actionable", stepIndex: step.stepIndex, isFallback: step.isFallback, candidateIds: holderIds, selfApprove: false };
+      current = { kind: "actionable", stepIndex: step.stepIndex, isFallback: step.isFallback, candidateIds: holderIds, selfApprove };
       display.push({ ...base, state: "current", holderIds, holderNames });
     } else {
       display.push({ ...base, state: "pending", holderIds, holderNames });
@@ -162,23 +178,33 @@ export function walkRoute(input: WalkRouteInput): WalkRouteResult {
   }
 
   const nextIndex = steps.reduce((max, s) => Math.max(max, s.stepIndex), 0) + 1;
+  const blockedEntry = { stepIndex: nextIndex, label: FALLBACK_LABEL, isFallback: true, actedBy: null, actedByName: null, actedAt: null, selfApproved: false };
 
   if (current === null) {
-    if (!emptyAfterLastAction && approvals > 0) {
+    const needsFallback = emptyAfterLastAction || approvers.size === 0;
+    const fallbackHolders = needsFallback ? input.snapshot.filter((p) => p.roleId === input.fallbackRoleId) : [];
+    const remaining = fallbackHolders.filter((p) => !approvers.has(p.id));
+    const others = remaining.filter((p) => p.id !== input.drafterId);
+    const drafter = remaining.find((p) => p.id === input.drafterId);
+
+    if (needsFallback && (others.length > 0 || drafter)) {
+      // W7 · W8 — 대표 폴백(자기 승인 값을 적용하지 않는다).
+      const chosen = others.length > 0 ? others : [drafter as SnapshotPerson];
+      const holderIds = chosen.map((c) => c.id);
+      for (const h of fallbackHolders) holderUnion.add(h.id);
+      current = { kind: "actionable", stepIndex: nextIndex, isFallback: true, candidateIds: holderIds, selfApprove: others.length === 0 };
+      display.push({ ...blockedEntry, state: "current", holderIds, holderNames: describeHolders(chosen.map((c) => c.name)) });
+    } else if (approvers.size === 0) {
+      // W11 — 대표 없음.
+      current = { kind: "blocked", reason: "no_fallback_holder", stepIndex: nextIndex };
+      display.push({ ...blockedEntry, state: "blocked", holderIds: [], holderNames: "" });
+    } else if (input.at === "after_approval") {
+      // W9 · W12 — 최종.
       current = { kind: "final" };
     } else {
-      const fallbackHolders = input.snapshot.filter((p) => p.roleId === input.fallbackRoleId);
-      const candidates = fallbackHolders.filter((p) => p.id !== input.drafterId);
-      const base = { stepIndex: nextIndex, label: FALLBACK_LABEL, isFallback: true, actedBy: null, actedByName: null, actedAt: null, selfApproved: false };
-      if (candidates.length > 0) {
-        const holderIds = candidates.map((c) => c.id);
-        for (const id of holderIds) holderUnion.add(id);
-        current = { kind: "actionable", stepIndex: nextIndex, isFallback: true, candidateIds: holderIds, selfApprove: false };
-        display.push({ ...base, state: "current", holderIds, holderNames: describeHolders(candidates.map((c) => c.name)) });
-      } else {
-        current = { kind: "blocked", reason: "no_fallback_holder", stepIndex: nextIndex };
-        display.push({ ...base, state: "blocked", holderIds: [], holderNames: "" });
-      }
+      // W10 · W13 — 행동 전 최종 = 막힘(고아 최종, ENG-3 · D2).
+      current = { kind: "blocked", reason: "orphan_final", stepIndex: nextIndex };
+      display.push({ ...blockedEntry, state: "blocked", holderIds: [], holderNames: "" });
     }
   }
 

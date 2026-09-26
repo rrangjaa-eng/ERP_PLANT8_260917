@@ -84,11 +84,14 @@ export function applyPaste<Row>(params: {
   appMeta?: string | null;
 }): ApplyPasteResult {
   const { clipboardText, columns, rows, activeRowIndex, activeColIndex, newRow } = params;
-  const parsed = parseTsv(clipboardText);
+  // 04-47 — 앱 형식 줄 수가 끝 줄바꿈을 떼기 전 줄 수와 같으면 떼지 않는다(마지막 줄이 빈 칸인 앱 복사 `x\n`).
+  const whole = parseTsv(clipboardText, { keepTrailingNewline: true });
+  const wholeCurrencies = readSourceCurrencies(params.appMeta, whole.length);
+  const parsed = wholeCurrencies ? whole : parseTsv(clipboardText);
   const cells: PasteCell[] = [];
   let droppedColumnCount = 0;
   let ignoredComputedCells = 0;
-  const sourceCurrencies = readSourceCurrencies(params.appMeta, parsed.length);
+  const sourceCurrencies = wholeCurrencies ?? readSourceCurrencies(params.appMeta, parsed.length);
   const source = sourceCurrencies ? "app" : "external";
 
   const lastRowIndex = activeRowIndex + parsed.length - 1;

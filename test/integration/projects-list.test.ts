@@ -632,6 +632,35 @@ describe("loadProjectList — 파라미터 정규화 · 빈 갈래 (04-48, 실�
     expect(team.hasFilter).toBe(true);
   });
 
+  // Opus 검토 NIT 9 — T-04-90 표에 PG를 깨는 기간 값(22008)과 배열 · 중복 teamId 행을 더한다.
+  it("(T-04-90) 달력에 없는 날 · 0년 기간과 배열 · 중복 teamId도 던지지 않고 정규화된다", async () => {
+    const base = await makeBase();
+    const marker = `틀린기간-${randomUUID().slice(0, 8)}`;
+    await makeProject(base, marker, { startDate: `${thisYear}-03-01`, endDate: `${thisYear}-03-20`, line: { quote: 1_000_000, execution: 0 } });
+    await makeProject(base, marker, { startDate: `${thisYear}-09-05`, endDate: `${thisYear}-09-20` });
+    const plain = await loadProjectList(SYSTEM_VIEWER, { search: marker });
+    expect(plain.rows).toHaveLength(2);
+
+    for (const from of [`${thisYear}-02-30`, "0000-01-01"]) {
+      const result = await loadProjectList(SYSTEM_VIEWER, { search: marker, from });
+      expect(result.periodErrors, from).toEqual({ from: "날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요" });
+      expect(result.rows.map((row) => row.id), from).toEqual(plain.rows.map((row) => row.id));
+      expect(result.totals, from).toEqual(plain.totals);
+    }
+
+    const team = await loadProjectList(SYSTEM_VIEWER, { search: marker, teamId: base.teamId });
+    const teamCases: { name: string; teamId: readonly string[]; applied: boolean }[] = [
+      { name: "teamId=[팀, abc]", teamId: [base.teamId, "abc"], applied: true },
+      { name: "teamId=[팀, 팀]", teamId: [base.teamId, base.teamId], applied: true },
+      { name: "teamId=[abc, 팀]", teamId: ["abc", base.teamId], applied: false },
+    ];
+    for (const { name, teamId, applied } of teamCases) {
+      const result = await loadProjectList(SYSTEM_VIEWER, { search: marker, teamId });
+      expect(result.params.teamId, name).toBe(applied ? base.teamId : undefined);
+      expect(result.rows.map((row) => row.id), name).toEqual((applied ? team : plain).rows.map((row) => row.id));
+    }
+  });
+
   it("(공백 8) 볼 수 있는 프로젝트가 하나도 없으면 emptyKind는 none이다", async () => {
     const result = await loadProjectList(SYSTEM_VIEWER, {});
     expect(result.total).toBe(0);

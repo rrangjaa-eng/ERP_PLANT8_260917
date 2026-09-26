@@ -132,10 +132,11 @@
 /* S1-a·§7-5 상태 태그와 같은 모양 — 의미 색 없이 --bar-fg 하나. */
 .badge {
   font-size: var(--fs-xs);
-  font-weight: 600;
-  border: 1px solid currentColor;
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-head);
+  border: var(--line-w) solid currentColor;
   padding: 1px 6px;
-  border-radius: 0;
+  border-radius: var(--radius);
   background: none;
   color: var(--bar-fg);
   font-variant-numeric: tabular-nums;

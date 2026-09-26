@@ -180,6 +180,11 @@
   font-size: var(--fs-base);
 }
 
+/* §7-2 자리표시자는 형식 예 — 공용 ui/input과 같은 --faint(UA 회색을 두지 않는다, §4-4). */
+.textInput::placeholder {
+  color: var(--faint);
+}
+
 .textInput[aria-invalid="true"] {
   border-color: var(--danger);
 }

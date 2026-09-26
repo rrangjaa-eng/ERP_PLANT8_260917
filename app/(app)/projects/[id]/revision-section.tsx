@@ -30,9 +30,16 @@ export function RevisionSection({
 
   const columns: TableColumn<SummaryRow>[] = [
     { key: "seq", header: "차수", priority: "p1", cell: (row) => `${row.seq}차` },
-    { key: "createdOn", header: "생성일", priority: "p2", cell: (row) => row.createdOn ?? "" },
-    { key: "lineCount", header: "줄 수", priority: "p2", cell: (row) => (row.lineCount === undefined ? "" : `${row.lineCount}줄`) },
-    { key: "total", header: "견적 합계", priority: "p1", align: "right", cell: (row) => (row.totalKrw === undefined ? "" : formatKrw(row.totalKrw)) },
+    // /design-review P-6 — 노출 투영으로 모든 행에서 빠진 열은 채우지 않고 열째 뺀다(SYSTEM 762-765).
+    ...(rows.some((row) => row.createdOn !== undefined)
+      ? [{ key: "createdOn", header: "생성일", priority: "p2", cell: (row) => row.createdOn ?? "" } satisfies TableColumn<SummaryRow>]
+      : []),
+    ...(rows.some((row) => row.lineCount !== undefined)
+      ? [{ key: "lineCount", header: "줄 수", priority: "p2", cell: (row) => (row.lineCount === undefined ? "" : `${row.lineCount}줄`) } satisfies TableColumn<SummaryRow>]
+      : []),
+    ...(rows.some((row) => row.totalKrw !== undefined)
+      ? [{ key: "total", header: "견적 합계", priority: "p1", align: "right", cell: (row) => (row.totalKrw === undefined ? "" : formatKrw(row.totalKrw)) } satisfies TableColumn<SummaryRow>]
+      : []),
     {
       key: "status",
       header: "상태",

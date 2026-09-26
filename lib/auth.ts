@@ -4,7 +4,7 @@ import { db } from "@/db/client";
 import * as schema from "@/db/schema";
 import { env } from "@/lib/env";
 import { getAuthProvider } from "@/domain/auth/provider";
-import { before, after } from "@/domain/auth/hooks";
+import { before, after, recordFirstLogin } from "@/domain/auth/hooks";
 import { CLIENT_IP_HEADER } from "@/lib/client-ip";
 
 // better-auth 인스턴스. next import 금지(01-05가 CLI 번들에 포함한다) — 이 파일과
@@ -56,6 +56,8 @@ export const auth = betterAuth({
     },
   },
   hooks: { before, after },
+  // D8-07 — 로그인 방식·로그인 로그 설정과 무관하게 모든 세션 생성에서 한 번. first_login_at의 유일한 기록 지점.
+  databaseHooks: { session: { create: { after: recordFirstLogin } } },
   rateLimit: {
     // better-auth 기본은 production만 활성 — 개발 환경에서도 통합 테스트로
     // 검증하기 위해 명시적으로 켠다.

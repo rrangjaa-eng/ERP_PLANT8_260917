@@ -125,10 +125,15 @@ describe("관리자 표 — 빈 상태 칸 em dash (F-08)", () => {
     ["vendors/page.tsx", ["app", "(app)", "admin", "vendors", "page.tsx"]],
     ["corp-cards/page.tsx", ["app", "(app)", "admin", "corp-cards", "page.tsx"]],
     ["code-tables/page.tsx", ["app", "(app)", "admin", "code-tables", "page.tsx"]],
-    ["people/page.tsx", ["app", "(app)", "admin", "people", "page.tsx"]],
   ])("%s의 정상 상태 칸이 —를 렌더한다", (_name, parts) => {
     const source = read(...parts);
     expect(source).toMatch(/<\/StatusTag>\s*\)\s*:\s*"—"\s*\}/);
+  });
+
+  // 04.4-05(D8-07): 사람 목록 상태 칸은 보관됨 / 로그인 배지 / — 세 갈래다 — 배지가 0개인 정상 상태가 —다.
+  it("people/page.tsx의 정상 상태 칸(로그인 배지 0개)이 —를 렌더한다", () => {
+    const source = read("app", "(app)", "admin", "people", "page.tsx");
+    expect(source).toMatch(/loginStatus\.badges\.length === 0 \?\s*\(\s*"—"\s*\)/);
   });
 
   it("roles-client.tsx의 「시드 여부」 칸이 비시드일 때 —를 렌더한다", () => {

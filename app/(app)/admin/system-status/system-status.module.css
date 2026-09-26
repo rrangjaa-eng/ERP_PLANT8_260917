@@ -1,0 +1,27 @@
+/* SYSTEM.md §6-8 · 04.4 UI-SPEC Color: 「복원 리허설」 행. 「실행 기록」은 사람 목록
+   「상세」(people.module.css .detailLink)와 같은 §7-1 3차 링크 모양이다. 색·서체는
+   tokens.css 변수만 쓴다. */
+.runLink {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: var(--underline-offset);
+}
+
+/* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44(.detailLink와 같은 결). */
+@media (max-width: 699.98px) {
+  .runLink {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+}
+
+/* §2-4: 백업 id는 숫자 한 덩어리 — 줄바꿈 없이 고정폭 숫자. */
+.backupId {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}

@@ -112,9 +112,9 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
 
   // WR-09: !docs/**가 unit 테스트가 실제로 읽는 docs 파일까지 가려서, 그 파일만
   // 바뀐 PR은 CI가 아예 돌지 않는다. test/unit/design-system-docs.test.ts·
-  // test/unit/ui/role-menu.test.ts·test/unit/docs-limits.test.ts가 읽는 5개
+  // test/unit/ui/role-menu.test.ts·test/unit/docs-limits.test.ts가 읽는 6개
   // 파일이 모두 !docs/** 뒤에 재포함되어야 한다.
-  it("pull_request paths가 unit 테스트가 읽는 5개 docs 파일을 모두 재포함한다(순서 포함)", () => {
+  it("pull_request paths가 unit 테스트가 읽는 6개 docs 파일을 모두 재포함한다(순서 포함)", () => {
     const ci = readWorkflow("ci.yml");
     const patterns = [
       '- "**"',
@@ -125,6 +125,7 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
       '- "docs/design/DECISIONS.md"',
       '- "docs/ARCHITECTURE.md"',
       '- "docs/OPERATIONS.md"',
+      '- "docs/RESTORE.md"',
     ];
     const indexes = patterns.map((pattern) => ci.indexOf(pattern));
     for (const [i, index] of indexes.entries()) {

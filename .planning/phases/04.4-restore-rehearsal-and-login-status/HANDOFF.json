@@ -1,10 +1,10 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-24T18:24:51.992Z",
+  "timestamp": "2026-09-26T18:55:13.000Z",
   "phase": "04.4",
   "phase_name": "restore-rehearsal-and-login-status",
   "phase_dir": ".planning/phases/04.4-restore-rehearsal-and-login-status",
-  "plan": null,
+  "plan": "04.4-05",
   "task": null,
   "total_tasks": null,
   "status": "paused",
@@ -20,23 +20,94 @@
       "name": "막는 문제 4건(E-10,E-16,E-18,E-20) 플랜 반영 + 검사기(통과) + Opus 독립 교차 검토(막는 문제 없음)",
       "status": "done",
       "commit": "dcd9130"
+    },
+    {
+      "id": 3,
+      "name": "plan-design-review 04.4 (+ Opus 교차)",
+      "status": "done",
+      "commit": "f8c69f5"
+    },
+    {
+      "id": 4,
+      "name": "plan-ceo-review 04.4 (HOLD SCOPE, CLEAR) — 보고서·TODOS·게이트 기록",
+      "status": "done",
+      "commit": "5458e7d"
+    },
+    {
+      "id": 5,
+      "name": "CEO 막는 문제 2건 플랜 반영(03 CEO-1, 04 CEO-2)",
+      "status": "done",
+      "commit": "e8ed306"
+    },
+    {
+      "id": 6,
+      "name": "04.4-01 실행(트레이서·검증·실패 문구·SUMMARY)",
+      "status": "done",
+      "commit": "4fcc27e"
+    },
+    {
+      "id": 9,
+      "name": "04.4-02 실행(verify 트레이서·restore Job·번들·SUMMARY)",
+      "status": "done",
+      "commit": "feb3499"
+    },
+    {
+      "id": 10,
+      "name": "04.4-03 실행(리허설 스크립트·워크플로·RESTORE.md·SUMMARY) + Opus 독립 검토 SHOULD 2건·NIT 1건 반영",
+      "status": "done",
+      "commit": "7021174"
+    },
+    {
+      "id": 11,
+      "name": "04.4-04 실행(첫 로그인 기록 트레이서·백필 업그레이드 픽스처·검토 반영·SUMMARY) + main #87 머지·명사형 문구",
+      "status": "done",
+      "commit": "b9774ff"
+    },
+    {
+      "id": 12,
+      "name": "04.4-05 실행(상태 화면 리허설 행 · 사람 목록 배지·폰 칸 접기 · SYSTEM/DECISIONS · Opus 검토 반영 · CI quality 수정 · 독립 DOM 감사 · 전체 게이트)",
+      "status": "done",
+      "commit": "a8e9a4b"
+    },
+    {
+      "id": 11,
+      "name": "/cso 게이트(04.4 diff) — 결함 0, 이월 5건 게이트 로그",
+      "status": "done",
+      "commit": "b9bfe0b"
+    },
+    {
+      "id": 12,
+      "name": "/cso 스캐너 재시도 — 제출 수락, 새 지적 0, 스캐너 미실행(Docker 없음)",
+      "status": "done",
+      "commit": "21133ab"
     }
   ],
   "remaining_tasks": [
     {
-      "id": 3,
-      "name": "plan-design-review 04.4 (+ Opus 독립 교차 검토, Codex 대신)",
+      "id": 1,
+      "name": "04.4-06 병합 직전 마이그레이션 재생성(0017+0018 → main 마지막+1, 머리 줄·백필 블록 재부착) 등 — 독립 DOM 감사는 04.4-05에서 이미 돌림",
       "status": "not_started"
     },
     {
-      "id": 4,
-      "name": "한도 풀린 뒤(2026-09-29~) Codex 재확인: eng 리비전(dcd9130)",
+      "id": 2,
+      "name": "2026-09-29 이후 Codex 재확인(04.4-05: afe7dc0·aa83360·8a16a39·6a13b16·1edbc12·49aafd6 추가) · /cso 결과 포함",
+      "status": "not_started"
+    },
+    {
+      "id": 3,
+      "name": "페이즈 Post-build 나머지: /review → /qa·/design-review → /ship (/cso는 b9bfe0b 완료)",
       "status": "not_started"
     }
   ],
   "blockers": [],
   "async_jobs": [],
-  "human_actions_pending": [],
+  "human_actions_pending": [
+    {
+      "action": "스캐너 미실행 확인 — Docker·검증 스캐너 이미지가 있는 환경에서 /cso 스캐너 실행 여부 결정",
+      "context": "클라우드 컨테이너에 Docker 데몬 없음, gstack-cso 스캐너 카탈로그 비어 있음",
+      "blocking": false
+    }
+  ],
   "decisions": [
     {
       "decision": "Rehearsal workflow uses its own concurrency group; mid-run deploys detected via image digest and recorded as failure",
@@ -47,9 +118,64 @@
       "decision": "plan-design-review 통과: 막는 문제 0 (Opus 1차+Opus 교차, Codex 대신)",
       "rationale": "Codex 한도 9/29까지, 한도 풀리면 재확인",
       "phase": "04.4"
+    },
+    {
+      "decision": "plan-ceo-review 04.4: HOLD SCOPE, CLEAR. CEO-1·2 수용, 참고 6건 TODOS 이연, 축소안 3건 거절",
+      "rationale": "자동 결정(추천값, 사용자 부재). Codex 한도로 Opus 독립 검토 대체",
+      "phase": "04.4"
+    },
+    {
+      "decision": "04.4-02: settings_simple·settings_historized를 requireRows로 올림(플랜 가정 2와 다름)",
+      "rationale": "seedMasterData가 두 표를 항상 채우고 삭제는 미래 적용분뿐 — 플랜이 실행자 대조·수정을 허용",
+      "phase": "04.4"
+    },
+    {
+      "decision": "04.4-03: OPERATIONS §14를 5줄로(276줄 상한 유지), 긴 설명은 RESTORE.md",
+      "rationale": "OPERATIONS.md가 계획이 잰 263줄이 아니라 270줄",
+      "phase": "04.4"
+    },
+    {
+      "decision": "04.4-03 Opus 검토 NIT 미반영: digest 태그 조회·동기 create/restore·INT/TERM trap·「이번 정리」 줄",
+      "rationale": "안전 영향 없음(SHA 태그 1회 push, finalize 마지막 정리가 막음) — Codex 재확인 때 함께 판단",
+      "phase": "04.4"
+    },
+    {
+      "decision": "04.4-04 조회 수 기준값 9(PLAN_BASE c222083 실측) 단언 한 줄",
+      "rationale": "#65 테스트 위에 고정 조회 증가 가드",
+      "phase": "04.4"
+    },
+    {
+      "decision": "04.4-04 Opus 검토 NIT 3건 미반영(설정 mock 유지 · userId 끌어올림 되돌림 · 세션 훅이 after 미들웨어보다 먼저 도는 가장자리 허용)",
+      "rationale": "SUMMARY key-decisions 참고",
+      "phase": "04.4"
+    },
+    {
+      "decision": "main #87 명사형 문구 검사에 걸린 04.4-01 기록 CLI 검증 문구 9개를 「원인 · 조건」 명사형으로",
+      "rationale": "코디네이터 지시 5848063942, 화면 미노출·문구 단언 테스트 없음",
+      "phase": "04.4"
+    },
+    {
+      "decision": "04.4-05: 폰 사람 목록 행 구분선을 접힌 줄 아래로(주 행 셀·행 머리글 아래선 0)",
+      "rationale": "Opus 독립 검토 BLOCKING — SYSTEM.md §7-3, vendors·공용 Table 선례. 플랜 read_first가 Table.module.css 216행 규칙을 놓침",
+      "phase": "04.4"
+    },
+    {
+      "decision": "04.4-05: F-08 단위 테스트의 사람 목록 항목을 「배지 0개 → —」 분기 단언으로 이동",
+      "rationale": "CI quality 실패 run 36259961373 원인 — 상태 칸이 세 갈래가 돼 옛 소스 모양 정규식이 깨짐",
+      "phase": "04.4"
+    },
+    {
+      "decision": "04.4-05: first-login-upgrade.test.ts afterAll에 60초 제한",
+      "rationale": "전체 게이트 부하에서 DROP DATABASE WITH (FORCE)가 기본 10초 초과, 단독 3~5초 통과",
+      "phase": "04.4"
+    },
+    {
+      "decision": "04.4-05: 독립 DOM 감사를 이 플랜에서 실행(플랜은 04.4-06 Task 2)",
+      "rationale": "코디네이터 지시. 막는 문제 0",
+      "phase": "04.4"
     }
   ],
   "uncommitted_files": [],
-  "next_action": "디자인 참고 지적 처리 → 최종 전체 검토(Fable 1회) → /review(문서) → PR 설명",
-  "context_notes": "Codex 한도 2026-09-29까지 → 교차 검토는 Opus, Fable은 최종 전체 1회. 결과: /mnt/project-files/04.4-gates/checker-rev1.md, opus-cross-r1.md(참고 7건). STATE.md·루트 HANDOFF.json 건드리지 않음."
+  "next_action": "#90 머지 뒤 코디네이터가 여는 새 세션에서 PR #91 [코디네이터 지시] 확인 → 04.4-06 하나 실행",
+  "context_notes": "/cso 게이트 완료(b9bfe0b): 지원 결함 0, Opus 독립 검토 low 3, 수정 없음. 이월 5건(verify 대상 env↔APP_ENV, 남은 임시 인스턴스 상한·알림, restore Job BETTER_AUTH_SECRET, 0018 now() 백필 문서화, WIF ref·전용 SA)은 .claude/gates/phase-04.4.log. Codex 재확인 필요. 재시도(21133ab): 스캐너 5종 PREREQUISITE로 미실행, 사용자 확인 필요."
 }

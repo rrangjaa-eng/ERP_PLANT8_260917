@@ -351,6 +351,14 @@ deploy_jobs() {
     --command=node,dist/cli/account-cli.mjs \
     --set-env-vars="$common_env" \
     --set-secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest"
+
+  # account Job과 같이 스크립트 경로를 --command 둘째 항목에 둔다 — restore-rehearsal.yml이 execute --args로 record/verify를 넘긴다(D8-08).
+  # verify 실행만 CLOUD_SQL_CONNECTION_NAME을 임시 인스턴스로 덮어쓴다.
+  run gcloud run jobs deploy "$(job_name "$ENV" restore)" \
+    "${job_common[@]}" \
+    --command=node,dist/cli/restore-rehearsal-cli.mjs \
+    --set-env-vars="$common_env" \
+    --set-secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest"
 }
 
 run_db_bootstrap() {

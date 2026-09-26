@@ -1,0 +1,392 @@
+#!/usr/bin/env bash
+# 가짜 gcloud — scripts/restore-rehearsal.sh 단위 테스트 전용(공유 fakebin/gcloud는 건드리지 않는다).
+# 모든 인자를 $DEPLOY_FAKE_LOG에 한 줄로 적고, $DEPLOY_FAKE_STATE 디렉터리의 파일로 상태를 흉내 낸다:
+#   instances/<이름>        Cloud SQL 인스턴스(있으면 존재, 내용은 리전)
+#   ops/<작업 id>           끝나지 않은 Cloud SQL 작업(내용: "<인스턴스> <종류>")
+#   execs/<실행>.image      그 Job 실행이 실제로 쓴 이미지 참조
+#   execs/<실행>.logs       그 Job 실행의 로그 줄
+#   job-image               지금 Job 이미지 참조(없으면 기본값)
+#   record-<실행 키>        record가 저장한 결과(04.4-01 run_key UNIQUE 흉내)
+# 로그 줄 머리: 가짜 timeout 밖에서 불리면 "UNBOUNDED ", $FAKE_CLOCK_FILE이 있으면 "@<가짜 시각> ".
+# 처리하지 않는 호출은 종료 코드 1(기존 fakebin 규약).
+#
+# 실패 손잡이(환경 변수):
+#   FAKE_NO_BACKUP=1                       백업 목록이 빈다
+#   FAKE_FAIL=create|restore|users|verify|record
+#   FAKE_LIST_FAIL=403|503|auth            인스턴스 목록이 실패한다(FAKE_LIST_FAIL_AFTER_CREATE=1이면 생성 뒤부터,
+#                                          그때부터 임시 describe도 NOT_FOUND 문구로 실패한다)
+#   FAKE_NEVER_RUNNABLE=1                  상태 조회가 늘 PENDING_CREATE
+#   FAKE_KILL_AFTER=started|create|restore 그 호출에서 스크립트 셸을 kill -KILL(EXIT trap이 못 돈다)
+#   FAKE_PENDING_OP=1|forever              끝나지 않은 작업 하나(1: 한 번 · forever: 늘, wait는 --timeout만큼 시계를 당기고 실패)
+#   FAKE_DELETE_CONFLICT=1                 첫 삭제만 「operation in progress」
+#   FAKE_DELETE_FAIL=always                삭제가 늘 실패
+#   FAKE_DELETE_SLOW=1                     --async 삭제 작업이 끝나지 않는다
+#   FAKE_RECORD_ACK_LOST=1                 첫 record는 행을 적은 뒤 실행 결과만 실패
+#   FAKE_RECORD_LOGS=none                  record 실행의 로그가 빈다
+#   FAKE_DEPLOY_AT=create|restore|before-verify|verify|cleanup|record  그 시점에 Job 이미지를 새 참조로(한 번)
+#   FAKE_IMAGE_FAIL=<n>                    n번째 digest 조회가 실패
+#   FAKE_ADVANCE=create:<초>               생성 호출이 가짜 시계를 당긴다
+set -u
+
+STATE="${DEPLOY_FAKE_STATE:?DEPLOY_FAKE_STATE 필요}"
+LOG="${DEPLOY_FAKE_LOG:-/dev/null}"
+ARGS="$*"
+ARGV=("$@")
+
+clock_get() { cat "$FAKE_CLOCK_FILE"; }
+clock_add() {
+  if [ -n "${FAKE_CLOCK_FILE:-}" ] && [ -f "$FAKE_CLOCK_FILE" ]; then
+    echo $(($(clock_get) + $1)) >"$FAKE_CLOCK_FILE"
+  fi
+}
+
+prefix=""
+[ -n "${FAKE_UNDER_TIMEOUT:-}" ] || prefix="UNBOUNDED "
+if [ -n "${FAKE_CLOCK_FILE:-}" ] && [ -f "$FAKE_CLOCK_FILE" ]; then
+  prefix="$prefix@$(clock_get) "
+fi
+printf '%s%s\n' "$prefix" "$ARGS" >>"$LOG"
+mkdir -p "$STATE/instances" "$STATE/ops" "$STATE/execs"
+
+DEFAULT_IMAGE="asia-northeast3-docker.pkg.dev/test-project/plant8/app:aaaa"
+NEW_IMAGE="asia-northeast3-docker.pkg.dev/test-project/plant8/app:bbbb"
+BACKUP_ID=1111
+
+# --flag=value 모양 인자의 값
+arg_value() {
+  local flag="$1" a
+  for a in "${ARGV[@]}"; do
+    case "$a" in
+      "$flag="*)
+        printf '%s' "${a#"$flag="}"
+        return 0
+        ;;
+    esac
+  done
+  return 1
+}
+
+has_arg() {
+  local a
+  for a in "${ARGV[@]}"; do
+    [ "$a" = "$1" ] && return 0
+  done
+  return 1
+}
+
+next_counter() {
+  local f="$STATE/counter-$1" n=0
+  [ -f "$f" ] && n="$(cat "$f")"
+  n=$((n + 1))
+  echo "$n" >"$f"
+  echo "$n"
+}
+
+once() {
+  [ -f "$STATE/once-$1" ] && return 1
+  : >"$STATE/once-$1"
+}
+
+job_image() {
+  if [ -f "$STATE/job-image" ]; then
+    cat "$STATE/job-image"
+  else
+    echo "$DEFAULT_IMAGE"
+  fi
+}
+
+deploy_at() {
+  if [ "${FAKE_DEPLOY_AT:-}" = "$1" ] && once deploy; then
+    echo "$NEW_IMAGE" >"$STATE/job-image"
+  fi
+}
+
+advance_at() {
+  case "${FAKE_ADVANCE:-}" in
+    "$1:"*) clock_add "${FAKE_ADVANCE#"$1:"}" ;;
+  esac
+}
+
+# 스크립트 셸(명령 치환 서브셸 포함)을 조상에서 찾아 전부 kill -KILL. 가짜 timeout과 스크립트 셸만
+# 거슬러 올라가고 그 밖(vitest 등)에 닿으면 멈춘다.
+kill_script() {
+  local pid="$PPID" ppid args targets=()
+  while [ -n "$pid" ] && [ "$pid" -gt 1 ]; do
+    read -r ppid args < <(ps -o ppid=,args= -p "$pid") || break
+    if [[ "$args" =~ ^([^[:space:]]*/)?bash\ scripts/restore-rehearsal\.sh\ (rehearse|finalize)$ ]]; then
+      targets+=("$pid")
+    elif [[ "$args" != timeout\ * && "$args" != *restore-fakebin/timeout\ * ]]; then
+      break
+    fi
+    pid="$ppid"
+  done
+  if [ "${#targets[@]}" -gt 0 ]; then
+    kill -KILL "${targets[@]}"
+  fi
+  exit 1
+}
+
+kill_at() {
+  if [ "${FAKE_KILL_AFTER:-}" = "$1" ]; then kill_script; fi
+}
+
+instance_exists() { [ -f "$STATE/instances/$1" ]; }
+
+list_failing() {
+  [ -n "${FAKE_LIST_FAIL:-}" ] || return 1
+  if [ -n "${FAKE_LIST_FAIL_AFTER_CREATE:-}" ] && [ ! -f "$STATE/created-any" ]; then
+    return 1
+  fi
+  return 0
+}
+
+not_found() {
+  echo "ERROR: (gcloud.sql.instances.describe) HTTPError 404: The Cloud SQL instance does not exist. NOT_FOUND" >&2
+  exit 1
+}
+
+fail_if() {
+  if [ "${FAKE_FAIL:-}" = "$1" ]; then
+    echo "fake gcloud: forced failure ($1)" >&2
+    exit 1
+  fi
+}
+
+case "$ARGS" in
+  "sql instances list "*)
+    if list_failing; then
+      case "$FAKE_LIST_FAIL" in
+        403) echo "ERROR: (gcloud.sql.instances.list) PERMISSION_DENIED: The client is not authorized to make this request. (403)" >&2 ;;
+        503) echo "ERROR: (gcloud.sql.instances.list) HTTPError 503: UNAVAILABLE" >&2 ;;
+        auth) echo "ERROR: (gcloud.sql.instances.list) There was a problem refreshing your current auth tokens: Reauthentication failed." >&2 ;;
+      esac
+      exit 1
+    fi
+    filter="$(arg_value --filter || true)"
+    case "$filter" in
+      "name="*)
+        deploy_at cleanup
+        want="${filter#name=}"
+        if instance_exists "$want"; then echo "$want"; fi
+        ;;
+      "name~^"*)
+        kill_at started
+        prefix="${filter#name~^}"
+        for f in "$STATE/instances/"*; do
+          [ -e "$f" ] || continue
+          n="$(basename "$f")"
+          case "$n" in "$prefix"*) echo "$n" ;; esac
+        done
+        ;;
+      *)
+        exit 1
+        ;;
+    esac
+    ;;
+
+  "sql backups list "*)
+    [ -n "${FAKE_NO_BACKUP:-}" ] || echo "$BACKUP_ID"
+    ;;
+
+  "sql instances describe "*)
+    name="$4"
+    case "$(arg_value --format || true)" in
+      "value(settings.dataDiskSizeGb)")
+        echo 10
+        ;;
+      "value(state)")
+        if list_failing || ! instance_exists "$name"; then not_found; fi
+        if [ -n "${FAKE_NEVER_RUNNABLE:-}" ]; then echo PENDING_CREATE; else echo RUNNABLE; fi
+        ;;
+      "value(connectionName)")
+        if list_failing || ! instance_exists "$name"; then not_found; fi
+        echo "$(arg_value --project):$(cat "$STATE/instances/$name"):$name"
+        ;;
+      *)
+        exit 1
+        ;;
+    esac
+    ;;
+
+  "sql instances create "*)
+    arg_value --region >"$STATE/instances/$4"
+    : >"$STATE/created-any"
+    advance_at create
+    deploy_at create
+    kill_at create
+    fail_if create
+    ;;
+
+  "sql backups restore "*)
+    deploy_at restore
+    kill_at restore
+    fail_if restore
+    instance_exists "$(arg_value --restore-instance)" || not_found
+    ;;
+
+  "sql users list "*)
+    fail_if users
+    ;;
+
+  "sql users create "*)
+    fail_if users
+    ;;
+
+  "sql operations list "*)
+    instance="$(arg_value --instance)"
+    if instance_exists "$instance"; then
+      if [ "${FAKE_PENDING_OP:-}" = forever ]; then
+        echo "$instance forever" >"$STATE/ops/op-$instance-forever"
+      elif [ "${FAKE_PENDING_OP:-}" = 1 ] && once pending-op; then
+        echo "$instance other" >"$STATE/ops/op-$instance-pending"
+      fi
+    fi
+    found=0
+    for f in "$STATE/ops/"*; do
+      [ -e "$f" ] || continue
+      read -r op_instance _ <"$f"
+      if [ "$op_instance" = "$instance" ]; then
+        basename "$f"
+        found=1
+      fi
+    done
+    if [ "$found" = 0 ] && ! instance_exists "$instance"; then
+      echo "ERROR: (gcloud.sql.operations.list) HTTPError 404: The Cloud SQL instance does not exist." >&2
+      exit 1
+    fi
+    ;;
+
+  "sql operations wait "*)
+    op="$4"
+    [ -f "$STATE/ops/$op" ] || exit 1
+    read -r op_instance op_kind <"$STATE/ops/$op"
+    case "$op_kind" in
+      forever | slowdelete)
+        clock_add "$(arg_value --timeout)"
+        echo "ERROR: (gcloud.sql.operations.wait) Operation $op did not finish within the timeout." >&2
+        exit 1
+        ;;
+      delete)
+        rm -f "$STATE/instances/$op_instance"
+        ;;
+    esac
+    rm -f "$STATE/ops/$op"
+    ;;
+
+  "sql instances delete "*)
+    name="$4"
+    has_arg --async || exit 1
+    instance_exists "$name" || not_found
+    if [ "${FAKE_DELETE_FAIL:-}" = always ]; then
+      echo "ERROR: (gcloud.sql.instances.delete) forced delete failure" >&2
+      exit 1
+    fi
+    if [ "${FAKE_PENDING_OP:-}" = forever ] || { [ -n "${FAKE_DELETE_CONFLICT:-}" ] && once delete-conflict; }; then
+      echo "ERROR: (gcloud.sql.instances.delete) HTTPError 409: Operation failed because another operation was already in progress." >&2
+      exit 1
+    fi
+    op="op-$name-delete-$(next_counter delete)"
+    if [ -n "${FAKE_DELETE_SLOW:-}" ]; then
+      echo "$name slowdelete" >"$STATE/ops/$op"
+    else
+      echo "$name delete" >"$STATE/ops/$op"
+    fi
+    echo "$op"
+    ;;
+
+  "run jobs describe "*)
+    job_image
+    ;;
+
+  "artifacts docker images describe "*)
+    n="$(next_counter digest)"
+    if [ "${FAKE_IMAGE_FAIL:-}" = "$n" ]; then
+      echo "ERROR: (gcloud.artifacts.docker.images.describe) forced failure" >&2
+      exit 1
+    fi
+    ref="$5"
+    printf 'sha256:%s\n' "$(printf '%s' "$ref" | sha256sum | cut -c1-64)"
+    ;;
+
+  "run jobs execute "*)
+    job="$4"
+    job_args="$(arg_value --args)"
+    case "$job_args" in
+      verify,*) deploy_at before-verify ;;
+      record,*) deploy_at record ;;
+      *) exit 1 ;;
+    esac
+    exec_name="$job-exec-$(next_counter exec)"
+    job_image >"$STATE/execs/$exec_name.image"
+    echo "$exec_name" >"$STATE/last-exec"
+    : >"$STATE/execs/$exec_name.logs"
+    rc=0
+    case "$job_args" in
+      verify,*)
+        deploy_at verify
+        if [ "${FAKE_FAIL:-}" = verify ]; then
+          echo "마이그레이션 접두가 다릅니다." >"$STATE/execs/$exec_name.logs"
+          rc=1
+        else
+          printf '%s\n' "마이그레이션 접두가 일치합니다." "핵심 표 확인을 통과했습니다." >"$STATE/execs/$exec_name.logs"
+        fi
+        ;;
+      record,*)
+        if [ "${FAKE_FAIL:-}" = record ]; then
+          echo "DB에 연결하지 못했습니다." >"$STATE/execs/$exec_name.logs"
+          echo "fake gcloud: forced failure (record)" >&2
+          exit 1
+        fi
+        IFS=, read -r -a parts <<<"$job_args"
+        key="" succeeded="" stage=""
+        for ((i = 0; i < ${#parts[@]}; i++)); do
+          case "${parts[$i]}" in
+            --run-key) key="${parts[$((i + 1))]}" ;;
+            --succeeded) succeeded="${parts[$((i + 1))]}" ;;
+            --failed-stage) stage="${parts[$((i + 1))]}" ;;
+          esac
+        done
+        requested="$stage"
+        [ "$succeeded" = true ] && requested=success
+        row="$STATE/record-$key"
+        if [ -f "$row" ]; then
+          stored="$(cat "$row")"
+        else
+          stored="$requested"
+          echo "$stored" >"$row"
+        fi
+        [ "$stored" = "$requested" ] || rc=1
+        if [ "${FAKE_RECORD_LOGS:-}" != none ]; then
+          printf '%s\n' "stored_outcome=cleanup run_key=999-1" "stored_outcome=$stored run_key=$key" >"$STATE/execs/$exec_name.logs"
+        fi
+        if [ -n "${FAKE_RECORD_ACK_LOST:-}" ] && once ack-lost; then rc=1; fi
+        ;;
+    esac
+    if [ "$rc" != 0 ]; then
+      echo "ERROR: (gcloud.run.jobs.execute) The execution failed." >&2
+      exit "$rc"
+    fi
+    if [ "$(arg_value --format || true)" = "value(metadata.name)" ]; then echo "$exec_name"; fi
+    ;;
+
+  "run jobs executions describe "*)
+    [ -f "$STATE/execs/$5.image" ] || exit 1
+    cat "$STATE/execs/$5.image"
+    ;;
+
+  "run jobs executions list "*)
+    [ -f "$STATE/last-exec" ] && cat "$STATE/last-exec"
+    exit 0
+    ;;
+
+  "logging read "*)
+    exec_name="$(printf '%s' "$3" | sed -n 's/.*execution_name"="\([^"]*\)".*/\1/p')"
+    [ -f "$STATE/execs/$exec_name.logs" ] && cat "$STATE/execs/$exec_name.logs"
+    exit 0
+    ;;
+
+  *)
+    echo "fake gcloud: unhandled: $ARGS" >&2
+    exit 1
+    ;;
+esac

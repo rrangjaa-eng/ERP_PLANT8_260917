@@ -9,7 +9,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { approvalBasis, insertRevision } from "@/repositories/quote-revisions";
-import { createProject, listProjects } from "@/domain/projects";
+import { createProject, loadProjectList } from "@/domain/projects";
 import { getCurrentQuoteRevision, listQuoteLines } from "@/domain/quotes/lines";
 import {
   createRevisionFromCurrent,
@@ -112,7 +112,9 @@ async function setStatus(projectId: string, status: string) {
 }
 
 async function listedExecution(projectNumber: string): Promise<number> {
-  const [row] = await listProjects(SYSTEM_VIEWER, { filter: { search: projectNumber } });
+  const {
+    rows: [row],
+  } = await loadProjectList(SYSTEM_VIEWER, { year: "all", search: projectNumber });
   if (!row) throw new Error("목록에 프로젝트가 없습니다");
   return Number(row.executionAmountKrw);
 }

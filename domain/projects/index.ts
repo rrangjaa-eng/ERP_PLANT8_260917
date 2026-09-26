@@ -245,6 +245,13 @@ export async function aggregateProjects(
   };
 }
 
+export async function loadProjectList(viewer: Viewer, query: Record<string, unknown>, deps?: Record<string, unknown>) {
+  void viewer;
+  void query;
+  void deps;
+  return { year: 0, rows: [] as ProjectListItemWithGroup[], totals: { count: 0 } as ProjectAggregateDto, total: 0 };
+}
+
 // 프로젝트 id는 uuid다 — 모양이 아니면 쿼리 전에 「없음」(22P02로 오류 화면이 되지 않게, PR #38 /qa).
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

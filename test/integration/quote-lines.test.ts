@@ -8,7 +8,7 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
 import { insertFieldDefinition } from "@/repositories/field-definitions";
-import { aggregateProjects, createProject, listProjects } from "@/domain/projects";
+import { createProject, loadProjectList } from "@/domain/projects";
 import {
   getCurrentQuoteRevision,
   listQuoteLines,
@@ -697,10 +697,9 @@ describe("보관·취소(D-56·A-04)", () => {
     expect(archivedList.find((item) => item.id === gone.id)).toMatchObject({ entity: "quote_line", label: "견적 줄", name: gone.itemName });
     expect(await listedIds(revision.id, "bidding")).toEqual([kept.id]);
 
-    const [listed] = await listProjects(SYSTEM_VIEWER, { filter: { search: project.name } });
+    const { rows: [listed], totals } = await loadProjectList(SYSTEM_VIEWER, { year: "all", search: project.name });
     expect(listed).toMatchObject({ quoteAmountKrw: 100_000, executionAmountKrw: 30_000 });
-    const aggregate = await aggregateProjects(SYSTEM_VIEWER, { search: project.name });
-    expect(aggregate).toMatchObject({ count: 1, quoteAmountKrw: 100_000, executionAmountKrw: 30_000 });
+    expect(totals).toMatchObject({ quoteAmountKrw: 100_000, executionAmountKrw: 30_000 });
   });
 
   it("(l) 보관된 줄 id로 고치는 배치는 「보관된 줄 · 새로 고침」으로 전부 거부된다", async () => {

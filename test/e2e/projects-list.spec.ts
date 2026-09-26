@@ -62,6 +62,17 @@ async function login(page: Page, pm: { email: string; password: string }) {
   await expect(page).toHaveURL(/\/account$/);
 }
 
+// 코디네이터 대리 결정 2026-09-26 /design-review FINDING-013 (a) — 기간 두 칸은 네이티브 날짜 칸이다. 네이티브 날짜 칸
+// 안에서 Tab은 연 · 월 · 일 조각을 차례로 지나므로, 칸(요소)을 벗어날 때까지 누른다. 조각 사이에서는 포커스 요소가 그대로다.
+async function tabOutOf(page: Page, id: string) {
+  for (let i = 0; i < 5; i += 1) {
+    await page.keyboard.press("Tab");
+    // 묶음을 벗어나 제출되면 문서가 바뀌어 evaluate가 끊긴다 — 그것도 칸을 벗어난 것이다.
+    if ((await page.evaluate(() => document.activeElement?.id ?? "").catch(() => "")) !== id) return;
+  }
+  throw new Error(`#${id}에서 Tab 다섯 번으로 나가지 못했다`);
+}
+
 async function addQuoteLine(projectId: string, quote: number) {
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, projectId);
   if (!revision) throw new Error("현재 차수를 찾지 못했습니다");
@@ -257,14 +268,16 @@ test.describe("프로젝트 목록 — 기간 필터 (04-48)", () => {
       (window as unknown as { __sameDocument?: boolean }).__sameDocument = true;
     });
 
+    await expect(page.locator("#from")).toHaveAttribute("type", "date");
+    await expect(page.locator("#to")).toHaveAttribute("type", "date");
     await page.locator("#from").fill(`${year}-09-01`);
-    await page.locator("#from").press("Tab");
+    await tabOutOf(page, "from");
     await expect(page.locator("#to")).toBeFocused();
     expect(page.url()).toBe(before);
     expect(await page.evaluate(() => (window as unknown as { __sameDocument?: boolean }).__sameDocument)).toBe(true);
 
     await page.locator("#to").fill(`${year}-10-31`);
-    await page.locator("#to").press("Tab");
+    await tabOutOf(page, "to");
     await expect(page).toHaveURL(new RegExp(`from=${year}-09-01.*to=${year}-10-31`));
     await expect(page.locator("table tbody a")).toHaveCount(1);
     const totals = page.getByRole("region", { name: "합계" });
@@ -282,13 +295,14 @@ test.describe("프로젝트 목록 — 기간 필터 (04-48)", () => {
 
     await login(page, pm);
     await page.goto(`/projects?q=${encodeURIComponent(marker)}`);
-    await page.locator("#from").fill(`${year}-9-1`);
-    await page.locator("#from").press("Tab");
-    await page.locator("#to").press("Tab");
-    await expect(page).toHaveURL(/from=/);
+    // 네이티브 날짜 칸은 `2026-9-1` 같은 틀린 모양을 받지 않는다 — 달력이 고를 수 있지만 서버 범위(2000–2100) 밖인 날로 서버 판정을 본다.
+    await page.locator("#from").fill("1999-12-31");
+    await tabOutOf(page, "from");
+    await tabOutOf(page, "to");
+    await expect(page).toHaveURL(/from=1999-12-31/);
     await expect(page.getByText("날짜 형식 오류 · 2026-09-18처럼", { exact: true })).toBeVisible();
     await expect(page.locator("#from")).toHaveAttribute("aria-invalid", "true");
-    await expect(page.locator("#from")).toHaveValue(`${year}-9-1`);
+    await expect(page.locator("#from")).toHaveValue("1999-12-31");
     await expect(page.locator("table tbody a")).toHaveCount(2);
 
     await page.locator("#from").fill(`${year}-10-31`);
@@ -377,7 +391,7 @@ test.describe("프로젝트 목록 — 조회 조건 (04-48)", () => {
     await page.goto(`/projects?q=${encodeURIComponent(marker)}`);
     await page.locator("#from").fill(`${lastYear}-01-01`);
     await page.locator("#to").fill(`${lastYear}-03-01`);
-    await page.locator("#to").press("Tab");
+    await tabOutOf(page, "to");
     await expect(page).toHaveURL(new RegExp(`year=${lastYear}`));
     await expect(page.locator("#year")).toHaveValue(String(lastYear));
     await expect(page.locator("table tbody a")).toHaveCount(1);
@@ -479,7 +493,12 @@ type FocusStop = { name: string; top: number; bottom: number; left: number };
 async function tabWalk(page: Page, count: number): Promise<FocusStop[]> {
   const stops: FocusStop[] = [];
   for (let i = 0; i < count; i += 1) {
-    if (i > 0) await page.keyboard.press("Tab");
+    // 네이티브 날짜 칸(FINDING-013)은 Tab이 칸 안 조각을 지난다 — 포커스 요소가 바뀔 때까지 눌러 요소 단위 멈춤만 센다.
+    if (i > 0) {
+      const id = await page.evaluate(() => document.activeElement?.id ?? "");
+      if (id === "from" || id === "to") await tabOutOf(page, id);
+      else await page.keyboard.press("Tab");
+    }
     stops.push(
       await page.evaluate(() => {
         const el = document.activeElement as HTMLElement;

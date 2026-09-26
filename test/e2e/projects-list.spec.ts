@@ -712,4 +712,35 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
       expect(errorBox && formBox && errorBox.y + errorBox.height <= formBox.y + formBox.height + 0.5, `${width} 오류 줄이 폼 안`).toBe(true);
     }
   });
+
+  test("(SF-1) 기간을 고친 채 창이 포커스를 잃으면(relatedTarget 없음 · 문서 포커스 없음) 제출하지 않고, 창 안에서 묶음을 벗어나면 제출한다", async ({ page }) => {
+    const year = kstYear(new Date());
+    const pm = await setupPm();
+    await login(page, pm);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/projects?q=E2E창포커스");
+    await expect(page.locator("#from")).toBeVisible();
+    await page.locator("#from").fill(`${year - 1}-01-10`);
+
+    // 창 전환(alt-tab · 폰 앱 전환)은 포커스된 칸에 relatedTarget 없는 focusout을 보내고 document.hasFocus()가 false다.
+    const leave = (windowHasFocus: boolean) =>
+      page.evaluate((hasFocus) => {
+        const form = document.querySelector("form[aria-label='프로젝트 필터']")!;
+        let submitted = false;
+        const onSubmit = (event: Event) => {
+          submitted = true;
+          event.preventDefault();
+        };
+        form.addEventListener("submit", onSubmit);
+        const original = document.hasFocus.bind(document);
+        document.hasFocus = () => hasFocus;
+        document.getElementById("from")!.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: null }));
+        document.hasFocus = original;
+        form.removeEventListener("submit", onSubmit);
+        return submitted;
+      }, windowHasFocus);
+
+    expect(await leave(false), "창이 포커스를 잃음").toBe(false);
+    expect(await leave(true), "창 안에서 묶음 밖(빈 곳 클릭)").toBe(true);
+  });
 });

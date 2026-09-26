@@ -240,3 +240,11 @@ Task 3 ⑤의 1280·1024·375 독립 DOM 감사((a)~(i) — 04-17 합계 줄·�
 
 - FOUND: domain/projects/list-view.ts · app/(app)/projects/filter-bar.tsx · app/(app)/projects/loading.tsx · test/unit/app/projects-loading.test.ts · test/e2e/projects-list.spec.ts
 - FOUND 커밋: b7f1844 · 166ad32 · bb9f584 · 6254ace · 590f864 · a1c4cf7 · 49f0efd (`git rev-list --count b7ed0f6..HEAD` = 7)
+
+## PR #85 머지 전 게이트 — /review(묶음 ④ 전체 diff, main 1dcfd6a 기준)
+
+- /review(gstack, Opus — Codex 한도로 적대적 검토는 Claude만, Codex 대체): Scope CLEAN · 계획 누락 0 · 치명 0 · 정보 2 · 참고 1 · 품질 9.0/10. SQL 매개변수화·경쟁·enum·토큰·`any` 문제 없음.
+  - 1번(정보, 실제 결함) Table.tsx 마지막 쪽 마지막 편집 셀에서 편집 중 Tab 무반응(값 미확정·편집기 열림) → 코디네이터 대리 결정으로 수정: RED 053b694(E2E) → fix 25ff919(다음 편집 셀이 없으면 값 확정·그 셀에 포커스).
+  - 2번(정보, 확신 6) list-view.ts:105·158 연도 경계 2000/2100 두 번 — 동작 결함 아님, 요청받지 않은 리팩터라 기록만.
+  - 참고: listProjectsPage가 04-18 전까지 쓰지 않는 금액 열을 계산 — 04-17 의도, 04-18이 소비.
+- CI integration-e2e 실패(2867e8d, 2/2): quote-edit-scope cap2가 저장 응답 직후 Ctrl+D를 눌러 늦게 온 「저장됨」이 300줄 상한 안내를 덮는 테스트 경쟁(2 vCPU에서만). 정렬 규칙(en_US) 원인 아님(별도 클러스터에서 1520·413 통과). 수정 4f6ab6d(성공 저장은 「저장됨」까지 대기). 이 컨테이너에서는 수정 전 재현 재시도 32회 모두 통과 — RED 재확인 불가, CI 결과로 판정.

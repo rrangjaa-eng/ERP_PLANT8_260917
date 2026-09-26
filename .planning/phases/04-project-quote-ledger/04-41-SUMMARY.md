@@ -148,14 +148,26 @@ completed: 2026-09-26
 - `saveRevenue(…, tx)` 호출은 기억할 환율을 버린다(스냅샷 null과 같은 이유). 원장 합성 저장은 `saveRevenueInTx`로 그 목록을 받는다. 지금 `tx`로 `saveRevenue`를 부르는 곳은 테스트뿐이다.
 - 절차상 누락: Task 2 RED 테스트를 쓴 뒤에 `test-driven-development`를 불렀다. 다시 부르고 RED를 재실행해 기록했다(스킬 로그에 남김).
 
-## 검토
+## 검토·게이트
 
-Opus 교차 검토로 대체 — 한도 풀리면 Codex 재확인 필요
+- 독립 DOM 감사(Sonnet, `CI=true`): **PASS 24 · FAIL 0 · INFO 3**(`/mnt/project-files/phase4-prep/04-41-dom-audit.md`). 04-49 이월은 단순 폭 축소로는 재현 안 됨(리사이즈만으로는 값·dirty 표시가 유지됨) — 기존 줄 편집 중 리사이즈, 여러 줄 동시 편집, 리사이즈 도중 blur 타이밍은 이번 감사 범위 밖이라 미확인이며 이월은 열린 채 유지한다.
+- Opus 검토(Codex 대체 — 한도 풀리면 Codex 재확인 필요): **BLOCKING 0 · SHOULD-FIX 2 · NIT 7**(`/mnt/project-files/phase4-prep/04-41-review-opus.md`)
+  - SF-1(`saveRevenueInTx` 권한 대체 경로가 잠긴 tx 안에서 전역 풀로 권한 조회 · 환율 기억 유실) → f0461ba로 반영
+  - SF-2(응답 유실 뒤 재전송에 기존 줄 수정이 섞이면 자기 저장을 남의 충돌로 오판) → a36716b로 반영
+  - N-6(0015 `lock_timeout` 1s로 배포 창에 락을 못 잡을 때 대응 문구 누락) → bf1169f로 반영
+  - 나머지 NIT 6개 이월(고치지 않음, 기록만):
+    - N-1: 견적 줄 쓰기가 먼저 거부되면 매출 칸 오류는 `prepareEntries`가 안 돌아 다음 저장에야 보임
+    - N-2: 수정 경로 WHERE에 `archivedAt` 필터가 없어 보관 줄도 version만 맞으면 고쳐짐(기존 동작)
+    - N-3: 매출 표 Ctrl+S가 변경 없음·쓰기 권한 없음에도 저장 요청을 보냄(견적 격자와 같은 동작)
+    - N-4: 교차 종류 수정·남의 id 새 줄 케이스의 write.denied 단언 누락, 원장 경로 유령 로그 미검증, 잠긴 tx 무풀호출 검증이 `saveRevenue(tx)` 목 한 건뿐
+    - N-5: `MoneyInputError.field`를 늘 `"amount"`로 고정하는 이유 주석 없음, fxRate 오류일 때 `label` 부정확
+    - N-7: `quoteTableRejectionText`의 `outsideCount`가 항상 0이라 실사용 안 됨, `rejectedCells.quote`와 매출 표 기준이 여전히 다름(기존 동작)
+- 전체 게이트(`CI=true`): lint 0 · typecheck 0 · lint:sql 0 issues(16 files) · 단위 95 files/1,288 통과 · 통합 54 files/1,431 통과 · E2E 344 통과
 
 ## 남은 일 · 결정 필요
 
-- 전체 게이트 CI=true: 오케스트레이터가 검토 반영 뒤 실행 예정
-- 04-49 이월(1024 미만 매출 입력 유실): 미처리
+- 전체 게이트 CI=true: 완료(위 「검토·게이트」 수치 참고)
+- 04-49 이월(1024 미만 매출 입력 유실): 미처리 — 이번 DOM 감사에서도 단순 리사이즈로는 재현 안 됨, 기존 줄 편집 중 리사이즈·blur 타이밍은 미확인이라 열린 채 유지
 - 새 사용자 결정 필요 항목: 없음
 
 ## Known Stubs

@@ -1,12 +1,15 @@
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
+import type { ReactNode } from "react";
 import { getSystemStatus } from "@/domain/system-status";
+import type { SystemStatus } from "@/domain/system-status";
 import { can } from "@/domain/permissions/can";
 import { env } from "@/lib/env";
 import { Banner } from "@/ui/banner/Banner";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { KvList } from "@/ui/kv-list/KvList";
 import { PageHeader } from "@/ui/page-header/PageHeader";
+import { formatRestoreRehearsal } from "./restore-rehearsal-view";
 
 // D-18: 캐시·별도 저장 없음 — 화면 로드마다 pg_stat_activity·Cloud SQL Admin API를
 // 직접 조회한다.
@@ -69,9 +72,25 @@ export default async function SystemStatusPage() {
                   <StatusTag kind="muted">확인 불가</StatusTag>
                 ),
             },
+            {
+              // 04.4-01(D8-08): 「마지막 백업」 바로 다음 줄.
+              label: "복원 리허설",
+              value: restoreRehearsalValue(status.restoreRehearsal),
+            },
           ]}
         />
       </div>
+    </>
+  );
+}
+
+function restoreRehearsalValue(restoreRehearsal: SystemStatus["restoreRehearsal"]): ReactNode {
+  if (restoreRehearsal.kind === "none") return "리허설 기록 없음 — 첫 리허설 전";
+  if (restoreRehearsal.kind === "unavailable") return <StatusTag kind="muted">확인 불가</StatusTag>;
+  const view = formatRestoreRehearsal(restoreRehearsal.record);
+  return (
+    <>
+      {view.head} · 백업 <span>{view.backupId}</span> · {view.duration}
     </>
   );
 }

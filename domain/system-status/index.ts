@@ -8,6 +8,10 @@ import {
   maxConnections as defaultMaxConnections,
 } from "@/repositories/system-status";
 import { getLastBackup as defaultGetLastBackup } from "@/lib/gcp/cloud-sql-admin";
+import {
+  getLatestRestoreRehearsal as defaultGetLatestRestoreRehearsal,
+  type RestoreRehearsalRecord,
+} from "@/domain/ops/restore-rehearsal";
 
 export class NotAdminError extends UserFacingError {}
 
@@ -20,12 +24,17 @@ export type SystemStatus = {
     | { kind: "ok"; status: string; endTime: string | null }
     | { kind: "none" }
     | { kind: "unavailable"; reason: string };
+  restoreRehearsal:
+    | { kind: "none" }
+    | { kind: "recorded"; record: RestoreRehearsalRecord }
+    | { kind: "unavailable" };
 };
 
 export type StatusDeps = {
   countConnections: typeof defaultCountConnections;
   maxConnections: typeof defaultMaxConnections;
   getLastBackup: typeof defaultGetLastBackup;
+  getLatestRestoreRehearsal: typeof defaultGetLatestRestoreRehearsal;
   can: typeof defaultCan;
   now?: () => Date;
 };
@@ -81,5 +90,12 @@ export async function getSystemStatus(
     instance: env.CLOUD_SQL_INSTANCE_ID,
   });
 
-  return { version, db, backup };
+  // 04.4-01(D8-08): 기존 세 항목을 다 구한 뒤에 부른다.
+  const getLatestRestoreRehearsalFn = deps?.getLatestRestoreRehearsal ?? defaultGetLatestRestoreRehearsal;
+  const latestRehearsal = await getLatestRestoreRehearsalFn(viewer);
+  const restoreRehearsal: SystemStatus["restoreRehearsal"] = latestRehearsal
+    ? { kind: "recorded", record: latestRehearsal }
+    : { kind: "none" };
+
+  return { version, db, backup, restoreRehearsal };
 }

@@ -83,14 +83,8 @@
   font-weight: var(--fw-bold);
 }
 
-.tertiaryLink {
-  border: none;
-  background: none;
+.telLink {
   color: var(--accent);
-  text-decoration: underline;
-  cursor: pointer;
-  font-size: var(--fs-sm);
-  padding: 0;
 }
 
 .stickySubmit {
@@ -160,4 +154,24 @@
   color: var(--faint);
   font-size: var(--fs-sm);
   pointer-events: none;
+}
+
+/* U14 — E5·E6-a 결과 블록: SYSTEM §6-5 / external-cert.html .state 그대로
+   (2px 강한 선 위 · 첫 줄 굵게 · 나머지 --muted). */
+.resultBlock {
+  border-top: var(--line-w-strong) solid var(--line-strong);
+  margin-top: var(--s-6);
+  padding-top: var(--s-4);
+}
+
+.resultBlock p {
+  margin: 0 0 var(--s-3);
+}
+
+.resultLead {
+  font-weight: var(--fw-bold);
+}
+
+.resultMuted {
+  color: var(--muted);
 }

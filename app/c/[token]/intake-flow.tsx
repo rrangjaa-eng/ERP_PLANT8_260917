@@ -1,10 +1,10 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { Button } from "@/ui/button/Button";
 import { TextField } from "@/ui/input/TextField";
-import { formatContactPhone } from "@/domain/certs/format";
+import { formatContactPhone, formatSubmittedAtKst } from "@/domain/certs/format";
 import { selectWinnerAction, submitCertificateAction, verifyLast4Action } from "./actions";
 import { SignaturePad, type SignaturePadHandle } from "./signature-pad";
 import styles from "./intake.module.css";
@@ -40,17 +40,30 @@ function randomIdemKey(): string {
   return crypto.randomUUID();
 }
 
+const TITLE = "기타소득 지급 확인";
+
 export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contactPhone }: IntakeFlowProps) {
   const [step, setStep] = useState<Step>({ kind: "pick" });
+  const [pendingRowId, setPendingRowId] = useState<string | null>(null);
   const selectAction = useAction(selectWinnerAction);
   const verifyAction = useAction(verifyLast4Action);
-  const contactLine = `PLANT8 경영관리 ${formatContactPhone(contactPhone)}`;
+  // U12 — 문의 전화는 어디서나 tel: 링크(숫자만)로 건다, 보이는 값은 하이픈 표기.
+  const contactLine: ReactNode = (
+    <>
+      PLANT8 경영관리{" "}
+      <a href={`tel:${contactPhone}`} className={styles.telLink}>
+        {formatContactPhone(contactPhone)}
+      </a>
+    </>
+  );
 
   async function pick(row: IntakeRowDto) {
+    setPendingRowId(row.rowId);
     const result = await selectAction.executeAsync({ token, rowId: row.rowId });
     if (result?.data?.kind === "ok") {
       setStep({ kind: "verify", rowId: row.rowId, maskedName: result.data.maskedName, last4: "" });
     } else {
+      setPendingRowId(null);
       setStep({ kind: "pick", error: "이름을 불러오지 못했습니다 · 잠시 뒤 다시 골라 주세요" });
     }
   }
@@ -85,7 +98,7 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
   if (step.kind === "pick") {
     return (
       <div>
-        <h1 className={styles.title}>기타소득 지급 확인</h1>
+        <h1 className={styles.title}>{TITLE}</h1>
         <p className={styles.subtitle}>
           {eventName} · {wonOn} 당첨
         </p>
@@ -94,8 +107,14 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
         <ul className={styles.pickList}>
           {rows.map((row) => (
             <li key={row.rowId}>
-              <button type="button" className={styles.pickRow} onClick={() => void pick(row)}>
+              <button
+                type="button"
+                className={styles.pickRow}
+                disabled={pendingRowId !== null}
+                onClick={() => void pick(row)}
+              >
                 <span>{row.maskedName}</span>
+                {pendingRowId === row.rowId ? <span aria-hidden="true">…</span> : null}
                 {row.prizeLine ? (
                   <span className={styles.pickRowSecondLine}>
                     {row.prizeLine}
@@ -115,12 +134,13 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
     const canSubmit = step.last4.length === 4;
     return (
       <div>
-        <label className={styles.fieldLabel}>이름</label>
+        <h1 className={styles.title}>{TITLE}</h1>
+        <p className={styles.fieldLabel}>이름</p>
         <div className={styles.verifyNameRow}>
           <span className={styles.verifyName}>{step.maskedName}</span>
-          <button type="button" className={styles.tertiaryLink} onClick={() => setStep({ kind: "pick" })}>
+          <Button variant="tertiary" onClick={() => setStep({ kind: "pick" })}>
             다른 이름 고르기
-          </button>
+          </Button>
         </div>
         <TextField
           id="last4"
@@ -135,6 +155,7 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
         />
         <div className={styles.stickySubmit}>
           <Button
+            variant="primary"
             size="external"
             disabled={!canSubmit}
             disabledReason="뒤 4자리 숫자를 적으면 확인할 수 있습니다"
@@ -151,27 +172,35 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
 
   if (step.kind === "form") {
     return (
-      <IntakeForm
-        token={token}
-        step={step}
-        contactLine={contactLine}
-        onSubmitted={(name, submittedAt) =>
-          setStep({ kind: "submitted", name, submittedAt, prizeLine: step.prizeLine, delivery: step.delivery })
-        }
-        onExpired={() => setStep({ kind: "pick" })}
-      />
+      <div>
+        <h1 className={styles.title}>{TITLE}</h1>
+        <IntakeForm
+          token={token}
+          step={step}
+          contactLine={contactLine}
+          onSubmitted={(name, submittedAt) =>
+            setStep({ kind: "submitted", name, submittedAt, prizeLine: step.prizeLine, delivery: step.delivery })
+          }
+          onExpired={() => setStep({ kind: "pick" })}
+        />
+      </div>
     );
   }
 
   if (step.kind === "submitted") {
     return (
       <div>
-        <p>제출되었습니다 · 다시 제출할 수 없습니다</p>
-        <p>
-          {step.name} · {new Date(step.submittedAt).toLocaleString("ko-KR")} 제출 · {step.prizeLine}{" "}
-          {step.delivery === "parcel" ? "적은 주소로 보내 드립니다" : "현장 수령"}
-        </p>
-        <p>확인이 필요하면 담당자 {managerName} · {contactLine}에 전화해 주세요</p>
+        <h1 className={styles.title}>{TITLE}</h1>
+        <section className={styles.resultBlock}>
+          <p className={styles.resultLead}>제출되었습니다 · 다시 제출할 수 없습니다</p>
+          <p className={styles.resultMuted}>
+            {step.name} · {formatSubmittedAtKst(step.submittedAt)} 제출 · {step.prizeLine}{" "}
+            {step.delivery === "parcel" ? "적은 주소로 보내 드립니다" : "현장 수령"}
+          </p>
+          <p className={styles.resultMuted}>
+            확인이 필요하면 담당자 {managerName} · {contactLine}에 전화해 주세요
+          </p>
+        </section>
       </div>
     );
   }
@@ -179,11 +208,14 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
   // alreadySubmitted
   return (
     <div>
-      <p>이미 제출하셨습니다</p>
-      <p>
-        {step.maskedName} · {new Date(step.submittedAt).toLocaleString("ko-KR")} 제출됨. 내용을 고치려면 담당자{" "}
-        {managerName} · {contactLine}에 전화해 주세요
-      </p>
+      <h1 className={styles.title}>{TITLE}</h1>
+      <section className={styles.resultBlock}>
+        <p className={styles.resultLead}>이미 제출하셨습니다</p>
+        <p className={styles.resultMuted}>
+          {step.maskedName} · {formatSubmittedAtKst(step.submittedAt)} 제출됨. 내용을 고치려면 담당자 {managerName} ·{" "}
+          {contactLine}에 전화해 주세요
+        </p>
+      </section>
     </div>
   );
 }
@@ -197,7 +229,7 @@ function IntakeForm({
 }: {
   token: string;
   step: Extract<Step, { kind: "form" }>;
-  contactLine: string;
+  contactLine: ReactNode;
   onSubmitted: (name: string, submittedAt: string) => void;
   onExpired: () => void;
 }) {
@@ -210,6 +242,7 @@ function IntakeForm({
   const [consent, setConsent] = useState(false);
   const [showFullConsent, setShowFullConsent] = useState(false);
   const [rrnError, setRrnError] = useState<string | undefined>(undefined);
+  const [phoneError, setPhoneError] = useState<string | undefined>(undefined);
   const [hasSignature, setHasSignature] = useState(false);
   const [rrnRecheckConfirmed, setRrnRecheckConfirmed] = useState(false);
   const signatureRef = useRef<SignaturePadHandle>(null);
@@ -256,7 +289,11 @@ function IntakeForm({
       setRrnError("주민등록번호가 맞지 않습니다 · 앞 6자리(생년월일)와 뒤 7자리를 다시 확인해 주세요");
       setRrnRecheckConfirmed(true);
     } else if (data?.kind === "invalid") {
-      setRrnError("주민등록번호가 맞지 않습니다 · 앞 6자리(생년월일)와 뒤 7자리를 다시 확인해 주세요");
+      if (data.fields.includes("phone")) {
+        setPhoneError("연락처 형식이 아닙니다 · 010-0000-0000처럼 적어 주세요");
+      } else {
+        setRrnError("주민등록번호가 맞지 않습니다 · 앞 6자리(생년월일)와 뒤 7자리를 다시 확인해 주세요");
+      }
     } else if (data?.kind === "expiredProof" || data?.kind === "notFound") {
       onExpired();
     }
@@ -313,7 +350,17 @@ function IntakeForm({
         </>
       ) : null}
 
-      <TextField id="phone" label="연락처" size="external" value={phone} onChange={(e) => setPhone(e.target.value)} />
+      <TextField
+        id="phone"
+        label="연락처"
+        size="external"
+        value={phone}
+        onChange={(e) => {
+          setPhone(e.target.value);
+          setPhoneError(undefined);
+        }}
+        error={phoneError}
+      />
 
       <div className={styles.consentBlock}>
         <label className={styles.consentLabel}>
@@ -324,26 +371,22 @@ function IntakeForm({
             보관한 뒤 파기합니다. 동의하지 않으면 경품을 드릴 수 없습니다.
           </span>
         </label>
-        <button
-          type="button"
-          className={styles.tertiaryLink}
-          aria-expanded={showFullConsent}
-          onClick={() => setShowFullConsent((v) => !v)}
-        >
+        <Button variant="tertiary" aria-expanded={showFullConsent} onClick={() => setShowFullConsent((v) => !v)}>
           {showFullConsent ? "전문 접기" : "전문 보기"}
-        </button>
+        </Button>
         {showFullConsent ? <p className={styles.consentFull}>{consentFullText(step.retentionYears)}</p> : null}
       </div>
 
       <SignaturePad ref={signatureRef} hasStroke={hasSignature} onChange={setHasSignature} />
       {hasSignature ? (
-        <button type="button" className={styles.tertiaryLink} onClick={() => signatureRef.current?.clear()}>
+        <Button variant="tertiary" onClick={() => signatureRef.current?.clear()}>
           다시 쓰기
-        </button>
+        </Button>
       ) : null}
 
       <div className={styles.stickySubmit}>
         <Button
+          variant="primary"
           size="external"
           disabled={!canSubmit}
           disabledReason={blockedReason}

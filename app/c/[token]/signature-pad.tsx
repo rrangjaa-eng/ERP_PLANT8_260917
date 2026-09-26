@@ -51,7 +51,7 @@ export const SignaturePad = forwardRef<SignaturePadHandle, { hasStroke: boolean;
       const ctx = getContext();
       if (!ctx) return;
       const { x, y } = pointFromEvent(e);
-      const fg = getComputedStyle(canvasRef.current!).getPropertyValue("--fg").trim() || "#111111";
+      const fg = getComputedStyle(canvasRef.current!).getPropertyValue("--fg").trim();
       ctx.strokeStyle = fg;
       ctx.lineWidth = 3;
       ctx.lineCap = "round";

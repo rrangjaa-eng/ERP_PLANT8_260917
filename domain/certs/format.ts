@@ -85,3 +85,21 @@ export function formatContactPhone(digits: string): string {
 export function maskRrn(rrn13: string): string {
   return `${rrn13.slice(0, 6)}-${rrn13.slice(6, 7)}******`;
 }
+
+// U13 — 제출 일시 표시는 브라우저 로케일(toLocaleString)에 기대지 않고
+// KST 고정 YYYY-MM-DD HH:mm로 그린다(UI-SPEC E5·E6-a).
+const KST_DATETIME_FORMAT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Seoul",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+export function formatSubmittedAtKst(iso: string): string {
+  const parts = KST_DATETIME_FORMAT.formatToParts(new Date(iso));
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}`;
+}

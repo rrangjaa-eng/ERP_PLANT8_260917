@@ -32,8 +32,11 @@ export default async function CertIntakePage({ params }: { params: Promise<{ tok
         <h1 className={styles.title}>이 링크는 닫혔습니다</h1>
         <p>{closedReasonText(result.reason)}</p>
         <p>
-          확인이 필요하면 담당자 {result.managerName} · PLANT8 경영관리 {formatContactPhone(result.contactPhone)}에
-          전화해 주세요
+          확인이 필요하면 담당자 {result.managerName} · PLANT8 경영관리{" "}
+          <a href={`tel:${result.contactPhone}`} className={styles.telLink}>
+            {formatContactPhone(result.contactPhone)}
+          </a>
+          에 전화해 주세요
         </p>
       </main>
     );

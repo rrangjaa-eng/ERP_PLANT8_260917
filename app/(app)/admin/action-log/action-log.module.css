@@ -40,6 +40,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--s-1);
+  /* §6-0 최소 폭 320px — 가장 긴 선택지만큼 넓어진 select가 필터 줄을 밀어내지 않는다. */
+  max-width: 100%;
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   color: var(--muted);
@@ -88,6 +90,38 @@
 
 .table tbody tr:hover td {
   background: var(--surface);
+}
+
+/* §7-3 폰 전략 — <700px에서 P1만 열로 남고 P2는 행 아래 접힌 줄 하나로
+   들어간다(ui/table/Table.module.css와 같은 모양). 가로 스크롤을 만들지 않는다. */
+.collapsedRow {
+  display: none;
+}
+
+.table .collapsedCell {
+  padding: 0 var(--cell-pad-x) var(--cell-pad-y);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  border-bottom: 0;
+}
+
+@media (max-width: 699.98px) {
+  .p2 {
+    display: none;
+  }
+
+  .collapsedRow {
+    display: table-row;
+  }
+
+  /* 접힌 줄은 자기 행에 붙는다 — 선은 주 행 아래가 아니라 접힌 줄 아래에 긋는다. */
+  .table tbody tr:has(+ .collapsedRow) td {
+    border-bottom: 0;
+  }
+
+  .table .collapsedCell {
+    border-bottom: var(--line-w) solid var(--line);
+  }
 }
 
 /* §2-4: 발생 시각은 숫자 성격 열이라 tabular-nums + nowrap. */

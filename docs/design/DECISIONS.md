@@ -924,3 +924,13 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 - **비고 `—`(ISSUE-011)**: 비고 칸에 붙인 `—`(앱의 빈 값 표시)는 빈 비고(null)로 읽는다 — 거래처 `—`(ISSUE-001)와 같다.
 
 **범위**: `ui/table/use-clipboard-paste.ts` · `lib/format-number.ts` · `app/(app)/projects/[id]/quote-table.tsx` · `app/(app)/projects/[id]/previous-revision.tsx`. SYSTEM.md 문구는 바꾸지 않는다.
+
+## 2026-09-26 — 목록 · 견적 원장 화면 다듬기 4건 (코디네이터 대리 결정 2026-09-26 · /design-review FINDING-001 (b) · 012 · 013 · 015 (a))
+
+- **목록 등록 = 링크(FINDING-001 (b))**: `/projects` 「프로젝트 등록」은 2026-09-21 결정대로 관리자 목록의 등록과 같은 등록 행동 링크로 둔다. 04-UI-SPEC S1 · Copywriting의 「1차」 표기를 링크로 고쳤다.
+  - 「목록 등록을 1차 버튼으로 전환」(`/projects`와 관리자 마스터 목록을 함께 `buttonLinkClassName("primary")`로) — **재검토 후보(사용자 확인 대기)**.
+- **저장됨 N줄(FINDING-012)**: N = 이번 저장에서 바뀐 견적 줄(만든 + 고친 + 지운) 수. 0이면 `저장됨 HH:MM`.
+- **목록 기간 필터 = 네이티브 날짜 칸(FINDING-013)**: 2026-09-26 「날짜 입력 네이티브 통일」을 목록 기간 필터에도 적용한다. 폭은 `10ch`가 아니라 네이티브 칸의 고유 폭(10ch는 날짜를 자른다). 묶음 제출 · Enter · 서버 판정 오류 줄 · 연도 자동 전환 · 폰 요약은 그대로. `SYSTEM.md` §6-1 필터 날짜 칸 폭 문장을 고쳤다.
+- **폰 목록 행 전체 = 링크 하나(FINDING-015)**: 폰(<700)에서 행(주 행 + 접힌 줄)의 어디를 눌러도 그 행의 이름 링크다. `ui/table`의 opt-in `phoneRowLink`(행마다 `<tbody>` + 링크 `::after`). 행 안 포커스 가능 요소는 링크 하나.
+
+**범위**: `app/(app)/projects/filter-bar.tsx` · `projects.module.css` · `projects-table.tsx` · `page.tsx` · `error.tsx`(부제 「프로젝트 원장」, FINDING-014) · `app/(app)/projects/[id]/quote-table.tsx` · `ui/table/Table.tsx` · `Table.module.css` · `footer-notice.ts`. FINDING-005(편집 표 합계 행 `--g-100` + 더 진한 성공 글자)는 tokens.css에 더 진한 성공 의미 토큰이 없어 보류했다(새 색 금지).

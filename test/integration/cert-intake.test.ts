@@ -370,3 +370,81 @@ describe("확인증 공개 흐름 — E3-02 제출 로그 같은 tx(로그 실�
     expect(logsForThisSubmission).toHaveLength(0);
   });
 });
+
+describe("확인증 공개 흐름 — Task 3 ⑦ 주민등록번호 되묻기", () => {
+  it("검증번호 mismatch 번호로 제출하면 rrnRecheck, 제출 행 0 · 같은 번호 재제출(rrnRecheckConfirmed) → submitted", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    const input = { ...submissionInputFor(winnerId, verified.proof, verified.consent), rrnBack7: "2123459" };
+
+    const first = await submitCertificate(token, input);
+    expect(first.kind).toBe("rrnRecheck");
+    const rowsAfterFirst = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(rowsAfterFirst).toHaveLength(0);
+
+    const second = await submitCertificate(token, { ...input, rrnRecheckConfirmed: true });
+    expect(second.kind).toBe("submitted");
+    const rowsAfterSecond = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(rowsAfterSecond).toHaveLength(1);
+  });
+});
+
+describe("확인증 공개 흐름 — Task 3 ⑦ 행사 경계 · 남의 증표 · 만료 증표 · DTO 허용 목록", () => {
+  it("행사 A의 토큰 + 행사 B의 당첨자 id → notFound(행사 경계)", async () => {
+    const eventA = await makeEvent();
+    const eventB = await makeEvent();
+    const winnerBId = await winnerIdOf(eventB.eventId, "김하늘");
+
+    const result = await selectWinner(eventA.token, winnerBId);
+    expect(result.kind).toBe("notFound");
+  });
+
+  it("남의 증표로 제출 → 거부, 제출 행 없음", async () => {
+    const eventA = await makeEvent();
+    const winnerAId = await winnerIdOf(eventA.eventId, "김하늘");
+    const verifiedA = await verifyLast4(eventA.token, winnerAId, "7730", randomUUID());
+    if (verifiedA.kind !== "ok") throw new Error("unreachable");
+
+    const eventB = await makeEvent({ phone: "010-2231-0045" });
+    const winnerBId = await winnerIdOf(eventB.eventId, "김하늘");
+
+    // 행사 B의 당첨자에 행사 A에서 받은 증표를 써서 제출 시도 — 증표는
+    // 그 당첨자 행(winnerAId)에 묶여 있으므로 winnerBId 자리에서는 거부된다.
+    const result = await submitCertificate(
+      eventB.token,
+      submissionInputFor(winnerBId, verifiedA.proof, verifiedA.consent),
+    );
+    expect(result.kind).toBe("expiredProof");
+    const rows = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerBId));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("만료된 증표로 제출 → 거부, 제출 행 없음", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const past = new Date(Date.now() - 60 * 60 * 1000); // 1시간 전
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), past);
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    const result = await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent));
+    expect(result.kind).toBe("expiredProof");
+    const rows = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("loadIntake rows[] 각 원소의 키는 허용 목록(rowId·maskedName·prizeLine?·label?)의 부분집합이다", async () => {
+    const { token } = await makeEvent();
+    const result = await loadIntake(token);
+    expect(result.kind).toBe("open");
+    if (result.kind !== "open") throw new Error("unreachable");
+    const allowedKeys = new Set(["rowId", "maskedName", "prizeLine", "label"]);
+    for (const row of result.rows) {
+      for (const key of Object.keys(row)) {
+        expect(allowedKeys.has(key)).toBe(true);
+      }
+    }
+  });
+});

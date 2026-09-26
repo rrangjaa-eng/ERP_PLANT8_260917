@@ -103,6 +103,19 @@ test.describe("폰 사람 목록 로그인 배지 · 칸 접기 (04.4-05, D8-07)
     const collapsed = collapsedRowOf(row);
     await expect(collapsed).toBeVisible();
     expect(await visibleText(collapsed.locator("td"))).toBe(`${email} · 기획 PM · —`);
+
+    // §7-3: 접힌 줄은 자기 행에 붙는다 — 선은 주 행 아래가 아니라 접힌 줄 아래에 긋는다.
+    const mainBorders = await row.evaluate((tr) =>
+      Array.from(tr.children)
+        .filter((cell) => getComputedStyle(cell).display !== "none")
+        .map((cell) => getComputedStyle(cell).borderBottomWidth),
+    );
+    expect(mainBorders.length).toBeGreaterThan(0);
+    expect(new Set(mainBorders)).toEqual(new Set(["0px"]));
+    const lineWidth = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--line-w").trim(),
+    );
+    expect(await collapsed.locator("td").evaluate((td) => getComputedStyle(td).borderBottomWidth)).toBe(lineWidth);
   });
 
   test.describe("360", () => {

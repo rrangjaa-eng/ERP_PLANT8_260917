@@ -176,6 +176,7 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
     await expectNoStatusColors(page, value);
   });
 
+  // 앞 테스트가 넣은 「정리」 실패 행(URL 있음)을 쓴다 — 이 블록은 순서대로 돈다(retries를 켜면 「기록 없음」과 runKey가 겹친다).
   test.describe("폰 375", () => {
     test.use({ viewport: { width: 375, height: 800 } });
 

@@ -105,7 +105,7 @@
 }
 
 /* 로그인 상태 배지: PC는 · 로 이어 한 줄. */
-.badges {
+.peopleTable .badges {
   display: inline;
 }
 
@@ -118,14 +118,20 @@
     display: table-row;
   }
 
+  /* 접힌 줄은 자기 행에 붙는다 — 선은 주 행 아래가 아니라 접힌 줄 아래에 긋는다(§7-3). */
+  .peopleTable tbody tr:has(+ .collapsedRow) > td,
+  .peopleTable tbody tr:has(+ .collapsedRow) > th {
+    border-bottom: 0;
+  }
+
   /* 폰은 구분자 없이 세로로 쌓는다. */
-  .badges {
+  .peopleTable .badges {
     display: flex;
     flex-direction: column;
     gap: var(--s-1);
   }
 
-  .badgeSep {
+  .peopleTable .badgeSep {
     display: none;
   }
 }

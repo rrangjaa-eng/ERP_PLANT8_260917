@@ -79,6 +79,18 @@ function tokenNumber(page: Page, name: string): Promise<number> {
   );
 }
 
+// 토큰 값을 브라우저 계산 색 문자열(rgb(...))로 바꿔 비교한다.
+function tokenAsColor(page: Page, name: string): Promise<string> {
+  return page.evaluate((token) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${token})`;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, name);
+}
+
 function styleOf(locator: Locator) {
   return locator.evaluate((el) => {
     const cs = getComputedStyle(el);
@@ -107,6 +119,7 @@ test.describe("사람 목록 로그인 상태 배지 · 행 머리글 (04.4-05, 
     const second = await status.getByText("임시 비밀번호 사용 중", { exact: true }).boundingBox();
     expect(first!.y).toBe(second!.y);
 
+    await expect(personRow(page, admin.email)).toBeVisible();
     await expect(statusCell(personRow(page, admin.email))).not.toContainText("첫 로그인 전");
 
     // 접힌 줄은 PC에서 숨고, 이메일 셀은 접근성 트리에 한 번만 나온다(행 이름은 셀 글자를 이어 붙이므로 셀 줄로 센다).
@@ -120,6 +133,7 @@ test.describe("사람 목록 로그인 상태 배지 · 행 머리글 (04.4-05, 
     await row.locator("td").first().hover();
     const th = await styleOf(row.locator("th[scope='row']"));
     const td = await styleOf(row.locator("td").first());
+    expect(td.background).toBe(await tokenAsColor(page, "--surface"));
     expect(th.background).toBe(td.background);
   });
 

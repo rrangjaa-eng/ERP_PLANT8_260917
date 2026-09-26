@@ -73,9 +73,14 @@ function wrongEntry(at: Date, ip = "x"): VerifyIdemEntry {
 }
 
 // 행사 한도를 채운다 — 자리 하나의 맵에 틀림 항목 n개를 직접 쓴다(E2E와 같은 방법).
-async function fillMisses(seatId: string, n: number, at: Date) {
+// fromIps를 주면 앞 항목들을 그 IP들의 해시로 쓴다 — 결정 A에서 행사 한도는
+// 이 창에 틀린 적 있는 IP만 막으므로, 막힐 요청의 IP가 한 번 틀린 것으로 둔다.
+async function fillMisses(seatId: string, n: number, at: Date, fromIps: { eventId: string; ips: string[] } = { eventId: "", ips: [] }) {
   const map: Record<string, VerifyIdemEntry> = {};
-  for (let i = 0; i < n; i++) map[`fill-${i}`] = wrongEntry(at);
+  for (let i = 0; i < n; i++) {
+    const ip = fromIps.ips[i];
+    map[`fill-${i}`] = wrongEntry(at, ip ? certIpHash(env.BETTER_AUTH_SECRET, fromIps.eventId, ip) : "x");
+  }
   await patchSeat(seatId, { verifyIdemOutcome: map });
 }
 
@@ -588,12 +593,13 @@ describe("속도 제한(C5 — 15분 · 행사 max(40, ceil(n×0.5)) · IP 20)",
     );
   });
 
-  it("서로 다른 IP 40개가 틀림 하나씩 → 41번째 IP throttled, 다른 행사는 영향 없음", async () => {
+  it("서로 다른 IP 40개가 틀림 하나씩 → 그 IP의 다음 요청은 throttled, 틀린 적 없는 IP는 판정, 다른 행사는 영향 없음", async () => {
     const ev = await makeEvent(11);
     for (let i = 0; i < 40; i++) {
       await verifyLast4(ev.token, ev.seats[Math.floor(i / 4)]!.id, "9999", key(), `192.0.2.${i + 1}`);
     }
-    expect((await verifyLast4(ev.token, ev.seats[10]!.id, "9999", key(), "192.0.2.200")).kind).toBe("throttled");
+    expect((await verifyLast4(ev.token, ev.seats[10]!.id, "9999", key(), "192.0.2.1")).kind).toBe("throttled");
+    expect((await verifyLast4(ev.token, ev.seats[10]!.id, "9999", key(), "192.0.2.200")).kind).toBe("wrong");
     const other = await makeEvent(1);
     expect((await verifyLast4(other.token, other.seats[0]!.id, "9999", key(), "192.0.2.200")).kind).toBe("wrong");
   });
@@ -614,13 +620,13 @@ describe("속도 제한(C5 — 15분 · 행사 max(40, ceil(n×0.5)) · IP 20)",
     for (let i = 0; i < 60; i++) {
       expect((await verifyLast4(big.token, big.seats[i]!.id, "9999", key(), `198.18.0.${i + 1}`)).kind).toBe("wrong");
     }
-    expect((await verifyLast4(big.token, big.seats[60]!.id, "9999", key(), "198.18.1.1")).kind).toBe("throttled");
+    expect((await verifyLast4(big.token, big.seats[60]!.id, "9999", key(), "198.18.0.1")).kind).toBe("throttled");
 
     const small = await makeEvent(10);
     for (let i = 0; i < 40; i++) {
       await verifyLast4(small.token, small.seats[Math.floor(i / 4)]!.id, "9999", key(), `198.19.0.${i + 1}`);
     }
-    expect((await verifyLast4(small.token, small.seats[0]!.id, "9999", key(), "198.19.1.1")).kind).toBe("throttled");
+    expect((await verifyLast4(small.token, small.seats[0]!.id, "9999", key(), "198.19.0.1")).kind).toBe("throttled");
   });
 
   it("틀림은 축출되지 않는다(B1) — X 틀림 1 → Y 새 키 20개 맞음 → X 다른 자리 19 → X 다음 = throttled", async () => {
@@ -662,7 +668,7 @@ describe("속도 제한(C5 — 15분 · 행사 max(40, ceil(n×0.5)) · IP 20)",
     expect(json).not.toContain("1234");
 
     const ev2 = await makeEvent(1);
-    await fillMisses(ev2.seats[0]!.id, 40, new Date());
+    await fillMisses(ev2.seats[0]!.id, 40, new Date(), { eventId: ev2.eventId, ips: ["203.0.113.61"] });
     warn.mockClear();
     expect((await verifyLast4(ev2.token, ev2.seats[0]!.id, "9999", key(), "203.0.113.61")).kind).toBe("throttled");
     expect(warn.mock.calls.filter((c) => c[0] === "cert.verify_throttled")[0]![1]).toEqual({
@@ -713,7 +719,7 @@ describe("잠금 전 빠른 거부 · 풀 고갈 없음(AX-P2)", () => {
 
   it("한도를 넘은 행사의 행을 남이 쥔 동안에도 throttled가 곧바로 온다 · 셈 · 맵 불변 · 경고 한 번", async () => {
     const ev = await makeEvent(2);
-    await fillMisses(ev.seats[0]!.id, 40, new Date());
+    await fillMisses(ev.seats[0]!.id, 40, new Date(), { eventId: ev.eventId, ips: ["203.0.113.70"] });
     const target = ev.seats[1]!;
     const before = await seat(target.id);
     const warn = vi.spyOn(log, "warn");
@@ -741,7 +747,10 @@ describe("잠금 전 빠른 거부 · 풀 고갈 없음(AX-P2)", () => {
     async () => {
       const a = await makeEvent(2);
       const b = await makeEvent(1);
-      await fillMisses(a.seats[0]!.id, 40, new Date());
+      await fillMisses(a.seats[0]!.id, 40, new Date(), {
+        eventId: a.eventId,
+        ips: Array.from({ length: env.DB_POOL_MAX * 3 }, (_, i) => `203.0.113.${100 + i}`),
+      });
       const holder = await holdEventRow(a.eventId);
       const pending = Promise.allSettled(
         Array.from({ length: env.DB_POOL_MAX * 3 }, (_, i) =>
@@ -857,5 +866,25 @@ describe("잠금 전 빠른 판정 — 잠긴 자리 · 닫힘(M2)", () => {
     expect(first).toEqual({ kind: "wrong", remaining: 4 });
     await patchSeat(s.id, { failedAttempts: 5, lockedUntil: new Date(Date.now() + 2 * MIN) });
     expect(await verifyLast4(ev.token, s.id, "9999", a, "203.0.113.93")).toEqual(first);
+  });
+});
+
+// /review 결정 A — 두 IP가 행사 한도를 채워도 틀린 적 없는 정상 IP는 판정받고,
+// 한도 초과는 경보 한 건으로 드러난다. 한도를 채운 두 IP는 계속 막힌다.
+describe("행사 한도는 틀린 IP만 막는다(/review 결정 A)", () => {
+  it("두 IP가 20번씩 틀린 뒤 정상 IP는 맞는 4자리로 ok · 경보 1건, 두 IP는 throttled", async () => {
+    const ev = await makeEvent(11);
+    for (let i = 0; i < 20; i++) {
+      await verifyLast4(ev.token, ev.seats[Math.floor(i / 4)]!.id, "9999", key(), "198.51.100.1");
+      await verifyLast4(ev.token, ev.seats[5 + Math.floor(i / 4)]!.id, "9999", key(), "198.51.100.2");
+    }
+    const warn = vi.spyOn(log, "warn");
+    const target = ev.seats[10]!;
+    expect((await verifyLast4(ev.token, target.id, target.last4, key(), "198.51.100.3")).kind).toBe("ok");
+    expect(warn.mock.calls.filter((c) => c[0] === "cert.verify_event_budget_exceeded")).toEqual([
+      ["cert.verify_event_budget_exceeded", { eventId: ev.eventId }],
+    ]);
+    expect((await verifyLast4(ev.token, target.id, "9999", key(), "198.51.100.1")).kind).toBe("throttled");
+    expect((await verifyLast4(ev.token, target.id, "9999", key(), "198.51.100.2")).kind).toBe("throttled");
   });
 });

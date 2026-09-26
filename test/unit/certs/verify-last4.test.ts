@@ -7,6 +7,7 @@ import {
   VERIFY_MISS_BUDGET_PER_IP,
   VERIFY_RATE_WINDOW_MINUTES,
   certIpHash,
+  eventBudgetExceeded,
   eventMissLimit,
   evaluateVerifyAttempt,
   ipKey,
@@ -204,21 +205,30 @@ describe("속도 제한 — 상수 · eventMissLimit · verifyBudgetExceeded", (
     expect(eventMissLimit(500)).toBe(250);
   });
 
-  it("명단 10명: 행사 39 · IP 19는 통과, 행사 40 또는 IP 20이면 넘음(경계는 이상)", () => {
+  it("명단 10명: 행사 39 · IP 19는 통과, 행사 40(이 IP도 틀린 적 있음) 또는 IP 20이면 넘음(경계는 이상)", () => {
     expect(verifyBudgetExceeded({ eventMisses: 39, ipMisses: 19, rosterSize: 10 })).toBe(false);
-    expect(verifyBudgetExceeded({ eventMisses: 40, ipMisses: 0, rosterSize: 10 })).toBe(true);
+    expect(verifyBudgetExceeded({ eventMisses: 40, ipMisses: 1, rosterSize: 10 })).toBe(true);
     expect(verifyBudgetExceeded({ eventMisses: 0, ipMisses: 20, rosterSize: 10 })).toBe(true);
   });
 
   it("명단 500명: 행사 249 통과 · 250 넘음", () => {
-    expect(verifyBudgetExceeded({ eventMisses: 249, ipMisses: 0, rosterSize: 500 })).toBe(false);
-    expect(verifyBudgetExceeded({ eventMisses: 250, ipMisses: 0, rosterSize: 500 })).toBe(true);
+    expect(verifyBudgetExceeded({ eventMisses: 249, ipMisses: 1, rosterSize: 500 })).toBe(false);
+    expect(verifyBudgetExceeded({ eventMisses: 250, ipMisses: 1, rosterSize: 500 })).toBe(true);
   });
 
   it("verifyBudgetScope — 막은 한도(event 먼저 · ip · 없음 null)", () => {
     expect(verifyBudgetScope({ eventMisses: 40, ipMisses: 20, rosterSize: 10 })).toBe("event");
     expect(verifyBudgetScope({ eventMisses: 39, ipMisses: 20, rosterSize: 10 })).toBe("ip");
     expect(verifyBudgetScope({ eventMisses: 39, ipMisses: 19, rosterSize: 10 })).toBeNull();
+  });
+
+  // /review 결정 A — 행사 한도는 한 공격 소스가 행사 전체를 막지 못하게, 이 창에
+  // 틀린 적 있는 IP만 막는다. 틀린 적 없는 IP는 판정받고, 한도 초과는 경보로 본다.
+  it("행사 한도를 넘어도 이 창에 틀린 적 없는 IP는 막지 않는다 · 한도 초과 여부는 따로 안다", () => {
+    expect(verifyBudgetScope({ eventMisses: 40, ipMisses: 0, rosterSize: 10 })).toBeNull();
+    expect(verifyBudgetScope({ eventMisses: 40, ipMisses: 1, rosterSize: 10 })).toBe("event");
+    expect(eventBudgetExceeded({ eventMisses: 40, ipMisses: 0, rosterSize: 10 })).toBe(true);
+    expect(eventBudgetExceeded({ eventMisses: 39, ipMisses: 0, rosterSize: 10 })).toBe(false);
   });
 });
 

@@ -169,10 +169,14 @@ test("행사 한도를 넘긴 상태에서 확인 → 잠시 멈춤 줄 · 4자�
   const id = await winnerIdOf(ev.eventId, "김하늘");
   const map: Record<string, VerifyIdemEntry> = {};
   const at = new Date().toISOString();
-  for (let i = 0; i < 40; i++) map[`fill-${i}`] = { o: "wrong", r: { kind: "wrong", remaining: 4 }, ip: "x", at };
+  // 결정 A — 행사 한도는 이 창에 틀린 적 있는 IP만 막는다. 39건을 채우고 이 브라우저가
+  // 한 번 틀려 40번째가 된 뒤 다시 확인하면 막힌다.
+  for (let i = 0; i < 39; i++) map[`fill-${i}`] = { o: "wrong", r: { kind: "wrong", remaining: 4 }, ip: "x", at };
   await db.update(certWinners).set({ verifyIdemOutcome: map }).where(eq(certWinners.id, id));
   await page.goto(ev.link);
   await page.getByRole("button", { name: "김*늘" }).click();
+  await wrongByClick(page, "0000");
+  await expect(page.getByText("남은 횟수 4번", { exact: false })).toBeVisible();
   await wrongByClick(page, "7730");
   await expect(page.getByText("확인이 잠시 멈췄습니다 · 잠시 뒤 다시 눌러 주세요", { exact: true })).toBeVisible();
   await expect(last4Field(page)).toHaveValue("7730");

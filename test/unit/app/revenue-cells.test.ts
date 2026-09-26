@@ -66,11 +66,14 @@ describe("revenueTableErrorText", () => {
 
 describe("otherCellsRejectedText", () => {
   it.each([
-    [0, 0, null],
-    [0, 1, "전부 거부 · 다른 칸 오류 1칸"],
-    [0, 3, "전부 거부 · 다른 칸 오류 3칸"],
-    [2, 3, null],
-  ])("제 칸 %i · 다른 칸 %i → %s", (own, other, expected) => {
+    [0, { conflictRows: 0, errorCells: 0 }, null],
+    [0, { conflictRows: 0, errorCells: 1 }, "전부 거부 · 다른 칸 오류 1칸"],
+    [0, { conflictRows: 0, errorCells: 3 }, "전부 거부 · 다른 칸 오류 3칸"],
+    [2, { conflictRows: 0, errorCells: 3 }, null],
+    // VERDICT.md "/qa low" — 원인이 다른 표의 충돌일 때는 "오류"가 아니라 "충돌"로 알린다.
+    [0, { conflictRows: 1, errorCells: 0 }, "전부 거부 · 다른 표 충돌 1줄"],
+    [0, { conflictRows: 2, errorCells: 1 }, "전부 거부 · 다른 표 충돌 2줄 · 다른 칸 오류 1칸"],
+  ])("제 칸 %i · 다른 원인 %o → %s", (own, other, expected) => {
     expect(otherCellsRejectedText(own, other)).toBe(expected);
   });
 });

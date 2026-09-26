@@ -215,7 +215,11 @@ test.describe("폭 320 — 어느 화면도 가로로 넘치지 않는다", () =
       const detailUrl = new URL(page.url()).pathname;
       await expectNoOverflow(page, detailUrl);
 
+      // 폰에서는 셀 편집이 없어(§7-3) 「첫 줄 만들기」가 PC 폭에만 있다 — PC 폭에서
+      // 줄을 만들고 320으로 돌아와 견적 줄이 있는 상태를 잰다.
+      await page.setViewportSize({ width: 1280, height: 900 });
       await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
+      await page.setViewportSize({ width: 320, height: 640 });
       await expect(page.locator("tbody tr").nth(1)).toBeVisible();
       expectMeasured(`${detailUrl} 견적 줄 1개`, await measure(page));
 

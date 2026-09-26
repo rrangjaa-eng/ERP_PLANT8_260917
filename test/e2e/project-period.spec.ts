@@ -385,6 +385,36 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     await page.reload();
     await expect(page.getByText(/^기간 \S+ ~ —$/)).toBeVisible();
   });
+
+  // /review (data-migration) — 덜 채운 날짜는 보관본에 「덜 채움」으로 남는다. 「복원」 뒤 그 칸에서 값을 바꾸지
+  // 않는 키(방향키)만 눌러도(keyup) 빈 값으로 바뀌면 저장이 종료일을 조용히 지운다. 지우는 키만 칸 상태를 다시 읽는다.
+  test("(6d) 덜 채운 종료일을 복원한 뒤 방향키만 누르고 저장해도 형식 오류로 막히고 기간은 그대로", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const endDate = addDays(TODAY, 5);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "bidding", endDate });
+
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    const endInput = page.getByLabel("종료일");
+    await endInput.focus();
+    await endInput.press("Backspace");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+
+    await page.reload();
+    await page.getByRole("button", { name: "복원", exact: true }).click();
+    await page.getByLabel("종료일").focus();
+    await page.getByLabel("종료일").press("ArrowRight");
+
+    const saving = waitForSaveAction(page);
+    await page.getByLabel("종료일").press("Control+s");
+    await saving;
+    await expect(page.getByText("날짜 형식 오류 · 2026-09-18처럼", { exact: true })).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByText(new RegExp(`^기간 \\S+ ~ ${endDate}$`))).toBeVisible();
+  });
 });
 
 // 04-44(DR-28 · DR-37 · 계약 8 · S17) — 머리 줄 부제의 총 매출 예상가. 권리는 기간 칸과 같다. 계급 권한·정보

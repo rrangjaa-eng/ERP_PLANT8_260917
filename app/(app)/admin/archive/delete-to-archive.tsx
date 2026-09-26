@@ -38,7 +38,7 @@ export function DeleteToArchive({ name, onArchive, failureMessage }: DeleteToArc
       await onArchive();
       setConfirming(false);
     } catch {
-      setError(failureMessage ?? "삭제하지 못했습니다 · 다시 시도");
+      setError(failureMessage ?? "삭제 실패 · 다시 시도");
     } finally {
       setPending(false);
     }

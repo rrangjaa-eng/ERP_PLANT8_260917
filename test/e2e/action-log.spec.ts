@@ -149,7 +149,7 @@ test.describe("행동 로그 화면 (ADMN-10, OPS-05)", () => {
     await page.getByRole("button", { name: "정리" }).click();
     await expect(page.getByText(/건을 정리합니다 · 정리 기록은 남습니다/)).toBeVisible();
     await page.getByRole("button", { name: "정리" }).click();
-    await expect(page.getByText("정리하지 못했습니다 · 다시 시도")).toHaveCount(0);
+    await expect(page.getByText("정리 실패 · 다시 시도")).toHaveCount(0);
     await expect(ownRow).toHaveCount(0);
   });
 

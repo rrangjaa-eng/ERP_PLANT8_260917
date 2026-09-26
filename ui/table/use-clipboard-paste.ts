@@ -72,7 +72,7 @@ export function applyPaste<Row>(params: {
         cells.push({
           rowIndex,
           columnKey: column.key,
-          result: { status: "error", reason: "읽기 전용·잠김 셀에 값이 떨어졌습니다" },
+          result: { status: "error", reason: "읽기 전용·잠김 셀에 값 떨어짐" },
         });
         return;
       }
@@ -82,7 +82,7 @@ export function applyPaste<Row>(params: {
         const tooPrecise = num !== null && column.numberKind !== undefined && Number(num.toFixed(MAX_DECIMALS[column.numberKind])) !== num;
         cells.push(
           num === null
-            ? { rowIndex, columnKey: column.key, result: { status: "error", reason: "숫자가 아닙니다 · 12,400,000처럼 적어 주세요" } }
+            ? { rowIndex, columnKey: column.key, result: { status: "error", reason: "숫자 형식 오류 · 12,400,000처럼" } }
             : tooPrecise && column.numberKind
               ? { rowIndex, columnKey: column.key, result: { status: "error", reason: numberInputRejectionReason(column.numberKind, "precision") } }
               : { rowIndex, columnKey: column.key, result: { status: "ok", value: String(num) } },
@@ -98,7 +98,7 @@ export function applyPaste<Row>(params: {
             : {
                 rowIndex,
                 columnKey: column.key,
-                result: { status: "error", reason: `목록에 없는 값입니다 · ${trimmed || "(빈 값)"}` },
+                result: { status: "error", reason: `목록에 없는 값 · ${trimmed || "(빈 값)"}` },
               },
         );
         return;

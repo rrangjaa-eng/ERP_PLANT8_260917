@@ -46,14 +46,14 @@ describe("resyncCells — M-1 회귀: 재조회 후 매트릭스 재동기화", 
 
   it("저장 실패(error)로 되돌려진 셀은 이유 문구까지 그대로 유지된다", () => {
     const prev = {
-      [key]: { checked: false, status: "error" as const, reason: "저장하지 못했습니다 · 다시 시도" },
+      [key]: { checked: false, status: "error" as const, reason: "저장 실패 · 다시 시도" },
     };
     const next = resyncCells(prev, rows, columns, { [key]: true });
 
     expect(next[key]).toEqual({
       checked: false,
       status: "error",
-      reason: "저장하지 못했습니다 · 다시 시도",
+      reason: "저장 실패 · 다시 시도",
     });
   });
 });

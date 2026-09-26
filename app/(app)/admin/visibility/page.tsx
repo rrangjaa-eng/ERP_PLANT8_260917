@@ -25,7 +25,7 @@ export default async function VisibilityPage() {
     values = grid.values;
   } catch (error) {
     if (error instanceof ForbiddenError) notFound();
-    errorMessage = "정보 노출표를 불러오지 못했습니다 · 다시 시도";
+    errorMessage = "정보 노출표 불러오기 실패 · 다시 시도";
   }
 
   return (

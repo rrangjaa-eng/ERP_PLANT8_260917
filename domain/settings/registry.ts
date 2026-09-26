@@ -115,7 +115,7 @@ export async function setSettingValue<T>(
 
   const can = deps?.can ?? defaultCan;
   const allowed = await can(viewer, "admin.settings", "write");
-  if (!allowed) throw new ForbiddenError("설정을 바꿀 권한이 없습니다.");
+  if (!allowed) throw new ForbiddenError("설정 변경 권한 없음");
 
   const parsed = def.schema.parse(value);
   const upsertSimpleValue = deps?.upsertSimpleValue ?? defaultUpsertSimpleValue;
@@ -144,7 +144,7 @@ export async function addHistorizedValue<T>(
 
   const can = deps?.can ?? defaultCan;
   const allowed = await can(viewer, "admin.settings", "write");
-  if (!allowed) throw new ForbiddenError("설정을 바꿀 권한이 없습니다.");
+  if (!allowed) throw new ForbiddenError("설정 변경 권한 없음");
 
   const parsed = def.schema.parse(input.value);
   const insertHistorizedValue = deps?.insertHistorizedValue ?? defaultInsertHistorizedValue;
@@ -179,11 +179,11 @@ export async function cancelHistorizedValue<T>(
 
   const can = deps?.can ?? defaultCan;
   const allowed = await can(viewer, "admin.settings", "write");
-  if (!allowed) throw new ForbiddenError("설정을 바꿀 권한이 없습니다.");
+  if (!allowed) throw new ForbiddenError("설정 변경 권한 없음");
 
   const today = dateOnly(new Date());
   if (effectiveFrom <= today) {
-    throw new FutureCancelOnlyError("이미 적용된 이력 행은 취소할 수 없습니다 — 미래로 예정된 행만 취소할 수 있습니다.");
+    throw new FutureCancelOnlyError("이미 적용된 이력 행은 취소할 수 없음 — 미래로 예정된 행만 취소 가능");
   }
 
   const deleteFutureHistorizedValue = deps?.deleteFutureHistorizedValue ?? defaultDeleteFutureHistorizedValue;

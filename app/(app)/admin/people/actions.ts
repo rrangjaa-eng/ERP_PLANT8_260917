@@ -18,11 +18,11 @@ import "./actions.registry";
 export const registerPersonAction = authedActionClient
   .schema(
     z.object({
-      name: z.string().min(1, "이름을 입력하세요."),
-      email: z.string().email("이메일 형식이 아닙니다."),
-      roleId: z.string().min(1, "계급을 선택하세요."),
+      name: z.string().min(1, "이름 필요 · 이름 입력"),
+      email: z.string().email("이메일 형식 오류 · 이메일 확인"),
+      roleId: z.string().min(1, "계급 필요 · 계급 선택"),
       teamId: z.string().min(1).optional(),
-      effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "발령일 형식이 아닙니다.").optional(),
+      effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "발령일 형식 오류 · 2026-09-18처럼").optional(),
     }),
   )
   .action(async ({ parsedInput, ctx }) => {
@@ -47,7 +47,7 @@ export const assignTeamAction = authedActionClient
     z.object({
       userId: z.string().min(1),
       teamId: z.string().min(1),
-      effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "발령일 형식이 아닙니다."),
+      effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "발령일 형식 오류 · 2026-09-18처럼"),
     }),
   )
   .action(async ({ parsedInput, ctx }) => {
@@ -63,14 +63,14 @@ export const cancelAssignmentAction = authedActionClient
   });
 
 export const createRoleAction = authedActionClient
-  .schema(z.object({ name: z.string().min(1, "이름을 입력하세요."), sortOrder: z.coerce.number().int().default(0) }))
+  .schema(z.object({ name: z.string().min(1, "이름 필요 · 이름 입력"), sortOrder: z.coerce.number().int().default(0) }))
   .action(async ({ parsedInput, ctx }) => {
     await createRole(ctx.viewer, parsedInput);
     revalidatePath("/admin/people/roles");
   });
 
 export const renameRoleAction = authedActionClient
-  .schema(z.object({ id: z.string().min(1), name: z.string().min(1, "이름을 입력하세요.") }))
+  .schema(z.object({ id: z.string().min(1), name: z.string().min(1, "이름 필요 · 이름 입력") }))
   .action(async ({ parsedInput, ctx }) => {
     await renameRole(ctx.viewer, parsedInput.id, parsedInput.name);
     revalidatePath("/admin/people/roles");
@@ -92,14 +92,14 @@ export const archiveRoleAction = authedActionClient
   });
 
 export const createOrgUnitAction = authedActionClient
-  .schema(z.object({ name: z.string().min(1, "이름을 입력하세요."), sortOrder: z.coerce.number().int().default(0) }))
+  .schema(z.object({ name: z.string().min(1, "이름 필요 · 이름 입력"), sortOrder: z.coerce.number().int().default(0) }))
   .action(async ({ parsedInput, ctx }) => {
     await createOrgUnit(ctx.viewer, parsedInput);
     revalidatePath("/admin/people/org");
   });
 
 export const renameOrgUnitAction = authedActionClient
-  .schema(z.object({ id: z.string().min(1), name: z.string().min(1, "이름을 입력하세요.") }))
+  .schema(z.object({ id: z.string().min(1), name: z.string().min(1, "이름 필요 · 이름 입력") }))
   .action(async ({ parsedInput, ctx }) => {
     await renameOrgUnit(ctx.viewer, parsedInput.id, parsedInput.name);
     revalidatePath("/admin/people/org");
@@ -135,8 +135,8 @@ export const archiveTeamAction = authedActionClient
 export const createTeamAction = authedActionClient
   .schema(
     z.object({
-      orgUnitId: z.string().min(1, "본부를 선택하세요."),
-      name: z.string().min(1, "이름을 입력하세요."),
+      orgUnitId: z.string().min(1, "본부 필요 · 본부 선택"),
+      name: z.string().min(1, "이름 필요 · 이름 입력"),
       sortOrder: z.coerce.number().int().default(0),
     }),
   )
@@ -146,7 +146,7 @@ export const createTeamAction = authedActionClient
   });
 
 export const renameTeamAction = authedActionClient
-  .schema(z.object({ id: z.string().min(1), name: z.string().min(1, "이름을 입력하세요.") }))
+  .schema(z.object({ id: z.string().min(1), name: z.string().min(1, "이름 필요 · 이름 입력") }))
   .action(async ({ parsedInput, ctx }) => {
     await renameTeam(ctx.viewer, parsedInput.id, parsedInput.name);
     revalidatePath("/admin/people/org");

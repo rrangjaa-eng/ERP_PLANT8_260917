@@ -17,9 +17,9 @@ export const setVisibilityCellAction = authedActionClient
   .schema(
     z.object({
       roleId: z.string().min(1).refine(async (value) => roleExists(SYSTEM_VIEWER, value), {
-        message: "알 수 없는 계급입니다.",
+        message: "알 수 없는 계급",
       }),
-      infoItem: z.string().refine((value) => infoItemKeys.has(value), "알 수 없는 정보 항목입니다."),
+      infoItem: z.string().refine((value) => infoItemKeys.has(value), "알 수 없는 정보 항목"),
       visible: z.boolean(),
     }),
   )

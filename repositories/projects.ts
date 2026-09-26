@@ -1,12 +1,17 @@
 import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
-import type { InferSelectModel } from "drizzle-orm";
+import type { InferSelectModel, SQL } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, projects, quoteLines, quoteRevisions, teams, users, vendors } from "@/db/schema";
+import { actionLog, projects, quoteLines, quoteRevisions, revenueEntries, teams, users, vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { Scope } from "@/domain/permissions/scope-for";
 import type { DbOrTx } from "@/repositories/document-counters";
+import { ISSUED_BASIS_STATUSES, type ProfitBasis } from "@/domain/projects/list-view";
+import type { ProjectStatus } from "@/domain/projects/status-transitions";
 
 export type ProjectRow = InferSelectModel<typeof projects>;
+
+// 04-17(CEO C-01) — 이 파일의 모든 집계 · 금액 반환은 JS number다: 돈 합은 SQL에서 `bigint`로 더하고
+// `mapWith(Number)`로 리포지토리 경계에서 바꾼다(21억 초과에서 `int` 오류 · 문자열 합계가 나지 않는다).
 
 // 04-05 Task 1 ① — 목록·집계가 공유하는 「현재 차수」 파생 표. D-54: 최신
 // 차수(seq 최댓값)만 현재다. project_id당 정확히 한 행(selectDistinctOn).
@@ -23,26 +28,76 @@ function currentRevisionsSubquery() {
 
 // 현재 차수의 견적 줄 합계(견적가·실행가·차익) — revision_id당 한 행. 보관된 줄은 빼고
 // 취소 줄은 견적가 0으로 더한다(04-12 · A-04 — 취소 줄의 견적가 열이 이미 0이다).
+// 04-17(엔지 리뷰 C §4 P2) — 현재 차수의 줄만 모아 더한다(모든 차수의 줄을 GROUP BY하지 않는다).
 function lineSumsSubquery() {
+  const currentRevisionIds = db
+    .selectDistinctOn([quoteRevisions.projectId], { id: quoteRevisions.id })
+    .from(quoteRevisions)
+    .orderBy(quoteRevisions.projectId, desc(quoteRevisions.seq));
   return db
     .select({
       revisionId: quoteLines.revisionId,
-      quoteSum: sql<number>`coalesce(sum(${quoteLines.quoteAmountKrw}), 0)`.as("quote_sum"),
-      executionSum: sql<number>`coalesce(sum(${quoteLines.executionAmountKrw}), 0)`.as("execution_sum"),
-      profitSum: sql<number>`coalesce(sum(${quoteLines.profitKrw}), 0)`.as("profit_sum"),
+      quoteSum: sql<number>`coalesce(sum(${quoteLines.quoteAmountKrw}), 0)::bigint`.as("quote_sum"),
+      executionSum: sql<number>`coalesce(sum(${quoteLines.executionAmountKrw}), 0)::bigint`.as("execution_sum"),
+      profitSum: sql<number>`coalesce(sum(${quoteLines.profitKrw}), 0)::bigint`.as("profit_sum"),
     })
     .from(quoteLines)
-    .where(isNull(quoteLines.archivedAt))
+    .where(and(isNull(quoteLines.archivedAt), inArray(quoteLines.revisionId, currentRevisionIds)))
     .groupBy(quoteLines.revisionId)
     .as("line_sums");
+}
+
+// 04-17(D-85 · C-14 · 엔지 리뷰 C §4 P2) — 발행 줄만(입금 줄 제외) · 보관 제외 합계와 줄 수. 표 전체를 GROUP BY하지 않고
+// 행 필터를 지난 프로젝트마다 LEFT JOIN LATERAL로 구한다(revenue_entries_project_kind_date_idx).
+function issuedSumsLateral() {
+  return db
+    .select({
+      issuedSum: sql<number | null>`sum(${revenueEntries.amountAmountKrw})::bigint`.as("issued_sum"),
+      issuedCount: sql<number>`count(*)::int`.as("issued_count"),
+    })
+    .from(revenueEntries)
+    .where(and(eq(revenueEntries.projectId, projects.id), eq(revenueEntries.kind, "issue"), isNull(revenueEntries.archivedAt)))
+    .as("issued");
+}
+
+// 04-17(교차 그룹 계약 7 · DR-8 · DR-38 · C-16) — 행 단위 식의 유일한 정의. 기준 금액은 정산·완료이고 발행 줄이 1개
+// 이상일 때만 발행 합계, 그 밖은 견적 합계다(domain/projects/list-view의 profitBasisFor와 같은 규칙 · 같은 상태 목록).
+// 수익금 = 기준 − 실행가, 수익률 = 수익금 ÷ 기준(기준 ≤ 0이면 NULL).
+function rowMoneyExpressions(
+  lineSums: ReturnType<typeof lineSumsSubquery>,
+  issued: ReturnType<typeof issuedSumsLateral>,
+) {
+  const quote = sql`coalesce(${lineSums.quoteSum}, 0)`;
+  const execution = sql`coalesce(${lineSums.executionSum}, 0)`;
+  const issuedCount = sql`coalesce(${issued.issuedCount}, 0)`;
+  const issuedBasisStatuses = sql.join(
+    ISSUED_BASIS_STATUSES.map((status: ProjectStatus) => sql`${status}`),
+    sql`, `,
+  );
+  const isIssuedBasis = sql`(${projects.status} in (${issuedBasisStatuses}) and ${issuedCount} > 0)`;
+  const basis = sql`(case when ${isIssuedBasis} then coalesce(${issued.issuedSum}, 0) else ${quote} end)`;
+  const profit = sql`(${basis} - ${execution})`;
+  return {
+    quote,
+    execution,
+    issuedCount,
+    basis,
+    profit,
+    revenue: sql`(case when ${issuedCount} > 0 then ${issued.issuedSum} end)`,
+    rate: sql`(case when ${basis} > 0 then ${profit}::float8 / ${basis} end)`,
+    profitBasis: sql`(case when ${isIssuedBasis} then 'issued' else 'quote' end)`,
+  };
 }
 
 export type ProjectListFilter = {
   /** 단일 선택(전체 상태 select, D-51) — 빈 값이면 필터 없음. */
   status?: string;
   teamId?: string;
-  /** 종료일 기준 연도 — 종료일 없는(기간 미정) 행은 특정 연도로 걸리지 않는다. */
-  year?: number;
+  /**
+   * 보기 범위 R(04-17 D-89 · D-90) — 없으면 범위 없음(전체 연도). 종료일이 있는 행은 기간이 R과 겹치면 보이고
+   * (시작일이 없으면 종료일로 본다), 종료일이 없는 행은 수주중이면 항상, 그 밖은 등록일(KST 날짜)이 R 안일 때만 보인다.
+   */
+  range?: { start?: string; end?: string };
   /** 프로젝트명·번호·클라이언트명 ILIKE. */
   search?: string;
 };
@@ -71,31 +126,76 @@ export type ProjectListRow = {
   quoteAmountKrw: number;
   executionAmountKrw: number;
   profitKrw: number;
+  // 04-17 — 행 단위 식(계약 7). DTO 명세에 올리는 것은 04-18이다(명세 밖이면 응답에 없다).
+  /** 발행 줄 합계 — 발행 줄이 0개면 null. */
+  revenueKrw: number | null;
+  issuedCount: number;
+  profitBasis: ProfitBasis;
+  /** 수익금 = 기준 금액 − 실행가(D-87). profitKrw(줄 차익 합)와 다르다. */
+  netProfitKrw: number;
+  /** 수익금 ÷ 기준 금액 — 기준 ≤ 0이면 null. */
+  profitRate: number | null;
 };
 
-export type ProjectAggregateRow = {
+// 04-17(D-90) — 귀속 구간: "in"(종료일이 R 안, R이 없으면 종료일 있는 전부) · "undetermined"(종료일 없음) · 종료 연도 문자열.
+export type ProjectAggregateBucket = {
+  bucket: string;
   count: number;
+  revenueKrw: number;
   quoteAmountKrw: number;
   executionAmountKrw: number;
   profitKrw: number;
+  basisAmountKrw: number;
+  /** 구간의 Σ수익금 ÷ Σ기준 — Σ기준 ≤ 0이면 null. */
+  profitRate: number | null;
 };
 
 // 목록 쿼리와 집계 쿼리가 공유하는 **같은 행 필터 서술자**(T-04-28) — 한쪽만
 // 고치면 합계가 그 사람이 볼 수 없는 행을 더하거나 덜 더치는 정보 노출이
 // 된다. 두 함수 모두 이 함수 하나만 호출한다.
-function projectFilterConditions(scope: Scope, filter: ProjectListFilter) {
-  const conditions = [];
-  if (!scope.includeArchived) conditions.push(isNull(projects.archivedAt));
+// 04-17(사용자 D18 · C-21): 보관된 프로젝트는 보관함을 볼 수 있는 계급에게도 목록·합계에 없다.
+function projectFilterConditions(filter: ProjectListFilter) {
+  const conditions: (SQL | undefined)[] = [isNull(projects.archivedAt)];
   if (filter.status) conditions.push(eq(projects.status, filter.status));
   if (filter.teamId) conditions.push(eq(projects.teamId, filter.teamId));
-  // endDate가 NULL이면 extract(year from NULL) = NULL이라 이 조건이 거짓으로
-  // 평가된다 — 기간 미정 행은 연도 필터에 걸리지 않고 자연히 제외된다.
-  if (filter.year) conditions.push(sql`extract(year from ${projects.endDate}) = ${filter.year}`);
+  if (filter.range) conditions.push(rangeCondition(filter.range));
   if (filter.search) {
     const pattern = `%${filter.search}%`;
     conditions.push(or(ilike(projects.name, pattern), ilike(projects.number, pattern), ilike(vendors.name, pattern)));
   }
   return conditions;
+}
+
+// created_at은 시간대 없는 UTC 시각이다(세션 TimeZone = UTC) — KST 날짜로 바꿔 R과 비교한다.
+const CREATED_ON_KST = sql`((${projects.createdAt} at time zone 'UTC') at time zone 'Asia/Seoul')::date`;
+const ALWAYS_LISTED_UNDATED_STATUS: ProjectStatus = "bidding";
+
+function withinRange(column: SQL, range: { start?: string; end?: string }): SQL {
+  return and(
+    range.start ? sql`${column} >= ${range.start}::date` : undefined,
+    range.end ? sql`${column} <= ${range.end}::date` : undefined,
+  ) ?? sql`true`;
+}
+
+// 04-17(D-89 · C-11 · 사용자 D19) — 겹침 조건 + 기간 미정 노출 규칙.
+function rangeCondition(range: { start?: string; end?: string }): SQL {
+  const dated = and(
+    isNotNull(projects.endDate),
+    range.end ? sql`coalesce(${projects.startDate}, ${projects.endDate}) <= ${range.end}::date` : undefined,
+    range.start ? sql`${projects.endDate} >= ${range.start}::date` : undefined,
+  );
+  const undated = and(
+    isNull(projects.endDate),
+    or(eq(projects.status, ALWAYS_LISTED_UNDATED_STATUS), withinRange(CREATED_ON_KST, range)),
+  );
+  return or(dated, undated) ?? sql`true`;
+}
+
+// 04-17(D-90) — 귀속 구간 식. 행 필터(projectFilterConditions) 위에 얹는 분류일 뿐 행을 거르지 않는다.
+function attributionBucket(range: { start?: string; end?: string } | undefined): SQL {
+  if (!range) return sql`(case when ${projects.endDate} is null then 'undetermined' else 'in' end)`;
+  const endDate = sql`${projects.endDate}`;
+  return sql`(case when ${projects.endDate} is null then 'undetermined' when ${withinRange(endDate, range)} then 'in' else extract(year from ${projects.endDate})::int::text end)`;
 }
 
 // T-04-30 — 허용 목록 밖 정렬 키는 기본 정렬(종료일)로 떨어진다(임의 컬럼
@@ -135,7 +235,9 @@ export async function listProjectsPage(
 
   const currentRevisions = currentRevisionsSubquery();
   const lineSums = lineSumsSubquery();
-  const conditions = projectFilterConditions(opts.scope, opts.filter);
+  const issued = issuedSumsLateral();
+  const money = rowMoneyExpressions(lineSums, issued);
+  const conditions = projectFilterConditions(opts.filter);
   const sortColumn = resolveSortColumn(opts.sort.key, lineSums);
   const orderDir = opts.sort.direction === "desc" ? desc : asc;
 
@@ -150,9 +252,14 @@ export async function listProjectsPage(
       clientName: vendors.name,
       teamName: teams.name,
       pmUserName: users.name,
-      quoteAmountKrw: sql<number>`coalesce(${lineSums.quoteSum}, 0)::bigint`.mapWith(Number),
-      executionAmountKrw: sql<number>`coalesce(${lineSums.executionSum}, 0)::bigint`.mapWith(Number),
+      quoteAmountKrw: sql<number>`${money.quote}::bigint`.mapWith(Number),
+      executionAmountKrw: sql<number>`${money.execution}::bigint`.mapWith(Number),
       profitKrw: sql<number>`coalesce(${lineSums.profitSum}, 0)::bigint`.mapWith(Number),
+      revenueKrw: sql<number | null>`${money.revenue}::bigint`.mapWith(Number),
+      issuedCount: sql<number>`${money.issuedCount}::int`.mapWith(Number),
+      profitBasis: sql<ProfitBasis>`${money.profitBasis}`,
+      netProfitKrw: sql<number>`${money.profit}::bigint`.mapWith(Number),
+      profitRate: sql<number | null>`${money.rate}`.mapWith(Number),
     })
     .from(projects)
     .leftJoin(vendors, eq(vendors.id, projects.clientId))
@@ -160,7 +267,8 @@ export async function listProjectsPage(
     .leftJoin(users, eq(users.id, projects.pmUserId))
     .leftJoin(currentRevisions, eq(currentRevisions.projectId, projects.id))
     .leftJoin(lineSums, eq(lineSums.revisionId, currentRevisions.revisionId))
-    .where(conditions.length ? and(...conditions) : undefined)
+    .leftJoinLateral(issued, sql`true`)
+    .where(and(...conditions))
     .orderBy(
       sql`(${projects.endDate} is null)`,
       sql`date_trunc('month', ${projects.endDate})`,
@@ -177,35 +285,42 @@ export async function listProjectsPage(
   }));
 }
 
-// 04-05 Task 1 ① — 집계. **쿼리 한 번**으로 건수·견적·실행가·차익 합계를
-// 돌려준다(화면에 불러온 페이지 크기와 무관 — `listProjectsPage`의 `limit`을
-// 이 함수는 아예 받지 않는다). `projectFilterConditions`를 그대로 재사용해
-// 목록과 같은 행만 더한다.
+// 04-05 Task 1 ① · 04-17(D-88 · D-90) — 집계. **쿼리 한 번**으로 귀속 구간마다 건수·매출·견적·실행가·수익금·기준
+// 합과 수익률을 돌려준다(화면에 불러온 페이지와 무관 — 이 함수는 페이지 인자를 받지 않는다). `projectFilterConditions`를
+// 그대로 재사용해 목록과 같은 행만 더하고, 귀속은 그 위에 구간 식으로만 나눈다.
 export async function aggregateProjects(
   viewer: Viewer,
   opts: { scope: Scope; filter: ProjectListFilter },
-): Promise<ProjectAggregateRow> {
+): Promise<ProjectAggregateBucket[]> {
   void viewer;
-  if (opts.scope.rows === "none") return { count: 0, quoteAmountKrw: 0, executionAmountKrw: 0, profitKrw: 0 };
+  if (opts.scope.rows === "none") return [];
 
   const currentRevisions = currentRevisionsSubquery();
   const lineSums = lineSumsSubquery();
-  const conditions = projectFilterConditions(opts.scope, opts.filter);
+  const issued = issuedSumsLateral();
+  const money = rowMoneyExpressions(lineSums, issued);
+  const conditions = projectFilterConditions(opts.filter);
 
-  const [row] = await db
+  // 구간 식에 날짜 파라미터가 있어 GROUP BY는 선택 목록의 첫 열(bucket) 번호로 건다 — 같은 식을 다시 쓰면
+  // 파라미터 번호가 달라 Postgres가 다른 식으로 본다.
+  return db
     .select({
-      count: sql<number>`count(*)::int`,
-      quoteAmountKrw: sql<number>`coalesce(sum(coalesce(${lineSums.quoteSum}, 0)), 0)::bigint`.mapWith(Number),
-      executionAmountKrw: sql<number>`coalesce(sum(coalesce(${lineSums.executionSum}, 0)), 0)::bigint`.mapWith(Number),
-      profitKrw: sql<number>`coalesce(sum(coalesce(${lineSums.profitSum}, 0)), 0)::bigint`.mapWith(Number),
+      bucket: sql<string>`${attributionBucket(opts.filter.range)}`,
+      count: sql<number>`count(*)::int`.mapWith(Number),
+      revenueKrw: sql<number>`coalesce(sum(coalesce(${issued.issuedSum}, 0)), 0)::bigint`.mapWith(Number),
+      quoteAmountKrw: sql<number>`coalesce(sum(${money.quote}), 0)::bigint`.mapWith(Number),
+      executionAmountKrw: sql<number>`coalesce(sum(${money.execution}), 0)::bigint`.mapWith(Number),
+      profitKrw: sql<number>`coalesce(sum(${money.profit}), 0)::bigint`.mapWith(Number),
+      basisAmountKrw: sql<number>`coalesce(sum(${money.basis}), 0)::bigint`.mapWith(Number),
+      profitRate: sql<number | null>`(case when sum(${money.basis}) > 0 then sum(${money.profit})::float8 / sum(${money.basis}) end)`.mapWith(Number),
     })
     .from(projects)
     .leftJoin(vendors, eq(vendors.id, projects.clientId))
     .leftJoin(currentRevisions, eq(currentRevisions.projectId, projects.id))
     .leftJoin(lineSums, eq(lineSums.revisionId, currentRevisions.revisionId))
-    .where(conditions.length ? and(...conditions) : undefined);
-
-  return row ?? { count: 0, quoteAmountKrw: 0, executionAmountKrw: 0, profitKrw: 0 };
+    .leftJoinLateral(issued, sql`true`)
+    .where(and(...conditions))
+    .groupBy(sql`1`);
 }
 
 export async function findProjectById(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<ProjectRow | null> {

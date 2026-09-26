@@ -1,11 +1,10 @@
 "use client";
 
-import type { ReactNode } from "react";
 import Link from "next/link";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
-import type { ProjectListItemWithGroup, ProjectAggregateDto } from "@/domain/projects";
+import type { ProjectListItemWithGroup } from "@/domain/projects";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { PROJECT_STATUS_TAG_KIND } from "./status-display";
 import { formatKrw } from "@/lib/format-number";
@@ -28,13 +27,11 @@ function formatPeriod(startDate: string | null, endDate: string | null): string 
 
 export function ProjectsTable({
   rows,
-  aggregate,
   loadMoreHref,
   canSeeAmount,
   statusLabels,
 }: {
   rows: ProjectListItemWithGroup[];
-  aggregate: ProjectAggregateDto;
   loadMoreHref: string | null;
   canSeeAmount: boolean;
   /** 코드표 라벨(서버) — 값 → 라벨. */
@@ -87,7 +84,14 @@ export function ProjectsTable({
     },
     { key: "pmUserName", header: "담당 PM", priority: "p2", cell: (row) => row.pmUserName || "—" },
     { key: "teamName", header: "팀", priority: "p3", cell: (row) => row.teamName || "—" },
-    { key: "period", header: "기간", priority: "p2", cell: (row) => formatPeriod(row.startDate, row.endDate) },
+    {
+      key: "period",
+      header: "기간",
+      priority: "p2",
+      cell: (row) => formatPeriod(row.startDate, row.endDate),
+      // 04-17(D-90) — 보기 범위 밖에서 끝나는 행만 2행에 귀속(`2027 귀속`).
+      secondaryLine: (row) => (row.attributionLabel ? <span className={styles.attribution}>{row.attributionLabel}</span> : null),
+    },
     ...moneyColumns,
     {
       key: "status",
@@ -100,25 +104,6 @@ export function ProjectsTable({
       ),
     },
   ];
-
-  // S1 — 「더 보기」는 합계 행 **위** 3차 버튼이다. `ui/table`의 `footer`는
-  // 항상 `<tfoot>`(표의 맨 끝)로만 렌더돼 그 사이에 낄 자리가 없다(04-04가
-  // 고칠 파일이라 이 플랜은 건드리지 않는다) — 그래서 합계는 `footer` prop
-  // 대신 표 **밖**의 별도 줄로 그려, 「더 보기」 링크가 표와 합계 줄 사이
-  // (문자 그대로 합계 위)에 오게 한다. 값·문구는 §6-1·Copywriting Contract
-  // 그대로다.
-  const summaryText: ReactNode = (
-    <>
-      {`합계 (전체 · ${aggregate.count}건)`}
-      {canSeeAmount ? (
-        <>
-          {` · 견적 ${formatKrw(aggregate.quoteAmountKrw ?? 0)}`}
-          {` · 실행가 ${formatKrw(aggregate.executionAmountKrw ?? 0)}`}
-          {` · 차익 ${formatKrw(aggregate.profitKrw ?? 0)}`}
-        </>
-      ) : null}
-    </>
-  );
 
   return (
     <>
@@ -134,9 +119,6 @@ export function ProjectsTable({
           더 보기 50건
         </a>
       ) : null}
-      <p className={styles.summaryRow} aria-live="polite">
-        {summaryText}
-      </p>
     </>
   );
 }

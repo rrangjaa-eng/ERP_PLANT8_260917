@@ -697,9 +697,11 @@ describe("보관·취소(D-56·A-04)", () => {
     expect(archivedList.find((item) => item.id === gone.id)).toMatchObject({ entity: "quote_line", label: "견적 줄", name: gone.itemName });
     expect(await listedIds(revision.id, "bidding")).toEqual([kept.id]);
 
+    // 04-17(D-90) — 기간 미정 행은 합계에 들지 않으므로 종료일을 둬 합계 쪽 단언이 보관 줄 제외를 본다.
+    await db.update(projects).set({ endDate: "2026-10-01" }).where(eq(projects.id, project.id));
     const { rows: [listed], totals } = await loadProjectList(SYSTEM_VIEWER, { year: "all", search: project.name });
     expect(listed).toMatchObject({ quoteAmountKrw: 100_000, executionAmountKrw: 30_000 });
-    expect(totals).toMatchObject({ quoteAmountKrw: 100_000, executionAmountKrw: 30_000 });
+    expect(totals).toMatchObject({ count: 1, quoteAmountKrw: 100_000, executionAmountKrw: 30_000 });
   });
 
   it("(l) 보관된 줄 id로 고치는 배치는 「보관된 줄 · 새로 고침」으로 전부 거부된다", async () => {

@@ -134,7 +134,7 @@ describe("리포지토리 목록 · 집계 (04-17, 실제 Postgres)", () => {
   it("(a) 집계 리포지토리 함수가 귀속 구간이 있어도 SQL 왕복 한 번으로 구간별 건수 · 합계를 계산한다", async () => {
     const base = await makeBase();
     await makeProject(base, "왕복", { endDate: "2026-09-15", line: { quote: 1_000_000, execution: 400_000 } });
-    await makeProject(base, "왕복", { endDate: "2027-01-15" });
+    await makeProject(base, "왕복", { startDate: "2026-12-20", endDate: "2027-01-15" });
 
     const querySpy = vi.spyOn(pool, "query");
     const buckets = await repoAggregateProjects(SYSTEM_VIEWER, {

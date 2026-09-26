@@ -1,4 +1,5 @@
-import { test, expect } from "@playwright/test";
+import { randomUUID } from "node:crypto";
+import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
@@ -7,6 +8,8 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { teams, users } from "@/db/schema";
 import { createProject } from "@/domain/projects";
+import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
+import { kstToday, kstYear } from "@/lib/kst-date";
 
 async function findUserIdByEmail(email: string): Promise<string> {
   const [row] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
@@ -14,87 +17,121 @@ async function findUserIdByEmail(email: string): Promise<string> {
   return row.id;
 }
 
-// 04-05 — 목록 화면 스모크: 필터·정렬·더 보기·합계 부제(S1). 정렬은
-// 04-04가 소유한 `ui/table`에 클릭 가능한 머리글이 아직 없어(이 플랜은
-// 그 디렉터리를 건드리지 않는다, <probe_fallback>) 검색 파라미터를 직접
-// 내비게이션해 서버 정렬 자체를 증명한다 — 클릭 UI는 이후 플랜이 잇는다.
-test.describe("프로젝트 목록 — 필터·정렬·더 보기·합계 (Phase 4)", () => {
-  test("필터를 걸었다 지우고, 정렬을 바꾸고, 더 보기를 눌러도 합계가 그대로다", async ({ page }) => {
-    const marker = `E2E목록-${Date.now()}`;
-    const vendor = await insertVendor(SYSTEM_VIEWER, {
-      name: `E2E목록클라이언트-${Date.now()}`,
-      normalizedName: `e2e목록클라이언트-${Date.now()}`,
-    });
-    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
-    const [team] = await db.select().from(teams).limit(1);
-    if (!team) throw new Error("시드된 팀이 없습니다");
+async function setupPm(): Promise<{ email: string; password: string; pmUserId: string; clientId: string; teamId: string }> {
+  const vendor = await insertVendor(SYSTEM_VIEWER, {
+    name: `E2E목록클라이언트-${randomUUID()}`,
+    normalizedName: `e2e목록클라이언트-${randomUUID()}`,
+  });
+  const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+  const [team] = await db.select().from(teams).limit(1);
+  if (!team) throw new Error("시드된 팀이 없습니다");
+  return { ...pm, pmUserId: await findUserIdByEmail(pm.email), clientId: vendor.id, teamId: team.id };
+}
 
-    const pmUserId = await findUserIdByEmail(pm.email);
-    const names = [`${marker}-가`, `${marker}-나`, `${marker}-다`];
-    for (const name of names) {
-      await createProject(SYSTEM_VIEWER, { clientId: vendor.id, teamId: team.id, pmUserId, name });
+async function login(page: Page, pm: { email: string; password: string }) {
+  await page.goto("/login");
+  await page.getByLabel("이메일").fill(pm.email);
+  await page.getByLabel("비밀번호").fill(pm.password);
+  await page.getByRole("button", { name: "로그인" }).click();
+  await expect(page).toHaveURL(/\/account$/);
+}
+
+async function addQuoteLine(projectId: string, quote: number) {
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, projectId);
+  if (!revision) throw new Error("현재 차수를 찾지 못했습니다");
+  await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
+    rows: [
+      {
+        id: randomUUID(),
+        isNew: true,
+        subcategory: "sub-a",
+        itemName: "항목",
+        quantity: 1,
+        unitPrice: { currency: "KRW", amount: quote, fxRate: 1 },
+        execution: { currency: "KRW", amount: 0, fxRate: 1 },
+      },
+    ],
+  });
+}
+
+test.describe("프로젝트 목록 — 올해 보기 · 표 위 귀속 합계 (04-17)", () => {
+  test("조건 없이 열면 올해 보기이고, 합계 줄이 표 위에서 올해 귀속만 더하며 제외 건수를 말한다", async ({ page }) => {
+    // C-17 — 올해·내년은 UTC가 아니라 KST로 계산한다.
+    const now = new Date();
+    const thisYear = kstYear(now);
+    const nextYear = thisYear + 1;
+    const today = kstToday(now);
+    const marker = `E2E올해-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    const base = { clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId };
+
+    const inYear = await createProject(SYSTEM_VIEWER, { ...base, name: `${marker}-올해`, startDate: today, endDate: today });
+    await addQuoteLine(inYear.id, 1_234_000);
+    const spanning = await createProject(SYSTEM_VIEWER, {
+      ...base,
+      name: `${marker}-걸침`,
+      startDate: today,
+      endDate: `${nextYear}-01-15`,
+    });
+    await addQuoteLine(spanning.id, 2_000_000);
+    await createProject(SYSTEM_VIEWER, { ...base, name: `${marker}-미정` });
+
+    await login(page, pm);
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}`);
+
+    await expect(page.locator("#year")).toHaveValue(String(thisYear));
+    await expect(page.locator("table tbody a")).toHaveCount(3);
+
+    const totals = page.getByRole("region", { name: "합계" });
+    await expect(totals.getByText(`합계 (${thisYear} 귀속 · 1건)`, { exact: true })).toBeVisible();
+    await expect(totals.getByText(`${nextYear} 귀속 1건 제외 · 기간 미정 1건 제외`, { exact: true })).toBeVisible();
+    // C-01 — 합계 금액은 숫자라 쉼표 서식이다.
+    await expect(totals.locator("dt:text-is('견적') + dd")).toHaveText("1,234,000");
+
+    // D-88 — 합계 줄은 표 **위**다.
+    const totalsBox = await totals.boundingBox();
+    const tableBox = await page.locator("table").first().boundingBox();
+    expect(totalsBox && tableBox && totalsBox.y + totalsBox.height <= tableBox.y).toBe(true);
+
+    // D-90 · D-51 — 걸친 행은 종료월 그룹 한 곳에 한 번, 기간 칸 2행에 내년 귀속.
+    await expect(page.locator("table tbody a", { hasText: `${marker}-걸침` })).toHaveCount(1);
+    await expect(page.locator("table tbody").getByText(`${nextYear} 귀속`, { exact: true })).toBeVisible();
+
+    await page.locator("#year").selectOption("all");
+    await expect(page).toHaveURL(/year=all/);
+    await expect(totals.getByText("합계 (전체 연도 · 2건)", { exact: true })).toBeVisible();
+    await expect(totals.getByText("기간 미정 1건 제외", { exact: true })).toBeVisible();
+    await expect(totals.locator("dt:text-is('견적') + dd")).toHaveText("3,234,000");
+  });
+
+  test("정렬을 바꾸면 첫 행이 바뀌고, 필터 지우기로 기본 보기에 돌아간다", async ({ page }) => {
+    const marker = `E2E정렬-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    for (const suffix of ["가", "나", "다"]) {
+      await createProject(SYSTEM_VIEWER, { clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId, name: `${marker}-${suffix}` });
     }
 
-    await page.goto("/login");
-    await page.getByLabel("이메일").fill(pm.email);
-    await page.getByLabel("비밀번호").fill(pm.password);
-    await page.getByRole("button", { name: "로그인" }).click();
-    await expect(page).toHaveURL(/\/account$/);
-
-    // 검색 필터 — 표 위 필터 줄의 검색 칸으로 marker를 좁힌다.
-    await page.goto(`/projects?q=${encodeURIComponent(marker)}`);
-    await expect(page.getByText(`합계 (전체 · 3건)`)).toBeVisible();
-    await expect(page.getByText("필터 지우기")).toBeVisible();
-
-    // 정렬 — 프로젝트명 오름차순/내림차순으로 첫 행이 바뀐다(URL 파라미터
-    // 직접 내비게이션, 클릭 UI는 04-04 이후).
+    await login(page, pm);
     await page.goto(`/projects?q=${encodeURIComponent(marker)}&sort=name&dir=asc`);
-    const firstLinkAsc = page.locator("table tbody a").first();
-    await expect(firstLinkAsc).toHaveText(`${marker}-가`);
+    await expect(page.locator("table tbody a").first()).toHaveText(`${marker}-가`);
 
     await page.goto(`/projects?q=${encodeURIComponent(marker)}&sort=name&dir=desc`);
-    const firstLinkDesc = page.locator("table tbody a").first();
-    await expect(firstLinkDesc).toHaveText(`${marker}-다`);
+    await expect(page.locator("table tbody a").first()).toHaveText(`${marker}-다`);
 
-    // 더 보기(count 파라미터 증가) — 렌더 건수가 1 → 2로 늘어도 합계
-    // 부제는 3건 그대로다(불러온 페이지 크기와 무관, S1). 프로젝트명 링크
-    // 개수(행마다 정확히 하나)로 렌더 건수를 잰다 — 그룹 머리글·폰 접힌
-    // 줄 등 데이터 행이 아닌 `<tr>`이 섞이지 않는다.
-    await page.goto(`/projects?q=${encodeURIComponent(marker)}&count=1`);
-    await expect(page.locator("table tbody a")).toHaveCount(1);
-    await expect(page.getByText(`합계 (전체 · 3건)`)).toBeVisible();
-
-    await page.goto(`/projects?q=${encodeURIComponent(marker)}&count=2`);
-    await expect(page.locator("table tbody a")).toHaveCount(2);
-    await expect(page.getByText(`합계 (전체 · 3건)`)).toBeVisible();
-
-    // 필터 지우기 — 전체 목록으로 돌아간다(marker 검색 파라미터가 사라진다).
     await page.getByText("필터 지우기").click();
     await expect(page).toHaveURL("/projects");
   });
 
   test("번호 열이 한 줄로 줄바꿈 없이 나온다(§2-4·S10)", async ({ page }) => {
-    const vendor = await insertVendor(SYSTEM_VIEWER, {
-      name: `E2E번호클라이언트-${Date.now()}`,
-      normalizedName: `e2e번호클라이언트-${Date.now()}`,
-    });
-    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
-    const [team] = await db.select().from(teams).limit(1);
-    if (!team) throw new Error("시드된 팀이 없습니다");
-    const pmUserId = await findUserIdByEmail(pm.email);
+    const pm = await setupPm();
     await createProject(SYSTEM_VIEWER, {
-      clientId: vendor.id,
-      teamId: team.id,
-      pmUserId,
-      name: `E2E번호-${Date.now()}`,
+      clientId: pm.clientId,
+      teamId: pm.teamId,
+      pmUserId: pm.pmUserId,
+      name: `E2E번호-${randomUUID().slice(0, 8)}`,
     });
 
-    await page.goto("/login");
-    await page.getByLabel("이메일").fill(pm.email);
-    await page.getByLabel("비밀번호").fill(pm.password);
-    await page.getByRole("button", { name: "로그인" }).click();
-    await expect(page).toHaveURL(/\/account$/);
-
+    await login(page, pm);
     await page.goto("/projects");
     // 번호 칸은 `<span>`으로 렌더된다(projects-table.tsx) — 요소 타입을
     // span으로 좁혀 부모 `<td>`와의 텍스트 매치 중의성을 피하고, 내용은

@@ -83,7 +83,7 @@ export function ProjectsFilterBar({
           defaultValue={defaultValues.year ?? ""}
           onChange={() => formRef.current?.requestSubmit()}
         >
-          <option value="">전체 연도</option>
+          <option value="all">전체 연도</option>
           {yearOptions.map((year) => (
             <option key={year} value={year}>
               {year}

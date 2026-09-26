@@ -137,13 +137,11 @@ describe("loadProjectList — 목록 읽기 실패의 운영 로그(엔지 리�
         { search: "비밀 검색어" },
         {
           now: () => new Date("2026-09-26T00:00:00Z"),
-          scope: async () => ({ rows: "all", includeArchived: false }),
-          settle: async () => {},
+          scope: () => Promise.resolve({ rows: "all", includeArchived: false }),
+          settle: () => Promise.resolve(),
           repo: {
-            aggregate: async () => {
-              throw failure;
-            },
-            listPage: async () => [],
+            aggregate: () => Promise.reject(failure),
+            listPage: () => Promise.resolve([]),
           },
         },
       ),

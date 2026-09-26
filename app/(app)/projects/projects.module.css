@@ -120,12 +120,63 @@
   text-underline-offset: var(--underline-offset);
 }
 
-.summaryRow {
-  padding: var(--cell-pad-y) var(--cell-pad-x);
-  border-top: var(--line-w-strong) solid var(--line-strong);
+/* 04-17(D-88 · S1) — 표 위 합계 줄. 카드·타일·배경 면 없이 한 줄, 아래 2px 선. 금액은 `라벨 값` 쌍 단위로 줄바꿈한다. */
+.totals {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2) var(--s-5);
+  margin: 0 0 var(--s-3);
+  padding: var(--s-2) 0;
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+}
+
+.totalsTitle,
+.totalsPair dt {
+  margin: 0;
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   color: var(--muted);
+}
+
+.totalsPairs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2) var(--s-5);
+  margin: 0;
+}
+
+.totalsPair {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  white-space: nowrap;
+}
+
+.totalsPair dd {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.totalsExclusion {
+  margin: 0 0 0 auto;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+@media (max-width: 699.98px) {
+  .totalsExclusion {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+}
+
+/* 04-17(D-90) — 기간 칸 2행 귀속 라벨. */
+.attribution {
+  white-space: nowrap;
 }
 
 .footerCell {

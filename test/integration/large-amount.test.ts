@@ -9,14 +9,16 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
 import { createProject } from "@/domain/projects";
-import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
+import { getCurrentQuoteRevision, saveQuoteLines, SaveRejectedError } from "@/domain/quotes/lines";
 import { saveRevenue } from "@/domain/revenue";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 
 // 버그: 금액이 약 21.4억(int4 상한 2,147,483,647)을 넘으면 원화 환산액
 // 열이 넘쳐 저장이 실패했다(사용자 보고는 "99억 이상"). 원화 금액 열이
 // 담아야 하는 크기를 실제 Postgres로 못박는다.
 const OVER_INT4 = 2_147_483_648;
 const NINETY_NINE_EOK = 9_900_000_000;
+const ONE_JO = 1_000_000_000_000;
 
 async function setupProject() {
   const client = await insertVendor(SYSTEM_VIEWER, {
@@ -87,5 +89,85 @@ describe("int4 상한을 넘는 원화 금액 저장 (실제 Postgres)", () => {
     expect(row?.executionAmountKrw).toBe(NINETY_NINE_EOK);
     expect(row?.quoteAmountKrw).toBe(NINETY_NINE_EOK * 3);
     expect(row?.profitKrw).toBe(NINETY_NINE_EOK * 2);
+  });
+});
+
+// /review 후속 — bigint로 넓힌 뒤 상한이 없으면 오타·붙여넣기로 19자리
+// 금액이 저장돼 /projects 합계(::bigint)가 넘치고, 2^53을 넘는 값은 조용히
+// 반올림된다. 원화 금액은 1조 원 미만만 받고, 넘으면 아무것도 쓰지 않는다.
+describe("원화 금액 상한 1조 원 (실제 Postgres)", () => {
+  it("계약 금액 999,999,999,999원은 저장되고 1조 원은 거부된다", async () => {
+    const { project, pm } = await setupProject();
+
+    await saveRevenue(pm, project.id, { contract: { currency: "KRW", amount: ONE_JO - 1, fxRate: 1 } });
+    await expect(
+      saveRevenue(pm, project.id, { contract: { currency: "KRW", amount: ONE_JO, fxRate: 1 } }),
+    ).rejects.toBeInstanceOf(UserFacingError);
+
+    const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
+    expect(row?.contractAmountKrw).toBe(ONE_JO - 1);
+  });
+
+  it("환산액이 1조 원 이상인 외화 계약 금액은 거부된다", async () => {
+    const { project, pm } = await setupProject();
+
+    await expect(
+      saveRevenue(pm, project.id, { contract: { currency: "USD", amount: 1_000_000_000, fxRate: 1000 } }),
+    ).rejects.toBeInstanceOf(UserFacingError);
+  });
+
+  it("1조 원 매출 발행 줄은 거부되고 아무 줄도 쓰이지 않는다", async () => {
+    const { project } = await setupProject();
+
+    await expect(
+      saveRevenue(SYSTEM_VIEWER, project.id, {
+        issuedEntries: [
+          { entryDate: "2026-09-01", amount: { currency: "KRW", amount: 1_000, fxRate: 1 } },
+          { entryDate: "2026-09-02", amount: { currency: "KRW", amount: ONE_JO, fxRate: 1 } },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(UserFacingError);
+
+    const rows = await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, project.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("단가·실행가가 1조 원이면 그 칸의 형식 오류로 전부 거부된다", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+
+    const attempt = saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+      {
+        subcategory: subcategoryValue,
+        itemName: "상한 초과",
+        unitPrice: { currency: "KRW", amount: ONE_JO, fxRate: 1 },
+        execution: { currency: "KRW", amount: ONE_JO, fxRate: 1 },
+      },
+    ]);
+
+    await expect(attempt).rejects.toBeInstanceOf(SaveRejectedError);
+    const error = await attempt.catch((e: unknown) => e);
+    expect(error instanceof SaveRejectedError && error.formatErrors.map((f) => f.field)).toEqual([
+      "unitPrice",
+      "execution",
+    ]);
+    const rows = await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("수량 × 단가가 1조 원 이상이면 수량 칸의 형식 오류로 거부된다", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+
+    const attempt = saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+      {
+        subcategory: subcategoryValue,
+        itemName: "수량 곱 초과",
+        quantity: 1_000,
+        unitPrice: { currency: "KRW", amount: 1_000_000_000, fxRate: 1 },
+        execution: { currency: "KRW", amount: 0, fxRate: 1 },
+      },
+    ]);
+
+    const error = await attempt.catch((e: unknown) => e);
+    expect(error instanceof SaveRejectedError && error.formatErrors.map((f) => f.field)).toEqual(["quantity"]);
   });
 });

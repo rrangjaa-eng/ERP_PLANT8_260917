@@ -8,7 +8,16 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { buildCustomFieldsSchema, type FieldDefType } from "@/domain/custom-fields/build-schema";
 import { gate, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
-import { moneyFromRow, moneyToColumns, quoteAmount, profit, type Money, type Currency } from "@/domain/money";
+import {
+  exceedsAmountLimit,
+  moneyExceedsLimit,
+  moneyFromRow,
+  moneyToColumns,
+  quoteAmount,
+  profit,
+  type Money,
+  type Currency,
+} from "@/domain/money";
 import { rememberFxRate } from "@/domain/money/currency";
 import { withTransaction } from "@/lib/db-transaction";
 import type { DbOrTx } from "@/repositories/document-counters";
@@ -423,6 +432,27 @@ export async function saveQuoteLines(
         field: "execution",
         label: "실행가",
         reason: "숫자가 아닙니다 · 12,400,000처럼 적어 주세요",
+      });
+    }
+    // 상한(1조 원 미만)은 칸마다, 그리고 수량 × 단가 결과에도 건다 — 넘치면
+    // 목록 합계가 깨지므로 이 줄만이 아니라 저장 전체를 거부한다.
+    const unitPriceTooLarge = moneyExceedsLimit(input.unitPrice);
+    if (unitPriceTooLarge) {
+      formatErrors.push({ rowIndex, rowId: input.id, field: "unitPrice", label: "단가", reason: "1조 원 미만으로 적어 주세요" });
+    }
+    if (moneyExceedsLimit(input.execution)) {
+      formatErrors.push({ rowIndex, rowId: input.id, field: "execution", label: "실행가", reason: "1조 원 미만으로 적어 주세요" });
+    }
+    if (
+      !unitPriceTooLarge &&
+      exceedsAmountLimit(quoteAmount(input.quantity, moneyFromRow(moneyToColumns(input.unitPrice))))
+    ) {
+      formatErrors.push({
+        rowIndex,
+        rowId: input.id,
+        field: "quantity",
+        label: "수량",
+        reason: "견적가(수량 × 단가)가 1조 원 미만이 되게 적어 주세요",
       });
     }
 

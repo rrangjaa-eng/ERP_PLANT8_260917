@@ -57,6 +57,21 @@ export function toKrw(input: MoneyInput): number {
   return round(exact, 1, "round");
 }
 
+// 금액 한 칸(외화 원금·원화 환산액·견적가)은 1조 원 미만만 받는다. 상한이
+// 없으면 오타·붙여넣기로 들어온 19자리 금액이 저장돼 목록 합계(::bigint)가
+// 넘치고, 2^53을 넘는 값은 조용히 반올림된다. 외화 원금 열 numeric(14,2)도
+// 1조 미만까지만 담는다.
+export const AMOUNT_LIMIT_KRW = 1_000_000_000_000;
+
+export function exceedsAmountLimit(value: number): boolean {
+  return !(Math.abs(value) < AMOUNT_LIMIT_KRW);
+}
+
+// 외화 원금과 원화 환산액 중 하나라도 상한을 넘는지 — 저장 전 검증용.
+export function moneyExceedsLimit(input: MoneyInput): boolean {
+  return exceedsAmountLimit(input.amount) || exceedsAmountLimit(toKrw(input));
+}
+
 // Drizzle numeric 컬럼이 돌려주는 문자열을 숫자로 바꾸는 **유일한 지점**.
 // foreignAmount가 null이면(원화 행) amount는 amountKrw와 같다 — 통화가
 // 둘로 갈리지 않고 KRW도 이 함수 하나를 거친다.

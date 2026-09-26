@@ -6,6 +6,7 @@ import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import {
   moneyFromRow,
+  moneyExceedsLimit,
   moneyToColumns,
   round,
   grossFromTotal,
@@ -324,6 +325,17 @@ export async function saveRevenue(
     if (!(await canFn(viewer, REVENUE_SETTLEMENT_MENU, "write"))) {
       throw new ForbiddenError("발행·입금 줄 저장 권한이 없습니다.");
     }
+  }
+
+  // 쓰기 전에 전부 검사한다 — 상한(1조 원 미만)을 넘는 금액이 하나라도
+  // 있으면 아무것도 쓰지 않는다.
+  const amounts = [
+    ...(input.contract ? [input.contract] : []),
+    ...(input.issuedEntries ?? []).map((entry) => entry.amount),
+    ...(input.paidEntries ?? []).map((entry) => entry.amount),
+  ];
+  if (amounts.some(moneyExceedsLimit)) {
+    throw new UserFacingError("금액은 1조 원 미만으로 적어 주세요");
   }
 
   const runSave = async (innerTx: DbOrTx): Promise<void> => {

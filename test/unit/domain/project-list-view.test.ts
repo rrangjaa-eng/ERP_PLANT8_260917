@@ -3,6 +3,7 @@ import {
   attributionLabel,
   bucketTotal,
   exclusionText,
+  parseListPeriod,
   profitBasisFor,
   resolveListRange,
   totalsTitle,
@@ -237,5 +238,44 @@ describe("loadProjectList — 번호 페이지 읽기 순서(C-23 · A-07)", () 
     expect(result.rows).toEqual([]);
     expect(result.page).toBe(1);
     expect(result.pageCount).toBe(0);
+  });
+});
+
+// 04-48 Task 1(UX-04 · CEO C-08) — 목록 기간 필터 두 칸의 서버 판정. 오류가 하나라도 있으면 기간 전체를 적용하지 않는다.
+describe("parseListPeriod — 목록 기간 필터 판정", () => {
+  const FORMAT = "날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요";
+  const REVERSED = "기간이 거꾸로입니다 · 앞 날짜를 먼저 적어 주세요";
+
+  it("올바른 두 날짜는 기간 둘이고 오류가 없다", () => {
+    expect(parseListPeriod("2026-09-01", "2026-10-31")).toEqual({
+      period: { from: "2026-09-01", to: "2026-10-31" },
+      errors: {},
+    });
+  });
+
+  it("한쪽만 적으면 그쪽만 있는 열린 기간이다", () => {
+    expect(parseListPeriod("", "2026-10-31")).toEqual({ period: { to: "2026-10-31" }, errors: {} });
+  });
+
+  it("자릿수가 틀린 날짜는 그 칸의 형식 오류이고 기간이 없다", () => {
+    expect(parseListPeriod("2026-9-1", "")).toEqual({ period: null, errors: { from: FORMAT } });
+  });
+
+  it("달력에 없는 날은 형식 오류다", () => {
+    expect(parseListPeriod("2026-02-30", "")).toEqual({ period: null, errors: { from: FORMAT } });
+  });
+
+  it("2000–2100 밖의 연도는 형식 오류다(C-08 — PG 날짜 오류로 가지 않는다)", () => {
+    expect(parseListPeriod("0000-01-01", "")).toEqual({ period: null, errors: { from: FORMAT } });
+    expect(parseListPeriod("", "2101-01-01")).toEqual({ period: null, errors: { to: FORMAT } });
+  });
+
+  it("거꾸로면 종료 칸의 거꾸로 오류이고 기간이 없다", () => {
+    expect(parseListPeriod("2026-10-31", "2026-09-01")).toEqual({ period: null, errors: { to: REVERSED } });
+  });
+
+  it("둘 다 비면 기간도 오류도 없다", () => {
+    expect(parseListPeriod("", "")).toEqual({ period: null, errors: {} });
+    expect(parseListPeriod(undefined, undefined)).toEqual({ period: null, errors: {} });
   });
 });

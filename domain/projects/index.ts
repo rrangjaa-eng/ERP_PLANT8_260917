@@ -10,7 +10,14 @@ import { allocateDocumentNumber, loadDocumentNumberFormat } from "@/domain/docum
 import { withTransaction } from "@/lib/db-transaction";
 import { kstToday, kstYear } from "@/lib/kst-date";
 import { log } from "@/lib/log";
-import { attributionLabel, exclusionText, resolveListPage, resolveListRange, totalsTitle } from "@/domain/projects/list-view";
+import {
+  attributionLabel,
+  exclusionText,
+  resolveListPage,
+  resolveListRange,
+  totalsTitle,
+  type ListPeriodErrors,
+} from "@/domain/projects/list-view";
 import { applyAutoSettlement, type AutoSettlementDeps } from "@/domain/projects/auto-transition";
 import { moneyFromRow, moneyToColumns, normalizeMoneyInput, MoneyInputError, type Currency, type Money, type MoneyInput } from "@/domain/money";
 import { validatePreEstimateChange } from "@/domain/projects/pre-estimate";
@@ -240,6 +247,9 @@ export type ProjectListQuery = {
   /** 없으면 올해(KST), `all`이면 범위 없음(D-89). */
   year?: number | "all";
   search?: string;
+  /** 04-48 — 기간 필터 두 칸(URL 값 그대로, 서버가 parseListPeriod로 판정한다). */
+  from?: string;
+  to?: string;
   sort?: { key?: string; direction?: string };
   /** URL의 쪽 번호 그대로 — 숫자 아님·1 미만·범위 밖은 clampPage가 보정한다(D-91). */
   page?: string | number;
@@ -254,6 +264,8 @@ export type ProjectListResult = {
   /** 보정된 쪽 번호와 쪽 수(50건씩). */
   page: number;
   pageCount: number;
+  /** 04-48(UX-04) — 기간 칸별 서버 판정 오류. 하나라도 있으면 기간 필터를 적용하지 않았다. */
+  periodErrors: ListPeriodErrors;
 };
 
 export type ProjectListDeps = {
@@ -347,6 +359,7 @@ export async function loadProjectList(
     total: paging.total,
     page: paging.page,
     pageCount: paging.pageCount,
+    periodErrors: {},
   };
 }
 

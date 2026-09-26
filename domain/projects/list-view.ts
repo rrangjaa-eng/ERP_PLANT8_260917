@@ -90,3 +90,14 @@ export function resolveListPage(
   const page = clampPage(rawPage, pageCount);
   return { total, pageCount, page, offset: (page - 1) * LIST_PAGE_SIZE, limit: LIST_PAGE_SIZE };
 }
+
+export type ListPeriod = { from?: string; to?: string };
+export type ListPeriodErrors = { from?: string; to?: string };
+
+// 04-48(UX-04) — 기간 필터 두 칸의 서버 판정. (RED 골격)
+export function parseListPeriod(
+  _from: string | undefined,
+  _to: string | undefined,
+): { period: ListPeriod | null; errors: ListPeriodErrors } {
+  return { period: null, errors: {} };
+}

@@ -231,3 +231,65 @@ test.describe("프로젝트 목록 — 올해 보기 · 표 위 귀속 합계 (0
     await expect(page.getByLabel("클라이언트")).toHaveCount(0);
   });
 });
+
+// 04-48 Task 1(D-89 · UX-04 · 엔지 리뷰 C §2 P2) — 기간 두 칸은 묶음 단위로 한 번 제출되고 서버가 판정한다.
+test.describe("프로젝트 목록 — 기간 필터 (04-48)", () => {
+  test("시작일에서 Tab으로 종료일에 가는 사이에는 다시 로드되지 않고, 묶음 밖으로 나가면 한 번 제출돼 기간 보기가 된다", async ({ page }) => {
+    const year = kstYear(new Date());
+    const marker = `E2E기간-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    const base = { clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId };
+    await createProject(SYSTEM_VIEWER, { ...base, name: `${marker}-가을`, startDate: `${year}-09-05`, endDate: `${year}-09-20` });
+    await createProject(SYSTEM_VIEWER, { ...base, name: `${marker}-봄`, startDate: `${year}-03-01`, endDate: `${year}-03-20` });
+
+    await login(page, pm);
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}`);
+    await expect(page.locator("table tbody a")).toHaveCount(2);
+    const before = page.url();
+    await page.evaluate(() => {
+      (window as unknown as { __sameDocument?: boolean }).__sameDocument = true;
+    });
+
+    await page.locator("#from").fill(`${year}-09-01`);
+    await page.locator("#from").press("Tab");
+    await expect(page.locator("#to")).toBeFocused();
+    expect(page.url()).toBe(before);
+    expect(await page.evaluate(() => (window as unknown as { __sameDocument?: boolean }).__sameDocument)).toBe(true);
+
+    await page.locator("#to").fill(`${year}-10-31`);
+    await page.locator("#to").press("Tab");
+    await expect(page).toHaveURL(new RegExp(`from=${year}-09-01.*to=${year}-10-31`));
+    await expect(page.locator("table tbody a")).toHaveCount(1);
+    const totals = page.getByRole("region", { name: "합계" });
+    await expect(totals.getByText(`합계 (${year}-09-01 ~ ${year}-10-31 귀속 · 1건)`, { exact: true })).toBeVisible();
+    await expect(page.locator("#from")).toHaveValue(`${year}-09-01`);
+  });
+
+  test("형식이 틀리거나 거꾸로면 칸 아래 오류 한 줄이 보이고 목록은 기간 필터 없는 결과 그대로다", async ({ page }) => {
+    const year = kstYear(new Date());
+    const marker = `E2E기간오류-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    const base = { clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId };
+    await createProject(SYSTEM_VIEWER, { ...base, name: `${marker}-가을`, startDate: `${year}-09-05`, endDate: `${year}-09-20` });
+    await createProject(SYSTEM_VIEWER, { ...base, name: `${marker}-봄`, startDate: `${year}-03-01`, endDate: `${year}-03-20` });
+
+    await login(page, pm);
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}`);
+    await page.locator("#from").fill(`${year}-9-1`);
+    await page.locator("#from").press("Tab");
+    await page.locator("#to").press("Tab");
+    await expect(page).toHaveURL(/from=/);
+    await expect(page.getByText("날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요", { exact: true })).toBeVisible();
+    await expect(page.locator("#from")).toHaveAttribute("aria-invalid", "true");
+    await expect(page.locator("#from")).toHaveValue(`${year}-9-1`);
+    await expect(page.locator("table tbody a")).toHaveCount(2);
+
+    await page.locator("#from").fill(`${year}-10-31`);
+    await page.locator("#to").fill(`${year}-09-01`);
+    await page.locator("#to").press("Enter");
+    await expect(page).toHaveURL(new RegExp(`from=${year}-10-31`));
+    await expect(page.getByText("기간이 거꾸로입니다 · 앞 날짜를 먼저 적어 주세요", { exact: true })).toBeVisible();
+    await expect(page.locator("#to")).toHaveAttribute("aria-invalid", "true");
+    await expect(page.locator("table tbody a")).toHaveCount(2);
+  });
+});

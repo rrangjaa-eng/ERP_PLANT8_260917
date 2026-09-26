@@ -548,3 +548,47 @@ describe("loadProjectList — 목록 입구 (04-17, 실제 Postgres)", () => {
     expect(totals.executionAmountKrw).toBe(expected);
   });
 });
+
+// 04-48 Task 1(D-89 · UX-04) — 기간 필터: 보기 범위 R = 연도 ∩ 기간, 행은 R과 겹치면 보이고 합계는 R 안 귀속만.
+describe("loadProjectList — 기간 필터 (04-48, 실제 Postgres)", () => {
+  it("(기간 보기) 연도 2026 + 기간 09-01~10-31이면 R이 그 기간이고, 11월에 끝나는 겹친 행은 보이되 합계에서 빠진다", async () => {
+    const base = await makeBase();
+    const marker = `기간보기-${randomUUID().slice(0, 8)}`;
+    await makeProject(base, marker, { startDate: "2026-09-05", endDate: "2026-09-20", line: { quote: 1_000_000, execution: 0 } });
+    const spilling = await makeProject(base, marker, {
+      startDate: "2026-10-20",
+      endDate: "2026-11-15",
+      line: { quote: 2_000_000, execution: 0 },
+    });
+    await makeProject(base, marker, { startDate: "2026-12-01", endDate: "2026-12-10", line: { quote: 4_000_000, execution: 0 } });
+
+    const result = await loadProjectList(SYSTEM_VIEWER, { year: 2026, search: marker, from: "2026-09-01", to: "2026-10-31" });
+    expect(result.periodErrors).toEqual({});
+    expect(result.rows).toHaveLength(2);
+    expect(result.rows.find((row) => row.id === spilling.id)?.attributionLabel).toBe("2026-11 귀속");
+    expect(result.totals).toMatchObject({
+      title: "합계 (2026-09-01 ~ 2026-10-31 귀속 · 1건)",
+      count: 1,
+      quoteAmountKrw: 1_000_000,
+      exclusionText: "기간 밖 귀속 1건 제외",
+    });
+  });
+
+  it("(UX-04) 기간 칸에 형식 오류가 있으면 기간 필터 없는 같은 요청과 행 · 합계가 같고 periodErrors에 그 칸의 오류가 있다", async () => {
+    const base = await makeBase();
+    const marker = `기간오류-${randomUUID().slice(0, 8)}`;
+    await makeProject(base, marker, { startDate: "2026-03-01", endDate: "2026-03-20", line: { quote: 1_000_000, execution: 0 } });
+    await makeProject(base, marker, { startDate: "2026-09-05", endDate: "2026-09-20", line: { quote: 2_000_000, execution: 0 } });
+
+    const plain = await loadProjectList(SYSTEM_VIEWER, { year: 2026, search: marker });
+    const broken = await loadProjectList(SYSTEM_VIEWER, { year: 2026, search: marker, from: "2026-9-1", to: "2026-09-30" });
+    expect(broken.periodErrors).toEqual({ from: "날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요" });
+    expect(broken.rows.map((row) => row.id)).toEqual(plain.rows.map((row) => row.id));
+    expect(broken.rows).toHaveLength(2);
+    expect(broken.totals).toEqual(plain.totals);
+
+    const reversed = await loadProjectList(SYSTEM_VIEWER, { year: 2026, search: marker, from: "2026-09-30", to: "2026-09-01" });
+    expect(reversed.periodErrors).toEqual({ to: "기간이 거꾸로입니다 · 앞 날짜를 먼저 적어 주세요" });
+    expect(reversed.totals).toEqual(plain.totals);
+  });
+});

@@ -27,7 +27,7 @@ export default async function NotificationsPage() {
       {initial === null ? (
         <ListEmpty
           tone="error"
-          message="불러오기 실패 · 다시 시도"
+          message="불러오기 실패"
           action={{ label: "다시 시도", href: "/notifications" }}
         />
       ) : initial.rows.length === 0 ? (

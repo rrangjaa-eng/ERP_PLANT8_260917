@@ -56,7 +56,7 @@ export default async function HolidaysPage({
         <PageHeader title="공휴일" />
         <ListEmpty
           tone="error"
-          message="공휴일 불러오기 실패 · 다시 시도"
+          message="공휴일 불러오기 실패"
           action={{ label: "다시 시도", href: yearParam ? `/admin/holidays?year=${yearParam}` : "/admin/holidays" }}
         />
       </>

@@ -14,7 +14,7 @@ import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
 import { createProject } from "@/domain/projects";
-import { listRevenue, saveRevenue } from "@/domain/revenue";
+import { listRevenue, saveRevenue, saveRevenueInTx } from "@/domain/revenue";
 import { saveProjectLedger } from "@/domain/projects/ledger";
 import { TAX_VAT_RATE, FX_RECENT_RATE_USD } from "@/domain/settings/keys";
 import { addHistorizedValue, getSettingValue, setSettingValue } from "@/domain/settings/registry";
@@ -790,18 +790,26 @@ describe("매출 쓰기 경로(04-41 · Codex #1 · ENG-D10)", () => {
       error.mockRestore();
     });
 
-    it("tx와 트랜잭션 앞에서 계산한 rights를 주면 잠긴 트랜잭션 안에서 권한을 조회하지 않고, canWriteEntries: false면 ForbiddenError다", async () => {
+    it("saveRevenueInTx는 트랜잭션 앞에서 계산한 rights가 필수이고(잠긴 트랜잭션 안 권한 조회 없음), canWriteEntries: false면 ForbiddenError다", async () => {
       const finance = await createFinanceViewer();
       const { project } = await setupProject();
-      const can = vi.fn(() => Promise.resolve(true));
-      const allowed = { can, rights: { canWriteEntries: true } };
-      const denied = { can, rights: { canWriteEntries: false } };
+      const allowed = { rights: { canWriteEntries: true } };
+      const denied = { rights: { canWriteEntries: false } };
       const input = { issuedEntries: [{ id: randomUUID(), isNew: true as const, entryDate: "2026-09-01", amount: krw(1000) }] };
+      // SF-1 — rights를 빼면 컴파일되지 않는다(잠긴 트랜잭션 안에서 풀로 권한을 조회하는 대체 경로가 없다).
+      // @ts-expect-error rights 필수
+      const _missingRights: Parameters<typeof saveRevenueInTx>[3] = {};
+      // SF-1 — saveRevenue는 외부 tx를 받지 않는다(기억할 환율을 버리는 분기 제거).
+      // @ts-expect-error tx 인자 없음
+      const _noTx: Parameters<typeof saveRevenue>[4] = undefined;
+      void _missingRights;
+      void _noTx;
 
-      await withTransaction((tx) => saveRevenue(finance, project.id, input, allowed, tx));
-      expect(can).toHaveBeenCalledTimes(0);
+      const fx = await withTransaction((tx) => saveRevenueInTx(finance, project.id, input, allowed, tx));
+      expect(fx).toEqual([]);
+      expect((await entriesOf(project.id)).map((row) => row.id)).toEqual([input.issuedEntries[0]?.id]);
 
-      const error = await rejectionOf(withTransaction((tx) => saveRevenue(finance, project.id, { issuedEntries: [{ id: randomUUID(), isNew: true, entryDate: "2026-09-01", amount: krw(1) }] }, denied, tx)));
+      const error = await rejectionOf(withTransaction((tx) => saveRevenueInTx(finance, project.id, { issuedEntries: [{ id: randomUUID(), isNew: true, entryDate: "2026-09-01", amount: krw(1) }] }, denied, tx)));
       expect(error).toBeInstanceOf(ForbiddenError);
       expect(error).toBeInstanceOf(UserFacingError);
     });

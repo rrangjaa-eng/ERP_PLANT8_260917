@@ -343,7 +343,7 @@ export async function saveProjectLedger(
               { now, recordAction },
             )
           : null;
-      const revenueFxToRemember = input.revenue
+      const revenueFxToRemember = input.revenue && revenueRights
         ? await saveRevenueInTx(viewer, projectId, input.revenue, { recordAction, rights: revenueRights }, tx)
         : [];
       return {

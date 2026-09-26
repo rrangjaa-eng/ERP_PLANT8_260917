@@ -391,18 +391,17 @@ export async function revenueWriteRights(viewer: Viewer, can: typeof defaultCan 
 // 않은 그룹은 아예 건드리지 않는다 — 권한 없이 줄을 실어 보내면 조용히
 // 무시하지 않고 거부한다(T-04-10, 조작 방어). 계약 금액은 쓰지 않는다(04-41 ·
 // D-84 — 고객 승인된 현재 차수 합계에서 파생된다).
-// `tx`를 받으면(04-02: 견적 줄과 한 트랜잭션으로 묶는 domain/projects/ledger.ts) 새 트랜잭션을 열지 않고, 기억할
-// 환율을 돌려준다(saveRevenueInTx) — 커밋 뒤 기억은 트랜잭션을 연 쪽이 한다.
+// 트랜잭션을 여는 쪽(04-02: 견적 줄과 한 트랜잭션으로 묶는 domain/projects/ledger.ts)은 saveRevenueInTx를 직접 부르고, 돌려받은
+// 기억할 환율을 커밋 뒤에 기억한다. 권한(rights)은 잠그기 전에 계산해 넘긴다 — 잠긴 트랜잭션 안에서 조회하지 않는다.
 export async function saveRevenueInTx(
   viewer: Viewer,
   projectId: string,
   input: SaveRevenueInput,
-  deps: Partial<RevenueWriteDeps> | undefined,
+  deps: Pick<RevenueWriteDeps, "rights"> & Partial<Pick<RevenueWriteDeps, "recordAction">>,
   tx: DbOrTx,
 ): Promise<FxToRemember[]> {
-  if (input.issuedEntries || input.paidEntries) {
-    const allowed = deps?.rights ? deps.rights.canWriteEntries : (await revenueWriteRights(viewer, deps?.can)).canWriteEntries;
-    if (!allowed) throw new ForbiddenError("발행·입금 줄 저장 권한이 없습니다.");
+  if ((input.issuedEntries || input.paidEntries) && !deps.rights.canWriteEntries) {
+    throw new ForbiddenError("발행·입금 줄 저장 권한이 없습니다.");
   }
 
   const formatErrors: CellFormatError[] = [];
@@ -415,7 +414,7 @@ export async function saveRevenueInTx(
 
   // 04-12(엔지 리뷰 A §1 P2) — 같은 tx로 남긴다(합성 저장이 뒤에서 거부되면 로그도 되돌아간다). 재전송 no-op은 남기지 않는다.
   if (issuedResult.written + paidResult.written > 0) {
-    const recordAction = deps?.recordAction ?? defaultRecordAction;
+    const recordAction = deps.recordAction ?? defaultRecordAction;
     await recordAction(viewer, { actionType: "document_update", entity: REVENUE_ENTITY, entityId: projectId }, { tx });
   }
   return [...issuedResult.fxToRemember, ...paidResult.fxToRemember];
@@ -426,17 +425,10 @@ export async function saveRevenue(
   projectId: string,
   input: SaveRevenueInput,
   deps?: Partial<RevenueWriteDeps>,
-  tx?: DbOrTx,
 ): Promise<RevenueDto | null> {
-  if (tx) {
-    // 외부 트랜잭션 안에서는 아직 커밋 전이라 listRevenue의 기본 db 커넥션이 이 쓰기를 보지 못한다(격리) — 스냅샷은
-    // 합성 호출자가 커밋 뒤 새로 조회한다.
-    await saveRevenueInTx(viewer, projectId, input, deps, tx);
-    return null;
-  }
-
-  const rights = deps?.rights ?? (input.issuedEntries || input.paidEntries ? await revenueWriteRights(viewer, deps?.can) : undefined);
-  const fxToRemember = await withTransaction((innerTx) => saveRevenueInTx(viewer, projectId, input, { ...deps, rights }, innerTx));
+  // 줄을 싣지 않으면 권한을 보지 않는다(saveRevenueInTx도 그때는 rights를 읽지 않는다).
+  const rights = deps?.rights ?? (input.issuedEntries || input.paidEntries ? await revenueWriteRights(viewer, deps?.can) : { canWriteEntries: false });
+  const fxToRemember = await withTransaction((tx) => saveRevenueInTx(viewer, projectId, input, { rights, recordAction: deps?.recordAction }, tx));
   await rememberFxAfterCommit(fxToRemember, deps?.rememberFxRate);
   return listRevenue(viewer, projectId);
 }

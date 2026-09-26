@@ -63,6 +63,9 @@ CREATE TABLE "leave_requests" (
 	CONSTRAINT "leave_requests_days_quarters_check" CHECK ("leave_requests"."days_quarters" >= 0)
 );
 --> statement-breakpoint
+SET LOCAL lock_timeout = '1s';
+SET LOCAL statement_timeout = '5s';
+--> statement-breakpoint
 ALTER TABLE "approval_instances" ADD CONSTRAINT "approval_instances_drafter_id_users_id_fk" FOREIGN KEY ("drafter_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "approval_instances" ADD CONSTRAINT "approval_instances_updated_by_users_id_fk" FOREIGN KEY ("updated_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "approval_routes" ADD CONSTRAINT "approval_routes_instance_id_approval_instances_id_fk" FOREIGN KEY ("instance_id") REFERENCES "public"."approval_instances"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint

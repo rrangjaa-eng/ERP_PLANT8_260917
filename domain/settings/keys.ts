@@ -184,7 +184,20 @@ export const FX_RECENT_RATE_USD: SettingDef<number> = {
   label: "USD 최근 환율",
   hint: "새 외화 줄의 환율 칸 기본값입니다 — 환율을 적은 저장마다 갱신됩니다.",
   namespace: "환율",
+  numberKind: "fxRate",
   default: 1300,
+};
+
+// 04-26(D-86 · S4) — 한 차수에 둘 수 있는 견적 줄 수. 보관된 줄은 빼고 조정·견적 외 비용·취소 줄은 센다.
+// 서버 게이트 quote.line-cap과 견적 표(「줄 추가」·키·붙여넣기)가 같은 값을 쓴다 — 상한은 줄을 더할 때만 막는다.
+export const QUOTE_LINE_MAX_PER_REVISION: SettingDef<number> = {
+  key: "quote_line.max_per_revision",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1),
+  label: "차수당 견적 줄 상한",
+  hint: "한 차수에 둘 수 있는 견적 줄 수 — 조정·취소 줄 포함",
+  namespace: "견적 표",
+  default: 300,
 };
 
 // 완료 처리 강행 허용 — 점검 항목별 boolean 셋(03-CONTEXT.md Claude's
@@ -220,6 +233,19 @@ export const PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE: SettingDef<boolean> =
   namespace: "완료 처리 강행",
   default: false,
   readBy: { phase: "6" },
+};
+
+// 04-14(D-43 · ROADMAP 기준 3) — 고객 승인 게이트(`quote.customer-approval`). 끄면 현재 차수가 미승인이어도
+// 지출결의를 올린다. Phase 5 지출결의가 읽는다.
+export const PROJECT_CUSTOMER_APPROVAL_GATE: SettingDef<boolean> = {
+  key: "project.customer_approval_gate",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "고객 승인 게이트",
+  hint: "끄면 고객 승인 전 차수에서도 지출결의를 올릴 수 있음",
+  namespace: "프로젝트",
+  default: true,
+  readBy: { phase: "5" },
 };
 
 // 04-05(ADMN-09) — 프로젝트 문서 번호 서식. 문서 종류별 키 묶음(Claude
@@ -328,6 +354,7 @@ export const SETTING_DEFS: SettingDef<unknown>[] = [
   TAX_ROUNDING_WITHHOLDING_UNIT,
   TAX_ROUNDING_MIN_WITHHOLDING,
   FX_RECENT_RATE_USD,
+  QUOTE_LINE_MAX_PER_REVISION,
   DOCUMENT_NUMBER_PROJECT_PREFIX,
   DOCUMENT_NUMBER_PROJECT_YEAR_DIGITS,
   DOCUMENT_NUMBER_PROJECT_SEQ_DIGITS,
@@ -336,6 +363,7 @@ export const SETTING_DEFS: SettingDef<unknown>[] = [
   PROJECT_FORCE_COMPLETE_ALLOW_OPEN_EXPENSES,
   PROJECT_FORCE_COMPLETE_ALLOW_UNMATCHED_ESTIMATE_LINES,
   PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE,
+  PROJECT_CUSTOMER_APPROVAL_GATE,
   PNL_START_GATE_WEEKS_AFTER_CUTOVER,
   NOTIFY_TICK_BATCH_MAX,
 ];

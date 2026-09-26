@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import type { NumberInputKind } from "@/lib/format-number";
 import type { Viewer } from "@/domain/viewer";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
@@ -33,6 +34,10 @@ export type SettingDef<T> = {
   hint?: string;
   /** 설정 화면 섹션 이름. */
   namespace: string;
+  /** number 타입 칸의 쉼표 입력 종류(04-09, UI-SPEC S15) — 금액·비율·개수라
+   * 식별자가 아닌 number 칸만 지정한다. 없으면 기존 숫자 칸(type="number")
+   * 그대로 렌더한다(자릿수 설정처럼 식별자에 가까운 값은 지정하지 않는다). */
+  numberKind?: NumberInputKind;
   default?: T;
   /** 미래 페이즈가 읽을 키의 예외 표시 — 미사용 키 검출에서 제외되되 목록으로 남는다. */
   readBy?: { phase: string };
@@ -191,7 +196,7 @@ export async function cancelHistorizedValue<T>(
 // 등)만 읽는다 — 화면 코드에 zod 타입 판정을 다시 흩뿌리지 않는다.
 export type SettingFieldDescriptor =
   | { kind: "boolean" }
-  | { kind: "number" }
+  | { kind: "number"; numberKind?: NumberInputKind }
   | { kind: "string" }
   | { kind: "enum"; options: string[] }
   | { kind: "multi-enum"; options: string[] };
@@ -222,7 +227,7 @@ function zodArrayElement(schema: unknown): unknown {
 export function describeSettingField(def: SettingDef<unknown>): SettingFieldDescriptor {
   const typeName = zodTypeName(def.schema);
   if (typeName === "boolean") return { kind: "boolean" };
-  if (typeName === "number") return { kind: "number" };
+  if (typeName === "number") return { kind: "number", numberKind: def.numberKind };
   if (typeName === "enum") return { kind: "enum", options: zodEnumOptions(def.schema) };
   if (typeName === "array") {
     const element = zodArrayElement(def.schema);

@@ -45,6 +45,13 @@ registerAction({
   dtoName: "RoleDto",
 });
 
+registerAction({
+  name: "setRoleWorkScopeAction",
+  menu: "admin.people",
+  action: "write",
+  dtoName: "RoleDto",
+});
+
 // 계급 관리 화면(§4)에서 비시드 계급을 보관하는 데 쓴다 — 보관함 자체는
 // domain/archive/index.ts의 정본 경로다(03-01). "계급 보관"이라는 별도
 // action.registry 항목이 필요해 이 플랜이 추가한다.

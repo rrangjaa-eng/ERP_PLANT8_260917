@@ -1,0 +1,99 @@
+/* SYSTEM.md §7-16 페이지 줄. 색·서체·radius는 토큰 참조만 쓴다(D-20). */
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-2);
+  margin-top: var(--s-3);
+}
+
+.range {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.pages {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+/* 넓은 창(PC ≥700)·폰 창(<700) — 700 중단점에서 하나만 보인다. display: none은
+   접근성 트리·탭 순서에서도 빠져 보이는 목록 하나만 읽힌다(§7-16 DR-33). */
+.wideWindow,
+.compactWindow {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+@media (max-width: 699.98px) {
+  .wideWindow {
+    display: none;
+  }
+}
+
+@media (min-width: 700px) {
+  .compactWindow {
+    display: none;
+  }
+}
+
+/* 번호·이전·다음 = 3차(글자 --accent + 밑줄) — ListEmpty .tertiary 선례. */
+.navLink,
+.pageLink {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font-weight: var(--fw-medium);
+  font-size: var(--fs-sm);
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
+  cursor: pointer;
+}
+
+.navLink:hover,
+.pageLink:hover {
+  text-decoration-thickness: var(--line-w-strong);
+}
+
+/* 현재 번호는 --fg 700, 밑줄 없음, 링크·버튼이 아니다(§7-16). */
+.current {
+  color: var(--fg);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-sm);
+}
+
+.gap {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.errorCount {
+  font-size: var(--fs-xs);
+  color: var(--danger);
+}
+
+/* 폰: 번호·이전·다음 44×44(--touch-min), 넘치면 범위 글자가 위 줄로(§7-16 폰). */
+@media (max-width: 699.98px) {
+  .navLink,
+  .pageLink {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+
+  .current {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+}

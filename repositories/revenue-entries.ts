@@ -20,13 +20,15 @@ export async function listRevenueEntriesByProject(viewer: Viewer, projectId: str
     .orderBy(asc(revenueEntries.kind), asc(revenueEntries.entryDate));
 }
 
-export async function findRevenueEntryById(viewer: Viewer, id: string): Promise<RevenueEntryRow | null> {
+export async function findRevenueEntryById(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<RevenueEntryRow | null> {
   void viewer;
-  const [row] = await db.select().from(revenueEntries).where(eq(revenueEntries.id, id)).limit(1);
+  const [row] = await tx.select().from(revenueEntries).where(eq(revenueEntries.id, id)).limit(1);
   return row ?? null;
 }
 
 export type RevenueEntryInsertInput = {
+  /** 04-41(ENG-D10) — 화면이 만든 uuid. 이미 있으면 넣지 않는다(null). */
+  id?: string;
   projectId: string;
   kind: string;
   entryDate: string;
@@ -43,11 +45,12 @@ export async function insertRevenueEntry(
   viewer: Viewer,
   input: RevenueEntryInsertInput,
   tx: DbOrTx = db,
-): Promise<RevenueEntryRow> {
+): Promise<RevenueEntryRow | null> {
   void viewer;
   const [row] = await tx
     .insert(revenueEntries)
     .values({
+      ...(input.id ? { id: input.id } : {}),
       projectId: input.projectId,
       kind: input.kind,
       entryDate: input.entryDate,
@@ -59,12 +62,12 @@ export async function insertRevenueEntry(
       source: input.source ?? "demo",
       customFields: input.customFields ?? {},
     })
+    .onConflictDoNothing({ target: revenueEntries.id })
     .returning();
-  if (!row) throw new Error("revenue_entries insert가 행을 반환하지 않았습니다.");
-  return row;
+  return row ?? null;
 }
 
-export type RevenueEntryUpdateInput = Omit<RevenueEntryInsertInput, "projectId" | "kind" | "source">;
+export type RevenueEntryUpdateInput = Omit<RevenueEntryInsertInput, "id" | "projectId" | "kind" | "source">;
 
 // 견적 줄과 같은 낙관적 잠금 — WHERE version = expectedVersion. 0행이면
 // 충돌 또는 존재하지 않음(null).

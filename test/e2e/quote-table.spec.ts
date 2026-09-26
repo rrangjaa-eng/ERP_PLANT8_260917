@@ -89,13 +89,14 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await page.keyboard.type("800000");
     await page.keyboard.press("Enter");
 
-    // 저장 — ⌘S/Ctrl+S(그리드에 포커스가 있는 채로).
+    // 저장 — Ctrl+S(그리드에 포커스가 있는 채로).
     await gridcell(7).focus();
     await page.keyboard.press("Control+s");
 
     await expect(page.getByText(/저장됨/)).toBeVisible();
-    await expect(page.getByText("1,200,000").first()).toBeVisible();
-    await expect(page.getByText("400,000").first()).toBeVisible(); // 차익 = 1,200,000 - 800,000
+    // 04-24 — 승인 다이얼로그 부제·차수 표에도 합계가 있어 견적 줄 표 안에서 찾는다(검토 S1).
+    await expect(quoteTable(page).getByText("1,200,000").first()).toBeVisible();
+    await expect(quoteTable(page).getByText("400,000").first()).toBeVisible(); // 차익 = 1,200,000 - 800,000
   });
 
   test("(b) 클립보드 여러 칸 붙여넣기가 활성 셀부터 오른쪽·아래로 채운다", async ({ page }) => {
@@ -158,7 +159,8 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await saveButton.click();
 
     await expect(page.getByText(/저장됨/)).toBeVisible();
-    await expect(page.getByText("1,500,000").first()).toBeVisible();
+    // 04-24 — 승인 다이얼로그 부제·차수 표에도 합계가 있어 견적 줄 표 안에서 찾는다(검토 S1).
+    await expect(quoteTable(page).getByText("1,500,000").first()).toBeVisible();
   });
 
   test("F2 — 항목을 비운 채 저장하면 next-safe-action 검증 오류가 화면에 alert로 보인다", async ({ page }) => {
@@ -184,7 +186,7 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
   });
 
   test("(f) 폰 뷰포트에서 줄을 탭하면 행 시트가 열리고 행동 줄이 없다", async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 800 });
+    // 04-49(DR-24 · DR-36) — 1024 미만에서는 줄을 만들거나 셀을 고칠 수 없다 — 줄은 PC 폭에서 만들고 폰 폭으로 바꿔 읽는다.
     await loginAndOpenProject(page);
 
     await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
@@ -194,6 +196,7 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await page.keyboard.press("Enter");
     await page.keyboard.type("폰 시트 확인용 항목");
     await page.keyboard.press("Enter");
+    await page.setViewportSize({ width: 375, height: 800 });
 
     // 접힌 요약 행(P2/P3 값)이 폰에서만 렌더되고 탭하면 시트가 열린다.
     const collapsedRow = page.locator('[role="button"][aria-label*="상세 보기"]');
@@ -268,6 +271,118 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await expect(page.locator("tbody tr").nth(1)).toBeVisible();
     await assertValues();
   });
+  test("(h) 저장된 줄에서 Delete → ui/confirm-dialog 확인 → 포커스·Tab 가두기·Esc 복귀 → 재삭제로 삭제 확정(04-46)", async ({ page }) => {
+    const client = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2E삭제확인-${Date.now()}`,
+      normalizedName: `e2e삭제확인-${Date.now()}`,
+    });
+    const email = `e2e-delete-${randomUUID()}@example.test`;
+    const { userId: pmUserId, tempPassword } = await createAccount(SYSTEM_VIEWER, {
+      email,
+      name: "E2E Delete",
+      roleId: DEFAULT_ROLE_ID,
+    });
+    const [team] = await db.select().from(teams).limit(1);
+    if (!team) throw new Error("시드된 팀이 없습니다");
+
+    const projectName = `E2E삭제확인프로젝트-${Date.now()}`;
+    const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId, name: projectName });
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("1차 차수가 없습니다");
+    // 저장된 줄(id가 있는 줄)을 도메인 함수로 미리 만든다 — UI로 만들면
+    // 아직 dirty·id 없는 새 줄이라 "저장된 줄에서 Delete" 전제와 다르다.
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
+      {
+        id: randomUUID(), isNew: true, subcategory: "sub-a",
+        itemName: "삭제 대상 줄",
+        unitPrice: { currency: "KRW", amount: 1000000, fxRate: 1 },
+        execution: { currency: "KRW", amount: 0, fxRate: 1 },
+      },
+    ] });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(email);
+    await page.getByLabel("비밀번호").fill(tempPassword);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+
+    const dataRow = page.locator("tbody tr").nth(1);
+    const gridcell = (index: number) => dataRow.getByRole("gridcell").nth(index);
+    const itemCell = gridcell(2);
+
+    await itemCell.focus();
+    await page.keyboard.press("Delete");
+
+    const dialog = page.getByRole("dialog", { name: "견적 줄 삭제" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText("보관함으로 옮겨짐 · 복원은 관리자")).toBeVisible();
+    const primaryButton = dialog.getByRole("button", { name: "견적 줄 삭제" });
+    await expect(primaryButton).toBeFocused();
+
+    // Tab이 다이얼로그 밖의 다른 인터랙션 요소로 나가지 않는다 — 네이티브
+    // showModal()의 포커스 가두기를 확인한다. Chromium은 마지막 포커스
+    // 가능 요소 다음 Tab에서 잠깐 activeElement를 <body>(포커스 없음 상태)로
+    // 돌렸다가 그다음 Tab에서 다이얼로그 첫 요소로 되돌아온다(실측 확인,
+    // 최소 재현 `<dialog><button>a</button><button>b</button></dialog>`도
+    // 같다) — 이 한 단계는 트랩이 깨진 것이 아니라 body는 인터랙션 요소가
+    // 아니므로 허용한다. 실제로 지켜야 할 계약은 "다이얼로그 밖의 다른
+    // 버튼·링크·입력으로 넘어가지 않는다"이다.
+    // body에 머무는 것은 한 단계뿐이다 — body 다음 Tab은 반드시 다이얼로그 안으로
+    // 돌아와야 하고, 다이얼로그 밖의 요소는 한 번도 포커스되지 않는다.
+    let previous: "inside" | "body" | "outside" = "inside";
+    let insideSteps = 0;
+    for (let i = 0; i < 6; i++) {
+      await page.keyboard.press("Tab");
+      const where = await dialog.evaluate((node) =>
+        node.contains(document.activeElement) ? "inside" : document.activeElement === document.body ? "body" : "outside",
+      );
+      expect(where).not.toBe("outside");
+      if (where === "body") expect(previous).toBe("inside");
+      if (where === "inside") insideSteps++;
+      previous = where;
+    }
+    expect(insideSteps).toBeGreaterThanOrEqual(4);
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(itemCell).toBeFocused();
+
+    // 다시 Delete → 1차 확인.
+    await page.keyboard.press("Delete");
+    await expect(dialog).toBeVisible();
+    await expect(primaryButton).toBeFocused();
+
+    // Esc 직후 곧바로 Delete(CI 실패 재현) — 브라우저는 close()에서 포커스를
+    // 셀로 바로 돌려주지만 close 이벤트는 따로 줄 선 작업이라, 입력 작업이
+    // 먼저 처리되면 Delete가 닫힘 이벤트보다 앞선다. 그래도 확인은 다시 열려야 한다.
+    await dialog.evaluate(async (node) => {
+      node.dispatchEvent(new Event("cancel", { cancelable: true }));
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+      const cell = document.activeElement;
+      if (!(cell instanceof HTMLElement) || node.contains(cell)) throw new Error("포커스가 셀로 돌아오지 않았다");
+      cell.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true }));
+    });
+    await expect(dialog).toBeVisible();
+    await expect(primaryButton).toBeFocused();
+
+    // 04-46 편차(SUMMARY 「계약 1 편차」 옆에 별도로 기록) — behavior 원문은
+    // "일괄 저장 건수 +1"을 요구하지만, 이 플랜은 ④에서 confirmDeleteLine을
+    // "기존 확인 처리기" 그대로 재사용한다(plan action ④). 그 함수는 줄을
+    // 로컬 상태에서 지울 뿐 dirty로 표시하지 않고, 삭제를 서버에 보내는
+    // 경로(quote_lines.archivedAt/archivedBy 컬럼은 있으나 saveQuoteLines에
+    // 쓰는 곳이 없다)도 이 플랜의 파일 목록(ui/app만)에 없다 — 실측 확인:
+    // 확정 클릭 뒤 "일괄 저장"은 여전히 비활성(dirtyCount 0)이다. 견적 줄
+    // 삭제의 실제 서버 반영(archivedAt 기록)은 이 플랜 밖의 새 도메인 작업
+    // 이라 여기서는 계약(모달 UI·포커스·Esc)만 굳히고 dirty 집계는 손대지
+    // 않는다.
+    await primaryButton.click();
+    await expect(dialog).toBeHidden();
+    await expect(itemCell).toBeHidden();
+  });
+
   test("금액을 볼 수 없는 직급은 상세 화면이 오류 없이 열리고 금액은 —, 표는 편집할 수 없다(/ship 리뷰)", async ({ page }) => {
     // role-ceo에 프로젝트 보기·쓰기와 project.value만 주고 quote.amount는 주지 않는다 — PM 역할을 건드리지 않아 다른 테스트와 격리된다.
     await upsertPermission(SYSTEM_VIEWER, { roleId: "role-ceo", menu: "projects", action: "view", allowed: true });
@@ -283,9 +398,9 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId, name: projectName });
     const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
     if (!revision) throw new Error("1차 차수가 없습니다");
-    await saveQuoteLines(SYSTEM_VIEWER, revision.id, [
-      { subcategory: "sub-a", itemName: "숨김 줄", unitPrice: { currency: "KRW", amount: 1000, fxRate: 1 }, execution: { currency: "KRW", amount: 0, fxRate: 1 } },
-    ]);
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
+      { id: randomUUID(), isNew: true, subcategory: "sub-a", itemName: "숨김 줄", unitPrice: { currency: "KRW", amount: 1000, fxRate: 1 }, execution: { currency: "KRW", amount: 0, fxRate: 1 } },
+    ] });
 
     const email = `e2e-ceo-${randomUUID()}@example.test`;
     const { tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 금액숨김", roleId: "role-ceo" });
@@ -301,5 +416,366 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await expect(page.getByText("1,000")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "줄 추가", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /첫 줄 만들기/ })).toHaveCount(0);
+  });
+});
+
+// 04-28 — 저장된 줄을 도메인 함수로 미리 만든 프로젝트를 기획 PM으로 연다.
+async function openProjectWithSavedLines(
+  page: Page,
+  rows: { subcategory: string; itemName: string; amount: number; execution?: number }[],
+): Promise<{ projectId: string; revisionId: string; email: string; password: string }> {
+  const stamp = `${Date.now()}-${randomUUID().slice(0, 6)}`;
+  const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E단축키-${stamp}`, normalizedName: `e2e단축키-${stamp}` });
+  const email = `e2e-shortcut-${randomUUID()}@example.test`;
+  const { userId: pmUserId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E Shortcut", roleId: DEFAULT_ROLE_ID });
+  const [team] = await db.select().from(teams).limit(1);
+  if (!team) throw new Error("시드된 팀이 없습니다");
+  const projectName = `E2E단축키프로젝트-${stamp}`;
+  const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId, name: projectName });
+  const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+  if (!revision) throw new Error("1차 차수가 없습니다");
+  if (rows.length > 0) {
+    await saveQuoteLines(
+      SYSTEM_VIEWER,
+      revision.id,
+      { rows: rows.map((row) => ({
+        id: randomUUID(),
+        isNew: true as const,
+        subcategory: row.subcategory,
+        itemName: row.itemName,
+        unitPrice: { currency: "KRW" as const, amount: row.amount, fxRate: 1 },
+        execution: { currency: "KRW" as const, amount: row.execution ?? 0, fxRate: 1 },
+      })) },
+    );
+  }
+
+  await page.goto("/login");
+  await page.getByLabel("이메일").fill(email);
+  await page.getByLabel("비밀번호").fill(tempPassword);
+  await page.getByRole("button", { name: "로그인" }).click();
+  await expect(page).toHaveURL(/\/account$/);
+  await page.goto(`/projects/${project.id}`);
+  await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+  return { projectId: project.id, revisionId: revision.id, email, password: tempPassword };
+}
+
+function quoteTable(page: Page) {
+  return page.locator("table", { has: page.locator("caption", { hasText: /^견적 줄$/ }) });
+}
+
+function quoteDataRows(page: Page) {
+  return quoteTable(page).locator('tbody tr:has(td[role="gridcell"])');
+}
+
+function quoteCell(page: Page, rowIndex: number, colIndex: number) {
+  return quoteDataRows(page).nth(rowIndex).getByRole("gridcell").nth(colIndex);
+}
+
+function isServerAction(request: { method: () => string; headers: () => Record<string, string> }) {
+  return request.method() === "POST" && request.headers()["next-action"] !== undefined;
+}
+
+async function editTextCell(page: Page, rowIndex: number, colIndex: number, text: string) {
+  const cell = quoteCell(page, rowIndex, colIndex);
+  // 편집 입력이 실제로 열렸는지 확인한다 — 하이드레이션 전에 누른 Enter는 사라진다.
+  await expect(async () => {
+    await cell.focus();
+    await page.keyboard.press("Enter");
+    await expect(cell.locator("input")).toBeFocused({ timeout: 1000 });
+  }).toPass();
+  await page.keyboard.press("Control+a");
+  await page.keyboard.type(text);
+  await page.keyboard.press("Enter");
+}
+
+test.describe("견적 줄 표 — Ctrl 전용 단축키·힌트 줄·이중 저장 없음(04-28 Task 1)", () => {
+  test("(a)(b) Meta+s는 저장하지 않고 Control+s는 저장한다", async ({ page }) => {
+    await openProjectWithSavedLines(page, [{ subcategory: "sub-a", itemName: "메타 키 확인 줄", amount: 1000000 }]);
+    let actionRequests = 0;
+    page.on("request", (request) => {
+      if (isServerAction(request)) actionRequests++;
+    });
+
+    await editTextCell(page, 0, 2, "메타 키로는 저장 안 됨");
+    await quoteCell(page, 0, 2).focus();
+
+    // (a) Mac 메타 키 조합 — 아무 일도 일어나지 않는다(D-94 「동작도 Ctrl」).
+    await page.keyboard.press("Meta+s");
+    await page.waitForTimeout(500); // 부정 단언 — 요청이 나가지 않음을 잠시 지켜본다.
+    expect(actionRequests).toBe(0);
+    await expect(page.getByText(/저장됨/)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+
+    // (b) Ctrl+S — 저장된다.
+    const saved = page.waitForResponse((response) => isServerAction(response.request()));
+    await page.keyboard.press("Control+s");
+    await saved;
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+    expect(actionRequests).toBe(1);
+  });
+
+  test("(c) 힌트 줄은 지금 되는 키 여섯 항목의 라벨 kbd 묶음이고 저장 항목이 없다", async ({ page }) => {
+    await openProjectWithSavedLines(page, [{ subcategory: "sub-a", itemName: "힌트 줄 확인", amount: 1000 }]);
+
+    const hintRow = page.locator("p", { hasText: "줄 복제" });
+    await expect(hintRow).toHaveCount(1);
+    await expect(hintRow).toHaveText(
+      "이동 ↑↓←→ · 붙여넣기 Ctrl+V · 취소 Esc · 새 줄 Ctrl+Enter · 줄 이동 Alt+↑↓ · 줄 복제 Ctrl+D",
+    );
+    await expect(hintRow.locator("kbd")).toHaveText(["↑↓←→", "Ctrl+V", "Esc", "Ctrl+Enter", "Alt+↑↓", "Ctrl+D"]);
+    await expect(hintRow).not.toContainText("저장");
+
+    // 1차 버튼 kbd가 저장 단축키를 말한다(힌트 줄과 두 자리에 쓰지 않는다).
+    await expect(page.getByRole("button", { name: /일괄 저장/ }).locator("kbd")).toHaveText("Ctrl+S");
+  });
+
+  test("(d) 새 줄 + Control+s 두 번 빠르게 → 새로 고친 뒤 줄 수가 정확히 +1", async ({ page }) => {
+    await openProjectWithSavedLines(page, [{ subcategory: "sub-a", itemName: "기존 줄", amount: 1000 }]);
+    await expect(quoteDataRows(page)).toHaveCount(1);
+    let actionRequests = 0;
+    page.on("request", (request) => {
+      if (isServerAction(request)) actionRequests++;
+    });
+
+    await quoteCell(page, 0, 2).focus();
+    await page.keyboard.press("Control+Enter");
+    await expect(quoteDataRows(page)).toHaveCount(2);
+    await editTextCell(page, 1, 2, "두 번 눌러도 한 줄");
+
+    await quoteCell(page, 1, 2).focus();
+    const saved = page.waitForResponse((response) => isServerAction(response.request()));
+    await page.keyboard.press("Control+s");
+    await page.keyboard.press("Control+s");
+    await saved;
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+    expect(actionRequests).toBe(1);
+
+    await page.reload();
+    await expect(quoteDataRows(page).first()).toBeVisible();
+    await expect(quoteDataRows(page)).toHaveCount(2);
+  });
+});
+
+test.describe("견적 줄 표 — 힌트 줄·1차·EMPTY에 적힌 조합이 전부 동작한다(04-28 Task 2 · C-07 · T17)", () => {
+  test("힌트 줄 여섯 조합과 1차 kbd Ctrl+S를 차례로 눌러 적힌 결과를 단언한다", async ({ page }) => {
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await openProjectWithSavedLines(page, [
+      { subcategory: "stage_construction", itemName: "무대 줄1", amount: 1000 },
+      { subcategory: "stage_construction", itemName: "무대 줄2", amount: 2000 },
+      { subcategory: "print_production", itemName: "인쇄 줄", amount: 3000 },
+    ]);
+    await expect(quoteDataRows(page)).toHaveCount(3);
+
+    // 이동 ↑↓←→ — 활성 셀 좌표가 방향키대로 움직인다.
+    await quoteCell(page, 0, 2).focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(quoteCell(page, 1, 2)).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(quoteCell(page, 1, 3)).toBeFocused();
+    await page.keyboard.press("ArrowLeft");
+    await expect(quoteCell(page, 1, 2)).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect(quoteCell(page, 0, 2)).toBeFocused();
+
+    // 붙여넣기 Ctrl+V — 클립보드 값이 활성 셀에 들어간다.
+    await page.evaluate(() => navigator.clipboard.writeText("7"));
+    await quoteCell(page, 2, 4).focus();
+    await page.keyboard.press("Control+v");
+    await expect(quoteCell(page, 2, 4)).toHaveText("7");
+
+    // 취소 Esc — 편집 중 값이 되돌아가고 포커스는 그 셀에 남는다.
+    await quoteCell(page, 0, 2).focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("취소될 값");
+    await page.keyboard.press("Escape");
+    await expect(quoteCell(page, 0, 2)).toHaveText("무대 줄1");
+    await expect(quoteCell(page, 0, 2)).toBeFocused();
+
+    // 줄 이동 Alt+↑↓ — 같은 그룹 안 순서가 바뀐다.
+    await quoteCell(page, 1, 2).focus();
+    await page.keyboard.press("Alt+ArrowUp");
+    await expect(quoteCell(page, 0, 2)).toHaveText("무대 줄2");
+    await expect(quoteCell(page, 1, 2)).toHaveText("무대 줄1");
+
+    // 줄 복제 Ctrl+D — 줄 수 +1, 값이 복제된다.
+    await quoteCell(page, 2, 2).focus();
+    await page.keyboard.press("Control+d");
+    await expect(quoteDataRows(page)).toHaveCount(4);
+    await expect(quoteCell(page, 3, 2)).toHaveText("인쇄 줄");
+
+    // 새 줄 Ctrl+Enter — 줄 수 +1.
+    await quoteCell(page, 0, 2).focus();
+    await page.keyboard.press("Control+Enter");
+    await expect(quoteDataRows(page)).toHaveCount(5);
+    await editTextCell(page, 2, 2, "새 줄 항목");
+
+    // 1차 kbd Ctrl+S — 저장된다(힌트 줄에는 없다).
+    await quoteCell(page, 0, 2).focus();
+    const saved = page.waitForResponse((response) => isServerAction(response.request()));
+    await page.keyboard.press("Control+s");
+    await saved;
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+  });
+
+  test("0줄 EMPTY의 3차 「첫 줄 만들기」 kbd Ctrl+Enter로 첫 줄이 정확히 하나 생긴다", async ({ page }) => {
+    await openProjectWithSavedLines(page, []);
+    const emptyAction = page.getByRole("button", { name: /첫 줄 만들기/ });
+    await expect(emptyAction.locator("kbd")).toHaveText("Ctrl+Enter");
+    await emptyAction.focus();
+    await page.keyboard.press("Control+Enter");
+    await expect(quoteDataRows(page)).toHaveCount(1);
+  });
+});
+
+async function saveWithKeyboard(page: Page, rowIndex: number, colIndex: number) {
+  await quoteCell(page, rowIndex, colIndex).focus();
+  const responded = page.waitForResponse((response) => isServerAction(response.request()));
+  await page.keyboard.press("Control+s");
+  await responded;
+}
+
+test.describe("견적 줄 표 — 저장 거부 봉투 → 충돌 셀·서버 형식 오류 셀(04-28 Task 3 · DR-25)", () => {
+  test("두 창 충돌 → 충돌 셀 → 키보드만으로 「그 값으로」·「덮어쓰기」 해소", async ({ page, browser, baseURL }) => {
+    const opened = await openProjectWithSavedLines(page, [
+      { subcategory: "stage_construction", itemName: "충돌 줄", amount: 5000000, execution: 1000000 },
+      { subcategory: "stage_construction", itemName: "다른 줄", amount: 2000000, execution: 500000 },
+    ]);
+
+    // 같은 담당 PM의 두 번째 창(B).
+    const contextB = await browser.newContext({ baseURL });
+    const pageB = await contextB.newPage();
+    await pageB.goto("/login");
+    await pageB.getByLabel("이메일").fill(opened.email);
+    await pageB.getByLabel("비밀번호").fill(opened.password);
+    await pageB.getByRole("button", { name: "로그인" }).click();
+    await expect(pageB).toHaveURL(/\/account$/);
+    await pageB.goto(`/projects/${opened.projectId}`);
+    await expect(quoteDataRows(pageB)).toHaveCount(2);
+
+    // B가 첫 줄 실행가를 9,800,000으로 저장한다.
+    await editTextCell(pageB, 0, 7, "9800000");
+    await saveWithKeyboard(pageB, 0, 7);
+    await expect(pageB.getByText(/저장됨/)).toBeVisible();
+
+    // A가 같은 줄 실행가와 다른 줄 항목을 고쳐 저장 → 전부 거부.
+    await editTextCell(page, 0, 7, "7000000");
+    await editTextCell(page, 1, 2, "다른 줄 수정");
+    await saveWithKeyboard(page, 0, 7);
+
+    const conflictCell = quoteCell(page, 0, 7);
+    await expect(conflictCell).toHaveAttribute("aria-invalid", "true");
+    await expect(conflictCell).toContainText(/다른 사람이 \d{2}:\d{2}에 9,800,000으로 바꿈 · 덮어쓰기 \/ 그 값으로/);
+    await expect(quoteTable(page).locator("tfoot")).toContainText("충돌 1줄 · 전부 거부");
+    await expect(quoteCell(page, 1, 2)).toHaveText("다른 줄 수정"); // 다른 셀 편집값은 그대로.
+    const overwrite = conflictCell.getByRole("button", { name: "덮어쓰기" });
+    const takeTheirs = conflictCell.getByRole("button", { name: "그 값으로" });
+    await expect(overwrite).toHaveAttribute("tabindex", "-1");
+    await expect(takeTheirs).toHaveAttribute("tabindex", "-1");
+    await expect(quoteTable(page).locator('[tabindex="0"][role="gridcell"]')).toHaveCount(1);
+
+    // Enter → 「덮어쓰기」 → → 「그 값으로」 → Esc → 셀(누르지 않음).
+    await conflictCell.focus();
+    await page.keyboard.press("Enter");
+    await expect(overwrite).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(takeTheirs).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(conflictCell).toBeFocused();
+    await expect(conflictCell).toHaveAttribute("aria-invalid", "true");
+
+    // Enter → → → Enter = 「그 값으로」.
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter");
+    await expect(conflictCell).toHaveText("9,800,000");
+    await expect(conflictCell).not.toHaveAttribute("aria-invalid", "true");
+    await expect(conflictCell).toBeFocused();
+
+    await saveWithKeyboard(page, 0, 7);
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+    await page.reload();
+    await expect(quoteCell(page, 0, 7)).toHaveText("9,800,000");
+    await expect(quoteCell(page, 1, 2)).toHaveText("다른 줄 수정");
+
+    // 다른 줄로 한 번 더 — 이번엔 「덮어쓰기」(A의 값이 남는다).
+    await pageB.reload();
+    await expect(quoteDataRows(pageB)).toHaveCount(2);
+    await editTextCell(pageB, 1, 7, "600000");
+    await saveWithKeyboard(pageB, 1, 7);
+    await expect(pageB.getByText(/저장됨/)).toBeVisible();
+
+    await editTextCell(page, 1, 7, "650000");
+    await saveWithKeyboard(page, 1, 7);
+    const secondConflict = quoteCell(page, 1, 7);
+    await expect(secondConflict).toHaveAttribute("aria-invalid", "true");
+    await expect(secondConflict).toContainText("600,000으로 바꿈");
+    await secondConflict.focus();
+    await page.keyboard.press("Enter");
+    await expect(secondConflict.getByRole("button", { name: "덮어쓰기" })).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(secondConflict).not.toHaveAttribute("aria-invalid", "true");
+    await expect(secondConflict).toHaveText("650,000");
+    await expect(secondConflict).toBeFocused();
+
+    await saveWithKeyboard(page, 1, 7);
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+    await page.reload();
+    await expect(quoteCell(page, 1, 7)).toHaveText("650,000");
+
+    await contextB.close();
+  });
+
+  test("옮긴 줄의 충돌을 「그 값으로」 풀어도 그 줄은 옮김 때문에 저장 대상으로 남는다", async ({ page, browser, baseURL }) => {
+    const opened = await openProjectWithSavedLines(page, [
+      { subcategory: "stage_construction", itemName: "옮길 줄", amount: 5000000, execution: 1000000 },
+      { subcategory: "stage_construction", itemName: "제자리 줄", amount: 2000000, execution: 500000 },
+    ]);
+
+    const contextB = await browser.newContext({ baseURL });
+    const pageB = await contextB.newPage();
+    await pageB.goto("/login");
+    await pageB.getByLabel("이메일").fill(opened.email);
+    await pageB.getByLabel("비밀번호").fill(opened.password);
+    await pageB.getByRole("button", { name: "로그인" }).click();
+    await expect(pageB).toHaveURL(/\/account$/);
+    await pageB.goto(`/projects/${opened.projectId}`);
+    await expect(quoteDataRows(pageB)).toHaveCount(2);
+    await editTextCell(pageB, 0, 7, "9800000");
+    await saveWithKeyboard(pageB, 0, 7);
+    await expect(pageB.getByText(/저장됨/)).toBeVisible();
+    await contextB.close();
+
+    // A가 첫 줄을 Alt+↓로 옮기고 같은 줄 실행가도 고쳐 저장 → 충돌.
+    await quoteCell(page, 0, 2).focus();
+    await page.keyboard.press("Alt+ArrowDown");
+    await expect(quoteCell(page, 1, 2)).toHaveText("옮길 줄");
+    await editTextCell(page, 1, 7, "7000000");
+    await saveWithKeyboard(page, 1, 7);
+    const conflictCell = quoteCell(page, 1, 7);
+    await expect(conflictCell).toHaveAttribute("aria-invalid", "true");
+
+    await conflictCell.getByRole("button", { name: "그 값으로" }).click();
+    await expect(conflictCell).toHaveText("9,800,000");
+    await expect(conflictCell).not.toHaveAttribute("aria-invalid", "true");
+    // 04-30(A-03) — 자리를 바꾼 두 줄이 모두 dirty다: 옮긴 줄이 저장 대상에 남아야 2(빠지면 제자리 줄만 1).
+    await expect(page.getByRole("button", { name: /일괄 저장 2/ })).toBeEnabled();
+  });
+
+  test("수량 0을 저장하면 서버 형식 오류가 그 셀에 고정되고, 고치면 풀린다", async ({ page }) => {
+    await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "수량 확인 줄", amount: 1000 }]);
+
+    await editTextCell(page, 0, 4, "0");
+    await saveWithKeyboard(page, 0, 4);
+
+    const quantityCell = quoteCell(page, 0, 4);
+    await expect(quantityCell).toHaveAttribute("aria-invalid", "true");
+    await expect(quantityCell).toContainText("0보다 큰 수를 적어 주세요");
+    await expect(quoteTable(page).locator("tfoot")).toContainText("오류 1칸 · 전부 거부");
+
+    await editTextCell(page, 0, 4, "2");
+    await expect(quantityCell).not.toHaveAttribute("aria-invalid", "true");
+    await expect(quantityCell).toHaveText("2");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeEnabled();
   });
 });

@@ -117,8 +117,15 @@ GitHub Environments·승인 버튼은 없다(D-05, 무료 플랜 비공개 저�
 `pnpm rollback` = `scripts/rollback.sh --env … --project … --region …` — **현재 100%
 서빙 중인 리비전보다 오래된 최신 리비전**으로 되돌린다(`status.traffic`에서 percent 100인
 리비전을 찾아 그보다 오래된 것 중 가장 최신을 고른다. percent가 없는 태그 전용 항목은
-후보가 아니다). DB는 확장-축소 규칙(컬럼 추가만)이라 되돌릴 필요가 없다 — 데이터 손상은 백업
-복원(OPS-03, 별도 페이즈)으로 대응한다.
+후보가 아니다).
+
+**스키마 하한(E2-04, 04-50).** 트래픽 롤백은 DB를 되돌리지 않는다 — 후보가 스키마 하한
+(체크아웃의 `db/migrations/*.sql` 중 가장 최신 `-- rollback-floor:` 표시 파일을 더한
+커밋)보다 오래되면 스크립트가 `update-traffic`을 부르지 않고 거부한다(APP_GIT_SHA가
+없거나 로컬 이력에 없어도 같다 — 이력이 없는 경우는 최신 main을 fetch한 체크아웃에서
+다시 실행). 복구는 `docs/design/DECISIONS.md` 04-50 항목의 절차(전진 수정이 먼저 —
+불가피하면 쓰기를 멈추고 역 SQL 적용 후 수동 `update-traffic`)를 따른다. 데이터 손상은
+여전히 백업 복원(OPS-03, 별도 페이즈)으로 대응한다.
 
 ## 6. 경보 3개
 

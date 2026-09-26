@@ -1,4 +1,6 @@
 import type { Currency } from "@/domain/money/currency";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { formatKrw } from "@/lib/format-number";
 
 export type { Currency } from "@/domain/money/currency";
 
@@ -57,6 +59,56 @@ export function toKrw(input: MoneyInput): number {
   return round(exact, 1, "round");
 }
 
+// 04-40(엔지니어링 리뷰 B §2 · DR-9) — 원화 금액 컬럼(integer)의 범위. 금액 입력 범위와 계산 견적가 상한이 같은 두 상수를 쓴다.
+export const KRW_COLUMN_MIN = -2147483648;
+export const KRW_COLUMN_MAX = 2147483647;
+// 04-40 검토 SF-1 — 외화 금액 numeric(14,2) · 환율 numeric(12,4)의 정수부 한계(db/schema/money-columns.ts).
+const FOREIGN_AMOUNT_COLUMN_LIMIT = 1e12;
+const FX_RATE_COLUMN_LIMIT = 1e8;
+
+// UI-SPEC rev 5 Copywriting `Error — 셀(금액 범위)` · `Error — 셀(숫자 자리)` · `Error — 셀(형식)`.
+export type MoneyInputErrorReason = "fx-rate" | "range" | "not-finite" | "precision";
+
+export class MoneyInputError extends UserFacingError {
+  constructor(
+    readonly reason: MoneyInputErrorReason,
+    message: string,
+    readonly field: "amount" | "fxRate" = "amount",
+  ) {
+    super(message);
+  }
+}
+
+export function withinKrwColumn(value: number): boolean {
+  return value >= KRW_COLUMN_MIN && value <= KRW_COLUMN_MAX;
+}
+
+function hasAtMostDecimals(value: number, digits: number): boolean {
+  const scaled = value * 10 ** digits;
+  return Math.abs(scaled - Math.round(scaled)) < 1e-6;
+}
+
+// 04-40 — 금액 입력 한 규칙: KRW는 요청 환율을 버리고 1, USD는 환율 > 0 · 외화 소수 2자리 · 환율 소수 4자리, 원화 환산은
+// 정수 컬럼 범위 안. 부호는 보지 않는다(각 쓰기 경로의 몫). 조용히 반올림하지 않고 거부한다.
+export function normalizeMoneyInput(input: MoneyInput): MoneyInput {
+  if (!Number.isFinite(input.amount)) throw new MoneyInputError("not-finite", "숫자가 아닙니다 · 12,400,000처럼 적어 주세요");
+  const normalized: MoneyInput =
+    input.currency === "KRW" ? { currency: "KRW", amount: input.amount, fxRate: 1 } : { currency: input.currency, amount: input.amount, fxRate: input.fxRate };
+  if (normalized.currency !== "KRW") {
+    if (!Number.isFinite(normalized.fxRate) || normalized.fxRate <= 0) {
+      throw new MoneyInputError("fx-rate", "환율은 0보다 커야 합니다 · 환율을 고쳐 주세요", "fxRate");
+    }
+    if (!hasAtMostDecimals(normalized.amount, 2)) throw new MoneyInputError("precision", "외화는 소수 2자리까지");
+    if (!hasAtMostDecimals(normalized.fxRate, 4)) throw new MoneyInputError("precision", "환율은 소수 4자리까지", "fxRate");
+    if (normalized.fxRate >= FX_RATE_COLUMN_LIMIT) throw new MoneyInputError("range", "환율이 상한을 넘습니다 · 환율을 고쳐 주세요", "fxRate");
+    if (Math.abs(normalized.amount) >= FOREIGN_AMOUNT_COLUMN_LIMIT) throw new MoneyInputError("range", "외화 금액이 상한을 넘습니다 · 금액을 고쳐 주세요");
+  }
+  if (!withinKrwColumn(toKrw(normalized))) {
+    throw new MoneyInputError("range", `금액이 상한을 넘습니다 · ${formatKrw(KRW_COLUMN_MAX)}원 이하`);
+  }
+  return normalized;
+}
+
 // Drizzle numeric 컬럼이 돌려주는 문자열을 숫자로 바꾸는 **유일한 지점**.
 // foreignAmount가 null이면(원화 행) amount는 amountKrw와 같다 — 통화가
 // 둘로 갈리지 않고 KRW도 이 함수 하나를 거친다.
@@ -86,19 +138,30 @@ export function moneyToColumns(input: MoneyInput): {
   fxRate: string;
   amountKrw: number;
 } {
+  const money = normalizeMoneyInput(input);
   return {
-    currency: input.currency,
-    foreignAmount: input.currency === "KRW" ? null : input.amount.toFixed(2),
-    fxRate: input.fxRate.toFixed(4),
-    amountKrw: toKrw(input),
+    currency: money.currency,
+    foreignAmount: money.currency === "KRW" ? null : money.amount.toFixed(2),
+    fxRate: money.fxRate.toFixed(4),
+    amountKrw: toKrw(money),
   };
 }
 
 // D-63: 견적가 = 수량(기본 1) × 단가. 서버 계산·저장, 브라우저 계산값은
 // 버린다(PROJ-02). 수량이 비었거나 0 이하이면 기본 1이 적용돼 단가와 같다.
 export function quoteAmount(quantity: number | null | undefined, unitPrice: Money): number {
+  return quoteAmountFromKrw(quantity, unitPrice.amountKrw);
+}
+
+function quoteAmountFromKrw(quantity: number | null | undefined, unitPriceKrw: number): number {
   const qty = quantity && quantity > 0 ? quantity : 1;
-  return round(qty * unitPrice.amountKrw, 1, "round");
+  return round(qty * unitPriceKrw, 1, "round");
+}
+
+// 04-40(DR-9) — 수량 × 단가로 계산한 견적가(quoteAmount와 같은 계산)가 quote_amount_krw 컬럼 범위 안인가. 서버 전용
+// import가 없어 화면도 같은 함수를 부른다.
+export function quoteAmountWithinBound(quantity: number | null | undefined, unitPrice: MoneyInput): boolean {
+  return withinKrwColumn(quoteAmountFromKrw(quantity, toKrw(unitPrice)));
 }
 
 // 차익 = 견적가 − 실행가. 실행가가 음수면(EXP-14 회수·환불) 차익이 견적가보다

@@ -46,12 +46,11 @@ export const INFO_ITEMS: InfoItemDef[] = [
   // 손익 숫자(pnl.amount)와는 다른 항목이다(견적 줄 = 계획값, 손익 = 확정
   // 비용 기준 결과값, Phase 9).
   { key: "quote.amount", label: "견적·실행가·차익", staffDefault: true },
-  // 04-02(D-57·T-04-09): 매출 섹션의 발행·입금 두 표. 기획본부 기본값은
-  // 숨김("새 기능 정보는 기본 숨김") — 발행·입금은 계약 금액과 달리
-  // 경영관리 전용 정보다. domain/revenue가 이 항목이 불통과면 DTO 배열
-  // 필드 자체를 싣지 않는다(빈 배열이 아니라 필드 부재, project()의
-  // 기본 동작).
-  { key: "revenue.issued_amount", label: "매출 발행액", staffDefault: false },
+  // 04-02(D-57·T-04-09) · 04-16(D-85): 매출 섹션의 발행·입금 두 표. 발행액은
+  // 기획본부 기본 공개(발행 진행을 PM도 안다), 입금액은 기본 숨김(경영관리
+  // 정보). domain/revenue가 이 항목이 불통과면 DTO 배열 필드 자체를 싣지
+  // 않는다(빈 배열이 아니라 필드 부재, project()의 기본 동작).
+  { key: "revenue.issued_amount", label: "매출 발행액", staffDefault: true },
   { key: "revenue.paid_amount", label: "매출 입금액", staffDefault: false },
   // ADMN-12(03-07): 보관함 목록 항목 — 여러 마스터 표를 섞어 보여주는
   // 화면이라 특정 표 전용 항목(예: vendor.value)으로는 게이트할 수 없다.

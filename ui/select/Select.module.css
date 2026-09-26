@@ -27,3 +27,12 @@
   color: var(--danger);
   font-size: var(--fs-sm);
 }
+
+/* 04-25(D-93 · S14): 고른 코드표 값의 설명 — Form.Hint와 같은 모양, 오류와
+   같은 자리. 굵은 라벨 안에 놓여도(관리자 폼) 본문 굵기로 읽힌다. */
+.hint {
+  margin: var(--s-1) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-regular);
+}

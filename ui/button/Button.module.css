@@ -15,13 +15,14 @@
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   border-radius: var(--radius);
+  text-decoration: none;
   cursor: pointer;
   transition:
     background-color var(--dur-hover) var(--ease-out),
     color var(--dur-hover) var(--ease-out);
 }
 
-.btn:disabled {
+.btn[aria-disabled="true"] {
   background: var(--surface);
   border-color: var(--line);
   color: var(--faint);
@@ -34,7 +35,7 @@
   color: var(--bg);
 }
 
-.primary:hover:not(:disabled) {
+.primary:hover:not([aria-disabled="true"]) {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
 }
@@ -45,7 +46,7 @@
   color: var(--fg);
 }
 
-.secondary:hover:not(:disabled) {
+.secondary:hover:not([aria-disabled="true"]) {
   background: var(--surface);
 }
 
@@ -59,7 +60,7 @@
   white-space: nowrap;
 }
 
-.tertiary:hover:not(:disabled) {
+.tertiary:hover:not([aria-disabled="true"]) {
   border-bottom-width: var(--line-w-strong);
 }
 
@@ -101,5 +102,11 @@
 
 .reason {
   color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+/* SYSTEM.md §7-1 개정 ⑦(DR-10, U-4) — 막힘이 아닌 정상 상태의 이유 색. */
+.reasonInfo {
+  color: var(--muted);
   font-size: var(--fs-sm);
 }

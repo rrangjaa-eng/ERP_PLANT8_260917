@@ -7,6 +7,7 @@ import {
   createCodeItem,
   setCodeItemActive,
   updateCodeItemLabel,
+  updateCodeItemDescription,
   setEvidenceTypeTaxRule,
 } from "@/domain/code-tables";
 import { taxRuleSchema } from "@/domain/code-tables/tax-rule";
@@ -24,6 +25,8 @@ export const createCodeItemAction = authedActionClient
       value: z.string().min(1, "값을 입력하세요."),
       label: z.string().min(1, "이름을 입력하세요."),
       sortOrder: z.coerce.number().int().default(0),
+      // 04-10(D-93): 「코드 추가」 폼 선택 칸 — 길이 검증은 domain이 한다.
+      description: z.string().optional(),
     }),
   )
   .action(async ({ parsedInput, ctx }) => {
@@ -37,6 +40,15 @@ export const updateCodeItemLabelAction = authedActionClient
   .schema(z.object({ id: z.string().min(1), label: z.string().min(1, "이름을 입력하세요.") }))
   .action(async ({ parsedInput, ctx }) => {
     await updateCodeItemLabel(ctx.viewer, parsedInput.id, parsedInput.label);
+    revalidatePath("/admin/code-tables");
+  });
+
+// 04-10(D-93): 설명 저장 — 길이 검증(40자)은 domain(updateCodeItemDescription)이
+// 한다. 빈 문자열도 유효한 입력이다(C-13 — 지우기).
+export const updateCodeItemDescriptionAction = authedActionClient
+  .schema(z.object({ id: z.string().min(1), description: z.string() }))
+  .action(async ({ parsedInput, ctx }) => {
+    await updateCodeItemDescription(ctx.viewer, parsedInput.id, parsedInput.description);
     revalidatePath("/admin/code-tables");
   });
 

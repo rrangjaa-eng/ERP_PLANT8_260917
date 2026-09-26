@@ -38,6 +38,11 @@ export type TableColumn<Row> = {
    * 렌더하지 않는다 — 3행으로 늘리지 않는다는 계약을 지킨다.
    */
   secondaryLine?: (row: Row) => ReactNode;
+  /**
+   * 04-49(DR-14) — 좁은 PC 열 접기. 그 폭 **미만**에서 숨는다(1024 미만은 1280 열도 숨는다). 숨은 열은 방향키가
+   * 건너뛰고, 붙여넣기의 논리 열 순서에는 남는다. 폰(<700)은 priority 규칙이 따로 접는다.
+   */
+  collapseBelow?: 1280 | 1024;
 };
 
 export type TableGroup<Row> = {
@@ -52,8 +57,10 @@ export type SortState = { key: string; direction: "asc" | "desc" } | null;
 // 모양이고, 이유 한 줄 + 다음 한 수(3차 버튼)를 함께 지닌다(D-65).
 export type CellIssueAction = { label: string; onClick: () => void };
 
+// 04-30(DR-35) — "reason"은 잠긴·읽기 전용 셀 편집 시도의 이유 한 줄이다. 같은 셀 아래 자리에 그리지만 고정
+// 오류가 아니다(오류 셀 모양·aria-invalid 없음 — 포커스가 셀을 떠나면 호출부가 지운다).
 export type CellIssue = {
-  kind: "error" | "conflict";
+  kind: "error" | "conflict" | "reason";
   message: string;
   actions?: CellIssueAction[];
 };

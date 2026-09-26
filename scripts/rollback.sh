@@ -10,6 +10,10 @@ set -euo pipefail
 # deploy.sh가 스모크에 실패하면 이 스크립트를 한 번 호출해 자동으로 되돌린다
 # (smoke_failed()). 그래도 수동 실행이 필요한 경우가 남는다 — 자동 롤백 자체가
 # 실패했을 때, 그리고 스모크는 통과했지만 나중에 문제가 드러났을 때다.
+#
+# 스키마 하한(E2-04): 체크아웃의 가장 최신 `-- rollback-floor:` 마이그레이션을
+# 더한 커밋을 조상으로 갖지 않는 배포로는 되돌리지 않는다 — 트래픽 롤백은 DB를
+# 되돌리지 않는다. 수동 실행은 최신 main 체크아웃에서.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -115,6 +119,39 @@ if [ -z "$PREV" ]; then
     echo "no previous revision" >&2
   fi
   exit 1
+fi
+
+# 스키마 하한(E2-04): db/migrations/*.sql 중 첫 줄이 `-- rollback-floor:`인 파일을
+# 이름순으로 모아 가장 최신 파일을 고른다(디렉터리 자체가 없거나 표시가 없으면
+# 판정을 건너뛰어 지금 동작 그대로 유지한다). 그 파일을 더한 커밋을 하한으로 삼고,
+# PREV의 APP_GIT_SHA가 그 커밋을 조상으로 갖지 않으면(또는 SHA가 없거나 로컬 git
+# 이력에 없으면) update-traffic을 부르지 않고 거부한다.
+FLOOR_FILE=""
+if [ -d "$ROOT_DIR/db/migrations" ]; then
+  FLOOR_FILE="$( (grep -l '^-- rollback-floor:' "$ROOT_DIR"/db/migrations/*.sql 2>/dev/null || true) \
+    | sort | tail -n1)"
+  FLOOR_FILE="${FLOOR_FILE##*/}"
+fi
+
+if [ -n "$FLOOR_FILE" ]; then
+  FLOOR_SHA="$(git -C "$ROOT_DIR" log --diff-filter=A --format=%H -1 -- "db/migrations/$FLOOR_FILE")"
+  CAND_SHA="$(rev_git_sha "$PREV")"
+  REASON=""
+  if [ -z "$CAND_SHA" ]; then
+    REASON="candidate has no APP_GIT_SHA"
+  elif ! git -C "$ROOT_DIR" cat-file -e "${CAND_SHA}^{commit}" 2>/dev/null; then
+    REASON="candidate SHA not found in local git history — git fetch and re-run from a checkout with the latest main"
+  elif ! git -C "$ROOT_DIR" merge-base --is-ancestor "$FLOOR_SHA" "$CAND_SHA" 2>/dev/null; then
+    REASON="candidate is older than the schema floor (not a descendant)"
+  fi
+  if [ -n "$REASON" ]; then
+    echo "rollback rejected: candidate revision $PREV (APP_GIT_SHA=${CAND_SHA:-<none>}) is not compatible with the current schema" >&2
+    echo "  floor migration: $FLOOR_FILE" >&2
+    echo "  floor commit:    $FLOOR_SHA" >&2
+    echo "  reason:          $REASON" >&2
+    echo "  recovery: fix forward first (new commit -> main -> deploy). If unavoidable, stop writes, apply the migration's reverse SQL, then move traffic manually. See docs/design/DECISIONS.md 04-50." >&2
+    exit 1
+  fi
 fi
 
 gcloud run services update-traffic "$SVC" --region="$REGION" --project="$PROJECT" --to-revisions="${PREV}=100"

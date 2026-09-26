@@ -1,6 +1,6 @@
 {
-  "id": "1c5b0fc6-2020-4ee6-bdd4-27b2880060ec",
-  "prevId": "db61382a-424b-449e-8925-ddd8b764e08f",
+  "id": "9dc65b23-fcdf-4b07-a665-b39b19d83e94",
+  "prevId": "658f114b-2e2c-4dd5-a9c3-d1dcb8f86628",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -14,15 +14,15 @@
           "primaryKey": true,
           "notNull": true,
           "identity": {
-            "type": "byDefault",
             "name": "action_log_seq_seq",
-            "schema": "public",
             "increment": "1",
-            "startWith": "1",
             "minValue": "1",
             "maxValue": "9223372036854775807",
+            "startWith": "1",
             "cache": "1",
-            "cycle": false
+            "cycle": false,
+            "schema": "public",
+            "type": "byDefault"
           }
         },
         "actor_id": {
@@ -106,9 +106,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "action_log_type_occurred_idx": {
           "name": "action_log_type_occurred_idx",
@@ -127,9 +127,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "action_log_document_idx": {
           "name": "action_log_document_idx",
@@ -142,9 +142,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "action_log_pruned_occurred_idx": {
           "name": "action_log_pruned_occurred_idx",
@@ -163,24 +163,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "action_log_actor_id_users_id_fk": {
           "name": "action_log_actor_id_users_id_fk",
           "tableFrom": "action_log",
-          "tableTo": "users",
           "columnsFrom": [
             "actor_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -279,15 +279,15 @@
         "accounts_user_id_users_id_fk": {
           "name": "accounts_user_id_users_id_fk",
           "tableFrom": "accounts",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -393,25 +393,25 @@
         "sessions_user_id_users_id_fk": {
           "name": "sessions_user_id_users_id_fk",
           "tableFrom": "sessions",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "sessions_token_unique": {
           "name": "sessions_token_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "token"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -505,25 +505,25 @@
         "users_role_id_roles_id_fk": {
           "name": "users_role_id_roles_id_fk",
           "tableFrom": "users",
-          "tableTo": "roles",
           "columnsFrom": [
             "role_id"
           ],
+          "tableTo": "roles",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "users_email_unique": {
           "name": "users_email_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "email"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -610,6 +610,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "sort_order": {
           "name": "sort_order",
           "type": "integer",
@@ -688,9 +694,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "code_items_custom_fields_idx": {
           "name": "code_items_custom_fields_idx",
@@ -703,9 +709,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "gin",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -713,11 +719,11 @@
       "uniqueConstraints": {
         "code_items_table_value_key": {
           "name": "code_items_table_value_key",
-          "nullsNotDistinct": false,
           "columns": [
             "table_key",
             "value"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -824,48 +830,48 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "gin",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "corp_cards_holder_user_id_users_id_fk": {
           "name": "corp_cards_holder_user_id_users_id_fk",
           "tableFrom": "corp_cards",
-          "tableTo": "users",
           "columnsFrom": [
             "holder_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "corp_cards_team_id_teams_id_fk": {
           "name": "corp_cards_team_id_teams_id_fk",
           "tableFrom": "corp_cards",
-          "tableTo": "teams",
           "columnsFrom": [
             "team_id"
           ],
+          "tableTo": "teams",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "corp_cards_issuer_last4_key": {
           "name": "corp_cards_issuer_last4_key",
-          "nullsNotDistinct": false,
           "columns": [
             "issuer",
             "number_last4"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -993,175 +999,15 @@
       "uniqueConstraints": {
         "field_definitions_entity_key_key": {
           "name": "field_definitions_entity_key_key",
-          "nullsNotDistinct": false,
           "columns": [
             "entity",
             "key"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.holiday_year_confirmations": {
-      "name": "holiday_year_confirmations",
-      "schema": "",
-      "columns": {
-        "year": {
-          "name": "year",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "confirmed_at": {
-          "name": "confirmed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "confirmed_by": {
-          "name": "confirmed_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "holiday_year_confirmations_confirmed_by_users_id_fk": {
-          "name": "holiday_year_confirmations_confirmed_by_users_id_fk",
-          "tableFrom": "holiday_year_confirmations",
-          "tableTo": "users",
-          "columnsFrom": [
-            "confirmed_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.holiday_year_generations": {
-      "name": "holiday_year_generations",
-      "schema": "",
-      "columns": {
-        "year": {
-          "name": "year",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "generated_at": {
-          "name": "generated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.holidays": {
-      "name": "holidays",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "date": {
-          "name": "date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "origin_year": {
-          "name": "origin_year",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "holidays_created_by_users_id_fk": {
-          "name": "holidays_created_by_users_id_fk",
-          "tableFrom": "holidays",
-          "tableTo": "users",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "holidays_date_key": {
-          "name": "holidays_date_key",
-          "nullsNotDistinct": false,
-          "columns": [
-            "date"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "holidays_kind_check": {
-          "name": "holidays_kind_check",
-          "value": "\"holidays\".\"kind\" in ('statutory', 'substitute', 'temporary', 'election')"
-        },
-        "holidays_origin_year_check": {
-          "name": "holidays_origin_year_check",
-          "value": "(\"holidays\".\"kind\" = 'substitute') = (\"holidays\".\"origin_year\" is not null)"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.roles": {
@@ -1240,9 +1086,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "gin",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -1250,10 +1096,10 @@
       "uniqueConstraints": {
         "roles_name_unique": {
           "name": "roles_name_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "name"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1327,9 +1173,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -1394,27 +1240,27 @@
         "permission_matrix_role_id_roles_id_fk": {
           "name": "permission_matrix_role_id_roles_id_fk",
           "tableFrom": "permission_matrix",
-          "tableTo": "roles",
           "columnsFrom": [
             "role_id"
           ],
+          "tableTo": "roles",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "permission_matrix_role_menu_action_key": {
           "name": "permission_matrix_role_menu_action_key",
-          "nullsNotDistinct": false,
           "columns": [
             "role_id",
             "menu",
             "action"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1470,26 +1316,26 @@
         "visibility_matrix_role_id_roles_id_fk": {
           "name": "visibility_matrix_role_id_roles_id_fk",
           "tableFrom": "visibility_matrix",
-          "tableTo": "roles",
           "columnsFrom": [
             "role_id"
           ],
+          "tableTo": "roles",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "visibility_matrix_role_item_key": {
           "name": "visibility_matrix_role_item_key",
-          "nullsNotDistinct": false,
           "columns": [
             "role_id",
             "info_item"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1557,9 +1403,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -1567,11 +1413,11 @@
       "uniqueConstraints": {
         "settings_historized_key_from_key": {
           "name": "settings_historized_key_from_key",
-          "nullsNotDistinct": false,
           "columns": [
             "key",
             "effective_from"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1686,9 +1532,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "gin",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -1696,10 +1542,10 @@
       "uniqueConstraints": {
         "org_units_name_unique": {
           "name": "org_units_name_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "name"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1767,48 +1613,48 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "team_memberships_user_id_users_id_fk": {
           "name": "team_memberships_user_id_users_id_fk",
           "tableFrom": "team_memberships",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "team_memberships_team_id_teams_id_fk": {
           "name": "team_memberships_team_id_teams_id_fk",
           "tableFrom": "team_memberships",
-          "tableTo": "teams",
           "columnsFrom": [
             "team_id"
           ],
+          "tableTo": "teams",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "team_memberships_user_from_key": {
           "name": "team_memberships_user_from_key",
-          "nullsNotDistinct": false,
           "columns": [
             "user_id",
             "effective_from"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1891,35 +1737,35 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "gin",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "teams_org_unit_id_org_units_id_fk": {
           "name": "teams_org_unit_id_org_units_id_fk",
           "tableFrom": "teams",
-          "tableTo": "org_units",
           "columnsFrom": [
             "org_unit_id"
           ],
+          "tableTo": "org_units",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "teams_org_name_key": {
           "name": "teams_org_name_key",
-          "nullsNotDistinct": false,
           "columns": [
             "org_unit_id",
             "name"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -2038,9 +1884,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "vendors_custom_fields_idx": {
           "name": "vendors_custom_fields_idx",
@@ -2053,9 +1899,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "gin",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -2237,9 +2083,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "projects_end_date_idx": {
           "name": "projects_end_date_idx",
@@ -2252,9 +2098,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "projects_client_id_idx": {
           "name": "projects_client_id_idx",
@@ -2267,9 +2113,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "projects_team_id_idx": {
           "name": "projects_team_id_idx",
@@ -2282,9 +2128,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "projects_custom_fields_idx": {
           "name": "projects_custom_fields_idx",
@@ -2297,60 +2143,60 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "gin",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "projects_client_id_vendors_id_fk": {
           "name": "projects_client_id_vendors_id_fk",
           "tableFrom": "projects",
-          "tableTo": "vendors",
           "columnsFrom": [
             "client_id"
           ],
+          "tableTo": "vendors",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "projects_team_id_teams_id_fk": {
           "name": "projects_team_id_teams_id_fk",
           "tableFrom": "projects",
-          "tableTo": "teams",
           "columnsFrom": [
             "team_id"
           ],
+          "tableTo": "teams",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "projects_pm_user_id_users_id_fk": {
           "name": "projects_pm_user_id_users_id_fk",
           "tableFrom": "projects",
-          "tableTo": "users",
           "columnsFrom": [
             "pm_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "projects_number_key": {
           "name": "projects_number_key",
-          "nullsNotDistinct": false,
           "columns": [
             "number"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -2426,48 +2272,48 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "quote_revisions_project_id_projects_id_fk": {
           "name": "quote_revisions_project_id_projects_id_fk",
           "tableFrom": "quote_revisions",
-          "tableTo": "projects",
           "columnsFrom": [
             "project_id"
           ],
+          "tableTo": "projects",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "quote_revisions_customer_approved_by_users_id_fk": {
           "name": "quote_revisions_customer_approved_by_users_id_fk",
           "tableFrom": "quote_revisions",
-          "tableTo": "users",
           "columnsFrom": [
             "customer_approved_by"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "quote_revisions_project_seq_key": {
           "name": "quote_revisions_project_seq_key",
-          "nullsNotDistinct": false,
           "columns": [
             "project_id",
             "seq"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -2672,9 +2518,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "quote_lines_custom_fields_idx": {
           "name": "quote_lines_custom_fields_idx",
@@ -2687,50 +2533,50 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "gin",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "quote_lines_revision_id_quote_revisions_id_fk": {
           "name": "quote_lines_revision_id_quote_revisions_id_fk",
           "tableFrom": "quote_lines",
-          "tableTo": "quote_revisions",
           "columnsFrom": [
             "revision_id"
           ],
+          "tableTo": "quote_revisions",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "quote_lines_vendor_id_vendors_id_fk": {
           "name": "quote_lines_vendor_id_vendors_id_fk",
           "tableFrom": "quote_lines",
-          "tableTo": "vendors",
           "columnsFrom": [
             "vendor_id"
           ],
+          "tableTo": "vendors",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "quote_lines_copied_from_line_id_quote_lines_id_fk": {
           "name": "quote_lines_copied_from_line_id_quote_lines_id_fk",
           "tableFrom": "quote_lines",
-          "tableTo": "quote_lines",
           "columnsFrom": [
             "copied_from_line_id"
           ],
+          "tableTo": "quote_lines",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2872,9 +2718,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "revenue_entries_custom_fields_idx": {
           "name": "revenue_entries_custom_fields_idx",
@@ -2887,307 +2733,26 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "gin",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "revenue_entries_project_id_projects_id_fk": {
           "name": "revenue_entries_project_id_projects_id_fk",
           "tableFrom": "revenue_entries",
-          "tableTo": "projects",
           "columnsFrom": [
             "project_id"
           ],
+          "tableTo": "projects",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.notification_log": {
-      "name": "notification_log",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "bigint",
-          "primaryKey": true,
-          "notNull": true,
-          "identity": {
-            "type": "byDefault",
-            "name": "notification_log_id_seq",
-            "schema": "public",
-            "increment": "1",
-            "startWith": "1",
-            "minValue": "1",
-            "maxValue": "9223372036854775807",
-            "cache": "1",
-            "cycle": false
-          }
-        },
-        "condition_kind": {
-          "name": "condition_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "entity": {
-          "name": "entity",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "entity_id": {
-          "name": "entity_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "recipient_id": {
-          "name": "recipient_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "round": {
-          "name": "round",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "reference_date": {
-          "name": "reference_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "message": {
-          "name": "message",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp (3)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "read_at": {
-          "name": "read_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "email_status": {
-          "name": "email_status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "email_attempted_at": {
-          "name": "email_attempted_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "notification_log_recipient_created_idx": {
-          "name": "notification_log_recipient_created_idx",
-          "columns": [
-            {
-              "expression": "recipient_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "notification_log_recipient_id_users_id_fk": {
-          "name": "notification_log_recipient_id_users_id_fk",
-          "tableFrom": "notification_log",
-          "tableTo": "users",
-          "columnsFrom": [
-            "recipient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "notification_log_dedup_key": {
-          "name": "notification_log_dedup_key",
-          "nullsNotDistinct": false,
-          "columns": [
-            "condition_kind",
-            "entity",
-            "entity_id",
-            "recipient_id",
-            "round"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "notification_log_email_status_check": {
-          "name": "notification_log_email_status_check",
-          "value": "\"notification_log\".\"email_status\" in ('pending', 'sending', 'sent', 'failed', 'unknown', 'skipped_no_smtp')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.notify_tick_runs": {
-      "name": "notify_tick_runs",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "bigint",
-          "primaryKey": true,
-          "notNull": true,
-          "identity": {
-            "type": "byDefault",
-            "name": "notify_tick_runs_id_seq",
-            "schema": "public",
-            "increment": "1",
-            "startWith": "1",
-            "minValue": "1",
-            "maxValue": "9223372036854775807",
-            "cache": "1",
-            "cycle": false
-          }
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "finished_at": {
-          "name": "finished_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kst_date": {
-          "name": "kst_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "business_day": {
-          "name": "business_day",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sent": {
-          "name": "sent",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "skipped": {
-          "name": "skipped",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "remaining": {
-          "name": "remaining",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "email_claimed": {
-          "name": "email_claimed",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "email_sent": {
-          "name": "email_sent",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "email_failed": {
-          "name": "email_failed",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "email_unknown": {
-          "name": "email_unknown",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "email_finished_at": {
-          "name": "email_finished_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "incomplete_recipient_ids": {
-          "name": "incomplete_recipient_ids",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
-        },
-        "evaluation_failed": {
-          "name": "evaluation_failed",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -3197,10 +2762,10 @@
   },
   "enums": {},
   "schemas": {},
+  "views": {},
   "sequences": {},
   "roles": {},
   "policies": {},
-  "views": {},
   "_meta": {
     "columns": {},
     "schemas": {},

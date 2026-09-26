@@ -1,8 +1,12 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { addDays, kstToday } from "@/lib/kst-date";
+import { rememberFxRate } from "@/domain/money/currency";
+import { getSettingValue } from "@/domain/settings/registry";
+import { FX_RECENT_RATE_USD } from "@/domain/settings/keys";
 
 // Phase 4 Task 2 ⑭ — 트레이서의 한 경로 스모크: 기획 PM 로그인 → 등록 →
 // 번호 부여 → 상세 → 견적 줄 서버 계산 저장. 필수 칸 유실 시 입력값 보존
@@ -78,8 +82,10 @@ test.describe("프로젝트 등록 → 견적 줄 저장 (Phase 4 트레이서)"
 
     // 견적가 = 수량(기본 1) × 단가 = 1,200,000, 차익 = 1,200,000 − 800,000 = 400,000.
     // 브라우저는 이 값을 계산해 보내지 않았다 — 서버가 domain/money로 계산해 돌려준 값이다.
-    await expect(page.getByText("1,200,000").first()).toBeVisible();
-    await expect(page.getByText("400,000").first()).toBeVisible();
+    // 04-24 — 승인 다이얼로그 부제·차수 표에도 합계가 있어 견적 줄 표 안에서 찾는다(검토 S1).
+    const quoteTable = page.locator("table", { has: page.locator("caption", { hasText: /^견적 줄$/ }) });
+    await expect(quoteTable.getByText("1,200,000").first()).toBeVisible();
+    await expect(quoteTable.getByText("400,000").first()).toBeVisible();
     await expect(page.getByText(/저장됨/)).toBeVisible();
   });
 
@@ -109,5 +115,276 @@ test.describe("프로젝트 등록 → 견적 줄 저장 (Phase 4 트레이서)"
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
     expect(overflow).toBeLessThanOrEqual(0);
+  });
+});
+
+// Phase 4 04-08 Task 1 — D-94(단축키 Windows Ctrl) · CEO 리뷰 C-06(연타·이중
+// 등록) · C-07(적힌 단축키 배선) · 엔지 리뷰 C §1 P2(성공 뒤 이동 지연 중
+// 재입력). project-form.tsx의 Ctrl+Enter 제출·Esc 취소가 실제로 동작하고
+// 연타·지연 재입력이 두 번째 제출을 만들지 않는지를 검증한다.
+test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phase 4 04-08 Task 1)", () => {
+  async function loginAndOpenForm(page: Page): Promise<void> {
+    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(pm.email);
+    await page.getByLabel("비밀번호").fill(pm.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto("/projects?new=1");
+    // 키보드 단축키(Ctrl+Enter·Esc)는 클라이언트 컴포넌트 하이드레이션
+    // 뒤에야 배선된다. 필드를 먼저 채우는 케이스(a·b·b2)는 그 자체로
+    // 충분한 지연을 주지만, 아무 선행 조작 없이 곧바로 키를 누르는
+    // 케이스(c)는 하이드레이션 전에 이벤트가 지나가 버릴 수 있어 실측
+    // 확인 뒤 이 대기를 추가했다(systematic-debugging).
+    await page.waitForLoadState("networkidle");
+  }
+
+  // 필수 네 칸(클라이언트·프로젝트명·담당 PM·팀)을 채우고 마지막 칸(팀
+  // select)에 포커스를 남긴다 — 이후 마우스 클릭 없이 그 칸에서
+  // Control+Enter를 누른다.
+  async function fillRequiredFields(page: Page, vendorName: string, projectName: string) {
+    await page.getByLabel("클라이언트").selectOption({ label: vendorName });
+    await page.getByLabel("프로젝트명").fill(projectName);
+    await page.getByLabel("담당 PM").selectOption({ index: 1 });
+    const teamSelect = page.getByLabel("팀");
+    await teamSelect.selectOption({ index: 1 });
+    return teamSelect;
+  }
+
+  test("(a) 마우스 클릭 없이 마지막 칸에서 Control+Enter를 누르면 상세로 이동하고 번호가 부여된다", async ({
+    page,
+  }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2ECtrlEnter클라이언트-${Date.now()}`,
+      normalizedName: `e2ectrlenter클라이언트-${Date.now()}`,
+    });
+    await loginAndOpenForm(page);
+    const projectName = `E2ECtrlEnter-${Date.now()}`;
+    const teamSelect = await fillRequiredFields(page, vendor.name, projectName);
+
+    await teamSelect.press("Control+Enter");
+
+    await expect(page).toHaveURL(/\/projects\/.+/);
+    await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+    await expect(page.getByText(/\d{5} · 상세 견적 1차/)).toBeVisible();
+  });
+
+  test("(b) Control+Enter를 빠르게 두 번 누르면 상세로 한 번만 이동하고 같은 이름 프로젝트가 정확히 1건이다(C-06)", async ({
+    page,
+  }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2E연타클라이언트-${Date.now()}`,
+      normalizedName: `e2e연타클라이언트-${Date.now()}`,
+    });
+    await loginAndOpenForm(page);
+    const projectName = `E2E연타-${Date.now()}`;
+    const teamSelect = await fillRequiredFields(page, vendor.name, projectName);
+
+    await teamSelect.press("Control+Enter");
+    await teamSelect.press("Control+Enter");
+
+    await expect(page).toHaveURL(/\/projects\/.+/);
+    await page.goto(`/projects?q=${encodeURIComponent(projectName)}`);
+    await expect(page.getByText(projectName, { exact: true })).toHaveCount(1);
+  });
+
+  test("(b2) 성공 뒤 상세 이동이 지연되는 사이 다시 눌러도 같은 이름 프로젝트가 정확히 1건이다(엔지 리뷰 C 공백 9)", async ({
+    page,
+  }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2E지연클라이언트-${Date.now()}`,
+      normalizedName: `e2e지연클라이언트-${Date.now()}`,
+    });
+    await loginAndOpenForm(page);
+    const projectName = `E2E지연-${Date.now()}`;
+    const teamSelect = await fillRequiredFields(page, vendor.name, projectName);
+
+    // 상세 이동 RSC 요청(Next.js가 붙이는 rsc 헤더가 있는 /projects/{id}
+    // 요청)을 약속이 풀릴 때까지 붙잡는다 — 고정 지연(timeout)이 아니라
+    // 요청 자체를 붙잡는 결정적 방식이다.
+    let releaseNav: () => void = () => {};
+    const navGate = new Promise<void>((resolve) => {
+      releaseNav = resolve;
+    });
+    await page.route(/\/projects\/[^/?]+(\?.*)?$/, async (route) => {
+      if (route.request().headers()["rsc"]) {
+        await navGate;
+      }
+      await route.continue();
+    });
+
+    await teamSelect.press("Control+Enter");
+    // 액션 응답은 왔지만(폼이 아직 보인다) 이동은 붙잡혀 있는 상태에서
+    // 다시 누른다 — submittedRef 래치가 이 두 번째 제출을 막아야 한다.
+    await expect(page.getByRole("button", { name: "프로젝트 등록" })).toBeVisible();
+    await teamSelect.press("Control+Enter");
+    releaseNav();
+
+    await expect(page).toHaveURL(/\/projects\/.+/);
+    await page.goto(`/projects?q=${encodeURIComponent(projectName)}`);
+    await expect(page.getByText(projectName, { exact: true })).toHaveCount(1);
+  });
+
+  test("(c) 빈 폼의 칸에서 Escape를 누르면 등록 폼이 닫힌 목록 주소로 간다(C-07, DR-27 빈 폼 갈래)", async ({
+    page,
+  }) => {
+    await loginAndOpenForm(page);
+    await page.getByLabel("프로젝트명").focus();
+
+    await page.keyboard.press("Escape");
+
+    await expect(page).toHaveURL(/\/projects$/);
+  });
+
+  test("(c2) 프로젝트명 한 칸을 적은 뒤 Escape를 누르면 「입력 버리기」 확인이 열리고, 2차로 닫으면 값이 남으며, 다시 눌러 1차를 확정하면 목록으로 간다(UX-04 · DR-27, 04-46)", async ({
+    page,
+  }) => {
+    await loginAndOpenForm(page);
+    const projectName = `E2EEsc유지-${Date.now()}`;
+    const nameField = page.getByLabel("프로젝트명");
+    await nameField.fill(projectName);
+
+    await page.keyboard.press("Escape");
+
+    const dialog = page.getByRole("dialog", { name: "입력 버리기" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText("프로젝트 등록 · 1칸")).toBeVisible();
+    const primaryButton = dialog.getByRole("button", { name: "입력 버리기" });
+    await expect(primaryButton).toBeFocused();
+
+    // Escape(= 2차) — 폼이 그대로이고 값이 남으며 포커스가 프로젝트명 칸으로 돌아온다.
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(page).toHaveURL(/\/projects\?new=1/);
+    await expect(nameField).toHaveValue(projectName);
+    await expect(nameField).toBeFocused();
+
+    // 다시 Escape → 1차 확정 → 목록 주소.
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeVisible();
+    await primaryButton.click();
+    await expect(page).toHaveURL(/\/projects$/);
+  });
+
+  test("(c3) 빈 폼에서 2차 「취소 Esc」 버튼을 클릭하면 확인 없이 바로 목록으로 간다(DR-27 빈 폼 갈래)", async ({
+    page,
+  }) => {
+    await loginAndOpenForm(page);
+
+    await page.getByRole("button", { name: /취소/ }).click();
+
+    await expect(page).toHaveURL(/\/projects$/);
+  });
+
+  test("(c4) 클라이언트 선택 목록을 연 채 Escape를 누르면 목록만 닫히고 폼이 유지된다(DR-27 — 내부 컨트롤 먼저)", async ({
+    page,
+  }) => {
+    await loginAndOpenForm(page);
+    const projectName = `E2E선택목록Esc-${Date.now()}`;
+    await page.getByLabel("프로젝트명").fill(projectName);
+
+    const clientSelect = page.getByLabel("클라이언트");
+    await clientSelect.click(); // 네이티브 <select> 드롭다운을 연다.
+    await page.keyboard.press("Escape");
+
+    // 「내부 컨트롤 먼저」 — 열린 네이티브 목록이 Esc를 먼저 처리했으면
+    // 폼은 그대로이고(「입력 버리기」 확인이 뜨지 않는다) 값도 남는다.
+    await expect(page.getByRole("dialog", { name: "입력 버리기" })).toBeHidden();
+    await expect(page).toHaveURL(/\/projects\?new=1/);
+    await expect(page.getByLabel("프로젝트명")).toHaveValue(projectName);
+  });
+  // 04-15 Task 2(D-52 · D-95 · S2) — 총 매출 예상가 칸. 저장 값은 통합 테스트(project-copy.test.ts)가 DB로 단언한다.
+  test("(d1) 총 매출 예상가에 120000000을 치면 칸에 120,000,000이 보이고 등록이 성공한다", async ({ page }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2E예상가클라이언트-${Date.now()}`,
+      normalizedName: `e2e예상가클라이언트-${Date.now()}`,
+    });
+    await loginAndOpenForm(page);
+    const projectName = `E2E예상가-${Date.now()}`;
+    await fillRequiredFields(page, vendor.name, projectName);
+    const amount = page.getByLabel("총 매출 예상가");
+    await amount.fill("120000000");
+    await expect(amount).toHaveValue("120,000,000");
+
+    await amount.press("Control+Enter");
+
+    await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+    await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+  });
+
+  test("(d2) 음수 총 매출 예상가를 제출하면 칸 아래와 1차 옆에 이유가 보이고 다른 칸 입력이 남는다", async ({ page }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2E음수클라이언트-${Date.now()}`,
+      normalizedName: `e2e음수클라이언트-${Date.now()}`,
+    });
+    await loginAndOpenForm(page);
+    const projectName = `E2E음수-${Date.now()}`;
+    await fillRequiredFields(page, vendor.name, projectName);
+    const amount = page.getByLabel("총 매출 예상가");
+    await amount.fill("-5000");
+
+    await amount.press("Control+Enter");
+
+    const form = page.locator("#project-form");
+    await expect(form.getByText("총 매출 예상가는 0 이상 · 금액을 고쳐 주세요", { exact: true })).toBeVisible();
+    await expect(form.getByText("등록하지 못했습니다 · 총 매출 예상가 1칸", { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/projects\?new=1/);
+    await expect(page.getByLabel("프로젝트명")).toHaveValue(projectName);
+    await expect(amount).toHaveValue("-5,000");
+  });
+
+  test("(d3) 종료일이 시작일보다 앞이면 종료일 칸 아래에 이유가 보이고 프로젝트가 생기지 않는다(PR #38 「날짜 순서」)", async ({ page }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2E날짜순서클라이언트-${Date.now()}`,
+      normalizedName: `e2e날짜순서클라이언트-${Date.now()}`,
+    });
+    await loginAndOpenForm(page);
+    const projectName = `E2E날짜순서-${Date.now()}`;
+    await fillRequiredFields(page, vendor.name, projectName);
+    const today = kstToday(new Date());
+    await page.getByLabel("시작일").fill(addDays(today, 5));
+    const endDate = page.getByLabel("종료일");
+    await endDate.fill(addDays(today, 1));
+
+    await endDate.press("Control+Enter");
+
+    await expect(
+      page.locator("#project-form").getByText("종료일이 시작일보다 빠릅니다 · 종료일을 고쳐 주세요", { exact: true }),
+    ).toBeVisible();
+    await page.goto(`/projects?q=${encodeURIComponent(projectName)}`);
+    await expect(page.getByText("조건에 맞는 프로젝트가 없습니다")).toBeVisible();
+  });
+
+  test("(d4) USD를 고르면 환율 칸이 설정의 USD 최근 환율로 채워지고, 환율을 안 고친 등록은 설정을 그대로 두며 고친 등록만 설정을 바꾼다(검토 S3)", async ({ page }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2E환율클라이언트-${Date.now()}`,
+      normalizedName: `e2e환율클라이언트-${Date.now()}`,
+    });
+    await rememberFxRate("USD", 1234.5);
+    await loginAndOpenForm(page);
+    await fillRequiredFields(page, vendor.name, `E2E환율기본-${Date.now()}`);
+    const amount = page.getByLabel("총 매출 예상가");
+    await amount.fill("100");
+    await page.getByLabel("통화", { exact: true }).selectOption("USD");
+    const fxRate = page.getByLabel("환율", { exact: true });
+    await expect(fxRate).toHaveValue("1,234.5");
+    // 폼이 열린 뒤 설정이 바뀌어도 환율을 안 고친 등록은 그 값을 덮지 않는다 — 같은 값이면 덮어써도 구분되지 않는다.
+    await rememberFxRate("USD", 999);
+
+    await amount.press("Control+Enter");
+    await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+    expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(999);
+
+    await page.goto("/projects?new=1");
+    await page.waitForLoadState("networkidle");
+    await fillRequiredFields(page, vendor.name, `E2E환율수정-${Date.now()}`);
+    await amount.fill("100");
+    await page.getByLabel("통화", { exact: true }).selectOption("USD");
+    await expect(fxRate).toHaveValue("999");
+    await fxRate.fill("1300");
+
+    await fxRate.press("Control+Enter");
+    await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+    expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(1300);
   });
 });

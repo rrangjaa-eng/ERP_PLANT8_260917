@@ -23,6 +23,13 @@ registerAction({
 });
 
 registerAction({
+  name: "updateCodeItemDescriptionAction",
+  menu: "admin.code-tables",
+  action: "write",
+  dtoName: "CodeItemDto",
+});
+
+registerAction({
   name: "setCodeItemActiveAction",
   menu: "admin.code-tables",
   action: "write",

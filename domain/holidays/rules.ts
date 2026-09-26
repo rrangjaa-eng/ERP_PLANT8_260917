@@ -36,7 +36,7 @@ export type StatutoryHoliday = {
 };
 
 // 효력 해가 있는 법정 공휴일 목록.
-// 노동절·제헌절(A1-b)은 미확인 기본값이다 — 공식 출처(law.go.kr lsiSeq=285779) 접속 불가, 코디네이터 지시로 카드 추천값(2026 시행 · 대체 대상) 적용, 사용자 확인 필요.
+// 노동절·제헌절은 사용자 확인 완료(2026-09-25, 04.2-02-SUMMARY) — law.go.kr lsiSeq=285779, 2026 시행 · 대체 대상.
 export const STATUTORY_HOLIDAYS: readonly StatutoryHoliday[] = [
   { name: "1월 1일", rule: { month: 1, day: 1 }, substitutable: false, fromYear: 2025, toYear: null },
   { name: "설날", rule: { lunar: "seollal" }, span: "eve-and-next", substitutable: true, fromYear: 2025, toYear: null },
@@ -53,7 +53,7 @@ export const STATUTORY_HOLIDAYS: readonly StatutoryHoliday[] = [
   { name: "기독탄신일", rule: { month: 12, day: 25 }, substitutable: true, fromYear: 2025, toYear: null },
 ];
 
-// 이 시스템을 켜기 전에 지난 선거일·임시공휴일(미확인 기본값 — 사용자 확인 필요). 04.2-06이 규칙 후보와 함께 넣는다.
+// 이 시스템을 켜기 전에 지난 선거일·임시공휴일 — 2026-06-03 하나만(사용자 확인 완료, 2026-09-26, PR #73 코디네이터 결정 (a)). 04.2-06이 규칙 후보와 함께 넣는다.
 export const INITIAL_MANUAL_HOLIDAYS: readonly { date: string; name: string; kind: "temporary" | "election" }[] = [
   { date: "2026-06-03", name: "제9회 전국동시지방선거", kind: "election" },
 ];

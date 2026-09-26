@@ -56,13 +56,13 @@ const TOP_BAR_MENU: readonly MenuLink[] = [
 ];
 
 // D-17 → 「관리」 한 줄로 접기(2026-09-22, quick/260922-i3k, 사용자 결정 옵션 B):
-// 관리자 화면 10종(§6-8 시스템 상태 + Phase 3의 나머지 9개) 전부 — 개별 이름은
+// 관리자 화면 11종(§6-8 시스템 상태 + Phase 3의 나머지 10개) 전부 — 개별 이름은
 // PC 사용자 메뉴·「더보기」 시트에 더 이상 나오지 않고, 두 표면 모두 「관리」 한
 // 줄(/admin)만 보여준다. 개별 화면·순서·그룹은 `/admin` 인덱스 화면
 // (app/(app)/admin/page.tsx)이 adminIndexGroups로 받는다. key는
 // domain/permissions/menus.ts MENUS의 admin.* 키와 같은 문자열이어야 하고,
 // href는 실제 라우트 디렉터리 app/(app)/admin/<name>/과 대조해 확정했다
-// (2026-09-21, 열 개 전부 확인) — `ui`는 domain을 import할 수 없어(D-26) 이
+// (2026-09-21, 열한 개 전부 확인) — `ui`는 domain을 import할 수 없어(D-26) 이
 // 목록은 이 파일 안에 복제된 상수다. 여기 키가 MENUS와 어긋나면 그 항목의
 // 진입점이 절대 나타나지 않고, href가 실제 라우트와 어긋나면 링크가 404로 간다.
 //

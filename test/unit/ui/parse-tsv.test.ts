@@ -135,6 +135,12 @@ describe("normalizeNumericPaste", () => {
     expect(normalizeNumericPaste("￦1,000")).toBe(1000);
   });
 
+  // /qa ISSUE-004 (a) — 한국 스프레드시트 `#,##0원` 표시값. 앞뒤 `원`은 통화 기호로 지운다.
+  it('"1,234원" → 1234 · "원1,234" → 1234(앞뒤 원은 통화 기호)', () => {
+    expect(normalizeNumericPaste("1,234원")).toBe(1234);
+    expect(normalizeNumericPaste("원1,234")).toBe(1234);
+  });
+
   it('"-1,200" → -1200(음수)', () => {
     expect(normalizeNumericPaste("-1,200")).toBe(-1200);
   });

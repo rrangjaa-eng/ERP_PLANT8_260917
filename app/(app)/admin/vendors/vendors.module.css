@@ -78,6 +78,15 @@
     display: table-row;
   }
 
+  /* 접힌 줄은 자기 행에 붙는다 — 선은 주 행 아래가 아니라 접힌 줄 아래에 긋는다. */
+  .table tbody tr:has(+ .collapsedRow) td {
+    border-bottom: 0;
+  }
+
+  .table .collapsedCell {
+    border-bottom: var(--line-w) solid var(--line);
+  }
+
   /* 폭이 모자라면 「번호 보기」가 번호 아래로 내려간다 — 번호는 꺾지 않는다(§2-4). */
   .accountCell {
     flex-wrap: wrap;

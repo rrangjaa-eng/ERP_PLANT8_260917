@@ -113,6 +113,15 @@
   .collapsedRow {
     display: table-row;
   }
+
+  /* 접힌 줄은 자기 행에 붙는다 — 선은 주 행 아래가 아니라 접힌 줄 아래에 긋는다. */
+  .table tbody tr:has(+ .collapsedRow) td {
+    border-bottom: 0;
+  }
+
+  .table .collapsedCell {
+    border-bottom: var(--line-w) solid var(--line);
+  }
 }
 
 /* §2-4: 발생 시각은 숫자 성격 열이라 tabular-nums + nowrap. */

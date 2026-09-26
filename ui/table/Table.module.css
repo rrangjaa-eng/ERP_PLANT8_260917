@@ -182,6 +182,15 @@
     display: table-row;
   }
 
+  /* 접힌 줄은 자기 행에 붙는다 — 선은 주 행 아래가 아니라 접힌 줄 아래에 긋는다. */
+  tr:has(+ .collapsedRow) > .cell {
+    border-bottom: 0;
+  }
+
+  .collapsedCell {
+    border-bottom: var(--line-w) solid var(--line);
+  }
+
   .cell,
   .headerCell {
     padding: var(--cell-pad-y) var(--cell-pad-x);

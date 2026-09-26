@@ -7,8 +7,14 @@ import {
   profit,
   splitWithRemainder,
   grossFromTotal,
-  moneyExceedsLimit,
+  moneyToColumns,
+  normalizeMoneyInput,
+  MoneyInputError,
+  quoteAmountWithinBound,
+  KRW_COLUMN_MIN,
+  KRW_COLUMN_MAX,
   type Money,
+  type MoneyInput,
 } from "@/domain/money";
 import { recentFxRate, rememberFxRate } from "@/domain/money/currency";
 
@@ -172,13 +178,120 @@ describe("recentFxRate / rememberFxRate", () => {
   });
 });
 
-describe("moneyExceedsLimit (원화 금액 상한 1조 원 미만)", () => {
-  it("저장될 때 소수 2자리로 반올림돼 1조가 되는 외화 원금을 상한 초과로 본다", () => {
-    expect(moneyExceedsLimit({ currency: "USD", amount: 999_999_999_999.996, fxRate: 0.5 })).toBe(true);
+// 04-40(엔지니어링 리뷰 B §2 · PR #38 알려진 문제) — 금액 입력 정규화 한 규칙. 부호는 호출자 몫이다.
+describe("normalizeMoneyInput", () => {
+  function rejection(input: MoneyInput): MoneyInputError {
+    try {
+      normalizeMoneyInput(input);
+    } catch (error) {
+      if (error instanceof MoneyInputError) return error;
+      throw error;
+    }
+    throw new Error("거부되지 않았다");
+  }
+
+  it("KRW는 요청의 환율을 버리고 1로 고정한다", () => {
+    expect(normalizeMoneyInput({ currency: "KRW", amount: 5000, fxRate: 1350 })).toEqual({ currency: "KRW", amount: 5000, fxRate: 1 });
   });
 
-  it("999,999,999,999원은 받고 1조 원은 받지 않는다", () => {
-    expect(moneyExceedsLimit({ currency: "KRW", amount: 999_999_999_999, fxRate: 1 })).toBe(false);
-    expect(moneyExceedsLimit({ currency: "KRW", amount: 1_000_000_000_000, fxRate: 1 })).toBe(true);
+  it("USD 정상 입력은 그대로다", () => {
+    expect(normalizeMoneyInput({ currency: "USD", amount: 100, fxRate: 1350 })).toEqual({ currency: "USD", amount: 100, fxRate: 1350 });
+    expect(normalizeMoneyInput({ currency: "USD", amount: 4400.1, fxRate: 1318.1818 })).toEqual({ currency: "USD", amount: 4400.1, fxRate: 1318.1818 });
+  });
+
+  it("USD 환율 0 · 음수는 fx-rate — 「환율은 0보다 커야 합니다 · 환율을 고쳐 주세요」", () => {
+    for (const fxRate of [0, -1]) {
+      const error = rejection({ currency: "USD", amount: 100, fxRate });
+      expect(error.reason).toBe("fx-rate");
+      expect(error.message).toBe("환율은 0보다 커야 합니다 · 환율을 고쳐 주세요");
+    }
+  });
+
+  it("환율 칸을 비운 요청(0 또는 NaN)은 0 환율로 저장되지 않고 fx-rate 또는 not-finite로 거부된다", () => {
+    expect(["fx-rate", "not-finite"]).toContain(rejection({ currency: "USD", amount: 100, fxRate: 0 }).reason);
+    expect(["fx-rate", "not-finite"]).toContain(rejection({ currency: "USD", amount: 100, fxRate: Number.NaN }).reason);
+  });
+
+  it("원화 환산이 금액 범위 밖이면 range — 양·음 경계와 USD 환산(1.35조)", () => {
+    expect(rejection({ currency: "KRW", amount: 1_000_000_000_000, fxRate: 1 }).reason).toBe("range");
+    expect(rejection({ currency: "KRW", amount: -1_000_000_000_001, fxRate: 1 }).reason).toBe("range");
+    const usd = rejection({ currency: "USD", amount: 1_000_000_000, fxRate: 1350 });
+    expect(usd.reason).toBe("range");
+    expect(usd.message).toBe("금액이 상한을 넘습니다 · 999,999,999,999원 이하");
+    expect(normalizeMoneyInput({ currency: "KRW", amount: KRW_COLUMN_MAX, fxRate: 1 }).amount).toBe(KRW_COLUMN_MAX);
+    expect(normalizeMoneyInput({ currency: "KRW", amount: KRW_COLUMN_MIN, fxRate: 1 }).amount).toBe(KRW_COLUMN_MIN);
+  });
+
+  it("NaN · Infinity 금액은 not-finite — 「숫자가 아닙니다 · 12,400,000처럼 적어 주세요」", () => {
+    for (const amount of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      const error = rejection({ currency: "KRW", amount, fxRate: 1 });
+      expect(error.reason).toBe("not-finite");
+      expect(error.message).toBe("숫자가 아닙니다 · 12,400,000처럼 적어 주세요");
+    }
+  });
+
+  it("음수 금액은 통과한다(부호 규칙은 각 쓰기 경로의 몫)", () => {
+    expect(normalizeMoneyInput({ currency: "KRW", amount: -120_000, fxRate: 1 })).toEqual({ currency: "KRW", amount: -120_000, fxRate: 1 });
+  });
+
+  it("외화 금액 소수 3자리는 precision — 「외화는 소수 2자리까지」, 환율 소수 5자리는 「환율은 소수 4자리까지」", () => {
+    const amount = rejection({ currency: "USD", amount: 4400.005, fxRate: 1350 });
+    expect(amount.reason).toBe("precision");
+    expect(amount.message).toBe("외화는 소수 2자리까지");
+    const fx = rejection({ currency: "USD", amount: 4400.12, fxRate: 1318.18185 });
+    expect(fx.reason).toBe("precision");
+    expect(fx.message).toBe("환율은 소수 4자리까지");
+  });
+
+  it("(SF-1) 환율이 fx_rate numeric(12,4) 밖(≥ 10^8)이면 range — 원화 환산이 범위 안이어도 PG 22003으로 새지 않는다", () => {
+    const fx = rejection({ currency: "USD", amount: 0, fxRate: 1_000_000_000 });
+    expect(fx.reason).toBe("range");
+    expect(fx.message).toBe("환율이 상한을 넘습니다 · 환율을 고쳐 주세요");
+    expect(rejection({ currency: "USD", amount: 0, fxRate: 100_000_000 }).reason).toBe("range");
+    expect(normalizeMoneyInput({ currency: "USD", amount: 0, fxRate: 99_999_999.9999 }).fxRate).toBe(99_999_999.9999);
+  });
+
+  it("(SF-1) 외화 금액이 foreign_amount numeric(14,2) 밖(|x| ≥ 10^12)이면 range", () => {
+    const amount = rejection({ currency: "USD", amount: 1_000_000_000_000, fxRate: 0.0001 });
+    expect(amount.reason).toBe("range");
+    expect(amount.message).toBe("외화 금액이 상한을 넘습니다 · 금액을 고쳐 주세요");
+    expect(rejection({ currency: "USD", amount: -1_000_000_000_000, fxRate: 0.0001 }).reason).toBe("range");
+    expect(normalizeMoneyInput({ currency: "USD", amount: 999_999_999_999.99, fxRate: 0.0001 }).amount).toBe(999_999_999_999.99);
+  });
+
+  it("moneyToColumns가 먼저 정규화한다 — KRW 위조 환율 1350은 원화 5000 · 환율 1.0000으로", () => {
+    const columns = moneyToColumns({ currency: "KRW", amount: 5000, fxRate: 1350 });
+    expect(columns.amountKrw).toBe(5000);
+    expect(columns.fxRate).toBe("1.0000");
+    expect(() => moneyToColumns({ currency: "USD", amount: 100, fxRate: 0 })).toThrow(MoneyInputError);
+  });
+});
+
+// 04-40(DR-9) — 수량 × 단가로 계산한 견적가가 quote_amount_krw 금액 범위 안인가(quoteAmount와 같은 계산).
+describe("quoteAmountWithinBound", () => {
+  const krw = (amount: number): MoneyInput => ({ currency: "KRW", amount, fxRate: 1 });
+
+  it("금액 범위 상수가 −1,000,000,000,000 / 999,999,999,999(1조 원 미만)이다", () => {
+    expect(KRW_COLUMN_MIN).toBe(-1_000_000_000_000);
+    expect(KRW_COLUMN_MAX).toBe(999_999_999_999);
+  });
+
+  it("수량 1 × 단가 999,999,999,999는 참 · 1,000,000,000,000(정규화 전 값)은 거짓", () => {
+    expect(quoteAmountWithinBound(1, krw(999_999_999_999))).toBe(true);
+    expect(quoteAmountWithinBound(1, krw(1_000_000_000_000))).toBe(false);
+  });
+
+  it("수량 3 × 단가 5,000억은 각각 상한 안이어도 곱이 1.5조라 거짓", () => {
+    expect(quoteAmountWithinBound(3, krw(500_000_000_000))).toBe(false);
+  });
+
+  it("소수 수량은 quoteAmount의 원화 반올림 뒤 값으로 판정한다 — 0.5 × 1,999,999,999,999 = …999.5 → 1조 거짓, × 1,999,999,999,998 → …999 참", () => {
+    expect(quoteAmountWithinBound(0.5, krw(1_999_999_999_999))).toBe(false);
+    expect(quoteAmountWithinBound(0.5, krw(1_999_999_999_998))).toBe(true);
+  });
+
+  it("USD 수량 2 × USD 400,000,000 @1,350(원화 1.08조)은 거짓 · 수량 0은 기본 1이라 참", () => {
+    expect(quoteAmountWithinBound(2, { currency: "USD", amount: 400_000_000, fxRate: 1350 })).toBe(false);
+    expect(quoteAmountWithinBound(0, krw(1_000_000))).toBe(true);
   });
 });

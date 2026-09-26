@@ -37,15 +37,15 @@ describe("저장 경로의 소속 검사(/review PR #38)", () => {
   it("다른 차수의 견적 줄 id로 저장하면 거부되고 그 줄은 바뀌지 않는다", async () => {
     const a = await setupProject();
     const b = await setupProject();
-    const [lineB] = (await saveQuoteLines(SYSTEM_VIEWER, b.revision.id, [
-      { subcategory: b.subcategoryValue, itemName: "B의 줄", unitPrice: krw(100), execution: krw(0) },
-    ])).lines;
+    const [lineB] = (await saveQuoteLines(SYSTEM_VIEWER, b.revision.id, { rows: [
+      { id: randomUUID(), isNew: true, subcategory: b.subcategoryValue, itemName: "B의 줄", unitPrice: krw(100), execution: krw(0) },
+    ] })).lines;
     if (!lineB) throw new Error("줄 저장 실패");
 
     await expect(
-      saveQuoteLines(SYSTEM_VIEWER, a.revision.id, [
+      saveQuoteLines(SYSTEM_VIEWER, a.revision.id, { rows: [
         { id: lineB.id, version: lineB.version, subcategory: a.subcategoryValue, itemName: "탈취", unitPrice: krw(1), execution: krw(0) },
-      ]),
+      ] }),
     ).rejects.toThrow();
 
     const [row] = await db.select().from(quoteLines).where(eq(quoteLines.id, lineB.id));
@@ -77,7 +77,8 @@ describe("저장 경로의 소속 검사(/review PR #38)", () => {
 
     await expect(
       saveProjectLedger(SYSTEM_VIEWER, a.project.id, {
-        quoteLines: { revisionId: b.revision.id, rows: [{ subcategory: b.subcategoryValue, itemName: "섞임", unitPrice: krw(1), execution: krw(0) }] },
+        seenStatus: "bidding",
+        quoteLines: { revisionId: b.revision.id, rows: [{ id: randomUUID(), isNew: true, subcategory: b.subcategoryValue, itemName: "섞임", unitPrice: krw(1), execution: krw(0) }] },
       }),
     ).rejects.toThrow();
 
@@ -90,7 +91,8 @@ describe("저장 경로의 소속 검사(/review PR #38)", () => {
 
     await expect(
       saveProjectLedger(pm, a.project.id, {
-        quoteLines: { revisionId: a.revision.id, rows: [{ subcategory: a.subcategoryValue, itemName: "줄", unitPrice: krw(1), execution: krw(0) }] },
+        seenStatus: "bidding",
+        quoteLines: { revisionId: a.revision.id, rows: [{ id: randomUUID(), isNew: true, subcategory: a.subcategoryValue, itemName: "줄", unitPrice: krw(1), execution: krw(0) }] },
         revenue: { paidEntries: [{ entryDate: "2026-09-01", amount: krw(1) }] },
       }),
     ).rejects.toThrow();
@@ -105,7 +107,8 @@ describe("저장 경로의 소속 검사(/review PR #38)", () => {
 
     await expect(
       saveProjectLedger(pm, a.project.id, {
-        quoteLines: { revisionId: a.revision.id, rows: [{ subcategory: a.subcategoryValue, itemName: "보관 뒤 줄", unitPrice: krw(1), execution: krw(0) }] },
+        seenStatus: "bidding",
+        quoteLines: { revisionId: a.revision.id, rows: [{ id: randomUUID(), isNew: true, subcategory: a.subcategoryValue, itemName: "보관 뒤 줄", unitPrice: krw(1), execution: krw(0) }] },
       }),
     ).rejects.toThrow();
 

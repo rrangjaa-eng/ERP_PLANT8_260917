@@ -24,17 +24,13 @@ export const projects = pgTable(
       .notNull()
       .references(() => users.id),
     name: text("name").notNull(),
-    // D-41: bidding(수주중) · in_progress(진행) · settled(완료(정산)) · lost(미수주).
+    // D-75: bidding(수주중) · in_progress(진행) · settling(정산) · completed(완료) · lost(미수주).
     status: text("status").notNull().default("bidding"),
     // D-49: 수주중 단계는 기간이 선택이다 — nullable, 진행 전환 게이트가 시점을 담당(04-06).
     startDate: date("start_date"),
     endDate: date("end_date"),
     // D-52: 사전 견적 = 프로젝트의 총 매출 예상가 한 칸(견적 줄 없는 프로젝트 속성, 선택 입력).
     ...moneyColumns("preEstimate"),
-    // 04-02(D-57): 매출 섹션의 계약 금액(공급가액) — PM이 쓰는 단일 칸. 부가세·
-    // 합계는 domain/revenue가 domain/money로 매번 계산해 화면에 보이고 저장하지
-    // 않는다(계약 금액 하나가 정본).
-    ...moneyColumns("contract"),
     // Eng OV-1: 전환 전 새 시스템 입력은 source='demo'뿐.
     source: text("source").notNull().default("demo"),
     customFields: jsonb("custom_fields").notNull().default({}),

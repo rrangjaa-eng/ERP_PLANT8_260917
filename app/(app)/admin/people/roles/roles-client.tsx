@@ -3,7 +3,8 @@
 import { useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useAction } from "next-safe-action/hooks";
-import { createRoleAction, renameRoleAction, archiveRoleAction } from "../actions";
+import { createRoleAction, renameRoleAction, setRoleWorkScopeAction, archiveRoleAction } from "../actions";
+import type { RoleWorkScope } from "@/domain/permissions/roles";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
@@ -19,6 +20,7 @@ export type RoleRowView = {
   name: string;
   isSeed: boolean;
   sortOrder: number;
+  workScope: RoleWorkScope;
   archivedAt: Date | null;
 };
 
@@ -30,6 +32,10 @@ function getStringField(formData: FormData, key: string): string {
 function RoleRow({ role, canArchive }: { role: RoleRowView; canArchive: boolean }) {
   const [name, setName] = useState(role.name);
   const { execute: executeRename, result: renameResult } = useAction(renameRoleAction);
+  const [workScope, setWorkScope] = useState<RoleWorkScope>(role.workScope);
+  const { execute: executeWorkScope, result: workScopeResult } = useAction(setRoleWorkScopeAction, {
+    onError: () => setWorkScope(role.workScope),
+  });
 
   return (
     <tr>
@@ -44,6 +50,23 @@ function RoleRow({ role, canArchive }: { role: RoleRowView; canArchive: boolean 
           }}
         />
         {renameResult.serverError ? <p className={styles.registeredHint}>{renameResult.serverError}</p> : null}
+      </td>
+      <td>
+        <select
+          className={styles.select}
+          aria-label={`${role.name} 업무 범위`}
+          value={workScope}
+          disabled={role.archivedAt !== null}
+          onChange={(event) => {
+            const next = event.target.value === "company" ? "company" : "team";
+            setWorkScope(next);
+            executeWorkScope({ id: role.id, workScope: next });
+          }}
+        >
+          <option value="team">자기 팀</option>
+          <option value="company">전사</option>
+        </select>
+        {workScopeResult.serverError ? <p className={styles.registeredHint}>{workScopeResult.serverError}</p> : null}
       </td>
       <td>{role.isSeed ? "시드" : "—"}</td>
       <td className={styles.num}>{role.sortOrder}</td>
@@ -128,6 +151,7 @@ export function RolesClient({
         <thead>
           <tr>
             <th scope="col">이름</th>
+            <th scope="col">업무 범위</th>
             <th scope="col">시드 여부</th>
             <th scope="col" className={styles.num}>정렬</th>
             <th scope="col">동작</th>

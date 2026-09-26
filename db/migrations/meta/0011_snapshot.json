@@ -1,5 +1,5 @@
 {
-  "id": "6d2b0d12-450a-4456-a2be-d545776fe85a",
+  "id": "658f114b-2e2c-4dd5-a9c3-d1dcb8f86628",
   "prevId": "d90fe79f-d8be-4bff-aefe-ce9f3dfb410c",
   "version": "7",
   "dialect": "postgresql",
@@ -609,6 +609,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "sort_order": {
           "name": "sort_order",
@@ -1987,7 +1993,7 @@
         },
         "pre_estimate_amount_krw": {
           "name": "pre_estimate_amount_krw",
-          "type": "bigint",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
@@ -2013,7 +2019,7 @@
         },
         "contract_amount_krw": {
           "name": "contract_amount_krw",
-          "type": "bigint",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
@@ -2385,7 +2391,7 @@
         },
         "unit_price_amount_krw": {
           "name": "unit_price_amount_krw",
-          "type": "bigint",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
@@ -2411,19 +2417,19 @@
         },
         "execution_amount_krw": {
           "name": "execution_amount_krw",
-          "type": "bigint",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
         "quote_amount_krw": {
           "name": "quote_amount_krw",
-          "type": "bigint",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
         "profit_krw": {
           "name": "profit_krw",
-          "type": "bigint",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
@@ -2630,7 +2636,7 @@
         },
         "amount_amount_krw": {
           "name": "amount_amount_krw",
-          "type": "bigint",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },

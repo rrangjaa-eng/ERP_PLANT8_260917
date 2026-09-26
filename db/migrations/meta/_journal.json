@@ -82,8 +82,43 @@
     {
       "idx": 11,
       "version": "7",
-      "when": 1790402297170,
-      "tag": "0011_money_krw_bigint",
+      "when": 1790241279781,
+      "tag": "0011_code_item_descriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790284363239,
+      "tag": "0012_project_status_five_values",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790298799744,
+      "tag": "0013_role_work_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790353949229,
+      "tag": "0014_quote_line_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1790393530474,
+      "tag": "0015_drop_project_contract_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790414052589,
+      "tag": "0016_money_krw_bigint",
       "breakpoints": true
     }
   ]

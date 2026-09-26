@@ -118,6 +118,67 @@
   color: var(--danger);
 }
 
+/* 04-25(D-93 · S14 overflow): 설명 열(세 번째 칸)은 긴 글자 열 — 낱말을
+   자르지 않고 줄바꿈해 전문을 보인다(§7-3 「항목명은 keep-all」). */
+.table td:nth-child(3) {
+  word-break: keep-all;
+}
+
+/* 04-25(D-93 · S14 overflow, 2026-09-23 사용자 확정) — 폰 칸 접기(§7-3).
+   열 우선순위: 1 값 P3 · 2 이름 P1 · 3 설명 P2 · 4 정렬 P3 · 5 상태 P1 · 6 동작 P3.
+   설명 칸은 한 번만 렌더하고 자리만 옮긴다 — 행을 두 줄 격자로 만들어
+   이름·상태 아래 접힌 줄(라벨 없이 값만, --fs-sm --muted)로 내린다. 행 구분선은
+   두 줄을 한 행으로 묶도록 칸이 아니라 행에 긋는다. 증빙 종류의 세금 규칙
+   행(칸 하나, colSpan)은 줄 전체를 그대로 쓴다. 상태 열 폭은 행마다 흔들리지
+   않게 고정한다(머리글과 칸이 같은 x). */
+@media (max-width: 699.98px) {
+  .table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 6em;
+  }
+
+  .table tbody tr {
+    border-bottom: var(--line-w) solid var(--line);
+  }
+
+  .table td {
+    border-bottom: 0;
+  }
+
+  .table tr > :nth-child(1):not(:only-child),
+  .table th:nth-child(3),
+  .table tr > :nth-child(4),
+  .table tr > :nth-child(6) {
+    display: none;
+  }
+
+  .table td:nth-child(3) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-height: 0;
+    padding-top: 0;
+    font-size: var(--fs-sm);
+    color: var(--muted);
+  }
+
+  .table td:only-child {
+    grid-column: 1 / -1;
+  }
+}
+
+/* 04-10(D-93 · DR-29) — 설명 칸: 입력 + 40자 초과 글자 수를 한 줄에. */
+.descriptionCell {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.descriptionCount {
+  font-size: var(--fs-sm);
+  color: var(--danger);
+  white-space: nowrap;
+}
+
 .select {
   height: var(--control-h);
   border: var(--line-w) solid var(--line-ui);

@@ -6,8 +6,8 @@ import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import {
   moneyFromRow,
-  moneyExceedsLimit,
   moneyToColumns,
+  MoneyInputError,
   round,
   grossFromTotal,
   type Money,
@@ -15,27 +15,30 @@ import {
 } from "@/domain/money";
 import { applyTaxRule } from "@/domain/money/tax";
 import { rememberFxRate } from "@/domain/money/currency";
+import { rememberFxAfterCommit, SaveRejectedError, type CellFormatError, type FxToRemember } from "@/domain/quotes/lines";
+import { denyWrite } from "@/domain/rules/deny-write";
 import type { TaxRule } from "@/domain/code-tables/tax-rule";
 import { getSettingValue as defaultGetSettingValue } from "@/domain/settings/registry";
 import { TAX_VAT_RATE, TAX_ROUNDING_VAT_UNIT } from "@/domain/settings/keys";
 import { withTransaction } from "@/lib/db-transaction";
+import { kstDateOf } from "@/lib/kst-date";
+import { isCalendarDate, FORMAT_ERROR as DATE_FORMAT_ERROR } from "@/domain/projects/period";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { scopeFor } from "@/domain/permissions/scope-for";
-import {
-  findProjectById as repoFindProjectById,
-  updateProjectContract as repoUpdateProjectContract,
-} from "@/repositories/projects";
+import { findProjectById as repoFindProjectById } from "@/repositories/projects";
 import {
   listRevenueEntriesByProject as repoListRevenueEntriesByProject,
   insertRevenueEntry as repoInsertRevenueEntry,
+  findRevenueEntryById as repoFindRevenueEntryById,
   updateRevenueEntryIfVersionMatches as repoUpdateRevenueEntryIfVersionMatches,
   type RevenueEntryRow,
 } from "@/repositories/revenue-entries";
+import { findLatestQuoteRevision as repoFindLatestQuoteRevision } from "@/repositories/quote-revisions";
+import { sumQuoteAmountByRevision as repoSumQuoteAmountByRevision } from "@/repositories/quote-lines";
 
 export class ForbiddenError extends UserFacingError {}
 export class ProjectNotFoundError extends UserFacingError {}
 
-const PROJECTS_MENU = "projects";
 const REVENUE_SETTLEMENT_MENU = "projects.revenue";
 const REVENUE_ENTITY = "revenue_entry";
 const PROJECT_ENTITY = "project";
@@ -108,16 +111,23 @@ export type RevenueEntryDto = {
   version: number;
 };
 
+// 04-16(D-84) — 계약 금액은 입력이 아니라 고객 승인된 현재 차수의 견적 합계다. 미승인이면 금액 셋이 null이고
+// pendingLabel(`{n}차 고객 승인 전`)만 있다 — 이전 승인 차수의 합계로 대신하지 않는다.
 export type ContractInfo = {
-  amount: MoneyDto;
-  vatKrw: number;
-  totalKrw: number;
+  amountKrw: number | null;
+  vatKrw: number | null;
+  totalKrw: number | null;
+  vatRateLabel: string | null;
+  sourceLabel: string | null;
+  pendingLabel: string | null;
 };
 
 // project()가 필드 단위로 투영하는 대상. 배열 필드(issuedEntries·
 // paidEntries)와 그 합계는 정보 항목 통과 여부에 따라 project()가 **키
-// 자체를 싣지 않는다**(domain/permissions/project.ts) — 기획본부에게는
-// 이 두 필드와 파생 합계가 DTO에서 통째로 빠진다(T-04-09).
+// 자체를 싣지 않는다**(domain/permissions/project.ts). 04-16(D-85 · B-28 ·
+// T-04-83): 발행 합계는 입금에서 파생되지 않아 발행 항목으로, 입금 합계와
+// 잔액(미수·초과 입금)은 입금 항목으로 게이트한다 — 기획본부에게 입금 줄과
+// 그 파생값이 통째로 빠져 발행액 − 미수 = 입금액 역산이 막힌다.
 type RevenueProjectable = {
   contract: ContractInfo;
   issuedEntries: RevenueEntryDto[];
@@ -131,10 +141,10 @@ export type RevenueDto = Partial<RevenueProjectable>;
 
 export const REVENUE_DTO_SPEC: DtoSpec<RevenueProjectable, RevenueDto> = {
   fields: [
-    { key: "contract", from: "contract", infoItem: "project.value" },
+    { key: "contract", from: "contract", infoItem: "quote.amount" },
     { key: "issuedEntries", from: "issuedEntries", infoItem: "revenue.issued_amount" },
     { key: "paidEntries", from: "paidEntries", infoItem: "revenue.paid_amount" },
-    { key: "issuedTotalKrw", from: "issuedTotalKrw", infoItem: "revenue.paid_amount" },
+    { key: "issuedTotalKrw", from: "issuedTotalKrw", infoItem: "revenue.issued_amount" },
     { key: "paidGrossTotalKrw", from: "paidGrossTotalKrw", infoItem: "revenue.paid_amount" },
     { key: "balanceKrw", from: "balanceKrw", infoItem: "revenue.paid_amount" },
   ],
@@ -169,7 +179,30 @@ function toEntryDto(
   };
 }
 
-// 04-02 Task 2 ③ — 계약 금액 + 발행·입금 두 표를 한 DTO로 합쳐 돌려준다.
+// 04-16(D-84 · B-27) — 현재 차수(최신 순번)가 승인됐으면 그 차수의 견적 합계와 승인일 기준 부가세. 기준일은 승인일의
+// KST 날짜를 UTC 자정으로 만든 값이다 — 저장된 순간(KST 00:00 = 전날 UTC 15:00)을 넘기면 설정 조회가 UTC 날짜로
+// 잘라 전날 세율을 쓴다(엔지니어링 리뷰 B §1, 발행 줄의 new Date(row.entryDate)와 같은 규칙).
+async function deriveContract(viewer: Viewer, projectId: string, deps?: Partial<RevenueDeps>): Promise<ContractInfo> {
+  const current = await repoFindLatestQuoteRevision(viewer, projectId);
+  if (!current) throw new ProjectNotFoundError("존재하지 않는 프로젝트입니다.");
+  if (current.customerApprovedAt === null) {
+    return { amountKrw: null, vatKrw: null, totalKrw: null, vatRateLabel: null, sourceLabel: null, pendingLabel: `${current.seq}차 고객 승인 전` };
+  }
+  const amountKrw = await repoSumQuoteAmountByRevision(viewer, current.id);
+  const asOf = new Date(kstDateOf(current.customerApprovedAt));
+  const vat = await computeVat(amountKrw, asOf, deps);
+  const vatRate = await (deps?.getSettingValue ?? defaultGetSettingValue)(TAX_VAT_RATE, { asOf });
+  return {
+    amountKrw,
+    vatKrw: vat.vatKrw,
+    totalKrw: vat.totalKrw,
+    vatRateLabel: `${Number((vatRate * 100).toFixed(2))}%`,
+    sourceLabel: `${current.seq}차 고객 승인 합계`,
+    pendingLabel: null,
+  };
+}
+
+// 04-02 Task 2 ③ — 파생 계약 금액(고객 승인된 현재 차수 합계) + 발행·입금 두 표를 한 DTO로 합쳐 돌려준다.
 // 발행 줄은 순방향(공급가 → 부가세) 계산, 입금 줄은 역방향(통장 합계 →
 // 공급가) 계산이라 서로 다른 함수를 부른다.
 export async function listRevenue(viewer: Viewer, projectId: string, deps?: Partial<RevenueDeps>): Promise<RevenueDto> {
@@ -183,14 +216,7 @@ export async function listRevenue(viewer: Viewer, projectId: string, deps?: Part
   if (!projectRow) throw new ProjectNotFoundError("존재하지 않는 프로젝트입니다.");
   if (projectRow.archivedAt !== null && !scope.includeArchived) throw new ProjectNotFoundError("존재하지 않는 프로젝트입니다.");
 
-  const contractMoney = moneyFromRow({
-    currency: projectRow.contractCurrency,
-    foreignAmount: projectRow.contractForeignAmount,
-    fxRate: projectRow.contractFxRate,
-    amountKrw: projectRow.contractAmountKrw,
-  });
-  const contractVat = await computeVat(contractMoney.amountKrw, new Date(), deps);
-  const contract: ContractInfo = { amount: moneyToDto(contractMoney), vatKrw: contractVat.vatKrw, totalKrw: contractVat.totalKrw };
+  const contract = await deriveContract(viewer, projectId, deps);
 
   const rows = await repoListRevenueEntriesByProject(viewer, projectId);
   const issuedRows = rows.filter((row) => row.kind === "issue");
@@ -232,6 +258,8 @@ export async function listRevenue(viewer: Viewer, projectId: string, deps?: Part
 
 export type RevenueEntryWriteRow = {
   id?: string;
+  /** 04-41(ENG-D10) — 화면이 만든 uuid(`id`)로 넣는 새 줄. 재전송에도 같은 id를 싣는다. */
+  isNew?: true;
   version?: number;
   entryDate: string;
   amount: MoneyInputDto;
@@ -241,9 +269,6 @@ export type RevenueEntryWriteRow = {
 };
 
 export type SaveRevenueInput = {
-  contract?: MoneyInputDto;
-  /** 환율 칸을 이번 저장에서 실제로 고쳤을 때만 true. */
-  contractFxRateTouched?: boolean;
   issuedEntries?: RevenueEntryWriteRow[];
   paidEntries?: RevenueEntryWriteRow[];
 };
@@ -251,128 +276,166 @@ export type SaveRevenueInput = {
 export type RevenueWriteDeps = {
   can: typeof defaultCan;
   recordAction: typeof defaultRecordAction;
+  /** 04-41 — 커밋 뒤 최근 환율 기억. 테스트가 실패를 주입한다. */
+  rememberFxRate: typeof rememberFxRate;
+  /** 04-41(B §1) — 트랜잭션 앞에서 계산한 권한. 있으면 잠긴 트랜잭션 안에서 권한을 조회하지 않는다. */
+  rights: { canWriteEntries: boolean };
 };
 
+const ENTRY_SCOPE_RULE = "revenue.entry-scope";
+const REPLAY_RULE = "revenue.replay-mismatch";
+const ENTRY_NOT_FOUND = "줄을 찾을 수 없음 · 새로 고침";
+const REPLAY_MISMATCH = "이미 저장된 줄과 값이 다름 · 새로 고침";
+
+type EntryPayload = {
+  entryDate: string;
+  amountCurrency: Currency;
+  amountForeignAmount: string | null;
+  amountFxRate: string;
+  amountAmountKrw: number;
+  note: string | null;
+};
+
+type PreparedEntry = { input: RevenueEntryWriteRow; payload: EntryPayload };
+
+// 04-41(B §2 · B3) — 금액은 쓰기 전에 전부 한 규칙(normalizeMoneyInput)으로 정규화한다. 걸린 줄은 그 표의 줄 순번·id로
+// 칸 오류를 모아 배치 전체를 거부한다(견적 줄과 같은 SaveRejectedError — PG 범위 오류로 새지 않는다).
+function prepareEntries(rows: RevenueEntryWriteRow[], formatErrors: CellFormatError[]): PreparedEntry[] {
+  const prepared: PreparedEntry[] = [];
+  rows.forEach((input, rowIndex) => {
+    if (!isCalendarDate(input.entryDate)) {
+      formatErrors.push({ rowIndex, ...(input.id ? { rowId: input.id } : {}), field: "entryDate", label: "날짜", reason: DATE_FORMAT_ERROR });
+      return;
+    }
+    try {
+      const columns = moneyToColumns(input.amount);
+      prepared.push({
+        input,
+        payload: {
+          entryDate: input.entryDate,
+          amountCurrency: columns.currency,
+          amountForeignAmount: columns.foreignAmount,
+          amountFxRate: columns.fxRate,
+          amountAmountKrw: columns.amountKrw,
+          note: input.note ?? null,
+        },
+      });
+    } catch (error) {
+      if (!(error instanceof MoneyInputError)) throw error;
+      formatErrors.push({ rowIndex, ...(input.id ? { rowId: input.id } : {}), field: "amount", label: "금액", reason: error.message });
+    }
+  });
+  return prepared;
+}
+
+function sameStoredEntry(stored: RevenueEntryRow, owner: { projectId: string; kind: RevenueEntryKind }, payload: EntryPayload): boolean {
+  return (
+    stored.archivedAt === null &&
+    stored.projectId === owner.projectId &&
+    stored.kind === owner.kind &&
+    stored.entryDate === payload.entryDate &&
+    stored.amountCurrency === payload.amountCurrency &&
+    stored.amountForeignAmount === payload.amountForeignAmount &&
+    stored.amountFxRate === payload.amountFxRate &&
+    stored.amountAmountKrw === payload.amountAmountKrw &&
+    stored.note === payload.note
+  );
+}
+
+// 04-41(Codex #1 · ENG-D10) — 기존 줄은 이 프로젝트·이 종류의 줄만 고친다(아니면 `줄을 찾을 수 없음`). 새 줄은 화면
+// id로 멱등 삽입하고, 이미 있으면 같은 프로젝트·종류의 활성 줄이고 값이 같을 때만 응답을 잃은 재전송(no-op)이다.
+// 환율 기억은 여기서 하지 않고 실제로 쓴 외화 줄만 돌려준다 — 커밋 뒤에 트랜잭션을 연 쪽이 기억한다.
 async function saveEntries(
   viewer: Viewer,
   projectId: string,
   kind: RevenueEntryKind,
-  rows: RevenueEntryWriteRow[],
+  entries: PreparedEntry[],
   tx: DbOrTx,
-): Promise<RevenueEntryRow[]> {
-  const results: RevenueEntryRow[] = [];
-  for (const input of rows) {
-    const columns = moneyToColumns(input.amount);
-
-    if (columns.currency !== "KRW" && input.fxRateTouched) {
-      await rememberFxRate(columns.currency, Number(columns.fxRate), undefined, tx);
-    }
-
-    const payload = {
-      entryDate: input.entryDate,
-      amountCurrency: columns.currency,
-      amountForeignAmount: columns.foreignAmount,
-      amountFxRate: columns.fxRate,
-      amountAmountKrw: columns.amountKrw,
-      note: input.note ?? null,
-    };
-
-    if (input.id) {
+): Promise<{ written: number; fxToRemember: FxToRemember[] }> {
+  let written = 0;
+  const fxToRemember: FxToRemember[] = [];
+  for (const { input, payload } of entries) {
+    if (input.id && input.isNew) {
+      const inserted = await repoInsertRevenueEntry(viewer, { id: input.id, projectId, kind, ...payload }, tx);
+      if (!inserted) {
+        const stored = await repoFindRevenueEntryById(viewer, input.id, tx);
+        if (!stored || !sameStoredEntry(stored, { projectId, kind }, payload)) {
+          denyWrite(viewer, REPLAY_RULE, { projectId, entryIds: [input.id] }, new UserFacingError(REPLAY_MISMATCH));
+        }
+        continue;
+      }
+    } else if (input.id) {
       if (input.version === undefined) {
         throw new UserFacingError("기존 줄을 저장하려면 버전 정보가 필요합니다 · 화면을 새로고침해 주세요");
       }
-      const updated = await repoUpdateRevenueEntryIfVersionMatches(
-        viewer,
-        input.id,
-        input.version,
-        { projectId, kind },
-        payload,
-        tx,
-      );
+      const updated = await repoUpdateRevenueEntryIfVersionMatches(viewer, input.id, input.version, { projectId, kind }, payload, tx);
       if (!updated) {
+        const stored = await repoFindRevenueEntryById(viewer, input.id, tx);
+        if (!stored || stored.projectId !== projectId || stored.kind !== kind) {
+          denyWrite(viewer, ENTRY_SCOPE_RULE, { projectId, entryIds: [input.id] }, new UserFacingError(ENTRY_NOT_FOUND));
+        }
+        // SF-2 — 응답을 잃은 재전송: 첫 커밋이 version을 하나 올렸고 값이 이번 입력과 같으면 no-op(쓰기·로그 없음).
+        if (stored.version === input.version + 1 && sameStoredEntry(stored, { projectId, kind }, payload)) continue;
         throw new UserFacingError(`다른 사람이 먼저 이 줄을 바꿨습니다 · 덮어쓰기 / 그 값으로(줄 ${input.id})`);
       }
-      results.push(updated);
     } else {
-      const inserted = await repoInsertRevenueEntry(viewer, { projectId, kind, ...payload }, tx);
-      results.push(inserted);
+      await repoInsertRevenueEntry(viewer, { projectId, kind, ...payload }, tx);
+    }
+    written += 1;
+    if (payload.amountCurrency !== "KRW" && input.fxRateTouched) {
+      fxToRemember.push({ currency: payload.amountCurrency, rate: Number(payload.amountFxRate) });
     }
   }
-  return results;
+  return { written, fxToRemember };
 }
 
-// 04-02 Task 2 ③ — 쓰기는 칸별 주체가 갈린다(D-57): 계약 금액은 기존
-// "projects" write(PM), 발행·입금 줄은 새 "projects.revenue" write. 둘
-// 다 보내지 않은 그룹은 아예 건드리지 않는다 — 권한이 없는 그룹을 입력에
-// 실어 보내면 조용히 무시하지 않고 거부한다(T-04-10, 조작 방어).
-// `tx`를 받으면(04-02: 견적 줄과 한 트랜잭션으로 묶는
-// domain/projects/ledger.ts) 새 트랜잭션을 열지 않는다.
+// 04-41(B §1) — 트랜잭션을 여는 쪽(원장 합성 저장)이 잠그기 전에 읽는 매출 줄 쓰기 권한.
+export async function revenueWriteRights(viewer: Viewer, can: typeof defaultCan = defaultCan): Promise<{ canWriteEntries: boolean }> {
+  return { canWriteEntries: await can(viewer, REVENUE_SETTLEMENT_MENU, "write") };
+}
+
+// 04-02 Task 2 ③ — 발행·입금 줄은 "projects.revenue" write로 쓴다. 보내지
+// 않은 그룹은 아예 건드리지 않는다 — 권한 없이 줄을 실어 보내면 조용히
+// 무시하지 않고 거부한다(T-04-10, 조작 방어). 계약 금액은 쓰지 않는다(04-41 ·
+// D-84 — 고객 승인된 현재 차수 합계에서 파생된다).
+// 트랜잭션을 여는 쪽(04-02: 견적 줄과 한 트랜잭션으로 묶는 domain/projects/ledger.ts)은 saveRevenueInTx를 직접 부르고, 돌려받은
+// 기억할 환율을 커밋 뒤에 기억한다. 권한(rights)은 잠그기 전에 계산해 넘긴다 — 잠긴 트랜잭션 안에서 조회하지 않는다.
+export async function saveRevenueInTx(
+  viewer: Viewer,
+  projectId: string,
+  input: SaveRevenueInput,
+  deps: Pick<RevenueWriteDeps, "rights"> & Partial<Pick<RevenueWriteDeps, "recordAction">>,
+  tx: DbOrTx,
+): Promise<FxToRemember[]> {
+  if ((input.issuedEntries || input.paidEntries) && !deps.rights.canWriteEntries) {
+    throw new ForbiddenError("발행·입금 줄 저장 권한이 없습니다.");
+  }
+
+  const formatErrors: CellFormatError[] = [];
+  const issued = prepareEntries(input.issuedEntries ?? [], formatErrors);
+  const paid = prepareEntries(input.paidEntries ?? [], formatErrors);
+  if (formatErrors.length > 0) throw new SaveRejectedError([], formatErrors);
+
+  const issuedResult = await saveEntries(viewer, projectId, "issue", issued, tx);
+  const paidResult = await saveEntries(viewer, projectId, "payment", paid, tx);
+
+  // 04-12(엔지 리뷰 A §1 P2) — 같은 tx로 남긴다(합성 저장이 뒤에서 거부되면 로그도 되돌아간다). 재전송 no-op은 남기지 않는다.
+  if (issuedResult.written + paidResult.written > 0) {
+    const recordAction = deps.recordAction ?? defaultRecordAction;
+    await recordAction(viewer, { actionType: "document_update", entity: REVENUE_ENTITY, entityId: projectId }, { tx });
+  }
+  return [...issuedResult.fxToRemember, ...paidResult.fxToRemember];
+}
+
 export async function saveRevenue(
   viewer: Viewer,
   projectId: string,
   input: SaveRevenueInput,
   deps?: Partial<RevenueWriteDeps>,
-  tx?: DbOrTx,
 ): Promise<RevenueDto | null> {
-  const canFn = deps?.can ?? defaultCan;
-
-  if (input.contract) {
-    if (!(await canFn(viewer, PROJECTS_MENU, "write"))) {
-      throw new ForbiddenError("계약 금액 저장 권한이 없습니다.");
-    }
-  }
-  if (input.issuedEntries || input.paidEntries) {
-    if (!(await canFn(viewer, REVENUE_SETTLEMENT_MENU, "write"))) {
-      throw new ForbiddenError("발행·입금 줄 저장 권한이 없습니다.");
-    }
-  }
-
-  // 쓰기 전에 전부 검사한다 — 상한(1조 원 미만)을 넘는 금액이 하나라도
-  // 있으면 아무것도 쓰지 않는다.
-  const amounts = [
-    ...(input.contract ? [input.contract] : []),
-    ...(input.issuedEntries ?? []).map((entry) => entry.amount),
-    ...(input.paidEntries ?? []).map((entry) => entry.amount),
-  ];
-  if (amounts.some(moneyExceedsLimit)) {
-    throw new UserFacingError("금액은 1조 원 미만으로 적어 주세요");
-  }
-
-  const runSave = async (innerTx: DbOrTx): Promise<void> => {
-    if (input.contract) {
-      const columns = moneyToColumns(input.contract);
-      if (columns.currency !== "KRW" && input.contractFxRateTouched) {
-        await rememberFxRate(columns.currency, Number(columns.fxRate), undefined, innerTx);
-      }
-      await repoUpdateProjectContract(
-        viewer,
-        projectId,
-        {
-          contractCurrency: columns.currency,
-          contractForeignAmount: columns.foreignAmount,
-          contractFxRate: columns.fxRate,
-          contractAmountKrw: columns.amountKrw,
-        },
-        innerTx,
-      );
-    }
-    if (input.issuedEntries) await saveEntries(viewer, projectId, "issue", input.issuedEntries, innerTx);
-    if (input.paidEntries) await saveEntries(viewer, projectId, "payment", input.paidEntries, innerTx);
-  };
-
-  const recordAction = deps?.recordAction ?? defaultRecordAction;
-
-  if (tx) {
-    // 외부 트랜잭션(domain/projects/ledger.ts) 안에서는 아직 커밋 전이라
-    // listRevenue의 기본 db 커넥션이 이 쓰기를 보지 못한다(격리) — 여기서
-    // 최신 스냅샷을 만들지 않는다. 커밋 뒤 스냅샷은 합성 호출자가 새로
-    // 조회한다.
-    await runSave(tx);
-    await recordAction(viewer, { actionType: "document_update", entity: REVENUE_ENTITY, entityId: projectId });
-    return null;
-  }
-
-  await withTransaction(runSave);
-  await recordAction(viewer, { actionType: "document_update", entity: REVENUE_ENTITY, entityId: projectId });
+  // 줄을 싣지 않으면 권한을 보지 않는다(saveRevenueInTx도 그때는 rights를 읽지 않는다).
+  const rights = deps?.rights ?? (input.issuedEntries || input.paidEntries ? await revenueWriteRights(viewer, deps?.can) : { canWriteEntries: false });
+  const fxToRemember = await withTransaction((tx) => saveRevenueInTx(viewer, projectId, input, { rights, recordAction: deps?.recordAction }, tx));
+  await rememberFxAfterCommit(fxToRemember, deps?.rememberFxRate);
   return listRevenue(viewer, projectId);
 }

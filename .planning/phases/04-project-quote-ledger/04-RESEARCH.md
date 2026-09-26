@@ -525,19 +525,24 @@ export function computeLineAmounts(quantity: number, unitPrice: number, executio
 
 **If this table is empty:** 해당 없음 — 위 6건이 존재한다.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> **2026-09-24 상태(엔지 r2 반영 지시 13 · CEO r2 C2-06):** Q1 **해소** · Q2 **무의미**(데이터 이전 철회) · Q3 **해소** — 각 질문 아래 「상태」 줄. 아래 본문은 2026-09-22 리서치 원문 그대로다.
 
 1. **`document_counters`의 (counter_key, period) 조합에서 "전사 범위"는 어떤 `period` 값을 쓰는가?**
+   - **상태(2026-09-24): 해소.** 04-01이 `counter_key = "project"` · `period` = 서기 연도 네 자리 문자열(예: `"2026"`)로 정했다 — 연도가 바뀌면 순번이 1부터 다시 시작한다(`domain/document-numbering/index.ts` 13–16행 주석 · 04-01-SUMMARY). 서식 설정은 04-05(ADMN-09).
    - What we know: D-42는 프로젝트 번호와 지출결의 번호가 같은 카운터를 쓴다고 명시한다. `period` 컬럼 자체는 이미 존재하지만 "전사 범위는 고정 문자열"이라는 설명은 `db/schema/document-counters.ts` 주석에만 있고([VERIFIED: db/schema/document-counters.ts:6 "전사 범위는 고정 문자열"], 실제 어떤 문자열을 쓰는지는 코드 어디에도 정의돼 있지 않다.
    - What's unclear: `period`가 연도("2026")인지, 프로젝트별 범위(`scope_key`처럼 프로젝트 id)인지 — CONTEXT.md의 문서 번호 서식 예시(`26001`, `26001-0001`)를 보면 연도가 서식에 들어가므로 `period="2026"`이 유력하지만 확정된 코드가 없다.
    - Recommendation: 계획 단계 첫 태스크로 `document_counters`의 `period` 의미를 프로젝트 번호(연도 범위 전사 단일 카운터)와 견적 표시 번호(카운터 없음, 파생값, D-56)에 대해 명시적으로 정의한다.
 
 2. **인트라넷 MySQL 덤프의 실제 컬럼 스키마(금액·통화·날짜 컬럼명)는 무엇인가?**
+   - **상태(2026-09-24): 무의미.** 2026-09-23 사용자 결정(데이터 이전 없음 — 수기 입력 전환)으로 04-03(추출·변환)이 철회됐고 MIG-01~03이 Out of Scope다 — 덤프 스키마를 알아낼 일이 없다.
    - What we know: 표 이름(`fone_project`, `QUOTATION_LINE` 등)과 행 수·상태 분포는 `docs/research/repo-audit-260917.md`에 집계돼 있다([VERIFIED: 위 인용]).
    - What's unclear: 실제 컬럼명·타입은 이 리서치 세션에서 확인하지 못했다(덤프 파일 자체는 이 리포에 없고 `INTRANET_DUMP_PATH` 환경 변수로 별도 위치에서 제공됨, D-72).
    - Recommendation: `scripts/migrate/extract.ts`의 첫 태스크로 덤프 파일의 `CREATE TABLE` 구문만 먼저 파싱해 컬럼 목록을 출력하는 정찰 스크립트를 만들고, 그 결과를 바탕으로 `transform.ts`의 `amount_basis` 판정 로직을 짠다.
 
 3. **`ui/table`이 편집 표와 읽기 표(차수 섹션 S5) 사이에서 컴포넌트를 어떻게 공유하는가?**
+   - **상태(2026-09-24): 해소.** 04-01 트레이서가 모드 토글 prop 없이 전 행·전 열의 `editability()`(`edit`·`readonly`·`locked` 세 단계)를 스캔해 `role="grid"` 여부와 흰 머리글 읽기 표를 자동 판정하게 만들었고(04-01-SUMMARY 33행), 04-04가 키보드·붙여넣기 계약으로 넓혔다. 셀 단계는 서버 DTO `cellEditability`에서 온다(04-12 · 04-30).
    - What we know: UI-SPEC S5는 차수 섹션이 "편집 가능한 셀이 구조적으로 0"이라 `ui/table`의 "읽기 모드"(모드 토글이 아니라 자동 파생 렌더 형태)를 쓴다고 명시한다([VERIFIED: .planning/phases/04-project-quote-ledger/04-UI-SPEC.md:668-679]).
    - What's unclear: 이 세션은 실제 `Table.tsx` prop 인터페이스를 설계하지 않았다 — "서버가 셀마다 판정해 보낸다"(가)를 만족하려면 각 셀에 `editability: "edit" | "readonly" | "locked"` 같은 필드가 필요할 텐데 이 데이터 모양이 quote_lines DTO와 어떻게 매핑되는지는 계획 단계 설계 대상이다.
    - Recommendation: 계획의 첫 플랜(트레이서)에서 이 컴포넌트 계약을 스키마부터 화면까지 관통시켜 확정한다(Phase 3의 03-01 트레이서 선례를 따름).

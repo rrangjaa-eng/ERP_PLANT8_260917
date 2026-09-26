@@ -1,12 +1,24 @@
 import { randomUUID } from "node:crypto";
 import { isNull, eq, and } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { db } from "@/db/client";
-import { users } from "@/db/schema";
-import { listRoles, insertRole, renameRole } from "@/repositories/roles";
+import { users, actionLog } from "@/db/schema";
+import { listRoles, insertRole, renameRole, findRoleById } from "@/repositories/roles";
 import { archive, ProtectedRowError } from "@/domain/archive";
-import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { SEED_ROLES, SYSADMIN_ROLE_ID, DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { seedMasterData } from "@/domain/seed";
+import {
+  SEED_ROLES,
+  SYSADMIN_ROLE_ID,
+  DEFAULT_ROLE_ID,
+  ROLE_WORK_SCOPES,
+  ForbiddenError,
+  createRole,
+  setRoleWorkScope,
+  listRoles as listRoleDtos,
+  type RoleWorkScope,
+} from "@/domain/permissions/roles";
 
 describe("roles (ADMN-08, 실제 Postgres)", () => {
   it("시드 5종이 존재한다", async () => {
@@ -80,5 +92,73 @@ describe("roles (ADMN-08, 실제 Postgres)", () => {
     const [refreshedStaff] = await db.select().from(users).where(eq(users.id, staffLegacy.id));
     expect(refreshedAdmin?.roleId).toBe(SYSADMIN_ROLE_ID);
     expect(refreshedStaff?.roleId).toBe(DEFAULT_ROLE_ID);
+  });
+});
+
+// 04-27(D11·D20): 계급 업무 범위는 데이터다 — 상태 전환·기간 수정 게이트(04-20·
+// 04-21·04-22)가 읽는 입력일 뿐 보기 권한이 아니다.
+describe("계급 업무 범위(D11·D20)", () => {
+  const PM_VIEWER: Viewer = { id: "pm-viewer", roleId: DEFAULT_ROLE_ID };
+
+  async function workScopeOf(id: string): Promise<string | undefined> {
+    return (await findRoleById(SYSTEM_VIEWER, id))?.workScope;
+  }
+
+  it("빈 DB에 시드를 돌리면 팀장·기획 PM은 team, 본부 책임자·대표·시스템 관리자는 company다", async () => {
+    const dtos = await listRoleDtos(SYSTEM_VIEWER);
+    const scopes = Object.fromEntries(dtos.map((role) => [role.id, role.workScope]));
+    expect(scopes).toEqual({
+      "role-team-lead": "team",
+      "role-pm": "team",
+      "role-division-head": "company",
+      "role-ceo": "company",
+      "role-sysadmin": "company",
+    });
+  });
+
+  it("시스템 관리자가 팀장을 company로 바꾸면 DB 값이 바뀌고 permission_change 로그 한 줄이 from·to를 남긴다", async () => {
+    await setRoleWorkScope(SYSTEM_VIEWER, "role-team-lead", "company");
+
+    expect(await workScopeOf("role-team-lead")).toBe("company");
+    const logs = await db
+      .select()
+      .from(actionLog)
+      .where(and(eq(actionLog.entity, "roles"), eq(actionLog.entityId, "role-team-lead")));
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.actionType).toBe("permission_change");
+    expect(logs[0]?.detail).toEqual({ workScope: { from: "team", to: "company" } });
+  });
+
+  it("admin.people 쓰기가 없는 기획 PM의 변경은 거부되고 DB 값이 그대로다", async () => {
+    await expect(setRoleWorkScope(PM_VIEWER, "role-team-lead", "company")).rejects.toBeInstanceOf(ForbiddenError);
+    expect(await workScopeOf("role-team-lead")).toBe("team");
+  });
+
+  it("관리자가 바꾼 뒤 시드를 다시 돌려도 바꾼 값이 덮이지 않는다", async () => {
+    await setRoleWorkScope(SYSTEM_VIEWER, "role-team-lead", "company");
+    await seedMasterData(SYSTEM_VIEWER);
+    expect(await workScopeOf("role-team-lead")).toBe("company");
+  });
+
+  it("createRole로 만든 새 계급의 업무 범위는 team이다", async () => {
+    const role = await createRole(SYSTEM_VIEWER, { name: `새 계급-${randomUUID()}` });
+    expect(role.workScope).toBe("team");
+    expect(await workScopeOf(role.id)).toBe("team");
+  });
+
+  it("두 값 밖의 값(all)은 액션 스키마가 거부하고, domain 직접 호출은 DB CHECK가 거부한다", async () => {
+    expect(z.enum(ROLE_WORK_SCOPES).safeParse("all").success).toBe(false);
+
+    const outOfRange: string = "all";
+    await expect(
+      setRoleWorkScope(SYSTEM_VIEWER, "role-team-lead", outOfRange as RoleWorkScope),
+    ).rejects.toThrow();
+    expect(await workScopeOf("role-team-lead")).toBe("team");
+  });
+
+  it("없는 계급의 업무 범위를 바꾸면 찾을 수 없다고 거부한다", async () => {
+    await expect(setRoleWorkScope(SYSTEM_VIEWER, `role-missing-${randomUUID()}`, "company")).rejects.toThrow(
+      "계급을 찾을 수 없습니다.",
+    );
   });
 });

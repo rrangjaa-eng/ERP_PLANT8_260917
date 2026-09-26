@@ -5,6 +5,8 @@ name: deploy
 # 이미지 태그를 확인한 뒤에만 같은 SHA를 그대로 승격한다 — GitHub Environments·
 # required reviewers는 쓰지 않는다(무료 플랜 비공개 저장소). 변수는 저장소 수준
 # vars.*이고 시크릿 탭은 비워 둔다(WIF, 키 파일 없음).
+# 스테이징·프로덕션 잡은 main ref에서만 돈다 — 다른 브랜치의 workflow_dispatch는
+# ref-guard 스텝에서 인증 전에 실패한다(ENG-D12 · 머지 묶음 규칙, 04-50).
 on:
   push:
     branches: [main]
@@ -53,6 +55,15 @@ jobs:
     env:
       ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
     steps:
+      - id: ref-guard
+        shell: bash
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::main이 아닌 ref는 배포하지 않습니다(ENG-D12) — main에서 다시 실행하세요" >&2
+            exit 1
+          fi
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -78,6 +89,15 @@ jobs:
     env:
       ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
     steps:
+      - id: ref-guard
+        shell: bash
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::main이 아닌 ref는 배포하지 않습니다(ENG-D12) — main에서 다시 실행하세요" >&2
+            exit 1
+          fi
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0

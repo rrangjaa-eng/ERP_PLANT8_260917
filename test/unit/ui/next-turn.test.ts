@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildNextTurnView,
@@ -107,5 +109,21 @@ describe("buildNextTurnView", () => {
 
   it("정렬 순서가 모듈 안 단일 상수에서 온다", () => {
     expect(NEXT_TURN_TAG_ORDER).toEqual(["막힘", "오늘", "결재", "대기"]);
+  });
+});
+
+// SYSTEM.md 개정 ⑩(04-08 Task 2) — §7-4 787행이 §7-5 793행 의미 목록과
+// 어긋나 「대기」가 accent·muted 두 색을 가졌다. §7-5를 따른다: muted.
+// 이 저장소에 React 렌더 테스트 러너가 없어(next-turn-action.test.ts와
+// 같은 이유) NextTurn.tsx 소스 텍스트로 kind 매핑을 확인한다.
+describe("§7-4 「대기」 태그 색 — muted다(개정 ⑩)", () => {
+  const NEXT_TURN = readFileSync(resolve(process.cwd(), "ui/next-turn/NextTurn.tsx"), "utf8");
+
+  it("대기의 kind가 muted다", () => {
+    expect(NEXT_TURN).toMatch(/대기:\s*"muted"/);
+  });
+
+  it("대기가 accent로 매핑되지 않는다", () => {
+    expect(NEXT_TURN).not.toMatch(/대기:\s*"accent"/);
   });
 });

@@ -10,6 +10,7 @@ import {
 } from "@/repositories/archive";
 import { findUserById as defaultFindUserById } from "@/repositories/users";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { restoreQuoteLine } from "@/domain/quotes/lines";
 
 // ADMN-12: "지우지 않는다" — archived_at/archived_by 규약의 유일한 진입점.
 // 물리 삭제 문장은 이 리포 어디에도 넣지 않는다 — DB 레벨 권한 회수(REVOKE)는
@@ -67,6 +68,12 @@ export async function archive(
   await recordAction(viewer, { actionType: "archive", entity, entityId: id });
 }
 
+// 04-12(A-19 · OV-2) — 도메인 규칙이 있는 엔티티의 복원은 도메인 함수에 통째로 맡긴다(잠금·게이트·보관 해제·로그를
+// 한 트랜잭션에서). 범용 setArchived 경로는 이 표에 없는 엔티티만 탄다(리저브는 04-07 · 그룹 B가 더한다).
+const DOMAIN_RESTORERS: Partial<Record<string, (viewer: Viewer, id: string, deps?: Partial<ArchiveDeps>) => Promise<void>>> = {
+  quote_line: (viewer, id, deps) => restoreQuoteLine(viewer, id, { recordAction: deps?.recordAction }),
+};
+
 export async function restore(
   viewer: Viewer,
   entity: string,
@@ -74,6 +81,8 @@ export async function restore(
   deps?: Partial<ArchiveDeps>,
 ): Promise<void> {
   await assertCanWrite(viewer, deps);
+  const domainRestorer = DOMAIN_RESTORERS[entity];
+  if (domainRestorer) return domainRestorer(viewer, id, deps);
   const entry = findEntry(entity);
 
   const row = await entry.findById(viewer, id);

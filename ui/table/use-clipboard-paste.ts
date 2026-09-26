@@ -2,6 +2,7 @@
 
 import { useCallback } from "react";
 import { parseTsv, normalizeNumericPaste } from "./parse-tsv";
+import { MAX_DECIMALS, numberInputRejectionReason, type NumberInputKind } from "@/lib/format-number";
 
 // SYSTEM.md §7-3 보강 (다) — 붙여넣기 반영. `parseTsv`로 읽은 값을 활성
 // 셀부터 오른쪽·아래로 채운다. 숫자 열은 정규화 실패 시, 목록(select) 열은
@@ -16,7 +17,9 @@ export type PasteColumn<Row> = {
   kind: PasteColumnKind;
   /** kind === "select"일 때만 — 옵션 라벨/값과 대조한다. */
   options?: { value: string; label: string }[];
-  /** 기존 행에서만 호출된다 — 붙여넣기로 새로 생긴 행은 항상 편집 가능하다. */
+  /** kind === "number"일 때 — 셀 편집기와 같은 소수 자리 상한을 붙여넣기에도 적용한다. */
+  numberKind?: NumberInputKind;
+  /** 기존 행, 그리고 newRow가 있으면 붙여넣기로 새로 생길 행(newRow)에 호출된다. */
   isEditable: (row: Row) => boolean;
 };
 
@@ -39,8 +42,10 @@ export function applyPaste<Row>(params: {
   rows: Row[];
   activeRowIndex: number;
   activeColIndex: number;
+  /** 붙여넣기로 새로 생길 줄의 모양 — 없으면 새 줄은 모든 칸이 편집 가능하다. */
+  newRow?: Row;
 }): ApplyPasteResult {
-  const { clipboardText, columns, rows, activeRowIndex, activeColIndex } = params;
+  const { clipboardText, columns, rows, activeRowIndex, activeColIndex, newRow } = params;
   const parsed = parseTsv(clipboardText);
   const cells: PasteCell[] = [];
   let droppedColumnCount = 0;
@@ -50,9 +55,8 @@ export function applyPaste<Row>(params: {
 
   parsed.forEach((pastedRow, rOffset) => {
     const rowIndex = activeRowIndex + rOffset;
-    // undefined면 붙여넣기로 새로 생기는 줄이다 — 새 draft 줄은 항상 편집
-    // 가능하므로 존재하는 행에서만 isEditable을 묻는다.
-    const row: Row | undefined = rowIndex < rows.length ? rows[rowIndex] : undefined;
+    // 붙여넣기로 새로 생기는 줄은 newRow로 묻는다 — newRow가 없으면 undefined(항상 편집 가능).
+    const row: Row | undefined = rowIndex < rows.length ? rows[rowIndex] : newRow;
 
     pastedRow.forEach((rawValue, cOffset) => {
       const colIndex = activeColIndex + cOffset;
@@ -75,10 +79,13 @@ export function applyPaste<Row>(params: {
 
       if (column.kind === "number") {
         const num = normalizeNumericPaste(rawValue);
+        const tooPrecise = num !== null && column.numberKind !== undefined && Number(num.toFixed(MAX_DECIMALS[column.numberKind])) !== num;
         cells.push(
           num === null
             ? { rowIndex, columnKey: column.key, result: { status: "error", reason: "숫자가 아닙니다 · 12,400,000처럼 적어 주세요" } }
-            : { rowIndex, columnKey: column.key, result: { status: "ok", value: String(num) } },
+            : tooPrecise && column.numberKind
+              ? { rowIndex, columnKey: column.key, result: { status: "error", reason: numberInputRejectionReason(column.numberKind, "precision") } }
+              : { rowIndex, columnKey: column.key, result: { status: "ok", value: String(num) } },
         );
         return;
       }

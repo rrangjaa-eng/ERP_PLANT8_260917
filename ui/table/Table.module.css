@@ -35,6 +35,7 @@
 .alignRight {
   text-align: right;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* 04-02 Task 2 ④ — 금액 셀 보조 줄(§2-4 외화 두 줄 병기 · 입금 셀 공급가액
@@ -44,6 +45,11 @@
   margin-top: var(--s-1);
   color: var(--muted);
   font-size: var(--fs-sm);
+  /* white-space는 상속이다 — .alignRight(td)가 nowrap이면 그 안의 보조
+     줄(외화 2행 등 숫자)도 같이 nowrap이 된다. 여기서 다시 nowrap을
+     선언하면 align이 없는 셀(예: 프로젝트명 아래 거래처명)의 보조 줄까지
+     줄바꿈을 잃어 375px에서 가로 오버플로가 났다(측정 확인) — 그래서
+     이 규칙 자체를 없앤다. */
 }
 
 .groupRow td {
@@ -168,6 +174,30 @@
   font-size: var(--fs-base);
   font-weight: var(--fw-medium);
   cursor: pointer;
+}
+
+/* 04-28 — EMPTY 3차 라벨 오른쪽 kbd(Button .kbd와 같은 토큰) */
+.emptyActionKbd {
+  margin-left: var(--s-1);
+  border: var(--line-w) solid var(--line);
+  color: var(--faint);
+  padding: 0 var(--s-1);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-head);
+}
+
+/* 04-49(DR-14) — 좁은 PC 열 접기(TableColumn.collapseBelow). 숨은 열은 DOM에 남아 논리 열 순서를 지킨다. */
+@media (max-width: 1279.98px) {
+  .collapse-1280 {
+    display: none;
+  }
+}
+
+@media (max-width: 1023.98px) {
+  .collapse-1024 {
+    display: none;
+  }
 }
 
 /* §7-3 폰 전략 — P1만 열로 남고 P2는 행 아래 접힌 줄, P3은 숨는다. 가로

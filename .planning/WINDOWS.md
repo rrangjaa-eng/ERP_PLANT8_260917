@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 17
+open_count: 19
 waived_count: 0
-fixed_count: 14
-total_count: 31
-last_updated: 2026-09-24T11:40:22.454Z
+fixed_count: 16
+total_count: 35
+last_updated: 2026-09-26T02:55:55.835Z
 ---
 
 # Broken Windows Ledger
@@ -46,6 +46,10 @@ last_updated: 2026-09-24T11:40:22.454Z
 | 29 | 04 | stub | app/(app)/projects/[id]/quote-table.tsx |  | ⌘Enter 새 줄은 그룹의 소분류를 물려받지만 배열 끝에 추가되고(그룹 안 위치로 스플라이스되지 않는다) 그 셀이 자동으로 편집 상태로 열리지 않는다 — Table이 로빙 포커스 상태를 내부 소유해 quote-table.tsx가 저장 직후 특정 셀에 포커스를 강제할 API가 없다. Alt+↑↓ 줄 이동이 그룹 경계를 넘을 때도 같은 이유로 그 셀이 자동으로 열리지 않는다(소분류는 이웃 그룹 값을 물려받는다) | open |  | 2026-09-22T23:52:13.717Z |  |
 | 30 | 04 | stub | app/(app)/projects/[id]/quote-table.tsx |  | 셀 편집 가능성이 편집/잠김 이진 판정이다 — §7-3 (가)의 3단계 중 '읽기 전용'(연결 문서가 있는 줄의 금액 셀, D-66)은 이 페이즈의 QuoteLineDto에 연결 문서 여부 필드가 아직 없어 구현하지 않았다(지출결의가 생기는 이후 페이즈 몫). 줄 삭제 확인 모달도 '삭제'(연결 문서 없음) 갈래만 있고 '취소'(연결 문서 있음) 갈래는 같은 이유로 없다 | open |  | 2026-09-22T23:52:13.942Z |  |
 | 31 | 04 | unrun-verify | test/e2e/mobile-list-empty.spec.ts |  | 04-04: pnpm test(전체 스위트) 1회 실행에서 이 스펙이 실패(다른 워커가 동시에 만든 프로젝트로 /projects EMPTY 가정이 깨짐 추정) — 04-01(WINDOWS #25)과 같은 종류의 전체 스위트 동시 실행 인프라 문제, 04-04가 건드린 파일과 무관. 단독 재실행에서는 desktop 프로젝트가 매번 다른 무관 스펙(action-log·corp-cards)에서 실패해 셰어드 DB 경합으로 판단. 이 플랜 소유 스펙만 묶어 2회 재실행하면 전부(19/19, 23/23) 통과 — deferred-items.md 04-04 절 참고 | open |  | 2026-09-23T00:14:23.543Z |  |
+| 32 | 04 | deviation | app/(app)/projects/[id]/quote-table.tsx |  | 견적 줄 삭제(confirmDeleteLine)는 로컬 상태에서만 제거되고 서버에 삭제/보관 신호를 보내지 않는다 — quote_lines.archivedAt/archivedBy 컬럼은 있으나 saveQuoteLines가 아직 쓰지 않는다. 04-46은 기존 처리기를 그대로 재사용했다(plan action ④ 지시) — 서버 반영은 후속 플랜 필요 | open |  | 2026-09-24T11:55:16.988Z |  |
+| 33 | 4 | stub | domain/quotes/lines.ts | 218 | linkedDocumentsByLine가 빈 Map을 돌려줌 — 지출결의 연결 조회는 Phase 5가 채움(04-12 의도된 조회 지점) | open |  | 2026-09-25T10:37:19.987Z |  |
+| 34 | 4 | unrun-verify | app/(app)/projects/[id]/revenue-section.tsx |  | 04-16 Task 3 독립 DOM 감사(S6 backstop 1280·1024·375·1000) 미실행 — 실행자 환경에 서브에이전트 도구 없음 | fixed |  | 2026-09-26T02:08:24.175Z | 2026-09-26T02:55:50.359Z |
+| 35 | 4 | unrun-verify | test/e2e/revenue-section.spec.ts |  | 04-16 Task 3 verify 'CI=true pnpm test' 전체 게이트 미실행 — 디스패치가 전체 pnpm test를 금지(대상 스펙만 CI=true 44 passed) | fixed |  | 2026-09-26T02:08:24.365Z | 2026-09-26T02:55:55.835Z |
 
 ````json
 [
@@ -450,6 +454,58 @@ last_updated: 2026-09-24T11:40:22.454Z
     "reason": "",
     "recorded_at": "2026-09-23T00:14:23.543Z",
     "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 32,
+    "kind": "deviation",
+    "phase": "04",
+    "file": "app/(app)/projects/[id]/quote-table.tsx",
+    "line": null,
+    "description": "견적 줄 삭제(confirmDeleteLine)는 로컬 상태에서만 제거되고 서버에 삭제/보관 신호를 보내지 않는다 — quote_lines.archivedAt/archivedBy 컬럼은 있으나 saveQuoteLines가 아직 쓰지 않는다. 04-46은 기존 처리기를 그대로 재사용했다(plan action ④ 지시) — 서버 반영은 후속 플랜 필요",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-24T11:55:16.988Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 33,
+    "kind": "stub",
+    "phase": "4",
+    "file": "domain/quotes/lines.ts",
+    "line": 218,
+    "description": "linkedDocumentsByLine가 빈 Map을 돌려줌 — 지출결의 연결 조회는 Phase 5가 채움(04-12 의도된 조회 지점)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-25T10:37:19.987Z",
+    "resolved_at": null,
+    "milestone": null
+  },
+  {
+    "id": 34,
+    "kind": "unrun-verify",
+    "phase": "4",
+    "file": "app/(app)/projects/[id]/revenue-section.tsx",
+    "line": null,
+    "description": "04-16 Task 3 독립 DOM 감사(S6 backstop 1280·1024·375·1000) 미실행 — 실행자 환경에 서브에이전트 도구 없음",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-09-26T02:08:24.175Z",
+    "resolved_at": "2026-09-26T02:55:50.359Z",
+    "milestone": null
+  },
+  {
+    "id": 35,
+    "kind": "unrun-verify",
+    "phase": "4",
+    "file": "test/e2e/revenue-section.spec.ts",
+    "line": null,
+    "description": "04-16 Task 3 verify 'CI=true pnpm test' 전체 게이트 미실행 — 디스패치가 전체 pnpm test를 금지(대상 스펙만 CI=true 44 passed)",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-09-26T02:08:24.365Z",
+    "resolved_at": "2026-09-26T02:55:55.835Z",
     "milestone": null
   }
 ]

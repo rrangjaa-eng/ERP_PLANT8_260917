@@ -34,6 +34,7 @@ describe("changePersonRole 계급 검증 (T-03-30)", () => {
             name: "은퇴한 계급",
             isSeed: false,
             sortOrder: 90,
+            workScope: "team",
             customFields: null,
             archivedAt: new Date("2026-01-01T00:00:00Z"),
             archivedBy: null,

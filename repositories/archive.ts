@@ -1,6 +1,6 @@
 import { isNotNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { roles, codeItems, orgUnits, teams, corpCards, users, vendors } from "@/db/schema";
+import { roles, codeItems, orgUnits, teams, corpCards, users, vendors, quoteLines } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import {
   findRoleById,
@@ -21,6 +21,7 @@ import {
 } from "@/repositories/corp-cards";
 import { findUserById, setUserArchived } from "@/repositories/users";
 import { findVendorById, setVendorArchived } from "@/repositories/vendors";
+import { findQuoteLineById, setQuoteLineArchived } from "@/repositories/quote-lines";
 
 // archive()/restore()(domain/archive/index.ts)가 필요로 하는 최소 행 모양.
 // isSeed는 roles 전용(시드 계급 보관 거부 판정) — 다른 표는 없어도 된다.
@@ -174,6 +175,25 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
         .from(vendors)
         .where(isNotNull(vendors.archivedAt));
       return rows.map((row) => ({ entity: "vendor", label: "거래처", id: row.id, name: row.name, archivedAt: row.archivedAt as Date, archivedBy: row.archivedBy }));
+    },
+  },
+  // 04-12(D-56 · A-04) — 견적 줄 삭제는 보관이다(저장 트랜잭션 안에서 domain/quotes/lines가 보관한다).
+  // 복원은 이 항목의 setArchived를 타지 않는다 — domain/archive의 DOMAIN_RESTORERS가 restoreQuoteLine에 맡긴다.
+  {
+    entity: "quote_line",
+    label: "견적 줄",
+    async setArchived(viewer, id, value) {
+      await setQuoteLineArchived(viewer, id, value);
+    },
+    async findById(viewer, id) {
+      return findQuoteLineById(viewer, id);
+    },
+    async listArchived() {
+      const rows = await db
+        .select({ id: quoteLines.id, name: quoteLines.itemName, archivedAt: quoteLines.archivedAt, archivedBy: quoteLines.archivedBy })
+        .from(quoteLines)
+        .where(isNotNull(quoteLines.archivedAt));
+      return rows.map((row) => ({ entity: "quote_line", label: "견적 줄", id: row.id, name: row.name, archivedAt: row.archivedAt as Date, archivedBy: row.archivedBy }));
     },
   },
 ];

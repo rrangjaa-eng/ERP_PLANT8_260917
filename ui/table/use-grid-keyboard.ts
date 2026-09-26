@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { isCtrlCombo } from "@/lib/shortcut";
+import { isGridActionAllowed } from "./save-lock";
 
 // SYSTEM.md §7-3 보강 (아) — `role="grid"` 키보드 계약. 표 전체가 탭 정지
 // **1개**이고(로빙 tabindex — 이 훅이 관리하는 `focus` 좌표만 tabIndex=0),
@@ -16,15 +18,17 @@ export type GridKeyboardHandlers = {
   onEscape?: (pos: GridPosition, wasEditing: boolean) => void;
   /** Delete — 편집 중이 아닐 때만: 줄 삭제 확인 모달을 연다. */
   onDeleteRow?: (rowIndex: number) => void;
-  /** ⌘/Ctrl+Enter — 새 줄. 현재 포커스 행 인덱스를 넘긴다(D-62: 그 줄의
+  /** Ctrl+Enter — 새 줄. 현재 포커스 행 인덱스를 넘긴다(D-62: 그 줄의
    * 그룹 대분류를 물려받아야 한다 — 어느 그룹 안에서 눌렀는지 알아야 한다). */
   onNewRow?: (currentRowIndex: number) => void;
-  /** ⌘/Ctrl+D — 줄 복제. */
+  /** Ctrl+D — 줄 복제. */
   onDuplicateRow?: (rowIndex: number) => void;
   /** Alt+↑/↓ — 줄 이동. */
   onMoveRow?: (rowIndex: number, direction: "up" | "down") => void;
-  /** ⌘/Ctrl+S — 일괄 저장. */
+  /** Ctrl+S — 일괄 저장. */
   onSave?: () => void;
+  /** 04-30(DR-35) — 막힌 셀(isBlockedCell)의 Enter·글자 입력·Delete. 편집·줄 삭제 대신 이것만 부른다. */
+  onBlockedEdit?: (pos: GridPosition) => void;
 };
 
 export type UseGridKeyboardParams = {
@@ -32,6 +36,12 @@ export type UseGridKeyboardParams = {
   colCount: number;
   isEditableCell: (pos: GridPosition) => boolean;
   isEditing: (pos: GridPosition) => boolean;
+  /** 04-30(DR-35) — 편집기가 있는 열인데 이 셀은 편집 단계가 아니다(잠김·읽기 전용). */
+  isBlockedCell?: (pos: GridPosition) => boolean;
+  /** 04-49(DR-3) — 저장 요청 중. 편집 진입·구조·저장 키는 무동작이고 방향키·범위 선택은 된다. */
+  saveLocked?: boolean;
+  /** 04-49(DR-14) — 좁은 PC에서 숨은 열. 방향키가 건너뛰고 로빙 탭 정지도 보이는 열에 둔다. */
+  isHiddenCol?: (col: number) => boolean;
   handlers: GridKeyboardHandlers;
 };
 
@@ -48,14 +58,57 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+// 04-28(DR-25) — 충돌 셀 키보드. 셀에서 Enter → 셀 안 두 3차 버튼 중 첫째
+// (「덮어쓰기」), 버튼 위 ←/→는 둘 사이(끝에서 멈춤), Enter/Space는 그 버튼을
+// 누르고 셀로, Esc는 누르지 않고 셀로. 버튼 위 ↑/↓는 격자 이동 없이 그대로.
+// null이면 격자 기본 처리에 맡긴다. 04-19가 포커스를 { rowId, colKey }로 바꿀 때
+// 이 전이를 그대로 옮긴다.
+export type ConflictFocusState = { at: "cell" } | { at: "action"; index: number };
+export type ConflictFocusResult = { at: "cell"; pressed?: number } | { at: "action"; index: number };
+
+const CONFLICT_ACTION_COUNT = 2;
+
+export function conflictFocusTransition(state: ConflictFocusState, key: string): ConflictFocusResult | null {
+  if (state.at === "cell") return key === "Enter" ? { at: "action", index: 0 } : null;
+  switch (key) {
+    case "ArrowRight":
+      return { at: "action", index: Math.min(state.index + 1, CONFLICT_ACTION_COUNT - 1) };
+    case "ArrowLeft":
+      return { at: "action", index: Math.max(state.index - 1, 0) };
+    case "ArrowUp":
+    case "ArrowDown":
+      return { at: "action", index: state.index };
+    case "Escape":
+      return { at: "cell" };
+    case "Enter":
+    case " ":
+      return { at: "cell", pressed: state.index };
+    default:
+      return null;
+  }
+}
+
 export function useGridKeyboard({
   rowCount,
   colCount,
   isEditableCell,
   isEditing,
+  isBlockedCell,
+  saveLocked = false,
+  isHiddenCol = () => false,
   handlers,
 }: UseGridKeyboardParams): UseGridKeyboardResult {
-  const [focus, setFocusState] = useState<GridPosition>({ row: 0, col: 0 });
+  const [storedFocus, setFocusState] = useState<GridPosition>({ row: 0, col: 0 });
+  // 탭 정지가 숨은 열에 있으면(첫 칸 번호 등) 가장 가까운 보이는 열로 옮겨 보인다.
+  const focus: GridPosition = isHiddenCol(storedFocus.col)
+    ? { row: storedFocus.row, col: nearestVisibleCol(storedFocus.col) }
+    : storedFocus;
+
+  function nearestVisibleCol(col: number): number {
+    for (let next = col; next < colCount; next++) if (!isHiddenCol(next)) return next;
+    for (let next = col; next >= 0; next--) if (!isHiddenCol(next)) return next;
+    return col;
+  }
   const [selectionAnchor, setSelectionAnchor] = useState<GridPosition | null>(null);
 
   function setFocus(pos: GridPosition) {
@@ -78,7 +131,13 @@ export function useGridKeyboard({
 
   function moveFocus(rowDelta: number, colDelta: number, extendSelection: boolean, from: GridPosition) {
     if (rowCount === 0 || colCount === 0) return;
-    const next = { row: clamp(from.row + rowDelta, 0, rowCount - 1), col: clamp(from.col + colDelta, 0, colCount - 1) };
+    let col = clamp(from.col + colDelta, 0, colCount - 1);
+    // 04-49(DR-14) — 숨은 열은 건너뛴다. 끝까지 숨은 열뿐이면 제자리.
+    while (colDelta !== 0 && col !== from.col && isHiddenCol(col)) {
+      const step = Math.sign(colDelta);
+      col = col + step < 0 || col + step >= colCount ? from.col : col + step;
+    }
+    const next = { row: clamp(from.row + rowDelta, 0, rowCount - 1), col };
     if (extendSelection) {
       setSelectionAnchor((anchor) => anchor ?? from);
     } else {
@@ -89,30 +148,33 @@ export function useGridKeyboard({
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLElement>, pos: GridPosition) {
     const editing = isEditing(pos);
-    const meta = event.metaKey || event.ctrlKey;
+    const allowed = (action: Parameters<typeof isGridActionAllowed>[0]) => isGridActionAllowed(action, { saveLocked });
 
     // 줄 이동은 방향키보다 먼저 판정한다(Alt+↑/↓가 일반 방향키 이동과 겹친다).
     if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
       event.preventDefault();
-      handlers.onMoveRow?.(pos.row, event.key === "ArrowUp" ? "up" : "down");
+      if (allowed("moveRow")) handlers.onMoveRow?.(pos.row, event.key === "ArrowUp" ? "up" : "down");
       return;
     }
 
-    if (meta && (event.key === "Enter" || event.key === "NumpadEnter")) {
+    // D-94 · 엔지 리뷰 C §1 P1 — 앱이 쓰는 세 조합은 Ctrl 전용이고 판정은
+    // isCtrlCombo 하나다(자동 반복·한글 조합 중이면 거짓 — 무시). 무시할 때도
+    // 브라우저 기본 동작(페이지 저장 창 등)은 막는다. 편집 중 Ctrl+C·V·A는
+    // 여기 걸리지 않아 입력의 기본 동작 그대로다.
+    if (event.ctrlKey && ["enter", "d", "s"].includes(event.key.toLowerCase())) {
       event.preventDefault();
-      handlers.onNewRow?.(pos.row);
+      if (isCtrlCombo(event, "Enter")) {
+        if (allowed("newRow")) handlers.onNewRow?.(pos.row);
+      } else if (isCtrlCombo(event, "d")) {
+        if (allowed("duplicateRow")) handlers.onDuplicateRow?.(pos.row);
+      } else if (isCtrlCombo(event, "s")) {
+        if (allowed("save")) handlers.onSave?.();
+      }
       return;
     }
-    if (meta && (event.key === "d" || event.key === "D")) {
-      event.preventDefault();
-      handlers.onDuplicateRow?.(pos.row);
-      return;
-    }
-    if (meta && (event.key === "s" || event.key === "S")) {
-      event.preventDefault();
-      handlers.onSave?.();
-      return;
-    }
+
+    // 04-49 — 한글 조합 중인 키는 격자 동작을 시작하지 않는다(조합 확정 Enter가 편집을 열지 않게). Ctrl 조합은 위에서 기본 동작을 막았다(리뷰 S-1).
+    if (event.nativeEvent.isComposing) return;
 
     if (editing) {
       // 편집 중에는 이 훅이 방향키·Delete를 가로채지 않는다 — 입력 요소
@@ -124,6 +186,8 @@ export function useGridKeyboard({
       }
       return;
     }
+
+    const blocked = handlers.onBlockedEdit !== undefined && (isBlockedCell?.(pos) ?? false);
 
     switch (event.key) {
       case "ArrowUp":
@@ -146,7 +210,10 @@ export function useGridKeyboard({
       case " ":
         if (isEditableCell(pos)) {
           event.preventDefault();
-          handlers.onEnterEdit?.(pos);
+          if (allowed("enterEdit")) handlers.onEnterEdit?.(pos);
+        } else if (blocked) {
+          event.preventDefault();
+          handlers.onBlockedEdit?.(pos);
         }
         break;
       case "Escape":
@@ -157,9 +224,15 @@ export function useGridKeyboard({
       case "Delete":
       case "Backspace":
         event.preventDefault();
-        handlers.onDeleteRow?.(pos.row);
+        if (blocked) handlers.onBlockedEdit?.(pos);
+        else if (allowed("deleteRow")) handlers.onDeleteRow?.(pos.row);
         break;
       default:
+        // 글자 입력(한 글자 키, 조합 키 없음) — 막힌 셀이면 이유만.
+        if (blocked && event.key.length === 1 && !event.ctrlKey && !event.altKey) {
+          event.preventDefault();
+          handlers.onBlockedEdit?.(pos);
+        }
         break;
     }
   }

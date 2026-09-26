@@ -98,10 +98,13 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   ]);
 
   // 등록 폼의 팀 · 담당 PM 칸만 업무 범위로 좁힌다 — 필터 줄은 전체 팀(references.teams)을 계속 쓴다.
-  const createReferences =
-    canWrite && showCreateForm
-      ? await scopeCreateFormReferences(session.viewer, references, { todayKst: kstToday(new Date()) })
-      : null;
+  const scopedCreateReferences = canWrite
+    ? await scopeCreateFormReferences(session.viewer, references, { todayKst: kstToday(new Date()) })
+    : null;
+  // /review team-scope-create-review.md P3(2) — 팀 발령이 없는 팀 업무 범위 사람은
+  // 등록해도 서버가 항상 거부한다(팀 목록 0개) — §7 "할 수 없는 선택지는 보이지 않게".
+  const canCreate = canWrite && scopedCreateReferences !== null && scopedCreateReferences.teams.length > 0;
+  const createReferences = canCreate && showCreateForm ? scopedCreateReferences : null;
 
   const canSeeAmount = aggregate.quoteAmountKrw !== undefined;
   const hasMore = rows.length < aggregate.count;
@@ -147,7 +150,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         {/* aggregate.count === 0이면 ListEmpty가 이미 같은 「프로젝트 등록」
             행동을 준다 — vendors.tsx 선례와 같은 이유로 여기서도 중복 CTA를
             만들지 않는다. */}
-        {canWrite && !showCreateForm && aggregate.count > 0 ? (
+        {canCreate && !showCreateForm && aggregate.count > 0 ? (
           <Link href={projectsHref({ isNew: true })} className={styles.toggle}>
             프로젝트 등록
           </Link>

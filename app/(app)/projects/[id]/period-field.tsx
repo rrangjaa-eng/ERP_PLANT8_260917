@@ -12,6 +12,10 @@ import styles from "./project-detail.module.css";
 export type PeriodDraft = { start: string; end: string };
 export type PeriodFieldError = { field: "start" | "end"; reason: string };
 
+// /review R-3 — 네이티브 날짜 칸을 덜 채우면 브라우저가 값을 ""로 준다(validity.badInput). 비운 칸("" → null로
+// 저장돼 기간이 지워진다)과 구분해 초안에 날짜가 아닌 값을 담는다 — 서버가 형식 오류로 거부한다(10자 이하).
+const INCOMPLETE_DATE = "incomplete";
+
 export function PeriodField({
   draft,
   baseline,
@@ -91,12 +95,14 @@ export function PeriodField({
               id={id}
               type="date"
               autoComplete="off"
-              value={draft[field.key]}
+              value={draft[field.key] === INCOMPLETE_DATE ? "" : draft[field.key]}
               readOnly={saveLocked}
               aria-invalid={error ? "true" : undefined}
               aria-describedby={error ? `${id}-error` : undefined}
               className={dirty ? `${styles.periodInput} ${styles.periodInputDirty}` : styles.periodInput}
-              onChange={(event) => onChange({ ...draft, [field.key]: event.target.value })}
+              onChange={(event) =>
+                onChange({ ...draft, [field.key]: event.target.validity.badInput ? INCOMPLETE_DATE : event.target.value })
+              }
               onKeyDown={handleKeyDown}
             />
             {error ? <Form.Error id={`${id}-error`}>{error.reason}</Form.Error> : null}

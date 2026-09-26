@@ -39,6 +39,7 @@ import {
   type WalkRouteResult,
 } from "@/domain/approvals/route";
 import { getDocumentKind, type RouteConfigStep } from "@/domain/approvals/kinds";
+import { buildConflictMessage, isApprovalParty } from "@/domain/approvals/conflict-message";
 import { loadActionLogGate as defaultLoadActionLogGate, recordActionInTx, type ActionLogGate, type TxLogDeps } from "@/domain/approvals/tx-log";
 import {
   APPROVAL_INBOX_ITEM_DTO_SPEC,
@@ -75,13 +76,6 @@ export class NotCurrentHolderError extends UserFacingError {}
 export class RouteBlockedError extends UserFacingError {}
 
 export const NOT_HOLDER_MESSAGE = "지금 담당이 아님 · 새로 고침";
-// 04.1-02 Task 3이 관련자에게 처리자 이름 · 시각이 담긴 문구를 조립한다 — 여기는 기본 문구.
-const CONFLICT_MESSAGE = "다른 처리가 먼저 끝남 · 새로 고침";
-const FINAL_MESSAGES: Record<"approved" | "rejected" | "withdrawn", string> = {
-  approved: "최종 승인됨 · 새로 고침",
-  rejected: "반려됨 · 새로 고침",
-  withdrawn: "회수됨 · 새로 고침",
-};
 const NO_FALLBACK_MESSAGE = "대표 없음 · 관리자에게 대표 계급 확인 요청";
 
 const IN_PROGRESS: readonly string[] = ["submitted", "in_review"];
@@ -384,23 +378,45 @@ function closedFor(status: ApprovalStatus, event: TransitionEvent, isDrafter: bo
   return event === "resubmit" && !isDrafter;
 }
 
-// (1) version 불일치 갈래 — 04.1-02 Task 3이 관련자 판정(isApprovalParty)으로 오류 종류를 가른다.
-function refuseStale(fields: RefusalFields): Error {
-  return refuse("conflict", new ApprovalConflictError(CONFLICT_MESSAGE), fields);
+// 지금 행으로 만든 상세 문구(관련자에게만) — 마지막으로 바꾼 사람(updated_by)은 기안자이거나 처리 기록의 한 사람이다.
+function conflictMessageOf(graph: ApprovalGraph, attempted: TransitionEvent): string {
+  const { instance } = graph;
+  const actorName =
+    instance.updatedBy === instance.drafterId
+      ? instance.drafterName
+      : (graph.routes.flatMap((route) => route.steps).find((step) => step.actedBy === instance.updatedBy)?.actedByName ?? null);
+  return buildConflictMessage({
+    status: instance.status as ApprovalStatus,
+    round: instance.currentRound,
+    actorName,
+    at: instance.updatedAt,
+    attempted,
+  });
 }
 
-// (2) 종결 갈래 — 04.1-02 Task 3이 관련자에게만 지금 상태 문구를 준다.
-function refuseClosed(graph: ApprovalGraph, fields: RefusalFields): Error {
-  const status = graph.instance.status as ApprovalStatus;
-  if (status === "approved" || status === "rejected" || status === "withdrawn") {
-    return refuse("final", new ApprovalConflictError(FINAL_MESSAGES[status]), fields);
-  }
-  return refuse("invalid_state", new ApprovalConflictError(CONFLICT_MESSAGE), fields);
+// 관련자 판정(ENG-6 · D1) — 기안자 · 모든 차수 acted_by · 지금 차수 단계들을 행동 전 스냅숏으로 해석한 담당
+// (walkRoute before_action의 currentHolderIds — 대표 폴백 자리면 폴백 후보 포함, X-1 · X-3).
+function isPartyOf(viewer: Viewer, graph: ApprovalGraph, holders: WalkRouteResult | null): boolean {
+  return isApprovalParty(viewer.id, {
+    drafterId: graph.instance.drafterId,
+    actedByIds: graph.routes.flatMap((route) => route.steps.flatMap((step) => (step.actedBy === null ? [] : [step.actedBy]))),
+    currentHolderIds: holders?.currentHolderIds ?? [],
+  });
 }
 
-// (5) version 조건 UPDATE 0행 — 04.1-02 Task 3이 다시 읽은 행으로 상세 문구를 만든다.
-function refuseLostRace(fields: RefusalFields): Error {
-  return refuse("conflict", new ApprovalConflictError(CONFLICT_MESSAGE), fields);
+// (1) version 불일치 · (2) 종결 — 관련자면 지금 상태의 상세 문구, 아니면 이름 · 시각 · 상태가 없는
+// `지금 담당이 아님`(handleServerError가 UserFacingError 문구를 그대로 화면에 보낸다). 상세 문구
+// (buildConflictMessage)는 이 판정 갈래 안에서만 만든다.
+function refuseStaleOrClosed(
+  viewer: Viewer,
+  graph: ApprovalGraph,
+  holders: WalkRouteResult | null,
+  attempted: TransitionEvent,
+  reason: "conflict" | "final" | "invalid_state",
+  fields: RefusalFields,
+): Error {
+  if (!isPartyOf(viewer, graph, holders)) return refuse("not_holder", new NotCurrentHolderError(NOT_HOLDER_MESSAGE), fields);
+  return refuse(reason, new ApprovalConflictError(conflictMessageOf(graph, attempted)), fields);
 }
 
 type TransitionContext = {
@@ -441,11 +457,18 @@ async function runTransition<T>(
   const status = instance.status as ApprovalStatus;
   const isDrafter = viewer.id === instance.drafterId;
   const before = IN_PROGRESS.includes(status) ? walkGraph(graph, pre.snapshot) : null;
+  // 관련자 재료 — 끝난 문서도 지금 차수 담당(예: 회수된 문서의 1단 팀장)은 관련자다(CEO-6 순서 B).
+  const holders = before ?? walkGraph(graph, pre.snapshot);
 
-  // (1) version 불일치 — 후보 · 기안자 판정보다 먼저.
-  if (instance.version !== input.expectedVersion) throw refuseStale(fields);
+  // (1) version 불일치 — 후보 · 기안자 판정보다 먼저(진 쪽 관련자는 무슨 일이 있었는지 받는다).
+  if (instance.version !== input.expectedVersion) {
+    throw refuseStaleOrClosed(viewer, graph, holders, input.event, "conflict", fields);
+  }
   // (2) 사건별 종결.
-  if (closedFor(status, input.event, isDrafter)) throw refuseClosed(graph, fields);
+  if (closedFor(status, input.event, isDrafter)) {
+    const reason = IN_PROGRESS.includes(status) ? "invalid_state" : "final";
+    throw refuseStaleOrClosed(viewer, graph, holders, input.event, reason, fields);
+  }
   // (3) 후보 또는 기안자.
   const route = currentRouteOf(graph);
   let outcome: TransitionContext["outcome"] = null;
@@ -470,7 +493,12 @@ async function runTransition<T>(
     { id: instance.id, expectedVersion: input.expectedVersion, status: planned.status, currentRound: planned.currentRound },
     tx,
   );
-  if (!updated) throw refuseLostRace(fields);
+  if (!updated) {
+    // (5) 0행 — 이 viewer는 (3)을 통과한 관련자다. 경쟁자가 커밋한 지금 행을 다시 읽어 상세 문구를 만든다.
+    const current = await findApprovalGraphById(viewer, input.instanceId, tx);
+    const message = current ? conflictMessageOf(current, input.event) : NOT_HOLDER_MESSAGE;
+    throw refuse("conflict", new ApprovalConflictError(message), { ...fields, actualVersion: current?.instance.version ?? null });
+  }
   // (6) 단계 · 폴백 · 차수 행.
   const written = await planned.write(updated);
   // (7) 같은 tx 행동 로그(Codex HIGH 원자성) — 켜짐 여부는 트랜잭션 전에 읽은 gate.

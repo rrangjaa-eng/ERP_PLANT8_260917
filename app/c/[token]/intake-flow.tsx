@@ -7,6 +7,7 @@ import { TextField } from "@/ui/input/TextField";
 import { formatContactPhone, formatSubmittedAtKst } from "@/domain/certs/format";
 import { recheckLockAction, selectWinnerAction, submitCertificateAction, verifyLast4Action } from "./actions";
 import {
+  invalidSubmitField,
   isDefiniteResult,
   recheckOutcome,
   resolveHistoryEntry,
@@ -802,7 +803,10 @@ function IntakeForm({
       setRrnError("주민등록번호가 맞지 않습니다 · 앞 6자리(생년월일)와 뒤 7자리를 다시 확인해 주세요");
       setRrnRecheckConfirmed(true);
     } else if (data?.kind === "invalid") {
-      if (data.fields.includes("phone")) {
+      const field = invalidSubmitField(data.fields);
+      if (field === "signature") {
+        signatureRef.current?.clear();
+      } else if (field === "phone") {
         setPhoneError("연락처 형식이 아닙니다 · 010-0000-0000처럼 적어 주세요");
       } else {
         setRrnError("주민등록번호가 맞지 않습니다 · 앞 6자리(생년월일)와 뒤 7자리를 다시 확인해 주세요");

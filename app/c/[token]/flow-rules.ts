@@ -32,6 +32,14 @@ export function isDefiniteResult(result: ActionResultLike): boolean {
   return typeof kind === "string" && DEFINITE_KINDS.has(kind);
 }
 
+// 제출 입력 거부(invalid)의 fields → 오류를 보일 칸. 서명이 거부되면 서명을
+// 지우고 다시 받는다(주민등록번호 오류로 안내하지 않는다).
+export function invalidSubmitField(fields: readonly string[]): "signature" | "phone" | "rrn" {
+  if (fields.includes("signature")) return "signature";
+  if (fields.includes("phone")) return "phone";
+  return "rrn";
+}
+
 export type RecheckTrigger = "visible" | "button";
 export type RecheckOutcome = {
   next: "closed" | "open" | "shortLock" | "stay" | "networkError";

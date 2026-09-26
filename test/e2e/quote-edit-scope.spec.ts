@@ -657,6 +657,18 @@ test.describe("폭 규칙 — 1024 미만 보기 전용 · 좁은 PC 열 접기 
     await expect(primarySave(page)).toContainText("일괄 저장 1");
   });
 
+  // 사용자 결정 2026-09-26(VERDICT.md M-6) — DR-14 정의(700~1023 = P1 + P2 다섯 열)를 정본으로 삼는다:
+  // 소분류(P3)는 숨고, 수량·단가·견적가(P2)는 보인다.
+  test("(k) 1000 — 소분류 열은 숨고 수량·단가·견적가 열은 보인다 (DR-14)", async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);
+
+    await expect(page.getByRole("columnheader", { name: "소분류" })).not.toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "수량" })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "단가" })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "견적가" })).toBeVisible();
+  });
+
   test("(k) 1000 — 0줄 진행 표의 EMPTY에 「첫 줄 만들기」가 없다", async ({ page }) => {
     await page.setViewportSize({ width: 1000, height: 800 });
     await openAsPm(page, "in_progress", addDays(TODAY, 10), []);

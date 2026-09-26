@@ -280,6 +280,10 @@ export async function submitCertificate(
     return { kind: "rrnRecheck" };
   }
 
+  // 3-b. 연락처 — 정규화에 실패하면 빈 문자열로 저장하지 않고 되돌린다(S8).
+  const normalizedPhone = normalizePhone(parsed.phone);
+  if (normalizedPhone === null) return { kind: "invalid", fields: ["phone"] };
+
   // 4. 서명 PNG.
   const signaturePng = Buffer.from(parsed.signaturePngBase64, "base64");
   if (!isValidSignaturePng(signaturePng)) return { kind: "invalid", fields: ["signature"] };
@@ -297,10 +301,18 @@ export async function submitCertificate(
     submitLogEnabled = true; // fail-open — record.ts의 defaultIsActionTypeEnabled와 같은 규칙
   }
 
-  // 5. 규약 C3 — 의도 행을 먼저 (자기 문장으로) 커밋 → put.
-  await insertSignatureUploadIntent(SYSTEM_VIEWER, objectKey);
+  // 5. 규약 C3 — 저장소를 먼저 확정한다(non-local 환경에서 드라이버가 없으면
+  // 여기서 fail-closed로 던져 의도 행이 커밋되기 전에 끝난다, S3) → 의도
+  // 행을 먼저(자기 문장으로) 커밋 → put. put 자체가 실패하면(객체가 없다)
+  // 의도 행을 바로 지운다 — 24시간 파기를 기다릴 고아가 아니다.
   const signatureStore = deps?.signatureStore ?? getSignatureStore();
-  await signatureStore.put(objectKey, signaturePng);
+  await insertSignatureUploadIntent(SYSTEM_VIEWER, objectKey);
+  try {
+    await signatureStore.put(objectKey, signaturePng);
+  } catch (putError) {
+    await deleteSignatureUploadIntent(SYSTEM_VIEWER, objectKey);
+    throw putError;
+  }
 
   const submittedAt = now;
 
@@ -326,7 +338,7 @@ export async function submitCertificate(
           name: normalizeName(parsed.name),
           rrnEncrypted: encrypt(`${parsed.rrnFront6}${parsed.rrnBack7}`),
           rrnMasked: maskRrn(`${parsed.rrnFront6}${parsed.rrnBack7}`),
-          phone: normalizePhone(parsed.phone) ?? parsed.phone.replace(/\D/g, ""),
+          phone: normalizedPhone,
           address: winner.delivery === "parcel" ? (parsed.address ?? null) : null,
           consentAt: submittedAt,
           consentVersion: parsed.consentVersion,

@@ -18,11 +18,79 @@
   flex: 1 1 auto;
 }
 
+/* 04-11(D-81) — 상태 태그 + `종료일 지남` 글자는 한 묶음(폰에서도 태그 바로 옆, DR-26). */
+.statusLine {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2);
+}
+
+.endDateNote {
+  font-size: var(--fs-sm);
+  color: var(--warning);
+}
+
 .headerActions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--s-3);
+}
+
+/* DR-26 — 복사·차수 묶음. PC(≥700)는 버튼군 안에 그대로, 「더보기」 없음. */
+.moreToggle {
+  display: none;
+}
+
+.copyActions {
+  display: contents;
+}
+
+/* DR-26 폰 첫 화면(<700): 제목 → 상태 태그 → 부제 → 버튼 줄. PageHeader의 제목·부제를
+   머리 줄의 직접 항목으로 풀어(display: contents) 순서를 다시 매긴다. 버튼 줄 끝의 2차
+   「더보기」는 묶음을 바로 아래 한 줄로 펼친다(시트 아님). */
+@media (max-width: 699.98px) {
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    margin-bottom: var(--s-4);
+  }
+
+  .titleBlock,
+  .titleBlock > div {
+    display: contents;
+  }
+
+  .titleBlock p {
+    order: 2;
+  }
+
+  /* 04-44(DR-26) — 부제 첫 항목은 `기간 …` + 「기간 바꾸기」, 나머지 부제는 그 아래. */
+  .titleBlock .periodLead {
+    order: 1;
+  }
+
+  .headerActions {
+    order: 3;
+  }
+
+  .moreToggle {
+    display: inline-flex;
+    order: 1;
+  }
+
+  .copyActions {
+    display: none;
+    order: 2;
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    gap: var(--s-3);
+  }
+
+  .copyActionsOpen {
+    display: flex;
+  }
 }
 
 .cellSelect,
@@ -64,15 +132,12 @@
   font-weight: var(--fw-medium);
 }
 
+/* 04-26 — 「줄 추가」는 3차 Button(비활성 이유 한 줄 포함)이고, 이 자리는 표와의 간격만 준다. */
 .addLineButton {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
   margin-top: var(--s-3);
-  border: 0;
-  border-bottom: var(--line-w) solid var(--accent);
-  background: none;
-  color: var(--accent);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  cursor: pointer;
 }
 
 /* 04-02 — §6-2 섹션 순서 ② 매출. 섹션 시작은 2px 강한 선(§3 「섹션 사이」). */
@@ -94,8 +159,23 @@
   font-size: var(--fs-sm);
 }
 
-.contractForm {
+/* 04-16(D-84) — 파생 계약 금액 한 줄(KvList). 값은 --fs-base 700 숫자, 2행은 --fs-sm --muted. */
+.contractSummary {
   margin-bottom: var(--s-6);
+}
+
+.contractAmount {
+  display: block;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.contractNote {
+  display: block;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 .contractRow {
@@ -106,14 +186,32 @@
 
 /* 04-04(§7-3 보강 (마)) — 미저장 편집 복원 줄. 표 위 한 줄(전역 배너가
    아니다 — §7-11과 구분). */
+/* 04-49(S18 overflow) — 복원 줄은 제 줄(블록). 글자는 keep-all로 줄바꿈하고, 두 3차는 한 묶음이라 함께 다음 줄로 간다. */
 .restoreBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--s-2);
   margin: var(--s-2) 0;
-  color: var(--fg);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  word-break: keep-all;
+}
+
+.restoreActions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: var(--s-2);
+}
+
+/* 04-30(DR-2 · DR-31) — 표 위 잠김 줄. 복원 줄 다음, 잠긴 셀 편집 시도의 이유와 같은 문자열. */
+.lockLine {
+  margin: var(--s-2) 0;
+  color: var(--muted);
   font-size: var(--fs-sm);
 }
 
 .restoreAction {
-  margin-left: var(--s-2);
   border: 0;
   background: none;
   color: var(--accent);
@@ -129,10 +227,26 @@
   font-weight: var(--fw-medium);
 }
 
+/* 04-23(DR-22 · DR-16) — 붙여넣기가 건너뛴 권한 밖 줄 칸 수(muted 항목). */
+.pasteSkipped {
+  color: var(--muted);
+}
+
 /* 04-04(나) — 저장 거부 요약(--danger). */
 .rejectionSummary {
   color: var(--danger);
   font-weight: var(--fw-medium);
+}
+
+/* 04-16(S6) — 입금 표 합계 행의 미수·초과 입금 글자(--warning). */
+.balanceWarning {
+  color: var(--warning);
+}
+
+/* 04-09 — 숫자 입력 칸의 편집 중 거부 문구(붙여넣기·자동완성 통째 거부, C-02). */
+.cellEditError {
+  color: var(--danger);
+  font-size: var(--fs-sm);
 }
 
 /* SYSTEM.md §7-9 — 단축키 힌트 줄. 편집용 표가 있는 화면 하단에 항상
@@ -143,60 +257,159 @@
   font-size: var(--fs-sm);
 }
 
+/* 입금 셀 둘째 줄 — 숫자 열(.alignRight)의 nowrap을 상속하면 줄 전체가 열
+   최소 폭이 돼 375px에서 표가 넘친다. 숫자 묶음은 꺾지 않고 두 묶음
+   사이에서만 줄바꿈한다(SYSTEM.md 숫자 칸 · 외화 2행 규칙과 같은 결). */
+.secondaryGroups {
+  white-space: normal;
+}
+
+.secondaryGroups > span {
+  white-space: nowrap;
+}
+
+/* 04-16(DR-15) — 매출 표 금액 셀 2행은 PC에서만. 폰(<700)은 같은 묶음을 접힌 줄에 둔다. */
+@media (max-width: 699.98px) {
+  .pcSecondary {
+    display: none;
+  }
+}
+
+/* 04-16(DR-15) — 매출 표 메모 읽기 값은 PC에서 한 줄 말줄임(폰은 접힌 줄에서 줄바꿈). */
+.noteText {
+  display: block;
+  max-width: 40ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 04-49(DR-14) — 외화 2행(`USD 4,400.00` · `@1,318.1818`). 1280 미만에서만 두 묶음 사이에서 줄바꿈한다. */
+.fxGroups > span {
+  white-space: nowrap;
+}
+
+@media (max-width: 1279.98px) {
+  .fxGroups {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+}
+
+/* 04-49(DR-14) — 숨은 금액 열의 합계(합계 행 라벨 뒤). 1024~1279 = 차익, 700~1023 = 견적 · 차익. */
+.footerQuoteSum,
+.footerProfitSum {
+  display: none;
+}
+
+@media (min-width: 700px) and (max-width: 1279.98px) {
+  .footerProfitSum {
+    display: inline;
+  }
+}
+
+@media (min-width: 700px) and (max-width: 1023.98px) {
+  .footerQuoteSum {
+    display: inline;
+  }
+}
+
 .hintRow kbd {
-  padding: 0 4px;
+  padding: 0 var(--s-1);
   border: var(--line-w) solid var(--line);
+  color: var(--faint);
   font-size: var(--fs-xs);
+  line-height: var(--lh-head);
 }
 
 @media (max-width: 699.98px) {
   .hintRow {
     display: none;
   }
+
+  /* 04-49(S18) — 폰에서 복원·버림은 터치 최소 높이. */
+  .restoreAction {
+    min-height: var(--touch-min);
+  }
 }
 
-/* 04-04(아) — 줄 삭제 확인 모달(Copywriting "Destructive — 견적 줄
-   삭제"). 이 화면 전용 — 이 저장소에 재사용 가능한 ui/modal이 아직
-   없어(선례 없음) 여기서만 최소로 만든다. */
-.dialogScrim {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-modal);
+
+/* 04-22(S13) — 부제의 기간 글자 + 3차 「기간 바꾸기」, 머리 줄 아래 기간 칸 묶음(Form.Actions 없음). */
+.periodLine {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--scrim);
-}
-
-.dialog {
-  width: 100%;
-  max-width: var(--modal-w);
-  margin: var(--s-4);
-  padding: var(--s-4);
-  background: var(--bg);
-  border: var(--line-w-strong) solid var(--line-strong);
-}
-
-.dialogTitle {
-  margin: 0 0 var(--s-1);
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-bold);
-}
-
-.dialogSubtitle {
-  margin: 0 0 var(--s-3);
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2);
+  margin: var(--s-1) 0 0;
   color: var(--muted);
   font-size: var(--fs-sm);
 }
 
-.dialogBody {
-  margin: 0 0 var(--s-4);
-  color: var(--fg);
-  font-size: var(--fs-base);
+.periodForm {
+  margin: var(--s-3) 0;
+  gap: var(--s-3);
 }
 
-.dialogActions {
-  display: flex;
-  align-items: center;
-  gap: var(--s-3);
+.periodSaved {
+  background: var(--accent-weak);
+}
+
+.periodInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 var(--s-2);
+  border: var(--line-w) solid var(--line-ui);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  font-variant-numeric: tabular-nums;
+}
+
+.periodInput:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.periodInputDirty {
+  box-shadow: var(--inset-dirty);
+}
+
+.periodInput[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+/* 04-24(DR-13) — 이전 차수 읽기 섹션 제목(--fs-sm 600, 섹션의 2px --line-strong으로 시작). */
+.previousTitle {
+  margin: 0 0 var(--s-3);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+/* §7-7 LOADING — 머리글 + --surface 행 3개, 반짝임 없음. 300ms 안에 끝나면 보이지 않는다. */
+.previousSkeleton {
+  width: 100%;
+  border-collapse: collapse;
+  visibility: hidden;
+  animation: previousSkeletonReveal 0s linear 300ms forwards;
+}
+
+.previousSkeleton th {
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+}
+
+.previousSkeleton td {
+  height: var(--row-min);
+  background: var(--surface);
+  border-bottom: var(--line-w) solid var(--line);
+}
+
+@keyframes previousSkeletonReveal {
+  to {
+    visibility: visible;
+  }
 }

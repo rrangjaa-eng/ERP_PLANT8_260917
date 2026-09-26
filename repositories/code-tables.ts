@@ -29,7 +29,7 @@ export async function listCodeItems(
 
 export async function insertCodeItem(
   viewer: Viewer,
-  input: { tableKey: string; value: string; label: string; sortOrder?: number },
+  input: { tableKey: string; value: string; label: string; sortOrder?: number; description?: string | null },
 ): Promise<CodeItemRow> {
   void viewer;
   const [row] = await db
@@ -39,6 +39,7 @@ export async function insertCodeItem(
       value: input.value,
       label: input.label,
       sortOrder: input.sortOrder ?? 0,
+      description: input.description ?? null,
     })
     .returning();
   if (!row) throw new Error("code_items insert가 행을 반환하지 않았습니다.");
@@ -57,6 +58,17 @@ export async function setCodeItemActive(viewer: Viewer, id: string, active: bool
 export async function updateCodeItemLabel(viewer: Viewer, id: string, label: string): Promise<void> {
   void viewer;
   await db.update(codeItems).set({ label, updatedAt: new Date() }).where(eq(codeItems.id, id));
+}
+
+// 04-10(D-93): 코드표 값 설명 저장 — 이름(label)과 달리 빈 값(null)도 그대로
+// 쓴다(C-13 — 지우기를 지원한다). 40자 상한·빈 값→null 변환은 domain이 한다.
+export async function updateCodeItemDescription(
+  viewer: Viewer,
+  id: string,
+  description: string | null,
+): Promise<void> {
+  void viewer;
+  await db.update(codeItems).set({ description, updatedAt: new Date() }).where(eq(codeItems.id, id));
 }
 
 // 보관·복원 둘 다 조건부 UPDATE로 멱등·경합 안전을 확보한다(repositories/roles.ts
@@ -93,7 +105,7 @@ export async function setCodeItemTaxRule(viewer: Viewer, id: string, taxRule: un
 // 증빙 종류 코드표 시드가 기본 세금 규칙을 함께 심을 때만 쓴다.
 export async function seedCodeItem(
   viewer: Viewer,
-  input: { tableKey: string; value: string; label: string; sortOrder: number; taxRule?: unknown },
+  input: { tableKey: string; value: string; label: string; sortOrder: number; taxRule?: unknown; description?: string },
 ): Promise<boolean> {
   void viewer;
   const inserted = await db

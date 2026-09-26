@@ -1,4 +1,5 @@
-import { pgTable, text, boolean, integer, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, integer, jsonb, timestamp, index, check } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 // Phase 3 Task 1 결정(옵션 A, 03-01-DECISION-TASK1.md): 계급은 데이터, 시드 5종은
 // is_seed로 보호한다. 순위(rank) 컬럼을 두지 않는다 — 순위 비교가
@@ -9,6 +10,11 @@ import { pgTable, text, boolean, integer, jsonb, timestamp, index } from "drizzl
 //
 // 03-06이 customFields의 GIN 인덱스를 뒤늦게 채운다 — field_definitions 표와
 // 저장 전 zod 조립 검증 규약이 이제 정해졌다(마이그레이션 0007).
+//
+// 04-27(D11·D20): 업무 범위(workScope — team·company 두 값)는 순위도 보기 권한도
+// 아니다. 두 값은 크기를 비교하지 않고, can()/visible()/scopeFor()는 이 값을 읽지
+// 않는다. 상태 전환·기간 수정 게이트(04-20·04-21·04-22)가 「담당 PM인가」와 같은
+// 종류의 입력 사실로만 읽는다.
 export const roles = pgTable(
   "roles",
   {
@@ -16,11 +22,15 @@ export const roles = pgTable(
     name: text("name").notNull().unique(),
     isSeed: boolean("is_seed").notNull().default(false),
     sortOrder: integer("sort_order").notNull().default(0),
+    workScope: text("work_scope").notNull().default("team"),
     customFields: jsonb("custom_fields").notNull().default({}),
     archivedAt: timestamp("archived_at"),
     archivedBy: text("archived_by"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
-  (table) => [index("roles_custom_fields_idx").using("gin", table.customFields)],
+  (table) => [
+    index("roles_custom_fields_idx").using("gin", table.customFields),
+    check("roles_work_scope_check", sql`${table.workScope} IN ('team','company')`),
+  ],
 );

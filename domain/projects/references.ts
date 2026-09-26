@@ -9,7 +9,9 @@ import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 export class ForbiddenError extends UserFacingError {}
 
 export type ProjectReferenceOption = { id: string; name: string };
-export type CodeOption = { value: string; label: string };
+// 04-25(D-93): 코드표 설명을 싣고 온다(없으면 null) — 견적 소분류 셀이
+// 편집 중 셀 아래 힌트로 쓴다(표 연결은 04-23).
+export type CodeOption = { value: string; label: string; description: string | null };
 
 // 견적 줄의 소분류 코드표 — 그룹 머리글이 이 값에서 파생된다(D-62).
 export const QUOTE_SUBCATEGORY_TABLE_KEY = "quote_subcategory";
@@ -59,6 +61,6 @@ export async function listProjectFormReferences(
     teams: teamRows.map((row) => ({ id: row.id, name: row.name })),
     pmUsers: userRows.map((row) => ({ id: row.id, name: row.name })),
     vendors: vendorRows.map((row) => ({ id: row.id, name: row.name })),
-    subcategories: subcategoryRows.map((row) => ({ value: row.value, label: row.label })),
+    subcategories: subcategoryRows.map((row) => ({ value: row.value, label: row.label, description: row.description })),
   };
 }

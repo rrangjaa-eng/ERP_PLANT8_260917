@@ -5,12 +5,16 @@ import { can } from "@/domain/permissions/can";
 import {
   listProjects,
   aggregateProjects,
+  settleForProjectList,
+  getProjectCopySource,
   PROJECT_LIST_DEFAULT_LIMIT,
   PROJECT_LIST_MAX_LIMIT,
   PROJECT_SORT_KEYS,
   type ProjectSortKey,
 } from "@/domain/projects";
 import { listProjectFormReferences } from "@/domain/projects/references";
+import { listProjectStatusCatalog } from "@/domain/projects/status";
+import { recentFxRate } from "@/domain/money/currency";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { ProjectForm } from "./project-form";
@@ -22,14 +26,7 @@ import styles from "./projects.module.css";
 export const dynamic = "force-dynamic";
 
 // 04-05 — 04-01의 트레이서 목록(무필터·무그룹)을 완성한다: 월별 그룹·상태
-// 필터 한 줄·정렬·더 보기·전체 집계 합계(S1).
-const STATUS_OPTIONS: ProjectFilterOption[] = [
-  { value: "bidding", label: "수주중" },
-  { value: "in_progress", label: "진행" },
-  { value: "settled", label: "완료(정산)" },
-  { value: "lost", label: "미수주" },
-];
-const VALID_STATUS_VALUES = new Set(STATUS_OPTIONS.map((option) => option.value));
+// 필터 한 줄·정렬·더 보기·전체 집계 합계(S1). 04-21 — 상태 값·라벨은 코드표(D-75).
 
 function projectsHref(opts?: { isNew?: boolean }): string {
   return opts?.isNew ? "/projects?new=1#project-form" : "/projects";
@@ -46,6 +43,7 @@ function isValidSortKey(value: string | undefined): value is ProjectSortKey {
 
 type ProjectsSearchParams = {
   new?: string;
+  copyFrom?: string;
   status?: string;
   teamId?: string;
   year?: string;
@@ -62,10 +60,14 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
 
   const params = await searchParams;
   const showCreateForm = params.new === "1";
+  const statusOptions: ProjectFilterOption[] = (await listProjectStatusCatalog(session.viewer)).map(
+    ({ value, label }) => ({ value, label }),
+  );
 
   // 네이티브 GET 폼이 빈 칸까지 `status=&...`로 실으므로 여기서 한 번만
   // undefined로 정규화한다(action-log/page.tsx와 같은 이유).
-  const status = params.status && VALID_STATUS_VALUES.has(params.status) ? params.status : undefined;
+  const status =
+    params.status && statusOptions.some((option) => option.value === params.status) ? params.status : undefined;
   const teamId = params.teamId || undefined;
   const year = params.year && /^\d{4}$/.test(params.year) ? Number(params.year) : undefined;
   const search = params.q || undefined;
@@ -80,11 +82,18 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const filter = { status, teamId, year, search };
   const hasFilter = Boolean(status || teamId || year || search);
 
-  const [references, canWrite, rows, aggregate] = await Promise.all([
+  // 04-11(A-07): 자동 정산 판정은 목록 요청당 한 번, 목록·합계를 나란히 읽기 전에(04-17이
+  // loadProjectList 안으로 옮긴다).
+  await settleForProjectList(session.viewer);
+  const [references, canWrite, rows, aggregate, copySource, usdDefaultFxRate] = await Promise.all([
     listProjectFormReferences(session.viewer),
     can(session.viewer, "projects", "write"),
     listProjects(session.viewer, { filter, sort: { key: sortKey, direction: sortDirection }, limit: count }),
     aggregateProjects(session.viewer, filter),
+    // 04-15(D-70 · S2) — 복사 등록 미리 채우기. 범위 밖 · 보관 · 없는 출처면 null → 일반 등록 폼.
+    showCreateForm && params.copyFrom ? getProjectCopySource(session.viewer, params.copyFrom) : Promise.resolve(null),
+    // 04-15(D-71) — 총 매출 예상가 USD 환율 칸 기본값(설정의 실제 값).
+    showCreateForm ? recentFxRate("USD") : Promise.resolve(1),
   ]);
 
   const canSeeAmount = aggregate.quoteAmountKrw !== undefined;
@@ -107,10 +116,13 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           렌더하지 않는다 — 한 화면에 1차는 하나다. */}
       {canWrite && showCreateForm ? (
         <ProjectForm
+          key={copySource && params.copyFrom ? `copy-${params.copyFrom}` : "new"}
+          copySource={copySource && params.copyFrom ? { ...copySource, projectId: params.copyFrom } : null}
           clients={references.clients}
           teams={references.teams}
           pmUsers={references.pmUsers}
           cancelHref={projectsHref()}
+          usdDefaultFxRate={usdDefaultFxRate}
         />
       ) : null}
 
@@ -120,7 +132,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         <ProjectsFilterBar
           key={`${status ?? ""}|${teamId ?? ""}|${year ?? ""}|${search ?? ""}`}
           teams={references.teams}
-          statusOptions={STATUS_OPTIONS}
+          statusOptions={statusOptions}
           yearOptions={yearOptions()}
           defaultValues={{ status, teamId, year: year ? String(year) : undefined, q: search }}
           hasFilter={hasFilter}
@@ -143,7 +155,13 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       ) : aggregate.count === 0 ? (
         <ListEmpty message="조건에 맞는 프로젝트가 없습니다" action={{ label: "필터 지우기", href: "/projects" }} />
       ) : (
-        <ProjectsTable rows={rows} aggregate={aggregate} loadMoreHref={loadMoreHref} canSeeAmount={canSeeAmount} />
+        <ProjectsTable
+          rows={rows}
+          aggregate={aggregate}
+          loadMoreHref={loadMoreHref}
+          canSeeAmount={canSeeAmount}
+          statusLabels={Object.fromEntries(statusOptions.map((option) => [option.value, option.label]))}
+        />
       )}
     </>
   );

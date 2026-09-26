@@ -148,13 +148,14 @@ describe("rememberFxRate 동시 저장 — 풀 소진 애플리케이션 교착 
       const seeded = await saveQuoteLines(
         SYSTEM_VIEWER,
         revision.id,
-        Array.from({ length: poolMax }, (_, i) => ({
-          sortOrder: i,
+        { rows: Array.from({ length: poolMax }, (_, i) => ({
+          id: randomUUID(),
+          isNew: true as const,
           subcategory: subcategory.value,
           itemName: `잠금 줄 ${i}`,
           unitPrice: { currency: "KRW" as const, amount: 1_000, fxRate: 1 },
           execution: { currency: "KRW" as const, amount: 0, fxRate: 1 },
-        })),
+        })) },
       );
 
       const results = await expectAllFinishAfterPoolSaturated(
@@ -162,24 +163,23 @@ describe("rememberFxRate 동시 저장 — 풀 소진 애플리케이션 교착 
         seeded.lines.map((line) => line.id),
         () =>
           seeded.lines.map((line, i) =>
-            saveQuoteLines(SYSTEM_VIEWER, revision.id, [
+            saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
               {
                 id: line.id,
                 version: line.version,
-                sortOrder: i,
                 subcategory: subcategory.value,
                 itemName: `잠금 줄 ${i} 수정`,
                 unitPrice: { currency: "KRW", amount: 2_000, fxRate: 1 },
                 execution: { currency: "KRW", amount: 0, fxRate: 1 },
               },
               {
-                subcategory: subcategory.value,
+                id: randomUUID(), isNew: true, subcategory: subcategory.value,
                 itemName: `외화 줄 ${i}`,
                 unitPrice: { currency: "USD", amount: 100, fxRate: 1300 + i },
                 unitPriceFxRateTouched: true,
                 execution: { currency: "KRW", amount: 0, fxRate: 1 },
               },
-            ]),
+            ] }),
           ),
       );
       expect(results).toHaveLength(poolMax);

@@ -1,0 +1,160 @@
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
+import { AUTO_TRANSITIONS } from "@/domain/projects/status-transitions";
+import { withTransaction } from "@/lib/db-transaction";
+import { addDays, kstDateOf, kstToday } from "@/lib/kst-date";
+import { log } from "@/lib/log";
+import {
+  lockProjectForWrite,
+  settleOverdueProjects,
+  updateProjectStatusIfCurrent,
+  type ProjectRow,
+} from "@/repositories/projects";
+import { findLatestActionFor } from "@/repositories/action-log";
+import type { DbOrTx } from "@/repositories/document-counters";
+
+// 04-11(D-76 · D-50 · CEO A-01·A-08·A-15·A-39·OV-5 · 사용자 D19) — 진행 → 정산 자동 전환.
+// 읽기 시점 판정이다. 읽기용 입구(applyAutoSettlement)는 짧은 별도 트랜잭션에서 잠긴 행을
+// 건너뛰며 돌고 실패해도 읽기를 막지 않는다(fail-open). 상태 변경과 그 행동 로그 한 줄은
+// 한 트랜잭션이다 — 로그가 실패하면 상태도 진행으로 남아 다음 판정이 다시 잡는다.
+// Phase 7 예약 작업은 같은 applyAutoSettlement를 부르기만 한다.
+
+const PROJECT_ENTITY = "project";
+const [AUTO_SETTLE] = AUTO_TRANSITIONS;
+
+export type AutoSettlementDeps = {
+  now: () => Date;
+  transaction: typeof withTransaction;
+  settle: typeof settleOverdueProjects;
+  recordAction: typeof defaultRecordAction;
+  logger: Pick<typeof log, "info" | "error">;
+};
+
+// A-08: 발효일 = max(종료일 + 1, 직전 상태 변경일). 판정이 늦게 돌아도 기록상의 날짜는 D-76
+// 그대로이고, 종료일이 지난 뒤 사람이 진행으로 바꾼 건은 그 바꾼 날보다 앞서지 않는다.
+export function effectiveOnFor(input: { endDate: string; lastChangeOn: string | null }): string {
+  const dayAfterEnd = addDays(input.endDate, 1);
+  return input.lastChangeOn !== null && input.lastChangeOn > dayAfterEnd ? input.lastChangeOn : dayAfterEnd;
+}
+
+function failureReason(error: unknown): string {
+  if (!(error instanceof Error)) return "unknown";
+  const cause = (error as { cause?: unknown }).cause;
+  const code = (error as { code?: unknown }).code ?? (cause as { code?: unknown } | undefined)?.code;
+  return typeof code === "string" ? `${error.name}:${code}` : error.name;
+}
+
+// projectIds가 없으면 대상 전체(목록 입구 · Phase 7 예약 작업). 바뀐 프로젝트 id를 돌려준다.
+export async function applyAutoSettlement(
+  opts: { projectIds?: string[] },
+  deps?: Partial<AutoSettlementDeps>,
+): Promise<string[]> {
+  const now = deps?.now ?? (() => new Date());
+  const transaction = deps?.transaction ?? withTransaction;
+  const settle = deps?.settle ?? settleOverdueProjects;
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  const logger = deps?.logger ?? log;
+
+  try {
+    const settled = await transaction(async (tx) => {
+      const rows = await settle(
+        SYSTEM_VIEWER,
+        { todayKst: kstToday(now()), projectIds: opts.projectIds, from: AUTO_SETTLE.from, to: AUTO_SETTLE.to },
+        tx,
+      );
+      for (const row of rows) {
+        const lastChangeOn = row.lastChangeAt ? kstDateOf(row.lastChangeAt) : null;
+        await recordAction(
+          SYSTEM_VIEWER,
+          {
+            actionType: "status_change",
+            entity: PROJECT_ENTITY,
+            entityId: row.id,
+            detail: {
+              from: AUTO_SETTLE.from,
+              to: AUTO_SETTLE.to,
+              trigger: AUTO_SETTLE.trigger,
+              effectiveOn: effectiveOnFor({ endDate: row.endDate, lastChangeOn }),
+            },
+          },
+          { tx },
+        );
+      }
+      return rows.map((row) => row.id);
+    });
+    if (settled.length > 0) logger.info("project.auto_settle", { count: settled.length });
+    return settled;
+  } catch (error) {
+    // 읽기를 막지 않는다 — 쓰기 경로는 잠금 안에서 같은 판정을 다시 한다(loadProjectForGate).
+    logger.error("project.auto_settle_failed", { projectIds: opts.projectIds ?? null, reason: failureReason(error) });
+    return [];
+  }
+}
+
+export type ProjectGateDeps = {
+  lockProject: typeof lockProjectForWrite;
+  updateStatus: typeof updateProjectStatusIfCurrent;
+  findLatestAction: typeof findLatestActionFor;
+  recordAction: typeof defaultRecordAction;
+};
+
+// 04-11(A-33 · OV-5 · T-04-162) — 쓰기 입구. 호출자가 연 트랜잭션에서 프로젝트 행을 배타
+// 잠금한 뒤, 그 행이 판정 대상이면 같은 tx로 정산하고 로그를 남긴 다음 판정 뒤 행을
+// 돌려준다. 실패는 삼키지 않는다(fail-closed). 화면이 본 상태와의 비교(from · seenStatus)는
+// 호출자가 이 반환 행으로 한다 — 스스로 거부하지 않는다(DR-6). 이 함수 안의 리포지토리
+// 호출은 전부 tx를 받는다(ARCHITECTURE §4-8 — 잠근 트랜잭션 안 풀 호출 금지).
+export async function loadProjectForGate(
+  viewer: Viewer,
+  projectId: string,
+  opts: { now?: () => Date; tx: DbOrTx; afterLock?: () => Promise<void> },
+  deps?: Partial<ProjectGateDeps>,
+): Promise<ProjectRow | null> {
+  const lockProject = deps?.lockProject ?? lockProjectForWrite;
+  const updateStatus = deps?.updateStatus ?? updateProjectStatusIfCurrent;
+  const findLatestAction = deps?.findLatestAction ?? findLatestActionFor;
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  const now = opts.now ?? (() => new Date());
+
+  const row = await lockProject(viewer, projectId, opts.tx);
+  if (!row) return null;
+  await opts.afterLock?.();
+
+  // 읽기 입구의 SQL 조건(settleOverdueProjects)과 같다 — 진행 · 종료일 < 오늘(KST) · 보관 아님.
+  const endDate = row.endDate;
+  if (row.status !== AUTO_SETTLE.from || endDate === null || endDate >= kstToday(now()) || row.archivedAt !== null) {
+    return row;
+  }
+
+  const settled = await updateStatus(
+    viewer,
+    projectId,
+    { expectedStatus: AUTO_SETTLE.from, status: AUTO_SETTLE.to, fillEndDateFromStart: false },
+    opts.tx,
+  );
+  // 잠근 행이라 0행일 수 없다 — 깨지면 로그만 남기지 않고 던져 tx를 되돌린다(fail-closed).
+  if (!settled) throw new Error("project.auto_settle_gate_no_row");
+  const latest = await findLatestAction(
+    viewer,
+    { entity: PROJECT_ENTITY, entityId: projectId, actionType: "status_change" },
+    opts.tx,
+  );
+  await recordAction(
+    SYSTEM_VIEWER,
+    {
+      actionType: "status_change",
+      entity: PROJECT_ENTITY,
+      entityId: projectId,
+      detail: {
+        from: AUTO_SETTLE.from,
+        to: AUTO_SETTLE.to,
+        trigger: AUTO_SETTLE.trigger,
+        effectiveOn: effectiveOnFor({
+          endDate,
+          lastChangeOn: latest ? kstDateOf(latest.occurredAt) : null,
+        }),
+      },
+    },
+    { tx: opts.tx },
+  );
+  return settled;
+}

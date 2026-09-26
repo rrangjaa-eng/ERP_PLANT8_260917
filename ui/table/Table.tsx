@@ -4,10 +4,9 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { clampPage } from "@/lib/paging";
 import { isCtrlCombo } from "@/lib/shortcut";
 import { Pagination } from "@/ui/pagination/Pagination";
-import { pageRangeText } from "@/ui/pagination/page-window";
 import styles from "./Table.module.css";
 import { composeFooterNotice, type FooterNoticeItem } from "./footer-notice";
-import { crossPageTarget, nextEditableCell, pageEntryFocus, pageOfRow, pinNewRows, splitPages, type FocusCell } from "./paging";
+import { crossPageTarget, nextEditableCell, pageEntryFocus, pageOfRow, pinNewRows, splitPageRangeText, splitPages, type FocusCell } from "./paging";
 import { toTsv } from "./parse-tsv";
 import { isGridActionAllowed } from "./save-lock";
 import { readPasteClipboard } from "./use-clipboard-paste";
@@ -719,9 +718,7 @@ export function Table<Row>({
     if (count > 0) pageErrorCounts[index + 1] = count;
   });
 
-  const rangeText = pagination
-    ? pageRangeText({ page, pageSize: pagination.pageSize, total: displayRows.length, unit: pagination.unit })
-    : "";
+  const rangeText = pagination && pages ? splitPageRangeText({ pages, page, unit: pagination.unit }) : "";
 
   return (
     <>

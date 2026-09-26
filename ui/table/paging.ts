@@ -1,5 +1,6 @@
 // 04-19(D-91 · SYSTEM.md §7-3 (자)) — 편집 표의 쪽 나눔은 화면 안 배열 자르기다(서버 페이지네이션이 아니다). 순수 함수,
 // React 없음. 쪽 번호 보정과 쪽 크기는 lib/paging(04-29)의 clampPage · QUOTE_TABLE_PAGE_SIZE를 쓴다 — 여기서 다시 만들지 않는다.
+import { formatCount } from "@/lib/format-number";
 
 /** 격자의 포커스·범위 앵커 — 인덱스가 아니라 줄 id와 열 키로 기억한다(엔지 리뷰 C §1 P2). */
 export type FocusCell = { rowId: string; colKey: string };
@@ -36,6 +37,14 @@ export function pinNewRows(input: {
   const fresh = input.ids.filter((id) => !input.known.has(id) && input.pinned[id] === undefined);
   if (fresh.length === 0) return input.pinned;
   return { ...input.pinned, ...Object.fromEntries(fresh.map((id) => [id, input.page])) };
+}
+
+/** 04-47(§7-3 (자)) — 범위 글자를 실제 분할로 센다(새 줄 고정으로 한 쪽이 쪽 크기를 넘는 동안에도 맞다). */
+export function splitPageRangeText(input: { pages: readonly (readonly string[])[]; page: number; unit: string }): string {
+  const start = input.pages.slice(0, input.page - 1).reduce((count, ids) => count + ids.length, 0) + 1;
+  const end = start + (input.pages[input.page - 1]?.length ?? 0) - 1;
+  const total = input.pages.reduce((count, ids) => count + ids.length, 0);
+  return `${formatCount(start)}–${formatCount(end)} / ${formatCount(total)}${input.unit}`;
 }
 
 /** 줄 id가 있는 쪽(1부터). 없으면 null. */

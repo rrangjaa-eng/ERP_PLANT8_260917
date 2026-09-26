@@ -56,6 +56,8 @@ export type { DocumentKindDef, RouteConfig, RouteConfigStep, RouteSettingDefs } 
 export { nextStep, resolveHolders, walkRoute } from "@/domain/approvals/route";
 export { loadActionLogGate, recordActionInTx } from "@/domain/approvals/tx-log";
 export type { ApprovalInboxItemDto, ApprovalViewDto, RoutePreviewDTO, RoutePreviewStepDTO } from "@/domain/approvals/dto";
+export { projectActionResult } from "@/domain/approvals/dto";
+export type { ApprovalActionResult } from "@/domain/approvals/dto";
 
 // 04.1(EXP-03·EXP-04): 결재 서비스. 읽기와 쓰기를 나눈다(CEO-2 — ARCHITECTURE
 // §4-8 (3)): 설정 · 조직 스냅숏 · 행동 로그 켜짐 여부는 트랜잭션 전에 읽고,
@@ -374,11 +376,47 @@ function staleOrFinalRefusal(
   return null;
 }
 
+// 액션 토스트 재료(B-A1) — 투영 전 값이라 액션은 projectActionResult를 지난 뒤에만 돌려준다.
+export type ApproveResult = {
+  status: ApprovalStatus;
+  version: number;
+  documentId: string;
+  kind: string;
+  final: boolean;
+  nextHolderNames: string | null;
+};
+
+function currentHolderNamesOf(walk: WalkRouteResult | null): string | null {
+  if (!walk || walk.outcome.kind !== "actionable") return null;
+  return walk.display.find((step) => step.state === "current")?.holderNames || null;
+}
+
+// 문서의 지금 단계 담당 이름(없으면 null) — 신청 · 다시 신청 토스트 재료(투영 전).
+export async function currentHolderNames(
+  viewer: Viewer,
+  input: { kind: string; documentId: string },
+  deps?: ApprovalDeps,
+): Promise<string | null> {
+  const graph = await findApprovalGraphByDocument(viewer, { documentKind: input.kind, documentId: input.documentId });
+  if (!graph || !IN_PROGRESS.includes(graph.instance.status)) return null;
+  return currentHolderNamesOf(walkGraph(graph, await readSnapshot(viewer, deps)));
+}
+
+// 최종 승인 토스트의 차감 일수(B-C2 — 출처는 종류가 준 요약의 daysQuarters · days).
+// 요약에 일수가 없거나 0이면(재택 · 일수 없는 종류) null.
+export async function describeDeduction(viewer: Viewer, input: { kind: string; documentId: string }): Promise<string | null> {
+  const described = await getDocumentKind(input.kind).describeDocuments(viewer, [input.documentId]);
+  const summary = described.get(input.documentId);
+  if (!summary || !("daysQuarters" in summary) || !("days" in summary)) return null;
+  const { daysQuarters, days } = summary;
+  return typeof daysQuarters === "number" && daysQuarters > 0 && typeof days === "string" ? days : null;
+}
+
 export async function approveDocument(
   viewer: Viewer,
   input: { instanceId: string; expectedVersion: number },
   deps?: ApprovalDeps,
-): Promise<{ status: ApprovalStatus; version: number }> {
+): Promise<ApproveResult> {
   const snapshot = await readSnapshot(viewer, deps);
   const gate = await (deps?.loadActionLogGate ?? defaultLoadActionLogGate)();
 
@@ -458,7 +496,14 @@ export async function approveDocument(
       gate,
       { appendActionLog: deps?.appendActionLog },
     );
-    return { status: updated.status as ApprovalStatus, version: updated.version };
+    return {
+      status: updated.status as ApprovalStatus,
+      version: updated.version,
+      documentId: instance.documentId,
+      kind: instance.documentKind,
+      final: status === "approved",
+      nextHolderNames: currentHolderNamesOf(after),
+    };
   });
 }
 

@@ -1,4 +1,5 @@
-import type { DtoSpec } from "@/domain/permissions/project";
+import { project, type DtoSpec, type ProjectDeps } from "@/domain/permissions/project";
+import type { Viewer } from "@/domain/viewer";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import type { ApprovalStatus, DisplayState } from "@/domain/approvals/route";
 
@@ -122,3 +123,37 @@ registerDto({
   name: "routePreviewStep",
   fields: ROUTE_PREVIEW_STEP_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
 });
+
+// 04.1-02(B-A1 — CX-R3와 같은 규칙): 신청 · 다시 신청 · 승인 · 반려 액션이 돌려주는 토스트
+// 재료. 사람 이름은 approval.value, 차감 일수는 leave.value — 투영에서 빠지면 토스트가 그
+// 조각을 뺀다. 구조 값(documentId · final)은 투영 밖에서 그대로 붙인다.
+export type ApprovalActionResultDto = {
+  nextHolderNames: string | null;
+  drafterName: string | null;
+  deductedDays: string | null;
+};
+
+export const APPROVAL_ACTION_RESULT_DTO_SPEC: DtoSpec<Partial<ApprovalActionResultDto>, ApprovalActionResultDto> = {
+  fields: [
+    { key: "nextHolderNames", from: "nextHolderNames", infoItem: "approval.value" },
+    { key: "drafterName", from: "drafterName", infoItem: "approval.value" },
+    { key: "deductedDays", from: "deductedDays", infoItem: "leave.value" },
+  ],
+};
+
+registerDto({
+  name: "ApprovalActionResultDto",
+  fields: APPROVAL_ACTION_RESULT_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
+});
+
+export type ApprovalActionResult = { documentId: string; final: boolean } & Partial<ApprovalActionResultDto>;
+
+export async function projectActionResult(
+  viewer: Viewer,
+  raw: { documentId: string; final: boolean } & Partial<ApprovalActionResultDto>,
+  deps?: Partial<ProjectDeps>,
+): Promise<ApprovalActionResult> {
+  const { documentId, final, ...material } = raw;
+  const projected = await project(viewer, material, APPROVAL_ACTION_RESULT_DTO_SPEC, deps);
+  return { documentId, final, ...projected };
+}

@@ -927,3 +927,14 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **버린 대안**: 회수를 `--danger`로 — 반려와 구분되지 않는다. `{단계} 결재 중`을 `결재 중` 태그 + 단계 이름 글자로 쪼갠다 — 같은 칸에 두 모양이 생긴다.
 
 **범위**: SYSTEM.md §1-2 `--warning` 행 · §7-5. 코드 매핑은 `app/(app)/leave/status-display.ts` 한 곳.
+
+## 2026-09-26 — 결재함 EMPTY의 다음 한 수 = 연차 목록 (04.1 오케스트레이터 결정 11 · CEO-22)
+
+**결정**: `/approvals`가 0건이면 `결재할 건이 없습니다 · 연차 목록 보기`(→ `/leave`)다. SYSTEM.md §7-7 EMPTY 행의 예시도 같은 글자로 고친다.
+**결정자**: 04.1 오케스트레이터 결정 11(UI-SPEC Copywriting 「Empty — 결재함 0건」 정정, CEO-22). 04.1-02 실행 때 반영.
+
+**이유**: 지출결의 목록은 Phase 5 화면이라 지금은 갈 곳이 없다(이동하면 자리표시 화면). 이 페이즈의 결재 문서는 연차 하나이고, 결재할 건이 없을 때 할 수 있는 일은 내 연차를 보는 것이다.
+
+**버린 대안**: `지출결의 목록 보기`(→ `/expenses`) 유지 — 결재와 무관한 빈 화면으로 보낸다.
+
+**범위**: `app/(app)/approvals/page.tsx` · SYSTEM.md §7-7 EMPTY 예시 · `test/unit/ui/system-md-compliance.test.ts`. Phase 5가 지출결의를 결재함에 더할 때 다시 본다.

@@ -9,3 +9,19 @@ registerAction({
   action: "write",
   dtoName: "ApprovalActionResultDto",
 });
+
+// 회수 — 문서 id만 돌려준다(DTO 없음). 판정은 기안자 본인(도메인).
+registerAction({
+  name: "withdrawLeaveAction",
+  menu: "leave",
+  action: "write",
+  dtoName: null,
+});
+
+// 다시 신청 — 토스트 재료(다음 담당 이름)를 ApprovalActionResultDto로 투영해 돌려준다(B-A1).
+registerAction({
+  name: "resubmitLeaveAction",
+  menu: "leave",
+  action: "write",
+  dtoName: "ApprovalActionResultDto",
+});

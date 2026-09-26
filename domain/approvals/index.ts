@@ -20,13 +20,16 @@ import {
   updateInstanceStatus,
   type ApprovalGraph,
   type ApprovalInstanceRow,
+  type ApprovalRouteWithSteps,
   type ApprovalStepWithActor,
   type NewApprovalStep,
 } from "@/repositories/approvals";
 import { listOrgSnapshot as defaultListOrgSnapshot, listRouteLabelNames } from "@/repositories/org-snapshot";
 import {
   FALLBACK_LABEL,
+  InvalidTransitionError,
   nextStep,
+  type ApprovalEvent,
   walkRoute,
   type ApprovalStatus,
   type RouteStep,
@@ -71,7 +74,7 @@ export class ApprovalConflictError extends UserFacingError {}
 export class NotCurrentHolderError extends UserFacingError {}
 export class RouteBlockedError extends UserFacingError {}
 
-const NOT_HOLDER_MESSAGE = "지금 담당이 아님 · 새로 고침";
+export const NOT_HOLDER_MESSAGE = "지금 담당이 아님 · 새로 고침";
 // 04.1-02 Task 3이 관련자에게 처리자 이름 · 시각이 담긴 문구를 조립한다 — 여기는 기본 문구.
 const CONFLICT_MESSAGE = "다른 처리가 먼저 끝남 · 새로 고침";
 const FINAL_MESSAGES: Record<"approved" | "rejected" | "withdrawn", string> = {
@@ -136,6 +139,8 @@ export type PreparedSubmission = {
   drafterOrgUnitId: string | null;
   steps: NewApprovalStep[];
   walk: WalkRouteResult;
+  // 다시 신청의 행동 전 판정(관련자 재료)도 같은 스냅숏을 쓴다.
+  snapshot: SnapshotPerson[];
   gate: ActionLogGate;
 };
 
@@ -223,6 +228,7 @@ async function planRoute(
     drafterOrgUnitId,
     steps,
     walk,
+    snapshot,
   };
 }
 
@@ -316,15 +322,12 @@ export async function submitDocument(
   return instance;
 }
 
-// ── 승인 ────────────────────────────────────────────────────────────────
+// ── 전이(승인 · 반려 · 회수 · 다시 신청) ──────────────────────────────────
 
-type RefusalReason = "conflict" | "not_holder" | "final";
+type RefusalReason = "conflict" | "not_holder" | "final" | "not_drafter" | "invalid_state";
+type RefusalFields = { instanceId: string; viewerId: string; expectedVersion: number; actualVersion: number | null };
 
-function refuse(
-  reason: RefusalReason,
-  error: Error,
-  fields: { instanceId: string; viewerId: string; expectedVersion: number; actualVersion: number | null },
-): Error {
+function refuse(reason: RefusalReason, error: Error, fields: RefusalFields): Error {
   log.info("approval.refused", { ...fields, reason });
   return error;
 }
@@ -357,23 +360,142 @@ function warnIfBlocked(graph: ApprovalGraph, walk: WalkRouteResult | null): void
   });
 }
 
-// (1) version 불일치 · (2) 종결 상태 — 후보 판정보다 먼저. 04.1-02 Task 3이 이
-// 자리에 관련자 판정(isApprovalParty — 기안자 · 모든 차수 acted_by ·
-// walk.currentHolderIds)을 끼워 오류 종류를 가른다. 여기서는 기본 문구다.
-function staleOrFinalRefusal(
+type TransitionEvent = "approve" | "reject" | "withdraw" | "resubmit";
+
+// 상태 기계 표(nextStep)가 그 사건을 허용하는가 — 승인은 approve · approve_final 둘 중 하나라도.
+function allowsEvent(status: ApprovalStatus, event: TransitionEvent): boolean {
+  const events: ApprovalEvent[] = event === "approve" ? ["approve", "approve_final"] : [event];
+  return events.some((candidate) => {
+    try {
+      nextStep(status, candidate);
+      return true;
+    } catch (error) {
+      if (error instanceof InvalidTransitionError) return false;
+      throw error;
+    }
+  });
+}
+
+// (2) 사건별 종결 검사(CX-B1) — 「(상태, 사건, viewer가 기안자인가) → 이 사건에 닫혔는가」 한 곳.
+// nextStep 허용 표에서 읽는다: approved · withdrawn은 모든 사건에 닫혔고, rejected에서 열린 사건은
+// resubmit 하나이며 그것도 기안자에게만이다(반려에서 나가는 유일한 전이). 진행 중 상태의 resubmit도 닫힘.
+function closedFor(status: ApprovalStatus, event: TransitionEvent, isDrafter: boolean): boolean {
+  if (!allowsEvent(status, event)) return true;
+  return event === "resubmit" && !isDrafter;
+}
+
+// (1) version 불일치 갈래 — 04.1-02 Task 3이 관련자 판정(isApprovalParty)으로 오류 종류를 가른다.
+function refuseStale(fields: RefusalFields): Error {
+  return refuse("conflict", new ApprovalConflictError(CONFLICT_MESSAGE), fields);
+}
+
+// (2) 종결 갈래 — 04.1-02 Task 3이 관련자에게만 지금 상태 문구를 준다.
+function refuseClosed(graph: ApprovalGraph, fields: RefusalFields): Error {
+  const status = graph.instance.status as ApprovalStatus;
+  if (status === "approved" || status === "rejected" || status === "withdrawn") {
+    return refuse("final", new ApprovalConflictError(FINAL_MESSAGES[status]), fields);
+  }
+  return refuse("invalid_state", new ApprovalConflictError(CONFLICT_MESSAGE), fields);
+}
+
+// (5) version 조건 UPDATE 0행 — 04.1-02 Task 3이 다시 읽은 행으로 상세 문구를 만든다.
+function refuseLostRace(fields: RefusalFields): Error {
+  return refuse("conflict", new ApprovalConflictError(CONFLICT_MESSAGE), fields);
+}
+
+type TransitionContext = {
+  graph: ApprovalGraph;
+  route: ApprovalRouteWithSteps;
+  // 행동 전 결재선 해석(진행 중일 때만) — 후보 판정과 관련자 재료(currentHolderIds).
+  before: WalkRouteResult | null;
+  // (3)을 통과한 승인 · 반려의 지금 자리(후보 판정 결과).
+  outcome: Extract<WalkRouteResult["outcome"], { kind: "actionable" }> | null;
+};
+
+type TransitionPlan<T> = {
+  status: ApprovalStatus;
+  currentRound?: number;
+  actionType: "document_approve" | "document_reject" | "document_withdraw" | "document_submit";
+  // (6) UPDATE가 1행을 얻은 뒤에만 부른다 — 단계 기록 · 폴백 행 · 새 차수 행. 로그 detail 조각과 결과를 돌려준다.
+  write: (updated: ApprovalInstanceRow) => Promise<{ detail: Record<string, unknown>; result: T }>;
+};
+
+type TransitionPre = { snapshot: SnapshotPerson[]; gate: ActionLogGate; appendActionLog?: TxLogDeps["appendActionLog"] };
+
+// 공용 전이 — 고정 순서(CEO-6): 트랜잭션 전 읽기(snapshot · gate — 호출자) → tx로 인스턴스·차수·단계 읽기 →
+// (1) version 불일치 → (2) 사건별 종결 → (3) 후보(승인 · 반려 — 반려는 기안자 제외) 또는 기안자(회수 ·
+// 다시 신청) → (4) 결과 계산(plan) → (5) 상태 UPDATE 먼저(version 조건) → (6) 단계 · 폴백 · 차수 행 →
+// (7) 같은 tx 행동 로그. 재시도 코드를 두지 않는다(진 쪽은 무슨 일이 있었는지 받고 스스로 새로 고친다).
+async function runTransition<T>(
   viewer: Viewer,
-  graph: ApprovalGraph,
-  expectedVersion: number,
-): Error | null {
+  input: { instanceId: string; expectedVersion: number; event: TransitionEvent },
+  pre: TransitionPre,
+  tx: DbOrTx,
+  plan: (ctx: TransitionContext) => TransitionPlan<T>,
+): Promise<{ updated: ApprovalInstanceRow; result: T }> {
+  const baseFields = { instanceId: input.instanceId, viewerId: viewer.id, expectedVersion: input.expectedVersion };
+  const graph = await findApprovalGraphById(viewer, input.instanceId, tx);
+  if (!graph) throw refuse("not_holder", new NotCurrentHolderError(NOT_HOLDER_MESSAGE), { ...baseFields, actualVersion: null });
   const { instance } = graph;
-  const fields = { instanceId: instance.id, viewerId: viewer.id, expectedVersion, actualVersion: instance.version };
-  if (instance.version !== expectedVersion) {
-    return refuse("conflict", new ApprovalConflictError(CONFLICT_MESSAGE), fields);
+  const fields = { ...baseFields, actualVersion: instance.version };
+  const status = instance.status as ApprovalStatus;
+  const isDrafter = viewer.id === instance.drafterId;
+  const before = IN_PROGRESS.includes(status) ? walkGraph(graph, pre.snapshot) : null;
+
+  // (1) version 불일치 — 후보 · 기안자 판정보다 먼저.
+  if (instance.version !== input.expectedVersion) throw refuseStale(fields);
+  // (2) 사건별 종결.
+  if (closedFor(status, input.event, isDrafter)) throw refuseClosed(graph, fields);
+  // (3) 후보 또는 기안자.
+  const route = currentRouteOf(graph);
+  let outcome: TransitionContext["outcome"] = null;
+  if (input.event === "approve" || input.event === "reject") {
+    warnIfBlocked(graph, before);
+    const actionable = before?.outcome.kind === "actionable" ? before.outcome : null;
+    const isCandidate = actionable !== null && actionable.candidateIds.includes(viewer.id);
+    if (!route || !isCandidate || (input.event === "reject" && isDrafter)) {
+      throw refuse("not_holder", new NotCurrentHolderError(NOT_HOLDER_MESSAGE), fields);
+    }
+    outcome = actionable;
+  } else if (!isDrafter) {
+    throw refuse("not_drafter", new NotCurrentHolderError(NOT_HOLDER_MESSAGE), fields);
   }
-  if (instance.status === "approved" || instance.status === "rejected" || instance.status === "withdrawn") {
-    return refuse("final", new ApprovalConflictError(FINAL_MESSAGES[instance.status]), fields);
-  }
-  return null;
+  if (!route) throw new Error("지금 차수 행 없음");
+
+  // (4) 결과 계산.
+  const planned = plan({ graph, route, before, outcome });
+  // (5) 상태 UPDATE 먼저 — 경쟁자는 이 행 잠금에서 줄을 서고, 진 쪽은 행을 쓰기 전에 0행으로 멈춘다.
+  const updated = await updateInstanceStatus(
+    viewer,
+    { id: instance.id, expectedVersion: input.expectedVersion, status: planned.status, currentRound: planned.currentRound },
+    tx,
+  );
+  if (!updated) throw refuseLostRace(fields);
+  // (6) 단계 · 폴백 · 차수 행.
+  const written = await planned.write(updated);
+  // (7) 같은 tx 행동 로그(Codex HIGH 원자성) — 켜짐 여부는 트랜잭션 전에 읽은 gate.
+  await recordActionInTx(
+    viewer,
+    {
+      actionType: planned.actionType,
+      entity: "approval_instance",
+      entityId: instance.id,
+      documentId: instance.documentId,
+      detail: { kind: instance.documentKind, round: updated.currentRound, ...written.detail },
+    },
+    tx,
+    pre.gate,
+    { appendActionLog: pre.appendActionLog },
+  );
+  return { updated, result: written.result };
+}
+
+async function readTransitionPre(viewer: Viewer, deps?: ApprovalDeps): Promise<TransitionPre> {
+  return {
+    snapshot: await readSnapshot(viewer, deps),
+    gate: await (deps?.loadActionLogGate ?? defaultLoadActionLogGate)(),
+    appendActionLog: deps?.appendActionLog,
+  };
 }
 
 // 액션 토스트 재료(B-A1) — 투영 전 값이라 액션은 projectActionResult를 지난 뒤에만 돌려준다.
@@ -391,7 +513,7 @@ function currentHolderNamesOf(walk: WalkRouteResult | null): string | null {
   return walk.display.find((step) => step.state === "current")?.holderNames || null;
 }
 
-// 문서의 지금 단계 담당 이름(없으면 null) — 신청 · 다시 신청 토스트 재료(투영 전).
+// 문서의 지금 단계 담당 이름(없으면 null) — 신청 토스트 재료(투영 전).
 export async function currentHolderNames(
   viewer: Viewer,
   input: { kind: string; documentId: string },
@@ -417,94 +539,180 @@ export async function approveDocument(
   input: { instanceId: string; expectedVersion: number },
   deps?: ApprovalDeps,
 ): Promise<ApproveResult> {
-  const snapshot = await readSnapshot(viewer, deps);
-  const gate = await (deps?.loadActionLogGate ?? defaultLoadActionLogGate)();
-
+  const pre = await readTransitionPre(viewer, deps);
   return withTransaction(async (tx) => {
-    const graph = await findApprovalGraphById(viewer, input.instanceId, tx);
-    const baseFields = { instanceId: input.instanceId, viewerId: viewer.id, expectedVersion: input.expectedVersion };
-    if (!graph) throw refuse("not_holder", new NotCurrentHolderError(NOT_HOLDER_MESSAGE), { ...baseFields, actualVersion: null });
-    const { instance } = graph;
-    const fields = { ...baseFields, actualVersion: instance.version };
-
-    const staleOrFinal = staleOrFinalRefusal(viewer, graph, input.expectedVersion);
-    if (staleOrFinal) throw staleOrFinal;
-
-    const route = currentRouteOf(graph);
-    const before = walkGraph(graph, snapshot);
-    warnIfBlocked(graph, before);
-    if (!route || !before || before.outcome.kind !== "actionable" || !before.outcome.candidateIds.includes(viewer.id)) {
-      throw refuse("not_holder", new NotCurrentHolderError(NOT_HOLDER_MESSAGE), fields);
-    }
-    const outcome = before.outcome;
-    const selfApproved = viewer.id === instance.drafterId;
-    const steps = route.steps.map(toRouteStep);
-    const actedAt = new Date();
-    const acted = { actedBy: viewer.id, actedByName: null, actedAt, action: "approved" as const, selfApproved };
-    const afterSteps: RouteStep[] = outcome.isFallback
-      ? [
-          ...steps,
-          {
-            stepIndex: outcome.stepIndex,
-            label: FALLBACK_LABEL,
-            roleId: FALLBACK_ROLE_ID,
-            scopeKind: "company",
-            scopeTargetId: null,
-            isFallback: true,
-            ...acted,
-          },
-        ]
-      : steps.map((step) => (step.stepIndex === outcome.stepIndex ? { ...step, ...acted } : step));
-    const after = walkRoute({
-      steps: afterSteps,
-      snapshot,
-      selfApproval: route.selfApproval as SelfApproval,
-      drafterId: instance.drafterId,
-      fallbackRoleId: FALLBACK_ROLE_ID,
-      at: "after_approval",
-    });
-    const status = nextStep(instance.status as ApprovalStatus, after.outcome.kind === "final" ? "approve_final" : "approve");
-
-    // 상태 UPDATE 먼저(version 조건) — 경쟁자는 이 행 잠금에서 줄을 서고, 진 쪽은
-    // 단계 행을 쓰기 전에 0행으로 멈춘다.
-    const updated = await updateInstanceStatus(viewer, { id: instance.id, expectedVersion: input.expectedVersion, status }, tx);
-    if (!updated) throw refuse("conflict", new ApprovalConflictError(CONFLICT_MESSAGE), fields);
-
-    let stepIndex = outcome.stepIndex;
-    if (outcome.isFallback) {
-      stepIndex = await insertFallbackStep(
-        viewer,
-        { routeId: route.id, label: FALLBACK_LABEL, roleId: FALLBACK_ROLE_ID, actedBy: viewer.id, selfApproved },
-        tx,
-      );
-    } else {
-      const row = route.steps.find((step) => step.stepIndex === outcome.stepIndex);
-      if (!row) throw new Error("지금 단계 행 없음");
-      await recordStepAction(viewer, { stepId: row.id, actedBy: viewer.id, action: "approved", selfApproved }, tx);
-    }
-
-    await recordActionInTx(
-      viewer,
-      {
+    const { updated, result } = await runTransition(viewer, { ...input, event: "approve" }, pre, tx, ({ graph, route, outcome }) => {
+      if (!outcome) throw new Error("승인 자리 없음");
+      const { instance } = graph;
+      const selfApproved = viewer.id === instance.drafterId;
+      const steps = route.steps.map(toRouteStep);
+      const acted = { actedBy: viewer.id, actedByName: null, actedAt: new Date(), action: "approved" as const, selfApproved };
+      const afterSteps: RouteStep[] = outcome.isFallback
+        ? [
+            ...steps,
+            {
+              stepIndex: outcome.stepIndex,
+              label: FALLBACK_LABEL,
+              roleId: FALLBACK_ROLE_ID,
+              scopeKind: "company",
+              scopeTargetId: null,
+              isFallback: true,
+              ...acted,
+            },
+          ]
+        : steps.map((step) => (step.stepIndex === outcome.stepIndex ? { ...step, ...acted } : step));
+      // after_approval은 이 한 곳뿐이다(X-1) — 승인 반영 뒤 최종인지 · 다음 담당이 누구인지.
+      const after = walkRoute({
+        steps: afterSteps,
+        snapshot: pre.snapshot,
+        selfApproval: route.selfApproval as SelfApproval,
+        drafterId: instance.drafterId,
+        fallbackRoleId: FALLBACK_ROLE_ID,
+        at: "after_approval",
+      });
+      const status = nextStep(instance.status as ApprovalStatus, after.outcome.kind === "final" ? "approve_final" : "approve");
+      return {
+        status,
         actionType: "document_approve",
-        entity: "approval_instance",
-        entityId: instance.id,
-        documentId: instance.documentId,
-        detail: { kind: instance.documentKind, round: instance.currentRound, stepIndex, final: status === "approved" },
-      },
-      tx,
-      gate,
-      { appendActionLog: deps?.appendActionLog },
-    );
+        write: async () => {
+          let stepIndex = outcome.stepIndex;
+          if (outcome.isFallback) {
+            stepIndex = await insertFallbackStep(
+              viewer,
+              { routeId: route.id, label: FALLBACK_LABEL, roleId: FALLBACK_ROLE_ID, actedBy: viewer.id, selfApproved },
+              tx,
+            );
+          } else {
+            const row = route.steps.find((step) => step.stepIndex === outcome.stepIndex);
+            if (!row) throw new Error("지금 단계 행 없음");
+            await recordStepAction(viewer, { stepId: row.id, actedBy: viewer.id, action: "approved", selfApproved }, tx);
+          }
+          return {
+            detail: { stepIndex, final: status === "approved" },
+            result: { final: status === "approved", nextHolderNames: currentHolderNamesOf(after) },
+          };
+        },
+      };
+    });
     return {
       status: updated.status as ApprovalStatus,
       version: updated.version,
-      documentId: instance.documentId,
-      kind: instance.documentKind,
-      final: status === "approved",
-      nextHolderNames: currentHolderNamesOf(after),
+      documentId: updated.documentId,
+      kind: updated.documentKind,
+      ...result,
     };
   });
+}
+
+const REJECT_REASON_MAX = 500;
+const REJECT_REASON_EMPTY_MESSAGE = "사유 없음 · 사유 적기";
+const REJECT_REASON_TOO_LONG_MESSAGE = "사유 500자 넘음 · 줄여 적기";
+
+export class RejectReasonError extends UserFacingError {}
+
+export type RejectResult = { status: ApprovalStatus; version: number; documentId: string; kind: string; drafterName: string };
+
+// 반려 — 사유(trim 1~500자)는 트랜잭션 전에 거부한다. 지금 단계 후보(기안자 제외)만. 사유는 그 단계 행에.
+export async function rejectDocument(
+  viewer: Viewer,
+  input: { instanceId: string; expectedVersion: number; reason: string },
+  deps?: ApprovalDeps,
+): Promise<RejectResult> {
+  const reason = input.reason.trim();
+  if (reason.length === 0) throw new RejectReasonError(REJECT_REASON_EMPTY_MESSAGE);
+  if (reason.length > REJECT_REASON_MAX) throw new RejectReasonError(REJECT_REASON_TOO_LONG_MESSAGE);
+  const pre = await readTransitionPre(viewer, deps);
+  return withTransaction(async (tx) => {
+    const { updated, result } = await runTransition(
+      viewer,
+      { instanceId: input.instanceId, expectedVersion: input.expectedVersion, event: "reject" },
+      pre,
+      tx,
+      ({ graph, route, outcome }) => {
+        if (!outcome) throw new Error("반려 자리 없음");
+        return {
+          status: nextStep(graph.instance.status as ApprovalStatus, "reject"),
+          actionType: "document_reject",
+          write: async () => {
+            let stepIndex = outcome.stepIndex;
+            if (outcome.isFallback) {
+              stepIndex = await insertFallbackStep(
+                viewer,
+                { routeId: route.id, label: FALLBACK_LABEL, roleId: FALLBACK_ROLE_ID, actedBy: viewer.id, selfApproved: false, action: "rejected", reason },
+                tx,
+              );
+            } else {
+              const row = route.steps.find((step) => step.stepIndex === outcome.stepIndex);
+              if (!row) throw new Error("지금 단계 행 없음");
+              await recordStepAction(viewer, { stepId: row.id, actedBy: viewer.id, action: "rejected", selfApproved: false, reason }, tx);
+            }
+            return { detail: { stepIndex }, result: { drafterName: graph.instance.drafterName } };
+          },
+        };
+      },
+    );
+    return { status: updated.status as ApprovalStatus, version: updated.version, documentId: updated.documentId, kind: updated.documentKind, ...result };
+  });
+}
+
+// 회수 — 기안자만, 최종 승인 전(submitted · in_review)만. 막힘 · 고아 최종에서도 된다(기안자 판정만, D2).
+export async function withdrawDocument(
+  viewer: Viewer,
+  input: { instanceId: string; expectedVersion: number },
+  deps?: ApprovalDeps,
+): Promise<{ status: ApprovalStatus; version: number; documentId: string }> {
+  const pre = await readTransitionPre(viewer, deps);
+  return withTransaction(async (tx) => {
+    const { updated } = await runTransition(viewer, { ...input, event: "withdraw" }, pre, tx, ({ graph }) => ({
+      status: nextStep(graph.instance.status as ApprovalStatus, "withdraw"),
+      actionType: "document_withdraw",
+      write: () => Promise.resolve({ detail: {}, result: null }),
+    }));
+    return { status: updated.status as ApprovalStatus, version: updated.version, documentId: updated.documentId };
+  });
+}
+
+// 다시 신청 — 기안자만, rejected에서만. 호출자(종류 모듈)의 트랜잭션 안에서 돈다. 새 차수의 결재선은
+// 트랜잭션 전에 prepareSubmission으로 다시 읽은 설정 · 소속(CEO-2)이고, 차수 + 1 행은 상태 UPDATE가
+// 1행을 얻은 뒤에만 쓴다 — 다시 신청 두 건이 겹쳐도 두 번째는 0행으로 멈춰 UNIQUE(instance_id, round)
+// 위반이 나지 않는다.
+export async function resubmitDocument(
+  viewer: Viewer,
+  prepared: PreparedSubmission,
+  input: { instanceId: string; expectedVersion: number },
+  tx: DbOrTx,
+  deps?: TxLogDeps,
+): Promise<{ status: ApprovalStatus; version: number; round: number; nextHolderNames: string | null }> {
+  const pre: TransitionPre = { snapshot: prepared.snapshot, gate: prepared.gate, appendActionLog: deps?.appendActionLog };
+  const { updated } = await runTransition(viewer, { ...input, event: "resubmit" }, pre, tx, ({ graph }) => {
+    const round = graph.instance.currentRound + 1;
+    return {
+      status: nextStep(graph.instance.status as ApprovalStatus, "resubmit"),
+      currentRound: round,
+      actionType: "document_submit",
+      write: async () => {
+        const route = await insertApprovalRoute(
+          viewer,
+          {
+            instanceId: graph.instance.id,
+            round,
+            selfApproval: prepared.selfApproval,
+            drafterTeamId: prepared.drafterTeamId,
+            drafterOrgUnitId: prepared.drafterOrgUnitId,
+          },
+          tx,
+        );
+        await insertApprovalSteps(viewer, route.id, prepared.steps, tx);
+        return { detail: {}, result: null };
+      },
+    };
+  });
+  return {
+    status: updated.status as ApprovalStatus,
+    version: updated.version,
+    round: updated.currentRound,
+    nextHolderNames: currentHolderNamesOf(prepared.walk),
+  };
 }
 
 // ── 조회 ────────────────────────────────────────────────────────────────
@@ -555,6 +763,25 @@ async function readApprovalState(
   return { graph, walk, isParty: graph.instance.drafterId === viewer.id || actedByAny || isCandidate, isCandidate };
 }
 
+// 가능 행동(X-5) — 서버 판정과 같은 규칙(같은 nextStep 허용 표 · 같은 후보 판정)에서 읽는다. 04.1-05의
+// 결재함 상세 · 폰 시트도 이 함수 결과를 싣는다(CXF2-B-RF01). 지금 담당이면 `승인`, 기안자가 아닌 담당이면
+// `반려`, 기안자면 진행 중일 때 `회수`(막힘 · 고아 최종이어도, D2), 반려됐고 종류의 다시 신청 권한이 있으면
+// `다시 신청`(CX-W1). 기안자 = 지금 담당(W5 · W8)이면 [승인, 회수]이고 `반려`는 없다(CXF-B-F01).
+async function possibleActions(viewer: Viewer, state: ApprovalState): Promise<ApprovalAction[]> {
+  const { instance } = state.graph;
+  const status = instance.status as ApprovalStatus;
+  const isDrafter = instance.drafterId === viewer.id;
+  const actions: ApprovalAction[] = [];
+  if (state.isCandidate && !closedFor(status, "approve", isDrafter)) actions.push("approve");
+  if (state.isCandidate && !isDrafter && !closedFor(status, "reject", isDrafter)) actions.push("reject");
+  if (isDrafter && !closedFor(status, "withdraw", isDrafter)) actions.push("withdraw");
+  if (isDrafter && !closedFor(status, "resubmit", isDrafter)) {
+    const canResubmit = getDocumentKind(instance.documentKind).canResubmit;
+    if (canResubmit && (await canResubmit(viewer))) actions.push("resubmit");
+  }
+  return actions;
+}
+
 // 결재 문서가 보이는 사람 = 기안자 · 이 문서에서 처리한 사람 · 지금 단계 후보(진행
 // 중일 때만). 종류 모듈(domain/leave/access.ts)의 보임 규칙이 이것을 그대로 쓴다.
 export async function canSeeApprovalDocument(
@@ -594,7 +821,6 @@ export async function getApprovalView(
     steps = state.walk.display.map(toStepView);
     const outcome = state.walk.outcome;
     if (outcome.kind !== "final") currentStepIndex = outcome.stepIndex;
-    if (state.isCandidate) actions.push("approve");
   } else {
     // 종결 상태 — 저장된 처리 기록만(스냅숏 해석 없음), 지금 단계 없음.
     steps = (route?.steps ?? [])
@@ -612,6 +838,8 @@ export async function getApprovalView(
         }),
       );
   }
+
+  actions.push(...(await possibleActions(viewer, state)));
 
   const source: ApprovalViewDto = {
     instanceId: graph.instance.id,

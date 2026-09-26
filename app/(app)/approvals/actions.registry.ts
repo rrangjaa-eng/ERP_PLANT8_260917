@@ -9,3 +9,11 @@ registerAction({
   action: "approve",
   dtoName: "ApprovalActionResultDto",
 });
+
+// 반려 — 토스트 재료(기안자 이름)를 같은 DTO로 투영한다.
+registerAction({
+  name: "rejectAction",
+  menu: "approvals",
+  action: "approve",
+  dtoName: "ApprovalActionResultDto",
+});

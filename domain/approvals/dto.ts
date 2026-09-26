@@ -55,7 +55,8 @@ export const APPROVAL_INBOX_ITEM_DTO_SPEC: DtoSpec<ApprovalInboxItemSource, Appr
   ],
 };
 
-export type ApprovalAction = "approve";
+// 04.1-02(X-5): 보는 사람이 지금 할 수 있는 일 — 목록 순서가 화면 1차 · 2차 순서다.
+export type ApprovalAction = "approve" | "reject" | "withdraw" | "resubmit";
 
 export type ApprovalViewDto = {
   instanceId: string;

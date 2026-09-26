@@ -167,7 +167,16 @@ export async function recordStepAction(
 // 번호에 빈틈이 있어 「행 수 + 1」은 UNIQUE(route_id, step_index)와 부딪친다).
 export async function insertFallbackStep(
   viewer: Viewer,
-  input: { routeId: string; label: string; roleId: string; actedBy: string; selfApproved: boolean },
+  input: {
+    routeId: string;
+    label: string;
+    roleId: string;
+    actedBy: string;
+    selfApproved: boolean;
+    // 04.1-02: 대표 폴백 자리의 반려도 같은 행 모양(기본은 승인).
+    action?: "approved" | "rejected";
+    reason?: string | null;
+  },
   tx: DbOrTx,
 ): Promise<number> {
   void viewer;
@@ -186,8 +195,9 @@ export async function insertFallbackStep(
     isFallback: true,
     actedBy: input.actedBy,
     actedAt: new Date(),
-    action: "approved",
+    action: input.action ?? "approved",
     selfApproved: input.selfApproved,
+    reason: input.reason ?? null,
   });
   return stepIndex;
 }

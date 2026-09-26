@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
 import "@/app/(app)/document-kinds";
-import { approveDocument, describeDeduction, projectActionResult } from "@/domain/approvals";
+import { approveDocument, describeDeduction, projectActionResult, rejectDocument } from "@/domain/approvals";
 import "./actions.registry";
 
 // 04.1-02: 결재함 액션 — expectedVersion은 화면이 받은 값을 그대로 넘긴다(낙관적 잠금).
@@ -27,3 +27,12 @@ export const approveAction = authedActionClient.schema(transitionSchema).action(
     deductedDays,
   });
 });
+
+// 반려 — 사유 검증(trim 1~500자)과 문구는 도메인 한 곳(rejectDocument). 스키마는 크기만 막는다.
+export const rejectAction = authedActionClient
+  .schema(transitionSchema.extend({ reason: z.string().max(2000) }))
+  .action(async ({ parsedInput, ctx }) => {
+    const rejected = await rejectDocument(ctx.viewer, parsedInput);
+    revalidatePath("/approvals");
+    return projectActionResult(ctx.viewer, { documentId: rejected.documentId, final: false, drafterName: rejected.drafterName });
+  });

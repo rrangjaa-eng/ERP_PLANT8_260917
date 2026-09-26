@@ -11,7 +11,7 @@ import { findUserById, type UserRow } from "@/repositories/users";
 import { listLeaveUsage } from "@/repositories/leave-usage";
 import { findLeaveRequestById } from "@/repositories/leave-requests";
 import { insertLeaveAdjustment, listLeaveAdjustments } from "@/repositories/leave-adjustments";
-import { canSeeLeaveDocument, LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
+import { assertLeaveWrite, canSeeLeaveDocument, LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
 import { countLeaveQuarters, type LeaveDaysInput } from "@/domain/leave/days";
 import {
   allocateLeave,
@@ -185,6 +185,7 @@ export async function previewLeaveBalance(
   input: LeaveDaysInput,
   deps?: { now?: Date },
 ): Promise<Partial<LeaveRequestBalanceDto> | null> {
+  await assertLeaveWrite(viewer);
   const today = seoulToday(deps?.now);
   const days = countLeaveQuarters(input);
   if (!days.ok) return null;

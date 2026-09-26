@@ -98,3 +98,22 @@ export async function listLeaveRequestsByDrafter(
     .orderBy(asc(leaveRequests.startDate), asc(leaveRequests.createdAt));
   return rows.map(flatten);
 }
+
+// 04.1-02: 다시 신청 — 번호는 그대로, 검증된 칸만 갱신한다(호출자의 tx).
+export async function updateLeaveRequestFields(
+  viewer: Viewer,
+  id: string,
+  input: {
+    kind: string;
+    startDate: string;
+    endDate: string;
+    half: string | null;
+    daysQuarters: number;
+    fiscalYear: number;
+    note: string | null;
+  },
+  tx: DbOrTx,
+): Promise<void> {
+  void viewer;
+  await tx.update(leaveRequests).set({ ...input, updatedAt: new Date() }).where(eq(leaveRequests.id, id));
+}

@@ -19,6 +19,8 @@ import {
   listMyInbox,
   prepareSubmission,
   registerDocumentKind,
+  rejectDocument,
+  withdrawDocument,
   submitDocument,
   ApprovalConflictError,
   NotCurrentHolderError,
@@ -111,7 +113,7 @@ describe("트레이서 — 제출 → 팀장 승인 → 빈 자리 건너뜀 →
     expect(afterLead.status).toBe("in_review");
     const view = await getApprovalView(org.ceo, { kind: LEAVE_DOCUMENT_KIND, documentId: submitted.leaveId }, { now: NOW_2026 });
     expect(view?.currentStepIndex).toBe(4);
-    expect(view?.actions).toEqual(["approve"]);
+    expect(view?.actions).toEqual(["approve", "reject"]);
     expect((await listMyInbox(org.ceo, { now: NOW_2026 })).mine.map((item) => item.instanceId)).toEqual([
       submitted.instanceId,
     ]);
@@ -437,6 +439,29 @@ describe("담당 소멸 뒤 고아 최종 — 막힘으로 다룬다(ENG-3 · D2
     expect((await listMyInbox(newMgmt, { now: NOW_2026 })).mine.map((item) => item.instanceId)).toEqual([instanceId]);
     const result = await approveDocument(newMgmt, { instanceId, expectedVersion: version }, { now: NOW_2026 });
     expect(result.status).toBe("approved");
+  });
+  // 04.1-02 Task 2(X-1 · X-2 · X-5): 막힌 고아 최종 문서 — 대표의 반려는 후보 0명이라 거부되고, 기안자의
+  // 가능 행동은 [회수] 하나이며 회수는 기안자 판정만이라 막힘에서도 된다.
+  it("기안자 회수 성공 — 대표 반려 거부 · 기안자 [회수] · 대표 [] · 회수 뒤 withdrawn · 1단 대표 승인 기록 보존 · document_withdraw 1건", async () => {
+    const { instanceId, leaveId, version, drafter, ceo } = await setupOrphanFinal();
+    const stepsBefore = await stepsOf(instanceId);
+
+    await expect(
+      rejectDocument(ceo, { instanceId, expectedVersion: version, reason: "일정 겹침" }, { now: NOW_2026 }),
+    ).rejects.toBeInstanceOf(NotCurrentHolderError);
+    expect(await stepsOf(instanceId)).toEqual(stepsBefore);
+    expect((await instanceOf(instanceId)).version).toBe(version);
+
+    const drafterView = await getApprovalView(drafter, { kind: LEAVE_DOCUMENT_KIND, documentId: leaveId }, { now: NOW_2026 });
+    expect(drafterView?.actions).toEqual(["withdraw"]);
+    const ceoView = await getApprovalView(ceo, { kind: LEAVE_DOCUMENT_KIND, documentId: leaveId }, { now: NOW_2026 });
+    expect(ceoView?.actions).toEqual([]);
+
+    const withdrawn = await withdrawDocument(drafter, { instanceId, expectedVersion: version }, { now: NOW_2026 });
+    expect(withdrawn).toMatchObject({ status: "withdrawn", version: version + 1 });
+    expect((await stepsOf(instanceId)).find((step) => step.stepIndex === 1)).toMatchObject({ action: "approved", actedBy: ceo.id });
+    const withdrawLogs = await db.select().from(actionLog).where(eq(actionLog.entityId, instanceId));
+    expect(withdrawLogs.filter((row) => row.actionType === "document_withdraw")).toHaveLength(1);
   });
 });
 

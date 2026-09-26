@@ -122,7 +122,7 @@ Phase 4 브랜치 기준 `git ls-tree -d --name-only 5b1ac10:ui` — 19 modules(
 | Select | `ui/select/Select` | 카드 · 통화 · 증빙 종류(코드표 → `Form.Hint` 설명, D-93) · 목록 필터 |
 | ConfirmDialog | `ui/confirm-dialog/ConfirmDialog` | 이 페이즈의 사용처 여덟(rev 9): S2 일괄 지급 완료 · S5 지급 취소 · S4 증빙 면제 · **S1 · S3 증빙 확인(제자리 증빙 확인, DR-4)** · S7 마지막 증빙 삭제(SP-6) · S11 **남의** 구매 요청 취소(사유) · S16 발행 요청 취소 · S9·S12 입력 버리기. 여기에 Phase 4 모달 한 곳(04 S16 `리저브 줄 삭제`)에 결과 줄 하나를 더한다(S22). 확인 근거 한 칸은 기존 슬롯(날짜 또는 사유, §7-8 882행). **새 슬롯 하나 — 읽기 전용 「첨부 보기 칸」(SP-7)**: §7-8 시트 상세의 첨부 행 모양 재사용, 새 시각 요소 없음, 쓰는 곳은 증빙 확인 하나(UA-602). 검토 반영 지시의 「아홉」은 H-4 전 셈이다 — H-4가 카드 사용 삭제 · 요청자 본인 구매 요청 취소를 모달 없이 즉시 + 토스트 `되돌리기`로 바꿔 여덟이다 |
 | Pagination | `ui/pagination/Pagination` | 목록 다섯(S1·S3·S8·S11·S17), 50건(§6-1). 링크 갈래(`href`) — 지급 대상 표는 편집 표지만 원장형 목록이라 50건이고 선택·이체액 편집은 쪽 이동에도 남는다(행 id 키, DR-18 선례)(UA-603) |
-| Button | `ui/button/Button` | §7-1. 비활성 이유 `reasonTone: "block" \| "info"` · `aria-disabled`(DR-10·11) |
+| Button | `ui/button/Button` | §7-1. 비활성 이유 `reasonTone: "block" \| "info"` · `aria-disabled`(04-UI-SPEC ⑦ — Phase 4 디자인 리뷰 10·11번 항목. 이 페이즈 design-review.md 번호가 아니다) |
 | StatusTag | `ui/status-tag/StatusTag` | 새 낱말은 Color 절 매핑표 한 곳에서 `kind`를 받는다(SP-2). 표 상태 열 = `text`, 문서 화면 제목 옆 = `tag` |
 | ListEmpty | `ui/list-empty/ListEmpty` | 모든 EMPTY·ERROR 한 줄. 다음 한 수가 권한 밖이면 `action` 생략 + 담당 표기 |
 | PageHeader | `ui/page-header/PageHeader` | 목록·폼 제목 + 부제 |
@@ -999,7 +999,7 @@ Phase 4에서 넘어온 D-60(리저브 줄 증빙 첨부). **새 컴포넌트 �
 ### SP-1. §7-3에 「일괄 처리 표」 — 선택 열과 행 단위 부분 처리
 - **내용:** 편집 표의 variant `selectable`. 맨 왼쪽 선택 열(네이티브 체크박스 · `accent-color: var(--native-accent)`(Color 절과 같음) · 칸 폭 = 28 + `--cell-pad-x`×2(44, Spacing 절) ·
   머리글 셀 = 이 쪽의 고를 수 있는 행 전체(섞이면 `indeterminate`) · `Space` = 현재 행 고르기). 고를 수 있는지는 서버가 행마다 보낸다(못 고르는 행의 체크박스는
-  `aria-disabled` + `aria-describedby` → 그 행 안의 이유 글자 — DR-11, 이유 없는 비활성 없음). 1차는 표 위 행동 줄 하나(`{동사} N Ctrl+Enter` — 예 `지급 완료 5`, 「건」 없음).
+  `aria-disabled` + `aria-describedby` → 그 행 안의 이유 글자 — 04-UI-SPEC ⑦(Phase 4 디자인 리뷰 11번 항목), 이유 없는 비활성 없음). 1차는 표 위 행동 줄 하나(`{동사} N Ctrl+Enter` — 예 `지급 완료 5`, 「건」 없음).
   **저장은 행마다 따로 커밋되고**(AS1), 막힌 행은 자리를 유지하며 행 아래 `--fs-sm --danger` 이유. 결과 글자 `시:분 {동사} N건 · 막힘 N건`
   (예 `14:02 지급 완료 5건 · 막힘 2건`, 막힘 0이면 앞 묶음만)은 필터 줄의 필터 다음 자리 — 1차(오른쪽 끝)와 떨어진 자리이고 시각이 앞이라 1차 라벨과 붙어 읽히지 않는다(rev 9, M-2). 행 배경 칠 금지(§1-3 규칙 3). 힌트 줄 낱말 `고르기 Space` 추가.
   **(rev 9 보강 — `/plan-design-review`)**
@@ -1321,7 +1321,7 @@ Applicable state considerations resolved: 174 applicable — 129 explicit, 45 ba
 
 **반영 위치(이 문서):**
 - 막음 — DR-1 → S21 · DR-2 → S22(두 절 제목에 `D-56` · `D-60`) · UI Considerations `S21` · `S22` 행 · 권한 표 · UA-621.
-- 고침 — DR-4 + C-1(+ DR-5) → S1 스토리보드 · S1 「제자리 증빙 확인」 · S1 「문서 화면 왕복」 · 보기 필터 `[증빙 전체 ▾]` · SP-7 · O-21 · UI Considerations `S1 제자리 증빙 확인` / DR-3 → O-6 · S7 「중복」 · 「Error — 증빙 업로드」 / DR-6 + H-3 → S1 「일괄 결과 알림 · 막힌 행 선택」 · SP-1 · UI Considerations `S1 일괄 결과 알림` / DR-7 → SP-1 / H-1 → S19 · 「표시 — 「내 차례」」 / H-2 → S1 링크 셀 · 「링크 셀과 편집 표 키」 / H-4 → Copywriting 「즉시 — 카드 사용 삭제」 · 「즉시 — 요청자 본인 구매 요청 취소」 · 토스트 `되돌리기` · Component Inventory / H-5 → S2 결과 줄 ③.
+- 고침 — DR-4 + C-1(+ 옛 DR-5 — Opus 1차 검토 `design-review-opus.md`의 번호, design-review.md 표에서는 DR-4에 합쳐 번호가 없다 · 06-17 ledger) → S1 스토리보드 · S1 「제자리 증빙 확인」 · S1 「문서 화면 왕복」 · 보기 필터 `[증빙 전체 ▾]` · SP-7 · O-21 · UI Considerations `S1 제자리 증빙 확인` / DR-3 → O-6 · S7 「중복」 · 「Error — 증빙 업로드」 / DR-6 + H-3 → S1 「일괄 결과 알림 · 막힌 행 선택」 · SP-1 · UI Considerations `S1 일괄 결과 알림` / DR-7 → SP-1 / H-1 → S19 · 「표시 — 「내 차례」」 / H-2 → S1 링크 셀 · 「링크 셀과 편집 표 키」 / H-4 → Copywriting 「즉시 — 카드 사용 삭제」 · 「즉시 — 요청자 본인 구매 요청 취소」 · 토스트 `되돌리기` · Component Inventory / H-5 → S2 결과 줄 ③.
 - 참고 — DR-8 → SP-1 · 단축키 / DR-9 → UA 절 「재확인 2026-09-25」 / DR-10 → S1 머리 스토리보드 / DR-12 → S21 「자리」(승인 뒤 3차가 저절로 선다, 안내 문구 없음) / M-1 · M-2 → S1 「일괄 결과 알림」 / M-3 → S1 「제자리 증빙 확인」 · S4 / M-4 → S9 「새 건의 기본값」 / M-5 → S9 · S12 · S13 힌트 줄임 / M-6 → 「막힘 — 대표 승인」 / M-7 → S1 선택 열(계좌 없음 = P4) / M-9 → UA 절 「실행 착수 게이트」.
 
 **버림 · 미룸(이유):**

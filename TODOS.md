@@ -192,6 +192,8 @@
 
 ### 폰 접힌 줄이 다음 행에 붙어 보이는 선 배치
 
+> Fixed by /review on claude/lucid-volta-qkmgs7, 2026-09-26 — 폰에서 선을 접힌 줄 아래로 옮겼다(ui/table + 관리자 세 표, 회귀: test/e2e/mobile-320-no-overflow.spec.ts `expectFoldAttached`).
+
 **What:** 폰(<700)에서 주 행 아래에 1px 선이 있고 접힌 줄 아래에는 선이 없다. 그래서 접힌 줄(P2)이 자기 행이 아니라 다음 행에 붙어 보일 수 있다. 주 행 아래 선을 0으로, 접힌 줄 아래를 1px로 옮긴다.
 
 **Why:** SYSTEM.md §7-3은 「행은 두 줄이 된다」, 곧 한 행으로 읽혀야 한다. 지금 선 배치는 그 묶음을 끊는다(DOM 실측: 접힌 줄 border-bottom 0, 주 행 td 1px).
@@ -213,3 +215,53 @@
 **Effort:** S
 **Priority:** P3
 **Depends on:** None
+
+## Review 이연(2026-09-26 /review, 320px 가로 넘침 PR)
+
+### 접힌 줄 값에 스크린리더 라벨이 없다
+
+**What:** 폰(<700)에서 접힌 줄(P2)은 첫 열부터 colSpan으로 걸친 한 칸이다. 스크린리더가 그 값을 첫 열 머리글(예: 「발생 시각」) 아래 값으로 읽는다. 값 앞에 라벨이 없고, 빈 값은 빠지므로 위치만으로는 무슨 값인지 알 수 없다.
+
+**Why:** SYSTEM.md §10 접근성 계약 — 표의 칸은 머리글과 바르게 이어져야 한다.
+
+**Context:** `ui/table/Table.tsx`(접힌 줄이 onRowTap 없으면 aria-hidden — 이쪽은 아예 읽히지 않는다)와 관리자 행동 로그·거래처·보관함 표. 값마다 시각적으로 숨긴 라벨(`sr-only`)을 붙이거나 접힌 칸에 머리글 연결을 준다. 넷을 함께 고친다.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### 행동 로그 목록에 페이지 나눔이 없다
+
+**What:** `queryActionLog`는 한도 없이 전부 읽고, 폰 접힌 줄 때문에 행위자·대상·문서·상세 JSON이 HTML에 두 번 실린다(PC에서는 접힌 줄이 숨지만 SSR·RSC 페이로드에는 있다).
+
+**Why:** 로그는 계속 쌓인다 — 응답 크기가 로그 수에 비례해 커진다.
+
+**Context:** `app/(app)/admin/action-log/page.tsx`, `domain/action-log`. 페이지 나눔(또는 최근 N건 + 기간 필터 기본값)을 넣으면 중복 문제도 함께 작아진다.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
+
+### 행동 로그 발생 시각이 UTC로 보인다
+
+**What:** 「발생 시각」은 `toISOString()`을 잘라 쓴다 — 한국 시간보다 9시간 이르게, 시간대 표시 없이 보인다.
+
+**Why:** 사용자는 모두 한국 시간으로 읽는다(기존 문제, 이번 PR은 줄 위치만 옮겼다).
+
+**Context:** `app/(app)/admin/action-log/page.tsx`(보관함 `archive/page.tsx`의 보관 시각도 같은 방식). 서버에서 Asia/Seoul로 포맷한다.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### 폰 접힌 줄의 상태가 배지가 아니라 글자다 · 직접 만든 표의 접힌 줄 코드 중복
+
+**What:** 거래처 접힌 줄의 「숨김·보관됨」은 `StatusTag`가 아니라 글자다(PC 칸은 태그). 관리자 세 표는 접힌 줄 CSS·마크업을 각자 가진다(`ui/table`과 같은 모양을 복사).
+
+**Why:** CLAUDE.md §7 「상태는 색·배지로」. 중복은 선 규칙처럼 한 번에 바꿔야 할 때 네 곳을 고치게 만든다.
+
+**Context:** 관리자 목록을 `ui/table` 읽기 전용으로 옮기면(서버 페이지는 작은 클라이언트 래퍼 필요) 둘 다 풀린다 — Phase 7 관리 콘솔 재검수(ROADMAP 성공 기준 5)와 함께 한다.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** Phase 7

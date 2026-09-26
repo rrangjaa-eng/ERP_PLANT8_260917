@@ -6,7 +6,7 @@ import { GENERIC_ERROR, loginErrorMessage } from "@/app/(auth)/login/login-error
 describe("loginErrorMessage (§6-7 A②·A③)", () => {
   it("A②: 자격 증명 오류(401)의 better-auth 영문 메시지를 한국어 문구로 접는다", () => {
     expect(loginErrorMessage({ status: 401, message: "Invalid email or password" })).toBe(
-      "이메일 또는 비밀번호가 올바르지 않습니다.",
+      "이메일 또는 비밀번호 오류",
     );
   });
 

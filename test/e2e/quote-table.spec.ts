@@ -137,7 +137,7 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await pasteIntoFocusedCell(page, "숫자아님");
 
     await expect(gridcell(5)).toHaveAttribute("aria-invalid", "true");
-    await expect(page.getByText(/숫자가 아닙니다/)).toBeVisible();
+    await expect(page.getByText(/숫자 형식 오류/)).toBeVisible();
 
     // (c) 저장 버튼 자체가 오류 이유와 함께 비활성 — 서버 왕복 없이 거부.
     const saveButton = page.getByRole("button", { name: /일괄 저장/ });
@@ -182,7 +182,7 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await saveButton.click();
 
     // role=alert는 Next.js 라우트 안내에도 있어 문구로 좁힌다.
-    await expect(page.getByRole("alert").filter({ hasText: "저장하지 못했습니다 · 입력값을 확인하세요" })).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: "저장 실패 · 입력값 확인" })).toBeVisible();
   });
 
   test("(f) 폰 뷰포트에서 줄을 탭하면 행 시트가 열리고 행동 줄이 없다", async ({ page }) => {

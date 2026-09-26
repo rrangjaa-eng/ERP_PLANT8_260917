@@ -187,3 +187,29 @@
 **Effort:** S
 **Priority:** P2
 **Depends on:** SYSTEM.md 포커스 링 규정 결정
+
+## Design review 이연(2026-09-26 /design-review, 320px 가로 넘침 PR)
+
+### 폰 접힌 줄이 다음 행에 붙어 보이는 선 배치
+
+**What:** 폰(<700)에서 주 행 아래에 1px 선이 있고 접힌 줄 아래에는 선이 없다. 그래서 접힌 줄(P2)이 자기 행이 아니라 다음 행에 붙어 보일 수 있다. 주 행 아래 선을 0으로, 접힌 줄 아래를 1px로 옮긴다.
+
+**Why:** SYSTEM.md §7-3은 「행은 두 줄이 된다」, 곧 한 행으로 읽혀야 한다. 지금 선 배치는 그 묶음을 끊는다(DOM 실측: 접힌 줄 border-bottom 0, 주 행 td 1px).
+
+**Context:** `ui/table/Table.module.css`(.cell·.collapsedCell)에서 온 모양이다. 관리자 행동 로그·거래처·보관함 표(`app/(app)/admin/{action-log,vendors,archive}/*.module.css`)는 일관성을 위해 같게 맞췄다. 한 곳만 고치면 표마다 모양이 달라지므로 넷을 함께 고친다.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### 폰 프로젝트 목록의 프로젝트명 링크 누르는 영역 18px
+
+**What:** 폰에서 프로젝트 목록(ui/table) 프로젝트명 링크의 높이가 18px이다. 행 높이는 44px 이상이지만 링크 자체의 누르는 영역은 작다.
+
+**Why:** SYSTEM.md §3 「폰에서 모든 행동 요소 최소 44×44」.
+
+**Context:** `app/(app)/projects/projects-table.tsx`의 이름 칸. 행 탭으로 이동을 넓히거나 링크에 min-height를 준다.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None

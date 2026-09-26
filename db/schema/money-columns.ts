@@ -1,4 +1,4 @@
-import { text, numeric, integer } from "drizzle-orm/pg-core";
+import { text, numeric, bigint } from "drizzle-orm/pg-core";
 
 // Phase 4 Task 1 ① — 통화·외화 금액·환율·원화 환산액 네 컬럼의 공용 정의.
 // 견적 줄·매출·리저브가 같은 모양을 물려받는다(FX-01). 원화는 **정수 원**,
@@ -37,7 +37,7 @@ function buildFxRate(prefix: string) {
 }
 
 function buildAmountKrw(prefix: string) {
-  return integer(columnName(prefix, "amount_krw")).notNull();
+  return bigint(columnName(prefix, "amount_krw"), { mode: "number" }).notNull();
 }
 
 export type MoneyColumns<Prefix extends string> = {

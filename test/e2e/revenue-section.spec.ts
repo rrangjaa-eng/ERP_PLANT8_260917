@@ -636,12 +636,12 @@ test.describe("매출 금액 입력 오류 → 그 셀 고정 오류 · 표별 �
     const issuedTable = revenueTable(page, "발행 줄");
     await page.getByRole("button", { name: "발행 줄 추가" }).click();
     const newAmount = issuedTable.getByLabel("발행액").last();
-    await newAmount.fill("3000000000");
+    await newAmount.fill("1000000000000");
     const rejected = page.waitForResponse((response) => isServerAction(response.request()));
     await page.keyboard.press("Control+s");
     await rejected;
 
-    const CAP = "금액이 상한을 넘습니다 · 2,147,483,647원 이하";
+    const CAP = "금액이 상한을 넘습니다 · 999,999,999,999원 이하";
     // 새 줄은 발행 표의 마지막 줄이다(`has:`에 표 기준 로케이터를 넣으면 줄 안에서 다시 표를 찾아 늘 0개다).
     const amountCell = issuedTable.locator("tbody tr").last().locator('td[aria-invalid="true"]');
     await expect(amountCell).toHaveCount(1);

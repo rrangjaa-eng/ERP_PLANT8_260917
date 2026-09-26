@@ -1167,13 +1167,13 @@ describe("금액 입력 정규화(04-40 · B §2)", () => {
     expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id))).toHaveLength(0);
   });
 
-  it("(n3) 원화 환산이 범위를 넘는 단가는 그 칸 셀 오류 「금액이 상한을 넘습니다 · 2,147,483,647원 이하」 — PG 22003으로 새지 않는다", async () => {
+  it("(n3) 원화 환산이 범위를 넘는 단가는 그 칸 셀 오류 「금액이 상한을 넘습니다 · 999,999,999,999원 이하」 — PG 22003으로 새지 않는다", async () => {
     const { revision, subcategoryValue } = await setupProject();
-    const bad = newRow(subcategoryValue, { unitPrice: krw(3_000_000_000) });
+    const bad = newRow(subcategoryValue, { unitPrice: krw(1_000_000_000_000) });
 
     const error = await rejectionOf(saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [bad] }));
 
-    expect(error.formatErrors).toContainEqual(expect.objectContaining({ rowId: bad.id, field: "unitPrice", reason: "금액이 상한을 넘습니다 · 2,147,483,647원 이하" }));
+    expect(error.formatErrors).toContainEqual(expect.objectContaining({ rowId: bad.id, field: "unitPrice", reason: "금액이 상한을 넘습니다 · 999,999,999,999원 이하" }));
     expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id))).toHaveLength(0);
   });
 });
@@ -1210,9 +1210,9 @@ describe("원화 밖 숫자 컬럼 범위(04-40 검토 SF-1)", () => {
     await expectCell(revision.id, bad, "quantity", "수량은 소수 2자리까지");
   });
 
-  it("(o4) 견적 외 비용 줄 실행가 −2,147,483,648 → 차익 2,147,483,648 — 실행가 칸 「차익이 상한을 넘습니다 · 실행가를 고쳐 주세요」", async () => {
+  it("(o4) 견적 외 비용 줄 실행가 −1,000,000,000,000 → 차익 1,000,000,000,000 — 실행가 칸 「차익이 상한을 넘습니다 · 실행가를 고쳐 주세요」", async () => {
     const { revision, subcategoryValue } = await setupProject();
-    const bad = newRow(subcategoryValue, { lineKind: "out_of_quote", execution: krw(-2_147_483_648) });
+    const bad = newRow(subcategoryValue, { lineKind: "out_of_quote", execution: krw(-1_000_000_000_000) });
     await expectCell(revision.id, bad, "execution", "차익이 상한을 넘습니다 · 실행가를 고쳐 주세요");
   });
 });
@@ -1223,7 +1223,7 @@ describe("계산 견적가 상한(04-40 · DR-9)", () => {
 
   function overBatch(subcategory: string) {
     const ok = newRow(subcategory, { unitPrice: krw(100_000) });
-    const over = newRow(subcategory, { quantity: 3, unitPrice: krw(1_000_000_000) });
+    const over = newRow(subcategory, { quantity: 3, unitPrice: krw(500_000_000_000) });
     return { ok, over };
   }
 
@@ -1233,7 +1233,7 @@ describe("계산 견적가 상한(04-40 · DR-9)", () => {
     expect(cells.every((cell) => cell.reason === OVER)).toBe(true);
   }
 
-  it("(d1) 단독 저장: 수량 3 × 단가 10억 줄은 수량·단가 두 칸 오류 · PG 오류 아님 · 같은 배치의 정상 줄도 쓰이지 않는다", async () => {
+  it("(d1) 단독 저장: 수량 3 × 단가 5,000억 줄은 수량·단가 두 칸 오류 · PG 오류 아님 · 같은 배치의 정상 줄도 쓰이지 않는다", async () => {
     const { revision, subcategoryValue } = await setupProject();
     const { ok, over } = overBatch(subcategoryValue);
 
@@ -1243,11 +1243,11 @@ describe("계산 견적가 상한(04-40 · DR-9)", () => {
     expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id))).toHaveLength(0);
   });
 
-  it("(d1b) 기존 줄을 수량 3 × 단가 10억으로 고친 저장도 두 칸 오류 · 줄 값 그대로", async () => {
+  it("(d1b) 기존 줄을 수량 3 × 단가 5,000억으로 고친 저장도 두 칸 오류 · 줄 값 그대로", async () => {
     const { revision, subcategoryValue } = await setupProject();
     const line = await seedLine(revision.id, subcategoryValue, { sortOrder: 0, itemName: `상한 줄-${randomUUID()}` });
 
-    const error = await rejectionOf(saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [asInput(line, { quantity: 3, unitPrice: krw(1_000_000_000) })] }));
+    const error = await rejectionOf(saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [asInput(line, { quantity: 3, unitPrice: krw(500_000_000_000) })] }));
 
     expectTwoCells(error, line.id);
     const after = await reloadLine(line.id);
@@ -1274,7 +1274,7 @@ describe("계산 견적가 상한(04-40 · DR-9)", () => {
 
   it("(d3) saveProjectLedgerAction의 봉투가 { rejected: { summary: 「오류 2칸 · 전부 거부」, cells } }이고 그 줄의 quantity·unitPrice 두 칸이 있다(W3)", async () => {
     const { project, revision, subcategoryValue } = await setupProject();
-    const over = { id: randomUUID(), isNew: true as const, subcategory: subcategoryValue, itemName: `상한-${randomUUID()}`, quantity: 3, unitPrice: krw(1_000_000_000), execution: krw(10_000) };
+    const over = { id: randomUUID(), isNew: true as const, subcategory: subcategoryValue, itemName: `상한-${randomUUID()}`, quantity: 3, unitPrice: krw(500_000_000_000), execution: krw(10_000) };
 
     const result = await saveProjectLedgerAction({ projectId: project.id, seenStatus: "bidding", quoteLines: { revisionId: revision.id, rows: [over] } });
 

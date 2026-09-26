@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { codeItems, projects } from "@/db/schema";
+import { codeItems, projects, quoteLines } from "@/db/schema";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
@@ -886,5 +886,50 @@ test.describe("줄 수 상한 (04-26, D-86 · UX-04 · UX-05)", () => {
     await pasteIntoFocusedCell(page, "붙인 하나");
     await expect(lastItem).toHaveText("붙인 하나");
     await expect(pasteNotice).toHaveCount(0);
+  });
+});
+
+// 검토 8(UI-SPEC S18 · §7-3 (나)) — 「복원」은 보관할 때의 줄 version·기간 기준값으로 저장한다. 그 사이 동료가
+// 같은 칸을 저장했으면 복원 뒤 저장은 충돌로 거부되고 동료 값이 남는다(조용히 덮지 않는다).
+test.describe("복원 뒤 저장 — 그 사이 동료 저장은 충돌 (검토 8)", () => {
+  test("실행가: 복원한 칸이 충돌 셀이 되고 DB에는 동료 값이 남는다", async ({ page }) => {
+    const { project } = await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);
+    await typeInto(page, cell(page, 0, COL.execution), "실행가", "654000");
+    await expect(primarySave(page)).toContainText("일괄 저장 1");
+
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("차수가 없습니다");
+    const theirs = and(eq(quoteLines.revisionId, revision.id), eq(quoteLines.itemName, "폭 첫 줄"));
+    await db
+      .update(quoteLines)
+      .set({ executionAmountKrw: 700_000, profitKrw: 300_000, version: sql`${quoteLines.version} + 1`, updatedAt: new Date() })
+      .where(theirs);
+
+    await page.reload();
+    await page.getByRole("button", { name: "복원", exact: true }).click();
+    await expect(cell(page, 0, COL.execution)).toHaveText("654,000");
+    await saveWithKeyboard(page, cell(page, 0, COL.execution));
+
+    await expect(cell(page, 0, COL.execution)).toContainText(/다른 사람이 \d{2}:\d{2}에 700,000으로 바꿈 · 덮어쓰기 \/ 그 값으로/);
+    const [saved] = await db.select().from(quoteLines).where(theirs);
+    expect(saved?.executionAmountKrw).toBe(700_000);
+  });
+
+  test("기간: 복원한 종료일 저장은 기간 충돌이 되고 DB에는 동료 종료일이 남는다", async ({ page }) => {
+    const { project } = await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);
+    await changePeriodEnd(page, addDays(TODAY, 30));
+    await expect(primarySave(page)).toContainText("일괄 저장 1");
+
+    const theirEnd = addDays(TODAY, 20);
+    await db.update(projects).set({ endDate: theirEnd }).where(eq(projects.id, project.id));
+
+    await page.reload();
+    await page.getByRole("button", { name: "복원", exact: true }).click();
+    await expect(page.locator("#period-end")).toHaveValue(addDays(TODAY, 30));
+    await saveWithKeyboard(page, page.locator("#period-end"));
+
+    await expect(page.getByText("다른 사람이 먼저 기간을 바꿈 · 새로 고침")).toBeVisible();
+    const [saved] = await db.select({ endDate: projects.endDate }).from(projects).where(eq(projects.id, project.id));
+    expect(saved?.endDate).toBe(theirEnd);
   });
 });

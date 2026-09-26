@@ -364,7 +364,10 @@ test("잠금 다시 확인 — 아직 잠김: 보임 이벤트는 조용하고, 
   const before = await seatOf(id);
 
   await setVisibility(page, "hidden");
+  // 보임 이벤트의 다시 확인이 끝난 뒤 누른다 — 진행 중인 다시 확인이 있으면 다음 방아쇠는 무시된다(한 번에 하나).
+  const silentRecheck = page.waitForResponse((r) => r.url() === ev.link && r.request().method() === "POST");
   await setVisibility(page, "visible");
+  await silentRecheck;
   await expect(lockGroup(page).getByText(HARD_LINE_1, { exact: true })).toBeVisible();
   await expect.poll(() => activeIsLockGroup(page)).toBe(true);
   expect(await seatOf(id)).toEqual(before);

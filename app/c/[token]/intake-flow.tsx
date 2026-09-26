@@ -5,8 +5,14 @@ import { useAction } from "next-safe-action/hooks";
 import { Button } from "@/ui/button/Button";
 import { TextField } from "@/ui/input/TextField";
 import { formatContactPhone, formatSubmittedAtKst } from "@/domain/certs/format";
-import { selectWinnerAction, submitCertificateAction, verifyLast4Action } from "./actions";
-import { isDefiniteResult, resolveHistoryEntry, type HistoryStep } from "./flow-rules";
+import { recheckLockAction, selectWinnerAction, submitCertificateAction, verifyLast4Action } from "./actions";
+import {
+  isDefiniteResult,
+  recheckOutcome,
+  resolveHistoryEntry,
+  type HistoryStep,
+  type RecheckTrigger,
+} from "./flow-rules";
 import { SignaturePad, type SignaturePadHandle } from "./signature-pad";
 import styles from "./intake.module.css";
 
@@ -25,7 +31,11 @@ type ClosedReason = "expired" | "all_submitted" | "manual";
 
 // 짧은 잠김 — 한도 · 표시 시각은 서버 응답 값, deadline은 받은 순간 + 남은 초
 // (기기 시계 차이 무시). 클라이언트는 화면만 되살리고 판정은 서버가 한다.
-type ShortLock = { kind: "short"; limit: number; unlockAtDisplay: string; deadline: number };
+// inGroup — 누적 잠김 복구 길(잠금 다시 확인)에서 온 짧은 잠김은 누적 잠김 묶음
+// 안에 두 줄을 그리고 1차는 disabledReason 없이 그 두 줄만 가리킨다(UI-SPEC 6차 손질 3).
+type ShortLock = { kind: "short"; limit: number; unlockAtDisplay: string; deadline: number; inGroup?: boolean };
+// 누적 잠김 — 해제 시각 · 횟수 없음, 클라이언트는 풀지 않는다(서버에 다시 묻기만).
+type HardLock = { kind: "hard" };
 
 type VerifyStep = {
   kind: "verify";
@@ -34,7 +44,8 @@ type VerifyStep = {
   last4: string;
   fieldError?: { kind: "wrong"; remaining: number } | { kind: "expired" };
   line?: "unknown" | "throttled";
-  lock?: ShortLock;
+  lock?: ShortLock | HardLock;
+  recheckError?: boolean;
 };
 
 type Step =
@@ -54,7 +65,7 @@ type Step =
   | { kind: "alreadySubmitted"; maskedName: string; submittedAt: string }
   | { kind: "closed"; reason: ClosedReason; at: string };
 
-type FocusTarget = "input" | "row" | "result" | "prize" | "primary";
+type FocusTarget = "input" | "row" | "result" | "prize" | "primary" | "group";
 
 // 받은 순간 + 서버가 준 남은 초(기기 시계 차이 무시).
 function deadlineAfter(seconds: number): number {
@@ -72,6 +83,8 @@ const LAST4_FIELD_ID = "last4";
 const RESULT_LEAD_ID = "cert-result-lead";
 const PRIMARY_ID = "cert-verify-primary";
 const PRIZE_ID = "cert-prize";
+const LOCK_GROUP_ID = "cert-lock-group";
+const HARD_LOCK_LINE_1 = "틀린 번호가 너무 여러 번 들어와 확인이 잠겼습니다";
 
 const STEP_TITLE: Record<Step["kind"], string> = {
   pick: "이름 고르기",
@@ -165,7 +178,11 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
   const submitAreaId = useId();
   const lockLine2Id = useId();
   const resultLineId = useId();
-  const lockGroupId = useId();
+  const lockLine1InGroupId = useId();
+  const lockLine2InGroupId = useId();
+  const recheckFailId = useId();
+  const [recheckBusy, setRecheckBusy] = useState(false);
+  const recheckInFlightRef = useRef(false);
 
   // U12 — 문의 전화는 어디서나 tel: 링크(숫자만)로 건다, 보이는 값은 하이픈 표기.
   const contactLine: ReactNode = (
@@ -200,6 +217,7 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
     else if (target === "result") document.getElementById(RESULT_LEAD_ID)?.focus();
     else if (target === "primary") document.getElementById(PRIMARY_ID)?.focus();
     else if (target === "prize") document.getElementById(PRIZE_ID)?.focus();
+    else if (target === "group") document.getElementById(LOCK_GROUP_ID)?.focus();
     else if (target === "row" && lastRowRef.current) {
       document.querySelector<HTMLButtonElement>(`[data-row-id="${lastRowRef.current}"]`)?.focus();
     }
@@ -246,7 +264,7 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
   }, []);
 
   // 짧은 잠김 풀림 — 마감 도달 또는 화면이 다시 보일 때 지났으면.
-  const shortLock = step.kind === "verify" ? step.lock : undefined;
+  const shortLock = step.kind === "verify" && step.lock?.kind === "short" ? step.lock : undefined;
   useEffect(() => {
     if (!shortLock) return;
     const deadline = shortLock.deadline;
@@ -291,6 +309,11 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
     if (data?.kind === "ok") {
       history.pushState({ step: "verify" }, "");
       pendingKeyRef.current = null;
+      if (data.hardLocked) {
+        focusRef.current = "group";
+        setStep({ kind: "verify", rowId: row.rowId, maskedName: data.maskedName, last4: "", lock: { kind: "hard" } });
+        return;
+      }
       if (data.locked) {
         focusRef.current = "primary";
         setStep({
@@ -334,7 +357,13 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
     setBusy(false);
     if (isDefiniteResult(result)) pendingKeyRef.current = null;
     const data = result?.data;
-    const base: VerifyStep = { ...current, fieldError: undefined, line: undefined, lock: undefined };
+    const base: VerifyStep = {
+      ...current,
+      fieldError: undefined,
+      line: undefined,
+      lock: undefined,
+      recheckError: undefined,
+    };
 
     if (data?.kind === "ok") {
       history.replaceState({ step: "form" }, "");
@@ -367,6 +396,9 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
           deadline: deadlineAfter(data.remainingSeconds),
         },
       });
+    } else if (data?.kind === "hardLocked") {
+      focusRef.current = "group";
+      setStep({ ...base, last4: "", lock: { kind: "hard" } });
     } else if (data?.kind === "expiredProof") {
       focusRef.current = "input";
       setStep({ ...base, last4: "", fieldError: { kind: "expired" } });
@@ -377,6 +409,81 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
       setStep({ ...base, fieldError: current.fieldError, line: "unknown" });
     }
   }
+
+  // 누적 잠김 복구 길 — 잠금 상태만 서버에 다시 묻는다(읽기 · 한 번에 하나).
+  async function recheck(trigger: RecheckTrigger) {
+    const current = stepRef.current;
+    if (current.kind !== "verify" || current.lock?.kind !== "hard" || recheckInFlightRef.current) return;
+    recheckInFlightRef.current = true;
+    if (trigger === "button") {
+      // 누르는 즉시(응답 전) 실패 줄과 그 연결을 지운다.
+      setRecheckBusy(true);
+      setStep({ ...current, recheckError: false });
+    }
+    const result = await withDeadline(() => recheckLockAction({ token, rowId: current.rowId }));
+    recheckInFlightRef.current = false;
+    if (trigger === "button") setRecheckBusy(false);
+    const latest = stepRef.current;
+    if (latest.kind !== "verify" || latest.rowId !== current.rowId || latest.lock?.kind !== "hard") return;
+    const outcome = recheckOutcome(result, trigger);
+    const data = result?.data;
+    if (outcome.next === "closed" && data?.kind === "closed") {
+      toResult({ kind: "closed", reason: data.reason, at: data.at });
+      return;
+    }
+    if (outcome.next === "open") {
+      focusRef.current = "input";
+      setStep({ ...latest, last4: "", lock: undefined, fieldError: undefined, line: undefined, recheckError: false });
+      return;
+    }
+    if (outcome.next === "shortLock" && data?.kind === "shortLocked") {
+      focusRef.current = "group";
+      setStep({
+        ...latest,
+        recheckError: false,
+        lock: {
+          kind: "short",
+          limit: data.limit,
+          unlockAtDisplay: data.unlockAtDisplay,
+          deadline: deadlineAfter(data.remainingSec),
+          inGroup: true,
+        },
+      });
+      return;
+    }
+    if (outcome.next === "networkError") {
+      focusRef.current = "group";
+      setStep({ ...latest, recheckError: true });
+      return;
+    }
+    if (outcome.focus === "group") {
+      focusRef.current = "group";
+      setStep({ ...latest, recheckError: false });
+    }
+  }
+
+  const recheckRef = useRef(recheck);
+  useEffect(() => {
+    recheckRef.current = recheck;
+  });
+
+  // 누적 잠김인 동안만 화면이 다시 보일 때 조용히 다시 묻는다.
+  const hardLocked = step.kind === "verify" && step.lock?.kind === "hard";
+  useEffect(() => {
+    if (!hardLocked) return;
+    function onVisible() {
+      if (document.visibilityState === "visible") void recheckRef.current("visible");
+    }
+    function onPageShow() {
+      void recheckRef.current("visible");
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, [hardLocked]);
 
   const progressBar = showProgress && inFlight ? <div className={styles.progress} aria-hidden="true" /> : null;
 
@@ -422,19 +529,30 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
   }
 
   if (step.kind === "verify") {
-    const locked = Boolean(step.lock);
+    const lock = step.lock;
+    const locked = Boolean(lock);
     const hasFour = step.last4.length === 4;
     const disabled = locked || !hasFour;
-    const lockReason = step.lock
-      ? `틀린 번호가 ${step.lock.limit}번 들어와 확인이 잠겼습니다 · ${step.lock.unlockAtDisplay}부터 다시 해 주세요`
-      : undefined;
+    const shortLockText =
+      lock?.kind === "short"
+        ? `틀린 번호가 ${lock.limit}번 들어와 확인이 잠겼습니다 · ${lock.unlockAtDisplay}부터 다시 해 주세요`
+        : undefined;
+    // 묶음 안 잠김(누적 잠김 · 복구 길에서 온 짧은 잠김)은 1차가 disabledReason 없이
+    // 묶음 안 두 <p> id만 가리킨다 — 묶음 id도 실패 줄 id도 아니다(4차 E3 계약).
+    const inGroup = lock?.kind === "hard" || (lock?.kind === "short" && lock.inGroup === true);
     const fieldErrorText =
       step.fieldError?.kind === "wrong"
         ? `전화번호 뒤 4자리가 맞지 않습니다 · 다시 적어 주세요 · 남은 횟수 ${step.fieldError.remaining}번`
         : step.fieldError?.kind === "expired"
           ? "확인 시간이 지났습니다 · 전화번호 뒤 4자리를 다시 적어 주세요"
           : undefined;
-    const describedBy = locked ? lockLine2Id : !disabled && step.line ? resultLineId : undefined;
+    const describedBy = inGroup
+      ? `${lockLine1InGroupId} ${lockLine2InGroupId}`
+      : locked
+        ? lockLine2Id
+        : !disabled && step.line
+          ? resultLineId
+          : undefined;
     return (
       <div>
         {progressBar}
@@ -478,14 +596,14 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
               variant="primary"
               size="external"
               disabled={disabled}
-              disabledReason={lockReason ?? BLOCKED_FIRST}
+              disabledReason={inGroup ? undefined : (shortLockText ?? BLOCKED_FIRST)}
               reasonTone={locked ? "block" : "info"}
               pending={busy}
               aria-describedby={describedBy}
             >
               전화번호 확인
             </Button>
-            {step.lock ? (
+            {lock?.kind === "short" && !inGroup ? (
               <p id={lockLine2Id} className={styles.inquiryLine}>
                 등록한 번호가 다르면 {contactLine}에 전화해 주세요
               </p>
@@ -495,7 +613,42 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
                 {LINE_TEXT[step.line]}
               </p>
             ) : null}
-            <div id={lockGroupId} tabIndex={-1} />
+            {/* 잠김 알림 묶음 — aria-live 없음(포커스 이동이 낭독을 대신한다, 4차). */}
+            <div id={LOCK_GROUP_ID} tabIndex={-1}>
+              {lock?.kind === "hard" ? (
+                <>
+                  <p id={lockLine1InGroupId} className={styles.blockedDanger}>
+                    {HARD_LOCK_LINE_1}
+                  </p>
+                  <p id={lockLine2InGroupId} className={styles.inquiryLine}>
+                    담당자 {managerName} · {contactLine}에 전화해 주세요
+                  </p>
+                  <Button
+                    variant="secondary"
+                    pending={recheckBusy}
+                    aria-describedby={step.recheckError ? recheckFailId : undefined}
+                    onClick={() => void recheck("button")}
+                  >
+                    잠금 확인
+                  </Button>
+                  {step.recheckError ? (
+                    <p id={recheckFailId} className={styles.blockedDanger}>
+                      {LINE_TEXT.unknown}
+                    </p>
+                  ) : null}
+                </>
+              ) : null}
+              {lock?.kind === "short" && inGroup ? (
+                <>
+                  <p id={lockLine1InGroupId} className={styles.blockedDanger}>
+                    {shortLockText}
+                  </p>
+                  <p id={lockLine2InGroupId} className={styles.inquiryLine}>
+                    등록한 번호가 다르면 {contactLine}에 전화해 주세요
+                  </p>
+                </>
+              ) : null}
+            </div>
           </div>
         </form>
       </div>

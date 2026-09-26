@@ -20,7 +20,7 @@ export function resolveHistoryEntry(input: {
 
 const DEFINITE_KINDS = new Set(["wrong", "locked", "hardLocked", "ok", "submitted", "closed", "expiredProof"]);
 
-type ActionResultLike = { data?: { kind?: string } | null; validationErrors?: unknown; serverError?: unknown } | undefined;
+type ActionResultLike = { data?: { kind?: string; [field: string]: unknown } | null; validationErrors?: unknown; serverError?: unknown } | undefined;
 
 // 확정 판정 여덟(틀림 · 잠김 · 누적 잠김 · 맞음 · 이미 제출 · 닫힘 · 확인 시간
 // 지남 · 입력 거부)만 멱등 키를 끝낸다. throttled · serverError(잠금 · 풀 시간
@@ -30,4 +30,23 @@ export function isDefiniteResult(result: ActionResultLike): boolean {
   if (result.validationErrors) return true;
   const kind = result.data?.kind;
   return typeof kind === "string" && DEFINITE_KINDS.has(kind);
+}
+
+export type RecheckTrigger = "visible" | "button";
+export type RecheckOutcome = {
+  next: "closed" | "open" | "shortLock" | "stay" | "networkError";
+  focus: "step" | "input" | "group" | "none";
+};
+
+// 잠금 다시 확인(누적 잠김 복구 길) 응답 → 다음 화면과 포커스. 보임 이벤트의
+// 누적 잠김 · 실패는 조용하고(포커스 · 글 불변), 누름의 누적 잠김은 실패 줄
+// 없이 포커스만 묶음으로, 누름의 실패는 묶음 안 실패 줄이다(UI-SPEC 6차 손질 2).
+// 이 길은 E6-a로 가지 않는다 — 잠금 밖 응답(submitted 등)은 모르는 응답이다.
+export function recheckOutcome(result: ActionResultLike, trigger: RecheckTrigger): RecheckOutcome {
+  const kind = result?.data?.kind;
+  if (kind === "closed") return { next: "closed", focus: "step" };
+  if (kind === "shortLocked") return { next: "shortLock", focus: "group" };
+  if (kind === "open") return { next: "open", focus: "input" };
+  if (kind === "hardLocked") return { next: "stay", focus: trigger === "button" ? "group" : "none" };
+  return trigger === "button" ? { next: "networkError", focus: "group" } : { next: "stay", focus: "none" };
 }

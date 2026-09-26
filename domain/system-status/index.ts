@@ -93,10 +93,10 @@ export function emailFailureBannerFrom(outcome: EmailOutcomeStatus): EmailFailur
 
 // B2 글자(링크 제외, D-4217) — 0건 조각은 쓰지 않고 시각은 조각마다 괄호.
 export function emailFailureBannerText(banner: EmailFailureBanner): string {
-  const unknownPart = `결과 불명 ${banner.unknown}건 (${banner.unknownSince ?? ""})`;
-  if (banner.failed === 0) return `이메일 ${unknownPart}`;
+  const unknownSince = banner.unknownSince ?? "";
+  if (banner.failed === 0) return `이메일 결과 불명 ${banner.unknown}건 (${unknownSince})`;
   const failedPart = `이메일 발송 실패 ${banner.failed}건 (${banner.failedAt ?? ""})`;
-  return banner.unknown === 0 ? failedPart : `${failedPart} · ${unknownPart}`;
+  return banner.unknown === 0 ? failedPart : `${failedPart} · 결과 불명 ${banner.unknown}건 (${unknownSince})`;
 }
 
 // B2(NOTI-02 · D-4217): 「관리」 인덱스용 — admin.system-status view 권한자에게만, 시스템

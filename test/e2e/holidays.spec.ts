@@ -3,8 +3,8 @@ import { and, eq, gte, inArray, lte } from "drizzle-orm";
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { db } from "@/db/client";
-import { holidays, holidayYearConfirmations } from "@/db/schema";
-import { toKstDate } from "@/domain/holidays/business-day";
+import { holidays, holidayYearConfirmations, notificationLog, notifyTickRuns, users } from "@/db/schema";
+import { formatKstMinute, toKstDate } from "@/domain/holidays/business-day";
 import { LUNAR_TABLE_LAST_YEAR } from "@/domain/holidays/lunar-table";
 import { setPermissionCell } from "@/domain/permissions/matrix";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
@@ -536,5 +536,121 @@ test.describe("공휴일 추가 폼의 상태(04.2-12)", () => {
     const reasonId = await submit.getAttribute("aria-describedby");
     await expect(page.locator(`[id="${reasonId}"]`)).toHaveText("추가하지 못했습니다 · 다시 시도");
     expect(await db.select().from(holidays).where(eq(holidays.date, `${NEXT_YEAR}-07-14`))).toHaveLength(0);
+  });
+});
+
+// 04.2-13 — 「관리」 인덱스·시스템 상태 배너(B1·B2, UI-SPEC S3). 공휴일 확정 기록과 이메일 실행
+// 기록은 E2E 워커가 공유하는 DB 상태라 이 직렬 파일에만 모은다(올해 Y 확정은 어떤 E2E도 건드리지 않는다).
+test.describe("관리자 배너 B1·B2(04.2-13)", () => {
+  const inserted: { runIds: number[]; logIds: number[] } = { runIds: [], logIds: [] };
+
+  async function cleanup(): Promise<void> {
+    if (inserted.logIds.length > 0) await db.delete(notificationLog).where(inArray(notificationLog.id, inserted.logIds));
+    if (inserted.runIds.length > 0) await db.delete(notifyTickRuns).where(inArray(notifyTickRuns.id, inserted.runIds));
+    inserted.runIds = [];
+    inserted.logIds = [];
+  }
+
+  test.afterAll(cleanup);
+
+  test("B1 → 공휴일 검토 링크 · 이메일 실패면 B2만(시스템 상태는 링크 없이, 미설정에도 결과 꼬리) · 결과 불명 변형 · 지우면 B1", async ({
+    page,
+  }) => {
+    const credentials = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+    await login(page, credentials);
+    const main = page.locator("main");
+
+    // ① 이메일 조건이 없으면 B1(안내) — 올해 Y는 E2E가 확정하지 않는다.
+    await page.goto("/admin");
+    const b1 = main.getByRole("status").filter({ hasText: "공휴일 확정 전" });
+    await expect(b1).toHaveText(`${THIS_YEAR}년 공휴일 확정 전 ${THIS_YEAR}년 공휴일 검토`);
+    await expect(main.getByRole("alert")).toHaveCount(0);
+    await expect(b1.getByRole("button")).toHaveCount(0);
+    await b1.getByRole("link", { name: `${THIS_YEAR}년 공휴일 검토` }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/holidays\\?year=${THIS_YEAR}$`));
+    await expect(main.getByRole("status").filter({ hasText: "공휴일 확정 전" })).toHaveCount(0);
+    await expect(main.getByRole("alert")).toHaveCount(0);
+
+    // ② 이메일을 시도한 실행에 실패 3건 → /admin은 B2(경고)만.
+    const startedAt = new Date();
+    const failedAt = formatKstMinute(startedAt);
+    const [run] = await db
+      .insert(notifyTickRuns)
+      .values({
+        startedAt,
+        finishedAt: startedAt,
+        kstDate: toKstDate(startedAt),
+        businessDay: true,
+        emailClaimed: 3,
+        emailFailed: 3,
+        emailFinishedAt: startedAt,
+      })
+      .returning({ id: notifyTickRuns.id });
+    if (!run) throw new Error("tick run insert failed");
+    inserted.runIds.push(run.id);
+
+    await page.goto("/admin");
+    const b2 = main.getByRole("alert");
+    await expect(b2).toHaveCount(1);
+    await expect(b2).toHaveText(`이메일 발송 실패 3건 (${failedAt}) 시스템 상태 보기`);
+    await expect(b2.getByRole("link")).toHaveCount(1);
+    await expect(b2.getByRole("link", { name: "시스템 상태 보기" })).toHaveAttribute("href", "/admin/system-status");
+    await expect(b2.getByRole("button")).toHaveCount(0);
+    await expect(main.getByRole("status").filter({ hasText: "공휴일 확정 전" })).toHaveCount(0);
+
+    // ③ 시스템 상태 — 같은 B2를 링크 없이, 이메일 줄은 미설정 + 결과 꼬리, 「실패 3건」만 --danger.
+    await page.goto("/admin/system-status");
+    const statusBanner = main.getByRole("alert");
+    await expect(statusBanner).toHaveText(`이메일 발송 실패 3건 (${failedAt})`);
+    await expect(statusBanner.getByRole("link")).toHaveCount(0);
+    const emailValue = page.locator("dt", { hasText: /^이메일$/ }).locator("xpath=following-sibling::dd[1]");
+    await expect(emailValue).toHaveText(`미설정 · 실패 3건 (${failedAt})`);
+    const danger = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--danger)";
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    });
+    await expect(emailValue.getByText("실패 3건", { exact: true })).toHaveCSS("color", danger);
+    const valueColor = await emailValue.evaluate((el) => getComputedStyle(el).color);
+    expect(valueColor).not.toBe(danger);
+
+    // ④ 결과 불명(선점 11분 지난 sending 행) → 두 조각, 시각은 조각마다 괄호.
+    const [me] = await db.select({ id: users.id }).from(users).where(eq(users.email, credentials.email));
+    if (!me) throw new Error("fixture user missing");
+    const attemptedAt = new Date(Date.now() - 11 * 60_000);
+    const since = formatKstMinute(attemptedAt);
+    const [row] = await db
+      .insert(notificationLog)
+      .values({
+        conditionKind: "e2e_admin_banner",
+        entity: "e2e_admin_banner",
+        entityId: randomUUID(),
+        recipientId: me.id,
+        referenceDate: toKstDate(attemptedAt),
+        message: "E2E 배너 결과 불명",
+        emailStatus: "sending",
+        emailAttemptedAt: attemptedAt,
+      })
+      .returning({ id: notificationLog.id });
+    if (!row) throw new Error("notification insert failed");
+    inserted.logIds.push(row.id);
+
+    await page.goto("/admin");
+    await expect(main.getByRole("alert")).toHaveText(
+      `이메일 발송 실패 3건 (${failedAt}) · 결과 불명 1건 (${since}) 시스템 상태 보기`,
+    );
+    await page.goto("/admin/system-status");
+    await expect(emailValue).toHaveText(`미설정 · 실패 3건 (${failedAt}) · 결과 불명 1건 (${since})`);
+
+    // ⑤ 넣은 두 행을 지우면 다시 B1.
+    await cleanup();
+    await page.goto("/admin");
+    await expect(main.getByRole("alert")).toHaveCount(0);
+    await expect(main.getByRole("status").filter({ hasText: "공휴일 확정 전" })).toHaveText(
+      `${THIS_YEAR}년 공휴일 확정 전 ${THIS_YEAR}년 공휴일 검토`,
+    );
   });
 });

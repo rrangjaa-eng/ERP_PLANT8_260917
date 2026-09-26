@@ -52,3 +52,21 @@
   outline: var(--focus-w) solid var(--focus);
   outline-offset: calc(-1 * var(--focus-w));
 }
+
+/* §7-11 배너 안의 다음 한 수 — 3차 링크(공휴일 화면 .yearLink와 같은 모양). 폰에서는
+   터치 목표 44px(--touch-min). 04.2-13. */
+.bannerLink {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: var(--underline-offset);
+}
+
+@media (max-width: 699.98px) {
+  .bannerLink {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch-min);
+  }
+}

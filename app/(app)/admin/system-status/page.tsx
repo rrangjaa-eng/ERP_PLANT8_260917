@@ -1,6 +1,11 @@
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
-import { getSystemStatus, type SystemStatus } from "@/domain/system-status";
+import {
+  emailFailureBannerFrom,
+  emailFailureBannerText,
+  getSystemStatus,
+  type SystemStatus,
+} from "@/domain/system-status";
 import { can } from "@/domain/permissions/can";
 import { env } from "@/lib/env";
 import { Banner } from "@/ui/banner/Banner";
@@ -67,11 +72,17 @@ export default async function SystemStatusPage() {
   const status = await getSystemStatus(session.viewer);
   const bannerPercent = Math.round(env.STATUS_CONN_BANNER_RATIO * 100);
   const showConnBanner = !("unavailable" in status.db) && status.db.banner;
+  // UI-SPEC S3: DB 커넥션 경고가 먼저, 없을 때만 B2(이미 읽은 결과로 — 두 번 조회하지 않는다).
+  const emailBanner = showConnBanner ? null : emailFailureBannerFrom(status.emailOutcome);
 
   return (
     <>
       {/* SYSTEM.md §6-8 B③/D④: 커넥션 한도 경고는 §7-11 경고 배너, 화면 제목 위. */}
-      {showConnBanner ? <Banner kind="warning">DB 커넥션이 한도의 {bannerPercent}%를 넘었습니다.</Banner> : null}
+      {showConnBanner ? (
+        <Banner kind="warning">DB 커넥션이 한도의 {bannerPercent}%를 넘었습니다.</Banner>
+      ) : emailBanner ? (
+        <Banner kind="warning">{emailFailureBannerText(emailBanner)}</Banner>
+      ) : null}
 
       <PageHeader title="시스템 상태" />
 

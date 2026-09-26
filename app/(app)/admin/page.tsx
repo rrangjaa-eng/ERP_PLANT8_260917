@@ -5,6 +5,9 @@ import { can } from "@/domain/permissions/can";
 import { MENUS } from "@/domain/permissions/menus";
 import { adminIndexGroups } from "@/ui/shell/role-menu";
 import { PageHeader } from "@/ui/page-header/PageHeader";
+import { Banner } from "@/ui/banner/Banner";
+import { emailFailureBanner, emailFailureBannerText } from "@/domain/system-status";
+import { holidayConfirmationBanner } from "@/domain/holidays/admin";
 import styles from "./admin-index.module.css";
 
 // SYSTEM.md §6-10 「관리」 인덱스 화면 — 관리자 화면 10개의 단일 진입점(「관리」
@@ -31,8 +34,28 @@ export default async function AdminIndexPage() {
   // D-17: 권한 없는 리소스는 404 — 볼 항목이 0개인 계급에게는 이 화면 자체가 없다.
   if (groups.length === 0) notFound();
 
+  // §7-11 · UI-SPEC S3: 한 화면 배너 최대 1개 — 경고 B2(이메일 실패)가 있으면 그것만,
+  // 없을 때만 안내 B1(공휴일 확정 요청)을 본다. 판정 함수가 권한을 보고 실패는 null이다.
+  const emailBanner = await emailFailureBanner(session.viewer);
+  const holidayBanner = emailBanner ? null : await holidayConfirmationBanner(session.viewer);
+
   return (
     <>
+      {emailBanner ? (
+        <Banner kind="warning">
+          {emailFailureBannerText(emailBanner)}{" "}
+          <Link href="/admin/system-status" className={styles.bannerLink}>
+            시스템 상태 보기
+          </Link>
+        </Banner>
+      ) : holidayBanner ? (
+        <Banner kind="info">
+          {holidayBanner.year}년 공휴일 확정 전{" "}
+          <Link href={`/admin/holidays?year=${holidayBanner.year}`} className={styles.bannerLink}>
+            {holidayBanner.year}년 공휴일 검토
+          </Link>
+        </Banner>
+      ) : null}
       <PageHeader title="관리" />
       <div className="single-column">
         {groups.map((group) => (

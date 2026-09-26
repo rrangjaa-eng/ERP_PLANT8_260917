@@ -394,6 +394,14 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     await page.getByRole("button", { name: "입금 줄 추가" }).click();
     await page.getByLabel("입금일").fill("2026-09-05");
     await page.getByLabel("입금액").fill("1100000");
+    // /design-review H-1 — 표 밑 추가 버튼은 3차 Button이다(UA 기본 버튼 면 없음, 밑줄 --accent).
+    const accent = await cssColor(page, "--accent");
+    for (const name of ["발행 줄 추가", "입금 줄 추가"]) {
+      const style = await page
+        .getByRole("button", { name })
+        .evaluate((el) => ({ bg: getComputedStyle(el).backgroundColor, underline: getComputedStyle(el).borderBottomColor }));
+      expect(style).toEqual({ bg: "rgba(0, 0, 0, 0)", underline: accent });
+    }
 
     let release: () => void = () => {};
     const held = new Promise<void>((resolve) => {

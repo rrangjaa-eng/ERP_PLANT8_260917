@@ -586,6 +586,37 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await expect(dataRows(page)).toHaveCount(1);
     await expect(page.getByText(SETTLING_REASON, { exact: true })).toBeVisible();
   });
+
+  test("(p7) 저장 요청 중 「줄 추가」·「견적 외 비용 줄 추가」는 aria-disabled이고 일괄 저장 버튼을 가리키며 눌러도 줄이 늘지 않는다(/design-review P-7)", async ({ page }) => {
+    await openAsPm(page, "in_progress", addDays(TODAY, 10), [{ itemName: "잠금 줄", unitPrice: 100_000, execution: 10_000 }]);
+    await typeInto(page, cell(page, 0, COL.itemName), "항목", "잠금 줄 고침");
+
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/*", async (route) => {
+      const request = route.request();
+      if (isSaveAction(request.method(), request.headers())) await held;
+      await route.continue();
+    });
+    await primarySave(page).click();
+    await expect(primarySave(page)).toContainText("…");
+
+    const saveId = await primarySave(page).getAttribute("id");
+    expect(saveId).toBeTruthy();
+    for (const name of ["줄 추가", "견적 외 비용 줄 추가"]) {
+      const button = page.getByRole("button", { name, exact: true });
+      await expect(button).toHaveAttribute("aria-disabled", "true");
+      expect((await button.getAttribute("aria-describedby"))?.split(" ")).toContain(saveId);
+      await button.click({ force: true });
+      await expect(dataRows(page)).toHaveCount(1);
+    }
+
+    release();
+    await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "줄 추가", exact: true })).not.toHaveAttribute("aria-disabled", "true");
+  });
 });
 
 // 04-49(DR-14 · DR-24 · DR-36 · 계약 6 · S18 · 후속 결정 R1) — 폭 규칙. 1024 미만에서 견적 줄 표는 보기 전용이고,

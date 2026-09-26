@@ -4,6 +4,9 @@ import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor, setVendorArchived } from "@/repositories/vendors";
 import { insertCorpCard, setCorpCardArchived } from "@/repositories/corp-cards";
 import { findUserByEmail } from "@/repositories/users";
+import { insertOrgUnit, setOrgUnitArchived } from "@/repositories/org-units";
+import { insertTeam, setTeamArchived } from "@/repositories/teams";
+import { createAccount } from "@/domain/auth/accounts";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 
 // SYSTEM.md 반응형 규칙 — 320px까지 어느 화면도 문서가 가로로 넘치지 않는다.
@@ -90,8 +93,17 @@ test.describe("폭 320 — 어느 화면도 가로로 넘치지 않는다", () =
   test("시스템 관리자가 여는 화면 전부", async ({ page }) => {
     // 빈 목록은 넘치지 않는다 — 행이 가장 넓어지는 데이터(계좌번호 있는
     // 거래처의 「번호 보기」, 긴 이름)를 넣고 재고, 끝나면 보관해 목록에서
-    // 치운다(다른 폰 스펙이 같은 목록 폭을 잰다). 보관한 두 행으로 보관함도
-    // 행이 있는 상태에서 잰다.
+    // 치운다(다른 폰 스펙이 같은 목록 폭을 잰다). 보관한 행으로 보관함도
+    // 행이 있는 상태에서 잰다. 필터 select는 가장 긴 선택지 폭만큼 넓어지므로
+    // 긴 팀 이름(프로젝트 「팀」 필터)과 긴 사람 이름(행동 로그 「사람」 필터)도 넣는다.
+    const stamp = Date.now();
+    const orgUnit = await insertOrgUnit(SYSTEM_VIEWER, { name: `E2E320브랜드익스피리언스마케팅본부${stamp}` });
+    const team = await insertTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `통합캠페인운영및디지털콘텐츠제작팀${stamp}` });
+    await createAccount(SYSTEM_VIEWER, {
+      email: `e2e-320-${stamp}@example.test`,
+      name: `알렉산드라크리스티나반데르사르${stamp}`,
+      roleId: DEFAULT_ROLE_ID,
+    });
     const vendor = await insertVendor(SYSTEM_VIEWER, {
       name: `E2E320거래처-아주긴이름의주식회사플랜트에이트-${Date.now()}`,
       normalizedName: `e2e320거래처-${Date.now()}`,
@@ -115,6 +127,8 @@ test.describe("폭 320 — 어느 화면도 가로로 넘치지 않는다", () =
     } finally {
       await setVendorArchived(SYSTEM_VIEWER, vendor.id, true);
       await setCorpCardArchived(SYSTEM_VIEWER, card.id, true);
+      await setTeamArchived(SYSTEM_VIEWER, team.id, true);
+      await setOrgUnitArchived(SYSTEM_VIEWER, orgUnit.id, true);
     }
     await expectNoOverflow(page, "/admin/archive");
 

@@ -1,11 +1,11 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-26T07:42:55.226Z",
+  "timestamp": "2026-09-26T10:09:20.045Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
-  "plan": 41,
-  "task": 33,
+  "plan": 19,
+  "task": 34,
   "total_tasks": 42,
   "status": "paused",
   "completed_tasks": [
@@ -266,12 +266,28 @@
       "name": "묶음 ②·③ /design-review 게이트 — 10화면×5폭 CI=true DOM 실측(Sonnet)+Opus 교차 검토+Opus 판정: 디자인 B+·AI 티 A·트렁크 10/10. 고침 5건: H-1+P-7 매출 줄 추가 3차 Button·저장 중 비활성(8d09e0b/61fc8b4), M-1 새 매출 줄 날짜 KST(6c0dd71/0eef9b9), M-4 ConfirmDialog 폰 44px·비활성 색(d5a2af4), P-1 힌트 kbd 토큰(fca90cb), P-6 노출로 빠진 차수 요약 열 제거(05c0d68/3f979a2). 사용자 결정 8·미룸 6은 보고서",
       "status": "done",
       "commit": "b718cdb"
+    },
+    {
+      "id": 44,
+      "name": "[세션 AJ] 04-17 실행(웨이브 25) — 브랜치를 origin/main 93590d8(PR #40 머지)에서 재시작, 새 draft PR #85. executor Opus, 격리 none. 커밋 016c8e5(RED)·43e66d1(GREEN)·e330e68(RED)·6d2bc70(GREEN)·7230cc1(SUMMARY)·4f3668f(STATE·ROADMAP)·88b0c34(E2E 단언 수정 — 합계가 표 위 dt/dd로 옮겨져 quote-line-kinds.spec.ts:228 옛 문구 단언 실패, 화면 값은 정상). 독립 DOM 감사(Sonnet, CI=true, 1280·1024·375) 17 PASS·1 FAIL(375 기간 칸 2행 귀속 라벨 누락, Table.tsx:418-422 p2Values가 secondaryLine 미포함 — 04-18 몫, /mnt/project-files/phase4-prep/04-17-dom-audit.md). Opus 코드 검토 BLOCKER 0·SHOULD-FIX 1(repositories/projects.ts:128 profitKrw·:136 netProfitKrw 이름·의미가 04-18-PLAN.md:167,173-177 가정과 어긋남 — 04-18 시작 때 정리)·NIT 4(04-48 몫: year=0000 PG 날짜 오류 화면, 올해 0건인데 빈 목록 문구, filter-bar.tsx 주석·`?? \"\"` 폴백, quote-line-kinds:95 낡은 주석, /mnt/project-files/phase4-prep/04-17-review-opus.md). 전체 게이트 CI=true: lint·typecheck·lint:sql 0, 단위 1320·통합 1499·E2E 351 통과. Codex 한도로 Opus 대체(한도 풀리면 재확인). 스킬 기록 /mnt/project-files/phase4-prep/04-17-skill-calls.md. 진행 34/42",
+      "status": "done",
+      "commit": "88b0c34"
     }
   ],
   "remaining_tasks": [
     {
       "id": 1,
-      "name": "묶음 ③ Post-build 남은 게이트: /ship 뒤 main 머지(/review 9039452, /qa 545f75d, /design-review b718cdb, /cso cdf79a5 통과). 그 전에 04-17·04-19(웨이브 25) 시작 금지. /ship 전 사용자 확인: 0015 배포 창, 운영 DB 실제 계약 금액 입력 여부, 기존 DB 시드 재실행 여부, /design-review 결정 8건, /cso 프로젝트 생성 팀 범위",
+      "name": "다음 04-19(웨이브 25) — 새 세션, 같은 브랜치 claude/gsd-progress-e1nzgu, draft PR #85. 04-17이 남긴 것: repositories/projects.ts profitKrw/netProfitKrw 이름·의미 정리(SHOULD-FIX 1) 04-19에서도 확인",
+      "status": "not_started"
+    },
+    {
+      "id": 9,
+      "name": "04-18(웨이브 25, 04-19 뒤 또는 병행): 폰 375 기간 칸 2행 귀속 라벨(ui/table/Table.tsx:418-422 p2Values에 column.secondaryLine 포함, Table.module.css:205-213) + profitKrw/netProfitKrw 이름·의미 정리(04-17 SHOULD-FIX 1)",
+      "status": "not_started"
+    },
+    {
+      "id": 10,
+      "name": "04-48(웨이브 26): year=0000 PG 날짜 오류 화면(연도 범위 검사), 올해 0건이면 다른 해에 있어도 「등록된 프로젝트가 없습니다」로 나오는 빈 목록 갈래, filter-bar.tsx:10-12 낡은 주석·`?? \"\"` 폴백, test/.../quote-line-kinds:95 낡은 주석(04-17 NIT 4건)",
       "status": "not_started"
     },
     {
@@ -638,8 +654,8 @@
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션 → git status -sb → /gsd-progress. 묶음 ②·③ Post-build 마지막 /ship 준비(/review 9039452·/qa 545f75d·/design-review b718cdb·/cso cdf79a5 통과), 그 뒤 main 머지(사용자 「머지해」). /ship 전 사용자 확인: 0015 배포 창, 운영 DB 실제 계약 금액 입력 여부, 기존 DB 시드 재실행 여부, /design-review 결정 8건, /cso 프로젝트 생성 팀 범위. 묶음 ③ 머지 뒤 웨이브 25(04-17·04-19). PR #40, 브랜치 claude/gsd-progress-e1nzgu.",
-  "context_notes": "세션 AI: 묶음 ②·③ /cso 통과(cdf79a5) — 정적 diff 감사 partial, 지지되는 발견 0, 수정 없음. 보고서 /mnt/project-files/phase4-prep/postbuild3-cso/REPORT.md. 세션 AG: 묶음 ②·③ /qa 통과(545f75d). ISSUE-002 수정 a7db637·4ee33b3(매출 entryDate 스키마를 길이만 막고 형식·달력은 도메인 셀 오류로). 참고(low): 견적 충돌 전부 거부 시 매출 합계 줄에도 같은 문구 — /design-review에서 볼 것. 세션 AF: 묶음 ②·③ /review 통과(9039452). 수정 커밋 291e79f·1f03e03·ecfb69e·94f06ee·299ed56·246a705·c1dbec6·fa5c5d2·6fe32e1. 후속(막지 않음)과 사용자 확인 항목은 REPORT.md. 기각: 0015 가드 demo(OV-1), DR-5 일괄 저장 비활성은 04-47 몫. 복원 시 예상가는 R3(나중 저장 승)라 제외, 잠긴 칸 복원은 S18대로 서버 판정. ",
+  "next_action": "/gsd-execute-phase 4 --wave 25 로 04-19 한 플랜만 (새 세션, 브랜치 claude/gsd-progress-e1nzgu, draft PR #85)",
+  "context_notes": "세션 AI: 묶음 ②·③ /cso 통과(cdf79a5) — 정적 diff 감사 partial, 지지되는 발견 0, 수정 없음. 보고서 /mnt/project-files/phase4-prep/postbuild3-cso/REPORT.md. 세션 AG: 묶음 ②·③ /qa 통과(545f75d). ISSUE-002 수정 a7db637·4ee33b3(매출 entryDate 스키마를 길이만 막고 형식·달력은 도메인 셀 오류로). 참고(low): 견적 충돌 전부 거부 시 매출 합계 줄에도 같은 문구 — /design-review에서 볼 것. 세션 AF: 묶음 ②·③ /review 통과(9039452). 수정 커밋 291e79f·1f03e03·ecfb69e·94f06ee·299ed56·246a705·c1dbec6·fa5c5d2·6fe32e1. 후속(막지 않음)과 사용자 확인 항목은 REPORT.md. 기각: 0015 가드 demo(OV-1), DR-5 일괄 저장 비활성은 04-47 몫. 복원 시 예상가는 R3(나중 저장 승)라 제외, 잠긴 칸 복원은 S18대로 서버 판정. 세션 AJ: PR #40이 main에 93590d8로 머지됨(묶음 ②·③ 종료) — 브랜치를 origin/main 93590d8에서 재시작해 새 draft PR #85로 04-17 실행.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"

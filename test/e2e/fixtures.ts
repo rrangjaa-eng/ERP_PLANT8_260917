@@ -22,7 +22,8 @@ export async function createFixtureUser(options: {
   });
   if (options.withTeam) {
     const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E본부-${randomUUID()}` });
-    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E팀-${randomUUID()}` });
+    // 팀 이름은 /projects 팀 필터 select 폭을 정한다 — 전체 UUID면 375px를 넘친다(projects-list-number-nowrap).
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E팀-${randomUUID().slice(0, 8)}` });
     await assignTeam(SYSTEM_VIEWER, { userId, teamId: team.id, effectiveFrom: "2020-01-01" });
   }
   return { email, password: tempPassword };

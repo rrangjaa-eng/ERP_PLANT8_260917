@@ -518,6 +518,53 @@ test.describe("알림함 목록 완성 (Task 3 · S1-c · S1-d)", () => {
     await expect(lastRow).toContainText("안 읽음");
   });
 
+  test("51건 — openInboxAction이 끝나기 전엔 「더 보기」가 비활성(연 결과와 더 보기 결과가 rows를 서로 덮어쓰는 경합 방지)", async ({
+    page,
+  }) => {
+    const user = await createEmployee();
+    const candidates = Array.from({ length: 51 }, (_, i) =>
+      testCandidate({ recipientId: user.userId, entityId: `${randomUUID()}-${i}`, referenceDate: "2026-01-01" }),
+    );
+    const kind = createTestConditionKind(candidates);
+    await tickOnce(kind);
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(user.email);
+    await page.getByLabel("비밀번호").fill(user.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    // 마운트 때 한 번 도는 openInboxAction(cursor 없는 유일한 next-action POST)만
+    // 500ms 늦춘다 — 그사이 서버가 먼저 준 rows(더 보기 버튼 포함)는 이미
+    // 그려져 있다. 버튼이 이 요청이 끝나기 전에 눌리면 그 성공 결과가 rows를
+    // 통째로 덮어써 그사이 더 보기로 받은 행이 사라진다.
+    let intercepted = false;
+    await page.route("**/*", async (route) => {
+      const request = route.request();
+      const postData = request.postData() ?? "";
+      if (
+        !intercepted &&
+        request.method() === "POST" &&
+        request.headers()["next-action"] &&
+        !postData.includes('"cursor"')
+      ) {
+        intercepted = true;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        await route.continue();
+        return;
+      }
+      await route.continue();
+    });
+
+    await page.goto("/notifications");
+    const loadMore = page.getByRole("button", { name: "더 보기 50건" });
+    await expect(loadMore).toBeVisible();
+    await expect(loadMore).toBeDisabled();
+
+    await page.unroute("**/*");
+    await expect(loadMore).toBeEnabled();
+  });
+
   test("101건 — 더 보기 성공 뒤에도 hasMore면 포커스가 버튼에 남는다(M2)", async ({ page }) => {
     const user = await createEmployee();
     const candidates = Array.from({ length: 101 }, (_, i) =>

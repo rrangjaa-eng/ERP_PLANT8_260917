@@ -216,7 +216,11 @@ export function InboxList({ initialRows, initialHasMore, initialReferenceYear }:
               loadMoreContainerRef.current = el;
             }}
           >
-            <Button variant="tertiary" pending={isExecuting} onClick={loadMore}>
+            {/* D-4218 경합 수정 — 열기(openInboxAction)가 rows를 통째로 갈아 끼우고
+                더 보기는 그 rows 끝의 커서로 이어 붙인다. 열기가 끝나기(openedAt이
+                채워지기) 전에 더 보기가 성공하면 뒤늦게 도착한 열기 결과가 그사이
+                붙은 행을 덮어쓴다 — 열기가 끝날 때까지 더 보기를 막는다. */}
+            <Button variant="tertiary" pending={isExecuting || openedAt === null} onClick={loadMore}>
               더 보기 50건
             </Button>
           </span>

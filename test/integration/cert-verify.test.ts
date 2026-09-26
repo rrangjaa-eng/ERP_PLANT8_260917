@@ -763,3 +763,99 @@ describe("잠금 전 빠른 거부 · 풀 고갈 없음(AX-P2)", () => {
     15_000,
   );
 });
+
+// 04.3-03 Review fixes M2 — 셈을 올리지 않는 요청(누적 잠긴 자리 · 짧은 잠김 자리)도
+// 행사 행 FOR UPDATE 대기열에 서지 않는다. 닫힘이 어떤 잠김보다 앞선다.
+describe("잠금 전 빠른 판정 — 잠긴 자리 · 닫힘(M2)", () => {
+  async function holdEventRow(eventId: string) {
+    const client = new Client({ connectionString: process.env.DATABASE_URL });
+    await client.connect();
+    await client.query("BEGIN");
+    await client.query("SELECT id FROM cert_events WHERE id = $1 FOR UPDATE", [eventId]);
+    return {
+      async release() {
+        await client.query("ROLLBACK");
+        await client.end();
+      },
+    };
+  }
+
+  async function raceWhileHeld<T>(eventId: string, run: () => Promise<T>): Promise<T | "timeout"> {
+    const holder = await holdEventRow(eventId);
+    try {
+      return await Promise.race([run(), new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 2000))]);
+    } finally {
+      await holder.release();
+    }
+  }
+
+  it(
+    "누적 잠긴 자리로 동시 확인 DB_POOL_MAX×3 동안 다른 행사의 loadIntake가 5초 안에 ok, A 요청 전부 hardLocked",
+    async () => {
+      const a = await makeEvent(1);
+      const b = await makeEvent(1);
+      await patchSeat(a.seats[0]!.id, { cumulativeFailedAttempts: 20, hardLockedAt: new Date() });
+      const holder = await holdEventRow(a.eventId);
+      const pending = Promise.allSettled(
+        Array.from({ length: env.DB_POOL_MAX * 3 }, (_, i) =>
+          verifyLast4(a.token, a.seats[0]!.id, "9999", key(), `203.0.113.${100 + i}`),
+        ),
+      );
+      try {
+        // A 요청들이 잠금 전 읽기를 마치고 (고치기 전이라면) 행사 행 대기열에 설 틈을 준다.
+        await new Promise((r) => setTimeout(r, 500));
+        const start = performance.now();
+        const intake = await loadIntake(b.token);
+        expect(intake.kind).toBe("open");
+        expect(performance.now() - start).toBeLessThan(5000);
+      } finally {
+        await holder.release();
+      }
+      const settled = await pending;
+      expect(settled.every((s) => s.status === "fulfilled" && s.value.kind === "hardLocked")).toBe(true);
+    },
+    15_000,
+  );
+
+  it("짧은 잠김 자리 — 행사 행을 남이 쥔 동안에도 locked(서버 해제 시각)가 곧바로 온다 · 셈 불변", async () => {
+    const ev = await makeEvent(1);
+    const s = ev.seats[0]!;
+    const until = new Date(Date.now() + 2 * MIN);
+    await patchSeat(s.id, { failedAttempts: 5, lockedUntil: until });
+    const r = await raceWhileHeld(ev.eventId, () => verifyLast4(ev.token, s.id, s.last4, key(), "203.0.113.90"));
+    expect(r).not.toBe("timeout");
+    if (r === "timeout" || r.kind !== "locked") throw new Error(`locked가 아니다: ${JSON.stringify(r)}`);
+    expect(r.limit).toBe(5);
+    expect(r.remainingSeconds).toBeGreaterThan(100);
+    expect(r.remainingSeconds).toBeLessThanOrEqual(120);
+    expect((await seat(s.id)).failedAttempts).toBe(5);
+  });
+
+  it("닫힌 행사의 누적 잠긴 자리 → closed(행사 행을 남이 쥔 동안에도 곧바로)", async () => {
+    const ev = await makeEvent(1);
+    await patchSeat(ev.seats[0]!.id, { cumulativeFailedAttempts: 20, hardLockedAt: new Date() });
+    await db.update(certEvents).set({ closedAt: new Date(), closedReason: "manual" }).where(eq(certEvents.id, ev.eventId));
+    const r = await raceWhileHeld(ev.eventId, () =>
+      verifyLast4(ev.token, ev.seats[0]!.id, "9999", key(), "203.0.113.91"),
+    );
+    expect(r).toMatchObject({ kind: "closed", reason: "manual" });
+  });
+
+  it("닫힌 행사가 한도를 넘었어도 throttled가 아니라 closed(닫힘이 빠른 거부보다 앞선다)", async () => {
+    const ev = await makeEvent(2);
+    await fillMisses(ev.seats[0]!.id, 40, new Date());
+    await db.update(certEvents).set({ closedAt: new Date(), closedReason: "manual" }).where(eq(certEvents.id, ev.eventId));
+    const r = await verifyLast4(ev.token, ev.seats[1]!.id, "9999", key(), "203.0.113.92");
+    expect(r).toMatchObject({ kind: "closed", reason: "manual" });
+  });
+
+  it("같은 키 재전송은 짧은 잠김 빠른 판정보다 재생이 앞선다 — 틀림 뒤 남이 잠가도 A 재전송은 처음 응답", async () => {
+    const ev = await makeEvent(1);
+    const s = ev.seats[0]!;
+    const a = key();
+    const first = await verifyLast4(ev.token, s.id, "9999", a, "203.0.113.93");
+    expect(first).toEqual({ kind: "wrong", remaining: 4 });
+    await patchSeat(s.id, { failedAttempts: 5, lockedUntil: new Date(Date.now() + 2 * MIN) });
+    expect(await verifyLast4(ev.token, s.id, "9999", a, "203.0.113.93")).toEqual(first);
+  });
+});

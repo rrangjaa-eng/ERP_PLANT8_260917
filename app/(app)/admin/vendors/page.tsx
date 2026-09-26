@@ -55,6 +55,8 @@ export default async function VendorsPage({
   ]);
 
   const evidenceTypeLabelByValue = new Map(evidenceTypes.map((item) => [item.value, item.label]));
+  // 「동작」 열의 유무 — 머리글·행·접힌 줄의 colSpan이 같은 조건을 쓴다.
+  const hasActions = canWrite || canArchive;
   // editId가 가리키는 행이 지금 이 조회 결과(숨김 포함 여부에 따라 달라짐)에
   // 없으면(예: 숨김 거래처를 「숨김 포함」 꺼진 채로 가리키는 오래된 링크)
   // 조용히 등록 모드로 돌아간다 — 존재하지 않는 대상을 오류로 다루지 않는다.
@@ -117,7 +119,7 @@ export default async function VendorsPage({
               <th scope="col" className={styles.p2}>기본 증빙 종류</th>
               <th scope="col">계좌</th>
               <th scope="col" className={styles.p2}>상태</th>
-              {canWrite || canArchive ? <th scope="col">동작</th> : null}
+              {hasActions ? <th scope="col">동작</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -156,7 +158,7 @@ export default async function VendorsPage({
                         </StatusTag>
                       ) : "—"}
                     </td>
-                    {canWrite || canArchive ? (
+                    {hasActions ? (
                       <td>
                         {vendor.archivedAt ? null : (
                           <>
@@ -174,7 +176,7 @@ export default async function VendorsPage({
                   </tr>
                   {folded.length > 0 ? (
                     <tr className={styles.collapsedRow}>
-                      <td colSpan={canWrite || canArchive ? 6 : 5} className={styles.collapsedCell}>
+                      <td colSpan={hasActions ? 6 : 5} className={styles.collapsedCell}>
                         {folded.join(" · ")}
                       </td>
                     </tr>

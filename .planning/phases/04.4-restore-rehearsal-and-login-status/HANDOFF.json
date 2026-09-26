@@ -1,10 +1,10 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-26T15:10:00.000Z",
+  "timestamp": "2026-09-26T15:40:00.000Z",
   "phase": "04.4",
   "phase_name": "restore-rehearsal-and-login-status",
   "phase_dir": ".planning/phases/04.4-restore-rehearsal-and-login-status",
-  "plan": "04.4-01",
+  "plan": "04.4-02",
   "task": null,
   "total_tasks": null,
   "status": "paused",
@@ -44,17 +44,23 @@
       "name": "04.4-01 실행(트레이서·검증·실패 문구·SUMMARY)",
       "status": "done",
       "commit": "4fcc27e"
+    },
+    {
+      "id": 9,
+      "name": "04.4-02 실행(verify 트레이서·restore Job·번들·SUMMARY)",
+      "status": "done",
+      "commit": "feb3499"
     }
   ],
   "remaining_tasks": [
     {
-      "id": 8,
-      "name": "새 세션: /gsd-execute-phase 04.4 — 04.4-02 하나(끝나면 커밋·푸시·[완료 보고]·pause)",
+      "id": 10,
+      "name": "새 세션(코디네이터가 연다): /gsd-execute-phase 04.4 — 04.4-03 하나(끝나면 커밋·푸시·[완료 보고]·pause)",
       "status": "not_started"
     },
     {
       "id": 7,
-      "name": "한도 풀린 뒤(2026-09-29~) Codex 재확인: e8ed306 CEO 반영 + dcd9130 + f8c69f5",
+      "name": "한도 풀린 뒤(2026-09-29~) Codex 재확인: e8ed306 CEO 반영 + dcd9130 + f8c69f5 + 04.4-02 코드(49accb3·b7b0519)",
       "status": "not_started"
     }
   ],
@@ -76,9 +82,14 @@
       "decision": "plan-ceo-review 04.4: HOLD SCOPE, CLEAR. CEO-1·2 수용, 참고 6건 TODOS 이연, 축소안 3건 거절",
       "rationale": "자동 결정(추천값, 사용자 부재). Codex 한도로 Opus 독립 검토 대체",
       "phase": "04.4"
+    },
+    {
+      "decision": "04.4-02: settings_simple·settings_historized를 requireRows로 올림(플랜 가정 2와 다름)",
+      "rationale": "seedMasterData가 두 표를 항상 채우고 삭제는 미래 적용분뿐 — 플랜이 실행자 대조·수정을 허용",
+      "phase": "04.4"
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션에서 PR #91 최신 [코디네이터 지시] 확인 → /gsd-execute-phase 04.4 (04.4-02)",
-  "context_notes": "04.4-01 완료(620694e·16cc31b·26d351e·4fcc27e). 마이그레이션 0017은 브랜치 임시 번호. STATE.md·루트 HANDOFF.json 건드리지 않음. 사용자 결정 필요 시 PR에 [사용자 결정 요청]."
+  "next_action": "새 세션에서 PR #91 최신 [코디네이터 지시] 확인 → /gsd-execute-phase 04.4 (04.4-03)",
+  "context_notes": "04.4-01(4fcc27e)·04.4-02(49accb3·b7b0519·feb3499) 완료. restore Job은 verify --target <연결 이름> + --update-env-vars=CLOUD_SQL_CONNECTION_NAME=<같은 이름>으로 부른다. 마이그레이션 0017은 브랜치 임시 번호. STATE.md·루트 HANDOFF.json 건드리지 않음. 사용자 결정 필요 시 PR에 [사용자 결정 요청]."
 }

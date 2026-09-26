@@ -19,6 +19,7 @@ import { useEditableWidth } from "@/ui/table/use-editable-width";
 import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
 import { normalizeNumericPaste } from "@/ui/table/parse-tsv";
 import { formatKrw, formatForeignLine, formatQuantity, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
+import { kstToday } from "@/lib/kst-date";
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import type { TableColumn, CellIssue, CellEditability } from "@/ui/table/types";
 import type { QuoteLineDto, QuoteLineBaseline } from "@/domain/quotes/lines";
@@ -567,7 +568,7 @@ function newEntryDraft(): EntryDraft {
   return {
     clientKey: id,
     id,
-    entryDate: new Date().toISOString().slice(0, 10),
+    entryDate: kstToday(new Date()),
     amount: 0,
     note: null,
     dirty: true,

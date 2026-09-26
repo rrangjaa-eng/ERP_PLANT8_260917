@@ -55,7 +55,7 @@ export type PeriodFieldError = { field: "start" | "end"; reason: string };
 
 export const FORMAT_ERROR = "날짜 형식 오류 · 2026-09-18처럼";
 // 사용자 결정 2026-09-26 「날짜 입력 통일」 — 네이티브 달력 칸을 비운 값("")은 형식이 틀린 게 아니라 고르지 않은 것.
-export const EMPTY_ERROR = "날짜를 골라 주세요";
+export const EMPTY_ERROR = "날짜 없음 · 날짜 고르기";
 // 덜 채운 네이티브 날짜 칸의 표식(브라우저는 값을 ""로 주고 validity.badInput만 켠다). 비운 칸("" → null, 날짜 지움)과
 // 구분해 저장을 막는다 — 문구는 빈 칸과 같다(사용자 결정 2026-09-26 /review D2). 기간 스키마 max(10) 안에 든다.
 export const INCOMPLETE_DATE = "incomplete";

@@ -13,7 +13,7 @@ export type PeriodDraft = { start: string; end: string };
 export type PeriodFieldError = { field: "start" | "end"; reason: string };
 
 // /review R-3 — 네이티브 날짜 칸을 덜 채우면 브라우저가 값을 ""로 준다(validity.badInput). 비운 칸("" → null로
-// 저장돼 기간이 지워진다)과 구분해 초안에 도메인 표식 INCOMPLETE_DATE를 담는다 — 서버가 「날짜를 골라 주세요」로 거부한다.
+// 저장돼 기간이 지워진다)과 구분해 초안에 도메인 표식 INCOMPLETE_DATE를 담는다 — 서버가 「날짜 없음 · 날짜 고르기」로 거부한다.
 // /qa ISSUE-001 — input 이벤트는 값이 바뀔 때만 난다. 조각을 하나씩 전부 지우면 첫 조각에서만 ""(badInput)로 오고
 // 나머지는 ""→""라 이벤트가 없다 — 지우는 키를 뗄 때 칸의 실제 상태를 다시 읽어 초안을 맞춘다. 다른 키(방향키·Tab)는
 // 읽지 않는다: 복원한 「덜 채움」 초안은 칸에 빈 값으로 보이므로, 읽으면 빈 값으로 바뀌어 저장이 날짜를 지운다.

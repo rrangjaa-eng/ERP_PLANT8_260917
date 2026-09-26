@@ -10,6 +10,7 @@ import {
   findMembershipsAtDate as repoFindMembershipsAtDate,
 } from "@/repositories/team-memberships";
 import { loadActorTeamScope } from "@/domain/projects/status";
+import { log } from "@/lib/log";
 
 export class ForbiddenError extends UserFacingError {}
 
@@ -95,10 +96,18 @@ export async function scopeCreateFormReferences(
 
 // 결정 2(사용자 결정 2026-09-26) — 등록 폼의 담당 PM·팀 기본값: 등록하는 사람과 그 사람의 오늘(KST) 소속 팀
 // (가장 최근 발령). 폼은 좁힌 옵션에 있을 때만 고른다 — 없으면 빈 칸.
+// /review D3 — 기본값은 보조 정보라 조회가 실패하면 null(기본값 없음)로 떨어지고 서버 로그에만 남는다.
 export async function loadCreatorDefaults(
   viewer: Viewer,
   opts: { todayKst: string },
-): Promise<{ pmUserId: string; teamId: string | null }> {
-  const membership = await repoFindMembershipAtDate(viewer, viewer.id, opts.todayKst);
-  return { pmUserId: viewer.id, teamId: membership?.teamId ?? null };
+  deps?: Partial<{ findMembershipAtDate: typeof repoFindMembershipAtDate }>,
+): Promise<{ pmUserId: string; teamId: string | null } | null> {
+  const findMembershipAtDate = deps?.findMembershipAtDate ?? repoFindMembershipAtDate;
+  try {
+    const membership = await findMembershipAtDate(viewer, viewer.id, opts.todayKst);
+    return { pmUserId: viewer.id, teamId: membership?.teamId ?? null };
+  } catch (error) {
+    log.error("projects.creator_defaults_failed", { message: error instanceof Error ? error.message : String(error) });
+    return null;
+  }
 }

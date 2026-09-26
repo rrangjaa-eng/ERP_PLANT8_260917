@@ -11,9 +11,7 @@ describe("loadCreatorDefaults — 조회 실패", () => {
       { id: "user-1", roleId: "role-pm" },
       { todayKst: "2026-09-26" },
       {
-        findMembershipAtDate: async () => {
-          throw new Error("db down");
-        },
+        findMembershipAtDate: () => Promise.reject(new Error("db down")),
       },
     );
     expect(result).toBeNull();

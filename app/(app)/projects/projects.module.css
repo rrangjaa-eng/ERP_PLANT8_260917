@@ -122,7 +122,14 @@
   font-weight: var(--fw-medium);
   color: var(--accent);
   text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
   text-underline-offset: var(--underline-offset);
+}
+
+/* §4-4 · §7-1 3차 밑줄 1px → hover 2px(ui/pagination · ui/list-empty와 같다). */
+.toggle:hover,
+.link:hover {
+  text-decoration-thickness: var(--line-w-strong);
 }
 
 @media (max-width: 699.98px) {
@@ -164,6 +171,7 @@
 .link {
   color: var(--accent);
   text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
   text-underline-offset: var(--underline-offset);
 }
 

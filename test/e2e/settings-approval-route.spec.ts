@@ -49,6 +49,28 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     await expect(step1OrgUnit).toBeDisabled();
     await expect(step1OrgUnit).toHaveValue(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP1_ORG_UNIT_ID));
     await expect(page.getByLabel("3단 특정 부서")).toBeEnabled();
+
+    // SYSTEM.md §1-2: 비활성 글자는 --faint on --surface, 반투명은 --scrim 하나뿐. 활성 select 글자는 --fg.
+    const tokenColor = (token: string) =>
+      page.evaluate((name) => {
+        const probe = document.createElement("span");
+        probe.style.color = `var(${name})`;
+        document.body.append(probe);
+        const color = getComputedStyle(probe).color;
+        probe.remove();
+        return color;
+      }, token);
+    const style = (label: string) =>
+      page.getByLabel(label).evaluate((el) => {
+        const computed = getComputedStyle(el);
+        return { color: computed.color, background: computed.backgroundColor, opacity: computed.opacity };
+      });
+    expect(await style("1단 특정 부서")).toEqual({
+      color: await tokenColor("--faint"),
+      background: await tokenColor("--surface"),
+      opacity: "1",
+    });
+    expect((await style("3단 특정 부서")).color).toBe(await tokenColor("--fg"));
   });
 
   test("자기 승인을 본인 승인으로 바꾸면 즉시 저장되고 새로 고쳐도 남는다", async ({ page }) => {

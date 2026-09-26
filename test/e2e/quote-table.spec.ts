@@ -1119,7 +1119,7 @@ test.describe("견적 줄 표 — 쪽 경계 키보드·전체 복사·힌트 �
     expect(lines[0]?.split("\t")[2]).toBe("A줄1");
     expect(lines[44]?.split("\t")[0]).toBe("45");
     expect(lines[44]?.split("\t")[2]).toBe("B줄25");
-    expect(JSON.parse(json)).toEqual(Array.from({ length: 45 }, () => ({ currency: "KRW" })));
+    expect(JSON.parse(json)).toEqual(Array.from({ length: 45 }, () => ({ currency: "KRW", kind: "quote" })));
   });
 
   test("힌트 줄은 일곱 항목이고 페이지 줄 바로 다음 형제 · 매출 표 아래에는 없고 · 1000 폭에서는 없다", async ({ page }) => {

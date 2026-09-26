@@ -912,7 +912,7 @@ test.describe("이전 차수 보관본 복원 줄 (04-24 Task 4 — DR-4 · DR-3
     await expect(row).toBeVisible();
     const [copied] = await copiesOf(page);
     expect(copied).toBeDefined();
-    expect(JSON.parse(copied!.json)).toEqual([{ currency: "KRW" }]);
+    expect(JSON.parse(copied!.json)).toEqual([{ currency: "KRW", kind: "quote" }]);
     const lines = copied!.text.split("\n").filter(Boolean);
     expect(lines).toHaveLength(1);
     const cells = lines[0]!.split("\t");

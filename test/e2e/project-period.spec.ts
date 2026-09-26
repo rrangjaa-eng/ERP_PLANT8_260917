@@ -338,7 +338,7 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
 
   // /review R-3 — 네이티브 날짜 칸을 덜 채우면 값이 ""로 온다(validity.badInput). 비운 것으로 저장해
   // 기간을 조용히 지우지 않고 형식 오류로 막는다.
-  test("(6b) 종료일 칸을 덜 채운 채 저장하면 칸 아래 형식 오류 · 기간은 그대로", async ({ page }) => {
+  test("(6b) 종료일 칸을 덜 채운 채 저장하면 칸 아래 「날짜를 골라 주세요」 · 기간은 그대로", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team);
     const endDate = addDays(TODAY, 5);
@@ -355,7 +355,7 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     const saving = waitForSaveAction(page);
     await endInput.press("Control+s");
     await saving;
-    await expect(page.getByText("날짜 형식 오류 · 2026-09-18처럼", { exact: true })).toBeVisible();
+    await expect(page.getByText("날짜를 골라 주세요", { exact: true })).toBeVisible();
 
     await page.reload();
     await expect(page.getByText(new RegExp(`^기간 \\S+ ~ ${endDate}$`))).toBeVisible();
@@ -380,7 +380,7 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     const saving = waitForSaveAction(page);
     await endInput.press("Control+s");
     await saving;
-    await expect(page.getByText("날짜 형식 오류 · 2026-09-18처럼", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("날짜를 골라 주세요", { exact: true })).toHaveCount(0);
 
     await page.reload();
     await expect(page.getByText(/^기간 \S+ ~ —$/)).toBeVisible();
@@ -388,7 +388,7 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
 
   // /review (data-migration) — 덜 채운 날짜는 보관본에 「덜 채움」으로 남는다. 「복원」 뒤 그 칸에서 값을 바꾸지
   // 않는 키(방향키)만 눌러도(keyup) 빈 값으로 바뀌면 저장이 종료일을 조용히 지운다. 지우는 키만 칸 상태를 다시 읽는다.
-  test("(6d) 덜 채운 종료일을 복원한 뒤 방향키만 누르고 저장해도 형식 오류로 막히고 기간은 그대로", async ({ page }) => {
+  test("(6d) 덜 채운 종료일을 복원한 뒤 방향키만 누르고 저장해도 「날짜를 골라 주세요」로 막히고 기간은 그대로", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team);
     const endDate = addDays(TODAY, 5);
@@ -410,7 +410,7 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     const saving = waitForSaveAction(page);
     await page.getByLabel("종료일").press("Control+s");
     await saving;
-    await expect(page.getByText("날짜 형식 오류 · 2026-09-18처럼", { exact: true })).toBeVisible();
+    await expect(page.getByText("날짜를 골라 주세요", { exact: true })).toBeVisible();
 
     await page.reload();
     await expect(page.getByText(new RegExp(`^기간 \\S+ ~ ${endDate}$`))).toBeVisible();

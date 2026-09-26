@@ -4,6 +4,7 @@ import {
   previewPeriodChange,
   resolvePeriodSave,
   validatePeriodChange,
+  INCOMPLETE_DATE,
 } from "@/domain/projects/period";
 
 // 04-22(D-80 · D-82 · 사용자 D14·D11·D20 · 엔지 리뷰 A P3 · 사용자 결정 2026-09-25 「기간만 수정」) —
@@ -115,6 +116,13 @@ describe("validatePeriodChange — 저장될 값 위에서", () => {
   it("시작일 빈 문자열 → 시작일 칸 「날짜를 골라 주세요」", () => {
     expect(validatePeriodChange({ ...ok, status: "bidding", start: "", end: "2026-09-18" })).toEqual([
       { field: "start", reason: "날짜를 골라 주세요" },
+    ]);
+  });
+
+  // 사용자 결정 2026-09-26(/review D2) — 덜 채운 네이티브 날짜 칸(표식 INCOMPLETE_DATE)도 다른 화면처럼 「날짜를 골라 주세요」.
+  it("덜 채운 칸 표식 → 그 칸 「날짜를 골라 주세요」(형식 오류 아님)", () => {
+    expect(validatePeriodChange({ ...ok, status: "bidding", start: "2026-09-18", end: INCOMPLETE_DATE })).toEqual([
+      { field: "end", reason: "날짜를 골라 주세요" },
     ]);
   });
 

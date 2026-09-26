@@ -94,10 +94,31 @@ export function resolveListPage(
 export type ListPeriod = { from?: string; to?: string };
 export type ListPeriodErrors = { from?: string; to?: string };
 
-// 04-48(UX-04) — 기간 필터 두 칸의 서버 판정. (RED 골격)
+export const PERIOD_FORMAT_ERROR = "날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요";
+export const PERIOD_REVERSED_ERROR = "기간이 거꾸로입니다 · 앞 날짜를 먼저 적어 주세요";
+
+// 연도 2000–2100 · `YYYY-MM-DD` · 달력에 있는 날짜만(C-08 — 틀린 값이 PG 날짜 오류로 가지 않는다).
+function isListDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  if (year < 2000 || year > 2100) return false;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+// 04-48(UX-04 · UI-SPEC Copywriting 「Error — 목록 기간 필터」) — 기간 필터 두 칸의 서버 판정. 오류가 하나라도 있으면
+// 기간 전체를 적용하지 않는다(period null). 거꾸로 오류는 종료 칸에 단다.
 export function parseListPeriod(
-  _from: string | undefined,
-  _to: string | undefined,
+  rawFrom: string | undefined,
+  rawTo: string | undefined,
 ): { period: ListPeriod | null; errors: ListPeriodErrors } {
-  return { period: null, errors: {} };
+  const from = rawFrom?.trim() || undefined;
+  const to = rawTo?.trim() || undefined;
+  const errors: ListPeriodErrors = {};
+  if (from && !isListDate(from)) errors.from = PERIOD_FORMAT_ERROR;
+  if (to && !isListDate(to)) errors.to = PERIOD_FORMAT_ERROR;
+  if (!errors.from && !errors.to && from && to && from > to) errors.to = PERIOD_REVERSED_ERROR;
+  if (errors.from || errors.to || (!from && !to)) return { period: null, errors };
+  return { period: { ...(from ? { from } : {}), ...(to ? { to } : {}) }, errors };
 }

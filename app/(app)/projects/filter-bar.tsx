@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, type FocusEvent, type KeyboardEvent } from "react";
 import Link from "next/link";
 import styles from "./projects.module.css";
 
@@ -15,6 +15,8 @@ export type ProjectFilterValues = {
   teamId?: string;
   year?: string;
   q?: string;
+  from?: string;
+  to?: string;
 };
 
 export type ProjectFilterOption = { value: string; label: string };
@@ -25,14 +27,36 @@ export function ProjectsFilterBar({
   yearOptions,
   defaultValues,
   hasFilter,
+  periodErrors = {},
 }: {
   teams: { id: string; name: string }[];
   statusOptions: ProjectFilterOption[];
   yearOptions: number[];
   defaultValues: ProjectFilterValues;
   hasFilter: boolean;
+  /** 04-48(UX-04) — 서버가 판정한 기간 칸 오류(칸 아래 한 줄). */
+  periodErrors?: { from?: string; to?: string };
 }) {
   const formRef = useRef<HTMLFormElement>(null);
+  const fromRef = useRef<HTMLInputElement>(null);
+  const toRef = useRef<HTMLInputElement>(null);
+
+  // 04-48(엔지 리뷰 C §2 P2) — 기간 두 칸은 묶음 단위로 제출한다: 묶음의 focusout(React onBlur는 focusout으로
+  // 올라온다)에서 포커스가 두 칸 밖으로 나갈 때(relatedTarget)만, 값이 처음과 달라졌을 때만. 시작일 → Tab → 종료일
+  // 사이에는 제출하지 않는다.
+  function onPeriodFocusOut(event: FocusEvent<HTMLDivElement>) {
+    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+    const changed =
+      (fromRef.current?.value ?? "") !== (defaultValues.from ?? "") || (toRef.current?.value ?? "") !== (defaultValues.to ?? "");
+    if (changed) formRef.current?.requestSubmit();
+  }
+
+  // 텍스트 칸이 여럿이고 제출 버튼이 없는 폼은 브라우저가 Enter로 제출하지 않는다 — Enter는 직접 제출한다.
+  function submitOnEnter(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    formRef.current?.requestSubmit();
+  }
 
   return (
     // autoComplete="off": 이 폼 제출은 전체 페이지 이동이라, 뒤로 가기 때
@@ -93,6 +117,50 @@ export function ProjectsFilterBar({
       </div>
 
       <div className={styles.selectLabel}>
+        <label htmlFor="from">기간</label>
+        <div className={styles.periodFields} onBlur={onPeriodFocusOut}>
+          <input
+            ref={fromRef}
+            id="from"
+            name="from"
+            type="text"
+            inputMode="numeric"
+            placeholder="2026-09-18"
+            className={`${styles.textInput} ${styles.periodInput}`}
+            defaultValue={defaultValues.from ?? ""}
+            aria-invalid={periodErrors.from ? true : undefined}
+            aria-describedby={periodErrors.from ? "from-error" : undefined}
+            onKeyDown={submitOnEnter}
+          />
+          <span aria-hidden="true">~</span>
+          <input
+            ref={toRef}
+            id="to"
+            name="to"
+            type="text"
+            inputMode="numeric"
+            placeholder="2026-09-18"
+            aria-label="기간 끝"
+            className={`${styles.textInput} ${styles.periodInput}`}
+            defaultValue={defaultValues.to ?? ""}
+            aria-invalid={periodErrors.to ? true : undefined}
+            aria-describedby={periodErrors.to ? "to-error" : undefined}
+            onKeyDown={submitOnEnter}
+          />
+        </div>
+        {periodErrors.from ? (
+          <p id="from-error" className={styles.fieldError}>
+            {periodErrors.from}
+          </p>
+        ) : null}
+        {periodErrors.to ? (
+          <p id="to-error" className={styles.fieldError}>
+            {periodErrors.to}
+          </p>
+        ) : null}
+      </div>
+
+      <div className={styles.selectLabel}>
         <label htmlFor="q">검색</label>
         <input
           id="q"
@@ -101,6 +169,7 @@ export function ProjectsFilterBar({
           className={styles.textInput}
           defaultValue={defaultValues.q ?? ""}
           onBlur={() => formRef.current?.requestSubmit()}
+          onKeyDown={submitOnEnter}
         />
       </div>
 

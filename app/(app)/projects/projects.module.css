@@ -104,6 +104,31 @@
   outline-offset: var(--focus-offset);
 }
 
+/* 04-48(D-89 · SYSTEM.md 개정 ③) — 목록 기간 필터 두 칸: 폭 10ch + 좌우 --cell-pad-x. 오류는 §7-2 테두리 + 아래 한 줄. */
+.periodFields {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  color: var(--fg);
+}
+
+.periodInput {
+  width: calc(10ch + 2 * var(--cell-pad-x));
+  padding: 0 var(--cell-pad-x);
+  font-variant-numeric: tabular-nums;
+}
+
+.periodInput[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.fieldError {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-regular);
+}
+
 .blockedReason {
   color: var(--danger);
   font-size: var(--fs-sm);

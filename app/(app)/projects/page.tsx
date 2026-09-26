@@ -48,6 +48,8 @@ type ProjectsSearchParams = {
   teamId?: string;
   year?: string;
   q?: string;
+  from?: string;
+  to?: string;
   sort?: string;
   dir?: string;
   page?: string;
@@ -73,11 +75,13 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const currentYear = kstYear(new Date());
   const year = params.year === "all" ? "all" : params.year && /^\d{4}$/.test(params.year) ? Number(params.year) : currentYear;
   const search = params.q || undefined;
+  const from = params.from || undefined;
+  const to = params.to || undefined;
   const sortKey = isValidSortKey(params.sort) ? params.sort : "endDate";
   const sortDirection = params.dir === "desc" ? "desc" : "asc";
 
   // 올해 연도 값은 필터로 세지 않는다(UI-SPEC S1).
-  const hasFilter = Boolean(status || teamId || year !== currentYear || search);
+  const hasFilter = Boolean(status || teamId || year !== currentYear || search || from || to);
   const statusLabel = statusOptions.find((option) => option.value === status)?.label;
 
   const [references, canWrite, list, copySource, usdDefaultFxRate] = await Promise.all([
@@ -89,6 +93,8 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       teamId,
       year,
       search,
+      from,
+      to,
       sort: { key: sortKey, direction: sortDirection },
       page: params.page,
     }),
@@ -107,7 +113,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const canCreate = canWrite && scopedCreateReferences !== null && scopedCreateReferences.teams.length > 0;
   const createReferences = canCreate && showCreateForm ? scopedCreateReferences : null;
 
-  const { rows, totals, total, page, pageCount } = list;
+  const { rows, totals, total, page, pageCount, periodErrors } = list;
   const canSeeAmount = totals.quoteAmountKrw !== undefined;
   // 지금 필터·정렬을 그대로 두고 쪽 번호만 바꾼다. 필터 폼은 page를 싣지 않아 필터를 바꾸면 1쪽이다.
   const pageParams = new URLSearchParams();
@@ -115,6 +121,8 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   if (teamId) pageParams.set("teamId", teamId);
   if (year !== currentYear) pageParams.set("year", String(year));
   if (search) pageParams.set("q", search);
+  if (from) pageParams.set("from", from);
+  if (to) pageParams.set("to", to);
   if (sortKey !== "endDate") pageParams.set("sort", sortKey);
   if (sortDirection !== "asc") pageParams.set("dir", sortDirection);
   function pageHref(target: number): string {
@@ -145,12 +153,13 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         {/* select의 defaultValue는 마운트 뒤 바뀌어도 칸에 반영되지 않는다 —
             「필터 지우기」·뒤로 가기로 URL이 바뀌면 key로 새로 마운트한다(/qa ISSUE-001). */}
         <ProjectsFilterBar
-          key={`${status ?? ""}|${teamId ?? ""}|${year}|${search ?? ""}`}
+          key={`${status ?? ""}|${teamId ?? ""}|${year}|${search ?? ""}|${from ?? ""}|${to ?? ""}`}
           teams={references.teams}
           statusOptions={statusOptions}
           yearOptions={yearOptions(currentYear)}
-          defaultValues={{ status, teamId, year: String(year), q: search }}
+          defaultValues={{ status, teamId, year: String(year), q: search, from, to }}
           hasFilter={hasFilter}
+          periodErrors={periodErrors}
         />
         {/* total === 0이면 ListEmpty가 이미 같은 「프로젝트 등록」
             행동을 준다 — vendors.tsx 선례와 같은 이유로 여기서도 중복 CTA를

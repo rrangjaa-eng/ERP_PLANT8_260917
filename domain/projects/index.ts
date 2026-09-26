@@ -14,6 +14,7 @@ import {
   attributionLabel,
   exclusionText,
   resolveListPage,
+  parseListPeriod,
   resolveListRange,
   totalsTitle,
   type ListPeriodErrors,
@@ -297,7 +298,9 @@ export async function loadProjectList(
   const scope = await (deps?.scope ?? scopeFor)(viewer, PROJECT_ENTITY);
 
   const year = query.year ?? kstYear(now());
-  const range = resolveListRange({ year });
+  // UX-04 — 기간은 서버가 판정한다. 오류가 있으면 기간 없이 연도 범위만 쓴다.
+  const { period, errors: periodErrors } = parseListPeriod(query.from, query.to);
+  const range = resolveListRange({ year, ...(period ? { period } : {}) });
   const filter: ProjectListFilter = {
     status: query.status,
     teamId: query.teamId,
@@ -359,7 +362,7 @@ export async function loadProjectList(
     total: paging.total,
     page: paging.page,
     pageCount: paging.pageCount,
-    periodErrors: {},
+    periodErrors,
   };
 }
 

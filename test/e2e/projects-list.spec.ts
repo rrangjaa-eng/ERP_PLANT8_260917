@@ -758,3 +758,65 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
     expect(await leave(true), "창 안에서 묶음 밖(빈 곳 클릭)").toBe(true);
   });
 });
+
+// 코디네이터 대리 결정 2026-09-26 /design-review FINDING-015 (a) — 폰에서는 목록 행 전체(주 행 + 접힌 P2 줄)가
+// 그 프로젝트 링크 하나의 누름 자리다. 행 안의 포커스 가능한 요소는 링크 하나뿐이다(키보드 · 보조 기술 한 행 한 링크).
+test.describe("프로젝트 목록 — 폰 행 전체 링크 (FINDING-015)", () => {
+  test("375에서 행의 어느 칸을 눌러도 그 행의 프로젝트 링크이고, 누름 자리 높이 ≥44px, 행 안 포커스 가능 요소는 링크 하나다", async ({ page }) => {
+    const year = kstYear(new Date());
+    const marker = `E2E행링크-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    const base = { clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId };
+    const first = await createProject(SYSTEM_VIEWER, { ...base, name: `${marker}-가`, startDate: `${year}-03-01`, endDate: `${year}-03-20` });
+    const second = await createProject(SYSTEM_VIEWER, { ...base, name: `${marker}-나`, startDate: `${year}-04-01`, endDate: `${year}-04-20` });
+    await login(page, pm);
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}`);
+    // loading.tsx 스트리밍 — 내용은 숨은 채 먼저 도착한다(개수만 세면 교체 전에 잰다). 보일 때까지 기다린다.
+    await expect(page.getByRole("link", { name: `${marker}-나` })).toBeVisible();
+    await expect(page.locator("table tbody a")).toHaveCount(2);
+
+    for (const project of [first, second]) {
+      const m = await page.evaluate((id) => {
+        const link = document.querySelector<HTMLAnchorElement>(`table a[href="/projects/${id}"]`)!;
+        const main = link.closest("tr")!;
+        const next = main.nextElementSibling;
+        // 접힌 P2 줄(폰에서만 보인다)도 이 행의 일부다 — 다음 프로젝트의 주 행(링크가 있는 줄)이 아니면 포함한다.
+        const rows = [main, ...(next instanceof HTMLTableRowElement && !next.querySelector("a") ? [next] : [])];
+        const cells = rows.flatMap((row) => [...row.cells].filter((cell) => cell.getClientRects().length > 0 && cell.offsetWidth > 0));
+        const top = Math.min(...rows.map((row) => row.getBoundingClientRect().top));
+        const bottom = Math.max(...rows.map((row) => row.getBoundingClientRect().bottom));
+        // 칸마다 가운데 · 왼쪽 위 안쪽 · 오른쪽 아래 안쪽 점을 찍어 그 점의 맨 위 요소가 이 행의 링크(또는 그 안)인지 본다.
+        const misses: string[] = [];
+        for (const cell of cells) {
+          const r = cell.getBoundingClientRect();
+          for (const [x, y] of [
+            [r.left + r.width / 2, r.top + r.height / 2],
+            [r.left + 2, r.top + 2],
+            [r.right - 2, r.bottom - 2],
+          ] as const) {
+            const hit = document.elementFromPoint(x, y);
+            if (hit?.closest("a") !== link) misses.push(`${cell.textContent?.trim().slice(0, 12)} @${Math.round(x)},${Math.round(y)} → ${hit?.tagName}`);
+          }
+        }
+        const focusables = rows.flatMap((row) => [
+          ...row.querySelectorAll<HTMLElement>("a[href], button, input, select, textarea, [tabindex], [role=button]"),
+        ]);
+        return { misses, height: bottom - top, rowCount: rows.length, focusables: focusables.map((el) => el.tagName) };
+      }, project.id);
+      expect(m.rowCount, "접힌 P2 줄이 폰에 있다").toBe(2);
+      expect(m.misses, "행의 모든 칸이 그 행 링크").toEqual([]);
+      expect(m.height, "행 누름 자리 높이").toBeGreaterThanOrEqual(44);
+      expect(m.focusables, "행 안 포커스 가능 요소 = 링크 하나").toEqual(["A"]);
+    }
+
+    // 접힌 P2 줄(담당 PM · 기간)을 눌러도 그 프로젝트 상세로 간다.
+    const collapsed = await page.evaluate((id) => {
+      const main = document.querySelector(`table a[href="/projects/${id}"]`)!.closest("tr")!;
+      const r = (main.nextElementSibling as HTMLElement).getBoundingClientRect();
+      return { x: r.left + r.width - 8, y: r.top + r.height / 2 };
+    }, second.id);
+    await page.mouse.click(collapsed.x, collapsed.y);
+    await expect(page).toHaveURL(new RegExp(`/projects/${second.id}$`));
+  });
+});

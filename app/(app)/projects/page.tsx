@@ -135,7 +135,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
 
   return (
     <>
-      <PageHeader title="프로젝트" subtitle="진행 중인 프로젝트 원장" />
+      <PageHeader title="프로젝트" subtitle="프로젝트 원장" />
 
       {/* §6-1 D-39: 폼이 열려 있으면(?new=1) 아래 필터 줄의 1차 버튼을
           렌더하지 않는다 — 한 화면에 1차는 하나다. */}

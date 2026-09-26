@@ -47,6 +47,12 @@
   text-align: right;
 }
 
+/* 04.3-02 UI-SPEC 개정 ⑦(a) — 외부 수령자 화면 전용. */
+.external {
+  height: var(--s-12);
+  font-size: var(--fs-md);
+}
+
 .error {
   margin: var(--s-1) 0 0;
   color: var(--danger);

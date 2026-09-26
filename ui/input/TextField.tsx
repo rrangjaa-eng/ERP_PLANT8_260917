@@ -8,7 +8,7 @@ import styles from "./TextField.module.css";
 // SYSTEM.md §7-2 입력 · 오류 표시, §10 접근성 계약.
 export type TextFieldProps = Omit<
   InputHTMLAttributes<HTMLInputElement>,
-  "id" | "aria-invalid" | "aria-describedby"
+  "id" | "aria-invalid" | "aria-describedby" | "size"
 > & {
   id: string;
   label: string;
@@ -19,6 +19,10 @@ export type TextFieldProps = Omit<
   /** 쉼표 입력 칸(UI-SPEC S15, 04-09) — 있으면 useCommaInput으로 렌더한다.
    * numeric은 이때 의미가 없다(항상 우측 정렬 + tabular-nums). */
   numberKind?: NumberInputKind;
+  /** 04.3-02 UI-SPEC 개정 ⑦(a) — external은 외부 수령자 화면 전용(높이
+   * --s-12 · --fs-md). 기본값은 기존 모양(HTML `size` 속성을 가린다 —
+   * 이 저장소의 27개 기존 호출부는 그 속성을 쓰지 않는다). */
+  size?: "default" | "external";
 };
 
 // 훅은 조건 없이 호출해야 한다(Rules of Hooks) — numberKind 유무로 다른
@@ -30,7 +34,7 @@ export function TextField(props: TextFieldProps) {
   return <PlainTextField {...props} />;
 }
 
-function PlainTextField({ id, label, error, numeric = false, className, ...rest }: TextFieldProps) {
+function PlainTextField({ id, label, error, numeric = false, size = "default", className, ...rest }: TextFieldProps) {
   const errorId = `${id}-error`;
 
   return (
@@ -44,7 +48,13 @@ function PlainTextField({ id, label, error, numeric = false, className, ...rest 
           {...rest}
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? errorId : undefined}
-          className={[styles.input, numeric ? styles.numeric : "", error ? styles.inputError : "", className]
+          className={[
+            styles.input,
+            numeric ? styles.numeric : "",
+            size === "external" ? styles.external : "",
+            error ? styles.inputError : "",
+            className,
+          ]
             .filter(Boolean)
             .join(" ")}
         />
@@ -69,8 +79,10 @@ function CommaTextField({
   numberKind,
   name,
   defaultValue,
+  size,
   ...rest
 }: TextFieldProps & { numberKind: NumberInputKind }) {
+  void size; // 쉼표 입력 칸은 external 변형을 쓰지 않는다 — native size 유출만 막는다.
   const initial = defaultValue === undefined || defaultValue === null ? "" : String(defaultValue);
   const { inputRef, value, onChange, error: commaError, rawValue } = useCommaInput(numberKind, initial);
   const errorId = `${id}-error`;

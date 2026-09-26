@@ -24,6 +24,9 @@ export type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "disable
   reasonTone?: ButtonReasonTone;
   /** 단축키 표기, 라벨 오른쪽에 kbd로 병기(§7-1). */
   shortcut?: string;
+  /** 04.3-02 UI-SPEC 개정 ⑦(a) — external은 외부 수령자 화면 전용(높이
+   * --s-12 · --fs-md · 폭 100%, 이유 줄이 버튼 아래). 기본값은 기존 모양. */
+  size?: "default" | "external";
   children: ReactNode;
 };
 
@@ -40,6 +43,7 @@ export function Button({
   reasonId: givenReasonId,
   reasonTone = "block",
   shortcut,
+  size = "default",
   children,
   className,
   type,
@@ -72,14 +76,16 @@ export function Button({
   }
 
   return (
-    <span className={styles.wrap}>
+    <span className={size === "external" ? styles.wrapExternal : styles.wrap}>
       <button
         type={type ?? "button"}
         {...rest}
         aria-disabled={inactive ? "true" : undefined}
         aria-describedby={describedBy}
         onClick={handleClick}
-        className={[styles.btn, styles[variant], className].filter(Boolean).join(" ")}
+        className={[styles.btn, styles[variant], size === "external" ? styles.external : "", className]
+          .filter(Boolean)
+          .join(" ")}
       >
         <span>{children}</span>
         {pending ? <span aria-hidden="true">…</span> : null}

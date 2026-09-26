@@ -8,7 +8,7 @@ import { validateRrn } from "@/domain/certs/rrn";
 import { CERT_CONSENT_VERSION } from "@/domain/certs/consent";
 import { getSettingValue } from "@/domain/settings/registry";
 import { ACTION_LOG_OPTIONAL_TYPES, CERT_RETENTION_YEARS } from "@/domain/settings/keys";
-import { recordAction as defaultRecordAction, type RecordActionDeps } from "@/domain/action-log/record";
+import { recordAction, type RecordActionDeps } from "@/domain/action-log/record";
 import {
   loadDocumentNumberFormat as defaultLoadDocumentNumberFormat,
   allocateDocumentNumber,
@@ -339,16 +339,16 @@ export async function submitCertificate(
 
       await deleteSignatureUploadIntent(SYSTEM_VIEWER, objectKey, tx);
 
-      const recordAction = defaultRecordAction;
-      await recordAction(
-        SYSTEM_VIEWER,
-        { actionType: "document_submit", entity: "cert_submission", entityId: winner.id, detail: { eventId: event.id } },
-        {
-          tx,
-          isActionTypeEnabled: () => Promise.resolve(submitLogEnabled),
-          ...(deps?.appendActionLog ? { appendActionLog: deps.appendActionLog } : {}),
-        },
-      );
+      await recordAction(SYSTEM_VIEWER, {
+        actionType: "document_submit",
+        entity: "cert_submission",
+        entityId: winner.id,
+        detail: { eventId: event.id },
+      }, {
+        tx,
+        isActionTypeEnabled: () => Promise.resolve(submitLogEnabled),
+        ...(deps?.appendActionLog ? { appendActionLog: deps.appendActionLog } : {}),
+      });
 
     });
 

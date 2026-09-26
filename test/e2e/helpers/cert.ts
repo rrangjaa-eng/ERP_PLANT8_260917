@@ -9,8 +9,9 @@ import { findSubmissionByWinnerId } from "@/repositories/cert-submissions";
 import { listWinnersForIntake } from "@/repositories/cert-winners";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 
-// 규약 C4(04.3-02) — 확인증 E2E·통합 공용 도우미. `@playwright/test`를
-// import하지 않는다(04.3-12 Vitest 통합 테스트도 이 파일을 import한다).
+// 규약 C4(04.3-02) — 확인증 E2E·통합 공용 도우미. Playwright 테스트
+// 러너 패키지를 import하지 않는다(04.3-12 Vitest 통합 테스트도 이
+// 파일을 import한다).
 
 export const CERT_E2E_CONTACT_PHONE = "02-123-4567";
 

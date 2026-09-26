@@ -1406,11 +1406,11 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
     await saveAndWait(page);
     await expect.poll(() => footerPieces(page)).toEqual([{ tone: "success", text: expect.stringMatching(/^저장됨 \d{2}:\d{2}$/) }]);
     const saved = await db
-      .select({ itemName: quoteLines.itemName, lineKind: quoteLines.lineKind, executionAmount: quoteLines.executionAmount })
+      .select({ itemName: quoteLines.itemName, lineKind: quoteLines.lineKind, executionAmountKrw: quoteLines.executionAmountKrw })
       .from(quoteLines)
       .where(and(eq(quoteLines.revisionId, targetRevision.id), isNull(quoteLines.archivedAt)));
     expect(saved.find((line) => line.itemName === "견적줄")?.lineKind).toBe("quote");
-    expect(saved.find((line) => line.itemName === "견적외줄")).toMatchObject({ lineKind: "out_of_quote", executionAmount: 7000 });
+    expect(saved.find((line) => line.itemName === "견적외줄")).toMatchObject({ lineKind: "out_of_quote", executionAmountKrw: 7000 });
   });
 
   // Regression: ISSUE-002 — 원화 단가·실행가 칸에 소수가 붙으면 오류 없이 받아 저장 때 조용히 반올림됐다(12.345 → 12)

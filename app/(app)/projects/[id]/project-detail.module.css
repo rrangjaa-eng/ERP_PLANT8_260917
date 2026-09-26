@@ -122,6 +122,7 @@
 
 .footerCell {
   padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-top: var(--line-w-strong) solid var(--line-strong);
   color: var(--fg);
   font-weight: var(--fw-bold);
 }

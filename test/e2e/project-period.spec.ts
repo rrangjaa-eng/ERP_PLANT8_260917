@@ -335,6 +335,31 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     await expect(page.getByLabel("종료일")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "기간 바꾸기" })).toBeFocused();
   });
+
+  // /review R-3 — 네이티브 날짜 칸을 덜 채우면 값이 ""로 온다(validity.badInput). 비운 것으로 저장해
+  // 기간을 조용히 지우지 않고 형식 오류로 막는다.
+  test("(6b) 종료일 칸을 덜 채운 채 저장하면 칸 아래 형식 오류 · 기간은 그대로", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const endDate = addDays(TODAY, 5);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "bidding", endDate });
+
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    const endInput = page.getByLabel("종료일");
+    await endInput.focus();
+    await endInput.press("Backspace");
+    expect(await endInput.evaluate((input: HTMLInputElement) => input.validity.badInput)).toBe(true);
+
+    const saving = waitForSaveAction(page);
+    await endInput.press("Control+s");
+    await saving;
+    await expect(page.getByText("날짜 형식 오류 · 2026-09-18처럼", { exact: true })).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByText(new RegExp(`^기간 \\S+ ~ ${endDate}$`))).toBeVisible();
+  });
 });
 
 // 04-44(DR-28 · DR-37 · 계약 8 · S17) — 머리 줄 부제의 총 매출 예상가. 권리는 기간 칸과 같다. 계급 권한·정보

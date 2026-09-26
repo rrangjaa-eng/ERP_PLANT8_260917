@@ -40,7 +40,7 @@ import {
 import { rememberFxRate as defaultRememberFxRate } from "@/domain/money/currency";
 import { log } from "@/lib/log";
 import { withTransaction } from "@/lib/db-transaction";
-import { formatKrw } from "@/lib/format-number";
+import { formatKrw, MAX_DECIMALS, numberInputRejectionReason } from "@/lib/format-number";
 import type { DbOrTx } from "@/repositories/document-counters";
 import {
   listQuoteLinesByRevision as repoListQuoteLinesByRevision,
@@ -720,6 +720,9 @@ export function quoteLineFormatErrors(input: QuoteLineWriteRow, rowIndex: number
   }
   if (input.quantity !== undefined && Number(input.quantity.toFixed(2)) >= QUANTITY_COLUMN_LIMIT) {
     errors.push({ rowIndex, rowId: input.id, field: "quantity", label: "수량", reason: "수량이 상한을 넘습니다 · 수량을 고쳐 주세요" });
+  }
+  if (input.quantity !== undefined && input.quantity > 0 && Number(input.quantity.toFixed(MAX_DECIMALS.quantity)) !== input.quantity) {
+    errors.push({ rowIndex, rowId: input.id, field: "quantity", label: "수량", reason: numberInputRejectionReason("quantity", "precision") });
   }
   if (input.unitPrice.amount < 0) {
     errors.push({ rowIndex, rowId: input.id, field: "unitPrice", label: "단가", reason: "숫자가 아닙니다 · 12,400,000처럼 적어 주세요" });

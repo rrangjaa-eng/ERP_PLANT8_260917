@@ -1692,7 +1692,7 @@ export function QuoteLedger({
         options: vendors.map((option) => ({ value: option.id, label: option.name })),
         isEditable: (row) => row.cells.vendorId === "edit",
       },
-      { key: "quantity", kind: "number", isEditable: (row) => row.cells.quantity === "edit" },
+      { key: "quantity", kind: "number", numberKind: "quantity", isEditable: (row) => row.cells.quantity === "edit" },
       { key: "unitPrice", kind: "number", isEditable: (row) => row.cells.unitPrice === "edit" },
       { key: "quoteAmount", kind: "text", isEditable: () => false },
       { key: "execution", kind: "number", isEditable: (row) => row.cells.execution === "edit" },

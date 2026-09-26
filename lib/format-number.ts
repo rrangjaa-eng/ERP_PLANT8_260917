@@ -101,7 +101,7 @@ export type FormatNumberInputResult = {
   rejected?: NumberInputRejection;
 };
 
-const MAX_DECIMALS: Record<NumberInputKind, number> = {
+export const MAX_DECIMALS: Record<NumberInputKind, number> = {
   krw: 0,
   foreign: 2,
   fxRate: 4,

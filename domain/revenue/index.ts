@@ -369,6 +369,8 @@ async function saveEntries(
         if (!stored || stored.projectId !== projectId || stored.kind !== kind) {
           denyWrite(viewer, ENTRY_SCOPE_RULE, { projectId, entryIds: [input.id] }, new UserFacingError(ENTRY_NOT_FOUND));
         }
+        // SF-2 — 응답을 잃은 재전송: 첫 커밋이 version을 하나 올렸고 값이 이번 입력과 같으면 no-op(쓰기·로그 없음).
+        if (stored.version === input.version + 1 && sameStoredEntry(stored, { projectId, kind }, payload)) continue;
         throw new UserFacingError(`다른 사람이 먼저 이 줄을 바꿨습니다 · 덮어쓰기 / 그 값으로(줄 ${input.id})`);
       }
     } else {

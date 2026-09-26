@@ -616,6 +616,44 @@ describe("매출 쓰기 경로(04-41 · Codex #1 · ENG-D10)", () => {
       expect((await entriesOf(a.project.id)).map((row) => row.id)).toEqual([paymentA.id]);
     });
 
+    it("(SF-2) 새 줄 + 기존 줄 수정 배치를 응답을 잃고 그대로 다시 보내면 성공하고 행 수·version·행동 로그 수가 그대로다", async () => {
+      const finance = await createFinanceViewer();
+      const { project } = await setupProject();
+      const existing = await seedEntry(finance, project.id, "issue", 1000);
+      const batch = {
+        issuedEntries: [
+          { id: existing.id, version: existing.version, entryDate: "2026-09-02", amount: krw(2000), note: "고침" },
+          { id: randomUUID(), isNew: true as const, entryDate: "2026-09-03", amount: krw(3000) },
+        ],
+      };
+
+      await saveRevenue(finance, project.id, batch);
+      const rowsAfterFirst = await entriesOf(project.id);
+      const logsAfterFirst = await revenueLogCount(project.id);
+      const second = await saveRevenue(finance, project.id, batch);
+
+      expect(second?.issuedEntries).toHaveLength(2);
+      expect(await entriesOf(project.id)).toHaveLength(rowsAfterFirst.length);
+      expect((await entryRow(existing.id))?.version).toBe(existing.version + 1);
+      expect((await entryRow(existing.id))?.amountAmountKrw).toBe(2000);
+      expect(await revenueLogCount(project.id)).toBe(logsAfterFirst);
+    });
+
+    it("(SF-2) 한 번 고친 줄에 옛 version으로 다른 값을 보내면 여전히 충돌로 거부되고 DB 값은 그대로다", async () => {
+      const finance = await createFinanceViewer();
+      const { project } = await setupProject();
+      const existing = await seedEntry(finance, project.id, "issue", 1000);
+      await saveRevenue(finance, project.id, { issuedEntries: [{ id: existing.id, version: existing.version, entryDate: "2026-09-02", amount: krw(2000) }] });
+
+      const error = await rejectionOf(
+        saveRevenue(finance, project.id, { issuedEntries: [{ id: existing.id, version: existing.version, entryDate: "2026-09-02", amount: krw(2500) }] }),
+      );
+
+      expect((error as Error).message).toMatch(/다른 사람이 먼저 이 줄을 바꿨습니다/);
+      expect((await entryRow(existing.id))?.amountAmountKrw).toBe(2000);
+      expect((await entryRow(existing.id))?.version).toBe(existing.version + 1);
+    });
+
     it("(I1) 보관된 줄 id를 같은 값의 새 줄로 다시 보내면 거부되고(write.denied revenue.replay-mismatch 한 번) 그 줄은 보관 상태·값·version 그대로다", async () => {
       const finance = await createFinanceViewer();
       const { project } = await setupProject();

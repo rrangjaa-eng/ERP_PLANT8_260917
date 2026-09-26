@@ -29,6 +29,12 @@
   background: var(--surface);
 }
 
+/* 전폭 행이라 기본 outline-offset(양수)이면 뷰포트 밖으로 밀린다 — ui/table의
+   .cell:focus-visible 선례처럼 인셋으로 당긴다. */
+.table tr:focus-visible {
+  outline-offset: calc(-1 * var(--focus-w));
+}
+
 /* S1-c 안 읽음: 첫 칸 좌측 인셋 선(§7-12 E① · §4-3 허용 목록). */
 .unread td:first-child {
   box-shadow: inset var(--line-w-strong) 0 0 var(--line-strong);

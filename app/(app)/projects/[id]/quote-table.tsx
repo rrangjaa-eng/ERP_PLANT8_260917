@@ -2001,7 +2001,8 @@ export function QuoteLedger({
             patch = { executionAmount: Number(value) };
             break;
           case "note":
-            patch = { note: value || null };
+            // ISSUE-011(/qa) — 빈 비고의 복사 글자는 `—`(읽기 열 copyText)다. 붙일 때 빈 비고로 읽는다.
+            patch = { note: value === "—" ? null : value || null };
             break;
           default:
             break;

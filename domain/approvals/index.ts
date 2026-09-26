@@ -4,6 +4,8 @@ import { withTransaction } from "@/lib/db-transaction";
 import { seoulToday } from "@/lib/dates";
 import { log } from "@/lib/log";
 import { project } from "@/domain/permissions/project";
+import { visible as defaultVisible } from "@/domain/permissions/visible";
+import type { findVisibility as defaultFindVisibility } from "@/repositories/permissions";
 import type { DbOrTx } from "@/repositories/document-counters";
 import {
   findApprovalGraphByDocument,
@@ -38,6 +40,10 @@ import { loadActionLogGate as defaultLoadActionLogGate, recordActionInTx, type A
 import {
   APPROVAL_INBOX_ITEM_DTO_SPEC,
   APPROVAL_VIEW_DTO_SPEC,
+  ROUTE_PREVIEW_DTO_SPEC,
+  ROUTE_PREVIEW_STEP_DTO_SPEC,
+  type RoutePreviewDTO,
+  type RoutePreviewStepDTO,
   type ApprovalAction,
   type ApprovalInboxItemDto,
   type ApprovalInboxItemSource,
@@ -49,7 +55,7 @@ export { registerDocumentKind, getDocumentKind, listDocumentKinds } from "@/doma
 export type { DocumentKindDef, RouteConfig, RouteConfigStep, RouteSettingDefs } from "@/domain/approvals/kinds";
 export { nextStep, resolveHolders, walkRoute } from "@/domain/approvals/route";
 export { loadActionLogGate, recordActionInTx } from "@/domain/approvals/tx-log";
-export type { ApprovalInboxItemDto, ApprovalViewDto } from "@/domain/approvals/dto";
+export type { ApprovalInboxItemDto, ApprovalViewDto, RoutePreviewDTO, RoutePreviewStepDTO } from "@/domain/approvals/dto";
 
 // 04.1(EXP-03·EXP-04): 결재 서비스. 읽기와 쓰기를 나눈다(CEO-2 — ARCHITECTURE
 // §4-8 (3)): 설정 · 조직 스냅숏 · 행동 로그 켜짐 여부는 트랜잭션 전에 읽고,
@@ -80,7 +86,23 @@ export type ApprovalDeps = {
   listOrgSnapshot?: typeof defaultListOrgSnapshot;
   loadActionLogGate?: typeof defaultLoadActionLogGate;
   appendActionLog?: TxLogDeps["appendActionLog"];
+  // 노출표 조회 — 테스트가 호출 수를 세려고 주입한다.
+  findVisibility?: typeof defaultFindVisibility;
 };
+
+// 요청 단위 노출 메모(CEO-17) — 정보 항목마다 visible()을 한 번만 부른다. 요청마다
+// 새로 만든다(모듈 전역 캐시를 두지 않는다 — 노출표 변경이 다음 요청에 바로 반영).
+export function createVisibleMemo(findVisibility?: typeof defaultFindVisibility): typeof defaultVisible {
+  const memo = new Map<string, Promise<boolean>>();
+  return (viewer, infoItem) => {
+    let result = memo.get(infoItem);
+    if (!result) {
+      result = defaultVisible(viewer, infoItem, findVisibility ? { findVisibility } : undefined);
+      memo.set(infoItem, result);
+    }
+    return result;
+  };
+}
 
 function toRouteStep(row: ApprovalStepWithActor): RouteStep {
   return {
@@ -170,7 +192,7 @@ async function planRoute(
   viewer: Viewer,
   input: { kind: string; drafterId: string },
   deps?: ApprovalDeps,
-): Promise<Omit<PreparedSubmission, "gate">> {
+): Promise<Omit<PreparedSubmission, "gate"> & { drafterName: string | null }> {
   const def = getDocumentKind(input.kind);
   const config = await def.loadRouteConfig();
   const snapshot = await readSnapshot(viewer, deps);
@@ -190,7 +212,16 @@ async function planRoute(
     fallbackRoleId: FALLBACK_ROLE_ID,
     at: "before_action",
   });
-  return { kind: input.kind, drafterId: input.drafterId, selfApproval: config.selfApproval, drafterTeamId, drafterOrgUnitId, steps, walk };
+  return {
+    kind: input.kind,
+    drafterId: input.drafterId,
+    drafterName: drafter?.name ?? null,
+    selfApproval: config.selfApproval,
+    drafterTeamId,
+    drafterOrgUnitId,
+    steps,
+    walk,
+  };
 }
 
 // 트랜잭션 전 읽기 — 결재선 설정(한 번) · 조직 스냅숏 · 행동 로그 켜짐 여부.
@@ -200,10 +231,40 @@ export async function prepareSubmission(
   input: { kind: string; drafterId: string },
   deps?: ApprovalDeps,
 ): Promise<PreparedSubmission> {
-  const planned = await planRoute(viewer, input, deps);
+  const { drafterName, ...planned } = await planRoute(viewer, input, deps);
+  void drafterName;
   if (planned.walk.outcome.kind === "blocked") throw new RouteBlockedError(NO_FALLBACK_MESSAGE);
   const gate = await (deps?.loadActionLogGate ?? defaultLoadActionLogGate)();
   return { ...planned, gate };
+}
+
+// 제출 전 결재선 미리보기(CX-R3) — 제출과 같은 도우미(planRoute)로 지금 설정 · 지금
+// 소속을 해석하되 아무것도 쓰지 않는다. 빈 자리는 목록에 없고, 자기 승인 건너뜀
+// 자리는 skipped. 이름은 approval.value 투영을 통과할 때만 실린다.
+export async function previewRoute(
+  viewer: Viewer,
+  input: { kind: string },
+  deps?: ApprovalDeps,
+): Promise<RoutePreviewDTO> {
+  const planned = await planRoute(viewer, { kind: input.kind, drafterId: viewer.id }, deps);
+  if (planned.walk.outcome.kind === "blocked") throw new RouteBlockedError(NO_FALLBACK_MESSAGE);
+  const visible = createVisibleMemo(deps?.findVisibility);
+
+  const rows: Partial<RoutePreviewStepDTO>[] = planned.walk.display.flatMap((step): Partial<RoutePreviewStepDTO>[] => {
+    if (step.state === "skipped_self") return [{ label: step.label, skipped: true }];
+    if (step.state === "current" || step.state === "pending") {
+      return [{ label: step.label, holderNames: step.holderNames, skipped: false }];
+    }
+    return [];
+  });
+  const steps: Partial<RoutePreviewStepDTO>[] = [];
+  for (const [i, row] of rows.entries()) {
+    const projected = await project(viewer, row, ROUTE_PREVIEW_STEP_DTO_SPEC, { visible });
+    // 자리 이름을 볼 수 없어도 자리는 사라지지 않는다 — 순번으로 둔다(CX2-W1).
+    steps.push(projected.label === undefined ? { label: `${i + 1}단`, ...projected } : projected);
+  }
+  const head = planned.drafterName === null ? {} : await project(viewer, { drafterName: planned.drafterName }, ROUTE_PREVIEW_DTO_SPEC, { visible });
+  return { ...head, steps };
 }
 
 // 트랜잭션 안 쓰기만 — 인스턴스 · 차수 · 단계 · document_submit 로그(같은 tx).
@@ -519,7 +580,7 @@ export async function getApprovalView(
     currentStepIndex,
     actions,
   };
-  return project(viewer, source, APPROVAL_VIEW_DTO_SPEC);
+  return project(viewer, source, APPROVAL_VIEW_DTO_SPEC, { visible: createVisibleMemo(deps?.findVisibility) });
 }
 
 export type InboxResult = { mine: Partial<ApprovalInboxItemDto>[]; processed: Partial<ApprovalInboxItemDto>[] };
@@ -530,6 +591,7 @@ const PROCESSED_LIMIT = 50;
 // 처리한 문서(처리 내림차순 50건). scopeFor()로 거르지 않는다(Pitfall 3) — 문서마다
 // 결재선을 지금 조직으로 다시 풀어 viewer가 후보인지 본다. 읽기 전용이다.
 export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<InboxResult> {
+  const visible = createVisibleMemo(deps?.findVisibility);
   const snapshot = await readSnapshot(viewer, deps);
   const active = await listActiveInstances(viewer);
 
@@ -601,13 +663,13 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
   for (const source of all) idsByKind.set(source.kind, [...(idsByKind.get(source.kind) ?? []), source.documentId]);
   const summaries = new Map<string, object>();
   for (const [kind, ids] of idsByKind) {
-    const described = await getDocumentKind(kind).describeDocuments(viewer, [...new Set(ids)]);
+    const described = await getDocumentKind(kind).describeDocuments(viewer, [...new Set(ids)], { visible });
     for (const [id, summary] of described) summaries.set(`${kind}:${id}`, summary);
   }
   for (const source of all) source.summary = summaries.get(`${source.kind}:${source.documentId}`) ?? null;
 
   return {
-    mine: await Promise.all(mineSources.map((source) => project(viewer, source, APPROVAL_INBOX_ITEM_DTO_SPEC))),
-    processed: await Promise.all(processedSources.map((source) => project(viewer, source, APPROVAL_INBOX_ITEM_DTO_SPEC))),
+    mine: await Promise.all(mineSources.map((source) => project(viewer, source, APPROVAL_INBOX_ITEM_DTO_SPEC, { visible }))),
+    processed: await Promise.all(processedSources.map((source) => project(viewer, source, APPROVAL_INBOX_ITEM_DTO_SPEC, { visible }))),
   };
 }

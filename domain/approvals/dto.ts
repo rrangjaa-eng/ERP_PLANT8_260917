@@ -95,3 +95,30 @@ registerDto({
   name: "approvalView",
   fields: APPROVAL_VIEW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
 });
+
+// CX-R3: 제출 전 결재선 미리보기. 담당 이름 · 기안자 이름은 approval.value, 자리
+// 이름(계급 · 부서 · 전사 · 대표)과 건너뜀 표시는 구조 정보라 role.value.
+export type RoutePreviewStepDTO = { label: string; holderNames: string; skipped: boolean };
+export type RoutePreviewDTO = { drafterName?: string; steps: Partial<RoutePreviewStepDTO>[] };
+
+export const ROUTE_PREVIEW_DTO_SPEC: DtoSpec<{ drafterName: string }, { drafterName: string }> = {
+  fields: [{ key: "drafterName", from: "drafterName", infoItem: "approval.value" }],
+};
+
+export const ROUTE_PREVIEW_STEP_DTO_SPEC: DtoSpec<Partial<RoutePreviewStepDTO>, RoutePreviewStepDTO> = {
+  fields: [
+    { key: "label", from: "label", infoItem: "role.value" },
+    { key: "holderNames", from: "holderNames", infoItem: "approval.value" },
+    { key: "skipped", from: "skipped", infoItem: "role.value" },
+  ],
+};
+
+registerDto({
+  name: "routePreview",
+  fields: ROUTE_PREVIEW_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
+});
+
+registerDto({
+  name: "routePreviewStep",
+  fields: ROUTE_PREVIEW_STEP_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
+});

@@ -24,7 +24,15 @@ import {
   APPROVAL_ROUTE_LEAVE_STEP4_ORG_UNIT_ID,
 } from "@/domain/settings/keys";
 import { allocateDocumentNumber, loadDocumentNumberFormat } from "@/domain/document-numbering";
-import { prepareSubmission, registerDocumentKind, submitDocument, type RouteConfig, type RouteSettingDefs } from "@/domain/approvals";
+import {
+  createVisibleMemo,
+  prepareSubmission,
+  registerDocumentKind,
+  submitDocument,
+  type RouteConfig,
+  type RouteSettingDefs,
+} from "@/domain/approvals";
+import type { findVisibility } from "@/repositories/permissions";
 import type { DescribeDeps, RouteConfigStep } from "@/domain/approvals/kinds";
 import type { TxLogDeps } from "@/domain/approvals/tx-log";
 import {
@@ -206,9 +214,10 @@ export async function getLeave(
 export async function listMyLeave(
   viewer: Viewer,
   input: { fiscalYear: number },
-  deps?: { now?: Date },
+  deps?: { now?: Date; findVisibility?: typeof findVisibility },
 ): Promise<Partial<LeaveRequestDto>[]> {
   const today = seoulToday(deps?.now);
+  const visible = createVisibleMemo(deps?.findVisibility);
   const rows = await listLeaveRequestsByDrafter(viewer, {
     drafterId: viewer.id,
     fiscalYear: input.fiscalYear,
@@ -217,7 +226,7 @@ export async function listMyLeave(
   const result: Partial<LeaveRequestDto>[] = [];
   for (const row of rows) {
     if (!(await canSeeLeaveDocument(viewer, row, { today }))) continue;
-    result.push(await project(viewer, toSource(row), LEAVE_REQUEST_DTO_SPEC));
+    result.push(await project(viewer, toSource(row), LEAVE_REQUEST_DTO_SPEC, { visible }));
   }
   return result;
 }

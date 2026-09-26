@@ -5,6 +5,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { seoulToday } from "@/lib/dates";
 import {
   findSimpleValue as defaultFindSimpleValue,
   findSimpleValues as defaultFindSimpleValues,
@@ -54,9 +55,44 @@ export class SettingNotFoundError extends UserFacingError {}
 export class ForbiddenError extends UserFacingError {}
 export class SettingKindMismatchError extends UserFacingError {}
 export class FutureCancelOnlyError extends UserFacingError {}
+export class EffectiveFromRuleError extends UserFacingError {}
 
 function dateOnly(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+// 04.1-04(ENG-5): 적용 시작일 규칙의 공통 검증 — 일반 저장 · JSON 가져오기 · 이력 취소가
+// 모두 이 함수를 부른다. 규칙 없는 키는 null(기존 동작 그대로). `year_start` 키는 날짜로
+// 해석해(접미사 검사가 아니다) 실재하는 YYYY-01-01만, `today`(서울 날짜)의 연도 이후만 받는다.
+const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+export type EffectiveFromViolation = { reason: "format" | "past_year"; message: string };
+
+export function validateEffectiveFrom(
+  def: SettingDef<unknown>,
+  effectiveFrom: string,
+  today: string,
+): EffectiveFromViolation | null {
+  if (def.effectiveFromRule !== "year_start") return null;
+  const match = DATE_PATTERN.exec(effectiveFrom);
+  const year = Number(match?.[1]);
+  if (!match || year < 1 || match[2] !== "01" || match[3] !== "01") {
+    return { reason: "format", message: "적용 시작일은 1월 1일만 · 2027-01-01처럼 적기" };
+  }
+  if (year < Number(today.slice(0, 4))) {
+    return { reason: "past_year", message: "지난 연도 변경 불가 · 지난 잔고는 사람 상세의 연차 조정으로 고치기" };
+  }
+  return null;
+}
+
+// 정규형 YYYY-MM-DD이고 실재하는 날짜인가(이력 취소 전용 — B-NEW01).
+function isCanonicalDate(value: string): boolean {
+  const match = DATE_PATTERN.exec(value);
+  if (!match) return false;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  return year >= 1 && daysInMonth !== undefined && day >= 1 && day <= daysInMonth;
 }
 
 export type RegistryDeps = {
@@ -68,6 +104,8 @@ export type RegistryDeps = {
   listHistory: typeof defaultListHistory;
   insertHistorizedValue: typeof defaultInsertHistorizedValue;
   deleteFutureHistorizedValue: typeof defaultDeleteFutureHistorizedValue;
+  // 04.1-04: 적용 시작일 규칙 · 「이미 적용됨」 판정의 서울 오늘 기준 시각(테스트 주입).
+  now: Date;
 };
 
 // Phase 4 계약: 정의 객체(키 문자열이 아니다)를 넘겨 반환 타입을 추론한다.
@@ -147,6 +185,9 @@ export async function addHistorizedValue<T>(
   if (!allowed) throw new ForbiddenError("설정 변경 권한 없음");
 
   const parsed = def.schema.parse(input.value);
+  const violation = validateEffectiveFrom(def, input.effectiveFrom, seoulToday(deps?.now));
+  if (violation) throw new EffectiveFromRuleError(violation.message);
+
   const insertHistorizedValue = deps?.insertHistorizedValue ?? defaultInsertHistorizedValue;
   await insertHistorizedValue(viewer, {
     key: def.key,
@@ -181,7 +222,15 @@ export async function cancelHistorizedValue<T>(
   const allowed = await can(viewer, "admin.settings", "write");
   if (!allowed) throw new ForbiddenError("설정 변경 권한 없음");
 
-  const today = dateOnly(new Date());
+  if (def.effectiveFromRule === "year_start") {
+    const violation = validateEffectiveFrom(def, effectiveFrom, seoulToday(deps?.now));
+    if (violation) throw new EffectiveFromRuleError(violation.message);
+  } else if (!isCanonicalDate(effectiveFrom)) {
+    // 삭제 경로라 정규형이 아니면 아래 문자열 대소 판정이 공허해진다("J" > "2").
+    throw new EffectiveFromRuleError("적용 시작일은 2027-01-01처럼 적기");
+  }
+
+  const today = seoulToday(deps?.now);
   if (effectiveFrom <= today) {
     throw new FutureCancelOnlyError("이미 적용된 이력 행은 취소할 수 없음 — 미래로 예정된 행만 취소 가능");
   }

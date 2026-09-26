@@ -1,11 +1,14 @@
+import { isDeepStrictEqual } from "node:util";
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { SETTING_DEFS } from "@/domain/settings/keys";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
 import {
   getSettingValue as defaultGetSettingValue,
   listSettingHistory as defaultListSettingHistory,
+  validateEffectiveFrom,
 } from "@/domain/settings/registry";
 import { applySettingsImport as defaultApplySettingsImport } from "@/repositories/settings";
 
@@ -70,6 +73,8 @@ export async function exportSettings(viewer: Viewer, deps?: Partial<ExportDeps>)
 
 export type ImportDeps = ExportDeps & {
   applySettingsImport: typeof defaultApplySettingsImport;
+  // 04.1-04: 적용 시작일 규칙의 서울 오늘 기준 시각(테스트 주입).
+  now: Date;
 };
 
 type HistorizedImportEntry = { effectiveFrom?: unknown; value?: unknown };
@@ -86,6 +91,8 @@ export async function importSettings(
   const allowed = await can(viewer, "admin.settings", "write");
   if (!allowed) throw new ForbiddenError("설정 가져오기 권한 없음");
 
+  const getSettingValue = deps?.getSettingValue ?? defaultGetSettingValue;
+  const today = seoulToday(deps?.now);
   const issues: string[] = [];
   const simple: Array<{ key: string; value: unknown; by: string | null }> = [];
   const historized: Array<{ key: string; effectiveFrom: string; value: unknown; by: string | null }> = [];
@@ -117,6 +124,20 @@ export async function importSettings(
         if (!parsed.success) {
           issues.push(`'${key}'(${effectiveFrom}) 값이 스키마를 만족하지 않습니다.`);
           continue;
+        }
+        // 04.1-04(ENG-5): 일반 저장과 같은 적용 시작일 검증. 지난 연도는 그날 이미 유효한
+        // 값(기존 행 또는 기본값)과 같은 무변화 행만 통과 — 어느 날의 유효값도 바꾸지 않는다.
+        const violation = validateEffectiveFrom(def, effectiveFrom, today);
+        if (violation?.reason === "format") {
+          issues.push(`'${key}'(${effectiveFrom}) ${violation.message}`);
+          continue;
+        }
+        if (violation?.reason === "past_year") {
+          const effective: unknown = await getSettingValue(def, { asOf: seoulDateToUtcDate(effectiveFrom) }).catch(() => undefined);
+          if (!isDeepStrictEqual(effective, parsed.data)) {
+            issues.push(`'${key}'(${effectiveFrom}) ${violation.message}`);
+            continue;
+          }
         }
         seenDates.add(effectiveFrom);
         historized.push({ key, effectiveFrom, value: parsed.data, by: viewer.id });

@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Table } from "@/ui/table/Table";
+import { Button } from "@/ui/button/Button";
 import { KvList } from "@/ui/kv-list/KvList";
 import { formatKrw, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
 import { useCommaInput } from "@/ui/input/use-comma-input";
@@ -207,6 +208,7 @@ export function RevenueSection({
   canWriteEntries,
   balanceKrw,
   saveLocked = false,
+  saveButtonId,
   editableWidth = true,
   rejectedCells,
   onSave,
@@ -223,6 +225,8 @@ export function RevenueSection({
   balanceKrw: number | undefined;
   /** 04-49(DR-3 · 계약 3) — 저장 요청 중. 칸은 값을 보인 채 readOnly, 추가·통화 바꾸기는 무동작이다. */
   saveLocked?: boolean;
+  /** /design-review H-1 — 저장 중 비활성 추가 버튼이 aria-describedby로 가리키는 일괄 저장 버튼 id. */
+  saveButtonId?: string;
   /** 04-49(DR-36) — 1024 미만이면 발행·입금 표는 보기 전용(추가 버튼 없음, EMPTY는 사실만). */
   editableWidth?: boolean;
   /** 04-16(B3 · R2) — 마지막 거부 봉투의 표별 칸 수. total은 표 밖 칸까지 센 전부다. */
@@ -411,14 +415,16 @@ export function RevenueSection({
             }
           />
           {canEditEntries && issuedEntries.length > 0 ? (
-            <button
-              type="button"
-              className={styles.addLineButton}
-              aria-disabled={saveLocked ? "true" : undefined}
-              onClick={() => (saveLocked ? undefined : onAddIssued())}
-            >
-              발행 줄 추가
-            </button>
+            <div className={styles.addLineButton}>
+              <Button
+                variant="tertiary"
+                disabled={saveLocked}
+                aria-describedby={saveLocked ? saveButtonId : undefined}
+                onClick={onAddIssued}
+              >
+                발행 줄 추가
+              </Button>
+            </div>
           ) : null}
         </>
       ) : null}
@@ -450,14 +456,16 @@ export function RevenueSection({
             }
           />
           {canEditEntries && paidEntries.length > 0 ? (
-            <button
-              type="button"
-              className={styles.addLineButton}
-              aria-disabled={saveLocked ? "true" : undefined}
-              onClick={() => (saveLocked ? undefined : onAddPaid())}
-            >
-              입금 줄 추가
-            </button>
+            <div className={styles.addLineButton}>
+              <Button
+                variant="tertiary"
+                disabled={saveLocked}
+                aria-describedby={saveLocked ? saveButtonId : undefined}
+                onClick={onAddPaid}
+              >
+                입금 줄 추가
+              </Button>
+            </div>
           ) : null}
         </>
       ) : null}

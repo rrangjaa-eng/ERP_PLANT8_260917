@@ -1507,6 +1507,8 @@ export function QuoteLedger({
   const atLineCap = lines.length >= lineCap;
   const lineCapReason = `${lineCap}줄 상한 · 상한은 관리자 설정`;
   const capReasonId = useId();
+  // /design-review P-7 — 저장 중 비활성 추가 버튼(견적·매출 표)이 aria-describedby로 가리키는 일괄 저장 버튼.
+  const saveButtonId = useId();
 
   // 04-30(엔지 r2 분할안) — 키보드 Ctrl+S는 표가 열린 셀 편집기를 먼저 커밋(blur)한 뒤 부른다. 그 커밋이
   // 상태에 반영된 다음 렌더에서 저장해야 활성 셀의 마지막 값이 페이로드에 든다.
@@ -2073,6 +2075,7 @@ export function QuoteLedger({
           {/* 04-49(후속 결정 R1) — 1024 미만에서는 dirty가 하나라도 있을 때만(복원한 표 칸 포함, 같은 dirty 셈). */}
           {canSave && (editableWidth || dirtyCount > 0) ? (
             <Button
+              id={saveButtonId}
               type="button"
               variant="primary"
               pending={isExecuting}
@@ -2232,10 +2235,10 @@ export function QuoteLedger({
           {structural.insert ? (
             <Button
               variant="tertiary"
-              disabled={atLineCap}
+              disabled={atLineCap || saveLocked}
               // 04-23 검토 S-3 — 「조정 줄 추가」도 그려지면 상한 이유 글자는 그 옆 한 번만, 이 버튼은 그 글자를 가리킨다.
-              disabledReason={adjustmentStructural.insert ? undefined : lineCapReason}
-              aria-describedby={atLineCap && adjustmentStructural.insert ? capReasonId : undefined}
+              disabledReason={atLineCap && !adjustmentStructural.insert ? lineCapReason : undefined}
+              aria-describedby={atLineCap && adjustmentStructural.insert ? capReasonId : !atLineCap && saveLocked ? saveButtonId : undefined}
               onClick={() => (saveLocked ? undefined : addLine())}
             >
               줄 추가
@@ -2246,6 +2249,8 @@ export function QuoteLedger({
           {structural.insert && !atLineCap ? (
             <Button
               variant="tertiary"
+              disabled={saveLocked}
+              aria-describedby={saveLocked ? saveButtonId : undefined}
               onClick={() => (saveLocked ? undefined : setOpenCell({ rowId: addLineToGroup("out_of_quote"), columnKey: "itemName" }))}
             >
               견적 외 비용 줄 추가
@@ -2255,9 +2260,10 @@ export function QuoteLedger({
           {adjustmentStructural.insert ? (
             <Button
               variant="tertiary"
-              disabled={atLineCap}
-              disabledReason={lineCapReason}
+              disabled={atLineCap || saveLocked}
+              disabledReason={atLineCap ? lineCapReason : undefined}
               reasonId={capReasonId}
+              aria-describedby={!atLineCap && saveLocked ? saveButtonId : undefined}
               onClick={() => (saveLocked ? undefined : setOpenCell({ rowId: addLineToGroup("adjustment"), columnKey: "execution" }))}
             >
               조정 줄 추가
@@ -2318,6 +2324,7 @@ export function QuoteLedger({
         canWriteEntries={canWriteEntries}
         balanceKrw={balanceKrw}
         saveLocked={saveLocked}
+        saveButtonId={saveButtonId}
         editableWidth={editableWidth}
         rejectedCells={{ issued: rejectedCells.issued, paid: rejectedCells.paid, total: rejectedCellTotal }}
         onSave={() => setSaveRequests((count) => count + 1)}

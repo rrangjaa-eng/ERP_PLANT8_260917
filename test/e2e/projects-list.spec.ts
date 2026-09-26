@@ -42,7 +42,13 @@ test.describe("프로젝트 목록 — 팀 발령 없는 사람의 빈 목록", 
 
     await page.goto("/projects");
     // loading.tsx 스트리밍이 끝나 본문(EMPTY 행 또는 표)이 드러난 뒤에 센다.
-    await expect(page.getByText("등록된 프로젝트가 없습니다").or(page.locator("main table:not([aria-hidden='true'])"))).toBeVisible();
+    // 04-48 — 다른 스펙이 올해 밖 프로젝트만 남긴 DB면 기본 보기 0건 갈래다.
+    await expect(
+      page
+        .getByText("등록된 프로젝트가 없습니다")
+        .or(page.getByText(/년에 걸친 프로젝트가 없습니다$/))
+        .or(page.locator("main table:not([aria-hidden='true'])")),
+    ).toBeVisible();
     await expect(page.getByRole("link", { name: "프로젝트 등록" })).toHaveCount(0);
   });
 });
@@ -291,5 +297,107 @@ test.describe("프로젝트 목록 — 기간 필터 (04-48)", () => {
     await expect(page.getByText("기간이 거꾸로입니다 · 앞 날짜를 먼저 적어 주세요", { exact: true })).toBeVisible();
     await expect(page.locator("#to")).toHaveAttribute("aria-invalid", "true");
     await expect(page.locator("table tbody a")).toHaveCount(2);
+  });
+});
+
+// 04-48 Task 2(CEO C-08 · C-24 · 엔지 리뷰 C 공백 10 · DR-30) — 정규화 · 정렬 유지 · 창 밖 연도 · 빈 갈래 · 연도 자동 전환.
+test.describe("프로젝트 목록 — 조회 조건 (04-48)", () => {
+  test("창 밖 연도를 직접 열면 선택된 채 보이고, 다른 필터를 바꿔도 연도가 그대로다", async ({ page }) => {
+    const farYear = kstYear(new Date()) + 5;
+    const pm = await setupPm();
+    await login(page, pm);
+    await page.goto(`/projects?year=${farYear}`);
+    await expect(page.locator("#year")).toHaveValue(String(farYear));
+    await page.locator("#status").selectOption("bidding");
+    await expect(page).toHaveURL(/status=bidding/);
+    expect(new URL(page.url()).searchParams.get("year")).toBe(String(farYear));
+    await expect(page.locator("#year")).toHaveValue(String(farYear));
+  });
+
+  test("정렬한 뒤 필터를 바꾸면 정렬이 남고 1쪽이며, 「필터 지우기」는 올해 기본 보기다", async ({ page }) => {
+    const marker = `E2E정렬유지-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    for (const suffix of ["가", "나"]) {
+      await createProject(SYSTEM_VIEWER, { clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId, name: `${marker}-${suffix}` });
+    }
+    await login(page, pm);
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}&sort=name&dir=desc&page=1`);
+    await expect(page.locator("table tbody a").first()).toHaveText(`${marker}-나`);
+
+    await page.locator("#status").selectOption("bidding");
+    await expect(page).toHaveURL(/status=bidding/);
+    const params = new URL(page.url()).searchParams;
+    expect(params.get("sort")).toBe("name");
+    expect(params.get("dir")).toBe("desc");
+    expect(params.has("page")).toBe(false);
+    await expect(page.locator("table tbody a").first()).toHaveText(`${marker}-나`);
+
+    await page.getByRole("link", { name: "필터 지우기" }).first().click();
+    await expect(page).toHaveURL(/\/projects$/);
+    await expect(page.locator("#year")).toHaveValue(String(kstYear(new Date())));
+  });
+
+  test("틀린 teamId · year를 직접 열면 오류 화면이 아니라 올해 기본 보기다", async ({ page }) => {
+    const pm = await setupPm();
+    await login(page, pm);
+    await page.goto("/projects?teamId=abc&year=0000");
+    await expect(page.locator("#year")).toHaveValue(String(kstYear(new Date())));
+    await expect(page.locator("#teamId")).toHaveValue("");
+    await expect(page.getByText("프로젝트 목록을 불러오지 못했습니다")).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "필터 지우기" })).toHaveCount(0);
+  });
+
+  test("사용자 필터 0건은 「조건에 맞는 프로젝트가 없습니다 · 필터 지우기」이고 합계 줄 · 페이지 줄이 없으며 1차 등록은 남는다", async ({ page }) => {
+    // 팀 발령이 있어야 「프로젝트 등록」이 보인다.
+    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID, withTeam: true });
+    await login(page, pm);
+    await page.goto(`/projects?q=${encodeURIComponent(`E2E없음-${randomUUID()}`)}`);
+    await expect(page.getByText("조건에 맞는 프로젝트가 없습니다", { exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "합계" })).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "프로젝트 페이지" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "프로젝트 등록" })).toHaveCount(1);
+  });
+
+  test("(DR-30) 기간이 선택 연도 밖이면 연도가 기간의 해로, 해를 걸치면 전체 연도로 바뀌고, 연도를 바꿔 어긋나면 기간이 빈다", async ({ page }) => {
+    const year = kstYear(new Date());
+    const lastYear = year - 1;
+    const marker = `E2E자동전환-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    await createProject(SYSTEM_VIEWER, {
+      clientId: pm.clientId,
+      teamId: pm.teamId,
+      pmUserId: pm.pmUserId,
+      name: `${marker}-작년`,
+      startDate: `${lastYear}-01-10`,
+      endDate: `${lastYear}-02-20`,
+    });
+    await login(page, pm);
+
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}`);
+    await page.locator("#from").fill(`${lastYear}-01-01`);
+    await page.locator("#to").fill(`${lastYear}-03-01`);
+    await page.locator("#to").press("Tab");
+    await expect(page).toHaveURL(new RegExp(`year=${lastYear}`));
+    await expect(page.locator("#year")).toHaveValue(String(lastYear));
+    await expect(page.locator("table tbody a")).toHaveCount(1);
+    await expect(page.getByText("조건에 맞는 프로젝트가 없습니다")).toHaveCount(0);
+
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}`);
+    await page.locator("#from").fill(`${year - 2}-11-01`);
+    await page.locator("#to").fill(`${lastYear}-02-01`);
+    await page.locator("#to").press("Enter");
+    await expect(page).toHaveURL(/year=all/);
+    await expect(page.locator("#year")).toHaveValue("all");
+    await expect(page.locator("table tbody a")).toHaveCount(1);
+
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}&from=${year}-09-01&to=${year}-10-31`);
+    await expect(page.locator("#from")).toHaveValue(`${year}-09-01`);
+    await page.locator("#year").selectOption(String(lastYear));
+    await expect(page).toHaveURL(new RegExp(`year=${lastYear}`));
+    expect(new URL(page.url()).searchParams.has("from")).toBe(false);
+    expect(new URL(page.url()).searchParams.has("to")).toBe(false);
+    await expect(page.locator("#from")).toHaveValue("");
+    await expect(page.locator("#to")).toHaveValue("");
+    await expect(page.locator("#year")).toHaveValue(String(lastYear));
   });
 });

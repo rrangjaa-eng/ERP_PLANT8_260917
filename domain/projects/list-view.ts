@@ -122,3 +122,48 @@ export function parseListPeriod(
   if (errors.from || errors.to || (!from && !to)) return { period: null, errors };
   return { period: { ...(from ? { from } : {}), ...(to ? { to } : {}) }, errors };
 }
+
+// ---- 04-48 Task 2 (RED 골격) ----
+/* eslint-disable @typescript-eslint/no-unused-vars -- RED 골격(GREEN에서 이 블록을 구현으로 바꾼다) */
+export type ListParam = string | readonly string[] | number | undefined;
+export type NormalizedListParams = {
+  status?: string;
+  teamId?: string;
+  year: number | "all";
+  q?: string;
+  from?: string;
+  to?: string;
+  page?: string;
+};
+export type ListEmptyKind = "none" | "default-view" | "filtered";
+
+export function normalizeListParams(
+  _raw: { status?: ListParam; teamId?: ListParam; year?: ListParam; q?: ListParam; from?: ListParam; to?: ListParam; page?: ListParam },
+  opts: { teamIds: readonly string[]; thisYear: number },
+): NormalizedListParams {
+  return { year: opts.thisYear };
+}
+
+export function isUserFiltered(_params: Omit<NormalizedListParams, "page">, _thisYear: number): boolean {
+  return false;
+}
+
+export function listEmptyKind(_input: { total: number; userFiltered: boolean; visibleCount: number }): ListEmptyKind | null {
+  return null;
+}
+
+export function yearOptions(thisYear: number, _requested: number | "all"): number[] {
+  return [thisYear];
+}
+
+export function formatListPeriod(_start: string | null, _end: string | null, _viewYear: number | null): string {
+  return "";
+}
+
+export function periodOverlapsYear(_period: ListPeriod | null, _year: number | "all"): boolean {
+  return false;
+}
+
+export function reconcileListYear(_input: { year: string | number; from?: string; to?: string }): string | null {
+  return "x";
+}

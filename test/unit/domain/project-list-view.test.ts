@@ -3,10 +3,17 @@ import {
   attributionLabel,
   bucketTotal,
   exclusionText,
+  formatListPeriod,
+  isUserFiltered,
+  listEmptyKind,
+  normalizeListParams,
   parseListPeriod,
+  periodOverlapsYear,
   profitBasisFor,
+  reconcileListYear,
   resolveListRange,
   totalsTitle,
+  yearOptions,
 } from "@/domain/projects/list-view";
 import { loadProjectList } from "@/domain/projects";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
@@ -234,7 +241,9 @@ describe("loadProjectList — 번호 페이지 읽기 순서(C-23 · A-07)", () 
 
     const result = await loadProjectList(viewer, {}, deps);
 
-    expect(calls).toEqual(["settle", "scope", "aggregate"]);
+    // 04-48 — 0건일 때만 필터 없는 건수 조회(집계 한 번 더)로 빈 갈래를 가린다. 목록 행은 읽지 않는다.
+    expect(calls).toEqual(["settle", "scope", "aggregate", "aggregate"]);
+    expect(result.emptyKind).toBe("none");
     expect(result.rows).toEqual([]);
     expect(result.page).toBe(1);
     expect(result.pageCount).toBe(0);
@@ -277,5 +286,159 @@ describe("parseListPeriod — 목록 기간 필터 판정", () => {
   it("둘 다 비면 기간도 오류도 없다", () => {
     expect(parseListPeriod("", "")).toEqual({ period: null, errors: {} });
     expect(parseListPeriod(undefined, undefined)).toEqual({ period: null, errors: {} });
+  });
+});
+
+// 04-48 Task 2(CEO C-08) — URL 파라미터 정규화: 배열이면 첫 값, teamId는 uuid 모양 + 고를 수 있는 팀, 연도는 all 또는 2000–2100.
+describe("normalizeListParams — 틀린 URL 파라미터는 기본 보기로", () => {
+  const teamIds = ["11111111-1111-4111-8111-111111111111"];
+
+  it("uuid가 아닌 팀 · 범위 밖 연도 · 배열 상태를 정규화하고 쪽 번호는 그대로 둔다", () => {
+    expect(
+      normalizeListParams({ teamId: "abc", year: "0000", status: ["in_progress", "settling"], page: "2" }, { teamIds, thisYear: 2026 }),
+    ).toEqual({ teamId: undefined, year: 2026, status: "in_progress", page: "2" });
+  });
+
+  it("목록에 없는 uuid 팀은 전체 팀이고 목록에 있는 팀은 그대로다", () => {
+    expect(normalizeListParams({ teamId: "22222222-2222-4222-8222-222222222222" }, { teamIds, thisYear: 2026 }).teamId).toBeUndefined();
+    expect(normalizeListParams({ teamId: teamIds[0] }, { teamIds, thisYear: 2026 }).teamId).toBe(teamIds[0]);
+  });
+
+  it("연도는 all · 2000–2100 정수만, 그 밖은 올해다", () => {
+    const year = (raw: string | number | undefined) => normalizeListParams({ year: raw }, { teamIds, thisYear: 2026 }).year;
+    expect(year("all")).toBe("all");
+    expect(year("2031")).toBe(2031);
+    expect(year(2025)).toBe(2025);
+    expect(year("99999")).toBe(2026);
+    expect(year("1999")).toBe(2026);
+    expect(year("20a6")).toBe(2026);
+    expect(year(undefined)).toBe(2026);
+  });
+
+  it("검색어 · 기간 · 빈 값은 첫 값이고 빈 문자열은 없는 값이다", () => {
+    expect(normalizeListParams({ q: ["가", "나"], from: "", to: ["2026-10-31"] }, { teamIds, thisYear: 2026 })).toEqual({
+      year: 2026,
+      q: "가",
+      to: "2026-10-31",
+    });
+  });
+});
+
+describe("isUserFiltered — 기본 보기(올해 · 전체 상태 · 전체 팀)와 다른 값", () => {
+  it("올해 연도 값은 필터로 세지 않는다", () => {
+    expect(isUserFiltered({ year: 2026 }, 2026)).toBe(false);
+  });
+
+  it("전체 연도 · 다른 해 · 상태 · 팀 · 검색어 · 기간 값(형식 오류여도)은 필터다", () => {
+    expect(isUserFiltered({ year: "all" }, 2026)).toBe(true);
+    expect(isUserFiltered({ year: 2025 }, 2026)).toBe(true);
+    expect(isUserFiltered({ year: 2026, status: "bidding" }, 2026)).toBe(true);
+    expect(isUserFiltered({ year: 2026, teamId: "t" }, 2026)).toBe(true);
+    expect(isUserFiltered({ year: 2026, q: "x" }, 2026)).toBe(true);
+    expect(isUserFiltered({ year: 2026, from: "2026-9-1" }, 2026)).toBe(true);
+  });
+});
+
+describe("listEmptyKind — 빈 목록 세 갈래", () => {
+  it("행이 있으면 빈 갈래가 없다", () => {
+    expect(listEmptyKind({ total: 3, userFiltered: false, visibleCount: 3 })).toBeNull();
+  });
+
+  it("볼 수 있는 프로젝트가 하나도 없으면 none이다", () => {
+    expect(listEmptyKind({ total: 0, userFiltered: false, visibleCount: 0 })).toBe("none");
+  });
+
+  it("사용자 필터 없이 다른 해에만 프로젝트가 있으면 default-view다", () => {
+    expect(listEmptyKind({ total: 0, userFiltered: false, visibleCount: 4 })).toBe("default-view");
+  });
+
+  it("사용자 필터가 있으면 filtered다", () => {
+    expect(listEmptyKind({ total: 0, userFiltered: true, visibleCount: 4 })).toBe("filtered");
+  });
+});
+
+// 엔지 리뷰 C 공백 10 — 창 밖이지만 유효한 요청 연도는 선택지에 더해 선택된 채 보인다.
+describe("yearOptions — 연도 선택지", () => {
+  it("창 밖 요청 연도를 더해 내림차순이다", () => {
+    expect(yearOptions(2026, 2031)).toEqual([2031, 2027, 2026, 2025, 2024, 2023]);
+  });
+
+  it("창 안 연도 · 전체 연도는 기본 창 그대로다", () => {
+    expect(yearOptions(2026, 2025)).toEqual([2027, 2026, 2025, 2024, 2023]);
+    expect(yearOptions(2026, "all")).toEqual([2027, 2026, 2025, 2024, 2023]);
+  });
+});
+
+describe("formatListPeriod — 목록 기간 칸 서식(D-89)", () => {
+  it("같은 해이고 보기 연도면 월-일만", () => {
+    expect(formatListPeriod("2026-09-12", "2026-09-16", 2026)).toBe("09-12 ~ 09-16");
+  });
+
+  it("같은 해지만 보기 연도가 다르거나 없으면 시작만 연도를 적는다", () => {
+    expect(formatListPeriod("2025-03-01", "2025-03-05", 2026)).toBe("2025-03-01 ~ 03-05");
+    expect(formatListPeriod("2025-03-01", "2025-03-05", null)).toBe("2025-03-01 ~ 03-05");
+  });
+
+  it("해를 걸치면 연월만", () => {
+    expect(formatListPeriod("2026-11-10", "2027-02-05", 2026)).toBe("2026-11 ~ 2027-02");
+  });
+
+  it("한쪽만 있으면 없는 쪽이 —이고 둘 다 없으면 —다", () => {
+    expect(formatListPeriod("2026-09-12", null, 2026)).toBe("09-12 ~ —");
+    expect(formatListPeriod(null, "2025-09-16", 2026)).toBe("— ~ 2025-09-16");
+    expect(formatListPeriod(null, null, 2026)).toBe("—");
+  });
+});
+
+// DR-30 — 연도와 기간의 겹침 · 연도 자동 전환.
+describe("periodOverlapsYear — 기간과 연도 겹침", () => {
+  it("다른 해 기간은 겹치지 않고 그 해와는 겹친다", () => {
+    expect(periodOverlapsYear({ from: "2025-01-01", to: "2025-03-01" }, 2026)).toBe(false);
+    expect(periodOverlapsYear({ from: "2025-01-01", to: "2025-03-01" }, 2025)).toBe(true);
+  });
+
+  it("해를 걸친 기간은 걸친 해와 겹친다", () => {
+    expect(periodOverlapsYear({ from: "2025-11-01", to: "2026-02-01" }, 2026)).toBe(true);
+  });
+
+  it("열린 기간은 열린 쪽을 끝없이 본다", () => {
+    expect(periodOverlapsYear({ from: "2027-03-01" }, 2026)).toBe(false);
+    expect(periodOverlapsYear({ to: "2026-01-01" }, 2026)).toBe(true);
+  });
+
+  it("기간이 없거나 전체 연도면 늘 겹친다", () => {
+    expect(periodOverlapsYear(null, 2026)).toBe(true);
+    expect(periodOverlapsYear({ from: "2025-01-01", to: "2025-03-01" }, "all")).toBe(true);
+  });
+});
+
+describe("reconcileListYear — 연도 자동 전환(DR-30)", () => {
+  it("같은 해 기간이 선택 연도 밖이면 그 해로 바꾼다", () => {
+    expect(reconcileListYear({ year: "2026", from: "2025-01-01", to: "2025-03-01" })).toBe("2025");
+  });
+
+  it("해를 걸치거나 한쪽이 열린 기간이 겹치지 않으면 전체 연도다", () => {
+    expect(reconcileListYear({ year: "2024", from: "2025-11-01", to: "2026-02-01" })).toBe("all");
+    expect(reconcileListYear({ year: "2026", from: "2027-03-01", to: "" })).toBe("all");
+  });
+
+  it("겹치거나 · 전체 연도거나 · 형식 오류거나 · 기간이 없으면 바꾸지 않는다", () => {
+    expect(reconcileListYear({ year: "2026", from: "2026-09-01", to: "2026-10-31" })).toBeNull();
+    expect(reconcileListYear({ year: "all", from: "2025-01-01", to: "2025-03-01" })).toBeNull();
+    expect(reconcileListYear({ year: "2026", from: "2025-1-1", to: "2025-03-01" })).toBeNull();
+    expect(reconcileListYear({ year: "2026", from: "", to: "" })).toBeNull();
+  });
+
+  it("멱등 — 돌려준 연도를 다시 넣으면 바꿀 것이 없다", () => {
+    const cases = [
+      { year: "2026", from: "2025-01-01", to: "2025-03-01" },
+      { year: "2024", from: "2025-11-01", to: "2026-02-01" },
+      { year: "2026", from: "2027-03-01", to: "" },
+    ];
+    for (const input of cases) {
+      const next = reconcileListYear(input);
+      expect(next).not.toBeNull();
+      expect(reconcileListYear({ ...input, year: next ?? "" })).toBeNull();
+    }
   });
 });

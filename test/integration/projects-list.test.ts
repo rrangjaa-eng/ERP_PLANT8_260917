@@ -19,6 +19,7 @@ import {
   type ProjectListFilter,
 } from "@/repositories/projects";
 import { getCurrentQuoteRevision, listQuoteLines, saveQuoteLines } from "@/domain/quotes/lines";
+import { kstYear } from "@/lib/kst-date";
 
 // 04-17(D-88 · D-89 · D-90 · 계약 7 · CEO C-01 · C-14 · C-21 · 엔지 리뷰 C) — 목록 입구 loadProjectList와
 // 리포지토리 목록·집계를 실제 Postgres에서 본다. 매 테스트 전 표가 비워진다(setup.ts) — 픽스처는 표식 검색어로
@@ -590,5 +591,63 @@ describe("loadProjectList — 기간 필터 (04-48, 실제 Postgres)", () => {
     const reversed = await loadProjectList(SYSTEM_VIEWER, { year: 2026, search: marker, from: "2026-09-30", to: "2026-09-01" });
     expect(reversed.periodErrors).toEqual({ to: "기간이 거꾸로입니다 · 앞 날짜를 먼저 적어 주세요" });
     expect(reversed.totals).toEqual(plain.totals);
+  });
+});
+
+// 04-48 Task 2(CEO C-08 · 엔지 리뷰 C 공백 8 · DR-30) — 틀린 파라미터 정규화 · 빈 목록 갈래.
+describe("loadProjectList — 파라미터 정규화 · 빈 갈래 (04-48, 실제 Postgres)", () => {
+  const thisYear = kstYear(new Date());
+
+  it("(C-08) 틀린 파라미터마다 던지지 않고 기본 보기와 같은 결과다", async () => {
+    const base = await makeBase();
+    const marker = `틀린값-${randomUUID().slice(0, 8)}`;
+    await makeProject(base, marker, { startDate: `${thisYear}-03-01`, endDate: `${thisYear}-03-20`, line: { quote: 1_000_000, execution: 0 } });
+    await makeProject(base, marker, { status: "lost", startDate: `${thisYear}-04-01`, endDate: `${thisYear}-04-20` });
+
+    const plain = await loadProjectList(SYSTEM_VIEWER, { search: marker });
+    expect(plain.rows).toHaveLength(2);
+    const cases: { name: string; query: Parameters<typeof loadProjectList>[1] }[] = [
+      { name: "teamId=abc", query: { search: marker, teamId: "abc" } },
+      { name: "teamId=목록 밖 uuid", query: { search: marker, teamId: randomUUID() } },
+      { name: "year=0000", query: { search: marker, year: "0000" } },
+      { name: "year=99999", query: { search: marker, year: "99999" } },
+      { name: "page=-1", query: { search: marker, page: "-1" } },
+      { name: "q 두 개", query: { search: [marker, "다른"] } },
+    ];
+    for (const { name, query } of cases) {
+      const result = await loadProjectList(SYSTEM_VIEWER, query);
+      expect(result.year, name).toBe(thisYear);
+      expect(result.rows.map((row) => row.id), name).toEqual(plain.rows.map((row) => row.id));
+      expect(result.totals, name).toEqual(plain.totals);
+    }
+
+    const bidding = await loadProjectList(SYSTEM_VIEWER, { search: marker, status: "bidding" });
+    const twoStatuses = await loadProjectList(SYSTEM_VIEWER, { search: marker, status: ["bidding", "lost"] as unknown as string });
+    expect(twoStatuses.rows.map((row) => row.id)).toEqual(bidding.rows.map((row) => row.id));
+    expect(twoStatuses.rows).toHaveLength(1);
+
+    // 목록에 있는 팀은 그대로 적용된다.
+    const team = await loadProjectList(SYSTEM_VIEWER, { search: marker, teamId: base.teamId });
+    expect(team.rows).toHaveLength(2);
+    expect(team.hasFilter).toBe(true);
+  });
+
+  it("(공백 8) 볼 수 있는 프로젝트가 하나도 없으면 emptyKind는 none이다", async () => {
+    const result = await loadProjectList(SYSTEM_VIEWER, {});
+    expect(result.total).toBe(0);
+    expect(result.emptyKind).toBe("none");
+    expect(result.hasFilter).toBe(false);
+  });
+
+  it("다른 해에만 프로젝트가 있으면 기본 보기는 default-view, 사용자 필터가 있으면 filtered, 행이 있으면 null이다", async () => {
+    const base = await makeBase();
+    const marker = `빈갈래-${randomUUID().slice(0, 8)}`;
+    await makeProject(base, marker, { startDate: `${thisYear - 3}-03-01`, endDate: `${thisYear - 3}-03-20` });
+
+    expect((await loadProjectList(SYSTEM_VIEWER, {})).emptyKind).toBe("default-view");
+    const filtered = await loadProjectList(SYSTEM_VIEWER, { search: `${marker}-없음` });
+    expect(filtered.emptyKind).toBe("filtered");
+    expect(filtered.hasFilter).toBe(true);
+    expect((await loadProjectList(SYSTEM_VIEWER, { year: "all" })).emptyKind).toBeNull();
   });
 });

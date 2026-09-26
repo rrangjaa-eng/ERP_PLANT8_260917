@@ -17,6 +17,8 @@ import {
   parseListPeriod,
   resolveListRange,
   totalsTitle,
+  type ListEmptyKind,
+  type ListParam,
   type ListPeriodErrors,
 } from "@/domain/projects/list-view";
 import { applyAutoSettlement, type AutoSettlementDeps } from "@/domain/projects/auto-transition";
@@ -244,16 +246,17 @@ export type ProjectListQuery = {
   status?: string;
   /** 상태 필터의 코드표 라벨 — 합계 제목 괄호에 쓴다. */
   statusLabel?: string;
-  teamId?: string;
-  /** 없으면 올해(KST), `all`이면 범위 없음(D-89). */
-  year?: number | "all";
-  search?: string;
+  /** 04-48(C-08) — 아래 URL 값은 배열로도 오고 틀릴 수 있다. 입구에서 normalizeListParams로 정규화한다. */
+  teamId?: ListParam;
+  /** 없으면 올해(KST), `all`이면 범위 없음(D-89). 2000–2100 밖은 올해. */
+  year?: ListParam;
+  search?: ListParam;
   /** 04-48 — 기간 필터 두 칸(URL 값 그대로, 서버가 parseListPeriod로 판정한다). */
-  from?: string;
-  to?: string;
+  from?: ListParam;
+  to?: ListParam;
   sort?: { key?: string; direction?: string };
   /** URL의 쪽 번호 그대로 — 숫자 아님·1 미만·범위 밖은 clampPage가 보정한다(D-91). */
-  page?: string | number;
+  page?: ListParam;
 };
 
 export type ProjectListResult = {
@@ -267,6 +270,10 @@ export type ProjectListResult = {
   pageCount: number;
   /** 04-48(UX-04) — 기간 칸별 서버 판정 오류. 하나라도 있으면 기간 필터를 적용하지 않았다. */
   periodErrors: ListPeriodErrors;
+  /** 04-48 — 0건일 때만 빈 목록 세 갈래, 행이 있으면 null. */
+  emptyKind: ListEmptyKind | null;
+  /** 04-48 — 기본 보기(올해 · 전체 상태 · 전체 팀)와 다른 값이 있는가(「필터 지우기」 · 빈 갈래). */
+  hasFilter: boolean;
 };
 
 export type ProjectListDeps = {
@@ -297,14 +304,17 @@ export async function loadProjectList(
   await (deps?.settle ?? settleForProjectList)(viewer);
   const scope = await (deps?.scope ?? scopeFor)(viewer, PROJECT_ENTITY);
 
-  const year = query.year ?? kstYear(now());
+  // (RED 골격 — 04-48 Task 2가 normalizeListParams로 바꾼다)
+  const text = (value: ListParam): string | undefined => (typeof value === "string" ? value : undefined);
+  const year: number | "all" =
+    typeof query.year === "number" ? query.year : query.year === "all" ? "all" : text(query.year) ? Number(query.year) : kstYear(now());
   // UX-04 — 기간은 서버가 판정한다. 오류가 있으면 기간 없이 연도 범위만 쓴다.
-  const { period, errors: periodErrors } = parseListPeriod(query.from, query.to);
+  const { period, errors: periodErrors } = parseListPeriod(text(query.from), text(query.to));
   const range = resolveListRange({ year, ...(period ? { period } : {}) });
   const filter: ProjectListFilter = {
     status: query.status,
-    teamId: query.teamId,
-    search: query.search,
+    teamId: text(query.teamId),
+    search: text(query.search),
     ...(range ? { range: { start: range.start, end: range.end } } : {}),
   };
   const sort = normalizeSort(query.sort);
@@ -314,7 +324,7 @@ export async function loadProjectList(
   let paging: ReturnType<typeof resolveListPage>;
   try {
     buckets = await repo.aggregate(viewer, { scope, filter });
-    paging = resolveListPage(buckets, query.page);
+    paging = resolveListPage(buckets, typeof query.page === "number" ? query.page : text(query.page));
     if (paging.total > 0) {
       rows = await repo.listPage(viewer, { scope, filter, sort, offset: paging.offset, limit: paging.limit });
     }
@@ -363,6 +373,8 @@ export async function loadProjectList(
     page: paging.page,
     pageCount: paging.pageCount,
     periodErrors,
+    emptyKind: null,
+    hasFilter: false,
   };
 }
 

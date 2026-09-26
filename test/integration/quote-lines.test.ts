@@ -1204,6 +1204,12 @@ describe("원화 밖 숫자 컬럼 범위(04-40 검토 SF-1)", () => {
     await expectCell(revision.id, bad, "quantity", "수량이 상한을 넘습니다 · 수량을 고쳐 주세요");
   });
 
+  it("(o5) 수량 1.234 · 단가 1,000,000 → 수량 칸 「수량은 소수 2자리까지」(저장 수량과 견적가가 어긋나지 않게 반올림하지 않고 거부)", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const bad = newRow(subcategoryValue, { quantity: 1.234, unitPrice: krw(1_000_000) });
+    await expectCell(revision.id, bad, "quantity", "수량은 소수 2자리까지");
+  });
+
   it("(o4) 견적 외 비용 줄 실행가 −2,147,483,648 → 차익 2,147,483,648 — 실행가 칸 「차익이 상한을 넘습니다 · 실행가를 고쳐 주세요」", async () => {
     const { revision, subcategoryValue } = await setupProject();
     const bad = newRow(subcategoryValue, { lineKind: "out_of_quote", execution: krw(-2_147_483_648) });

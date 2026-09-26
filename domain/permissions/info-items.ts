@@ -56,4 +56,8 @@ export const INFO_ITEMS: InfoItemDef[] = [
   // 화면이라 특정 표 전용 항목(예: vendor.value)으로는 게이트할 수 없다.
   // 관리자 전용 화면이라 기본값은 거짓(새 기능 정보는 기본 숨김).
   { key: "archive.value", label: "보관함 정보", staffDefault: false },
+  // 04.1: 결재함 · 결재선 · 연차 신청 · 잔고 DTO의 정보 항목. 결재자·기안자가
+  // 매일 보는 업무 정보라 기본값 참.
+  { key: "approval.value", label: "결재 정보", staffDefault: true },
+  { key: "leave.value", label: "연차 정보", staffDefault: true },
 ];

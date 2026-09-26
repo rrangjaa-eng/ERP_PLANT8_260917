@@ -1,4 +1,5 @@
-import { pgTable, text, timestamp, boolean, integer, bigint } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { pgTable, text, timestamp, boolean, integer, bigint, date, check } from "drizzle-orm/pg-core";
 import { roles } from "./roles";
 
 // better-auth 1.7 core 스키마(node_modules/better-auth 문서 concepts/database 필드명 그대로) +
@@ -31,7 +32,18 @@ export const users = pgTable("users", {
   archivedBy: text("archived_by"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+  // 04.1-03(D-96 · D-97): 입사일(월차 적립 · 입사 다음 해 연차 비례)과 퇴직일(월차
+  // 적립 중단 · 결재선 후보 제외 · 퇴직 줄). 둘 다 서울 날짜 문자열, 비면 null.
+  hireDate: date("hire_date"),
+  resignationDate: date("resignation_date"),
+}, (table) => [
+  // A2-02: 입사일·퇴직일을 동시에 고쳐 앱 검증이 옛 상대값을 봐도 역전이 커밋되지 않게
+  // DB가 마지막으로 막는다(마이그레이션에서 NOT VALID — 새 열이라 기존 행은 null).
+  check(
+    "users_resignation_on_or_after_hire_check",
+    sql`${table.resignationDate} IS NULL OR ${table.hireDate} IS NULL OR ${table.resignationDate} >= ${table.hireDate}`,
+  ),
+]);
 
 export const sessions = pgTable("sessions", {
   id: text("id").primaryKey(),

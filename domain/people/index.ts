@@ -12,10 +12,13 @@ import { revokeAllSessions as defaultRevokeAllSessions } from "@/domain/auth/pas
 import { findRoleById as defaultFindRoleById, findRolesByIds as defaultFindRolesByIds } from "@/repositories/roles";
 import { findTeamById as defaultFindTeamById } from "@/repositories/teams";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { isCheckViolation } from "@/lib/pg-errors";
 import {
   listUsers as repoListUsers,
   findUserById as repoFindUserById,
   updateUserRole as repoUpdateUserRole,
+  updateUserHireDate as repoUpdateUserHireDate,
+  updateUserResignationDate as repoUpdateUserResignationDate,
   type UserRow,
 } from "@/repositories/users";
 import {
@@ -165,6 +168,8 @@ export type RegisterPersonInput = {
   roleId: string;
   teamId?: string;
   effectiveFrom?: string;
+  // 04.1-03(D-96): 선택 — 필수화는 04.1-06의 폼·액션이 한다(입사일 없는 기존 계정도 받는다).
+  hireDate?: string;
 };
 
 export type RegisterPersonDeps = {
@@ -175,6 +180,7 @@ export type RegisterPersonDeps = {
   findRoleById: typeof defaultFindRoleById;
   findTeamById: typeof defaultFindTeamById;
   recordAction: typeof defaultRecordAction;
+  saveHireDate: typeof repoUpdateUserHireDate;
 };
 
 // 사람 등록 — 계정 발급과 초기 비밀번호 생성을 같은 흐름에서 부른다.
@@ -211,6 +217,10 @@ export async function registerPerson(
     }
   }
 
+  if (input.hireDate !== undefined && !isCalendarDate(input.hireDate)) {
+    throw new ValidationError(HIRE_DATE_FORMAT_ERROR);
+  }
+
   const createAccount = deps?.createAccount ?? defaultCreateAccount;
   const { userId, tempPassword } = await createAccount(viewer, {
     email: input.email,
@@ -237,6 +247,26 @@ export async function registerPerson(
       });
       throw new UserFacingError(
         "발령 실패 · 계정은 발급됨 — 보관함에서 복원 후 발령 추가",
+      );
+    }
+  }
+
+  if (input.hireDate !== undefined) {
+    const saveHireDate = deps?.saveHireDate ?? repoUpdateUserHireDate;
+    try {
+      await saveHireDate(viewer, userId, input.hireDate);
+    } catch {
+      // (b) 잔여 창 — 발령 실패와 같은 보상(입사일 없는 새 계정이 조용히 남지 않는다).
+      const archive = deps?.archive ?? defaultArchive;
+      await archive(SYSTEM_VIEWER, "user", userId, {
+        recordAction: async (v, entry) =>
+          (deps?.recordAction ?? defaultRecordAction)(v, {
+            ...entry,
+            detail: { reason: "register_person_rollback", requestedBy: viewer.id },
+          }),
+      });
+      throw new UserFacingError(
+        "입사일 저장 실패 · 계정은 발급됨 — 보관함에서 복원 후 사람 상세에서 입사일 넣기",
       );
     }
   }
@@ -308,4 +338,76 @@ export async function archivePerson(
 
   const revokeAllSessions = deps?.revokeAllSessions ?? defaultRevokeAllSessions;
   await revokeAllSessions(viewer, userId);
+}
+
+// 04.1-03(D-96 · D-97): 입사일·퇴직일. 쓰기 권한 · 날짜 형식 · 퇴직일 ≥ 입사일(같은 날 허용)을
+// 검증하고 쓴 뒤 행동 로그를 남긴다(Phase 3 사람 도메인 규약 — 쓰기 뒤 recordAction). 두 함수가
+// 동시에 옛 상대값으로 검증을 통과해도 users CHECK(23514)가 막고, 같은 ValidationError가 된다(A2-02).
+const HIRE_DATE_FORMAT_ERROR = "입사일 형식 오류 — YYYY-MM-DD로";
+const RESIGNATION_DATE_FORMAT_ERROR = "퇴직일 형식 오류 — YYYY-MM-DD로";
+const DATES_INVERTED_ERROR = "퇴직일이 입사일보다 빠름 · 날짜 확인";
+const DATES_CHECK_CONSTRAINT = "users_resignation_on_or_after_hire_check";
+
+function isCalendarDate(value: string): boolean {
+  if (!EFFECTIVE_FROM_PATTERN.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+export type EmploymentDateDeps = {
+  can: typeof defaultCan;
+  recordAction: typeof defaultRecordAction;
+};
+
+async function setEmploymentDate(
+  viewer: Viewer,
+  userId: string,
+  field: "hire_date" | "resignation_date",
+  value: string | null,
+  deps?: Partial<EmploymentDateDeps>,
+): Promise<void> {
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, PEOPLE_MENU, "write"))) {
+    throw new ForbiddenError(field === "hire_date" ? "입사일을 바꿀 권한이 없습니다." : "퇴직일을 바꿀 권한이 없습니다.");
+  }
+  if (value !== null && !isCalendarDate(value)) {
+    throw new ValidationError(field === "hire_date" ? HIRE_DATE_FORMAT_ERROR : RESIGNATION_DATE_FORMAT_ERROR);
+  }
+
+  const row = await repoFindUserById(viewer, userId);
+  if (!row) throw new UserNotFoundError("사람 찾을 수 없음");
+  const hireDate = field === "hire_date" ? value : row.hireDate;
+  const resignationDate = field === "resignation_date" ? value : row.resignationDate;
+  if (hireDate !== null && resignationDate !== null && resignationDate < hireDate) {
+    throw new ValidationError(DATES_INVERTED_ERROR);
+  }
+
+  try {
+    if (field === "hire_date") await repoUpdateUserHireDate(viewer, userId, value);
+    else await repoUpdateUserResignationDate(viewer, userId, value);
+  } catch (error) {
+    if (isCheckViolation(error, DATES_CHECK_CONSTRAINT)) throw new ValidationError(DATES_INVERTED_ERROR);
+    throw error;
+  }
+
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  await recordAction(viewer, { actionType: "document_update", entity: "user", entityId: userId, detail: { field } });
+}
+
+export async function setHireDate(
+  viewer: Viewer,
+  userId: string,
+  hireDate: string | null,
+  deps?: Partial<EmploymentDateDeps>,
+): Promise<void> {
+  await setEmploymentDate(viewer, userId, "hire_date", hireDate, deps);
+}
+
+export async function setResignationDate(
+  viewer: Viewer,
+  userId: string,
+  resignationDate: string | null,
+  deps?: Partial<EmploymentDateDeps>,
+): Promise<void> {
+  await setEmploymentDate(viewer, userId, "resignation_date", resignationDate, deps);
 }

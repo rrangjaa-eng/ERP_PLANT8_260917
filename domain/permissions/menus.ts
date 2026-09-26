@@ -43,3 +43,7 @@ export const MENUS: MenuDef[] = [
   { key: "admin.action-log", label: "행동 로그" },
   { key: "admin.archive", label: "보관함" },
 ];
+
+// 04.1-02(UI-SPEC S10 · A1): 연차 — 계정 그룹의 셀프 서비스. 계급 5종 view·write 기본
+// 허용은 domain/seed/approvals-leave.ts가 넣는다(시스템 관리자는 위 시드 루프가 받는다).
+MENUS.push({ key: "leave", label: "연차" });

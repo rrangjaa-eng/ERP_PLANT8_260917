@@ -1,0 +1,41 @@
+/* 04.1-02 연차 신청 폼 첫 형태 — projects.module.css의 입력 칸과 같은 토큰(새 값 없음). */
+.textInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 var(--s-2);
+  border: var(--line-w) solid var(--line-ui);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+}
+
+.textInput[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.textInput:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.blockedReason {
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+.headerLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  align-items: baseline;
+  font-variant-numeric: tabular-nums;
+}
+
+.link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: var(--underline-offset);
+}

@@ -31,6 +31,9 @@ export type SettingsFieldViewModel = {
   field:
     | { kind: "simple"; descriptor: SettingsFieldDescriptorView; value: unknown }
     | { kind: "historized"; descriptor: SettingsFieldDescriptorView; entries: HistoryEntry[] };
+  options?: { value: string; label: string }[];
+  disabled?: boolean;
+  warning?: string;
 };
 
 export type SettingsSection = {
@@ -53,12 +56,18 @@ function SimpleFieldEditor({
   hint,
   descriptor,
   initialValue,
+  options,
+  disabled,
+  warning,
 }: {
   fieldKey: string;
   label: string;
   hint?: string;
   descriptor: SettingsFieldDescriptorView;
   initialValue: unknown;
+  options?: { value: string; label: string }[];
+  disabled?: boolean;
+  warning?: string;
 }) {
   const { execute, result } = useAction(setSimpleSettingAction);
   const [checked, setChecked] = useState(initialValue === true);
@@ -95,7 +104,7 @@ function SimpleFieldEditor({
     );
   }
 
-  if (descriptor.kind === "enum") {
+  if (descriptor.kind === "enum" || options) {
     return (
       <div className={styles.field}>
         <label className={styles.selectLabel}>
@@ -103,19 +112,21 @@ function SimpleFieldEditor({
           <select
             className={styles.select}
             value={selected}
+            disabled={disabled}
             onChange={(event) => {
               setSelected(event.target.value);
               execute({ key: fieldKey, value: event.target.value });
             }}
           >
-            {descriptor.options.map((option) => (
-              <option key={option} value={option}>
-                {option}
+            {(options ?? (descriptor.kind === "enum" ? descriptor.options.map((option) => ({ value: option, label: option })) : [])).map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>
         </label>
         {hint ? <p className={styles.hint}>{hint}</p> : null}
+        {warning ? <p className={styles.warning}>{warning}</p> : null}
         {error ? <p className={styles.error}>{error}</p> : null}
       </div>
     );
@@ -291,6 +302,9 @@ export function SettingsFormClient({ sections }: { sections: SettingsSection[] }
                 hint={field.hint}
                 descriptor={field.field.descriptor}
                 initialValue={field.field.value}
+                options={field.options}
+                disabled={field.disabled}
+                warning={field.warning}
               />
             ),
           )}

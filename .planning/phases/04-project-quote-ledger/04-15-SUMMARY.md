@@ -268,3 +268,32 @@ None - no external service configuration required.
 
 - FOUND: test/integration/project-copy.test.ts · test/e2e/project-copy.spec.ts · domain/projects/index.ts · domain/projects/period.ts · repositories/quote-lines.ts · app/(app)/projects/project-form.tsx
 - FOUND commits: 7196deb · d0f54da · fabfaef · 88de58e · 87a133e
+
+## 검토 반영 (Opus, Codex 대체 — 한도 풀리면 재확인 필요)
+
+검토 보고: `/mnt/project-files/phase4-prep/04-15-review-opus.md`(BLOCKING 1 · SHOULD-FIX 4 · NIT 6). Codex 사용 한도 때문에 Opus 독립 리뷰로 교차 리뷰를 대신했다 — 한도가 풀리면 Codex로 다시 확인한다.
+
+### B1 독립 DOM 감사 — 닫힘
+- 결과 파일: `/mnt/project-files/phase4-prep/04-15-dom-audit.md` — 별도 에이전트 · `CI=true` · 1280 · 1024 · 375 실측
+- 판정: **PASS 16 · FAIL 0 · INFO 2**(INFO ① 서버 왕복 전 무대기 측정은 대기 추가 뒤 재확인 PASS, ② 375 포커스 순서는 직접 측정하지 않음)
+- 출처 한 줄 · 최장 프로젝트명 · 총 매출 예상가 칸이 720 · 칸 폭 3종 안, 가로 스크롤 0
+
+### SHOULD-FIX 반영
+| 항목 | 커밋 | 테스트 |
+|---|---|---|
+| S1 환율 소수 4자리 · 환율 상한 오류가 금액 칸으로 가던 칸 배정 — `MoneyInputError`에 칸(`amount` \| `fxRate`)을 더해 환율 오류 셋에서 `fxRate`로 채우고 매핑을 그 칸으로 바꿈 | `f4f756e` fix(04-15): route fx-rate precision and range errors to the fx field | `test/integration/project-copy.test.ts:378`, `:384` (p4) |
+| S2 보관된 프로젝트 상세의 「프로젝트 복사」 숨김(`project.archivedAt === null`) | `6d5f80b` fix(04-15): hide project copy link on archived project detail | `test/e2e/project-copy.spec.ts:127` |
+| S3 USD 기본 환율 = 설정값, 환율을 안 고친 등록은 설정을 덮지 않고 고친 등록만 갱신 — 화면 경로 E2E. touched를 늘 참으로 바꾼 변이에서 실패 확인 | `69039bc` test(04-15): cover USD default fx rate and touched-only remember on registration | `test/e2e/project-register.spec.ts:358` (d4) |
+
+### 이월
+- **S4(열린 항목)** — UI-SPEC rev 5 Copywriting에 없는 문구가 이 경로에서 보인다. 코드가 아니라 UI-SPEC 개정(04-UI-SPEC 개정 플랜 또는 `/design-review`) 몫, 머지 묶음 ③/4 Post-build 전에 처리:
+  - 「복사할 프로젝트 없음 · 새로 고침」(`domain/projects/index.ts` `COPY_SOURCE_MISSING`)
+  - 04-40 금액 오류 문구가 등록 폼 칸 오류로 나옴 — 「환율은 소수 4자리까지」 · 「외화는 소수 2자리까지」 · 「환율이 상한을 넘습니다 · 환율을 고쳐 주세요」 · 「외화 금액이 상한을 넘습니다 · 금액을 고쳐 주세요」, 그리고 `domain/projects/pre-estimate.ts`의 「환율이 없습니다 · USD 환율을 적어 주세요」
+  - `등록하지 못했습니다 · 종료일 n칸`(`시작일` · `종료일` 칸 이름의 1차 옆 줄 — rev 5 예시는 `클라이언트` · `총 매출 예상가`뿐)
+- **NIT** — 반영 0건. 모두 손댄 파일 밖이거나 동작 · 기대를 바꾸는 판단이 필요해 이월:
+  - N1 1차 옆 줄 칸 수 세기(라벨 기준 중복 제거 · 형식은 S4와 함께 UI-SPEC에서 확정)
+  - N2 스키마 `superRefine` 선실패로 기간 오류가 같이 안 보임(`app/(app)/projects/actions.ts`)
+  - N3 출처 판정과 복사 사이 TOCTOU(tx 안 `archivedAt` 재확인) — 영향 작음
+  - N4 USD→KRW 전환 시 소수 금액이 조용히 반올림(04-40 규칙 소관)
+  - N5 링크 버튼 `span.wrap` 없음 — DOM 감사가 높이 · 글자 · radius · 색 동일(PASS)을 확인했고, 펼침 줄 간격 1–2px 차이는 따로 재지 않음
+  - N6 `copyFromProjectId`를 `z.string().uuid()`로 좁히기 — (c5) 기대가 바뀌어 택일 필요

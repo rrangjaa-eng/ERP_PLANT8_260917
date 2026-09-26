@@ -244,9 +244,12 @@ describe("account.yml", () => {
   });
 
   // 04.2-08(D-4222): 해제한 운영자 = 워크플로를 실행한 GitHub 계정. 입력 칸이 아니라
-  // GitHub가 정하는 github.actor를 env로만 받아 unlock일 때만 --operator로 붙인다.
-  it("github.actor를 env INPUT_OPERATOR로 받는다", () => {
-    expect(account).toContain("INPUT_OPERATOR: ${{ github.actor }}");
+  // GitHub가 정하는 github.triggering_actor를 env로만 받아 unlock일 때만 --operator로
+  // 붙인다. github.actor가 아니라 github.triggering_actor를 쓰는 이유 — 재실행(re-run)은
+  // github.actor가 워크플로를 처음 만든 사람으로 고정돼 재실행한 사람을 반영하지
+  // 않는다.
+  it("github.triggering_actor를 env INPUT_OPERATOR로 받는다", () => {
+    expect(account).toContain("INPUT_OPERATOR: ${{ github.triggering_actor }}");
   });
 
   it("unlock일 때만 --args에 --operator,$INPUT_OPERATOR를 붙인다", () => {
@@ -256,9 +259,9 @@ describe("account.yml", () => {
     expect(account.match(/--operator/g) ?? []).toHaveLength(1);
   });
 
-  it("run: 본문에 ${{ github.actor }}가 직접 들어가지 않는다(env로만 — T-1-32)", () => {
+  it("run: 본문에 ${{ github.triggering_actor }}가 직접 들어가지 않는다(env로만 — T-1-32)", () => {
     const runBody = account.slice(account.indexOf("run: |"));
-    expect(runBody).not.toMatch(/\$\{\{\s*github\.actor\s*\}\}/);
+    expect(runBody).not.toMatch(/\$\{\{\s*github\.triggering_actor\s*\}\}/);
   });
 
   it("실제 프로젝트 번호·이메일 등 식별자를 담지 않는다", () => {

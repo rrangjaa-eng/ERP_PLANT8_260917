@@ -69,7 +69,7 @@ describe("scripts/account-cli 프로세스 종료", () => {
 });
 
 // 04.2-08(D-712·D-4222): 지금 실제로 쓰는 해제 경로는 account.yml → Cloud Run Job →
-// 이 CLI다. 워크플로가 github.actor를 --operator로 넘기면 해제 행동 로그의
+// 이 CLI다. 워크플로가 github.triggering_actor를 --operator로 넘기면 해제 행동 로그의
 // detail.operator에 남는다(actorId는 시스템 실행이라 null).
 describe("scripts/account-cli unlock 행동 로그", () => {
   it("잠긴 계정을 unlock --operator로 풀면 account_unlock 1행(operator)이 남고 열린 실패가 0이 된다", async () => {

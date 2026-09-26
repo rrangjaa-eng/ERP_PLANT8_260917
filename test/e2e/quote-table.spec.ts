@@ -1078,6 +1078,24 @@ test.describe("견적 줄 표 — 쪽 경계 키보드·전체 복사·힌트 �
     await expect(quoteCell(page, 29, 10)).toHaveText("비고 확정");
   });
 
+  test("편집 중 Tab을 마지막 쪽 마지막 편집 셀에서 누르면 값을 확정하고 그 셀에 포커스가 남는다(다음 편집 셀 없음)", async ({ page }) => {
+    await openProjectWithSavedLines(page, fortyFiveLines());
+    await pageNav(page).getByRole("button", { name: "2", exact: true }).click();
+    await expect(currentPage(page)).toHaveText("2");
+    const noteCell = quoteCell(page, 14, 10);
+    await expect(async () => {
+      await noteCell.focus();
+      await page.keyboard.press("Enter");
+      await expect(noteCell.locator("input")).toBeFocused({ timeout: 1000 });
+    }).toPass();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("끝 칸 확정");
+    await page.keyboard.press("Tab");
+    await expect(noteCell.locator("input")).toHaveCount(0);
+    await expect(noteCell).toHaveText("끝 칸 확정");
+    await expect(noteCell).toBeFocused();
+  });
+
   test("편집 중이 아닐 때 Control+a → Control+c는 45줄 전부를 견적 줄 표 열 수만큼의 TSV와 앱 형식 JSON으로 싣는다", async ({ page }) => {
     await openProjectWithSavedLines(page, fortyFiveLines());
     await page.evaluate(() => {

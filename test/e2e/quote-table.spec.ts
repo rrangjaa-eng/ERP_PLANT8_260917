@@ -193,8 +193,9 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
 
     const dataRow = page.locator("tbody tr").nth(1);
+    // 클릭이 편집기를 연다(04-04). 여기서 Enter를 더 누르면 빈 값을 확정하고 아래로 간다(리뷰 B-1).
     await dataRow.locator("td[role='gridcell']").nth(2).click();
-    await page.keyboard.press("Enter");
+    await expect(dataRow.locator("td[role='gridcell']").nth(2).locator("input")).toBeFocused();
     await page.keyboard.type("폰 시트 확인용 항목");
     await page.keyboard.press("Enter");
     await page.setViewportSize({ width: 375, height: 800 });

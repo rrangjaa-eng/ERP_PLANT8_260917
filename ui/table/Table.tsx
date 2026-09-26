@@ -236,6 +236,9 @@ export function Table<Row>({
           if (row && column) keyboard?.onEscapeCell?.(row, column.key);
         }
       },
+      onCommitDown: () => {
+        refocusCellRef.current = true;
+      },
       onDeleteRow: (rowId) => {
         const row = findRow(rowId);
         if (row) keyboard?.onDeleteRow?.(row);

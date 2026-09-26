@@ -28,6 +28,8 @@ export type GridKeyboardHandlers = {
   onMoveRow?: (rowId: string, direction: "up" | "down") => void;
   /** Ctrl+S — 일괄 저장. */
   onSave?: () => void;
+  /** 04-19 리뷰 B-1 — 편집 중 Enter(편집기가 이미 확정했다) 뒤 아래로 옮겼다. 호출부는 편집기가 내려간 뒤 셀로 포커스를 돌려준다. */
+  onCommitDown?: () => void;
   /** 04-30(DR-35) — 막힌 셀(isBlockedCell)의 Enter·글자 입력·Delete. 편집·줄 삭제 대신 이것만 부른다. */
   onBlockedEdit?: (pos: GridPosition) => void;
 };
@@ -239,6 +241,10 @@ export function useGridKeyboard({
       } else if (event.key === "Escape") {
         event.preventDefault();
         handlers.onEscape?.(pos, true);
+      } else if (event.key === "Enter" && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+        // 04-19 리뷰 B-1 — 확정 후 아래(§7-3 「Enter 아래」). 쪽 마지막 줄이면 ↓와 같은 onEdgeExit로 다음 쪽.
+        handlers.onCommitDown?.();
+        moveFocus(1, 0, false, pos);
       }
       return;
     }

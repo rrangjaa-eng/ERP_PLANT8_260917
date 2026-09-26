@@ -275,7 +275,7 @@ test.describe("숫자 서식(D-95, 04-09)", () => {
       name: `E2Enumber발행액클라이언트-${Date.now()}`,
       normalizedName: `e2enumber발행액클라이언트-${Date.now()}`,
     });
-    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID, withTeam: true });
     await grantFinanceRole();
     const finance = await createFixtureUser({ roleId: "role-ceo" });
 
@@ -317,6 +317,10 @@ test.describe("숫자 서식(D-95, 04-09)", () => {
     // 버튼이 다시 비활성(dirtyCount 0)으로 돌아오는 것으로 저장 완료를 본다.
     const saveButton = page.getByRole("button", { name: /일괄 저장/ });
     await saveButton.click();
+    // 저장 중에도 aria-disabled라(Button pending) toBeDisabled만으로는 저장 완료가 아니다 —
+    // 진행 표시 「…」가 사라진 뒤(pending 끝) 다시 비활성인지 봐야 reload가 저장을 끊지 않는다.
+    await expect(saveButton).toBeDisabled();
+    await expect(saveButton).not.toContainText("…");
     await expect(saveButton).toBeDisabled();
 
     await page.reload();

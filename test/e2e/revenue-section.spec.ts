@@ -225,7 +225,7 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
       name: `E2E매출클라이언트-${Date.now()}`,
       normalizedName: `e2e매출클라이언트-${Date.now()}`,
     });
-    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID, withTeam: true });
     await grantFinanceRole();
     const finance = await createFixtureUser({ roleId: "role-ceo" });
 
@@ -304,7 +304,7 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
       name: `E2E매출폭클라이언트-${Date.now()}`,
       normalizedName: `e2e매출폭클라이언트-${Date.now()}`,
     });
-    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID, withTeam: true });
     await grantFinanceRole();
     const finance = await createFixtureUser({ roleId: "role-ceo" });
 

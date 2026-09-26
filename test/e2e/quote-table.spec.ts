@@ -1561,4 +1561,24 @@ test.describe("견적 줄 표 — 거부 뒤 오류 수 · 숨은 열 오류 · 
     await expect.poll(() => footerPieces(page)).toEqual([{ tone: "danger", text: "오류 3칸" }]);
     expect(actions.count).toBe(0);
   });
+
+  test("1024~1279 폭에서 숨은 차익 칸만 오류인 채 1차 → 서버 요청 0 · 그 줄의 항목 칸에 포커스", async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 800 });
+    await openProjectWithSavedLines(page, [
+      { subcategory: "stage_construction", itemName: "숨은열1", amount: 1000 },
+      { subcategory: "stage_construction", itemName: "숨은열2", amount: 1000 },
+    ]);
+    // 숨은 칸(display: none)은 접근성 트리에 없다 — 논리 열 순서(번호 0 · 항목 2 · 실행가 7 · 차익 8)로 td를 센다.
+    const cells = (rowIndex: number) => quoteDataRows(page).nth(rowIndex).locator("td");
+    await cells(1).nth(7).focus();
+    await pasteWithFormats(page, { "text/plain": "800\t900" });
+    await expect(cells(1).nth(8)).toHaveAttribute("aria-invalid", "true");
+    await expect(cells(1).nth(8)).toBeHidden();
+    await expect(invalidCells(page)).toHaveCount(1);
+
+    const actions = countServerActions(page);
+    await primarySave(page).click();
+    await expect(cells(1).nth(2)).toBeFocused();
+    expect(actions.count).toBe(0);
+  });
 });

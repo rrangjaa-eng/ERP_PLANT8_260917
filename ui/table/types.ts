@@ -43,6 +43,8 @@ export type TableColumn<Row> = {
    * 건너뛰고, 붙여넣기의 논리 열 순서에는 남는다. 폰(<700)은 priority 규칙이 따로 접는다.
    */
   collapseBelow?: 1280 | 1024;
+  /** 04-19 — 격자 Ctrl+C(네이티브 copy 이벤트)가 이 열에 싣는 글자. 없으면 빈 칸. */
+  copyText?: (row: Row) => string;
 };
 
 export type TableGroup<Row> = {

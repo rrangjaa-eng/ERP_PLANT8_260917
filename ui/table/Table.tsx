@@ -6,7 +6,8 @@ import { isCtrlCombo } from "@/lib/shortcut";
 import { Pagination } from "@/ui/pagination/Pagination";
 import { pageRangeText } from "@/ui/pagination/page-window";
 import styles from "./Table.module.css";
-import { pageEntryFocus, splitPages } from "./paging";
+import { crossPageTarget, nextEditableCell, pageEntryFocus, pageOfRow, splitPages, type FocusCell } from "./paging";
+import { toTsv } from "./parse-tsv";
 import { isGridActionAllowed } from "./save-lock";
 import { useMinWidth } from "./use-editable-width";
 import type { CellEditability, CellIssue, TableColumn } from "./types";
@@ -82,6 +83,10 @@ export type TableProps<Row> = {
    * `focusHeadingId`(읽기 표 — 없으면 캡션)로 포커스한다(DR-23).
    */
   pagination?: { pageSize: number; unit: string; label: string; resetKey: string | number; focusHeadingId?: string };
+  /** 04-19 — 격자 Ctrl+C의 앱 형식(`application/x-plant8-quote-lines+json`). 복사한 줄을 받아 글자로. */
+  copyMeta?: (rows: Row[]) => string;
+  /** 04-19(§7-9) — 표 아래(페이지 줄 다음) 힌트 줄. 라벨 + kbd 묶음, 1024 미만에서 숨는다. */
+  hint?: { label: string; keys: string }[];
 };
 
 type ActiveCell = { rowId: string; columnKey: string } | null;
@@ -121,6 +126,8 @@ export function Table<Row>({
   onEditingChange,
   openCell,
   pagination,
+  copyMeta,
+  hint,
 }: TableProps<Row>) {
   const [activeCell, setActiveCell] = useState<ActiveCell>(null);
   const allowed = (action: Parameters<typeof isGridActionAllowed>[0]) => isGridActionAllowed(action, { saveLocked });
@@ -158,6 +165,20 @@ export function Table<Row>({
   // 좌표 체계가 데이터 행만 센다(방향키가 그룹 머리글을 "건너뛴다"는 (라)
   // 요구가 저절로 성립한다).
   const flatRows: Row[] = groups.flatMap((group) => group.rows);
+  const rowById = new Map(displayRows.map((row) => [getRowId(row), row]));
+  const findRow = (rowId: string) => flatRows.find((row) => getRowId(row) === rowId);
+
+  // 04-19(공백 4) — Alt+↑↓로 옮긴 줄이 다른 쪽으로 넘어가면 그 쪽으로 따라간다(포커스는 줄 id로 기억해 저절로 따라온다).
+  const [followRowId, setFollowRowId] = useState<string | null>(null);
+  if (followRowId !== null && pages) {
+    setFollowRowId(null);
+    const followPage = pageOfRow(pages, followRowId);
+    if (followPage !== null && followPage !== page) {
+      setRequestedPage(followPage);
+      setPageAnnounced(true);
+      setFocusRequest({ kind: "cell" });
+    }
+  }
 
   function cellEditability(column: TableColumn<Row>, row: Row): CellEditability {
     return column.editability?.(row) ?? "readonly";
@@ -168,9 +189,17 @@ export function Table<Row>({
   // 옮기면 입력의 blur 커밋이 취소를 덮는다).
   const refocusCellRef = useRef(false);
 
+  // 04-19 — Tab이 여는 셀: 편집기가 있고 지금 폭에서 보이는 `edit` 셀.
+  const isTabStop = (rowId: string, colKey: string) => {
+    const row = rowById.get(rowId);
+    const column = columns.find((candidate) => candidate.key === colKey);
+    return row !== undefined && column?.editCell !== undefined && !isHiddenColumn(column) && cellEditability(column, row) === "edit";
+  };
+  const colKeys = columns.map((column) => column.key);
+
   const keyboardState = useGridKeyboard({
-    rowCount: flatRows.length,
-    colCount: columns.length,
+    rowIds: flatRows.map(getRowId),
+    colKeys,
     isEditableCell: (pos: GridPosition) => {
       const row = flatRows[pos.row];
       const column = columns[pos.col];
@@ -207,21 +236,22 @@ export function Table<Row>({
           if (row && column) keyboard?.onEscapeCell?.(row, column.key);
         }
       },
-      onDeleteRow: (rowIndex) => {
-        const row = flatRows[rowIndex];
+      onDeleteRow: (rowId) => {
+        const row = findRow(rowId);
         if (row) keyboard?.onDeleteRow?.(row);
       },
-      onNewRow: (rowIndex) => {
-        const row = flatRows[rowIndex];
-        keyboard?.onNewRow?.(row);
+      onNewRow: (rowId) => {
+        keyboard?.onNewRow?.(rowId === undefined ? undefined : findRow(rowId));
       },
-      onDuplicateRow: (rowIndex) => {
-        const row = flatRows[rowIndex];
+      onDuplicateRow: (rowId) => {
+        const row = findRow(rowId);
         if (row) keyboard?.onDuplicateRow?.(row);
       },
-      onMoveRow: (rowIndex, direction) => {
-        const row = flatRows[rowIndex];
-        if (row) keyboard?.onMoveRow?.(row, direction);
+      onMoveRow: (rowId, direction) => {
+        const row = findRow(rowId);
+        if (!row || !keyboard?.onMoveRow) return;
+        keyboard.onMoveRow(row, direction);
+        setFollowRowId(rowId);
       },
       onBlockedEdit: onBlockedEdit
         ? (pos) => {
@@ -241,7 +271,96 @@ export function Table<Row>({
         keyboard?.onSave?.();
       },
     },
+    // 04-19(C-18) — 쪽 끝을 넘는 ↑↓는 표시 순서의 옆 줄이 있는 쪽으로, 같은 열.
+    onEdgeExit: (direction, colKey) => {
+      if (!pages) return false;
+      const pageRowIds = pages[page - 1] ?? [];
+      const fromId = direction === "down" ? pageRowIds[pageRowIds.length - 1] : pageRowIds[0];
+      const target = fromId === undefined ? null : crossPageTarget({ ids: displayRows.map(getRowId), fromId, direction, pages });
+      if (!target) return false;
+      goToCell(target.page, { rowId: target.rowId, colKey });
+      return true;
+    },
+    // 04-19 — 편집 중 Tab: 칸 안에 다음 입력(단가의 통화·금액·환율)이 있으면 그리로, 아니면 값을 확정하고 옆 편집 셀을 연다.
+    onTab: (pos, direction) => {
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement)) return;
+      const inCell = Array.from(active.closest("td")?.querySelectorAll<HTMLElement>("input, select, textarea") ?? []);
+      const sibling = inCell[inCell.indexOf(active) + (direction === "forward" ? 1 : -1)];
+      if (sibling) {
+        sibling.focus();
+        return;
+      }
+      const from: FocusCell = { rowId: getRowId(flatRows[pos.row]!), colKey: colKeys[pos.col]! };
+      const next = nextEditableCell({ rowIds: flatRows.map(getRowId), colKeys, isEditable: isTabStop, from, direction });
+      let targetPage = page;
+      let target: FocusCell | undefined;
+      if ("crossPage" in next) {
+        targetPage = page + (next.crossPage === "next" ? 1 : -1);
+        const ids = pages?.[targetPage - 1] ?? [];
+        const scanRows = direction === "forward" ? ids : [...ids].reverse();
+        const scanCols = direction === "forward" ? colKeys : [...colKeys].reverse();
+        for (const rowId of scanRows) {
+          const colKey = scanCols.find((key) => isTabStop(rowId, key));
+          if (colKey !== undefined) {
+            target = { rowId, colKey };
+            break;
+          }
+        }
+      } else {
+        target = next;
+      }
+      if (!target) return;
+      active.blur();
+      if (targetPage !== page) {
+        setRequestedPage(targetPage);
+        setPageAnnounced(true);
+      }
+      keyboardState.setFocusCell(target);
+      if (allowed("enterEdit")) setActiveCell({ rowId: target.rowId, columnKey: target.colKey });
+      else setFocusRequest({ kind: "cell" });
+    },
   });
+
+  function goToCell(nextPage: number, cell: FocusCell) {
+    setRequestedPage(nextPage);
+    setPageAnnounced(true);
+    keyboardState.setFocusCell(cell);
+    setFocusRequest({ kind: "cell" });
+  }
+
+  // 04-19 — Ctrl+C: 브라우저가 쏘는 네이티브 copy 이벤트에 격자 선택을 싣는다(Ctrl+A면 전체 줄, 범위면 쪽 안 사각형,
+  // 아니면 활성 셀). 글자는 열의 copyText(견적 표는 04-24 직렬화), 앱 형식은 copyMeta. 선택이 없으면 이벤트 대상이
+  // <body>라 document에서 받는다. 편집 중 입력·사용자가 끌어 고른 글자는 브라우저 기본 복사 그대로다.
+  const copyRef = useRef<(event: ClipboardEvent) => void>(() => {});
+  useEffect(() => {
+    copyRef.current = (event) => {
+      const table = tableRef.current;
+      const active = document.activeElement;
+      if (!enableGridKeyboard || !table || !active || !table.contains(active)) return;
+      if (active.matches("input, textarea, select") || !columns.some((column) => column.copyText)) return;
+      if (!keyboardState.allSelected && document.getSelection()?.isCollapsed === false) return;
+      let copyRows: Row[];
+      let copyColumns: TableColumn<Row>[];
+      if (keyboardState.allSelected) {
+        copyRows = displayRows;
+        copyColumns = columns;
+      } else {
+        const { focus } = keyboardState;
+        const anchor = keyboardState.selectionAnchor ?? focus;
+        copyRows = flatRows.slice(Math.min(anchor.row, focus.row), Math.max(anchor.row, focus.row) + 1);
+        copyColumns = columns.slice(Math.min(anchor.col, focus.col), Math.max(anchor.col, focus.col) + 1);
+      }
+      event.clipboardData?.setData("text/plain", toTsv(copyRows.map((row) => copyColumns.map((column) => column.copyText?.(row) ?? ""))));
+      if (copyMeta) event.clipboardData?.setData("application/x-plant8-quote-lines+json", copyMeta(copyRows));
+      event.preventDefault();
+    };
+  });
+  useEffect(() => {
+    const onCopy = (event: ClipboardEvent) => copyRef.current(event);
+    document.addEventListener("copy", onCopy);
+    return () => document.removeEventListener("copy", onCopy);
+  }, []);
 
   // 04-28(앞 플랜 결함 — 04-04) — 방향키가 로빙 좌표(tabIndex)만 옮기고 DOM
   // 포커스는 옛 셀에 남아 「이동 ↑↓←→」가 동작하지 않았다. 표 안에 포커스가
@@ -300,8 +419,7 @@ export function Table<Row>({
       .map((column) => column.key);
     // 편집 셀이 없는 격자(좁은 폭 보기 전용)도 로빙 격자이므로 같은 열 첫 줄로 간다.
     const colKey = pageEntryFocus({ pageRowIds: nextIds, lastColKey, editableColKeys })?.colKey ?? lastColKey;
-    const col = Math.max(0, columns.findIndex((column) => column.key === colKey));
-    keyboardState.setFocus({ row: 0, col });
+    keyboardState.setFocusCell({ rowId: getRowId(firstRow), colKey: colKey ?? colKeys[0] ?? "" });
     setFocusRequest({ kind: "cell" });
   }
 
@@ -637,6 +755,16 @@ export function Table<Row>({
       </table>
       {pagination && pages ? (
         <Pagination label={pagination.label} page={page} pageCount={pages.length} rangeText={rangeText} onPageChange={changePage} />
+      ) : null}
+      {hint && hint.length > 0 ? (
+        <p className={styles.hintRow}>
+          {hint.map((item, index) => (
+            <Fragment key={item.label}>
+              {index > 0 ? " · " : ""}
+              {item.label} <kbd>{item.keys}</kbd>
+            </Fragment>
+          ))}
+        </p>
       ) : null}
     </>
   );

@@ -194,8 +194,27 @@
   }
 }
 
+/* SYSTEM.md §7-9 — 단축키 힌트 줄(04-19: 표 안으로 옮김 — 페이지 줄 다음). 1024 미만(셀 편집 없음)에서 숨는다. */
+.hintRow {
+  margin-top: var(--s-3);
+  color: var(--faint);
+  font-size: var(--fs-sm);
+}
+
+.hintRow kbd {
+  padding: 0 var(--s-1);
+  border: var(--line-w) solid var(--line);
+  color: var(--faint);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-head);
+}
+
 @media (max-width: 1023.98px) {
   .collapse-1024 {
+    display: none;
+  }
+
+  .hintRow {
     display: none;
   }
 }

@@ -170,7 +170,7 @@ export function quoteTableEmptyState(input: {
 
 // 04-30(C-07 · UI-SPEC rev 5 S4 「힌트 줄」) — 힌트 항목(04-28 배열의 키)에서 그 사람에게 없는 구조 동작과 `저장`
 // (1차 kbd가 말한다)을 뺀다.
-export type QuoteHintKey = "move" | "paste" | "cancel" | "newRow" | "moveRow" | "duplicateRow" | "save";
+export type QuoteHintKey = "move" | "copy" | "paste" | "cancel" | "newRow" | "moveRow" | "duplicateRow" | "save";
 
 const HINT_KEY_NEEDS: Partial<Record<QuoteHintKey, keyof StructuralEditability>> = {
   newRow: "insert",

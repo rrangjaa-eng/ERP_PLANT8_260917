@@ -1,6 +1,6 @@
 "use client";
 
-import { Children, Fragment, useCallback, useEffect, useEffectEvent, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { Children, useCallback, useEffect, useEffectEvent, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -41,7 +41,7 @@ import type { RevenueDto } from "@/domain/revenue";
 import type { Currency, Money } from "@/domain/money";
 import { RevenueSection, type EntryDraft } from "./revenue-section";
 import { otherCellsRejectedText, quoteTableRejectionText, routeRejectedRevenueCells } from "./revenue-cells";
-import { PreviousRevisionDraftRow } from "./previous-revision";
+import { PreviousRevisionDraftRow, quoteLineClipboardMeta, quoteLineReadColumns } from "./previous-revision";
 import { StatusChange, type StatusChangeProps } from "./status-change";
 import { CustomerApprovalLine, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
 import { PeriodField, periodText, type PeriodDraft, type PeriodFieldError } from "./period-field";
@@ -170,11 +170,12 @@ const PRE_ESTIMATE_TRIGGER_ID = "pre-estimate-open";
 const CONFLICT_ACTIONS_SUFFIX = " · 덮어쓰기 / 그 값으로";
 
 // 04-28(C-07 ② · DR-31) — 견적 표 힌트 줄. 지금 실제로 되는 키만 적는다 —
-// Tab 편집 이동·Ctrl+C 복사는 04-19가 배선하며 여기 더한다. 저장은 1차 버튼
+// 04-19가 Tab 편집 이동·Ctrl+C 복사를 배선해 일곱 항목이다. 저장은 1차 버튼
 // kbd가 말하므로 적지 않는다.
 // 04-30 — 항목마다 key를 두어 구조 가능성으로 거른다(visibleHintKeys).
 const QUOTE_HINT_ITEMS: { key: QuoteHintKey; label: string; keys: string }[] = [
-  { key: "move", label: "이동", keys: "↑↓←→" },
+  { key: "move", label: "이동", keys: "Tab ↑↓←→" },
+  { key: "copy", label: "복사", keys: "Ctrl+C" },
   { key: "paste", label: "붙여넣기", keys: "Ctrl+V" },
   { key: "cancel", label: "취소", keys: "Esc" },
   { key: "newRow", label: "새 줄", keys: "Ctrl+Enter" },
@@ -1755,6 +1756,11 @@ export function QuoteLedger({
         }),
     },
   ];
+  // 04-19 — 격자 Ctrl+C 글자는 04-24 읽기 열의 copyText(견적 줄 복사 글자의 유일한 정의)를 열 키로 붙인다.
+  const copyTextByKey = new Map(
+    quoteLineReadColumns<DraftLine>({ subcategories, vendors }, (row) => lines.indexOf(row) + 1).map((column) => [column.key, column.copyText]),
+  );
+  for (const column of columns) column.copyText = copyTextByKey.get(column.key);
 
   // 04-04(다) — 붙여넣기 열 정의. columns와 같은 순서·같은 길이여야 한다
   // (Table이 colIndex로 이 둘을 함께 참조한다).
@@ -2170,6 +2176,9 @@ export function QuoteLedger({
         openCell={openCell}
         // 04-19(D-91) — 30줄 쪽은 Table이 자른다(이 파일은 전체 줄을 넘긴다). 새 차수로 다시 그리면 1쪽부터.
         pagination={{ pageSize: QUOTE_TABLE_PAGE_SIZE, unit: "줄", label: "견적 줄", resetKey: renderedRevisionId }}
+        copyMeta={quoteLineClipboardMeta}
+        // SYSTEM.md §7-9 개정 ⑬ — 힌트 줄(라벨 kbd 묶음)은 표가 페이지 줄 다음에 그린다. 1024 미만에서 숨는다.
+        hint={editableWidth && lines.some((line) => Object.values(line.cells).includes("edit")) ? hintItems : undefined}
         emptyMessage={emptyState.message}
         emptyAction={
           emptyState.action?.kind === "addLine" && editableWidth
@@ -2233,18 +2242,6 @@ export function QuoteLedger({
           </tr>
         }
       />
-
-      {/* SYSTEM.md §7-9 개정 ⑬ — 견적 표 아래 힌트 줄(라벨 kbd 묶음), 폰에서 숨는다. */}
-      {editableWidth && lines.some((line) => Object.values(line.cells).includes("edit")) ? (
-        <p className={styles.hintRow}>
-          {hintItems.map((item, index) => (
-            <Fragment key={item.label}>
-              {index > 0 ? " · " : ""}
-              {item.label} <kbd>{item.keys}</kbd>
-            </Fragment>
-          ))}
-        </p>
-      ) : null}
 
       {(structural.insert || adjustmentStructural.insert) && editableWidth && lines.length > 0 ? (
         <div className={styles.addLineButton}>

@@ -45,17 +45,28 @@ export function pageEntryFocus(input: {
   return { rowId, colKey };
 }
 
-// 04-19 Task 2 — RED 자리표시(구현 전).
+/**
+ * C-18 — 쪽 경계를 넘는 ↑↓의 대상. 표시 순서(`ids`)에서 바로 앞·뒤 줄과 그 줄이 있는 쪽. 표 끝이면 null(멈춘다). 고정된 새
+ * 줄이 쪽 크기를 넘겨 있어도 표시 순서를 따르므로 제자리에 머물지 않는다.
+ */
 export function crossPageTarget(input: {
   ids: readonly string[];
   fromId: string;
   direction: "up" | "down";
   pages: readonly (readonly string[])[];
 }): { rowId: string; page: number } | null {
-  void input;
-  return null;
+  const index = input.ids.indexOf(input.fromId);
+  if (index === -1) return null;
+  const rowId = input.ids[input.direction === "down" ? index + 1 : index - 1];
+  if (rowId === undefined) return null;
+  const page = pageOfRow(input.pages, rowId);
+  return page === null ? null : { rowId, page };
 }
 
+/**
+ * 편집 중 Tab/Shift+Tab의 대상 — 지금 쪽 안에서 같은 줄 오른쪽(왼쪽) 편집 셀, 줄 끝이면 다음(이전) 줄의 첫(끝) 편집 셀.
+ * 쪽 안에 더 없으면 `{ crossPage }` — 호출부가 옆 쪽으로 넘긴다.
+ */
 export function nextEditableCell(input: {
   rowIds: readonly string[];
   colKeys: readonly string[];
@@ -63,16 +74,32 @@ export function nextEditableCell(input: {
   from: FocusCell;
   direction: "forward" | "backward";
 }): FocusCell | { crossPage: "next" | "prev" } {
-  void input;
-  return { crossPage: "next" };
+  const step = input.direction === "forward" ? 1 : -1;
+  const width = input.colKeys.length;
+  const start = input.rowIds.indexOf(input.from.rowId) * width + input.colKeys.indexOf(input.from.colKey);
+  for (let at = start + step; at >= 0 && at < input.rowIds.length * width; at += step) {
+    const rowId = input.rowIds[Math.floor(at / width)]!;
+    const colKey = input.colKeys[at % width]!;
+    if (input.isEditable(rowId, colKey)) return { rowId, colKey };
+  }
+  return { crossPage: input.direction === "forward" ? "next" : "prev" };
 }
 
+/**
+ * 엔지 리뷰 C §1 P2 — 기억한 `{ rowId, colKey }`를 렌더마다 지금 쪽의 인덱스로. 줄이 사라졌으면(삭제·다른 쪽) 직전 인덱스를
+ * 쪽 안으로 보정한 자리(같은 자리 = 다음 줄, 끝이었으면 이전 줄).
+ */
 export function resolveFocus(input: {
   pageIds: readonly string[];
   colKeys: readonly string[];
   focus: FocusCell;
   fallback: { row: number; col: number };
 }): { row: number; col: number } {
-  void input;
-  return { row: 0, col: 0 };
+  const clamp = (value: number, length: number) => Math.max(0, Math.min(length - 1, value));
+  const row = input.pageIds.indexOf(input.focus.rowId);
+  const col = input.colKeys.indexOf(input.focus.colKey);
+  return {
+    row: row === -1 ? clamp(input.fallback.row, input.pageIds.length) : row,
+    col: col === -1 ? clamp(input.fallback.col, input.colKeys.length) : col,
+  };
 }

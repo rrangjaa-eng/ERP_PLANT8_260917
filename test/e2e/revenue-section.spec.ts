@@ -436,6 +436,15 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     await expect(addPaid).not.toHaveAttribute("aria-disabled", "true");
     await expect(page.getByRole("grid", { name: "발행 줄" })).not.toHaveAttribute("aria-busy", "true");
   });
+
+  test("(/design-review M-1) KST 새벽(UTC 전날)에 만든 새 입금 줄의 기본 날짜는 KST 오늘이다", async ({ page }) => {
+    const projectUrl = await openWithIssuedEntry(page);
+    // KST 2026-09-26 01:30 = UTC 2026-09-25 16:30.
+    await page.clock.setFixedTime(new Date("2026-09-25T16:30:00Z"));
+    await page.goto(projectUrl);
+    await page.getByRole("button", { name: "입금 줄 추가" }).click();
+    await expect(page.getByLabel("입금일")).toHaveValue("2026-09-26");
+  });
 });
 
 test.describe("매출 표 — 발행 읽기 표·입금 표 부재(D-85) · 폰 배치(DR-15) · 좁은 PC 보기 전용(DR-36) · 다른 표 오류(R2) (04-16 Task 3)", () => {

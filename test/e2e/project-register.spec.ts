@@ -1,6 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { createAccount } from "@/domain/auth/accounts";
+import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
+import { insertRole } from "@/repositories/roles";
+import { upsertPermission } from "@/repositories/permissions";
 import { insertVendor } from "@/repositories/vendors";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { addDays, kstToday } from "@/lib/kst-date";
@@ -386,5 +391,31 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     await fxRate.press("Control+Enter");
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
     expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(1300);
+  });
+});
+
+// 결정 2(사용자 결정 2026-09-26) — 담당 PM은 등록하는 사람, 팀은 그 사람의 오늘 소속 팀으로 미리 채운다.
+// 회사 범위 계급은 팀 목록이 여럿이라 소속 팀 미리 고르기가 드러난다.
+test.describe("프로젝트 등록 폼 — 담당 PM · 팀 기본값 (결정 2)", () => {
+  test("회사 범위 등록자가 폼을 열면 담당 PM은 본인, 팀은 본인 소속 팀이 골라져 있다", async ({ page }) => {
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E 회사 범위-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    for (const action of ["view", "write"] as const) {
+      await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action, allowed: true });
+    }
+    const email = `e2e-defaults-${randomUUID()}@example.test`;
+    const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 기본값 등록자", roleId: role.id });
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E본부-${randomUUID()}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E팀-${randomUUID().slice(0, 8)}` });
+    await assignTeam(SYSTEM_VIEWER, { userId, teamId: team.id, effectiveFrom: "2020-01-01" });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(email);
+    await page.getByLabel("비밀번호").fill(tempPassword);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto("/projects?new=1");
+
+    await expect(page.locator("#pmUserId")).toHaveValue(userId);
+    await expect(page.locator("#teamId")).toHaveValue(team.id);
   });
 });

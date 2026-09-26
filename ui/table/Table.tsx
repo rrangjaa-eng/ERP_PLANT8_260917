@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ElementType, type ReactNode } from "react";
 import { clampPage } from "@/lib/paging";
 import { isCtrlCombo } from "@/lib/shortcut";
 import { Pagination } from "@/ui/pagination/Pagination";
@@ -70,6 +70,11 @@ export type TableProps<Row> = {
   cellIssue?: (row: Row, columnKey: string) => CellIssue | undefined;
   /** 04-04(바) — 폰에서 줄을 탭하면 호출된다(RowSheet를 여는 신호). */
   onRowTap?: (row: Row) => void;
+  /**
+   * FINDING-015(코디네이터 대리 결정 2026-09-26) — 폰(<700)에서 행 전체(주 행 + 접힌 P2 줄)를 그 행의 링크 하나
+   * (`data-row-link`를 단 `<a>`)의 누름 자리로 넓힌다. 행마다 제 `<tbody>`로 묶어 링크의 ::after가 두 줄을 덮는다.
+   */
+  phoneRowLink?: boolean;
   /** 04-04 — dirty(미저장 편집) 셀 고정 표시(좌측 인셋 선). */
   cellDirty?: (row: Row, columnKey: string) => boolean;
   /** 04-04 — 저장 성공 직후 600ms 틴트(Copywriting SUCCESS 행). */
@@ -152,6 +157,7 @@ export function Table<Row>({
   onPasteAtCell,
   cellIssue,
   onRowTap,
+  phoneRowLink = false,
   cellDirty,
   cellSaved,
   onBlockedEdit,
@@ -257,6 +263,9 @@ export function Table<Row>({
   if (pages && page !== targetPage) setRequestedPage(page);
   const pageIds = pages ? new Set(pages[page - 1]) : null;
   const groups = pageIds ? groupRows(displayRows.filter((row) => pageIds.has(getRowId(row))), groupBy) : allGroups;
+  // phoneRowLink — 그룹 하나 = <tbody> 하나 대신, 그룹 머리글과 행(주 행 + 접힌 줄)마다 제 <tbody>다.
+  const GroupBody: ElementType = phoneRowLink ? Fragment : "tbody";
+  const RowBody: ElementType = phoneRowLink ? "tbody" : Fragment;
   const [focusRequest, setFocusRequest] = useState<{ kind: "cell" | "heading" } | { kind: "issue"; issueId: string } | null>(null);
   if (issueFocusId !== null) setFocusRequest({ kind: "issue", issueId: issueFocusId });
   const captionRef = useRef<HTMLTableCaptionElement>(null);
@@ -772,13 +781,15 @@ export function Table<Row>({
           </tr>
         </thead>
         {groups.map((group, groupIndex) => (
-          <tbody key={group.header ?? `group-${groupIndex}`}>
+          <GroupBody key={group.header ?? `group-${groupIndex}`}>
             {group.header !== null ? (
-              <tr className={styles.groupRow}>
-                <td colSpan={columns.length} className={styles.groupHeader}>
-                  {group.header}
-                </td>
-              </tr>
+              <RowBody>
+                <tr className={styles.groupRow}>
+                  <td colSpan={columns.length} className={styles.groupHeader}>
+                    {group.header}
+                  </td>
+                </tr>
+              </RowBody>
             ) : null}
             {group.rows.map((row) => {
               const rowId = getRowId(row);
@@ -793,7 +804,7 @@ export function Table<Row>({
                 .filter((value): value is ReactNode => value !== null && value !== undefined && value !== "");
 
               return (
-                <Fragment key={rowId}>
+                <RowBody key={rowId} {...(phoneRowLink ? { className: styles.rowLinkGroup } : {})}>
                   <tr>
                     {columns.map((column, colIndex) => {
                       const editability = cellEditability(column, row);
@@ -926,10 +937,10 @@ export function Table<Row>({
                       )}
                     </tr>
                   ) : null}
-                </Fragment>
+                </RowBody>
               );
             })}
-          </tbody>
+          </GroupBody>
         ))}
         {footerContent ? <tfoot aria-live="polite">{footerContent}</tfoot> : null}
       </table>

@@ -65,7 +65,7 @@ export function ProjectsTable({
       header: "프로젝트명",
       priority: "p1",
       cell: (row) => (
-        <Link href={`/projects/${row.id}`} className={styles.link}>
+        <Link href={`/projects/${row.id}`} className={styles.link} data-row-link="">
           {row.name}
         </Link>
       ),
@@ -102,6 +102,7 @@ export function ProjectsTable({
       rows={rows}
       getRowId={(row) => row.id}
       groupBy={(row) => row.groupLabel}
+      phoneRowLink
     />
   );
 }

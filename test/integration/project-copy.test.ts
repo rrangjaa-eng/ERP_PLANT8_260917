@@ -367,13 +367,13 @@ describe("등록의 총 매출 예상가 · 기간 검증(04-15 Task 2, 실제 P
       pm,
       { ...base(), preEstimate: { currency: "KRW", amount: 1_000_000_000_000, fxRate: 1 } },
       "preEstimateAmount",
-      "금액이 상한을 넘습니다 · 999,999,999,999원 이하",
+      "금액 상한 초과 · 999,999,999,999원 이하",
     );
     await expectRejected(
       pm,
       { ...base(), preEstimate: { currency: "USD", amount: 1_000_000_000, fxRate: 1350 }, preEstimateFxRateTouched: true },
       "preEstimateAmount",
-      "금액이 상한을 넘습니다 · 999,999,999,999원 이하",
+      "금액 상한 초과 · 999,999,999,999원 이하",
     );
     await expectRejected(
       pm,

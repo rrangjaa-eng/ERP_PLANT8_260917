@@ -487,7 +487,7 @@ describe("매출 쓰기 경로(04-41 · Codex #1 · ENG-D10)", () => {
   const usd = (amount: number, fxRate: number) => ({ currency: "USD" as const, amount, fxRate });
   const NOT_FOUND = "줄을 찾을 수 없음 · 새로 고침";
   const MISMATCH = "이미 저장된 줄과 값이 다름 · 새로 고침";
-  const CAP = "금액이 상한을 넘습니다 · 999,999,999,999원 이하";
+  const CAP = "금액 상한 초과 · 999,999,999,999원 이하";
   const FX_ZERO = "환율 0 이하 · 환율 수정";
 
   async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
@@ -649,7 +649,7 @@ describe("매출 쓰기 경로(04-41 · Codex #1 · ENG-D10)", () => {
         saveRevenue(finance, project.id, { issuedEntries: [{ id: existing.id, version: existing.version, entryDate: "2026-09-02", amount: krw(2500) }] }),
       );
 
-      expect((error as Error).message).toMatch(/다른 사람이 먼저 이 줄을 바꿨습니다/);
+      expect((error as Error).message).toMatch(/다른 사람이 먼저 이 줄을 바꿈/);
       expect((await entryRow(existing.id))?.amountAmountKrw).toBe(2000);
       expect((await entryRow(existing.id))?.version).toBe(existing.version + 1);
     });

@@ -227,7 +227,7 @@ describe("normalizeMoneyInput", () => {
     expect(rejection({ currency: "KRW", amount: -1_000_000_000_001, fxRate: 1 }).reason).toBe("range");
     const usd = rejection({ currency: "USD", amount: 1_000_000_000, fxRate: 1350 });
     expect(usd.reason).toBe("range");
-    expect(usd.message).toBe("금액이 상한을 넘습니다 · 999,999,999,999원 이하");
+    expect(usd.message).toBe("금액 상한 초과 · 999,999,999,999원 이하");
     expect(normalizeMoneyInput({ currency: "KRW", amount: KRW_COLUMN_MAX, fxRate: 1 }).amount).toBe(KRW_COLUMN_MAX);
     expect(normalizeMoneyInput({ currency: "KRW", amount: KRW_COLUMN_MIN, fxRate: 1 }).amount).toBe(KRW_COLUMN_MIN);
   });

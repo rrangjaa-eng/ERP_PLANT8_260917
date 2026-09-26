@@ -41,8 +41,8 @@ describe("handleServerError (defect 1 — 화이트리스트)", () => {
   });
 
   it("UserFacingError는 메시지가 그대로 화면에 나간다", () => {
-    const message = handleServerError(new UserFacingError("로그인이 필요합니다."));
-    expect(message).toBe("로그인이 필요합니다.");
+    const message = handleServerError(new UserFacingError("로그인 필요 · 다시 로그인"));
+    expect(message).toBe("로그인 필요 · 다시 로그인");
   });
 
   it("UserFacingError를 상속한 도메인 클래스도 화이트리스트를 통과한다", () => {
@@ -60,7 +60,7 @@ describe("handleServerError (defect 1 — 화이트리스트)", () => {
 
     const message = handleServerError(result.error);
 
-    expect(message).toBe("0 이상이어야 합니다 · 값을 확인해 주세요");
+    expect(message).toBe("0 이상만 가능 · 값 확인");
     expect(result.error).toBeInstanceOf(ZodError);
   });
 

@@ -218,8 +218,8 @@ describe("formatNumberInput — 타이핑 중 쉼표 삽입 + 커서 보존", ()
 });
 
 describe("numberInputRejectionReason — UI-SPEC rev 5 Copywriting 원문", () => {
-  it("krw · krw-fraction → 원화는 소수점 없이 적어 주세요", () => {
-    expect(numberInputRejectionReason("krw", "krw-fraction")).toBe("원화는 소수점 없이 적어 주세요");
+  it("krw · krw-fraction → 원화는 소수점 없이", () => {
+    expect(numberInputRejectionReason("krw", "krw-fraction")).toBe("원화는 소수점 없이");
   });
 
   it("foreign · precision → 외화는 소수 2자리까지", () => {

@@ -28,9 +28,9 @@ describe("validatePreEstimateChange — 결정표", () => {
     expect(validatePreEstimateChange({ currency: "USD", amount: 40_000, fxRate: 1350 })).toEqual([]);
   });
 
-  it("USD인데 환율이 없으면 → 환율 칸 「환율이 없습니다」", () => {
+  it("USD인데 환율이 없으면 → 환율 칸 「환율 없음」", () => {
     expect(validatePreEstimateChange({ currency: "USD", amount: 40_000, fxRate: null })).toEqual([
-      { field: "fxRate", reason: "환율이 없습니다 · USD 환율을 적어 주세요" },
+      { field: "fxRate", reason: "환율 없음 · USD 환율 입력" },
     ]);
   });
 

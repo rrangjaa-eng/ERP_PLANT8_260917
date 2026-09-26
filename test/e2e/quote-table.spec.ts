@@ -142,7 +142,7 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     // (c) 저장 버튼 자체가 오류 이유와 함께 비활성 — 서버 왕복 없이 거부.
     const saveButton = page.getByRole("button", { name: /일괄 저장/ });
     await expect(saveButton).toBeDisabled();
-    await expect(page.getByText(/오류.*고쳐야 저장됩니다/)).toBeVisible();
+    await expect(page.getByText(/오류.*고친 뒤 저장/)).toBeVisible();
 
     // (e) 항목 편집값은 오류가 있어도 그대로 남아 있다.
     await expect(page.getByText("오류 검증용 항목")).toBeVisible();

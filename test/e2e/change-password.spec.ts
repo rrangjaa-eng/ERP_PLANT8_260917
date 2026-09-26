@@ -49,7 +49,7 @@ test.describe("비밀번호 변경 + 임시 비밀번호 배너 (AUTH-03, D-08, 
     await page.getByLabel("현재 비밀번호").fill(newPassword);
     await page.getByLabel("새 비밀번호").fill("short12");
     await page.getByRole("button", { name: "비밀번호 변경" }).click();
-    await expect(page.getByText("8자 이상이어야 합니다.")).toBeVisible();
+    await expect(page.getByText("8자 미만 · 8자 이상으로")).toBeVisible();
     await expect(page).toHaveURL(/\/account$/);
 
     // 로그아웃한다.

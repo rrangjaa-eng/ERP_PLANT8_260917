@@ -36,7 +36,7 @@ test.describe("프로젝트 등록 → 견적 줄 저장 (Phase 4 트레이서)"
     const pmSelect = page.getByLabel("담당 PM");
     await pmSelect.selectOption({ index: 1 });
     await page.getByRole("button", { name: "프로젝트 등록" }).click();
-    await expect(page.getByText(/입력하세요|고르세요/).first()).toBeVisible();
+    await expect(page.getByText(/필요 · /).first()).toBeVisible();
     // 이미 고른 클라이언트 값이 유지된다 — 오류 뒤에도 사람이 적은 값이 남는다.
     await expect(page.getByLabel("클라이언트")).toHaveValue(vendor.id);
 

@@ -1167,13 +1167,13 @@ describe("금액 입력 정규화(04-40 · B §2)", () => {
     expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id))).toHaveLength(0);
   });
 
-  it("(n3) 원화 환산이 범위를 넘는 단가는 그 칸 셀 오류 「금액이 상한을 넘습니다 · 999,999,999,999원 이하」 — PG 22003으로 새지 않는다", async () => {
+  it("(n3) 원화 환산이 범위를 넘는 단가는 그 칸 셀 오류 「금액 상한 초과 · 999,999,999,999원 이하」 — PG 22003으로 새지 않는다", async () => {
     const { revision, subcategoryValue } = await setupProject();
     const bad = newRow(subcategoryValue, { unitPrice: krw(1_000_000_000_000) });
 
     const error = await rejectionOf(saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [bad] }));
 
-    expect(error.formatErrors).toContainEqual(expect.objectContaining({ rowId: bad.id, field: "unitPrice", reason: "금액이 상한을 넘습니다 · 999,999,999,999원 이하" }));
+    expect(error.formatErrors).toContainEqual(expect.objectContaining({ rowId: bad.id, field: "unitPrice", reason: "금액 상한 초과 · 999,999,999,999원 이하" }));
     expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id))).toHaveLength(0);
   });
 });

@@ -641,7 +641,7 @@ test.describe("매출 금액 입력 오류 → 그 셀 고정 오류 · 표별 �
     await page.keyboard.press("Control+s");
     await rejected;
 
-    const CAP = "금액이 상한을 넘습니다 · 999,999,999,999원 이하";
+    const CAP = "금액 상한 초과 · 999,999,999,999원 이하";
     // 새 줄은 발행 표의 마지막 줄이다(`has:`에 표 기준 로케이터를 넣으면 줄 안에서 다시 표를 찾아 늘 0개다).
     const amountCell = issuedTable.locator("tbody tr").last().locator('td[aria-invalid="true"]');
     await expect(amountCell).toHaveCount(1);

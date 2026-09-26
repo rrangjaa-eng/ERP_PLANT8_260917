@@ -94,8 +94,8 @@ export default defineConfig({
       //    (02-RESEARCH.md:535가 성공 기준 3 검증 명령으로 적어 둔 형태다).
       //    폰만 빨리 보려면 `--project=mobile-375 --no-deps`를 쓴다.
       //
-      // 진짜 해결은 워커별 DB 분리(후속 과제)이고, 375px 표 오버플로 자체는
-      // Phase 4 이월 항목이다.
+      // 진짜 해결은 워커별 DB 분리(후속 과제)다. 375px 표 오버플로 자체는
+      // 2026-09-26 §7-3 칸 접기로 고쳤다(mobile-320-no-overflow.spec.ts).
       dependencies: ["desktop"],
       use: {
         viewport: { width: 375, height: 800 },

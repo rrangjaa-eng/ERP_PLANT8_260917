@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getSession } from "@/lib/viewer";
@@ -54,6 +55,8 @@ export default async function VendorsPage({
   ]);
 
   const evidenceTypeLabelByValue = new Map(evidenceTypes.map((item) => [item.value, item.label]));
+  // 「동작」 열의 유무 — 머리글·행·접힌 줄의 colSpan이 같은 조건을 쓴다.
+  const hasActions = canWrite || canArchive;
   // editId가 가리키는 행이 지금 이 조회 결과(숨김 포함 여부에 따라 달라짐)에
   // 없으면(예: 숨김 거래처를 「숨김 포함」 꺼진 채로 가리키는 오래된 링크)
   // 조용히 등록 모드로 돌아간다 — 존재하지 않는 대상을 오류로 다루지 않는다.
@@ -112,58 +115,75 @@ export default async function VendorsPage({
           <thead>
             <tr>
               <th scope="col">이름</th>
-              <th scope="col">사업자 번호</th>
-              <th scope="col">기본 증빙 종류</th>
+              <th scope="col" className={styles.p2}>사업자 번호</th>
+              <th scope="col" className={styles.p2}>기본 증빙 종류</th>
               <th scope="col">계좌</th>
-              <th scope="col">상태</th>
-              {canWrite || canArchive ? <th scope="col">동작</th> : null}
+              <th scope="col" className={styles.p2}>상태</th>
+              {hasActions ? <th scope="col">동작</th> : null}
             </tr>
           </thead>
           <tbody>
-            {vendors.map((vendor) => (
-              <tr key={vendor.id}>
-                <td>{vendor.name}</td>
-                <td>{vendor.businessNo ?? "—"}</td>
-                <td>
-                  {vendor.defaultEvidenceType
-                    ? (evidenceTypeLabelByValue.get(vendor.defaultEvidenceType) ?? vendor.defaultEvidenceType)
-                    : "—"}
-                </td>
-                <td>
-                  <AccountNumberCell
-                    vendorId={vendor.id}
-                    masked={maskTail4(vendor.accountNumberLast4)}
-                    canReveal={canReveal}
-                  />
-                </td>
-                <td>
-                  {vendor.archivedAt ? (
-                    <StatusTag kind="muted" variant="text">
-                      보관됨
-                    </StatusTag>
-                  ) : vendor.hidden ? (
-                    <StatusTag kind="muted" variant="text">
-                      숨김
-                    </StatusTag>
-                  ) : "—"}
-                </td>
-                {canWrite || canArchive ? (
-                  <td>
-                    {vendor.archivedAt ? null : (
-                      <>
-                        {canWrite ? (
-                          <Link href={vendorsHref(includeHidden, { editId: vendor.id })} className={styles.toggle}>
-                            수정
-                          </Link>
-                        ) : null}
-                        {canWrite ? <VendorHiddenToggle id={vendor.id} hidden={vendor.hidden} /> : null}
-                        {canArchive ? <VendorDeleteButton id={vendor.id} name={vendor.name} /> : null}
-                      </>
-                    )}
-                  </td>
-                ) : null}
-              </tr>
-            ))}
+            {vendors.map((vendor) => {
+              const evidenceType = vendor.defaultEvidenceType
+                ? (evidenceTypeLabelByValue.get(vendor.defaultEvidenceType) ?? vendor.defaultEvidenceType)
+                : null;
+              // §7-3 폰 전략 — P1(이름·계좌·동작)만 열로 남고 나머지는 행 아래
+              // 접힌 줄 하나로 들어간다(상세 화면이 없어 P3로 숨기지 않는다).
+              const folded = [
+                vendor.businessNo,
+                evidenceType,
+                vendor.archivedAt ? "보관됨" : vendor.hidden ? "숨김" : null,
+              ].filter((value): value is string => !!value);
+              return (
+                <Fragment key={vendor.id}>
+                  <tr>
+                    <td>{vendor.name}</td>
+                    <td className={styles.p2}>{vendor.businessNo ?? "—"}</td>
+                    <td className={styles.p2}>{evidenceType ?? "—"}</td>
+                    <td>
+                      <AccountNumberCell
+                        vendorId={vendor.id}
+                        masked={maskTail4(vendor.accountNumberLast4)}
+                        canReveal={canReveal}
+                      />
+                    </td>
+                    <td className={styles.p2}>
+                      {vendor.archivedAt ? (
+                        <StatusTag kind="muted" variant="text">
+                          보관됨
+                        </StatusTag>
+                      ) : vendor.hidden ? (
+                        <StatusTag kind="muted" variant="text">
+                          숨김
+                        </StatusTag>
+                      ) : "—"}
+                    </td>
+                    {hasActions ? (
+                      <td>
+                        {vendor.archivedAt ? null : (
+                          <>
+                            {canWrite ? (
+                              <Link href={vendorsHref(includeHidden, { editId: vendor.id })} className={styles.toggle}>
+                                수정
+                              </Link>
+                            ) : null}
+                            {canWrite ? <VendorHiddenToggle id={vendor.id} hidden={vendor.hidden} /> : null}
+                            {canArchive ? <VendorDeleteButton id={vendor.id} name={vendor.name} /> : null}
+                          </>
+                        )}
+                      </td>
+                    ) : null}
+                  </tr>
+                  {folded.length > 0 ? (
+                    <tr className={styles.collapsedRow}>
+                      <td colSpan={hasActions ? 6 : 5} className={styles.collapsedCell}>
+                        {folded.join(" · ")}
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       )}

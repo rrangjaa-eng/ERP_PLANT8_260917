@@ -10,7 +10,7 @@ import { selectWinner, submitCertificate, verifyLast4 } from "@/domain/certs/int
 // 호출도 막는다). domain 함수 하나만 부르고 결과 유니온을 그대로 돌려준다.
 
 export const selectWinnerAction = publicActionClient
-  .schema(z.object({ token: z.string().min(1), rowId: z.string().min(1) }))
+  .schema(z.object({ token: z.string().min(1), rowId: z.uuid() }))
   .action(async ({ parsedInput }) => {
     await assertCertFeatureEnabled();
     return selectWinner(parsedInput.token, parsedInput.rowId);
@@ -20,7 +20,7 @@ export const verifyLast4Action = publicActionClient
   .schema(
     z.object({
       token: z.string().min(1),
-      rowId: z.string().min(1),
+      rowId: z.uuid(),
       last4: z.string().min(1).max(4),
       idemKey: z.string().min(1),
     }),
@@ -34,7 +34,7 @@ export const submitCertificateAction = publicActionClient
   .schema(
     z.object({
       token: z.string().min(1),
-      rowId: z.string().min(1),
+      rowId: z.uuid(),
       proof: z.string().min(1),
       name: z.string().min(1).max(40),
       rrnFront6: z.string(),

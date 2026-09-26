@@ -17,7 +17,7 @@ import { Toast } from "@/ui/toast/Toast";
 import { useDirtyStorage } from "@/ui/table/use-dirty-storage";
 import { useEditableWidth } from "@/ui/table/use-editable-width";
 import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
-import type { FooterNoticeItem } from "@/ui/table/footer-notice";
+import { savedNoticeText, type FooterNoticeItem } from "@/ui/table/footer-notice";
 import { normalizeNumericPaste } from "@/ui/table/parse-tsv";
 import { formatKrw, formatForeignLine, formatQuantity, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
 import { kstToday } from "@/lib/kst-date";
@@ -975,6 +975,9 @@ export function QuoteLedger({
   };
   const [balanceKrw, setBalanceKrw] = useState<number | undefined>(revenue.balanceKrw);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  // FINDING-012 — 이번 저장 요청의 바뀐 줄 수(만든 + 고친 = dirty 줄, 지운 = 보관할 줄). 성공 글자 `저장됨 N줄 HH:MM`의 N
+  // (0이면 `저장됨 HH:MM`). 시도마다 savedAt을 먼저 비우므로 성공 전에는 보이지 않는다.
+  const [sentChangedLines, setSentChangedLines] = useState(0);
   // 04-47(DR-16) — 합계 행 오른쪽의 붙여넣기 묶음(`붙여넣기 N줄` · 오른쪽 버림 · 외화 · 계산 열 무시 · 04-23 조정 줄 건너뜀).
   // 다음 붙여넣기 때 바뀌고 다음 저장 시도 때 지운다.
   const [pasteNotices, setPasteNotices] = useState<FooterNoticeItem[]>([]);
@@ -1501,6 +1504,7 @@ export function QuoteLedger({
 
     const dirtyLines = lines.filter((line) => line.dirty);
     sentLineKeysRef.current = dirtyLines.map((line) => line.clientKey);
+    setSentChangedLines(dirtyLines.length + archivedLineIds.length);
     const dirtyIssued = (issuedEntries ?? []).filter((entry) => entry.dirty);
     const dirtyPaid = (paidEntries ?? []).filter((entry) => entry.dirty);
 
@@ -2371,7 +2375,7 @@ export function QuoteLedger({
             : []),
           ...pasteNotices,
         ]}
-        footerSuccess={savedAt ? `저장됨 ${savedAt}` : null}
+        footerSuccess={savedAt ? savedNoticeText(sentChangedLines, savedAt) : null}
         revealRowId={revealRowId}
         footer={(notice) => (
           <tr>

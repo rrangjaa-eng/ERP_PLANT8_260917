@@ -50,3 +50,11 @@ export function composeFooterNotice(
     ...pick((item) => item.paste === undefined && item.tone === "muted"),
   ];
 }
+
+/**
+ * FINDING-012(코디네이터 대리 결정 2026-09-26) — 저장 성공 글자. `changedLines` = 이번 저장에서 바뀐 줄(만든 + 고친 + 지운) 수.
+ * 0이면(기간 · 총 매출 예상가 · 매출 표만 저장) 수를 뺀다.
+ */
+export function savedNoticeText(changedLines: number, time: string): string {
+  return changedLines > 0 ? `저장됨 ${changedLines}줄 ${time}` : `저장됨 ${time}`;
+}

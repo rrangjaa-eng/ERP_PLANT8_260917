@@ -187,7 +187,7 @@ export function PermissionGrid({
       // 안 된다).
       setCells((prev) => ({
         ...prev,
-        [key]: { checked: !next, status: "error", reason: "저장하지 못했습니다 · 다시 시도" },
+        [key]: { checked: !next, status: "error", reason: "저장 실패 · 다시 시도" },
       }));
       return false;
     }

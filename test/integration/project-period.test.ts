@@ -273,7 +273,7 @@ describe("기간 저장 — 행위자 · 권리 · 검증 (04-22 Task 2)", () =>
     }).catch((error: unknown) => error);
 
     expect((outcome as PeriodRejectedError).errors).toEqual([
-      { field: "start", reason: "진행부터는 시작일이 있어야 합니다 · 시작일을 적어 주세요" },
+      { field: "start", reason: "시작일 필요 · 시작일 입력" },
     ]);
   });
 
@@ -287,7 +287,7 @@ describe("기간 저장 — 행위자 · 권리 · 검증 (04-22 Task 2)", () =>
 
     expect(outcome).toBeInstanceOf(PeriodRejectedError);
     expect((outcome as PeriodRejectedError).errors).toEqual([
-      { field: "start", reason: "날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요" },
+      { field: "start", reason: "날짜 형식 오류 · 2026-09-18처럼" },
     ]);
   });
 
@@ -351,7 +351,7 @@ describe("기간 저장 — 행위자 · 권리 · 검증 (04-22 Task 2)", () =>
         period: period(s, { endDate: newEnd }),
         quoteLines: await newLine(s, itemName),
       }),
-    ).rejects.toThrow("견적 줄 저장 권한이 없습니다.");
+    ).rejects.toThrow("견적 줄 저장 권한 없음");
     expect(await linesNamed(itemName)).toHaveLength(0);
     expect((await reload(s.projectId)).endDate).toBe(s.endDate);
     expect(await logs(s.projectId, "document_update")).toHaveLength(0);
@@ -734,7 +734,7 @@ describe("총 매출 예상가 저장 (04-44)", () => {
 
     expect(outcome).toBeInstanceOf(PreEstimateRejectedError);
     expect((outcome as PreEstimateRejectedError).errors).toEqual([
-      { field: "amount", reason: "총 매출 예상가는 0 이상 · 금액을 고쳐 주세요" },
+      { field: "amount", reason: "총 매출 예상가는 0 이상 · 금액 수정" },
     ]);
     expect((await reload(s.projectId)).preEstimateAmountKrw).toBe(0);
     expect(await linesNamed(itemName)).toHaveLength(0);
@@ -751,10 +751,10 @@ describe("총 매출 예상가 저장 (04-44)", () => {
 
     expect(outcome).toBeInstanceOf(PeriodRejectedError);
     expect((outcome as PeriodRejectedError).errors).toEqual([
-      { field: "end", reason: "종료일이 시작일보다 빠릅니다 · 종료일을 고쳐 주세요" },
+      { field: "end", reason: "종료일이 시작일보다 빠름 · 종료일 수정" },
     ]);
     expect((outcome as PeriodRejectedError).preEstimateErrors).toEqual([
-      { field: "fxRate", reason: "환율은 0보다 커야 합니다 · 환율을 고쳐 주세요" },
+      { field: "fxRate", reason: "환율 0 이하 · 환율 수정" },
     ]);
     const row = await reload(s.projectId);
     expect(row.endDate).toBe(FAR);

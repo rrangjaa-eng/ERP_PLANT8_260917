@@ -72,7 +72,7 @@ export function PermissionGridClient<TInput>({
     const input = buildActionInput(kind, rowId, columnId, next) as unknown as TInput;
     const result = await toggleAction(input);
     if (result.serverError || result.validationErrors) {
-      const message = typeof result.serverError === "string" ? result.serverError : "저장하지 못했습니다.";
+      const message = typeof result.serverError === "string" ? result.serverError : "저장 실패";
       throw new Error(message);
     }
   }

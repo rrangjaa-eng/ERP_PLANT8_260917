@@ -150,7 +150,7 @@ test.describe("코드표 항목 설명 (D-93, UI-SPEC rev 5 S14, DR-29)", () => 
     const descriptionInput = page.getByLabel(`${label} 설명`);
     await descriptionInput.fill("무대·부스 설치와 철거 공사");
     await blurAndWaitForSave(page, descriptionInput);
-    await expect(page.getByText("설명이 40자를 넘습니다", { exact: false })).toHaveCount(0);
+    await expect(page.getByText("설명 40자 초과 · 한 문장으로 축약")).toHaveCount(0);
 
     await page.reload();
     await expect(page.getByLabel(`${label} 설명`)).toHaveValue("무대·부스 설치와 철거 공사");
@@ -177,18 +177,18 @@ test.describe("코드표 항목 설명 (D-93, UI-SPEC rev 5 S14, DR-29)", () => 
     const descriptionInput = page.getByLabel(`${label} 설명`);
     await descriptionInput.fill(forty);
     await descriptionInput.blur();
-    await expect(page.getByText("설명이 40자를 넘습니다", { exact: false })).toHaveCount(0);
+    await expect(page.getByText("설명 40자 초과 · 한 문장으로 축약")).toHaveCount(0);
 
     await descriptionInput.fill(fortyOne);
     await descriptionInput.blur();
-    await expect(page.getByText("설명이 40자를 넘습니다 · 한 문장으로 줄여 주세요")).toBeVisible();
+    await expect(page.getByText("설명 40자 초과 · 한 문장으로 축약")).toBeVisible();
     await expect(page.getByText("41/40")).toBeVisible();
     await expect(descriptionInput).toHaveValue(fortyOne);
 
     // 한 글자 지우고 blur — 오류·글자 수가 사라지고 새로 고쳐도 40자 값.
     await descriptionInput.fill(forty);
     await descriptionInput.blur();
-    await expect(page.getByText("설명이 40자를 넘습니다", { exact: false })).toHaveCount(0);
+    await expect(page.getByText("설명 40자 초과 · 한 문장으로 축약")).toHaveCount(0);
     await expect(page.getByText("41/40")).toHaveCount(0);
     await page.reload();
     await expect(page.getByLabel(`${label} 설명`)).toHaveValue(forty);
@@ -198,7 +198,7 @@ test.describe("코드표 항목 설명 (D-93, UI-SPEC rev 5 S14, DR-29)", () => 
     await descriptionInputAfterReload.fill(fortyOne);
     await descriptionInputAfterReload.press("Escape");
     await expect(descriptionInputAfterReload).toHaveValue(forty);
-    await expect(page.getByText("설명이 40자를 넘습니다", { exact: false })).toHaveCount(0);
+    await expect(page.getByText("설명 40자 초과 · 한 문장으로 축약")).toHaveCount(0);
   });
 
   // (c) 설명을 지우고 blur → 새로 고쳐도 설명 칸이 비고 읽기 표시가 —다(C-13).
@@ -228,11 +228,11 @@ test.describe("코드표 항목 설명 (D-93, UI-SPEC rev 5 S14, DR-29)", () => 
     await page.reload();
     // 값이 지워졌다는 증거는 DB에서 다시 읽은 입력값이 빈 문자열이라는
     // 것이다(DB가 null이 아니면 옛 값이 그대로 보인다) — 관리자(canWrite)는
-    // 화면에서 계속 편집 가능한 입력칸을 보므로 정적 「—」 글자가 아니라
-    // 빈 칸 + placeholder 「—」(S14 「값이 없으면 — 하나」와 같은 시각).
+    // 화면에서 계속 편집 가능한 입력칸을 보며, 자리표시자는 형식 예만 쓴다는
+    // 원칙(SYSTEM.md)에 따라 빈 칸은 그냥 빈 칸이다(placeholder 없음).
     const descriptionInputAfterClear = page.getByLabel(`${label} 설명`);
     await expect(descriptionInputAfterClear).toHaveValue("");
-    await expect(descriptionInputAfterClear).toHaveAttribute("placeholder", "—");
+    await expect(descriptionInputAfterClear).not.toHaveAttribute("placeholder", "—");
   });
 
   // (d) 증빙 종류 표의 세금 규칙 행 colSpan이 새 열 수와 맞는다 — 머리글

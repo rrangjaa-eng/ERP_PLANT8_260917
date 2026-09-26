@@ -262,7 +262,7 @@ export async function queryActionLog(
 ): Promise<ActionLogDto[]> {
   const visibleFn = deps?.visible ?? defaultVisible;
   if (!(await visibleFn(viewer, DETAIL_INFO_ITEM))) {
-    throw new ForbiddenError("행동 로그 열람 권한이 없습니다.");
+    throw new ForbiddenError("행동 로그 열람 권한 없음");
   }
 
   const filterActionLog = deps?.filterActionLog ?? defaultFilterActionLog;
@@ -336,7 +336,7 @@ export async function pruneActionLog(
 ): Promise<PruneActionLogResult> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, ACTION_LOG_MENU, "write"))) {
-    throw new ForbiddenError("행동 로그 정리 권한이 없습니다.");
+    throw new ForbiddenError("행동 로그 정리 권한 없음");
   }
 
   const pruneRows = deps?.markActionLogRowsPruned ?? defaultPruneActionLogRows;

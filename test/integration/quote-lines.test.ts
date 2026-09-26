@@ -1156,24 +1156,24 @@ describe("금액 입력 정규화(04-40 · B §2)", () => {
     expect(saved.quoteAmountKrw).toBe(10_000);
   });
 
-  it("(n2) USD 단가 환율 0은 그 칸의 셀 오류 「환율은 0보다 커야 합니다 · 환율을 고쳐 주세요」 · 배치 전부 거부", async () => {
+  it("(n2) USD 단가 환율 0은 그 칸의 셀 오류 「환율 0 이하 · 환율 수정」 · 배치 전부 거부", async () => {
     const { revision, subcategoryValue } = await setupProject();
     const ok = newRow(subcategoryValue);
     const bad = newRow(subcategoryValue, { unitPrice: { currency: "USD", amount: 100, fxRate: 0 } });
 
     const error = await rejectionOf(saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [ok, bad] }));
 
-    expect(error.formatErrors).toContainEqual(expect.objectContaining({ rowId: bad.id, field: "unitPrice", reason: "환율은 0보다 커야 합니다 · 환율을 고쳐 주세요" }));
+    expect(error.formatErrors).toContainEqual(expect.objectContaining({ rowId: bad.id, field: "unitPrice", reason: "환율 0 이하 · 환율 수정" }));
     expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id))).toHaveLength(0);
   });
 
-  it("(n3) 원화 환산이 범위를 넘는 단가는 그 칸 셀 오류 「금액이 상한을 넘습니다 · 999,999,999,999원 이하」 — PG 22003으로 새지 않는다", async () => {
+  it("(n3) 원화 환산이 범위를 넘는 단가는 그 칸 셀 오류 「금액 상한 초과 · 999,999,999,999원 이하」 — PG 22003으로 새지 않는다", async () => {
     const { revision, subcategoryValue } = await setupProject();
     const bad = newRow(subcategoryValue, { unitPrice: krw(1_000_000_000_000) });
 
     const error = await rejectionOf(saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [bad] }));
 
-    expect(error.formatErrors).toContainEqual(expect.objectContaining({ rowId: bad.id, field: "unitPrice", reason: "금액이 상한을 넘습니다 · 999,999,999,999원 이하" }));
+    expect(error.formatErrors).toContainEqual(expect.objectContaining({ rowId: bad.id, field: "unitPrice", reason: "금액 상한 초과 · 999,999,999,999원 이하" }));
     expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id))).toHaveLength(0);
   });
 });
@@ -1186,22 +1186,22 @@ describe("원화 밖 숫자 컬럼 범위(04-40 검토 SF-1)", () => {
     expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revisionId))).toHaveLength(0);
   }
 
-  it("(o1) USD 단가 금액 0 · 환율 10억 → 단가 칸 「환율이 상한을 넘습니다 · 환율을 고쳐 주세요」", async () => {
+  it("(o1) USD 단가 금액 0 · 환율 10억 → 단가 칸 「환율 상한 초과 · 환율 수정」", async () => {
     const { revision, subcategoryValue } = await setupProject();
     const bad = newRow(subcategoryValue, { unitPrice: { currency: "USD", amount: 0, fxRate: 1_000_000_000 } });
-    await expectCell(revision.id, bad, "unitPrice", "환율이 상한을 넘습니다 · 환율을 고쳐 주세요");
+    await expectCell(revision.id, bad, "unitPrice", "환율 상한 초과 · 환율 수정");
   });
 
-  it("(o2) USD 실행가 금액 1조 · 환율 0.0001 → 실행가 칸 「외화 금액이 상한을 넘습니다 · 금액을 고쳐 주세요」", async () => {
+  it("(o2) USD 실행가 금액 1조 · 환율 0.0001 → 실행가 칸 「외화 금액 상한 초과 · 금액 수정」", async () => {
     const { revision, subcategoryValue } = await setupProject();
     const bad = newRow(subcategoryValue, { execution: { currency: "USD", amount: 1_000_000_000_000, fxRate: 0.0001 } });
-    await expectCell(revision.id, bad, "execution", "외화 금액이 상한을 넘습니다 · 금액을 고쳐 주세요");
+    await expectCell(revision.id, bad, "execution", "외화 금액 상한 초과 · 금액 수정");
   });
 
-  it("(o3) 수량 100억 · 단가 0 → 수량 칸 「수량이 상한을 넘습니다 · 수량을 고쳐 주세요」", async () => {
+  it("(o3) 수량 100억 · 단가 0 → 수량 칸 「수량 상한 초과 · 수량 수정」", async () => {
     const { revision, subcategoryValue } = await setupProject();
     const bad = newRow(subcategoryValue, { quantity: 10_000_000_000, unitPrice: krw(0) });
-    await expectCell(revision.id, bad, "quantity", "수량이 상한을 넘습니다 · 수량을 고쳐 주세요");
+    await expectCell(revision.id, bad, "quantity", "수량 상한 초과 · 수량 수정");
   });
 
   it("(o5) 수량 1.234 · 단가 1,000,000 → 수량 칸 「수량은 소수 2자리까지」(저장 수량과 견적가가 어긋나지 않게 반올림하지 않고 거부)", async () => {
@@ -1210,16 +1210,16 @@ describe("원화 밖 숫자 컬럼 범위(04-40 검토 SF-1)", () => {
     await expectCell(revision.id, bad, "quantity", "수량은 소수 2자리까지");
   });
 
-  it("(o4) 견적 외 비용 줄 실행가 −1,000,000,000,000 → 차익 1,000,000,000,000 — 실행가 칸 「차익이 상한을 넘습니다 · 실행가를 고쳐 주세요」", async () => {
+  it("(o4) 견적 외 비용 줄 실행가 −1,000,000,000,000 → 차익 1,000,000,000,000 — 실행가 칸 「차익 상한 초과 · 실행가 수정」", async () => {
     const { revision, subcategoryValue } = await setupProject();
     const bad = newRow(subcategoryValue, { lineKind: "out_of_quote", execution: krw(-1_000_000_000_000) });
-    await expectCell(revision.id, bad, "execution", "차익이 상한을 넘습니다 · 실행가를 고쳐 주세요");
+    await expectCell(revision.id, bad, "execution", "차익 상한 초과 · 실행가 수정");
   });
 });
 
 // 04-40(DR-9) — 수량 × 단가의 계산 견적가가 quote_amount_krw 상한을 넘으면 수량·단가 두 칸 셀 오류로 쓰기 전에 거부한다.
 describe("계산 견적가 상한(04-40 · DR-9)", () => {
-  const OVER = "견적가가 상한을 넘습니다 · 수량이나 단가를 고쳐 주세요";
+  const OVER = "견적가 상한 초과 · 수량이나 단가 수정";
 
   function overBatch(subcategory: string) {
     const ok = newRow(subcategory, { unitPrice: krw(100_000) });

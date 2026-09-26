@@ -115,7 +115,7 @@ export async function createRole(
 ): Promise<RoleDto> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, PEOPLE_MENU, "write"))) {
-    throw new ForbiddenError("계급 추가 권한이 없습니다.");
+    throw new ForbiddenError("계급 추가 권한 없음");
   }
 
   const id = `role-${randomUUID()}`;
@@ -135,7 +135,7 @@ export async function renameRole(
 ): Promise<void> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, PEOPLE_MENU, "write"))) {
-    throw new ForbiddenError("계급 이름 변경 권한이 없습니다.");
+    throw new ForbiddenError("계급 이름 변경 권한 없음");
   }
 
   await repoRenameRole(viewer, id, normalizeRoleName(name));
@@ -152,11 +152,11 @@ export async function setRoleWorkScope(
 ): Promise<void> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, PEOPLE_MENU, "write"))) {
-    throw new ForbiddenError("계급 업무 범위 변경 권한이 없습니다.");
+    throw new ForbiddenError("계급 업무 범위 변경 권한 없음");
   }
 
   const row = await defaultFindRoleById(viewer, id);
-  if (!row) throw new UserFacingError("계급을 찾을 수 없습니다.");
+  if (!row) throw new UserFacingError("계급 찾을 수 없음");
 
   await repoSetRoleWorkScope(viewer, id, workScope);
 

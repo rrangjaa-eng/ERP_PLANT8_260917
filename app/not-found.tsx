@@ -9,9 +9,9 @@ import { PageHeader } from "@/ui/page-header/PageHeader";
 export default function NotFound() {
   return (
     <main>
-      <PageHeader title="페이지를 찾을 수 없습니다" titleSize="2xl" />
+      <PageHeader title="페이지 찾을 수 없음" titleSize="2xl" />
       <ListEmpty
-        message="이 페이지가 없거나 옮겨졌습니다"
+        message="페이지 없음 또는 이동됨"
         action={{ label: "첫 화면으로", href: "/" }}
         tone="error"
       />

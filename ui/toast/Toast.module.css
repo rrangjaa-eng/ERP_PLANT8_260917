@@ -49,4 +49,9 @@
   .toast {
     bottom: calc(var(--touch-min) + var(--s-3));
   }
+
+  .action {
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
 }

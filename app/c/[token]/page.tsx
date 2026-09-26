@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { assertCertFeatureEnabled } from "@/lib/certs/feature-guard";
 import { loadIntake } from "@/domain/certs/intake";
-import { formatContactPhone } from "@/domain/certs/format";
-import { IntakeFlow } from "./intake-flow";
+import { ClosedResult, IntakeFlow } from "./intake-flow";
 import styles from "./intake.module.css";
 
 export const metadata: Metadata = {
@@ -12,12 +11,6 @@ export const metadata: Metadata = {
 };
 
 export const dynamic = "force-dynamic";
-
-function closedReasonText(reason: "expired" | "all_submitted" | "manual"): string {
-  if (reason === "all_submitted") return "모든 자리가 제출을 마쳤습니다";
-  if (reason === "manual") return "담당자가 링크를 닫았습니다";
-  return "링크 유효 시간이 지났습니다";
-}
 
 export default async function CertIntakePage({ params }: { params: Promise<{ token: string }> }) {
   await assertCertFeatureEnabled();
@@ -29,15 +22,13 @@ export default async function CertIntakePage({ params }: { params: Promise<{ tok
   if (result.kind === "closed") {
     return (
       <main className={styles.main}>
-        <h1 className={styles.title}>이 링크는 닫혔습니다</h1>
-        <p>{closedReasonText(result.reason)}</p>
-        <p>
-          확인이 필요하면 담당자 {result.managerName} · PLANT8 경영관리{" "}
-          <a href={`tel:${result.contactPhone}`} className={styles.telLink}>
-            {formatContactPhone(result.contactPhone)}
-          </a>
-          에 전화해 주세요
-        </p>
+        <h1 className={styles.title}>기타소득 지급 확인</h1>
+        <ClosedResult
+          reason={result.reason}
+          at={result.at}
+          managerName={result.managerName}
+          contactPhone={result.contactPhone}
+        />
       </main>
     );
   }

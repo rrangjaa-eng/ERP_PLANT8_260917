@@ -1,11 +1,12 @@
 "use client";
 
-import { useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { Button } from "@/ui/button/Button";
 import { TextField } from "@/ui/input/TextField";
 import { formatContactPhone, formatSubmittedAtKst } from "@/domain/certs/format";
 import { selectWinnerAction, submitCertificateAction, verifyLast4Action } from "./actions";
+import { isDefiniteResult, resolveHistoryEntry, type HistoryStep } from "./flow-rules";
 import { SignaturePad, type SignaturePadHandle } from "./signature-pad";
 import styles from "./intake.module.css";
 
@@ -20,9 +21,25 @@ export type IntakeFlowProps = {
   contactPhone: string;
 };
 
+type ClosedReason = "expired" | "all_submitted" | "manual";
+
+// 짧은 잠김 — 한도 · 표시 시각은 서버 응답 값, deadline은 받은 순간 + 남은 초
+// (기기 시계 차이 무시). 클라이언트는 화면만 되살리고 판정은 서버가 한다.
+type ShortLock = { kind: "short"; limit: number; unlockAtDisplay: string; deadline: number };
+
+type VerifyStep = {
+  kind: "verify";
+  rowId: string;
+  maskedName: string;
+  last4: string;
+  fieldError?: { kind: "wrong"; remaining: number } | { kind: "expired" };
+  line?: "unknown" | "throttled";
+  lock?: ShortLock;
+};
+
 type Step =
-  | { kind: "pick"; error?: string }
-  | { kind: "verify"; rowId: string; maskedName: string; last4: string; error?: string }
+  | { kind: "pick"; error?: boolean }
+  | VerifyStep
   | {
       kind: "form";
       rowId: string;
@@ -34,19 +51,122 @@ type Step =
       rrnRecheck: boolean;
     }
   | { kind: "submitted"; name: string; submittedAt: string; prizeLine: string; delivery: "onsite" | "parcel" }
-  | { kind: "alreadySubmitted"; maskedName: string; submittedAt: string };
+  | { kind: "alreadySubmitted"; maskedName: string; submittedAt: string }
+  | { kind: "closed"; reason: ClosedReason; at: string };
+
+type FocusTarget = "input" | "row" | "result" | "prize" | "primary";
+
+// 받은 순간 + 서버가 준 남은 초(기기 시계 차이 무시).
+function deadlineAfter(seconds: number): number {
+  return Date.now() + seconds * 1000;
+}
 
 function randomIdemKey(): string {
   return crypto.randomUUID();
 }
 
 const TITLE = "기타소득 지급 확인";
+const RESPONSE_TIMEOUT_MS = 20_000;
+const PROGRESS_DELAY_MS = 300;
+const LAST4_FIELD_ID = "last4";
+const RESULT_LEAD_ID = "cert-result-lead";
+const PRIMARY_ID = "cert-verify-primary";
+const PRIZE_ID = "cert-prize";
+
+const STEP_TITLE: Record<Step["kind"], string> = {
+  pick: "이름 고르기",
+  verify: "전화번호 확인",
+  form: "확인증 입력",
+  submitted: "제출됨",
+  alreadySubmitted: "이미 제출",
+  closed: "링크 닫힘",
+};
+
+const LINE_TEXT = {
+  unknown: "확인 결과를 받지 못했습니다 · 다시 눌러 주세요",
+  throttled: "확인이 잠시 멈췄습니다 · 잠시 뒤 다시 눌러 주세요",
+} as const;
+
+const BLOCKED_FIRST = "뒤 4자리 숫자를 적으면 확인할 수 있습니다";
+
+function memoryStepOf(step: Step): HistoryStep | null {
+  if (step.kind === "verify") return "verify";
+  if (step.kind === "form") return "form";
+  if (step.kind === "pick") return null;
+  return "result";
+}
+
+function readHistoryStep(state: unknown): HistoryStep | null {
+  if (typeof state !== "object" || state === null || !("step" in state)) return null;
+  const value = (state as { step?: unknown }).step;
+  return value === "verify" || value === "form" || value === "result" ? value : null;
+}
+
+// 서버 왕복 공통 — 20초 안에 답이 없거나 연결이 끊기면 undefined(결과 불명).
+async function withDeadline<T>(call: () => Promise<T>): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), RESPONSE_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([call(), timeout]);
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// E6-b 링크 닫힘 — 서버가 준 사유의 문장(UI-SPEC Copywriting E6-b). 진입(page)과
+// 서버 왕복(E2 · E3) 모두 이 블록을 그린다.
+export function ClosedResult({
+  reason,
+  at,
+  managerName,
+  contactPhone,
+}: {
+  reason: ClosedReason;
+  at: string;
+  managerName: string;
+  contactPhone: string;
+}) {
+  const reasonText =
+    reason === "all_submitted"
+      ? "당첨자 모두 제출했습니다"
+      : reason === "manual"
+        ? "담당자가 접수를 마쳤습니다"
+        : `제출 기한 ${formatSubmittedAtKst(at)}이 지났습니다`;
+  return (
+    <section className={styles.resultBlock}>
+      <p id={RESULT_LEAD_ID} tabIndex={-1} className={styles.resultLead}>
+        이 링크는 닫혔습니다
+      </p>
+      <p className={styles.resultMuted}>
+        {reasonText} · 확인이 필요하면 담당자 {managerName} · PLANT8 경영관리{" "}
+        <a href={`tel:${contactPhone}`} className={styles.telLink}>
+          {formatContactPhone(contactPhone)}
+        </a>
+        에 전화해 주세요
+      </p>
+    </section>
+  );
+}
 
 export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contactPhone }: IntakeFlowProps) {
   const [step, setStep] = useState<Step>({ kind: "pick" });
   const [pendingRowId, setPendingRowId] = useState<string | null>(null);
-  const selectAction = useAction(selectWinnerAction);
-  const verifyAction = useAction(verifyLast4Action);
+  const [busy, setBusy] = useState(false);
+  const [showProgress, setShowProgress] = useState(false);
+  const stepRef = useRef<Step>(step);
+  const focusRef = useRef<FocusTarget | null>(null);
+  const lastRowRef = useRef<string | null>(null);
+  // 멱등 키는 시도 단위 — 확정 판정을 받을 때만 끝난다(UI-SPEC E1 「멱등 키」).
+  const pendingKeyRef = useRef<{ key: string; rowId: string; last4: string } | null>(null);
+  const submitAreaId = useId();
+  const lockLine2Id = useId();
+  const resultLineId = useId();
+  const lockGroupId = useId();
+
   // U12 — 문의 전화는 어디서나 tel: 링크(숫자만)로 건다, 보이는 값은 하이픈 표기.
   const contactLine: ReactNode = (
     <>
@@ -57,30 +177,171 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
     </>
   );
 
-  async function pick(row: IntakeRowDto) {
-    setPendingRowId(row.rowId);
-    const result = await selectAction.executeAsync({ token, rowId: row.rowId });
-    setPendingRowId(null);
-    if (result?.data?.kind === "ok") {
-      setStep({ kind: "verify", rowId: row.rowId, maskedName: result.data.maskedName, last4: "" });
-    } else {
-      setStep({ kind: "pick", error: "이름을 불러오지 못했습니다 · 잠시 뒤 다시 골라 주세요" });
+  // 진행 바 — 300ms 안에 끝나면 보이지 않는다(UI-SPEC E1 LOADING). 왕복을
+  // 시작하는 쪽이 showProgress를 먼저 거짓으로 되돌린다.
+  const inFlight = busy || pendingRowId !== null;
+  useEffect(() => {
+    if (!inFlight) return;
+    const timer = setTimeout(() => setShowProgress(true), PROGRESS_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [inFlight]);
+
+  useEffect(() => {
+    stepRef.current = step;
+  }, [step]);
+
+  // 단계 전환 — 제목과 포커스(UI-SPEC E1 「포커스 이동」).
+  useEffect(() => {
+    document.title = `${STEP_TITLE[step.kind]} · ${TITLE}`;
+    const target = focusRef.current;
+    if (!target) return;
+    focusRef.current = null;
+    if (target === "input") document.getElementById(LAST4_FIELD_ID)?.focus();
+    else if (target === "result") document.getElementById(RESULT_LEAD_ID)?.focus();
+    else if (target === "primary") document.getElementById(PRIMARY_ID)?.focus();
+    else if (target === "prize") document.getElementById(PRIZE_ID)?.focus();
+    else if (target === "row" && lastRowRef.current) {
+      document.querySelector<HTMLButtonElement>(`[data-row-id="${lastRowRef.current}"]`)?.focus();
     }
+  }, [step]);
+
+  // 기록 항목 — E2 항목으로 돌아오면 E3 · E4 메모리를 비우고, 메모리에 없는 뒤
+  // 단계 항목(앞으로 가기 · 새로 고침 · bfcache 복원)이면 E2를 그리고 뒤로 간다.
+  useEffect(() => {
+    function backToPick() {
+      pendingKeyRef.current = null;
+      focusRef.current = "row";
+      setStep({ kind: "pick" });
+    }
+    function onPopState(event: PopStateEvent) {
+      const stateStep = readHistoryStep(event.state);
+      if (stateStep === null) {
+        backToPick();
+        return;
+      }
+      const decision = resolveHistoryEntry({ stateStep, memoryStep: memoryStepOf(stateRefCurrent()) });
+      if (decision.back) {
+        backToPick();
+        history.back();
+      }
+    }
+    function onPageShow(event: PageTransitionEvent) {
+      if (!event.persisted) return;
+      // bfcache 복원은 메모리가 남아 있어도 확인 상태를 버린다.
+      const decision = resolveHistoryEntry({ stateStep: readHistoryStep(history.state), memoryStep: null });
+      backToPick();
+      if (decision.back) history.back();
+    }
+    function stateRefCurrent(): Step {
+      return stepRef.current;
+    }
+    const initial = resolveHistoryEntry({ stateStep: readHistoryStep(history.state), memoryStep: null });
+    if (initial.back) history.back();
+    window.addEventListener("popstate", onPopState);
+    window.addEventListener("pageshow", onPageShow);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, []);
+
+  // 짧은 잠김 풀림 — 마감 도달 또는 화면이 다시 보일 때 지났으면.
+  const shortLock = step.kind === "verify" ? step.lock : undefined;
+  useEffect(() => {
+    if (!shortLock) return;
+    const deadline = shortLock.deadline;
+    function unlockIfDue() {
+      if (Date.now() < deadline) return;
+      const active = document.activeElement;
+      const area = document.getElementById(submitAreaId);
+      // 포커스가 문서 바깥 · 잠김 표시 자리 안(1차 포함)이면 칸으로, 다른 곳이면 그대로.
+      if (!active || active === document.body || (area?.contains(active) ?? false)) focusRef.current = "input";
+      setStep((current) =>
+        current.kind === "verify" ? { ...current, lock: undefined, fieldError: undefined } : current,
+      );
+    }
+    const timer = setTimeout(unlockIfDue, Math.max(0, deadline - Date.now()));
+    function onVisible() {
+      if (document.visibilityState === "visible") unlockIfDue();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pageshow", unlockIfDue);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pageshow", unlockIfDue);
+    };
+  }, [shortLock, submitAreaId]);
+
+  function toResult(next: Step) {
+    history.replaceState({ step: "result" }, "");
+    focusRef.current = "result";
+    setStep(next);
+  }
+
+  async function pick(row: IntakeRowDto) {
+    if (pendingRowId !== null) return;
+    lastRowRef.current = row.rowId;
+    setStep({ kind: "pick" });
+    setShowProgress(false);
+    setPendingRowId(row.rowId);
+    const result = await withDeadline(() => selectWinnerAction({ token, rowId: row.rowId }));
+    setPendingRowId(null);
+    const data = result?.data;
+    if (data?.kind === "ok") {
+      history.pushState({ step: "verify" }, "");
+      pendingKeyRef.current = null;
+      if (data.locked) {
+        focusRef.current = "primary";
+        setStep({
+          kind: "verify",
+          rowId: row.rowId,
+          maskedName: data.maskedName,
+          last4: "",
+          lock: {
+            kind: "short",
+            limit: data.locked.limit,
+            unlockAtDisplay: data.locked.unlockAtDisplay,
+            deadline: deadlineAfter(data.locked.remainingSeconds),
+          },
+        });
+        return;
+      }
+      focusRef.current = "input";
+      setStep({ kind: "verify", rowId: row.rowId, maskedName: data.maskedName, last4: "" });
+      return;
+    }
+    if (data?.kind === "closed") {
+      toResult({ kind: "closed", reason: data.reason, at: data.at });
+      return;
+    }
+    focusRef.current = "row";
+    setStep({ kind: "pick", error: true });
   }
 
   async function verify() {
-    if (step.kind !== "verify") return;
-    const result = await verifyAction.executeAsync({
-      token,
-      rowId: step.rowId,
-      last4: step.last4,
-      idemKey: randomIdemKey(),
-    });
+    const current = stepRef.current;
+    if (current.kind !== "verify" || busy || current.lock || current.last4.length !== 4) return;
+    const reused = pendingKeyRef.current;
+    const key =
+      reused && reused.rowId === current.rowId && reused.last4 === current.last4 ? reused.key : randomIdemKey();
+    pendingKeyRef.current = { key, rowId: current.rowId, last4: current.last4 };
+    setShowProgress(false);
+    setBusy(true);
+    const result = await withDeadline(() =>
+      verifyLast4Action({ token, rowId: current.rowId, last4: current.last4, idemKey: key }),
+    );
+    setBusy(false);
+    if (isDefiniteResult(result)) pendingKeyRef.current = null;
     const data = result?.data;
+    const base: VerifyStep = { ...current, fieldError: undefined, line: undefined, lock: undefined };
+
     if (data?.kind === "ok") {
+      history.replaceState({ step: "form" }, "");
+      focusRef.current = "prize";
       setStep({
         kind: "form",
-        rowId: step.rowId,
+        rowId: current.rowId,
         proof: data.proof,
         prizeLine: data.prizeLine,
         delivery: data.delivery,
@@ -89,26 +350,56 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
         rrnRecheck: false,
       });
     } else if (data?.kind === "submitted") {
-      setStep({ kind: "alreadySubmitted", maskedName: data.maskedName, submittedAt: data.submittedAt });
+      toResult({ kind: "alreadySubmitted", maskedName: data.maskedName, submittedAt: data.submittedAt });
+    } else if (data?.kind === "closed") {
+      toResult({ kind: "closed", reason: data.reason, at: data.at });
+    } else if (data?.kind === "wrong") {
+      focusRef.current = "input";
+      setStep({ ...base, last4: "", fieldError: { kind: "wrong", remaining: data.remaining } });
+    } else if (data?.kind === "locked") {
+      setStep({
+        ...base,
+        last4: "",
+        lock: {
+          kind: "short",
+          limit: data.limit,
+          unlockAtDisplay: data.unlockAtDisplay,
+          deadline: deadlineAfter(data.remainingSeconds),
+        },
+      });
+    } else if (data?.kind === "expiredProof") {
+      focusRef.current = "input";
+      setStep({ ...base, last4: "", fieldError: { kind: "expired" } });
+    } else if (data?.kind === "throttled") {
+      setStep({ ...base, fieldError: current.fieldError, line: "throttled" });
     } else {
-      setStep({ ...step, error: "전화번호 뒤 4자리가 맞지 않습니다 · 다시 적어 주세요" });
+      // 결과 불명(연결 끊김 · 20초 · 5xx · serverError) — 4자리 유지 · 같은 키로 다시.
+      setStep({ ...base, fieldError: current.fieldError, line: "unknown" });
     }
   }
+
+  const progressBar = showProgress && inFlight ? <div className={styles.progress} aria-hidden="true" /> : null;
 
   if (step.kind === "pick") {
     return (
       <div>
+        {progressBar}
         <h1 className={styles.title}>{TITLE}</h1>
         <p className={styles.subtitle}>
           {eventName} · {wonOn} 당첨
         </p>
         <p className={styles.listLabel}>이름을 골라 주세요 · {rows.length}명</p>
-        {step.error ? <p className={styles.blockedDanger}>{step.error}</p> : null}
+        {step.error ? (
+          <p role="alert" className={styles.blockedDanger}>
+            이름을 불러오지 못했습니다 · 잠시 뒤 다시 골라 주세요
+          </p>
+        ) : null}
         <ul className={styles.pickList}>
           {rows.map((row) => (
             <li key={row.rowId}>
               <button
                 type="button"
+                data-row-id={row.rowId}
                 className={styles.pickRow}
                 disabled={pendingRowId !== null}
                 onClick={() => void pick(row)}
@@ -131,41 +422,82 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
   }
 
   if (step.kind === "verify") {
-    const canSubmit = step.last4.length === 4;
+    const locked = Boolean(step.lock);
+    const hasFour = step.last4.length === 4;
+    const disabled = locked || !hasFour;
+    const lockReason = step.lock
+      ? `틀린 번호가 ${step.lock.limit}번 들어와 확인이 잠겼습니다 · ${step.lock.unlockAtDisplay}부터 다시 해 주세요`
+      : undefined;
+    const fieldErrorText =
+      step.fieldError?.kind === "wrong"
+        ? `전화번호 뒤 4자리가 맞지 않습니다 · 다시 적어 주세요 · 남은 횟수 ${step.fieldError.remaining}번`
+        : step.fieldError?.kind === "expired"
+          ? "확인 시간이 지났습니다 · 전화번호 뒤 4자리를 다시 적어 주세요"
+          : undefined;
+    const describedBy = locked ? lockLine2Id : !disabled && step.line ? resultLineId : undefined;
     return (
       <div>
+        {progressBar}
         <h1 className={styles.title}>{TITLE}</h1>
-        <p className={styles.fieldLabel}>이름</p>
-        <div className={styles.verifyNameRow}>
-          <span className={styles.verifyName}>{step.maskedName}</span>
-          <Button variant="tertiary" onClick={() => setStep({ kind: "pick" })}>
-            다른 이름 고르기
-          </Button>
-        </div>
-        <TextField
-          id="last4"
-          label="전화번호 뒤 4자리"
-          size="external"
-          inputMode="numeric"
-          autoComplete="off"
-          maxLength={4}
-          value={step.last4}
-          onChange={(e) => setStep({ ...step, last4: e.target.value.replace(/\D/g, "").slice(0, 4) })}
-          error={step.error}
-        />
-        <div className={styles.stickySubmit}>
-          <Button
-            variant="primary"
-            size="external"
-            disabled={!canSubmit}
-            disabledReason="뒤 4자리 숫자를 적으면 확인할 수 있습니다"
-            reasonTone="info"
-            pending={verifyAction.isExecuting}
-            onClick={() => void verify()}
-          >
-            전화번호 확인
-          </Button>
-        </div>
+        <form
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            void verify();
+          }}
+        >
+          <p className={styles.fieldLabel}>이름</p>
+          <div className={styles.verifyNameRow}>
+            <span className={styles.verifyName}>{step.maskedName}</span>
+            <Button variant="tertiary" onClick={() => history.back()}>
+              다른 이름 고르기
+            </Button>
+          </div>
+          <div aria-live="polite">
+            <TextField
+              id={LAST4_FIELD_ID}
+              label="전화번호 뒤 4자리"
+              size="external"
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="0000"
+              maxLength={4}
+              disabled={locked}
+              value={step.last4}
+              onChange={(e) => {
+                const last4 = e.target.value.replace(/\D/g, "").slice(0, 4);
+                setStep({ ...step, last4, line: undefined });
+              }}
+              error={fieldErrorText}
+            />
+          </div>
+          <div id={submitAreaId} className={styles.stickySubmit}>
+            <Button
+              id={PRIMARY_ID}
+              type="submit"
+              variant="primary"
+              size="external"
+              disabled={disabled}
+              disabledReason={lockReason ?? BLOCKED_FIRST}
+              reasonTone={locked ? "block" : "info"}
+              pending={busy}
+              aria-describedby={describedBy}
+            >
+              전화번호 확인
+            </Button>
+            {step.lock ? (
+              <p id={lockLine2Id} className={styles.inquiryLine}>
+                등록한 번호가 다르면 {contactLine}에 전화해 주세요
+              </p>
+            ) : null}
+            {!disabled && step.line ? (
+              <p id={resultLineId} className={styles.blockedDanger}>
+                {LINE_TEXT[step.line]}
+              </p>
+            ) : null}
+            <div id={lockGroupId} tabIndex={-1} />
+          </div>
+        </form>
       </div>
     );
   }
@@ -179,10 +511,19 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
           step={step}
           contactLine={contactLine}
           onSubmitted={(name, submittedAt) =>
-            setStep({ kind: "submitted", name, submittedAt, prizeLine: step.prizeLine, delivery: step.delivery })
+            toResult({ kind: "submitted", name, submittedAt, prizeLine: step.prizeLine, delivery: step.delivery })
           }
           onExpired={() => setStep({ kind: "pick" })}
         />
+      </div>
+    );
+  }
+
+  if (step.kind === "closed") {
+    return (
+      <div>
+        <h1 className={styles.title}>{TITLE}</h1>
+        <ClosedResult reason={step.reason} at={step.at} managerName={managerName} contactPhone={contactPhone} />
       </div>
     );
   }
@@ -192,7 +533,9 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
       <div>
         <h1 className={styles.title}>{TITLE}</h1>
         <section className={styles.resultBlock}>
-          <p className={styles.resultLead}>제출되었습니다 · 다시 제출할 수 없습니다</p>
+          <p id={RESULT_LEAD_ID} tabIndex={-1} className={styles.resultLead}>
+            제출되었습니다 · 다시 제출할 수 없습니다
+          </p>
           <p className={styles.resultMuted}>
             {step.name} · {formatSubmittedAtKst(step.submittedAt)} 제출 · {step.prizeLine}{" "}
             {step.delivery === "parcel" ? "적은 주소로 보내 드립니다" : "현장 수령"}
@@ -210,7 +553,9 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
     <div>
       <h1 className={styles.title}>{TITLE}</h1>
       <section className={styles.resultBlock}>
-        <p className={styles.resultLead}>이미 제출하셨습니다</p>
+        <p id={RESULT_LEAD_ID} tabIndex={-1} className={styles.resultLead}>
+          이미 제출하셨습니다
+        </p>
         <p className={styles.resultMuted}>
           {step.maskedName} · {formatSubmittedAtKst(step.submittedAt)} 제출됨. 내용을 고치려면 담당자 {managerName} ·{" "}
           {contactLine}에 전화해 주세요
@@ -301,7 +646,9 @@ function IntakeForm({
 
   return (
     <div>
-      <p className={styles.prizeLine}>{step.prizeLine}</p>
+      <p id={PRIZE_ID} tabIndex={-1} className={styles.prizeLine}>
+        {step.prizeLine}
+      </p>
       <p className={styles.inquiryLine}>경품이나 받는 방법이 다르면 제출하기 전에 {contactLine}에 전화해 주세요</p>
 
       <TextField

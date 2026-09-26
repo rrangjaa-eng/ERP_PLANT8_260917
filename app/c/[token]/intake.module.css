@@ -203,3 +203,13 @@
   margin-left: auto;
   color: var(--bar-muted);
 }
+
+/* 04.3-03 — E1 LOADING 진행 바(상단 바 바로 아래 2px --accent, 글자 없음). */
+.progress {
+  position: fixed;
+  top: var(--touch-min);
+  left: 0;
+  right: 0;
+  height: var(--line-w-strong);
+  background: var(--accent);
+}

@@ -57,7 +57,8 @@ export function Button({
   const showReason = disabled && !pending && Boolean(disabledReason);
   const describedBy = [ariaDescribedBy, showReason ? reasonId : undefined].filter(Boolean).join(" ") || undefined;
 
-  // 다른 요소의 이유를 aria-describedby로 가리키면 이유 글자가 이미 화면에 한 번 있다.
+  // 다른 요소의 이유를 aria-describedby로 가리키면 이유 글자가 이미 화면에 한 번 있다
+  // (04.3-⑦(b) — 누적 잠김 1차가 알림 묶음의 두 줄을 이유로 삼는다).
   if (process.env.NODE_ENV !== "production" && disabled && !pending && !disabledReason && !ariaDescribedBy) {
     // 이유 없는 비활성 버튼은 금지된다(UX-06, SYSTEM.md §7-1). 런타임 동작은 바꾸지 않고
     // 개발 중에만 알린다 — 이 파일에 예외 없이 색 리터럴을 두지 않는 것과 같은 종류의 계약.
@@ -89,6 +90,8 @@ export function Button({
       >
         <span>{children}</span>
         {pending ? <span aria-hidden="true">…</span> : null}
+        {/* 04.3-⑦(c) — 진행 중을 보조기술에도 알린다(「…」는 aria-hidden 그대로). */}
+        {pending ? <span className="sr-only">처리 중</span> : null}
         {shortcut ? (
           <kbd className={variant === "primary" ? styles.kbdOnAccent : styles.kbd}>{shortcut}</kbd>
         ) : null}

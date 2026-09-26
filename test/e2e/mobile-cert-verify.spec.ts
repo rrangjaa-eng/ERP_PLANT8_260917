@@ -76,9 +76,11 @@ test("겹치는 가린 이름은 2행(경품 · 구별 표시)이 보이고 나�
 test("틀림 → 남은 횟수 · 칸 비움 · 포커스 칸 · 다섯 번째(1차 클릭) 잠김 → 풀림 때 포커스 칸 · 다른 곳에 둔 포커스는 그대로", async ({
   page,
 }) => {
-  await page.clock.install();
   const ev = await oneWinnerEvent("E2E잠김");
   await page.goto(ev.link);
+  // 시계는 목록이 선 뒤에 건다 — 탐색 전에 걸면 스트리밍 렌더가 멈춘다.
+  await expect(page.getByRole("button", { name: "김*늘" })).toBeVisible();
+  await page.clock.install();
   await page.getByRole("button", { name: "김*늘" }).click();
   await expect(last4Field(page)).toBeFocused();
   await expect(page).toHaveTitle("전화번호 확인 · 기타소득 지급 확인");
@@ -94,7 +96,11 @@ test("틀림 → 남은 횟수 · 칸 비움 · 포커스 칸 · 다섯 번째(1
   await expect(last4Field(page)).toHaveAttribute("aria-invalid", "true");
   await expect(last4Field(page)).toBeFocused();
 
-  for (let i = 0; i < 4; i++) await wrongByClick(page);
+  for (const left of [3, 2, 1]) {
+    await wrongByClick(page);
+    await expect(page.getByText(`남은 횟수 ${left}번`, { exact: false })).toBeVisible();
+  }
+  await wrongByClick(page);
   const lockLine = page.getByText(/^틀린 번호가 5번 들어와 확인이 잠겼습니다 · \d{2}:\d{2}부터 다시 해 주세요$/);
   await expect(lockLine).toBeVisible();
   await expect(lockLine).toHaveCSS("color", DANGER);
@@ -120,14 +126,15 @@ test("틀림 → 남은 횟수 · 칸 비움 · 포커스 칸 · 다섯 번째(1
 });
 
 test("마지막 틀림을 칸 Enter로 보내 잠그면 포커스가 body — 풀리면 칸", async ({ page }) => {
-  await page.clock.install();
   const ev = await oneWinnerEvent("E2E잠김body");
   await page.goto(ev.link);
+  await expect(page.getByRole("button", { name: "김*늘" })).toBeVisible();
+  await page.clock.install();
   await page.getByRole("button", { name: "김*늘" }).click();
   for (let i = 0; i < 5; i++) {
     await last4Field(page).fill("0000");
     await last4Field(page).press("Enter");
-    if (i < 4) await expect(last4Field(page)).toHaveValue("");
+    if (i < 4) await expect(page.getByText(`남은 횟수 ${4 - i}번`, { exact: false })).toBeVisible();
   }
   await expect(last4Field(page)).toBeDisabled();
   expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
@@ -208,7 +215,14 @@ test("E3에서 새로 고침 → E2(고아 항목), 앞으로 가기를 해도 E
   await expect(last4Field(page)).toBeVisible();
   await page.reload();
   await expect(page.getByText(/^이름을 골라 주세요/)).toBeVisible();
-  await expect.poll(() => page.evaluate(() => (history.state as { step?: string } | null)?.step ?? null)).not.toBe("verify");
+  // 새로 고친 문서의 고아 E3 항목에서 history.back()이 앞 문서(E2 항목)로 돌아간다 —
+  // 그 이동 중에는 실행 문맥이 바뀌므로 읽기를 다시 시도한다.
+  await expect
+    .poll(() =>
+      page.evaluate(() => (history.state as { step?: string } | null)?.step ?? null).catch(() => "verify"),
+    )
+    .not.toBe("verify");
+  await page.waitForLoadState();
   await page.goForward().catch(() => undefined);
   await expect(page.getByText(/^이름을 골라 주세요/)).toBeVisible();
   await expect(last4Field(page)).toHaveCount(0);

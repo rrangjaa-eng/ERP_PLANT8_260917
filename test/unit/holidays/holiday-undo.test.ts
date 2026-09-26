@@ -14,14 +14,14 @@ describe("undoFailure — 되돌리기 결과 → 결과 줄 실패 문구", () 
 
   it("오늘이나 지난 날짜 칸 오류 → 원인 앞부분, retry 없음", () => {
     expect(
-      undoFailure({ validationErrors: { date: { _errors: ["오늘이나 지난 날짜입니다 · 내일 이후 날짜를 적어 주세요"] } } }),
-    ).toEqual({ text: "되돌리기 실패 · 오늘이나 지난 날짜입니다", retry: false });
+      undoFailure({ validationErrors: { date: { _errors: ["지난 날짜 · 내일 이후 날짜 고르기"] } } }),
+    ).toEqual({ text: "되돌리기 실패 · 지난 날짜", retry: false });
   });
 
   it("이미 공휴일 칸 오류 → 기존 이름을 실은 원인, retry 없음", () => {
     expect(
-      undoFailure({ validationErrors: { date: { _errors: ["이미 공휴일입니다(설날) · 다른 날짜를 적어 주세요"] } } }),
-    ).toEqual({ text: "되돌리기 실패 · 이미 공휴일입니다(설날)", retry: false });
+      undoFailure({ validationErrors: { date: { _errors: ["이미 공휴일(설날) · 다른 날짜 고르기"] } } }),
+    ).toEqual({ text: "되돌리기 실패 · 이미 공휴일(설날)", retry: false });
   });
 
   it("서버 오류 → 다시 시도, retry 있음", () => {

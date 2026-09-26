@@ -442,7 +442,7 @@ test.describe("공휴일 삭제 · 되돌리기(04.2-12)", () => {
 
     await db.insert(holidays).values({ date: ROW_A.date, name: OTHER_NAME, kind: "temporary" });
     await resultLine.getByRole("button", { name: "되돌리기" }).click();
-    await expect(resultLine).toContainText(`되돌리기 실패 · 이미 공휴일입니다(${OTHER_NAME})`);
+    await expect(resultLine).toContainText(`되돌리기 실패 · 이미 공휴일(${OTHER_NAME})`);
     await expect(resultLine.getByRole("button", { name: "되돌리기" })).toHaveCount(0);
   });
 });
@@ -497,11 +497,11 @@ test.describe("공휴일 추가 폼의 상태(04.2-12)", () => {
     const submit = page.getByRole("button", { name: "공휴일 추가", exact: true });
 
     const cases = [
-      { value: today, error: "오늘이나 지난 날짜입니다 · 내일 이후 날짜를 적어 주세요" },
-      { value: `${NEXT_YEAR}-10-03`, error: "이미 공휴일입니다(개천절) · 다른 날짜를 적어 주세요" },
+      { value: today, error: "지난 날짜 · 내일 이후 날짜 고르기" },
+      { value: `${NEXT_YEAR}-10-03`, error: "이미 공휴일(개천절) · 다른 날짜 고르기" },
       {
         value: `${LUNAR_TABLE_LAST_YEAR + 1}-01-05`,
-        error: `${LUNAR_TABLE_LAST_YEAR + 1}년은 음력 표에 없습니다 · ${LUNAR_TABLE_LAST_YEAR}년 이전 날짜를 적어 주세요`,
+        error: `${LUNAR_TABLE_LAST_YEAR + 1}년 음력 표 없음 · ${LUNAR_TABLE_LAST_YEAR}년까지 날짜 고르기`,
       },
     ];
     for (const { value, error } of cases) {
@@ -514,7 +514,7 @@ test.describe("공휴일 추가 폼의 상태(04.2-12)", () => {
     expect(await holidayCount(LUNAR_TABLE_LAST_YEAR + 1)).toBe(0);
   });
 
-  test("제출 중 라벨 `공휴일 추가…` + 취소 비활성 · 요청이 끊기면 이유 자리에 `추가하지 못했습니다 · 다시 시도` · 폼 폭 720 이하", async ({
+  test("제출 중 라벨 `공휴일 추가…` + 취소 비활성 · 요청이 끊기면 이유 자리에 `추가 실패 · 다시 시도` · 폼 폭 720 이하", async ({
     page,
   }) => {
     await loginAsSysadmin(page);
@@ -531,10 +531,10 @@ test.describe("공휴일 추가 폼의 상태(04.2-12)", () => {
     await expect(page.getByRole("link", { name: "취소" })).toHaveAttribute("aria-disabled", "true");
     release();
 
-    await expect(page.getByText("추가하지 못했습니다 · 다시 시도", { exact: true })).toBeVisible();
+    await expect(page.getByText("추가 실패 · 다시 시도", { exact: true })).toBeVisible();
     await expect(submit).toHaveText("공휴일 추가");
     const reasonId = await submit.getAttribute("aria-describedby");
-    await expect(page.locator(`[id="${reasonId}"]`)).toHaveText("추가하지 못했습니다 · 다시 시도");
+    await expect(page.locator(`[id="${reasonId}"]`)).toHaveText("추가 실패 · 다시 시도");
     expect(await db.select().from(holidays).where(eq(holidays.date, `${NEXT_YEAR}-07-14`))).toHaveLength(0);
   });
 });

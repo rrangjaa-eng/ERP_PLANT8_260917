@@ -55,7 +55,7 @@ export const addHolidayAction = authedActionClient
       if (error instanceof LunarTableRangeError) {
         returnValidationErrors(addHolidaySchema, {
           date: {
-            _errors: [`${error.year}년은 음력 표에 없습니다 · ${LUNAR_TABLE_LAST_YEAR}년 이전 날짜를 적어 주세요`],
+            _errors: [`${error.year}년 음력 표 없음 · ${LUNAR_TABLE_LAST_YEAR}년까지 날짜 고르기`],
           },
         });
       }

@@ -188,13 +188,13 @@ export async function confirmHolidayYear(viewer: Viewer, year: number, deps?: Co
 
 export class PastHolidayDateError extends UserFacingError {
   constructor() {
-    super("오늘이나 지난 날짜입니다 · 내일 이후 날짜를 적어 주세요");
+    super("지난 날짜 · 내일 이후 날짜 고르기");
   }
 }
 
 export class DuplicateHolidayError extends UserFacingError {
   constructor(existingName: string) {
-    super(`이미 공휴일입니다(${existingName}) · 다른 날짜를 적어 주세요`);
+    super(`이미 공휴일(${existingName}) · 다른 날짜 고르기`);
   }
 }
 

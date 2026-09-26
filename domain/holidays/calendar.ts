@@ -8,7 +8,7 @@ export class HolidayYearNotLoadedError extends Error {
   readonly year: number;
 
   constructor(year: number) {
-    super(`${year}년 공휴일을 읽지 않았습니다.`);
+    super(`${year}년 공휴일 안 읽음`);
     this.name = "HolidayYearNotLoadedError";
     this.year = year;
   }

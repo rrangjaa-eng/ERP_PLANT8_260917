@@ -248,7 +248,7 @@ describe("addHoliday — 수동 추가(04.2-12)", () => {
     for (const date of ["2026-10-20", "2026-10-19"]) {
       const attempt = addHoliday(admin, { date, kind: "temporary", name: "x" }, deps);
       await expect(attempt).rejects.toBeInstanceOf(PastHolidayDateError);
-      await expect(attempt).rejects.toThrow("오늘이나 지난 날짜입니다 · 내일 이후 날짜를 적어 주세요");
+      await expect(attempt).rejects.toThrow("지난 날짜 · 내일 이후 날짜 고르기");
     }
     expect(await holidayLogs("add")).toHaveLength(0);
 
@@ -269,7 +269,7 @@ describe("addHoliday — 수동 추가(04.2-12)", () => {
 
     const duplicate = addHoliday(admin, { date: "2027-10-03", kind: "temporary", name: "x" }, deps);
     await expect(duplicate).rejects.toBeInstanceOf(DuplicateHolidayError);
-    await expect(duplicate).rejects.toThrow("이미 공휴일입니다(개천절) · 다른 날짜를 적어 주세요");
+    await expect(duplicate).rejects.toThrow("이미 공휴일(개천절) · 다른 날짜 고르기");
 
     const results = await Promise.allSettled([
       addHoliday(admin, { date: "2027-06-08", kind: "temporary", name: "동시 A" }, deps),
@@ -282,7 +282,7 @@ describe("addHoliday — 수동 추가(04.2-12)", () => {
     const reason: unknown = (rejected[0] as PromiseRejectedResult).reason;
     expect(reason).toBeInstanceOf(DuplicateHolidayError);
     expect(reason instanceof Error ? reason.message : "").toMatch(
-      /^이미 공휴일입니다\(동시 [AB]\) · 다른 날짜를 적어 주세요$/,
+      /^이미 공휴일\(동시 [AB]\) · 다른 날짜 고르기$/,
     );
     expect(await rowsBetween("2027-06-08", "2027-06-08")).toHaveLength(1);
     expect(await holidayLogs("add")).toHaveLength(1);
@@ -383,11 +383,11 @@ describe("addHolidayAction — 칸 오류(04.2-12)", () => {
     const outside = LUNAR_TABLE_LAST_YEAR + 1;
     try {
       const past = await addHolidayAction({ date: "2020-01-02", kind: "temporary", name: "x" });
-      expect(past?.validationErrors?.date?._errors).toEqual(["오늘이나 지난 날짜입니다 · 내일 이후 날짜를 적어 주세요"]);
+      expect(past?.validationErrors?.date?._errors).toEqual(["지난 날짜 · 내일 이후 날짜 고르기"]);
 
       const lunar = await addHolidayAction({ date: `${outside}-01-05`, kind: "temporary", name: "x" });
       expect(lunar?.validationErrors?.date?._errors).toEqual([
-        `${outside}년은 음력 표에 없습니다 · ${LUNAR_TABLE_LAST_YEAR}년 이전 날짜를 적어 주세요`,
+        `${outside}년 음력 표 없음 · ${LUNAR_TABLE_LAST_YEAR}년까지 날짜 고르기`,
       ]);
 
       const badFormat = await addHolidayAction({ date: "2027-02-30", kind: "temporary", name: "x" });
@@ -395,7 +395,7 @@ describe("addHolidayAction — 칸 오류(04.2-12)", () => {
 
       const nextYear = Number(toKstDate(new Date()).slice(0, 4)) + 1;
       const duplicate = await addHolidayAction({ date: `${nextYear}-01-01`, kind: "temporary", name: "x" });
-      expect(duplicate?.validationErrors?.date?._errors?.[0]).toMatch(/^이미 공휴일입니다\(.+\) · 다른 날짜를 적어 주세요$/);
+      expect(duplicate?.validationErrors?.date?._errors?.[0]).toMatch(/^이미 공휴일\(.+\) · 다른 날짜 고르기$/);
 
       const ok = await addHolidayAction({ date: `${nextYear}-06-08`, kind: "election", name: "  선거  " });
       expect(ok?.data).toEqual({ date: `${nextYear}-06-08`, year: nextYear });
@@ -610,7 +610,7 @@ describe("deleteHoliday — 수동 미래 행 삭제(04.2-12)", () => {
     const logCount = (await logsForDate("2027-06-08")).length;
     const duplicate = addHoliday(admin, undo, { now: NOW_0924 });
     await expect(duplicate).rejects.toBeInstanceOf(DuplicateHolidayError);
-    await expect(duplicate).rejects.toThrow("이미 공휴일입니다(다른 이름) · 다른 날짜를 적어 주세요");
+    await expect(duplicate).rejects.toThrow("이미 공휴일(다른 이름) · 다른 날짜 고르기");
     expect(await logsForDate("2027-06-08")).toHaveLength(logCount);
   });
 });

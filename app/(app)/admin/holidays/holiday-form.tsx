@@ -122,7 +122,7 @@ export function HolidayForm({ min, max, cancelHref }: { min: string; max: string
         </Button>
         {!blockedReason && failed && !pending ? (
           <span id={REASON_ID} className={styles.rowError}>
-            추가하지 못했습니다 · 다시 시도
+            추가 실패 · 다시 시도
           </span>
         ) : null}
         {firstEmpty && !pending ? (

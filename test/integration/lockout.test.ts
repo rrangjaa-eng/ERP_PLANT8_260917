@@ -6,7 +6,10 @@ import { loginAttempts } from "@/db/schema";
 import { createAccount, unlockAccount } from "@/domain/auth/accounts";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { backdateOpenFailures, countOpenFailures } from "@/repositories/login-attempts";
-import { windowStart } from "@/domain/auth/lockout";
+import { lockoutConfig, windowStart } from "@/domain/auth/lockout";
+import { setSettingValue } from "@/domain/settings/registry";
+import { AUTH_LOCKOUT_WINDOW_MINUTES } from "@/domain/settings/keys";
+import { lockedMessage } from "@/domain/auth/locked-message";
 
 const BASE_URL = process.env.BETTER_AUTH_URL ?? "http://127.0.0.1:3000";
 
@@ -129,5 +132,42 @@ describe("계정 잠금 (login_attempts)", () => {
       .from(loginAttempts)
       .where(and(eq(loginAttempts.email, email), isNull(loginAttempts.resolvedAt)));
     expect(row?.ip).toBe(ip);
+  });
+
+  // 04.2-03: 잠금 문구의 분 숫자는 설정 auth.lockout.window_minutes를 읽는다.
+  it("E: 잠금 시간 설정을 20분으로 바꾸면 잠금 403 문구가 20분이고, 잠기지 않은 실패에는 잠금 문구가 없다", async () => {
+    const email = uniqueEmail("lockout-e");
+    const ip = "198.51.100.5";
+    const defaultMinutes = AUTH_LOCKOUT_WINDOW_MINUTES.default!;
+    await setSettingValue(SYSTEM_VIEWER, AUTH_LOCKOUT_WINDOW_MINUTES, 20);
+    try {
+      const { threshold } = await lockoutConfig();
+      for (let i = 0; i < threshold; i++) {
+        const res = await signIn(email, "wrong-password", ip);
+        const body = (await res.json()) as { message?: string };
+        expect(body.message ?? "").not.toContain("로그인 시도 과다");
+      }
+
+      const locked = await signIn(email, "wrong-password", ip);
+      expect(locked.status).toBe(403);
+      const body = (await locked.json()) as { message?: string };
+      expect(body.message).toBe(lockedMessage(20));
+    } finally {
+      await setSettingValue(SYSTEM_VIEWER, AUTH_LOCKOUT_WINDOW_MINUTES, defaultMinutes);
+    }
+  });
+
+  it("F: 설정이 기본값이면 잠금 문구의 분 숫자가 기본값과 같다", async () => {
+    const email = uniqueEmail("lockout-f");
+    const ip = "198.51.100.6";
+    const { threshold, windowMinutes } = await lockoutConfig();
+    expect(windowMinutes).toBe(AUTH_LOCKOUT_WINDOW_MINUTES.default);
+    for (let i = 0; i < threshold; i++) {
+      await signIn(email, "wrong-password", ip);
+    }
+    const locked = await signIn(email, "wrong-password", ip);
+    expect(locked.status).toBe(403);
+    const body = (await locked.json()) as { message?: string };
+    expect(body.message).toBe(lockedMessage(windowMinutes));
   });
 });

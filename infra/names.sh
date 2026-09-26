@@ -28,11 +28,13 @@ DEPLOYER_SA=gha-deployer
 svc_name()        { echo "plant8-$1"; }              # plant8-staging / plant8-prod
 sql_instance()    { echo "plant8-$1-db"; }
 runtime_sa()      { echo "plant8-$1-runtime"; }      # 이메일: plant8-$1-runtime@$PROJECT.iam.gserviceaccount.com, IAM DB user: plant8-$1-runtime@$PROJECT.iam
+scheduler_sa()    { echo "plant8-$1-scheduler"; }    # 이메일: plant8-$1-scheduler@$PROJECT.iam.gserviceaccount.com — notify-tick OIDC 호출자(bootstrap이 만든다)
+scheduler_job()   { echo "plant8-$1-notify-tick"; }  # Cloud Scheduler 잡 — 매일 09:00 KST POST /internal/notify-tick
 job_name()        { echo "plant8-$1-$2"; }           # $2 ∈ migrate | db-bootstrap | account
 secret_name()     { echo "$1-$2"; }                  # base-env: better-auth-secret-staging, app-data-key-v1-staging, db-admin-password-staging, smtp-host-staging …
 image_path()      { echo "$3-docker.pkg.dev/$2/$AR_REPO/app:$1"; }   # sha project region
 alert_channel()   { echo "ERP Alerts ($1)"; }
 policy_5xx()      { echo "[$1] 5xx ratio > 5%"; }
 policy_backup()   { echo "[$1] Cloud SQL backup failed"; }
-policy_tick()     { echo "[$1] notify tick stale 23h30m"; }
+policy_tick()     { echo "[$1] notify tick stale 25h"; }
 tick_metric()     { echo "notify_tick_success_$1"; }

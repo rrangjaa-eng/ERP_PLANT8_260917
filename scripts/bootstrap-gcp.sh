@@ -112,11 +112,16 @@ for env in $ENVS; do
   if ! gcloud iam service-accounts describe "${runtime_sa}@${PROJECT}.iam.gserviceaccount.com" --project="$PROJECT" >/dev/null 2>&1; then
     gcloud iam service-accounts create "$runtime_sa" --project="$PROJECT" --display-name="PLANT8 ERP ${env} runtime"
   fi
+  # 04.2-04(D-4212): notify-tick을 부르는 Cloud Scheduler의 OIDC 계정
+  scheduler_sa="plant8-${env}-scheduler"
+  if ! gcloud iam service-accounts describe "${scheduler_sa}@${PROJECT}.iam.gserviceaccount.com" --project="$PROJECT" >/dev/null 2>&1; then
+    gcloud iam service-accounts create "$scheduler_sa" --project="$PROJECT" --display-name="PLANT8 ERP ${env} notify scheduler"
+  fi
 done
 
 # (d) 배포자 프로젝트 역할(넓게 시작 — 01-08이 실사용 권한으로 좁히는 절차를 문서화한다)
 DEPLOYER_EMAIL="${DEPLOYER_SA}@${PROJECT}.iam.gserviceaccount.com"
-for role in run.admin cloudsql.admin secretmanager.admin artifactregistry.admin monitoring.editor logging.admin serviceusage.serviceUsageAdmin compute.networkAdmin; do
+for role in run.admin cloudsql.admin secretmanager.admin artifactregistry.admin monitoring.editor logging.admin serviceusage.serviceUsageAdmin compute.networkAdmin cloudscheduler.admin; do
   gcloud projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:${DEPLOYER_EMAIL}" --role="roles/${role}" >/dev/null
 done
 
@@ -128,6 +133,13 @@ for env in $ENVS; do
   for role in cloudsql.client cloudsql.instanceUser cloudsql.viewer logging.logWriter monitoring.metricWriter; do
     gcloud projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:${runtime_email}" --role="roles/${role}" >/dev/null
   done
+done
+
+# 스케줄러 SA 둘에 iam.serviceAccountUser(배포자가 잡의 OIDC 계정으로 지정) — 배포자에게
+# SA 관리 권한은 주지 않는다(D-4212)
+for env in $ENVS; do
+  gcloud iam service-accounts add-iam-policy-binding "plant8-${env}-scheduler@${PROJECT}.iam.gserviceaccount.com" --project="$PROJECT" \
+    --member="serviceAccount:${DEPLOYER_EMAIL}" --role=roles/iam.serviceAccountUser >/dev/null
 done
 
 # (e) WIF 바인딩: gha-deployer는 이 리포에서만 대신 사용할 수 있다(T-1-29)

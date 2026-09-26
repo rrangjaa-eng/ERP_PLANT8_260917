@@ -1,7 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { adminIndexGroups, roleMenu, type RoleMenuViewer } from "../../../ui/shell/role-menu";
+import { NOTIFICATIONS_HREF, adminIndexGroups, roleMenu, type RoleMenuViewer } from "../../../ui/shell/role-menu";
+import { notificationsMenuLabel } from "../../../ui/shell/unread-count";
 
 // D-23의 계약 고정: 역할 → (상단 바 메뉴, 폰 하단 탭, 계정 그룹, 관리자 메뉴 진입점)
 // 매핑이 순수 함수 한 곳에 데이터로 있는지를 검증한다. 계정 그룹 항목 이름과 폰 하단
@@ -139,6 +140,7 @@ const ADMIN_MENU_KEYS = [
   "admin.settings",
   "admin.action-log",
   "admin.archive",
+  "admin.holidays",
 ];
 
 /** admin.<name> 키의 실제 라우트 디렉터리(app/(app)/admin/<name>/page.tsx)가 있는지. */
@@ -148,8 +150,8 @@ function adminRouteExists(key: string): boolean {
 }
 
 describe("roleMenu — 관리자 메뉴 진입점 (「관리」 한 줄로 접힘, D-17)", () => {
-  it("전제 확인: 위에 복제한 admin.* 키 10개 전부 실제 라우트 디렉터리가 있고, /admin 인덱스 라우트도 있다", () => {
-    expect(ADMIN_MENU_KEYS.length).toBe(10);
+  it("전제 확인: 위에 복제한 admin.* 키 11개 전부 실제 라우트 디렉터리가 있고, /admin 인덱스 라우트도 있다", () => {
+    expect(ADMIN_MENU_KEYS.length).toBe(11);
     for (const key of ADMIN_MENU_KEYS) {
       expect(adminRouteExists(key)).toBe(true);
     }
@@ -174,7 +176,7 @@ describe("roleMenu — 관리자 메뉴 진입점 (「관리」 한 줄로 접�
     expect(roleMenu(viewer).adminMenu).toEqual([{ label: "관리", href: "/admin" }]);
   });
 
-  it("allowedMenus에 admin.* 키 10개가 전부 있어도 관리자 메뉴는 여전히 「관리」 한 줄이다(개별 화면 이름은 adminIndexGroups가 담당)", () => {
+  it("allowedMenus에 admin.* 키 11개가 전부 있어도 관리자 메뉴는 여전히 「관리」 한 줄이다(개별 화면 이름은 adminIndexGroups가 담당)", () => {
     const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ADMIN_MENU_KEYS };
     expect(roleMenu(viewer).adminMenu).toEqual([{ label: "관리", href: "/admin" }]);
   });
@@ -189,13 +191,13 @@ describe("roleMenu — 관리자 메뉴 진입점 (「관리」 한 줄로 접�
 describe("adminIndexGroups — 「관리」 인덱스 3그룹 (SYSTEM.md §6-10 표가 정본)", () => {
   const expectedGroups = expectedAdminIndexGroups(SYSTEM);
 
-  it("전제 확인: SYSTEM.md §6-10 표에서 그룹 3개를 읽었고 항목 합이 admin.* 키 10개와 같다", () => {
+  it("전제 확인: SYSTEM.md §6-10 표에서 그룹 3개를 읽었고 항목 합이 admin.* 키 11개와 같다", () => {
     expect(expectedGroups).toHaveLength(3);
     const totalItems = expectedGroups.reduce((sum, group) => sum + group.items.length, 0);
     expect(totalItems).toBe(ADMIN_MENU_KEYS.length);
   });
 
-  it("10개 전부 허용이면 그룹 3개, 라벨·항목 순서가 SYSTEM.md §6-10 표와 원소 단위로 같다", () => {
+  it("11개 전부 허용이면 그룹 3개, 라벨·항목 순서가 SYSTEM.md §6-10 표와 원소 단위로 같다", () => {
     const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ADMIN_MENU_KEYS };
     const groups = adminIndexGroups(viewer);
     expect(groups.map((group) => group.label)).toEqual(expectedGroups.map((group) => group.label));
@@ -230,7 +232,7 @@ describe("adminIndexGroups — 「관리」 인덱스 3그룹 (SYSTEM.md §6-10 
     expect(forward).toEqual(reversed);
   });
 
-  it("모든 항목 href가 /admin/<키 뒤쪽 이름>이고, 세 그룹의 합집합이 admin.* 키 10개를 빠짐없이 덮는다", () => {
+  it("모든 항목 href가 /admin/<키 뒤쪽 이름>이고, 세 그룹의 합집합이 admin.* 키 11개를 빠짐없이 덮는다", () => {
     const groups = adminIndexGroups({ roleId: SYSADMIN_ROLE_ID, allowedMenus: ADMIN_MENU_KEYS });
     const allItems = groups.flatMap((group) => group.items);
     for (const item of allItems) {
@@ -255,6 +257,7 @@ describe("adminIndexGroups — 「관리」 인덱스 3그룹 (SYSTEM.md §6-10 
     "시스템 상태": "admin.system-status",
     "행동 로그": "admin.action-log",
     보관함: "admin.archive",
+    공휴일: "admin.holidays",
   };
 
   it("항목마다 라벨과 href가 정확히 짝지어져 있다 — 같은 그룹 안 두 항목의 href를 맞바꿔도 잡아낸다", () => {
@@ -331,6 +334,30 @@ describe("roleMenu — 계정 그룹 (SYSTEM.md 목록과 원소 단위로 같�
 
   it("accountGroup은 계급과 무관하게 같다(§6-0/§7-8 목록은 역할로 갈라지지 않는다)", () => {
     expect(roleMenu(EMPLOYEE).accountGroup).toEqual(roleMenu(ADMIN).accountGroup);
+  });
+
+  it("accountGroup 맨 앞이 「알림함」이고 href가 NOTIFICATIONS_HREF다(04.2-09 Task 1)", () => {
+    expect(roleMenu(ADMIN).accountGroup[0]).toEqual({
+      kind: "link",
+      label: "알림함",
+      href: NOTIFICATIONS_HREF,
+    });
+  });
+
+  it("accountGroup 라벨 순서가 SYSTEM.md 「계정」 그룹 목록과 원소 단위로 같다(순서 포함, 04.2-09 Task 1)", () => {
+    const actualLabels = roleMenu(ADMIN).accountGroup.map((entry) => entry.label);
+    expect(actualLabels).toEqual(expectedLabels);
+  });
+});
+
+describe("notificationsMenuLabel — 「알림함 N」 라벨 조립 (04.2-09 Task 2, unreadCountLabel과 결합)", () => {
+  it.each([
+    [0, "알림함"],
+    [1, "알림함 1"],
+    [99, "알림함 99"],
+    [100, "알림함 99+"],
+  ])("count=%d → %s", (count, expected) => {
+    expect(notificationsMenuLabel("알림함", count)).toBe(expected);
   });
 });
 

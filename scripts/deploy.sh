@@ -3,7 +3,7 @@ set -euo pipefail
 set -o errtrace  # ERR 트랩이 함수 안에서도 발동하도록(그렇지 않으면 STAGE 메시지가 나오지 않는다)
 
 # scripts/deploy.sh — OPS-01: 인프라 ensure(멱등) → 이미지(SHA 태그) → Job 3개 →
-# 리비전 배포(신규·기존 모두 바로 100% 트래픽) → 경보 3개 upsert → 스모크 3종
+# 리비전 배포(신규·기존 모두 바로 100% 트래픽) → 스케줄러 잡 → 경보 3개 upsert → 스모크 4종
 # (실제 서비스 주소로). 원래는 기존 서비스 업데이트를 0%(카나리)로 몰래
 # 올려 전용 URL로 미리 검증한 뒤 승격하는 절차였는데, 그 전용 URL이 실제
 # 스테이징에서 반복적으로(4회 연속) 15분 넘게 라우팅되지 않았다
@@ -130,6 +130,16 @@ require_clean_tree() {
   fi
 }
 
+# 04.2-04(Issue 6): OIDC 검증을 끄는 변수가 배포 셸에 있으면 어떤 gcloud 호출보다
+# 먼저 거부한다 — 앱 쪽 비로컬 부팅 거부(lib/env.ts)와 이중 차단이다.
+refuse_oidc_bypass() {
+  STAGE=refuse_oidc_bypass
+  if [ -n "${NOTIFY_TICK_OIDC_DISABLED:-}" ]; then
+    echo "refusing to deploy: NOTIFY_TICK_OIDC_DISABLED is set (OIDC verification must stay on outside local)" >&2
+    exit 2
+  fi
+}
+
 resolve_project_number() {
   STAGE=resolve_project_number
   PROJECT_NUMBER="$(run gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
@@ -155,7 +165,7 @@ ensure_apis() {
   run gcloud services enable \
     run.googleapis.com sqladmin.googleapis.com secretmanager.googleapis.com \
     artifactregistry.googleapis.com monitoring.googleapis.com logging.googleapis.com \
-    compute.googleapis.com servicenetworking.googleapis.com \
+    compute.googleapis.com servicenetworking.googleapis.com cloudscheduler.googleapis.com \
     --project="$PROJECT"
 }
 
@@ -437,7 +447,7 @@ deploy_service() {
 
   local deployed_at
   deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  local env_vars="APP_ENV=${ENV},APP_GIT_SHA=${SHA},APP_DEPLOYED_AT=${deployed_at},CLOUD_SQL_CONNECTION_NAME=${CONN_NAME},DB_IAM_USER=${iam_user},DB_NAME=${DB_NAME},DB_POOL_MAX=${DB_POOL_MAX},BETTER_AUTH_URL=${SERVICE_URL},AUTH_PROVIDER=email,GCP_PROJECT_ID=${PROJECT},CLOUD_SQL_INSTANCE_ID=${instance}"
+  local env_vars="APP_ENV=${ENV},APP_GIT_SHA=${SHA},APP_DEPLOYED_AT=${deployed_at},CLOUD_SQL_CONNECTION_NAME=${CONN_NAME},DB_IAM_USER=${iam_user},DB_NAME=${DB_NAME},DB_POOL_MAX=${DB_POOL_MAX},BETTER_AUTH_URL=${SERVICE_URL},AUTH_PROVIDER=email,GCP_PROJECT_ID=${PROJECT},CLOUD_SQL_INSTANCE_ID=${instance},NOTIFY_TICK_SCHEDULER_SA=$(scheduler_sa "$ENV")@${PROJECT}.iam.gserviceaccount.com"
   local secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest,APP_DATA_KEY_v1=${app_data_key_secret}:latest,SMTP_HOST=${smtp_host_secret}:latest,SMTP_USER=${smtp_user_secret}:latest,SMTP_PASSWORD=${smtp_password_secret}:latest,SMTP_FROM=${smtp_from_secret}:latest"
 
   # 신규·기존 서비스 모두 바로 100% 트래픽으로 배포한다(--no-traffic/--tag
@@ -491,6 +501,28 @@ deploy_service() {
     run gcloud run services update "$svc" --region="$REGION" --project="$PROJECT" \
       --update-env-vars="BETTER_AUTH_URL=${SERVICE_URL}"
   fi
+}
+
+# 04.2-04(NOTI-04): 매일 09:00 KST에 스케줄러가 전용 SA의 OIDC 토큰으로
+# notify-tick을 부른다. audience는 경로 없는 SERVICE_URL(= BETTER_AUTH_URL)이라
+# 서비스 배포로 SERVICE_URL이 확정된 뒤에만 만든다. 재시도는 끈다 — 남은 건은
+# 운영자가 같은 날 수동 실행으로 잇는다(D-4202).
+ensure_scheduler() {
+  STAGE=ensure_scheduler
+  local job sa_email verb
+  job="$(scheduler_job "$ENV")"
+  sa_email="$(scheduler_sa "$ENV")@${PROJECT}.iam.gserviceaccount.com"
+  verb=create
+  if run gcloud scheduler jobs describe "$job" --location="$REGION" --project="$PROJECT" >/dev/null 2>&1; then
+    verb=update
+  fi
+  run gcloud scheduler jobs "$verb" http "$job" \
+    --location="$REGION" --project="$PROJECT" \
+    --schedule="0 9 * * *" --time-zone="Asia/Seoul" \
+    --uri="${SERVICE_URL}/internal/notify-tick" --http-method=POST \
+    --oidc-service-account-email="$sa_email" \
+    --oidc-token-audience="$SERVICE_URL" \
+    --max-retry-attempts=0 --attempt-deadline=180s
 }
 
 # 스모크가 실패하면 서비스 상태·IAM 정책을 같이 남긴다 — 다음에 다른
@@ -547,6 +579,7 @@ smoke() {
       -H "Origin: ${SERVICE_URL}" -H 'content-type: application/json' \
       -d '{"email":"smoke@example.invalid","password":"smoke-not-a-password"}' \
       "${target}/api/auth/sign-in/email"
+    run curl -s -o /dev/null -w '%{http_code}' -X POST "${target}/internal/notify-tick"
     return 0
   fi
 
@@ -581,6 +614,17 @@ smoke() {
       smoke_failed "sign-in probe returned $signin_code (expected a 4xx)"
       ;;
   esac
+
+  # D-4214: 토큰 없는 호출은 앱이 401로 거부해야 한다. 404는 Cloud Run 엣지가
+  # 경로를 먹은 것(/healthz 전례), 그 밖(2xx 등)은 검증이 꺼졌거나 라우트 실패다.
+  local tick_code
+  tick_code="$(run curl -s -o /dev/null -w '%{http_code}' -X POST "${target}/internal/notify-tick")"
+  if [ "$tick_code" = "404" ]; then
+    smoke_failed "/internal/notify-tick returned 404 — Cloud Run edge ate the path"
+  fi
+  if [ "$tick_code" != "401" ]; then
+    smoke_failed "/internal/notify-tick returned $tick_code without a token (expected 401 — OIDC verification must be on)"
+  fi
 }
 
 ensure_alerts() {
@@ -652,6 +696,7 @@ map_domain() {
 
 main() {
   parse_args "$@"
+  refuse_oidc_bypass
   require_clean_tree
   resolve_project_number
   require_prod_image
@@ -667,6 +712,7 @@ main() {
   run_migrate
   run_seed
   deploy_service
+  ensure_scheduler
   ensure_alerts
   smoke
   map_domain

@@ -168,8 +168,14 @@ describe("docs/design/SYSTEM.md — 2026-09-23 개정(04-08)", () => {
   });
 
   it("옛 목록 페이지(`더 보기 50건`)·옛 완료 라벨(`완료(정산)`)이 0개다(항목 4)", () => {
-    expect(SYSTEM).not.toContain("더 보기 50건");
+    const inbox = section(SYSTEM, "### 7-12.", "### 7-13.");
+    expect(SYSTEM.replace(inbox, "")).not.toContain("더 보기 50건");
     expect(SYSTEM).not.toContain("완료(정산)");
+  });
+
+  it("§7-12 알림함의 `더 보기 50건`은 기록된 임시 예외다(04.2 병합, D-91 적용 범위)", () => {
+    expect(section(SYSTEM, "### 7-12.", "### 7-13.")).toContain("기록된 임시 예외");
+    expect(DECISIONS).toContain("알림함 「더 보기 50건」을 기록된 임시 예외로");
   });
 
   it("`실행가만 고칠 수 있음`이 0개다(항목 5, D-78 개정 CEO-D10·D12)", () => {

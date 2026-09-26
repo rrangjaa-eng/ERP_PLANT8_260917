@@ -7,5 +7,16 @@
 // domain/action-log/filter-keys.ts와 같은 결의 분리다.
 
 // 남은 시간은 표시하지 않는다(계정 존재 여부 비노출과 같은 이유로 정보 최소화).
-export const LOCKED_MESSAGE =
-  "로그인 시도 과다 · 15분 뒤 다시 시도하거나 관리자에게 문의";
+// 분 숫자는 설정 auth.lockout.window_minutes(최대 대기) 하나뿐이다(04.2-03).
+// 문구 말투는 #87의 명사형·마침표 없음 통일(SYSTEM.md §7-2)을 따른다.
+const PREFIX = "로그인 시도 과다 · ";
+const SUFFIX = "분 뒤 다시 시도하거나 관리자에게 문의";
+
+export function lockedMessage(minutes: number): string {
+  return `${PREFIX}${Math.trunc(minutes)}${SUFFIX}`;
+}
+
+export function isLockedMessage(text: string): boolean {
+  if (!text.startsWith(PREFIX) || !text.endsWith(SUFFIX)) return false;
+  return /^\d+$/.test(text.slice(PREFIX.length, text.length - SUFFIX.length));
+}

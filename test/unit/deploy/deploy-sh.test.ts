@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, cpSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, cpSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -94,6 +94,21 @@ function jobLine(log: string, jobSuffix: string): string {
   return line;
 }
 
+// 04.2-04 Task 1: 스케줄러 잡 인자 계약 — create·update가 같은 인자를 쓴다.
+function expectSchedulerArgs(line: string, serviceUrl: string): void {
+  expect(line).toContain("--schedule=0 9 * * *");
+  expect(line).toContain("--time-zone=Asia/Seoul");
+  expect(line).toContain(`--uri=${serviceUrl}/internal/notify-tick `);
+  expect(line).toContain("--http-method=POST");
+  expect(line).toContain("--oidc-service-account-email=plant8-staging-scheduler@test-proj.iam.gserviceaccount.com");
+  // audience는 경로·끝 슬래시 없는 서비스 URL(= BETTER_AUTH_URL)이다.
+  expect(line.match(/--oidc-token-audience=(\S+)/)?.[1]).toBe(serviceUrl);
+  expect(line).toContain("--max-retry-attempts=0");
+  expect(line).toContain("--attempt-deadline=180s");
+  expect(line).toContain("--location=asia-northeast3");
+  expect(line).toContain("--project=test-proj");
+}
+
 describe("deploy.sh — 새 프로젝트(시나리오 1)", () => {
   let repoDir: string;
   beforeEach(() => {
@@ -172,6 +187,13 @@ describe("deploy.sh — 새 프로젝트(시나리오 1)", () => {
     expect(signinLine).toContain("-X POST");
     expect(signinLine).toMatch(/Origin: https:\/\/plant8-staging-/);
 
+    // 04.2-04: 스케줄러 API를 켜고, 스모크가 토큰 없는 notify-tick POST를 찌른다.
+    const enableLine = r.log.split("\n").find((l) => l.startsWith("services enable"));
+    expect(enableLine).toContain("cloudscheduler.googleapis.com");
+    const tickProbe = r.log.split("\n").find((l) => l.includes("/internal/notify-tick") && !l.startsWith("scheduler "));
+    expect(tickProbe).toContain("-X POST");
+    expect(tickProbe).not.toContain("Authorization");
+
     expect(r.stdout.trim().split("\n").at(-1)).toMatch(/^SERVICE_URL=https:\/\/plant8-staging-/);
   });
 
@@ -191,6 +213,28 @@ describe("deploy.sh — 새 프로젝트(시나리오 1)", () => {
 
     const healthLine = r.log.split("\n").find((l) => l.includes("/api/health"));
     expect(healthLine).toContain("https://plant8-staging-67rumhdgba-du.a.run.app/api/health");
+  });
+
+  it("잡이 없으면 서비스 배포 뒤 notify-tick 스케줄러 잡을 매일 09:00 KST·OIDC로 만든다(04.2-04)", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
+    expect(r.status).toBe(0);
+    const lines = r.log.split("\n");
+
+    const describeIdx = lineIndex(r.log, "scheduler jobs describe plant8-staging-notify-tick");
+    expect(describeIdx).toBeGreaterThan(-1);
+    // SERVICE_URL이 확정된 뒤(서비스 배포 뒤)에만 잡을 만든다.
+    expect(describeIdx).toBeGreaterThan(lineIndex(r.log, "run deploy plant8-staging "));
+
+    const createLines = lines.filter((l) => l.startsWith("scheduler jobs create http plant8-staging-notify-tick "));
+    expect(createLines).toHaveLength(1);
+    expect(lines.findIndex((l) => l.startsWith("scheduler jobs create http"))).toBeGreaterThan(describeIdx);
+    expect(r.log).not.toContain("scheduler jobs update");
+    const serviceUrl = r.stdout.trim().split("\n").at(-1)!.replace(/^SERVICE_URL=/, "");
+    expectSchedulerArgs(createLines[0]!, serviceUrl);
+
+    // 앱은 누가 불러야 하는지 안다 — 기대 호출자 이메일이 서비스 env에 들어간다.
+    const deployLine = lines.find((l) => l.startsWith("run deploy plant8-staging "));
+    expect(deployLine).toContain("NOTIFY_TICK_SCHEDULER_SA=plant8-staging-scheduler@test-proj.iam.gserviceaccount.com");
   });
 });
 
@@ -254,6 +298,28 @@ describe("deploy.sh — 기존 서비스·이미지(시나리오 2)", () => {
 
     expect(r.stderr).toContain("using actual status.url");
     expect(r.stdout.trim().split("\n").at(-1)).toBe("SERVICE_URL=https://plant8-staging-abc123-du.a.run.app");
+  });
+
+  it("잡이 이미 있으면 create가 아니라 update http로 같은 인자를 다시 적용한다(04.2-04)", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: {
+        "service-exists": true,
+        "image-exists": true,
+        "describe-url": "https://plant8-staging-abc123-du.a.run.app",
+        "scheduler-job": true,
+      },
+    });
+    expect(r.status).toBe(0);
+    const lines = r.log.split("\n");
+    expect(r.log).not.toContain("scheduler jobs create");
+    const updateLines = lines.filter((l) => l.startsWith("scheduler jobs update http plant8-staging-notify-tick "));
+    expect(updateLines).toHaveLength(1);
+    expectSchedulerArgs(updateLines[0]!, "https://plant8-staging-abc123-du.a.run.app");
+    expect(lineIndex(r.log, "scheduler jobs describe plant8-staging-notify-tick")).toBeGreaterThan(
+      lineIndex(r.log, "run deploy plant8-staging "),
+    );
+    const deployLine = lines.find((l) => l.startsWith("run deploy plant8-staging "));
+    expect(deployLine).toContain("NOTIFY_TICK_SCHEDULER_SA=plant8-staging-scheduler@test-proj.iam.gserviceaccount.com");
   });
 });
 
@@ -323,6 +389,31 @@ describe("deploy.sh — 거부·실패 경로", () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toContain("SmokeFailed: origin check");
     expect(r.stderr).toContain("BETTER_AUTH_URL");
+  });
+
+  it("배포 셸에 NOTIFY_TICK_OIDC_DISABLED가 있으면 어떤 gcloud 호출보다 먼저 exit 2로 거부한다(Issue 6)", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      env: { NOTIFY_TICK_OIDC_DISABLED: "1" },
+    });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toContain("NOTIFY_TICK_OIDC_DISABLED");
+    expect(r.log).toBe("");
+  });
+
+  it("토큰 없는 notify-tick POST가 404면 Cloud Run 엣지가 경로를 먹은 것으로 SmokeFailed(D-4214)", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "service-exists": true, "image-exists": true, "notify-tick": "404" },
+    });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/SmokeFailed: .*\/internal\/notify-tick.*edge/);
+  });
+
+  it("토큰 없는 notify-tick POST가 200이면 OIDC 검증이 꺼진 것으로 SmokeFailed(D-4214)", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "service-exists": true, "image-exists": true, "notify-tick": "200" },
+    });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/SmokeFailed: .*\/internal\/notify-tick.*OIDC/);
   });
 
   it("임의 gcloud 하위 명령이 실패하면 exit 1과 'deploy failed at <함수명>'을 stderr 마지막 줄에 남긴다", () => {
@@ -537,4 +628,117 @@ describe("deploy.sh — 스모크 실패 시 자동 롤백", () => {
     expect(r.log).not.toContain("--to-revisions=");
     expect(r.stderr).toContain("first deploy");
   });
+});
+
+// 04.2-04 Task 2(D-4211 · eng E1 · R2-1): 저장소의 경보 템플릿을 직접 읽어 GCP 한도
+// 안의 25시간 성공 0건 조건인지 단언한다. 한 번도 생긴 적 없는 시계열은 이 단언의
+// 대상이 아니다 — 환경별 첫 성공 확인이 따로 덮는다(eng R2-2).
+interface Aggregation {
+  alignmentPeriod?: string;
+  perSeriesAligner?: string;
+  crossSeriesReducer?: string;
+  groupByFields?: string[];
+}
+interface ConditionBody {
+  filter?: string;
+  duration?: string;
+  aggregations?: Aggregation[];
+  denominatorAggregations?: Aggregation[];
+  comparison?: string;
+  thresholdValue?: number;
+  evaluationMissingData?: string;
+}
+interface PolicyCondition {
+  displayName: string;
+  conditionThreshold?: ConditionBody;
+  conditionAbsent?: ConditionBody;
+  conditionMatchedLog?: ConditionBody;
+}
+interface PolicyTemplate {
+  displayName: string;
+  enabled: boolean;
+  conditions: PolicyCondition[];
+}
+
+const MONITORING_DIR = join(REPO_ROOT, "infra/monitoring");
+
+function readTemplate(file: string): PolicyTemplate {
+  return JSON.parse(readFileSync(join(MONITORING_DIR, file), "utf8")) as PolicyTemplate;
+}
+
+function seconds(value: string): number {
+  const m = /^(\d+)s$/.exec(value);
+  if (!m) throw new Error(`not a seconds duration: ${value}`);
+  return Number(m[1]);
+}
+
+function conditionBody(c: PolicyCondition): ConditionBody {
+  const body = c.conditionThreshold ?? c.conditionAbsent ?? c.conditionMatchedLog;
+  if (!body) throw new Error(`unknown condition kind in ${c.displayName}`);
+  return body;
+}
+
+describe("tick-stale 경보 템플릿 (D-4211 · eng E1)", () => {
+  const tick = readTemplate("tick-stale.json.tpl");
+
+  it("켜져 있고 이름이 25h이며 부재 조건 없이 threshold 조건 하나다", () => {
+    expect(tick.enabled).toBe(true);
+    expect(tick.displayName).toBe("[__ENV__] notify tick stale 25h");
+    expect(tick.conditions).toHaveLength(1);
+    for (const c of tick.conditions) expect(c.conditionAbsent).toBeUndefined();
+    expect(tick.conditions[0]!.conditionThreshold).toBeDefined();
+  });
+
+  it("성공 0건 경로 — 89700s ALIGN_SUM·REDUCE_SUM 합이 1 미만이면 참, groupByFields 없음(새 리비전 거짓 경보 없음)", () => {
+    const t = tick.conditions[0]?.conditionThreshold;
+    expect(t?.aggregations).toEqual([
+      { alignmentPeriod: "89700s", perSeriesAligner: "ALIGN_SUM", crossSeriesReducer: "REDUCE_SUM" },
+    ]);
+    expect(t?.comparison).toBe("COMPARISON_LT");
+    expect(t?.thresholdValue).toBe(1);
+    expect(t?.filter).toContain("logging.googleapis.com/user/__METRIC__");
+  });
+
+  it("있던 시계열이 끊기는 경로 — 결측=참, duration 300s", () => {
+    const t = tick.conditions[0]?.conditionThreshold;
+    expect(t?.evaluationMissingData).toBe("EVALUATION_MISSING_DATA_ACTIVE");
+    expect(t?.duration).toBe("300s");
+  });
+
+  it("policy_tick staging = [staging] notify tick stale 25h", () => {
+    const out = spawnSync("bash", ["-c", `source "${join(REPO_ROOT, "infra/names.sh")}"; policy_tick staging`], {
+      encoding: "utf8",
+    });
+    expect(out.stdout.trim()).toBe("[staging] notify tick stale 25h");
+  });
+});
+
+describe("경보 템플릿 API 한도 가드 (eng R2-1)", () => {
+  const files = readdirSync(MONITORING_DIR).filter((f) => f.endsWith(".json.tpl"));
+
+  it("템플릿이 있다", () => {
+    expect(files).toContain("tick-stale.json.tpl");
+  });
+
+  for (const file of files) {
+    it(`${file}: 정렬 기간 ≥ 60s · duration은 분 배수 · 조건마다 정렬 기간 최댓값 + duration ≤ 90000s`, () => {
+      for (const c of readTemplate(file).conditions) {
+        const body = conditionBody(c);
+        const periods = [...(body.aggregations ?? []), ...(body.denominatorAggregations ?? [])]
+          .map((a) => a.alignmentPeriod)
+          .filter((p): p is string => p !== undefined)
+          .map(seconds);
+        for (const p of periods) expect(p).toBeGreaterThanOrEqual(60);
+        const duration = body.duration ? seconds(body.duration) : 0;
+        expect(duration % 60).toBe(0);
+        const sum = Math.max(0, ...periods) + duration;
+        expect(sum).toBeLessThanOrEqual(90000);
+        if (file === "tick-stale.json.tpl") expect(sum).toBe(90000);
+        if (c.conditionAbsent) {
+          expect(duration).toBeGreaterThanOrEqual(120);
+          expect(duration).toBeLessThanOrEqual(84600);
+        }
+      }
+    });
+  }
 });

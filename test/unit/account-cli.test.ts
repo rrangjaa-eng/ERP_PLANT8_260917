@@ -68,11 +68,28 @@ describe("scripts/account-cli parseArgs", () => {
     });
   });
 
-  it("unlock: --email만 파싱한다", async () => {
-    await expect(parseArgs(["unlock", "--email", "a@b.c"])).resolves.toEqual({
+  // 04.2-08(D-4222): unlock은 해제한 운영자(GitHub 계정)를 --operator로 반드시 받는다.
+  it("unlock: --email과 --operator를 파싱한다", async () => {
+    await expect(parseArgs(["unlock", "--email", "a@b.c", "--operator", "octo-admin"])).resolves.toEqual({
       cmd: "unlock",
       email: "a@b.c",
+      operator: "octo-admin",
     });
+  });
+
+  it("unlock에 --operator가 없으면 UsageError", async () => {
+    await expect(parseArgs(["unlock", "--email", "a@b.c"])).rejects.toThrow(UsageError);
+  });
+
+  it.each(["a,b", "-x", "", "a".repeat(40)])("unlock --operator 값 %j는 GitHub 계정 형식이 아니라 UsageError", async (operator) => {
+    await expect(parseArgs(["unlock", "--email", "a@b.c", "--operator", operator])).rejects.toThrow(UsageError);
+  });
+
+  it("create·reset에 --operator를 주면 UsageError(unlock 전용)", async () => {
+    await expect(
+      parseArgs(["create", "--email", "a@b.c", "--name", "홍길동", "--operator", "octo-admin"]),
+    ).rejects.toThrow(UsageError);
+    await expect(parseArgs(["reset", "--email", "a@b.c", "--operator", "octo-admin"])).rejects.toThrow(UsageError);
   });
 
   it("create에 --name이 없으면 UsageError", async () => {

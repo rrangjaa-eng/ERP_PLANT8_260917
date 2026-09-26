@@ -29,6 +29,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 2: 디자인 시스템·앱 셸** - `docs/design/SYSTEM.md` + `tokens.css` 확정, 앱 셸(내비게이션·레이아웃)과 핵심 컴포넌트 계약(5상태 필수, 엑셀식 표 동작 계약), Phase 1 임시 화면 교체
 - [ ] **Phase 3: 권한·설정·마스터 (관리자 운영 콘솔)** - 메커니즘+마스터: 사람·계급·본부·팀(발령일 이력), 권한표·정보 노출표(scopeFor 행 필터 + DTO 투영·누수 스캔 테스트 생성기), 설정 레지스트리 자동 화면, 거래처(계좌번호 암호화 헬퍼·기본 증빙 종류)·법인카드·코드표(증빙 종류별 세금 규칙 + 기준일·절사), 행동 로그·보관함 — 전 메뉴 검수는 Phase 7 끝
 - [ ] **Phase 4: 프로젝트·견적 원장** - 프로젝트 등록·목록·상세, 엑셀식 견적 줄 표(차익 서버 계산, 구현 방식 선택), 차수·고객 승인(게이트 단일 진입점), 매출 칸(공급가 입력·부가세 자동, 입금액은 합계→역산), 문서 번호 서식·카운터 행 잠금, `domain/money` 금액 모델(통화·환율·원화 환산, 정수 원·서버 단일 반올림), 클라이언트별 리저브 대장
+- [ ] **Phase 04.2: 알림·공휴일 기반** - 법정 규칙 공휴일 후보·연도 확정·임시공휴일(ADMN-11), 알림함·미읽음 배지(NOTI-01), 하루 한 통 묶음 이메일(SMTP 미설정 시 알림함만, NOTI-02), OIDC 검증 `/internal/notify-tick`·advisory lock·배치 상한(NOTI-04), 계정 잠금·해제 행동 로그(D-712)
 - [ ] **Phase 5: 지출결의·결재·연차** - 견적 줄에서 한 화면 지출결의(증빙 첨부 포함, 기본 1줄 1문서) 제출, 4단 결재(계급 × 조직 범위로 고정, 자기 승인 건너뜀, 낙관적 잠금, 폰 승인), 팀 비용(프로젝트 미연결 개인 비용은 사용일 소속 팀), 증빙 종류별 세금 자동 계산(사람은 공급가만 입력, 세율 기준일·버전 저장, 회사 대납 세금은 프로젝트 비용), 같은 결재 모듈로 연차·정산 결재
 - [ ] **Phase 6: 지급·증빙·법인카드·구매 요청 (경영관리)** - 결재·증빙 게이트로 지급 완료(실제 이체액 입력→공급가 역산, 완료 줄 잠금), 증빙 업로드(브라우저 축소 + GCS 서명 URL)·확정 비용·선결제, 법인카드(경영관리 대리 등록·견적 외 비용)·구매 요청·이중 계산 차단, 완료(정산) 미결 점검
 - [ ] **Phase 7: 공휴일·지급일·마감·알림 + 전 메뉴 권한 검수** - 공휴일 표, 지급일 자동 계산·마감 14시, 알림함+이메일(회사 Google SMTP 활성, 조건 종류 코드 등록), notify-tick(OIDC 검증·advisory lock·배치 상한), 권한·노출·행동 로그 전 메뉴 검수 — 인트라넷 패리티 완료
@@ -434,45 +435,45 @@ Wave 7 *(blocked on Wave 6)*
   4. Cloud Scheduler가 부르는(발송 시각 오전 9시, 07-CONTEXT 입력 §4) 단일 엔드포인트(`/internal/notify-tick`)로 동작한다. 호출은 Google OIDC ID 토큰을 검증하고(audience = 서비스 URL, 이메일 = 스케줄러 서비스 계정; 실패 401 + 로그), tick은 advisory lock으로 동시 실행을 막으며(2A), 건수 상한(설정)만큼 배치로 처리하고 `{sent, skipped, remaining}`을 응답해 남은 건은 다음 tick이 잇는다. notification_log 유니크 제약(INSERT … ON CONFLICT DO NOTHING)으로 같은 건은 두 번 발송되지 않고(NOTI-04), tick 날이 비영업일이면 아무것도 보내지 않고 끝난다(D-709). 알림 조건 종류는 코드에 등록하는 틀로 두고 이 페이즈는 테스트 전용 조건 종류로 tick을 증명한다 — 실제 조건 종류·기본 규칙·규칙 관리 화면은 Phase 7(NOTI-03). 스케줄러 잡·서비스 계정은 deploy.sh가 만들고, OIDC 검증을 끄는 환경 변수가 있으면 배포가 거부된다(Issue 6). 통합 테스트: 토큰 없음 → 401, 상한 초과 시 remaining > 0 뒤 다음 tick 완료, 재실행 멱등, 공휴일 날짜 → `{sent: 0}`. 관리자 시스템 상태 화면에 마지막 tick 시각·결과가 더해진다(18A)
   5. 계정 잠금과 잠금 해제가 행동 로그에 남는다(D-712, Phase 1 성공 기준 2의 미이행분). 잠금은 로그인 전에 일어나 행위자 표현(시스템 행위자 + 대상 이메일 등)은 계획이 정한다. 통합 테스트: 로그인 N회 실패 → 잠금 행동 로그 1건, 관리자 해제 → 해제 행동 로그 1건. 새 액션·DTO(알림함·공휴일)는 누수 스캔 생성기에 등록된다
 
-**Plans:** 15 plans
+**Plans:** 15/15 plans executed
 **UI hint**: yes
 
 Plans:
 **Wave 1**
 
-- [ ] 04.2-01-PLAN.md — 트레이서: `/internal/notify-tick` → advisory lock tick → `notification_log`·실행 기록, 배치 상한·종류별 격리·이어받기 (W1)
-- [ ] 04.2-02-PLAN.md — 공휴일 규칙 생성(음력 내장 표 2025–2035·시행일별 법정 공휴일·대체공휴일)과 영업일·N영업일 순수 함수, 공식 달력 대조 체크포인트 (W1)
-- [ ] 04.2-04-PLAN.md — deploy.sh 스케줄러 잡·서비스 계정·OIDC 우회 거부·401 스모크, tick 정체 경보 25시간 켜기, 저널 가드 (W1)
-- [ ] 04.2-15-PLAN.md — SMTP 발송 어댑터(거부·결과 불명·발송 마감 분류, 오류 비노출)와 묶음 메일 모양, `nodemailer` 패키지 확인 체크포인트 (W1)
+- [x] 04.2-01-PLAN.md — 트레이서: `/internal/notify-tick` → advisory lock tick → `notification_log`·실행 기록, 배치 상한·종류별 격리·이어받기 (W1)
+- [x] 04.2-02-PLAN.md — 공휴일 규칙 생성(음력 내장 표 2025–2035·시행일별 법정 공휴일·대체공휴일)과 영업일·N영업일 순수 함수, 공식 달력 대조 체크포인트 (W1)
+- [x] 04.2-04-PLAN.md — deploy.sh 스케줄러 잡·서비스 계정·OIDC 우회 거부·401 스모크, tick 정체 경보 25시간 켜기, 저널 가드 (W1)
+- [x] 04.2-15-PLAN.md — SMTP 발송 어댑터(거부·결과 불명·발송 마감 분류, 오류 비노출)와 묶음 메일 모양, `nodemailer` 패키지 확인 체크포인트 (W1)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 04.2-05-PLAN.md — OIDC 거부 경로 전부·환경 변수 연결·실제 기본 설정 실측·재생 보장 (W2)
-- [ ] 04.2-06-PLAN.md — 공휴일 표·연도 확정 표, 후보 지연 생성(수동 날짜가 대체일을 막음), 필요한 해만 읽는 영업일 함수를 tick에 연결 (W2)
-- [ ] 04.2-07-PLAN.md — 트레이서: 알림함 한 스냅샷 열기·키셋 목록, 경로 변경 때 갱신되는 미읽음 배지 (W2)
+- [x] 04.2-05-PLAN.md — OIDC 거부 경로 전부·환경 변수 연결·실제 기본 설정 실측·재생 보장 (W2)
+- [x] 04.2-06-PLAN.md — 공휴일 표·연도 확정 표, 후보 지연 생성(수동 날짜가 대체일을 막음), 필요한 해만 읽는 영업일 함수를 tick에 연결 (W2)
+- [x] 04.2-07-PLAN.md — 트레이서: 알림함 한 스냅샷 열기·키셋 목록, 경로 변경 때 갱신되는 미읽음 배지 (W2)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 04.2-03-PLAN.md — D-712 계정 잠금 행동 로그(실패 기록과 한 트랜잭션) + 잠금 문구가 설정 분(`auth.lockout.window_minutes`)을 읽음, 끌 수 없는 행동 종류 셋 (W3)
-- [ ] 04.2-09-PLAN.md — 알림함 메뉴 항목·목록 다섯 상태, DECISIONS 한 항목 + SYSTEM.md 수정 제안 #2~#8 (W3)
-- [ ] 04.2-10-PLAN.md — 하루 한 통 묶음 이메일(한 묶음씩 선점·결과 불명 기록·로그 비노출·실행 예산) (W3)
+- [x] 04.2-03-PLAN.md — D-712 계정 잠금 행동 로그(실패 기록과 한 트랜잭션) + 잠금 문구가 설정 분(`auth.lockout.window_minutes`)을 읽음, 끌 수 없는 행동 종류 셋 (W3)
+- [x] 04.2-09-PLAN.md — 알림함 메뉴 항목·목록 다섯 상태, DECISIONS 한 항목 + SYSTEM.md 수정 제안 #2~#8 (W3)
+- [x] 04.2-10-PLAN.md — 하루 한 통 묶음 이메일(한 묶음씩 선점·결과 불명 기록·로그 비노출·실행 예산) (W3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 04.2-08-PLAN.md — D-712 잠금 해제 로그(한 트랜잭션) + CLI 운영자 신원(`github.actor`) (W4)
-- [ ] 04.2-11-PLAN.md — 공휴일 관리 화면 `/admin/holidays` 트레이서: 후보 표·연도 확정(범위·완결 검사 + 행동 로그 한 트랜잭션), SYSTEM.md #1 (W4)
+- [x] 04.2-08-PLAN.md — D-712 잠금 해제 로그(한 트랜잭션) + CLI 운영자 신원(`github.actor`) (W4)
+- [x] 04.2-11-PLAN.md — 공휴일 관리 화면 `/admin/holidays` 트레이서: 후보 표·연도 확정(범위·완결 검사 + 행동 로그 한 트랜잭션), SYSTEM.md #1 (W4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 04.2-12-PLAN.md — 임시공휴일·선거일 추가·수동 미래 행 삭제(미래 대체일 재계산 + 행동 로그 한 트랜잭션), 폰 칸 접기 (W5)
+- [x] 04.2-12-PLAN.md — 임시공휴일·선거일 추가·수동 미래 행 삭제(미래 대체일 재계산 + 행동 로그 한 트랜잭션), 폰 칸 접기 (W5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 04.2-13-PLAN.md — 시스템 상태 `알림 발송`·`이메일` 줄과 관리자 배너 둘(공휴일 확정 요청·이메일 발송 실패/결과 불명) (W6)
+- [x] 04.2-13-PLAN.md — 시스템 상태 `알림 발송`·`이메일` 줄과 관리자 배너 둘(공휴일 확정 요청·이메일 발송 실패/결과 불명) (W6)
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 04.2-14-PLAN.md — [BLOCKING] main 합친 뒤 마이그레이션 재생성(목록 삭제·두 DB 적용·두 번 실행), REQUIREMENTS·ROADMAP 추적 이동, ARCHITECTURE 표기, 전체 게이트 (W7)
+- [x] 04.2-14-PLAN.md — [BLOCKING] main 합친 뒤 마이그레이션 재생성(목록 삭제·두 DB 적용·두 번 실행), REQUIREMENTS·ROADMAP 추적 이동, ARCHITECTURE 표기, 전체 게이트 (W7)
 
 **Cross-cutting constraints:**
 
@@ -821,10 +822,11 @@ v1 요구사항 86개 전부가 정확히 한 페이즈에 속한다(2026-09-23:
 | 3 | 13 | ADMN-01, ADMN-02, ADMN-03, ADMN-05, ADMN-06, ADMN-08, ADMN-10, ADMN-12, OPS-05, MAST-01, MAST-02, MAST-03, MAST-04 |
 | 4 | 11 | PROJ-01, PROJ-02, PROJ-03, PROJ-04, PROJ-05, PROJ-07, ADMN-09, UX-04, UX-05, RSV-01, FX-01 |
 | 04.1 | 5 | EXP-03, EXP-04, EXP-05, LEAV-01, ADMN-04 (결재 부분 — 알림 시점은 Phase 7, 세율·수식은 Phase 5) |
+| 04.2 | 4 | ADMN-11, NOTI-01, NOTI-02, NOTI-04 |
 | 04.4 | 1 | OPS-03 |
 | 5 | 8 | EXP-01, EXP-02, EXP-08, EXP-14, EXP-15, EVID-01, UX-03, UX-06 |
 | 6 | 10 | EXP-06, EXP-07, EXP-09, EXP-10, EXP-13, EXP-16, EVID-02, EVID-03, EVID-04, PROJ-06 |
-| 7 | 7 | EXP-11, EXP-12, ADMN-11, NOTI-01, NOTI-02, NOTI-03, NOTI-04 |
+| 7 | 3 | EXP-11, EXP-12, NOTI-03 |
 | 8 | 2 | MIG-04, MIG-05 |
 | 9 | 10 | PNL-01, PNL-02, PNL-03, PNL-04, PNL-05, PNL-06, PNL-08, PNL-09, UX-02, RSV-02 |
 | 10 | 5 | PNL-07, GOAL-01, GOAL-02, GOAL-03, ADMN-07 |

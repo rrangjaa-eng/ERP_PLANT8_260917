@@ -89,6 +89,21 @@ describe("bootstrap-gcp.sh — 새 프로젝트", () => {
       }
     }
 
+    // 04.2-04(D-4212): 스케줄러 SA는 소유자 bootstrap이 만들고, 배포자에게는
+    // 스케줄러 관리 역할과 그 SA 사용 권한만 준다 — SA 관리 권한은 주지 않는다.
+    expect(r.log).toContain("iam service-accounts create plant8-staging-scheduler ");
+    expect(r.log).toContain("iam service-accounts create plant8-prod-scheduler ");
+    expect(r.log).toContain("serviceAccount:gha-deployer@test-proj.iam.gserviceaccount.com --role=roles/cloudscheduler.admin");
+    for (const env of ["staging", "prod"]) {
+      const binding = r.log
+        .split("\n")
+        .find((l) => l.startsWith(`iam service-accounts add-iam-policy-binding plant8-${env}-scheduler@test-proj.iam.gserviceaccount.com `));
+      expect(binding, `scheduler SA binding for ${env}`).toBeDefined();
+      expect(binding).toContain("--member=serviceAccount:gha-deployer@test-proj.iam.gserviceaccount.com");
+      expect(binding).toContain("--role=roles/iam.serviceAccountUser");
+    }
+    expect(r.log).not.toContain("serviceAccountAdmin");
+
     expect(r.stdout).toContain("GCP_PROJECT_ID=test-proj");
     expect(r.stdout).toContain("GCP_PROJECT_NUMBER=123456789012");
     expect(r.stdout).toContain("GCP_REGION=asia-northeast3");
@@ -144,6 +159,18 @@ describe("bootstrap-gcp.sh — 단일 파일(names.sh 미의존) + 이름 상수
   it("infra/names.sh를 source하지 않는다", () => {
     const script = readFileSync(SCRIPT_PATH, "utf8");
     expect(script).not.toMatch(/source .*names\.sh/);
+  });
+
+  it("스케줄러 SA 이름이 infra/names.sh scheduler_sa와 같다(04.2-04)", () => {
+    const r = bootstrap(["--project", "test-proj", "--github-repo", "rrangjaa-eng/ERP_PLANT8_260917"], {
+      "no-vpc-peering": true,
+    });
+    for (const env of ["staging", "prod"]) {
+      const out = spawnSync("bash", ["-c", `source "${NAMES_PATH}"; scheduler_sa ${env}`], { encoding: "utf8" });
+      const name = out.stdout.trim();
+      expect(name).toBe(`plant8-${env}-scheduler`);
+      expect(r.log).toContain(`iam service-accounts create ${name} `);
+    }
   });
 
   it("WIF_POOL·WIF_PROVIDER·DEPLOYER_SA·REGION_DEFAULT·VPC_RANGE·NETWORK 값이 infra/names.sh와 같다", () => {

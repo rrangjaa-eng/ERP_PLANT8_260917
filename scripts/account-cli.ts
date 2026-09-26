@@ -15,7 +15,7 @@ export class UsageError extends Error {}
 export type ParsedArgs =
   | { cmd: "create"; email: string; name: string; roleId: string }
   | { cmd: "reset"; email: string }
-  | { cmd: "unlock"; email: string };
+  | { cmd: "unlock"; email: string; operator: string };
 
 // domain/system-status의 StatusDeps·domain/permissions/can의 CanDeps와 같은
 // deps?: Partial<XDeps> 주입 패턴 — 단위 테스트가 Postgres 없이 findRoleById를
@@ -25,6 +25,9 @@ export type ParseArgsDeps = {
 };
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// 04.2-08(D-4222): --operator는 워크플로의 github.actor — GitHub 계정 이름 규칙만
+// 받는다. account.yml의 --args가 쉼표로 인자를 나누므로 쉼표·공백은 인자를 깨뜨린다.
+const OPERATOR_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 
 // 시드 5종은 정적으로, 그 밖의 값은 DB(관리자가 화면에서 추가한 계급)에서
 // 확인한다. 둘 다 아니면 오타를 조용히 기본 계급으로 만들지 않고 거부한다(T-03-12).
@@ -45,15 +48,15 @@ export async function parseArgs(argv: string[], deps?: Partial<ParseArgsDeps>): 
     throw new UsageError(`알 수 없는 서브커맨드: ${cmd ?? "(없음)"}. create|reset|unlock 중 하나여야 합니다.`);
   }
 
-  const flags: { email?: string; name?: string; role?: string } = {};
+  const flags: { email?: string; name?: string; role?: string; operator?: string } = {};
   for (let i = 0; i < rest.length; i++) {
     const token = rest[i];
-    if (token === "--email" || token === "--name" || token === "--role") {
+    if (token === "--email" || token === "--name" || token === "--role" || token === "--operator") {
       const value = rest[i + 1];
       if (value === undefined || value.startsWith("--")) {
         throw new UsageError(`${token} 뒤에 값이 필요합니다.`);
       }
-      flags[token === "--email" ? "email" : token === "--name" ? "name" : "role"] = value;
+      flags[token === "--email" ? "email" : token === "--name" ? "name" : token === "--role" ? "role" : "operator"] = value;
       i++;
     } else {
       throw new UsageError(`알 수 없는 플래그: ${token}. 등호 결합(--flag=value) 토큰은 지원하지 않습니다.`);
@@ -62,6 +65,19 @@ export async function parseArgs(argv: string[], deps?: Partial<ParseArgsDeps>): 
 
   if (!flags.email || !EMAIL_PATTERN.test(flags.email)) {
     throw new UsageError("--email이 필요하고 이메일 형식이어야 합니다.");
+  }
+
+  if (cmd === "unlock") {
+    if (flags.operator === undefined) {
+      throw new UsageError("unlock에는 --operator가 필요합니다.");
+    }
+    if (!OPERATOR_PATTERN.test(flags.operator)) {
+      throw new UsageError("--operator는 GitHub 계정 이름 형식이어야 합니다.");
+    }
+    return { cmd, email: flags.email, operator: flags.operator };
+  }
+  if (flags.operator !== undefined) {
+    throw new UsageError("--operator는 unlock에서만 씁니다.");
   }
 
   if (cmd === "create") {
@@ -101,7 +117,7 @@ async function run(parsed: ParsedArgs): Promise<void> {
     return;
   }
 
-  const { resolved } = await unlockAccount(SYSTEM_VIEWER, parsed.email);
+  const { resolved } = await unlockAccount(SYSTEM_VIEWER, parsed.email, { operator: parsed.operator });
   console.log(`account unlocked: ${parsed.email} (resolved=${resolved})`);
 }
 

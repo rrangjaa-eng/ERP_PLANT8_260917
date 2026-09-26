@@ -83,10 +83,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### 알림 (NOTI)
 
-- [ ] **NOTI-01**: 앱 안 알림함과 미읽음 배지가 있다
-- [ ] **NOTI-02**: 같은 알림이 이메일로도 간다. 발송은 회사 Google 계정 SMTP(환경 변수 host·user·password·from; Workspace 릴레이 설정은 TODOS.md)이며, 발송 실패는 알림함과 관리자 배너에 남는다
+- [x] **NOTI-01**: 앱 안 알림함과 미읽음 배지가 있다
+- [x] **NOTI-02**: 같은 알림이 이메일로도 간다. 발송은 회사 Google 계정 SMTP(환경 변수 host·user·password·from; Workspace 릴레이 설정은 TODOS.md)이며, 발송 실패는 알림함과 관리자 배너에 남는다
 - [ ] **NOTI-03**: 관리자가 설정에서 알림 규칙을 새로 만든다. 조건 종류(상태 + 기준일로부터 N일 전/후, '프로젝트 종료 후 지출결의 없음' 같은 교차 문서 조건 등)는 코드에 등록되고, 규칙 = 조건 종류 × 파라미터(대상 문서(지출결의·구매 요청·결재·증빙·프로젝트·연차), N일, 받는 사람(계급·담당자·팀장), 채널)의 인스턴스다. 기본 규칙 4개(종료 후 지출결의 없음, 지급 예정일 임박, 결재 대기 초과, 증빙 미첨부)는 시드로 제공
-- [ ] **NOTI-04**: 같은 건이 두 번 발송되지 않는다. 스케줄러가 하루 몇 번 호출하는 단일 엔드포인트로 동작한다(큐 없음). tick은 advisory lock으로 동시 실행을 막고 notification_log 유니크 제약으로 중복 발송을 막는다
+- [x] **NOTI-04**: 같은 건이 두 번 발송되지 않는다. 스케줄러가 하루 몇 번 호출하는 단일 엔드포인트로 동작한다(큐 없음). tick은 advisory lock으로 동시 실행을 막고 notification_log 유니크 제약으로 중복 발송을 막는다
 
 ### 연차 (LEAV)
 
@@ -112,7 +112,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **ADMN-08**: 계급 종류를 추가·이름 변경한다(데이터)
 - [x] **ADMN-09**: 문서 번호 서식(프로젝트·견적·지출결의·구매 요청·연차 등)을 설정에서 정의한다: 접두어·연도·순번 자릿수·구분자·순번 범위(전사/프로젝트별). 예: 프로젝트 26001, 지출결의 26001-0001. 번호 부여 시점: 지출결의는 제출 시, 구매 요청은 생성 시
 - [ ] **ADMN-10**: 대표·경영관리·관리자가 행동 로그 화면에서 핵심 로그 위주로 보고, 사람·기간·행동 종류·문서로 걸러 Excel로 내보낸다(사고 증거·인사평가 참고용). 어떤 행동을 핵심으로 남길지는 설정에서 고른다. 열람 권한은 정보 노출표로 통제
-- [ ] **ADMN-11**: 영업일·공휴일: 법정 공휴일 규칙으로 매년 후보가 자동 생성되고 관리자가 검토·확정·수동 추가한다. 지급일·마감·알림 계산이 이 표를 쓴다
+- [x] **ADMN-11**: 영업일·공휴일: 법정 공휴일 규칙으로 매년 후보가 자동 생성되고 관리자가 검토·확정·수동 추가한다. 지급일·마감·알림 계산이 이 표를 쓴다
 - [ ] **ADMN-12**: "지우지 않는다": 사용자가 무엇을 삭제해도 보관함으로 이동하며, 관리자만 보관함에서 보고 복원할 수 있다. 삭제·복원은 행동 로그에 남는다
 
 ### 전환 (MIG)
@@ -236,10 +236,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | GOAL-01 | Phase 10 | Pending |
 | GOAL-02 | Phase 10 | Pending |
 | GOAL-03 | Phase 10 | Pending |
-| NOTI-01 | Phase 7 | Pending |
-| NOTI-02 | Phase 7 | Pending |
+| NOTI-01 | Phase 04.2 | Complete |
+| NOTI-02 | Phase 04.2 | Complete |
 | NOTI-03 | Phase 7 | Pending |
-| NOTI-04 | Phase 7 | Pending |
+| NOTI-04 | Phase 04.2 | Complete |
 | LEAV-01 | Phase 04.1 | Pending |
 | CERT-01 | Phase 11 | Pending |
 | CERT-02 | Phase 11 | Pending |
@@ -255,7 +255,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ADMN-08 | Phase 3 | Pending |
 | ADMN-09 | Phase 4 | Complete |
 | ADMN-10 | Phase 3 | Pending |
-| ADMN-11 | Phase 7 | Pending |
+| ADMN-11 | Phase 04.2 | Complete |
 | ADMN-12 | Phase 3 | Pending |
 | MIG-04 | Phase 8 | Pending |
 | MIG-05 | Phase 8 | Pending |
@@ -279,9 +279,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 - Mapped to phases: 86
 - Unmapped: 0 ✓
 
-**By phase:** 1 (9) · 2 (1) · 3 (13) · 4 (11) · 04.1 (5) · 04.4 (1) · 5 (8) · 6 (10) · 7 (7) · 8 (2) · 9 (10) · 10 (5) · 11 (4)
+**By phase:** 1 (9) · 2 (1) · 3 (13) · 4 (11) · 04.1 (5) · 04.2 (4) · 04.4 (1) · 5 (8) · 6 (10) · 7 (3) · 8 (2) · 9 (10) · 10 (5) · 11 (4)
 
 ---
 *Requirements defined: 2026-09-17*
+*2026-09-24: Phase 7에서 Phase 04.2로 ADMN-11·NOTI-01·NOTI-02·NOTI-04 이동(PR #50 분리 — 옮긴 4 + 남긴 3 = 원래 7)*
 *Last updated: 2026-09-23 — 데이터 이전 제외(사용자 결정): MIG-01·02·03 → Out of Scope, MIG-04·05를 수기 입력 전환으로 재정의, OPS-06 '이전 실행' → '복원 리허설', 인트라넷 미러링 사유 정정, v1 89 → 86 (86/86 mapped)*
 *Earlier update: 2026-09-17 after /plan-ceo-review (23 findings + D3·D4·D5 + OV-1..8 folded in; OPS-06·OPS-07 added; OV-3 redefined → EXP-15 증빙 종류별 세금 자동 계산; CERT-01 QR 진입; EXP-16 경영관리 카드 사용 대리 등록·개인 비용 팀 귀속·경품 대납 세금 비용 포함; 89/89 mapped; /plan-eng-review decisions 1–15 + OV-1..8 folded: 본부·계급×조직 범위·자기 승인, 세율 기준일·절사, effectiveCost 식 공유, upsert 이전·결정적 번호·amount_basis·중복 후보, demo 입력; roadmap Phase 6 split per Eng OV-6 → 11 phases, traceability renumbered: old 6 → 6/7, old 7~10 → 8~11; 회사 GCP Phase 1부터)*

@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { AccountEntry, MenuLink } from "./role-menu";
+import { NOTIFICATIONS_HREF, type AccountEntry, type MenuLink } from "./role-menu";
 import styles from "./MoreSheet.module.css";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { useLogout } from "@/ui/logout/use-logout";
+import { useUnreadCount, notificationsMenuLabel } from "./unread-count";
 
 // SYSTEM.md §7-8 「더보기」 시트. 실물: docs/design/system/sheet-modal.html #sheet-more.
 //
@@ -68,6 +69,9 @@ export function MoreSheet({ open, onClose, moreMenu, accountGroup, adminMenu, tr
 
   // WR-06: 성공했을 때만 시트를 닫는다(TopBar와 같은 계약).
   const { logout, error: logoutError } = useLogout(() => dialogRef.current?.close());
+  // 04.2-09 Task 2(S1-b): 「알림함」 항목 라벨 뒤에 건수를 붙인다 — Shell·BottomTabs는
+  // 고치지 않고 이 컴포넌트가 useUnreadCount()를 직접 읽는다.
+  const { count: unreadCount } = useUnreadCount();
 
   const firstRowHref = moreMenu[0]?.href ?? adminMenu[0]?.href;
 
@@ -136,7 +140,9 @@ export function MoreSheet({ open, onClose, moreMenu, accountGroup, adminMenu, tr
           entry.kind === "link" ? (
             <li key={entry.label}>
               <a href={entry.href} className={styles.link}>
-                {entry.label}
+                {entry.href === NOTIFICATIONS_HREF
+                  ? notificationsMenuLabel(entry.label, unreadCount)
+                  : entry.label}
               </a>
             </li>
           ) : (

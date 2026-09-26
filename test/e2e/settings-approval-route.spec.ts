@@ -8,7 +8,6 @@ import {
   APPROVAL_ROUTE_LEAVE_STEP1_ORG_UNIT_ID,
   APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID,
 } from "@/domain/settings/keys";
-import { findOrgUnitByName } from "@/repositories/org-units";
 
 // 04.1-04(ADMN-04 · CEO-14): 설정 화면 `연차 결재선` 섹션. 결재선은 공유 erp_test의
 // 전역 값이라 이 스펙은 `desktop-settings` 프로젝트(다른 모든 스펙 뒤)에서만 돌고,
@@ -74,6 +73,7 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
   });
 
   test("자기 승인을 본인 승인으로 바꾸면 즉시 저장되고 새로 고쳐도 남는다", async ({ page }) => {
+    const original = await getSettingValue(APPROVAL_ROUTE_LEAVE_SELF_APPROVAL);
     try {
       await openSettings(page);
       await page.getByLabel("자기 승인").selectOption({ label: "본인 승인" });
@@ -82,13 +82,12 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
         await expect(checkedText(page, "자기 승인")).toHaveText("본인 승인");
       }).toPass();
     } finally {
-      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_SELF_APPROVAL, "skip");
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_SELF_APPROVAL, original);
     }
   });
 
   test("3단 특정 부서를 —로 바꾸면 칸 아래 경고가 보이고 저장은 된다", async ({ page }) => {
-    const mgmt = await findOrgUnitByName(SYSTEM_VIEWER, "경영관리본부");
-    if (!mgmt) throw new Error("시드된 경영관리본부가 없습니다");
+    const original = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID);
     try {
       await openSettings(page);
       const step3OrgUnit = page.getByLabel("3단 특정 부서");
@@ -102,7 +101,7 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
         await expect(field.getByText("부서 없음 · 이 단계는 빈 자리로 건너뜀")).toBeVisible();
       }).toPass();
     } finally {
-      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID, mgmt.id);
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID, original);
     }
   });
 

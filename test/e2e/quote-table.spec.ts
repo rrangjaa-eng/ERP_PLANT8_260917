@@ -911,6 +911,25 @@ test.describe("견적 줄 표 — 30줄 쪽 나눔(04-19 Task 1 · D-91)", () =>
     await expect(pageNav(page)).toHaveCount(0);
   });
 
+  test("(리뷰 S-1) 2쪽 31번째 줄을 지워 1쪽이 된 뒤 1쪽 그룹 A에서 Ctrl+Enter로 31줄이 돼도 1쪽에 남고 새 줄이 열린다", async ({ page }) => {
+    await openProjectWithSavedLines(page, [
+      ...Array.from({ length: 5 }, (_, index) => ({ subcategory: "stage_construction", itemName: `A줄${index + 1}`, amount: 1000 })),
+      ...Array.from({ length: 26 }, (_, index) => ({ subcategory: "print_production", itemName: `B줄${index + 1}`, amount: 2000 })),
+    ]);
+    await pageNav(page).getByRole("button", { name: "2", exact: true }).click();
+    await expect(quoteCell(page, 0, 2)).toHaveText("B줄26");
+    await quoteCell(page, 0, 2).focus();
+    await page.keyboard.press("Delete");
+    await page.getByRole("dialog").getByRole("button", { name: "견적 줄 삭제" }).click();
+    await expect(pageNav(page)).toHaveCount(0);
+
+    await quoteCell(page, 4, 2).focus();
+    await page.keyboard.press("Control+Enter");
+    await expect(pageNav(page)).toContainText("1–30 / 31줄");
+    await expect(quoteCell(page, 5, 0)).toHaveText("6");
+    await expect(quoteCell(page, 5, 1).locator("select, input").first()).toBeFocused();
+  });
+
   test("(DR-13 · W2) 31줄 이전 차수 읽기 섹션도 30줄 쪽 — 번호 2 → 제목 포커스 · 2쪽 첫 번호 31 · 합계 31줄", async ({ page }) => {
     const { projectId, revisionId } = await openProjectWithSavedLines(
       page,

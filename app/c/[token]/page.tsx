@@ -1,21 +1,30 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { cache } from "react";
 import { assertCertFeatureEnabled } from "@/lib/certs/feature-guard";
 import { loadIntake } from "@/domain/certs/intake";
 import { ClosedResult, IntakeFlow } from "./intake-flow";
 import styles from "./intake.module.css";
 
-export const metadata: Metadata = {
-  title: "이름 고르기 · 기타소득 지급 확인",
-  robots: { index: false, follow: false },
-};
+// 한 요청 안에서 generateMetadata와 페이지가 같은 읽기를 한 번만 한다.
+const loadIntakeOnce = cache(loadIntake);
+
+// 첫 진입 제목도 단계별 제목 규칙을 따른다 — 닫힌 링크는 「링크 닫힘」(DOM 감사 F6).
+export async function generateMetadata({ params }: { params: Promise<{ token: string }> }): Promise<Metadata> {
+  const { token } = await params;
+  const result = await loadIntakeOnce(token);
+  return {
+    title: `${result.kind === "closed" ? "링크 닫힘" : "이름 고르기"} · 기타소득 지급 확인`,
+    robots: { index: false, follow: false },
+  };
+}
 
 export const dynamic = "force-dynamic";
 
 export default async function CertIntakePage({ params }: { params: Promise<{ token: string }> }) {
   await assertCertFeatureEnabled();
   const { token } = await params;
-  const result = await loadIntake(token);
+  const result = await loadIntakeOnce(token);
 
   if (result.kind === "notFound") notFound();
 

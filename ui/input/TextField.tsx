@@ -59,7 +59,7 @@ function PlainTextField({ id, label, error, numeric = false, size = "default", c
             .join(" ")}
         />
         {error ? (
-          <p id={errorId} className={styles.error}>
+          <p id={errorId} className={size === "external" ? `${styles.error} ${styles.errorExternal}` : styles.error}>
             {error}
           </p>
         ) : null}

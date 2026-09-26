@@ -20,7 +20,8 @@
   text-align: center;
 }
 
-.external {
+/* .btn(뒤에 선언, 같은 명시도)의 --control-h · --fs-sm보다 앞서도록 두 클래스로 건다(DOM 감사 F1). */
+.btn.external {
   height: var(--s-12);
   width: 100%;
   font-size: var(--fs-md);

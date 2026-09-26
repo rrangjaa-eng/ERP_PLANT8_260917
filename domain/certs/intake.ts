@@ -322,6 +322,20 @@ export async function verifyLast4(
   const since = new Date(now.getTime() - VERIFY_RATE_WINDOW_MINUTES * 60 * 1000);
   const keyHash = sha256Hex(input.idemKey);
 
+  // (b0) 잠금 전 빠른 판정(M2) — 셈을 올리지 않는 요청(닫힌 행사 · 누적 잠긴 자리
+  // · 짧은 잠김 자리)도 행사 행 대기열에 서지 않는다. 순서는 잠근 뒤와 같다:
+  // 닫힘 → 누적 잠김 → (같은 키 재생이 있으면 잠근 뒤로) → 짧은 잠김. 정본은 잠근 뒤 (c)~(e)다.
+  const quickState = resolveEventState(event, now);
+  if (quickState.status === "closed") return { kind: "closed", reason: quickState.reason, at: quickState.at };
+  const quickWinner = await findWinnerInEvent(SYSTEM_VIEWER, event.id, rowId);
+  if (quickWinner && quickWinner.name !== null) {
+    if (quickWinner.hardLockedAt) return { kind: "hardLocked" };
+    const hasReplay = Boolean(pruneIdemEntries(quickWinner.verifyIdemOutcome ?? {}, now)[keyHash]);
+    if (!hasReplay && quickWinner.lockedUntil && now < quickWinner.lockedUntil) {
+      return lockedResponse(maxAttempts, quickWinner.lockedUntil, now);
+    }
+  }
+
   // (b1) 잠금 전 빠른 판정(AX-P2 · T-04.3-113) — 이미 한도를 넘은 요청은 행사
   // 행 FOR UPDATE 대기열에 서지 않고(풀 연결을 붙들지 않는다) 곧바로
   // throttled다. 잠금 없는 짧은 읽기 한 번이고, 한도의 정본은 잠근 뒤 (f)다.

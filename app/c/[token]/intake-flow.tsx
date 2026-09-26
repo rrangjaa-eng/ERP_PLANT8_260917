@@ -355,6 +355,10 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
       verifyLast4Action({ token, rowId: current.rowId, last4: current.last4, idemKey: key }),
     );
     setBusy(false);
+    // 그사이 E2로 돌아갔거나(뒤로 가기) 다른 이름을 골랐으면 늦은 응답을 버린다 —
+    // 화면 · 기록 항목을 건드리지 않는다(Opus 검토 M1).
+    const latest = stepRef.current;
+    if (latest.kind !== "verify" || latest.rowId !== current.rowId || pendingKeyRef.current?.key !== key) return;
     if (isDefiniteResult(result)) pendingKeyRef.current = null;
     const data = result?.data;
     const base: VerifyStep = {
@@ -513,6 +517,7 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
               >
                 <span>{row.maskedName}</span>
                 {pendingRowId === row.rowId ? <span aria-hidden="true">…</span> : null}
+                {pendingRowId === row.rowId ? <span className="sr-only">처리 중</span> : null}
                 {row.prizeLine ? (
                   <span className={styles.pickRowSecondLine}>
                     {row.prizeLine}
@@ -567,7 +572,12 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
           <p className={styles.fieldLabel}>이름</p>
           <div className={styles.verifyNameRow}>
             <span className={styles.verifyName}>{step.maskedName}</span>
-            <Button variant="tertiary" onClick={() => history.back()}>
+            <Button
+              variant="tertiary"
+              disabled={busy}
+              aria-describedby={busy ? PRIMARY_ID : undefined}
+              onClick={() => history.back()}
+            >
               다른 이름 고르기
             </Button>
           </div>

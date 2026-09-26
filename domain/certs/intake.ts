@@ -33,8 +33,8 @@ import {
   insertSubmission,
 } from "@/repositories/cert-submissions";
 
-// 04.3-02 Task 2 ⑩ — 공개 흐름의 유일한 domain 진입점. can·visible·scopeFor·
-// lib/viewer를 import하지 않는다 — 범위는 토큰 해시·행사 id가 좁힌다
+// 04.3-02 Task 2 ⑩ — 공개 흐름의 유일한 domain 진입점. can·visible·scopeFor나
+// 세션 뷰어 도우미를 import하지 않는다 — 범위는 토큰 해시·행사 id가 좁힌다
 // (T-04.3-09). 리포지토리 호출의 viewer 인자는 전부 SYSTEM_VIEWER다.
 
 // 증표 유효 기간(설계 /cso 검토 대상) — 확인 뒤 이 시간 안에만 제출할 수 있다.

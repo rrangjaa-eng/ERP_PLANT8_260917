@@ -1365,6 +1365,23 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
     expect(serverCalls).toBe(0);
   });
 
+  // Regression: ISSUE-011 — 비고 칸에 앱의 빈 값 표시 `—`를 붙이면 글자 `—`가 비고로 저장됐다
+  // 코디네이터 대리 결정 2026-09-26 /qa ISSUE-011 (a) — `—`는 빈 비고로 읽는다.
+  test("(ISSUE-011) 비고 칸에 `—`를 붙이면 빈 비고로 읽어, 저장 뒤 비고가 없다", async ({ page }) => {
+    const { revisionId } = await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "빈비고", amount: 1000 }]);
+    await quoteCell(page, 0, 10).focus();
+    await pasteWithFormats(page, { "text/plain": "—" });
+
+    await expect(invalidCells(page)).toHaveCount(0);
+    await saveAndWait(page);
+    await expect.poll(() => footerPieces(page)).toEqual([{ tone: "success", text: expect.stringMatching(/^저장됨 \d{2}:\d{2}$/) }]);
+    const saved = await db
+      .select({ note: quoteLines.note })
+      .from(quoteLines)
+      .where(and(eq(quoteLines.revisionId, revisionId), isNull(quoteLines.archivedAt)));
+    expect(saved).toEqual([{ note: null }]);
+  });
+
   test("(금지 항목) 142줄 1쪽 20번째 줄에 45줄 → 화면은 1쪽 · `붙여넣기 45줄 · 3쪽까지` · 저장 뒤 20~64번째 줄이 전부 붙여 넣은 값", async ({ page }) => {
     await openProjectWithSavedLines(
       page,

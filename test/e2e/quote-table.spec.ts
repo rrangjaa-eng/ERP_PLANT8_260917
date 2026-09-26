@@ -1370,6 +1370,7 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
   test("(ISSUE-011) 비고 칸에 `—`를 붙이면 빈 비고로 읽어, 저장 뒤 비고가 없다", async ({ page }) => {
     const { revisionId } = await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "빈비고", amount: 1000 }]);
     await quoteCell(page, 0, 10).focus();
+    await expect(quoteCell(page, 0, 10)).toHaveAttribute("data-grid-focus", "");
     await pasteWithFormats(page, { "text/plain": "—" });
 
     await expect(invalidCells(page)).toHaveCount(0);

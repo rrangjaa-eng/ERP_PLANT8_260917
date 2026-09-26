@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 // D8-08: 복원 리허설 결과를 기록하는 유일한 경로 — 리허설 워크플로의 Cloud Run Job이
@@ -15,7 +17,7 @@ export class UsageError extends Error {}
 
 type Stage = "restore" | "verify" | "cleanup";
 
-export type ParsedArgs = {
+export type RecordArgs = {
   cmd: "record";
   succeeded: boolean;
   failedStage: Stage | null;
@@ -25,6 +27,10 @@ export type ParsedArgs = {
   runUrl: string | null;
   runKey: string;
 };
+
+export type VerifyArgs = { cmd: "verify"; target: string };
+
+export type ParsedArgs = RecordArgs | VerifyArgs;
 
 const FLAGS = [
   "--succeeded",
@@ -46,10 +52,25 @@ function isFlag(token: string): token is Flag {
   return (FLAGS as readonly string[]).includes(token);
 }
 
+// 복원된 임시 인스턴스만 검증 대상이다(D8-08) — 원본 인스턴스 이름은 이 모양이 아니다.
+const REHEARSAL_TARGET_PATTERN = /^[a-z0-9-]+:[a-z0-9-]+:plant8-(staging|prod)-rehearsal-\d+-\d+$/;
+
+// 가드에 걸리면 사용 오류(2)가 아니라 검증 실패(1)다 — 워크플로가 단계 「검증」으로 기록한다.
+class TargetRejectedError extends Error {}
+
+function parseVerifyArgs(rest: string[]): VerifyArgs {
+  const [flag, value, ...extra] = rest;
+  if (flag !== "--target" || value === undefined || value.startsWith("--") || extra.length > 0) {
+    throw new UsageError("verify는 --target <연결 이름> 하나만 받습니다.");
+  }
+  return { cmd: "verify", target: value };
+}
+
 export function parseArgs(argv: string[]): ParsedArgs {
   const [cmd, ...rest] = argv;
+  if (cmd === "verify") return parseVerifyArgs(rest);
   if (cmd !== "record") {
-    throw new UsageError(`알 수 없는 서브커맨드: ${cmd ?? "(없음)"}. record여야 합니다.`);
+    throw new UsageError(`알 수 없는 서브커맨드: ${cmd ?? "(없음)"}. record 또는 verify여야 합니다.`);
   }
 
   const flags: Partial<Record<Flag, string>> = {};
@@ -106,10 +127,48 @@ function outcomeCode(outcome: { succeeded: boolean; failedStage: Stage | null })
   return outcome.succeeded ? "success" : (outcome.failedStage ?? "unknown");
 }
 
+// DB 모듈을 불러오기 전에(= 커넥터 초기화 전에) 대상이 임시 인스턴스이고 컨테이너가
+// 실제로 그 인스턴스에 붙도록 덮어써졌는지 확인한다(Codex #11). 덮어쓰기가 안 먹어
+// 원본 연결 이름이 남아 있으면 여기서 실패한다.
+async function runVerify(parsed: VerifyArgs, setCloseDb: (close: () => Promise<void>) => void): Promise<void> {
+  if (
+    !REHEARSAL_TARGET_PATTERN.test(parsed.target) ||
+    process.env.CLOUD_SQL_CONNECTION_NAME !== parsed.target
+  ) {
+    throw new TargetRejectedError("검증 대상이 임시 인스턴스가 아닙니다.");
+  }
+  // 컨테이너 작업 디렉터리 기준 — Dockerfile이 db/migrations를 이미지에 복사한다(migrate-runner와 같은 기준).
+  const journal = JSON.parse(readFileSync(resolve(process.cwd(), "db/migrations/meta/_journal.json"), "utf8")) as {
+    entries: { idx: number; when: number; tag: string }[];
+  };
+
+  const dbModule = await import("@/db/client");
+  setCloseDb(dbModule.closeDb);
+  const { SYSTEM_VIEWER } = await import("@/domain/viewer");
+  const { verifyRestoredDatabase } = await import("@/domain/ops/restore-verify");
+
+  const result = await verifyRestoredDatabase(SYSTEM_VIEWER, journal);
+  for (const check of result.checks) {
+    console.log(`${check.ok ? "통과" : "실패"} ${check.name}: ${check.detail}`);
+  }
+  if (result.ok) {
+    console.log("복원본 확인을 통과했습니다.");
+  } else {
+    console.log("복원본 확인에 실패했습니다.");
+    process.exitCode = 1;
+  }
+}
+
 export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
   let closeDb: (() => Promise<void>) | null = null;
   try {
     const parsed = parseArgs(argv);
+    if (parsed.cmd === "verify") {
+      await runVerify(parsed, (close) => {
+        closeDb = close;
+      });
+      return;
+    }
     const source = sourceFromAppEnv(process.env.APP_ENV);
 
     const dbModule = await import("@/db/client");

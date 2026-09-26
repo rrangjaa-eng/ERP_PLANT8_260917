@@ -104,7 +104,7 @@ coverage:
     description: "1280·1024·375 독립 DOM 감사(합계 행 조각 색 순서·줄바꿈 경계 · `오류 N` 토큰·접근 이름 · 1차 aria-disabled 아님 · 375 가로 스크롤 0)와 전체 게이트 CI=true pnpm test"
     verification: []
     human_judgment: true
-    rationale: "오케스트레이터가 독립 수행 — 결과는 후속 커밋으로 추가"
+    rationale: "오케스트레이터가 독립 수행 — 세 폭 FAIL 0, 전체 게이트 CI=true 통과(본문 Verification · 검토 반영 절)"
 duration: 38min
 completed: 2026-09-26
 ---
@@ -211,8 +211,19 @@ completed: 2026-09-26
 - CI=true(프로덕션 빌드 — `pnpm build` 포함) E2E: `quote-table` · `revenue-section` · `ledger-save-flow` · `project-period` · `quote-edit-scope` · `quote-line-kinds` · `quote-revisions` · `number-format` 167/167 — 저장 중 잠금(saveLocked)·상태 바뀜 거부 케이스 포함 초록
 - 수용 grep: `고쳐야 저장됩니다` app·ui 0건 · `pasteRole: "computed"` 견적 표 4건 · 두 매출 `Table`에 `firstIssueSignal` · 견적 표 조립이 `quoteTableRejectionText`(→ `otherCellsRejectedText`)·`otherCellsRejectedText` 호출 · `isFixedIssue`가 `reason` 제외 · 붙여넣기 새 줄 `newDraftLine`(randomUUID)
 - 공급망: `package.json` 의존성 객체 넷이 d6b41cf와 같음 · `pnpm-lock.yaml` diff 0줄
-- **독립 DOM 감사(1280·1024·375):** 오케스트레이터가 독립 수행 — 결과는 후속 커밋으로 추가
-- **전체 게이트 `CI=true pnpm test`:** 오케스트레이터가 독립 수행 — 결과는 후속 커밋으로 추가
+- **독립 DOM 감사(1280·1024·375, 별도 Opus 에이전트, CI=true 프로덕션 빌드 DOM 실측, HEAD 97f38f5):** 세 폭 FAIL 0. 합계 행 조각 6개가 danger `오류 N칸` → 붙여넣기 묶음(`붙여넣기 45줄` → warning `오른쪽 45칸 버림`·`외화 1줄 원화로` → muted `계산 열 135칸 무시`·`3쪽까지`) 순서, 색은 토큰 계산값과 같음(--danger rgb(155,28,28) · --warning rgb(138,90,0) · --muted rgb(78,93,89) · --success rgb(14,122,102)), 조각마다 getClientRects 1이고 합계 행 rect 안(375는 조각 경계에서만 세 줄). `저장됨` 단독 success. 쪽 번호 옆 접근 이름 `3쪽, 오류 2칸` · 11px(--fs-xs) · danger, 오류 없는 쪽엔 없음. 오류가 남은 채 1차는 disabled·aria-disabled 아님, 서버 요청 0, 첫 오류 칸 포커스(2쪽 → 1쪽 이동 포함). 가로 스크롤 1280/1280 · 1024/1024 · 375/375(페이지 줄·합계 셀 347/347). INFO: 375는 셀 편집이 없는 설계라 1차 뒤 쪽은 옮기나 포커스는 버튼에 남음(계약 밖) · 거래처 빈 값 붙여넣기는 `목록에 없는 값입니다 · (빈 값)`(04-04 규칙, 04-31 사람 확인 때 볼 것)
+- **전체 게이트 `CI=true pnpm test`(HEAD 2fccb3b — 검토 수정 포함):** 단위 101파일 1387/1387 · 통합 56파일 1512/1512 · E2E 384 passed(5.4m) · rc=0. `pnpm lint` 0 · `pnpm typecheck` 0 · `pnpm lint:sql` 0
+
+## 검토 반영(오케스트레이터)
+- **RED 직접 재현:** Task 1 단위 17건 실패 @061b64b · Task 2 E2E 4/5 실패 @1d13e42(dirty 왕복 1건은 이미 초록 — 회귀 방지) · 검토 수정 단위 7건 실패 @11bdec6 · 검토 수정 E2E 2건(숨은 열 포커스 — 2fccb3b 되돌림, 기존 외화 줄 — `|| existing…` 변이) 실패
+- **main 반영:** 코디네이터 지시로 origin/main 8dbe98f(#86)를 머지 커밋 97f38f5로 반영 — 충돌 0, plant8-skill-gate 훅 테스트 89/89
+- **독립 코드 검토(Opus — Codex 한도로 대체, 09-29 이후 Codex 재확인 필요):** BLOCKING 0 · SHOULD-FIX 4 · NIT 6. 편차 4건·판단 3건 모두 타당 판정
+  - S-1 거부 요약이 남은 동안 표가 센 `오류 N칸`을 계속 대체 → `withIssueCount`(ui/table/footer-notice.ts): 봉투 칸 수와 표 센 수가 같을 때만 요약이 대체(R2 `전부 거부 · 다른 칸 오류 1칸`은 0=0으로 유지) — d462412(RED) · ea6c62d
+  - S-2 첫 오류가 `collapseBelow`로 숨은 열이면 포커스가 조용히 실패 → 그 줄의 보이는 첫 P1 칸(항목)으로(새 UI 없음, RowSheet는 700 미만에서만 열려 1024–1279에 못 씀) — f488398(RED) · 2fccb3b. 1024 미만 서버 거부(수량·단가·비고) 경로는 같은 판정을 타지만 E2E 없음
+  - S-3 기존 외화 줄 덮기 경고 무테스트 → E2E 추가(변이 RED) — b0d835d
+  - S-4 앱 복사 끝 빈 칸 유실(`toTsv([["x"],[""]])` = `x\n` → 1줄·external) → 앱 형식 줄 수가 떼기 전 줄 수와 같으면 끝 줄바꿈을 떼지 않음(C-05 엑셀 45줄 유지) — 67dae50(RED) · 133be10
+  - NIT 쪽 범위 글자 `1–30` 어긋남 → `splitPageRangeText`(실제 분할 기준, `1–31 / 46줄`) — 11bdec6(RED) · c663fe0
+  - 남긴 NIT 5: 계산 열 오류 칸(엑셀 6열)은 줄 삭제로만 풀림 — DR-5가 고칠 수 없는 칸으로 보낼 수 있음(04-31 확인) · `저장됨 N줄` 글자 · 뒤 쪽 고정 새 줄에서 시작한 붙여넣기가 앞 쪽을 채우면 `N쪽까지` 없음 · 다시 불러오기가 `pasteNotices`를 지우지 않을 수 있음(확인 필요) · 테스트 공백(매출 칸 오류만 남은 1차, 다음 붙여넣기가 이전 조각 교체, B-24 「조정 줄 추가」 경로) · 1024–1279에서 숨은 차익 칸 오류는 여전히 지울 수 없음(기존 동작)
 
 ## 이월
 - N-2(`lib/shortcut.ts` `isCtrlCombo`가 Shift·Alt를 보지 않음) — 범위 밖, 그대로
@@ -229,6 +240,6 @@ None - no external service configuration required.
 
 ## Next Phase Readiness
 - 04-18(머리글 정렬·열 접기)이 이 플랜 뒤 `ui/table`을 이어 고칠 수 있다. 04-31이 실제 엑셀로 최종 사람 확인을 한다
-- 남은 것: 오케스트레이터의 독립 DOM 감사(1280·1024·375)와 전체 게이트
+- 독립 DOM 감사·전체 게이트·검토 반영 끝(위 「검토 반영」). 묶음 ④ 머지 요청 전 /qa·/design-review 실행 필요(코디네이터 지시 2026-09-26 14:10)
 
 ## Self-Check: PASSED

@@ -36,3 +36,14 @@ export const authedActionClient = actionClient.use(async ({ next, clientInput })
   // viewer 투영: repositories가 scopeFor(viewer)로 쓸 최소 정보만 ctx에 싣는다.
   return next({ ctx: { viewer: session.viewer, user: session.user } });
 });
+
+// 04.3-02 Task 2 ⑫ — 확인증 공개 액션 전용. 세션을 읽지 않는다(ctx 없음) —
+// `app/c/**`만 이 클라이언트를 쓰고, 범위는 domain이 토큰 해시·행사 id로
+// 좁힌다. 본문 크기 한도만 authedActionClient와 같은 미들웨어를 쓴다.
+export const publicActionClient = actionClient.use(async ({ next, clientInput }) => {
+  const sizeCheck = checkPayloadSize(clientInput);
+  if (!sizeCheck.ok) {
+    throw new UserFacingError(sizeCheck.reason);
+  }
+  return next({ ctx: {} });
+});

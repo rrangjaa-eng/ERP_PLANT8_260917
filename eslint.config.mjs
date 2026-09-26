@@ -73,7 +73,7 @@ const eslintConfig = defineConfig([
           ],
         },
       ],
-      "plant8/require-action-client": "error",
+      "plant8/require-action-client": ["error", { clients: ["authedActionClient", "publicActionClient"] }],
       "plant8/repository-viewer-param": "error",
       "plant8/money-boundary": "error",
       "plant8/no-row-type-escape": "error",

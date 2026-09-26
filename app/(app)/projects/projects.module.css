@@ -209,6 +209,20 @@
   font-weight: var(--fw-regular);
 }
 
+/* 감사 F3 — PC 필터 한 줄은 칸 바닥 맞춤이다. 기간 오류 한 줄은 제 높이 + 라벨 묶음 간격(--s-1)만큼 음수 아래 여백으로 정렬 상자 밖(칸 아래)에
+   두어 다른 칸을 밀어 내리지 않고, 그 높이만큼 줄 간격 · 폼 아래 여백을 더해 다음 줄 · 합계 줄과 겹치지 않는다. */
+@media (min-width: 700px) {
+  .filterFields .fieldError {
+    margin-bottom: calc(-1 * (var(--fs-sm) * var(--lh-body) + var(--s-1)));
+    line-height: var(--lh-body);
+  }
+
+  .filterFields:has(.fieldError) {
+    row-gap: calc(var(--s-4) + var(--fs-sm) * var(--lh-body) + var(--s-1));
+    padding-bottom: calc(var(--fs-sm) * var(--lh-body) + var(--s-1));
+  }
+}
+
 .blockedReason {
   color: var(--danger);
   font-size: var(--fs-sm);

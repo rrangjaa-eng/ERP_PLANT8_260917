@@ -707,6 +707,9 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
       }
       const errorBox = await error.boundingBox();
       expect(errorBox && errorBox.y >= withError.from.bottom).toBe(true);
+      // 정렬 상자 밖으로 뺀 오류 줄도 폼 상자 안이다 — 아래 합계 줄 · 표와 겹치지 않는다.
+      const formBox = await page.getByRole("form", { name: "프로젝트 필터" }).boundingBox();
+      expect(errorBox && formBox && errorBox.y + errorBox.height <= formBox.y + formBox.height + 0.5, `${width} 오류 줄이 폼 안`).toBe(true);
     }
   });
 });

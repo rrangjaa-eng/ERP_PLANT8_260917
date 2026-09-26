@@ -770,7 +770,7 @@ test.describe("견적 줄 표 — 저장 거부 봉투 → 충돌 셀·서버 �
 
     const quantityCell = quoteCell(page, 0, 4);
     await expect(quantityCell).toHaveAttribute("aria-invalid", "true");
-    await expect(quantityCell).toContainText("0보다 큰 수를 적어 주세요");
+    await expect(quantityCell).toContainText("숫자 형식 오류 · 0보다 큰 수");
     await expect(quoteTable(page).locator("tfoot")).toContainText("오류 1칸 · 전부 거부");
 
     await editTextCell(page, 0, 4, "2");

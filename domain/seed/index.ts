@@ -16,6 +16,7 @@ import {
   upsertVisibility,
   insertPermissionIfAbsent,
   insertVisibilityIfAbsent,
+  upsertVisibilityIfUnedited,
 } from "@/repositories/permissions";
 import { seedCodeItem } from "@/repositories/code-tables";
 import { seedSimpleValue, seedHistorizedValue } from "@/repositories/settings";
@@ -222,7 +223,7 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
       // 팀장·본부 책임자 행은 없을 때만 숨김으로 넣는다 — 관리자가 노출표에서 켠다.
       if (item.key === "revenue.issued_amount") {
         if (roleId === DEFAULT_ROLE_ID) {
-          await upsertVisibility(viewer, { roleId, infoItem: item.key, visible: true, updatedBy: null });
+          await upsertVisibilityIfUnedited(viewer, { roleId, infoItem: item.key, visible: true });
         } else {
           await insertVisibilityIfAbsent(viewer, { roleId, infoItem: item.key, visible: false, updatedBy: null });
         }

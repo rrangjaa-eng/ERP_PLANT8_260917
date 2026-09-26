@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
 import { permissionMatrix, visibilityMatrix } from "@/db/schema";
@@ -113,6 +113,22 @@ export async function upsertVisibility(
     .onConflictDoUpdate({
       target: [visibilityMatrix.roleId, visibilityMatrix.infoItem],
       set: { visible: input.visible, updatedAt: new Date(), updatedBy: input.updatedBy ?? null },
+    });
+}
+
+// 관리자가 손대지 않은 행(updated_by 없음)만 갱신한다 — 시드가 관리자 변경을 되돌리지 않는다.
+export async function upsertVisibilityIfUnedited(
+  viewer: Viewer,
+  input: { roleId: string; infoItem: string; visible: boolean },
+): Promise<void> {
+  void viewer;
+  await db
+    .insert(visibilityMatrix)
+    .values({ roleId: input.roleId, infoItem: input.infoItem, visible: input.visible, updatedBy: null })
+    .onConflictDoUpdate({
+      target: [visibilityMatrix.roleId, visibilityMatrix.infoItem],
+      set: { visible: input.visible, updatedAt: new Date() },
+      where: isNull(visibilityMatrix.updatedBy),
     });
 }
 

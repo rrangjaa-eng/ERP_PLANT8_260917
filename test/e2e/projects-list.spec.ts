@@ -684,8 +684,11 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
     const measure = () =>
       page.evaluate(() => {
         const rect = (id: string) => {
-          const r = document.getElementById(id)!.getBoundingClientRect();
-          return { top: r.top, bottom: r.bottom, left: r.left };
+          const el = document.getElementById(id)!;
+          const r = el.getBoundingClientRect();
+          // 라벨 글자까지 포함한 칸 묶음의 위 — 오류 줄은 다음 줄 칸의 라벨과도 겹치면 안 된다.
+          const groupTop = (el.closest("label") ?? el).getBoundingClientRect().top;
+          return { top: r.top, bottom: r.bottom, left: r.left, groupTop };
         };
         return { status: rect("status"), teamId: rect("teamId"), year: rect("year"), from: rect("from"), to: rect("to"), q: rect("q-wide") };
       });
@@ -698,19 +701,25 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
       await page.goto(`/projects?q=E2E정렬기준&from=${year}-10-31&to=${year}-09-01`);
       const error = page.getByText("기간 끝이 시작보다 빠름 · 기간 끝 수정", { exact: true });
       await expect(error).toBeVisible();
-      // 글꼴 폭에 기대지 않는다 — 오류 줄을 일부러 넓혀도(글꼴이 넓은 환경을 흉내) 칸을 밀지 않아야 한다(CI 1024에서 검색이 다음 줄로 밀림).
+      // 글꼴 폭에 기대지 않는다 — 오류 줄을 일부러 넓혀도(글꼴이 넓은 환경을 흉내) 칸을 옆으로 밀지 않아야 한다.
       await page.addStyleTag({ content: "#from-error, #to-error { letter-spacing: 0.4em; }" });
       const withError = await measure();
       for (const id of ["status", "teamId", "year", "to", "q"] as const) {
         if (Math.abs(clean[id].top - clean.from.top) > 0.5) continue; // 1024에서 줄바꿈된 검색은(오류 없을 때도) 다음 줄
         expect(withError[id].bottom, `${width} ${id} 바닥 = 기간 바닥`).toBeCloseTo(withError.from.bottom, 0);
       }
-      for (const id of ["status", "teamId", "year", "from", "to", "q"] as const) {
-        expect(withError[id].top, `${width} ${id} 오류 없을 때 자리`).toBeCloseTo(clean[id].top, 0);
-        // 오류 줄 폭이 기간 묶음을 넓혀 뒤 칸을 옆으로 밀면(폰트가 넓은 CI에서는 1024에서 줄바꿈까지) 안 된다.
-        expect(withError[id].left, `${width} ${id} 오류 없을 때 가로 자리`).toBeCloseTo(clean[id].left, 0);
-      }
       const errorBox = await error.boundingBox();
+      for (const id of ["status", "teamId", "year", "from", "to", "q"] as const) {
+        // 오류 줄 폭이 기간 묶음을 넓혀 뒤 칸을 옆으로 밀면 안 된다.
+        expect(withError[id].left, `${width} ${id} 오류 없을 때 가로 자리`).toBeCloseTo(clean[id].left, 0);
+        if (Math.abs(clean[id].top - clean.from.top) > 0.5) {
+          // 줄바꿈된 칸(오류 없을 때도 다음 줄)은 오류 줄 자리만큼 내려가되 올라가거나 오류 줄과 겹치지 않는다(F3 줄 간격).
+          expect(withError[id].top, `${width} ${id} 다음 줄은 위로 오지 않음`).toBeGreaterThanOrEqual(clean[id].top - 0.5);
+          expect(errorBox && errorBox.y + errorBox.height <= withError[id].groupTop + 0.5, `${width} ${id} 오류 줄과 겹치지 않음`).toBe(true);
+          continue;
+        }
+        expect(withError[id].top, `${width} ${id} 오류 없을 때 자리`).toBeCloseTo(clean[id].top, 0);
+      }
       expect(errorBox && errorBox.y >= withError.from.bottom).toBe(true);
       // 정렬 상자 밖으로 뺀 오류 줄도 폼 상자 안이다 — 아래 합계 줄 · 표와 겹치지 않는다.
       const formBox = await page.getByRole("form", { name: "프로젝트 필터" }).boundingBox();

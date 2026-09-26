@@ -288,6 +288,12 @@ describe("useGridKeyboard — 쪽 경계 · Tab · Ctrl+A · Ctrl+C · 줄 id �
     expect(idle.calls.tab).toEqual([]);
   });
 
+  it("편집 중 한글 조합 중 Tab도 막고 onTab 한 번 — 표를 떠나지 않는다(리뷰 S-2)", () => {
+    const editing = renderGrid({ editing: true });
+    expect(editing.press({ key: "Tab", isComposing: true }, { row: 0, col: 1 })).toBe(true);
+    expect(editing.calls.tab).toEqual(["forward"]);
+  });
+
   it("Delete · Alt+↓는 줄 인덱스가 아니라 줄 id를 넘긴다", () => {
     const grid = renderGrid({ editing: false });
     grid.press({ key: "Delete" }, { row: 1, col: 1 });

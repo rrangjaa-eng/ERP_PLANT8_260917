@@ -146,6 +146,14 @@ async function saveWithKeyboard(page: Page, focusTarget: Locator) {
   await saved;
 }
 
+// 성공할 저장 — 응답 뒤 클라이언트 onSuccess(저장됨)까지 기다린다. 응답과 onSuccess 사이는 비어 있어, 2-vCPU CI에서는
+// 그 틈에 누른 다음 키(예: Ctrl+D의 상한 글자)를 늦게 온 저장됨이 덮었다(합계 행은 성공 글자만 혼자 보인다).
+// 충돌·거부로 저장됨이 오지 않는 저장은 saveWithKeyboard를 그대로 쓴다.
+async function saveAndSettle(page: Page, focusTarget: Locator) {
+  await saveWithKeyboard(page, focusTarget);
+  await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
+}
+
 const SETTLING_REASON = "정산 · 실행가와 새 줄만";
 const EMPTY_MESSAGE = "이 프로젝트에 견적 줄이 없습니다";
 
@@ -342,8 +350,7 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
 
     await typeInto(page, lastCell(COL.itemName), "항목", "늦은 비용");
     await typeInto(page, lastCell(COL.execution), "실행가", "45000");
-    await saveWithKeyboard(page, lastCell(COL.execution));
-    await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
+    await saveAndSettle(page, lastCell(COL.execution));
 
     await page.reload();
     const saved = dataRows(page).filter({ hasText: "늦은 비용" });
@@ -449,18 +456,16 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await page.keyboard.press("Alt+ArrowUp");
     expect(await itemNames(page)).toEqual(["순서 1", "순서 3", "순서 2"]);
     const moved = page.waitForRequest((req) => isSaveAction(req.method(), req.headers()));
-    await saveWithKeyboard(page, cell(page, 0, COL.itemName));
+    await saveAndSettle(page, cell(page, 0, COL.itemName));
     expect((await moved).postData() ?? "").toMatch(/"order":\[/);
-    await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
 
     await page.reload();
     expect(await itemNames(page)).toEqual(["순서 1", "순서 3", "순서 2"]);
 
     await typeInto(page, cell(page, 0, COL.execution), "실행가", "11000");
     const editOnly = page.waitForRequest((req) => isSaveAction(req.method(), req.headers()));
-    await saveWithKeyboard(page, cell(page, 0, COL.execution));
+    await saveAndSettle(page, cell(page, 0, COL.execution));
     expect((await editOnly).postData() ?? "").not.toMatch(/"order":\[/);
-    await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
     await page.reload();
     expect(await itemNames(page)).toEqual(["순서 1", "순서 3", "순서 2"]);
   });
@@ -503,9 +508,8 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await page.getByRole("button", { name: "줄 추가", exact: true }).click();
     await typeInto(page, dataRows(page).last().getByRole("gridcell").nth(COL.itemName), "항목", "새 끝 줄");
     const appended = page.waitForRequest((req) => isSaveAction(req.method(), req.headers()));
-    await saveWithKeyboard(page, cell(page, 0, COL.itemName));
+    await saveAndSettle(page, cell(page, 0, COL.itemName));
     expect((await appended).postData() ?? "").not.toMatch(/"order":\[/);
-    await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
 
     await page.reload();
     expect(await itemNames(page)).toEqual(["끝 1", "끝 3", "새 끝 줄"]);
@@ -535,8 +539,7 @@ test.describe("견적 표 편집 범위 — 서버 셀 단계 · 구조 (04-30, 
     await expect(page.getByRole("button", { name: "일괄 저장 1" })).toBeVisible();
     await expect(page.locator("tfoot").getByText(/저장됨/)).toHaveCount(0);
 
-    await saveWithKeyboard(page, cell(page, 0, COL.itemName));
-    await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
+    await saveAndSettle(page, cell(page, 0, COL.itemName));
     await page.reload();
     await expect(dataRows(page).filter({ hasText: "재전송 새 줄" })).toHaveCount(1);
   });
@@ -1014,7 +1017,7 @@ test.describe("줄 수 상한 (04-26, D-86 · UX-04 · UX-05)", () => {
     await expectLineTotal(page, 300);
 
     // 저장 시도는 상한 글자를 지운다(위 attemptSave/onSave 주석) — Ctrl+D의 단언을 Ctrl+Enter의 잔상과 분리한다.
-    await saveWithKeyboard(page, capCell(page, 0, COL.itemName));
+    await saveAndSettle(page, capCell(page, 0, COL.itemName));
     await expect(footerNotice).toHaveCount(0);
 
     await focusGridCell(capCell(page, 0, COL.itemName));
@@ -1024,8 +1027,7 @@ test.describe("줄 수 상한 (04-26, D-86 · UX-04 · UX-05)", () => {
     await expect(primarySave(page)).toHaveAttribute("aria-disabled", "true");
 
     await typeInto(page, capCell(page, 0, COL.execution), "실행가", "700");
-    await saveWithKeyboard(page, capCell(page, 0, COL.itemName));
-    await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
+    await saveAndSettle(page, capCell(page, 0, COL.itemName));
     await expect(footerNotice).toHaveCount(0);
   });
 

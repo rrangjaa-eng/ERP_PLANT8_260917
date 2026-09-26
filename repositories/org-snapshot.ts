@@ -1,4 +1,4 @@
-import { asc, desc, eq, isNull, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, lte, or } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { orgUnits, roles, teamMemberships, teams, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
@@ -34,7 +34,8 @@ export async function listOrgSnapshot(viewer: Viewer, asOf: string, tx: DbOrTx =
     .from(users)
     .leftJoin(latest, eq(latest.userId, users.id))
     .leftJoin(teams, eq(teams.id, latest.teamId))
-    .where(isNull(users.archivedAt))
+    // 04.1-03(계획 가정 5): 퇴직일 당일까지는 후보, 퇴직일 < asOf면 빠진다(담당 소멸).
+    .where(and(isNull(users.archivedAt), or(isNull(users.resignationDate), gte(users.resignationDate, asOf))))
     .orderBy(asc(users.name), asc(users.id));
 }
 

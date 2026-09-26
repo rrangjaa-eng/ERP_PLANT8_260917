@@ -1,6 +1,7 @@
 import type { DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import type { HalfPeriod, LeaveKind } from "@/domain/leave/days";
+import type { AnnualBalanceLine, MonthlyBalanceLine, ResignationBalance } from "@/domain/leave/balance";
 
 // 04.1(ROADMAP 기준 5): 연차 DTO — 필드 전부 leave.value.
 
@@ -44,19 +45,48 @@ export const LEAVE_REQUEST_DTO_SPEC: DtoSpec<LeaveRequestSource, LeaveRequestDto
   ],
 };
 
-// 연차 잔고 — 연차 줄 · 월차 줄 두 객체(두 남음을 합친 필드를 두지 않는다).
-// 인터페이스 먼저 — 줄의 내용과 계산은 04.1-03이 채운다.
+// 연차 잔고(본인 · 관리자용) — 연차 줄 · 월차 줄 두 객체(두 남음을 합친 필드를 두지 않는다).
+// `hireDate` · `resignationDate`는 조회 연도와 무관하게 늘 싣는다(C-N01). 퇴직 줄 재료
+// `resignation`은 조회 연도 = 퇴직 연도일 때만 있다(ENG-4 · CXF2).
 export type LeaveBalanceDto = {
   fiscalYear: number;
-  annual: object;
-  monthly: object | null;
+  hireDate: string | null;
+  resignationDate: string | null;
+  annual: AnnualBalanceLine;
+  monthly: MonthlyBalanceLine | null;
+  resignation: ResignationBalance | null;
 };
 
 export const LEAVE_BALANCE_DTO_SPEC: DtoSpec<LeaveBalanceDto, LeaveBalanceDto> = {
   fields: [
     { key: "fiscalYear", from: "fiscalYear", infoItem: "leave.value" },
+    { key: "hireDate", from: "hireDate", infoItem: "leave.value" },
+    { key: "resignationDate", from: "resignationDate", infoItem: "leave.value" },
     { key: "annual", from: "annual", infoItem: "leave.value" },
     { key: "monthly", from: "monthly", infoItem: "leave.value" },
+    { key: "resignation", from: "resignation", infoItem: "leave.value" },
+  ],
+};
+
+// 결재자 · 신청 미리보기용 잔고 행 재료(CEO-9) — 입사일 · 퇴직일 · 두 남음의 합계 필드가
+// 명세에 없다. `monthlyRemaining`은 월차 줄(D4)이 없거나 입사일이 없으면 null(ENG-11).
+export type LeaveRequestBalanceDto = {
+  annualRemaining: number;
+  monthlyRemaining: number | null;
+  pending: number;
+  thisRequest: number;
+  plannedDeduction: { monthly: number; annual: number };
+  over: number;
+};
+
+export const LEAVE_REQUEST_BALANCE_DTO_SPEC: DtoSpec<LeaveRequestBalanceDto, LeaveRequestBalanceDto> = {
+  fields: [
+    { key: "annualRemaining", from: "annualRemaining", infoItem: "leave.value" },
+    { key: "monthlyRemaining", from: "monthlyRemaining", infoItem: "leave.value" },
+    { key: "pending", from: "pending", infoItem: "leave.value" },
+    { key: "thisRequest", from: "thisRequest", infoItem: "leave.value" },
+    { key: "plannedDeduction", from: "plannedDeduction", infoItem: "leave.value" },
+    { key: "over", from: "over", infoItem: "leave.value" },
   ],
 };
 
@@ -68,4 +98,9 @@ registerDto({
 registerDto({
   name: "leaveBalance",
   fields: LEAVE_BALANCE_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
+});
+
+registerDto({
+  name: "leaveRequestBalance",
+  fields: LEAVE_REQUEST_BALANCE_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
 });

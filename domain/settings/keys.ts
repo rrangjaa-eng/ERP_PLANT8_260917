@@ -627,3 +627,19 @@ SETTING_DEFS.push(
   DOCUMENT_NUMBER_LEAVE_SEPARATOR,
   DOCUMENT_NUMBER_LEAVE_SEQ_START,
 );
+
+// 04.1-03(LEAV-01 · 입력 §5): 회계연도(1월 시작) 연차 일수 — 이력형이라 값을 바꿔도 지난
+// 연도 잔고가 소급해 바뀌지 않는다(잔고는 각 회계연도 1월 1일 시점 값을 읽는다). 적용 시작일
+// 1월 1일 강제와 지난 연도 거부는 04.1-04 레지스트리 검증이 한다.
+export const LEAVE_ANNUAL_DAYS: SettingDef<number> = {
+  key: "leave.annual_days",
+  kind: "historized",
+  schema: z.coerce.number().int().min(0).max(366),
+  label: "연차 일수",
+  hint: "회계연도(1월 시작)마다 부여 · 이월 없음",
+  namespace: "연차",
+  default: 15,
+  effectiveFromRule: "year_start",
+};
+
+SETTING_DEFS.push(LEAVE_ANNUAL_DAYS);

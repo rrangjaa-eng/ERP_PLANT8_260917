@@ -10,8 +10,11 @@ import {
   listPeople,
   getPerson,
   changePersonRole,
+  setHireDate,
+  setResignationDate,
   ForbiddenError,
   SelfRoleChangeError,
+  ValidationError,
 } from "@/domain/people";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { queryActionLog } from "@/repositories/action-log";
@@ -89,6 +92,47 @@ describe("people (MAST-02, 실제 Postgres) — 등록 · 계정 · 발령", () 
 
     const [row] = await db.select().from(users).where(eq(users.email, email));
     expect(row?.archivedAt).not.toBeNull();
+  });
+
+  it("입사일 형식이 틀리면 계정 생성 전에 거부된다(사용자 수 불변)", async () => {
+    const before = await db.$count(users);
+
+    await expect(
+      registerPerson(SYSTEM_VIEWER, {
+        name: "입사일틀림",
+        email: `${randomUUID()}@test.local`,
+        roleId: DEFAULT_ROLE_ID,
+        hireDate: "2026-13-01",
+      }),
+    ).rejects.toBeInstanceOf(ValidationError);
+
+    expect(await db.$count(users)).toBe(before);
+  });
+
+  it("입사일 저장이 실패하면 방금 만든 사용자가 보관 상태이고 오류가 보관·입사일 입력을 안내한다", async () => {
+    const email = `${randomUUID()}@test.local`;
+
+    await expect(
+      registerPerson(
+        SYSTEM_VIEWER,
+        { name: "입사일실패", email, roleId: DEFAULT_ROLE_ID, hireDate: "2026-03-10" },
+        { saveHireDate: () => Promise.reject(new Error("가짜 인프라 오류")) },
+      ),
+    ).rejects.toThrow(/보관함.*입사일/);
+
+    const [row] = await db.select().from(users).where(eq(users.email, email));
+    expect(row?.archivedAt).not.toBeNull();
+  });
+
+  it("입사일을 주면 등록된 사람에게 저장된다", async () => {
+    const { userId } = await registerPerson(SYSTEM_VIEWER, {
+      name: "입사일저장",
+      email: `${randomUUID()}@test.local`,
+      roleId: DEFAULT_ROLE_ID,
+      hireDate: "2026-03-10",
+    });
+    const [row] = await db.select().from(users).where(eq(users.id, userId));
+    expect(row?.hireDate).toBe("2026-03-10");
   });
 
   it("사람 메뉴 쓰기 권한이 없는 계급에서 등록이 거부된다", async () => {
@@ -210,5 +254,108 @@ describe("listPeople — 조회 횟수와 현재 소속(이슈 #56)", () => {
     // 목록 결과는 한 사람 상세(getPerson)와 같은 DTO여야 한다.
     const detail = await getPerson(SYSTEM_VIEWER, userId);
     expect(person).toEqual(detail?.person);
+  });
+});
+
+const INVERTED_MESSAGE = "퇴직일이 입사일보다 빠름 · 날짜 확인";
+
+async function datesOf(userId: string) {
+  const [row] = await db
+    .select({ hireDate: users.hireDate, resignationDate: users.resignationDate })
+    .from(users)
+    .where(eq(users.id, userId));
+  return row;
+}
+
+async function makePlainPerson(name: string): Promise<string> {
+  const { userId } = await registerPerson(SYSTEM_VIEWER, {
+    name,
+    email: `${randomUUID()}@test.local`,
+    roleId: DEFAULT_ROLE_ID,
+  });
+  return userId;
+}
+
+describe("입사일·퇴직일 — 권한 · 역전 · 로그 · DB CHECK(A-04 · A2-02)", () => {
+  it("사람 메뉴 쓰기 권한이 없는 기획 PM이 남의 입사일·퇴직일을 바꾸면 ForbiddenError이고 행이 그대로다", async () => {
+    const userId = await makePlainPerson("권한대상");
+    await setHireDate(SYSTEM_VIEWER, userId, "2026-03-10");
+    const before = await datesOf(userId);
+    const pmViewer = { id: "dates-pm-tester", roleId: DEFAULT_ROLE_ID };
+
+    await expect(setHireDate(pmViewer, userId, "2026-04-01")).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(setResignationDate(pmViewer, userId, "2026-12-31")).rejects.toBeInstanceOf(ForbiddenError);
+    expect(await datesOf(userId)).toEqual(before);
+  });
+
+  it("퇴직일 < 입사일이 되는 쓰기는 ValidationError이고 행이 그대로다 · 같은 날은 통과", async () => {
+    const a = await makePlainPerson("역전A");
+    await setHireDate(SYSTEM_VIEWER, a, "2026-03-10");
+    await expect(setResignationDate(SYSTEM_VIEWER, a, "2026-03-09")).rejects.toThrow(INVERTED_MESSAGE);
+    await expect(setResignationDate(SYSTEM_VIEWER, a, "2026-03-09")).rejects.toBeInstanceOf(ValidationError);
+    expect(await datesOf(a)).toEqual({ hireDate: "2026-03-10", resignationDate: null });
+
+    const b = await makePlainPerson("역전B");
+    await setResignationDate(SYSTEM_VIEWER, b, "2026-06-15");
+    await expect(setHireDate(SYSTEM_VIEWER, b, "2026-06-16")).rejects.toThrow(INVERTED_MESSAGE);
+    expect(await datesOf(b)).toEqual({ hireDate: null, resignationDate: "2026-06-15" });
+
+    await setResignationDate(SYSTEM_VIEWER, a, "2026-03-10");
+    expect(await datesOf(a)).toEqual({ hireDate: "2026-03-10", resignationDate: "2026-03-10" });
+  });
+
+  it("성공한 쓰기마다 document_update · entity user 로그가 한 건씩 남고 detail에 필드명이 있다", async () => {
+    const userId = await makePlainPerson("로그대상");
+    const logsFor = async () =>
+      (await queryActionLog(SYSTEM_VIEWER, { actionType: "document_update" })).filter(
+        (entry) => entry.entity === "user" && entry.entityId === userId,
+      );
+
+    await setHireDate(SYSTEM_VIEWER, userId, "2026-03-10");
+    const afterHire = await logsFor();
+    expect(afterHire).toHaveLength(1);
+    expect(JSON.stringify(afterHire[0]?.detail)).toContain("hire_date");
+
+    await setResignationDate(SYSTEM_VIEWER, userId, "2026-10-31");
+    const afterResign = await logsFor();
+    expect(afterResign).toHaveLength(2);
+    expect(JSON.stringify(afterResign.map((entry) => entry.detail))).toContain("resignation_date");
+  });
+
+  it("앱 검증을 거치지 않은 직접 UPDATE도 역전이면 23514로 거부된다", async () => {
+    const userId = await makePlainPerson("CHECK대상");
+    await setHireDate(SYSTEM_VIEWER, userId, "2026-03-10");
+
+    const error = await db
+      .update(users)
+      .set({ resignationDate: "2026-03-09" })
+      .where(eq(users.id, userId))
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(error).toBeInstanceOf(Error);
+    const cause = (error as Error & { cause?: { code?: string } }).cause;
+    expect(cause?.code).toBe("23514");
+    expect((await datesOf(userId))?.resignationDate).toBeNull();
+  });
+
+  it("입사일·퇴직일을 동시에 바꾸는 경합 10회 — 매번 정확히 하나만 성공하고 나머지는 ValidationError, 끝 행은 역전이 없다", async () => {
+    const userId = await makePlainPerson("경합대상");
+    for (let round = 0; round < 10; round++) {
+      await db.update(users).set({ hireDate: "2026-01-01", resignationDate: "2026-12-31" }).where(eq(users.id, userId));
+
+      const results = await Promise.allSettled([
+        setHireDate(SYSTEM_VIEWER, userId, "2026-10-01"),
+        setResignationDate(SYSTEM_VIEWER, userId, "2026-03-31"),
+      ]);
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      const rejected = results.find((r) => r.status === "rejected");
+      expect(rejected?.status === "rejected" ? rejected.reason : null).toBeInstanceOf(ValidationError);
+      expect(rejected?.status === "rejected" ? (rejected.reason as Error).message : "").toBe(INVERTED_MESSAGE);
+
+      const row = await datesOf(userId);
+      expect(row?.hireDate && row.resignationDate ? row.resignationDate >= row.hireDate : false).toBe(true);
+    }
   });
 });

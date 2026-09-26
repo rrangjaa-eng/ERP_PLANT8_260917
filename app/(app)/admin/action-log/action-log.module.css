@@ -90,6 +90,29 @@
   background: var(--surface);
 }
 
+/* §7-3 폰 전략 — <700px에서 P1만 열로 남고 P2는 행 아래 접힌 줄 하나로
+   들어간다(ui/table/Table.module.css와 같은 모양). 가로 스크롤을 만들지 않는다. */
+.collapsedRow {
+  display: none;
+}
+
+.table .collapsedCell {
+  padding: 0 var(--cell-pad-x) var(--cell-pad-y);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  border-bottom: 0;
+}
+
+@media (max-width: 699.98px) {
+  .p2 {
+    display: none;
+  }
+
+  .collapsedRow {
+    display: table-row;
+  }
+}
+
 /* §2-4: 발생 시각은 숫자 성격 열이라 tabular-nums + nowrap. */
 .occurredAt {
   font-variant-numeric: tabular-nums;

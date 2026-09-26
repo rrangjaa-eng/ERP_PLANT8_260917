@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 31
+current_plan: 32
 status: executing
-stopped_at: Completed 04-24-PLAN.md
-last_updated: "2026-09-25T22:32:02.514Z"
+stopped_at: Completed 04-15-PLAN.md
+last_updated: "2026-09-26T00:02:19.691Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 4 execution started
-state_head: 085ad1494b8c9d510e88a5eba697f6d62a601113
+state_head: 87a133e4a2e22877ba42d3747690a6ec17126d3f
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 115
-  completed_plans: 53
+  completed_plans: 54
   percent: 6
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 4 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 31
+Current Plan: 32
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-25 — Phase 4 execution started
@@ -102,6 +102,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P14 | 30min | 3 tasks | 12 files |
 | Phase 4 P40 | 48 min | 3 tasks | 11 files |
 | Phase 04 P24 | 66min | 4 tasks | 14 files |
+| Phase 04 P15 | 40min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -252,6 +253,9 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-24: ConfirmDialog primary.blockedBy — 근거 칸 오류는 칸 아래 한 자리, 1차는 그 id를 aria-describedby로
 - [Phase 4]: 04-24: 승인 표시·취소 뒤 새로 고침은 칸 단계만 서버 값으로 갈고 편집 값은 유지
 - [Phase 4]: 04-24: 부제는 S3의 번호 · 상세 견적 n차 그대로 — 표시 번호 26001-2차는 부제에 넣지 않음(UI-SPEC 결정 필요)
+- [Phase 4]: 04-15: 빈 총 매출 예상가 = 04-01 기본 저장(원화 0 · KRW · 환율 1), 새 컬럼 없음(B-37)
+- [Phase 4]: 04-15: 복사 출처 거부는 없음·범위 밖·보관·uuid 아님을 한 문구 「복사할 프로젝트 없음 · 새로 고침」으로(UI-SPEC 반영 필요)
+- [Phase 4]: 04-15: 등록 기간 판정은 04-22 validatePeriodChange를 수주중으로 부르는 validateNewProjectPeriod
 
 ### Pending Todos
 
@@ -308,6 +312,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-25T22:32:02.272Z
-Stopped at: Completed 04-24-PLAN.md
+Last session: 2026-09-26T00:02:19.456Z
+Stopped at: Completed 04-15-PLAN.md
 Resume file: None

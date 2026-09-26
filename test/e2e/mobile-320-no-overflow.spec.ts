@@ -39,7 +39,7 @@ async function measure(page: Page): Promise<Overflow> {
       culprits.push(`${el.tagName.toLowerCase()}${cls} right=${Math.round(rect.right)} w=${Math.round(rect.width)} "${text}"`);
     }
     const scrollers =
-      root.clientWidth < 700
+      window.matchMedia("(max-width: 699.98px)").matches
         ? Array.from(document.body.querySelectorAll("*"))
             .filter((el) => ["auto", "scroll"].includes(getComputedStyle(el).overflowX) && el.scrollWidth > el.clientWidth + 1)
             .map((el) => `${el.tagName.toLowerCase()}.${typeof el.className === "string" ? el.className : ""} ${el.scrollWidth}>${el.clientWidth}`)
@@ -124,7 +124,9 @@ test.describe("폭 320 — 어느 화면도 가로로 넘치지 않는다", () =
     // 이름(행동 로그 「사람」 필터)도 넣는다. 다른 폰 스펙이 같은 목록 폭을
     // 재므로 끝나면 긴 값을 목록에서 치운다 — 시스템 관리자는 보관된 행도
     // 보므로 보관만으로는 안 된다(거래처는 숨기고, 조직은 짧은 이름으로 바꾼다).
-    // 보관함은 짧은 이름의 보관 거래처·카드로 행이 있는 상태에서 잰다.
+    // 긴 이름 계정은 이름을 바꿀 저장소 함수가 없어 보관만 한다 — 사람 목록·
+    // 행동 로그 필터·보관함에 남지만, 320에서 넘치지 않음을 이 스펙이 잰다.
+    // 보관함은 보관 거래처·카드·계정이 있는 상태에서 잰다.
     const stamp = Date.now();
     const orgUnit = await insertOrgUnit(SYSTEM_VIEWER, { name: `E2E320브랜드익스피리언스마케팅본부${stamp}` });
     const team = await insertTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `통합캠페인운영및디지털콘텐츠제작팀${stamp}` });

@@ -1538,6 +1538,7 @@ export function QuoteLedger({
       key: "subcategory",
       header: "소분류",
       priority: "p3",
+      collapseBelow: 1024,
       editability: (row) => atWidth(row.cells.subcategory),
       cell: (row) => (row.lineKind === "quote" ? subcategoryLabel(row.subcategory) : KIND_GROUP_LABELS[row.lineKind]),
       editCell: (row, ctx) =>
@@ -1595,7 +1596,6 @@ export function QuoteLedger({
       key: "quantity",
       header: "수량",
       priority: "p2",
-      collapseBelow: 1024,
       align: "right",
       editability: (row) => atWidth(row.cells.quantity),
       // D-95 — 읽기 모드도 쉼표 서식을 쓴다(04-09 Task 3 편차, 수량 칸이
@@ -1617,7 +1617,6 @@ export function QuoteLedger({
       key: "unitPrice",
       header: "단가",
       priority: "p2",
-      collapseBelow: 1024,
       align: "right",
       editability: (row) => atWidth(row.cells.unitPrice),
       cell: (row) => (row.lineKind === "quote" ? formatKrw(row.unitPriceAmountKrw) : "—"),
@@ -1686,7 +1685,6 @@ export function QuoteLedger({
       key: "quoteAmount",
       header: "견적가",
       priority: "p2",
-      collapseBelow: 1024,
       align: "right",
       // 계산 열 — 누구에게나 항상 읽기 전용(D-63).
       cell: (row) => formatKrw(row.quoteAmountKrw),

@@ -862,3 +862,11 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **버린 대안**: (a) `integer` 유지 + 칸 오류(99억 견적을 저장할 수 없어 보고된 버그가 남는다) · 상한 = JS 안전 정수(04-07 원안 — 합계 정밀도) · 0016을 롤백 하한으로(근거 전제가 틀려 불필요하게 롤백을 막는다).
 
 **범위**: `db/migrations/0016_money_krw_bigint.sql` · `db/schema/money-columns.ts` · `db/schema/quote-lines.ts` · `domain/money/index.ts` · 상한 문구 `금액이 상한을 넘습니다 · {상한}원 이하`의 숫자(UI-SPEC Copywriting 예시 숫자가 낡는다). 04-07은 이 항목 뒤 리저브(`reserve_entries`)만 남고 그 마이그레이션 번호는 0017이 된다(04-07 번호 규칙 「생성기 출력 그대로」). 이 항목은 SYSTEM.md를 바꾸지 않는다.
+
+## 2026-09-26 — 견적 줄 표 700~1023(좁은 PC) 열 구성: 소분류 숨김 · 수량·단가·견적가 노출 (사용자 결정 2026-09-26 · VERDICT.md M-6)
+
+**결정**: 견적 줄 표(`app/(app)/projects/[id]/quote-table.tsx`)와 이전 차수 읽기 표(`previous-revision.tsx`)의 700~1023px에서 **소분류(P3) 열은 숨고, 수량·단가·견적가(P2) 열은 보인다** — `.planning/phases/04-project-quote-ledger/04-UI-SPEC.md:509`(DR-14) 정의를 정본으로 삼는다. 구현은 소분류에 `collapseBelow: 1024`를 더하고 수량·단가·견적가의 `collapseBelow: 1024`를 뗀다.
+
+**왜**: SYSTEM.md §6-1 ⑶ "편집 표도 숨기는 열은 P3에서만 고르고 계산 열·식별 열부터 숨긴다"는 원칙과 실제 코드가 어긋나 있었다 — 소분류(P3)엔 `collapseBelow`가 아예 없어 항상 보였고, 수량·단가·견적가(P2)는 `collapseBelow: 1024`로 숨어 있었다. SYSTEM.md 원칙 자체는 이번 결정과 이미 일치한다(문구 변경 불필요) — 어긋난 쪽은 코드였다. 실제 자주 보는 값(수량·단가·견적가)이 숨는 대신, 상세에서 확인해도 되는 소분류가 숨는 편이 사용자에게 낫다.
+
+**범위**: `app/(app)/projects/[id]/quote-table.tsx`, `app/(app)/projects/[id]/previous-revision.tsx`. SYSTEM.md 문구는 바꾸지 않는다(이미 이 결정과 일치).

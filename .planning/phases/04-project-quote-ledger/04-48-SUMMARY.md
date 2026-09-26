@@ -28,7 +28,7 @@ tech-stack:
     - URL 파라미터는 도메인 입구 한 곳(normalizeListParams)에서 정규화 — 페이지는 string으로 단정하지 않는다
     - 조회 전 redirect로 모순 조합(연도 ∩ 기간 = ∅)을 없앤다 — 도메인·리포지토리에 빈 교집합 갈래 없음
     - 빈 갈래 판정용 필터 없는 건수는 0건일 때만 기존 집계를 한 번 더(리포지토리 변경 없음)
-    - 폰/PC 두 배치를 한 DOM + 700 중단점 CSS만으로(display: contents · order)
+    - 폰/PC 두 배치를 한 DOM + 700 중단점 CSS로(display: contents · 폰 자리/PC 자리 display: none — CSS order 없음, 검토·감사 반영 F4)
 key-files:
   created:
     - test/unit/app/projects-loading.test.ts
@@ -49,7 +49,7 @@ key-decisions:
   - "04-48: URL 파라미터 정규화는 loadProjectList 입구 한 곳 — 팀 목록은 uuid 모양의 teamId가 왔을 때만 listTeams(필터 줄과 같은 조회)로 읽는다"
   - "04-48: emptyKind의 none 판정은 0건일 때만 기존 aggregate를 필터 없이 한 번 더 부른다(새 리포지토리 함수 없음)"
   - "04-48: 연도를 바꿔 기간이 어긋나면 두 칸을 비우고 disabled로 둬 GET 주소에 from=·to=가 남지 않게 한다"
-  - "04-48: 폰 배치는 DOM 순서를 PC 한 줄에 맞추고 폰에서 CSS order로 검색을 맨 위 · 1차를 「필터」 줄로 올린다 — 폰의 Tab 순서는 「필터」 → (네 칸) → 검색 → 필터 지우기 → 1차로 시각 순서와 다르다(독립 DOM 감사가 판정)"
+  - "04-48(검토·감사 반영 F4로 대체): 폰 · PC 모두 DOM 순서 = 시각 순서 — 검색과 1차는 폰 자리 · PC 자리 둘에 그리고 700 중단점에서 하나만 보인다(display: none, Pagination 선례). 두 검색 칸은 한 값을 쓰고 제출은 숨은 q 하나"
   - "04-48: 기간 칸 서버 오류가 있으면 폰 disclosure를 펼친 채 연다(오류 한 줄이 접힌 칸 안에 숨지 않게)"
 requirements-completed: [PROJ-01, UX-04]
 coverage:
@@ -146,6 +146,35 @@ Task 1 트레이서 게이트: `auto_advance` false · `human_verify_mode` end-o
 ## 독립 DOM 감사: 오케스트레이터 실행 예정
 
 Task 3 ⑤의 1280·1024·375 독립 DOM 감사((a)~(i) — 04-17 합계 줄·페이지 줄 포함, 폰 첫 화면 (g))는 실행자가 아닌 별도 에이전트가 해야 한다(CLAUDE.md §6). 실행자는 돌리지 않았다. 감사자에게 넘길 점: 폰 Tab 순서가 시각 순서와 다르다(key-decisions 넷째 줄) — 판정 대상.
+
+## 검토·감사 반영
+
+### Opus 검토(Codex 대체, 한도 풀리면 재확인) — BLOCKING 0 · SHOULD-FIX 2 · NIT 9
+- SF-1 창 포커스 잃음에도 기간 묶음 제출 → 고침: `relatedTarget === null && !document.hasFocus()`면 제출 안 함(ad0a1ab RED · 0bdb4aa).
+- SF-2 목록 기간 두 칸 `inputMode="numeric"`(iOS 키패드에 `-` 없음) → 고침: 두 칸에서 뺌(91da2a7 RED · 936b66b). 같은 선례 `[id]/period-field.tsx:93`은 **후속 항목**(이 계획 범위 밖, 손대지 않음).
+- NIT 1 `periodOverlapsYear` 12-31 경계 → 단위 테스트 추가, `<=`→`<` 뮤테이션에서 그 테스트만 실패(59/60) 확인 뒤 되돌림(ac1c541).
+- NIT 9 T-04-90 통합 표 → `from=YYYY-02-30` · `from=0000-01-01` · 배열/중복 teamId 행 추가(5bae9a8, 제품 코드 변경 없음).
+- NIT 2 `isListDate`·문구 중복(period.ts) → 이월: 공용화는 요청받지 않은 리팩터.
+- NIT 3 통합 테스트 `as unknown as string`(status 타입) → 이월: 타입 변경은 범위 밖.
+- NIT 4 0건 때 필터 없는 집계 재실행 → 이월: 계획 결정(리포지토리 무변경), 행이 늘면 `exists` 조회 검토.
+- NIT 5 `q` trim 없음(`q=%20`) → 이월: 검색 동작 변경은 스펙 판단 필요.
+- NIT 6 제출마다 폰 disclosure 접힘 → 이월: 스펙 「기본 접힘」, 사용자 판단.
+- NIT 7 기간 편집 뒤 연도 select mousedown focusout 제출 → 이월: 검색 칸과 같은 종류, 별도 항목.
+- NIT 8 일부만 겹친 기간의 R 잘림 vs 요약 원문 → 이월: 스펙 질문(R = 연도 ∩ 기간 그대로).
+
+### 독립 DOM 감사(Opus, CI=true 1280·1024·375·320) — PASS 100 · FAIL 11(결함 4)
+- F1(major) 폰 요약이 눌려 값 조각이 「프로젝트 등록」 위로 넘침 → 요약 `min-width` 기본값(가장 긴 값 조각)으로, 자리가 모자라면 1차가 다음 줄(ce50475 RED · d3f597a). 375·320 × 기간 + 24자 팀 이름: 겹침 0 · 값 안 줄바꿈 0 · 가로 스크롤 0.
+- F2(minor) 320 펼친 필터 가로 스크롤(팀 select 331px) → 폰 `.detailFields`에 `min-width: 0; max-width: 100%`(e7aa485 RED · 204be6d).
+- F3(minor) PC 기간 오류 한 줄이 칸 줄을 23.2px 밀어냄 → 오류 줄을 음수 아래 여백으로 정렬 상자 밖에 두고, 오류가 있을 때만 줄 간격 · 폼 아래 여백을 그만큼 더함(530a173 RED · 24ff523). 1280·1024에서 칸 바닥 일치 · 오류 없을 때 자리 · 오류 줄이 폼 상자 안.
+- F4(moderate) 폰 Tab 순서 ≠ 시각 순서(CSS order) → CSS order 제거, 검색 · 1차를 폰 자리/PC 자리 둘로(display: none), 「필터」 · 요약 · 1차를 폰 전용 한 줄로 묶음. id `q`(폰) · `q-wide`(PC), 제출은 숨은 `q` 하나(5e6634a RED · 9c0800a). 375 접힘 · 펼침 · 1280 Tab 순서 = 시각 순서, 중복 id 0.
+
+### 계획 밖 수정
+- 검색 blur가 값이 그대로여도 제출해 키보드 Tab이 검색을 지나가지 못함(04-05 결함, 감사 발견, F4 검증 전제) → 값이 바뀌었을 때만 제출(76ad3b7 RED · d9fbd8c).
+
+### 반영 뒤 검증(실행 결과)
+- `pnpm lint` 0 · `pnpm typecheck` 0 · `pnpm lint:sql` 0 issues · `CI=true pnpm build` exit 0
+- 단위 `project-list-view` + `projects-loading` + `projects-filter-bar` 64/64 · 통합 `projects-list` 24/24
+- `CI=true` E2E desktop(`projects-list` · `projects-filter-reset` · `projects-list-number-nowrap` · `keyboard-nav` · `a11y` · `page-chrome` · `project-register` · `project-copy`) 69/69 · mobile-375(`--no-deps`: `mobile-320-no-overflow` · `mobile-list-empty` · `mobile-page-chrome` · `mobile-wordmark-home` · `mobile-shell`) 26/26
 
 ## 전체 게이트: 오케스트레이터 실행 예정
 

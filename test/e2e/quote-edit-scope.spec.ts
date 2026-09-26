@@ -858,8 +858,14 @@ async function openCappedAsPm(page: Page, lineCount: number) {
   await login(page, pm);
   await page.goto(`/projects/${project.id}`);
   await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
-  await expect(capRows(page)).toHaveCount(lineCount);
+  // 04-19(D-91) — 표는 30줄 쪽으로 그린다. 전체 줄 수는 합계 행이 말한다(모든 쪽에서 전체 기준).
+  await expect(capRows(page)).toHaveCount(30);
+  await expectLineTotal(page, lineCount);
   return project;
+}
+
+async function expectLineTotal(page: Page, lineCount: number) {
+  await expect(page.locator("tfoot", { hasText: "합계 (공급가액" })).toContainText(`합계 (공급가액 · ${lineCount}줄)`);
 }
 
 test.describe("줄 수 상한 (04-26, D-86 · UX-04 · UX-05)", () => {
@@ -882,7 +888,7 @@ test.describe("줄 수 상한 (04-26, D-86 · UX-04 · UX-05)", () => {
     await focusGridCell(capCell(page, 0, COL.itemName));
     await page.keyboard.press("Control+Enter");
     await expect(footerNotice).toBeVisible();
-    await expect(capRows(page)).toHaveCount(300);
+    await expectLineTotal(page, 300);
 
     // 저장 시도는 상한 글자를 지운다(위 attemptSave/onSave 주석) — Ctrl+D의 단언을 Ctrl+Enter의 잔상과 분리한다.
     await saveWithKeyboard(page, capCell(page, 0, COL.itemName));
@@ -891,7 +897,7 @@ test.describe("줄 수 상한 (04-26, D-86 · UX-04 · UX-05)", () => {
     await focusGridCell(capCell(page, 0, COL.itemName));
     await page.keyboard.press("Control+d");
     await expect(footerNotice).toBeVisible();
-    await expect(capRows(page)).toHaveCount(300);
+    await expectLineTotal(page, 300);
     await expect(primarySave(page)).toHaveAttribute("aria-disabled", "true");
 
     await typeInto(page, capCell(page, 0, COL.execution), "실행가", "700");
@@ -902,14 +908,16 @@ test.describe("줄 수 상한 (04-26, D-86 · UX-04 · UX-05)", () => {
 
   test("(cap3) 줄 299의 마지막 줄에 세 줄짜리 TSV를 붙여 넣으면 한 칸도 바뀌지 않고 합계 행에 전부 거부 이유가 나오며, 다음 붙여넣기 때 사라진다", async ({ page }) => {
     await openCappedAsPm(page, 299);
-    const lastItem = capCell(page, 298, COL.itemName);
+    // 299줄 = 10쪽, 마지막 쪽의 29번째 줄이 299번째 줄이다.
+    await page.getByRole("navigation", { name: "견적 줄 페이지", exact: true }).getByRole("button", { name: "10", exact: true }).click();
+    const lastItem = capCell(page, 28, COL.itemName);
     await expect(lastItem).toHaveText("상한 줄 299");
     const pasteNotice = page.locator("tfoot").getByText("붙여넣기 전부 거부 · 300줄 상한을 1줄 넘음", { exact: true });
 
     await focusGridCell(lastItem);
     await pasteIntoFocusedCell(page, "붙인 1\n붙인 2\n붙인 3");
     await expect(pasteNotice).toBeVisible();
-    await expect(capRows(page)).toHaveCount(299);
+    await expectLineTotal(page, 299);
     await expect(lastItem).toHaveText("상한 줄 299");
     await expect(primarySave(page)).toHaveAttribute("aria-disabled", "true");
 

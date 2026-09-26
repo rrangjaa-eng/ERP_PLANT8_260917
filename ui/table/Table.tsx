@@ -256,7 +256,7 @@ export function Table<Row>({
         const row = findRow(rowId);
         if (!row || !keyboard?.onMoveRow) return;
         keyboard.onMoveRow(row, direction);
-        setFollowRowId(rowId);
+        if (pages) setFollowRowId(rowId);
       },
       onBlockedEdit: onBlockedEdit
         ? (pos) => {

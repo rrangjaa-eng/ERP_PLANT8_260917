@@ -1,16 +1,59 @@
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
-import { getSystemStatus } from "@/domain/system-status";
+import { getSystemStatus, type SystemStatus } from "@/domain/system-status";
 import { can } from "@/domain/permissions/can";
 import { env } from "@/lib/env";
 import { Banner } from "@/ui/banner/Banner";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { KvList } from "@/ui/kv-list/KvList";
 import { PageHeader } from "@/ui/page-header/PageHeader";
+import styles from "./system-status.module.css";
 
 // D-18: 캐시·별도 저장 없음 — 화면 로드마다 pg_stat_activity·Cloud SQL Admin API를
 // 직접 조회한다.
 export const dynamic = "force-dynamic";
+
+// §6-8 「알림 발송」 값(18A).
+function notifyValue(notify: SystemStatus["notify"]) {
+  if (notify.kind === "none") return "기록 없음 — 첫 알림 발송 전";
+  if (notify.kind === "unavailable") return <StatusTag kind="muted">확인 불가</StatusTag>;
+  return (
+    <span className={styles.num}>
+      {notify.businessDay
+        ? `${notify.at} · 알림 ${notify.sent}건 · 중복 건너뜀 ${notify.skipped}건 · 남음 ${notify.remaining}건`
+        : `${notify.at} · 비영업일 · 보내지 않음`}
+    </span>
+  );
+}
+
+// §6-8 「이메일」 값 = 설정 부분 + 결과 꼬리(D-4217 · Codex #18). 꼬리는 설정과 무관하게 붙는다.
+function emailValue(email: SystemStatus["email"], outcome: SystemStatus["emailOutcome"]) {
+  const setting =
+    email.kind === "configured" ? `사용 중 · ${email.from}` : <StatusTag kind="muted">미설정</StatusTag>;
+  if (outcome.kind === "unavailable") {
+    return (
+      <>
+        {setting} · <StatusTag kind="muted">확인 불가</StatusTag>
+      </>
+    );
+  }
+  return (
+    <>
+      {setting}
+      {outcome.failed > 0 ? (
+        <span className={styles.num}>
+          {" · "}
+          <span className={styles.failed}>실패 {outcome.failed}건</span> ({outcome.failedAt})
+        </span>
+      ) : null}
+      {outcome.unknown > 0 ? (
+        <span className={styles.num}>
+          {" · "}결과 불명 {outcome.unknown}건 ({outcome.unknownSince})
+        </span>
+      ) : null}
+    </>
+  );
+}
 
 // D-17·D-36(03-02): 권한표의 시스템 상태 보기 권한이 있는 계급만 본다. 서버
 // 컴포넌트의 notFound() + domain의 NotAdminError 이중 방어(T-1-15) — 권한
@@ -69,6 +112,8 @@ export default async function SystemStatusPage() {
                   <StatusTag kind="muted">확인 불가</StatusTag>
                 ),
             },
+            { label: "알림 발송", value: notifyValue(status.notify) },
+            { label: "이메일", value: emailValue(status.email, status.emailOutcome) },
           ]}
         />
       </div>

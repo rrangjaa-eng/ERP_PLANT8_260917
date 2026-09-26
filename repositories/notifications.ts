@@ -267,6 +267,32 @@ export async function insertTickRun(
   return row.id;
 }
 
+export type LastTickRun = {
+  startedAt: Date;
+  businessDay: boolean;
+  sent: number;
+  skipped: number;
+  remaining: number;
+};
+
+// 18A(04.2-13): 시스템 상태 「알림 발송」 줄 — 가장 최근 tick 실행(잠금을 못 잡은 tick은
+// 기록이 없어 덮어쓰지 않는다, D-4204).
+export async function findLastTickRun(viewer: Viewer): Promise<LastTickRun | null> {
+  void viewer;
+  const [row] = await db
+    .select({
+      startedAt: notifyTickRuns.startedAt,
+      businessDay: notifyTickRuns.businessDay,
+      sent: notifyTickRuns.sent,
+      skipped: notifyTickRuns.skipped,
+      remaining: notifyTickRuns.remaining,
+    })
+    .from(notifyTickRuns)
+    .orderBy(desc(notifyTickRuns.startedAt), desc(notifyTickRuns.id))
+    .limit(1);
+  return row ?? null;
+}
+
 // ── 이메일 단계 (04.2-10, D-4203 · D-4216) ─────────────────────────────
 
 // 끝 표시·미설정 표시 트랜잭션의 클라이언트 마감 — 문장 하나 × 5초(풀 대기 5 + 5 = 10초).

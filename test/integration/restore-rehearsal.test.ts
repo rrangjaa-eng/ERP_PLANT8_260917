@@ -1,10 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { Pool, type PoolClient } from "pg";
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, pool } from "@/db/client";
 import { getSystemStatus } from "@/domain/system-status";
-import { recordRestoreRehearsal } from "@/domain/ops/restore-rehearsal";
+import {
+  recordRestoreRehearsal,
+  ValidationError,
+  type RestoreRehearsalInput,
+} from "@/domain/ops/restore-rehearsal";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { parseArgs, UsageError } from "@/scripts/restore-rehearsal-cli";
 
@@ -291,6 +296,177 @@ describe("복원 리허설 기록 → 시스템 상태 (04.4-01 트레이서)", 
         runKey: "8-1",
       });
       expect(result).toEqual({ inserted: false, stored: { succeeded: false, failedStage: "cleanup" } });
+    },
+    IT_TIMEOUT_MS,
+  );
+});
+
+// ── Task 2: 쓰기·읽기 검증, 조회 시간 제한, 확인 불가 흡수 ────────────────────────
+
+const VALID_INPUT: RestoreRehearsalInput = {
+  source: "staging",
+  succeeded: false,
+  failedStage: "verify",
+  backupId: "1758684000000",
+  startedAt: new Date("2026-09-23T18:02:00Z"),
+  finishedAt: new Date("2026-09-23T18:14:00Z"),
+  runUrl: "https://github.com/o/r/actions/runs/1",
+  runKey: "90-1",
+};
+
+// console.log를 조용히 한다 — status.restore_rehearsal_unavailable 경고가 테스트 출력을 덮지 않게.
+async function quietly<T>(fn: () => Promise<T>): Promise<T> {
+  const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+  try {
+    return await fn();
+  } finally {
+    spy.mockRestore();
+  }
+}
+
+describe("복원 리허설 쓰기 거부(도메인, 04.4-01 Task 2)", () => {
+  it.each<[string, Partial<RestoreRehearsalInput>]>([
+    ["javascript: URL", { runUrl: "javascript:alert(1)" }],
+    ["http URL", { runUrl: "http://github.com/o/r/actions/runs/1" }],
+    ["호스트 위장 URL", { runUrl: "https://github.com.evil.example/o/r/actions/runs/1" }],
+    ["숫자 아닌 run id", { runUrl: "https://github.com/o/r/actions/runs/abc" }],
+    ["꼬리 경로", { runUrl: "https://github.com/o/r/actions/runs/1/x" }],
+    ["유효하지 않은 시각", { startedAt: new Date("not-a-date") }],
+    ["종료 < 시작", { finishedAt: new Date("2026-09-23T18:00:00Z") }],
+    ["백업 id 12a", { backupId: "12a" }],
+    ["백업 id 빈 문자열", { backupId: "" }],
+    ["백업 id -1", { backupId: "-1" }],
+    ["성공 + 단계", { succeeded: true, failedStage: "verify" }],
+    ["실패 + 단계 없음", { failedStage: null }],
+    ["모르는 단계", { failedStage: "bogus" as RestoreRehearsalInput["failedStage"] }],
+    ["실패 + 실행 URL 없음", { runUrl: null }],
+    ["실행 키 abc", { runKey: "abc" }],
+    ["실행 키 1", { runKey: "1" }],
+    ["실행 키 1-", { runKey: "1-" }],
+    ["실행 키 1-1-1", { runKey: "1-1-1" }],
+  ])("%s → ValidationError, 행 0개", async (_name, override) => {
+    await expect(recordRestoreRehearsal(SYSTEM_VIEWER, { ...VALID_INPUT, ...override })).rejects.toBeInstanceOf(
+      ValidationError,
+    );
+    expect(await rows()).toHaveLength(0);
+  });
+});
+
+describe("복원 리허설 CLI 거부(04.4-01 Task 2)", () => {
+  const withFlag = (flag: string, value: string) => {
+    const index = SUCCESS_ARGS.indexOf(flag);
+    return SUCCESS_ARGS.map((token, i) => (i === index + 1 ? value : token));
+  };
+
+  it(
+    "javascript: 실행 URL → 종료 코드 ≠ 0, 행 0개",
+    async () => {
+      expect(runCli(withFlag("--run-url", "javascript:alert(1)")).status).not.toBe(0);
+      expect(await rows()).toHaveLength(0);
+    },
+    IT_TIMEOUT_MS,
+  );
+
+  it(
+    "종료 < 시작 → 종료 코드 ≠ 0, 행 0개",
+    async () => {
+      expect(runCli(withFlag("--finished-at", "2026-09-23T18:00:00Z")).status).not.toBe(0);
+      expect(await rows()).toHaveLength(0);
+    },
+    IT_TIMEOUT_MS,
+  );
+
+  it(
+    "실패(검증)인데 실행 URL 없음 → 종료 코드 ≠ 0, 행 0개",
+    async () => {
+      const index = SUCCESS_ARGS.indexOf("--run-url");
+      const args = [...SUCCESS_ARGS.slice(0, index), ...SUCCESS_ARGS.slice(index + 2)].map((token) =>
+        token === "true" ? "false" : token,
+      );
+      expect(runCli([...args, "--failed-stage", "verify"]).status).not.toBe(0);
+      expect(await rows()).toHaveLength(0);
+    },
+    IT_TIMEOUT_MS,
+  );
+});
+
+describe("복원 리허설 읽기 — 확인 불가 흡수(04.4-01 Task 2)", () => {
+  async function insertTimes(startedAt: string, finishedAt: string): Promise<void> {
+    await db.execute(sql`
+      insert into restore_rehearsals (source, succeeded, failed_stage, backup_id, started_at, finished_at, run_url, run_key)
+      values ('staging', true, null, '1', ${startedAt}, ${finishedAt}, null, '91-1')
+    `);
+  }
+
+  it("종료 < 시작인 행은 그 행만 unavailable이고 db는 정상이다", async () => {
+    await insertTimes("2026-09-23T18:14:00Z", "2026-09-23T18:02:00Z");
+    const status = await quietly(() => getSystemStatus(SYSTEM_VIEWER));
+    expect(status.restoreRehearsal).toEqual({ kind: "unavailable" });
+    expect("unavailable" in status.db).toBe(false);
+  });
+
+  it("started_at = infinity인 행은 그 행만 unavailable이고 db는 정상이다", async () => {
+    await insertTimes("infinity", "2026-09-23T18:14:00Z");
+    const status = await quietly(() => getSystemStatus(SYSTEM_VIEWER));
+    expect(status.restoreRehearsal).toEqual({ kind: "unavailable" });
+    expect("unavailable" in status.db).toBe(false);
+  });
+
+  it(
+    "표가 잠겨 있어도 5초 안에 끝나고 그 행만 unavailable, 잠금이 풀리면 none이다",
+    async () => {
+      const lockPool = new Pool({ connectionString: DATABASE_URL });
+      const lockClient = await lockPool.connect();
+      try {
+        await lockClient.query("begin");
+        await lockClient.query("lock table restore_rehearsals in access exclusive mode");
+
+        const startedAt = Date.now();
+        const status = await quietly(() => getSystemStatus(SYSTEM_VIEWER));
+        expect(Date.now() - startedAt).toBeLessThan(5000);
+        expect(status.restoreRehearsal).toEqual({ kind: "unavailable" });
+        expect("unavailable" in status.db).toBe(false);
+      } finally {
+        await lockClient.query("rollback");
+        lockClient.release();
+        await lockPool.end();
+      }
+
+      const after = await getSystemStatus(SYSTEM_VIEWER);
+      expect(after.restoreRehearsal).toEqual({ kind: "none" });
+    },
+    IT_TIMEOUT_MS,
+  );
+
+  it(
+    "기존 확인이 끝난 뒤 풀이 고갈돼도 5초 안에 끝나고, 늦게 얻은 연결은 새지 않는다",
+    async () => {
+      const held: PoolClient[] = [];
+      try {
+        const startedAt = Date.now();
+        const status = await quietly(() =>
+          getSystemStatus(SYSTEM_VIEWER, {
+            // db 항목 조회가 이미 끝난 뒤 불린다 — 여기서 앱 풀을 전부 쥔다.
+            getLastBackup: async () => {
+              const max = pool.options.max ?? 10;
+              for (let i = 0; i < max; i++) held.push(await pool.connect());
+              return { kind: "none" as const };
+            },
+          }),
+        );
+        expect(Date.now() - startedAt).toBeLessThan(5000);
+        expect(status.restoreRehearsal).toEqual({ kind: "unavailable" });
+        expect(status.db).toMatchObject({ connections: expect.any(Number) as number });
+      } finally {
+        for (const client of held) client.release();
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(pool.waitingCount).toBe(0);
+      expect(pool.idleCount).toBe(pool.totalCount);
+
+      const next = await getSystemStatus(SYSTEM_VIEWER);
+      expect(next.restoreRehearsal).toEqual({ kind: "none" });
     },
     IT_TIMEOUT_MS,
   );

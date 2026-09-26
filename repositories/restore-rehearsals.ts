@@ -1,5 +1,7 @@
-import { desc, eq } from "drizzle-orm";
-import { db } from "@/db/client";
+import { desc, eq, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
+import type { PoolClient } from "pg";
+import { db, pool } from "@/db/client";
 import { restoreRehearsals } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
@@ -32,13 +34,46 @@ export async function insertRestoreRehearsal(
   return { inserted: false, stored: existing };
 }
 
+// 상태 화면 조회 한도(Codex #15 · 2차 #6). 공유 pool 설정은 다른 모든 쿼리가 쓰므로
+// 건드리지 않고 이 조회 하나만 묶는다 — 풀이 고갈되거나 표가 잠겨도 화면이 멈추지 않는다.
+const ACQUIRE_TIMEOUT_MS = 1000;
+
+async function acquireClient(): Promise<PoolClient> {
+  const pending = pool.connect();
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      // 대기열에 남은 요청이 나중에 연결을 얻으면 곧바로 풀에 돌려준다(누수 방지).
+      pending.then(
+        (client) => client.release(),
+        () => {},
+      );
+      reject(new Error(`restore_rehearsals: ${ACQUIRE_TIMEOUT_MS}ms 안에 DB 연결을 얻지 못했습니다`));
+    }, ACQUIRE_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([pending, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // 종료 시각 내림차순 최신 1건, 같은 시각이면 나중에 넣은(seq가 큰) 행.
 export async function findLatestRestoreRehearsal(viewer: Viewer): Promise<RestoreRehearsalRow | null> {
   void viewer;
-  const [row] = await db
-    .select()
-    .from(restoreRehearsals)
-    .orderBy(desc(restoreRehearsals.finishedAt), desc(restoreRehearsals.seq))
-    .limit(1);
-  return row ?? null;
+  const client = await acquireClient();
+  try {
+    return await drizzle(client).transaction(async (tx) => {
+      await tx.execute(sql.raw("set local statement_timeout = '2000ms'"));
+      await tx.execute(sql.raw("set local lock_timeout = '1000ms'"));
+      const [row] = await tx
+        .select()
+        .from(restoreRehearsals)
+        .orderBy(desc(restoreRehearsals.finishedAt), desc(restoreRehearsals.seq))
+        .limit(1);
+      return row ?? null;
+    });
+  } finally {
+    client.release();
+  }
 }

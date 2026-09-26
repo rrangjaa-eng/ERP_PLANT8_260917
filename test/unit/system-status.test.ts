@@ -121,6 +121,25 @@ describe("getSystemStatus — 복원 리허설 (04.4-01)", () => {
     ).rejects.toBeInstanceOf(NotAdminError);
     expect(getLatestRestoreRehearsal).not.toHaveBeenCalled();
   });
+
+  it("리허설 조회가 throw하면 restoreRehearsal만 unavailable이고 나머지는 정상이다", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const status = await getSystemStatus(adminViewer, {
+        can: allowCan,
+        countConnections: () => Promise.resolve(3),
+        maxConnections: () => Promise.resolve(25),
+        getLastBackup: () => Promise.resolve({ kind: "none" as const }),
+        getLatestRestoreRehearsal: () => Promise.reject(new Error("lock timeout")),
+      });
+      expect(status.restoreRehearsal).toEqual({ kind: "unavailable" });
+      expect(status.db).toMatchObject({ connections: 3, maxConnections: 25 });
+      expect(status.backup).toEqual({ kind: "none" });
+      expect(status.version.sha).toBe("local");
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
 });
 
 describe("getLastBackup (D-18)", () => {

@@ -7,16 +7,29 @@ export type FooterNoticeTone = "danger" | "warning" | "muted";
 
 /**
  * `paste` — 붙여넣기 묶음의 머리(`붙여넣기 N줄`) · 조각 · 끝(`N쪽까지`). 없으면 붙여넣기 밖 항목.
- * `replacesIssueCount` — 이 항목이 이미 그 표의 오류·충돌 칸 수를 말한다(서버 거부 요약) — 표가 세는 `오류 N칸`을 더하지 않는다.
+ * `replacesIssueCount` — 이 항목이 말하는 그 표의 오류 칸 · 충돌 줄 수(서버 거부 요약). 표가 센 수와 같을 때만 표가 세는 `오류 N칸`을
+ * 대신한다 — 다르면(거부 뒤 오류가 더 생기거나 고쳐졌으면) 요약이 낡았으므로 빼고 표가 센 수를 쓴다(`withIssueCount`).
  */
 export type FooterNoticeItem = {
   tone: FooterNoticeTone;
   text: string;
   paste?: "head" | "piece" | "reach";
-  replacesIssueCount?: true;
+  replacesIssueCount?: IssueCount;
 };
 
+export type IssueCount = { errorCells: number; conflictRows: number };
+
 export type FooterNoticePiece = { tone: FooterNoticeTone | "success"; text: string };
+
+/** 표가 센 오류·충돌 조각을 앞에 두고 호출부 항목을 잇는다. 서버 거부 요약은 그 수가 표가 센 수와 같을 때만 표의 조각을 대신한다. */
+export function withIssueCount(items: readonly FooterNoticeItem[], counted: IssueCount): FooterNoticeItem[] {
+  const claimed = items.find((item) => item.replacesIssueCount)?.replacesIssueCount;
+  if (claimed && claimed.errorCells === counted.errorCells && claimed.conflictRows === counted.conflictRows) return [...items];
+  const own: FooterNoticeItem[] = [];
+  if (counted.errorCells > 0) own.push({ tone: "danger", text: `오류 ${counted.errorCells}칸` });
+  if (counted.conflictRows > 0) own.push({ tone: "danger", text: `충돌 ${counted.conflictRows}줄` });
+  return [...own, ...items.filter((item) => !item.replacesIssueCount)];
+}
 
 export function composeFooterNotice(
   items: readonly FooterNoticeItem[],

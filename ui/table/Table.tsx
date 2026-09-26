@@ -5,7 +5,7 @@ import { clampPage } from "@/lib/paging";
 import { isCtrlCombo } from "@/lib/shortcut";
 import { Pagination } from "@/ui/pagination/Pagination";
 import styles from "./Table.module.css";
-import { composeFooterNotice, type FooterNoticeItem } from "./footer-notice";
+import { composeFooterNotice, withIssueCount, type FooterNoticeItem } from "./footer-notice";
 import { crossPageTarget, nextEditableCell, pageEntryFocus, pageOfRow, pinNewRows, splitPageRangeText, splitPages, type FocusCell } from "./paging";
 import { toTsv } from "./parse-tsv";
 import { isGridActionAllowed } from "./save-lock";
@@ -588,25 +588,21 @@ export function Table<Row>({
     return true;
   }
 
-  // 04-47(DR-16) — 합계 행 오른쪽 한 줄. 표가 세는 오류·충돌(서버 거부 요약이 이미 말하면 빼고) + 호출부 항목 + 붙여넣기가 닿은 쪽.
+  // 04-47(DR-16) — 합계 행 오른쪽 한 줄. 표가 세는 오류·충돌(서버 거부 요약이 같은 수를 말하면 그 요약) + 호출부 항목 + 붙여넣기가 닿은 쪽.
   let noticeContent: ReactNode = null;
   if (footerNotices !== undefined || footerSuccess) {
-    const own: FooterNoticeItem[] = [];
-    if (!footerNotices?.some((item) => item.replacesIssueCount)) {
-      let errorCells = 0;
-      const conflictRows = new Set<string>();
-      for (const row of displayRows) {
-        for (const column of columns) {
-          const kind = cellIssue?.(row, column.key)?.kind;
-          if (kind === "error") errorCells++;
-          if (kind === "conflict") conflictRows.add(getRowId(row));
-        }
+    let errorCells = 0;
+    const conflictRows = new Set<string>();
+    for (const row of displayRows) {
+      for (const column of columns) {
+        const kind = cellIssue?.(row, column.key)?.kind;
+        if (kind === "error") errorCells++;
+        if (kind === "conflict") conflictRows.add(getRowId(row));
       }
-      if (errorCells > 0) own.push({ tone: "danger", text: `오류 ${errorCells}칸` });
-      if (conflictRows.size > 0) own.push({ tone: "danger", text: `충돌 ${conflictRows.size}줄` });
     }
     const reachItem: FooterNoticeItem[] = pasteReach !== null && hasPasteHead ? [{ tone: "muted", text: `${pasteReach}쪽까지`, paste: "reach" }] : [];
-    const pieces = composeFooterNotice([...own, ...(footerNotices ?? []), ...reachItem], { successText: footerSuccess });
+    const counted = withIssueCount(footerNotices ?? [], { errorCells, conflictRows: conflictRows.size });
+    const pieces = composeFooterNotice([...counted, ...reachItem], { successText: footerSuccess });
     noticeContent =
       pieces.length > 0 ? (
         <span className={styles.footerNotice}>

@@ -2112,6 +2112,13 @@ export function QuoteLedger({
   const quoteFooterSummary = rejectedEnvelope
     ? quoteTableRejectionText(rejectedEnvelope, revenueEntryIds, outsideErrorCount)
     : rejectionSummary;
+  // 04-47(DR-16) — 봉투 요약이 말하는 견적 줄 표의 오류 칸 · 충돌 줄 수. 표가 센 수와 다르면(거부 뒤 달라졌으면) 표가 센 수를 쓴다.
+  const quoteRejectedCount = routedRejection
+    ? {
+        errorCells: routedRejection.rest.filter((cell) => cell.kind === "error").length,
+        conflictRows: new Set(routedRejection.rest.filter((cell) => cell.kind === "conflict").map((cell) => cell.rowId)).size,
+      }
+    : undefined;
 
   // 04-30(C-07) — 힌트 줄은 그 사람에게 실제로 되는 키만. 편집 셀이 없는 읽기 표에는 힌트 줄이 없다.
   const hintKeys = visibleHintKeys(
@@ -2314,7 +2321,7 @@ export function QuoteLedger({
         footerNotices={[
           ...(lineCapNotice ? [{ tone: "danger" as const, text: lineCapNotice }] : []),
           ...(quoteFooterSummary
-            ? [{ tone: "danger" as const, text: quoteFooterSummary, ...(rejectedEnvelope ? { replacesIssueCount: true as const } : {}) }]
+            ? [{ tone: "danger" as const, text: quoteFooterSummary, ...(quoteRejectedCount ? { replacesIssueCount: quoteRejectedCount } : {}) }]
             : []),
           ...pasteNotices,
         ]}

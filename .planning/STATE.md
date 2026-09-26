@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 33
+current_plan: 34
 status: executing
-stopped_at: Completed 04-16-PLAN.md
-last_updated: "2026-09-26T02:10:01.545Z"
+stopped_at: Completed 04-41-PLAN.md
+last_updated: "2026-09-26T04:05:42.050Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 4 execution started
-state_head: 7ea24b39579f50b8750889b09edfa63e38ec9bbf
+state_head: 35b3f60b799e656ec2ab46794d0bff22259ecc0e
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 115
-  completed_plans: 55
+  completed_plans: 56
   percent: 6
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 4 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 33
+Current Plan: 34
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-25 — Phase 4 execution started
@@ -104,6 +104,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P24 | 66min | 4 tasks | 14 files |
 | Phase 04 P15 | 40min | 2 tasks | 14 files |
 | Phase 04 P16 | 47m | 3 tasks | 14 files |
+| Phase 04 P41 | 60min | 3 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -260,6 +261,8 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-16: 계약 금액은 고객 승인된 현재 차수 견적 합계(D-84), VAT 기준일은 승인 KST 날짜(B-27) — 입력 칸 없음
 - [Phase 4]: 04-16: D-85 발행액 기본 노출은 새 DB에만(insert-if-absent 시드) — 기존 DB는 관리자가 role-pm 행을 켠다(B-29)
 - [Phase 4]: 04-16: 매출 표 합계 행 거부 글자는 봉투 칸 수로 정하고 거부 요약과 같은 수명
+- [Phase 4]: 04-41: 계약 금액은 파생값 하나 — 0015가 업무 값 가드 뒤 projects.contract_* DROP(ARCHITECTURE §5 예외, DECISIONS 04-41)
+- [Phase 4]: 04-41: 매출 줄 쓰기 거부 규칙 revenue.entry-scope · revenue.replay-mismatch(write.denied id만), 새 줄은 화면 uuid 멱등 삽입
 
 ### Pending Todos
 
@@ -316,6 +319,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-26T02:10:01.330Z
-Stopped at: Completed 04-16-PLAN.md
+Last session: 2026-09-26T04:05:41.831Z
+Stopped at: Completed 04-41-PLAN.md
 Resume file: None

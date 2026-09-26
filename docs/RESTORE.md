@@ -63,10 +63,10 @@
     --freshness=2m --limit=1 --project=$GCP_PROJECT_ID
   ```
   두 번째 명령이 빈 출력이어야 한다. 비지 않으면 더 기다린다.
-- (c) 스케줄러 일시정지: `gcloud scheduler jobs list --location=$GCP_REGION`의 작업마다
-  `gcloud scheduler jobs pause <작업> --location=$GCP_REGION`
+- (c) 스케줄러 일시정지: `gcloud scheduler jobs list --location=$GCP_REGION --project=$GCP_PROJECT_ID`의 작업마다
+  `gcloud scheduler jobs pause <작업> --location=$GCP_REGION --project=$GCP_PROJECT_ID`
 - (d) 운영 워크플로(account · deploy · restore-rehearsal)를 돌리지 않는다.
-- (e) 실행 중 Job이 끝나기를 기다린다 — `gcloud run jobs executions list --region=$GCP_REGION`에
+- (e) 실행 중 Job이 끝나기를 기다린다 — `gcloud run jobs executions list --region=$GCP_REGION --project=$GCP_PROJECT_ID`에
   끝나지 않은 실행이 없어야 한다.
 
 **2. 백업 선택** — 리허설과 같은 필터로 최신 성공 자동 백업(또는 사고 직전의 것)을 고른다:
@@ -96,23 +96,23 @@ gcloud sql backups restore <2의 백업 id> --restore-instance=plant8-$ENV-db \
 **5. 스키마 맞추기(닫힌 채)** — 백업은 서빙 중인 이미지보다 오래된 스키마일 수 있다.
 
 - 먼저 `plant8-$ENV-migrate`·`plant8-$ENV-seed` Job 이미지
-  (`gcloud run jobs describe <Job> --region=$GCP_REGION --format='value(spec.template.spec.template.spec.containers[0].image)'`)가
-  트래픽을 받는 리비전의 이미지와 같은지 본다. 다르면(롤백 뒤) `gcloud run jobs update <Job> --image=<서빙 리비전 이미지> --region=$GCP_REGION`으로 맞춘다.
-- 그다음 `gcloud run jobs execute plant8-$ENV-migrate --region=$GCP_REGION --wait` →
-  `gcloud run jobs execute plant8-$ENV-seed --region=$GCP_REGION --wait`.
+  (`gcloud run jobs describe <Job> --region=$GCP_REGION --project=$GCP_PROJECT_ID --format='value(spec.template.spec.template.spec.containers[0].image)'`)가
+  트래픽을 받는 리비전의 이미지와 같은지 본다. 다르면(롤백 뒤) `gcloud run jobs update <Job> --image=<서빙 리비전 이미지> --region=$GCP_REGION --project=$GCP_PROJECT_ID`으로 맞춘다.
+- 그다음 `gcloud run jobs execute plant8-$ENV-migrate --region=$GCP_REGION --project=$GCP_PROJECT_ID --wait` →
+  `gcloud run jobs execute plant8-$ENV-seed --region=$GCP_REGION --project=$GCP_PROJECT_ID --wait`.
 - `deploy.yml`은 이 단계에 쓰지 않는다 — 서비스 배포 단계가 `--allow-unauthenticated`로 확인보다
   먼저 공개 접근을 연다(`deploy.sh` `main()`의 `deploy_service` → `smoke` 순서).
 
 **6. 확인(닫힌 채, 인증된 요청)** — `roles/run.invoker`를 가진 운영자가 한다:
 
 ```bash
-URL=$(gcloud run services describe plant8-$ENV --region=$GCP_REGION --format='value(status.url)')
+URL=$(gcloud run services describe plant8-$ENV --region=$GCP_REGION --project=$GCP_PROJECT_ID --format='value(status.url)')
 TOKEN=$(gcloud auth print-identity-token)
 curl -fsS -H "Authorization: Bearer $TOKEN" "$URL/api/health"      # "ok":true, sha = 서빙 SHA
 read -rs PASSWORD   # 관리자 비밀번호 — 명령·기록에 남기지 않는다
-curl -fsS -c cookies.txt -H "Authorization: Bearer $TOKEN" -H "Origin: $URL" \
-  -H "Content-Type: application/json" -X POST "$URL/api/auth/sign-in/email" \
-  --data "{\"email\":\"<관리자 이메일>\",\"password\":\"$PASSWORD\"}"
+printf '%s' "$PASSWORD" | jq -Rs '{email:"<관리자 이메일>",password:.}' | \
+  curl -fsS -c cookies.txt -H "Authorization: Bearer $TOKEN" -H "Origin: $URL" \
+  -H "Content-Type: application/json" -X POST "$URL/api/auth/sign-in/email" --data @-
 curl -fsS -b cookies.txt -H "Authorization: Bearer $TOKEN" "$URL/admin/system-status" -o /dev/null -w '%{http_code}\n'
 ```
 
@@ -128,14 +128,14 @@ gcloud run services add-iam-policy-binding plant8-$ENV --region=$GCP_REGION \
 
 인증 없이 `curl -fsS "$URL/api/health"`가 `"ok":true`여야 한다.
 
-**8. 재개** — 1(c)의 작업마다 `gcloud scheduler jobs resume <작업> --location=$GCP_REGION`.
+**8. 재개** — 1(c)의 작업마다 `gcloud scheduler jobs resume <작업> --location=$GCP_REGION --project=$GCP_PROJECT_ID`.
 사용자에게 공지한다: 백업 시각 이후 입력은 다시 넣어야 한다.
 
 **9. 백업 설정 재확인** — 복원은 백업 설정을 기본값으로 되돌릴 수 있다:
 
 ```bash
-gcloud sql instances describe plant8-$ENV-db --format='value(settings.backupConfiguration)'
-gcloud sql instances patch plant8-$ENV-db --backup-start-time=18:00 --retained-backups-count=7
+gcloud sql instances describe plant8-$ENV-db --project=$GCP_PROJECT_ID --format='value(settings.backupConfiguration)'
+gcloud sql instances patch plant8-$ENV-db --backup-start-time=18:00 --retained-backups-count=7 --project=$GCP_PROJECT_ID
 ```
 
 두 번째는 첫 번째 결과가 `18:00` · 7개와 다를 때만 낸다.

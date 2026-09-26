@@ -178,9 +178,10 @@ describe("계정 잠금 행동 로그 (D-712)", () => {
     expect(row?.actorId).toBeNull();
     expect(row?.entity).toBe("user");
     expect(row?.entityId).toBe(userId);
-    expect(row?.detail.email).toBe(email);
-    expect(typeof row?.detail.threshold).toBe("number");
-    expect(typeof row?.detail.windowMinutes).toBe("number");
+    const detail = row?.detail as Record<string, unknown> | undefined;
+    expect(detail?.email).toBe(email);
+    expect(typeof detail?.threshold).toBe("number");
+    expect(typeof detail?.windowMinutes).toBe("number");
 
     const afterLocked = await signIn(email, "wrong-password", ip);
     expect(afterLocked.status).toBe(403);

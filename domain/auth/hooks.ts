@@ -3,7 +3,7 @@ import { log } from "@/lib/log";
 import { CLIENT_IP_HEADER } from "@/lib/client-ip";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { countOpenFailures, recordAttempt, resolveOpenFailures } from "@/repositories/login-attempts";
-import { isLocked, lockoutConfig, windowStart, LOCKED_MESSAGE } from "@/domain/auth/lockout";
+import { isLocked, lockoutConfig, recordLoginFailure, windowStart, LOCKED_MESSAGE } from "@/domain/auth/lockout";
 import { findUserByEmail } from "@/repositories/users";
 import { recordAction } from "@/domain/action-log/record";
 import type { Viewer } from "@/domain/viewer";
@@ -91,9 +91,8 @@ export const after = createAuthMiddleware(async (ctx) => {
   // 위조할 수 있고, IP 규칙은 lib/client-ip.ts 한 곳에만 둔다.
   const ip = ctx.headers?.get(CLIENT_IP_HEADER) ?? null;
 
-  await recordAttempt(SYSTEM_VIEWER, { email, success, ip, attemptedAt: new Date() });
-
   if (success) {
+    await recordAttempt(SYSTEM_VIEWER, { email, success, ip, attemptedAt: new Date() });
     await resolveOpenFailures(SYSTEM_VIEWER, email, "success");
 
     // OPS-05가 핵심 행동으로 명시한 「로그인」의 유일한 기록 지점이다.
@@ -107,12 +106,7 @@ export const after = createAuthMiddleware(async (ctx) => {
     return;
   }
 
-  // at-least-once: 동시 실패 둘이 4→6으로 건너뛰어도 이벤트가 누락되지 않는다.
-  // 잠긴 뒤에는 before 훅이 거부해 after가 돌지 않으므로 순차 실행에서는
-  // 정확히 1회, 동시 실행에서만 드물게 2회 남는다.
-  const { threshold, windowMinutes } = await lockoutConfig();
-  const count = await countOpenFailures(SYSTEM_VIEWER, email, windowStart(new Date(), windowMinutes));
-  if (isLocked(count, threshold)) {
-    log.info("auth.lockout", { email, threshold, windowMinutes });
-  }
+  // 같은 이메일의 실패는 이메일 키 잠금으로 줄을 서 잠금 기록이 정확히 1회 남는다.
+  // 잠긴 뒤에는 before 훅이 거부해 after가 돌지 않는다.
+  await recordLoginFailure(email, ip);
 });

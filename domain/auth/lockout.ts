@@ -1,5 +1,11 @@
 import { getSettingValue as defaultGetSettingValue } from "@/domain/settings/registry";
 import { AUTH_LOCKOUT_THRESHOLD, AUTH_LOCKOUT_WINDOW_MINUTES } from "@/domain/settings/keys";
+import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { countOpenFailures, lockLoginEmail, recordAttempt } from "@/repositories/login-attempts";
+import { findUserByEmail } from "@/repositories/users";
+import { withTransaction } from "@/lib/db-transaction";
+import { log } from "@/lib/log";
 
 // AUTH-01·Eng Issue 5: 계정 잠금 판정의 순수 함수. DB 접근은
 // repositories/login-attempts.ts가, 실제 훅 배선은 domain/auth/hooks.ts가
@@ -31,6 +37,44 @@ export function windowStart(now: Date, windowMinutes: number): Date {
 
 export function isLocked(openFailures: number, threshold: number): boolean {
   return openFailures >= threshold;
+}
+
+export async function recordLoginFailure(
+  email: string,
+  ip: string | null,
+  deps?: { recordAction?: typeof defaultRecordAction; now?: () => Date },
+): Promise<{ locked: boolean }> {
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  const now = deps?.now?.() ?? new Date();
+  // eng E5: 전역 db를 쓰는 사용자 조회·설정 읽기는 트랜잭션 전에 끝낸다 —
+  // 이메일 잠금을 쥔 트랜잭션이 풀에서 두 번째 연결을 기다리면, 같은 이메일
+  // 대기로 풀이 다 찬 순간 서로 풀리지 않는다. 콜백 안에서는 tx 호출만 한다.
+  const { threshold, windowMinutes } = await lockoutConfig();
+  const user = await findUserByEmail(SYSTEM_VIEWER, email);
+
+  // D-712·D-4220(Codex #12): 실패 기록·세기·잠금 로그가 한 트랜잭션이다 —
+  // 잠금 로그 쓰기가 실패하면 N번째 실패 기록도 롤백되어 다음 실패가 다시
+  // N번째가 된다(「잠겼는데 잠금 기록 0건」 없음).
+  const locked = await withTransaction(async (tx) => {
+    await lockLoginEmail(SYSTEM_VIEWER, email, tx);
+    await recordAttempt(SYSTEM_VIEWER, { email, success: false, ip, attemptedAt: now }, tx);
+    const count = await countOpenFailures(SYSTEM_VIEWER, email, windowStart(now, windowMinutes), tx);
+    if (!isLocked(count, threshold)) return false;
+    await recordAction(
+      SYSTEM_VIEWER,
+      {
+        actionType: "account_lock",
+        entity: "user",
+        entityId: user?.id ?? null,
+        detail: { email, threshold, windowMinutes },
+      },
+      { tx },
+    );
+    return true;
+  });
+
+  if (locked) log.info("auth.lockout", { email, threshold, windowMinutes });
+  return { locked };
 }
 
 // 문구 자체는 잎 모듈에 있다 — 로그인 화면(클라이언트)이 이 파일을 import하면

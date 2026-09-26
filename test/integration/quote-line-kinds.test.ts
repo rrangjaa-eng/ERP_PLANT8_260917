@@ -92,7 +92,7 @@ async function listedExecution(projectNumber: string): Promise<number> {
     rows: [row],
   } = await loadProjectList(SYSTEM_VIEWER, { year: "all", search: projectNumber });
   if (!row) throw new Error("목록에 프로젝트가 없습니다");
-  // B-18 — 목록 SUM이 문자열로 올 수 있어 값만 숫자로 비교한다(타입 단언은 04-17 C-01).
+  // 04-17(C-01)부터 목록 금액은 숫자다 — 금액 칸은 투영이 뺄 수 있는 선택 키라 undefined만 좁힌다.
   return Number(row.executionAmountKrw);
 }
 

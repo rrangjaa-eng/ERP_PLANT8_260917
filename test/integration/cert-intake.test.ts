@@ -104,6 +104,50 @@ describe("확인증 공개 흐름 — 정상 제출·인증 거부", () => {
   });
 });
 
+describe("확인증 공개 흐름 — 저장소 fail-closed 순서(S3)", () => {
+  it("주입한 저장소가 던지면 의도 행·제출 행이 모두 0이다(고아 없음)", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    let threw: unknown;
+    try {
+      await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent), {
+        signatureStore: {
+          put: () => Promise.reject(new Error("저장소 사용 불가(주입)")),
+          get: () => Promise.resolve(null),
+          delete: () => Promise.resolve(),
+        },
+      });
+    } catch (e) {
+      threw = e;
+    }
+
+    expect(threw).toBeInstanceOf(Error);
+    const intents = await db.select().from(certSignatureUploads);
+    expect(intents).toHaveLength(0);
+    const submissions = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(submissions).toHaveLength(0);
+  });
+});
+
+describe("확인증 공개 흐름 — 연락처 정규화 실패(S8)", () => {
+  it("전화번호가 형식에 맞지 않으면 invalid(phone), 빈 문자열로 저장하지 않는다", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    const input = { ...submissionInputFor(winnerId, verified.proof, verified.consent), phone: "abc" };
+    const result = await submitCertificate(token, input);
+
+    expect(result).toEqual({ kind: "invalid", fields: ["phone"] });
+    const rows = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(rows).toHaveLength(0);
+  });
+});
+
 describe("확인증 공개 흐름 — 규약 C1 domain 두 겹째(설정 꺼짐)", () => {
   it("cert.enabled를 끄면 loadIntake·selectWinner·verifyLast4·submitCertificate 넷 다 notFound, DB 변화 없음", async () => {
     const { eventId, token } = await makeEvent();

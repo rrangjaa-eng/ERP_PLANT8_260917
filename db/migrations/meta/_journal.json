@@ -120,6 +120,13 @@
       "when": 1790414052589,
       "tag": "0016_money_krw_bigint",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790432915306,
+      "tag": "0017_supreme_micromacro",
+      "breakpoints": true
     }
   ]
 }

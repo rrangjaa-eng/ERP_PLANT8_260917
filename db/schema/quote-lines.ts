@@ -1,4 +1,4 @@
-import { pgTable, text, integer, numeric, jsonb, timestamp, uuid, index, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, bigint, numeric, jsonb, timestamp, uuid, index, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { vendors } from "./vendors";
 import { quoteRevisions } from "./quote-revisions";
 import { moneyColumns } from "./money-columns";
@@ -23,8 +23,8 @@ export const quoteLines = pgTable(
     ...moneyColumns("unitPrice"),
     ...moneyColumns("execution"),
     // D-63: 견적가 = 수량 × 단가, 서버 계산·저장. 차익 = 견적가 − 실행가.
-    quoteAmountKrw: integer("quote_amount_krw").notNull(),
-    profitKrw: integer("profit_krw").notNull(),
+    quoteAmountKrw: bigint("quote_amount_krw", { mode: "number" }).notNull(),
+    profitKrw: bigint("profit_krw", { mode: "number" }).notNull(),
     // D-64: 이 페이즈는 미착수·취소 둘뿐.
     lineStatus: text("line_status").notNull().default("not_started"),
     note: text("note"),

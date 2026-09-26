@@ -283,14 +283,14 @@ describe("관련자만 상세 문구(ENG-6 · D1 · CX-W4)", () => {
     const infoSpy = vi.spyOn(log, "info");
     const stale = { instanceId: doc.instanceId, expectedVersion: 1 };
 
-    const attempts: Promise<unknown>[] = [
-      approveDocument(pm, stale, T3),
-      rejectDocument(pm, { ...stale, reason: "일정 겹침" }, T3),
-      withdrawDocument(pm, stale, T3),
-      resubmitLeave(pm, { leaveId: doc.leaveId, expectedVersion: 1, input: RESUBMIT_T3 }, T3),
+    const attempts: (() => Promise<unknown>)[] = [
+      () => approveDocument(pm, stale, T3),
+      () => rejectDocument(pm, { ...stale, reason: "일정 겹침" }, T3),
+      () => withdrawDocument(pm, stale, T3),
+      () => resubmitLeave(pm, { leaveId: doc.leaveId, expectedVersion: 1, input: RESUBMIT_T3 }, T3),
     ];
     for (const attempt of attempts) {
-      const error = await caught(attempt);
+      const error = await caught(attempt());
       expect(error).toBeInstanceOf(NotCurrentHolderError);
       expect(error.message).toBe(NOT_HOLDER_TEXT);
       expect(handleServerError(error)).toBe(NOT_HOLDER_TEXT);
@@ -405,22 +405,22 @@ describe("반려 상태의 사건별 종결 문구(CX-B1)", () => {
     const infoSpy = vi.spyOn(log, "info");
 
     for (const attempt of [
-      withdrawDocument(drafter, current, T3),
-      approveDocument(lead, current, T3),
-      rejectDocument(lead, { ...current, reason: "다시 반려" }, T3),
+      () => withdrawDocument(drafter, current, T3),
+      () => approveDocument(lead, current, T3),
+      () => rejectDocument(lead, { ...current, reason: "다시 반려" }, T3),
     ]) {
-      const error = await caught(attempt);
+      const error = await caught(attempt());
       expect(error).toBeInstanceOf(ApprovalConflictError);
       expect(error.message).toBe(expected);
       expect(infoSpy).toHaveBeenLastCalledWith("approval.refused", expect.objectContaining({ reason: "final" }));
     }
     for (const attempt of [
-      approveDocument(pm, current, T3),
-      rejectDocument(pm, { ...current, reason: "다시 반려" }, T3),
-      withdrawDocument(pm, current, T3),
-      resubmitLeave(pm, { leaveId: doc.leaveId, expectedVersion: rejected.version, input: RESUBMIT_T3 }, T3),
+      () => approveDocument(pm, current, T3),
+      () => rejectDocument(pm, { ...current, reason: "다시 반려" }, T3),
+      () => withdrawDocument(pm, current, T3),
+      () => resubmitLeave(pm, { leaveId: doc.leaveId, expectedVersion: rejected.version, input: RESUBMIT_T3 }, T3),
     ]) {
-      const error = await caught(attempt);
+      const error = await caught(attempt());
       expect(error.message).toBe(NOT_HOLDER_TEXT);
       expectNoDetail(error.message, ["김팀장"]);
       expect(infoSpy).toHaveBeenLastCalledWith("approval.refused", expect.objectContaining({ viewerId: pm.id, reason: "not_holder" }));

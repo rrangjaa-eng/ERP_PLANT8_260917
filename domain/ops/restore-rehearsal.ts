@@ -53,20 +53,20 @@ function toValidRecord(value: {
   runUrl: string | null;
 }): RestoreRehearsalRecord {
   const { source, succeeded, failedStage, backupId, startedAt, finishedAt, runUrl } = value;
-  if (!SOURCES.includes(source)) throw new ValidationError("원본 환경은 staging 또는 production이어야 합니다.");
-  if (succeeded && failedStage !== null) throw new ValidationError("성공한 리허설에는 실패 단계가 없어야 합니다.");
+  if (!SOURCES.includes(source)) throw new ValidationError("원본 환경 오류 · staging 또는 production만");
+  if (succeeded && failedStage !== null) throw new ValidationError("성공한 리허설에 실패 단계 있음");
   if (!succeeded && !isStage(failedStage)) {
-    throw new ValidationError("실패한 리허설의 단계는 restore·verify·cleanup 중 하나여야 합니다.");
+    throw new ValidationError("실패 단계 오류 · restore·verify·cleanup 중 하나");
   }
   if (!Number.isFinite(startedAt.getTime()) || !Number.isFinite(finishedAt.getTime())) {
-    throw new ValidationError("시작·종료 시각이 유효하지 않습니다.");
+    throw new ValidationError("시작·종료 시각 오류");
   }
-  if (finishedAt.getTime() < startedAt.getTime()) throw new ValidationError("종료 시각이 시작 시각보다 이릅니다.");
-  if (backupId !== null && !BACKUP_ID_PATTERN.test(backupId)) throw new ValidationError("백업 id는 숫자여야 합니다.");
+  if (finishedAt.getTime() < startedAt.getTime()) throw new ValidationError("종료 시각이 시작 시각보다 이름");
+  if (backupId !== null && !BACKUP_ID_PATTERN.test(backupId)) throw new ValidationError("백업 id 오류 · 숫자만");
   if (runUrl !== null && !RUN_URL_PATTERN.test(runUrl)) {
-    throw new ValidationError("실행 URL은 GitHub Actions 실행 주소여야 합니다.");
+    throw new ValidationError("실행 URL 오류 · GitHub Actions 실행 주소만");
   }
-  if (!succeeded && runUrl === null) throw new ValidationError("실패한 리허설에는 실행 URL이 있어야 합니다.");
+  if (!succeeded && runUrl === null) throw new ValidationError("실패한 리허설에 실행 URL 없음");
   return {
     source: source as RestoreRehearsalSource,
     succeeded,
@@ -84,7 +84,7 @@ export async function recordRestoreRehearsal(
 ): Promise<RecordRestoreRehearsalResult> {
   const record = toValidRecord(input);
   if (!RUN_KEY_PATTERN.test(input.runKey)) {
-    throw new ValidationError("실행 키는 <실행 id>-<시도> 모양이어야 합니다.");
+    throw new ValidationError("실행 키 오류 · <실행 id>-<시도> 모양");
   }
   const { inserted, stored } = await defaultInsert(viewer, { ...record, runKey: input.runKey });
   return {

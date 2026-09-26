@@ -336,6 +336,11 @@ function IntakeForm({
       </div>
 
       <SignaturePad ref={signatureRef} hasStroke={hasSignature} onChange={setHasSignature} />
+      {hasSignature ? (
+        <button type="button" className={styles.tertiaryLink} onClick={() => signatureRef.current?.clear()}>
+          다시 쓰기
+        </button>
+      ) : null}
 
       <div className={styles.stickySubmit}>
         <Button

@@ -225,6 +225,8 @@ test.describe("폭 320 — 어느 화면도 가로로 넘치지 않는다", () =
 
       // 공용 ui/table(프로젝트 목록)의 접힌 줄도 같은 선 규칙을 따른다.
       await expectNoOverflow(page, "/projects");
+      // 목록은 50건씩이라 다른 스펙이 만든 프로젝트에 밀려 첫 쪽에 없을 수 있다 — 이름으로 좁혀서 본다.
+      await expectNoOverflow(page, `/projects?q=${encodeURIComponent(projectName)}`);
       await expectFoldAttached(page, projectName);
     } finally {
       await setVendorArchived(SYSTEM_VIEWER, vendor.id, true);

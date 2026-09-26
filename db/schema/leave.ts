@@ -30,3 +30,31 @@ export const leaveRequests = pgTable(
     check("leave_requests_days_quarters_check", sql`${table.daysQuarters} >= 0`),
   ],
 );
+
+// 04.1-03(05-CONTEXT Discretion 「결근 차감은 관리자 수동 조정」 · ENG-13): 연차·월차 잔고
+// 조정 — 추가만 된다(수정·삭제 없음, 틀리면 반대 부호로 한 줄 더). 일수는 부호 있는 정수
+// 1/4일. 연차 조정만 회계연도를 갖는다(그 해 연차 줄에 붙는다), 월차 조정은 입력한 날 ~
+// 월차 소멸일 창. 잔고 숫자는 어느 표에도 저장하지 않는다.
+export const leaveAdjustments = pgTable(
+  "leave_adjustments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    bucket: text("bucket").notNull(),
+    fiscalYear: integer("fiscal_year"),
+    amountQuarters: integer("amount_quarters").notNull(),
+    reason: text("reason").notNull(),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [
+    index("leave_adjustments_user_idx").on(table.userId),
+    check("leave_adjustments_bucket_check", sql`${table.bucket} IN ('annual','monthly')`),
+    check("leave_adjustments_amount_quarters_check", sql`${table.amountQuarters} <> 0`),
+    check("leave_adjustments_fiscal_year_check", sql`(${table.bucket} = 'annual') = (${table.fiscalYear} IS NOT NULL)`),
+  ],
+);

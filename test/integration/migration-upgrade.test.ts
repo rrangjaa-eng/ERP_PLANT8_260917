@@ -231,3 +231,94 @@ describe("마이그레이션 업그레이드 — 옛 데이터 위 적용, 재�
     expect(errorText(caught)).toContain("quote_lines_line_kind_check");
   });
 });
+
+// 04-41(사용자 D9 · CEO 리뷰 B-09·OV-6 · 엔지 r2 E2-05) — 0010이 더한 projects.contract_* 네 칸을 지우는 마이그레이션.
+// 0010까지 적용한 DB에 옛 데이터를 넣고 남은 마이그레이션 전부를 적용한다(시드를 부르지 않는다). 업무 행(source <> 'demo')에
+// 계약 값(원화 ≠ 0 또는 외화 값)이 있으면 가드가 멈추고, 이번 적용 전부가 한 트랜잭션이라 DB가 한 칸도 바뀌지 않는다.
+describe("계약 칸 삭제(04-41 · D9 · OV-6)", () => {
+  const DEMO = "00000000-0000-4000-8000-0000000000b1";
+  const WORK = "00000000-0000-4000-8000-0000000000b2";
+
+  type ContractCells = { currency: string; foreign: string | null; fxRate: string; krw: number };
+
+  // 0010 상태: demo 프로젝트(계약 원화 5,000,000 · 견적 줄 둘)와 업무 프로젝트(source = 'intranet' · 견적 줄 하나).
+  async function prepareAt0010(work: ContractCells): Promise<Pool> {
+    const pool = await createScratchDb();
+    await migrateTo(pool, countThrough("_revenue_entries"));
+    await insertParents(pool);
+    await insertProject(pool, DEMO, "OLD-D1", "bidding", 1);
+    await insertProject(pool, WORK, "OLD-W1", "in_progress", 1);
+    await pool.query(`UPDATE projects SET contract_amount_krw = 5000000 WHERE id = $1`, [DEMO]);
+    await pool.query(
+      `UPDATE projects SET source = 'intranet', contract_currency = $2, contract_foreign_amount = $3, contract_fx_rate = $4, contract_amount_krw = $5 WHERE id = $1`,
+      [WORK, work.currency, work.foreign, work.fxRate, work.krw],
+    );
+    await insertLine(pool, DEMO, "demo 줄 1");
+    await insertLine(pool, DEMO, "demo 줄 2");
+    await insertLine(pool, WORK, "업무 줄");
+    return pool;
+  }
+
+  async function contractColumns(pool: Pool): Promise<string[]> {
+    const { rows } = await pool.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns WHERE table_name = 'projects' AND column_name LIKE 'contract\\_%' ORDER BY column_name`,
+    );
+    return rows.map((row) => row.column_name);
+  }
+
+  async function workContract(pool: Pool): Promise<ContractCells | undefined> {
+    const { rows } = await pool.query<ContractCells>(
+      `SELECT contract_currency AS currency, contract_foreign_amount AS foreign, contract_fx_rate AS "fxRate", contract_amount_krw AS krw FROM projects WHERE id = $1`,
+      [WORK],
+    );
+    return rows[0];
+  }
+
+  async function expectGuardStops(pool: Pool, work: ContractCells): Promise<void> {
+    let caught: unknown;
+    try {
+      await migrateTo(pool);
+    } catch (error) {
+      caught = error;
+    }
+    expect(errorText(caught)).toContain("계약 금액");
+    expect(await contractColumns(pool)).toHaveLength(4);
+    expect(await workContract(pool)).toEqual(work);
+    // 이번 적용의 앞 마이그레이션(04-13의 line_kind)도 남지 않았다 — 적용 기록이 0010에서 멈춰 있다.
+    const { rows: kind } = await pool.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name = 'quote_lines' AND column_name = 'line_kind'`,
+    );
+    expect(kind).toHaveLength(0);
+    const { rows } = await pool.query<{ count: string }>(`SELECT count(*) FROM drizzle.__drizzle_migrations`);
+    expect(Number(rows[0]?.count)).toBe(countThrough("_revenue_entries"));
+  }
+
+  it("(c) 업무 행의 계약 값이 0이면 네 칸이 사라지고 프로젝트 행·번호·견적 줄이 그대로다(재시드 전)", async () => {
+    const pool = await prepareAt0010({ currency: "KRW", foreign: null, fxRate: "1.0000", krw: 0 });
+
+    await migrateTo(pool);
+
+    expect(await contractColumns(pool)).toEqual([]);
+    const { rows: projects } = await pool.query<{ id: string; number: string }>(`SELECT id, number FROM projects ORDER BY number`);
+    expect(projects).toEqual([
+      { id: DEMO, number: "OLD-D1" },
+      { id: WORK, number: "OLD-W1" },
+    ]);
+    const { rows: lines } = await pool.query<{ item_name: string }>(`SELECT item_name FROM quote_lines ORDER BY item_name`);
+    expect(lines.map((line) => line.item_name)).toEqual(["demo 줄 1", "demo 줄 2", "업무 줄"].sort());
+  });
+
+  it("(c2) 업무 행의 원화 환산이 0이어도 외화 계약 금액이 있으면 가드가 멈추고 네 칸이 그대로다(E2-05)", async () => {
+    const work = { currency: "USD", foreign: "1000.00", fxRate: "0.0000", krw: 0 };
+    const pool = await prepareAt0010(work);
+
+    await expectGuardStops(pool, work);
+  });
+
+  it("(d) 업무 행의 계약 원화가 5,000,000이면 가드가 멈추고 그 값과 앞 마이그레이션 결과까지 아무것도 바뀌지 않는다", async () => {
+    const work = { currency: "KRW", foreign: null, fxRate: "1.0000", krw: 5_000_000 };
+    const pool = await prepareAt0010(work);
+
+    await expectGuardStops(pool, work);
+  });
+});

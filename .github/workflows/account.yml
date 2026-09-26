@@ -53,6 +53,7 @@ jobs:
           INPUT_EMAIL: ${{ inputs.email }}
           INPUT_NAME: ${{ inputs.name }}
           INPUT_ROLE: ${{ inputs.role }}
+          INPUT_OPERATOR: ${{ github.actor }}
           PROJECT: ${{ vars.GCP_PROJECT_ID }}
           REGION: ${{ vars.GCP_REGION }}
         run: |
@@ -69,6 +70,7 @@ jobs:
           if [ -n "$INPUT_ROLE" ]; then
             ARGS="$ARGS,--role,$INPUT_ROLE"
           fi
+          if [ "$INPUT_ACTION" = "unlock" ]; then ARGS="$ARGS,--operator,$INPUT_OPERATOR"; fi
 
           JOB="$(job_name "$ENV_SHORT" account)"
 

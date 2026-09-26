@@ -176,18 +176,53 @@ case "$event" in
 
   merge)
     # 문서만 바꾼 PR(.planning/·.claude/gates/ 아래 파일, *.md — 단 CLAUDE.md와 .claude/ 아래 .md 제외)은
-    # /qa 면제(사용자 승인 2026-09-25). 목록을 못 읽거나 받은 수가 changed_files와 다르면 문서만으로
-    # 보지 않는다. 이름 바꾸기는 옛 경로도 본다. 판정은 파이프 없이(SIGPIPE가 결과를 뒤집지 않게).
+    # /qa 면제(사용자 승인 2026-09-25). gh가 우선이다: 목록을 못 읽거나 받은 수가 changed_files와
+    # 다르면 문서만으로 보지 않는다. gh가 없거나 실패하면(클라우드 세션) origin ls-remote로 얻은
+    # PR 헤드 sha와 로컬 origin/main의 diff(옛 경로 포함, 사용자 승인 2026-09-26)에 같은 규칙을 쓴다.
+    # origin이 owner/repo와 다르거나, PR 헤드나 origin/main이 로컬에 없거나, expectedHeadSha가
+    # PR 헤드와 다르면 판정하지 않고 막는다. 이름 바꾸기는 옛 경로도 본다.
+    # 판정은 파이프 없이(SIGPIPE가 결과를 뒤집지 않게).
     pr="$(printf '%s' "$payload" | jq -r '.tool_input | "repos/\(.owner // "")/\(.repo // "")/pulls/\(.pullNumber // "")"')"
-    pr_files="$(gh api "$pr/files" --paginate --jq '.[] | [.filename, .previous_filename // empty] | @tsv' 2>/dev/null || true)"
-    pr_changed="$(gh api "$pr" --jq '.changed_files' 2>/dev/null || true)"
     docs_only=0
-    if [ -n "$pr_files" ] && [ "$(grep -c . <<<"$pr_files")" = "$pr_changed" ]; then
+    if pr_files="$(gh api "$pr/files" --paginate --jq '.[] | [.filename, .previous_filename // empty] | @tsv' 2>/dev/null)" \
+      && pr_changed="$(gh api "$pr" --jq '.changed_files' 2>/dev/null)"; then
+      if [ -z "$pr_files" ] || [ "$(grep -c . <<<"$pr_files")" != "$pr_changed" ]; then
+        pr_files=""
+      fi
+    else
+      pr_files=""
+      # gh가 없거나 실패했다 — origin ls-remote + 로컬 diff 대체 경로.
+      cwd="$(printf '%s' "$payload" | jq -r '.cwd // empty')"
+      [ -n "$cwd" ] || cwd="$project"
+      owner="$(printf '%s' "$payload" | jq -r '.tool_input.owner // empty')"
+      repo="$(printf '%s' "$payload" | jq -r '.tool_input.repo // empty')"
+      pull_number="$(printf '%s' "$payload" | jq -r '.tool_input.pullNumber // empty')"
+      expected_head_sha="$(printf '%s' "$payload" | jq -r '.tool_input.expectedHeadSha // empty')"
+      origin_ok=0
+      if [[ "$pull_number" =~ ^[0-9]+$ ]] && [ -n "$owner" ] && [ -n "$repo" ]; then
+        origin_url="$(git -C "$cwd" config --get remote.origin.url 2>/dev/null || true)"
+        origin_url="${origin_url%.git}"
+        case "$origin_url" in
+          */"$owner"/"$repo") origin_ok=1 ;;
+          *:"$owner"/"$repo") origin_ok=1 ;;
+        esac
+      fi
+      if [ "$origin_ok" = 1 ]; then
+        ls_out="$(GIT_TERMINAL_PROMPT=0 timeout 5 git -C "$cwd" ls-remote origin "refs/pull/$pull_number/head" 2>/dev/null || true)"
+        head_sha="${ls_out%%$'\t'*}"
+        if [ "$ls_out" = "$head_sha"$'\t'"refs/pull/$pull_number/head" ] \
+          && [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]] \
+          && { [ -z "$expected_head_sha" ] || [ "$expected_head_sha" = "$head_sha" ]; }; then
+          pr_files="$(git -C "$cwd" -c core.quotePath=false diff --no-renames --name-only "refs/remotes/origin/main...$head_sha" 2>/dev/null || true)"
+        fi
+      fi
+    fi
+    if [ -n "$pr_files" ]; then
       awk -F'\t' '{ for (i = 1; i <= NF; i++) if (!($i ~ /^(\.planning|\.claude\/gates)\// || ($i ~ /\.md$/ && $i !~ /^\.claude\// && $i !~ /(^|\/)CLAUDE\.md$/))) bad = 1 }
                   END { exit bad }' <<<"$pr_files" && docs_only=1
     fi
     gate_has review && { [ "$docs_only" = 1 ] || gate_has qa; } \
-      || deny "PR 머지 전에 gstack Post-build를 실제로 호출하라: /review → /qa(문서만 바뀐 PR은 면제) → (해당 시)/cso → /ship."
+      || deny "PR 머지 전에 gstack Post-build를 실제로 호출하라: /review → /qa(문서만 바뀐 PR은 면제) → (해당 시)/cso → /ship. gh가 없으면 PR 헤드 커밋과 origin/main이 로컬에 있어야 문서 PR로 판정한다(git fetch origin)."
     ;;
 esac
 exit 0

@@ -434,14 +434,21 @@ case " $* " in
 esac
 STUB
 chmod +x "$GH_STUB_DIR/gh"
-payload_merge() {
-  jq -nc --arg s "$1" '{session_id:$s, tool_name:"mcp__github__merge_pull_request", tool_input:{owner:"o", repo:"r", pullNumber:7}}'
+payload_merge() {  # $1=session $2=expectedHeadSha(선택)
+  local session="$1" sha="${2:-}"
+  if [ -n "$sha" ]; then
+    jq -nc --arg s "$session" --arg sha "$sha" \
+      '{session_id:$s, tool_name:"mcp__github__merge_pull_request", tool_input:{owner:"o", repo:"r", pullNumber:7, expectedHeadSha:$sha}}'
+  else
+    jq -nc --arg s "$session" \
+      '{session_id:$s, tool_name:"mcp__github__merge_pull_request", tool_input:{owner:"o", repo:"r", pullNumber:7}}'
+  fi
 }
-merge_hook() {  # $1=session $2=project $3=files(줄바꿈) $4=gh rc $5=changed_files(기본: 목록 줄 수)
+merge_hook() {  # $1=session $2=project $3=files(줄바꿈) $4=gh rc $5=changed_files(기본: 목록 줄 수) $6=expectedHeadSha
   printf '%s\n' "$3" > "$TMPDIR/gh-files"  # 큰 목록은 환경 변수 한도를 넘으므로 파일로
   local errfile
   errfile="$(mktemp "$TMPDIR/stderr.XXXXXX")"
-  HOOK_STDOUT="$(payload_merge "$1" | PATH="$GH_STUB_DIR:$PATH" GH_STUB_FILES="$TMPDIR/gh-files" GH_STUB_RC="${4:-0}" GH_STUB_COUNT="${5:-}" \
+  HOOK_STDOUT="$(payload_merge "$1" "${6:-}" | PATH="$GH_STUB_DIR:$PATH" GH_STUB_FILES="$TMPDIR/gh-files" GH_STUB_RC="${4:-0}" GH_STUB_COUNT="${5:-}" \
     CLAUDE_PROJECT_DIR="$2" bash "$HOOKS/plant8-skill-gate.sh" merge 2>"$errfile")"
   HOOK_RC=$?
   HOOK_STDERR="$(cat "$errfile")"
@@ -482,6 +489,119 @@ write_gate_line "$projM2" review "$M2"
 write_gate_line "$projM2" qa "$M2"
 merge_hook "$M2" "$projM2" $'app/page.tsx'
 expect_rc "merge: 코드 PR + review·qa -> 통과" 0 "$HOOK_RC"
+
+# ---------------------------------------------------------------------------
+# merge: gh가 없거나 실패하면 origin ls-remote의 PR 헤드 커밋을 로컬 git diff로 판정
+pr_project() {  # $1=owner $2=repo → 새 프로젝트 경로만 stdout
+  local owner="$1" repo="$2" proj remote
+  proj="$(new_project)"
+  write_gate_line "$proj" review "setup"
+  remote="$(mktemp -d "$TMPDIR/remote.XXXXXX")/$owner/$repo.git"
+  mkdir -p "$(dirname "$remote")"
+  git init -q --bare "$remote" >/dev/null
+  git -C "$proj" remote add origin "$remote" >/dev/null
+  stage_file "$proj" app/moved.ts "code" >/dev/null
+  git -C "$proj" commit -q -m "add app/moved.ts" >/dev/null
+  git -C "$proj" branch -M main >/dev/null
+  git -C "$proj" push -q origin main >/dev/null
+  git -C "$proj" checkout -q -b feature >/dev/null
+  printf '%s' "$proj"
+}
+pr_commit() {  # $1=proj $2=rel
+  stage_file "$1" "$2" >/dev/null
+  git -C "$1" commit -q -m "add $2" >/dev/null
+}
+pr_push() {  # $1=proj → 현재 HEAD를 refs/pull/7/head로 강제 푸시
+  git -C "$1" push -q -f origin HEAD:refs/pull/7/head >/dev/null
+}
+pr_clone() {  # $1=proj → 그 프로젝트의 origin을 새 클론으로, 경로만 stdout
+  local proj="$1" remote clone
+  remote="$(git -C "$proj" config --get remote.origin.url)"
+  clone="$(mktemp -d "$TMPDIR/clone.XXXXXX")"
+  git clone -q -b main "$remote" "$clone" >/dev/null
+  git -C "$clone" config user.name "test" >/dev/null
+  git -C "$clone" config user.email "test@example.com" >/dev/null
+  printf '%s' "$clone"
+}
+
+# N1·N11·N8·N7·N9는 같은 프로젝트(o/r)에서 이 순서로(N9가 로컬 HEAD를 옮기므로 마지막)
+projPR="$(pr_project o r)"
+SPR="sid-fallback-$$"
+pr_commit "$projPR" docs/x.md
+pr_commit "$projPR" .planning/quick/x.md
+pr_push "$projPR"
+HEAD_DOCS="$(git -C "$projPR" rev-parse HEAD)"
+MAIN_SHA="$(git -C "$projPR" rev-parse origin/main)"
+
+merge_hook "$SPR" "$projPR" "" 127
+expect_rc "merge(gh 없음): 문서만 바뀐 PR + review만 -> 통과" 0 "$HOOK_RC"
+
+merge_hook "$SPR" "$projPR" "app/page.tsx" 0
+expect_rc "merge(gh 동작): gh가 코드 PR이라 하면 로컬 판정과 무관하게 -> exit 2" 2 "$HOOK_RC"
+
+merge_hook "$SPR" "$projPR" "" 1 "" "$HEAD_DOCS"
+expect_rc "merge(gh 실패): expectedHeadSha가 PR 헤드와 같음 -> 통과" 0 "$HOOK_RC"
+
+merge_hook "$SPR" "$projPR" "" 127 "" "$MAIN_SHA"
+expect_rc "merge(gh 없음): expectedHeadSha가 PR 헤드와 다름 -> exit 2" 2 "$HOOK_RC"
+
+pr_commit "$projPR" app/extra.ts
+merge_hook "$SPR" "$projPR" "" 127
+expect_rc "merge(gh 없음): 로컬 HEAD에 푸시 안 한 코드 커밋이 있어도 PR 헤드가 문서만 -> 통과" 0 "$HOOK_RC"
+
+# N2: 코드 파일 섞인 PR
+proj2="$(pr_project o r)"
+S2="sid-n2-$$"
+pr_commit "$proj2" docs/x.md
+pr_commit "$proj2" app/page.tsx
+pr_push "$proj2"
+merge_hook "$S2" "$proj2" "" 127
+expect_rc "merge(gh 없음): 코드 파일 섞인 PR + review만 -> exit 2" 2 "$HOOK_RC"
+
+# N3: 코드를 문서로 이름 바꾼 PR(옛 경로 포함 검사)
+proj3="$(pr_project o r)"
+S3="sid-n3-$$"
+git -C "$proj3" mv app/moved.ts docs/moved.md
+git -C "$proj3" commit -q -m "rename to docs" >/dev/null
+pr_push "$proj3"
+merge_hook "$S3" "$proj3" "" 127
+expect_rc "merge(gh 없음): 코드를 문서로 이름 바꾼 PR + review만 -> exit 2" 2 "$HOOK_RC"
+
+# N4: PR 헤드 커밋이 로컬에 없음(다른 클론에서 만든 커밋을 refs/pull/7/head로 푸시)
+proj4="$(pr_project o r)"
+S4="sid-n4-$$"
+clone4="$(pr_clone "$proj4")"
+stage_file "$clone4" docs/y.md >/dev/null
+git -C "$clone4" commit -q -m "docs only" >/dev/null
+git -C "$clone4" push -q -f origin HEAD:refs/pull/7/head >/dev/null
+merge_hook "$S4" "$proj4" "" 127
+expect_rc "merge(gh 없음): PR 헤드 커밋이 로컬에 없음 -> exit 2" 2 "$HOOK_RC"
+
+# N5: origin에 refs/pull/7/head 없음(브랜치로만 푸시)
+proj5="$(pr_project o r)"
+S5="sid-n5-$$"
+pr_commit "$proj5" docs/z.md
+git -C "$proj5" push -q origin feature >/dev/null
+merge_hook "$S5" "$proj5" "" 127
+expect_rc "merge(gh 없음): origin에 refs/pull/7/head 없음 -> exit 2" 2 "$HOOK_RC"
+
+# N6: origin이 payload owner/repo(o/r)와 다름
+proj6="$(pr_project x y)"
+S6="sid-n6-$$"
+pr_commit "$proj6" docs/w.md
+pr_push "$proj6"
+merge_hook "$S6" "$proj6" "" 127
+expect_rc "merge(gh 없음): origin이 payload owner/repo와 다름 -> exit 2" 2 "$HOOK_RC"
+
+# N10: 로컬에 origin/main이 없음
+proj10="$(pr_project o r)"
+S10="sid-n10-$$"
+pr_commit "$proj10" docs/v.md
+pr_push "$proj10"
+git -C "$proj10" update-ref -d refs/remotes/origin/main
+merge_hook "$S10" "$proj10" "" 127
+expect_rc "merge(gh 없음): 로컬에 origin/main이 없음 -> exit 2" 2 "$HOOK_RC"
+expect_contains "merge(gh 없음): 판정 못 하면 메시지에 git fetch origin 안내" "$HOOK_STDERR" "git fetch origin"
 
 # ---------------------------------------------------------------------------
 # Isolation: real gate logs unchanged

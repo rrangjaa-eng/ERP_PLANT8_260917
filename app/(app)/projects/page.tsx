@@ -11,6 +11,7 @@ import {
 import { listProjectFormReferences, scopeCreateFormReferences } from "@/domain/projects/references";
 import { listProjectStatusCatalog } from "@/domain/projects/status";
 import { recentFxRate } from "@/domain/money/currency";
+import { firstListParam, normalizeListYear, reconcileListYear, yearOptions } from "@/domain/projects/list-view";
 import { kstToday, kstYear } from "@/lib/kst-date";
 import { LIST_PAGE_SIZE } from "@/lib/paging";
 import { PageHeader } from "@/ui/page-header/PageHeader";
@@ -33,27 +34,12 @@ function projectsHref(opts?: { isNew?: boolean }): string {
   return opts?.isNew ? "/projects?new=1#project-form" : "/projects";
 }
 
-function yearOptions(currentYear: number): number[] {
-  return [currentYear + 1, currentYear, currentYear - 1, currentYear - 2, currentYear - 3];
-}
-
 function isValidSortKey(value: string | undefined): value is ProjectSortKey {
   return typeof value === "string" && (PROJECT_SORT_KEYS as readonly string[]).includes(value);
 }
 
-type ProjectsSearchParams = {
-  new?: string;
-  copyFrom?: string;
-  status?: string;
-  teamId?: string;
-  year?: string;
-  q?: string;
-  from?: string;
-  to?: string;
-  sort?: string;
-  dir?: string;
-  page?: string;
-};
+// 04-48(C-08) — URL 값은 배열로도 온다. 페이지는 `string`으로 단정하지 않고 도메인 입구(normalizeListParams)에 넘긴다.
+type ProjectsSearchParams = Record<string, string | string[] | undefined>;
 
 export default async function ProjectsPage({ searchParams }: { searchParams: Promise<ProjectsSearchParams> }) {
   const session = await getSession();
@@ -61,27 +47,38 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   if (!(await can(session.viewer, "projects", "view"))) notFound();
 
   const params = await searchParams;
-  const showCreateForm = params.new === "1";
+  const currentYear = kstYear(new Date());
+
+  // DR-30 연도 자동 전환 — 기간이 선택 연도와 겹치지 않으면 조회 · 자동 정산 판정 전에 연도만 고친 같은 경로 주소로
+  // 옮긴다(`page`는 뺀다, 문구 없음). 이동 주소의 연도는 reconcileListYear가 만든 4자리 연도 또는 `all`뿐이다(T-04-367).
+  const reconciledYear = reconcileListYear({
+    year: String(normalizeListYear(params.year, currentYear)),
+    from: firstListParam(params.from),
+    to: firstListParam(params.to),
+  });
+  if (reconciledYear) {
+    const next = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (key === "year" || key === "page" || value === undefined) continue;
+      for (const item of Array.isArray(value) ? value : [value]) next.append(key, item);
+    }
+    next.set("year", reconciledYear);
+    redirect(`/projects?${next.toString()}`);
+  }
+
+  const showCreateForm = firstListParam(params.new) === "1";
+  const copyFrom = firstListParam(params.copyFrom);
   const statusOptions: ProjectFilterOption[] = (await listProjectStatusCatalog(session.viewer)).map(
     ({ value, label }) => ({ value, label }),
   );
 
   // 네이티브 GET 폼이 빈 칸까지 `status=&...`로 실으므로 여기서 한 번만
   // undefined로 정규화한다(action-log/page.tsx와 같은 이유).
-  const status =
-    params.status && statusOptions.some((option) => option.value === params.status) ? params.status : undefined;
-  const teamId = params.teamId || undefined;
-  // D-89 — 조건 없는 URL은 올해(KST) 보기, `all`은 전체 연도.
-  const currentYear = kstYear(new Date());
-  const year = params.year === "all" ? "all" : params.year && /^\d{4}$/.test(params.year) ? Number(params.year) : currentYear;
-  const search = params.q || undefined;
-  const from = params.from || undefined;
-  const to = params.to || undefined;
-  const sortKey = isValidSortKey(params.sort) ? params.sort : "endDate";
-  const sortDirection = params.dir === "desc" ? "desc" : "asc";
-
-  // 올해 연도 값은 필터로 세지 않는다(UI-SPEC S1).
-  const hasFilter = Boolean(status || teamId || year !== currentYear || search || from || to);
+  const statusParam = firstListParam(params.status);
+  const status = statusParam && statusOptions.some((option) => option.value === statusParam) ? statusParam : undefined;
+  const sortParam = firstListParam(params.sort);
+  const sortKey = isValidSortKey(sortParam) ? sortParam : "endDate";
+  const sortDirection = firstListParam(params.dir) === "desc" ? "desc" : "asc";
   const statusLabel = statusOptions.find((option) => option.value === status)?.label;
 
   const [references, canWrite, list, copySource, usdDefaultFxRate] = await Promise.all([
@@ -90,16 +87,16 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     loadProjectList(session.viewer, {
       status,
       statusLabel,
-      teamId,
-      year,
-      search,
-      from,
-      to,
+      teamId: params.teamId,
+      year: params.year,
+      search: params.q,
+      from: params.from,
+      to: params.to,
       sort: { key: sortKey, direction: sortDirection },
       page: params.page,
     }),
     // 04-15(D-70 · S2) — 복사 등록 미리 채우기. 범위 밖 · 보관 · 없는 출처면 null → 일반 등록 폼.
-    showCreateForm && params.copyFrom ? getProjectCopySource(session.viewer, params.copyFrom) : Promise.resolve(null),
+    showCreateForm && copyFrom ? getProjectCopySource(session.viewer, copyFrom) : Promise.resolve(null),
     // 04-15(D-71) — 총 매출 예상가 USD 환율 칸 기본값(설정의 실제 값).
     showCreateForm ? recentFxRate("USD") : Promise.resolve(1),
   ]);
@@ -113,7 +110,9 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const canCreate = canWrite && scopedCreateReferences !== null && scopedCreateReferences.teams.length > 0;
   const createReferences = canCreate && showCreateForm ? scopedCreateReferences : null;
 
-  const { rows, totals, total, page, pageCount, periodErrors } = list;
+  const { rows, totals, total, page, pageCount, periodErrors, year, hasFilter, emptyKind } = list;
+  // 도메인이 정규화한 값(C-08) — 필터 줄 · 페이지 줄은 이 값만 쓴다.
+  const { teamId, search, from, to } = list.params;
   const canSeeAmount = totals.quoteAmountKrw !== undefined;
   // 지금 필터·정렬을 그대로 두고 쪽 번호만 바꾼다. 필터 폼은 page를 싣지 않아 필터를 바꾸면 1쪽이다.
   const pageParams = new URLSearchParams();
@@ -139,8 +138,8 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           렌더하지 않는다 — 한 화면에 1차는 하나다. */}
       {createReferences ? (
         <ProjectForm
-          key={copySource && params.copyFrom ? `copy-${params.copyFrom}` : "new"}
-          copySource={copySource && params.copyFrom ? { ...copySource, projectId: params.copyFrom } : null}
+          key={copySource && copyFrom ? `copy-${copyFrom}` : "new"}
+          copySource={copySource && copyFrom ? { ...copySource, projectId: copyFrom } : null}
           clients={references.clients}
           teams={createReferences.teams}
           pmUsers={createReferences.pmUsers}
@@ -156,15 +155,16 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           key={`${status ?? ""}|${teamId ?? ""}|${year}|${search ?? ""}|${from ?? ""}|${to ?? ""}`}
           teams={references.teams}
           statusOptions={statusOptions}
-          yearOptions={yearOptions(currentYear)}
+          yearOptions={yearOptions(currentYear, year)}
           defaultValues={{ status, teamId, year: String(year), q: search, from, to }}
+          sort={{ key: sortKey !== "endDate" ? sortKey : undefined, dir: sortDirection !== "asc" ? sortDirection : undefined }}
           hasFilter={hasFilter}
           periodErrors={periodErrors}
         />
-        {/* total === 0이면 ListEmpty가 이미 같은 「프로젝트 등록」
+        {/* 볼 수 있는 프로젝트가 하나도 없으면(none) ListEmpty가 이미 같은 「프로젝트 등록」
             행동을 준다 — vendors.tsx 선례와 같은 이유로 여기서도 중복 CTA를
-            만들지 않는다. */}
-        {canCreate && !showCreateForm && total > 0 ? (
+            만들지 않는다. 나머지 두 빈 갈래에서는 1차가 그대로 있다. */}
+        {canCreate && !showCreateForm && emptyKind !== "none" ? (
           <Link href={projectsHref({ isNew: true })} className={styles.toggle}>
             프로젝트 등록
           </Link>
@@ -173,17 +173,20 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
 
       {total > 0 ? <ListTotals totals={totals} /> : null}
 
-      {total === 0 && !hasFilter ? (
+      {emptyKind === "none" ? (
         <ListEmpty
           message="등록된 프로젝트가 없습니다"
           action={canCreate ? { label: "프로젝트 등록", href: projectsHref({ isNew: true }) } : undefined}
         />
-      ) : total === 0 ? (
+      ) : emptyKind === "default-view" ? (
+        <ListEmpty message={`${year}년에 걸친 프로젝트가 없습니다`} action={{ label: "전체 연도 보기", href: "/projects?year=all" }} />
+      ) : emptyKind === "filtered" ? (
         <ListEmpty message="조건에 맞는 프로젝트가 없습니다" action={{ label: "필터 지우기", href: "/projects" }} />
       ) : (
         <>
           <ProjectsTable
             rows={rows}
+            viewYear={year === "all" ? null : year}
             canSeeAmount={canSeeAmount}
             statusLabels={Object.fromEntries(statusOptions.map((option) => [option.value, option.label]))}
           />

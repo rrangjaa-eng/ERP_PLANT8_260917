@@ -2,18 +2,20 @@
 
 import { useRef, type FocusEvent, type KeyboardEvent } from "react";
 import Link from "next/link";
+import { parseListPeriod, periodOverlapsYear } from "@/domain/projects/list-view";
 import styles from "./projects.module.css";
 
 // SYSTEM.md §6-1 필터 한 줄 — 네이티브 GET 폼(action-log/filter-bar.tsx와
 // 같은 패턴, 04-05 Task 1 ④). 값이 바뀌면 즉시 다시 제출해 URL 검색
 // 파라미터로 상태를 관리한다(새로 고침·공유 가능). 검색만 타이핑 중 매
-// 글자 제출을 피하려고 blur에서 제출한다. 제출 시 `sort`/`dir`/`count`는
-// 이 폼에 없어 자연히 초기화된다 — 필터를 바꾸면 정렬·더 보기 누적도
-// 처음부터 다시 보는 것이 맞다.
+// 글자 제출을 피하려고 blur에서, 기간 두 칸은 묶음을 벗어날 때 제출한다.
+// 필터를 바꾸면 1쪽이다(`page`를 싣지 않는다) — 지금 정렬 `sort`·`dir`은
+// 숨은 값으로 실어 그대로 남긴다(C-24).
 export type ProjectFilterValues = {
   status?: string;
   teamId?: string;
-  year?: string;
+  /** 정규화된 보기 연도(`all` 또는 4자리) — 늘 있다. */
+  year: string;
   q?: string;
   from?: string;
   to?: string;
@@ -26,6 +28,7 @@ export function ProjectsFilterBar({
   statusOptions,
   yearOptions,
   defaultValues,
+  sort,
   hasFilter,
   periodErrors = {},
 }: {
@@ -33,6 +36,8 @@ export function ProjectsFilterBar({
   statusOptions: ProjectFilterOption[];
   yearOptions: number[];
   defaultValues: ProjectFilterValues;
+  /** 지금 정렬(기본값이면 비움) — 필터를 바꿔도 남긴다(C-24). */
+  sort?: { key?: string; dir?: string };
   hasFilter: boolean;
   /** 04-48(UX-04) — 서버가 판정한 기간 칸 오류(칸 아래 한 줄). */
   periodErrors?: { from?: string; to?: string };
@@ -49,6 +54,21 @@ export function ProjectsFilterBar({
     const changed =
       (fromRef.current?.value ?? "") !== (defaultValues.from ?? "") || (toRef.current?.value ?? "") !== (defaultValues.to ?? "");
     if (changed) formRef.current?.requestSubmit();
+  }
+
+  // DR-30 반대 방향 — 기간이 있는 채 연도를 바꿔 겹치지 않게 되면 방금 고른 연도를 되돌리지 않고 기간 두 칸을 비운다.
+  // 비운 칸은 비활성으로 두어 GET 주소에 `from=`·`to=`가 남지 않게 한다.
+  function onYearChange(value: string) {
+    const from = fromRef.current;
+    const to = toRef.current;
+    const { period } = parseListPeriod(from?.value, to?.value);
+    if (from && to && period && !periodOverlapsYear(period, value === "all" ? "all" : Number(value))) {
+      from.value = "";
+      to.value = "";
+      from.disabled = true;
+      to.disabled = true;
+    }
+    formRef.current?.requestSubmit();
   }
 
   // 텍스트 칸이 여럿이고 제출 버튼이 없는 폼은 브라우저가 Enter로 제출하지 않는다 — Enter는 직접 제출한다.
@@ -104,8 +124,8 @@ export function ProjectsFilterBar({
           id="year"
           name="year"
           className={styles.select}
-          defaultValue={defaultValues.year ?? ""}
-          onChange={() => formRef.current?.requestSubmit()}
+          defaultValue={defaultValues.year}
+          onChange={(event) => onYearChange(event.currentTarget.value)}
         >
           <option value="all">전체 연도</option>
           {yearOptions.map((year) => (
@@ -172,6 +192,9 @@ export function ProjectsFilterBar({
           onKeyDown={submitOnEnter}
         />
       </div>
+
+      {sort?.key ? <input type="hidden" name="sort" value={sort.key} /> : null}
+      {sort?.dir ? <input type="hidden" name="dir" value={sort.dir} /> : null}
 
       {hasFilter ? (
         <Link href="/projects" className={styles.toggle}>

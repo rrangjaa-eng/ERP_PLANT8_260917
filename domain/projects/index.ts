@@ -12,7 +12,13 @@ import { kstToday, kstYear } from "@/lib/kst-date";
 import { log } from "@/lib/log";
 import {
   attributionLabel,
+  bucketTotal,
   exclusionText,
+  firstListParam,
+  isTeamIdShape,
+  isUserFiltered,
+  listEmptyKind,
+  normalizeListParams,
   resolveListPage,
   parseListPeriod,
   resolveListRange,
@@ -52,6 +58,7 @@ import { denyWrite } from "@/domain/rules/deny-write";
 import { coversProjectTeam, loadActorTeamScope } from "@/domain/projects/status";
 import { findMembershipAtDate } from "@/repositories/team-memberships";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
+import { listTeams as repoListTeams } from "@/repositories/teams";
 
 export class ForbiddenError extends UserFacingError {}
 // D-47 완료(정산) 뒤 잠김의 domain 가드 자리 — `domain/vendors`의
@@ -274,6 +281,8 @@ export type ProjectListResult = {
   emptyKind: ListEmptyKind | null;
   /** 04-48 — 기본 보기(올해 · 전체 상태 · 전체 팀)와 다른 값이 있는가(「필터 지우기」 · 빈 갈래). */
   hasFilter: boolean;
+  /** 04-48(C-08) — 정규화된 URL 값(필터 줄 · 페이지 줄이 이 값만 되돌려 쓴다). */
+  params: { teamId?: string; search?: string; from?: string; to?: string };
 };
 
 export type ProjectListDeps = {
@@ -281,6 +290,7 @@ export type ProjectListDeps = {
   scope: typeof scopeFor;
   settle: (viewer: Viewer) => Promise<void>;
   repo: { aggregate: typeof repoAggregateProjects; listPage: typeof repoListProjectsPage };
+  teams: typeof repoListTeams;
 };
 
 // 드리즐이 PG 오류를 cause로 감싼다 — 운영 로그에는 PG 코드만(필터 값·금액 없음).
@@ -304,17 +314,24 @@ export async function loadProjectList(
   await (deps?.settle ?? settleForProjectList)(viewer);
   const scope = await (deps?.scope ?? scopeFor)(viewer, PROJECT_ENTITY);
 
-  // (RED 골격 — 04-48 Task 2가 normalizeListParams로 바꾼다)
-  const text = (value: ListParam): string | undefined => (typeof value === "string" ? value : undefined);
-  const year: number | "all" =
-    typeof query.year === "number" ? query.year : query.year === "all" ? "all" : text(query.year) ? Number(query.year) : kstYear(now());
+  // 04-48(C-08) — URL 값은 여기서 한 번 정규화한 뒤에만 쓴다(배열 첫 값 · 팀은 uuid 모양 + 고를 수 있는 팀 · 연도
+  // 2000–2100). 팀 목록은 필터 줄과 같은 조회이고, uuid 모양의 팀 값이 왔을 때만 읽는다.
+  const thisYear = kstYear(now());
+  const teamIds = isTeamIdShape(firstListParam(query.teamId))
+    ? (await (deps?.teams ?? repoListTeams)(viewer, { scope: { rows: "all", includeArchived: false } })).map((team) => team.id)
+    : [];
+  const params = normalizeListParams(
+    { status: query.status, teamId: query.teamId, year: query.year, q: query.search, from: query.from, to: query.to, page: query.page },
+    { teamIds, thisYear },
+  );
+  const year = params.year;
   // UX-04 — 기간은 서버가 판정한다. 오류가 있으면 기간 없이 연도 범위만 쓴다.
-  const { period, errors: periodErrors } = parseListPeriod(text(query.from), text(query.to));
+  const { period, errors: periodErrors } = parseListPeriod(params.from, params.to);
   const range = resolveListRange({ year, ...(period ? { period } : {}) });
   const filter: ProjectListFilter = {
-    status: query.status,
-    teamId: text(query.teamId),
-    search: text(query.search),
+    status: params.status,
+    teamId: params.teamId,
+    search: params.q,
     ...(range ? { range: { start: range.start, end: range.end } } : {}),
   };
   const sort = normalizeSort(query.sort);
@@ -322,11 +339,15 @@ export async function loadProjectList(
   let buckets: Awaited<ReturnType<typeof repoAggregateProjects>>;
   let rows: ProjectListRow[] = [];
   let paging: ReturnType<typeof resolveListPage>;
+  let visibleCount = 0;
   try {
     buckets = await repo.aggregate(viewer, { scope, filter });
-    paging = resolveListPage(buckets, typeof query.page === "number" ? query.page : text(query.page));
+    paging = resolveListPage(buckets, params.page);
     if (paging.total > 0) {
       rows = await repo.listPage(viewer, { scope, filter, sort, offset: paging.offset, limit: paging.limit });
+    } else {
+      // 빈 갈래 판정(none)에만 쓰는 필터 없는 건수 — 0건일 때만 한 번 더 집계한다.
+      visibleCount = bucketTotal(await repo.aggregate(viewer, { scope, filter: {} }));
     }
   } catch (error) {
     log.error("project.list_failed", { code: pgErrorCode(error) });
@@ -361,6 +382,7 @@ export async function loadProjectList(
   )) as ProjectListTotals;
 
   const dtos = (await projectMany(viewer, rows, PROJECT_LIST_DTO_SPEC)) as ProjectListItemDto[];
+  const hasFilter = isUserFiltered(params, thisYear);
   return {
     year,
     rows: dtos.map((dto) => ({
@@ -373,8 +395,9 @@ export async function loadProjectList(
     page: paging.page,
     pageCount: paging.pageCount,
     periodErrors,
-    emptyKind: null,
-    hasFilter: false,
+    emptyKind: listEmptyKind({ total: paging.total, userFiltered: hasFilter, visibleCount }),
+    hasFilter,
+    params: { teamId: params.teamId, search: params.q, from: params.from, to: params.to },
   };
 }
 

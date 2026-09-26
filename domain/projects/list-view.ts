@@ -123,8 +123,8 @@ export function parseListPeriod(
   return { period: { ...(from ? { from } : {}), ...(to ? { to } : {}) }, errors };
 }
 
-// ---- 04-48 Task 2 (RED 골격) ----
-/* eslint-disable @typescript-eslint/no-unused-vars -- RED 골격(GREEN에서 이 블록을 구현으로 바꾼다) */
+// ---- 04-48 Task 2 — 조회 조건(C-08 · DR-30 · 엔지 리뷰 C 공백 10) ----
+
 export type ListParam = string | readonly string[] | number | undefined;
 export type NormalizedListParams = {
   status?: string;
@@ -137,33 +137,86 @@ export type NormalizedListParams = {
 };
 export type ListEmptyKind = "none" | "default-view" | "filtered";
 
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// 같은 이름이 여럿이면 첫 값, 빈 문자열은 없는 값.
+export function firstListParam(value: ListParam): string | undefined {
+  const first = typeof value === "string" || typeof value === "number" ? String(value) : value?.[0];
+  return first ? first : undefined;
+}
+
+export function isTeamIdShape(value: string | undefined): boolean {
+  return value !== undefined && UUID_SHAPE.test(value);
+}
+
+// 연도는 `all` 또는 2000–2100 정수, 그 밖(0000 · 99999 · 글자)은 올해 — 틀린 값이 PG 날짜 오류로 가지 않는다(C-08).
+export function normalizeListYear(value: ListParam, thisYear: number): number | "all" {
+  const raw = firstListParam(value);
+  if (raw === "all") return "all";
+  if (raw === undefined || !/^\d{4}$/.test(raw)) return thisYear;
+  const year = Number(raw);
+  return year >= 2000 && year <= 2100 ? year : thisYear;
+}
+
 export function normalizeListParams(
-  _raw: { status?: ListParam; teamId?: ListParam; year?: ListParam; q?: ListParam; from?: ListParam; to?: ListParam; page?: ListParam },
+  raw: { status?: ListParam; teamId?: ListParam; year?: ListParam; q?: ListParam; from?: ListParam; to?: ListParam; page?: ListParam },
   opts: { teamIds: readonly string[]; thisYear: number },
 ): NormalizedListParams {
-  return { year: opts.thisYear };
+  const teamId = firstListParam(raw.teamId);
+  const out: NormalizedListParams = { year: normalizeListYear(raw.year, opts.thisYear) };
+  const status = firstListParam(raw.status);
+  if (status) out.status = status;
+  if (isTeamIdShape(teamId) && teamId && opts.teamIds.includes(teamId)) out.teamId = teamId;
+  for (const key of ["q", "from", "to", "page"] as const) {
+    const value = firstListParam(raw[key]);
+    if (value) out[key] = value;
+  }
+  return out;
 }
 
-export function isUserFiltered(_params: Omit<NormalizedListParams, "page">, _thisYear: number): boolean {
-  return false;
+// 기본 보기(올해 · 전체 상태 · 전체 팀 · 검색어·기간 없음)와 다른 값이 있는가. 올해 연도 값은 필터로 세지 않는다.
+export function isUserFiltered(params: Omit<NormalizedListParams, "page">, thisYear: number): boolean {
+  return Boolean(params.status || params.teamId || params.q || params.from || params.to || params.year !== thisYear);
 }
 
-export function listEmptyKind(_input: { total: number; userFiltered: boolean; visibleCount: number }): ListEmptyKind | null {
-  return null;
+// 빈 목록 세 갈래(UI-SPEC S1 empty) — 행이 있으면 null.
+export function listEmptyKind(input: { total: number; userFiltered: boolean; visibleCount: number }): ListEmptyKind | null {
+  if (input.total > 0) return null;
+  if (input.visibleCount === 0) return "none";
+  return input.userFiltered ? "filtered" : "default-view";
 }
 
-export function yearOptions(thisYear: number, _requested: number | "all"): number[] {
-  return [thisYear];
+// 연도 선택지 — 기본 창(내년 ~ 3년 전) + 창 밖이지만 정규화를 통과한 요청 연도(선택된 채 보이게), 내림차순.
+export function yearOptions(thisYear: number, requested: number | "all"): number[] {
+  const years = [thisYear + 1, thisYear, thisYear - 1, thisYear - 2, thisYear - 3];
+  if (requested !== "all" && !years.includes(requested)) years.push(requested);
+  return years.sort((a, b) => b - a);
 }
 
-export function formatListPeriod(_start: string | null, _end: string | null, _viewYear: number | null): string {
-  return "";
+// 목록 기간 칸(D-89) — 식별자형 날짜라 쉼표 없음.
+export function formatListPeriod(start: string | null, end: string | null, viewYear: number | null): string {
+  if (!start && !end) return "—";
+  const side = (date: string | null) => (!date ? "—" : Number(date.slice(0, 4)) === viewYear ? date.slice(5) : date);
+  if (start && end) {
+    if (start.slice(0, 4) !== end.slice(0, 4)) return `${start.slice(0, 7)} ~ ${end.slice(0, 7)}`;
+    return `${side(start)} ~ ${end.slice(5)}`;
+  }
+  return `${side(start)} ~ ${side(end)}`;
 }
 
-export function periodOverlapsYear(_period: ListPeriod | null, _year: number | "all"): boolean {
-  return false;
+// DR-30 — 기간이 연도와 겹치는가. 기간이 없거나 전체 연도면 늘 겹친다. 열린 쪽은 끝없이 본다.
+export function periodOverlapsYear(period: ListPeriod | null, year: number | "all"): boolean {
+  if (year === "all" || !period || (!period.from && !period.to)) return true;
+  return (!period.from || period.from <= `${year}-12-31`) && (!period.to || period.to >= `${year}-01-01`);
 }
 
-export function reconcileListYear(_input: { year: string | number; from?: string; to?: string }): string | null {
-  return "x";
+// DR-30 연도 자동 전환 — 제출된 기간(형식 오류 없음)이 선택 연도와 겹치지 않으면 고칠 연도(같은 해면 그 해, 해를 걸치거나
+// 한쪽이 열려 있으면 `all`), 바꿀 것이 없으면 null. 멱등이다(돌려준 연도는 늘 기간과 겹친다).
+export function reconcileListYear(input: { year: string | number; from?: string; to?: string }): string | null {
+  const year = input.year === "all" ? "all" : Number(input.year);
+  if (year !== "all" && !Number.isInteger(year)) return null;
+  const { period } = parseListPeriod(input.from, input.to);
+  if (!period || periodOverlapsYear(period, year)) return null;
+  if (period.from && period.to && period.from.slice(0, 4) === period.to.slice(0, 4)) return period.from.slice(0, 4);
+  return "all";
 }

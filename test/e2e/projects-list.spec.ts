@@ -778,6 +778,42 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
   });
 });
 
+// 코디네이터 대리 결정 2026-09-26 /design-review FINDING-013 (a) — 네이티브 날짜 칸은 글자를 셰도 DOM에 그려
+// scrollWidth로 잘림을 못 잰다. 같은 글꼴 · 패딩의 폭 자동 네이티브 날짜 칸(고유 폭)을 옆에 만들어 그보다 좁지 않은지 잰다.
+test.describe("프로젝트 목록 — 기간 네이티브 날짜 칸 폭 (FINDING-013)", () => {
+  test("1280 · 375 · 320에서 기간 두 칸이 네이티브 날짜 칸 고유 폭 이상이라 날짜가 잘리지 않고, 문서 가로 스크롤이 없다", async ({ page }) => {
+    const year = kstYear(new Date());
+    const pm = await setupPm();
+    await login(page, pm);
+    for (const width of [1280, 375, 320]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/projects?q=E2E날짜폭&from=${year}-09-01&to=${year}-12-31`);
+      await expect(page.getByTestId("filter-summary")).toBeAttached();
+      if (width < 700) await page.getByRole("button", { name: "필터", exact: true }).click();
+      await expect(page.locator("#to")).toBeVisible();
+      const m = await page.evaluate(() =>
+        ["from", "to"].map((id) => {
+          const el = document.getElementById(id) as HTMLInputElement;
+          const probe = el.cloneNode() as HTMLInputElement;
+          probe.removeAttribute("id");
+          probe.style.width = "auto";
+          probe.style.position = "absolute";
+          probe.style.visibility = "hidden";
+          el.parentElement!.appendChild(probe);
+          const intrinsic = probe.getBoundingClientRect().width;
+          probe.remove();
+          return { id, type: el.type, width: el.getBoundingClientRect().width, intrinsic };
+        }).concat([{ id: "doc", type: "", width: document.documentElement.scrollWidth, intrinsic: document.documentElement.clientWidth }]),
+      );
+      for (const field of m.slice(0, 2)) {
+        expect(field.type, `${width} ${field.id}`).toBe("date");
+        expect(field.width, `${width} ${field.id} 폭 ≥ 고유 폭`).toBeGreaterThanOrEqual(field.intrinsic - 0.5);
+      }
+      expect(m[2]!.width, `${width} 가로 스크롤`).toBeLessThanOrEqual(m[2]!.intrinsic);
+    }
+  });
+});
+
 // 코디네이터 대리 결정 2026-09-26 /design-review FINDING-015 (a) — 폰에서는 목록 행 전체(주 행 + 접힌 P2 줄)가
 // 그 프로젝트 링크 하나의 누름 자리다. 행 안의 포커스 가능한 요소는 링크 하나뿐이다(키보드 · 보조 기술 한 행 한 링크).
 test.describe("프로젝트 목록 — 폰 행 전체 링크 (FINDING-015)", () => {

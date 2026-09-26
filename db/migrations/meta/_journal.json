@@ -120,6 +120,20 @@
       "when": 1790414052589,
       "tag": "0016_money_krw_bigint",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790427893654,
+      "tag": "0017_cert_intake",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790427907334,
+      "tag": "0018_cert_winners_unique_deferrable",
+      "breakpoints": true
     }
   ]
 }

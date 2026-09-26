@@ -38,7 +38,9 @@
   outline-offset: var(--focus-offset);
 }
 
-.inputError {
+/* 오류 칸은 포커스 중에도 --danger 테두리다(포커스 링은 그대로) — 틀림 직후 포커스가 칸에 남는다(DOM 감사 F2). */
+.inputError,
+.inputError:focus-visible {
   border-color: var(--danger);
 }
 
@@ -47,10 +49,21 @@
   text-align: right;
 }
 
+/* 04.3-02 UI-SPEC 개정 ⑦(a) — 외부 수령자 화면 전용. */
+.external {
+  height: var(--s-12);
+  font-size: var(--fs-md);
+}
+
 .error {
   margin: var(--s-1) 0 0;
   color: var(--danger);
   font-size: var(--fs-sm);
+}
+
+/* SYSTEM.md §6-5 ①-k — 외부 수령자 화면의 칸 오류는 문장이라 --fs-md(15). */
+.errorExternal {
+  font-size: var(--fs-md);
 }
 
 /* PC 폼: 라벨 왼쪽 96px. 폰(<700px)은 위 규칙(row가 세로로 쌓인다)이 기본값이다 */

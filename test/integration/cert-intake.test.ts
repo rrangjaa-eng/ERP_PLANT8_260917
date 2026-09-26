@@ -1,0 +1,897 @@
+import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
+import { beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
+import type { DbOrTx } from "@/db/client";
+import { db } from "@/db/client";
+import { certEvents, certSignatureUploads, certSubmissions, certWinners } from "@/db/schema";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { loadIntake, selectWinner, submitCertificate, verifyLast4 } from "@/domain/certs/intake";
+import { createEvent } from "@/domain/certs/events";
+import { setSettingValue } from "@/domain/settings/registry";
+import { CERT_CONTACT_PHONE, CERT_ENABLED, CERT_RETENTION_YEARS } from "@/domain/settings/keys";
+import { listWinnersForIntake } from "@/repositories/cert-winners";
+import { listStaleSignatureUploadIntents } from "@/repositories/cert-submissions";
+import { getSignatureStore, type SignatureStore } from "@/lib/storage/signature-store";
+import {
+  createCertEvent,
+  seedSubmittedCert,
+  signaturePngFixture,
+  withCertFeatureOff,
+} from "@/test/e2e/helpers/cert";
+
+// 04.3-02 Task 2 ⓪(d) — 확인증 공개 흐름 통합 테스트(실제 Postgres).
+// 액션 파일(app/c/[token]/actions.ts)은 import하지 않는다(leak-scan 사실 —
+// server-only 사슬 때문에 Vitest가 import할 수 없다). 액션 첫 줄의 가드는
+// E2E 직접 POST가 증명한다.
+
+// 규약 C1 — 환경 게이트는 global-setup.ts가 CERT_FEATURE_ALLOWED=true로
+// 켜지만 설정 cert.enabled는 기본 꺼짐이다(각 테스트가 직접 켠다).
+beforeEach(async () => {
+  await setSettingValue(SYSTEM_VIEWER, CERT_ENABLED, true);
+});
+
+async function makeEvent(overrides?: {
+  name?: string;
+  phone?: string;
+  prizeName?: string;
+  quantity?: number;
+  delivery?: "onsite" | "parcel";
+}) {
+  return createCertEvent({
+    winners: [
+      {
+        name: overrides?.name ?? "김하늘",
+        phone: overrides?.phone ?? "010-4821-7730",
+        prizeName: overrides?.prizeName ?? "갤럭시 탭 S10",
+        quantity: overrides?.quantity ?? 1,
+        delivery: overrides?.delivery ?? "onsite",
+      },
+    ],
+  });
+}
+
+async function winnerIdOf(eventId: string, name: string): Promise<string> {
+  const rows = await listWinnersForIntake(SYSTEM_VIEWER, eventId);
+  const row = rows.find((r) => r.name === name);
+  if (!row) throw new Error(`당첨자를 찾지 못했다: ${name}`);
+  return row.id;
+}
+
+function submissionInputFor(rowId: string, proof: string, consent: { version: string; retentionYears: number }) {
+  return {
+    rowId,
+    proof,
+    name: "김하늘",
+    rrnFront6: "930412",
+    rrnBack7: "2123458",
+    phone: "010-4821-7730",
+    consent: true as const,
+    signaturePngBase64: signaturePngFixture().toString("base64"),
+    idempotencyKey: randomUUID(),
+    consentVersion: consent.version,
+    retentionYears: consent.retentionYears,
+  };
+}
+
+describe("확인증 공개 흐름 — 정상 제출·인증 거부", () => {
+  it("정상 제출: createEvent → selectWinner → verifyLast4 → submitCertificate → submitted, 제출 행 1", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+
+    const selected = await selectWinner(token, winnerId);
+    expect(selected.kind).toBe("ok");
+
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    expect(verified.kind).toBe("ok");
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    const result = await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent));
+
+    expect(result.kind).toBe("submitted");
+    const [submissionRow] = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(submissionRow).toBeDefined();
+  });
+
+  it("인증 거부 — 증표 없이 submitCertificate를 부르면 거부되고 제출 행 0", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+
+    const result = await submitCertificate(
+      token,
+      submissionInputFor(winnerId, "not-a-real-proof", { version: "v1", retentionYears: 5 }),
+    );
+
+    expect(result.kind).toBe("expiredProof");
+    const rows = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(rows).toHaveLength(0);
+  });
+});
+
+describe("확인증 공개 흐름 — 저장소 fail-closed 순서(S3)", () => {
+  it("put이 실패하고 객체 삭제가 성공하면 delete가 그 키로 불리고 의도 행이 0이다", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    let deletedKey: string | undefined;
+    let threw: unknown;
+    try {
+      await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent), {
+        signatureStore: {
+          put: () => Promise.reject(new Error("저장소 사용 불가(주입)")),
+          get: () => Promise.resolve(null),
+          delete: (key) => {
+            deletedKey = key;
+            return Promise.resolve();
+          },
+        },
+      });
+    } catch (e) {
+      threw = e;
+    }
+
+    expect(threw).toBeInstanceOf(Error);
+    expect(deletedKey).toBeDefined();
+    expect(deletedKey).toMatch(new RegExp(`^signatures/${eventId}/${winnerId}-`));
+    const intents = await db.select().from(certSignatureUploads);
+    expect(intents).toHaveLength(0);
+    const submissions = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(submissions).toHaveLength(0);
+  });
+
+  it("put이 실패하고 객체 삭제도 실패하면(고아 객체일 수 있다) 의도 행 1이 남는다", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    let threw: unknown;
+    try {
+      await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent), {
+        signatureStore: {
+          put: () => Promise.reject(new Error("저장소 사용 불가(주입)")),
+          get: () => Promise.resolve(null),
+          delete: () => Promise.reject(new Error("객체 삭제 실패(주입)")),
+        },
+      });
+    } catch (e) {
+      threw = e;
+    }
+
+    expect(threw).toBeInstanceOf(Error);
+    const intents = await db.select().from(certSignatureUploads);
+    expect(intents).toHaveLength(1);
+    const submissions = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(submissions).toHaveLength(0);
+  });
+
+  it("저장소 자체가 없으면(주입 없음, non-local APP_ENV) 의도 행을 커밋하기 전에 던져 0행이다", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    // tx-safety.test.ts와 같은 격리 재-import 방식(codex A3) — env는 모듈
+    // 최상단에서 한 번만 읽히므로(lib/env.ts), APP_ENV를 non-local로 바꾼
+    // 채 모듈 그래프를 새로 불러야 getSignatureStore()가 실제로 던진다.
+    vi.stubEnv("APP_ENV", "staging");
+    vi.resetModules();
+    const isolatedClient = await import("@/db/client");
+    let threw: unknown;
+    try {
+      const { submitCertificate: isolatedSubmitCertificate } = await import("@/domain/certs/intake");
+      await isolatedSubmitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent));
+    } catch (e) {
+      threw = e;
+    } finally {
+      await isolatedClient.closeDb();
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
+
+    expect(threw).toBeInstanceOf(Error);
+    const intents = await db.select().from(certSignatureUploads);
+    expect(intents).toHaveLength(0);
+    const submissions = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(submissions).toHaveLength(0);
+  });
+});
+
+describe("확인증 공개 흐름 — 연락처 정규화 실패(S8)", () => {
+  it("전화번호가 형식에 맞지 않으면 invalid(phone), 빈 문자열로 저장하지 않는다", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    const input = { ...submissionInputFor(winnerId, verified.proof, verified.consent), phone: "abc" };
+    const result = await submitCertificate(token, input);
+
+    expect(result).toEqual({ kind: "invalid", fields: ["phone"] });
+    const rows = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(rows).toHaveLength(0);
+  });
+});
+
+describe("확인증 공개 흐름 — verifyLast4 틀림 · 이미 제출(T3)", () => {
+  it("열린 자리에서 틀린 뒤 4자리 — wrong, 증표는 저장되지 않는다", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+
+    const result = await verifyLast4(token, winnerId, "0000", randomUUID(), null);
+    expect(result.kind).toBe("wrong");
+
+    const [winnerRow] = await db.select().from(certWinners).where(eq(certWinners.id, winnerId));
+    expect(winnerRow?.verifyProofHash).toBeNull();
+  });
+
+  it("제출된 자리 + 맞는 뒤 4자리 — submitted", async () => {
+    const seeded = await seedSubmittedCert();
+    const result = await verifyLast4(seeded.token, seeded.winnerId, seeded.phone.slice(-4), randomUUID(), null);
+    expect(result.kind).toBe("submitted");
+  });
+
+  it("제출된 자리 + 틀린 뒤 4자리 — wrong(E6-a 비공개, 이미 제출됐다는 사실이 새지 않는다)", async () => {
+    const seeded = await seedSubmittedCert();
+    const result = await verifyLast4(seeded.token, seeded.winnerId, "0000", randomUUID(), null);
+    expect(result.kind).toBe("wrong");
+  });
+});
+
+describe("확인증 공개 흐름 — 규약 C1 domain 두 겹째(설정 꺼짐)", () => {
+  it("cert.enabled를 끄면 loadIntake·selectWinner·verifyLast4·submitCertificate 넷 다 notFound, DB 변화 없음", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+
+    const { queryActionLog } = await import("@/repositories/action-log");
+    const intentsBefore = await db.select().from(certSignatureUploads);
+    const logsBefore = (await queryActionLog(SYSTEM_VIEWER)).filter((l) => l.entityId === winnerId);
+
+    await withCertFeatureOff(async () => {
+      expect((await loadIntake(token)).kind).toBe("notFound");
+      expect((await selectWinner(token, winnerId)).kind).toBe("notFound");
+      expect((await verifyLast4(token, winnerId, "7730", randomUUID(), null)).kind).toBe("notFound");
+      const submitResult = await submitCertificate(
+        token,
+        submissionInputFor(winnerId, "x", { version: "v1", retentionYears: 5 }),
+      );
+      expect(submitResult.kind).toBe("notFound");
+    });
+
+    const [winnerRow] = await db.select().from(certWinners).where(eq(certWinners.id, winnerId));
+    expect(winnerRow?.failedAttempts).toBe(0);
+    expect(winnerRow?.verifyProofHash).toBeNull();
+    const submissionRows = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(submissionRows).toHaveLength(0);
+
+    // T12 — 의도 행 · 행동 로그 수가 그대로다(C1-off).
+    const intentsAfter = await db.select().from(certSignatureUploads);
+    expect(intentsAfter).toHaveLength(intentsBefore.length);
+    const logsAfter = (await queryActionLog(SYSTEM_VIEWER)).filter((l) => l.entityId === winnerId);
+    expect(logsAfter).toHaveLength(logsBefore.length);
+  });
+});
+
+describe("확인증 공개 흐름 — 동의 묶음(#15)", () => {
+  it("확인 뒤 보존 연수를 바꿔도 저장된 확인증은 확인 때 묶인 값이다", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    expect(verified.kind).toBe("ok");
+    if (verified.kind !== "ok") throw new Error("unreachable");
+    expect(verified.consent.retentionYears).toBe(5);
+
+    await setSettingValue(SYSTEM_VIEWER, CERT_RETENTION_YEARS, 7);
+
+    // 받은 consent 그대로(5년) 제출 — 저장된다.
+    const result = await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent));
+    expect(result.kind).toBe("submitted");
+
+    const [submissionRow] = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(submissionRow?.retentionYears).toBe(5);
+  });
+
+  it("돌려보낸 retentionYears가 묶인 값과 다르면 expiredProof, 제출 행 0", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    expect(verified.kind).toBe("ok");
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    const result = await submitCertificate(
+      token,
+      submissionInputFor(winnerId, verified.proof, {
+        version: verified.consent.version,
+        retentionYears: verified.consent.retentionYears + 1, // 묶인 값과 다르게
+      }),
+    );
+    expect(result.kind).toBe("expiredProof");
+    const rows = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("다시 확인하면 새로 바뀐 보존 연수(7)로 묶인다(T12)", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+
+    const first = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    expect(first.kind).toBe("ok");
+
+    await setSettingValue(SYSTEM_VIEWER, CERT_RETENTION_YEARS, 7);
+
+    const second = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    expect(second.kind).toBe("ok");
+    if (second.kind !== "ok") throw new Error("unreachable");
+    expect(second.consent.retentionYears).toBe(7);
+  });
+});
+
+describe("확인증 공개 흐름 — E3-27 순서(서식 읽기 실패)", () => {
+  it("서식 읽기가 실패하면 put·의도 행·제출 행이 모두 0이다(고아 없음), 증표 해시도 그대로다(T12)", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    expect(verified.kind).toBe("ok");
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    const [winnerBefore] = await db.select().from(certWinners).where(eq(certWinners.id, winnerId));
+
+    let putCalled = 0;
+    let threw: unknown;
+    try {
+      await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent), {
+        loadDocumentNumberFormat: () => {
+          throw new Error("서식 읽기 실패(주입)");
+        },
+        signatureStore: {
+          put: () => {
+            putCalled++;
+            return Promise.resolve();
+          },
+          get: () => Promise.resolve(null),
+          delete: () => Promise.resolve(),
+        },
+      });
+    } catch (e) {
+      threw = e;
+    }
+
+    expect(threw).toBeInstanceOf(Error);
+    expect(putCalled).toBe(0);
+    const intents = await db.select().from(certSignatureUploads);
+    expect(intents).toHaveLength(0);
+    const submissions = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(submissions).toHaveLength(0);
+
+    const [winnerAfter] = await db.select().from(certWinners).where(eq(certWinners.id, winnerId));
+    expect(winnerAfter?.verifyProofHash).toBe(winnerBefore?.verifyProofHash);
+  });
+});
+
+describe("확인증 공개 흐름 — 규약 C3 서명 업로드 의도 행(T1)", () => {
+  it("정상 제출 — put이 불리는 순간 그 키의 의도 행이 이미 커밋돼 있고, 끝나면 의도 행 0", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    const realStore = getSignatureStore();
+    let sawIntentDuringPut = false;
+    const spyStore: SignatureStore = {
+      put: async (key, png) => {
+        const [row] = await db.select().from(certSignatureUploads).where(eq(certSignatureUploads.objectKey, key));
+        sawIntentDuringPut = Boolean(row);
+        return realStore.put(key, png);
+      },
+      get: (key) => realStore.get(key),
+      delete: (key) => realStore.delete(key),
+    };
+
+    const result = await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent), {
+      signatureStore: spyStore,
+    });
+    expect(result.kind).toBe("submitted");
+    expect(sawIntentDuringPut).toBe(true);
+
+    const intents = await db.select().from(certSignatureUploads);
+    expect(intents).toHaveLength(0);
+  });
+
+  it("put 뒤 트랜잭션이 실패하면 객체가 지워지고 의도 행이 0이다", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    const realStore = getSignatureStore();
+    let key: string | undefined;
+    const spyStore: SignatureStore = {
+      put: async (k, png) => {
+        key = k;
+        return realStore.put(k, png);
+      },
+      get: (k) => realStore.get(k),
+      delete: (k) => realStore.delete(k),
+    };
+
+    let threw: unknown;
+    try {
+      await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent), {
+        appendActionLog: () => {
+          throw new Error("로그 실패(주입)");
+        },
+        signatureStore: spyStore,
+      });
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw).toBeInstanceOf(Error);
+    if (!key) throw new Error("put이 불리지 않았다");
+
+    expect(await realStore.get(key)).toBeNull();
+    const intents = await db.select().from(certSignatureUploads);
+    expect(intents).toHaveLength(0);
+  });
+
+  it("트랜잭션 실패 + 객체 지우기 실패를 함께 주입하면 의도 행 1이 남고 listStaleSignatureUploadIntents가 그 키를 돌려준다", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    let key: string | undefined;
+    const spyStore: SignatureStore = {
+      put: async (k, png) => {
+        key = k;
+        return getSignatureStore().put(k, png);
+      },
+      get: (k) => getSignatureStore().get(k),
+      delete: () => Promise.reject(new Error("객체 삭제 실패(주입)")),
+    };
+
+    let threw: unknown;
+    try {
+      await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent), {
+        appendActionLog: () => {
+          throw new Error("로그 실패(주입)");
+        },
+        signatureStore: spyStore,
+      });
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw).toBeInstanceOf(Error);
+    if (!key) throw new Error("put이 불리지 않았다");
+
+    const intents = await db.select().from(certSignatureUploads).where(eq(certSignatureUploads.objectKey, key));
+    expect(intents).toHaveLength(1);
+
+    const stale = await listStaleSignatureUploadIntents(SYSTEM_VIEWER, new Date(Date.now() + 24 * 60 * 60 * 1000));
+    expect(stale).toContain(key);
+  });
+});
+
+describe("확인증 공개 흐름 — E3-32 표본 도우미", () => {
+  it("seedSubmittedCert() — 현장 수령, rrnMasked 형식, 제출 행 1", async () => {
+    const seeded = await seedSubmittedCert();
+    expect(seeded.rrnMasked).toBe("930412-2******");
+
+    const [row] = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, seeded.winnerId));
+    expect(row).toBeDefined();
+    expect(row?.address).toBeNull();
+    expect(row?.certNo).toBe(seeded.certNo);
+    expect(row?.id).toBe(seeded.submissionId);
+  });
+
+  it("seedSubmittedCert({delivery: parcel, extraWinners}) — 주소 있음, 추가 당첨자는 미제출", async () => {
+    const seeded = await seedSubmittedCert({
+      delivery: "parcel",
+      extraWinners: [{ name: "이도윤", phone: "010-2231-0045" }],
+    });
+    expect(seeded.extraWinnerIds).toHaveLength(1);
+
+    const [row] = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, seeded.winnerId));
+    expect(row?.address).not.toBeNull();
+
+    const [extraRow] = await db.select().from(certWinners).where(eq(certWinners.id, seeded.extraWinnerIds[0]!));
+    expect(extraRow?.submittedAt).toBeNull();
+  });
+
+  it("signaturePngFixture() — 1040×400, 184320바이트 이하, PNG 시그니처", () => {
+    const png = signaturePngFixture();
+    expect(png.length).toBeLessThanOrEqual(184_320);
+    expect(png.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  });
+});
+
+describe("DbOrTx 타입 — delete·execute를 담는다(04.3-02 ⑨)", () => {
+  it("타입 확인", () => {
+    expectTypeOf<DbOrTx>().toHaveProperty("delete");
+    expectTypeOf<DbOrTx>().toHaveProperty("execute");
+  });
+});
+
+describe("확인증 공개 흐름 — 풀 교착 없음(T-04.3-140)", () => {
+  it(
+    "풀 크기 + 1건 동시 제출이 전부 저장된다",
+    async () => {
+      const { env } = await import("@/lib/env");
+      const concurrency = env.DB_POOL_MAX + 1;
+
+      const winners = Array.from({ length: concurrency }, (_, i) => ({
+        name: `동시${i}`,
+        phone: `010${String(20000000 + i).padStart(8, "0")}`,
+      }));
+
+      const { eventId, token } = await createCertEvent({ winners });
+      const rows = await listWinnersForIntake(SYSTEM_VIEWER, eventId);
+
+      const prepared = await Promise.all(
+        winners.map(async (w) => {
+          const winnerRow = rows.find((r) => r.name === w.name);
+          if (!winnerRow) throw new Error(`당첨자를 찾지 못했다: ${w.name}`);
+          const verified = await verifyLast4(token, winnerRow.id, w.phone.slice(-4), randomUUID(), null);
+          if (verified.kind !== "ok") throw new Error(`verifyLast4 실패: ${verified.kind}`);
+          return { winnerId: winnerRow.id, proof: verified.proof, consent: verified.consent, phone: w.phone };
+        }),
+      );
+
+      // 여섯이 같은 순간에 트랜잭션을 열게 하는 장벽 — 모든 요청의 put이
+      // 들어온 뒤에야 풀린다.
+      let arrived = 0;
+      let releaseAll: () => void = () => {};
+      const barrier = new Promise<void>((resolve) => {
+        releaseAll = resolve;
+      });
+      const barrierStore = {
+        put: async () => {
+          arrived++;
+          if (arrived === concurrency) releaseAll();
+          await barrier;
+        },
+        get: () => Promise.resolve(null),
+        delete: () => Promise.resolve(),
+      };
+
+      const results = await Promise.all(
+        prepared.map((p) =>
+          submitCertificate(
+            token,
+            {
+              rowId: p.winnerId,
+              proof: p.proof,
+              name: "동시제출",
+              rrnFront6: "930412",
+              rrnBack7: "2123458",
+              phone: p.phone,
+              consent: true,
+              signaturePngBase64: signaturePngFixture().toString("base64"),
+              idempotencyKey: randomUUID(),
+              consentVersion: p.consent.version,
+              retentionYears: p.consent.retentionYears,
+            },
+            { signatureStore: barrierStore },
+          ),
+        ),
+      );
+
+      expect(results.every((r) => r.kind === "submitted")).toBe(true);
+      const submissionRows = await db.select().from(certSubmissions).where(eq(certSubmissions.eventId, eventId));
+      expect(submissionRows).toHaveLength(concurrency);
+      expect(new Set(submissionRows.map((r) => r.certNo)).size).toBe(concurrency);
+
+      // T12 — 의도 행 0(전부 정상 제출로 끝났다).
+      const intents = await db.select().from(certSignatureUploads);
+      expect(intents).toHaveLength(0);
+    },
+    20_000,
+  );
+});
+
+describe("확인증 공개 흐름 — E3-02 제출 로그 같은 tx(로그 실패 롤백 · 재제출)", () => {
+  it("로그 INSERT가 실패하면 제출이 롤백되고, 같은 증표·같은 입력으로 다시 제출하면 저장된다(T4)", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    expect(verified.kind).toBe("ok");
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    const input = submissionInputFor(winnerId, verified.proof, verified.consent);
+
+    const { findDocumentCounter } = await import("@/repositories/document-counters");
+    const { kstYear } = await import("@/lib/kst-date");
+    const period = String(kstYear(new Date()));
+    const counterBefore = await findDocumentCounter(SYSTEM_VIEWER, "cert", period);
+
+    const realStore = getSignatureStore();
+    let key: string | undefined;
+    const spyStore: SignatureStore = {
+      put: async (k, png) => {
+        key = k;
+        return realStore.put(k, png);
+      },
+      get: (k) => realStore.get(k),
+      delete: (k) => realStore.delete(k),
+    };
+
+    let threw: unknown;
+    try {
+      await submitCertificate(token, input, {
+        appendActionLog: () => {
+          throw new Error("행동 로그 실패(주입)");
+        },
+        signatureStore: spyStore,
+      });
+    } catch (e) {
+      threw = e;
+    }
+    expect(threw).toBeInstanceOf(Error);
+
+    const afterFailure = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(afterFailure).toHaveLength(0);
+    const [winnerAfterFailure] = await db.select().from(certWinners).where(eq(certWinners.id, winnerId));
+    expect(winnerAfterFailure?.submittedAt).toBeNull();
+
+    // T4 — 문서 번호 카운터가 나가지 않고, 가짜 저장소의 객체가 지워진다.
+    const counterAfterFailure = await findDocumentCounter(SYSTEM_VIEWER, "cert", period);
+    expect(counterAfterFailure?.value).toBe(counterBefore?.value);
+    if (!key) throw new Error("put이 불리지 않았다");
+    expect(await realStore.get(key)).toBeNull();
+
+    // 같은 증표 · 같은 입력으로 다시 제출 — 롤백이 증표를 되살렸다.
+    const retry = await submitCertificate(token, input);
+    expect(retry.kind).toBe("submitted");
+    const afterRetry = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(afterRetry).toHaveLength(1);
+
+    // T4 — 재시도 뒤 document_submit 로그가 정확히 1건이다.
+    const { queryActionLog } = await import("@/repositories/action-log");
+    const logs = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_submit" });
+    expect(logs.filter((l) => l.entityId === winnerId)).toHaveLength(1);
+  });
+
+  it("설정에서 document_submit을 끄면 제출은 저장되고 로그는 0건이다", async () => {
+    const { queryActionLog } = await import("@/repositories/action-log");
+    const { ACTION_LOG_OPTIONAL_TYPES } = await import("@/domain/settings/keys");
+    await setSettingValue(SYSTEM_VIEWER, ACTION_LOG_OPTIONAL_TYPES, []);
+
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    const result = await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent));
+    expect(result.kind).toBe("submitted");
+
+    const logs = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_submit" });
+    const logsForThisSubmission = logs.filter((l) => l.entityId === winnerId);
+    expect(logsForThisSubmission).toHaveLength(0);
+  });
+});
+
+describe("확인증 공개 흐름 — 같은 자리 두 번째 제출(T2)", () => {
+  it("같은 증표 · 같은 멱등 키로 순서대로 다시 제출하면 거부되고, 행 · 카운터 · 의도 행 · 로그가 늘지 않는다", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    const input = submissionInputFor(winnerId, verified.proof, verified.consent);
+    const first = await submitCertificate(token, input);
+    expect(first.kind).toBe("submitted");
+
+    const { findDocumentCounter } = await import("@/repositories/document-counters");
+    const { kstYear } = await import("@/lib/kst-date");
+    const period = String(kstYear(new Date()));
+    const counterBefore = await findDocumentCounter(SYSTEM_VIEWER, "cert", period);
+
+    const second = await submitCertificate(token, input);
+    expect(second.kind).toBe("expiredProof");
+
+    const rows = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(rows).toHaveLength(1);
+
+    const counterAfter = await findDocumentCounter(SYSTEM_VIEWER, "cert", period);
+    expect(counterAfter?.value).toBe(counterBefore?.value);
+
+    const intents = await db.select().from(certSignatureUploads);
+    expect(intents).toHaveLength(0);
+
+    const { queryActionLog } = await import("@/repositories/action-log");
+    const logs = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_submit" });
+    const logsForThisSubmission = logs.filter((l) => l.entityId === winnerId);
+    expect(logsForThisSubmission).toHaveLength(1);
+    expect(Object.keys(logsForThisSubmission[0]!.detail as Record<string, unknown>)).toEqual(["eventId"]);
+  });
+});
+
+describe("확인증 공개 흐름 — Task 3 ⑦ 주민등록번호 되묻기", () => {
+  it("검증번호 mismatch 번호로 제출하면 rrnRecheck, 제출 행 0 · 같은 번호 재제출(rrnRecheckConfirmed) → submitted", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    const input = { ...submissionInputFor(winnerId, verified.proof, verified.consent), rrnBack7: "2123459" };
+
+    const first = await submitCertificate(token, input);
+    expect(first.kind).toBe("rrnRecheck");
+    const rowsAfterFirst = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(rowsAfterFirst).toHaveLength(0);
+
+    const second = await submitCertificate(token, { ...input, rrnRecheckConfirmed: true });
+    expect(second.kind).toBe("submitted");
+    const rowsAfterSecond = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(rowsAfterSecond).toHaveLength(1);
+  });
+});
+
+describe("확인증 공개 흐름 — createEvent 문의 전화(T9)", () => {
+  it("설정 cert.contact_phone이 비어 있으면 contactMissing, 행사·당첨자 행 수가 늘지 않는다", async () => {
+    await setSettingValue(SYSTEM_VIEWER, CERT_CONTACT_PHONE, "");
+    const eventsBefore = await db.select().from(certEvents);
+    const winnersBefore = await db.select().from(certWinners);
+
+    const result = await createEvent(SYSTEM_VIEWER, {
+      name: "문의전화없음",
+      wonOn: "2026-01-01",
+      winners: [{ name: "김하늘", phone: "010-4821-7730", prizeName: "상품", quantity: 1, delivery: "onsite" }],
+    });
+
+    expect(result.kind).toBe("contactMissing");
+    const eventsAfter = await db.select().from(certEvents);
+    const winnersAfter = await db.select().from(certWinners);
+    expect(eventsAfter).toHaveLength(eventsBefore.length);
+    expect(winnersAfter).toHaveLength(winnersBefore.length);
+  });
+
+  it("문의 전화는 행사에 사본으로 복사되고, 그 뒤 설정을 바꿔도 loadIntake의 contactPhone은 그대로다", async () => {
+    await setSettingValue(SYSTEM_VIEWER, CERT_CONTACT_PHONE, "02-123-4567");
+    const result = await createEvent(SYSTEM_VIEWER, {
+      name: "문의전화사본",
+      wonOn: "2026-01-01",
+      winners: [{ name: "김하늘", phone: "010-4821-7730", prizeName: "상품", quantity: 1, delivery: "onsite" }],
+    });
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") throw new Error("unreachable");
+    const token = result.link.split("/c/").pop();
+    if (!token) throw new Error("링크에서 토큰을 찾지 못했다");
+
+    await setSettingValue(SYSTEM_VIEWER, CERT_CONTACT_PHONE, "031-123-4567");
+
+    const intake = await loadIntake(token);
+    expect(intake.kind).toBe("open");
+    if (intake.kind !== "open") throw new Error("unreachable");
+    expect(intake.contactPhone).toBe("021234567");
+  });
+});
+
+describe("확인증 공개 흐름 — Task 3 ⑦ 행사 경계 · 남의 증표 · 만료 증표 · DTO 허용 목록", () => {
+  it("행사 A의 토큰 + 행사 B의 당첨자 id → notFound(행사 경계)", async () => {
+    const eventA = await makeEvent();
+    const eventB = await makeEvent();
+    const winnerBId = await winnerIdOf(eventB.eventId, "김하늘");
+
+    const result = await selectWinner(eventA.token, winnerBId);
+    expect(result.kind).toBe("notFound");
+  });
+
+  it("남의 증표로 제출 → 거부, 제출 행 없음", async () => {
+    const eventA = await makeEvent();
+    const winnerAId = await winnerIdOf(eventA.eventId, "김하늘");
+    const verifiedA = await verifyLast4(eventA.token, winnerAId, "7730", randomUUID(), null);
+    if (verifiedA.kind !== "ok") throw new Error("unreachable");
+
+    const eventB = await makeEvent({ phone: "010-2231-0045" });
+    const winnerBId = await winnerIdOf(eventB.eventId, "김하늘");
+
+    // 행사 B의 당첨자에 행사 A에서 받은 증표를 써서 제출 시도 — 증표는
+    // 그 당첨자 행(winnerAId)에 묶여 있으므로 winnerBId 자리에서는 거부된다.
+    const result = await submitCertificate(
+      eventB.token,
+      submissionInputFor(winnerBId, verifiedA.proof, verifiedA.consent),
+    );
+    expect(result.kind).toBe("expiredProof");
+    const rows = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerBId));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("만료된 증표로 제출 → 거부, 제출 행 없음", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const past = new Date(Date.now() - 60 * 60 * 1000); // 1시간 전
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null, past);
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    const result = await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent));
+    expect(result.kind).toBe("expiredProof");
+    const rows = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("loadIntake rows[] 각 원소의 키는 허용 목록(rowId·maskedName·prizeLine?·label?)의 부분집합이다", async () => {
+    const { token } = await makeEvent();
+    const result = await loadIntake(token);
+    expect(result.kind).toBe("open");
+    if (result.kind !== "open") throw new Error("unreachable");
+    const allowedKeys = new Set(["rowId", "maskedName", "prizeLine", "label"]);
+    for (const row of result.rows) {
+      for (const key of Object.keys(row)) {
+        expect(allowedKeys.has(key)).toBe(true);
+      }
+    }
+  });
+});
+
+describe("확인증 공개 흐름 — 제출 확인과 트랜잭션 사이 경합(/review TOCTOU)", () => {
+  function storeThatRunsDuringPut(during: () => Promise<void>): SignatureStore {
+    const realStore = getSignatureStore();
+    return {
+      put: async (k, png) => {
+        await realStore.put(k, png);
+        await during();
+      },
+      get: (k) => realStore.get(k),
+      delete: (k) => realStore.delete(k),
+    };
+  }
+
+  it("확인을 통과한 뒤 트랜잭션 전에 담당자가 링크를 닫으면 notFound, 제출 행 0 · 의도 행 0", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    const result = await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent), {
+      signatureStore: storeThatRunsDuringPut(async () => {
+        await db.update(certEvents).set({ closedAt: new Date() }).where(eq(certEvents.id, eventId));
+      }),
+    });
+
+    expect(result).toEqual({ kind: "notFound" });
+    expect(await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId))).toHaveLength(0);
+    expect(await db.select().from(certSignatureUploads)).toHaveLength(0);
+  });
+
+  it("확인을 통과한 뒤 트랜잭션 전에 같은 자리가 다시 확인돼 증표가 바뀌면 expiredProof, 제출 행 0", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    const result = await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent), {
+      signatureStore: storeThatRunsDuringPut(async () => {
+        const again = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+        if (again.kind !== "ok") throw new Error("unreachable");
+      }),
+    });
+
+    expect(result).toEqual({ kind: "expiredProof" });
+    expect(await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId))).toHaveLength(0);
+    expect(await db.select().from(certSignatureUploads)).toHaveLength(0);
+  });
+});
+
+describe("확인증 공개 흐름 — 닫힌 행사에는 제출하지 않는다(/review 보강)", () => {
+  it.each([
+    ["수동으로 닫힘", { closedAt: new Date(), closedReason: "manual" as const }],
+    ["기한 지남", { expiresAt: new Date(Date.now() - 60_000) }],
+  ])("증표를 받은 뒤 %s → notFound, put 0 · 제출 행 0", async (_label, patch) => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    if (verified.kind !== "ok") throw new Error("unreachable");
+    await db.update(certEvents).set(patch).where(eq(certEvents.id, eventId));
+
+    const put = vi.fn();
+    const result = await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent), {
+      signatureStore: { put, get: vi.fn(), delete: vi.fn() },
+    });
+
+    expect(result).toEqual({ kind: "notFound" });
+    expect(put).not.toHaveBeenCalled();
+    expect(await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId))).toHaveLength(0);
+  });
+});

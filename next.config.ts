@@ -13,6 +13,22 @@ const nextConfig: NextConfig = {
   // 스킵 링크" 계약을 dev 서버로 도는 test/e2e/keyboard-nav.spec.ts가 검증할 수 있게
   // 하기 위한 변경(Rule 3, 02-07).
   devIndicators: false,
+  // 04.3-02 — T-04.3-11: 확인증 공개 링크가 Referer·검색·캐시로 새지 않게
+  // 막는다. 제3자 리소스가 없으므로 CSP는 프레임 금지(클릭재킹, /review)만 둔다.
+  headers() {
+    return [
+      {
+        source: "/c/:path*",
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+          { key: "Cache-Control", value: "no-store" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

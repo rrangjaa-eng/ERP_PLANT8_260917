@@ -501,6 +501,30 @@ describe("deploy.sh — 배포당 리비전 하나(선행 URL 확정)", () => {
   });
 });
 
+describe("deploy.sh — 확인증 환경 게이트(E3-07)", () => {
+  let repoDir: string;
+  beforeEach(() => {
+    repoDir = setupRepo();
+  });
+
+  it("스테이징 배포의 run deploy plant8-staging 줄에 CERT_FEATURE_ALLOWED=true가 있다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
+    expect(r.status).toBe(0);
+    const deployLine = r.log.split("\n").find((l) => l.startsWith("run deploy plant8-staging "));
+    expect(deployLine).toBeDefined();
+    expect(deployLine).toContain("CERT_FEATURE_ALLOWED=true");
+  });
+
+  it("프로덕션 배포 로그의 어떤 줄에도 CERT_FEATURE_ALLOWED가 없다", () => {
+    const PROD_SHA = "0123456789abcdef0123456789abcdef01234567";
+    const r = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", PROD_SHA], {
+      state: { "image-exists": true },
+    });
+    expect(r.status).toBe(0);
+    expect(r.log).not.toContain("CERT_FEATURE_ALLOWED");
+  });
+});
+
 describe("deploy.sh — 스모크 실패 시 자동 롤백", () => {
   let repoDir: string;
   beforeEach(() => {

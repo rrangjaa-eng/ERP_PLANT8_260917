@@ -2,6 +2,7 @@ import { z, ZodError } from "zod";
 import { describe, expect, it, vi } from "vitest";
 import { handleServerError } from "@/lib/actions/handle-server-error";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { log } from "@/lib/log";
 
 // 재현(defect 1): 법인카드 중복 등록 시 drizzle의 DrizzleQueryError.message가
 // "Failed query: insert into \"corp_cards\" (...) values (default, $1, $2, ...)
@@ -77,15 +78,49 @@ describe("handleServerError (defect 1 — 화이트리스트)", () => {
     expect(message).not.toContain("!");
   });
 
-  it("원본 오류를 서버 로그에 남긴다(디버깅 가능성 유지)", () => {
+  it("규약 C2 — 처리하지 못한 오류의 원문 대신 오류 이름만 서버 로그에 남는다", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     try {
       handleServerError(new Error("Failed query: insert into corp_cards ..."));
       expect(logSpy).toHaveBeenCalled();
       const loggedPayload = logSpy.mock.calls.map((call) => String(call[0])).join("\n");
-      expect(loggedPayload).toContain("Failed query");
+      expect(loggedPayload).toContain("action.unhandled_error");
+      expect(loggedPayload).toContain("Error");
+      expect(loggedPayload).not.toContain("Failed query");
+      expect(loggedPayload).not.toContain("insert into");
+      expect(loggedPayload).not.toContain("corp_cards");
     } finally {
       logSpy.mockRestore();
+    }
+  });
+
+  it("규약 C2 — 개인정보가 든 DB 오류도 이름 · SQLSTATE · 제약 이름만 로그에 남는다", () => {
+    const logErrorSpy = vi.spyOn(log, "error").mockImplementation(() => {});
+    try {
+      const cause = {
+        code: "23505",
+        constraint: "cert_winners_event_id_name_phone_unique",
+        detail: "Key (name, phone)=(김하늘, 01048217730) already exists.",
+      };
+      const dbError = new Error(
+        'insert into "cert_winners" ("event_id", "name", "phone", "address") values ($1, $2, $3, $4)\nparams: 김하늘, 01048217730, 서울시 강남구 테헤란로 1',
+        { cause },
+      );
+
+      handleServerError(dbError);
+
+      expect(logErrorSpy).toHaveBeenCalled();
+      const serialized = JSON.stringify(logErrorSpy.mock.calls);
+      expect(serialized).not.toContain("김하늘");
+      expect(serialized).not.toContain("01048217730");
+      expect(serialized).not.toContain("테헤란로");
+      expect(serialized).not.toContain("params");
+      expect(serialized).not.toContain("insert into");
+      expect(serialized).toContain("name");
+      expect(serialized).toContain("23505");
+      expect(serialized).toContain("cert_winners_event_id_name_phone_unique");
+    } finally {
+      logErrorSpy.mockRestore();
     }
   });
 });

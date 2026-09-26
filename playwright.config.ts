@@ -18,6 +18,9 @@ process.env.APP_ENV ??= "local";
 // 그대로 물려받으므로 여기 값만 올리고 webServer.env 블록은 건드리지 않는다(acceptance:
 // 그 블록은 변경 전과 동일해야 한다).
 process.env.RATE_LIMIT_LOGIN_MAX ??= "1000";
+// 규약 C4(04.3-02) — 확인증 E2E는 webServer가 물려받는 이 값으로 기능
+// 게이트를 켠다(설정 cert.enabled는 cert.setup.ts가 켠다).
+process.env.CERT_FEATURE_ALLOWED ??= "true";
 
 // 클라우드 세션은 Playwright CDN이 프록시에 막혀 `playwright install`이 실패한다
 // — 먼저 명시 경로(PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH)를 쓰고, 없으면 클라우드
@@ -44,6 +47,10 @@ const executablePath =
 // 중복 실행되지 않는다(§threat T-02-22, CI 예산 보호).
 const MOBILE_SPEC_PATTERN = "mobile-*.spec.ts";
 
+// 규약 C4(04.3-02) — 확인증 스펙은 이름에 cert가 들어간 파일 전부다
+// (*cert*.spec.ts). desktop · mobile-375와 격리해 전용 프로젝트에서만 돈다.
+const CERT_SPEC_PATTERN = "*cert*.spec.ts";
+
 export default defineConfig({
   testDir: "test/e2e",
   globalSetup: "./test/e2e/global-setup.ts",
@@ -68,11 +75,12 @@ export default defineConfig({
   projects: [
     {
       name: "desktop",
-      testIgnore: MOBILE_SPEC_PATTERN,
+      testIgnore: [MOBILE_SPEC_PATTERN, CERT_SPEC_PATTERN],
     },
     {
       name: "mobile-375",
       testMatch: MOBILE_SPEC_PATTERN,
+      testIgnore: CERT_SPEC_PATTERN,
       // 두 프로젝트는 erp_test 하나를 공유한다(함정 6) — 동시에 돌면 서로의
       // 데이터를 본다. mobile-admin-master-list-first.spec.ts는
       // document.documentElement.scrollWidth로 /admin/vendors의 가로 오버플로를
@@ -100,6 +108,23 @@ export default defineConfig({
       use: {
         viewport: { width: 375, height: 800 },
       },
+    },
+    {
+      // 규약 C4(04.3-02) — 기능을 켜는 준비가 desktop · mobile-375와 같은
+      // erp_test에서 겹치면 그 스펙들이 켜진 기능을 본다(예:
+      // admin-nav.spec.ts의 기획 PM 「관리」 없음) — 그래서 둘이 끝난
+      // 뒤에만 돈다.
+      // 스펙 하나만 빨리: --no-deps --workers=1 --project=cert-setup
+      // --project=certs test/e2e/cert.setup.ts <스펙>
+      name: "cert-setup",
+      testMatch: "cert.setup.ts",
+      dependencies: ["desktop", "mobile-375"],
+    },
+    {
+      name: "certs",
+      testMatch: CERT_SPEC_PATTERN,
+      workers: 1,
+      dependencies: ["cert-setup"],
     },
   ],
 });

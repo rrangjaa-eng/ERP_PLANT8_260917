@@ -438,6 +438,10 @@ deploy_service() {
   local deployed_at
   deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   local env_vars="APP_ENV=${ENV},APP_GIT_SHA=${SHA},APP_DEPLOYED_AT=${deployed_at},CLOUD_SQL_CONNECTION_NAME=${CONN_NAME},DB_IAM_USER=${iam_user},DB_NAME=${DB_NAME},DB_POOL_MAX=${DB_POOL_MAX},BETTER_AUTH_URL=${SERVICE_URL},AUTH_PROVIDER=email,GCP_PROJECT_ID=${PROJECT},CLOUD_SQL_INSTANCE_ID=${instance}"
+  if [ "$ENV" = "staging" ]; then
+    # 확인증 환경 게이트 — 스테이징만. 프로덕션은 Phase 11이 켠다(04.3 D-1107).
+    env_vars="${env_vars},CERT_FEATURE_ALLOWED=true"
+  fi
   local secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest,APP_DATA_KEY_v1=${app_data_key_secret}:latest,SMTP_HOST=${smtp_host_secret}:latest,SMTP_USER=${smtp_user_secret}:latest,SMTP_PASSWORD=${smtp_password_secret}:latest,SMTP_FROM=${smtp_from_secret}:latest"
 
   # 신규·기존 서비스 모두 바로 100% 트래픽으로 배포한다(--no-traffic/--tag

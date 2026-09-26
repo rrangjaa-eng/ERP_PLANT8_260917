@@ -6,6 +6,29 @@
   gap: var(--s-2);
 }
 
+/* 04.3-02 UI-SPEC 개정 ⑦(a) — 외부 수령자 화면 전용. 이유 줄이 버튼 아래로 */
+.wrapExternal {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--s-2);
+  width: 100%;
+}
+
+.wrapExternal .reason,
+.wrapExternal .reasonInfo {
+  text-align: center;
+  font-size: var(--fs-md); /* §6-5 ①-k 외부 화면 문장은 15px */
+}
+
+/* .btn(뒤에 선언, 같은 명시도)의 --control-h · --fs-sm보다 앞서도록 두 클래스로 건다(DOM 감사 F1). */
+.btn.external {
+  height: var(--s-12);
+  width: 100%;
+  font-size: var(--fs-md);
+  justify-content: center;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;

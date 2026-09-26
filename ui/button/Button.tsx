@@ -24,6 +24,9 @@ export type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "disable
   reasonTone?: ButtonReasonTone;
   /** 단축키 표기, 라벨 오른쪽에 kbd로 병기(§7-1). */
   shortcut?: string;
+  /** 04.3-02 UI-SPEC 개정 ⑦(a) — external은 외부 수령자 화면 전용(높이
+   * --s-12 · --fs-md · 폭 100%, 이유 줄이 버튼 아래). 기본값은 기존 모양. */
+  size?: "default" | "external";
   children: ReactNode;
 };
 
@@ -40,6 +43,7 @@ export function Button({
   reasonId: givenReasonId,
   reasonTone = "block",
   shortcut,
+  size = "default",
   children,
   className,
   type,
@@ -53,7 +57,8 @@ export function Button({
   const showReason = disabled && !pending && Boolean(disabledReason);
   const describedBy = [ariaDescribedBy, showReason ? reasonId : undefined].filter(Boolean).join(" ") || undefined;
 
-  // 다른 요소의 이유를 aria-describedby로 가리키면 이유 글자가 이미 화면에 한 번 있다.
+  // 다른 요소의 이유를 aria-describedby로 가리키면 이유 글자가 이미 화면에 한 번 있다
+  // (04.3-⑦(b) — 누적 잠김 1차가 알림 묶음의 두 줄을 이유로 삼는다).
   if (process.env.NODE_ENV !== "production" && disabled && !pending && !disabledReason && !ariaDescribedBy) {
     // 이유 없는 비활성 버튼은 금지된다(UX-06, SYSTEM.md §7-1). 런타임 동작은 바꾸지 않고
     // 개발 중에만 알린다 — 이 파일에 예외 없이 색 리터럴을 두지 않는 것과 같은 종류의 계약.
@@ -72,17 +77,21 @@ export function Button({
   }
 
   return (
-    <span className={styles.wrap}>
+    <span className={size === "external" ? styles.wrapExternal : styles.wrap}>
       <button
         type={type ?? "button"}
         {...rest}
         aria-disabled={inactive ? "true" : undefined}
         aria-describedby={describedBy}
         onClick={handleClick}
-        className={[styles.btn, styles[variant], className].filter(Boolean).join(" ")}
+        className={[styles.btn, styles[variant], size === "external" ? styles.external : "", className]
+          .filter(Boolean)
+          .join(" ")}
       >
         <span>{children}</span>
         {pending ? <span aria-hidden="true">…</span> : null}
+        {/* 04.3-⑦(c) — 진행 중을 보조기술에도 알린다(「…」는 aria-hidden 그대로). */}
+        {pending ? <span className="sr-only">처리 중</span> : null}
         {shortcut ? (
           <kbd className={variant === "primary" ? styles.kbdOnAccent : styles.kbd}>{shortcut}</kbd>
         ) : null}

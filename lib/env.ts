@@ -79,6 +79,12 @@ const rawSchema = z.object({
   APP_DEPLOYED_AT: optionalString(),
   MAX_INSTANCES: optionalNumber(),
   STATUS_CONN_BANNER_RATIO: numberWithDefault(0.8),
+  // 04.3-02(규약 C1) — 확인증 기능의 첫 번째 게이트(환경). __unset__·없음은
+  // "false"로 정규화된다. 설정 cert.enabled(두 번째 게이트)와 AND로
+  // 묶여야만 기능이 켜진다 — 이 값만으로는 켜지지 않는다.
+  CERT_FEATURE_ALLOWED: z
+    .preprocess(unsetToUndefined, z.enum(["true", "false"]).optional())
+    .transform((value) => value ?? "false"),
 });
 
 const envSchema = rawSchema.superRefine((data, ctx) => {
@@ -162,6 +168,7 @@ const ENV_KEYS = [
   "APP_DEPLOYED_AT",
   "MAX_INSTANCES",
   "STATUS_CONN_BANNER_RATIO",
+  "CERT_FEATURE_ALLOWED",
 ] as const;
 
 function loadEnv(): Env {

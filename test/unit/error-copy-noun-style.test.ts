@@ -20,6 +20,8 @@ const DEVELOPER_ONLY = [
   "lib/crypto.ts",
   "lib/gcp/",
   "repositories/",
+  // 외부 수령자 화면은 SYSTEM §6-5 예외(설계 게이트에서 확정한 높임말 문장) — DECISIONS.md 2026-09-26 「외부 수령자 화면 문구 예외」.
+  "app/c/",
 ];
 
 function sourceFiles(dir: string): string[] {

@@ -42,4 +42,7 @@ export const MENUS: MenuDef[] = [
   { key: "admin.settings", label: "설정" },
   { key: "admin.action-log", label: "행동 로그" },
   { key: "admin.archive", label: "보관함" },
+  // 04.3-02 — 확인증 행사 관리(수령자 QR 확인증 발급). 시드가 시스템
+  // 관리자 계급에 자동으로 켠다(seedMasterData가 MENUS 전체를 순회).
+  { key: "certs.events", label: "확인증 행사" },
 ];

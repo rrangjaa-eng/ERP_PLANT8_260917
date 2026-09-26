@@ -1535,3 +1535,30 @@ test.describe("견적 줄 표 — 오류가 남은 채 1차 · 저장 거부 쪽
     await expect(page.locator("tfoot").getByText(/전부 거부/)).toHaveCount(0);
   });
 });
+
+// 04-47 코드 검토 지적 — 거부 요약이 남은 동안의 오류 수 · 숨은 열 오류로 1차 · 기존 외화 줄을 원화 붙여넣기로 덮음.
+test.describe("견적 줄 표 — 거부 뒤 오류 수 · 숨은 열 오류 · 기존 외화 줄 덮기(04-47 검토)", () => {
+  test("서버 거부 `오류 1칸 · 전부 거부` 뒤 다른 두 칸에 `abc` → 1차(서버 요청 0) → 합계 행 `오류 3칸`", async ({ page }) => {
+    await openProjectWithSavedLines(page, [
+      { subcategory: "stage_construction", itemName: "거부수1", amount: 1000 },
+      { subcategory: "stage_construction", itemName: "거부수2", amount: 1000 },
+      { subcategory: "stage_construction", itemName: "거부수3", amount: 1000 },
+    ]);
+    await editNumberCell(page, 0, 4, "0");
+    await saveAndWait(page);
+    await expect(quoteCell(page, 0, 4)).toHaveAttribute("aria-invalid", "true");
+    await expect.poll(() => footerPieces(page)).toEqual([{ tone: "danger", text: "오류 1칸 · 전부 거부" }]);
+
+    await quoteCell(page, 1, 4).focus();
+    await pasteIntoFocusedCell(page, "abc");
+    await quoteCell(page, 2, 4).focus();
+    await pasteIntoFocusedCell(page, "abc");
+    await expect(invalidCells(page)).toHaveCount(3);
+
+    const actions = countServerActions(page);
+    await primarySave(page).click();
+    await expect(quoteCell(page, 0, 4)).toBeFocused();
+    await expect.poll(() => footerPieces(page)).toEqual([{ tone: "danger", text: "오류 3칸" }]);
+    expect(actions.count).toBe(0);
+  });
+});

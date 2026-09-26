@@ -100,6 +100,8 @@ const ADMIN_SCREENS = [
   "/admin/code-tables?new=1",
   "/admin/corp-cards",
   "/admin/corp-cards?new=1",
+  "/admin/holidays",
+  "/admin/holidays?new=1",
   "/admin/people",
   "/admin/people?new=1",
   "/admin/people/org",

@@ -150,13 +150,73 @@
   font-size: var(--fs-base);
 }
 
+.cancel {
+  margin-left: auto;
+}
+
 .textInput:focus-visible {
   outline: var(--focus-w) solid var(--focus);
   outline-offset: var(--focus-offset);
 }
 
+/* §7-3 폰 전략 — <700px에서 P1만 칸으로 남고 P2는 행 아래 접힌 줄 하나(vendors와 같은 모양). */
+.collapsedRow {
+  display: none;
+}
+
+.table .collapsedCell {
+  padding: 0 var(--cell-pad-x) var(--cell-pad-y);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  border-bottom: 0;
+}
+
 /* §3 터치 목표: 폰에서 짧은 글자 링크의 히트 영역만 44×44로 키운다. */
 @media (max-width: 699.98px) {
+  .p2 {
+    display: none;
+  }
+
+  .collapsedRow {
+    display: table-row;
+  }
+
+  /* 접힌 줄은 자기 행에 붙는다 — 선은 주 행 아래가 아니라 접힌 줄 아래에 긋는다. */
+  .table tbody tr:has(+ .collapsedRow) td {
+    border-bottom: 0;
+  }
+
+  .table .collapsedCell {
+    border-bottom: var(--line-w) solid var(--line);
+  }
+
+  /* S2-b: 폰 확정 버튼은 상태 줄 아래 전폭(보이는 높이 40 그대로). */
+  .confirm {
+    flex: 1 1 100%;
+  }
+
+  .confirm > span,
+  .confirm button {
+    width: 100%;
+  }
+
+  /* UI-SPEC 「터치 목표」(디자인 리뷰 #7): 보이는 높이가 40인 버튼(확정 · 폼 1차 · 취소)은
+     보이는 상자를 그대로 두고 투명 확장 영역으로 누르는 영역만 44 이상으로 넓힌다. */
+  .confirm button,
+  .form button,
+  .form a {
+    position: relative;
+  }
+
+  .confirm button::before,
+  .form button::before,
+  .form a::before {
+    content: "";
+    position: absolute;
+    /* 절대 위치의 기준은 테두리 안쪽(padding box)이라 테두리 두께만큼 더 넓힌다. */
+    inset: calc((var(--control-h) - var(--touch-min)) / 2 - var(--line-w)) 0;
+  }
+
   .addLink {
     display: inline-flex;
     align-items: center;

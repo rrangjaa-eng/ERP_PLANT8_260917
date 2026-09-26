@@ -5,6 +5,7 @@ import { createFixtureUser } from "./fixtures";
 import { db } from "@/db/client";
 import { holidays, holidayYearConfirmations } from "@/db/schema";
 import { toKstDate } from "@/domain/holidays/business-day";
+import { LUNAR_TABLE_LAST_YEAR } from "@/domain/holidays/lunar-table";
 import { setPermissionCell } from "@/domain/permissions/matrix";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -64,7 +65,7 @@ test.describe("공휴일 관리 /admin/holidays", () => {
 
     const count = await holidayCount(NEXT_YEAR);
     expect(count).toBeGreaterThan(0);
-    await expect(table.locator("tbody tr")).toHaveCount(count);
+    await expect(table.locator("tbody tr").filter({ visible: true })).toHaveCount(count);
     await expect(page.getByText(`후보 · 공휴일 ${count}일`, { exact: true })).toBeVisible();
 
     const confirm = page.getByRole("button", { name: `${NEXT_YEAR}년 공휴일 확정` });
@@ -143,8 +144,8 @@ test.describe("공휴일 표·확정 버튼의 상태", () => {
     await expect(nav.getByRole("link")).toHaveCount(expectedYears.length - 1);
 
     const table = page.getByRole("table", { name: `${LONG_NAME_YEAR}년 공휴일` });
-    await expect(table.locator("tbody tr")).toHaveCount(1);
-    await expect(table.locator("tbody tr td")).toHaveText(["04-12", "화", LONG_NAME, "선거일", "삭제"]);
+    await expect(table.locator("tbody tr").filter({ visible: true })).toHaveCount(1);
+    await expect(table.locator("tbody tr").filter({ visible: true }).locator("td")).toHaveText(["04-12", "화", LONG_NAME, "선거일", "삭제"]);
   });
 
   test("행이 없는 해(?year=1999)는 기본 연도로 떨어지고 후보를 만들지 않는다", async ({ page }) => {
@@ -443,5 +444,97 @@ test.describe("공휴일 삭제 · 되돌리기(04.2-12)", () => {
     await resultLine.getByRole("button", { name: "되돌리기" }).click();
     await expect(resultLine).toContainText(`되돌리지 못했습니다 · 이미 공휴일입니다(${OTHER_NAME})`);
     await expect(resultLine.getByRole("button", { name: "되돌리기" })).toHaveCount(0);
+  });
+});
+
+// 04.2-12 Task 3 — 추가 폼 상태(UI-SPEC S2-d · Copywriting 막힘·칸 오류·폼 전체 오류).
+test.describe("공휴일 추가 폼의 상태(04.2-12)", () => {
+  test.beforeEach(async () => {
+    await resetConfirmation(NEXT_YEAR);
+  });
+
+  test("열면 날짜 칸 포커스 · 빈 칸이면 1차 비활성 + 이유 + 다음 한 수가 그 칸으로 포커스를 옮긴다 · 종류에 빈 옵션이 없다", async ({
+    page,
+  }) => {
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/holidays?year=${NEXT_YEAR}&new=1`);
+
+    const date = page.getByLabel("날짜");
+    const name = page.getByLabel("이름");
+    await expect(date).toBeFocused();
+    await expect(page.getByLabel("종류")).toHaveValue("temporary");
+    await expect(page.getByLabel("종류").locator("option")).toHaveText(["임시공휴일", "선거일"]);
+
+    const submit = page.getByRole("button", { name: "공휴일 추가", exact: true });
+    await expect(submit).toHaveAttribute("aria-disabled", "true");
+    const reasonId = await submit.getAttribute("aria-describedby");
+    expect(reasonId).toBeTruthy();
+    await expect(page.locator(`[id="${reasonId}"]`)).toHaveText("추가할 수 없음 — 날짜 · 이름 2칸 ·");
+    await name.focus();
+    await page.getByRole("button", { name: "날짜 적기" }).click();
+    await expect(date).toBeFocused();
+
+    await date.fill(`${NEXT_YEAR}-07-14`);
+    await expect(page.locator(`[id="${reasonId}"]`)).toHaveText("추가할 수 없음 — 이름 1칸 ·");
+    await page.getByRole("button", { name: "이름 적기" }).click();
+    await expect(name).toBeFocused();
+
+    await name.fill("채운 이름");
+    await expect(submit).not.toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByRole("button", { name: /적기$/ })).toHaveCount(0);
+  });
+
+  test("min은 KST 내일 · max는 음력 표 마지막 해 12-31 · 오늘·규칙 행 날짜·음력 표 밖 해는 날짜 칸 아래 오류이고 값이 남는다", async ({
+    page,
+  }) => {
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/holidays?year=${NEXT_YEAR}&new=1`);
+    const today = toKstDate(new Date());
+    const date = page.getByLabel("날짜");
+    await expect(date).toHaveAttribute("min", nextIsoDate(today));
+    await expect(date).toHaveAttribute("max", `${LUNAR_TABLE_LAST_YEAR}-12-31`);
+    await page.getByLabel("이름").fill("오류 확인");
+    const submit = page.getByRole("button", { name: "공휴일 추가", exact: true });
+
+    const cases = [
+      { value: today, error: "오늘이나 지난 날짜입니다 · 내일 이후 날짜를 적어 주세요" },
+      { value: `${NEXT_YEAR}-10-03`, error: "이미 공휴일입니다(개천절) · 다른 날짜를 적어 주세요" },
+      {
+        value: `${LUNAR_TABLE_LAST_YEAR + 1}-01-05`,
+        error: `${LUNAR_TABLE_LAST_YEAR + 1}년은 음력 표에 없습니다 · ${LUNAR_TABLE_LAST_YEAR}년 이전 날짜를 적어 주세요`,
+      },
+    ];
+    for (const { value, error } of cases) {
+      await date.fill(value);
+      await submit.click();
+      await expect(page.getByText(error, { exact: true })).toBeVisible();
+      await expect(date).toHaveValue(value);
+      await expect(date).toHaveAttribute("aria-invalid", "true");
+    }
+    expect(await holidayCount(LUNAR_TABLE_LAST_YEAR + 1)).toBe(0);
+  });
+
+  test("제출 중 라벨 `공휴일 추가…` + 취소 비활성 · 요청이 끊기면 이유 자리에 `추가하지 못했습니다 · 다시 시도` · 폼 폭 720 이하", async ({
+    page,
+  }) => {
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/holidays?year=${NEXT_YEAR}&new=1`);
+    expect((await page.locator("form#holiday-form").boundingBox())!.width).toBeLessThanOrEqual(720);
+
+    await page.getByLabel("날짜").fill(`${NEXT_YEAR}-07-14`);
+    await page.getByLabel("이름").fill("끊김 확인");
+    const release = await holdNextAction(page, "abort");
+    const submit = page.getByRole("button", { name: "공휴일 추가", exact: true });
+    await submit.click();
+    await expect(submit).toHaveText("공휴일 추가…");
+    await expect(submit).toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByRole("link", { name: "취소" })).toHaveAttribute("aria-disabled", "true");
+    release();
+
+    await expect(page.getByText("추가하지 못했습니다 · 다시 시도", { exact: true })).toBeVisible();
+    await expect(submit).toHaveText("공휴일 추가");
+    const reasonId = await submit.getAttribute("aria-describedby");
+    await expect(page.locator(`[id="${reasonId}"]`)).toHaveText("추가하지 못했습니다 · 다시 시도");
+    expect(await db.select().from(holidays).where(eq(holidays.date, `${NEXT_YEAR}-07-14`))).toHaveLength(0);
   });
 });

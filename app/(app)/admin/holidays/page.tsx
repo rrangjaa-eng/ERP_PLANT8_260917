@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
@@ -128,23 +129,36 @@ export default async function HolidaysPage({
               <thead>
                 <tr>
                   <th scope="col">날짜</th>
-                  <th scope="col">요일</th>
+                  <th scope="col" className={styles.p2}>
+                    요일
+                  </th>
                   <th scope="col">이름</th>
-                  <th scope="col">구분</th>
+                  <th scope="col" className={styles.p2}>
+                    구분
+                  </th>
                   {canWrite ? <th scope="col">동작</th> : null}
                 </tr>
               </thead>
               <tbody>
+                {/* §7-3 폰 칸 접기 — P1(날짜·이름·동작)만 칸으로 남고 P2(요일·구분)는 행 아래
+                    접힌 줄 하나다. 상세 화면이 없어 P3로 숨기지 않는다. */}
                 {view.rows.map((row) => (
-                  <tr key={row.id}>
-                    <td className={styles.date}>{row.monthDay}</td>
-                    <td>{row.weekday}</td>
-                    <td className={styles.name}>{row.name}</td>
-                    <td>{row.kindLabel}</td>
-                    {canWrite ? (
-                      <td>{row.deletable ? <DeleteHoliday id={row.id} date={row.date} /> : null}</td>
-                    ) : null}
-                  </tr>
+                  <Fragment key={row.id}>
+                    <tr>
+                      <td className={styles.date}>{row.monthDay}</td>
+                      <td className={styles.p2}>{row.weekday}</td>
+                      <td className={styles.name}>{row.name}</td>
+                      <td className={styles.p2}>{row.kindLabel}</td>
+                      {canWrite ? (
+                        <td>{row.deletable ? <DeleteHoliday id={row.id} date={row.date} /> : null}</td>
+                      ) : null}
+                    </tr>
+                    <tr className={styles.collapsedRow}>
+                      <td colSpan={canWrite ? 3 : 2} className={styles.collapsedCell}>
+                        {`${row.weekday} · ${row.kindLabel}`}
+                      </td>
+                    </tr>
+                  </Fragment>
                 ))}
               </tbody>
             </table>

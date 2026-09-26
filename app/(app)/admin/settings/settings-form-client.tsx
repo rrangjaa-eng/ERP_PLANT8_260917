@@ -40,7 +40,7 @@ export type SettingsSection = {
 
 function errorMessageOf(result: { serverError?: unknown; validationErrors?: unknown }): string | null {
   if (typeof result.serverError === "string") return `저장하지 못했습니다 · ${result.serverError}`;
-  if (result.validationErrors) return "저장하지 못했습니다 · 입력값을 확인하세요";
+  if (result.validationErrors) return "저장 실패 · 입력값 확인";
   return null;
 }
 

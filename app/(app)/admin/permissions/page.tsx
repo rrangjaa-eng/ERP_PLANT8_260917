@@ -25,7 +25,7 @@ export default async function PermissionsPage() {
     values = grid.values;
   } catch (error) {
     if (error instanceof ForbiddenError) notFound();
-    errorMessage = "권한표를 불러오지 못했습니다 · 다시 시도";
+    errorMessage = "권한표 불러오기 실패 · 다시 시도";
   }
 
   return (

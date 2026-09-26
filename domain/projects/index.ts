@@ -245,6 +245,7 @@ export type ProjectListQuery = {
   search?: string;
   sort?: { key?: string; direction?: string };
   limit?: number;
+  page?: string | number;
 };
 
 export type ProjectListResult = {
@@ -253,6 +254,8 @@ export type ProjectListResult = {
   totals: ProjectListTotals;
   /** 표에 보이는 전체 행 수(귀속 구간 전부). */
   total: number;
+  page: number;
+  pageCount: number;
 };
 
 export type ProjectListDeps = {
@@ -297,7 +300,7 @@ export async function loadProjectList(
   let rows: ProjectListRow[];
   try {
     buckets = await repo.aggregate(viewer, { scope, filter });
-    rows = await repo.listPage(viewer, { scope, filter, sort, limit });
+    rows = await repo.listPage(viewer, { scope, filter, sort, offset: 0, limit });
   } catch (error) {
     log.error("project.list_failed", { code: pgErrorCode(error) });
     throw error;
@@ -340,6 +343,8 @@ export async function loadProjectList(
     })),
     totals,
     total: buckets.reduce((sum, bucket) => sum + bucket.count, 0),
+    page: 0,
+    pageCount: 0,
   };
 }
 

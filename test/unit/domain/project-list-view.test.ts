@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   attributionLabel,
+  bucketTotal,
   exclusionText,
   profitBasisFor,
   resolveListRange,
@@ -9,6 +10,8 @@ import {
 import { loadProjectList } from "@/domain/projects";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
 import { log } from "@/lib/log";
+import { LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
+import type { ProjectAggregateBucket } from "@/repositories/projects";
 
 // 04-17(D-88 · D-89 · D-90 · 계약 7) — 목록 보기 범위 · 귀속 · 합계 제목 · 제외 문구 · 수익금 기준의 순수 함수.
 // 실제 SQL(겹침 · 귀속 구간 · 기준 식)은 test/integration/projects-list.test.ts가 본다.
@@ -149,5 +152,90 @@ describe("loadProjectList — 목록 읽기 실패의 운영 로그(엔지 리�
 
     const listFailed = errorSpy.mock.calls.filter(([event]) => event === "project.list_failed");
     expect(listFailed).toEqual([["project.list_failed", { code: "57014" }]]);
+  });
+});
+
+describe("bucketTotal — 귀속 구간 건수 합(C-01)", () => {
+  it("구간 건수를 숫자로 더한다 — 문자열 이어 붙이기가 아니다", () => {
+    const total = bucketTotal([{ count: 30 }, { count: 25 }, { count: 1 }]);
+    expect(total).toBe(56);
+    expect(pageCountFrom(total, LIST_PAGE_SIZE)).toBe(2);
+  });
+});
+
+describe("loadProjectList — 번호 페이지 읽기 순서(C-23 · A-07)", () => {
+  const bucket = (name: string, count: number): ProjectAggregateBucket => ({
+    bucket: name,
+    count,
+    revenueKrw: 0,
+    quoteAmountKrw: 0,
+    executionAmountKrw: 0,
+    profitKrw: 0,
+    basisAmountKrw: 0,
+    profitRate: null,
+  });
+
+  function stubDeps(buckets: ProjectAggregateBucket[]) {
+    const calls: string[] = [];
+    const pages: { offset: number; limit: number }[] = [];
+    const deps = {
+      now: () => new Date("2026-09-26T00:00:00Z"),
+      settle: () => {
+        calls.push("settle");
+        return Promise.resolve();
+      },
+      scope: () => {
+        calls.push("scope");
+        return Promise.resolve({ rows: "all" as const, includeArchived: false });
+      },
+      repo: {
+        aggregate: () => {
+          calls.push("aggregate");
+          return Promise.resolve(buckets);
+        },
+        listPage: (_viewer: unknown, options: { offset: number; limit: number }) => {
+          calls.push("listPage");
+          pages.push({ offset: options.offset, limit: options.limit });
+          return Promise.resolve([]);
+        },
+      },
+    };
+    return { calls, pages, deps };
+  }
+
+  // 계급 없는 viewer — 투영이 노출표를 조회하지 않는다(DB 없이 순서만 본다).
+  const viewer = { id: "u1", roleId: "" };
+
+  it("판정 → 집계 → 쪽 보정 → 목록 순으로 읽고, 범위 밖 번호는 마지막 쪽의 OFFSET으로 읽는다", async () => {
+    const { calls, pages, deps } = stubDeps([bucket("in", 30), bucket("2027", 25), bucket("undetermined", 1)]);
+
+    const result = await loadProjectList(viewer, { page: "99" }, deps);
+
+    expect(calls).toEqual(["settle", "scope", "aggregate", "listPage"]);
+    expect(pages).toEqual([{ offset: 50, limit: LIST_PAGE_SIZE }]);
+    expect(result.total).toBe(56);
+    expect(result.page).toBe(2);
+    expect(result.pageCount).toBe(2);
+  });
+
+  it("숫자가 아닌 쪽 번호는 1쪽이다", async () => {
+    const { pages, deps } = stubDeps([bucket("in", 120)]);
+
+    const result = await loadProjectList(viewer, { page: "abc" }, deps);
+
+    expect(pages).toEqual([{ offset: 0, limit: LIST_PAGE_SIZE }]);
+    expect(result.page).toBe(1);
+    expect(result.pageCount).toBe(3);
+  });
+
+  it("0건이면 목록 행을 읽지 않는다", async () => {
+    const { calls, deps } = stubDeps([]);
+
+    const result = await loadProjectList(viewer, {}, deps);
+
+    expect(calls).toEqual(["settle", "scope", "aggregate"]);
+    expect(result.rows).toEqual([]);
+    expect(result.page).toBe(1);
+    expect(result.pageCount).toBe(0);
   });
 });

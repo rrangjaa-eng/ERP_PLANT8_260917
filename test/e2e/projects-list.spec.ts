@@ -104,6 +104,47 @@ test.describe("프로젝트 목록 — 올해 보기 · 표 위 귀속 합계 (0
     await expect(totals.locator("dt:text-is('견적') + dd")).toHaveText("3,234,000");
   });
 
+  test("50건씩 번호 페이지로 나뉘고, 2쪽 맨 위에 같은 그룹 머리글이 다시 있으며, 필터를 바꾸면 1쪽이고 범위 밖 번호는 마지막 쪽이다", async ({ page }) => {
+    const thisYear = kstYear(new Date());
+    const month = `${thisYear}-12`;
+    const marker = `E2E페이지-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    for (let i = 0; i < 51; i += 1) {
+      await createProject(SYSTEM_VIEWER, {
+        clientId: pm.clientId,
+        teamId: pm.teamId,
+        pmUserId: pm.pmUserId,
+        name: `${marker}-${String(i).padStart(2, "0")}`,
+        startDate: `${month}-01`,
+        endDate: `${month}-15`,
+      });
+    }
+
+    await login(page, pm);
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}`);
+    const pager = page.getByRole("navigation", { name: "프로젝트 페이지" });
+    await expect(pager.getByText("1–50 / 51건", { exact: true })).toBeVisible();
+    await expect(page.locator("table tbody a")).toHaveCount(50);
+    await expect(pager.getByRole("link", { name: "이전" })).toHaveCount(0);
+
+    await pager.getByRole("link", { name: "2", exact: true }).click();
+    await expect(page).toHaveURL(/page=2/);
+    await expect(page.locator("table tbody a")).toHaveCount(1);
+    // 페이지를 넘는 그룹 — 2쪽의 첫 줄이 같은 종료월 그룹 머리글이다.
+    await expect(page.locator("table tbody tr").first()).toHaveText(month);
+    await expect(pager.getByText("51–51 / 51건", { exact: true })).toBeVisible();
+    await expect(pager.getByRole("link", { name: "다음" })).toHaveCount(0);
+
+    await page.locator("#status").selectOption("bidding");
+    await expect(page).toHaveURL(/status=bidding/);
+    expect(page.url()).not.toContain("page=");
+    await expect(page.locator("table tbody a")).toHaveCount(50);
+
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}&page=99`);
+    await expect(page.locator("table tbody a")).toHaveCount(1);
+    await expect(pager.locator("[aria-current='page']").first()).toHaveText("2");
+  });
+
   test("정렬을 바꾸면 첫 행이 바뀌고, 필터 지우기로 기본 보기에 돌아간다", async ({ page }) => {
     const marker = `E2E정렬-${randomUUID().slice(0, 8)}`;
     const pm = await setupPm();

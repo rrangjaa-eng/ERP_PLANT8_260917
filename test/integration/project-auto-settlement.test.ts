@@ -268,7 +268,7 @@ describe("목록 요청의 판정 한 번 · 보기 권한 (04-11 Task 2 ② · 
 
     const scope = { rows: "all", includeArchived: false } as const;
     const [rows, buckets] = await Promise.all([
-      repoListProjectsPage(SYSTEM_VIEWER, { scope, filter: {}, sort: { key: "endDate", direction: "asc" }, limit: 50 }),
+      repoListProjectsPage(SYSTEM_VIEWER, { scope, filter: {}, sort: { key: "endDate", direction: "asc" }, offset: 0, limit: 50 }),
       repoAggregateProjects(SYSTEM_VIEWER, { scope, filter: { status: "in_progress" } }),
     ]);
 

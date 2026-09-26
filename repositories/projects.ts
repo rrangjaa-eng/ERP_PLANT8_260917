@@ -228,7 +228,7 @@ function resolveSortColumn(
 // (오프셋이 아니라 개수 증가 방식 — Task 1 action ③).
 export async function listProjectsPage(
   viewer: Viewer,
-  opts: { scope: Scope; filter: ProjectListFilter; sort: ProjectSort; limit: number },
+  opts: { scope: Scope; filter: ProjectListFilter; sort: ProjectSort; offset: number; limit: number },
 ): Promise<ProjectListRow[]> {
   void viewer;
   if (opts.scope.rows === "none") return [];

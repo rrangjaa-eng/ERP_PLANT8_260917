@@ -106,7 +106,7 @@ async function addRevenue(projectId: string, kind: "issue" | "payment", amount: 
 const ALL_SCOPE = { rows: "all", includeArchived: false } as const;
 
 async function repoRows(filter: ProjectListFilter) {
-  return repoListProjectsPage(SYSTEM_VIEWER, { scope: ALL_SCOPE, filter, sort: { key: "endDate", direction: "asc" }, limit: 50 });
+  return repoListProjectsPage(SYSTEM_VIEWER, { scope: ALL_SCOPE, filter, sort: { key: "endDate", direction: "asc" }, offset: 0, limit: 50 });
 }
 
 const pmViewer = (userId: string): Viewer => ({ id: userId, roleId: DEFAULT_ROLE_ID });
@@ -256,17 +256,38 @@ describe("loadProjectList — 목록 입구 (04-17, 실제 Postgres)", () => {
     }
   });
 
-  it("(b) 합계가 렌더된 행 수와 무관하다 — 1건만 불러와도 전체 합", async () => {
+  it("(b · D-91) 125행 보기 — page=3은 101~125번째 25행, page=99는 마지막 쪽, 1~3쪽을 이으면 전체와 순서까지 같고 합계는 쪽과 무관하다", async () => {
     const base = await makeBase();
-    const marker = `합계테스트-${randomUUID().slice(0, 8)}`;
-    for (const quote of [1_000_000, 2_000_000, 3_000_000]) {
-      await makeProject(base, marker, { endDate: "2026-10-01", line: { quote, execution: 0 } });
+    const marker = `페이지-${randomUUID().slice(0, 8)}`;
+    for (let i = 0; i < 125; i += 1) {
+      await makeProject(base, marker, {
+        endDate: `2026-10-${String((i % 28) + 1).padStart(2, "0")}`,
+        ...(i < 3 ? { line: { quote: (i + 1) * 1_000_000, execution: 0 } } : {}),
+      });
     }
+    const all = await repoListProjectsPage(SYSTEM_VIEWER, {
+      scope: ALL_SCOPE,
+      filter: { search: marker },
+      sort: { key: "endDate", direction: "asc" },
+      offset: 0,
+      limit: 200,
+    });
+    expect(all).toHaveLength(125);
 
-    const result = await loadProjectList(pmViewer(base.pmUserId), { year: "all", search: marker, limit: 1 });
-    expect(result.rows).toHaveLength(1);
-    expect(result.totals.count).toBe(3);
-    expect(result.totals.quoteAmountKrw).toBe(6_000_000);
+    const pages = [];
+    for (const page of [1, 2, 3]) pages.push(await loadProjectList(SYSTEM_VIEWER, { year: 2026, search: marker, page }));
+    expect(pages.map((result) => result.rows.length)).toEqual([50, 50, 25]);
+    expect(pages.map((result) => result.page)).toEqual([1, 2, 3]);
+    expect(pages[2]?.pageCount).toBe(3);
+    expect(pages.flatMap((result) => result.rows.map((row) => row.id))).toEqual(all.map((row) => row.id));
+
+    const clamped = await loadProjectList(SYSTEM_VIEWER, { year: 2026, search: marker, page: 99 });
+    expect(clamped.page).toBe(3);
+    expect(clamped.rows.map((row) => row.id)).toEqual(pages[2]?.rows.map((row) => row.id));
+
+    // 합계는 렌더된 쪽의 행 수와 무관하다.
+    expect(pages[2]?.totals.count).toBe(125);
+    expect(pages[2]?.totals.quoteAmountKrw).toBe(6_000_000);
   });
 
   it("(c) 목록과 합계가 같은 상태 필터를 적용하고 제목에 상태 라벨이 들어간다", async () => {

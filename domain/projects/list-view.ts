@@ -73,3 +73,8 @@ export function totalsTitle(input: { statusLabel?: string; range: ListRange | nu
 export function profitBasisFor(status: string, issuedCount: number): ProfitBasis {
   return issuedCount > 0 && (ISSUED_BASIS_STATUSES as readonly string[]).includes(status) ? "issued" : "quote";
 }
+
+export function bucketTotal(buckets: readonly { count: number }[]): number {
+  void buckets;
+  return 0;
+}

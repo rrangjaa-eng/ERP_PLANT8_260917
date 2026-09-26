@@ -39,8 +39,9 @@ export async function withTimeoutConversion<T>(fn: () => Promise<T>): Promise<T>
 }
 
 export async function withTransaction<T>(fn: (tx: DbOrTx) => Promise<T>): Promise<T> {
-  // db.transaction이 주는 tx는 DbOrTx보다 넓다(execute를 가진다) — DbOrTx
-  // 타입 자체는 넓히지 않고 여기서만 SET LOCAL에 쓴다.
+  // db.transaction이 주는 tx는 DbOrTx보다 넓다 — DbOrTx 타입 자체는
+  // 04.2-06이 delete·execute까지 넓혔지만, 여기서는 넓어지기 전 tx 원본에
+  // SET LOCAL을 쓴다.
   return withTimeoutConversion(() =>
     db.transaction(async (tx) => {
       await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);

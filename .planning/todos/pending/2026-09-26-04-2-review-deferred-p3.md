@@ -27,3 +27,8 @@ files:
 ## Solution
 
 1은 「N건 삭제됨」으로 마지막 건만 되돌리기, 2는 서버 오류 문구 표시 또는 새로고침, 3은 30초 안이면 건너뛰기, 4는 `SET read_at = opened.at AT TIME ZONE 'UTC'`, 5는 55P03을 잡아 null 반환 뒤 finish, 6은 2034년부터 경고 로그와 음력 표 연장. 각 항목은 TDD로 한 커밋씩 처리한다.
+
+## /qa 이월 (2026-09-26, health 99)
+
+- ISSUE-002 [low] 잠금이 걸리는 N번째 시도에도 「이메일 또는 비밀번호 오류」가 뜨고, 잠금 문구는 N+1번째 시도부터 보인다(domain/auth/hooks.ts:66-69, before 훅에서만 잠금 확인). 해법: recordLoginFailure가 locked:true를 돌려주면 그 응답을 lockedMessage(windowMinutes) 403으로 바꾸기. 04.2 이전부터 있던 동작이다.
+- /notifications loading.tsx 스켈레톤의 「시각」 th에 styles.time이 없어 로드 뒤 머리글이 옮겨질 수 있다(코드 판독만, 실측 불가 — 알림함 링크가 전체 페이지 이동이라 스켈레톤이 보이지 않았다).

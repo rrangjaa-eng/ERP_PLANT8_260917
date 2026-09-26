@@ -676,4 +676,37 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
       expect(m.teamRight).toBeLessThanOrEqual(m.clientWidth);
     });
   });
+
+  test("(F3) PC 1280 · 1024에서 기간 오류 한 줄이 있어도 기간 칸 바닥이 다른 칸과 같고 칸들이 오류 없을 때 자리에 있다", async ({ page }) => {
+    const year = kstYear(new Date());
+    const pm = await setupPm();
+    await login(page, pm);
+    const measure = () =>
+      page.evaluate(() => {
+        const rect = (id: string) => {
+          const r = document.getElementById(id)!.getBoundingClientRect();
+          return { top: r.top, bottom: r.bottom };
+        };
+        return { status: rect("status"), teamId: rect("teamId"), year: rect("year"), from: rect("from"), to: rect("to"), q: rect("q-wide") };
+      });
+    for (const width of [1280, 1024]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto("/projects?q=E2E정렬기준");
+      await expect(page.locator("#status")).toBeVisible();
+      const clean = await measure();
+      await page.goto(`/projects?q=E2E정렬기준&from=${year}-10-31&to=${year}-09-01`);
+      const error = page.getByText("기간이 거꾸로입니다 · 앞 날짜를 먼저 적어 주세요", { exact: true });
+      await expect(error).toBeVisible();
+      const withError = await measure();
+      for (const id of ["status", "teamId", "year", "to", "q"] as const) {
+        if (Math.abs(clean[id].top - clean.from.top) > 0.5) continue; // 1024에서 줄바꿈된 검색은(오류 없을 때도) 다음 줄
+        expect(withError[id].bottom, `${width} ${id} 바닥 = 기간 바닥`).toBeCloseTo(withError.from.bottom, 0);
+      }
+      for (const id of ["status", "teamId", "year", "from", "to", "q"] as const) {
+        expect(withError[id].top, `${width} ${id} 오류 없을 때 자리`).toBeCloseTo(clean[id].top, 0);
+      }
+      const errorBox = await error.boundingBox();
+      expect(errorBox && errorBox.y >= withError.from.bottom).toBe(true);
+    }
+  });
 });

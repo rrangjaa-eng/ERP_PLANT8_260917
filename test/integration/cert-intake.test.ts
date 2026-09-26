@@ -81,7 +81,7 @@ describe("확인증 공개 흐름 — 정상 제출·인증 거부", () => {
     const selected = await selectWinner(token, winnerId);
     expect(selected.kind).toBe("ok");
 
-    const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
     expect(verified.kind).toBe("ok");
     if (verified.kind !== "ok") throw new Error("unreachable");
 
@@ -111,7 +111,7 @@ describe("확인증 공개 흐름 — 저장소 fail-closed 순서(S3)", () => {
   it("put이 실패하고 객체 삭제가 성공하면 delete가 그 키로 불리고 의도 행이 0이다", async () => {
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
-    const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
     if (verified.kind !== "ok") throw new Error("unreachable");
 
     let deletedKey: string | undefined;
@@ -143,7 +143,7 @@ describe("확인증 공개 흐름 — 저장소 fail-closed 순서(S3)", () => {
   it("put이 실패하고 객체 삭제도 실패하면(고아 객체일 수 있다) 의도 행 1이 남는다", async () => {
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
-    const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
     if (verified.kind !== "ok") throw new Error("unreachable");
 
     let threw: unknown;
@@ -169,7 +169,7 @@ describe("확인증 공개 흐름 — 저장소 fail-closed 순서(S3)", () => {
   it("저장소 자체가 없으면(주입 없음, non-local APP_ENV) 의도 행을 커밋하기 전에 던져 0행이다", async () => {
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
-    const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
     if (verified.kind !== "ok") throw new Error("unreachable");
 
     // tx-safety.test.ts와 같은 격리 재-import 방식(codex A3) — env는 모듈
@@ -202,7 +202,7 @@ describe("확인증 공개 흐름 — 연락처 정규화 실패(S8)", () => {
   it("전화번호가 형식에 맞지 않으면 invalid(phone), 빈 문자열로 저장하지 않는다", async () => {
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
-    const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
     if (verified.kind !== "ok") throw new Error("unreachable");
 
     const input = { ...submissionInputFor(winnerId, verified.proof, verified.consent), phone: "abc" };
@@ -219,7 +219,7 @@ describe("확인증 공개 흐름 — verifyLast4 틀림 · 이미 제출(T3)", 
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
 
-    const result = await verifyLast4(token, winnerId, "0000", randomUUID());
+    const result = await verifyLast4(token, winnerId, "0000", randomUUID(), null);
     expect(result.kind).toBe("wrong");
 
     const [winnerRow] = await db.select().from(certWinners).where(eq(certWinners.id, winnerId));
@@ -228,13 +228,13 @@ describe("확인증 공개 흐름 — verifyLast4 틀림 · 이미 제출(T3)", 
 
   it("제출된 자리 + 맞는 뒤 4자리 — submitted", async () => {
     const seeded = await seedSubmittedCert();
-    const result = await verifyLast4(seeded.token, seeded.winnerId, seeded.phone.slice(-4), randomUUID());
+    const result = await verifyLast4(seeded.token, seeded.winnerId, seeded.phone.slice(-4), randomUUID(), null);
     expect(result.kind).toBe("submitted");
   });
 
   it("제출된 자리 + 틀린 뒤 4자리 — wrong(E6-a 비공개, 이미 제출됐다는 사실이 새지 않는다)", async () => {
     const seeded = await seedSubmittedCert();
-    const result = await verifyLast4(seeded.token, seeded.winnerId, "0000", randomUUID());
+    const result = await verifyLast4(seeded.token, seeded.winnerId, "0000", randomUUID(), null);
     expect(result.kind).toBe("wrong");
   });
 });
@@ -251,7 +251,7 @@ describe("확인증 공개 흐름 — 규약 C1 domain 두 겹째(설정 꺼짐)
     await withCertFeatureOff(async () => {
       expect((await loadIntake(token)).kind).toBe("notFound");
       expect((await selectWinner(token, winnerId)).kind).toBe("notFound");
-      expect((await verifyLast4(token, winnerId, "7730", randomUUID())).kind).toBe("notFound");
+      expect((await verifyLast4(token, winnerId, "7730", randomUUID(), null)).kind).toBe("notFound");
       const submitResult = await submitCertificate(
         token,
         submissionInputFor(winnerId, "x", { version: "v1", retentionYears: 5 }),
@@ -278,7 +278,7 @@ describe("확인증 공개 흐름 — 동의 묶음(#15)", () => {
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
 
-    const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
     expect(verified.kind).toBe("ok");
     if (verified.kind !== "ok") throw new Error("unreachable");
     expect(verified.consent.retentionYears).toBe(5);
@@ -296,7 +296,7 @@ describe("확인증 공개 흐름 — 동의 묶음(#15)", () => {
   it("돌려보낸 retentionYears가 묶인 값과 다르면 expiredProof, 제출 행 0", async () => {
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
-    const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
     expect(verified.kind).toBe("ok");
     if (verified.kind !== "ok") throw new Error("unreachable");
 
@@ -316,12 +316,12 @@ describe("확인증 공개 흐름 — 동의 묶음(#15)", () => {
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
 
-    const first = await verifyLast4(token, winnerId, "7730", randomUUID());
+    const first = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
     expect(first.kind).toBe("ok");
 
     await setSettingValue(SYSTEM_VIEWER, CERT_RETENTION_YEARS, 7);
 
-    const second = await verifyLast4(token, winnerId, "7730", randomUUID());
+    const second = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
     expect(second.kind).toBe("ok");
     if (second.kind !== "ok") throw new Error("unreachable");
     expect(second.consent.retentionYears).toBe(7);
@@ -332,7 +332,7 @@ describe("확인증 공개 흐름 — E3-27 순서(서식 읽기 실패)", () =>
   it("서식 읽기가 실패하면 put·의도 행·제출 행이 모두 0이다(고아 없음), 증표 해시도 그대로다(T12)", async () => {
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
-    const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
     expect(verified.kind).toBe("ok");
     if (verified.kind !== "ok") throw new Error("unreachable");
 
@@ -374,7 +374,7 @@ describe("확인증 공개 흐름 — 규약 C3 서명 업로드 의도 행(T1)"
   it("정상 제출 — put이 불리는 순간 그 키의 의도 행이 이미 커밋돼 있고, 끝나면 의도 행 0", async () => {
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
-    const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
     if (verified.kind !== "ok") throw new Error("unreachable");
 
     const realStore = getSignatureStore();
@@ -402,7 +402,7 @@ describe("확인증 공개 흐름 — 규약 C3 서명 업로드 의도 행(T1)"
   it("put 뒤 트랜잭션이 실패하면 객체가 지워지고 의도 행이 0이다", async () => {
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
-    const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
     if (verified.kind !== "ok") throw new Error("unreachable");
 
     const realStore = getSignatureStore();
@@ -438,7 +438,7 @@ describe("확인증 공개 흐름 — 규약 C3 서명 업로드 의도 행(T1)"
   it("트랜잭션 실패 + 객체 지우기 실패를 함께 주입하면 의도 행 1이 남고 listStaleSignatureUploadIntents가 그 키를 돌려준다", async () => {
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
-    const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
     if (verified.kind !== "ok") throw new Error("unreachable");
 
     let key: string | undefined;
@@ -532,7 +532,7 @@ describe("확인증 공개 흐름 — 풀 교착 없음(T-04.3-140)", () => {
         winners.map(async (w) => {
           const winnerRow = rows.find((r) => r.name === w.name);
           if (!winnerRow) throw new Error(`당첨자를 찾지 못했다: ${w.name}`);
-          const verified = await verifyLast4(token, winnerRow.id, w.phone.slice(-4), randomUUID());
+          const verified = await verifyLast4(token, winnerRow.id, w.phone.slice(-4), randomUUID(), null);
           if (verified.kind !== "ok") throw new Error(`verifyLast4 실패: ${verified.kind}`);
           return { winnerId: winnerRow.id, proof: verified.proof, consent: verified.consent, phone: w.phone };
         }),
@@ -594,7 +594,7 @@ describe("확인증 공개 흐름 — E3-02 제출 로그 같은 tx(로그 실�
   it("로그 INSERT가 실패하면 제출이 롤백되고, 같은 증표·같은 입력으로 다시 제출하면 저장된다(T4)", async () => {
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
-    const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
     expect(verified.kind).toBe("ok");
     if (verified.kind !== "ok") throw new Error("unreachable");
 
@@ -659,7 +659,7 @@ describe("확인증 공개 흐름 — E3-02 제출 로그 같은 tx(로그 실�
 
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
-    const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
     if (verified.kind !== "ok") throw new Error("unreachable");
 
     const result = await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent));
@@ -675,7 +675,7 @@ describe("확인증 공개 흐름 — 같은 자리 두 번째 제출(T2)", () =
   it("같은 증표 · 같은 멱등 키로 순서대로 다시 제출하면 거부되고, 행 · 카운터 · 의도 행 · 로그가 늘지 않는다", async () => {
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
-    const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
     if (verified.kind !== "ok") throw new Error("unreachable");
 
     const input = submissionInputFor(winnerId, verified.proof, verified.consent);
@@ -711,7 +711,7 @@ describe("확인증 공개 흐름 — Task 3 ⑦ 주민등록번호 되묻기", 
   it("검증번호 mismatch 번호로 제출하면 rrnRecheck, 제출 행 0 · 같은 번호 재제출(rrnRecheckConfirmed) → submitted", async () => {
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
-    const verified = await verifyLast4(token, winnerId, "7730", randomUUID());
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
     if (verified.kind !== "ok") throw new Error("unreachable");
 
     const input = { ...submissionInputFor(winnerId, verified.proof, verified.consent), rrnBack7: "2123459" };
@@ -781,7 +781,7 @@ describe("확인증 공개 흐름 — Task 3 ⑦ 행사 경계 · 남의 증표 
   it("남의 증표로 제출 → 거부, 제출 행 없음", async () => {
     const eventA = await makeEvent();
     const winnerAId = await winnerIdOf(eventA.eventId, "김하늘");
-    const verifiedA = await verifyLast4(eventA.token, winnerAId, "7730", randomUUID());
+    const verifiedA = await verifyLast4(eventA.token, winnerAId, "7730", randomUUID(), null);
     if (verifiedA.kind !== "ok") throw new Error("unreachable");
 
     const eventB = await makeEvent({ phone: "010-2231-0045" });
@@ -802,7 +802,7 @@ describe("확인증 공개 흐름 — Task 3 ⑦ 행사 경계 · 남의 증표 
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
     const past = new Date(Date.now() - 60 * 60 * 1000); // 1시간 전
-    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), past);
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null, past);
     if (verified.kind !== "ok") throw new Error("unreachable");
 
     const result = await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent));

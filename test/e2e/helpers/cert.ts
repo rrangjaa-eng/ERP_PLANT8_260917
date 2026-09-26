@@ -170,7 +170,7 @@ export async function seedSubmittedCert(opts: SeedSubmittedCertOptions = {}): Pr
   if (selected.kind !== "ok") throw new Error(`seedSubmittedCert selectWinner 실패: ${selected.kind}`);
 
   const last4 = normalizePhone(phone)!.slice(-4);
-  const verified = await verifyLast4(token, winnerId, last4, randomUUID());
+  const verified = await verifyLast4(token, winnerId, last4, randomUUID(), null);
   if (verified.kind !== "ok") throw new Error(`seedSubmittedCert verifyLast4 실패: ${verified.kind}`);
 
   const submitted = await submitCertificate(token, {

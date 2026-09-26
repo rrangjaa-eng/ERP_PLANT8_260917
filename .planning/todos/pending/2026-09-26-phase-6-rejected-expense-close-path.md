@@ -1,6 +1,6 @@
 ---
 created: 2026-09-26T00:00:00.000Z
-title: 반려·회수 지출결의 종결(취소) 경로 — Phase 6 TODO (U2, 사용자 결정 대기)
+title: 반려·회수 지출결의 종결(취소) 경로 — Phase 6 TODO (U2, 사용자 결정: Phase 6 TODO 확정)
 area: planning
 severity: major
 files:
@@ -19,7 +19,7 @@ Phase 5 `/plan-ceo-review` U2(05-REVIEWS Round 1 — 1108e20). 반려·회수된
 - 분할 줄이면 회차 상한 계산에 계속 들어가며,
 - 비용이 실제로 취소돼도 그 줄은 계속 `반려`로 닫혀 있다.
 
-## 제안 (추천안 B — 사용자 결정 대기)
+## 제안 (사용자 결정으로 Phase 6 이관 확정)
 
 Phase 6에서 다룬다(Phase 5 범위 고정 · HOLD SCOPE).
 
@@ -30,6 +30,6 @@ Phase 6에서 다룬다(Phase 5 범위 고정 · HOLD SCOPE).
 
 ## Status
 
-- **사용자 결정 대기(U2)** — 추천 B(Phase 6 TODO). 코디네이터 답이 A(이번 범위)면
-  `/gsd-plan-phase 5 --reviews` 다음 라운드에서 05-09(또는 새 플랜)에 task를 더한다
+- **사용자 결정: Phase 6 TODO 확정**(2026-09-26, 코디네이터 PR #89 — U2를 Phase 5 범위에서 제외)
+- `06-CONTEXT.md` 「Phase 5에서 넘어온 것」 줄에 한 줄로 기록됨 — Phase 6 계획이 이 항목을 받는다
 - 05-09-PLAN.md `## Review Dispositions Ledger` Round 1 Deferred 표에 같은 내용이 있다

@@ -6,7 +6,7 @@
 <domain>
 ## Phase Boundary
 
-기획 PM이 견적 줄에서 지출결의를 한 화면에서 증빙 첨부까지 끝내 제출하면 결재자가 폰에서 승인·반려하고, 같은 결재 모듈(`domain/approvals`)로 연차와 정산 결재(정산 → 완료)도 처리된다. 요구사항: EXP-01, EXP-02, EXP-03, EXP-04, EXP-05, EXP-08, EXP-14, EXP-15, EVID-01, ADMN-04, LEAV-01, UX-03, UX-06 (`.planning/ROADMAP.md` Phase 5 성공 기준 1~7).
+기획 PM이 견적 줄에서 지출결의를 한 화면에서 증빙 첨부까지 끝내 제출하면 결재자가 폰에서 승인·반려하고, 같은 결재 모듈(`domain/approvals`)로 정산 결재(정산 → 완료)도 처리된다(연차는 Phase 04.1 소관 — 2026-09-24 사용자 결정). 요구사항: EXP-01, EXP-02, EXP-08, EXP-14, EXP-15, EVID-01, UX-03, UX-06 + ADMN-04 중 세율·수식 부분(`.planning/ROADMAP.md` Phase 5 성공 기준 1~7). ~~EXP-03, EXP-04, EXP-05, ADMN-04(결재 부분), LEAV-01~~ → Phase 04.1로 옮김(2026-09-24 사용자 결정 · REQUIREMENTS 추적표 — 리뷰 Round 1 P3-3에서 표시만 고침, 결정 원문은 그대로).
 
 범위 밖: 지급·지급 완료액·법인카드·구매 요청·증빙 한도/중복/선결제 규칙·미결 점검(Phase 6), 알림·SMTP·마감(Phase 7), 손익 스냅샷(Phase 9), 기타소득 확인증(Phase 11).
 
@@ -55,7 +55,7 @@
 
 ### 범위·요구사항
 - `.planning/ROADMAP.md` Phase 5 (기준 1~7, 결재 모듈 비고) — 범위 정본
-- `.planning/REQUIREMENTS.md` — EXP-01~05·08·14·15, EVID-01, ADMN-04, LEAV-01, UX-03, UX-06
+- `.planning/REQUIREMENTS.md` — EXP-01·02·08·14·15, EVID-01, UX-03, UX-06, ADMN-04(세율·수식 부분만). EXP-03~05 · ADMN-04 결재 부분 · LEAV-01은 Phase 04.1로 옮김(리뷰 Round 1 P3-3)
 - `docs/inputs/phase-05-approval.md` — 사용자 문답 입력(§8 기안자는 D-98로 대체)
 
 ### 선행 결정

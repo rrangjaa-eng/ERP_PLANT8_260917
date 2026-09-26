@@ -4,6 +4,9 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { addDays, kstToday } from "@/lib/kst-date";
+import { rememberFxRate } from "@/domain/money/currency";
+import { getSettingValue } from "@/domain/settings/registry";
+import { FX_RECENT_RATE_USD } from "@/domain/settings/keys";
 
 // Phase 4 Task 2 ⑭ — 트레이서의 한 경로 스모크: 기획 PM 로그인 → 등록 →
 // 번호 부여 → 상세 → 견적 줄 서버 계산 저장. 필수 칸 유실 시 입력값 보존
@@ -350,5 +353,38 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     ).toBeVisible();
     await page.goto(`/projects?q=${encodeURIComponent(projectName)}`);
     await expect(page.getByText("조건에 맞는 프로젝트가 없습니다")).toBeVisible();
+  });
+
+  test("(d4) USD를 고르면 환율 칸이 설정의 USD 최근 환율로 채워지고, 환율을 안 고친 등록은 설정을 그대로 두며 고친 등록만 설정을 바꾼다(검토 S3)", async ({ page }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2E환율클라이언트-${Date.now()}`,
+      normalizedName: `e2e환율클라이언트-${Date.now()}`,
+    });
+    await rememberFxRate("USD", 1234.5);
+    await loginAndOpenForm(page);
+    await fillRequiredFields(page, vendor.name, `E2E환율기본-${Date.now()}`);
+    const amount = page.getByLabel("총 매출 예상가");
+    await amount.fill("100");
+    await page.getByLabel("통화", { exact: true }).selectOption("USD");
+    const fxRate = page.getByLabel("환율", { exact: true });
+    await expect(fxRate).toHaveValue("1,234.5");
+    // 폼이 열린 뒤 설정이 바뀌어도 환율을 안 고친 등록은 그 값을 덮지 않는다 — 같은 값이면 덮어써도 구분되지 않는다.
+    await rememberFxRate("USD", 999);
+
+    await amount.press("Control+Enter");
+    await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+    expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(999);
+
+    await page.goto("/projects?new=1");
+    await page.waitForLoadState("networkidle");
+    await fillRequiredFields(page, vendor.name, `E2E환율수정-${Date.now()}`);
+    await amount.fill("100");
+    await page.getByLabel("통화", { exact: true }).selectOption("USD");
+    await expect(fxRate).toHaveValue("999");
+    await fxRate.fill("1300");
+
+    await fxRate.press("Control+Enter");
+    await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+    expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(1300);
   });
 });

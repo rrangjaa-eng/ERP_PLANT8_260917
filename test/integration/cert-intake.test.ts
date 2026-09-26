@@ -824,3 +824,52 @@ describe("확인증 공개 흐름 — Task 3 ⑦ 행사 경계 · 남의 증표 
     }
   });
 });
+
+describe("확인증 공개 흐름 — 제출 확인과 트랜잭션 사이 경합(/review TOCTOU)", () => {
+  function storeThatRunsDuringPut(during: () => Promise<void>): SignatureStore {
+    const realStore = getSignatureStore();
+    return {
+      put: async (k, png) => {
+        await realStore.put(k, png);
+        await during();
+      },
+      get: (k) => realStore.get(k),
+      delete: (k) => realStore.delete(k),
+    };
+  }
+
+  it("확인을 통과한 뒤 트랜잭션 전에 담당자가 링크를 닫으면 notFound, 제출 행 0 · 의도 행 0", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    const result = await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent), {
+      signatureStore: storeThatRunsDuringPut(async () => {
+        await db.update(certEvents).set({ closedAt: new Date() }).where(eq(certEvents.id, eventId));
+      }),
+    });
+
+    expect(result).toEqual({ kind: "notFound" });
+    expect(await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId))).toHaveLength(0);
+    expect(await db.select().from(certSignatureUploads)).toHaveLength(0);
+  });
+
+  it("확인을 통과한 뒤 트랜잭션 전에 같은 자리가 다시 확인돼 증표가 바뀌면 expiredProof, 제출 행 0", async () => {
+    const { eventId, token } = await makeEvent();
+    const winnerId = await winnerIdOf(eventId, "김하늘");
+    const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+    if (verified.kind !== "ok") throw new Error("unreachable");
+
+    const result = await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent), {
+      signatureStore: storeThatRunsDuringPut(async () => {
+        const again = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
+        if (again.kind !== "ok") throw new Error("unreachable");
+      }),
+    });
+
+    expect(result).toEqual({ kind: "expiredProof" });
+    expect(await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId))).toHaveLength(0);
+    expect(await db.select().from(certSignatureUploads)).toHaveLength(0);
+  });
+});

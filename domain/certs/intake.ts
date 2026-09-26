@@ -310,7 +310,16 @@ export async function submitCertificate(
   try {
     await signatureStore.put(objectKey, signaturePng);
   } catch (putError) {
-    await deleteSignatureUploadIntent(SYSTEM_VIEWER, objectKey);
+    // put 자체가 거부·타임아웃 등으로 실패해도 객체가 실제로 없다고
+    // 단정할 수 없다(예: 응답만 못 받은 경우) — tx 실패 갈래와 같은 규칙:
+    // 지우기가 성공했을 때만 의도 행도 지운다. 지우기가 실패하면 의도
+    // 행을 남겨 04.3-12 파기(24시간 뒤)가 치우게 한다.
+    try {
+      await signatureStore.delete(objectKey);
+      await deleteSignatureUploadIntent(SYSTEM_VIEWER, objectKey);
+    } catch {
+      // 지우기 실패 — 의도 행을 남긴다.
+    }
     throw putError;
   }
 

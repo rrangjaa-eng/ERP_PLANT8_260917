@@ -2,7 +2,7 @@ import { createElement, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { clampPage } from "@/lib/paging";
-import { crossPageTarget, nextEditableCell, pageEntryFocus, pageOfRow, pinNewRows, resolveFocus, splitPages } from "@/ui/table/paging";
+import { crossPageTarget, nextEditableCell, pageEntryFocus, pageOfRow, pinNewRows, resolveFocus, splitPageRangeText, splitPages } from "@/ui/table/paging";
 import { useGridKeyboard, type UseGridKeyboardResult } from "@/ui/table/use-grid-keyboard";
 
 // 04-19(D-91 · SYSTEM.md §7-3 (자)) — 편집 표의 30줄 쪽 나눔은 화면 안 배열 자르기다. 표시 순서 id를 쪽 크기로
@@ -84,6 +84,21 @@ describe("pageOfRow — 줄 id의 쪽(1부터)", () => {
 
   it("없는 id는 null이다", () => {
     expect(pageOfRow(pages, "missing")).toBeNull();
+  });
+});
+
+// 04-47(§7-3 (자)) — 새 줄 고정으로 한 쪽이 쪽 크기를 넘는 동안에도 범위 글자는 실제 분할로 센다.
+describe("splitPageRangeText — 실제 분할의 범위 글자", () => {
+  const pages = splitPages(ids(46), { pageSize: 30, pinned: { "id-46": 1 } });
+
+  it("1쪽에 고정된 새 줄이 있으면 1쪽은 `1–31 / 46줄`, 2쪽은 `32–46 / 46줄`", () => {
+    expect(splitPageRangeText({ pages, page: 1, unit: "줄" })).toBe("1–31 / 46줄");
+    expect(splitPageRangeText({ pages, page: 2, unit: "줄" })).toBe("32–46 / 46줄");
+  });
+
+  it("고정이 없으면 pageRangeText와 같다(천 단위 쉼표)", () => {
+    const plain = splitPages(ids(1250), { pageSize: 30 });
+    expect(splitPageRangeText({ pages: plain, page: 42, unit: "줄" })).toBe("1,231–1,250 / 1,250줄");
   });
 });
 

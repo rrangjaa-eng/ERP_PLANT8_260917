@@ -143,7 +143,7 @@ Task 1 트레이서 게이트: `auto_advance` false · `human_verify_mode` end-o
 - `CI=true` E2E(프로덕션 빌드): `projects-list` + `projects-filter-reset` + `projects-list-number-nowrap` 18/18 · desktop `page-chrome`·`a11y`·`project-copy`·`project-register`·`keyboard-nav`·`projects-list` 60/60 · mobile-375(`--no-deps`) `mobile-320-no-overflow`·`mobile-list-empty`·`mobile-page-chrome`·`mobile-wordmark-home` 11/11 · Task 2 시점 `projects-list`·`filter-reset`·`number-nowrap`·`mobile-list-empty`·`page-chrome` 346/346
 - 수용 grep: `grep -rn "empty: true" domain/projects repositories/projects.ts` 0 · `grep -c "더 보기" filter-bar.tsx` 0 · filter-bar에 `focusout`·`periodOverlapsYear` · page.tsx에 `reconcileListYear` · index.ts에 `normalizeListParams` · 기간 두 칸에 칸별 onBlur 없음(묶음 div의 onBlur 하나)
 
-## 독립 DOM 감사: 오케스트레이터 실행 예정
+## 독립 DOM 감사: 오케스트레이터 실행 — 1차 FAIL 11(결함 4) → 수정 → 재감사 PASS 160 · FAIL 0 · INFO 8
 
 Task 3 ⑤의 1280·1024·375 독립 DOM 감사((a)~(i) — 04-17 합계 줄·페이지 줄 포함, 폰 첫 화면 (g))는 실행자가 아닌 별도 에이전트가 해야 한다(CLAUDE.md §6). 실행자는 돌리지 않았다. 감사자에게 넘길 점: 폰 Tab 순서가 시각 순서와 다르다(key-decisions 넷째 줄) — 판정 대상.
 
@@ -176,7 +176,12 @@ Task 3 ⑤의 1280·1024·375 독립 DOM 감사((a)~(i) — 04-17 합계 줄·�
 - 단위 `project-list-view` + `projects-loading` + `projects-filter-bar` 64/64 · 통합 `projects-list` 24/24
 - `CI=true` E2E desktop(`projects-list` · `projects-filter-reset` · `projects-list-number-nowrap` · `keyboard-nav` · `a11y` · `page-chrome` · `project-register` · `project-copy`) 69/69 · mobile-375(`--no-deps`: `mobile-320-no-overflow` · `mobile-list-empty` · `mobile-page-chrome` · `mobile-wordmark-home` · `mobile-shell`) 26/26
 
-## 전체 게이트: 오케스트레이터 실행 예정
+## 전체 게이트: 오케스트레이터 실행 — 통과
+
+- 재감사(Opus, CI=true 1280·1024·375·320): PASS 160 · FAIL 0 · INFO 8 — F1~F4 해소, 검색 이중 슬롯(폰·PC) 포커스 가능 한 개·중복 id 없음·Enter 한 번 제출·값 유지, 회귀(기간 묶음·연도 자동 전환·빈 갈래 셋·로딩·토큰) 통과. INFO: 입력 중 700px 경계를 넘으면(폰 회전) 보이던 검색 칸이 숨으며 입력한 q가 제출됨(값 유지) · PC 기간 오류 때 오류 줄 폭만큼 검색 칸이 11.4px 오른쪽으로 밀림.
+- main(#87 1dcfd6a) 머지 커밋 43226f1 뒤 CI=true 전체 게이트 한 번: lint·typecheck·lint:sql 0 · 단위 1448 · 통합 1520 · E2E 413 통과(실패·건너뜀 0). 오케스트레이터가 단위 1448·lint·typecheck·lint:sql을 직접 재실행해 확인.
+- #87 오류 문구 명사형 규칙(SYSTEM.md §8 규칙 3, 검사 test/unit/error-copy-noun-style.test.ts)에 맞춰 기간 오류 두 줄을 바꿈(3ce9288): 「날짜 형식 오류 · 2026-09-18처럼」 · 「기간 끝이 시작보다 빠름 · 기간 끝 수정」(뒤 문구는 period.ts 선례를 본뜬 실행자 선택 — 사용자 확인 대상). 04-UI-SPEC.md 379행의 옛 문구 두 줄은 문서 동기화 필요(미반영).
+- 04-47 테스트 기대 문구를 #87 명사형(「…값 떨어짐」)에 맞춤, projects-list.spec.ts:347 늘 통과하던 단언 고침(04799f0).
 
 `bash scripts/reset-test-db.sh && CI=true pnpm test` 한 번은 DOM 감사·수정 뒤 오케스트레이터가 돌린다. 실행자는 돌리지 않았다.
 

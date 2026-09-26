@@ -60,10 +60,10 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
   async function pick(row: IntakeRowDto) {
     setPendingRowId(row.rowId);
     const result = await selectAction.executeAsync({ token, rowId: row.rowId });
+    setPendingRowId(null);
     if (result?.data?.kind === "ok") {
       setStep({ kind: "verify", rowId: row.rowId, maskedName: result.data.maskedName, last4: "" });
     } else {
-      setPendingRowId(null);
       setStep({ kind: "pick", error: "이름을 불러오지 못했습니다 · 잠시 뒤 다시 골라 주세요" });
     }
   }

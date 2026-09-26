@@ -370,7 +370,7 @@ async function saveEntries(
       }
     } else if (input.id) {
       if (input.version === undefined) {
-        throw new UserFacingError("버전 정보 필요 · 새로고침");
+        throw new UserFacingError("버전 정보 필요 · 새로 고침");
       }
       const updated = await repoUpdateRevenueEntryIfVersionMatches(viewer, input.id, input.version, { projectId, kind }, payload, tx);
       if (!updated) {

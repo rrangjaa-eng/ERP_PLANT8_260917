@@ -555,7 +555,7 @@ export const quoteLineRowInputSchema = z
       .optional(),
   })
   .refine((row) => row.id === undefined || row.isNew === true || row.version !== undefined, {
-    message: "버전 정보 필요 · 새로고침",
+    message: "버전 정보 필요 · 새로 고침",
     path: ["version"],
   })
   // 04-13(엔지 리뷰 GAP 6) — 소분류는 견적 줄(종류 없음 = 기존 줄 포함)에서만 필수. 조정·견적 외 비용 줄의 소분류 칸은
@@ -917,7 +917,7 @@ export async function writeQuoteLinesInTx(
       }
 
       if (row.version === undefined) {
-        throw new UserFacingError("버전 정보 필요 · 새로고침");
+        throw new UserFacingError("버전 정보 필요 · 새로 고침");
       }
       if (!current) continue; // (b)가 이미 막았다.
       if (current.version !== row.version) conflicts.push(...cellConflictsFor(row.id, row.baseline, current));

@@ -13,7 +13,7 @@ const JOURNAL_PATH = resolve(process.cwd(), "db/migrations/meta/_journal.json");
 type JournalEntry = { idx: number; tag: string; when: number };
 
 describe("db/migrations/meta/_journal.json 무결성", () => {
-  const journal: { entries: JournalEntry[] } = JSON.parse(readFileSync(JOURNAL_PATH, "utf8"));
+  const journal = JSON.parse(readFileSync(JOURNAL_PATH, "utf8")) as { entries: JournalEntry[] };
 
   it("entries를 하나 이상 읽었다", () => {
     expect(journal.entries.length).toBeGreaterThan(0);

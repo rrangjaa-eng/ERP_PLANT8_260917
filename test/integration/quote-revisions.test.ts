@@ -300,7 +300,7 @@ describe("새 차수 트레이서(04-14 Task 1 · D-53, 실제 Postgres)", () =>
     expect(deniedWarnings(warn.mock.calls)).toHaveLength(1);
     const stranger = await makeViewer([]);
     await expect(createRevisionFromCurrent(stranger, { projectId: project.id, fromRevisionId: revisionId })).rejects.toThrow(
-      "존재하지 않는 프로젝트입니다.",
+      "존재하지 않는 프로젝트",
     );
     expect(deniedWarnings(warn.mock.calls)).toHaveLength(2);
     expect(await revisionCount(project.id)).toBe(1);
@@ -449,10 +449,10 @@ describe("고객 승인 표시(04-14 Task 2 · D-56, 실제 Postgres)", () => {
     expect(latest?.detail).toEqual({ kind: "customer_approval", revisionSeq: 1, cleared: true });
   });
 
-  it("(a7) 오늘(KST)보다 늦은 승인일은 「승인일이 오늘보다 늦음 · 날짜를 고쳐 주세요」", async () => {
+  it("(a7) 오늘(KST)보다 늦은 승인일은 「승인일이 오늘보다 늦음 · 날짜 수정」", async () => {
     const { revisionId, pm } = await setupProject();
     await insertLine(revisionId);
-    await expect(approve(pm, revisionId, "2026-09-21")).rejects.toThrow("승인일이 오늘보다 늦음 · 날짜를 고쳐 주세요");
+    await expect(approve(pm, revisionId, "2026-09-21")).rejects.toThrow("승인일이 오늘보다 늦음 · 날짜 수정");
     await approve(pm, revisionId, "2026-09-20");
     expect((await approvalOf(revisionId)).by).toBe(pm.id);
   });
@@ -654,7 +654,7 @@ describe("차수 요약 · 이전 차수 잠김 조회(04-14 Task 3, 실제 Post
     const { project, revisionId } = await setupProject();
     await insertLine(revisionId);
     const stranger = await makeViewer([]);
-    await expect(listRevisionLines(stranger, project.id, { revisionSeq: 1 })).rejects.toThrow("존재하지 않는 프로젝트입니다.");
-    await expect(listRevisionLines(SYSTEM_VIEWER, randomUUID(), { revisionSeq: 1 })).rejects.toThrow("존재하지 않는 프로젝트입니다.");
+    await expect(listRevisionLines(stranger, project.id, { revisionSeq: 1 })).rejects.toThrow("존재하지 않는 프로젝트");
+    await expect(listRevisionLines(SYSTEM_VIEWER, randomUUID(), { revisionSeq: 1 })).rejects.toThrow("존재하지 않는 프로젝트");
   });
 });

@@ -1,7 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { createAccount } from "@/domain/auth/accounts";
+import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
+import { insertRole } from "@/repositories/roles";
+import { listPermissions, listVisibility, upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertVendor } from "@/repositories/vendors";
+import { createProject } from "@/domain/projects";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { rememberFxRate } from "@/domain/money/currency";
@@ -36,7 +42,7 @@ test.describe("프로젝트 등록 → 견적 줄 저장 (Phase 4 트레이서)"
     const pmSelect = page.getByLabel("담당 PM");
     await pmSelect.selectOption({ index: 1 });
     await page.getByRole("button", { name: "프로젝트 등록" }).click();
-    await expect(page.getByText(/입력하세요|고르세요/).first()).toBeVisible();
+    await expect(page.getByText(/필요 · /).first()).toBeVisible();
     // 이미 고른 클라이언트 값이 유지된다 — 오류 뒤에도 사람이 적은 값이 남는다.
     await expect(page.getByLabel("클라이언트")).toHaveValue(vendor.id);
 
@@ -150,6 +156,35 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     await teamSelect.selectOption({ index: 1 });
     return teamSelect;
   }
+
+  // /design-review FINDING-002 — SYSTEM.md §7-2: 오류 칸은 aria-invalid이고 테두리가 --danger다(선택 칸과 같다).
+  test("(e) 프로젝트명·종료일 오류 칸은 aria-invalid이고 테두리가 --danger다", async ({ page }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E오류테두리-${Date.now()}`, normalizedName: `e2e오류테두리-${Date.now()}` });
+    await loginAndOpenForm(page);
+    await page.getByLabel("클라이언트").selectOption({ label: vendor.name });
+    await page.locator("#startDate").fill(addDays(kstToday(new Date()), 5));
+    await page.locator("#endDate").fill(addDays(kstToday(new Date()), 1));
+    await page.getByRole("button", { name: "프로젝트 등록" }).click();
+
+    const name = page.locator("#project-form #name");
+    await expect(name).toHaveAttribute("aria-invalid", "true");
+    const danger = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--danger)";
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    });
+    await expect(name).toHaveCSS("border-top-color", danger);
+
+    // 이름 오류는 스키마에서 먼저 거부돼 기간 검사(domain)까지 가지 않는다 — 이름을 채워 다시 제출한다.
+    await name.fill(`E2E오류테두리-${Date.now()}`);
+    await page.getByRole("button", { name: "프로젝트 등록" }).click();
+    const endDate = page.locator("#project-form #endDate");
+    await expect(endDate).toHaveAttribute("aria-invalid", "true");
+    await expect(endDate).toHaveCSS("border-top-color", danger);
+  });
 
   test("(a) 마우스 클릭 없이 마지막 칸에서 Control+Enter를 누르면 상세로 이동하고 번호가 부여된다", async ({
     page,
@@ -326,8 +361,8 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     await amount.press("Control+Enter");
 
     const form = page.locator("#project-form");
-    await expect(form.getByText("총 매출 예상가는 0 이상 · 금액을 고쳐 주세요", { exact: true })).toBeVisible();
-    await expect(form.getByText("등록하지 못했습니다 · 총 매출 예상가 1칸", { exact: true })).toBeVisible();
+    await expect(form.getByText("총 매출 예상가는 0 이상 · 금액 수정", { exact: true })).toBeVisible();
+    await expect(form.getByText("등록 실패 · 총 매출 예상가 1칸", { exact: true })).toBeVisible();
     await expect(page).toHaveURL(/\/projects\?new=1/);
     await expect(page.getByLabel("프로젝트명")).toHaveValue(projectName);
     await expect(amount).toHaveValue("-5,000");
@@ -349,7 +384,7 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     await endDate.press("Control+Enter");
 
     await expect(
-      page.locator("#project-form").getByText("종료일이 시작일보다 빠릅니다 · 종료일을 고쳐 주세요", { exact: true }),
+      page.locator("#project-form").getByText("종료일이 시작일보다 빠름 · 종료일 수정", { exact: true }),
     ).toBeVisible();
     await page.goto(`/projects?q=${encodeURIComponent(projectName)}`);
     await expect(page.getByText("조건에 맞는 프로젝트가 없습니다")).toBeVisible();
@@ -386,5 +421,68 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     await fxRate.press("Control+Enter");
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
     expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(1300);
+  });
+});
+
+// 결정 2(사용자 결정 2026-09-26) — 담당 PM은 등록하는 사람, 팀은 그 사람의 오늘 소속 팀으로 미리 채운다.
+// 회사 범위 계급은 팀 목록이 여럿이라 소속 팀 미리 고르기가 드러난다.
+test.describe("프로젝트 등록 폼 — 담당 PM · 팀 기본값 (결정 2)", () => {
+  // 기획 PM 권한·노출을 그대로 복사하고 업무 범위만 회사로 둔 등록자 — 본인 소속 팀 하나를 가진다.
+  async function loginCompanyScopeCreator(page: Page): Promise<{ userId: string; teamId: string }> {
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E 회사 범위-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    for (const row of await listPermissions(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID })) {
+      await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: row.menu, action: row.action, allowed: row.allowed });
+    }
+    for (const row of await listVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID })) {
+      await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: row.infoItem, visible: row.visible });
+    }
+    const email = `e2e-defaults-${randomUUID()}@example.test`;
+    const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 기본값 등록자", roleId: role.id });
+    const teamId = await makeTeamWithOrgUnit();
+    await assignTeam(SYSTEM_VIEWER, { userId, teamId, effectiveFrom: "2020-01-01" });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(email);
+    await page.getByLabel("비밀번호").fill(tempPassword);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    return { userId, teamId };
+  }
+
+  async function makeTeamWithOrgUnit(): Promise<string> {
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E본부-${randomUUID()}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E팀-${randomUUID().slice(0, 8)}` });
+    return team.id;
+  }
+
+  test("회사 범위 등록자가 폼을 열면 담당 PM은 본인, 팀은 본인 소속 팀이 골라져 있다", async ({ page }) => {
+    const creator = await loginCompanyScopeCreator(page);
+    await page.goto("/projects?new=1");
+
+    const form = page.locator("#project-form");
+    await expect(form.locator("#pmUserId")).toHaveValue(creator.userId);
+    await expect(form.locator("#teamId")).toHaveValue(creator.teamId);
+  });
+
+  // /review(testing) — 복사 등록은 출처의 담당 PM·팀이 등록자 기본값보다 먼저다.
+  test("복사 등록이면 출처의 담당 PM·팀이 골라져 있다(등록자 기본값보다 먼저)", async ({ page }) => {
+    const creator = await loginCompanyScopeCreator(page);
+    const sourceTeamId = await makeTeamWithOrgUnit();
+    const sourcePm = await createAccount(SYSTEM_VIEWER, { email: `e2e-srcpm-${randomUUID()}@example.test`, name: "E2E 출처 PM", roleId: DEFAULT_ROLE_ID });
+    await assignTeam(SYSTEM_VIEWER, { userId: sourcePm.userId, teamId: sourceTeamId, effectiveFrom: "2020-01-01" });
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E복사출처-${randomUUID()}`, normalizedName: `e2e복사출처-${randomUUID()}` });
+    const source = await createProject(SYSTEM_VIEWER, {
+      clientId: vendor.id,
+      teamId: sourceTeamId,
+      pmUserId: sourcePm.userId,
+      name: `E2E복사출처-${randomUUID().slice(0, 8)}`,
+    });
+
+    await page.goto(`/projects?new=1&copyFrom=${source.id}`);
+    const form = page.locator("#project-form");
+    await expect(form.locator("#pmUserId")).toHaveValue(sourcePm.userId);
+    await expect(form.locator("#teamId")).toHaveValue(sourceTeamId);
+    expect(sourcePm.userId).not.toBe(creator.userId);
+    expect(sourceTeamId).not.toBe(creator.teamId);
   });
 });

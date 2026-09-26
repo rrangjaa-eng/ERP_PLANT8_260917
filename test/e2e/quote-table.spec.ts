@@ -143,13 +143,13 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await pasteIntoFocusedCell(page, "숫자아님");
 
     await expect(gridcell(5)).toHaveAttribute("aria-invalid", "true");
-    await expect(page.getByText(/숫자가 아닙니다/)).toBeVisible();
+    await expect(page.getByText(/숫자 형식 오류/)).toBeVisible();
 
     // (c) 04-47(DR-5) — 오류가 남아도 1차는 살아 있고(옛 오류 게이트 문자열 없음), 오류 칸 수는 합계 행이 말한다.
     const saveButton = page.getByRole("button", { name: /일괄 저장/ });
     await expect(saveButton).toBeEnabled();
     await expect(saveButton).not.toHaveAttribute("aria-disabled", "true");
-    await expect(page.getByText(/고쳐야 저장됩니다/)).toHaveCount(0);
+    await expect(page.getByText(/고쳐야 저장됩니다|고친 뒤 저장/)).toHaveCount(0);
     await expect(quoteTable(page).locator("tfoot")).toContainText("오류 1칸");
 
     // (e) 항목 편집값은 오류가 있어도 그대로 남아 있다.
@@ -190,7 +190,7 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await saveButton.click();
 
     // role=alert는 Next.js 라우트 안내에도 있어 문구로 좁힌다.
-    await expect(page.getByRole("alert").filter({ hasText: "저장하지 못했습니다 · 입력값을 확인하세요" })).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: "저장 실패 · 입력값 확인" })).toBeVisible();
   });
 
   test("(f) 폰 뷰포트에서 줄을 탭하면 행 시트가 열리고 행동 줄이 없다", async ({ page }) => {
@@ -794,7 +794,7 @@ test.describe("견적 줄 표 — 저장 거부 봉투 → 충돌 셀·서버 �
 
     const quantityCell = quoteCell(page, 0, 4);
     await expect(quantityCell).toHaveAttribute("aria-invalid", "true");
-    await expect(quantityCell).toContainText("0보다 큰 수를 적어 주세요");
+    await expect(quantityCell).toContainText("숫자 형식 오류 · 0보다 큰 수");
     await expect(quoteTable(page).locator("tfoot")).toContainText("오류 1칸 · 전부 거부");
 
     await editTextCell(page, 0, 4, "2");
@@ -1383,7 +1383,7 @@ test.describe("견적 줄 표 — 오류가 남은 채 1차 · 저장 거부 쪽
 
     const actions = countServerActions(page);
     await expect(primarySave(page)).not.toHaveAttribute("aria-disabled", "true");
-    await expect(page.getByText(/고쳐야 저장됩니다/)).toHaveCount(0);
+    await expect(page.getByText(/고쳐야 저장됩니다|고친 뒤 저장/)).toHaveCount(0);
     await primarySave(page).click();
     await expect(currentPage(page)).toHaveText("3");
     await expect(quoteCell(page, 1, 4)).toBeFocused();

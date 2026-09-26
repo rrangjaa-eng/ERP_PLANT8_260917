@@ -139,7 +139,7 @@ export async function saveProjectLedger(
     // 정산을 따로 커밋하므로 부르지 않는다 — 판정은 트랜잭션 안 잠금 읽기가 한다.
     const scope = await scopeFor(viewer, PROJECT_ENTITY);
     if (scope.rows === "none" || !UUID_SHAPE.test(projectId)) {
-      throw new UserFacingError("존재하지 않는 프로젝트입니다.");
+      throw new UserFacingError("존재하지 않는 프로젝트");
     }
 
     // A-14: 견적 줄의 차수가 이 프로젝트의 것인지 먼저 확인한다 — 아니면 매출·감사 기록은 이
@@ -187,7 +187,7 @@ export async function saveProjectLedger(
       // ① 잠금 읽기 + 자동 전환 선판정 — 같은 tx(A-13).
       const locked = await loadProjectForGate(viewer, projectId, { now, tx, afterLock: deps?.afterLock }, { recordAction });
       if (!locked || (locked.archivedAt !== null && !scope.includeArchived)) {
-        throw new UserFacingError("존재하지 않는 프로젝트입니다.");
+        throw new UserFacingError("존재하지 않는 프로젝트");
       }
       // DR-6: 비교는 첫 판정 행(자정 자동 정산 반영)과 기간 쓰기 전에 한다 — 사람 자신의 기간 변경은
       // 거부 사유가 아니다. 던지면 같은 tx의 자동 정산까지 전부 되돌아가고, 읽기 경로가 다음 렌더에

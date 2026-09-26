@@ -230,8 +230,9 @@ export function RevenueSection({
   saveButtonId?: string;
   /** 04-49(DR-36) — 1024 미만이면 발행·입금 표는 보기 전용(추가 버튼 없음, EMPTY는 사실만). */
   editableWidth?: boolean;
-  /** 04-16(B3 · R2) — 마지막 거부 봉투의 표별 칸 수. total은 표 밖 칸까지 센 전부다. */
-  rejectedCells?: { issued: number; paid: number; total: number };
+  /** 04-16(B3 · R2) — 마지막 거부 봉투의 표별 칸 수. total은 표 밖 칸까지 센 전부다.
+   * conflictRows는 그중 다른 표(견적 줄)의 충돌 줄 수 — "/qa low" 원인 구분. */
+  rejectedCells?: { issued: number; paid: number; conflictRows: number; total: number };
   /** 04-47(DR-5 · B3) — 첫 오류로 이동 신호와 그 신호를 받을 표(첫 고정 오류 셀이 있는 표 — 발행이 먼저). */
   firstIssue?: { signal: number; table: "issued" | "paid" } | null;
   /** 04-41 — 발행·입금 표 안의 Ctrl+S도 견적 표와 같은 일괄 저장이다. */
@@ -242,9 +243,19 @@ export function RevenueSection({
   const issuedVisible = issuedEntries !== undefined;
   const paidVisible = paidEntries !== undefined;
   // 합계 행 글자는 거부 요약과 같은 수명이다(다음 저장 시도·성공에서 바뀐다) — 칸을 고쳐도 남는다.
-  const rejected = rejectedCells ?? { issued: 0, paid: 0, total: 0 };
-  const issuedNote = revenueTableErrorText(rejected.issued) ?? otherCellsRejectedText(rejected.issued, rejected.total - rejected.issued);
-  const paidNote = revenueTableErrorText(rejected.paid) ?? otherCellsRejectedText(rejected.paid, rejected.total - rejected.paid);
+  const rejected = rejectedCells ?? { issued: 0, paid: 0, conflictRows: 0, total: 0 };
+  const issuedNote =
+    revenueTableErrorText(rejected.issued) ??
+    otherCellsRejectedText(rejected.issued, {
+      conflictRows: rejected.conflictRows,
+      errorCells: rejected.total - rejected.issued - rejected.conflictRows,
+    });
+  const paidNote =
+    revenueTableErrorText(rejected.paid) ??
+    otherCellsRejectedText(rejected.paid, {
+      conflictRows: rejected.conflictRows,
+      errorCells: rejected.total - rejected.paid - rejected.conflictRows,
+    });
   // Copywriting Empty — 읽기로만 받는 사람은 담당을, 1024 미만 경영관리는 사실만, 편집 가능하면 사실 + 추가 버튼.
   const issuedEmpty = canWriteEntries ? "발행한 세금계산서가 없습니다" : "발행한 세금계산서가 없습니다 · 발행은 경영관리";
   const paidEmpty = canWriteEntries ? "입금 줄이 없습니다" : "입금 줄이 없습니다 · 입금은 경영관리";

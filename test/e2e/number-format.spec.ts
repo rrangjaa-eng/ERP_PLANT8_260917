@@ -380,7 +380,7 @@ test.describe("숫자 서식(D-95, 04-09)", () => {
     await page.keyboard.press("ControlOrMeta+v");
 
     await expect(amountInput).toHaveValue("1,000,000");
-    await expect(page.getByText("원화는 소수점 없이 적어 주세요")).toBeVisible();
+    await expect(page.getByText("원화는 소수점 없이")).toBeVisible();
 
     await page.keyboard.press("Enter");
     await unitPriceCell.focus();

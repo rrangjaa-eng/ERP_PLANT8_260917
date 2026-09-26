@@ -4,6 +4,7 @@ import {
   previewPeriodChange,
   resolvePeriodSave,
   validatePeriodChange,
+  INCOMPLETE_DATE,
 } from "@/domain/projects/period";
 
 // 04-22(D-80 · D-82 · 사용자 D14·D11·D20 · 엔지 리뷰 A P3 · 사용자 결정 2026-09-25 「기간만 수정」) —
@@ -106,19 +107,47 @@ describe("validatePeriodChange — 저장될 값 위에서", () => {
 
   it.each(["2026-02-30", "2026-13-01", "2026-9-18", "abc"])("달력·형식에 없는 날짜 %s → 형식 오류(그 칸)", (value) => {
     expect(validatePeriodChange({ ...ok, status: "bidding", start: "2026-09-18", end: value })).toEqual([
-      { field: "end", reason: "날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요" },
+      { field: "end", reason: "날짜 형식 오류 · 2026-09-18처럼" },
+    ]);
+  });
+
+  // 사용자 결정 2026-09-26 「날짜 입력 통일」 — 빈 칸은 형식 오류가 아니라 「날짜 없음 · 날짜 고르기」다.
+  // /review(testing) — 시작일 빈 칸과 두 칸 모두 빈 칸도 같은 판정(저장 판정 전에 칸별 오류로 끝난다).
+  it("시작일 빈 문자열 → 시작일 칸 「날짜 없음 · 날짜 고르기」", () => {
+    expect(validatePeriodChange({ ...ok, status: "bidding", start: "", end: "2026-09-18" })).toEqual([
+      { field: "start", reason: "날짜 없음 · 날짜 고르기" },
+    ]);
+  });
+
+  // 사용자 결정 2026-09-26(/review D2) — 덜 채운 네이티브 날짜 칸(표식 INCOMPLETE_DATE)도 다른 화면처럼 「날짜 없음 · 날짜 고르기」.
+  it("덜 채운 칸 표식 → 그 칸 「날짜 없음 · 날짜 고르기」(형식 오류 아님)", () => {
+    expect(validatePeriodChange({ ...ok, status: "bidding", start: "2026-09-18", end: INCOMPLETE_DATE })).toEqual([
+      { field: "end", reason: "날짜 없음 · 날짜 고르기" },
+    ]);
+  });
+
+  it("두 칸 모두 빈 문자열 → 두 칸 모두 「날짜 없음 · 날짜 고르기」", () => {
+    expect(validatePeriodChange({ ...ok, status: "bidding", start: "", end: "" })).toEqual([
+      { field: "start", reason: "날짜 없음 · 날짜 고르기" },
+      { field: "end", reason: "날짜 없음 · 날짜 고르기" },
+    ]);
+  });
+
+  it("빈 문자열(칸을 비움) → 「날짜 없음 · 날짜 고르기」(형식 오류 아님)", () => {
+    expect(validatePeriodChange({ ...ok, status: "bidding", start: "2026-09-18", end: "" })).toEqual([
+      { field: "end", reason: "날짜 없음 · 날짜 고르기" },
     ]);
   });
 
   it("종료 < 시작 → 종료 칸 오류", () => {
     expect(validatePeriodChange({ ...ok, status: "bidding", start: "2026-10-05", end: "2026-10-01" })).toEqual([
-      { field: "end", reason: "종료일이 시작일보다 빠릅니다 · 종료일을 고쳐 주세요" },
+      { field: "end", reason: "종료일이 시작일보다 빠름 · 종료일 수정" },
     ]);
   });
 
   it("진행 이후 + 시작일 비움 → 시작 칸 오류(D-82)", () => {
     expect(validatePeriodChange({ ...ok, status: "settling", start: null, end: "2026-10-01" })).toEqual([
-      { field: "start", reason: "진행부터는 시작일이 있어야 합니다 · 시작일을 적어 주세요" },
+      { field: "start", reason: "시작일 필요 · 시작일 입력" },
     ]);
   });
 

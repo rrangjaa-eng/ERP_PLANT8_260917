@@ -54,14 +54,13 @@ export function quoteLineReadColumns<Row extends QuoteLineCopyRow>(
   });
   return [
     column({ key: "sort", header: "번호", priority: "p3", collapseBelow: 1280, align: "left", text: (row) => String(rowNumber(row)) }),
-    column({ key: "subcategory", header: "소분류", priority: "p3", text: (row) => quoteLineGroupLabel(row, subcategoryLabel) }),
+    column({ key: "subcategory", header: "소분류", priority: "p3", collapseBelow: 1024, text: (row) => quoteLineGroupLabel(row, subcategoryLabel) }),
     column({ key: "itemName", header: "항목", priority: "p1", text: (row) => row.itemName }),
     column({ key: "vendor", header: "거래처", priority: "p2", text: (row) => vendorLabel(row.vendorId) }),
     column({
       key: "quantity",
       header: "수량",
       priority: "p2",
-      collapseBelow: 1024,
       align: "right",
       text: (row) => (row.lineKind === "quote" ? formatQuantity(row.quantity) : "—"),
     }),
@@ -70,7 +69,6 @@ export function quoteLineReadColumns<Row extends QuoteLineCopyRow>(
         key: "unitPrice",
         header: "단가",
         priority: "p2",
-        collapseBelow: 1024,
         align: "right",
         text: (row) => (row.lineKind === "quote" ? formatKrw(row.unitPriceAmountKrw) : "—"),
       }),
@@ -86,7 +84,7 @@ export function quoteLineReadColumns<Row extends QuoteLineCopyRow>(
         );
       },
     },
-    column({ key: "quoteAmount", header: "견적가", priority: "p2", collapseBelow: 1024, align: "right", text: (row) => formatKrw(row.quoteAmountKrw) }),
+    column({ key: "quoteAmount", header: "견적가", priority: "p2", align: "right", text: (row) => formatKrw(row.quoteAmountKrw) }),
     column({ key: "execution", header: "실행가", priority: "p1", align: "right", text: (row) => formatKrw(row.executionAmount) }),
     column({ key: "profit", header: "차익", priority: "p2", collapseBelow: 1280, align: "right", text: (row) => formatKrw(row.profitKrw) }),
     column({ key: "status", header: "상태", priority: "p1", text: (row) => (row.lineKind === "adjustment" ? "—" : lineStatusLabel(row.lineStatus)) }),

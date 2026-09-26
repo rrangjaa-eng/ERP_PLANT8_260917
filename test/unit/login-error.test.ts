@@ -6,7 +6,7 @@ import { GENERIC_ERROR, loginErrorMessage } from "@/app/(auth)/login/login-error
 describe("loginErrorMessage (§6-7 A②·A③)", () => {
   it("A②: 자격 증명 오류(401)의 better-auth 영문 메시지를 한국어 문구로 접는다", () => {
     expect(loginErrorMessage({ status: 401, message: "Invalid email or password" })).toBe(
-      "이메일 또는 비밀번호가 올바르지 않습니다.",
+      "이메일 또는 비밀번호 오류",
     );
   });
 
@@ -17,7 +17,7 @@ describe("loginErrorMessage (§6-7 A②·A③)", () => {
   });
 
   it("A③: 계정 잠금(403)은 서버가 준 문구를 그대로 보인다 — 잠긴 사용자가 비밀번호를 계속 고쳐 보는 것을 막는다", () => {
-    const locked = "로그인 시도가 너무 많습니다. 15분 뒤 다시 시도하거나 관리자에게 문의하세요.";
+    const locked = "로그인 시도 과다 · 15분 뒤 다시 시도하거나 관리자에게 문의";
     expect(loginErrorMessage({ status: 403, message: locked })).toBe(locked);
   });
 
@@ -40,7 +40,7 @@ describe("loginErrorMessage (§6-7 A②·A③)", () => {
   });
 
   it("L-3: 잠금 문구는 그대로 보인다 — 잠긴 줄 모르고 비밀번호만 고쳐 보게 두지 않는다", () => {
-    const locked = "로그인 시도가 너무 많습니다. 15분 뒤 다시 시도하거나 관리자에게 문의하세요.";
+    const locked = "로그인 시도 과다 · 15분 뒤 다시 시도하거나 관리자에게 문의";
     expect(loginErrorMessage({ status: 403, message: locked })).toBe(locked);
   });
 });

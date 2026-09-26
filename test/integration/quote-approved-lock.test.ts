@@ -21,7 +21,7 @@ import { log } from "@/lib/log";
 // 계속 고친다. 모든 거부 뒤 승인 차수의 견적 합계(보관 제외)가 승인 직전 값 그대로인지 DB로 단언한다.
 
 const LOCKED = "2차 고객 승인됨 · 고치려면 새 차수";
-const PAST_RESTORE = "이전 차수의 줄은 복원할 수 없습니다 · 현재 차수에서 새로 만들어 주세요";
+const PAST_RESTORE = "이전 차수 줄은 복원할 수 없음 · 현재 차수에서 새로 생성";
 
 async function makePm(): Promise<Viewer> {
   const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `승인 잠금 계급-${randomUUID()}` });

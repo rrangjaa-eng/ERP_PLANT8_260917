@@ -40,7 +40,7 @@ export type ExportDeps = {
 export async function exportSettings(viewer: Viewer, deps?: Partial<ExportDeps>): Promise<SettingsExport> {
   const can = deps?.can ?? defaultCan;
   const allowed = await can(viewer, "admin.settings", "view");
-  if (!allowed) throw new ForbiddenError("설정을 내보낼 권한이 없습니다.");
+  if (!allowed) throw new ForbiddenError("설정 내보내기 권한 없음");
 
   const getSettingValue = deps?.getSettingValue ?? defaultGetSettingValue;
   const listSettingHistory = deps?.listSettingHistory ?? defaultListSettingHistory;
@@ -84,7 +84,7 @@ export async function importSettings(
 ): Promise<void> {
   const can = deps?.can ?? defaultCan;
   const allowed = await can(viewer, "admin.settings", "write");
-  if (!allowed) throw new ForbiddenError("설정을 가져올 권한이 없습니다.");
+  if (!allowed) throw new ForbiddenError("설정 가져오기 권한 없음");
 
   const issues: string[] = [];
   const simple: Array<{ key: string; value: unknown; by: string | null }> = [];

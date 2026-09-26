@@ -179,6 +179,10 @@
   font-size: var(--fs-base);
 }
 
+.textInput[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
 .textInput:focus-visible {
   outline: var(--focus-w) solid var(--focus);
   outline-offset: var(--focus-offset);

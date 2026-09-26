@@ -42,7 +42,7 @@ export async function scopeFor(
 ): Promise<Scope> {
   const menu = ENTITY_MENUS[entity];
   if (!menu) {
-    throw new UnknownScopeEntityError(`scopeFor: 등록되지 않은 entity입니다: ${entity}`);
+    throw new UnknownScopeEntityError(`scopeFor: 등록되지 않은 entity: ${entity}`);
   }
 
   const canFn = deps?.can ?? defaultCan;

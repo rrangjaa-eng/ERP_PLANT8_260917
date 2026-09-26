@@ -459,7 +459,7 @@ export type ProjectInputFieldError = {
 
 export class ProjectInputRejectedError extends UserFacingError {
   constructor(readonly errors: ProjectInputFieldError[]) {
-    super(errors[0]?.reason ?? "등록하지 못했습니다");
+    super(errors[0]?.reason ?? "등록 실패");
   }
 }
 
@@ -536,7 +536,7 @@ export async function createProject(
 ): Promise<ProjectDto> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, PROJECTS_MENU, "write"))) {
-    throw new ForbiddenError("프로젝트 등록 권한이 없습니다.");
+    throw new ForbiddenError("프로젝트 등록 권한 없음");
   }
 
   const { errors: inputErrors, preEstimate } = validateProjectInput(input);
@@ -548,10 +548,10 @@ export async function createProject(
   const todayKst = kstToday(now);
   const teamScope = await loadActorTeamScope(viewer, { todayKst });
   if (!coversProjectTeam(teamScope, input.teamId)) {
-    denyWrite(viewer, CREATE_TEAM_SCOPE_RULE, {}, new ForbiddenError("내 팀 프로젝트만 등록할 수 있습니다."));
+    denyWrite(viewer, CREATE_TEAM_SCOPE_RULE, {}, new ForbiddenError("내 팀 프로젝트만 등록 가능 · 내 팀 선택"));
   }
   if (teamScope.workScope === "team" && (await findMembershipAtDate(viewer, input.pmUserId, todayKst))?.teamId !== input.teamId) {
-    denyWrite(viewer, CREATE_TEAM_SCOPE_RULE, {}, new ForbiddenError("담당 PM은 내 팀 사람만 고를 수 있습니다."));
+    denyWrite(viewer, CREATE_TEAM_SCOPE_RULE, {}, new ForbiddenError("담당 PM은 내 팀 사람만 가능 · 내 팀 사람 선택"));
   }
 
   const customFields = await validatedCustomFields(viewer, input.customFields);

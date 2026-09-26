@@ -1000,6 +1000,8 @@ export function QuoteLedger({
   const [blockedReason, setBlockedReason] = useState<{ clientKey: string; columnKey: string; message: string } | null>(null);
   const [sheetRowKey, setSheetRowKey] = useState<string | null>(null);
   const [statusToast, setStatusToast] = useState<string | null>(null);
+  // 사용자 결정 2026-09-26(VERDICT.md C-1) — 「버림」으로 지운 편집. 토스트가 떠 있는 동안만 되돌릴 수 있다.
+  const [discardedEdits, setDiscardedEdits] = useState<Record<string, unknown> | null>(null);
   // 04-22(S13) — 기간 칸. 기준값은 서버 렌더 값 또는 직전 저장 결과(엔지 리뷰 A §1 P1).
   const [periodBaseline, setPeriodBaseline] = useState({ startDate: period.startDate, endDate: period.endDate });
   // 검토 8(S18) — 「복원」한 기간 칸은 보관 시점 기준값으로 저장한다(그 사이 동료 저장이면 기간 충돌). 저장 성공·다시 그림에 비운다.
@@ -1246,12 +1248,15 @@ export function QuoteLedger({
     setPreEstimateErrors([]);
     setRenderedApprovedSeq(approvedSeq);
     setResplitKey((key) => key + 1);
+    setDiscardedEdits(null);
     dirtyStorage.recount();
   }
   // 04-24(ENG-D7) — 승인 표시·취소 뒤 새로 고침은 칸 단계만 바꾼다(편집 값은 그대로): 기존 줄은 서버 DTO,
   // 저장 전 새 견적 줄은 서버가 다시 계산한 newLineCells.
   if (renderedApprovedSeq !== approvedSeq) {
     setRenderedApprovedSeq(approvedSeq);
+    // /review ② — 승인으로 칸이 잠긴 뒤에는 버린 편집을 되살리지 않는다.
+    setDiscardedEdits(null);
     setLines((prev) =>
       prev.map((line) => {
         if (line.isNew) return line.lineKind === "quote" ? { ...line, cells: newLineCells } : line;
@@ -1261,9 +1266,8 @@ export function QuoteLedger({
     );
   }
 
-  function restoreEdits() {
-    const edits = dirtyStorage.restore();
-    if (!edits) return;
+  // 사용자 결정 2026-09-26(VERDICT.md C-1) — 「버림」·「되돌리기」가 같은 병합 로직을 쓴다.
+  function applyRestoredEdits(edits: Record<string, unknown>) {
     const restored = mergeRestoredEdits(lines, edits, subcategories[0]?.value ?? "", {
       quote: newLineCells,
       out_of_quote: outOfQuoteLineCells,
@@ -1283,6 +1287,30 @@ export function QuoteLedger({
     if (preEstimateBaselineDraft && Object.keys(restored.preEstimate).length > 0) {
       setPreEstimateDraft({ ...preEstimateBaselineDraft, ...restored.preEstimate });
     }
+  }
+
+  function restoreEdits() {
+    const edits = dirtyStorage.restore();
+    if (!edits) return;
+    applyRestoredEdits(edits);
+  }
+
+  // 사용자 결정 2026-09-26(VERDICT.md C-1) — 「버림」은 확인 없이 즉시 지우되, 되돌릴 수 있게
+  // 지운 편집을 들고 있다가 토스트 「되돌리기」에서 복원 병합을 그대로 적용한다.
+  function discardEdits() {
+    const edits = dirtyStorage.restore();
+    dirtyStorage.discard();
+    setStatusToast(null); // /review ① — 토스트 자리는 하나다. 되돌리기가 가려지지 않게.
+    setDiscardedEdits(edits);
+  }
+
+  function undoDiscard() {
+    if (discardedEdits) {
+      // /review R-1 · ③ — 되살린 편집과 「버림」 뒤에 고친 칸을 합친 현재 편집 전체로 보관본을 다시 쓴다.
+      persistPendingRef.current = true;
+      applyRestoredEdits(discardedEdits);
+    }
+    setDiscardedEdits(null);
   }
   // 04-47(DR-5) — 남은 고정 오류·해소되지 않은 충돌. 1차는 이것 때문에 비활성이 되지 않고, 누르면 서버를 부르지 않고 첫 오류로 간다.
   const hasEntryError = (entries: EntryDraft[] | undefined) => (entries ?? []).some((entry) => Object.keys(entry.cellErrors ?? {}).length > 0);
@@ -1336,7 +1364,7 @@ export function QuoteLedger({
       setLines((prev) =>
         prev.map((line) =>
           line.clientKey === clientKey
-            ? { ...line, cellErrors: { ...line.cellErrors, [columnKey]: "숫자가 아닙니다 · 12,400,000처럼 적어 주세요" }, dirty: true }
+            ? { ...line, cellErrors: { ...line.cellErrors, [columnKey]: "숫자 형식 오류 · 12,400,000처럼" }, dirty: true }
             : line,
         ),
       );
@@ -1468,6 +1496,8 @@ export function QuoteLedger({
     // §7-3 "오류가 한 칸이라도 있으면 화면 전체가 거부" — 서버에 보내지 않고 첫 오류로 간다(04-47 DR-5).
     if (goToFirstIssue()) return;
     savingRef.current = true;
+    // /review R-2 — 저장을 시작하면 되돌리기를 거둔다. 저장 중·저장 뒤에 옛 편집이 덮이지 않게.
+    setDiscardedEdits(null);
 
     const dirtyLines = lines.filter((line) => line.dirty);
     sentLineKeysRef.current = dirtyLines.map((line) => line.clientKey);
@@ -1606,6 +1636,7 @@ export function QuoteLedger({
       key: "subcategory",
       header: "소분류",
       priority: "p3",
+      collapseBelow: 1024,
       editability: (row) => atWidth(row.cells.subcategory),
       cell: (row) => (row.lineKind === "quote" ? subcategoryLabel(row.subcategory) : KIND_GROUP_LABELS[row.lineKind]),
       editCell: (row, ctx) =>
@@ -1663,7 +1694,6 @@ export function QuoteLedger({
       key: "quantity",
       header: "수량",
       priority: "p2",
-      collapseBelow: 1024,
       align: "right",
       editability: (row) => atWidth(row.cells.quantity),
       // D-95 — 읽기 모드도 쉼표 서식을 쓴다(04-09 Task 3 편차, 수량 칸이
@@ -1685,7 +1715,6 @@ export function QuoteLedger({
       key: "unitPrice",
       header: "단가",
       priority: "p2",
-      collapseBelow: 1024,
       align: "right",
       editability: (row) => atWidth(row.cells.unitPrice),
       cell: (row) => (row.lineKind === "quote" ? formatKrw(row.unitPriceAmountKrw) : "—"),
@@ -1712,7 +1741,7 @@ export function QuoteLedger({
                   line.clientKey === row.clientKey
                     ? {
                         ...line,
-                        cellErrors: { ...line.cellErrors, unitPrice: "숫자가 아닙니다 · 12,400,000처럼 적어 주세요" },
+                        cellErrors: { ...line.cellErrors, unitPrice: "숫자 형식 오류 · 12,400,000처럼" },
                         dirty: true,
                       }
                     : line,
@@ -1754,7 +1783,6 @@ export function QuoteLedger({
       key: "quoteAmount",
       header: "견적가",
       priority: "p2",
-      collapseBelow: 1024,
       align: "right",
       pasteRole: "computed",
       // 계산 열 — 누구에게나 항상 읽기 전용(D-63).
@@ -2091,13 +2119,19 @@ export function QuoteLedger({
       : result.data && "preEstimateRejected" in result.data
         ? result.data.preEstimateRejected.errors.length
         : 0;
-  const periodRejectedSummary = otherCellsRejectedText(0, outsideErrorCount) ?? undefined;
+  const periodRejectedSummary = otherCellsRejectedText(0, { conflictRows: 0, errorCells: outsideErrorCount }) ?? undefined;
   // 04-16(R2) — 거부 봉투의 칸을 표별로 센다. 제 칸이 0인 표는 `전부 거부 · 다른 칸 오류 N칸`이다.
   const routedRejection = rejectedEnvelope ? routeRejectedRevenueCells(rejectedEnvelope.cells, revenueEntryIds) : undefined;
+  // "/qa low" — 견적 줄 표(rest)의 나머지는 충돌(줄 수)·오류(칸 수)를 따로 센다.
+  const restConflictRows = new Set(
+    (routedRejection?.rest ?? []).filter((cell) => cell.kind === "conflict").map((cell) => cell.rowId),
+  ).size;
+  const restErrorCells = (routedRejection?.rest ?? []).filter((cell) => cell.kind === "error").length;
   const rejectedCells = {
     issued: Object.values(routedRejection?.issued ?? {}).reduce((sum, row) => sum + Object.keys(row).length, 0),
     paid: Object.values(routedRejection?.paid ?? {}).reduce((sum, row) => sum + Object.keys(row).length, 0),
-    quote: routedRejection?.rest.length ?? 0,
+    conflictRows: restConflictRows,
+    quote: restConflictRows + restErrorCells,
   };
   const rejectedCellTotal = rejectedCells.issued + rejectedCells.paid + rejectedCells.quote + outsideErrorCount;
   // DR-6 — 상태 바뀜 거부 문구(서버가 statusChangedMessage로 만든다). 다시 그린 뒤에도 남는다.
@@ -2107,7 +2141,7 @@ export function QuoteLedger({
     periodRejectedSummary ??
     statusChangedSummary ??
     result.serverError ??
-    (result.validationErrors ? "저장하지 못했습니다 · 입력값을 확인하세요" : undefined);
+    (result.validationErrors ? "저장 실패 · 입력값 확인" : undefined);
   // 견적 줄 표 합계 행 — 봉투 요약은 견적 줄 칸이 있을 때만, 매출 칸만 거부됐으면 다른 칸 글자.
   const quoteFooterSummary = rejectedEnvelope
     ? quoteTableRejectionText(rejectedEnvelope, revenueEntryIds, outsideErrorCount)
@@ -2237,7 +2271,7 @@ export function QuoteLedger({
             <button type="button" className={styles.restoreAction} onClick={() => (saveLocked ? undefined : restoreEdits())}>
               복원
             </button>
-            <button type="button" className={styles.restoreAction} onClick={() => (saveLocked ? undefined : dirtyStorage.discard())}>
+            <button type="button" className={styles.restoreAction} onClick={() => (saveLocked ? undefined : discardEdits())}>
               버림
             </button>
           </span>
@@ -2436,7 +2470,12 @@ export function QuoteLedger({
         saveLocked={saveLocked}
         saveButtonId={saveButtonId}
         editableWidth={editableWidth}
-        rejectedCells={{ issued: rejectedCells.issued, paid: rejectedCells.paid, total: rejectedCellTotal }}
+        rejectedCells={{
+          issued: rejectedCells.issued,
+          paid: rejectedCells.paid,
+          conflictRows: rejectedCells.conflictRows,
+          total: rejectedCellTotal,
+        }}
         firstIssue={issueTarget?.table === "issued" || issueTarget?.table === "paid" ? { signal: issueTarget.signal, table: issueTarget.table } : null}
         onSave={() => {
           clearAttemptNotices();
@@ -2444,7 +2483,10 @@ export function QuoteLedger({
         }}
       />
 
-      {statusToast ? <Toast message={statusToast} onDismiss={() => setStatusToast(null)} /> : null}
+      {statusToast && !discardedEdits ? <Toast message={statusToast} onDismiss={() => setStatusToast(null)} /> : null}
+      {discardedEdits ? (
+        <Toast message="편집을 버렸습니다" actionLabel="되돌리기" onAction={undoDiscard} onDismiss={() => setDiscardedEdits(null)} />
+      ) : null}
     </>
   );
 }

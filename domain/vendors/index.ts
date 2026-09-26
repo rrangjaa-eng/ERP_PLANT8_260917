@@ -245,7 +245,7 @@ export async function createVendor(
 ): Promise<CreateVendorResult> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, VENDORS_MENU, "write"))) {
-    throw new ForbiddenError("거래처 등록 권한이 없습니다.");
+    throw new ForbiddenError("거래처 등록 권한 없음");
   }
 
   const customFields = await validatedCustomFields(viewer, input.customFields);
@@ -289,7 +289,7 @@ export async function updateVendor(
 ): Promise<VendorDto | null> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, VENDORS_MENU, "write"))) {
-    throw new ForbiddenError("거래처 수정 권한이 없습니다.");
+    throw new ForbiddenError("거래처 수정 권한 없음");
   }
 
   // 목록이 보관된 행에 「수정」 링크를 감추는 것만으로는 부족하다 —
@@ -298,7 +298,7 @@ export async function updateVendor(
   const findVendorById = deps?.findVendorById ?? repoFindVendorById;
   const existing = await findVendorById(viewer, id);
   if (!existing || existing.archivedAt !== null) {
-    throw new ArchivedVendorError("보관되었거나 존재하지 않는 거래처는 수정할 수 없습니다.");
+    throw new ArchivedVendorError("보관됐거나 존재하지 않는 거래처는 수정할 수 없음");
   }
 
   const normalizedName = normalizeVendorName(input.name);
@@ -351,7 +351,7 @@ export async function setVendorHidden(
 ): Promise<VendorDto | null> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, VENDORS_MENU, "write"))) {
-    throw new ForbiddenError("거래처 상태 변경 권한이 없습니다.");
+    throw new ForbiddenError("거래처 상태 변경 권한 없음");
   }
 
   const current = await repoFindVendorById(viewer, id);
@@ -380,7 +380,7 @@ export async function revealAccountNumber(
 ): Promise<string> {
   const visibleFn = deps?.visible ?? defaultVisible;
   if (!(await visibleFn(viewer, REVEAL_INFO_ITEM))) {
-    throw new ForbiddenError("계좌번호 마스킹 해제 권한이 없습니다.");
+    throw new ForbiddenError("계좌번호 마스킹 해제 권한 없음");
   }
 
   const row = await repoFindVendorById(viewer, id);

@@ -52,13 +52,13 @@ export class UnknownDocumentKindError extends Error {}
 const REGISTRY = new Map<string, DocumentKindDef>();
 
 export function registerDocumentKind(def: DocumentKindDef): void {
-  if (REGISTRY.has(def.kind)) throw new DuplicateDocumentKindError(`이미 등록된 문서 종류입니다: ${def.kind}`);
+  if (REGISTRY.has(def.kind)) throw new DuplicateDocumentKindError(`이미 등록된 문서 종류: ${def.kind}`);
   REGISTRY.set(def.kind, def);
 }
 
 export function getDocumentKind(kind: string): DocumentKindDef {
   const def = REGISTRY.get(kind);
-  if (!def) throw new UnknownDocumentKindError(`등록되지 않은 문서 종류입니다: ${kind}`);
+  if (!def) throw new UnknownDocumentKindError(`등록되지 않은 문서 종류: ${kind}`);
   return def;
 }
 

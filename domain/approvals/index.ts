@@ -441,7 +441,7 @@ export async function approveDocument(
       );
     } else {
       const row = route.steps.find((step) => step.stepIndex === outcome.stepIndex);
-      if (!row) throw new Error("지금 단계 행을 찾지 못했습니다.");
+      if (!row) throw new Error("지금 단계 행 없음");
       await recordStepAction(viewer, { stepId: row.id, actedBy: viewer.id, action: "approved", selfApproved }, tx);
     }
 

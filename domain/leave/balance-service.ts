@@ -126,7 +126,7 @@ export async function getMyLeaveBalance(
 ): Promise<Partial<LeaveBalanceDto>> {
   const today = seoulToday(deps?.now);
   const user = await findUserById(viewer, viewer.id);
-  if (!user) throw new UserNotFoundError("사람을 찾을 수 없습니다.");
+  if (!user) throw new UserNotFoundError("사람 찾을 수 없음");
   return balanceDto(viewer, user, input.fiscalYear ?? yearOf(today), today);
 }
 
@@ -140,10 +140,10 @@ export async function getLeaveBalanceForUser(
 ): Promise<Partial<LeaveBalanceDto>> {
   const today = seoulToday(deps?.now);
   if (!(await (deps?.can ?? defaultCan)(viewer, PEOPLE_MENU, "view"))) {
-    throw new ForbiddenError("연차 잔고를 볼 권한이 없습니다.");
+    throw new ForbiddenError("연차 잔고 열람 권한 없음");
   }
   const user = await findUserById(viewer, userId);
-  if (!user) throw new UserNotFoundError("사람을 찾을 수 없습니다.");
+  if (!user) throw new UserNotFoundError("사람 찾을 수 없음");
   return balanceDto(viewer, user, input.fiscalYear, today);
 }
 
@@ -189,7 +189,7 @@ export async function previewLeaveBalance(
   const days = countLeaveQuarters(input);
   if (!days.ok) return null;
   const user = await findUserById(viewer, viewer.id);
-  if (!user) throw new UserNotFoundError("사람을 찾을 수 없습니다.");
+  if (!user) throw new UserNotFoundError("사람 찾을 수 없음");
   return requestBalanceDto(
     viewer,
     user,
@@ -218,14 +218,14 @@ export async function addLeaveAdjustment(
 ): Promise<{ id: string }> {
   const today = seoulToday(deps?.now);
   if (!(await (deps?.can ?? defaultCan)(viewer, PEOPLE_MENU, "write"))) {
-    throw new ForbiddenError("연차 조정 권한이 없습니다.");
+    throw new ForbiddenError("연차 조정 권한 없음");
   }
   if (!BUCKETS.includes(input.bucket)) {
     throw new LeaveAdjustmentValidationError("bucket", "잔고 비어 있음 · 잔고 고르기");
   }
   const bucket = input.bucket as LeaveBucket;
   const user = await findUserById(viewer, input.userId);
-  if (!user) throw new UserNotFoundError("사람을 찾을 수 없습니다.");
+  if (!user) throw new UserNotFoundError("사람 찾을 수 없음");
   const error = checkLeaveAdjustment({
     bucket,
     fiscalYear: input.fiscalYear,
@@ -271,10 +271,10 @@ export async function listLeaveAdjustmentsForUser(
   deps?: { can?: typeof defaultCan },
 ): Promise<Partial<LeaveAdjustmentDto>[]> {
   if (!(await (deps?.can ?? defaultCan)(viewer, PEOPLE_MENU, "view"))) {
-    throw new ForbiddenError("연차 조정 기록을 볼 권한이 없습니다.");
+    throw new ForbiddenError("연차 조정 기록 열람 권한 없음");
   }
   const user = await findUserById(viewer, input.userId);
-  if (!user) throw new UserNotFoundError("사람을 찾을 수 없습니다.");
+  if (!user) throw new UserNotFoundError("사람 찾을 수 없음");
   const monthlyLastYear = user.hireDate === null ? null : yearOf(monthlyExpiresOn(user.hireDate));
   const rows = (await listLeaveAdjustments(viewer, input.userId)).filter((row) =>
     row.bucket === "annual"

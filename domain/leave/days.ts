@@ -18,9 +18,9 @@ export const DEFAULT_HALF_PERIOD: HalfPeriod = "am";
 
 const START_EMPTY_ERROR = "시작일 비어 있음 · 시작일 적기";
 const DATE_EMPTY_ERROR = "날짜 비어 있음 · 날짜 적기";
-const DATE_FORMAT_ERROR = "날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요";
-const END_BEFORE_START_ERROR = "종료일이 시작일보다 빠릅니다 · 종료일을 고쳐 주세요";
-const WEEKEND_ONLY_ERROR = "주말만 고른 기간입니다 · 평일을 넣어 주세요";
+const DATE_FORMAT_ERROR = "날짜 형식 오류 · 2026-09-18처럼";
+const END_BEFORE_START_ERROR = "종료일이 시작일보다 빠름 · 종료일 고치기";
+const WEEKEND_ONLY_ERROR = "주말만 고른 기간 · 평일 넣기";
 const FISCAL_YEAR_ERROR = "기간이 회계연도를 넘음 · 12-31과 01-01로 나눠 신청";
 const SINGLE_DAY_ERROR = "반차·반반차는 하루뿐 · 날짜 하나만 적기";
 

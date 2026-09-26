@@ -266,7 +266,7 @@ export async function registerPerson(
           }),
       });
       throw new UserFacingError(
-        "계정 발급은 됐으나 입사일 저장이 실패해 보관함으로 보냈습니다 · 보관함에서 복원한 뒤 사람 상세에서 입사일을 넣으세요",
+        "입사일 저장 실패 · 계정은 발급됨 — 보관함에서 복원 후 사람 상세에서 입사일 넣기",
       );
     }
   }
@@ -343,8 +343,8 @@ export async function archivePerson(
 // 04.1-03(D-96 · D-97): 입사일·퇴직일. 쓰기 권한 · 날짜 형식 · 퇴직일 ≥ 입사일(같은 날 허용)을
 // 검증하고 쓴 뒤 행동 로그를 남긴다(Phase 3 사람 도메인 규약 — 쓰기 뒤 recordAction). 두 함수가
 // 동시에 옛 상대값으로 검증을 통과해도 users CHECK(23514)가 막고, 같은 ValidationError가 된다(A2-02).
-const HIRE_DATE_FORMAT_ERROR = "입사일 형식이 올바르지 않습니다 — YYYY-MM-DD로 적어 주세요.";
-const RESIGNATION_DATE_FORMAT_ERROR = "퇴직일 형식이 올바르지 않습니다 — YYYY-MM-DD로 적어 주세요.";
+const HIRE_DATE_FORMAT_ERROR = "입사일 형식 오류 — YYYY-MM-DD로";
+const RESIGNATION_DATE_FORMAT_ERROR = "퇴직일 형식 오류 — YYYY-MM-DD로";
 const DATES_INVERTED_ERROR = "퇴직일이 입사일보다 빠름 · 날짜 확인";
 const DATES_CHECK_CONSTRAINT = "users_resignation_on_or_after_hire_check";
 
@@ -375,7 +375,7 @@ async function setEmploymentDate(
   }
 
   const row = await repoFindUserById(viewer, userId);
-  if (!row) throw new UserNotFoundError("사람을 찾을 수 없습니다.");
+  if (!row) throw new UserNotFoundError("사람 찾을 수 없음");
   const hireDate = field === "hire_date" ? value : row.hireDate;
   const resignationDate = field === "resignation_date" ? value : row.resignationDate;
   if (hireDate !== null && resignationDate !== null && resignationDate < hireDate) {

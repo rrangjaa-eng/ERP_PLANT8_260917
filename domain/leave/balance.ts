@@ -376,7 +376,7 @@ export function checkLeaveAdjustment(input: {
   hireDate: string | null;
 }): { field: LeaveAdjustmentField; message: string } | null {
   if (!Number.isFinite(input.amountDays) || !Number.isInteger(input.amountDays * 4)) {
-    return { field: "amountDays", message: "일수는 0.25 단위 · 0.5처럼 적어 주세요" };
+    return { field: "amountDays", message: "일수는 0.25 단위 · 0.5처럼" };
   }
   if (input.amountDays === 0) return { field: "amountDays", message: "일수가 0 · 빼려면 -1처럼 적기" };
   if (input.reason.trim() === "") return { field: "reason", message: "사유 비어 있음 · 사유 적기" };

@@ -134,7 +134,7 @@ describe("조정 — 계약(ENG-13)", () => {
 
   it("0 · 0.3 · 사유 공백은 거부, 0.25 단위는 통과", () => {
     expect(check({ amountDays: 0 })).not.toBeNull();
-    expect(check({ amountDays: 0.3 })?.message).toBe("일수는 0.25 단위 · 0.5처럼 적어 주세요");
+    expect(check({ amountDays: 0.3 })?.message).toBe("일수는 0.25 단위 · 0.5처럼");
     expect(check({ reason: "   " })?.message).toBe("사유 비어 있음 · 사유 적기");
     expect(check({ amountDays: -1.75 })).toBeNull();
   });

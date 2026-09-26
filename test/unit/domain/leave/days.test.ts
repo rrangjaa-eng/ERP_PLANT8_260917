@@ -33,7 +33,7 @@ describe("countLeaveQuarters — 단위", () => {
 
   it("종일 토~일만(2026-09-26~27)은 거부", () => {
     expect(errors({ kind: "full_day", startDate: "2026-09-26", endDate: "2026-09-27", half: "" })).toEqual([
-      { field: "startDate", message: "주말만 고른 기간입니다 · 평일을 넣어 주세요" },
+      { field: "startDate", message: "주말만 고른 기간 · 평일 넣기" },
     ]);
   });
 
@@ -60,7 +60,7 @@ describe("countLeaveQuarters — 단위", () => {
 
   it("종료일 < 시작일은 거부", () => {
     expect(errors({ kind: "full_day", startDate: "2026-09-23", endDate: "2026-09-21", half: "" })).toEqual([
-      { field: "endDate", message: "종료일이 시작일보다 빠릅니다 · 종료일을 고쳐 주세요" },
+      { field: "endDate", message: "종료일이 시작일보다 빠름 · 종료일 고치기" },
     ]);
   });
 

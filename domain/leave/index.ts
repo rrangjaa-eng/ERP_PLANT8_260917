@@ -96,7 +96,7 @@ const LEAVE_ROUTE_DEFS = [
 ];
 
 function required<T>(value: T | undefined, key: string): T {
-  if (value === undefined) throw new Error(`결재선 설정 '${key}'에 값이 없습니다.`);
+  if (value === undefined) throw new Error(`결재선 설정 '${key}' 값 없음`);
   return value;
 }
 

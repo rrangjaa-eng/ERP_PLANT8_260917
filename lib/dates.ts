@@ -15,7 +15,7 @@ export function seoulToday(now: Date = new Date()): string {
 export function seoulDateToUtcDate(date: string): Date {
   const result = new Date(`${date}T00:00:00.000Z`);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(result.getTime()) || result.toISOString().slice(0, 10) !== date) {
-    throw new Error(`날짜 형식이 아닙니다: ${date}`);
+    throw new Error(`날짜 형식 오류: ${date}`);
   }
   return result;
 }

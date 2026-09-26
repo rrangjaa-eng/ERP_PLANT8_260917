@@ -161,7 +161,8 @@ test.describe("§6-0 화면 제목·부제 · §6-9 오류 제목 (02-08 Task 2)
     const lineHeight = await h1.evaluate((el) => getComputedStyle(el).lineHeight);
     expect(px(lineHeight)).toBeCloseTo(25.2, 1);
 
-    const subtitle = page.getByText("진행 중인 프로젝트 원장");
+    // 코디네이터 대리 결정 2026-09-26 /design-review FINDING-014 — 기본 보기가 올해 · 전체 상태라 「진행 중인」을 뺀다.
+    const subtitle = page.getByText("프로젝트 원장", { exact: true });
     await expect(subtitle).toHaveCSS("font-size", "12px");
     await expect(subtitle).toHaveCSS("color", "rgb(78, 93, 89)");
   });

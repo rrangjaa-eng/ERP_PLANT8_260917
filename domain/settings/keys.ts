@@ -311,6 +311,21 @@ export const DOCUMENT_NUMBER_PROJECT_SEQ_START: SettingDef<number> = {
   default: 1,
 };
 
+// 04.3-02(규약 C1) — 확인증 기능의 두 번째 게이트(설정). 환경 게이트
+// CERT_FEATURE_ALLOWED가 "true"일 때만 SETTING_DEFS에 실린다(아래 참고) —
+// 환경 게이트가 꺼져 있으면 이 키는 설정 화면에 줄이 없고
+// setSimpleSettingAction이 등록되지 않은 키로 거부한다. 프로덕션 배포는
+// Phase 11 전까지 CERT_FEATURE_ALLOWED를 두지 않는다(D-1107).
+export const CERT_ENABLED: SettingDef<boolean> = {
+  key: "cert.enabled",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "확인증 기능 사용",
+  hint: "환경 게이트가 켜져 있을 때만 이 설정으로 확인증 기능을 켤 수 있습니다.",
+  namespace: "확인증",
+  default: false,
+};
+
 export const PNL_START_GATE_WEEKS_AFTER_CUTOVER: SettingDef<number> = {
   key: "pnl.start_gate.weeks_after_cutover",
   kind: "simple",
@@ -353,4 +368,5 @@ export const SETTING_DEFS: SettingDef<unknown>[] = [
   PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE,
   PROJECT_CUSTOMER_APPROVAL_GATE,
   PNL_START_GATE_WEEKS_AFTER_CUTOVER,
+  ...(env.CERT_FEATURE_ALLOWED === "true" ? [CERT_ENABLED] : []),
 ];

@@ -188,7 +188,7 @@ export function ipKey(ip: string): string {
 // 재작성이 이 값을 다시 쓰지 않는다). IP가 없으면(로컬 · XFF 없는 경로)
 // "unknown" 한 칸에 모인다 — Cloud Run은 늘 XFF가 있어 실사용에서는 안 걸린다.
 export function certIpHash(secret: string | undefined, eventId: string, ip: string | null): string {
-  if (!secret) throw new Error("certIpHash: BETTER_AUTH_SECRET이 없어 IP 해시 키를 파생할 수 없습니다.");
+  if (!secret) throw new Error("certIpHash: BETTER_AUTH_SECRET 없음 · IP 해시 키 파생 불가");
   const key = Buffer.from(hkdfSync("sha256", secret, Buffer.alloc(0), "cert-ip-v1", 32));
   return createHmac("sha256", key)
     .update(`${eventId}:${ip ? ipKey(ip) : "unknown"}`)

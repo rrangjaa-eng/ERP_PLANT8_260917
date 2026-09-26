@@ -12,6 +12,7 @@ import {
   HolidayForbiddenError,
   HolidayNotDeletableError,
   HolidayYearIncompleteError,
+  HolidayYearOutOfRangeError,
   loadHolidayAdmin,
   PastHolidayDateError,
 } from "@/domain/holidays/admin";
@@ -151,12 +152,12 @@ describe("confirmHolidayYear — 연도 확정(04.2-11 · D-4220 · D-4223)", ()
     expect(await confirmLogs()).toHaveLength(1);
   });
 
-  it("액션으로 음력 표 밖 해(2036)를 직접 불러도 확정되지 않고 오류다(Codex #14)", async () => {
+  it("액션으로 범위 밖 해(2036)를 직접 불러도 확정되지 않고 오류다(Codex #14)", async () => {
     session.viewer = await createViewer(SYSADMIN_ROLE_ID, "관리자");
     try {
       const result = await confirmHolidayYearAction({ year: 2036 });
       expect(result?.data).toBeUndefined();
-      expect(result?.serverError).toContain("음력 표에 없는 해");
+      expect(result?.serverError).toContain("확정 불가 · 올해·내년만 확정");
     } finally {
       session.viewer = null;
     }
@@ -167,7 +168,7 @@ describe("confirmHolidayYear — 연도 확정(04.2-11 · D-4220 · D-4223)", ()
     const admin = await createViewer(SYSADMIN_ROLE_ID, "관리자");
     await db.insert(holidays).values({ date: "2030-07-15", name: "임시공휴일", kind: "temporary" });
 
-    await confirmHolidayYear(admin, 2030);
+    await confirmHolidayYear(admin, 2030, { now: () => new Date("2030-03-01T00:00:00Z") });
 
     expect(await generationsOf(2030)).toHaveLength(1);
     expect(await statutoryDatesOf(2030)).toEqual(ruleStatutoryDatesOf(2030));
@@ -178,7 +179,7 @@ describe("confirmHolidayYear — 연도 확정(04.2-11 · D-4220 · D-4223)", ()
     const admin = await createViewer(SYSADMIN_ROLE_ID, "관리자");
     await db.insert(holidays).values({ date: "2029-01-01", name: "1월 1일", kind: "statutory" });
 
-    await confirmHolidayYear(admin, 2029);
+    await confirmHolidayYear(admin, 2029, { now: () => new Date("2029-03-01T00:00:00Z") });
 
     expect(await statutoryDatesOf(2029)).toEqual(ruleStatutoryDatesOf(2029));
     expect(await generationsOf(2029)).toHaveLength(1);
@@ -189,7 +190,10 @@ describe("confirmHolidayYear — 연도 확정(04.2-11 · D-4220 · D-4223)", ()
     const admin = await createViewer(SYSADMIN_ROLE_ID, "관리자");
 
     await expect(
-      confirmHolidayYear(admin, 2031, { ensure: () => Promise.resolve(false) }),
+      confirmHolidayYear(admin, 2031, {
+        ensure: () => Promise.resolve(false),
+        now: () => new Date("2031-03-01T00:00:00Z"),
+      }),
     ).rejects.toBeInstanceOf(HolidayYearIncompleteError);
 
     expect(await confirmationsOf(2031)).toHaveLength(0);
@@ -202,6 +206,32 @@ describe("confirmHolidayYear — 연도 확정(04.2-11 · D-4220 · D-4223)", ()
     await expect(loadHolidayAdmin(viewOnly, {})).resolves.toBeDefined();
     await expect(confirmHolidayYear(viewOnly, 2027)).rejects.toBeInstanceOf(HolidayForbiddenError);
     expect(await confirmationsOf(2027)).toHaveLength(0);
+  });
+
+  // 04.2-11 개정(PR #73 · 2026-09-26) — D-4223 확정은 배너와 같은 범위: 올해·내년만.
+  // 화면이 주소창으로 다른 해를 부르는 경로(과거 연도 데이터가 남아 있을 때)까지
+  // 도메인이 다시 막는다.
+  it("올해·내년만 확정 가능 — 지난해·2년 뒤는 HolidayYearOutOfRangeError, 올해·내년은 성공한다(PR #73)", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID, "관리자");
+    const thisYear = Number(toKstDate(new Date()).slice(0, 4));
+
+    const past = confirmHolidayYear(admin, thisYear - 1);
+    await expect(past).rejects.toBeInstanceOf(HolidayYearOutOfRangeError);
+    await expect(past).rejects.toThrow(`${thisYear - 1}년 확정 불가 · 올해·내년만 확정`);
+
+    const tooFar = confirmHolidayYear(admin, thisYear + 2);
+    await expect(tooFar).rejects.toBeInstanceOf(HolidayYearOutOfRangeError);
+    await expect(tooFar).rejects.toThrow(`${thisYear + 2}년 확정 불가 · 올해·내년만 확정`);
+
+    expect(await confirmationsOf(thisYear - 1)).toHaveLength(0);
+    expect(await confirmationsOf(thisYear + 2)).toHaveLength(0);
+    expect(await confirmLogs()).toHaveLength(0);
+
+    await confirmHolidayYear(admin, thisYear);
+    await confirmHolidayYear(admin, thisYear + 1);
+
+    expect(await confirmationsOf(thisYear)).toHaveLength(1);
+    expect(await confirmationsOf(thisYear + 1)).toHaveLength(1);
   });
 });
 

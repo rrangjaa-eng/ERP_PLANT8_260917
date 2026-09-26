@@ -150,17 +150,26 @@ export async function loadHolidayAdmin(
   };
 }
 
+export class HolidayYearOutOfRangeError extends UserFacingError {}
+
 export type ConfirmHolidayYearDeps = {
   recordAction?: typeof defaultRecordAction;
   ensure?: (year: number, tx: DbOrTx) => Promise<boolean>;
+  now?: () => Date;
 };
 
 // D-4223: 한 달력 잠금 트랜잭션에서 (가) 후보 보장(음력 표 밖이면 LunarTableRangeError)
 // (나) 생성 표시 확인 (다) 멱등 확정 삽입 (라) 실제로 들어갔을 때만 끌 수 없는
 // `holiday_change` 로그(D-4220) — 로그가 실패하면 확정도 되돌려진다.
+// PR #73(2026-09-26) — 확정 가능한 해는 배너(holidayConfirmationBanner)와 같은 범위,
+// 올해·내년(KST)뿐이다. 화면이 주소창으로 다른 해를 부르는 경로까지 여기서 다시 막는다.
 export async function confirmHolidayYear(viewer: Viewer, year: number, deps?: ConfirmHolidayYearDeps): Promise<void> {
   if (!(await can(viewer, HOLIDAYS_MENU, "write"))) {
     throw new HolidayForbiddenError("공휴일 확정 권한 없음");
+  }
+  const thisYear = Number(toKstDate((deps?.now ?? (() => new Date()))()).slice(0, 4));
+  if (year !== thisYear && year !== thisYear + 1) {
+    throw new HolidayYearOutOfRangeError(`${year}년 확정 불가 · 올해·내년만 확정`);
   }
   const ensure = deps?.ensure ?? ensureHolidayCandidatesLocked;
   const recordAction = deps?.recordAction ?? defaultRecordAction;

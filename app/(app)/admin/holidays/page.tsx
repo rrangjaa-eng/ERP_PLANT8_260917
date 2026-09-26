@@ -65,6 +65,10 @@ export default async function HolidaysPage({
 
   const confirmed = view.confirmation !== null;
   const listHref = `/admin/holidays?year=${view.year}`;
+  // PR #73 — 확정은 올해·내년(KST)만 도메인이 받는다. 주소창으로 다른 해를 불러도
+  // (과거 연도 데이터가 남아 있을 때) 버튼은 보이지 않는다(§7 — 틀린 선택 자체를 없앤다).
+  const thisYear = Number(toKstDate(new Date()).slice(0, 4));
+  const canConfirmYear = view.year === thisYear || view.year === thisYear + 1;
   // `added`는 ISO 날짜이고 그 해 행에 있을 때만 토스트를 띄운다(T-4.2-74).
   const addedDate =
     added && /^\d{4}-\d{2}-\d{2}$/.test(added) && view.rows.some((row) => row.date === added) ? added : null;
@@ -120,7 +124,9 @@ export default async function HolidaysPage({
                 {` · 공휴일 ${view.count}일`}
               </p>
             )}
-            {!confirmed && canWrite && !showForm ? <ConfirmYear key={view.year} year={view.year} /> : null}
+            {!confirmed && canWrite && !showForm && canConfirmYear ? (
+              <ConfirmYear key={view.year} year={view.year} />
+            ) : null}
           </div>
 
           <DeleteUndoSection key={`${view.year}:${showForm ? "form" : "list"}`}>

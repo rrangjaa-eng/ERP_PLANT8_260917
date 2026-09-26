@@ -385,11 +385,15 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     expect(await amountCell.evaluate((el) => getComputedStyle(el).color)).not.toBe(muted);
   });
 
-  test("(리뷰 S-2) 저장 요청 중 발행액 칸은 값을 보인 채 읽기 전용이고 「발행 줄 추가」는 무동작이다", async ({ page }) => {
+  test("(리뷰 S-2) 저장 요청 중 발행액 칸은 값을 보인 채 읽기 전용이고 「발행 줄 추가」·「입금 줄 추가」는 비활성·무동작이다", async ({ page }) => {
     const projectUrl = await openWithIssuedEntry(page);
     await page.goto(projectUrl);
     const amount = page.getByLabel("발행액");
     await amount.fill("4000000");
+    // 입금 줄이 하나 있어야 표 밑 「입금 줄 추가」가 그려진다(0줄이면 EMPTY 행 버튼).
+    await page.getByRole("button", { name: "입금 줄 추가" }).click();
+    await page.getByLabel("입금일").fill("2026-09-05");
+    await page.getByLabel("입금액").fill("1100000");
 
     let release: () => void = () => {};
     const held = new Promise<void>((resolve) => {
@@ -406,12 +410,21 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     await expect(amount).toHaveAttribute("readonly", "");
     // 04-16(DR-3) — 이 플랜이 바꾼 발행 표에도 저장 잠금이 그대로 간다.
     await expect(page.getByRole("grid", { name: "발행 줄" })).toHaveAttribute("aria-busy", "true");
-    await page.getByRole("button", { name: "발행 줄 추가" }).click();
+    // 04-16 리뷰 S-2 — 플랜 truth 「추가 버튼이 비활성」: 저장 중에는 aria-disabled(DR-11)이고 눌러도 줄이 늘지 않는다.
+    const addIssued = page.getByRole("button", { name: "발행 줄 추가" });
+    const addPaid = page.getByRole("button", { name: "입금 줄 추가" });
+    await expect(addIssued).toHaveAttribute("aria-disabled", "true");
+    await expect(addPaid).toHaveAttribute("aria-disabled", "true");
+    await addIssued.click();
     await expect(page.getByLabel("발행액")).toHaveCount(1);
+    await addPaid.click();
+    await expect(page.getByLabel("입금액")).toHaveCount(1);
 
     release();
     await expect(page.getByText("바뀐 칸 없음", { exact: true })).toBeVisible();
     await expect(amount).not.toHaveAttribute("readonly", "");
+    await expect(addIssued).not.toHaveAttribute("aria-disabled", "true");
+    await expect(addPaid).not.toHaveAttribute("aria-disabled", "true");
     await expect(page.getByRole("grid", { name: "발행 줄" })).not.toHaveAttribute("aria-busy", "true");
   });
 });

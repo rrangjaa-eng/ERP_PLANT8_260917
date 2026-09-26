@@ -837,3 +837,18 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **버린 대안**: 04.1이 `Select`에 `placeholder` 끄기 prop을 더한다. Phase 4 소유 파일을 병렬로 고쳐야 한다. 04.1 전용 select를 새로 만든다. 같은 컴포넌트가 두 벌이 된다.
 
 **범위**: `ui/select/Select.tsx`, SYSTEM.md §7-15(Phase 4 소유). 처리 시점은 Phase 4 머지 뒤.
+
+---
+
+## 2026-09-23 — Phase 4(04-41) ARCHITECTURE §5 예외: projects.contract_* DROP · 머지 묶음 ③ 배포 (사용자 D9 · CEO 리뷰 B-09·OV-6 · 머지 묶음 결정 2026-09-23)
+
+**결정**: 0010이 더한 네 컬럼(`contract_currency` · `contract_foreign_amount` · `contract_fx_rate` · `contract_amount_krw`)을 마이그레이션 `0015_drop_project_contract_columns`가 지운다 — ARCHITECTURE §5 「확장 전용(DROP 없음)」의 예외 한 건. DROP 앞의 가드가 업무 데이터(`source <> 'demo'`)에서 계약 원화 금액이 0이 아니거나 외화 계약 금액이 있는 행(`contract_amount_krw <> 0 OR contract_foreign_amount IS NOT NULL`)을 세고, 한 건이라도 있으면 RAISE로 멈춘다 — 이번에 적용할 마이그레이션 전부가 한 트랜잭션이라 그 DB는 한 칸도 바뀌지 않는다. `ban-drop-column`은 `.squawk.toml`이 아니라 DROP 문장마다 인라인 무시 주석과 이유 한 줄로만 비켜 간다.
+전제(릴리스 제약): 0015는 계약 금액 입력 경로를 지우는 04-16(화면)·04-41 Task 1(서버 쓰기 경로)과 **같은 머지 묶음 ③**으로 한 번에 배포되고, 묶음 중간 커밋·중간 플랜 상태를 어느 환경에도 배포하지 않는다. 묶음 규칙 전체와 강제 장치(`deploy.yml` main 전용 가드 ENG-D12 · `rollback.sh` 스키마 하한 E2-04)는 04-50 항목이 정본이다(옛 「Phase 4는 PR #38 한 번에 배포」 전제는 사용자 결정 2026-09-23으로 대체됐다). 0015 첫 줄의 `-- rollback-floor:` 표시로 이 마이그레이션이 롤백 하한이 된다.
+
+**왜**: 계약 금액은 「고객 승인된 현재 차수 합계」 하나로만 존재해야 한다(D-84 · 사용자 D9 「지금 삭제 + 가드」). PR #38(3c1b015)로 0010이 이미 main·스테이징에 있지만 그 계약 값은 전환 전 입력이라 `source = 'demo'`(Eng OV-1)이고 파생값으로 대체된다. 업무 값(`source <> 'demo'`의 원화 ≠ 0 또는 외화 값)이 있는 DB는 가드가 멈춘다. 묶음 ② 리비전은 이 컬럼을 읽으므로 묶음 ③ 뒤 그 리비전으로의 트래픽 롤백은 04-50 하한이 거부한다. 배포 창 사실 한 줄: migrate Job이 새 리비전보다 먼저 돌므로 묶음 ③ 배포 중 새 리비전이 100%가 되기 전까지 묶음 ② 리비전의 계약 컬럼 읽기는 오류를 낸다(처리는 04-50 항목 · 이 묶음 /ship 전 사용자 확인).
+
+**버린 대안**: 코드만 지우고 DROP은 다음 확장-축소 릴리스로(B-09 B) · 컬럼 유지(B-09 C) — 둘 다 「어느 쪽이 계약 금액인가」를 다시 열어 둔다.
+
+**복구 절차(쓰기 중지)**: 전진 전용이다 — 되돌리는 마이그레이션 파일은 만들지 않는다. 하한 아래(묶음 ② 리비전)로의 롤백이 필요한 사고는 전진 수정이 먼저이고, 불가피하면 쓰기를 멈춘 상태에서 역 SQL — 네 컬럼을 0010 정의로 다시 더하기(`contract_currency text DEFAULT 'KRW' NOT NULL` · `contract_foreign_amount numeric(14,2)` · `contract_fx_rate numeric(12,4) DEFAULT '1.0000' NOT NULL` · `contract_amount_krw integer DEFAULT 0 NOT NULL`) — 를 적용한 뒤 사람이 트래픽을 옮긴다. 값은 돌아오지 않는다(파생값이 정본). 같은 하한 규칙 아래 있는 것 한 줄: 0012 상태 재매핑(04-06 — 묶음 ②, 전진 전용). 04-17·04-18 중간 상태(C-26)는 묶음 ④ 한 배포다.
+
+**범위**: `db/migrations/0015_drop_project_contract_columns.sql` · 배포 절차(묶음 ③). 이 항목은 SYSTEM.md를 바꾸지 않는다.

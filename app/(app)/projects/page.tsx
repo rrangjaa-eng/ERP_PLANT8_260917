@@ -8,10 +8,10 @@ import {
   PROJECT_SORT_KEYS,
   type ProjectSortKey,
 } from "@/domain/projects";
-import { listProjectFormReferences } from "@/domain/projects/references";
+import { listProjectFormReferences, scopeCreateFormReferences } from "@/domain/projects/references";
 import { listProjectStatusCatalog } from "@/domain/projects/status";
 import { recentFxRate } from "@/domain/money/currency";
-import { kstYear } from "@/lib/kst-date";
+import { kstToday, kstYear } from "@/lib/kst-date";
 import { LIST_PAGE_SIZE } from "@/lib/paging";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
@@ -98,6 +98,15 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     showCreateForm ? recentFxRate("USD") : Promise.resolve(1),
   ]);
 
+  // 등록 폼의 팀 · 담당 PM 칸만 업무 범위로 좁힌다 — 필터 줄은 전체 팀(references.teams)을 계속 쓴다.
+  const scopedCreateReferences = canWrite
+    ? await scopeCreateFormReferences(session.viewer, references, { todayKst: kstToday(new Date()) })
+    : null;
+  // /review team-scope-create-review.md P3(2) — 팀 발령이 없는 팀 업무 범위 사람은
+  // 등록해도 서버가 항상 거부한다(팀 목록 0개) — §7 "할 수 없는 선택지는 보이지 않게".
+  const canCreate = canWrite && scopedCreateReferences !== null && scopedCreateReferences.teams.length > 0;
+  const createReferences = canCreate && showCreateForm ? scopedCreateReferences : null;
+
   const { rows, totals, total, page, pageCount } = list;
   const canSeeAmount = totals.quoteAmountKrw !== undefined;
   // 지금 필터·정렬을 그대로 두고 쪽 번호만 바꾼다. 필터 폼은 page를 싣지 않아 필터를 바꾸면 1쪽이다.
@@ -120,13 +129,13 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
 
       {/* §6-1 D-39: 폼이 열려 있으면(?new=1) 아래 필터 줄의 1차 버튼을
           렌더하지 않는다 — 한 화면에 1차는 하나다. */}
-      {canWrite && showCreateForm ? (
+      {createReferences ? (
         <ProjectForm
           key={copySource && params.copyFrom ? `copy-${params.copyFrom}` : "new"}
           copySource={copySource && params.copyFrom ? { ...copySource, projectId: params.copyFrom } : null}
           clients={references.clients}
-          teams={references.teams}
-          pmUsers={references.pmUsers}
+          teams={createReferences.teams}
+          pmUsers={createReferences.pmUsers}
           cancelHref={projectsHref()}
           usdDefaultFxRate={usdDefaultFxRate}
         />
@@ -146,7 +155,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         {/* total === 0이면 ListEmpty가 이미 같은 「프로젝트 등록」
             행동을 준다 — vendors.tsx 선례와 같은 이유로 여기서도 중복 CTA를
             만들지 않는다. */}
-        {canWrite && !showCreateForm && total > 0 ? (
+        {canCreate && !showCreateForm && total > 0 ? (
           <Link href={projectsHref({ isNew: true })} className={styles.toggle}>
             프로젝트 등록
           </Link>
@@ -158,7 +167,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       {total === 0 && !hasFilter ? (
         <ListEmpty
           message="등록된 프로젝트가 없습니다"
-          action={{ label: "프로젝트 등록", href: projectsHref({ isNew: true }) }}
+          action={canCreate ? { label: "프로젝트 등록", href: projectsHref({ isNew: true }) } : undefined}
         />
       ) : total === 0 ? (
         <ListEmpty message="조건에 맞는 프로젝트가 없습니다" action={{ label: "필터 지우기", href: "/projects" }} />

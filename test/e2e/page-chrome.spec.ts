@@ -12,8 +12,12 @@ function px(value: string): number {
   return Number.parseFloat(value);
 }
 
-async function loginAs(page: Page, roleId: string): Promise<{ email: string; password: string }> {
-  const user = await createFixtureUser({ roleId });
+async function loginAs(
+  page: Page,
+  roleId: string,
+  options: { withTeam?: boolean } = {},
+): Promise<{ email: string; password: string }> {
+  const user = await createFixtureUser({ roleId, withTeam: options.withTeam });
   await page.goto("/login");
   await page.getByLabel("이메일").fill(user.email);
   await page.getByLabel("비밀번호").fill(user.password);
@@ -101,7 +105,8 @@ test.describe("로그인 실패 문구 — FormAlert (02-08 Task 1, §6-7 A②)"
 
 test.describe("전역 포커스 링 (02-08 Task 1, §4-4)", () => {
   test("컴포넌트 포커스 스타일이 없는 3차 링크에 전역 포커스 링이 적용된다", async ({ page }) => {
-    await loginAs(page, DEFAULT_ROLE_ID);
+    // 팀 발령이 없는 팀 업무 범위 사람에게는 「프로젝트 등록」이 보이지 않는다 — 팀을 준다.
+    await loginAs(page, DEFAULT_ROLE_ID, { withTeam: true });
     await page.goto("/projects");
 
     // Phase 4(04-01): /projects의 EMPTY 다음 한 수가 "지출결의 보기"(임시

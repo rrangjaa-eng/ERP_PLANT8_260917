@@ -275,7 +275,7 @@ test.describe("숫자 서식(D-95, 04-09)", () => {
       name: `E2Enumber발행액클라이언트-${Date.now()}`,
       normalizedName: `e2enumber발행액클라이언트-${Date.now()}`,
     });
-    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID, withTeam: true });
     await grantFinanceRole();
     const finance = await createFixtureUser({ roleId: "role-ceo" });
 

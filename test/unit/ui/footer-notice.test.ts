@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { composeFooterNotice, withIssueCount, type FooterNoticeItem } from "@/ui/table/footer-notice";
+import { composeFooterNotice, savedNoticeText, withIssueCount, type FooterNoticeItem } from "@/ui/table/footer-notice";
 
 // 04-47(DR-16) — 합계 행 오른쪽은 한 줄이다. danger → warning → muted 순서로 잇고 각 조각은 제 톤이다. 붙여넣기 묶음은
 // `붙여넣기 N줄`로 시작해 warning → muted, `N쪽까지`가 맨 끝. 저장 성공은 혼자 선다.
@@ -85,5 +85,18 @@ describe("withIssueCount — 표가 센 오류 수와 서버 거부 요약", () 
   it("제 칸이 0인 요약(`전부 거부 · 다른 칸 오류 1칸`)은 표가 0칸을 세는 동안 그대로 선다", () => {
     const other: FooterNoticeItem = { tone: "danger", text: "전부 거부 · 다른 칸 오류 1칸", replacesIssueCount: { errorCells: 0, conflictRows: 0 } };
     expect(withIssueCount([other], { errorCells: 0, conflictRows: 0 })).toEqual([other]);
+  });
+});
+
+// 코디네이터 대리 결정 2026-09-26 /design-review FINDING-012 (a) — 저장 성공 글자는 이번 저장에서 바뀐 줄 수
+// (만든 줄 + 고친 줄 + 지운 줄)를 싣는다. 0줄(기간 · 총 매출 예상가 · 매출 표만 저장)이면 수를 뺀다.
+describe("savedNoticeText — 저장됨 N줄 HH:MM(FINDING-012)", () => {
+  it("바뀐 줄이 있으면 `저장됨 N줄 HH:MM`", () => {
+    expect(savedNoticeText(6, "14:02")).toBe("저장됨 6줄 14:02");
+    expect(savedNoticeText(1, "09:05")).toBe("저장됨 1줄 09:05");
+  });
+
+  it("바뀐 줄이 0이면 수 없이 `저장됨 HH:MM`", () => {
+    expect(savedNoticeText(0, "14:02")).toBe("저장됨 14:02");
   });
 });

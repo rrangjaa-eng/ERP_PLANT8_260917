@@ -1277,7 +1277,7 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
 
     await saveAndWait(page);
     // 저장 뒤 붙여넣기 조각은 사라지고 `저장됨 …` 하나만 선다(DR-16).
-    await expect.poll(() => footerPieces(page)).toEqual([{ tone: "success", text: expect.stringMatching(/^저장됨 \d{2}:\d{2}$/) }]);
+    await expect.poll(() => footerPieces(page)).toEqual([{ tone: "success", text: expect.stringMatching(/^저장됨 45줄 \d{2}:\d{2}$/) }]);
     expect(await quoteTotalKrw(targetRevision.id)).toBe(await quoteTotalKrw(sourceRevision.id));
   });
 
@@ -1333,7 +1333,7 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
     await expect(quoteDataRows(page)).toHaveCount(2);
     await expect(invalidCells(page)).toHaveCount(0);
     await saveAndWait(page);
-    await expect.poll(() => footerPieces(page)).toEqual([{ tone: "success", text: expect.stringMatching(/^저장됨 \d{2}:\d{2}$/) }]);
+    await expect.poll(() => footerPieces(page)).toEqual([{ tone: "success", text: expect.stringMatching(/^저장됨 2줄 \d{2}:\d{2}$/) }]);
     const saved = await db
       .select({ itemName: quoteLines.itemName, vendorId: quoteLines.vendorId })
       .from(quoteLines)
@@ -1404,7 +1404,7 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
     await expect(quoteDataRows(page)).toHaveCount(2);
     await expect(invalidCells(page)).toHaveCount(0);
     await saveAndWait(page);
-    await expect.poll(() => footerPieces(page)).toEqual([{ tone: "success", text: expect.stringMatching(/^저장됨 \d{2}:\d{2}$/) }]);
+    await expect.poll(() => footerPieces(page)).toEqual([{ tone: "success", text: expect.stringMatching(/^저장됨 2줄 \d{2}:\d{2}$/) }]);
     const saved = await db
       .select({ itemName: quoteLines.itemName, lineKind: quoteLines.lineKind, executionAmountKrw: quoteLines.executionAmountKrw })
       .from(quoteLines)
@@ -1446,7 +1446,7 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
 
     await expect(invalidCells(page)).toHaveCount(0);
     await saveAndWait(page);
-    await expect.poll(() => footerPieces(page)).toEqual([{ tone: "success", text: expect.stringMatching(/^저장됨 \d{2}:\d{2}$/) }]);
+    await expect.poll(() => footerPieces(page)).toEqual([{ tone: "success", text: expect.stringMatching(/^저장됨 1줄 \d{2}:\d{2}$/) }]);
     const saved = await db
       .select({ note: quoteLines.note })
       .from(quoteLines)
@@ -1786,5 +1786,34 @@ test.describe("견적 줄 표 — 거부 뒤 오류 수 · 숨은 열 오류 · 
       { tone: "muted", text: "붙여넣기 1줄" },
       { tone: "warning", text: "외화 1줄 원화로" },
     ]);
+  });
+});
+
+// 코디네이터 대리 결정 2026-09-26 /design-review FINDING-012 (a) — `저장됨 N줄 HH:MM`의 N은 이번 저장에서 바뀐 줄
+// (만든 + 고친 + 지운) 수다. 줄이 하나도 안 바뀐 저장(기간만)은 수 없이 `저장됨 HH:MM`이다.
+test.describe("견적 줄 표 — 저장됨 N줄(FINDING-012)", () => {
+  test("한 줄 고치고 한 줄 지워 저장하면 `저장됨 2줄 HH:MM`, 이어서 기간만 저장하면 `저장됨 HH:MM`", async ({ page }) => {
+    await openProjectWithSavedLines(page, [
+      { subcategory: "stage_construction", itemName: "고칠줄", amount: 1000 },
+      { subcategory: "stage_construction", itemName: "지울줄", amount: 2000 },
+      { subcategory: "stage_construction", itemName: "둘줄", amount: 3000 },
+    ]);
+    await quoteCell(page, 0, 10).focus();
+    await expect(quoteCell(page, 0, 10)).toHaveAttribute("data-grid-focus", "");
+    await pasteWithFormats(page, { "text/plain": "비고바꿈" });
+    await quoteCell(page, 1, 2).focus();
+    await page.keyboard.press("Delete");
+    await page.getByRole("dialog").getByRole("button", { name: "견적 줄 삭제" }).click();
+    await expect(quoteDataRows(page)).toHaveCount(2);
+    await expect(invalidCells(page)).toHaveCount(0);
+
+    await saveAndWait(page);
+    await expect.poll(() => footerPieces(page)).toEqual([{ tone: "success", text: expect.stringMatching(/^저장됨 2줄 \d{2}:\d{2}$/) }]);
+
+    await page.locator("#period-open").click();
+    await page.locator("#period-start").fill("2026-10-01");
+    await page.locator("#period-end").fill("2026-10-31");
+    await saveAndWait(page);
+    await expect.poll(() => footerPieces(page)).toEqual([{ tone: "success", text: expect.stringMatching(/^저장됨 \d{2}:\d{2}$/) }]);
   });
 });

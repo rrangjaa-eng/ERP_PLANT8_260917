@@ -530,7 +530,7 @@ export const quoteLineRowInputSchema = z
     duplicatedFrom: z.string().uuid().optional(),
     version: z.number().optional(),
     subcategory: z.string(),
-    itemName: z.string().min(1, "항목명을 입력하세요."),
+    itemName: z.string().min(1, "항목명 필요 · 항목명 입력"),
     vendorId: z.string().optional(),
     quantity: z.coerce.number().optional(),
     unitPrice: quoteLineMoneyInputSchema,
@@ -562,7 +562,7 @@ export const quoteLineRowInputSchema = z
   // 서버가 종류 값으로 채운다.
   .superRefine((row, ctx) => {
     if ((row.lineKind === undefined || row.lineKind === "quote") && row.subcategory.length === 0) {
-      ctx.addIssue({ code: "custom", message: "소분류를 고르세요.", path: ["subcategory"] });
+      ctx.addIssue({ code: "custom", message: "소분류 필요 · 소분류 고르기", path: ["subcategory"] });
     }
   });
 

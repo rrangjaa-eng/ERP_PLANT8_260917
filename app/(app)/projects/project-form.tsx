@@ -39,7 +39,7 @@ const PRISTINE_FIELDS = [
   "preEstimateFxRate",
 ] as const;
 
-// 04-15 — 1차 옆 `등록하지 못했습니다 · {칸} {n}칸`의 칸 이름(라벨 그대로).
+// 04-15 — 1차 옆 `등록 실패 · {칸} {n}칸`의 칸 이름(라벨 그대로).
 const FIELD_LABELS: Record<ProjectInputFieldError["field"], string> = {
   startDate: "시작일",
   endDate: "종료일",
@@ -235,10 +235,10 @@ export function ProjectForm({
   // §7-15 검증 관문 — 필수인데 비면 제출 버튼이 이유를 말한다(막힘 자리는
   // 서버 응답 없이도 클라이언트 상태로 계산할 수 있지만, 이 플랜은
   // 서버 오류 문구를 그대로 옆에 붙이는 것으로 같은 계약을 만족한다).
-  // 04-15 — 필수 칸이 아닌 칸 거부는 Copywriting `Error — 등록 폼 제출` 한 줄(`등록하지 못했습니다 · 총 매출 예상가 1칸`).
+  // 04-15 — 필수 칸이 아닌 칸 거부는 Copywriting `Error — 등록 폼 제출` 한 줄(`등록 실패 · 총 매출 예상가 1칸`).
   const firstSubmitField = submitFieldErrors[0];
   const submitReason = firstSubmitField
-    ? `등록하지 못했습니다 · ${FIELD_LABELS[firstSubmitField]} ${submitFieldErrors.length}칸`
+    ? `등록 실패 · ${FIELD_LABELS[firstSubmitField]} ${submitFieldErrors.length}칸`
     : undefined;
   const blockedReason = [clientError, nameError, pmError, teamError, submitReason].filter(Boolean)[0];
 

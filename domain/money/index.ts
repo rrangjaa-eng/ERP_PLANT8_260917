@@ -119,7 +119,7 @@ export function normalizeMoneyInput(input: MoneyInput): MoneyInput {
     if (Math.abs(normalized.amount) >= FOREIGN_AMOUNT_COLUMN_LIMIT) throw new MoneyInputError("range", "외화 금액 상한 초과 · 금액 수정");
   }
   if (!withinKrwColumn(toKrw(normalized))) {
-    throw new MoneyInputError("range", `금액이 상한을 넘습니다 · ${formatKrw(KRW_COLUMN_MAX)}원 이하`);
+    throw new MoneyInputError("range", `금액 상한 초과 · ${formatKrw(KRW_COLUMN_MAX)}원 이하`);
   }
   return normalized;
 }

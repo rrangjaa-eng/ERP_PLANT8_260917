@@ -15,8 +15,8 @@ import { validateNewPassword, finalizePasswordChange } from "@/domain/auth/passw
 export const changePasswordAction = authedActionClient
   .schema(
     z.object({
-      currentPassword: z.string().min(1, "현재 비밀번호를 입력하세요."),
-      newPassword: z.string().min(8, "8자 이상이어야 합니다."),
+      currentPassword: z.string().min(1, "현재 비밀번호 필요 · 현재 비밀번호 입력"),
+      newPassword: z.string().min(8, "8자 미만 · 8자 이상으로"),
     }),
   )
   .action(async ({ parsedInput, ctx }) => {

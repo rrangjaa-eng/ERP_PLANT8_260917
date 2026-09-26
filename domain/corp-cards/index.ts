@@ -48,7 +48,7 @@ export function cardOwnerKind(input: CardOwnerInput): CardOwnerKind {
   const hasHolder = Boolean(input.holderUserId);
   const hasTeam = Boolean(input.teamId);
   if (hasHolder === hasTeam) {
-    throw new InvalidCardOwnerError("법인카드는 소지자 또는 팀 중 정확히 하나를 가져야 합니다.");
+    throw new InvalidCardOwnerError("소지자·팀 중 하나 필요 · 하나만 선택");
   }
   return hasHolder ? "personal" : "team";
 }

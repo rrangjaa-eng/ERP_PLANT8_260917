@@ -31,7 +31,7 @@ export const authedActionClient = actionClient.use(async ({ next, clientInput })
 
   const session = await getSession();
   if (!session) {
-    throw new UserFacingError("로그인이 필요합니다.");
+    throw new UserFacingError("로그인 필요 · 다시 로그인");
   }
   // viewer 투영: repositories가 scopeFor(viewer)로 쓸 최소 정보만 ctx에 싣는다.
   return next({ ctx: { viewer: session.viewer, user: session.user } });

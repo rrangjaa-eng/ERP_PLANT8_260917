@@ -157,7 +157,7 @@ export async function createTeam(
 
   const orgUnit = await repoFindOrgUnitById(viewer, input.orgUnitId);
   if (!orgUnit) {
-    throw new NotFoundError(`본부를 찾을 수 없습니다: ${input.orgUnitId}`);
+    throw new NotFoundError(`본부 찾을 수 없음: ${input.orgUnitId}`);
   }
 
   const row = await repoInsertTeam(viewer, input);
@@ -252,7 +252,7 @@ export async function assignTeam(
   const findTeamById = deps?.findTeamById ?? defaultFindTeamById;
   const team = await findTeamById(viewer, input.teamId);
   if (!team) {
-    throw new NotFoundError(`팀을 찾을 수 없습니다: ${input.teamId}`);
+    throw new NotFoundError(`팀 찾을 수 없음: ${input.teamId}`);
   }
 
   const insertMembership = deps?.insertMembership ?? repoInsertMembership;

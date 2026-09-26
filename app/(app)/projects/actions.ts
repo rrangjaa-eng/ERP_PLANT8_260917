@@ -41,10 +41,10 @@ const moneyInputSchema = z.object({
 export const createProjectAction = authedActionClient
   .schema(
     z.object({
-      clientId: z.string().min(1, "클라이언트를 고르세요."),
-      name: z.string().min(1, "프로젝트명을 입력하세요."),
-      pmUserId: z.string().min(1, "담당 PM을 고르세요."),
-      teamId: z.string().min(1, "팀을 고르세요."),
+      clientId: z.string().min(1, "클라이언트 필요 · 클라이언트 고르기"),
+      name: z.string().min(1, "프로젝트명 필요 · 프로젝트명 입력"),
+      pmUserId: z.string().min(1, "담당 PM 필요 · 담당 PM 고르기"),
+      teamId: z.string().min(1, "팀 필요 · 팀 고르기"),
       startDate: z.string().optional(),
       endDate: z.string().optional(),
       // 04-15(D-70) — 복사 등록의 출처. 행 범위 · 보관 판정은 domain이 한다.

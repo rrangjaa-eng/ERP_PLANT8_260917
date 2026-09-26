@@ -197,7 +197,7 @@ export async function registerPerson(
   const findRoleById = deps?.findRoleById ?? defaultFindRoleById;
   const role = await findRoleById(viewer, input.roleId);
   if (!role || role.archivedAt) {
-    throw new ValidationError(`존재하지 않거나 보관된 계급입니다: ${input.roleId}`);
+    throw new ValidationError(`존재하지 않거나 보관된 계급: ${input.roleId}`);
   }
 
   if (input.teamId) {
@@ -207,7 +207,7 @@ export async function registerPerson(
     const findTeamById = deps?.findTeamById ?? defaultFindTeamById;
     const team = await findTeamById(viewer, input.teamId);
     if (!team || team.archivedAt) {
-      throw new ValidationError(`존재하지 않거나 보관된 팀입니다: ${input.teamId}`);
+      throw new ValidationError(`존재하지 않거나 보관된 팀: ${input.teamId}`);
     }
   }
 
@@ -280,7 +280,7 @@ export async function changePersonRole(
   const findRoleById = deps?.findRoleById ?? defaultFindRoleById;
   const role = await findRoleById(viewer, roleId);
   if (!role || role.archivedAt) {
-    throw new ValidationError(`존재하지 않거나 보관된 계급입니다: ${roleId}`);
+    throw new ValidationError(`존재하지 않거나 보관된 계급: ${roleId}`);
   }
 
   await repoUpdateUserRole(viewer, userId, roleId);

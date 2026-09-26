@@ -2105,7 +2105,7 @@ export function QuoteLedger({
               variant="primary"
               pending={isExecuting}
               disabled={(dirtyCount === 0 && !cellEditing) || errorCellCount > 0}
-              disabledReason={errorCellCount > 0 ? `오류 ${errorCellCount}칸 · 고쳐야 저장됩니다` : saveDisabledReason}
+              disabledReason={errorCellCount > 0 ? `오류 ${errorCellCount}칸 · 고친 뒤 저장` : saveDisabledReason}
               reasonTone={errorCellCount > 0 ? "block" : "info"}
               shortcut="Ctrl+S"
               onClick={attemptSave}

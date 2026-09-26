@@ -18,7 +18,7 @@ export function validatePreEstimateChange(input: {
   }
   if (input.currency !== "KRW") {
     if (input.fxRate === null || !Number.isFinite(input.fxRate)) {
-      errors.push({ field: "fxRate", reason: `환율이 없습니다 · ${input.currency} 환율을 적어 주세요` });
+      errors.push({ field: "fxRate", reason: `환율 없음 · ${input.currency} 환율 입력` });
     } else if (input.fxRate <= 0) {
       errors.push({ field: "fxRate", reason: "환율 0 이하 · 환율 수정" });
     }

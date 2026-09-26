@@ -294,7 +294,7 @@ export function formatNumberInput(params: { raw: string; caret: number; kind: Nu
 /** 거부 이유 다섯 문구 — UI-SPEC rev 5 Copywriting `Error — 셀(형식)` ·
  * `Error — 셀(숫자 자리, 04-09)` 원문 그대로. 이 함수 밖에 사본을 두지 않는다. */
 export function numberInputRejectionReason(kind: NumberInputKind, rejected: NumberInputRejection): string {
-  if (rejected === "krw-fraction") return "원화는 소수점 없이 적어 주세요";
+  if (rejected === "krw-fraction") return "원화는 소수점 없이";
   if (rejected === "precision") {
     if (kind === "foreign") return "외화는 소수 2자리까지";
     if (kind === "fxRate") return "환율은 소수 4자리까지";

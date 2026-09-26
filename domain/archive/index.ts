@@ -31,7 +31,7 @@ const ARCHIVE_MENU = "admin.archive";
 function findEntry(entity: string) {
   const entry = ARCHIVABLE_TABLES.find((candidate) => candidate.entity === entity);
   if (!entry) {
-    throw new UnknownArchivableEntityError(`등록되지 않은 entity입니다: ${entity}`);
+    throw new UnknownArchivableEntityError(`등록되지 않은 entity: ${entity}`);
   }
   return entry;
 }

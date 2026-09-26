@@ -81,7 +81,7 @@ export class WeakPasswordError extends UserFacingError {}
 
 export function validateNewPassword(pw: string): void {
   if (pw.length < 8) {
-    throw new WeakPasswordError("비밀번호는 8자 이상이어야 합니다.");
+    throw new WeakPasswordError("비밀번호 8자 미만 · 8자 이상으로");
   }
   if (COMMON_PASSWORDS.has(pw.toLowerCase())) {
     throw new WeakPasswordError("너무 흔한 비밀번호 · 다른 비밀번호 사용");

@@ -28,7 +28,7 @@ export async function createAccount(
   // 그대로 노출된다(Rule 1 — 운영 CLI 사용성 버그, 실제 실행 확인 중 발견).
   const existing = await findUserByEmail(viewer, input.email);
   if (existing) {
-    throw new UserFacingError(`이미 존재하는 이메일입니다: ${input.email}`);
+    throw new UserFacingError(`이미 있는 이메일: ${input.email}`);
   }
 
   const tempPassword = generateTempPassword();

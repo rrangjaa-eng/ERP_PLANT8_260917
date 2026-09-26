@@ -262,3 +262,277 @@ test("C1 — 기능이 꺼지면 확인 액션을 직접 POST해도 세지 않�
   expect(await on.text()).toContain("remaining");
   expect((await seatOf(id)).failedAttempts).toBe(2);
 });
+
+// ── Task 2b — 누적 잠김 묶음 · 잠금 다시 확인 ──────────────────────────────
+
+const HARD_LINE_1 = "틀린 번호가 너무 여러 번 들어와 확인이 잠겼습니다";
+const HARD_LINE_2 = /^담당자 .*PLANT8 경영관리 02-123-4567에 전화해 주세요$/;
+const RECHECK_FAIL = "확인 결과를 받지 못했습니다 · 다시 눌러 주세요";
+
+function lockGroup(page: Page) {
+  return page.locator('div[tabindex="-1"]').filter({ hasText: HARD_LINE_1 });
+}
+
+function recheckButton(page: Page) {
+  return page.getByRole("button", { name: /^잠금 확인/ });
+}
+
+async function activeIsLockGroup(page: Page): Promise<boolean> {
+  return page.evaluate(() => {
+    const el = document.activeElement;
+    return el instanceof HTMLElement && el.tagName === "DIV" && el.getAttribute("tabindex") === "-1";
+  });
+}
+
+async function setVisibility(page: Page, state: "hidden" | "visible") {
+  await page.evaluate((next) => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => next });
+    document.dispatchEvent(new Event("visibilitychange"));
+  }, state);
+}
+
+async function hardLockSeat(id: string) {
+  await db
+    .update(certWinners)
+    .set({ cumulativeFailedAttempts: 20, hardLockedAt: new Date() })
+    .where(eq(certWinners.id, id));
+}
+
+async function primaryDescribedBy(page: Page): Promise<string[]> {
+  const value = (await confirmButton(page).getAttribute("aria-describedby")) ?? "";
+  return value.split(/\s+/).filter(Boolean);
+}
+
+test("누적 잠김 — 20번째 틀림 → 묶음(aria-live 없음) · 포커스 묶음 · 1차 설명 = 두 줄 · 10분 뒤에도 잠김 · 다시 골라도 누적 잠김", async ({
+  page,
+}) => {
+  const ev = await oneWinnerEvent("E2E누적");
+  const id = await winnerIdOf(ev.eventId, "김하늘");
+  await db.update(certWinners).set({ cumulativeFailedAttempts: 19 }).where(eq(certWinners.id, id));
+  await page.goto(ev.link);
+  await expect(page.getByRole("button", { name: "김*늘" })).toBeVisible();
+  await page.clock.install();
+  await page.getByRole("button", { name: "김*늘" }).click();
+  await wrongByClick(page);
+
+  const group = lockGroup(page);
+  await expect(group).toHaveCount(1);
+  await expect(group).not.toHaveAttribute("aria-live");
+  await expect(group.getByText(HARD_LINE_1, { exact: true })).toBeVisible();
+  await expect(group.getByText(HARD_LINE_2)).toBeVisible();
+  await expect(group.getByRole("link")).toHaveAttribute("href", /^tel:/);
+  await expect(group.getByRole("button", { name: /^잠금 확인/ })).toBeVisible();
+  await expect.poll(() => activeIsLockGroup(page)).toBe(true);
+  await expect(last4Field(page)).toHaveValue("");
+  await expect(last4Field(page)).toBeDisabled();
+  await expect(confirmButton(page)).toBeDisabled();
+  await expect(group.getByText(RECHECK_FAIL)).toHaveCount(0);
+
+  const ids = await primaryDescribedBy(page);
+  expect(ids).toHaveLength(2);
+  const groupId = await group.getAttribute("id");
+  for (const pid of ids) {
+    expect(pid).not.toBe(groupId);
+    await expect(page.locator(`[id="${pid}"]`)).toHaveJSProperty("tagName", "P");
+  }
+  expect(await page.locator(`[id="${ids[0]}"]`).textContent()).toBe(HARD_LINE_1);
+
+  const submitText = (await page.locator("form").innerText()) ?? "";
+  expect(submitText).not.toMatch(/\d{2}:\d{2}/);
+  expect(submitText).not.toContain("남은 횟수");
+  expect(submitText).not.toContain("20");
+  await expect(page.getByRole("button", { name: "다른 이름 고르기" })).toBeEnabled();
+
+  await page.clock.fastForward("10:00");
+  await expect(last4Field(page)).toBeDisabled();
+  await expect.poll(() => activeIsLockGroup(page)).toBe(true);
+
+  await page.getByRole("button", { name: "다른 이름 고르기" }).click();
+  await expect(page.getByText(/^이름을 골라 주세요/)).toBeVisible();
+  await page.getByRole("button", { name: "김*늘" }).click();
+  await expect(lockGroup(page)).toHaveCount(1);
+  await expect.poll(() => activeIsLockGroup(page)).toBe(true);
+});
+
+test("잠금 다시 확인 — 아직 잠김: 보임 이벤트는 조용하고, 「잠금 확인」 누름은 실패 줄 없이 포커스 묶음", async ({ page }) => {
+  const ev = await oneWinnerEvent("E2E재확인잠김");
+  const id = await winnerIdOf(ev.eventId, "김하늘");
+  await hardLockSeat(id);
+  await page.goto(ev.link);
+  await page.getByRole("button", { name: "김*늘" }).click();
+  await expect.poll(() => activeIsLockGroup(page)).toBe(true);
+  const before = await seatOf(id);
+
+  await setVisibility(page, "hidden");
+  await setVisibility(page, "visible");
+  await expect(lockGroup(page).getByText(HARD_LINE_1, { exact: true })).toBeVisible();
+  await expect.poll(() => activeIsLockGroup(page)).toBe(true);
+  expect(await seatOf(id)).toEqual(before);
+
+  await lockGroup(page).getByRole("link").focus();
+  await recheckButton(page).click();
+  await expect(lockGroup(page).getByText(HARD_LINE_1, { exact: true })).toBeVisible();
+  await expect.poll(() => activeIsLockGroup(page)).toBe(true);
+  await expect(page.getByText(RECHECK_FAIL)).toHaveCount(0);
+  expect(await seatOf(id)).toEqual(before);
+});
+
+test("잠금 다시 확인 — 담당자가 풀고 남이 제출했어도 입력만 살아나고 E6-a는 없다 · 확인 요청 0 · 셈 불변", async ({ page }) => {
+  const ev = await oneWinnerEvent("E2E재확인풀림");
+  const id = await winnerIdOf(ev.eventId, "김하늘");
+  await hardLockSeat(id);
+  await page.goto(ev.link);
+  await page.getByRole("button", { name: "김*늘" }).click();
+  await expect(lockGroup(page)).toHaveCount(1);
+
+  const verifyRequests: string[] = [];
+  page.on("request", (req) => {
+    if (req.method() === "POST" && (req.postData() ?? "").includes('"last4"')) verifyRequests.push(req.url());
+  });
+
+  await setVisibility(page, "hidden");
+  await db
+    .update(certWinners)
+    .set({ failedAttempts: 0, lockedUntil: null, cumulativeFailedAttempts: 0, hardLockedAt: null, submittedAt: new Date() })
+    .where(eq(certWinners.id, id));
+  await setVisibility(page, "visible");
+
+  await expect(lockGroup(page)).toHaveCount(0);
+  await expect(last4Field(page)).toBeEnabled();
+  await expect(last4Field(page)).toBeFocused();
+  await expect(page.getByText(BLOCKED_FIRST, { exact: true })).toBeVisible();
+  await expect(page.getByText(/이미 제출/)).toHaveCount(0);
+  expect(verifyRequests).toHaveLength(0);
+  const after = await seatOf(id);
+  expect(after.failedAttempts).toBe(0);
+  expect(after.cumulativeFailedAttempts).toBe(0);
+
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: false })));
+  const again = await seatOf(id);
+  expect(again.failedAttempts).toBe(0);
+  expect(again.cumulativeFailedAttempts).toBe(0);
+  expect(verifyRequests).toHaveLength(0);
+});
+
+test("누적 → 풀림 → 새 짧은 잠김: 같은 묶음 안에 짧은 잠김 줄 · 포커스 묶음 · 1차 설명 = 그 두 줄 · 풀리면 칸", async ({ page }) => {
+  const ev = await oneWinnerEvent("E2E누적짧은");
+  const id = await winnerIdOf(ev.eventId, "김하늘");
+  await hardLockSeat(id);
+  await page.goto(ev.link);
+  await expect(page.getByRole("button", { name: "김*늘" })).toBeVisible();
+  await page.clock.install();
+  await page.getByRole("button", { name: "김*늘" }).click();
+  await expect(lockGroup(page)).toHaveCount(1);
+
+  await db
+    .update(certWinners)
+    .set({
+      cumulativeFailedAttempts: 0,
+      hardLockedAt: null,
+      failedAttempts: 5,
+      lockedUntil: new Date(Date.now() + 3 * 60 * 1000),
+    })
+    .where(eq(certWinners.id, id));
+  await recheckButton(page).click();
+
+  const shortLine = page.getByText(/^틀린 번호가 5번 들어와 확인이 잠겼습니다 · \d{2}:\d{2}부터 다시 해 주세요$/);
+  await expect(shortLine).toBeVisible();
+  const group = page.locator('div[tabindex="-1"]').filter({ has: shortLine });
+  await expect(group).toHaveCount(1);
+  await expect(last4Field(page)).toBeDisabled();
+  await expect(confirmButton(page)).toBeDisabled();
+  await expect.poll(() => activeIsLockGroup(page)).toBe(true);
+  const ids = await primaryDescribedBy(page);
+  expect(ids).toHaveLength(2);
+  expect(await page.locator(`[id="${ids[0]}"]`).textContent()).toMatch(/^틀린 번호가 5번 들어와/);
+  // 1차 아래 disabledReason 요소가 없다 — 같은 글이 두 번 서지 않는다.
+  await expect(shortLine).toHaveCount(1);
+
+  await page.clock.fastForward("03:01");
+  await expect(last4Field(page)).toBeEnabled();
+  await expect(last4Field(page)).toBeFocused();
+});
+
+test("「잠금 확인」 실패 → 묶음 안 실패 줄 · 포커스 묶음 · 연결, 다시 누르면 응답 전에 지워진다 · 보임 이벤트 실패는 조용하다", async ({
+  page,
+}) => {
+  const ev = await oneWinnerEvent("E2E재확인실패");
+  const id = await winnerIdOf(ev.eventId, "김하늘");
+  await hardLockSeat(id);
+  await page.goto(ev.link);
+  await page.getByRole("button", { name: "김*늘" }).click();
+  await expect(lockGroup(page)).toHaveCount(1);
+
+  let mode: "abort" | "hold" | "pass" = "abort";
+  let release: () => void = () => undefined;
+  await page.route(ev.link, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    if (mode === "abort") {
+      mode = "pass";
+      return route.abort();
+    }
+    if (mode === "hold") {
+      mode = "pass";
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    }
+    return route.continue();
+  });
+
+  await recheckButton(page).click();
+  const failLine = page.getByText(RECHECK_FAIL, { exact: true });
+  await expect(failLine).toBeVisible();
+  await expect(lockGroup(page).getByText(RECHECK_FAIL)).toHaveCount(1);
+  await expect.poll(() => activeIsLockGroup(page)).toBe(true);
+  const failId = await failLine.getAttribute("id");
+  expect(failId).toBeTruthy();
+  await expect(recheckButton(page)).toHaveAttribute("aria-describedby", failId ?? "");
+  expect(await primaryDescribedBy(page)).not.toContain(failId);
+  expect(await primaryDescribedBy(page)).toHaveLength(2);
+  await expect(recheckButton(page)).toBeEnabled();
+
+  mode = "hold";
+  await recheckButton(page).click();
+  await expect(failLine).toHaveCount(0);
+  expect((await recheckButton(page).getAttribute("aria-describedby")) ?? "").not.toContain(failId ?? "∅");
+  release();
+  await expect(recheckButton(page)).toBeEnabled();
+  await expect(failLine).toHaveCount(0);
+  await expect.poll(() => activeIsLockGroup(page)).toBe(true);
+
+  mode = "abort";
+  await recheckButton(page).focus();
+  await setVisibility(page, "hidden");
+  await setVisibility(page, "visible");
+  await expect.poll(() => mode).toBe("pass");
+  await expect(failLine).toHaveCount(0);
+  await expect(recheckButton(page)).toBeFocused();
+});
+
+test("누적 잠긴 채 담당자가 닫으면 「잠금 확인」 → E6-b, 보임 이벤트로도 E6-b · E6-a 없음", async ({ page }) => {
+  const ev = await oneWinnerEvent("E2E누적닫힘");
+  const id = await winnerIdOf(ev.eventId, "김하늘");
+  await hardLockSeat(id);
+  await page.goto(ev.link);
+  await page.getByRole("button", { name: "김*늘" }).click();
+  await expect(lockGroup(page)).toHaveCount(1);
+  await db.update(certEvents).set({ closedAt: new Date(), closedReason: "manual" }).where(eq(certEvents.id, ev.eventId));
+  await recheckButton(page).click();
+  await expect(page.getByText("이 링크는 닫혔습니다")).toBeVisible();
+  await expect(page.getByText(/^담당자가 접수를 마쳤습니다/)).toBeVisible();
+  await expect(page.getByText("이 링크는 닫혔습니다")).toBeFocused();
+  await expect(page.getByText(/이미 제출/)).toHaveCount(0);
+
+  const ev2 = await oneWinnerEvent("E2E누적닫힘보임");
+  const id2 = await winnerIdOf(ev2.eventId, "김하늘");
+  await hardLockSeat(id2);
+  await page.goto(ev2.link);
+  await page.getByRole("button", { name: "김*늘" }).click();
+  await expect(lockGroup(page)).toHaveCount(1);
+  await db.update(certEvents).set({ closedAt: new Date(), closedReason: "manual" }).where(eq(certEvents.id, ev2.eventId));
+  await setVisibility(page, "hidden");
+  await setVisibility(page, "visible");
+  await expect(page.getByText("이 링크는 닫혔습니다")).toBeVisible();
+  await expect(page.getByText(/이미 제출/)).toHaveCount(0);
+});

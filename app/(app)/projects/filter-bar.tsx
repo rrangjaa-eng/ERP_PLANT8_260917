@@ -68,6 +68,8 @@ export function ProjectsFilterBar({
   // 올라온다)에서 포커스가 두 칸 밖으로 나갈 때(relatedTarget)만, 값이 처음과 달라졌을 때만. 시작일 → Tab → 종료일
   // 사이에는 제출하지 않는다.
   function onPeriodFocusOut(event: FocusEvent<HTMLDivElement>) {
+    // 창 자체가 포커스를 잃을 때(창 전환 · 폰 앱 전환)도 relatedTarget 없는 focusout이 온다 — 그때는 묶음을 떠난 것이 아니다.
+    if (event.relatedTarget === null && !document.hasFocus()) return;
     if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
     const changed =
       (fromRef.current?.value ?? "") !== (defaultValues.from ?? "") || (toRef.current?.value ?? "") !== (defaultValues.to ?? "");

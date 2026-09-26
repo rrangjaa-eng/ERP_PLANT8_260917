@@ -1862,7 +1862,8 @@ export function QuoteLedger({
       {
         key: "vendor",
         kind: "select",
-        options: vendors.map((option) => ({ value: option.id, label: option.name })),
+        // ISSUE-001(/qa) — 거래처 없음의 복사 글자는 `—`(읽기 열 copyText)다. 붙일 때 빈 값으로 읽어 거래처를 비운다.
+        options: [{ value: "", label: "—" }, ...vendors.map((option) => ({ value: option.id, label: option.name }))],
         isEditable: (row) => row.cells.vendorId === "edit",
       },
       { key: "quantity", kind: "number", numberKind: "quantity", isEditable: (row) => row.cells.quantity === "edit" },

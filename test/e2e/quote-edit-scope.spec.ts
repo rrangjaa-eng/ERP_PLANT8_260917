@@ -669,6 +669,19 @@ test.describe("폭 규칙 — 1024 미만 보기 전용 · 좁은 PC 열 접기 
     await expect(page.getByRole("columnheader", { name: "견적가" })).toBeVisible();
   });
 
+  // /review R-6 — DR-14로 700~1023 표가 7열이 됐다. 가장 좁은 700에서도 문서가 가로로 넘치지 않고,
+  // 견적가 열이 뷰포트 안에 있다.
+  test("(k2) 700 — 7열 견적 표가 문서를 가로로 넘치게 하지 않고 견적가 열이 화면 안에 있다 (DR-14)", async ({ page }) => {
+    await page.setViewportSize({ width: 700, height: 800 });
+    await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);
+
+    const amountHeader = page.getByRole("columnheader", { name: "견적가" });
+    await expect(amountHeader).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const box = await amountHeader.boundingBox();
+    expect(box ? box.x + box.width <= 700 : false).toBe(true);
+  });
+
   test("(k) 1000 — 0줄 진행 표의 EMPTY에 「첫 줄 만들기」가 없다", async ({ page }) => {
     await page.setViewportSize({ width: 1000, height: 800 });
     await openAsPm(page, "in_progress", addDays(TODAY, 10), []);

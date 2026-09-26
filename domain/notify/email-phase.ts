@@ -1,5 +1,5 @@
 import { log } from "@/lib/log";
-import { emailErrorCode, type EmailSender, type SendOutcome } from "@/lib/email/sender";
+import { emailErrorCode, type EmailMessage, type EmailSender, type SendOutcome } from "@/lib/email/sender";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { composeDigest } from "@/domain/notify/digest";
 import {
@@ -35,6 +35,8 @@ export type EmailPhaseDeps = {
   now: () => Date;
   monotonicNow: () => number;
   sendDeadlineMs?: number;
+  // 발송기가 신호를 무시할 때 이메일 단계가 끊는 여유(마감 + 이 값) — 기본 2초.
+  sendGraceMs?: number;
   // 선점·결과 트랜잭션의 클라이언트 마감.
   txDeadlineMs?: number;
   claim?: typeof claimNextEmailBundle;
@@ -50,10 +52,32 @@ function toOutcome(result: SendOutcome): EmailOutcome {
   return result.outcome === "rejected" ? "failed" : "unknown";
 }
 
+// 발송기가 AbortSignal을 무시해도 마감 + grace에 indeterminate·DEADLINE으로 끝낸다(Codex 2차 #6).
+// 진 발송 프라미스의 늦은 거부는 삼킨다.
+async function sendWithDeadline(
+  sender: EmailSender,
+  message: EmailMessage,
+  deadlineMs: number,
+  graceMs: number,
+): Promise<SendOutcome> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<SendOutcome>((resolve) => {
+    timer = setTimeout(() => resolve({ outcome: "indeterminate", code: "DEADLINE" }), deadlineMs + graceMs);
+  });
+  const sending = sender.send(message, { signal: AbortSignal.timeout(deadlineMs) });
+  sending.catch(() => {});
+  try {
+    return await Promise.race([sending, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // D-4203: 예산 안에서 「한 묶음 선점 → 발송(트랜잭션 밖) → 결과 기록」을 되풀이한다.
 // 결과 기록이 던지면 전파하고 끝 표시를 하지 않는다 — 행은 sending으로 남는다(D-4216).
 export async function runEmailPhase(input: EmailPhaseInput, deps: EmailPhaseDeps): Promise<EmailPhaseResult> {
   const sendDeadlineMs = deps.sendDeadlineMs ?? EMAIL_SEND_DEADLINE_MS;
+  const sendGraceMs = deps.sendGraceMs ?? SEND_GRACE_MS;
   const claim = deps.claim ?? claimNextEmailBundle;
   const recordOutcome = deps.recordOutcome ?? recordEmailOutcome;
   const finish = deps.finish ?? finishEmailPhase;
@@ -61,7 +85,7 @@ export async function runEmailPhase(input: EmailPhaseInput, deps: EmailPhaseDeps
 
   for (;;) {
     const elapsed = deps.monotonicNow() - input.requestStartedAtMs;
-    if (elapsed + EMAIL_TX_WORST_MS + sendDeadlineMs + SEND_GRACE_MS + EMAIL_TX_WORST_MS > NOTIFY_TICK_BUDGET_MS) break;
+    if (elapsed + EMAIL_TX_WORST_MS + sendDeadlineMs + sendGraceMs + EMAIL_TX_WORST_MS > NOTIFY_TICK_BUDGET_MS) break;
 
     const bundle = await claim(SYSTEM_VIEWER, {
       runId: input.runId,
@@ -78,10 +102,7 @@ export async function runEmailPhase(input: EmailPhaseInput, deps: EmailPhaseDeps
     });
     let sendResult: SendOutcome;
     try {
-      sendResult = await deps.sender.send(
-        { to: bundle.email, ...digest },
-        { signal: AbortSignal.timeout(sendDeadlineMs) },
-      );
+      sendResult = await sendWithDeadline(deps.sender, { to: bundle.email, ...digest }, sendDeadlineMs, sendGraceMs);
     } catch (error) {
       // 포트 계약 위반 — 갔을 수 있는 메일을 확정 실패로 적지 않는다. 예외 메시지는
       // 주소·호스트·사용자·본문을 담을 수 있어 허용 목록 코드만 남긴다(Codex #5).

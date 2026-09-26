@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { withDeadlineTransaction, type DeadlineTx } from "@/db/deadline-transaction";
 import { notificationLog, notifyTickRuns, users } from "@/db/schema";
@@ -400,4 +400,44 @@ export async function finishEmailPhase(
     await setEmailTxLimits(tx);
     await tx.update(notifyTickRuns).set({ emailFinishedAt: opts.now }).where(eq(notifyTickRuns.id, opts.runId));
   });
+}
+
+// U-6: 이메일을 보낸(선점한) 마지막 실행의 시작 시각과 실패 메일 수. 결과 불명은 따로 센다.
+export async function findLastEmailOutcome(viewer: Viewer): Promise<{ at: Date; failed: number } | null> {
+  void viewer;
+  const [row] = await db
+    .select({ at: notifyTickRuns.startedAt, failed: notifyTickRuns.emailFailed })
+    .from(notifyTickRuns)
+    .where(gt(notifyTickRuns.emailClaimed, 0))
+    .orderBy(desc(notifyTickRuns.id))
+    .limit(1);
+  return row ?? null;
+}
+
+// D-4216 · Codex 2차 #1: 결과 불명 묶음(받는 사람 × 선점 시각)을 실행 기록이 아니라 알림 행에서
+// 센다 — unknown 행과 unknownAfterMs 넘게 지난 sending 행, 선점 시각이 visibleDays 안인 것만.
+// 한도 값은 도메인 상수를 인자로 받는다(저장소는 도메인을 import하지 않는다).
+export async function findUnresolvedEmail(
+  viewer: Viewer,
+  opts: { now: Date; unknownAfterMs: number; visibleDays: number },
+): Promise<{ bundles: number; since: Date | null }> {
+  void viewer;
+  const visibleFrom = new Date(opts.now.getTime() - opts.visibleDays * 86_400_000);
+  const sendingBefore = new Date(opts.now.getTime() - opts.unknownAfterMs);
+  const [row] = await db
+    .select({
+      bundles: sql<number>`count(distinct (${notificationLog.recipientId}, ${notificationLog.emailAttemptedAt}))::int`,
+      since: sql<Date | null>`min(${notificationLog.emailAttemptedAt})`.mapWith(notificationLog.emailAttemptedAt),
+    })
+    .from(notificationLog)
+    .where(
+      and(
+        gte(notificationLog.emailAttemptedAt, visibleFrom),
+        or(
+          eq(notificationLog.emailStatus, "unknown"),
+          and(eq(notificationLog.emailStatus, "sending"), lt(notificationLog.emailAttemptedAt, sendingBefore)),
+        ),
+      ),
+    );
+  return { bundles: row?.bundles ?? 0, since: row?.since ?? null };
 }

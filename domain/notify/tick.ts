@@ -15,6 +15,7 @@ import {
   insertTickRun,
   markPendingEmailSkipped,
   NOTIFY_TX_DEADLINE_MS,
+  recordEmailOutcome,
   withNotifyTickLock,
   type DedupKey,
   type NotificationInsert,
@@ -36,6 +37,8 @@ export type TickDeps = {
   // 요청 예산의 기준 시각(핸들러 진입) — monotonicNow와 같은 시계.
   requestStartedAtMs: number;
   monotonicNow: () => number;
+  // 이메일 결과 기록 — 결과 기록 장애(끊긴 실행)를 테스트가 대체한다(D-4216).
+  recordOutcome: typeof recordEmailOutcome;
 };
 
 export type TickResult =
@@ -171,7 +174,7 @@ export async function runTick(deps?: Partial<TickDeps>): Promise<TickResult> {
     } else {
       email = await runEmailPhase(
         { runId, kstDate: today, dayStart: new Date(`${today}T00:00:00+09:00`), requestStartedAtMs },
-        { sender: emailSender, serviceUrl, now, monotonicNow, txDeadlineMs },
+        { sender: emailSender, serviceUrl, now, monotonicNow, txDeadlineMs, recordOutcome: deps?.recordOutcome },
       );
     }
   }

@@ -434,7 +434,7 @@ export function RevenueSection({
                 <td className={styles.footerCell}>
                   {paidNote ? <span className={styles.rejectionSummary}>{paidNote}</span> : null}
                   {paidNote && balanceLabel ? " · " : null}
-                  {balanceLabel}
+                  {balanceLabel ? <span className={styles.balanceWarning}>{balanceLabel}</span> : null}
                 </td>
               </tr>
             }

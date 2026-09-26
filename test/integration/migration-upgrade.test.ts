@@ -322,3 +322,50 @@ describe("계약 칸 삭제(04-41 · D9 · OV-6)", () => {
     await expectGuardStops(pool, work);
   });
 });
+
+// 원화 금액 bigint 전환(0016 · 사용자 결정 ①(b) · 상한 1조 원 미만) — 0015까지 적용한 DB(integer)의 원화 값이 0016 뒤
+// 같은 숫자이고, integer가 거부하던 21.4억 초과 값이 0016 뒤에는 저장된다(시드를 부르지 않는다).
+describe("원화 금액 bigint 전환(0016)", () => {
+  const BIG = 3_000_000_000;
+
+  async function insertLineAmount(pool: Pool, amount: number): Promise<void> {
+    await pool.query(
+      `INSERT INTO quote_lines (revision_id, subcategory, item_name, unit_price_amount_krw, execution_amount_krw, quote_amount_krw, profit_krw)
+       VALUES ($1, 'etc', $2, $3, 0, $3, $3)`,
+      [ID.inProgress, `줄-${amount}`, amount],
+    );
+  }
+
+  it("0015 상태의 2,000,000,000원 값이 0016 뒤 그대로이고, 0015에서 거부되던 3,000,000,000원이 0016 뒤 저장된다", async () => {
+    const pool = await createScratchDb();
+    await migrateTo(pool, countThrough("_drop_project_contract_columns"));
+
+    await insertParents(pool);
+    await insertProject(pool, ID.inProgress, "OLD-B", "in_progress", 1);
+    await pool.query(`UPDATE projects SET pre_estimate_amount_krw = 2000000000 WHERE id = $1`, [ID.inProgress]);
+    await insertLineAmount(pool, 2_000_000_000);
+
+    let caught: unknown;
+    try {
+      await insertLineAmount(pool, BIG);
+    } catch (error) {
+      caught = error;
+    }
+    expect(errorText(caught)).toContain("out of range for type integer");
+
+    await migrateTo(pool);
+
+    const { rows: before } = await pool.query<{ unit: string; quote: string; pre: string }>(
+      `SELECT l.unit_price_amount_krw AS unit, l.quote_amount_krw AS quote, p.pre_estimate_amount_krw AS pre
+         FROM quote_lines l JOIN projects p ON p.id = l.revision_id`,
+    );
+    expect(before).toEqual([{ unit: "2000000000", quote: "2000000000", pre: "2000000000" }]);
+
+    await insertLineAmount(pool, BIG);
+    const { rows: big } = await pool.query<{ unit: string }>(
+      `SELECT unit_price_amount_krw AS unit FROM quote_lines WHERE item_name = $1`,
+      [`줄-${BIG}`],
+    );
+    expect(big).toEqual([{ unit: String(BIG) }]);
+  });
+});

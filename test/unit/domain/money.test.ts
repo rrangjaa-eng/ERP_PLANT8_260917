@@ -51,6 +51,16 @@ describe("toKrw", () => {
   it("부동소수점 오차로 내려가지 않는다 — 0.35 × 1350은 473", () => {
     expect(toKrw({ currency: "USD", amount: 0.35, fxRate: 1350 })).toBe(473);
   });
+
+  // bigint 전환(0016) 뒤 원화 환산이 약 90억(2^53 / 1e6)을 넘을 수 있다 — 정수로 올린 두 수의 곱이 JS 안전 정수를
+  // 넘어도 반올림 경계에서 틀리지 않는다. 정확한 곱 10,596,128,621,499,999 / 1e6 = …621.499999 → 621.
+  it("곱이 안전 정수를 넘는 큰 USD 환산도 .5 경계 바로 아래를 올리지 않는다 — 7,983,953.79 × 1,327.1781은 10,596,128,621", () => {
+    expect(toKrw({ currency: "USD", amount: 7_983_953.79, fxRate: 1327.1781 })).toBe(10_596_128_621);
+  });
+
+  it("안전 정수를 넘는 곱에서도 음수는 Math.round처럼 반올림한다 — −7,983,953.79 × 1,327.1781은 −10,596,128,621", () => {
+    expect(toKrw({ currency: "USD", amount: -7_983_953.79, fxRate: 1327.1781 })).toBe(-10_596_128_621);
+  });
 });
 
 describe("moneyFromRow", () => {
@@ -212,12 +222,12 @@ describe("normalizeMoneyInput", () => {
     expect(["fx-rate", "not-finite"]).toContain(rejection({ currency: "USD", amount: 100, fxRate: Number.NaN }).reason);
   });
 
-  it("원화 환산이 정수 컬럼 범위 밖이면 range — 양·음 경계와 USD 환산(27억)", () => {
-    expect(rejection({ currency: "KRW", amount: 2_147_483_648, fxRate: 1 }).reason).toBe("range");
-    expect(rejection({ currency: "KRW", amount: -2_147_483_649, fxRate: 1 }).reason).toBe("range");
-    const usd = rejection({ currency: "USD", amount: 2_000_000, fxRate: 1350 });
+  it("원화 환산이 금액 범위 밖이면 range — 양·음 경계와 USD 환산(1.35조)", () => {
+    expect(rejection({ currency: "KRW", amount: 1_000_000_000_000, fxRate: 1 }).reason).toBe("range");
+    expect(rejection({ currency: "KRW", amount: -1_000_000_000_001, fxRate: 1 }).reason).toBe("range");
+    const usd = rejection({ currency: "USD", amount: 1_000_000_000, fxRate: 1350 });
     expect(usd.reason).toBe("range");
-    expect(usd.message).toBe("금액이 상한을 넘습니다 · 2,147,483,647원 이하");
+    expect(usd.message).toBe("금액이 상한을 넘습니다 · 999,999,999,999원 이하");
     expect(normalizeMoneyInput({ currency: "KRW", amount: KRW_COLUMN_MAX, fxRate: 1 }).amount).toBe(KRW_COLUMN_MAX);
     expect(normalizeMoneyInput({ currency: "KRW", amount: KRW_COLUMN_MIN, fxRate: 1 }).amount).toBe(KRW_COLUMN_MIN);
   });
@@ -267,31 +277,31 @@ describe("normalizeMoneyInput", () => {
   });
 });
 
-// 04-40(DR-9) — 수량 × 단가로 계산한 견적가가 quote_amount_krw 정수 컬럼 안인가(quoteAmount와 같은 계산).
+// 04-40(DR-9) — 수량 × 단가로 계산한 견적가가 quote_amount_krw 금액 범위 안인가(quoteAmount와 같은 계산).
 describe("quoteAmountWithinBound", () => {
   const krw = (amount: number): MoneyInput => ({ currency: "KRW", amount, fxRate: 1 });
 
-  it("정수 컬럼 범위 상수가 −2,147,483,648 / 2,147,483,647이다", () => {
-    expect(KRW_COLUMN_MIN).toBe(-2_147_483_648);
-    expect(KRW_COLUMN_MAX).toBe(2_147_483_647);
+  it("금액 범위 상수가 −1,000,000,000,000 / 999,999,999,999(1조 원 미만)이다", () => {
+    expect(KRW_COLUMN_MIN).toBe(-1_000_000_000_000);
+    expect(KRW_COLUMN_MAX).toBe(999_999_999_999);
   });
 
-  it("수량 1 × 단가 2,147,483,647은 참 · 2,147,483,648(정규화 전 값)은 거짓", () => {
-    expect(quoteAmountWithinBound(1, krw(2_147_483_647))).toBe(true);
-    expect(quoteAmountWithinBound(1, krw(2_147_483_648))).toBe(false);
+  it("수량 1 × 단가 999,999,999,999는 참 · 1,000,000,000,000(정규화 전 값)은 거짓", () => {
+    expect(quoteAmountWithinBound(1, krw(999_999_999_999))).toBe(true);
+    expect(quoteAmountWithinBound(1, krw(1_000_000_000_000))).toBe(false);
   });
 
-  it("수량 3 × 단가 10억은 각각 상한 안이어도 곱이 30억이라 거짓", () => {
-    expect(quoteAmountWithinBound(3, krw(1_000_000_000))).toBe(false);
+  it("수량 3 × 단가 5,000억은 각각 상한 안이어도 곱이 1.5조라 거짓", () => {
+    expect(quoteAmountWithinBound(3, krw(500_000_000_000))).toBe(false);
   });
 
-  it("소수 수량은 quoteAmount의 원화 반올림 뒤 값으로 판정한다 — 1.5 × 1,431,655,765 = …647.5 → 648 거짓, × 1,431,655,764 → 646 참", () => {
-    expect(quoteAmountWithinBound(1.5, krw(1_431_655_765))).toBe(false);
-    expect(quoteAmountWithinBound(1.5, krw(1_431_655_764))).toBe(true);
+  it("소수 수량은 quoteAmount의 원화 반올림 뒤 값으로 판정한다 — 단가는 상한 안이고 38.33 × 26,089,225,150만 반올림해 1조가 되어 거짓, × 26,089,225,149 참", () => {
+    expect(quoteAmountWithinBound(38.33, krw(26_089_225_150))).toBe(false);
+    expect(quoteAmountWithinBound(38.33, krw(26_089_225_149))).toBe(true);
   });
 
-  it("USD 수량 2 × USD 1,000,000 @1,350(원화 27억)은 거짓 · 수량 0은 기본 1이라 참", () => {
-    expect(quoteAmountWithinBound(2, { currency: "USD", amount: 1_000_000, fxRate: 1350 })).toBe(false);
+  it("USD 수량 2 × USD 400,000,000 @1,350(원화 1.08조)은 거짓 · 수량 0은 기본 1이라 참", () => {
+    expect(quoteAmountWithinBound(2, { currency: "USD", amount: 400_000_000, fxRate: 1350 })).toBe(false);
     expect(quoteAmountWithinBound(0, krw(1_000_000))).toBe(true);
   });
 });

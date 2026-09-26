@@ -212,8 +212,7 @@ export function ProjectsFilterBar({
               ref={fromRef}
               id="from"
               name="from"
-              type="text"
-              placeholder="2026-09-18"
+              type="date"
               className={`${styles.textInput} ${styles.periodInput}`}
               defaultValue={defaultValues.from ?? ""}
               aria-invalid={periodErrors.from ? true : undefined}
@@ -225,8 +224,7 @@ export function ProjectsFilterBar({
               ref={toRef}
               id="to"
               name="to"
-              type="text"
-              placeholder="2026-09-18"
+              type="date"
               aria-label="기간 끝"
               className={`${styles.textInput} ${styles.periodInput}`}
               defaultValue={defaultValues.to ?? ""}

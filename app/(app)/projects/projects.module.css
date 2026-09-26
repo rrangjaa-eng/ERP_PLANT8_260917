@@ -202,16 +202,18 @@
   outline-offset: var(--focus-offset);
 }
 
-/* 04-48(D-89 · SYSTEM.md 개정 ③) — 목록 기간 필터 두 칸: 폭 10ch + 좌우 --cell-pad-x. 오류는 §7-2 테두리 + 아래 한 줄. */
+/* 04-48(D-89 · SYSTEM.md 개정 ③) — 목록 기간 필터 두 칸. FINDING-013(코디네이터 대리 결정 2026-09-26) — 다른 날짜 칸과 같은
+   네이티브 날짜 칸이라 폭은 고유 폭(날짜 + 달력 단추가 잘리지 않는 폭)이다. 오류는 §7-2 테두리 + 아래 한 줄. */
 .periodFields {
   display: flex;
+  flex-wrap: wrap; /* FINDING-013 — 320 폭에서는 고유 폭 두 칸이 한 줄에 못 들어가 종료일이 다음 줄로 간다(가로 스크롤 없음). */
   align-items: center;
   gap: var(--s-1);
   color: var(--fg);
 }
 
 .periodInput {
-  width: calc(10ch + 2 * var(--cell-pad-x));
+  width: auto;
   padding: 0 var(--cell-pad-x);
   font-variant-numeric: tabular-nums;
 }

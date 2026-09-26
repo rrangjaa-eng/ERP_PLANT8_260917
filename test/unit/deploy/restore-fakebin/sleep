@@ -1,3 +1,11 @@
 #!/usr/bin/env bash
-# 가짜 sleep — restore-rehearsal.sh 단위 테스트 전용. 폴링이 테스트를 느리게 하지 않게 곧바로 끝난다.
+# 가짜 sleep — restore-rehearsal.sh 단위 테스트 전용. 곧바로 끝난다(폴링이 테스트를 느리게 하지 않게).
+# $FAKE_CLOCK_FILE이 있으면 가짜 시계를 N초 당기고, $DEPLOY_FAKE_LOG에 "sleep N[ @시각]"을 적는다.
+set -u
+if [ -n "${FAKE_CLOCK_FILE:-}" ] && [ -f "$FAKE_CLOCK_FILE" ]; then
+  echo $(($(cat "$FAKE_CLOCK_FILE") + $1)) >"$FAKE_CLOCK_FILE"
+  printf 'sleep %s @%s\n' "$1" "$(cat "$FAKE_CLOCK_FILE")" >>"${DEPLOY_FAKE_LOG:-/dev/null}"
+else
+  printf 'sleep %s\n' "$1" >>"${DEPLOY_FAKE_LOG:-/dev/null}"
+fi
 exit 0

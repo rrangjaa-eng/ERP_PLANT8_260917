@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# 가짜 date — restore-rehearsal.sh 단위 테스트 전용 가짜 시계.
+# $FAKE_CLOCK_FILE이 있으면 +%s는 그 값을, 그 밖 형식은 진짜 date로 그 시각을 낸다. 없으면 진짜 date.
+set -u
+if [ -n "${FAKE_CLOCK_FILE:-}" ] && [ -f "$FAKE_CLOCK_FILE" ]; then
+  clock="$(cat "$FAKE_CLOCK_FILE")"
+  fmt=""
+  for a in "$@"; do
+    case "$a" in +*) fmt="$a" ;; esac
+  done
+  if [ "$fmt" = "+%s" ]; then
+    echo "$clock"
+    exit 0
+  fi
+  command -p date -u -d "@$clock" ${fmt:+"$fmt"}
+  exit $?
+fi
+command -p date "$@"

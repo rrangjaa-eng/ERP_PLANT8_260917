@@ -1,11 +1,11 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-26T12:25:52.634Z",
+  "timestamp": "2026-09-26T14:49:49.569Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
-  "plan": 36,
-  "task": 35,
+  "plan": 37,
+  "task": 36,
   "total_tasks": 42,
   "status": "paused",
   "completed_tasks": [
@@ -278,18 +278,39 @@
       "name": "[세션 AJ~AK] 04-19(웨이브 25) 실행 — 견적 표 30줄 페이지 나눔·쪽 경계 키·Tab·Ctrl+A/C·힌트 줄. executor 커밋 dfa6508(RED)→9d95a95(GREEN, Task1), 4a90b0d(RED)→e1e503c(GREEN, Task2), cc40569(04-26 300줄 E2E를 30줄 쪽에 맞춤), SUMMARY 80eb51a, STATE/ROADMAP df77337, main 머지 343f451(#82 KRW bigint). 검토 반영: B-1 Enter 편집 확정 뒤 아래로·쪽 넘김(1d7f605→a6e81c9), S-1 쪽 번호 보정(313413f→16aadf5), S-2 한글 조합 중 Tab(663c23e→0189b3a), N-1 auto-repeat Ctrl+A(f029e93→30fe9f0), N-4 92ba37c, N-5 f40aae5, SUMMARY 갱신 eca21eb, main 재머지 e094b60(#78·#83·사용자 CLAUDE.md a9a90e4). 독립 DOM 감사(Sonnet, CI=true 1280·1024·375) PASS 22·FAIL 0·INFO 3(/mnt/project-files/phase4-prep/04-19-dom-audit.md). Opus 검토 BLOCKING 1·SHOULD-FIX 2·NIT 5(/mnt/project-files/phase4-prep/04-19-review-opus.md) — B-1·S-1·S-2·N-1·N-4·N-5 반영, N-2(lib/shortcut.ts)·N-3(quote-table.tsx)는 04-47 참고로 이월. 전체 게이트 CI=true 단위 1351·통합 1504·E2E 364 통과, lint·typecheck·lint:sql 0; 두 번째 main 머지 뒤 단위 1351·CI=true 표 E2E 324 재통과. 스킬 기록 /mnt/project-files/phase4-prep/04-19-skill-calls.md. PR #85 CI는 e094b60에서 실행 중(이 인계 시점). 세션 중: 컨테이너 재시작으로 실행자가 Task2 GREEN 도중 끊김 → 작업 트리 보존, 세션 경계 훅(gsd-executor 1회) 때문에 general-purpose Opus 이어가기 에이전트로 재개; state.begin-phase가 current_plan을 1로 되돌려 원복 후 생략; 격리 none(origin/HEAD 미해결로 base-check 강등); 로컬 deploy-sh.test.ts가 전역 ssh 커밋 서명 서버 503으로 1회 실패(환경 문제, 단독 재실행 23/23). 진행 35/42.",
       "status": "done",
       "commit": "e094b60"
+    },
+    {
+      "id": 46,
+      "name": "[세션 AL · 다른 계정] 04-47(웨이브 26) 실행 — 붙여넣기 계산 열·통화·끝 줄바꿈·쪽 넘김, 새 줄 고정, 합계 행 한 줄(DR-16), 오류가 남은 채 1차(DR-5), 거부 뒤 첫 오류 쪽과 `오류 N`. executor Opus 061b64b(RED)·c0ddce4·1d13e42(RED)·13ce68c·704ae05·222fdfa → main #86 머지 97f38f5 → 검토 반영 d462412·f488398·b0d835d·67dae50·11bdec6(RED)·133be10·c663fe0·ea6c62d·2fccb3b → SUMMARY 기록 52b9f33. RED 전부 직접 재현. 독립 Opus DOM 감사 1280·1024·375 FAIL 0. Opus 검토(Codex 대체) BLOCKING 0·SHOULD-FIX 4(전부 반영)·NIT 6(1 반영). 전체 게이트 CI=true 단위 1387·통합 1512·E2E 384, lint·typecheck·lint:sql 0. 푸시 52b9f33",
+      "status": "done",
+      "commit": "52b9f33"
     }
   ],
   "remaining_tasks": [
     {
-      "id": 50,
-      "name": "**계정 인계**: 이 계정은 주간 한도가 없어 Phase 4를 04-19까지만 하고 종료. 다음 계정이 PR #85(브랜치 claude/gsd-progress-e1nzgu)를 이어받는다 — 저장소 CLAUDE.md 새 절 「다른 계정 작업과 코디네이터 지시」(작업 시작·재개·푸시 전마다 PR #85 최신 [코디네이터 지시] 댓글 확인·반영, 끝나면 [완료 보고] 댓글, main 새 머지는 머지 커밋으로만, 머지는 사용자 「머지해」 때만) 참고.",
+      "id": 53,
+      "name": "다음: 웨이브 26 나머지 04-48 — /gsd-execute-phase 4 --wave 26(04-47은 SUMMARY 있음 → 04-48만 남음), 새 세션, 같은 브랜치·PR #85. 시작 전 PR #85 최신 [코디네이터 지시] 확인. 04-48 몫 NIT 4건(id 10)을 실행자 프롬프트에 넣는다. 그 뒤 웨이브 27(04-18, id 9 몫 포함) → 28(04-07) → 29(04-42·04-51) → 30(04-31)",
       "status": "not_started"
     },
     {
-      "id": 51,
-      "name": "다음 웨이브 26(04-47·04-48) 실행 — /gsd-execute-phase 4 --wave 26 으로 한 플랜만(세션 경계), 새 세션, 같은 브랜치·PR #85, 시작 전 PR #85 [코디네이터 지시] 댓글 확인. 그 뒤 웨이브 27(04-18), 웨이브 29(04-42·04-51), 웨이브 28(04-07), 웨이브 30(04-31) 순.",
+      "id": 54,
+      "name": "[코디네이터 지시 14:02] 머지 순서 #87 → #85. #87이 먼저 main에 들어가면 main을 머지 커밋으로 다시 반영하고 겹치는 8개 파일(quote-table.tsx·previous-revision.tsx·domain/projects/index.ts·E2E quote-table·quote-revisions·quote-edit-scope·통합 quote-lines·quote-revisions) 충돌을 이 PR에서 푼다 — #87 변경(디자인 결정 B-1·R-1~6·결정2) 유지, STATE.md는 양쪽 기록 모두. 2026-09-26 14:50Z 기준 #87은 draft·미머지",
       "status": "not_started"
+    },
+    {
+      "id": 55,
+      "name": "[코디네이터 지시 14:10] 묶음 ④ 머지 요청 전 /qa와 /design-review(CI=true DOM 감사)를 실제로 실행(04-19의 Table.tsx +602줄 등 포함)하고 결과를 SUMMARY 또는 게이트 기록에 남긴다. 게이트 기록(.claude/gates) 줄은 직접 쓰지 말고 사용자에게 줄을 보여 준다(사용자 지시 2026-09-26). wip 커밋은 그대로, 히스토리 재작성 금지",
+      "status": "not_started"
+    },
+    {
+      "id": 56,
+      "name": "04-47 이월 NIT 5(04-47-SUMMARY 「검토 반영」): 계산 열 오류 칸(엑셀 6열)은 줄 삭제로만 풀림 — DR-5가 고칠 수 없는 칸으로 보낼 수 있음(04-31 확인) · `저장됨 N줄` 글자 · 뒤 쪽 고정 새 줄에서 시작한 붙여넣기의 `N쪽까지` 누락 · 다시 불러오기가 pasteNotices를 안 지울 수 있음(확인 필요) · 테스트 공백(매출 칸 오류만 남은 1차, 다음 붙여넣기 조각 교체, B-24 조정 줄 추가) · 1024–1279 숨은 차익 칸 오류는 지울 수 없음(기존). 1024 미만 서버 거부 숨은 열 포커스는 E2E 없음",
+      "status": "not_started"
+    },
+    {
+      "id": 50,
+      "name": "**계정 인계**: 이 계정은 주간 한도가 없어 Phase 4를 04-19까지만 하고 종료. 다음 계정이 PR #85(브랜치 claude/gsd-progress-e1nzgu)를 이어받는다 — 저장소 CLAUDE.md 새 절 「다른 계정 작업과 코디네이터 지시」(작업 시작·재개·푸시 전마다 PR #85 최신 [코디네이터 지시] 댓글 확인·반영, 끝나면 [완료 보고] 댓글, main 새 머지는 머지 커밋으로만, 머지는 사용자 「머지해」 때만) 참고.",
+      "status": "in_progress"
     },
     {
       "id": 9,
@@ -348,7 +369,7 @@
     },
     {
       "id": 52,
-      "name": "04-19 이월: N-2(lib/shortcut.ts)·N-3(quote-table.tsx) — 검토의 04-47 참고. dev 서버(비 CI) E2E 3건 간헐 실패(Alt+↓ 따라가기·Ctrl+A/C 45줄·cap2 — 페이지 상호작용 준비 전 키 입력 유실, CI=true에선 통과) — 준비 대기 추가 후속.",
+      "name": "04-19 이월: N-2(lib/shortcut.ts)·N-3(quote-table.tsx) — 검토의 04-47 참고. dev 서버(비 CI) E2E 3건 간헐 실패(Alt+↓ 따라가기·Ctrl+A/C 45줄·cap2 — 페이지 상호작용 준비 전 키 입력 유실, CI=true에선 통과) — 준비 대기 추가 후속. — [세션 AL] 04-47이 「1쪽 그룹 B 새 줄이 2쪽에 떨어져 openCell이 안 열리는 경로」를 해소(B-24 E2E). N-2·N-3은 그대로",
       "status": "not_started"
     }
   ],
@@ -507,13 +528,18 @@
       "blocking": false
     },
     {
-      "action": "Codex 재확인(09-29 07:13 한도 해제 뒤) — 04-19 검토(Opus 대체)·04-17 검토·04-27 검토·04-11 검토, 묶음 ②·③ /review·/qa·/design-review·/cso 게이트, PR #84 게이트, PR #70·#71·#54·#72·#74~#78·#80·#81, 04.4, PR #73, Phase 4 플랜 04-29 이후 계획 검토와 실행된 플랜 검토 전부",
+      "action": "Codex 재확인(09-29 07:13 한도 해제 뒤) — 04-19 검토(Opus 대체)·04-47 검토(Opus 대체)·04-17 검토·04-27 검토·04-11 검토, 묶음 ②·③ /review·/qa·/design-review·/cso 게이트, PR #84 게이트, PR #70·#71·#54·#72·#74~#78·#80·#81, 04.4, PR #73, Phase 4 플랜 04-29 이후 계획 검토와 실행된 플랜 검토 전부",
       "context": "Codex 한도로 전부 Opus 교차 검토로 대체됨 — 한도 해제 뒤 일괄 재확인",
       "blocking": false
     },
     {
       "action": "04-31 사람 확인에 추가: 한글 IME 조합 중 Tab",
       "context": "04-19 review S-2에서 발견된 조합 중 Tab 처리(0189b3a로 수정됨)를 04-31 최종 PC 확인 항목에도 포함",
+      "blocking": false
+    },
+    {
+      "action": "[세션 AL] 보고 방식 확인: 사용자 지시 「10분마다 PR #85에 [진행 보고]」와 새 코디네이터 지시(14:02 「[진행 보고] 그만, [완료 보고]·[막힘]만」)가 충돌 — CLAUDE.md대로 코디네이터를 따라 타이머를 껐음. 사용자가 원하면 다시 켠다",
+      "context": "세션 AL 판단, 채팅으로 알림",
       "blocking": false
     }
   ],
@@ -687,11 +713,31 @@
       "decision": "fx 2줄 가격 쌓기 커밋(ef6445f)의 커밋 제목 오기(「1024」로 적었으나 실제 임계값은 1280 미만)는 코드가 맞으므로 역사 재작성 없이 HANDOFF·인계 문서로만 정정한다",
       "rationale": ".planning 수동 편집 금지 + git 커밋 이력 재작성 지양 원칙",
       "phase": "4"
+    },
+    {
+      "decision": "[세션 AL 판단·알림] 격리 none(base-check 자동 강등, --force-isolation none 기록) · 실행 컨텍스트는 executor Read · executor Opus(설정 sonnet 대신, 이전 세션과 동일) · 웨이브 26 중 04-47만(세션 경계 훅) · 독립 DOM 감사·전체 게이트는 오케스트레이터가 한 번",
+      "rationale": "세션 D~AK와 같은 판단, 디스패치 전 사용자에게 알림",
+      "phase": "4"
+    },
+    {
+      "decision": "[세션 AL] 04-47 Opus 검토 SHOULD-FIX 4 전부와 NIT 1(쪽 범위 글자)을 같은 세션에서 TDD로 반영, 나머지 NIT 5 이월. S-1은 action reset 대신 「봉투 칸 수 = 표 센 수일 때만 요약이 대체」(reset은 매출 표 합계 줄을 비움), S-2는 RowSheet 대신 그 줄의 보이는 첫 P1 칸(RowSheet는 700 미만 전용)",
+      "rationale": "막는 문제는 없으나 04-31 전에 고치기를 검토자가 권함, 이전 세션 관례(S1·S4·S5 즉시 반영)",
+      "phase": "4"
+    },
+    {
+      "decision": "[세션 AL] 코디네이터 교체(14:02) 뒤 보고는 [완료 보고]·[막힘]만 — 사용자 10분 진행 보고 타이머는 CLAUDE.md 「최신 코디네이터 지시를 따른다」에 따라 끔(사용자에게 알림, 확인 대기)",
+      "rationale": "두 지시 충돌, 최신·저장소 규칙 우선",
+      "phase": "4"
+    },
+    {
+      "decision": "[세션 AL] 사용자 지시: 세션 경계에서는 인계 파일을 쓰고 멈춘 뒤 PR에 알린다 — 경계 훅의 「create_session으로 다음 세션 만들기」는 이 세션에서 하지 않음",
+      "rationale": "사용자 지시 2026-09-26(이 세션 첫 메시지)",
+      "phase": "4"
     }
   ],
   "uncommitted_files": [],
-  "next_action": "/gsd-execute-phase 4 --wave 26 으로 한 플랜만(세션 경계), 새 세션, 같은 브랜치·PR #85, 시작 전 PR #85 [코디네이터 지시] 댓글 확인 (다음 웨이브 26: 04-47·04-48)",
-  "context_notes": "[계정 인계] 이 계정은 주간 한도가 없어 Phase 4를 04-19까지만 하고 다른 Claude 계정으로 넘김(사용자 지시 2026-09-26 21:10 KST). PR #85(브랜치 claude/gsd-progress-e1nzgu)를 다음 계정이 이어받는다. 저장소 CLAUDE.md에 새 절 「다른 계정 작업과 코디네이터 지시」 추가: 작업 시작·재개·푸시 전마다 PR #85 최신 [코디네이터 지시] 댓글을 읽고 따르고, 끝나면 [완료 보고] 댓글, main 새 머지는 머지 커밋으로 반영(force push 금지), 머지는 사용자 「머지해」 때만. 세션 AI: 묶음 ②·③ /cso 통과(cdf79a5) — 정적 diff 감사 partial, 지지되는 발견 0, 수정 없음. 보고서 /mnt/project-files/phase4-prep/postbuild3-cso/REPORT.md. 세션 AG: 묶음 ②·③ /qa 통과(545f75d). ISSUE-002 수정 a7db637·4ee33b3(매출 entryDate 스키마를 길이만 막고 형식·달력은 도메인 셀 오류로). 참고(low): 견적 충돌 전부 거부 시 매출 합계 줄에도 같은 문구 — /design-review에서 볼 것. 세션 AF: 묶음 ②·③ /review 통과(9039452). 수정 커밋 291e79f·1f03e03·ecfb69e·94f06ee·299ed56·246a705·c1dbec6·fa5c5d2·6fe32e1. 후속(막지 않음)과 사용자 확인 항목은 REPORT.md. 기각: 0015 가드 demo(OV-1), DR-5 일괄 저장 비활성은 04-47 몫. 복원 시 예상가는 R3(나중 저장 승)라 제외, 잠긴 칸 복원은 S18대로 서버 판정. 세션 AJ: PR #40이 main에 93590d8로 머지됨(묶음 ②·③ 종료) — 브랜치를 origin/main 93590d8에서 재시작해 새 draft PR #85로 04-17 실행.",
+  "next_action": "/gsd-execute-phase 4 --wave 26 으로 04-48 한 플랜만(04-47 완료), 새 세션, 같은 브랜치 claude/gsd-progress-e1nzgu·PR #85. 시작 전 PR #85 최신 [코디네이터 지시] 확인, main 새 머지(특히 #87) 있으면 머지 커밋으로 반영부터. 04-48 NIT 4건(remaining id 10)을 실행자에게 넘긴다",
+  "context_notes": "[세션 AL · 다른 계정] 04-47(웨이브 26) 끝, 52b9f33 푸시. 코디네이터가 14:02에 바뀜 — 보고는 [완료 보고]·[막힘]만, 머지 순서 #87 → #85, 묶음 ④ 머지 요청 전 /qa·/design-review. 04-47 실행 착수는 새 코디네이터 지시(「1·2 뒤 착수」)보다 먼저였다(13:59 착수 보고) — [완료 보고]에 적음. RED 재현용 worktree는 node_modules 심볼릭 링크를 Turbopack이 거부하므로 worktree 안에서 `pnpm install --frozen-lockfile --offline`(3초). subscribe_pr_activity는 이번에도 실패 — CI는 pull_request_read get_check_runs로 확인. [계정 인계] 이 계정은 주간 한도가 없어 Phase 4를 04-19까지만 하고 다른 Claude 계정으로 넘김(사용자 지시 2026-09-26 21:10 KST). PR #85(브랜치 claude/gsd-progress-e1nzgu)를 다음 계정이 이어받는다. 저장소 CLAUDE.md에 새 절 「다른 계정 작업과 코디네이터 지시」 추가: 작업 시작·재개·푸시 전마다 PR #85 최신 [코디네이터 지시] 댓글을 읽고 따르고, 끝나면 [완료 보고] 댓글, main 새 머지는 머지 커밋으로 반영(force push 금지), 머지는 사용자 「머지해」 때만. 세션 AI: 묶음 ②·③ /cso 통과(cdf79a5) — 정적 diff 감사 partial, 지지되는 발견 0, 수정 없음. 보고서 /mnt/project-files/phase4-prep/postbuild3-cso/REPORT.md. 세션 AG: 묶음 ②·③ /qa 통과(545f75d). ISSUE-002 수정 a7db637·4ee33b3(매출 entryDate 스키마를 길이만 막고 형식·달력은 도메인 셀 오류로). 참고(low): 견적 충돌 전부 거부 시 매출 합계 줄에도 같은 문구 — /design-review에서 볼 것. 세션 AF: 묶음 ②·③ /review 통과(9039452). 수정 커밋 291e79f·1f03e03·ecfb69e·94f06ee·299ed56·246a705·c1dbec6·fa5c5d2·6fe32e1. 후속(막지 않음)과 사용자 확인 항목은 REPORT.md. 기각: 0015 가드 demo(OV-1), DR-5 일괄 저장 비활성은 04-47 몫. 복원 시 예상가는 R3(나중 저장 승)라 제외, 잠긴 칸 복원은 S18대로 서버 판정. 세션 AJ: PR #40이 main에 93590d8로 머지됨(묶음 ②·③ 종료) — 브랜치를 origin/main 93590d8에서 재시작해 새 draft PR #85로 04-17 실행.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"

@@ -82,3 +82,17 @@ describe("Button — reasonTone · aria-disabled(⑦, DR-10 · DR-11)", () => {
     }
   });
 });
+
+// 04.3-02 UI-SPEC 개정 ⑦(a) — 외부 수령자 화면 전용 크기 변형.
+describe("Button — size external(04.3-02 ⑦(a))", () => {
+  it("size를 주지 않으면 기존 모양 그대로다(external 클래스 없음)", () => {
+    const html = renderButton({});
+    expect(html).not.toContain(styles.external);
+  });
+
+  it("size='external'이면 wrapExternal · external 클래스가 붙는다", () => {
+    const html = renderButton({ size: "external" });
+    expect(html).toContain(styles.wrapExternal);
+    expect(html).toContain(styles.external);
+  });
+});

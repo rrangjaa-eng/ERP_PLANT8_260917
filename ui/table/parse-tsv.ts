@@ -59,7 +59,9 @@ function tryParseQuotedField(text: string, openQuoteIndex: number): { value: str
  * 다룬다. 따옴표만 있고 줄바꿈이 없는 칸은 인용된 칸이 아니므로 따옴표를
  * 포함한 원문 그대로 리터럴로 남는다.
  */
-export function parseTsv(text: string): string[][] {
+export function parseTsv(input: string): string[][] {
+  // 04-47(C-05) — 엑셀은 복사 영역 끝에 줄바꿈 하나를 붙인다. 그 하나만 떼어 빈 줄을 만들지 않는다.
+  const text = input.endsWith("\r\n") ? input.slice(0, -2) : input.endsWith("\n") ? input.slice(0, -1) : input;
   const rows: string[][] = [];
   let row: string[] = [];
   let field = "";

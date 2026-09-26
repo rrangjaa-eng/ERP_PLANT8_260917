@@ -221,17 +221,6 @@
   cursor: pointer;
 }
 
-/* 04-04(다) — 붙여넣기 오른쪽 버림 경고(--warning). */
-.pasteWarning {
-  color: var(--warning);
-  font-weight: var(--fw-medium);
-}
-
-/* 04-23(DR-22 · DR-16) — 붙여넣기가 건너뛴 권한 밖 줄 칸 수(muted 항목). */
-.pasteSkipped {
-  color: var(--muted);
-}
-
 /* 04-04(나) — 저장 거부 요약(--danger). */
 .rejectionSummary {
   color: var(--danger);

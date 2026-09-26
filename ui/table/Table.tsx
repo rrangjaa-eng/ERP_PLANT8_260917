@@ -6,9 +6,11 @@ import { isCtrlCombo } from "@/lib/shortcut";
 import { Pagination } from "@/ui/pagination/Pagination";
 import { pageRangeText } from "@/ui/pagination/page-window";
 import styles from "./Table.module.css";
-import { crossPageTarget, nextEditableCell, pageEntryFocus, pageOfRow, splitPages, type FocusCell } from "./paging";
+import { composeFooterNotice, type FooterNoticeItem } from "./footer-notice";
+import { crossPageTarget, nextEditableCell, pageEntryFocus, pageOfRow, pinNewRows, splitPages, type FocusCell } from "./paging";
 import { toTsv } from "./parse-tsv";
 import { isGridActionAllowed } from "./save-lock";
+import { readPasteClipboard } from "./use-clipboard-paste";
 import { useMinWidth } from "./use-editable-width";
 import type { CellEditability, CellIssue, TableColumn } from "./types";
 import { conflictFocusTransition, useGridKeyboard, type ConflictFocusState, type GridPosition } from "./use-grid-keyboard";
@@ -41,7 +43,15 @@ export type TableProps<Row> = {
   groupBy?: (row: Row) => string;
   emptyMessage?: string;
   emptyAction?: { label: string; onClick: () => void; shortcut?: string };
-  footer?: ReactNode;
+  /**
+   * 합계 행(`<tr>`). 04-47(DR-16) — 함수면 표가 조립한 합계 행 오른쪽 한 줄(`footerNotices`·`footerSuccess`·표가 세는 오류·충돌 ·
+   * 붙여넣기가 닿은 쪽)을 받아 그 행 안에 놓는다.
+   */
+  footer?: ReactNode | ((notice: ReactNode) => ReactNode);
+  /** 04-47(DR-16) — 합계 행 오른쪽 한 줄에 넣을 항목(붙여넣기·상한·거부 요약). 주면 표가 제 오류·충돌 칸 수도 센다. */
+  footerNotices?: FooterNoticeItem[];
+  /** 04-47(DR-16) — 저장 성공 글자. 있으면 합계 행 오른쪽은 이것 하나다. */
+  footerSuccess?: string | null;
   onCellCommit?: (rowId: string, columnKey: string, value: string) => void;
   /**
    * 04-02(U-3 계획 단계 판단) — 행이 0개일 때도 `footer`를 함께 렌더한다.
@@ -52,8 +62,11 @@ export type TableProps<Row> = {
   /** 04-04 — role="grid" 키보드 계약을 켠다(opt-in, 기본 false). */
   enableGridKeyboard?: boolean;
   keyboard?: TableKeyboardHandlers<Row>;
-  /** 04-04(다) — 활성(포커스) 셀에서 붙여넣기가 발생하면 위임한다. */
-  onPasteAtCell?: (row: Row, columnKey: string, clipboardText: string) => void;
+  /**
+   * 04-04(다) — 활성(포커스) 셀에서 붙여넣기가 발생하면 위임한다. 04-47 — 앱 전용 형식(`appMeta`)도 넘기고, 채운(바꾸거나 만든)
+   * 줄 id를 돌려받아 시작 쪽보다 뒤 쪽까지 닿았으면 합계 행에 `{k}쪽까지`를 더한다(`footerNotices`에 붙여넣기 머리가 있는 동안).
+   */
+  onPasteAtCell?: (row: Row, columnKey: string, clipboard: { text: string; appMeta: string | null }) => readonly string[] | void;
   /** 04-04(나)(다) — 셀 오류·충돌(있으면 고정 오류 모양 + aria-invalid). */
   cellIssue?: (row: Row, columnKey: string) => CellIssue | undefined;
   /** 04-04(바) — 폰에서 줄을 탭하면 호출된다(RowSheet를 여는 신호). */
@@ -82,11 +95,27 @@ export type TableProps<Row> = {
    * 않는다. 쪽 번호는 표 안 상태(URL 아님)이고 `resetKey`가 바뀌면 1쪽으로. 쪽을 바꾸면 새 쪽의 활성 셀(격자) 또는
    * `focusHeadingId`(읽기 표 — 없으면 캡션)로 포커스한다(DR-23).
    */
-  pagination?: { pageSize: number; unit: string; label: string; resetKey: string | number; focusHeadingId?: string };
+  pagination?: {
+    pageSize: number;
+    unit: string;
+    label: string;
+    resetKey: string | number;
+    focusHeadingId?: string;
+    /**
+     * 04-47(§7-3 (자)) — 새 줄(직전 분할에 없던 줄 id)은 만들어질 때의 쪽에 고정된다. 이 값이 바뀌면(저장 성공 · 서버 다시
+     * 불러오기) 고정을 비우고 쪽 크기로 다시 나눈다. 사용자의 페이지 이동도 다시 나눈다.
+     */
+    resplitKey?: string | number;
+  };
   /** 04-19 — 격자 Ctrl+C의 앱 형식(`application/x-plant8-quote-lines+json`). 복사한 줄을 받아 글자로. */
   copyMeta?: (rows: Row[]) => string;
   /** 04-19(§7-9) — 표 아래(페이지 줄 다음) 힌트 줄. 라벨 + kbd 묶음, 1024 미만에서 숨는다. */
   hint?: { label: string; keys: string }[];
+  /**
+   * 04-47(B-24) — 그룹을 지정해 더한 새 줄. 바뀌면 그 줄의 표시 위치(그룹 끝)가 있는 쪽으로 옮기고 그 쪽에 고정한다. 같은 줄을
+   * `openCell`로 열지 않으면 그 줄의 첫 편집 셀에 포커스한다.
+   */
+  revealRowId?: string | null;
 };
 
 type ActiveCell = { rowId: string; columnKey: string } | null;
@@ -128,6 +157,9 @@ export function Table<Row>({
   pagination,
   copyMeta,
   hint,
+  footerNotices,
+  footerSuccess,
+  revealRowId,
 }: TableProps<Row>) {
   const [activeCell, setActiveCell] = useState<ActiveCell>(null);
   const allowed = (action: Parameters<typeof isGridActionAllowed>[0]) => isGridActionAllowed(action, { saveLocked });
@@ -147,20 +179,51 @@ export function Table<Row>({
   // 04-19 — 쪽 나눔은 그룹 정렬 뒤의 표시 순서를 자른다. 지금 쪽은 렌더마다 쪽 수 안으로 보정한다(clampPage — 04-29).
   const allGroups = groupRows(rows, groupBy);
   const displayRows = allGroups.flatMap((group) => group.rows);
+  const displayIds = displayRows.map(getRowId);
   const [requestedPage, setRequestedPage] = useState(1);
-  const [seenResetKey, setSeenResetKey] = useState(pagination?.resetKey);
-  if (pagination && pagination.resetKey !== seenResetKey) {
-    setSeenResetKey(pagination.resetKey);
-    setRequestedPage(1);
-  }
-  const pages = pagination ? splitPages(displayRows.map(getRowId), { pageSize: pagination.pageSize }) : null;
-  const page = pages ? clampPage(requestedPage, pages.length) : 1;
-  // 리뷰 S-1 — 보정한 쪽을 요청 쪽에도 되돌린다(줄이 다시 늘 때 사라졌던 쪽으로 튀지 않게).
-  if (pages && page !== requestedPage) setRequestedPage(page);
-  const pageIds = pages ? new Set(pages[page - 1]) : null;
-  const groups = pageIds ? groupRows(displayRows.filter((row) => pageIds.has(getRowId(row))), groupBy) : allGroups;
   // 쪽을 바꾼 뒤에만 범위 글자를 읽는다(첫 렌더에는 비어 있다).
   const [pageAnnounced, setPageAnnounced] = useState(false);
+  // 04-47(§7-3 (자)) — 새 줄 고정. `known`은 직전 분할의 줄 id, `pinned`는 새 줄 → 만들어진 쪽.
+  const [pinState, setPinState] = useState<{ known: ReadonlySet<string>; pinned: Readonly<Record<string, number>>; resplitKey?: string | number }>(
+    () => ({ known: new Set(displayIds), pinned: {}, resplitKey: pagination?.resplitKey }),
+  );
+  let targetPage = requestedPage;
+  let pinned = pinState.pinned;
+  let revealFocusId: string | null = null;
+  const [seenResetKey, setSeenResetKey] = useState(pagination?.resetKey);
+  const [seenReveal, setSeenReveal] = useState(revealRowId);
+  if (pagination) {
+    const resplit = pagination.resetKey !== seenResetKey || pagination.resplitKey !== pinState.resplitKey;
+    if (pagination.resetKey !== seenResetKey) {
+      setSeenResetKey(pagination.resetKey);
+      setRequestedPage(1);
+      targetPage = 1;
+    }
+    if (resplit) pinned = {};
+    else if (displayIds.some((id) => !pinState.known.has(id))) pinned = pinNewRows({ ids: displayIds, known: pinState.known, pinned, page: requestedPage });
+    if (revealRowId !== seenReveal) {
+      setSeenReveal(revealRowId);
+      if (revealRowId && displayIds.includes(revealRowId)) {
+        const others = { ...pinned };
+        delete others[revealRowId];
+        const naturalPage = pageOfRow(splitPages(displayIds, { pageSize: pagination.pageSize, pinned: others }), revealRowId) ?? targetPage;
+        pinned = { ...others, [revealRowId]: naturalPage };
+        targetPage = naturalPage;
+        setRequestedPage(naturalPage);
+        setPageAnnounced(true);
+        if (openCell?.rowId !== revealRowId) revealFocusId = revealRowId;
+      }
+    }
+    if (resplit || pinned !== pinState.pinned || displayIds.some((id) => !pinState.known.has(id))) {
+      setPinState({ known: new Set(displayIds), pinned, resplitKey: pagination.resplitKey });
+    }
+  }
+  const pages = pagination ? splitPages(displayIds, { pageSize: pagination.pageSize, pinned }) : null;
+  const page = pages ? clampPage(targetPage, pages.length) : 1;
+  // 리뷰 S-1 — 보정한 쪽을 요청 쪽에도 되돌린다(줄이 다시 늘 때 사라졌던 쪽으로 튀지 않게).
+  if (pages && page !== targetPage) setRequestedPage(page);
+  const pageIds = pages ? new Set(pages[page - 1]) : null;
+  const groups = pageIds ? groupRows(displayRows.filter((row) => pageIds.has(getRowId(row))), groupBy) : allGroups;
   const [focusRequest, setFocusRequest] = useState<{ kind: "cell" | "heading" } | null>(null);
   const captionRef = useRef<HTMLTableCaptionElement>(null);
   // 그룹 머리글 행은 이 평탄화 목록에 들어오지 않는다 — 로빙 tabIndex·방향키
@@ -169,6 +232,11 @@ export function Table<Row>({
   const flatRows: Row[] = groups.flatMap((group) => group.rows);
   const rowById = new Map(displayRows.map((row) => [getRowId(row), row]));
   const findRow = (rowId: string) => flatRows.find((row) => getRowId(row) === rowId);
+
+  // 04-47(DR-16) — 붙여넣기가 닿은 마지막 쪽(시작 쪽보다 뒤일 때만). 호출부의 붙여넣기 머리가 지워지면(다음 저장 시도) 함께 지운다.
+  const [pasteReach, setPasteReach] = useState<number | null>(null);
+  const hasPasteHead = footerNotices?.some((item) => item.paste === "head") ?? false;
+  if (pasteReach !== null && !hasPasteHead) setPasteReach(null);
 
   // 04-19(공백 4) — Alt+↑↓로 옮긴 줄이 다른 쪽으로 넘어가면 그 쪽으로 따라간다(포커스는 줄 id로 기억해 저절로 따라온다).
   const [followRowId, setFollowRowId] = useState<string | null>(null);
@@ -327,6 +395,16 @@ export function Table<Row>({
     },
   });
 
+  // 04-47(B-24) — 그룹 버튼의 새 줄을 호출부가 열지 않으면 그 줄의 첫 편집 셀로 포커스한다.
+  if (revealFocusId !== null) {
+    const revealRow = rowById.get(revealFocusId);
+    const colKey = revealRow ? columns.find((column) => !isHiddenColumn(column) && cellEditability(column, revealRow) === "edit")?.key : undefined;
+    if (colKey !== undefined) {
+      keyboardState.setFocusCell({ rowId: revealFocusId, colKey });
+      setFocusRequest({ kind: "cell" });
+    }
+  }
+
   function goToCell(nextPage: number, cell: FocusCell) {
     setRequestedPage(nextPage);
     setPageAnnounced(true);
@@ -409,10 +487,13 @@ export function Table<Row>({
   }, [focusRequest, focusHeadingId]);
 
   function changePage(next: number) {
-    if (!pages) return;
+    if (!pages || !pagination) return;
     setRequestedPage(next);
     setPageAnnounced(true);
-    const nextIds = pages[next - 1] ?? [];
+    // 04-47(§7-3 (자)) — 사용자의 페이지 이동은 새 줄 고정을 비우고 쪽 크기로 다시 나눈다.
+    const resplitPages = splitPages(displayIds, { pageSize: pagination.pageSize });
+    setPinState({ known: new Set(displayIds), pinned: {}, resplitKey: pagination.resplitKey });
+    const nextIds = resplitPages[next - 1] ?? [];
     const firstRow = displayRows.find((row) => getRowId(row) === nextIds[0]);
     if (!enableGridKeyboard || !firstRow) {
       setFocusRequest({ kind: "heading" });
@@ -472,6 +553,41 @@ export function Table<Row>({
     return true;
   }
 
+  // 04-47(DR-16) — 합계 행 오른쪽 한 줄. 표가 세는 오류·충돌(서버 거부 요약이 이미 말하면 빼고) + 호출부 항목 + 붙여넣기가 닿은 쪽.
+  let noticeContent: ReactNode = null;
+  if (footerNotices !== undefined || footerSuccess) {
+    const own: FooterNoticeItem[] = [];
+    if (!footerNotices?.some((item) => item.replacesIssueCount)) {
+      let errorCells = 0;
+      const conflictRows = new Set<string>();
+      for (const row of displayRows) {
+        for (const column of columns) {
+          const kind = cellIssue?.(row, column.key)?.kind;
+          if (kind === "error") errorCells++;
+          if (kind === "conflict") conflictRows.add(getRowId(row));
+        }
+      }
+      if (errorCells > 0) own.push({ tone: "danger", text: `오류 ${errorCells}칸` });
+      if (conflictRows.size > 0) own.push({ tone: "danger", text: `충돌 ${conflictRows.size}줄` });
+    }
+    const reachItem: FooterNoticeItem[] = pasteReach !== null && hasPasteHead ? [{ tone: "muted", text: `${pasteReach}쪽까지`, paste: "reach" }] : [];
+    const pieces = composeFooterNotice([...own, ...(footerNotices ?? []), ...reachItem], { successText: footerSuccess });
+    noticeContent =
+      pieces.length > 0 ? (
+        <span className={styles.footerNotice}>
+          {pieces.map((piece, index) => (
+            <Fragment key={index}>
+              {index > 0 ? " · " : null}
+              <span data-tone={piece.tone} className={`${styles.noticePiece} ${styles[`tone-${piece.tone}`]}`}>
+                {piece.text}
+              </span>
+            </Fragment>
+          ))}
+        </span>
+      ) : null;
+  }
+  const footerContent = typeof footer === "function" ? footer(noticeContent) : footer;
+
   if (rows.length === 0) {
     return (
       <table className={styles.table} aria-busy={saveLocked ? true : undefined}>
@@ -502,7 +618,7 @@ export function Table<Row>({
             </td>
           </tr>
         </tbody>
-        {alwaysShowFooter && footer ? <tfoot aria-live="polite">{footer}</tfoot> : null}
+        {alwaysShowFooter && footerContent ? <tfoot aria-live="polite">{footerContent}</tfoot> : null}
       </table>
     );
   }
@@ -546,11 +662,14 @@ export function Table<Row>({
     if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
     const row = flatRows[keyboardState.focus.row];
     const column = columns[keyboardState.focus.col];
-    if (!row || !column) return;
-    const text = event.clipboardData?.getData("text/plain");
-    if (!text) return;
+    if (!row || !column || !event.clipboardData) return;
+    const clipboard = readPasteClipboard(event.clipboardData);
+    if (!clipboard.text) return;
     event.preventDefault();
-    onPasteAtCell(row, column.key, text);
+    const filled = onPasteAtCell(row, column.key, clipboard);
+    // 04-47(§7-3 (자)) — 화면은 시작 쪽에 머문다. 채운 줄이 뒤 쪽까지 닿았으면 합계 행에 `{k}쪽까지`(새 줄은 시작 쪽에 고정된다).
+    const reach = pages && filled ? Math.max(page, ...filled.map((id) => pageOfRow(pages, id) ?? page)) : page;
+    setPasteReach(reach > page ? reach : null);
   }
 
   const rangeText = pagination
@@ -756,7 +875,7 @@ export function Table<Row>({
             })}
           </tbody>
         ))}
-        {footer ? <tfoot aria-live="polite">{footer}</tfoot> : null}
+        {footerContent ? <tfoot aria-live="polite">{footerContent}</tfoot> : null}
       </table>
       {pagination && pages ? (
         <Pagination label={pagination.label} page={page} pageCount={pages.length} rangeText={rangeText} onPageChange={changePage} />

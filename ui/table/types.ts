@@ -45,6 +45,11 @@ export type TableColumn<Row> = {
   collapseBelow?: 1280 | 1024;
   /** 04-19 — 격자 Ctrl+C(네이티브 copy 이벤트)가 이 열에 싣는 글자. 없으면 빈 칸. */
   copyText?: (row: Row) => string;
+  /**
+   * 04-47(ENG-D5 · C-03) — 붙여넣기에서 이 열의 몫. `computed`(번호·견적가·차익·상태 같은 계산 열)는 앱에서 복사한
+   * 붙여넣기일 때만 값을 넣지 않고 무시해 센다 — 앱 형식이 없으면(엑셀) 04-04처럼 오류 칸이다. 기본 `input`.
+   */
+  pasteRole?: "input" | "computed";
 };
 
 export type TableGroup<Row> = {

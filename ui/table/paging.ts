@@ -23,14 +23,19 @@ export function splitPages(ids: readonly string[], opts: { pageSize: number; pin
   return pages;
 }
 
-/** 04-47 RED 골격(구현 전). */
+/**
+ * 04-47(§7-3 (자)) — 직전 분할에 없던 줄 id(새 줄 — Ctrl+Enter·Ctrl+D·붙여넣기·줄 추가)를 만들어질 때의 쪽(`page`)에 고정한다.
+ * 이미 고정된 줄은 그대로다. 새 줄이 없으면 받은 객체를 그대로 돌려준다(호출부가 상태를 바꾸지 않는다).
+ */
 export function pinNewRows(input: {
   ids: readonly string[];
   known: ReadonlySet<string>;
   pinned: Readonly<Record<string, number>>;
   page: number;
 }): Readonly<Record<string, number>> {
-  return input.pinned;
+  const fresh = input.ids.filter((id) => !input.known.has(id) && input.pinned[id] === undefined);
+  if (fresh.length === 0) return input.pinned;
+  return { ...input.pinned, ...Object.fromEntries(fresh.map((id) => [id, input.page])) };
 }
 
 /** 줄 id가 있는 쪽(1부터). 없으면 null. */

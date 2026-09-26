@@ -1191,9 +1191,7 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
     await expect(quoteCell(page, 0, 6)).toHaveAttribute("aria-invalid", "true");
     await expect(quoteCell(page, 1, 6)).toHaveAttribute("aria-invalid", "true");
     await expect(quoteCell(page, 0, 6)).toContainText("읽기 전용·잠김 셀에 값이 떨어졌습니다");
-    const pieces = await footerPieces(page);
-    expect(pieces).toContainEqual({ tone: "danger", text: "오류 2칸" });
-    expect(pieces.some((piece) => piece.text.includes("계산 열"))).toBe(false);
+    await expect.poll(() => footerPieces(page)).toEqual([{ tone: "danger", text: "오류 2칸" }]);
   });
 
   test("(C-03) 두 그룹 · USD 1줄 · 45줄을 Ctrl+A → Ctrl+C로 복사해 0줄 프로젝트의 번호 칸에 붙이면 오류 0 · 한 줄 요약 · 저장 뒤 원화 합계가 같다", async ({ page }) => {
@@ -1230,8 +1228,12 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
         };
       });
     });
-    await quoteCell(page, 3, 2).focus();
-    await page.keyboard.press("Control+a");
+    // 하이드레이션 전 Control+a는 사라진다 — 전체 선택 표시(마지막 줄 셀의 선택 모양)가 보일 때까지 누른 뒤 복사한다.
+    await expect(async () => {
+      await quoteCell(page, 3, 2).focus();
+      await page.keyboard.press("Control+a");
+      await expect(quoteCell(page, 29, 2)).toHaveClass(/selectedCell/, { timeout: 1000 });
+    }).toPass();
     await page.keyboard.press("Control+c");
     const copied = (await (await page.waitForFunction(() => (window as unknown as { __copied?: Record<string, string> }).__copied)).jsonValue()) as Record<string, string>;
     expect(JSON.parse(copied["application/x-plant8-quote-lines+json"] ?? "[]")).toHaveLength(45);
@@ -1243,17 +1245,15 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
 
     await expect(quoteDataRows(page)).toHaveCount(45);
     await expect(invalidCells(page)).toHaveCount(0);
-    expect(await footerPieces(page)).toEqual([
+    await expect.poll(() => footerPieces(page)).toEqual([
       { tone: "muted", text: "붙여넣기 45줄" },
       { tone: "warning", text: "외화 1줄 원화로" },
       { tone: "muted", text: "계산 열 180칸 무시" },
     ]);
 
     await saveAndWait(page);
-    const saved = await footerPieces(page);
-    expect(saved).toHaveLength(1);
-    expect(saved[0]?.tone).toBe("success");
-    expect(saved[0]?.text).toMatch(/^저장됨/);
+    // 저장 뒤 붙여넣기 조각은 사라지고 `저장됨 …` 하나만 선다(DR-16).
+    await expect.poll(() => footerPieces(page)).toEqual([{ tone: "success", text: expect.stringMatching(/^저장됨 \d{2}:\d{2}$/) }]);
     expect(await quoteTotalKrw(targetRevision.id)).toBe(await quoteTotalKrw(sourceRevision.id));
   });
 
@@ -1268,7 +1268,7 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
 
     await expect(quoteCell(page, 19, 2)).toHaveText("붙임1");
     await expect(currentPage(page)).toHaveText("1");
-    expect(await footerPieces(page)).toEqual([
+    await expect.poll(() => footerPieces(page)).toEqual([
       { tone: "muted", text: "붙여넣기 45줄" },
       { tone: "muted", text: "3쪽까지" },
     ]);

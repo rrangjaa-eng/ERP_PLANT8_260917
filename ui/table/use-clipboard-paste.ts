@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import { parseTsv, normalizeNumericPaste } from "./parse-tsv";
 import { MAX_DECIMALS, numberInputRejectionReason, type NumberInputKind } from "@/lib/format-number";
+import type { TableColumn } from "./types";
 
 // SYSTEM.md §7-3 보강 (다) — 붙여넣기 반영. `parseTsv`로 읽은 값을 활성
 // 셀부터 오른쪽·아래로 채운다. 숫자 열은 정규화 실패 시, 목록(select) 열은
@@ -15,9 +16,26 @@ export type PasteColumnKind = "text" | "number" | "select";
 /** 04-47 — 앱 전용 클립보드 형식(04-19 격자 복사 · 04-24 이전 차수 복사가 싣는다). */
 export const APP_CLIPBOARD_FORMAT = "application/x-plant8-quote-lines+json";
 
-/** 04-47 RED 골격(구현 전). */
+/** 붙여넣기 이벤트의 글자와 앱 전용 형식(없으면 null — 엑셀·다른 프로그램). */
 export function readPasteClipboard(data: Pick<DataTransfer, "types" | "getData">): { text: string; appMeta: string | null } {
-  return { text: data.getData("text/plain"), appMeta: null };
+  const types = Array.from(data.types);
+  return { text: data.getData("text/plain"), appMeta: types.includes(APP_CLIPBOARD_FORMAT) ? data.getData(APP_CLIPBOARD_FORMAT) : null };
+}
+
+// 앱 형식은 줄마다 `{ currency }`(04-24 quoteLineClipboardMeta)다. 읽지 못하거나 줄 수가 다르면 앱 형식 없음과 같다(T-04-172).
+function readSourceCurrencies(appMeta: string | null | undefined, rowCount: number): string[] | null {
+  if (!appMeta) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(appMeta);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed) || parsed.length !== rowCount) return null;
+  const currencies = parsed.map((entry: unknown) =>
+    typeof entry === "object" && entry !== null && "currency" in entry && typeof entry.currency === "string" ? entry.currency : null,
+  );
+  return currencies.every((currency): currency is string => currency !== null) ? currencies : null;
 }
 
 export type PasteColumn<Row> = {
@@ -29,8 +47,8 @@ export type PasteColumn<Row> = {
   numberKind?: NumberInputKind;
   /** 기존 행, 그리고 newRow가 있으면 붙여넣기로 새로 생길 행(newRow)에 호출된다. */
   isEditable: (row: Row) => boolean;
-  /** 04-47 — 계산 열(`computed`)인지. */
-  pasteRole?: "input" | "computed";
+  /** 04-47(ENG-D5) — 계산 열(`computed`)은 앱에서 복사한 붙여넣기일 때만 값을 넣지 않고 무시해 센다. 기본 `input`. */
+  pasteRole?: TableColumn<Row>["pasteRole"];
 };
 
 export type PasteCellResult = { status: "ok"; value: string } | { status: "error"; reason: string };
@@ -62,13 +80,16 @@ export function applyPaste<Row>(params: {
   activeColIndex: number;
   /** 붙여넣기로 새로 생길 줄의 모양 — 없으면 새 줄은 모든 칸이 편집 가능하다. */
   newRow?: Row;
-  /** 04-47 — 앱 전용 형식 원문(없으면 null). */
+  /** 04-47 — 앱 전용 형식 원문(`readPasteClipboard`, 없으면 null). */
   appMeta?: string | null;
 }): ApplyPasteResult {
   const { clipboardText, columns, rows, activeRowIndex, activeColIndex, newRow } = params;
   const parsed = parseTsv(clipboardText);
   const cells: PasteCell[] = [];
   let droppedColumnCount = 0;
+  let ignoredComputedCells = 0;
+  const sourceCurrencies = readSourceCurrencies(params.appMeta, parsed.length);
+  const source = sourceCurrencies ? "app" : "external";
 
   const lastRowIndex = activeRowIndex + parsed.length - 1;
   const newRowsNeeded = Math.max(0, lastRowIndex - (rows.length - 1));
@@ -85,6 +106,10 @@ export function applyPaste<Row>(params: {
         return;
       }
       const column = columns[colIndex]!;
+      if (source === "app" && column.pasteRole === "computed") {
+        ignoredComputedCells++;
+        return;
+      }
       const editable = row ? column.isEditable(row) : true;
       const trimmed = rawValue.trim();
 
@@ -128,7 +153,7 @@ export function applyPaste<Row>(params: {
     });
   });
 
-  return { cells, newRowsNeeded, droppedColumnCount, source: "external", ignoredComputedCells: 0, sourceCurrencies: null, rowCount: 0 };
+  return { cells, newRowsNeeded, droppedColumnCount, source, ignoredComputedCells, sourceCurrencies, rowCount: parsed.length };
 }
 
 export type UseClipboardPasteParams<Row> = {

@@ -45,7 +45,7 @@ describe("splitPages — 표시 순서 그대로 쪽 크기로 자른다", () =>
 describe("pinNewRows — 직전 분할에 없던 id를 만들어질 때의 쪽에 고정한다", () => {
   it("2쪽에서 만든 새 줄이 표시 순서상 1쪽 자리에 들어와도 2쪽에 남는다", () => {
     const before = ids(45);
-    const display = [...ids(4), "new-1", ...ids(41).slice(4)];
+    const display = [...ids(4), "new-1", ...before.slice(4)];
     const pinned = pinNewRows({ ids: display, known: new Set(before), pinned: {}, page: 2 });
     expect(pinned).toEqual({ "new-1": 2 });
     const pages = splitPages(display, { pageSize: 30, pinned });

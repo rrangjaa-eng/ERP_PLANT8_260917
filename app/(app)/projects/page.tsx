@@ -160,7 +160,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       {aggregate.count === 0 && !hasFilter ? (
         <ListEmpty
           message="등록된 프로젝트가 없습니다"
-          action={{ label: "프로젝트 등록", href: projectsHref({ isNew: true }) }}
+          action={canCreate ? { label: "프로젝트 등록", href: projectsHref({ isNew: true }) } : undefined}
         />
       ) : aggregate.count === 0 ? (
         <ListEmpty message="조건에 맞는 프로젝트가 없습니다" action={{ label: "필터 지우기", href: "/projects" }} />

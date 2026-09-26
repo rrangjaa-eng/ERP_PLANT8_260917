@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { invalidSubmitField, isDefiniteResult, recheckOutcome, resolveHistoryEntry } from "@/app/c/[token]/flow-rules";
+import { invalidSubmitField, submitBlockedReason, isDefiniteResult, recheckOutcome, resolveHistoryEntry } from "@/app/c/[token]/flow-rules";
 
 // 04.3-03 Task 2a ③ — 외부 수령자 흐름의 순수 판정(브라우저 API 없음).
 
@@ -92,5 +92,21 @@ describe("invalidSubmitField — 제출 입력 거부를 어느 칸에 보일지
     [["rrn"], "rrn"],
   ] as const)("%o → %s", (fields, expected) => {
     expect(invalidSubmitField(fields)).toBe(expected);
+  });
+});
+
+describe("submitBlockedReason — 빈 칸 나열과 받침에 맞는 조사(/design-review)", () => {
+  it.each([
+    [["서명"], "서명을 해 주세요"],
+    [["연락처", "동의"], "연락처 · 동의를 채우면 제출할 수 있습니다"],
+    [["주민등록번호"], "주민등록번호를 채우면 제출할 수 있습니다"],
+    [["이름", "서명"], "이름 · 서명을 채우면 제출할 수 있습니다"],
+    [["주소"], "주소를 채우면 제출할 수 있습니다"],
+  ] as const)("%o → %s", (missing, expected) => {
+    expect(submitBlockedReason(missing)).toBe(expected);
+  });
+
+  it("빈 칸이 없으면 이유 없음", () => {
+    expect(submitBlockedReason([])).toBeUndefined();
   });
 });

@@ -271,7 +271,10 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     await expect(revenueTable(page, "입금 줄").locator("tbody tr:not([aria-hidden])").getByText("공급가액 5,000,000", { exact: true })).toBeVisible();
     await expect(revenueSection(page).getByText(/서버 계산/)).toHaveCount(0);
     // 합계 행 — 발행 10,000,000 - 입금 공급가 5,000,000 = 미수 5,000,000.
-    await expect(page.getByText("미수 5,000,000")).toBeVisible();
+    const balance = page.getByText("미수 5,000,000");
+    await expect(balance).toBeVisible();
+    // 04-16 리뷰 S-1 — 미수·초과 입금 글자는 `--warning`이다(합계 행의 다른 글자는 `--fg`).
+    await expect(balance).toHaveCSS("color", await cssColor(page, "--warning"));
 
     // 다시 PM으로 로그인해 같은 화면을 연다 — 04-16(D-85): 발행 표는 읽기 표로 보이고, 입금 표·미수는 DOM에 없다(숨김이 아니라 부재).
     await page.goto("/account");

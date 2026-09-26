@@ -583,13 +583,13 @@ describe("loadProjectList — 기간 필터 (04-48, 실제 Postgres)", () => {
 
     const plain = await loadProjectList(SYSTEM_VIEWER, { year: 2026, search: marker });
     const broken = await loadProjectList(SYSTEM_VIEWER, { year: 2026, search: marker, from: "2026-9-1", to: "2026-09-30" });
-    expect(broken.periodErrors).toEqual({ from: "날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요" });
+    expect(broken.periodErrors).toEqual({ from: "날짜 형식 오류 · 2026-09-18처럼" });
     expect(broken.rows.map((row) => row.id)).toEqual(plain.rows.map((row) => row.id));
     expect(broken.rows).toHaveLength(2);
     expect(broken.totals).toEqual(plain.totals);
 
     const reversed = await loadProjectList(SYSTEM_VIEWER, { year: 2026, search: marker, from: "2026-09-30", to: "2026-09-01" });
-    expect(reversed.periodErrors).toEqual({ to: "기간이 거꾸로입니다 · 앞 날짜를 먼저 적어 주세요" });
+    expect(reversed.periodErrors).toEqual({ to: "기간 끝이 시작보다 빠름 · 기간 끝 수정" });
     expect(reversed.totals).toEqual(plain.totals);
   });
 });
@@ -643,7 +643,7 @@ describe("loadProjectList — 파라미터 정규화 · 빈 갈래 (04-48, 실�
 
     for (const from of [`${thisYear}-02-30`, "0000-01-01"]) {
       const result = await loadProjectList(SYSTEM_VIEWER, { search: marker, from });
-      expect(result.periodErrors, from).toEqual({ from: "날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요" });
+      expect(result.periodErrors, from).toEqual({ from: "날짜 형식 오류 · 2026-09-18처럼" });
       expect(result.rows.map((row) => row.id), from).toEqual(plain.rows.map((row) => row.id));
       expect(result.totals, from).toEqual(plain.totals);
     }

@@ -94,8 +94,8 @@ export function resolveListPage(
 export type ListPeriod = { from?: string; to?: string };
 export type ListPeriodErrors = { from?: string; to?: string };
 
-export const PERIOD_FORMAT_ERROR = "날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요";
-export const PERIOD_REVERSED_ERROR = "기간이 거꾸로입니다 · 앞 날짜를 먼저 적어 주세요";
+export const PERIOD_FORMAT_ERROR = "날짜 형식 오류 · 2026-09-18처럼";
+export const PERIOD_REVERSED_ERROR = "기간 끝이 시작보다 빠름 · 기간 끝 수정";
 
 // 연도 2000–2100 · `YYYY-MM-DD` · 달력에 있는 날짜만(C-08 — 틀린 값이 PG 날짜 오류로 가지 않는다).
 function isListDate(value: string): boolean {

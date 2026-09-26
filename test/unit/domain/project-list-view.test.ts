@@ -253,8 +253,8 @@ describe("loadProjectList — 번호 페이지 읽기 순서(C-23 · A-07)", () 
 
 // 04-48 Task 1(UX-04 · CEO C-08) — 목록 기간 필터 두 칸의 서버 판정. 오류가 하나라도 있으면 기간 전체를 적용하지 않는다.
 describe("parseListPeriod — 목록 기간 필터 판정", () => {
-  const FORMAT = "날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요";
-  const REVERSED = "기간이 거꾸로입니다 · 앞 날짜를 먼저 적어 주세요";
+  const FORMAT = "날짜 형식 오류 · 2026-09-18처럼";
+  const REVERSED = "기간 끝이 시작보다 빠름 · 기간 끝 수정";
 
   it("올바른 두 날짜는 기간 둘이고 오류가 없다", () => {
     expect(parseListPeriod("2026-09-01", "2026-10-31")).toEqual({

@@ -286,7 +286,7 @@ test.describe("프로젝트 목록 — 기간 필터 (04-48)", () => {
     await page.locator("#from").press("Tab");
     await page.locator("#to").press("Tab");
     await expect(page).toHaveURL(/from=/);
-    await expect(page.getByText("날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요", { exact: true })).toBeVisible();
+    await expect(page.getByText("날짜 형식 오류 · 2026-09-18처럼", { exact: true })).toBeVisible();
     await expect(page.locator("#from")).toHaveAttribute("aria-invalid", "true");
     await expect(page.locator("#from")).toHaveValue(`${year}-9-1`);
     await expect(page.locator("table tbody a")).toHaveCount(2);
@@ -295,7 +295,7 @@ test.describe("프로젝트 목록 — 기간 필터 (04-48)", () => {
     await page.locator("#to").fill(`${year}-09-01`);
     await page.locator("#to").press("Enter");
     await expect(page).toHaveURL(new RegExp(`from=${year}-10-31`));
-    await expect(page.getByText("기간이 거꾸로입니다 · 앞 날짜를 먼저 적어 주세요", { exact: true })).toBeVisible();
+    await expect(page.getByText("기간 끝이 시작보다 빠름 · 기간 끝 수정", { exact: true })).toBeVisible();
     await expect(page.locator("#to")).toHaveAttribute("aria-invalid", "true");
     await expect(page.locator("table tbody a")).toHaveCount(2);
   });
@@ -695,7 +695,7 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
       await expect(page.locator("#status")).toBeVisible();
       const clean = await measure();
       await page.goto(`/projects?q=E2E정렬기준&from=${year}-10-31&to=${year}-09-01`);
-      const error = page.getByText("기간이 거꾸로입니다 · 앞 날짜를 먼저 적어 주세요", { exact: true });
+      const error = page.getByText("기간 끝이 시작보다 빠름 · 기간 끝 수정", { exact: true });
       await expect(error).toBeVisible();
       const withError = await measure();
       for (const id of ["status", "teamId", "year", "to", "q"] as const) {

@@ -99,6 +99,30 @@ export function emailFailureBannerText(banner: EmailFailureBanner): string {
   return banner.unknown === 0 ? failedPart : `${failedPart} · ${unknownPart}`;
 }
 
+// B2(NOTI-02 · D-4217): 「관리」 인덱스용 — admin.system-status view 권한자에게만, 시스템
+// 상태와 같은 읽기(readEmailOutcome)와 같은 판정(emailFailureBannerFrom). 권한이 없으면
+// null, 조회가 실패하면 경고 로그 뒤 null(S3/error).
+export async function emailFailureBanner(
+  viewer: Viewer,
+  deps?: Partial<Pick<StatusDeps, "can" | "getLastEmailOutcome" | "getUnresolvedEmail" | "now">>,
+): Promise<EmailFailureBanner | null> {
+  try {
+    if (!(await (deps?.can ?? defaultCan)(viewer, "admin.system-status", "view"))) return null;
+    const outcome = await readEmailOutcome(viewer, {
+      getLastEmailOutcome: deps?.getLastEmailOutcome ?? defaultGetLastEmailOutcome,
+      getUnresolvedEmail: deps?.getUnresolvedEmail ?? defaultGetUnresolvedEmail,
+      now: deps?.now ?? (() => new Date()),
+    });
+    return emailFailureBannerFrom(outcome);
+  } catch (error) {
+    log.warn("admin.banner_failed", {
+      banner: "email",
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
 // OPS-06·D-17: 한도 배너 판정. connections/maxConnections >= ratio(정확히 같아도 뜬다).
 export function connectionBanner(connections: number, maxConnections: number, ratio: number): boolean {
   if (maxConnections <= 0) return false;

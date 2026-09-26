@@ -10,6 +10,7 @@ import {
 } from "@/domain/holidays/candidates";
 import { HOLIDAY_KIND_LABELS, LunarTableRangeError, type HolidayKind } from "@/domain/holidays/rules";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { log } from "@/lib/log";
 import type { DbOrTx } from "@/repositories/document-counters";
 import {
   deleteHolidayById,
@@ -54,6 +55,32 @@ export type HolidayAdminView = {
 };
 
 export type HolidayAdminDeps = { now?: () => Date };
+
+export type HolidayBannerDeps = { now?: () => Date; findConfirmation?: typeof findYearConfirmation };
+
+// B1(D-705 · UI-SPEC U-4): 올해·다음 해 가운데 확정 기록이 없는 가장 이른 해. 행동할 수
+// 있는 사람(admin.holidays write)에게만 — 권한이 없으면 던지지 않고 null(「관리」 인덱스는
+// 다른 권한으로 들어온 사람도 본다). 조회가 실패하면 배너 없이 화면을 그린다(S3/error).
+export async function holidayConfirmationBanner(
+  viewer: Viewer,
+  deps?: HolidayBannerDeps,
+): Promise<{ year: number } | null> {
+  try {
+    if (!(await can(viewer, HOLIDAYS_MENU, "write"))) return null;
+    const find = deps?.findConfirmation ?? findYearConfirmation;
+    const thisYear = Number(toKstDate((deps?.now ?? (() => new Date()))()).slice(0, 4));
+    for (const year of [thisYear, thisYear + 1]) {
+      if (!(await find(viewer, year))) return { year };
+    }
+    return null;
+  } catch (error) {
+    log.warn("admin.banner_failed", {
+      banner: "holiday",
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
 
 function weekdayOf(date: string): string {
   return WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()] ?? "";

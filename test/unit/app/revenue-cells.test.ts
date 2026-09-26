@@ -8,7 +8,7 @@ import {
 
 // 04-16(B3 · UI-SPEC rev 5 후속 결정 R2) — 04-28 거부 봉투의 칸 중 매출 줄 id 칸을 발행·입금 표의 줄·열 오류로 떼어 내고,
 // 표별 합계 행 오른쪽 글자를 만든다.
-const CAP = "금액이 상한을 넘습니다 · 2,147,483,647원 이하";
+const CAP = "금액이 상한을 넘습니다 · 999,999,999,999원 이하";
 const ids = { issuedIds: ["i1"], paidIds: ["p1"] };
 
 describe("routeRejectedRevenueCells", () => {

@@ -891,3 +891,13 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **복구 절차(쓰기 중지)**: 전진 전용이다 — 되돌리는 마이그레이션 파일은 만들지 않는다. 하한 아래(묶음 ② 리비전)로의 롤백이 필요한 사고는 전진 수정이 먼저이고, 불가피하면 쓰기를 멈춘 상태에서 역 SQL — 네 컬럼을 0010 정의로 다시 더하기(`contract_currency text DEFAULT 'KRW' NOT NULL` · `contract_foreign_amount numeric(14,2)` · `contract_fx_rate numeric(12,4) DEFAULT '1.0000' NOT NULL` · `contract_amount_krw integer DEFAULT 0 NOT NULL`) — 를 적용한 뒤 사람이 트래픽을 옮긴다. 값은 돌아오지 않는다(파생값이 정본). 같은 하한 규칙 아래 있는 것 한 줄: 0012 상태 재매핑(04-06 — 묶음 ②, 전진 전용). 04-17·04-18 중간 상태(C-26)는 묶음 ④ 한 배포다.
 
 **범위**: `db/migrations/0015_drop_project_contract_columns.sql` · 배포 절차(묶음 ③). 이 항목은 SYSTEM.md를 바꾸지 않는다.
+
+## 2026-09-26 — 결정 ① (b) 원화 금액 bigint 전환 · 줄당 상한 1조 원 미만 · 0016 롤백 하한 없음 (사용자 답 2026-09-24 · 상한 사용자 답 2026-09-26 · PR #82)
+
+**결정**: 원화 금액 정수 컬럼 여섯 개(`projects.pre_estimate_amount_krw` · `quote_lines.unit_price_amount_krw` · `execution_amount_krw` · `quote_amount_krw` · `profit_krw` · `revenue_entries.amount_amount_krw`)를 마이그레이션 `0016_money_krw_bigint`가 `bigint`(drizzle `mode: "number"`)로 넓힌다. 한 칸의 원화 금액 범위(`domain/money`의 `KRW_COLUMN_MIN`·`KRW_COLUMN_MAX`)는 **−1,000,000,000,000 ~ 999,999,999,999원(1조 원 미만)** 이다 — 04-40의 입력 규칙(`normalizeMoneyInput` · 계산 견적가 · 차익 상한)은 그대로이고 상수만 바뀐다. 하한이 한 칸 넓은 것은 옛 `integer` 범위(−2³¹ ~ 2³¹−1)와 같은 모양이라 「견적가 0 줄의 최소 실행가 → 차익 상한 초과」 판정이 살아 있기 때문이다. 원화 환산(`toKrw`)은 정수로 올린 곱이 JS 안전 정수를 넘으면 BigInt로 나눠 반올림한다. 0016 첫 줄에 `-- rollback-floor:`를 두지 않는다.
+
+**왜**: 사용자 보고 「금액이 99억 이상이면 오류」 — `integer` 상한 2,147,483,647원(약 21.4억)을 넘는 견적·매출이 PG 22003(PR #38 배포본) 또는 04-40의 「금액이 상한을 넘습니다 · 2,147,483,647원 이하」로 막혔다. 04-07 계획의 (b)는 상한을 JS 안전 정수(9,007조)로 두었지만, 그 상한이면 최대값 몇 줄의 합계가 2^53을 넘어 목록·차수 합계(`::bigint` + `mapWith(Number)`)가 조용히 반올림된다. 1조 원 미만이면 약 9,000줄이 모두 최대값이어야 2^53에 닿고 bigint 합계는 넘치지 않는다(사용자 선택 2026-09-26). 롤백 하한을 두지 않는 근거: 04-07 계획의 전제 「옛 리비전은 int8을 문자열로 읽어 조용히 틀린다」가 사실과 다르다 — node-postgres는 int8을 문자열로 주지만 drizzle 0.45.2 `PgInteger.mapFromDriverValue`가 `Number.parseInt`로 숫자로 바꾸고(`node_modules/drizzle-orm/pg-core/columns/integer.js`), 옛 코드의 합계는 이미 `::bigint`다. 묶음 ③·④ 리비전으로 롤백해도 읽기는 맞고, 21.4억을 넘는 줄의 **수정**만 옛 리비전의 상한 문구로 거부된다(조용한 오염 없음).
+
+**버린 대안**: (a) `integer` 유지 + 칸 오류(99억 견적을 저장할 수 없어 보고된 버그가 남는다) · 상한 = JS 안전 정수(04-07 원안 — 합계 정밀도) · 0016을 롤백 하한으로(근거 전제가 틀려 불필요하게 롤백을 막는다).
+
+**범위**: `db/migrations/0016_money_krw_bigint.sql` · `db/schema/money-columns.ts` · `db/schema/quote-lines.ts` · `domain/money/index.ts` · 상한 문구 `금액이 상한을 넘습니다 · {상한}원 이하`의 숫자(UI-SPEC Copywriting 예시 숫자가 낡는다). 04-07은 이 항목 뒤 리저브(`reserve_entries`)만 남고 그 마이그레이션 번호는 0017이 된다(04-07 번호 규칙 「생성기 출력 그대로」). 이 항목은 SYSTEM.md를 바꾸지 않는다.

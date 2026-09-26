@@ -1,6 +1,6 @@
 {
-  "id": "c7d1ba05-ed7c-43da-af95-b3c3b5606faa",
-  "prevId": "41aabed5-9d7c-467f-81aa-8eebfe6d49ea",
+  "id": "24b934d5-e0a1-47d2-a9e9-e354788a4bb3",
+  "prevId": "cc951447-cb12-4b9e-bc66-799ef31728b5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1010,166 +1010,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.holiday_year_confirmations": {
-      "name": "holiday_year_confirmations",
-      "schema": "",
-      "columns": {
-        "year": {
-          "name": "year",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "confirmed_at": {
-          "name": "confirmed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "confirmed_by": {
-          "name": "confirmed_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "holiday_year_confirmations_confirmed_by_users_id_fk": {
-          "name": "holiday_year_confirmations_confirmed_by_users_id_fk",
-          "tableFrom": "holiday_year_confirmations",
-          "tableTo": "users",
-          "columnsFrom": [
-            "confirmed_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.holiday_year_generations": {
-      "name": "holiday_year_generations",
-      "schema": "",
-      "columns": {
-        "year": {
-          "name": "year",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "generated_at": {
-          "name": "generated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.holidays": {
-      "name": "holidays",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "date": {
-          "name": "date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "origin_year": {
-          "name": "origin_year",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "holidays_created_by_users_id_fk": {
-          "name": "holidays_created_by_users_id_fk",
-          "tableFrom": "holidays",
-          "tableTo": "users",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "holidays_date_key": {
-          "name": "holidays_date_key",
-          "nullsNotDistinct": false,
-          "columns": [
-            "date"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "holidays_kind_check": {
-          "name": "holidays_kind_check",
-          "value": "\"holidays\".\"kind\" in ('statutory', 'substitute', 'temporary', 'election')"
-        },
-        "holidays_origin_year_check": {
-          "name": "holidays_origin_year_check",
-          "value": "(\"holidays\".\"kind\" = 'substitute') = (\"holidays\".\"origin_year\" is not null)"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.roles": {
       "name": "roles",
       "schema": "",
@@ -2165,7 +2005,7 @@
         },
         "pre_estimate_amount_krw": {
           "name": "pre_estimate_amount_krw",
-          "type": "integer",
+          "type": "bigint",
           "primaryKey": false,
           "notNull": true
         },
@@ -2537,7 +2377,7 @@
         },
         "unit_price_amount_krw": {
           "name": "unit_price_amount_krw",
-          "type": "integer",
+          "type": "bigint",
           "primaryKey": false,
           "notNull": true
         },
@@ -2563,19 +2403,19 @@
         },
         "execution_amount_krw": {
           "name": "execution_amount_krw",
-          "type": "integer",
+          "type": "bigint",
           "primaryKey": false,
           "notNull": true
         },
         "quote_amount_krw": {
           "name": "quote_amount_krw",
-          "type": "integer",
+          "type": "bigint",
           "primaryKey": false,
           "notNull": true
         },
         "profit_krw": {
           "name": "profit_krw",
-          "type": "integer",
+          "type": "bigint",
           "primaryKey": false,
           "notNull": true
         },
@@ -2794,7 +2634,7 @@
         },
         "amount_amount_krw": {
           "name": "amount_amount_krw",
-          "type": "integer",
+          "type": "bigint",
           "primaryKey": false,
           "notNull": true
         },

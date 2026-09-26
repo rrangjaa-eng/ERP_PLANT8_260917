@@ -117,15 +117,22 @@
     {
       "idx": 16,
       "version": "7",
-      "when": 1790411707173,
-      "tag": "0016_notify_log",
+      "when": 1790414052589,
+      "tag": "0016_money_krw_bigint",
       "breakpoints": true
     },
     {
       "idx": 17,
       "version": "7",
-      "when": 1790411708386,
-      "tag": "0017_holidays",
+      "when": 1790420391418,
+      "tag": "0017_notify_log",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790420392611,
+      "tag": "0018_holidays",
       "breakpoints": true
     }
   ]

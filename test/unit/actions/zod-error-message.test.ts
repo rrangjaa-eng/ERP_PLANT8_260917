@@ -46,4 +46,17 @@ describe("koreanZodErrorMessage", () => {
     expect(message).not.toMatch(/[{}]/);
     expect(message).toContain("·");
   });
+
+  // Rule 2(04.3-02) — CERT_CONTACT_PHONE 등 커스텀 refine 메시지가 default
+  // 케이스의 일반 문구로 뭉개지지 않고 그대로 나와야 한다(그 설정 키의
+  // acceptance criteria가 이 정확한 문장을 요구한다).
+  it("커스텀 refine 메시지는 그대로 나온다(default로 뭉개지지 않는다)", () => {
+    const schema = z.string().refine(() => false, { message: "전화번호 형식이 아닙니다 · 02-1234-5678처럼 적어 주세요" });
+    const result = schema.safeParse("abc");
+    if (result.success) throw new Error("test setup 오류");
+
+    const message = koreanZodErrorMessage(result.error);
+
+    expect(message).toBe("전화번호 형식이 아닙니다 · 02-1234-5678처럼 적어 주세요");
+  });
 });

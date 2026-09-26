@@ -92,4 +92,13 @@ describe("domain/document-numbering 서식 설정 (ADMN-09, 실제 Postgres)", (
     const { number } = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026, format });
     expect(number).toBe("26-001");
   });
+
+  // 04.3-02 Task 2 ④ — 확인증 번호 서식(document_number.cert.*, 기본
+  // CERT- + 4자리 연도 + - + 4자리 순번). counterKey가 project와 독립
+  // (다른 카운터 행)임도 함께 확인한다.
+  it("cert counterKey는 기본 서식으로 CERT-2026-0001을 낸다", async () => {
+    const format = await loadDocumentNumberFormat("cert");
+    const { number } = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "cert", year: 2026, format });
+    expect(number).toBe("CERT-2026-0001");
+  });
 });

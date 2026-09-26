@@ -3,6 +3,7 @@ import {
   attributionLabel,
   bucketTotal,
   exclusionText,
+  filterSummary,
   formatListPeriod,
   isUserFiltered,
   listEmptyKind,
@@ -440,5 +441,31 @@ describe("reconcileListYear — 연도 자동 전환(DR-30)", () => {
       expect(next).not.toBeNull();
       expect(reconcileListYear({ ...input, year: next ?? "" })).toBeNull();
     }
+  });
+});
+
+// 04-48 Task 3(DR-26) — 폰 필터 요약: 지금 필터 값만(라벨 없음), 화면이 ` · `로 잇는다.
+describe("filterSummary — 폰 필터 요약 값", () => {
+  it("기본 보기는 연도 · 전체 상태 · 전체 팀이다", () => {
+    expect(filterSummary({ year: 2026, statusLabel: "전체 상태", teamLabel: "전체 팀" })).toEqual(["2026", "전체 상태", "전체 팀"]);
+  });
+
+  it("전체 연도는 첫 값이 「전체 연도」이고 상태 · 팀 필터는 그 라벨이다", () => {
+    expect(filterSummary({ year: "all", statusLabel: "진행", teamLabel: "기획1팀" })).toEqual(["전체 연도", "진행", "기획1팀"]);
+  });
+
+  it("기간이 있으면 끝에 붙고 한쪽이 열려 있으면 —다", () => {
+    expect(filterSummary({ year: 2026, statusLabel: "전체 상태", teamLabel: "전체 팀", from: "2026-09-01", to: "2026-10-31" })).toEqual([
+      "2026",
+      "전체 상태",
+      "전체 팀",
+      "2026-09-01 ~ 2026-10-31",
+    ]);
+    expect(filterSummary({ year: 2026, statusLabel: "전체 상태", teamLabel: "전체 팀", from: "2026-09-01" })).toEqual([
+      "2026",
+      "전체 상태",
+      "전체 팀",
+      "2026-09-01 ~ —",
+    ]);
   });
 });

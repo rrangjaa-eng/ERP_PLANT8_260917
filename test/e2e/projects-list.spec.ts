@@ -401,3 +401,61 @@ test.describe("프로젝트 목록 — 조회 조건 (04-48)", () => {
     await expect(page.locator("#year")).toHaveValue(String(lastYear));
   });
 });
+
+// 04-48 Task 3(DR-26) — 폰 첫 화면: 검색 · 「필터」 · 요약 · 1차가 먼저, 상태 · 팀 · 연도 · 기간은 펼친다.
+test.describe("프로젝트 목록 — 폰 첫 화면 (04-48)", () => {
+  test("375 폭에서 「필터」는 접힘으로 시작하고 누르면 네 칸이 펼쳐지며, 요약은 필터 값과 같다", async ({ page }) => {
+    const year = kstYear(new Date());
+    const marker = `E2E폰필터-${randomUUID().slice(0, 8)}`;
+    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID, withTeam: true });
+    const pmUserId = await findUserIdByEmail(pm.email);
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `${marker}-클라이언트`, normalizedName: `${marker}-클라이언트` });
+    const [team] = await db.select().from(teams).limit(1);
+    if (!team) throw new Error("시드된 팀이 없습니다");
+    await createProject(SYSTEM_VIEWER, {
+      clientId: vendor.id,
+      teamId: team.id,
+      pmUserId,
+      name: `${marker}-작년`,
+      startDate: `${year - 1}-01-10`,
+      endDate: `${year - 1}-02-20`,
+    });
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    await login(page, pm);
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}`);
+
+    const toggle = page.getByRole("button", { name: "필터", exact: true });
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    const panelId = await toggle.getAttribute("aria-controls");
+    expect(panelId).toBeTruthy();
+    await expect(page.locator("#status")).toBeHidden();
+    await expect(page.locator("#from")).toBeHidden();
+    await expect(page.locator("#q")).toBeVisible();
+    const summary = page.getByTestId("filter-summary");
+    await expect(summary).toHaveText(`${year} · 전체 상태 · 전체 팀`);
+    await expect(page.getByRole("link", { name: "프로젝트 등록" })).toBeVisible();
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    for (const id of ["status", "teamId", "year", "from", "to"]) await expect(page.locator(`#${id}`)).toBeVisible();
+    await expect(page.locator(`#${panelId}`)).toContainText("상태");
+
+    // 연도 자동 전환(DR-30) 뒤에도 요약이 새 연도다.
+    await page.locator("#from").fill(`${year - 1}-01-01`);
+    await page.locator("#to").fill(`${year - 1}-03-01`);
+    await page.locator("#to").press("Enter");
+    await expect(page).toHaveURL(new RegExp(`year=${year - 1}`));
+    await expect(page.getByTestId("filter-summary")).toHaveText(`${year - 1} · 전체 상태 · 전체 팀 · ${year - 1}-01-01 ~ ${year - 1}-03-01`);
+  });
+
+  test("PC 1280에는 「필터」 버튼과 요약이 없고 필터 칸이 한 줄에 보인다", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const pm = await setupPm();
+    await login(page, pm);
+    await page.goto("/projects");
+    await expect(page.locator("#status")).toBeVisible();
+    await expect(page.getByRole("button", { name: "필터", exact: true })).toHaveCount(0);
+    await expect(page.getByTestId("filter-summary")).toBeHidden();
+  });
+});

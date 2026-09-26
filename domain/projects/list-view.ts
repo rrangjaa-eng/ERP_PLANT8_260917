@@ -220,3 +220,8 @@ export function reconcileListYear(input: { year: string | number; from?: string;
   if (period.from && period.to && period.from.slice(0, 4) === period.to.slice(0, 4)) return period.from.slice(0, 4);
   return "all";
 }
+
+// (RED 골격 — 04-48 Task 3)
+export function filterSummary(input: { year: number | "all"; statusLabel: string; teamLabel: string; from?: string; to?: string }): string[] {
+  return [String(input.year)];
+}

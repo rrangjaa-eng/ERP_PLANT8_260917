@@ -5,6 +5,8 @@ import { listVendors as repoListVendors } from "@/repositories/vendors";
 import { listTeams as repoListTeams } from "@/repositories/teams";
 import { listUsers as repoListUsers } from "@/repositories/users";
 import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
+import { findMembershipsAtDate as repoFindMembershipsAtDate } from "@/repositories/team-memberships";
+import { loadActorTeamScope } from "@/domain/projects/status";
 
 export class ForbiddenError extends UserFacingError {}
 
@@ -62,5 +64,28 @@ export async function listProjectFormReferences(
     pmUsers: userRows.map((row) => ({ id: row.id, name: row.name })),
     vendors: vendorRows.map((row) => ({ id: row.id, name: row.name })),
     subcategories: subcategoryRows.map((row) => ({ value: row.value, label: row.label, description: row.description })),
+  };
+}
+
+// 보안 감사 · CLAUDE.md §7 — 등록 폼의 팀 · 담당 PM 칸은 서버가 받는 값만 보인다.
+// 팀 업무 범위면 내 팀 하나와 오늘(KST) 내 팀 사람만, 회사 범위면 그대로다(필터 줄은 전체 팀을 계속 쓴다).
+export async function scopeCreateFormReferences(
+  viewer: Viewer,
+  references: Pick<ProjectFormReferences, "teams" | "pmUsers">,
+  opts: { todayKst: string },
+): Promise<Pick<ProjectFormReferences, "teams" | "pmUsers">> {
+  const scope = await loadActorTeamScope(viewer, opts);
+  if (scope.workScope === "company") return { teams: references.teams, pmUsers: references.pmUsers };
+  if (scope.teamId === null) return { teams: [], pmUsers: [] };
+
+  const memberships = await repoFindMembershipsAtDate(
+    viewer,
+    references.pmUsers.map((user) => user.id),
+    opts.todayKst,
+  );
+  const memberIds = new Set(memberships.filter((row) => row.teamId === scope.teamId).map((row) => row.userId));
+  return {
+    teams: references.teams.filter((team) => team.id === scope.teamId),
+    pmUsers: references.pmUsers.filter((user) => memberIds.has(user.id)),
   };
 }

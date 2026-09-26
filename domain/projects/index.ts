@@ -9,7 +9,7 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { buildCustomFieldsSchema, type FieldDefType } from "@/domain/custom-fields/build-schema";
 import { allocateDocumentNumber, loadDocumentNumberFormat } from "@/domain/document-numbering";
 import { withTransaction } from "@/lib/db-transaction";
-import { kstYear } from "@/lib/kst-date";
+import { kstToday, kstYear } from "@/lib/kst-date";
 import { applyAutoSettlement, type AutoSettlementDeps } from "@/domain/projects/auto-transition";
 import { moneyFromRow, moneyToColumns, normalizeMoneyInput, MoneyInputError, type Currency, type Money, type MoneyInput } from "@/domain/money";
 import { validatePreEstimateChange } from "@/domain/projects/pre-estimate";
@@ -38,6 +38,8 @@ import {
 } from "@/repositories/quote-revisions";
 import { copyQuoteLines as repoCopyQuoteLines, countCopyableLines as repoCountCopyableLines } from "@/repositories/quote-lines";
 import { denyWrite } from "@/domain/rules/deny-write";
+import { coversProjectTeam, loadActorTeamScope } from "@/domain/projects/status";
+import { findMembershipAtDate } from "@/repositories/team-memberships";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
 
 export class ForbiddenError extends UserFacingError {}
@@ -332,6 +334,7 @@ function validateProjectInput(input: ProjectInput): { errors: ProjectInputFieldE
 }
 
 const COPY_SOURCE_RULE = "project.copy-source";
+const CREATE_TEAM_SCOPE_RULE = "project.create-team-scope";
 const COPY_SOURCE_MISSING = "복사할 프로젝트 없음 · 새로 고침";
 
 // 04-15 — 복사 출처는 보는 사람의 행 범위 안 · 보관 안 된 프로젝트만. 보관함을 볼 수 있어도 보관된 프로젝트는 출처가 아니다.
@@ -386,9 +389,20 @@ export async function createProject(
   if (inputErrors.length > 0) throw new ProjectInputRejectedError(inputErrors);
   const preEstimateColumns = preEstimate ? moneyToColumns(preEstimate) : null;
 
+  const now = deps?.now?.() ?? new Date();
+  // 보안 감사 — 팀 업무 범위 계급은 내 팀 프로젝트만, 오늘(KST) 내 팀 사람을 PM으로만 등록한다(status.ts 전환과 같은 판정).
+  const todayKst = kstToday(now);
+  const teamScope = await loadActorTeamScope(viewer, { todayKst });
+  if (!coversProjectTeam(teamScope, input.teamId)) {
+    denyWrite(viewer, CREATE_TEAM_SCOPE_RULE, {}, new ForbiddenError("내 팀 프로젝트만 등록할 수 있습니다."));
+  }
+  if (teamScope.workScope === "team" && (await findMembershipAtDate(viewer, input.pmUserId, todayKst))?.teamId !== input.teamId) {
+    denyWrite(viewer, CREATE_TEAM_SCOPE_RULE, {}, new ForbiddenError("담당 PM은 내 팀 사람만 고를 수 있습니다."));
+  }
+
   const customFields = await validatedCustomFields(viewer, input.customFields);
   // C-17: 번호 연도는 KST — 1월 1일 00:00~09:00(KST) 등록도 새해 번호다.
-  const year = kstYear(deps?.now?.() ?? new Date());
+  const year = kstYear(now);
   // 서식 설정은 트랜잭션을 열기 전에 읽는다 — 풀 소진 애플리케이션 교착을
   // 막는다(domain/document-numbering/index.ts의 allocateDocumentNumber 주석 참고).
   const format = await loadDocumentNumberFormat(PROJECT_NUMBER_COUNTER_KEY);

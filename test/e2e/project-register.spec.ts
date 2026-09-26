@@ -18,7 +18,7 @@ test.describe("프로젝트 등록 → 견적 줄 저장 (Phase 4 트레이서)"
       normalizedName: `e2e클라이언트-${Date.now()}`,
     });
 
-    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID, withTeam: true });
     await page.goto("/login");
     await page.getByLabel("이메일").fill(pm.email);
     await page.getByLabel("비밀번호").fill(pm.password);
@@ -94,7 +94,7 @@ test.describe("프로젝트 등록 → 견적 줄 저장 (Phase 4 트레이서)"
       name: `E2E375클라이언트-${Date.now()}`,
       normalizedName: `e2e375클라이언트-${Date.now()}`,
     });
-    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID, withTeam: true });
 
     await page.setViewportSize({ width: 375, height: 800 });
     await page.goto("/login");
@@ -124,7 +124,7 @@ test.describe("프로젝트 등록 → 견적 줄 저장 (Phase 4 트레이서)"
 // 연타·지연 재입력이 두 번째 제출을 만들지 않는지를 검증한다.
 test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phase 4 04-08 Task 1)", () => {
   async function loginAndOpenForm(page: Page): Promise<void> {
-    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID, withTeam: true });
     await page.goto("/login");
     await page.getByLabel("이메일").fill(pm.email);
     await page.getByLabel("비밀번호").fill(pm.password);

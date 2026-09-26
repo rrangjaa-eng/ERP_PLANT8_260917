@@ -56,6 +56,9 @@ export type PeriodFieldError = { field: "start" | "end"; reason: string };
 export const FORMAT_ERROR = "날짜 형식 오류 · 2026-09-18처럼";
 // 사용자 결정 2026-09-26 「날짜 입력 통일」 — 네이티브 달력 칸을 비운 값("")은 형식이 틀린 게 아니라 고르지 않은 것.
 export const EMPTY_ERROR = "날짜를 골라 주세요";
+// 덜 채운 네이티브 날짜 칸의 표식(브라우저는 값을 ""로 주고 validity.badInput만 켠다). 비운 칸("" → null, 날짜 지움)과
+// 구분해 저장을 막는다 — 문구는 빈 칸과 같다(사용자 결정 2026-09-26 /review D2). 기간 스키마 max(10) 안에 든다.
+export const INCOMPLETE_DATE = "incomplete";
 
 // 칸별 오류 — 형식은 입력 칸 값으로, 나머지는 저장될 값(resolvePeriodSave 결과)으로 판정한다(A-02:
 // 종료일을 비워 과거 시작일로 저장되게 하는 우회도 「종료일이 오늘보다 빠름」이다).
@@ -68,9 +71,9 @@ export function validatePeriodChange(input: {
   teamLeadName: string | null;
 }): PeriodFieldError[] {
   const formatErrors: PeriodFieldError[] = [];
-  if (input.start === "") formatErrors.push({ field: "start", reason: EMPTY_ERROR });
+  if (input.start === "" || input.start === INCOMPLETE_DATE) formatErrors.push({ field: "start", reason: EMPTY_ERROR });
   else if (input.start !== null && !isCalendarDate(input.start)) formatErrors.push({ field: "start", reason: FORMAT_ERROR });
-  if (input.end === "") formatErrors.push({ field: "end", reason: EMPTY_ERROR });
+  if (input.end === "" || input.end === INCOMPLETE_DATE) formatErrors.push({ field: "end", reason: EMPTY_ERROR });
   else if (input.end !== null && !isCalendarDate(input.end)) formatErrors.push({ field: "end", reason: FORMAT_ERROR });
   if (formatErrors.length > 0) return formatErrors;
 

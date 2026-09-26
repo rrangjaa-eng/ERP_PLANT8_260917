@@ -422,6 +422,21 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
     await expect(page.getByRole("button", { name: "고객 승인 표시", exact: true })).toHaveCount(0);
   });
 
+  test("견적 금액(quote.amount)을 볼 수 없으면 차수 표에 「견적 합계」 열이 없다(/design-review P-6 · SYSTEM 정보 노출 — 열이 빠진다)", async ({ page }) => {
+    const team = await makeTeam();
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E금액없음-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "quote.amount", visible: false });
+    const pm = await makeAccount(role.id, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "차수 금액 숨김 줄", unitPrice: 1_000_000, execution: 400_000 }] });
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    const revisions = page.locator("table", { has: page.locator("caption", { hasText: /^차수$/ }) });
+    await expect(revisions.getByRole("columnheader", { name: "생성일", exact: true })).toHaveCount(1);
+    await expect(revisions.getByRole("columnheader", { name: "견적 합계", exact: true })).toHaveCount(0);
+  });
+
   test("다른 사람이 그새 수량을 바꿔 저장하면 `견적이 바뀜 · 새로 고침`, 승인일 없음 → 새로 고친 뒤 통과(ENG-D9)", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);

@@ -1,5 +1,6 @@
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { formatCount } from "@/lib/format-number";
+import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 
 // 04-17(D-88 · D-89 · D-90 · 계약 7) — 목록 보기 범위 · 귀속 · 합계 줄 문구 · 수익금 기준의 순수 함수. 서버 전용 모듈을
 // import하지 않는다(04-48의 필터 줄 클라이언트가 이 파일을 import한다).
@@ -74,7 +75,18 @@ export function profitBasisFor(status: string, issuedCount: number): ProfitBasis
   return issuedCount > 0 && (ISSUED_BASIS_STATUSES as readonly string[]).includes(status) ? "issued" : "quote";
 }
 
+// 귀속 구간 건수의 합 = 표에 보이는 전체 행 수(쪽 수의 근거).
 export function bucketTotal(buckets: readonly { count: number }[]): number {
-  void buckets;
-  return 0;
+  return buckets.reduce((sum, bucket) => sum + bucket.count, 0);
+}
+
+// D-91 — 50건씩 번호 페이지. 쪽 보정·쪽 수 규칙은 lib/paging(04-29) 그대로 쓴다.
+export function resolveListPage(
+  buckets: readonly { count: number }[],
+  rawPage: string | number | undefined,
+): { total: number; pageCount: number; page: number; offset: number; limit: number } {
+  const total = bucketTotal(buckets);
+  const pageCount = pageCountFrom(total, LIST_PAGE_SIZE);
+  const page = clampPage(rawPage, pageCount);
+  return { total, pageCount, page, offset: (page - 1) * LIST_PAGE_SIZE, limit: LIST_PAGE_SIZE };
 }

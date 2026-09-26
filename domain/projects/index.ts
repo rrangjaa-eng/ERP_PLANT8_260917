@@ -10,7 +10,7 @@ import { allocateDocumentNumber, loadDocumentNumberFormat } from "@/domain/docum
 import { withTransaction } from "@/lib/db-transaction";
 import { kstYear } from "@/lib/kst-date";
 import { log } from "@/lib/log";
-import { attributionLabel, exclusionText, resolveListRange, totalsTitle } from "@/domain/projects/list-view";
+import { attributionLabel, exclusionText, resolveListPage, resolveListRange, totalsTitle } from "@/domain/projects/list-view";
 import { applyAutoSettlement, type AutoSettlementDeps } from "@/domain/projects/auto-transition";
 import { moneyFromRow, moneyToColumns, normalizeMoneyInput, MoneyInputError, type Currency, type Money, type MoneyInput } from "@/domain/money";
 import { validatePreEstimateChange } from "@/domain/projects/pre-estimate";
@@ -177,11 +177,6 @@ registerDto({
   fields: PROJECT_LIST_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
 });
 
-export const PROJECT_LIST_DEFAULT_LIMIT = 50;
-// T-04-32 — 「더 보기」 개수 파라미터 상한. 이보다 큰 값이 와도 상한으로
-// 떨어뜨린다 — 한 요청이 전체 행을 끌어오지 못하게 한다.
-export const PROJECT_LIST_MAX_LIMIT = 1000;
-
 function normalizeSort(sort?: { key?: string; direction?: string }): ProjectSort {
   const requestedKey = sort?.key;
   const key: ProjectSortKey = (PROJECT_SORT_KEYS as readonly string[]).includes(requestedKey ?? "")
@@ -244,7 +239,7 @@ export type ProjectListQuery = {
   year?: number | "all";
   search?: string;
   sort?: { key?: string; direction?: string };
-  limit?: number;
+  /** URL의 쪽 번호 그대로 — 숫자 아님·1 미만·범위 밖은 clampPage가 보정한다(D-91). */
   page?: string | number;
 };
 
@@ -254,6 +249,7 @@ export type ProjectListResult = {
   totals: ProjectListTotals;
   /** 표에 보이는 전체 행 수(귀속 구간 전부). */
   total: number;
+  /** 보정된 쪽 번호와 쪽 수(50건씩). */
   page: number;
   pageCount: number;
 };
@@ -273,7 +269,8 @@ function pgErrorCode(error: unknown): string | null {
 }
 
 // 04-17(PROJ-01 · D-88~D-90 · CEO C-09 · A-07 · 엔지 리뷰 C §1 P1) — 목록 화면의 유일한 입구. 자동 전환 판정을 먼저
-// 한 번(04-11, 실패해도 저장된 상태로 계속) → 집계 → 목록 순으로 읽고, 행은 projectMany 투영만 넘긴다.
+// 한 번(04-11, 실패해도 저장된 상태로 계속) → 집계 → 쪽 수·쪽 보정(D-91) → 그 쪽 목록 순으로 읽고(0건이면 목록을 읽지
+// 않는다), 행은 projectMany 투영만 넘긴다.
 export async function loadProjectList(
   viewer: Viewer,
   query: ProjectListQuery,
@@ -294,13 +291,16 @@ export async function loadProjectList(
     ...(range ? { range: { start: range.start, end: range.end } } : {}),
   };
   const sort = normalizeSort(query.sort);
-  const limit = Math.min(Math.max(query.limit ?? PROJECT_LIST_DEFAULT_LIMIT, 1), PROJECT_LIST_MAX_LIMIT);
 
   let buckets: Awaited<ReturnType<typeof repoAggregateProjects>>;
-  let rows: ProjectListRow[];
+  let rows: ProjectListRow[] = [];
+  let paging: ReturnType<typeof resolveListPage>;
   try {
     buckets = await repo.aggregate(viewer, { scope, filter });
-    rows = await repo.listPage(viewer, { scope, filter, sort, offset: 0, limit });
+    paging = resolveListPage(buckets, query.page);
+    if (paging.total > 0) {
+      rows = await repo.listPage(viewer, { scope, filter, sort, offset: paging.offset, limit: paging.limit });
+    }
   } catch (error) {
     log.error("project.list_failed", { code: pgErrorCode(error) });
     throw error;
@@ -342,9 +342,9 @@ export async function loadProjectList(
       attributionLabel: attributionLabel({ endDate: dto.endDate ?? null, range }),
     })),
     totals,
-    total: buckets.reduce((sum, bucket) => sum + bucket.count, 0),
-    page: 0,
-    pageCount: 0,
+    total: paging.total,
+    page: paging.page,
+    pageCount: paging.pageCount,
   };
 }
 

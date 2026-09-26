@@ -27,12 +27,10 @@ function formatPeriod(startDate: string | null, endDate: string | null): string 
 
 export function ProjectsTable({
   rows,
-  loadMoreHref,
   canSeeAmount,
   statusLabels,
 }: {
   rows: ProjectListItemWithGroup[];
-  loadMoreHref: string | null;
   canSeeAmount: boolean;
   /** 코드표 라벨(서버) — 값 → 라벨. */
   statusLabels: Record<string, string>;
@@ -106,19 +104,12 @@ export function ProjectsTable({
   ];
 
   return (
-    <>
-      <Table
-        caption="프로젝트"
-        columns={columns}
-        rows={rows}
-        getRowId={(row) => row.id}
-        groupBy={(row) => row.groupLabel}
-      />
-      {loadMoreHref ? (
-        <a href={loadMoreHref} className={styles.loadMore}>
-          더 보기 50건
-        </a>
-      ) : null}
-    </>
+    <Table
+      caption="프로젝트"
+      columns={columns}
+      rows={rows}
+      getRowId={(row) => row.id}
+      groupBy={(row) => row.groupLabel}
+    />
   );
 }

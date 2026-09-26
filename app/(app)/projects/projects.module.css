@@ -106,20 +106,6 @@
   font-size: var(--fs-sm);
 }
 
-/* 04-05 S1 — 「더 보기」는 3차 버튼(링크 스타일)이고 합계 줄 위에 온다.
-   `ui/table`의 `footer`(tfoot)가 표 맨 끝에만 렌더돼 그 사이에 낄 자리가
-   없어(04-04 소유 파일, 이 플랜은 건드리지 않는다) 둘 다 표 밖 줄로
-   그린다 — projects-table.tsx 참고. */
-.loadMore {
-  display: block;
-  margin: var(--s-3) 0;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--accent);
-  text-decoration: underline;
-  text-underline-offset: var(--underline-offset);
-}
-
 /* 04-17(D-88 · S1) — 표 위 합계 줄. 카드·타일·배경 면 없이 한 줄, 아래 2px 선. 금액은 `라벨 값` 쌍 단위로 줄바꿈한다. */
 .totals {
   display: flex;

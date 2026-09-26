@@ -224,8 +224,8 @@ function resolveSortColumn(
 
 // 04-05 Task 1 ① — 목록. 그룹(종료일 월, 기간 미정은 맨 아래)이 1차 정렬,
 // 요청 정렬 키는 **그룹 안**에서의 순서다 — 그래야 열 머리글 정렬이 D-51의
-// 월별 묶음 구조를 깨지 않는다. `limit`이 곧 화면의 "더 보기" 누적 개수
-// (오프셋이 아니라 개수 증가 방식 — Task 1 action ③).
+// 월별 묶음 구조를 깨지 않는다. 04-17(D-91) — 번호 페이지는 `offset`·`limit`으로 한 쪽만 읽는다(정렬 끝의
+// `projects.id`가 쪽 사이 순서를 고정한다).
 export async function listProjectsPage(
   viewer: Viewer,
   opts: { scope: Scope; filter: ProjectListFilter; sort: ProjectSort; offset: number; limit: number },
@@ -275,6 +275,7 @@ export async function listProjectsPage(
       orderDir(sortColumn),
       projects.id,
     )
+    .offset(opts.offset)
     .limit(opts.limit);
 
   return rows.map((row) => ({

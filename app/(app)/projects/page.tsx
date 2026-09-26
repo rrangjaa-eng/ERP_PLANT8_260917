@@ -5,8 +5,6 @@ import { can } from "@/domain/permissions/can";
 import {
   loadProjectList,
   getProjectCopySource,
-  PROJECT_LIST_DEFAULT_LIMIT,
-  PROJECT_LIST_MAX_LIMIT,
   PROJECT_SORT_KEYS,
   type ProjectSortKey,
 } from "@/domain/projects";
@@ -14,8 +12,11 @@ import { listProjectFormReferences } from "@/domain/projects/references";
 import { listProjectStatusCatalog } from "@/domain/projects/status";
 import { recentFxRate } from "@/domain/money/currency";
 import { kstYear } from "@/lib/kst-date";
+import { LIST_PAGE_SIZE } from "@/lib/paging";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
+import { Pagination } from "@/ui/pagination/Pagination";
+import { pageRangeText } from "@/ui/pagination/page-window";
 import { ProjectForm } from "./project-form";
 import { ProjectsFilterBar, type ProjectFilterOption } from "./filter-bar";
 import { ProjectsTable } from "./projects-table";
@@ -26,7 +27,7 @@ import styles from "./projects.module.css";
 export const dynamic = "force-dynamic";
 
 // 04-05 — 04-01의 트레이서 목록(무필터·무그룹)을 완성한다: 월별 그룹·상태
-// 필터 한 줄·정렬·더 보기·전체 집계 합계(S1). 04-21 — 상태 값·라벨은 코드표(D-75).
+// 필터 한 줄·정렬·전체 집계 합계(S1). 04-21 — 상태 값·라벨은 코드표(D-75). 04-17 — 50건씩 번호 페이지(D-91).
 
 function projectsHref(opts?: { isNew?: boolean }): string {
   return opts?.isNew ? "/projects?new=1#project-form" : "/projects";
@@ -49,7 +50,7 @@ type ProjectsSearchParams = {
   q?: string;
   sort?: string;
   dir?: string;
-  count?: string;
+  page?: string;
 };
 
 export default async function ProjectsPage({ searchParams }: { searchParams: Promise<ProjectsSearchParams> }) {
@@ -74,11 +75,6 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const search = params.q || undefined;
   const sortKey = isValidSortKey(params.sort) ? params.sort : "endDate";
   const sortDirection = params.dir === "desc" ? "desc" : "asc";
-  const requestedCount = params.count ? Number(params.count) : PROJECT_LIST_DEFAULT_LIMIT;
-  const count =
-    Number.isFinite(requestedCount) && requestedCount > 0
-      ? Math.min(Math.floor(requestedCount), PROJECT_LIST_MAX_LIMIT)
-      : PROJECT_LIST_DEFAULT_LIMIT;
 
   // 올해 연도 값은 필터로 세지 않는다(UI-SPEC S1).
   const hasFilter = Boolean(status || teamId || year !== currentYear || search);
@@ -94,7 +90,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       year,
       search,
       sort: { key: sortKey, direction: sortDirection },
-      limit: count,
+      page: params.page,
     }),
     // 04-15(D-70 · S2) — 복사 등록 미리 채우기. 범위 밖 · 보관 · 없는 출처면 null → 일반 등록 폼.
     showCreateForm && params.copyFrom ? getProjectCopySource(session.viewer, params.copyFrom) : Promise.resolve(null),
@@ -102,18 +98,21 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     showCreateForm ? recentFxRate("USD") : Promise.resolve(1),
   ]);
 
-  const { rows, totals, total } = list;
+  const { rows, totals, total, page, pageCount } = list;
   const canSeeAmount = totals.quoteAmountKrw !== undefined;
-  const hasMore = rows.length < total;
-  const loadMoreParams = new URLSearchParams();
-  if (status) loadMoreParams.set("status", status);
-  if (teamId) loadMoreParams.set("teamId", teamId);
-  if (year !== currentYear) loadMoreParams.set("year", String(year));
-  if (search) loadMoreParams.set("q", search);
-  if (sortKey !== "endDate") loadMoreParams.set("sort", sortKey);
-  if (sortDirection !== "asc") loadMoreParams.set("dir", sortDirection);
-  loadMoreParams.set("count", String(count + PROJECT_LIST_DEFAULT_LIMIT));
-  const loadMoreHref = hasMore ? `/projects?${loadMoreParams.toString()}` : null;
+  // 지금 필터·정렬을 그대로 두고 쪽 번호만 바꾼다. 필터 폼은 page를 싣지 않아 필터를 바꾸면 1쪽이다.
+  const pageParams = new URLSearchParams();
+  if (status) pageParams.set("status", status);
+  if (teamId) pageParams.set("teamId", teamId);
+  if (year !== currentYear) pageParams.set("year", String(year));
+  if (search) pageParams.set("q", search);
+  if (sortKey !== "endDate") pageParams.set("sort", sortKey);
+  if (sortDirection !== "asc") pageParams.set("dir", sortDirection);
+  function pageHref(target: number): string {
+    const next = new URLSearchParams(pageParams);
+    next.set("page", String(target));
+    return `/projects?${next.toString()}`;
+  }
 
   return (
     <>
@@ -164,12 +163,20 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       ) : total === 0 ? (
         <ListEmpty message="조건에 맞는 프로젝트가 없습니다" action={{ label: "필터 지우기", href: "/projects" }} />
       ) : (
-        <ProjectsTable
-          rows={rows}
-          loadMoreHref={loadMoreHref}
-          canSeeAmount={canSeeAmount}
-          statusLabels={Object.fromEntries(statusOptions.map((option) => [option.value, option.label]))}
-        />
+        <>
+          <ProjectsTable
+            rows={rows}
+            canSeeAmount={canSeeAmount}
+            statusLabels={Object.fromEntries(statusOptions.map((option) => [option.value, option.label]))}
+          />
+          <Pagination
+            label="프로젝트"
+            page={page}
+            pageCount={pageCount}
+            href={pageHref}
+            rangeText={pageRangeText({ page, pageSize: LIST_PAGE_SIZE, total, unit: "건" })}
+          />
+        </>
       )}
     </>
   );

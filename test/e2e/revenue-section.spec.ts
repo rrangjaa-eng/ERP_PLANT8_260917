@@ -6,8 +6,8 @@ import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { db } from "@/db/client";
-import { codeItems, revenueEntries } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { codeItems, quoteLines, revenueEntries } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
@@ -605,6 +605,58 @@ test.describe("매출 표 — 발행 읽기 표·입금 표 부재(D-85) · 폰 
     await expect(page.getByText(/저장됨/).first()).toBeVisible();
     await expect(quoteTable.locator("tfoot")).not.toContainText("전부 거부");
     await expect(revenueSection(page).locator("tfoot").getByText(/전부 거부/)).toHaveCount(0);
+  });
+});
+
+// /review R-5 · 결정 7 — 견적 줄이 충돌만으로 전부 거부되면 매출 표 합계 행은 「다른 칸 오류」가 아니라
+// 원인 그대로 「다른 표 충돌 N줄」이다(충돌 칸 수 → 줄 수 연결부).
+test.describe("매출 표 합계 행 — 다른 표 충돌 줄 수 (결정 7)", () => {
+  test("견적 줄 한 줄이 동료 저장과 충돌 → 발행·입금 표 합계 행이 각각 `전부 거부 · 다른 표 충돌 1줄`", async ({ page }) => {
+    const roleId = `role-${randomUUID()}`;
+    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 매출 PM-${randomUUID().slice(0, 8)}` });
+    for (const row of await listPermissions(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID })) {
+      await upsertPermission(SYSTEM_VIEWER, { roleId, menu: row.menu, action: row.action, allowed: row.allowed });
+    }
+    await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "projects.revenue", action: "write", allowed: true });
+    for (const row of await listVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID })) {
+      await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: row.infoItem, visible: true });
+    }
+    const seeded = await seedRevenueProject({
+      pmRoleId: roleId,
+      quoteAmounts: [1_000_000],
+      issued: [{ entryDate: "2026-09-01", amount: krw(1_000_000) }],
+      paid: [{ entryDate: "2026-09-05", amount: krw(1_100_000) }],
+    });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await login(page, seeded.email, seeded.password);
+    await page.goto(seeded.projectUrl);
+
+    // 화면을 연 뒤 동료가 같은 줄의 수량을 먼저 저장했다.
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, seeded.projectUrl.split("/").pop() ?? "");
+    if (!revision) throw new Error("현재 차수 없음");
+    await db
+      .update(quoteLines)
+      .set({ quantity: "5.00", version: 2 })
+      .where(and(eq(quoteLines.revisionId, revision.id), eq(quoteLines.itemName, "매출표 줄 1")));
+
+    const quoteTable = page.locator("table", { has: page.locator("caption", { hasText: /^견적 줄$/ }) });
+    const quantityCell = quoteTable.locator('tbody tr:has(td[role="gridcell"])').first().getByRole("gridcell").nth(4);
+    await expect(async () => {
+      await quantityCell.focus();
+      await page.keyboard.press("Enter");
+      await expect(quantityCell.locator("input")).toBeFocused({ timeout: 1000 });
+    }).toPass();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("3");
+    await page.keyboard.press("Enter");
+    await quantityCell.focus();
+    const rejected = page.waitForResponse((response) => isServerAction(response.request()));
+    await page.keyboard.press("Control+s");
+    await rejected;
+
+    for (const caption of ["발행 줄", "입금 줄"] as const) {
+      await expect(revenueTable(page, caption).locator("tfoot").getByText("전부 거부 · 다른 표 충돌 1줄", { exact: true })).toBeVisible();
+    }
   });
 });
 

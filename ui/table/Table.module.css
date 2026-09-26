@@ -57,6 +57,7 @@
 }
 
 .groupHeader {
+  padding-inline: var(--cell-pad-x);
   border-bottom: var(--line-w) solid var(--line-strong);
   color: var(--muted);
   font-size: var(--fs-sm);

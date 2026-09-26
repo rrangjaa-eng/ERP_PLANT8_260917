@@ -407,7 +407,12 @@ export function RevenueSection({
             }
           />
           {canEditEntries && issuedEntries.length > 0 ? (
-            <button type="button" className={styles.addLineButton} onClick={() => (saveLocked ? undefined : onAddIssued())}>
+            <button
+              type="button"
+              className={styles.addLineButton}
+              aria-disabled={saveLocked ? "true" : undefined}
+              onClick={() => (saveLocked ? undefined : onAddIssued())}
+            >
               발행 줄 추가
             </button>
           ) : null}
@@ -440,7 +445,12 @@ export function RevenueSection({
             }
           />
           {canEditEntries && paidEntries.length > 0 ? (
-            <button type="button" className={styles.addLineButton} onClick={() => (saveLocked ? undefined : onAddPaid())}>
+            <button
+              type="button"
+              className={styles.addLineButton}
+              aria-disabled={saveLocked ? "true" : undefined}
+              onClick={() => (saveLocked ? undefined : onAddPaid())}
+            >
               입금 줄 추가
             </button>
           ) : null}

@@ -411,13 +411,14 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     // 04-16(DR-3) — 이 플랜이 바꾼 발행 표에도 저장 잠금이 그대로 간다.
     await expect(page.getByRole("grid", { name: "발행 줄" })).toHaveAttribute("aria-busy", "true");
     // 04-16 리뷰 S-2 — 플랜 truth 「추가 버튼이 비활성」: 저장 중에는 aria-disabled(DR-11)이고 눌러도 줄이 늘지 않는다.
+    // Playwright는 aria-disabled를 비활성으로 보고 기다리므로 force로 누른다.
     const addIssued = page.getByRole("button", { name: "발행 줄 추가" });
     const addPaid = page.getByRole("button", { name: "입금 줄 추가" });
     await expect(addIssued).toHaveAttribute("aria-disabled", "true");
     await expect(addPaid).toHaveAttribute("aria-disabled", "true");
-    await addIssued.click();
+    await addIssued.click({ force: true });
     await expect(page.getByLabel("발행액")).toHaveCount(1);
-    await addPaid.click();
+    await addPaid.click({ force: true });
     await expect(page.getByLabel("입금액")).toHaveCount(1);
 
     release();

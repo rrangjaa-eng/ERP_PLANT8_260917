@@ -140,6 +140,12 @@
   margin-top: var(--s-3);
 }
 
+/* 04-16 리뷰 S-2 — 저장 중 추가 버튼은 aria-disabled(DR-11) — ui/button 비활성과 같은 글자색. */
+.addLineButton[aria-disabled="true"] {
+  color: var(--faint);
+  cursor: not-allowed;
+}
+
 /* 04-02 — §6-2 섹션 순서 ② 매출. 섹션 시작은 2px 강한 선(§3 「섹션 사이」). */
 .section {
   margin-top: var(--s-6);

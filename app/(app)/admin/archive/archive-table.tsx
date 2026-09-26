@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { restoreArchivedAction } from "./actions";
 import { Button } from "@/ui/button/Button";
@@ -50,28 +50,38 @@ export function ArchiveTable({ rows }: { rows: ArchiveTableRow[] }) {
             <tr>
               <th scope="col">종류</th>
               <th scope="col">이름</th>
-              <th scope="col">보관 시각</th>
-              <th scope="col">보관한 사람</th>
+              <th scope="col" className={styles.p2}>보관 시각</th>
+              <th scope="col" className={styles.p2}>보관한 사람</th>
               <th scope="col">동작</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((item) => (
-              <tr key={`${item.entity}:${item.id}`}>
-                <td>{item.label}</td>
-                <td>{item.name}</td>
-                <td className={styles.archivedAt}>{item.archivedAtLabel}</td>
-                <td>{item.archivedBy ?? "—"}</td>
-                <td>
-                  <RestoreRowButton
-                    entity={item.entity}
-                    id={item.id}
-                    name={item.name}
-                    onRestored={(name) => setToast({ message: `복원 · ${name} 복원됨`, tone: "default" })}
-                    onFailed={() => setToast({ message: "복원 · 실패 · 다시 시도", tone: "error" })}
-                  />
-                </td>
-              </tr>
+              // §7-3 폰 전략 — P1(종류·이름·동작)만 열로 남고 보관 시각·보관한
+              // 사람은 행 아래 접힌 줄 하나로 들어간다.
+              <Fragment key={`${item.entity}:${item.id}`}>
+                <tr>
+                  <td>{item.label}</td>
+                  <td>{item.name}</td>
+                  <td className={`${styles.archivedAt} ${styles.p2}`}>{item.archivedAtLabel}</td>
+                  <td className={styles.p2}>{item.archivedBy ?? "—"}</td>
+                  <td>
+                    <RestoreRowButton
+                      entity={item.entity}
+                      id={item.id}
+                      name={item.name}
+                      onRestored={(name) => setToast({ message: `복원 · ${name} 복원됨`, tone: "default" })}
+                      onFailed={() => setToast({ message: "복원 · 실패 · 다시 시도", tone: "error" })}
+                    />
+                  </td>
+                </tr>
+                <tr className={styles.collapsedRow}>
+                  <td colSpan={5} className={styles.collapsedCell}>
+                    <span className={styles.archivedAt}>{item.archivedAtLabel}</span>
+                    {item.archivedBy ? ` · ${item.archivedBy}` : ""}
+                  </td>
+                </tr>
+              </Fragment>
             ))}
           </tbody>
         </table>

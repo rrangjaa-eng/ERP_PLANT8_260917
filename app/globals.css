@@ -35,6 +35,12 @@ button, input, select, textarea {
   color: inherit;
 }
 
+/* §6-0 최소 폭 320px — select는 가장 긴 선택지 글자 폭만큼 넓어진다. 가로 필터 줄
+   안에서 부모 폭을 넘지 않게 전역으로 막는다(긴 선택지는 닫힌 상태에서 잘린다). */
+select {
+  max-width: 100%;
+}
+
 /* §4-4 브라우저 기본 표면 — 기본값으로 두지 않는다. */
 ::selection {
   background: var(--sel-bg);

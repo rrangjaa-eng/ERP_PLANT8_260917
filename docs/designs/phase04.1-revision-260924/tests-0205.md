@@ -1,0 +1,11 @@
+## 02/05 new or changed test cases
+- test/unit/domain/approvals/conflict-message.test.ts · isApprovalParty six cases (drafter / earlier-round actor / current holder / earlier-round non-actor / unrelated / empty sets)
+- test/integration/approvals-concurrency.test.ts · unrelated user, old version, approve/reject/withdraw → exact generic text, same after handleServerError, no name/HH:MM/status words, reason not_holder, state unchanged
+- test/integration/approvals-concurrency.test.ts · after approved, unrelated user with old or current version → generic; drafter withdrawing with current version → 최종 승인됨 · 새로 고침
+- test/integration/approvals-concurrency.test.ts · three 관련자 types with old version → detailed text
+- test/unit/action-registry-completeness.test.ts · enumeration from app/**/actions.ts, exact exception list, detectors (a)-(d)
+- test/unit/domain/approvals/document-kind-registry.test.ts · out-of-spec field and old row string dropped; registration fails without buildDetailRows; hidden item never in rows
+- test/integration/approvals-inbox-projection.test.ts · leave.value hidden → absent from rows; re-enabled → present
+- test/integration/leave-balance.test.ts · 2026-10-01 hire @2027-03-15 6 days → 연차 남음 4일 · 월차 남음 5일 …, no 9일
+- test/integration/leave-balance.test.ts · 2026-12-15 hire @2027-01-05 half day → 월차 남음 0일; @2028-03-15 no 월차 cell
+- test/e2e/mobile-leave-approval.spec.ts · processed-box row tap → /leave/[id], no sheet

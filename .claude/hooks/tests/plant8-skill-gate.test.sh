@@ -422,6 +422,68 @@ record_skill "$projP7" "$P7" review
 expect_contains "gsd-quick 3: review는 STATE 페이즈(04)에" "$(gate_lines "$projP7" 04)" "review"
 
 # ---------------------------------------------------------------------------
+# merge: 문서만 바꾼 PR은 /qa 면제(/review는 그대로), 파일 목록을 못 읽으면 /qa 요구
+GH_STUB_DIR="$TMPDIR/gh-stub"
+mkdir -p "$GH_STUB_DIR"
+cat > "$GH_STUB_DIR/gh" <<'STUB'
+#!/usr/bin/env bash
+[ "${GH_STUB_RC:-0}" = "0" ] || exit "$GH_STUB_RC"
+case " $* " in
+  */files\ *) cat "$GH_STUB_FILES" ;;                                   # 파일 목록(이름 바꾸기는 "새<TAB>옛")
+  *) printf '%s\n' "${GH_STUB_COUNT:-$(grep -c . "$GH_STUB_FILES")}" ;;  # changed_files
+esac
+STUB
+chmod +x "$GH_STUB_DIR/gh"
+payload_merge() {
+  jq -nc --arg s "$1" '{session_id:$s, tool_name:"mcp__github__merge_pull_request", tool_input:{owner:"o", repo:"r", pullNumber:7}}'
+}
+merge_hook() {  # $1=session $2=project $3=files(줄바꿈) $4=gh rc $5=changed_files(기본: 목록 줄 수)
+  printf '%s\n' "$3" > "$TMPDIR/gh-files"  # 큰 목록은 환경 변수 한도를 넘으므로 파일로
+  local errfile
+  errfile="$(mktemp "$TMPDIR/stderr.XXXXXX")"
+  HOOK_STDOUT="$(payload_merge "$1" | PATH="$GH_STUB_DIR:$PATH" GH_STUB_FILES="$TMPDIR/gh-files" GH_STUB_RC="${4:-0}" GH_STUB_COUNT="${5:-}" \
+    CLAUDE_PROJECT_DIR="$2" bash "$HOOKS/plant8-skill-gate.sh" merge 2>"$errfile")"
+  HOOK_RC=$?
+  HOOK_STDERR="$(cat "$errfile")"
+  rm -f "$errfile"
+}
+projM="$(new_project)"
+M="sid-merge-$$"
+write_gate_line "$projM" review "$M"
+DOC_FILES=$'.planning/phases/04-test/04-01-PLAN.md\ndocs/ARCHITECTURE.md\n.claude/gates/phase-04.log\nREADME.md'
+merge_hook "$M" "$projM" "$DOC_FILES"
+expect_rc "merge: 문서만 바뀐 PR + review만 -> 통과" 0 "$HOOK_RC"
+merge_hook "$M" "$projM" $'docs/x.md\napp/page.tsx'
+expect_rc "merge: 코드 파일 섞인 PR + review만 -> exit 2" 2 "$HOOK_RC"
+merge_hook "$M" "$projM" $'docs/x.md\n.claude/hooks/plant8-skill-gate.sh'
+expect_rc "merge: 훅 .sh 섞인 PR + review만 -> exit 2" 2 "$HOOK_RC"
+merge_hook "$M" "$projM" "$DOC_FILES" 1
+expect_rc "merge: 파일 목록 못 읽음 + review만 -> exit 2" 2 "$HOOK_RC"
+merge_hook "$M" "$projM" ""
+expect_rc "merge: 빈 파일 목록 + review만 -> exit 2" 2 "$HOOK_RC"
+BIG_MIX="$(printf 'app/page.tsx\n'; for i in $(seq 1 20000); do printf 'docs/d%s.md\n' "$i"; done)"
+merge_hook "$M" "$projM" "$BIG_MIX"
+expect_rc "merge: 코드 1개 + 문서 2만 줄(SIGPIPE) + review만 -> exit 2" 2 "$HOOK_RC"
+merge_hook "$M" "$projM" $'docs/x.md\nCLAUDE.md'
+expect_rc "merge: CLAUDE.md 섞인 PR + review만 -> exit 2" 2 "$HOOK_RC"
+merge_hook "$M" "$projM" $'docs/x.md\n.claude/skills/x/SKILL.md'
+expect_rc "merge: .claude/ 아래 .md 섞인 PR + review만 -> exit 2" 2 "$HOOK_RC"
+merge_hook "$M" "$projM" "$DOC_FILES" 0 9
+expect_rc "merge: 받은 목록 수 != changed_files + review만 -> exit 2" 2 "$HOOK_RC"
+merge_hook "$M" "$projM" $'docs/x.md\ndocs/moved.md\tapp/moved.ts'
+expect_rc "merge: 코드를 문서로 이름 바꾼 PR + review만 -> exit 2" 2 "$HOOK_RC"
+merge_hook "$M" "$projM" 'docs/design/tokens.css'
+expect_rc "merge: docs/ 아래 .md 아닌 파일(tokens.css) + review만 -> exit 2" 2 "$HOOK_RC"
+projM2="$(new_project)"
+M2="sid-merge2-$$"
+merge_hook "$M2" "$projM2" "$DOC_FILES"
+expect_rc "merge: 문서만 바뀐 PR이어도 review 없으면 -> exit 2" 2 "$HOOK_RC"
+write_gate_line "$projM2" review "$M2"
+write_gate_line "$projM2" qa "$M2"
+merge_hook "$M2" "$projM2" $'app/page.tsx'
+expect_rc "merge: 코드 PR + review·qa -> 통과" 0 "$HOOK_RC"
+
+# ---------------------------------------------------------------------------
 # Isolation: real gate logs unchanged
 REAL_GATES_AFTER="$(gates_checksum)"
 if [ "$REAL_GATES_BEFORE" = "$REAL_GATES_AFTER" ]; then

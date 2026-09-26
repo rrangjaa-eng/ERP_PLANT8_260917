@@ -1,0 +1,55 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-24T18:24:51.992Z",
+  "phase": "04.4",
+  "phase_name": "restore-rehearsal-and-login-status",
+  "phase_dir": ".planning/phases/04.4-restore-rehearsal-and-login-status",
+  "plan": null,
+  "task": null,
+  "total_tasks": null,
+  "status": "paused",
+  "completed_tasks": [
+    {
+      "id": 1,
+      "name": "plan-eng-review 04.4",
+      "status": "done",
+      "commit": "9b8694e"
+    },
+    {
+      "id": 2,
+      "name": "막는 문제 4건(E-10,E-16,E-18,E-20) 플랜 반영 + 검사기(통과) + Opus 독립 교차 검토(막는 문제 없음)",
+      "status": "done",
+      "commit": "dcd9130"
+    }
+  ],
+  "remaining_tasks": [
+    {
+      "id": 3,
+      "name": "plan-design-review 04.4 (+ Opus 독립 교차 검토, Codex 대신)",
+      "status": "not_started"
+    },
+    {
+      "id": 4,
+      "name": "한도 풀린 뒤(2026-09-29~) Codex 재확인: eng 리비전(dcd9130)",
+      "status": "not_started"
+    }
+  ],
+  "blockers": [],
+  "async_jobs": [],
+  "human_actions_pending": [],
+  "decisions": [
+    {
+      "decision": "Rehearsal workflow uses its own concurrency group; mid-run deploys detected via image digest and recorded as failure",
+      "rationale": "User chose 「따로 두고 감지」 on a decision card 2026-09-24 01:30 KST",
+      "phase": "04.4"
+    },
+    {
+      "decision": "plan-design-review 통과: 막는 문제 0 (Opus 1차+Opus 교차, Codex 대신)",
+      "rationale": "Codex 한도 9/29까지, 한도 풀리면 재확인",
+      "phase": "04.4"
+    }
+  ],
+  "uncommitted_files": [],
+  "next_action": "디자인 참고 지적 처리 → 최종 전체 검토(Fable 1회) → /review(문서) → PR 설명",
+  "context_notes": "Codex 한도 2026-09-29까지 → 교차 검토는 Opus, Fable은 최종 전체 1회. 결과: /mnt/project-files/04.4-gates/checker-rev1.md, opus-cross-r1.md(참고 7건). STATE.md·루트 HANDOFF.json 건드리지 않음."
+}

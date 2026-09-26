@@ -26,7 +26,7 @@ const writerMenus: Menu[] = [
 ];
 
 async function makeViewer(menus: Menu[], infoItems: string[] = ["project.value", "quote.amount"]): Promise<Viewer> {
-  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `복사 계급-${randomUUID()}` });
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `복사 계급-${randomUUID()}`, workScope: "company" });
   const { userId } = await createAccount(SYSTEM_VIEWER, {
     email: `copy-${randomUUID()}@example.test`,
     name: "복사 테스트 사람",

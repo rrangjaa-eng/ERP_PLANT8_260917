@@ -286,7 +286,7 @@ export function ProjectForm({
             id="teamId"
             name="teamId"
             options={teams.map((t) => ({ value: t.id, label: t.name }))}
-            defaultValue={copySource?.teamId}
+            defaultValue={copySource?.teamId ?? (teams.length === 1 ? teams[0]?.id : undefined)}
             error={teamError}
           />
         </Form.Field>

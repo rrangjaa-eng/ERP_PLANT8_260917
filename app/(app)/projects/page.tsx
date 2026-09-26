@@ -12,9 +12,10 @@ import {
   PROJECT_SORT_KEYS,
   type ProjectSortKey,
 } from "@/domain/projects";
-import { listProjectFormReferences } from "@/domain/projects/references";
+import { listProjectFormReferences, scopeCreateFormReferences } from "@/domain/projects/references";
 import { listProjectStatusCatalog } from "@/domain/projects/status";
 import { recentFxRate } from "@/domain/money/currency";
+import { kstToday } from "@/lib/kst-date";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { ProjectForm } from "./project-form";
@@ -96,6 +97,12 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     showCreateForm ? recentFxRate("USD") : Promise.resolve(1),
   ]);
 
+  // 등록 폼의 팀 · 담당 PM 칸만 업무 범위로 좁힌다 — 필터 줄은 전체 팀(references.teams)을 계속 쓴다.
+  const createReferences =
+    canWrite && showCreateForm
+      ? await scopeCreateFormReferences(session.viewer, references, { todayKst: kstToday(new Date()) })
+      : null;
+
   const canSeeAmount = aggregate.quoteAmountKrw !== undefined;
   const hasMore = rows.length < aggregate.count;
   const loadMoreParams = new URLSearchParams();
@@ -114,13 +121,13 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
 
       {/* §6-1 D-39: 폼이 열려 있으면(?new=1) 아래 필터 줄의 1차 버튼을
           렌더하지 않는다 — 한 화면에 1차는 하나다. */}
-      {canWrite && showCreateForm ? (
+      {createReferences ? (
         <ProjectForm
           key={copySource && params.copyFrom ? `copy-${params.copyFrom}` : "new"}
           copySource={copySource && params.copyFrom ? { ...copySource, projectId: params.copyFrom } : null}
           clients={references.clients}
-          teams={references.teams}
-          pmUsers={references.pmUsers}
+          teams={createReferences.teams}
+          pmUsers={createReferences.pmUsers}
           cancelHref={projectsHref()}
           usdDefaultFxRate={usdDefaultFxRate}
         />

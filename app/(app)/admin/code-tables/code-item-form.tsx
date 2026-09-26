@@ -161,7 +161,6 @@ export function CodeItemDescriptionInput({
           aria-label={`${label} 설명`}
           aria-invalid={errorText ? true : undefined}
           aria-describedby={describedBy}
-          placeholder="—"
           value={value}
           onChange={(event) => setValue(event.target.value)}
           onBlur={() => {

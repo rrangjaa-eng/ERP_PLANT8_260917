@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 35
+current_plan: 36
 status: executing
-stopped_at: Completed 04-17-PLAN.md
-last_updated: "2026-09-26T09:29:25.055Z"
+stopped_at: Completed 04-19-PLAN.md
+last_updated: "2026-09-26T11:06:03.602Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 4 execution started
-state_head: 7230cc1c50f5458f227cae1c50c653534adb1da0
+state_head: 80eb51ad3f05d368cbc5e4922584a928693750a1
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 115
-  completed_plans: 57
+  completed_plans: 58
   percent: 6
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 4 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 35
+Current Plan: 36
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-25 — Phase 4 execution started
@@ -106,6 +106,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P16 | 47m | 3 tasks | 14 files |
 | Phase 04 P41 | 60min | 3 tasks | 19 files |
 | Phase 04 P17 | 43min | 2 tasks | 16 files |
+| Phase 04 P19 | 43 min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -266,6 +267,9 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-41: 매출 줄 쓰기 거부 규칙 revenue.entry-scope · revenue.replay-mismatch(write.denied id만), 새 줄은 화면 uuid 멱등 삽입
 - [Phase 4]: 04-17: 목록 입구는 loadProjectList 하나 — 판정 → 집계 → 쪽 보정 → 그 쪽 목록, 0건이면 목록 문장 없음
 - [Phase 4]: 04-17: 리포지토리 행 netProfitKrw가 수익금, profitKrw는 04-18까지 줄 차익 합
+- [Phase 04]: 04-19: 격자 포커스·범위 앵커는 { rowId, colKey }로 기억하고 onMoveRow·onDeleteRow·onDuplicateRow는 줄 id를 넘긴다 — 2쪽 이후 Delete·Alt+↑↓가 1쪽 같은 인덱스 줄에 작용하던 경로 제거(엔지 리뷰 C §1 P2)
+- [Phase 04]: 04-19: Ctrl+C는 훅이 가로채지 않고 Table이 document copy 이벤트에서 04-24 직렬화(copyText·quoteLineClipboardMeta)로 싣는다 — C-19 — 권한·실패 문구 없음, 접힌 선택에서도 Chromium이 copy를 쏜다는 것을 CI E2E로 확인
+- [Phase 04]: 04-19: 편집 중 Tab은 칸 안 다음 입력 → 없으면 확정 후 nextEditableCell(쪽 넘김), 편집 중이 아닐 때 Tab은 표를 떠난다 — §7-3 편집 키 줄과 (아) 탭 정지 1개를 함께 지킴
 
 ### Pending Todos
 
@@ -284,6 +288,7 @@ Recent decisions affecting current work:
 - [Phase 2]: `docs/design/`(SYSTEM.md 725줄·tokens.css·DECISIONS.md·BRIEF.md·EXPLORE.md)은 **이미 있다**(2026-09-18 확인). Phase 2는 이 시스템을 앱 셸·임시 화면에 적용하는 일이며, 새 화면은 SYSTEM.md 기준을 따르고 시스템을 벗어나면 DECISIONS.md에 이유를 남긴 뒤 SYSTEM.md를 고친다
 - [Phase 2] 02-02: ci.yml/deploy.yml paths+! 트리거 실제 동작 미검증 — tokens.css 단독 PR이 CI를 타는지, 일반 소스 PR도 여전히 타는지 GitHub에서 사람이 확인해야 한다. (2)가 실패하면 즉시 paths-ignore로 되돌린다
 - 04-09 S15 backstop DOM audit (coverage D4) was self-performed by the executor, not a separate sub-agent as the plan's Task 3 ⑥ requires — orchestrator should confirm or dispatch an independent check before /gsd-verify-work
+- 04-19 독립 DOM 감사(1280·1024·375)와 CI=true pnpm test 전체 게이트 미실행 — 오케스트레이터가 돌리고 04-19-SUMMARY에 보고서를 붙인다
 
 ### Quick Tasks Completed
 
@@ -322,6 +327,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-26T09:29:24.851Z
-Stopped at: Completed 04-17-PLAN.md
+Last session: 2026-09-26T11:05:47.673Z
+Stopped at: Completed 04-19-PLAN.md
 Resume file: None

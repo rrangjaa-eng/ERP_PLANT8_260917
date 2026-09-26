@@ -226,7 +226,10 @@ export function ProjectsFilterBar({
           type="text"
           className={styles.textInput}
           defaultValue={defaultValues.q ?? ""}
-          onBlur={() => formRef.current?.requestSubmit()}
+          onBlur={(event) => {
+            // 값이 바뀌었을 때만 제출한다(기간 묶음과 같은 규칙) — 그대로 나가면 Tab이 다음 컨트롤로 간다.
+            if (event.currentTarget.value !== (defaultValues.q ?? "")) formRef.current?.requestSubmit();
+          }}
           onKeyDown={submitOnEnter}
         />
       </div>

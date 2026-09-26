@@ -99,6 +99,7 @@ export function HolidayForm({ min, max, cancelHref }: { min: string; max: string
           name="name"
           type="text"
           autoComplete="off"
+          maxLength={50}
           className={styles.textInput}
           value={name}
           onChange={(event) => setName(event.target.value)}

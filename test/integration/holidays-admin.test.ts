@@ -405,6 +405,22 @@ describe("addHolidayAction — 칸 오류(04.2-12)", () => {
     }
     expect(await dateKindsOf(outside)).toHaveLength(0);
   });
+
+  it("이름 50자 넘으면 이름 칸 오류로 돌아오고 행이 생기지 않는다", async () => {
+    session.viewer = await createViewer(SYSADMIN_ROLE_ID, "관리자");
+    const nextYear = Number(toKstDate(new Date()).slice(0, 4)) + 1;
+    try {
+      const tooLong = await addHolidayAction({
+        date: `${nextYear}-03-03`,
+        kind: "temporary",
+        name: "가".repeat(51),
+      });
+      expect(tooLong?.validationErrors?.name?._errors).toEqual(["이름 50자 이하 · 이름 줄이기"]);
+    } finally {
+      session.viewer = null;
+    }
+    expect(await rowsBetween(`${nextYear}-03-03`, `${nextYear}-03-03`)).toHaveLength(0);
+  });
 });
 
 // 04.2-12 Task 2 — 수동 미래 행 삭제(D-4210 「삭제」 · D-4209 개정 · Codex #2·#12 · Codex 2차 #4·#5)

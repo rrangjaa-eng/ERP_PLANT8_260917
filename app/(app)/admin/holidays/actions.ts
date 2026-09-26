@@ -35,7 +35,7 @@ function isRealIsoDate(value: string): boolean {
 const addHolidaySchema = z.object({
   date: z.string().refine(isRealIsoDate, DATE_FORMAT_MESSAGE),
   kind: z.enum(["temporary", "election"]),
-  name: z.string().trim().min(1),
+  name: z.string().trim().min(1, "이름 필요 · 이름 입력").max(50, "이름 50자 이하 · 이름 줄이기"),
 });
 
 // 04.2-12: 수동 추가. 소급·중복·음력 표 밖 해는 도메인이 거부하고 여기서 날짜 칸

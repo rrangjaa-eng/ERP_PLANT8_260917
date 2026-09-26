@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
-import { db } from "@/db/client";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
+import { describe, expect, it, vi } from "vitest";
+import { db, pool } from "@/db/client";
 import { codeItems, quoteLines, revenueEntries, teams } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -19,6 +21,19 @@ import { approvalBasis } from "@/repositories/quote-revisions";
 import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
 import { kstToday } from "@/lib/kst-date";
+import { saveProjectLedgerAction } from "@/app/(app)/projects/actions";
+
+// 04-41 — 액션(스키마 → 원장 합성 저장)을 직접 부르는 케이스용 세션 · revalidatePath · 합성 저장 호출 기록.
+// 합성 저장은 실제 구현을 그대로 감싸기만 한다(동작 불변 — 이 파일의 다른 케이스도 실제 경로를 탄다).
+vi.mock("@/lib/viewer", async () => {
+  const { SYSTEM_VIEWER: viewer } = await import("@/domain/viewer");
+  return { getSession: () => Promise.resolve({ viewer, user: { id: viewer.id } }) };
+});
+vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
+vi.mock("@/domain/projects/ledger", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/domain/projects/ledger")>();
+  return { ...actual, saveProjectLedger: vi.fn(actual.saveProjectLedger) };
+});
 
 async function setupProject() {
   const client = await insertVendor(SYSTEM_VIEWER, {
@@ -152,18 +167,11 @@ describe("domain/revenue saveRevenue/listRevenue (Phase 4, 실제 Postgres)", ()
 
   it("(f) 환율을 적은 저장 뒤 최근 환율 설정 값이 갱신되고, 건드리지 않은 저장 뒤에는 갱신되지 않는다", async () => {
     const { project } = await setupProject();
+    const finance = await createFinanceViewer();
 
-    const pmAccount = await createAccount(SYSTEM_VIEWER, {
-      email: `pm2-${randomUUID()}@example.test`,
-      name: "통합테스트 PM2",
-      roleId: DEFAULT_ROLE_ID,
-    });
-    const pm = pmViewer(pmAccount.userId);
-
-    // 계약 금액을 USD로 저장하고 환율을 적는다(fxRateTouched: true).
-    await saveRevenue(pm, project.id, {
-      contract: { currency: "USD", amount: 1000, fxRate: 1400.5 },
-      contractFxRateTouched: true,
+    // 04-41 — 계약 금액 쓰기 경로가 없어져 발행 줄(USD)로 같은 규칙을 본다(fxRateTouched: true).
+    await saveRevenue(finance, project.id, {
+      issuedEntries: [{ entryDate: "2026-09-01", amount: { currency: "USD", amount: 1000, fxRate: 1400.5 }, fxRateTouched: true }],
     });
     const afterTouch = await getSettingValue(FX_RECENT_RATE_USD);
     expect(afterTouch).toBe(1400.5);
@@ -171,9 +179,8 @@ describe("domain/revenue saveRevenue/listRevenue (Phase 4, 실제 Postgres)", ()
     // 다른 값으로 다시 저장하되 이번엔 fxRateTouched: false — 사람이 환율
     // 칸을 건드리지 않은 저장이라 설정이 그 값으로 갱신되지 않는다(값이
     // 같았다면 갱신 여부를 구분할 수 없으므로 일부러 다른 값을 쓴다).
-    await saveRevenue(pm, project.id, {
-      contract: { currency: "USD", amount: 2000, fxRate: 1500.0 },
-      contractFxRateTouched: false,
+    await saveRevenue(finance, project.id, {
+      issuedEntries: [{ entryDate: "2026-09-02", amount: { currency: "USD", amount: 2000, fxRate: 1500.0 }, fxRateTouched: false }],
     });
     const afterUntouched = await getSettingValue(FX_RECENT_RATE_USD);
     expect(afterUntouched).toBe(1400.5);
@@ -188,13 +195,6 @@ describe("domain/revenue saveRevenue/listRevenue (Phase 4, 실제 Postgres)", ()
     ).rejects.toThrow();
   });
 
-  it("경영관리 viewer로는 계약 금액 저장이 거부된다(projects write 없음)", async () => {
-    const { project } = await setupProject();
-    const finance = await createFinanceViewer();
-    await expect(
-      saveRevenue(finance, project.id, { contract: { currency: "KRW", amount: 1_000_000, fxRate: 1 } }),
-    ).rejects.toThrow();
-  });
   it("이미 바뀐 매출 줄을 옛 버전으로 저장하면 거부되고 값은 그대로다", async () => {
     const { project } = await setupProject();
     const finance = await createFinanceViewer();
@@ -383,5 +383,92 @@ describe("파생 계약 금액 — 고객 승인된 현재 차수 합계 (04-16 
     const dto = await listRevenue({ id: userId, roleId: role.id }, project.id);
 
     expect(Object.keys(dto)).not.toContain("contract");
+  });
+});
+
+// 04-41(D-84 · 사용자 D9 · T-04-84) — 계약 금액은 04-16의 파생값 하나다. 옛 클라이언트가 계약 필드를 실어 보내도
+// 스키마가 버려 아무것도 저장되지 않고, 계약을 쓰는 이름이 코드 어디에도 남지 않는다.
+describe("계약 금액 쓰기 경로 없음(04-41)", () => {
+  // 옛 화면이 보내던 모양 — 변수로 두어 타입이 모르는 키를 싣는다(액션 입력은 zod가 파싱한다).
+  function legacyInput(projectId: string) {
+    return {
+      projectId,
+      seenStatus: "bidding" as const,
+      revenue: {
+        contract: { currency: "KRW" as const, amount: 50_000_000, fxRate: 1 },
+        contractFxRateTouched: true,
+        issuedEntries: [{ entryDate: "2026-09-01", amount: { currency: "KRW" as const, amount: 1_000_000, fxRate: 1 } }],
+      },
+    };
+  }
+
+  it("옛 계약 필드를 실은 일괄 저장은 발행 줄만 저장하고 프로젝트 행에 계약 값이 남지 않으며, 계약 금액은 파생값 그대로다", async () => {
+    const { project } = await setupProject();
+    const before = await listRevenue(SYSTEM_VIEWER, project.id);
+
+    const input = legacyInput(project.id);
+    const result = await saveProjectLedgerAction(input);
+    expect(result?.serverError).toBeUndefined();
+    expect(result?.validationErrors).toBeUndefined();
+
+    const entries = await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, project.id));
+    expect(entries.map((entry) => [entry.kind, entry.amountAmountKrw])).toEqual([["issue", 1_000_000]]);
+
+    // 컬럼이 남아 있는 동안(Task 2 전)은 기본값 그대로, 컬럼을 지운 뒤에는 키 자체가 없다 — 어느 쪽이든 50,000,000은 없다.
+    const { rows } = await pool.query<Record<string, unknown>>("SELECT * FROM projects WHERE id = $1", [project.id]);
+    const row = rows[0] ?? {};
+    expect(row.contract_amount_krw ?? 0).toBe(0);
+    expect(row.contract_foreign_amount ?? null).toBeNull();
+    expect(row.contract_currency ?? "KRW").toBe("KRW");
+
+    const after = await listRevenue(SYSTEM_VIEWER, project.id);
+    expect(after.contract).toEqual(before.contract);
+    expect(after.contract?.pendingLabel).toBe("1차 고객 승인 전");
+  });
+
+  it("액션 스키마가 옛 계약 필드를 버린다 — 합성 저장이 받은 revenue에 contract·contractFxRateTouched 키가 없다(거부가 아니라 무시)", async () => {
+    const { project } = await setupProject();
+    const ledger = vi.mocked(saveProjectLedger);
+    ledger.mockClear();
+
+    const result = await saveProjectLedgerAction(legacyInput(project.id));
+    expect(result?.validationErrors).toBeUndefined();
+
+    expect(ledger).toHaveBeenCalledTimes(1);
+    const revenue = ledger.mock.calls[0]?.[2].revenue;
+    expect(revenue).toBeDefined();
+    expect(Object.keys(revenue ?? {}).sort()).toEqual(["issuedEntries"]);
+  });
+
+  it("참조 스캔 — app/·domain/·repositories/·db/schema/의 .ts·.tsx에 계약 컬럼·쓰기 함수 이름이 0건", () => {
+    const names = [
+      "contract_amount_krw",
+      "contract_currency",
+      "contract_fx_rate",
+      "contract_foreign_amount",
+      "contractAmountKrw",
+      "contractCurrency",
+      "contractFxRate",
+      "contractForeignAmount",
+      "updateProjectContract",
+      "contractFxRateTouched",
+    ];
+    const root = process.cwd();
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const name of readdirSync(dir)) {
+        const full = path.join(dir, name);
+        if (statSync(full).isDirectory()) walk(full);
+        else if (/\.tsx?$/.test(name)) files.push(full);
+      }
+    };
+    for (const dir of ["app", "domain", "repositories", "db/schema"]) walk(path.join(root, dir));
+    expect(files.length).toBeGreaterThan(50);
+
+    const hits = files.flatMap((file) => {
+      const text = readFileSync(file, "utf8");
+      return names.filter((name) => text.includes(name)).map((name) => `${path.relative(root, file)}: ${name}`);
+    });
+    expect(hits).toEqual([]);
   });
 });

@@ -1,6 +1,9 @@
+import { createElement, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { clampPage } from "@/lib/paging";
-import { pageEntryFocus, pageOfRow, splitPages } from "@/ui/table/paging";
+import { crossPageTarget, nextEditableCell, pageEntryFocus, pageOfRow, resolveFocus, splitPages } from "@/ui/table/paging";
+import { useGridKeyboard, type UseGridKeyboardResult } from "@/ui/table/use-grid-keyboard";
 
 // 04-19(D-91 · SYSTEM.md §7-3 (자)) — 편집 표의 30줄 쪽 나눔은 화면 안 배열 자르기다. 표시 순서 id를 쪽 크기로
 // 자르고(새 줄 고정 입력 포함), 줄 id로 쪽을 찾고, 쪽 전환 뒤 활성 셀을 정한다. 쪽 번호 보정은 lib/paging(04-29).
@@ -83,5 +86,205 @@ describe("pageEntryFocus — 쪽 전환 뒤 활성 셀(DR-23)", () => {
 
   it("편집 열이 없으면(읽기 표) null — 호출부가 제목으로 보낸다", () => {
     expect(pageEntryFocus({ pageRowIds: ["id-31"], lastColKey: "execution", editableColKeys: [] })).toBeNull();
+  });
+});
+
+// ── 04-19 Task 2 — 쪽 경계 키보드(줄 id 기준) · 편집 셀 순회 · 포커스를 id로 기억 ──────────────────────────────
+
+describe("crossPageTarget — 쪽 경계를 넘는 ↑↓의 대상은 줄 id로 정한다(C-18)", () => {
+  const display = ids(45);
+  const pages = splitPages(display, { pageSize: 30 });
+
+  it("1쪽 끝 id-30에서 ↓ → id-31 · 2쪽", () => {
+    expect(crossPageTarget({ ids: display, fromId: "id-30", direction: "down", pages })).toEqual({ rowId: "id-31", page: 2 });
+  });
+
+  it("2쪽 첫 id-31에서 ↑ → id-30 · 1쪽", () => {
+    expect(crossPageTarget({ ids: display, fromId: "id-31", direction: "up", pages })).toEqual({ rowId: "id-30", page: 1 });
+  });
+
+  it("표 끝(마지막 줄 ↓ · 첫 줄 ↑)에서는 null — 멈춘다", () => {
+    expect(crossPageTarget({ ids: display, fromId: "id-45", direction: "down", pages })).toBeNull();
+    expect(crossPageTarget({ ids: display, fromId: "id-1", direction: "up", pages })).toBeNull();
+  });
+
+  it("1쪽에 고정된 새 줄(표시 31번째)에서 ↓ → 표시 순서의 다음 id-31 · 2쪽(제자리에 머물지 않는다)", () => {
+    const withNew = [...ids(30), "new-1", ...ids(15).slice(0).map((_, index) => `id-${index + 31}`)];
+    const pinnedPages = splitPages(withNew, { pageSize: 30, pinned: { "new-1": 1 } });
+    expect(pinnedPages[0]).toContain("new-1");
+    expect(crossPageTarget({ ids: withNew, fromId: "new-1", direction: "down", pages: pinnedPages })).toEqual({ rowId: "id-31", page: 2 });
+  });
+});
+
+describe("nextEditableCell — 편집 중 Tab/Shift+Tab의 대상(편집 셀만)", () => {
+  const rowIds = ["id-1", "id-2"];
+  const colKeys = ["sort", "subcategory", "itemName", "profit", "execution"];
+  const editable = new Set(["subcategory", "itemName", "execution"]);
+  const isEditable = (_rowId: string, colKey: string) => editable.has(colKey);
+
+  it("forward — 같은 줄 오른쪽 첫 편집 셀(읽기 열은 건너뛴다)", () => {
+    expect(nextEditableCell({ rowIds, colKeys, isEditable, from: { rowId: "id-1", colKey: "itemName" }, direction: "forward" })).toEqual({
+      rowId: "id-1",
+      colKey: "execution",
+    });
+  });
+
+  it("forward — 줄 끝이면 다음 줄 첫 편집 셀, 쪽 끝이면 { crossPage: next }", () => {
+    expect(nextEditableCell({ rowIds, colKeys, isEditable, from: { rowId: "id-1", colKey: "execution" }, direction: "forward" })).toEqual({
+      rowId: "id-2",
+      colKey: "subcategory",
+    });
+    expect(nextEditableCell({ rowIds, colKeys, isEditable, from: { rowId: "id-2", colKey: "execution" }, direction: "forward" })).toEqual({
+      crossPage: "next",
+    });
+  });
+
+  it("backward — 반대 방향, 쪽 첫 편집 셀이면 { crossPage: prev }", () => {
+    expect(nextEditableCell({ rowIds, colKeys, isEditable, from: { rowId: "id-2", colKey: "subcategory" }, direction: "backward" })).toEqual({
+      rowId: "id-1",
+      colKey: "execution",
+    });
+    expect(nextEditableCell({ rowIds, colKeys, isEditable, from: { rowId: "id-1", colKey: "subcategory" }, direction: "backward" })).toEqual({
+      crossPage: "prev",
+    });
+  });
+});
+
+describe("resolveFocus — 기억한 { rowId, colKey }를 렌더마다 지금 쪽의 인덱스로(엔지 리뷰 C §1 P2)", () => {
+  const colKeys = ["sort", "itemName", "unitPrice"];
+
+  it("1쪽 그룹 끝에 새 줄이 들어가 표시 순서가 한 칸 밀려도 포커스는 id-35에 남는다", () => {
+    const before = splitPages(ids(45), { pageSize: 30 })[1]!;
+    const after = splitPages([...ids(20), "new-1", ...ids(25).map((_, index) => `id-${index + 21}`)], { pageSize: 30 })[1]!;
+    const focus = { rowId: "id-35", colKey: "unitPrice" };
+    const was = resolveFocus({ pageIds: before, colKeys, focus, fallback: { row: 0, col: 0 } });
+    const now = resolveFocus({ pageIds: after, colKeys, focus, fallback: was });
+    expect(before[was.row]).toBe("id-35");
+    expect(after[now.row]).toBe("id-35");
+    expect(now.col).toBe(2);
+  });
+
+  it("2쪽 5번째 줄(표시 35번째)을 기억하면 그 인덱스의 줄이 id-35다 — 1쪽 5번째 줄이 아니다", () => {
+    const page2 = splitPages(ids(45), { pageSize: 30 })[1]!;
+    const resolved = resolveFocus({ pageIds: page2, colKeys, focus: { rowId: "id-35", colKey: "itemName" }, fallback: { row: 0, col: 0 } });
+    expect(resolved).toEqual({ row: 4, col: 1 });
+    expect(page2[resolved.row]).toBe("id-35");
+  });
+
+  it("기억한 줄이 지워지면 같은 자리(다음 줄), 마지막 줄이었으면 이전 줄로 떨어진다", () => {
+    const pageIds = ["id-1", "id-2", "id-3"];
+    expect(resolveFocus({ pageIds, colKeys, focus: { rowId: "gone", colKey: "itemName" }, fallback: { row: 1, col: 1 } })).toEqual({ row: 1, col: 1 });
+    expect(resolveFocus({ pageIds, colKeys, focus: { rowId: "gone", colKey: "itemName" }, fallback: { row: 3, col: 1 } })).toEqual({ row: 2, col: 1 });
+  });
+});
+
+// 훅 — jsdom 없이 react-dom/server로 한 번 렌더해 handleKeyDown을 꺼낸다(grid-keyboard-composing.test.ts 선례).
+type KeyInit = { key: string; ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean };
+type Calls = { edge: [string, string][]; deleted: unknown[]; moved: unknown[][]; tab: string[]; selectAll: number };
+
+function renderGrid(opts: { editing: boolean; rowCount?: number }) {
+  const rowCount = opts.rowCount ?? 3;
+  const calls: Calls = { edge: [], deleted: [], moved: [], tab: [], selectAll: 0 };
+  let result: UseGridKeyboardResult | undefined;
+  const params = {
+    rowCount,
+    colCount: 3,
+    rowIds: Array.from({ length: rowCount }, (_, index) => `id-${index + 1}`),
+    colKeys: ["sort", "itemName", "unitPrice"],
+    isEditableCell: () => true,
+    isEditing: () => opts.editing,
+    onEdgeExit: (direction: string, colKey: string) => {
+      calls.edge.push([direction, colKey]);
+      return true;
+    },
+    onSelectAll: () => {
+      calls.selectAll += 1;
+    },
+    onTab: (_pos: unknown, direction: string) => {
+      calls.tab.push(direction);
+    },
+    handlers: {
+      onDeleteRow: (row: number | string) => {
+        calls.deleted.push(row);
+      },
+      onMoveRow: (row: number | string, direction: "up" | "down") => {
+        calls.moved.push([row, direction]);
+      },
+    },
+  };
+  function Probe() {
+    result = useGridKeyboard(params);
+    return null;
+  }
+  renderToStaticMarkup(createElement(Probe));
+  if (!result) throw new Error("훅이 렌더되지 않았습니다");
+  const keyboard = result;
+  function press(init: KeyInit, pos: { row: number; col: number }) {
+    let prevented = false;
+    const event = {
+      key: init.key,
+      ctrlKey: init.ctrlKey ?? false,
+      shiftKey: init.shiftKey ?? false,
+      altKey: init.altKey ?? false,
+      metaKey: false,
+      repeat: false,
+      nativeEvent: { isComposing: false },
+      preventDefault: () => {
+        prevented = true;
+      },
+    };
+    keyboard.handleKeyDown(event as unknown as ReactKeyboardEvent<HTMLElement>, pos);
+    return prevented;
+  }
+  return { calls, press };
+}
+
+describe("useGridKeyboard — 쪽 경계 · Tab · Ctrl+A · Ctrl+C · 줄 id 핸들러(§7-3 (자))", () => {
+  it("쪽 마지막 줄에서 ↓ · 첫 줄에서 ↑는 onEdgeExit(방향, 열 키)를 부른다", () => {
+    const grid = renderGrid({ editing: false });
+    grid.press({ key: "ArrowDown" }, { row: 2, col: 2 });
+    grid.press({ key: "ArrowUp" }, { row: 0, col: 1 });
+    expect(grid.calls.edge).toEqual([
+      ["down", "unitPrice"],
+      ["up", "itemName"],
+    ]);
+  });
+
+  it("Shift+↓ 범위 선택은 쪽 마지막 줄에서 멈춘다(onEdgeExit 없음)", () => {
+    const grid = renderGrid({ editing: false });
+    grid.press({ key: "ArrowDown", shiftKey: true }, { row: 2, col: 1 });
+    expect(grid.calls.edge).toEqual([]);
+  });
+
+  it("편집 중이 아닐 때 Ctrl+A는 전체 선택 + 기본 동작 막음, 편집 중이면 입력의 기본 동작", () => {
+    const idle = renderGrid({ editing: false });
+    expect(idle.press({ key: "a", ctrlKey: true }, { row: 0, col: 1 })).toBe(true);
+    expect(idle.calls.selectAll).toBe(1);
+    const editing = renderGrid({ editing: true });
+    expect(editing.press({ key: "a", ctrlKey: true }, { row: 0, col: 1 })).toBe(false);
+    expect(editing.calls.selectAll).toBe(0);
+  });
+
+  it("Ctrl+C는 가로채지 않는다(브라우저가 copy 이벤트를 쏜다)", () => {
+    const grid = renderGrid({ editing: false });
+    expect(grid.press({ key: "c", ctrlKey: true }, { row: 0, col: 1 })).toBe(false);
+  });
+
+  it("편집 중 Tab/Shift+Tab은 막고 onTab(forward/backward), 편집 중이 아니면 Tab은 표를 떠난다(막지 않음)", () => {
+    const editing = renderGrid({ editing: true });
+    expect(editing.press({ key: "Tab" }, { row: 0, col: 1 })).toBe(true);
+    expect(editing.press({ key: "Tab", shiftKey: true }, { row: 0, col: 1 })).toBe(true);
+    expect(editing.calls.tab).toEqual(["forward", "backward"]);
+    const idle = renderGrid({ editing: false });
+    expect(idle.press({ key: "Tab" }, { row: 0, col: 1 })).toBe(false);
+    expect(idle.calls.tab).toEqual([]);
+  });
+
+  it("Delete · Alt+↓는 줄 인덱스가 아니라 줄 id를 넘긴다", () => {
+    const grid = renderGrid({ editing: false });
+    grid.press({ key: "Delete" }, { row: 1, col: 1 });
+    grid.press({ key: "ArrowDown", altKey: true }, { row: 1, col: 1 });
+    expect(grid.calls.deleted).toEqual(["id-2"]);
+    expect(grid.calls.moved).toEqual([["id-2", "down"]]);
   });
 });

@@ -44,3 +44,35 @@ export function pageEntryFocus(input: {
   const colKey = input.lastColKey !== undefined && input.editableColKeys.includes(input.lastColKey) ? input.lastColKey : firstEditable;
   return { rowId, colKey };
 }
+
+// 04-19 Task 2 — RED 자리표시(구현 전).
+export function crossPageTarget(input: {
+  ids: readonly string[];
+  fromId: string;
+  direction: "up" | "down";
+  pages: readonly (readonly string[])[];
+}): { rowId: string; page: number } | null {
+  void input;
+  return null;
+}
+
+export function nextEditableCell(input: {
+  rowIds: readonly string[];
+  colKeys: readonly string[];
+  isEditable: (rowId: string, colKey: string) => boolean;
+  from: FocusCell;
+  direction: "forward" | "backward";
+}): FocusCell | { crossPage: "next" | "prev" } {
+  void input;
+  return { crossPage: "next" };
+}
+
+export function resolveFocus(input: {
+  pageIds: readonly string[];
+  colKeys: readonly string[];
+  focus: FocusCell;
+  fallback: { row: number; col: number };
+}): { row: number; col: number } {
+  void input;
+  return { row: 0, col: 0 };
+}

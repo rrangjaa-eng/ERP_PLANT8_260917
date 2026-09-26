@@ -515,15 +515,17 @@ test.describe("견적 줄 표 — Ctrl 전용 단축키·힌트 줄·이중 저�
     expect(actionRequests).toBe(1);
   });
 
-  test("(c) 힌트 줄은 지금 되는 키 여섯 항목의 라벨 kbd 묶음이고 저장 항목이 없다", async ({ page }) => {
+  test("(c) 힌트 줄은 지금 되는 키 일곱 항목(04-19 — Tab·Ctrl+C 되돌림)의 라벨 kbd 묶음이고 저장 항목이 없다", async ({ page }) => {
     await openProjectWithSavedLines(page, [{ subcategory: "sub-a", itemName: "힌트 줄 확인", amount: 1000 }]);
 
     const hintRow = page.locator("p", { hasText: "줄 복제" });
     await expect(hintRow).toHaveCount(1);
     await expect(hintRow).toHaveText(
-      "이동 ↑↓←→ · 붙여넣기 Ctrl+V · 취소 Esc · 새 줄 Ctrl+Enter · 줄 이동 Alt+↑↓ · 줄 복제 Ctrl+D",
+      "이동 Tab ↑↓←→ · 복사 Ctrl+C · 붙여넣기 Ctrl+V · 취소 Esc · 새 줄 Ctrl+Enter · 줄 이동 Alt+↑↓ · 줄 복제 Ctrl+D",
     );
-    await expect(hintRow.locator("kbd")).toHaveText(["↑↓←→", "Ctrl+V", "Esc", "Ctrl+Enter", "Alt+↑↓", "Ctrl+D"]);
+    await expect(hintRow.locator("kbd")).toHaveText(["Tab ↑↓←→", "Ctrl+C", "Ctrl+V", "Esc", "Ctrl+Enter", "Alt+↑↓", "Ctrl+D"]);
+    // 04-19(DR-31) — 페이지 줄이 없으면 합계 행(표) 바로 아래.
+    expect(await quoteTable(page).evaluate((table) => table.nextElementSibling?.textContent)).toContain("줄 복제 Ctrl+D");
     await expect(hintRow).not.toContainText("저장");
 
     // 1차 버튼 kbd가 저장 단축키를 말한다(힌트 줄과 두 자리에 쓰지 않는다).
@@ -558,7 +560,7 @@ test.describe("견적 줄 표 — Ctrl 전용 단축키·힌트 줄·이중 저�
 });
 
 test.describe("견적 줄 표 — 힌트 줄·1차·EMPTY에 적힌 조합이 전부 동작한다(04-28 Task 2 · C-07 · T17)", () => {
-  test("힌트 줄 여섯 조합과 1차 kbd Ctrl+S를 차례로 눌러 적힌 결과를 단언한다", async ({ page }) => {
+  test("힌트 줄 일곱 조합과 1차 kbd Ctrl+S를 차례로 눌러 적힌 결과를 단언한다", async ({ page }) => {
     await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
     await openProjectWithSavedLines(page, [
       { subcategory: "stage_construction", itemName: "무대 줄1", amount: 1000 },
@@ -577,6 +579,19 @@ test.describe("견적 줄 표 — 힌트 줄·1차·EMPTY에 적힌 조합이 �
     await expect(quoteCell(page, 1, 2)).toBeFocused();
     await page.keyboard.press("ArrowUp");
     await expect(quoteCell(page, 0, 2)).toBeFocused();
+
+    // 04-19 — 이동 Tab: 편집 중 Tab은 확정하고 오른쪽 편집 셀을 연다(편집 중이 아니면 표를 떠난다).
+    await page.keyboard.press("Enter");
+    await expect(quoteCell(page, 0, 2).locator("input")).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(quoteCell(page, 0, 3).locator("select, input").first()).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(quoteCell(page, 0, 3)).toBeFocused();
+
+    // 04-19 — 복사 Ctrl+C: 활성 셀의 복사 글자가 클립보드에 실린다(네이티브 copy 이벤트).
+    await quoteCell(page, 0, 2).focus();
+    await page.keyboard.press("Control+c");
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("무대 줄1");
 
     // 붙여넣기 Ctrl+V — 클립보드 값이 활성 셀에 들어간다.
     await page.evaluate(() => navigator.clipboard.writeText("7"));
@@ -922,5 +937,139 @@ test.describe("견적 줄 표 — 30줄 쪽 나눔(04-19 Task 1 · D-91)", () =>
     );
     expect(firstCells).toEqual(["31"]);
     await expect(readTable.locator("tfoot")).toContainText("합계 (공급가액 · 31줄)");
+  });
+});
+
+// 04-19 Task 2 — 쪽 경계 키보드(줄 id) · Alt+↑↓ 따라가기 · 2쪽 Delete · Tab · 쪽 안 범위 선택 · Ctrl+A/Ctrl+C 네이티브 복사 · 힌트 줄.
+const HINT_TEXT = "이동 Tab ↑↓←→ · 복사 Ctrl+C · 붙여넣기 Ctrl+V · 취소 Esc · 새 줄 Ctrl+Enter · 줄 이동 Alt+↑↓ · 줄 복제 Ctrl+D";
+
+function currentPage(page: Page) {
+  return pageNav(page).locator('[aria-current="page"]:visible');
+}
+
+test.describe("견적 줄 표 — 쪽 경계 키보드·전체 복사·힌트 줄(04-19 Task 2 · §7-3 (자))", () => {
+  test("(공백 4) 1쪽 30번째 줄에서 Alt+↓ → 2쪽으로 따라가 그 줄에 포커스 · Alt+↑ → 1쪽으로", async ({ page }) => {
+    await openProjectWithSavedLines(page, fortyFiveLines());
+    await expect(quoteDataRows(page)).toHaveCount(30);
+    await expect(quoteCell(page, 29, 2)).toHaveText("B줄10");
+    await quoteCell(page, 29, 2).focus();
+    await page.keyboard.press("Alt+ArrowDown");
+
+    await expect(currentPage(page)).toHaveText("2");
+    await expect(quoteCell(page, 0, 2)).toHaveText("B줄10");
+    await expect(quoteCell(page, 0, 2)).toBeFocused();
+    await expect(quoteCell(page, 0, 2)).toBeInViewport();
+
+    await page.keyboard.press("Alt+ArrowUp");
+    await expect(currentPage(page)).toHaveText("1");
+    await expect(quoteCell(page, 29, 2)).toHaveText("B줄10");
+    await expect(quoteCell(page, 29, 2)).toBeFocused();
+  });
+
+  test("(§3) 2쪽 5번째 줄에서 Delete → 그 줄이 지워지고 1쪽 5번째 줄은 그대로다", async ({ page }) => {
+    await openProjectWithSavedLines(page, fortyFiveLines());
+    await pageNav(page).getByRole("button", { name: "2", exact: true }).click();
+    await expect(quoteCell(page, 4, 2)).toHaveText("B줄15");
+    await quoteCell(page, 4, 2).focus();
+    await page.keyboard.press("Delete");
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("B줄15");
+    await dialog.getByRole("button", { name: "견적 줄 삭제" }).click();
+
+    await expect(quoteTable(page).getByText("B줄15", { exact: true })).toHaveCount(0);
+    await expect(quoteDataRows(page)).toHaveCount(14);
+    await pageNav(page).getByRole("button", { name: "1", exact: true }).click();
+    await expect(quoteCell(page, 4, 2)).toHaveText("A줄5");
+  });
+
+  test("↓가 1쪽 끝을 넘으면 2쪽 31번째 줄 같은 열, ↑로 1쪽 30번째 줄 · Shift+↓ 범위는 쪽 안에서 멈춘다", async ({ page }) => {
+    await openProjectWithSavedLines(page, fortyFiveLines());
+    await quoteCell(page, 29, 5).focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(currentPage(page)).toHaveText("2");
+    await expect(quoteCell(page, 0, 0)).toHaveText("31");
+    await expect(quoteCell(page, 0, 5)).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect(currentPage(page)).toHaveText("1");
+    await expect(quoteCell(page, 29, 5)).toBeFocused();
+
+    await quoteCell(page, 28, 2).focus();
+    await page.keyboard.press("Shift+ArrowDown");
+    await page.keyboard.press("Shift+ArrowDown");
+    await page.keyboard.press("Shift+ArrowDown");
+    await expect(currentPage(page)).toHaveText("1");
+    await expect(quoteCell(page, 29, 2)).toBeFocused();
+  });
+
+  test("편집 중 Tab은 값을 확정하고 옆 편집 셀로, 쪽 마지막 편집 셀에서는 2쪽 첫 줄 첫 편집 셀을 연다", async ({ page }) => {
+    await openProjectWithSavedLines(page, fortyFiveLines());
+    const itemCell = quoteCell(page, 29, 2);
+    await expect(async () => {
+      await itemCell.focus();
+      await page.keyboard.press("Enter");
+      await expect(itemCell.locator("input")).toBeFocused({ timeout: 1000 });
+    }).toPass();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("Tab으로 확정");
+    await page.keyboard.press("Tab");
+    await expect(itemCell).toHaveText("Tab으로 확정");
+    await expect(quoteCell(page, 29, 3).locator("select, input").first()).toBeFocused();
+
+    const noteCell = quoteCell(page, 29, 10);
+    await expect(async () => {
+      await noteCell.focus();
+      await page.keyboard.press("Enter");
+      await expect(noteCell.locator("input")).toBeFocused({ timeout: 1000 });
+    }).toPass();
+    await page.keyboard.type("비고 확정");
+    await page.keyboard.press("Tab");
+    await expect(currentPage(page)).toHaveText("2");
+    await expect(quoteCell(page, 0, 1).locator("select")).toBeFocused();
+    await page.keyboard.press("Escape");
+    await pageNav(page).getByRole("button", { name: "1", exact: true }).click();
+    await expect(quoteCell(page, 29, 10)).toHaveText("비고 확정");
+  });
+
+  test("편집 중이 아닐 때 Control+a → Control+c는 45줄 전부를 견적 줄 표 열 수만큼의 TSV와 앱 형식 JSON으로 싣는다", async ({ page }) => {
+    await openProjectWithSavedLines(page, fortyFiveLines());
+    await page.evaluate(() => {
+      window.addEventListener("copy", (event) => {
+        const data = event.clipboardData;
+        (window as unknown as { __copied?: { text: string; json: string } }).__copied = {
+          text: data?.getData("text/plain") ?? "",
+          json: data?.getData("application/x-plant8-quote-lines+json") ?? "",
+        };
+      });
+    });
+    await quoteCell(page, 3, 2).focus();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.press("Control+c");
+    const copied = await page.waitForFunction(() => (window as unknown as { __copied?: { text: string; json: string } }).__copied);
+    const { text, json } = (await copied.jsonValue()) as { text: string; json: string };
+    const columnCount = await quoteTable(page).locator("thead th").count();
+    const lines = text.split("\n");
+    expect(lines).toHaveLength(45);
+    expect(lines.every((line) => line.split("\t").length === columnCount)).toBe(true);
+    expect(lines[0]?.split("\t")[2]).toBe("A줄1");
+    expect(lines[44]?.split("\t")[0]).toBe("45");
+    expect(lines[44]?.split("\t")[2]).toBe("B줄25");
+    expect(JSON.parse(json)).toEqual(Array.from({ length: 45 }, () => ({ currency: "KRW" })));
+  });
+
+  test("힌트 줄은 일곱 항목이고 페이지 줄 바로 다음 형제 · 매출 표 아래에는 없고 · 1000 폭에서는 없다", async ({ page }) => {
+    await openProjectWithSavedLines(page, fortyFiveLines());
+    const hint = page.locator("p", { has: page.locator("kbd", { hasText: "Ctrl+D" }) });
+    await expect(hint).toHaveCount(1);
+    await expect(hint).toHaveText(HINT_TEXT);
+    await expect(hint.locator("kbd")).toHaveText(["Tab ↑↓←→", "Ctrl+C", "Ctrl+V", "Esc", "Ctrl+Enter", "Alt+↑↓", "Ctrl+D"]);
+    expect(await pageNav(page).evaluate((nav) => nav.nextElementSibling?.textContent)).toBe(HINT_TEXT);
+    for (const caption of ["발행 줄", "입금 줄"]) {
+      const revenue = page.locator("table", { has: page.locator("caption", { hasText: new RegExp(`^${caption}$`) }) });
+      if ((await revenue.count()) === 0) continue;
+      expect(await revenue.evaluate((table) => table.nextElementSibling?.querySelector("kbd") ?? null)).toBeNull();
+    }
+
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await expect(hint).toBeHidden();
   });
 });

@@ -471,6 +471,39 @@ async function isSameDocument(page: Page): Promise<boolean> {
   return page.evaluate(() => (window as unknown as { __sameDocument?: boolean }).__sameDocument === true);
 }
 
+
+type FocusStop = { name: string; top: number; bottom: number; left: number };
+
+// 지금 포커스된 요소에서 시작해 Tab을 (count - 1)번 누르며 멈춘 곳의 이름(라벨·aria-label·글자)과 위치를 모은다.
+async function tabWalk(page: Page, count: number): Promise<FocusStop[]> {
+  const stops: FocusStop[] = [];
+  for (let i = 0; i < count; i += 1) {
+    if (i > 0) await page.keyboard.press("Tab");
+    stops.push(
+      await page.evaluate(() => {
+        const el = document.activeElement as HTMLElement;
+        const isField = el instanceof HTMLInputElement || el instanceof HTMLSelectElement;
+        const name = isField ? (el.getAttribute("aria-label") ?? el.labels?.[0]?.textContent ?? "") : (el.textContent ?? "");
+        const rect = el.getBoundingClientRect();
+        return { name: name.trim(), top: rect.top, bottom: rect.bottom, left: rect.left };
+      }),
+    );
+  }
+  return stops;
+}
+
+// 포커스 순서 = 시각 순서(SYSTEM.md §10): 같은 줄(세로로 겹침)이면 왼쪽 → 오른쪽, 아니면 위 → 아래.
+function visualOrderViolations(stops: FocusStop[]): string[] {
+  const bad: string[] = [];
+  for (let i = 1; i < stops.length; i += 1) {
+    const a = stops[i - 1]!;
+    const b = stops[i]!;
+    const sameRow = a.top < b.bottom && b.top < a.bottom;
+    if (sameRow ? a.left >= b.left : a.top >= b.top) bad.push(`${a.name} → ${b.name}`);
+  }
+  return bad;
+}
+
 test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)", () => {
   test("검색 칸에서 값을 바꾸지 않고 Tab으로 나가면 다시 로드되지 않고 다음 컨트롤로 간다(바꾸면 제출)", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -493,5 +526,45 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
     await search.fill(`${marker}-바꿈`);
     await page.keyboard.press("Tab");
     await expect(page).toHaveURL(new RegExp(`q=${encodeURIComponent(`${marker}-바꿈`)}`));
+  });
+
+  test("(F4) 폰 375 접힘 · 펼침과 PC 1280에서 Tab 순서가 시각 순서와 같고, 숨은 자리는 포커스되지 않는다", async ({ page }) => {
+    const marker = `E2E탭순서-${randomUUID().slice(0, 8)}`;
+    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID, withTeam: true });
+    const pmUserId = await findUserIdByEmail(pm.email);
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `${marker}-클라이언트`, normalizedName: `${marker}-클라이언트` });
+    const [team] = await db.select().from(teams).limit(1);
+    if (!team) throw new Error("시드된 팀이 없습니다");
+    await createProject(SYSTEM_VIEWER, { clientId: vendor.id, teamId: team.id, pmUserId, name: `${marker}-행` });
+    await login(page, pm);
+
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}`);
+    await expect(page.locator("table tbody a")).toHaveCount(1);
+    const search = page.getByRole("textbox", { name: "검색" });
+    await expect(search).toHaveCount(1);
+    const duplicateIds = await page.evaluate(() => {
+      const ids = [...document.querySelectorAll("[id]")].map((el) => el.id);
+      return ids.filter((id, index) => ids.indexOf(id) !== index);
+    });
+    expect(duplicateIds).toEqual([]);
+
+    await search.focus();
+    const collapsed = await tabWalk(page, 4);
+    expect(collapsed.map((stop) => stop.name)).toEqual(["검색", "필터", "프로젝트 등록", "필터 지우기"]);
+    expect(visualOrderViolations(collapsed)).toEqual([]);
+
+    await page.getByRole("button", { name: "필터", exact: true }).click();
+    await search.focus();
+    const expanded = await tabWalk(page, 9);
+    expect(expanded.map((stop) => stop.name)).toEqual(["검색", "필터", "프로젝트 등록", "상태", "팀", "연도", "기간", "기간 끝", "필터 지우기"]);
+    expect(visualOrderViolations(expanded)).toEqual([]);
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(search).toHaveCount(1);
+    await page.locator("#status").focus();
+    const wide = await tabWalk(page, 8);
+    expect(wide.map((stop) => stop.name)).toEqual(["상태", "팀", "연도", "기간", "기간 끝", "검색", "필터 지우기", "프로젝트 등록"]);
+    expect(visualOrderViolations(wide)).toEqual([]);
   });
 });

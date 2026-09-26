@@ -14,6 +14,25 @@ async function findUserIdByEmail(email: string): Promise<string> {
   return row.id;
 }
 
+// 사용자 결정 2026-09-26(「숨기기」) — 빈 목록의 「프로젝트 등록」도 등록할 수 있는
+// 사람에게만 보인다. 이 파일의 다른 테스트가 프로젝트를 만들기 전에 돌도록 맨 앞에
+// 둔다(파일 단독 실행이면 빈 DB라 EMPTY 행을 거친다).
+test.describe("프로젝트 목록 — 팀 발령 없는 사람의 빈 목록", () => {
+  test("팀 발령이 없는 팀 업무 범위 사람은 빈 목록에서도 「프로젝트 등록」이 보이지 않는다", async ({ page }) => {
+    const noTeamPm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(noTeamPm.email);
+    await page.getByLabel("비밀번호").fill(noTeamPm.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto("/projects");
+    // loading.tsx 스트리밍이 끝나 본문(EMPTY 행 또는 표)이 드러난 뒤에 센다.
+    await expect(page.getByText("등록된 프로젝트가 없습니다").or(page.locator("main table:not([aria-hidden='true'])"))).toBeVisible();
+    await expect(page.getByRole("link", { name: "프로젝트 등록" })).toHaveCount(0);
+  });
+});
+
 // 04-05 — 목록 화면 스모크: 필터·정렬·더 보기·합계 부제(S1). 정렬은
 // 04-04가 소유한 `ui/table`에 클릭 가능한 머리글이 아직 없어(이 플랜은
 // 그 디렉터리를 건드리지 않는다, <probe_fallback>) 검색 파라미터를 직접
@@ -102,5 +121,35 @@ test.describe("프로젝트 목록 — 필터·정렬·더 보기·합계 (Phase
     const numberSpan = page.locator("table tbody span").filter({ hasText: /^\d{5}$/ }).first();
     const whiteSpace = await numberSpan.evaluate((el) => getComputedStyle(el).whiteSpace);
     expect(whiteSpace).toBe("nowrap");
+  });
+
+  // /review team-scope-create-review.md P3(2) — 팀 업무 범위 계급인데 팀 발령이
+  // 없는 사람은 등록해도 서버가 항상 거부한다(팀 목록 0개). §7 "할 수 없는
+  // 선택지는 보이지 않게" — 등록 폼과 등록 진입점(필터 줄 버튼)을 숨긴다.
+  test("팀 발령이 없는 팀 업무 범위 사람은 등록 버튼도 등록 폼도 보이지 않는다", async ({ page }) => {
+    const marker = `E2E무발령-${Date.now()}`;
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `${marker}클라이언트`,
+      normalizedName: `${marker}클라이언트`,
+    });
+    const rowPm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    const [team] = await db.select().from(teams).limit(1);
+    if (!team) throw new Error("시드된 팀이 없습니다");
+    const rowPmUserId = await findUserIdByEmail(rowPm.email);
+    await createProject(SYSTEM_VIEWER, { clientId: vendor.id, teamId: team.id, pmUserId: rowPmUserId, name: marker });
+
+    const noTeamPm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(noTeamPm.email);
+    await page.getByLabel("비밀번호").fill(noTeamPm.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}`);
+    await expect(page.getByText(marker, { exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "프로젝트 등록" })).toHaveCount(0);
+
+    await page.goto("/projects?new=1");
+    await expect(page.getByLabel("클라이언트")).toHaveCount(0);
   });
 });

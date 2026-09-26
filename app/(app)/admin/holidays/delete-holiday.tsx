@@ -46,7 +46,7 @@ export function DeleteHoliday({ id, date }: { id: string; date: string }) {
       <Button variant="tertiary" pending={pending} autoFocus={restored} onClick={() => void handleDelete()}>
         삭제
       </Button>
-      {failed ? <span className={styles.rowError}>삭제하지 못했습니다 · 다시 시도</span> : null}
+      {failed ? <span className={styles.rowError}>삭제 실패 · 다시 시도</span> : null}
     </span>
   );
 }

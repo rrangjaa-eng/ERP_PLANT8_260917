@@ -21,8 +21,8 @@ type UndoResult =
 export function undoFailure(result: UndoResult): { text: string; retry: boolean } | null {
   if (result?.data) return null;
   const reason = result?.validationErrors?.date?._errors?.[0];
-  if (reason) return { text: `되돌리지 못했습니다 · ${reason.split(" · ")[0]}`, retry: false };
-  return { text: "되돌리지 못했습니다 · 다시 시도", retry: true };
+  if (reason) return { text: `되돌리기 실패 · ${reason.split(" · ")[0]}`, retry: false };
+  return { text: "되돌리기 실패 · 다시 시도", retry: true };
 }
 
 type DeleteUndoContextValue = {

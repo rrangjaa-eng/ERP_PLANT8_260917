@@ -477,8 +477,8 @@ test.describe("알림함 목록 완성 (Task 3 · S1-c · S1-d)", () => {
     // 실패: 행은 그대로이고 버튼 자리가 오류 문구 + 「다시 시도」로 바뀐다.
     // 오류 줄은 role="status"(M2 — 포커스를 잃어도 스크린 리더가 실패를 안다).
     await expect(rows).toHaveCount(50);
-    await expect(page.getByText("불러오지 못했습니다")).toBeVisible();
-    await expect(page.getByRole("status").filter({ hasText: "불러오지 못했습니다" })).toBeVisible();
+    await expect(page.getByText("불러오기 실패")).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "불러오기 실패" })).toBeVisible();
     const retry = page.getByRole("button", { name: "다시 시도" });
     await expect(retry).toBeVisible();
     await expect(loadMore).toHaveCount(0);
@@ -582,7 +582,7 @@ test.describe("알림함 목록 완성 (Task 3 · S1-c · S1-d)", () => {
     // (Next.js 내장 AppRouterAnnouncer는 항상 마운트돼 있어 개수가 아니라
     // 텍스트 유무로 판정한다), 본문에도 오류 낱말이 없다.
     await expect(page.getByRole("alert")).toHaveText("");
-    await expect(page.getByText("불러오지 못했습니다")).toHaveCount(0);
+    await expect(page.getByText("불러오기 실패")).toHaveCount(0);
 
     // 배지·인셋은 그대로(열기 실패라 openedAt이 갱신되지 않아도 readAt===null
     // 인 안 읽은 행은 여전히 안 읽음이다).

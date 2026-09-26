@@ -293,7 +293,7 @@ describe("addHoliday — 수동 추가(04.2-12)", () => {
     const deps = { now: NOW_0924 };
     for (const kind of ["statutory", "substitute"] as const) {
       await expect(addHoliday(admin, { date: "2027-06-08", kind, name: "x" }, deps)).rejects.toThrow(
-        "임시공휴일·선거일만 추가할 수 있습니다",
+        "임시공휴일·선거일만 추가 가능",
       );
     }
     const viewOnly = await createViewOnlyViewer();
@@ -391,7 +391,7 @@ describe("addHolidayAction — 칸 오류(04.2-12)", () => {
       ]);
 
       const badFormat = await addHolidayAction({ date: "2027-02-30", kind: "temporary", name: "x" });
-      expect(badFormat?.validationErrors?.date?._errors).toEqual(["날짜 형식이 아닙니다 · 2027-06-03처럼 적어 주세요"]);
+      expect(badFormat?.validationErrors?.date?._errors).toEqual(["날짜 형식 오류 · 2027-06-03 형식"]);
 
       const nextYear = Number(toKstDate(new Date()).slice(0, 4)) + 1;
       const duplicate = await addHolidayAction({ date: `${nextYear}-01-01`, kind: "temporary", name: "x" });

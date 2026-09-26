@@ -21,7 +21,7 @@ export const OIDC_VERIFY_DEADLINE_MS = 10_000;
 async function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`토큰 검증이 ${ms}ms 안에 끝나지 않았습니다.`)), ms);
+    timer = setTimeout(() => reject(new Error(`토큰 검증 ${ms}ms 초과`)), ms);
   });
   try {
     return await Promise.race([promise, deadline]);

@@ -217,7 +217,7 @@ test.describe("공휴일 표·확정 버튼의 상태", () => {
     await expect(confirm).toHaveAttribute("aria-disabled", "true");
 
     release();
-    await expect(page.getByText("확정하지 못했습니다 · 다시 시도", { exact: true })).toBeVisible();
+    await expect(page.getByText("확정 실패 · 다시 시도", { exact: true })).toBeVisible();
     await expect(confirm).toHaveText(`${NEXT_YEAR}년 공휴일 확정`);
     await expect(confirm).not.toHaveAttribute("aria-disabled", "true");
     expect(
@@ -228,7 +228,7 @@ test.describe("공휴일 표·확정 버튼의 상태", () => {
     await confirm.click();
     await expect(confirm).toHaveCount(0);
     await expect(page.getByText(/^확정 · .* · 공휴일 \d+일$/)).toBeVisible();
-    await expect(page.getByText("확정하지 못했습니다 · 다시 시도", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("확정 실패 · 다시 시도", { exact: true })).toHaveCount(0);
   });
 });
 
@@ -426,23 +426,23 @@ test.describe("공휴일 삭제 · 되돌리기(04.2-12)", () => {
     const releaseDelete = await holdNextAction(page, "abort");
     await rowA.getByRole("button", { name: "삭제" }).click();
     releaseDelete();
-    await expect(rowA.getByText("삭제하지 못했습니다 · 다시 시도", { exact: true })).toBeVisible();
+    await expect(rowA.getByText("삭제 실패 · 다시 시도", { exact: true })).toBeVisible();
     await expect(rowA).toHaveCount(1);
     await page.unroute("**/*");
     await rowA.getByRole("button", { name: "삭제" }).click();
     await expect(rowA).toHaveCount(0);
 
-    const resultLine = page.getByRole("status").filter({ hasText: /삭제됨|되돌리지 못했습니다/ });
+    const resultLine = page.getByRole("status").filter({ hasText: /삭제됨|되돌리기 실패/ });
     const releaseUndo = await holdNextAction(page, "abort");
     await resultLine.getByRole("button", { name: "되돌리기" }).click();
     releaseUndo();
-    await expect(resultLine).toContainText("되돌리지 못했습니다 · 다시 시도");
+    await expect(resultLine).toContainText("되돌리기 실패 · 다시 시도");
     await expect(resultLine.getByRole("button", { name: "되돌리기" })).toBeVisible();
     await page.unroute("**/*");
 
     await db.insert(holidays).values({ date: ROW_A.date, name: OTHER_NAME, kind: "temporary" });
     await resultLine.getByRole("button", { name: "되돌리기" }).click();
-    await expect(resultLine).toContainText(`되돌리지 못했습니다 · 이미 공휴일입니다(${OTHER_NAME})`);
+    await expect(resultLine).toContainText(`되돌리기 실패 · 이미 공휴일입니다(${OTHER_NAME})`);
     await expect(resultLine.getByRole("button", { name: "되돌리기" })).toHaveCount(0);
   });
 });

@@ -20,7 +20,7 @@ export class LunarTableRangeError extends UserFacingError {
   readonly year: number;
 
   constructor(year: number) {
-    super(`${year}년 후보를 만들지 못했습니다 · 음력 표에 없는 해 · 음력 표 갱신 필요`);
+    super(`${year}년 후보 생성 실패 · 음력 표에 없는 해 · 음력 표 갱신 필요`);
     this.year = year;
   }
 }
@@ -137,7 +137,7 @@ export function generateHolidayRules(year: number, opts: { blockers?: ReadonlySe
     let candidate = shiftDate(from, 1);
     while (isWeekend(candidate) || taken.has(candidate)) {
       candidate = shiftDate(candidate, 1);
-      if (candidate > searchLimit) throw new Error(`${year}년 대체공휴일 자리를 찾지 못했습니다`);
+      if (candidate > searchLimit) throw new Error(`${year}년 대체공휴일 자리 없음`);
       if (!nextLunar && candidate >= firstPossibleSeollal) throw new LunarTableRangeError(year + 1);
     }
     taken.add(candidate);

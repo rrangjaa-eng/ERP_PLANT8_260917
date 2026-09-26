@@ -9,6 +9,7 @@ import { backdateOpenFailures, countOpenFailures } from "@/repositories/login-at
 import { lockoutConfig, windowStart } from "@/domain/auth/lockout";
 import { setSettingValue } from "@/domain/settings/registry";
 import { AUTH_LOCKOUT_WINDOW_MINUTES } from "@/domain/settings/keys";
+import { lockedMessage } from "@/domain/auth/locked-message";
 
 const BASE_URL = process.env.BETTER_AUTH_URL ?? "http://127.0.0.1:3000";
 
@@ -144,13 +145,13 @@ describe("계정 잠금 (login_attempts)", () => {
       for (let i = 0; i < threshold; i++) {
         const res = await signIn(email, "wrong-password", ip);
         const body = (await res.json()) as { message?: string };
-        expect(body.message ?? "").not.toContain("로그인 시도가 너무 많습니다");
+        expect(body.message ?? "").not.toContain("로그인 시도 과다");
       }
 
       const locked = await signIn(email, "wrong-password", ip);
       expect(locked.status).toBe(403);
       const body = (await locked.json()) as { message?: string };
-      expect(body.message).toBe("로그인 시도가 너무 많습니다. 20분 뒤 다시 시도하거나 관리자에게 문의하세요.");
+      expect(body.message).toBe(lockedMessage(20));
     } finally {
       await setSettingValue(SYSTEM_VIEWER, AUTH_LOCKOUT_WINDOW_MINUTES, defaultMinutes);
     }
@@ -167,8 +168,6 @@ describe("계정 잠금 (login_attempts)", () => {
     const locked = await signIn(email, "wrong-password", ip);
     expect(locked.status).toBe(403);
     const body = (await locked.json()) as { message?: string };
-    expect(body.message).toBe(
-      `로그인 시도가 너무 많습니다. ${windowMinutes}분 뒤 다시 시도하거나 관리자에게 문의하세요.`,
-    );
+    expect(body.message).toBe(lockedMessage(windowMinutes));
   });
 });

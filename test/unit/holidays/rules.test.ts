@@ -30,7 +30,7 @@ describe("generateHolidayRules", () => {
   it("음력 표에 없는 해는 빈 목록 대신 LunarTableRangeError를 던진다", () => {
     expect(() => generateHolidayRules(2036)).toThrow(LunarTableRangeError);
     expect(() => generateHolidayRules(2036)).toThrow(
-      "2036년 후보를 만들지 못했습니다 · 음력 표에 없는 해 · 음력 표 갱신 필요",
+      "2036년 후보 생성 실패 · 음력 표에 없는 해 · 음력 표 갱신 필요",
     );
   });
 });
@@ -141,7 +141,7 @@ describe("generateHolidayRules — 교차 연도 대체일", () => {
 
   it("다음 해 12월 31일까지 자리가 없으면 다다음 해를 고르지 않고 던진다", () => {
     const blockers = new Set(weekdaysBetween("2027-12-27", "2028-12-31"));
-    expect(() => generateHolidayRules(2027, { blockers })).toThrow("2027년 대체공휴일 자리를 찾지 못했습니다");
+    expect(() => generateHolidayRules(2027, { blockers })).toThrow("2027년 대체공휴일 자리 없음");
   });
 });
 
@@ -186,7 +186,7 @@ describe("generateHolidayRules — 표의 모든 해 성질", () => {
 
   it("표 밖의 해(2024)도 LunarTableRangeError를 던진다", () => {
     expect(() => generateHolidayRules(2024)).toThrow(
-      "2024년 후보를 만들지 못했습니다 · 음력 표에 없는 해 · 음력 표 갱신 필요",
+      "2024년 후보 생성 실패 · 음력 표에 없는 해 · 음력 표 갱신 필요",
     );
     expect(() => generateHolidayRules(2024)).toThrow(LunarTableRangeError);
   });

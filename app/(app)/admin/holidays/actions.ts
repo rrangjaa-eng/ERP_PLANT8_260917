@@ -25,7 +25,7 @@ export const confirmHolidayYearAction = authedActionClient
     return { ok: true };
   });
 
-const DATE_FORMAT_MESSAGE = "날짜 형식이 아닙니다 · 2027-06-03처럼 적어 주세요";
+const DATE_FORMAT_MESSAGE = "날짜 형식 오류 · 2027-06-03 형식";
 
 function isRealIsoDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;

@@ -35,7 +35,7 @@ export function ConfirmYear({ year }: { year: number }) {
       <Button variant="primary" pending={pending} onClick={() => void handleConfirm()}>
         {`${year}년 공휴일 확정`}
       </Button>
-      {failed ? <span className={styles.confirmError}>확정하지 못했습니다 · 다시 시도</span> : null}
+      {failed ? <span className={styles.confirmError}>확정 실패 · 다시 시도</span> : null}
     </span>
   );
 }

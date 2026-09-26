@@ -205,7 +205,7 @@ export function InboxList({ initialRows, initialHasMore, initialReferenceYear }:
             className={styles.loadMoreError}
             role="status"
           >
-            <span>불러오지 못했습니다</span>
+            <span>불러오기 실패</span>
             <Button variant="tertiary" pending={isExecuting} onClick={loadMore}>
               다시 시도
             </Button>

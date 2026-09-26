@@ -95,7 +95,7 @@ export async function loadHolidayAdmin(
   deps?: HolidayAdminDeps,
 ): Promise<HolidayAdminView> {
   if (!(await can(viewer, HOLIDAYS_MENU, "view"))) {
-    throw new HolidayForbiddenError("공휴일을 볼 권한이 없습니다.");
+    throw new HolidayForbiddenError("공휴일 열람 권한 없음");
   }
 
   const today = toKstDate((deps?.now ?? (() => new Date()))());
@@ -160,7 +160,7 @@ export type ConfirmHolidayYearDeps = {
 // `holiday_change` 로그(D-4220) — 로그가 실패하면 확정도 되돌려진다.
 export async function confirmHolidayYear(viewer: Viewer, year: number, deps?: ConfirmHolidayYearDeps): Promise<void> {
   if (!(await can(viewer, HOLIDAYS_MENU, "write"))) {
-    throw new HolidayForbiddenError("공휴일을 확정할 권한이 없습니다.");
+    throw new HolidayForbiddenError("공휴일 확정 권한 없음");
   }
   const ensure = deps?.ensure ?? ensureHolidayCandidatesLocked;
   const recordAction = deps?.recordAction ?? defaultRecordAction;
@@ -168,7 +168,7 @@ export async function confirmHolidayYear(viewer: Viewer, year: number, deps?: Co
   await withHolidayCalendarLock(async (tx) => {
     await ensure(year, tx);
     if (!(await findYearGeneration(viewer, year, tx))) {
-      throw new HolidayYearIncompleteError(`${year}년 후보가 아직 없습니다 · 다시 시도`);
+      throw new HolidayYearIncompleteError(`${year}년 후보 없음 · 다시 시도`);
     }
     const inserted = await insertYearConfirmation(viewer, { year, confirmedBy: viewer.id }, tx);
     if (!inserted) return;
@@ -220,10 +220,10 @@ export async function addHoliday(
   deps?: HolidayWriteDeps,
 ): Promise<{ id: string; date: string; year: number }> {
   if (!(await can(viewer, HOLIDAYS_MENU, "write"))) {
-    throw new HolidayForbiddenError("공휴일을 추가할 권한이 없습니다.");
+    throw new HolidayForbiddenError("공휴일 추가 권한 없음");
   }
   if (!MANUAL_KINDS.includes(input.kind)) {
-    throw new UserFacingError("임시공휴일·선거일만 추가할 수 있습니다");
+    throw new UserFacingError("임시공휴일·선거일만 추가 가능");
   }
   const now = deps?.now ?? new Date();
   const today = toKstDate(now);
@@ -277,7 +277,7 @@ export async function deleteHoliday(
   deps?: HolidayWriteDeps,
 ): Promise<DeleteHolidayResult> {
   if (!(await can(viewer, HOLIDAYS_MENU, "write"))) {
-    throw new HolidayForbiddenError("공휴일을 삭제할 권한이 없습니다.");
+    throw new HolidayForbiddenError("공휴일 삭제 권한 없음");
   }
   const today = toKstDate(deps?.now ?? new Date());
   const recordAction = deps?.recordAction ?? defaultRecordAction;
@@ -287,7 +287,7 @@ export async function deleteHoliday(
     const row = await deleteHolidayById(viewer, id, tx);
     if (!row) return { deleted: false };
     if ((row.kind !== "temporary" && row.kind !== "election") || row.date <= today) {
-      throw new HolidayNotDeletableError("지울 수 없는 공휴일입니다 · 규칙 행이나 오늘 이전 행");
+      throw new HolidayNotDeletableError("지울 수 없는 공휴일 · 규칙 행이나 오늘 이전 행");
     }
     const kind = row.kind;
     await recompute(Number(row.date.slice(0, 4)) - 1, { today }, tx);

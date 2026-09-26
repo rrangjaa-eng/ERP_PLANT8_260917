@@ -15,3 +15,8 @@ export * from "./projects";
 export * from "./quote-revisions";
 export * from "./quote-lines";
 export * from "./revenue-entries";
+export * from "./cert-events";
+export * from "./cert-winners";
+export * from "./cert-submissions";
+export * from "./cert-signature-uploads";
+export * from "./privacy-session-activity";

@@ -75,8 +75,8 @@ async function expectNoOverflow(page: Page, url: string): Promise<void> {
   expectMeasured(`${page.viewportSize()?.width}px ${url}`, await measure(page));
 }
 
-async function login(page: Page, roleId: string): Promise<void> {
-  const user = await createFixtureUser({ roleId });
+async function login(page: Page, roleId: string, options: { withTeam?: boolean } = {}): Promise<void> {
+  const user = await createFixtureUser({ roleId, withTeam: options.withTeam });
   await page.goto("/login");
   await page.getByLabel("이메일").fill(user.email);
   await page.getByLabel("비밀번호").fill(user.password);
@@ -203,7 +203,7 @@ test.describe("폭 320 — 어느 화면도 가로로 넘치지 않는다", () =
     });
     const projectName = `E2E320프로젝트-${Date.now()}`;
     try {
-      await login(page, DEFAULT_ROLE_ID);
+      await login(page, DEFAULT_ROLE_ID, { withTeam: true });
       await expectNoOverflow(page, "/projects?new=1");
 
       await page.getByLabel("클라이언트").selectOption({ label: vendor.name });

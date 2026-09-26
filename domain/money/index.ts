@@ -73,6 +73,7 @@ export class MoneyInputError extends UserFacingError {
   constructor(
     readonly reason: MoneyInputErrorReason,
     message: string,
+    readonly field: "amount" | "fxRate" = "amount",
   ) {
     super(message);
   }
@@ -95,11 +96,11 @@ export function normalizeMoneyInput(input: MoneyInput): MoneyInput {
     input.currency === "KRW" ? { currency: "KRW", amount: input.amount, fxRate: 1 } : { currency: input.currency, amount: input.amount, fxRate: input.fxRate };
   if (normalized.currency !== "KRW") {
     if (!Number.isFinite(normalized.fxRate) || normalized.fxRate <= 0) {
-      throw new MoneyInputError("fx-rate", "환율은 0보다 커야 합니다 · 환율을 고쳐 주세요");
+      throw new MoneyInputError("fx-rate", "환율은 0보다 커야 합니다 · 환율을 고쳐 주세요", "fxRate");
     }
     if (!hasAtMostDecimals(normalized.amount, 2)) throw new MoneyInputError("precision", "외화는 소수 2자리까지");
-    if (!hasAtMostDecimals(normalized.fxRate, 4)) throw new MoneyInputError("precision", "환율은 소수 4자리까지");
-    if (normalized.fxRate >= FX_RATE_COLUMN_LIMIT) throw new MoneyInputError("range", "환율이 상한을 넘습니다 · 환율을 고쳐 주세요");
+    if (!hasAtMostDecimals(normalized.fxRate, 4)) throw new MoneyInputError("precision", "환율은 소수 4자리까지", "fxRate");
+    if (normalized.fxRate >= FX_RATE_COLUMN_LIMIT) throw new MoneyInputError("range", "환율이 상한을 넘습니다 · 환율을 고쳐 주세요", "fxRate");
     if (Math.abs(normalized.amount) >= FOREIGN_AMOUNT_COLUMN_LIMIT) throw new MoneyInputError("range", "외화 금액이 상한을 넘습니다 · 금액을 고쳐 주세요");
   }
   if (!withinKrwColumn(toKrw(normalized))) {

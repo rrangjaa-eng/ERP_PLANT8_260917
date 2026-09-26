@@ -375,6 +375,18 @@ describe("등록의 총 매출 예상가 · 기간 검증(04-15 Task 2, 실제 P
       "preEstimateAmount",
       "금액이 상한을 넘습니다 · 2,147,483,647원 이하",
     );
+    await expectRejected(
+      pm,
+      { ...base(), preEstimate: { currency: "USD", amount: 100, fxRate: 1350.12345 }, preEstimateFxRateTouched: true },
+      "preEstimateFxRate",
+      "환율은 소수 4자리까지",
+    );
+    await expectRejected(
+      pm,
+      { ...base(), preEstimate: { currency: "USD", amount: 1, fxRate: 100_000_000 }, preEstimateFxRateTouched: true },
+      "preEstimateFxRate",
+      "환율이 상한을 넘습니다 · 환율을 고쳐 주세요",
+    );
     expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(1111);
   });
 

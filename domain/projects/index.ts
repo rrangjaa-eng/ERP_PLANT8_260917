@@ -326,7 +326,7 @@ function validateProjectInput(input: ProjectInput): { errors: ProjectInputFieldE
     return { errors, preEstimate };
   } catch (error) {
     if (!(error instanceof MoneyInputError)) throw error;
-    errors.push({ field: error.reason === "fx-rate" ? "preEstimateFxRate" : "preEstimateAmount", reason: error.message });
+    errors.push({ field: error.field === "fxRate" ? "preEstimateFxRate" : "preEstimateAmount", reason: error.message });
     return { errors, preEstimate: null };
   }
 }

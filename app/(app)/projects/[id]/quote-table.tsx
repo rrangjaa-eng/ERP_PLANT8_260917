@@ -1201,6 +1201,7 @@ export function QuoteLedger({
     setPreEstimateDraft(null);
     setPreEstimateErrors([]);
     setRenderedApprovedSeq(approvedSeq);
+    setDiscardedEdits(null);
     dirtyStorage.recount();
   }
   // 04-24(ENG-D7) — 승인 표시·취소 뒤 새로 고침은 칸 단계만 바꾼다(편집 값은 그대로): 기존 줄은 서버 DTO,
@@ -1254,7 +1255,11 @@ export function QuoteLedger({
   }
 
   function undoDiscard() {
-    if (discardedEdits) applyRestoredEdits(discardedEdits);
+    if (discardedEdits) {
+      applyRestoredEdits(discardedEdits);
+      // /review R-1 — 「버림」이 지운 보관본도 되돌린다(새로 고쳐도 복원 줄로 남게).
+      dirtyStorage.persist(discardedEdits);
+    }
     setDiscardedEdits(null);
   }
   // 해소되지 않은 충돌 칸도 함께 센다 — 충돌이 남은 채 서버를 부르지 않는다.
@@ -1426,6 +1431,8 @@ export function QuoteLedger({
     if (savingRef.current || isExecuting) return; // 버튼·키보드 두 경로가 여기서 한 번만 보낸다.
     if (errorCellCount > 0) return; // §7-3 "오류가 한 칸이라도 있으면 화면 전체가 거부" — 서버에 보내지 않는다.
     savingRef.current = true;
+    // /review R-2 — 저장을 시작하면 되돌리기를 거둔다. 저장 중·저장 뒤에 옛 편집이 덮이지 않게.
+    setDiscardedEdits(null);
 
     const dirtyLines = lines.filter((line) => line.dirty);
     sentLineKeysRef.current = dirtyLines.map((line) => line.clientKey);

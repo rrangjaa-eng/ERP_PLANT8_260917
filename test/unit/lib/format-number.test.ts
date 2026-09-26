@@ -234,8 +234,8 @@ describe("numberInputRejectionReason — UI-SPEC rev 5 Copywriting 원문", () =
     expect(numberInputRejectionReason("quantity", "precision")).toBe("수량은 소수 2자리까지");
   });
 
-  it("아무 kind · not-number → 숫자가 아닙니다 · 12,400,000처럼 적어 주세요", () => {
-    expect(numberInputRejectionReason("krw", "not-number")).toBe("숫자가 아닙니다 · 12,400,000처럼 적어 주세요");
-    expect(numberInputRejectionReason("quantity", "not-number")).toBe("숫자가 아닙니다 · 12,400,000처럼 적어 주세요");
+  it("아무 kind · not-number → 숫자 형식 오류 · 12,400,000처럼", () => {
+    expect(numberInputRejectionReason("krw", "not-number")).toBe("숫자 형식 오류 · 12,400,000처럼");
+    expect(numberInputRejectionReason("quantity", "not-number")).toBe("숫자 형식 오류 · 12,400,000처럼");
   });
 });

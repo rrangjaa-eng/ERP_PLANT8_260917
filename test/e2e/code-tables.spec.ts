@@ -181,7 +181,7 @@ test.describe("코드표 항목 설명 (D-93, UI-SPEC rev 5 S14, DR-29)", () => 
 
     await descriptionInput.fill(fortyOne);
     await descriptionInput.blur();
-    await expect(page.getByText("설명이 40자를 넘습니다 · 한 문장으로 줄여 주세요")).toBeVisible();
+    await expect(page.getByText("설명 40자 초과 · 한 문장으로 축약")).toBeVisible();
     await expect(page.getByText("41/40")).toBeVisible();
     await expect(descriptionInput).toHaveValue(fortyOne);
 

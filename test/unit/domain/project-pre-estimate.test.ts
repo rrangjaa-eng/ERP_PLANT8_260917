@@ -14,13 +14,13 @@ describe("validatePreEstimateChange — 결정표", () => {
 
   it("음수 금액 → 금액 칸 「총 매출 예상가는 0 이상」", () => {
     expect(validatePreEstimateChange({ currency: "KRW", amount: -1, fxRate: 1 })).toEqual([
-      { field: "amount", reason: "총 매출 예상가는 0 이상 · 금액을 고쳐 주세요" },
+      { field: "amount", reason: "총 매출 예상가는 0 이상 · 금액 수정" },
     ]);
   });
 
   it("숫자가 아닌 금액 → 금액 칸 「숫자가 아닙니다」", () => {
     expect(validatePreEstimateChange({ currency: "KRW", amount: Number.NaN, fxRate: 1 })).toEqual([
-      { field: "amount", reason: "숫자가 아닙니다 · 12,400,000처럼 적어 주세요" },
+      { field: "amount", reason: "숫자 형식 오류 · 12,400,000처럼" },
     ]);
   });
 
@@ -36,7 +36,7 @@ describe("validatePreEstimateChange — 결정표", () => {
 
   it("USD 환율 0 → 환율 칸 「환율은 0보다 커야 합니다」", () => {
     expect(validatePreEstimateChange({ currency: "USD", amount: 40_000, fxRate: 0 })).toEqual([
-      { field: "fxRate", reason: "환율은 0보다 커야 합니다 · 환율을 고쳐 주세요" },
+      { field: "fxRate", reason: "환율 0 이하 · 환율 수정" },
     ]);
   });
 
@@ -50,8 +50,8 @@ describe("validatePreEstimateChange — 결정표", () => {
 
   it("금액과 환율이 둘 다 틀리면 칸마다 하나씩", () => {
     expect(validatePreEstimateChange({ currency: "USD", amount: -5, fxRate: 0 })).toEqual([
-      { field: "amount", reason: "총 매출 예상가는 0 이상 · 금액을 고쳐 주세요" },
-      { field: "fxRate", reason: "환율은 0보다 커야 합니다 · 환율을 고쳐 주세요" },
+      { field: "amount", reason: "총 매출 예상가는 0 이상 · 금액 수정" },
+      { field: "fxRate", reason: "환율 0 이하 · 환율 수정" },
     ]);
   });
 });

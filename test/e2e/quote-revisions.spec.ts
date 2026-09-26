@@ -251,7 +251,7 @@ async function approveInDb(revisionId: string, userId: string, approvedOn = TODA
   await db.update(quoteRevisions).set(customerApprovalColumns(userId, approvedOn)).where(eq(quoteRevisions.id, revisionId));
 }
 
-const APPROVAL_FORMAT_ERROR = "날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요";
+const APPROVAL_EMPTY_ERROR = "날짜를 골라 주세요";
 const APPROVED_REASON = "1차 고객 승인됨 · 고치려면 새 차수";
 const PM_NAME = "E2E 차수 PM";
 
@@ -327,7 +327,7 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
     await expect(page.getByRole("button", { name: "승인 표시 취소", exact: true })).toHaveCount(0);
   });
 
-  test("승인일 칸이 첫 포커스·기본 오늘 · 비우면 칸 아래 형식 오류로 막힘 · 내일은 서버 거부 · 오늘로 고쳐 통과하면 토스트 없이 제목 포커스·부제", async ({ page }) => {
+  test("승인일 칸이 첫 포커스·기본 오늘 · 비우면 칸 아래 「날짜를 골라 주세요」로 막힘 · 내일은 서버 거부 · 오늘로 고쳐 통과하면 토스트 없이 제목 포커스·부제", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
     const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "승인 줄", unitPrice: 1_000_000, execution: 400_000 }] });
@@ -343,13 +343,13 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
 
     await date.fill("");
     await expect(primary).toHaveAttribute("aria-disabled", "true");
-    await expect(dialog.getByText(APPROVAL_FORMAT_ERROR, { exact: true }).filter({ visible: true })).toHaveCount(1);
-    await expectDescribedBy(page, primary, APPROVAL_FORMAT_ERROR);
+    await expect(dialog.getByText(APPROVAL_EMPTY_ERROR, { exact: true }).filter({ visible: true })).toHaveCount(1);
+    await expectDescribedBy(page, primary, APPROVAL_EMPTY_ERROR);
 
     await date.fill(addDays(TODAY, 1));
-    await expect(dialog.getByText(APPROVAL_FORMAT_ERROR, { exact: true })).toHaveCount(0);
+    await expect(dialog.getByText(APPROVAL_EMPTY_ERROR, { exact: true })).toHaveCount(0);
     await submitAndWait(page, primary);
-    const future = "승인일이 오늘보다 늦음 · 날짜를 고쳐 주세요";
+    const future = "승인일이 오늘보다 늦음 · 날짜 수정";
     await expect(dialog.getByText(future, { exact: true }).filter({ visible: true })).toHaveCount(1);
     await expect(dialog).toBeVisible();
 

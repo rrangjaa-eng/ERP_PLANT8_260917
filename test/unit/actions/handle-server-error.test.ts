@@ -48,9 +48,9 @@ describe("handleServerError (defect 1 — 화이트리스트)", () => {
   it("UserFacingError를 상속한 도메인 클래스도 화이트리스트를 통과한다", () => {
     class DuplicateCorpCardError extends UserFacingError {}
     const message = handleServerError(
-      new DuplicateCorpCardError("이미 등록된 카드입니다 · 발급사와 뒤 4자리를 확인하세요"),
+      new DuplicateCorpCardError("이미 등록된 카드 · 발급사와 뒤 4자리 확인"),
     );
-    expect(message).toBe("이미 등록된 카드입니다 · 발급사와 뒤 4자리를 확인하세요");
+    expect(message).toBe("이미 등록된 카드 · 발급사와 뒤 4자리 확인");
   });
 
   it("ZodError는 기존처럼 한국어 한 줄로 가공된다(회귀 방지)", () => {

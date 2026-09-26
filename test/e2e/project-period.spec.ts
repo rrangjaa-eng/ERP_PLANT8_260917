@@ -96,9 +96,9 @@ test.describe("날짜로 움직이는 상세 (04-11, PROJ-04)", () => {
 
     for (const path of ["/projects/abc", `/projects/${randomUUID()}`]) {
       await page.goto(path);
-      await expect(page.getByRole("heading", { name: "페이지를 찾을 수 없습니다" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "페이지 찾을 수 없음" })).toBeVisible();
       await expect(page.locator('meta[name="robots"][content*="noindex"]').first()).toBeAttached();
-      await expect(page.getByRole("heading", { name: "문제가 생겼습니다" })).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "문제 발생" })).toHaveCount(0);
     }
   });
 
@@ -403,7 +403,7 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
     await saving;
 
     await expect(amount).toHaveAttribute("aria-invalid", "true");
-    await expect(page.getByText("총 매출 예상가는 0 이상 · 금액을 고쳐 주세요", { exact: true })).toBeVisible();
+    await expect(page.getByText("총 매출 예상가는 0 이상 · 금액 수정", { exact: true })).toBeVisible();
     // 04-16(D-85 · R2) — PM에게도 발행 표가 있어 그 합계 행에도 같은 글자가 나온다. 견적 표로 좁힌다.
     await expect(page.locator("table", { has: page.locator("caption", { hasText: /^견적 줄$/ }) }).locator("tfoot").getByText("전부 거부 · 다른 칸 오류 1칸")).toBeVisible();
     const [row] = await db.select().from(projects).where(eq(projects.id, project.id));

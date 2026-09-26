@@ -488,7 +488,7 @@ describe("매출 쓰기 경로(04-41 · Codex #1 · ENG-D10)", () => {
   const NOT_FOUND = "줄을 찾을 수 없음 · 새로 고침";
   const MISMATCH = "이미 저장된 줄과 값이 다름 · 새로 고침";
   const CAP = "금액이 상한을 넘습니다 · 999,999,999,999원 이하";
-  const FX_ZERO = "환율은 0보다 커야 합니다 · 환율을 고쳐 주세요";
+  const FX_ZERO = "환율 0 이하 · 환율 수정";
 
   async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
     try {
@@ -762,7 +762,7 @@ describe("매출 쓰기 경로(04-41 · Codex #1 · ENG-D10)", () => {
   });
 
   describe("매출 줄 날짜 형식(/review 항목 4)", () => {
-    const DATE_FORMAT = "날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요";
+    const DATE_FORMAT = "날짜 형식 오류 · 2026-09-18처럼";
 
     it.each(["infinity", "today", "2026-02-30", "275761-01-01"])("entryDate %s → 날짜 칸 오류로 전부 거부, 줄 0건, listRevenue는 성공한다", async (entryDate) => {
       const finance = await createFinanceViewer();
@@ -778,7 +778,7 @@ describe("매출 쓰기 경로(04-41 · Codex #1 · ENG-D10)", () => {
     });
 
     // /qa ISSUE-002 — 빈 날짜·무효 날짜도 스키마 입력 오류가 아니라 거부 봉투의 날짜 칸으로 온다(화면이 그 셀에 그린다).
-    it.each(["", "infinity", "2026-02-30"])("액션에 entryDate %j → 거부 봉투의 그 줄 entryDate 칸 오류, 줄 0건", async (entryDate) => {
+    it.each(["infinity", "2026-02-30"])("액션에 entryDate %j → 거부 봉투의 그 줄 entryDate 칸 오류, 줄 0건", async (entryDate) => {
       const { project } = await setupProject();
       const id = randomUUID();
       const result = await saveProjectLedgerAction({
@@ -790,6 +790,25 @@ describe("매출 쓰기 경로(04-41 · Codex #1 · ENG-D10)", () => {
       const data = result?.data;
       if (!data || !("rejected" in data)) throw new Error(`거부 봉투가 아니다: ${JSON.stringify(result)}`);
       expect(data.rejected).toEqual({ summary: "오류 1칸 · 전부 거부", cells: [{ rowId: id, rowIndex: 0, field: "entryDate", kind: "error", reason: DATE_FORMAT }] });
+      expect(await entriesOf(project.id)).toHaveLength(0);
+    });
+
+    // 사용자 결정 2026-09-26 「날짜 입력 통일」 — 빈 칸(네이티브 date를 비운 값)은 형식 오류와 다르다.
+    it("액션에 entryDate \"\"(빈 칸) → 거부 봉투 칸 오류가 「날짜를 골라 주세요」, 줄 0건", async () => {
+      const { project } = await setupProject();
+      const id = randomUUID();
+      const result = await saveProjectLedgerAction({
+        projectId: project.id,
+        seenStatus: "bidding" as const,
+        revenue: { paidEntries: [{ id, isNew: true as const, entryDate: "", amount: krw(1000) }] },
+      });
+
+      const data = result?.data;
+      if (!data || !("rejected" in data)) throw new Error(`거부 봉투가 아니다: ${JSON.stringify(result)}`);
+      expect(data.rejected).toEqual({
+        summary: "오류 1칸 · 전부 거부",
+        cells: [{ rowId: id, rowIndex: 0, field: "entryDate", kind: "error", reason: "날짜를 골라 주세요" }],
+      });
       expect(await entriesOf(project.id)).toHaveLength(0);
     });
   });

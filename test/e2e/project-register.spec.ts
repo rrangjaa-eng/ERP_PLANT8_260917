@@ -326,8 +326,8 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     await amount.press("Control+Enter");
 
     const form = page.locator("#project-form");
-    await expect(form.getByText("총 매출 예상가는 0 이상 · 금액을 고쳐 주세요", { exact: true })).toBeVisible();
-    await expect(form.getByText("등록하지 못했습니다 · 총 매출 예상가 1칸", { exact: true })).toBeVisible();
+    await expect(form.getByText("총 매출 예상가는 0 이상 · 금액 수정", { exact: true })).toBeVisible();
+    await expect(form.getByText("등록 실패 · 총 매출 예상가 1칸", { exact: true })).toBeVisible();
     await expect(page).toHaveURL(/\/projects\?new=1/);
     await expect(page.getByLabel("프로젝트명")).toHaveValue(projectName);
     await expect(amount).toHaveValue("-5,000");
@@ -349,7 +349,7 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     await endDate.press("Control+Enter");
 
     await expect(
-      page.locator("#project-form").getByText("종료일이 시작일보다 빠릅니다 · 종료일을 고쳐 주세요", { exact: true }),
+      page.locator("#project-form").getByText("종료일이 시작일보다 빠름 · 종료일 수정", { exact: true }),
     ).toBeVisible();
     await page.goto(`/projects?q=${encodeURIComponent(projectName)}`);
     await expect(page.getByText("조건에 맞는 프로젝트가 없습니다")).toBeVisible();

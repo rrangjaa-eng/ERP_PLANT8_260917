@@ -109,12 +109,12 @@ describe("ConfirmDialog — 정적 렌더(슬롯 · 파생 라벨 · 막힌 1차
   it("blockedBy(04-24 — 근거 칸 오류 id)면 1차는 aria-disabled이고 그 id를 가리키며, 1차 왼쪽 이유 자리는 비어 있다", () => {
     const html = render({
       title: "고객 승인 표시",
-      evidenceField: createElement("p", { id: "approval-date-error" }, "날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요"),
+      evidenceField: createElement("p", { id: "approval-date-error" }, "날짜 형식 오류 · 2026-09-18처럼"),
       primary: { label: "고객 승인 표시", onConfirm: () => {}, blockedBy: "approval-date-error" },
     });
     expect(html).toContain('aria-disabled="true"');
     expect(html).toContain('aria-describedby="approval-date-error"');
-    expect(html.match(/날짜 형식이 아닙니다/g)).toHaveLength(1);
+    expect(html.match(/날짜 형식 오류/g)).toHaveLength(1);
     expect(html).not.toContain(`class="${styles.reason}"`);
   });
 

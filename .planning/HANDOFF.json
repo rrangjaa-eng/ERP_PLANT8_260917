@@ -1,11 +1,11 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-26T02:59:22.526Z",
+  "timestamp": "2026-09-26T04:36:54.970Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
   "plan": 41,
-  "task": 32,
+  "task": 33,
   "total_tasks": 42,
   "status": "paused",
   "completed_tasks": [
@@ -242,9 +242,20 @@
       "name": "04-16 웨이브 23 — 매출 섹션 계약 금액 파생·발행/입금 공개 범위·매출 두 표 상태",
       "status": "done",
       "commit": "19271bd"
+    },
+    {
+      "id": 32,
+      "name": "[세션 AE] 04-41 실행(웨이브 24) — 계약 금액 쓰기 경로 제거·0015 drop_project_contract_columns·매출 줄 수정 id/version/project_id/kind 조건·클라이언트 UUID ON CONFLICT·정규화 셀 오류·S-4 봉투 수정. executor 196a91e·9ca2d56·6292105·2dd528b·d097f3f·48d5cec·35b3f60·e1d6170 → 검토 반영 f0461ba(SF-1)·a36716b(SF-2)·bf1169f(N-6 fixes) → 4291979(SUMMARY 게이트 기록)",
+      "status": "done",
+      "commit": "4291979"
     }
   ],
   "remaining_tasks": [
+    {
+      "id": 1,
+      "name": "묶음 ③(웨이브 19~24, 04-14→04-41) 끝 — Post-build(/review → /qa → /design-review → /cso → /ship) 뒤 main 머지. 그 전에 04-17·04-19(묶음 ④, 웨이브 25) 시작 금지(04-41-PLAN objective). /ship 전에 0015 배포 창 처리를 사용자에게 확인.",
+      "status": "not_started"
+    },
     {
       "id": 2,
       "name": "묶음 끝(04-23·04-41·04-31) Post-build + 머지, Phase 4 종료 검증",
@@ -398,6 +409,11 @@
     {
       "action": "기존 DB에서 시드를 다시 돌리면 role-pm 발행액 행이 켜진다(B-1 upsert). 운영 DB는 04-17/04-18 배포 전 시드 재실행 여부 확인",
       "context": "04-16 검토 반영 B-1(role-pm만 upsert)",
+      "blocking": false
+    },
+    {
+      "action": "0015 배포 창 처리 확인(/ship 전)",
+      "context": "묶음 ③ /ship 전 — migrate가 트래픽 전환 전에 돌아 옛 코드가 새 스키마(0015) 위에서 몇 분 동작(T-04-86)",
       "blocking": false
     }
   ],
@@ -574,8 +590,8 @@
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션 → git status -sb → /gsd-progress → /gsd-execute-phase 4 --wave 24 (04-41) — 실행 전 phase-plan-index로 가장 낮은 미완 웨이브 재확인",
-  "context_notes": "04-15 완료(31/42). executor Opus 커밋 7개(7196deb·d0f54da·fabfaef·88de58e·87a133e·28d2b25·d4fff16) → 검토 반영 f4f756e·6d5f80b·69039bc·17268d8. Opus 검토(Codex 대체, 한도 풀리면 재확인) BLOCKING 1(DOM 감사 미실행 → 독립 Sonnet 감사 PASS 16·FAIL 0·INFO 2로 해소) · SHOULD-FIX 4 중 3 반영, S4(UI-SPEC rev 5에 없는 문구 3종) 이월 · NIT 6 SUMMARY 이월. 전체 게이트 CI=true 단위 1273·통합 1393·E2E 338, lint·typecheck·lint:sql 0. 스킬 기록 /mnt/project-files/phase4-prep/04-15-skill-calls.md — 수정자 6d5f80b 앞 TDD 재호출 누락, 사후 변이로 RED 확인. 04-49 매출 표 1024 미만 입력 유실은 여전히 열림.",
+  "next_action": "새 세션 → git status -sb → /gsd-progress. 묶음 ③ Post-build를 코디네이터 지시대로 진행(다음 실행 플랜은 묶음 ③ 머지 뒤 웨이브 25의 04-17·04-19)",
+  "context_notes": "04-41(웨이브 24) 완료(33/42, 묶음 ③ 끝). executor 196a91e·9ca2d56·6292105·2dd528b·d097f3f·48d5cec·35b3f60·e1d6170 → 검토 반영 f0461ba(SF-1)·a36716b(SF-2)·bf1169f(N-6 fixes) → 4291979(SUMMARY 게이트 기록). 계약 금액 쓰기 경로(액션·도메인·리포지토리) 제거, 0015 drop_project_contract_columns(RAISE 가드 원화≠0 또는 외화 값, rollback-floor, 인라인 squawk 무시), 매출 줄 수정 id·version·project_id·kind 조건, 클라이언트 UUID ON CONFLICT DO NOTHING, normalizeMoneyInput 셀 오류 봉투, S-4 견적 표 합계가 자기 칸만 셈, 매출 표 Ctrl+S 무동작 버그 수정(플랜 밖), EntryDraft.id 필수. executor Opus, 격리 none(fork-ref-unknown). 독립 Sonnet DOM 감사 PASS 24·FAIL 0·INFO 3(/mnt/project-files/phase4-prep/04-41-dom-audit.md). Opus 검토(Codex 대체, 한도 풀리면 재확인) BLOCKING 0·SHOULD-FIX 2·NIT 7 → SF-1·SF-2·N-6 반영, NIT 6 SUMMARY 이월(/mnt/project-files/phase4-prep/04-41-review-opus.md). 전체 게이트 CI=true lint·typecheck·lint:sql 0, 단위 1288·통합 1431·E2E 344. main과 충돌 없음(merge-tree), main 새 마이그레이션 없음. 04-49 이월: 단순 폭 축소 재현 안 됨, 편집 중·blur 경우 미확인이라 열림. 스킬 기록 /mnt/project-files/phase4-prep/04-41-skill-calls.md. 진행 33/42, 묶음 ③ 끝 — 다음은 묶음 ③ Post-build·머지(웨이브 25 04-17·04-19는 그 뒤).",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"

@@ -777,6 +777,46 @@ test.describe("폭 규칙 — 1024 미만 보기 전용 · 좁은 PC 열 접기 
     await expect(toast).toHaveCount(0, { timeout: 1000 });
   });
 
+  // /review(adversarial) ①② — 토스트 자리는 하나다. 「버림」 뒤 고객 승인 표시로 칸이 잠기며 다시 그려지면
+  // 되돌리기를 거둔다(잠긴 차수에 옛 편집을 되살리지 않게), 승인 토스트와 겹쳐 뜨지 않는다.
+  test("(l2f) 1280 — 「버림」 뒤 고객 승인 표시로 다시 그려지면 되돌리기 토스트가 사라지고 토스트는 하나다", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openAsPm(page, "bidding", addDays(TODAY, 10), TWO_LINES);
+    await changePeriodEnd(page, addDays(TODAY, 10 + 10));
+    await expect(primarySave(page)).toContainText("일괄 저장 1");
+
+    await page.reload();
+    await page.getByRole("button", { name: "버림", exact: true }).click();
+    const undoToast = page.getByRole("status").filter({ hasText: "편집을 버렸습니다" });
+    await expect(undoToast).toBeVisible();
+
+    await page.getByRole("button", { name: "고객 승인 표시", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "고객 승인 표시", exact: true });
+    const approved = page.waitForResponse((response) => response.request().method() === "POST" && response.request().headers()["next-action"] !== undefined);
+    await dialog.getByRole("button", { name: /고객 승인 표시/ }).click();
+    await approved;
+
+    await expect(undoToast).toHaveCount(0, { timeout: 1000 });
+    await expect(page.getByRole("status").filter({ hasText: "되돌리기" })).toHaveCount(0);
+  });
+
+  // /review(testing · adversarial) ③ — 「버림」과 「되돌리기」 사이에 고친 칸도 보관본에 남는다.
+  test("(l2g) 1280 — 「버림」 뒤 다른 칸을 고치고 「되돌리기」하면 새로 고쳐도 두 편집이 복원 줄에 있다", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);
+    await changePeriodEnd(page, addDays(TODAY, 10 + 10));
+    await expect(primarySave(page)).toContainText("일괄 저장 1");
+
+    await page.reload();
+    await page.getByRole("button", { name: "버림", exact: true }).click();
+    await typeInto(page, cell(page, 0, COL.execution), "실행가", "654000");
+    await page.getByRole("status").filter({ hasText: "편집을 버렸습니다" }).getByRole("button", { name: "되돌리기" }).click();
+    await expect(primarySave(page)).toContainText("일괄 저장 2");
+
+    await page.reload();
+    await expect(page.locator("p").getByText("저장 안 한 편집 2칸")).toBeVisible();
+  });
+
   test("(l2) 표 칸만 — 1280에서 실행가만 고친 채 375로 새로 고치면 「복원」 뒤 1차 1이 렌더되고 저장된다(R1)", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);

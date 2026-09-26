@@ -26,7 +26,7 @@ const COLUMNS: PasteColumn<Row>[] = [
   { key: "note", kind: "text", isEditable: () => true },
 ];
 
-const LOCKED = "읽기 전용·잠김 셀에 값이 떨어졌습니다";
+const LOCKED = "읽기 전용·잠김 셀에 값 떨어짐";
 const ELEVEN = "1\t무대·시공\t무대 설치\t가나상사\t2\t1,000,000\t₩2,000,000\t800,000\t₩1,200,000\t진행\t—";
 const EXCEL_SIX = "무대·시공\t무대 설치\t가나상사\t2\t1000000\t800000";
 

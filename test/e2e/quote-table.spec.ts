@@ -1196,7 +1196,7 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
     await expect(invalidCells(page)).toHaveCount(2);
     await expect(quoteCell(page, 0, 6)).toHaveAttribute("aria-invalid", "true");
     await expect(quoteCell(page, 1, 6)).toHaveAttribute("aria-invalid", "true");
-    await expect(quoteCell(page, 0, 6)).toContainText("읽기 전용·잠김 셀에 값이 떨어졌습니다");
+    await expect(quoteCell(page, 0, 6)).toContainText("읽기 전용·잠김 셀에 값 떨어짐");
     await expect.poll(() => footerPieces(page)).toEqual([{ tone: "danger", text: "오류 2칸" }]);
   });
 

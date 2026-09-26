@@ -344,7 +344,7 @@ test.describe("프로젝트 목록 — 조회 조건 (04-48)", () => {
     await page.goto("/projects?teamId=abc&year=0000");
     await expect(page.locator("#year")).toHaveValue(String(kstYear(new Date())));
     await expect(page.locator("#teamId")).toHaveValue("");
-    await expect(page.getByText("프로젝트 목록을 불러오지 못했습니다")).toHaveCount(0);
+    await expect(page.getByText("프로젝트 목록 불러오기 실패")).toHaveCount(0);
     await expect(page.getByRole("link", { name: "필터 지우기" })).toHaveCount(0);
   });
 

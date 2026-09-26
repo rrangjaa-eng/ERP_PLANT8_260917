@@ -7,6 +7,7 @@ import { recordAction as defaultRecordAction } from "@/domain/action-log/record"
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import {
   findSimpleValue as defaultFindSimpleValue,
+  findSimpleValues as defaultFindSimpleValues,
   upsertSimpleValue as defaultUpsertSimpleValue,
   findEffectiveValue as defaultFindEffectiveValue,
   listHistory as defaultListHistory,
@@ -41,6 +42,12 @@ export type SettingDef<T> = {
   default?: T;
   /** 미래 페이즈가 읽을 키의 예외 표시 — 미사용 키 검출에서 제외되되 목록으로 남는다. */
   readBy?: { phase: string };
+  /** 04.1(U3): enum 값 → 화면 라벨. 동작(설정 화면 배선)은 04.1-04. */
+  optionLabels?: Record<string, string>;
+  /** 04.1(U3): 선택지를 지금의 계급·조직 목록으로 채우는 칸. 동작은 04.1-04. */
+  dynamicOptions?: "roles" | "org_units";
+  /** 04.1: 이력형 키의 적용 시작일 규칙(연차 일수 = 1월 1일). 동작은 04.1-03·04. */
+  effectiveFromRule?: "year_start";
 };
 
 export class SettingNotFoundError extends UserFacingError {}
@@ -247,4 +254,29 @@ export async function listSettingHistory<T>(
   const listHistory = deps?.listHistory ?? defaultListHistory;
   const rows = await listHistory(SYSTEM_VIEWER, def.key);
   return rows.map((row) => ({ effectiveFrom: row.effectiveFrom, value: def.schema.parse(row.value) }));
+}
+
+export type SimpleSettingValues<Defs extends readonly SettingDef<unknown>[]> = {
+  [K in keyof Defs]: Defs[K] extends SettingDef<infer V> ? V | undefined : never;
+};
+
+// 04.1(Codex HIGH 스냅숏): 비이력형 키 여러 개를 findSimpleValues **한 번**(SELECT
+// 한 문장)으로 읽어 정의 순서대로 돌려준다 — 행이 있으면 schema.parse, 없으면
+// default, default도 없으면 undefined(던지지 않는다 — 호출자가 정한다).
+// 이력형이 섞이면 거부한다.
+export async function getSimpleSettingValues<const Defs extends readonly SettingDef<unknown>[]>(
+  defs: Defs,
+  deps?: { findSimpleValues?: typeof defaultFindSimpleValues },
+): Promise<SimpleSettingValues<Defs>> {
+  const historized = defs.find((def) => def.kind !== "simple");
+  if (historized) {
+    throw new SettingKindMismatchError(`'${historized.key}'는 이력형 키입니다 — 일괄 읽기는 비이력형 키만 받습니다.`);
+  }
+  const findSimpleValues = deps?.findSimpleValues ?? defaultFindSimpleValues;
+  const rows = await findSimpleValues(
+    SYSTEM_VIEWER,
+    defs.map((def) => def.key),
+  );
+  const byKey = new Map(rows.map((row) => [row.key, row.value]));
+  return defs.map((def) => (byKey.has(def.key) ? def.schema.parse(byKey.get(def.key)) : def.default)) as SimpleSettingValues<Defs>;
 }

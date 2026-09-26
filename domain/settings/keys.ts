@@ -354,3 +354,276 @@ export const SETTING_DEFS: SettingDef<unknown>[] = [
   PROJECT_CUSTOMER_APPROVAL_GATE,
   PNL_START_GATE_WEEKS_AFTER_CUTOVER,
 ];
+
+
+// ── 04.1 연차 결재선(ADMN-04 결재 부분) · 연차 문서 번호 ─────────────────
+// 결재선은 JSON 한 개가 아니라 필드 단위 키 17개다(자기 승인 1 + 4단 × 사용 ·
+// 담당 계급 · 조직 범위 · 특정 부서). 기본값: 1단 팀장 × 기안자 팀 · 2단 본부
+// 책임자 × 기안자 본부 · 3단 계급 무관 × 특정 부서(경영관리본부 — 시드가
+// 채운다, 기본값 없음) · 4단 대표 × 전사, 넷 다 사용, 자기 승인 = 건너뜀.
+// 제출은 이 17키를 SELECT 한 문장으로 읽는다(domain/leave — getSimpleSettingValues).
+// 04.1-04는 이 파일을 고치지 않으므로 라벨 · 힌트 · 선택지 라벨은 여기가 최종형이다.
+export const APPROVAL_SELF_APPROVAL_VALUES = ["skip", "self_approve"] as const;
+export type ApprovalSelfApprovalValue = (typeof APPROVAL_SELF_APPROVAL_VALUES)[number];
+export const APPROVAL_ROUTE_SCOPE_VALUES = ["drafter_team", "drafter_org_unit", "company", "org_unit"] as const;
+export type ApprovalRouteScopeValue = (typeof APPROVAL_ROUTE_SCOPE_VALUES)[number];
+
+// "" = 특정 부서 없음(그 단계는 빈 자리). 그 밖은 uuid만 — 비uuid가 저장되면
+// 제출의 scope_target_id(uuid) INSERT가 22P02로 실패한다(B-NEW02).
+const ROUTE_ORG_UNIT_ID_SCHEMA = z.union([z.literal(""), z.string().uuid()]);
+const ROUTE_NAMESPACE = "연차 결재선";
+
+export const APPROVAL_ROUTE_LEAVE_SELF_APPROVAL: SettingDef<ApprovalSelfApprovalValue> = {
+  key: "approval_route.leave.self_approval",
+  kind: "simple",
+  schema: z.enum(APPROVAL_SELF_APPROVAL_VALUES),
+  label: "자기 승인",
+  hint: "기안자가 그 단계 담당일 때",
+  namespace: ROUTE_NAMESPACE,
+  optionLabels: { skip: "건너뜀", self_approve: "본인 승인" },
+  default: "skip",
+};
+
+export const APPROVAL_ROUTE_LEAVE_STEP1_ENABLED: SettingDef<boolean> = {
+  key: "approval_route.leave.step1.enabled",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "1단 사용",
+  hint: "새 문서부터 적용 · 진행 중 문서는 그대로",
+  namespace: ROUTE_NAMESPACE,
+  default: true,
+};
+
+export const APPROVAL_ROUTE_LEAVE_STEP1_ROLE_ID: SettingDef<string> = {
+  key: "approval_route.leave.step1.role_id",
+  kind: "simple",
+  schema: z.string(),
+  label: "1단 담당 계급",
+  hint: "계급 무관 = 그 범위의 누구나",
+  namespace: ROUTE_NAMESPACE,
+  optionLabels: { "": "계급 무관" },
+  dynamicOptions: "roles",
+  default: "role-team-lead",
+};
+
+export const APPROVAL_ROUTE_LEAVE_STEP1_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
+  key: "approval_route.leave.step1.scope",
+  kind: "simple",
+  schema: z.enum(APPROVAL_ROUTE_SCOPE_VALUES),
+  label: "1단 조직 범위",
+  namespace: ROUTE_NAMESPACE,
+  optionLabels: { drafter_team: "기안자 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
+  default: "drafter_team",
+};
+
+export const APPROVAL_ROUTE_LEAVE_STEP1_ORG_UNIT_ID: SettingDef<string> = {
+  key: "approval_route.leave.step1.org_unit_id",
+  kind: "simple",
+  schema: ROUTE_ORG_UNIT_ID_SCHEMA,
+  label: "1단 특정 부서",
+  namespace: ROUTE_NAMESPACE,
+  dynamicOptions: "org_units",
+  default: "",
+};
+
+export const APPROVAL_ROUTE_LEAVE_STEP2_ENABLED: SettingDef<boolean> = {
+  key: "approval_route.leave.step2.enabled",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "2단 사용",
+  hint: "새 문서부터 적용 · 진행 중 문서는 그대로",
+  namespace: ROUTE_NAMESPACE,
+  default: true,
+};
+
+export const APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID: SettingDef<string> = {
+  key: "approval_route.leave.step2.role_id",
+  kind: "simple",
+  schema: z.string(),
+  label: "2단 담당 계급",
+  hint: "계급 무관 = 그 범위의 누구나",
+  namespace: ROUTE_NAMESPACE,
+  optionLabels: { "": "계급 무관" },
+  dynamicOptions: "roles",
+  default: "role-division-head",
+};
+
+export const APPROVAL_ROUTE_LEAVE_STEP2_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
+  key: "approval_route.leave.step2.scope",
+  kind: "simple",
+  schema: z.enum(APPROVAL_ROUTE_SCOPE_VALUES),
+  label: "2단 조직 범위",
+  namespace: ROUTE_NAMESPACE,
+  optionLabels: { drafter_team: "기안자 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
+  default: "drafter_org_unit",
+};
+
+export const APPROVAL_ROUTE_LEAVE_STEP2_ORG_UNIT_ID: SettingDef<string> = {
+  key: "approval_route.leave.step2.org_unit_id",
+  kind: "simple",
+  schema: ROUTE_ORG_UNIT_ID_SCHEMA,
+  label: "2단 특정 부서",
+  namespace: ROUTE_NAMESPACE,
+  dynamicOptions: "org_units",
+  default: "",
+};
+
+export const APPROVAL_ROUTE_LEAVE_STEP3_ENABLED: SettingDef<boolean> = {
+  key: "approval_route.leave.step3.enabled",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "3단 사용",
+  hint: "새 문서부터 적용 · 진행 중 문서는 그대로",
+  namespace: ROUTE_NAMESPACE,
+  default: true,
+};
+
+export const APPROVAL_ROUTE_LEAVE_STEP3_ROLE_ID: SettingDef<string> = {
+  key: "approval_route.leave.step3.role_id",
+  kind: "simple",
+  schema: z.string(),
+  label: "3단 담당 계급",
+  hint: "계급 무관 = 그 범위의 누구나",
+  namespace: ROUTE_NAMESPACE,
+  optionLabels: { "": "계급 무관" },
+  dynamicOptions: "roles",
+  default: "",
+};
+
+export const APPROVAL_ROUTE_LEAVE_STEP3_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
+  key: "approval_route.leave.step3.scope",
+  kind: "simple",
+  schema: z.enum(APPROVAL_ROUTE_SCOPE_VALUES),
+  label: "3단 조직 범위",
+  namespace: ROUTE_NAMESPACE,
+  optionLabels: { drafter_team: "기안자 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
+  default: "org_unit",
+};
+
+export const APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID: SettingDef<string> = {
+  key: "approval_route.leave.step3.org_unit_id",
+  kind: "simple",
+  schema: ROUTE_ORG_UNIT_ID_SCHEMA,
+  label: "3단 특정 부서",
+  namespace: ROUTE_NAMESPACE,
+  dynamicOptions: "org_units",
+};
+
+export const APPROVAL_ROUTE_LEAVE_STEP4_ENABLED: SettingDef<boolean> = {
+  key: "approval_route.leave.step4.enabled",
+  kind: "simple",
+  schema: z.boolean(),
+  label: "4단 사용",
+  hint: "새 문서부터 적용 · 진행 중 문서는 그대로",
+  namespace: ROUTE_NAMESPACE,
+  default: true,
+};
+
+export const APPROVAL_ROUTE_LEAVE_STEP4_ROLE_ID: SettingDef<string> = {
+  key: "approval_route.leave.step4.role_id",
+  kind: "simple",
+  schema: z.string(),
+  label: "4단 담당 계급",
+  hint: "계급 무관 = 그 범위의 누구나",
+  namespace: ROUTE_NAMESPACE,
+  optionLabels: { "": "계급 무관" },
+  dynamicOptions: "roles",
+  default: "role-ceo",
+};
+
+export const APPROVAL_ROUTE_LEAVE_STEP4_SCOPE: SettingDef<ApprovalRouteScopeValue> = {
+  key: "approval_route.leave.step4.scope",
+  kind: "simple",
+  schema: z.enum(APPROVAL_ROUTE_SCOPE_VALUES),
+  label: "4단 조직 범위",
+  namespace: ROUTE_NAMESPACE,
+  optionLabels: { drafter_team: "기안자 팀", drafter_org_unit: "기안자 본부", company: "전사", org_unit: "특정 부서" },
+  default: "company",
+};
+
+export const APPROVAL_ROUTE_LEAVE_STEP4_ORG_UNIT_ID: SettingDef<string> = {
+  key: "approval_route.leave.step4.org_unit_id",
+  kind: "simple",
+  schema: ROUTE_ORG_UNIT_ID_SCHEMA,
+  label: "4단 특정 부서",
+  namespace: ROUTE_NAMESPACE,
+  dynamicOptions: "org_units",
+  default: "",
+};
+
+// 연차 문서 번호(계획 가정 1 — UI-SPEC Assumptions #16): 기본 `LV26-0001`.
+export const DOCUMENT_NUMBER_LEAVE_PREFIX: SettingDef<string> = {
+  key: "document_number.leave.prefix",
+  kind: "simple",
+  schema: z.string(),
+  label: "연차 번호 접두어",
+  hint: "번호 맨 앞에 붙는 문자열입니다(기본 LV).",
+  namespace: "문서 번호",
+  default: "LV",
+};
+
+export const DOCUMENT_NUMBER_LEAVE_YEAR_DIGITS: SettingDef<number> = {
+  key: "document_number.leave.year_digits",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1).max(4),
+  label: "연차 번호 연도 자릿수",
+  hint: "연도를 뒤에서부터 이 자릿수만큼 씁니다(기본 2 → 26).",
+  namespace: "문서 번호",
+  default: 2,
+};
+
+export const DOCUMENT_NUMBER_LEAVE_SEQ_DIGITS: SettingDef<number> = {
+  key: "document_number.leave.seq_digits",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1),
+  label: "연차 번호 순번 자릿수",
+  hint: "순번을 이 자릿수만큼 0으로 채웁니다(넘치면 자릿수가 늘어나고 잘리지 않습니다).",
+  namespace: "문서 번호",
+  default: 4,
+};
+
+export const DOCUMENT_NUMBER_LEAVE_SEPARATOR: SettingDef<string> = {
+  key: "document_number.leave.separator",
+  kind: "simple",
+  schema: z.string(),
+  label: "연차 번호 구분자",
+  hint: "연도와 순번 사이에 넣을 문자입니다(기본 -).",
+  namespace: "문서 번호",
+  default: "-",
+};
+
+export const DOCUMENT_NUMBER_LEAVE_SEQ_START: SettingDef<number> = {
+  key: "document_number.leave.seq_start",
+  kind: "simple",
+  schema: z.coerce.number().int().min(0),
+  label: "연차 번호 순번 시작값",
+  hint: "연도가 바뀌어 순번이 다시 시작할 때의 첫 값입니다(기본 1).",
+  namespace: "문서 번호",
+  default: 1,
+};
+
+// SETTING_DEFS 선언 뒤에 덧붙이는 등록(파일 끝 덧붙이기 — 병합 충돌을 줄인다).
+SETTING_DEFS.push(
+  APPROVAL_ROUTE_LEAVE_SELF_APPROVAL,
+  APPROVAL_ROUTE_LEAVE_STEP1_ENABLED,
+  APPROVAL_ROUTE_LEAVE_STEP1_ROLE_ID,
+  APPROVAL_ROUTE_LEAVE_STEP1_SCOPE,
+  APPROVAL_ROUTE_LEAVE_STEP1_ORG_UNIT_ID,
+  APPROVAL_ROUTE_LEAVE_STEP2_ENABLED,
+  APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID,
+  APPROVAL_ROUTE_LEAVE_STEP2_SCOPE,
+  APPROVAL_ROUTE_LEAVE_STEP2_ORG_UNIT_ID,
+  APPROVAL_ROUTE_LEAVE_STEP3_ENABLED,
+  APPROVAL_ROUTE_LEAVE_STEP3_ROLE_ID,
+  APPROVAL_ROUTE_LEAVE_STEP3_SCOPE,
+  APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID,
+  APPROVAL_ROUTE_LEAVE_STEP4_ENABLED,
+  APPROVAL_ROUTE_LEAVE_STEP4_ROLE_ID,
+  APPROVAL_ROUTE_LEAVE_STEP4_SCOPE,
+  APPROVAL_ROUTE_LEAVE_STEP4_ORG_UNIT_ID,
+  DOCUMENT_NUMBER_LEAVE_PREFIX,
+  DOCUMENT_NUMBER_LEAVE_YEAR_DIGITS,
+  DOCUMENT_NUMBER_LEAVE_SEQ_DIGITS,
+  DOCUMENT_NUMBER_LEAVE_SEPARATOR,
+  DOCUMENT_NUMBER_LEAVE_SEQ_START,
+);

@@ -1,4 +1,4 @@
-import { and, desc, eq, lte } from "drizzle-orm";
+import { and, desc, eq, inArray, lte } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { settingsSimple, settingsHistorized } from "@/db/schema";
@@ -157,4 +157,13 @@ export async function applySettingsImport(viewer: Viewer, input: SettingsImportI
         .onConflictDoNothing({ target: [settingsHistorized.key, settingsHistorized.effectiveFrom] });
     }
   });
+}
+
+// 04.1(Codex HIGH 스냅숏): 여러 비이력형 키를 SELECT 한 문장으로 읽는다 —
+// Postgres 문장 스냅숏이라 한 호출의 값은 한 시점에 커밋된 설정 한 벌에서만
+// 나온다(키마다 따로 읽으면 그 사이의 관리자 저장이 섞인다).
+export async function findSimpleValues(viewer: Viewer, keys: string[], tx?: DbOrTx): Promise<SettingSimpleRow[]> {
+  void viewer;
+  if (keys.length === 0) return [];
+  return (tx ?? db).select().from(settingsSimple).where(inArray(settingsSimple.key, keys));
 }

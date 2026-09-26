@@ -12,7 +12,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 // 「이 페이즈 앞」은 journal에서 SQL이 restore_rehearsals나 first_login_at을 처음 언급하는 항목 앞까지다 —
 // 브랜치에서도 병합 직전 재생성(04.4-06) 뒤에도 같은 뜻이다.
 
-const ADMIN_URL = "postgres://erp:erp@127.0.0.1:5432/postgres";
+const BASE_URL = process.env.DATABASE_URL ?? "postgres://erp:erp@127.0.0.1:5432/erp_test";
 const MIGRATIONS = resolve(process.cwd(), "db/migrations");
 const MARKER = "-- 04.4 D8-07 first_login_at backfill";
 const DB_NAME = `erp_upgrade_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
@@ -85,9 +85,16 @@ async function insertAttempt(email: string, success: boolean, at: string): Promi
 }
 
 beforeAll(async () => {
-  admin = new Pool({ connectionString: ADMIN_URL });
+  const adminUrl = new URL(BASE_URL);
+  adminUrl.pathname = "/postgres";
+  admin = new Pool({ connectionString: adminUrl.toString() });
   await adminQuery(`CREATE DATABASE "${DB_NAME}" OWNER erp`);
-  target = new Pool({ connectionString: ADMIN_URL.replace("/postgres", `/${DB_NAME}`) });
+  const targetUrl = new URL(BASE_URL);
+  targetUrl.pathname = `/${DB_NAME}`;
+  target = new Pool({ connectionString: targetUrl.toString() });
+  // 뒷정리의 DROP ... WITH (FORCE)가 남은 백엔드를 끊으면 pg가 57P01을 error 이벤트로 올린다
+  // (migration-upgrade.test.ts와 같은 이유, CI run 328) — 정리 중 일이라 삼킨다.
+  target.on("error", () => undefined);
   priorFolder = priorMigrationsFolder();
   await migrate(drizzle(target), { migrationsFolder: priorFolder });
 

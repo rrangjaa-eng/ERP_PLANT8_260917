@@ -135,7 +135,7 @@ function stateLines(ctx: Ctx): string[] {
 
 function stateValue(ctx: Ctx, key: string): string | undefined {
   const found = stateLines(ctx).filter((line) => line.startsWith(`${key}=`));
-  return found.length === 0 ? undefined : found[found.length - 1].slice(key.length + 1);
+  return found.at(-1)?.slice(key.length + 1);
 }
 
 function label(ctx: Ctx, line: string): string {
@@ -201,7 +201,7 @@ function assertInvariants(ctx: Ctx, opts: { allowRecordRetry?: boolean } = {}): 
       expect(t).toContain(`--instance=${ctx.temp}`);
     }
     if (line.startsWith("sql operations wait ")) {
-      expect(t[3].startsWith(`op-${ctx.temp}-`)).toBe(true);
+      expect(t[3]?.startsWith(`op-${ctx.temp}-`)).toBe(true);
     }
     expect(line).not.toMatch(/^sql instances (patch|restart|clone|promote-replica) /);
   }
@@ -255,7 +255,7 @@ describe("restore-rehearsal.sh 행복 경로(트레이서)", { timeout: 60_000 }
     expect(lines[3]).toContain("--filter=type=AUTOMATED AND status=SUCCESSFUL");
     expect(lines[3]).toContain("--sort-by=~startTime");
     expect(lines[3]).toContain("--limit=1");
-    expect(tokens(lines[7])).toContain(BACKUP_ID);
+    expect(tokens(lines[7] ?? "")).toContain(BACKUP_ID);
     expect(lines[7]).toContain(`--restore-instance=${ctx.temp}`);
     expect(lines[7]).toContain(`--backup-instance=${ctx.source}`);
     expect(lines[10]).toContain(`plant8-staging-runtime@${PROJECT}.iam`);
@@ -398,7 +398,7 @@ function clockedLog(ctx: Ctx, from = 0): ClockedLine[] {
     .map((line): ClockedLine => {
       const timeout = /^timeout (\d+) @(\d+) (.*)$/.exec(line);
       if (timeout) {
-        return { kind: "timeout", sec: Number(timeout[1]), at: Number(timeout[2]), text: timeout[3] };
+        return { kind: "timeout", sec: Number(timeout[1]), at: Number(timeout[2]), text: timeout[3] ?? "" };
       }
       const sleep = /^sleep (\d+) @(\d+)$/.exec(line);
       if (sleep) {
@@ -406,7 +406,7 @@ function clockedLog(ctx: Ctx, from = 0): ClockedLine[] {
       }
       const gcloud = /^(?:UNBOUNDED )?@(\d+) (.*)$/.exec(line);
       if (!gcloud) throw new Error(`시각 없는 로그 줄: ${line}`);
-      return { kind: "gcloud", at: Number(gcloud[1]), text: gcloud[2] };
+      return { kind: "gcloud", at: Number(gcloud[1]), text: gcloud[2] ?? "" };
     });
 }
 
@@ -966,7 +966,7 @@ describe("겹친 실패 — 우선순위 정리 > 복원 > 검증, --failed-stag
     const records = recordCalls(ctx);
     expect(records.length).toBe(1);
     expect(records[0]).toContain(`--failed-stage,${expected},`);
-    expect(records[0].split("--failed-stage").length - 1).toBe(1);
+    expect((records[0] ?? "").split("--failed-stage").length - 1).toBe(1);
     assertInvariants(ctx);
   });
 });

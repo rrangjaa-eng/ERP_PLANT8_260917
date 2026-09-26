@@ -27,7 +27,7 @@ function steps(text: string): string[] {
 function stepWith(needle: string): string {
   const found = steps(workflow).filter((step) => step.includes(needle));
   expect(found.length, `"${needle}"를 담은 단계가 하나여야 한다`).toBe(1);
-  return found[0];
+  return found[0] ?? "";
 }
 
 function topLevelGroup(text: string): string | undefined {
@@ -59,7 +59,7 @@ describe("restore-rehearsal.yml", () => {
   });
 
   it("워크플로 2 — 첫 단계가 체크아웃·인증 전에 main과 plant8-prod-db 확인을 하고, WIF provider 줄은 account.yml과 같다", () => {
-    const first = steps(workflow)[0];
+    const first = steps(workflow)[0] ?? "";
     expect(first).toContain("refs/heads/main");
     expect(first).toContain("plant8-prod-db");
     expect(first).toContain("REF: ${{ github.ref }}");

@@ -653,4 +653,27 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
       }
     });
   });
+
+  test("(F2) 폰 320에서 긴 팀 이름이 있을 때 「필터」를 펼쳐도 문서 가로 스크롤이 없고 팀 칸이 화면 안이다", async ({ page }) => {
+    const pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID, withTeam: true });
+    await login(page, pm);
+    await withLongTeam(async () => {
+      await page.setViewportSize({ width: 320, height: 640 });
+      await page.goto("/projects");
+      const toggle = page.getByRole("button", { name: "필터", exact: true });
+      await expect(toggle).toBeVisible();
+      await toggle.click();
+      await expect(page.locator("#teamId")).toBeVisible();
+      await expect(page.locator("#teamId option", { hasText: LONG_TEAM_NAME })).toHaveCount(1);
+      const m = await page.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+        teamRight: document.querySelector("#teamId")!.getBoundingClientRect().right,
+        fieldsRight: document.querySelector("#project-filter-fields")!.getBoundingClientRect().right,
+      }));
+      expect(m.scrollWidth).toBeLessThanOrEqual(m.clientWidth);
+      expect(m.fieldsRight).toBeLessThanOrEqual(m.clientWidth);
+      expect(m.teamRight).toBeLessThanOrEqual(m.clientWidth);
+    });
+  });
 });

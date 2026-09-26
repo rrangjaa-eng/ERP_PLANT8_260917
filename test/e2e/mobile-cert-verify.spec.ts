@@ -137,7 +137,10 @@ test("마지막 틀림을 칸 Enter로 보내 잠그면 포커스가 body — �
     if (i < 4) await expect(page.getByText(`남은 횟수 ${4 - i}번`, { exact: false })).toBeVisible();
   }
   await expect(last4Field(page)).toBeDisabled();
-  expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+  // 막힌 칸의 포커스를 body로 옮기는 것은 브라우저의 focus fixup이다 — HTML 명세상
+  // 렌더링 갱신 때 일어나 disabled 속성보다 늦을 수 있다(9ff519f CI 실패). 한 번 읽지
+  // 않고 그 상태가 될 때까지 본다. 다른 요소로 가면 여전히 실패한다.
+  await expect.poll(() => page.evaluate(() => document.activeElement === document.body)).toBe(true);
   await page.clock.fastForward("03:01");
   await expect(last4Field(page)).toBeEnabled();
   await expect(last4Field(page)).toBeFocused();

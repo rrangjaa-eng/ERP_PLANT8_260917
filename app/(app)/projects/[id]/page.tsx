@@ -223,7 +223,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       statusTagKind={PROJECT_STATUS_TAG_KIND[status]}
       statusChange={statusChange}
       newRevision={newRevision}
-      copyProjectHref={canWrite ? `/projects?new=1&copyFrom=${project.id}#project-form` : null}
+      copyProjectHref={canWrite && project.archivedAt === null ? `/projects?new=1&copyFrom=${project.id}#project-form` : null}
       customerApproval={customerApproval}
       approvedSeq={approvedSeq}
       revisions={revisionSummaries.flatMap((row) => (row.revisionId && row.seq !== undefined ? [{ id: row.revisionId, seq: row.seq }] : []))}

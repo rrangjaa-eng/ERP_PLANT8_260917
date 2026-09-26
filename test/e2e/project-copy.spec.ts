@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { codeItems, quoteLines } from "@/db/schema";
+import { codeItems, projects, quoteLines } from "@/db/schema";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
-import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
@@ -19,11 +19,11 @@ const TODAY = kstToday(new Date());
 
 type Account = { userId: string; email: string; password: string };
 
-async function makeAccount(): Promise<{ account: Account; teamId: string }> {
+async function makeAccount(roleId = DEFAULT_ROLE_ID): Promise<{ account: Account; teamId: string }> {
   const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E복사본부-${randomUUID()}` });
   const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E복사팀-${randomUUID().slice(0, 8)}` });
   const email = `e2e-copy-${randomUUID()}@example.test`;
-  const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 복사 PM", roleId: DEFAULT_ROLE_ID });
+  const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 복사 PM", roleId });
   await assignTeam(SYSTEM_VIEWER, { userId, teamId: team.id, effectiveFrom: TODAY });
   return { account: { userId, email, password: tempPassword }, teamId: team.id };
 }
@@ -122,6 +122,17 @@ test.describe("프로젝트 복사 등록 (04-15, PROJ-05 · D-70)", () => {
     await expect(quoteRows(page).nth(1)).toContainText("음향 장비");
     // UI Considerations S4 해소 — 원본에 조정 줄이 있어도 복사본 표에 「조정」 그룹이 없다.
     await expect(groupHeaders(page).filter({ hasText: /^조정$/ })).toHaveCount(0);
+  });
+
+  test("보관된 프로젝트 상세(보관함 보기 권한자)에는 「프로젝트 복사」가 없다 — 출처가 될 수 없는 선택지는 보이지 않는다(검토 S2)", async ({ page }) => {
+    const { account, teamId } = await makeAccount(SYSADMIN_ROLE_ID);
+    const original = await makeOriginal(teamId, account.userId);
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, original.id));
+    await login(page, account);
+
+    await page.goto(`/projects/${original.id}`);
+    await expect(page.getByRole("heading", { name: original.name })).toBeVisible();
+    await expect(page.getByRole("link", { name: "프로젝트 복사" })).toHaveCount(0);
   });
 
   test("DR-27 — 손대지 않은 복사 폼의 Esc는 확인 없이 목록으로, 프로젝트명을 바꾼 뒤의 Esc는 「입력 버리기」 확인이고 2차 취소면 값이 남는다", async ({ page }) => {

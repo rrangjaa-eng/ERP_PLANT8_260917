@@ -689,7 +689,8 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
         };
         return { status: rect("status"), teamId: rect("teamId"), year: rect("year"), from: rect("from"), to: rect("to"), q: rect("q-wide") };
       });
-    for (const width of [1280, 1024]) {
+    // 800 — 검색이 오류 없을 때도 다음 줄로 줄바꿈되는 폭(CI는 글꼴·스크롤바 차이로 1024에서 이미 이렇다).
+    for (const width of [1280, 1024, 800]) {
       await page.setViewportSize({ width, height: 800 });
       await page.goto("/projects?q=E2E정렬기준");
       await expect(page.locator("#status")).toBeVisible();

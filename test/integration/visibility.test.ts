@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { Viewer } from "@/domain/viewer";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { CODE_ITEM_DTO_SPEC, createCodeItem } from "@/domain/code-tables";
 import { project, type DtoSpec } from "@/domain/permissions/project";
-import { upsertVisibility } from "@/repositories/permissions";
+import { findVisibility, upsertVisibility } from "@/repositories/permissions";
 import { insertCodeItem, type CodeItemRow } from "@/repositories/code-tables";
 import { insertRole } from "@/repositories/roles";
 import { visible } from "@/domain/permissions/visible";
@@ -89,18 +89,24 @@ describe("노출 판정의 실제 효과 (ADMN-02·ADMN-03)", () => {
     expect(secondOn.label).toBe("D");
   });
 
-  // 04-16(D-85 · T-04-87) — 발행액은 기획본부 기본 공개, 입금액은 기본 숨김. 04-20부터 시드는 시스템 관리자 밖 계급의 노출 행을
-  // 없을 때만 넣는다 — 새 기본값은 새 DB(행이 없는 계급)에만 반영되고, 이미 행이 있는 DB는 관리자가 노출표에서 켠다.
-  it("(e) 시드된 새 DB에서 기획 PM은 revenue.issued_amount를 보고 revenue.paid_amount는 못 본다(D-85)", async () => {
+  // 04-16(D-85 · T-04-87) — 발행액은 기획본부 기본 공개, 입금액은 기본 숨김. 시드가 기획 PM의 발행액 행을 upsert하므로
+  // 시드를 다시 돌린 기존 DB에도 반영된다. 팀장·본부 책임자 행은 없을 때만 숨김으로 넣고 이미 있으면 건드리지 않는다(CEO 리뷰 B-29).
+  it("(e) 시드된 새 DB에서 기획 PM은 revenue.issued_amount를 보고 revenue.paid_amount는 못 본다 — 팀장·본부 책임자는 발행액 숨김(D-85 · B-29)", async () => {
     const pmViewer: Viewer = { id: "pm-vis-tester-e", roleId: DEFAULT_ROLE_ID };
     expect(await visible(pmViewer, "revenue.issued_amount")).toBe(true);
     expect(await visible(pmViewer, "revenue.paid_amount")).toBe(false);
+    for (const roleId of [TEAM_LEAD_ROLE_ID, DIVISION_HEAD_ROLE_ID]) {
+      expect((await findVisibility(SYSTEM_VIEWER, roleId, "revenue.issued_amount"))?.visible).toBe(false);
+    }
   });
 
-  it("(f) 기획 PM 행이 이미 있는 DB에서 시드를 다시 돌려도 그 행을 바꾸지 않는다(04-20 없을 때만 넣기 — D-85는 새 DB에만)", async () => {
+  it("(f) 기획 PM 발행액 행이 숨김인 기존 DB에서 시드를 다시 돌리면 공개가 되고, 팀장·본부 책임자 행은 건드리지 않는다(D-85 · B-29)", async () => {
     await upsertVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, infoItem: "revenue.issued_amount", visible: false });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: TEAM_LEAD_ROLE_ID, infoItem: "revenue.issued_amount", visible: true });
     await seedMasterData(SYSTEM_VIEWER);
     const pmViewer: Viewer = { id: "pm-vis-tester-f", roleId: DEFAULT_ROLE_ID };
-    expect(await visible(pmViewer, "revenue.issued_amount")).toBe(false);
+    expect(await visible(pmViewer, "revenue.issued_amount")).toBe(true);
+    expect((await findVisibility(SYSTEM_VIEWER, TEAM_LEAD_ROLE_ID, "revenue.issued_amount"))?.visible).toBe(true);
+    expect((await findVisibility(SYSTEM_VIEWER, DIVISION_HEAD_ROLE_ID, "revenue.issued_amount"))?.visible).toBe(false);
   });
 });

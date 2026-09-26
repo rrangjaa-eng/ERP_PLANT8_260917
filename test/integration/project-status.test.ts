@@ -532,7 +532,10 @@ describe("원자성·경합·시드 보존(A-01·A-11·OV-3·A-05·ENG-D3 ③·A
   it("ENG-D3 ③ — 첫 시드의 노출 기본값, 관리자가 끈 기획 PM quote.amount·대표 revenue.issued_amount는 재시드 뒤에도 꺼져 있고 시스템 관리자 항목은 재시드가 켠다", async () => {
     for (const item of INFO_ITEMS) {
       for (const roleId of ["role-team-lead", "role-division-head"]) {
-        expect((await findVisibility(SYSTEM_VIEWER, roleId, item.key))?.visible).toBe(item.staffDefault);
+        // 04-16(B-29): 발행액은 기획 PM에게만 기본 공개 — 팀장·본부 책임자는 숨김으로 시작한다.
+        expect((await findVisibility(SYSTEM_VIEWER, roleId, item.key))?.visible).toBe(
+          item.key === "revenue.issued_amount" ? false : item.staffDefault,
+        );
       }
       expect((await findVisibility(SYSTEM_VIEWER, "role-ceo", item.key))?.visible).toBe(
         item.staffDefault || item.key.startsWith("revenue."),

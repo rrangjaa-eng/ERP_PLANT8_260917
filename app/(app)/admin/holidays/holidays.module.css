@@ -85,7 +85,7 @@
 }
 
 .table td {
-  min-height: var(--row-min);
+  height: var(--row-min);
   padding: var(--cell-pad-y) var(--cell-pad-x);
   font-size: var(--fs-base);
   border-bottom: var(--line-w) solid var(--line);

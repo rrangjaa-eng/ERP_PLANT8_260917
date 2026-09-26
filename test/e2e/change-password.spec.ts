@@ -43,7 +43,7 @@ test.describe("비밀번호 변경 + 임시 비밀번호 배너 (AUTH-03, D-08, 
     await page.getByLabel("현재 비밀번호").fill("wrong-current-password");
     await page.getByLabel("새 비밀번호").fill("another-password-1");
     await page.getByRole("button", { name: "비밀번호 변경" }).click();
-    await expect(page.getByText("현재 비밀번호 오류")).toBeVisible();
+    await expect(page.getByText("현재 비밀번호 오류 · 다시 입력", { exact: true })).toBeVisible();
 
     // 7자 새 비밀번호는 폼 오류로 거부된다(제출 안 됨, 화면은 그대로 /account).
     await page.getByLabel("현재 비밀번호").fill(newPassword);

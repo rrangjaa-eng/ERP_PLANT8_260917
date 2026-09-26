@@ -60,7 +60,12 @@
   font-weight: var(--fw-medium);
   color: var(--accent);
   text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
   text-underline-offset: var(--underline-offset);
+}
+
+.bannerLink:hover {
+  text-decoration-thickness: var(--line-w-strong);
 }
 
 @media (max-width: 699.98px) {

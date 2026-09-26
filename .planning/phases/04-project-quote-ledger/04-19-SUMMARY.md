@@ -113,7 +113,7 @@ completed: 2026-09-26
 
 ## Accomplishments
 - 30줄 쪽 나눔(`splitPages` · 렌더마다 `clampPage`) — 그룹 머리글 반복, 번호 31부터 이어짐, 합계는 어느 쪽이든 전체, 두 쪽 편집이 다 저장됨, 이전 차수 읽기 섹션도 같은 `pagination`(제목 포커스)
-- 키보드 훅 포커스·앵커를 줄 id로 — 쪽 끝 ↑↓/Enter는 `crossPageTarget`, Alt+↑↓는 쪽 따라가기, Shift 범위는 쪽 안, 편집 중 Tab/Shift+Tab 쪽 넘김, Ctrl+A 전체 선택(`isCtrlCombo`)
+- 키보드 훅 포커스·앵커를 줄 id로 — 쪽 끝 ↑↓는 `crossPageTarget`(편집 중 Enter의 「확정 후 아래」·쪽 넘김은 첫 실행에 없었고 리뷰 B-1 반영 `a6e81c9`에서 같은 경로로 더함), Alt+↑↓는 쪽 따라가기, Shift 범위는 쪽 안, 편집 중 Tab/Shift+Tab 쪽 넘김, Ctrl+A 전체 선택(`isCtrlCombo`)
 - 네이티브 copy 이벤트 복사 — 글자는 04-24 `quoteLineReadColumns` `copyText`, 앱 형식은 `quoteLineClipboardMeta`(새 직렬화 없음, W1), 격자 복사 실패 문구 0
 - 힌트 줄을 `Table` `hint` 자리로(페이지 줄 다음, 1024 미만 숨김) 옮기고 `이동 Tab ↑↓←→ · 복사 Ctrl+C`를 되돌려 일곱 항목
 
@@ -122,6 +122,13 @@ completed: 2026-09-26
 1. **Task 1: 30줄 쪽 나눔 트레이서** — `dfa6508` (test, RED) → `9d95a95` (feat, GREEN of dfa6508)
 2. **Task 2: 쪽 경계 키보드 · Tab · 전체 선택 복사 · 힌트 줄** — `4a90b0d` (test, RED) → `e1e503c` (feat, GREEN of 4a90b0d)
 3. **편차 수정:** `cc40569` (fix — 300줄 상한 E2E를 30줄 쪽 기준으로)
+
+4. **리뷰 반영(Opus 리뷰 `04-19-review-opus.md`):**
+   - B-1 편집 중 Enter 확정 후 아래 · 쪽 넘김 — `1d7f605` (test, RED) → `a6e81c9` (fix, GREEN of 1d7f605)
+   - S-1 보정 쪽을 requestedPage에 되돌림 — `313413f` (test, RED) → `16aadf5` (fix, GREEN of 313413f)
+   - S-2 조합 중 Tab — `663c23e` (test, RED) → `0189b3a` (fix, GREEN of 663c23e)
+   - N-1 자동 반복 Ctrl+A 기본 동작 막음 — `f029e93` (test, RED) → `30fe9f0` (fix, GREEN of f029e93)
+   - N-4 followRowId는 쪽 있는 표에서만 — `92ba37c` (chore) · N-5 옛 테스트 파라미터 — `f40aae5` (chore)
 
 **Plan metadata:** 이 SUMMARY 커밋
 
@@ -174,6 +181,17 @@ completed: 2026-09-26
 **Total deviations:** 3 auto-fixed (2 Rule 1 앞 플랜 테스트 전제, 1 Rule 3 시그니처 적응)
 **Impact on plan:** 모두 쪽 나눔·훅 시그니처의 직접 결과. 범위 확장 없음.
 
+## 리뷰 반영 (Opus 리뷰 · BLOCKING 1 · SHOULD-FIX 2 · NIT 5)
+
+- **B-1 (반영):** 리뷰 지적이 맞았다 — 첫 실행의 116행 「쪽 끝 ↑↓/Enter」 주장과 달리 Enter는 편집 중 확정 뒤 같은 셀에 남고 포커스가 `<body>`로 빠졌다(플랜 action ②(a)의 「기존 『확정 후 아래』」 전제가 틀렸다). 편집 중 Enter는 편집기가 확정한 뒤 훅이 ↓와 같은 `moveFocus`로 아래 줄 같은 열로 옮기고, 쪽 마지막 줄이면 `onEdgeExit("down")`로 다음 줄의 쪽으로 넘긴다. `Table`은 `onCommitDown`에서 새 셀로 포커스를 돌려준다. **편집 중이 아닐 때 Enter는 그대로 편집 진입**(§7-3 「셀 클릭 또는 Enter → 편집」)이고, 플랜 truth의 「`Enter`(편집 아님)가 쪽 경계에서 넘김」은 편집 진입 계약과 겹쳐 편집 중 Enter로 해석했다. 한글 조합 확정 Enter는 움직이지 않는다. 단위 1 + E2E 1(29번째 → 30번째 → 2쪽 31번째 같은 열).
+  - 부수 수정: `quote-table.spec.ts` (f) 폰 시트 케이스는 클릭이 이미 편집기를 연 뒤 Enter를 한 번 더 눌러 빈 값을 확정하던 키 순서였다(정규식이 「항목명 없음」도 받아 가려졌다). Enter가 이제 아래로 가므로 그 Enter를 빼고 입력 포커스를 단언한다.
+- **S-1 (반영):** 렌더 중 `clampPage` 보정 값이 요청 쪽과 다르면 렌더 중 상태 조정으로 되돌린다. E2E 「두 그룹 31줄 → 2쪽 31번째 삭제 → 1쪽 그룹 A Ctrl+Enter → 1쪽 유지」. 리뷰의 「새 줄 `openCell`이 열리지 않는다」 전제는 Ctrl+Enter 경로(`addLine`)에 없다 — Ctrl+Enter는 새 줄을 열지 않는다. 그래서 단언은 1쪽 유지·새 줄 6번째·포커스가 누른 줄에 남음으로 했다.
+- **S-2 (반영):** 편집 중 Tab 분기를 `isComposing` 가드 앞으로 올렸다(조합 중 Enter·글자 키는 04-49 계약대로 가드에 걸린다). 단위 1. Chromium+한글 IME의 실제 이벤트 순서는 자동화로 재현할 수 없어 04-31 사람 확인으로 넘긴다.
+- **NIT:** N-1(자동 반복 Ctrl+A 기본 동작 막음) · N-4 · N-5 반영. **이월:** N-2(`lib/shortcut.ts` `isCtrlCombo`가 Shift·Alt를 보지 않음 — 기존 함수의 성질, 리뷰도 기록만) · N-3(`quote-table.tsx` 열 객체 사후 `copyText` 대입 → 열 정의에 직접 두기, `toCopyRow` 대신 `DraftLine` 구조적 전달은 Decisions의 「견적 표 어댑터」에 이미 적음) · 04-47 몫 참고(1쪽 그룹 B에서 만든 새 줄이 2쪽에 떨어져 `openCell`이 조용히 열리지 않는 경로 — 04-47 pinned 배선·E2E에서 확인).
+
+### 04-31 사람 확인 목록에 더할 것
+- 한글 IME 조합 중 Tab(항목·비고에 한글을 치다 마지막 음절 조합 중 Tab → 옆 편집 셀로, 조합 글자가 확정 값에 실림, 포커스가 표 밖으로 나가지 않음 — Chrome+Windows 한글 IME)
+
 ## Issues Encountered
 - 독립 DOM 감사(1280·1024·375)와 전체 게이트 `CI=true pnpm test`는 이 실행에서 돌리지 않았다 — 이어가기 실행자는 서브에이전트를 띄울 수 없고, 전체 게이트는 오케스트레이터가 한 번 돌린다(디스패치 지시). 감사 보고서는 오케스트레이터가 이 SUMMARY에 붙인다.
 
@@ -184,13 +202,19 @@ completed: 2026-09-26
 - 수용 grep: Tab·Ctrl+A 분기, `isCtrlCombo(event, "a")`, `onMoveRow/onDeleteRow(rowId: string)`, `navigator.clipboard` 0, `복사하지 못함` ui/table 0, 04-24 import, 매출 표 hint 0
 - 공급망: `package.json`·`pnpm-lock.yaml`이 abbe610(페이즈 재개 기준 — d6b41cf는 이 저장소에서 해석되지 않음)과 diff 0
 
+## Verification (리뷰 반영 뒤 전체 게이트)
+- `pnpm lint` 0 · `pnpm typecheck` 0 · `pnpm lint:sql` 0 issues
+- `CI=true pnpm test`: 단위 98 파일 1351/1351 · 통합 55 파일 1504/1504 · E2E 364/364(프로덕션 빌드, 마이그레이션 0016 포함 — E2E·통합 globalSetup이 erp_test에 적용)
+- 첫 게이트 시도에서 단위 1건(`deploy-sh.test.ts`)이 임시 저장소 `git commit`의 전역 ssh 서명(commit.gpgsign) 서버 503으로 실패 — 단독 재실행 23/23, 전체 재실행 초록. 코드와 무관한 환경 요인
+- dev 서버(비 CI) E2E에서 간헐 실패 3건을 봤다: 「(공백 4) Alt+↓ 따라가기」 포커스, 「Control+a → Control+c」 45줄, cap2 「Ctrl+Enter 상한 글자」. 수정 전 코드(343f451)에서도 재현(공백 4는 20회 중 6회)되는 기존 결함이다. 계측 결과 실패 때 포커스 좌표가 훅 기본 {0,0}(번호 열) — 하이드레이션 전 `focus()`/키 입력이 유실되는 테스트 경합. CI=true 전체 게이트에서는 초록이라 이 플랜에서 고치지 않았다(이월 — 해당 케이스에 하이드레이션 대기를 넣는 후속)
+
 ## User Setup Required
 
 None - no external service configuration required.
 
 ## Next Phase Readiness
 - 04-47(붙여넣기 쪽 넘김 · 새 줄 고정 배선 · DR-5 · DR-16)이 `pagination`·`paging.ts`·`{ rowId, colKey }` 위에 얹을 수 있다
-- 남은 것: 독립 DOM 감사 · 전체 게이트(오케스트레이터)
+- 독립 DOM 감사(PASS 22 · FAIL 0)와 리뷰 반영 뒤 전체 게이트는 끝났다. 남은 것: 09-29 이후 Codex 교차 확인 · 04-31 사람 확인(한글 IME 조합 중 Tab 포함)
 
 ## Self-Check: PASSED
 (오케스트레이터 몫 2건 — 독립 DOM 감사 · `CI=true pnpm test` — 은 위 Issues에 남김)

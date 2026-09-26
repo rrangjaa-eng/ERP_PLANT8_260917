@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { Table } from "@/ui/table/Table";
@@ -9,6 +10,7 @@ import { Button } from "@/ui/button/Button";
 import { StatusTag, type StatusTagKind } from "@/ui/status-tag/StatusTag";
 import { Toast, type ToastTone } from "@/ui/toast/Toast";
 import { approveAction } from "./actions";
+import styles from "@/app/(app)/leave/leave.module.css";
 
 // 04.1-02 S4 첫 형태 — 그룹 `내 결재`(비면 머리글째 없음) · `처리함`. `내 결재` 행의 상태 칸은 비우고
 // (그룹 머리글이 말한다), PC 행동 칸에 3차 `승인` — 확인 없이 즉시(사용자 결정 #3). 반려 버튼 · 폰 결재
@@ -60,7 +62,15 @@ export function InboxTable({ rows }: { rows: InboxRow[] }) {
       header: "문서",
       priority: "p1",
       cell: (row) => (
-        <span id={documentCellId(row)}>{row.href ? <a href={row.href}>{row.document}</a> : row.document}</span>
+        <span id={documentCellId(row)}>
+          {row.href ? (
+            <Link href={row.href} className={styles.link}>
+              {row.document}
+            </Link>
+          ) : (
+            row.document
+          )}
+        </span>
       ),
     },
     { key: "drafter", header: "기안", priority: "p2", cell: (row) => row.drafter },

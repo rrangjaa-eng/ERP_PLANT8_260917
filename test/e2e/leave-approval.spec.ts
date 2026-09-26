@@ -36,6 +36,8 @@ async function loginPage(browser: Browser, baseURL: string | undefined, person: 
 async function approveFromInbox(page: Page, documentLabel: string, toast: string | RegExp): Promise<void> {
   await page.goto("/approvals");
   const row = page.getByRole("row").filter({ hasText: documentLabel });
+  // 문서 링크는 토큰 색(--accent) — 브라우저 기본 파랑이 아니다(SYSTEM §1 · DOM 감사 04.1-02).
+  await expect(row.getByRole("link", { name: documentLabel })).toHaveCSS("color", "rgb(0, 84, 70)");
   await row.getByRole("button", { name: "승인" }).click();
   await expect(page.getByRole("status").filter({ hasText: toast })).toHaveText(toast);
   // 그 행이 `처리함` 그룹 머리글 뒤로 옮겨 가고 행동 버튼이 없다.

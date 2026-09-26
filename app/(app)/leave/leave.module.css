@@ -33,3 +33,9 @@
   align-items: baseline;
   font-variant-numeric: tabular-nums;
 }
+
+.link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: var(--underline-offset);
+}

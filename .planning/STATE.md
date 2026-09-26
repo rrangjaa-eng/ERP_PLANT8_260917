@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 34
+current_plan: 35
 status: executing
-stopped_at: Completed 04-41-PLAN.md
-last_updated: "2026-09-26T04:05:42.050Z"
+stopped_at: Completed 04-17-PLAN.md
+last_updated: "2026-09-26T09:29:25.055Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 4 execution started
-state_head: 35b3f60b799e656ec2ab46794d0bff22259ecc0e
+state_head: 7230cc1c50f5458f227cae1c50c653534adb1da0
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 115
-  completed_plans: 56
+  completed_plans: 57
   percent: 6
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 4 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 34
+Current Plan: 35
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-25 — Phase 4 execution started
@@ -105,6 +105,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P15 | 40min | 2 tasks | 14 files |
 | Phase 04 P16 | 47m | 3 tasks | 14 files |
 | Phase 04 P41 | 60min | 3 tasks | 19 files |
+| Phase 04 P17 | 43min | 2 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -263,6 +264,8 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-16: 매출 표 합계 행 거부 글자는 봉투 칸 수로 정하고 거부 요약과 같은 수명
 - [Phase 4]: 04-41: 계약 금액은 파생값 하나 — 0015가 업무 값 가드 뒤 projects.contract_* DROP(ARCHITECTURE §5 예외, DECISIONS 04-41)
 - [Phase 4]: 04-41: 매출 줄 쓰기 거부 규칙 revenue.entry-scope · revenue.replay-mismatch(write.denied id만), 새 줄은 화면 uuid 멱등 삽입
+- [Phase 4]: 04-17: 목록 입구는 loadProjectList 하나 — 판정 → 집계 → 쪽 보정 → 그 쪽 목록, 0건이면 목록 문장 없음
+- [Phase 4]: 04-17: 리포지토리 행 netProfitKrw가 수익금, profitKrw는 04-18까지 줄 차익 합
 
 ### Pending Todos
 
@@ -319,6 +322,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-26T04:05:41.831Z
-Stopped at: Completed 04-41-PLAN.md
+Last session: 2026-09-26T09:29:24.851Z
+Stopped at: Completed 04-17-PLAN.md
 Resume file: None

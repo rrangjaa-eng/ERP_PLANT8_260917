@@ -14,6 +14,7 @@ import { isCtrlCombo } from "@/lib/shortcut";
 import type { ProjectCopySource, ProjectInputFieldError } from "@/domain/projects";
 import type { Currency } from "@/domain/money";
 import { useCommaInput } from "@/ui/input/use-comma-input";
+import { resolveDefaultOptionId } from "./copy-defaults";
 import styles from "./projects.module.css";
 
 export type ProjectFormOption = { id: string; name: string };
@@ -276,7 +277,7 @@ export function ProjectForm({
             id="pmUserId"
             name="pmUserId"
             options={pmUsers.map((u) => ({ value: u.id, label: u.name }))}
-            defaultValue={copySource?.pmUserId}
+            defaultValue={resolveDefaultOptionId(copySource?.pmUserId, pmUsers)}
             error={pmError}
           />
         </Form.Field>
@@ -286,7 +287,7 @@ export function ProjectForm({
             id="teamId"
             name="teamId"
             options={teams.map((t) => ({ value: t.id, label: t.name }))}
-            defaultValue={copySource?.teamId ?? (teams.length === 1 ? teams[0]?.id : undefined)}
+            defaultValue={resolveDefaultOptionId(copySource?.teamId, teams, teams.length === 1 ? teams[0]?.id : undefined)}
             error={teamError}
           />
         </Form.Field>

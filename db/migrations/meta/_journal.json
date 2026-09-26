@@ -127,6 +127,13 @@
       "when": 1790433533474,
       "tag": "0017_restore_rehearsals",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790440003506,
+      "tag": "0018_users_first_login_at",
+      "breakpoints": true
     }
   ]
 }

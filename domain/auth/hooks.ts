@@ -4,7 +4,7 @@ import { CLIENT_IP_HEADER } from "@/lib/client-ip";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { countOpenFailures, recordAttempt, resolveOpenFailures } from "@/repositories/login-attempts";
 import { isLocked, lockoutConfig, windowStart, LOCKED_MESSAGE } from "@/domain/auth/lockout";
-import { findUserByEmail } from "@/repositories/users";
+import { findUserByEmail, setFirstLoginAtIfUnset } from "@/repositories/users";
 import { recordAction } from "@/domain/action-log/record";
 import type { Viewer } from "@/domain/viewer";
 
@@ -116,3 +116,20 @@ export const after = createAuthMiddleware(async (ctx) => {
     log.info("auth.lockout", { email, threshold, windowMinutes });
   }
 });
+
+// D8-07: better-auth databaseHooks.session.create.after의 처리 함수(lib/auth.ts가 등록). 로그인 방식·경로·
+// 로그인 로그 설정과 무관하게 세션이 만들어질 때마다 한 번 돌고, first_login_at이 NULL일 때만 채운다.
+// 기록 실패는 잡아 에러 로그만 남긴다(CEO-2) — 배지용 칼럼이 로그인을 막지 않고, 값이 NULL로 남아
+// 다음 로그인에서 다시 시도된다. 로그에는 userId와 오류 이름만(메시지는 값을 담을 수 있다).
+export async function recordFirstLogin(
+  session: { userId: string },
+  context: unknown,
+  deps?: { setFirstLoginAtIfUnset?: typeof setFirstLoginAtIfUnset },
+): Promise<void> {
+  void context;
+  try {
+    await (deps?.setFirstLoginAtIfUnset ?? setFirstLoginAtIfUnset)(SYSTEM_VIEWER, session.userId, new Date());
+  } catch (e) {
+    log.error("auth.first_login_record_failed", { userId: session.userId, name: e instanceof Error ? e.name : typeof e });
+  }
+}

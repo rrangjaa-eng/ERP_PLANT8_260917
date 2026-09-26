@@ -21,6 +21,14 @@ export async function setPasswordTemporary(viewer: Viewer, userId: string, value
   await db.update(users).set({ passwordIsTemporary: value }).where(eq(users.id, userId));
 }
 
+// D8-07: 첫 로그인 시각은 한 번만 쓴다 — 이미 값이 있으면 조건부 UPDATE가 아무것도 바꾸지 않는다.
+export async function setFirstLoginAtIfUnset(viewer: Viewer, userId: string, at: Date): Promise<void> {
+  await db
+    .update(users)
+    .set({ firstLoginAt: at })
+    .where(and(eq(users.id, userId), isNull(users.firstLoginAt)));
+}
+
 // Phase 3(03-05): Phase 1이 남긴 자리표시를 실제 행 필터로 채운다. scope.rows가
 // "none"이면 쿼리를 생략한다(보기 권한이 없는 viewer). includeArchived는
 // scopeFor(viewer, "user")의 보관함 보기 권한 판정 결과를 그대로 받는다 — 이

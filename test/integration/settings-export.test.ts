@@ -101,6 +101,18 @@ describe("설정 JSON 내보내기·가져오기 (ADMN-06, 실제 Postgres)", ()
     expect(await annualAndThreshold()).toEqual(before);
   });
 
+  it("(e2) 지난 연도 비교 조회가 DB 오류로 실패하면 검증 오류로 바꾸지 않고 그 오류를 그대로 올린다", async () => {
+    const before = await annualAndThreshold();
+    const outage = new Error("connection terminated");
+    const error = await importSettings(
+      SYSTEM_VIEWER,
+      payload({ [LEAVE_ANNUAL_DAYS.key]: [{ effectiveFrom: "2025-01-01", value: 20 }] }),
+      { ...importDeps, getSettingValue: () => Promise.reject(outage) },
+    ).catch((caught: unknown) => caught);
+    expect(error).toBe(outage);
+    expect(await annualAndThreshold()).toEqual(before);
+  });
+
   it("(f) 무변화 지난 행(2000-01-01 · 시드 15) + 미래 행은 통과하고 미래 행만 늘어난다", async () => {
     const before = await listSettingHistory(LEAVE_ANNUAL_DAYS);
     await importSettings(

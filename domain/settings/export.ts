@@ -9,6 +9,7 @@ import {
   getSettingValue as defaultGetSettingValue,
   listSettingHistory as defaultListSettingHistory,
   validateEffectiveFrom,
+  SettingNotFoundError,
 } from "@/domain/settings/registry";
 import { applySettingsImport as defaultApplySettingsImport } from "@/repositories/settings";
 
@@ -133,7 +134,10 @@ export async function importSettings(
           continue;
         }
         if (violation?.reason === "past_year") {
-          const effective: unknown = await getSettingValue(def, { asOf: seoulDateToUtcDate(effectiveFrom) }).catch(() => undefined);
+          const effective: unknown = await getSettingValue(def, { asOf: seoulDateToUtcDate(effectiveFrom) }).catch((caught: unknown) => {
+            if (caught instanceof SettingNotFoundError) return undefined;
+            throw caught;
+          });
           if (!isDeepStrictEqual(effective, parsed.data)) {
             issues.push(`'${key}'(${effectiveFrom}) ${violation.message}`);
             continue;

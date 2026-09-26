@@ -106,7 +106,7 @@ const revenueEntryRowSchema = z.object({
   id: z.string().uuid(),
   isNew: z.literal(true).optional(),
   version: z.number().optional(),
-  entryDate: z.string().min(1, "날짜를 입력하세요."),
+  entryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "날짜 형식이 아닙니다."),
   amount: moneyInputSchema,
   fxRateTouched: z.boolean().optional(),
   note: z.string().optional(),

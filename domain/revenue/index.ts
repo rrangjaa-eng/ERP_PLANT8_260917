@@ -22,6 +22,7 @@ import { getSettingValue as defaultGetSettingValue } from "@/domain/settings/reg
 import { TAX_VAT_RATE, TAX_ROUNDING_VAT_UNIT } from "@/domain/settings/keys";
 import { withTransaction } from "@/lib/db-transaction";
 import { kstDateOf } from "@/lib/kst-date";
+import { isCalendarDate, FORMAT_ERROR as DATE_FORMAT_ERROR } from "@/domain/projects/period";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { scopeFor } from "@/domain/permissions/scope-for";
 import { findProjectById as repoFindProjectById } from "@/repositories/projects";
@@ -302,6 +303,10 @@ type PreparedEntry = { input: RevenueEntryWriteRow; payload: EntryPayload };
 function prepareEntries(rows: RevenueEntryWriteRow[], formatErrors: CellFormatError[]): PreparedEntry[] {
   const prepared: PreparedEntry[] = [];
   rows.forEach((input, rowIndex) => {
+    if (!isCalendarDate(input.entryDate)) {
+      formatErrors.push({ rowIndex, ...(input.id ? { rowId: input.id } : {}), field: "entryDate", label: "날짜", reason: DATE_FORMAT_ERROR });
+      return;
+    }
     try {
       const columns = moneyToColumns(input.amount);
       prepared.push({

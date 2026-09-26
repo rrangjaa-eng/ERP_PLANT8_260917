@@ -974,6 +974,8 @@ export function QuoteLedger({
   const [blockedReason, setBlockedReason] = useState<{ clientKey: string; columnKey: string; message: string } | null>(null);
   const [sheetRowKey, setSheetRowKey] = useState<string | null>(null);
   const [statusToast, setStatusToast] = useState<string | null>(null);
+  // 사용자 결정 2026-09-26(VERDICT.md C-1) — 「버림」으로 지운 편집. 토스트가 떠 있는 동안만 되돌릴 수 있다.
+  const [discardedEdits, setDiscardedEdits] = useState<Record<string, unknown> | null>(null);
   // 04-22(S13) — 기간 칸. 기준값은 서버 렌더 값 또는 직전 저장 결과(엔지 리뷰 A §1 P1).
   const [periodBaseline, setPeriodBaseline] = useState({ startDate: period.startDate, endDate: period.endDate });
   // 검토 8(S18) — 「복원」한 기간 칸은 보관 시점 기준값으로 저장한다(그 사이 동료 저장이면 기간 충돌). 저장 성공·다시 그림에 비운다.
@@ -1214,9 +1216,8 @@ export function QuoteLedger({
     );
   }
 
-  function restoreEdits() {
-    const edits = dirtyStorage.restore();
-    if (!edits) return;
+  // 사용자 결정 2026-09-26(VERDICT.md C-1) — 「버림」·「되돌리기」가 같은 병합 로직을 쓴다.
+  function applyRestoredEdits(edits: Record<string, unknown>) {
     const restored = mergeRestoredEdits(lines, edits, subcategories[0]?.value ?? "", {
       quote: newLineCells,
       out_of_quote: outOfQuoteLineCells,
@@ -1236,6 +1237,25 @@ export function QuoteLedger({
     if (preEstimateBaselineDraft && Object.keys(restored.preEstimate).length > 0) {
       setPreEstimateDraft({ ...preEstimateBaselineDraft, ...restored.preEstimate });
     }
+  }
+
+  function restoreEdits() {
+    const edits = dirtyStorage.restore();
+    if (!edits) return;
+    applyRestoredEdits(edits);
+  }
+
+  // 사용자 결정 2026-09-26(VERDICT.md C-1) — 「버림」은 확인 없이 즉시 지우되, 되돌릴 수 있게
+  // 지운 편집을 들고 있다가 토스트 「되돌리기」에서 복원 병합을 그대로 적용한다.
+  function discardEdits() {
+    const edits = dirtyStorage.restore();
+    dirtyStorage.discard();
+    setDiscardedEdits(edits);
+  }
+
+  function undoDiscard() {
+    if (discardedEdits) applyRestoredEdits(discardedEdits);
+    setDiscardedEdits(null);
   }
   // 해소되지 않은 충돌 칸도 함께 센다 — 충돌이 남은 채 서버를 부르지 않는다.
   const errorCellCount =
@@ -2132,7 +2152,7 @@ export function QuoteLedger({
             <button type="button" className={styles.restoreAction} onClick={() => (saveLocked ? undefined : restoreEdits())}>
               복원
             </button>
-            <button type="button" className={styles.restoreAction} onClick={() => (saveLocked ? undefined : dirtyStorage.discard())}>
+            <button type="button" className={styles.restoreAction} onClick={() => (saveLocked ? undefined : discardEdits())}>
               버림
             </button>
           </span>
@@ -2341,6 +2361,9 @@ export function QuoteLedger({
       />
 
       {statusToast ? <Toast message={statusToast} onDismiss={() => setStatusToast(null)} /> : null}
+      {discardedEdits ? (
+        <Toast message="편집을 버렸습니다" actionLabel="되돌리기" onAction={undoDiscard} onDismiss={() => setDiscardedEdits(null)} />
+      ) : null}
     </>
   );
 }

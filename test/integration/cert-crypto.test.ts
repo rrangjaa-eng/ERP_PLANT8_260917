@@ -22,7 +22,7 @@ beforeEach(async () => {
 
 describe("cert-crypto — 평문 부재 · 가린 값 · 토큰 해시(Task 3 ⑥)", () => {
   it("세 표의 모든 text 칸에 13자리 평문·뒤 7자리·토큰 평문이 없다(스키마에서 text 칸을 모은다)", async () => {
-    await seedSubmittedCert({ rrn: "9304122123458", name: "김하늘", phone: "010-4821-7730" });
+    const seeded = await seedSubmittedCert({ rrn: "9304122123458", name: "김하늘", phone: "010-4821-7730" });
 
     const rrn13 = "9304122123458";
     const rrnTail7 = rrn13.slice(6);
@@ -36,6 +36,8 @@ describe("cert-crypto — 평문 부재 · 가린 값 · 토큰 해시(Task 3 �
           if (typeof value !== "string") continue;
           expect(value, `${getTableName(table)}.${key}에 13자리 평문이 있다`).not.toContain(rrn13);
           expect(value, `${getTableName(table)}.${key}에 뒤 7자리 평문이 있다`).not.toContain(rrnTail7);
+          // T7 — 링크 토큰 평문도 세 표 어느 칸에도 없다.
+          expect(value, `${getTableName(table)}.${key}에 토큰 평문이 있다`).not.toContain(seeded.token);
         }
       }
     }

@@ -152,21 +152,20 @@ commits: 9
 - **F4 계약 금액 타이핑 E2E 삭제**(Task 1): 계약 입력 칸이 없어졌다. 발행액 쉼표 타이핑은 number-format.spec (e)가 계속 다룬다.
 - **`vatRateLabel` DTO 필드 추가**(Task 1): 화면이 `부가세 10%`를 계산하지 않도록 DTO가 싣는다. 통합 테스트 toEqual에 필드를 더했다(강화).
 - **D-85 시드는 새 DB에만 적용**: 04-20 시드가 비-sysadmin 노출 행을 insert-if-absent로 넣는다. 플랜 truth "시드 재실행으로 기존 DB에 반영"은 성립하지 않는다(probe_fallback대로 바꿈). visibility.test (e)(f)가 두 경로를 고정했다.
-  - 새 DB에서는 팀장·본부장 계급도 staffDefault로 발행액을 본다. "팀장 행은 숨김 유지"라는 플랜 truth와 어긋난다.
+  - Opus 검토 B-1로 고쳤다(3e8c028 RED · 4fb03b6): 새 DB·재시드 DB 모두에서 기획 PM 행이 발행액을 본다. 팀장·본부 책임자 행은 새 DB에서도 숨김을 유지하고 재시드에서도 그대로다(관리자 변경 보존). 아래 "검토 반영" 절 참고.
 - **E2E 데이터 준비는 도메인으로 했다**: 매출 줄은 `saveRevenue`, 견적 줄은 `saveQuoteLines`로 심었다. 화면 입력 경로는 04-41 범위다.
 - **R2 E2E 사용자**: 플랜은 "경영관리 1280"이었다. 경영관리 계급은 견적 줄을 고칠 수 없어, role-pm 권한을 복사하고 매출 쓰기·모든 정보 노출을 더한 계급의 담당 PM으로 했다.
-- **저장 중 추가 버튼은 무동작**: 플랜 behavior는 "비활성"이지만, 04-49 리뷰 S-2 관례와 기존 E2E대로 무동작이다.
+- **저장 중 추가 버튼은 무동작**: 플랜 behavior는 "비활성"이지만, 04-49 리뷰 S-2 관례와 기존 E2E대로 무동작으로 냈다. Opus 검토 S-2로 고쳤다(020e81b RED · 4348356): 추가 버튼은 저장 중 `aria-disabled`다(DR-11 관례). 아래 "검토 반영" 절 참고.
 - **저장 잠금·1000 E2E 범위**:
   - 저장 중에는 `aria-busy` · 발행액 readOnly · 추가 무동작을 단언했다. "다른 셀에서 Enter·글자 입력이 편집을 열지 않음 · 방향키 이동"은 E2E로 단언하지 않았다. 매출 표 입력은 항상 열린 `cell` 입력이라 editCell 진입 경로가 없다.
   - 1000은 읽기 표(grid role 없음) · 추가 버튼 부재 · EMPTY 사실만을 단언했다. 금액 셀 readOnly는 기존 S-4가 단언한다.
 - **매출 표 합계 행 글자 수명**: 거부 봉투의 표별 칸 수로 정한다. 칸을 고쳐 오류 셀이 풀려도 글자는 다음 저장 시도까지 남는다. 견적 표 거부 요약과 같은 수명이다.
-- **미수 표시 색**: 입금 합계 행은 danger → warning 순서로 잇는다. 기존 미수·초과 입금 글자의 색(`--fg`)은 바꾸지 않았다. 플랜 문구의 `--warning`은 적용하지 않았다.
+- **미수 표시 색**: 입금 합계 행은 danger → warning 순서로 잇는다. 기존 미수·초과 입금 글자의 색(`--fg`)은 바꾸지 않았다. 플랜 문구의 `--warning`은 적용하지 않았다. Opus 검토 S-1로 고쳤다(d927eb0 RED · 46e77fc): 미수·초과 입금 글자는 `--warning`이다. 아래 "검토 반영" 절 참고.
 - **계약 금액 2행 묶음 구조 변경**(Task 1 코드): 구분자 ` · `를 nowrap 묶음 밖(줄바꿈되는 부모)으로 옮겼다. 같은 `NumberGroups`를 입금 2행과 접힌 줄에 쓴다.
 
 ### 절차 편차
 - Task 2 RED 테스트를 쓰기 전에 `test-driven-development` Skill을 부르지 않았다. GREEN 전에는 불렀다. 스킬 로그에 그대로 적었다.
-- **독립 DOM 감사는 실행하지 않았다.** 이 실행자 환경에는 서브에이전트를 띄우는 도구가 없다. 실행자가 대신 재면 CLAUDE.md §6(감사는 실행자가 아닌 별도 에이전트)을 어긴다. 폭별 판정은 없다. 오케스트레이터 남은 일이며 WINDOWS.md에 unrun-verify로 적었다.
-- 플랜 verify의 `CI=true pnpm test`(전체)는 디스패치 금지로 돌리지 않았다. 대상 스펙만 CI=true로 돌렸다. WINDOWS.md에 적었다.
+- 실행자 자신은 독립 DOM 감사·전체 게이트를 돌리지 않았다(당시 서브에이전트 도구 부재·디스패치 금지). 오케스트레이터가 뒤이어 둘 다 완료했다. 아래 "검토 반영" 절 참고.
 
 ## 느슨해진 테스트 단언(명시)
 
@@ -196,9 +195,31 @@ commits: 9
 - 이 경로를 재현·검증하지 않았다.
 - 곁가지: 04-49 SUMMARY 269행의 "계약 금액 입력이 1024 미만에서도 편집된다"는 Task 1이 계약 입력 칸을 없애 해소됐다.
 
+## 검토 반영 (Opus 검토, Codex 대체 — 한도 풀리면 Codex 재확인 필요)
+
+보고서 `/mnt/project-files/phase4-prep/04-16-review-opus.md`: BLOCKING 1 · SHOULD-FIX 4 · NIT 9.
+
+- **B-1(BLOCKING) 고침**(3e8c028 RED · 4fb03b6): 시드 upsert로 role-pm의 `revenue.issued_amount`가 새 DB와 재시드된 기존 DB 모두에서 노출된다. 팀장·본부 책임자 행은 새 DB에서 숨김을 유지하고, 재시드에서도 관리자 변경이 보존돼 그대로다. 이전 "판단" 절의 "새 DB에서는 팀장·본부장 계급도 발행액을 본다"는 편차 기록은 이 수정으로 대체됐다(계획 truth대로 고쳐졌다).
+- **S-1 고침**(d927eb0 · 46e77fc): 미수·초과 입금 글자를 `--warning`으로 칠했다.
+- **S-2 고침**(020e81b · 4348356): 저장 중 발행·입금 줄 추가 버튼이 `aria-disabled`다(DR-11 관례). 이전 "판단" 절의 "무동작(비활성 아님)" 편차 기록은 이 수정으로 대체됐다.
+- **S-3**(SUMMARY가 DOM 감사·전체 게이트 없이 complete를 주장) — 위 "남은 일" 1·2로 해소됐다.
+- **S-4**(미수정, 04-41 인계): `app/(app)/projects/[id]/quote-table.tsx:1930-1937`가 `rejectedEnvelope?.summary`를 그대로 쓴다. 지금은 `SaveRejectedError.summary`(`domain/quotes/lines.ts:415-424`)가 견적 줄 칸만 세서 맞다. 04-41이 매출 셀을 같은 봉투에 넣으면서 summary를 봉투 전체 칸 수로 바꾸면 R2("그 표의 칸 수")가 깨진다. 04-41은 `summary`가 견적 줄 칸만 세도록 유지하거나, 견적 표 글자를 `routedRejection.rest` 수로 화면에서 만들어야 한다.
+- **NIT(이월, 손대지 않음)**:
+  1. `quote-table.tsx:1922-1923` 표별 오류 수를 `Object.keys(row).length`(열 수)로 세어 봉투 칸 수보다 적게 셀 수 있음(표시와는 일치, 무해에 가까움)
+  2. `revenue-section.tsx:247,267,285` PM 발행 읽기 표 셀이 `.lockedCell`로 흐리게 그려짐 — `/design-review` 확인 대상
+  3. `quote-table.tsx:891` `revenueEntryIds` 매 렌더 재생성, onSuccess는 execute 시점 값 사용(실해 없음)
+  4. `revenue-section.tsx`의 `NumberGroups`가 `key={group}`이라 동일 문자열 중복 시 key 충돌 가능(현재 호출 경로엔 중복 없음)
+  5. 저장 잠금 E2E가 발행액 readonly·aria-busy·추가 무동작만 단언, 다른 셀 Enter·방향키 이동은 미단언
+  6. B3 셀 오류 렌더는 코드 리뷰로만 확인, E2E는 04-41 범위
+  7. 단위 테스트 경로 이동과 R2 E2E 사용자가 플랜과 다름(이유 타당, 기록됨)
+  8. 절차: fd8150d가 lint 오류 1건인 채 커밋됨, Task 2 RED 전 TDD 스킬 미호출(둘 다 SUMMARY 자인)
+  9. `project-detail.module.css:276`의 `max-width: 40ch`는 토큰이 아닌 폭 값(새 색·서체·radius 아님, SYSTEM.md의 `ch` 폭 관례를 따름)
+
 ## 관리자 조치(B-29)
 
-기존 운영 DB에는 D-85 기본값이 들어가지 않는다(insert-if-absent). 관리자가 노출 설정에서 기획 PM(role-pm) 행의 `revenue.issued_amount`를 켜야 PM이 발행 읽기 표를 본다. 새 DB에서는 팀장·본부장 계급도 발행액을 본다. 원치 않으면 그 행을 끈다.
+B-1 수정(4fb03b6)으로 role-pm 행은 upsert된다. 재시드된 기존 운영 DB에서도 기획 PM은 발행 읽기 표를 본다(관리자가 따로 켤 필요가 없다). 팀장·본부 책임자 행은 새 DB·재시드 DB 모두 숨김을 유지한다. 관리자가 이미 role-pm 행을 손댔다면(`updated_by` 있음) 그 값이 보존된다.
+
+실행자 스킬 호출 공백(오케스트레이터 대조, 로그 `/mnt/project-files/phase4-prep/04-16-skill-calls.md`): 06a8e80은 선행 `test-driven-development` 호출 없이 RED로 커밋됨, 7ea24b3(SUMMARY)은 검증 없이 커밋돼 오케스트레이터가 사후 확인함, fd8150d는 eslint 오류 1건인 채 커밋되고 ed96f5d에서 고쳐짐.
 
 ## RED 증거(TDD Gate Compliance)
 
@@ -221,8 +242,8 @@ commits: 9
 
 ## 남은 일(오케스트레이터)
 
-1. 별도 에이전트(model sonnet, verification-before-completion 명시)로 `CI=true` 독립 DOM 감사를 돌린다. 대상은 S6 backstop 1280·1024·375·1000이다: 가로 스크롤 0 · 숫자 꺾임 · 375 P1 두 열 · 접힌 줄 묶음 줄바꿈 · 긴 메모 PC 말줄임 · 1000 읽기 표. 고칠 곳이 나오면 `project-detail.module.css`만 고친다.
-2. 그 뒤 전체 게이트 `CI=true pnpm test`를 한 번 돌린다.
+1. ~~별도 에이전트로 `CI=true` 독립 DOM 감사~~ **완료.** 별도 에이전트(Sonnet, `CI=true`, 1280·1024·1000·375)가 S6 backstop을 실측했다. 보고서 `/mnt/project-files/phase4-prep/04-16-dom-audit.md`: PASS 22 · FAIL 0 · INFO 2(구조적 제약·프레임워크 특이사항, 결함 아님). 가로 스크롤 0 · 숫자 꺾임 없음 · 375 P1 두 열 · 접힌 줄 묶음 줄바꿈 · 메모 PC 말줄임 · 1000 읽기 표 전부 PASS. 고칠 곳 없음.
+2. ~~전체 게이트 `CI=true pnpm test`~~ **완료.** HEAD `4348356`에서 `CI=true`로 전체 게이트 실행: lint 0 · typecheck 0 · lint:sql 0 · 단위 1285 passed · 통합 1409 passed · E2E 343 passed.
 3. B-29 관리자 조치를 운영 DB 이관 체크리스트에 올린다.
 
 ## Self-Check: PASSED

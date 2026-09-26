@@ -62,29 +62,52 @@ function stripComments(text: string): string {
     .join("\n");
 }
 
+// 한 파일 본문에서 걸리는 문구. 양성 대조 테스트가 같은 함수로 스캐너가 실제로 잡는지 확인한다.
+function offendersIn(rel: string, source: string): string[] {
+  const found: string[] = [];
+  const text = stripComments(source);
+  for (const pattern of ERROR_SITES) {
+    for (const match of text.matchAll(pattern)) {
+      // 오류 클래스 자리만 두 그룹(클래스 · 문구)이다 — 문구는 늘 마지막 그룹.
+      const copy = (match[match.length - 1] ?? "").trim();
+      const errorClass = match.length > 2 ? (match[1] ?? "") : "";
+      if (EXEMPT.has(copy) || DEVELOPER_ERRORS.has(errorClass)) continue;
+      if (HONORIFIC_OR_PERIOD.test(copy)) found.push(`${rel}: ${copy}`);
+    }
+  }
+  for (const match of text.matchAll(FAILURE_SENTENCE)) found.push(`${rel}: ${(match[1] ?? "").trim()}`);
+  return found;
+}
+
 function offenders(): string[] {
   const found: string[] = [];
   for (const dir of SCAN_DIRS) {
     for (const file of sourceFiles(path.join(ROOT, dir))) {
       const rel = path.relative(ROOT, file).split(path.sep).join("/");
       if (DEVELOPER_ONLY.some((prefix) => rel.startsWith(prefix) || rel.includes(`/${prefix}`))) continue;
-      const text = stripComments(readFileSync(file, "utf8"));
-      for (const pattern of ERROR_SITES) {
-        for (const match of text.matchAll(pattern)) {
-          // 오류 클래스 자리만 두 그룹(클래스 · 문구)이다 — 문구는 늘 마지막 그룹.
-          const copy = (match[match.length - 1] ?? "").trim();
-          const errorClass = match.length > 2 ? (match[1] ?? "") : "";
-          if (EXEMPT.has(copy) || DEVELOPER_ERRORS.has(errorClass)) continue;
-          if (HONORIFIC_OR_PERIOD.test(copy)) found.push(`${rel}: ${copy}`);
-        }
-      }
-      for (const match of text.matchAll(FAILURE_SENTENCE)) found.push(`${rel}: ${(match[1] ?? "").trim()}`);
+      found.push(...offendersIn(rel, readFileSync(file, "utf8")));
     }
   }
   return [...new Set(found)].sort();
 }
 
 describe("오류 문구 명사형 통일 (결정 4 · SYSTEM.md §8-3)", () => {
+  // /review(testing) — 양성 대조: 패턴이 어긋나 아무것도 못 잡으면 아래 전수 검사가 늘 통과한다.
+  it.each([
+    'throw new UserFacingError("권한이 없습니다.");',
+    'name: z.string().min(1, "이름을 입력하세요."),',
+    'ctx.addIssue({ code: "custom", message: "절사 단위가 필요합니다." });',
+    'errors.push({ field: "fxRate", reason: `환율이 없습니다 · 환율 입력` });',
+    'return `저장하지 못했습니다 · ${message}`;',
+    "disabledReason={`오류 ${count}칸 · 고쳐야 저장됩니다`}",
+  ])("알려진 나쁜 예 %s 를 잡는다", (sample) => {
+    expect(offendersIn("sample.ts", sample)).not.toEqual([]);
+  });
+
+  it.each(['throw new UserFacingError("권한 없음");', 'reason: "날짜를 골라 주세요"'])("허용되는 예 %s 는 잡지 않는다", (sample) => {
+    expect(offendersIn("sample.ts", sample)).toEqual([]);
+  });
+
   it("사용자에게 보이는 오류 문구에 높임말 종결·마침표·「~하지 못했습니다」가 없다", () => {
     expect(offenders()).toEqual([]);
   });

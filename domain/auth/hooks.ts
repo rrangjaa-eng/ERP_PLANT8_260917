@@ -3,7 +3,8 @@ import { log } from "@/lib/log";
 import { CLIENT_IP_HEADER } from "@/lib/client-ip";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { countOpenFailures, recordAttempt, resolveOpenFailures } from "@/repositories/login-attempts";
-import { isLocked, lockoutConfig, recordLoginFailure, windowStart, LOCKED_MESSAGE } from "@/domain/auth/lockout";
+import { isLocked, lockoutConfig, recordLoginFailure, windowStart } from "@/domain/auth/lockout";
+import { lockedMessage } from "@/domain/auth/locked-message";
 import { findUserByEmail } from "@/repositories/users";
 import { recordAction } from "@/domain/action-log/record";
 import type { Viewer } from "@/domain/viewer";
@@ -65,7 +66,7 @@ export const before = createAuthMiddleware(async (ctx) => {
   const { threshold, windowMinutes } = await lockoutConfig();
   const count = await countOpenFailures(SYSTEM_VIEWER, email, windowStart(new Date(), windowMinutes));
   if (isLocked(count, threshold)) {
-    throw new APIError("FORBIDDEN", { message: LOCKED_MESSAGE });
+    throw new APIError("FORBIDDEN", { message: lockedMessage(windowMinutes) });
   }
 });
 

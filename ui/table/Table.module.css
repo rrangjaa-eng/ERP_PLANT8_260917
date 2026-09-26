@@ -32,6 +32,11 @@
   vertical-align: top;
 }
 
+/* §7-3 「행: hover --surface」 — 읽기 표(편집 셀 0개)의 줄. 편집 표는 편집 셀 hover(.editableCell)가 대신한다. */
+.table:not(.editable) tbody tr:hover > .cell {
+  background: var(--surface);
+}
+
 .alignRight {
   text-align: right;
   font-variant-numeric: tabular-nums;

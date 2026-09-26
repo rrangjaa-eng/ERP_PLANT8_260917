@@ -157,6 +157,30 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     return teamSelect;
   }
 
+  // /design-review FINDING-002 — SYSTEM.md §7-2: 오류 칸은 aria-invalid이고 테두리가 --danger다(선택 칸과 같다).
+  test("(e) 프로젝트명·종료일 오류 칸은 aria-invalid이고 테두리가 --danger다", async ({ page }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E오류테두리-${Date.now()}`, normalizedName: `e2e오류테두리-${Date.now()}` });
+    await loginAndOpenForm(page);
+    await page.getByLabel("클라이언트").selectOption({ label: vendor.name });
+    await page.locator("#startDate").fill(addDays(kstToday(new Date()), 5));
+    await page.locator("#endDate").fill(addDays(kstToday(new Date()), 1));
+    await page.getByRole("button", { name: "프로젝트 등록" }).click();
+
+    const name = page.locator("#project-form #name");
+    await expect(name).toHaveAttribute("aria-invalid", "true");
+    const danger = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--danger)";
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    });
+    for (const field of [name, page.locator("#project-form #endDate")]) {
+      await expect(field).toHaveCSS("border-top-color", danger);
+    }
+  });
+
   test("(a) 마우스 클릭 없이 마지막 칸에서 Control+Enter를 누르면 상세로 이동하고 번호가 부여된다", async ({
     page,
   }) => {

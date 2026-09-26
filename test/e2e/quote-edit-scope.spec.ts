@@ -739,6 +739,10 @@ test.describe("폭 규칙 — 1024 미만 보기 전용 · 좁은 PC 열 접기 
 
     const toast = page.getByRole("status").filter({ hasText: "편집을 버렸습니다" });
     await expect(toast).toBeVisible();
+    // /design-review FINDING-004 — 폰에서 되돌리기도 터치 목표 44×44(SYSTEM.md §3).
+    const undoBox = await toast.getByRole("button", { name: "되돌리기" }).boundingBox();
+    expect(undoBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+    expect(undoBox?.width ?? 0).toBeGreaterThanOrEqual(44);
     await toast.getByRole("button", { name: "되돌리기" }).click();
     await expect(page.locator("#period-end")).toHaveValue(newEnd);
     await expect(primarySave(page)).toContainText("일괄 저장 1");

@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 36
+current_plan: 37
 status: executing
-stopped_at: Completed 04-19-PLAN.md
-last_updated: "2026-09-26T11:06:03.602Z"
+stopped_at: Completed 04-47-PLAN.md
+last_updated: "2026-09-26T14:00:02.085Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 4 execution started
-state_head: 80eb51ad3f05d368cbc5e4922584a928693750a1
+state_head: 13ce68ced2397fba5f8b80b4bb7df3b07f2bd73f
 progress:
   total_phases: 16
   completed_phases: 1
-  total_plans: 115
-  completed_plans: 58
+  total_plans: 140
+  completed_plans: 59
   percent: 6
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 4 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 36
+Current Plan: 37
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-25 — Phase 4 execution started
@@ -107,6 +107,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P41 | 60min | 3 tasks | 19 files |
 | Phase 04 P17 | 43min | 2 tasks | 16 files |
 | Phase 04 P19 | 43 min | 2 tasks | 14 files |
+| Phase 04 P47 | 38min | 2 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -270,6 +271,7 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-19: 격자 포커스·범위 앵커는 { rowId, colKey }로 기억하고 onMoveRow·onDeleteRow·onDuplicateRow는 줄 id를 넘긴다 — 2쪽 이후 Delete·Alt+↑↓가 1쪽 같은 인덱스 줄에 작용하던 경로 제거(엔지 리뷰 C §1 P2)
 - [Phase 04]: 04-19: Ctrl+C는 훅이 가로채지 않고 Table이 document copy 이벤트에서 04-24 직렬화(copyText·quoteLineClipboardMeta)로 싣는다 — C-19 — 권한·실패 문구 없음, 접힌 선택에서도 Chromium이 copy를 쏜다는 것을 CI E2E로 확인
 - [Phase 04]: 04-19: 편집 중 Tab은 칸 안 다음 입력 → 없으면 확정 후 nextEditableCell(쪽 넘김), 편집 중이 아닐 때 Tab은 표를 떠난다 — §7-3 편집 키 줄과 (아) 탭 정지 1개를 함께 지킴
+- [Phase 4]: 04-47: 붙여넣기 머리는 조각이 있을 때만 · 표가 센 오류 수는 서버 거부 요약이 말하면 생략 · 표 밖 칸 서버 오류도 DR-5 남은 오류에 포함 · 외화 경고는 줄 단위 · revealRowId는 addLineToGroup 한 곳
 
 ### Pending Todos
 
@@ -327,6 +329,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-26T11:05:47.673Z
-Stopped at: Completed 04-19-PLAN.md
+Last session: 2026-09-26T14:00:01.862Z
+Stopped at: Completed 04-47-PLAN.md
 Resume file: None

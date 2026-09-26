@@ -54,9 +54,14 @@ export function clearDirtyEdits(storage: DirtyStorageLike, scopeId: string, subS
   storage.removeItem(dirtyStorageKey(scopeId, subScopeId));
 }
 
+// 검토 8 — `{owner}:base`는 칸이 아니라 그 owner의 보관 시점 기준값(version·baseline)이다 — 세지 않는다.
+function isBaseKey(key: string): boolean {
+  return key.endsWith(":base");
+}
+
 export function countDirtyEdits(edits: Record<string, unknown> | null): number {
   if (!edits) return 0;
-  return Object.keys(edits).length;
+  return Object.keys(edits).filter((key) => !isBaseKey(key)).length;
 }
 
 // 04-22(D-68 · DR-6) — 복원 줄의 칸 수를 저장소에서 읽는다(마운트 때 한 번 · recount 때 다시).
@@ -95,7 +100,7 @@ export function findOtherRevisionDrafts(
   const drafts: { revisionId: string; count: number }[] = [];
   for (const revisionId of otherSubScopeIds(storage, scopeId, currentSubScopeId)) {
     const edits = loadDirtyEdits(storage, scopeId, revisionId) ?? {};
-    const count = Object.keys(edits).filter((key) => !isSharedKey(key, sharedOwners)).length;
+    const count = Object.keys(edits).filter((key) => !isSharedKey(key, sharedOwners) && !isBaseKey(key)).length;
     if (count > 0) drafts.push({ revisionId, count });
   }
   return drafts;

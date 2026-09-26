@@ -313,6 +313,8 @@ function newDraftLine(defaultSubcategory: string, cells: LineCells, id: string =
 // 검토 B1 — 기간·총 매출 예상가 칸은 차수가 아니라 프로젝트의 칸이다(다른 차수 보관본에서 현재 차수로 옮긴다).
 export const PROJECT_EDIT_OWNERS = ["period", "preEstimate"] as const;
 type StoredUnitPrice = { amount: number; currency: Currency; fxRate: number };
+type StoredLineBase = { version: number; baseline: QuoteLineBaseline };
+type StoredPeriodBase = { startDate: string | null; endDate: string | null };
 type StoredNewLine = {
   lineKind: QuoteLineKind;
   subcategory: string;
@@ -359,10 +361,16 @@ export function editsSnapshot(
     if (line.executionAmount !== base.executionAmountKrw) edits[`${line.id}:execution`] = line.executionAmount;
     if (line.lineStatus !== base.lineStatus) edits[`${line.id}:status`] = line.lineStatus;
     if (line.note !== base.note) edits[`${line.id}:note`] = line.note;
+    // 검토 8(S18) — 칸이 하나라도 있으면 그 줄의 version·baseline을 함께 보관한다(복원 뒤 저장이 충돌 판정을 받는다).
+    if (lineDiffersFromBaseline(line) && line.version !== undefined) {
+      const stored: StoredLineBase = { version: line.version, baseline: base };
+      edits[`${line.id}:base`] = stored;
+    }
   }
   if (period) {
     if (period.start !== (periodBase.startDate ?? "")) edits["period:start"] = period.start;
     if (period.end !== (periodBase.endDate ?? "")) edits["period:end"] = period.end;
+    if ("period:start" in edits || "period:end" in edits) edits["period:base"] = periodBase;
   }
   if (preEstimate && preEstimateBase) {
     if (preEstimate.amount !== preEstimateBase.amount) edits["preEstimate:amount"] = preEstimate.amount;
@@ -390,6 +398,45 @@ function unitPricePatch(price: StoredUnitPrice): Partial<DraftLine> {
     unitPriceFxRate: price.fxRate,
     unitPriceAmountKrw: price.currency === "KRW" ? price.amount : Math.round(price.amount * price.fxRate),
   };
+}
+
+function isTextOrNull(value: unknown): value is string | null {
+  return typeof value === "string" || value === null;
+}
+
+function readLineBase(value: unknown): StoredLineBase | null {
+  if (!isRecord(value) || typeof value.version !== "number" || !isRecord(value.baseline)) return null;
+  const b = value.baseline;
+  if (
+    typeof b.subcategory !== "string" ||
+    typeof b.itemName !== "string" ||
+    !isTextOrNull(b.vendorId) ||
+    typeof b.quantity !== "number" ||
+    typeof b.unitPriceAmountKrw !== "number" ||
+    typeof b.executionAmountKrw !== "number" ||
+    typeof b.lineStatus !== "string" ||
+    !isTextOrNull(b.note)
+  ) {
+    return null;
+  }
+  return {
+    version: value.version,
+    baseline: {
+      subcategory: b.subcategory,
+      itemName: b.itemName,
+      vendorId: b.vendorId,
+      quantity: b.quantity,
+      unitPriceAmountKrw: b.unitPriceAmountKrw,
+      executionAmountKrw: b.executionAmountKrw,
+      lineStatus: b.lineStatus,
+      note: b.note,
+    },
+  };
+}
+
+function readPeriodBase(value: unknown): StoredPeriodBase | null {
+  if (!isRecord(value) || !isTextOrNull(value.startDate) || !isTextOrNull(value.endDate)) return null;
+  return { startDate: value.startDate, endDate: value.endDate };
 }
 
 // 보관본의 한 칸을 그 줄의 patch로. 모양이 맞지 않는 값(이전 버전이 쓴 값)은 버린다.
@@ -449,23 +496,32 @@ function restoredNewLine(value: unknown, defaultSubcategory: string, kindCells: 
 }
 
 // 「복원」 — 돌려받은 편집을 dirty 모양으로 병합한다(기존 줄 칸 덮기 · 새 줄 끝에 다시 만들기 · 기간 칸 값 ·
-// 총 매출 예상가 칸 값).
+// 총 매출 예상가 칸 값). 검토 8(S18) — 기존 줄·기간은 보관 시점 기준값을 되살려 그 사이 동료 저장이 저장 때
+// 충돌로 가게 한다. 기준값이 없는 옛 보관본의 줄 칸·기간 칸은 들이지 않는다(총 매출 예상가는 R3 — 나중 저장이 이긴다).
 export function mergeRestoredEdits(
   lines: DraftLine[],
   edits: Record<string, unknown>,
   defaultSubcategory: string,
   kindCells: Record<QuoteLineKind, LineCells>,
-): { lines: DraftLine[]; period: { start?: string; end?: string }; preEstimate: Partial<PreEstimateDraft> } {
+): {
+  lines: DraftLine[];
+  period: { start?: string; end?: string; base?: StoredPeriodBase };
+  preEstimate: Partial<PreEstimateDraft>;
+} {
   let next = lines;
   const added: DraftLine[] = [];
-  const period: { start?: string; end?: string } = {};
+  const periodBase = readPeriodBase(edits["period:base"]);
+  const period: { start?: string; end?: string; base?: StoredPeriodBase } = {};
   const preEstimate: Partial<PreEstimateDraft> = {};
   for (const [key, value] of Object.entries(edits)) {
     const cut = key.lastIndexOf(":");
     const owner = key.slice(0, cut);
     const column = key.slice(cut + 1);
     if (owner === "period") {
-      if (typeof value === "string" && (column === "start" || column === "end")) period[column] = value;
+      if (periodBase && typeof value === "string" && (column === "start" || column === "end")) {
+        period[column] = value;
+        period.base = periodBase;
+      }
       continue;
     }
     if (owner === "preEstimate") {
@@ -480,8 +536,9 @@ export function mergeRestoredEdits(
       continue;
     }
     const patch = restoredCellPatch(column, value);
-    if (!patch) continue;
-    next = next.map((line) => (line.id === owner ? { ...line, ...patch, dirty: true } : line));
+    const base = readLineBase(edits[`${owner}:base`]);
+    if (!patch || !base) continue;
+    next = next.map((line) => (line.id === owner ? { ...line, ...patch, ...base, dirty: true } : line));
   }
   return { lines: [...next, ...added], period, preEstimate };
 }
@@ -918,6 +975,9 @@ export function QuoteLedger({
   const [statusToast, setStatusToast] = useState<string | null>(null);
   // 04-22(S13) — 기간 칸. 기준값은 서버 렌더 값 또는 직전 저장 결과(엔지 리뷰 A §1 P1).
   const [periodBaseline, setPeriodBaseline] = useState({ startDate: period.startDate, endDate: period.endDate });
+  // 검토 8(S18) — 「복원」한 기간 칸은 보관 시점 기준값으로 저장한다(그 사이 동료 저장이면 기간 충돌). 저장 성공·다시 그림에 비운다.
+  const [restoredPeriodBase, setRestoredPeriodBase] = useState<{ startDate: string | null; endDate: string | null } | null>(null);
+  const periodSaveBaseline = restoredPeriodBase ?? periodBaseline;
   const [periodDraft, setPeriodDraft] = useState<PeriodDraft | null>(null);
   const [periodFocus, setPeriodFocus] = useState<"start" | "end">("start");
   const [periodErrors, setPeriodErrors] = useState<PeriodFieldError[]>([]);
@@ -980,6 +1040,7 @@ export function QuoteLedger({
       if (data?.project) {
         const saved = data.project;
         setPeriodBaseline({ startDate: saved.startDate, endDate: saved.endDate });
+        setRestoredPeriodBase(null);
         setPeriodErrors([]);
         setPreEstimateErrors([]);
         setSeenStatus(saved.status as ProjectStatus); // projects.status 열은 text — 값은 PROJECT_STATUSES 중 하나다.
@@ -1091,6 +1152,7 @@ export function QuoteLedger({
   function escapePeriod() {
     persistPendingRef.current = true;
     if (periodDirtyCount > 0) {
+      setRestoredPeriodBase(null);
       setPeriodDraft(periodBaselineDraft);
       setPeriodErrors([]);
       return;
@@ -1109,8 +1171,8 @@ export function QuoteLedger({
   useEffect(() => {
     if (!persistPendingRef.current) return;
     persistPendingRef.current = false;
-    persist(editsSnapshot(lines, periodDraft, periodBaseline, preEstimateDraft, preEstimateBaselineDraft));
-  }, [lines, periodDraft, periodBaseline, preEstimateDraft, preEstimateBaselineDraft, persist]);
+    persist(editsSnapshot(lines, periodDraft, periodSaveBaseline, preEstimateDraft, preEstimateBaselineDraft));
+  }, [lines, periodDraft, periodSaveBaseline, preEstimateDraft, preEstimateBaselineDraft, persist]);
 
   // DR-6 — 상태 바뀜 거부 뒤 router.refresh()가 새 status를 내려보내면 화면 편집(줄·매출·기간 칸)을
   // 서버 props로 되돌리고 보관본의 칸 수를 다시 읽어 복원 줄을 띄운다. 기간 저장 성공으로 상태가
@@ -1129,6 +1191,7 @@ export function QuoteLedger({
     setPaidEntries(entriesFromDto(revenue.paidEntries));
     setBalanceKrw(revenue.balanceKrw);
     setPeriodBaseline({ startDate: period.startDate, endDate: period.endDate });
+    setRestoredPeriodBase(null);
     setPeriodDraft(null);
     setPeriodErrors([]);
     setPreEstimateBase(preEstimate.value);
@@ -1159,11 +1222,14 @@ export function QuoteLedger({
       adjustment: adjustmentLineCells,
     });
     setLines(restored.lines);
-    if (restored.period.start !== undefined || restored.period.end !== undefined) {
+    if (restored.period.base) {
+      // 고치지 않은 칸도 보관 시점 값으로 — 보통 편집과 같이 기준값에서 시작한 초안이다.
+      const base = restored.period.base;
+      setRestoredPeriodBase(base);
       setPeriodFocus(restored.period.start !== undefined ? "start" : "end");
       setPeriodDraft({
-        start: restored.period.start ?? periodBaseline.startDate ?? "",
-        end: restored.period.end ?? periodBaseline.endDate ?? "",
+        start: restored.period.start ?? base.startDate ?? "",
+        end: restored.period.end ?? base.endDate ?? "",
       });
     }
     if (preEstimateBaselineDraft && Object.keys(restored.preEstimate).length > 0) {
@@ -1361,7 +1427,7 @@ export function QuoteLedger({
           ? {
               startDate: periodDraft.start.trim() || null,
               endDate: periodDraft.end.trim() || null,
-              baseline: periodBaseline,
+              baseline: periodSaveBaseline,
             }
           : undefined,
       preEstimate:

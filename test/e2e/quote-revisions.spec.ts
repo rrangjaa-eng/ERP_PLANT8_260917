@@ -949,7 +949,8 @@ test.describe("이전 차수 보관본 복원 줄 (04-24 Task 4 — DR-4 · DR-3
     await copyRevision(project.id, project.revisionId);
     const end = addDays(TODAY, 40);
     await login(page, pm);
-    await seedDraft(page, project.id, project.revisionId, { "period:end": end });
+    // 검토 8 — 기간 칸 보관본은 보관 시점 기준값(`period:base`)과 함께 쓰인다(기준값 없는 옛 보관본은 복원하지 않는다).
+    await seedDraft(page, project.id, project.revisionId, { "period:end": end, "period:base": { startDate: null, endDate: null } });
     await page.goto(`/projects/${project.id}`);
     await expect(page.getByText(`${project.number} · 상세 견적 2차`, { exact: true })).toBeVisible();
 

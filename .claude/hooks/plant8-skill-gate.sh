@@ -178,9 +178,11 @@ case "$event" in
     # 문서만 바꾼 PR(.planning/·.claude/gates/ 아래 파일, *.md — 단 CLAUDE.md와 .claude/ 아래 .md 제외)은
     # /qa 면제(사용자 승인 2026-09-25). gh가 우선이다: 목록을 못 읽거나 받은 수가 changed_files와
     # 다르면 문서만으로 보지 않는다. gh가 없거나 실패하면(클라우드 세션) origin ls-remote로 얻은
-    # PR 헤드 sha와 로컬 origin/main의 diff(옛 경로 포함, 사용자 승인 2026-09-26)에 같은 규칙을 쓴다.
-    # origin이 owner/repo와 다르거나, PR 헤드나 origin/main이 로컬에 없거나, expectedHeadSha가
-    # PR 헤드와 다르면 판정하지 않고 막는다. 이름 바꾸기는 옛 경로도 본다.
+    # GitHub 병합 커밋(refs/pull/N/merge)의 첫 부모(PR 대상 브랜치) 대비 diff(옛 경로 포함, 사용자
+    # 승인 2026-09-26)에 같은 규칙을 쓴다. 로컬 origin/main은 쓰지 않는다(대상이 main이 아니거나 위조).
+    # origin이 owner/repo와 다르거나(대소문자 무시), expectedHeadSha가 없거나 PR 헤드와 다르거나,
+    # 병합 커밋이 없거나 로컬에 없거나 그 둘째 부모가 PR 헤드가 아니면 판정하지 않고 막는다.
+    # 이름 바꾸기는 옛 경로도 본다.
     # 판정은 파이프 없이(SIGPIPE가 결과를 뒤집지 않게).
     pr="$(printf '%s' "$payload" | jq -r '.tool_input | "repos/\(.owner // "")/\(.repo // "")/pulls/\(.pullNumber // "")"')"
     docs_only=0
@@ -199,21 +201,32 @@ case "$event" in
       pull_number="$(printf '%s' "$payload" | jq -r '.tool_input.pullNumber // empty')"
       expected_head_sha="$(printf '%s' "$payload" | jq -r '.tool_input.expectedHeadSha // empty')"
       origin_ok=0
-      if [[ "$pull_number" =~ ^[0-9]+$ ]] && [ -n "$owner" ] && [ -n "$repo" ]; then
+      if [[ "$pull_number" =~ ^[0-9]+$ ]] && [ -n "$owner" ] && [ -n "$repo" ] && [ -n "$expected_head_sha" ]; then
         origin_url="$(git -C "$cwd" config --get remote.origin.url 2>/dev/null || true)"
         origin_url="${origin_url%.git}"
+        origin_url="${origin_url,,}" owner="${owner,,}" repo="${repo,,}"
         case "$origin_url" in
           */"$owner"/"$repo") origin_ok=1 ;;
           *:"$owner"/"$repo") origin_ok=1 ;;
         esac
       fi
       if [ "$origin_ok" = 1 ]; then
-        ls_out="$(GIT_TERMINAL_PROMPT=0 timeout 5 git -C "$cwd" ls-remote origin "refs/pull/$pull_number/head" 2>/dev/null || true)"
-        head_sha="${ls_out%%$'\t'*}"
-        if [ "$ls_out" = "$head_sha"$'\t'"refs/pull/$pull_number/head" ] \
-          && [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]] \
-          && { [ -z "$expected_head_sha" ] || [ "$expected_head_sha" = "$head_sha" ]; }; then
-          pr_files="$(git -C "$cwd" -c core.quotePath=false diff --no-renames --name-only "refs/remotes/origin/main...$head_sha" 2>/dev/null || true)"
+        ls_out="$(GIT_TERMINAL_PROMPT=0 timeout 5 git -C "$cwd" ls-remote origin "refs/pull/$pull_number/head" "refs/pull/$pull_number/merge" 2>/dev/null || true)"
+        head_sha="" merge_sha=""
+        while IFS=$'\t' read -r sha ref; do
+          case "$ref" in
+            "refs/pull/$pull_number/head") head_sha="$sha" ;;
+            "refs/pull/$pull_number/merge") merge_sha="$sha" ;;
+          esac
+        done <<<"$ls_out"
+        if [ "$(grep -c . <<<"$ls_out")" = 2 ] \
+          && [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]] && [[ "$merge_sha" =~ ^[0-9a-f]{40}$ ]] \
+          && [ "$expected_head_sha" = "$head_sha" ]; then
+          # 병합 커밋의 부모는 정확히 둘(대상 브랜치, PR 헤드)이어야 한다.
+          parents="$(git -C "$cwd" rev-list --parents -n 1 "$merge_sha" 2>/dev/null || true)"
+          if [[ "$parents" =~ ^$merge_sha\ ([0-9a-f]{40})\ $head_sha$ ]]; then
+            pr_files="$(git -C "$cwd" -c core.quotePath=false diff --no-renames --name-only "${BASH_REMATCH[1]}" "$merge_sha" 2>/dev/null || true)"
+          fi
         fi
       fi
     fi
@@ -222,7 +235,7 @@ case "$event" in
                   END { exit bad }' <<<"$pr_files" && docs_only=1
     fi
     gate_has review && { [ "$docs_only" = 1 ] || gate_has qa; } \
-      || deny "PR 머지 전에 gstack Post-build를 실제로 호출하라: /review → /qa(문서만 바뀐 PR은 면제) → (해당 시)/cso → /ship. gh가 없으면 PR 헤드 커밋과 origin/main이 로컬에 있어야 문서 PR로 판정한다(git fetch origin)."
+      || deny "PR 머지 전에 gstack Post-build를 실제로 호출하라: /review → /qa(문서만 바뀐 PR은 면제) → (해당 시)/cso → /ship. gh가 없으면 expectedHeadSha를 넣고 PR 커밋을 받아 둬야 문서 PR로 판정한다(git fetch origin pull/${pull_number:-N}/head pull/${pull_number:-N}/merge)."
     ;;
 esac
 exit 0

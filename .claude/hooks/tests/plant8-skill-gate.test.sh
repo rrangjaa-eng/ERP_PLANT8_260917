@@ -437,11 +437,11 @@ chmod +x "$GH_STUB_DIR/gh"
 payload_merge() {  # $1=session $2=expectedHeadSha(선택)
   local session="$1" sha="${2:-}"
   if [ -n "$sha" ]; then
-    jq -nc --arg s "$session" --arg sha "$sha" \
-      '{session_id:$s, tool_name:"mcp__github__merge_pull_request", tool_input:{owner:"o", repo:"r", pullNumber:7, expectedHeadSha:$sha}}'
+    jq -nc --arg s "$session" --arg sha "$sha" --arg o "${PM_OWNER:-o}" --arg r "${PM_REPO:-r}" \
+      '{session_id:$s, tool_name:"mcp__github__merge_pull_request", tool_input:{owner:$o, repo:$r, pullNumber:7, expectedHeadSha:$sha}}'
   else
-    jq -nc --arg s "$session" \
-      '{session_id:$s, tool_name:"mcp__github__merge_pull_request", tool_input:{owner:"o", repo:"r", pullNumber:7}}'
+    jq -nc --arg s "$session" --arg o "${PM_OWNER:-o}" --arg r "${PM_REPO:-r}" \
+      '{session_id:$s, tool_name:"mcp__github__merge_pull_request", tool_input:{owner:$o, repo:$r, pullNumber:7}}'
   fi
 }
 merge_hook() {  # $1=session $2=project $3=files(줄바꿈) $4=gh rc $5=changed_files(기본: 목록 줄 수) $6=expectedHeadSha
@@ -511,8 +511,12 @@ pr_commit() {  # $1=proj $2=rel
   stage_file "$1" "$2" >/dev/null
   git -C "$1" commit -q -m "add $2" >/dev/null
 }
-pr_push() {  # $1=proj → 현재 HEAD를 refs/pull/7/head로 강제 푸시
+pr_push() {  # $1=proj $2=base(기본 origin/main) → HEAD를 refs/pull/7/head로, GitHub처럼 base+HEAD 병합 커밋을 refs/pull/7/merge로
+  local base="${2:-origin/main}" tree merge
   git -C "$1" push -q -f origin HEAD:refs/pull/7/head >/dev/null
+  tree="$(git -C "$1" merge-tree --write-tree "$base" HEAD)"
+  merge="$(git -C "$1" commit-tree "$tree" -p "$base" -p HEAD -m "Merge into $base")"
+  git -C "$1" push -q -f origin "$merge:refs/pull/7/merge" >/dev/null
 }
 pr_clone() {  # $1=proj → 그 프로젝트의 origin을 새 클론으로, 경로만 stdout
   local proj="$1" remote clone
@@ -533,7 +537,7 @@ pr_push "$projPR"
 HEAD_DOCS="$(git -C "$projPR" rev-parse HEAD)"
 MAIN_SHA="$(git -C "$projPR" rev-parse origin/main)"
 
-merge_hook "$SPR" "$projPR" "" 127
+merge_hook "$SPR" "$projPR" "" 127 "" "$HEAD_DOCS"
 expect_rc "merge(gh 없음): 문서만 바뀐 PR + review만 -> 통과" 0 "$HOOK_RC"
 
 merge_hook "$SPR" "$projPR" "app/page.tsx" 0
@@ -546,7 +550,7 @@ merge_hook "$SPR" "$projPR" "" 127 "" "$MAIN_SHA"
 expect_rc "merge(gh 없음): expectedHeadSha가 PR 헤드와 다름 -> exit 2" 2 "$HOOK_RC"
 
 pr_commit "$projPR" app/extra.ts
-merge_hook "$SPR" "$projPR" "" 127
+merge_hook "$SPR" "$projPR" "" 127 "" "$HEAD_DOCS"
 expect_rc "merge(gh 없음): 로컬 HEAD에 푸시 안 한 코드 커밋이 있어도 PR 헤드가 문서만 -> 통과" 0 "$HOOK_RC"
 
 # N2: 코드 파일 섞인 PR
@@ -555,7 +559,7 @@ S2="sid-n2-$$"
 pr_commit "$proj2" docs/x.md
 pr_commit "$proj2" app/page.tsx
 pr_push "$proj2"
-merge_hook "$S2" "$proj2" "" 127
+merge_hook "$S2" "$proj2" "" 127 "" "$(git -C "$proj2" rev-parse HEAD)"
 expect_rc "merge(gh 없음): 코드 파일 섞인 PR + review만 -> exit 2" 2 "$HOOK_RC"
 
 # N3: 코드를 문서로 이름 바꾼 PR(옛 경로 포함 검사)
@@ -564,7 +568,7 @@ S3="sid-n3-$$"
 git -C "$proj3" mv app/moved.ts docs/moved.md
 git -C "$proj3" commit -q -m "rename to docs" >/dev/null
 pr_push "$proj3"
-merge_hook "$S3" "$proj3" "" 127
+merge_hook "$S3" "$proj3" "" 127 "" "$(git -C "$proj3" rev-parse HEAD)"
 expect_rc "merge(gh 없음): 코드를 문서로 이름 바꾼 PR + review만 -> exit 2" 2 "$HOOK_RC"
 
 # N4: PR 헤드 커밋이 로컬에 없음(다른 클론에서 만든 커밋을 refs/pull/7/head로 푸시)
@@ -574,7 +578,7 @@ clone4="$(pr_clone "$proj4")"
 stage_file "$clone4" docs/y.md >/dev/null
 git -C "$clone4" commit -q -m "docs only" >/dev/null
 git -C "$clone4" push -q -f origin HEAD:refs/pull/7/head >/dev/null
-merge_hook "$S4" "$proj4" "" 127
+merge_hook "$S4" "$proj4" "" 127 "" "$(git -C "$clone4" rev-parse HEAD)"
 expect_rc "merge(gh 없음): PR 헤드 커밋이 로컬에 없음 -> exit 2" 2 "$HOOK_RC"
 
 # N5: origin에 refs/pull/7/head 없음(브랜치로만 푸시)
@@ -582,7 +586,7 @@ proj5="$(pr_project o r)"
 S5="sid-n5-$$"
 pr_commit "$proj5" docs/z.md
 git -C "$proj5" push -q origin feature >/dev/null
-merge_hook "$S5" "$proj5" "" 127
+merge_hook "$S5" "$proj5" "" 127 "" "$(git -C "$proj5" rev-parse HEAD)"
 expect_rc "merge(gh 없음): origin에 refs/pull/7/head 없음 -> exit 2" 2 "$HOOK_RC"
 
 # N6: origin이 payload owner/repo(o/r)와 다름
@@ -590,18 +594,90 @@ proj6="$(pr_project x y)"
 S6="sid-n6-$$"
 pr_commit "$proj6" docs/w.md
 pr_push "$proj6"
-merge_hook "$S6" "$proj6" "" 127
+merge_hook "$S6" "$proj6" "" 127 "" "$(git -C "$proj6" rev-parse HEAD)"
 expect_rc "merge(gh 없음): origin이 payload owner/repo와 다름 -> exit 2" 2 "$HOOK_RC"
 
-# N10: 로컬에 origin/main이 없음
+# N10: 병합 커밋이 로컬에 없음(다른 클론에서 만든 병합 커밋을 refs/pull/7/merge로 푸시)
 proj10="$(pr_project o r)"
 S10="sid-n10-$$"
 pr_commit "$proj10" docs/v.md
-pr_push "$proj10"
-git -C "$proj10" update-ref -d refs/remotes/origin/main
-merge_hook "$S10" "$proj10" "" 127
-expect_rc "merge(gh 없음): 로컬에 origin/main이 없음 -> exit 2" 2 "$HOOK_RC"
-expect_contains "merge(gh 없음): 판정 못 하면 메시지에 git fetch origin 안내" "$HOOK_STDERR" "git fetch origin"
+git -C "$proj10" push -q -f origin HEAD:refs/pull/7/head >/dev/null
+H10="$(git -C "$proj10" rev-parse HEAD)"
+clone10="$(pr_clone "$proj10")"
+git -C "$clone10" fetch -q origin refs/pull/7/head >/dev/null
+git -C "$clone10" push -q -f origin "$(git -C "$clone10" commit-tree "$(git -C "$clone10" rev-parse 'FETCH_HEAD^{tree}')" -p origin/main -p FETCH_HEAD -m m):refs/pull/7/merge" >/dev/null
+merge_hook "$S10" "$proj10" "" 127 "" "$H10"
+expect_rc "merge(gh 없음): 병합 커밋이 로컬에 없음 -> exit 2" 2 "$HOOK_RC"
+expect_contains "merge(gh 없음): 판정 못 하면 메시지에 PR head·merge fetch 안내" "$HOOK_STDERR" "git fetch origin pull/7/head pull/7/merge"
+
+# N12: expectedHeadSha 없음(판정 뒤 코드 push 경합) -> 차단
+proj12="$(pr_project o r)"
+S12="sid-n12-$$"
+pr_commit "$proj12" docs/u.md
+pr_push "$proj12"
+merge_hook "$S12" "$proj12" "" 127
+expect_rc "merge(gh 없음): expectedHeadSha 없음 -> exit 2" 2 "$HOOK_RC"
+
+# N13: 원격 URL 대소문자(O/R)와 payload(o/r)가 달라도 같은 저장소
+proj13="$(pr_project O R)"
+S13="sid-n13-$$"
+pr_commit "$proj13" docs/t.md
+pr_push "$proj13"
+merge_hook "$S13" "$proj13" "" 127 "" "$(git -C "$proj13" rev-parse HEAD)"
+expect_rc "merge(gh 없음): owner/repo 대소문자만 다름 -> 통과" 0 "$HOOK_RC"
+
+# N14: ssh(scp 형식) origin URL git@github.com:o/r.git
+proj14="$(pr_project o r)"
+S14="sid-n14-$$"
+pr_commit "$proj14" docs/s.md
+pr_push "$proj14"
+remote14="$(git -C "$proj14" config --get remote.origin.url)"
+git -C "$proj14" config url."${remote14%/o/r.git}/".insteadOf "git@github.com:"
+git -C "$proj14" remote set-url origin "git@github.com:o/r.git"
+merge_hook "$S14" "$proj14" "" 127 "" "$(git -C "$proj14" rev-parse HEAD)"
+expect_rc "merge(gh 없음): ssh 형식 origin URL -> 통과" 0 "$HOOK_RC"
+
+# N15: main이 아닌 대상(release). main에 들어간 코드가 release 기준으로는 PR 변경분
+proj15="$(pr_project o r)"
+S15="sid-n15-$$"
+git -C "$proj15" push -q origin main:release >/dev/null
+git -C "$proj15" checkout -q main
+pr_commit "$proj15" app/page.tsx
+git -C "$proj15" push -q origin main >/dev/null
+git -C "$proj15" fetch -q origin >/dev/null
+git -C "$proj15" checkout -q -b feature15
+pr_commit "$proj15" docs/r.md
+pr_push "$proj15" origin/release
+merge_hook "$S15" "$proj15" "" 127 "" "$(git -C "$proj15" rev-parse HEAD)"
+expect_rc "merge(gh 없음): release 대상 PR에 코드 변경 포함 -> exit 2" 2 "$HOOK_RC"
+
+# N16: 로컬 origin/main을 바꿔도(위조) 판정이 흔들리지 않음
+proj16="$(pr_project o r)"
+S16="sid-n16-$$"
+pr_commit "$proj16" app/page.tsx
+pr_commit "$proj16" docs/q.md
+pr_push "$proj16"
+git -C "$proj16" update-ref refs/remotes/origin/main HEAD~1
+merge_hook "$S16" "$proj16" "" 127 "" "$(git -C "$proj16" rev-parse HEAD)"
+expect_rc "merge(gh 없음): 로컬 origin/main 위조 + 코드 PR -> exit 2" 2 "$HOOK_RC"
+
+# N17: 병합 ref가 옛 head 기준(충돌·재계산 전) -> 차단
+proj17="$(pr_project o r)"
+S17="sid-n17-$$"
+pr_commit "$proj17" docs/p.md
+pr_push "$proj17"
+pr_commit "$proj17" docs/p2.md
+git -C "$proj17" push -q -f origin HEAD:refs/pull/7/head >/dev/null
+merge_hook "$S17" "$proj17" "" 127 "" "$(git -C "$proj17" rev-parse HEAD)"
+expect_rc "merge(gh 없음): 병합 ref의 PR 쪽 부모가 현재 head와 다름 -> exit 2" 2 "$HOOK_RC"
+
+# N18: 병합 ref 없음(충돌 PR) -> 차단
+proj18="$(pr_project o r)"
+S18="sid-n18-$$"
+pr_commit "$proj18" docs/o.md
+git -C "$proj18" push -q -f origin HEAD:refs/pull/7/head >/dev/null
+merge_hook "$S18" "$proj18" "" 127 "" "$(git -C "$proj18" rev-parse HEAD)"
+expect_rc "merge(gh 없음): refs/pull/7/merge 없음 -> exit 2" 2 "$HOOK_RC"
 
 # ---------------------------------------------------------------------------
 # Isolation: real gate logs unchanged

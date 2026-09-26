@@ -212,7 +212,7 @@ export function PruneControl({ filter, count }: { filter: ActionLogFilterPayload
       <Button variant="secondary" onClick={() => setConfirming(false)}>
         취소
       </Button>
-      {result.serverError ? <span className={styles.confirmError}>정리하지 못했습니다 · 다시 시도</span> : null}
+      {result.serverError ? <span className={styles.confirmError}>정리 실패 · 다시 시도</span> : null}
     </span>
   );
 }

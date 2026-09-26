@@ -14,7 +14,7 @@ const customFieldsSchema = z.record(z.string(), z.unknown()).optional();
 export const createVendorAction = authedActionClient
   .schema(
     z.object({
-      name: z.string().min(1, "이름을 입력하세요."),
+      name: z.string().min(1, "이름 필요 · 이름 입력"),
       businessNo: z.string().optional(),
       defaultEvidenceType: z.string().optional(),
       accountBank: z.string().optional(),
@@ -33,7 +33,7 @@ export const updateVendorAction = authedActionClient
   .schema(
     z.object({
       id: z.string().min(1),
-      name: z.string().min(1, "이름을 입력하세요."),
+      name: z.string().min(1, "이름 필요 · 이름 입력"),
       businessNo: z.string().optional(),
       defaultEvidenceType: z.string().optional(),
       accountBank: z.string().optional(),

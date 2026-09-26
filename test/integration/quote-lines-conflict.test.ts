@@ -243,7 +243,7 @@ describe("domain/quotes/lines saveQuoteLines — 배치 충돌·전부 거부(04
       expect(rejected.formatErrors[0]?.field).toBe("quantity");
       expect(rejected.formatErrors[0]?.rowIndex).toBe(1);
       expect(rejected.summary).toBe("오류 1칸 · 전부 거부"); // 04-28 거부 봉투 요약.
-      expect(rejected.message).toBe("오류 1칸 · 전부 거부 · [수량] 숫자가 아닙니다 · 0보다 큰 수를 적어 주세요");
+      expect(rejected.message).toBe("오류 1칸 · 전부 거부 · [수량] 숫자 형식 오류 · 0보다 큰 수");
     }
 
     const rows = await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id));

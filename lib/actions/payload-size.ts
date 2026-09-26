@@ -15,6 +15,6 @@ export function checkPayloadSize(payload: unknown, maxBytes: number = MAX_ACTION
   return {
     ok: false,
     bytes,
-    reason: `요청이 너무 큽니다 · ${toKb(bytes)}KB > ${toKb(maxBytes)}KB 한도 · 나눠서 저장해 주세요`,
+    reason: `요청 크기 초과 · ${toKb(bytes)}KB > ${toKb(maxBytes)}KB 한도 · 나눠서 저장`,
   };
 }

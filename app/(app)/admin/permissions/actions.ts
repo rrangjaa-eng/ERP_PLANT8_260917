@@ -19,9 +19,9 @@ export const setPermissionCellAction = authedActionClient
   .schema(
     z.object({
       roleId: z.string().min(1).refine(async (value) => roleExists(SYSTEM_VIEWER, value), {
-        message: "알 수 없는 계급입니다.",
+        message: "알 수 없는 계급",
       }),
-      menu: z.string().refine((value) => menuKeys.has(value), "알 수 없는 메뉴입니다."),
+      menu: z.string().refine((value) => menuKeys.has(value), "알 수 없는 메뉴"),
       action: z.enum(PERMISSION_ACTIONS),
       allowed: z.boolean(),
     }),

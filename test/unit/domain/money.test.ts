@@ -209,11 +209,11 @@ describe("normalizeMoneyInput", () => {
     expect(normalizeMoneyInput({ currency: "USD", amount: 4400.1, fxRate: 1318.1818 })).toEqual({ currency: "USD", amount: 4400.1, fxRate: 1318.1818 });
   });
 
-  it("USD 환율 0 · 음수는 fx-rate — 「환율은 0보다 커야 합니다 · 환율을 고쳐 주세요」", () => {
+  it("USD 환율 0 · 음수는 fx-rate — 「환율 0 이하 · 환율 수정」", () => {
     for (const fxRate of [0, -1]) {
       const error = rejection({ currency: "USD", amount: 100, fxRate });
       expect(error.reason).toBe("fx-rate");
-      expect(error.message).toBe("환율은 0보다 커야 합니다 · 환율을 고쳐 주세요");
+      expect(error.message).toBe("환율 0 이하 · 환율 수정");
     }
   });
 
@@ -227,16 +227,16 @@ describe("normalizeMoneyInput", () => {
     expect(rejection({ currency: "KRW", amount: -1_000_000_000_001, fxRate: 1 }).reason).toBe("range");
     const usd = rejection({ currency: "USD", amount: 1_000_000_000, fxRate: 1350 });
     expect(usd.reason).toBe("range");
-    expect(usd.message).toBe("금액이 상한을 넘습니다 · 999,999,999,999원 이하");
+    expect(usd.message).toBe("금액 상한 초과 · 999,999,999,999원 이하");
     expect(normalizeMoneyInput({ currency: "KRW", amount: KRW_COLUMN_MAX, fxRate: 1 }).amount).toBe(KRW_COLUMN_MAX);
     expect(normalizeMoneyInput({ currency: "KRW", amount: KRW_COLUMN_MIN, fxRate: 1 }).amount).toBe(KRW_COLUMN_MIN);
   });
 
-  it("NaN · Infinity 금액은 not-finite — 「숫자가 아닙니다 · 12,400,000처럼 적어 주세요」", () => {
+  it("NaN · Infinity 금액은 not-finite — 「숫자 형식 오류 · 12,400,000처럼」", () => {
     for (const amount of [Number.NaN, Number.POSITIVE_INFINITY]) {
       const error = rejection({ currency: "KRW", amount, fxRate: 1 });
       expect(error.reason).toBe("not-finite");
-      expect(error.message).toBe("숫자가 아닙니다 · 12,400,000처럼 적어 주세요");
+      expect(error.message).toBe("숫자 형식 오류 · 12,400,000처럼");
     }
   });
 
@@ -256,7 +256,7 @@ describe("normalizeMoneyInput", () => {
   it("(SF-1) 환율이 fx_rate numeric(12,4) 밖(≥ 10^8)이면 range — 원화 환산이 범위 안이어도 PG 22003으로 새지 않는다", () => {
     const fx = rejection({ currency: "USD", amount: 0, fxRate: 1_000_000_000 });
     expect(fx.reason).toBe("range");
-    expect(fx.message).toBe("환율이 상한을 넘습니다 · 환율을 고쳐 주세요");
+    expect(fx.message).toBe("환율 상한 초과 · 환율 수정");
     expect(rejection({ currency: "USD", amount: 0, fxRate: 100_000_000 }).reason).toBe("range");
     expect(normalizeMoneyInput({ currency: "USD", amount: 0, fxRate: 99_999_999.9999 }).fxRate).toBe(99_999_999.9999);
   });
@@ -264,7 +264,7 @@ describe("normalizeMoneyInput", () => {
   it("(SF-1) 외화 금액이 foreign_amount numeric(14,2) 밖(|x| ≥ 10^12)이면 range", () => {
     const amount = rejection({ currency: "USD", amount: 1_000_000_000_000, fxRate: 0.0001 });
     expect(amount.reason).toBe("range");
-    expect(amount.message).toBe("외화 금액이 상한을 넘습니다 · 금액을 고쳐 주세요");
+    expect(amount.message).toBe("외화 금액 상한 초과 · 금액 수정");
     expect(rejection({ currency: "USD", amount: -1_000_000_000_000, fxRate: 0.0001 }).reason).toBe("range");
     expect(normalizeMoneyInput({ currency: "USD", amount: 999_999_999_999.99, fxRate: 0.0001 }).amount).toBe(999_999_999_999.99);
   });

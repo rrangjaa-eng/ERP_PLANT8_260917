@@ -62,7 +62,7 @@ test.describe("법인카드 관리 화면 (MAST-03)", () => {
     // 잡으므로 FormAlert가 렌더하는 <p role="alert">만 좁혀서 본다.
     const alert = page.locator('p[role="alert"]');
     await expect(alert).toBeVisible();
-    await expect(alert).toHaveText("이미 등록된 카드입니다 · 발급사와 뒤 4자리를 확인하세요");
+    await expect(alert).toHaveText("이미 등록된 카드 · 발급사와 뒤 4자리 확인");
     await expect(alert).not.toContainText("insert into");
     await expect(alert).not.toContainText("params:");
 

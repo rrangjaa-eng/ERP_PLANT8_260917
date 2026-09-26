@@ -22,8 +22,8 @@ export const createCodeItemAction = authedActionClient
   .schema(
     z.object({
       tableKey: z.string().min(1),
-      value: z.string().min(1, "값을 입력하세요."),
-      label: z.string().min(1, "이름을 입력하세요."),
+      value: z.string().min(1, "값 필요 · 값 입력"),
+      label: z.string().min(1, "이름 필요 · 이름 입력"),
       sortOrder: z.coerce.number().int().default(0),
       // 04-10(D-93): 「코드 추가」 폼 선택 칸 — 길이 검증은 domain이 한다.
       description: z.string().optional(),
@@ -37,7 +37,7 @@ export const createCodeItemAction = authedActionClient
 // MAST-04 「수정」 — 이름만 바꾼다. value를 스키마에 넣지 않는 것이 계약이다:
 // vendors.default_evidence_type이 FK 없이 value 문자열을 참조한다.
 export const updateCodeItemLabelAction = authedActionClient
-  .schema(z.object({ id: z.string().min(1), label: z.string().min(1, "이름을 입력하세요.") }))
+  .schema(z.object({ id: z.string().min(1), label: z.string().min(1, "이름 필요 · 이름 입력") }))
   .action(async ({ parsedInput, ctx }) => {
     await updateCodeItemLabel(ctx.viewer, parsedInput.id, parsedInput.label);
     revalidatePath("/admin/code-tables");

@@ -21,8 +21,8 @@ export default function AppError({
 
   return (
     <>
-      <PageHeader title="문제가 생겼습니다" titleSize="2xl" />
-      <ListEmpty message="화면을 불러오지 못했습니다" action={{ label: "다시 시도", onClick: retry }} tone="error" />
+      <PageHeader title="문제 발생" titleSize="2xl" />
+      <ListEmpty message="화면 불러오기 실패" action={{ label: "다시 시도", onClick: retry }} tone="error" />
     </>
   );
 }

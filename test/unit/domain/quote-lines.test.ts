@@ -76,13 +76,13 @@ describe("quoteLineRowInputSchema — 줄 종류와 소분류(04-13)", () => {
     expect(messages(row({ isNew: true, lineKind: "out_of_quote", subcategory: "" }))).toEqual([]);
   });
 
-  it("새 견적 줄(종류 quote 또는 없음)의 빈 소분류는 「소분류를 고르세요.」", () => {
-    expect(messages(row({ isNew: true, lineKind: "quote", subcategory: "" }))).toEqual(["소분류를 고르세요."]);
-    expect(messages(row({ isNew: true, subcategory: "" }))).toEqual(["소분류를 고르세요."]);
+  it("새 견적 줄(종류 quote 또는 없음)의 빈 소분류는 「소분류 필요 · 소분류 고르기」", () => {
+    expect(messages(row({ isNew: true, lineKind: "quote", subcategory: "" }))).toEqual(["소분류 필요 · 소분류 고르기"]);
+    expect(messages(row({ isNew: true, subcategory: "" }))).toEqual(["소분류 필요 · 소분류 고르기"]);
   });
 
   it("기존 줄(종류 없음)의 빈 소분류도 같은 거부", () => {
-    expect(messages(row({ id: "4ca0caf1-a0dd-4e04-a56b-3ebed41def03", version: 1, subcategory: "" }))).toEqual(["소분류를 고르세요."]);
+    expect(messages(row({ id: "4ca0caf1-a0dd-4e04-a56b-3ebed41def03", version: 1, subcategory: "" }))).toEqual(["소분류 필요 · 소분류 고르기"]);
   });
 
   it("모르는 종류는 받지 않는다", () => {

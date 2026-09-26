@@ -7,6 +7,7 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import {
   moneyFromRow,
   moneyToColumns,
+  MoneyInputError,
   round,
   grossFromTotal,
   type Money,
@@ -14,6 +15,8 @@ import {
 } from "@/domain/money";
 import { applyTaxRule } from "@/domain/money/tax";
 import { rememberFxRate } from "@/domain/money/currency";
+import { rememberFxAfterCommit, SaveRejectedError, type CellFormatError, type FxToRemember } from "@/domain/quotes/lines";
+import { denyWrite } from "@/domain/rules/deny-write";
 import type { TaxRule } from "@/domain/code-tables/tax-rule";
 import { getSettingValue as defaultGetSettingValue } from "@/domain/settings/registry";
 import { TAX_VAT_RATE, TAX_ROUNDING_VAT_UNIT } from "@/domain/settings/keys";
@@ -25,6 +28,7 @@ import { findProjectById as repoFindProjectById } from "@/repositories/projects"
 import {
   listRevenueEntriesByProject as repoListRevenueEntriesByProject,
   insertRevenueEntry as repoInsertRevenueEntry,
+  findRevenueEntryById as repoFindRevenueEntryById,
   updateRevenueEntryIfVersionMatches as repoUpdateRevenueEntryIfVersionMatches,
   type RevenueEntryRow,
 } from "@/repositories/revenue-entries";
@@ -277,60 +281,146 @@ export type RevenueWriteDeps = {
   rights: { canWriteEntries: boolean };
 };
 
+const ENTRY_SCOPE_RULE = "revenue.entry-scope";
+const REPLAY_RULE = "revenue.replay-mismatch";
+const ENTRY_NOT_FOUND = "줄을 찾을 수 없음 · 새로 고침";
+const REPLAY_MISMATCH = "이미 저장된 줄과 값이 다름 · 새로 고침";
+
+type EntryPayload = {
+  entryDate: string;
+  amountCurrency: Currency;
+  amountForeignAmount: string | null;
+  amountFxRate: string;
+  amountAmountKrw: number;
+  note: string | null;
+};
+
+type PreparedEntry = { input: RevenueEntryWriteRow; payload: EntryPayload };
+
+// 04-41(B §2 · B3) — 금액은 쓰기 전에 전부 한 규칙(normalizeMoneyInput)으로 정규화한다. 걸린 줄은 그 표의 줄 순번·id로
+// 칸 오류를 모아 배치 전체를 거부한다(견적 줄과 같은 SaveRejectedError — PG 범위 오류로 새지 않는다).
+function prepareEntries(rows: RevenueEntryWriteRow[], formatErrors: CellFormatError[]): PreparedEntry[] {
+  const prepared: PreparedEntry[] = [];
+  rows.forEach((input, rowIndex) => {
+    try {
+      const columns = moneyToColumns(input.amount);
+      prepared.push({
+        input,
+        payload: {
+          entryDate: input.entryDate,
+          amountCurrency: columns.currency,
+          amountForeignAmount: columns.foreignAmount,
+          amountFxRate: columns.fxRate,
+          amountAmountKrw: columns.amountKrw,
+          note: input.note ?? null,
+        },
+      });
+    } catch (error) {
+      if (!(error instanceof MoneyInputError)) throw error;
+      formatErrors.push({ rowIndex, ...(input.id ? { rowId: input.id } : {}), field: "amount", label: "금액", reason: error.message });
+    }
+  });
+  return prepared;
+}
+
+function sameStoredEntry(stored: RevenueEntryRow, owner: { projectId: string; kind: RevenueEntryKind }, payload: EntryPayload): boolean {
+  return (
+    stored.archivedAt === null &&
+    stored.projectId === owner.projectId &&
+    stored.kind === owner.kind &&
+    stored.entryDate === payload.entryDate &&
+    stored.amountCurrency === payload.amountCurrency &&
+    stored.amountForeignAmount === payload.amountForeignAmount &&
+    stored.amountFxRate === payload.amountFxRate &&
+    stored.amountAmountKrw === payload.amountAmountKrw &&
+    stored.note === payload.note
+  );
+}
+
+// 04-41(Codex #1 · ENG-D10) — 기존 줄은 이 프로젝트·이 종류의 줄만 고친다(아니면 `줄을 찾을 수 없음`). 새 줄은 화면
+// id로 멱등 삽입하고, 이미 있으면 같은 프로젝트·종류의 활성 줄이고 값이 같을 때만 응답을 잃은 재전송(no-op)이다.
+// 환율 기억은 여기서 하지 않고 실제로 쓴 외화 줄만 돌려준다 — 커밋 뒤에 트랜잭션을 연 쪽이 기억한다.
 async function saveEntries(
   viewer: Viewer,
   projectId: string,
   kind: RevenueEntryKind,
-  rows: RevenueEntryWriteRow[],
+  entries: PreparedEntry[],
   tx: DbOrTx,
-): Promise<RevenueEntryRow[]> {
-  const results: RevenueEntryRow[] = [];
-  for (const input of rows) {
-    const columns = moneyToColumns(input.amount);
-
-    if (columns.currency !== "KRW" && input.fxRateTouched) {
-      await rememberFxRate(columns.currency, Number(columns.fxRate), undefined, tx);
-    }
-
-    const payload = {
-      entryDate: input.entryDate,
-      amountCurrency: columns.currency,
-      amountForeignAmount: columns.foreignAmount,
-      amountFxRate: columns.fxRate,
-      amountAmountKrw: columns.amountKrw,
-      note: input.note ?? null,
-    };
-
-    if (input.id) {
+): Promise<{ written: number; fxToRemember: FxToRemember[] }> {
+  let written = 0;
+  const fxToRemember: FxToRemember[] = [];
+  for (const { input, payload } of entries) {
+    if (input.id && input.isNew) {
+      const inserted = await repoInsertRevenueEntry(viewer, { id: input.id, projectId, kind, ...payload }, tx);
+      if (!inserted) {
+        const stored = await repoFindRevenueEntryById(viewer, input.id, tx);
+        if (!stored || !sameStoredEntry(stored, { projectId, kind }, payload)) {
+          denyWrite(viewer, REPLAY_RULE, { projectId, entryIds: [input.id] }, new UserFacingError(REPLAY_MISMATCH));
+        }
+        continue;
+      }
+    } else if (input.id) {
       if (input.version === undefined) {
         throw new UserFacingError("기존 줄을 저장하려면 버전 정보가 필요합니다 · 화면을 새로고침해 주세요");
       }
-      const updated = await repoUpdateRevenueEntryIfVersionMatches(
-        viewer,
-        input.id,
-        input.version,
-        { projectId, kind },
-        payload,
-        tx,
-      );
+      const updated = await repoUpdateRevenueEntryIfVersionMatches(viewer, input.id, input.version, { projectId, kind }, payload, tx);
       if (!updated) {
+        const stored = await repoFindRevenueEntryById(viewer, input.id, tx);
+        if (!stored || stored.projectId !== projectId || stored.kind !== kind) {
+          denyWrite(viewer, ENTRY_SCOPE_RULE, { projectId, entryIds: [input.id] }, new UserFacingError(ENTRY_NOT_FOUND));
+        }
         throw new UserFacingError(`다른 사람이 먼저 이 줄을 바꿨습니다 · 덮어쓰기 / 그 값으로(줄 ${input.id})`);
       }
-      results.push(updated);
     } else {
-      const inserted = await repoInsertRevenueEntry(viewer, { projectId, kind, ...payload }, tx);
-      results.push(inserted);
+      await repoInsertRevenueEntry(viewer, { projectId, kind, ...payload }, tx);
+    }
+    written += 1;
+    if (payload.amountCurrency !== "KRW" && input.fxRateTouched) {
+      fxToRemember.push({ currency: payload.amountCurrency, rate: Number(payload.amountFxRate) });
     }
   }
-  return results;
+  return { written, fxToRemember };
+}
+
+// 04-41(B §1) — 트랜잭션을 여는 쪽(원장 합성 저장)이 잠그기 전에 읽는 매출 줄 쓰기 권한.
+export async function revenueWriteRights(viewer: Viewer, can: typeof defaultCan = defaultCan): Promise<{ canWriteEntries: boolean }> {
+  return { canWriteEntries: await can(viewer, REVENUE_SETTLEMENT_MENU, "write") };
 }
 
 // 04-02 Task 2 ③ — 발행·입금 줄은 "projects.revenue" write로 쓴다. 보내지
 // 않은 그룹은 아예 건드리지 않는다 — 권한 없이 줄을 실어 보내면 조용히
 // 무시하지 않고 거부한다(T-04-10, 조작 방어). 계약 금액은 쓰지 않는다(04-41 ·
 // D-84 — 고객 승인된 현재 차수 합계에서 파생된다).
-// `tx`를 받으면(04-02: 견적 줄과 한 트랜잭션으로 묶는
-// domain/projects/ledger.ts) 새 트랜잭션을 열지 않는다.
+// `tx`를 받으면(04-02: 견적 줄과 한 트랜잭션으로 묶는 domain/projects/ledger.ts) 새 트랜잭션을 열지 않고, 기억할
+// 환율을 돌려준다(saveRevenueInTx) — 커밋 뒤 기억은 트랜잭션을 연 쪽이 한다.
+export async function saveRevenueInTx(
+  viewer: Viewer,
+  projectId: string,
+  input: SaveRevenueInput,
+  deps: Partial<RevenueWriteDeps> | undefined,
+  tx: DbOrTx,
+): Promise<FxToRemember[]> {
+  if (input.issuedEntries || input.paidEntries) {
+    const allowed = deps?.rights ? deps.rights.canWriteEntries : (await revenueWriteRights(viewer, deps?.can)).canWriteEntries;
+    if (!allowed) throw new ForbiddenError("발행·입금 줄 저장 권한이 없습니다.");
+  }
+
+  const formatErrors: CellFormatError[] = [];
+  const issued = prepareEntries(input.issuedEntries ?? [], formatErrors);
+  const paid = prepareEntries(input.paidEntries ?? [], formatErrors);
+  if (formatErrors.length > 0) throw new SaveRejectedError([], formatErrors);
+
+  const issuedResult = await saveEntries(viewer, projectId, "issue", issued, tx);
+  const paidResult = await saveEntries(viewer, projectId, "payment", paid, tx);
+
+  // 04-12(엔지 리뷰 A §1 P2) — 같은 tx로 남긴다(합성 저장이 뒤에서 거부되면 로그도 되돌아간다). 재전송 no-op은 남기지 않는다.
+  if (issuedResult.written + paidResult.written > 0) {
+    const recordAction = deps?.recordAction ?? defaultRecordAction;
+    await recordAction(viewer, { actionType: "document_update", entity: REVENUE_ENTITY, entityId: projectId }, { tx });
+  }
+  return [...issuedResult.fxToRemember, ...paidResult.fxToRemember];
+}
+
 export async function saveRevenue(
   viewer: Viewer,
   projectId: string,
@@ -338,33 +428,15 @@ export async function saveRevenue(
   deps?: Partial<RevenueWriteDeps>,
   tx?: DbOrTx,
 ): Promise<RevenueDto | null> {
-  const canFn = deps?.can ?? defaultCan;
-
-  if (input.issuedEntries || input.paidEntries) {
-    if (!(await canFn(viewer, REVENUE_SETTLEMENT_MENU, "write"))) {
-      throw new ForbiddenError("발행·입금 줄 저장 권한이 없습니다.");
-    }
-  }
-
-  const runSave = async (innerTx: DbOrTx): Promise<void> => {
-    if (input.issuedEntries) await saveEntries(viewer, projectId, "issue", input.issuedEntries, innerTx);
-    if (input.paidEntries) await saveEntries(viewer, projectId, "payment", input.paidEntries, innerTx);
-  };
-
-  const recordAction = deps?.recordAction ?? defaultRecordAction;
-
   if (tx) {
-    // 외부 트랜잭션(domain/projects/ledger.ts) 안에서는 아직 커밋 전이라
-    // listRevenue의 기본 db 커넥션이 이 쓰기를 보지 못한다(격리) — 여기서
-    // 최신 스냅샷을 만들지 않는다. 커밋 뒤 스냅샷은 합성 호출자가 새로
-    // 조회한다.
-    await runSave(tx);
-    // 04-12(엔지 리뷰 A §1 P2) — 같은 tx로 남긴다(합성 저장이 뒤에서 거부되면 로그도 되돌아간다).
-    await recordAction(viewer, { actionType: "document_update", entity: REVENUE_ENTITY, entityId: projectId }, { tx });
+    // 외부 트랜잭션 안에서는 아직 커밋 전이라 listRevenue의 기본 db 커넥션이 이 쓰기를 보지 못한다(격리) — 스냅샷은
+    // 합성 호출자가 커밋 뒤 새로 조회한다.
+    await saveRevenueInTx(viewer, projectId, input, deps, tx);
     return null;
   }
 
-  await withTransaction(runSave);
-  await recordAction(viewer, { actionType: "document_update", entity: REVENUE_ENTITY, entityId: projectId });
+  const rights = deps?.rights ?? (input.issuedEntries || input.paidEntries ? await revenueWriteRights(viewer, deps?.can) : undefined);
+  const fxToRemember = await withTransaction((innerTx) => saveRevenueInTx(viewer, projectId, input, { ...deps, rights }, innerTx));
+  await rememberFxAfterCommit(fxToRemember, deps?.rememberFxRate);
   return listRevenue(viewer, projectId);
 }

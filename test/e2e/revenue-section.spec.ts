@@ -625,7 +625,8 @@ test.describe("매출 금액 입력 오류 → 그 셀 고정 오류 · 표별 �
     await rejected;
 
     const CAP = "금액이 상한을 넘습니다 · 2,147,483,647원 이하";
-    const amountCell = issuedTable.locator("tbody tr").filter({ has: newAmount }).locator('td[aria-invalid="true"]');
+    // 새 줄은 발행 표의 마지막 줄이다(`has:`에 표 기준 로케이터를 넣으면 줄 안에서 다시 표를 찾아 늘 0개다).
+    const amountCell = issuedTable.locator("tbody tr").last().locator('td[aria-invalid="true"]');
     await expect(amountCell).toHaveCount(1);
     await expect(amountCell).toContainText(CAP);
     await expect(issuedTable.locator("tfoot").getByText("오류 1칸 · 전부 거부", { exact: true })).toBeVisible();

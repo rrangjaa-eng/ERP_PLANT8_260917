@@ -12,7 +12,7 @@ import styles from "./project-detail.module.css";
 
 export type EntryDraft = {
   clientKey: string;
-  id?: string;
+  id: string;
   version?: number;
   entryDate: string;
   amount: number;
@@ -209,6 +209,7 @@ export function RevenueSection({
   saveLocked = false,
   editableWidth = true,
   rejectedCells,
+  onSave,
 }: {
   /** 04-16(B-19) — quote.amount를 볼 수 없으면 서버가 싣지 않는다(키 부재). */
   contract: ContractInfo | undefined;
@@ -226,6 +227,8 @@ export function RevenueSection({
   editableWidth?: boolean;
   /** 04-16(B3 · R2) — 마지막 거부 봉투의 표별 칸 수. total은 표 밖 칸까지 센 전부다. */
   rejectedCells?: { issued: number; paid: number; total: number };
+  /** 04-41 — 발행·입금 표 안의 Ctrl+S도 견적 표와 같은 일괄 저장이다. */
+  onSave: () => void;
 }) {
   const canEditEntries = canWriteEntries && editableWidth;
   // 04-16(D-85) — 발행 표는 발행액을 볼 수 있으면, 입금 표는 입금액을 볼 수 있을 때만 렌더한다(DTO 키 부재 = 표 부재).
@@ -387,6 +390,7 @@ export function RevenueSection({
         <>
           <Table
             caption="발행 줄"
+            keyboard={{ onSave }}
             columns={issuedColumns}
             rows={issuedEntries}
             getRowId={(row) => row.clientKey}
@@ -423,6 +427,7 @@ export function RevenueSection({
         <>
           <Table
             caption="입금 줄"
+            keyboard={{ onSave }}
             columns={paidColumns}
             rows={paidEntries}
             getRowId={(row) => row.clientKey}

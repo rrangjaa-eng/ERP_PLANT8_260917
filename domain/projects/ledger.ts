@@ -9,7 +9,7 @@ import {
   type QuoteLineWriteRow,
   type SaveQuoteLinesResult,
 } from "@/domain/quotes/lines";
-import { saveRevenue, listRevenue, type SaveRevenueInput, type RevenueDto } from "@/domain/revenue";
+import { saveRevenueInTx, listRevenue, revenueWriteRights, type SaveRevenueInput, type RevenueDto } from "@/domain/revenue";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { findQuoteRevisionById } from "@/repositories/quote-revisions";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
@@ -133,7 +133,7 @@ export async function saveProjectLedger(
   // 아니라 같은 문구로 끝나게 한다(tx-safety.test.ts (c)). 커밋 뒤 단계(환율 기억·투영·스냅샷)는
   // 씌우지 않는다 — 이미 저장됐는데 「다시 저장」을 시키면 새 줄이 두 번 들어간다
   // (tx-safety.test.ts (d)).
-  const { quoteLinesWritten, project } = await withTimeoutConversion(async () => {
+  const { quoteLinesWritten, revenueFxToRemember, project } = await withTimeoutConversion(async () => {
     // 볼 수 없는 프로젝트(보기 권한·범위 밖, 권한 없는 보관 프로젝트)에는 쓰지 않는다 — 조회
     // 화면(findProject)과 같은 조건이다(/cso 14b1ae15). 04-22(A-13): findProject는 풀에서 자동
     // 정산을 따로 커밋하므로 부르지 않는다 — 판정은 트랜잭션 안 잠금 읽기가 한다.
@@ -159,6 +159,8 @@ export async function saveProjectLedger(
 
     // 04-12(ENG-D3 ①): 견적 줄 저장의 트랜잭션 전 단계(권한·금액 노출·사용자 정의 필드 스키마).
     const preparedQuoteLines = input.quoteLines ? await prepareQuoteLineSave(viewer, input.quoteLines.revisionId) : null;
+    // 04-41(B §1) — 매출 줄 쓰기 권한도 잠그기 전에 읽는다(잠근 트랜잭션 안 풀 호출 금지).
+    const revenueRights = input.revenue ? await revenueWriteRights(viewer) : undefined;
 
     // ENG-D3 ①: 기간 권리의 사실은 트랜잭션 전에 읽는다. 총 매출 예상가도 같은 권리(periodEditRights —
     // DR-37)라 기간 없이 총 매출 예상가만 실린 저장도 같은 사실과 quote.amount 노출을 여기서 읽는다(04-44).
@@ -341,9 +343,12 @@ export async function saveProjectLedger(
               { now, recordAction },
             )
           : null;
-      if (input.revenue) await saveRevenue(viewer, projectId, input.revenue, { recordAction }, tx);
+      const revenueFxToRemember = input.revenue
+        ? await saveRevenueInTx(viewer, projectId, input.revenue, { recordAction, rights: revenueRights }, tx)
+        : [];
       return {
         quoteLinesWritten,
+        revenueFxToRemember,
         project: {
           status: current.status,
           startDate: current.startDate,
@@ -355,9 +360,9 @@ export async function saveProjectLedger(
     return inTx;
   });
 
-  // D-71 · ENG-D3 ① — 최근 환율은 커밋 뒤에만 기억한다(거부·롤백된 저장은 여기 오지 않는다). 견적 줄 쓰기 단계가
-  // 돌려준 목록과 총 매출 예상가를 합쳐 한 번에 기억한다 — 실패해도 저장은 이미 끝났다(오류 로그만).
-  const fxToRemember: FxToRemember[] = [...(quoteLinesWritten?.fxToRemember ?? [])];
+  // D-71 · ENG-D3 ① — 최근 환율은 커밋 뒤에만 기억한다(거부·롤백된 저장은 여기 오지 않는다). 견적 줄·매출 줄 쓰기
+  // 단계가 돌려준 목록과 총 매출 예상가를 합쳐 한 번에 기억한다 — 실패해도 저장은 이미 끝났다(오류 로그만).
+  const fxToRemember: FxToRemember[] = [...(quoteLinesWritten?.fxToRemember ?? []), ...revenueFxToRemember];
   const savedPreEstimate = project.preEstimate;
   if (input.preEstimate?.fxRateTouched && savedPreEstimate && savedPreEstimate.currency !== "KRW") {
     fxToRemember.push({ currency: savedPreEstimate.currency, rate: savedPreEstimate.fxRate });

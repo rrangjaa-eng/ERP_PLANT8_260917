@@ -51,5 +51,11 @@ export function quoteTableRejectionText<Cell extends { rowId?: string; field: st
 ): string | null {
   const routed = routeRejectedRevenueCells(envelope.cells, ids);
   if (routed.rest.length === 0) return otherCellsRejectedText(0, countCells(routed.issued) + countCells(routed.paid) + outsideCount);
-  return envelope.summary;
+  // SaveRejectedError 요약과 같은 규칙 — 충돌은 줄 수, 오류는 칸 수. 매출 칸은 그 표의 합계 행이 센다.
+  const conflictRows = new Set(routed.rest.filter((cell) => cell.kind === "conflict").map((cell) => cell.rowId)).size;
+  const errorCells = routed.rest.filter((cell) => cell.kind === "error").length;
+  const parts: string[] = [];
+  if (conflictRows > 0) parts.push(`충돌 ${conflictRows}줄 · 전부 거부`);
+  if (errorCells > 0) parts.push(`오류 ${errorCells}칸 · 전부 거부`);
+  return parts.join(" · ");
 }

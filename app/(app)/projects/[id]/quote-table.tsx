@@ -504,9 +504,12 @@ function entriesFromDto(entries: RevenueDto["issuedEntries"]): EntryDraft[] | un
   }));
 }
 
+// 04-41(ENG-D10) — 새 매출 줄도 만들 때 화면 uuid를 id로 붙인다(재전송 멱등 · 거부 칸을 이 줄로 돌리는 키).
 function newEntryDraft(): EntryDraft {
+  const id = crypto.randomUUID();
   return {
-    clientKey: `new-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    clientKey: id,
+    id,
     entryDate: new Date().toISOString().slice(0, 10),
     amount: 0,
     note: null,
@@ -887,7 +890,7 @@ export function QuoteLedger({
   const [openCell, setOpenCell] = useState<{ rowId: string; columnKey: string } | null>(null);
   const [issuedEntries, setIssuedEntries] = useState<EntryDraft[] | undefined>(() => entriesFromDto(revenue.issuedEntries));
   const [paidEntries, setPaidEntries] = useState<EntryDraft[] | undefined>(() => entriesFromDto(revenue.paidEntries));
-  // 04-16(B3) — 거부 봉투의 칸을 매출 표로 떼어 낼 때 쓰는 저장된 매출 줄 id(새 줄 id는 04-41).
+  // 04-16(B3) — 거부 봉투의 칸을 매출 표로 떼어 낼 때 쓰는 매출 줄 id(04-41부터 새 줄도 화면 uuid가 있다).
   const revenueEntryIds = {
     issuedIds: (issuedEntries ?? []).flatMap((entry) => (entry.id ? [entry.id] : [])),
     paidIds: (paidEntries ?? []).flatMap((entry) => (entry.id ? [entry.id] : [])),
@@ -1403,6 +1406,7 @@ export function QuoteLedger({
               dirtyIssued.length > 0
                 ? dirtyIssued.map((entry) => ({
                     id: entry.id,
+                    ...(entry.version === undefined ? { isNew: true as const } : {}),
                     version: entry.version,
                     entryDate: entry.entryDate,
                     amount: { currency: "KRW" as const, amount: entry.amount, fxRate: 1 },
@@ -1413,6 +1417,7 @@ export function QuoteLedger({
               dirtyPaid.length > 0
                 ? dirtyPaid.map((entry) => ({
                     id: entry.id,
+                    ...(entry.version === undefined ? { isNew: true as const } : {}),
                     version: entry.version,
                     entryDate: entry.entryDate,
                     amount: { currency: "KRW" as const, amount: entry.amount, fxRate: 1 },
@@ -2249,6 +2254,7 @@ export function QuoteLedger({
         saveLocked={saveLocked}
         editableWidth={editableWidth}
         rejectedCells={{ issued: rejectedCells.issued, paid: rejectedCells.paid, total: rejectedCellTotal }}
+        onSave={() => setSaveRequests((count) => count + 1)}
       />
 
       {statusToast ? <Toast message={statusToast} onDismiss={() => setStatusToast(null)} /> : null}

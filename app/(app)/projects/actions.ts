@@ -101,8 +101,10 @@ const periodBaselineDateSchema = z
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .nullable();
 
+// 04-41(ENG-D10) — 모든 줄이 id(UUID)를 싣는다. 새 줄은 화면이 만든 uuid + isNew(재전송 멱등), 기존 줄은 id + version.
 const revenueEntryRowSchema = z.object({
-  id: z.string().optional(),
+  id: z.string().uuid(),
+  isNew: z.literal(true).optional(),
   version: z.number().optional(),
   entryDate: z.string().min(1, "날짜를 입력하세요."),
   amount: moneyInputSchema,

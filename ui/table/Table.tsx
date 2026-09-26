@@ -479,6 +479,12 @@ export function Table<Row>({
                                 keyboardState.handleKeyDown(event, pos);
                               }
                             : (event) => {
+                                // 04-41 — 격자 키보드를 켜지 않은 표도 onSave를 받으면 칸 안의 Ctrl+S가 저장이다(매출 표).
+                                if (keyboard?.onSave && isCtrlCombo(event, "s")) {
+                                  event.preventDefault();
+                                  if (allowed("save")) keyboard.onSave();
+                                  return;
+                                }
                                 if ((event.key === "Enter" || event.key === " ") && isEditableColumn && column.editCell && allowed("enterEdit")) {
                                   event.preventDefault();
                                   setActiveCell({ rowId, columnKey: column.key });

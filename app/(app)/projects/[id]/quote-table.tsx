@@ -1989,13 +1989,19 @@ export function QuoteLedger({
       : result.data && "preEstimateRejected" in result.data
         ? result.data.preEstimateRejected.errors.length
         : 0;
-  const periodRejectedSummary = otherCellsRejectedText(0, outsideErrorCount) ?? undefined;
+  const periodRejectedSummary = otherCellsRejectedText(0, { conflictRows: 0, errorCells: outsideErrorCount }) ?? undefined;
   // 04-16(R2) — 거부 봉투의 칸을 표별로 센다. 제 칸이 0인 표는 `전부 거부 · 다른 칸 오류 N칸`이다.
   const routedRejection = rejectedEnvelope ? routeRejectedRevenueCells(rejectedEnvelope.cells, revenueEntryIds) : undefined;
+  // "/qa low" — 견적 줄 표(rest)의 나머지는 충돌(줄 수)·오류(칸 수)를 따로 센다.
+  const restConflictRows = new Set(
+    (routedRejection?.rest ?? []).filter((cell) => cell.kind === "conflict").map((cell) => cell.rowId),
+  ).size;
+  const restErrorCells = (routedRejection?.rest ?? []).filter((cell) => cell.kind === "error").length;
   const rejectedCells = {
     issued: Object.values(routedRejection?.issued ?? {}).reduce((sum, row) => sum + Object.keys(row).length, 0),
     paid: Object.values(routedRejection?.paid ?? {}).reduce((sum, row) => sum + Object.keys(row).length, 0),
-    quote: routedRejection?.rest.length ?? 0,
+    conflictRows: restConflictRows,
+    quote: restConflictRows + restErrorCells,
   };
   const rejectedCellTotal = rejectedCells.issued + rejectedCells.paid + rejectedCells.quote + outsideErrorCount;
   // DR-6 — 상태 바뀜 거부 문구(서버가 statusChangedMessage로 만든다). 다시 그린 뒤에도 남는다.
@@ -2327,7 +2333,12 @@ export function QuoteLedger({
         saveLocked={saveLocked}
         saveButtonId={saveButtonId}
         editableWidth={editableWidth}
-        rejectedCells={{ issued: rejectedCells.issued, paid: rejectedCells.paid, total: rejectedCellTotal }}
+        rejectedCells={{
+          issued: rejectedCells.issued,
+          paid: rejectedCells.paid,
+          conflictRows: rejectedCells.conflictRows,
+          total: rejectedCellTotal,
+        }}
         onSave={() => setSaveRequests((count) => count + 1)}
       />
 

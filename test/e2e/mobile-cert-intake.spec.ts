@@ -36,6 +36,10 @@ test("QR 진입 → 이름 고르기 → 전화번호 확인 → 입력·서명 
 
   const response = await page.goto(link);
   expect(response?.status()).toBe(200);
+  // T10 — next.config.ts가 /c/:path*에 붙이는 헤더 셋(T-04.3-11).
+  expect(response?.headers()["referrer-policy"]).toBe("no-referrer");
+  expect(response?.headers()["x-robots-tag"]).toBe("noindex, nofollow");
+  expect(response?.headers()["cache-control"]).toBe("no-store");
 
   await expect(page.getByRole("heading", { name: "기타소득 지급 확인" })).toBeVisible();
   await expect(page.getByText(`${eventName} · 2026-01-05 당첨`)).toBeVisible();
@@ -123,6 +127,8 @@ test("규약 C1 직접 POST — 기능이 꺼진 동안 진짜 요청을 다시 
   // 범위를 나와 같은 두 요청을 다시 보내면 정상 응답이다(요청 모양이 맞았음을 증명).
   const onSelectResp = await page.request.post(link, { headers: selectHeaders, data: selectBody ?? undefined });
   expect(onSelectResp.ok()).toBe(true);
+  // T11 — 응답 본문에 가린 이름이 실제로 실려 있다(빈 ok 응답이 아니다).
+  expect(await onSelectResp.text()).toContain("박*준");
   const onVerifyResp = await page.request.post(link, { headers: verifyHeaders, data: verifyBody ?? undefined });
   expect(onVerifyResp.ok()).toBe(true);
 
@@ -141,6 +147,32 @@ test("기능을 끄면 링크를 찾을 수 없습니다 · 404", async ({ page 
     expect(response?.status()).toBe(404);
     await expect(page.getByText("링크를 찾을 수 없습니다")).toBeVisible();
   });
+});
+
+test("S7 — rowId가 uuid 형식이 아니면 스키마가 거부한다(22P02 대신)", async ({ page }) => {
+  const { link, eventId } = await createCertEvent({
+    name: "모바일E2E S7",
+    winners: [{ name: "정민준", phone: "010-3321-8890", prizeName: "무선 키보드", quantity: 1, delivery: "onsite" }],
+  });
+  const [winner] = await db.select().from(certWinners).where(eq(certWinners.eventId, eventId));
+  if (!winner) throw new Error("당첨자를 찾지 못했다");
+
+  await page.goto(link);
+  const selectRequestPromise = page.waitForRequest((req) => req.url() === link && req.method() === "POST");
+  await page.getByText("정*준").click();
+  const selectRequest = await selectRequestPromise;
+
+  const body = selectRequest.postDataBuffer();
+  if (!body) throw new Error("본문을 잡지 못했다");
+  const bodyText = body.toString("utf8");
+  expect(bodyText).toContain(winner.id);
+  // 같은 길이 · 형식만 깨뜨린 값(z.uuid()가 거부, Postgres uuid 칸도 22P02로 거부할 값)
+  const mutatedId = `${winner.id.slice(0, -1)}z`;
+  const mutatedBody = bodyText.replaceAll(winner.id, mutatedId);
+
+  const resp = await page.request.post(link, { headers: selectRequest.headers(), data: mutatedBody });
+  const text = await resp.text();
+  expect(text).not.toContain("처리 중 오류가 발생했습니다");
 });
 
 test("존재하지 않는 토큰도 같은 링크를 찾을 수 없습니다 · 404", async ({ page }) => {

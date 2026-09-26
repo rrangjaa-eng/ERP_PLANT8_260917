@@ -316,9 +316,11 @@
 }
 
 .hintRow kbd {
-  padding: 0 4px;
+  padding: 0 var(--s-1);
   border: var(--line-w) solid var(--line);
+  color: var(--faint);
   font-size: var(--fs-xs);
+  line-height: var(--lh-head);
 }
 
 @media (max-width: 699.98px) {

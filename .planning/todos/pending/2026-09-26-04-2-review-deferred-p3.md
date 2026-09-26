@@ -32,3 +32,9 @@ files:
 
 - ISSUE-002 [low] 잠금이 걸리는 N번째 시도에도 「이메일 또는 비밀번호 오류」가 뜨고, 잠금 문구는 N+1번째 시도부터 보인다(domain/auth/hooks.ts:66-69, before 훅에서만 잠금 확인). 해법: recordLoginFailure가 locked:true를 돌려주면 그 응답을 lockedMessage(windowMinutes) 403으로 바꾸기. 04.2 이전부터 있던 동작이다.
 - /notifications loading.tsx 스켈레톤의 「시각」 th에 styles.time이 없어 로드 뒤 머리글이 옮겨질 수 있다(코드 판독만, 실측 불가 — 알림함 링크가 전체 페이지 이동이라 스켈레톤이 보이지 않았다).
+
+## /cso 이월 (2026-09-26, run 1790449069493-67ca82919885b7dd, partial)
+
+- F1 [low, medium confidence] 로그인 잠금 확인-후-실행 경쟁: `domain/auth/hooks.ts` before 훅이 잠금 없이 `countOpenFailures`를 읽고 실패는 after에서만 기록해, 같은 이메일로 동시에 들어온 틀린 비밀번호 N건이 모두 검사된다(창당 임계보다 많은 추측). IP별 rateLimit(로그인 10회/60초)이 버스트를 막지만 여러 IP로 분산하면 우회된다. main(1dcfd6a)에도 같은 패턴이 있어 04.2가 만든 문제는 아니다. 해법: before에서 이메일별 advisory lock + 실패 수 확인 + 대기 실패 행 삽입을 한 트랜잭션으로, after에서 그 행을 성공·실패로 확정. 임계+k 병렬 로그인 회귀 테스트. 수정 뒤 `gstack-cso recheck 36e4b8bb0cfa83b51df42b5ad71f5680`.
+- 의존성: `pnpm audit --prod` 결과 nodemailer 10.0.10 취약점 없음. esbuild <=0.24.2 moderate(GHSA-67mh-4wv8-2f99, better-auth>drizzle-kit 경로, 개발 서버 한정)는 기존부터 있던 것이다.
+- 미평가: 비밀 이력 스캔(헬퍼 history 출력 한도 초과), gitleaks·OSV 스캐너(프록시 403), `.claude/` 스킬 공급망(스냅샷 제외).

@@ -138,7 +138,7 @@ export async function getSystemStatus(
 ): Promise<SystemStatus> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, "admin.system-status", "view"))) {
-    throw new NotAdminError("관리자만 볼 수 있습니다.");
+    throw new NotAdminError("관리자만 볼 수 있음");
   }
 
   const countConnections = deps?.countConnections ?? defaultCountConnections;

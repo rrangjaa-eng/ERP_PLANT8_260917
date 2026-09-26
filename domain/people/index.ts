@@ -191,23 +191,23 @@ export async function registerPerson(
 ): Promise<{ userId: string; tempPassword: string }> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, PEOPLE_MENU, "write"))) {
-    throw new ForbiddenError("사람 등록 권한이 없습니다.");
+    throw new ForbiddenError("사람 등록 권한 없음");
   }
 
   const findRoleById = deps?.findRoleById ?? defaultFindRoleById;
   const role = await findRoleById(viewer, input.roleId);
   if (!role || role.archivedAt) {
-    throw new ValidationError(`존재하지 않거나 보관된 계급입니다: ${input.roleId}`);
+    throw new ValidationError(`존재하지 않거나 보관된 계급: ${input.roleId}`);
   }
 
   if (input.teamId) {
     if (!input.effectiveFrom || !EFFECTIVE_FROM_PATTERN.test(input.effectiveFrom)) {
-      throw new ValidationError("발령일 형식이 올바르지 않습니다 — YYYY-MM-DD로 적어 주세요.");
+      throw new ValidationError("발령일 형식 오류 — YYYY-MM-DD로");
     }
     const findTeamById = deps?.findTeamById ?? defaultFindTeamById;
     const team = await findTeamById(viewer, input.teamId);
     if (!team || team.archivedAt) {
-      throw new ValidationError(`존재하지 않거나 보관된 팀입니다: ${input.teamId}`);
+      throw new ValidationError(`존재하지 않거나 보관된 팀: ${input.teamId}`);
     }
   }
 
@@ -236,7 +236,7 @@ export async function registerPerson(
           }),
       });
       throw new UserFacingError(
-        "계정 발급은 됐으나 발령이 실패해 보관함으로 보냈습니다 · 보관함에서 복원한 뒤 사람 상세에서 발령을 추가하세요",
+        "발령 실패 · 계정은 발급됨 — 보관함에서 복원 후 발령 추가",
       );
     }
   }
@@ -266,11 +266,11 @@ export async function changePersonRole(
 ): Promise<void> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, PEOPLE_MENU, "write"))) {
-    throw new ForbiddenError("계급 변경 권한이 없습니다.");
+    throw new ForbiddenError("계급 변경 권한 없음");
   }
 
   if (viewer.id === userId) {
-    throw new SelfRoleChangeError("자기 자신의 계급은 이 화면에서 바꿀 수 없습니다.");
+    throw new SelfRoleChangeError("자기 자신의 계급은 이 화면에서 바꿀 수 없음");
   }
 
   // registerPerson과 같은 검사를 여기에도 둔다(T-03-30). 외래키는 없는
@@ -280,7 +280,7 @@ export async function changePersonRole(
   const findRoleById = deps?.findRoleById ?? defaultFindRoleById;
   const role = await findRoleById(viewer, roleId);
   if (!role || role.archivedAt) {
-    throw new ValidationError(`존재하지 않거나 보관된 계급입니다: ${roleId}`);
+    throw new ValidationError(`존재하지 않거나 보관된 계급: ${roleId}`);
   }
 
   await repoUpdateUserRole(viewer, userId, roleId);

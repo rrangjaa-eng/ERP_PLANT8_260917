@@ -48,7 +48,7 @@ export function cardOwnerKind(input: CardOwnerInput): CardOwnerKind {
   const hasHolder = Boolean(input.holderUserId);
   const hasTeam = Boolean(input.teamId);
   if (hasHolder === hasTeam) {
-    throw new InvalidCardOwnerError("법인카드는 소지자 또는 팀 중 정확히 하나를 가져야 합니다.");
+    throw new InvalidCardOwnerError("소지자·팀 중 하나 필요 · 하나만 선택");
   }
   return hasHolder ? "personal" : "team";
 }
@@ -112,14 +112,14 @@ async function assertOwnerNotArchived(
     const findUserById = deps?.findUserById ?? defaultFindUserById;
     const holder = await findUserById(viewer, owner.holderUserId);
     if (!holder || holder.archivedAt !== null) {
-      throw new ArchivedCardOwnerError("보관되었거나 존재하지 않는 사람은 카드 소지자가 될 수 없습니다.");
+      throw new ArchivedCardOwnerError("보관됐거나 존재하지 않는 사람은 카드 소지자가 될 수 없음");
     }
   }
   if (owner.teamId) {
     const findTeamById = deps?.findTeamById ?? defaultFindTeamById;
     const team = await findTeamById(viewer, owner.teamId);
     if (!team || team.archivedAt !== null) {
-      throw new ArchivedCardOwnerError("보관되었거나 존재하지 않는 팀은 카드 소유 팀이 될 수 없습니다.");
+      throw new ArchivedCardOwnerError("보관됐거나 존재하지 않는 팀은 카드 소유 팀이 될 수 없음");
     }
   }
 }
@@ -139,7 +139,7 @@ export async function createCorpCard(
 
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, CARDS_MENU, "write"))) {
-    throw new ForbiddenError("법인카드 등록 권한이 없습니다.");
+    throw new ForbiddenError("법인카드 등록 권한 없음");
   }
 
   await assertOwnerNotArchived(viewer, input, deps);
@@ -149,7 +149,7 @@ export async function createCorpCard(
     row = await repoInsertCorpCard(viewer, { ...input, kind });
   } catch (e) {
     if (isUniqueViolation(e, "corp_cards_issuer_last4_key")) {
-      throw new DuplicateCorpCardError("이미 등록된 카드입니다 · 발급사와 뒤 4자리를 확인하세요");
+      throw new DuplicateCorpCardError("이미 등록된 카드 · 발급사와 뒤 4자리 확인");
     }
     throw e;
   }
@@ -171,7 +171,7 @@ export async function updateCorpCardOwner(
 
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, CARDS_MENU, "write"))) {
-    throw new ForbiddenError("법인카드 소유자 변경 권한이 없습니다.");
+    throw new ForbiddenError("법인카드 소유자 변경 권한 없음");
   }
 
   // 거래처(updateVendor)와 같은 이유로 판정을 여기서 한다 — 목록이 보관된
@@ -180,7 +180,7 @@ export async function updateCorpCardOwner(
   const findCorpCardById = deps?.findCorpCardById ?? repoFindCorpCardById;
   const existing = await findCorpCardById(viewer, id);
   if (!existing || existing.archivedAt !== null) {
-    throw new ArchivedCorpCardError("보관되었거나 존재하지 않는 법인카드는 수정할 수 없습니다.");
+    throw new ArchivedCorpCardError("보관됐거나 존재하지 않는 법인카드는 수정할 수 없음");
   }
 
   await assertOwnerNotArchived(viewer, owner, deps);
@@ -211,7 +211,7 @@ export async function setCorpCardActive(
 ): Promise<CorpCardDto | null> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, CARDS_MENU, "write"))) {
-    throw new ForbiddenError("법인카드 상태 변경 권한이 없습니다.");
+    throw new ForbiddenError("법인카드 상태 변경 권한 없음");
   }
 
   const current = await repoFindCorpCardById(viewer, id);

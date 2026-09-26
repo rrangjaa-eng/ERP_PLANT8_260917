@@ -17,7 +17,7 @@ import "./actions.registry";
 // 다른 파일에서 import해 쓰는 것뿐이라 위 제약과 무관하다(defect 1).
 function findSettingDef(key: string): SettingDef<unknown> {
   const def = SETTING_DEFS.find((candidate) => candidate.key === key);
-  if (!def) throw new UserFacingError(`등록되지 않은 설정 키입니다: ${key}`);
+  if (!def) throw new UserFacingError(`등록되지 않은 설정 키: ${key}`);
   return def;
 }
 

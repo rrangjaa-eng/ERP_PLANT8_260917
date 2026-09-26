@@ -7,7 +7,7 @@ import { isLockedMessage, lockedMessage } from "@/domain/auth/locked-message";
 describe("loginErrorMessage (§6-7 A②·A③)", () => {
   it("A②: 자격 증명 오류(401)의 better-auth 영문 메시지를 한국어 문구로 접는다", () => {
     expect(loginErrorMessage({ status: 401, message: "Invalid email or password" })).toBe(
-      "이메일 또는 비밀번호가 올바르지 않습니다.",
+      "이메일 또는 비밀번호 오류",
     );
   });
 
@@ -57,11 +57,11 @@ describe("loginErrorMessage (§6-7 A②·A③)", () => {
 
 describe("lockedMessage · isLockedMessage (04.2-03)", () => {
   it("분 숫자를 문장에 넣는다", () => {
-    expect(lockedMessage(20)).toBe("로그인 시도가 너무 많습니다. 20분 뒤 다시 시도하거나 관리자에게 문의하세요.");
+    expect(lockedMessage(20)).toBe("로그인 시도 과다 · 20분 뒤 다시 시도하거나 관리자에게 문의");
   });
 
-  it("15분이면 옛 문구와 글자 하나까지 같다", () => {
-    expect(lockedMessage(15)).toBe("로그인 시도가 너무 많습니다. 15분 뒤 다시 시도하거나 관리자에게 문의하세요.");
+  it("15분이면 #87 명사형 문구와 글자 하나까지 같다", () => {
+    expect(lockedMessage(15)).toBe("로그인 시도 과다 · 15분 뒤 다시 시도하거나 관리자에게 문의");
   });
 
   it("소수 분은 정수로 표시한다", () => {
@@ -74,8 +74,8 @@ describe("lockedMessage · isLockedMessage (04.2-03)", () => {
 
   it("다른 문장·숫자 없는 자리·숫자가 아닌 자리는 잠금 문구가 아니다", () => {
     expect(isLockedMessage("Invalid origin")).toBe(false);
-    expect(isLockedMessage("로그인 시도가 너무 많습니다. 분 뒤 다시 시도하거나 관리자에게 문의하세요.")).toBe(false);
-    expect(isLockedMessage("로그인 시도가 너무 많습니다. 십오분 뒤 다시 시도하거나 관리자에게 문의하세요.")).toBe(false);
-    expect(isLockedMessage("로그인 시도가 너무 많습니다. 1.5분 뒤 다시 시도하거나 관리자에게 문의하세요.")).toBe(false);
+    expect(isLockedMessage("로그인 시도 과다 · 분 뒤 다시 시도하거나 관리자에게 문의")).toBe(false);
+    expect(isLockedMessage("로그인 시도 과다 · 십오분 뒤 다시 시도하거나 관리자에게 문의")).toBe(false);
+    expect(isLockedMessage("로그인 시도 과다 · 1.5분 뒤 다시 시도하거나 관리자에게 문의")).toBe(false);
   });
 });

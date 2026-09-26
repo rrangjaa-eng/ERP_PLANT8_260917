@@ -96,9 +96,9 @@ test.describe("날짜로 움직이는 상세 (04-11, PROJ-04)", () => {
 
     for (const path of ["/projects/abc", `/projects/${randomUUID()}`]) {
       await page.goto(path);
-      await expect(page.getByRole("heading", { name: "페이지를 찾을 수 없습니다" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "페이지 찾을 수 없음" })).toBeVisible();
       await expect(page.locator('meta[name="robots"][content*="noindex"]').first()).toBeAttached();
-      await expect(page.getByRole("heading", { name: "문제가 생겼습니다" })).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: "문제 발생" })).toHaveCount(0);
     }
   });
 
@@ -335,6 +335,86 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     await expect(page.getByLabel("종료일")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "기간 바꾸기" })).toBeFocused();
   });
+
+  // /review R-3 — 네이티브 날짜 칸을 덜 채우면 값이 ""로 온다(validity.badInput). 비운 것으로 저장해
+  // 기간을 조용히 지우지 않고 형식 오류로 막는다.
+  test("(6b) 종료일 칸을 덜 채운 채 저장하면 칸 아래 「날짜 없음 · 날짜 고르기」 · 기간은 그대로", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const endDate = addDays(TODAY, 5);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "bidding", endDate });
+
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    const endInput = page.getByLabel("종료일");
+    await endInput.focus();
+    await endInput.press("Backspace");
+    expect(await endInput.evaluate((input: HTMLInputElement) => input.validity.badInput)).toBe(true);
+
+    const saving = waitForSaveAction(page);
+    await endInput.press("Control+s");
+    await saving;
+    await expect(page.getByText("날짜 없음 · 날짜 고르기", { exact: true })).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByText(new RegExp(`^기간 \\S+ ~ ${endDate}$`))).toBeVisible();
+  });
+
+  // /qa ISSUE-001 — 조각을 하나씩 전부 지우면 값은 ""이고 badInput도 풀린다. 첫 조각에서만 input 이벤트가
+  // 나므로 「덜 채움」 표시가 남아 형식 오류로 막혔다. 완전히 비운 칸은 비운 것으로 저장된다.
+  test("(6c) 종료일 칸의 세 조각을 키보드로 모두 지우고 저장하면 형식 오류 없이 종료일이 비워진다", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const endDate = addDays(TODAY, 5);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "bidding", endDate });
+
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    const endInput = page.getByLabel("종료일");
+    await endInput.focus();
+    for (const key of ["Backspace", "Tab", "Backspace", "Tab", "Backspace"]) await endInput.press(key);
+    expect(await endInput.evaluate((input: HTMLInputElement) => [input.value, input.validity.badInput])).toEqual(["", false]);
+
+    const saving = waitForSaveAction(page);
+    await endInput.press("Control+s");
+    await saving;
+    await expect(page.getByText("날짜 없음 · 날짜 고르기", { exact: true })).toHaveCount(0);
+
+    await page.reload();
+    await expect(page.getByText(/^기간 \S+ ~ —$/)).toBeVisible();
+  });
+
+  // /review (data-migration) — 덜 채운 날짜는 보관본에 「덜 채움」으로 남는다. 「복원」 뒤 그 칸에서 값을 바꾸지
+  // 않는 키(방향키)만 눌러도(keyup) 빈 값으로 바뀌면 저장이 종료일을 조용히 지운다. 지우는 키만 칸 상태를 다시 읽는다.
+  test("(6d) 덜 채운 종료일을 복원한 뒤 방향키만 누르고 저장해도 「날짜 없음 · 날짜 고르기」로 막히고 기간은 그대로", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const endDate = addDays(TODAY, 5);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "bidding", endDate });
+
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    const endInput = page.getByLabel("종료일");
+    await endInput.focus();
+    await endInput.press("Backspace");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+
+    await page.reload();
+    await page.getByRole("button", { name: "복원", exact: true }).click();
+    await page.getByLabel("종료일").focus();
+    await page.getByLabel("종료일").press("ArrowRight");
+
+    const saving = waitForSaveAction(page);
+    await page.getByLabel("종료일").press("Control+s");
+    await saving;
+    await expect(page.getByText("날짜 없음 · 날짜 고르기", { exact: true })).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByText(new RegExp(`^기간 \\S+ ~ ${endDate}$`))).toBeVisible();
+  });
 });
 
 // 04-44(DR-28 · DR-37 · 계약 8 · S17) — 머리 줄 부제의 총 매출 예상가. 권리는 기간 칸과 같다. 계급 권한·정보
@@ -403,7 +483,7 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
     await saving;
 
     await expect(amount).toHaveAttribute("aria-invalid", "true");
-    await expect(page.getByText("총 매출 예상가는 0 이상 · 금액을 고쳐 주세요", { exact: true })).toBeVisible();
+    await expect(page.getByText("총 매출 예상가는 0 이상 · 금액 수정", { exact: true })).toBeVisible();
     // 04-16(D-85 · R2) — PM에게도 발행 표가 있어 그 합계 행에도 같은 글자가 나온다. 견적 표로 좁힌다.
     await expect(page.locator("table", { has: page.locator("caption", { hasText: /^견적 줄$/ }) }).locator("tfoot").getByText("전부 거부 · 다른 칸 오류 1칸")).toBeVisible();
     const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
@@ -431,12 +511,12 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
     await amount.fill("1,234.56");
 
     await expect(amount).toHaveValue("12,000");
-    await expect(page.getByText("원화는 소수점 없이 적어 주세요", { exact: true })).toBeVisible();
+    await expect(page.getByText("원화는 소수점 없이", { exact: true })).toBeVisible();
     await expect(amount).toHaveAttribute("aria-invalid", "true");
 
     await amount.press("Escape");
     await expect(amount).toHaveValue("");
-    await expect(page.getByText("원화는 소수점 없이 적어 주세요", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("원화는 소수점 없이", { exact: true })).toHaveCount(0);
   });
 
   test("(10) 상태가 바뀌어 전부 거부된 뒤 「복원」은 총 매출 예상가 묶음을 열고 편집 값을 dirty로 되살린다(D-68)", async ({ page }) => {

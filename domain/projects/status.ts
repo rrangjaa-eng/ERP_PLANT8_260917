@@ -135,7 +135,7 @@ export async function listProjectStatusCatalog(
 ): Promise<ProjectStatusCatalogEntry[]> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, "projects", "view"))) {
-    throw new ForbiddenError("프로젝트 조회 권한이 없습니다.");
+    throw new ForbiddenError("프로젝트 조회 권한 없음");
   }
   return readStatusCatalog(viewer, deps);
 }
@@ -270,7 +270,7 @@ export async function changeProjectStatus(
   const ids = { projectId, from: input.from, to: input.to };
   const facts = deps?.facts ?? (await loadStatusChangeFacts(viewer, deps));
   if (facts.rowScope.rows === "none") {
-    denyWrite(viewer, "projects.view", ids, new ProjectNotFoundError("존재하지 않는 프로젝트입니다."));
+    denyWrite(viewer, "projects.view", ids, new ProjectNotFoundError("존재하지 않는 프로젝트"));
   }
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
@@ -284,9 +284,9 @@ export async function changeProjectStatus(
       { now: deps?.now, tx, afterLock: deps?.afterLock },
       { recordAction },
     );
-    if (!row) throw new ProjectNotFoundError("존재하지 않는 프로젝트입니다.");
+    if (!row) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
     if (row.archivedAt !== null && !facts.rowScope.includeArchived) {
-      denyWrite(viewer, "projects.view", ids, new ProjectNotFoundError("존재하지 않는 프로젝트입니다."));
+      denyWrite(viewer, "projects.view", ids, new ProjectNotFoundError("존재하지 않는 프로젝트"));
     }
 
     // 권한(메뉴·팀 범위)을 from 불일치보다 먼저 판정한다 — 불일치 문구에는 지금

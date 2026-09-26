@@ -8,8 +8,9 @@
 
 // 남은 시간은 표시하지 않는다(계정 존재 여부 비노출과 같은 이유로 정보 최소화).
 // 분 숫자는 설정 auth.lockout.window_minutes(최대 대기) 하나뿐이다(04.2-03).
-const PREFIX = "로그인 시도가 너무 많습니다. ";
-const SUFFIX = "분 뒤 다시 시도하거나 관리자에게 문의하세요.";
+// 문구 말투는 #87의 명사형·마침표 없음 통일(SYSTEM.md §7-2)을 따른다.
+const PREFIX = "로그인 시도 과다 · ";
+const SUFFIX = "분 뒤 다시 시도하거나 관리자에게 문의";
 
 export function lockedMessage(minutes: number): string {
   return `${PREFIX}${Math.trunc(minutes)}${SUFFIX}`;

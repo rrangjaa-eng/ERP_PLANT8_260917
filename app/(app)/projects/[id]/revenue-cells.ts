@@ -35,8 +35,16 @@ export function revenueTableErrorText(count: number): string | null {
 }
 
 // 후속 결정 R2 — 제 오류가 0칸인 표는 다른 표·표 밖 칸 오류 수로 전부 거부를 알린다.
-export function otherCellsRejectedText(ownCount: number, otherCount: number): string | null {
-  return ownCount === 0 && otherCount > 0 ? `전부 거부 · 다른 칸 오류 ${otherCount}칸` : null;
+// VERDICT.md "/qa low" — 다른 표 충돌(줄 수)과 오류(칸 수)는 원인이 달라 따로 알린다.
+export function otherCellsRejectedText(
+  ownCount: number,
+  other: { conflictRows: number; errorCells: number },
+): string | null {
+  if (ownCount !== 0) return null;
+  const parts: string[] = [];
+  if (other.conflictRows > 0) parts.push(`다른 표 충돌 ${other.conflictRows}줄`);
+  if (other.errorCells > 0) parts.push(`다른 칸 오류 ${other.errorCells}칸`);
+  return parts.length > 0 ? `전부 거부 · ${parts.join(" · ")}` : null;
 }
 
 function countCells(errors: RevenueCellErrors): number {
@@ -50,7 +58,8 @@ export function quoteTableRejectionText<Cell extends { rowId?: string; field: st
   outsideCount: number,
 ): string | null {
   const routed = routeRejectedRevenueCells(envelope.cells, ids);
-  if (routed.rest.length === 0) return otherCellsRejectedText(0, countCells(routed.issued) + countCells(routed.paid) + outsideCount);
+  if (routed.rest.length === 0)
+    return otherCellsRejectedText(0, { conflictRows: 0, errorCells: countCells(routed.issued) + countCells(routed.paid) + outsideCount });
   // SaveRejectedError 요약과 같은 규칙 — 충돌은 줄 수, 오류는 칸 수. 매출 칸은 그 표의 합계 행이 센다.
   const conflictRows = new Set(routed.rest.filter((cell) => cell.kind === "conflict").map((cell) => cell.rowId)).size;
   const errorCells = routed.rest.filter((cell) => cell.kind === "error").length;

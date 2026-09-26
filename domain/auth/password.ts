@@ -81,10 +81,10 @@ export class WeakPasswordError extends UserFacingError {}
 
 export function validateNewPassword(pw: string): void {
   if (pw.length < 8) {
-    throw new WeakPasswordError("비밀번호는 8자 이상이어야 합니다.");
+    throw new WeakPasswordError("비밀번호 8자 미만 · 8자 이상으로");
   }
   if (COMMON_PASSWORDS.has(pw.toLowerCase())) {
-    throw new WeakPasswordError("너무 흔한 비밀번호입니다. 다른 비밀번호를 쓰세요.");
+    throw new WeakPasswordError("너무 흔한 비밀번호 · 다른 비밀번호 사용");
   }
 }
 
@@ -96,7 +96,7 @@ export function validateNewPassword(pw: string): void {
 // 메서드를 쓰고 있다).
 export async function revokeAllSessions(viewer: Viewer, userId: string): Promise<void> {
   if (viewer.id !== userId && !(await can(viewer, "admin.people", "write"))) {
-    throw new UserFacingError("세션을 만료할 권한이 없습니다.");
+    throw new UserFacingError("세션 만료 권한 없음");
   }
   const ctx = await auth.$context;
   await ctx.internalAdapter.deleteUserSessions(userId);

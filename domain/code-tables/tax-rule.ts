@@ -39,16 +39,16 @@ export const taxRuleSchema = z
   .superRefine((value, ctx) => {
     if (value.ruleKind === "none") return;
     if (value.roundingUnit === undefined) {
-      ctx.addIssue({ code: "custom", path: ["roundingUnit"], message: "절사 단위가 필요합니다." });
+      ctx.addIssue({ code: "custom", path: ["roundingUnit"], message: "절사 단위 필요 · 절사 단위 선택" });
     }
     if (value.roundingMethod === undefined) {
-      ctx.addIssue({ code: "custom", path: ["roundingMethod"], message: "절사 방식이 필요합니다." });
+      ctx.addIssue({ code: "custom", path: ["roundingMethod"], message: "절사 방식 필요 · 절사 방식 선택" });
     }
     if (value.minWithholdingAmount === undefined) {
-      ctx.addIssue({ code: "custom", path: ["minWithholdingAmount"], message: "최소 징수액이 필요합니다." });
+      ctx.addIssue({ code: "custom", path: ["minWithholdingAmount"], message: "최소 징수액 필요 · 최소 징수액 입력" });
     }
     if (value.basisDate === undefined) {
-      ctx.addIssue({ code: "custom", path: ["basisDate"], message: "적용 기준일 종류가 필요합니다." });
+      ctx.addIssue({ code: "custom", path: ["basisDate"], message: "적용 기준일 종류 필요 · 적용 기준일 종류 선택" });
     }
   });
 

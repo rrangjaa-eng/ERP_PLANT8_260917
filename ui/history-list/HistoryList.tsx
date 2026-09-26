@@ -152,7 +152,7 @@ export function HistoryList({
       await onAdd({ effectiveFrom, value });
       closeAdd();
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "저장하지 못했습니다 · 다시 시도");
+      setSubmitError(error instanceof Error ? error.message : "저장 실패 · 다시 시도");
     } finally {
       setSubmitting(false);
     }

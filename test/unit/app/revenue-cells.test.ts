@@ -8,7 +8,7 @@ import {
 
 // 04-16(B3 · UI-SPEC rev 5 후속 결정 R2) — 04-28 거부 봉투의 칸 중 매출 줄 id 칸을 발행·입금 표의 줄·열 오류로 떼어 내고,
 // 표별 합계 행 오른쪽 글자를 만든다.
-const CAP = "금액이 상한을 넘습니다 · 999,999,999,999원 이하";
+const CAP = "금액 상한 초과 · 999,999,999,999원 이하";
 const ids = { issuedIds: ["i1"], paidIds: ["p1"] };
 
 describe("routeRejectedRevenueCells", () => {
@@ -66,11 +66,14 @@ describe("revenueTableErrorText", () => {
 
 describe("otherCellsRejectedText", () => {
   it.each([
-    [0, 0, null],
-    [0, 1, "전부 거부 · 다른 칸 오류 1칸"],
-    [0, 3, "전부 거부 · 다른 칸 오류 3칸"],
-    [2, 3, null],
-  ])("제 칸 %i · 다른 칸 %i → %s", (own, other, expected) => {
+    [0, { conflictRows: 0, errorCells: 0 }, null],
+    [0, { conflictRows: 0, errorCells: 1 }, "전부 거부 · 다른 칸 오류 1칸"],
+    [0, { conflictRows: 0, errorCells: 3 }, "전부 거부 · 다른 칸 오류 3칸"],
+    [2, { conflictRows: 0, errorCells: 3 }, null],
+    // VERDICT.md "/qa low" — 원인이 다른 표의 충돌일 때는 "오류"가 아니라 "충돌"로 알린다.
+    [0, { conflictRows: 1, errorCells: 0 }, "전부 거부 · 다른 표 충돌 1줄"],
+    [0, { conflictRows: 2, errorCells: 1 }, "전부 거부 · 다른 표 충돌 2줄 · 다른 칸 오류 1칸"],
+  ])("제 칸 %i · 다른 원인 %o → %s", (own, other, expected) => {
     expect(otherCellsRejectedText(own, other)).toBe(expected);
   });
 });

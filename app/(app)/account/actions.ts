@@ -15,8 +15,8 @@ import { validateNewPassword, finalizePasswordChange } from "@/domain/auth/passw
 export const changePasswordAction = authedActionClient
   .schema(
     z.object({
-      currentPassword: z.string().min(1, "현재 비밀번호를 입력하세요."),
-      newPassword: z.string().min(8, "8자 이상이어야 합니다."),
+      currentPassword: z.string().min(1, "현재 비밀번호 필요 · 현재 비밀번호 입력"),
+      newPassword: z.string().min(8, "8자 미만 · 8자 이상으로"),
     }),
   )
   .action(async ({ parsedInput, ctx }) => {
@@ -34,7 +34,7 @@ export const changePasswordAction = authedActionClient
       // 현재 비밀번호 불일치는 better-auth가 APIError(BAD_REQUEST, INVALID_PASSWORD)로
       // 던진다 — 사용자에게는 일관된 한국어 메시지만 보여준다.
       if (e instanceof APIError) {
-        throw new UserFacingError("현재 비밀번호가 올바르지 않습니다.");
+        throw new UserFacingError("현재 비밀번호 오류 · 다시 입력");
       }
       throw e;
     }

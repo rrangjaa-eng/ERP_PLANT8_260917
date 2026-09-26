@@ -944,3 +944,29 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **버린 대안**: (a) 결과 불명을 마지막 이메일 실행에서만 센다 — 뒤의 성공한 실행이 가린다. (b) 사람이 결과 불명을 「확인」 처리하는 버튼 — 새 컨트롤·결정 하나. (c) 시각을 문장 끝에 하나만 단다 — 둘 다일 때 어느 조각의 시각인지 읽히지 않는다. (d) 미설정이면 결과 꼬리를 뗀다 — B2가 DB 커넥션 배너에 밀리면 실패가 어디에도 남지 않는다.
 
 **범위**: SYSTEM.md §6-8(`이메일` 값 한 줄 덧붙임) · §7-11(B2 변형 한 줄 덧붙임). 코드: `domain/system-status/index.ts`(`emailFailureBannerFrom`·`emailFailureBannerText`) · `app/(app)/admin/page.tsx` · `app/(app)/admin/system-status/page.tsx`.
+
+---
+
+## 2026-09-26 — 견적 줄 표 700~1023(좁은 PC) 열 구성: 소분류 숨김 · 수량·단가·견적가 노출 (사용자 결정 2026-09-26 · VERDICT.md M-6)
+
+**결정**: 견적 줄 표(`app/(app)/projects/[id]/quote-table.tsx`)와 이전 차수 읽기 표(`previous-revision.tsx`)의 700~1023px에서 **소분류(P3) 열은 숨고, 수량·단가·견적가(P2) 열은 보인다** — `.planning/phases/04-project-quote-ledger/04-UI-SPEC.md:509`(DR-14) 정의를 정본으로 삼는다. 구현은 소분류에 `collapseBelow: 1024`를 더하고 수량·단가·견적가의 `collapseBelow: 1024`를 뗀다.
+
+**왜**: SYSTEM.md §6-1 ⑶ "편집 표도 숨기는 열은 P3에서만 고르고 계산 열·식별 열부터 숨긴다"는 원칙과 실제 코드가 어긋나 있었다 — 소분류(P3)엔 `collapseBelow`가 아예 없어 항상 보였고, 수량·단가·견적가(P2)는 `collapseBelow: 1024`로 숨어 있었다. SYSTEM.md 원칙 자체는 이번 결정과 이미 일치한다(문구 변경 불필요) — 어긋난 쪽은 코드였다. 실제 자주 보는 값(수량·단가·견적가)이 숨는 대신, 상세에서 확인해도 되는 소분류가 숨는 편이 사용자에게 낫다.
+
+**범위**: `app/(app)/projects/[id]/quote-table.tsx`, `app/(app)/projects/[id]/previous-revision.tsx`. SYSTEM.md 문구는 바꾸지 않는다(이미 이 결정과 일치).
+
+## 2026-09-26 — 날짜 입력 네이티브 통일 + 오류 문구 명사형 통일 (사용자 결정 2026-09-26)
+
+**결정**: (1) 남아 있던 텍스트 ISO 날짜 칸(상세 기간 칸 `period-field.tsx`, 차수 승인일 `revision-dialogs.tsx`)을 다른 화면과 같은 네이티브 `<input type="date">`로 바꾼다. 네이티브 달력 칸을 비운 값("")은 형식 오류가 아니라 「날짜 없음 · 날짜 고르기」로 구분한다(`domain/projects/period.ts` EMPTY_ERROR, `domain/revenue/index.ts` entryDate 동일). (2) 사용자 노출 오류 문구(검증 오류·행동 실패)를 짧은 명사형·마침표 없음으로 통일하고 높임말 종결(`-습니다`·`-세요`·`-해 주세요`·`-입니다`)을 없앤다 — SYSTEM.md §7-2 3번 규칙의 예외(오류의 「다음 행동」도 `~해 주세요`체 허용)를 없애 오류 전체를 명사형으로 좁힌다. 외부 수령자 화면의 「다음 행동」 존댓말 허용은 유지한다(이번에 그 화면은 건드리지 않았다). 설정 힌트·안내 문구, 성공/되돌리기 토스트, 라벨은 이 통일에서 제외한다. 처음에 제외했던 「날짜를 골라 주세요」도 사용자 요청(2026-09-26)으로 「날짜 없음 · 날짜 고르기」로 바꿔 오류 문구에 높임말 예외가 없다.
+
+**왜**: VERDICT.md M-2·N-8·P-4가 지적한 시스템 공백 — 날짜 입력 방식이 화면마다 갈려 있었고, 빈 날짜 칸이 형식 오류로 잘못 보고됐으며, 오류 문구 말투가 높임+마침표와 명사형으로 섞여 있었다. SYSTEM.md 3번 규칙 자체가 오류의 「다음 행동」에 존댓말을 허용해 코드의 혼재를 정당화하고 있었다.
+
+**범위**: `domain/`(projects/period.ts·revenue/index.ts·기타 UserFacingError 문구 다수) · `lib/format-number.ts` · `app/(app)/projects/[id]/period-field.tsx`·`revision-dialogs.tsx`·`quote-table.tsx`·기타 admin 화면 · `ui/`(history-list·table·permission-grid·logout). 전체 문구 인벤토리는 세션 산출물 `design-decisions-apply-error-copy.md`에 있다. `docs/design/SYSTEM.md` §7-2 3·6번 규칙과 예시 문자열을 이 결정에 맞춰 고쳤다.
+
+## 2026-09-26 — 새 프로젝트 등록: 담당 PM·팀 기본값 = 등록하는 사람과 그 사람의 소속 팀 (사용자 결정 2026-09-26 · 결정 2)
+
+**결정**: `/projects?new=1` 등록 폼의 담당 PM은 등록하는 사람, 팀은 그 사람의 오늘(KST) 소속 팀(가장 최근 발령, 미래 발령 제외)으로 미리 고른다. 복사 등록이면 출처 값이 먼저다. 미리 고를 값이 좁힌 옵션(팀 업무 범위면 내 팀·오늘 내 팀 사람)에 없으면 담당 PM은 빈 칸, 팀은 기존 단일 팀 폴백으로 떨어진다. 구현은 `domain/projects/references.ts` `loadCreatorDefaults`가 값을 주고 `project-form.tsx`가 `resolveDefaultOptionId`의 폴백 인자로 쓴다.
+
+**왜**: CLAUDE.md §7 「알 수 있는 값은 기본값으로 미리 채운다(내 팀)」. 대부분의 등록은 등록자가 자기 팀 프로젝트의 PM이다 — 매번 두 칸을 고르게 할 이유가 없다. PR #84(등록 팀 범위)가 옵션을 좁힌 뒤에 얹어야 목록 밖 값을 고르지 않는다.
+
+**범위**: `domain/projects/references.ts` · `app/(app)/projects/page.tsx` · `app/(app)/projects/project-form.tsx`. SYSTEM.md 문구는 바꾸지 않는다.

@@ -158,7 +158,7 @@ describe("계급 업무 범위(D11·D20)", () => {
 
   it("없는 계급의 업무 범위를 바꾸면 찾을 수 없다고 거부한다", async () => {
     await expect(setRoleWorkScope(SYSTEM_VIEWER, `role-missing-${randomUUID()}`, "company")).rejects.toThrow(
-      "계급을 찾을 수 없습니다.",
+      "계급 찾을 수 없음",
     );
   });
 });

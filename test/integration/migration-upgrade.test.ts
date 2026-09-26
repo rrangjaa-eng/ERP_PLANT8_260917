@@ -304,7 +304,7 @@ describe("계약 칸 삭제(04-41 · D9 · OV-6)", () => {
       { id: DEMO, number: "OLD-D1" },
       { id: WORK, number: "OLD-W1" },
     ]);
-    const { rows: lines } = await pool.query<{ item_name: string }>(`SELECT item_name FROM quote_lines ORDER BY item_name`);
+    const { rows: lines } = await pool.query<{ item_name: string }>(`SELECT item_name FROM quote_lines ORDER BY item_name COLLATE "C"`);
     expect(lines.map((line) => line.item_name)).toEqual(["demo 줄 1", "demo 줄 2", "업무 줄"].sort());
   });
 

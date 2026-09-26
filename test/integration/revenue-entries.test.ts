@@ -121,21 +121,23 @@ describe("domain/revenue saveRevenue/listRevenue (Phase 4, 실제 Postgres)", ()
     expect(overpay?.balanceKrw).toBeGreaterThan(0);
   });
 
-  it("(d) 기획본부(PM) DTO 키 집합에 발행·입금 배열 필드가 없다 — 빈 배열이 아니라 필드 부재", async () => {
+  // 04-16(D-85 · B-28 · T-04-83) — PM은 발행 줄과 서버가 계산한 발행 합계를 받고, 입금 줄과 입금에서 파생된 값(입금 합계 ·
+  // 잔액 = 미수·초과 입금)은 필드 자체가 없다 — 발행액 − 미수 = 입금액 역산 통로를 남기지 않는다.
+  it("(d) 기획본부(PM) DTO 키 집합 — 발행 줄·발행 합계는 있고, 입금 줄과 입금 파생 필드는 없다(빈 배열이 아니라 필드 부재)", async () => {
     const { project, pmUserId } = await setupProject();
     const finance = await createFinanceViewer();
     await saveRevenue(finance, project.id, {
       issuedEntries: [{ entryDate: "2026-09-01", amount: { currency: "KRW", amount: 1_000_000, fxRate: 1 } }],
+      paidEntries: [{ entryDate: "2026-09-05", amount: { currency: "KRW", amount: 550_000, fxRate: 1 } }],
     });
 
     const pmDto = await listRevenue(pmViewer(pmUserId), project.id);
-    expect(Object.keys(pmDto)).not.toContain("issuedEntries");
-    expect(Object.keys(pmDto)).not.toContain("paidEntries");
-    expect(Object.keys(pmDto)).not.toContain("balanceKrw");
-    expect(pmDto.contract).toBeTruthy();
+    expect(Object.keys(pmDto).sort()).toEqual(["contract", "issuedEntries", "issuedTotalKrw"]);
+    expect(pmDto.issuedEntries).toHaveLength(1);
+    expect(pmDto.issuedTotalKrw).toBe(1_000_000);
 
     const financeDto = await listRevenue(finance, project.id);
-    expect(Object.keys(financeDto)).toContain("issuedEntries");
+    expect(Object.keys(financeDto)).toEqual(expect.arrayContaining(["issuedEntries", "paidEntries", "issuedTotalKrw", "paidGrossTotalKrw", "balanceKrw"]));
   });
 
   it("(e) 음수 금액 줄(환불·할인)이 저장된다(EXP-14)", async () => {

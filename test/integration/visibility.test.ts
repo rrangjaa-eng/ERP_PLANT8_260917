@@ -8,6 +8,8 @@ import { project, type DtoSpec } from "@/domain/permissions/project";
 import { upsertVisibility } from "@/repositories/permissions";
 import { insertCodeItem, type CodeItemRow } from "@/repositories/code-tables";
 import { insertRole } from "@/repositories/roles";
+import { visible } from "@/domain/permissions/visible";
+import { seedMasterData } from "@/domain/seed";
 
 const TABLE_KEY = `visibility_test_${randomUUID()}`;
 
@@ -85,5 +87,20 @@ describe("노출 판정의 실제 효과 (ADMN-02·ADMN-03)", () => {
     const secondOn = await project(pmViewer, row, secondSpec);
     expect(firstOn.label).toBe("D");
     expect(secondOn.label).toBe("D");
+  });
+
+  // 04-16(D-85 · T-04-87) — 발행액은 기획본부 기본 공개, 입금액은 기본 숨김. 04-20부터 시드는 시스템 관리자 밖 계급의 노출 행을
+  // 없을 때만 넣는다 — 새 기본값은 새 DB(행이 없는 계급)에만 반영되고, 이미 행이 있는 DB는 관리자가 노출표에서 켠다.
+  it("(e) 시드된 새 DB에서 기획 PM은 revenue.issued_amount를 보고 revenue.paid_amount는 못 본다(D-85)", async () => {
+    const pmViewer: Viewer = { id: "pm-vis-tester-e", roleId: DEFAULT_ROLE_ID };
+    expect(await visible(pmViewer, "revenue.issued_amount")).toBe(true);
+    expect(await visible(pmViewer, "revenue.paid_amount")).toBe(false);
+  });
+
+  it("(f) 기획 PM 행이 이미 있는 DB에서 시드를 다시 돌려도 그 행을 바꾸지 않는다(04-20 없을 때만 넣기 — D-85는 새 DB에만)", async () => {
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, infoItem: "revenue.issued_amount", visible: false });
+    await seedMasterData(SYSTEM_VIEWER);
+    const pmViewer: Viewer = { id: "pm-vis-tester-f", roleId: DEFAULT_ROLE_ID };
+    expect(await visible(pmViewer, "revenue.issued_amount")).toBe(false);
   });
 });

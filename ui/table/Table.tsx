@@ -231,6 +231,8 @@ export function Table<Row>({
   };
   const [seenIssueSignal, setSeenIssueSignal] = useState(firstIssueSignal);
   let issueFocusId: string | null = null;
+  // 폭 때문에 숨은 열(collapseBelow)의 오류면 그 칸에 포커스할 수 없다 — 격자는 그 줄의 보이는 P1 칸으로 간다.
+  let issueRowFocusId: string | null = null;
   if (firstIssueSignal !== seenIssueSignal) {
     setSeenIssueSignal(firstIssueSignal);
     if (firstIssueSignal !== undefined) {
@@ -238,7 +240,8 @@ export function Table<Row>({
         const column = columns.find((candidate) => isFixedIssue(row, candidate.key));
         if (!column) continue;
         const rowId = getRowId(row);
-        issueFocusId = `${rowId}-${column.key}-issue`;
+        if (enableGridKeyboard && isHiddenColumn(column)) issueRowFocusId = rowId;
+        else issueFocusId = `${rowId}-${column.key}-issue`;
         const issuePage = pages ? pageOfRow(pages, rowId) : null;
         if (issuePage !== null && issuePage !== targetPage) {
           targetPage = issuePage;
@@ -432,6 +435,14 @@ export function Table<Row>({
     const colKey = revealRow ? columns.find((column) => !isHiddenColumn(column) && cellEditability(column, revealRow) === "edit")?.key : undefined;
     if (colKey !== undefined) {
       keyboardState.setFocusCell({ rowId: revealFocusId, colKey });
+      setFocusRequest({ kind: "cell" });
+    }
+  }
+
+  if (issueRowFocusId !== null) {
+    const colKey = columns.find((column) => column.priority === "p1" && !isHiddenColumn(column))?.key;
+    if (colKey !== undefined) {
+      keyboardState.setFocusCell({ rowId: issueRowFocusId, colKey });
       setFocusRequest({ kind: "cell" });
     }
   }

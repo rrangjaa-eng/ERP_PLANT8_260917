@@ -459,3 +459,39 @@ test.describe("프로젝트 목록 — 폰 첫 화면 (04-48)", () => {
     await expect(page.getByTestId("filter-summary")).toBeHidden();
   });
 });
+
+// 04-48 검토·감사 반영 — 독립 DOM 감사 F1–F4 · 검색 blur(04-05) · Opus 검토 SF-1 · SF-2.
+async function markSameDocument(page: Page) {
+  await page.evaluate(() => {
+    (window as unknown as { __sameDocument?: boolean }).__sameDocument = true;
+  });
+}
+
+async function isSameDocument(page: Page): Promise<boolean> {
+  return page.evaluate(() => (window as unknown as { __sameDocument?: boolean }).__sameDocument === true);
+}
+
+test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)", () => {
+  test("검색 칸에서 값을 바꾸지 않고 Tab으로 나가면 다시 로드되지 않고 다음 컨트롤로 간다(바꾸면 제출)", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const pm = await setupPm();
+    const marker = `E2E검색blur-${randomUUID().slice(0, 8)}`;
+    await createProject(SYSTEM_VIEWER, { clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId, name: `${marker}-행` });
+    await login(page, pm);
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}`);
+    const search = page.getByRole("textbox", { name: "검색" });
+    await expect(search).toHaveValue(marker);
+    await markSameDocument(page);
+    const before = page.url();
+
+    await search.focus();
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("link", { name: "필터 지우기" })).toBeFocused();
+    expect(page.url()).toBe(before);
+    expect(await isSameDocument(page)).toBe(true);
+
+    await search.fill(`${marker}-바꿈`);
+    await page.keyboard.press("Tab");
+    await expect(page).toHaveURL(new RegExp(`q=${encodeURIComponent(`${marker}-바꿈`)}`));
+  });
+});

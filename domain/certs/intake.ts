@@ -7,24 +7,46 @@ import { maskName, maskRrn, normalizeName, normalizePhone } from "@/domain/certs
 import { validateRrn } from "@/domain/certs/rrn";
 import { CERT_CONSENT_VERSION } from "@/domain/certs/consent";
 import { getSettingValue } from "@/domain/settings/registry";
-import { ACTION_LOG_OPTIONAL_TYPES, CERT_RETENTION_YEARS } from "@/domain/settings/keys";
+import {
+  ACTION_LOG_OPTIONAL_TYPES,
+  CERT_RETENTION_YEARS,
+  CERT_VERIFY_LOCK_MINUTES,
+  CERT_VERIFY_MAX_ATTEMPTS,
+} from "@/domain/settings/keys";
+import {
+  VERIFY_RATE_WINDOW_MINUTES,
+  certIpHash,
+  evaluateVerifyAttempt,
+  lockStatus,
+  pruneIdemEntries,
+  remainingSeconds,
+  unlockAtDisplay,
+  verifyBudgetScope,
+} from "@/domain/certs/verify-lock";
 import { recordAction, type RecordActionDeps } from "@/domain/action-log/record";
 import {
   loadDocumentNumberFormat as defaultLoadDocumentNumberFormat,
   allocateDocumentNumber,
 } from "@/domain/document-numbering";
-import { withTransaction } from "@/lib/db-transaction";
-import { encrypt } from "@/lib/crypto";
+import { withTimeoutConversion, withTransaction } from "@/lib/db-transaction";
+import { decrypt, encrypt } from "@/lib/crypto";
+import { env } from "@/lib/env";
+import { log } from "@/lib/log";
 import { kstYear } from "@/lib/kst-date";
 import { getSignatureStore, type SignatureStore } from "@/lib/storage/signature-store";
 import { findUserById } from "@/repositories/users";
 import { findEventByTokenHash, lockEventForUpdate, type CertEventRow } from "@/repositories/cert-events";
 import {
+  countRecentMisses,
+  countRecentMissesUnlocked,
   findWinnerInEvent,
   listWinnersForIntake,
+  lockEventRow,
+  lockWinnerInEvent,
   markWinnerSubmitted,
-  markWinnerVerified,
+  writeWinnerVerifyState,
   type CertWinnerRow,
+  type VerifyIdemEntry,
 } from "@/repositories/cert-winners";
 import {
   deleteSignatureUploadIntent,
@@ -112,85 +134,316 @@ export async function loadIntake(token: string, now: Date = new Date()): Promise
 
 // ── selectWinner ────────────────────────────────────────────────────────
 
-export type SelectWinnerResult = { kind: "notFound" } | { kind: "ok"; rowId: string; maskedName: string };
+type ClosedResult = { kind: "closed"; reason: "expired" | "all_submitted" | "manual"; at: string };
+
+export type SelectWinnerResult =
+  | { kind: "notFound" }
+  | ClosedResult
+  | {
+      kind: "ok";
+      rowId: string;
+      maskedName: string;
+      // 짧은 잠김이면 잠김 블록, 누적 잠김이면 hardLocked만(숫자 없음). 제출
+      // 여부는 싣지 않는다 — 제출한 자리와 안 한 자리의 응답 키 집합이 같다.
+      locked?: { limit: number; unlockAtDisplay: string; remainingSeconds: number };
+      hardLocked?: true;
+    };
 
 export async function selectWinner(token: string, rowId: string, now: Date = new Date()): Promise<SelectWinnerResult> {
   if (!(await isCertFeatureEnabled())) return { kind: "notFound" };
 
   const event = await findEventByTokenHash(SYSTEM_VIEWER, sha256Hex(token));
   if (!event) return { kind: "notFound" };
-  if (resolveEventState(event, now).status === "closed") return { kind: "notFound" };
+  const state = resolveEventState(event, now);
+  if (state.status === "closed") return { kind: "closed", reason: state.reason, at: state.at };
 
   const winner = await findWinnerInEvent(SYSTEM_VIEWER, event.id, rowId);
   if (!winner || winner.name === null) return { kind: "notFound" };
 
-  return { kind: "ok", rowId, maskedName: maskName(normalizeName(winner.name)) };
+  const base = { kind: "ok" as const, rowId, maskedName: maskName(normalizeName(winner.name)) };
+  const status = lockStatus({ lockedUntil: winner.lockedUntil, hardLockedAt: winner.hardLockedAt, now });
+  if (status.kind === "hardLocked") return { ...base, hardLocked: true };
+  if (status.kind === "shortLocked") {
+    const limit = await getSettingValue(CERT_VERIFY_MAX_ATTEMPTS);
+    return {
+      ...base,
+      locked: { limit, unlockAtDisplay: unlockAtDisplay(status.unlockAt), remainingSeconds: status.remainingSec },
+    };
+  }
+  return base;
+}
+
+// ── recheckWinnerLock ───────────────────────────────────────────────────
+
+// 04.3-03 Task 1 ⑤-b — E3 누적 잠김의 복구 길이 부르는 읽기 전용 판정.
+// 답은 닫힘(링크 단위 — 어떤 잠김보다 앞선다) · 누적 잠김 · 짧은 잠김 ·
+// 열림 넷뿐이다. 개인별 제출 여부 · 셈 · 이름을 싣지 않고 쓰지 않는다.
+export type RecheckWinnerLockResult =
+  | { kind: "notFound" }
+  | ClosedResult
+  | { kind: "hardLocked" }
+  | { kind: "shortLocked"; unlockAt: string; unlockAtDisplay: string; remainingSec: number; limit: number }
+  | { kind: "open" };
+
+export async function recheckWinnerLock(
+  token: string,
+  winnerId: string,
+  now: Date = new Date(),
+): Promise<RecheckWinnerLockResult> {
+  if (!(await isCertFeatureEnabled())) return { kind: "notFound" };
+
+  const event = await findEventByTokenHash(SYSTEM_VIEWER, sha256Hex(token));
+  if (!event) return { kind: "notFound" };
+  const winner = await findWinnerInEvent(SYSTEM_VIEWER, event.id, winnerId);
+  if (!winner || winner.name === null) return { kind: "notFound" };
+
+  const state = resolveEventState(event, now);
+  if (state.status === "closed") return { kind: "closed", reason: state.reason, at: state.at };
+
+  const status = lockStatus({ lockedUntil: winner.lockedUntil, hardLockedAt: winner.hardLockedAt, now });
+  if (status.kind === "shortLocked") {
+    return {
+      kind: "shortLocked",
+      unlockAt: status.unlockAt.toISOString(),
+      unlockAtDisplay: unlockAtDisplay(status.unlockAt),
+      remainingSec: status.remainingSec,
+      limit: await getSettingValue(CERT_VERIFY_MAX_ATTEMPTS),
+    };
+  }
+  return status;
 }
 
 // ── verifyLast4 ─────────────────────────────────────────────────────────
 
+type OkPayload = {
+  kind: "ok";
+  rowId: string;
+  prizeLine: string;
+  delivery: "onsite" | "parcel";
+  consent: { version: string; retentionYears: number };
+  // 증표를 발급한 순간 그 자리 행의 version — 04.3-06 제출이 비교한다(Codex #7).
+  version: number;
+};
+
 export type VerifyLast4Result =
   | { kind: "notFound" }
+  | ClosedResult
+  | { kind: "throttled" }
+  | { kind: "wrong"; remaining: number }
+  | { kind: "locked"; limit: number; unlockAtDisplay: string; remainingSeconds: number }
+  | { kind: "hardLocked" }
+  | { kind: "expiredProof" }
   | { kind: "submitted"; maskedName: string; submittedAt: string }
-  | { kind: "wrong" }
-  | {
-      kind: "ok";
-      rowId: string;
-      proof: string;
-      prizeLine: string;
-      delivery: "onsite" | "parcel";
-      consent: { version: string; retentionYears: number };
-    };
+  | (OkPayload & { proof: string; verifiedUntil: string });
+
+const verifyInputSchema = z.object({
+  last4: z.string().regex(/^\d{4}$/),
+  idemKey: z.string().regex(/^[A-Za-z0-9_-]{22,64}$/),
+  ip: z.string().max(200).nullable(),
+});
+
+// 맵에 둔 응답(r)의 모양 — 개인정보 · 4자리 · 증표 평문 없음. 읽을 때 다시
+// 검사해 모양이 어긋난 항목은 재생하지 않는다.
+const storedWrongSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("wrong"), remaining: z.number() }),
+  z.object({ kind: z.literal("locked"), limit: z.number(), unlockAt: z.string() }),
+  z.object({ kind: z.literal("hardLocked") }),
+]);
+type StoredWrong = z.infer<typeof storedWrongSchema>;
+
+const storedOkSchema = z.object({
+  kind: z.literal("ok"),
+  rowId: z.string(),
+  prizeLine: z.string(),
+  delivery: z.enum(["onsite", "parcel"]),
+  consent: z.object({ version: z.string(), retentionYears: z.number() }),
+  version: z.number(),
+});
+
+function lockedResponse(limit: number, until: Date, now: Date): VerifyLast4Result {
+  return { kind: "locked", limit, unlockAtDisplay: unlockAtDisplay(until), remainingSeconds: remainingSeconds(until, now) };
+}
+
+function submittedResponse(winner: CertWinnerRow): VerifyLast4Result {
+  return {
+    kind: "submitted",
+    maskedName: maskName(normalizeName(winner.name ?? "")),
+    submittedAt: (winner.submittedAt ?? new Date()).toISOString(),
+  };
+}
+
+// 같은 키의 재전송 — 쓰기 없이 그 항목으로 응답한다(셈 · 맵 · 증표 불변).
+function replayEntry(entry: VerifyIdemEntry, winner: CertWinnerRow, maxAttempts: number, now: Date): VerifyLast4Result {
+  if (entry.o === "wrong") {
+    const parsed = storedWrongSchema.safeParse(entry.r);
+    if (!parsed.success) return { kind: "expiredProof" };
+    const r = parsed.data;
+    if (r.kind === "wrong") return { kind: "wrong", remaining: r.remaining };
+    // 해제 시각은 저장된 절대 시각, 남은 초만 지금 다시 계산한다.
+    if (r.kind === "locked") return lockedResponse(r.limit, new Date(r.unlockAt), now);
+    // 누적 잠김을 건 틀림 — 응답 순간 상태로 붙인다. 여기 왔으면 지금은
+    // 누적 잠김이 아니다(담당자가 풀었다) → 지금 셈으로 만든 wrong.
+    return { kind: "wrong", remaining: Math.max(0, maxAttempts - winner.failedAttempts) };
+  }
+  // 맞음 항목 — 그새 제출됐으면 E6-a(키 주인은 이미 맞힌 사람이다).
+  if (winner.submittedAt) return submittedResponse(winner);
+  const parsed = storedOkSchema.safeParse(entry.r);
+  if (!parsed.success) return { kind: "expiredProof" };
+  let proof: string;
+  try {
+    proof = decrypt(entry.p);
+  } catch {
+    // 재생 불가(키 회전 등, Codex B-5) — 새로 판정 · 발급하지 않는다.
+    return { kind: "expiredProof" };
+  }
+  return { ...parsed.data, proof, verifiedUntil: entry.until };
+}
 
 export async function verifyLast4(
   token: string,
   rowId: string,
   last4: string,
   idemKey: string,
+  ip: string | null,
   now: Date = new Date(),
 ): Promise<VerifyLast4Result> {
-  void idemKey; // 멱등 재생·잠금 카운트는 04.3-03이 이 서명에 더한다.
   if (!(await isCertFeatureEnabled())) return { kind: "notFound" };
+  const input = verifyInputSchema.parse({ last4, idemKey, ip });
 
   const event = await findEventByTokenHash(SYSTEM_VIEWER, sha256Hex(token));
   if (!event) return { kind: "notFound" };
-  if (resolveEventState(event, now).status === "closed") return { kind: "notFound" };
 
-  const winner = await findWinnerInEvent(SYSTEM_VIEWER, event.id, rowId);
-  if (!winner || winner.name === null || winner.phone === null) return { kind: "notFound" };
+  // (a0) 설정은 행사 행을 잠그기 전에 값으로 읽는다(E3-09) — 잠근 콜백 안의
+  // DB 호출은 전부 tx다.
+  const maxAttempts = await getSettingValue(CERT_VERIFY_MAX_ATTEMPTS);
+  const lockMinutes = await getSettingValue(CERT_VERIFY_LOCK_MINUTES);
+  const retentionYears = await getSettingValue(CERT_RETENTION_YEARS);
+  const ipHash = certIpHash(env.BETTER_AUTH_SECRET, event.id, input.ip);
+  const since = new Date(now.getTime() - VERIFY_RATE_WINDOW_MINUTES * 60 * 1000);
+  const keyHash = sha256Hex(input.idemKey);
 
-  const matches = winner.phone.slice(-4) === last4;
-
-  if (winner.submittedAt) {
-    // E6-a — 행을 고르는 것만으로 제출 여부가 드러나지 않는다. 맞았을
-    // 때만 「이미 제출하셨습니다」가 선다.
-    if (!matches) return { kind: "wrong" };
-    return { kind: "submitted", maskedName: maskName(normalizeName(winner.name)), submittedAt: winner.submittedAt.toISOString() };
+  // (b1) 잠금 전 빠른 판정(AX-P2 · T-04.3-113) — 이미 한도를 넘은 요청은 행사
+  // 행 FOR UPDATE 대기열에 서지 않고(풀 연결을 붙들지 않는다) 곧바로
+  // throttled다. 잠금 없는 짧은 읽기 한 번이고, 한도의 정본은 잠근 뒤 (f)다.
+  const quickCounts = await withTimeoutConversion(() =>
+    countRecentMissesUnlocked(SYSTEM_VIEWER, { eventId: event.id, ipHash, since }),
+  );
+  const quickScope = verifyBudgetScope(quickCounts);
+  if (quickScope) {
+    log.warn("cert.verify_throttled", { scope: quickScope, eventId: event.id });
+    return { kind: "throttled" };
   }
 
-  if (!matches) return { kind: "wrong" };
+  return withTransaction(async (tx): Promise<VerifyLast4Result> => {
+    // (c) 행사 행 → 자리 행. 열림 판정은 잠근 뒤 읽은 값으로 한다.
+    const lockedEvent = await lockEventRow(SYSTEM_VIEWER, event.id, tx);
+    if (!lockedEvent) return { kind: "notFound" };
+    const state = resolveEventState(lockedEvent, now);
+    if (state.status === "closed") return { kind: "closed", reason: state.reason, at: state.at };
 
-  const proof = randomBytes(32).toString("base64url");
-  const proofHash = sha256Hex(proof);
-  const verifiedUntil = new Date(now.getTime() + VERIFY_PROOF_TTL_MINUTES * 60 * 1000);
-  const consentVersion = CERT_CONSENT_VERSION;
-  const retentionYears = await getSettingValue(CERT_RETENTION_YEARS);
+    const winner = await lockWinnerInEvent(SYSTEM_VIEWER, event.id, rowId, tx);
+    if (!winner || winner.name === null || winner.phone === null) return { kind: "notFound" };
 
-  await markWinnerVerified(SYSTEM_VIEWER, winner.id, {
-    verifyProofHash: proofHash,
-    verifiedUntil,
-    offeredConsentVersion: consentVersion,
-    offeredRetentionYears: retentionYears,
+    // (d0) 지금의 누적 잠김이 어떤 재생보다 앞선다 — 판정 · 셈 · 쓰기 없음.
+    if (winner.hardLockedAt) return { kind: "hardLocked" };
+
+    // (d) 재생 — 60분 지난 항목은 읽을 때도 없는 것으로 본다.
+    const entries = pruneIdemEntries(winner.verifyIdemOutcome ?? {}, now);
+    const replay = entries[keyHash];
+    if (replay) return replayEntry(replay, winner, maxAttempts, now);
+
+    // (e) 짧은 잠김 중 — 세지 않고 맵에 넣지 않는다(제출 판정보다 먼저).
+    if (winner.lockedUntil && now < winner.lockedUntil) return lockedResponse(maxAttempts, winner.lockedUntil, now);
+
+    // (f) 속도 제한 — 잠근 뒤 다시 센 값이 정본이다(동시 요청이 넘지 못한다).
+    const counts = await countRecentMisses(SYSTEM_VIEWER, { eventId: event.id, ipHash, since }, tx);
+    const scope = verifyBudgetScope(counts);
+    if (scope) {
+      log.warn("cert.verify_throttled", { scope, eventId: event.id });
+      return { kind: "throttled" };
+    }
+
+    // (g) 그 한 사람과만 대조한다.
+    const matched = winner.phone.slice(-4) === input.last4;
+    if (matched && winner.submittedAt) return submittedResponse(winner);
+
+    const decision = evaluateVerifyAttempt({
+      failedAttempts: winner.failedAttempts,
+      lockedUntil: winner.lockedUntil,
+      cumulativeFailed: winner.cumulativeFailedAttempts,
+      hardLockedAt: winner.hardLockedAt,
+      now,
+      maxAttempts,
+      lockMinutes,
+      matched,
+    });
+    const at = now.toISOString();
+
+    if (decision.outcome === "ok") {
+      const proof = randomBytes(32).toString("base64url");
+      const verifiedUntil = new Date(now.getTime() + VERIFY_PROOF_TTL_MINUTES * 60 * 1000);
+      const payload: OkPayload = {
+        kind: "ok",
+        rowId,
+        prizeLine: `${winner.prizeName} ${winner.quantity}개`,
+        delivery: winner.delivery as "onsite" | "parcel",
+        consent: { version: CERT_CONSENT_VERSION, retentionYears },
+        version: winner.version,
+      };
+      const entry: VerifyIdemEntry = { o: "ok", r: payload, p: encrypt(proof), until: verifiedUntil.toISOString(), ip: ipHash, at };
+      await writeWinnerVerifyState(
+        SYSTEM_VIEWER,
+        winner.id,
+        {
+          failedAttempts: 0,
+          lockedUntil: null,
+          cumulativeFailedAttempts: decision.cumulativeFailed,
+          hardLockedAt: null,
+          verifyIdemOutcome: pruneIdemEntries({ ...entries, [keyHash]: entry }, now),
+          verifyProofHash: sha256Hex(proof),
+          verifiedUntil,
+          offeredConsentVersion: CERT_CONSENT_VERSION,
+          offeredRetentionYears: retentionYears,
+        },
+        tx,
+      );
+      return { ...payload, proof, verifiedUntil: verifiedUntil.toISOString() };
+    }
+
+    // 여기서부터는 상태를 바꾼 틀림(짧은 잠김 중 · 누적 잠김 중은 위에서 걸렀다).
+    if (!("failedAttempts" in decision)) return { kind: "hardLocked" };
+    let stored: StoredWrong;
+    let response: VerifyLast4Result;
+    let lockedUntil: Date | null = null;
+    let hardLockedAt: Date | null = null;
+    if (decision.outcome === "hardLocked") {
+      stored = { kind: "hardLocked" };
+      response = { kind: "hardLocked" };
+      lockedUntil = winner.lockedUntil; // 누적 잠김은 짧은 잠김 시각을 쓰지 않는다.
+      hardLockedAt = decision.hardLockedAt;
+    } else if (decision.outcome === "locked") {
+      stored = { kind: "locked", limit: maxAttempts, unlockAt: decision.lockedUntil.toISOString() };
+      response = lockedResponse(maxAttempts, decision.lockedUntil, now);
+      lockedUntil = decision.lockedUntil;
+    } else {
+      stored = { kind: "wrong", remaining: decision.remaining };
+      response = { kind: "wrong", remaining: decision.remaining };
+    }
+    const entry: VerifyIdemEntry = { o: "wrong", r: stored, ip: ipHash, at };
+    await writeWinnerVerifyState(
+      SYSTEM_VIEWER,
+      winner.id,
+      {
+        failedAttempts: decision.failedAttempts,
+        lockedUntil,
+        cumulativeFailedAttempts: decision.cumulativeFailed,
+        hardLockedAt,
+        verifyIdemOutcome: pruneIdemEntries({ ...entries, [keyHash]: entry }, now),
+      },
+      tx,
+    );
+    return response;
   });
-
-  return {
-    kind: "ok",
-    rowId,
-    proof,
-    prizeLine: `${winner.prizeName} ${winner.quantity}개`,
-    delivery: winner.delivery as "onsite" | "parcel",
-    consent: { version: consentVersion, retentionYears },
-  };
 }
 
 // ── submitCertificate ───────────────────────────────────────────────────

@@ -1,7 +1,11 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { certWinners } from "@/db/schema";
+import { certEvents, certWinners } from "@/db/schema";
+import type { VerifyIdemOutcomeMap } from "@/db/schema/cert-winners";
+
+// domain은 db를 import하지 못한다 — 맵 모양 타입을 여기서 다시 내보낸다.
+export type { VerifyIdemEntry, VerifyIdemOutcomeMap } from "@/db/schema/cert-winners";
 import type { Viewer } from "@/domain/viewer";
 
 export type CertWinnerRow = InferSelectModel<typeof certWinners>;
@@ -55,30 +59,109 @@ export async function findWinnerInEvent(
   return row ?? null;
 }
 
-export type MarkWinnerVerifiedInput = {
-  verifyProofHash: string;
-  verifiedUntil: Date;
-  offeredConsentVersion: string;
-  offeredRetentionYears: number;
+// 04.3-03 Task 1 ③ — 확인(verifyLast4)이 쓰는 잠금 · 셈 · 판정 쓰기.
+//
+// 잠금 순서 규칙(교착 방지): 확인증 공개 쓰기는 늘 **행사 행 → 자리 행**
+// 순서로 잠근다. 04.3-06 제출 · 04.3-10도 lockEventRow(viewer, eventId, tx)로
+// 행사 행을 먼저 잠근다. tx에 기본값이 없다 — 잠금은 트랜잭션 밖에서 뜻이 없다.
+export async function lockEventRow(
+  viewer: Viewer,
+  eventId: string,
+  tx: DbOrTx,
+): Promise<InferSelectModel<typeof certEvents> | null> {
+  void viewer;
+  const [row] = await tx.select().from(certEvents).where(eq(certEvents.id, eventId)).for("update");
+  return row ?? null;
+}
+
+// 자리 한 행 FOR UPDATE — 행사 id와 자리 id를 함께 건다(행사 경계).
+export async function lockWinnerInEvent(
+  viewer: Viewer,
+  eventId: string,
+  winnerId: string,
+  tx: DbOrTx,
+): Promise<CertWinnerRow | null> {
+  void viewer;
+  const [row] = await tx
+    .select()
+    .from(certWinners)
+    .where(and(eq(certWinners.id, winnerId), eq(certWinners.eventId, eventId)))
+    .for("update");
+  return row ?? null;
+}
+
+export type RecentMissesInput = { eventId: string; ipHash: string; since: Date };
+export type RecentMisses = { eventMisses: number; ipMisses: number; rosterSize: number };
+
+// 지난 창의 틀림 항목(맵의 o = wrong)을 행사 전체 · 이 IP 해시로 세고, 같은
+// 쿼리에서 파기되지 않은 당첨자 수를 센다. at 비교는 timestamptz다(E3-34 —
+// timestamp 캐스트는 ISO의 Z를 버려 프로세스 시간대에 따라 창이 어긋난다).
+async function queryRecentMisses(runner: DbOrTx, input: RecentMissesInput): Promise<RecentMisses> {
+  const since = input.since.toISOString();
+  const result = await runner.execute<{ event_misses: number; ip_misses: number; roster_size: number }>(sql`
+    select
+      (select count(*)::int
+         from cert_winners w, jsonb_each(coalesce(w.verify_idem_outcome, '{}'::jsonb)) e
+        where w.event_id = ${input.eventId}
+          and e.value->>'o' = 'wrong'
+          and (e.value->>'at')::timestamptz >= ${since}::timestamptz) as event_misses,
+      (select count(*)::int
+         from cert_winners w, jsonb_each(coalesce(w.verify_idem_outcome, '{}'::jsonb)) e
+        where w.event_id = ${input.eventId}
+          and e.value->>'o' = 'wrong'
+          and e.value->>'ip' = ${input.ipHash}
+          and (e.value->>'at')::timestamptz >= ${since}::timestamptz) as ip_misses,
+      (select count(*)::int from cert_winners where event_id = ${input.eventId} and purged_at is null) as roster_size
+  `);
+  const row = result.rows[0];
+  return {
+    eventMisses: row?.event_misses ?? 0,
+    ipMisses: row?.ip_misses ?? 0,
+    rosterSize: row?.roster_size ?? 0,
+  };
+}
+
+// 잠근 콜백 안의 정본 셈(동시 요청이 한도를 넘지 못한다).
+export async function countRecentMisses(
+  viewer: Viewer,
+  input: RecentMissesInput,
+  tx: DbOrTx,
+): Promise<RecentMisses> {
+  void viewer;
+  return queryRecentMisses(tx, input);
+}
+
+// 잠금 없음 — 트랜잭션을 열기 전 빠른 거름망 전용(AX-P2). 잠근 콜백 안에서
+// 부르지 않는다(그 안의 셈은 countRecentMisses(…, tx)만).
+export async function countRecentMissesUnlocked(viewer: Viewer, input: RecentMissesInput): Promise<RecentMisses> {
+  void viewer;
+  return queryRecentMisses(db, input);
+}
+
+export type WinnerVerifyStatePatch = {
+  failedAttempts: number;
+  lockedUntil: Date | null;
+  cumulativeFailedAttempts: number;
+  hardLockedAt: Date | null;
+  verifyIdemOutcome: VerifyIdemOutcomeMap;
+  verifyProofHash?: string;
+  verifiedUntil?: Date;
+  offeredConsentVersion?: string;
+  offeredRetentionYears?: number;
 };
 
-// 확인 성공 — 증표 해시·만료 시각·그 자리에 묶는 동의문 판·보존 연수를
-// 한 번의 갱신으로 적는다.
-export async function markWinnerVerified(
+// 확인 판정 결과를 한 번에 쓴다. version은 올리지 않는다(확인 시도·잠금은
+// 담당자 편집이 아니다). 두 셈을 0으로 되돌리는 쓰기는 04.3-10 몫이다.
+export async function writeWinnerVerifyState(
   viewer: Viewer,
   winnerId: string,
-  input: MarkWinnerVerifiedInput,
+  patch: WinnerVerifyStatePatch,
+  tx: DbOrTx,
 ): Promise<void> {
   void viewer;
-  await db
+  await tx
     .update(certWinners)
-    .set({
-      verifyProofHash: input.verifyProofHash,
-      verifiedUntil: input.verifiedUntil,
-      offeredConsentVersion: input.offeredConsentVersion,
-      offeredRetentionYears: input.offeredRetentionYears,
-      updatedAt: new Date(),
-    })
+    .set({ ...patch, updatedAt: new Date() })
     .where(eq(certWinners.id, winnerId));
 }
 

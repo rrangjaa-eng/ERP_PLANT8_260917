@@ -374,6 +374,29 @@ export const CERT_CONTACT_PHONE: SettingDef<string> = {
   default: "",
 };
 
+// 04.3-03 Task 1 ① — 전화번호 뒤 4자리 짧은 잠김 두 키(CONTEXT 「이미 확정된
+// 입력」 5회 · 3분이 기본값). 누적 잠김 문턱 20은 설정이 아니라
+// domain/certs/verify-lock.ts의 고정 상수다(소유자 결정 2026-09-24).
+export const CERT_VERIFY_MAX_ATTEMPTS: SettingDef<number> = {
+  key: "cert.verify.max_attempts",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1).max(20),
+  label: "확인증 전화번호 틀림 한도(회)",
+  hint: "수령자가 전화번호 뒤 4자리를 이 횟수만큼 틀리면 그 자리의 확인이 잠시 잠깁니다.",
+  namespace: "확인증",
+  default: 5,
+};
+
+export const CERT_VERIFY_LOCK_MINUTES: SettingDef<number> = {
+  key: "cert.verify.lock_minutes",
+  kind: "simple",
+  schema: z.coerce.number().int().min(1).max(60),
+  label: "확인증 전화번호 잠금 시간(분)",
+  hint: "틀림 한도에 닿은 자리는 이 시간(분) 동안 확인할 수 없습니다.",
+  namespace: "확인증",
+  default: 3,
+};
+
 export const DOCUMENT_NUMBER_CERT_PREFIX: SettingDef<string> = {
   key: "document_number.cert.prefix",
   kind: "simple",
@@ -470,6 +493,8 @@ export const SETTING_DEFS: SettingDef<unknown>[] = [
   CERT_LINK_EXPIRE_HOURS,
   CERT_RETENTION_YEARS,
   CERT_CONTACT_PHONE,
+  CERT_VERIFY_MAX_ATTEMPTS,
+  CERT_VERIFY_LOCK_MINUTES,
   DOCUMENT_NUMBER_CERT_PREFIX,
   DOCUMENT_NUMBER_CERT_YEAR_DIGITS,
   DOCUMENT_NUMBER_CERT_SEQ_DIGITS,

@@ -197,7 +197,7 @@ describe("키별 멱등 재생(틀림)", () => {
   it("60분 정각 재전송은 재생, 61분 재전송은 새 시도(읽을 때 만료)", async () => {
     const ev = await makeEvent(2);
     const now = new Date();
-    const [s1, s2] = ev.seats as [{ id: string }, { id: string }];
+    const s1 = ev.seats[0]!, s2 = ev.seats[1]!;
 
     const a = key();
     await verifyLast4(ev.token, s1.id, "9999", a, null, now);
@@ -323,8 +323,10 @@ describe("누적 잠김(고정 20)", () => {
     const row = await seat(s.id);
     expect(row.cumulativeFailedAttempts).toBe(20);
     expect(row.hardLockedAt).not.toBeNull();
-    // 세 번째 짧은 잠김(15번째 틀림)이 쓴 시각 그대로 — 누적 잠김은 locked_until을 쓰지 않는다.
-    expect(row.lockedUntil!.getTime()).toBeLessThan(row.hardLockedAt!.getTime());
+    // 누적 잠김은 locked_until을 새로 쓰지 않는다 — 넷째 라운드 첫 틀림이 풀린
+    // 짧은 잠김을 지웠고, 20번째(누적 잠김)는 짧은 잠김 시각을 걸지 않았다.
+    expect(row.lockedUntil).toBeNull();
+    expect(row.failedAttempts).toBe(5);
 
     const later = await verifyLast4(ev.token, s.id, s.last4, key(), "10.1.1.1", new Date(t + 60 * MIN));
     expect(later).toEqual({ kind: "hardLocked" });
@@ -488,7 +490,7 @@ describe("selectWinner — 잠김 증명 · 제출 비노출", () => {
 
   it("제출한 자리와 안 한 자리의 응답 키 집합이 같다(누적 잠긴 두 자리도 같다)", async () => {
     const ev = await makeEvent(4);
-    const [a, b, c, d] = ev.seats as [{ id: string }, { id: string }, { id: string }, { id: string }];
+    const a = ev.seats[0]!, b = ev.seats[1]!, c = ev.seats[2]!, d = ev.seats[3]!;
     await patchSeat(a.id, { submittedAt: new Date() });
     await patchSeat(c.id, { submittedAt: new Date(), cumulativeFailedAttempts: 20, hardLockedAt: new Date() });
     await patchSeat(d.id, { cumulativeFailedAttempts: 20, hardLockedAt: new Date() });
@@ -508,7 +510,7 @@ describe("recheckWinnerLock — 잠금 다시 확인(닫힘 우선 · limit · �
   it("누적 잠김 → hardLocked · 짧은 잠김 → shortLocked{unlockAt, remainingSec, limit=설정값} · 잠김 없음 → open", async () => {
     await setSettingValue(SYSTEM_VIEWER, CERT_VERIFY_MAX_ATTEMPTS, 7);
     const ev = await makeEvent(3);
-    const [h, sl, o] = ev.seats as [{ id: string }, { id: string }, { id: string }];
+    const h = ev.seats[0]!, sl = ev.seats[1]!, o = ev.seats[2]!;
     const unlockAt = new Date(Date.now() + 2 * MIN);
     await patchSeat(h.id, { cumulativeFailedAttempts: 20, hardLockedAt: new Date() });
     await patchSeat(sl.id, { failedAttempts: 7, lockedUntil: unlockAt });
@@ -522,7 +524,7 @@ describe("recheckWinnerLock — 잠금 다시 확인(닫힘 우선 · limit · �
 
   it("제출된 · 잠김 없는 자리도 open — 제출 자리와 안 한 자리의 응답 키 집합이 같다", async () => {
     const ev = await makeEvent(2);
-    const [a, b] = ev.seats as [{ id: string }, { id: string }];
+    const a = ev.seats[0]!, b = ev.seats[1]!;
     await patchSeat(a.id, { submittedAt: new Date() });
     const ra = await recheckWinnerLock(ev.token, a.id);
     const rb = await recheckWinnerLock(ev.token, b.id);
@@ -532,7 +534,7 @@ describe("recheckWinnerLock — 잠금 다시 확인(닫힘 우선 · limit · �
 
   it("행사가 닫혔으면 누적 잠긴 자리든 짧은 잠김 자리든 closed{reason}", async () => {
     const ev = await makeEvent(2);
-    const [h, sl] = ev.seats as [{ id: string }, { id: string }];
+    const h = ev.seats[0]!, sl = ev.seats[1]!;
     await patchSeat(h.id, { cumulativeFailedAttempts: 20, hardLockedAt: new Date() });
     await patchSeat(sl.id, { failedAttempts: 5, lockedUntil: new Date(Date.now() + 2 * MIN) });
     await db.update(certEvents).set({ closedAt: new Date(), closedReason: "manual" }).where(eq(certEvents.id, ev.eventId));
@@ -741,13 +743,12 @@ describe("잠금 전 빠른 거부 · 풀 고갈 없음(AX-P2)", () => {
       const b = await makeEvent(1);
       await fillMisses(a.seats[0]!.id, 40, new Date());
       const holder = await holdEventRow(a.eventId);
-      let pending: Promise<Array<PromiseSettledResult<Awaited<ReturnType<typeof verifyLast4>>>>> | undefined;
+      const pending = Promise.allSettled(
+        Array.from({ length: env.DB_POOL_MAX * 3 }, (_, i) =>
+          verifyLast4(a.token, a.seats[1]!.id, "9999", key(), `203.0.113.${100 + i}`),
+        ),
+      );
       try {
-        pending = Promise.allSettled(
-          Array.from({ length: env.DB_POOL_MAX * 3 }, (_, i) =>
-            verifyLast4(a.token, a.seats[1]!.id, "9999", key(), `203.0.113.${100 + i}`),
-          ),
-        );
         const start = performance.now();
         const intake = await loadIntake(b.token);
         expect(intake.kind).toBe("open");
@@ -756,7 +757,6 @@ describe("잠금 전 빠른 거부 · 풀 고갈 없음(AX-P2)", () => {
       } finally {
         await holder.release();
       }
-      if (!pending) throw new Error("unreachable");
       const settled = await pending;
       expect(settled.every((s) => s.status === "fulfilled" && s.value.kind === "throttled")).toBe(true);
     },

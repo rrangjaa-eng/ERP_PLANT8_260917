@@ -7,6 +7,7 @@ import {
   profit,
   splitWithRemainder,
   grossFromTotal,
+  moneyExceedsLimit,
   type Money,
 } from "@/domain/money";
 import { recentFxRate, rememberFxRate } from "@/domain/money/currency";
@@ -168,5 +169,16 @@ describe("recentFxRate / rememberFxRate", () => {
     const upsertSimpleValue = vi.fn();
     await rememberFxRate("KRW", 1, { upsertSimpleValue });
     expect(upsertSimpleValue).not.toHaveBeenCalled();
+  });
+});
+
+describe("moneyExceedsLimit (원화 금액 상한 1조 원 미만)", () => {
+  it("저장될 때 소수 2자리로 반올림돼 1조가 되는 외화 원금을 상한 초과로 본다", () => {
+    expect(moneyExceedsLimit({ currency: "USD", amount: 999_999_999_999.996, fxRate: 0.5 })).toBe(true);
+  });
+
+  it("999,999,999,999원은 받고 1조 원은 받지 않는다", () => {
+    expect(moneyExceedsLimit({ currency: "KRW", amount: 999_999_999_999, fxRate: 1 })).toBe(false);
+    expect(moneyExceedsLimit({ currency: "KRW", amount: 1_000_000_000_000, fxRate: 1 })).toBe(true);
   });
 });

@@ -68,8 +68,9 @@ export function exceedsAmountLimit(value: number): boolean {
 }
 
 // 외화 원금과 원화 환산액 중 하나라도 상한을 넘는지 — 저장 전 검증용.
+// 원금은 저장될 모양(소수 2자리 반올림, moneyToColumns의 toFixed(2))으로 본다.
 export function moneyExceedsLimit(input: MoneyInput): boolean {
-  return exceedsAmountLimit(input.amount) || exceedsAmountLimit(toKrw(input));
+  return exceedsAmountLimit(Math.round(input.amount * 100) / 100) || exceedsAmountLimit(toKrw(input));
 }
 
 // Drizzle numeric 컬럼이 돌려주는 문자열을 숫자로 바꾸는 **유일한 지점**.

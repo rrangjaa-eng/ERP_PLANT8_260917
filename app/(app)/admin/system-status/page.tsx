@@ -88,9 +88,24 @@ function restoreRehearsalValue(restoreRehearsal: SystemStatus["restoreRehearsal"
   if (restoreRehearsal.kind === "none") return "리허설 기록 없음 — 첫 리허설 전";
   if (restoreRehearsal.kind === "unavailable") return <StatusTag kind="muted">확인 불가</StatusTag>;
   const view = formatRestoreRehearsal(restoreRehearsal.record);
+  // 백업 id·실행 링크는 값이 없으면 앞의 구분자까지 통째로 뺀다(UI-SPEC #7).
   return (
     <>
-      {view.head} · 백업 <span>{view.backupId}</span> · {view.duration}
+      {view.head}
+      {view.backupId === null ? null : (
+        <>
+          {" · 백업 "}
+          <span>{view.backupId}</span>
+        </>
+      )}
+      {" · "}
+      {view.duration}
+      {view.runUrl === null ? null : (
+        <>
+          {" · "}
+          <a href={view.runUrl}>실행 기록</a>
+        </>
+      )}
     </>
   );
 }

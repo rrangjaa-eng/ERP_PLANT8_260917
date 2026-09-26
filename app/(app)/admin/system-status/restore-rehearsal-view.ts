@@ -31,12 +31,25 @@ function formatKst(date: Date): string {
   return `${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")}`;
 }
 
+const STAGE_LABEL: Record<NonNullable<RestoreRehearsalRecord["failedStage"]>, string> = {
+  restore: "복원",
+  verify: "검증",
+  cleanup: "정리",
+};
+
+function formatDuration(record: RestoreRehearsalRecord): string {
+  const seconds = (record.finishedAt.getTime() - record.startedAt.getTime()) / 1000;
+  return seconds < 60 ? "1분 미만" : `${Math.floor(seconds / 60)}분`;
+}
+
+// 검증을 통과한 기록만 받는다(domain/ops/restore-rehearsal의 읽기 검증). 화면은 저장된
+// 단계를 그대로 보이고 재계산하지 않는다. 실행 링크는 실패이고 URL이 있을 때만.
 export function formatRestoreRehearsal(record: RestoreRehearsalRecord): RestoreRehearsalView {
-  const minutes = Math.floor((record.finishedAt.getTime() - record.startedAt.getTime()) / 60_000);
+  const result = record.failedStage === null ? "성공" : `실패 · ${STAGE_LABEL[record.failedStage]}`;
   return {
-    head: `성공 · ${SOURCE_LABEL[record.source]} · ${formatKst(record.finishedAt)}`,
+    head: `${result} · ${SOURCE_LABEL[record.source]} · ${formatKst(record.finishedAt)}`,
     backupId: record.backupId,
-    duration: `${minutes}분`,
-    runUrl: null,
+    duration: formatDuration(record),
+    runUrl: record.succeeded ? null : record.runUrl,
   };
 }

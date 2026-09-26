@@ -407,6 +407,13 @@ describe("periodOverlapsYear — 기간과 연도 겹침", () => {
     expect(periodOverlapsYear({ to: "2026-01-01" }, 2026)).toBe(true);
   });
 
+  // Opus 검토 NIT 1 — 시작일이 그 해 마지막 날이어도 겹친다(`<=` 경계, `<`로 바꾸면 실패).
+  it("시작일이 그 해 12-31이면 겹친다(끝 경계)", () => {
+    expect(periodOverlapsYear({ from: "2026-12-31" }, 2026)).toBe(true);
+    expect(periodOverlapsYear({ from: "2026-12-31", to: "2027-01-05" }, 2026)).toBe(true);
+    expect(periodOverlapsYear({ from: "2027-01-01" }, 2026)).toBe(false);
+  });
+
   it("기간이 없거나 전체 연도면 늘 겹친다", () => {
     expect(periodOverlapsYear(null, 2026)).toBe(true);
     expect(periodOverlapsYear({ from: "2025-01-01", to: "2025-03-01" }, "all")).toBe(true);

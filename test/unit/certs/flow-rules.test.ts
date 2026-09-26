@@ -30,6 +30,7 @@ describe("isDefiniteResult — 확정 판정 여덟 / 결과 불명", () => {
     [{ data: { kind: "submitted" } }],
     [{ data: { kind: "closed", reason: "manual", at: "2026-09-26T00:00:00Z" } }],
     [{ data: { kind: "expiredProof" } }],
+    [{ data: { kind: "notFound" } }],
     [{ validationErrors: { last4: { _errors: ["x"] } } }],
   ])("%o → true", (result) => {
     expect(isDefiniteResult(result)).toBe(true);

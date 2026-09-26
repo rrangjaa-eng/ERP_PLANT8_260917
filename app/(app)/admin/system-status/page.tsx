@@ -10,6 +10,7 @@ import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { KvList } from "@/ui/kv-list/KvList";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { formatRestoreRehearsal } from "./restore-rehearsal-view";
+import styles from "./system-status.module.css";
 
 // D-18: 캐시·별도 저장 없음 — 화면 로드마다 pg_stat_activity·Cloud SQL Admin API를
 // 직접 조회한다.
@@ -95,7 +96,7 @@ function restoreRehearsalValue(restoreRehearsal: SystemStatus["restoreRehearsal"
       {view.backupId === null ? null : (
         <>
           {" · 백업 "}
-          <span>{view.backupId}</span>
+          <span className={styles.backupId}>{view.backupId}</span>
         </>
       )}
       {" · "}
@@ -103,7 +104,9 @@ function restoreRehearsalValue(restoreRehearsal: SystemStatus["restoreRehearsal"
       {view.runUrl === null ? null : (
         <>
           {" · "}
-          <a href={view.runUrl}>실행 기록</a>
+          <a href={view.runUrl} className={styles.runLink}>
+            실행 기록
+          </a>
         </>
       )}
     </>

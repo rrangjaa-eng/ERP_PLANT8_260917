@@ -253,6 +253,8 @@ export async function listRevenue(viewer: Viewer, projectId: string, deps?: Part
 
 export type RevenueEntryWriteRow = {
   id?: string;
+  /** 04-41(ENG-D10) — 화면이 만든 uuid(`id`)로 넣는 새 줄. 재전송에도 같은 id를 싣는다. */
+  isNew?: true;
   version?: number;
   entryDate: string;
   amount: MoneyInputDto;
@@ -269,6 +271,10 @@ export type SaveRevenueInput = {
 export type RevenueWriteDeps = {
   can: typeof defaultCan;
   recordAction: typeof defaultRecordAction;
+  /** 04-41 — 커밋 뒤 최근 환율 기억. 테스트가 실패를 주입한다. */
+  rememberFxRate: typeof rememberFxRate;
+  /** 04-41(B §1) — 트랜잭션 앞에서 계산한 권한. 있으면 잠긴 트랜잭션 안에서 권한을 조회하지 않는다. */
+  rights: { canWriteEntries: boolean };
 };
 
 async function saveEntries(

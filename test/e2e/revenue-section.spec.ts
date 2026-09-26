@@ -6,7 +6,7 @@ import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { db } from "@/db/client";
-import { codeItems } from "@/db/schema";
+import { codeItems, revenueEntries } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
@@ -588,5 +588,61 @@ test.describe("매출 표 — 발행 읽기 표·입금 표 부재(D-85) · 폰 
     await expect(page.getByText(/저장됨/).first()).toBeVisible();
     await expect(quoteTable.locator("tfoot")).not.toContainText("전부 거부");
     await expect(revenueSection(page).locator("tfoot").getByText(/전부 거부/)).toHaveCount(0);
+  });
+});
+
+// 04-41(B3 · UI-SPEC rev 5 후속 결정 R2) — 매출 금액 입력 오류는 서버가 그 매출 줄 id · amount 칸 오류로 봉투에 싣고, 화면이
+// 그 표의 고정 오류 셀과 합계 행으로 그린다. 새 줄은 화면이 만든 UUID로 저장되므로 새 줄의 칸도 좌표를 잃지 않는다.
+test.describe("매출 금액 입력 오류 → 그 셀 고정 오류 · 표별 합계 행 (04-41 · B3)", () => {
+  test("새 발행 줄 금액 3,000,000,000 저장 → 그 셀 오류 · 발행 표 `오류 1칸 · 전부 거부` · 견적·입금 표 `전부 거부 · 다른 칸 오류 1칸` · DB 무변경 · 고쳐 저장하면 모두 사라진다", async ({ page }) => {
+    // 04-16 R2와 같은 계급 — 견적 표·발행·입금 표를 모두 보고 매출을 쓰는 담당 PM(role-pm 복사 + 매출 쓰기 · 모든 정보 노출).
+    const roleId = `role-${randomUUID()}`;
+    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 매출 PM-${randomUUID().slice(0, 8)}` });
+    for (const row of await listPermissions(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID })) {
+      await upsertPermission(SYSTEM_VIEWER, { roleId, menu: row.menu, action: row.action, allowed: row.allowed });
+    }
+    await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "projects.revenue", action: "write", allowed: true });
+    for (const row of await listVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID })) {
+      await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: row.infoItem, visible: true });
+    }
+    const seeded = await seedRevenueProject({
+      pmRoleId: roleId,
+      quoteAmounts: [1_000_000],
+      issued: [{ entryDate: "2026-09-01", amount: krw(1_000_000) }],
+      paid: [{ entryDate: "2026-09-05", amount: krw(1_100_000) }],
+    });
+    const projectId = seeded.projectUrl.split("/").pop() ?? "";
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await login(page, seeded.email, seeded.password);
+    await page.goto(seeded.projectUrl);
+
+    const issuedTable = revenueTable(page, "발행 줄");
+    await page.getByRole("button", { name: "발행 줄 추가" }).click();
+    const newAmount = issuedTable.getByLabel("발행액").last();
+    await newAmount.fill("3000000000");
+    const rejected = page.waitForResponse((response) => isServerAction(response.request()));
+    await page.keyboard.press("Control+s");
+    await rejected;
+
+    const CAP = "금액이 상한을 넘습니다 · 2,147,483,647원 이하";
+    const amountCell = issuedTable.locator("tbody tr").filter({ has: newAmount }).locator('td[aria-invalid="true"]');
+    await expect(amountCell).toHaveCount(1);
+    await expect(amountCell).toContainText(CAP);
+    await expect(issuedTable.locator("tfoot").getByText("오류 1칸 · 전부 거부", { exact: true })).toBeVisible();
+    const quoteTable = page.locator("table", { has: page.locator("caption", { hasText: /^견적 줄$/ }) });
+    for (const table of [quoteTable, revenueTable(page, "입금 줄")]) {
+      await expect(table.locator("tfoot").getByText("전부 거부 · 다른 칸 오류 1칸", { exact: true })).toBeVisible();
+    }
+    expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, projectId))).toHaveLength(2);
+
+    await newAmount.fill("3000000");
+    await expect(amountCell).toHaveCount(0);
+    const saved = page.waitForResponse((response) => isServerAction(response.request()));
+    await page.keyboard.press("Control+s");
+    await saved;
+
+    await expect(page.getByText(/저장됨/).first()).toBeVisible();
+    await expect(page.locator("tfoot").getByText(/전부 거부/)).toHaveCount(0);
+    expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, projectId))).toHaveLength(3);
   });
 });

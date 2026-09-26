@@ -3,7 +3,8 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { db, pool } from "@/db/client";
-import { codeItems, quoteLines, revenueEntries, teams } from "@/db/schema";
+import { actionLog, codeItems, quoteLines, revenueEntries, teams } from "@/db/schema";
+import { and } from "drizzle-orm";
 import { eq } from "drizzle-orm";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import type { Viewer } from "@/domain/viewer";
@@ -16,12 +17,17 @@ import { createProject } from "@/domain/projects";
 import { listRevenue, saveRevenue } from "@/domain/revenue";
 import { saveProjectLedger } from "@/domain/projects/ledger";
 import { TAX_VAT_RATE, FX_RECENT_RATE_USD } from "@/domain/settings/keys";
-import { addHistorizedValue, getSettingValue } from "@/domain/settings/registry";
+import { addHistorizedValue, getSettingValue, setSettingValue } from "@/domain/settings/registry";
 import { approvalBasis } from "@/repositories/quote-revisions";
 import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
 import { kstToday } from "@/lib/kst-date";
 import { saveProjectLedgerAction } from "@/app/(app)/projects/actions";
+import { SaveRejectedError } from "@/domain/quotes/lines";
+import { ForbiddenError } from "@/domain/revenue";
+import { withTransaction } from "@/lib/db-transaction";
+import { log } from "@/lib/log";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 
 // 04-41 — 액션(스키마 → 원장 합성 저장)을 직접 부르는 케이스용 세션 · revalidatePath · 합성 저장 호출 기록.
 // 합성 저장은 실제 구현을 그대로 감싸기만 한다(동작 불변 — 이 파일의 다른 케이스도 실제 경로를 탄다).
@@ -397,7 +403,7 @@ describe("계약 금액 쓰기 경로 없음(04-41)", () => {
       revenue: {
         contract: { currency: "KRW" as const, amount: 50_000_000, fxRate: 1 },
         contractFxRateTouched: true,
-        issuedEntries: [{ entryDate: "2026-09-01", amount: { currency: "KRW" as const, amount: 1_000_000, fxRate: 1 } }],
+        issuedEntries: [{ id: randomUUID(), isNew: true as const, entryDate: "2026-09-01", amount: { currency: "KRW" as const, amount: 1_000_000, fxRate: 1 } }],
       },
     };
   }
@@ -470,5 +476,334 @@ describe("계약 금액 쓰기 경로 없음(04-41)", () => {
       return names.filter((name) => text.includes(name)).map((name) => `${path.relative(root, file)}: ${name}`);
     });
     expect(hits).toEqual([]);
+  });
+});
+
+// 04-41(Codex #1 · ENG-D10 · 엔지 리뷰 B §1·§2 · B3) — 매출 줄 쓰기는 자기 프로젝트·자기 종류의 줄에만 닿고, 응답을 잃은
+// 재전송이 줄을 두 번 만들지 않으며, 금액 입력은 한 규칙(normalizeMoneyInput)으로 정규화돼 칸 오류로 거부되고, 잠긴
+// 트랜잭션 안에서 풀 연결(권한 조회 · 최근 환율 기억)을 붙잡지 않는다.
+describe("매출 쓰기 경로(04-41 · Codex #1 · ENG-D10)", () => {
+  const krw = (amount: number) => ({ currency: "KRW" as const, amount, fxRate: 1 });
+  const usd = (amount: number, fxRate: number) => ({ currency: "USD" as const, amount, fxRate });
+  const NOT_FOUND = "줄을 찾을 수 없음 · 새로 고침";
+  const MISMATCH = "이미 저장된 줄과 값이 다름 · 새로 고침";
+  const CAP = "금액이 상한을 넘습니다 · 2,147,483,647원 이하";
+  const FX_ZERO = "환율은 0보다 커야 합니다 · 환율을 고쳐 주세요";
+
+  async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
+    try {
+      await promise;
+    } catch (error) {
+      return error;
+    }
+    throw new Error("거부되지 않았다");
+  }
+
+  async function entryRow(id: string) {
+    const [row] = await db.select().from(revenueEntries).where(eq(revenueEntries.id, id));
+    return row;
+  }
+
+  async function entriesOf(projectId: string) {
+    return db.select().from(revenueEntries).where(eq(revenueEntries.projectId, projectId));
+  }
+
+  async function revenueLogCount(projectId: string): Promise<number> {
+    const rows = await db
+      .select()
+      .from(actionLog)
+      .where(and(eq(actionLog.entity, "revenue_entry"), eq(actionLog.entityId, projectId)));
+    return rows.length;
+  }
+
+  function deniedCalls(calls: ReadonlyArray<ReadonlyArray<unknown>>, rule: string) {
+    return calls.filter((call) => call[0] === "write.denied" && (call[1] as { rule?: string } | undefined)?.rule === rule);
+  }
+
+  async function seedEntry(finance: Viewer, projectId: string, kind: "issue" | "payment", amount: number) {
+    const saved = await saveRevenue(finance, projectId, kind === "issue" ? { issuedEntries: [{ entryDate: "2026-09-01", amount: krw(amount) }] } : { paidEntries: [{ entryDate: "2026-09-01", amount: krw(amount) }] });
+    const entry = (kind === "issue" ? saved?.issuedEntries : saved?.paidEntries)?.[0];
+    if (!entry) throw new Error("매출 줄 준비 실패");
+    return entry;
+  }
+
+  describe("행 범위(Codex #1)", () => {
+    it("프로젝트 A의 저장에 프로젝트 B 발행 줄의 id·맞는 version → `줄을 찾을 수 없음`, B의 줄 무변경, write.denied 한 번(금액 없음)", async () => {
+      const finance = await createFinanceViewer();
+      const a = await setupProject();
+      const b = await setupProject();
+      const entryB = await seedEntry(finance, b.project.id, "issue", 1000);
+      const warn = vi.spyOn(log, "warn");
+
+      const error = await rejectionOf(
+        saveRevenue(finance, a.project.id, { issuedEntries: [{ id: entryB.id, version: entryB.version, entryDate: "2026-09-02", amount: krw(1) }] }),
+      );
+
+      expect((error as Error).message).toBe(NOT_FOUND);
+      const row = await entryRow(entryB.id);
+      expect(row?.projectId).toBe(b.project.id);
+      expect(row?.amountAmountKrw).toBe(1000);
+      const denied = deniedCalls(warn.mock.calls, "revenue.entry-scope");
+      expect(denied).toHaveLength(1);
+      expect(JSON.stringify(denied[0]?.[1])).not.toMatch(/amount/i);
+      warn.mockRestore();
+    });
+
+    it("A의 발행 표에 A의 입금 줄 id를 실으면 같은 거부이고 입금 줄 금액은 그대로다", async () => {
+      const finance = await createFinanceViewer();
+      const { project } = await setupProject();
+      const payment = await seedEntry(finance, project.id, "payment", 5000);
+
+      const error = await rejectionOf(
+        saveRevenue(finance, project.id, { issuedEntries: [{ id: payment.id, version: payment.version, entryDate: "2026-09-02", amount: krw(1) }] }),
+      );
+
+      expect((error as Error).message).toBe(NOT_FOUND);
+      const row = await entryRow(payment.id);
+      expect(row?.kind).toBe("payment");
+      expect(row?.amountAmountKrw).toBe(5000);
+    });
+  });
+
+  describe("재전송(ENG-D10)", () => {
+    it("같은 새 줄 페이로드를 두 번 보내도 한 행이고, 두 번째 저장은 행동 로그를 남기지 않는다", async () => {
+      const finance = await createFinanceViewer();
+      const { project } = await setupProject();
+      const id = randomUUID();
+      const payload = { issuedEntries: [{ id, isNew: true as const, entryDate: "2026-09-01", amount: krw(700_000), note: "첫 발행" }] };
+
+      await saveRevenue(finance, project.id, payload);
+      const logsAfterFirst = await revenueLogCount(project.id);
+      const second = await saveRevenue(finance, project.id, payload);
+
+      expect((await entriesOf(project.id)).map((row) => row.id)).toEqual([id]);
+      expect(second?.issuedEntries?.map((entry) => entry.id)).toEqual([id]);
+      expect(await revenueLogCount(project.id)).toBe(logsAfterFirst);
+    });
+
+    it("같은 id에 금액을 바꿔 다시 보내면 `이미 저장된 줄과 값이 다름`이고 DB 값은 첫 저장 그대로다", async () => {
+      const finance = await createFinanceViewer();
+      const { project } = await setupProject();
+      const id = randomUUID();
+      await saveRevenue(finance, project.id, { issuedEntries: [{ id, isNew: true, entryDate: "2026-09-01", amount: krw(700_000) }] });
+
+      const error = await rejectionOf(
+        saveRevenue(finance, project.id, { issuedEntries: [{ id, isNew: true, entryDate: "2026-09-01", amount: krw(800_000) }] }),
+      );
+
+      expect((error as Error).message).toBe(MISMATCH);
+      expect((await entryRow(id))?.amountAmountKrw).toBe(700_000);
+    });
+
+    it("다른 프로젝트의 줄 id · 다른 종류의 줄 id를 새 줄 id로 보내면 같은 거부이고 그 줄은 그대로다", async () => {
+      const finance = await createFinanceViewer();
+      const a = await setupProject();
+      const b = await setupProject();
+      const entryB = await seedEntry(finance, b.project.id, "issue", 1000);
+      const paymentA = await seedEntry(finance, a.project.id, "payment", 1000);
+
+      const other = await rejectionOf(
+        saveRevenue(finance, a.project.id, { issuedEntries: [{ id: entryB.id, isNew: true, entryDate: "2026-09-01", amount: krw(1000) }] }),
+      );
+      const otherKind = await rejectionOf(
+        saveRevenue(finance, a.project.id, { issuedEntries: [{ id: paymentA.id, isNew: true, entryDate: "2026-09-01", amount: krw(1000) }] }),
+      );
+
+      expect((other as Error).message).toBe(MISMATCH);
+      expect((otherKind as Error).message).toBe(MISMATCH);
+      expect((await entryRow(entryB.id))?.projectId).toBe(b.project.id);
+      expect((await entryRow(paymentA.id))?.kind).toBe("payment");
+      expect((await entriesOf(a.project.id)).map((row) => row.id)).toEqual([paymentA.id]);
+    });
+
+    it("(I1) 보관된 줄 id를 같은 값의 새 줄로 다시 보내면 거부되고(write.denied revenue.replay-mismatch 한 번) 그 줄은 보관 상태·값·version 그대로다", async () => {
+      const finance = await createFinanceViewer();
+      const { project } = await setupProject();
+      const id = randomUUID();
+      const row = { id, isNew: true as const, entryDate: "2026-09-01", amount: krw(900_000) };
+      await saveRevenue(finance, project.id, { issuedEntries: [row] });
+      await db.update(revenueEntries).set({ archivedAt: new Date(), archivedBy: SYSTEM_VIEWER.id }).where(eq(revenueEntries.id, id));
+      const before = await entryRow(id);
+      const warn = vi.spyOn(log, "warn");
+
+      const error = await rejectionOf(saveRevenue(finance, project.id, { issuedEntries: [row] }));
+
+      expect((error as Error).message).toBe(MISMATCH);
+      const denied = deniedCalls(warn.mock.calls, "revenue.replay-mismatch");
+      expect(denied).toHaveLength(1);
+      expect(JSON.stringify(denied[0]?.[1])).not.toMatch(/amount/i);
+      const after = await entryRow(id);
+      expect(after?.archivedAt).not.toBeNull();
+      expect(after?.amountAmountKrw).toBe(before?.amountAmountKrw);
+      expect(after?.version).toBe(before?.version);
+      warn.mockRestore();
+    });
+
+    it("원장 합성 저장으로 같은 새 줄을 두 번 보내도 한 행이다", async () => {
+      const { project } = await setupProject();
+      const id = randomUUID();
+      const revenue = { issuedEntries: [{ id, isNew: true as const, entryDate: "2026-09-01", amount: krw(300_000) }] };
+
+      await saveProjectLedger(SYSTEM_VIEWER, project.id, { seenStatus: "bidding", revenue });
+      await saveProjectLedger(SYSTEM_VIEWER, project.id, { seenStatus: "bidding", revenue });
+
+      expect((await entriesOf(project.id)).map((row) => row.id)).toEqual([id]);
+    });
+  });
+
+  describe("금액 입력 정규화 → 매출 칸 셀 오류(B §2 · B3)", () => {
+    it("KRW 발행 줄에 환율 1,350을 실어도 원화 = 금액 × 1, 환율 1로 저장된다", async () => {
+      const finance = await createFinanceViewer();
+      const { project } = await setupProject();
+      const id = randomUUID();
+
+      await saveRevenue(finance, project.id, { issuedEntries: [{ id, isNew: true, entryDate: "2026-09-01", amount: { currency: "KRW", amount: 2_000_000, fxRate: 1350 } }] });
+
+      const row = await entryRow(id);
+      expect(row?.amountAmountKrw).toBe(2_000_000);
+      expect(row?.amountFxRate).toBe("1.0000");
+    });
+
+    it("USD 입금 줄 환율 0 → SaveRejectedError 칸 오류 하나(그 줄 id · amount · rev 5 이유), 배치의 다른 줄도 저장되지 않는다", async () => {
+      const finance = await createFinanceViewer();
+      const { project } = await setupProject();
+      const good = randomUUID();
+      const bad = randomUUID();
+
+      const error = await rejectionOf(
+        saveRevenue(finance, project.id, {
+          issuedEntries: [{ id: good, isNew: true, entryDate: "2026-09-01", amount: krw(1000) }],
+          paidEntries: [{ id: bad, isNew: true, entryDate: "2026-09-01", amount: usd(100, 0) }],
+        }),
+      );
+
+      expect(error).toBeInstanceOf(SaveRejectedError);
+      expect((error as SaveRejectedError).formatErrors).toEqual([{ rowIndex: 0, rowId: bad, field: "amount", label: "금액", reason: FX_ZERO }]);
+      expect(await entriesOf(project.id)).toHaveLength(0);
+    });
+
+    it("원화 환산 범위 밖(발행 3,000,000,000)은 PG 오류가 아니라 같은 모양의 칸 오류이고, 두 줄이 각각 넘으면 칸 오류 둘이다", async () => {
+      const finance = await createFinanceViewer();
+      const { project } = await setupProject();
+      const first = randomUUID();
+      const second = randomUUID();
+
+      const error = await rejectionOf(
+        saveRevenue(finance, project.id, {
+          issuedEntries: [
+            { id: first, isNew: true, entryDate: "2026-09-01", amount: krw(3_000_000_000) },
+            { id: second, isNew: true, entryDate: "2026-09-02", amount: krw(3_000_000_000) },
+          ],
+        }),
+      );
+
+      expect(error).toBeInstanceOf(SaveRejectedError);
+      expect((error as SaveRejectedError).formatErrors).toEqual([
+        { rowIndex: 0, rowId: first, field: "amount", label: "금액", reason: CAP },
+        { rowIndex: 1, rowId: second, field: "amount", label: "금액", reason: CAP },
+      ]);
+      expect(await entriesOf(project.id)).toHaveLength(0);
+    });
+
+    it("(봉투 B3) 범위 밖 발행 줄을 saveProjectLedgerAction으로 보내면 { rejected: { summary: `오류 1칸 · 전부 거부`, cells: [그 줄 id · amount · error] } }", async () => {
+      const { project } = await setupProject();
+      const id = randomUUID();
+
+      const input = {
+        projectId: project.id,
+        seenStatus: "bidding" as const,
+        revenue: { issuedEntries: [{ id, isNew: true as const, entryDate: "2026-09-01", amount: krw(3_000_000_000) }] },
+      };
+      const result = await saveProjectLedgerAction(input);
+
+      const data = result?.data;
+      if (!data || !("rejected" in data)) throw new Error(`거부 봉투가 아니다: ${JSON.stringify(result)}`);
+      expect(data.rejected).toEqual({ summary: "오류 1칸 · 전부 거부", cells: [{ rowId: id, rowIndex: 0, field: "amount", kind: "error", reason: CAP }] });
+      expect(await entriesOf(project.id)).toHaveLength(0);
+    });
+  });
+
+  describe("커밋 뒤 환율 기억 · 권한 선계산(B §1 · 04-12 규약)", () => {
+    it("환율을 고친 USD 발행 줄 뒤에 거부되는 줄이 있으면 전부 거부 · 최근 환율 무변경, 그 줄 하나만이면 커밋 뒤 1380", async () => {
+      const finance = await createFinanceViewer();
+      const { project } = await setupProject();
+      await setSettingValue(SYSTEM_VIEWER, FX_RECENT_RATE_USD, 1300);
+      const before = await getSettingValue(FX_RECENT_RATE_USD);
+      const usdRow = { id: randomUUID(), isNew: true as const, entryDate: "2026-09-01", amount: usd(100, 1380), fxRateTouched: true };
+
+      await rejectionOf(
+        saveRevenue(finance, project.id, { issuedEntries: [usdRow, { id: randomUUID(), isNew: true, entryDate: "2026-09-01", amount: krw(3_000_000_000) }] }),
+      );
+      expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(before);
+
+      await saveRevenue(finance, project.id, { issuedEntries: [usdRow] });
+      expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(1380);
+    });
+
+    it("원장 합성 저장 — 환율을 고친 USD 발행 줄과 견적 줄을 함께 저장하면 커밋 뒤 1380, 견적 줄 거부로 끝나면 무변경", async () => {
+      const { project } = await setupProject();
+      await setSettingValue(SYSTEM_VIEWER, FX_RECENT_RATE_USD, 1300);
+      const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+      if (!revision) throw new Error("1차 차수가 없습니다");
+      const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+      if (!subcategory) throw new Error("소분류 코드가 없습니다");
+      const quoteRow = (quantity: number) => ({
+        id: randomUUID(),
+        isNew: true as const,
+        subcategory: subcategory.value,
+        itemName: `줄-${randomUUID()}`,
+        quantity,
+        unitPrice: krw(10_000),
+        execution: krw(0),
+      });
+      const usdRevenue = () => ({ issuedEntries: [{ id: randomUUID(), isNew: true as const, entryDate: "2026-09-01", amount: usd(100, 1380), fxRateTouched: true }] });
+
+      await rejectionOf(
+        saveProjectLedger(SYSTEM_VIEWER, project.id, {
+          seenStatus: "bidding",
+          quoteLines: { revisionId: revision.id, rows: [quoteRow(3_000_000_000)] },
+          revenue: usdRevenue(),
+        }),
+      );
+      expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(1300);
+
+      await saveProjectLedger(SYSTEM_VIEWER, project.id, {
+        seenStatus: "bidding",
+        quoteLines: { revisionId: revision.id, rows: [quoteRow(1)] },
+        revenue: usdRevenue(),
+      });
+      expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(1380);
+    });
+
+    it("saveRevenue의 deps.rememberFxRate가 던져도 저장은 성공하고 fx.remember_failed가 한 번(currency만) 남는다", async () => {
+      const finance = await createFinanceViewer();
+      const { project } = await setupProject();
+      const id = randomUUID();
+      const error = vi.spyOn(log, "error");
+      const deps = { rememberFxRate: () => Promise.reject(new Error("설정 저장 실패")) };
+
+      const result = await saveRevenue(finance, project.id, { issuedEntries: [{ id, isNew: true, entryDate: "2026-09-01", amount: usd(100, 1380), fxRateTouched: true }] }, deps);
+
+      expect(result?.issuedEntries?.map((entry) => entry.id)).toEqual([id]);
+      const failed = error.mock.calls.filter((call) => call[0] === "fx.remember_failed");
+      expect(failed).toEqual([["fx.remember_failed", { currency: "USD" }]]);
+      error.mockRestore();
+    });
+
+    it("tx와 트랜잭션 앞에서 계산한 rights를 주면 잠긴 트랜잭션 안에서 권한을 조회하지 않고, canWriteEntries: false면 ForbiddenError다", async () => {
+      const finance = await createFinanceViewer();
+      const { project } = await setupProject();
+      const can = vi.fn(() => Promise.resolve(true));
+      const allowed = { can, rights: { canWriteEntries: true } };
+      const denied = { can, rights: { canWriteEntries: false } };
+      const input = { issuedEntries: [{ id: randomUUID(), isNew: true as const, entryDate: "2026-09-01", amount: krw(1000) }] };
+
+      await withTransaction((tx) => saveRevenue(finance, project.id, input, allowed, tx));
+      expect(can).toHaveBeenCalledTimes(0);
+
+      const error = await rejectionOf(withTransaction((tx) => saveRevenue(finance, project.id, { issuedEntries: [{ id: randomUUID(), isNew: true, entryDate: "2026-09-01", amount: krw(1) }] }, denied, tx)));
+      expect(error).toBeInstanceOf(ForbiddenError);
+      expect(error).toBeInstanceOf(UserFacingError);
+    });
   });
 });

@@ -38,3 +38,18 @@ export function revenueTableErrorText(count: number): string | null {
 export function otherCellsRejectedText(ownCount: number, otherCount: number): string | null {
   return ownCount === 0 && otherCount > 0 ? `전부 거부 · 다른 칸 오류 ${otherCount}칸` : null;
 }
+
+function countCells(errors: RevenueCellErrors): number {
+  return Object.values(errors).reduce((sum, row) => sum + Object.keys(row).length, 0);
+}
+
+// 04-41(04-16 검토 S-4) — 견적 줄 표 합계 행 글자. 봉투 칸 중 견적 줄 칸(매출 줄 id가 아닌 칸)이 없으면 다른 칸 글자다.
+export function quoteTableRejectionText<Cell extends { rowId?: string; field: string; reason: string; kind: "conflict" | "error" }>(
+  envelope: { summary: string; cells: Cell[] },
+  ids: { issuedIds: string[]; paidIds: string[] },
+  outsideCount: number,
+): string | null {
+  const routed = routeRejectedRevenueCells(envelope.cells, ids);
+  if (routed.rest.length === 0) return otherCellsRejectedText(0, countCells(routed.issued) + countCells(routed.paid) + outsideCount);
+  return envelope.summary;
+}

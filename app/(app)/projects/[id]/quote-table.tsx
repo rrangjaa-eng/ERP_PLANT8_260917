@@ -38,7 +38,7 @@ import {
 import type { RevenueDto } from "@/domain/revenue";
 import type { Currency, Money } from "@/domain/money";
 import { RevenueSection, type EntryDraft } from "./revenue-section";
-import { otherCellsRejectedText, routeRejectedRevenueCells } from "./revenue-cells";
+import { otherCellsRejectedText, quoteTableRejectionText, routeRejectedRevenueCells } from "./revenue-cells";
 import { PreviousRevisionDraftRow } from "./previous-revision";
 import { StatusChange, type StatusChangeProps } from "./status-change";
 import { CustomerApprovalLine, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
@@ -1933,8 +1933,9 @@ export function QuoteLedger({
     result.serverError ??
     (result.validationErrors ? "저장하지 못했습니다 · 입력값을 확인하세요" : undefined);
   // 견적 줄 표 합계 행 — 봉투 요약은 견적 줄 칸이 있을 때만, 매출 칸만 거부됐으면 다른 칸 글자.
-  const quoteFooterSummary =
-    rejectedEnvelope && rejectedCells.quote === 0 ? otherCellsRejectedText(0, rejectedCellTotal) : rejectionSummary;
+  const quoteFooterSummary = rejectedEnvelope
+    ? quoteTableRejectionText(rejectedEnvelope, revenueEntryIds, outsideErrorCount)
+    : rejectionSummary;
 
   // 04-30(C-07) — 힌트 줄은 그 사람에게 실제로 되는 키만. 편집 셀이 없는 읽기 표에는 힌트 줄이 없다.
   const hintKeys = visibleHintKeys(

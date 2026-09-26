@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isDefiniteResult, recheckOutcome, resolveHistoryEntry } from "@/app/c/[token]/flow-rules";
+import { invalidSubmitField, isDefiniteResult, recheckOutcome, resolveHistoryEntry } from "@/app/c/[token]/flow-rules";
 
 // 04.3-03 Task 2a ③ — 외부 수령자 흐름의 순수 판정(브라우저 API 없음).
 
@@ -83,4 +83,14 @@ describe("recheckOutcome — 잠금 다시 확인 응답 → {next, focus}(4차 
       expect(recheckOutcome(result, "visible")).toEqual({ next: "stay", focus: "none" });
     },
   );
+});
+
+describe("invalidSubmitField — 제출 입력 거부를 어느 칸에 보일지(/review)", () => {
+  it.each([
+    [["signature"], "signature"],
+    [["phone"], "phone"],
+    [["rrn"], "rrn"],
+  ] as const)("%o → %s", (fields, expected) => {
+    expect(invalidSubmitField(fields)).toBe(expected);
+  });
 });

@@ -1001,6 +1001,24 @@ test.describe("견적 줄 표 — 쪽 경계 키보드·전체 복사·힌트 �
     await expect(quoteCell(page, 29, 2)).toBeFocused();
   });
 
+  test("(리뷰 B-1) 편집 중 Enter는 값을 확정하고 아래 줄 같은 열로, 1쪽 30번째 줄에서는 2쪽 31번째 줄 같은 열로", async ({ page }) => {
+    await openProjectWithSavedLines(page, fortyFiveLines());
+    await editTextCell(page, 28, 2, "29번째 확정");
+    await expect(quoteCell(page, 28, 2)).toHaveText("29번째 확정");
+    await expect(quoteCell(page, 29, 2)).toBeFocused();
+
+    await page.keyboard.press("Enter");
+    await expect(quoteCell(page, 29, 2).locator("input")).toBeFocused();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("30번째 확정");
+    await page.keyboard.press("Enter");
+    await expect(currentPage(page)).toHaveText("2");
+    await expect(quoteCell(page, 0, 0)).toHaveText("31");
+    await expect(quoteCell(page, 0, 2)).toBeFocused();
+    await pageNav(page).getByRole("button", { name: "1", exact: true }).click();
+    await expect(quoteCell(page, 29, 2)).toHaveText("30번째 확정");
+  });
+
   test("편집 중 Tab은 값을 확정하고 옆 편집 셀로, 쪽 마지막 편집 셀에서는 2쪽 첫 줄 첫 편집 셀을 연다", async ({ page }) => {
     await openProjectWithSavedLines(page, fortyFiveLines());
     const itemCell = quoteCell(page, 29, 2);

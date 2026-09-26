@@ -179,7 +179,7 @@ describe("resolveFocus — 기억한 { rowId, colKey }를 렌더마다 지금 �
 });
 
 // 훅 — jsdom 없이 react-dom/server로 한 번 렌더해 handleKeyDown을 꺼낸다(grid-keyboard-composing.test.ts 선례).
-type KeyInit = { key: string; ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean };
+type KeyInit = { key: string; ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean; isComposing?: boolean };
 type Calls = { edge: [string, string][]; deleted: unknown[]; moved: unknown[][]; tab: string[]; selectAll: number };
 
 function renderGrid(opts: { editing: boolean; rowCount?: number }) {
@@ -228,7 +228,7 @@ function renderGrid(opts: { editing: boolean; rowCount?: number }) {
       altKey: init.altKey ?? false,
       metaKey: false,
       repeat: false,
-      nativeEvent: { isComposing: false },
+      nativeEvent: { isComposing: init.isComposing ?? false },
       preventDefault: () => {
         prevented = true;
       },
@@ -248,6 +248,14 @@ describe("useGridKeyboard — 쪽 경계 · Tab · Ctrl+A · Ctrl+C · 줄 id �
       ["down", "unitPrice"],
       ["up", "itemName"],
     ]);
+  });
+
+  it("편집 중 Enter(편집기가 확정)는 아래로 — 쪽 마지막 줄이면 onEdgeExit(down, 열 키), 한글 조합 확정 Enter는 움직이지 않는다(리뷰 B-1)", () => {
+    const grid = renderGrid({ editing: true });
+    grid.press({ key: "Enter", isComposing: true }, { row: 2, col: 1 });
+    expect(grid.calls.edge).toEqual([]);
+    grid.press({ key: "Enter" }, { row: 2, col: 1 });
+    expect(grid.calls.edge).toEqual([["down", "itemName"]]);
   });
 
   it("Shift+↓ 범위 선택은 쪽 마지막 줄에서 멈춘다(onEdgeExit 없음)", () => {

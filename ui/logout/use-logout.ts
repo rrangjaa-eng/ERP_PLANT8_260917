@@ -11,7 +11,7 @@ import { authClient } from "@/lib/auth-client";
 //
 // 셋이 같은 실패를 같은 방식으로 다루도록 판정을 여기 한 곳에 둔다.
 // D-10: 로그아웃은 현재 기기 세션만 끝낸다("모든 기기에서 로그아웃"은 없음).
-export const LOGOUT_FAILED = "로그아웃 실패 — 다시 시도";
+export const LOGOUT_FAILED = "로그아웃 실패 · 다시 시도";
 
 export type UseLogout = {
   logout: () => Promise<void>;

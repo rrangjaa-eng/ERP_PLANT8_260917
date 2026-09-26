@@ -47,7 +47,7 @@ export const before = createAuthMiddleware(async (ctx) => {
   // 공용 rateLimit 버킷에 조용히 흘러가는 대신 500으로 멈춘다(better-auth Eng OV-2).
   if (!ctx.headers?.get(CLIENT_IP_HEADER)) {
     log.error("auth.client_ip_missing", { path: ctx.path });
-    throw new APIError("INTERNAL_SERVER_ERROR", { message: "요청 정보가 올바르지 않습니다." });
+    throw new APIError("INTERNAL_SERVER_ERROR", { message: "요청 정보 오류" });
   }
 
   const email = getBodyEmail(ctx.body);

@@ -20,7 +20,7 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 // 한다). lib/actions/client.ts에서 함수를 분리해 둔 이유는
 // zod-error-message.ts와 같다 — DB·세션 없이 단위 테스트가 돌아야 한다
 // ("use server" 파일도 아니고 getSession 의존도 없다).
-const GENERIC_ERROR_MESSAGE = "처리 중 오류가 발생했습니다 · 잠시 후 다시 시도해 주세요";
+const GENERIC_ERROR_MESSAGE = "처리 중 오류 · 잠시 후 다시 시도";
 
 function pgErrorField(source: unknown, field: "code" | "constraint"): string | undefined {
   if (source && typeof source === "object" && field in source) {

@@ -22,7 +22,7 @@ import { getSettingValue as defaultGetSettingValue } from "@/domain/settings/reg
 import { TAX_VAT_RATE, TAX_ROUNDING_VAT_UNIT } from "@/domain/settings/keys";
 import { withTransaction } from "@/lib/db-transaction";
 import { kstDateOf } from "@/lib/kst-date";
-import { isCalendarDate, FORMAT_ERROR as DATE_FORMAT_ERROR } from "@/domain/projects/period";
+import { isCalendarDate, FORMAT_ERROR as DATE_FORMAT_ERROR, EMPTY_ERROR as DATE_EMPTY_ERROR } from "@/domain/projects/period";
 import type { DbOrTx } from "@/repositories/document-counters";
 import { scopeFor } from "@/domain/permissions/scope-for";
 import { findProjectById as repoFindProjectById } from "@/repositories/projects";
@@ -184,7 +184,7 @@ function toEntryDto(
 // 잘라 전날 세율을 쓴다(엔지니어링 리뷰 B §1, 발행 줄의 new Date(row.entryDate)와 같은 규칙).
 async function deriveContract(viewer: Viewer, projectId: string, deps?: Partial<RevenueDeps>): Promise<ContractInfo> {
   const current = await repoFindLatestQuoteRevision(viewer, projectId);
-  if (!current) throw new ProjectNotFoundError("존재하지 않는 프로젝트입니다.");
+  if (!current) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
   if (current.customerApprovedAt === null) {
     return { amountKrw: null, vatKrw: null, totalKrw: null, vatRateLabel: null, sourceLabel: null, pendingLabel: `${current.seq}차 고객 승인 전` };
   }
@@ -210,11 +210,11 @@ export async function listRevenue(viewer: Viewer, projectId: string, deps?: Part
   // + 아카이브)를 여기서 다시 한다 — domain/projects ↔ domain/revenue
   // 순환 import를 피하기 위한 최소 복제(도메인 4계층 원칙).
   const scope = await scopeFor(viewer, PROJECT_ENTITY);
-  if (scope.rows === "none") throw new ProjectNotFoundError("존재하지 않는 프로젝트입니다.");
+  if (scope.rows === "none") throw new ProjectNotFoundError("존재하지 않는 프로젝트");
 
   const projectRow = await repoFindProjectById(viewer, projectId);
-  if (!projectRow) throw new ProjectNotFoundError("존재하지 않는 프로젝트입니다.");
-  if (projectRow.archivedAt !== null && !scope.includeArchived) throw new ProjectNotFoundError("존재하지 않는 프로젝트입니다.");
+  if (!projectRow) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
+  if (projectRow.archivedAt !== null && !scope.includeArchived) throw new ProjectNotFoundError("존재하지 않는 프로젝트");
 
   const contract = await deriveContract(viewer, projectId, deps);
 
@@ -303,6 +303,10 @@ type PreparedEntry = { input: RevenueEntryWriteRow; payload: EntryPayload };
 function prepareEntries(rows: RevenueEntryWriteRow[], formatErrors: CellFormatError[]): PreparedEntry[] {
   const prepared: PreparedEntry[] = [];
   rows.forEach((input, rowIndex) => {
+    if (input.entryDate === "") {
+      formatErrors.push({ rowIndex, ...(input.id ? { rowId: input.id } : {}), field: "entryDate", label: "날짜", reason: DATE_EMPTY_ERROR });
+      return;
+    }
     if (!isCalendarDate(input.entryDate)) {
       formatErrors.push({ rowIndex, ...(input.id ? { rowId: input.id } : {}), field: "entryDate", label: "날짜", reason: DATE_FORMAT_ERROR });
       return;
@@ -366,7 +370,7 @@ async function saveEntries(
       }
     } else if (input.id) {
       if (input.version === undefined) {
-        throw new UserFacingError("기존 줄을 저장하려면 버전 정보가 필요합니다 · 화면을 새로고침해 주세요");
+        throw new UserFacingError("버전 정보 필요 · 새로 고침");
       }
       const updated = await repoUpdateRevenueEntryIfVersionMatches(viewer, input.id, input.version, { projectId, kind }, payload, tx);
       if (!updated) {
@@ -376,7 +380,7 @@ async function saveEntries(
         }
         // SF-2 — 응답을 잃은 재전송: 첫 커밋이 version을 하나 올렸고 값이 이번 입력과 같으면 no-op(쓰기·로그 없음).
         if (stored.version === input.version + 1 && sameStoredEntry(stored, { projectId, kind }, payload)) continue;
-        throw new UserFacingError(`다른 사람이 먼저 이 줄을 바꿨습니다 · 덮어쓰기 / 그 값으로(줄 ${input.id})`);
+        throw new UserFacingError(`다른 사람이 먼저 이 줄을 바꿈 · 덮어쓰기 / 그 값으로(줄 ${input.id})`);
       }
     } else {
       await repoInsertRevenueEntry(viewer, { projectId, kind, ...payload }, tx);
@@ -408,7 +412,7 @@ export async function saveRevenueInTx(
   tx: DbOrTx,
 ): Promise<FxToRemember[]> {
   if ((input.issuedEntries || input.paidEntries) && !deps.rights.canWriteEntries) {
-    throw new ForbiddenError("발행·입금 줄 저장 권한이 없습니다.");
+    throw new ForbiddenError("발행·입금 줄 저장 권한 없음");
   }
 
   const formatErrors: CellFormatError[] = [];

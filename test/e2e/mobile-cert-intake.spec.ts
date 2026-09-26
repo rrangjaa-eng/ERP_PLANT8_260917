@@ -234,7 +234,7 @@ test("S7 — rowId가 uuid 형식이 아니면 스키마가 거부한다(22P02 �
   // 스키마 거부(validationErrors) — DB까지 가지 않아 22P02도 가린 이름도 없다.
   expect(text).toContain('"validationErrors"');
   expect(text).toContain('"rowId"');
-  expect(text).not.toContain("처리 중 오류가 발생했습니다");
+  expect(text).not.toContain("처리 중 오류 · 잠시 후 다시 시도");
   expect(text).not.toContain("정*준");
 });
 

@@ -134,7 +134,7 @@ export async function recordAction(
   deps?: Partial<RecordActionDeps>,
 ): Promise<void> {
   if (!isCoreActionType(entry.actionType)) {
-    throw new UnknownActionTypeError(`핵심 행동 종류가 아닙니다: ${entry.actionType}`);
+    throw new UnknownActionTypeError(`핵심 행동 종류 아님: ${entry.actionType}`);
   }
 
   if (!ALWAYS_ON_ACTION_TYPES.includes(entry.actionType)) {

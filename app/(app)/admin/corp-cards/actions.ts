@@ -16,9 +16,9 @@ const LAST4_PATTERN = /^\d{4}$/;
 export const createCorpCardAction = authedActionClient
   .schema(
     z.object({
-      issuer: z.string().min(1, "발급사를 입력하세요."),
-      numberLast4: z.string().regex(LAST4_PATTERN, "숫자 4자리를 입력하세요."),
-      label: z.string().min(1, "별칭을 입력하세요."),
+      issuer: z.string().min(1, "발급사 필요 · 발급사 입력"),
+      numberLast4: z.string().regex(LAST4_PATTERN, "숫자 4자리 필요 · 끝 4자리 입력"),
+      label: z.string().min(1, "별칭 필요 · 별칭 입력"),
       holderUserId: z.string().min(1).optional(),
       teamId: z.string().min(1).optional(),
     }),
@@ -45,7 +45,7 @@ export const updateCorpCardOwnerAction = authedActionClient
         if (hasHolder === hasTeam) {
           ctx.addIssue({
             code: "custom",
-            message: "소지자 또는 팀 중 정확히 하나를 선택하세요.",
+            message: "소지자·팀 중 하나 필요 · 하나만 선택",
             path: ["holderUserId"],
           });
         }

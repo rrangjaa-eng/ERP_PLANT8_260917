@@ -15,29 +15,29 @@ function describeIssue(issue: core.$ZodIssue): string {
   switch (issue.code) {
     case "too_small": {
       const bound = issue.inclusive ? "이상" : "초과";
-      return `${issue.minimum} ${bound}이어야 합니다 · 값을 확인해 주세요`;
+      return `${issue.minimum} ${bound}만 가능 · 값 확인`;
     }
     case "too_big": {
       const bound = issue.inclusive ? "이하" : "미만";
-      return `${issue.maximum} ${bound}이어야 합니다 · 값을 확인해 주세요`;
+      return `${issue.maximum} ${bound}만 가능 · 값 확인`;
     }
     case "invalid_type":
-      return "형식이 올바르지 않습니다 · 값을 확인해 주세요";
+      return "형식 오류 · 값 확인";
     case "invalid_value": {
       const options = issue.values.map((value) => String(value)).join(", ");
-      return `허용되지 않은 값입니다 · ${options} 중에서 선택해 주세요`;
+      return `허용되지 않은 값 · ${options} 중 선택`;
     }
     case "not_multiple_of":
-      return `${issue.divisor}의 배수여야 합니다 · 값을 확인해 주세요`;
+      return `${issue.divisor}의 배수만 가능 · 값 확인`;
     case "invalid_format":
-      return "형식이 올바르지 않습니다 · 값을 확인해 주세요";
+      return "형식 오류 · 값 확인";
     // Rule 2(04.3-02) — .refine()/.superRefine()가 지어 붙인 메시지는 이미
     // §8 카피 규칙을 지키는 완성 문장이다(예: CERT_CONTACT_PHONE 스키마) —
     // default의 일반 문구로 뭉개면 그 문장이 통째로 사라진다.
     case "custom":
       return issue.message;
     default:
-      return "입력값이 올바르지 않습니다 · 값을 확인해 주세요";
+      return "입력값 오류 · 값 확인";
   }
 }
 
@@ -46,6 +46,6 @@ function describeIssue(issue: core.$ZodIssue): string {
 // 오류는 한 줄).
 export function koreanZodErrorMessage(error: ZodError): string {
   const [firstIssue] = error.issues;
-  if (!firstIssue) return "입력값이 올바르지 않습니다 · 값을 확인해 주세요";
+  if (!firstIssue) return "입력값 오류 · 값 확인";
   return describeIssue(firstIssue);
 }

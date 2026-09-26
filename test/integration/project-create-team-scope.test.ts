@@ -17,8 +17,8 @@ import { log } from "@/lib/log";
 // 보안 감사 — 팀 업무 범위 계급의 등록도 상태 · 기간 변경처럼 내 팀 안으로 묶는다.
 // 발령일은 늘 과거인 고정 날짜(자정 경계에서 흔들리지 않게 — project-status.test.ts와 같은 이유).
 const PAST_ASSIGNMENT_DATE = "2020-01-01";
-const TEAM_DENIED = "내 팀 프로젝트만 등록할 수 있습니다.";
-const PM_DENIED = "담당 PM은 내 팀 사람만 고를 수 있습니다.";
+const TEAM_DENIED = "내 팀 프로젝트만 등록 가능 · 내 팀 선택";
+const PM_DENIED = "담당 PM은 내 팀 사람만 가능 · 내 팀 사람 선택";
 
 afterEach(() => {
   vi.restoreAllMocks();

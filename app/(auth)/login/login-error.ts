@@ -15,7 +15,7 @@
 // lib/env를 클라이언트 번들로 끌고 오지 않는다(domain/auth/locked-message.ts).
 import { LOCKED_MESSAGE } from "@/domain/auth/locked-message";
 
-export const GENERIC_ERROR = "이메일 또는 비밀번호가 올바르지 않습니다.";
+export const GENERIC_ERROR = "이메일 또는 비밀번호 오류";
 
 export function loginErrorMessage(
   error: { status?: number; message?: string } | null | undefined,

@@ -196,7 +196,7 @@ export const QUOTE_LINE_MAX_PER_REVISION: SettingDef<number> = {
   kind: "simple",
   schema: z.coerce.number().int().min(1),
   label: "차수당 견적 줄 상한",
-  hint: "한 차수에 둘 수 있는 견적 줄 수 — 조정·취소 줄 포함",
+  hint: "한 차수에 둘 수 있는 견적 줄 수를 정합니다(조정·취소 줄 포함).",
   namespace: "견적 표",
   default: 300,
 };
@@ -243,7 +243,7 @@ export const PROJECT_CUSTOMER_APPROVAL_GATE: SettingDef<boolean> = {
   kind: "simple",
   schema: z.boolean(),
   label: "고객 승인 게이트",
-  hint: "끄면 고객 승인 전 차수에서도 지출결의를 올릴 수 있음",
+  hint: "끄면 고객 승인 전 차수에서도 지출결의를 올릴 수 있습니다.",
   namespace: "프로젝트",
   default: true,
   readBy: { phase: "5" },

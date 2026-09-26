@@ -12,7 +12,7 @@ import {
   PROJECT_SORT_KEYS,
   type ProjectSortKey,
 } from "@/domain/projects";
-import { listProjectFormReferences, scopeCreateFormReferences } from "@/domain/projects/references";
+import { listProjectFormReferences, loadCreatorDefaults, scopeCreateFormReferences } from "@/domain/projects/references";
 import { listProjectStatusCatalog } from "@/domain/projects/status";
 import { recentFxRate } from "@/domain/money/currency";
 import { kstToday } from "@/lib/kst-date";
@@ -98,13 +98,16 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   ]);
 
   // 등록 폼의 팀 · 담당 PM 칸만 업무 범위로 좁힌다 — 필터 줄은 전체 팀(references.teams)을 계속 쓴다.
-  const scopedCreateReferences = canWrite
-    ? await scopeCreateFormReferences(session.viewer, references, { todayKst: kstToday(new Date()) })
-    : null;
+  // /review D3 — 등록 폼 기본값(결정 2)은 범위 좁히기와 함께 조회한다. 실패해도 null이라 목록을 막지 않는다.
+  const [scopedCreateReferences, loadedCreatorDefaults] = await Promise.all([
+    canWrite ? scopeCreateFormReferences(session.viewer, references, { todayKst: kstToday(new Date()) }) : null,
+    canWrite && showCreateForm ? loadCreatorDefaults(session.viewer, { todayKst: kstToday(new Date()) }) : null,
+  ]);
   // /review team-scope-create-review.md P3(2) — 팀 발령이 없는 팀 업무 범위 사람은
   // 등록해도 서버가 항상 거부한다(팀 목록 0개) — §7 "할 수 없는 선택지는 보이지 않게".
   const canCreate = canWrite && scopedCreateReferences !== null && scopedCreateReferences.teams.length > 0;
   const createReferences = canCreate && showCreateForm ? scopedCreateReferences : null;
+  const creatorDefaults = createReferences ? loadedCreatorDefaults : null;
 
   const canSeeAmount = aggregate.quoteAmountKrw !== undefined;
   const hasMore = rows.length < aggregate.count;
@@ -131,6 +134,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           clients={references.clients}
           teams={createReferences.teams}
           pmUsers={createReferences.pmUsers}
+          creatorDefaults={creatorDefaults}
           cancelHref={projectsHref()}
           usdDefaultFxRate={usdDefaultFxRate}
         />

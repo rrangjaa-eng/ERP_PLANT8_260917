@@ -109,4 +109,17 @@ describe("노출 판정의 실제 효과 (ADMN-02·ADMN-03)", () => {
     expect((await findVisibility(SYSTEM_VIEWER, TEAM_LEAD_ROLE_ID, "revenue.issued_amount"))?.visible).toBe(true);
     expect((await findVisibility(SYSTEM_VIEWER, DIVISION_HEAD_ROLE_ID, "revenue.issued_amount"))?.visible).toBe(false);
   });
+
+  it("(g) 관리자가 숨긴 기획 PM 발행액 행(updated_by 있음)은 시드를 다시 돌려도 숨김과 updated_by가 그대로다", async () => {
+    await upsertVisibility(SYSTEM_VIEWER, {
+      roleId: DEFAULT_ROLE_ID,
+      infoItem: "revenue.issued_amount",
+      visible: false,
+      updatedBy: "admin-vis-tester-g",
+    });
+    await seedMasterData(SYSTEM_VIEWER);
+    const row = await findVisibility(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "revenue.issued_amount");
+    expect(row?.visible).toBe(false);
+    expect(row?.updatedBy).toBe("admin-vis-tester-g");
+  });
 });

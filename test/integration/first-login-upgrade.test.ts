@@ -124,7 +124,8 @@ afterAll(async () => {
   await admin?.query(`DROP DATABASE IF EXISTS "${DB_NAME}" WITH (FORCE)`);
   await admin?.end();
   if (priorFolder) rmSync(priorFolder, { recursive: true, force: true });
-});
+  // 전체 통합 실행 부하에서 DROP DATABASE … WITH (FORCE)가 기본 10초를 넘긴 적이 있다 — beforeAll과 같은 제한.
+}, 60_000);
 
 describe("first_login_at 백필 — 실제 업그레이드 경로(D8-07)", () => {
   it("표지 줄을 가진 마이그레이션이 정확히 하나다", () => {

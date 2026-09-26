@@ -382,12 +382,12 @@ describe("deploy.sh — Job 환경 계약(시나리오 9)", () => {
     repoDir = setupRepo();
   });
 
-  it("Job 4개 모두 APP_ENV·BETTER_AUTH_URL·BETTER_AUTH_SECRET을 갖고, DB_ADMIN_PASSWORD는 db-bootstrap에만 있다", () => {
+  it("Job 5개 모두 APP_ENV·BETTER_AUTH_URL·BETTER_AUTH_SECRET을 갖고, DB_ADMIN_PASSWORD는 db-bootstrap에만 있다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
     expect(r.status).toBe(0);
 
     const deployLines = r.log.split("\n").filter((l) => l.startsWith("run jobs deploy plant8-staging-"));
-    expect(deployLines).toHaveLength(4);
+    expect(deployLines).toHaveLength(5);
     for (const line of deployLines) {
       expect(line).toContain("APP_ENV=staging");
       expect(line).toContain("BETTER_AUTH_URL=https://plant8-staging-");
@@ -418,6 +418,12 @@ describe("deploy.sh — Job 환경 계약(시나리오 9)", () => {
     expect(seed).toContain("--command=node ");
     expect(seed).toContain("--args=dist/cli/seed-master.mjs");
     expect(seed).not.toContain("DB_ADMIN_PASSWORD");
+
+    const restore = jobLine(r.log, "restore");
+    expect(restore).toContain("--command=node,dist/cli/restore-rehearsal-cli.mjs");
+    expect(restore).not.toContain("--args=");
+    expect(restore).toContain("CLOUD_SQL_CONNECTION_NAME=");
+    expect(restore).not.toContain("DB_ADMIN_PASSWORD");
   });
 });
 

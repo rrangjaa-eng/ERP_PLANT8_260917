@@ -17,6 +17,17 @@ export const MENUS: MenuDef[] = [
   // SEED_ROLES 5종에 없는 조직상 역할이라 권한표에서 관리자가 실제
   // 담당 계급에 배정한다 — 코드에 역할 이름을 박지 않는다).
   { key: "projects.revenue", label: "매출 정산" },
+  // 04-20(D-46·D-79): 사람의 상태 전환 주체가 둘로 갈린다 — 수주중·미수주의
+  // 전환은 "projects.status"(팀장 이상 + 계급 업무 범위), 정산 → 완료는
+  // "projects.complete"(대표 — Phase 5에서 결재 승인이 호출자가 된다).
+  { key: "projects.status", label: "프로젝트 상태 변경" },
+  { key: "projects.complete", label: "프로젝트 완료" },
+  // 04-22(사용자 결정 2026-09-25 「기간만 수정」): 팀장 이상이 프로젝트 시작일·종료일만 고치는
+  // 권한 — "projects" 쓰기(견적 줄·매출 등)는 주지 않는다.
+  { key: "projects.period", label: "프로젝트 기간 변경" },
+  // 04-13(D-83): 경영관리의 원가 보정(조정 줄) — 프로젝트 상태와 무관하게 조정 줄만 만들고 고친다. 매출 기록
+  // (projects.revenue)과 다른 일이라 따로 두고, 시드 계급에 경영관리가 없어 기본값은 아무에게도 켜지 않는다.
+  { key: "projects.adjustment", label: "견적 조정 줄" },
   { key: "expenses", label: "지출결의" },
   { key: "cards", label: "법인카드" },
   { key: "approvals", label: "결재함" },

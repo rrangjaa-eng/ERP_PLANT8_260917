@@ -80,7 +80,7 @@ export default async function VendorsPage({
       {canWrite && showForm ? (
         <VendorForm
           key={editingVendor?.id ?? "create"}
-          evidenceTypes={evidenceTypes.map((item) => ({ value: item.value, label: item.label }))}
+          evidenceTypes={evidenceTypes.map((item) => ({ value: item.value, label: item.label, description: item.description }))}
           fieldDefs={fieldDefs}
           editing={editingVendor}
           cancelHref={cancelHref}

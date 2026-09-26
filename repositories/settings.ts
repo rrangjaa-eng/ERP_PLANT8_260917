@@ -7,9 +7,12 @@ import type { Viewer } from "@/domain/viewer";
 export type SettingSimpleRow = InferSelectModel<typeof settingsSimple>;
 export type SettingHistorizedRow = InferSelectModel<typeof settingsHistorized>;
 
-export async function findSimpleValue(viewer: Viewer, key: string): Promise<SettingSimpleRow | null> {
+// Phase 4(04-32, ENG-D3 ①): 선택 tx — 잠근 트랜잭션 안에서 끌 수 있는 종류의
+// 설정을 조회하면 그 tx로 읽는다(풀 연결을 하나 더 잡지 않는다). 없으면
+// 지금처럼 풀 db.
+export async function findSimpleValue(viewer: Viewer, key: string, tx?: DbOrTx): Promise<SettingSimpleRow | null> {
   void viewer;
-  const [row] = await db.select().from(settingsSimple).where(eq(settingsSimple.key, key)).limit(1);
+  const [row] = await (tx ?? db).select().from(settingsSimple).where(eq(settingsSimple.key, key)).limit(1);
   return row ?? null;
 }
 

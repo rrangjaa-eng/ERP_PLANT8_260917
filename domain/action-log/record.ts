@@ -1,7 +1,9 @@
 import type { Viewer } from "@/domain/viewer";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { appendActionLog as defaultAppendActionLog } from "@/repositories/action-log";
+import { findSimpleValue } from "@/repositories/settings";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import type { DbOrTx } from "@/repositories/document-counters";
 
 // OPS-05: 핵심 행동 종류 목록의 정본. 단순 조회·화면 이동은 이 목록에 없다 —
 // recordAction을 아예 부르지 않는 것이 "잡음을 남기지 않는다"의 구현이다.
@@ -89,6 +91,10 @@ export type RecordActionDeps = {
   // recordAction을 정적으로 import하므로(설정 변경 로그), 정적 상호
   // import는 순환이 되어 이 파일 쪽을 동적 import로 늦춰 끊는다.
   isActionTypeEnabled?: (actionType: CoreActionType) => Promise<boolean>;
+  // Phase 4(04-32, ENG-D3 ①): 잠근 트랜잭션 안에서 부르면 로그 쓰기와 끌 수
+  // 있는 종류의 설정 조회가 둘 다 이 tx로 돈다 — 인자가 없으면 지금 동작
+  // 그대로(풀 db).
+  tx?: DbOrTx;
 };
 
 function isCoreActionType(value: string): value is CoreActionType {
@@ -99,13 +105,20 @@ function isCoreActionType(value: string): value is CoreActionType {
 // 이 방향에서는 안전하다: "기록 안 함"으로 fail-closed하면 설정 레지스트리
 // 장애 한 번에 핵심 행동 로그 전체가 조용히 비어 OPS-05·ADMN-10이 요구하는
 // 감사 가능성을 정면으로 해친다.
-async function defaultIsActionTypeEnabled(actionType: CoreActionType): Promise<boolean> {
+async function defaultIsActionTypeEnabled(actionType: CoreActionType, tx?: DbOrTx): Promise<boolean> {
   try {
     const [{ getSettingValue }, { ACTION_LOG_OPTIONAL_TYPES }] = await Promise.all([
       import("@/domain/settings/registry"),
       import("@/domain/settings/keys"),
     ]);
-    const enabledTypes = await getSettingValue(ACTION_LOG_OPTIONAL_TYPES);
+    // tx가 있으면 registry의 findSimpleValue 주입 자리로 같은 tx를 넘긴다
+    // (domain/settings/registry.ts는 고치지 않는다 — 그 파일의 deps 주입
+    // 계약을 그대로 쓴다).
+    const enabledTypes = await getSettingValue(
+      ACTION_LOG_OPTIONAL_TYPES,
+      undefined,
+      tx ? { findSimpleValue: (v, k) => findSimpleValue(v, k, tx) } : undefined,
+    );
     return enabledTypes.includes(actionType);
   } catch {
     return true;
@@ -125,21 +138,25 @@ export async function recordAction(
   }
 
   if (!ALWAYS_ON_ACTION_TYPES.includes(entry.actionType)) {
-    const isEnabled = deps?.isActionTypeEnabled ?? defaultIsActionTypeEnabled;
+    const isEnabled = deps?.isActionTypeEnabled ?? ((type: CoreActionType) => defaultIsActionTypeEnabled(type, deps?.tx));
     const enabled = await isEnabled(entry.actionType);
     if (!enabled) return;
   }
 
   const appendActionLog = deps?.appendActionLog ?? defaultAppendActionLog;
-  await appendActionLog(viewer, {
-    // 시스템 주체(SYSTEM_VIEWER)의 행동은 actorId가 null이다 — users 표에 없는
-    // id를 FK로 넣지 않는다.
-    actorId: viewer.id === SYSTEM_VIEWER.id ? null : viewer.id,
-    actorRoleId: viewer.roleId ?? null,
-    actionType: entry.actionType,
-    entity: entry.entity ?? null,
-    entityId: entry.entityId ?? null,
-    documentId: entry.documentId ?? null,
-    detail: entry.detail ?? {},
-  });
+  await appendActionLog(
+    viewer,
+    {
+      // 시스템 주체(SYSTEM_VIEWER)의 행동은 actorId가 null이다 — users 표에 없는
+      // id를 FK로 넣지 않는다.
+      actorId: viewer.id === SYSTEM_VIEWER.id ? null : viewer.id,
+      actorRoleId: viewer.roleId ?? null,
+      actionType: entry.actionType,
+      entity: entry.entity ?? null,
+      entityId: entry.entityId ?? null,
+      documentId: entry.documentId ?? null,
+      detail: entry.detail ?? {},
+    },
+    deps?.tx,
+  );
 }

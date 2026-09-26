@@ -1,10 +1,23 @@
 import type { Viewer } from "@/domain/viewer";
-import { SEED_ROLES, SYSADMIN_ROLE_ID, DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import {
+  SEED_ROLES,
+  SYSADMIN_ROLE_ID,
+  DEFAULT_ROLE_ID,
+  CEO_ROLE_ID,
+  DIVISION_HEAD_ROLE_ID,
+  TEAM_LEAD_ROLE_ID,
+} from "@/domain/permissions/roles";
 import { MENUS, PERMISSION_ACTIONS } from "@/domain/permissions/menus";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import { SETTING_DEFS } from "@/domain/settings/keys";
 import { seedRole } from "@/repositories/roles";
-import { upsertPermission, upsertVisibility, insertPermissionIfAbsent } from "@/repositories/permissions";
+import {
+  upsertPermission,
+  upsertVisibility,
+  insertPermissionIfAbsent,
+  insertVisibilityIfAbsent,
+  upsertVisibilityIfUnedited,
+} from "@/repositories/permissions";
 import { seedCodeItem } from "@/repositories/code-tables";
 import { seedSimpleValue, seedHistorizedValue } from "@/repositories/settings";
 import { seedOrgUnit, findOrgUnitByName } from "@/repositories/org-units";
@@ -15,16 +28,23 @@ import { seedTeam } from "@/repositories/teams";
 // 보장하는 "설정 화면에 EMPTY 상태가 발생하지 않는다"가 실제로 성립한다.
 const SEED_HISTORIZED_EFFECTIVE_FROM = "2000-01-01";
 
-// 프로젝트 상태 코드표 시드(D-41, Phase 4 Task 1 ④) — 수주중·진행·완료(정산)·
-// 미수주 네 값. 옛 다섯 값(planning/on_hold/done/cancelled + 이 목록에 없던
+// 프로젝트 상태 코드표 시드(D-41 → D-75, 04-06) — 수주중·진행·정산·완료·
+// 미수주 다섯 값. 옛 다섯 값(planning/on_hold/done/cancelled + 이 목록에 없던
 // in_progress도 값 자체는 그대로)은 db/migrations/0009_project_quote_ledger_spine.sql이
 // DELETE/INSERT로 이미 교체했다 — 이 상수는 그 마이그레이션이 못 닿는
-// 경로(멱등 재시드·픽스처 DB)에서도 같은 네 값이 나오게 하는 정본이다.
+// 경로(멱등 재시드·픽스처 DB)에서도 같은 값이 나오게 하는 정본이다.
+// 04-10(D-93): 설명 문장은 db/migrations/0011_code_item_descriptions.sql의
+// description IS NULL UPDATE 문과 글자 그대로 같아야 한다(대조 검증: Task 2
+// verify) — 새 DB(이 시드)와 기존 DB(그 마이그레이션)가 같은 설명으로
+// 시작한다. 04-06(D-75): 다섯 값 — settling(정산)·completed(완료)의 라벨·정렬·
+// 설명과 lost의 정렬 4는 db/migrations/0012_project_status_five_values.sql과
+// 글자 그대로 같다.
 const PROJECT_STATUS_CODES = [
-  { value: "bidding", label: "수주중", sortOrder: 0 },
-  { value: "in_progress", label: "진행", sortOrder: 1 },
-  { value: "settled", label: "완료(정산)", sortOrder: 2 },
-  { value: "lost", label: "미수주", sortOrder: 3 },
+  { value: "bidding", label: "수주중", sortOrder: 0, description: "제안·PT 단계 · 쌓인 비용은 진행 뒤 프로젝트 비용" },
+  { value: "in_progress", label: "진행", sortOrder: 1, description: "수주 확정 · 종료일 다음 날 자동으로 정산" },
+  { value: "settling", label: "정산", sortOrder: 2, description: "행사 종료 · 발행 요청과 증빙 첨부를 마치는 단계" },
+  { value: "completed", label: "완료", sortOrder: 3, description: "정산 마감 · 견적 줄이 잠기고 되돌리기 없음" },
+  { value: "lost", label: "미수주", sortOrder: 4, description: "수주 실패 · 쌓인 비용은 팀 미수주 비용" },
 ];
 
 // D-62: 견적 줄 대분류 = 그룹 머리글(소분류에서 파생), 그룹 순서는
@@ -34,10 +54,10 @@ const PROJECT_STATUS_CODES = [
 // 관리자가 화면(04-05 이후)에서 언제든 늘리거나 이름을 바꿀 수 있다 —
 // 시드는 출발점일 뿐 정본이 아니다(evidence_type과 같은 결).
 const QUOTE_SUBCATEGORY_CODES = [
-  { value: "stage_construction", label: "무대·시공", sortOrder: 0 },
-  { value: "print_production", label: "인쇄·제작", sortOrder: 1 },
-  { value: "staffing", label: "인력", sortOrder: 2 },
-  { value: "etc", label: "기타", sortOrder: 3 },
+  { value: "stage_construction", label: "무대·시공", sortOrder: 0, description: "무대·부스 설치와 철거 공사" },
+  { value: "print_production", label: "인쇄·제작", sortOrder: 1, description: "현수막·배너·인쇄물·소품 제작" },
+  { value: "staffing", label: "인력", sortOrder: 2, description: "진행요원·MC·모델 등 사람 비용" },
+  { value: "etc", label: "기타", sortOrder: 3, description: "위 분류에 들지 않는 비용" },
 ];
 
 // EXP-15·MAST-01: 증빙 종류 코드표 시드 — REQUIREMENTS.md가 열거한 일곱 종류와
@@ -50,11 +70,13 @@ const EVIDENCE_TYPE_CODES: {
   label: string;
   sortOrder: number;
   taxRule: Record<string, unknown>;
+  description: string;
 }[] = [
   {
     value: "tax_invoice",
     label: "세금계산서",
     sortOrder: 0,
+    description: "과세 거래 · 부가세가 붙는 세금계산서",
     taxRule: {
       ruleKind: "vat_surcharge",
       roundingUnit: 1,
@@ -63,13 +85,14 @@ const EVIDENCE_TYPE_CODES: {
       basisDate: "evidence_date",
     },
   },
-  { value: "invoice", label: "계산서", sortOrder: 1, taxRule: { ruleKind: "none" } },
-  { value: "card_receipt", label: "카드 전표", sortOrder: 2, taxRule: { ruleKind: "none" } },
-  { value: "cash_receipt", label: "현금영수증", sortOrder: 3, taxRule: { ruleKind: "none" } },
+  { value: "invoice", label: "계산서", sortOrder: 1, description: "면세 거래 · 부가세 없는 계산서", taxRule: { ruleKind: "none" } },
+  { value: "card_receipt", label: "카드 전표", sortOrder: 2, description: "법인카드 결제 전표", taxRule: { ruleKind: "none" } },
+  { value: "cash_receipt", label: "현금영수증", sortOrder: 3, description: "지출 증빙용 현금영수증", taxRule: { ruleKind: "none" } },
   {
     value: "other_income",
     label: "기타소득",
     sortOrder: 4,
+    description: "강사료·경품 등 일시 소득 · 원천징수 대상",
     taxRule: {
       ruleKind: "withholding",
       roundingUnit: 10,
@@ -82,6 +105,7 @@ const EVIDENCE_TYPE_CODES: {
     value: "business_income",
     label: "사업소득",
     sortOrder: 5,
+    description: "프리랜서 용역 대가 · 원천징수 대상",
     taxRule: {
       ruleKind: "withholding",
       roundingUnit: 10,
@@ -90,7 +114,7 @@ const EVIDENCE_TYPE_CODES: {
       basisDate: "payment_date",
     },
   },
-  { value: "overseas_invoice", label: "해외 인보이스", sortOrder: 6, taxRule: { ruleKind: "none" } },
+  { value: "overseas_invoice", label: "해외 인보이스", sortOrder: 6, description: "해외 거래처 인보이스 · 부가세 없음", taxRule: { ruleKind: "none" } },
 ];
 
 // MAST-02: 본부·팀 최소 시드 — PROJECT.md가 실명으로 쓰는 두 본부(기획본부·
@@ -116,7 +140,8 @@ export type SeedResult = {
 // import하지 않는다(검증: Task 2 <verify> BOOTSTRAP LEAK 스캔).
 //
 // 두 번 호출해도 결과 상태가 같다(멱등) — ①은 onConflictDoNothing, ②·③은
-// onConflictDoUpdate(같은 값으로 갱신), ④는 onConflictDoNothing.
+// 시스템 관리자만 onConflictDoUpdate(같은 값으로 갱신)이고 나머지 계급은
+// onConflictDoNothing(04-20 — 관리자 변경 보존), ④는 onConflictDoNothing.
 export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
   let rolesCount = 0;
   for (const role of SEED_ROLES) {
@@ -125,6 +150,7 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
       name: role.name,
       isSeed: role.isSeed,
       sortOrder: role.sortOrder,
+      workScope: role.workScope,
     });
     if (inserted) rolesCount++;
   }
@@ -162,6 +188,28 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
     permissionsCount++;
   }
 
+  // 04-20(D-46·D-79·A-05): 상태 전환 기본 권한 — 팀장·본부 책임자·대표는
+  // 프로젝트 화면(보기)과 수주중·미수주 전환(projects.status 쓰기), 대표는
+  // 정산 → 완료(projects.complete 쓰기)까지. 없을 때만 넣는다 — 관리자가 권한표에서
+  // 끈 값을 다음 배포의 시드가 되살리지 않는다. 04-22(사용자 결정 2026-09-25): 같은 계급에
+  // 기간만 고치는 projects.period 쓰기를 더한다.
+  const statusDefaults: { roleId: string; menu: string; action: "view" | "write" }[] = [
+    ...[TEAM_LEAD_ROLE_ID, DIVISION_HEAD_ROLE_ID, CEO_ROLE_ID].flatMap((roleId) => [
+      { roleId, menu: "projects", action: "view" as const },
+      { roleId, menu: "projects.status", action: "write" as const },
+      { roleId, menu: "projects.period", action: "write" as const },
+    ]),
+    { roleId: CEO_ROLE_ID, menu: "projects.complete", action: "write" },
+  ];
+  for (const entry of statusDefaults) {
+    await insertPermissionIfAbsent(viewer, { ...entry, allowed: true, updatedBy: null });
+    permissionsCount++;
+  }
+
+  // 04-20(ENG-D2·ENG-D3 ③): 시스템 관리자만 전 항목을 매번 켜고, 나머지 계급은
+  // 없을 때만 넣는다 — 기획 PM·팀장·본부 책임자는 staffDefault, 대표는 그에 더해
+  // 매출(revenue.*) 항목까지. 관리자가 노출표에서 끈 값을 시드가 되살리지 않는다.
+  const staffDefaultRoles = [DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID, DIVISION_HEAD_ROLE_ID];
   let visibilityCount = 0;
   for (const item of INFO_ITEMS) {
     await upsertVisibility(viewer, {
@@ -170,13 +218,26 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
       visible: true,
       updatedBy: null,
     });
-    await upsertVisibility(viewer, {
-      roleId: DEFAULT_ROLE_ID,
+    for (const roleId of staffDefaultRoles) {
+      // 04-16(D-85 · CEO 리뷰 B-29): 발행액은 기획 PM 행만 upsert해 재시드한 기존 DB에도 공개하고,
+      // 팀장·본부 책임자 행은 없을 때만 숨김으로 넣는다 — 관리자가 노출표에서 켠다.
+      if (item.key === "revenue.issued_amount") {
+        if (roleId === DEFAULT_ROLE_ID) {
+          await upsertVisibilityIfUnedited(viewer, { roleId, infoItem: item.key, visible: true });
+        } else {
+          await insertVisibilityIfAbsent(viewer, { roleId, infoItem: item.key, visible: false, updatedBy: null });
+        }
+        continue;
+      }
+      await insertVisibilityIfAbsent(viewer, { roleId, infoItem: item.key, visible: item.staffDefault, updatedBy: null });
+    }
+    await insertVisibilityIfAbsent(viewer, {
+      roleId: CEO_ROLE_ID,
       infoItem: item.key,
-      visible: item.staffDefault,
+      visible: item.staffDefault || item.key.startsWith("revenue."),
       updatedBy: null,
     });
-    visibilityCount += 2;
+    visibilityCount += 2 + staffDefaultRoles.length;
   }
 
   let codeItemsCount = 0;

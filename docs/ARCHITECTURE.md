@@ -165,6 +165,34 @@ document-counters.ts`는 읽기와 upsert만 두고 증가 함수를 두지 않�
 Manual-Only) — Phase 8 데이터 이전 리허설에서 실이관 규모로 `/projects`
 p99를 재고 이 표의 인덱스로 충분한지 재확인한다.
 
+## 4-8. 트랜잭션·잠금 규약(Phase 4)
+
+(1) 트랜잭션은 `withTransaction`(`lib/db-transaction.ts`) 하나로 연다 —
+`lock_timeout 5s`, 풀 `connectionTimeoutMillis 5s`, 두 시간 초과는 모두
+UserFacing "다른 저장이 끝나지 않음 · 잠시 뒤 다시 저장"로 바뀐다.
+
+(2) 프로젝트를 바꾸는 쓰기 트랜잭션은 첫 단계에서 프로젝트 행을 잠근다 —
+`loadProjectForGate`(자동 정산 판정 포함, 04-11이 만든다) 또는
+`lockProjectForWrite`(04-20이 만든다). 합성 저장은 한 번 잡은 잠금을 그 안의
+함수들이 다시 잡아도 곧바로 돌아온다.
+
+(3) **잠근 트랜잭션 안에서는 전역 `db`(풀)를 부르지 않는다** — 리포지토리
+읽기·쓰기와 `recordAction`에 `tx`를 넘기고, `can`·`visible`·`scopeFor`·설정
+값·계급 업무 범위·소속 팀처럼 잠근 행과 무관한 사실은 트랜잭션을 열기 전에
+읽으며, `project()`·`projectMany` 투영과 최근 환율 기억처럼 커밋 뒤에 해도
+되는 일은 커밋 뒤에 한다.
+
+(4) 거부 운영 로그는 `denyWrite`(04-20이 만드는 `domain/rules/deny-write.ts`)
+한 함수로 남긴다 — 금액 키가 없는 허용 목록 필드.
+
+(5) 경합 테스트는 쓰기 함수의 `deps.afterLock` 주입 지점과
+`test/integration/lock-race.ts`(04-20이 만든다)의 `deferred`·`waitForLockWaiter`로
+순서를 정하고 `sleep`을 쓰지 않는다.
+
+(6) 규약 준수의 통합 증명은 `test/integration/tx-safety.test.ts`(풀 2 · 동시
+저장 셋 — 04-11·04-20·04-22·04-12가 같은 파일에 케이스를 더한다). (2)(4)(5)의
+함수는 같은 머지 묶음 ②(04-50 → 04-23) 안에서 만들어진다.
+
 ## 5. DB·마이그레이션
 
 `drizzle-kit generate` → Squawk(`.squawk.toml`, `pnpm lint:sql`) → `scripts/migrate-runner.ts`

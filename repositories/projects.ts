@@ -1,7 +1,7 @@
-import { and, asc, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
-import { projects, quoteLines, quoteRevisions, teams, users, vendors } from "@/db/schema";
+import { actionLog, projects, quoteLines, quoteRevisions, teams, users, vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { Scope } from "@/domain/permissions/scope-for";
 import type { DbOrTx } from "@/repositories/document-counters";
@@ -21,9 +21,8 @@ function currentRevisionsSubquery() {
     .as("current_revisions");
 }
 
-// 현재 차수의 견적 줄 합계(견적가·실행가·차익) — revision_id당 한 행. 상태
-// (미착수/취소)와 무관하게 전 줄을 더한다 — `[id]/quote-table.tsx`의 합계
-// 행(공급가액 · N줄)이 이미 같은 규칙(전 줄 포함)이다.
+// 현재 차수의 견적 줄 합계(견적가·실행가·차익) — revision_id당 한 행. 보관된 줄은 빼고
+// 취소 줄은 견적가 0으로 더한다(04-12 · A-04 — 취소 줄의 견적가 열이 이미 0이다).
 function lineSumsSubquery() {
   return db
     .select({
@@ -33,6 +32,7 @@ function lineSumsSubquery() {
       profitSum: sql<number>`coalesce(sum(${quoteLines.profitKrw}), 0)`.as("profit_sum"),
     })
     .from(quoteLines)
+    .where(isNull(quoteLines.archivedAt))
     .groupBy(quoteLines.revisionId)
     .as("line_sums");
 }
@@ -208,9 +208,9 @@ export async function aggregateProjects(
   return row ?? { count: 0, quoteAmountKrw: 0, executionAmountKrw: 0, profitKrw: 0 };
 }
 
-export async function findProjectById(viewer: Viewer, id: string): Promise<ProjectRow | null> {
+export async function findProjectById(viewer: Viewer, id: string, tx: DbOrTx = db): Promise<ProjectRow | null> {
   void viewer;
-  const [row] = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
+  const [row] = await tx.select().from(projects).where(eq(projects.id, id)).limit(1);
   return row ?? null;
 }
 
@@ -233,10 +233,6 @@ export type ProjectInsertInput = {
   preEstimateForeignAmount: string | null;
   preEstimateFxRate: string;
   preEstimateAmountKrw: number;
-  contractCurrency: string;
-  contractForeignAmount: string | null;
-  contractFxRate: string;
-  contractAmountKrw: number;
   source?: string;
   customFields?: Record<string, unknown>;
 };
@@ -260,10 +256,6 @@ export async function insertProject(viewer: Viewer, input: ProjectInsertInput, t
       preEstimateForeignAmount: input.preEstimateForeignAmount,
       preEstimateFxRate: input.preEstimateFxRate,
       preEstimateAmountKrw: input.preEstimateAmountKrw,
-      contractCurrency: input.contractCurrency,
-      contractForeignAmount: input.contractForeignAmount,
-      contractFxRate: input.contractFxRate,
-      contractAmountKrw: input.contractAmountKrw,
       source: input.source ?? "demo",
       customFields: input.customFields ?? {},
     })
@@ -272,31 +264,128 @@ export async function insertProject(viewer: Viewer, input: ProjectInsertInput, t
   return row;
 }
 
-export type ProjectContractUpdateInput = {
-  contractCurrency: string;
-  contractForeignAmount: string | null;
-  contractFxRate: string;
-  contractAmountKrw: number;
-};
+// 04-20(OV-3·A-11): 상태 전환의 배타 잠금 읽기 — 호출자가 연 트랜잭션 안에서만
+// 부른다(tx 필수). 행이 없으면 null.
+export async function lockProjectForWrite(viewer: Viewer, id: string, tx: DbOrTx): Promise<ProjectRow | null> {
+  void viewer;
+  const [row] = await tx.select().from(projects).where(eq(projects.id, id)).for("update");
+  return row ?? null;
+}
 
-// 04-02(D-57) — 계약 금액 칸 하나만 갱신한다. 낙관적 잠금은 두지 않는다
-// (칸 하나이고 PM 한 명만 쓰기 권한을 갖는다 — 견적 줄·매출 줄처럼 여러
-// 사람이 동시에 같은 셀을 다투는 표가 아니다).
-export async function updateProjectContract(
+// 04-20(D-82): 기대 상태일 때만 바꾼다(0행이면 null — 호출자가 동시 변경으로
+// 거부한다). 진행으로 가는 전환은 같은 문장에서 빈 종료일을 시작일로 채운다.
+export async function updateProjectStatusIfCurrent(
   viewer: Viewer,
   id: string,
-  input: ProjectContractUpdateInput,
-  tx: DbOrTx = db,
-): Promise<void> {
+  input: { expectedStatus: string; status: string; fillEndDateFromStart: boolean },
+  tx: DbOrTx,
+): Promise<ProjectRow | null> {
   void viewer;
-  await tx
+  const [row] = await tx
     .update(projects)
     .set({
-      contractCurrency: input.contractCurrency,
-      contractForeignAmount: input.contractForeignAmount,
-      contractFxRate: input.contractFxRate,
-      contractAmountKrw: input.contractAmountKrw,
+      status: input.status,
+      version: sql`${projects.version} + 1`,
+      updatedAt: new Date(),
+      ...(input.fillEndDateFromStart ? { endDate: sql`coalesce(${projects.endDate}, ${projects.startDate})` } : {}),
+    })
+    .where(and(eq(projects.id, id), eq(projects.status, input.expectedStatus)))
+    .returning();
+  return row ?? null;
+}
+
+// 04-22(엔지 리뷰 A §1 P1): 기간 갱신 — 화면이 읽은 기간(expected)과 같을 때만 바꾼다(0행이면
+// null — 호출자가 동시 수정으로 거부한다). version은 판정에 쓰지 않는다(상태 변경·자동 정산도
+// 올리는 값이라 헛충돌이 된다).
+export async function updateProjectPeriod(
+  viewer: Viewer,
+  id: string,
+  input: {
+    startDate: string | null;
+    endDate: string | null;
+    expected: { startDate: string | null; endDate: string | null };
+  },
+  tx: DbOrTx,
+): Promise<ProjectRow | null> {
+  void viewer;
+  const [row] = await tx
+    .update(projects)
+    .set({ startDate: input.startDate, endDate: input.endDate, updatedAt: new Date() })
+    .where(
+      and(
+        eq(projects.id, id),
+        sql`${projects.startDate} IS NOT DISTINCT FROM ${input.expected.startDate}::date`,
+        sql`${projects.endDate} IS NOT DISTINCT FROM ${input.expected.endDate}::date`,
+      ),
+    )
+    .returning();
+  return row ?? null;
+}
+
+// 04-44(계약 8) — 총 매출 예상가 네 칸. 동시 수정 기준값은 두지 않는다(나중 저장이 이긴다 — 사용자 2026-09-23).
+// 호출자는 잠근 트랜잭션 안에서 부른다.
+export async function updateProjectPreEstimate(
+  viewer: Viewer,
+  id: string,
+  input: { currency: string; foreignAmount: string | null; fxRate: string; amountKrw: number },
+  tx: DbOrTx,
+): Promise<ProjectRow | null> {
+  void viewer;
+  const [row] = await tx
+    .update(projects)
+    .set({
+      preEstimateCurrency: input.currency,
+      preEstimateForeignAmount: input.foreignAmount,
+      preEstimateFxRate: input.fxRate,
+      preEstimateAmountKrw: input.amountKrw,
       updatedAt: new Date(),
     })
-    .where(eq(projects.id, id));
+    .where(eq(projects.id, id))
+    .returning();
+  return row ?? null;
+}
+
+export type SettledProjectRow = { id: string; endDate: string; lastChangeAt: Date | null };
+
+// 04-11(D-76 · OV-5 · Pitfall 7): 종료일이 지난 from 상태 프로젝트를 to로 바꾼다. 대상은
+// FOR UPDATE SKIP LOCKED 하위 선택으로 잠근다 — 누가 저장·전환으로 잡은 행은 기다리지
+// 않고 건너뛴다(그 쓰기가 자기 잠금 안에서 같은 판정을 한다). 오늘(KST)은 인자로만
+// 받는다 — DB의 현재 날짜·서버 시간대를 쓰지 않는다. 바뀐 행마다 그 프로젝트의 직전
+// status_change 시각(발효일 계산용)을 같은 문장에서 돌려준다.
+export async function settleOverdueProjects(
+  viewer: Viewer,
+  input: { todayKst: string; projectIds?: string[]; from: string; to: string },
+  tx: DbOrTx,
+): Promise<SettledProjectRow[]> {
+  void viewer;
+  const targets = tx
+    .select({ id: projects.id })
+    .from(projects)
+    .where(
+      and(
+        eq(projects.status, input.from),
+        isNotNull(projects.endDate),
+        lt(projects.endDate, input.todayKst),
+        isNull(projects.archivedAt),
+        input.projectIds ? inArray(projects.id, input.projectIds) : undefined,
+      ),
+    )
+    .for("update", { skipLocked: true });
+
+  const rows = await tx
+    .update(projects)
+    .set({ status: input.to, version: sql`${projects.version} + 1`, updatedAt: new Date() })
+    .where(and(inArray(projects.id, targets), eq(projects.status, input.from)))
+    .returning({
+      id: projects.id,
+      endDate: projects.endDate,
+      lastChangeAt: sql<Date | null>`(
+        select max(${actionLog.occurredAt}) from ${actionLog}
+        where ${actionLog.entity} = 'project'
+          and ${actionLog.entityId} = ${projects.id}::text
+          and ${actionLog.actionType} = 'status_change'
+      )`.mapWith(actionLog.occurredAt),
+    });
+  // 하위 선택이 종료일 없는 행을 거르므로 endDate는 항상 있다 — 타입만 좁힌다.
+  return rows.flatMap((row) => (row.endDate === null ? [] : [{ id: row.id, endDate: row.endDate, lastChangeAt: row.lastChangeAt }]));
 }

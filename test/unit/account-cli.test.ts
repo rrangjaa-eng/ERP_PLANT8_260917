@@ -10,6 +10,7 @@ function fakeRoleRow(id: string) {
     name: "커스텀 계급",
     isSeed: false,
     sortOrder: 9,
+    workScope: "team",
     customFields: {},
     archivedAt: null,
     archivedBy: null,

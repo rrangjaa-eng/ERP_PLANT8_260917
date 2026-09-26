@@ -1,10 +1,10 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-26T16:19:40.902Z",
+  "timestamp": "2026-09-26T17:11:46.615Z",
   "phase": "04.4",
   "phase_name": "restore-rehearsal-and-login-status",
   "phase_dir": ".planning/phases/04.4-restore-rehearsal-and-login-status",
-  "plan": "04.4-03",
+  "plan": "04.4-04",
   "task": null,
   "total_tasks": null,
   "status": "paused",
@@ -56,17 +56,28 @@
       "name": "04.4-03 실행(리허설 스크립트·워크플로·RESTORE.md·SUMMARY) + Opus 독립 검토 SHOULD 2건·NIT 1건 반영",
       "status": "done",
       "commit": "7021174"
+    },
+    {
+      "id": 11,
+      "name": "04.4-04 실행(첫 로그인 기록 트레이서·백필 업그레이드 픽스처·검토 반영·SUMMARY) + main #87 머지·명사형 문구",
+      "status": "done",
+      "commit": "b9774ff"
     }
   ],
   "remaining_tasks": [
     {
-      "id": 11,
-      "name": "새 세션(코디네이터가 연다): /gsd-execute-phase 04.4 — 04.4-04 하나(끝나면 커밋·푸시·[완료 보고]·pause)",
+      "id": 1,
+      "name": "04.4-05 사람 목록 배지 렌더·E2E·SYSTEM/DECISIONS",
       "status": "not_started"
     },
     {
-      "id": 7,
-      "name": "한도 풀린 뒤(2026-09-29~) Codex 재확인: e8ed306 + dcd9130 + f8c69f5 + 04.4-02 코드(49accb3·b7b0519) + 04.4-03 코드(65e1c00·7247f7e·c000640·4929441·8fc8e4f·7021174)",
+      "id": 2,
+      "name": "04.4-06 병합 직전 마이그레이션 재생성(0017+0018 → main 마지막+1, 머리 줄·백필 블록 재부착) 등",
+      "status": "not_started"
+    },
+    {
+      "id": 3,
+      "name": "2026-09-29 이후 Codex 재확인(04.4-04: 1b30b97·fd899ad·e47f89f·b9774ff 추가)",
       "status": "not_started"
     }
   ],
@@ -103,9 +114,24 @@
       "decision": "04.4-03 Opus 검토 NIT 미반영: digest 태그 조회·동기 create/restore·INT/TERM trap·「이번 정리」 줄",
       "rationale": "안전 영향 없음(SHA 태그 1회 push, finalize 마지막 정리가 막음) — Codex 재확인 때 함께 판단",
       "phase": "04.4"
+    },
+    {
+      "decision": "04.4-04 조회 수 기준값 9(PLAN_BASE c222083 실측) 단언 한 줄",
+      "rationale": "#65 테스트 위에 고정 조회 증가 가드",
+      "phase": "04.4"
+    },
+    {
+      "decision": "04.4-04 Opus 검토 NIT 3건 미반영(설정 mock 유지 · userId 끌어올림 되돌림 · 세션 훅이 after 미들웨어보다 먼저 도는 가장자리 허용)",
+      "rationale": "SUMMARY key-decisions 참고",
+      "phase": "04.4"
+    },
+    {
+      "decision": "main #87 명사형 문구 검사에 걸린 04.4-01 기록 CLI 검증 문구 9개를 「원인 · 조건」 명사형으로",
+      "rationale": "코디네이터 지시 5848063942, 화면 미노출·문구 단언 테스트 없음",
+      "phase": "04.4"
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션에서 PR #91 최신 [코디네이터 지시] 확인 → /gsd-execute-phase 04.4 (04.4-04)",
-  "context_notes": "04.4-01·02·03 완료. 04.4-03: scripts/restore-rehearsal.sh(guard·rehearse·finalize), .github/workflows/restore-rehearsal.yml, docs/RESTORE.md, OPERATIONS §14. 마이그레이션 0017은 브랜치 임시 번호. STATE.md·루트 HANDOFF.json 건드리지 않음. 사용자 결정 필요 시 PR에 [사용자 결정 요청]."
+  "next_action": "새 세션에서 PR #91 [코디네이터 지시] 확인 → 04.4-05 하나 실행",
+  "context_notes": "04.4-04 완료·푸시(b9774ff). /cso 필요(인증 경로 — better-auth 세션 생성 훅). 로컬 erp DB는 재생성돼 시드 없음."
 }

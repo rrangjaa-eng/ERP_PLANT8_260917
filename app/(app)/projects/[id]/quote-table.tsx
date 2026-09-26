@@ -1208,6 +1208,8 @@ export function QuoteLedger({
   // 저장 전 새 견적 줄은 서버가 다시 계산한 newLineCells.
   if (renderedApprovedSeq !== approvedSeq) {
     setRenderedApprovedSeq(approvedSeq);
+    // /review ② — 승인으로 칸이 잠긴 뒤에는 버린 편집을 되살리지 않는다.
+    setDiscardedEdits(null);
     setLines((prev) =>
       prev.map((line) => {
         if (line.isNew) return line.lineKind === "quote" ? { ...line, cells: newLineCells } : line;
@@ -1251,14 +1253,15 @@ export function QuoteLedger({
   function discardEdits() {
     const edits = dirtyStorage.restore();
     dirtyStorage.discard();
+    setStatusToast(null); // /review ① — 토스트 자리는 하나다. 되돌리기가 가려지지 않게.
     setDiscardedEdits(edits);
   }
 
   function undoDiscard() {
     if (discardedEdits) {
+      // /review R-1 · ③ — 되살린 편집과 「버림」 뒤에 고친 칸을 합친 현재 편집 전체로 보관본을 다시 쓴다.
+      persistPendingRef.current = true;
       applyRestoredEdits(discardedEdits);
-      // /review R-1 — 「버림」이 지운 보관본도 되돌린다(새로 고쳐도 복원 줄로 남게).
-      dirtyStorage.persist(discardedEdits);
     }
     setDiscardedEdits(null);
   }
@@ -2367,7 +2370,7 @@ export function QuoteLedger({
         onSave={() => setSaveRequests((count) => count + 1)}
       />
 
-      {statusToast ? <Toast message={statusToast} onDismiss={() => setStatusToast(null)} /> : null}
+      {statusToast && !discardedEdits ? <Toast message={statusToast} onDismiss={() => setStatusToast(null)} /> : null}
       {discardedEdits ? (
         <Toast message="편집을 버렸습니다" actionLabel="되돌리기" onAction={undoDiscard} onDismiss={() => setDiscardedEdits(null)} />
       ) : null}

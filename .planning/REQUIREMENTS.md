@@ -236,10 +236,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | GOAL-01 | Phase 10 | Pending |
 | GOAL-02 | Phase 10 | Pending |
 | GOAL-03 | Phase 10 | Pending |
-| NOTI-01 | Phase 7 | Pending |
-| NOTI-02 | Phase 7 | Pending |
+| NOTI-01 | Phase 04.2 | Pending |
+| NOTI-02 | Phase 04.2 | Pending |
 | NOTI-03 | Phase 7 | Pending |
-| NOTI-04 | Phase 7 | Pending |
+| NOTI-04 | Phase 04.2 | Pending |
 | LEAV-01 | Phase 04.1 | Pending |
 | CERT-01 | Phase 11 | Pending |
 | CERT-02 | Phase 11 | Pending |
@@ -255,7 +255,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ADMN-08 | Phase 3 | Pending |
 | ADMN-09 | Phase 4 | Complete |
 | ADMN-10 | Phase 3 | Pending |
-| ADMN-11 | Phase 7 | Pending |
+| ADMN-11 | Phase 04.2 | Pending |
 | ADMN-12 | Phase 3 | Pending |
 | MIG-04 | Phase 8 | Pending |
 | MIG-05 | Phase 8 | Pending |
@@ -279,9 +279,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 - Mapped to phases: 86
 - Unmapped: 0 ✓
 
-**By phase:** 1 (9) · 2 (1) · 3 (13) · 4 (11) · 04.1 (5) · 04.4 (1) · 5 (8) · 6 (10) · 7 (7) · 8 (2) · 9 (10) · 10 (5) · 11 (4)
+**By phase:** 1 (9) · 2 (1) · 3 (13) · 4 (11) · 04.1 (5) · 04.2 (4) · 04.4 (1) · 5 (8) · 6 (10) · 7 (3) · 8 (2) · 9 (10) · 10 (5) · 11 (4)
 
 ---
 *Requirements defined: 2026-09-17*
+*2026-09-24: Phase 7에서 Phase 04.2로 ADMN-11·NOTI-01·NOTI-02·NOTI-04 이동(PR #50 분리 — 옮긴 4 + 남긴 3 = 원래 7)*
 *Last updated: 2026-09-23 — 데이터 이전 제외(사용자 결정): MIG-01·02·03 → Out of Scope, MIG-04·05를 수기 입력 전환으로 재정의, OPS-06 '이전 실행' → '복원 리허설', 인트라넷 미러링 사유 정정, v1 89 → 86 (86/86 mapped)*
 *Earlier update: 2026-09-17 after /plan-ceo-review (23 findings + D3·D4·D5 + OV-1..8 folded in; OPS-06·OPS-07 added; OV-3 redefined → EXP-15 증빙 종류별 세금 자동 계산; CERT-01 QR 진입; EXP-16 경영관리 카드 사용 대리 등록·개인 비용 팀 귀속·경품 대납 세금 비용 포함; 89/89 mapped; /plan-eng-review decisions 1–15 + OV-1..8 folded: 본부·계급×조직 범위·자기 승인, 세율 기준일·절사, effectiveCost 식 공유, upsert 이전·결정적 번호·amount_basis·중복 후보, demo 입력; roadmap Phase 6 split per Eng OV-6 → 11 phases, traceability renumbered: old 6 → 6/7, old 7~10 → 8~11; 회사 GCP Phase 1부터)*

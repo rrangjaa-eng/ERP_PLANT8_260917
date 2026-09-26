@@ -246,7 +246,9 @@ domain 모듈 = 단위, 새 액션·DTO = 통합(+Phase 3부터 누수 생성), 
 | `LOCKOUT_THRESHOLD`·`LOCKOUT_WINDOW_MINUTES` | 잠금 | Phase 3부터 설정 레지스트리 키(`auth.lockout.*`)의 기본값 출처로만 남는다 |
 | `RATE_LIMIT_LOGIN_MAX` | 속도 제한 | 부팅 시 1회(`lib/auth.ts` better-auth 설정) — 레지스트리 밖, 런타임 변경 불가 |
 | `APP_DATA_KEY_v1`·`APP_DATA_KEY_v2` | 암호화 키(Phase 3부터 사용, v2는 회전용 두 번째 버전) | Secret Manager |
-| `SMTP_HOST`·`SMTP_USER`·`SMTP_PASSWORD`·`SMTP_FROM` | 이메일(Phase 1은 정의만) | Secret Manager |
+| `SMTP_HOST`·`SMTP_USER`·`SMTP_PASSWORD`·`SMTP_FROM` | 이메일 — 넷 다 채워져야 켜짐(Phase 04.2, D-711) | Secret Manager |
+| `NOTIFY_TICK_SCHEDULER_SA` | `/internal/notify-tick` OIDC 기대 호출자(스케줄러 서비스 계정 이메일) | deploy.sh가 주입 |
+| `NOTIFY_TICK_OIDC_DISABLED` | 로컬 전용 OIDC 우회(`1`) — 비로컬이면 부팅 거부·deploy.sh 거부 | `.env.local`만 |
 | `GCP_PROJECT_ID`·`CLOUD_SQL_INSTANCE_ID` | 상태 화면의 GCP 조회 | 배포 워크플로 변수 |
 | `APP_GIT_SHA`·`APP_DEPLOYED_AT` | 상태 화면 배포 버전 표시 | deploy.sh가 주입 |
 | `MAX_INSTANCES` | 16A 커넥션 규칙 계산 | 배포 워크플로 변수 |
@@ -261,5 +263,6 @@ domain 모듈 = 단위, 새 액션·DTO = 통합(+Phase 3부터 누수 생성), 
   나머지 여섯 플랜은 이 경로 위의 확장
 - **Phase 4:** `domain/money`·`domain/rules.gate`·문서 번호 채번은 구현됨(§4) — 남은 것:
   프로젝트·견적 원장, 통화·리저브 대장
-- **Phase 7:** 이메일 발송 활성화(SMTP 4개 변수 실사용), 알림 tick(현재 경보는
-  `enabled: false`)
+- **Phase 04.2:** 이메일 채널(SMTP 4개 실사용)·알림 tick(`/internal/notify-tick`,
+  tick 정체 경보 켜짐)·공휴일 표·영업일 함수
+- **Phase 7:** 실제 알림 조건 종류·규칙 관리·지급일·마감이 영업일 함수를 씀

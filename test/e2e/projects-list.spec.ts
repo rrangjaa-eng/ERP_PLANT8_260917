@@ -685,7 +685,7 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
       page.evaluate(() => {
         const rect = (id: string) => {
           const r = document.getElementById(id)!.getBoundingClientRect();
-          return { top: r.top, bottom: r.bottom };
+          return { top: r.top, bottom: r.bottom, left: r.left };
         };
         return { status: rect("status"), teamId: rect("teamId"), year: rect("year"), from: rect("from"), to: rect("to"), q: rect("q-wide") };
       });
@@ -697,6 +697,8 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
       await page.goto(`/projects?q=E2E정렬기준&from=${year}-10-31&to=${year}-09-01`);
       const error = page.getByText("기간 끝이 시작보다 빠름 · 기간 끝 수정", { exact: true });
       await expect(error).toBeVisible();
+      // 글꼴 폭에 기대지 않는다 — 오류 줄을 일부러 넓혀도(글꼴이 넓은 환경을 흉내) 칸을 밀지 않아야 한다(CI 1024에서 검색이 다음 줄로 밀림).
+      await page.addStyleTag({ content: "#from-error, #to-error { letter-spacing: 0.4em; }" });
       const withError = await measure();
       for (const id of ["status", "teamId", "year", "to", "q"] as const) {
         if (Math.abs(clean[id].top - clean.from.top) > 0.5) continue; // 1024에서 줄바꿈된 검색은(오류 없을 때도) 다음 줄
@@ -704,6 +706,8 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
       }
       for (const id of ["status", "teamId", "year", "from", "to", "q"] as const) {
         expect(withError[id].top, `${width} ${id} 오류 없을 때 자리`).toBeCloseTo(clean[id].top, 0);
+        // 오류 줄 폭이 기간 묶음을 넓혀 뒤 칸을 옆으로 밀면(폰트가 넓은 CI에서는 1024에서 줄바꿈까지) 안 된다.
+        expect(withError[id].left, `${width} ${id} 오류 없을 때 가로 자리`).toBeCloseTo(clean[id].left, 0);
       }
       const errorBox = await error.boundingBox();
       expect(errorBox && errorBox.y >= withError.from.bottom).toBe(true);

@@ -434,7 +434,7 @@ Wave 7 *(blocked on Wave 6)*
   4. Cloud Scheduler가 부르는(발송 시각 오전 9시, 07-CONTEXT 입력 §4) 단일 엔드포인트(`/internal/notify-tick`)로 동작한다. 호출은 Google OIDC ID 토큰을 검증하고(audience = 서비스 URL, 이메일 = 스케줄러 서비스 계정; 실패 401 + 로그), tick은 advisory lock으로 동시 실행을 막으며(2A), 건수 상한(설정)만큼 배치로 처리하고 `{sent, skipped, remaining}`을 응답해 남은 건은 다음 tick이 잇는다. notification_log 유니크 제약(INSERT … ON CONFLICT DO NOTHING)으로 같은 건은 두 번 발송되지 않고(NOTI-04), tick 날이 비영업일이면 아무것도 보내지 않고 끝난다(D-709). 알림 조건 종류는 코드에 등록하는 틀로 두고 이 페이즈는 테스트 전용 조건 종류로 tick을 증명한다 — 실제 조건 종류·기본 규칙·규칙 관리 화면은 Phase 7(NOTI-03). 스케줄러 잡·서비스 계정은 deploy.sh가 만들고, OIDC 검증을 끄는 환경 변수가 있으면 배포가 거부된다(Issue 6). 통합 테스트: 토큰 없음 → 401, 상한 초과 시 remaining > 0 뒤 다음 tick 완료, 재실행 멱등, 공휴일 날짜 → `{sent: 0}`. 관리자 시스템 상태 화면에 마지막 tick 시각·결과가 더해진다(18A)
   5. 계정 잠금과 잠금 해제가 행동 로그에 남는다(D-712, Phase 1 성공 기준 2의 미이행분). 잠금은 로그인 전에 일어나 행위자 표현(시스템 행위자 + 대상 이메일 등)은 계획이 정한다. 통합 테스트: 로그인 N회 실패 → 잠금 행동 로그 1건, 관리자 해제 → 해제 행동 로그 1건. 새 액션·DTO(알림함·공휴일)는 누수 스캔 생성기에 등록된다
 
-**Plans:** 12/15 plans executed
+**Plans:** 13/15 plans executed
 **UI hint**: yes
 
 Plans:
@@ -464,7 +464,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 04.2-12-PLAN.md — 임시공휴일·선거일 추가·수동 미래 행 삭제(미래 대체일 재계산 + 행동 로그 한 트랜잭션), 폰 칸 접기 (W5)
+- [x] 04.2-12-PLAN.md — 임시공휴일·선거일 추가·수동 미래 행 삭제(미래 대체일 재계산 + 행동 로그 한 트랜잭션), 폰 칸 접기 (W5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 

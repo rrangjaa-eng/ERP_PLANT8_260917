@@ -1342,6 +1342,29 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
     expect(saved.find((line) => line.itemName === "거래처있음")?.vendorId).toBe(vendor.id);
   });
 
+  // Regression: ISSUE-002 — 원화 단가·실행가 칸에 소수가 붙으면 오류 없이 받아 저장 때 조용히 반올림됐다(12.345 → 12)
+  // Found by /qa on 2026-09-26
+  // Report: .gstack/qa-reports/qa-report-plant8-2026-09-26.md
+  test("(ISSUE-002) 엑셀 소수 원화 값을 단가 · 실행가 칸에 붙이면 두 칸이 `원화는 소수점 없이` 오류이고 1차는 서버를 부르지 않는다", async ({ page }) => {
+    await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "소수원화", amount: 100_000, execution: 50_000 }]);
+    await quoteCell(page, 0, 5).focus();
+    await pasteWithFormats(page, { "text/plain": "12.345" });
+    await quoteCell(page, 0, 7).focus();
+    await pasteWithFormats(page, { "text/plain": "1,234.5" });
+
+    await expect(invalidCells(page)).toHaveCount(2);
+    await expect(quoteCell(page, 0, 5)).toContainText("원화는 소수점 없이");
+    await expect(quoteCell(page, 0, 7)).toContainText("원화는 소수점 없이");
+
+    let serverCalls = 0;
+    page.on("request", (request) => {
+      if (isServerAction(request)) serverCalls += 1;
+    });
+    await page.getByRole("button", { name: /일괄 저장/ }).click();
+    await expect(quoteCell(page, 0, 5)).toBeFocused();
+    expect(serverCalls).toBe(0);
+  });
+
   test("(금지 항목) 142줄 1쪽 20번째 줄에 45줄 → 화면은 1쪽 · `붙여넣기 45줄 · 3쪽까지` · 저장 뒤 20~64번째 줄이 전부 붙여 넣은 값", async ({ page }) => {
     await openProjectWithSavedLines(
       page,

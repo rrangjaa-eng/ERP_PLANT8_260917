@@ -504,6 +504,10 @@ export type SubmitCertificateDeps = {
 // 트랜잭션 안에서만 쓰는 내부 신호 — 다른 요청이 이미 같은 자리를 제출로
 // 확정했을 때(0행) 커밋할 것이 없으므로 롤백해 밖에서 기존 제출을 읽는다.
 class AlreadySubmittedSignal extends Error {}
+// 트랜잭션 안에서 잠근 행으로 다시 판정했을 때 확인 뒤 상태가 바뀐 경우 —
+// 링크가 닫혔거나(자리 파기 포함) 증표·묶인 동의가 더는 맞지 않는다.
+class ClosedSinceCheckSignal extends Error {}
+class ProofChangedSinceCheckSignal extends Error {}
 
 export async function submitCertificate(
   token: string,
@@ -524,21 +528,17 @@ export async function submitCertificate(
 
   // 1. 증표 확인 — 없음·불일치·시간 지남은 모두 같은 판정이다(공격자가
   // "틀린 증표"와 "지난 증표"를 구별하지 못하게 한다).
-  const proofHash = sha256Hex(parsed.proof);
-  const proofValid =
-    winner.verifyProofHash !== null &&
-    winner.verifyProofHash === proofHash &&
-    winner.verifiedUntil !== null &&
-    winner.verifiedUntil > now;
-  if (!proofValid) return { kind: "expiredProof" };
-
   // 2. 동의 묶음 검사(#15) — 확인 때 그 자리에 묶인 값과 같을 때만 저장한다.
-  if (
-    parsed.consentVersion !== winner.offeredConsentVersion ||
-    parsed.retentionYears !== winner.offeredRetentionYears
-  ) {
-    return { kind: "expiredProof" };
-  }
+  // 트랜잭션 안에서 잠근 자리 행으로 한 번 더 본다(확인 뒤 경합).
+  const proofHash = sha256Hex(parsed.proof);
+  const proofAndConsentMatch = (row: typeof winner) =>
+    row.verifyProofHash !== null &&
+    row.verifyProofHash === proofHash &&
+    row.verifiedUntil !== null &&
+    row.verifiedUntil > now &&
+    parsed.consentVersion === row.offeredConsentVersion &&
+    parsed.retentionYears === row.offeredRetentionYears;
+  if (!proofAndConsentMatch(winner)) return { kind: "expiredProof" };
 
   // 3. 주민등록번호 규칙.
   const rrnResult = validateRrn(parsed.rrnFront6, parsed.rrnBack7, now);
@@ -594,7 +594,15 @@ export async function submitCertificate(
 
   try {
     await withTransaction(async (tx) => {
-      await lockEventForUpdate(SYSTEM_VIEWER, event.id, tx);
+      // 행사 행 → 자리 행 순서로 잠그고, 잠근 값으로 닫힘 · 증표를 다시 판정한다.
+      const lockedEvent = await lockEventForUpdate(SYSTEM_VIEWER, event.id, tx);
+      if (!lockedEvent || resolveEventState(lockedEvent, now).status === "closed") {
+        throw new ClosedSinceCheckSignal();
+      }
+      const lockedWinner = await lockWinnerInEvent(SYSTEM_VIEWER, event.id, winner.id, tx);
+      if (!lockedWinner || lockedWinner.name === null) throw new ClosedSinceCheckSignal();
+      if (lockedWinner.submittedAt) throw new AlreadySubmittedSignal();
+      if (!proofAndConsentMatch(lockedWinner)) throw new ProofChangedSinceCheckSignal();
 
       const updatedRows = await markWinnerSubmitted(SYSTEM_VIEWER, winner.id, submittedAt, tx);
       if (updatedRows === 0) throw new AlreadySubmittedSignal();
@@ -660,6 +668,8 @@ export async function submitCertificate(
       // 지우기 실패 — 의도 행을 남긴다.
     }
 
+    if (error instanceof ClosedSinceCheckSignal) return { kind: "notFound" };
+    if (error instanceof ProofChangedSinceCheckSignal) return { kind: "expiredProof" };
     if (error instanceof AlreadySubmittedSignal) {
       const existing = await findSubmissionByWinnerId(SYSTEM_VIEWER, winner.id);
       const managerName = await managerNameFor(event);

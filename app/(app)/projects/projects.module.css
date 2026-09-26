@@ -68,9 +68,9 @@
     min-height: var(--touch-min);
   }
 
+  /* 최소 폭은 기본값(auto = 가장 긴 값 조각) — 그보다 좁게 눌리지 않고, 자리가 모자라면 1차가 다음 줄로 내려간다(감사 F1). */
   .filterSummary {
     flex: 1 1 0;
-    min-width: 0;
     margin: 0;
     font-size: var(--fs-sm);
     color: var(--muted);

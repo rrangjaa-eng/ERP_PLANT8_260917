@@ -1581,4 +1581,19 @@ test.describe("견적 줄 표 — 거부 뒤 오류 수 · 숨은 열 오류 · 
     await expect(cells(1).nth(2)).toBeFocused();
     expect(actions.count).toBe(0);
   });
+
+  test("기존 외화(USD) 줄의 단가 칸에 엑셀 원화 값을 붙이면 합계 행 `붙여넣기 1줄 · 외화 1줄 원화로`", async ({ page }) => {
+    const { revisionId } = await openProjectWithSavedLines(page, []);
+    await seedLines(revisionId, [{ subcategory: "stage_construction", itemName: "기존USD", amount: 100, currency: "USD", fxRate: 1300 }]);
+    await page.reload();
+    await expect(quoteCell(page, 0, 2)).toHaveText("기존USD");
+
+    await quoteCell(page, 0, 5).focus();
+    await pasteWithFormats(page, { "text/plain": "5000" });
+    await expect(quoteCell(page, 0, 5)).toContainText("5,000");
+    await expect.poll(() => footerPieces(page)).toEqual([
+      { tone: "muted", text: "붙여넣기 1줄" },
+      { tone: "warning", text: "외화 1줄 원화로" },
+    ]);
+  });
 });

@@ -218,6 +218,16 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
       updatedBy: null,
     });
     for (const roleId of staffDefaultRoles) {
+      // 04-16(D-85 · CEO 리뷰 B-29): 발행액은 기획 PM 행만 upsert해 재시드한 기존 DB에도 공개하고,
+      // 팀장·본부 책임자 행은 없을 때만 숨김으로 넣는다 — 관리자가 노출표에서 켠다.
+      if (item.key === "revenue.issued_amount") {
+        if (roleId === DEFAULT_ROLE_ID) {
+          await upsertVisibility(viewer, { roleId, infoItem: item.key, visible: true, updatedBy: null });
+        } else {
+          await insertVisibilityIfAbsent(viewer, { roleId, infoItem: item.key, visible: false, updatedBy: null });
+        }
+        continue;
+      }
       await insertVisibilityIfAbsent(viewer, { roleId, infoItem: item.key, visible: item.staffDefault, updatedBy: null });
     }
     await insertVisibilityIfAbsent(viewer, {

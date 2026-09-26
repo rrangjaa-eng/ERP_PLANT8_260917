@@ -57,7 +57,7 @@
 }
 
 .groupHeader {
-  border-bottom: var(--line-w-strong) solid var(--line-strong);
+  border-bottom: var(--line-w) solid var(--line-strong);
   color: var(--muted);
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);

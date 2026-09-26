@@ -3,16 +3,13 @@
 -- (test/integration/large-amount.test.ts). int4→int8은 표 재작성과
 -- ACCESS EXCLUSIVE 락이 필요하지만, 세 표 모두 사내 장부(수십 명 규모)라
 -- 행 수가 작아 재작성이 짧다 — 0003·0004·0009 선례와 같은 락 타임아웃
--- 한 쌍을 두어 경합 시 기다리지 않고 실패하게 한다. 읽는 쪽은 drizzle
+-- 한 쌍을 두어 경합 시 기다리지 않고 실패하게 한다. 표마다 ALTER 한 번으로
+-- 묶어 재작성·인덱스 재생성이 표당 한 번만 일어나게 한다. 읽는 쪽은 drizzle
 -- bigint(mode: "number")라 코드의 number 타입이 그대로다.
 -- squawk-ignore-file changing-column-type
 SET LOCAL lock_timeout = '1s';
 SET LOCAL statement_timeout = '5s';
 --> statement-breakpoint
-ALTER TABLE "projects" ALTER COLUMN "pre_estimate_amount_krw" SET DATA TYPE bigint;--> statement-breakpoint
-ALTER TABLE "projects" ALTER COLUMN "contract_amount_krw" SET DATA TYPE bigint;--> statement-breakpoint
-ALTER TABLE "quote_lines" ALTER COLUMN "unit_price_amount_krw" SET DATA TYPE bigint;--> statement-breakpoint
-ALTER TABLE "quote_lines" ALTER COLUMN "execution_amount_krw" SET DATA TYPE bigint;--> statement-breakpoint
-ALTER TABLE "quote_lines" ALTER COLUMN "quote_amount_krw" SET DATA TYPE bigint;--> statement-breakpoint
-ALTER TABLE "quote_lines" ALTER COLUMN "profit_krw" SET DATA TYPE bigint;--> statement-breakpoint
+ALTER TABLE "projects" ALTER COLUMN "pre_estimate_amount_krw" SET DATA TYPE bigint, ALTER COLUMN "contract_amount_krw" SET DATA TYPE bigint;--> statement-breakpoint
+ALTER TABLE "quote_lines" ALTER COLUMN "unit_price_amount_krw" SET DATA TYPE bigint, ALTER COLUMN "execution_amount_krw" SET DATA TYPE bigint, ALTER COLUMN "quote_amount_krw" SET DATA TYPE bigint, ALTER COLUMN "profit_krw" SET DATA TYPE bigint;--> statement-breakpoint
 ALTER TABLE "revenue_entries" ALTER COLUMN "amount_amount_krw" SET DATA TYPE bigint;

@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-26T18:36:27.225Z",
+  "timestamp": "2026-09-26T18:50:38.000Z",
   "phase": "04.4",
   "phase_name": "restore-rehearsal-and-login-status",
   "phase_dir": ".planning/phases/04.4-restore-rehearsal-and-login-status",
@@ -68,6 +68,12 @@
       "name": "04.4-05 실행(상태 화면 리허설 행 · 사람 목록 배지·폰 칸 접기 · SYSTEM/DECISIONS · Opus 검토 반영 · CI quality 수정 · 독립 DOM 감사 · 전체 게이트)",
       "status": "done",
       "commit": "a8e9a4b"
+    },
+    {
+      "id": 11,
+      "name": "/cso 게이트(04.4 diff) — 결함 0, 이월 5건 게이트 로그",
+      "status": "done",
+      "commit": "b9bfe0b"
     }
   ],
   "remaining_tasks": [
@@ -78,12 +84,12 @@
     },
     {
       "id": 2,
-      "name": "2026-09-29 이후 Codex 재확인(04.4-05: afe7dc0·aa83360·8a16a39·6a13b16·1edbc12·49aafd6 추가)",
+      "name": "2026-09-29 이후 Codex 재확인(04.4-05: afe7dc0·aa83360·8a16a39·6a13b16·1edbc12·49aafd6 추가) · /cso 결과 포함",
       "status": "not_started"
     },
     {
       "id": 3,
-      "name": "페이즈 Post-build: /review → /qa·/design-review → /cso(04.4-04 인증 경로) → /ship",
+      "name": "페이즈 Post-build 나머지: /review → /qa·/design-review → /ship (/cso는 b9bfe0b 완료)",
       "status": "not_started"
     }
   ],
@@ -158,6 +164,6 @@
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션에서 PR #91 [코디네이터 지시] 확인 → 04.4-06 하나 실행",
-  "context_notes": "04.4-05 완료·푸시(a8e9a4b). 전체 게이트 CI=true pnpm test 통과(단위 1462·통합 1532·E2E 380). 교훈: 푸시 전 pnpm test:unit 전체. /cso 여전히 필요(04.4-04)."
+  "next_action": "#90 머지 뒤 코디네이터가 여는 새 세션에서 PR #91 [코디네이터 지시] 확인 → 04.4-06 하나 실행",
+  "context_notes": "/cso 게이트 완료(b9bfe0b): 지원 결함 0, Opus 독립 검토 low 3, 수정 없음. 이월 5건(verify 대상 env↔APP_ENV, 남은 임시 인스턴스 상한·알림, restore Job BETTER_AUTH_SECRET, 0018 now() 백필 문서화, WIF ref·전용 SA)은 .claude/gates/phase-04.4.log. Codex 재확인 필요."
 }

@@ -33,6 +33,7 @@ export type SettingsFieldViewModel = {
     | { kind: "historized"; descriptor: SettingsFieldDescriptorView; entries: HistoryEntry[] };
   options?: { value: string; label: string }[];
   disabled?: boolean;
+  warning?: string;
 };
 
 export type SettingsSection = {
@@ -57,6 +58,7 @@ function SimpleFieldEditor({
   initialValue,
   options,
   disabled,
+  warning,
 }: {
   fieldKey: string;
   label: string;
@@ -65,6 +67,7 @@ function SimpleFieldEditor({
   initialValue: unknown;
   options?: { value: string; label: string }[];
   disabled?: boolean;
+  warning?: string;
 }) {
   const { execute, result } = useAction(setSimpleSettingAction);
   const [checked, setChecked] = useState(initialValue === true);
@@ -123,6 +126,7 @@ function SimpleFieldEditor({
           </select>
         </label>
         {hint ? <p className={styles.hint}>{hint}</p> : null}
+        {warning ? <p className={styles.warning}>{warning}</p> : null}
         {error ? <p className={styles.error}>{error}</p> : null}
       </div>
     );
@@ -300,6 +304,7 @@ export function SettingsFormClient({ sections }: { sections: SettingsSection[] }
                 initialValue={field.field.value}
                 options={field.options}
                 disabled={field.disabled}
+                warning={field.warning}
               />
             ),
           )}

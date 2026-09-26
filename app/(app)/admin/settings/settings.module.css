@@ -70,6 +70,12 @@
   margin: var(--s-1) 0 0 0;
 }
 
+.warning {
+  font-size: var(--fs-sm);
+  color: var(--warning);
+  margin: var(--s-1) 0 0 0;
+}
+
 .historizedLabel {
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);

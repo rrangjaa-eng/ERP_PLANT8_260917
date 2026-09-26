@@ -12,6 +12,7 @@ import {
   type SettingFieldDescriptor,
 } from "@/domain/settings/registry";
 import { isSettingActive, listApprovalRouteOptions, type ApprovalRouteOptions } from "@/domain/approvals/settings-options";
+import { listApprovalRouteSettingWarnings } from "@/domain/approvals/settings-warnings";
 import type { HistoryEntry } from "@/ui/history-list/HistoryList";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { SettingsFormClient, type SettingsSection, type SettingsFieldViewModel } from "./settings-form-client";
@@ -65,6 +66,7 @@ async function buildSections(viewer: Viewer): Promise<SettingsSection[]> {
   const sections = new Map<string, SettingsFieldViewModel[]>();
   const values: Record<string, unknown> = {};
   const routeOptions = await listApprovalRouteOptions(viewer);
+  const warnings = await listApprovalRouteSettingWarnings(viewer);
 
   for (const def of SETTING_DEFS) {
     const descriptor = describeSettingField(def);
@@ -102,6 +104,7 @@ async function buildSections(viewer: Viewer): Promise<SettingsSection[]> {
       hint: def.hint,
       field,
       options: field.kind === "simple" ? optionsFor(def, descriptor, field.value, routeOptions) : undefined,
+      warning: warnings[def.key],
     };
 
     const bucket = sections.get(def.namespace);

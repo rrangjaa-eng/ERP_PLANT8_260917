@@ -3,7 +3,12 @@ import { createFixtureUser } from "./fixtures";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { getSettingValue, setSettingValue } from "@/domain/settings/registry";
-import { APPROVAL_ROUTE_LEAVE_SELF_APPROVAL, APPROVAL_ROUTE_LEAVE_STEP1_ORG_UNIT_ID } from "@/domain/settings/keys";
+import {
+  APPROVAL_ROUTE_LEAVE_SELF_APPROVAL,
+  APPROVAL_ROUTE_LEAVE_STEP1_ORG_UNIT_ID,
+  APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID,
+} from "@/domain/settings/keys";
+import { findOrgUnitByName } from "@/repositories/org-units";
 
 // 04.1-04(ADMN-04 · CEO-14): 설정 화면 `연차 결재선` 섹션. 결재선은 공유 erp_test의
 // 전역 값이라 이 스펙은 `desktop-settings` 프로젝트(다른 모든 스펙 뒤)에서만 돌고,
@@ -59,9 +64,30 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     }
   });
 
-  // 파일 안 테스트는 선언 순서로 돈다(fullyParallel: false) — 앞 테스트의 복원 증명.
-  test("복원 확인 — 자기 승인이 건너뜀이다", async ({ page }) => {
+  test("3단 특정 부서를 —로 바꾸면 칸 아래 경고가 보이고 저장은 된다", async ({ page }) => {
+    const mgmt = await findOrgUnitByName(SYSTEM_VIEWER, "경영관리본부");
+    if (!mgmt) throw new Error("시드된 경영관리본부가 없습니다");
+    try {
+      await openSettings(page);
+      const step3OrgUnit = page.getByLabel("3단 특정 부서");
+      const field = step3OrgUnit.locator("xpath=ancestor::div[1]");
+      await expect(field.getByText("부서 없음 · 이 단계는 빈 자리로 건너뜀")).toHaveCount(0);
+
+      await step3OrgUnit.selectOption({ label: "—" });
+      await expect(async () => {
+        await page.reload();
+        await expect(page.getByLabel("3단 특정 부서")).toHaveValue("");
+        await expect(field.getByText("부서 없음 · 이 단계는 빈 자리로 건너뜀")).toBeVisible();
+      }).toPass();
+    } finally {
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID, mgmt.id);
+    }
+  });
+
+  // 파일 안 테스트는 선언 순서로 돈다(fullyParallel: false) — 앞 테스트들의 복원 증명.
+  test("복원 확인 — 자기 승인이 건너뜀 · 3단 특정 부서가 경영관리본부다", async ({ page }) => {
     await openSettings(page);
     await expect(checkedText(page, "자기 승인")).toHaveText("건너뜀");
+    await expect(checkedText(page, "3단 특정 부서")).toHaveText("경영관리본부");
   });
 });

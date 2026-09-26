@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
-import { revenueEntries, teams } from "@/db/schema";
+import { codeItems, quoteLines, revenueEntries, teams } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import type { Viewer } from "@/domain/viewer";
@@ -14,7 +14,11 @@ import { createProject } from "@/domain/projects";
 import { listRevenue, saveRevenue } from "@/domain/revenue";
 import { saveProjectLedger } from "@/domain/projects/ledger";
 import { TAX_VAT_RATE, FX_RECENT_RATE_USD } from "@/domain/settings/keys";
-import { getSettingValue } from "@/domain/settings/registry";
+import { addHistorizedValue, getSettingValue } from "@/domain/settings/registry";
+import { approvalBasis } from "@/repositories/quote-revisions";
+import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
+import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/revisions";
+import { kstToday } from "@/lib/kst-date";
 
 async function setupProject() {
   const client = await insertVendor(SYSTEM_VIEWER, {
@@ -229,5 +233,144 @@ describe("domain/revenue saveRevenue/listRevenue (Phase 4, 실제 Postgres)", ()
 
     await expect(listRevenue(noAccess, project.id)).rejects.toThrow();
     await expect(saveProjectLedger(noAccess, project.id, { seenStatus: "bidding", revenue: {} })).rejects.toThrow();
+  });
+});
+
+// 04-16(D-84 · B-18 · B-19 · B-27 · GAP 4) — 계약 금액은 입력이 아니라 고객 승인된 **현재 차수**의 견적 합계(보관 제외)다.
+// 부가세 기준일은 승인일(KST 날짜)이다. 현재 차수가 미승인이면 이전 승인 차수로 대신하지 않는다.
+describe("파생 계약 금액 — 고객 승인된 현재 차수 합계 (04-16 Task 1)", () => {
+  type LineInsert = typeof quoteLines.$inferInsert;
+
+  async function quoteSubcategory(): Promise<string> {
+    const [row] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+    if (!row) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+    return row.value;
+  }
+
+  async function insertLine(revisionId: string, quoteAmountKrw: number, patch: Partial<LineInsert> = {}) {
+    await db.insert(quoteLines).values({
+      revisionId,
+      subcategory: await quoteSubcategory(),
+      itemName: `항목-${randomUUID()}`,
+      unitPriceAmountKrw: quoteAmountKrw,
+      executionAmountKrw: 0,
+      quoteAmountKrw,
+      profitKrw: quoteAmountKrw,
+      ...patch,
+    });
+  }
+
+  async function firstRevisionId(projectId: string): Promise<string> {
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, projectId);
+    if (!revision) throw new Error("1차 차수가 없습니다");
+    return revision.id;
+  }
+
+  async function approve(pm: Viewer, revisionId: string, approvedOn = kstToday(new Date())) {
+    const basis = await approvalBasis(SYSTEM_VIEWER, revisionId);
+    await setCustomerApproval(pm, revisionId, { approvedOn, seenTotalKrw: basis.totalKrw, contentToken: basis.contentToken });
+  }
+
+  // 1차에 견적 줄 둘(30,000,000 + 18,000,000) · 견적 외 비용 · 조정 줄을 두고 2차를 만든 뒤, 2차에 줄 하나를 더해 승인 전에 보관한다.
+  async function setupSecondRevision() {
+    const { project, pmUserId } = await setupProject();
+    const pm = pmViewer(pmUserId);
+    const first = await firstRevisionId(project.id);
+    await insertLine(first, 30_000_000, { sortOrder: 0 });
+    await insertLine(first, 18_000_000, { sortOrder: 1 });
+    await insertLine(first, 0, { sortOrder: 2, lineKind: "out_of_quote", executionAmountKrw: 700_000, profitKrw: -700_000 });
+    await insertLine(first, 0, { sortOrder: 3, lineKind: "adjustment", executionAmountKrw: 300_000, profitKrw: -300_000 });
+    const { revisionId } = await createRevisionFromCurrent(pm, { projectId: project.id, fromRevisionId: first });
+    await insertLine(revisionId, 5_000_000, { sortOrder: 9, archivedAt: new Date(), archivedBy: SYSTEM_VIEWER.id });
+    return { project, pm, revisionId };
+  }
+
+  it("승인된 현재 차수(2차) — 견적 합계 · 부가세 · 합계가 숫자이고 출처가 `2차 고객 승인 합계`다(견적 외 비용·조정·보관 줄 제외)", async () => {
+    const { project, pm, revisionId } = await setupSecondRevision();
+    await approve(pm, revisionId);
+
+    const dto = await listRevenue(pm, project.id);
+
+    expect(dto.contract).toEqual({
+      amountKrw: 48_000_000,
+      vatKrw: 4_800_000,
+      totalKrw: 52_800_000,
+      sourceLabel: "2차 고객 승인 합계",
+      pendingLabel: null,
+    });
+    expect(typeof dto.contract?.amountKrw).toBe("number");
+    expect(typeof dto.contract?.vatKrw).toBe("number");
+    expect(typeof dto.contract?.totalKrw).toBe("number");
+  });
+
+  it("(B-18) 견적 합계 3,000,000,000 — SUM이 숫자로 와서 부가세·합계가 숫자 덧셈이다", async () => {
+    const { project, pmUserId } = await setupProject();
+    const pm = pmViewer(pmUserId);
+    const first = await firstRevisionId(project.id);
+    await insertLine(first, 1_500_000_000, { sortOrder: 0 });
+    await insertLine(first, 1_500_000_000, { sortOrder: 1 });
+    await approve(pm, first);
+
+    const dto = await listRevenue(pm, project.id);
+
+    expect(dto.contract?.amountKrw).toBe(3_000_000_000);
+    expect(dto.contract?.vatKrw).toBe(300_000_000);
+    expect(dto.contract?.totalKrw).toBe(3_300_000_000);
+    expect(dto.contract?.sourceLabel).toBe("1차 고객 승인 합계");
+  });
+
+  it("(금지 항목) 새 차수(3차)를 만들어 현재가 미승인이면 `3차 고객 승인 전` — 2차 승인 합계로 대신하지 않는다", async () => {
+    const { project, pm, revisionId } = await setupSecondRevision();
+    await approve(pm, revisionId);
+    await createRevisionFromCurrent(pm, { projectId: project.id, fromRevisionId: revisionId });
+
+    const dto = await listRevenue(pm, project.id);
+
+    expect(dto.contract).toEqual({ amountKrw: null, vatKrw: null, totalKrw: null, sourceLabel: null, pendingLabel: "3차 고객 승인 전" });
+  });
+
+  it("(B-27) 부가세 기준일은 승인일이다 — 승인 뒤 시행되는 새 세율은 이미 승인된 계약의 부가세를 바꾸지 않는다", async () => {
+    const { project, pmUserId } = await setupProject();
+    const pm = pmViewer(pmUserId);
+    const first = await firstRevisionId(project.id);
+    await insertLine(first, 48_000_000);
+    await approve(pm, first, "2026-01-10");
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: "2026-06-01", value: 0.2 });
+
+    const dto = await listRevenue(pm, project.id);
+
+    const approvalRate = await getSettingValue(TAX_VAT_RATE, { asOf: new Date("2026-01-10") });
+    expect(dto.contract?.vatKrw).toBe(Math.round(48_000_000 * approvalRate));
+    expect(dto.contract?.vatKrw).not.toBe(9_600_000);
+  });
+
+  it("(GAP 4 경계일) 새 세율 시행일 당일 승인은 새 세율로 계산된다 — 저장된 순간(전날 UTC 15:00)을 그대로 쓰지 않는다", async () => {
+    const { project, pmUserId } = await setupProject();
+    const pm = pmViewer(pmUserId);
+    const first = await firstRevisionId(project.id);
+    await insertLine(first, 48_000_000);
+    await addHistorizedValue(SYSTEM_VIEWER, TAX_VAT_RATE, { effectiveFrom: "2026-09-19", value: 0.2 });
+    await approve(pm, first, "2026-09-19");
+
+    const dto = await listRevenue(pm, project.id);
+
+    expect(dto.contract?.vatKrw).toBe(9_600_000);
+    expect(dto.contract?.totalKrw).toBe(57_600_000);
+  });
+
+  it("(B-19) quote.amount를 숨기고 project.value만 보이는 계급에게는 contract 키가 없다", async () => {
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `견적 숨김 계급-${randomUUID()}` });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "quote.amount", visible: false });
+    const { userId } = await createAccount(SYSTEM_VIEWER, { email: `noquote-${randomUUID()}@example.test`, name: "견적 숨김", roleId: role.id });
+    const { project, pmUserId } = await setupProject();
+    const first = await firstRevisionId(project.id);
+    await insertLine(first, 48_000_000);
+    await approve(pmViewer(pmUserId), first);
+
+    const dto = await listRevenue({ id: userId, roleId: role.id }, project.id);
+
+    expect(Object.keys(dto)).not.toContain("contract");
   });
 });

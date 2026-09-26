@@ -1,2 +1,5 @@
+plan-ceo-review 2026-09-24T23:52Z commit=a7f2f4e (06 게이트 — 원 기록 유실, 근거 커밋 "apply plan-ceo-review findings". ceo-review.md 보고서는 저장소에 없음. 사용자 승인 2026-09-26로 보고서 근거 기록)
+plan-eng-review 2026-09-24T23:59Z commit=333f7bf (06 게이트 — 원 기록 유실, 근거 eng-review.md · eng-cross-opus.md. 사용자 승인 2026-09-26로 보고서 근거 기록)
+plan-design-review 2026-09-25T00:37Z session=99102bb1-92f7-5e0c-bc04-cd8b6f6ccb53 (06 게이트 — 훅이 STATE 현재 페이즈(4) 로그에 적어 이 파일로 옮김, 근거 design-review.md)
 review 2026-09-24T18:00Z session=b51ac70f-f95e-5872-8610-f6e8462e7faa
 review 2026-09-26T10:10Z session=87c4ac25-f470-589b-858c-2ee2b68857b2

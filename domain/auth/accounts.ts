@@ -7,6 +7,8 @@ import { can } from "@/domain/permissions/can";
 import { findUserByEmail, setPasswordTemporary } from "@/repositories/users";
 import { resolveOpenFailures } from "@/repositories/login-attempts";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { withTransaction } from "@/lib/db-transaction";
+import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 
 // D-11: 계정 발급 수단은 CLI 하나. 무작위 임시 비밀번호를 반환하고, 어떤 로그·
 // 출력에도 비밀번호 값 자체는 절대 남기지 않는다.
@@ -96,12 +98,36 @@ export async function resetPassword(
 }
 
 // AUTH-01: 관리자 해제 — 열린 실패 기록을 admin_unlock으로 닫는다.
-export async function unlockAccount(viewer: Viewer, email: string): Promise<{ resolved: number }> {
+// 04.2-08(D-712·D-4220): 해소와 account_unlock 로그가 한 트랜잭션이다 — 로그
+// 쓰기가 실패하면 해소도 롤백되어 계정은 잠긴 채다. D-4222: CLI 경로는 시스템
+// 실행(actorId null)이라 워크플로를 실행한 GitHub 계정을 operator로 detail에 남긴다.
+export async function unlockAccount(
+  viewer: Viewer,
+  email: string,
+  opts?: { operator?: string; recordAction?: typeof defaultRecordAction },
+): Promise<{ resolved: number }> {
   if (!(await can(viewer, "admin.people", "write"))) {
     throw new UserFacingError("계정 잠금 해제 권한이 없습니다.");
   }
 
-  const resolved = await resolveOpenFailures(SYSTEM_VIEWER, email, "admin_unlock");
+  const recordAction = opts?.recordAction ?? defaultRecordAction;
+  // eng E5: 전역 db를 쓰는 사용자 조회는 트랜잭션 전에 끝낸다 — 콜백 안에서는 tx 호출만.
+  const user = await findUserByEmail(SYSTEM_VIEWER, email);
+
+  const resolved = await withTransaction(async (tx) => {
+    const count = await resolveOpenFailures(SYSTEM_VIEWER, email, "admin_unlock", tx);
+    await recordAction(
+      viewer,
+      {
+        actionType: "account_unlock",
+        entity: "user",
+        entityId: user?.id ?? null,
+        detail: { email, resolved: count, operator: opts?.operator ?? null },
+      },
+      { tx },
+    );
+    return count;
+  });
   log.info("auth.unlock", { email, resolved });
 
   return { resolved };

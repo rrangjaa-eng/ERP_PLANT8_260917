@@ -52,11 +52,12 @@ test("QR 진입 → 이름 고르기 → 전화번호 확인 → 입력·서명 
   await expect(page.getByText("이*윤")).toBeVisible();
   // U12 — E2 문의 줄의 번호는 tel: 링크다.
   await expect(page.locator('a[href="tel:021234567"]').first()).toBeVisible();
-  // U15 — 화면에 「이름」 단독 <label>이 없다(E3의 정적 이름표는 orphan label이 아니다).
-  await expect(page.locator("label", { hasText: /^이름$/ })).toHaveCount(0);
 
   await page.getByText("김*늘").click();
   await expect(page.getByLabel("전화번호 뒤 4자리")).toBeVisible();
+  // U15 — E3의 정적 「이름」 이름표가 orphan <label>이 아니다(대응하는
+  // 입력이 없다 — 실제로 이 이름표가 있는 단계에서 확인한다).
+  await expect(page.locator("label", { hasText: /^이름$/ })).toHaveCount(0);
   // U14 — 이름 고르기를 지나도 제목(h1)이 그대로 있다.
   await expect(page.getByRole("heading", { name: "기타소득 지급 확인" })).toBeVisible();
   // U8 — 「다른 이름 고르기」는 ui/button Button(variant="tertiary")다.
@@ -228,8 +229,13 @@ test("S7 — rowId가 uuid 형식이 아니면 스키마가 거부한다(22P02 �
   const mutatedBody = bodyText.replaceAll(winner.id, mutatedId);
 
   const resp = await page.request.post(link, { headers: selectRequest.headers(), data: mutatedBody });
+  expect(resp.ok()).toBe(true);
   const text = await resp.text();
+  // 스키마 거부(validationErrors) — DB까지 가지 않아 22P02도 가린 이름도 없다.
+  expect(text).toContain('"validationErrors"');
+  expect(text).toContain('"rowId"');
   expect(text).not.toContain("처리 중 오류가 발생했습니다");
+  expect(text).not.toContain("정*준");
 });
 
 test("존재하지 않는 토큰도 같은 링크를 찾을 수 없습니다 · 404", async ({ page }) => {

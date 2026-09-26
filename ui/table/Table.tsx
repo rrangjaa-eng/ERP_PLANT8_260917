@@ -417,7 +417,12 @@ export function Table<Row>({
       } else {
         target = next;
       }
-      if (!target) return;
+      if (!target) {
+        // 마지막(첫) 편집 셀 — 옆 셀이 없으면 값을 확정하고 포커스를 그 셀에 둔다(키는 이미 preventDefault).
+        refocusCellRef.current = true;
+        active.blur();
+        return;
+      }
       active.blur();
       if (targetPage !== page) {
         setRequestedPage(targetPage);

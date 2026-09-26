@@ -112,6 +112,7 @@
   height: var(--control-h);
   border: var(--line-w) solid var(--line-ui);
   background: var(--bg);
+  color: var(--fg);
   padding: 0 var(--s-2);
   font-size: var(--fs-base);
 }

@@ -100,10 +100,10 @@ describe("ConfirmDialog — 정적 렌더(슬롯 · 파생 라벨 · 막힌 1차
   it("막힌 1차(disabledReason)는 aria-disabled고 이유 글자가 보인다", () => {
     const html = render({
       title: "고객 승인 표시",
-      primary: { label: "승인 표시", onConfirm: () => {}, disabledReason: "승인일 없음 · 날짜를 골라 주세요" },
+      primary: { label: "승인 표시", onConfirm: () => {}, disabledReason: "승인일 없음 · 날짜 없음 · 날짜 고르기" },
     });
     expect(html).toContain('aria-disabled="true"');
-    expect(html).toContain("승인일 없음 · 날짜를 골라 주세요");
+    expect(html).toContain("승인일 없음 · 날짜 없음 · 날짜 고르기");
   });
 
   it("blockedBy(04-24 — 근거 칸 오류 id)면 1차는 aria-disabled이고 그 id를 가리키며, 1차 왼쪽 이유 자리는 비어 있다", () => {

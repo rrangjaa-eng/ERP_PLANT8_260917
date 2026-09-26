@@ -111,31 +111,31 @@ describe("validatePeriodChange — 저장될 값 위에서", () => {
     ]);
   });
 
-  // 사용자 결정 2026-09-26 「날짜 입력 통일」 — 빈 칸은 형식 오류가 아니라 「날짜를 골라 주세요」다.
+  // 사용자 결정 2026-09-26 「날짜 입력 통일」 — 빈 칸은 형식 오류가 아니라 「날짜 없음 · 날짜 고르기」다.
   // /review(testing) — 시작일 빈 칸과 두 칸 모두 빈 칸도 같은 판정(저장 판정 전에 칸별 오류로 끝난다).
-  it("시작일 빈 문자열 → 시작일 칸 「날짜를 골라 주세요」", () => {
+  it("시작일 빈 문자열 → 시작일 칸 「날짜 없음 · 날짜 고르기」", () => {
     expect(validatePeriodChange({ ...ok, status: "bidding", start: "", end: "2026-09-18" })).toEqual([
-      { field: "start", reason: "날짜를 골라 주세요" },
+      { field: "start", reason: "날짜 없음 · 날짜 고르기" },
     ]);
   });
 
-  // 사용자 결정 2026-09-26(/review D2) — 덜 채운 네이티브 날짜 칸(표식 INCOMPLETE_DATE)도 다른 화면처럼 「날짜를 골라 주세요」.
-  it("덜 채운 칸 표식 → 그 칸 「날짜를 골라 주세요」(형식 오류 아님)", () => {
+  // 사용자 결정 2026-09-26(/review D2) — 덜 채운 네이티브 날짜 칸(표식 INCOMPLETE_DATE)도 다른 화면처럼 「날짜 없음 · 날짜 고르기」.
+  it("덜 채운 칸 표식 → 그 칸 「날짜 없음 · 날짜 고르기」(형식 오류 아님)", () => {
     expect(validatePeriodChange({ ...ok, status: "bidding", start: "2026-09-18", end: INCOMPLETE_DATE })).toEqual([
-      { field: "end", reason: "날짜를 골라 주세요" },
+      { field: "end", reason: "날짜 없음 · 날짜 고르기" },
     ]);
   });
 
-  it("두 칸 모두 빈 문자열 → 두 칸 모두 「날짜를 골라 주세요」", () => {
+  it("두 칸 모두 빈 문자열 → 두 칸 모두 「날짜 없음 · 날짜 고르기」", () => {
     expect(validatePeriodChange({ ...ok, status: "bidding", start: "", end: "" })).toEqual([
-      { field: "start", reason: "날짜를 골라 주세요" },
-      { field: "end", reason: "날짜를 골라 주세요" },
+      { field: "start", reason: "날짜 없음 · 날짜 고르기" },
+      { field: "end", reason: "날짜 없음 · 날짜 고르기" },
     ]);
   });
 
-  it("빈 문자열(칸을 비움) → 「날짜를 골라 주세요」(형식 오류 아님)", () => {
+  it("빈 문자열(칸을 비움) → 「날짜 없음 · 날짜 고르기」(형식 오류 아님)", () => {
     expect(validatePeriodChange({ ...ok, status: "bidding", start: "2026-09-18", end: "" })).toEqual([
-      { field: "end", reason: "날짜를 골라 주세요" },
+      { field: "end", reason: "날짜 없음 · 날짜 고르기" },
     ]);
   });
 

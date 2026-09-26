@@ -794,7 +794,7 @@ describe("매출 쓰기 경로(04-41 · Codex #1 · ENG-D10)", () => {
     });
 
     // 사용자 결정 2026-09-26 「날짜 입력 통일」 — 빈 칸(네이티브 date를 비운 값)은 형식 오류와 다르다.
-    it("액션에 entryDate \"\"(빈 칸) → 거부 봉투 칸 오류가 「날짜를 골라 주세요」, 줄 0건", async () => {
+    it("액션에 entryDate \"\"(빈 칸) → 거부 봉투 칸 오류가 「날짜 없음 · 날짜 고르기」, 줄 0건", async () => {
       const { project } = await setupProject();
       const id = randomUUID();
       const result = await saveProjectLedgerAction({
@@ -807,7 +807,7 @@ describe("매출 쓰기 경로(04-41 · Codex #1 · ENG-D10)", () => {
       if (!data || !("rejected" in data)) throw new Error(`거부 봉투가 아니다: ${JSON.stringify(result)}`);
       expect(data.rejected).toEqual({
         summary: "오류 1칸 · 전부 거부",
-        cells: [{ rowId: id, rowIndex: 0, field: "entryDate", kind: "error", reason: "날짜를 골라 주세요" }],
+        cells: [{ rowId: id, rowIndex: 0, field: "entryDate", kind: "error", reason: "날짜 없음 · 날짜 고르기" }],
       });
       expect(await entriesOf(project.id)).toHaveLength(0);
     });

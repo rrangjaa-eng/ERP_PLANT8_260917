@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 32
+current_plan: 33
 status: executing
-stopped_at: Completed 04-15-PLAN.md
-last_updated: "2026-09-26T00:02:19.691Z"
+stopped_at: Completed 04-16-PLAN.md
+last_updated: "2026-09-26T02:10:01.545Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 4 execution started
-state_head: 87a133e4a2e22877ba42d3747690a6ec17126d3f
+state_head: 7ea24b39579f50b8750889b09edfa63e38ec9bbf
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 115
-  completed_plans: 54
+  completed_plans: 55
   percent: 6
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 4 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 32
+Current Plan: 33
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-25 — Phase 4 execution started
@@ -103,6 +103,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 4 P40 | 48 min | 3 tasks | 11 files |
 | Phase 04 P24 | 66min | 4 tasks | 14 files |
 | Phase 04 P15 | 40min | 2 tasks | 14 files |
+| Phase 04 P16 | 47m | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -256,6 +257,9 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-15: 빈 총 매출 예상가 = 04-01 기본 저장(원화 0 · KRW · 환율 1), 새 컬럼 없음(B-37)
 - [Phase 4]: 04-15: 복사 출처 거부는 없음·범위 밖·보관·uuid 아님을 한 문구 「복사할 프로젝트 없음 · 새로 고침」으로(UI-SPEC 반영 필요)
 - [Phase 4]: 04-15: 등록 기간 판정은 04-22 validatePeriodChange를 수주중으로 부르는 validateNewProjectPeriod
+- [Phase 4]: 04-16: 계약 금액은 고객 승인된 현재 차수 견적 합계(D-84), VAT 기준일은 승인 KST 날짜(B-27) — 입력 칸 없음
+- [Phase 4]: 04-16: D-85 발행액 기본 노출은 새 DB에만(insert-if-absent 시드) — 기존 DB는 관리자가 role-pm 행을 켠다(B-29)
+- [Phase 4]: 04-16: 매출 표 합계 행 거부 글자는 봉투 칸 수로 정하고 거부 요약과 같은 수명
 
 ### Pending Todos
 
@@ -312,6 +316,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-26T00:02:19.456Z
-Stopped at: Completed 04-15-PLAN.md
+Last session: 2026-09-26T02:10:01.330Z
+Stopped at: Completed 04-16-PLAN.md
 Resume file: None

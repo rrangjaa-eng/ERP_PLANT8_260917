@@ -213,7 +213,6 @@ export function ProjectsFilterBar({
               id="from"
               name="from"
               type="text"
-              inputMode="numeric"
               placeholder="2026-09-18"
               className={`${styles.textInput} ${styles.periodInput}`}
               defaultValue={defaultValues.from ?? ""}
@@ -227,7 +226,6 @@ export function ProjectsFilterBar({
               id="to"
               name="to"
               type="text"
-              inputMode="numeric"
               placeholder="2026-09-18"
               aria-label="기간 끝"
               className={`${styles.textInput} ${styles.periodInput}`}

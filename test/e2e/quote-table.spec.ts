@@ -1342,6 +1342,77 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
     expect(saved.find((line) => line.itemName === "거래처있음")?.vendorId).toBe(vendor.id);
   });
 
+  // Regression: ISSUE-003 — 견적 외 비용 줄을 복사해 붙이면 줄 종류가 실리지 않아 소분류·수량·단가 3칸이 오류였다
+  // 코디네이터 대리 결정 2026-09-26 /qa ISSUE-003 (a) — 앱 형식이 줄 종류를 싣고, 붙여넣기로 생기는 줄은 같은 종류다.
+  test("(ISSUE-003) 견적 외 비용 줄을 복사해 다른 프로젝트에 붙이면 같은 종류의 줄로 오류 없이 들어가 저장된다", async ({ page }) => {
+    const stamp = `${Date.now()}-${randomUUID().slice(0, 6)}`;
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E견적외-${stamp}`, normalizedName: `e2e견적외-${stamp}` });
+    const email = `e2e-outofquote-${randomUUID()}@example.test`;
+    const { userId: pmUserId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E OutOfQuote", roleId: DEFAULT_ROLE_ID });
+    const [team] = await db.select().from(teams).limit(1);
+    if (!team) throw new Error("시드된 팀이 없습니다");
+    const source = await createProject(SYSTEM_VIEWER, { clientId: vendor.id, teamId: team.id, pmUserId, name: `E2E견적외원본-${stamp}` });
+    const target = await createProject(SYSTEM_VIEWER, { clientId: vendor.id, teamId: team.id, pmUserId, name: `E2E견적외대상-${stamp}` });
+    const sourceRevision = await getCurrentQuoteRevision(SYSTEM_VIEWER, source.id);
+    const targetRevision = await getCurrentQuoteRevision(SYSTEM_VIEWER, target.id);
+    if (!sourceRevision || !targetRevision) throw new Error("1차 차수가 없습니다");
+    await seedLines(sourceRevision.id, [{ subcategory: "stage_construction", itemName: "견적줄", amount: 1000 }]);
+    await saveQuoteLines(SYSTEM_VIEWER, sourceRevision.id, {
+      rows: [
+        {
+          id: randomUUID(),
+          isNew: true as const,
+          lineKind: "out_of_quote" as const,
+          subcategory: "",
+          itemName: "견적외줄",
+          unitPrice: { currency: "KRW" as const, amount: 0, fxRate: 1 },
+          execution: { currency: "KRW" as const, amount: 7000, fxRate: 1 },
+        },
+      ],
+    });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(email);
+    await page.getByLabel("비밀번호").fill(tempPassword);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto(`/projects/${source.id}`);
+    await expect(quoteDataRows(page)).toHaveCount(2);
+    await page.evaluate(() => {
+      window.addEventListener("copy", (event) => {
+        const data = event.clipboardData;
+        (window as unknown as { __copied?: Record<string, string> }).__copied = {
+          "text/plain": data?.getData("text/plain") ?? "",
+          "application/x-plant8-quote-lines+json": data?.getData("application/x-plant8-quote-lines+json") ?? "",
+        };
+      });
+    });
+    await expect(async () => {
+      await quoteCell(page, 0, 2).focus();
+      await page.keyboard.press("Control+a");
+      await expect(quoteCell(page, 1, 2)).toHaveClass(/selectedCell/, { timeout: 1000 });
+    }).toPass();
+    await page.keyboard.press("Control+c");
+    const copied = (await (await page.waitForFunction(() => (window as unknown as { __copied?: Record<string, string> }).__copied)).jsonValue()) as Record<string, string>;
+
+    await page.goto(`/projects/${target.id}`);
+    await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
+    await quoteCell(page, 0, 0).focus();
+    await expect(quoteCell(page, 0, 0)).toHaveAttribute("data-grid-focus", "");
+    await pasteWithFormats(page, copied);
+
+    await expect(quoteDataRows(page)).toHaveCount(2);
+    await expect(invalidCells(page)).toHaveCount(0);
+    await saveAndWait(page);
+    await expect.poll(() => footerPieces(page)).toEqual([{ tone: "success", text: expect.stringMatching(/^저장됨 \d{2}:\d{2}$/) }]);
+    const saved = await db
+      .select({ itemName: quoteLines.itemName, lineKind: quoteLines.lineKind, executionAmount: quoteLines.executionAmount })
+      .from(quoteLines)
+      .where(and(eq(quoteLines.revisionId, targetRevision.id), isNull(quoteLines.archivedAt)));
+    expect(saved.find((line) => line.itemName === "견적줄")?.lineKind).toBe("quote");
+    expect(saved.find((line) => line.itemName === "견적외줄")).toMatchObject({ lineKind: "out_of_quote", executionAmount: 7000 });
+  });
+
   // Regression: ISSUE-002 — 원화 단가·실행가 칸에 소수가 붙으면 오류 없이 받아 저장 때 조용히 반올림됐다(12.345 → 12)
   // Found by /qa on 2026-09-26
   // Report: .gstack/qa-reports/qa-report-plant8-2026-09-26.md

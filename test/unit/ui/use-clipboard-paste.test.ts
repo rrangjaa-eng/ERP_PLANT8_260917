@@ -156,3 +156,45 @@ describe("applyPaste — 원본 통화 · 줄 수 · 끝 줄바꿈", () => {
     ]);
   });
 });
+
+// /qa ISSUE-003 (a) — 코디네이터 대리 결정 2026-09-26. 앱 형식은 줄 종류(`kind`)도 싣는다.
+// 붙여넣기로 새로 생기는 줄은 원본 줄의 종류 모양(newRow(kind))으로 판정한다.
+describe("applyPaste — 원본 줄 종류", () => {
+  it("앱 형식의 줄별 kind를 sourceKinds로 싣는다", () => {
+    const result = applyPaste({
+      clipboardText: `${ELEVEN}\n${ELEVEN}`,
+      appMeta: '[{"currency":"KRW","kind":"quote"},{"currency":"KRW","kind":"out_of_quote"}]',
+      columns: COLUMNS,
+      rows: [{}, {}],
+      activeRowIndex: 0,
+      activeColIndex: 0,
+    });
+    expect(result.sourceKinds).toEqual(["quote", "out_of_quote"]);
+  });
+
+  it("엑셀처럼 앱 형식이 없으면 원본 줄 종류가 없다", () => {
+    const result = applyPaste({ clipboardText: EXCEL_SIX, columns: COLUMNS, rows: [{}], activeRowIndex: 0, activeColIndex: 1 });
+    expect(result.sourceKinds).toBeNull();
+  });
+
+  it("새로 생기는 줄은 newRow(원본 kind)의 모양으로 편집 가능 여부를 판정한다", () => {
+    const kinds: (string | null)[] = [];
+    const result = applyPaste({
+      clipboardText: "1,000\n2,000",
+      appMeta: '[{"currency":"KRW","kind":"quote"},{"currency":"KRW","kind":"out_of_quote"}]',
+      columns: COLUMNS,
+      rows: [],
+      activeRowIndex: 0,
+      activeColIndex: 5,
+      newRow: (kind) => {
+        kinds.push(kind);
+        return { locked: kind === "out_of_quote" };
+      },
+    });
+    expect(kinds).toEqual(["quote", "out_of_quote"]);
+    expect(result.cells).toEqual([
+      { rowIndex: 0, columnKey: "unitPrice", result: { status: "ok", value: "1000" } },
+      { rowIndex: 1, columnKey: "unitPrice", result: { status: "error", reason: LOCKED } },
+    ]);
+  });
+});

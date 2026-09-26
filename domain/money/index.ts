@@ -55,8 +55,21 @@ export function toKrw(input: MoneyInput): number {
   // amount는 소수 2자리, fxRate는 소수 4자리로 저장된다 — 정수로 올려
   // 곱한 뒤 나누면 부동소수점 오차(0.35×1350=472.49999999999994 등) 없이
   // 정확한 값이 나온다.
-  const exact = (Math.round(input.amount * 100) * Math.round(input.fxRate * 10000)) / 1e6;
-  return round(exact, 1, "round");
+  const scaledAmount = Math.round(input.amount * 100);
+  const scaledRate = Math.round(input.fxRate * 10000);
+  const product = scaledAmount * scaledRate;
+  if (Number.isSafeInteger(product)) return round(product / 1e6, 1, "round");
+  // 원화 금액이 bigint(0016)라 곱이 2^53을 넘을 수 있다(원화 약 90억 초과) — double은 끝자리를 잃어 .5 경계를
+  // 틀리게 올린다. BigInt로 정확히 나눈 뒤 Math.round처럼(반은 +∞ 쪽) 반올림한다.
+  const million = BigInt(1_000_000);
+  const exact = BigInt(scaledAmount) * BigInt(scaledRate);
+  let quotient = exact / million;
+  let remainder = exact % million;
+  if (remainder < BigInt(0)) {
+    quotient -= BigInt(1);
+    remainder += million;
+  }
+  return Number(remainder * BigInt(2) >= million ? quotient + BigInt(1) : quotient);
 }
 
 // 04-40(엔지니어링 리뷰 B §2 · DR-9) — 원화 금액 범위. 금액 입력 범위와 계산 견적가 상한이 같은 두 상수를 쓴다.

@@ -51,6 +51,16 @@ describe("toKrw", () => {
   it("부동소수점 오차로 내려가지 않는다 — 0.35 × 1350은 473", () => {
     expect(toKrw({ currency: "USD", amount: 0.35, fxRate: 1350 })).toBe(473);
   });
+
+  // bigint 전환(0016) 뒤 원화 환산이 약 90억(2^53 / 1e6)을 넘을 수 있다 — 정수로 올린 두 수의 곱이 JS 안전 정수를
+  // 넘어도 반올림 경계에서 틀리지 않는다. 정확한 곱 10,596,128,621,499,999 / 1e6 = …621.499999 → 621.
+  it("곱이 안전 정수를 넘는 큰 USD 환산도 .5 경계 바로 아래를 올리지 않는다 — 7,983,953.79 × 1,327.1781은 10,596,128,621", () => {
+    expect(toKrw({ currency: "USD", amount: 7_983_953.79, fxRate: 1327.1781 })).toBe(10_596_128_621);
+  });
+
+  it("안전 정수를 넘는 곱에서도 음수는 Math.round처럼 반올림한다 — −7,983,953.79 × 1,327.1781은 −10,596,128,621", () => {
+    expect(toKrw({ currency: "USD", amount: -7_983_953.79, fxRate: 1327.1781 })).toBe(-10_596_128_621);
+  });
 });
 
 describe("moneyFromRow", () => {
@@ -285,9 +295,9 @@ describe("quoteAmountWithinBound", () => {
     expect(quoteAmountWithinBound(3, krw(500_000_000_000))).toBe(false);
   });
 
-  it("소수 수량은 quoteAmount의 원화 반올림 뒤 값으로 판정한다 — 0.5 × 1,999,999,999,999 = …999.5 → 1조 거짓, × 1,999,999,999,998 → …999 참", () => {
-    expect(quoteAmountWithinBound(0.5, krw(1_999_999_999_999))).toBe(false);
-    expect(quoteAmountWithinBound(0.5, krw(1_999_999_999_998))).toBe(true);
+  it("소수 수량은 quoteAmount의 원화 반올림 뒤 값으로 판정한다 — 단가는 상한 안이고 38.33 × 26,089,225,150만 반올림해 1조가 되어 거짓, × 26,089,225,149 참", () => {
+    expect(quoteAmountWithinBound(38.33, krw(26_089_225_150))).toBe(false);
+    expect(quoteAmountWithinBound(38.33, krw(26_089_225_149))).toBe(true);
   });
 
   it("USD 수량 2 × USD 400,000,000 @1,350(원화 1.08조)은 거짓 · 수량 0은 기본 1이라 참", () => {

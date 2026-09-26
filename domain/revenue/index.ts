@@ -123,8 +123,10 @@ export type ContractInfo = {
 
 // project()가 필드 단위로 투영하는 대상. 배열 필드(issuedEntries·
 // paidEntries)와 그 합계는 정보 항목 통과 여부에 따라 project()가 **키
-// 자체를 싣지 않는다**(domain/permissions/project.ts) — 기획본부에게는
-// 이 두 필드와 파생 합계가 DTO에서 통째로 빠진다(T-04-09).
+// 자체를 싣지 않는다**(domain/permissions/project.ts). 04-16(D-85 · B-28 ·
+// T-04-83): 발행 합계는 입금에서 파생되지 않아 발행 항목으로, 입금 합계와
+// 잔액(미수·초과 입금)은 입금 항목으로 게이트한다 — 기획본부에게 입금 줄과
+// 그 파생값이 통째로 빠져 발행액 − 미수 = 입금액 역산이 막힌다.
 type RevenueProjectable = {
   contract: ContractInfo;
   issuedEntries: RevenueEntryDto[];
@@ -141,7 +143,7 @@ export const REVENUE_DTO_SPEC: DtoSpec<RevenueProjectable, RevenueDto> = {
     { key: "contract", from: "contract", infoItem: "quote.amount" },
     { key: "issuedEntries", from: "issuedEntries", infoItem: "revenue.issued_amount" },
     { key: "paidEntries", from: "paidEntries", infoItem: "revenue.paid_amount" },
-    { key: "issuedTotalKrw", from: "issuedTotalKrw", infoItem: "revenue.paid_amount" },
+    { key: "issuedTotalKrw", from: "issuedTotalKrw", infoItem: "revenue.issued_amount" },
     { key: "paidGrossTotalKrw", from: "paidGrossTotalKrw", infoItem: "revenue.paid_amount" },
     { key: "balanceKrw", from: "balanceKrw", infoItem: "revenue.paid_amount" },
   ],

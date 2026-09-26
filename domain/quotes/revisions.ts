@@ -49,7 +49,7 @@ const SEQ_UNIQUE_CONSTRAINT = "quote_revisions_project_seq_key";
 // UI-SPEC rev 5 `막힘 — 새 차수(동시·오래된 화면)`.
 const REVISION_STALE = "다른 사람이 먼저 새 차수를 만듦 · 새로 고침";
 const WRITE_DENIED = "견적 줄 · 쓰기 권한 없음";
-const PROJECT_NOT_FOUND = "존재하지 않는 프로젝트입니다.";
+const PROJECT_NOT_FOUND = "존재하지 않는 프로젝트";
 
 export type CreateRevisionDeps = {
   can: typeof defaultCan;
@@ -125,7 +125,7 @@ export async function createRevisionFromCurrent(
 
 const APPROVAL_TOGGLE_RULE = "quote.approval-toggle";
 // rev 5 밖 방어 문구 — 사람이 고칠 입력 오류라 「~해 주세요」.
-const APPROVAL_DATE_IN_FUTURE = "승인일이 오늘보다 늦음 · 날짜를 고쳐 주세요";
+const APPROVAL_DATE_IN_FUTURE = "승인일이 오늘보다 늦음 · 날짜 수정";
 
 // B-25 — 승인일은 KST 달력 날짜로 받아 그날 KST 00:00 순간으로 저장하고(`customer_approved_at`은 시간대 없는
 // timestamp라 SQL 날짜 캐스트는 하루 앞 날짜를 준다), 읽을 때 같은 날짜로 돌린다. 04-29의 한 쌍만 쓴다.

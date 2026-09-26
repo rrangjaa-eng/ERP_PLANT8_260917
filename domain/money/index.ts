@@ -106,20 +106,20 @@ function hasAtMostDecimals(value: number, digits: number): boolean {
 // 04-40 — 금액 입력 한 규칙: KRW는 요청 환율을 버리고 1, USD는 환율 > 0 · 외화 소수 2자리 · 환율 소수 4자리, 원화 환산은
 // 정수 컬럼 범위 안. 부호는 보지 않는다(각 쓰기 경로의 몫). 조용히 반올림하지 않고 거부한다.
 export function normalizeMoneyInput(input: MoneyInput): MoneyInput {
-  if (!Number.isFinite(input.amount)) throw new MoneyInputError("not-finite", "숫자가 아닙니다 · 12,400,000처럼 적어 주세요");
+  if (!Number.isFinite(input.amount)) throw new MoneyInputError("not-finite", "숫자 형식 오류 · 12,400,000처럼");
   const normalized: MoneyInput =
     input.currency === "KRW" ? { currency: "KRW", amount: input.amount, fxRate: 1 } : { currency: input.currency, amount: input.amount, fxRate: input.fxRate };
   if (normalized.currency !== "KRW") {
     if (!Number.isFinite(normalized.fxRate) || normalized.fxRate <= 0) {
-      throw new MoneyInputError("fx-rate", "환율은 0보다 커야 합니다 · 환율을 고쳐 주세요", "fxRate");
+      throw new MoneyInputError("fx-rate", "환율 0 이하 · 환율 수정", "fxRate");
     }
     if (!hasAtMostDecimals(normalized.amount, 2)) throw new MoneyInputError("precision", "외화는 소수 2자리까지");
     if (!hasAtMostDecimals(normalized.fxRate, 4)) throw new MoneyInputError("precision", "환율은 소수 4자리까지", "fxRate");
-    if (normalized.fxRate >= FX_RATE_COLUMN_LIMIT) throw new MoneyInputError("range", "환율이 상한을 넘습니다 · 환율을 고쳐 주세요", "fxRate");
-    if (Math.abs(normalized.amount) >= FOREIGN_AMOUNT_COLUMN_LIMIT) throw new MoneyInputError("range", "외화 금액이 상한을 넘습니다 · 금액을 고쳐 주세요");
+    if (normalized.fxRate >= FX_RATE_COLUMN_LIMIT) throw new MoneyInputError("range", "환율 상한 초과 · 환율 수정", "fxRate");
+    if (Math.abs(normalized.amount) >= FOREIGN_AMOUNT_COLUMN_LIMIT) throw new MoneyInputError("range", "외화 금액 상한 초과 · 금액 수정");
   }
   if (!withinKrwColumn(toKrw(normalized))) {
-    throw new MoneyInputError("range", `금액이 상한을 넘습니다 · ${formatKrw(KRW_COLUMN_MAX)}원 이하`);
+    throw new MoneyInputError("range", `금액 상한 초과 · ${formatKrw(KRW_COLUMN_MAX)}원 이하`);
   }
   return normalized;
 }

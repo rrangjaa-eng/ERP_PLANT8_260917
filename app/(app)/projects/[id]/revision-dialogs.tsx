@@ -7,7 +7,7 @@ import { createRevisionAction, setCustomerApprovalAction } from "../actions";
 import { Button } from "@/ui/button/Button";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Form } from "@/ui/form/Form";
-import { FORMAT_ERROR, isCalendarDate } from "@/domain/projects/period";
+import { EMPTY_ERROR, FORMAT_ERROR, isCalendarDate } from "@/domain/projects/period";
 import { formatKrw } from "@/lib/format-number";
 import { unsavedEditsReason } from "./unsaved-edits";
 import styles from "./project-detail.module.css";
@@ -188,10 +188,12 @@ function ApprovalDialog({
   });
 
   const unsaved = unsavedEditsReason(dirtyCount);
-  const formatInvalid = !isCalendarDate(approvedOn);
+  const dateEmpty = approvedOn === "";
+  const formatInvalid = !dateEmpty && !isCalendarDate(approvedOn);
+  const dateInvalid = dateEmpty || formatInvalid;
 
   function submit() {
-    if (submittingRef.current || unsaved || formatInvalid) return;
+    if (submittingRef.current || unsaved || dateInvalid) return;
     submittingRef.current = true;
     succeededRef.current = false;
     setRejection(null);
@@ -223,29 +225,27 @@ function ApprovalDialog({
           <Form.Field id={fieldId} label="승인일" width="short">
             <input
               id={fieldId}
-              type="text"
-              inputMode="numeric"
+              type="date"
               autoComplete="off"
-              placeholder="2026-09-18"
               value={approvedOn}
-              aria-invalid={formatInvalid ? "true" : undefined}
-              aria-describedby={formatInvalid ? errorId : undefined}
+              aria-invalid={dateInvalid ? "true" : undefined}
+              aria-describedby={dateInvalid ? errorId : undefined}
               className={styles.periodInput}
               onChange={(event) => {
                 setApprovedOn(event.target.value);
                 setRejection(null);
               }}
             />
-            {formatInvalid ? <Form.Error id={errorId}>{FORMAT_ERROR}</Form.Error> : null}
+            {dateInvalid ? <Form.Error id={errorId}>{dateEmpty ? EMPTY_ERROR : FORMAT_ERROR}</Form.Error> : null}
           </Form.Field>
         }
         primary={{
           label: "고객 승인 표시",
           onConfirm: submit,
           pending: isExecuting,
-          // 막힘 순서: 미저장 편집(DR-6) → 날짜 형식(칸 아래 한 자리) → 서버 거부.
-          disabledReason: unsaved ?? (formatInvalid ? undefined : (rejection ?? undefined)),
-          blockedBy: formatInvalid ? errorId : undefined,
+          // 막힘 순서: 미저장 편집(DR-6) → 날짜 칸(비었거나 형식이 틀림, 칸 아래 한 자리) → 서버 거부.
+          disabledReason: unsaved ?? (dateInvalid ? undefined : (rejection ?? undefined)),
+          blockedBy: dateInvalid ? errorId : undefined,
         }}
       />
     </>

@@ -98,7 +98,7 @@ describe("계정 잠금 (login_attempts)", () => {
     const sixth = await signIn(email, "wrong-password", ip);
     expect(sixth.status).toBe(403);
     const body = (await sixth.json()) as { message?: string };
-    expect(body.message).toContain("로그인 시도가 너무 많습니다");
+    expect(body.message).toContain("로그인 시도 과다");
   });
 
   it("D: 5회째 실패에 auth.lockout 이벤트가 정확히 1회, ip는 보낸 x-client-ip와 같다", async () => {

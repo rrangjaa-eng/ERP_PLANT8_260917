@@ -40,7 +40,7 @@ describe("코드표 항목 설명 (D-93, UI-SPEC S14)", () => {
     expect(tooLong.length).toBe(41);
 
     await expect(updateCodeItemDescription(SYSTEM_VIEWER, created.id, tooLong)).rejects.toThrow(
-      "설명이 40자를 넘습니다 · 한 문장으로 줄여 주세요",
+      "설명 40자 초과 · 한 문장으로 축약",
     );
 
     const items = await listCodeItems(SYSTEM_VIEWER, TABLE_KEY);
@@ -166,6 +166,6 @@ describe("「코드 추가」 폼 설명 칸 (D-93 · UI-SPEC S14)", () => {
         label: "이름",
         description: tooLong,
       }),
-    ).rejects.toThrow("설명이 40자를 넘습니다 · 한 문장으로 줄여 주세요");
+    ).rejects.toThrow("설명 40자 초과 · 한 문장으로 축약");
   });
 });

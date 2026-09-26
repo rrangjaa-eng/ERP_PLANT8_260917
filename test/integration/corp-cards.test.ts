@@ -65,7 +65,7 @@ describe("corp-cards (MAST-03, 실제 Postgres)", () => {
     } catch (e) {
       expect(e).toBeInstanceOf(DuplicateCorpCardError);
       const message = (e as Error).message;
-      expect(message).toBe("이미 등록된 카드입니다 · 발급사와 뒤 4자리를 확인하세요");
+      expect(message).toBe("이미 등록된 카드 · 발급사와 뒤 4자리 확인");
       expect(message).not.toContain("insert into");
       expect(message).not.toContain("params:");
       expect(message).not.toContain(holderUserId);

@@ -92,7 +92,7 @@ export function CodeItemLabelInput({ id, label }: { id: string; label: string })
       setErrorText(
         error.serverError ??
           error.validationErrors?.label?._errors?.[0] ??
-          "저장하지 못했습니다 · 잠시 후 다시 시도해 주세요.",
+          "저장 실패 · 잠시 후 다시 시도",
       );
     },
     onSuccess: () => setErrorText(undefined),
@@ -142,7 +142,7 @@ export function CodeItemDescriptionInput({
       setErrorText(
         error.serverError ??
           error.validationErrors?.description?._errors?.[0] ??
-          "저장하지 못했습니다 · 잠시 후 다시 시도해 주세요.",
+          "저장 실패 · 잠시 후 다시 시도",
       );
     },
     onSuccess: () => setErrorText(undefined),
@@ -161,7 +161,6 @@ export function CodeItemDescriptionInput({
           aria-label={`${label} 설명`}
           aria-invalid={errorText ? true : undefined}
           aria-describedby={describedBy}
-          placeholder="—"
           value={value}
           onChange={(event) => setValue(event.target.value)}
           onBlur={() => {

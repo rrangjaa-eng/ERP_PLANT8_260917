@@ -53,7 +53,7 @@ export function AccountNumberCell({
           {revealed !== null ? "가리기" : "번호 보기"}
         </Button>
       ) : null}
-      {result.serverError ? <p className={styles.revealError}>번호를 불러오지 못했습니다 · 다시 시도</p> : null}
+      {result.serverError ? <p className={styles.revealError}>번호 불러오기 실패 · 다시 시도</p> : null}
     </div>
   );
 }

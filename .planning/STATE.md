@@ -5,10 +5,10 @@ current_phase_name: 프로젝트·견적 원장
 current_plan: 34
 status: executing
 stopped_at: Completed 04-41-PLAN.md
-last_updated: "2026-09-26T04:05:42.050Z"
+last_updated: "2026-09-26T15:53:50.827Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 4 execution started
-state_head: 35b3f60b799e656ec2ab46794d0bff22259ecc0e
+state_head: 93f5af46600932aea67421c68ee43736b52a454a
 progress:
   total_phases: 16
   completed_phases: 1
@@ -292,6 +292,10 @@ Recent decisions affecting current work:
 | 260923-odg | hook 보강: 게이트 리뷰 종료·quick 완료 = 세션 경계, 문서 커밋도 검증 스킬, 세션당 executor 1회 | 2026-09-23 | 542cafd | [260923-odg-hook](./quick/260923-odg-hook/) |
 | 260924-hgx | 이슈 #56 사람 목록 N+1 조회 제거 | 2026-09-24 | a637516 | [260924-hgx-admin-people-list-n-1-query-fix-issue-56](./quick/260924-hgx-admin-people-list-n-1-query-fix-issue-56/) |
 | 260926-fqc | 머지 훅: gh 없을 때도 문서 PR 판정(ls-remote PR 헤드 + 로컬 diff, 판정 못 하면 차단) | 2026-09-26 | 6f3943b | [260926-fqc-fix-merge-gate-docs-only-check-without-g](./quick/260926-fqc-fix-merge-gate-docs-only-check-without-g/) |
+| 7 | PR #87 디자인 결정 1·4·6·7을 04-UI-SPEC·04-15-PLAN 문구에 반영 | 2026-09-26 | cf02a3b | — |
+| 8 | /review 반영: 04-UI-SPEC 남은 문구 행을 명사형 코드에 맞춤 | 2026-09-26 | f7d677b | — |
+| 9 | /review D2 반영: 04-UI-SPEC 기간 칸 덜 채운 날짜 문구 | 2026-09-26 | f5646d2 | — |
+| 10 | 04-UI-SPEC 377 날짜 빈 칸 문구 「날짜 없음 · 날짜 고르기」(사용자 요청, 명사형 통일) | 2026-09-26 | 93f5af4 | — |
 
 ### Roadmap Evolution
 

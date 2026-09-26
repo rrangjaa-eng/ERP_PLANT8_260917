@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type KeyboardEvent } from "react";
 import { Form } from "@/ui/form/Form";
-import { previewPeriodChange } from "@/domain/projects/period";
+import { INCOMPLETE_DATE, previewPeriodChange } from "@/domain/projects/period";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import styles from "./project-detail.module.css";
 
@@ -11,6 +11,15 @@ import styles from "./project-detail.module.css";
 // 갖고 이 컴포넌트는 그리기와 키(Enter 막기 · Ctrl+S 저장 · Esc 되돌리기/닫기)만 맡는다.
 export type PeriodDraft = { start: string; end: string };
 export type PeriodFieldError = { field: "start" | "end"; reason: string };
+
+// /review R-3 — 네이티브 날짜 칸을 덜 채우면 브라우저가 값을 ""로 준다(validity.badInput). 비운 칸("" → null로
+// 저장돼 기간이 지워진다)과 구분해 초안에 도메인 표식 INCOMPLETE_DATE를 담는다 — 서버가 「날짜 없음 · 날짜 고르기」로 거부한다.
+// /qa ISSUE-001 — input 이벤트는 값이 바뀔 때만 난다. 조각을 하나씩 전부 지우면 첫 조각에서만 ""(badInput)로 오고
+// 나머지는 ""→""라 이벤트가 없다 — 지우는 키를 뗄 때 칸의 실제 상태를 다시 읽어 초안을 맞춘다. 다른 키(방향키·Tab)는
+// 읽지 않는다: 복원한 「덜 채움」 초안은 칸에 빈 값으로 보이므로, 읽으면 빈 값으로 바뀌어 저장이 날짜를 지운다.
+function dateDraftOf(input: HTMLInputElement): string {
+  return input.validity.badInput ? INCOMPLETE_DATE : input.value;
+}
 
 export function PeriodField({
   draft,
@@ -89,17 +98,20 @@ export function PeriodField({
             <input
               ref={field.ref}
               id={id}
-              type="text"
-              inputMode="numeric"
+              type="date"
               autoComplete="off"
-              placeholder="2026-09-18"
-              value={draft[field.key]}
+              value={draft[field.key] === INCOMPLETE_DATE ? "" : draft[field.key]}
               readOnly={saveLocked}
               aria-invalid={error ? "true" : undefined}
               aria-describedby={error ? `${id}-error` : undefined}
               className={dirty ? `${styles.periodInput} ${styles.periodInputDirty}` : styles.periodInput}
-              onChange={(event) => onChange({ ...draft, [field.key]: event.target.value })}
+              onChange={(event) => onChange({ ...draft, [field.key]: dateDraftOf(event.target) })}
               onKeyDown={handleKeyDown}
+              onKeyUp={(event) => {
+                if (event.key !== "Backspace" && event.key !== "Delete") return;
+                const next = dateDraftOf(event.currentTarget);
+                if (next !== draft[field.key]) onChange({ ...draft, [field.key]: next });
+              }}
             />
             {error ? <Form.Error id={`${id}-error`}>{error.reason}</Form.Error> : null}
           </Form.Field>

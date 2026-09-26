@@ -360,20 +360,20 @@ describe("등록의 총 매출 예상가 · 기간 검증(04-15 Task 2, 실제 P
       pm,
       { ...base(), preEstimate: { currency: "USD", amount: 100, fxRate: 0 }, preEstimateFxRateTouched: true },
       "preEstimateFxRate",
-      "환율은 0보다 커야 합니다 · 환율을 고쳐 주세요",
+      "환율 0 이하 · 환율 수정",
     );
-    await expectRejected(pm, { ...base(), preEstimate: { currency: "KRW", amount: -1, fxRate: 1 } }, "preEstimateAmount", "총 매출 예상가는 0 이상 · 금액을 고쳐 주세요");
+    await expectRejected(pm, { ...base(), preEstimate: { currency: "KRW", amount: -1, fxRate: 1 } }, "preEstimateAmount", "총 매출 예상가는 0 이상 · 금액 수정");
     await expectRejected(
       pm,
       { ...base(), preEstimate: { currency: "KRW", amount: 1_000_000_000_000, fxRate: 1 } },
       "preEstimateAmount",
-      "금액이 상한을 넘습니다 · 999,999,999,999원 이하",
+      "금액 상한 초과 · 999,999,999,999원 이하",
     );
     await expectRejected(
       pm,
       { ...base(), preEstimate: { currency: "USD", amount: 1_000_000_000, fxRate: 1350 }, preEstimateFxRateTouched: true },
       "preEstimateAmount",
-      "금액이 상한을 넘습니다 · 999,999,999,999원 이하",
+      "금액 상한 초과 · 999,999,999,999원 이하",
     );
     await expectRejected(
       pm,
@@ -385,15 +385,15 @@ describe("등록의 총 매출 예상가 · 기간 검증(04-15 Task 2, 실제 P
       pm,
       { ...base(), preEstimate: { currency: "USD", amount: 1, fxRate: 100_000_000 }, preEstimateFxRateTouched: true },
       "preEstimateFxRate",
-      "환율이 상한을 넘습니다 · 환율을 고쳐 주세요",
+      "환율 상한 초과 · 환율 수정",
     );
     expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(1111);
   });
 
   it("(p5) 등록의 종료일이 시작일보다 앞이거나 날짜가 아니면 04-22와 같은 문구의 칸 오류로 거부되고 행이 없다(PR #38 「날짜 순서」)", async () => {
     const { pm, base } = await setupRegistration();
-    await expectRejected(pm, { ...base(), startDate: "2026-09-20", endDate: "2026-09-10" }, "endDate", "종료일이 시작일보다 빠릅니다 · 종료일을 고쳐 주세요");
-    await expectRejected(pm, { ...base(), startDate: "2026-02-30" }, "startDate", "날짜 형식이 아닙니다 · 2026-09-18처럼 적어 주세요");
+    await expectRejected(pm, { ...base(), startDate: "2026-09-20", endDate: "2026-09-10" }, "endDate", "종료일이 시작일보다 빠름 · 종료일 수정");
+    await expectRejected(pm, { ...base(), startDate: "2026-02-30" }, "startDate", "날짜 형식 오류 · 2026-09-18처럼");
   });
 
   it("(p6) 총 매출 예상가를 비우면 04-01 기본 저장(원화 0 · KRW · 환율 1)과 같다(B-37)", async () => {

@@ -70,7 +70,7 @@ export async function readPermissionGrid(viewer: Viewer, deps?: Partial<MatrixDe
   const listPermissions = deps?.listPermissions ?? defaultListPermissions;
 
   const allowed = await canFn(viewer, "admin.permissions", "view");
-  if (!allowed) throw new ForbiddenError("권한표를 볼 권한이 없습니다.");
+  if (!allowed) throw new ForbiddenError("권한표 열람 권한 없음");
 
   const [roleRows, permissionRows] = await Promise.all([listRoles(viewer), listPermissions(viewer)]);
 
@@ -96,7 +96,7 @@ export async function setPermissionCell(
   const recordAction = deps?.recordAction ?? defaultRecordAction;
 
   const allowed = await canFn(viewer, "admin.permissions", "write");
-  if (!allowed) throw new ForbiddenError("권한표를 바꿀 권한이 없습니다.");
+  if (!allowed) throw new ForbiddenError("권한표 변경 권한 없음");
 
   // T-03-18: 자기 계급의 권한표 쓰기 칸을 스스로 끄는 사고를 막는다 — 그 칸을
   // 끄면 그 계급의 누구도 권한표를 다시 열 수 없어 DB 직접 수정 없이는
@@ -107,7 +107,7 @@ export async function setPermissionCell(
     input.action === "write" &&
     input.allowed === false
   ) {
-    throw new SelfLockoutError("자기 계급의 권한표 쓰기 권한은 끌 수 없습니다.");
+    throw new SelfLockoutError("자기 계급 권한표 쓰기는 끌 수 없음");
   }
 
   await upsertPermission(viewer, {
@@ -137,7 +137,7 @@ export async function readVisibilityGrid(viewer: Viewer, deps?: Partial<MatrixDe
   const listVisibility = deps?.listVisibility ?? defaultListVisibility;
 
   const allowed = await canFn(viewer, "admin.visibility", "view");
-  if (!allowed) throw new ForbiddenError("정보 노출표를 볼 권한이 없습니다.");
+  if (!allowed) throw new ForbiddenError("정보 노출표 열람 권한 없음");
 
   const [roleRows, visibilityRows] = await Promise.all([listRoles(viewer), listVisibility(viewer)]);
 
@@ -163,7 +163,7 @@ export async function setVisibilityCell(
   const recordAction = deps?.recordAction ?? defaultRecordAction;
 
   const allowed = await canFn(viewer, "admin.visibility", "write");
-  if (!allowed) throw new ForbiddenError("정보 노출표를 바꿀 권한이 없습니다.");
+  if (!allowed) throw new ForbiddenError("정보 노출표 변경 권한 없음");
 
   await upsertVisibility(viewer, {
     roleId: input.roleId,

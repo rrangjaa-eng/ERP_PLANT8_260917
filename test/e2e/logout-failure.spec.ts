@@ -8,7 +8,7 @@ import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 // pending이 영구히 걸려 다시 시도할 수 없다.
 //
 // 네트워크 단에서 sign-out을 끊어 그 상황을 실제로 만든다.
-const FAIL_MESSAGE = "로그아웃하지 못했습니다";
+const FAIL_MESSAGE = "로그아웃 실패";
 
 // 「로그아웃」 이름의 버튼은 본문과 닫힌 「더보기」 시트 둘 다에 있다 — 본문 것으로 좁힌다.
 function accountLogout(page: Page) {

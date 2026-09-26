@@ -27,13 +27,14 @@ export function HolidayForm({ min, max, cancelHref }: { min: string; max: string
   const [failed, setFailed] = useState(false);
 
   // §7-15 PARTIAL — 빈 필수 칸(날짜·이름)을 세어 1차 옆 이유 + 첫 빈 칸 다음 한 수.
+  // 날짜는 네이티브 날짜 입력이라 다음 한 수가 「고르기」다(DECISIONS.md 2026-09-26 날짜 입력 네이티브 통일).
   const empty = [
-    ...(date === "" ? [{ label: "날짜", id: "holiday-date" }] : []),
-    ...(name.trim() === "" ? [{ label: "이름", id: "holiday-name" }] : []),
+    ...(date === "" ? [{ label: "날짜", id: "holiday-date", nextLabel: "날짜 고르기" }] : []),
+    ...(name.trim() === "" ? [{ label: "이름", id: "holiday-name", nextLabel: "이름 적기" }] : []),
   ];
   const firstEmpty = empty[0];
   const blockedReason = firstEmpty
-    ? `추가할 수 없음 — ${empty.map((field) => field.label).join(" · ")} ${empty.length}칸 ·`
+    ? `${empty.map((field) => field.label).join(" · ")} ${empty.length}칸 비어 있음`
     : undefined;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -128,7 +129,7 @@ export function HolidayForm({ min, max, cancelHref }: { min: string; max: string
         ) : null}
         {firstEmpty && !pending ? (
           <Button variant="tertiary" onClick={() => document.getElementById(firstEmpty.id)?.focus()}>
-            {`${firstEmpty.label} 적기`}
+            {firstEmpty.nextLabel}
           </Button>
         ) : null}
         <Link

@@ -469,19 +469,19 @@ test.describe("공휴일 추가 폼의 상태(04.2-12)", () => {
     await expect(submit).toHaveAttribute("aria-disabled", "true");
     const reasonId = await submit.getAttribute("aria-describedby");
     expect(reasonId).toBeTruthy();
-    await expect(page.locator(`[id="${reasonId}"]`)).toHaveText("추가할 수 없음 — 날짜 · 이름 2칸 ·");
+    await expect(page.locator(`[id="${reasonId}"]`)).toHaveText("날짜 · 이름 2칸 비어 있음");
     await name.focus();
-    await page.getByRole("button", { name: "날짜 적기" }).click();
+    await page.getByRole("button", { name: "날짜 고르기" }).click();
     await expect(date).toBeFocused();
 
     await date.fill(`${NEXT_YEAR}-07-14`);
-    await expect(page.locator(`[id="${reasonId}"]`)).toHaveText("추가할 수 없음 — 이름 1칸 ·");
+    await expect(page.locator(`[id="${reasonId}"]`)).toHaveText("이름 1칸 비어 있음");
     await page.getByRole("button", { name: "이름 적기" }).click();
     await expect(name).toBeFocused();
 
     await name.fill("채운 이름");
     await expect(submit).not.toHaveAttribute("aria-disabled", "true");
-    await expect(page.getByRole("button", { name: /적기$/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /(적기|고르기)$/ })).toHaveCount(0);
   });
 
   test("min은 KST 내일 · max는 음력 표 마지막 해 12-31 · 오늘·규칙 행 날짜·음력 표 밖 해는 날짜 칸 아래 오류이고 값이 남는다", async ({

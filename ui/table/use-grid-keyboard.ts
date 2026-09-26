@@ -228,17 +228,21 @@ export function useGridKeyboard({
       return;
     }
 
+    // 04-19 — 편집 중 Tab/Shift+Tab은 확정하고 옆 편집 셀로(호출부). Tab은 조합을 끝내는 키라 조합 중이어도 여기서 처리한다(리뷰 S-2).
+    if (editing && event.key === "Tab" && !event.ctrlKey && !event.altKey) {
+      event.preventDefault();
+      onTab?.(pos, event.shiftKey ? "backward" : "forward");
+      return;
+    }
+
     // 04-49 — 한글 조합 중인 키는 격자 동작을 시작하지 않는다(조합 확정 Enter가 편집을 열지 않게). Ctrl 조합은 위에서 기본 동작을 막았다(리뷰 S-1).
     if (event.nativeEvent.isComposing) return;
 
     if (editing) {
       // 편집 중에는 이 훅이 방향키·Delete를 가로채지 않는다 — 입력 요소
       // 자체의 커서 이동·글자 삭제가 자연스럽게 동작해야 한다. Esc·Enter만
-      // 편집 종료 신호로 계속 처리한다. 04-19 — Tab/Shift+Tab은 확정하고 옆 편집 셀로(호출부).
-      if (event.key === "Tab" && !event.ctrlKey && !event.altKey) {
-        event.preventDefault();
-        onTab?.(pos, event.shiftKey ? "backward" : "forward");
-      } else if (event.key === "Escape") {
+      // 편집 종료 신호로 계속 처리한다.
+      if (event.key === "Escape") {
         event.preventDefault();
         handlers.onEscape?.(pos, true);
       } else if (event.key === "Enter" && !event.ctrlKey && !event.altKey && !event.shiftKey) {

@@ -471,7 +471,7 @@ cmd_finalize() {
       state_set RECORD_EXEC "$rec_exec"
     else
       rec_exec=""
-      record_note="기록 실패(저장된 결과 확인 불가)입니다 — finalize를 다시 돌리면 같은 실행 키로 다시 기록합니다."
+      record_note="기록 실패(저장된 결과 확인 불가)입니다 — 워크플로를 다시 돌립니다(새 실행으로 기록됩니다). 남은 임시 인스턴스는 docs/RESTORE.md 2절로 확인합니다."
     fi
   fi
 

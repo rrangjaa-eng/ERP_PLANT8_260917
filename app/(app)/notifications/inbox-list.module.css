@@ -31,7 +31,7 @@
 
 /* S1-c 안 읽음: 첫 칸 좌측 인셋 선(§7-12 E① · §4-3 허용 목록). */
 .unread td:first-child {
-  box-shadow: inset 2px 0 0 var(--line-strong);
+  box-shadow: inset var(--line-w-strong) 0 0 var(--line-strong);
 }
 
 /* S1-c 시각 칸: 오른쪽 정렬 · tabular-nums · nowrap(§2-4 숫자 칸 규칙과 같은 결). */

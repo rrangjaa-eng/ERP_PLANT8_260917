@@ -132,7 +132,7 @@ export function applyPaste<Row>(params: {
           num === null
             ? { rowIndex, columnKey: column.key, result: { status: "error", reason: "숫자 형식 오류 · 12,400,000처럼" } }
             : tooPrecise && column.numberKind
-              ? { rowIndex, columnKey: column.key, result: { status: "error", reason: numberInputRejectionReason(column.numberKind, "precision") } }
+              ? { rowIndex, columnKey: column.key, result: { status: "error", reason: numberInputRejectionReason(column.numberKind, column.numberKind === "krw" ? "krw-fraction" : "precision") } }
               : { rowIndex, columnKey: column.key, result: { status: "ok", value: String(num) } },
         );
         return;

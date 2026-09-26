@@ -101,6 +101,11 @@
   border-bottom: var(--line-w) solid var(--line);
 }
 
+/* §7-3 행 hover — people/vendors/inbox-list 선례. */
+.table tbody tr:hover td {
+  background: var(--surface);
+}
+
 /* §2-4: 날짜는 같은 폭 숫자 — tabular-nums, 줄바꿈 없음. */
 .date {
   font-variant-numeric: tabular-nums;

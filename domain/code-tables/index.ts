@@ -103,7 +103,7 @@ export async function createCodeItem(
   input: { tableKey: string; value: string; label: string; sortOrder?: number; description?: string },
 ): Promise<CodeItemDto> {
   const allowed = await can(viewer, "admin.code-tables", "write");
-  if (!allowed) throw new ForbiddenError("코드표 항목 추가 권한이 없습니다.");
+  if (!allowed) throw new ForbiddenError("코드표 항목 추가 권한 없음");
 
   const description = normalizeDescription(input.description ?? "");
 
@@ -122,7 +122,7 @@ export async function setCodeItemActive(
   active: boolean,
 ): Promise<CodeItemDto | null> {
   const allowed = await can(viewer, "admin.code-tables", "write");
-  if (!allowed) throw new ForbiddenError("코드표 항목 상태 변경 권한이 없습니다.");
+  if (!allowed) throw new ForbiddenError("코드표 항목 상태 변경 권한 없음");
 
   const current = await repoFindCodeItemById(viewer, id);
   if (!current) return null;
@@ -146,15 +146,15 @@ export async function updateCodeItemLabel(
   label: string,
 ): Promise<CodeItemDto | null> {
   const allowed = await can(viewer, "admin.code-tables", "write");
-  if (!allowed) throw new ForbiddenError("코드표 항목 수정 권한이 없습니다.");
+  if (!allowed) throw new ForbiddenError("코드표 항목 수정 권한 없음");
 
   const trimmed = label.trim();
-  if (trimmed === "") throw new UserFacingError("이름이 비어 있습니다 · 이름을 입력해 주세요.");
+  if (trimmed === "") throw new UserFacingError("이름 없음 · 이름 입력");
 
   const current = await repoFindCodeItemById(viewer, id);
   if (!current) return null;
   if (current.archivedAt !== null) {
-    throw new ArchivedCodeItemError("보관된 코드표 항목은 수정할 수 없습니다 · 먼저 복원해 주세요.");
+    throw new ArchivedCodeItemError("보관된 코드표 항목은 수정할 수 없음 · 먼저 복원");
   }
 
   await repoUpdateCodeItemLabel(viewer, id, trimmed);
@@ -172,7 +172,7 @@ function normalizeDescription(description: string): string | null {
   const trimmed = description.trim();
   if (trimmed === "") return null;
   if (trimmed.length > CODE_ITEM_DESCRIPTION_MAX) {
-    throw new UserFacingError("설명이 40자를 넘습니다 · 한 문장으로 줄여 주세요");
+    throw new UserFacingError("설명 40자 초과 · 한 문장으로 축약");
   }
   return trimmed;
 }
@@ -186,14 +186,14 @@ export async function updateCodeItemDescription(
   description: string,
 ): Promise<CodeItemDto | null> {
   const allowed = await can(viewer, "admin.code-tables", "write");
-  if (!allowed) throw new ForbiddenError("코드표 항목 설명 변경 권한이 없습니다.");
+  if (!allowed) throw new ForbiddenError("코드표 항목 설명 변경 권한 없음");
 
   const normalized = normalizeDescription(description);
 
   const current = await repoFindCodeItemById(viewer, id);
   if (!current) return null;
   if (current.archivedAt !== null) {
-    throw new ArchivedCodeItemError("보관된 코드표 항목은 수정할 수 없습니다 · 먼저 복원해 주세요.");
+    throw new ArchivedCodeItemError("보관된 코드표 항목은 수정할 수 없음 · 먼저 복원");
   }
 
   await repoUpdateCodeItemDescription(viewer, id, normalized);
@@ -212,12 +212,12 @@ export async function setEvidenceTypeTaxRule(
   taxRule: unknown,
 ): Promise<CodeItemDto | null> {
   const allowed = await can(viewer, "admin.code-tables", "write");
-  if (!allowed) throw new ForbiddenError("세금 규칙 변경 권한이 없습니다.");
+  if (!allowed) throw new ForbiddenError("세금 규칙 변경 권한 없음");
 
   const current = await repoFindCodeItemById(viewer, id);
   if (!current) return null;
   if (current.tableKey !== EVIDENCE_TYPE_TABLE_KEY) {
-    throw new NotEvidenceTypeError("증빙 종류 코드표 항목에만 세금 규칙을 저장할 수 있습니다.");
+    throw new NotEvidenceTypeError("증빙 종류 코드표 항목에만 세금 규칙 저장 가능");
   }
 
   const parsed = taxRuleSchema.parse(taxRule);

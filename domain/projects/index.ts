@@ -303,7 +303,7 @@ export type ProjectInputFieldError = {
 
 export class ProjectInputRejectedError extends UserFacingError {
   constructor(readonly errors: ProjectInputFieldError[]) {
-    super(errors[0]?.reason ?? "등록하지 못했습니다");
+    super(errors[0]?.reason ?? "등록 실패");
   }
 }
 
@@ -379,7 +379,7 @@ export async function createProject(
 ): Promise<ProjectDto> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, PROJECTS_MENU, "write"))) {
-    throw new ForbiddenError("프로젝트 등록 권한이 없습니다.");
+    throw new ForbiddenError("프로젝트 등록 권한 없음");
   }
 
   const { errors: inputErrors, preEstimate } = validateProjectInput(input);

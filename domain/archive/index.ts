@@ -40,7 +40,7 @@ async function assertCanWrite(viewer: Viewer, deps?: Partial<ArchiveDeps>): Prom
   const canFn = deps?.can ?? defaultCan;
   const allowed = await canFn(viewer, ARCHIVE_MENU, "write");
   if (!allowed) {
-    throw new ForbiddenError("보관함 쓰기 권한이 없습니다.");
+    throw new ForbiddenError("보관함 쓰기 권한 없음");
   }
 }
 
@@ -57,9 +57,9 @@ export async function archive(
   const entry = findEntry(entity);
 
   const row = await entry.findById(viewer, id);
-  if (!row) throw new ArchivableRowNotFoundError("대상을 찾을 수 없습니다.");
+  if (!row) throw new ArchivableRowNotFoundError("대상 찾을 수 없음");
   if (entry.isProtected?.(row)) {
-    throw new ProtectedRowError("보호된 항목은 보관할 수 없습니다.");
+    throw new ProtectedRowError("보호된 항목은 보관할 수 없음");
   }
 
   await entry.setArchived(viewer, id, true);
@@ -86,7 +86,7 @@ export async function restore(
   const entry = findEntry(entity);
 
   const row = await entry.findById(viewer, id);
-  if (!row) throw new ArchivableRowNotFoundError("대상을 찾을 수 없습니다.");
+  if (!row) throw new ArchivableRowNotFoundError("대상 찾을 수 없음");
 
   await entry.setArchived(viewer, id, false);
 
@@ -139,7 +139,7 @@ export type ListArchiveDeps = {
 export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps>): Promise<ArchiveEntryDto[]> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, ARCHIVE_MENU, "view"))) {
-    throw new ForbiddenError("보관함 열람 권한이 없습니다.");
+    throw new ForbiddenError("보관함 열람 권한 없음");
   }
 
   const listFn = deps?.listArchivedAcrossEntities ?? defaultListArchivedAcrossEntities;

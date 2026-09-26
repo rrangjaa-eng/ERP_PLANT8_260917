@@ -474,7 +474,7 @@ function cellConflictsFor(rowId: string, baseline: QuoteLineBaseline | undefined
         rowId,
         field: "itemName",
         label: FIELD_LABELS.itemName,
-        reason: "다른 사람이 이 줄을 바꿨습니다 · 덮어쓰기 / 그 값으로",
+        reason: "다른 사람이 이 줄을 바꿈 · 덮어쓰기 / 그 값으로",
         theirValue: current.itemName,
         theirRaw: current.itemName,
         theirVersion: current.version,
@@ -555,7 +555,7 @@ export const quoteLineRowInputSchema = z
       .optional(),
   })
   .refine((row) => row.id === undefined || row.isNew === true || row.version !== undefined, {
-    message: "기존 줄을 저장하려면 버전 정보가 필요합니다 · 화면을 새로고침해 주세요",
+    message: "버전 정보 필요 · 새로고침",
     path: ["version"],
   })
   // 04-13(엔지 리뷰 GAP 6) — 소분류는 견적 줄(종류 없음 = 기존 줄 포함)에서만 필수. 조정·견적 외 비용 줄의 소분류 칸은
@@ -590,7 +590,7 @@ const CURRENT_REVISION_RULE = "quote.current-revision";
 // UI-SPEC rev 5 — 보낸 차수가 잠금 뒤 다시 읽은 최신 차수가 아니다(04-40 · B-01).
 const STALE_REVISION = "다른 사람이 새 차수를 만듦 · 새로 고침";
 // 보관함 복원(관리자 화면 — P0 예외) — 현재 차수가 아닌 차수의 줄.
-const PAST_REVISION_RESTORE = "이전 차수의 줄은 복원할 수 없습니다 · 현재 차수에서 새로 만들어 주세요";
+const PAST_REVISION_RESTORE = "이전 차수 줄은 복원할 수 없음 · 현재 차수에서 새로 생성";
 // UI-SPEC rev 5 `Error — 저장(순서·소속, 방어)` · `Error — 저장(재전송 불일치, ENG-D10)`.
 const MEMBERSHIP_MISMATCH = "차수와 프로젝트가 맞지 않음 · 새로 고침";
 const ORDER_MISMATCH = "줄 순서가 맞지 않음 · 새로 고침";
@@ -623,16 +623,16 @@ export async function prepareQuoteLineSave(
   // 04-13(D-83) — 조정 권한만 있는 사람도 조정 줄을 저장한다. 두 권한은 여기서(트랜잭션 전) 읽는다(04-32).
   const [canWrite, canAdjust] = await Promise.all([canFn(viewer, PROJECTS_MENU, "write"), canFn(viewer, ADJUSTMENT_MENU, "write")]);
   if (!canWrite && !canAdjust) {
-    throw new ForbiddenError("견적 줄 저장 권한이 없습니다.");
+    throw new ForbiddenError("견적 줄 저장 권한 없음");
   }
   // 금액을 볼 수 없는 사람은 줄을 저장하지 못한다 — 화면은 금액 없이 줄을
   // 받으므로, 저장을 허용하면 단가·실행가가 0으로 덮인다(/ship 리뷰).
   if (!(await defaultVisible(viewer, "quote.amount"))) {
-    throw new ForbiddenError("견적 금액을 볼 수 없어 견적 줄을 저장할 수 없습니다.");
+    throw new ForbiddenError("견적 금액을 볼 수 없어 견적 줄 저장 불가");
   }
 
   const revision = await repoFindQuoteRevisionById(viewer, revisionId);
-  if (!revision) throw new RevisionNotFoundError("존재하지 않는 차수입니다.");
+  if (!revision) throw new RevisionNotFoundError("존재하지 않는 차수");
 
   return {
     revisionId,
@@ -716,19 +716,19 @@ const QUANTITY_COLUMN_LIMIT = 1e10;
 export function quoteLineFormatErrors(input: QuoteLineWriteRow, rowIndex: number, kind: QuoteLineKind): CellFormatError[] {
   const errors: CellFormatError[] = [];
   if (input.quantity !== undefined && input.quantity <= 0) {
-    errors.push({ rowIndex, rowId: input.id, field: "quantity", label: "수량", reason: "숫자가 아닙니다 · 0보다 큰 수를 적어 주세요" });
+    errors.push({ rowIndex, rowId: input.id, field: "quantity", label: "수량", reason: "숫자 형식 오류 · 0보다 큰 수" });
   }
   if (input.quantity !== undefined && Number(input.quantity.toFixed(2)) >= QUANTITY_COLUMN_LIMIT) {
-    errors.push({ rowIndex, rowId: input.id, field: "quantity", label: "수량", reason: "수량이 상한을 넘습니다 · 수량을 고쳐 주세요" });
+    errors.push({ rowIndex, rowId: input.id, field: "quantity", label: "수량", reason: "수량 상한 초과 · 수량 수정" });
   }
   if (input.quantity !== undefined && input.quantity > 0 && Number(input.quantity.toFixed(MAX_DECIMALS.quantity)) !== input.quantity) {
     errors.push({ rowIndex, rowId: input.id, field: "quantity", label: "수량", reason: numberInputRejectionReason("quantity", "precision") });
   }
   if (input.unitPrice.amount < 0) {
-    errors.push({ rowIndex, rowId: input.id, field: "unitPrice", label: "단가", reason: "숫자가 아닙니다 · 12,400,000처럼 적어 주세요" });
+    errors.push({ rowIndex, rowId: input.id, field: "unitPrice", label: "단가", reason: "숫자 형식 오류 · 12,400,000처럼" });
   }
   if (input.execution.amount < 0 && kind === "quote") {
-    errors.push({ rowIndex, rowId: input.id, field: "execution", label: "실행가", reason: "숫자가 아닙니다 · 12,400,000처럼 적어 주세요" });
+    errors.push({ rowIndex, rowId: input.id, field: "execution", label: "실행가", reason: "숫자 형식 오류 · 12,400,000처럼" });
   }
   return errors;
 }
@@ -745,7 +745,7 @@ const CELL_LABELS: Record<QuoteLineField, string> = {
 };
 
 // UI-SPEC rev 5 `Error — 셀(금액 범위, 04-40 · DR-9)` — 계산값 상한은 수량·단가 두 칸 모두.
-const QUOTE_AMOUNT_OVER = "견적가가 상한을 넘습니다 · 수량이나 단가를 고쳐 주세요";
+const QUOTE_AMOUNT_OVER = "견적가 상한 초과 · 수량이나 단가 수정";
 
 // 04-40(엔지니어링 리뷰 B §2 · DR-9) — 단가·실행가를 한 규칙으로 정규화하고(거부는 그 칸의 셀 오류), 수량 × 단가의 계산
 // 견적가가 저장 상한 밖이면 수량·단가 두 칸 오류. 쓰기 전에 판정해 PG 22003이 화면에 닿지 않는다.
@@ -769,7 +769,7 @@ function normalizeLineMoney(row: QuoteLineWriteRow, rowIndex: number): { row: Qu
   }
   // 04-40 검토 SF-1 — 차익(견적가 − 실행가)도 profit_krw 정수 컬럼 안이어야 한다(견적가 0 줄의 음수 실행가 하한 등).
   if (errors.length === 0 && !withinKrwColumn(computeQuoteLineAmounts({ ...row, unitPrice, execution }).profitKrw)) {
-    errors.push({ rowIndex, rowId: row.id, field: "execution", label: CELL_LABELS.execution, reason: "차익이 상한을 넘습니다 · 실행가를 고쳐 주세요" });
+    errors.push({ rowIndex, rowId: row.id, field: "execution", label: CELL_LABELS.execution, reason: "차익 상한 초과 · 실행가 수정" });
   }
   return { row: { ...row, unitPrice, execution }, errors };
 }
@@ -810,7 +810,7 @@ export async function writeQuoteLinesInTx(
 
   // (a)
   const projectRow = await loadProjectForGate(viewer, projectId, { now: deps?.now, tx, afterLock: deps?.afterLock }, { recordAction });
-  if (!projectRow) throw new RevisionNotFoundError("연결된 프로젝트를 찾을 수 없습니다.");
+  if (!projectRow) throw new RevisionNotFoundError("연결된 프로젝트 찾을 수 없음");
   // 04-40(B-01) — 현재 차수 재확인은 잠금 뒤 같은 tx로(단독 저장·합성 저장 공통). 아무것도 쓰기 전에 전부 거부한다.
   const latest = await repoFindLatestQuoteRevision(viewer, projectId, tx);
   if (latest?.id !== revisionId) denyWrite(viewer, CURRENT_REVISION_RULE, { projectId, revisionId }, new UserFacingError(STALE_REVISION));
@@ -917,7 +917,7 @@ export async function writeQuoteLinesInTx(
       }
 
       if (row.version === undefined) {
-        throw new UserFacingError("기존 줄을 저장하려면 버전 정보가 필요합니다 · 화면을 새로고침해 주세요");
+        throw new UserFacingError("버전 정보 필요 · 새로고침");
       }
       if (!current) continue; // (b)가 이미 막았다.
       if (current.version !== row.version) conflicts.push(...cellConflictsFor(row.id, row.baseline, current));
@@ -1068,17 +1068,17 @@ export async function restoreQuoteLine(
   const canFn = deps?.can ?? defaultCan;
   // 04-13(OV-2 · D-83) — 입구는 저장과 같은 두 권한 중 하나. 보관된 줄의 종류로 게이트가 가른다(조정 줄은 조정 권한만).
   const [canWrite, canAdjust] = await Promise.all([canFn(viewer, PROJECTS_MENU, "write"), canFn(viewer, ADJUSTMENT_MENU, "write")]);
-  if (!canWrite && !canAdjust) throw new ForbiddenError("견적 줄 복원 권한이 없습니다.");
+  if (!canWrite && !canAdjust) throw new ForbiddenError("견적 줄 복원 권한 없음");
   const line = await repoFindQuoteLineById(viewer, id);
   const revision = line ? await repoFindQuoteRevisionById(viewer, line.revisionId) : null;
-  if (!line || !revision) throw new RevisionNotFoundError("대상을 찾을 수 없습니다.");
+  if (!line || !revision) throw new RevisionNotFoundError("대상 찾을 수 없음");
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   // 04-26(A-19 · ENG-D3 ①) — 상한 값은 트랜잭션 전에 읽는다. 복원도 줄 하나를 더하는 것이라 같은 상한을 지난다.
   const lineCap = await getSettingValue(QUOTE_LINE_MAX_PER_REVISION);
 
   await withTransaction(async (tx) => {
     const projectRow = await loadProjectForGate(viewer, revision.projectId, { now: deps?.now, tx, afterLock: deps?.afterLock }, { recordAction });
-    if (!projectRow) throw new RevisionNotFoundError("연결된 프로젝트를 찾을 수 없습니다.");
+    if (!projectRow) throw new RevisionNotFoundError("연결된 프로젝트 찾을 수 없음");
     const current = await repoFindQuoteLineById(viewer, id, tx);
     if (!current || current.revisionId !== line.revisionId) throw new UserFacingError(MEMBERSHIP_MISMATCH);
     if (current.archivedAt === null) return;

@@ -108,7 +108,7 @@ registerDto({
 
 async function assertPeopleWrite(viewer: Viewer, can: typeof defaultCan): Promise<void> {
   if (!(await can(viewer, PEOPLE_MENU, "write"))) {
-    throw new ForbiddenError("조직 관리 권한이 없습니다.");
+    throw new ForbiddenError("조직 관리 권한 없음");
   }
 }
 
@@ -284,13 +284,13 @@ export async function cancelFutureAssignment(
 
   const now = deps?.now ?? (() => new Date());
   if (input.effectiveFrom <= todayIsoDate(now)) {
-    throw new PastAssignmentCancelError("과거·오늘 발령은 취소할 수 없습니다 — 미래로 예정된 발령만 취소됩니다.");
+    throw new PastAssignmentCancelError("과거·오늘 발령은 취소할 수 없음 — 미래로 예정된 발령만 취소 가능");
   }
 
   const deleteMembership = deps?.deleteMembership ?? repoDeleteMembership;
   const deleted = await deleteMembership(viewer, input.userId, input.effectiveFrom);
   if (deleted === 0) {
-    throw new NotFoundError("취소할 발령을 찾을 수 없습니다.");
+    throw new NotFoundError("취소할 발령 찾을 수 없음");
   }
 }
 

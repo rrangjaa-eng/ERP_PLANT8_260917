@@ -12,15 +12,15 @@ export function validatePreEstimateChange(input: {
 }): PreEstimateFieldError[] {
   const errors: PreEstimateFieldError[] = [];
   if (!Number.isFinite(input.amount)) {
-    errors.push({ field: "amount", reason: "숫자가 아닙니다 · 12,400,000처럼 적어 주세요" });
+    errors.push({ field: "amount", reason: "숫자 형식 오류 · 12,400,000처럼" });
   } else if (input.amount < 0) {
-    errors.push({ field: "amount", reason: "총 매출 예상가는 0 이상 · 금액을 고쳐 주세요" });
+    errors.push({ field: "amount", reason: "총 매출 예상가는 0 이상 · 금액 수정" });
   }
   if (input.currency !== "KRW") {
     if (input.fxRate === null || !Number.isFinite(input.fxRate)) {
       errors.push({ field: "fxRate", reason: `환율이 없습니다 · ${input.currency} 환율을 적어 주세요` });
     } else if (input.fxRate <= 0) {
-      errors.push({ field: "fxRate", reason: "환율은 0보다 커야 합니다 · 환율을 고쳐 주세요" });
+      errors.push({ field: "fxRate", reason: "환율 0 이하 · 환율 수정" });
     }
   }
   return errors;

@@ -300,5 +300,5 @@ export function numberInputRejectionReason(kind: NumberInputKind, rejected: Numb
     if (kind === "fxRate") return "환율은 소수 4자리까지";
     return "수량은 소수 2자리까지";
   }
-  return "숫자가 아닙니다 · 12,400,000처럼 적어 주세요";
+  return "숫자 형식 오류 · 12,400,000처럼";
 }

@@ -89,10 +89,8 @@ export function PeriodField({
             <input
               ref={field.ref}
               id={id}
-              type="text"
-              inputMode="numeric"
+              type="date"
               autoComplete="off"
-              placeholder="2026-09-18"
               value={draft[field.key]}
               readOnly={saveLocked}
               aria-invalid={error ? "true" : undefined}

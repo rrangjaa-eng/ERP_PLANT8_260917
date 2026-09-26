@@ -42,7 +42,7 @@ export async function listProjectFormReferences(
 ): Promise<ProjectFormReferences> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, "projects", "view"))) {
-    throw new ForbiddenError("프로젝트 조회 권한이 없습니다.");
+    throw new ForbiddenError("프로젝트 조회 권한 없음");
   }
 
   const [vendorRows, teamRows, userRows, subcategoryRows] = await Promise.all([

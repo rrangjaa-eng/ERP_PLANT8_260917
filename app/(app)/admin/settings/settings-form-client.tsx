@@ -5,6 +5,7 @@ import { useAction } from "next-safe-action/hooks";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { HistoryList, type HistoryEntry } from "@/ui/history-list/HistoryList";
+import { parseNumberInput, type NumberInputKind } from "@/lib/format-number";
 import {
   setSimpleSettingAction,
   addHistorizedSettingAction,
@@ -18,7 +19,7 @@ import styles from "./settings.module.css";
 // 결과만 props로 받는다).
 export type SettingsFieldDescriptorView =
   | { kind: "boolean" }
-  | { kind: "number" }
+  | { kind: "number"; numberKind?: NumberInputKind }
   | { kind: "string" }
   | { kind: "enum"; options: string[] }
   | { kind: "multi-enum"; options: string[] };
@@ -146,8 +147,33 @@ function SimpleFieldEditor({
     );
   }
 
-  // number | string — 텍스트 입력, blur에서 즉시 저장(§7-2 자동 생성 설정
-  // 화면 필드 렌더 규칙).
+  // 쉼표 입력 종류가 있는 number 칸(04-09, UI-SPEC S15) — useCommaInput이
+  // 자기 상태를 갖는 비제어 칸이라 blur에서 표시 텍스트를 직접 읽는다
+  // (parseNumberInput이 쉼표를 지우므로 rawValue를 따로 넘기지 않아도 된다).
+  if (descriptor.kind === "number" && descriptor.numberKind) {
+    return (
+      <div className={styles.field}>
+        <TextField
+          id={`setting-${fieldKey}`}
+          label={label}
+          numberKind={descriptor.numberKind}
+          defaultValue={text}
+          onBlur={(event) => {
+            const parsed = parseNumberInput(event.target.value);
+            // "-"·"." 만 남은 칸은 NaN이다 — 0으로 대체하지 않고(??는
+            // null만 대체한다) 이전 값을 유지한 채 저장을 건너뛴다.
+            if (parsed !== null && !Number.isFinite(parsed)) return;
+            execute({ key: fieldKey, value: parsed ?? 0 });
+          }}
+          error={error ?? undefined}
+        />
+        {hint ? <p className={styles.hint}>{hint}</p> : null}
+      </div>
+    );
+  }
+
+  // number(numberKind 없음) | string — 텍스트 입력, blur에서 즉시 저장
+  // (§7-2 자동 생성 설정 화면 필드 렌더 규칙).
   return (
     <div className={styles.field}>
       <TextField

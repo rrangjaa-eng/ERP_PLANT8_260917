@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 5
+current_plan: 34
 status: executing
-stopped_at: Completed 04-04-PLAN.md
-last_updated: "2026-09-24T13:00:53.191Z"
-last_activity: 2026-09-22
-last_activity_desc: Phase 04 execution started
-state_head: a6375166b2704a13ae586b73a0ff3895ea1d4e1b
+stopped_at: Completed 04-41-PLAN.md
+last_updated: "2026-09-26T04:05:42.050Z"
+last_activity: 2026-09-25
+last_activity_desc: Phase 4 execution started
+state_head: 35b3f60b799e656ec2ab46794d0bff22259ecc0e
 progress:
   total_phases: 16
   completed_phases: 1
-  total_plans: 61
-  completed_plans: 27
+  total_plans: 115
+  completed_plans: 56
   percent: 6
 ---
 
@@ -24,15 +24,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-17)
 
 **Core value:** 기획본부와 경영관리본부가 프로젝트마다 같은 숫자(견적·예상 비용·확정 비용·손익)를 본다. 기획본부는 계산식·근거 없이 결과 숫자로 납득하고, 경영관리·대표는 근거 줄까지 본다.
-**Current focus:** Phase 04 — 프로젝트·견적 원장
+**Current focus:** Phase 4 — 프로젝트·견적 원장
 
 ## Current Position
 
-Phase: 4 (프로젝트·견적 원장) — READY TO EXECUTE
-Current Plan: 5
-Total Plans in Phase: 26
+Phase: 4 (프로젝트·견적 원장) — EXECUTING
+Current Plan: 34
+Total Plans in Phase: 42
 Status: Ready to execute
-Last activity: 2026-09-22 — Phase 04 execution started
+Last activity: 2026-09-25 — Phase 4 execution started
 
 Progress: [█░░░░░░░░░] 6%
 
@@ -77,6 +77,34 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P02 | 1h10m | 3 tasks | 36 files |
 | Phase 04 P05 | 1h2m | 2 tasks | 16 files |
 | Phase 04 P04 | 35min | 3 tasks | 21 files |
+| Phase 04 P50 | 15min | 2 tasks | 6 files |
+| Phase 04 P08 | 41min | 2 tasks | 10 files |
+| Phase 04 P32 | 55min | 3 tasks | 13 files |
+| Phase 04 P43 | 10min | 1 tasks | 2 files |
+| Phase 04 P10 | 105min | 2 tasks | 14 files |
+| Phase 04 P46 | 58min | 2 tasks | 15 files |
+| Phase 04 P25 | 17 min | 2 tasks | 8 files |
+| Phase 04 P28 | 44 min | 3 tasks | 11 files |
+| Phase 04 P29 | 55min | 3 tasks | 11 files |
+| Phase 04 P06 | 27min | 2 tasks | 13 files |
+| Phase 04 P09 | 85min | 3 tasks | 20 files |
+| Phase 04 P27 | 15 min | 2 tasks | 15 files |
+| Phase 04 P20 | 38min | 3 tasks | 18 files |
+| Phase 04 P21 | 66min | 3 tasks | 20 files |
+| Phase 04 P11 | 32 min | 3 tasks | 14 files |
+| Phase 04 P44 | 39min | 3 tasks | 14 files |
+| Phase 04 P12 | 78min | 3 tasks | 30 files |
+| Phase 04 P30 | 39min | 2 tasks | 11 files |
+| Phase 04 P49 | 159min | 2 tasks | 17 files |
+| Phase 04 P26 | 93min | 2 tasks | 10 files |
+| Phase 04 P13 | 38 min | 2 tasks | 15 files |
+| Phase 04 P23 | 34 min | 3 tasks | 8 files |
+| Phase 04 P14 | 30min | 3 tasks | 12 files |
+| Phase 4 P40 | 48 min | 3 tasks | 11 files |
+| Phase 04 P24 | 66min | 4 tasks | 14 files |
+| Phase 04 P15 | 40min | 2 tasks | 14 files |
+| Phase 04 P16 | 47m | 3 tasks | 14 files |
+| Phase 04 P41 | 60min | 3 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -161,6 +189,80 @@ Recent decisions affecting current work:
 - [Phase 4]: 요청 본문 한도는 lib/actions/client.ts 미들웨어 한 자리(256KB)에만 둔다
 - [Phase 4]: 실제 Windows Excel은 줄바꿈 있는 칸만 인용하고 따옴표만 있는 칸은 원문 그대로 쓴다 — parseTsv를 이 규칙에 맞춤(04-RESEARCH.md 가정 A3 대체)
 - [Phase 4]: 데이터 이전 없음(사용자 결정 2026-09-23) — 인트라넷 데이터는 이전하지 않고 마스터(거래처·클라이언트·직원·법인카드·분류) 포함 전부 새 시스템에 손으로 입력한다. 시스템이 완성되는 대로 연중에 전환하고(연도 경계 아님) 인트라넷은 과거 조회 전용. REQUIREMENTS MIG-01~03 → Out of Scope(v1 89 → 86), MIG-04·05 재정의, OPS-06 '이전 실행' → '복원 리허설'. ROADMAP Phase 8 = 전환(마스터 수기 입력·계정 발급·demo 삭제·전환일 체크리스트·백업/복원 리허설). 04-03 철회(플랜 삭제, 추출 스크립트는 6b7519f로 되돌림), Phase 4 성공 기준 7 철회. 손익(Phase 9·10)은 전환 데이터부터이며 2026년 숫자는 두 시스템에 나뉜다(사용자 수용). 앞의 [CEO 리뷰 OV-1]·[Roadmap] 데이터 이전·[Eng 리뷰 OV-1]의 델타 이전 부분을 대체 — 옛 구조(상태 컬럼 없이 Y/N 승인 표시 4개, 견적 줄 = 단가×수량×일수, 프로젝트 번호 9개를 22개 프로젝트가 공유, 금액이 공급가인지 합계인지 불명)가 새 구조와 달라 단계마다 변환 규칙과 사람 확인이 필요했다
+- [Phase 4]: 04 plan-phase 13a 결정 커버리지 override: D-72·D-73·D-74(인트라넷 데이터 추출·변환)는 플랜 미인용으로 통과 — 2026-09-23 사용자 결정(데이터 이관 없음, 04-03 철회)으로 CONTEXT에 이미 대체 표시된 결정 — 사용자 선택 2026-09-24(AskUserQuestion: 그대로 진행). verify-phase에서 다시 보이도록 기록
+- [Phase 4]: [Phase 4] 04-50: 스키마 하한 = 체크아웃의 가장 최신 `-- rollback-floor:` 마이그레이션을 더한 커밋. rollback.sh가 그 커밋을 조상으로 갖지 않는 배포로는 트래픽을 옮기지 않는다(fail-closed, 우회 옵션 없음)
+- [Phase 4]: [Phase 4] 04-50: ENG-D12 deploy.yml main 전용 ref-guard를 04-31 Task 2에서 이 플랜(묶음 ② 첫 웨이브)으로 옮겼다 — 하한 판정이 main 이력을 전제한다
+- [Phase 4]: 04 열린 질문 사용자 답: ① 줄당 원화 > 2,147,483,647 → (b) bigint 전환(04-07 Task 0 = b: 0016에서 KRW 금액 컬럼 bigint + rollback-floor 마커) ② 채번 순번 시작값 하향 충돌 → (a) 설정 검증(현재 발급 최대 이하 값 거부, 04-51 Task 1 = a) — 사용자 결정 2026-09-24(세션 C 채팅). 04-07·04-51 checkpoint:decision은 실행 때 이 답을 적용한다
+- [Phase 4]: 04-08: 단축키 표기·동작은 Windows Ctrl(D-94) — metaKey를 읽지 않는다
+- [Phase 4]: 04-08: 등록 폼 제출 이중 방지는 submittedRef 래치로 — isExecuting 가드만으로는 성공 뒤 이동 지연 중 재입력을 못 막는다(엔지 리뷰 C §1 P2)
+- [Phase 4]: 04-08: SYSTEM.md §7-3 (가) 잠김 정의는 D-78 개정(CEO-D10·D12) — 정산 프로젝트의 줄 추가는 렌더한다
+- [Phase 4]: 04-08: SYSTEM.md §7-4 대기 태그 색을 §7-5 의미 목록에 맞춰 accent→muted로 정정
+- [Phase 4]: 04-08: 플랜의 baseline 커밋 d6b41cf가 저장소에 없어(환경 불일치) 실제 04-08 시작 시점 HEAD인 b0fc281을 tokens.css/package.json/pnpm-lock.yaml 불변 검증 기준으로 대신 썼다
+- [Phase 4]: 04-32: withTimeoutConversion을 lib/db-transaction.ts에서 분리 — withTransaction 안의 db.transaction()뿐 아니라 saveProjectLedger 전체(04-02)에도 씌워 트랜잭션 밖 풀 읽기의 원시 pg-pool 시간 초과 누수를 막았다(ENG-D11, tx-safety.test.ts (c) 실측)
+- [Phase 4]: 04-32: project()/projectMany의 infoItem 배열 판별은 Array.isArray가 아니라 typeof ref === "string" — Array.isArray는 string | readonly string[] 유니언을 any[]로 좁혀 lint 오류를 낸다(실측)
+- [Phase 4]: [Phase 04]: 04-43: D16 승인 세 곳(PROJ-04·PROJ-03·ROADMAP 기준 4)만 D-75~D-84 모델로 갱신, ROADMAP Goal·기준 1·5·트레일링·PROJ-06의 낡은 문구는 SUMMARY 표로 남겨 사용자가 /gsd-phase 편집 여부를 정한다
+- [Phase 4]: 04-10: 마이그레이션 번호 0011이 계획 번호와 일치(생성기가 직전 최고 idx+1을 그대로 줬다)
+- [Phase 4]: 04-10: CODE_ITEM_DESCRIPTION_MAX는 .length(UTF-16 단위)로 센다 — 한글은 글자당 1
+- [Phase 4]: 04-10: server-only 의존 체인이 있는 domain 모듈의 클라이언트 소비 상수는 잎(leaf) 모듈로 분리한다(domain/code-tables/description-max.ts)
+- [Phase 4]: 배포 창(T-04-372/T-04-86): 묶음 ②·③ 모두 업무 시간 밖에 프로덕션 승격, migrate 뒤 몇 분 오류는 수용(코드 변경 없음) — 사용자 결정 2026-09-24 세션 H(AskUserQuestion)
+- [Phase 4]: A-12 수용: 묶음 ② 배포 동안 완료 프로젝트 계약 금액 편집 가능 상태 유지, 묶음 ③ 끝(04-41)에서 해소 — 사용자 결정 2026-09-24 세션 H
+- [Phase 4]: 플래너 판단 인정: ②/③ 경계 04-23 뒤 · ENG-D12 04-50 이동 · QA 날짜 순서→04-15 · 폰 편집→04-49 — 사용자 결정 2026-09-24 세션 H
+- [Phase 4]: 04-43 남은 낡은 문구 5자리는 Phase 4 /gsd-verify-work 직전에 /gsd-phase 편집으로 고침 — 사용자 결정 2026-09-24 세션 H
+- [Phase 4]: QA 16건 유실 인정 — 묶음 ② /qa가 다시 훑고 키보드 포커스(탭 순서·포커스 표시·복귀)를 점검 항목으로 둠 — 사용자 결정 2026-09-24 세션 H
+- [Phase 4]: Button pending 상태도 aria-disabled(rev 5) — 계약 1 요약과 다름, 소비 API는 동일
+- [Phase 4]: ConfirmDialog primary에 reasonTone·nextStep 선택 확장, options 행 모양 {label, description?, onSelect} 확정
+- [Phase 4]: confirmDeleteLine 기존 로직 재사용(서버 삭제 신호 없음) — 견적 줄 삭제 서버 반영은 후속 플랜
+- [Phase 4]: 등록 폼 Escape 핸들러에 preventDefault 추가 — 같은 키 입력이 방금 연 ConfirmDialog를 즉시 닫는 버그 수정
+- [Phase 04]: 04-25: Select가 SelectHint를 내보내 관리자 폼의 네이티브 select도 같은 설명 힌트 줄을 쓴다(A-H2 이관 전) — vendors.module.css .hint는 PC 라벨 열 들여쓰기가 걸려 라벨 위 select 아래에 맞지 않는다
+- [Phase 04]: 04-25: 폰 칸 접기(§7-3) 첫 CSS 선례 — tr 2열 격자, P2 칸 grid-row 2 전체 폭, P3 nth-child 숨김, 상태 열 폭 고정 — 칸을 두 번 렌더하지 않고 자리만 옮긴다(S14 overflow 사용자 확정)
+- [Phase 04]: 04-28: 견적 표 힌트 줄은 지금 되는 키 여섯 항목(Tab·Ctrl+C·저장 제외) — 04-04가 둘을 배선하지 않았다(toTsv 호출처 0)
+- [Phase 04]: 04-28: 거부 봉투는 SaveRejectedError만 잡아 { rejected: { summary, cells } } — 뒤 플랜은 도메인 항목만 더하고 열 대응은 quote-table FIELD_TO_COLUMN
+- [Phase 04]: 04-28: 격자 DOM 포커스 따라가기는 좌표가 실제로 바뀔 때만(첫 렌더 제외) — 하이드레이션 전 포커스를 빼앗지 않는다
+- [Phase 04]: 04-29: pageWindow의 넓은 창(threshold 7)·폰 창(threshold 5, compact)을 하나의 파라미터화 알고리즘으로 구현해 C-27(한 쪽 틈은 번호) 로직을 중복 없이 공유
+- [Phase 04]: 04-29: ENG-D11 — 04-08이 §7-16에 적기로 했던 생략 규칙 기본 문장(PC 7쪽/8쪽)이 실제 SYSTEM.md에 없어 04-29가 기본 문장까지 함께 추가하고 회귀 테스트로 고정
+- [Phase 04]: 04-06: 프로젝트 상태 다섯 값(bidding·in_progress·settling·completed·lost), 옛 settled는 0012가 completed로 재매핑 — 0012 전진 전용·rollback-floor 표시
+- [Phase 04]: 04-06: 완료 잠금 게이트는 project.line-edit(완료 → 「완료 · 견적 줄 잠김」, 미수주 포함 나머지 통과) — project.completed-lock 삭제
+- [Phase 04]: 04-09: lib/format-number.ts is the single source of truth for numeric display + comma-input formatting; only FX_RECENT_RATE_USD gets numberKind in settings
+- [Phase 04]: 04-09: useCommaInput pre-formats initial value through the typed path so reload/reopen never shows uncomma'd text
+- [Phase 04]: 04-27: roles.work_scope(team/company, 기본 team) — 업무 범위는 순위도 보기 권한도 아닌 게이트 입력. 비시드 계급(경영관리 등)은 관리자가 계급 화면에서 전사로 바꿔야 한다
+- [Phase 04]: 04-20: 전환 판정은 evaluateTransition 하나(게이트 두 규칙) — changeProjectStatus와 statusDestinations가 공유, 종료일 채움도 규칙에 물어 정함
+- [Phase 04]: 04-20: 시드는 시스템 관리자만 upsert, 나머지 계급의 권한·노출은 없을 때만(insertPermissionIfAbsent·insertVisibilityIfAbsent)
+- [Phase 04]: 04-20: Phase 5 결재 호출자는 loadStatusChangeFacts로 사실을 트랜잭션 전에 읽어 deps.facts·deps.tx로 changeProjectStatus를 부른다
+- [Phase 04]: 04-11: 잘못된 id 상세는 soft 404(HTTP 200 + noindex) — projects/loading.tsx 스트리밍 탓, 진짜 404는 loading 재배치·proxy 사용자 결정 필요
+- [Phase 04]: 04-11: 쓰기 경로는 lockProjectForWrite 대신 loadProjectForGate(잠금 안 자동 정산 판정, fail-closed), 목록은 settleForProjectList 요청당 한 번
+- [Phase 4]: 04-22 팀장 기간 권리: 팀장(팀장 이상)은 프로젝트 시작일·종료일만 고칠 수 있는 별도 권한을 받는다. projects 쓰기 전체는 주지 않으며 견적 줄 등 나머지 수정은 지금처럼 막힌다 — 사용자 결정 2026-09-25 15:29 KST(04-21 스레드 카드 「기간만 수정」) — 04-20 시드가 팀장에게 projects.view·projects.status 쓰기만 줘서 04-22 종료일 흐름(CEO-D13)이 막혔고, 가장 좁은 권한을 택함. 기각: projects 쓰기 전체 부여 / 현행 유지
+- [Phase 4]: 04-44: 총 매출 예상가 권리 = periodEditRights≠none 그리고 quote.amount 노출, 기간과 모은 거부(U-6), 나중 저장이 이김·0=미입력, USD 환율 기억은 커밋 뒤
+- [Phase 4]: 04-44: 모달 3차가 모달 밖 칸으로 포커스를 옮길 때는 ConfirmDialog onClose 다음 마이크로태스크에서 연다
+- [Phase 4]: 04-12: 정산 새 줄의 견적 칸 0 = 원화 단가 0 · 수량 없음 또는 1(수량 > 0 검증 유지)
+- [Phase 4]: 04-12: 순서 불일치·보관된 줄 수정은 quote.line-membership으로 denyWrite
+- [Phase 4]: 04-12: 보관함 복원은 restore()의 보관함 권한 뒤 DOMAIN_RESTORERS → restoreQuoteLine(projects 쓰기 재확인, 이미 복원된 줄은 멱등)
+- [Phase 4]: 04-30: 정산 새 줄 셀 단계(newLineCells)는 page.tsx(서버)가 계산해 넘긴다 — 클라이언트는 lineCellEditability를 부르지 않는다
+- [Phase 4]: 04-30: 잠긴 셀 이유는 CellIssue kind reason — aria-invalid·오류 칸 수에서 제외
+- [Phase 4]: 04-30: 줄 이동은 자리를 바꾼 두 줄 모두 dirty(A-03), order는 이동·가운데 삽입일 때만 한 번
+- [Phase 4]: 04-30: Ctrl+S는 열린 편집기를 blur 커밋 후 useEffectEvent로 저장
+- [Phase 04]: 04-13: 견적 줄 종류는 quote_lines.line_kind 한 컬럼(quote·out_of_quote·adjustment)이 정본 — 기존 줄 종류는 잠근 tx로 다시 읽은 DB 행, 새 줄만 요청 값
+- [Phase 04]: 04-13: 조정 줄은 projects.adjustment 쓰기로만 상태와 무관하게 판정, 견적 줄·견적 외 비용은 projects 쓰기 — 저장·복원 입구는 둘 중 하나, 줄마다 게이트(ctx lineKind·actorCanWrite·actorCanAdjust 필수)
+- [Phase 04]: 04-13: 조정·견적 외 비용 줄은 서버가 수량 1·원화 단가 0·소분류=종류 값으로 정규화(견적가 0), 실행가 음수는 이 두 종류만
+- [Phase 04]: 04-23: 화면 줄 상태를 종류 순서(견적 → 견적 외 비용 → 조정)로 늘 정렬 — 새 견적 줄이 조정 줄 앞 자리로 insertOnly order와 함께 저장된다
+- [Phase 04]: 04-23: 줄 수 상한에서 이유 글자는 첫 추가 버튼 옆 한 번만, 뒤따르는 추가 버튼은 그리지 않는다(projects 쓰기+조정 권한 동시 보유자는 조정 줄 추가가 사라짐 — 코디네이터 확인 필요)
+- [Phase 04]: 04-14: 고객 승인 게이트 quote.customer-approval은 수주중·미수주를 규칙 안에서 면제(사용자 D8)
+- [Phase 04]: 04-14: 이전 차수 잠김 조회는 listQuoteLines ctx.locked + 새 입구 listRevisionLines(projectId, revisionSeq) — 기존 listQuoteLines 호출자 보존
+- [Phase 04]: 04-14: 승인 기준값 = 견적 합계 + md5 내용 토큰(견적 줄·견적 외 비용, 보관 포함, 조정 줄 제외) — 리포지토리 sql 조각 하나를 approvalBasis·summarizeRevisions가 공유
+- [Phase 4]: 04-40: writeQuoteLinesInTx가 잠금 후 최신 차수를 재확인하고, 승인 차수는 quote 줄의 수량·단가·상태·세분류를 잠근다(견적가 불변만 허용)
+- [Phase 4]: 04-40: restoreQuoteLine은 현재 차수가 아닌 줄의 복원을 거부한다(04-14 이월 종결)
+- [Phase 4]: 04-40: normalizeMoneyInput이 KRW 열 범위·외화 소수 자리·환율을 검증하고, DR-9 견적가 상한은 수량·단가 두 칸 오류로 돌려준다
+- [Phase 4]: 04-24: 머리 줄 차수 버튼은 RSC가 함수 prop을 넘길 수 없어 직렬화 props 객체 + QuoteLedger 렌더(statusChange 선례)
+- [Phase 4]: 04-24: ConfirmDialog primary.blockedBy — 근거 칸 오류는 칸 아래 한 자리, 1차는 그 id를 aria-describedby로
+- [Phase 4]: 04-24: 승인 표시·취소 뒤 새로 고침은 칸 단계만 서버 값으로 갈고 편집 값은 유지
+- [Phase 4]: 04-24: 부제는 S3의 번호 · 상세 견적 n차 그대로 — 표시 번호 26001-2차는 부제에 넣지 않음(UI-SPEC 결정 필요)
+- [Phase 4]: 04-15: 빈 총 매출 예상가 = 04-01 기본 저장(원화 0 · KRW · 환율 1), 새 컬럼 없음(B-37)
+- [Phase 4]: 04-15: 복사 출처 거부는 없음·범위 밖·보관·uuid 아님을 한 문구 「복사할 프로젝트 없음 · 새로 고침」으로(UI-SPEC 반영 필요)
+- [Phase 4]: 04-15: 등록 기간 판정은 04-22 validatePeriodChange를 수주중으로 부르는 validateNewProjectPeriod
+- [Phase 4]: 04-16: 계약 금액은 고객 승인된 현재 차수 견적 합계(D-84), VAT 기준일은 승인 KST 날짜(B-27) — 입력 칸 없음
+- [Phase 4]: 04-16: D-85 발행액 기본 노출은 새 DB에만(insert-if-absent 시드) — 기존 DB는 관리자가 role-pm 행을 켠다(B-29)
+- [Phase 4]: 04-16: 매출 표 합계 행 거부 글자는 봉투 칸 수로 정하고 거부 요약과 같은 수명
+- [Phase 4]: 04-41: 계약 금액은 파생값 하나 — 0015가 업무 값 가드 뒤 projects.contract_* DROP(ARCHITECTURE §5 예외, DECISIONS 04-41)
+- [Phase 4]: 04-41: 매출 줄 쓰기 거부 규칙 revenue.entry-scope · revenue.replay-mismatch(write.denied id만), 새 줄은 화면 uuid 멱등 삽입
 
 ### Pending Todos
 
@@ -178,6 +280,7 @@ Recent decisions affecting current work:
 - [All]: 과잉 설계 재발 방지 — 페이즈마다 "인트라넷보다 못한가"로 검증하고, 실제 사용자 로그인·입력이 있어야 완료로 본다
 - [Phase 2]: `docs/design/`(SYSTEM.md 725줄·tokens.css·DECISIONS.md·BRIEF.md·EXPLORE.md)은 **이미 있다**(2026-09-18 확인). Phase 2는 이 시스템을 앱 셸·임시 화면에 적용하는 일이며, 새 화면은 SYSTEM.md 기준을 따르고 시스템을 벗어나면 DECISIONS.md에 이유를 남긴 뒤 SYSTEM.md를 고친다
 - [Phase 2] 02-02: ci.yml/deploy.yml paths+! 트리거 실제 동작 미검증 — tokens.css 단독 PR이 CI를 타는지, 일반 소스 PR도 여전히 타는지 GitHub에서 사람이 확인해야 한다. (2)가 실패하면 즉시 paths-ignore로 되돌린다
+- 04-09 S15 backstop DOM audit (coverage D4) was self-performed by the executor, not a separate sub-agent as the plan's Task 3 ⑥ requires — orchestrator should confirm or dispatch an independent check before /gsd-verify-work
 
 ### Quick Tasks Completed
 
@@ -216,6 +319,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-23T14:29:34.050Z
-Stopped at: Completed 04-04-PLAN.md
+Last session: 2026-09-26T04:05:41.831Z
+Stopped at: Completed 04-41-PLAN.md
 Resume file: None

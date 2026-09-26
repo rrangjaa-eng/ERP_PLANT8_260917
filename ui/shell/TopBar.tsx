@@ -146,7 +146,7 @@ export function TopBar({ topBarMenu, adminMenu, accountGroup, userName }: TopBar
       </nav>
       <div className={styles.right}>
         <span className={styles.kbdWrap}>
-          <kbd className={styles.kbd}>⌘K</kbd>
+          <kbd className={styles.kbd}>Ctrl+K</kbd>
         </span>
         <div className={styles.userWrap} ref={wrapRef} onKeyDown={handleKeyDown} onBlur={handleBlur}>
           <button

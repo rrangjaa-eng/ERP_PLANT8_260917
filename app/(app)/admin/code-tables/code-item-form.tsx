@@ -6,9 +6,15 @@ import { useAction } from "next-safe-action/hooks";
 import {
   createCodeItemAction,
   updateCodeItemLabelAction,
+  updateCodeItemDescriptionAction,
   setCodeItemActiveAction,
   archiveCodeItemAction,
 } from "./actions";
+// 잎(leaf) 모듈에서 상수만 import한다 — @/domain/code-tables는 db/client
+// (pg)를 거치는 서버 전용 의존 체인이라 클라이언트 컴포넌트에서 직접
+// import하면 클라이언트 번들이 깨진다(domain/action-log/filter-keys.ts와
+// 같은 이유).
+import { CODE_ITEM_DESCRIPTION_MAX } from "@/domain/code-tables/description-max";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
@@ -37,17 +43,22 @@ export function CodeItemForm({ tableKey, cancelHref }: { tableKey: string; cance
       value: getStringField(formData, "value"),
       label: getStringField(formData, "label"),
       sortOrder: Number(getStringField(formData, "sortOrder") || "0"),
+      description: getStringField(formData, "description"),
     });
   }
 
   const valueError = result.validationErrors?.value?._errors?.[0];
   const labelError = result.validationErrors?.label?._errors?.[0];
+  const descriptionError = result.validationErrors?.description?._errors?.[0];
 
   return (
     <form ref={formRef} onSubmit={handleSubmit} id="code-item-form" className="single-column">
       <TextField id="value" name="value" label="값" required error={valueError} />
       <TextField id="label" name="label" label="이름" required error={labelError} />
       <TextField id="sortOrder" name="sortOrder" label="정렬 순서" type="number" defaultValue={0} />
+      {/* S14 「코드 추가」 설명 칸(Task 2 ②) — 선택(required 없음). 40자
+          검증은 domain(createCodeItem)이 한다. */}
+      <TextField id="description" name="description" label="설명" error={descriptionError} />
       {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
       <div className={styles.formActions}>
         <Button type="submit" variant="primary" pending={isExecuting}>
@@ -102,6 +113,83 @@ export function CodeItemLabelInput({ id, label }: { id: string; label: string })
           if (value.trim() && value !== label) execute({ id, label: value });
         }}
       />
+      {errorText ? (
+        <p id={errorId} role="alert" className={styles.labelError}>
+          {errorText}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+// 04-10(D-93 · DR-29) — 값 한 문장 설명. CodeItemLabelInput과 결은 같지만
+// (blur 저장 · 오류 한 줄 · aria-invalid/aria-describedby) 둘이 다르다:
+// (a) 저장 조건(C-13) — 빈 값도 저장한다(지우기). (b) 실패해도 입력을
+// 지우거나 서버 값으로 되돌리지 않는다 — 되돌림은 Esc 처리기 한 곳뿐이다.
+export function CodeItemDescriptionInput({
+  id,
+  label,
+  description,
+}: {
+  id: string;
+  label: string;
+  description: string | null;
+}) {
+  const [value, setValue] = useState(description ?? "");
+  const [errorText, setErrorText] = useState<string | undefined>(undefined);
+  const { execute } = useAction(updateCodeItemDescriptionAction, {
+    onError: ({ error }) => {
+      setErrorText(
+        error.serverError ??
+          error.validationErrors?.description?._errors?.[0] ??
+          "저장하지 못했습니다 · 잠시 후 다시 시도해 주세요.",
+      );
+    },
+    onSuccess: () => setErrorText(undefined),
+  });
+
+  const errorId = `code-item-description-error-${id}`;
+  const countId = `code-item-description-count-${id}`;
+  const overLimit = value.length > CODE_ITEM_DESCRIPTION_MAX;
+  const describedBy = [errorText ? errorId : null, overLimit ? countId : null].filter(Boolean).join(" ") || undefined;
+
+  return (
+    <>
+      <span className={styles.descriptionCell}>
+        <input
+          className={[styles.labelInput, errorText ? styles.labelInputError : ""].filter(Boolean).join(" ")}
+          aria-label={`${label} 설명`}
+          aria-invalid={errorText ? true : undefined}
+          aria-describedby={describedBy}
+          placeholder="—"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          onBlur={() => {
+            // C-13: 빈 값도 저장한다 — 이름 칸의 「비어 있지 않고 바뀌었을
+            // 때만」 가드를 베끼면 설명을 지울 수 없다. 값이 서버 값과 이미
+            // 같으면(예: 오류 뒤 서버 값으로 직접 되돌려 쳤을 때) 저장할
+            // 것이 없다 — 화면에 보이는 값이 이미 맞으므로 오류 줄도 지운다.
+            if (value.trim() !== (description ?? "")) {
+              execute({ id, description: value });
+            } else {
+              setErrorText(undefined);
+            }
+          }}
+          onKeyDown={(event) => {
+            // Esc(조합 중 아님)만 서버 값으로 되돌린다 — onError는 되돌리지
+            // 않는다(DR-29, 41자를 다시 쓰지 않아도 되게).
+            if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+              setValue(description ?? "");
+              setErrorText(undefined);
+            }
+          }}
+        />
+        {overLimit ? (
+          <span id={countId} className={styles.descriptionCount}>
+            {value.length}/{CODE_ITEM_DESCRIPTION_MAX}
+          </span>
+        ) : null}
+      </span>
       {errorText ? (
         <p id={errorId} role="alert" className={styles.labelError}>
           {errorText}

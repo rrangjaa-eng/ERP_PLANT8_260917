@@ -144,8 +144,12 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
       const beforeWindowScroll = await page.evaluate(() => window.scrollY);
       const beforeWrapScroll = await wrap.evaluate((el) => el.scrollTop);
 
-      const tableBox = await page.locator("table").first().boundingBox();
-      if (!tableBox) throw new Error("표 bounding box를 가져오지 못했다");
+      // 휠 좌표는 표가 아니라 .wrap의 화면상 박스 안에서 고른다 — 표는
+      // 메뉴(열)가 늘면 .wrap보다 훨씬 넓어져(04-20: 2,515px vs 1,240px)
+      // 표 중앙이 .wrap 오른쪽 바깥(스크롤할 것이 없는 문서 여백)에 떨어지고,
+      // 그러면 휠이 아무것도 스크롤하지 못해 sticky와 무관하게 실패한다.
+      const wrapBox = await wrap.boundingBox();
+      if (!wrapBox) throw new Error(".wrap bounding box를 가져오지 못했다");
       // .wrap이 실제로 흡수할 수 있는 세로 스크롤량을 먼저 재서, 그 범위
       // 안에서만 휠을 굴린다 — 범위를 넘겨 굴리면 브라우저가 남는 양을
       // 문서로 체이닝해(정상 동작) 머리글이 아주 조금(수십 px) 같이
@@ -157,7 +161,7 @@ test.describe("권한표 격자 (ADMN-01, D-40, 성공 기준 2)", () => {
       const deltaY = wrapMaxScroll > 150 ? Math.min(wrapMaxScroll - 50, 900) : 900;
       // 실제 사용자 스크롤과 같은 경로(스크롤 체이닝) — .wrap이 자기 축을
       // 갖든 문서가 스크롤되든 구현을 가정하지 않는다.
-      await page.mouse.move(tableBox.x + tableBox.width / 2, tableBox.y + 200);
+      await page.mouse.move(wrapBox.x + wrapBox.width / 2, wrapBox.y + 200);
       await page.mouse.wheel(0, deltaY);
 
       // sanity: 무언가 실제로 스크롤됐는지 먼저 확인한다(문서 스크롤 +

@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { gate, registerGateRule, listGateRules, UnknownGateRuleError } from "@/domain/rules/gate";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { gate, registerGateRule, listGateRules, UnknownGateRuleError, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
+import type { ProjectLineEditCtx } from "@/domain/rules/register";
+import { denyWrite, type DenyWriteIds } from "@/domain/rules/deny-write";
 
 // Phase 4 Task 2 ⑫ — 등록·판정·미등록 규칙 오류. register.ts를 side-effect
-// import해 실제 등록된 `project.completed-lock` 하나로 판정을 단언한다.
+// import해 실제 등록된 `project.line-edit`(04-06 — 옛 이진 규칙 교체)로 판정을 단언한다.
 describe("domain/rules/gate", () => {
   it("등록된 규칙 이름으로 부르면 판정 함수를 그대로 실행한다", async () => {
     registerGateRule<{ id: string }, { allow: boolean }>({
@@ -24,28 +26,399 @@ describe("domain/rules/gate", () => {
     await expect(gate({}, "없는-규칙", {})).rejects.toBeInstanceOf(UnknownGateRuleError);
   });
 
-  it("listGateRules가 등록된 규칙 이름을 돌려준다", () => {
-    expect(listGateRules()).toContain("project.completed-lock");
+  it("listGateRules가 등록된 규칙 이름을 돌려준다 — 옛 이진 규칙 project.completed-lock은 없다", () => {
+    expect(listGateRules()).toContain("project.line-edit");
+    expect(listGateRules()).not.toContain("project.completed-lock");
   });
 
-  describe("project.completed-lock (D-47)", () => {
-    it("완료(정산) 상태면 거부하고 이유 문자열을 돌려준다", async () => {
-      const decision = await gate({}, "project.completed-lock", { status: "settled", actorRole: "role-pm" });
-      expect(decision.allowed).toBe(false);
-      expect(typeof (decision as { reason: string }).reason).toBe("string");
+  // 04-12(D-78 · 사용자 D10·D12) — 셀 단위 판정. 바뀐 칸마다 lineCellEditability를 본다.
+  describe("project.line-edit (D-47·D-45·D-75·D-78)", () => {
+    const update = (fields: string[]) => ({ kind: "update" as const, fields });
+    // 04-13 — 견적 줄(quote)을 `projects` 쓰기가 있는 사람이 고칠 때(조정 권한 없음).
+    const actor = { lineKind: "quote" as const, actorCanWrite: true, actorCanAdjust: false };
+    const ctx = (status: string, fields: string[], linked: { hasLinkedDocuments: boolean; linkedDocumentNumber?: string } = { hasLinkedDocuments: false }) => ({
+      status,
+      ...actor,
+      ...linked,
+      change: update(fields),
     });
 
-    it("수주중 상태면 통과한다", async () => {
-      const decision = await gate({}, "project.completed-lock", { status: "bidding" });
-      expect(decision).toEqual({ allowed: true });
+    it("정산 + 실행가만 바꾼 저장은 통과한다", async () => {
+      await expect(gate({}, "project.line-edit", ctx("settling", ["execution"]))).resolves.toEqual({ allowed: true });
     });
 
-    it("완료(정산)여도 actorCanAddOutOfQuoteLine이 참이면 통과한다(D-47 경영관리 예외 자리)", async () => {
-      const decision = await gate({}, "project.completed-lock", {
-        status: "settled",
-        actorCanAddOutOfQuoteLine: true,
+    it("정산 + 실행가·단가를 바꾸면 「정산 · 실행가와 새 줄만」", async () => {
+      await expect(gate({}, "project.line-edit", ctx("settling", ["execution", "unitPrice"]))).resolves.toEqual({
+        allowed: false,
+        reason: "정산 · 실행가와 새 줄만",
       });
-      expect(decision).toEqual({ allowed: true });
     });
+
+    it("완료 + 비고만 바꿔도 「완료 · 견적 줄 잠김」", async () => {
+      await expect(gate({}, "project.line-edit", ctx("completed", ["note"]))).resolves.toEqual({
+        allowed: false,
+        reason: "완료 · 견적 줄 잠김",
+      });
+    });
+
+    it("진행 + 연결 문서 + 수량이면 「지출결의 {번호} 연결됨 · 고치려면 새 차수」", async () => {
+      const decision = await gate(
+        {},
+        "project.line-edit",
+        ctx("in_progress", ["quantity"], { hasLinkedDocuments: true, linkedDocumentNumber: "26001-0004" }),
+      );
+      expect(decision).toEqual({ allowed: false, reason: "지출결의 26001-0004 연결됨 · 고치려면 새 차수" });
+    });
+
+    it("수주중·진행·미수주는 모든 칸이 통과한다(D-45)", async () => {
+      for (const status of ["bidding", "in_progress", "lost"]) {
+        await expect(
+          gate({}, "project.line-edit", ctx(status, ["subcategory", "itemName", "quantity", "unitPrice", "execution", "note"])),
+        ).resolves.toEqual({ allowed: true });
+      }
+    });
+
+    it("완료에서 새 줄(insert)은 「완료 · 견적 줄 잠김」", async () => {
+      await expect(
+        gate({}, "project.line-edit", { status: "completed", ...actor, hasLinkedDocuments: false, change: { kind: "insert", quoteCellsZero: true } }),
+      ).resolves.toEqual({ allowed: false, reason: "완료 · 견적 줄 잠김" });
+    });
+
+    // 04-12 Task 2(사용자 D10·D12) — 구조 판정.
+    const structural = (status: string, change: ProjectLineEditCtx["change"], hasLinkedDocuments = false) =>
+      gate({}, "project.line-edit", { status, ...actor, hasLinkedDocuments, change });
+
+    it("정산 + insert(견적 칸 0)는 통과, 견적 칸이 0이 아니면 「정산 · 새 줄은 실행가만」", async () => {
+      await expect(structural("settling", { kind: "insert", quoteCellsZero: true })).resolves.toEqual({ allowed: true });
+      await expect(structural("settling", { kind: "insert", quoteCellsZero: false })).resolves.toEqual({
+        allowed: false,
+        reason: "정산 · 새 줄은 실행가만",
+      });
+    });
+
+    it("정산 + archive·reorder·duplicate는 「정산 · 줄 삭제·이동 없음」", async () => {
+      for (const kind of ["archive", "reorder", "duplicate"] as const) {
+        await expect(structural("settling", { kind })).resolves.toEqual({ allowed: false, reason: "정산 · 줄 삭제·이동 없음" });
+      }
+    });
+
+    it("완료 + archive·reorder·duplicate는 「완료 · 견적 줄 잠김」", async () => {
+      for (const kind of ["archive", "reorder", "duplicate"] as const) {
+        await expect(structural("completed", { kind })).resolves.toEqual({ allowed: false, reason: "완료 · 견적 줄 잠김" });
+      }
+    });
+
+    it("진행 + 연결 문서 줄 archive는 「연결 문서 있음 · 삭제 대신 취소」, 연결 문서가 없으면 통과", async () => {
+      await expect(structural("in_progress", { kind: "archive" }, true)).resolves.toEqual({
+        allowed: false,
+        reason: "연결 문서 있음 · 삭제 대신 취소",
+      });
+      await expect(structural("in_progress", { kind: "archive" })).resolves.toEqual({ allowed: true });
+    });
+
+    // 04-12 Task 3(A-19 · OV-2) — 보관함 복원은 그 상태에서 줄을 더하는 것과 같다.
+    it("복원: 완료는 「완료 · 견적 줄 잠김」, 정산은 견적가 0일 때만, 진행은 통과", async () => {
+      await expect(structural("completed", { kind: "restore", quoteAmountZero: true })).resolves.toEqual({
+        allowed: false,
+        reason: "완료 · 견적 줄 잠김",
+      });
+      await expect(structural("settling", { kind: "restore", quoteAmountZero: false })).resolves.toEqual({
+        allowed: false,
+        reason: "정산 · 새 줄은 실행가만",
+      });
+      await expect(structural("settling", { kind: "restore", quoteAmountZero: true })).resolves.toEqual({ allowed: true });
+      await expect(structural("in_progress", { kind: "restore", quoteAmountZero: false })).resolves.toEqual({ allowed: true });
+    });
+
+    it("진행 + insert(견적 칸 있음)·reorder·duplicate는 통과", async () => {
+      await expect(structural("in_progress", { kind: "insert", quoteCellsZero: false })).resolves.toEqual({ allowed: true });
+      await expect(structural("in_progress", { kind: "reorder" })).resolves.toEqual({ allowed: true });
+      await expect(structural("in_progress", { kind: "duplicate" })).resolves.toEqual({ allowed: true });
+    });
+  });
+});
+
+// 04-20 — 사람의 전환 규칙 둘의 경계.
+describe("project.transition (D-46·D-79·D11)", () => {
+  const allMenus = { status: true, complete: true };
+
+  it("전이표에 없는 쌍은 「갈 수 없는 상태 · 새로 고침」", async () => {
+    const decision = await gate({}, "project.transition", {
+      from: "in_progress",
+      to: "settling",
+      actorMenus: allMenus,
+      actorCoversTeam: true,
+    });
+    expect(decision).toEqual({ allowed: false, reason: "갈 수 없는 상태 · 새로 고침" });
+  });
+
+  it("그 쌍의 메뉴 권한이 없으면 「상태 바꾸기 권한 없음」 — 완료는 projects.complete", async () => {
+    const decision = await gate({}, "project.transition", {
+      from: "settling",
+      to: "completed",
+      actorMenus: { status: true, complete: false },
+      actorCoversTeam: true,
+    });
+    expect(decision).toEqual({ allowed: false, reason: "상태 바꾸기 권한 없음" });
+  });
+
+  it("권한이 있어도 팀 범위 밖이면 「다른 팀 프로젝트 · 상태 바꾸기 권한 없음」", async () => {
+    const decision = await gate({}, "project.transition", {
+      from: "bidding",
+      to: "lost",
+      actorMenus: { status: true, complete: false },
+      actorCoversTeam: false,
+    });
+    expect(decision).toEqual({ allowed: false, reason: "다른 팀 프로젝트 · 상태 바꾸기 권한 없음" });
+  });
+
+  it("쌍·권한·팀 범위가 맞으면 통과한다", async () => {
+    const decision = await gate({}, "project.transition", {
+      from: "bidding",
+      to: "in_progress",
+      actorMenus: { status: true, complete: false },
+      actorCoversTeam: true,
+    });
+    expect(decision).toEqual({ allowed: true });
+  });
+});
+
+describe("project.start-date-required (D-82)", () => {
+  it("진행으로 가는데 시작일이 없으면 「시작일 없음 · 기간 적기」", async () => {
+    const decision = await gate({}, "project.start-date-required", { to: "in_progress", startDate: null });
+    expect(decision).toEqual({ allowed: false, reason: "시작일 없음 · 기간 적기" });
+  });
+
+  it("시작일이 있으면 통과, 진행이 아닌 목적지는 시작일 없이 통과", async () => {
+    await expect(gate({}, "project.start-date-required", { to: "in_progress", startDate: "2026-10-01" })).resolves.toEqual({
+      allowed: true,
+    });
+    await expect(gate({}, "project.start-date-required", { to: "lost", startDate: null })).resolves.toEqual({
+      allowed: true,
+    });
+  });
+});
+
+// 04-14(D-53 · 사용자 D10) — 새 차수. 수주중·진행·미수주 + 쓰기만 열린다. 정산의 새 줄은 열렸어도 새 차수는 닫힌다.
+describe("quote.revision-create (D-53 · D10)", () => {
+  const ctx = (status: string, copyableLineCount = 3, canCreateRevision = status !== "settling" && status !== "completed") => ({
+    status,
+    copyableLineCount,
+    canCreateRevision,
+  });
+
+  it("정산은 「정산 · 새 차수 없음」", async () => {
+    await expect(gate({}, "quote.revision-create", ctx("settling"))).resolves.toEqual({ allowed: false, reason: "정산 · 새 차수 없음" });
+  });
+
+  it("완료는 「완료 · 견적 줄 잠김」", async () => {
+    await expect(gate({}, "quote.revision-create", ctx("completed"))).resolves.toEqual({ allowed: false, reason: "완료 · 견적 줄 잠김" });
+  });
+
+  it("복사할 견적 줄이 0개면 「복사할 견적 줄 없음 · 첫 줄 만들기」", async () => {
+    await expect(gate({}, "quote.revision-create", ctx("in_progress", 0))).resolves.toEqual({
+      allowed: false,
+      reason: "복사할 견적 줄 없음 · 첫 줄 만들기",
+    });
+  });
+
+  it("쓰기가 없으면(열린 상태여도) 「견적 줄 · 쓰기 권한 없음」", async () => {
+    await expect(gate({}, "quote.revision-create", ctx("in_progress", 3, false))).resolves.toEqual({
+      allowed: false,
+      reason: "견적 줄 · 쓰기 권한 없음",
+    });
+  });
+
+  it("수주중·진행·미수주 + 줄 있음 + 쓰기는 통과한다", async () => {
+    for (const status of ["bidding", "in_progress", "lost"]) {
+      await expect(gate({}, "quote.revision-create", ctx(status))).resolves.toEqual({ allowed: true });
+    }
+  });
+});
+
+// 04-14(D-43 · 사용자 D8 · D-54 · ROADMAP 기준 3) — 고객 승인 게이트. 이 페이즈에 호출자가 없다(Phase 5 지출결의).
+describe("quote.customer-approval (D-43 · D8)", () => {
+  const ctx = (status: string, patch: Partial<{ revisionApproved: boolean; gateEnabled: boolean; actorIsAssignedPm: boolean }> = {}) => ({
+    status,
+    revisionSeq: 2,
+    revisionApproved: false,
+    gateEnabled: true,
+    actorIsAssignedPm: false,
+    pmName: "김기획",
+    ...patch,
+  });
+
+  it("수주중·미수주는 미승인이어도 통과한다(D-43 · 사용자 D8)", async () => {
+    await expect(gate({}, "quote.customer-approval", ctx("bidding"))).resolves.toEqual({ allowed: true });
+    await expect(gate({}, "quote.customer-approval", ctx("lost"))).resolves.toEqual({ allowed: true });
+  });
+
+  it("진행 + 미승인: 담당 PM에게 「{n}차 고객 승인 전 · 고객 승인 표시」, 그 밖 「{n}차 고객 승인 전 · 담당 PM {이름}」", async () => {
+    await expect(gate({}, "quote.customer-approval", ctx("in_progress", { actorIsAssignedPm: true }))).resolves.toEqual({
+      allowed: false,
+      reason: "2차 고객 승인 전 · 고객 승인 표시",
+    });
+    await expect(gate({}, "quote.customer-approval", ctx("in_progress"))).resolves.toEqual({
+      allowed: false,
+      reason: "2차 고객 승인 전 · 담당 PM 김기획",
+    });
+  });
+
+  it("진행 + 승인은 통과, 설정을 끄면 미승인도 통과", async () => {
+    await expect(gate({}, "quote.customer-approval", ctx("in_progress", { revisionApproved: true }))).resolves.toEqual({ allowed: true });
+    await expect(gate({}, "quote.customer-approval", ctx("in_progress", { gateEnabled: false }))).resolves.toEqual({ allowed: true });
+  });
+
+  it("정산·완료 + 미승인은 거부한다", async () => {
+    for (const status of ["settling", "completed"]) {
+      await expect(gate({}, "quote.customer-approval", ctx(status))).resolves.toEqual({
+        allowed: false,
+        reason: "2차 고객 승인 전 · 담당 PM 김기획",
+      });
+    }
+  });
+});
+
+// 04-14(D-56 · B-30 · ENG-D4 · ENG-D9 · 사용자 D19-9) — 승인 표시 켜기·끄기. 우선순위: 담당·권한 → 완료 → 현재 차수 →
+// 빈 차수 → 기준값 → 연결 문서.
+describe("quote.approval-toggle (D-56 · B-30 · ENG-D4 · ENG-D9)", () => {
+  const base = {
+    turningOn: true,
+    status: "in_progress",
+    actorIsAssignedPm: true,
+    actorCanWrite: true,
+    isCurrentRevision: true,
+    approvableLineCount: 3,
+    basisMatches: true,
+    hasLinkedDocuments: false,
+  };
+  const check = (patch: Partial<typeof base>) => gate({}, "quote.approval-toggle", { ...base, ...patch });
+  const denied = (reason: string) => ({ allowed: false, reason });
+
+  it("담당 PM + 진행 + 켜기는 통과, 정산 + 켜기도 통과(D19-9)", async () => {
+    await expect(check({})).resolves.toEqual({ allowed: true });
+    await expect(check({ status: "settling" })).resolves.toEqual({ allowed: true });
+  });
+
+  it("담당이 아니거나 쓰기가 없으면 「고객 승인 표시는 담당 PM만」 — 다른 조건보다 먼저", async () => {
+    await expect(check({ actorIsAssignedPm: false, status: "completed" })).resolves.toEqual(denied("고객 승인 표시는 담당 PM만"));
+    await expect(check({ actorCanWrite: false })).resolves.toEqual(denied("고객 승인 표시는 담당 PM만"));
+  });
+
+  it("완료는 켜기·끄기 모두 「완료 · 견적 줄 잠김」", async () => {
+    await expect(check({ status: "completed", isCurrentRevision: false })).resolves.toEqual(denied("완료 · 견적 줄 잠김"));
+    await expect(check({ status: "completed", turningOn: false })).resolves.toEqual(denied("완료 · 견적 줄 잠김"));
+  });
+
+  it("현재 차수가 아니면 「다른 사람이 새 차수를 만듦 · 새로 고침」 — 빈 차수·기준값보다 먼저", async () => {
+    await expect(check({ isCurrentRevision: false, approvableLineCount: 0, basisMatches: false })).resolves.toEqual(
+      denied("다른 사람이 새 차수를 만듦 · 새로 고침"),
+    );
+  });
+
+  it("켜기 + 견적 줄 0개는 「승인할 견적 줄이 없음 · 첫 줄 만들기」(ENG-D4) — 기준값보다 먼저", async () => {
+    await expect(check({ approvableLineCount: 0, basisMatches: false })).resolves.toEqual(denied("승인할 견적 줄이 없음 · 첫 줄 만들기"));
+  });
+
+  it("켜기 + 기준값 불일치는 「견적이 바뀜 · 새로 고침」(ENG-D9)", async () => {
+    await expect(check({ basisMatches: false })).resolves.toEqual(denied("견적이 바뀜 · 새로 고침"));
+  });
+
+  it("끄기는 줄 수·기준값을 보지 않고, 연결 문서가 있으면 「연결 문서 있음 · 고치려면 새 차수」", async () => {
+    await expect(check({ turningOn: false, approvableLineCount: 0, basisMatches: false })).resolves.toEqual({ allowed: true });
+    await expect(check({ turningOn: false, hasLinkedDocuments: true })).resolves.toEqual(denied("연결 문서 있음 · 고치려면 새 차수"));
+  });
+});
+
+// 04-14(D-64) — 거래처 필수. 이 페이즈 호출자 없음(Phase 5 지출결의·구매 요청).
+describe("quote.vendor-required (D-64)", () => {
+  it("거래처가 없으면 「거래처 없음 · 거래처 고르기」, 있으면 통과", async () => {
+    await expect(gate({}, "quote.vendor-required", { vendorId: null })).resolves.toEqual({ allowed: false, reason: "거래처 없음 · 거래처 고르기" });
+    await expect(gate({}, "quote.vendor-required", { vendorId: "v-1" })).resolves.toEqual({ allowed: true });
+  });
+});
+
+describe("denyWrite — 거부 운영 로그 한 함수 (D19 · 엔지 리뷰 B)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("write.denied 한 줄에 viewerId·rule·errorName과 허용 목록 키만 싣고 오류를 그대로 던진다", () => {
+    const lines: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((line: string) => {
+      lines.push(line);
+    });
+    const err = new GateBlockedError("상태 바꾸기 권한 없음 · 금액 1,000,000원");
+    // 캐스팅으로 허용 목록 밖 금액 키를 넣어도 로그에 실리지 않아야 한다.
+    const ids = { projectId: "p-1", from: "bidding", to: "in_progress", amountKrw: 1_000_000 } as DenyWriteIds;
+
+    expect(() => denyWrite({ id: "u-1", roleId: "role-pm" }, "project.transition", ids, err)).toThrow(err);
+
+    expect(lines).toHaveLength(1);
+    const entry = JSON.parse(lines[0] ?? "{}") as Record<string, unknown>;
+    expect(entry.event).toBe("write.denied");
+    expect(entry.severity).toBe("WARNING");
+    const { severity, message, time, event, ...fields } = entry;
+    void severity;
+    void message;
+    void time;
+    void event;
+    expect(fields).toEqual({
+      viewerId: "u-1",
+      rule: "project.transition",
+      errorName: "GateBlockedError",
+      projectId: "p-1",
+      from: "bidding",
+      to: "in_progress",
+    });
+    expect(JSON.stringify(entry)).not.toContain("1,000,000");
+    expect(entry).not.toHaveProperty("amountKrw");
+  });
+});
+
+// 04-40(사용자 D7 · OV-1 · ENG-D7 · GAP 1 · W5) — 승인된 현재 차수의 project.line-edit. 이유는 quoteLockReason 결과.
+describe("project.line-edit — 승인 차수(04-40)", () => {
+  const LOCKED = "2차 고객 승인됨 · 고치려면 새 차수";
+  const approvedCtx = (change: ProjectLineEditCtx["change"]): ProjectLineEditCtx => ({
+    status: "in_progress",
+    lineKind: "quote",
+    actorCanWrite: true,
+    actorCanAdjust: false,
+    hasLinkedDocuments: false,
+    approvedSeq: 2,
+    change,
+  });
+  const check = (change: ProjectLineEditCtx["change"]) => gate({}, "project.line-edit", approvedCtx(change));
+  const denied = { allowed: false, reason: LOCKED };
+
+  it("수량 · 소분류(ENG-D7) 변경은 승인 문구로 거부", async () => {
+    await expect(check({ kind: "update", fields: ["quantity"], quoteAmountUnchanged: true })).resolves.toEqual(denied);
+    await expect(check({ kind: "update", fields: ["subcategory"], quoteAmountUnchanged: true })).resolves.toEqual(denied);
+  });
+
+  it("실행가만 바꾸고 견적가가 그대로면 통과", async () => {
+    await expect(check({ kind: "update", fields: ["execution"], quoteAmountUnchanged: true })).resolves.toEqual({ allowed: true });
+  });
+
+  it("다시 계산한 견적가 ≠ 저장값이면 바뀐 칸에 단가가 없어도 거부(GAP 1)", async () => {
+    await expect(check({ kind: "update", fields: ["execution"], quoteAmountUnchanged: false })).resolves.toEqual(denied);
+  });
+
+  it("견적 칸이 0이 아닌 새 줄은 거부 · 견적 칸 0 새 줄은 통과", async () => {
+    await expect(check({ kind: "insert", quoteCellsZero: false })).resolves.toEqual(denied);
+    await expect(check({ kind: "insert", quoteCellsZero: true })).resolves.toEqual({ allowed: true });
+  });
+
+  it("견적가가 있는 줄 보관은 거부 · 견적가 0 줄 보관은 통과", async () => {
+    await expect(check({ kind: "archive", quoteAmountZero: false })).resolves.toEqual(denied);
+    await expect(check({ kind: "archive", quoteAmountZero: true })).resolves.toEqual({ allowed: true });
+  });
+
+  it("견적가가 있는 줄 복원은 거부", async () => {
+    await expect(check({ kind: "restore", quoteAmountZero: false })).resolves.toEqual(denied);
+  });
+
+  it("승인이 없으면 같은 수량 변경은 통과", async () => {
+    await expect(gate({}, "project.line-edit", { ...approvedCtx({ kind: "update", fields: ["quantity"], quoteAmountUnchanged: true }), approvedSeq: null })).resolves.toEqual({ allowed: true });
   });
 });

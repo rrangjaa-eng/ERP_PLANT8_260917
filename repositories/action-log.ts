@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, isNull, lte, ne } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, type DbOrTx } from "@/db/client";
 import { actionLog } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
@@ -17,6 +17,9 @@ export type ActionLogFilterInput = {
 
 // append-only — 이 함수 외에 action_log를 겨냥한 INSERT는 이 리포에 없다. UPDATE/
 // DELETE 문은 존재하지 않는다(ADMN-12·OPS-05).
+//
+// Phase 4(04-32, ENG-D3 ①): 선택 tx — 잠근 트랜잭션 안에서 로그를 남기면
+// 그 tx로 쓴다(풀 연결을 하나 더 잡지 않는다). 없으면 지금처럼 풀 db.
 export async function appendActionLog(
   viewer: Viewer,
   entry: {
@@ -28,9 +31,10 @@ export async function appendActionLog(
     documentId: string | null;
     detail: Record<string, unknown>;
   },
+  tx?: DbOrTx,
 ): Promise<ActionLogRow> {
   void viewer;
-  const [row] = await db.insert(actionLog).values(entry).returning();
+  const [row] = await (tx ?? db).insert(actionLog).values(entry).returning();
   if (!row) throw new Error("action_log insert가 행을 반환하지 않았습니다.");
   return row;
 }
@@ -54,6 +58,30 @@ export async function queryActionLog(
     .from(actionLog)
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(actionLog.occurredAt, actionLog.seq);
+}
+
+// 04-21(D-50): 한 대상의 최신 로그 한 줄 — 상세 부제의 마지막 상태 변경일. 정리 표시 행도
+// 읽는다(CEO A-30 — 거르면 정리 뒤 부제가 조용히 등록일로 돌아간다). 같은 트랜잭션의 두 줄은
+// occurred_at이 같으므로 seq로도 정렬한다. 선택 tx — 잠근 트랜잭션 안에서 읽을 때(04-11).
+export async function findLatestActionFor(
+  viewer: Viewer,
+  query: { entity: string; entityId: string; actionType: string },
+  tx?: DbOrTx,
+): Promise<ActionLogRow | null> {
+  void viewer;
+  const [row] = await (tx ?? db)
+    .select()
+    .from(actionLog)
+    .where(
+      and(
+        eq(actionLog.entity, query.entity),
+        eq(actionLog.entityId, query.entityId),
+        eq(actionLog.actionType, query.actionType),
+      ),
+    )
+    .orderBy(desc(actionLog.occurredAt), desc(actionLog.seq))
+    .limit(1);
+  return row ?? null;
 }
 
 // 03-07: 행동 로그 화면·내보내기가 쓰는 네 축(사람·기간·행동 종류·문서) +

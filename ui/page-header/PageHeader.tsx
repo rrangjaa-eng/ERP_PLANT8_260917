@@ -20,7 +20,10 @@ export type PageHeaderProps = {
 export function PageHeader({ title, subtitle, titleSize = "lg" }: PageHeaderProps) {
   return (
     <div className={styles.header}>
-      <h1 className={titleSize === "2xl" ? `${styles.title} ${styles.title2xl}` : styles.title}>{title}</h1>
+      {/* tabIndex -1 — 트리거가 사라진 뒤 포커스를 받을 자리(04-21 S16). 탭 순서에는 넣지 않는다. */}
+      <h1 tabIndex={-1} className={titleSize === "2xl" ? `${styles.title} ${styles.title2xl}` : styles.title}>
+        {title}
+      </h1>
       {subtitle ? <p className={styles.subtitle}>{subtitle}</p> : null}
     </div>
   );

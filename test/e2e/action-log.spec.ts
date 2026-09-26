@@ -153,6 +153,46 @@ test.describe("행동 로그 화면 (ADMN-10, OPS-05)", () => {
     await expect(ownRow).toHaveCount(0);
   });
 
+  // 04-46 Task 1(⑦, DR-11) — 기존 사용처 회귀. 「정리」가 0건이면 disabled +
+  // disabledReason(§7-1)이던 것이 이제 aria-disabled다 — 네이티브 disabled와
+  // 달리 탭 순서에 남아 포커스되고 이유가 aria-describedby로 읽히며, 클릭해도
+  // 확인 줄(정리 두 단계 제출)이 열리지 않는다.
+  test("0건 필터에서 「정리」가 aria-disabled고 포커스되며 클릭이 무시된다(DR-11)", async ({ page }) => {
+    const admin = await createFixtureUser({ roleId: "role-sysadmin" });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    // 시작일을 내일 이후로 걸면 필터에 걸리는 행이 0건이라 pruneCount도 0이다.
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    await page.goto(`/admin/action-log?from=${tomorrow}`);
+    await expect(page.getByText("조건에 맞는 건이 없습니다")).toBeVisible();
+
+    const pruneButton = page.getByRole("button", { name: "정리" });
+    await expect(pruneButton).toHaveAttribute("aria-disabled", "true");
+    await expect(pruneButton).not.toHaveAttribute("disabled", "");
+
+    // 탭 순서에 남아 포커스된다(네이티브 disabled였다면 포커스를 받지 못한다).
+    await pruneButton.focus();
+    await expect(pruneButton).toBeFocused();
+
+    // aria-describedby가 이유 글자를 가리킨다.
+    const describedById = await pruneButton.getAttribute("aria-describedby");
+    expect(describedById).toBeTruthy();
+    await expect(page.locator(`#${describedById}`)).toHaveText("정리할 행이 없습니다");
+
+    // 클릭해도 확인 줄(두 단계 제출)이 열리지 않는다 — Playwright의 기본
+    // actionability 검사는 aria-disabled="true"를 네이티브 disabled처럼 취급해
+    // 클릭 자체를 막는다. 이 테스트는 "클릭 이벤트가 눌러져도 컴포넌트의
+    // 클릭 가드(preventDefault)가 동작을 막는다"를 보는 것이라 force로
+    // Playwright의 방어를 건너뛰고 실제 클릭 이벤트를 쏜다.
+    await pruneButton.click({ force: true });
+    await expect(page.getByText(/건을 정리합니다 · 정리 기록은 남습니다/)).toHaveCount(0);
+  });
+
   // OPS-05는 행동 로그에 남길 핵심 행동으로 「로그인」을 명시한다. record.ts의
   // CORE_ACTION_TYPES에 "login"이 선언돼 있고 화면 필터에도 나오지만, 정작
   // recordAction({actionType:"login"})을 부르는 코드가 없어서 그 필터는 영원히

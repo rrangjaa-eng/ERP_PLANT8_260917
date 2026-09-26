@@ -1,4 +1,5 @@
-import { pgTable, text, integer, numeric, jsonb, timestamp, uuid, index, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { pgTable, text, integer, numeric, jsonb, timestamp, uuid, index, check, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { vendors } from "./vendors";
 import { quoteRevisions } from "./quote-revisions";
 import { moneyColumns } from "./money-columns";
@@ -27,6 +28,9 @@ export const quoteLines = pgTable(
     profitKrw: integer("profit_krw").notNull(),
     // D-64: 이 페이즈는 미착수·취소 둘뿐.
     lineStatus: text("line_status").notNull().default("not_started"),
+    // 04-13(D-48 · D-83): 줄 종류 — 견적 줄(quote) · 견적 외 비용(out_of_quote) · 조정(adjustment). 새 줄에서만
+    // 정해지고 바뀌지 않는다. 그룹·권한·음수 허용·복사 제외가 이 컬럼 하나를 본다.
+    lineKind: text("line_kind").notNull().default("quote"),
     note: text("note"),
     // D-53: 새 차수는 이전 차수 복사 — 복사 줄의 계보. 자기 참조라 지연
     // 콜백으로 순환을 피한다(Drizzle self-reference pattern).
@@ -42,5 +46,6 @@ export const quoteLines = pgTable(
   (table) => [
     index("quote_lines_revision_sort_idx").on(table.revisionId, table.sortOrder),
     index("quote_lines_custom_fields_idx").using("gin", table.customFields),
+    check("quote_lines_line_kind_check", sql`${table.lineKind} IN ('quote','out_of_quote','adjustment')`),
   ],
 );

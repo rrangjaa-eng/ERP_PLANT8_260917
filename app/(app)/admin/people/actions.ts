@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
 import { registerPerson, changePersonRole, archivePerson } from "@/domain/people";
 import { assignTeam, cancelFutureAssignment, createOrgUnit, renameOrgUnit, createTeam, renameTeam } from "@/domain/org";
-import { createRole, renameRole } from "@/domain/permissions/roles";
+import { createRole, renameRole, setRoleWorkScope, ROLE_WORK_SCOPES } from "@/domain/permissions/roles";
 import { archive } from "@/domain/archive";
 import "./actions.registry";
 
@@ -73,6 +73,13 @@ export const renameRoleAction = authedActionClient
   .schema(z.object({ id: z.string().min(1), name: z.string().min(1, "이름을 입력하세요.") }))
   .action(async ({ parsedInput, ctx }) => {
     await renameRole(ctx.viewer, parsedInput.id, parsedInput.name);
+    revalidatePath("/admin/people/roles");
+  });
+
+export const setRoleWorkScopeAction = authedActionClient
+  .schema(z.object({ id: z.string().min(1), workScope: z.enum(ROLE_WORK_SCOPES) }))
+  .action(async ({ parsedInput, ctx }) => {
+    await setRoleWorkScope(ctx.viewer, parsedInput.id, parsedInput.workScope);
     revalidatePath("/admin/people/roles");
   });
 

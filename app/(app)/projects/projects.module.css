@@ -150,3 +150,18 @@
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+
+/* 04-15(D-70 · S2) — 복사 등록의 출처 한 줄. 폼 위, 폼과 같은 폭 안. */
+.copySource {
+  max-width: var(--form-max);
+  margin: 0 0 var(--s-2);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* 04-15(D-52 · S15) — 총 매출 예상가 · 환율 칸. 숫자 칸은 오른쪽 정렬 + 고정폭 숫자(ui/input TextField numeric과 같다). */
+.numericInput {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}

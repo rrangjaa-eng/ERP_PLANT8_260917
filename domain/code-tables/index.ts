@@ -6,11 +6,13 @@ import { recordAction } from "@/domain/action-log/record";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { taxRuleSchema, type TaxRule } from "@/domain/code-tables/tax-rule";
+import { CODE_ITEM_DESCRIPTION_MAX } from "@/domain/code-tables/description-max";
 import {
   listCodeItems as repoListCodeItems,
   insertCodeItem as repoInsertCodeItem,
   setCodeItemActive as repoSetCodeItemActive,
   updateCodeItemLabel as repoUpdateCodeItemLabel,
+  updateCodeItemDescription as repoUpdateCodeItemDescription,
   findCodeItemById as repoFindCodeItemById,
   setCodeItemTaxRule as repoSetCodeItemTaxRule,
   type CodeItemRow,
@@ -27,6 +29,12 @@ export class ArchivedCodeItemError extends UserFacingError {}
 
 const EVIDENCE_TYPE_TABLE_KEY = "evidence_type";
 
+// 04-10(D-93): 코드표 설명 40자 상한 — 서버 판정, DB CHECK 아님(설정 hint와
+// 같은 결). .length(UTF-16 단위)로 센다 — 한글은 글자당 1. 값 자체는
+// description-max.ts(잎 모듈)에 있다 — 클라이언트 컴포넌트가 이 파일 전체
+// (server-only db 의존 체인)를 번들에 끌어들이지 않고 상수만 쓸 수 있게.
+export { CODE_ITEM_DESCRIPTION_MAX };
+
 // MAST-04: 코드표 항목 DTO. id·tableKey·sortOrder·active·archivedAt은
 // "code_item.value" 정보 항목(구조/식별 정보) 아래, label만 별도
 // "code_item.label" 정보 항목으로 가른다(judgment — SUMMARY 참고). 서버가
@@ -42,6 +50,9 @@ export type CodeItemDto = {
   // evidence_type이 아닌 코드표 항목은 항상 null(컬럼 자체가 그 항목엔
   // 비어 있다).
   taxRule: TaxRule | null;
+  // 04-10(D-93): 값 한 문장 설명. 없으면 null(화면은 「—」). label과 같은
+  // 정보 항목으로 게이트한다(새 정보 항목을 만들지 않는다).
+  description: string | null;
 };
 
 export const CODE_ITEM_DTO_SPEC: DtoSpec<CodeItemRow, CodeItemDto> = {
@@ -50,6 +61,7 @@ export const CODE_ITEM_DTO_SPEC: DtoSpec<CodeItemRow, CodeItemDto> = {
     { key: "tableKey", from: "tableKey", infoItem: "code_item.value" },
     { key: "value", from: "value", infoItem: "code_item.value" },
     { key: "label", from: "label", infoItem: "code_item.label" },
+    { key: "description", from: "description", infoItem: "code_item.label" },
     { key: "sortOrder", from: "sortOrder", infoItem: "code_item.value" },
     { key: "active", from: "active", infoItem: "code_item.value" },
     { key: "archivedAt", from: "archivedAt", infoItem: "code_item.value" },
@@ -83,15 +95,19 @@ export async function listCodeItems(
 }
 
 // 쓰기는 코드표 메뉴의 쓰기 권한을 먼저 확인하고 실패 시 ForbiddenError, 성공
-// 시 recordAction으로 document_create를 남긴다.
+// 시 recordAction으로 document_create를 남긴다. description(Task 2 — 「코드
+// 추가」 폼 선택 칸)은 updateCodeItemDescription과 같은 규칙(normalizeDescription)
+// 으로 검증한다.
 export async function createCodeItem(
   viewer: Viewer,
-  input: { tableKey: string; value: string; label: string; sortOrder?: number },
+  input: { tableKey: string; value: string; label: string; sortOrder?: number; description?: string },
 ): Promise<CodeItemDto> {
   const allowed = await can(viewer, "admin.code-tables", "write");
   if (!allowed) throw new ForbiddenError("코드표 항목 추가 권한이 없습니다.");
 
-  const row = await repoInsertCodeItem(viewer, input);
+  const description = normalizeDescription(input.description ?? "");
+
+  const row = await repoInsertCodeItem(viewer, { ...input, description });
   await recordAction(viewer, { actionType: "document_create", entity: "code_items", entityId: row.id });
 
   return (await project(viewer, row, CODE_ITEM_DTO_SPEC)) as CodeItemDto;
@@ -143,6 +159,44 @@ export async function updateCodeItemLabel(
 
   await repoUpdateCodeItemLabel(viewer, id, trimmed);
   // 수정은 생성이 아니다 — updateVendor·updateCorpCardOwner와 같은 종류로 남긴다.
+  await recordAction(viewer, { actionType: "document_update", entity: "code_items", entityId: id });
+
+  const updated = await repoFindCodeItemById(viewer, id);
+  return updated ? ((await project(viewer, updated, CODE_ITEM_DTO_SPEC)) as CodeItemDto) : null;
+}
+
+// 04-10(D-93) · Copywriting 「Error — 코드표 설명(관리자)」: 공백만 있는 값은
+// null(지우기, C-13), 40자를 넘으면 서버 문구 그대로 거부한다. createCodeItem
+// (Task 2 「코드 추가」 설명 칸)도 같은 규칙을 쓴다.
+function normalizeDescription(description: string): string | null {
+  const trimmed = description.trim();
+  if (trimmed === "") return null;
+  if (trimmed.length > CODE_ITEM_DESCRIPTION_MAX) {
+    throw new UserFacingError("설명이 40자를 넘습니다 · 한 문장으로 줄여 주세요");
+  }
+  return trimmed;
+}
+
+// MAST-04 결(updateCodeItemLabel)과 같은 권한 판정·보관 가드·행동 로그
+// 순서지만 저장 조건이 다르다(C-13) — 빈 값도 저장한다(null로, 지우기).
+// 실패해도 화면 입력은 되돌리지 않는다(DR-29, code-item-form.tsx 몫).
+export async function updateCodeItemDescription(
+  viewer: Viewer,
+  id: string,
+  description: string,
+): Promise<CodeItemDto | null> {
+  const allowed = await can(viewer, "admin.code-tables", "write");
+  if (!allowed) throw new ForbiddenError("코드표 항목 설명 변경 권한이 없습니다.");
+
+  const normalized = normalizeDescription(description);
+
+  const current = await repoFindCodeItemById(viewer, id);
+  if (!current) return null;
+  if (current.archivedAt !== null) {
+    throw new ArchivedCodeItemError("보관된 코드표 항목은 수정할 수 없습니다 · 먼저 복원해 주세요.");
+  }
+
+  await repoUpdateCodeItemDescription(viewer, id, normalized);
   await recordAction(viewer, { actionType: "document_update", entity: "code_items", entityId: id });
 
   const updated = await repoFindCodeItemById(viewer, id);

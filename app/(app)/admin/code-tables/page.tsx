@@ -10,6 +10,7 @@ import { StatusTag } from "@/ui/status-tag/StatusTag";
 import {
   CodeItemForm,
   CodeItemLabelInput,
+  CodeItemDescriptionInput,
   CodeItemActiveToggle,
   CodeItemDeleteButton,
 } from "./code-item-form";
@@ -121,6 +122,7 @@ export default async function CodeTablesPage({
             <tr>
               <th scope="col">값</th>
               <th scope="col">이름</th>
+              <th scope="col">설명</th>
               <th scope="col" className={styles.num}>정렬</th>
               <th scope="col">상태</th>
               {/* 칸을 비우면서 머리글만 남기면 빈 칸이 생긴다 — 법인카드
@@ -140,6 +142,15 @@ export default async function CodeTablesPage({
                       item.label
                     ) : (
                       <CodeItemLabelInput id={item.id} label={item.label} />
+                    )}
+                  </td>
+                  {/* 04-10(D-93) — 설명. 보관·쓰기 불가는 이름 칸과 같은
+                      결로 글자만(「—」는 값 없음, S14). */}
+                  <td>
+                    {item.archivedAt || !canWrite ? (
+                      (item.description ?? "—")
+                    ) : (
+                      <CodeItemDescriptionInput id={item.id} label={item.label} description={item.description} />
                     )}
                   </td>
                   <td className={styles.num}>{item.sortOrder}</td>
@@ -168,7 +179,7 @@ export default async function CodeTablesPage({
                 </tr>
                 {isEvidenceType && canWrite ? (
                   <tr>
-                    <td colSpan={canWrite || canArchive ? 5 : 4}>
+                    <td colSpan={canWrite || canArchive ? 6 : 5}>
                       <EvidenceTypeFields itemId={item.id} initialValue={item.taxRule} />
                     </td>
                   </tr>

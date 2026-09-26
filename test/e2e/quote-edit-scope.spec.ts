@@ -731,6 +731,39 @@ test.describe("폭 규칙 — 1024 미만 보기 전용 · 좁은 PC 열 접기 
     await expect(primarySave(page)).toContainText("일괄 저장 1");
   });
 
+  // /review R-1 — 「되돌리기」로 되살린 편집은 보관본에도 돌아가, 새로 고쳐도 복원 줄로 남는다.
+  test("(l2d) 375 — 「되돌리기」 뒤 새로 고치면 복원 줄이 다시 뜬다", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);
+    await changePeriodEnd(page, addDays(TODAY, 10 + 10));
+    await expect(primarySave(page)).toContainText("일괄 저장 1");
+
+    await page.reload();
+    await page.getByRole("button", { name: "버림", exact: true }).click();
+    await page.getByRole("status").filter({ hasText: "편집을 버렸습니다" }).getByRole("button", { name: "되돌리기" }).click();
+    await expect(primarySave(page)).toContainText("일괄 저장 1");
+
+    await page.reload();
+    await expect(page.locator("p").getByText("저장 안 한 편집 1칸")).toBeVisible();
+  });
+
+  // /review R-2 — 저장을 시작하면 되돌리기 토스트를 치운다(저장 중·저장 뒤 옛 편집을 덮어쓰지 않게).
+  test("(l2e) 375 — 「버림」 뒤 새 편집을 저장하면 되돌리기 토스트가 바로 사라진다", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);
+    await changePeriodEnd(page, addDays(TODAY, 10 + 10));
+    await expect(primarySave(page)).toContainText("일괄 저장 1");
+
+    await page.reload();
+    await page.getByRole("button", { name: "버림", exact: true }).click();
+    const toast = page.getByRole("status").filter({ hasText: "편집을 버렸습니다" });
+    await expect(toast).toBeVisible();
+    await changePeriodEnd(page, addDays(TODAY, 10 + 5));
+    await primarySave(page).click();
+    // 자동 소멸(4초)보다 짧게 본다 — 저장이 치운 것만 통과한다.
+    await expect(toast).toHaveCount(0, { timeout: 1000 });
+  });
+
   test("(l2) 표 칸만 — 1280에서 실행가만 고친 채 375로 새로 고치면 「복원」 뒤 1차 1이 렌더되고 저장된다(R1)", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);

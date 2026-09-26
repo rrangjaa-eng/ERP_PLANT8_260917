@@ -39,13 +39,17 @@ const ERROR_SITES: RegExp[] = [
   /\breturn\s+["`]([^"`\n]*[가-힣][^"`\n]*)["`]/g,
   /=\s*["`]([^"`\n]*(?:오류|실패)[^"`\n]*)["`]/g,
   /`(오류 \$\{[^`\n]*)`/g,
+  // /review(red-team) — 도메인 거부 문구는 대문자 상수에 많이 담긴다(예: PERIOD_CONFLICT).
+  /\bconst [A-Z][A-Z0-9_]* = ["`]([^"`\n]*[가-힣][^"`\n]*)["`]/g,
 ];
+// 다음 행동 표기는 「새로 고침」(UI-SPEC F1)으로 통일한다 — 붙여 쓴 「새로고침」도 걸린다.
 // 폼·행동 실패 요약 「~하지 못했습니다」는 어디에 있든 오류다.
 const FAILURE_SENTENCE = /["`>]([^"`<\n]*지 못했습니다[^"`<\n]*)["`<]/g;
 
 // 끝이든 「원인 · 다음 행동」의 원인 자리(가운뎃점·쌍점 앞)든 높임말 종결이면 걸린다.
 const HONORIFIC_OR_PERIOD = /(?:습니다|세요|입니다|니다)\.?(?:$|\s*[·:])|\.$/;
-const EXEMPT = new Set(["날짜를 골라 주세요"]);
+// 빈 목록 문구는 사용자 결정으로 제외(오류가 아니라 비어 있음 상태).
+const EXEMPT = new Set(["날짜를 골라 주세요", "이 프로젝트에 견적 줄이 없습니다"]);
 // 등록부·규칙 불변식 위반 — 코드 결함일 때만 나는 일반 Error라 화면에 나가지 않는다(handleServerError allowlist).
 const DEVELOPER_ERRORS = new Set([
   "DuplicateDtoError",
@@ -72,7 +76,7 @@ function offendersIn(rel: string, source: string): string[] {
       const copy = (match[match.length - 1] ?? "").trim();
       const errorClass = match.length > 2 ? (match[1] ?? "") : "";
       if (EXEMPT.has(copy) || DEVELOPER_ERRORS.has(errorClass)) continue;
-      if (HONORIFIC_OR_PERIOD.test(copy)) found.push(`${rel}: ${copy}`);
+      if (HONORIFIC_OR_PERIOD.test(copy) || copy.includes("새로고침")) found.push(`${rel}: ${copy}`);
     }
   }
   for (const match of text.matchAll(FAILURE_SENTENCE)) found.push(`${rel}: ${(match[1] ?? "").trim()}`);
@@ -100,6 +104,8 @@ describe("오류 문구 명사형 통일 (결정 4 · SYSTEM.md §8-3)", () => {
     'errors.push({ field: "fxRate", reason: `환율이 없습니다 · 환율 입력` });',
     'return `저장하지 못했습니다 · ${message}`;',
     "disabledReason={`오류 ${count}칸 · 고쳐야 저장됩니다`}",
+    'const STALE = "다른 사람이 먼저 바꿨습니다 · 새로 고침";',
+    'throw new UserFacingError("버전 정보 필요 · 새로고침");',
   ])("알려진 나쁜 예 %s 를 잡는다", (sample) => {
     expect(offendersIn("sample.ts", sample)).not.toEqual([]);
   });

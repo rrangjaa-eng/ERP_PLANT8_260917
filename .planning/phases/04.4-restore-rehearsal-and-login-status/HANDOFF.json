@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-24T18:24:51.992Z",
+  "timestamp": "2026-09-26T14:34:18.000Z",
   "phase": "04.4",
   "phase_name": "restore-rehearsal-and-login-status",
   "phase_dir": ".planning/phases/04.4-restore-rehearsal-and-login-status",
@@ -20,17 +20,35 @@
       "name": "막는 문제 4건(E-10,E-16,E-18,E-20) 플랜 반영 + 검사기(통과) + Opus 독립 교차 검토(막는 문제 없음)",
       "status": "done",
       "commit": "dcd9130"
+    },
+    {
+      "id": 3,
+      "name": "plan-design-review 04.4 (+ Opus 교차)",
+      "status": "done",
+      "commit": "f8c69f5"
+    },
+    {
+      "id": 4,
+      "name": "plan-ceo-review 04.4 (HOLD SCOPE, CLEAR) — 보고서·TODOS·게이트 기록",
+      "status": "done",
+      "commit": "5458e7d"
+    },
+    {
+      "id": 5,
+      "name": "CEO 막는 문제 2건 플랜 반영(03 CEO-1, 04 CEO-2)",
+      "status": "done",
+      "commit": "e8ed306"
     }
   ],
   "remaining_tasks": [
     {
-      "id": 3,
-      "name": "plan-design-review 04.4 (+ Opus 독립 교차 검토, Codex 대신)",
+      "id": 6,
+      "name": "새 세션: /gsd-execute-phase 04.4 — 04.4-01부터(플랜 하나 끝나면 커밋·푸시·pause)",
       "status": "not_started"
     },
     {
-      "id": 4,
-      "name": "한도 풀린 뒤(2026-09-29~) Codex 재확인: eng 리비전(dcd9130)",
+      "id": 7,
+      "name": "한도 풀린 뒤(2026-09-29~) Codex 재확인: e8ed306 CEO 반영 + dcd9130 + f8c69f5",
       "status": "not_started"
     }
   ],
@@ -47,9 +65,14 @@
       "decision": "plan-design-review 통과: 막는 문제 0 (Opus 1차+Opus 교차, Codex 대신)",
       "rationale": "Codex 한도 9/29까지, 한도 풀리면 재확인",
       "phase": "04.4"
+    },
+    {
+      "decision": "plan-ceo-review 04.4: HOLD SCOPE, CLEAR. CEO-1·2 수용, 참고 6건 TODOS 이연, 축소안 3건 거절",
+      "rationale": "자동 결정(추천값, 사용자 부재). Codex 한도로 Opus 독립 검토 대체",
+      "phase": "04.4"
     }
   ],
   "uncommitted_files": [],
-  "next_action": "디자인 참고 지적 처리 → 최종 전체 검토(Fable 1회) → /review(문서) → PR 설명",
-  "context_notes": "Codex 한도 2026-09-29까지 → 교차 검토는 Opus, Fable은 최종 전체 1회. 결과: /mnt/project-files/04.4-gates/checker-rev1.md, opus-cross-r1.md(참고 7건). STATE.md·루트 HANDOFF.json 건드리지 않음."
+  "next_action": "새 세션에서 PR #91 최신 [코디네이터 지시] 확인 → /gsd-execute-phase 04.4 (04.4-01)",
+  "context_notes": "CEO 게이트 완료(PR #91, 브랜치 claude/execute-phase-04-4). 게이트 리뷰를 시작한 세션은 실행자를 띄우지 않으므로 실행은 새 세션. STATE.md·루트 HANDOFF.json 건드리지 않음."
 }

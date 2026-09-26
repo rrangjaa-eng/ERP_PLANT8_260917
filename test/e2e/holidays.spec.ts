@@ -103,3 +103,126 @@ test.describe("공휴일 관리 /admin/holidays", () => {
     expect(response?.status()).toBe(404);
   });
 });
+
+// 04.2-11 Task 2 — UI-SPEC S2-holiday-table · S2-confirm 상태.
+const LONG_NAME_YEAR = 2033;
+const LONG_NAME = "제22대 국회의원 선거일";
+
+async function yearsWithRows(): Promise<number[]> {
+  const rows = await db.select({ date: holidays.date }).from(holidays);
+  return [...new Set(rows.map((row) => Number(row.date.slice(0, 4))))].sort((a, b) => a - b);
+}
+
+test.describe("공휴일 표·확정 버튼의 상태", () => {
+  test.beforeAll(async () => {
+    await db.delete(holidays).where(and(gte(holidays.date, `${LONG_NAME_YEAR}-01-01`), lte(holidays.date, `${LONG_NAME_YEAR}-12-31`)));
+    await db.insert(holidays).values({ date: `${LONG_NAME_YEAR}-04-12`, name: LONG_NAME, kind: "election" });
+  });
+
+  test.afterAll(async () => {
+    await db.delete(holidays).where(and(gte(holidays.date, `${LONG_NAME_YEAR}-01-01`), lte(holidays.date, `${LONG_NAME_YEAR}-12-31`)));
+  });
+
+  test("연도 링크는 행이 있는 해 전부 오름차순이고 현재 연도는 aria-current 글자다 · 1행인 해도 같은 행 템플릿", async ({
+    page,
+  }) => {
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/holidays?year=${LONG_NAME_YEAR}`);
+
+    const nav = page.getByRole("navigation", { name: "연도" });
+    const current = nav.locator('[aria-current="page"]');
+    await expect(current).toHaveText(`${LONG_NAME_YEAR}년`);
+    await expect(nav.getByRole("link", { name: `${LONG_NAME_YEAR}년` })).toHaveCount(0);
+
+    const expectedYears = (await yearsWithRows()).map((year) => `${year}년`);
+    await expect(nav.locator("li")).toHaveText(expectedYears);
+    await expect(nav.getByRole("link")).toHaveCount(expectedYears.length - 1);
+
+    const table = page.getByRole("table", { name: `${LONG_NAME_YEAR}년 공휴일` });
+    await expect(table.locator("tbody tr")).toHaveCount(1);
+    await expect(table.locator("tbody tr td")).toHaveText(["04-12", "화", LONG_NAME, "선거일", ""]);
+  });
+
+  test("행이 없는 해(?year=1999)는 기본 연도로 떨어지고 후보를 만들지 않는다", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto("/admin/holidays?year=1999");
+
+    await expect(page.getByRole("table", { name: "1999년 공휴일" })).toHaveCount(0);
+    const confirmedYears = new Set(
+      (await db.select({ year: holidayYearConfirmations.year }).from(holidayYearConfirmations)).map((row) => row.year),
+    );
+    const defaultYear = [THIS_YEAR, NEXT_YEAR].find((year) => !confirmedYears.has(year)) ?? THIS_YEAR;
+    await expect(page.getByRole("table", { name: `${defaultYear}년 공휴일` })).toBeVisible();
+    expect(await holidayCount(1999)).toBe(0);
+  });
+
+  for (const viewport of [
+    { label: "PC", width: 1280, height: 800 },
+    { label: "375px", width: 375, height: 812 },
+  ]) {
+    test(`긴 이름은 이름 칸에서 줄바꿈되고 말줄임되지 않는다(${viewport.label})`, async ({ page }) => {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await loginAsSysadmin(page);
+      await page.goto(`/admin/holidays?year=${LONG_NAME_YEAR}`);
+
+      const cell = page.getByRole("cell", { name: LONG_NAME, exact: true });
+      await expect(cell).toBeVisible();
+      const metrics = await cell.evaluate((el) => {
+        const style = getComputedStyle(el);
+        return {
+          textOverflow: style.textOverflow,
+          whiteSpace: style.whiteSpace,
+          overflowing: el.scrollWidth > el.clientWidth,
+          text: (el as HTMLElement).innerText,
+        };
+      });
+      expect(metrics.textOverflow).not.toBe("ellipsis");
+      expect(metrics.whiteSpace).not.toBe("nowrap");
+      expect(metrics.overflowing).toBe(false);
+      expect(metrics.text).toBe(LONG_NAME);
+    });
+  }
+
+  test("확정 대기 중 라벨은 `{연도}년 공휴일 확정…` 비활성, 요청이 끊기면 원래 라벨 + 실패 줄, 풀고 다시 누르면 확정된다", async ({
+    page,
+  }) => {
+    await resetConfirmation(NEXT_YEAR);
+    await loginAsSysadmin(page);
+    await page.goto(`/admin/holidays?year=${NEXT_YEAR}`);
+
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const isConfirmAction = (method: string, headers: Record<string, string>) =>
+      method === "POST" && headers["next-action"] !== undefined;
+    await page.route("**/*", async (route) => {
+      const request = route.request();
+      if (!isConfirmAction(request.method(), request.headers())) {
+        await route.continue();
+        return;
+      }
+      await held;
+      await route.abort();
+    });
+
+    const confirm = page.getByRole("button", { name: `${NEXT_YEAR}년 공휴일 확정` });
+    await confirm.click();
+    await expect(confirm).toHaveText(`${NEXT_YEAR}년 공휴일 확정…`);
+    await expect(confirm).toHaveAttribute("aria-disabled", "true");
+
+    release();
+    await expect(page.getByText("확정하지 못했습니다 · 다시 시도", { exact: true })).toBeVisible();
+    await expect(confirm).toHaveText(`${NEXT_YEAR}년 공휴일 확정`);
+    await expect(confirm).not.toHaveAttribute("aria-disabled", "true");
+    expect(
+      await db.select().from(holidayYearConfirmations).where(eq(holidayYearConfirmations.year, NEXT_YEAR)),
+    ).toHaveLength(0);
+
+    await page.unroute("**/*");
+    await confirm.click();
+    await expect(confirm).toHaveCount(0);
+    await expect(page.getByText(/^확정 · .* · 공휴일 \d+일$/)).toBeVisible();
+    await expect(page.getByText("확정하지 못했습니다 · 다시 시도", { exact: true })).toHaveCount(0);
+  });
+});

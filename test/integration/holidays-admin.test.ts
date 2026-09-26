@@ -278,7 +278,7 @@ describe("addHoliday — 수동 추가(04.2-12)", () => {
     for (const date of ["2026-10-20", "2026-10-19"]) {
       const attempt = addHoliday(admin, { date, kind: "temporary", name: "x" }, deps);
       await expect(attempt).rejects.toBeInstanceOf(PastHolidayDateError);
-      await expect(attempt).rejects.toThrow("지난 날짜 · 내일 이후 날짜 고르기");
+      await expect(attempt).rejects.toThrow("오늘·지난 날짜 · 내일 이후 날짜 고르기");
     }
     expect(await holidayLogs("add")).toHaveLength(0);
 
@@ -413,7 +413,7 @@ describe("addHolidayAction — 칸 오류(04.2-12)", () => {
     const outside = LUNAR_TABLE_LAST_YEAR + 1;
     try {
       const past = await addHolidayAction({ date: "2020-01-02", kind: "temporary", name: "x" });
-      expect(past?.validationErrors?.date?._errors).toEqual(["지난 날짜 · 내일 이후 날짜 고르기"]);
+      expect(past?.validationErrors?.date?._errors).toEqual(["오늘·지난 날짜 · 내일 이후 날짜 고르기"]);
 
       const lunar = await addHolidayAction({ date: `${outside}-01-05`, kind: "temporary", name: "x" });
       expect(lunar?.validationErrors?.date?._errors).toEqual([

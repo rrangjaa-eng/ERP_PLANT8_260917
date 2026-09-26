@@ -497,7 +497,7 @@ test.describe("공휴일 추가 폼의 상태(04.2-12)", () => {
     const submit = page.getByRole("button", { name: "공휴일 추가", exact: true });
 
     const cases = [
-      { value: today, error: "지난 날짜 · 내일 이후 날짜 고르기" },
+      { value: today, error: "오늘·지난 날짜 · 내일 이후 날짜 고르기" },
       { value: `${NEXT_YEAR}-10-03`, error: "이미 공휴일(개천절) · 다른 날짜 고르기" },
       {
         value: `${LUNAR_TABLE_LAST_YEAR + 1}-01-05`,

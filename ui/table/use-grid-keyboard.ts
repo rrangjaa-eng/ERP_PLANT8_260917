@@ -220,11 +220,14 @@ export function useGridKeyboard({
       return;
     }
 
-    if (!editing && isCtrlCombo(event, "a")) {
+    // 리뷰 N-1 — 자동 반복·조합 중 Ctrl+A도 기본 동작(페이지 전체 선택)은 막는다. 전체 선택은 isCtrlCombo일 때만.
+    if (!editing && event.ctrlKey && event.key.toLowerCase() === "a") {
       event.preventDefault();
-      setAnchorCell(null);
-      setAllSelected(true);
-      onSelectAll?.();
+      if (isCtrlCombo(event, "a")) {
+        setAnchorCell(null);
+        setAllSelected(true);
+        onSelectAll?.();
+      }
       return;
     }
 

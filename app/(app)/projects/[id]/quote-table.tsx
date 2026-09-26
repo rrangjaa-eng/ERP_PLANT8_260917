@@ -1298,7 +1298,7 @@ export function QuoteLedger({
       setLines((prev) =>
         prev.map((line) =>
           line.clientKey === clientKey
-            ? { ...line, cellErrors: { ...line.cellErrors, [columnKey]: "숫자가 아닙니다 · 12,400,000처럼 적어 주세요" }, dirty: true }
+            ? { ...line, cellErrors: { ...line.cellErrors, [columnKey]: "숫자 형식 오류 · 12,400,000처럼" }, dirty: true }
             : line,
         ),
       );
@@ -1663,7 +1663,7 @@ export function QuoteLedger({
                   line.clientKey === row.clientKey
                     ? {
                         ...line,
-                        cellErrors: { ...line.cellErrors, unitPrice: "숫자가 아닙니다 · 12,400,000처럼 적어 주세요" },
+                        cellErrors: { ...line.cellErrors, unitPrice: "숫자 형식 오류 · 12,400,000처럼" },
                         dirty: true,
                       }
                     : line,
@@ -2029,7 +2029,7 @@ export function QuoteLedger({
     periodRejectedSummary ??
     statusChangedSummary ??
     result.serverError ??
-    (result.validationErrors ? "저장하지 못했습니다 · 입력값을 확인하세요" : undefined);
+    (result.validationErrors ? "저장 실패 · 입력값 확인" : undefined);
   // 견적 줄 표 합계 행 — 봉투 요약은 견적 줄 칸이 있을 때만, 매출 칸만 거부됐으면 다른 칸 글자.
   const quoteFooterSummary = rejectedEnvelope
     ? quoteTableRejectionText(rejectedEnvelope, revenueEntryIds, outsideErrorCount)

@@ -34,7 +34,7 @@ export const changePasswordAction = authedActionClient
       // 현재 비밀번호 불일치는 better-auth가 APIError(BAD_REQUEST, INVALID_PASSWORD)로
       // 던진다 — 사용자에게는 일관된 한국어 메시지만 보여준다.
       if (e instanceof APIError) {
-        throw new UserFacingError("현재 비밀번호가 올바르지 않습니다.");
+        throw new UserFacingError("현재 비밀번호 오류");
       }
       throw e;
     }

@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-26T18:50:38.000Z",
+  "timestamp": "2026-09-26T18:55:13.000Z",
   "phase": "04.4",
   "phase_name": "restore-rehearsal-and-login-status",
   "phase_dir": ".planning/phases/04.4-restore-rehearsal-and-login-status",
@@ -74,6 +74,12 @@
       "name": "/cso 게이트(04.4 diff) — 결함 0, 이월 5건 게이트 로그",
       "status": "done",
       "commit": "b9bfe0b"
+    },
+    {
+      "id": 12,
+      "name": "/cso 스캐너 재시도 — 제출 수락, 새 지적 0, 스캐너 미실행(Docker 없음)",
+      "status": "done",
+      "commit": "21133ab"
     }
   ],
   "remaining_tasks": [
@@ -95,7 +101,13 @@
   ],
   "blockers": [],
   "async_jobs": [],
-  "human_actions_pending": [],
+  "human_actions_pending": [
+    {
+      "action": "스캐너 미실행 확인 — Docker·검증 스캐너 이미지가 있는 환경에서 /cso 스캐너 실행 여부 결정",
+      "context": "클라우드 컨테이너에 Docker 데몬 없음, gstack-cso 스캐너 카탈로그 비어 있음",
+      "blocking": false
+    }
+  ],
   "decisions": [
     {
       "decision": "Rehearsal workflow uses its own concurrency group; mid-run deploys detected via image digest and recorded as failure",
@@ -165,5 +177,5 @@
   ],
   "uncommitted_files": [],
   "next_action": "#90 머지 뒤 코디네이터가 여는 새 세션에서 PR #91 [코디네이터 지시] 확인 → 04.4-06 하나 실행",
-  "context_notes": "/cso 게이트 완료(b9bfe0b): 지원 결함 0, Opus 독립 검토 low 3, 수정 없음. 이월 5건(verify 대상 env↔APP_ENV, 남은 임시 인스턴스 상한·알림, restore Job BETTER_AUTH_SECRET, 0018 now() 백필 문서화, WIF ref·전용 SA)은 .claude/gates/phase-04.4.log. Codex 재확인 필요."
+  "context_notes": "/cso 게이트 완료(b9bfe0b): 지원 결함 0, Opus 독립 검토 low 3, 수정 없음. 이월 5건(verify 대상 env↔APP_ENV, 남은 임시 인스턴스 상한·알림, restore Job BETTER_AUTH_SECRET, 0018 now() 백필 문서화, WIF ref·전용 SA)은 .claude/gates/phase-04.4.log. Codex 재확인 필요. 재시도(21133ab): 스캐너 5종 PREREQUISITE로 미실행, 사용자 확인 필요."
 }

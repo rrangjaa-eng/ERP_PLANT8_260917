@@ -487,7 +487,7 @@ describe("매출 쓰기 경로(04-41 · Codex #1 · ENG-D10)", () => {
   const usd = (amount: number, fxRate: number) => ({ currency: "USD" as const, amount, fxRate });
   const NOT_FOUND = "줄을 찾을 수 없음 · 새로 고침";
   const MISMATCH = "이미 저장된 줄과 값이 다름 · 새로 고침";
-  const CAP = "금액이 상한을 넘습니다 · 2,147,483,647원 이하";
+  const CAP = "금액이 상한을 넘습니다 · 999,999,999,999원 이하";
   const FX_ZERO = "환율은 0보다 커야 합니다 · 환율을 고쳐 주세요";
 
   async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
@@ -729,8 +729,8 @@ describe("매출 쓰기 경로(04-41 · Codex #1 · ENG-D10)", () => {
       const error = await rejectionOf(
         saveRevenue(finance, project.id, {
           issuedEntries: [
-            { id: first, isNew: true, entryDate: "2026-09-01", amount: krw(3_000_000_000) },
-            { id: second, isNew: true, entryDate: "2026-09-02", amount: krw(3_000_000_000) },
+            { id: first, isNew: true, entryDate: "2026-09-01", amount: krw(1_000_000_000_000) },
+            { id: second, isNew: true, entryDate: "2026-09-02", amount: krw(1_000_000_000_000) },
           ],
         }),
       );
@@ -750,7 +750,7 @@ describe("매출 쓰기 경로(04-41 · Codex #1 · ENG-D10)", () => {
       const input = {
         projectId: project.id,
         seenStatus: "bidding" as const,
-        revenue: { issuedEntries: [{ id, isNew: true as const, entryDate: "2026-09-01", amount: krw(3_000_000_000) }] },
+        revenue: { issuedEntries: [{ id, isNew: true as const, entryDate: "2026-09-01", amount: krw(1_000_000_000_000) }] },
       };
       const result = await saveProjectLedgerAction(input);
 
@@ -803,7 +803,7 @@ describe("매출 쓰기 경로(04-41 · Codex #1 · ENG-D10)", () => {
       const usdRow = { id: randomUUID(), isNew: true as const, entryDate: "2026-09-01", amount: usd(100, 1380), fxRateTouched: true };
 
       await rejectionOf(
-        saveRevenue(finance, project.id, { issuedEntries: [usdRow, { id: randomUUID(), isNew: true, entryDate: "2026-09-01", amount: krw(3_000_000_000) }] }),
+        saveRevenue(finance, project.id, { issuedEntries: [usdRow, { id: randomUUID(), isNew: true, entryDate: "2026-09-01", amount: krw(1_000_000_000_000) }] }),
       );
       expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(before);
 

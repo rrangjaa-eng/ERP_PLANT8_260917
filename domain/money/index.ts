@@ -55,13 +55,28 @@ export function toKrw(input: MoneyInput): number {
   // amount는 소수 2자리, fxRate는 소수 4자리로 저장된다 — 정수로 올려
   // 곱한 뒤 나누면 부동소수점 오차(0.35×1350=472.49999999999994 등) 없이
   // 정확한 값이 나온다.
-  const exact = (Math.round(input.amount * 100) * Math.round(input.fxRate * 10000)) / 1e6;
-  return round(exact, 1, "round");
+  const scaledAmount = Math.round(input.amount * 100);
+  const scaledRate = Math.round(input.fxRate * 10000);
+  const product = scaledAmount * scaledRate;
+  if (Number.isSafeInteger(product)) return round(product / 1e6, 1, "round");
+  // 원화 금액이 bigint(0016)라 곱이 2^53을 넘을 수 있다(원화 약 90억 초과) — double은 끝자리를 잃어 .5 경계를
+  // 틀리게 올린다. BigInt로 정확히 나눈 뒤 Math.round처럼(반은 +∞ 쪽) 반올림한다.
+  const million = BigInt(1_000_000);
+  const exact = BigInt(scaledAmount) * BigInt(scaledRate);
+  let quotient = exact / million;
+  let remainder = exact % million;
+  if (remainder < BigInt(0)) {
+    quotient -= BigInt(1);
+    remainder += million;
+  }
+  return Number(remainder * BigInt(2) >= million ? quotient + BigInt(1) : quotient);
 }
 
-// 04-40(엔지니어링 리뷰 B §2 · DR-9) — 원화 금액 컬럼(integer)의 범위. 금액 입력 범위와 계산 견적가 상한이 같은 두 상수를 쓴다.
-export const KRW_COLUMN_MIN = -2147483648;
-export const KRW_COLUMN_MAX = 2147483647;
+// 04-40(엔지니어링 리뷰 B §2 · DR-9) — 원화 금액 범위. 금액 입력 범위와 계산 견적가 상한이 같은 두 상수를 쓴다.
+// 원화 금액 컬럼은 bigint(0016)라 열 한계가 아니라 업무 상한이다 — 1조 원 미만(사용자 결정). 이 범위면 여러 줄을
+// 더한 목록 합계도 bigint·2^53 안에 머문다. 하한은 옛 integer 범위처럼 한 칸 넓어 차익 상한 판정이 살아 있다.
+export const KRW_COLUMN_MIN = -1_000_000_000_000;
+export const KRW_COLUMN_MAX = 999_999_999_999;
 // 04-40 검토 SF-1 — 외화 금액 numeric(14,2) · 환율 numeric(12,4)의 정수부 한계(db/schema/money-columns.ts).
 const FOREIGN_AMOUNT_COLUMN_LIMIT = 1e12;
 const FX_RATE_COLUMN_LIMIT = 1e8;

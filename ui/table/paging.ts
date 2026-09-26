@@ -23,6 +23,16 @@ export function splitPages(ids: readonly string[], opts: { pageSize: number; pin
   return pages;
 }
 
+/** 04-47 RED 골격(구현 전). */
+export function pinNewRows(input: {
+  ids: readonly string[];
+  known: ReadonlySet<string>;
+  pinned: Readonly<Record<string, number>>;
+  page: number;
+}): Readonly<Record<string, number>> {
+  return input.pinned;
+}
+
 /** 줄 id가 있는 쪽(1부터). 없으면 null. */
 export function pageOfRow(pages: readonly (readonly string[])[], rowId: string): number | null {
   const index = pages.findIndex((page) => page.includes(rowId));

@@ -12,6 +12,14 @@ import { MAX_DECIMALS, numberInputRejectionReason, type NumberInputKind } from "
 
 export type PasteColumnKind = "text" | "number" | "select";
 
+/** 04-47 — 앱 전용 클립보드 형식(04-19 격자 복사 · 04-24 이전 차수 복사가 싣는다). */
+export const APP_CLIPBOARD_FORMAT = "application/x-plant8-quote-lines+json";
+
+/** 04-47 RED 골격(구현 전). */
+export function readPasteClipboard(data: Pick<DataTransfer, "types" | "getData">): { text: string; appMeta: string | null } {
+  return { text: data.getData("text/plain"), appMeta: null };
+}
+
 export type PasteColumn<Row> = {
   key: string;
   kind: PasteColumnKind;
@@ -21,6 +29,8 @@ export type PasteColumn<Row> = {
   numberKind?: NumberInputKind;
   /** 기존 행, 그리고 newRow가 있으면 붙여넣기로 새로 생길 행(newRow)에 호출된다. */
   isEditable: (row: Row) => boolean;
+  /** 04-47 — 계산 열(`computed`)인지. */
+  pasteRole?: "input" | "computed";
 };
 
 export type PasteCellResult = { status: "ok"; value: string } | { status: "error"; reason: string };
@@ -34,6 +44,14 @@ export type ApplyPasteResult = {
   newRowsNeeded: number;
   /** 표 오른쪽을 넘어 버린 칸 수(전체 붙여넣기 범위 기준, 열 수가 아니다). */
   droppedColumnCount: number;
+  /** 04-47 — 붙여넣기 출처(앱 전용 형식이 실렸으면 app). */
+  source: "app" | "external";
+  /** 04-47 — 앱 출처에서 값을 넣지 않고 소비한 계산 열 칸 수. */
+  ignoredComputedCells: number;
+  /** 04-47 — 앱 형식의 줄별 통화(없으면 null). */
+  sourceCurrencies: string[] | null;
+  /** 04-47 — 붙여넣은 줄 수. */
+  rowCount: number;
 };
 
 export function applyPaste<Row>(params: {
@@ -44,6 +62,8 @@ export function applyPaste<Row>(params: {
   activeColIndex: number;
   /** 붙여넣기로 새로 생길 줄의 모양 — 없으면 새 줄은 모든 칸이 편집 가능하다. */
   newRow?: Row;
+  /** 04-47 — 앱 전용 형식 원문(없으면 null). */
+  appMeta?: string | null;
 }): ApplyPasteResult {
   const { clipboardText, columns, rows, activeRowIndex, activeColIndex, newRow } = params;
   const parsed = parseTsv(clipboardText);
@@ -108,7 +128,7 @@ export function applyPaste<Row>(params: {
     });
   });
 
-  return { cells, newRowsNeeded, droppedColumnCount };
+  return { cells, newRowsNeeded, droppedColumnCount, source: "external", ignoredComputedCells: 0, sourceCurrencies: null, rowCount: 0 };
 }
 
 export type UseClipboardPasteParams<Row> = {

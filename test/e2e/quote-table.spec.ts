@@ -9,7 +9,8 @@ import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
 import { db } from "@/db/client";
-import { teams } from "@/db/schema";
+import { quoteLines, teams } from "@/db/schema";
+import { and, eq, isNull, sum } from "drizzle-orm";
 
 // 04-04 Task 3 — 견적 줄 표의 키보드 계약·범위 선택·붙여넣기·전부 거부를
 // E2E로 증명한다. 실제 엑셀 붙여넣기(인용 규칙)는 자동화가 닿지 못해
@@ -925,7 +926,9 @@ test.describe("견적 줄 표 — 30줄 쪽 나눔(04-19 Task 1 · D-91)", () =>
 
     await quoteCell(page, 4, 2).focus();
     await page.keyboard.press("Control+Enter");
-    await expect(pageNav(page)).toContainText("1–30 / 31줄");
+    // 04-47(§7-3 (자)) — 새 줄은 만든 쪽에 붙어 있다: 1쪽이 잠시 31줄이고 쪽 줄이 없다(저장 뒤 30줄 단위로 다시 나뉜다).
+    await expect(quoteDataRows(page)).toHaveCount(31);
+    await expect(pageNav(page)).toHaveCount(0);
     await expect(quoteCell(page, 5, 0)).toHaveText("6");
     await expect(quoteCell(page, 5, 2)).toHaveText("");
     await expect(quoteCell(page, 4, 2)).toBeFocused();
@@ -1110,5 +1113,238 @@ test.describe("견적 줄 표 — 쪽 경계 키보드·전체 복사·힌트 �
 
     await page.setViewportSize({ width: 1000, height: 900 });
     await expect(hint).toBeHidden();
+  });
+});
+
+// 04-47 Task 1 — 붙여넣기(계산 열 무시 · 통화 경고 · 끝 줄바꿈 · 쪽을 넘는 채우기) · 새 줄 고정 · 그룹 버튼 쪽 이동 · 합계 행 한 줄(DR-16).
+type SeedLine = {
+  subcategory: string;
+  itemName: string;
+  amount: number;
+  currency?: "KRW" | "USD";
+  fxRate?: number;
+  vendorId?: string;
+};
+
+async function seedLines(revisionId: string, rows: SeedLine[]) {
+  if (rows.length === 0) return;
+  await saveQuoteLines(SYSTEM_VIEWER, revisionId, {
+    rows: rows.map((row) => ({
+      id: randomUUID(),
+      isNew: true as const,
+      subcategory: row.subcategory,
+      itemName: row.itemName,
+      vendorId: row.vendorId ?? null,
+      unitPrice: { currency: row.currency ?? ("KRW" as const), amount: row.amount, fxRate: row.fxRate ?? 1 },
+      execution: { currency: "KRW" as const, amount: 0, fxRate: 1 },
+    })),
+  });
+}
+
+async function quoteTotalKrw(revisionId: string): Promise<number> {
+  const [row] = await db
+    .select({ total: sum(quoteLines.quoteAmountKrw) })
+    .from(quoteLines)
+    .where(and(eq(quoteLines.revisionId, revisionId), isNull(quoteLines.archivedAt)));
+  return Number(row?.total ?? 0);
+}
+
+// 합계 행 오른쪽 한 줄의 조각(글자 · 톤).
+async function footerPieces(page: Page): Promise<{ tone: string; text: string }[]> {
+  return quoteTable(page)
+    .locator("tfoot [data-tone]")
+    .evaluateAll((elements) => elements.map((element) => ({ tone: element.getAttribute("data-tone") ?? "", text: (element.textContent ?? "").trim() })));
+}
+
+async function pasteWithFormats(page: Page, formats: Record<string, string>) {
+  await page.evaluate((data) => {
+    const transfer = new DataTransfer();
+    for (const [format, value] of Object.entries(data)) transfer.setData(format, value);
+    const event = new ClipboardEvent("paste", { clipboardData: transfer, bubbles: true, cancelable: true });
+    document.activeElement?.dispatchEvent(event);
+  }, formats);
+}
+
+async function saveAndWait(page: Page) {
+  const saved = page.waitForResponse((response) => isServerAction(response.request()));
+  await page.getByRole("button", { name: /일괄 저장/ }).click();
+  await saved;
+}
+
+const invalidCells = (page: Page) => quoteTable(page).locator('td[aria-invalid="true"]');
+
+test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 한 줄(04-47 Task 1)", () => {
+  test("(ENG-D5) 앱 형식 없는 엑셀 6열을 소분류 칸에 → 실행가 값이 떨어진 견적가 칸 둘이 오류 · 합계 행 `오류 2칸` · `계산 열` 조각 없음", async ({ page }) => {
+    const stamp = randomUUID().slice(0, 8);
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E엑셀거래처-${stamp}`, normalizedName: `e2e엑셀거래처-${stamp}` });
+    await openProjectWithSavedLines(page, [
+      { subcategory: "stage_construction", itemName: "엑셀 앞줄1", amount: 1000 },
+      { subcategory: "stage_construction", itemName: "엑셀 앞줄2", amount: 1000 },
+    ]);
+    await quoteCell(page, 0, 1).focus();
+    await pasteWithFormats(page, {
+      "text/plain": `무대·시공\t엑셀 항목1\t${vendor.name}\t2\t1000\t800\r\n무대·시공\t엑셀 항목2\t${vendor.name}\t3\t2000\t900\r\n`,
+    });
+
+    await expect(quoteCell(page, 0, 2)).toHaveText("엑셀 항목1");
+    await expect(invalidCells(page)).toHaveCount(2);
+    await expect(quoteCell(page, 0, 6)).toHaveAttribute("aria-invalid", "true");
+    await expect(quoteCell(page, 1, 6)).toHaveAttribute("aria-invalid", "true");
+    await expect(quoteCell(page, 0, 6)).toContainText("읽기 전용·잠김 셀에 값이 떨어졌습니다");
+    const pieces = await footerPieces(page);
+    expect(pieces).toContainEqual({ tone: "danger", text: "오류 2칸" });
+    expect(pieces.some((piece) => piece.text.includes("계산 열"))).toBe(false);
+  });
+
+  test("(C-03) 두 그룹 · USD 1줄 · 45줄을 Ctrl+A → Ctrl+C로 복사해 0줄 프로젝트의 번호 칸에 붙이면 오류 0 · 한 줄 요약 · 저장 뒤 원화 합계가 같다", async ({ page }) => {
+    const stamp = `${Date.now()}-${randomUUID().slice(0, 6)}`;
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E왕복-${stamp}`, normalizedName: `e2e왕복-${stamp}` });
+    const email = `e2e-roundtrip-${randomUUID()}@example.test`;
+    const { userId: pmUserId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E Roundtrip", roleId: DEFAULT_ROLE_ID });
+    const [team] = await db.select().from(teams).limit(1);
+    if (!team) throw new Error("시드된 팀이 없습니다");
+    const source = await createProject(SYSTEM_VIEWER, { clientId: vendor.id, teamId: team.id, pmUserId, name: `E2E왕복원본-${stamp}` });
+    const target = await createProject(SYSTEM_VIEWER, { clientId: vendor.id, teamId: team.id, pmUserId, name: `E2E왕복대상-${stamp}` });
+    const sourceRevision = await getCurrentQuoteRevision(SYSTEM_VIEWER, source.id);
+    const targetRevision = await getCurrentQuoteRevision(SYSTEM_VIEWER, target.id);
+    if (!sourceRevision || !targetRevision) throw new Error("1차 차수가 없습니다");
+    await seedLines(sourceRevision.id, [
+      ...Array.from({ length: 20 }, (_, index) => ({ subcategory: "stage_construction", itemName: `왕복A${index + 1}`, amount: 1000 * (index + 1), vendorId: vendor.id })),
+      { subcategory: "print_production", itemName: "왕복USD", amount: 100, currency: "USD" as const, fxRate: 1300, vendorId: vendor.id },
+      ...Array.from({ length: 24 }, (_, index) => ({ subcategory: "print_production", itemName: `왕복B${index + 1}`, amount: 2500, vendorId: vendor.id })),
+    ]);
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(email);
+    await page.getByLabel("비밀번호").fill(tempPassword);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto(`/projects/${source.id}`);
+    await expect(quoteDataRows(page)).toHaveCount(30);
+    await page.evaluate(() => {
+      window.addEventListener("copy", (event) => {
+        const data = event.clipboardData;
+        (window as unknown as { __copied?: Record<string, string> }).__copied = {
+          "text/plain": data?.getData("text/plain") ?? "",
+          "application/x-plant8-quote-lines+json": data?.getData("application/x-plant8-quote-lines+json") ?? "",
+        };
+      });
+    });
+    await quoteCell(page, 3, 2).focus();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.press("Control+c");
+    const copied = (await (await page.waitForFunction(() => (window as unknown as { __copied?: Record<string, string> }).__copied)).jsonValue()) as Record<string, string>;
+    expect(JSON.parse(copied["application/x-plant8-quote-lines+json"] ?? "[]")).toHaveLength(45);
+
+    await page.goto(`/projects/${target.id}`);
+    await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
+    await quoteCell(page, 0, 0).focus();
+    await pasteWithFormats(page, copied);
+
+    await expect(quoteDataRows(page)).toHaveCount(45);
+    await expect(invalidCells(page)).toHaveCount(0);
+    expect(await footerPieces(page)).toEqual([
+      { tone: "muted", text: "붙여넣기 45줄" },
+      { tone: "warning", text: "외화 1줄 원화로" },
+      { tone: "muted", text: "계산 열 180칸 무시" },
+    ]);
+
+    await saveAndWait(page);
+    const saved = await footerPieces(page);
+    expect(saved).toHaveLength(1);
+    expect(saved[0]?.tone).toBe("success");
+    expect(saved[0]?.text).toMatch(/^저장됨/);
+    expect(await quoteTotalKrw(targetRevision.id)).toBe(await quoteTotalKrw(sourceRevision.id));
+  });
+
+  test("(금지 항목) 142줄 1쪽 20번째 줄에 45줄 → 화면은 1쪽 · `붙여넣기 45줄 · 3쪽까지` · 저장 뒤 20~64번째 줄이 전부 붙여 넣은 값", async ({ page }) => {
+    await openProjectWithSavedLines(
+      page,
+      Array.from({ length: 142 }, (_, index) => ({ subcategory: "stage_construction", itemName: `줄${index + 1}`, amount: 1000 })),
+    );
+    await expect(quoteCell(page, 19, 2)).toHaveText("줄20");
+    await quoteCell(page, 19, 2).focus();
+    await pasteWithFormats(page, { "text/plain": Array.from({ length: 45 }, (_, index) => `붙임${index + 1}`).join("\r\n") + "\r\n" });
+
+    await expect(quoteCell(page, 19, 2)).toHaveText("붙임1");
+    await expect(currentPage(page)).toHaveText("1");
+    expect(await footerPieces(page)).toEqual([
+      { tone: "muted", text: "붙여넣기 45줄" },
+      { tone: "muted", text: "3쪽까지" },
+    ]);
+
+    await saveAndWait(page);
+    await page.reload();
+    await expect(quoteCell(page, 19, 2)).toHaveText("붙임1");
+    await expect(quoteCell(page, 29, 2)).toHaveText("붙임11");
+    await pageNav(page).getByRole("button", { name: "2", exact: true }).first().click();
+    await expect(quoteCell(page, 0, 2)).toHaveText("붙임12");
+    await expect(quoteCell(page, 29, 2)).toHaveText("붙임41");
+    await pageNav(page).getByRole("button", { name: "3", exact: true }).first().click();
+    await expect(quoteCell(page, 0, 2)).toHaveText("붙임42");
+    await expect(quoteCell(page, 3, 2)).toHaveText("붙임45");
+    await expect(quoteCell(page, 4, 2)).toHaveText("줄65");
+  });
+
+  test("10줄 표 1번째 줄에 45줄 → 저장 전 1쪽에 45줄(쪽 줄 없음) → 저장 뒤 `1–30 / 45줄` 두 쪽", async ({ page }) => {
+    await openProjectWithSavedLines(
+      page,
+      Array.from({ length: 10 }, (_, index) => ({ subcategory: "stage_construction", itemName: `열줄${index + 1}`, amount: 1000 })),
+    );
+    await quoteCell(page, 0, 2).focus();
+    await pasteWithFormats(page, { "text/plain": Array.from({ length: 45 }, (_, index) => `새항목${index + 1}`).join("\n") });
+
+    await expect(quoteDataRows(page)).toHaveCount(45);
+    await expect(pageNav(page)).toHaveCount(0);
+    await expect(quoteCell(page, 44, 2)).toHaveText("새항목45");
+
+    await saveAndWait(page);
+    await expect(pageNav(page)).toContainText("1–30 / 45줄");
+    await expect(quoteDataRows(page)).toHaveCount(30);
+  });
+
+  test("2쪽에서 Control+Enter로 만든 새 줄은 표시 순서상 3쪽 자리여도 2쪽에 머문다", async ({ page }) => {
+    await openProjectWithSavedLines(page, [
+      ...Array.from({ length: 35 }, (_, index) => ({ subcategory: "stage_construction", itemName: `A줄${index + 1}`, amount: 1000 })),
+      ...Array.from({ length: 40 }, (_, index) => ({ subcategory: "print_production", itemName: `B줄${index + 1}`, amount: 2000 })),
+    ]);
+    await pageNav(page).getByRole("button", { name: "2", exact: true }).first().click();
+    await expect(quoteCell(page, 5, 2)).toHaveText("B줄1");
+    await quoteCell(page, 5, 2).focus();
+    await page.keyboard.press("Control+Enter");
+
+    await expect(quoteDataRows(page)).toHaveCount(31);
+    await expect(currentPage(page)).toHaveText("2");
+    await expect(quoteCell(page, 30, 0)).toHaveText("76");
+    await expect(quoteCell(page, 30, 2)).toHaveText("");
+  });
+
+  test("(C-18) 1쪽 끝에서 만든 새 줄은 1쪽 31번째에 붙고, 그 줄에서 ↓ → 2쪽 표시 순서상 다음 줄", async ({ page }) => {
+    await openProjectWithSavedLines(page, [
+      ...Array.from({ length: 30 }, (_, index) => ({ subcategory: "stage_construction", itemName: `A줄${index + 1}`, amount: 1000 })),
+      ...Array.from({ length: 15 }, (_, index) => ({ subcategory: "print_production", itemName: `B줄${index + 1}`, amount: 2000 })),
+    ]);
+    await quoteCell(page, 29, 2).focus();
+    await page.keyboard.press("Control+Enter");
+    await expect(quoteDataRows(page)).toHaveCount(31);
+    await expect(quoteCell(page, 30, 0)).toHaveText("31");
+
+    await page.keyboard.press("ArrowDown");
+    await expect(quoteCell(page, 30, 2)).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(currentPage(page)).toHaveText("2");
+    await expect(quoteCell(page, 0, 2)).toHaveText("B줄1");
+    await expect(quoteCell(page, 0, 2)).toBeFocused();
+  });
+
+  test("(B-24) 45줄 1쪽에서 그룹 버튼(견적 외 비용 줄 추가) → 그 그룹 끝이 있는 2쪽으로 옮겨 새 줄의 항목 칸에 포커스", async ({ page }) => {
+    await openProjectWithSavedLines(page, fortyFiveLines());
+    await expect(currentPage(page)).toHaveText("1");
+    await page.getByRole("button", { name: "견적 외 비용 줄 추가" }).click();
+
+    await expect(currentPage(page)).toHaveText("2");
+    await expect(quoteDataRows(page)).toHaveCount(16);
+    await expect(quoteCell(page, 15, 1)).toHaveText("견적 외 비용");
+    await expect(quoteCell(page, 15, 2).locator("input")).toBeFocused();
   });
 });

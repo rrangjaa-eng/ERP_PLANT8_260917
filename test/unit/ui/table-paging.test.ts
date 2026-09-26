@@ -2,7 +2,7 @@ import { createElement, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { clampPage } from "@/lib/paging";
-import { crossPageTarget, nextEditableCell, pageEntryFocus, pageOfRow, resolveFocus, splitPages } from "@/ui/table/paging";
+import { crossPageTarget, nextEditableCell, pageEntryFocus, pageOfRow, pinNewRows, resolveFocus, splitPages } from "@/ui/table/paging";
 import { useGridKeyboard, type UseGridKeyboardResult } from "@/ui/table/use-grid-keyboard";
 
 // 04-19(D-91 · SYSTEM.md §7-3 (자)) — 편집 표의 30줄 쪽 나눔은 화면 안 배열 자르기다. 표시 순서 id를 쪽 크기로
@@ -37,6 +37,40 @@ describe("splitPages — 표시 순서 그대로 쪽 크기로 자른다", () =>
     const resplit = splitPages(display, { pageSize: 30 });
     expect(resplit.map((page) => page.length)).toEqual([30, 15]);
     expect(resplit[1]?.[0]).toBe("new-1");
+  });
+});
+
+// 04-47(§7-3 (자) · C-18) — 직전 분할에 없던 줄(새 줄)은 만들어질 때의 쪽에 고정된다. 재분할은 저장 성공·다시 불러오기·
+// 사용자의 페이지 이동뿐이다(고정을 비우는 쪽은 Table).
+describe("pinNewRows — 직전 분할에 없던 id를 만들어질 때의 쪽에 고정한다", () => {
+  it("2쪽에서 만든 새 줄이 표시 순서상 1쪽 자리에 들어와도 2쪽에 남는다", () => {
+    const before = ids(45);
+    const display = [...ids(4), "new-1", ...ids(41).slice(4)];
+    const pinned = pinNewRows({ ids: display, known: new Set(before), pinned: {}, page: 2 });
+    expect(pinned).toEqual({ "new-1": 2 });
+    const pages = splitPages(display, { pageSize: 30, pinned });
+    expect(pageOfRow(pages, "new-1")).toBe(2);
+    expect(pages.map((page) => page.length)).toEqual([30, 16]);
+  });
+
+  it("1쪽에서 35줄을 새로 만들면(붙여넣기) 1쪽이 45줄이고 쪽 줄이 없다 — 고정을 비우면 30 · 15", () => {
+    const before = ids(10);
+    const display = [...before, ...ids(35, "new")];
+    const pinned = pinNewRows({ ids: display, known: new Set(before), pinned: {}, page: 1 });
+    expect(Object.keys(pinned)).toHaveLength(35);
+    expect(splitPages(display, { pageSize: 30, pinned }).map((page) => page.length)).toEqual([45]);
+    expect(splitPages(display, { pageSize: 30 }).map((page) => page.length)).toEqual([30, 15]);
+  });
+
+  it("이미 고정된 줄은 그 쪽 그대로이고 알던 줄은 고정하지 않는다", () => {
+    const display = [...ids(30), "new-1", "new-2"];
+    const pinned = pinNewRows({ ids: display, known: new Set([...ids(30), "new-1"]), pinned: { "new-1": 1 }, page: 2 });
+    expect(pinned).toEqual({ "new-1": 1, "new-2": 2 });
+  });
+
+  it("새 줄이 없으면 같은 고정 객체를 돌려준다(렌더 중 상태 조정이 멈춘다)", () => {
+    const current = { "new-1": 1 };
+    expect(pinNewRows({ ids: [...ids(3), "new-1"], known: new Set([...ids(3), "new-1"]), pinned: current, page: 1 })).toBe(current);
   });
 });
 

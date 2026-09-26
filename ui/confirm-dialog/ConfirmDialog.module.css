@@ -95,6 +95,11 @@
   color: var(--faint);
 }
 
+.optionButton[aria-disabled="true"] .optionLabel,
+.optionButton[aria-disabled="true"] .optionDescription {
+  color: var(--faint);
+}
+
 .optionLabel {
   display: block;
   color: var(--fg);
@@ -210,6 +215,10 @@
 
   .secondaryWrap {
     flex: 1;
+  }
+
+  .optionButton {
+    min-height: var(--touch-min);
   }
 }
 

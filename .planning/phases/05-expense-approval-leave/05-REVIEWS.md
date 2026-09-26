@@ -1,54 +1,53 @@
 ---
 phase: 5
-round: 2
+round: 3
 sources:
-  - eng-review.md (`/plan-eng-review 5`, 6c245e5, Opus 독립 교차 검토 — Codex 대체, 한도 해제 뒤 Codex 재확인 필요)
-reviewers: [plan-eng-review, opus-outside-voice]
+  - design-review.md (`/plan-design-review 5`, 99d74bd, Opus 독립 디자인 검토 — Codex 대체, 한도 해제 뒤 Codex 재확인 필요)
+reviewers: [plan-design-review, opus-outside-voice]
 prior_rounds:
   - "Round 1 — 1108e20 (ceo-review.md, 반영 완료: 각 플랜 Ledger `### Round 1 — 1108e20`)"
+  - "Round 2 — 69fb7ea (eng-review.md, 반영 완료: 각 플랜 Ledger `### Round 2 — 69fb7ea`)"
 ---
 
-# Phase 5 — Reviews (Round 2)
+# Phase 5 — Reviews (Round 3)
 
-> `/gsd-plan-phase 5 --reviews` Round 2 입력. 정본은 `eng-review.md`이고 이 파일은 그 지적을 반영용 목록으로 옮긴 것이다(내용 추가 없음, 사용자 결정 E1 · E2만 덧붙임).
-> Round 1(CEO) 지적은 `1108e20` 판 이 파일에 있고 각 플랜 Ledger Round 1에 반영됐다. design 게이트 결과는 다음 라운드에서 덧붙인다.
+> `/gsd-plan-phase 5 --reviews` Round 3 입력. 정본은 `design-review.md`이고 이 파일은 그 지적을 반영용 목록으로 옮긴 것이다(내용 추가 없음, 사용자 결정 G1~G4만 덧붙임).
+> P1 D1(UI-SPEC ↔ 플랜 불일치)은 design 게이트가 99d74bd에서 UI-SPEC에 직접 반영해 해소됐다 — 이 라운드 대상 아님.
+> Round 1(CEO) · Round 2(eng) 지적은 각 판(1108e20 · 69fb7ea)의 이 파일에 있고 각 플랜 Ledger에 반영됐다.
 
 ## User Decisions (코디네이터 경유 — 전제)
 
-- **E1: A** (2026-09-27 00:4x KST, PR #89 issuecomment-5847548776) — 문서에는 세율 값(이력 id · 적용일 · 세율)만 스냅숏으로 저장하고 외래 키를 두지 않는다. 예정 세율 취소는 허용하고 그 문서에는 기존 「세율 바뀜」 표시
-- **E2: A** (같은 댓글) — 업로드는 `incoming/` 접두어에 받고 완료 통보 때 `evidence/`로 옮긴다. 7일 삭제 규칙은 `incoming/`에만 건다
-- `expenses.evidence_void` 기본 부여: **A**(시드 부여 없음, 15:18Z) — 현행 플랜 유지
-- U1 · U2(Round 1)는 결정대로 반영 완료
+- **G1: A** (2026-09-27 01:1x KST, PR #89 issuecomment-5847791230) — 증빙이 무효 처리되면 기안자 첫 화면 「내 차례」에 [막힘] `증빙 무효 · 증빙 올리기` 한 줄. 새 증빙을 올리면 사라짐
+- **G2: A** (같은 댓글) — 마지막 살아 있는 증빙까지 무효 처리 허용. 0개는 G1 신호 + Phase 6 점검이 잡음
+- **G3: A** (같은 댓글) — 무효 해제 없음. 사유와 함께 영구 기록, 잘못 무효로 했으면 같은 파일을 다시 올림
+- **G4: A** (같은 댓글) — 정산 결재 문서 화면에 견적 표에 이미 있는 합계(견적가 합 · 실행가 합)를 한 행씩 표시(새 계산 없음)
+- 앞선 결정 U1 · U2 · `expenses.evidence_void` A · E1 A · E2 A는 그대로 전제
 
 ## Consensus Summary
 
-### HIGH (P1 — 실행 전 필수)
-- **B1** `05-03-PLAN.md:184`(`tax_rate_setting_id` FK → `settings_historized`), `:188`(`pickTaxDates` 지급 쪽 = 지급 예정일, 미래일 수 있음), 코드 `domain/settings/registry.ts:182-183` · `repositories/settings.ts:88-96`(미래 이력 행 물리 삭제) — 예정 세율 행을 FK가 잡으면 관리자의 예정 세율 취소가 23503으로 영구히 막힌다. 수리(E1 A): 스냅숏 값(이력 id · 적용일 · 세율)을 FK 없이 저장, 취소 허용, 문서에는 기존 `세율 바뀜`. 통합 사례 1(예정 세율 참조 문서 제출 → 취소 성공 → 문서에 drift 표시). 영향: 05-03 스키마, 05-06 세금 한 줄 · 통합 사례(`05-06-PLAN.md:143`)
-- **B2** `05-04-PLAN.md:173`(`completeEvidenceUpload`는 주인 상태 tx 재확인만), `:174`(`removeEvidence`는 `markRemoved`만) vs `05-09-PLAN.md:122`(잠금 순서 "지출결의 행 → 결재 인스턴스" 전제) — 제출 ∥ 삭제로 증빙 0개 문서 제출(기준 3 위반), 삭제 ∥ 삭제로 0개. 수리: 두 함수 tx 첫 단계 `lockExpenseForUpdate`(05-03) → 살아 있는 파일 수 재확인. 05-14 `afterLock` 두 순서 사례 2(제출↔삭제, 삭제↔삭제 — 결과 증빙 ≥ 1)
+### HIGH (P1)
+- 없음(D1은 99d74bd에서 해소)
 
-### MEDIUM (P2 — 같은 반영 라운드)
-- **M1** `05-12-PLAN.md:34 · 156`, `05-04-PLAN.md:173`(`retain` = temporaryHold) — `evidence/` 전체 7일 삭제 + 보존 표식 하나로 완료 증빙을 지키는 구조(CEO F9의 부작용). 수리(E2 A): 업로드는 `incoming/{의도 id}`, 완료 통보 때 `evidence/`로 이동, 수명 주기 규칙은 `incoming/`에만. Round 1 `05-12` Deferred 「F9 대안 — `incoming/` 채택하지 않음」을 뒤집는다
-- **M2** `05-08-PLAN.md:147 · 183` — 목록 페이지 나눔 × 그룹 정렬 계약 없음. 수리: `listExpenses` SQL `ORDER BY group_rank, <그룹별 CASE 키>, id` 계약 + 그룹 둘 이상이 쪽 경계를 넘는 통합 사례 1
-- **M3** ARCHITECTURE §4-8(6) `tx-safety.test.ts`(풀 2)를 어느 플랜도 건드리지 않음 — 수리: 05-01(훅 승인) · 05-04(증빙 추가) · 05-11(정산 최종 승인)에 사례 하나씩
-- **M4** `05-01-PLAN.md:303`("이동만"), `eslint.config.mjs:72`(ui는 `ui` · `lib`만 import) — 수리: 액션은 콜백 prop, 표시 타입은 `ui/approval-sheet` 안에 정의 + 이동 전 import grep 단계(Task 3 ⓪)
-- **M5** 05-11 잠금 순서(인스턴스 → 프로젝트)가 §4-8(2)와 다른데 SUMMARY에만 기록, 05-03 counter period 예외(§4-6)도 같음 — 수리: 05-13 ARCHITECTURE 갱신에 §4-8 · §4-6 예외 각 한 줄
-- **A1** `05-11-PLAN.md:159-160` — 브랜드 타입은 `as` 캐스트로 위조 가능. 수리: `domain/settlements` 밖 `as SettlementApprovalAuthority` 0건 grep을 acceptance에(또는 eslint `no-restricted-syntax`)
+### MEDIUM (P2 — 이 라운드 반영)
+- **D2** 올리는 중 제출의 막힘 이유가 틀린 안내가 된다 — UI-SPEC S4 · S6. 파일 완료 전엔 서버상 증빙 0개라 막힘 ⑧ `증빙 없음 · 증빙 올리기 Ctrl+U`가 뜨는데 사용자는 이미 올리는 중. 수리: 올리는 행이 하나라도 있으면 1차 `aria-disabled` + `증빙 올리는 중 · 잠시 뒤 제출`(막힘 ⑧ 앞의 클라이언트 상태). S3 「떠날 때」에 올리는 행이 있으면 `beforeunload` 경고. 영향: UI-SPEC S3 · S4 · S6, 05-05
+- **D3** E2(`incoming/` → `evidence/` 이동) 뒤 `다시 올리기`의 뜻이 정해지지 않음 — `05-UI-SPEC.md:263 · :414-418`, 05-04 완료 통보. 서명 PUT은 끝났는데 완료(이동 · 확인)만 실패하는 경우가 새로 생김. 수리: 문구는 `올리지 못함 · 다시 올리기` 하나, 서버가 갈래를 돌려준다 — 의도가 살아 있으면 완료 통보만 다시, 만료면 처음부터. 이동 중에도 메타는 `올리는 중…`(새 상태 없음). 영향: UI-SPEC S4 · Copywriting, 05-04
+- **D4** 결재함 행 · 「내 차례」 행에서 `승인`이 막힐 때 이유가 설 자리가 없음 — S9 · S11(04.1 행 위), `진행으로 바뀜 · 반려` · `최종 승인 담당 아님 · 새로 고침`. 수리: 그 셀에서 `승인`을 빼고 이유 글자(`--fs-sm --danger`) + 3차 `반려`(S1 행 행동 셀과 같은 규칙). 영향: UI-SPEC S9 · S11, 05-10 · 05-11
+- **D5** 무효 처리 상태가 UI Considerations 표에 없음 — `05-UI-SPEC.md:690~`. 수리: 무효 처리의 loading(확인 버튼 pending) · error(`무효 처리하지 못했습니다 · 다시 시도`) · populated(무효 행) · a11y 행 추가. Color 매핑(`무효` → `--muted`) · 「Accent reserved for」 목록 점검. 영향: UI-SPEC
+- **D6** 무효 행 접근성 — 취소선은 스크린리더가 읽지 않음. 수리: DOM 순서 「무효」 → 파일명, 파일명에 `aria-describedby` = 2행, 결과는 기존 첨부 `aria-live="polite"`가 읽음. 폰 파일 행 3차 두 개(`크게 보기` · `무효 처리`)는 각각 `--touch-min` 영역, 둘 사이 `--s-4`(위험 동작 분리). 영향: UI-SPEC S4, 05-09
+- **D7** 새 표기 두 가지가 디자인 정본에 기록되지 않음 — 취소선(DECISIONS 2026-09-18 #7 「취소선이라는 새 표기를 만들지 않는다」와 충돌 — U1이 사용자 결정이라 유지)과 `무효` 낱말 · 정산 즉시 승인 §7 예외. 수리: 05-02 개정 제안 목록에 B8(§7-10 무효 행 · §7-5 `무효` 낱말 · 충돌 기록)과 정산 즉시 승인 예외 한 항목 추가 → DECISIONS.md 먼저, SYSTEM.md 다음(CLAUDE.md §6). 영향: 05-02
 
 ### LOW (P3)
-1. `05-01-PLAN.md:292` 테스트 입력 `fxRate: 1`(숫자) vs `:299` 타입 `fxRate: string` — `domain/money` Money 모양으로 통일
-2. `05-01-PLAN.md:239` · `05-11-PLAN.md:172` "종류 이름 리터럴 0건" grep이 `leave|expense|settlement`만 봄 — 05-03이 정한 실제 kind 값으로 패턴
-3. E4 충돌 문구 `증빙을 더함`이 결재 중 **삭제**(`05-09-PLAN.md:44`)에도 나옴 — 추가/삭제로 가르거나 중립 문구
-4. 05-11 훅의 "지금 차수 마지막 단계 기록"이 대표 폴백 행(`is_fallback`)을 포함하는지 명시 + 4단 끔 · 담당 없음 설정 사례 1
-5. `05-11-PLAN.md:160` projects → settlements `import type` 역의존 — 브랜드를 projects 쪽에 선언하고 생성만 settlements에서 하는 배치 검토
-6. `05-08-PLAN.md:146` `visibleExpenseScope.partyInstanceIds` 누적 IN 목록 — 결재 단계 표 EXISTS 서브쿼리로
-7. `05-09` 다시 제출 · 되돌리기의 `expectedVersion`이 문서 version인지 인스턴스 version인지 섞임 — 인스턴스 version은 tx 잠금 뒤 읽는다고 명시
-8. 웨이브 5 `05-05 ∥ 05-12` 같은 작업 트리 위험 — 별도 worktree 또는 순차, 05-12 사람 확인 checkpoint가 웨이브를 멈춤을 명시
-9. `05-VALIDATION.md` Wave 0 `test/unit/lib/gcp/storage.test.ts`가 실제 `storage-local` · `storage-gcs` 이름과 다름 — P-5(`/gsd-validate-phase 5`)에서 맞춤
-10. E3 종류별 `approveBlockedReason` 읽기가 04.1 `approvals-inbox-projection` 조회 횟수 단언(`05-01-PLAN.md:309`)을 흔들 수 있음 — 단언 범위 명시
-11. `files.owner_id` FK 없음 · sha256 중복 검사에 UNIQUE 없음 — 동시 같은 파일 업로드 허용 여부 명시
-12. 되돌리기 토스트 E2E가 토스트 표시 시간에 기댐 — 시간 주입 또는 지속 시간 설정
-13. 목록 정렬 키(`submitted_at` · `scheduled_payment_date`) 인덱스 없음 — 30명 규모라 불요, 기록만
+1. **D8** F1 문구는 04.1의 `지금 담당이 아님 · 새로 고침`을 다시 쓰는 편이 낱말 수를 줄인다 — 새 문구를 유지하면 §8 규칙 3대로 `· 담당 {이름}` 꼬리 검토(현재 UI-SPEC은 플랜 문구 그대로 등록). 영향: 05-11 · UI-SPEC
+2. **D9** 무효 처리 오류 `이미 무효 · 새로 고침`을 04.1 동시 처리 꼴 `{이름}이 HH:MM에 무효 처리함 · 새로 고침`으로 바꾸면 원인 · 다음 행동 규칙과 맞다. 영향: 05-09 · UI-SPEC
+3. **D10** 무효 처리 성공 토스트는 결과가 그 자리 행에 바로 보여(§7-7 SUCCESS) 중복 — 유지한다면 「확인 창을 닫을 때 토스트로 이어짐」 한 줄을 §7-8 근거로 명시. 영향: 05-09 · UI-SPEC
+4. **D11** S10 (나) 와이어의 `손익` 행(`:580대`) ↔ 05-11:54 「이 페이즈에서는 모든 계급에 행째 없다」 불일치 — 와이어에 「Phase 9부터」 표시(G4 답과 함께 정리). 영향: UI-SPEC S10 · 05-11
+
+### 사용자 결정 반영 (G1~G4 — 이 라운드 반영)
+- **G1** → UI-SPEC S11(「내 차례」) · 05-09(무효 처리 뒤 신호 원천) · 05-10(「내 차례」 행): 기안자에게 [막힘] `증빙 무효 · 증빙 올리기`, 살아 있는 증빙이 새로 올라오면 사라짐
+- **G2** → 05-09 `voidEvidence`: 마지막 살아 있는 파일도 허용(04 live 판정 · 제출 막힘 ⑧과 별개 — 승인 문서라 제출 경로 없음), 통합 사례 1
+- **G3** → 05-09 · UI-SPEC: 무효 해제 동작 없음을 명시(확인 창 = 되돌릴 수 없는 일)
+- **G4** → UI-SPEC S10 · 05-11: 정산 결재 문서 화면에 견적가 합 · 실행가 합 한 행씩(기존 견적 합계 재사용, 새 계산 없음, 권한 판정은 기존 금액 보임 규칙 그대로)
 
 ## Divergent Views
 
-- 없음. Opus 독립 검토의 BLOCKER 2 · MAJOR 5 · MINOR 12는 eng-review가 B1 · B2 · M1~M5 · P3로 흡수했고 A1 · P3-13을 더했다
+- 없음. Opus 독립 디자인 검토의 critical 1 · high 6 · medium 6 + 사용자 결정 4는 design-review가 D1~D11 · G1~G4로 흡수했다

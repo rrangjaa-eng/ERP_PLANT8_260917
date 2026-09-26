@@ -360,6 +360,31 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     await page.reload();
     await expect(page.getByText(new RegExp(`^기간 \\S+ ~ ${endDate}$`))).toBeVisible();
   });
+
+  // /qa ISSUE-001 — 조각을 하나씩 전부 지우면 값은 ""이고 badInput도 풀린다. 첫 조각에서만 input 이벤트가
+  // 나므로 「덜 채움」 표시가 남아 형식 오류로 막혔다. 완전히 비운 칸은 비운 것으로 저장된다.
+  test("(6c) 종료일 칸의 세 조각을 키보드로 모두 지우고 저장하면 형식 오류 없이 종료일이 비워진다", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const endDate = addDays(TODAY, 5);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "bidding", endDate });
+
+    await login(page, pm);
+    await page.goto(`/projects/${project.id}`);
+    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    const endInput = page.getByLabel("종료일");
+    await endInput.focus();
+    for (const key of ["Backspace", "Tab", "Backspace", "Tab", "Backspace"]) await endInput.press(key);
+    expect(await endInput.evaluate((input: HTMLInputElement) => [input.value, input.validity.badInput])).toEqual(["", false]);
+
+    const saving = waitForSaveAction(page);
+    await endInput.press("Control+s");
+    await saving;
+    await expect(page.getByText("날짜 형식 오류 · 2026-09-18처럼", { exact: true })).toHaveCount(0);
+
+    await page.reload();
+    await expect(page.getByText(/^기간 \S+ ~ —$/)).toBeVisible();
+  });
 });
 
 // 04-44(DR-28 · DR-37 · 계약 8 · S17) — 머리 줄 부제의 총 매출 예상가. 권리는 기간 칸과 같다. 계급 권한·정보

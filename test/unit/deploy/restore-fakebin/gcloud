@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+# 가짜 gcloud — scripts/restore-rehearsal.sh 단위 테스트 전용(공유 fakebin/gcloud는 건드리지 않는다).
+# 모든 인자를 $DEPLOY_FAKE_LOG에 한 줄로 적고, $DEPLOY_FAKE_STATE 디렉터리의 파일로 상태를 흉내 낸다:
+#   instances/<이름>        Cloud SQL 인스턴스(있으면 존재)
+#   ops/<작업 id>           끝나지 않은 Cloud SQL 작업(내용: "<인스턴스> <종류>")
+#   execs/<실행>.image      그 Job 실행이 실제로 쓴 이미지 참조
+#   execs/<실행>.logs       그 Job 실행의 로그 줄
+#   job-image               지금 Job 이미지 참조(없으면 기본값)
+# 처리하지 않는 호출은 종료 코드 1(기존 fakebin 규약).
+set -u
+
+STATE="${DEPLOY_FAKE_STATE:?DEPLOY_FAKE_STATE 필요}"
+LOG="${DEPLOY_FAKE_LOG:-/dev/null}"
+ARGS="$*"
+ARGV=("$@")
+
+printf '%s\n' "$ARGS" >>"$LOG"
+mkdir -p "$STATE/instances" "$STATE/ops" "$STATE/execs"
+
+DEFAULT_IMAGE="asia-northeast3-docker.pkg.dev/test-project/plant8/app:aaaa"
+BACKUP_ID=1111
+
+# --flag=value 모양 인자의 값
+arg_value() {
+  local flag="$1" a
+  for a in "${ARGV[@]}"; do
+    case "$a" in
+      "$flag="*)
+        printf '%s' "${a#"$flag="}"
+        return 0
+        ;;
+    esac
+  done
+  return 1
+}
+
+has_arg() {
+  local a
+  for a in "${ARGV[@]}"; do
+    [ "$a" = "$1" ] && return 0
+  done
+  return 1
+}
+
+next_counter() {
+  local f="$STATE/counter-$1" n=0
+  [ -f "$f" ] && n="$(cat "$f")"
+  n=$((n + 1))
+  echo "$n" >"$f"
+  echo "$n"
+}
+
+job_image() {
+  if [ -f "$STATE/job-image" ]; then
+    cat "$STATE/job-image"
+  else
+    echo "$DEFAULT_IMAGE"
+  fi
+}
+
+instance_exists() { [ -f "$STATE/instances/$1" ]; }
+
+not_found() {
+  echo "ERROR: (gcloud.sql.instances.describe) HTTPError 404: The Cloud SQL instance does not exist. NOT_FOUND" >&2
+  exit 1
+}
+
+case "$ARGS" in
+  "sql instances list "*)
+    filter="$(arg_value --filter || true)"
+    case "$filter" in
+      "name="*)
+        want="${filter#name=}"
+        if instance_exists "$want"; then echo "$want"; fi
+        ;;
+      "name~^"*)
+        prefix="${filter#name~^}"
+        for f in "$STATE/instances/"*; do
+          [ -e "$f" ] || continue
+          n="$(basename "$f")"
+          case "$n" in "$prefix"*) echo "$n" ;; esac
+        done
+        ;;
+      *)
+        exit 1
+        ;;
+    esac
+    ;;
+
+  "sql backups list "*)
+    echo "$BACKUP_ID"
+    ;;
+
+  "sql instances describe "*)
+    name="$4"
+    case "$(arg_value --format || true)" in
+      "value(settings.dataDiskSizeGb)")
+        echo 10
+        ;;
+      "value(state)")
+        instance_exists "$name" || not_found
+        echo RUNNABLE
+        ;;
+      "value(connectionName)")
+        instance_exists "$name" || not_found
+        echo "$(arg_value --project):$(cat "$STATE/instances/$name"):$name"
+        ;;
+      *)
+        exit 1
+        ;;
+    esac
+    ;;
+
+  "sql instances create "*)
+    arg_value --region >"$STATE/instances/$4"
+    ;;
+
+  "sql backups restore "*)
+    instance_exists "$(arg_value --restore-instance)" || not_found
+    ;;
+
+  "sql users list "*)
+    exit 0
+    ;;
+
+  "sql users create "*)
+    exit 0
+    ;;
+
+  "sql operations list "*)
+    instance="$(arg_value --instance)"
+    for f in "$STATE/ops/"*; do
+      [ -e "$f" ] || continue
+      read -r op_instance _ <"$f"
+      if [ "$op_instance" = "$instance" ]; then basename "$f"; fi
+    done
+    ;;
+
+  "sql operations wait "*)
+    op="$4"
+    [ -f "$STATE/ops/$op" ] || exit 1
+    read -r op_instance op_kind <"$STATE/ops/$op"
+    if [ "$op_kind" = "delete" ]; then rm -f "$STATE/instances/$op_instance"; fi
+    rm -f "$STATE/ops/$op"
+    ;;
+
+  "sql instances delete "*)
+    name="$4"
+    has_arg --async || exit 1
+    instance_exists "$name" || not_found
+    op="op-$name-delete-$(next_counter delete)"
+    echo "$name delete" >"$STATE/ops/$op"
+    echo "$op"
+    ;;
+
+  "run jobs describe "*)
+    job_image
+    ;;
+
+  "artifacts docker images describe "*)
+    ref="$5"
+    printf 'sha256:%s\n' "$(printf '%s' "$ref" | sha256sum | cut -c1-64)"
+    ;;
+
+  "run jobs execute "*)
+    job="$4"
+    exec_name="$job-exec-$(next_counter exec)"
+    job_image >"$STATE/execs/$exec_name.image"
+    echo "$exec_name" >"$STATE/last-exec"
+    case "$(arg_value --args)" in
+      verify,*)
+        printf '%s\n' "마이그레이션 접두가 일치합니다." "핵심 표 확인을 통과했습니다." >"$STATE/execs/$exec_name.logs"
+        ;;
+      record,*)
+        : >"$STATE/execs/$exec_name.logs"
+        ;;
+      *)
+        exit 1
+        ;;
+    esac
+    if [ "$(arg_value --format || true)" = "value(metadata.name)" ]; then echo "$exec_name"; fi
+    ;;
+
+  "run jobs executions describe "*)
+    [ -f "$STATE/execs/$5.image" ] || exit 1
+    cat "$STATE/execs/$5.image"
+    ;;
+
+  "logging read "*)
+    exec_name="$(printf '%s' "$4" | sed -n 's/.*execution_name"="\([^"]*\)".*/\1/p')"
+    [ -f "$STATE/execs/$exec_name.logs" ] && cat "$STATE/execs/$exec_name.logs"
+    exit 0
+    ;;
+
+  *)
+    echo "fake gcloud: unhandled: $ARGS" >&2
+    exit 1
+    ;;
+esac

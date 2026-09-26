@@ -2,14 +2,18 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
-import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { listPermissions, listVisibility, upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
 import { db } from "@/db/client";
-import { quoteLines, teams } from "@/db/schema";
+import { projects, quoteLines, revenueEntries, teams } from "@/db/schema";
+import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
+import { insertRole } from "@/repositories/roles";
+import { saveRevenue } from "@/domain/revenue";
+import { addDays, kstToday } from "@/lib/kst-date";
 import { and, eq, isNull, sum } from "drizzle-orm";
 
 // 04-04 Task 3 — 견적 줄 표의 키보드 계약·범위 선택·붙여넣기·전부 거부를
@@ -141,10 +145,12 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     await expect(gridcell(5)).toHaveAttribute("aria-invalid", "true");
     await expect(page.getByText(/숫자가 아닙니다/)).toBeVisible();
 
-    // (c) 저장 버튼 자체가 오류 이유와 함께 비활성 — 서버 왕복 없이 거부.
+    // (c) 04-47(DR-5) — 오류가 남아도 1차는 살아 있고(옛 오류 게이트 문자열 없음), 오류 칸 수는 합계 행이 말한다.
     const saveButton = page.getByRole("button", { name: /일괄 저장/ });
-    await expect(saveButton).toBeDisabled();
-    await expect(page.getByText(/오류.*고쳐야 저장됩니다/)).toBeVisible();
+    await expect(saveButton).toBeEnabled();
+    await expect(saveButton).not.toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByText(/고쳐야 저장됩니다/)).toHaveCount(0);
+    await expect(quoteTable(page).locator("tfoot")).toContainText("오류 1칸");
 
     // (e) 항목 편집값은 오류가 있어도 그대로 남아 있다.
     await expect(page.getByText("오류 검증용 항목")).toBeVisible();
@@ -1346,5 +1352,186 @@ test.describe("견적 줄 표 — 붙여넣기 · 새 줄 고정 · 합계 행 �
     await expect(quoteDataRows(page)).toHaveCount(16);
     await expect(quoteCell(page, 15, 1)).toHaveText("견적 외 비용");
     await expect(quoteCell(page, 15, 2).locator("input")).toBeFocused();
+  });
+});
+
+// 04-47 Task 2 — 오류가 남은 채 1차는 서버 없이 첫 오류로(DR-5) · 저장 거부 뒤 첫 오류 쪽과 번호 옆 `오류 N` · 쪽 왕복 뒤 표시 유지 · R2.
+function threePageLines() {
+  return Array.from({ length: 75 }, (_, index) => ({ subcategory: "stage_construction", itemName: `세쪽줄${index + 1}`, amount: 1000 }));
+}
+
+function countServerActions(page: Page): { count: number } {
+  const counter = { count: 0 };
+  page.on("request", (request) => {
+    if (isServerAction(request)) counter.count++;
+  });
+  return counter;
+}
+
+const primarySave = (page: Page) => page.getByRole("button", { name: /일괄 저장/ });
+
+test.describe("견적 줄 표 — 오류가 남은 채 1차 · 저장 거부 쪽 · 표시 유지(04-47 Task 2)", () => {
+  test("(DR-5) 3쪽 한 칸이 오류인 채 1쪽에서 1차·Control+s → 서버 요청 0 · 3쪽으로 옮겨 그 칸에 포커스 · 고치면 저장된다", async ({ page }) => {
+    await openProjectWithSavedLines(page, threePageLines());
+    await pageNav(page).getByRole("button", { name: "3", exact: true }).first().click();
+    await expect(quoteCell(page, 1, 2)).toHaveText("세쪽줄62");
+    await quoteCell(page, 1, 4).focus();
+    await pasteIntoFocusedCell(page, "abc");
+    await expect(quoteCell(page, 1, 4)).toHaveAttribute("aria-invalid", "true");
+    await pageNav(page).getByRole("button", { name: "1", exact: true }).first().click();
+    await expect(currentPage(page)).toHaveText("1");
+
+    const actions = countServerActions(page);
+    await expect(primarySave(page)).not.toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByText(/고쳐야 저장됩니다/)).toHaveCount(0);
+    await primarySave(page).click();
+    await expect(currentPage(page)).toHaveText("3");
+    await expect(quoteCell(page, 1, 4)).toBeFocused();
+
+    await pageNav(page).getByRole("button", { name: "1", exact: true }).first().click();
+    await quoteCell(page, 0, 2).focus();
+    await page.keyboard.press("Control+s");
+    await expect(currentPage(page)).toHaveText("3");
+    await expect(quoteCell(page, 1, 4)).toBeFocused();
+
+    await editNumberCell(page, 1, 4, "2");
+    await expect(quoteCell(page, 1, 4)).not.toHaveAttribute("aria-invalid", "true");
+    await saveAndWait(page);
+    await expect.poll(() => footerPieces(page)).toEqual([{ tone: "success", text: expect.stringMatching(/^저장됨/) }]);
+    // 대조 요청 — 오류가 있던 두 번의 1차는 서버를 부르지 않았고, 고친 뒤의 저장 한 번만 나갔다.
+    expect(actions.count).toBe(1);
+  });
+
+  test("(DR-5) 표 밖 칸(종료일)에 서버 오류가 고정된 채 견적 표에도 오류 → 1차 → 서버 요청 0 · 포커스가 종료일 칸", async ({ page }) => {
+    const today = kstToday(new Date());
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E본부-${randomUUID()}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E팀-${randomUUID().slice(0, 8)}` });
+    const email = `e2e-dr5-${randomUUID()}@example.test`;
+    const pm = await createAccount(SYSTEM_VIEWER, { email, name: "E2E DR5 PM", roleId: DEFAULT_ROLE_ID });
+    await assignTeam(SYSTEM_VIEWER, { userId: pm.userId, teamId: team.id, effectiveFrom: today });
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2E표밖-${randomUUID()}`, normalizedName: `e2e표밖-${randomUUID()}` });
+    const project = await createProject(SYSTEM_VIEWER, {
+      clientId: vendor.id,
+      teamId: team.id,
+      pmUserId: pm.userId,
+      name: `E2E표밖-${randomUUID().slice(0, 8)}`,
+      startDate: addDays(today, -3),
+      endDate: addDays(today, 5),
+    });
+    await db.update(projects).set({ status: "in_progress" }).where(eq(projects.id, project.id));
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("1차 차수가 없습니다");
+    await seedLines(revision.id, [{ subcategory: "stage_construction", itemName: "표밖 줄", amount: 1000 }]);
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(email);
+    await page.getByLabel("비밀번호").fill(pm.tempPassword);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto(`/projects/${project.id}`);
+    await page.getByRole("button", { name: "기간 바꾸기" }).click();
+    await page.getByLabel("종료일").fill(addDays(today, -1));
+    await saveAndWait(page);
+    const endInput = page.getByLabel("종료일");
+    await expect(endInput).toHaveAttribute("aria-invalid", "true");
+
+    await quoteCell(page, 0, 4).focus();
+    await pasteIntoFocusedCell(page, "abc");
+    await expect(quoteCell(page, 0, 4)).toHaveAttribute("aria-invalid", "true");
+    const actions = countServerActions(page);
+    await primarySave(page).click();
+    await expect(endInput).toBeFocused();
+    await quoteCell(page, 0, 2).focus();
+    await page.keyboard.press("Control+s");
+    await expect(endInput).toBeFocused();
+    expect(actions.count).toBe(0);
+  });
+
+  test("1쪽 5행과 3쪽 2행이 서버 오류로 거부되면 1쪽 5행 오류 칸에 포커스 · 3쪽 번호 옆 `오류 1`(`3쪽, 오류 1칸`) · 다른 번호엔 없다", async ({ page }) => {
+    await openProjectWithSavedLines(page, threePageLines());
+    await editNumberCell(page, 4, 4, "0");
+    await pageNav(page).getByRole("button", { name: "3", exact: true }).first().click();
+    await editNumberCell(page, 1, 4, "0");
+    await saveAndWait(page);
+
+    await expect(currentPage(page)).toHaveText("1");
+    await expect(quoteCell(page, 4, 4)).toHaveAttribute("aria-invalid", "true");
+    await expect(quoteCell(page, 4, 4)).toBeFocused();
+    const nav = pageNav(page);
+    const three = nav.getByRole("button", { name: "3쪽, 오류 1칸", exact: true }).filter({ visible: true });
+    await expect(three).toHaveCount(1);
+    await expect(three).toHaveText("3 오류 1");
+    await expect(nav.getByRole("button", { name: "2", exact: true }).filter({ visible: true })).toHaveCount(1);
+    await expect(currentPage(page)).not.toContainText("오류");
+  });
+
+  test("2쪽에서 고친 칸의 dirty 표시가 1쪽 → 2쪽 왕복 뒤에도 남는다", async ({ page }) => {
+    await openProjectWithSavedLines(page, fortyFiveLines());
+    await pageNav(page).getByRole("button", { name: "2", exact: true }).first().click();
+    await editNumberCell(page, 2, 7, "5555");
+    await expect(quoteCell(page, 2, 7)).toHaveCSS("box-shadow", /inset/);
+    await pageNav(page).getByRole("button", { name: "1", exact: true }).first().click();
+    await expect(currentPage(page)).toHaveText("1");
+    await pageNav(page).getByRole("button", { name: "2", exact: true }).first().click();
+    await expect(quoteCell(page, 2, 7)).toHaveText("5,555");
+    await expect(quoteCell(page, 2, 7)).toHaveCSS("box-shadow", /inset/);
+  });
+
+  test("(R2) 발행 줄 금액만 범위 밖으로 1차 저장 → 견적 표 합계 행 한 줄 `전부 거부 · 다른 칸 오류 1칸` · 발행 표 `오류 1칸 · 전부 거부` · 포커스는 그 발행 금액 · 고쳐 저장하면 `저장됨`만", async ({ page }) => {
+    const roleId = `role-${randomUUID()}`;
+    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 매출 PM-${randomUUID().slice(0, 8)}` });
+    for (const row of await listPermissions(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID })) {
+      await upsertPermission(SYSTEM_VIEWER, { roleId, menu: row.menu, action: row.action, allowed: row.allowed });
+    }
+    await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "projects.revenue", action: "write", allowed: true });
+    for (const row of await listVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID })) {
+      await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: row.infoItem, visible: true });
+    }
+    const today = kstToday(new Date());
+    const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E본부-${randomUUID()}` });
+    const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E팀-${randomUUID().slice(0, 8)}` });
+    const email = `e2e-r2-${randomUUID()}@example.test`;
+    const pm = await createAccount(SYSTEM_VIEWER, { email, name: "E2E R2 PM", roleId });
+    await assignTeam(SYSTEM_VIEWER, { userId: pm.userId, teamId: team.id, effectiveFrom: today });
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `E2ER2-${randomUUID()}`, normalizedName: `e2er2-${randomUUID()}` });
+    const project = await createProject(SYSTEM_VIEWER, {
+      clientId: vendor.id,
+      teamId: team.id,
+      pmUserId: pm.userId,
+      name: `E2ER2-${randomUUID().slice(0, 8)}`,
+      startDate: today,
+      endDate: addDays(today, 10),
+    });
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("1차 차수가 없습니다");
+    await seedLines(revision.id, [{ subcategory: "stage_construction", itemName: "R2 견적 줄", amount: 1_000_000 }]);
+    await saveRevenue(SYSTEM_VIEWER, project.id, {
+      issuedEntries: [{ entryDate: "2026-09-01", amount: { currency: "KRW", amount: 1_000_000, fxRate: 1 } }],
+      paidEntries: [{ entryDate: "2026-09-05", amount: { currency: "KRW", amount: 1_100_000, fxRate: 1 } }],
+    });
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(email);
+    await page.getByLabel("비밀번호").fill(pm.tempPassword);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto(`/projects/${project.id}`);
+
+    const issuedTable = page.locator("table", { has: page.locator("caption", { hasText: /^발행 줄$/ }) });
+    await page.getByRole("button", { name: "발행 줄 추가" }).click();
+    const newAmount = issuedTable.getByLabel("발행액").last();
+    await newAmount.fill("1000000000000");
+    await saveAndWait(page);
+
+    await expect(issuedTable.locator("tfoot").getByText("오류 1칸 · 전부 거부", { exact: true })).toBeVisible();
+    await expect.poll(() => footerPieces(page)).toEqual([{ tone: "danger", text: "전부 거부 · 다른 칸 오류 1칸" }]);
+    await expect(newAmount).toBeFocused();
+    expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, project.id))).toHaveLength(2);
+
+    await newAmount.fill("3000000");
+    await saveAndWait(page);
+    await expect.poll(() => footerPieces(page)).toEqual([{ tone: "success", text: expect.stringMatching(/^저장됨/) }]);
+    await expect(page.locator("tfoot").getByText(/전부 거부/)).toHaveCount(0);
   });
 });

@@ -710,6 +710,27 @@ test.describe("폭 규칙 — 1024 미만 보기 전용 · 좁은 PC 열 접기 
     await expect(primarySave(page)).toContainText("일괄 저장 1");
   });
 
+  // 사용자 결정 2026-09-26(VERDICT.md C-1) — 「버림」은 확인 없이 즉시 지우되, 몇 초간
+  // 「편집을 버렸습니다 · 되돌리기」 토스트를 띄우고 「되돌리기」로 되살릴 수 있다.
+  test("(l2c) 375 — 「버림」 뒤 되돌리기 토스트로 버린 편집을 되살린다", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);
+    const newEnd = addDays(TODAY, 10 + 10);
+    await changePeriodEnd(page, newEnd);
+    await expect(primarySave(page)).toContainText("일괄 저장 1");
+
+    await page.reload();
+    await expect(page.locator("p").getByText("저장 안 한 편집 1칸")).toBeVisible();
+    await page.getByRole("button", { name: "버림", exact: true }).click();
+    await expect(page.locator("p").getByText("저장 안 한 편집 1칸")).toHaveCount(0);
+
+    const toast = page.getByRole("status").filter({ hasText: "편집을 버렸습니다" });
+    await expect(toast).toBeVisible();
+    await toast.getByRole("button", { name: "되돌리기" }).click();
+    await expect(page.locator("#period-end")).toHaveValue(newEnd);
+    await expect(primarySave(page)).toContainText("일괄 저장 1");
+  });
+
   test("(l2) 표 칸만 — 1280에서 실행가만 고친 채 375로 새로 고치면 「복원」 뒤 1차 1이 렌더되고 저장된다(R1)", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await openAsPm(page, "in_progress", addDays(TODAY, 10), TWO_LINES);

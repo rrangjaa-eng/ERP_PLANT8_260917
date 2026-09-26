@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
@@ -108,35 +109,51 @@ export default async function ActionLogPage({ searchParams }: { searchParams: Pr
           <thead>
             <tr>
               <th scope="col">발생 시각</th>
-              <th scope="col">행위자</th>
-              <th scope="col">행위자 계급</th>
+              <th scope="col" className={styles.p2}>행위자</th>
+              <th scope="col" className={styles.p2}>행위자 계급</th>
               <th scope="col">행동 종류</th>
-              <th scope="col">대상</th>
-              <th scope="col">문서</th>
-              <th scope="col">상세</th>
+              <th scope="col" className={styles.p2}>대상</th>
+              <th scope="col" className={styles.p2}>문서</th>
+              <th scope="col" className={styles.p2}>상세</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr key={row.seq}>
-                <td className={styles.occurredAt}>{row.occurredAt ? new Date(row.occurredAt).toISOString().slice(0, 19).replace("T", " ") : "—"}</td>
-                <td>{row.actorName ?? "—"}</td>
-                <td>{row.actorRoleName ?? "—"}</td>
-                <td>{row.actionTypeLabel ?? row.actionType ?? "—"}</td>
-                {/* 대상은 이름으로 보인다 — entityName은 도메인이 읽기 시점에 푼 값이고,
-                    풀 수 없으면(삭제된 대상·노출표에서 막힌 계급) entityId로 안전하게
-                    내려앉는다. 원시 UUID를 사람에게 그대로 보이지 않는다. */}
-                <td>
-                  {row.entity
-                    ? `${row.entity}${row.entityName ? ` ${row.entityName}` : row.entityId ? ` ${row.entityId}` : ""}`
-                    : "—"}
-                </td>
-                <td>{row.documentId ?? "—"}</td>
-                {/* 상세 열은 노출표에서 상세 항목이 꺼진 계급에는 값이 비어
-                    있다(project()가 이미 걸렀다 — 필드 부재가 아니라 undefined). */}
-                <td>{row.detail && Object.keys(row.detail).length > 0 ? JSON.stringify(row.detail) : "—"}</td>
-              </tr>
-            ))}
+            {rows.map((row) => {
+              // 대상은 이름으로 보인다 — entityName은 도메인이 읽기 시점에 푼 값이고,
+              // 풀 수 없으면(삭제된 대상·노출표에서 막힌 계급) entityId로 안전하게
+              // 내려앉는다. 원시 UUID를 사람에게 그대로 보이지 않는다.
+              const entity = row.entity
+                ? `${row.entity}${row.entityName ? ` ${row.entityName}` : row.entityId ? ` ${row.entityId}` : ""}`
+                : null;
+              // 상세 열은 노출표에서 상세 항목이 꺼진 계급에는 값이 비어
+              // 있다(project()가 이미 걸렀다 — 필드 부재가 아니라 undefined).
+              const detail = row.detail && Object.keys(row.detail).length > 0 ? JSON.stringify(row.detail) : null;
+              // §7-3 폰 전략 — P1(발생 시각·행동 종류)만 열로 남고 나머지는 행 아래
+              // 접힌 줄 하나로 들어간다. 상세 화면이 없어 P3로 숨기지 않는다.
+              const folded = [row.actorName, row.actorRoleName, entity, row.documentId, detail].filter(
+                (value): value is string => !!value,
+              );
+              return (
+                <Fragment key={row.seq}>
+                  <tr>
+                    <td className={styles.occurredAt}>{row.occurredAt ? new Date(row.occurredAt).toISOString().slice(0, 19).replace("T", " ") : "—"}</td>
+                    <td className={styles.p2}>{row.actorName ?? "—"}</td>
+                    <td className={styles.p2}>{row.actorRoleName ?? "—"}</td>
+                    <td>{row.actionTypeLabel ?? row.actionType ?? "—"}</td>
+                    <td className={styles.p2}>{entity ?? "—"}</td>
+                    <td className={styles.p2}>{row.documentId ?? "—"}</td>
+                    <td className={styles.p2}>{detail ?? "—"}</td>
+                  </tr>
+                  {folded.length > 0 ? (
+                    <tr className={styles.collapsedRow}>
+                      <td colSpan={7} className={styles.collapsedCell}>
+                        {folded.join(" · ")}
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       )}

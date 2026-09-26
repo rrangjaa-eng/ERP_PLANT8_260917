@@ -179,7 +179,7 @@ describe("resolveFocus — 기억한 { rowId, colKey }를 렌더마다 지금 �
 });
 
 // 훅 — jsdom 없이 react-dom/server로 한 번 렌더해 handleKeyDown을 꺼낸다(grid-keyboard-composing.test.ts 선례).
-type KeyInit = { key: string; ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean; isComposing?: boolean };
+type KeyInit = { key: string; ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean; isComposing?: boolean; repeat?: boolean };
 type Calls = { edge: [string, string][]; deleted: unknown[]; moved: unknown[][]; tab: string[]; selectAll: number };
 
 function renderGrid(opts: { editing: boolean; rowCount?: number }) {
@@ -227,7 +227,7 @@ function renderGrid(opts: { editing: boolean; rowCount?: number }) {
       shiftKey: init.shiftKey ?? false,
       altKey: init.altKey ?? false,
       metaKey: false,
-      repeat: false,
+      repeat: init.repeat ?? false,
       nativeEvent: { isComposing: init.isComposing ?? false },
       preventDefault: () => {
         prevented = true;
@@ -271,6 +271,12 @@ describe("useGridKeyboard — 쪽 경계 · Tab · Ctrl+A · Ctrl+C · 줄 id �
     const editing = renderGrid({ editing: true });
     expect(editing.press({ key: "a", ctrlKey: true }, { row: 0, col: 1 })).toBe(false);
     expect(editing.calls.selectAll).toBe(0);
+  });
+
+  it("편집 중이 아닐 때 자동 반복 Ctrl+A는 전체 선택하지 않지만 페이지 전체 선택(기본 동작)은 막는다(리뷰 N-1)", () => {
+    const idle = renderGrid({ editing: false });
+    expect(idle.press({ key: "a", ctrlKey: true, repeat: true }, { row: 0, col: 1 })).toBe(true);
+    expect(idle.calls.selectAll).toBe(0);
   });
 
   it("Ctrl+C는 가로채지 않는다(브라우저가 copy 이벤트를 쏜다)", () => {

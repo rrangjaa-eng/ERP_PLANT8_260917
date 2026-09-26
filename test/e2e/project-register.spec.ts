@@ -176,9 +176,14 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
       probe.remove();
       return color;
     });
-    for (const field of [name, page.locator("#project-form #endDate")]) {
-      await expect(field).toHaveCSS("border-top-color", danger);
-    }
+    await expect(name).toHaveCSS("border-top-color", danger);
+
+    // 이름 오류는 스키마에서 먼저 거부돼 기간 검사(domain)까지 가지 않는다 — 이름을 채워 다시 제출한다.
+    await name.fill(`E2E오류테두리-${Date.now()}`);
+    await page.getByRole("button", { name: "프로젝트 등록" }).click();
+    const endDate = page.locator("#project-form #endDate");
+    await expect(endDate).toHaveAttribute("aria-invalid", "true");
+    await expect(endDate).toHaveCSS("border-top-color", danger);
   });
 
   test("(a) 마우스 클릭 없이 마지막 칸에서 Control+Enter를 누르면 상세로 이동하고 번호가 부여된다", async ({

@@ -270,6 +270,7 @@ export function ProjectForm({
             className={styles.textInput}
             autoComplete="off"
             defaultValue={copySource?.name}
+            aria-invalid={nameError ? true : undefined}
             aria-describedby={nameError ? "name-error" : undefined}
           />
           {nameError ? <Form.Error id="name-error">{nameError}</Form.Error> : null}

@@ -406,6 +406,11 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
     } else if (data?.kind === "expiredProof") {
       focusRef.current = "input";
       setStep({ ...base, last4: "", fieldError: { kind: "expired" } });
+    } else if (data?.kind === "notFound") {
+      // 링크 · 자리가 없어졌다 — 이름 고르기 실패와 같이 E2 오류 줄로 돌아간다.
+      history.replaceState(null, "");
+      focusRef.current = "row";
+      setStep({ kind: "pick", error: true });
     } else if (data?.kind === "throttled") {
       setStep({ ...base, fieldError: current.fieldError, line: "throttled" });
     } else {

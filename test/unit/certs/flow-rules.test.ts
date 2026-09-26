@@ -21,7 +21,7 @@ describe("resolveHistoryEntry — 고아 기록 항목", () => {
   });
 });
 
-describe("isDefiniteResult — 확정 판정 여덟 / 결과 불명", () => {
+describe("isDefiniteResult — 확정 판정 아홉 / 결과 불명", () => {
   it.each([
     [{ data: { kind: "wrong", remaining: 4 } }],
     [{ data: { kind: "locked", limit: 5, unlockAtDisplay: "18:45", remainingSeconds: 180 } }],

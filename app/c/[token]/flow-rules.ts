@@ -18,12 +18,12 @@ export function resolveHistoryEntry(input: {
   return { render: "E2", back: true };
 }
 
-const DEFINITE_KINDS = new Set(["wrong", "locked", "hardLocked", "ok", "submitted", "closed", "expiredProof"]);
+const DEFINITE_KINDS = new Set(["wrong", "locked", "hardLocked", "ok", "submitted", "closed", "expiredProof", "notFound"]);
 
 type ActionResultLike = { data?: { kind?: string; [field: string]: unknown } | null; validationErrors?: unknown; serverError?: unknown } | undefined;
 
-// 확정 판정 여덟(틀림 · 잠김 · 누적 잠김 · 맞음 · 이미 제출 · 닫힘 · 확인 시간
-// 지남 · 입력 거부)만 멱등 키를 끝낸다. throttled · serverError(잠금 · 풀 시간
+// 확정 판정 아홉(틀림 · 잠김 · 누적 잠김 · 맞음 · 이미 제출 · 닫힘 · 확인 시간
+// 지남 · 자리 없음 · 입력 거부)만 멱등 키를 끝낸다. throttled · serverError(잠금 · 풀 시간
 // 초과 포함) · 연결 끊김 · 모르는 응답은 결과 불명 — 같은 키로 다시 보낸다.
 export function isDefiniteResult(result: ActionResultLike): boolean {
   if (!result) return false;

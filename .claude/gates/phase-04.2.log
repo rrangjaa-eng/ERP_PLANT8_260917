@@ -9,5 +9,5 @@ cso 2026-09-26T18:43Z session=f4c349ae-87ff-5fc4-b1d5-c00621440831
 result gsd-verify-work 2026-09-26 VERIFICATION passed(결정 1a·2a) · UAT 통과 70 · 문제 0 · 막힘 5(실배포·SMTP·Codex 한도)
 result review 2026-09-26 Opus 검토자 3명(Codex 대체 — 9/29 뒤 Codex 재확인 필요) P1 0 · P2 3 수정 · P3 이월 todo
 result qa 2026-09-26 CI=true 독립 DOM 감사 health 99 · ISSUE-001 수정 4aa9ce0 · low 이월
-result design-review 2026-09-26 B+/A · FINDING 001~009+문서 수정(a8961a3..3d6f0ff) · Codex 적대적 디자인 검토 한도로 Opus 대체 — 9/29 뒤 Codex 재확인 필요
+result design-review 2026-09-26 B+→A- (재실측 9건 VERIFIED)/A · FINDING 001~009+문서 수정(a8961a3..3d6f0ff) · Codex 적대적 디자인 검토 한도로 Opus 대체 — 9/29 뒤 Codex 재확인 필요
 result cso 2026-09-26 run 1790449069493-67ca82919885b7dd partial · F1 low(기존 결함, 결정 a: 별도 작업) · 스캐너 미실행(gitleaks·OSV, 환경 제약) · 사용자 로컬 재실행 필요

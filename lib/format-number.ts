@@ -291,8 +291,8 @@ export function formatNumberInput(params: { raw: string; caret: number; kind: Nu
   return formatTyped(raw, caret, MAX_DECIMALS[kind], prev);
 }
 
-/** 거부 이유 다섯 문구 — UI-SPEC rev 5 Copywriting `Error — 셀(형식)` ·
- * `Error — 셀(숫자 자리, 04-09)` 원문 그대로. 이 함수 밖에 사본을 두지 않는다. */
+/** 거부 이유 다섯 문구 — UI-SPEC rev 5 Copywriting `Error — 셀(형식)` · `Error — 셀(숫자 자리, 04-09)`을
+ * 사용자 결정 2026-09-26(DECISIONS.md 「오류 문구 명사형 통일」)대로 명사형으로 고친 문구. */
 export function numberInputRejectionReason(kind: NumberInputKind, rejected: NumberInputRejection): string {
   if (rejected === "krw-fraction") return "원화는 소수점 없이";
   if (rejected === "precision") {

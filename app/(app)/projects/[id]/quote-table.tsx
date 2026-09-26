@@ -38,6 +38,7 @@ import {
 import type { RevenueDto } from "@/domain/revenue";
 import type { Currency, Money } from "@/domain/money";
 import { RevenueSection, type EntryDraft } from "./revenue-section";
+import { otherCellsRejectedText, routeRejectedRevenueCells } from "./revenue-cells";
 import { PreviousRevisionDraftRow } from "./previous-revision";
 import { StatusChange, type StatusChangeProps } from "./status-change";
 import { CustomerApprovalLine, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
@@ -499,6 +500,7 @@ function entriesFromDto(entries: RevenueDto["issuedEntries"]): EntryDraft[] | un
     recomputeDeltaKrw: entry.recomputeDeltaKrw,
     vatKrw: entry.vatKrw,
     totalKrw: entry.totalKrw,
+    foreignLine: formatForeignLine(entry.amount),
   }));
 }
 
@@ -885,6 +887,11 @@ export function QuoteLedger({
   const [openCell, setOpenCell] = useState<{ rowId: string; columnKey: string } | null>(null);
   const [issuedEntries, setIssuedEntries] = useState<EntryDraft[] | undefined>(() => entriesFromDto(revenue.issuedEntries));
   const [paidEntries, setPaidEntries] = useState<EntryDraft[] | undefined>(() => entriesFromDto(revenue.paidEntries));
+  // 04-16(B3) — 거부 봉투의 칸을 매출 표로 떼어 낼 때 쓰는 저장된 매출 줄 id(새 줄 id는 04-41).
+  const revenueEntryIds = {
+    issuedIds: (issuedEntries ?? []).flatMap((entry) => (entry.id ? [entry.id] : [])),
+    paidIds: (paidEntries ?? []).flatMap((entry) => (entry.id ? [entry.id] : [])),
+  };
   const [balanceKrw, setBalanceKrw] = useState<number | undefined>(revenue.balanceKrw);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [pasteWarning, setPasteWarning] = useState<string | null>(null);
@@ -942,7 +949,11 @@ export function QuoteLedger({
         return;
       }
       if (data && "rejected" in data) {
-        applyRejectedCells(data.rejected.cells);
+        // 04-16(B3) — 매출 줄 id로 온 칸을 먼저 발행·입금 표로 떼어 내고, 나머지만 견적 줄에 붙인다.
+        const routed = routeRejectedRevenueCells(data.rejected.cells, revenueEntryIds);
+        setIssuedEntries((prev) => prev?.map((entry) => ({ ...entry, cellErrors: entry.id ? routed.issued[entry.id] : undefined })));
+        setPaidEntries((prev) => prev?.map((entry) => ({ ...entry, cellErrors: entry.id ? routed.paid[entry.id] : undefined })));
+        applyRejectedCells(routed.rest);
         return; // 전부 거부 — 줄 교체·저장됨·보관본 지우기를 하지 않는다.
       }
       if (data && "periodRejected" in data) {
@@ -1157,10 +1168,9 @@ export function QuoteLedger({
     }
   }
   // 해소되지 않은 충돌 칸도 함께 센다 — 충돌이 남은 채 서버를 부르지 않는다.
-  const errorCellCount = lines.reduce(
-    (sum, line) => sum + Object.keys(line.cellErrors).length + Object.keys(line.cellConflicts).length,
-    0,
-  );
+  const errorCellCount =
+    lines.reduce((sum, line) => sum + Object.keys(line.cellErrors).length + Object.keys(line.cellConflicts).length, 0) +
+    [...(issuedEntries ?? []), ...(paidEntries ?? [])].reduce((sum, entry) => sum + Object.keys(entry.cellErrors ?? {}).length, 0);
 
   function updateLine(clientKey: string, patch: Partial<DraftLine>) {
     persistPendingRef.current = true;
@@ -1292,12 +1302,19 @@ export function QuoteLedger({
     setDeleteConfirm(null);
   }
 
+  // 04-16(B3) — 매출 칸을 고치면 그 칸의 오류만 지운다(04-04 견적 줄 규칙과 같다).
+  function patchEntry(entry: EntryDraft, patch: Partial<EntryDraft>): EntryDraft {
+    const cellErrors = entry.cellErrors ? { ...entry.cellErrors } : undefined;
+    for (const key of Object.keys(patch)) delete cellErrors?.[key];
+    return { ...entry, ...patch, cellErrors, dirty: true };
+  }
+
   function updateIssued(clientKey: string, patch: Partial<EntryDraft>) {
-    setIssuedEntries((prev) => prev?.map((entry) => (entry.clientKey === clientKey ? { ...entry, ...patch, dirty: true } : entry)));
+    setIssuedEntries((prev) => prev?.map((entry) => (entry.clientKey === clientKey ? patchEntry(entry, patch) : entry)));
   }
 
   function updatePaid(clientKey: string, patch: Partial<EntryDraft>) {
-    setPaidEntries((prev) => prev?.map((entry) => (entry.clientKey === clientKey ? { ...entry, ...patch, dirty: true } : entry)));
+    setPaidEntries((prev) => prev?.map((entry) => (entry.clientKey === clientKey ? patchEntry(entry, patch) : entry)));
   }
 
   function addIssued() {
@@ -1898,7 +1915,15 @@ export function QuoteLedger({
       : result.data && "preEstimateRejected" in result.data
         ? result.data.preEstimateRejected.errors.length
         : 0;
-  const periodRejectedSummary = outsideErrorCount > 0 ? `전부 거부 · 다른 칸 오류 ${outsideErrorCount}칸` : undefined;
+  const periodRejectedSummary = otherCellsRejectedText(0, outsideErrorCount) ?? undefined;
+  // 04-16(R2) — 거부 봉투의 칸을 표별로 센다. 제 칸이 0인 표는 `전부 거부 · 다른 칸 오류 N칸`이다.
+  const routedRejection = rejectedEnvelope ? routeRejectedRevenueCells(rejectedEnvelope.cells, revenueEntryIds) : undefined;
+  const rejectedCells = {
+    issued: Object.values(routedRejection?.issued ?? {}).reduce((sum, row) => sum + Object.keys(row).length, 0),
+    paid: Object.values(routedRejection?.paid ?? {}).reduce((sum, row) => sum + Object.keys(row).length, 0),
+    quote: routedRejection?.rest.length ?? 0,
+  };
+  const rejectedCellTotal = rejectedCells.issued + rejectedCells.paid + rejectedCells.quote + outsideErrorCount;
   // DR-6 — 상태 바뀜 거부 문구(서버가 statusChangedMessage로 만든다). 다시 그린 뒤에도 남는다.
   const statusChangedSummary = result.data && "statusChanged" in result.data ? result.data.statusChanged.message : undefined;
   const rejectionSummary =
@@ -1907,6 +1932,9 @@ export function QuoteLedger({
     statusChangedSummary ??
     result.serverError ??
     (result.validationErrors ? "저장하지 못했습니다 · 입력값을 확인하세요" : undefined);
+  // 견적 줄 표 합계 행 — 봉투 요약은 견적 줄 칸이 있을 때만, 매출 칸만 거부됐으면 다른 칸 글자.
+  const quoteFooterSummary =
+    rejectedEnvelope && rejectedCells.quote === 0 ? otherCellsRejectedText(0, rejectedCellTotal) : rejectionSummary;
 
   // 04-30(C-07) — 힌트 줄은 그 사람에게 실제로 되는 키만. 편집 셀이 없는 읽기 표에는 힌트 줄이 없다.
   const hintKeys = visibleHintKeys(
@@ -2109,7 +2137,7 @@ export function QuoteLedger({
               {pasteWarning ? <span className={styles.pasteWarning}> {pasteWarning}</span> : null}
               {pasteSkipped ? <span className={styles.pasteSkipped}> {pasteSkipped}</span> : null}
               {lineCapNotice ? <span className={styles.rejectionSummary}> {lineCapNotice}</span> : null}
-              {rejectionSummary ? <span className={styles.rejectionSummary}> {rejectionSummary}</span> : null}
+              {quoteFooterSummary ? <span className={styles.rejectionSummary}> {quoteFooterSummary}</span> : null}
             </td>
           </tr>
         }
@@ -2219,6 +2247,7 @@ export function QuoteLedger({
         balanceKrw={balanceKrw}
         saveLocked={saveLocked}
         editableWidth={editableWidth}
+        rejectedCells={{ issued: rejectedCells.issued, paid: rejectedCells.paid, total: rejectedCellTotal }}
       />
 
       {statusToast ? <Toast message={statusToast} onDismiss={() => setStatusToast(null)} /> : null}

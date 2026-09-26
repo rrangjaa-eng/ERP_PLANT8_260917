@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Table } from "@/ui/table/Table";
 import { KvList } from "@/ui/kv-list/KvList";
 import { formatKrw, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
 import { useCommaInput } from "@/ui/input/use-comma-input";
-import type { TableColumn } from "@/ui/table/types";
+import type { CellIssue, TableColumn } from "@/ui/table/types";
 import type { ContractInfo } from "@/domain/revenue";
+import { otherCellsRejectedText, revenueTableErrorText } from "./revenue-cells";
 import styles from "./project-detail.module.css";
 
 export type EntryDraft = {
@@ -21,7 +22,48 @@ export type EntryDraft = {
   recomputeDeltaKrw?: number | null;
   vatKrw?: number | null;
   totalKrw?: number | null;
+  /** 04-16(DR-15) — 외화 입금이면 `USD 4,400.00 @1,318.1818`, 원화면 null. */
+  foreignLine?: string | null;
+  /** 04-16(B3) — 거부 봉투에서 이 줄로 떼어 낸 칸 오류(열 키 → 이유). */
+  cellErrors?: Record<string, string>;
 };
+
+// 04-16(DR-15) — 숫자 묶음은 꺾지 않고 ` · ` 사이에서만 줄바꿈한다(구분자는 줄바꿈되는 부모의 글자).
+function NumberGroups({ groups, className }: { groups: string[]; className?: string }) {
+  return (
+    <span className={[styles.secondaryGroups, className].filter(Boolean).join(" ")}>
+      {groups.map((group, index) => (
+        <Fragment key={group}>
+          {index > 0 ? " · " : null}
+          <span>{group}</span>
+        </Fragment>
+      ))}
+    </span>
+  );
+}
+
+function paidNumberGroups(row: EntryDraft): string[] {
+  const groups: string[] = [];
+  if (row.foreignLine) groups.push(row.foreignLine);
+  if (row.computedGrossKrw !== null && row.computedGrossKrw !== undefined) groups.push(`공급가액 ${formatKrw(row.computedGrossKrw)}`);
+  return groups;
+}
+
+// 폰 접힌 줄 — 숫자 묶음 뒤에 메모(메모는 줄바꿈된다). 같은 정보를 금액 셀 2행과 두 번 보이지 않게 2행은 폰에서 숨긴다.
+function collapsedSummary(groups: string[], note: string | null): ReactNode {
+  if (groups.length === 0) return note;
+  return (
+    <>
+      <NumberGroups groups={groups} />
+      {note ? ` · ${note}` : null}
+    </>
+  );
+}
+
+function entryCellIssue(row: EntryDraft, columnKey: string): CellIssue | undefined {
+  const message = row.cellErrors?.[columnKey];
+  return message ? { kind: "error", message } : undefined;
+}
 
 // 04-16(D-84) — 계약 금액은 입력이 아니라 서버가 파생한 값이다. 2행은 ` · ` 묶음 사이에서만 줄바꿈한다.
 function contractNoteGroups(contract: ContractInfo): string[] {
@@ -36,15 +78,10 @@ function contractNoteGroups(contract: ContractInfo): string[] {
 }
 
 function ContractValue({ contract }: { contract: ContractInfo }) {
-  const groups = contractNoteGroups(contract);
   return (
     <>
       <span className={styles.contractAmount}>{contract.amountKrw === null ? "—" : formatKrw(contract.amountKrw)}</span>
-      <span className={`${styles.contractNote} ${styles.secondaryGroups}`}>
-        {groups.map((group, index) => (
-          <span key={group}>{index === 0 ? group : ` · ${group}`}</span>
-        ))}
-      </span>
+      <NumberGroups groups={contractNoteGroups(contract)} className={styles.contractNote} />
     </>
   );
 }
@@ -171,6 +208,7 @@ export function RevenueSection({
   balanceKrw,
   saveLocked = false,
   editableWidth = true,
+  rejectedCells,
 }: {
   /** 04-16(B-19) — quote.amount를 볼 수 없으면 서버가 싣지 않는다(키 부재). */
   contract: ContractInfo | undefined;
@@ -186,9 +224,20 @@ export function RevenueSection({
   saveLocked?: boolean;
   /** 04-49(DR-36) — 1024 미만이면 발행·입금 표는 보기 전용(추가 버튼 없음, EMPTY는 사실만). */
   editableWidth?: boolean;
+  /** 04-16(B3 · R2) — 마지막 거부 봉투의 표별 칸 수. total은 표 밖 칸까지 센 전부다. */
+  rejectedCells?: { issued: number; paid: number; total: number };
 }) {
   const canEditEntries = canWriteEntries && editableWidth;
-  const tablesVisible = issuedEntries !== undefined && paidEntries !== undefined;
+  // 04-16(D-85) — 발행 표는 발행액을 볼 수 있으면, 입금 표는 입금액을 볼 수 있을 때만 렌더한다(DTO 키 부재 = 표 부재).
+  const issuedVisible = issuedEntries !== undefined;
+  const paidVisible = paidEntries !== undefined;
+  // 합계 행 글자는 거부 요약과 같은 수명이다(다음 저장 시도·성공에서 바뀐다) — 칸을 고쳐도 남는다.
+  const rejected = rejectedCells ?? { issued: 0, paid: 0, total: 0 };
+  const issuedNote = revenueTableErrorText(rejected.issued) ?? otherCellsRejectedText(rejected.issued, rejected.total - rejected.issued);
+  const paidNote = revenueTableErrorText(rejected.paid) ?? otherCellsRejectedText(rejected.paid, rejected.total - rejected.paid);
+  // Copywriting Empty — 읽기로만 받는 사람은 담당을, 1024 미만 경영관리는 사실만, 편집 가능하면 사실 + 추가 버튼.
+  const issuedEmpty = canWriteEntries ? "발행한 세금계산서가 없습니다" : "발행한 세금계산서가 없습니다 · 발행은 경영관리";
+  const paidEmpty = canWriteEntries ? "입금 줄이 없습니다" : "입금 줄이 없습니다 · 입금은 경영관리";
 
   const issuedColumns: TableColumn<EntryDraft>[] = [
     {
@@ -245,8 +294,9 @@ export function RevenueSection({
             readOnly={saveLocked}
           />
         ) : (
-          (row.note ?? "—")
+          <span className={styles.noteText}>{row.note ?? "—"}</span>
         ),
+      summary: (row) => row.note,
     },
   ];
 
@@ -288,14 +338,10 @@ export function RevenueSection({
         ) : (
           formatKrw(row.amount)
         ),
-      secondaryLine: (row) =>
-        row.computedGrossKrw !== null && row.computedGrossKrw !== undefined
-          ? (
-              <span className={styles.secondaryGroups}>
-                <span>공급가액 {formatKrw(row.computedGrossKrw)}</span> <span>· 서버 계산</span>
-              </span>
-            )
-          : null,
+      secondaryLine: (row) => {
+        const groups = paidNumberGroups(row);
+        return groups.length > 0 ? <NumberGroups groups={groups} className={styles.pcSecondary} /> : null;
+      },
     },
     {
       key: "note",
@@ -313,8 +359,9 @@ export function RevenueSection({
             readOnly={saveLocked}
           />
         ) : (
-          (row.note ?? "—")
+          <span className={styles.noteText}>{row.note ?? "—"}</span>
         ),
+      summary: (row) => collapsedSummary(paidNumberGroups(row), row.note),
     },
   ];
 
@@ -328,7 +375,7 @@ export function RevenueSection({
   return (
     <section className={styles.section}>
       <h2 className={styles.sectionTitle}>매출</h2>
-      <p className={styles.sectionSubtitle}>공급가액 기준 · 입금액만 통장 합계</p>
+      <p className={styles.sectionSubtitle}>{paidVisible ? "공급가액 기준 · 입금액만 통장 합계" : "공급가액 기준"}</p>
 
       {contract ? (
         <div className={styles.contractSummary}>
@@ -336,49 +383,63 @@ export function RevenueSection({
         </div>
       ) : null}
 
-      {tablesVisible ? (
+      {issuedVisible ? (
         <>
           <Table
             caption="발행 줄"
             columns={issuedColumns}
-            rows={issuedEntries ?? []}
+            rows={issuedEntries}
             getRowId={(row) => row.clientKey}
-            emptyMessage="발행한 세금계산서가 없습니다"
+            emptyMessage={issuedEmpty}
             emptyAction={canEditEntries ? { label: "발행 줄 추가", onClick: onAddIssued } : undefined}
             saveLocked={saveLocked}
+            cellIssue={entryCellIssue}
+            alwaysShowFooter={issuedNote !== null}
             footer={
               <tr>
-                <td colSpan={issuedColumns.length} className={styles.footerCell}>
-                  {`합계 (공급가액 · ${(issuedEntries ?? []).length}줄)`}
+                <td colSpan={issuedColumns.length - 1} className={styles.footerCell}>
+                  {`합계 (공급가액 · ${issuedEntries.length}줄)`}
+                </td>
+                <td className={styles.footerCell}>
+                  {issuedNote ? <span className={styles.rejectionSummary}>{issuedNote}</span> : null}
                 </td>
               </tr>
             }
           />
-          {canEditEntries && (issuedEntries ?? []).length > 0 ? (
+          {canEditEntries && issuedEntries.length > 0 ? (
             <button type="button" className={styles.addLineButton} onClick={() => (saveLocked ? undefined : onAddIssued())}>
               발행 줄 추가
             </button>
           ) : null}
+        </>
+      ) : null}
 
+      {paidVisible ? (
+        <>
           <Table
             caption="입금 줄"
             columns={paidColumns}
-            rows={paidEntries ?? []}
+            rows={paidEntries}
             getRowId={(row) => row.clientKey}
-            emptyMessage="입금 줄이 없습니다"
+            emptyMessage={paidEmpty}
             emptyAction={canEditEntries ? { label: "입금 줄 추가", onClick: onAddPaid } : undefined}
             saveLocked={saveLocked}
+            cellIssue={entryCellIssue}
             alwaysShowFooter
             footer={
               <tr>
                 <td colSpan={paidColumns.length - 1} className={styles.footerCell}>
-                  {`합계 (공급가액 · ${(paidEntries ?? []).length}줄)`}
+                  {`합계 (공급가액 · ${paidEntries.length}줄)`}
                 </td>
-                <td className={styles.footerCell}>{balanceLabel}</td>
+                <td className={styles.footerCell}>
+                  {paidNote ? <span className={styles.rejectionSummary}>{paidNote}</span> : null}
+                  {paidNote && balanceLabel ? " · " : null}
+                  {balanceLabel}
+                </td>
               </tr>
             }
           />
-          {canEditEntries && (paidEntries ?? []).length > 0 ? (
+          {canEditEntries && paidEntries.length > 0 ? (
             <button type="button" className={styles.addLineButton} onClick={() => (saveLocked ? undefined : onAddPaid())}>
               입금 줄 추가
             </button>

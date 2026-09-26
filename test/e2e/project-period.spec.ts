@@ -282,7 +282,8 @@ test.describe("상세 기간 칸 (04-22, PROJ-04)", () => {
     const endInput = page.getByLabel("종료일");
     await expect(endInput).toHaveAttribute("aria-invalid", "true");
     await expect(page.getByText(`종료일이 오늘보다 빠름 · 앞당기기는 팀장 ${leadName}`, { exact: true })).toBeVisible();
-    await expect(page.locator("tfoot").getByText("전부 거부 · 다른 칸 오류 1칸")).toBeVisible();
+    // 04-16(D-85 · R2) — PM에게도 발행 표가 있어 그 합계 행에도 같은 글자가 나온다. 견적 표로 좁힌다.
+    await expect(page.locator("table", { has: page.locator("caption", { hasText: /^견적 줄$/ }) }).locator("tfoot").getByText("전부 거부 · 다른 칸 오류 1칸")).toBeVisible();
     const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
     expect(row?.endDate).toBe(endDate);
     expect(row?.status).toBe("in_progress");
@@ -403,7 +404,8 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
 
     await expect(amount).toHaveAttribute("aria-invalid", "true");
     await expect(page.getByText("총 매출 예상가는 0 이상 · 금액을 고쳐 주세요", { exact: true })).toBeVisible();
-    await expect(page.locator("tfoot").getByText("전부 거부 · 다른 칸 오류 1칸")).toBeVisible();
+    // 04-16(D-85 · R2) — PM에게도 발행 표가 있어 그 합계 행에도 같은 글자가 나온다. 견적 표로 좁힌다.
+    await expect(page.locator("table", { has: page.locator("caption", { hasText: /^견적 줄$/ }) }).locator("tfoot").getByText("전부 거부 · 다른 칸 오류 1칸")).toBeVisible();
     const [row] = await db.select().from(projects).where(eq(projects.id, project.id));
     expect(row?.preEstimateAmountKrw).toBe(0);
 

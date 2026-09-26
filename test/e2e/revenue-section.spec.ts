@@ -267,7 +267,8 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     await page.getByRole("button", { name: /일괄 저장/ }).click();
 
     // 입금 셀 둘째 줄 — 서버가 역산한 공급가액(04-16 P0: `· 서버 계산` 꼬리 없음).
-    await expect(page.getByText("공급가액 5,000,000", { exact: true })).toBeVisible();
+    // 같은 묶음이 폰 접힌 줄(PC에서 숨김)에도 있어 입금 표 주 행으로 좁힌다.
+    await expect(revenueTable(page, "입금 줄").locator("tbody tr:not([aria-hidden])").getByText("공급가액 5,000,000", { exact: true })).toBeVisible();
     await expect(revenueSection(page).getByText(/서버 계산/)).toHaveCount(0);
     // 합계 행 — 발행 10,000,000 - 입금 공급가 5,000,000 = 미수 5,000,000.
     await expect(page.getByText("미수 5,000,000")).toBeVisible();
@@ -332,7 +333,7 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
     await page.getByLabel("입금일").fill("2026-09-05");
     await page.getByLabel("입금액").fill("2000000000");
     await page.getByRole("button", { name: /일괄 저장/ }).click();
-    await expect(page.getByText("공급가액 1,818,181,818", { exact: true })).toBeVisible();
+    await expect(revenueTable(page, "입금 줄").locator("tbody tr:not([aria-hidden])").getByText("공급가액 1,818,181,818", { exact: true })).toBeVisible();
 
     await page.setViewportSize({ width: 375, height: 800 });
     await page.goto(projectUrl);
@@ -352,7 +353,10 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
         const range = document.createRange();
         range.setStart(node, at);
         range.setEnd(node, at + "1,818,181,818".length);
-        return new Set([...range.getClientRects()].map((rect) => Math.round(rect.top))).size;
+        const rects = [...range.getClientRects()];
+        // 04-16(DR-15) — 폰에서 숨는 금액 셀 2행은 건너뛰고 보이는 접힌 줄의 숫자를 잰다.
+        if (rects.length === 0) continue;
+        return new Set(rects.map((rect) => Math.round(rect.top))).size;
       }
       return 0;
     });

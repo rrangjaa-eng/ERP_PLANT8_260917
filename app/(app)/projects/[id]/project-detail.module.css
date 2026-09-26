@@ -263,6 +263,22 @@
   white-space: nowrap;
 }
 
+/* 04-16(DR-15) — 매출 표 금액 셀 2행은 PC에서만. 폰(<700)은 같은 묶음을 접힌 줄에 둔다. */
+@media (max-width: 699.98px) {
+  .pcSecondary {
+    display: none;
+  }
+}
+
+/* 04-16(DR-15) — 매출 표 메모 읽기 값은 PC에서 한 줄 말줄임(폰은 접힌 줄에서 줄바꿈). */
+.noteText {
+  display: block;
+  max-width: 40ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* 04-49(DR-14) — 외화 2행(`USD 4,400.00` · `@1,318.1818`). 1280 미만에서만 두 묶음 사이에서 줄바꿈한다. */
 .fxGroups > span {
   white-space: nowrap;

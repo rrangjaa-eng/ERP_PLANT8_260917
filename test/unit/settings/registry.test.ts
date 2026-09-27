@@ -12,6 +12,7 @@ import {
   FutureCancelOnlyError,
   type SettingDef,
 } from "@/domain/settings/registry";
+import { SETTING_DEFS } from "@/domain/settings/keys";
 import type { Viewer } from "@/domain/viewer";
 
 const viewer: Viewer = { id: "u1", roleId: "role-sysadmin" };
@@ -240,5 +241,13 @@ describe("listSettingHistory", () => {
   it("비이력형 키는 빈 배열을 돌려준다", async () => {
     const result = await listSettingHistory(SIMPLE_DEF);
     expect(result).toEqual([]);
+  });
+});
+
+describe("SETTING_DEFS", () => {
+  it("손익 착수 대기 주수 키가 등록돼 있지 않다(손익은 테스트 데이터로 검증 — 2026-09-27 결정)", () => {
+    expect(SETTING_DEFS.map((def) => def.key)).not.toContain(
+      "pnl.start_gate.weeks_after_cutover",
+    );
   });
 });

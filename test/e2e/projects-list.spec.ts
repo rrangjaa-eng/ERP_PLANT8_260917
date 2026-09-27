@@ -591,6 +591,28 @@ test.describe("프로젝트 목록 — 조회 조건 (04-48)", () => {
     await expect(page.locator("#year")).toHaveValue(String(kstYear(new Date())));
   });
 
+  test("(04-18 리뷰 NIT 2) 볼 수 없는 열의 정렬 키로 연 뒤 필터를 바꾸면 URL에 그 키가 남지 않는다", async ({ page }) => {
+    const marker = `E2E숨긴정렬-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    await createProject(SYSTEM_VIEWER, { clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId, name: `${marker}-행` });
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E견적끔-${randomUUID().slice(0, 8)}`, workScope: "company" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "project.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "quote.amount", visible: false });
+    const email = `e2e-list-noquote-${randomUUID()}@example.test`;
+    const { tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 견적 끔", roleId: role.id });
+
+    await login(page, { email, password: tempPassword });
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}&year=all&sort=quoteAmountKrw&dir=desc`);
+    await expect(page.locator(LIST_TABLE).getByRole("link", { name: `${marker}-행`, exact: true })).toBeVisible();
+
+    await page.locator("#status").selectOption("bidding");
+    await expect(page).toHaveURL(/status=bidding/);
+    const params = new URL(page.url()).searchParams;
+    expect(params.has("sort")).toBe(false);
+    expect(params.has("dir")).toBe(false);
+  });
+
   test("틀린 teamId · year를 직접 열면 오류 화면이 아니라 올해 기본 보기다", async ({ page }) => {
     const pm = await setupPm();
     await login(page, pm);

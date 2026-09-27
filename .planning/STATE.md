@@ -5,15 +5,15 @@ current_phase_name: 프로젝트·견적 원장
 current_plan: 34
 status: executing
 stopped_at: Completed 04-41-PLAN.md
-last_updated: "2026-09-26T15:53:50.827Z"
+last_updated: "2026-09-27T13:27:26.265Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 4 execution started
-state_head: 93f5af46600932aea67421c68ee43736b52a454a
+state_head: 7a02037560ff68a80ca2eae17307e0ab0dcd5d99
 progress:
   total_phases: 16
   completed_phases: 1
-  total_plans: 115
-  completed_plans: 56
+  total_plans: 140
+  completed_plans: 71
   percent: 6
 ---
 
@@ -313,6 +313,7 @@ Recent decisions affecting current work:
 - Phase 10 edited: edited fields: depends_on, success_criteria (기준 4의 관리 화면·보관·노출표 등록을 Phase 04.5로 옮김, ADMN-07은 Phase 10에 남김)
 - Phase 04.5 edited: edited fields: goal, depends_on, requirements, success_criteria (/review 반영: 거래처 대상만 켜고 프로젝트·견적 줄 대상은 Phase 10, 보관 선택지·보이지 않는 칸 값 보존, 노출표 행 기본값 방식, Phase 4 겹침 파일 추가)
 - Phase 10 edited: edited fields: success_criteria (/review 반영: 프로젝트·견적 줄 대상 켜기와 칸별 판정·값 보존 적용을 Phase 10 기준 4에 명시)
+- Phase 9 edited: edited fields: depends_on, success_criteria(6·7), 결정 메모 — 손익을 테스트 데이터로 검증, Phase 6 뒤 착수(2026-09-27 사용자 결정)
 
 ## Deferred Items
 

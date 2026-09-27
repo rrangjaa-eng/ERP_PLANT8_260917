@@ -2,13 +2,16 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { db } from "@/db/client";
-import { reserveEntries } from "@/db/schema";
+import { codeItems, projects, reserveEntries } from "@/db/schema";
 import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { recentFxRate } from "@/domain/money/currency";
+import { createProject } from "@/domain/projects";
+import { createAccount } from "@/domain/auth/accounts";
+import { createOrgUnit, createTeam } from "@/domain/org";
 import { eq } from "drizzle-orm";
 
 // 04-42 — 클라이언트별 리저브 대장(S9). 리저브는 회사 전체 원장 하나라 이 스펙만 쓴다 — 케이스마다 비우고 시작한다.
@@ -347,6 +350,58 @@ test.describe("리저브 대장 — 쪽 · 오류 · 삭제 · 입력", () => {
     await focusGridCell(cell(page, 0, COL.evidence));
     await page.keyboard.press("Enter");
     await expect(cell(page, 0, COL.evidence)).toContainText("과세 거래 · 부가세가 붙는 세금계산서");
+  });
+});
+
+// 04-42 리뷰 S1 — 보관된 프로젝트에 묶인 줄과 비활성 증빙 종류 줄. 선택지에는 없지만 저장된 값이다.
+async function seedLinkedRow(clientId: string): Promise<{ projectName: string; evidenceLabel: string }> {
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E리저브본부-${randomUUID().slice(0, 8)}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E리저브팀-${randomUUID().slice(0, 8)}` });
+  const { userId } = await createAccount(SYSTEM_VIEWER, { email: `rsv-pm-${randomUUID()}@example.test`, name: "리저브 PM", roleId: DEFAULT_ROLE_ID });
+  const projectName = `E2E리저브프로젝트-${randomUUID().slice(0, 6)}`;
+  const project = await createProject(SYSTEM_VIEWER, { clientId, teamId: team.id, pmUserId: userId, name: projectName });
+  const evidenceLabel = `옛 증빙 ${randomUUID().slice(0, 4)}`;
+  const [code] = await db
+    .insert(codeItems)
+    .values({ tableKey: "evidence_type", value: `old-${randomUUID().slice(0, 8)}`, label: evidenceLabel, active: false })
+    .returning({ value: codeItems.value });
+  const [id] = await seedEntries(clientId, [{ date: "2026-08-01", direction: "deposit", amount: 10_000 }]);
+  await db.update(reserveEntries).set({ projectId: project.id, evidenceType: code!.value }).where(eq(reserveEntries.id, id!));
+  await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, project.id));
+  return { projectName, evidenceLabel };
+}
+
+test.describe("리저브 대장 — 보관된 프로젝트 · 비활성 증빙 종류(리뷰 S1)", () => {
+  test("저장된 이름이 보이고, 셀을 열었다가 바꾸지 않고 떠나면 편집이 생기지 않는다", async ({ page }) => {
+    const roles = await createRoles();
+    const client = await createClient("E2E리저브보관");
+    const { projectName, evidenceLabel } = await seedLinkedRow(client.id);
+    await openLedger(page, roles.finance);
+
+    await expect(cell(page, 0, COL.project)).toHaveText(projectName);
+    await expect(cell(page, 0, COL.evidence)).toHaveText(evidenceLabel);
+
+    for (const [col, label] of [
+      [COL.project, "프로젝트"],
+      [COL.evidence, "증빙 종류"],
+    ] as const) {
+      await focusGridCell(cell(page, 0, col));
+      await page.keyboard.press("Enter");
+      await expect(page.getByRole("combobox", { name: label, exact: true })).toBeVisible();
+      await page.keyboard.press("Tab");
+      await expect(page.getByRole("combobox", { name: label, exact: true })).toHaveCount(0);
+    }
+    await expect(cell(page, 0, COL.project)).toHaveText(projectName);
+    await expect(cell(page, 0, COL.evidence)).toHaveText(evidenceLabel);
+    await expect(saveButton(page)).toHaveText(/^일괄 저장(?! \d)/);
+  });
+
+  test("읽는 사람에게도 보관된 프로젝트 이름이 보인다", async ({ page }) => {
+    const roles = await createRoles();
+    const client = await createClient("E2E리저브보관읽기");
+    const { projectName } = await seedLinkedRow(client.id);
+    await openLedger(page, roles.reader);
+    await expect(readRow(page, "2026-08-01").locator("td").nth(COL.project)).toHaveText(projectName);
   });
 });
 

@@ -216,19 +216,25 @@ function TextEditCell({ ariaLabel, initialValue, numeric, onCommit }: { ariaLabe
   );
 }
 
+// 리뷰 S1 — 저장된 값이 선택지에 없으면(보관된 프로젝트 · 비활성 증빙 종류) 그 값을 한 칸으로 남기고, 바꾸지 않고 떠나면 커밋하지 않는다.
 function SelectEditCell({
   id,
   ariaLabel,
   initialValue,
+  initialLabel,
   options,
   onCommit,
+  onCancel,
 }: {
   id: string;
   ariaLabel: string;
   initialValue: string;
+  initialLabel?: string | null;
   options: { value: string; label: string; description?: string | null }[];
   onCommit: (value: string) => void;
+  onCancel: () => void;
 }) {
+  const stored = initialValue !== "" && !options.some((option) => option.value === initialValue);
   return (
     <Select
       id={id}
@@ -236,8 +242,8 @@ function SelectEditCell({
       defaultValue={initialValue}
       autoFocus
       onChange={(event) => onCommit(event.target.value)}
-      onBlur={(event) => onCommit(event.currentTarget.value)}
-      options={options}
+      onBlur={(event) => (event.currentTarget.value === initialValue ? onCancel() : onCommit(event.currentTarget.value))}
+      options={stored ? [{ value: initialValue, label: initialLabel || initialValue }, ...options] : options}
       className={styles.cellSelect}
     />
   );
@@ -767,7 +773,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
       cell: (row) => directionLabel(row.direction),
       copyText: (row) => directionLabel(row.direction),
       editCell: (row, ctx) => (
-        <SelectEditCell id={`reserve-direction-${row.id}`} ariaLabel="구분" initialValue={row.direction} options={DIRECTION_OPTIONS} onCommit={ctx.onCommit} />
+        <SelectEditCell id={`reserve-direction-${row.id}`} ariaLabel="구분" initialValue={row.direction} options={DIRECTION_OPTIONS} onCommit={ctx.onCommit} onCancel={ctx.onCancel} />
       ),
     },
     {
@@ -799,7 +805,15 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
       cell: (row) => row.projectName || "—",
       copyText: (row) => row.projectName ?? "",
       editCell: (row, ctx) => (
-        <SelectEditCell id={`reserve-project-${row.id}`} ariaLabel="프로젝트" initialValue={row.projectId ?? ""} options={clientProjects(row)} onCommit={ctx.onCommit} />
+        <SelectEditCell
+          id={`reserve-project-${row.id}`}
+          ariaLabel="프로젝트"
+          initialValue={row.projectId ?? ""}
+          initialLabel={row.projectName}
+          options={clientProjects(row)}
+          onCommit={ctx.onCommit}
+          onCancel={ctx.onCancel}
+        />
       ),
     },
     {
@@ -815,8 +829,10 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
           id={`reserve-evidence-${row.id}`}
           ariaLabel="증빙 종류"
           initialValue={row.evidenceType ?? ""}
+          initialLabel={row.evidenceLabel}
           options={references.evidenceTypes}
           onCommit={ctx.onCommit}
+          onCancel={ctx.onCancel}
         />
       ),
     },
@@ -856,6 +872,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
           initialValue={row.clientId}
           options={references.clients.map((client) => ({ value: client.id, label: client.name }))}
           onCommit={ctx.onCommit}
+          onCancel={ctx.onCancel}
         />
       ),
     },

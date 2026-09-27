@@ -1,11 +1,16 @@
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { db } from "@/db/client";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import {
   allocateDocumentNumber,
+  assertSeqStartAvailable,
   loadDocumentNumberFormat,
+  SeqStartOverlapError,
   UnknownDocumentNumberCounterError,
 } from "@/domain/document-numbering";
-import { setSettingValue } from "@/domain/settings/registry";
+import { ForbiddenError, getSettingValue, setSettingValue } from "@/domain/settings/registry";
 import {
   DOCUMENT_NUMBER_PROJECT_PREFIX,
   DOCUMENT_NUMBER_PROJECT_YEAR_DIGITS,
@@ -91,5 +96,92 @@ describe("domain/document-numbering 서식 설정 (ADMN-09, 실제 Postgres)", (
     const format = await loadDocumentNumberFormat("project");
     const { number } = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026, format });
     expect(number).toBe("26-001");
+  });
+});
+
+// 04-51 결정 ②(a) — 사용자 답 2026-09-24: 올해 이미 매긴 최대 표시 순번 이하로 시작값을
+// 내리는 저장은 거부한다. saveSeqStart는 설정 저장 액션(app/(app)/admin/settings/actions.ts
+// setSimpleSettingAction)과 같은 순서 — 검증 뒤 저장 — 로 부른다("use server" 파일은
+// Vitest에서 import할 수 없다).
+describe("순번 시작값 낮추기(결정 ②)", () => {
+  const NOW = new Date("2026-06-01T03:00:00Z");
+  const YEAR = 2026;
+
+  async function saveSeqStart(viewer: Viewer, value: number): Promise<void> {
+    await assertSeqStartAvailable(viewer, DOCUMENT_NUMBER_PROJECT_SEQ_START, value, NOW);
+    await setSettingValue(viewer, DOCUMENT_NUMBER_PROJECT_SEQ_START, value);
+  }
+
+  async function allocate(year = YEAR): Promise<string> {
+    const format = await loadDocumentNumberFormat("project");
+    const { number } = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year, format });
+    return number;
+  }
+
+  // 공통 준비: 시작값 100으로 올해 셋(표시 순번 100 · 101 · 102).
+  async function issueThreeFrom100(): Promise<string[]> {
+    await saveSeqStart(SYSTEM_VIEWER, 100);
+    return [await allocate(), await allocate(), await allocate()];
+  }
+
+  it("준비: 시작값 100으로 올해 매긴 번호는 26100 · 26101 · 26102다", async () => {
+    expect(await issueThreeFrom100()).toEqual(["26100", "26101", "26102"]);
+  });
+
+  it("50으로 낮추면 거부되고(필드 오류 문구) 설정 값은 100 그대로다", async () => {
+    await issueThreeFrom100();
+    const rejected = saveSeqStart(SYSTEM_VIEWER, 50);
+    await expect(rejected).rejects.toBeInstanceOf(SeqStartOverlapError);
+    await expect(rejected).rejects.toThrow("순번 시작값이 이미 매긴 번호(102)와 겹침 · 103 이상 입력");
+    expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_START)).toBe(100);
+  });
+
+  it("이미 매긴 최대 102와 같은 값도 거부되고 설정 값은 100 그대로다", async () => {
+    await issueThreeFrom100();
+    await expect(saveSeqStart(SYSTEM_VIEWER, 102)).rejects.toBeInstanceOf(SeqStartOverlapError);
+    expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_START)).toBe(100);
+  });
+
+  it("103은 저장되고 다음 번호가 이미 매긴 번호와 겹치지 않는다", async () => {
+    const issued = await issueThreeFrom100();
+    await saveSeqStart(SYSTEM_VIEWER, 103);
+    expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_START)).toBe(103);
+
+    const next = [await allocate(), await allocate()];
+    for (const number of next) expect(issued).not.toContain(number);
+    expect(next).toEqual(["26106", "26107"]);
+  });
+
+  it("올해 매긴 번호가 없으면(작년 번호만 있으면) 어떤 값으로 낮춰도 저장된다", async () => {
+    await saveSeqStart(SYSTEM_VIEWER, 100);
+    await allocate(2025);
+    await saveSeqStart(SYSTEM_VIEWER, 1);
+    expect(await allocate()).toBe("26001");
+  });
+
+  it("다른 설정 키 저장은 이 검증을 지나지 않는다", async () => {
+    await issueThreeFrom100();
+    await expect(
+      assertSeqStartAvailable(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEQ_DIGITS, 1, NOW),
+    ).resolves.toBeUndefined();
+  });
+
+  it("설정 쓰기 권한이 없으면 최대 번호를 알리지 않고 권한 거부로 끝난다", async () => {
+    await issueThreeFrom100();
+    const pmViewer: Viewer = { id: `pm-${randomUUID()}`, roleId: DEFAULT_ROLE_ID };
+    await expect(saveSeqStart(pmViewer, 50)).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it("공통: 시작값을 올린 뒤에도 두 연결이 동시에 매긴 번호는 서로 다르다", async () => {
+    const issued = await issueThreeFrom100();
+    await saveSeqStart(SYSTEM_VIEWER, 103);
+    const format = await loadDocumentNumberFormat("project");
+    const [a, b] = await Promise.all([
+      db.transaction((tx) => allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: YEAR, format }, tx)),
+      db.transaction((tx) => allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: YEAR, format }, tx)),
+    ]);
+    expect(a.number).not.toBe(b.number);
+    expect(issued).not.toContain(a.number);
+    expect(issued).not.toContain(b.number);
   });
 });

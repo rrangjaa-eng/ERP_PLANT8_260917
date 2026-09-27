@@ -204,6 +204,7 @@ case "$event" in
     # 이름 바꾸기는 옛 경로도 본다.
     # 판정은 파이프 없이(SIGPIPE가 결과를 뒤집지 않게).
     pr="$(printf '%s' "$payload" | jq -r '.tool_input | "repos/\(.owner // "")/\(.repo // "")/pulls/\(.pullNumber // "")"')"
+    pull_number="$(printf '%s' "$payload" | jq -r '.tool_input.pullNumber // empty')"
     docs_only=0
     if pr_files="$(gh api "$pr/files" --paginate --jq '.[] | [.filename, .previous_filename // empty] | @tsv' 2>/dev/null)" \
       && pr_changed="$(gh api "$pr" --jq '.changed_files' 2>/dev/null)"; then
@@ -249,6 +250,9 @@ case "$event" in
         fi
       fi
     fi
+    # 변경 파일을 모르면 위험 경로·문서만 판정을 할 수 없다 — review·qa가 있어도 막는다
+    # (2026-09-27 #96: 훅·CLAUDE.md PR이 refs/pull/96/merge 미수신 상태에서 phase 로그의 review·qa로 통과했다).
+    [ -n "$pr_files" ] || deny "PR 변경 파일을 판정할 수 없어 머지하지 않는다(gh 없음·실패, 또는 PR 병합 커밋이 로컬에 없음). git fetch origin pull/${pull_number:-N}/head pull/${pull_number:-N}/merge 뒤 다시 시도하라."
     ui_changed=0
     if [ -n "$pr_files" ]; then
       awk -F'\t' '{ for (i = 1; i <= NF; i++) if (!($i ~ /^(\.planning|\.claude\/gates)\// || ($i ~ /\.md$/ && $i !~ /^\.claude\// && $i !~ /(^|\/)CLAUDE\.md$/))) bad = 1 }

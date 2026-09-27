@@ -452,6 +452,10 @@ describe("복원 리허설 읽기 — 확인 불가 흡수(04.4-01 Task 2)", () 
               for (let i = 0; i < max; i++) held.push(await pool.connect());
               return { kind: "none" as const };
             },
+            // 04.2의 알림 · 이메일 읽기는 이 테스트의 대상이 아니다 — 고갈된 풀을 기다리지 않게 비운다.
+            getLastTickRun: () => Promise.resolve(null),
+            getLastEmailOutcome: () => Promise.resolve(null),
+            getUnresolvedEmail: () => Promise.resolve({ bundles: 0, since: null }),
           }),
         );
         expect(Date.now() - startedAt).toBeLessThan(5000);

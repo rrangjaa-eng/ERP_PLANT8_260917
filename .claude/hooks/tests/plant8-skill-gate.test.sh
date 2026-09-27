@@ -741,6 +741,49 @@ merge_hook "$S18" "$proj18" "" 127 "" "$(git -C "$proj18" rev-parse HEAD)"
 expect_rc "merge(gh 없음): refs/pull/7/merge 없음 -> exit 2" 2 "$HOOK_RC"
 
 # ---------------------------------------------------------------------------
+# DG: 디자인 관문(사용자 결정 2026-09-28) — 화면 파일 편집은 design-gate 스킬 뒤에만,
+# 화면 코드 커밋은 빈칸 없는 점검표(docs/design/checks/*.md)를 함께 스테이징해야 한다.
+payload_edit() {
+  local session="$1" path="$2"
+  jq -nc --arg s "$session" --arg p "$path" '{session_id:$s, tool_name:"Edit", tool_input:{file_path:$p}}'
+}
+projDG="$(new_project)"
+SDG="sid-dg-$$"
+record_skill "$projDG" "$SDG" test-driven-development
+hook plant8-skill-gate.sh edit "$(payload_edit "$SDG" "$projDG/app/(app)/projects/page.tsx")" "$projDG"
+expect_rc "DG1 edit(app .tsx): design-gate 없음 -> exit 2" 2 "$HOOK_RC"
+expect_contains "DG1 안내에 design-gate" "$HOOK_STDERR" "design-gate"
+hook plant8-skill-gate.sh edit "$(payload_edit "$SDG" "$projDG/docs/design/SYSTEM.md")" "$projDG"
+expect_rc "DG2 edit(docs/design): design-gate 없음 -> exit 2" 2 "$HOOK_RC"
+hook plant8-skill-gate.sh edit "$(payload_edit "$SDG" "$projDG/domain/projects/index.ts")" "$projDG"
+expect_rc "DG3 edit(domain): 화면 아님 -> exit 0" 0 "$HOOK_RC"
+record_skill "$projDG" "$SDG" design-gate
+hook plant8-skill-gate.sh edit "$(payload_edit "$SDG" "$projDG/ui/button/Button.module.css")" "$projDG"
+expect_rc "DG4 edit(ui): design-gate 뒤 -> exit 0" 0 "$HOOK_RC"
+
+record_skill "$projDG" "$SDG" verification-before-completion
+stage_file "$projDG" "ui/button/Button.module.css" ".btn{}"
+hook plant8-skill-gate.sh bash "$(payload_bash "$SDG" 'git commit -m "feat: x"' "$projDG")" "$projDG"
+expect_rc "DG5 commit(화면 코드): 점검표 없음 -> exit 2" 2 "$HOOK_RC"
+expect_contains "DG5 안내에 점검표 경로" "$HOOK_STDERR" "docs/design/checks/"
+stage_file "$projDG" "docs/design/checks/2026-09-28-button.md" "- [x] 안내 문구
+- [ ] 주 버튼 하나"
+hook plant8-skill-gate.sh bash "$(payload_bash "$SDG" 'git commit -m "feat: x"' "$projDG")" "$projDG"
+expect_rc "DG6 commit: 점검표에 빈칸 -> exit 2" 2 "$HOOK_RC"
+stage_file "$projDG" "docs/design/checks/2026-09-28-button.md" "- [x] 안내 문구
+- [x] 주 버튼 하나"
+hook plant8-skill-gate.sh bash "$(payload_bash "$SDG" 'git commit -m "feat: x"' "$projDG")" "$projDG"
+expect_rc "DG7 commit: 점검표 다 채움 -> exit 0" 0 "$HOOK_RC"
+
+projDG2="$(new_project)"
+SDG2="sid-dg2-$$"
+record_skill "$projDG2" "$SDG2" test-driven-development
+record_skill "$projDG2" "$SDG2" verification-before-completion
+stage_file "$projDG2" "domain/x.ts" "export {}"
+hook plant8-skill-gate.sh bash "$(payload_bash "$SDG2" 'git commit -m "feat: x"' "$projDG2")" "$projDG2"
+expect_rc "DG8 commit(화면 아님): 점검표 필요 없음 -> exit 0" 0 "$HOOK_RC"
+
+# ---------------------------------------------------------------------------
 # Isolation: real gate logs unchanged
 REAL_GATES_AFTER="$(gates_checksum)"
 if [ "$REAL_GATES_BEFORE" = "$REAL_GATES_AFTER" ]; then

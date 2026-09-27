@@ -88,6 +88,13 @@ gate_skills="plan-ceo-review|plan-eng-review|plan-design-review|review|qa|cso|de
 phase_has_ui() { ls "$project"/.planning/phases/${phase_pad}-*/*-UI-SPEC.md >/dev/null 2>&1; }
 gate_has() { [ -f "$gate_log" ] && awk '{print $1}' "$gate_log" | grep -qx "$1"; }
 
+is_ui_path() {  # 화면 경로 — 디자인 관문(사용자 결정 2026-09-28): 브리프·원칙을 확인하지 않고 화면을 만들지 않는다
+  grep -Eq '^(app/.*\.(tsx|css)|ui/|docs/design/)'
+}
+is_ui_code_path() {  # 커밋 때 점검표를 요구하는 화면 코드(문서 제외)
+  grep -Eq '^(app|ui)/.*\.(tsx|css)$'
+}
+
 is_code_path() {  # 저장소 코드 경로(문서·계획 제외)
   grep -Eq '^(app|domain|repositories|ui|db|lib|components|scripts|test|e2e)/|\.(ts|tsx|js|mjs|cjs|sql|css)$'
 }
@@ -165,6 +172,18 @@ case "$event" in
       # 스테이징된 파일 + gsd-tools `--files` 인자 + git commit `--` 뒤 경로
       files="$( { git -C "$cwd" diff --cached --name-only 2>/dev/null || true;
                   printf '%s' "$cmd" | grep -oE -- '(--files|[[:space:]]--)[[:space:]].*' | tr ' ' '\n' | grep -vE -- '^(--files|--)?$' || true; } | sort -u )"
+      # 디자인 관문: 화면 코드 커밋은 빈칸 없는 점검표(docs/design/checks/*.md)를 함께 스테이징해야 한다
+      if printf '%s\n' "$files" | is_ui_code_path; then
+        checks="$(printf '%s\n' "$files" | grep -E '^docs/design/checks/[^/]+\.md$' || true)"
+        [ -n "$checks" ] || deny "화면 코드(app/·ui/의 .tsx·.css) 커밋에는 점검표가 함께 있어야 한다 — design-gate 스킬의 점검표를 docs/design/checks/<날짜>-<작업>.md로 채워 스테이징하라."
+        while IFS= read -r c; do
+          body="$(git -C "$cwd" show ":$c" 2>/dev/null || true)"
+          printf '%s\n' "$body" | grep -Eq '^[[:space:]]*- \[x\]' || deny "점검표 ${c}에 확인한 항목(- [x])이 없다."
+          if printf '%s\n' "$body" | grep -Eq '^[[:space:]]*- \[ \]'; then
+            deny "점검표 ${c}에 빈칸(- [ ])이 남았다 — 항목마다 확인하고 근거를 한 줄 적어라. 지킬 수 없는 항목은 사용자 승인을 받고 이유를 적는다."
+          fi
+        done <<<"$checks"
+      fi
       if printf '%s\n' "$files" | is_code_path; then
         has_skill "$skills_file" "test-driven-development" && has_skill "$skills_file" "verification-before-completion" \
           || deny "코드 커밋 전에 superpowers 스킬을 이 에이전트에서 호출하라: 구현 전 test-driven-development, 완료·커밋 전 verification-before-completion (Skill 도구). 호출 뒤 커밋을 다시 시도하라."
@@ -186,6 +205,10 @@ case "$event" in
   edit)
     path="$(printf '%s' "$payload" | jq -r '.tool_input.file_path // empty')"
     rel="${path#"${CLAUDE_PROJECT_DIR:-}"/}"
+    if printf '%s\n' "$rel" | is_ui_path; then
+      has_skill "$skills_file" "design-gate" \
+        || deny "화면 파일(app/의 .tsx·.css, ui/, docs/design/)을 고치기 전에 Skill 도구로 design-gate를 호출하라 — 브리프·화면 사용성 원칙·사용자 디자인 결정을 읽고 점검표를 준비한다. 호출 뒤 다시 시도하라."
+    fi
     printf '%s\n' "$rel" | is_code_path || exit 0
     has_skill "$skills_file" "test-driven-development" \
       || deny "코드를 쓰기 전에 Skill 도구로 test-driven-development를 호출하라(실패 테스트 → 최소 구현 → 리팩터). 호출 뒤 다시 시도하라."

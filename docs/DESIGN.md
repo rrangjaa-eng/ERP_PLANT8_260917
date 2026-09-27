@@ -58,9 +58,11 @@ GSD `.planning/PROJECT.md`·`REQUIREMENTS.md`를 읽고 아래를 채운다. 비
 과감함을 쓴 한 곳:
 위험·비용:
 ```
-### 2-4. gstack으로 실물 보기
-`/design-consultation`으로 브리프 검토 → `/design-shotgun`에 **안 A·B·C의 축 값을 그대로 명시**해 3안 생성 → 비교 보드에서 확인.
-축을 명시하지 않으면 세 안이 비슷해진다. 필요하면 안 D·E로 한 번 더.
+### 2-4. 실물 보기 — 실제 앱 화면으로만 (2026-09-28 사용자 결정)
+- **비교·시안은 실제 앱에 입혀 찍은 화면으로만 한다.** 목업 HTML·이미지 생성 시안은 실제 CSS 모듈과 달라 "보드에선 예쁜데 실물은 아니다"가 된다(2026-09-27 스킨 리프레시).
+- 방법: 로컬 앱을 실제 데이터로 띄우고, 안마다 오버레이 CSS를 실제 페이지에 얹어 PC 1280 · 폰 390 전체 화면을 찍는다 → 보드(스킨 탭 × 화면 탭 × 폭)로 게시. 도구: `docs/design/explore-skin/real/`(촬영 스크립트 `shoot.spec.ts.txt`를 `test/e2e/`에 잠시 복사해 `SHOT_OUT=<폴더> SKINS=now,a,… pnpm exec playwright test <스펙> --project=desktop`, 끝나면 지운다).
+- 안마다 **축 값을 그대로 명시**한다. 명시하지 않으면 안들이 비슷해진다.
+- 시작 전 `design-gate` 스킬(훅이 강제)로 브리프 · 화면 사용성 원칙 · 사용자 디자인 결정을 먼저 읽는다.
 
 ## 3. 수렴 — 하나로 정하고 시스템으로 고정
 ### 3-1. 평가 (각 1–5점, EXPLORE.md 비교표)
@@ -108,7 +110,7 @@ GSD `.planning/PROJECT.md`·`REQUIREMENTS.md`를 읽고 아래를 채운다. 비
 | 단계 | 명령 |
 |---|---|
 | §1 브리프 | `/superpowers:brainstorm`(사용자·작업·제약 추출) → `/design-consultation` |
-| §2 발산 | `/design-shotgun` (축 값 명시, 3–5안) |
+| §2 발산 | `design-gate` → 실제 앱 오버레이 촬영 보드(§2-4, 축 값 명시, 3–5안) |
 | §3 수렴 | 사용자 승인 → `/design-html`(채택안 실물) → SYSTEM.md 작성 → `/plan-design-review` |
-| §4 통일 | 화면마다 `/design-review` → `/qa` |
+| §4 통일 | `design-gate` 점검표(`docs/design/checks/`) → 독립 DOM 감사 → `/design-review` → `/qa` |
 | 개선 | `/browse` 스크린샷 → §5 대조 → 수정 → `/qa` |

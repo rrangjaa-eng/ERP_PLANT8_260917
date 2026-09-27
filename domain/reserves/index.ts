@@ -25,10 +25,12 @@ import {
   insertEntry as repoInsertEntry,
   updateEntryIfVersionMatches as repoUpdateEntryIfVersionMatches,
   setEntryArchived as repoSetEntryArchived,
+  listProjectOptions as repoListProjectOptions,
   type ReserveEntryPayload,
   type ReserveEntryRow,
 } from "@/repositories/reserve-entries";
 import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
+import { listVendors as repoListVendors } from "@/repositories/vendors";
 
 export type ReserveDirection = "deposit" | "withdrawal";
 
@@ -556,6 +558,36 @@ registerDto({
   name: "ReserveEntryDto",
   fields: RESERVE_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
 });
+
+// 04-42 — 액션 스키마 가장자리의 uuid·구분 검사가 같은 칸 이유를 쓴다(도메인 검사는 마지막 방어선, 04-07 리뷰 S3).
+export const RESERVE_INPUT_REASONS = {
+  entryNotFound: ENTRY_NOT_FOUND,
+  clientNotFound: CLIENT_NOT_FOUND,
+  projectMismatch: PROJECT_CLIENT_MISMATCH,
+  directionInvalid: DIRECTION_INVALID,
+} as const;
+
+export type ReserveReferences = {
+  clients: { id: string; name: string }[];
+  projects: { id: string; name: string; clientId: string }[];
+  evidenceTypes: { value: string; label: string; description: string | null }[];
+};
+
+// 04-42 — 대장 편집 칸의 선택지(클라이언트 · 프로젝트 · 증빙 종류 코드표). 대장과 같은 두 조건(pnl 보기 + reserve.amount)이
+// 아니면 빈 목록이다 — 관리자 메뉴 권한 없이도 대장을 적는 사람이 고를 수 있게 이름·값만 싣는다.
+export async function listReserveReferences(viewer: Viewer): Promise<ReserveReferences> {
+  if (!(await reserveRights(viewer, "view"))) return { clients: [], projects: [], evidenceTypes: [] };
+  const [vendorRows, projectRows, evidenceRows] = await Promise.all([
+    repoListVendors(viewer, { scope: { rows: "all", includeArchived: false }, includeHidden: false }),
+    repoListProjectOptions(viewer),
+    repoListCodeItems(viewer, { tableKey: EVIDENCE_TYPE_TABLE, scope: { rows: "all", includeArchived: false }, includeInactive: false }),
+  ]);
+  return {
+    clients: vendorRows.map((row) => ({ id: row.id, name: row.name })),
+    projects: projectRows,
+    evidenceTypes: evidenceRows.map((row) => ({ value: row.value, label: row.label, description: row.description })),
+  };
+}
 
 // 50건 번호 페이지(D-91). `pnl` 보기와 reserve.amount가 둘 다 있을 때만 줄을 싣고, 하나라도 없으면 건수·그룹 키 없는
 // 빈 결과다(B-15). 잔액은 클라이언트 원장 전체로 계산한 **뒤** 쪽을 자른다 — 몇 쪽을 보든 같은 잔액이다.

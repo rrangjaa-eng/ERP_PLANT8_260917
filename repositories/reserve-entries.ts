@@ -57,6 +57,16 @@ export async function findProjectClientIds(viewer: Viewer, projectIds: string[],
   return new Map(rows.map((row) => [row.id, row.clientId]));
 }
 
+// 04-42 — 리저브 대장 프로젝트 칸의 선택지(보관 제외). 클라이언트별로 거르는 일은 화면이 한다.
+export async function listProjectOptions(viewer: Viewer): Promise<{ id: string; name: string; clientId: string }[]> {
+  void viewer;
+  return db
+    .select({ id: projects.id, name: projects.name, clientId: projects.clientId })
+    .from(projects)
+    .where(isNull(projects.archivedAt))
+    .orderBy(projects.name);
+}
+
 export type ReserveEntryPayload = {
   entryDate: string;
   direction: string;

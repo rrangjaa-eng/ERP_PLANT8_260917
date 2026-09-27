@@ -1,0 +1,89 @@
+/* 04-42 — 리저브 대장(S9). 토큰만 쓴다(docs/design/tokens.css) — 새 색·서체·radius 없음. */
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+.titleBlock {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* 셀 편집기 — 견적 표 편집 셀(project-detail.module.css)과 같은 모양. */
+.cellSelect,
+.cellInput,
+.cellInputNumeric {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 var(--s-1);
+  border: 0;
+  border-bottom: var(--line-w) solid var(--accent);
+  background: var(--g-50);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+}
+
+.cellInputNumeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cellSelect:focus-visible,
+.cellInput:focus-visible,
+.cellInputNumeric:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.cellEditError {
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+/* 금액 편집 — 통화 · 금액 · (외화면) 환율 한 줄. */
+.moneyRow {
+  display: flex;
+  gap: var(--s-2);
+  align-items: center;
+}
+
+/* S9 — 잔액은 계산값이지만 값이다: 흐린 색이 아니라 본문 색. */
+.balance {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+/* S9 · §2-4 — 세금계산서 번호는 숫자 고정 폭, 꺾이지 않는다. */
+.taxInvoice {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* S9 long-text — 메모는 긴 칸 규칙 아래 PC에서 한 줄 말줄임(행 높이를 늘리지 않는다). */
+.noteText {
+  display: block;
+  max-width: 40ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.footerCell {
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-top: var(--line-w-strong) solid var(--line-strong);
+  color: var(--fg);
+  font-weight: var(--fw-bold);
+}
+
+.addLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  margin-top: var(--s-3);
+}

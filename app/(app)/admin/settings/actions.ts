@@ -5,9 +5,9 @@ import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { SETTING_DEFS } from "@/domain/settings/keys";
-import { setSettingValue, addHistorizedValue, cancelHistorizedValue, type SettingDef } from "@/domain/settings/registry";
+import { addHistorizedValue, cancelHistorizedValue, type SettingDef } from "@/domain/settings/registry";
 import { exportSettings } from "@/domain/settings/export";
-import { assertSeqStartAvailable } from "@/domain/document-numbering";
+import { setSimpleSettingValue } from "@/domain/document-numbering";
 import "./actions.registry";
 
 // ADMN-05: 화면 코드에 설정 키 문자열이 하드코딩돼 있지 않다 — 클라이언트가
@@ -28,8 +28,7 @@ export const setSimpleSettingAction = authedActionClient
   .schema(z.object({ key: z.string().min(1), value: z.unknown() }))
   .action(async ({ parsedInput, ctx }) => {
     const def = findSettingDef(parsedInput.key);
-    await assertSeqStartAvailable(ctx.viewer, def, parsedInput.value, new Date());
-    await setSettingValue(ctx.viewer, def, parsedInput.value);
+    await setSimpleSettingValue(ctx.viewer, def, parsedInput.value, new Date());
     revalidatePath("/admin/settings");
   });
 

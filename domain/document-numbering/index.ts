@@ -1,12 +1,15 @@
 import type { Viewer } from "@/domain/viewer";
 import {
   allocateNumber as repoAllocateNumber,
-  findDocumentCounter,
+  lockDocumentCounter,
   type DbOrTx,
 } from "@/repositories/document-counters";
-import { getSettingValue, type SettingDef } from "@/domain/settings/registry";
+import { findSimpleValue, upsertSimpleValue } from "@/repositories/settings";
+import { getSettingValue, setSettingValue, type SettingDef } from "@/domain/settings/registry";
+import { recordAction } from "@/domain/action-log/record";
 import { can } from "@/domain/permissions/can";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { withTransaction } from "@/lib/db-transaction";
 import { kstYear } from "@/lib/kst-date";
 import {
   DOCUMENT_NUMBER_PROJECT_PREFIX,
@@ -106,38 +109,58 @@ export async function allocateDocumentNumber(
   const seq = tx
     ? await repoAllocateNumber(viewer, input.counterKey, period, tx)
     : await repoAllocateNumber(viewer, input.counterKey, period);
-  return { number: documentNumberFormat({ year: input.year, seq }, input.format), seq };
+  // 04-51 리뷰 S1 — 순번 시작값만은 카운터 행 잠금 뒤 같은 tx로 다시 읽는다(전역 풀이 아니라 tx라
+  // 풀 소진 교착과 무관). 트랜잭션 전에 읽은 값은 그 사이 저장된 시작값보다 낡았을 수 있다 —
+  // 시작값 저장(setSimpleSettingValue)이 같은 행 잠금 안에서 검증하므로 이 값과 카운터가 맞물린다.
+  const seqStartDef = DOCUMENT_NUMBER_FORMAT_DEFS[input.counterKey]?.seqStart;
+  if (!seqStartDef) {
+    throw new UnknownDocumentNumberCounterError(
+      `document-numbering: counterKey '${input.counterKey}'의 서식 설정이 등록되지 않았습니다.`,
+    );
+  }
+  const seqStart = await getSettingValue(seqStartDef, undefined, {
+    findSimpleValue: (v, k) => findSimpleValue(v, k, tx),
+  });
+  return { number: documentNumberFormat({ year: input.year, seq }, { ...input.format, seqStart }), seq };
 }
 
 export class SeqStartOverlapError extends UserFacingError {}
 
-// 04-51 결정 ②(a) — 사용자 답 2026-09-24(설정 검증). 순번 시작값 저장이 올해
-// 이미 매긴 최대 표시 순번 이하이면 거부한다 — 표시 순번 = 카운터 + 시작값 − 1이라
-// 낮춘 시작값은 언젠가 이미 매긴 번호와 겹쳐 UNIQUE(format_key, number)로 등록이
-// 실패한다. 최대는 카운터 행과 현재 시작값으로 계산한다 — 시작값이 이 검증을
-// 거쳐 바뀌어 왔다면 실제 최대와 같거나 크다(거부 쪽으로만 틀린다).
-// 시작값 키가 아니면 아무것도 하지 않는다. 권한 없는 호출은 판정을
-// setSettingValue에 맡긴다 — 최대 번호를 알려 주지 않는다.
-export async function assertSeqStartAvailable(
+// 04-51 결정 ②(a) — 사용자 답 2026-09-24(설정 검증). 설정 화면의 비이력형 저장 한 곳 — 순번 시작값
+// 키는 올해 이미 매긴 최대 표시 순번 이하이면 거부한다. 표시 순번 = 카운터 + 시작값 − 1이라 낮춘
+// 시작값은 언젠가 이미 매긴 번호와 겹쳐 UNIQUE(format_key, number)로 등록이 실패한다. 최대는 카운터
+// 행과 현재 시작값으로 계산한다 — 시작값이 이 검증을 거쳐 바뀌어 왔다면 실제 최대와 같거나 크다.
+// 리뷰 S1: 검증과 저장은 한 트랜잭션에서 채번과 같은 카운터 행 잠금을 잡고 한다(직렬화). 권한은 잠금
+// 전에 판정한다 — 잠금 안에서 전역 풀을 쓰지 않고(04-32 규칙), 권한 없는 호출에는 최대 번호를
+// 알리지 않고 setSettingValue의 권한 거부로 끝낸다. 시작값 키가 아니면 setSettingValue 그대로다.
+export async function setSimpleSettingValue(
   viewer: Viewer,
   def: SettingDef<unknown>,
   value: unknown,
   now: Date,
 ): Promise<void> {
   const entry = Object.entries(DOCUMENT_NUMBER_FORMAT_DEFS).find(([, defs]) => defs.seqStart.key === def.key);
-  if (!entry) return;
-  if (!(await can(viewer, "admin.settings", "write"))) return;
+  if (!entry || !(await can(viewer, "admin.settings", "write"))) return setSettingValue(viewer, def, value);
   const [counterKey, defs] = entry;
   const parsed = defs.seqStart.schema.safeParse(value);
-  if (!parsed.success) return;
+  if (!parsed.success) return setSettingValue(viewer, def, value);
 
-  const counter = await findDocumentCounter(viewer, counterKey, String(kstYear(now)));
-  if (!counter || counter.value < 1) return;
-  const currentStart = await getSettingValue(defs.seqStart);
-  // 04-51 리뷰 B1 — 바꾸지 않은 값의 재저장(설정 화면 blur)은 검증하지 않는다.
-  if (parsed.data === currentStart) return;
-  const maxIssued = counter.value + currentStart - 1;
-  if (parsed.data <= maxIssued) {
-    throw new SeqStartOverlapError(`순번 시작값이 이미 매긴 번호(${maxIssued})와 겹침 · ${maxIssued + 1} 이상 입력`);
-  }
+  await withTransaction(async (tx) => {
+    const counterValue = await lockDocumentCounter(viewer, counterKey, String(kstYear(now)), tx);
+    const currentStart = await getSettingValue(defs.seqStart, undefined, {
+      findSimpleValue: (v, k) => findSimpleValue(v, k, tx),
+    });
+    // 04-51 리뷰 B1 — 바꾸지 않은 값의 재저장(설정 화면 blur)은 검증하지 않는다.
+    if (counterValue >= 1 && parsed.data !== currentStart) {
+      const maxIssued = counterValue + currentStart - 1;
+      if (parsed.data <= maxIssued) {
+        throw new SeqStartOverlapError(`순번 시작값이 이미 매긴 번호(${maxIssued})와 겹침 · ${maxIssued + 1} 이상 입력`);
+      }
+    }
+    await setSettingValue(viewer, def, value, {
+      can: () => Promise.resolve(true),
+      upsertSimpleValue: (v, key, val, by) => upsertSimpleValue(v, key, val, by, tx),
+      recordAction: (v, logEntry) => recordAction(v, logEntry, { tx }),
+    });
+  });
 }

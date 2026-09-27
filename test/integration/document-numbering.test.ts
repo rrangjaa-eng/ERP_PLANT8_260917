@@ -5,12 +5,14 @@ import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import {
   allocateDocumentNumber,
-  assertSeqStartAvailable,
   loadDocumentNumberFormat,
   SeqStartOverlapError,
+  setSimpleSettingValue,
   UnknownDocumentNumberCounterError,
 } from "@/domain/document-numbering";
 import { ForbiddenError, getSettingValue, setSettingValue } from "@/domain/settings/registry";
+import { lockDocumentCounter } from "@/repositories/document-counters";
+import { upsertSimpleValue } from "@/repositories/settings";
 import {
   DOCUMENT_NUMBER_PROJECT_PREFIX,
   DOCUMENT_NUMBER_PROJECT_YEAR_DIGITS,
@@ -101,15 +103,14 @@ describe("domain/document-numbering 서식 설정 (ADMN-09, 실제 Postgres)", (
 
 // 04-51 결정 ②(a) — 사용자 답 2026-09-24: 올해 이미 매긴 최대 표시 순번 이하로 시작값을
 // 내리는 저장은 거부한다. saveSeqStart는 설정 저장 액션(app/(app)/admin/settings/actions.ts
-// setSimpleSettingAction)과 같은 순서 — 검증 뒤 저장 — 로 부른다("use server" 파일은
+// setSimpleSettingAction)이 부르는 도메인 함수를 그대로 부른다("use server" 파일은
 // Vitest에서 import할 수 없다).
 describe("순번 시작값 낮추기(결정 ②)", () => {
   const NOW = new Date("2026-06-01T03:00:00Z");
   const YEAR = 2026;
 
   async function saveSeqStart(viewer: Viewer, value: number): Promise<void> {
-    await assertSeqStartAvailable(viewer, DOCUMENT_NUMBER_PROJECT_SEQ_START, value, NOW);
-    await setSettingValue(viewer, DOCUMENT_NUMBER_PROJECT_SEQ_START, value);
+    await setSimpleSettingValue(viewer, DOCUMENT_NUMBER_PROJECT_SEQ_START, value, NOW);
   }
 
   async function allocate(year = YEAR): Promise<string> {
@@ -175,15 +176,80 @@ describe("순번 시작값 낮추기(결정 ②)", () => {
 
   it("다른 설정 키 저장은 이 검증을 지나지 않는다", async () => {
     await issueThreeFrom100();
-    await expect(
-      assertSeqStartAvailable(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEQ_DIGITS, 1, NOW),
-    ).resolves.toBeUndefined();
+    await setSimpleSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEQ_DIGITS, 1, NOW);
+    expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_DIGITS)).toBe(1);
   });
 
   it("설정 쓰기 권한이 없으면 최대 번호를 알리지 않고 권한 거부로 끝난다", async () => {
     await issueThreeFrom100();
     const pmViewer: Viewer = { id: `pm-${randomUUID()}`, roleId: DEFAULT_ROLE_ID };
     await expect(saveSeqStart(pmViewer, 50)).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  // 04-51 리뷰 S1 — 등록은 서식을 트랜잭션 전에 읽는다. 그 사이 시작값이 바뀌어도(올해 카운터 행이
+  // 아직 없는 해 첫날 등) 번호는 카운터 행 잠금 뒤 같은 트랜잭션에서 다시 읽은 시작값으로 매긴다.
+  it("등록이 옛 서식(시작값 100)을 읽은 뒤 시작값이 1로 저장되면 번호는 1로 매긴다", async () => {
+    await saveSeqStart(SYSTEM_VIEWER, 100);
+    const staleFormat = await loadDocumentNumberFormat("project");
+    await saveSeqStart(SYSTEM_VIEWER, 1);
+    const { number } = await db.transaction((tx) =>
+      allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: YEAR, format: staleFormat }, tx),
+    );
+    expect(number).toBe("26001");
+  });
+
+  // 04-51 리뷰 S1 — 시작값 저장은 채번과 같은 카운터 행 잠금을 잡고 검증·저장한다. 커밋 전 등록이 올해
+  // 첫 번호(26100)를 잡고 있으면 저장은 그 커밋을 기다렸다가 판정한다.
+  it("커밋 전 등록이 올해 첫 번호를 잡고 있으면 시작값 1 저장은 그 커밋 뒤 거부된다", async () => {
+    await saveSeqStart(SYSTEM_VIEWER, 100);
+    const format = await loadDocumentNumberFormat("project");
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let markAllocated!: () => void;
+    const allocated = new Promise<void>((resolve) => (markAllocated = resolve));
+    const registration = db.transaction(async (tx) => {
+      const { number } = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: YEAR, format }, tx);
+      markAllocated();
+      await released;
+      return number;
+    });
+    await allocated;
+    const saveResult = saveSeqStart(SYSTEM_VIEWER, 1).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    release();
+
+    expect(await registration).toBe("26100");
+    expect(await saveResult).toBeInstanceOf(SeqStartOverlapError);
+    expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_START)).toBe(100);
+  });
+
+  // 04-51 리뷰 S1 — 반대 순서: 시작값 저장이 카운터 행 잠금을 잡은 채 커밋 전이면 등록은 그 커밋을
+  // 기다렸다가 새 시작값으로 매긴다(저장 트랜잭션 안을 lockDocumentCounter + 같은 tx 저장으로 재현).
+  it("커밋 전 시작값 저장(1)이 카운터 행을 잠그고 있으면 등록은 그 커밋 뒤 1로 매긴다", async () => {
+    await saveSeqStart(SYSTEM_VIEWER, 100);
+    const format = await loadDocumentNumberFormat("project");
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let markLocked!: () => void;
+    const locked = new Promise<void>((resolve) => (markLocked = resolve));
+    const save = db.transaction(async (tx) => {
+      expect(await lockDocumentCounter(SYSTEM_VIEWER, "project", String(YEAR), tx)).toBe(0);
+      await upsertSimpleValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEQ_START.key, 1, null, tx);
+      markLocked();
+      await released;
+    });
+    await locked;
+    const registration = db.transaction((tx) =>
+      allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: YEAR, format }, tx),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    release();
+    await save;
+
+    expect((await registration).number).toBe("26001");
   });
 
   it("공통: 시작값을 올린 뒤에도 두 연결이 동시에 매긴 번호는 서로 다르다", async () => {

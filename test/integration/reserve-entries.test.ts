@@ -447,6 +447,37 @@ describe("domain/reserves — 권한 · 노출 · 보관/복원 · 페이지 · 
     expect((await storedRow(deposit.id))?.archivedAt).toBeNull();
   });
 
+  it("같은 줄을 수정(rows)과 보관(archivedIds)에 함께 보내면 잔액 판정을 비켜 가지 못하고 거부, DB 무변경(리뷰 B1)", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const deposit = newRow(client.id, "2026-03-01", "deposit", 1_000_000);
+    const withdrawal = newRow(client.id, "2026-03-05", "withdrawal", 800_000);
+    await saveReserves(finance, { rows: [deposit, withdrawal] });
+
+    const error = await expectOneDenied("reserve.input", () =>
+      rejection(saveReserves(finance, { rows: [{ ...deposit, isNew: undefined, version: 1 }], archivedIds: [deposit.id] })),
+    );
+
+    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: deposit.id, reason: "같은 줄 중복 · 새로 고침" })]);
+    expect(await storedRow(deposit.id)).toMatchObject({ archivedAt: null, version: 1 });
+    expect((await reserveLogs("archive")).filter((row) => row.entityId === deposit.id)).toEqual([]);
+    expect((await reserveLogs("document_update")).filter((row) => row.entityId === deposit.id)).toEqual([]);
+  });
+
+  it("archivedIds 안의 같은 id 두 번도 같은 이유로 거부 — archive 로그가 두 줄 남지 않는다(리뷰 N4)", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const deposit = newRow(client.id, "2026-03-01", "deposit", 1_000_000);
+    const withdrawal = newRow(client.id, "2026-03-05", "withdrawal", 300_000);
+    await saveReserves(finance, { rows: [deposit, withdrawal] });
+
+    const error = await rejection(saveReserves(finance, { rows: [], archivedIds: [withdrawal.id, withdrawal.id] }));
+
+    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: withdrawal.id, reason: "같은 줄 중복 · 새로 고침" })]);
+    expect((await storedRow(withdrawal.id))?.archivedAt).toBeNull();
+    expect((await reserveLogs("archive")).filter((row) => row.entityId === withdrawal.id)).toEqual([]);
+  });
+
   it("범용 archive(관리자, reserve_entry)는 보호 행으로 거부되고 DB 무변경", async () => {
     const finance = await createFinanceViewer();
     const client = await createClient();

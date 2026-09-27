@@ -141,6 +141,7 @@ const EVIDENCE_NOT_IN_TABLE = "코드표에 없는 증빙 종류 · 증빙 종�
 const AMOUNT_NOT_POSITIVE = "금액 0 이하 · 금액 수정";
 const DIRECTION_INVALID = "구분 없음 · 구분 고르기";
 const VERSION_CONFLICT = "다른 사람이 먼저 이 줄을 바꿈 · 새로 고침";
+const DUPLICATE_ROW = "같은 줄 중복 · 새로 고침";
 const EVIDENCE_TYPE_TABLE = "evidence_type";
 
 function balanceReason(balanceKrw: number): string {
@@ -273,13 +274,13 @@ export async function saveReserves(viewer: Viewer, input: SaveReservesInput, dep
     const plan = await planBatch(viewer, prepared, archivedIds, storedById, locked, tx);
 
     const ledger = new Map((await repoListActiveEntriesByClients(viewer, [...locked], tx)).map((row) => [row.id, toBalanceRow(row)]));
-    for (const stored of plan.archives) ledger.delete(stored.id);
     for (const { row, stored } of plan.updates) {
       ledger.set(stored.id, { ...toBalanceRow(stored), entryDate: row.payload.entryDate, direction: row.input.direction, amountKrw: row.payload.amountAmountKrw });
     }
     for (const row of plan.inserts) {
       ledger.set(row.input.id, { id: row.input.id, clientId: row.input.clientId, entryDate: row.payload.entryDate, direction: row.input.direction, amountKrw: row.payload.amountAmountKrw, createdAt: now });
     }
+    for (const stored of plan.archives) ledger.delete(stored.id);
     const balance = runningBalance([...ledger.values()]);
     if (balance.firstNegative) await rejectNegative(viewer, balance.firstNegative, prepared, tx);
 
@@ -303,8 +304,18 @@ async function planBatch(
   const projectIds = [...new Set(prepared.map((row) => row.payload.projectId).filter((id): id is string => id !== null))];
   const projectClients = await repoFindProjectClientIds(viewer, projectIds, tx);
 
+  // 리뷰 B1 — 한 배치에서 같은 id가 두 번(수정 + 보관, 보관 두 번 등) 오면 원장 판정과 쓰기가 어긋난다. 그 id는 거부한다.
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const id of [...prepared.map((row) => row.input.id), ...archivedIds]) (seen.has(id) ? duplicates : seen).add(id);
+  for (const id of duplicates) {
+    const index = prepared.find((row) => row.input.id === id)?.index ?? -1;
+    errors.push(cellError(index, id, "row", "줄", DUPLICATE_ROW));
+  }
+
   for (const row of prepared) {
     const { input, payload, index } = row;
+    if (duplicates.has(input.id)) continue;
     const stored = storedById.get(input.id);
     if (input.isNew) {
       if (stored) {
@@ -344,6 +355,7 @@ async function planBatch(
   }
 
   for (const id of archivedIds) {
+    if (duplicates.has(id)) continue;
     const stored = storedById.get(id);
     if (!stored) denyWrite(viewer, INPUT_RULE, { entryIds: [id] }, new UserFacingError(ENTRY_NOT_FOUND));
     if (stored.archivedAt !== null) {

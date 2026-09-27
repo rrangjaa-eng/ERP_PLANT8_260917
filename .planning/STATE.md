@@ -5,10 +5,10 @@ current_phase_name: 프로젝트·견적 원장
 current_plan: 42
 status: executing
 stopped_at: Completed 04-42-PLAN.md
-last_updated: "2026-09-27T20:34:21.976Z"
+last_updated: "2026-09-27T22:35:08.794Z"
 last_activity: 2026-09-27
 last_activity_desc: Phase 4 execution started
-state_head: cc161c51d19db1145362f93083efc3c8fdb628f3
+state_head: 9f50105b80b98a85e1ac01b12efd7d7e6354cb12
 progress:
   total_phases: 16
   completed_phases: 1
@@ -283,6 +283,7 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-07: 리저브 쓰기는 vendors 행 id 오름차순 FOR NO KEY UPDATE 잠금 뒤 날짜 마감 잔액(runningBalance)으로 판정 — 마이그레이션은 생성기 번호 그대로 0018_reserve_entries
 - [Phase 04]: 04-51: 결정 ② = (a) 설정 검증(사용자 답 2026-09-24) — 순번 시작값 저장이 올해 이미 매긴 최대 표시 순번(카운터 + 현재 시작값 − 1) 이하이면 「순번 시작값이 이미 매긴 번호({최대})와 겹침 · {최대 + 1} 이상 입력」으로 거부(domain/document-numbering assertSeqStartAvailable, 설정 저장 액션이 저장 전 호출). 제안 문구는 명사형 통일 규칙으로 변환
 - [Phase 4]: 04-42: /pnl/reserves는 layout·page가 pnl 보기 + reserve.amount를 판정(loading 스트리밍 뒤에도 404) · 대장 참조는 domain listReserveReferences
+- [Phase 4]: 04-42 리뷰 후속: 대장 선택지는 쓰기 권한자에게만(클라이언트 vendor.value · 프로젝트 projects 보기 + project.value, 등록 명세로 투영), 읽는 사람의 프로젝트·증빙 이름은 대장 DTO(projectName · evidenceLabel) · ui/table 선택 prop groupAside로 머리글 오른쪽 굵은 잔액 · 붙여넣기(applyPaste) · 날짜 date 입력 · 저장 흐름 DR-5(오류 칸 남으면 첫 오류 쪽으로) · 폰 열 순서는 선언 순서 편차(ui/table에 폰 순서 prop 없음) · 편집 보관 localStorage는 견적 원장 패턴 유지(/cso 항목)
 
 ### Pending Todos
 

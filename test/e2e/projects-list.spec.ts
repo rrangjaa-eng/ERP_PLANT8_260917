@@ -471,7 +471,9 @@ test.describe("프로젝트 목록 — 머리글 정렬 (04-18)", () => {
     const header = page.locator(`${LIST_TABLE} thead th`, { hasText: "수익금" });
     const firstRowLink = page.locator(`${LIST_TABLE} tbody a`).first();
     await expect(firstRowLink).toHaveText(`${marker}-큰수익`);
-    await expect(page.locator(`${LIST_TABLE} thead th[aria-sort]`)).toHaveCount(0);
+    // 기본 정렬(종료일 오름차순)도 현재 정렬이라 기간 머리글 하나만 aria-sort를 지닌다.
+    await expect(page.locator(`${LIST_TABLE} thead th[aria-sort]`)).toHaveCount(1);
+    await expect(page.locator(`${LIST_TABLE} thead th`, { hasText: "기간" })).toHaveAttribute("aria-sort", "ascending");
 
     await header.getByRole("link", { name: "수익금" }).click();
     await expect(page).toHaveURL(/sort=profitKrw/);

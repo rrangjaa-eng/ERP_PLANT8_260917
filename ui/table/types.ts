@@ -17,8 +17,11 @@ export type TableColumn<Row> = {
   header: string;
   priority: ColumnPriority;
   align?: "left" | "right";
-  /** 정렬 가능 여부 — 04-05(목록)가 쓴다. 이 플랜은 쓰지 않는다. */
-  sortable?: boolean;
+  /**
+   * 04-18(§6-1) — 머리글 정렬. 있으면 머리글 글자가 `href`로 가는 링크다(GET 이동 — §10 「이동이면 `<a>`」).
+   * `direction`이 있는 열이 현재 정렬 열이고, 그 `<th>` 하나에만 `aria-sort`와 16px 방향 아이콘이 붙는다.
+   */
+  sort?: { href: string; direction: "asc" | "desc" | null };
   /** 읽기 렌더 — 값 그대로 보여준다(편집 중이 아닐 때). */
   cell: (row: Row) => ReactNode;
   /**
@@ -57,8 +60,6 @@ export type TableGroup<Row> = {
   header: string;
   rows: Row[];
 };
-
-export type SortState = { key: string; direction: "asc" | "desc" } | null;
 
 // 04-04(§7-3 보강 (나)(다)) — 셀 오류·버전 충돌. 충돌은 오류 셀과 같은 고정
 // 모양이고, 이유 한 줄 + 다음 한 수(3차 버튼)를 함께 지닌다(D-65).

@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState, type ElementType, type ReactNode } from "react";
+import Link from "next/link";
 import { clampPage } from "@/lib/paging";
 import { isCtrlCombo } from "@/lib/shortcut";
 import { Pagination } from "@/ui/pagination/Pagination";
@@ -130,6 +131,25 @@ export type TableProps<Row> = {
 };
 
 type ActiveCell = { rowId: string; columnKey: string } | null;
+
+// 04-18 — 정렬 방향 아이콘(Lucide arrow-up / arrow-down 경로, 패키지 없이 인라인 SVG — RowSheet 닫기 아이콘 선례).
+function SortIcon({ direction }: { direction: "asc" | "desc" }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={styles.sortIcon}>
+      {direction === "asc" ? (
+        <>
+          <path d="m5 12 7-7 7 7" />
+          <path d="M12 19V5" />
+        </>
+      ) : (
+        <>
+          <path d="M12 5v14" />
+          <path d="m19 12-7 7-7-7" />
+        </>
+      )}
+    </svg>
+  );
+}
 
 function groupRows<Row>(rows: Row[], groupBy?: (row: Row) => string): { header: string | null; rows: Row[] }[] {
   if (!groupBy) return [{ header: null, rows }];
@@ -777,8 +797,16 @@ export function Table<Row>({
                   collapseClass(column),
                   column.align === "right" ? styles.alignRight : "",
                 ].join(" ")}
+                aria-sort={column.sort?.direction ? (column.sort.direction === "asc" ? "ascending" : "descending") : undefined}
               >
-                {column.header}
+                {column.sort ? (
+                  <Link href={column.sort.href} className={styles.sortLink}>
+                    {column.header}
+                    {column.sort.direction ? <SortIcon direction={column.sort.direction} /> : null}
+                  </Link>
+                ) : (
+                  column.header
+                )}
               </th>
             ))}
           </tr>

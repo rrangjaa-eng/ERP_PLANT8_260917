@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import type { InferSelectModel, SQL } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, projects, quoteLines, quoteRevisions, revenueEntries, teams, users, vendors } from "@/db/schema";
@@ -102,12 +102,15 @@ export type ProjectListFilter = {
 };
 
 export const PROJECT_SORT_KEYS = [
-  "endDate",
-  "name",
   "number",
+  "client",
+  "name",
+  "endDate",
+  "revenueKrw",
   "quoteAmountKrw",
   "executionAmountKrw",
   "profitKrw",
+  "profitRate",
 ] as const;
 export type ProjectSortKey = (typeof PROJECT_SORT_KEYS)[number];
 export type ProjectSort = { key: ProjectSortKey; direction: "asc" | "desc" };
@@ -209,6 +212,10 @@ function resolveSortColumn(
       return projects.name;
     case "number":
       return projects.number;
+    case "client":
+      return vendors.name;
+    case "revenueKrw":
+      return money.revenue;
     case "quoteAmountKrw":
       return lineSums.quoteSum;
     case "executionAmountKrw":
@@ -216,6 +223,8 @@ function resolveSortColumn(
     // 04-18(04-17 리뷰 S1) — 수익금 열과 같은 식(기준 − 실행가)으로 정렬한다.
     case "profitKrw":
       return money.profit;
+    case "profitRate":
+      return money.rate;
     case "endDate":
     default:
       return projects.endDate;
@@ -239,7 +248,9 @@ export async function listProjectsPage(
   const money = rowMoneyExpressions(lineSums, issued);
   const conditions = projectFilterConditions(opts.filter);
   const sortColumn = resolveSortColumn(opts.sort.key, lineSums, money);
-  const orderDir = opts.sort.direction === "desc" ? desc : asc;
+  // 04-18 — 매출(미발행)·수익률(기준 ≤ 0)의 빈 값은 방향과 무관하게 맨 뒤다.
+  const nullsLast = opts.sort.key === "revenueKrw" || opts.sort.key === "profitRate";
+  const sortOrder = sql`${sortColumn} ${opts.sort.direction === "desc" ? sql`desc` : sql`asc`}${nullsLast ? sql` nulls last` : sql``}`;
 
   const rows = await db
     .select({
@@ -271,7 +282,7 @@ export async function listProjectsPage(
     .orderBy(
       sql`(${projects.endDate} is null)`,
       sql`date_trunc('month', ${projects.endDate})`,
-      orderDir(sortColumn),
+      sortOrder,
       projects.id,
     )
     .offset(opts.offset)

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
-import type { ProjectListItemWithGroup } from "@/domain/projects";
+import type { ProjectListItemWithGroup, ProjectSortKey } from "@/domain/projects";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { PROJECT_STATUS_TAG_KIND } from "./status-display";
 import { formatKrw, formatPercent } from "@/lib/format-number";
@@ -19,6 +19,8 @@ export function ProjectsTable({
   viewYear,
   statusLabels,
   columnStep,
+  sort,
+  filterQuery,
 }: {
   rows: ProjectListItemWithGroup[];
   /** 04-48(D-89) — 보기 연도(전체 연도면 null). 기간 칸이 그 해면 월-일만 적는다. */
@@ -27,6 +29,10 @@ export function ProjectsTable({
   statusLabels: Record<string, string>;
   /** 04-18(S1 열 폭) — 서버가 페이지 금액 글자 수로 판정한 단계. narrow면 1280 이상에서도 좁은 PC 열 집합. */
   columnStep: ListColumnStep;
+  /** 04-18 — 서버가 실제로 쓴 정렬(볼 수 없는 열 키는 이미 기본 정렬로 떨어졌다). */
+  sort: { key: ProjectSortKey; direction: "asc" | "desc" };
+  /** 04-18 — 정렬 링크가 그대로 싣는 필터 쿼리(정렬 · page 제외). */
+  filterQuery: string;
 }) {
   const nowrap = (text: string) => <span className={styles.nowrap}>{text}</span>;
   const period = (row: ProjectListItemWithGroup) => formatListPeriod(row.startDate, row.endDate, viewYear);
@@ -86,6 +92,26 @@ export function ProjectsTable({
     },
   ];
   const moneyColumns = amountColumns.filter((column) => rows.some((row) => column.key in row));
+
+  // 04-18(§6-1) — 머리글 정렬 링크. 같은 열이면 방향을 뒤집고 다른 열이면 오름차순, page를 싣지 않아 1쪽이다.
+  const sortHeader = (key: ProjectSortKey): TableColumn<ProjectListItemWithGroup>["sort"] => {
+    const direction = sort.key === key ? sort.direction : null;
+    const next = new URLSearchParams(filterQuery);
+    next.set("sort", key);
+    if (direction === "asc") next.set("dir", "desc");
+    return { href: `/projects?${next.toString()}`, direction };
+  };
+  const SORT_KEY_OF_COLUMN: Record<string, ProjectSortKey> = {
+    number: "number",
+    clientName: "client",
+    name: "name",
+    period: "endDate",
+    revenueKrw: "revenueKrw",
+    quoteAmountKrw: "quoteAmountKrw",
+    executionAmountKrw: "executionAmountKrw",
+    profitKrw: "profitKrw",
+    profitRate: "profitRate",
+  };
 
   const columns: TableColumn<ProjectListItemWithGroup>[] = [
     {
@@ -158,11 +184,15 @@ export function ProjectsTable({
       ),
     },
   ];
+  const sortableColumns = columns.map((column) => {
+    const sortKey = SORT_KEY_OF_COLUMN[column.key];
+    return sortKey ? { ...column, sort: sortHeader(sortKey) } : column;
+  });
 
   return (
     <Table
       caption="프로젝트"
-      columns={columns}
+      columns={sortableColumns}
       rows={rows}
       getRowId={(row) => row.id}
       groupBy={(row) => row.groupLabel}

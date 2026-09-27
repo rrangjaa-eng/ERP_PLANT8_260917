@@ -2,6 +2,7 @@ import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { scopeFor } from "@/domain/permissions/scope-for";
 import { project, projectMany, type DtoSpec, type ProjectDeps } from "@/domain/permissions/project";
+import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -216,13 +217,30 @@ registerDto({
   fields: PROJECT_LIST_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
 });
 
-function normalizeSort(sort?: { key?: string; direction?: string }): ProjectSort {
-  const requestedKey = sort?.key;
-  const key: ProjectSortKey = (PROJECT_SORT_KEYS as readonly string[]).includes(requestedKey ?? "")
-    ? (requestedKey as ProjectSortKey)
-    : "endDate";
-  const direction = sort?.direction === "desc" ? "desc" : "asc";
-  return { key, direction };
+const DEFAULT_SORT: ProjectSort = { key: "endDate", direction: "asc" };
+
+// 04-18(T-04-94) — 금액 열 정렬 키는 그 열의 정보 항목을 모두 볼 때만 쓴다. 볼 수 없는 열의 키는 기본 정렬이다
+// (그 열로 줄 세운 순서가 숨긴 값을 드러내지 않게).
+const SORT_INFO_ITEMS: Partial<Record<ProjectSortKey, readonly string[]>> = {
+  revenueKrw: ["revenue.issued_amount"],
+  quoteAmountKrw: ["quote.amount"],
+  executionAmountKrw: ["quote.amount"],
+  profitKrw: PROFIT_INFO_ITEMS,
+  profitRate: PROFIT_INFO_ITEMS,
+};
+
+async function normalizeSort(
+  viewer: Viewer,
+  sort: { key?: string; direction?: string } | undefined,
+  visibleFn: ProjectDeps["visible"],
+): Promise<ProjectSort> {
+  const requestedKey = sort?.key ?? "";
+  if (!(PROJECT_SORT_KEYS as readonly string[]).includes(requestedKey)) return DEFAULT_SORT;
+  const key = requestedKey as ProjectSortKey;
+  for (const infoItem of SORT_INFO_ITEMS[key] ?? []) {
+    if (!(await visibleFn(viewer, infoItem))) return DEFAULT_SORT;
+  }
+  return { key, direction: sort?.direction === "desc" ? "desc" : "asc" };
 }
 
 // 종료일 기준 월, 없으면 「기간 미정」 — 리포지토리 정렬이 이미 이 그룹을
@@ -303,6 +321,8 @@ export type ProjectListResult = {
   params: { teamId?: string; search?: string; from?: string; to?: string };
   /** 04-18(S1) — 받은 금액 중 13자가 있으면 narrow(1280 이상에서도 좁은 PC 열 집합). */
   columnStep: ListColumnStep;
+  /** 04-18 — 실제로 쓴 정렬(허용 밖 · 볼 수 없는 열 키는 기본 정렬) — 머리글 aria-sort가 이 값을 따른다. */
+  sort: ProjectSort;
 };
 
 export type ProjectListDeps = {
@@ -356,7 +376,7 @@ export async function loadProjectList(
     search: params.q,
     ...(range ? { range: { start: range.start, end: range.end } } : {}),
   };
-  const sort = normalizeSort(query.sort);
+  const sort = await normalizeSort(viewer, query.sort, deps?.visible ?? defaultVisible);
 
   let buckets: Awaited<ReturnType<typeof repoAggregateProjects>>;
   let rows: ProjectListRow[] = [];
@@ -424,6 +444,7 @@ export async function loadProjectList(
     hasFilter,
     params: { teamId: params.teamId, search: params.q, from: params.from, to: params.to },
     columnStep: listColumnStep(dtos),
+    sort,
   };
 }
 

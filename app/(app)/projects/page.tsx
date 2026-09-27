@@ -117,15 +117,17 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   // 도메인이 정규화한 값(C-08) — 필터 줄 · 페이지 줄은 이 값만 쓴다.
   const { teamId, search, from, to } = list.params;
   // 지금 필터·정렬을 그대로 두고 쪽 번호만 바꾼다. 필터 폼은 page를 싣지 않아 필터를 바꾸면 1쪽이다.
-  const pageParams = new URLSearchParams();
-  if (status) pageParams.set("status", status);
-  if (teamId) pageParams.set("teamId", teamId);
-  if (year !== currentYear) pageParams.set("year", String(year));
-  if (search) pageParams.set("q", search);
-  if (from) pageParams.set("from", from);
-  if (to) pageParams.set("to", to);
-  if (sortKey !== "endDate") pageParams.set("sort", sortKey);
-  if (sortDirection !== "asc") pageParams.set("dir", sortDirection);
+  // 04-18 — 머리글 정렬 링크는 필터만 싣는다(정렬은 머리글이 정하고 page가 없어 1쪽이다).
+  const filterParams = new URLSearchParams();
+  if (status) filterParams.set("status", status);
+  if (teamId) filterParams.set("teamId", teamId);
+  if (year !== currentYear) filterParams.set("year", String(year));
+  if (search) filterParams.set("q", search);
+  if (from) filterParams.set("from", from);
+  if (to) filterParams.set("to", to);
+  const pageParams = new URLSearchParams(filterParams);
+  if (list.sort.key !== "endDate") pageParams.set("sort", list.sort.key);
+  if (list.sort.direction !== "asc") pageParams.set("dir", list.sort.direction);
   function pageHref(target: number): string {
     const next = new URLSearchParams(pageParams);
     next.set("page", String(target));
@@ -192,6 +194,8 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
             rows={rows}
             viewYear={year === "all" ? null : year}
             columnStep={list.columnStep}
+            sort={list.sort}
+            filterQuery={filterParams.toString()}
             statusLabels={Object.fromEntries(statusOptions.map((option) => [option.value, option.label]))}
           />
           <Pagination

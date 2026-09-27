@@ -107,6 +107,7 @@
 /* 로그인 상태 배지: PC는 · 로 이어 한 줄. */
 .peopleTable .badges {
   display: inline;
+  white-space: nowrap;
 }
 
 @media (max-width: 699.98px) {
@@ -129,6 +130,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--s-1);
+    white-space: normal;
   }
 
   .peopleTable .badgeSep {

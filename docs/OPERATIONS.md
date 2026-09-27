@@ -133,11 +133,18 @@ GitHub Environments·승인 버튼은 없다(D-05, 무료 플랜 비공개 저�
 |---|---|
 | 5xx > 5% | 최근 배포를 의심 → `rollback.sh` 검토, Cloud Logging에서 오류 확인 |
 | Cloud SQL 백업 실패 | Cloud SQL 콘솔에서 확인, 수동 백업 실행. 정책→채널→메일 경로는 스테이징 합성 로그로 검증됨(2026-09-24, §7 끝의 방법). 실제 백업 실패 로그가 이 필터에 맞는지는 실패 없이는 검증 불가 — 미검증인 동안은 상태 화면 "마지막 백업"을 주 1회 눈으로 확인 |
-| notify tick 24h 미성공 | Phase 7까지 `enabled: false`(tick 자체가 없다) |
+| notify tick 25h 미성공 | 스케줄러 잡(`plant8-{env}-notify-tick`) 실행 기록과 Cloud Logging `notify.tick` 확인 → 401이면 `NOTIFY_TICK_SCHEDULER_SA`·잡의 OIDC 계정·audience 대조, 409면 다른 실행 중(다음 날 자동) · 새 환경·첫 배포 뒤에는 잡을 한 번 수동 실행해 첫 성공을 확인한다(성공이 한 번도 없으면 이 경보가 울리지 않는다) · 옛 `…stale 23h30m` 비활성 정책은 콘솔에서 지워도 된다 |
 
 알림 채널은 환경 변수 **`ALERT_EMAIL`** 하나 — 스테이징·프로덕션 모두 같은 주소, 정책
 이름·제목에 환경을 표시해 구분한다(D-16). 배포 자체의 실패는 GitHub Actions 워크플로
 실패 알림(GitHub 기본)으로 받는다.
+
+### 알림 발송 스케줄러
+
+- 잡 `plant8-{env}-notify-tick`: 매일 09:00 KST에 `POST /internal/notify-tick`(OIDC, 재시도 0, 시도 마감 180초). 비영업일에는 앱이 보내지 않고 `비영업일`로 기록한다.
+- 수동 실행: `gcloud scheduler jobs run plant8-{env}-notify-tick --location=asia-northeast3 --project="$PROJECT"`. 결과는 `gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="plant8-{env}" AND jsonPayload.event="notify.tick" AND jsonPayload.ok=true' --project="$PROJECT" --freshness=1h --limit=1 --format='value(timestamp,jsonPayload.remaining)'` — 빈 출력이면 실패, `remaining`이 0보다 크면 같은 날 한 번 더 실행해 잇는다(이미 메일을 받은 사람은 다음 영업일로 미뤄진다). 환경마다 첫 배포 뒤 이 둘을 한 번 해 첫 성공을 확인한다.
+- 스케줄러 SA `plant8-{env}-scheduler`는 bootstrap이 만든다 — 이 권한이 생긴 뒤(Phase 04.2) 소유자가 bootstrap을 1회 다시 실행해야 배포가 잡을 만든다. 서울 리전을 스케줄러가 거부하면(`INVALID_ARGUMENT`) 가장 가까운 지원 리전으로 바꾸고 여기에 적는다.
+- 배포 셸에 `NOTIFY_TICK_OIDC_DISABLED`가 있으면 배포가 거부된다(exit 2). 배포 스모크는 토큰 없는 POST가 401인지 본다 — 404는 엣지가 경로를 먹은 것이다.
 
 ## 7. 계정 운영
 
@@ -180,7 +187,7 @@ P=<GCP_PROJECT_ID 값>; curl -sS -X POST https://logging.googleapis.com/v2/entri
 
 사용자가 Cloud Shell에서 **`scripts/bootstrap-gcp.sh`**를 1회 실행한다 — 단일 파일이라
 비공개 리포를 클론하지 않고 파일 하나만 붙여넣어 실행할 수 있다. 만드는 것: API 활성화,
-WIF 풀·프로바이더, 서비스 계정 3개(배포자 + 환경별 런타임 2개), VPC 프라이빗 서비스
+WIF 풀·프로바이더, 서비스 계정 5개(배포자 + 환경별 런타임·스케줄러 각 2개), VPC 프라이빗 서비스
 접근, 조직 정책 확인. 저장소 수준 GitHub Actions 변수 4개를 설정한다: `GCP_PROJECT_ID`,
 `GCP_PROJECT_NUMBER`, `GCP_REGION`, `ALERT_EMAIL`(Secrets 탭은 비워 둔다 — WIF라 키
 파일이 없다. GitHub Environments도 만들지 않는다).
@@ -225,6 +232,12 @@ openssl rand -base64 32 | gcloud secrets versions add app-data-key-v1-prod    --
 다시 쓴다(중단·재실행 안전, 이미 최신 버전인 행은 건너뛴다). **회전 완료 후에만** 옛
 키(`app-data-key-v1-{env}`)를 지운다 — 먼저 지우면 아직 재암호화되지 않은 행이 영구히
 읽히지 않는다.
+
+### 이메일(SMTP) 확인 경로
+
+Workspace 관리자에게 확인할 네 가지: 발송 주소(`SMTP_FROM`) · 인증 방식(앱 비밀번호 또는 Workspace SMTP 릴레이) · 사용자별 일 발송 한도 · 호스트·포트(587, STARTTLS). 확인된 값은 기존 비밀 네 개(`smtp-host-{env}`·`smtp-user-{env}`·`smtp-password-{env}`·`smtp-from-{env}`)에 새 버전으로 넣는다 — 값은 문서·명령줄에 적지 않고 표준 입력으로 붙여넣는다(Ctrl-D로 끝):
+`gcloud secrets versions add smtp-password-{env} --project="$PROJECT" --data-file=-`
+네 값이 모두 채워지기 전(하나라도 `__unset__`)에는 앱이 이메일을 보내지 않고 시스템 상태 「이메일」이 `미설정`이다(D-711). 첫 설정 뒤 스테이징에서 본인에게 1통 받아 확인한다.
 
 ## 10. 상태 화면
 

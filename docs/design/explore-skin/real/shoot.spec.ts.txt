@@ -113,7 +113,7 @@ test("스킨 실물 촬영", async ({ browser }) => {
       for (const skin of SKINS) {
         await page.reload();
         await page.waitForLoadState("networkidle");
-        const files = skin === "now" ? [] : ["_common", ...(skin === "d" ? ["overlay-a", "overlay-d"] : [`overlay-${skin}`])];
+        const files = skin === "now" ? [] : ["_common", ...(skin === "d" ? ["overlay-a", "overlay-d"] : skin === "e" ? ["overlay-a", "overlay-e"] : [`overlay-${skin}`])];
         for (const f of files) await page.addStyleTag({ content: readFileSync(`${OVERLAY_DIR}/${f}.css`, "utf8") });
         // 전체 페이지 촬영에서 고정 하단 탭이 중간에 찍히지 않게 문서 끝으로 보낸다(촬영 전용)
         await page.addStyleTag({ content: '[class*="BottomTabs-module__"][class*="__tabs"]{position:static!important}' });

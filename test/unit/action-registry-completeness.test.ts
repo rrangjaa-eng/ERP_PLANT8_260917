@@ -16,6 +16,8 @@ const REGISTRY_FILE = "actions.registry.ts";
 const ACTIONS_WITHOUT_REGISTRY: Record<string, string[]> = {
   // 본인 비밀번호 변경(Phase 1) — 세션 본인만 대상이고 돌려주는 DTO가 없어 누수 스캔 DTO 축에 올릴 것이 없다.
   "app/(app)/account/actions.ts": ["changePasswordAction"],
+  // 본인 알림함(04.2, main 병합으로 들어옴) — 세션 본인 알림만 연다. 임시 예외: 등록 파일(메뉴·DTO 분류)로 옮길지는 04.1 실행 때 정한다(.continue-here.md 인계 항목).
+  "app/(app)/notifications/actions.ts": ["openInboxAction", "refreshUnreadCountAction", "loadMoreInboxAction"],
 };
 
 export type ActionFileEntry = { path: string; actionNames: string[]; registryNames: string[] | null };
@@ -117,7 +119,7 @@ describe("app 아래 모든 actions.ts (T-04.1-57)", () => {
     expect(violations, violations.join("\n")).toEqual([]);
   });
 
-  it("예외 목록은 account 한 항목뿐이다", () => {
-    expect(Object.keys(ACTIONS_WITHOUT_REGISTRY)).toEqual(["app/(app)/account/actions.ts"]);
+  it("예외 목록은 account · notifications(임시) 두 항목뿐이다", () => {
+    expect(Object.keys(ACTIONS_WITHOUT_REGISTRY)).toEqual(["app/(app)/account/actions.ts", "app/(app)/notifications/actions.ts"]);
   });
 });

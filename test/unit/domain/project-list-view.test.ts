@@ -546,3 +546,56 @@ describe("loadProjectList — 행의 endDatePassed", () => {
     expect(await endDatePassedOf([row("in_progress", "2026-09-25")])).toEqual([false]);
   });
 });
+
+// 04-18 리뷰 S2(T-04-94 · 금지 둘째) — 금액 정렬 키 다섯 × 가시성 넷. 볼 수 없는 열의 키는 방향까지 버리고 기본 정렬
+// (종료일 오름차순)로 떨어져야 한다. 기대 규칙은 DTO 명세의 열 정보 항목(수익 셋은 둘 다 — all-of)을 그대로 옮겼다.
+describe("loadProjectList — 볼 수 없는 금액 열의 정렬 차단", () => {
+  const REQUIRED: Record<string, ("quote.amount" | "revenue.issued_amount")[]> = {
+    revenueKrw: ["revenue.issued_amount"],
+    quoteAmountKrw: ["quote.amount"],
+    executionAmountKrw: ["quote.amount"],
+    profitKrw: ["quote.amount", "revenue.issued_amount"],
+    profitRate: ["quote.amount", "revenue.issued_amount"],
+  };
+  const VISIBILITIES = [
+    { name: "둘 다 켬", quote: true, revenue: true },
+    { name: "quote.amount 끔", quote: false, revenue: true },
+    { name: "revenue.issued_amount 끔", quote: true, revenue: false },
+    { name: "둘 다 끔", quote: false, revenue: false },
+  ];
+  const cases = Object.keys(REQUIRED).flatMap((key) =>
+    VISIBILITIES.flatMap((visibility) => (["asc", "desc"] as const).map((direction) => ({ key, direction, visibility }))),
+  );
+
+  it.each(cases)("$key $direction · $visibility.name", async ({ key, direction, visibility }) => {
+    const shown: Record<string, boolean> = {
+      "project.value": true,
+      "quote.amount": visibility.quote,
+      "revenue.issued_amount": visibility.revenue,
+    };
+    const passed: unknown[] = [];
+    const result = await loadProjectList(
+      { id: "u1", roleId: "role-pm" },
+      { year: "all", sort: { key, direction } },
+      {
+        now: () => new Date("2026-09-26T00:00:00Z"),
+        scope: () => Promise.resolve({ rows: "all", includeArchived: false }),
+        settle: () => Promise.resolve(),
+        visible: (_viewer, infoItem) => Promise.resolve(shown[infoItem] ?? false),
+        repo: {
+          aggregate: () =>
+            Promise.resolve([{ bucket: "in", count: 1, revenueKrw: 0, quoteAmountKrw: 0, executionAmountKrw: 0, profitKrw: 0, basisAmountKrw: 0, profitRate: null }]),
+          listPage: (_viewer, options) => {
+            passed.push(options.sort);
+            return Promise.resolve([]);
+          },
+        },
+      },
+    );
+
+    const allowed = REQUIRED[key]!.every((infoItem) => shown[infoItem]);
+    const expected = allowed ? { key, direction } : { key: "endDate", direction: "asc" };
+    expect(result.sort).toEqual(expected);
+    expect(passed).toEqual([expected]);
+  });
+});

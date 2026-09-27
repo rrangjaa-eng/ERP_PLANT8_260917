@@ -739,6 +739,19 @@ describe("loadProjectList — 머리글 정렬 키 (04-18, 실제 Postgres)", ()
     }
   });
 
+  it("(04-18 리뷰 S2) sort=revenueKrw는 발행 합계 순서이고 미발행(null)은 방향과 무관하게 그룹 맨 뒤다", async () => {
+    const base = await makeBase();
+    const marker = `정렬매출-${randomUUID().slice(0, 8)}`;
+    const none = await makeProject(base, marker, { endDate: "2026-09-05" });
+    const small = await makeProject(base, marker, { endDate: "2026-09-10", issues: [1_000_000] });
+    const large = await makeProject(base, marker, { endDate: "2026-09-20", issues: [5_000_000] });
+
+    const asc = await loadProjectList(SYSTEM_VIEWER, { year: "all", search: marker, sort: { key: "revenueKrw", direction: "asc" } });
+    expect(ids(asc)).toEqual([small.id, large.id, none.id]);
+    const desc = await loadProjectList(SYSTEM_VIEWER, { year: "all", search: marker, sort: { key: "revenueKrw", direction: "desc" } });
+    expect(ids(desc)).toEqual([large.id, small.id, none.id]);
+  });
+
   it("sort=client는 클라이언트명 순서다", async () => {
     const marker = `정렬거래처-${randomUUID().slice(0, 8)}`;
     const base = await makeBase();

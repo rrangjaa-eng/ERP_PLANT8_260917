@@ -15,7 +15,7 @@
 ## §2. 점검표 틀 — `docs/design/checks/<YYYY-MM-DD>-<작업>.md`로 복사해 채운다
 ```
 # <작업 이름> — 점검표
-화면: <경로 목록>
+화면: <이 점검표가 덮는 화면 파일이나 폴더, 쉼표로 — 예: app/(app)/projects/, ui/table/ · app/·ui/ 통째는 안 됨>
 기준: BRIEF.md · frontend.md 화면 사용성 원칙 · CHECKLIST.md §1 · SYSTEM.md §<절>
 
 ## 원칙

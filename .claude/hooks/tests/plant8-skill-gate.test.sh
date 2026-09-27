@@ -766,12 +766,14 @@ stage_file "$projDG" "ui/button/Button.module.css" ".btn{}"
 hook plant8-skill-gate.sh bash "$(payload_bash "$SDG" 'git commit -m "feat: x"' "$projDG")" "$projDG"
 expect_rc "DG5 commit(화면 코드): 점검표 없음 -> exit 2" 2 "$HOOK_RC"
 expect_contains "DG5 안내에 점검표 경로" "$HOOK_STDERR" "docs/design/checks/"
-stage_file "$projDG" "docs/design/checks/2026-09-28-button.md" "- [x] 안내 문구
+stage_file "$projDG" "docs/design/checks/2026-09-28-button.md" "화면: ui/button/
+- [x] 안내 문구
 - [ ] 주 버튼 하나"
 hook plant8-skill-gate.sh bash "$(payload_bash "$SDG" 'git commit -m "feat: x"' "$projDG")" "$projDG"
 expect_rc "DG6 commit: 점검표에 빈칸 -> exit 2" 2 "$HOOK_RC"
 expect_contains "DG6 안내에 빈칸" "$HOOK_STDERR" "빈칸"
-stage_file "$projDG" "docs/design/checks/2026-09-28-button.md" "- [x] 안내 문구
+stage_file "$projDG" "docs/design/checks/2026-09-28-button.md" "화면: ui/button/
+- [x] 안내 문구
 - [x] 주 버튼 하나"
 hook plant8-skill-gate.sh bash "$(payload_bash "$SDG" 'git commit -m "feat: x"' "$projDG")" "$projDG"
 expect_rc "DG7 commit: 점검표 다 채움 -> exit 0" 0 "$HOOK_RC"
@@ -798,7 +800,8 @@ expect_rc "DG10 commit: main에 있던 옛 점검표만 -> exit 2" 2 "$HOOK_RC"
 projK="$(new_project)"; SK="sid-dgk-$$"
 record_skill "$projK" "$SK" test-driven-development; record_skill "$projK" "$SK" verification-before-completion
 stage_file "$projK" "app/page.tsx" "x"
-stage_file "$projK" "docs/design/checks/2026-09-28-버튼.md" "- [x] 안내 문구 — 근거: 부제 삭제"
+stage_file "$projK" "docs/design/checks/2026-09-28-버튼.md" "화면: app/page.tsx
+- [x] 안내 문구 — 근거: 부제 삭제"
 hook plant8-skill-gate.sh bash "$(payload_bash "$SK" 'git commit -m "feat: k"' "$projK")" "$projK"
 expect_rc "DG11 commit: 한글 이름 점검표 -> exit 0" 0 "$HOOK_RC"
 # DG12: 점검표를 지우는 커밋은 빈 점검표로 보지 않는다(남은 점검표로 판정)
@@ -807,7 +810,8 @@ git -C "$projK" commit -q -m "base"
 stage_file "$projK" "docs/design/checks/b.md" "- [x] 근거: 있음"
 git -C "$projK" commit -q -m "b"
 git -C "$projK" rm -q "docs/design/checks/b.md"
-stage_file "$projK" "docs/design/checks/c.md" "- [x] 근거: 있음"
+stage_file "$projK" "docs/design/checks/c.md" "화면: app/page.tsx
+- [x] 근거: 있음"
 stage_file "$projK" "app/page.tsx" "y"
 hook plant8-skill-gate.sh bash "$(payload_bash "$SK" 'git commit -m "feat: k2"' "$projK")" "$projK"
 expect_rc "DG12 commit: 점검표 삭제 + 다른 점검표 -> exit 0" 0 "$HOOK_RC"
@@ -822,13 +826,34 @@ expect_rc "DG13 commit -am: 화면 파일 수정·점검표 없음 -> exit 2" 2 
 projX="$(new_project)"; SX="sid-dgx-$$"
 record_skill "$projX" "$SX" test-driven-development; record_skill "$projX" "$SX" verification-before-completion
 stage_file "$projX" "ui/a.css" "x"
-stage_file "$projX" "docs/design/checks/x.md" "- [X] 주 버튼 하나 — 근거: 등록만 주 버튼"
+stage_file "$projX" "docs/design/checks/x.md" "화면: ui/a.css
+- [X] 주 버튼 하나 — 근거: 등록만 주 버튼"
 hook plant8-skill-gate.sh bash "$(payload_bash "$SX" 'git commit -m "feat: x"' "$projX")" "$projX"
 expect_rc "DG14 commit: - [X] -> exit 0" 0 "$HOOK_RC"
-stage_file "$projX" "docs/design/checks/x.md" "- [x] 주 버튼 하나 — 근거:"
+stage_file "$projX" "docs/design/checks/x.md" "화면: ui/a.css
+- [x] 주 버튼 하나 — 근거:"
 hook plant8-skill-gate.sh bash "$(payload_bash "$SX" 'git commit -m "feat: x"' "$projX")" "$projX"
 expect_rc "DG15 commit: 근거가 비었음 -> exit 2" 2 "$HOOK_RC"
 expect_contains "DG15 안내에 근거" "$HOOK_STDERR" "근거"
+
+# DG16~18: 엄격 모드(사용자 결정 2026-09-28) — 커밋하는 화면 파일마다 점검표 「화면:」 줄에 그 파일이나 폴더가 있어야 한다
+projS="$(new_project)"; SS="sid-dgs-$$"
+record_skill "$projS" "$SS" test-driven-development; record_skill "$projS" "$SS" verification-before-completion
+stage_file "$projS" "app/(app)/projects/page.tsx" "x"
+stage_file "$projS" "docs/design/checks/p.md" "화면: app/(app)/projects/
+- [x] 안내 문구 — 근거: 부제 삭제"
+hook plant8-skill-gate.sh bash "$(payload_bash "$SS" 'git commit -m "feat: s"' "$projS")" "$projS"
+expect_rc "DG16 commit: 화면 줄의 폴더 안 파일 -> exit 0" 0 "$HOOK_RC"
+git -C "$projS" update-ref refs/remotes/origin/main "$(git -C "$projS" rev-parse HEAD)"
+git -C "$projS" commit -q -m "p"
+stage_file "$projS" "app/(app)/admin/vendors/page.tsx" "y"
+hook plant8-skill-gate.sh bash "$(payload_bash "$SS" 'git commit -m "feat: s2"' "$projS")" "$projS"
+expect_rc "DG17 commit: 점검표 화면 줄에 없는 화면 -> exit 2" 2 "$HOOK_RC"
+expect_contains "DG17 안내에 빠진 화면 경로" "$HOOK_STDERR" "app/(app)/admin/vendors/page.tsx"
+stage_file "$projS" "docs/design/checks/p.md" "화면: app/
+- [x] 안내 문구 — 근거: 부제 삭제"
+hook plant8-skill-gate.sh bash "$(payload_bash "$SS" 'git commit -m "feat: s3"' "$projS")" "$projS"
+expect_rc "DG18 commit: 화면 줄이 app/처럼 너무 넓음 -> exit 2" 2 "$HOOK_RC"
 
 projDG2="$(new_project)"
 SDG2="sid-dg2-$$"

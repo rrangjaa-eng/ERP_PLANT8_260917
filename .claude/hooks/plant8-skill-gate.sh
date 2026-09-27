@@ -186,6 +186,7 @@ case "$event" in
         checks="$( { printf '%s\n' "$design_files";
                      [ -z "$branch_base" ] || git -C "$cwd" -c core.quotePath=false diff --name-only --diff-filter=d "$branch_base" HEAD -- docs/design/checks/ 2>/dev/null || true; } \
                    | grep -E '^docs/design/checks/[^/]+\.md$' | sort -u || true)"
+        covered=""
         [ -n "$checks" ] || deny "화면 코드(app/·ui/의 .tsx·.css) 커밋에는 점검표가 함께 있어야 한다 — design-gate 스킬의 점검표를 docs/design/checks/<날짜>-<작업>.md로 채워 스테이징하라(같은 브랜치에서 이미 커밋한 점검표도 인정)."
         while IFS= read -r c; do
           [ -n "$c" ] || continue
@@ -198,7 +199,20 @@ case "$event" in
           if printf '%s\n' "$body" | grep -Eq '근거:[[:space:]]*$'; then
             deny "점검표 ${c}에 빈 근거(「근거:」 뒤가 비었다)가 있다 — 무엇을 보고 확인했는지 한 줄 적어라."
           fi
+          # 엄격 모드(사용자 결정 2026-09-28): 「화면:」 줄에 적은 파일·폴더만 이 점검표가 덮는다
+          covered="$covered
+$(printf '%s\n' "$body" | sed -n 's/^[[:space:]]*화면:[[:space:]]*//p' | tr ',·' '  ' | tr -s ' \t' '\n\n' | tr -d '`' || true)"
         done <<<"$checks"
+        uncovered=""
+        while IFS= read -r f; do
+          ok=0
+          while IFS= read -r e; do
+            case "$e" in ""|app|app/|ui|ui/|"app/(app)"|"app/(app)/") continue ;; esac
+            if [ "$f" = "$e" ] || { [ "${e%/}/" = "$e" ] && [ "${f#"$e"}" != "$f" ]; } || [ "${f#"$e"/}" != "$f" ]; then ok=1; break; fi
+          done <<<"$covered"
+          [ "$ok" = 1 ] || uncovered="$uncovered $f"
+        done < <(printf '%s\n' "$design_files" | grep -E '^(app|ui)/.*\.(tsx|css)$' || true)
+        [ -z "$uncovered" ] || deny "점검표 「화면:」 줄에 없는 화면을 커밋한다:${uncovered} — 이 화면을 점검표 「화면:」 줄에 더하고(파일이나 그 폴더, app/·ui/처럼 넓게 적기는 안 됨) 항목을 이 화면 기준으로 다시 확인하라."
       fi
       if printf '%s\n' "$files" | is_code_path; then
         has_skill "$skills_file" "test-driven-development" && has_skill "$skills_file" "verification-before-completion" \

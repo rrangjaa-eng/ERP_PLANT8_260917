@@ -180,3 +180,29 @@ None - no external service configuration required.
 *Completed: 2026-09-27*
 
 ## Self-Check: PASSED
+
+## Review follow-up (2026-09-27 — 독립 Opus 리뷰: BLOCKING 1 · SHOULD-FIX 2 · NIT 5)
+
+거부 기준(「현재 발급 최대 이하 값 거부」)은 사용자 결정 그대로 두고, 결함만 고쳤다.
+
+| 항목 | 커밋 | 내용 |
+|---|---|---|
+| B1 | `3fe33fb` (fix) | 바꾸지 않은 현재 시작값의 재저장(설정 화면 blur)은 검증 없이 통과 — 올해 번호를 매긴 뒤 칸을 지나가기만 해도 겹침 오류가 나던 문제. 회귀 2건(시작값 100·3건 뒤 100 재저장 · 기본값 1·첫 번호 뒤 1 재저장) RED(겹침 오류) → GREEN |
+| S1 | `867fce2` (fix) | 채번이 카운터 행 잠금 뒤 같은 tx로 순번 시작값을 다시 읽는다 · 설정 저장은 `setSimpleSettingValue` 한 곳에서 `lockDocumentCounter`(행 없으면 0 행 → `SELECT … FOR UPDATE`)로 같은 행을 잠그고 검증·저장·행동 로그를 한 트랜잭션으로(권한은 잠금 전 판정, lock_timeout 5s는 `withTransaction` 그대로). 테스트 3건: 옛 서식 뒤 시작값 1 저장 → 26001(RED 26100) · 커밋 전 등록 중 시작값 1 저장 → 거부(RED 저장됨) · 커밋 전 시작값 저장이 행을 잠그면 등록이 기다렸다 26001(FOR UPDATE 제거 변이에서 26100) |
+| S2 | `6c7ce5c` (test) | 화면 문자열 입력("50" 거부 · "100" 통과 · "103" 저장) · 실제 `createProject` 경로(UNIQUE 살아 있음)로 낮추기 시도 뒤 등록 + 카운터 행 없는 2027년 첫 등록, `projects.number` 전부 서로 다름. 변이 두 가지(거부 끔 · B1 예외 뺌)에서 둘 다 실패 확인 |
+
+**편차(리뷰 수정):**
+- `assertSeqStartAvailable`은 검증+저장을 한 트랜잭션으로 묶는 `setSimpleSettingValue(viewer, def, value, now)`로 대체(액션은 이 함수 한 줄). 시작값 키가 아니면 `setSettingValue` 그대로.
+- `repositories/document-counters.ts`에 `lockDocumentCounter` 추가 → `test/integration/document-counters.test.ts`의 export 목록 고정에 한 줄 추가(플랜 files_modified 밖 — 이 export 고정 때문에 꼭 필요). `domain/projects/index.ts`는 건드리지 않았다(시작값 재읽기는 `allocateDocumentNumber` 안).
+- 순번 시작값을 저장하면 그해 카운터 행이 값 0으로 먼저 생길 수 있다(잠글 행이 필요) — 첫 등록은 그대로 1부터.
+
+**검증:** `pnpm lint` 0 · `pnpm typecheck` 0 · `pnpm lint:sql` 0 issues · 단위 118파일 1704 passed · 통합 전체(`CI=true pnpm test:integration`) 65파일 1848 passed. E2E·`pnpm build`는 돌리지 않았다(PR CI 몫).
+
+**넘기는 NIT(고치지 않음):**
+- N1 이 검증 배포 전에 이미 낮춰 둔 시작값은 감지하지 못한다(최대 = 카운터 + 현재 시작값 − 1이 실제 최대보다 작을 수 있음) — 배포 때 올해 `projects.number` 최대를 한 번 확인하는 방법이 있다. `pnpm settings:import` 경로도 이 검증을 지나지 않는다.
+- N2 노운 스타일 스캐너가 `domain/document-numbering/`을 개발자 전용으로 빼서 이 사용자 문구를 보지 않는다(통합 테스트의 정확한 문구 단언이 지킨다).
+- N3 「이미 매긴 번호(102)」는 프로젝트 번호(26102)가 아니라 표시 순번이다.
+- N4 빈 칸은 `z.coerce.number()`로 0이 되어 형식 오류 대신 겹침 문구가 난다(기존 강제 변환 동작).
+- N5 `8e962dc`에 한국어 본문·트레일러가 없다(이미 푸시 — 이력 재작성 안 함).
+
+**사용자 결정 필요(열린 질문):** 결정 ② 임계값 — 지금 규칙(발급 최대 이하 거부)은 오프셋 모델에서 안전한 값(예: 시작 100·3건 발급 뒤 101·102)도 거부하고 올리면 번호를 건너뜀; 수학적으로 충돌하는 경우는 `새 시작값 < 현재 시작값`(올해 1건 이상 발급)뿐 — 규칙을 바꿀지 사용자 결정 필요

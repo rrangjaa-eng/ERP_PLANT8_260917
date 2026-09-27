@@ -472,14 +472,15 @@ describe("loadProjectList — 목록 입구 (04-17, 실제 Postgres)", () => {
     }
   });
 
-  it("(공백 1) 명세 밖 행 칸(발행 합계 · 기준 · 수익금)은 금액을 볼 수 있어도 응답에 없다", async () => {
+  // 04-18 — 매출 · 기준 · 수익금 · 수익률은 명세에 올랐다. 리포지토리 전용 칸(발행 줄 수 · 옛 이름 netProfitKrw)은 여전히 없다.
+  it("(공백 1) 명세 밖 행 칸(발행 줄 수 · netProfitKrw)은 금액을 볼 수 있어도 응답에 없다", async () => {
     const base = await makeBase();
     const marker = `명세밖-${randomUUID().slice(0, 8)}`;
     await makeProject(base, marker, { status: "settling", endDate: "2026-10-01", line: { quote: 700_000, execution: 300_000 }, issues: [600_000] });
 
     const [row] = (await loadProjectList(SYSTEM_VIEWER, { year: "all", search: marker })).rows;
-    expect(row?.quoteAmountKrw).toBe(700_000);
-    for (const key of ["revenueKrw", "netProfitKrw", "profitRate", "profitBasis", "issuedCount"]) {
+    expect(row).toMatchObject({ quoteAmountKrw: 700_000, revenueKrw: 600_000, profitBasis: "issued", profitKrw: 300_000 });
+    for (const key of ["netProfitKrw", "issuedCount"]) {
       expect(Object.keys(row!)).not.toContain(key);
     }
   });
@@ -547,6 +548,136 @@ describe("loadProjectList — 목록 입구 (04-17, 실제 Postgres)", () => {
     const { rows, totals } = await loadProjectList(SYSTEM_VIEWER, { year: "all", search: project.number });
     expect(rows[0]?.executionAmountKrw).toBe(expected);
     expect(totals.executionAmountKrw).toBe(expected);
+  });
+});
+
+// 04-18 Task 1(D-87 · DR-8 · DR-38 · CEO C-01 · C-14 · C-16 · ENG-D3 ② · 엔지 리뷰 C §3) — 목록 행의 매출 · 기준 ·
+// 수익금 · 수익률. 전부 목록 입구 loadProjectList의 결과 행으로 본다.
+const ROW_AMOUNT_KEYS = ["revenueKrw", "quoteAmountKrw", "executionAmountKrw", "profitBasis", "profitKrw", "profitRate"];
+const rowAmountKeys = (row: object) => Object.keys(row).filter((key) => ROW_AMOUNT_KEYS.includes(key)).sort();
+
+describe("loadProjectList — 행 매출 · 기준 · 수익금 · 수익률 (04-18, 실제 Postgres)", () => {
+  async function listRow(marker: string) {
+    const { rows } = await loadProjectList(SYSTEM_VIEWER, { year: "all", search: marker });
+    expect(rows).toHaveLength(1);
+    return rows[0]!;
+  }
+
+  it("정산 + 발행 두 줄(음수 포함)은 발행 기준 — 수익금은 줄 차익(5,000,000)이 아니라 발행 합계 − 실행가", async () => {
+    const base = await makeBase();
+    const marker = `행정산-${randomUUID().slice(0, 8)}`;
+    await makeProject(base, marker, {
+      status: "settling",
+      endDate: "2026-09-01",
+      line: { quote: 12_000_000, execution: 7_000_000 },
+      issues: [10_000_000, -1_000_000],
+    });
+
+    const row = await listRow(marker);
+    expect(row).toMatchObject({ revenueKrw: 9_000_000, profitBasis: "issued", profitKrw: 2_000_000 });
+    expect(row.profitRate).toBeCloseTo(2 / 9, 4);
+  });
+
+  it("(DR-8) 진행 + 같은 발행 두 줄은 견적 기준이다", async () => {
+    const base = await makeBase();
+    const marker = `행진행-${randomUUID().slice(0, 8)}`;
+    await makeProject(base, marker, {
+      status: "in_progress",
+      startDate: "2026-09-01",
+      endDate: "2099-12-31",
+      line: { quote: 12_000_000, execution: 7_000_000 },
+      issues: [10_000_000, -1_000_000],
+    });
+
+    const row = await listRow(marker);
+    expect(row).toMatchObject({ revenueKrw: 9_000_000, profitBasis: "quote", profitKrw: 5_000_000 });
+    expect(row.profitRate).toBeCloseTo(5 / 12, 4);
+  });
+
+  it("(DR-38) 완료 + 발행 0개는 매출 null · 견적 기준, 견적 0 · 발행 없음은 수익률 null", async () => {
+    const base = await makeBase();
+    const completed = `행완료-${randomUUID().slice(0, 8)}`;
+    const zero = `행영견적-${randomUUID().slice(0, 8)}`;
+    await makeProject(base, completed, { status: "completed", endDate: "2026-09-01", line: { quote: 12_000_000, execution: 7_000_000 } });
+    await makeProject(base, zero, { endDate: "2026-09-01" });
+
+    const completedRow = await listRow(completed);
+    expect(completedRow).toMatchObject({ revenueKrw: null, profitBasis: "quote", profitKrw: 5_000_000 });
+    expect(completedRow.profitRate).toBeCloseTo(5 / 12, 4);
+
+    const zeroRow = await listRow(zero);
+    expect(zeroRow).toMatchObject({ profitBasis: "quote", profitRate: null });
+  });
+
+  it("(C-16) 발행 합계가 음수인 정산 행은 수익금 −1,500,000 · 수익률 null", async () => {
+    const base = await makeBase();
+    const marker = `행음수-${randomUUID().slice(0, 8)}`;
+    await makeProject(base, marker, {
+      status: "settling",
+      endDate: "2026-09-01",
+      line: { quote: 600_000, execution: 500_000 },
+      issues: [1_000_000, -2_000_000],
+    });
+
+    expect(await listRow(marker)).toMatchObject({ profitBasis: "issued", profitKrw: -1_500_000, profitRate: null });
+  });
+
+  it("(C-14 · C-01) 입금 줄은 행 매출에 더해지지 않고, 값이 있는 행 금액 필드는 전부 숫자다", async () => {
+    const base = await makeBase();
+    const marker = `행입금-${randomUUID().slice(0, 8)}`;
+    await makeProject(base, marker, {
+      status: "settling",
+      endDate: "2026-09-01",
+      line: { quote: 4_000_000, execution: 1_000_000 },
+      issues: [3_000_000],
+      payments: [3_000_000],
+    });
+
+    const row = await listRow(marker);
+    expect(row.revenueKrw).toBe(3_000_000);
+    for (const key of ["revenueKrw", "quoteAmountKrw", "executionAmountKrw", "profitKrw", "profitRate"] as const) {
+      expect(typeof row[key], key).toBe("number");
+    }
+  });
+
+  it("(금지 첫째 · C-14 · 엔지 리뷰 C §3) 계급 넷의 행 금액 키 집합 — 둘 다 · 견적만 · 발행만 · 둘 다 없음", async () => {
+    const base = await makeBase();
+    const marker = `행키집합-${randomUUID().slice(0, 8)}`;
+    await makeProject(base, marker, {
+      status: "settling",
+      endDate: "2026-10-01",
+      line: { quote: 700_000, execution: 300_000 },
+      issues: [600_000],
+    });
+    const keysFor = async (visibility: { quote: boolean; revenue: boolean }) => {
+      const { rows } = await loadProjectList(await viewerWith(visibility), { year: "all", search: marker });
+      expect(rows).toHaveLength(1);
+      return rowAmountKeys(rows[0]!);
+    };
+
+    expect(await keysFor({ quote: true, revenue: true })).toEqual([...ROW_AMOUNT_KEYS].sort());
+    expect(await keysFor({ quote: true, revenue: false })).toEqual(["executionAmountKrw", "quoteAmountKrw"]);
+    expect(await keysFor({ quote: false, revenue: true })).toEqual(["revenueKrw"]);
+    expect(await keysFor({ quote: false, revenue: false })).toEqual([]);
+  });
+
+  it("(04-17 리뷰 S1) sort=profitKrw는 수익금(기준 − 실행가) 순서다 — 줄 차익 순서가 아니다", async () => {
+    const base = await makeBase();
+    const marker = `행수익정렬-${randomUUID().slice(0, 8)}`;
+    // A: 줄 차익 5,000,000 · 수익금(발행 3,000,000 − 7,000,000) −4,000,000 / B: 줄 차익 = 수익금 3,000,000.
+    const a = await makeProject(base, marker, {
+      status: "settling",
+      endDate: "2026-09-10",
+      line: { quote: 12_000_000, execution: 7_000_000 },
+      issues: [3_000_000],
+    });
+    const b = await makeProject(base, marker, { endDate: "2026-09-20", line: { quote: 6_000_000, execution: 3_000_000 } });
+
+    const asc = await loadProjectList(SYSTEM_VIEWER, { year: "all", search: marker, sort: { key: "profitKrw", direction: "asc" } });
+    expect(asc.rows.map((row) => row.id)).toEqual([a.id, b.id]);
+    expect(asc.rows.map((row) => row.profitKrw)).toEqual([-4_000_000, 3_000_000]);
+    const desc = await loadProjectList(SYSTEM_VIEWER, { year: "all", search: marker, sort: { key: "profitKrw", direction: "desc" } });
+    expect(desc.rows.map((row) => row.id)).toEqual([b.id, a.id]);
   });
 });
 

@@ -10,7 +10,12 @@ import { teams, users } from "@/db/schema";
 import { createProject } from "@/domain/projects";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
-import { kstToday, kstYear } from "@/lib/kst-date";
+import { addDays, kstToday, kstYear } from "@/lib/kst-date";
+import { changeProjectStatus } from "@/domain/projects/status";
+import { saveRevenue } from "@/domain/revenue";
+import { createAccount } from "@/domain/auth/accounts";
+import { insertRole } from "@/repositories/roles";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 
 async function findUserIdByEmail(email: string): Promise<string> {
   const [row] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
@@ -73,7 +78,7 @@ async function tabOutOf(page: Page, id: string) {
   throw new Error(`#${id}에서 Tab 다섯 번으로 나가지 못했다`);
 }
 
-async function addQuoteLine(projectId: string, quote: number) {
+async function addQuoteLine(projectId: string, quote: number, execution = 0) {
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, projectId);
   if (!revision) throw new Error("현재 차수를 찾지 못했습니다");
   await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
@@ -85,10 +90,33 @@ async function addQuoteLine(projectId: string, quote: number) {
         itemName: "항목",
         quantity: 1,
         unitPrice: { currency: "KRW", amount: quote, fxRate: 1 },
-        execution: { currency: "KRW", amount: 0, fxRate: 1 },
+        execution: { currency: "KRW", amount: execution, fxRate: 1 },
       },
     ],
   });
+}
+
+// 04-18 — 경영관리(시드 계급에 없다): 전사 범위 새 계급에 목록 보기 + 견적 · 발행 금액 노출을 준다(시드 계급을 바꾸지 않는다).
+async function makeManager(): Promise<{ email: string; password: string }> {
+  const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E경영관리-${randomUUID().slice(0, 8)}`, workScope: "company" });
+  await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+  for (const infoItem of ["project.value", "quote.amount", "revenue.issued_amount"]) {
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+  }
+  const email = `e2e-list-mgr-${randomUUID()}@example.test`;
+  const { tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 경영관리", roleId: role.id });
+  return { email, password: tempPassword };
+}
+
+// 머리글 글자로 열 번호를 찾아 그 행(프로젝트명 링크가 있는 주 행)의 칸을 돌려준다.
+async function cellOf(page: Page, projectName: string, header: string) {
+  const headers = (await page.locator("main table thead th").allTextContents()).map((text) => text.trim());
+  const index = headers.indexOf(header);
+  expect(index, `머리글 ${header}`).toBeGreaterThanOrEqual(0);
+  return page
+    .locator("main table tbody tr", { has: page.getByRole("link", { name: projectName, exact: true }) })
+    .locator("td")
+    .nth(index);
 }
 
 test.describe("프로젝트 목록 — 올해 보기 · 표 위 귀속 합계 (04-17)", () => {
@@ -247,6 +275,63 @@ test.describe("프로젝트 목록 — 올해 보기 · 표 위 귀속 합계 (0
 
     await page.goto("/projects?new=1");
     await expect(page.getByLabel("클라이언트")).toHaveCount(0);
+  });
+});
+
+// 04-18 Task 1(D-87 · DR-8 · DR-38) — 행의 매출 · 기준 · 수익금 · 수익률. 상태는 전환 경로(04-20 수동 전환 · 04-11 자동 정산)로만 만든다.
+test.describe("프로젝트 목록 — 행 매출 · 기준 · 수익금 · 수익률 (04-18)", () => {
+  test("정산 행은 발행 기준, 같은 발행의 진행 행은 견적 기준, 발행 없는 행은 매출 — · 견적 기준이다", async ({ page }) => {
+    const today = kstToday(new Date());
+    const marker = `E2E행금액-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    const base = { clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId };
+    const issued = [
+      { entryDate: addDays(today, -5), amount: { currency: "KRW" as const, amount: 10_000_000, fxRate: 1 } },
+      { entryDate: addDays(today, -4), amount: { currency: "KRW" as const, amount: -1_000_000, fxRate: 1 } },
+    ];
+
+    // 정산: 진행으로 바꾼 뒤 종료일(어제)이 지나 목록을 여는 순간 자동 정산된다.
+    const settling = await createProject(SYSTEM_VIEWER, { ...base, name: `${marker}-정산`, startDate: addDays(today, -10), endDate: addDays(today, -1) });
+    await addQuoteLine(settling.id, 12_000_000, 7_000_000);
+    await saveRevenue(SYSTEM_VIEWER, settling.id, { issuedEntries: issued });
+    await changeProjectStatus(SYSTEM_VIEWER, settling.id, { from: "bidding", to: "in_progress" });
+
+    const inProgress = await createProject(SYSTEM_VIEWER, { ...base, name: `${marker}-진행`, startDate: addDays(today, -10), endDate: addDays(today, 30) });
+    await addQuoteLine(inProgress.id, 12_000_000, 7_000_000);
+    await saveRevenue(SYSTEM_VIEWER, inProgress.id, { issuedEntries: issued });
+    await changeProjectStatus(SYSTEM_VIEWER, inProgress.id, { from: "bidding", to: "in_progress" });
+
+    const noIssue = await createProject(SYSTEM_VIEWER, { ...base, name: `${marker}-무발행`, startDate: today, endDate: addDays(today, 30) });
+    await addQuoteLine(noIssue.id, 12_000_000, 7_000_000);
+
+    // 발행 줄 합이 0인 행은 `—`가 아니라 0이다.
+    const zeroIssue = await createProject(SYSTEM_VIEWER, { ...base, name: `${marker}-영발행`, startDate: today, endDate: addDays(today, 30) });
+    await saveRevenue(SYSTEM_VIEWER, zeroIssue.id, {
+      issuedEntries: [
+        { entryDate: today, amount: { currency: "KRW", amount: 1_000_000, fxRate: 1 } },
+        { entryDate: today, amount: { currency: "KRW", amount: -1_000_000, fxRate: 1 } },
+      ],
+    });
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await login(page, await makeManager());
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}&year=all`);
+    await expect(page.locator("table tbody a")).toHaveCount(4);
+
+    const expectRow = async (name: string, cells: Record<string, string>) => {
+      for (const [header, text] of Object.entries(cells)) {
+        await expect(await cellOf(page, name, header), `${name} ${header}`).toHaveText(text);
+      }
+    };
+    await expectRow(`${marker}-정산`, { 매출: "9,000,000", 기준: "발행", 수익금: "2,000,000", 수익률: "22.2%" });
+    await expectRow(`${marker}-진행`, { 매출: "9,000,000", 기준: "견적", 수익금: "5,000,000" });
+    await expectRow(`${marker}-무발행`, { 매출: "—", 기준: "견적", 수익률: "41.7%" });
+    await expectRow(`${marker}-영발행`, { 매출: "0" });
+
+    // 「차익」 열은 없고 「기준」이 「수익금」 바로 앞이다.
+    const headers = (await page.locator("main table thead th").allTextContents()).map((text) => text.trim());
+    expect(headers).not.toContain("차익");
+    expect(headers.indexOf("수익금") - headers.indexOf("기준")).toBe(1);
   });
 });
 

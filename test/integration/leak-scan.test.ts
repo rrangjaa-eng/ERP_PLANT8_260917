@@ -139,6 +139,17 @@ describe("정보 노출 누수 스캔 (ADMN-03)", () => {
       expect(typeof result).toBe("boolean");
     });
 
+    // 04-18(ENG-D3 ② · T-04-93) — 목록 행의 매출은 발행 항목 하나, 기준 · 수익금 · 수익률은 견적 · 발행 all-of로 등록돼
+    // 이 스캔이 두 항목을 모두 펼쳐 본다(투영 전 손 삭제가 아니라 명세가 규칙이다).
+    it("ProjectListItemDto의 매출 · 기준 · 수익금 · 수익률 정보 항목이 등록돼 있다", () => {
+      const dto = DTO_REGISTRY.find((entry) => entry.name === "ProjectListItemDto");
+      const infoItemOf = (key: string) => dto?.fields.find((field) => field.key === key)?.infoItem;
+      expect(infoItemOf("revenueKrw")).toBe("revenue.issued_amount");
+      for (const key of ["profitBasis", "profitKrw", "profitRate"]) {
+        expect(infoItemOf(key), key).toEqual(["quote.amount", "revenue.issued_amount"]);
+      }
+    });
+
     it("registerDto가 빈 목록 infoItem: []을 거부한다", () => {
       expect(() =>
         registerDto({

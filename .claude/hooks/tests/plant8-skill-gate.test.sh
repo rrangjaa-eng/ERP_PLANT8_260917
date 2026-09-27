@@ -775,6 +775,24 @@ stage_file "$projDG" "docs/design/checks/2026-09-28-button.md" "- [x] 안내 문
 hook plant8-skill-gate.sh bash "$(payload_bash "$SDG" 'git commit -m "feat: x"' "$projDG")" "$projDG"
 expect_rc "DG7 commit: 점검표 다 채움 -> exit 0" 0 "$HOOK_RC"
 
+# DG9: 같은 브랜치에서 이미 커밋한 점검표가 있으면 다음 화면 커밋에 다시 스테이징하지 않아도 된다(origin/main 이후)
+git -C "$projDG" update-ref refs/remotes/origin/main "$(git -C "$projDG" rev-parse HEAD)"
+git -C "$projDG" commit -q -m "feat: 첫 화면 커밋(점검표 포함)"
+stage_file "$projDG" "ui/button/Button.module.css" ".btn{color:red}"
+hook plant8-skill-gate.sh bash "$(payload_bash "$SDG" 'git commit -m "feat: y"' "$projDG")" "$projDG"
+expect_rc "DG9 commit: 브랜치에 이미 커밋한 점검표 -> exit 0" 0 "$HOOK_RC"
+# DG10: 브랜치 밖(main에 이미 있던) 점검표는 인정하지 않는다
+projDG3="$(new_project)"
+SDG3="sid-dg3-$$"
+record_skill "$projDG3" "$SDG3" test-driven-development
+record_skill "$projDG3" "$SDG3" verification-before-completion
+stage_file "$projDG3" "docs/design/checks/old.md" "- [x] 옛 작업"
+git -C "$projDG3" commit -q -m "docs: 옛 점검표"
+git -C "$projDG3" update-ref refs/remotes/origin/main "$(git -C "$projDG3" rev-parse HEAD)"
+stage_file "$projDG3" "app/page.tsx" "export default function P(){return null}"
+hook plant8-skill-gate.sh bash "$(payload_bash "$SDG3" 'git commit -m "feat: z"' "$projDG3")" "$projDG3"
+expect_rc "DG10 commit: main에 있던 옛 점검표만 -> exit 2" 2 "$HOOK_RC"
+
 projDG2="$(new_project)"
 SDG2="sid-dg2-$$"
 record_skill "$projDG2" "$SDG2" test-driven-development

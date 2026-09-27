@@ -174,8 +174,12 @@ case "$event" in
                   printf '%s' "$cmd" | grep -oE -- '(--files|[[:space:]]--)[[:space:]].*' | tr ' ' '\n' | grep -vE -- '^(--files|--)?$' || true; } | sort -u )"
       # 디자인 관문: 화면 코드 커밋은 빈칸 없는 점검표(docs/design/checks/*.md)를 함께 스테이징해야 한다
       if printf '%s\n' "$files" | is_ui_code_path; then
-        checks="$(printf '%s\n' "$files" | grep -E '^docs/design/checks/[^/]+\.md$' || true)"
-        [ -n "$checks" ] || deny "화면 코드(app/·ui/의 .tsx·.css) 커밋에는 점검표가 함께 있어야 한다 — design-gate 스킬의 점검표를 docs/design/checks/<날짜>-<작업>.md로 채워 스테이징하라."
+        # 이번 커밋에 스테이징한 점검표 + 이 브랜치에서 이미 커밋한 점검표(origin/main 이후) — 같은 작업의 화면 커밋이 여러 번이어도 된다
+        branch_base="$(git -C "$cwd" merge-base origin/main HEAD 2>/dev/null || true)"
+        checks="$( { printf '%s\n' "$files";
+                     [ -z "$branch_base" ] || git -C "$cwd" diff --name-only --diff-filter=d "$branch_base" HEAD -- docs/design/checks/ 2>/dev/null || true; } \
+                   | grep -E '^docs/design/checks/[^/]+\.md$' | sort -u || true)"
+        [ -n "$checks" ] || deny "화면 코드(app/·ui/의 .tsx·.css) 커밋에는 점검표가 함께 있어야 한다 — design-gate 스킬의 점검표를 docs/design/checks/<날짜>-<작업>.md로 채워 스테이징하라(같은 브랜치에서 이미 커밋한 점검표도 인정)."
         while IFS= read -r c; do
           body="$(git -C "$cwd" show ":$c" 2>/dev/null || true)"
           printf '%s\n' "$body" | grep -Eq '^[[:space:]]*- \[x\]' || deny "점검표 ${c}에 확인한 항목(- [x])이 없다."

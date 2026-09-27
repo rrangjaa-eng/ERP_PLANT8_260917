@@ -1,11 +1,11 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-27T18:50:20.446Z",
+  "timestamp": "2026-09-27T22:53:26.157Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
-  "plan": 39,
-  "task": 39,
+  "plan": 41,
+  "task": 41,
   "total_tasks": 42,
   "status": "paused",
   "completed_tasks": [
@@ -290,12 +290,18 @@
       "name": "[세션 AM] PR #73(Phase 04.2) main 머지 379b837 · PR #92(#87 인계 문서) main 머지 7a02037 확인, main을 머지 커밋으로 브랜치에 반영(be3fecd #73 · 6fdc2c1 #92). PR #85 CI 빨간불 수정: F3(test/e2e/projects-list.spec.ts) 1280에서 1px 실패 — CI Chrome 153(Chrome for Testing)이 Pretendard 날짜 텍스트로 date input 폭을 다르게 잡음 → f66ef6e가 .periodInput에 min-width: calc(16.5ch + 2 * (--cell-pad-x + --line-w)) 추가(기존 토큰만). 800px에서 팀 칸이 넓으면(CI 전체 스위트의 긴 팀 이름) 기간 그룹이 2행으로 내려가고 오류 줄 row-gap이 기간 행을 밀어내는 것은 FINDING-013(네이티브 date input)부터의 기존 동작 — 사용자 결정(카드, 2026-09-27 14:52 KST) 「테스트 기준 조정」 → 5e45615로 F3 계약 변경(기간 행을 뺀 나머지 행은 고정·오류 줄 위, 기간 행만 첫 행이 아닐 때 측정된 row-gap만큼 내려갈 수 있음, 1280/1024 엄격 유지). CI on 6fdc2c1: quality·integration-e2e green. /review(Opus, 3a762bd..6fdc2c1) PASS·막힘 0 — P2 1건(ui/table/Table.module.css:241-250 폰 행 전체 탭 영역, iPhone Safari 수동 확인 필요)·P3 3건(filter-bar.tsx 잘못된 `?from=` URL 값·반쪽 입력 날짜가 필터를 지움, SYSTEM.md §6-1·DECISIONS가 f66ef6e의 16.5ch min-width와 어긋남, 폰 행 포커스 링이 이름 글자만 감쌈). /qa(Sonnet, CI=true 프로덕션 빌드): 헬스 100, 변경 스펙 E2E 133/133 + 단위 155 + 통합 121 통과, 관찰(playwright webServer가 \"next start\" does not work with \"output: standalone\" 출력 — CI webServer를 node .next/standalone/server.js로 바꿔야 할지 확인 필요). hook이 게이트 줄 2개를 로컬 .claude/gates/phase-04.log에만 기록(커밋 금지 파일, 사용자가 GitHub 웹으로 추가해야 함): review 2026-09-27T06:03Z·qa 2026-09-27T06:03Z(session=72233dfb-b9f7-56bd-8238-ba2145765ae3). PR #85는 묶음 ④ 끝날 때까지 머지 보류(PR 본문·C-26, 위험 없는 것만 머지)",
       "status": "done",
       "commit": "6fdc2c1"
+    },
+    {
+      "id": 48,
+      "name": "[세션 AP] 웨이브 29 = 04-51·04-42 실행(Opus 실행자, 격리 none). 04-51: 결정 ② (a) 설정 검증(STATE 2026-09-24 답) — 42677ab·be5275e·8e962dc, Opus 검토 B1(값 그대로 재저장도 거부)·S1(설정 저장과 채번 비원자)·S2 반영 3fe33fb·867fce2·6c7ce5c·b501b53. 문구 명사형 변환 `순번 시작값이 이미 매긴 번호(${max})와 겹침 · ${max + 1} 이상 입력`. 04-42: 리저브 대장 화면 03af6d9·af17080·cc161c5·886e48a, Opus 검토(B1 1·S 9·N 11)+독립 DOM 감사(Opus, CI=true, PASS 38·FAIL 3) 반영 e78f611~fbe22f2(11커밋, ui/table groupAside prop 추가 — 플랜 truth 그룹 머리글 잔액). 오케스트레이터 신선 확인: lint·typecheck·lint:sql 0, 단위 1706, CI=true 통합 1933. 수정자 보고: CI=true build 0, reserves.spec 21, group 사용 화면 E2E 110. 전체 E2E는 PR CI(fbe22f2) 몫.",
+      "status": "done",
+      "commit": "fbe22f2"
     }
   ],
   "remaining_tasks": [
     {
-      "id": 57,
-      "name": "다음 웨이브 27 = 04-18(새 세션): `/gsd-execute-phase 4 --wave 27` — executor Opus, 격리 없음, 루트 고정 /mnt/project-files/phase4-prep/04-18-root-pin.sh(PINNED_ROOT=/home/user/ERP_PLANT8_260917, 이미 생성됨, 준비 노트 파일 아직 없음). 시작 전 PR #85 최신 [코디네이터 지시]·main 새 머지 확인. 04-18 몫(remaining id 9 항목들: 폰 375 기간 칸 2행 귀속 라벨, profitKrw/netProfitKrw 이름·의미 정리)을 실행자에게 넘긴다. 그 뒤 웨이브 28(04-07) → 29(04-42·04-51) → 30(04-31, 묶음 ④ 끝)",
+      "id": 60,
+      "name": "새 세션: PR #85 CI(fbe22f2) 결과 확인 — 빨강이면 systematic-debugging으로 원인 수정·푸시 먼저. 그다음 웨이브 30 = 04-31(`/gsd-execute-phase 4 --wave 30`, autonomous:false, 묶음 ④ 끝) → 묶음 ④ Post-build(/review·/qa·/design-review·/cso — /cso 항목: 리저브·견적 초안 금액이 로그아웃 뒤 localStorage에 남음, 리저브 clientName은 reserve.amount만 검사). 머지는 묶음 ④ 끝까지 하지 않음",
       "status": "not_started"
     },
     {
@@ -381,6 +387,11 @@
     {
       "id": 59,
       "name": "[세션 AM] /qa 관찰: playwright webServer가 `\"next start\" does not work with \"output: standalone\"`을 출력 — CI webServer를 `node .next/standalone/server.js`로 바꿔야 할지 확인 필요",
+      "status": "not_started"
+    },
+    {
+      "id": 61,
+      "name": "04-42 이월: 폰 375 열·접힌 줄 순서가 S9 나열(날짜·금액·구분 / 프로젝트·잔액·메모)과 다름 — ui/table에 폰 순서 prop 없음, 선언 순서 따름(편차 기록). 리뷰 NIT 11건은 04-42-SUMMARY Review follow-up",
       "status": "not_started"
     }
   ],
@@ -566,6 +577,11 @@
     {
       "action": "Codex 재확인(09-29 이후): 세션 AM의 /review·/qa(3a762bd..6fdc2c1, F3 계약 변경 5e45615 포함)",
       "context": "Codex 09-29까지 한도로 이번에도 Opus·Sonnet이 대체",
+      "blocking": false
+    },
+    {
+      "action": "Codex 재확인(09-29 이후): 04-51·04-42 검토(Opus가 대체)",
+      "context": "Codex 한도",
       "blocking": false
     }
   ],
@@ -769,13 +785,24 @@
       "decision": "PR #85는 묶음 ④(04-17·19·47·48·18·07·42·51·31) 전체가 끝날 때까지 머지하지 않는다",
       "rationale": "PR #85 본문·C-26(묶음 ④=배포 1회) — 사용자는 위험 없는 것만 머지하라고 지시",
       "phase": "4"
+    },
+    {
+      "decision": "04-42 그룹 머리글 오른쪽 잔액을 위해 ui/table에 선택적 prop groupAside 하나 추가(Table.tsx +4, Table.module.css +8, 기존 소비처 마크업 불변)",
+      "rationale": "플랜 truth 요구 — 「플랜에 없는 이유로 ui/를 고치지 않는다」에 해당하지 않음, 스킨 리프레시 세션과 충돌 시 머지로 해소",
+      "phase": "4"
+    },
+    {
+      "decision": "04-51 B1: 결정 ② 임계값은 사용자 답 그대로 두고 같은 값 재저장만 no-op 통과",
+      "rationale": "임계값 변경은 사용자 결정 변경 — open_questions로 올림",
+      "phase": "4"
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션 → git status -sb 확인 → .planning/phases/04-project-quote-ledger/.continue-here.md Read → PR #85 최신 지시·main 새 머지 확인(있으면 머지 커밋으로 반영) → /gsd-execute-phase 4 --wave 29 (04-42·04-51) → 이후 웨이브 30(04-31, 묶음 ④ 끝 → Post-build)",
+  "next_action": "새 세션 → git status -sb(HEAD가 claude/gsd-progress-e1nzgu에 붙었는지) → .planning/phases/04-project-quote-ledger/.continue-here.md Read(세션 AP 블록) → PR #85 최신 [지시] 확인 → PR #85 CI(fbe22f2) 확인·빨강이면 먼저 수정 → origin/main 머지 커밋 반영 → `/gsd-execute-phase 4 --wave 30`(04-31, 묶음 ④ 끝, autonomous:false) → 묶음 ④ Post-build",
   "context_notes": "세션 AN: 04-18 완료(실행·DOM 감사 30/0·Opus 검토 반영·전체 게이트 CI=true 통과, origin 8a5e2cf). 사용자 지시로 이 계정은 인계까지만, 다음은 다른 계정. Codex 재확인 목록에 04-18 추가.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
-    "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"
+    "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정",
+    "04-51 결정 ② 임계값(사용자 결정 필요): 지금 규칙 「발급 최대 이하 거부」는 오프셋 모델(표시 순번 = 카운터 + 시작값 − 1)에서 안전한 값(시작 100·3건 발급 뒤 101·102)도 거부하고, 올리면 번호를 건너뜀. 실제로 충돌하는 경우는 올해 1건 이상 발급 + 새 시작값 < 현재 시작값뿐 — 규칙을 바꿀지. 현재는 같은 값 재저장만 통과(B1 수정)."
   ]
 }

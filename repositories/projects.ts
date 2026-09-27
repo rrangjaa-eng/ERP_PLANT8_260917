@@ -204,7 +204,6 @@ function attributionBucket(range: { start?: string; end?: string } | undefined):
 // 스스로도 신뢰하지 않는 입력을 받을 수 있다는 전제로 자체 방어한다.
 function resolveSortColumn(
   key: ProjectSortKey,
-  lineSums: ReturnType<typeof lineSumsSubquery>,
   money: ReturnType<typeof rowMoneyExpressions>,
 ) {
   switch (key) {
@@ -216,10 +215,11 @@ function resolveSortColumn(
       return vendors.name;
     case "revenueKrw":
       return money.revenue;
+    // 04-18 리뷰 S1 — 표시와 같은 식(줄 없음 = 0)으로 정렬한다.
     case "quoteAmountKrw":
-      return lineSums.quoteSum;
+      return money.quote;
     case "executionAmountKrw":
-      return lineSums.executionSum;
+      return money.execution;
     // 04-18(04-17 리뷰 S1) — 수익금 열과 같은 식(기준 − 실행가)으로 정렬한다.
     case "profitKrw":
       return money.profit;
@@ -247,7 +247,7 @@ export async function listProjectsPage(
   const issued = issuedSumsLateral();
   const money = rowMoneyExpressions(lineSums, issued);
   const conditions = projectFilterConditions(opts.filter);
-  const sortColumn = resolveSortColumn(opts.sort.key, lineSums, money);
+  const sortColumn = resolveSortColumn(opts.sort.key, money);
   // 04-18 — 매출(미발행)·수익률(기준 ≤ 0)의 빈 값은 방향과 무관하게 맨 뒤다.
   const nullsLast = opts.sort.key === "revenueKrw" || opts.sort.key === "profitRate";
   const sortOrder = sql`${sortColumn} ${opts.sort.direction === "desc" ? sql`desc` : sql`asc`}${nullsLast ? sql` nulls last` : sql``}`;

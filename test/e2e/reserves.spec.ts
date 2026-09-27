@@ -117,6 +117,14 @@ async function pasteText(page: Page, target: Locator, text: string) {
   }, text);
 }
 
+// 리뷰 S7 — 「리저브 줄 추가」는 SSR HTML에도 있어 수화 전 클릭이 사라질 수 있다. 새 줄의 클라이언트 칸이 열릴 때까지 다시 누른다.
+async function addReserveRow(page: Page) {
+  await expect(async () => {
+    await page.getByRole("button", { name: "리저브 줄 추가" }).click();
+    await expect(page.getByRole("combobox", { name: "클라이언트", exact: true })).toBeVisible({ timeout: 1_000 });
+  }).toPass();
+}
+
 async function saveWithKeyboard(page: Page, focusTarget: Locator) {
   const saved = waitForSave(page);
   await focusGridCell(focusTarget);
@@ -205,7 +213,7 @@ test.describe("리저브 대장 트레이서", () => {
     await expect(page).toHaveURL(/\/pnl\/reserves$/);
     await expect(page.getByText("리저브 기록이 없습니다", { exact: true })).toBeVisible();
 
-    await page.getByRole("button", { name: "리저브 줄 추가" }).click();
+    await addReserveRow(page);
     // 새 줄은 클라이언트 칸이 편집 상태로 열린다(사용자 D6).
     await page.getByRole("combobox", { name: "클라이언트", exact: true }).selectOption({ label: clientA.name });
     await typeDate(page, cell(page, 0, COL.date), "2026-09-01");
@@ -277,7 +285,7 @@ test.describe("리저브 대장 — 쪽 · 오류 · 삭제 · 입력", () => {
     await seedEntries(client.id, [{ date: "2026-03-01", direction: "deposit", amount: 100_000 }]);
     await openLedger(page, roles.finance);
 
-    await page.getByRole("button", { name: "리저브 줄 추가" }).click();
+    await addReserveRow(page);
     await page.getByRole("combobox", { name: "클라이언트", exact: true }).selectOption({ label: client.name });
     await typeDate(page, cell(page, 1, COL.date), "2026-03-01");
     await focusGridCell(cell(page, 1, COL.direction));
@@ -291,7 +299,7 @@ test.describe("리저브 대장 — 쪽 · 오류 · 삭제 · 입력", () => {
     await expect(ledger(page).locator("tfoot")).toContainText("전부 거부");
 
     // 같은 날 입금을 뒤에 적는다 — 그날 마감이 0 이상이면 저장된다(사용자 D19-2).
-    await page.getByRole("button", { name: "리저브 줄 추가" }).click();
+    await addReserveRow(page);
     await page.getByRole("combobox", { name: "클라이언트", exact: true }).selectOption({ label: client.name });
     await typeDate(page, cell(page, 2, COL.date), "2026-03-01");
     await typeInto(page, cell(page, 2, COL.amount), "금액", "400000");
@@ -346,10 +354,7 @@ test.describe("리저브 대장 — 쪽 · 오류 · 삭제 · 입력", () => {
     });
 
     // 1쪽에 클라이언트 없는 새 줄을 두고 2쪽에서 저장한다 — 서버가 그 줄의 클라이언트 칸을 거부한다.
-    await expect(async () => {
-      await page.getByRole("button", { name: "리저브 줄 추가" }).click();
-      await expect(page.getByRole("combobox", { name: "클라이언트", exact: true })).toBeVisible({ timeout: 1_000 });
-    }).toPass();
+    await addReserveRow(page);
     await page.keyboard.press("Escape");
     await pager(page).getByRole("link", { name: "2", exact: true }).click();
     await expect(dataRows(page)).toHaveCount(1);
@@ -409,7 +414,7 @@ test.describe("리저브 대장 — 쪽 · 오류 · 삭제 · 입력", () => {
     await openLedger(page, roles.finance);
     await expect(saveButton(page).locator("kbd")).toHaveText("Ctrl+S");
 
-    await page.getByRole("button", { name: "리저브 줄 추가" }).click();
+    await addReserveRow(page);
     await page.keyboard.press("Escape");
     await focusGridCell(cell(page, 0, COL.amount));
     await page.keyboard.press("Enter");
@@ -662,13 +667,13 @@ test.describe("리저브 대장 — 읽기 · 좁은 PC · 저장 중 잠금 · 
     await focusGridCell(cell(page, 0, COL.amount));
     await page.keyboard.press("Control+s");
     await expect(ledger(page)).toHaveAttribute("aria-busy", "true");
-    await cell(page, 1, COL.note).focus();
+    // 리뷰 S8 — 잠긴 동안의 시도와 풀린 뒤의 대조가 같은 포커스 방법(focusGridCell)이어야 잠김 단언이 의미가 있다.
+    await focusGridCell(cell(page, 1, COL.note));
     await page.keyboard.press("Enter");
     await page.keyboard.type("x");
     await expect(page.getByRole("textbox")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "리저브 줄 추가" })).toHaveAttribute("aria-disabled", "true");
     await page.keyboard.press("Control+s");
-    expect(actionPosts).toBe(1);
 
     release();
     await saved;

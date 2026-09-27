@@ -767,9 +767,25 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
     setDeleteTarget(row);
   }
 
+  // DOM 감사 #36 — 확인하면 트리거 줄이 빠져 확인 창이 포커스를 돌려줄 곳이 없다(h1로 간다). 창이 닫힌 뒤 격자의 탭 정지
+  // (같은 열의 다음 줄 — 마지막 줄이었으면 앞 줄)로 되돌린다.
+  const deleteConfirmedRef = useRef(false);
+  const [gridRefocus, setGridRefocus] = useState(0);
+  useEffect(() => {
+    if (gridRefocus > 0) document.querySelector<HTMLElement>('table[role="grid"] td[tabindex="0"]')?.focus();
+  }, [gridRefocus]);
+
+  function closeDeleteDialog() {
+    setDeleteTarget(null);
+    if (!deleteConfirmedRef.current) return;
+    deleteConfirmedRef.current = false;
+    setGridRefocus((count) => count + 1);
+  }
+
   function confirmDelete() {
     const target = deleteTarget;
     if (!target) return;
+    deleteConfirmedRef.current = true;
     persistPendingRef.current = true;
     setSavedAt(null);
     setArchivedIds((prev) => (prev.includes(target.id) ? prev : [...prev, target.id]));
@@ -1182,7 +1198,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        onClose={() => setDeleteTarget(null)}
+        onClose={closeDeleteDialog}
         title={COPY.deleteTitle}
         subtitle={deleteTarget ? `${deleteTarget.entryDate} · ${deleteTarget.clientName} · ${formatKrw(deleteTarget.amountKrw)}` : undefined}
         resultLines={[COPY.deleteResult]}

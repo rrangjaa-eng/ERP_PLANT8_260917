@@ -393,6 +393,9 @@ test.describe("리저브 대장 — 쪽 · 오류 · 삭제 · 입력", () => {
     await page.keyboard.press("Delete");
     await dialog.getByRole("button", { name: /^리저브 줄 삭제/ }).click();
     await expect(saveButton(page)).toContainText("일괄 저장 1");
+    // DOM 감사 #36 — 확인하면 트리거 줄이 빠지므로 포커스는 같은 열의 다음 줄(마지막 줄이었으면 앞 줄)로 간다(h1이 아니다).
+    await expect(dataRows(page)).toHaveCount(1);
+    await expect(cell(page, 0, COL.date)).toBeFocused();
     await saveWithKeyboard(page, cell(page, 0, COL.date));
     await expect(dataRows(page)).toHaveCount(1);
     await expectGroupBalance(page, client.name, "200,000");

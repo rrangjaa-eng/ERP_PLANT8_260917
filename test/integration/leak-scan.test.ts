@@ -152,6 +152,17 @@ describe("정보 노출 누수 스캔 (ADMN-03)", () => {
       }
     });
 
+    // 04-42 리뷰 B1 — 리저브 대장의 선택지(클라이언트 · 프로젝트 · 증빙 종류)와 대장 DTO의 이름 칸도 명세로 등록돼 이 스캔이
+    // 본다 — 거래처 이름은 vendor.value, 프로젝트 이름은 project.value와 reserve.amount의 all-of다.
+    it("리저브 선택지 DTO와 대장 DTO의 이름 칸 정보 항목이 등록돼 있다", () => {
+      const infoItemOf = (dtoName: string, key: string) => DTO_REGISTRY.find((entry) => entry.name === dtoName)?.fields.find((field) => field.key === key)?.infoItem;
+      expect(infoItemOf("ReserveClientOptionDto", "name")).toEqual(["reserve.amount", "vendor.value"]);
+      expect(infoItemOf("ReserveProjectOptionDto", "name")).toEqual(["reserve.amount", "project.value"]);
+      expect(infoItemOf("ReserveEvidenceOptionDto", "label")).toBe("reserve.amount");
+      expect(infoItemOf("ReserveEntryDto", "projectName")).toEqual(["reserve.amount", "project.value"]);
+      expect(infoItemOf("ReserveEntryDto", "evidenceLabel")).toBe("reserve.amount");
+    });
+
     it("registerDto가 빈 목록 infoItem: []을 거부한다", () => {
       expect(() =>
         registerDto({

@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db, pool } from "@/db/client";
-import { actionLog, reserveEntries, teams } from "@/db/schema";
+import { actionLog, codeItems, projects, reserveEntries, teams } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
+import { insertCodeItem } from "@/repositories/code-tables";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
-import { listReserves, saveReserves, type ReserveWriteRow } from "@/domain/reserves";
+import { listReserveReferences, listReserves, saveReserves, type ReserveWriteRow } from "@/domain/reserves";
 import { SaveRejectedError } from "@/domain/quotes/lines";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createProject } from "@/domain/projects";
@@ -643,5 +644,75 @@ describe("domain/reserves — 권한 · 노출 · 보관/복원 · 페이지 · 
     const list = await listReserves(finance, { page: 1 });
     expect(list.rows.filter((row) => row.clientId === client.id).every((row) => row.balanceKrw >= 0)).toBe(true);
     expect(list.clientBalances?.find((entry) => entry.clientId === client.id)?.balanceKrw).toBe(100_000);
+  });
+});
+
+// 04-42 리뷰 B1 · S1 — 대장 참조(선택지)는 쓰기 권한자에게만, 거래처·프로젝트는 앱의 다른 곳과 같은 노출·메뉴 범위로 싣는다.
+// 읽는 사람의 프로젝트 이름·증빙 종류 이름은 대장 DTO가 싣는다(보관된 프로젝트·비활성 코드도 저장된 값 그대로).
+async function createRoleViewer(opts: { permissions: [string, "view" | "write"][]; visible: string[] }): Promise<Viewer> {
+  const roleId = `role-${randomUUID()}`;
+  await insertRole(SYSTEM_VIEWER, { id: roleId, name: `계급 ${roleId.slice(5, 13)}` });
+  for (const [menu, action] of opts.permissions) await upsertPermission(SYSTEM_VIEWER, { roleId, menu, action, allowed: true });
+  for (const infoItem of opts.visible) await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem, visible: true });
+  const { userId } = await createAccount(SYSTEM_VIEWER, { email: `r-${randomUUID()}@example.test`, name: "통합테스트 계급", roleId });
+  return { id: userId, roleId };
+}
+
+const WRITER: [string, "view" | "write"][] = [
+  ["pnl", "view"],
+  ["pnl", "write"],
+  ["projects", "view"],
+];
+
+describe("domain/reserves — 대장 참조와 DTO 이름 (04-42 리뷰 B1 · S1)", () => {
+  it("쓰기 권한이 없는 읽는 사람(pnl 보기 + reserve.amount)은 선택지가 전부 비어 있다", async () => {
+    const client = await createClient();
+    await createProjectFor(client.id);
+    const reader = await createRoleViewer({ permissions: [["pnl", "view"], ["projects", "view"]], visible: ["reserve.amount", "vendor.value", "project.value"] });
+    expect(await listReserveReferences(reader)).toEqual({ clients: [], projects: [], evidenceTypes: [] });
+  });
+
+  it("vendor.value가 꺼진 쓰기 권한자는 클라이언트 선택지가 비고, projects 보기나 project.value가 없으면 프로젝트 선택지가 빈다", async () => {
+    const client = await createClient();
+    await createProjectFor(client.id);
+    const noVendor = await createRoleViewer({ permissions: WRITER, visible: ["reserve.amount", "project.value"] });
+    const noVendorRefs = await listReserveReferences(noVendor);
+    expect(noVendorRefs.clients).toEqual([]);
+    expect(noVendorRefs.projects).toHaveLength(1);
+
+    const noProjectsMenu = await createRoleViewer({ permissions: [["pnl", "view"], ["pnl", "write"]], visible: ["reserve.amount", "vendor.value", "project.value"] });
+    expect((await listReserveReferences(noProjectsMenu)).projects).toEqual([]);
+    const noProjectValue = await createRoleViewer({ permissions: WRITER, visible: ["reserve.amount", "vendor.value"] });
+    const noProjectRefs = await listReserveReferences(noProjectValue);
+    expect(noProjectRefs.projects).toEqual([]);
+    expect(noProjectRefs.clients.map((option) => option.id)).toContain(client.id);
+  });
+
+  it("모두 있는 쓰기 권한자는 클라이언트(id·이름) · 프로젝트(id·이름·클라이언트) · 증빙 종류를 받는다", async () => {
+    const client = await createClient();
+    const project = await createProjectFor(client.id);
+    const writer = await createRoleViewer({ permissions: WRITER, visible: ["reserve.amount", "vendor.value", "project.value"] });
+    const refs = await listReserveReferences(writer);
+    expect(refs.clients).toContainEqual({ id: client.id, name: client.name });
+    expect(refs.projects).toEqual([{ id: project.id, name: project.name, clientId: client.id }]);
+    expect(refs.evidenceTypes.map((option) => option.value)).toContain("tax_invoice");
+  });
+
+  it("대장 DTO가 보관된 프로젝트 이름과 비활성 증빙 종류 이름을 싣고, project.value가 없으면 프로젝트 이름 키가 없다", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const project = await createProjectFor(client.id);
+    const code = await insertCodeItem(SYSTEM_VIEWER, { tableKey: "evidence_type", value: `old-${randomUUID().slice(0, 8)}`, label: "옛 증빙" });
+    await saveReserves(finance, { rows: [{ ...newRow(client.id, "2026-03-01", "deposit", 1_000), projectId: project.id, evidenceType: code.value }] });
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, project.id));
+    await db.update(codeItems).set({ active: false }).where(eq(codeItems.id, code.id));
+
+    const [row] = (await listReserves(finance, { page: 1 })).rows;
+    expect(row).toMatchObject({ projectId: project.id, projectName: project.name, evidenceType: code.value, evidenceLabel: "옛 증빙" });
+
+    const noProjectValue = await createRoleViewer({ permissions: [["pnl", "view"], ["projects", "view"]], visible: ["reserve.amount"] });
+    const [hiddenRow] = (await listReserves(noProjectValue, { page: 1 })).rows;
+    expect(hiddenRow).toMatchObject({ projectId: project.id, evidenceLabel: "옛 증빙" });
+    expect(hiddenRow).not.toHaveProperty("projectName");
   });
 });

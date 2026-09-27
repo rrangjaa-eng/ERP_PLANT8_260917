@@ -12,6 +12,7 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
 import { clampPage, pageCountFrom, LIST_PAGE_SIZE } from "@/lib/paging";
 import { projectMany, type DtoSpec } from "@/domain/permissions/project";
+import { scopeFor as defaultScopeFor } from "@/domain/permissions/scope-for";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { formatKrw } from "@/lib/format-number";
 import type { DbOrTx } from "@/repositories/document-counters";
@@ -26,6 +27,7 @@ import {
   updateEntryIfVersionMatches as repoUpdateEntryIfVersionMatches,
   setEntryArchived as repoSetEntryArchived,
   listProjectOptions as repoListProjectOptions,
+  findProjectNames as repoFindProjectNames,
   type ReserveEntryPayload,
   type ReserveEntryRow,
 } from "@/repositories/reserve-entries";
@@ -531,7 +533,11 @@ export type ReserveEntryDto = {
   direction: ReserveDirection;
   amount: { currency: Currency; amount: number; fxRate: number; amountKrw: number };
   projectId: string | null;
+  /** 04-42 리뷰 B1 · S1 — 가리키는 프로젝트 이름(보관된 프로젝트도). projects 보기 + project.value가 없으면 싣지 않는다. */
+  projectName: string | null;
   evidenceType: string | null;
+  /** 04-42 리뷰 S1 — 코드표 이름(비활성 코드도). 코드표에 없으면 null. */
+  evidenceLabel: string | null;
   taxInvoiceNumber: string | null;
   note: string | null;
   balanceKrw: number;
@@ -548,10 +554,12 @@ export type ReserveListResult = {
 };
 
 // D-59 · CEO 리뷰 B-15 — 대장 전체가 숨김 정보다. 모든 필드를 reserve.amount로 게이트한다(날짜·메모만 싣는 부분 노출 없음).
+// 04-42 리뷰 B1 — 프로젝트 이름은 앱의 다른 곳처럼 project.value도 요구한다(all-of).
+const PROJECT_NAME_INFO_ITEMS = [RESERVE_INFO_ITEM, "project.value"] as const;
 export const RESERVE_DTO_SPEC: DtoSpec<ReserveEntryDto, ReserveEntryDto> = {
   fields: (
-    ["id", "version", "clientId", "clientName", "entryDate", "direction", "amount", "projectId", "evidenceType", "taxInvoiceNumber", "note", "balanceKrw", "cellEditability"] as const
-  ).map((key) => ({ key, from: key, infoItem: RESERVE_INFO_ITEM })),
+    ["id", "version", "clientId", "clientName", "entryDate", "direction", "amount", "projectId", "projectName", "evidenceType", "evidenceLabel", "taxInvoiceNumber", "note", "balanceKrw", "cellEditability"] as const
+  ).map((key) => ({ key, from: key, infoItem: key === "projectName" ? PROJECT_NAME_INFO_ITEMS : RESERVE_INFO_ITEM })),
 };
 
 registerDto({
@@ -567,25 +575,58 @@ export const RESERVE_INPUT_REASONS = {
   directionInvalid: DIRECTION_INVALID,
 } as const;
 
+type ReserveClientOption = { id: string; name: string };
+type ReserveProjectOption = { id: string; name: string; clientId: string };
+type ReserveEvidenceOption = { value: string; label: string; description: string | null };
+
 export type ReserveReferences = {
-  clients: { id: string; name: string }[];
-  projects: { id: string; name: string; clientId: string }[];
-  evidenceTypes: { value: string; label: string; description: string | null }[];
+  clients: ReserveClientOption[];
+  projects: ReserveProjectOption[];
+  evidenceTypes: ReserveEvidenceOption[];
 };
 
-// 04-42 — 대장 편집 칸의 선택지(클라이언트 · 프로젝트 · 증빙 종류 코드표). 대장과 같은 두 조건(pnl 보기 + reserve.amount)이
-// 아니면 빈 목록이다 — 관리자 메뉴 권한 없이도 대장을 적는 사람이 고를 수 있게 이름·값만 싣는다.
+// 04-42 리뷰 B1 — 선택지도 명세로 투영한다(누수 스캔이 본다). 거래처 이름은 vendor.value, 프로젝트는 project.value와 all-of.
+const CLIENT_OPTION_SPEC: DtoSpec<ReserveClientOption, ReserveClientOption> = {
+  fields: (["id", "name"] as const).map((key) => ({ key, from: key, infoItem: [RESERVE_INFO_ITEM, "vendor.value"] })),
+};
+const PROJECT_OPTION_SPEC: DtoSpec<ReserveProjectOption, ReserveProjectOption> = {
+  fields: (["id", "name", "clientId"] as const).map((key) => ({ key, from: key, infoItem: PROJECT_NAME_INFO_ITEMS })),
+};
+const EVIDENCE_OPTION_SPEC: DtoSpec<ReserveEvidenceOption, ReserveEvidenceOption> = {
+  fields: (["value", "label", "description"] as const).map((key) => ({ key, from: key, infoItem: RESERVE_INFO_ITEM })),
+};
+for (const [name, spec] of [
+  ["ReserveClientOptionDto", CLIENT_OPTION_SPEC],
+  ["ReserveProjectOptionDto", PROJECT_OPTION_SPEC],
+  ["ReserveEvidenceOptionDto", EVIDENCE_OPTION_SPEC],
+] as const) {
+  registerDto({ name, fields: spec.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
+}
+
+// 04-42 — 대장 편집 칸의 선택지(클라이언트 · 프로젝트 · 증빙 종류 코드표). 리뷰 B1: 쓰기 권한자(pnl 쓰기 + reserve.amount)
+// 에게만 싣는다 — 읽는 사람의 이름은 대장 DTO가 싣는다. 클라이언트는 vendor.value(관리자 메뉴 없이 고르는 좁은 id·이름 투영 —
+// 프로젝트 등록 폼 references.ts 선례), 프로젝트는 projects 보기 범위 + project.value일 때만.
 export async function listReserveReferences(viewer: Viewer): Promise<ReserveReferences> {
-  if (!(await reserveRights(viewer, "view"))) return { clients: [], projects: [], evidenceTypes: [] };
+  const empty: ReserveReferences = { clients: [], projects: [], evidenceTypes: [] };
+  if (!(await reserveRights(viewer, "write"))) return empty;
+  const [vendorShown, projectShown, projectScope] = await Promise.all([
+    defaultVisible(viewer, "vendor.value"),
+    defaultVisible(viewer, "project.value"),
+    defaultScopeFor(viewer, "project"),
+  ]);
   const [vendorRows, projectRows, evidenceRows] = await Promise.all([
-    repoListVendors(viewer, { scope: { rows: "all", includeArchived: false }, includeHidden: false }),
-    repoListProjectOptions(viewer),
+    vendorShown ? repoListVendors(viewer, { scope: { rows: "all", includeArchived: false }, includeHidden: false }) : [],
+    projectShown && projectScope.rows === "all" ? repoListProjectOptions(viewer) : [],
     repoListCodeItems(viewer, { tableKey: EVIDENCE_TYPE_TABLE, scope: { rows: "all", includeArchived: false }, includeInactive: false }),
   ]);
   return {
-    clients: vendorRows.map((row) => ({ id: row.id, name: row.name })),
-    projects: projectRows,
-    evidenceTypes: evidenceRows.map((row) => ({ value: row.value, label: row.label, description: row.description })),
+    clients: (await projectMany(viewer, vendorRows.map((row) => ({ id: row.id, name: row.name })), CLIENT_OPTION_SPEC)) as ReserveClientOption[],
+    projects: (await projectMany(viewer, projectRows, PROJECT_OPTION_SPEC)) as ReserveProjectOption[],
+    evidenceTypes: (await projectMany(
+      viewer,
+      evidenceRows.map((row) => ({ value: row.value, label: row.label, description: row.description })),
+      EVIDENCE_OPTION_SPEC,
+    )) as ReserveEvidenceOption[],
   };
 }
 
@@ -603,7 +644,17 @@ export async function listReserves(viewer: Viewer, opts: { page?: number | strin
   const sorted = sortForList(rows.map(toBalanceRow), names);
   const pageCount = pageCountFrom(sorted.length, LIST_PAGE_SIZE);
   const page = clampPage(opts.page, pageCount);
-  const pageRows = sorted.slice((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE).map(({ id }) => {
+  const pageIds = sorted.slice((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE).map(({ id }) => id);
+  // 04-42 리뷰 B1 · S1 — 줄이 가리키는 프로젝트 이름(projects 보기 범위일 때만 — 키는 project.value 투영이 가린다)과 증빙 종류
+  // 이름(비활성·보관 코드도). 저장된 값을 그대로 보인다.
+  const projectIds = [...new Set(pageIds.map((id) => byId.get(id)?.projectId).filter((id): id is string => typeof id === "string"))];
+  const [projectScope, evidenceRows] = await Promise.all([
+    defaultScopeFor(viewer, "project"),
+    repoListCodeItems(viewer, { tableKey: EVIDENCE_TYPE_TABLE, scope: { rows: "all", includeArchived: true }, includeInactive: true }),
+  ]);
+  const projectNames = projectScope.rows === "all" ? await repoFindProjectNames(viewer, projectIds) : new Map<string, string>();
+  const evidenceLabels = new Map(evidenceRows.map((row) => [row.value, row.label]));
+  const pageRows = pageIds.map((id) => {
     const row = byId.get(id) as ReserveEntryRow;
     const money = moneyFromRow({ currency: row.amountCurrency, foreignAmount: row.amountForeignAmount, fxRate: row.amountFxRate, amountKrw: row.amountAmountKrw });
     const dto: ReserveEntryDto = {
@@ -615,7 +666,9 @@ export async function listReserves(viewer: Viewer, opts: { page?: number | strin
       direction: row.direction as ReserveDirection,
       amount: { currency: money.currency, amount: money.amount, fxRate: money.fxRate, amountKrw: money.amountKrw },
       projectId: row.projectId,
+      projectName: row.projectId ? (projectNames.get(row.projectId) ?? null) : null,
       evidenceType: row.evidenceType,
+      evidenceLabel: row.evidenceType ? (evidenceLabels.get(row.evidenceType) ?? null) : null,
       taxInvoiceNumber: row.taxInvoiceNumber,
       note: row.note,
       balanceKrw: balanceById.get(row.id) ?? 0,

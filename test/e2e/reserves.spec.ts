@@ -15,19 +15,21 @@ import { eq } from "drizzle-orm";
 // 계급은 이 스펙이 만든 임시 계급이다(공용 계급의 권한을 바꾸지 않는다).
 type Roles = { finance: string; reader: string; hidden: string };
 
-async function createRole(name: string, grants: { menu: string; action: string }[], reserveVisible: boolean): Promise<string> {
+async function createRole(name: string, grants: { menu: string; action: string }[], reserveVisible: boolean, alsoVisible: string[] = []): Promise<string> {
   const id = `role-e2e-rsv-${randomUUID()}`;
   await insertRole(SYSTEM_VIEWER, { id, name: `E2E 리저브 ${name} ${id.slice(-8)}`, sortOrder: 99 });
   for (const grant of grants) await upsertPermission(SYSTEM_VIEWER, { roleId: id, menu: grant.menu, action: grant.action, allowed: true });
   await upsertVisibility(SYSTEM_VIEWER, { roleId: id, infoItem: "reserve.amount", visible: reserveVisible });
+  for (const infoItem of alsoVisible) await upsertVisibility(SYSTEM_VIEWER, { roleId: id, infoItem, visible: true });
   return id;
 }
 
 async function createRoles(): Promise<Roles> {
   const view = { menu: "pnl", action: "view" };
   return {
-    finance: await createRole("경영관리", [view, { menu: "pnl", action: "write" }], true),
-    reader: await createRole("읽기", [view], true),
+    // 04-42 리뷰 B1 — 클라이언트·프로젝트 선택지는 앱의 다른 곳처럼 vendor.value · projects 보기 + project.value를 요구한다.
+    finance: await createRole("경영관리", [view, { menu: "pnl", action: "write" }, { menu: "projects", action: "view" }], true, ["vendor.value", "project.value"]),
+    reader: await createRole("읽기", [view, { menu: "projects", action: "view" }], true, ["project.value"]),
     hidden: await createRole("노출 꺼짐", [view], false),
   };
 }

@@ -49,7 +49,10 @@ type Row = {
   amountKrw: number;
   fxRateTouched: boolean;
   projectId: string | null;
+  /** 04-42 리뷰 B1 · S1 — 서버가 실은 이름(보관된 프로젝트·비활성 코드도). 편집하면 선택지의 이름으로 바뀐다. */
+  projectName: string | null;
   evidenceType: string | null;
+  evidenceLabel: string | null;
   taxInvoiceNumber: string | null;
   note: string | null;
   /** 서버 계산 잔액 — 저장 전 새 줄은 없다. */
@@ -57,7 +60,19 @@ type Row = {
   cells: Record<ReserveCellField, ReserveCellEditability>;
 };
 
-type EditableField = "clientId" | "clientName" | "entryDate" | "direction" | "money" | "fxRateTouched" | "projectId" | "evidenceType" | "taxInvoiceNumber" | "note";
+type EditableField =
+  | "clientId"
+  | "clientName"
+  | "entryDate"
+  | "direction"
+  | "money"
+  | "fxRateTouched"
+  | "projectId"
+  | "projectName"
+  | "evidenceType"
+  | "evidenceLabel"
+  | "taxInvoiceNumber"
+  | "note";
 type Patch = Partial<Pick<Row, EditableField>>;
 /** 기존 줄의 편집 — 처음 고친 순간의 서버 줄(base)과 바뀐 칸(patch). 쪽을 넘어가도 base로 저장 페이로드를 만든다(DR-18). */
 type Edit = { base: Row; patch: Patch };
@@ -122,7 +137,9 @@ function rowFromDto(dto: ReserveEntryDto): Row {
     amountKrw: dto.amount.amountKrw,
     fxRateTouched: false,
     projectId: dto.projectId,
+    projectName: dto.projectName ?? null,
     evidenceType: dto.evidenceType,
+    evidenceLabel: dto.evidenceLabel ?? null,
     taxInvoiceNumber: dto.taxInvoiceNumber,
     note: dto.note,
     balanceKrw: dto.balanceKrw,
@@ -509,8 +526,8 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
   }, [edits, newRows, archivedIds, persist]);
 
   const clientName = (id: string) => references.clients.find((client) => client.id === id)?.name ?? "";
-  const projectName = (id: string | null) => (id ? (references.projects.find((project) => project.id === id)?.name ?? "") : "");
-  const evidenceLabel = (value: string | null) => (value ? (references.evidenceTypes.find((item) => item.value === value)?.label ?? value) : "");
+  const projectName = (id: string | null) => (id ? (references.projects.find((project) => project.id === id)?.name ?? null) : null);
+  const evidenceLabel = (value: string | null) => (value ? (references.evidenceTypes.find((item) => item.value === value)?.label ?? null) : null);
 
   // 그룹 머리글 = 클라이언트 + 서버가 계산한 최종 잔액(S9 · D-91). 저장 전 새 줄의 클라이언트가 이 쪽에 없으면 이름만.
   function groupLabel(row: Row): string {
@@ -570,8 +587,10 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
         return;
       }
       case "projectId":
+        applyPatch(rowId, { projectId: value === "" ? null : value, projectName: projectName(value || null) });
+        return;
       case "evidenceType":
-        applyPatch(rowId, { [columnKey]: value === "" ? null : value });
+        applyPatch(rowId, { evidenceType: value === "" ? null : value, evidenceLabel: evidenceLabel(value || null) });
         return;
       case "taxInvoiceNumber":
       case "note":
@@ -581,7 +600,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
         if (value === "" || value === row.clientId) return;
         // 다른 클라이언트의 프로젝트는 남기지 않는다(서버도 거부한다).
         const keepProject = references.projects.some((project) => project.id === row.projectId && project.clientId === value);
-        applyPatch(rowId, { clientId: value, clientName: clientName(value), projectId: keepProject ? row.projectId : null });
+        applyPatch(rowId, { clientId: value, clientName: clientName(value), projectId: keepProject ? row.projectId : null, projectName: keepProject ? row.projectName : null });
         return;
       }
     }
@@ -607,7 +626,9 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
         amountKrw: 0,
         fxRateTouched: false,
         projectId: null,
+        projectName: null,
         evidenceType: null,
+        evidenceLabel: null,
         taxInvoiceNumber: null,
         note: null,
         balanceKrw: null,
@@ -775,8 +796,8 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
       header: "프로젝트",
       priority: "p2",
       editability: (row) => editability(row, "projectId"),
-      cell: (row) => projectName(row.projectId) || "—",
-      copyText: (row) => projectName(row.projectId),
+      cell: (row) => row.projectName || "—",
+      copyText: (row) => row.projectName ?? "",
       editCell: (row, ctx) => (
         <SelectEditCell id={`reserve-project-${row.id}`} ariaLabel="프로젝트" initialValue={row.projectId ?? ""} options={clientProjects(row)} onCommit={ctx.onCommit} />
       ),
@@ -787,8 +808,8 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
       priority: "p3",
       collapseBelow: 1280,
       editability: (row) => editability(row, "evidenceType"),
-      cell: (row) => evidenceLabel(row.evidenceType) || "—",
-      copyText: (row) => evidenceLabel(row.evidenceType),
+      cell: (row) => row.evidenceLabel || row.evidenceType || "—",
+      copyText: (row) => row.evidenceLabel ?? row.evidenceType ?? "",
       editCell: (row, ctx) => (
         <SelectEditCell
           id={`reserve-evidence-${row.id}`}

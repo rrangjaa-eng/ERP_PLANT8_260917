@@ -97,6 +97,16 @@ async function typeInto(page: Page, target: Locator, label: string, value: strin
   await page.keyboard.press("Enter");
 }
 
+// 리뷰 S5 — 날짜 칸 편집기는 형식을 잡는 date 입력이다(매출 표 선례 · 사용자 결정 2026-09-26).
+async function typeDate(page: Page, target: Locator, value: string) {
+  await focusGridCell(target);
+  await page.keyboard.press("Enter");
+  const input = page.getByLabel("날짜", { exact: true });
+  await expect(input).toHaveAttribute("type", "date");
+  await input.fill(value);
+  await page.keyboard.press("Enter");
+}
+
 async function saveWithKeyboard(page: Page, focusTarget: Locator) {
   const saved = waitForSave(page);
   await focusGridCell(focusTarget);
@@ -188,7 +198,7 @@ test.describe("리저브 대장 트레이서", () => {
     await page.getByRole("button", { name: "리저브 줄 추가" }).click();
     // 새 줄은 클라이언트 칸이 편집 상태로 열린다(사용자 D6).
     await page.getByRole("combobox", { name: "클라이언트", exact: true }).selectOption({ label: clientA.name });
-    await typeInto(page, cell(page, 0, COL.date), "날짜", "2026-09-01");
+    await typeDate(page, cell(page, 0, COL.date), "2026-09-01");
     await typeInto(page, cell(page, 0, COL.amount), "금액", "1500000");
     await saveWithKeyboard(page, cell(page, 0, COL.amount));
 
@@ -259,7 +269,7 @@ test.describe("리저브 대장 — 쪽 · 오류 · 삭제 · 입력", () => {
 
     await page.getByRole("button", { name: "리저브 줄 추가" }).click();
     await page.getByRole("combobox", { name: "클라이언트", exact: true }).selectOption({ label: client.name });
-    await typeInto(page, cell(page, 1, COL.date), "날짜", "2026-03-01");
+    await typeDate(page, cell(page, 1, COL.date), "2026-03-01");
     await focusGridCell(cell(page, 1, COL.direction));
     await page.keyboard.press("Enter");
     await page.getByRole("combobox", { name: "구분", exact: true }).selectOption({ label: "출금" });
@@ -273,7 +283,7 @@ test.describe("리저브 대장 — 쪽 · 오류 · 삭제 · 입력", () => {
     // 같은 날 입금을 뒤에 적는다 — 그날 마감이 0 이상이면 저장된다(사용자 D19-2).
     await page.getByRole("button", { name: "리저브 줄 추가" }).click();
     await page.getByRole("combobox", { name: "클라이언트", exact: true }).selectOption({ label: client.name });
-    await typeInto(page, cell(page, 2, COL.date), "날짜", "2026-03-01");
+    await typeDate(page, cell(page, 2, COL.date), "2026-03-01");
     await typeInto(page, cell(page, 2, COL.amount), "금액", "400000");
     await saveWithKeyboard(page, cell(page, 2, COL.amount));
     await expectGroupBalance(page, client.name, "100,000");

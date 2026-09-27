@@ -197,11 +197,24 @@ function countCells(errors: CellErrors): number {
   return Object.values(errors).reduce((sum, cells) => sum + Object.keys(cells).length, 0);
 }
 
-function TextEditCell({ ariaLabel, initialValue, numeric, onCommit }: { ariaLabel: string; initialValue: string; numeric?: boolean; onCommit: (value: string) => void }) {
+// 리뷰 S5 — 날짜 칸은 형식을 잡는 date 입력(매출 표 revenue-section 선례).
+function TextEditCell({
+  ariaLabel,
+  initialValue,
+  numeric,
+  type = "text",
+  onCommit,
+}: {
+  ariaLabel: string;
+  initialValue: string;
+  numeric?: boolean;
+  type?: "text" | "date";
+  onCommit: (value: string) => void;
+}) {
   return (
     <input
       aria-label={ariaLabel}
-      type="text"
+      type={type}
       defaultValue={initialValue}
       autoFocus
       className={numeric ? styles.cellInputNumeric : styles.cellInput}
@@ -767,7 +780,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
       editability: (row) => editability(row, "entryDate"),
       cell: (row) => row.entryDate || "—",
       copyText: (row) => row.entryDate,
-      editCell: (row, ctx) => <TextEditCell ariaLabel="날짜" initialValue={row.entryDate} onCommit={ctx.onCommit} />,
+      editCell: (row, ctx) => <TextEditCell ariaLabel="날짜" type="date" initialValue={row.entryDate} onCommit={ctx.onCommit} />,
     },
     {
       key: "direction",

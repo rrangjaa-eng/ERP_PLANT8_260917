@@ -142,6 +142,20 @@ describe("순번 시작값 낮추기(결정 ②)", () => {
     expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_START)).toBe(100);
   });
 
+  // 04-51 리뷰 B1 — 설정 화면은 칸을 벗어날 때마다(blur) 값을 다시 보낸다.
+  it("현재 값 100을 그대로 다시 저장하면 통과하고 값은 100 그대로다", async () => {
+    const issued = await issueThreeFrom100();
+    await saveSeqStart(SYSTEM_VIEWER, 100);
+    expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_START)).toBe(100);
+    expect(issued).not.toContain(await allocate());
+  });
+
+  it("기본값 1로 올해 첫 번호를 매긴 뒤 1을 그대로 다시 저장해도 통과한다", async () => {
+    expect(await allocate()).toBe("26001");
+    await saveSeqStart(SYSTEM_VIEWER, 1);
+    expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_START)).toBe(1);
+  });
+
   it("103은 저장되고 다음 번호가 이미 매긴 번호와 겹치지 않는다", async () => {
     const issued = await issueThreeFrom100();
     await saveSeqStart(SYSTEM_VIEWER, 103);

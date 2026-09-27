@@ -133,7 +133,10 @@ export async function assertSeqStartAvailable(
 
   const counter = await findDocumentCounter(viewer, counterKey, String(kstYear(now)));
   if (!counter || counter.value < 1) return;
-  const maxIssued = counter.value + (await getSettingValue(defs.seqStart)) - 1;
+  const currentStart = await getSettingValue(defs.seqStart);
+  // 04-51 리뷰 B1 — 바꾸지 않은 값의 재저장(설정 화면 blur)은 검증하지 않는다.
+  if (parsed.data === currentStart) return;
+  const maxIssued = counter.value + currentStart - 1;
   if (parsed.data <= maxIssued) {
     throw new SeqStartOverlapError(`순번 시작값이 이미 매긴 번호(${maxIssued})와 겹침 · ${maxIssued + 1} 이상 입력`);
   }

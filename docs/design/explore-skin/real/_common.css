@@ -1,0 +1,25 @@
+/* _common.css — 새 스킨(A·B·C·D) 공통 조각. 실제 앱 DOM(CSS 모듈 클래스)에 얹는 비교용 오버레이 — 앱 코드 아님.
+ * ① 등록 폼을 목록 위 모달로(목록이 밀리지 않게) ② 거래처 동작 열 「수정숨기기삭제」 붙음 간격 ③ 폰 표 셀 여백 */
+/* ① 등록 모달: main 바로 아래 폼(거래처 ?new=1)을 화면 가운데 띄우고 뒤에 가림막 */
+html body main > form:has([class*="__formActions"]) {
+  position: fixed; z-index: 60; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 64px); overflow: auto;
+  background: #FFFFFF; border-radius: var(--m-radius, 12px); padding: 20px 24px 20px;
+  box-shadow: 0 24px 48px -12px rgba(0, 33, 28, 0.35), 0 4px 12px rgba(0, 33, 28, 0.12);
+}
+html body main > form:has([class*="__formActions"])::before {
+  content: "거래처 등록"; display: block; font-size: 18px; font-weight: 700; color: var(--fg); margin-bottom: 12px; letter-spacing: -0.02em;
+}
+html body main:has(> form [class*="__formActions"])::after {
+  content: ""; position: fixed; inset: 0; background: rgba(0, 33, 28, 0.45); z-index: 55;
+}
+html body main > form:has([class*="__formActions"]) [class*="TextField-module__"][class*="__row"] { grid-template-columns: 1fr; gap: 4px; }
+html body main > form:has([class*="__formActions"]) input,
+html body main > form:has([class*="__formActions"]) select { width: 100%; max-width: none; }
+html body main > form:has([class*="__formActions"]) [class*="__formActions"] { justify-content: flex-end; display: flex; flex-direction: row-reverse; gap: 16px; align-items: center; padding-top: 8px; }
+/* ② 동작 열 간격 */
+html body td:has(> [class*="__toggle"]) { white-space: nowrap; }
+html body td > [class*="__toggle"] ~ [class*="Button-module__"] { margin-left: 14px; }
+/* 모달 안 칸: 라벨 위 · 입력 아래 한 줄 기둥으로 통일 */
+html body main > form:has([class*="__formActions"]) div:is([class*="__row"], [class*="__selectLabel"]) { display: flex !important; flex-direction: column; align-items: stretch; gap: 4px; margin: 0 0 12px; }
+html body main > form:has([class*="__formActions"]) :is(label, [class*="__label"]) { padding: 0 !important; font-size: 13px; font-weight: 600; }

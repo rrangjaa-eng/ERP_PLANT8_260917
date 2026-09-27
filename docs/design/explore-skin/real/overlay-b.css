@@ -1,0 +1,28 @@
+/* 안 B 「스튜디오」 — 위험한 안. 흰 상단 바 + 필 메뉴, 쿨 그레이 캔버스 위 흰 카드(r12 · 층 그림자), 필 태그, 행 48 */
+html:root { --line: #E7ECEA; --line-strong: #D5DDDA; --muted: #56645F; --fg: #14201D; --m-radius: 16px; }
+html body { background: #EEF1F2; }
+html body [class*="TopBar-module__"][class*="__bar"] { background: #FFFFFF; height: 56px; border-bottom: 1px solid #E3E8E6; }
+html body [class*="TopBar-module__"][class*="__mark"] { color: #00312A; }
+html body [class*="TopBar-module__"][class*="__navLink"] { color: #56645F; padding: 6px 14px !important; border-radius: 999px; box-shadow: none !important; }
+html body [class*="TopBar-module__"][class*="__navLink"][aria-current] { background: #EBF2F0; color: #00443A; }
+html body [class*="TopBar-module__"][class*="__kbd"] { color: #56645F; border-color: #D5DDDA; }
+html body [class*="TopBar-module__"][class*="__userTrigger"] { color: #14201D; }
+html body [class*="PageHeader-module__"][class*="__title"] { font-size: 26px; font-weight: 700; letter-spacing: -0.025em; }
+html body main table { background: #FFFFFF; border-collapse: separate !important; border-spacing: 0; border-radius: 14px; overflow: hidden; box-shadow: 0 1px 2px rgba(15, 35, 30, 0.06), 0 8px 24px -8px rgba(15, 35, 30, 0.12); }
+html body main table thead th { background: #FFFFFF; border-bottom: 1px solid var(--line) !important; color: var(--muted); font-weight: 600; padding-top: 14px; padding-bottom: 12px; }
+html body main table td { border-bottom: 1px solid var(--line) !important; border-top: 0 !important; }
+html body main table tbody tr:last-child td { border-bottom: 0 !important; }
+html body main table th:first-child, html body main table td:first-child { padding-left: 20px; }
+html body main table th:last-child, html body main table td:last-child { padding-right: 20px; }
+html body [class*="Table-module__"][class*="__groupHeader"] { background: #F7F9F8; color: #00443A; border: 0 !important; font-weight: 700; padding-top: 10px !important; padding-bottom: 10px !important; }
+html body [class*="Table-module__"][class*="__cell"]:not([class*="__cellSecondary"]) { height: 48px; }
+html body tfoot td, html body [class*="__footerCell"] { background: #F7F9F8; border-top: 1px solid var(--line) !important; }
+html body [class*="__summaryRow"] { background: #FFFFFF; border: 0 !important; border-radius: 14px; padding: 16px 20px !important; margin-top: 16px; box-shadow: 0 1px 2px rgba(15, 35, 30, 0.06), 0 8px 24px -8px rgba(15, 35, 30, 0.12); font-size: 15px; }
+html body [class*="project-detail-module__"][class*="__section"] { border-top: 0 !important; }
+html body [class*="Button-module__"][class*="__btn"]:not([class*="__tertiary"]) { border-radius: 10px; }
+html body [class*="Button-module__"][class*="__secondary"] { border-color: #D5DDDA; background: #FFFFFF; box-shadow: 0 1px 2px rgba(15, 35, 30, 0.08); }
+html body input, html body select { border-radius: 10px; border-color: #C9D3CF; }
+html body [class*="StatusTag-module__"][class*="__base"] { border: 0 !important; border-radius: 999px; padding: 2px 10px; background: #EBF2F0; }
+html body [class*="StatusTag-module__"][class*="__muted"] { background: #EEF1F0; }
+html body [class*="StatusTag-module__"][class*="__danger"] { background: #FBE9E9; }
+html body [class*="StatusTag-module__"][class*="__warning"] { background: #FBF1DE; }

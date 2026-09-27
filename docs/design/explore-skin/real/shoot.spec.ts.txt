@@ -1,0 +1,130 @@
+// 임시(커밋 금지) — 스킨 리프레시 실물 비교: 실제 앱 세 화면에 스킨 오버레이 CSS를 얹어 전체 페이지를 찍는다.
+import { randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { test, expect, type Page } from "@playwright/test";
+import { eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { codeItems } from "@/db/schema";
+import { createProject } from "@/domain/projects";
+import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { createAccount } from "@/domain/auth/accounts";
+import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
+import { insertVendor } from "@/repositories/vendors";
+import { kstToday } from "@/lib/kst-date";
+
+const OUT = process.env.SHOT_OUT ?? "/tmp/skin-shots";
+const SKINS = (process.env.SKINS ?? "now").split(",");
+const OVERLAY_DIR = "docs/design/explore-skin/real";
+const TODAY = kstToday(new Date());
+
+test.setTimeout(600_000);
+
+test("스킨 실물 촬영", async ({ browser }) => {
+  mkdirSync(OUT, { recursive: true });
+  const tryName = async <T,>(f: (n: string) => Promise<T>, n: string): Promise<T> => { try { return await f(n); } catch { return f(`${n} `); } };
+  const org = await tryName((name) => createOrgUnit(SYSTEM_VIEWER, { name }), "기획본부");
+  const team1 = await tryName((name) => createTeam(SYSTEM_VIEWER, { orgUnitId: org.id, name }), "기획1팀");
+  const team2 = await tryName((name) => createTeam(SYSTEM_VIEWER, { orgUnitId: org.id, name }), "기획2팀");
+  const mk = async (name: string, roleId: string, teamId: string) => {
+    const email = `shot-${randomUUID()}@example.test`;
+    const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name, roleId });
+    await assignTeam(SYSTEM_VIEWER, { userId, teamId, effectiveFrom: TODAY });
+    return { userId, email, password: tempPassword };
+  };
+  const ceo = await mk("최지현", "role-sysadmin", team1.id);
+  const pm1 = await mk("박서연", "role-pm", team1.id);
+  const pm2 = await mk("이도윤", "role-pm", team2.id);
+  const pm3 = await mk("김태오", "role-pm", team2.id);
+  const pm4 = await mk("정하은", "role-pm", team1.id);
+
+  const evidence = async (value: string) => value;
+  const v = async (name: string, businessNo: string | null, ev: string | null, bank: string | null) =>
+    insertVendor(SYSTEM_VIEWER, { name, normalizedName: name.replace(/\s|\(주\)/g, "").toLowerCase(), businessNo, defaultEvidenceType: ev ? await evidence(ev) : null, accountBank: bank, accountHolder: bank ? name : null });
+  const hyundai = await v("현대자동차(주)", "101-81-15555", "tax_invoice", "기업은행");
+  const stage = await v("(주)스테이지원커뮤니케이션즈", "107-86-44120", "tax_invoice", "신한은행");
+  const hanbit = await v("한빛무대예술", "312-81-90563", "tax_invoice", "국민은행");
+  const staff = await v("(주)이벤트스태프코리아", "220-87-15534", "invoice", "우리은행");
+  const sky = await v("Skyline Travel Pte Ltd", null, "overseas_invoice", null);
+  await v("김민지 (기타소득)", null, "other_income", "카카오뱅크");
+  const samsung = await v("삼성전자(주)", "124-81-00998", "tax_invoice", null);
+  const cj = await v("CJ제일제당(주)", "104-86-09535", "tax_invoice", null);
+  const kb = await v("KB국민카드", "101-86-61717", "tax_invoice", null);
+  const lg = await v("(주)LG유플러스", "220-81-39938", "tax_invoice", null);
+  const orion = await v("오리온", "134-81-45234", "tax_invoice", null);
+  const kto = await v("한국관광공사", "202-82-00312", "tax_invoice", null);
+
+  const [sub] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+  const subs = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory"));
+  const S = (label: string) => subs.find((s) => s.label === label)?.value ?? sub!.value;
+  const krw = (amount: number) => ({ currency: "KRW" as const, amount, fxRate: 1 });
+
+  let seq = 0;
+  const mkProject = async (name: string, clientId: string, teamId: string, pmUserId: string, lines: Array<[string, string, number, number, number]>) => {
+    const n = ++seq;
+    const startDate = `2026-10-${String(2 + n * 3).padStart(2, "0")}`;
+    const endDate = `2026-10-${String(4 + n * 3).padStart(2, "0")}`;
+    let p;
+    try { p = await createProject(SYSTEM_VIEWER, { clientId, teamId, pmUserId, name, startDate, endDate, preEstimate: { currency: "KRW", amount: 50_000_000, fxRate: 1 } }); }
+    catch { p = await createProject(SYSTEM_VIEWER, { clientId, teamId, pmUserId, name }); }
+    const rev = await getCurrentQuoteRevision(SYSTEM_VIEWER, p.id);
+    if (rev && lines.length) {
+      await saveQuoteLines(SYSTEM_VIEWER, rev.id, { rows: lines.map(([s, itemName, quantity, unit, exec]) => ({ id: randomUUID(), isNew: true, subcategory: S(s), itemName, quantity, unitPrice: krw(unit), execution: krw(exec) })) });
+    }
+    return p;
+  };
+  const main = await mkProject("2026 현대자동차 아이오닉9 미디어 론칭 쇼케이스", hyundai.id, team1.id, pm1.userId, [
+    ["무대·시공", "메인 스테이지 구조물 설치 및 철거", 1, 18_000_000, 12_400_000],
+    ["무대·시공", "LED 월 W12000×H4000", 1, 9_600_000, 6_900_000],
+    ["무대·시공", "음향·조명 오퍼레이팅 (2일)", 2, 2_200_000, 3_100_000],
+    ["인력", "행사 진행 MC — 김민지", 1, 3_000_000, 2_200_000],
+    ["인력", "운영요원 12명 × 2일", 24, 300_000, 5_760_000],
+    ["인쇄·제작", "포토월·현수막·X배너 제작", 1, 2_400_000, 1_650_000],
+    ["기타", "해외 연사 항공·숙박", 1, 5_800_000, 5_537_280],
+  ]);
+  await mkProject("삼성전자 비스포크 AI 팝업스토어 성수", samsung.id, team2.id, pm2.userId, [["무대·시공", "팝업 부스 시공", 1, 86_000_000, 67_300_000], ["인력", "상주 운영 인력 31일", 1, 40_500_000, 31_040_000]]);
+  await mkProject("LG유플러스 대학생 서포터즈 발대식", lg.id, team1.id, pm4.userId, [["무대·시공", "무대·음향", 1, 12_000_000, 8_400_000], ["인쇄·제작", "키트 제작 300세트", 300, 22_333, 4_690_000]]);
+  await mkProject("CJ제일제당 비비고 페스타 부산", cj.id, team1.id, pm1.userId, [["무대·시공", "야외 부스 12동", 12, 4_500_000, 3_860_000], ["인력", "시식 운영 인력", 1, 18_300_000, 8_540_500]]);
+  await mkProject("KB국민카드 트래블러스 로드쇼 (전국 6개 도시 순회)", kb.id, team2.id, pm3.userId, [["무대·시공", "순회 부스 6회", 6, 32_000_000, 25_400_000], ["인력", "도시별 운영 인력", 6, 8_166_666, 6_332_000]]);
+  await mkProject("한국관광공사 K-컬처 페어 도쿄", kto.id, team2.id, pm2.userId, [["무대·시공", "현지 부스 시공", 1, 60_800_000, 52_000_000]]);
+  await mkProject("오리온 꼬북칩 대학 축제 샘플링", orion.id, team2.id, pm3.userId, [["인력", "샘플링 인력 20명", 20, 770_000, 16_120_000]]);
+  await mkProject("스테이지원 파트너 워크숍", stage.id, team1.id, pm4.userId, []);
+  void hanbit; void staff; void sky;
+
+  const ctxFor = async (width: number) => {
+    const isPhone = width < 700;
+    const ctx = await browser.newContext({ viewport: { width, height: isPhone ? 844 : 900 }, deviceScaleFactor: isPhone ? 2 : 1, isMobile: isPhone, hasTouch: isPhone });
+    const page = await ctx.newPage();
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(ceo.email);
+    await page.getByLabel("비밀번호").fill(ceo.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    return { ctx, page };
+  };
+  const screens: Array<[string, string]> = [["projects", "/projects"], ["project", `/projects/${main.id}`], ["vendors", "/admin/vendors?new=1"]];
+
+  for (const width of [1280, 390]) {
+    const { ctx, page } = await ctxFor(width);
+    for (const [key, url] of screens) {
+      await page.goto(url);
+      await page.waitForLoadState("networkidle");
+      if (!existsSync(`${OUT}/${key}.html`)) writeFileSync(`${OUT}/${key}.html`, await page.content());
+      for (const skin of SKINS) {
+        await page.reload();
+        await page.waitForLoadState("networkidle");
+        const files = skin === "now" ? [] : ["_common", ...(skin === "d" ? ["overlay-a", "overlay-d"] : [`overlay-${skin}`])];
+        for (const f of files) await page.addStyleTag({ content: readFileSync(`${OVERLAY_DIR}/${f}.css`, "utf8") });
+        // 전체 페이지 촬영에서 고정 하단 탭이 중간에 찍히지 않게 문서 끝으로 보낸다(촬영 전용)
+        await page.addStyleTag({ content: '[class*="BottomTabs-module__"][class*="__tabs"]{position:static!important}' });
+        await page.addStyleTag({ content: "*{transition:none!important;animation:none!important;caret-color:transparent!important}" });
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        await page.waitForTimeout(300);
+        const sw = await page.evaluate(() => [document.scrollingElement!.scrollWidth, document.scrollingElement!.clientWidth]);
+        writeFileSync(`${OUT}/${key}-${skin}-${width}.json`, JSON.stringify({ sw }));
+        await page.screenshot({ path: `${OUT}/${key}-${skin}-${width}.png`, fullPage: !(key === "vendors" && skin !== "now") });
+      }
+    }
+    await ctx.close();
+  }
+});

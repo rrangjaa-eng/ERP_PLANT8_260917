@@ -192,3 +192,19 @@ status: complete
 ## Self-Check: PASSED
 
 - 파일 7개 FOUND · 커밋 6개(f2eb2d5 · d443301 · 3135423 · c999d41 · 774edff · 1d56bf9) FOUND
+
+## Review follow-up (2026-09-27, Opus 리뷰 04-07)
+
+**고친 것 (각각 RED 확인 → GREEN)**
+- B1 `ac1aedb` — 같은 id를 수정(rows)과 보관(archivedIds)에 함께 보내면 잔액 판정을 비켜 가 음수 잔액이 커밋되던 구멍. planBatch가 rows·archivedIds 전체의 중복 id를 「같은 줄 중복 · 새로 고침」(reserve.input)으로 거부하고, 원장 메모리 적용은 수정·새 줄 뒤에 보관 삭제를 적용한다. archivedIds 안의 중복(N4, archive 로그 두 줄)도 같은 규칙으로 막힌다.
+- S1 `ca32e56` — 입금 보관 중간 음수 테스트가 ReserveBalanceRejectedError · 이유 문구 · rejection.entryDate 2026-03-05를 확인한다(잔액 판정 끔 · 다른 거부로 바꿈 두 변이에서 실패 확인).
+- S2 `b0c0fe5` — restoreReserve의 없는 줄 경로가 denyWrite("reserve.restore")를 지나 write.denied를 남긴다.
+- S3 `ff9b4df` — 줄 id·clientId·projectId·archivedIds·복원 id의 uuid 모양을 쿼리 전에 검사해 PG 22P02 대신 칸 이유/「줄을 찾을 수 없음 · 새로 고침」으로 거부한다(정규식은 domain/projects와 같은 모듈 내부 상수 — 공유 검증기는 없다).
+
+**넘긴 것 (NIT, 고치지 않음)**
+- N1 잔액 누적이 domain/money가 아니라 정수 `+=` — 원화 정수라 정확하지만 편차 기록 없음.
+- N2 rejectNegative가 잠긴 tx에서 활성 리저브 줄 전체를 `select *`로 읽는다(계획은 정렬 키만) — 현재 규모에서 성능 NIT.
+- N3 VERSION_CONFLICT가 denyWrite 없이 던져져 write.denied가 남지 않는 유일한 쓰기 거부.
+
+**04-42 의무**
+- 04-42의 액션 스키마도 가장자리에서 id(줄 id·clientId·projectId·archivedIds·복원 id)에 uuid 검증을 건다 — 도메인 검사는 마지막 방어선이다.

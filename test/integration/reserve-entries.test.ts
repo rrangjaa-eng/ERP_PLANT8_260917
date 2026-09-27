@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, pool } from "@/db/client";
 import { actionLog, reserveEntries, teams } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
@@ -15,6 +15,13 @@ import { FX_RECENT_RATE_USD } from "@/domain/settings/keys";
 import { getSettingValue } from "@/domain/settings/registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { log } from "@/lib/log";
+import { addDays } from "@/lib/kst-date";
+import { ForbiddenError } from "@/domain/permissions/can";
+import { insertRole } from "@/repositories/roles";
+import { archive, restore, ProtectedRowError } from "@/domain/archive";
+import { listArchivedAcrossEntities } from "@/repositories/archive";
+import { restoreReserve, ReserveBalanceRejectedError } from "@/domain/reserves";
+import { deferred, waitForLockWaiter } from "./lock-race";
 
 // 04-07 — 리저브 대장(RSV-01) 서버 쪽. 「경영관리」 페르소나는 SEED_ROLES에 없는 조직상 역할이라 revenue-entries.test.ts와
 // 같은 결로 role-ceo에 이 테스트가 `pnl` 쓰기·보기와 `reserve.amount` 노출을 명시로 준다.
@@ -354,5 +361,216 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
     const client = await createClient();
 
     await expectOneDenied("reserve.balance-negative", () => rejection(saveReserves(finance, { rows: [newRow(client.id, "2026-03-01", "withdrawal", 1)] })));
+  });
+});
+
+// 권한표·노출표를 이 테스트가 직접 채운 새 계급의 사람(시드 계급과 섞이지 않는다).
+async function createViewerWith(opts: { permissions: [string, "view" | "write"][]; reserveVisible: boolean }): Promise<Viewer> {
+  const roleId = `role-${randomUUID()}`;
+  await insertRole(SYSTEM_VIEWER, { id: roleId, name: `계급 ${roleId.slice(5, 13)}` });
+  for (const [menu, action] of opts.permissions) await upsertPermission(SYSTEM_VIEWER, { roleId, menu, action, allowed: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "reserve.amount", visible: opts.reserveVisible });
+  const { userId } = await createAccount(SYSTEM_VIEWER, { email: `u-${randomUUID()}@example.test`, name: "통합테스트 사용자", roleId });
+  return { id: userId, roleId };
+}
+
+async function caught(promise: Promise<unknown>): Promise<unknown> {
+  return promise.then(
+    () => null,
+    (error: unknown) => error,
+  );
+}
+
+// 한 클라이언트 51줄: 1쪽 첫 줄 = 입금 1,000,000(1/1) · 그 뒤 입금 1원 49줄 · 2쪽(51번째) = 출금 1,000,000.
+async function seedFiftyOne(finance: Viewer, clientId: string) {
+  const first = newRow(clientId, "2026-01-01", "deposit", 1_000_000);
+  const smalls = Array.from({ length: 49 }, (_, i) => newRow(clientId, addDays("2026-01-02", i), "deposit", 1));
+  const last = newRow(clientId, "2026-06-01", "withdrawal", 1_000_000);
+  await saveReserves(finance, { rows: [first, ...smalls, last] });
+  return { first, last };
+}
+
+describe("domain/reserves — 권한 · 노출 · 보관/복원 · 페이지 · 경합 (04-07 Task 3)", () => {
+  it("pnl 보기만 있는 사람의 저장은 ForbiddenError, DB 무변경, write.denied 한 번", async () => {
+    const viewer = await createViewerWith({ permissions: [["pnl", "view"]], reserveVisible: true });
+    const client = await createClient();
+
+    const error = await expectOneDenied("reserve.forbidden", () => caught(saveReserves(viewer, { rows: [newRow(client.id, "2026-03-01", "deposit", 1_000)] })));
+
+    expect(error).toBeInstanceOf(ForbiddenError);
+    expect(await countRows(client.id)).toBe(0);
+  });
+
+  it("pnl 쓰기는 있고 reserve.amount가 꺼진 계급의 저장·복원은 숫자 없는 ForbiddenError — 잔액을 떠볼 수 없다(GAP 3a)", async () => {
+    const finance = await createFinanceViewer();
+    const viewer = await createViewerWith({ permissions: [["pnl", "view"], ["pnl", "write"], ["admin.archive", "write"]], reserveVisible: false });
+    const client = await createClient();
+    const deposit = newRow(client.id, "2026-03-01", "deposit", 1_000_000);
+    const withdrawal = newRow(client.id, "2026-03-05", "withdrawal", 300_000);
+    await saveReserves(finance, { rows: [deposit, withdrawal], archivedIds: [] });
+    await saveReserves(finance, { rows: [], archivedIds: [withdrawal.id] });
+
+    const saveError = await expectOneDenied("reserve.forbidden", () => caught(saveReserves(viewer, { rows: [newRow(client.id, "2026-03-02", "withdrawal", 5_000_000)] })));
+    expect(saveError).toBeInstanceOf(ForbiddenError);
+    expect((saveError as Error).message).not.toMatch(/\d/);
+
+    const restoreError = await expectOneDenied("reserve.forbidden", () => caught(restoreReserve(viewer, withdrawal.id)));
+    expect(restoreError).toBeInstanceOf(ForbiddenError);
+    expect((restoreError as Error).message).not.toMatch(/\d/);
+    expect(await countRows(client.id)).toBe(2);
+    expect((await storedRow(withdrawal.id))?.archivedAt).not.toBeNull();
+  });
+
+  it("admin.archive 없는 경영관리가 배치 archivedIds로 출금 줄을 보관 → 통과, 보관함에 금액 없는 이름으로 나타난다", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient("현대자동차");
+    const deposit = newRow(client.id, "2026-03-01", "deposit", 1_000_000);
+    const withdrawal = newRow(client.id, "2026-03-05", "withdrawal", 300_000);
+    await saveReserves(finance, { rows: [deposit, withdrawal] });
+
+    await saveReserves(finance, { rows: [], archivedIds: [withdrawal.id] });
+
+    expect((await storedRow(withdrawal.id))?.archivedAt).not.toBeNull();
+    const items = (await listArchivedAcrossEntities(SYSTEM_VIEWER)).filter((item) => item.entity === "reserve_entry");
+    expect(items.map((item) => [item.id, item.label, item.name])).toEqual([[withdrawal.id, "리저브", "2026-03-05 현대자동차 출금"]]);
+    expect((await reserveLogs("archive")).map((row) => row.entityId)).toEqual([withdrawal.id]);
+  });
+
+  it("입금 줄 보관으로 중간 날짜가 음수가 되는 배치는 거부되고 DB 무변경", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const deposit = newRow(client.id, "2026-03-01", "deposit", 1_000_000);
+    await saveReserves(finance, { rows: [deposit, newRow(client.id, "2026-03-05", "withdrawal", 300_000), newRow(client.id, "2026-04-01", "deposit", 5_000_000)] });
+
+    await rejection(saveReserves(finance, { rows: [], archivedIds: [deposit.id] }));
+
+    expect((await storedRow(deposit.id))?.archivedAt).toBeNull();
+  });
+
+  it("범용 archive(관리자, reserve_entry)는 보호 행으로 거부되고 DB 무변경", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const deposit = newRow(client.id, "2026-03-01", "deposit", 1_000_000);
+    await saveReserves(finance, { rows: [deposit] });
+
+    await expect(archive(SYSTEM_VIEWER, "reserve_entry", deposit.id)).rejects.toBeInstanceOf(ProtectedRowError);
+
+    expect((await storedRow(deposit.id))?.archivedAt).toBeNull();
+  });
+
+  it("보관함 복원: 음수가 되는 출금 복원은 거부(DB 무변경), 음수가 안 되는 복원은 통과 + restore 로그, pnl 쓰기 없는 사람은 거부", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const deposit = newRow(client.id, "2026-09-01", "deposit", 1_000_000);
+    const small = newRow(client.id, "2026-09-10", "withdrawal", 100_000);
+    const big = newRow(client.id, "2026-09-18", "withdrawal", 1_000_000);
+    await saveReserves(finance, { rows: [deposit, small] });
+    await saveReserves(finance, { rows: [], archivedIds: [small.id] });
+    await saveReserves(finance, { rows: [big] });
+    // 이제 small을 복원하면 9/18 마감이 1,000,000 − 100,000 − 1,000,000 = −100,000.
+
+    const refused = await caught(restore(SYSTEM_VIEWER, "reserve_entry", small.id));
+    expect(refused).toBeInstanceOf(UserFacingError);
+    expect((refused as Error).message).toBe("복원하면 2026-09-18 잔액이 -100,000이 됩니다 · 리저브 대장에서 출금 줄을 먼저 고쳐 주세요");
+    expect((await storedRow(small.id))?.archivedAt).not.toBeNull();
+
+    const noPnl = await createViewerWith({ permissions: [["admin.archive", "write"]], reserveVisible: true });
+    expect(await caught(restore(noPnl, "reserve_entry", small.id))).toBeInstanceOf(ForbiddenError);
+
+    await saveReserves(finance, { rows: [newRow(client.id, "2026-09-02", "deposit", 500_000)] });
+    await restore(SYSTEM_VIEWER, "reserve_entry", small.id);
+    expect((await storedRow(small.id))?.archivedAt).toBeNull();
+    expect((await reserveLogs("restore")).map((row) => row.entityId)).toEqual([small.id]);
+  });
+
+  it("노출(키 집합): 기획 PM과 pnl 보기 + 노출 꺼진 계급은 빈 결과에 건수·그룹 키가 없고, 경영관리는 줄·잔액 전부", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    await saveReserves(finance, { rows: [newRow(client.id, "2026-03-01", "deposit", 1_000_000)] });
+    const { userId } = await createAccount(SYSTEM_VIEWER, { email: `pm-${randomUUID()}@example.test`, name: "PM", roleId: DEFAULT_ROLE_ID });
+    const hidden = await createViewerWith({ permissions: [["pnl", "view"]], reserveVisible: false });
+
+    for (const viewer of [{ id: userId, roleId: DEFAULT_ROLE_ID }, hidden]) {
+      expect(await listReserves(viewer, { page: 1 })).toEqual({ rows: [], page: 1, pageCount: 0 });
+    }
+    const full = await listReserves(finance, { page: 1 });
+    expect(full.rows).toHaveLength(1);
+    expect(full.rows[0]).toMatchObject({ clientId: client.id, balanceKrw: 1_000_000, amount: { amountKrw: 1_000_000 } });
+    expect(full.total).toBe(1);
+  });
+
+  it("페이지: 51줄의 2쪽 첫 줄 잔액은 전체 누적 기준, 그룹 최종 잔액은 두 쪽에서 같고, page=99는 마지막 쪽", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const { last } = await seedFiftyOne(finance, client.id);
+
+    const page1 = await listReserves(finance, { page: 1 });
+    const page2 = await listReserves(finance, { page: 2 });
+    expect(page1.rows).toHaveLength(50);
+    expect(page2.rows.map((row) => row.id)).toEqual([last.id]);
+    expect(page2.rows[0]?.balanceKrw).toBe((page1.rows.at(-1)?.balanceKrw ?? 0) - 1_000_000);
+    expect(page1.clientBalances).toEqual(page2.clientBalances);
+    expect(page1.clientBalances?.[0]?.balanceKrw).toBe(49);
+    expect([page1.pageCount, page1.total]).toEqual([2, 51]);
+    expect((await listReserves(finance, { page: 99 })).page).toBe(2);
+  });
+
+  it("거부 줄의 쪽 번호(Codex #7): 1쪽 입금을 줄여 2쪽 줄이 음수 → page 2, 새 줄에서 생긴 음수 → page null", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient("현대자동차");
+    const { first, last } = await seedFiftyOne(finance, client.id);
+
+    const error = await caught(saveReserves(finance, { rows: [{ ...first, isNew: undefined, version: 1, amount: krw(900_000) }] }));
+    expect(error).toBeInstanceOf(ReserveBalanceRejectedError);
+    expect((error as ReserveBalanceRejectedError).rejection).toEqual({
+      entryId: last.id,
+      entryDate: "2026-06-01",
+      clientId: client.id,
+      clientName: "현대자동차",
+      balanceKrw: -99_951,
+      page: 2,
+    });
+
+    const fresh = newRow(client.id, "2026-07-01", "withdrawal", 100);
+    const newError = await caught(saveReserves(finance, { rows: [fresh] }));
+    expect((newError as ReserveBalanceRejectedError).rejection).toMatchObject({ entryId: fresh.id, page: null, balanceKrw: -51 });
+  });
+
+  it("경합(사용자 D5): A가 잠금을 쥔 동안 B의 같은 클라이언트 출금은 기다렸다가 새 잔액으로 거부 · 다른 클라이언트는 기다리지 않는다", async () => {
+    expect(pool.options.max ?? 10).toBeGreaterThanOrEqual(3);
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const other = await createClient();
+    await saveReserves(finance, { rows: [newRow(client.id, "2026-03-01", "deposit", 1_000_000), newRow(other.id, "2026-03-01", "deposit", 10)] });
+    const locked = deferred();
+    const release = deferred();
+
+    const first = saveReserves(
+      finance,
+      { rows: [newRow(client.id, "2026-03-02", "withdrawal", 900_000)] },
+      {
+        afterLock: async () => {
+          locked.resolve();
+          await release.promise;
+        },
+      },
+    );
+    await locked.promise;
+    // 다른 클라이언트의 저장은 A의 잠금을 기다리지 않는다(A를 풀기 전에 끝난다).
+    await saveReserves(finance, { rows: [newRow(other.id, "2026-03-02", "withdrawal", 5)] });
+    const second = caught(saveReserves(finance, { rows: [newRow(client.id, "2026-03-03", "withdrawal", 200_000)] }));
+    try {
+      await waitForLockWaiter(pool);
+    } finally {
+      release.resolve();
+    }
+
+    await first;
+    const secondError = await second;
+    expect(secondError).toBeInstanceOf(SaveRejectedError);
+    expect((secondError as SaveRejectedError).formatErrors[0]?.reason).toBe("이 줄 뒤 잔액 -100,000 · 금액을 줄이거나 입금 줄 먼저");
+    const list = await listReserves(finance, { page: 1 });
+    expect(list.rows.filter((row) => row.clientId === client.id).every((row) => row.balanceKrw >= 0)).toBe(true);
+    expect(list.clientBalances?.find((entry) => entry.clientId === client.id)?.balanceKrw).toBe(100_000);
   });
 });

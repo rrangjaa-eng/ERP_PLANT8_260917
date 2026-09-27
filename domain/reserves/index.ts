@@ -465,7 +465,7 @@ export async function restoreReserve(
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await withTransaction(async (tx) => {
     const [before] = await repoFindEntriesByIds(viewer, [id], tx);
-    if (!before) throw new UserFacingError(ENTRY_NOT_FOUND);
+    if (!before) denyWrite(viewer, "reserve.restore", { entryIds: [id] }, new UserFacingError(ENTRY_NOT_FOUND));
     // 클라이언트는 첫 저장 뒤 바뀌지 않으므로 잠금 전에 읽어도 된다(사용자 D6).
     await repoLockReserveClients(viewer, [before.clientId], tx);
     await deps?.afterLock?.();

@@ -517,6 +517,15 @@ describe("domain/reserves — 권한 · 노출 · 보관/복원 · 페이지 · 
     expect((await reserveLogs("restore")).map((row) => row.entityId)).toEqual([small.id]);
   });
 
+  it("없는 줄 복원은 `줄을 찾을 수 없음 · 새로 고침`, write.denied 한 번(규칙 reserve.restore — 리뷰 S2)", async () => {
+    const finance = await createFinanceViewer();
+    const missingId = randomUUID();
+
+    const error = await expectOneDenied("reserve.restore", () => userFacing(restoreReserve(finance, missingId)));
+
+    expect(error.message).toBe("줄을 찾을 수 없음 · 새로 고침");
+  });
+
   it("노출(키 집합): 기획 PM과 pnl 보기 + 노출 꺼진 계급은 빈 결과에 건수·그룹 키가 없고, 경영관리는 줄·잔액 전부", async () => {
     const finance = await createFinanceViewer();
     const client = await createClient();

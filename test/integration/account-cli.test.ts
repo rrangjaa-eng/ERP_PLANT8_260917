@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { lockoutConfig, recordLoginFailure, windowStart } from "@/domain/auth/lockout";
+import { countOpenFailures } from "@/repositories/login-attempts";
+import { queryActionLog } from "@/repositories/action-log";
 
 // account-cli.ts는 Cloud Run Job(plant8-{env}-account)이 실행하는 진입점이다.
 // 여기서 중요한 건 "계정이 만들어졌는가"만이 아니라 **프로세스가 스스로
@@ -61,5 +65,29 @@ describe("scripts/account-cli 프로세스 종료", () => {
 
     expect(signal).toBeNull();
     expect(status).toBe(2);
+  }, IT_TIMEOUT_MS);
+});
+
+// 04.2-08(D-712·D-4222): 지금 실제로 쓰는 해제 경로는 account.yml → Cloud Run Job →
+// 이 CLI다. 워크플로가 github.triggering_actor를 --operator로 넘기면 해제 행동 로그의
+// detail.operator에 남는다(actorId는 시스템 실행이라 null).
+describe("scripts/account-cli unlock 행동 로그", () => {
+  it("잠긴 계정을 unlock --operator로 풀면 account_unlock 1행(operator)이 남고 열린 실패가 0이 된다", async () => {
+    const email = `unlock-cli-${randomBytes(4).toString("hex")}@example.invalid`;
+    const { threshold, windowMinutes } = await lockoutConfig();
+    for (let i = 0; i < threshold; i++) {
+      await recordLoginFailure(email, "198.51.100.80");
+    }
+
+    const { status, signal, stdout, stderr } = runAccountCli(["unlock", "--email", email, "--operator", "octo-admin"]);
+    expect(signal).toBeNull();
+    expect(status, stderr).toBe(0);
+    expect(stdout).toContain(`account unlocked: ${email} (resolved=${threshold})`);
+
+    const rows = await queryActionLog(SYSTEM_VIEWER, { actionType: "account_unlock" });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.actorId).toBeNull();
+    expect(rows[0]?.detail).toEqual({ email, resolved: threshold, operator: "octo-admin" });
+    expect(await countOpenFailures(SYSTEM_VIEWER, email, windowStart(new Date(), windowMinutes))).toBe(0);
   }, IT_TIMEOUT_MS);
 });

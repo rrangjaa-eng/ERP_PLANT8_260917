@@ -17,3 +17,5 @@ export * from "./quote-lines";
 export * from "./revenue-entries";
 export * from "./approvals";
 export * from "./leave";
+export * from "./notifications";
+export * from "./holidays";

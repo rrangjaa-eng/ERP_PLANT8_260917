@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { GENERIC_ERROR, loginErrorMessage } from "@/app/(auth)/login/login-error";
+import { isLockedMessage, lockedMessage } from "@/domain/auth/locked-message";
 
 // SYSTEM.md §6-7 A②·A③ — 실패 문구는 한국어 한 문장이고, 계정 잠금만 같은 자리에
 // 서버 문구를 그대로 보인다. better-auth의 영문 메시지가 화면에 새어 나오면 안 된다.
@@ -17,7 +18,7 @@ describe("loginErrorMessage (§6-7 A②·A③)", () => {
   });
 
   it("A③: 계정 잠금(403)은 서버가 준 문구를 그대로 보인다 — 잠긴 사용자가 비밀번호를 계속 고쳐 보는 것을 막는다", () => {
-    const locked = "로그인 시도 과다 · 15분 뒤 다시 시도하거나 관리자에게 문의";
+    const locked = lockedMessage(15);
     expect(loginErrorMessage({ status: 403, message: locked })).toBe(locked);
   });
 
@@ -40,7 +41,41 @@ describe("loginErrorMessage (§6-7 A②·A③)", () => {
   });
 
   it("L-3: 잠금 문구는 그대로 보인다 — 잠긴 줄 모르고 비밀번호만 고쳐 보게 두지 않는다", () => {
-    const locked = "로그인 시도 과다 · 15분 뒤 다시 시도하거나 관리자에게 문의";
+    const locked = lockedMessage(15);
     expect(loginErrorMessage({ status: 403, message: locked })).toBe(locked);
+  });
+
+  // 04.2-03: 분 숫자는 설정값이라 정확 대조 대신 고정 접두어·접미어로 판정한다.
+  it("설정 분 숫자가 바뀐 잠금 문구(403)도 그대로 보인다", () => {
+    expect(loginErrorMessage({ status: 403, message: lockedMessage(20) })).toBe(lockedMessage(20));
+  });
+
+  it("잠금 문구라도 403이 아니면 일반 문구로 접는다", () => {
+    expect(loginErrorMessage({ status: 401, message: lockedMessage(20) })).toBe(GENERIC_ERROR);
+  });
+});
+
+describe("lockedMessage · isLockedMessage (04.2-03)", () => {
+  it("분 숫자를 문장에 넣는다", () => {
+    expect(lockedMessage(20)).toBe("로그인 시도 과다 · 20분 뒤 다시 시도하거나 관리자에게 문의");
+  });
+
+  it("15분이면 #87 명사형 문구와 글자 하나까지 같다", () => {
+    expect(lockedMessage(15)).toBe("로그인 시도 과다 · 15분 뒤 다시 시도하거나 관리자에게 문의");
+  });
+
+  it("소수 분은 정수로 표시한다", () => {
+    expect(lockedMessage(20.7)).toBe(lockedMessage(20));
+  });
+
+  it("잠금 문구를 알아본다", () => {
+    expect(isLockedMessage(lockedMessage(7))).toBe(true);
+  });
+
+  it("다른 문장·숫자 없는 자리·숫자가 아닌 자리는 잠금 문구가 아니다", () => {
+    expect(isLockedMessage("Invalid origin")).toBe(false);
+    expect(isLockedMessage("로그인 시도 과다 · 분 뒤 다시 시도하거나 관리자에게 문의")).toBe(false);
+    expect(isLockedMessage("로그인 시도 과다 · 십오분 뒤 다시 시도하거나 관리자에게 문의")).toBe(false);
+    expect(isLockedMessage("로그인 시도 과다 · 1.5분 뒤 다시 시도하거나 관리자에게 문의")).toBe(false);
   });
 });

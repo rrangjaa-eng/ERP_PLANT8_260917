@@ -268,6 +268,16 @@ case "$ARGS" in
     exit 0
     ;;
 
+  "scheduler jobs describe "*)
+    state_file scheduler-job || { echo "fake gcloud: scheduler job not found" >&2; exit 1; }
+    ;;
+  "scheduler jobs create http "*)
+    exit 0
+    ;;
+  "scheduler jobs update http "*)
+    exit 0
+    ;;
+
   "beta run domain-mappings list"*)
     exit 0
     ;;

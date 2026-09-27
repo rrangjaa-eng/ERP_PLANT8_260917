@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 41
+current_plan: 42
 status: executing
-stopped_at: Completed 04-51-PLAN.md
-last_updated: "2026-09-27T19:31:55.125Z"
+stopped_at: Completed 04-42-PLAN.md
+last_updated: "2026-09-27T20:34:21.976Z"
 last_activity: 2026-09-27
 last_activity_desc: Phase 4 execution started
-state_head: be5275e525ee5ed99d0e1abf5518ed64b445f46b
+state_head: cc161c51d19db1145362f93083efc3c8fdb628f3
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 140
-  completed_plans: 78
+  completed_plans: 79
   percent: 6
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 4 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 41
+Current Plan: 42
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-27 - Completed quick task 260927-jny: ROADMAP 17행 Phase 9 착수 조건을 테스트 데이터 검증 결정에 맞춤
@@ -112,6 +112,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P18 | 61min | 3 tasks | 14 files |
 | Phase 04 P07 | 36min | 3 tasks | 13 files |
 | Phase 04 P51 | 30 min | 2 tasks | 4 files |
+| Phase 4 P42 | 59 min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -281,6 +282,7 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-18: 폰 접힌 줄의 귀속 · 종료일 지남은 기간 열 summary로 — Table p2 규칙 불변
 - [Phase 4]: 04-07: 리저브 쓰기는 vendors 행 id 오름차순 FOR NO KEY UPDATE 잠금 뒤 날짜 마감 잔액(runningBalance)으로 판정 — 마이그레이션은 생성기 번호 그대로 0018_reserve_entries
 - [Phase 04]: 04-51: 결정 ② = (a) 설정 검증(사용자 답 2026-09-24) — 순번 시작값 저장이 올해 이미 매긴 최대 표시 순번(카운터 + 현재 시작값 − 1) 이하이면 「순번 시작값이 이미 매긴 번호({최대})와 겹침 · {최대 + 1} 이상 입력」으로 거부(domain/document-numbering assertSeqStartAvailable, 설정 저장 액션이 저장 전 호출). 제안 문구는 명사형 통일 규칙으로 변환
+- [Phase 4]: 04-42: /pnl/reserves는 layout·page가 pnl 보기 + reserve.amount를 판정(loading 스트리밍 뒤에도 404) · 대장 참조는 domain listReserveReferences
 
 ### Pending Todos
 
@@ -346,6 +348,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-27T19:31:48.362Z
-Stopped at: Completed 04-51-PLAN.md
+Last session: 2026-09-27T20:34:21.678Z
+Stopped at: Completed 04-42-PLAN.md
 Resume file: None

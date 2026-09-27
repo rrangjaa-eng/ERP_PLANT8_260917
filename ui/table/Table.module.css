@@ -96,6 +96,14 @@
   font-weight: var(--fw-medium);
 }
 
+/* 04-42(S9) — 그룹 머리글 행 오른쪽 칸(리저브 최종 잔액): 값이라 본문 색 · 굵게 · 숫자 고정 폭. */
+.groupAside {
+  float: inline-end;
+  color: var(--fg);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+}
+
 /* (가) 편집 단계 — 편집 가능 셀만 상호작용 신호(커서 + 포커스 링). 읽기
    전용·잠김 셀은 값만, 배경 없음(§7-3 (가) 표). */
 .editableCell {

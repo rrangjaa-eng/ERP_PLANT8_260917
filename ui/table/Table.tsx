@@ -41,6 +41,8 @@ export type TableProps<Row> = {
   rows: Row[];
   getRowId: (row: Row) => string;
   groupBy?: (row: Row) => string;
+  /** 04-42(S9) — 그룹 머리글 행 오른쪽 칸(굵게). 그룹의 첫 줄로 부른다 — 리저브 대장의 클라이언트 최종 잔액. */
+  groupAside?: (row: Row) => ReactNode;
   emptyMessage?: string;
   emptyAction?: { label: string; onClick: () => void; shortcut?: string };
   /**
@@ -169,6 +171,7 @@ export function Table<Row>({
   rows,
   getRowId,
   groupBy,
+  groupAside,
   emptyMessage,
   emptyAction,
   footer,
@@ -818,6 +821,7 @@ export function Table<Row>({
                 <tr className={styles.groupRow}>
                   <td colSpan={columns.length} className={styles.groupHeader}>
                     {group.header}
+                    {groupAside && group.rows[0] !== undefined ? <span className={styles.groupAside}>{groupAside(group.rows[0])}</span> : null}
                   </td>
                 </tr>
               </RowBody>

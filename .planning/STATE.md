@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 39
+current_plan: 40
 status: executing
-stopped_at: Completed 04-18-PLAN.md
-last_updated: "2026-09-27T07:54:27.344Z"
-last_activity: 2026-09-25
+stopped_at: Completed 04-07-PLAN.md
+last_updated: "2026-09-27T18:09:27.425Z"
+last_activity: 2026-09-27
 last_activity_desc: Phase 4 execution started
-state_head: c9977fc82b78623f7906f4ed9f840b00db98e6bf
+state_head: 1d56bf9d2b9434783279b59b943044b07d1fa16f
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 140
-  completed_plans: 76
+  completed_plans: 77
   percent: 6
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 4 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 39
+Current Plan: 40
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-27 - Completed quick task 260927-jny: ROADMAP 17행 Phase 9 착수 조건을 테스트 데이터 검증 결정에 맞춤
@@ -110,6 +110,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P47 | 38min | 2 tasks | 15 files |
 | Phase 4 P48 | ~3h | 3 tasks | 13 files |
 | Phase 04 P18 | 61min | 3 tasks | 14 files |
+| Phase 04 P07 | 36min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -277,6 +278,7 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-18: 목록 profitKrw · 수익금 열 · 정렬은 모두 D-87 수익금(기준 − 실행가) 한 식, 옛 줄 차익 합 제거
 - [Phase 4]: 04-18: 볼 수 없는 금액 열 정렬 키는 기본 정렬로 떨어지고 머리글 aria-sort는 실제 쓴 정렬(ProjectListResult.sort)을 따른다
 - [Phase 4]: 04-18: 폰 접힌 줄의 귀속 · 종료일 지남은 기간 열 summary로 — Table p2 규칙 불변
+- [Phase 4]: 04-07: 리저브 쓰기는 vendors 행 id 오름차순 FOR NO KEY UPDATE 잠금 뒤 날짜 마감 잔액(runningBalance)으로 판정 — 마이그레이션은 생성기 번호 그대로 0018_reserve_entries
 
 ### Pending Todos
 
@@ -342,6 +344,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-27T07:54:27.077Z
-Stopped at: Completed 04-18-PLAN.md
+Last session: 2026-09-27T18:09:27.118Z
+Stopped at: Completed 04-07-PLAN.md
 Resume file: None

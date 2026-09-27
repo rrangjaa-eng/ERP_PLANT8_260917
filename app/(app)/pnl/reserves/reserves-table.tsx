@@ -1,18 +1,27 @@
 "use client";
 
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
+import Link from "next/link";
 import { useAction } from "next-safe-action/hooks";
 import { saveReservesAction } from "./actions";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { Button } from "@/ui/button/Button";
 import { Select } from "@/ui/select/Select";
 import { Table } from "@/ui/table/Table";
+import { Pagination } from "@/ui/pagination/Pagination";
+import { pageRangeText } from "@/ui/pagination/page-window";
+import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
+import { Toast } from "@/ui/toast/Toast";
+import { useDirtyStorage } from "@/ui/table/use-dirty-storage";
+import { useEditableWidth } from "@/ui/table/use-editable-width";
+import { LIST_PAGE_SIZE } from "@/lib/paging";
 import { useCommaInput } from "@/ui/input/use-comma-input";
 import { savedNoticeText, type FooterNoticeItem } from "@/ui/table/footer-notice";
 import type { CellEditability, CellIssue, TableColumn } from "@/ui/table/types";
 import { formatForeignLine, formatKrw, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
 import type { Currency } from "@/domain/money";
 import type {
+  ReserveBalanceRejection,
   ReserveCellEditability,
   ReserveCellField,
   ReserveDirection,
@@ -73,6 +82,15 @@ function columnForField(field: string): string {
   return field;
 }
 
+// 힌트 줄 — 이 화면에서 실제로 되는 키만(저장은 1차 kbd가 말한다).
+const HINT_ITEMS = [
+  { label: "이동", keys: "Tab ↑↓←→" },
+  { label: "복사", keys: "Ctrl+C" },
+  { label: "취소", keys: "Esc" },
+  { label: "새 줄", keys: "Ctrl+Enter" },
+  { label: "줄 삭제", keys: "Delete" },
+];
+
 const DIRECTION_OPTIONS: { value: ReserveDirection; label: string }[] = [
   { value: "deposit", label: "입금" },
   { value: "withdrawal", label: "출금" },
@@ -83,7 +101,11 @@ const COPY = {
   empty: "리저브 기록이 없습니다",
   emptyReadOnly: "리저브 기록이 없습니다 · 기록은 경영관리",
   addRow: "리저브 줄 추가",
+  addRowShortcut: "Ctrl+Enter",
   noChange: "바뀐 칸 없음",
+  deleteTitle: "리저브 줄 삭제",
+  deleteResult: "보관함으로 옮겨짐 · 잔액 다시 계산",
+  discarded: "편집을 버렸습니다",
   invalidInput: "저장 실패 · 입력값 확인",
 };
 
@@ -349,6 +371,49 @@ function readMoneyCommit(value: string, previous: Money): { money: Money; fxRate
   }
 }
 
+// 04-04 useDirtyStorage 보관본 — 칸 하나가 키 하나다: `{id}:base`(처음 고친 서버 줄 · 세지 않음) · `{id}:{칸}` · `{id}:new`(새 줄) ·
+// `{id}:archive`(삭제). 다시 열면 같은 모양으로 편집 맵을 되살린다.
+type NewRow = Row & { page: number };
+type Snapshot = { edits: Record<string, Edit>; newRows: NewRow[]; archivedIds: string[] };
+
+function editsSnapshot({ edits, newRows, archivedIds }: Snapshot): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [id, edit] of Object.entries(edits)) {
+    out[`${id}:base`] = edit.base;
+    for (const [field, value] of Object.entries(edit.patch)) out[`${id}:${field}`] = value;
+  }
+  for (const row of newRows) out[`${row.id}:new`] = row;
+  for (const id of archivedIds) out[`${id}:archive`] = true;
+  return out;
+}
+
+function isStoredRow(value: unknown): value is Row {
+  return isRecord(value) && typeof value.id === "string" && isRecord(value.money) && isRecord(value.cells) && typeof value.entryDate === "string";
+}
+
+function restoredSnapshot(stored: Record<string, unknown>): Snapshot {
+  const snapshot: Snapshot = { edits: {}, newRows: [], archivedIds: [] };
+  for (const [key, value] of Object.entries(stored)) {
+    const cut = key.lastIndexOf(":");
+    const id = key.slice(0, cut);
+    const field = key.slice(cut + 1);
+    if (field === "new" && isStoredRow(value)) {
+      const page = (value as Row & { page?: unknown }).page;
+      snapshot.newRows.push({ ...value, page: typeof page === "number" ? page : 1 });
+    }
+    else if (field === "archive") snapshot.archivedIds.push(id);
+    else if (field === "base" && isStoredRow(value)) snapshot.edits[id] = { base: value, patch: snapshot.edits[id]?.patch ?? {} };
+  }
+  for (const [key, value] of Object.entries(stored)) {
+    const cut = key.lastIndexOf(":");
+    const id = key.slice(0, cut);
+    const field = key.slice(cut + 1);
+    const edit = snapshot.edits[id];
+    if (edit && field in edit.base && field !== "id") edit.patch = { ...edit.patch, [field]: value };
+  }
+  return snapshot;
+}
+
 export type ReservesTableProps = {
   list: ReserveListResult;
   references: ReserveReferences;
@@ -366,7 +431,15 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
   }
 
   const [edits, setEdits] = useState<Record<string, Edit>>({});
-  const [newRows, setNewRows] = useState<(Row & { page: number })[]>([]);
+  const [newRows, setNewRows] = useState<NewRow[]>([]);
+  const [archivedIds, setArchivedIds] = useState<string[]>([]);
+  const [balanceRejection, setBalanceRejection] = useState<ReserveBalanceRejection | null>(null);
+  // 거부 봉투가 말한 칸(행 id) — 합계 행 요약이 표가 센 오류 칸과 같을 때만 요약이 그 수를 대신한다(04-47 DR-16).
+  const [rejectedRowIds, setRejectedRowIds] = useState<string[]>([]);
+  const [deleteTarget, setDeleteTarget] = useState<Row | null>(null);
+  const [discardedEdits, setDiscardedEdits] = useState<Record<string, unknown> | null>(null);
+  // 사용자가 칸을 바꾼 순간에만 보관본을 쓴다(04-22 D-68) — 서버 값으로 다시 그리는 경로는 켜지 않는다.
+  const persistPendingRef = useRef(false);
   const [cellErrors, setCellErrors] = useState<CellErrors>({});
   const [rejectionSummary, setRejectionSummary] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -392,6 +465,8 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
         }
         setCellErrors(next);
         setRejectionSummary(data.rejected.summary);
+        setRejectedRowIds(data.rejected.cells.flatMap((cell) => (cell.rowId ? [cell.rowId] : [])));
+        setBalanceRejection(data.rejected.balance);
         setIssueSignal((signal) => signal + 1);
         return;
       }
@@ -399,8 +474,12 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
         setList(data.saved);
         setEdits({});
         setNewRows([]);
+        setArchivedIds([]);
         setCellErrors({});
         setRejectionSummary(null);
+        setRejectedRowIds([]);
+        setBalanceRejection(null);
+        dirtyStorage.clearAfterSave();
         setSavedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }));
       }
     },
@@ -408,6 +487,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
       if (error.validationErrors) {
         const next = validationCellErrors(error.validationErrors, sentIdsRef.current);
         setCellErrors(next);
+        setRejectedRowIds(Object.keys(next));
         setRejectionSummary(countCells(next) > 0 ? `오류 ${countCells(next)}칸 · 전부 거부` : COPY.invalidInput);
         setIssueSignal((signal) => signal + 1);
       }
@@ -416,10 +496,17 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
 
   const serverRows = list.rows.map(rowFromDto);
   const rows: Row[] = [
-    ...serverRows.map((row) => (edits[row.id] ? withPatch(row, edits[row.id]!.patch) : row)),
+    ...serverRows.filter((row) => !archivedIds.includes(row.id)).map((row) => (edits[row.id] ? withPatch(row, edits[row.id]!.patch) : row)),
     ...newRows.filter((row) => row.page === list.page),
   ];
-  const dirtyCount = Object.keys(edits).length + newRows.length;
+  const dirtyCount = Object.keys(edits).length + newRows.length + archivedIds.length;
+  const dirtyStorage = useDirtyStorage("reserves", "ledger", dirtyCount);
+  const { persist } = dirtyStorage;
+  useEffect(() => {
+    if (!persistPendingRef.current) return;
+    persistPendingRef.current = false;
+    persist(editsSnapshot({ edits, newRows, archivedIds }));
+  }, [edits, newRows, archivedIds, persist]);
 
   const clientName = (id: string) => references.clients.find((client) => client.id === id)?.name ?? "";
   const projectName = (id: string | null) => (id ? (references.projects.find((project) => project.id === id)?.name ?? "") : "");
@@ -444,6 +531,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
 
   function applyPatch(rowId: string, patch: Patch) {
     setSavedAt(null);
+    persistPendingRef.current = true;
     if (newRows.some((row) => row.id === rowId)) {
       setNewRows((prev) => prev.map((row) => (row.id === rowId ? { ...withPatch(row, patch), page: row.page } : row)));
       return;
@@ -504,6 +592,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
     // ENG-D10 — 새 줄 id는 화면이 만든 uuid(행 키도 그 값). 응답을 잃어 다시 보내도 서버가 한 행만 남긴다.
     const id = crypto.randomUUID();
     setSavedAt(null);
+    persistPendingRef.current = true;
     setNewRows((prev) => [
       ...prev,
       {
@@ -551,10 +640,11 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
     savingRef.current = true;
     setSavedAt(null);
     setRejectionSummary(null);
+    setDiscardedEdits(null);
     const sent = [...Object.values(edits).map((edit) => withPatch(edit.base, edit.patch)), ...newRows];
     sentIdsRef.current = sent.map((row) => row.id);
-    setSentCount(sent.length);
-    execute({ rows: sent.map(toPayload), page: list.page });
+    setSentCount(sent.length + archivedIds.length);
+    execute({ rows: sent.map(toPayload), archivedIds, page: list.page });
   }
 
   // 키보드 Ctrl+S는 표가 열린 편집기를 먼저 커밋(blur)한 뒤 부른다 — 그 커밋이 반영된 다음 렌더에서 저장한다(04-30 선례).
@@ -565,8 +655,62 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
   }, [saveRequests]);
 
   const [cellEditing, setCellEditing] = useState(false);
+  // DR-36 · 계약 6 — 1024 미만은 보기 전용(셀 단계를 전부 읽기 전용으로 내린다). 편집기가 열린 채 폭이 줄면 커밋 뒤로 미룬다.
+  const editableWidth = useEditableWidth() || cellEditing;
+  // DR-3 · 계약 3 — 저장 요청 동안 표는 보이되 편집에 들어가지 않는다(ui/table saveLocked). 응답이 오면 곧바로 풀린다.
+  const saveLocked = isExecuting;
+  const saveButtonId = useId();
 
-  const editability = (row: Row, field: ReserveCellField): CellEditability => row.cells[field];
+  const editability = (row: Row, field: ReserveCellField): CellEditability => (editableWidth ? row.cells[field] : "readonly");
+
+  // B-04 · T5 — 삭제는 확인 뒤 보관할 id로 들어가 다음 「일괄 저장」에서 잔액 판정과 함께 저장된다(보관함 권한 불필요).
+  function requestDelete(row: Row) {
+    if (row.isNew) {
+      persistPendingRef.current = true;
+      setNewRows((prev) => prev.filter((candidate) => candidate.id !== row.id));
+      return;
+    }
+    setDeleteTarget(row);
+  }
+
+  function confirmDelete() {
+    const target = deleteTarget;
+    if (!target) return;
+    persistPendingRef.current = true;
+    setSavedAt(null);
+    setArchivedIds((prev) => (prev.includes(target.id) ? prev : [...prev, target.id]));
+    setEdits((prev) => {
+      const next = { ...prev };
+      delete next[target.id];
+      return next;
+    });
+    setCellErrors((prev) => {
+      const next = { ...prev };
+      delete next[target.id];
+      return next;
+    });
+    setDeleteTarget(null);
+  }
+
+  function applyRestored(stored: Record<string, unknown>) {
+    const snapshot = restoredSnapshot(stored);
+    persistPendingRef.current = true;
+    setEdits((prev) => ({ ...prev, ...snapshot.edits }));
+    setNewRows((prev) => [...prev, ...snapshot.newRows.filter((row) => !prev.some((existing) => existing.id === row.id))]);
+    setArchivedIds((prev) => [...new Set([...prev, ...snapshot.archivedIds])]);
+  }
+
+  function restoreEdits() {
+    const stored = dirtyStorage.restore();
+    if (stored) applyRestored(stored);
+  }
+
+  // 사용자 결정 2026-09-26(C-1) — 「버림」은 확인 없이 지우고 토스트 「되돌리기」로 되살린다(견적 원장과 같은 규칙).
+  function discardEdits() {
+    const stored = dirtyStorage.restore();
+    dirtyStorage.discard();
+    setDiscardedEdits(stored);
+  }
 
   function isDirtyCell(row: Row, columnKey: string): boolean {
     if (row.isNew) return true;
@@ -641,6 +785,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
       key: "evidenceType",
       header: "증빙 종류",
       priority: "p3",
+      collapseBelow: 1280,
       editability: (row) => editability(row, "evidenceType"),
       cell: (row) => evidenceLabel(row.evidenceType) || "—",
       copyText: (row) => evidenceLabel(row.evidenceType),
@@ -658,6 +803,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
       key: "taxInvoiceNumber",
       header: "세금계산서 번호",
       priority: "p3",
+      collapseBelow: 1280,
       editability: (row) => editability(row, "taxInvoiceNumber"),
       cell: (row) => <span className={styles.taxInvoice}>{row.taxInvoiceNumber || "—"}</span>,
       copyText: (row) => row.taxInvoiceNumber ?? "",
@@ -669,6 +815,8 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
       priority: "p2",
       editability: (row) => editability(row, "note"),
       cell: (row) => (row.note ? <span className={styles.noteText}>{row.note}</span> : "—"),
+      // 폰 접힌 줄은 말줄임 없이 글자 그대로(줄바꿈) — 한 줄 말줄임은 PC 셀에만.
+      summary: (row) => row.note ?? "",
       copyText: (row) => row.note ?? "",
       editCell: (row, ctx) => <TextEditCell ariaLabel="메모" initialValue={row.note ?? ""} onCommit={ctx.onCommit} />,
     },
@@ -676,6 +824,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
       key: "clientId",
       header: "클라이언트",
       priority: "p3",
+      collapseBelow: 1024,
       editability: (row) => editability(row, "clientId"),
       cell: (row) => row.clientName || clientName(row.clientId) || "—",
       copyText: (row) => row.clientName,
@@ -691,9 +840,19 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
     },
   ];
 
+  // 합계 행 오른쪽 한 줄 — 거부 요약은 지금 보이는 줄의 오류 칸 수를 말할 때만 표가 세는 수를 대신한다(다른 쪽 줄이면 0칸).
+  const displayedIds = new Set(rows.map((row) => row.id));
+  const claimedErrorCells = rejectedRowIds.filter((id) => displayedIds.has(id)).length;
   const footerNotices: FooterNoticeItem[] = [];
-  if (rejectionSummary) footerNotices.push({ tone: "danger", text: rejectionSummary });
+  if (rejectionSummary) footerNotices.push({ tone: "danger", text: rejectionSummary, replacesIssueCount: { errorCells: claimedErrorCells, conflictRows: 0 } });
   if (result.serverError) footerNotices.push({ tone: "danger", text: result.serverError });
+
+  // Codex #7 — 잔액을 음수로 만든 줄이 지금 보는 쪽에 없으면 표 위 한 줄과 그 쪽으로 가는 링크(편집 맵은 그대로 남는다).
+  const otherPageRejection = balanceRejection && balanceRejection.page !== null && balanceRejection.page !== list.page ? balanceRejection : null;
+  const pageHref = (n: number) => `/pnl/reserves?page=${n}`;
+  const total = list.total ?? 0;
+  const canEditHere = canWrite && editableWidth;
+  const emptyMessage = !canWrite ? COPY.emptyReadOnly : COPY.empty;
 
   return (
     <>
@@ -701,8 +860,10 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
         <div className={styles.titleBlock}>
           <PageHeader title="리저브 대장" subtitle="클라이언트별 리저브 입출금" />
         </div>
-        {canWrite ? (
+        {/* 후속 결정 R1 — 1024 미만에서는 편집이 남았을 때(N ≥ 1)만 그 폭에서 저장할 수단으로 보인다. */}
+        {canWrite && (editableWidth || dirtyCount > 0) ? (
           <Button
+            id={saveButtonId}
             type="button"
             variant="primary"
             pending={isExecuting}
@@ -717,6 +878,29 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
         ) : null}
       </div>
 
+      {dirtyStorage.restorableCount > 0 ? (
+        <p className={styles.restoreBanner}>
+          <span>{`저장 안 한 편집 ${dirtyStorage.restorableCount}칸`}</span>
+          <span className={styles.restoreActions}>
+            <button type="button" className={styles.restoreAction} onClick={() => (saveLocked ? undefined : restoreEdits())}>
+              복원
+            </button>
+            <button type="button" className={styles.restoreAction} onClick={() => (saveLocked ? undefined : discardEdits())}>
+              버림
+            </button>
+          </span>
+        </p>
+      ) : null}
+
+      {otherPageRejection ? (
+        <p role="alert" className={styles.batchError}>
+          {`${otherPageRejection.entryDate} ${otherPageRejection.clientName} 잔액 ${formatKrw(otherPageRejection.balanceKrw)} · `}
+          <Link href={pageHref(otherPageRejection.page ?? 1)} className={styles.batchErrorLink}>
+            {`${otherPageRejection.page}쪽에서 고치기`}
+          </Link>
+        </p>
+      ) : null}
+
       <Table
         caption="리저브 대장"
         columns={columns}
@@ -725,15 +909,17 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
         groupBy={groupLabel}
         openCell={openCell}
         enableGridKeyboard
+        saveLocked={saveLocked}
         onEditingChange={setCellEditing}
         onCellCommit={commitCell}
         cellIssue={cellIssue}
         cellDirty={isDirtyCell}
         firstIssueSignal={issueSignal}
-        emptyMessage={canWrite ? COPY.empty : COPY.emptyReadOnly}
-        emptyAction={canWrite ? { label: COPY.addRow, shortcut: "Ctrl+Enter", onClick: addRow } : undefined}
+        emptyMessage={emptyMessage}
+        emptyAction={canEditHere ? { label: COPY.addRow, shortcut: COPY.addRowShortcut, onClick: addRow } : undefined}
         keyboard={{
-          onNewRow: canWrite ? () => addRow() : undefined,
+          onNewRow: canEditHere ? () => addRow() : undefined,
+          onDeleteRow: canEditHere ? requestDelete : undefined,
           onSave: () => setSaveRequests((count) => count + 1),
         }}
         footerNotices={footerNotices}
@@ -741,19 +927,66 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
         footer={(notice) => (
           <tr>
             <td colSpan={columns.length} className={styles.footerCell}>
-              {`전체 ${list.total ?? 0}건`}
+              {`전체 ${total}건`}
               {notice}
             </td>
           </tr>
         )}
       />
 
-      {canWrite && rows.length > 0 ? (
+      {canEditHere && rows.length > 0 ? (
         <div className={styles.addLine}>
-          <Button variant="tertiary" onClick={addRow}>
+          <Button
+            variant="tertiary"
+            disabled={saveLocked}
+            aria-describedby={saveLocked ? saveButtonId : undefined}
+            onClick={() => (saveLocked ? undefined : addRow())}
+          >
             {COPY.addRow}
           </Button>
         </div>
+      ) : null}
+
+      {/* D-91 · DR-18 — 50건 번호 페이지. 링크 갈래는 next/link 클라이언트 이동이라 표가 다시 마운트되지 않고 편집 맵이 남는다. */}
+      <Pagination
+        label="리저브"
+        page={list.page}
+        pageCount={list.pageCount}
+        href={pageHref}
+        rangeText={pageRangeText({ page: list.page, pageSize: LIST_PAGE_SIZE, total, unit: "건" })}
+      />
+
+      {/* 개정 ⑬ — 힌트 줄은 페이지 줄 아래 한 곳, 이 화면에서 실제로 되는 키만(1024 미만에서 숨는다). */}
+      {canEditHere && rows.length > 0 ? (
+        <p className={styles.hintRow}>
+          {HINT_ITEMS.map((item, index) => (
+            <span key={item.label}>
+              {index > 0 ? " · " : ""}
+              {item.label} <kbd>{item.keys}</kbd>
+            </span>
+          ))}
+        </p>
+      ) : null}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        title={COPY.deleteTitle}
+        subtitle={deleteTarget ? `${deleteTarget.entryDate} · ${deleteTarget.clientName} · ${formatKrw(deleteTarget.amountKrw)}` : undefined}
+        resultLines={[COPY.deleteResult]}
+        primary={{ label: COPY.deleteTitle, onConfirm: confirmDelete }}
+      />
+
+      {discardedEdits ? (
+        <Toast
+          message={COPY.discarded}
+          actionLabel="되돌리기"
+          onAction={() => {
+            applyRestored(discardedEdits);
+            setDiscardedEdits(null);
+          }}
+          onDismiss={() => setDiscardedEdits(null)}
+        />
       ) : null}
     </>
   );

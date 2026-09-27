@@ -87,3 +87,92 @@
   gap: var(--s-3);
   margin-top: var(--s-3);
 }
+
+/* Codex #7 — 다른 쪽 줄의 잔액 거부. 표 위 한 줄(오류 색 토큰) + 3차 링크. */
+.batchError {
+  margin: var(--s-2) 0;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+.batchErrorLink {
+  color: var(--accent);
+  font-weight: var(--fw-medium);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.batchErrorLink:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* 04-04(D-68) — 저장 안 한 편집 복원 줄(견적 원장과 같은 모양). */
+.restoreBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--s-2);
+  margin: var(--s-2) 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  word-break: keep-all;
+}
+
+.restoreActions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: var(--s-2);
+}
+
+.restoreAction {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* §7-9 · 개정 ⑬ — 힌트 줄(ui/table Table.module.css .hintRow와 같은 모양). */
+.hintRow {
+  margin-top: var(--s-3);
+  color: var(--faint);
+  font-size: var(--fs-sm);
+}
+
+.hintRow kbd {
+  padding: 0 var(--s-1);
+  border: var(--line-w) solid var(--line);
+  color: var(--faint);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-head);
+}
+
+@media (max-width: 1023.98px) {
+  .hintRow {
+    display: none;
+  }
+}
+
+/* §7-7 LOADING 뼈대(loading.tsx) — projects.module.css 목록 뼈대와 같은 모양. */
+.skeleton {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.skeleton th {
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-align: left;
+}
+
+.skeletonRow td {
+  height: var(--row-min);
+  border-bottom: var(--line-w) solid var(--line);
+  background: var(--surface);
+}

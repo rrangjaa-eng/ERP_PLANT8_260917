@@ -295,6 +295,16 @@ test.describe("리저브 대장 — 쪽 · 오류 · 삭제 · 입력", () => {
     await page.getByRole("combobox", { name: "클라이언트", exact: true }).selectOption({ label: client.name });
     await typeDate(page, cell(page, 2, COL.date), "2026-03-01");
     await typeInto(page, cell(page, 2, COL.amount), "금액", "400000");
+    // S19 DR-5 — 오류 칸이 남은 채 Ctrl+S는 서버를 부르지 않고 그 칸으로 간다. 그 칸을 다시 확정하면 풀리고 저장된다.
+    let actionPosts = 0;
+    page.on("request", (request) => {
+      if (isServerAction(request)) actionPosts++;
+    });
+    await focusGridCell(cell(page, 2, COL.amount));
+    await page.keyboard.press("Control+s");
+    await expect(cell(page, 1, COL.amount)).toBeFocused();
+    expect(actionPosts).toBe(0);
+    await typeInto(page, cell(page, 1, COL.amount), "금액", "400000");
     await saveWithKeyboard(page, cell(page, 2, COL.amount));
     await expectGroupBalance(page, client.name, "100,000");
     await expect(dataRows(page)).toHaveCount(3);
@@ -323,6 +333,40 @@ test.describe("리저브 대장 — 쪽 · 오류 · 삭제 · 입력", () => {
     await expect(cell(page, 0, COL.balance)).toHaveText("540,000");
     const [first] = await db.select().from(reserveEntries).where(eq(reserveEntries.id, ids[0]!));
     expect(first?.amountAmountKrw).toBe(100_000);
+  });
+
+  test("오류 칸이 남은 채 1차(Ctrl+S)는 서버를 부르지 않고 첫 오류가 있는 쪽의 그 칸으로 간다(S19 DR-5 · 리뷰 S2)", async ({ page }) => {
+    const roles = await createRoles();
+    const client = await createClient("E2E리저브오류로");
+    await seedEntries(client.id, fiftyOneRows());
+    await openLedger(page, roles.finance);
+    let actionPosts = 0;
+    page.on("request", (request) => {
+      if (isServerAction(request)) actionPosts++;
+    });
+
+    // 1쪽에 클라이언트 없는 새 줄을 두고 2쪽에서 저장한다 — 서버가 그 줄의 클라이언트 칸을 거부한다.
+    await expect(async () => {
+      await page.getByRole("button", { name: "리저브 줄 추가" }).click();
+      await expect(page.getByRole("combobox", { name: "클라이언트", exact: true })).toBeVisible({ timeout: 1_000 });
+    }).toPass();
+    await page.keyboard.press("Escape");
+    await pager(page).getByRole("link", { name: "2", exact: true }).click();
+    await expect(dataRows(page)).toHaveCount(1);
+    await saveWithKeyboard(page, cell(page, 0, COL.amount));
+    expect(actionPosts).toBe(1);
+    await expect(pager(page).getByRole("link", { name: "1쪽, 오류 1칸" })).toBeVisible();
+
+    await focusGridCell(cell(page, 0, COL.amount));
+    await page.keyboard.press("Control+s");
+    await expect(page).toHaveURL(/page=1/);
+    await expect(dataRows(page)).toHaveCount(51);
+    const clientCell = cell(page, 50, COL.client);
+    await expect(clientCell).toHaveAttribute("aria-invalid", "true");
+    await expect(clientCell).toBeFocused();
+    await page.keyboard.press("Control+s");
+    await page.waitForTimeout(300);
+    expect(actionPosts).toBe(1);
   });
 
   test("삭제는 공용 확인 다이얼로그 뒤 일괄 저장으로 보관되고 잔액이 다시 계산된다 — Esc는 포커스를 셀로 돌린다", async ({ page }) => {

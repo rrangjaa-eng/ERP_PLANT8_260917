@@ -2,6 +2,7 @@
 
 import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { saveReservesAction } from "./actions";
 import { PageHeader } from "@/ui/page-header/PageHeader";
@@ -76,7 +77,7 @@ type EditableField =
   | "note";
 type Patch = Partial<Pick<Row, EditableField>>;
 /** 기존 줄의 편집 — 처음 고친 순간의 서버 줄(base)과 바뀐 칸(patch). 쪽을 넘어가도 base로 저장 페이로드를 만든다(DR-18). */
-type Edit = { base: Row; patch: Patch };
+type Edit = { base: Row; patch: Patch; /** 처음 고친 쪽 — 오류로 이동(DR-5)이 그 쪽으로 간다. */ page: number };
 
 // 열 키 = 서버 셀 단계의 필드 이름(금액 열은 amount).
 const COLUMN_FIELD: Record<string, EditableField | null> = {
@@ -417,7 +418,7 @@ type Snapshot = { edits: Record<string, Edit>; newRows: NewRow[]; archivedIds: s
 function editsSnapshot({ edits, newRows, archivedIds }: Snapshot): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [id, edit] of Object.entries(edits)) {
-    out[`${id}:base`] = edit.base;
+    out[`${id}:base`] = { ...edit.base, page: edit.page };
     for (const [field, value] of Object.entries(edit.patch)) out[`${id}:${field}`] = value;
   }
   for (const row of newRows) out[`${row.id}:new`] = row;
@@ -440,7 +441,10 @@ function restoredSnapshot(stored: Record<string, unknown>): Snapshot {
       snapshot.newRows.push({ ...value, page: typeof page === "number" ? page : 1 });
     }
     else if (field === "archive") snapshot.archivedIds.push(id);
-    else if (field === "base" && isStoredRow(value)) snapshot.edits[id] = { base: value, patch: snapshot.edits[id]?.patch ?? {} };
+    else if (field === "base" && isStoredRow(value)) {
+      const page = (value as Row & { page?: unknown }).page;
+      snapshot.edits[id] = { base: value, patch: snapshot.edits[id]?.patch ?? {}, page: typeof page === "number" ? page : 1 };
+    }
   }
   for (const [key, value] of Object.entries(stored)) {
     const cut = key.lastIndexOf(":");
@@ -463,10 +467,18 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
   // 서버 대장(지금 쪽). 쪽 이동·새로 고침은 props로, 저장 성공은 액션 응답으로 바뀐다 — 표는 다시 마운트되지 않는다.
   const [list, setList] = useState(initialList);
   const [seenList, setSeenList] = useState(initialList);
+  // 리뷰 S2(DR-5) — 다른 쪽의 첫 오류로 옮겨 가는 중이면, 그 쪽이 도착한 렌더에서 표에 첫 오류 신호를 준다.
+  const [pendingIssuePage, setPendingIssuePage] = useState<number | null>(null);
+  const [issueSignal, setIssueSignal] = useState(0);
   if (initialList !== seenList) {
     setSeenList(initialList);
     setList(initialList);
+    if (pendingIssuePage !== null && initialList.page === pendingIssuePage) {
+      setPendingIssuePage(null);
+      setIssueSignal((signal) => signal + 1);
+    }
   }
+  const router = useRouter();
 
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [newRows, setNewRows] = useState<NewRow[]>([]);
@@ -485,7 +497,6 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [sentCount, setSentCount] = useState(0);
   const [openCell, setOpenCell] = useState<{ rowId: string; columnKey: string } | null>(null);
-  const [issueSignal, setIssueSignal] = useState(0);
   const savingRef = useRef(false);
   const sentIdsRef = useRef<string[]>([]);
 
@@ -592,7 +603,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
       if (!merged.money) delete merged.fxRateTouched;
       const next = { ...prev };
       if (Object.keys(merged).length === 0) delete next[rowId];
-      else next[rowId] = { base, patch: merged };
+      else next[rowId] = { base, patch: merged, page: prev[rowId]?.page ?? list.page };
       return next;
     });
   }
@@ -685,8 +696,40 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
     };
   }
 
+  // 리뷰 S2(DR-5) — 고정 오류 칸이 있는 줄의 쪽. 고친 줄은 처음 고친 쪽, 새 줄은 만든 쪽, 잔액 거부 줄은 서버가 준 쪽,
+  // 그 밖에는 지금 쪽에 보이는 줄만 센다(보관할 줄은 보이지 않아 세지 않는다).
+  const shownIds = new Set(serverRows.map((row) => row.id));
+  function issuePage(rowId: string): number | null {
+    if (archivedIds.includes(rowId)) return null;
+    const known = edits[rowId]?.page ?? newRows.find((row) => row.id === rowId)?.page;
+    if (known !== undefined) return known;
+    if (balanceRejection?.entryId === rowId && balanceRejection.page !== null) return balanceRejection.page;
+    return shownIds.has(rowId) ? list.page : null;
+  }
+  const issues = Object.entries(cellErrors).flatMap(([rowId, cells]) => {
+    const page = Object.keys(cells).length > 0 ? issuePage(rowId) : null;
+    return page === null ? [] : [{ page, count: Object.keys(cells).length }];
+  });
+  // 다른 쪽의 오류 칸 수(페이지 줄 번호 옆 `오류 N` — 견적 원장 04-47과 같은 자리).
+  const pageErrorCounts: Record<number, number> = {};
+  for (const issue of issues) if (issue.page !== list.page) pageErrorCounts[issue.page] = (pageErrorCounts[issue.page] ?? 0) + issue.count;
+
+  const pageHref = (n: number) => `/pnl/reserves?page=${n}`;
+  function goToFirstIssue(): boolean {
+    if (issues.length === 0) return false;
+    if (issues.some((issue) => issue.page === list.page)) {
+      setIssueSignal((signal) => signal + 1);
+      return true;
+    }
+    const target = Math.min(...issues.map((issue) => issue.page));
+    setPendingIssuePage(target);
+    router.push(pageHref(target));
+    return true;
+  }
+
   function handleSave() {
-    if (savingRef.current || isExecuting || dirtyCount === 0) return;
+    // S19 DR-5 — 고정된 오류 칸이 남아 있으면 서버에 보내지 않고 첫 오류로 간다(견적 원장 goToFirstIssue와 같은 규칙).
+    if (savingRef.current || isExecuting || goToFirstIssue() || dirtyCount === 0) return;
     savingRef.current = true;
     setSavedAt(null);
     setRejectionSummary(null);
@@ -1016,7 +1059,6 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
 
   // Codex #7 — 잔액을 음수로 만든 줄이 지금 보는 쪽에 없으면 표 위 한 줄과 그 쪽으로 가는 링크(편집 맵은 그대로 남는다).
   const otherPageRejection = balanceRejection && balanceRejection.page !== null && balanceRejection.page !== list.page ? balanceRejection : null;
-  const pageHref = (n: number) => `/pnl/reserves?page=${n}`;
   const total = list.total ?? 0;
   const canEditHere = canWrite && editableWidth;
   const emptyMessage = !canWrite ? COPY.emptyReadOnly : COPY.empty;
@@ -1123,6 +1165,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
         pageCount={list.pageCount}
         href={pageHref}
         rangeText={pageRangeText({ page: list.page, pageSize: LIST_PAGE_SIZE, total, unit: "건" })}
+        errorCounts={pageErrorCounts}
       />
 
       {/* 개정 ⑬ — 힌트 줄은 페이지 줄 아래 한 곳, 이 화면에서 실제로 되는 키만(1024 미만에서 숨는다). */}

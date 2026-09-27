@@ -40,14 +40,14 @@ export function ProjectsTable({
       priority: "p3",
       collapseBelow: 1280,
       align: "right",
-      cell: (row) => nowrap(row.revenueKrw === null || row.revenueKrw === undefined ? "—" : formatKrw(row.revenueKrw)),
+      cell: (row) => (row.revenueKrw === null || row.revenueKrw === undefined ? "—" : formatKrw(row.revenueKrw)),
     },
     {
       key: "quoteAmountKrw",
       header: "견적",
       priority: "p1",
       align: "right",
-      cell: (row) => nowrap(formatKrw(row.quoteAmountKrw ?? 0)),
+      cell: (row) => formatKrw(row.quoteAmountKrw ?? 0),
     },
     {
       key: "executionAmountKrw",
@@ -55,7 +55,7 @@ export function ProjectsTable({
       priority: "p3",
       collapseBelow: 1280,
       align: "right",
-      cell: (row) => nowrap(formatKrw(row.executionAmountKrw ?? 0)),
+      cell: (row) => formatKrw(row.executionAmountKrw ?? 0),
     },
     {
       key: "profitBasis",
@@ -70,7 +70,7 @@ export function ProjectsTable({
       priority: "p3",
       collapseBelow: 1024,
       align: "right",
-      cell: (row) => nowrap(formatKrw(row.profitKrw ?? 0)),
+      cell: (row) => formatKrw(row.profitKrw ?? 0),
     },
     {
       key: "profitRate",

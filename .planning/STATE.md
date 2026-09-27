@@ -5,10 +5,10 @@ current_phase_name: 프로젝트·견적 원장
 current_plan: 34
 status: executing
 stopped_at: Completed 04-41-PLAN.md
-last_updated: "2026-09-27T13:27:26.265Z"
-last_activity: 2026-09-25
-last_activity_desc: Phase 4 execution started
-state_head: 7a02037560ff68a80ca2eae17307e0ab0dcd5d99
+last_updated: "2026-09-27T13:50:09.050Z"
+last_activity: 2026-09-27
+last_activity_desc: "Completed quick task 260927-ipy: 설정 pnl.start_gate.weeks_after_cutover 삭제"
+state_head: d11f1d589970159260b39a4c957f07333071b1ae
 progress:
   total_phases: 16
   completed_phases: 1
@@ -32,7 +32,7 @@ Phase: 4 (프로젝트·견적 원장) — EXECUTING
 Current Plan: 34
 Total Plans in Phase: 42
 Status: Ready to execute
-Last activity: 2026-09-25 — Phase 4 execution started
+Last activity: 2026-09-27 - Completed quick task 260927-ipy: 설정 pnl.start_gate.weeks_after_cutover 삭제
 
 Progress: [█░░░░░░░░░] 6%
 
@@ -296,6 +296,7 @@ Recent decisions affecting current work:
 | 8 | /review 반영: 04-UI-SPEC 남은 문구 행을 명사형 코드에 맞춤 | 2026-09-26 | f7d677b | — |
 | 9 | /review D2 반영: 04-UI-SPEC 기간 칸 덜 채운 날짜 문구 | 2026-09-26 | f5646d2 | — |
 | 10 | 04-UI-SPEC 377 날짜 빈 칸 문구 「날짜 없음 · 날짜 고르기」(사용자 요청, 명사형 통일) | 2026-09-26 | 93f5af4 | — |
+| 260927-ipy | 설정 pnl.start_gate.weeks_after_cutover 삭제 (손익을 테스트 데이터로 검증하기로 한 결정 반영) | 2026-09-27 | d11f1d5 | [260927-ipy-pnl-start-gate-weeks-after-cutover](./quick/260927-ipy-pnl-start-gate-weeks-after-cutover/) |
 
 ### Roadmap Evolution
 

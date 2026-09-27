@@ -1,5 +1,7 @@
 # SKIN-EXPLORE.md — 스킨 리프레시 발산 (2026-09-27)
 
+> **사용자 선택(2026-09-27): 안 A 「정돈」 + 한 건 등록 폼은 옆 패널.** 기준 실물: `docs/design/explore-skin/real/shots/*-e-*.png`(= A + 옆 패널)와 `real/overlay-a.css` · `real/overlay-e.css` · `real/_common.css`. 적용은 Phase 4 머지 뒤(SYSTEM.md 충돌 회피) — DECISIONS.md(2026-09-18 radius 0 · 그림자 없음 · 2px 선 뒤집기 · D-39 뒤집기 · 버린 안 B·C·D 한 줄씩) → SYSTEM.md · tokens.css → ui/·CSS 모듈.
+
 `docs/DESIGN.md` §2 형식. **확정이 아니다.** 사용자 선택 뒤 `DECISIONS.md`(2026-09-18 결정 세 개 — radius 0 · 그림자 없음 · 2px 선 — 를 뒤집는 기록)와 `SYSTEM.md`·`tokens.css`에서 확정한다.
 
 - 배경: 사용자 결정(2026-09-27, 채팅) "화면이 옛날 컴퓨터 화면 같다" → 스킨 리프레시 → 보드. **레이아웃·흐름·DOM은 그대로, 피부(토큰·컴포넌트 CSS)만.**

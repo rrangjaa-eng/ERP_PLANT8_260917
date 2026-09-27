@@ -4,8 +4,11 @@ import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { denyWrite } from "@/domain/rules/deny-write";
-import { moneyFromRow, moneyToColumns, type Currency } from "@/domain/money";
-import { SaveRejectedError, type CellFormatError } from "@/domain/quotes/lines";
+import { moneyFromRow, moneyToColumns, MoneyInputError, type Currency } from "@/domain/money";
+import { rememberFxRate as defaultRememberFxRate } from "@/domain/money/currency";
+import { rememberFxAfterCommit, SaveRejectedError, type CellFormatError, type FxToRemember } from "@/domain/quotes/lines";
+import { isCalendarDate, FORMAT_ERROR as DATE_FORMAT_ERROR, EMPTY_ERROR as DATE_EMPTY_ERROR } from "@/domain/projects/period";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
 import { formatKrw } from "@/lib/format-number";
 import type { DbOrTx } from "@/repositories/document-counters";
@@ -13,11 +16,16 @@ import {
   lockReserveClients as repoLockReserveClients,
   listActiveEntriesByClients as repoListActiveEntriesByClients,
   listAllActiveEntries as repoListAllActiveEntries,
+  findEntriesByIds as repoFindEntriesByIds,
   findClientNames as repoFindClientNames,
+  findProjectClientIds as repoFindProjectClientIds,
   insertEntry as repoInsertEntry,
+  updateEntryIfVersionMatches as repoUpdateEntryIfVersionMatches,
+  setEntryArchived as repoSetEntryArchived,
   type ReserveEntryPayload,
   type ReserveEntryRow,
 } from "@/repositories/reserve-entries";
+import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 
 export type ReserveDirection = "deposit" | "withdrawal";
 
@@ -94,6 +102,7 @@ export type ReserveWriteRow = {
   entryDate: string;
   direction: ReserveDirection;
   amount: { currency: Currency; amount: number; fxRate: number };
+  /** 환율 칸을 이번 저장에서 실제로 고쳤을 때만 true(외화일 때만 의미가 있다 — D-71). */
   fxRateTouched?: boolean;
   projectId?: string | null;
   evidenceType?: string | null;
@@ -110,7 +119,26 @@ export type ReserveWriteDeps = {
   /** 04-20 규약 — 잠금 직후 경합 테스트가 멈춰 세우는 주입 지점. */
   afterLock: () => Promise<void>;
   recordAction: typeof defaultRecordAction;
+  /** 커밋 뒤 최근 환율 기억(D-71). 테스트가 실패를 주입한다. */
+  rememberFxRate: typeof defaultRememberFxRate;
 };
+
+const INPUT_RULE = "reserve.input";
+const CLIENT_LOCKED_RULE = "reserve.client-locked";
+const REPLAY_RULE = "reserve.replay-mismatch";
+const NEGATIVE_RULE = "reserve.balance-negative";
+const FORBIDDEN_RULE = "reserve.forbidden";
+const REPLAY_MISMATCH = "이미 저장된 줄과 값이 다름 · 새로 고침";
+const ENTRY_NOT_FOUND = "줄을 찾을 수 없음 · 새로 고침";
+const ARCHIVED_ROW = "보관된 줄 · 새로 고침";
+const CLIENT_LOCKED = "클라이언트는 첫 저장 뒤 잠김 · 새 줄로 적어 주세요";
+const CLIENT_NOT_FOUND = "클라이언트를 찾을 수 없습니다";
+const PROJECT_CLIENT_MISMATCH = "이 프로젝트의 클라이언트가 아닙니다";
+const EVIDENCE_NOT_IN_TABLE = "증빙 종류를 고르세요";
+const AMOUNT_NOT_POSITIVE = "금액은 0보다 커야 합니다 · 금액을 고쳐 주세요";
+const DIRECTION_INVALID = "구분을 고르세요";
+const VERSION_CONFLICT = "다른 사람이 먼저 이 줄을 바꿈 · 새로 고침";
+const EVIDENCE_TYPE_TABLE = "evidence_type";
 
 function balanceReason(balanceKrw: number): string {
   return `이 줄 뒤 잔액 ${formatKrw(balanceKrw)} · 금액을 줄이거나 입금 줄 먼저`;
@@ -129,23 +157,71 @@ function toBalanceRow(row: ReserveEntryRow): BalanceRow {
 
 type PreparedRow = { index: number; input: ReserveWriteRow; payload: ReserveEntryPayload };
 
-function preparePayload(input: ReserveWriteRow): ReserveEntryPayload {
-  const columns = moneyToColumns(input.amount);
-  return {
-    entryDate: input.entryDate,
-    direction: input.direction,
-    amountCurrency: columns.currency,
-    amountForeignAmount: columns.foreignAmount,
-    amountFxRate: columns.fxRate,
-    amountAmountKrw: columns.amountKrw,
-    projectId: input.projectId ?? null,
-    evidenceType: input.evidenceType ?? null,
-    taxInvoiceNumber: input.taxInvoiceNumber ?? null,
-    note: input.note ?? null,
-  };
+function cellError(index: number, rowId: string, field: string, label: string, reason: string): CellFormatError {
+  return { rowIndex: index, rowId, field, label, reason };
 }
 
-async function reserveRights(viewer: Viewer, action: "view" | "write", deps?: Partial<ReserveWriteDeps>): Promise<boolean> {
+// 입력 계약(B-17 · 엔지니어링 리뷰 B §2) — 금액은 04-40의 normalizeMoneyInput(moneyToColumns 안) 한 규칙을 지나고, 이
+// 경로는 금액 > 0(부호는 구분이 정한다) · 달력 날짜 · 코드표 증빙 종류만 더한다. 걸린 칸은 모아 한 번에 거부한다.
+function prepareRows(rows: ReserveWriteRow[], evidenceValues: ReadonlySet<string>, errors: CellFormatError[]): PreparedRow[] {
+  const prepared: PreparedRow[] = [];
+  rows.forEach((input, index) => {
+    const before = errors.length;
+    if (input.direction !== "deposit" && input.direction !== "withdrawal") {
+      errors.push(cellError(index, input.id, "direction", "구분", DIRECTION_INVALID));
+    }
+    if (input.entryDate === "") errors.push(cellError(index, input.id, "entryDate", "날짜", DATE_EMPTY_ERROR));
+    else if (!isCalendarDate(input.entryDate)) errors.push(cellError(index, input.id, "entryDate", "날짜", DATE_FORMAT_ERROR));
+    let columns: ReturnType<typeof moneyToColumns> | null = null;
+    try {
+      columns = moneyToColumns(input.amount);
+      if (columns.amountKrw <= 0 || input.amount.amount <= 0) {
+        errors.push(cellError(index, input.id, "amount", "금액", AMOUNT_NOT_POSITIVE));
+      }
+    } catch (error) {
+      if (!(error instanceof MoneyInputError)) throw error;
+      errors.push(cellError(index, input.id, error.field, error.field === "fxRate" ? "환율" : "금액", error.message));
+    }
+    if (input.evidenceType && !evidenceValues.has(input.evidenceType)) {
+      errors.push(cellError(index, input.id, "evidenceType", "증빙 종류", EVIDENCE_NOT_IN_TABLE));
+    }
+    if (errors.length > before || columns === null) return;
+    prepared.push({
+      index,
+      input,
+      payload: {
+        entryDate: input.entryDate,
+        direction: input.direction,
+        amountCurrency: columns.currency,
+        amountForeignAmount: columns.foreignAmount,
+        amountFxRate: columns.fxRate,
+        amountAmountKrw: columns.amountKrw,
+        projectId: input.projectId ?? null,
+        evidenceType: input.evidenceType ?? null,
+        taxInvoiceNumber: input.taxInvoiceNumber ?? null,
+        note: input.note ?? null,
+      },
+    });
+  });
+  return prepared;
+}
+
+function samePayload(stored: ReserveEntryRow, payload: ReserveEntryPayload): boolean {
+  return (
+    stored.entryDate === payload.entryDate &&
+    stored.direction === payload.direction &&
+    stored.amountCurrency === payload.amountCurrency &&
+    stored.amountForeignAmount === payload.amountForeignAmount &&
+    stored.amountFxRate === payload.amountFxRate &&
+    stored.amountAmountKrw === payload.amountAmountKrw &&
+    stored.projectId === payload.projectId &&
+    stored.evidenceType === payload.evidenceType &&
+    stored.taxInvoiceNumber === payload.taxInvoiceNumber &&
+    stored.note === payload.note
+  );
+}
+
+async function reserveRights(viewer: Viewer, action: "view" | "write", deps?: Partial<Pick<ReserveWriteDeps, "can" | "visible">>): Promise<boolean> {
   const [allowed, shown] = await Promise.all([
     (deps?.can ?? defaultCan)(viewer, PNL_MENU, action),
     (deps?.visible ?? defaultVisible)(viewer, RESERVE_INFO_ITEM),
@@ -153,52 +229,197 @@ async function reserveRights(viewer: Viewer, action: "view" | "write", deps?: Pa
   return allowed && shown;
 }
 
-// 04-07 — 리저브 저장(새 줄 · 수정 · 보관 배치). 권한은 트랜잭션 앞에서, 잠금 뒤 읽기·쓰기·로그는 전부 같은 tx로 —
-// 잠긴 트랜잭션 안에서 풀 db를 부르지 않는다(04-32 규칙).
+// 트랜잭션 앞에서 읽는다(04-32 — 잠긴 트랜잭션 안에서 풀 db를 부르지 않는다).
+async function evidenceTypeValues(viewer: Viewer, rows: ReserveWriteRow[]): Promise<Set<string>> {
+  if (!rows.some((row) => row.evidenceType)) return new Set();
+  const items = await repoListCodeItems(viewer, { tableKey: EVIDENCE_TYPE_TABLE, scope: { rows: "all", includeArchived: false }, includeInactive: false });
+  return new Set(items.map((item) => item.value));
+}
+
+type Plan = {
+  inserts: PreparedRow[];
+  updates: { row: PreparedRow; stored: ReserveEntryRow }[];
+  archives: ReserveEntryRow[];
+};
+
+// 04-07 — 리저브 저장(새 줄 · 수정 · 보관 배치). 순서: 트랜잭션 앞 권한(pnl 쓰기 + reserve.amount — 숫자 없는 거부)·
+// 형식·코드표 → 트랜잭션 → 대상 줄의 저장된 클라이언트 → 클라이언트 행 잠금(id 오름차순 FOR NO KEY UPDATE) → 잠긴
+// tx로 대상 줄·원장 재조회 → 참조·상태·재전송 판정 → 배치를 메모리에 적용한 원장의 날짜 마감 판정 → 쓰기·로그(같은
+// tx) → 커밋 뒤 최근 환율. 모든 거부는 denyWrite 한 지점에서 write.denied를 남긴다(금액 없음).
 export async function saveReserves(viewer: Viewer, input: SaveReservesInput, deps?: Partial<ReserveWriteDeps>): Promise<void> {
-  const clientIds = [...new Set(input.rows.map((row) => row.clientId))];
-  const entryIds = input.rows.map((row) => row.id);
+  const archivedIds = input.archivedIds ?? [];
+  const entryIds = [...input.rows.map((row) => row.id), ...archivedIds];
+  const requestedClientIds = [...new Set(input.rows.map((row) => row.clientId))];
   if (!(await reserveRights(viewer, "write", deps))) {
-    denyWrite(viewer, "reserve.forbidden", { clientIds, entryIds }, new ForbiddenError(FORBIDDEN_MESSAGE));
+    denyWrite(viewer, FORBIDDEN_RULE, { clientIds: requestedClientIds, entryIds }, new ForbiddenError(FORBIDDEN_MESSAGE));
   }
-  const prepared: PreparedRow[] = input.rows.map((row, index) => ({ index, input: row, payload: preparePayload(row) }));
+  const formatErrors: CellFormatError[] = [];
+  const prepared = prepareRows(input.rows, await evidenceTypeValues(viewer, input.rows), formatErrors);
+  if (formatErrors.length > 0) {
+    denyWrite(viewer, INPUT_RULE, { clientIds: requestedClientIds, entryIds }, new SaveRejectedError([], formatErrors));
+  }
   const now = deps?.now?.() ?? new Date();
 
-  await withTransaction(async (tx) => {
-    const locked = await repoLockReserveClients(viewer, clientIds, tx);
+  const fxToRemember = await withTransaction(async (tx) => {
+    // 기존 줄의 클라이언트는 바뀌지 않으므로(사용자 D6) 잠글 id를 잠금 전에 읽어도 된다.
+    const preStored = await repoFindEntriesByIds(viewer, entryIds, tx);
+    const lockIds = [...new Set([...prepared.filter((row) => row.input.isNew).map((row) => row.input.clientId), ...preStored.map((row) => row.clientId)])].sort();
+    const locked = new Set(await repoLockReserveClients(viewer, lockIds, tx));
     await deps?.afterLock?.();
-    const ledger = (await repoListActiveEntriesByClients(viewer, locked, tx)).map(toBalanceRow);
-    const incoming: BalanceRow[] = prepared.map(({ input: row, payload }) => ({
-      id: row.id,
-      clientId: row.clientId,
-      entryDate: payload.entryDate,
-      direction: row.direction,
-      amountKrw: payload.amountAmountKrw,
-      createdAt: now,
-    }));
-    const balance = runningBalance([...ledger, ...incoming]);
-    if (balance.firstNegative) {
-      rejectNegative(viewer, balance.firstNegative, prepared);
+    const storedById = new Map((await repoFindEntriesByIds(viewer, entryIds, tx)).map((row) => [row.id, row]));
+    const plan = await planBatch(viewer, prepared, archivedIds, storedById, locked, tx);
+
+    const ledger = new Map((await repoListActiveEntriesByClients(viewer, [...locked], tx)).map((row) => [row.id, toBalanceRow(row)]));
+    for (const stored of plan.archives) ledger.delete(stored.id);
+    for (const { row, stored } of plan.updates) {
+      ledger.set(stored.id, { ...toBalanceRow(stored), entryDate: row.payload.entryDate, direction: row.input.direction, amountKrw: row.payload.amountAmountKrw });
     }
-    await writeRows(viewer, prepared, now, tx, deps);
+    for (const row of plan.inserts) {
+      ledger.set(row.input.id, { id: row.input.id, clientId: row.input.clientId, entryDate: row.payload.entryDate, direction: row.input.direction, amountKrw: row.payload.amountAmountKrw, createdAt: now });
+    }
+    const balance = runningBalance([...ledger.values()]);
+    if (balance.firstNegative) rejectNegative(viewer, balance.firstNegative, prepared);
+
+    return writePlan(viewer, plan, now, tx, deps);
   });
+  await rememberFxAfterCommit(fxToRemember, deps?.rememberFxRate);
+}
+
+// 잠긴 tx 안의 참조·상태·재전송 판정. 칸 이유는 모아 한 번에 거부하고, 재전송 불일치·버전 충돌은 배치 전체 거부다.
+async function planBatch(
+  viewer: Viewer,
+  prepared: PreparedRow[],
+  archivedIds: string[],
+  storedById: Map<string, ReserveEntryRow>,
+  locked: Set<string>,
+  tx: DbOrTx,
+): Promise<Plan> {
+  const errors: CellFormatError[] = [];
+  let clientLocked = false;
+  const plan: Plan = { inserts: [], updates: [], archives: [] };
+  const projectIds = [...new Set(prepared.map((row) => row.payload.projectId).filter((id): id is string => id !== null))];
+  const projectClients = await repoFindProjectClientIds(viewer, projectIds, tx);
+
+  for (const row of prepared) {
+    const { input, payload, index } = row;
+    const stored = storedById.get(input.id);
+    if (input.isNew) {
+      if (stored) {
+        // 응답을 잃은 재전송(ENG-D10): 같은 클라이언트의 활성 줄이고 값이 같을 때만 no-op — 잔액을 두 번 반영하지 않는다.
+        if (stored.clientId !== input.clientId || stored.archivedAt !== null || !samePayload(stored, payload)) {
+          denyWrite(viewer, REPLAY_RULE, { clientIds: [input.clientId], entryIds: [input.id] }, new UserFacingError(REPLAY_MISMATCH));
+        }
+        continue;
+      }
+      if (!locked.has(input.clientId)) {
+        errors.push(cellError(index, input.id, "clientId", "클라이언트", CLIENT_NOT_FOUND));
+        continue;
+      }
+    } else {
+      if (!stored) denyWrite(viewer, INPUT_RULE, { entryIds: [input.id] }, new UserFacingError(ENTRY_NOT_FOUND));
+      if (stored.archivedAt !== null) {
+        errors.push(cellError(index, input.id, "row", "줄", ARCHIVED_ROW));
+        continue;
+      }
+      if (stored.clientId !== input.clientId) {
+        clientLocked = true;
+        errors.push(cellError(index, input.id, "clientId", "클라이언트", CLIENT_LOCKED));
+        continue;
+      }
+      if (input.version === undefined || stored.version !== input.version) {
+        // SF-2 선례 — 첫 커밋이 version을 하나 올렸고 값이 같으면 응답을 잃은 재전송이다.
+        if (input.version !== undefined && stored.version === input.version + 1 && samePayload(stored, payload)) continue;
+        throw new UserFacingError(VERSION_CONFLICT);
+      }
+    }
+    if (payload.projectId !== null && projectClients.get(payload.projectId) !== input.clientId) {
+      errors.push(cellError(index, input.id, "projectId", "프로젝트", PROJECT_CLIENT_MISMATCH));
+      continue;
+    }
+    if (input.isNew) plan.inserts.push(row);
+    else if (stored) plan.updates.push({ row, stored });
+  }
+
+  for (const id of archivedIds) {
+    const stored = storedById.get(id);
+    if (!stored) denyWrite(viewer, INPUT_RULE, { entryIds: [id] }, new UserFacingError(ENTRY_NOT_FOUND));
+    if (stored.archivedAt !== null) {
+      errors.push(cellError(-1, id, "row", "줄", ARCHIVED_ROW));
+      continue;
+    }
+    plan.archives.push(stored);
+  }
+
+  if (errors.length > 0) {
+    const clientIds = [...new Set(prepared.map((row) => row.input.clientId))];
+    const entryIds = errors.map((error) => error.rowId).filter((id): id is string => id !== undefined);
+    denyWrite(viewer, clientLocked ? CLIENT_LOCKED_RULE : INPUT_RULE, { clientIds, entryIds }, new SaveRejectedError([], errors));
+  }
+  return plan;
 }
 
 function rejectNegative(viewer: Viewer, negative: NegativeClosing, prepared: PreparedRow[]): never {
   const index = prepared.find((row) => row.input.id === negative.lastRowId)?.index ?? -1;
-  const cell: CellFormatError = { rowIndex: index, rowId: negative.lastRowId, field: "amount", label: "금액", reason: balanceReason(negative.balanceKrw) };
-  return denyWrite(viewer, "reserve.balance-negative", { clientIds: [negative.clientId], entryIds: [negative.lastRowId] }, new SaveRejectedError([], [cell]));
+  const cell = cellError(index, negative.lastRowId, "amount", "금액", balanceReason(negative.balanceKrw));
+  return denyWrite(viewer, NEGATIVE_RULE, { clientIds: [negative.clientId], entryIds: [negative.lastRowId] }, new SaveRejectedError([], [cell]));
 }
 
-async function writeRows(viewer: Viewer, prepared: PreparedRow[], now: Date, tx: DbOrTx, deps?: Partial<ReserveWriteDeps>): Promise<void> {
+// 수정 로그(B-16 · ENG-D8) — 바뀐 금액(원화)·날짜·구분만 [전, 후]로, 값을 가리지 않는다(활동 기록은 기본값으로 시스템관리자만).
+function changedFields(stored: ReserveEntryRow, payload: ReserveEntryPayload): Record<string, [unknown, unknown]> {
+  const changed: Record<string, [unknown, unknown]> = {};
+  if (stored.amountAmountKrw !== payload.amountAmountKrw) changed.amount = [stored.amountAmountKrw, payload.amountAmountKrw];
+  if (stored.entryDate !== payload.entryDate) changed.entryDate = [stored.entryDate, payload.entryDate];
+  if (stored.direction !== payload.direction) changed.direction = [stored.direction, payload.direction];
+  return changed;
+}
+
+async function writePlan(viewer: Viewer, plan: Plan, now: Date, tx: DbOrTx, deps?: Partial<ReserveWriteDeps>): Promise<FxToRemember[]> {
   const recordAction = deps?.recordAction ?? defaultRecordAction;
-  for (const { input, payload } of prepared) {
-    await repoInsertEntry(viewer, { id: input.id, clientId: input.clientId, createdAt: now, ...payload }, tx);
-    await recordAction(viewer, { actionType: "document_create", entity: RESERVE_ENTITY, entityId: input.id, detail: { entryId: input.id, clientId: input.clientId } }, { tx });
+  const fxToRemember: FxToRemember[] = [];
+  const rememberIfTouched = (row: PreparedRow) => {
+    if (row.payload.amountCurrency !== "KRW" && row.input.fxRateTouched) {
+      fxToRemember.push({ currency: row.payload.amountCurrency as Currency, rate: Number(row.payload.amountFxRate) });
+    }
+  };
+  for (const row of plan.inserts) {
+    const inserted = await repoInsertEntry(viewer, { id: row.input.id, clientId: row.input.clientId, createdAt: now, ...row.payload }, tx);
+    if (!inserted) denyWrite(viewer, REPLAY_RULE, { clientIds: [row.input.clientId], entryIds: [row.input.id] }, new UserFacingError(REPLAY_MISMATCH));
+    await recordAction(viewer, { actionType: "document_create", entity: RESERVE_ENTITY, entityId: row.input.id, detail: { entryId: row.input.id, clientId: row.input.clientId } }, { tx });
+    rememberIfTouched(row);
   }
+  for (const { row, stored } of plan.updates) {
+    const updated = await repoUpdateEntryIfVersionMatches(viewer, stored.id, stored.version, stored.clientId, row.payload, tx);
+    if (!updated) throw new UserFacingError(VERSION_CONFLICT);
+    await recordAction(
+      viewer,
+      { actionType: "document_update", entity: RESERVE_ENTITY, entityId: stored.id, detail: { entryId: stored.id, clientId: stored.clientId, changed: changedFields(stored, row.payload) } },
+      { tx },
+    );
+    rememberIfTouched(row);
+  }
+  for (const stored of plan.archives) {
+    await repoSetEntryArchived(viewer, stored.id, true, tx);
+    await recordAction(viewer, { actionType: "archive", entity: RESERVE_ENTITY, entityId: stored.id, detail: { entryId: stored.id, clientId: stored.clientId } }, { tx });
+  }
+  return fxToRemember;
 }
 
 // ── 읽기 ─────────────────────────────────────────────────────────────────
+
+export type ReserveCellEditability = "edit" | "readonly" | "locked";
+export type ReserveCellField = "clientId" | "entryDate" | "direction" | "amount" | "fxRate" | "projectId" | "evidenceType" | "taxInvoiceNumber" | "note" | "balanceKrw";
+const RESERVE_CELL_FIELDS: ReserveCellField[] = ["clientId", "entryDate", "direction", "amount", "fxRate", "projectId", "evidenceType", "taxInvoiceNumber", "note", "balanceKrw"];
+
+// 서버 셀 단계(사용자 D6) — 기존 줄의 클라이언트 칸은 잠김, 잔액은 계산값이라 누구에게나 읽기 전용, 쓰기 권한이 없으면 전부 잠김.
+function reserveCellEditability(isNew: boolean, canWrite: boolean): Record<ReserveCellField, ReserveCellEditability> {
+  const cells = {} as Record<ReserveCellField, ReserveCellEditability>;
+  for (const field of RESERVE_CELL_FIELDS) {
+    if (field === "balanceKrw") cells[field] = "readonly";
+    else if (field === "clientId" && !isNew) cells[field] = "locked";
+    else cells[field] = canWrite ? "edit" : "locked";
+  }
+  return cells;
+}
 
 export type ReserveEntryDto = {
   id: string;
@@ -213,15 +434,18 @@ export type ReserveEntryDto = {
   taxInvoiceNumber: string | null;
   note: string | null;
   balanceKrw: number;
+  cellEditability: Record<ReserveCellField, ReserveCellEditability>;
 };
 
 export type ReserveListResult = {
   rows: ReserveEntryDto[];
+  newRowCellEditability?: Record<ReserveCellField, ReserveCellEditability>;
   clientBalances?: { clientId: string; clientName: string; balanceKrw: number }[];
 };
 
 export async function listReserves(viewer: Viewer, opts: { page?: number | string }): Promise<ReserveListResult> {
   void opts;
+  const canWrite = await reserveRights(viewer, "write");
   const rows = await repoListAllActiveEntries(viewer);
   const names = await repoFindClientNames(viewer, [...new Set(rows.map((row) => row.clientId))]);
   const balance = runningBalance(rows.map(toBalanceRow));
@@ -243,11 +467,13 @@ export async function listReserves(viewer: Viewer, opts: { page?: number | strin
       taxInvoiceNumber: row.taxInvoiceNumber,
       note: row.note,
       balanceKrw: balanceById.get(row.id) ?? 0,
+      cellEditability: reserveCellEditability(false, canWrite),
     };
   });
   const clientBalances = balance.closingByDate.reduce<Map<string, number>>((acc, closing) => acc.set(closing.clientId, closing.balanceKrw), new Map());
   return {
     rows: dtos,
+    newRowCellEditability: reserveCellEditability(true, canWrite),
     clientBalances: [...clientBalances].map(([clientId, balanceKrw]) => ({ clientId, clientName: names.get(clientId) ?? "", balanceKrw })),
   };
 }

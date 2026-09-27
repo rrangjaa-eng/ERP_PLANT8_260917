@@ -56,13 +56,13 @@ const TOP_BAR_MENU: readonly MenuLink[] = [
 ];
 
 // D-17 → 「관리」 한 줄로 접기(2026-09-22, quick/260922-i3k, 사용자 결정 옵션 B):
-// 관리자 화면 10종(§6-8 시스템 상태 + Phase 3의 나머지 9개) 전부 — 개별 이름은
+// 관리자 화면 11종(§6-8 시스템 상태 + Phase 3의 나머지 10개) 전부 — 개별 이름은
 // PC 사용자 메뉴·「더보기」 시트에 더 이상 나오지 않고, 두 표면 모두 「관리」 한
 // 줄(/admin)만 보여준다. 개별 화면·순서·그룹은 `/admin` 인덱스 화면
 // (app/(app)/admin/page.tsx)이 adminIndexGroups로 받는다. key는
 // domain/permissions/menus.ts MENUS의 admin.* 키와 같은 문자열이어야 하고,
 // href는 실제 라우트 디렉터리 app/(app)/admin/<name>/과 대조해 확정했다
-// (2026-09-21, 열 개 전부 확인) — `ui`는 domain을 import할 수 없어(D-26) 이
+// (2026-09-21, 열한 개 전부 확인) — `ui`는 domain을 import할 수 없어(D-26) 이
 // 목록은 이 파일 안에 복제된 상수다. 여기 키가 MENUS와 어긋나면 그 항목의
 // 진입점이 절대 나타나지 않고, href가 실제 라우트와 어긋나면 링크가 404로 간다.
 //
@@ -86,6 +86,7 @@ const ADMIN_MENUS: ReadonlyArray<{ key: string; label: string; href: string; gro
     group: ADMIN_GROUP_MASTER,
   },
   { key: "admin.code-tables", label: "코드표", href: "/admin/code-tables", group: ADMIN_GROUP_MASTER },
+  { key: "admin.holidays", label: "공휴일", href: "/admin/holidays", group: ADMIN_GROUP_MASTER },
   {
     key: "admin.permissions",
     label: "권한표",
@@ -125,6 +126,11 @@ const ADMIN_MENUS: ReadonlyArray<{ key: string; label: string; href: string; gro
 // 통과/실패가 갈리므로, 문서를 바꾸고 이 상수를 잊으면 테스트가 즉시 알린다.
 const SETTINGS_ENTRY: AccountEntry = { kind: "link", label: "설정", href: "/settings" };
 
+// 04.2-09 Task 1 — SYSTEM.md §6-0 (a)·§7-8 「계정」 그룹 맨 앞 「알림함」(S1-b).
+// 상단 바 트리거 배지(§7-12 S1-a)는 TopBar.tsx가 useUnreadCount()로 별도로 붙인다 —
+// 이 상수는 라우트와 라벨 정본일 뿐 건수를 담지 않는다.
+export const NOTIFICATIONS_HREF = "/notifications";
+
 /** allowedMenus에 admin.* 메뉴가 하나라도 있으면 「관리」 한 줄, 없으면 빈 배열
  * (「관리」 한 줄로 접기 — 개별 화면 이름은 adminIndexGroups가 담당). */
 function buildAdminMenu(viewer: RoleMenuViewer): MenuLink[] {
@@ -152,6 +158,7 @@ export function adminIndexGroups(viewer: RoleMenuViewer): AdminMenuGroup[] {
 
 function buildAccountGroup(): AccountEntry[] {
   return [
+    { kind: "link", label: "알림함", href: NOTIFICATIONS_HREF },
     { kind: "link", label: "내 정보", href: "/account" },
     SETTINGS_ENTRY,
     { kind: "action", label: "로그아웃", action: "logout" },

@@ -216,6 +216,10 @@
   width: auto;
   padding: 0 var(--cell-pad-x);
   font-variant-numeric: tabular-nums;
+  /* F3 — Chromium 153은 날짜 칸 고유 폭을 들어 있는 날짜 글자 폭으로 잡아 값(빈 칸 · 09-01 · 10-31)마다 1px씩 달라지고, 그만큼 뒤 칸이
+     옆으로 밀린다. 가장 넓은 날짜(숫자 8자 + 구분자 + 달력 단추)보다 넓은 최소 폭을 두어 폭이 값과 무관하다. 더 넓은 글꼴 · 지역 형식이면
+     고유 폭(auto)이 이겨 날짜가 잘리지 않는다(FINDING-013). */
+  min-width: calc(16.5ch + 2 * (var(--cell-pad-x) + var(--line-w)));
 }
 
 .periodInput[aria-invalid="true"] {

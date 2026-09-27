@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# 세션 경계 훅 — 플랜 하나가 끝나면 그 세션에서 더 나아가지 않고 새 세션으로 넘긴다.
-# 사용자 요청(2026-09-23): "플랜이 종료되면 새 세션으로 넘어가게 해".
+# 세션 경계 훅 — 웨이브 하나가 끝나면 그 세션에서 더 나아가지 않고 새 세션으로 넘긴다.
+# 사용자 요청(2026-09-23): "플랜이 종료되면 새 세션으로 넘어가게 해" → 2026-09-27 개정: 단위를
+# 플랜에서 웨이브로 넓힘(세션 교체 비용이 플랜 실행 시간과 비슷했다). quick 완료는 경계가 아니다.
 # 사용자 결정(2026-09-23, D-01): 게이트 리뷰(/plan-ceo-review, /plan-eng-review,
-# /plan-design-review)의 종료도 세션 경계다.
+# /plan-design-review)의 종료는 여전히 세션 경계다.
 #
-# 플랜 종료로 보는 것(메인 에이전트 기준):
-#   - 이 세션 시작 뒤 새 `.planning/phases/*/*-SUMMARY.md`가 생김(플랜 실행 완료)
-#   - 이 세션 시작 뒤 새 `.planning/quick/*/*-SUMMARY.md`가 생김(/gsd-quick 완료, D-03)
+# 경계로 보는 것(메인 에이전트 기준):
+#   - gsd-executor를 띄운 세션: 첫 디스패치 때 기록한 웨이브의 플랜이 전부 SUMMARY를 가짐(웨이브 종료)
+#   - 플랜에 wave 정보가 없는 옛 형식: 이 세션 시작 뒤 새 `.planning/phases/*/*-SUMMARY.md`가 생김
 #   - `state.planned-phase` 실행(/gsd-plan-phase 13b — 계획 완료)
 #   - 이 세션에서 게이트 리뷰를 시작했고 그 보고서(docs/designs/*review*)가 커밋됨(D-01)
+#   웨이브 계산은 lib/plant8-wave.sh(skill-gate와 공유)
 #
 # 동작(첫 인자 = 이벤트):
 #   session-start : 지금 있는 SUMMARY 목록을 기준으로 저장(재개 때는 기준이 없을 때만)
@@ -32,13 +34,33 @@ flag_plan_phase="$state_dir/${session}.plan-phase-done"
 announced="$state_dir/${session}.announced"
 stop_reminded="$state_dir/${session}.stop-reminded"
 own="$state_dir/${session}.own"  # 처음 볼 때 main에 없던(이 세션이 만든) SUMMARY
+wave_file="$state_dir/${session}.wave"  # 이 세션이 실행 중인 "phase_pad wave"(첫 gsd-executor 디스패치 때 기록)
+# shellcheck source=lib/plant8-wave.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/plant8-wave.sh"
 
 gate_reviews="plan-ceo-review|plan-eng-review|plan-design-review"
 
 normalize() { sed -e 's/^\///' -e 's/^[^:]*://' -e 's/[[:space:]].*$//'; }
 
+# quick(.planning/quick) 완료는 2026-09-27부터 경계가 아니다(D-03 폐기) — 페이즈 플랜만 본다.
 list_summaries() {
-  { find "$project/.planning/phases" "$project/.planning/quick" -name '*-SUMMARY.md' -type f 2>/dev/null || true; } | sort
+  { find "$project/.planning/phases" -name '*-SUMMARY.md' -type f 2>/dev/null || true; } | sort
+}
+
+# 이 세션의 실행 경계 문구. 웨이브가 기록됐으면(gsd-executor를 띄운 세션) 그 웨이브의 플랜이 전부
+# 끝났을 때만 "웨이브 N 종료", 기록이 없으면(플랜에 wave 정보가 없는 옛 형식) 새 SUMMARY가 생기면 "플랜 종료".
+plans_boundary() {
+  local rec done_plans
+  if [ -s "$wave_file" ]; then
+    rec="$(cat "$wave_file")"
+    if p8_wave_complete "$(p8_phase_dir "$project" "${rec% *}")" "${rec#* }"; then
+      printf '웨이브 %s 종료(Phase %s)' "${rec#* }" "${rec% *}"
+    fi
+    return 0
+  fi
+  done_plans="$(new_summaries)"
+  [ -n "$done_plans" ] && printf '플랜 종료: %s' "$done_plans"
+  return 0
 }
 
 current_branch() {
@@ -114,13 +136,13 @@ boundary_text() {
   local what="$1"
   cat <<EOF
 [세션 경계 — ${what}]
-이 세션에서 다음 플랜(또는 실행)을 시작하지 마라. 순서대로 한다:
+이 세션에서 다음 웨이브(또는 다음 계획·실행 단위)를 시작하지 마라. 순서대로 한다:
 1. verification-before-completion 스킬로 방금 끝난 결과를 확인한다.
-2. 남은 변경을 커밋하고 푸시한다(훅 우회 금지).
+2. 남은 변경을 커밋하고 푸시한다(훅 우회 금지). 푸시 전에 origin/main을 머지 커밋으로 반영한다.
 3. /gsd-pause-work로 인계 문서를 만들고 커밋·푸시한다.
 4. 다음 세션을 만든다 — mcp__Claude_Code_Remote__create_session에 아래를 모두 명시한다(하나라도 빠지면 환경이 제대로 뜨지 않는다 — 2026-09-23 시험으로 확인):
-   environment_id = 이 세션의 environment_id(get_session으로 확인, plant8 환경), source_url = 이 리포 URL, source_revision = 현재 브랜치, outcome_branch = 현재 브랜치(같은 PR을 계속 쓴다), model = 이 세션과 같은 모델.
-   prompt에는: "/gsd-progress로 재개하라. 다음은 {다음 플랜 또는 단계}. 브랜치 {브랜치}, PR #{번호}를 계속 쓴다. 플랜 하나가 끝나면 같은 방식으로 다음 세션을 만들어 넘긴다."
+   environment_id = env_01BjvDha7fqn18V6L1UywqDh (plant8 환경 고정 — 「기본값」 환경은 시크릿·허용 목록이 없다, 2026-09-27), source_url = 이 리포 URL, source_revision = 현재 브랜치, outcome_branch = 현재 브랜치(같은 PR을 계속 쓴다), model = 이 세션과 같은 모델.
+   prompt에는: "/gsd-progress로 재개하라. 다음은 {다음 웨이브 또는 단계}. 브랜치 {브랜치}, PR #{번호}를 계속 쓴다. 웨이브 하나가 끝나면 같은 방식으로 다음 세션을 만들어 넘긴다."
    create_session 도구가 없는 환경이면 사용자에게 붙여 넣을 첫 메시지를 코드 블록 하나로 준다.
 5. 새 세션 id를 사용자에게 알리고 이 세션의 작업을 끝낸다.
 EOF
@@ -132,7 +154,7 @@ case "$event" in
     if [ "$source" = "startup" ] || [ ! -f "$baseline" ]; then
       list_summaries > "$baseline"
       current_branch > "$branch_file"
-      rm -f "$flag_plan_phase" "$announced" "$stop_reminded" "$own"
+      rm -f "$flag_plan_phase" "$announced" "$stop_reminded" "$own" "$wave_file"
     fi
     exit 0
     ;;
@@ -144,9 +166,7 @@ case "$event" in
     if [ "$tool" = "Bash" ] && printf '%s' "$payload" | jq -r '.tool_input.command // empty' | grep -Eq 'gsd-tools\.cjs[^;&|]*state\.planned-phase'; then
       touch "$flag_plan_phase"
     fi
-    done_plans="$(new_summaries)"
-    what=""
-    [ -n "$done_plans" ] && what="플랜 종료: ${done_plans}"
+    what="$(plans_boundary)"
     [ -f "$flag_plan_phase" ] && what="${what:+$what · }계획(/gsd-plan-phase) 완료 — 13b 뒤 남은 13c~14단계는 끝내고, 15단계 자동 실행 대신 새 세션으로"
     review_done="$(gate_review_done)"
     [ -n "$review_done" ] && what="${what:+$what · }게이트 리뷰 종료(${review_done}) — 남은 정리(보고서·게이트 기록 커밋·푸시)만 끝내고, 다음 게이트 리뷰·계획·실행은 새 세션으로"
@@ -185,21 +205,41 @@ case "$event" in
 
     [ "$subagent" = "gsd-executor" ] || exit 0
     maybe_rebase_baseline_for_branch
+    if [ -f "$flag_plan_phase" ]; then
+      echo "차단됨: 이 세션에서 계획이 끝났다(계획 완료). 실행은 새 세션에서 한다 — 커밋·푸시 → /gsd-pause-work → 새 세션(/gsd-progress)." >&2
+      exit 2
+    fi
+    # 웨이브가 기록된 세션: 그 웨이브가 전부 끝났으면 다음 웨이브는 새 세션, 아니면 같은 웨이브의 플랜이라 허용
+    if [ -s "$wave_file" ]; then
+      rec="$(cat "$wave_file")"
+      if p8_wave_complete "$(p8_phase_dir "$project" "${rec% *}")" "${rec#* }"; then
+        echo "차단됨: 이 세션의 웨이브 ${rec#* }(Phase ${rec% *})가 끝났다 — 세션 하나에 웨이브 하나. 다음 웨이브는 새 세션에서 실행한다 — 커밋·푸시 → /gsd-pause-work → 새 세션(/gsd-progress)." >&2
+        exit 2
+      fi
+      exit 0
+    fi
+    # 첫 디스패치: 플랜에 wave 정보가 있으면 지금 웨이브를 기록한다. 없으면 옛 규칙(이 세션에서 끝난 플랜이 있으면 막는다)
+    pad="$(p8_current_phase_pad "$project" "$session")"
+    cur="$(p8_lowest_incomplete_wave "$(p8_phase_dir "$project" "$pad")")"
+    if [ -n "$cur" ]; then
+      printf '%s %s' "$pad" "$cur" > "$wave_file"
+      exit 0
+    fi
     done_plans="$(new_summaries)"
-    if [ -n "$done_plans" ] || [ -f "$flag_plan_phase" ]; then
-      echo "차단됨: 이 세션에서 이미 플랜이 끝났다(${done_plans:-계획 완료}). 다음 플랜 실행은 새 세션에서 한다 — 커밋·푸시 → /gsd-pause-work → 새 세션(/gsd-progress)." >&2
+    if [ -n "$done_plans" ]; then
+      echo "차단됨: 이 세션에서 이미 플랜이 끝났다(${done_plans}). 다음 플랜 실행은 새 세션에서 한다 — 커밋·푸시 → /gsd-pause-work → 새 세션(/gsd-progress)." >&2
       exit 2
     fi
     exit 0
     ;;
 
   stop)
-    done_plans="$(new_summaries)"
+    pb="$(plans_boundary)"
     review_done="$(gate_review_done)"
-    { [ -n "$done_plans" ] || [ -f "$flag_plan_phase" ] || [ -n "$review_done" ]; } || exit 0
+    { [ -n "$pb" ] || [ -f "$flag_plan_phase" ] || [ -n "$review_done" ]; } || exit 0
     [ -f "$stop_reminded" ] && exit 0
     touch "$stop_reminded"
-    jq -nc --arg reason "$(boundary_text "${review_done:+게이트 리뷰 종료: $review_done · }${done_plans:+플랜 종료: $done_plans}${done_plans:+ · }계획/실행 경계 — 인계를 마쳤는지 확인")
+    jq -nc --arg reason "$(boundary_text "${review_done:+게이트 리뷰 종료: $review_done · }${pb:+$pb · }계획/실행 경계 — 인계를 마쳤는지 확인")
 이미 1~5를 모두 마쳤다면 그렇다고 한 줄로 말하고 끝내라." \
       '{decision:"block", reason:$reason}'
     ;;

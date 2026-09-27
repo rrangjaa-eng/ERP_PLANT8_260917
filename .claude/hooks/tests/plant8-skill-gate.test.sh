@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 회귀 테스트 — plant8-skill-gate.sh (D-02: 커밋 전 verification-before-completion,
-# D-04: 세션당 gsd-executor 한 번)
+# D-04: 세션당 gsd-executor는 한 웨이브 — 플랜 wave 정보가 없으면 옛 규칙(한 번))
 # payload를 stdin으로 넣어 각 이벤트를 검증한다. 실제 리포를 절대 건드리지 않는다.
 set -uo pipefail
 
@@ -250,6 +250,31 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# D-04(웨이브): 같은 웨이브의 실행자는 여러 번 띄울 수 있고, 다음 웨이브는 새 세션
+wave_project() {  # 04-test 페이즈: wave 1 = 04-01·04-02, wave 2 = 04-03
+  local proj
+  proj="$(new_project)"
+  printf -- '---\nwave: 1\n---\n' > "$proj/.planning/phases/04-test/04-01-PLAN.md"
+  printf -- '---\nwave: 1\n---\n' > "$proj/.planning/phases/04-test/04-02-PLAN.md"
+  printf -- '---\nwave: 2\n---\n' > "$proj/.planning/phases/04-test/04-03-PLAN.md"
+  printf '%s' "$proj"
+}
+projW="$(wave_project)"
+W="sid-d04-wave-$$"
+executor_ready_session "$projW" "$W"
+hook plant8-skill-gate.sh agent "$(payload_agent "$W" gsd-executor)" "$projW"
+expect_rc "D-04 wave: 첫 디스패치(웨이브 1) -> exit 0" 0 "$HOOK_RC"
+hook plant8-skill-gate.sh agent "$(payload_agent "$W" gsd-executor)" "$projW"
+expect_rc "D-04 wave: 같은 웨이브 두 번째 디스패치(병렬 플랜) -> exit 0" 0 "$HOOK_RC"
+echo summary > "$projW/.planning/phases/04-test/04-01-SUMMARY.md"
+hook plant8-skill-gate.sh agent "$(payload_agent "$W" gsd-executor)" "$projW"
+expect_rc "D-04 wave: 웨이브 1 미완(04-02 남음) -> exit 0" 0 "$HOOK_RC"
+echo summary > "$projW/.planning/phases/04-test/04-02-SUMMARY.md"
+hook plant8-skill-gate.sh agent "$(payload_agent "$W" gsd-executor)" "$projW"
+expect_rc "D-04 wave: 웨이브 1 완료 뒤 디스패치(웨이브 2) -> exit 2" 2 "$HOOK_RC"
+expect_contains "D-04 wave: 메시지에 웨이브" "$HOOK_STDERR" "웨이브"
+
+# ---------------------------------------------------------------------------
 # 소수점 페이즈(04.1 …)는 Phase 4 로그와 섞이지 않는다
 # payload: Skill 도구 호출(args 포함)
 payload_skill_args() {
@@ -487,8 +512,29 @@ merge_hook "$M2" "$projM2" "$DOC_FILES"
 expect_rc "merge: 문서만 바뀐 PR이어도 review 없으면 -> exit 2" 2 "$HOOK_RC"
 write_gate_line "$projM2" review "$M2"
 write_gate_line "$projM2" qa "$M2"
+merge_hook "$M2" "$projM2" $'domain/x.ts'
+expect_rc "merge: 코드 PR(화면 아님) + review·qa -> 통과" 0 "$HOOK_RC"
 merge_hook "$M2" "$projM2" $'app/page.tsx'
-expect_rc "merge: 코드 PR + review·qa -> 통과" 0 "$HOOK_RC"
+expect_rc "merge: 화면 코드 PR + review·qa, design-review 없음 -> exit 2" 2 "$HOOK_RC"
+expect_contains "merge: 화면 코드 PR 메시지에 /design-review" "$HOOK_STDERR" "design-review"
+write_gate_line "$projM2" design-review "$M2"
+merge_hook "$M2" "$projM2" $'app/page.tsx'
+expect_rc "merge: 화면 코드 PR + review·qa·design-review -> 통과" 0 "$HOOK_RC"
+
+# ---------------------------------------------------------------------------
+# merge: 위험 경로(마이그레이션·스키마·인증·권한·암호화·배포·.claude·CLAUDE.md)는 세션이 머지하지 않는다
+projRk="$(new_project)"
+RK="sid-merge-risk-$$"
+write_gate_line "$projRk" review "$RK"
+write_gate_line "$projRk" qa "$RK"
+write_gate_line "$projRk" design-review "$RK"
+for risky in 'db/migrations/0020_x.sql' 'db/schema/projects.ts' 'domain/auth/hooks.ts' 'domain/permissions/can.ts' 'lib/crypto.ts' 'scripts/deploy.sh' '.github/workflows/ci.yml' 'infra/names.sh' '.claude/hooks/plant8-skill-gate.sh' '.claude/rules/db.md' 'CLAUDE.md'; do
+  merge_hook "$RK" "$projRk" "$(printf 'domain/x.ts\n%s' "$risky")"
+  expect_rc "merge: 위험 경로 $risky -> exit 2" 2 "$HOOK_RC"
+  expect_contains "merge: 위험 경로 $risky 메시지에 사용자" "$HOOK_STDERR" "사용자"
+done
+merge_hook "$RK" "$projRk" $'domain/x.ts\n.claude/gates/phase-04.log'
+expect_rc "merge: .claude/gates 로그는 위험 경로가 아님 -> 통과" 0 "$HOOK_RC"
 
 # ---------------------------------------------------------------------------
 # merge: gh가 없거나 실패하면 origin ls-remote의 PR 헤드 커밋을 로컬 git diff로 판정

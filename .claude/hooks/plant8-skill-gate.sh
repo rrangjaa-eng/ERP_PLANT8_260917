@@ -10,16 +10,20 @@
 #   record-prompt  UserPromptSubmit         — /gsd-… 같은 슬래시 명령을 기록(페이즈 인자도 같다)
 #   agent          PreToolUse(Agent)        — gsd-* 에이전트는 맞는 /gsd-* 스킬을 부른 뒤에만,
 #                                            gsd-executor는 페이즈 계획 게이트(CEO·엔지·UI면 디자인 리뷰) 기록 뒤에만.
-#                                            검사를 모두 통과한 메인 에이전트 gsd-executor 디스패치는 세션당
-#                                            한 번만(D-04, 사용자 결정 2026-09-23) — 검사가 마지막이라 거부된
-#                                            디스패치는 그 한 번을 쓰지 않는다
+#                                            메인 에이전트의 gsd-executor 디스패치는 세션당 웨이브 하나(D-04,
+#                                            2026-09-27 개정: 같은 웨이브의 플랜은 몇 개든, 다음 웨이브는 새 세션).
+#                                            플랜에 wave 정보가 없으면 옛 규칙(세션당 한 번) — 검사가 마지막이라
+#                                            거부된 디스패치는 그 한 번을 쓰지 않는다. 웨이브 계산은 lib/plant8-wave.sh
 #   bash           PreToolUse(Bash)         — 모든 커밋(문서 포함)은 verification-before-completion 뒤에만,
 #                                            코드 커밋은 test-driven-development도 더해서(D-02, 사용자 결정
 #                                            2026-09-23). 페이즈 완료는 /review·/qa 뒤에만
 #   edit           PreToolUse(Edit|Write)   — 코드 작성은 test-driven-development 뒤에만,
 #                                            테스트·빌드 실패 뒤 코드 수정은 systematic-debugging 뒤에만
 #   failure        PostToolUseFailure(Bash) — 테스트·빌드 실패를 표시
-#   merge          PreToolUse(PR 머지)      — 페이즈 기록에 /review·/qa가 있을 때만(문서만 바뀐 PR은 /review만)
+#   merge          PreToolUse(PR 머지)      — 페이즈 기록에 /review·/qa가 있을 때만(문서만 바뀐 PR은 /review만,
+#                                            화면 파일이 바뀐 PR은 /design-review도). 위험 경로(마이그레이션·스키마·
+#                                            인증·권한·암호화·배포·.claude·CLAUDE.md)는 세션이 머지하지 않는다 —
+#                                            사용자가 GitHub에서 머지(2026-09-27). 그 밖은 세션이 머지한다
 # 게이트 기록(.claude/gates/phase-NN[.N].log)은 커밋해 세션을 넘어 남긴다.
 set -euo pipefail
 
@@ -33,7 +37,10 @@ mkdir -p "$state_dir"
 skills_file="$state_dir/${session}-${agent}.skills"      # 이 에이전트가 부른 스킬
 session_skills="$state_dir/${session}.skills"           # 세션 전체(메인 + 서브)
 debug_flag="$state_dir/${session}-${agent}.debug-required"
-executor_flag="$state_dir/${session}.executor-dispatched"  # D-04: 세션당 gsd-executor 한 번
+executor_flag="$state_dir/${session}.executor-dispatched"  # D-04(옛 규칙): 플랜에 wave 정보가 없을 때 세션당 gsd-executor 한 번
+wave_file="$state_dir/${session}.wave"                     # D-04(웨이브): 이 세션이 실행 중인 "phase_pad wave"
+# shellcheck source=lib/plant8-wave.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/plant8-wave.sh"
 
 normalize() { sed -e 's/^\///' -e 's/^[^:]*://' -e 's/[[:space:]].*$//'; }
 
@@ -124,8 +131,20 @@ case "$event" in
     fi
     has_skill "$session_skills" "$need" || deny "${sub}는 GSD 워크플로 안에서만 띄운다. 먼저 Skill 도구로 해당 스킬(${need//|/ 또는 })을 호출하고 그 워크플로의 단계를 그대로 따르라. 워크플로를 임의로 바꾸거나 건너뛰려면 먼저 사용자 승인을 받아라."
     if [ "$sub" = "gsd-executor" ]; then
-      if ! ( set -o noclobber; : > "$executor_flag" ) 2>/dev/null; then
-        deny "이 세션에서 이미 gsd-executor를 띄웠다 — 세션 하나에 플랜 하나. 다음 플랜(같은 웨이브의 병렬 플랜, 체크포인트 이어가기 포함)은 새 세션에서 실행한다 — 커밋·푸시 → /gsd-pause-work → 새 세션(/gsd-progress)."
+      # 세션 하나 = 웨이브 하나(사용자 결정 2026-09-27). 지금 웨이브 = SUMMARY 없는 플랜의 최소 wave.
+      # 첫 디스패치 때 기록하고 같은 웨이브면 몇 번이든 허용(병렬 플랜), 웨이브가 넘어가면 새 세션.
+      phase_dir="$(p8_phase_dir "$project" "$phase_pad")"
+      cur_wave="$(p8_lowest_incomplete_wave "$phase_dir")"
+      if [ -n "$cur_wave" ]; then
+        if [ -s "$wave_file" ]; then
+          rec="$(cat "$wave_file")"
+          [ "$rec" = "${phase_pad} ${cur_wave}" ] \
+            || deny "이 세션은 웨이브 ${rec#* }(Phase ${rec% *})를 실행했다 — 세션 하나에 웨이브 하나. 다음 웨이브(${cur_wave})는 새 세션에서 실행한다 — 커밋·푸시 → /gsd-pause-work → 새 세션(/gsd-progress)."
+        else
+          printf '%s %s' "$phase_pad" "$cur_wave" > "$wave_file"
+        fi
+      elif ! ( set -o noclobber; : > "$executor_flag" ) 2>/dev/null; then
+        deny "이 세션에서 이미 gsd-executor를 띄웠다 — 플랜에 wave 정보가 없어 세션 하나에 플랜 하나로 본다. 다음 플랜은 새 세션에서 실행한다 — 커밋·푸시 → /gsd-pause-work → 새 세션(/gsd-progress)."
       fi
     fi
     ;;
@@ -230,12 +249,24 @@ case "$event" in
         fi
       fi
     fi
+    ui_changed=0
     if [ -n "$pr_files" ]; then
       awk -F'\t' '{ for (i = 1; i <= NF; i++) if (!($i ~ /^(\.planning|\.claude\/gates)\// || ($i ~ /\.md$/ && $i !~ /^\.claude\// && $i !~ /(^|\/)CLAUDE\.md$/))) bad = 1 }
                   END { exit bad }' <<<"$pr_files" && docs_only=1
+      # 위험 경로(마이그레이션·스키마·인증·권한·암호화·배포·훅/규칙·CLAUDE.md)는 세션이 머지하지 않는다 —
+      # 사용자가 GitHub에서 직접 머지한다(사용자 결정 2026-09-27: 그 밖의 PR은 조건 충족 시 세션이 머지).
+      # 이름 바꾸기의 옛 경로(탭 뒤)도 본다. .claude/gates/ 로그는 모든 PR이 건드리므로 제외.
+      risky="$(printf '%s\n' "$pr_files" | tr '\t' '\n' \
+        | { grep -E '^(db/migrations/|db/schema/|domain/auth/|domain/permissions/|lib/crypto|scripts/(deploy|rollback|bootstrap-gcp|promote-guard)\.sh$|\.github/workflows/|infra/|\.claude/|CLAUDE\.md$)' || true; } \
+        | { grep -vE '^\.claude/gates/' || true; } | head -n 3 | tr '\n' ' ')"
+      [ -z "$risky" ] || deny "위험 경로가 바뀐 PR(${risky% })은 세션이 머지하지 않는다 — 마이그레이션·스키마·인증·권한·암호화·배포·훅·규칙·CLAUDE.md는 사용자가 GitHub에서 직접 머지한다."
+      if printf '%s\n' "$pr_files" | tr '\t' '\n' | grep -Eq '^(app|ui)/.*\.(tsx|css)$'; then ui_changed=1; fi
     fi
     gate_has review && { [ "$docs_only" = 1 ] || gate_has qa; } \
       || deny "PR 머지 전에 gstack Post-build를 실제로 호출하라: /review → /qa(문서만 바뀐 PR은 면제) → (해당 시)/cso → /ship. gh가 없으면 expectedHeadSha를 넣고 PR 커밋을 받아 둬야 문서 PR로 판정한다(git fetch origin pull/${pull_number:-N}/head pull/${pull_number:-N}/merge)."
+    if [ "$ui_changed" = 1 ] && ! gate_has design-review; then
+      deny "화면 파일(app/·ui/의 .tsx·.css)이 바뀐 PR은 /design-review 통과 기록이 있어야 머지한다(CLAUDE.md §6: UI 완료 판정 = /design-review → /qa). 호출 뒤 다시 시도하라."
+    fi
     ;;
 esac
 exit 0

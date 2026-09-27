@@ -102,9 +102,15 @@
 
 .userWrap {
   position: relative;
+  min-width: 0;
 }
 
 .userTrigger {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+  max-width: 100%;
   border: 0;
   background: none;
   color: var(--bar-fg);
@@ -113,6 +119,29 @@
   /* 메뉴 링크(.navLink)와 같은 9px — 히트 영역이 글자 줄 19px에서 바 높이 37px로
      (/design-review FINDING-003, §10 PC 컨트롤 32 하한). */
   padding: 9px 0;
+}
+
+/* S1-a(04.2-07): 배지가 트리거 폭을 넘으면 이름을 말줄임한다 — 배지는 자르지 않는다. */
+.userTriggerName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* S1-a·§7-5 상태 태그와 같은 모양 — 의미 색 없이 --bar-fg 하나. */
+.badge {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-head);
+  border: var(--line-w) solid currentColor;
+  padding: 1px 6px;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--bar-fg);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* 이미 --bar-fg라 색으로는 hover를 못 보인다 — §4-4 3차 버튼과 같은 밑줄로. */

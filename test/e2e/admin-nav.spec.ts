@@ -3,12 +3,12 @@ import { createFixtureUser } from "./fixtures";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 
 // 「관리」 한 줄로 접기(2026-09-22, quick/260922-i3k, 사용자 결정 옵션 B) 회귀
-// 방지 — PC 사용자 메뉴·「더보기」 시트는 더 이상 관리자 화면 10개의 이름을
+// 방지 — PC 사용자 메뉴·「더보기」 시트는 더 이상 관리자 화면 11개의 이름을
 // 나열하지 않고 「관리」 한 줄(/admin)만 보여준다. 개별 화면 이름·그룹은
 // /admin 인덱스(SYSTEM.md §6-10)가 담당한다. 이 파일은 "클릭만으로 닿는다"를
 // 새 두 단계 진입(사용자 메뉴 「관리」 → /admin 인덱스 → 개별 화면)으로 직접
 // 증명한다. 시스템 관리자는 seed에서 MENUS × PERMISSION_ACTIONS 전부를
-// 받으므로(domain/seed/index.ts) admin.* 10개가 전부 /admin 인덱스에 보여야
+// 받으므로(domain/seed/index.ts) admin.* 11개가 전부 /admin 인덱스에 보여야
 // 한다.
 async function loginAsSysadmin(page: Page): Promise<void> {
   const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
@@ -43,7 +43,7 @@ test.describe("PC 사용자 메뉴 → /admin 인덱스로 클릭만으로 관�
     await expect(page.getByRole("navigation", { name: "코드표 선택" })).toBeVisible();
   });
 
-  test("PC 사용자 메뉴에는 「관리」 항목만 보이고, 관리자 화면 개별 라벨 10개는 메뉴 안에 하나도 없다", async ({
+  test("PC 사용자 메뉴에는 「관리」 항목만 보이고, 관리자 화면 개별 라벨 11개는 메뉴 안에 하나도 없다", async ({
     page,
   }) => {
     await loginAsSysadmin(page);
@@ -65,6 +65,7 @@ test.describe("PC 사용자 메뉴 → /admin 인덱스로 클릭만으로 관�
       "시스템 설정",
       "행동 로그",
       "보관함",
+      "공휴일",
     ];
     for (const label of individualLabels) {
       await expect(menu.getByRole("menuitem", { name: label, exact: true })).toHaveCount(0);
@@ -75,7 +76,7 @@ test.describe("PC 사용자 메뉴 → /admin 인덱스로 클릭만으로 관�
     await expect(menu.getByRole("menuitem", { name: "설정", exact: true })).toHaveCount(0);
   });
 
-  test("/admin 인덱스에 그룹 머리글 셋(마스터·설정·권한·운영 기록)과 항목 링크 10개가 전부 보인다", async ({
+  test("/admin 인덱스에 그룹 머리글 셋(마스터·설정·권한·운영 기록)과 항목 링크 11개가 전부 보인다", async ({
     page,
   }) => {
     await loginAsSysadmin(page);
@@ -92,6 +93,7 @@ test.describe("PC 사용자 메뉴 → /admin 인덱스로 클릭만으로 관�
       "거래처",
       "법인카드 마스터",
       "코드표",
+      "공휴일",
       "권한표",
       "정보 노출표",
       "시스템 설정",

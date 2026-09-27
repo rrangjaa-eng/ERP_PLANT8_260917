@@ -1,0 +1,11 @@
+/* SYSTEM.md §6-8 「알림 발송」·「이메일」 값(04.2-13). 토큰 참조만 쓴다(D-20).
+   긴 SMTP_FROM 줄바꿈은 body의 overflow-wrap: anywhere(globals.css)가 맡는다. */
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* D-4217: --danger 글자는 「실패 N건」 하나뿐 — 결과 불명 꼬리는 본문 색. */
+.failed {
+  color: var(--danger);
+}

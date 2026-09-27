@@ -41,10 +41,17 @@ const ERROR_SITES: RegExp[] = [
   /`(오류 \$\{[^`\n]*)`/g,
   // /review(red-team) — 도메인 거부 문구는 대문자 상수에 많이 담긴다(예: PERIOD_CONFLICT).
   /\bconst [A-Z][A-Z0-9_]* = ["`]([^"`\n]*[가-힣][^"`\n]*)["`]/g,
+  // /review 맹점 (a) — 오류 클래스 생성자의 super(...) 인자는 호출부에 문구가 없어 위 패턴들이 못 잡는다.
+  /\bsuper\(\s*["`]([^"`\n]*[가-힣][^"`\n]*)["`]/g,
+  // /review 맹점 (b) — next-safe-action returnValidationErrors의 필드 오류 배열.
+  /_errors:\s*\[\s*["`]([^"`\n]*[가-힣][^"`\n]*)["`]/g,
 ];
 // 다음 행동 표기는 「새로 고침」(UI-SPEC F1)으로 통일한다 — 붙여 쓴 「새로고침」도 걸린다.
 // 폼·행동 실패 요약 「~하지 못했습니다」는 어디에 있든 오류다.
 const FAILURE_SENTENCE = /["`>]([^"`<\n]*지 못했습니다[^"`<\n]*)["`<]/g;
+// /review 맹점 (c) — JSX 텍스트 자식이 여러 줄로 꺾이면 앞뒤에 `>`·`<`가 바로 붙지
+// 않는다(문구가 그 줄 하나를 통째로 차지). 그 줄만 따로 잡는다.
+const FAILURE_SENTENCE_LINE = /^\s*([^"`<\n{]*지 못했습니다[^"`<\n]*)$/gm;
 
 // 끝이든 「원인 · 다음 행동」의 원인 자리(가운뎃점·쌍점 앞)든 높임말 종결이면 걸린다.
 const HONORIFIC_OR_PERIOD = /(?:습니다|세요|입니다|니다)\.?(?:$|\s*[·:])|\.$/;
@@ -80,6 +87,7 @@ function offendersIn(rel: string, source: string): string[] {
     }
   }
   for (const match of text.matchAll(FAILURE_SENTENCE)) found.push(`${rel}: ${(match[1] ?? "").trim()}`);
+  for (const match of text.matchAll(FAILURE_SENTENCE_LINE)) found.push(`${rel}: ${(match[1] ?? "").trim()}`);
   return found;
 }
 
@@ -108,11 +116,23 @@ describe("오류 문구 명사형 통일 (결정 4 · SYSTEM.md §8-3)", () => {
     'throw new UserFacingError("버전 정보 필요 · 새로고침");',
     // 사용자 결정 2026-09-26 — 날짜 빈 칸 문구도 높임말 없이 명사형으로.
     'export const EMPTY_ERROR = "날짜를 골라 주세요";',
+    // /review 맹점 (a) — 오류 클래스 생성자 안 super(...) 문구.
+    'class SampleError extends UserFacingError {\n  constructor() {\n    super("탈퇴한 사용자입니다.");\n  }\n}',
+    // /review 맹점 (b) — _errors 배열 리터럴.
+    'returnValidationErrors(schema, { date: { _errors: ["형식이 틀렸습니다."] } });',
+    // /review 맹점 (c) — 여러 줄 JSX 텍스트 자식이 그 줄 하나를 통째로 차지하는 경우.
+    '<span id={REASON_ID} className={styles.rowError}>\n  추가하지 못했습니다 · 다시 시도\n</span>',
   ])("알려진 나쁜 예 %s 를 잡는다", (sample) => {
     expect(offendersIn("sample.ts", sample)).not.toEqual([]);
   });
 
-  it.each(['throw new UserFacingError("권한 없음");', 'reason: "날짜 없음 · 날짜 고르기"'])("허용되는 예 %s 는 잡지 않는다", (sample) => {
+  it.each([
+    'throw new UserFacingError("권한 없음");',
+    'reason: "날짜 없음 · 날짜 고르기"',
+    'class SampleError extends UserFacingError {\n  constructor() {\n    super("탈퇴한 사용자");\n  }\n}',
+    'returnValidationErrors(schema, { date: { _errors: ["형식 오류"] } });',
+    '<span>\n  추가 실패 · 다시 시도\n</span>',
+  ])("허용되는 예 %s 는 잡지 않는다", (sample) => {
     expect(offendersIn("sample.ts", sample)).toEqual([]);
   });
 

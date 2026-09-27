@@ -32,6 +32,9 @@ export const CORE_ACTION_TYPES = [
   // ACTION_TYPE_LABELS·ALWAYS_ON_ACTION_TYPES 두 배열도 같은 변경에서 함께
   // 고친다(04-RESEARCH.md Pitfall 2 — 하나만 고치면 조용히 어긋난다).
   "status_change",
+  "account_lock",
+  "account_unlock",
+  "holiday_change",
 ] as const;
 
 export type CoreActionType = (typeof CORE_ACTION_TYPES)[number];
@@ -60,6 +63,9 @@ export const ACTION_TYPE_LABELS: Record<CoreActionType, string> = {
   mask_reveal: "마스킹 해제",
   action_log_prune: "행동 로그 정리",
   status_change: "상태 변경",
+  account_lock: "계정 잠금",
+  account_unlock: "잠금 해제",
+  holiday_change: "공휴일 변경",
 };
 
 // OPS-05: Excel 내보내기·마스킹 해제·행동 로그 정리는 설정으로 못 끄는 핵심
@@ -71,6 +77,10 @@ export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = [
   // D-50: 상태 변경 이력은 끌 수 없다 — 설정으로 끄면 상세의 「마지막
   // 변경일」이 조용히 빈다.
   "status_change",
+  // 04.2 D-712·D-4220: 계정 잠금·해제와 공휴일 변경은 상태 변경과 한 트랜잭션으로 남기는 기록이라 끌 수 없다
+  "account_lock",
+  "account_unlock",
+  "holiday_change",
 ];
 
 export class UnknownActionTypeError extends UserFacingError {}

@@ -85,4 +85,18 @@ describe("recordAction (OPS-05)", () => {
   it("document_update는 끌 수 없는 종류가 아니다 — 다른 일반 종류와 같이 설정으로 끌 수 있어야 한다", () => {
     expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).not.toContain("document_update");
   });
+
+  // 04.2-03(D-712·D-4220): 계정 잠금·해제와 공휴일 변경은 상태 변경과 한
+  // 트랜잭션으로 남기는 기록이라 세 배열에 함께 있고 설정으로 끌 수 없다.
+  it("account_lock·account_unlock·holiday_change가 세 배열에 함께 있다(D-4220)", () => {
+    const added = ["account_lock", "account_unlock", "holiday_change"] as const;
+    for (const type of added) {
+      expect(CORE_ACTION_TYPES as readonly string[]).toContain(type);
+      expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain(type);
+    }
+    const labels = ACTION_TYPE_LABELS as Record<string, string>;
+    expect(labels.account_lock).toBe("계정 잠금");
+    expect(labels.account_unlock).toBe("잠금 해제");
+    expect(labels.holiday_change).toBe("공휴일 변경");
+  });
 });

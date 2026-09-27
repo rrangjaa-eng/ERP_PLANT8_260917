@@ -709,7 +709,9 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
           const groupTop = (el.closest("label") ?? el).getBoundingClientRect().top;
           return { top: r.top, bottom: r.bottom, left: r.left, groupTop };
         };
-        return { status: rect("status"), teamId: rect("teamId"), year: rect("year"), from: rect("from"), to: rect("to"), q: rect("q-wide") };
+        // 폼(칸 줄)의 줄 간격 — 오류가 있으면 오류 줄 자리만큼 커진다(F3). 기간 줄이 첫 줄이 아닐 때 내려가도 되는 상한이다.
+        const rowGap = parseFloat(getComputedStyle(document.querySelector('form[aria-label="프로젝트 필터"]')!).rowGap);
+        return { status: rect("status"), teamId: rect("teamId"), year: rect("year"), from: rect("from"), to: rect("to"), q: rect("q-wide"), rowGap };
       });
     // 800 — 검색이 오류 없을 때도 다음 줄로 줄바꿈되는 폭(CI는 글꼴·스크롤바 차이로 1024에서 이미 이렇다).
     for (const width of [1280, 1024, 800]) {
@@ -728,16 +730,34 @@ test.describe("프로젝트 목록 — 필터 줄 검토·감사 반영 (04-48)"
         expect(withError[id].bottom, `${width} ${id} 바닥 = 기간 바닥`).toBeCloseTo(withError.from.bottom, 0);
       }
       const errorBox = await error.boundingBox();
-      for (const id of ["status", "teamId", "year", "from", "to", "q"] as const) {
+      const ids = ["status", "teamId", "year", "from", "to", "q"] as const;
+      // 기간 줄보다 위 줄(오류 없을 때 기준)에 칸이 있으면 기간 줄은 첫 줄이 아니다 — 폭 · 팀 이름 길이(CI는 앞 스펙이 만든 긴 팀 이름으로
+      // 팀 칸이 넓다)에 따라 800에서 기간 묶음이 둘째 줄로 줄바꿈된다. 그때 커진 줄 간격이 기간 줄을 그만큼 내리는 것은 F3 설계다.
+      const periodIsFirstRow = ids.every((id) => clean[id].top >= clean.from.top - 0.5);
+      const rowGapGrowth = withError.rowGap - clean.rowGap;
+      for (const id of ids) {
         // 오류 줄 폭이 기간 묶음을 넓혀 뒤 칸을 옆으로 밀면 안 된다.
         expect(withError[id].left, `${width} ${id} 오류 없을 때 가로 자리`).toBeCloseTo(clean[id].left, 0);
-        if (Math.abs(clean[id].top - clean.from.top) > 0.5) {
+        if (clean[id].top < clean.from.top - 0.5) {
+          // 기간 줄보다 위 줄의 칸은 그대로이고(가로 · 세로) 오류 줄과 겹치지 않는다.
+          expect(withError[id].top, `${width} ${id} 위 줄은 오류 없을 때 자리`).toBeCloseTo(clean[id].top, 0);
+          expect(errorBox && withError[id].bottom <= errorBox.y + 0.5, `${width} ${id} 위 줄은 오류 줄과 겹치지 않음`).toBe(true);
+          continue;
+        }
+        if (clean[id].top > clean.from.top + 0.5) {
           // 줄바꿈된 칸(오류 없을 때도 다음 줄)은 오류 줄 자리만큼 내려가되 올라가거나 오류 줄과 겹치지 않는다(F3 줄 간격).
           expect(withError[id].top, `${width} ${id} 다음 줄은 위로 오지 않음`).toBeGreaterThanOrEqual(clean[id].top - 0.5);
           expect(errorBox && errorBox.y + errorBox.height <= withError[id].groupTop + 0.5, `${width} ${id} 오류 줄과 겹치지 않음`).toBe(true);
           continue;
         }
-        expect(withError[id].top, `${width} ${id} 오류 없을 때 자리`).toBeCloseTo(clean[id].top, 0);
+        if (periodIsFirstRow) {
+          expect(withError[id].top, `${width} ${id} 오류 없을 때 자리`).toBeCloseTo(clean[id].top, 0);
+          continue;
+        }
+        // 기간 줄이 첫 줄이 아니면 커진 줄 간격만큼만 내려간다 — 올라가거나 그보다 더 내려가지 않는다.
+        const shift = withError[id].top - clean[id].top;
+        expect(shift, `${width} ${id} 기간 줄은 위로 오지 않음`).toBeGreaterThanOrEqual(-0.5);
+        expect(shift, `${width} ${id} 기간 줄은 커진 줄 간격(${rowGapGrowth}px)만큼만 내려감`).toBeLessThanOrEqual(rowGapGrowth + 0.5);
       }
       expect(errorBox && errorBox.y >= withError.from.bottom).toBe(true);
       // 정렬 상자 밖으로 뺀 오류 줄도 폼 상자 안이다 — 아래 합계 줄 · 표와 겹치지 않는다.

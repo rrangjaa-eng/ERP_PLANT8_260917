@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
-current_plan: 38
+current_plan: 39
 status: executing
-stopped_at: Completed 04-48-PLAN.md
-last_updated: "2026-09-26T17:18:47.319Z"
+stopped_at: Completed 04-18-PLAN.md
+last_updated: "2026-09-27T07:54:27.344Z"
 last_activity: 2026-09-25
 last_activity_desc: Phase 4 execution started
-state_head: 04799f09159c38f187b50500e8f339702deed7da
+state_head: c9977fc82b78623f7906f4ed9f840b00db98e6bf
 progress:
   total_phases: 16
   completed_phases: 1
   total_plans: 140
-  completed_plans: 60
+  completed_plans: 76
   percent: 6
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 ## Current Position
 
 Phase: 4 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 38
+Current Plan: 39
 Total Plans in Phase: 42
 Status: Ready to execute
 Last activity: 2026-09-25 — Phase 4 execution started
@@ -109,6 +109,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P19 | 43 min | 2 tasks | 14 files |
 | Phase 04 P47 | 38min | 2 tasks | 15 files |
 | Phase 4 P48 | ~3h | 3 tasks | 13 files |
+| Phase 04 P18 | 61min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -273,6 +274,9 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-19: Ctrl+C는 훅이 가로채지 않고 Table이 document copy 이벤트에서 04-24 직렬화(copyText·quoteLineClipboardMeta)로 싣는다 — C-19 — 권한·실패 문구 없음, 접힌 선택에서도 Chromium이 copy를 쏜다는 것을 CI E2E로 확인
 - [Phase 04]: 04-19: 편집 중 Tab은 칸 안 다음 입력 → 없으면 확정 후 nextEditableCell(쪽 넘김), 편집 중이 아닐 때 Tab은 표를 떠난다 — §7-3 편집 키 줄과 (아) 탭 정지 1개를 함께 지킴
 - [Phase 4]: 04-47: 붙여넣기 머리는 조각이 있을 때만 · 표가 센 오류 수는 서버 거부 요약이 말하면 생략 · 표 밖 칸 서버 오류도 DR-5 남은 오류에 포함 · 외화 경고는 줄 단위 · revealRowId는 addLineToGroup 한 곳
+- [Phase 4]: 04-18: 목록 profitKrw · 수익금 열 · 정렬은 모두 D-87 수익금(기준 − 실행가) 한 식, 옛 줄 차익 합 제거
+- [Phase 4]: 04-18: 볼 수 없는 금액 열 정렬 키는 기본 정렬로 떨어지고 머리글 aria-sort는 실제 쓴 정렬(ProjectListResult.sort)을 따른다
+- [Phase 4]: 04-18: 폰 접힌 줄의 귀속 · 종료일 지남은 기간 열 summary로 — Table p2 규칙 불변
 
 ### Pending Todos
 
@@ -335,6 +339,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-26T17:18:47.054Z
-Stopped at: Completed 04-48-PLAN.md
+Last session: 2026-09-27T07:54:27.077Z
+Stopped at: Completed 04-18-PLAN.md
 Resume file: None

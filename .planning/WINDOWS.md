@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 20
+open_count: 19
 waived_count: 0
-fixed_count: 16
+fixed_count: 17
 total_count: 36
-last_updated: 2026-09-26T13:58:34.328Z
+last_updated: 2026-09-27T07:54:43.632Z
 ---
 
 # Broken Windows Ledger
@@ -41,7 +41,7 @@ last_updated: 2026-09-26T13:58:34.328Z
 | 24 | 02 | deviation | docs/design/system/preview.html |  | §7-4 폰 두 줄 실물(preview.html .next li grid)이 §7-4 원문과 다르게 렌더된다 — grid(auto 1fr auto) 자동 배치가 .amt를 2행 2칸에 먼저 놓아 .go(행동)가 2행으로 밀린다. 컴포넌트(NextTurn)는 2026-09-22 원문대로 고쳤고(test/e2e/mobile-next-turn.spec.ts 실측) 실물은 미수정. 디자인 문서 정비 시 맞춘다 | open |  | 2026-09-22T05:07:38.860Z |  |
 | 25 | 04 | unrun-verify | test/e2e/action-log.spec.ts |  | 04-01: 전체 E2E 스위트 동시 실행 시 간헐적 실패(단독 실행은 통과) — Excel BOM·corp-cards·master-edit·org, 웹서버 stream 오류 의심, 04-01 범위 밖 | open |  | 2026-09-22T20:41:47.158Z |  |
 | 26 | 04 | stub | app/(app)/projects/[id]/revenue-section.tsx |  | 발행·입금 줄은 스키마·domain 계층이 이미 임의 통화를 지원하나 UI는 KRW 입력만 제공한다(계약 금액·견적 단가는 통화 Select+환율 완비) — 04-04 이후 외화 입금 실사례가 나오면 마저 채운다 | open |  | 2026-09-22T21:35:03.481Z |  |
-| 27 | 04 | stub | app/(app)/projects/projects-table.tsx |  | 열 머리글 클릭 정렬·aria-sort 미구현 — ui/table/Table.tsx가 04-04 소유 파일이라 이 플랜은 건드리지 않는다(서버 정렬 자체는 구현·테스트됨, URL 파라미터 직접 내비게이션으로 검증) | open |  | 2026-09-22T22:32:21.535Z |  |
+| 27 | 04 | stub | app/(app)/projects/projects-table.tsx |  | 열 머리글 클릭 정렬·aria-sort 미구현 — ui/table/Table.tsx가 04-04 소유 파일이라 이 플랜은 건드리지 않는다(서버 정렬 자체는 구현·테스트됨, URL 파라미터 직접 내비게이션으로 검증) | fixed |  | 2026-09-22T22:32:21.535Z | 2026-09-27T07:54:43.632Z |
 | 28 | 04 | stub | app/(app)/projects/[id]/quote-table.tsx |  | 버전 충돌은 화면 전체 alert/합계 행에 서버 메시지로만 뜬다 — §7-3 (나)가 요구하는 셀별 고정 오류 모양·「덮어쓰기 / 그 값으로」 3차 버튼(per-cell)은 Table.tsx의 cellIssue.actions API로만 배선되어 있고 quote-table.tsx가 아직 채우지 않았다(구조화된 conflicts가 action 경계를 못 넘는다 — SaveRejectedError.message만 next-safe-action의 serverError로 전달된다) | open |  | 2026-09-22T23:52:05.361Z |  |
 | 29 | 04 | stub | app/(app)/projects/[id]/quote-table.tsx |  | ⌘Enter 새 줄은 그룹의 소분류를 물려받지만 배열 끝에 추가되고(그룹 안 위치로 스플라이스되지 않는다) 그 셀이 자동으로 편집 상태로 열리지 않는다 — Table이 로빙 포커스 상태를 내부 소유해 quote-table.tsx가 저장 직후 특정 셀에 포커스를 강제할 API가 없다. Alt+↑↓ 줄 이동이 그룹 경계를 넘을 때도 같은 이유로 그 셀이 자동으로 열리지 않는다(소분류는 이웃 그룹 값을 물려받는다) | open |  | 2026-09-22T23:52:13.717Z |  |
 | 30 | 04 | stub | app/(app)/projects/[id]/quote-table.tsx |  | 셀 편집 가능성이 편집/잠김 이진 판정이다 — §7-3 (가)의 3단계 중 '읽기 전용'(연결 문서가 있는 줄의 금액 셀, D-66)은 이 페이즈의 QuoteLineDto에 연결 문서 여부 필드가 아직 없어 구현하지 않았다(지출결의가 생기는 이후 페이즈 몫). 줄 삭제 확인 모달도 '삭제'(연결 문서 없음) 갈래만 있고 '취소'(연결 문서 있음) 갈래는 같은 이유로 없다 | open |  | 2026-09-22T23:52:13.942Z |  |
@@ -399,10 +399,10 @@ last_updated: 2026-09-26T13:58:34.328Z
     "file": "app/(app)/projects/projects-table.tsx",
     "line": null,
     "description": "열 머리글 클릭 정렬·aria-sort 미구현 — ui/table/Table.tsx가 04-04 소유 파일이라 이 플랜은 건드리지 않는다(서버 정렬 자체는 구현·테스트됨, URL 파라미터 직접 내비게이션으로 검증)",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-22T22:32:21.535Z",
-    "resolved_at": null,
+    "resolved_at": "2026-09-27T07:54:43.632Z",
     "milestone": null
   },
   {

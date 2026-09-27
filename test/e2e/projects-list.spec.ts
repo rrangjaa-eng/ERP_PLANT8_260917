@@ -452,6 +452,41 @@ test.describe("프로젝트 목록 — 열 · 폭별 접기 · 종료일 지남 
   });
 });
 
+// 04-18 Task 3(§6-1 · WINDOWS #27) — 머리글 정렬.
+test.describe("프로젝트 목록 — 머리글 정렬 (04-18)", () => {
+  test("수익금 머리글을 누르면 오름차순 · 다시 누르면 내림차순이고, 2쪽 주소에서 눌러도 1쪽으로 간다", async ({ page }) => {
+    const thisYear = kstYear(new Date());
+    const marker = `E2E머리정렬-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    const base = { clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId };
+    // 같은 종료월 — 기본 정렬은 큰수익 → 작은수익, 수익금 오름차순은 작은수익 → 큰수익.
+    const big = await createProject(SYSTEM_VIEWER, { ...base, name: `${marker}-큰수익`, startDate: `${thisYear}-12-01`, endDate: `${thisYear}-12-10` });
+    await addQuoteLine(big.id, 3_000_000, 1_000_000);
+    const small = await createProject(SYSTEM_VIEWER, { ...base, name: `${marker}-작은수익`, startDate: `${thisYear}-12-01`, endDate: `${thisYear}-12-20` });
+    await addQuoteLine(small.id, 3_000_000, 2_500_000);
+
+    await login(page, pm);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}&year=all&page=2`);
+    const header = page.locator(`${LIST_TABLE} thead th`, { hasText: "수익금" });
+    const firstRowLink = page.locator(`${LIST_TABLE} tbody a`).first();
+    await expect(firstRowLink).toHaveText(`${marker}-큰수익`);
+    await expect(page.locator(`${LIST_TABLE} thead th[aria-sort]`)).toHaveCount(0);
+
+    await header.getByRole("link", { name: "수익금" }).click();
+    await expect(page).toHaveURL(/sort=profitKrw/);
+    expect(page.url()).not.toContain("page=");
+    await expect(header).toHaveAttribute("aria-sort", "ascending");
+    await expect(page.locator(`${LIST_TABLE} thead th[aria-sort]`)).toHaveCount(1);
+    await expect(firstRowLink).toHaveText(`${marker}-작은수익`);
+
+    await header.getByRole("link", { name: "수익금" }).click();
+    await expect(page).toHaveURL(/dir=desc/);
+    await expect(header).toHaveAttribute("aria-sort", "descending");
+    await expect(firstRowLink).toHaveText(`${marker}-큰수익`);
+  });
+});
+
 // 04-48 Task 1(D-89 · UX-04 · 엔지 리뷰 C §2 P2) — 기간 두 칸은 묶음 단위로 한 번 제출되고 서버가 판정한다.
 test.describe("프로젝트 목록 — 기간 필터 (04-48)", () => {
   test("시작일에서 Tab으로 종료일에 가는 사이에는 다시 로드되지 않고, 묶음 밖으로 나가면 한 번 제출돼 기간 보기가 된다", async ({ page }) => {

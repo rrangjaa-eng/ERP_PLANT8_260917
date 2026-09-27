@@ -681,6 +681,66 @@ describe("loadProjectList — 행 매출 · 기준 · 수익금 · 수익률 (04
   });
 });
 
+// 04-18 Task 3(§6-1 · T-04-94 · T-04-95 · 엔지 리뷰 C 공백 6) — 새 정렬 키와 볼 수 없는 열의 정렬 차단.
+describe("loadProjectList — 머리글 정렬 키 (04-18, 실제 Postgres)", () => {
+  // 9월 그룹 A(수익률 0.5 · 견적 2,000,000) · B(0.25 · 4,000,000) · C(견적 0 줄 → 수익률 null), 10월 그룹 D(0.9).
+  // 기본 정렬(종료일 오름차순)은 C → B → A → D. C도 견적 줄이 있어 견적 합이 NULL이 아니다(NULL 정렬 위치가 순서를 가리지 않게).
+  async function rateFixture() {
+    const base = await makeBase();
+    const marker = `정렬키-${randomUUID().slice(0, 8)}`;
+    const a = await makeProject(base, marker, { endDate: "2026-09-20", line: { quote: 2_000_000, execution: 1_000_000 } });
+    const b = await makeProject(base, marker, { endDate: "2026-09-10", line: { quote: 4_000_000, execution: 3_000_000 } });
+    const c = await makeProject(base, marker, { endDate: "2026-09-05", line: { quote: 0, execution: 500_000 } });
+    const d = await makeProject(base, marker, { endDate: "2026-10-01", line: { quote: 1_000_000, execution: 100_000 } });
+    return { marker, a, b, c, d };
+  }
+  const ids = (result: { rows: { id: string }[] }) => result.rows.map((row) => row.id);
+
+  it("sort=profitRate는 종료월 그룹 안에서 수익률 순서이고 null(—)은 방향과 무관하게 그룹 맨 뒤다", async () => {
+    const { marker, a, b, c, d } = await rateFixture();
+
+    const desc = await loadProjectList(SYSTEM_VIEWER, { year: "all", search: marker, sort: { key: "profitRate", direction: "desc" } });
+    expect(ids(desc)).toEqual([a.id, b.id, c.id, d.id]);
+    const asc = await loadProjectList(SYSTEM_VIEWER, { year: "all", search: marker, sort: { key: "profitRate", direction: "asc" } });
+    expect(ids(asc)).toEqual([b.id, a.id, c.id, d.id]);
+  });
+
+  it("(금지 둘째) revenue.issued_amount를 끈 계급의 sort=profitRate는 기본 정렬 순서다", async () => {
+    const { marker, c, b, a, d } = await rateFixture();
+    const viewer = await viewerWith({ quote: true, revenue: false });
+
+    const sorted = await loadProjectList(viewer, { year: "all", search: marker, sort: { key: "profitRate", direction: "desc" } });
+    const plain = await loadProjectList(viewer, { year: "all", search: marker });
+    expect(ids(plain)).toEqual([c.id, b.id, a.id, d.id]);
+    expect(ids(sorted)).toEqual(ids(plain));
+  });
+
+  it("(공백 6) quote.amount를 끈 계급의 sort=quoteAmountKrw&dir=desc는 기본 정렬 순서다", async () => {
+    const { marker, c, b, a, d } = await rateFixture();
+    const viewer = await viewerWith({ quote: false, revenue: true });
+
+    // 견적 내림차순이면 B → A → C → D라 기본 순서와 다르다.
+    const sorted = await loadProjectList(viewer, { year: "all", search: marker, sort: { key: "quoteAmountKrw", direction: "desc" } });
+    expect(ids(sorted)).toEqual([c.id, b.id, a.id, d.id]);
+  });
+
+  it("sort=client는 클라이언트명 순서다", async () => {
+    const marker = `정렬거래처-${randomUUID().slice(0, 8)}`;
+    const base = await makeBase();
+    const byClient: Record<string, string> = {};
+    for (const prefix of ["C", "A", "B"]) {
+      const client = await insertVendor(SYSTEM_VIEWER, { name: `${prefix}-${randomUUID()}`, normalizedName: `${prefix}-${randomUUID()}` });
+      const project = await makeProject({ ...base, clientId: client.id }, marker, { endDate: "2026-09-15" });
+      byClient[prefix] = project.id;
+    }
+
+    const asc = await loadProjectList(SYSTEM_VIEWER, { year: "all", search: marker, sort: { key: "client", direction: "asc" } });
+    expect(ids(asc)).toEqual([byClient.A, byClient.B, byClient.C]);
+    const desc = await loadProjectList(SYSTEM_VIEWER, { year: "all", search: marker, sort: { key: "client", direction: "desc" } });
+    expect(ids(desc)).toEqual([byClient.C, byClient.B, byClient.A]);
+  });
+});
+
 // 04-48 Task 1(D-89 · UX-04) — 기간 필터: 보기 범위 R = 연도 ∩ 기간, 행은 R과 겹치면 보이고 합계는 R 안 귀속만.
 describe("loadProjectList — 기간 필터 (04-48, 실제 Postgres)", () => {
   it("(기간 보기) 연도 2026 + 기간 09-01~10-31이면 R이 그 기간이고, 11월에 끝나는 겹친 행은 보이되 합계에서 빠진다", async () => {

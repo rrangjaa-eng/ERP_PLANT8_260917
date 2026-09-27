@@ -14,7 +14,7 @@
     "BASH_MAX_TIMEOUT_MS": "1200000"
   },
   "language": "korean",
-  "effortLevel": "medium",
+  "effortLevel": "high",
   "hooks": {
     "SessionStart": [
       {

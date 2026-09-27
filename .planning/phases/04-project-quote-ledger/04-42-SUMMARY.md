@@ -43,6 +43,10 @@ key-files:
     - repositories/reserve-entries.ts
     - test/integration/leak-scan.test.ts
     - .planning/phases/04-project-quote-ledger/04-OPEN-ITEMS.md
+    - ui/table/Table.tsx
+    - ui/table/Table.module.css
+    - test/unit/ui/table-group-aside.test.ts
+    - test/integration/reserve-entries.test.ts
 
 key-decisions:
   - "04-42: 대장 참조(클라이언트·프로젝트·증빙 종류)는 새 domain listReserveReferences가 대장과 같은 두 조건으로 싣는다 — 관리자 메뉴 권한 없는 경영관리도 고를 수 있게"
@@ -195,3 +199,40 @@ status: complete
 
 ## Self-Check: PASSED
 - 파일 14개 FOUND · 커밋 03af6d9 · af17080 · cc161c5 FOUND
+
+## Review follow-up (2026-09-27 — 독립 Opus 리뷰 1 BLOCKING · 9 SHOULD-FIX · 11 NIT + 독립 DOM 감사 36 PASS · 3 FAIL)
+
+오케스트레이터 결정(scratchpad `fix-04-42-decisions.md`)대로 고쳤다. 항목마다 실패 테스트를 먼저 보고(RED) 최소 수정 뒤 초록(GREEN)을 봤다.
+
+| 항목 | 커밋 | 무엇을 | RED → GREEN 근거 |
+|------|------|--------|------------------|
+| B1 참조 목록 게이트 | `e78f611` | 선택지는 쓰기 권한자(pnl 쓰기 + reserve.amount)에게만. 클라이언트 = vendor.value, 프로젝트 = projects 보기 범위(scopeFor) + project.value. 세 선택지를 등록 명세(`ReserveClientOptionDto`·`ReserveProjectOptionDto`·`ReserveEvidenceOptionDto`)로 projectMany 투영 → 누수 스캔 대상. 대장 DTO에 `projectName`(reserve.amount + project.value all-of, projects 보기 범위일 때만)·`evidenceLabel`(비활성·보관 코드 포함) | 통합 4건(읽는 사람 빈 선택지 · vendor.value 꺼짐/프로젝트 범위 · DTO 이름) + 누수 스캔 등록 단언이 실패(선택지 실림 · 명세 미등록) → 통과 |
+| S1 보관 프로젝트·비활성 증빙 | `675277a` | 선택 편집 셀이 저장된 값을 DTO 이름으로 한 칸 남기고, 값이 그대로면 커밋 없이 닫는다. 표시는 DTO 이름 | E2E: 셀을 열고 Tab → 프로젝트 칸 `—`·dirty(실패) → 이름 유지·편집 0 |
+| S3 · 감사 #18 머리글 잔액 | `eedc02b`(ui) · `28b6098`(화면) | `ui/table`에 선택 prop `groupAside`(그룹 첫 줄 → ReactNode, 머리글 칸 안 오른쪽 float · `--fg` · `--fw-bold` · tabular-nums) 하나. 대장은 머리글 = 클라이언트, 오른쪽 = `잔액 {최종 잔액}` | 단위 2건(주면 span, 안 주면 마크업 불변) 실패 → 통과 · E2E 1280/1024/375 DOM 실측(오른쪽 끝 간격 ≤1px · 가운데보다 오른쪽 · 700 · `--fg`) span 없음 실패 → 통과 |
+| S5 날짜 입력 | `1cc5568` | 날짜 편집기 `type="date"`(매출 표 선례) | E2E `type`이 `text`(실패) → `date` |
+| S4 붙여넣기 | `ef43a88` | `onPasteAtCell` + 견적 원장과 같은 `applyPaste` 규칙(금액 쉼표·`원` 제거 → 원화, 목록 열 라벨·값 대조, `—` → 빈 칸, 읽기 전용·잠김·계산 열의 엑셀 값은 오류 칸, 표 끝을 넘으면 uuid 새 줄). 붙여넣기 열 = 표 열 순서라 숨은 열도 논리 순서에 남음. 힌트 줄 `붙여넣기 Ctrl+V` | E2E 2건: 붙여도 날짜 그대로 · 1024 숨은 열 뒤 메모 `—`(실패) → 채워짐·저장 |
+| S2 DR-5 오류로 이동 | `36fd376` | 고정 오류 칸이 남으면 1차·Ctrl+S가 서버를 부르지 않고 첫 오류 쪽의 그 칸으로(지금 쪽이면 표 신호, 다른 쪽이면 `router.push` 뒤 도착 렌더에서 신호). 편집 맵이 처음 고친 쪽을 들고(보관본 포함), 다른 쪽 오류 칸 수는 페이지 번호 옆 `오류 N`(ui/pagination `errorCounts`) | E2E: `1쪽, 오류 1칸` 링크 없음(실패) → 2번째 Ctrl+S 요청 0 · 1쪽 오류 칸 포커스 |
+| 감사 #36 삭제 확인 뒤 포커스 | `a95f9c4` | 창이 닫힌 뒤 격자 탭 정지(같은 열 다음 줄, 마지막이면 앞 줄)로. ui/confirm-dialog 무변경 | E2E: 앞 줄 날짜 칸 포커스 아님(h1) → 포커스 |
+| S7 · S8 E2E | `e7fc391` | 「리저브 줄 추가」 수화 대기(`addReserveRow` — 클라이언트 칸이 열릴 때까지 재클릭) · 잠김 시도와 풀린 대조 모두 `focusGridCell` · 이른 `actionPosts` 단언 제거 | saveLocked를 끄고(aria-busy 단언 생략) 돌리면 `textbox` 0 단언이 1로 실패 → 복원 뒤 통과 |
+
+### DOM 감사 FAIL 처리
+- **#18** 해소 — 위 S3. reserves.spec이 세 폭에서 DOM으로 다시 잰다.
+- **#36** 해소 — 위 #36.
+- **#7 폰 열·접힌 줄 순서** — 편차로 남긴다. `ui/table`에 폰 전용 순서·우선 순위 prop이 없어 폰 P1·접힌 줄은 열 선언 순서(날짜·구분·금액 / 잔액·프로젝트·메모)를 따른다. 집합은 S9와 같다(날짜·금액·구분 / 프로젝트·잔액·메모). 결정대로 `ui/table`·데스크톱 열 순서를 바꾸지 않았다.
+
+### 결정·편차
+- **S2 필요 여부:** 필요 — UI-SPEC 적용 규칙 S9 「1차 … 저장 흐름(S19) … 은 견적 줄 표와 같다」, S19 DR-5. 서버 쪽 페이지라 견적 표처럼 표 안에서 쪽을 옮길 수 없어 `next/navigation` 이동 뒤 신호로 했다. 결과로 음수 잔액 E2E의 두 번째 배치는 DR-5 흐름(오류 칸 다시 확정 → 저장)으로 바뀌었다 — 서버 거부 칸은 그 칸을 고쳐야 풀린다(견적 원장과 같은 규칙).
+- **S6 localStorage 편집 보관:** 바꾸지 않았다 — 견적 원장(`quote-table.tsx` `useDirtyStorage(projectId, revisionId)`)이 단가·금액을 같은 공용 훅·같은 `quote-ledger:dirty:*` 키 규약으로 이미 보관하는 결정된 패턴이고, 리저브는 그것을 따른다(`reserves:ledger`). **`/cso` 묶음 항목:** 보관본(`{id}:base`에 금액·잔액·클라이언트 이름 포함)이 로그아웃 뒤에도 브라우저에 남고 계정별로 나뉘지 않는다 — 공용 PC에서 다음 사용자가 devtools로 읽거나 복원 줄로 되살릴 수 있다. 로그아웃 때 `quote-ledger:dirty:*` 비우기(`ui/logout` — 공용)와 보관 범위 축소는 별도 플랜 판단.
+- **B1 클라이언트 메뉴 범위:** `admin.vendors` 보기를 요구하지 않는다 — 프로젝트 등록 폼(`domain/projects/references.ts`)처럼 관리자 메뉴 없이 고르는 좁은 id·이름 투영이고, 게이트는 이 화면의 쓰기 권한 + vendor.value다. 프로젝트는 앱과 같은 `scopeFor(project)`(projects 보기) + project.value. **`/cso` 참고:** 대장 DTO·그룹 머리글의 `clientName`은 04-07대로 reserve.amount만 본다(vendor.value 미적용).
+- **ui/table 변경(플랜 truth 때문):** 플랜은 `ui/table` 무변경을 요구했지만 truth 33(머리글 오른쪽 굵은 잔액)은 표 변경 없이 성립하지 않는다(리뷰 S3 — 계획 결함). 오케스트레이터 결정으로 선택 prop 하나(`groupAside`)와 클래스 하나(`.groupAside`, 기존 토큰만)를 더했다. 기존 사용처(견적 원장·프로젝트 목록·알림·이전 차수)는 prop을 주지 않아 마크업 불변(단위 테스트) — 해당 E2E(quote-table · quote-line-kinds · projects-list · notify-inbox) 110 passed. 병렬 스킨 세션이 `ui/`를 만질 수 있어 diff를 작게 뒀다.
+- **files_modified 밖:** `domain/reserves/index.ts`·`repositories/reserve-entries.ts`(B1 · S1 — 게이트·이름은 도메인), `ui/table/Table.tsx`·`Table.module.css`·`test/unit/ui/table-group-aside.test.ts`(S3), `test/integration/reserve-entries.test.ts`(B1 통합). E2E 경영관리 계급은 vendor.value · project.value · projects 보기를, 읽기 계급은 projects 보기 · project.value를 받는다(새 게이트).
+- 새 문구 없음 — 붙여넣기 조각(`붙여넣기 N줄`·`오른쪽 N칸 버림`·`계산 열 N칸 무시`)과 오류 이유는 견적 원장·applyPaste 것을 쓴다. `붙여넣기`는 힌트 줄 라벨. 명사형 문구 테스트 18 passed.
+
+### 넘기는 NIT(고치지 않음)
+N1 `/pnl`의 Button.module.css 직접 import(수용) · N2 raw px(`1px`/`2px`) · N3 복제 CSS(hintRow·restoreBanner·footerCell) · N4 COPY 밖 문구 · N5 권한 판정 반복(reserveRights ~5회 + 이번 scopeFor) · N6 = 감사 #7(위 편차) · N7 로딩 뼈대 4열 · N8 1000px Enter 단언이 비어 있음 · N9 순수 도우미 단위 테스트 없음 · N10 복원 줄 칸 수에 `fxRateTouched` 포함 · N11 앞부분은 #36으로 해소, 쪽의 모든 줄이 삭제 대기면 EMPTY 문구가 보이는 점은 남음. 그룹이 이름 글자로 묶여 같은 이름·다른 클라이언트가 합쳐질 수 있는 점(리뷰 S3 끝)도 남음.
+
+### Checks (이 후속, 로컬 — CLAUDE.md §5·§6)
+- `pnpm lint` 0 · `pnpm typecheck` 0 · `pnpm lint:sql` 0 issues(19 files) · `CI=true pnpm build` 0
+- 단위 119 files 1706 passed · 통합(CI=true, leak-scan 포함) 65 files 1933 passed
+- E2E(CI=true, 건드린 스펙만): `reserves.spec.ts` 21 passed · ui/table 그룹 머리글 사용처 `quote-table`·`quote-line-kinds`·`projects-list`·`notify-inbox` 110 passed. 전체 E2E는 PR CI 몫.
+- 금지 경로: `docs/design/tokens.css`·`docs/design/SYSTEM.md`·`ui/shell`·`menus.ts` 무변경, 새 의존성 0.

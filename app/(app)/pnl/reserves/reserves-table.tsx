@@ -535,12 +535,16 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
   const projectName = (id: string | null) => (id ? (references.projects.find((project) => project.id === id)?.name ?? null) : null);
   const evidenceLabel = (value: string | null) => (value ? (references.evidenceTypes.find((item) => item.value === value)?.label ?? null) : null);
 
-  // 그룹 머리글 = 클라이언트 + 서버가 계산한 최종 잔액(S9 · D-91). 저장 전 새 줄의 클라이언트가 이 쪽에 없으면 이름만.
+  // 그룹 머리글 = 클라이언트, 머리글 행 오른쪽 = 서버가 계산한 최종 잔액(굵게 — S9 · D-91 · 리뷰 S3). 저장 전 새 줄의 클라이언트가
+  // 이 쪽에 없으면 이름만.
   function groupLabel(row: Row): string {
     if (!row.clientId) return "—";
-    const name = row.clientName || clientName(row.clientId);
+    return row.clientName || clientName(row.clientId);
+  }
+
+  function groupBalance(row: Row): string | null {
     const balance = list.clientBalances?.find((entry) => entry.clientId === row.clientId);
-    return balance ? `${name} · 잔액 ${formatKrw(balance.balanceKrw)}` : name;
+    return balance ? `잔액 ${formatKrw(balance.balanceKrw)}` : null;
   }
 
   function clearCellError(rowId: string, columnKey: string) {
@@ -945,6 +949,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
         rows={rows}
         getRowId={(row) => row.id}
         groupBy={groupLabel}
+        groupAside={groupBalance}
         openCell={openCell}
         enableGridKeyboard
         saveLocked={saveLocked}

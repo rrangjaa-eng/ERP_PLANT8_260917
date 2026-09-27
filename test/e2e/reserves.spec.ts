@@ -143,6 +143,17 @@ function fiftyOneRows(): SeedRow[] {
   ];
 }
 
+// 그룹 머리글 칸(클라이언트) — 오른쪽 칸(span)이 그 클라이언트의 최종 잔액이다(S9 · 리뷰 S3).
+function groupHeader(page: Page, clientName: string): Locator {
+  return page.locator("main table tbody tr > td[colspan]").filter({ hasText: clientName });
+}
+
+async function expectGroupBalance(page: Page, clientName: string, balance: string) {
+  const header = groupHeader(page, clientName);
+  await expect(header).toBeVisible();
+  await expect(header.locator("> span")).toHaveText(`잔액 ${balance}`);
+}
+
 function pager(page: Page): Locator {
   return page.getByRole("navigation", { name: "리저브 페이지" });
 }
@@ -181,7 +192,7 @@ test.describe("리저브 대장 트레이서", () => {
     await typeInto(page, cell(page, 0, COL.amount), "금액", "1500000");
     await saveWithKeyboard(page, cell(page, 0, COL.amount));
 
-    await expect(ledger(page).getByText(`${clientA.name} · 잔액 1,500,000`, { exact: true })).toBeVisible();
+    await expectGroupBalance(page, clientA.name, "1,500,000");
     await expect(cell(page, 0, COL.balance)).toHaveText("1,500,000");
     await expect(cell(page, 0, COL.direction)).toHaveText("입금");
 
@@ -201,13 +212,12 @@ test.describe("리저브 대장 — 쪽 · 오류 · 삭제 · 입력", () => {
     await seedEntries(client.id, fiftyOneRows());
     await openLedger(page, roles.finance);
 
-    const header = `${client.name} · 잔액 590,000`;
-    await expect(ledger(page).getByText(header, { exact: true })).toBeVisible();
+    await expectGroupBalance(page, client.name, "590,000");
     await expect(dataRows(page)).toHaveCount(50);
     await expect(pager(page).getByText("1–50 / 51건")).toBeVisible();
     await pager(page).getByRole("link", { name: "2", exact: true }).click();
     await expect(dataRows(page)).toHaveCount(1);
-    await expect(ledger(page).getByText(header, { exact: true })).toBeVisible();
+    await expectGroupBalance(page, client.name, "590,000");
     // 2쪽 첫 줄 잔액 = 1쪽 마지막 줄 잔액(1,490,000) − 900,000.
     await expect(cell(page, 0, COL.balance)).toHaveText("590,000");
 
@@ -266,7 +276,7 @@ test.describe("리저브 대장 — 쪽 · 오류 · 삭제 · 입력", () => {
     await typeInto(page, cell(page, 2, COL.date), "날짜", "2026-03-01");
     await typeInto(page, cell(page, 2, COL.amount), "금액", "400000");
     await saveWithKeyboard(page, cell(page, 2, COL.amount));
-    await expect(ledger(page).getByText(`${client.name} · 잔액 100,000`, { exact: true })).toBeVisible();
+    await expectGroupBalance(page, client.name, "100,000");
     await expect(dataRows(page)).toHaveCount(3);
   });
 
@@ -321,7 +331,7 @@ test.describe("리저브 대장 — 쪽 · 오류 · 삭제 · 입력", () => {
     await expect(saveButton(page)).toContainText("일괄 저장 1");
     await saveWithKeyboard(page, cell(page, 0, COL.date));
     await expect(dataRows(page)).toHaveCount(1);
-    await expect(ledger(page).getByText(`${client.name} · 잔액 200,000`, { exact: true })).toBeVisible();
+    await expectGroupBalance(page, client.name, "200,000");
     const [archived] = await db.select().from(reserveEntries).where(eq(reserveEntries.id, ids[1]!));
     expect(archived?.archivedAt).not.toBeNull();
   });
@@ -370,6 +380,48 @@ async function seedLinkedRow(clientId: string): Promise<{ projectName: string; e
   await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, project.id));
   return { projectName, evidenceLabel };
 }
+
+test.describe("리저브 대장 — 그룹 머리글 오른쪽 굵은 잔액(리뷰 S3 · DOM 감사 #18)", () => {
+  for (const width of [1280, 1024, 375]) {
+    test(`${width}px — 클라이언트 이름은 왼쪽, 최종 잔액은 머리글 행 오른쪽 끝에 굵게(700) 본문 색`, async ({ page }) => {
+      const roles = await createRoles();
+      const client = await createClient("E2E리저브머리글");
+      await seedEntries(client.id, [
+        { date: "2026-09-01", direction: "deposit", amount: 1_200_000 },
+        { date: "2026-09-02", direction: "withdrawal", amount: 250_000 },
+      ]);
+      await openLedger(page, roles.finance, width);
+      await expectGroupBalance(page, client.name, "950,000");
+
+      const measured = await groupHeader(page, client.name).evaluate((td) => {
+        const aside = td.querySelector(":scope > span");
+        const padRight = parseFloat(getComputedStyle(td).paddingRight);
+        const tdRect = td.getBoundingClientRect();
+        const asideRect = aside?.getBoundingClientRect();
+        const fg = getComputedStyle(document.documentElement).getPropertyValue("--fg").trim();
+        const probe = document.createElement("span");
+        probe.style.color = fg;
+        document.body.append(probe);
+        const fgRgb = getComputedStyle(probe).color;
+        probe.remove();
+        return {
+          gapToRight: asideRect ? tdRect.right - padRight - asideRect.right : null,
+          asideLeftOfCenter: asideRect ? asideRect.left < tdRect.left + tdRect.width / 2 : null,
+          weight: aside ? getComputedStyle(aside).fontWeight : null,
+          color: aside ? getComputedStyle(aside).color : null,
+          fgRgb,
+          nameText: td.firstChild?.textContent ?? "",
+        };
+      });
+      expect(measured.nameText).toBe(client.name);
+      expect(measured.gapToRight).not.toBeNull();
+      expect(Math.abs(measured.gapToRight ?? 99)).toBeLessThanOrEqual(1);
+      expect(measured.asideLeftOfCenter).toBe(false);
+      expect(measured.weight).toBe("700");
+      expect(measured.color).toBe(measured.fgRgb);
+    });
+  }
+});
 
 test.describe("리저브 대장 — 보관된 프로젝트 · 비활성 증빙 종류(리뷰 S1)", () => {
   test("저장된 이름이 보이고, 셀을 열었다가 바꾸지 않고 떠나면 편집이 생기지 않는다", async ({ page }) => {

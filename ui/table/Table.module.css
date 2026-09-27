@@ -19,8 +19,6 @@
   text-align: left;
 }
 
-/* (가) — 편집 가능한 셀이 하나라도 있으면 --g-100 + --g-950 머리글(편집
-   가능 신호). 읽기 표는 흰 바탕 그대로다. */
 /* 04-18(§6-1) — 정렬 머리글 링크: 머리글 글자 색 · 크기 그대로, 밑줄은 hover · focus에서만(행동 링크처럼 보이지 않게). */
 .sortLink {
   display: inline-flex;
@@ -48,6 +46,8 @@
   stroke-linejoin: round;
 }
 
+/* (가) — 편집 가능한 셀이 하나라도 있으면 --g-100 + --g-950 머리글(편집
+   가능 신호). 읽기 표는 흰 바탕 그대로다. */
 .editable .headerCell {
   background: var(--g-100);
   color: var(--g-950);

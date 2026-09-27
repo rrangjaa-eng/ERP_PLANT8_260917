@@ -322,8 +322,6 @@
   background: var(--surface);
 }
 
-/* §2-4·S10 — 문서 번호는 서버 서식 그대로의 고정 길이 문자열이라 줄바꿈·
-   말줄임 없이 자릿수 고정 폭으로 그린다. */
 /* 04-18(D-87) — 수익금의 기준(견적/발행) 글자. */
 .basisCell {
   font-size: var(--fs-base);
@@ -331,6 +329,8 @@
   white-space: nowrap;
 }
 
+/* §2-4·S10 — 문서 번호는 서버 서식 그대로의 고정 길이 문자열이라 줄바꿈·
+   말줄임 없이 자릿수 고정 폭으로 그린다. */
 .numberCell {
   display: inline-block;
   min-width: 5ch;

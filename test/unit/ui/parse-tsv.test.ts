@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseTsv, toTsv, normalizeNumericPaste } from "@/ui/table/parse-tsv";
 import { applyPaste } from "@/ui/table/use-clipboard-paste";
-import { REAL_EXCEL_WINDOWS_20260923 } from "@/test/fixtures/excel-clipboard";
 
 // 04-04 Task 1 ① — 클립보드 TSV 상태 기계 파서(04-RESEARCH.md Pattern 4).
 // 인용된 칸의 탭·줄바꿈·이스케이프된 따옴표를 리터럴로 다룬다 — 단순
@@ -51,9 +50,15 @@ describe("parseTsv", () => {
   // 영역(헤더 행 + 번호 열 포함)을 복사한 clipboard text/plain 원문.
   // 처음 구현은 따옴표만 있고 줄바꿈은 없는 칸(`"대형" 현수막`)도 인용된
   // 칸으로 오인해 따옴표를 지워 버렸다 — 이 회귀 테스트가 그 결함을 잡는다.
-  // 04-31 — 원문은 이제 test/fixtures/excel-clipboard.ts 한 곳에만 있고
-  // (04-04 방식 재사용, 사용자 승인 2026-09-23), 최종 표 E2E
-  // (test/e2e/excel-paste-final.spec.ts)가 같은 바이트를 재생한다.
+  // 04-31 — 정본은 test/fixtures/excel-clipboard.ts(04-04 방식 재사용, 사용자
+  // 승인 2026-09-23). 이 파일은 경로에 "ui/"를 포함해 boundaries/element-types가
+  // "ui" 요소로 잡는다(role-menu.test.ts의 SEED_ROLE_NAMES·ADMIN_MENU_KEYS와
+  // 같은 이유, tests.md 함정) — "ui"는 "test" 요소를 import할 수 없어 이 상수를
+  // 여기 복제한다. E2E(test/e2e/excel-paste-final.spec.ts)는 fixture 모듈을
+  // 그대로 import해 같은 바이트를 재생한다 — 바이트가 어긋나면 둘 중 하나가 아니라
+  // 파서가 틀린 것이다.
+  const REAL_EXCEL_WINDOWS_20260923 =
+    '\tA\tB\tC\r\n1\t무대 설치\t2\t 1,200,000 \r\n2\t"대형" 현수막\t5\t 35,000 \r\n3\t"비고 첫 줄\r\n둘째 줄"\t1\t₩450,000 ';
 
   it("실제 엑셀(Windows, 2026-09-23 캡처) 원문 — 따옴표만 있는 칸은 따옴표를 지우지 않고, 줄바꿈이 있는 칸만 인용 해제한다", () => {
     expect(parseTsv(REAL_EXCEL_WINDOWS_20260923)).toEqual([

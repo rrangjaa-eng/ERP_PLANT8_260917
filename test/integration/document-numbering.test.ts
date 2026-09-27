@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { db } from "@/db/client";
+import { projects, teams } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import {
@@ -13,6 +14,9 @@ import {
 import { ForbiddenError, getSettingValue, setSettingValue } from "@/domain/settings/registry";
 import { lockDocumentCounter } from "@/repositories/document-counters";
 import { upsertSimpleValue } from "@/repositories/settings";
+import { insertVendor } from "@/repositories/vendors";
+import { createAccount } from "@/domain/auth/accounts";
+import { createProject } from "@/domain/projects";
 import {
   DOCUMENT_NUMBER_PROJECT_PREFIX,
   DOCUMENT_NUMBER_PROJECT_YEAR_DIGITS,
@@ -250,6 +254,50 @@ describe("순번 시작값 낮추기(결정 ②)", () => {
     await save;
 
     expect((await registration).number).toBe("26001");
+  });
+
+  // 04-51 리뷰 S2 — 설정 화면은 칸의 글자를 그대로 보낸다(z.coerce.number()가 숫자로 바꾼다).
+  it("화면이 보내는 문자열 값도 같은 규칙이다 — \"50\" 거부 · \"100\" 그대로 통과 · \"103\" 저장", async () => {
+    await issueThreeFrom100();
+    await expect(setSimpleSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEQ_START, "50", NOW)).rejects.toThrow(
+      "순번 시작값이 이미 매긴 번호(102)와 겹침 · 103 이상 입력",
+    );
+    await setSimpleSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEQ_START, "100", NOW);
+    expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_START)).toBe(100);
+    await setSimpleSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEQ_START, "103", NOW);
+    expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_START)).toBe(103);
+  });
+
+  // 04-51 리뷰 S2 — 실제 등록 경로(createProject, UNIQUE(format_key, number) 살아 있음)로 낮추기 시도 뒤에도
+  // 등록이 번호 중복으로 실패하지 않는다. 카운터 행이 없는 새해(2027) 첫 등록까지.
+  it("createProject로 등록 — 낮추기 시도가 거부된 뒤에도, 새해에 낮춘 뒤에도 등록이 겹침 없이 된다", async () => {
+    const client = await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}`, normalizedName: `거래처-${randomUUID()}` });
+    const { userId: pmUserId } = await createAccount(SYSTEM_VIEWER, {
+      email: `pm-${randomUUID()}@example.test`,
+      name: "순번 시작값 테스트 PM",
+      roleId: DEFAULT_ROLE_ID,
+    });
+    const [team] = await db.select().from(teams).limit(1);
+    if (!team) throw new Error("시드된 팀이 없습니다");
+    const register = async (now: Date): Promise<string> =>
+      (await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId, name: `번호-${randomUUID()}` }, { now: () => now }))
+        .number;
+    const save = (value: string, now: Date) => setSimpleSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEQ_START, value, now);
+
+    await save("100", NOW);
+    const issued = [await register(NOW), await register(NOW), await register(NOW)];
+    expect(issued).toEqual(["26100", "26101", "26102"]);
+    for (const lowered of ["1", "50", "102"]) await expect(save(lowered, NOW)).rejects.toBeInstanceOf(SeqStartOverlapError);
+    await save("100", NOW);
+    const after = [await register(NOW), await register(NOW)];
+    expect(after).toEqual(["26103", "26104"]);
+
+    const NEW_YEAR = new Date("2026-12-31T15:30:00Z"); // 2027-01-01 00:30 KST — 2027 카운터 행 없음
+    await save("1", NEW_YEAR);
+    expect([await register(NEW_YEAR), await register(NEW_YEAR)]).toEqual(["27001", "27002"]);
+
+    const numbers = (await db.select({ number: projects.number }).from(projects)).map((row) => row.number);
+    expect(new Set(numbers).size).toBe(numbers.length);
   });
 
   it("공통: 시작값을 올린 뒤에도 두 연결이 동시에 매긴 번호는 서로 다르다", async () => {

@@ -126,9 +126,19 @@ coverage:
 
 없음 — 새 정렬 키는 허용 목록 + 정보 항목 visible 검사를 지나며(T-04-94), 머리글 링크는 서버가 정규화한 필터 값만 싣는다.
 
-## 남은 항목
+## 오케스트레이터 게이트
 
-- 독립 DOM 감사(1280·1024·700·375) · 전체 게이트 CI=true: 오케스트레이터 몫(대기)
+- **독립 DOM 감사**(별도 에이전트, `CI=true` 프로덕션 빌드, HEAD b315c2f, 1280·1024·700·375): **30 PASS / 0 FAIL** — 보고서 `/mnt/project-files/phase4-prep/04-18-dom-audit.md`. 04-17 FAIL(375 범위 밖 귀속 라벨)은 재현되지 않았다.
+- **Opus 독립 리뷰**(`/mnt/project-files/phase4-prep/04-18-review-opus.md`): BLOCKING 0 · SHOULD-FIX 3 · NIT 3.
+  - S1 고침 — 견적 · 실행가 정렬이 NULL 합을 최댓값으로 둠: RED 0c8f427 → 701351f(표시와 같은 `money.quote`/`money.execution`으로 정렬).
+  - S2 고침(테스트) — 46a959e: 금액 정렬 키 5 × 가시성 4 × 방향 2 단위 표 테스트 + 매출 NULLS LAST 통합 단언. `SORT_INFO_ITEMS`는 유지 — DTO 명세에서 파생하려면 정렬 키 → DTO 키 매핑이 또 필요해 더 단순하지 않다. 변경 전 코드가 맞아 돌연변이로 검증(맵에서 revenueKrw 삭제 → 4건 실패, nullsLast에서 revenueKrw 제외 → 1건 실패).
+  - S3 — 이 절로 해소(DOM 감사 · 전체 게이트 결과를 붙임).
+  - NIT 1 고침 — 8ef9aa2(새 CSS 블록을 주석 위로, 규칙 순서 불변).
+  - NIT 2 고침 — RED 2953973 → 36f8d0a(필터 줄에 정규화된 `list.sort`).
+  - NIT 3 — S2 표 테스트가 보완(가드를 실제로 떨어뜨리면 실패함을 돌연변이로 확인).
+- **DOM 감사 메모 `collapsedLine` 스코프** — `test/e2e/projects-list.spec.ts`에는 해당 없음, 고치지 않음: 목록 표는 `phoneRowLink`라 행마다 제 `<tbody>`(주 행 + 접힌 줄)다. 실측(임시 프로브, 되돌림): `tbody:has(link)`가 전체 4개 tbody 중 정확히 1개 · 그 안 tr 2개를 잡아 `nth(1)`은 그 행의 접힌 줄이다. 감사 스펙의 멈춤은 그 스펙 쪽 원인으로 본다.
+- **전체 게이트** `CI=true pnpm test`(HEAD 8ef9aa2, 단계별 순차): 단위 1692/1692(117 파일) · 통합 1727/1727(64 파일) · E2E 468 passed(실패 · flaky · skip 0). `pnpm lint` · `pnpm typecheck` · `pnpm lint:sql`(0 issues) 통과.
+- **Codex 재확인 필요** — Codex 사용 한도로 교차 리뷰를 Opus가 대신했다. 2026-09-29 이후 Codex로 다시 확인한다.
 
 ## Self-Check: PASSED
 

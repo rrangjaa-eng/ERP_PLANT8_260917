@@ -22,9 +22,13 @@ if [ -f "$DONE_MARKER" ]; then
 fi
 rm -rf "$GSTACK_DIR"
 
-if ! timeout 120 git clone -q --single-branch --depth 1 https://github.com/garrytan/gstack.git "$GSTACK_DIR" >/dev/null 2>&1; then
+# 버전 고정(2026-09-27): 세션마다 다른 gstack으로 /review·/design-review가 돌지 않게 커밋을 못 박는다.
+# 올릴 때는 이 SHA를 바꾸고 결과 차이를 페이즈 경계에서 한 번 본다. GitHub은 전체 SHA 지정 fetch를 허용한다.
+GSTACK_PIN="${GSTACK_PIN:-01593aa67c94780528e8f5121e47362502410ced}"  # 1.91.2.0
+if ! ( mkdir -p "$GSTACK_DIR" && cd "$GSTACK_DIR" && git init -q && git remote add origin https://github.com/garrytan/gstack.git \
+       && timeout 120 git fetch -q --depth 1 origin "$GSTACK_PIN" && git checkout -q FETCH_HEAD ) >/dev/null 2>&1; then
   rm -rf "$GSTACK_DIR"
-  echo "install-gstack: git clone failed — gstack skills unavailable this session" >&2
+  echo "install-gstack: pinned fetch failed ($GSTACK_PIN) — gstack skills unavailable this session" >&2
   exit 0
 fi
 
@@ -33,6 +37,9 @@ if ! (cd "$GSTACK_DIR" && GSTACK_SKIP_PLAYWRIGHT=1 timeout 600 ./setup --team </
   echo "install-gstack: ./setup --team failed — gstack skills may be incomplete this session" >&2
   exit 0
 fi
+
+# 팀 모드 setup이 켜는 세션 시작 자동 업그레이드를 끈다(고정 버전 유지).
+"$GSTACK_DIR/bin/gstack-config" set auto_upgrade false >/dev/null 2>&1 || true
 
 touch "$DONE_MARKER"
 echo "install-gstack: installed gstack $(cat "$GSTACK_DIR/VERSION" 2>/dev/null) (team mode)"

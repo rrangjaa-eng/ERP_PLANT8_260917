@@ -442,8 +442,11 @@ describe("domain/reserves — 권한 · 노출 · 보관/복원 · 페이지 · 
     const deposit = newRow(client.id, "2026-03-01", "deposit", 1_000_000);
     await saveReserves(finance, { rows: [deposit, newRow(client.id, "2026-03-05", "withdrawal", 300_000), newRow(client.id, "2026-04-01", "deposit", 5_000_000)] });
 
-    await rejection(saveReserves(finance, { rows: [], archivedIds: [deposit.id] }));
+    const error = await rejection(saveReserves(finance, { rows: [], archivedIds: [deposit.id] }));
 
+    expect(error).toBeInstanceOf(ReserveBalanceRejectedError);
+    expect(error.formatErrors).toEqual([expect.objectContaining({ field: "amount", reason: "이 줄 뒤 잔액 -300,000 · 금액을 줄이거나 입금 줄 먼저" })]);
+    expect((error as ReserveBalanceRejectedError).rejection.entryDate).toBe("2026-03-05");
     expect((await storedRow(deposit.id))?.archivedAt).toBeNull();
   });
 

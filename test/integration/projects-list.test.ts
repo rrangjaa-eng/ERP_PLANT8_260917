@@ -724,6 +724,21 @@ describe("loadProjectList — 머리글 정렬 키 (04-18, 실제 Postgres)", ()
     expect(ids(sorted)).toEqual([c.id, b.id, a.id, d.id]);
   });
 
+  it("(04-18 리뷰 S1) 견적 줄이 없는 행(견적 · 실행가 0으로 표시)은 sort=quoteAmountKrw · executionAmountKrw에서 0으로 정렬된다", async () => {
+    const base = await makeBase();
+    const marker = `정렬빈줄-${randomUUID().slice(0, 8)}`;
+    const empty = await makeProject(base, marker, { endDate: "2026-09-10" });
+    const lined = await makeProject(base, marker, { endDate: "2026-09-20", line: { quote: 50_000_000, execution: 30_000_000 } });
+
+    for (const key of ["quoteAmountKrw", "executionAmountKrw"] as const) {
+      const asc = await loadProjectList(SYSTEM_VIEWER, { year: "all", search: marker, sort: { key, direction: "asc" } });
+      expect(ids(asc), `${key} asc`).toEqual([empty.id, lined.id]);
+      expect(asc.rows[0]![key], `${key} 표시`).toBe(0);
+      const desc = await loadProjectList(SYSTEM_VIEWER, { year: "all", search: marker, sort: { key, direction: "desc" } });
+      expect(ids(desc), `${key} desc`).toEqual([lined.id, empty.id]);
+    }
+  });
+
   it("sort=client는 클라이언트명 순서다", async () => {
     const marker = `정렬거래처-${randomUUID().slice(0, 8)}`;
     const base = await makeBase();

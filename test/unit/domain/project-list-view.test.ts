@@ -6,6 +6,7 @@ import {
   filterSummary,
   formatListPeriod,
   isUserFiltered,
+  listColumnStep,
   listEmptyKind,
   normalizeListParams,
   parseListPeriod,
@@ -20,7 +21,7 @@ import { loadProjectList } from "@/domain/projects";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
 import { log } from "@/lib/log";
 import { LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
-import type { ProjectAggregateBucket } from "@/repositories/projects";
+import type { ProjectAggregateBucket, ProjectListRow } from "@/repositories/projects";
 
 // 04-17(D-88 · D-89 · D-90 · 계약 7) — 목록 보기 범위 · 귀속 · 합계 제목 · 제외 문구 · 수익금 기준의 순수 함수.
 // 실제 SQL(겹침 · 귀속 구간 · 기준 식)은 test/integration/projects-list.test.ts가 본다.
@@ -474,5 +475,74 @@ describe("filterSummary — 폰 필터 요약 값", () => {
       "전체 팀",
       "2026-09-01 ~ —",
     ]);
+  });
+});
+
+// 04-18(S1 열 폭) — 페이지 안 금액 중 formatKrw 13자(10억 이상)가 하나라도 있으면 표를 좁은 단계로.
+describe("listColumnStep — 좁은 PC 단계 판정", () => {
+  it("12자 이하 금액뿐이면 full이다", () => {
+    expect(listColumnStep([{ quoteAmountKrw: 412_300_000, executionAmountKrw: 1_000 }, { revenueKrw: null, profitKrw: 5 }])).toBe("full");
+  });
+
+  it("금액 하나가 1,020,000,000(13자)이면 narrow다", () => {
+    expect(listColumnStep([{ quoteAmountKrw: 1_000 }, { revenueKrw: 1_020_000_000 }])).toBe("narrow");
+  });
+
+  it("음수 −120,000,000(12자)만 있으면 full이다", () => {
+    expect(listColumnStep([{ profitKrw: -120_000_000 }])).toBe("full");
+  });
+
+  it("금액 키가 없는 계급(행에 금액 없음)은 full이다", () => {
+    expect(listColumnStep([{}, {}])).toBe("full");
+  });
+});
+
+// 04-18(D-81 · DR-34) — 목록 행의 종료일 지남은 상세와 같은 isEndDatePassed · 같은 KST 오늘이다.
+describe("loadProjectList — 행의 endDatePassed", () => {
+  const row = (status: string, endDate: string): ProjectListRow => ({
+    id: `p-${status}-${endDate}`,
+    number: "26001",
+    name: "행",
+    status,
+    startDate: null,
+    endDate,
+    clientName: "클라이언트",
+    teamName: "팀",
+    pmUserName: "PM",
+    quoteAmountKrw: 0,
+    executionAmountKrw: 0,
+    revenueKrw: null,
+    issuedCount: 0,
+    profitBasis: "quote",
+    netProfitKrw: 0,
+    profitRate: null,
+  });
+
+  async function endDatePassedOf(rows: ProjectListRow[]) {
+    const result = await loadProjectList(
+      { id: "u1", roleId: "role-pm" },
+      { year: "all" },
+      {
+        // 2026-09-26 KST 오전 — UTC로는 아직 09-25다(KST 오늘을 쓰는지 본다).
+        now: () => new Date("2026-09-25T20:00:00Z"),
+        scope: () => Promise.resolve({ rows: "all", includeArchived: false }),
+        settle: () => Promise.resolve(),
+        visible: () => Promise.resolve(true),
+        repo: {
+          aggregate: () =>
+            Promise.resolve([{ bucket: "in", count: rows.length, revenueKrw: 0, quoteAmountKrw: 0, executionAmountKrw: 0, profitKrw: 0, basisAmountKrw: 0, profitRate: null }]),
+          listPage: () => Promise.resolve(rows),
+        },
+      },
+    );
+    return result.rows.map((item) => item.endDatePassed);
+  }
+
+  it("수주중 · 종료일 어제(KST)는 true, 종료일 오늘은 false", async () => {
+    expect(await endDatePassedOf([row("bidding", "2026-09-25"), row("bidding", "2026-09-26")])).toEqual([true, false]);
+  });
+
+  it("진행 · 종료일 어제는 false다(정산 자동 전환 대상이지 이 표시가 아니다)", async () => {
+    expect(await endDatePassedOf([row("in_progress", "2026-09-25")])).toEqual([false]);
   });
 });

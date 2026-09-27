@@ -113,6 +113,7 @@ const LIST_TABLE = "main table:not([aria-hidden='true'])";
 
 // 머리글 글자로 열 번호를 찾아 그 행(프로젝트명 링크가 있는 주 행)의 칸을 돌려준다.
 async function cellOf(page: Page, projectName: string, header: string) {
+  await expect(page.locator(`${LIST_TABLE} tbody`).getByRole("link", { name: projectName, exact: true })).toBeAttached();
   const headers = (await page.locator(`${LIST_TABLE} thead th`).allTextContents()).map((text) => text.trim());
   const index = headers.indexOf(header);
   expect(index, `머리글 ${header} (있는 머리글: ${headers.join(",")})`).toBeGreaterThanOrEqual(0);
@@ -335,6 +336,118 @@ test.describe("프로젝트 목록 — 행 매출 · 기준 · 수익금 · 수�
     const headers = (await page.locator(`${LIST_TABLE} thead th`).allTextContents()).map((text) => text.trim());
     expect(headers).not.toContain("차익");
     expect(headers.indexOf("수익금") - headers.indexOf("기준")).toBe(1);
+  });
+});
+
+// 04-18 Task 2(S1 열 · 좁은 PC 접기 · 폰 우선순위 · DR-32 · DR-34 · D-81)
+async function visibleHeaders(page: Page): Promise<string[]> {
+  return (await page.locator(`${LIST_TABLE} thead th`).filter({ visible: true }).allTextContents()).map((text) => text.trim());
+}
+
+test.describe("프로젝트 목록 — 열 · 폭별 접기 · 종료일 지남 (04-18)", () => {
+  test("경영관리는 1280에서 13열, 1100에서 번호 · 팀 · 실행가 · 매출을 숨긴 9열, 800에서 6열이다", async ({ page }) => {
+    const marker = `E2E열접기-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    const project = await createProject(SYSTEM_VIEWER, { clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId, name: `${marker}-행` });
+    await addQuoteLine(project.id, 3_000_000, 1_000_000);
+
+    await login(page, await makeManager());
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}&year=all`);
+    await expect(page.locator(`${LIST_TABLE} tbody a`)).toHaveCount(1);
+    expect(await visibleHeaders(page)).toEqual([
+      "번호", "클라이언트", "프로젝트명", "담당 PM", "팀", "기간", "매출", "견적", "실행가", "기준", "수익금", "수익률", "상태",
+    ]);
+
+    await page.setViewportSize({ width: 1100, height: 900 });
+    await expect.poll(() => visibleHeaders(page)).toEqual(["클라이언트", "프로젝트명", "담당 PM", "기간", "견적", "기준", "수익금", "수익률", "상태"]);
+
+    await page.setViewportSize({ width: 800, height: 900 });
+    await expect.poll(() => visibleHeaders(page)).toEqual(["클라이언트", "프로젝트명", "담당 PM", "기간", "견적", "상태"]);
+  });
+
+  test("10억 이상 금액이 있는 쪽은 1280에서도 9열이다", async ({ page }) => {
+    const marker = `E2E좁은단계-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    const project = await createProject(SYSTEM_VIEWER, { clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId, name: `${marker}-큰금액` });
+    await addQuoteLine(project.id, 1_020_000_000, 1_000_000);
+
+    await login(page, await makeManager());
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}&year=all`);
+    await expect(page.locator(`${LIST_TABLE} tbody a`)).toHaveCount(1);
+    expect(await visibleHeaders(page)).toHaveLength(9);
+  });
+
+  test("(DR-34) 수주중 + 종료일 지난 행의 상태 칸 2행에 「종료일 지남」이 상태 글자보다 크지 않게 있다", async ({ page }) => {
+    const today = kstToday(new Date());
+    const marker = `E2E종료지남-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    await createProject(SYSTEM_VIEWER, {
+      clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId, name: `${marker}-행`, startDate: addDays(today, -5), endDate: addDays(today, -1),
+    });
+
+    await login(page, pm);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}&year=all`);
+    const status = await cellOf(page, `${marker}-행`, "상태");
+    const passed = status.getByText("종료일 지남", { exact: true });
+    await expect(passed).toBeVisible();
+    const statusText = status.getByText("수주중", { exact: true });
+    const sizes = await Promise.all([passed, statusText].map((el) => el.evaluate((node) => parseFloat(getComputedStyle(node).fontSize))));
+    expect(sizes[0]).toBeLessThanOrEqual(sizes[1]!);
+    // 2행 — 상태 글자 아래에 있다.
+    const [passedBox, statusBox] = await Promise.all([passed.boundingBox(), statusText.boundingBox()]);
+    expect(passedBox!.y).toBeGreaterThanOrEqual(statusBox!.y + statusBox!.height - 1);
+  });
+
+  test("(DR-32) 긴 클라이언트명은 두 줄 높이를 넘지 않는다", async ({ page }) => {
+    const marker = `E2E긴거래처-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    const longClient = await insertVendor(SYSTEM_VIEWER, {
+      name: `가나다라마바사아자차카타파하거너더러머버-${randomUUID().slice(0, 4)}`,
+      normalizedName: `e2e긴거래처-${randomUUID()}`,
+    });
+    await createProject(SYSTEM_VIEWER, { clientId: longClient.id, teamId: pm.teamId, pmUserId: pm.pmUserId, name: `${marker}-행` });
+
+    await login(page, pm);
+    for (const width of [1280, 1024]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/projects?q=${encodeURIComponent(marker)}&year=all`);
+      const client = (await cellOf(page, `${marker}-행`, "클라이언트")).locator("span").first();
+      const { height, lineHeight } = await client.evaluate((node) => ({
+        height: node.getBoundingClientRect().height,
+        lineHeight: parseFloat(getComputedStyle(node).lineHeight),
+      }));
+      expect(height, `${width}`).toBeLessThanOrEqual(lineHeight * 2 + 1);
+    }
+  });
+
+  test("(04-17 DOM 감사) 375 접힌 줄은 「클라이언트 · 담당 PM · 기간」 끝에 귀속 · 종료일 지남을 잇고 상태 칸에는 두 번 보이지 않는다", async ({ page }) => {
+    const now = new Date();
+    const today = kstToday(now);
+    const nextYear = kstYear(now) + 1;
+    const marker = `E2E폰접힘-${randomUUID().slice(0, 8)}`;
+    const pm = await setupPm();
+    const base = { clientId: pm.clientId, teamId: pm.teamId, pmUserId: pm.pmUserId };
+    await createProject(SYSTEM_VIEWER, { ...base, name: `${marker}-지남`, startDate: addDays(today, -5), endDate: addDays(today, -1) });
+    await createProject(SYSTEM_VIEWER, { ...base, name: `${marker}-걸침`, startDate: today, endDate: `${nextYear}-01-15` });
+
+    await login(page, pm);
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto(`/projects?q=${encodeURIComponent(marker)}`);
+    const collapsedLine = (name: string) =>
+      page.locator(`${LIST_TABLE} tbody`, { has: page.getByRole("link", { name, exact: true }) }).locator("tr").nth(1);
+
+    const passedLine = collapsedLine(`${marker}-지남`);
+    await expect(passedLine).toBeVisible();
+    await expect(passedLine).toHaveText(/^[^·]+ · [^·]+ · [^·]+ · 종료일 지남$/);
+    await expect(passedLine.getByText("종료일 지남", { exact: true })).toBeVisible();
+    await expect(page.locator(`${LIST_TABLE} tbody`, { has: page.getByRole("link", { name: `${marker}-지남`, exact: true }) }).getByText("종료일 지남", { exact: true }).filter({ visible: true })).toHaveCount(1);
+
+    const spanningLine = collapsedLine(`${marker}-걸침`);
+    await expect(spanningLine).toHaveText(new RegExp(`^[^·]+ · [^·]+ · [^·]+ · ${nextYear} 귀속$`));
+    await expect(spanningLine.getByText(`${nextYear} 귀속`, { exact: true })).toBeVisible();
   });
 });
 

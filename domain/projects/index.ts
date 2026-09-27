@@ -1,7 +1,7 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { scopeFor } from "@/domain/permissions/scope-for";
-import { project, projectMany, type DtoSpec } from "@/domain/permissions/project";
+import { project, projectMany, type DtoSpec, type ProjectDeps } from "@/domain/permissions/project";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
@@ -17,12 +17,14 @@ import {
   firstListParam,
   isTeamIdShape,
   isUserFiltered,
+  listColumnStep,
   listEmptyKind,
   normalizeListParams,
   resolveListPage,
   parseListPeriod,
   resolveListRange,
   totalsTitle,
+  type ListColumnStep,
   type ListEmptyKind,
   type ProfitBasis,
   type ListParam,
@@ -56,7 +58,7 @@ import {
 } from "@/repositories/quote-revisions";
 import { copyQuoteLines as repoCopyQuoteLines, countCopyableLines as repoCountCopyableLines } from "@/repositories/quote-lines";
 import { denyWrite } from "@/domain/rules/deny-write";
-import { coversProjectTeam, loadActorTeamScope } from "@/domain/projects/status";
+import { coversProjectTeam, isEndDatePassed, loadActorTeamScope } from "@/domain/projects/status";
 import { findMembershipAtDate } from "@/repositories/team-memberships";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
 import { listTeams as repoListTeams } from "@/repositories/teams";
@@ -176,6 +178,8 @@ export type ProjectListItemDto = {
   profitKrw?: number;
   /** 수익금 ÷ 기준 금액 — 기준 ≤ 0이면 null. */
   profitRate?: number | null;
+  /** 04-18(D-81) — 수주중이면서 종료일이 KST 오늘보다 앞(상세와 같은 isEndDatePassed). */
+  endDatePassed?: boolean;
 };
 
 // 04-17(D-90) — attributionLabel: 보기 범위 밖에서 끝나는 행의 기간 칸 2행(`2027 귀속`), 범위 안이면 null.
@@ -183,7 +187,10 @@ export type ProjectListItemWithGroup = ProjectListItemDto & { groupLabel: string
 
 const PROFIT_INFO_ITEMS = ["quote.amount", "revenue.issued_amount"] as const;
 
-const PROJECT_LIST_DTO_SPEC: DtoSpec<ProjectListRow, ProjectListItemDto> = {
+// 04-18 — 투영 원본은 리포지토리 행 + 요청당 한 번 구한 KST 오늘로 판정한 종료일 지남.
+type ProjectListSource = ProjectListRow & { endDatePassed: boolean };
+
+const PROJECT_LIST_DTO_SPEC: DtoSpec<ProjectListSource, ProjectListItemDto> = {
   fields: [
     { key: "id", from: "id", infoItem: "project.value" },
     { key: "number", from: "number", infoItem: "project.value" },
@@ -200,6 +207,7 @@ const PROJECT_LIST_DTO_SPEC: DtoSpec<ProjectListRow, ProjectListItemDto> = {
     { key: "profitBasis", from: "profitBasis", infoItem: PROFIT_INFO_ITEMS },
     { key: "profitKrw", from: "netProfitKrw", infoItem: PROFIT_INFO_ITEMS },
     { key: "profitRate", from: "profitRate", infoItem: PROFIT_INFO_ITEMS },
+    { key: "endDatePassed", from: "endDatePassed", infoItem: "project.value" },
   ],
 };
 
@@ -293,6 +301,8 @@ export type ProjectListResult = {
   hasFilter: boolean;
   /** 04-48(C-08) — 정규화된 URL 값(필터 줄 · 페이지 줄이 이 값만 되돌려 쓴다). */
   params: { teamId?: string; search?: string; from?: string; to?: string };
+  /** 04-18(S1) — 받은 금액 중 13자가 있으면 narrow(1280 이상에서도 좁은 PC 열 집합). */
+  columnStep: ListColumnStep;
 };
 
 export type ProjectListDeps = {
@@ -301,6 +311,7 @@ export type ProjectListDeps = {
   settle: (viewer: Viewer) => Promise<void>;
   repo: { aggregate: typeof repoAggregateProjects; listPage: typeof repoListProjectsPage };
   teams: typeof repoListTeams;
+  visible: ProjectDeps["visible"];
 };
 
 // 드리즐이 PG 오류를 cause로 감싼다 — 운영 로그에는 PG 코드만(필터 값·금액 없음).
@@ -320,6 +331,7 @@ export async function loadProjectList(
 ): Promise<ProjectListResult> {
   const now = deps?.now ?? (() => new Date());
   const repo = deps?.repo ?? { aggregate: repoAggregateProjects, listPage: repoListProjectsPage };
+  const projectDeps = deps?.visible ? { visible: deps.visible } : undefined;
 
   await (deps?.settle ?? settleForProjectList)(viewer);
   const scope = await (deps?.scope ?? scopeFor)(viewer, PROJECT_ENTITY);
@@ -389,9 +401,12 @@ export async function loadProjectList(
       profitRate: inBucket?.profitRate ?? null,
     },
     PROJECT_LIST_TOTALS_DTO_SPEC,
+    projectDeps,
   )) as ProjectListTotals;
 
-  const dtos = (await projectMany(viewer, rows, PROJECT_LIST_DTO_SPEC)) as ProjectListItemDto[];
+  const todayKst = kstToday(now());
+  const sources = rows.map((row) => ({ ...row, endDatePassed: isEndDatePassed({ status: row.status, endDate: row.endDate, todayKst }) }));
+  const dtos = (await projectMany(viewer, sources, PROJECT_LIST_DTO_SPEC, projectDeps)) as ProjectListItemDto[];
   const hasFilter = isUserFiltered(params, thisYear);
   return {
     year,
@@ -408,6 +423,7 @@ export async function loadProjectList(
     emptyKind: listEmptyKind({ total: paging.total, userFiltered: hasFilter, visibleCount }),
     hasFilter,
     params: { teamId: params.teamId, search: params.q, from: params.from, to: params.to },
+    columnStep: listColumnStep(dtos),
   };
 }
 

@@ -164,7 +164,8 @@ test.describe("프로젝트 목록 — 올해 보기 · 표 위 귀속 합계 (0
 
     // D-90 · D-51 — 걸친 행은 종료월 그룹 한 곳에 한 번, 기간 칸 2행에 내년 귀속.
     await expect(page.locator("table tbody a", { hasText: `${marker}-걸침` })).toHaveCount(1);
-    await expect(page.locator("table tbody").getByText(`${nextYear} 귀속`, { exact: true })).toBeVisible();
+    // 04-18 — 폰 접힌 줄(PC에서는 display:none)에도 같은 귀속 글자가 있다. PC에 보이는 것은 기간 칸 2행 하나다.
+    await expect(page.locator("table tbody").getByText(`${nextYear} 귀속`, { exact: true }).filter({ visible: true })).toHaveCount(1);
 
     await page.locator("#year").selectOption("all");
     await expect(page).toHaveURL(/year=all/);

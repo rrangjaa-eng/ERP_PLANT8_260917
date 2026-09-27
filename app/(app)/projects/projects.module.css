@@ -328,11 +328,63 @@
 .basisCell {
   font-size: var(--fs-base);
   color: var(--muted);
+  white-space: nowrap;
 }
 
 .numberCell {
+  display: inline-block;
+  min-width: 5ch;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+/* 04-18(S1 열 폭) — 클라이언트는 keep-all 두 줄까지(세 줄째부터 말줄임, DR-32). */
+.clientCell {
+  display: -webkit-box;
+  max-width: 6em;
+  overflow: hidden;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+/* 프로젝트명은 남는 폭 전부, 9em 아래로 눌리지 않고 keep-all 줄바꿈(행 높이가 따라 는다). */
+.nameCell {
+  display: block;
+  min-width: 9em;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.rateCell {
+  display: inline-block;
+  min-width: 7ch;
+  white-space: nowrap;
+}
+
+/* D-81 · DR-34 — 종료일 지남: 상태 글자보다 크지 않은 --fs-xs 400 --warning 글자(태그 아님). */
+.endDatePassed {
+  color: var(--warning);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-regular);
+  white-space: nowrap;
+}
+
+.statusSecondLine {
+  display: block;
+}
+
+/* 폰은 상태 칸 2행 대신 접힌 줄 끝에 한 번만 보인다. */
+@media (max-width: 699.98px) {
+  .statusSecondLine {
+    display: none;
+  }
 }
 
 /* 04-15(D-70 · S2) — 복사 등록의 출처 한 줄. 폼 위, 폼과 같은 폭 안. */

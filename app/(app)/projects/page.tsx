@@ -191,6 +191,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           <ProjectsTable
             rows={rows}
             viewYear={year === "all" ? null : year}
+            columnStep={list.columnStep}
             statusLabels={Object.fromEntries(statusOptions.map((option) => [option.value, option.label]))}
           />
           <Pagination

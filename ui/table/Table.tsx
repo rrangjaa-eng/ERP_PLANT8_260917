@@ -125,6 +125,8 @@ export type TableProps<Row> = {
    * 그 셀(안에 입력이 있으면 그 입력)에 포커스한다. `reason`(잠긴 셀 편집 시도 이유)은 세지 않고, 찾은 셀이 없으면 아무것도 하지 않는다.
    */
   firstIssueSignal?: number;
+  /** 04-18(S1 열 폭) — 참이면 1280 이상에서도 `collapseBelow: 1280` 열을 숨긴다(좁은 단계 — 서버가 페이지 금액 글자 수로 판정). */
+  collapseEarly?: boolean;
 };
 
 type ActiveCell = { rowId: string; columnKey: string } | null;
@@ -171,6 +173,7 @@ export function Table<Row>({
   footerSuccess,
   revealRowId,
   firstIssueSignal,
+  collapseEarly = false,
 }: TableProps<Row>) {
   const [activeCell, setActiveCell] = useState<ActiveCell>(null);
   const allowed = (action: Parameters<typeof isGridActionAllowed>[0]) => isGridActionAllowed(action, { saveLocked });
@@ -178,7 +181,7 @@ export function Table<Row>({
   const atLeast1280 = useMinWidth(1280);
   const atLeast1024 = useMinWidth(1024);
   const isHiddenColumn = (column: TableColumn<Row> | undefined) =>
-    (column?.collapseBelow === 1280 && !atLeast1280) || (column?.collapseBelow !== undefined && !atLeast1024);
+    (column?.collapseBelow === 1280 && (!atLeast1280 || collapseEarly)) || (column?.collapseBelow !== undefined && !atLeast1024);
   const collapseClass = (column: TableColumn<Row>) => (column.collapseBelow ? styles[`collapse-${column.collapseBelow}`] : "");
 
   // (가) — 편집 가능한 셀이 하나라도 있으면 role="grid" + --g-100 머리글,
@@ -750,7 +753,7 @@ export function Table<Row>({
       ) : null}
       <table
         ref={tableRef}
-        className={[styles.table, hasEditableCell ? styles.editable : styles.readonly].join(" ")}
+        className={[styles.table, hasEditableCell ? styles.editable : styles.readonly, collapseEarly ? styles.collapseEarly : ""].join(" ")}
         role={hasEditableCell ? "grid" : undefined}
         aria-busy={saveLocked ? true : undefined}
         onPaste={enableGridKeyboard ? handleTablePaste : undefined}

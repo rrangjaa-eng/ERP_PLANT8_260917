@@ -1,5 +1,5 @@
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
-import { formatCount } from "@/lib/format-number";
+import { formatCount, formatKrw } from "@/lib/format-number";
 import { clampPage, LIST_PAGE_SIZE, pageCountFrom } from "@/lib/paging";
 
 // 04-17(D-88 · D-89 · D-90 · 계약 7) — 목록 보기 범위 · 귀속 · 합계 줄 문구 · 수익금 기준의 순수 함수. 서버 전용 모듈을
@@ -73,6 +73,21 @@ export function totalsTitle(input: { statusLabel?: string; range: ListRange | nu
 
 export function profitBasisFor(status: string, issuedCount: number): ProfitBasis {
   return issuedCount > 0 && (ISSUED_BASIS_STATUSES as readonly string[]).includes(status) ? "issued" : "quote";
+}
+
+// 04-18(S1 열 폭) — 페이지 안 금액 중 formatKrw 13자(10억 이상)가 하나라도 있으면 1280 이상에서도 좁은 PC 열 집합을 쓴다
+// (프로젝트명이 9em 아래로 눌리지 않게). 그 사람이 받은 금액만 본다 — 금액 키가 없으면 항상 full.
+export type ListColumnStep = "full" | "narrow";
+const NARROW_AMOUNT_CHARS = 13;
+type ListAmounts = { revenueKrw?: number | null; quoteAmountKrw?: number; executionAmountKrw?: number; profitKrw?: number };
+
+export function listColumnStep(rows: readonly ListAmounts[]): ListColumnStep {
+  const wide = rows.some((row) =>
+    [row.revenueKrw, row.quoteAmountKrw, row.executionAmountKrw, row.profitKrw].some(
+      (value) => typeof value === "number" && formatKrw(value).length >= NARROW_AMOUNT_CHARS,
+    ),
+  );
+  return wide ? "narrow" : "full";
 }
 
 // 귀속 구간 건수의 합 = 표에 보이는 전체 행 수(쪽 수의 근거).

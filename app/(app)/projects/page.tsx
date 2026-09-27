@@ -162,7 +162,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           statusOptions={statusOptions}
           yearOptions={yearOptions(currentYear, year)}
           defaultValues={{ status, teamId, year: String(year), q: search, from, to }}
-          sort={{ key: sortKey !== "endDate" ? sortKey : undefined, dir: sortDirection !== "asc" ? sortDirection : undefined }}
+          sort={{ key: list.sort.key !== "endDate" ? list.sort.key : undefined, dir: list.sort.direction !== "asc" ? list.sort.direction : undefined }}
           hasFilter={hasFilter}
           periodErrors={periodErrors}
           primaryAction={

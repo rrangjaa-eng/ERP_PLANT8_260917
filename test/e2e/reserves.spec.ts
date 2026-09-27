@@ -107,6 +107,16 @@ async function typeDate(page: Page, target: Locator, value: string) {
   await page.keyboard.press("Enter");
 }
 
+// 엑셀에서 복사한 글자 붙여넣기(앱 형식 없음) — 포커스한 격자 칸에서 paste 이벤트(ledger-save-flow 선례).
+async function pasteText(page: Page, target: Locator, text: string) {
+  await focusGridCell(target);
+  await page.evaluate((value) => {
+    const data = new DataTransfer();
+    data.setData("text/plain", value);
+    document.activeElement?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  }, text);
+}
+
 async function saveWithKeyboard(page: Page, focusTarget: Locator) {
   const saved = waitForSave(page);
   await focusGridCell(focusTarget);
@@ -464,6 +474,48 @@ test.describe("리저브 대장 — 보관된 프로젝트 · 비활성 증빙 �
     const { projectName } = await seedLinkedRow(client.id);
     await openLedger(page, roles.reader);
     await expect(readRow(page, "2026-08-01").locator("td").nth(COL.project)).toHaveText(projectName);
+  });
+});
+
+test.describe("리저브 대장 — 붙여넣기 Ctrl+V(리뷰 S4)", () => {
+  test("엑셀 글자를 붙이면 날짜 · 구분 · 금액(쉼표·원) · 메모(—는 빈 칸)가 채워지고, 표 끝을 넘는 줄은 새 줄이 된다 · 계산 열의 엑셀 값은 오류 칸", async ({ page }) => {
+    const roles = await createRoles();
+    const client = await createClient("E2E리저브붙여넣기");
+    await seedEntries(client.id, [{ date: "2026-10-01", direction: "deposit", amount: 500_000, note: "원래 메모" }]);
+    await openLedger(page, roles.finance);
+
+    await pasteText(page, cell(page, 0, COL.date), "2026-10-02\t출금\t1,234원");
+    await expect(cell(page, 0, COL.date)).toHaveText("2026-10-02");
+    await expect(cell(page, 0, COL.direction)).toHaveText("출금");
+    await expect(cell(page, 0, COL.amount)).toHaveText("1,234");
+    await expect(saveButton(page)).toContainText("일괄 저장 1");
+
+    await pasteText(page, cell(page, 0, COL.note), "—\n둘째 줄 메모");
+    await expect(cell(page, 0, COL.note)).toHaveText("—");
+    await expect(dataRows(page)).toHaveCount(2);
+    await expect(cell(page, 1, COL.note)).toHaveText("둘째 줄 메모");
+    await expect(saveButton(page)).toContainText("일괄 저장 2");
+
+    // 잔액(계산 열)에 떨어진 엑셀 값은 조용히 버리지 않고 오류 칸이다.
+    await pasteText(page, cell(page, 0, COL.balance), "999");
+    await expect(cell(page, 0, COL.balance)).toHaveAttribute("aria-invalid", "true");
+  });
+
+  test("1024에서 숨은 증빙 종류 · 세금계산서 번호 열도 붙여넣기 논리 순서에 남는다", async ({ page }) => {
+    const roles = await createRoles();
+    const client = await createClient("E2E리저브숨은열");
+    const [id] = await seedEntries(client.id, [{ date: "2026-10-01", direction: "deposit", amount: 500_000 }]);
+    await openLedger(page, roles.finance, 1024);
+    await expect(ledger(page).locator("thead th:visible")).toHaveCount(7);
+
+    await pasteText(page, cell(page, 0, COL.project), "—\t세금계산서\t20261001-0001\t숨은 열 뒤 메모");
+    // 숨은 두 열은 접근성 트리에 없어 1024의 메모 칸은 보이는 칸 순서로 여섯째(5)다.
+    const noteAt1024 = cell(page, 0, 5);
+    await expect(noteAt1024).toHaveText("숨은 열 뒤 메모");
+    await saveWithKeyboard(page, noteAt1024);
+    await expect(saveButton(page)).not.toContainText("일괄 저장 1");
+    const [row] = await db.select().from(reserveEntries).where(eq(reserveEntries.id, id!));
+    expect(row).toMatchObject({ projectId: null, evidenceType: "tax_invoice", taxInvoiceNumber: "20261001-0001", note: "숨은 열 뒤 메모" });
   });
 });
 

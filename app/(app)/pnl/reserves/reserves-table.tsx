@@ -13,6 +13,7 @@ import { pageRangeText } from "@/ui/pagination/page-window";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Toast } from "@/ui/toast/Toast";
 import { useDirtyStorage } from "@/ui/table/use-dirty-storage";
+import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
 import { useEditableWidth } from "@/ui/table/use-editable-width";
 import { LIST_PAGE_SIZE } from "@/lib/paging";
 import { useCommaInput } from "@/ui/input/use-comma-input";
@@ -101,6 +102,7 @@ function columnForField(field: string): string {
 const HINT_ITEMS = [
   { label: "이동", keys: "Tab ↑↓←→" },
   { label: "복사", keys: "Ctrl+C" },
+  { label: "붙여넣기", keys: "Ctrl+V" },
   { label: "취소", keys: "Esc" },
   { label: "새 줄", keys: "Ctrl+Enter" },
   { label: "줄 삭제", keys: "Delete" },
@@ -478,6 +480,8 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
   const persistPendingRef = useRef(false);
   const [cellErrors, setCellErrors] = useState<CellErrors>({});
   const [rejectionSummary, setRejectionSummary] = useState<string | null>(null);
+  // 리뷰 S4 — 붙여넣기 묶음(합계 행 오른쪽 한 줄, 견적 원장과 같은 조각). 저장을 시도하면 지운다.
+  const [pasteNotices, setPasteNotices] = useState<FooterNoticeItem[]>([]);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [sentCount, setSentCount] = useState(0);
   const [openCell, setOpenCell] = useState<{ rowId: string; columnKey: string } | null>(null);
@@ -629,36 +633,38 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
     }
   }
 
+  // ENG-D10 — 새 줄 id는 화면이 만든 uuid(행 키도 그 값). 응답을 잃어 다시 보내도 서버가 한 행만 남긴다.
+  function blankNewRow(cells: Record<ReserveCellField, ReserveCellEditability>): NewRow {
+    return {
+      id: crypto.randomUUID(),
+      isNew: true,
+      version: 0,
+      clientId: "",
+      clientName: "",
+      entryDate: todayKst,
+      direction: "deposit",
+      money: { currency: "KRW", amount: 0, fxRate: 1 },
+      amountKrw: 0,
+      fxRateTouched: false,
+      projectId: null,
+      projectName: null,
+      evidenceType: null,
+      evidenceLabel: null,
+      taxInvoiceNumber: null,
+      note: null,
+      balanceKrw: null,
+      cells,
+      page: list.page,
+    };
+  }
+
   function addRow() {
     if (!newRowCells || isExecuting) return;
-    // ENG-D10 — 새 줄 id는 화면이 만든 uuid(행 키도 그 값). 응답을 잃어 다시 보내도 서버가 한 행만 남긴다.
-    const id = crypto.randomUUID();
+    const row = blankNewRow(newRowCells);
+    const id = row.id;
     setSavedAt(null);
     persistPendingRef.current = true;
-    setNewRows((prev) => [
-      ...prev,
-      {
-        id,
-        isNew: true,
-        version: 0,
-        clientId: "",
-        clientName: "",
-        entryDate: todayKst,
-        direction: "deposit",
-        money: { currency: "KRW", amount: 0, fxRate: 1 },
-        amountKrw: 0,
-        fxRateTouched: false,
-        projectId: null,
-        projectName: null,
-        evidenceType: null,
-        evidenceLabel: null,
-        taxInvoiceNumber: null,
-        note: null,
-        balanceKrw: null,
-        cells: newRowCells,
-        page: list.page,
-      },
-    ]);
+    setNewRows((prev) => [...prev, row]);
     // 사용자 D6 — 새 줄은 클라이언트 칸이 편집 상태로 열린다.
     setOpenCell({ rowId: id, columnKey: "clientId" });
   }
@@ -684,6 +690,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
     savingRef.current = true;
     setSavedAt(null);
     setRejectionSummary(null);
+    setPasteNotices([]);
     setDiscardedEdits(null);
     const sent = [...Object.values(edits).map((edit) => withPatch(edit.base, edit.patch)), ...newRows];
     sentIdsRef.current = sent.map((row) => row.id);
@@ -895,10 +902,115 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
     },
   ];
 
+  // 리뷰 S4 — 붙여넣기(§7-3 (다)). columns와 같은 순서·길이다 — 숨은 열(collapseBelow)도 논리 순서에 남는다. 파싱·오류 규칙은
+  // ui/table applyPaste(견적 원장과 같다): 금액 쉼표·`원`, 목록 열은 라벨·값 대조, 읽기 전용·잠김·계산 열에 떨어진 엑셀 값은 오류 칸.
+  const blankOption = { value: "", label: "—" };
+  const pasteColumns: PasteColumn<Row>[] = [
+    { key: "entryDate", kind: "text", isEditable: (row) => editability(row, "entryDate") === "edit" },
+    { key: "direction", kind: "select", options: DIRECTION_OPTIONS, isEditable: (row) => editability(row, "direction") === "edit" },
+    { key: "amount", kind: "number", numberKind: "krw", isEditable: (row) => editability(row, "amount") === "edit" },
+    { key: "balanceKrw", kind: "text", isEditable: () => false, pasteRole: "computed" },
+    {
+      key: "projectId",
+      kind: "select",
+      options: [blankOption, ...references.projects.map((project) => ({ value: project.id, label: project.name }))],
+      isEditable: (row) => editability(row, "projectId") === "edit",
+    },
+    { key: "evidenceType", kind: "select", options: [blankOption, ...references.evidenceTypes], isEditable: (row) => editability(row, "evidenceType") === "edit" },
+    { key: "taxInvoiceNumber", kind: "text", isEditable: (row) => editability(row, "taxInvoiceNumber") === "edit" },
+    { key: "note", kind: "text", isEditable: (row) => editability(row, "note") === "edit" },
+    {
+      key: "clientId",
+      kind: "select",
+      options: references.clients.map((client) => ({ value: client.id, label: client.name })),
+      isEditable: (row) => editability(row, "clientId") === "edit",
+    },
+  ];
+
+  // 붙여넣은 칸 값 → 줄 패치(견적 원장 handlePasteAtCell과 같은 결 — 금액은 원화로 들어간다, `—`는 빈 칸).
+  function pastePatch(columnKey: string, value: string): Patch {
+    switch (columnKey) {
+      case "entryDate":
+        return { entryDate: value };
+      case "direction":
+        return value === "deposit" || value === "withdrawal" ? { direction: value } : {};
+      case "amount":
+        return { money: { currency: "KRW", amount: Number(value), fxRate: 1 }, fxRateTouched: false };
+      case "projectId":
+        return { projectId: value || null, projectName: projectName(value || null) };
+      case "evidenceType":
+        return { evidenceType: value || null, evidenceLabel: evidenceLabel(value || null) };
+      case "taxInvoiceNumber":
+      case "note":
+        return { [columnKey]: value === "—" || value === "" ? null : value };
+      case "clientId":
+        return { clientId: value, clientName: clientName(value) };
+      default:
+        return {};
+    }
+  }
+
+  function handlePasteAtCell(row: Row, columnKey: string, clipboard: { text: string; appMeta: string | null }): string[] {
+    // 표가 그리는 순서(클라이언트 그룹 순)로 아래 줄을 센다.
+    const grouped = new Map<string, Row[]>();
+    for (const candidate of rows) grouped.set(groupLabel(candidate), [...(grouped.get(groupLabel(candidate)) ?? []), candidate]);
+    const ordered = [...grouped.values()].flat();
+    const rowIndex = ordered.indexOf(row);
+    const colIndex = pasteColumns.findIndex((column) => column.key === columnKey);
+    if (rowIndex === -1 || colIndex === -1) return [];
+    const result = applyPaste({
+      clipboardText: clipboard.text,
+      appMeta: clipboard.appMeta,
+      columns: pasteColumns,
+      rows: ordered,
+      activeRowIndex: rowIndex,
+      activeColIndex: colIndex,
+      newRow: newRowCells ? blankNewRow(newRowCells) : undefined,
+    });
+    const created = newRowCells ? Array.from({ length: result.newRowsNeeded }, () => blankNewRow(newRowCells)) : [];
+    const targetAt = (index: number) => ordered[index] ?? created[index - ordered.length];
+
+    const patches = new Map<string, Patch>();
+    const errors: CellErrors = {};
+    const cleared: { rowId: string; columnKey: string }[] = [];
+    for (const cell of result.cells) {
+      const target = targetAt(cell.rowIndex);
+      if (!target) continue;
+      if (cell.result.status === "error") {
+        errors[target.id] = { ...errors[target.id], [cell.columnKey]: cell.result.reason };
+        continue;
+      }
+      cleared.push({ rowId: target.id, columnKey: cell.columnKey });
+      patches.set(target.id, { ...patches.get(target.id), ...pastePatch(cell.columnKey, cell.result.value) });
+    }
+
+    setSavedAt(null);
+    persistPendingRef.current = true;
+    for (const { rowId, columnKey: key } of cleared) clearCellError(rowId, key);
+    setCellErrors((prev) => {
+      const next = { ...prev };
+      for (const [rowId, cells] of Object.entries(errors)) next[rowId] = { ...next[rowId], ...cells };
+      return next;
+    });
+    for (const target of ordered) {
+      const patch = patches.get(target.id);
+      if (patch) applyPatch(target.id, patch);
+    }
+    if (created.length > 0) {
+      setNewRows((prev) => [...prev, ...created.map((newRow) => ({ ...withPatch(newRow, patches.get(newRow.id) ?? {}), page: newRow.page }))]);
+    }
+
+    const notices: FooterNoticeItem[] = [{ tone: "muted", text: `붙여넣기 ${result.rowCount}줄`, paste: "head" }];
+    if (result.droppedColumnCount > 0) notices.push({ tone: "warning", text: `오른쪽 ${result.droppedColumnCount}칸 버림`, paste: "piece" });
+    if (result.ignoredComputedCells > 0) notices.push({ tone: "muted", text: `계산 열 ${result.ignoredComputedCells}칸 무시`, paste: "piece" });
+    setPasteNotices(notices);
+    return Array.from({ length: result.rowCount }, (_, offset) => targetAt(rowIndex + offset)?.id ?? "").filter((id) => id !== "");
+  }
+
   // 합계 행 오른쪽 한 줄 — 거부 요약은 지금 보이는 줄의 오류 칸 수를 말할 때만 표가 세는 수를 대신한다(다른 쪽 줄이면 0칸).
   const displayedIds = new Set(rows.map((row) => row.id));
   const claimedErrorCells = rejectedRowIds.filter((id) => displayedIds.has(id)).length;
-  const footerNotices: FooterNoticeItem[] = [];
+  const footerNotices: FooterNoticeItem[] = [...pasteNotices];
   if (rejectionSummary) footerNotices.push({ tone: "danger", text: rejectionSummary, replacesIssueCount: { errorCells: claimedErrorCells, conflictRows: 0 } });
   if (result.serverError) footerNotices.push({ tone: "danger", text: result.serverError });
 
@@ -971,6 +1083,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
         cellIssue={cellIssue}
         cellDirty={isDirtyCell}
         firstIssueSignal={issueSignal}
+        onPasteAtCell={canEditHere ? handlePasteAtCell : undefined}
         emptyMessage={emptyMessage}
         emptyAction={canEditHere ? { label: COPY.addRow, shortcut: COPY.addRowShortcut, onClick: addRow } : undefined}
         keyboard={{

@@ -172,19 +172,31 @@ case "$event" in
       # 스테이징된 파일 + gsd-tools `--files` 인자 + git commit `--` 뒤 경로
       files="$( { git -C "$cwd" diff --cached --name-only 2>/dev/null || true;
                   printf '%s' "$cmd" | grep -oE -- '(--files|[[:space:]]--)[[:space:]].*' | tr ' ' '\n' | grep -vE -- '^(--files|--)?$' || true; } | sort -u )"
-      # 디자인 관문: 화면 코드 커밋은 빈칸 없는 점검표(docs/design/checks/*.md)를 함께 스테이징해야 한다
-      if printf '%s\n' "$files" | is_ui_code_path; then
-        # 이번 커밋에 스테이징한 점검표 + 이 브랜치에서 이미 커밋한 점검표(origin/main 이후) — 같은 작업의 화면 커밋이 여러 번이어도 된다
+      # 디자인 관문: 화면 코드 커밋은 빈칸 없는 점검표(docs/design/checks/*.md)가 있어야 한다.
+      # 한글 파일 이름을 그대로 받으려고 core.quotePath=false, 지운 파일은 빼고(--diff-filter=d),
+      # `git commit -a/--all`이면 스테이징 안 된 추적 파일도 본다.
+      design_files="$( { git -C "$cwd" -c core.quotePath=false diff --cached --name-only --diff-filter=d 2>/dev/null || true;
+                         if printf '%s' "$cmd" | grep -Eq 'git[[:space:]]+commit([[:space:]]+[^;&|]*)?[[:space:]](-[a-zA-Z]*a[a-zA-Z]*|--all)([[:space:]]|$)'; then
+                           git -C "$cwd" -c core.quotePath=false diff --name-only --diff-filter=d 2>/dev/null || true
+                         fi
+                         printf '%s' "$cmd" | grep -oE -- '(--files|[[:space:]]--)[[:space:]].*' | tr ' ' '\n' | grep -vE -- '^(--files|--)?$' || true; } | sort -u )"
+      if printf '%s\n' "$design_files" | is_ui_code_path; then
+        # 이번 커밋의 점검표 + 이 브랜치에서 이미 커밋한 점검표(origin/main 이후) — 같은 작업의 화면 커밋이 여러 번이어도 된다
         branch_base="$(git -C "$cwd" merge-base origin/main HEAD 2>/dev/null || true)"
-        checks="$( { printf '%s\n' "$files";
-                     [ -z "$branch_base" ] || git -C "$cwd" diff --name-only --diff-filter=d "$branch_base" HEAD -- docs/design/checks/ 2>/dev/null || true; } \
+        checks="$( { printf '%s\n' "$design_files";
+                     [ -z "$branch_base" ] || git -C "$cwd" -c core.quotePath=false diff --name-only --diff-filter=d "$branch_base" HEAD -- docs/design/checks/ 2>/dev/null || true; } \
                    | grep -E '^docs/design/checks/[^/]+\.md$' | sort -u || true)"
         [ -n "$checks" ] || deny "화면 코드(app/·ui/의 .tsx·.css) 커밋에는 점검표가 함께 있어야 한다 — design-gate 스킬의 점검표를 docs/design/checks/<날짜>-<작업>.md로 채워 스테이징하라(같은 브랜치에서 이미 커밋한 점검표도 인정)."
         while IFS= read -r c; do
+          [ -n "$c" ] || continue
+          git -C "$cwd" cat-file -e ":$c" 2>/dev/null || continue   # 이번 커밋에서 지우는 점검표
           body="$(git -C "$cwd" show ":$c" 2>/dev/null || true)"
-          printf '%s\n' "$body" | grep -Eq '^[[:space:]]*- \[x\]' || deny "점검표 ${c}에 확인한 항목(- [x])이 없다."
-          if printf '%s\n' "$body" | grep -Eq '^[[:space:]]*- \[ \]'; then
+          printf '%s\n' "$body" | grep -Eq '^[[:space:]]*([-*+]|[0-9]+\.) \[[xX]\]' || deny "점검표 ${c}에 확인한 항목(- [x])이 없다."
+          if printf '%s\n' "$body" | grep -Eq '^[[:space:]]*([-*+]|[0-9]+\.) \[ \]'; then
             deny "점검표 ${c}에 빈칸(- [ ])이 남았다 — 항목마다 확인하고 근거를 한 줄 적어라. 지킬 수 없는 항목은 사용자 승인을 받고 이유를 적는다."
+          fi
+          if printf '%s\n' "$body" | grep -Eq '근거:[[:space:]]*$'; then
+            deny "점검표 ${c}에 빈 근거(「근거:」 뒤가 비었다)가 있다 — 무엇을 보고 확인했는지 한 줄 적어라."
           fi
         done <<<"$checks"
       fi

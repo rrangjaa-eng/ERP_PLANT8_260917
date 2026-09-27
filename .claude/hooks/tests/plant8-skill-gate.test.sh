@@ -770,6 +770,7 @@ stage_file "$projDG" "docs/design/checks/2026-09-28-button.md" "- [x] 안내 문
 - [ ] 주 버튼 하나"
 hook plant8-skill-gate.sh bash "$(payload_bash "$SDG" 'git commit -m "feat: x"' "$projDG")" "$projDG"
 expect_rc "DG6 commit: 점검표에 빈칸 -> exit 2" 2 "$HOOK_RC"
+expect_contains "DG6 안내에 빈칸" "$HOOK_STDERR" "빈칸"
 stage_file "$projDG" "docs/design/checks/2026-09-28-button.md" "- [x] 안내 문구
 - [x] 주 버튼 하나"
 hook plant8-skill-gate.sh bash "$(payload_bash "$SDG" 'git commit -m "feat: x"' "$projDG")" "$projDG"
@@ -792,6 +793,42 @@ git -C "$projDG3" update-ref refs/remotes/origin/main "$(git -C "$projDG3" rev-p
 stage_file "$projDG3" "app/page.tsx" "export default function P(){return null}"
 hook plant8-skill-gate.sh bash "$(payload_bash "$SDG3" 'git commit -m "feat: z"' "$projDG3")" "$projDG3"
 expect_rc "DG10 commit: main에 있던 옛 점검표만 -> exit 2" 2 "$HOOK_RC"
+
+# DG11: 한글 파일 이름 점검표(core.quotePath 이스케이프)도 알아본다
+projK="$(new_project)"; SK="sid-dgk-$$"
+record_skill "$projK" "$SK" test-driven-development; record_skill "$projK" "$SK" verification-before-completion
+stage_file "$projK" "app/page.tsx" "x"
+stage_file "$projK" "docs/design/checks/2026-09-28-버튼.md" "- [x] 안내 문구 — 근거: 부제 삭제"
+hook plant8-skill-gate.sh bash "$(payload_bash "$SK" 'git commit -m "feat: k"' "$projK")" "$projK"
+expect_rc "DG11 commit: 한글 이름 점검표 -> exit 0" 0 "$HOOK_RC"
+# DG12: 점검표를 지우는 커밋은 빈 점검표로 보지 않는다(남은 점검표로 판정)
+git -C "$projK" update-ref refs/remotes/origin/main "$(git -C "$projK" rev-parse HEAD)"
+git -C "$projK" commit -q -m "base"
+stage_file "$projK" "docs/design/checks/b.md" "- [x] 근거: 있음"
+git -C "$projK" commit -q -m "b"
+git -C "$projK" rm -q "docs/design/checks/b.md"
+stage_file "$projK" "docs/design/checks/c.md" "- [x] 근거: 있음"
+stage_file "$projK" "app/page.tsx" "y"
+hook plant8-skill-gate.sh bash "$(payload_bash "$SK" 'git commit -m "feat: k2"' "$projK")" "$projK"
+expect_rc "DG12 commit: 점검표 삭제 + 다른 점검표 -> exit 0" 0 "$HOOK_RC"
+# DG13: git commit -a 는 스테이징 안 된 화면 파일도 본다
+projA="$(new_project)"; SA="sid-dga-$$"
+record_skill "$projA" "$SA" test-driven-development; record_skill "$projA" "$SA" verification-before-completion
+stage_file "$projA" "app/page.tsx" "x"; git -C "$projA" commit -q -m "base"
+printf 'y\n' > "$projA/app/page.tsx"
+hook plant8-skill-gate.sh bash "$(payload_bash "$SA" 'git commit -am "feat: a"' "$projA")" "$projA"
+expect_rc "DG13 commit -am: 화면 파일 수정·점검표 없음 -> exit 2" 2 "$HOOK_RC"
+# DG14: - [X](대문자)도 체크로 본다 · DG15: 빈 근거는 빈칸이다
+projX="$(new_project)"; SX="sid-dgx-$$"
+record_skill "$projX" "$SX" test-driven-development; record_skill "$projX" "$SX" verification-before-completion
+stage_file "$projX" "ui/a.css" "x"
+stage_file "$projX" "docs/design/checks/x.md" "- [X] 주 버튼 하나 — 근거: 등록만 주 버튼"
+hook plant8-skill-gate.sh bash "$(payload_bash "$SX" 'git commit -m "feat: x"' "$projX")" "$projX"
+expect_rc "DG14 commit: - [X] -> exit 0" 0 "$HOOK_RC"
+stage_file "$projX" "docs/design/checks/x.md" "- [x] 주 버튼 하나 — 근거:"
+hook plant8-skill-gate.sh bash "$(payload_bash "$SX" 'git commit -m "feat: x"' "$projX")" "$projX"
+expect_rc "DG15 commit: 근거가 비었음 -> exit 2" 2 "$HOOK_RC"
+expect_contains "DG15 안내에 근거" "$HOOK_STDERR" "근거"
 
 projDG2="$(new_project)"
 SDG2="sid-dg2-$$"

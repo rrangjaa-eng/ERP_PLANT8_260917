@@ -218,6 +218,11 @@ describe("알림함 경계 (D-4218)", () => {
     expect(first.rows).toHaveLength(3);
     const firstReadAts = new Map(first.rows.map((row) => [row.id, row.readAt]));
 
+    // opened.at은 now()(트랜잭션 시작 시각)를 ms로 잘라 온다. 두 열기가 같은 ms에 들어가면
+    // openedAt이 같아져 아래 「read_at ≠ 두 번째 openedAt」 단언이 뜻을 잃는다 — 2026-09-27 main
+    // CI에서 실제로 같은 ms(…30.097Z)로 실패했다. 다음 ms로 넘어간 뒤 두 번째 열기를 한다.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
     const second = await openMyInbox({ id: user, roleId: null });
     expect(second.openedAt).not.toBe(first.openedAt);
     expect(second.rows).toHaveLength(3);

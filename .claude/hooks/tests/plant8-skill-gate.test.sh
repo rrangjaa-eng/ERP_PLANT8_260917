@@ -522,6 +522,15 @@ merge_hook "$M2" "$projM2" $'app/page.tsx'
 expect_rc "merge: 화면 코드 PR + review·qa·design-review -> 통과" 0 "$HOOK_RC"
 
 # ---------------------------------------------------------------------------
+# merge: 파일 목록을 못 읽으면 review·qa가 다 있어도 막는다 — 위험 경로 판정이 불가능하다(2026-09-27 #96)
+projMq="$(new_project)"
+MQ="sid-merge-unknown-$$"
+write_gate_line "$projMq" review "$MQ"
+write_gate_line "$projMq" qa "$MQ"
+merge_hook "$MQ" "$projMq" "" 1
+expect_rc "merge: 파일 목록 못 읽음(gh 실패·origin 없음) + review·qa -> exit 2" 2 "$HOOK_RC"
+expect_contains "merge: 판정 불가 메시지에 fetch 안내" "$HOOK_STDERR" "git fetch origin pull/7/head pull/7/merge"
+
 # merge: 위험 경로(마이그레이션·스키마·인증·권한·암호화·배포·.claude·CLAUDE.md)는 세션이 머지하지 않는다
 projRk="$(new_project)"
 RK="sid-merge-risk-$$"
@@ -655,6 +664,12 @@ git -C "$clone10" push -q -f origin "$(git -C "$clone10" commit-tree "$(git -C "
 merge_hook "$S10" "$proj10" "" 127 "" "$H10"
 expect_rc "merge(gh 없음): 병합 커밋이 로컬에 없음 -> exit 2" 2 "$HOOK_RC"
 expect_contains "merge(gh 없음): 판정 못 하면 메시지에 PR head·merge fetch 안내" "$HOOK_STDERR" "git fetch origin pull/7/head pull/7/merge"
+# N10b: 같은 상황에 review·qa가 다 있어도 막는다 — 변경 파일을 모르면 위험 경로 판정을 할 수 없다
+# (2026-09-27 #96: 훅·CLAUDE.md PR이 refs/pull/96/merge 미수신 + phase 로그의 review·qa로 통과했다)
+write_gate_line "$proj10" qa "setup"
+merge_hook "$S10" "$proj10" "" 127 "" "$H10"
+expect_rc "merge(gh 없음): 병합 커밋이 로컬에 없음 + review·qa -> exit 2" 2 "$HOOK_RC"
+expect_contains "merge(gh 없음): review·qa 있어도 판정 불가 메시지에 fetch 안내" "$HOOK_STDERR" "git fetch origin pull/7/head pull/7/merge"
 
 # N12: expectedHeadSha 없음(판정 뒤 코드 push 경합) -> 차단
 proj12="$(pr_project o r)"

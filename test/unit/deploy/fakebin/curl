@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 가짜 curl — deploy.sh의 스모크 검사 3종(health GET, login GET, sign-in POST)을 흉내 낸다.
+# 가짜 curl — deploy.sh의 스모크 검사 4종(health GET, login GET, sign-in POST, notify-tick POST)을 흉내 낸다.
 set -u
 
 STATE="${DEPLOY_FAKE_STATE:-}"
@@ -26,6 +26,15 @@ case "$ARGS" in
     code="401"
     if state_file signin; then
       code="$(state_val signin)"
+    fi
+    printf '%s' "$code"
+    exit 0
+    ;;
+  *"/internal/notify-tick"*)
+    # 토큰 없는 POST — 앱이 401을 돌려주는 것이 정상(D-4214). 상태 파일 notify-tick으로 바꾼다.
+    code="401"
+    if state_file notify-tick; then
+      code="$(state_val notify-tick)"
     fi
     printf '%s' "$code"
     exit 0

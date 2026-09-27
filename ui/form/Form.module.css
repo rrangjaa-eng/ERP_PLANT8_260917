@@ -23,17 +23,19 @@
   width: 100%;
 }
 
-/* 칸 폭 3종 — select 200 · 짧은 칸 280 · 긴 칸 480 */
-.select {
-  max-width: 200px;
-}
+/* 칸 폭 3종 — select 200 · 짧은 칸 280 · 긴 칸 480. 폰(<700px)은 컨트롤 전폭(§7-15). */
+@media (min-width: 700px) {
+  .select {
+    max-width: 200px;
+  }
 
-.short {
-  max-width: 280px;
-}
+  .short {
+    max-width: 280px;
+  }
 
-.long {
-  max-width: 480px;
+  .long {
+    max-width: 480px;
+  }
 }
 
 .hint {

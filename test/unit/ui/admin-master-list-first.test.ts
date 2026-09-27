@@ -33,6 +33,7 @@ const cases: Case[] = [
   { name: "코드표 (code-tables)", pagePath: ["app", "(app)", "admin", "code-tables", "page.tsx"], actionLabel: "코드 추가", formComponent: "CodeItemForm" },
   { name: "사람 (people)", pagePath: ["app", "(app)", "admin", "people", "page.tsx"], actionLabel: "사람 등록", formComponent: "PersonForm" },
   { name: "법인카드 (corp-cards)", pagePath: ["app", "(app)", "admin", "corp-cards", "page.tsx"], actionLabel: "법인카드 등록", formComponent: "CardForm" },
+  { name: "공휴일 (holidays)", pagePath: ["app", "(app)", "admin", "holidays", "page.tsx"], actionLabel: "공휴일 추가", formComponent: "HolidayForm" },
 ];
 
 describe.each(cases)("$name 관리 화면 — 목록이 첫 화면, 등록은 행동 (§6-1)", ({ pagePath, actionLabel, formComponent }) => {

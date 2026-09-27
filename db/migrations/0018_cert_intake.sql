@@ -1,6 +1,8 @@
 -- 04.3-02 Task 1 ① — 확인증 신규 표 다섯 개 생성. 전부 신규 테이블(FK만
 -- 있고 데이터 없음)이라 락 경합이 낮지만 0010 선례와 같은 락 타임아웃
--- 한 쌍을 첫 문장 앞에 둔다.
+-- 한 쌍을 첫 문장 앞에 둔다. origin/main(0017_phase_04_2) 머지 뒤 옛 0017_cert_intake ·
+-- 0018_cert_winners_unique_deferrable을 지우고 pnpm db:generate로 다시 만든 뒤
+-- 두 파일의 손 편집(이 머리 · 끝의 지연 UNIQUE 다시 걸기)을 옮겨 적었다.
 SET LOCAL lock_timeout = '1s';
 SET LOCAL statement_timeout = '5s';
 --> statement-breakpoint
@@ -99,4 +101,18 @@ ALTER TABLE "cert_submissions" ADD CONSTRAINT "cert_submissions_updated_by_users
 ALTER TABLE "cert_winners" ADD CONSTRAINT "cert_winners_event_id_cert_events_id_fk" FOREIGN KEY ("event_id") REFERENCES "public"."cert_events"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "cert_winners" ADD CONSTRAINT "cert_winners_updated_by_users_id_fk" FOREIGN KEY ("updated_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "privacy_session_activity" ADD CONSTRAINT "privacy_session_activity_session_id_sessions_id_fk" FOREIGN KEY ("session_id") REFERENCES "public"."sessions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "cert_winners_event_id_idx" ON "cert_winners" USING btree ("event_id");
+CREATE INDEX "cert_winners_event_id_idx" ON "cert_winners" USING btree ("event_id");--> statement-breakpoint
+-- 04.3-02 Task 1 ②-b(codex final3 A1 · C2) — cert_winners_event_id_name_phone_unique의
+-- 지연 여부를 이 파일 끝에서 바꾼다. drizzle-kit이 이 절을 내지 못해
+-- (unique() 빌더에 nullsNotDistinct()만 있음, drizzle-kit 0.31.10의
+-- 지연 옵션은 트랜잭션 쪽뿐) custom SQL로 만든다. Postgres 16의
+-- ALTER CONSTRAINT는 UNIQUE의 지연 여부를 바꾸지 못하므로 DROP → 인덱스로
+-- 다시 걸기다 — 표가 같은 migrate() 트랜잭션에서 방금 생긴 빈 표라 잠금
+-- 부담이 없다. 칸을 괄호로 적는 `ADD CONSTRAINT ... UNIQUE (...) DEFERRABLE`
+-- 형태는 squawk(.squawk.toml)가 constraint-missing-not-valid ·
+-- disallowed-unique-constraint로 막는다 — USING INDEX 형태를 쓴다.
+ALTER TABLE "cert_winners" DROP CONSTRAINT "cert_winners_event_id_name_phone_unique";
+--> statement-breakpoint
+CREATE UNIQUE INDEX "cert_winners_event_id_name_phone_unique" ON "cert_winners" ("event_id", "name", "phone");
+--> statement-breakpoint
+ALTER TABLE "cert_winners" ADD CONSTRAINT "cert_winners_event_id_name_phone_unique" UNIQUE USING INDEX "cert_winners_event_id_name_phone_unique" DEFERRABLE INITIALLY IMMEDIATE;

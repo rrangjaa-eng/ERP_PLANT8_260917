@@ -45,4 +45,6 @@ export const MENUS: MenuDef[] = [
   // 04.3-02 — 확인증 행사 관리(수령자 QR 확인증 발급). 시드가 시스템
   // 관리자 계급에 자동으로 켠다(seedMasterData가 MENUS 전체를 순회).
   { key: "certs.events", label: "확인증 행사" },
+  // 04.2-11(ADMN-11): 공휴일 표 검토·연도 확정 — 「관리」 인덱스 「마스터」 끝.
+  { key: "admin.holidays", label: "공휴일" },
 ];

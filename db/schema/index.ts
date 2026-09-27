@@ -20,3 +20,5 @@ export * from "./cert-winners";
 export * from "./cert-submissions";
 export * from "./cert-signature-uploads";
 export * from "./privacy-session-activity";
+export * from "./notifications";
+export * from "./holidays";

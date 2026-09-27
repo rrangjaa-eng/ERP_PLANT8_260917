@@ -69,7 +69,11 @@ test.describe("키보드 전용 동선 (성공 기준 3)", () => {
 
     const menu = page.getByRole("menu");
     await expect(menu).toBeVisible();
-    // 열릴 때 첫 행동 요소에 포커스(§7-8과 같은 결 — TopBar.tsx firstItemRef).
+    // 열릴 때 첫 행동 요소에 포커스(§7-8과 같은 결 — TopBar.tsx firstItemRef). 04.2-09부터
+    // accountGroup 맨 앞이 「알림함」이라 첫 항목은 그것이고, 「내 정보」는 그다음이다.
+    const notificationsItem = menu.getByRole("menuitem", { name: "알림함" });
+    await expect(notificationsItem).toBeFocused();
+    await page.keyboard.press("ArrowDown");
     const accountItem = menu.getByRole("menuitem", { name: "내 정보" });
     await expect(accountItem).toBeFocused();
     await page.keyboard.press("Enter");

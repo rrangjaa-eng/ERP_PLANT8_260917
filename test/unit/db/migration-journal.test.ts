@@ -1,40 +1,40 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-// journal 가드(오케스트레이터 사실 2, 04.3-RESEARCH.md Pitfall 4) — drizzle의
-// migrate()는 마지막으로 적용된 항목보다 `when`이 새로운 항목만 적용한다
-// (node_modules/drizzle-orm/pg-core/dialect.js). idx 연속성 · tag 접두어 =
-// idx 네 자리 · when 엄격 증가가 어긋나면 스테이징·프로덕션이 마이그레이션을
-// 조용히 건너뛴다 — 이 테스트가 그 불변식을 고정한다.
+// drizzle 저널 가드(04.2-04 · Codex 2차 #10) — 04.2-06의 마이그레이션 검증과 04.2-14의
+// 통합 절차가 기댄다. 번호는 생성기가 붙인다: 특정 태그·개수를 고정하지 않는다.
 
-const JOURNAL_PATH = resolve(process.cwd(), "db/migrations/meta/_journal.json");
+interface JournalEntry {
+  idx: number;
+  when: number;
+  tag: string;
+}
 
-type JournalEntry = { idx: number; tag: string; when: number };
+const MIGRATIONS_DIR = join(process.cwd(), "db/migrations");
+const journal = JSON.parse(readFileSync(join(MIGRATIONS_DIR, "meta/_journal.json"), "utf8")) as {
+  entries: JournalEntry[];
+};
+const entries = journal.entries;
 
-describe("db/migrations/meta/_journal.json 무결성", () => {
-  const journal = JSON.parse(readFileSync(JOURNAL_PATH, "utf8")) as { entries: JournalEntry[] };
-
-  it("entries를 하나 이상 읽었다", () => {
-    expect(journal.entries.length).toBeGreaterThan(0);
+describe("db/migrations/meta/_journal.json", () => {
+  it("항목이 있다", () => {
+    expect(entries.length).toBeGreaterThan(0);
   });
 
-  it("idx가 0부터 연속이다", () => {
-    journal.entries.forEach((entry, i) => {
-      expect(entry.idx).toBe(i);
-    });
+  it("idx가 0..n-1로 연속이다", () => {
+    entries.forEach((e, i) => expect(e.idx).toBe(i));
   });
 
-  it("각 tag가 idx를 네 자리로 채운 접두어로 시작한다", () => {
-    for (const entry of journal.entries) {
-      const prefix = String(entry.idx).padStart(4, "0");
-      expect(entry.tag.startsWith(prefix)).toBe(true);
-    }
+  it("tag가 0 채운 idx + '_'로 시작한다", () => {
+    for (const e of entries) expect(e.tag.startsWith(`${String(e.idx).padStart(4, "0")}_`)).toBe(true);
   });
 
-  it("when이 엄격히 증가한다", () => {
-    for (let i = 1; i < journal.entries.length; i++) {
-      expect(journal.entries[i]!.when).toBeGreaterThan(journal.entries[i - 1]!.when);
-    }
+  it("when이 앞 항목보다 엄격히 크다", () => {
+    for (let i = 1; i < entries.length; i++) expect(entries[i]!.when).toBeGreaterThan(entries[i - 1]!.when);
+  });
+
+  it("tag마다 SQL 파일이 있다", () => {
+    for (const e of entries) expect(existsSync(join(MIGRATIONS_DIR, `${e.tag}.sql`)), `${e.tag}.sql`).toBe(true);
   });
 });

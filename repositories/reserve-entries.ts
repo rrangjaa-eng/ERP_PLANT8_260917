@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db } from "@/db/client";
 import { reserveEntries, vendors, projects } from "@/db/schema";
@@ -37,7 +37,7 @@ export async function listAllActiveEntries(viewer: Viewer, tx: DbOrTx = db): Pro
 }
 
 // 보관된 줄도 포함한다 — 재전송 판정·보관 줄 수정 거부가 보관 여부를 본다.
-export async function findEntriesByIds(viewer: Viewer, ids: string[], tx: DbOrTx): Promise<ReserveEntryRow[]> {
+export async function findEntriesByIds(viewer: Viewer, ids: string[], tx: DbOrTx = db): Promise<ReserveEntryRow[]> {
   void viewer;
   if (ids.length === 0) return [];
   return tx.select().from(reserveEntries).where(inArray(reserveEntries.id, ids));
@@ -110,9 +110,33 @@ export async function updateEntryIfVersionMatches(
   return row ?? null;
 }
 
-export async function setEntryArchived(viewer: Viewer, id: string, value: boolean, tx: DbOrTx): Promise<void> {
+export async function setEntryArchived(viewer: Viewer, id: string, value: boolean, tx: DbOrTx = db): Promise<void> {
   await tx
     .update(reserveEntries)
     .set(value ? { archivedAt: new Date(), archivedBy: viewer.id, updatedAt: new Date() } : { archivedAt: null, archivedBy: null, updatedAt: new Date() })
     .where(eq(reserveEntries.id, id));
+}
+
+// 보관함 목록(repositories/archive.ts) — 이름은 금액 없는 `{날짜} {클라이언트} {구분}`이다. 보관함은 admin.archive 화면이라
+// 리저브 노출 게이트(reserve.amount) 밖이므로 금액을 싣지 않는다.
+export async function listArchivedEntryNames(viewer: Viewer): Promise<{ id: string; name: string; archivedAt: Date; archivedBy: string | null }[]> {
+  void viewer;
+  const rows = await db
+    .select({
+      id: reserveEntries.id,
+      entryDate: reserveEntries.entryDate,
+      direction: reserveEntries.direction,
+      clientName: vendors.name,
+      archivedAt: reserveEntries.archivedAt,
+      archivedBy: reserveEntries.archivedBy,
+    })
+    .from(reserveEntries)
+    .innerJoin(vendors, eq(vendors.id, reserveEntries.clientId))
+    .where(isNotNull(reserveEntries.archivedAt));
+  return rows.map((row) => ({
+    id: row.id,
+    name: `${row.entryDate} ${row.clientName} ${row.direction === "deposit" ? "입금" : "출금"}`,
+    archivedAt: row.archivedAt as Date,
+    archivedBy: row.archivedBy,
+  }));
 }

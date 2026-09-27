@@ -23,6 +23,7 @@ import "@/domain/projects";
 import "@/domain/quotes/lines";
 import "@/domain/quotes/revisions";
 import "@/domain/revenue";
+import "@/domain/reserves";
 import "@/domain/action-log/export";
 import "@/domain/archive";
 import "@/app/(app)/admin/code-tables/actions.registry";

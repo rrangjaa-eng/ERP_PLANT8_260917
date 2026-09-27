@@ -22,6 +22,7 @@ import {
 import { findUserById, setUserArchived } from "@/repositories/users";
 import { findVendorById, setVendorArchived } from "@/repositories/vendors";
 import { findQuoteLineById, setQuoteLineArchived } from "@/repositories/quote-lines";
+import { findEntriesByIds as findReserveEntriesByIds, setEntryArchived as setReserveEntryArchived, listArchivedEntryNames as listArchivedReserveEntryNames } from "@/repositories/reserve-entries";
 
 // archive()/restore()(domain/archive/index.ts)가 필요로 하는 최소 행 모양.
 // isSeed는 roles 전용(시드 계급 보관 거부 판정) — 다른 표는 없어도 된다.
@@ -194,6 +195,26 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
         .from(quoteLines)
         .where(isNotNull(quoteLines.archivedAt));
       return rows.map((row) => ({ entity: "quote_line", label: "견적 줄", id: row.id, name: row.name, archivedAt: row.archivedAt as Date, archivedBy: row.archivedBy }));
+    },
+  },
+  // 04-07(B-04 · OV-2) — 리저브 줄. 보관은 잔액 판정을 지나는 domain/reserves의 saveReserves(archivedIds)로만 한다 —
+  // 범용 archive()는 잔액을 보지 않으므로 늘 보호 행이다. 복원은 DOMAIN_RESTORERS가 restoreReserve에 맡긴다.
+  {
+    entity: "reserve_entry",
+    label: "리저브",
+    async setArchived(viewer, id, value) {
+      await setReserveEntryArchived(viewer, id, value);
+    },
+    async findById(viewer, id) {
+      const [row] = await findReserveEntriesByIds(viewer, [id]);
+      return row ?? null;
+    },
+    isProtected() {
+      return true;
+    },
+    async listArchived(viewer) {
+      const rows = await listArchivedReserveEntryNames(viewer);
+      return rows.map((row) => ({ entity: "reserve_entry", label: "리저브", ...row }));
     },
   },
 ];

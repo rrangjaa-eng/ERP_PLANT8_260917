@@ -10,6 +10,9 @@ import { rememberFxAfterCommit, SaveRejectedError, type CellFormatError, type Fx
 import { isCalendarDate, FORMAT_ERROR as DATE_FORMAT_ERROR, EMPTY_ERROR as DATE_EMPTY_ERROR } from "@/domain/projects/period";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
+import { clampPage, pageCountFrom, LIST_PAGE_SIZE } from "@/lib/paging";
+import { projectMany, type DtoSpec } from "@/domain/permissions/project";
+import { registerDto } from "@/domain/permissions/dto-registry";
 import { formatKrw } from "@/lib/format-number";
 import type { DbOrTx } from "@/repositories/document-counters";
 import {
@@ -32,7 +35,7 @@ export type ReserveDirection = "deposit" | "withdrawal";
 const PNL_MENU = "pnl";
 const RESERVE_INFO_ITEM = "reserve.amount";
 const RESERVE_ENTITY = "reserve_entry";
-const FORBIDDEN_MESSAGE = "리저브를 기록할 권한이 없습니다";
+const FORBIDDEN_MESSAGE = "리저브 기록 권한 없음";
 
 // ── 잔액(순수) ─────────────────────────────────────────────────────────────
 
@@ -131,12 +134,12 @@ const FORBIDDEN_RULE = "reserve.forbidden";
 const REPLAY_MISMATCH = "이미 저장된 줄과 값이 다름 · 새로 고침";
 const ENTRY_NOT_FOUND = "줄을 찾을 수 없음 · 새로 고침";
 const ARCHIVED_ROW = "보관된 줄 · 새로 고침";
-const CLIENT_LOCKED = "클라이언트는 첫 저장 뒤 잠김 · 새 줄로 적어 주세요";
-const CLIENT_NOT_FOUND = "클라이언트를 찾을 수 없습니다";
-const PROJECT_CLIENT_MISMATCH = "이 프로젝트의 클라이언트가 아닙니다";
-const EVIDENCE_NOT_IN_TABLE = "증빙 종류를 고르세요";
-const AMOUNT_NOT_POSITIVE = "금액은 0보다 커야 합니다 · 금액을 고쳐 주세요";
-const DIRECTION_INVALID = "구분을 고르세요";
+const CLIENT_LOCKED = "클라이언트는 첫 저장 뒤 잠김 · 새 줄로 적기";
+const CLIENT_NOT_FOUND = "클라이언트 없음 · 클라이언트 다시 고르기";
+const PROJECT_CLIENT_MISMATCH = "다른 클라이언트의 프로젝트 · 프로젝트 다시 고르기";
+const EVIDENCE_NOT_IN_TABLE = "코드표에 없는 증빙 종류 · 증빙 종류 고르기";
+const AMOUNT_NOT_POSITIVE = "금액 0 이하 · 금액 수정";
+const DIRECTION_INVALID = "구분 없음 · 구분 고르기";
 const VERSION_CONFLICT = "다른 사람이 먼저 이 줄을 바꿈 · 새로 고침";
 const EVIDENCE_TYPE_TABLE = "evidence_type";
 
@@ -278,7 +281,7 @@ export async function saveReserves(viewer: Viewer, input: SaveReservesInput, dep
       ledger.set(row.input.id, { id: row.input.id, clientId: row.input.clientId, entryDate: row.payload.entryDate, direction: row.input.direction, amountKrw: row.payload.amountAmountKrw, createdAt: now });
     }
     const balance = runningBalance([...ledger.values()]);
-    if (balance.firstNegative) rejectNegative(viewer, balance.firstNegative, prepared);
+    if (balance.firstNegative) await rejectNegative(viewer, balance.firstNegative, prepared, tx);
 
     return writePlan(viewer, plan, now, tx, deps);
   });
@@ -358,10 +361,42 @@ async function planBatch(
   return plan;
 }
 
-function rejectNegative(viewer: Viewer, negative: NegativeClosing, prepared: PreparedRow[]): never {
+export type ReserveBalanceRejection = {
+  entryId: string;
+  entryDate: string;
+  clientId: string;
+  clientName: string;
+  balanceKrw: number;
+  /** 그 줄이 지금 목록(listReserves와 같은 정렬)에서 놓인 쪽 — 새 줄(DB에 없음)이면 null(Codex #7). */
+  page: number | null;
+};
+
+// 잔액 음수 거부 — 그 날짜 마지막 줄의 금액 칸 오류와 함께 배치 수준 정보를 싣는다(화면 04-42가 다른 쪽의 줄로 옮겨 간다).
+export class ReserveBalanceRejectedError extends SaveRejectedError {
+  constructor(
+    cell: CellFormatError,
+    readonly rejection: ReserveBalanceRejection,
+  ) {
+    super([], [cell]);
+  }
+}
+
+async function rejectNegative(viewer: Viewer, negative: NegativeClosing, prepared: PreparedRow[], tx: DbOrTx): Promise<never> {
+  // 잠긴 tx로 지금 목록(보관 제외)을 읽어 listReserves와 같은 정렬로 그 줄의 위치를 구한다 — 정렬 정의는 하나다.
+  const active = (await repoListAllActiveEntries(viewer, tx)).map(toBalanceRow);
+  const names = await repoFindClientNames(viewer, [...new Set([...active.map((row) => row.clientId), negative.clientId])], tx);
+  const position = sortForList(active, names).findIndex((row) => row.id === negative.lastRowId);
   const index = prepared.find((row) => row.input.id === negative.lastRowId)?.index ?? -1;
   const cell = cellError(index, negative.lastRowId, "amount", "금액", balanceReason(negative.balanceKrw));
-  return denyWrite(viewer, NEGATIVE_RULE, { clientIds: [negative.clientId], entryIds: [negative.lastRowId] }, new SaveRejectedError([], [cell]));
+  const rejection: ReserveBalanceRejection = {
+    entryId: negative.lastRowId,
+    entryDate: negative.date,
+    clientId: negative.clientId,
+    clientName: names.get(negative.clientId) ?? "",
+    balanceKrw: negative.balanceKrw,
+    page: position < 0 ? null : Math.floor(position / LIST_PAGE_SIZE) + 1,
+  };
+  return denyWrite(viewer, NEGATIVE_RULE, { clientIds: [negative.clientId], entryIds: [negative.lastRowId] }, new ReserveBalanceRejectedError(cell, rejection));
 }
 
 // 수정 로그(B-16 · ENG-D8) — 바뀐 금액(원화)·날짜·구분만 [전, 후]로, 값을 가리지 않는다(활동 기록은 기본값으로 시스템관리자만).
@@ -404,7 +439,50 @@ async function writePlan(viewer: Viewer, plan: Plan, now: Date, tx: DbOrTx, deps
   return fxToRemember;
 }
 
+// 04-07(B-04 · T5 · OV-2) — 보관함 복원(domain/archive의 DOMAIN_RESTORERS가 위임). 권한은 트랜잭션 앞에서 저장과 같은
+// pnl 쓰기 + reserve.amount(숫자 없는 거부) — 보관함 권한(admin.archive)은 위임 앞의 restore()가 이미 판정했다. 그 뒤
+// 클라이언트 잠금 → 잠긴 tx로 원장 + 이 줄의 날짜 마감 판정 → 보관 해제 + restore 로그(같은 tx).
+export async function restoreReserve(
+  viewer: Viewer,
+  id: string,
+  deps?: Partial<Pick<ReserveWriteDeps, "can" | "visible" | "afterLock" | "recordAction">>,
+): Promise<void> {
+  if (!(await reserveRights(viewer, "write", deps))) {
+    denyWrite(viewer, FORBIDDEN_RULE, { entryIds: [id] }, new ForbiddenError(FORBIDDEN_MESSAGE));
+  }
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  await withTransaction(async (tx) => {
+    const [before] = await repoFindEntriesByIds(viewer, [id], tx);
+    if (!before) throw new UserFacingError(ENTRY_NOT_FOUND);
+    // 클라이언트는 첫 저장 뒤 바뀌지 않으므로 잠금 전에 읽어도 된다(사용자 D6).
+    await repoLockReserveClients(viewer, [before.clientId], tx);
+    await deps?.afterLock?.();
+    const [current] = await repoFindEntriesByIds(viewer, [id], tx);
+    if (!current || current.archivedAt === null) return;
+    const ledger = (await repoListActiveEntriesByClients(viewer, [current.clientId], tx)).map(toBalanceRow);
+    const negative = runningBalance([...ledger, toBalanceRow(current)]).firstNegative;
+    if (negative) {
+      const reason = `복원하면 ${negative.date} 잔액 ${formatKrw(negative.balanceKrw)} · 리저브 대장에서 출금 줄 먼저 고치기`;
+      denyWrite(viewer, "reserve.restore", { clientIds: [current.clientId], entryIds: [id] }, new UserFacingError(reason));
+    }
+    await repoSetEntryArchived(viewer, id, false, tx);
+    await recordAction(viewer, { actionType: "restore", entity: RESERVE_ENTITY, entityId: id, detail: { entryId: id, clientId: current.clientId } }, { tx });
+  });
+}
+
 // ── 읽기 ─────────────────────────────────────────────────────────────────
+
+// 목록 순서: 클라이언트 이름 → 클라이언트 id → compareReserveRows. listReserves와 거부 줄의 쪽 번호가 같이 쓴다.
+function sortForList(rows: BalanceRow[], names: Map<string, string>): BalanceRow[] {
+  return [...rows].sort((a, b) => {
+    if (a.clientId !== b.clientId) {
+      const byName = (names.get(a.clientId) ?? "").localeCompare(names.get(b.clientId) ?? "", "ko");
+      if (byName !== 0) return byName;
+      return a.clientId < b.clientId ? -1 : 1;
+    }
+    return compareReserveRows(a, b);
+  });
+}
 
 export type ReserveCellEditability = "edit" | "readonly" | "locked";
 export type ReserveCellField = "clientId" | "entryDate" | "direction" | "amount" | "fxRate" | "projectId" | "evidenceType" | "taxInvoiceNumber" | "note" | "balanceKrw";
@@ -439,22 +517,43 @@ export type ReserveEntryDto = {
 
 export type ReserveListResult = {
   rows: ReserveEntryDto[];
+  page: number;
+  pageCount: number;
+  total?: number;
   newRowCellEditability?: Record<ReserveCellField, ReserveCellEditability>;
   clientBalances?: { clientId: string; clientName: string; balanceKrw: number }[];
 };
 
+// D-59 · CEO 리뷰 B-15 — 대장 전체가 숨김 정보다. 모든 필드를 reserve.amount로 게이트한다(날짜·메모만 싣는 부분 노출 없음).
+export const RESERVE_DTO_SPEC: DtoSpec<ReserveEntryDto, ReserveEntryDto> = {
+  fields: (
+    ["id", "version", "clientId", "clientName", "entryDate", "direction", "amount", "projectId", "evidenceType", "taxInvoiceNumber", "note", "balanceKrw", "cellEditability"] as const
+  ).map((key) => ({ key, from: key, infoItem: RESERVE_INFO_ITEM })),
+};
+
+registerDto({
+  name: "ReserveEntryDto",
+  fields: RESERVE_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
+});
+
+// 50건 번호 페이지(D-91). `pnl` 보기와 reserve.amount가 둘 다 있을 때만 줄을 싣고, 하나라도 없으면 건수·그룹 키 없는
+// 빈 결과다(B-15). 잔액은 클라이언트 원장 전체로 계산한 **뒤** 쪽을 자른다 — 몇 쪽을 보든 같은 잔액이다.
 export async function listReserves(viewer: Viewer, opts: { page?: number | string }): Promise<ReserveListResult> {
-  void opts;
+  if (!(await reserveRights(viewer, "view"))) return { rows: [], page: 1, pageCount: 0 };
   const canWrite = await reserveRights(viewer, "write");
   const rows = await repoListAllActiveEntries(viewer);
   const names = await repoFindClientNames(viewer, [...new Set(rows.map((row) => row.clientId))]);
   const balance = runningBalance(rows.map(toBalanceRow));
   const balanceById = new Map(balance.rows.map((row) => [row.id, row.balanceKrw]));
+  const finalByClient = new Map(balance.closingByDate.map((closing) => [closing.clientId, closing.balanceKrw]));
   const byId = new Map(rows.map((row) => [row.id, row]));
-  const dtos: ReserveEntryDto[] = balance.rows.map(({ id }) => {
+  const sorted = sortForList(rows.map(toBalanceRow), names);
+  const pageCount = pageCountFrom(sorted.length, LIST_PAGE_SIZE);
+  const page = clampPage(opts.page, pageCount);
+  const pageRows = sorted.slice((page - 1) * LIST_PAGE_SIZE, page * LIST_PAGE_SIZE).map(({ id }) => {
     const row = byId.get(id) as ReserveEntryRow;
     const money = moneyFromRow({ currency: row.amountCurrency, foreignAmount: row.amountForeignAmount, fxRate: row.amountFxRate, amountKrw: row.amountAmountKrw });
-    return {
+    const dto: ReserveEntryDto = {
       id: row.id,
       version: row.version,
       clientId: row.clientId,
@@ -469,11 +568,15 @@ export async function listReserves(viewer: Viewer, opts: { page?: number | strin
       balanceKrw: balanceById.get(row.id) ?? 0,
       cellEditability: reserveCellEditability(false, canWrite),
     };
+    return dto;
   });
-  const clientBalances = balance.closingByDate.reduce<Map<string, number>>((acc, closing) => acc.set(closing.clientId, closing.balanceKrw), new Map());
+  const pageClientIds = [...new Set(pageRows.map((row) => row.clientId))];
   return {
-    rows: dtos,
+    rows: (await projectMany(viewer, pageRows, RESERVE_DTO_SPEC)) as ReserveEntryDto[],
+    page,
+    pageCount,
+    total: sorted.length,
     newRowCellEditability: reserveCellEditability(true, canWrite),
-    clientBalances: [...clientBalances].map(([clientId, balanceKrw]) => ({ clientId, clientName: names.get(clientId) ?? "", balanceKrw })),
+    clientBalances: pageClientIds.map((clientId) => ({ clientId, clientName: names.get(clientId) ?? "", balanceKrw: finalByClient.get(clientId) ?? 0 })),
   };
 }

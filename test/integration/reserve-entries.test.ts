@@ -214,7 +214,7 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
     expect((await storedRow(deposit.id))?.amountAmountKrw).toBe(1_000_000);
   });
 
-  it("클라이언트 A 줄에 클라이언트 B 프로젝트를 고르면 `이 프로젝트의 클라이언트가 아닙니다`(PG 오류 아님)", async () => {
+  it("클라이언트 A 줄에 클라이언트 B 프로젝트를 고르면 `다른 클라이언트의 프로젝트 · 프로젝트 다시 고르기`(PG 오류 아님)", async () => {
     const finance = await createFinanceViewer();
     const clientA = await createClient();
     const clientB = await createClient();
@@ -223,7 +223,7 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
 
     const error = await rejection(saveReserves(finance, { rows: [row] }));
 
-    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: row.id, field: "projectId", reason: "이 프로젝트의 클라이언트가 아닙니다" })]);
+    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: row.id, field: "projectId", reason: "다른 클라이언트의 프로젝트 · 프로젝트 다시 고르기" })]);
     expect(await countRows(clientA.id)).toBe(0);
   });
 
@@ -238,23 +238,23 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
     expect((await storedRow(row.id))?.projectId).toBe(project.id);
   });
 
-  it("없는 clientId는 PG 23503이 아니라 `클라이언트를 찾을 수 없습니다`로 거부된다", async () => {
+  it("없는 clientId는 PG 23503이 아니라 `클라이언트 없음 · 클라이언트 다시 고르기`로 거부된다", async () => {
     const finance = await createFinanceViewer();
     const row = newRow(randomUUID(), "2026-03-01", "deposit", 1_000);
 
     const error = await rejection(saveReserves(finance, { rows: [row] }));
 
-    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: row.id, field: "clientId", reason: "클라이언트를 찾을 수 없습니다" })]);
+    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: row.id, field: "clientId", reason: "클라이언트 없음 · 클라이언트 다시 고르기" })]);
     expect(await storedRow(row.id)).toBeUndefined();
   });
 
-  it("코드표에 없는 증빙 종류는 `증빙 종류를 고르세요`로 거부되고, 코드표 값은 저장된다", async () => {
+  it("코드표에 없는 증빙 종류는 `코드표에 없는 증빙 종류 · 증빙 종류 고르기`로 거부되고, 코드표 값은 저장된다", async () => {
     const finance = await createFinanceViewer();
     const client = await createClient();
     const bad = { ...newRow(client.id, "2026-03-01", "deposit", 1_000), evidenceType: "not-a-code" };
 
     const error = await rejection(saveReserves(finance, { rows: [bad] }));
-    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: bad.id, field: "evidenceType", reason: "증빙 종류를 고르세요" })]);
+    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: bad.id, field: "evidenceType", reason: "코드표에 없는 증빙 종류 · 증빙 종류 고르기" })]);
 
     const good = { ...newRow(client.id, "2026-03-01", "deposit", 1_000), evidenceType: "tax_invoice", taxInvoiceNumber: "20260301-0001" };
     await saveReserves(finance, { rows: [good] });
@@ -293,7 +293,7 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
     expect(await countRows(clientB.id)).toBe(0);
   });
 
-  it("기존 줄의 클라이언트를 바꾸면 `클라이언트는 첫 저장 뒤 잠김 · 새 줄로 적어 주세요`, DB 무변경(사용자 D6)", async () => {
+  it("기존 줄의 클라이언트를 바꾸면 `클라이언트는 첫 저장 뒤 잠김 · 새 줄로 적기`, DB 무변경(사용자 D6)", async () => {
     const finance = await createFinanceViewer();
     const clientA = await createClient();
     const clientB = await createClient();
@@ -304,7 +304,7 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
       rejection(saveReserves(finance, { rows: [{ ...deposit, isNew: undefined, version: 1, clientId: clientB.id }] })),
     );
 
-    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: deposit.id, field: "clientId", reason: "클라이언트는 첫 저장 뒤 잠김 · 새 줄로 적어 주세요" })]);
+    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: deposit.id, field: "clientId", reason: "클라이언트는 첫 저장 뒤 잠김 · 새 줄로 적기" })]);
     expect((await storedRow(deposit.id))?.clientId).toBe(clientA.id);
   });
 
@@ -471,7 +471,7 @@ describe("domain/reserves — 권한 · 노출 · 보관/복원 · 페이지 · 
 
     const refused = await caught(restore(SYSTEM_VIEWER, "reserve_entry", small.id));
     expect(refused).toBeInstanceOf(UserFacingError);
-    expect((refused as Error).message).toBe("복원하면 2026-09-18 잔액이 -100,000이 됩니다 · 리저브 대장에서 출금 줄을 먼저 고쳐 주세요");
+    expect((refused as Error).message).toBe("복원하면 2026-09-18 잔액 -100,000 · 리저브 대장에서 출금 줄 먼저 고치기");
     expect((await storedRow(small.id))?.archivedAt).not.toBeNull();
 
     const noPnl = await createViewerWith({ permissions: [["admin.archive", "write"]], reserveVisible: true });

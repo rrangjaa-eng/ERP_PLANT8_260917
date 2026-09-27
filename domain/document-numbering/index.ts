@@ -1,6 +1,13 @@
 import type { Viewer } from "@/domain/viewer";
-import { allocateNumber as repoAllocateNumber, type DbOrTx } from "@/repositories/document-counters";
+import {
+  allocateNumber as repoAllocateNumber,
+  findDocumentCounter,
+  type DbOrTx,
+} from "@/repositories/document-counters";
 import { getSettingValue, type SettingDef } from "@/domain/settings/registry";
+import { can } from "@/domain/permissions/can";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { kstYear } from "@/lib/kst-date";
 import {
   DOCUMENT_NUMBER_PROJECT_PREFIX,
   DOCUMENT_NUMBER_PROJECT_YEAR_DIGITS,
@@ -100,4 +107,34 @@ export async function allocateDocumentNumber(
     ? await repoAllocateNumber(viewer, input.counterKey, period, tx)
     : await repoAllocateNumber(viewer, input.counterKey, period);
   return { number: documentNumberFormat({ year: input.year, seq }, input.format), seq };
+}
+
+export class SeqStartOverlapError extends UserFacingError {}
+
+// 04-51 결정 ②(a) — 사용자 답 2026-09-24(설정 검증). 순번 시작값 저장이 올해
+// 이미 매긴 최대 표시 순번 이하이면 거부한다 — 표시 순번 = 카운터 + 시작값 − 1이라
+// 낮춘 시작값은 언젠가 이미 매긴 번호와 겹쳐 UNIQUE(format_key, number)로 등록이
+// 실패한다. 최대는 카운터 행과 현재 시작값으로 계산한다 — 시작값이 이 검증을
+// 거쳐 바뀌어 왔다면 실제 최대와 같거나 크다(거부 쪽으로만 틀린다).
+// 시작값 키가 아니면 아무것도 하지 않는다. 권한 없는 호출은 판정을
+// setSettingValue에 맡긴다 — 최대 번호를 알려 주지 않는다.
+export async function assertSeqStartAvailable(
+  viewer: Viewer,
+  def: SettingDef<unknown>,
+  value: unknown,
+  now: Date,
+): Promise<void> {
+  const entry = Object.entries(DOCUMENT_NUMBER_FORMAT_DEFS).find(([, defs]) => defs.seqStart.key === def.key);
+  if (!entry) return;
+  if (!(await can(viewer, "admin.settings", "write"))) return;
+  const [counterKey, defs] = entry;
+  const parsed = defs.seqStart.schema.safeParse(value);
+  if (!parsed.success) return;
+
+  const counter = await findDocumentCounter(viewer, counterKey, String(kstYear(now)));
+  if (!counter || counter.value < 1) return;
+  const maxIssued = counter.value + (await getSettingValue(defs.seqStart)) - 1;
+  if (parsed.data <= maxIssued) {
+    throw new SeqStartOverlapError(`순번 시작값이 이미 매긴 번호(${maxIssued})와 겹침 · ${maxIssued + 1} 이상 입력`);
+  }
 }

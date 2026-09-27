@@ -134,6 +134,8 @@ new_summaries() {
 
 boundary_text() {
   local what="$1"
+  # 계정마다 자기 plant8 환경 id를 PLANT8_ENV_ID로 준다(2026-09-27, 두 계정 운영). 없으면 이 계정의 plant8.
+  local env_id="${PLANT8_ENV_ID:-env_01BjvDha7fqn18V6L1UywqDh}"
   cat <<EOF
 [세션 경계 — ${what}]
 이 세션에서 다음 웨이브(또는 다음 계획·실행 단위)를 시작하지 마라. 순서대로 한다:
@@ -141,7 +143,7 @@ boundary_text() {
 2. 남은 변경을 커밋하고 푸시한다(훅 우회 금지). 푸시 전에 origin/main을 머지 커밋으로 반영한다.
 3. /gsd-pause-work로 인계 문서를 만들고 커밋·푸시한다.
 4. 다음 세션을 만든다 — mcp__Claude_Code_Remote__create_session에 아래를 모두 명시한다(하나라도 빠지면 환경이 제대로 뜨지 않는다 — 2026-09-23 시험으로 확인):
-   environment_id = env_01BjvDha7fqn18V6L1UywqDh (plant8 환경 고정 — 「기본값」 환경은 시크릿·허용 목록이 없다, 2026-09-27), source_url = 이 리포 URL, source_revision = 현재 브랜치, outcome_branch = 현재 브랜치(같은 PR을 계속 쓴다), model = 이 세션과 같은 모델.
+   environment_id = ${env_id} (환경 변수 PLANT8_ENV_ID — 계정마다 자기 plant8 환경 id; 「기본값」 환경은 시크릿·허용 목록이 없다, 2026-09-27), source_url = 이 리포 URL, source_revision = 현재 브랜치, outcome_branch = 현재 브랜치(같은 PR을 계속 쓴다), model = 이 세션과 같은 모델.
    prompt에는: "/gsd-progress로 재개하라. 다음은 {다음 웨이브 또는 단계}. 브랜치 {브랜치}, PR #{번호}를 계속 쓴다. 웨이브 하나가 끝나면 같은 방식으로 다음 세션을 만들어 넘긴다."
    create_session 도구가 없는 환경이면 사용자에게 붙여 넣을 첫 메시지를 코드 블록 하나로 준다.
 5. 새 세션 id를 사용자에게 알리고 이 세션의 작업을 끝낸다.

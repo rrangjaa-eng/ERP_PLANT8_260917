@@ -26,7 +26,7 @@ function currentRevisionsSubquery() {
     .as("current_revisions");
 }
 
-// 현재 차수의 견적 줄 합계(견적가·실행가·차익) — revision_id당 한 행. 보관된 줄은 빼고
+// 현재 차수의 견적 줄 합계(견적가·실행가) — revision_id당 한 행. 보관된 줄은 빼고
 // 취소 줄은 견적가 0으로 더한다(04-12 · A-04 — 취소 줄의 견적가 열이 이미 0이다).
 // 04-17(엔지 리뷰 C §4 P2) — 현재 차수의 줄만 모아 더한다(모든 차수의 줄을 GROUP BY하지 않는다).
 function lineSumsSubquery() {
@@ -39,7 +39,6 @@ function lineSumsSubquery() {
       revisionId: quoteLines.revisionId,
       quoteSum: sql<number>`coalesce(sum(${quoteLines.quoteAmountKrw}), 0)::bigint`.as("quote_sum"),
       executionSum: sql<number>`coalesce(sum(${quoteLines.executionAmountKrw}), 0)::bigint`.as("execution_sum"),
-      profitSum: sql<number>`coalesce(sum(${quoteLines.profitKrw}), 0)::bigint`.as("profit_sum"),
     })
     .from(quoteLines)
     .where(and(isNull(quoteLines.archivedAt), inArray(quoteLines.revisionId, currentRevisionIds)))
@@ -125,13 +124,12 @@ export type ProjectListRow = {
   pmUserName: string;
   quoteAmountKrw: number;
   executionAmountKrw: number;
-  profitKrw: number;
-  // 04-17 — 행 단위 식(계약 7). DTO 명세에 올리는 것은 04-18이다(명세 밖이면 응답에 없다).
+  // 04-17 — 행 단위 식(계약 7). 04-18이 DTO 명세에 올렸다(발행 줄 수는 명세 밖).
   /** 발행 줄 합계 — 발행 줄이 0개면 null. */
   revenueKrw: number | null;
   issuedCount: number;
   profitBasis: ProfitBasis;
-  /** 수익금 = 기준 금액 − 실행가(D-87). profitKrw(줄 차익 합)와 다르다. */
+  /** 수익금 = 기준 금액 − 실행가(D-87) — DTO의 profitKrw. */
   netProfitKrw: number;
   /** 수익금 ÷ 기준 금액 — 기준 ≤ 0이면 null. */
   profitRate: number | null;
@@ -204,6 +202,7 @@ function attributionBucket(range: { start?: string; end?: string } | undefined):
 function resolveSortColumn(
   key: ProjectSortKey,
   lineSums: ReturnType<typeof lineSumsSubquery>,
+  money: ReturnType<typeof rowMoneyExpressions>,
 ) {
   switch (key) {
     case "name":
@@ -214,8 +213,9 @@ function resolveSortColumn(
       return lineSums.quoteSum;
     case "executionAmountKrw":
       return lineSums.executionSum;
+    // 04-18(04-17 리뷰 S1) — 수익금 열과 같은 식(기준 − 실행가)으로 정렬한다.
     case "profitKrw":
-      return lineSums.profitSum;
+      return money.profit;
     case "endDate":
     default:
       return projects.endDate;
@@ -238,7 +238,7 @@ export async function listProjectsPage(
   const issued = issuedSumsLateral();
   const money = rowMoneyExpressions(lineSums, issued);
   const conditions = projectFilterConditions(opts.filter);
-  const sortColumn = resolveSortColumn(opts.sort.key, lineSums);
+  const sortColumn = resolveSortColumn(opts.sort.key, lineSums, money);
   const orderDir = opts.sort.direction === "desc" ? desc : asc;
 
   const rows = await db
@@ -254,7 +254,6 @@ export async function listProjectsPage(
       pmUserName: users.name,
       quoteAmountKrw: sql<number>`${money.quote}::bigint`.mapWith(Number),
       executionAmountKrw: sql<number>`${money.execution}::bigint`.mapWith(Number),
-      profitKrw: sql<number>`coalesce(${lineSums.profitSum}, 0)::bigint`.mapWith(Number),
       revenueKrw: sql<number | null>`${money.revenue}::bigint`.mapWith(Number),
       issuedCount: sql<number>`${money.issuedCount}::int`.mapWith(Number),
       profitBasis: sql<ProfitBasis>`${money.profitBasis}`,

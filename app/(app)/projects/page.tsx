@@ -116,7 +116,6 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const { rows, totals, total, page, pageCount, periodErrors, year, hasFilter, emptyKind } = list;
   // 도메인이 정규화한 값(C-08) — 필터 줄 · 페이지 줄은 이 값만 쓴다.
   const { teamId, search, from, to } = list.params;
-  const canSeeAmount = totals.quoteAmountKrw !== undefined;
   // 지금 필터·정렬을 그대로 두고 쪽 번호만 바꾼다. 필터 폼은 page를 싣지 않아 필터를 바꾸면 1쪽이다.
   const pageParams = new URLSearchParams();
   if (status) pageParams.set("status", status);
@@ -192,7 +191,6 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           <ProjectsTable
             rows={rows}
             viewYear={year === "all" ? null : year}
-            canSeeAmount={canSeeAmount}
             statusLabels={Object.fromEntries(statusOptions.map((option) => [option.value, option.label]))}
           />
           <Pagination

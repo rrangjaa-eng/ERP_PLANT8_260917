@@ -251,7 +251,7 @@ describe("loadProjectList — 목록 입구 (04-17, 실제 Postgres)", () => {
       for (const key of ["quoteAmountKrw", "executionAmountKrw", "profitKrw"] as const) expect(typeof row[key], key).toBe("number");
     }
     for (const row of await repoRows({ search: marker })) {
-      for (const key of ["quoteAmountKrw", "executionAmountKrw", "profitKrw", "netProfitKrw", "issuedCount", "profitRate"] as const) {
+      for (const key of ["quoteAmountKrw", "executionAmountKrw", "netProfitKrw", "issuedCount", "profitRate"] as const) {
         expect(typeof row[key], key).toBe("number");
       }
     }

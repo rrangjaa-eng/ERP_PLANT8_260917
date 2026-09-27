@@ -7,7 +7,7 @@ import { StatusTag } from "@/ui/status-tag/StatusTag";
 import type { ProjectListItemWithGroup } from "@/domain/projects";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import { PROJECT_STATUS_TAG_KIND } from "./status-display";
-import { formatKrw } from "@/lib/format-number";
+import { formatKrw, formatPercent } from "@/lib/format-number";
 import { formatListPeriod } from "@/domain/projects/list-view";
 import styles from "./projects.module.css";
 
@@ -17,41 +17,59 @@ import styles from "./projects.module.css";
 export function ProjectsTable({
   rows,
   viewYear,
-  canSeeAmount,
   statusLabels,
 }: {
   rows: ProjectListItemWithGroup[];
   /** 04-48(D-89) — 보기 연도(전체 연도면 null). 기간 칸이 그 해면 월-일만 적는다. */
   viewYear: number | null;
-  canSeeAmount: boolean;
   /** 코드표 라벨(서버) — 값 → 라벨. */
   statusLabels: Record<string, string>;
 }) {
-  const moneyColumns: TableColumn<ProjectListItemWithGroup>[] = canSeeAmount
-    ? [
-        {
-          key: "quoteAmountKrw",
-          header: "견적",
-          priority: "p1",
-          align: "right",
-          cell: (row) => formatKrw(row.quoteAmountKrw ?? 0),
-        },
-        {
-          key: "executionAmountKrw",
-          header: "실행가",
-          priority: "p3",
-          align: "right",
-          cell: (row) => formatKrw(row.executionAmountKrw ?? 0),
-        },
-        {
-          key: "profitKrw",
-          header: "차익",
-          priority: "p3",
-          align: "right",
-          cell: (row) => formatKrw(row.profitKrw ?? 0),
-        },
-      ]
-    : [];
+  // 04-18(D-87) — 금액 열은 서버가 그 키를 보냈을 때만 만든다(키 부재는 계급 단위라 행마다 갈리지 않는다).
+  const amountColumns: TableColumn<ProjectListItemWithGroup>[] = [
+    {
+      key: "revenueKrw",
+      header: "매출",
+      priority: "p3",
+      align: "right",
+      cell: (row) => (row.revenueKrw === null || row.revenueKrw === undefined ? "—" : formatKrw(row.revenueKrw)),
+    },
+    {
+      key: "quoteAmountKrw",
+      header: "견적",
+      priority: "p1",
+      align: "right",
+      cell: (row) => formatKrw(row.quoteAmountKrw ?? 0),
+    },
+    {
+      key: "executionAmountKrw",
+      header: "실행가",
+      priority: "p3",
+      align: "right",
+      cell: (row) => formatKrw(row.executionAmountKrw ?? 0),
+    },
+    {
+      key: "profitBasis",
+      header: "기준",
+      priority: "p3",
+      cell: (row) => <span className={styles.basisCell}>{row.profitBasis === "issued" ? "발행" : "견적"}</span>,
+    },
+    {
+      key: "profitKrw",
+      header: "수익금",
+      priority: "p3",
+      align: "right",
+      cell: (row) => formatKrw(row.profitKrw ?? 0),
+    },
+    {
+      key: "profitRate",
+      header: "수익률",
+      priority: "p3",
+      align: "right",
+      cell: (row) => formatPercent(row.profitRate === null || row.profitRate === undefined ? null : row.profitRate * 100),
+    },
+  ];
+  const moneyColumns = amountColumns.filter((column) => rows.some((row) => column.key in row));
 
   const columns: TableColumn<ProjectListItemWithGroup>[] = [
     {

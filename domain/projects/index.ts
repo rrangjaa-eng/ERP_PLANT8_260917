@@ -24,6 +24,7 @@ import {
   resolveListRange,
   totalsTitle,
   type ListEmptyKind,
+  type ProfitBasis,
   type ListParam,
   type ListPeriodErrors,
 } from "@/domain/projects/list-view";
@@ -153,9 +154,9 @@ async function validatedCustomFields(
 }
 
 // 04-05 — 목록 항목 Dto. 프로젝트 구조 정보(project.value, staffDefault
-// true)와 견적·실행가·차익(quote.amount, 계급별 서버 부재) 두 정보 항목이
-// 섞인다 — 후자 셋은 project()가 필드 단위로 판정해 DTO 키 자체를 뺀다
-// (빈 값이 아니라 필드 부재, S1 must_have).
+// true)와 금액 정보 항목이 섞인다 — 금액은 projectMany가 필드 단위로 판정해 DTO 키 자체를 뺀다
+// (빈 값이 아니라 필드 부재, S1 must_have). 04-18(D-87 · ENG-D3 ②) — 매출은 revenue.issued_amount, 기준·수익금·수익률은
+// 견적·발행 두 항목을 **모두** 볼 때만(all-of 명세 — 발행 기준 수익금 + 실행가로 발행 합계가 역산된다).
 export type ProjectListItemDto = {
   id: string;
   number: string;
@@ -166,13 +167,21 @@ export type ProjectListItemDto = {
   clientName: string;
   teamName: string;
   pmUserName: string;
+  /** 발행 줄 공급가 합계 — 발행 줄이 0개면 null. */
+  revenueKrw?: number | null;
   quoteAmountKrw?: number;
   executionAmountKrw?: number;
+  profitBasis?: ProfitBasis;
+  /** 수익금 = 기준 금액 − 실행가(D-87). */
   profitKrw?: number;
+  /** 수익금 ÷ 기준 금액 — 기준 ≤ 0이면 null. */
+  profitRate?: number | null;
 };
 
 // 04-17(D-90) — attributionLabel: 보기 범위 밖에서 끝나는 행의 기간 칸 2행(`2027 귀속`), 범위 안이면 null.
 export type ProjectListItemWithGroup = ProjectListItemDto & { groupLabel: string; attributionLabel: string | null };
+
+const PROFIT_INFO_ITEMS = ["quote.amount", "revenue.issued_amount"] as const;
 
 const PROJECT_LIST_DTO_SPEC: DtoSpec<ProjectListRow, ProjectListItemDto> = {
   fields: [
@@ -185,9 +194,12 @@ const PROJECT_LIST_DTO_SPEC: DtoSpec<ProjectListRow, ProjectListItemDto> = {
     { key: "clientName", from: "clientName", infoItem: "project.value" },
     { key: "teamName", from: "teamName", infoItem: "project.value" },
     { key: "pmUserName", from: "pmUserName", infoItem: "project.value" },
+    { key: "revenueKrw", from: "revenueKrw", infoItem: "revenue.issued_amount" },
     { key: "quoteAmountKrw", from: "quoteAmountKrw", infoItem: "quote.amount" },
     { key: "executionAmountKrw", from: "executionAmountKrw", infoItem: "quote.amount" },
-    { key: "profitKrw", from: "profitKrw", infoItem: "quote.amount" },
+    { key: "profitBasis", from: "profitBasis", infoItem: PROFIT_INFO_ITEMS },
+    { key: "profitKrw", from: "netProfitKrw", infoItem: PROFIT_INFO_ITEMS },
+    { key: "profitRate", from: "profitRate", infoItem: PROFIT_INFO_ITEMS },
   ],
 };
 
@@ -228,8 +240,6 @@ export type ProjectListTotals = {
 };
 
 type ProjectListTotalsSource = Required<ProjectListTotals>;
-
-const PROFIT_INFO_ITEMS = ["quote.amount", "revenue.issued_amount"] as const;
 
 const PROJECT_LIST_TOTALS_DTO_SPEC: DtoSpec<ProjectListTotalsSource, ProjectListTotals> = {
   fields: [

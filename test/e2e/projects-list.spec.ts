@@ -108,13 +108,16 @@ async function makeManager(): Promise<{ email: string; password: string }> {
   return { email, password: tempPassword };
 }
 
+// 목록 표 — loading.tsx의 뼈대 표(aria-hidden)가 아니라 스트리밍이 끝나 main에 들어온 표.
+const LIST_TABLE = "main table:not([aria-hidden='true'])";
+
 // 머리글 글자로 열 번호를 찾아 그 행(프로젝트명 링크가 있는 주 행)의 칸을 돌려준다.
 async function cellOf(page: Page, projectName: string, header: string) {
-  const headers = (await page.locator("main table thead th").allTextContents()).map((text) => text.trim());
+  const headers = (await page.locator(`${LIST_TABLE} thead th`).allTextContents()).map((text) => text.trim());
   const index = headers.indexOf(header);
-  expect(index, `머리글 ${header}`).toBeGreaterThanOrEqual(0);
+  expect(index, `머리글 ${header} (있는 머리글: ${headers.join(",")})`).toBeGreaterThanOrEqual(0);
   return page
-    .locator("main table tbody tr", { has: page.getByRole("link", { name: projectName, exact: true }) })
+    .locator(`${LIST_TABLE} tbody tr`, { has: page.getByRole("link", { name: projectName, exact: true }) })
     .locator("td")
     .nth(index);
 }
@@ -316,7 +319,7 @@ test.describe("프로젝트 목록 — 행 매출 · 기준 · 수익금 · 수�
     await page.setViewportSize({ width: 1280, height: 900 });
     await login(page, await makeManager());
     await page.goto(`/projects?q=${encodeURIComponent(marker)}&year=all`);
-    await expect(page.locator("table tbody a")).toHaveCount(4);
+    await expect(page.locator(`${LIST_TABLE} tbody a`)).toHaveCount(4);
 
     const expectRow = async (name: string, cells: Record<string, string>) => {
       for (const [header, text] of Object.entries(cells)) {
@@ -329,7 +332,7 @@ test.describe("프로젝트 목록 — 행 매출 · 기준 · 수익금 · 수�
     await expectRow(`${marker}-영발행`, { 매출: "0" });
 
     // 「차익」 열은 없고 「기준」이 「수익금」 바로 앞이다.
-    const headers = (await page.locator("main table thead th").allTextContents()).map((text) => text.trim());
+    const headers = (await page.locator(`${LIST_TABLE} thead th`).allTextContents()).map((text) => text.trim());
     expect(headers).not.toContain("차익");
     expect(headers.indexOf("수익금") - headers.indexOf("기준")).toBe(1);
   });

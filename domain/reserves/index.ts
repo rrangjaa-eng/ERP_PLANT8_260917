@@ -143,6 +143,8 @@ const DIRECTION_INVALID = "구분 없음 · 구분 고르기";
 const VERSION_CONFLICT = "다른 사람이 먼저 이 줄을 바꿈 · 새로 고침";
 const DUPLICATE_ROW = "같은 줄 중복 · 새로 고침";
 const EVIDENCE_TYPE_TABLE = "evidence_type";
+// 리뷰 S3 — id는 uuid 열이다. 모양이 아니면 쿼리 전에 칸 이유로 거부한다(PG 22P02가 되지 않게, domain/projects 선례).
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function balanceReason(balanceKrw: number): string {
   return `이 줄 뒤 잔액 ${formatKrw(balanceKrw)} · 금액을 줄이거나 입금 줄 먼저`;
@@ -171,6 +173,9 @@ function prepareRows(rows: ReserveWriteRow[], evidenceValues: ReadonlySet<string
   const prepared: PreparedRow[] = [];
   rows.forEach((input, index) => {
     const before = errors.length;
+    if (!UUID_SHAPE.test(input.id)) errors.push(cellError(index, input.id, "row", "줄", ENTRY_NOT_FOUND));
+    if (!UUID_SHAPE.test(input.clientId)) errors.push(cellError(index, input.id, "clientId", "클라이언트", CLIENT_NOT_FOUND));
+    if (input.projectId && !UUID_SHAPE.test(input.projectId)) errors.push(cellError(index, input.id, "projectId", "프로젝트", PROJECT_CLIENT_MISMATCH));
     if (input.direction !== "deposit" && input.direction !== "withdrawal") {
       errors.push(cellError(index, input.id, "direction", "구분", DIRECTION_INVALID));
     }
@@ -259,6 +264,9 @@ export async function saveReserves(viewer: Viewer, input: SaveReservesInput, dep
   }
   const formatErrors: CellFormatError[] = [];
   const prepared = prepareRows(input.rows, await evidenceTypeValues(viewer, input.rows), formatErrors);
+  for (const id of archivedIds) {
+    if (!UUID_SHAPE.test(id)) formatErrors.push(cellError(-1, id, "row", "줄", ENTRY_NOT_FOUND));
+  }
   if (formatErrors.length > 0) {
     denyWrite(viewer, INPUT_RULE, { clientIds: requestedClientIds, entryIds }, new SaveRejectedError([], formatErrors));
   }
@@ -462,6 +470,7 @@ export async function restoreReserve(
   if (!(await reserveRights(viewer, "write", deps))) {
     denyWrite(viewer, FORBIDDEN_RULE, { entryIds: [id] }, new ForbiddenError(FORBIDDEN_MESSAGE));
   }
+  if (!UUID_SHAPE.test(id)) denyWrite(viewer, "reserve.restore", { entryIds: [id] }, new UserFacingError(ENTRY_NOT_FOUND));
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await withTransaction(async (tx) => {
     const [before] = await repoFindEntriesByIds(viewer, [id], tx);

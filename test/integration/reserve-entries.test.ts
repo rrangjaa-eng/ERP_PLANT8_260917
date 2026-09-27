@@ -248,6 +248,34 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
     expect(await storedRow(row.id)).toBeUndefined();
   });
 
+  it("uuid 모양이 아닌 줄 id·clientId·projectId·archivedIds는 PG 22P02가 아니라 칸 이유로 한 번에 거부된다(리뷰 S3)", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const badId = { ...newRow(client.id, "2026-03-01", "deposit", 1_000), id: "not-a-uuid" };
+    const badClient = newRow("client-x", "2026-03-01", "deposit", 1_000);
+    const badProject = { ...newRow(client.id, "2026-03-01", "deposit", 1_000), projectId: "project-x" };
+
+    const error = await expectOneDenied("reserve.input", () =>
+      rejection(saveReserves(finance, { rows: [badId, badClient, badProject], archivedIds: ["archived-x"] })),
+    );
+
+    expect(error.formatErrors).toEqual([
+      expect.objectContaining({ rowId: "not-a-uuid", field: "row", reason: "줄을 찾을 수 없음 · 새로 고침" }),
+      expect.objectContaining({ rowId: badClient.id, field: "clientId", reason: "클라이언트 없음 · 클라이언트 다시 고르기" }),
+      expect.objectContaining({ rowId: badProject.id, field: "projectId", reason: "다른 클라이언트의 프로젝트 · 프로젝트 다시 고르기" }),
+      expect.objectContaining({ rowId: "archived-x", field: "row", reason: "줄을 찾을 수 없음 · 새로 고침" }),
+    ]);
+    expect(await countRows(client.id)).toBe(0);
+  });
+
+  it("uuid 모양이 아닌 id 복원은 PG 22P02가 아니라 `줄을 찾을 수 없음 · 새로 고침`, write.denied 한 번(리뷰 S3)", async () => {
+    const finance = await createFinanceViewer();
+
+    const error = await expectOneDenied("reserve.restore", () => userFacing(restoreReserve(finance, "not-a-uuid")));
+
+    expect(error.message).toBe("줄을 찾을 수 없음 · 새로 고침");
+  });
+
   it("코드표에 없는 증빙 종류는 `코드표에 없는 증빙 종류 · 증빙 종류 고르기`로 거부되고, 코드표 값은 저장된다", async () => {
     const finance = await createFinanceViewer();
     const client = await createClient();

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { db } from "@/db/client";
 import { projects, teams } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
@@ -95,6 +95,12 @@ describe("domain/document-numbering 서식 설정 (ADMN-09, 실제 Postgres)", (
     await expect(loadDocumentNumberFormat("unregistered-document-type")).rejects.toThrow(
       UnknownDocumentNumberCounterError,
     );
+  });
+
+  // 묶음 ④ /review R11 — 순번 시작값은 카운터 행 잠금 뒤 같은 tx로 다시 읽는다. 입력 서식에 seqStart 자리가 없어야
+  // 호출자가 넘긴 값이 쓰인다고 오해하지 않는다(타입 검사 — pnpm typecheck가 판정한다).
+  it("allocateDocumentNumber의 입력 서식에는 seqStart 자리가 없다", () => {
+    expectTypeOf<Parameters<typeof allocateDocumentNumber>[1]["format"]>().not.toHaveProperty("seqStart");
   });
 
   it("구분자를 바꾼 뒤 등록분에 그 구분자가 반영된다", async () => {

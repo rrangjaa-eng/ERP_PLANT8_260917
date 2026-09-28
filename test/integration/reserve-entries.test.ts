@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { and, eq } from "drizzle-orm";
 import { db, pool } from "@/db/client";
-import { actionLog, codeItems, projects, reserveEntries, teams } from "@/db/schema";
+import { actionLog, codeItems, projects, reserveEntries, teams, vendors } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
@@ -247,6 +247,26 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
 
     expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: row.id, field: "clientId", reason: "클라이언트 없음 · 클라이언트 다시 고르기" })]);
     expect(await storedRow(row.id)).toBeUndefined();
+  });
+
+  // 묶음 ④ /review R10 — 새 줄의 클라이언트는 고를 수 있는 거래처(보관·숨김 아님)만. 기존 줄은 거래처가 나중에 보관·숨김돼도 고칠 수 있다.
+  it.each([
+    ["보관된", { archivedAt: new Date() }],
+    ["숨긴", { hidden: true }],
+  ])("%s 거래처를 새 줄 클라이언트로 보내면 `클라이언트 없음 · 클라이언트 다시 고르기`, 기존 줄 수정은 통과", async (_label, change) => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const deposit = newRow(client.id, "2026-03-01", "deposit", 1_000_000);
+    await saveReserves(finance, { rows: [deposit] });
+    await db.update(vendors).set(change).where(eq(vendors.id, client.id));
+    const row = newRow(client.id, "2026-03-02", "deposit", 1_000);
+
+    const error = await rejection(saveReserves(finance, { rows: [row] }));
+
+    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: row.id, field: "clientId", reason: "클라이언트 없음 · 클라이언트 다시 고르기" })]);
+    expect(await storedRow(row.id)).toBeUndefined();
+    await saveReserves(finance, { rows: [{ ...deposit, isNew: undefined, version: 1, note: "보관 뒤 수정" }] });
+    expect((await storedRow(deposit.id))?.note).toBe("보관 뒤 수정");
   });
 
   it("uuid 모양이 아닌 줄 id·clientId·projectId·archivedIds는 PG 22P02가 아니라 칸 이유로 한 번에 거부된다(리뷰 S3)", async () => {

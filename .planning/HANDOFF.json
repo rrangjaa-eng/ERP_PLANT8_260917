@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-28T02:14:00.000Z",
+  "timestamp": "2026-09-28T02:44:38.638Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -315,14 +315,16 @@
       "name": "04-31 Task 2 /design-review 1회(페이즈 화면 전체 SYSTEM §11) — A−·PASS, 보고서 docs/reviews/phase-04/04-31-design-review.md; DR-P4-01 코드표 현재 표 링크 ebed3c2(RED)→8353610, 독립 재측정 PASS 6/6; DR-P4-02 폰 정렬 머리글 터치(ui/table) ui/ 동결로 이월",
       "status": "done",
       "commit": "40fea8b"
-    }
-  ],
-  "remaining_tasks": [
+    },
     {
       "id": 64,
       "name": "04-31 continuation(다음 단위, Sonnet 실행자·gsd-executor 1회): (A)(B) 캡처 원문(PR #85 댓글 5861946973·5861989538)을 바이트 그대로 test/fixtures/excel-clipboard.ts 상수로 추가 → parse-tsv 단언(끝 \\r\\n에 빈 줄 없음·칸 안 LF 한 칸 두 줄·따옴표만 있는 칸 그대로·금액 칸 앞뒤 공백 ` 10,000 `·(B) 10번째 줄 비고 빈 칸) + 최종 표 재생 E2E((A) 6열 앱 형식 아님 → 견적가 자리 오류 칸 ENG-D5 확인, (B) 45줄 저장 뒤 다시 열어도 값 같음) + fixture 머리 주석 「정의 1건」 정정. (C)(D)는 스테이징 후 사람 확인",
-      "status": "not_started"
-    },
+      "status": "done",
+      "commit": "49774ef·d6a04f8·907ec5e",
+      "progress": "세션 AS: 캡처 (A)(B) 상수(바이트 === 확인)·parse-tsv 단언(바로 통과=회귀 고정)·재생 E2E (e)(f)·주석 정정. 단위 32/32, CI=true excel-paste-final 7/7, lint·typecheck 0"
+    }
+  ],
+  "remaining_tasks": [
     {
       "id": 65,
       "name": "04-31 Task 3: 마이그레이션 순서·가드·rollback-floor 검사 + CI=true 전체 E2E 새 DB 연속 3회",
@@ -858,7 +860,7 @@
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션 → git status -sb(HEAD 붙었는지) → .planning/phases/04-project-quote-ledger/.continue-here.md Read(세션 AR 블록·정정) → PR #85 최신 [지시] 확인(푸시 전에도 다시) → CI 확인·빨강이면 먼저 수정 → origin/main 머지 커밋 반영 → 이 세션 단위 = 04-31 continuation 한 개(HANDOFF remaining id 64: 캡처 fixture·parse-tsv 단언·재생 E2E·주석 정정) → 커밋·푸시 → [완료 보고] → pause → 다음 단위: 04-31 Task 3(reserves.spec.ts:282 간섭 먼저 조사 + CI=true 전체 E2E 새 DB 3회) → 04-31 SUMMARY(편차: (C)(D) 사용자 예외) → 04-51 결정 ② (b) 구현(id 69, Opus) → 묶음 ④ Post-build(/review → /qa → /cso).",
+  "next_action": "새 세션 → git status -sb → .continue-here.md 세션 AS 블록 Read → PR #85 최신 [지시](푸시·보고 직전 다시) → CI 확인 → origin/main 머지 커밋 반영 → 이 세션 단위 = 04-31 Task 3(id 65): reserves.spec.ts:282 스펙 간 간섭 먼저 조사(systematic-debugging) + 마이그레이션 검사 + CI=true 전체 E2E 새 DB 연속 3회 → 커밋·푸시 → [완료 보고] → pause → 다음: 04-31 SUMMARY(편차: (C)(D) 사용자 예외·parse-tsv 복제) → 04-51 결정 ② (b) 구현(Opus 실행자+Opus 검토) → 묶음 ④ Post-build(/review → /qa → /cso).",
   "context_notes": "세션 AQ(2026-09-28): 04-31 Task 1 실행(Sonnet 실행자), Task 2 체크포인트에서 멈춤. 독립 DOM 감사(Opus) FAIL 2 → 수정자(Sonnet) TDD 4커밋. 편차: parse-tsv.test.ts가 ui 경계(D-26)라 캡처 상수를 복제(role-menu.test.ts 선례) — fixture 머리 주석 「정의 1건」 문구가 사실과 달라 continuation이 정정할 것. reserves.spec.ts:282가 quote-table·projects-list 스펙과 함께 돌 때 잔액 100,000 기대·460,000 실측으로 1회 실패(단독 통과, 수정자 변경 전에도) — Task 3 전체 E2E 3회 전 조사 대상.\n\n세션 AN: 04-18 완료(실행·DOM 감사 30/0·Opus 검토 반영·전체 게이트 CI=true 통과, origin 8a5e2cf). 사용자 지시로 이 계정은 인계까지만, 다음은 다른 계정. Codex 재확인 목록에 04-18 추가.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",

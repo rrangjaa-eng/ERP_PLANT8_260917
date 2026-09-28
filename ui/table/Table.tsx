@@ -10,7 +10,7 @@ import { composeFooterNotice, withIssueCount, type FooterNoticeItem } from "./fo
 import { crossPageTarget, nextEditableCell, pageEntryFocus, pageOfRow, pinNewRows, splitPageRangeText, splitPages, type FocusCell } from "./paging";
 import { toTsv } from "./parse-tsv";
 import { isGridActionAllowed } from "./save-lock";
-import { readPasteClipboard } from "./use-clipboard-paste";
+import { APP_CLIPBOARD_FORMAT, readPasteClipboard } from "./use-clipboard-paste";
 import { useMinWidth } from "./use-editable-width";
 import type { CellEditability, CellIssue, TableColumn } from "./types";
 import { conflictFocusTransition, useGridKeyboard, type ConflictFocusState, type GridPosition } from "./use-grid-keyboard";
@@ -520,7 +520,7 @@ export function Table<Row>({
         copyColumns = columns.slice(Math.min(anchor.col, focus.col), Math.max(anchor.col, focus.col) + 1);
       }
       event.clipboardData?.setData("text/plain", toTsv(copyRows.map((row) => copyColumns.map((column) => column.copyText?.(row) ?? ""))));
-      if (copyMeta) event.clipboardData?.setData("application/x-plant8-quote-lines+json", copyMeta(copyRows));
+      if (copyMeta) event.clipboardData?.setData(APP_CLIPBOARD_FORMAT, copyMeta(copyRows));
       event.preventDefault();
     };
   });

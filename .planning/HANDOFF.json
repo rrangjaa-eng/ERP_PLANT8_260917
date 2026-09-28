@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-28T02:08:23.656Z",
+  "timestamp": "2026-09-28T02:14:00.000Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -320,8 +320,8 @@
   "remaining_tasks": [
     {
       "id": 64,
-      "name": "04-31 Task 2: 사람 확인 (A) 6열 두 줄 엑셀 캡처 원문 (B) 45줄 캡처 원문 (C) 프로젝트 간 복사·표→엑셀 (D) 한글 입력기(조합 중 Ctrl+Enter 연타·Esc·Tab) → 캡처 재생 단위·E2E 추가 (/design-review 1회는 세션 AR에서 끝남)",
-      "status": "blocked_on_human"
+      "name": "04-31 continuation(다음 단위, Sonnet 실행자·gsd-executor 1회): (A)(B) 캡처 원문(PR #85 댓글 5861946973·5861989538)을 바이트 그대로 test/fixtures/excel-clipboard.ts 상수로 추가 → parse-tsv 단언(끝 \\r\\n에 빈 줄 없음·칸 안 LF 한 칸 두 줄·따옴표만 있는 칸 그대로·금액 칸 앞뒤 공백 ` 10,000 `·(B) 10번째 줄 비고 빈 칸) + 최종 표 재생 E2E((A) 6열 앱 형식 아님 → 견적가 자리 오류 칸 ENG-D5 확인, (B) 45줄 저장 뒤 다시 열어도 값 같음) + fixture 머리 주석 「정의 1건」 정정. (C)(D)는 스테이징 후 사람 확인",
+      "status": "not_started"
     },
     {
       "id": 65,
@@ -433,6 +433,11 @@
       "id": 68,
       "name": "DR-P4-02 이월: 375 목록 표 머리글 정렬 링크 20×19·51×19(<44) — ui/table/Table.module.css:23-29 폰 구간 .sortLink min-height/min-width var(--touch-min). 스킨 리프레시(ui/ 동결) 끝난 뒤 별도 처리",
       "status": "deferred"
+    },
+    {
+      "id": 69,
+      "name": "04-51 결정 ② (b) 구현 — 별도 단위, risk(채번 카운터 잠금) → Opus 실행자 + Opus 독립 검토 1명. domain/document-numbering/index.ts SeqStartOverlapError 판정 + 단위·통합 테스트. TDD 경계: 발급 0건에 낮춤 통과 · 발급 ≥1건에 낮춤 거부 · 같은 값 통과 · 올림 통과. 옛 거부 문구의 「max+1 이상 입력」 제거",
+      "status": "not_started"
     }
   ],
   "blockers": [
@@ -490,9 +495,9 @@
   "async_jobs": [],
   "human_actions_pending": [
     {
-      "action": "04-31 최종 확인(PC, Windows): (A) 엑셀 6열 두 줄(소분류·항목·거래처·수량·단가·실행가, 한 칸 줄바꿈·한 칸 큰따옴표·금액 쉼표) 복사 → 브라우저 콘솔 `copy(JSON.stringify(await navigator.clipboard.readText()))` 결과 문자열 (B) 45줄×여러 열(빈 칸 하나 포함) 같은 방법 (C) 프로젝트 간 Ctrl+A→C→V 왕복과 표→엑셀 붙여넣기 열 어긋남 없음 (D) MS 한국어 입력기 조합 중 Ctrl+Enter 연타·길게 누름 1건만 생성, 조합 중 Esc가 입력을 버리지 않음, 조합 중 Tab",
-      "context": "04-31-PLAN.md Task 2 <how-to-verify> — 답은 PR #85 댓글로. 캡처엔 업무 데이터 말고 예시 값만",
-      "blocking": true
+      "action": "묶음 ④ 머지·스테이징 배포 직후 (C) 프로젝트 간 Ctrl+A→C→V 왕복과 표→엑셀 붙여넣기 열 어긋남 없음 (D) MS 한국어 입력기 조합 중 Ctrl+Enter 연타·길게 누름 1건만 생성·조합 중 Esc가 입력을 버리지 않음·조합 중 Tab 확인 — 어긋나면 바로 수정 PR",
+      "context": "사용자 예외 승인 2026-09-28(PR #85 댓글 5862009470). (A)(B)는 받음",
+      "blocking": false
     },
     {
       "action": "/cso 전체 검사(Docker 있는 PC)",
@@ -840,14 +845,23 @@
       "decision": "04-51 B1: 결정 ② 임계값은 사용자 답 그대로 두고 같은 값 재저장만 no-op 통과",
       "rationale": "임계값 변경은 사용자 결정 변경 — open_questions로 올림",
       "phase": "4"
+    },
+    {
+      "decision": "04-51 결정 ② 임계값 (b): 올해 카운터 발급 ≥1건 AND 새 시작값 < 현재 시작값일 때만 거부. 같은 값·올림 통과, 옛 「발급 최대 이하 거부」·「max+1 이상 입력」 안내 제거, 올려서 번호가 비는 점 유지, 다음 번호 미리보기는 범위 밖",
+      "rationale": "사용자 2026-09-28(PR #85 댓글 5861849715) — 표시 순번 = 카운터 + 시작값 − 1이라 이때만 겹침",
+      "phase": "4"
+    },
+    {
+      "decision": "04-31 Task 2 사람 확인: (A)(B) 캡처 원문 = PR #85 댓글 5861946973·5861989538(바이트 그대로 fixture 상수). (C)(D)는 묶음 ④ 머지·스테이징 배포 직후 사람 확인 — 플랜 「사람 확인 후속 금지」 사용자 예외",
+      "rationale": "사용자 2026-09-28(댓글 5862009470). Task 2 체크포인트 해소, Task 3은 캡처 재생 반영 뒤",
+      "phase": "4"
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션 → git status -sb(HEAD 붙었는지) → .planning/phases/04-project-quote-ledger/.continue-here.md Read(세션 AR 블록) → PR #85 최신 [지시]·사용자 04-31 사람 확인 답((A)(B) 캡처 원문, (C)(D) 같다/어긋남) 확인 → CI(967a519) 확인·빨강이면 먼저 수정 → origin/main 머지 커밋 반영 → 답이 있으면 04-31 continuation 실행자(캡처 fixture·parse-tsv 단언·재생 E2E, (C)(D) 어긋남 수정, fixture 머리 주석 「정의 1건」 정정) → 다음 세션 Task 3(reserves.spec.ts:282 스펙 간 간섭 먼저 조사 + CI=true 전체 E2E 새 DB 3회) → SUMMARY → 묶음 ④ Post-build(/review → /qa → /cso). 답이 없으면 멈추고 인계.",
+  "next_action": "새 세션 → git status -sb(HEAD 붙었는지) → .planning/phases/04-project-quote-ledger/.continue-here.md Read(세션 AR 블록·정정) → PR #85 최신 [지시] 확인(푸시 전에도 다시) → CI 확인·빨강이면 먼저 수정 → origin/main 머지 커밋 반영 → 이 세션 단위 = 04-31 continuation 한 개(HANDOFF remaining id 64: 캡처 fixture·parse-tsv 단언·재생 E2E·주석 정정) → 커밋·푸시 → [완료 보고] → pause → 다음 단위: 04-31 Task 3(reserves.spec.ts:282 간섭 먼저 조사 + CI=true 전체 E2E 새 DB 3회) → 04-31 SUMMARY(편차: (C)(D) 사용자 예외) → 04-51 결정 ② (b) 구현(id 69, Opus) → 묶음 ④ Post-build(/review → /qa → /cso).",
   "context_notes": "세션 AQ(2026-09-28): 04-31 Task 1 실행(Sonnet 실행자), Task 2 체크포인트에서 멈춤. 독립 DOM 감사(Opus) FAIL 2 → 수정자(Sonnet) TDD 4커밋. 편차: parse-tsv.test.ts가 ui 경계(D-26)라 캡처 상수를 복제(role-menu.test.ts 선례) — fixture 머리 주석 「정의 1건」 문구가 사실과 달라 continuation이 정정할 것. reserves.spec.ts:282가 quote-table·projects-list 스펙과 함께 돌 때 잔액 100,000 기대·460,000 실측으로 1회 실패(단독 통과, 수정자 변경 전에도) — Task 3 전체 E2E 3회 전 조사 대상.\n\n세션 AN: 04-18 완료(실행·DOM 감사 30/0·Opus 검토 반영·전체 게이트 CI=true 통과, origin 8a5e2cf). 사용자 지시로 이 계정은 인계까지만, 다음은 다른 계정. Codex 재확인 목록에 04-18 추가.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
-    "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정",
-    "04-51 결정 ② 임계값(사용자 결정 필요): 지금 규칙 「발급 최대 이하 거부」는 오프셋 모델(표시 순번 = 카운터 + 시작값 − 1)에서 안전한 값(시작 100·3건 발급 뒤 101·102)도 거부하고, 올리면 번호를 건너뜀. 실제로 충돌하는 경우는 올해 1건 이상 발급 + 새 시작값 < 현재 시작값뿐 — 규칙을 바꿀지. 현재는 같은 값 재저장만 통과(B1 수정)."
+    "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"
   ]
 }

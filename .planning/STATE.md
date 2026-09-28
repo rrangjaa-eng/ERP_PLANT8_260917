@@ -5,10 +5,10 @@ current_phase_name: 프로젝트·견적 원장
 current_plan: 42
 status: executing
 stopped_at: Completed 04-42-PLAN.md
-last_updated: "2026-09-27T22:35:08.794Z"
+last_updated: "2026-09-28T02:13:23.852Z"
 last_activity: 2026-09-27
 last_activity_desc: Phase 4 execution started
-state_head: 9f50105b80b98a85e1ac01b12efd7d7e6354cb12
+state_head: 9dbc4cf62da4632206767a44838c52169448fd82
 progress:
   total_phases: 16
   completed_phases: 1
@@ -284,6 +284,8 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-51: 결정 ② = (a) 설정 검증(사용자 답 2026-09-24) — 순번 시작값 저장이 올해 이미 매긴 최대 표시 순번(카운터 + 현재 시작값 − 1) 이하이면 「순번 시작값이 이미 매긴 번호({최대})와 겹침 · {최대 + 1} 이상 입력」으로 거부(domain/document-numbering assertSeqStartAvailable, 설정 저장 액션이 저장 전 호출). 제안 문구는 명사형 통일 규칙으로 변환
 - [Phase 4]: 04-42: /pnl/reserves는 layout·page가 pnl 보기 + reserve.amount를 판정(loading 스트리밍 뒤에도 404) · 대장 참조는 domain listReserveReferences
 - [Phase 4]: 04-42 리뷰 후속: 대장 선택지는 쓰기 권한자에게만(클라이언트 vendor.value · 프로젝트 projects 보기 + project.value, 등록 명세로 투영), 읽는 사람의 프로젝트·증빙 이름은 대장 DTO(projectName · evidenceLabel) · ui/table 선택 prop groupAside로 머리글 오른쪽 굵은 잔액 · 붙여넣기(applyPaste) · 날짜 date 입력 · 저장 흐름 DR-5(오류 칸 남으면 첫 오류 쪽으로) · 폰 열 순서는 선언 순서 편차(ui/table에 폰 순서 prop 없음) · 편집 보관 localStorage는 견적 원장 패턴 유지(/cso 항목)
+- [Phase 4]: 04-51 결정 ② 임계값 (b): 순번 시작값 변경은 올해 카운터 발급 1건 이상 그리고 새 시작값 < 현재 시작값일 때만 거부 — 같은 값·올리는 값 통과, 옛 「발급 최대 이하 거부」와 「max+1 이상 입력」 안내 제거, 올려서 번호가 비는 점은 유지(사용자 2026-09-28, PR #85 댓글 5861849715) — 표시 순번 = 카운터 + 시작값 − 1이라 이 경우에만 번호가 겹침
+- [Phase 4]: 04-31 Task 2 사람 확인: (A)(B) 엑셀 캡처 원문은 PR #85 댓글 5861946973·5861989538이 정본(끝 \r\n, 금액 칸 앞뒤 공백 형식 포함) / (C) 프로젝트 간 복사·표→엑셀 (D) MS 한국어 입력기는 묶음 ④ 머지·스테이징 배포 직후 사람이 확인 — 플랜 「사람 확인 후속 금지」의 사용자 예외 승인(2026-09-28, 댓글 5862009470) — Task 2 체크포인트는 이 답으로 풀림; Task 3은 캡처 재생 반영 뒤
 
 ### Pending Todos
 

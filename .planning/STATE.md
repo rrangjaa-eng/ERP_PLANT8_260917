@@ -5,12 +5,12 @@ current_phase_name: 프로젝트·견적 원장
 current_plan: 34
 status: executing
 stopped_at: Completed 04-41-PLAN.md
-last_updated: "2026-09-27T14:14:38.727Z"
+last_updated: "2026-09-28T02:15:32.042Z"
 last_activity: 2026-09-27
 last_activity_desc: "Completed quick task 260927-ipy: 설정 pnl.start_gate.weeks_after_cutover 삭제"
-state_head: 97971088b5e4ec71371214a66e026c62e3658b99
+state_head: 6d95cc7174dd93d9ff427355189e8b970dff5651
 progress:
-  total_phases: 16
+  total_phases: 17
   completed_phases: 1
   total_plans: 140
   completed_plans: 71
@@ -316,6 +316,7 @@ Recent decisions affecting current work:
 - Phase 04.5 edited: edited fields: goal, depends_on, requirements, success_criteria (/review 반영: 거래처 대상만 켜고 프로젝트·견적 줄 대상은 Phase 10, 보관 선택지·보이지 않는 칸 값 보존, 노출표 행 기본값 방식, Phase 4 겹침 파일 추가)
 - Phase 10 edited: edited fields: success_criteria (/review 반영: 프로젝트·견적 줄 대상 켜기와 칸별 판정·값 보존 적용을 Phase 10 기준 4에 명시)
 - Phase 9 edited: edited fields: depends_on, success_criteria(6·7), 결정 메모 — 손익을 테스트 데이터로 검증, Phase 6 뒤 착수(2026-09-27 사용자 결정)
+- Phase 04.6 inserted after Phase 4: 스킨 A 적용 — 스킨 A 정돈 + 옆 패널, 역할 토큰·lint·공용/화면 틀 컴포넌트·컴포넌트 모음·화면 사진 비교·원칙 점검 막는 모드. Phase 4 머지 뒤 착수
 
 ## Deferred Items
 

@@ -48,3 +48,16 @@
   - `review 2026-09-28T06:06Z session=08561e2c-13e6-5d2d-a96f-e47c2d2a364d`
   - `qa 2026-09-28T07:35Z session=08561e2c-13e6-5d2d-a96f-e47c2d2a364d`
 - 남은 순서: /qa(진행 중, 결과 docs/reviews/phase-04/bundle4-qa.md) → /cso(별도 worktree, 지정 항목: 로그아웃 뒤 localStorage 잔존 = R2로 수정됨 재확인, 리저브 clientName 노출 = R3 + vendor.value 여부 조사) → 게이트 줄 3개 추가 → 푸시·CI → PR #85 「[완료 보고]」 → /gsd-pause-work → 다음 세션
+
+## 인계 (2026-09-28 08:2x UTC — 이 계정 주간 한도 소진, 다른 계정이 이어받기)
+
+- 멈춘 곳: **/qa 도중.** 기준 보고서 `docs/reviews/phase-04/bundle4-qa.md`(381f1df), 수정 1건 ISSUE-003 49568f7(쉼표 앞 Delete가 다음 숫자를 지움). 다음 수정 진행 중이던 미완성 변경(`ui/table/Table.tsx`, `test/e2e/reserves.spec.ts`)은 검증 전이라 커밋하지 않고 `docs/reviews/phase-04/qa-wip.patch`로만 보관 — 참고용, 그대로 적용하지 말고 bundle4-qa.md의 이슈 목록에서 다시 TDD로
+- 이어서 할 일(새 계정, 그 계정의 plant8 환경에서 브랜치 `claude/gsd-progress-e1nzgu`로 세션 열고 `/gsd-progress`):
+  1. PR #85 최신 「[지시]」 확인(마지막 본 댓글 5864259502)
+  2. `/qa` 재개: bundle4-qa.md의 남은 이슈 수정(TDD, 커밋마다 직전 verification-before-completion, 커밋마다 푸시) → 최종 재점검 → 보고서 완성
+  3. `/cso`(별도 worktree): 로그아웃 뒤 localStorage 잔존(R2로 수정됨 — 재확인), 리저브 clientName 노출(R3 수정됨 + vendor.value 요구 여부 조사)
+  4. 게이트 줄 추가(`.claude/gates/phase-04.log`, 시간순): 위 review·qa 줄 + /cso 줄 — 사용자가 「판단해서 넣어」로 위임함
+  5. 푸시 → CI 초록 → PR #85 「[완료 보고]」 → `/gsd-pause-work`(HANDOFF open_questions의 04-51 문구 항목을 decisions로 이동 — 지시 5864259502)
+  6. 그다음 단위: `/ship`(PR ready·전체 CI) → 사용자 직접 머지(위험 경로) → 스테이징 (C)(D) 사람 확인 → `/gsd-verify-work 4` → id 71(DECISIONS.md 결정 ② (b) 갱신, design-gate) → Phase 04.6
+- 열린 결정: 순번 시작값 "0" 허용 여부(T3 참고) · 리저브 clientName에 vendor.value 요구 여부
+- 이 세션은 `.planning/.continue-here.md`를 갱신하지 못했다(한도). 새 세션은 이 절을 기준으로 삼고, `.planning/phases/04-project-quote-ledger/.continue-here.md`의 BLOCKING CONSTRAINTS·Anti-Patterns는 그대로 적용

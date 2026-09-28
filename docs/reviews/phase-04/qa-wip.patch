@@ -1,0 +1,56 @@
+diff --git a/test/e2e/reserves.spec.ts b/test/e2e/reserves.spec.ts
+index 480d6b2..a3fa5ef 100644
+--- a/test/e2e/reserves.spec.ts
++++ b/test/e2e/reserves.spec.ts
+@@ -859,3 +859,20 @@ test.describe("리저브 대장 — 묶음 ④ 리뷰", () => {
+     await expect(dateCell).toContainText("줄을 찾을 수 없음 · 새로 고침");
+   });
+ });
++
++// Regression: ISSUE-001·002 — 선택 칸 확정 · 그룹을 옮기는 붙여넣기 뒤 포커스가 <body>로 빠져 Ctrl+S가 격자에 닿지 않았다
++// Found by /qa on 2026-09-28 · Report: docs/reviews/phase-04/bundle4-qa.md
++test.describe("리저브 대장 — 묶음 ④ /qa 포커스", () => {
++  test("(QA ISSUE-001) 새 줄 클라이언트 칸에서 ↓로 고르면 포커스가 그 칸에 남는다", async ({ page }) => {
++    const roles = await createRoles();
++    await createClient("E2E리저브QA선택");
++    await openLedger(page, roles.finance);
++
++    await addReserveRow(page);
++    const select = page.getByRole("combobox", { name: "클라이언트", exact: true });
++    await expect(select).toBeFocused();
++    await page.keyboard.press("ArrowDown");
++    await expect(select).toHaveCount(0);
++    await expect(cell(page, 0, COL.client)).toBeFocused();
++  });
++});
+diff --git a/ui/table/Table.tsx b/ui/table/Table.tsx
+index ce27155..0e74cd8 100644
+--- a/ui/table/Table.tsx
++++ b/ui/table/Table.tsx
+@@ -612,6 +612,13 @@ export function Table<Row>({
+     }
+   }, [saveLocked]);
+ 
++  // QA ISSUE-001 — 편집기가 포커스를 쥔 채 확정된 뒤(편집기가 내려간 렌더 다음) 그 셀로 포커스를 돌려준다.
++  const [commitRefocus, setCommitRefocus] = useState(0);
++  useEffect(() => {
++    if (commitRefocus === 0) return;
++    tableRef.current?.querySelector<HTMLElement>("td[data-grid-focus]")?.focus();
++  }, [commitRefocus]);
++
+   useEffect(() => {
+     if (!refocusCellRef.current || activeCell) return;
+     refocusCellRef.current = false;
+@@ -716,8 +723,12 @@ export function Table<Row>({
+     if (isActive && editability === "edit" && column.editCell) {
+       return column.editCell(row, {
+         onCommit: (value) => {
++          // QA ISSUE-001 — 편집기가 포커스를 쥔 채 확정하면(선택 칸의 change — ↓·마우스로 고름) 편집기가 내려가며 포커스가
++          // <body>로 빠진다. 그 셀로 돌려준다. blur 확정(다른 곳을 누름)은 이미 포커스가 떠난 뒤라 건드리지 않는다.
++          const editorHoldsFocus = document.activeElement instanceof HTMLElement && document.activeElement.matches("input, select, textarea");
+           onCellCommit?.(rowId, column.key, value);
+           setActiveCell(null);
++          if (editorHoldsFocus) setCommitRefocus((count) => count + 1);
+         },
+         onCancel: () => setActiveCell(null),
+       });

@@ -315,10 +315,10 @@ function browserStorage(): EnumerableDirtyStorage | null {
 type RevisionRef = { id: string; seq: number };
 type Draft = { revisionId: string; seq: number; count: number };
 
-function readDrafts(projectId: string, currentRevisionId: string, revisions: RevisionRef[]): Draft[] {
+function readDrafts(draftScopeId: string, currentRevisionId: string, revisions: RevisionRef[]): Draft[] {
   const storage = browserStorage();
   if (!storage) return [];
-  return findOtherRevisionDrafts(storage, projectId, currentRevisionId, PROJECT_EDIT_OWNERS)
+  return findOtherRevisionDrafts(storage, draftScopeId, currentRevisionId, PROJECT_EDIT_OWNERS)
     .flatMap((draft) => {
       const revision = revisions.find((candidate) => candidate.id === draft.revisionId);
       return revision ? [{ ...draft, seq: revision.seq }] : [];
@@ -332,19 +332,22 @@ const subscribeNothing = () => () => {};
 // 합치지 않는다(줄 id가 다르다) — 「복사」와 「버림」만 있다.
 export function PreviousRevisionDraftRow({
   projectId,
+  draftScopeId,
   currentRevisionId,
   revisions,
   references,
   onSharedEditsCarried,
 }: {
   projectId: string;
+  /** 리뷰 R2 — 보관본 키의 scopeId(보는 사람 id + 프로젝트 id, viewerDirtyScope). */
+  draftScopeId: string;
   currentRevisionId: string;
   revisions: RevisionRef[];
   references: QuoteLineReadReferences;
   /** 검토 B1 — 다른 차수 보관본의 기간·총 매출 예상가 칸을 현재 차수 보관본으로 옮겼을 때(현재 차수 복원 줄이 다시 센다). */
   onSharedEditsCarried: () => void;
 }) {
-  const [drafts, setDrafts] = useState(() => readDrafts(projectId, currentRevisionId, revisions));
+  const [drafts, setDrafts] = useState(() => readDrafts(draftScopeId, currentRevisionId, revisions));
   // 서버·수화 첫 렌더는 저장소를 모른다 — 수화 뒤에만 그린다(use-dirty-storage와 같은 이유, React #418).
   const hydrated = useSyncExternalStore(subscribeNothing, () => true, () => false);
   const [rowsBySeq, setRowsBySeq] = useState<Record<number, ReadRow[]>>({});
@@ -358,8 +361,8 @@ export function PreviousRevisionDraftRow({
   // 검토 B1 — 차수와 무관한 칸은 이 줄이 아니라 현재 차수 복원 줄(「복원」)로 돌려준다.
   useEffect(() => {
     const storage = browserStorage();
-    if (storage && carrySharedEdits(storage, projectId, currentRevisionId, PROJECT_EDIT_OWNERS) > 0) onSharedEditsCarried();
-  }, [projectId, currentRevisionId, onSharedEditsCarried]);
+    if (storage && carrySharedEdits(storage, draftScopeId, currentRevisionId, PROJECT_EDIT_OWNERS) > 0) onSharedEditsCarried();
+  }, [draftScopeId, currentRevisionId, onSharedEditsCarried]);
 
   // 클릭 처리기 안에서 동기로 복사하려고 그 차수 줄을 미리 받아 둔다.
   useEffect(() => {
@@ -391,7 +394,7 @@ export function PreviousRevisionDraftRow({
   function copy(draft: Draft) {
     if (fetching) return;
     const storage = browserStorage();
-    const edits = storage ? loadDirtyEdits(storage, projectId, draft.revisionId) : null;
+    const edits = storage ? loadDirtyEdits(storage, draftScopeId, draft.revisionId) : null;
     const rows = rowsBySeq[draft.seq];
     let ok = false;
     const copyRows = edits && rows ? draftCopyRows(rows, edits) : [];
@@ -418,7 +421,7 @@ export function PreviousRevisionDraftRow({
 
   function discard(draft: Draft) {
     const storage = browserStorage();
-    if (storage) clearDirtyEdits(storage, projectId, draft.revisionId);
+    if (storage) clearDirtyEdits(storage, draftScopeId, draft.revisionId);
     setDrafts((prev) => prev.filter((candidate) => candidate.revisionId !== draft.revisionId));
     setCopyResult(null);
   }

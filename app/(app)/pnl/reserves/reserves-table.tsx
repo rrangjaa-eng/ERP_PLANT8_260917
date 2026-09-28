@@ -13,7 +13,7 @@ import { Pagination } from "@/ui/pagination/Pagination";
 import { pageRangeText } from "@/ui/pagination/page-window";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Toast } from "@/ui/toast/Toast";
-import { useDirtyStorage } from "@/ui/table/use-dirty-storage";
+import { useDirtyStorage, viewerDirtyScope } from "@/ui/table/use-dirty-storage";
 import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
 import { useEditableWidth } from "@/ui/table/use-editable-width";
 import { LIST_PAGE_SIZE } from "@/lib/paging";
@@ -460,13 +460,15 @@ function restoredSnapshot(stored: Record<string, unknown>): Snapshot {
 }
 
 export type ReservesTableProps = {
+  /** 리뷰 R2 — 미저장 편집 보관본 키를 보는 사람별로 나눈다. */
+  viewerId: string;
   list: ReserveListResult;
   references: ReserveReferences;
   usdDefaultFxRate: number;
   todayKst: string;
 };
 
-export function ReservesTable({ list: initialList, references, usdDefaultFxRate, todayKst }: ReservesTableProps) {
+export function ReservesTable({ viewerId, list: initialList, references, usdDefaultFxRate, todayKst }: ReservesTableProps) {
   // 서버 대장(지금 쪽). 쪽 이동·새로 고침은 props로, 저장 성공은 액션 응답으로 바뀐다 — 표는 다시 마운트되지 않는다.
   const [list, setList] = useState(initialList);
   const [seenList, setSeenList] = useState(initialList);
@@ -555,7 +557,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
     ...newRows.filter((row) => row.page === list.page),
   ];
   const dirtyCount = Object.keys(edits).length + newRows.length + archivedIds.length;
-  const dirtyStorage = useDirtyStorage("reserves", "ledger", dirtyCount);
+  const dirtyStorage = useDirtyStorage(viewerDirtyScope(viewerId, "reserves"), "ledger", dirtyCount);
   const { persist } = dirtyStorage;
   useEffect(() => {
     if (!persistPendingRef.current) return;

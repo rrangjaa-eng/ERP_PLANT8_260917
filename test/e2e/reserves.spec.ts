@@ -398,6 +398,17 @@ test.describe("리저브 대장 — 쪽 · 오류 · 삭제 · 입력", () => {
     await page.keyboard.press("Delete");
     await dialog.getByRole("button", { name: /^리저브 줄 삭제/ }).click();
     await expect(saveButton(page)).toContainText("일괄 저장 1");
+    // 묶음 ④ /review R2 · R9 — 보관본 키는 보는 사람 id를 앞세우고(quote-ledger:dirty:{사람}:reserves:ledger), 삭제 표시는 본 version이다.
+    const drafts = () =>
+      page.evaluate(() =>
+        Object.keys(window.localStorage)
+          .filter((key) => key.startsWith("quote-ledger:dirty:"))
+          .map((key) => [key, JSON.parse(window.localStorage.getItem(key) ?? "{}") as Record<string, unknown>] as const),
+      );
+    await expect.poll(async () => (await drafts()).length).toBe(1);
+    const [stored] = await drafts();
+    expect(stored?.[0]).toMatch(/^quote-ledger:dirty:[^:]+:reserves:ledger$/);
+    expect(stored?.[1][`${ids[1]!}:archive`]).toBe(1);
     // DOM 감사 #36 — 확인하면 트리거 줄이 빠지므로 포커스는 같은 열의 다음 줄(마지막 줄이었으면 앞 줄)로 간다(h1이 아니다).
     await expect(dataRows(page)).toHaveCount(1);
     await expect(cell(page, 0, COL.date)).toBeFocused();

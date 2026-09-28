@@ -14,7 +14,7 @@ import { Select } from "@/ui/select/Select";
 import { RowSheet } from "@/ui/table/RowSheet";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Toast } from "@/ui/toast/Toast";
-import { useDirtyStorage } from "@/ui/table/use-dirty-storage";
+import { useDirtyStorage, viewerDirtyScope } from "@/ui/table/use-dirty-storage";
 import { useEditableWidth } from "@/ui/table/use-editable-width";
 import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
 import { savedNoticeText, type FooterNoticeItem } from "@/ui/table/footer-notice";
@@ -871,6 +871,7 @@ function HeaderCopyActions({ children }: { children?: ReactNode }) {
 // Delete · 붙여넣기 · 셀 오류·충돌 고정 렌더) — 04-01/04-02의 always-on
 // 인풋 트레이서를 여기서 완성한다.
 export function QuoteLedger({
+  viewerId,
   projectId,
   status,
   period,
@@ -904,6 +905,8 @@ export function QuoteLedger({
   canWriteEntries,
   usdDefaultFxRate,
 }: {
+  /** 리뷰 R2 — 미저장 편집 보관본 키를 보는 사람별로 나눈다. */
+  viewerId: string;
   projectId: string;
   /** 화면이 본 상태 — 서버 값. */
   status: ProjectStatus;
@@ -1217,7 +1220,8 @@ export function QuoteLedger({
   const issuedDirtyCount = (issuedEntries ?? []).filter((entry) => entry.dirty).length;
   const paidDirtyCount = (paidEntries ?? []).filter((entry) => entry.dirty).length;
   const dirtyCount = quoteLinesDirtyCount + issuedDirtyCount + paidDirtyCount + periodDirtyCount + preEstimateDirty;
-  const dirtyStorage = useDirtyStorage(projectId, revisionId, dirtyCount);
+  const draftScopeId = viewerDirtyScope(viewerId, projectId);
+  const dirtyStorage = useDirtyStorage(draftScopeId, revisionId, dirtyCount);
 
   const { persist } = dirtyStorage;
   useEffect(() => {
@@ -2298,6 +2302,7 @@ export function QuoteLedger({
       <PreviousRevisionDraftRow
         key={revisionId}
         projectId={projectId}
+        draftScopeId={draftScopeId}
         currentRevisionId={revisionId}
         revisions={revisions}
         references={{ subcategories, vendors }}

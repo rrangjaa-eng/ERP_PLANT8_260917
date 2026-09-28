@@ -24,5 +24,5 @@ export default async function ReservesPage({ searchParams }: { searchParams: Pro
     recentFxRate("USD"),
   ]);
 
-  return <ReservesTable list={list} references={references} usdDefaultFxRate={usdDefaultFxRate} todayKst={kstToday(new Date())} />;
+  return <ReservesTable viewerId={viewer.id} list={list} references={references} usdDefaultFxRate={usdDefaultFxRate} todayKst={kstToday(new Date())} />;
 }

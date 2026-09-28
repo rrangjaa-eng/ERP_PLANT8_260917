@@ -102,6 +102,42 @@ describe("parseTsv", () => {
   it("인용 칸이 끝 줄바꿈 바로 앞에 있어도 그 칸 안의 줄바꿈은 그대로다", () => {
     expect(parseTsv('a\t"b\nc"\n')).toEqual([["a", "b\nc"]]);
   });
+
+  // 04-31 Task 2 인간 확인(2026-09-28, PR #85 댓글 5861946973·5861989538) — 실제
+  // Windows Excel 캡처 (A)(B). 정본은 test/fixtures/excel-clipboard.ts(같은 이유로
+  // 여기 복제 — tests.md boundaries 함정). 바이트가 어긋나면 이 상수가 아니라
+  // 파서가 틀린 것이다.
+  const REAL_EXCEL_WINDOWS_20260928_SIX_COL =
+    'A\tB\tC\tD\tE\tF\r\n무대·시공\t"무대 설치\n2일차"\t가나기획\t2\t1,200,000\t1,000,000\r\n인쇄\t"대형" 현수막\t다라인쇄\t5\t35,000\t30,000\r\n';
+
+  const REAL_EXCEL_WINDOWS_20260928_FORTY_FIVE =
+    Array.from({ length: 45 }, (_, index) => {
+      const lineNumber = index + 1;
+      const note = lineNumber === 10 ? "" : "비고";
+      return `항목${lineNumber}\t2\t 10,000 \t${note}`;
+    }).join("\r\n") + "\r\n";
+
+  it("실제 엑셀(Windows, 2026-09-28 캡처 A) 원문 — 끝 CRLF는 빈 줄을 만들지 않고 헤더+2행이다", () => {
+    expect(parseTsv(REAL_EXCEL_WINDOWS_20260928_SIX_COL)).toEqual([
+      ["A", "B", "C", "D", "E", "F"],
+      ["무대·시공", "무대 설치\n2일차", "가나기획", "2", "1,200,000", "1,000,000"],
+      ["인쇄", '"대형" 현수막', "다라인쇄", "5", "35,000", "30,000"],
+    ]);
+  });
+
+  it("실제 엑셀(Windows, 2026-09-28 캡처 B) 원문 — 끝 CRLF 포함 45줄이고 10번째 줄 4번째 칸은 빈 문자열이다", () => {
+    const rows = parseTsv(REAL_EXCEL_WINDOWS_20260928_FORTY_FIVE);
+    expect(rows).toHaveLength(45);
+    expect(rows[9]).toEqual(["항목10", "2", " 10,000 ", ""]);
+    expect(rows[9]).toHaveLength(4);
+    expect(rows[0]).toEqual(["항목1", "2", " 10,000 ", "비고"]);
+    expect(rows[44]).toEqual(["항목45", "2", " 10,000 ", "비고"]);
+  });
+
+  it('실제 엑셀(캡처 B) 단가 칸 " 10,000 "은 앞뒤 공백·쉼표를 지우면 10000이다', () => {
+    const rows = parseTsv(REAL_EXCEL_WINDOWS_20260928_FORTY_FIVE);
+    expect(normalizeNumericPaste(rows[0]![2]!)).toBe(10_000);
+  });
 });
 
 // 04-04 Task 1 ③ — 숫자 열 붙여넣기 정규화(§7-3 (다)). 쉼표·공백·통화

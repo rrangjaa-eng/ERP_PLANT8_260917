@@ -31,14 +31,15 @@ export const saveReservesAction = authedActionClient
   .schema(
     z.object({
       rows: z.array(rowSchema),
-      archivedIds: z.array(z.string().uuid(RESERVE_INPUT_REASONS.entryNotFound)).optional(),
+      // 리뷰 R9 — 보관(삭제)도 화면이 본 version을 싣는다(낡은 탭·복원 초안이 방금 고친 줄을 보관하지 않게).
+      archived: z.array(z.object({ id: z.string().uuid(RESERVE_INPUT_REASONS.entryNotFound), version: z.number().int() })).optional(),
       // 성공 뒤 돌려줄 대장의 쪽(화면이 보는 쪽).
       page: z.number().int().min(1).optional(),
     }),
   )
   .action(async ({ parsedInput, ctx }) => {
     try {
-      await saveReserves(ctx.viewer, { rows: parsedInput.rows, archivedIds: parsedInput.archivedIds });
+      await saveReserves(ctx.viewer, { rows: parsedInput.rows, archived: parsedInput.archived });
     } catch (error) {
       // 거부 봉투 — 칸 좌표로 돌려준다(트랜잭션은 이미 되돌렸다). 잔액 거부는 그 줄의 쪽 정보(Codex #7)를 함께 싣는다.
       if (!(error instanceof SaveRejectedError)) throw error;

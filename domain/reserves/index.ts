@@ -117,7 +117,10 @@ export type ReserveWriteRow = {
   note?: string | null;
 };
 
-export type SaveReservesInput = { rows: ReserveWriteRow[]; archivedIds?: string[] };
+/** 보관(삭제)할 줄 — 수정처럼 화면이 본 version을 싣는다(리뷰 R9, 낡은 탭·복원 초안의 lost update 방지). */
+export type ReserveArchiveRequest = { id: string; version: number };
+
+export type SaveReservesInput = { rows: ReserveWriteRow[]; archived?: ReserveArchiveRequest[] };
 
 export type ReserveWriteDeps = {
   can: typeof defaultCan;
@@ -260,7 +263,8 @@ type Plan = {
 // tx로 대상 줄·원장 재조회 → 참조·상태·재전송 판정 → 배치를 메모리에 적용한 원장의 날짜 마감 판정 → 쓰기·로그(같은
 // tx) → 커밋 뒤 최근 환율. 모든 거부는 denyWrite 한 지점에서 write.denied를 남긴다(금액 없음).
 export async function saveReserves(viewer: Viewer, input: SaveReservesInput, deps?: Partial<ReserveWriteDeps>): Promise<void> {
-  const archivedIds = input.archivedIds ?? [];
+  const archived = input.archived ?? [];
+  const archivedIds = archived.map((request) => request.id);
   const entryIds = [...input.rows.map((row) => row.id), ...archivedIds];
   const requestedClientIds = [...new Set(input.rows.map((row) => row.clientId))];
   if (!(await reserveRights(viewer, "write", deps))) {
@@ -285,7 +289,7 @@ export async function saveReserves(viewer: Viewer, input: SaveReservesInput, dep
     const selectable = new Set(lockedClients.filter((client) => client.selectable).map((client) => client.id));
     await deps?.afterLock?.();
     const storedById = new Map((await repoFindEntriesByIds(viewer, entryIds, tx)).map((row) => [row.id, row]));
-    const plan = await planBatch(viewer, prepared, archivedIds, storedById, selectable, tx);
+    const plan = await planBatch(viewer, prepared, archived, storedById, selectable, tx);
 
     const ledger = new Map((await repoListActiveEntriesByClients(viewer, [...locked], tx)).map((row) => [row.id, toBalanceRow(row)]));
     for (const { row, stored } of plan.updates) {
@@ -307,7 +311,7 @@ export async function saveReserves(viewer: Viewer, input: SaveReservesInput, dep
 async function planBatch(
   viewer: Viewer,
   prepared: PreparedRow[],
-  archivedIds: string[],
+  archived: ReserveArchiveRequest[],
   storedById: Map<string, ReserveEntryRow>,
   /** 잠근 클라이언트 중 새 줄이 고를 수 있는 것(보관·숨김 아님 — 리뷰 R10). */
   selectable: Set<string>,
@@ -322,7 +326,7 @@ async function planBatch(
   // 리뷰 B1 — 한 배치에서 같은 id가 두 번(수정 + 보관, 보관 두 번 등) 오면 원장 판정과 쓰기가 어긋난다. 그 id는 거부한다.
   const seen = new Set<string>();
   const duplicates = new Set<string>();
-  for (const id of [...prepared.map((row) => row.input.id), ...archivedIds]) (seen.has(id) ? duplicates : seen).add(id);
+  for (const id of [...prepared.map((row) => row.input.id), ...archived.map((request) => request.id)]) (seen.has(id) ? duplicates : seen).add(id);
   for (const id of duplicates) {
     const index = prepared.find((row) => row.input.id === id)?.index ?? -1;
     errors.push(cellError(index, id, "row", "줄", DUPLICATE_ROW));
@@ -369,14 +373,17 @@ async function planBatch(
     else if (stored) plan.updates.push({ row, stored });
   }
 
-  for (const id of archivedIds) {
+  for (const { id, version } of archived) {
     if (duplicates.has(id)) continue;
     const stored = storedById.get(id);
     if (!stored) denyWrite(viewer, INPUT_RULE, { entryIds: [id] }, new UserFacingError(ENTRY_NOT_FOUND));
+    // 보관은 version을 올리지 않는다 — 응답을 잃은 보관 재전송은 수정 재전송처럼 조용히 넘기지 않고 지금처럼 이 이유로 끝난다.
     if (stored.archivedAt !== null) {
       errors.push(cellError(-1, id, "row", "줄", ARCHIVED_ROW));
       continue;
     }
+    // 리뷰 R9 — 화면이 본 뒤 다른 저장이 이 줄을 고쳤으면 보관하지 않는다(수정의 버전 충돌과 같은 배치 전체 거부).
+    if (stored.version !== version) throw new UserFacingError(VERSION_CONFLICT);
     plan.archives.push(stored);
   }
 

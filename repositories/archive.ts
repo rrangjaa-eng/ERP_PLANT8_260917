@@ -197,7 +197,7 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
       return rows.map((row) => ({ entity: "quote_line", label: "견적 줄", id: row.id, name: row.name, archivedAt: row.archivedAt as Date, archivedBy: row.archivedBy }));
     },
   },
-  // 04-07(B-04 · OV-2) — 리저브 줄. 보관은 잔액 판정을 지나는 domain/reserves의 saveReserves(archivedIds)로만 한다 —
+  // 04-07(B-04 · OV-2) — 리저브 줄. 보관은 잔액 판정을 지나는 domain/reserves의 saveReserves(archived)로만 한다 —
   // 범용 archive()는 잔액을 보지 않으므로 늘 보호 행이다. 복원은 DOMAIN_RESTORERS가 restoreReserve에 맡긴다.
   {
     entity: "reserve_entry",

@@ -210,7 +210,7 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
     const editError = await rejection(saveReserves(finance, { rows: [edit] }));
     expect(editError.formatErrors).toEqual([expect.objectContaining({ rowId: deposit.id, reason: "보관된 줄 · 새로 고침" })]);
 
-    const archiveError = await rejection(saveReserves(finance, { rows: [], archivedIds: [deposit.id] }));
+    const archiveError = await rejection(saveReserves(finance, { rows: [], archived: [{ id: deposit.id, version: 1 }] }));
     expect(archiveError.formatErrors).toEqual([expect.objectContaining({ rowId: deposit.id, reason: "보관된 줄 · 새로 고침" })]);
     expect((await storedRow(deposit.id))?.amountAmountKrw).toBe(1_000_000);
   });
@@ -269,7 +269,7 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
     expect((await storedRow(deposit.id))?.note).toBe("보관 뒤 수정");
   });
 
-  it("uuid 모양이 아닌 줄 id·clientId·projectId·archivedIds는 PG 22P02가 아니라 칸 이유로 한 번에 거부된다(리뷰 S3)", async () => {
+  it("uuid 모양이 아닌 줄 id·clientId·projectId·archived는 PG 22P02가 아니라 칸 이유로 한 번에 거부된다(리뷰 S3)", async () => {
     const finance = await createFinanceViewer();
     const client = await createClient();
     const badId = { ...newRow(client.id, "2026-03-01", "deposit", 1_000), id: "not-a-uuid" };
@@ -277,7 +277,7 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
     const badProject = { ...newRow(client.id, "2026-03-01", "deposit", 1_000), projectId: "project-x" };
 
     const error = await expectOneDenied("reserve.input", () =>
-      rejection(saveReserves(finance, { rows: [badId, badClient, badProject], archivedIds: ["archived-x"] })),
+      rejection(saveReserves(finance, { rows: [badId, badClient, badProject], archived: [{ id: "archived-x", version: 1 }] })),
     );
 
     expect(error.formatErrors).toEqual([
@@ -501,8 +501,8 @@ describe("domain/reserves — 권한 · 노출 · 보관/복원 · 페이지 · 
     const client = await createClient();
     const deposit = newRow(client.id, "2026-03-01", "deposit", 1_000_000);
     const withdrawal = newRow(client.id, "2026-03-05", "withdrawal", 300_000);
-    await saveReserves(finance, { rows: [deposit, withdrawal], archivedIds: [] });
-    await saveReserves(finance, { rows: [], archivedIds: [withdrawal.id] });
+    await saveReserves(finance, { rows: [deposit, withdrawal], archived: [] });
+    await saveReserves(finance, { rows: [], archived: [{ id: withdrawal.id, version: 1 }] });
 
     const saveError = await expectOneDenied("reserve.forbidden", () => caught(saveReserves(viewer, { rows: [newRow(client.id, "2026-03-02", "withdrawal", 5_000_000)] })));
     expect(saveError).toBeInstanceOf(ForbiddenError);
@@ -515,14 +515,14 @@ describe("domain/reserves — 권한 · 노출 · 보관/복원 · 페이지 · 
     expect((await storedRow(withdrawal.id))?.archivedAt).not.toBeNull();
   });
 
-  it("admin.archive 없는 경영관리가 배치 archivedIds로 출금 줄을 보관 → 통과, 보관함에 금액 없는 이름으로 나타난다", async () => {
+  it("admin.archive 없는 경영관리가 배치 archived로 출금 줄을 보관 → 통과, 보관함에 금액 없는 이름으로 나타난다", async () => {
     const finance = await createFinanceViewer();
     const client = await createClient("현대자동차");
     const deposit = newRow(client.id, "2026-03-01", "deposit", 1_000_000);
     const withdrawal = newRow(client.id, "2026-03-05", "withdrawal", 300_000);
     await saveReserves(finance, { rows: [deposit, withdrawal] });
 
-    await saveReserves(finance, { rows: [], archivedIds: [withdrawal.id] });
+    await saveReserves(finance, { rows: [], archived: [{ id: withdrawal.id, version: 1 }] });
 
     expect((await storedRow(withdrawal.id))?.archivedAt).not.toBeNull();
     const items = (await listArchivedAcrossEntities(SYSTEM_VIEWER)).filter((item) => item.entity === "reserve_entry");
@@ -555,7 +555,7 @@ describe("domain/reserves — 권한 · 노출 · 보관/복원 · 페이지 · 
     const deposit = newRow(client.id, "2026-03-01", "deposit", 1_000_000);
     await saveReserves(finance, { rows: [deposit, newRow(client.id, "2026-03-05", "withdrawal", 300_000), newRow(client.id, "2026-04-01", "deposit", 5_000_000)] });
 
-    const error = await rejection(saveReserves(finance, { rows: [], archivedIds: [deposit.id] }));
+    const error = await rejection(saveReserves(finance, { rows: [], archived: [{ id: deposit.id, version: 1 }] }));
 
     expect(error).toBeInstanceOf(ReserveBalanceRejectedError);
     expect(error.formatErrors).toEqual([expect.objectContaining({ field: "amount", reason: "이 줄 뒤 잔액 -300,000 · 금액을 줄이거나 입금 줄 먼저" })]);
@@ -563,7 +563,7 @@ describe("domain/reserves — 권한 · 노출 · 보관/복원 · 페이지 · 
     expect((await storedRow(deposit.id))?.archivedAt).toBeNull();
   });
 
-  it("같은 줄을 수정(rows)과 보관(archivedIds)에 함께 보내면 잔액 판정을 비켜 가지 못하고 거부, DB 무변경(리뷰 B1)", async () => {
+  it("같은 줄을 수정(rows)과 보관(archived)에 함께 보내면 잔액 판정을 비켜 가지 못하고 거부, DB 무변경(리뷰 B1)", async () => {
     const finance = await createFinanceViewer();
     const client = await createClient();
     const deposit = newRow(client.id, "2026-03-01", "deposit", 1_000_000);
@@ -571,7 +571,7 @@ describe("domain/reserves — 권한 · 노출 · 보관/복원 · 페이지 · 
     await saveReserves(finance, { rows: [deposit, withdrawal] });
 
     const error = await expectOneDenied("reserve.input", () =>
-      rejection(saveReserves(finance, { rows: [{ ...deposit, isNew: undefined, version: 1 }], archivedIds: [deposit.id] })),
+      rejection(saveReserves(finance, { rows: [{ ...deposit, isNew: undefined, version: 1 }], archived: [{ id: deposit.id, version: 1 }] })),
     );
 
     expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: deposit.id, reason: "같은 줄 중복 · 새로 고침" })]);
@@ -580,14 +580,14 @@ describe("domain/reserves — 권한 · 노출 · 보관/복원 · 페이지 · 
     expect((await reserveLogs("document_update")).filter((row) => row.entityId === deposit.id)).toEqual([]);
   });
 
-  it("archivedIds 안의 같은 id 두 번도 같은 이유로 거부 — archive 로그가 두 줄 남지 않는다(리뷰 N4)", async () => {
+  it("archived 안의 같은 id 두 번도 같은 이유로 거부 — archive 로그가 두 줄 남지 않는다(리뷰 N4)", async () => {
     const finance = await createFinanceViewer();
     const client = await createClient();
     const deposit = newRow(client.id, "2026-03-01", "deposit", 1_000_000);
     const withdrawal = newRow(client.id, "2026-03-05", "withdrawal", 300_000);
     await saveReserves(finance, { rows: [deposit, withdrawal] });
 
-    const error = await rejection(saveReserves(finance, { rows: [], archivedIds: [withdrawal.id, withdrawal.id] }));
+    const error = await rejection(saveReserves(finance, { rows: [], archived: [{ id: withdrawal.id, version: 1 }, { id: withdrawal.id, version: 1 }] }));
 
     expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: withdrawal.id, reason: "같은 줄 중복 · 새로 고침" })]);
     expect((await storedRow(withdrawal.id))?.archivedAt).toBeNull();
@@ -612,7 +612,7 @@ describe("domain/reserves — 권한 · 노출 · 보관/복원 · 페이지 · 
     const small = newRow(client.id, "2026-09-10", "withdrawal", 100_000);
     const big = newRow(client.id, "2026-09-18", "withdrawal", 1_000_000);
     await saveReserves(finance, { rows: [deposit, small] });
-    await saveReserves(finance, { rows: [], archivedIds: [small.id] });
+    await saveReserves(finance, { rows: [], archived: [{ id: small.id, version: 1 }] });
     await saveReserves(finance, { rows: [big] });
     // 이제 small을 복원하면 9/18 마감이 1,000,000 − 100,000 − 1,000,000 = −100,000.
 

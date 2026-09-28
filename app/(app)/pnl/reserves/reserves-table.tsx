@@ -411,18 +411,20 @@ function readMoneyCommit(value: string, previous: Money): { money: Money; fxRate
 }
 
 // 04-04 useDirtyStorage 보관본 — 칸 하나가 키 하나다: `{id}:base`(처음 고친 서버 줄 · 세지 않음) · `{id}:{칸}` · `{id}:new`(새 줄) ·
-// `{id}:archive`(삭제). 다시 열면 같은 모양으로 편집 맵을 되살린다.
+// `{id}:archive`(삭제 — 값은 그 줄을 본 version, 리뷰 R9). 다시 열면 같은 모양으로 편집 맵을 되살린다.
 type NewRow = Row & { page: number };
-type Snapshot = { edits: Record<string, Edit>; newRows: NewRow[]; archivedIds: string[] };
+/** 보관(삭제)할 줄 — 확인한 순간 본 version을 함께 보낸다(리뷰 R9). */
+type ArchiveRequest = { id: string; version: number };
+type Snapshot = { edits: Record<string, Edit>; newRows: NewRow[]; archived: ArchiveRequest[] };
 
-function editsSnapshot({ edits, newRows, archivedIds }: Snapshot): Record<string, unknown> {
+function editsSnapshot({ edits, newRows, archived }: Snapshot): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [id, edit] of Object.entries(edits)) {
     out[`${id}:base`] = { ...edit.base, page: edit.page };
     for (const [field, value] of Object.entries(edit.patch)) out[`${id}:${field}`] = value;
   }
   for (const row of newRows) out[`${row.id}:new`] = row;
-  for (const id of archivedIds) out[`${id}:archive`] = true;
+  for (const { id, version } of archived) out[`${id}:archive`] = version;
   return out;
 }
 
@@ -431,7 +433,7 @@ function isStoredRow(value: unknown): value is Row {
 }
 
 function restoredSnapshot(stored: Record<string, unknown>): Snapshot {
-  const snapshot: Snapshot = { edits: {}, newRows: [], archivedIds: [] };
+  const snapshot: Snapshot = { edits: {}, newRows: [], archived: [] };
   for (const [key, value] of Object.entries(stored)) {
     const cut = key.lastIndexOf(":");
     const id = key.slice(0, cut);
@@ -440,7 +442,8 @@ function restoredSnapshot(stored: Record<string, unknown>): Snapshot {
       const page = (value as Row & { page?: unknown }).page;
       snapshot.newRows.push({ ...value, page: typeof page === "number" ? page : 1 });
     }
-    else if (field === "archive") snapshot.archivedIds.push(id);
+    // version 없는 옛 보관본(true)은 되살리지 않는다 — version 없이 보관을 보내지 않는다.
+    else if (field === "archive" && typeof value === "number") snapshot.archived.push({ id, version: value });
     else if (field === "base" && isStoredRow(value)) {
       const page = (value as Row & { page?: unknown }).page;
       snapshot.edits[id] = { base: value, patch: snapshot.edits[id]?.patch ?? {}, page: typeof page === "number" ? page : 1 };
@@ -482,7 +485,8 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
 
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [newRows, setNewRows] = useState<NewRow[]>([]);
-  const [archivedIds, setArchivedIds] = useState<string[]>([]);
+  const [archived, setArchived] = useState<ArchiveRequest[]>([]);
+  const archivedIds = archived.map((request) => request.id);
   const [balanceRejection, setBalanceRejection] = useState<ReserveBalanceRejection | null>(null);
   // 거부 봉투가 말한 칸(행 id) — 합계 행 요약이 표가 센 오류 칸과 같을 때만 요약이 그 수를 대신한다(04-47 DR-16).
   const [rejectedRowIds, setRejectedRowIds] = useState<string[]>([]);
@@ -525,7 +529,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
         setList(data.saved);
         setEdits({});
         setNewRows([]);
-        setArchivedIds([]);
+        setArchived([]);
         setCellErrors({});
         setRejectionSummary(null);
         setRejectedRowIds([]);
@@ -556,8 +560,8 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
   useEffect(() => {
     if (!persistPendingRef.current) return;
     persistPendingRef.current = false;
-    persist(editsSnapshot({ edits, newRows, archivedIds }));
-  }, [edits, newRows, archivedIds, persist]);
+    persist(editsSnapshot({ edits, newRows, archived }));
+  }, [edits, newRows, archived, persist]);
 
   const clientName = (id: string) => references.clients.find((client) => client.id === id)?.name ?? "";
   const projectName = (id: string | null) => (id ? (references.projects.find((project) => project.id === id)?.name ?? null) : null);
@@ -738,7 +742,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
     const sent = [...Object.values(edits).map((edit) => withPatch(edit.base, edit.patch)), ...newRows];
     sentIdsRef.current = sent.map((row) => row.id);
     setSentCount(sent.length + archivedIds.length);
-    execute({ rows: sent.map(toPayload), archivedIds, page: list.page });
+    execute({ rows: sent.map(toPayload), archived, page: list.page });
   }
 
   // 키보드 Ctrl+S는 표가 열린 편집기를 먼저 커밋(blur)한 뒤 부른다 — 그 커밋이 반영된 다음 렌더에서 저장한다(04-30 선례).
@@ -788,7 +792,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
     deleteConfirmedRef.current = true;
     persistPendingRef.current = true;
     setSavedAt(null);
-    setArchivedIds((prev) => (prev.includes(target.id) ? prev : [...prev, target.id]));
+    setArchived((prev) => (prev.some((request) => request.id === target.id) ? prev : [...prev, { id: target.id, version: target.version }]));
     setEdits((prev) => {
       const next = { ...prev };
       delete next[target.id];
@@ -807,7 +811,7 @@ export function ReservesTable({ list: initialList, references, usdDefaultFxRate,
     persistPendingRef.current = true;
     setEdits((prev) => ({ ...prev, ...snapshot.edits }));
     setNewRows((prev) => [...prev, ...snapshot.newRows.filter((row) => !prev.some((existing) => existing.id === row.id))]);
-    setArchivedIds((prev) => [...new Set([...prev, ...snapshot.archivedIds])]);
+    setArchived((prev) => [...prev, ...snapshot.archived.filter((request) => !prev.some((existing) => existing.id === request.id))]);
   }
 
   function restoreEdits() {

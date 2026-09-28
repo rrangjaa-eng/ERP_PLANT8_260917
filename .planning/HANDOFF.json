@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-28T05:16:01.880Z",
+  "timestamp": "2026-09-28T05:42:27.516Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -334,6 +334,12 @@
       "name": "04-31 SUMMARY·STATE·ROADMAP(플랜 완료, Phase 4 42/42) — 편차 기록, DR-P4-02 WINDOWS.md open",
       "status": "done",
       "commit": "914686f"
+    },
+    {
+      "id": 69,
+      "name": "04-51 결정 ② (b) 구현 — 별도 단위, risk(채번 카운터 잠금) → Opus 실행자 + Opus 독립 검토 1명. domain/document-numbering/index.ts SeqStartOverlapError 판정 + 단위·통합 테스트. TDD 경계: 발급 0건에 낮춤 통과 · 발급 ≥1건에 낮춤 거부 · 같은 값 통과 · 올림 통과. 옛 거부 문구의 「max+1 이상 입력」 제거 — 완료: quick 260928-7fp, 9e286b2(RED)·3fc1bf6(GREEN)·1db3896(검토 주석)·911d66b(문서)",
+      "status": "done",
+      "commit": "911d66b"
     }
   ],
   "remaining_tasks": [
@@ -444,8 +450,8 @@
       "status": "deferred"
     },
     {
-      "id": 69,
-      "name": "04-51 결정 ② (b) 구현 — 별도 단위, risk(채번 카운터 잠금) → Opus 실행자 + Opus 독립 검토 1명. domain/document-numbering/index.ts SeqStartOverlapError 판정 + 단위·통합 테스트. TDD 경계: 발급 0건에 낮춤 통과 · 발급 ≥1건에 낮춤 거부 · 같은 값 통과 · 올림 통과. 옛 거부 문구의 「max+1 이상 입력」 제거",
+      "id": 71,
+      "name": "docs/design/DECISIONS.md ~1000행 결정 ② 기록을 (b)로 갱신(옛 (a)·「이상 입력」 문구·없는 assertSeqStartAvailable 언급) — design-gate 경유",
       "status": "not_started"
     }
   ],
@@ -867,10 +873,15 @@
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션 → git status -sb(HEAD 붙었는지) → .continue-here.md 세션 AU 블록 Read → PR #85 최신 [지시](푸시·보고 직전 다시; 마지막 본 댓글 id 5863922900) → CI(914686f 뒤 인계 커밋) 확인·빨강이면 systematic-debugging → origin/main 머지 커밋 반영 → 이 세션 단위 = 04-51 결정 ② (b) 구현(id 69, risk: 채번 카운터 잠금 → Opus 실행자 + Opus 독립 검토 1명, TDD) → 커밋·푸시 → [완료 보고] → pause → 다음 단위: 묶음 ④ Post-build /review(6ea2c77 금액 입력 공용 유틸 필수) → /qa → /cso(리저브·견적 초안 금액의 로그아웃 뒤 localStorage 잔존, 리저브 clientName 노출). Phase 04.6(스킨 A)은 Phase 4 머지 뒤, DR-P4-02는 04.6 제안 답 대기.",
+  "next_action": "새 세션 → git status -sb(HEAD 붙었는지) → .continue-here.md 세션 AV 블록 Read → PR #85 최신 [지시](마지막 본 댓글 5864172489; 푸시·보고 직전 다시) — 04-51 문구 질문(should-1) 답이 있으면 반영 → CI(인계 커밋) 확인·빨강이면 systematic-debugging → origin/main 머지 커밋 반영 → 이 세션 단위 = 묶음 ④ Post-build(id 70): /review(6ea2c77 필수, 04-51 (b) 3커밋 포함) → /qa → /cso(리저브·견적 초안 금액 로그아웃 뒤 localStorage 잔존, 리저브 clientName 노출). 게이트 기록 줄은 사용자에게 보여 주기만. PR #85는 위험 경로 포함 → 세션 머지 금지. Phase 04.6(스킨 A)은 Phase 4 머지 뒤, DR-P4-02는 04.6 제안 답 대기.",
   "context_notes": "세션 AQ(2026-09-28): 04-31 Task 1 실행(Sonnet 실행자), Task 2 체크포인트에서 멈춤. 독립 DOM 감사(Opus) FAIL 2 → 수정자(Sonnet) TDD 4커밋. 편차: parse-tsv.test.ts가 ui 경계(D-26)라 캡처 상수를 복제(role-menu.test.ts 선례) — fixture 머리 주석 「정의 1건」 문구가 사실과 달라 continuation이 정정할 것. reserves.spec.ts:282가 quote-table·projects-list 스펙과 함께 돌 때 잔액 100,000 기대·460,000 실측으로 1회 실패(단독 통과, 수정자 변경 전에도) — Task 3 전체 E2E 3회 전 조사 대상.\n\n세션 AN: 04-18 완료(실행·DOM 감사 30/0·Opus 검토 반영·전체 게이트 CI=true 통과, origin 8a5e2cf). 사용자 지시로 이 계정은 인계까지만, 다음은 다른 계정. Codex 재확인 목록에 04-18 추가.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
-    "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"
+    "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정",
+    {
+      "question": "04-51 (b) 거부 문구 숫자: 「카운터+현재 시작값−1」은 시작값을 올린 뒤 낮출 때 실제 최대보다 큼(100~102 발급→110→105 시 112 표시). 현재 값 기준 문구(예: 「순번 시작값은 현재 값(110)보다 낮출 수 없음」)로 바꿀지",
+      "context": "Opus 검토 should-1, PR #85 [완료 보고] 5864172489에서 질문. 답 전까지 문구 유지",
+      "asked_at": "2026-09-28T05:42:27.516Z"
+    }
   ]
 }

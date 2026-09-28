@@ -297,6 +297,15 @@
     border-bottom: var(--line-w) solid var(--line);
   }
 
+  /* 04-31 DOM 감사 FAIL-1 — onRowTap이 있으면 이 칸이 행 시트를 여는 유일한 자리다.
+     §3(195행) 터치 목표 44px 미만(30px)이었다. table-cell은 auto layout에서
+     min-height를 행 높이 계산에 반영하지 않는다(실측 — min-height:44px을
+     주어도 30px 그대로) — height는 셀이 줄어들 수 없어 사실상 최소값으로
+     동작한다(실측 44px). */
+  .collapsedCellTap {
+    height: var(--touch-min);
+  }
+
   .cell,
   .headerCell {
     padding: var(--cell-pad-y) var(--cell-pad-x);

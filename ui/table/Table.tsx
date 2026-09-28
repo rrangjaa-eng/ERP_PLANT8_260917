@@ -947,7 +947,7 @@ export function Table<Row>({
                       {onRowTap ? (
                         <td
                           colSpan={columns.length}
-                          className={styles.collapsedCell}
+                          className={[styles.collapsedCell, styles.collapsedCellTap].join(" ")}
                           role="button"
                           tabIndex={0}
                           aria-label={`${rowId} 상세 보기`}

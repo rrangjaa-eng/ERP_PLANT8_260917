@@ -712,3 +712,24 @@ test.describe("리저브 대장 — 읽기 · 좁은 PC · 저장 중 잠금 · 
     expect((await page.goto("/pnl/reserves"))?.status()).toBe(404);
   });
 });
+
+
+// 묶음 ④ /review — 리저브 붙여넣기·복사·환산·보관 요청 오류.
+
+test.describe("리저브 대장 — 묶음 ④ 리뷰", () => {
+  test("같은 이름 클라이언트가 둘이면 붙여넣은 이름은 오류 칸 「같은 이름 여럿 · 목록에서 고르기」(R1)", async ({ page }) => {
+    const roles = await createRoles();
+    const base = await createClient("E2E리저브동명기준");
+    const duplicate = `E2E리저브동명-${randomUUID().slice(0, 6)}`;
+    await insertVendor(SYSTEM_VIEWER, { name: duplicate, normalizedName: duplicate.toLowerCase() });
+    await insertVendor(SYSTEM_VIEWER, { name: duplicate, normalizedName: duplicate.toLowerCase() });
+    await seedEntries(base.id, [{ date: "2026-10-01", direction: "deposit", amount: 1_000 }]);
+    await openLedger(page, roles.finance);
+
+    await pasteText(page, cell(page, 0, COL.note), `첫 줄 메모\n둘째 줄 메모\t${duplicate}`);
+    await expect(dataRows(page)).toHaveCount(2);
+    const clientCell = cell(page, 1, COL.client);
+    await expect(clientCell).toHaveAttribute("aria-invalid", "true");
+    await expect(clientCell).toContainText("같은 이름 여럿 · 목록에서 고르기");
+  });
+});

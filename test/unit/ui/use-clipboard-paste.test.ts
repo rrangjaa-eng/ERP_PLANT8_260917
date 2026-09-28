@@ -198,3 +198,29 @@ describe("applyPaste — 원본 줄 종류", () => {
     ]);
   });
 });
+
+// 묶음 ④ /review R1 — 거래처 이름은 unique가 아니다(db/schema/vendors.ts). 붙여넣은 이름이 옵션 둘 이상의 라벨과 같으면
+// 첫 옵션으로 조용히 고르지 않고 오류 칸이다. 값(id)과 정확히 같으면 그 옵션 그대로다.
+describe("applyPaste — 같은 라벨 옵션 여럿(리뷰 R1)", () => {
+  const DUPLICATES = [
+    { value: "vendor-1", label: "가나상사" },
+    { value: "vendor-2", label: "가나상사" },
+    { value: "vendor-3", label: "다라상사" },
+  ];
+  const columns: PasteColumn<Row>[] = [{ key: "vendor", kind: "select", options: DUPLICATES, isEditable: () => true }];
+
+  it("라벨이 옵션 둘과 같으면 오류 칸 「같은 이름 여럿 · 목록에서 고르기」", () => {
+    const result = applyPaste({ clipboardText: "가나상사", columns, rows: [{}], activeRowIndex: 0, activeColIndex: 0 });
+    expect(result.cells).toEqual([{ rowIndex: 0, columnKey: "vendor", result: { status: "error", reason: "같은 이름 여럿 · 목록에서 고르기" } }]);
+  });
+
+  it("값(id)과 정확히 같으면 같은 라벨이 여럿이어도 그 옵션", () => {
+    const result = applyPaste({ clipboardText: "vendor-2", columns, rows: [{}], activeRowIndex: 0, activeColIndex: 0 });
+    expect(result.cells).toEqual([{ rowIndex: 0, columnKey: "vendor", result: { status: "ok", value: "vendor-2" } }]);
+  });
+
+  it("라벨이 옵션 하나와만 같으면 그 옵션", () => {
+    const result = applyPaste({ clipboardText: "다라상사", columns, rows: [{}], activeRowIndex: 0, activeColIndex: 0 });
+    expect(result.cells).toEqual([{ rowIndex: 0, columnKey: "vendor", result: { status: "ok", value: "vendor-3" } }]);
+  });
+});

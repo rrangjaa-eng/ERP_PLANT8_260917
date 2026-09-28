@@ -1,0 +1,69 @@
+<title>PLANT8 실물 스킨 보드</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700&display=swap">
+<style>
+:root{--bg:#F2F5F4;--fg:#10201C;--muted:#4E5D59;--line:#D5DEDA;--panel:#FFFFFF;--accent:#005446;--on-accent:#FFFFFF;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0E1714;--fg:#E4ECE9;--muted:#9DB0AA;--line:#2A3833;--panel:#16211E;--accent:#6FBFA9;--on-accent:#00211C;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0E1714;--fg:#E4ECE9;--muted:#9DB0AA;--line:#2A3833;--panel:#16211E;--accent:#6FBFA9;--on-accent:#00211C;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 'Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;word-break:keep-all;letter-spacing:-.01em}
+.wrap{padding-inline:16px;padding-block:16px 40px;max-width:1320px;margin:0 auto}
+h1{font-size:20px;margin:0 0 2px}
+.lead{color:var(--muted);margin:0 0 10px;font-size:13px}
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding-block:6px;border-bottom:1px solid var(--line)}
+.ctl{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:4px 0}
+.lb{font-size:12px;font-weight:600;color:var(--muted);min-width:28px}
+.seg{display:flex;flex-wrap:wrap;gap:4px}
+.seg button{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:6px;padding:4px 10px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.note{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin:10px 0;font-size:13px}
+.note b{font-size:14px}.note p{margin:2px 0 0;color:var(--muted)}
+.shot{display:flex;justify-content:center}
+.shot img{display:block;max-width:100%;height:auto;border:1px solid var(--line);border-radius:6px;background:#fff}
+.shot.phone img{width:390px}
+</style>
+
+<div class="wrap">
+  <h1>PLANT8 실물 스킨 보드</h1>
+  <p class="lead">실제 앱(로컬, 실제 컴포넌트·CSS)을 띄워 세 화면에 스킨을 얹고 찍은 사진입니다. DOM과 동작은 그대로이고, D 사이드바와 등록 모달만 구조를 바꾼 안입니다. 웜톤 바탕은 뺐습니다.</p>
+  <div class="bar">
+    <div class="ctl"><span class="lb">안</span><div class="seg" id="skin">
+      <button type="button" data-v="now">현재</button><button type="button" data-v="a">A 정돈</button><button type="button" data-v="b">B 스튜디오</button><button type="button" data-v="c">C 스테이지</button><button type="button" data-v="d">D 사이드바</button><button type="button" data-v="e">A + 옆 패널</button>
+    </div></div>
+    <div class="ctl"><span class="lb">화면</span><div class="seg" id="screen">
+      <button type="button" data-v="projects">프로젝트 목록</button><button type="button" data-v="project">견적 원장</button><button type="button" data-v="vendors">거래처 등록</button>
+    </div></div>
+    <div class="ctl"><span class="lb">폭</span><div class="seg" id="width">
+      <button type="button" data-v="1280">PC 1280</button><button type="button" data-v="390">폰 390</button>
+    </div></div>
+  </div>
+  <div class="note" id="note"><b></b><p></p></div>
+  <div class="shot" id="shot"><img id="img" alt=""></div>
+</div>
+
+<script>
+const NOTES = {
+  now: ['현재 (main 그대로)', '2px 진한 선 · 직각 · 흰 바탕. 거래처 등록 폼은 목록 위에 열려 목록을 아래로 민다. 동작 열 「수정숨기기삭제」가 붙어 보이는 간격 버그도 그대로 찍혔다.'],
+  a: ['A 정돈 — 가장 안전', '딥그린 상단 바 유지. 차가운 회색 바탕 위에 표를 흰 면(모서리 8 · 1px 선 · 아주 옅은 그림자)으로 올리고, 2px 선을 1px + 옅은 초록 그룹 줄로 바꿨다. 행 44px · 제목 22px. 등록은 가운데 모달(폰은 아래 시트). 동작 열 「수정·숨기기·삭제」 모양을 하나로 맞췄다.'],
+  b: ['B 스튜디오 — 가장 과감', '흰 상단 바 + 둥근 메뉴, 쿨 그레이 캔버스 위 흰 카드(모서리 14 · 층 그림자), 둥근 상태 태그, 행 48px · 제목 26px. 가장 요즘 앱 같지만 한 화면에 보이는 줄이 가장 적다. 등록은 모달.'],
+  c: ['C 스테이지 — 브랜드', '상단 바와 제목 구역을 딥그린 한 띠로 이어 회사 색을 세우고 본문은 밝게. 표 머리글·그룹 줄은 초록 틴트, 흰 표 면(모서리 8). 제목 28px. 등록은 모달.'],
+  e: ['A + 옆 패널', 'A 정돈과 같고, 거래처 등록만 가운데 모달 대신 오른쪽에서 나오는 옆 패널(480px)로. 목록 왼쪽이 계속 보인다. 폰은 A와 같이 아래에서 올라오는 시트. 목록·견적 원장 화면은 A와 같다.'],
+  d: ['D 사이드바 — 구조 변경', 'A 정돈 피부 + 상단 메뉴를 왼쪽 딥그린 사이드바(232px)로. 표가 쓸 가로 폭이 232px 줄어든다. 폰은 사이드바 없이 A와 같다(하단 탭 유지). 등록은 모달.']
+};
+const state = { skin: 'a', screen: 'projects', width: innerWidth < 700 ? 390 : 1280 };
+try { Object.assign(state, JSON.parse(localStorage.getItem('realboard') || '{}')); } catch (e) {}
+const $ = (id) => document.getElementById(id);
+function render() {
+  for (const g of ['skin', 'screen', 'width'])
+    for (const b of $(g).querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.v == state[g]));
+  $('note').querySelector('b').textContent = NOTES[state.skin][0];
+  $('note').querySelector('p').textContent = NOTES[state.skin][1];
+  $('img').src = 'shots/' + state.screen + '-' + state.skin + '-' + state.width + '.png';
+  $('img').alt = state.screen + ' · ' + NOTES[state.skin][0] + ' · ' + state.width;
+  $('shot').className = 'shot' + (state.width == 390 ? ' phone' : '');
+  try { localStorage.setItem('realboard', JSON.stringify(state)); } catch (e) {}
+}
+for (const g of ['skin', 'screen', 'width'])
+  $(g).addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; state[g] = g === 'width' ? Number(b.dataset.v) : b.dataset.v; render(); });
+render();
+</script>

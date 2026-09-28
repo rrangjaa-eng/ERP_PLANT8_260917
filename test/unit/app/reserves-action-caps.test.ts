@@ -57,3 +57,20 @@ describe("saveReservesAction 입력 상한(리뷰 R8)", () => {
     expect(captured.schema?.safeParse({ rows: [], archived: Array.from({ length: 301 }, (_, i) => archived(i)) }).success).toBe(false);
   });
 });
+
+// 묶음 ④ /review R12 — 보관 요청의 가장자리 검증 오류는 화면이 그 줄의 칸 오류로 붙인다. id든 version이든 이유는
+// 「줄을 찾을 수 없음 · 새로 고침」(RESERVE_INPUT_REASONS.entryNotFound) 하나다 — zod 기본 영어 문구가 화면에 나가지 않는다.
+describe("saveReservesAction 보관 요청 검증 이유(리뷰 R12)", () => {
+  function archivedIssues(entry: unknown) {
+    const parsed = captured.schema?.safeParse({ rows: [], archived: [entry] });
+    return parsed?.success ? [] : (parsed?.error.issues ?? []);
+  }
+
+  it("정수가 아닌 version은 entryNotFound 이유", () => {
+    expect(archivedIssues({ id: archived(0).id, version: 1.5 }).map((issue) => issue.message)).toEqual(["줄"]);
+  });
+
+  it("숫자가 아닌 version도 entryNotFound 이유", () => {
+    expect(archivedIssues({ id: archived(0).id, version: "1" }).map((issue) => issue.message)).toEqual(["줄"]);
+  });
+});

@@ -822,4 +822,40 @@ test.describe("리저브 대장 — 묶음 ④ 리뷰", () => {
     await expect(cell(page, 0, COL.amount)).toContainText("473");
     await expect(cell(page, 0, COL.amount)).not.toContainText("472");
   });
+
+  test("보관 요청의 가장자리 검증 오류는 그 줄을 되살려 날짜 칸 오류로 보인다(R12)", async ({ page }) => {
+    const roles = await createRoles();
+    const client = await createClient("E2E리저브보관오류");
+    await seedEntries(client.id, [
+      { date: "2026-04-01", direction: "deposit", amount: 200_000 },
+      { date: "2026-04-02", direction: "deposit", amount: 100_000 },
+    ]);
+    await openLedger(page, roles.finance);
+
+    await focusGridCell(cell(page, 1, COL.date));
+    await page.keyboard.press("Delete");
+    await page.getByRole("dialog", { name: "리저브 줄 삭제" }).getByRole("button", { name: /^리저브 줄 삭제/ }).click();
+    await expect(dataRows(page)).toHaveCount(1);
+    // 손상된 보관본(정수가 아닌 version) — 액션 가장자리 스키마가 거부한다.
+    await expect
+      .poll(() => page.evaluate(() => Object.keys(window.localStorage).filter((key) => key.startsWith("quote-ledger:dirty:")).length))
+      .toBe(1);
+    await page.evaluate(() => {
+      const key = Object.keys(window.localStorage).find((candidate) => candidate.startsWith("quote-ledger:dirty:"))!;
+      const stored = JSON.parse(window.localStorage.getItem(key) ?? "{}") as Record<string, unknown>;
+      for (const field of Object.keys(stored)) if (field.endsWith(":archive")) stored[field] = 1.5;
+      window.localStorage.setItem(key, JSON.stringify(stored));
+    });
+    await page.reload();
+    await page.getByRole("button", { name: "복원" }).click();
+    await expect(dataRows(page)).toHaveCount(1);
+
+    const saved = waitForSave(page);
+    await saveButton(page).click();
+    await saved;
+    await expect(dataRows(page)).toHaveCount(2);
+    const dateCell = cell(page, 1, COL.date);
+    await expect(dateCell).toHaveAttribute("aria-invalid", "true");
+    await expect(dateCell).toContainText("줄을 찾을 수 없음 · 새로 고침");
+  });
 });

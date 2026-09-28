@@ -1,11 +1,11 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-28T02:44:38.638Z",
+  "timestamp": "2026-09-28T04:59:34.253Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
   "plan": 41,
-  "task": 41,
+  "task": 42,
   "total_tasks": 42,
   "status": "paused",
   "completed_tasks": [
@@ -322,14 +322,15 @@
       "status": "done",
       "commit": "49774ef·d6a04f8·907ec5e",
       "progress": "세션 AS: 캡처 (A)(B) 상수(바이트 === 확인)·parse-tsv 단언(바로 통과=회귀 고정)·재생 E2E (e)(f)·주석 정정. 단위 32/32, CI=true excel-paste-final 7/7, lint·typecheck 0"
+    },
+    {
+      "id": 65,
+      "name": "04-31 Task 3 — reserves.spec.ts:282 간섭 = lib/format-number.ts 쉼표 뒤 Backspace 규칙이 캐럿 무시(끝 캐럿 통째 덮어쓰기 400000→40000 저장, 앱 버그) 6ea2c77 · 플레이크 2건 0fb7e7b(Ctrl+Enter 연타 경합)·fa91922(48화면 순회 30초 예산 → 90초) · 마이그레이션 journal ok·rollback-floor 0012·0015만(0016 없음 = 결정 ① (b) 일치)·가드 케이스 이미 있음 · CI=true 전체 E2E 새 DB 3회 499/499×3(11.1·10.7·11.1분)",
+      "status": "done",
+      "commit": "fa91922"
     }
   ],
   "remaining_tasks": [
-    {
-      "id": 65,
-      "name": "04-31 Task 3: 마이그레이션 순서·가드·rollback-floor 검사 + CI=true 전체 E2E 새 DB 연속 3회",
-      "status": "not_started"
-    },
     {
       "id": 66,
       "name": "04-31 SUMMARY·STATE·ROADMAP(플랜 완료) → 묶음 ④ Post-build /review → /qa → (/design-review는 Task 2에서 1회) → /cso",
@@ -860,7 +861,7 @@
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션 → git status -sb → .continue-here.md 세션 AS 블록 Read → PR #85 최신 [지시](푸시·보고 직전 다시) → CI 확인 → origin/main 머지 커밋 반영 → 이 세션 단위 = 04-31 Task 3(id 65): reserves.spec.ts:282 스펙 간 간섭 먼저 조사(systematic-debugging) + 마이그레이션 검사 + CI=true 전체 E2E 새 DB 연속 3회 → 커밋·푸시 → [완료 보고] → pause → 다음: 04-31 SUMMARY(편차: (C)(D) 사용자 예외·parse-tsv 복제) → 04-51 결정 ② (b) 구현(Opus 실행자+Opus 검토) → 묶음 ④ Post-build(/review → /qa → /cso).",
+  "next_action": "새 세션 → git status -sb → .continue-here.md 세션 AT 블록 Read → PR #85 최신 [지시](푸시·보고 직전 다시; 마지막 본 댓글 id 5863766087) → CI(fa91922 뒤 인계 커밋) 확인 → origin/main 머지 커밋 반영 → 이 세션 단위 = 04-31 SUMMARY·STATE·ROADMAP(id 66 앞부분, 편차: (C)(D) 사용자 예외 · parse-tsv 캡처 복제(boundaries) · 캡처 단언은 바로 통과한 회귀 고정 · Task 3 format-number 앱 버그 수정(Rule 1, 플랜 files 밖 — ENG-D11) · 플레이크 2건 테스트 수정 · 1·2차 실패 trace는 같은 --output 이름 재사용으로 덮어써짐(repro-trace-3만 보존)) → 커밋·푸시 → [완료 보고] → pause → 다음: 04-51 결정 ② (b)(id 69, Opus 실행자+Opus 검토) → 묶음 ④ Post-build(/review → /qa → /cso: 리저브·견적 초안 금액의 로그아웃 뒤 localStorage 잔존, 리저브 clientName 노출). /review 때 6ea2c77(금액 입력 공용 유틸 수정) 반드시 포함.",
   "context_notes": "세션 AQ(2026-09-28): 04-31 Task 1 실행(Sonnet 실행자), Task 2 체크포인트에서 멈춤. 독립 DOM 감사(Opus) FAIL 2 → 수정자(Sonnet) TDD 4커밋. 편차: parse-tsv.test.ts가 ui 경계(D-26)라 캡처 상수를 복제(role-menu.test.ts 선례) — fixture 머리 주석 「정의 1건」 문구가 사실과 달라 continuation이 정정할 것. reserves.spec.ts:282가 quote-table·projects-list 스펙과 함께 돌 때 잔액 100,000 기대·460,000 실측으로 1회 실패(단독 통과, 수정자 변경 전에도) — Task 3 전체 E2E 3회 전 조사 대상.\n\n세션 AN: 04-18 완료(실행·DOM 감사 30/0·Opus 검토 반영·전체 게이트 CI=true 통과, origin 8a5e2cf). 사용자 지시로 이 계정은 인계까지만, 다음은 다른 계정. Codex 재확인 목록에 04-18 추가.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",

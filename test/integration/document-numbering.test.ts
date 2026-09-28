@@ -105,8 +105,8 @@ describe("domain/document-numbering 서식 설정 (ADMN-09, 실제 Postgres)", (
   });
 });
 
-// 04-51 결정 ②(a) — 사용자 답 2026-09-24: 올해 이미 매긴 최대 표시 순번 이하로 시작값을
-// 내리는 저장은 거부한다. saveSeqStart는 설정 저장 액션(app/(app)/admin/settings/actions.ts
+// 04-51 결정 ②(b) — 사용자 2026-09-28(PR #85 댓글 5861849715): 올해 카운터 발급이 1건 이상이고
+// 새 시작값이 현재 시작값보다 작을 때만 거부한다. 같은 값·올리는 값은 통과한다. saveSeqStart는 설정 저장 액션(app/(app)/admin/settings/actions.ts
 // setSimpleSettingAction)이 부르는 도메인 함수를 그대로 부른다("use server" 파일은
 // Vitest에서 import할 수 없다).
 describe("순번 시작값 낮추기(결정 ②)", () => {

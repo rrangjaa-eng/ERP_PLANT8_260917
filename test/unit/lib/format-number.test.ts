@@ -172,6 +172,21 @@ describe("formatNumberInput — 타이핑 중 쉼표 삽입 + 커서 보존", ()
     expect(formatNumberInput({ raw: "-1234", caret: 2, kind: "krw", prev: "-1,234" })).toEqual({ text: "-234", caret: 1 });
   });
 
+  // Regression: ISSUE-003 — 쉼표 바로 앞 Delete가 캐럿 앞 숫자를 지웠다(`1|,500,000` → `500,000`)
+  // Found by /qa on 2026-09-28 · Report: docs/reviews/phase-04/bundle4-qa.md
+  // 네이티브 삭제 뒤 raw·caret은 Backspace(`1,|500,000`)와 똑같다("1500,000", caret 1) — 키는 inputType으로만 갈린다.
+  it("(QA ISSUE-003) 쉼표 바로 앞 Delete — 쉼표 뒤 숫자 5를 지우고 커서는 제자리", () => {
+    expect(
+      formatNumberInput({ raw: "1500,000", caret: 1, kind: "krw", prev: "1,500,000", inputType: "deleteContentForward" }),
+    ).toEqual({ text: "100,000", caret: 1 });
+  });
+
+  it("(QA ISSUE-003) 같은 raw·caret이라도 Backspace(inputType deleteContentBackward)는 쉼표 앞 숫자 1을 지운다", () => {
+    expect(
+      formatNumberInput({ raw: "1500,000", caret: 1, kind: "krw", prev: "1,500,000", inputType: "deleteContentBackward" }),
+    ).toEqual({ text: "500,000", caret: 0 });
+  });
+
   it("(04-31 E2-06) 캐럿이 끝에 있는 통째 덮어쓰기 — 쉼표 하나가 우연히 사라져도 인접 숫자를 지우지 않는다", () => {
     // "400,000"이 보이는 칸을 사용자가 커서를 끝에 둔 채 "400000"으로 통째로
     // 덮어쓰면(붙여넣기·프로그램적 값 설정 — Playwright .fill()과 같은 모양)

@@ -213,7 +213,7 @@ function insertedLength(raw: string, prev: string): number {
   return raw.length - prefix - suffix;
 }
 
-function formatTyped(raw: string, caret: number, maxDecimals: number, prev: string | undefined): FormatNumberInputResult {
+function formatTyped(raw: string, caret: number, maxDecimals: number, prev: string | undefined, inputType: string | undefined): FormatNumberInputResult {
   let workingRaw = raw;
   let workingCaret = caret;
 
@@ -232,7 +232,9 @@ function formatTyped(raw: string, caret: number, maxDecimals: number, prev: stri
     prev[workingCaret] === "," &&
     prev.slice(0, workingCaret) + prev.slice(workingCaret + 1) === workingRaw
   ) {
-    const idx = Math.max(0, workingCaret - 1);
+    // QA ISSUE-003 — 쉼표 바로 앞 Delete도 네이티브 결과(raw·caret)가 쉼표 뒤 Backspace와 똑같다. 키는 inputType으로만
+    // 갈린다: 앞으로 지우기면 쉼표 뒤 숫자를 지우고 커서는 제자리.
+    const idx = inputType === "deleteContentForward" ? workingCaret : Math.max(0, workingCaret - 1);
     workingRaw = workingRaw.slice(0, idx) + workingRaw.slice(idx + 1);
     workingCaret = idx;
   }
@@ -274,14 +276,14 @@ function formatBulk(raw: string, kind: NumberInputKind, prev: string): FormatNum
  * 1글자를 넘으면 통째 입력으로 본다 — 순수 길이 차만 보면 긴 값을 선택해
  * 짧은 값을 붙여넣는 경우(길이가 줄어든다)를 놓친다. 한 글자 타이핑은 언제나
  * 조용히 반영되거나(자리 상한 초과 글자만 무시) 삭제로 취급된다. */
-export function formatNumberInput(params: { raw: string; caret: number; kind: NumberInputKind; prev?: string }): FormatNumberInputResult {
-  const { raw, caret, kind, prev } = params;
+export function formatNumberInput(params: { raw: string; caret: number; kind: NumberInputKind; prev?: string; inputType?: string }): FormatNumberInputResult {
+  const { raw, caret, kind, prev, inputType } = params;
 
   if (prev !== undefined && insertedLength(raw, prev) > 1) {
     return formatBulk(raw, kind, prev);
   }
 
-  return formatTyped(raw, caret, MAX_DECIMALS[kind], prev);
+  return formatTyped(raw, caret, MAX_DECIMALS[kind], prev, inputType);
 }
 
 /** 거부 이유 다섯 문구 — UI-SPEC rev 5 Copywriting `Error — 셀(형식)` · `Error — 셀(숫자 자리, 04-09)`을

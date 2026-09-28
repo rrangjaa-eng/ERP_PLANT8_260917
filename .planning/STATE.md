@@ -10,7 +10,7 @@ last_activity: 2026-09-27
 last_activity_desc: Phase 4 execution started
 state_head: 9dbc4cf62da4632206767a44838c52169448fd82
 progress:
-  total_phases: 16
+  total_phases: 17
   completed_phases: 1
   total_plans: 140
   completed_plans: 79
@@ -340,6 +340,7 @@ Recent decisions affecting current work:
 - Phase 04.5 edited: edited fields: goal, depends_on, requirements, success_criteria (/review 반영: 거래처 대상만 켜고 프로젝트·견적 줄 대상은 Phase 10, 보관 선택지·보이지 않는 칸 값 보존, 노출표 행 기본값 방식, Phase 4 겹침 파일 추가)
 - Phase 10 edited: edited fields: success_criteria (/review 반영: 프로젝트·견적 줄 대상 켜기와 칸별 판정·값 보존 적용을 Phase 10 기준 4에 명시)
 - Phase 9 edited: edited fields: depends_on, success_criteria(6·7), 결정 메모 — 손익을 테스트 데이터로 검증, Phase 6 뒤 착수(2026-09-27 사용자 결정)
+- Phase 04.6 inserted after Phase 4: 스킨 A 적용 — 스킨 A 정돈 + 옆 패널, 역할 토큰·lint·공용/화면 틀 컴포넌트·컴포넌트 모음·화면 사진 비교·원칙 점검 막는 모드. Phase 4 머지 뒤 착수
 
 ## Deferred Items
 

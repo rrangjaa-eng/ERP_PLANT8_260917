@@ -289,6 +289,16 @@ describe("순번 시작값 낮추기(결정 ②)", () => {
     expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_START)).toBe(103);
   });
 
+  // 묶음 ④ /review T3 — 스키마를 못 지나는 값은 낮추기 판정(잠금·비교) 전에 setSettingValue의 스키마 거부로 끝난다.
+  // "0"은 스키마(min(0))를 지나 낮추기 판정으로 가므로 이 목록에 없다(0 < 100이면 SeqStartOverlapError).
+  it.each(["-5", "abc", "1.5"])("형식이 틀린 값 %s는 낮추기 거부가 아니라 형식 거부로 끝나고 값은 100 그대로다", async (value) => {
+    await issueThreeFrom100();
+    const rejected = setSimpleSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEQ_START, value, NOW);
+    await expect(rejected).rejects.toThrow();
+    await expect(rejected).rejects.not.toBeInstanceOf(SeqStartOverlapError);
+    expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_START)).toBe(100);
+  });
+
   // 04-51 리뷰 S2 — 실제 등록 경로(createProject, UNIQUE(format_key, number) 살아 있음)로 낮추기 시도 뒤에도
   // 등록이 번호 중복으로 실패하지 않는다. 카운터 행이 없는 새해(2027) 첫 등록까지.
   // (b): 이미 매긴 최대 이하로 올려도 실제 등록이 UNIQUE 위반 없이 된다.

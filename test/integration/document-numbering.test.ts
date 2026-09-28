@@ -137,14 +137,21 @@ describe("순번 시작값 낮추기(결정 ②)", () => {
     await issueThreeFrom100();
     const rejected = saveSeqStart(SYSTEM_VIEWER, 50);
     await expect(rejected).rejects.toBeInstanceOf(SeqStartOverlapError);
-    await expect(rejected).rejects.toThrow("순번 시작값이 이미 매긴 번호(102)와 겹침 · 103 이상 입력");
+    await expect(rejected).rejects.toHaveProperty("message", "순번 시작값이 이미 매긴 번호(102)와 겹침");
     expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_START)).toBe(100);
   });
 
-  it("이미 매긴 최대 102와 같은 값도 거부되고 설정 값은 100 그대로다", async () => {
-    await issueThreeFrom100();
-    await expect(saveSeqStart(SYSTEM_VIEWER, 102)).rejects.toBeInstanceOf(SeqStartOverlapError);
-    expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_START)).toBe(100);
+  // 04-51 결정 ②(b) — 사용자 2026-09-28(PR #85 댓글 5861849715): 표시 순번 = 카운터 + 시작값 − 1이라 올리면 다음 번호가 이미 매긴 최대보다 크다.
+  it.each([
+    [101, "26104"],
+    [102, "26105"],
+  ])("이미 매긴 최대 102 이하여도 올린 값 %i은 저장되고 다음 번호 %s는 겹치지 않는다", async (value, expected) => {
+    const issued = await issueThreeFrom100();
+    await saveSeqStart(SYSTEM_VIEWER, value);
+    expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_START)).toBe(value);
+    const next = await allocate();
+    expect(next).toBe(expected);
+    expect(issued).not.toContain(next);
   });
 
   // 04-51 리뷰 B1 — 설정 화면은 칸을 벗어날 때마다(blur) 값을 다시 보낸다.
@@ -259,8 +266,9 @@ describe("순번 시작값 낮추기(결정 ②)", () => {
   // 04-51 리뷰 S2 — 설정 화면은 칸의 글자를 그대로 보낸다(z.coerce.number()가 숫자로 바꾼다).
   it("화면이 보내는 문자열 값도 같은 규칙이다 — \"50\" 거부 · \"100\" 그대로 통과 · \"103\" 저장", async () => {
     await issueThreeFrom100();
-    await expect(setSimpleSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEQ_START, "50", NOW)).rejects.toThrow(
-      "순번 시작값이 이미 매긴 번호(102)와 겹침 · 103 이상 입력",
+    await expect(setSimpleSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEQ_START, "50", NOW)).rejects.toHaveProperty(
+      "message",
+      "순번 시작값이 이미 매긴 번호(102)와 겹침",
     );
     await setSimpleSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEQ_START, "100", NOW);
     expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_START)).toBe(100);
@@ -270,6 +278,7 @@ describe("순번 시작값 낮추기(결정 ②)", () => {
 
   // 04-51 리뷰 S2 — 실제 등록 경로(createProject, UNIQUE(format_key, number) 살아 있음)로 낮추기 시도 뒤에도
   // 등록이 번호 중복으로 실패하지 않는다. 카운터 행이 없는 새해(2027) 첫 등록까지.
+  // (b): 이미 매긴 최대 이하로 올려도 실제 등록이 UNIQUE 위반 없이 된다.
   it("createProject로 등록 — 낮추기 시도가 거부된 뒤에도, 새해에 낮춘 뒤에도 등록이 겹침 없이 된다", async () => {
     const client = await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}`, normalizedName: `거래처-${randomUUID()}` });
     const { userId: pmUserId } = await createAccount(SYSTEM_VIEWER, {
@@ -287,10 +296,12 @@ describe("순번 시작값 낮추기(결정 ②)", () => {
     await save("100", NOW);
     const issued = [await register(NOW), await register(NOW), await register(NOW)];
     expect(issued).toEqual(["26100", "26101", "26102"]);
-    for (const lowered of ["1", "50", "102"]) await expect(save(lowered, NOW)).rejects.toBeInstanceOf(SeqStartOverlapError);
+    for (const lowered of ["1", "50", "99"]) await expect(save(lowered, NOW)).rejects.toBeInstanceOf(SeqStartOverlapError);
     await save("100", NOW);
     const after = [await register(NOW), await register(NOW)];
     expect(after).toEqual(["26103", "26104"]);
+    await save("102", NOW);
+    expect(await register(NOW)).toBe("26107");
 
     const NEW_YEAR = new Date("2026-12-31T15:30:00Z"); // 2027-01-01 00:30 KST — 2027 카운터 행 없음
     await save("1", NEW_YEAR);

@@ -716,8 +716,11 @@ export function Table<Row>({
     if (isActive && editability === "edit" && column.editCell) {
       return column.editCell(row, {
         onCommit: (value) => {
+          // QA ISSUE-001 — 편집기가 포커스를 쥔 채 확정(선택 칸 change)하면 편집기가 내려가며 포커스가 body로 빠진다 — 셀로 돌린다.
+          const editorHoldsFocus = document.activeElement instanceof HTMLElement && document.activeElement.matches("input, select, textarea");
           onCellCommit?.(rowId, column.key, value);
           setActiveCell(null);
+          if (editorHoldsFocus) setFocusRequest({ kind: "cell" });
         },
         onCancel: () => setActiveCell(null),
       });
@@ -752,6 +755,8 @@ export function Table<Row>({
     if (!clipboard.text) return;
     event.preventDefault();
     const filled = onPasteAtCell(row, column.key, clipboard);
+    // QA ISSUE-002 — 붙인 줄이 다른 그룹으로 옮겨 가면 포커스를 쥔 셀이 다시 그려져 body로 빠진다 — 탭 정지 셀로 돌린다.
+    setFocusRequest({ kind: "cell" });
     // 04-47(§7-3 (자)) — 화면은 시작 쪽에 머문다. 채운 줄이 뒤 쪽까지 닿았으면 합계 행에 `{k}쪽까지`(새 줄은 시작 쪽에 고정된다).
     const reach = pages && filled ? Math.max(page, ...filled.map((id) => pageOfRow(pages, id) ?? page)) : page;
     setPasteReach(reach > page ? reach : null);

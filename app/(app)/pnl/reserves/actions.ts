@@ -25,14 +25,21 @@ const rowSchema = z.object({
   note: z.string().max(2000).nullable().optional(),
 });
 
+// 리뷰 R8 — 한 요청의 줄·보관 수 상한. 거래처 행을 잠근 채 줄마다 쓰므로 큰 요청이 잠금을 오래 잡지 않게 한다.
+// 리저브 화면에는 줄 상한 상수가 없어 앱의 다른 줄 상한(견적 차수당 줄 상한 quote_line.max_per_revision 기본값 300)과 맞춘다.
+const MAX_ROWS_PER_SAVE = 300;
+
 export type ReserveRejectedCell = { rowId: string | undefined; field: string; reason: string };
 
 export const saveReservesAction = authedActionClient
   .schema(
     z.object({
-      rows: z.array(rowSchema),
+      rows: z.array(rowSchema).max(MAX_ROWS_PER_SAVE),
       // 리뷰 R9 — 보관(삭제)도 화면이 본 version을 싣는다(낡은 탭·복원 초안이 방금 고친 줄을 보관하지 않게).
-      archived: z.array(z.object({ id: z.string().uuid(RESERVE_INPUT_REASONS.entryNotFound), version: z.number().int() })).optional(),
+      archived: z
+        .array(z.object({ id: z.string().uuid(RESERVE_INPUT_REASONS.entryNotFound), version: z.number().int() }))
+        .max(MAX_ROWS_PER_SAVE)
+        .optional(),
       // 성공 뒤 돌려줄 대장의 쪽(화면이 보는 쪽).
       page: z.number().int().min(1).optional(),
     }),

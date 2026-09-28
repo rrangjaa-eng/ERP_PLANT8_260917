@@ -1034,6 +1034,17 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
     });
     const created = newRowCells ? Array.from({ length: result.newRowsNeeded }, () => blankNewRow(newRowCells)) : [];
     const targetAt = (index: number) => ordered[index] ?? created[index - ordered.length];
+    // 리뷰 R4 — 견적 원장 04-47(사용자 D15)과 같은 조각: 금액이 원화로 들어간 줄 중 원본(앱 형식)이 외화였거나 덮인 기존 줄이 외화였던 줄.
+    const foreignToKrw = new Set(
+      result.cells
+        .filter((cell) => cell.columnKey === "amount" && cell.result.status === "ok")
+        .filter((cell) => {
+          const sourceCurrency = result.sourceCurrencies?.[cell.rowIndex - rowIndex];
+          const existing = ordered[cell.rowIndex];
+          return (sourceCurrency !== undefined && sourceCurrency !== "KRW") || (existing !== undefined && existing.money.currency !== "KRW");
+        })
+        .map((cell) => cell.rowIndex),
+    ).size;
 
     const patches = new Map<string, Patch>();
     const errors: CellErrors = {};
@@ -1067,6 +1078,7 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
 
     const notices: FooterNoticeItem[] = [{ tone: "muted", text: `붙여넣기 ${result.rowCount}줄`, paste: "head" }];
     if (result.droppedColumnCount > 0) notices.push({ tone: "warning", text: `오른쪽 ${result.droppedColumnCount}칸 버림`, paste: "piece" });
+    if (foreignToKrw > 0) notices.push({ tone: "warning", text: `외화 ${foreignToKrw}줄 원화로`, paste: "piece" });
     if (result.ignoredComputedCells > 0) notices.push({ tone: "muted", text: `계산 열 ${result.ignoredComputedCells}칸 무시`, paste: "piece" });
     setPasteNotices(notices);
     return Array.from({ length: result.rowCount }, (_, offset) => targetAt(rowIndex + offset)?.id ?? "").filter((id) => id !== "");

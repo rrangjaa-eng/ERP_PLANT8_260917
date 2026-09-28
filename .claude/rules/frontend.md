@@ -9,6 +9,7 @@ paths:
 
 ## 프론트엔드 + 화면 검증
 - 모든 화면의 기준은 `docs/design/SYSTEM.md`(151KB). 통째로 읽지 말고 목차에서 절을 찾아 Grep + 범위 Read로 필요한 절만 읽는다. 없으면 화면을 만들지 않고 `docs/DESIGN.md` §1부터 시작한다.
+- **화면 파일(app/의 .tsx·.css, ui/, docs/design/)을 고치기 전에 `design-gate` 스킬을 호출한다 — 훅이 강제한다.** 스킬이 브리프 · 아래 사용성 원칙 · 사용자 디자인 결정(`.claude/skills/design-gate/CHECKLIST.md` §1)을 읽히고, 화면 코드 커밋에는 빈칸 없는 점검표(`docs/design/checks/<날짜>-<작업>.md`)가 함께 있어야 한다. 디자인 비교는 실제 앱 화면으로만(`docs/DESIGN.md` §2-4).
 - 새 화면·컴포넌트는 `docs/DESIGN.md` §4 절차대로. 새 색·서체·radius 생성 금지, 토큰은 `docs/design/tokens.css`에서만.
 - 시스템을 벗어나야 하면 `docs/design/DECISIONS.md`에 이유를 기록한 뒤 SYSTEM.md를 고친다. 화면 하나만 예외 금지.
 - UI 완료 판정은 `/design-review`(SYSTEM.md 일관성) → `/qa` 통과 후. 묶음(PR)마다 한 번.

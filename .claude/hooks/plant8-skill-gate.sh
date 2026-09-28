@@ -88,6 +88,13 @@ gate_skills="plan-ceo-review|plan-eng-review|plan-design-review|review|qa|cso|de
 phase_has_ui() { ls "$project"/.planning/phases/${phase_pad}-*/*-UI-SPEC.md >/dev/null 2>&1; }
 gate_has() { [ -f "$gate_log" ] && awk '{print $1}' "$gate_log" | grep -qx "$1"; }
 
+is_ui_path() {  # 화면 경로 — 디자인 관문(사용자 결정 2026-09-28): 브리프·원칙을 확인하지 않고 화면을 만들지 않는다
+  grep -Eq '^(app/.*\.(tsx|css)|ui/|docs/design/)'
+}
+is_ui_code_path() {  # 커밋 때 점검표를 요구하는 화면 코드(문서 제외)
+  grep -Eq '^(app|ui)/.*\.(tsx|css)$'
+}
+
 is_code_path() {  # 저장소 코드 경로(문서·계획 제외)
   grep -Eq '^(app|domain|repositories|ui|db|lib|components|scripts|test|e2e)/|\.(ts|tsx|js|mjs|cjs|sql|css)$'
 }
@@ -165,6 +172,48 @@ case "$event" in
       # 스테이징된 파일 + gsd-tools `--files` 인자 + git commit `--` 뒤 경로
       files="$( { git -C "$cwd" diff --cached --name-only 2>/dev/null || true;
                   printf '%s' "$cmd" | grep -oE -- '(--files|[[:space:]]--)[[:space:]].*' | tr ' ' '\n' | grep -vE -- '^(--files|--)?$' || true; } | sort -u )"
+      # 디자인 관문: 화면 코드 커밋은 빈칸 없는 점검표(docs/design/checks/*.md)가 있어야 한다.
+      # 한글 파일 이름을 그대로 받으려고 core.quotePath=false, 지운 파일은 빼고(--diff-filter=d),
+      # `git commit -a/--all`이면 스테이징 안 된 추적 파일도 본다.
+      design_files="$( { git -C "$cwd" -c core.quotePath=false diff --cached --name-only --diff-filter=d 2>/dev/null || true;
+                         if printf '%s' "$cmd" | grep -Eq 'git[[:space:]]+commit([[:space:]]+[^;&|]*)?[[:space:]](-[a-zA-Z]*a[a-zA-Z]*|--all)([[:space:]]|$)'; then
+                           git -C "$cwd" -c core.quotePath=false diff --name-only --diff-filter=d 2>/dev/null || true
+                         fi
+                         printf '%s' "$cmd" | grep -oE -- '(--files|[[:space:]]--)[[:space:]].*' | tr ' ' '\n' | grep -vE -- '^(--files|--)?$' || true; } | sort -u )"
+      if printf '%s\n' "$design_files" | is_ui_code_path; then
+        # 이번 커밋의 점검표 + 이 브랜치에서 이미 커밋한 점검표(origin/main 이후) — 같은 작업의 화면 커밋이 여러 번이어도 된다
+        branch_base="$(git -C "$cwd" merge-base origin/main HEAD 2>/dev/null || true)"
+        checks="$( { printf '%s\n' "$design_files";
+                     [ -z "$branch_base" ] || git -C "$cwd" -c core.quotePath=false diff --name-only --diff-filter=d "$branch_base" HEAD -- docs/design/checks/ 2>/dev/null || true; } \
+                   | grep -E '^docs/design/checks/[^/]+\.md$' | sort -u || true)"
+        covered=""
+        [ -n "$checks" ] || deny "화면 코드(app/·ui/의 .tsx·.css) 커밋에는 점검표가 함께 있어야 한다 — design-gate 스킬의 점검표를 docs/design/checks/<날짜>-<작업>.md로 채워 스테이징하라(같은 브랜치에서 이미 커밋한 점검표도 인정)."
+        while IFS= read -r c; do
+          [ -n "$c" ] || continue
+          git -C "$cwd" cat-file -e ":$c" 2>/dev/null || continue   # 이번 커밋에서 지우는 점검표
+          body="$(git -C "$cwd" show ":$c" 2>/dev/null || true)"
+          printf '%s\n' "$body" | grep -Eq '^[[:space:]]*([-*+]|[0-9]+\.) \[[xX]\]' || deny "점검표 ${c}에 확인한 항목(- [x])이 없다."
+          if printf '%s\n' "$body" | grep -Eq '^[[:space:]]*([-*+]|[0-9]+\.) \[ \]'; then
+            deny "점검표 ${c}에 빈칸(- [ ])이 남았다 — 항목마다 확인하고 근거를 한 줄 적어라. 지킬 수 없는 항목은 사용자 승인을 받고 이유를 적는다."
+          fi
+          if printf '%s\n' "$body" | grep -Eq '근거:[[:space:]]*$'; then
+            deny "점검표 ${c}에 빈 근거(「근거:」 뒤가 비었다)가 있다 — 무엇을 보고 확인했는지 한 줄 적어라."
+          fi
+          # 엄격 모드(사용자 결정 2026-09-28): 「화면:」 줄에 적은 파일·폴더만 이 점검표가 덮는다
+          covered="$covered
+$(printf '%s\n' "$body" | sed -n 's/^[[:space:]]*화면:[[:space:]]*//p' | tr ',·' '  ' | tr -s ' \t' '\n\n' | tr -d '`' || true)"
+        done <<<"$checks"
+        uncovered=""
+        while IFS= read -r f; do
+          ok=0
+          while IFS= read -r e; do
+            case "$e" in ""|app|app/|ui|ui/|"app/(app)"|"app/(app)/") continue ;; esac
+            if [ "$f" = "$e" ] || { [ "${e%/}/" = "$e" ] && [ "${f#"$e"}" != "$f" ]; } || [ "${f#"$e"/}" != "$f" ]; then ok=1; break; fi
+          done <<<"$covered"
+          [ "$ok" = 1 ] || uncovered="$uncovered $f"
+        done < <(printf '%s\n' "$design_files" | grep -E '^(app|ui)/.*\.(tsx|css)$' || true)
+        [ -z "$uncovered" ] || deny "점검표 「화면:」 줄에 없는 화면을 커밋한다:${uncovered} — 이 화면을 점검표 「화면:」 줄에 더하고(파일이나 그 폴더, app/·ui/처럼 넓게 적기는 안 됨) 항목을 이 화면 기준으로 다시 확인하라."
+      fi
       if printf '%s\n' "$files" | is_code_path; then
         has_skill "$skills_file" "test-driven-development" && has_skill "$skills_file" "verification-before-completion" \
           || deny "코드 커밋 전에 superpowers 스킬을 이 에이전트에서 호출하라: 구현 전 test-driven-development, 완료·커밋 전 verification-before-completion (Skill 도구). 호출 뒤 커밋을 다시 시도하라."
@@ -186,6 +235,10 @@ case "$event" in
   edit)
     path="$(printf '%s' "$payload" | jq -r '.tool_input.file_path // empty')"
     rel="${path#"${CLAUDE_PROJECT_DIR:-}"/}"
+    if printf '%s\n' "$rel" | is_ui_path; then
+      has_skill "$skills_file" "design-gate" \
+        || deny "화면 파일(app/의 .tsx·.css, ui/, docs/design/)을 고치기 전에 Skill 도구로 design-gate를 호출하라 — 브리프·화면 사용성 원칙·사용자 디자인 결정을 읽고 점검표를 준비한다. 호출 뒤 다시 시도하라."
+    fi
     printf '%s\n' "$rel" | is_code_path || exit 0
     has_skill "$skills_file" "test-driven-development" \
       || deny "코드를 쓰기 전에 Skill 도구로 test-driven-development를 호출하라(실패 테스트 → 최소 구현 → 리팩터). 호출 뒤 다시 시도하라."

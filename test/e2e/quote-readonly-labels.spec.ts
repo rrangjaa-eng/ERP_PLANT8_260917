@@ -6,13 +6,26 @@ import { createOrgUnit, createTeam } from "@/domain/org";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { insertVendor } from "@/repositories/vendors";
+import { insertRole } from "@/repositories/roles";
+import { listPermissions, listVisibility, upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { findUserByEmail } from "@/repositories/users";
 
 // 버그 재현(2026-09-28 스킨 촬영 중 발견): 견적 원장을 보기만 하는 계급(쓰기·조정 권한 없음 — 대표)에게
 // 소분류가 이름(무대·시공) 대신 코드값(stage_construction)으로, 거래처가 이름 대신 id로 보였다.
 // page.tsx가 이름 목록을 쓰기·조정 권한이 있을 때만 읽었기 때문이다.
+// 계급은 대표 권한·노출을 복사하고 프로젝트 쓰기·조정만 끈 임시 계급이다 — role-ceo는 다른 스펙이 쓰기를 켜 두어 순서에 따라 재현이 사라진다.
 test("보기만 하는 계급도 견적 원장에서 소분류·거래처를 이름으로 본다", async ({ page }) => {
-  const ceo = await createFixtureUser({ roleId: "role-ceo", withTeam: true });
+  const roleId = `role-e2e-readonly-${randomUUID()}`;
+  await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 보기만 ${roleId.slice(-12)}`, sortOrder: 99, workScope: "company" });
+  for (const row of await listPermissions(SYSTEM_VIEWER, { roleId: "role-ceo" })) {
+    await upsertPermission(SYSTEM_VIEWER, { roleId, menu: row.menu, action: row.action, allowed: row.allowed });
+  }
+  for (const row of await listVisibility(SYSTEM_VIEWER, { roleId: "role-ceo" })) {
+    await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: row.infoItem, visible: row.visible });
+  }
+  await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "projects", action: "write", allowed: false });
+  await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "projects.adjustment", action: "write", allowed: false });
+  const ceo = await createFixtureUser({ roleId, withTeam: true });
   const pm = await createFixtureUser({ roleId: "role-pm", withTeam: true });
   const pmUser = await findUserByEmail(SYSTEM_VIEWER, pm.email);
   if (!pmUser) throw new Error("PM 픽스처가 없습니다");

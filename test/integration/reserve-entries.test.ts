@@ -530,6 +530,25 @@ describe("domain/reserves — 권한 · 노출 · 보관/복원 · 페이지 · 
     expect((await reserveLogs("archive")).map((row) => row.entityId)).toEqual([withdrawal.id]);
   });
 
+  // 묶음 ④ /review R9 — 보관(삭제)도 수정처럼 version을 싣고 저장된 version과 비교한다(낡은 탭·복원 초안의 lost update 방지).
+  it("보관 요청의 version이 낡았으면 `다른 사람이 먼저 이 줄을 바꿈 · 새로 고침`, 줄은 보관되지 않는다 · 지금 version이면 보관된다", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const deposit = newRow(client.id, "2026-03-01", "deposit", 1_000_000);
+    const withdrawal = newRow(client.id, "2026-03-05", "withdrawal", 300_000);
+    await saveReserves(finance, { rows: [deposit, withdrawal] });
+    await saveReserves(finance, { rows: [{ ...withdrawal, isNew: undefined, version: 1, amount: krw(250_000) }] });
+
+    const error = await userFacing(saveReserves(finance, { rows: [], archived: [{ id: withdrawal.id, version: 1 }] }));
+
+    expect(error.message).toBe("다른 사람이 먼저 이 줄을 바꿈 · 새로 고침");
+    expect(await storedRow(withdrawal.id)).toMatchObject({ archivedAt: null, version: 2 });
+    expect(await reserveLogs("archive")).toHaveLength(0);
+
+    await saveReserves(finance, { rows: [], archived: [{ id: withdrawal.id, version: 2 }] });
+    expect((await storedRow(withdrawal.id))?.archivedAt).not.toBeNull();
+  });
+
   it("입금 줄 보관으로 중간 날짜가 음수가 되는 배치는 거부되고 DB 무변경", async () => {
     const finance = await createFinanceViewer();
     const client = await createClient();

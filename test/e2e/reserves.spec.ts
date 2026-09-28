@@ -804,4 +804,22 @@ test.describe("리저브 대장 — 묶음 ④ 리뷰", () => {
     await expect(ledger(page).locator('td[aria-invalid="true"]')).toHaveCount(0);
     await expect(cell(page, 1, COL.note)).toHaveText("둘째 줄");
   });
+
+  test("화면 원화 환산은 서버와 같은 정수 환산 — USD 0.35 × 1,350 = 473(R6)", async ({ page }) => {
+    const roles = await createRoles();
+    await createClient("E2E리저브환산");
+    await openLedger(page, roles.finance);
+
+    await addReserveRow(page);
+    await page.keyboard.press("Escape");
+    await focusGridCell(cell(page, 0, COL.amount));
+    await page.keyboard.press("Enter");
+    await page.getByRole("combobox", { name: "금액 통화" }).selectOption("USD");
+    await page.getByRole("textbox", { name: "금액", exact: true }).pressSequentially("0.35");
+    const rate = page.getByRole("textbox", { name: "금액 환율" });
+    await rate.fill("1350");
+    await rate.press("Enter");
+    await expect(cell(page, 0, COL.amount)).toContainText("473");
+    await expect(cell(page, 0, COL.amount)).not.toContainText("472");
+  });
 });

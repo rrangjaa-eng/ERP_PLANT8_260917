@@ -322,6 +322,51 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
     expect(await countRows(clientB.id)).toBe(0);
   });
 
+  // 묶음 ④ /review T1 — 돈 원장의 낙관적 잠금(version)과 응답을 잃은 수정 재전송(SF-2 선례).
+  describe("수정 버전 충돌 · 재전송", () => {
+    async function savedDeposit(finance: Viewer) {
+      const client = await createClient();
+      const deposit = newRow(client.id, "2026-03-01", "deposit", 1_000_000);
+      await saveReserves(finance, { rows: [deposit] });
+      return deposit;
+    }
+
+    it("낡은 version(1)으로 고치면 `다른 사람이 먼저 이 줄을 바꿈 · 새로 고침`, DB는 먼저 저장한 값 그대로", async () => {
+      const finance = await createFinanceViewer();
+      const deposit = await savedDeposit(finance);
+      await saveReserves(finance, { rows: [{ ...deposit, isNew: undefined, version: 1, amount: krw(900_000) }] });
+
+      const error = await userFacing(saveReserves(finance, { rows: [{ ...deposit, isNew: undefined, version: 1, note: "낡은 탭" }] }));
+
+      expect(error.message).toBe("다른 사람이 먼저 이 줄을 바꿈 · 새로 고침");
+      expect(await storedRow(deposit.id)).toMatchObject({ version: 2, amountAmountKrw: 900_000, note: null });
+    });
+
+    it("같은 수정을 같은 version으로 다시 보내면(응답 유실) no-op — version 2 그대로, document_update 한 번", async () => {
+      const finance = await createFinanceViewer();
+      const deposit = await savedDeposit(finance);
+      const edit = { ...deposit, isNew: undefined, version: 1, amount: krw(900_000) };
+      await saveReserves(finance, { rows: [edit] });
+
+      await saveReserves(finance, { rows: [edit] });
+
+      expect(await storedRow(deposit.id)).toMatchObject({ version: 2, amountAmountKrw: 900_000 });
+      expect((await reserveLogs("document_update")).filter((row) => row.entityId === deposit.id)).toHaveLength(1);
+    });
+
+    it("같은 version으로 다른 값을 다시 보내면 버전 충돌, DB는 첫 수정 값 그대로", async () => {
+      const finance = await createFinanceViewer();
+      const deposit = await savedDeposit(finance);
+      await saveReserves(finance, { rows: [{ ...deposit, isNew: undefined, version: 1, amount: krw(900_000) }] });
+
+      const error = await userFacing(saveReserves(finance, { rows: [{ ...deposit, isNew: undefined, version: 1, amount: krw(800_000) }] }));
+
+      expect(error.message).toBe("다른 사람이 먼저 이 줄을 바꿈 · 새로 고침");
+      expect(await storedRow(deposit.id)).toMatchObject({ version: 2, amountAmountKrw: 900_000 });
+      expect((await reserveLogs("document_update")).filter((row) => row.entityId === deposit.id)).toHaveLength(1);
+    });
+  });
+
   it("기존 줄의 클라이언트를 바꾸면 `클라이언트는 첫 저장 뒤 잠김 · 새 줄로 적기`, DB 무변경(사용자 D6)", async () => {
     const finance = await createFinanceViewer();
     const clientA = await createClient();

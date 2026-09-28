@@ -209,6 +209,11 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
 
     // 접힌 요약 행(P2/P3 값)이 폰에서만 렌더되고 탭하면 시트가 열린다.
     const collapsedRow = page.locator('[role="button"][aria-label*="상세 보기"]');
+
+    // 04-31 DOM 감사 FAIL-1 — SYSTEM.md §3(195행)·§7-3(761행) 터치 목표 44px. 시트를 여는 유일한 자리다.
+    const collapsedBox = await collapsedRow.boundingBox();
+    expect(collapsedBox?.height).toBeGreaterThanOrEqual(44);
+
     await collapsedRow.click();
 
     const sheet = page.getByRole("dialog", { name: /폰 시트 확인용 항목|항목명 없음/ });

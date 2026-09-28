@@ -125,6 +125,8 @@ const COPY = {
   deleteResult: "보관함으로 옮겨짐 · 잔액 다시 계산",
   discarded: "편집을 버렸습니다",
   invalidInput: "저장 실패 · 입력값 확인",
+  /** ui/table applyPaste의 잠김 셀 이유와 같은 문자열. */
+  lockedPaste: "읽기 전용·잠김 셀에 값 떨어짐",
 };
 
 function rowFromDto(dto: ReserveEntryDto): Row {
@@ -988,7 +990,8 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
       key: "clientId",
       kind: "select",
       options: references.clients.map((client) => ({ value: client.id, label: client.name })),
-      isEditable: (row) => editability(row, "clientId") === "edit",
+      // 리뷰 R5 — 저장된 줄의 잠긴 클라이언트 칸도 값을 읽는다. 같은 클라이언트면 그대로 두고, 다른 클라이언트면 잠김 오류 칸(handlePasteAtCell).
+      isEditable: (row) => editability(row, "clientId") !== "readonly",
     },
   ];
 
@@ -1054,6 +1057,10 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
       if (!target) continue;
       if (cell.result.status === "error") {
         errors[target.id] = { ...errors[target.id], [cell.columnKey]: cell.result.reason };
+        continue;
+      }
+      if (cell.columnKey === "clientId" && editability(target, "clientId") === "locked") {
+        if (cell.result.value !== target.clientId) errors[target.id] = { ...errors[target.id], clientId: COPY.lockedPaste };
         continue;
       }
       cleared.push({ rowId: target.id, columnKey: cell.columnKey });
@@ -1149,6 +1156,8 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
         columns={columns}
         rows={rows}
         getRowId={(row) => row.id}
+        // 리뷰 R5 — 격자 복사에 앱 형식(줄별 통화)을 싣는다. 같은 앱 안 붙여넣기는 계산 열을 무시하고 외화 줄을 센다(견적 원장과 같다).
+        copyMeta={(copyRows) => JSON.stringify(copyRows.map((row) => ({ currency: row.money.currency })))}
         groupBy={groupLabel}
         groupAside={groupBalance}
         openCell={openCell}

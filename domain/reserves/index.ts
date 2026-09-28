@@ -245,6 +245,12 @@ async function reserveRights(viewer: Viewer, action: "view" | "write", deps?: Pa
   return allowed && shown;
 }
 
+// 묶음 ④ /review R3 — 리저브 줄을 볼 수 있는가(pnl 보기 + reserve.amount, listReserves와 같은 게이트). 보관함 목록이
+// 리저브 줄을 싣기 전에 묻는다(B-15 — 날짜·클라이언트·건수도 부분 노출 금지).
+export async function canViewReserves(viewer: Viewer): Promise<boolean> {
+  return reserveRights(viewer, "view");
+}
+
 // 트랜잭션 앞에서 읽는다(04-32 — 잠긴 트랜잭션 안에서 풀 db를 부르지 않는다).
 async function evidenceTypeValues(viewer: Viewer, rows: ReserveWriteRow[]): Promise<Set<string>> {
   if (!rows.some((row) => row.evidenceType)) return new Set();

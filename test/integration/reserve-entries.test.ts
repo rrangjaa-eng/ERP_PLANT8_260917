@@ -560,6 +560,7 @@ describe("domain/reserves — 권한 · 노출 · 보관/복원 · 페이지 · 
     await saveReserves(finance, { rows: [], archived: [{ id: withdrawal.id, version: 1 }] });
     const archiveReader = async (grants: [string, "view" | "write"][], reserveVisible: boolean) => {
       const viewer = await createViewerWith({ permissions: [["admin.archive", "view"], ...grants], reserveVisible });
+      if (!viewer.roleId) throw new Error("계급 없는 테스트 사용자");
       await upsertVisibility(SYSTEM_VIEWER, { roleId: viewer.roleId, infoItem: "archive.value", visible: true });
       return viewer;
     };

@@ -183,17 +183,27 @@ function firstReason(node: unknown): string | null {
 type CellErrors = Record<string, Record<string, string>>;
 
 // 가장자리(zod) 검증 오류를 보낸 줄 순서로 칸 오류에 붙인다 — 모양이 아닌 id도 그 칸의 이유가 된다(04-07 리뷰 S3).
-function validationCellErrors(errors: unknown, sentIds: string[]): CellErrors {
+// 리뷰 R12 — 보관 요청(archived[i])의 오류는 그 줄의 줄 전체 이유 자리(날짜 칸 — 서버 봉투의 "row"와 같다)에 붙인다.
+function validationCellErrors(errors: unknown, sentIds: string[], sentArchivedIds: string[]): CellErrors {
   const out: CellErrors = {};
   const rows = isRecord(errors) ? errors.rows : undefined;
-  if (!isRecord(rows)) return out;
-  for (const [index, fields] of Object.entries(rows)) {
-    const rowId = sentIds[Number(index)];
-    if (rowId === undefined || !isRecord(fields)) continue;
-    for (const [field, node] of Object.entries(fields)) {
-      if (field === "_errors") continue;
+  if (isRecord(rows)) {
+    for (const [index, fields] of Object.entries(rows)) {
+      const rowId = sentIds[Number(index)];
+      if (rowId === undefined || !isRecord(fields)) continue;
+      for (const [field, node] of Object.entries(fields)) {
+        if (field === "_errors") continue;
+        const reason = firstReason(node);
+        if (reason) out[rowId] = { ...out[rowId], [columnForField(field)]: reason };
+      }
+    }
+  }
+  const archived = isRecord(errors) ? errors.archived : undefined;
+  if (isRecord(archived)) {
+    for (const [index, node] of Object.entries(archived)) {
+      const rowId = sentArchivedIds[Number(index)];
       const reason = firstReason(node);
-      if (reason) out[rowId] = { ...out[rowId], [columnForField(field)]: reason };
+      if (rowId !== undefined && reason) out[rowId] = { ...out[rowId], [columnForField("row")]: reason };
     }
   }
   return out;
@@ -508,6 +518,7 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
   const [openCell, setOpenCell] = useState<{ rowId: string; columnKey: string } | null>(null);
   const savingRef = useRef(false);
   const sentIdsRef = useRef<string[]>([]);
+  const sentArchivedIdsRef = useRef<string[]>([]);
 
   const newRowCells = list.newRowCellEditability;
   const canWrite = newRowCells?.entryDate === "edit";
@@ -545,7 +556,13 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
     },
     onError: ({ error }) => {
       if (error.validationErrors) {
-        const next = validationCellErrors(error.validationErrors, sentIdsRef.current);
+        const next = validationCellErrors(error.validationErrors, sentIdsRef.current, sentArchivedIdsRef.current);
+        // 리뷰 R12 — 거부된 보관 요청은 되돌려 그 줄을 표에 다시 보인다(오류 칸이 그 줄에 붙는다).
+        const rejectedArchive = sentArchivedIdsRef.current.filter((id) => next[id]);
+        if (rejectedArchive.length > 0) {
+          persistPendingRef.current = true;
+          setArchived((prev) => prev.filter((request) => !rejectedArchive.includes(request.id)));
+        }
         setCellErrors(next);
         setRejectedRowIds(Object.keys(next));
         setRejectionSummary(countCells(next) > 0 ? `오류 ${countCells(next)}칸 · 전부 거부` : COPY.invalidInput);
@@ -746,6 +763,7 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
     setDiscardedEdits(null);
     const sent = [...Object.values(edits).map((edit) => withPatch(edit.base, edit.patch)), ...newRows];
     sentIdsRef.current = sent.map((row) => row.id);
+    sentArchivedIdsRef.current = archivedIds;
     setSentCount(sent.length + archivedIds.length);
     execute({ rows: sent.map(toPayload), archived, page: list.page });
   }

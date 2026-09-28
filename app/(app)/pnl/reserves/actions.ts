@@ -37,7 +37,13 @@ export const saveReservesAction = authedActionClient
       rows: z.array(rowSchema).max(MAX_ROWS_PER_SAVE),
       // 리뷰 R9 — 보관(삭제)도 화면이 본 version을 싣는다(낡은 탭·복원 초안이 방금 고친 줄을 보관하지 않게).
       archived: z
-        .array(z.object({ id: z.string().uuid(RESERVE_INPUT_REASONS.entryNotFound), version: z.number().int() }))
+        // 리뷰 R12 — version 오류도 같은 줄 이유다(화면이 그 줄의 칸 오류로 붙인다 — zod 기본 영어 문구를 내보내지 않는다).
+        .array(
+          z.object({
+            id: z.string().uuid(RESERVE_INPUT_REASONS.entryNotFound),
+            version: z.number({ error: RESERVE_INPUT_REASONS.entryNotFound }).int(RESERVE_INPUT_REASONS.entryNotFound),
+          }),
+        )
         .max(MAX_ROWS_PER_SAVE)
         .optional(),
       // 성공 뒤 돌려줄 대장의 쪽(화면이 보는 쪽).

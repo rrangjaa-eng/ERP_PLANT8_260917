@@ -766,4 +766,42 @@ test.describe("리저브 대장 — 묶음 ④ 리뷰", () => {
       { tone: "warning", text: "외화 1줄 원화로" },
     ]);
   });
+
+  test("표 안 Ctrl+A → Ctrl+C → Ctrl+V는 앱 형식 — 잔액(계산) 칸 무시 · 같은 클라이언트의 잠긴 칸은 그대로, 오류 칸 0(R5)", async ({ page }) => {
+    const roles = await createRoles();
+    const client = await createClient("E2E리저브왕복");
+    await seedEntries(client.id, [
+      { date: "2026-10-01", direction: "deposit", amount: 300_000, note: "첫 줄" },
+      { date: "2026-10-02", direction: "withdrawal", amount: 100_000, note: "둘째 줄" },
+    ]);
+    await openLedger(page, roles.finance);
+    await page.evaluate(() => {
+      window.addEventListener("copy", (event) => {
+        const data = event.clipboardData;
+        (window as unknown as { __copied?: Record<string, string> }).__copied = {
+          "text/plain": data?.getData("text/plain") ?? "",
+          "application/x-plant8-quote-lines+json": data?.getData("application/x-plant8-quote-lines+json") ?? "",
+        };
+      });
+    });
+    await focusGridCell(cell(page, 0, COL.date));
+    await page.keyboard.press("Control+a");
+    await page.keyboard.press("Control+c");
+    const copied = (await (await page.waitForFunction(() => (window as unknown as { __copied?: Record<string, string> }).__copied)).jsonValue()) as Record<string, string>;
+    expect(JSON.parse(copied["application/x-plant8-quote-lines+json"] || "[]")).toEqual([{ currency: "KRW" }, { currency: "KRW" }]);
+
+    await focusGridCell(cell(page, 0, COL.date));
+    await page.evaluate((data) => {
+      const transfer = new DataTransfer();
+      for (const [format, value] of Object.entries(data)) transfer.setData(format, value);
+      document.activeElement?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: transfer, bubbles: true, cancelable: true }));
+    }, copied);
+
+    await expect.poll(() => footerPieces(page)).toEqual([
+      { tone: "muted", text: "붙여넣기 2줄" },
+      { tone: "muted", text: "계산 열 2칸 무시" },
+    ]);
+    await expect(ledger(page).locator('td[aria-invalid="true"]')).toHaveCount(0);
+    await expect(cell(page, 1, COL.note)).toHaveText("둘째 줄");
+  });
 });

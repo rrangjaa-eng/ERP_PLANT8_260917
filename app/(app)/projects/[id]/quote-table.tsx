@@ -2367,6 +2367,7 @@ export function QuoteLedger({
         cellIssue={cellIssueFor}
         cellDirty={(row) => row.dirty}
         onRowTap={(row) => setSheetRowKey(row.clientKey)}
+        rowLabel={(row) => row.itemName || "(항목명 없음)"}
         // 04-47(DR-16) — 합계 행 오른쪽 한 줄: 상한·거부 요약(danger) · 붙여넣기 묶음 · 저장 성공(혼자). 표가 조립해 넘겨준다.
         footerNotices={[
           ...(lineCapNotice ? [{ tone: "danger" as const, text: lineCapNotice }] : []),

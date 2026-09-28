@@ -73,6 +73,8 @@ export type TableProps<Row> = {
   cellIssue?: (row: Row, columnKey: string) => CellIssue | undefined;
   /** 04-04(바) — 폰에서 줄을 탭하면 호출된다(RowSheet를 여는 신호). */
   onRowTap?: (row: Row) => void;
+  /** 04-31 — onRowTap 트리거의 접근 이름(사람이 읽을 값). 없으면 rowId(내부 키)를 쓴다(하위 호환). */
+  rowLabel?: (row: Row) => string;
   /**
    * FINDING-015(코디네이터 대리 결정 2026-09-26) — 폰(<700)에서 행 전체(주 행 + 접힌 P2 줄)를 그 행의 링크 하나
    * (`data-row-link`를 단 `<a>`)의 누름 자리로 넓힌다. 행마다 제 `<tbody>`로 묶어 링크의 ::after가 두 줄을 덮는다.
@@ -182,6 +184,7 @@ export function Table<Row>({
   onPasteAtCell,
   cellIssue,
   onRowTap,
+  rowLabel,
   phoneRowLink = false,
   cellDirty,
   cellSaved,
@@ -950,7 +953,7 @@ export function Table<Row>({
                           className={[styles.collapsedCell, styles.collapsedCellTap].join(" ")}
                           role="button"
                           tabIndex={0}
-                          aria-label={`${rowId} 상세 보기`}
+                          aria-label={`${rowLabel ? rowLabel(row) : rowId} 상세 보기`}
                           onClick={() => onRowTap(row)}
                           onKeyDown={(event) => {
                             if (event.key === "Enter" || event.key === " ") {

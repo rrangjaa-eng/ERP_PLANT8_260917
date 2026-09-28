@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-27T22:53:26.157Z",
+  "timestamp": "2026-09-28T01:31:17.235Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -296,13 +296,42 @@
       "name": "[세션 AP] 웨이브 29 = 04-51·04-42 실행(Opus 실행자, 격리 none). 04-51: 결정 ② (a) 설정 검증(STATE 2026-09-24 답) — 42677ab·be5275e·8e962dc, Opus 검토 B1(값 그대로 재저장도 거부)·S1(설정 저장과 채번 비원자)·S2 반영 3fe33fb·867fce2·6c7ce5c·b501b53. 문구 명사형 변환 `순번 시작값이 이미 매긴 번호(${max})와 겹침 · ${max + 1} 이상 입력`. 04-42: 리저브 대장 화면 03af6d9·af17080·cc161c5·886e48a, Opus 검토(B1 1·S 9·N 11)+독립 DOM 감사(Opus, CI=true, PASS 38·FAIL 3) 반영 e78f611~fbe22f2(11커밋, ui/table groupAside prop 추가 — 플랜 truth 그룹 머리글 잔액). 오케스트레이터 신선 확인: lint·typecheck·lint:sql 0, 단위 1706, CI=true 통합 1933. 수정자 보고: CI=true build 0, reserves.spec 21, group 사용 화면 E2E 110. 전체 E2E는 PR CI(fbe22f2) 몫.",
       "status": "done",
       "commit": "fbe22f2"
+    },
+    {
+      "id": 62,
+      "name": "04-31 Task 1: 실제 엑셀 캡처 원문 fixture + 최종 표 재생 E2E (a)(a2)(b)(c)(d)",
+      "status": "done",
+      "commit": "c2a15b4·d7a6f03·4c61201"
+    },
+    {
+      "id": 63,
+      "name": "04-31 Task 2 앞부분: 페이즈 최종 독립 DOM 감사(Opus, CI=true 1280·1024·1000·375) PASS 51·FAIL 2·INFO 8 → FAIL 2건 수정",
+      "status": "in_progress",
+      "commit": "da5bc9a·002d58c·5a34bfb·2ae788e",
+      "progress": "DOM 감사·수정 끝. /design-review(§11 대조 1회) 남음 → 사람 확인(A)(B)(C)(D)"
     }
   ],
   "remaining_tasks": [
     {
+      "id": 64,
+      "name": "04-31 Task 2: /design-review 1회(페이즈 화면 전체, SYSTEM §11) → 사람 확인 (A) 6열 두 줄 엑셀 캡처 원문 (B) 45줄 캡처 원문 (C) 프로젝트 간 복사·표→엑셀 (D) 한글 입력기(조합 중 Ctrl+Enter 연타·Esc·Tab) → 캡처 재생 단위·E2E 추가",
+      "status": "blocked_on_human"
+    },
+    {
+      "id": 65,
+      "name": "04-31 Task 3: 마이그레이션 순서·가드·rollback-floor 검사 + CI=true 전체 E2E 새 DB 연속 3회",
+      "status": "not_started"
+    },
+    {
+      "id": 66,
+      "name": "04-31 SUMMARY·STATE·ROADMAP(플랜 완료) → 묶음 ④ Post-build /review → /qa → (/design-review는 Task 2에서 1회) → /cso",
+      "status": "not_started"
+    },
+    {
       "id": 60,
       "name": "새 세션: PR #85 CI(fbe22f2) 결과 확인 — 빨강이면 systematic-debugging으로 원인 수정·푸시 먼저. 그다음 웨이브 30 = 04-31(`/gsd-execute-phase 4 --wave 30`, autonomous:false, 묶음 ④ 끝) → 묶음 ④ Post-build(/review·/qa·/design-review·/cso — /cso 항목: 리저브·견적 초안 금액이 로그아웃 뒤 localStorage에 남음, 리저브 clientName은 reserve.amount만 검사). 머지는 묶음 ④ 끝까지 하지 않음",
-      "status": "not_started"
+      "status": "in_progress",
+      "progress": "세션 AQ: CI 초록 확인·04-31 Task 1·DOM 감사 수정 끝, Task 2 체크포인트에서 멈춤"
     },
     {
       "id": 55,
@@ -397,6 +426,11 @@
   ],
   "blockers": [
     {
+      "description": "04-31 Task 2 checkpoint:human-verify(gate=blocking) — 엑셀 캡처 원문 2종(6열·45줄)과 PC 전용 확인(C)(D)는 사람만 할 수 있음. auto-mode 꺼짐, 기록에 답 없음",
+      "type": "human_action",
+      "workaround": "그 전까지 /design-review(Task 2 앞부분)만 진행 가능. Task 3은 Task 2 뒤 순서라 먼저 돌리지 않음(바꾸려면 사용자 승인)"
+    },
+    {
       "description": "04-25 열린 항목: UX-04는 형제 플랜이 아직 열려 있어 완료 표시 안 함 — 마지막 형제 플랜에서 완료 처리",
       "type": "technical",
       "workaround": "형제 플랜(04-28 등) 완료 시 함께 마감"
@@ -445,9 +479,9 @@
   "async_jobs": [],
   "human_actions_pending": [
     {
-      "action": "04-31 최종 확인(PC): 엑셀 원문 2종(6열·45줄) 캡처, 앱→엑셀 복사, 한글 IME(조합 중 Esc)",
-      "context": "페이즈 끝, 한 번에",
-      "blocking": false
+      "action": "04-31 최종 확인(PC, Windows): (A) 엑셀 6열 두 줄(소분류·항목·거래처·수량·단가·실행가, 한 칸 줄바꿈·한 칸 큰따옴표·금액 쉼표) 복사 → 브라우저 콘솔 `copy(JSON.stringify(await navigator.clipboard.readText()))` 결과 문자열 (B) 45줄×여러 열(빈 칸 하나 포함) 같은 방법 (C) 프로젝트 간 Ctrl+A→C→V 왕복과 표→엑셀 붙여넣기 열 어긋남 없음 (D) MS 한국어 입력기 조합 중 Ctrl+Enter 연타·길게 누름 1건만 생성, 조합 중 Esc가 입력을 버리지 않음, 조합 중 Tab",
+      "context": "04-31-PLAN.md Task 2 <how-to-verify> — 답은 PR #85 댓글로. 캡처엔 업무 데이터 말고 예시 값만",
+      "blocking": true
     },
     {
       "action": "/cso 전체 검사(Docker 있는 PC)",
@@ -798,8 +832,8 @@
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션 → git status -sb(HEAD가 claude/gsd-progress-e1nzgu에 붙었는지) → .planning/phases/04-project-quote-ledger/.continue-here.md Read(세션 AP 블록) → PR #85 최신 [지시] 확인 → PR #85 CI(fbe22f2) 확인·빨강이면 먼저 수정 → origin/main 머지 커밋 반영 → `/gsd-execute-phase 4 --wave 30`(04-31, 묶음 ④ 끝, autonomous:false) → 묶음 ④ Post-build",
-  "context_notes": "세션 AN: 04-18 완료(실행·DOM 감사 30/0·Opus 검토 반영·전체 게이트 CI=true 통과, origin 8a5e2cf). 사용자 지시로 이 계정은 인계까지만, 다음은 다른 계정. Codex 재확인 목록에 04-18 추가.",
+  "next_action": "새 세션 → git status -sb(HEAD 붙었는지) → .planning/phases/04-project-quote-ledger/.continue-here.md Read(세션 AQ 블록) → PR #85 최신 [지시] 확인(사용자 캡처 (A)(B)·(C)(D) 답이 왔는지) → PR #85 CI(2ae788e 이후 인계 커밋) 확인·빨강이면 먼저 수정 → origin/main 머지 커밋 반영 → 04-31 Task 2 /design-review 1회(페이즈 화면 전체 §11, 입력: docs/reviews/phase-04/04-31-dom-audit.md INFO 8건) → 사용자 답이 있으면 continuation 실행자(캡처 fixture·재생 단위·E2E, (C)(D) 어긋남 수정) → Task 3(전체 E2E 3회) → SUMMARY → Post-build. 답이 없으면 /design-review 뒤 멈추고 인계.",
+  "context_notes": "세션 AQ(2026-09-28): 04-31 Task 1 실행(Sonnet 실행자), Task 2 체크포인트에서 멈춤. 독립 DOM 감사(Opus) FAIL 2 → 수정자(Sonnet) TDD 4커밋. 편차: parse-tsv.test.ts가 ui 경계(D-26)라 캡처 상수를 복제(role-menu.test.ts 선례) — fixture 머리 주석 「정의 1건」 문구가 사실과 달라 continuation이 정정할 것. reserves.spec.ts:282가 quote-table·projects-list 스펙과 함께 돌 때 잔액 100,000 기대·460,000 실측으로 1회 실패(단독 통과, 수정자 변경 전에도) — Task 3 전체 E2E 3회 전 조사 대상.\n\n세션 AN: 04-18 완료(실행·DOM 감사 30/0·Opus 검토 반영·전체 게이트 CI=true 통과, origin 8a5e2cf). 사용자 지시로 이 계정은 인계까지만, 다음은 다른 계정. Codex 재확인 목록에 04-18 추가.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정",

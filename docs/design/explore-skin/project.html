@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="skin-ledger.css">
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="relax.css">
+<script src="skin.mjs"></script>
+<title>견적 원장 — 스킨 목업</title>
+</head>
+<body>
+<header class="bar">
+  <a class="mark" href="#" aria-label="PLANT8 내 차례">PL<i>A</i>NT8</a>
+  <nav aria-label="주 메뉴"><a href="#" aria-current="page"><span>프로젝트</span></a><a href="#"><span>지출결의</span></a><a href="#"><span>법인카드</span></a><a href="#"><span>결재</span></a><a href="#"><span>손익</span></a></nav>
+  <div class="r"><a class="srch" href="#" aria-label="검색"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-search"></use></svg><kbd>Ctrl+K</kbd></a><div class="um"><button class="who" type="button" aria-haspopup="menu" aria-expanded="false">박서연<svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-down"></use></svg></button><div class="umenu" role="menu" hidden><a role="menuitem" href="#">알림함 2</a><a role="menuitem" href="#">내 정보</a><a role="menuitem" href="#">로그아웃</a></div></div></div>
+</header>
+<main>
+  <div class="head">
+    <div class="ph">
+      <div class="tt"><h1>2026 현대자동차 아이오닉9 미디어 론칭 쇼케이스</h1><p class="sub">P-2026-0412 · 상세 견적 2차</p><span class="tag">진행 중</span></div>
+      <div class="acts">
+        <button class="btn pc" type="button">복사해 새 차수</button><button class="btn pc" type="button">프로젝트 복사</button><button class="btn ph-only" type="button" aria-expanded="false">더보기</button>
+        <button class="btn" type="button">상태 바꾸기</button>
+        <button class="btn p" type="button">일괄 저장 3 <kbd>Ctrl+S</kbd></button>
+      </div>
+    </div>
+    <div class="meta">
+      <span>기간 <b class="num">09-12 ~ 09-16</b> <button class="b3" type="button">기간 바꾸기</button></span>
+      <span>고객 승인 <b class="num">2026-09-20</b> <b>박서연</b></span>
+      <span>총 매출 예상가 <b class="num">50,000,000</b> <button class="b3" type="button">바꾸기</button></span>
+      <span>진행 중 <span class="num">2026-09-02</span>부터</span>
+    </div>
+    <div class="pnl"><span>견적<b class="num">48,000,000</b></span><span>예상 비용<b class="num">37,097,280</b></span><span>확정 비용<b class="num">22,400,000</b></span><span>수익<b class="num">10,902,720 · 22.7%</b></span><span class="warn">계산 불가 1건</span></div>
+  </div>
+  <p class="lock">고객 승인 차수 · 견적가 잠김, 실행가와 새 줄만</p>
+
+  <div class="panel">
+  <table class="edit">
+    <caption class="sr">견적 줄</caption>
+    <thead><tr>
+      <th class="rn p3 c1280">번호</th><th class="p3">소분류</th><th>항목</th><th class="p2">거래처</th><th class="num p2">수량</th><th class="num p2">단가</th><th class="num p2">견적가</th><th class="num">실행가</th><th class="num p2 c1280">차익</th><th>상태</th><th class="p3">비고</th>
+    </tr></thead>
+    <tbody>
+      <tr class="grp"><td colspan="11">무대·시공</td></tr>
+      <tr>
+        <td class="rn p3 c1280">1</td><td class="p3">무대·시공</td>
+        <td>메인 스테이지 구조물 설치 및 철거<span class="fold">(주)스테이지원커뮤니케이션즈 · 견적 18,000,000</span></td>
+        <td class="p2">(주)스테이지원커뮤니케이션즈</td><td class="num p2">1식</td><td class="num p2">18,000,000</td><td class="num p2">18,000,000</td>
+        <td class="num">12,400,000</td><td class="num p2 c1280">5,600,000</td>
+        <td><span class="tag t d">증빙 14일 경과</span></td><td class="p3">철거 09-17 새벽</td>
+      </tr>
+      <tr class="editing">
+        <td class="rn p3 c1280">2</td><td class="p3">무대·시공</td>
+        <td>LED 월 W12000×H4000<span class="fold">한빛무대예술 · 견적 9,600,000</span></td>
+        <td class="p2">한빛무대예술</td><td class="num p2">1식</td><td class="num p2"><input class="in num" id="c-2-price" value="9,600,000" aria-label="단가"></td><td class="num p2">9,600,000</td>
+        <td class="num dirty">6,900,000</td><td class="num p2 c1280">2,700,000</td>
+        <td><span class="tag t">편집 중</span></td><td class="p3"></td>
+      </tr>
+      <tr>
+        <td class="rn p3 c1280">3</td><td class="p3">무대·시공</td>
+        <td>음향·조명 오퍼레이팅 (2일)<span class="fold">한빛무대예술 · 견적 4,400,000</span></td>
+        <td class="p2">한빛무대예술</td><td class="num p2">2일</td><td class="num p2">2,200,000</td><td class="num p2">4,400,000</td>
+        <td class="num">3,100,000</td><td class="num p2 c1280">1,300,000</td>
+        <td><span class="tag t ok">지출결의 승인</span></td><td class="p3"></td>
+      </tr>
+      <tr class="grp"><td colspan="11">운영·인력</td></tr>
+      <tr>
+        <td class="rn p3 c1280">4</td><td class="p3">운영·인력</td>
+        <td>행사 진행 MC — 김민지<span class="fold">김민지 (기타소득) · 견적 3,000,000</span></td>
+        <td class="p2">김민지 (기타소득)</td><td class="num p2">1명</td><td class="num p2">3,000,000</td><td class="num p2">3,000,000</td>
+        <td class="num">2,200,000</td><td class="num p2 c1280">800,000</td>
+        <td><span class="tag t w">확인증 미제출</span></td><td class="p3">QR 발송 09-15</td>
+      </tr>
+      <tr>
+        <td class="rn p3 c1280">5</td><td class="p3">운영·인력</td>
+        <td>운영요원 12명 × 2일<span class="fold">(주)이벤트스태프코리아 · 견적 7,200,000</span></td>
+        <td class="p2">(주)이벤트스태프코리아</td><td class="num p2">24</td><td class="num p2">300,000</td><td class="num p2">7,200,000</td>
+        <td class="num err">5,760,00<span class="why">숫자 아님 · 쉼표 위치 확인</span></td><td class="num p2 c1280">—</td>
+        <td><span class="tag t m">미착수</span></td><td class="p3"></td>
+      </tr>
+      <tr class="grp"><td colspan="11">해외 연사</td></tr>
+      <tr>
+        <td class="rn p3 c1280">6</td><td class="p3">해외 연사</td>
+        <td>해외 연사 항공·숙박<span class="fold">Skyline Travel Pte Ltd · USD 4,200.00 @1,318.40</span></td>
+        <td class="p2">Skyline Travel Pte Ltd</td><td class="num p2">1식</td><td class="num p2">5,800,000<span class="fx">USD 4,400.00 @1,318.18</span></td><td class="num p2">5,800,000</td>
+        <td class="num">5,537,280<span class="fx">USD 4,200.00 @1,318.40</span></td><td class="num p2 c1280">262,720</td>
+        <td><span class="tag t m">미착수</span></td><td class="p3"></td>
+      </tr>
+      <tr class="grp"><td colspan="11">조정</td></tr>
+      <tr>
+        <td class="rn p3 c1280">7</td><td class="p3">조정</td>
+        <td>에어컨 대여 초과분 (경영관리 등록)<span class="fold">(주)스테이지원커뮤니케이션즈 · 견적 0</span></td>
+        <td class="p2">(주)스테이지원커뮤니케이션즈</td><td class="num p2">—</td><td class="num p2">—</td><td class="num p2">0</td>
+        <td class="num">1,200,000</td><td class="num p2 c1280">-1,200,000</td>
+        <td><span class="tag t w">견적 외 비용</span></td><td class="p3"></td>
+      </tr>
+    </tbody>
+    <tfoot><tr>
+      <td class="rn p3 c1280"></td><td class="p3"></td><td>합계<span class="lbl">공급가액 · 7줄</span></td><td class="p2"></td><td class="p2"></td><td class="p2"></td>
+      <td class="num p2">48,000,000</td><td class="num">37,097,280</td><td class="num p2 c1280">10,902,720</td>
+      <td colspan="2"><span class="res">오류 1칸 · 전부 거부</span></td>
+    </tr></tfoot>
+  </table>
+  </div>
+  <div class="below pc"><button class="b3" type="button">줄 추가</button><button class="b3" type="button">견적 외 비용 줄 추가</button><button class="b3" type="button">조정 줄 추가</button></div>
+  <p class="hint"><span>이동 <kbd>↑↓←→</kbd></span><span>붙여넣기 <kbd>Ctrl+V</kbd></span><span>취소 <kbd>Esc</kbd></span><span>새 줄 <kbd>Ctrl+Enter</kbd></span><span>줄 이동 <kbd>Alt+↑↓</kbd></span><span>줄 복제 <kbd>Ctrl+D</kbd></span></p>
+
+  <section class="sec">
+    <h2>매출 <span class="sub">공급가액 기준 · 입금액만 통장 합계</span></h2>
+    <div class="panel">
+    <table>
+      <caption class="sr">매출</caption>
+      <thead><tr><th>구분</th><th class="p2">날짜</th><th>내용</th><th class="num">금액</th></tr></thead>
+      <tbody>
+        <tr><td><span class="tag t">발행</span></td><td class="p2 num">2026-09-20</td><td>세금계산서 1차 (계약금 50%)<span class="fold">2026-09-20</span></td><td class="num">24,000,000</td></tr>
+        <tr><td><span class="tag t ok">입금</span></td><td class="p2 num">2026-09-25</td><td>현대자동차(주) · 기업은행<span class="fold">2026-09-25</span></td><td class="num">24,000,000</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="bal">미수 <b class="num">24,000,000</b> · 잔금 세금계산서 발행 전</p>
+  </section>
+
+  <section class="sec">
+    <h2>차수</h2>
+    <div class="panel">
+    <table>
+      <caption class="sr">차수</caption>
+      <thead><tr><th>차수</th><th class="p2">생성일</th><th class="p2 num">줄 수</th><th class="num">견적 합계</th><th class="p2">상태</th><th><span class="sr">동작</span></th></tr></thead>
+      <tbody>
+        <tr><td>2차<span class="fold">2026-09-18 · 7줄 · 진행 중</span></td><td class="p2 num">2026-09-18</td><td class="p2 num">7줄</td><td class="num">48,000,000</td><td class="p2"><span class="tag t">진행 중</span></td><td></td></tr>
+        <tr><td>1차<span class="fold">2026-09-08 · 6줄 · 승인</span></td><td class="p2 num">2026-09-08</td><td class="p2 num">6줄</td><td class="num">52,300,000</td><td class="p2"><span class="tag t ok">승인</span></td><td><button class="b3" type="button">차수 열기</button></td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+</main>
+<div class="toast" role="status"><span>일괄 저장 · 3줄 저장됨</span><button class="b3" type="button">되돌리기</button></div>
+<nav class="tabs" aria-label="하단 탭"><a href="#"><svg class="ic" width="20" height="20" aria-hidden="true"><use href="#i-inbox"></use></svg><span>내 차례 3</span></a><a href="#" aria-current="page"><svg class="ic" width="20" height="20" aria-hidden="true"><use href="#i-folder"></use></svg><span>프로젝트</span></a><a href="#"><svg class="ic" width="20" height="20" aria-hidden="true"><use href="#i-receipt"></use></svg><span>지출결의</span></a><a href="#"><svg class="ic" width="20" height="20" aria-hidden="true"><use href="#i-menu"></use></svg><span>더보기</span></a></nav>
+</body>
+</html>

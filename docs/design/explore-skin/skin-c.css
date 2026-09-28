@@ -1,0 +1,94 @@
+/* skin-c.css — 안 C 「스테이지」
+ * 상단 바와 제목 구역을 하나의 딥그린 무대(가로 전폭)로 이어 브랜드를 세우고, 본문은 밝게.
+ * 표 머리글·그룹·합계는 그린 틴트 면, 표는 1px 선 흰 패널(radius 8). 과감함 한 곳: 무대 위 큰 제목(28px)과 네 숫자. */
+:root {
+  --fg:          #10201C;
+  --muted:       #4B5B57;   /* on --bg 7.0 · on --g-50 6.3 */
+  --faint:       #5B6B67;   /* on --bg 5.6 · on --g-50 5.0 */
+  --surface:     #F1F6F4;
+  --line:        #DCE6E2;
+  --line-strong: #9DBDB4;
+  --radius:      8px;
+
+  --bar:          var(--g-950);
+  --bar-h:        48px;
+  --bar-line:     0 solid transparent;
+  --nav-on-bg:    rgba(255, 255, 255, 0.10);
+  --nav-on-mark:  none;
+  --nav-radius:   6px;
+  --bar-kbd-line: var(--g-800);
+
+  --canvas:       #F7FAF9;
+  --panel:        #FFFFFF;
+  --panel-line:   1px solid var(--line);
+  --panel-radius: 8px;
+  --panel-shadow: none;
+  --panel-gap:    var(--s-4);
+
+  --head-bg:      var(--g-900);
+  --head-fg:      #F2F7F5;          /* on --g-900 13.5 */
+  --head-muted:   var(--g-300);      /* on --g-900 7.0 */
+  --title-size:   28px;
+
+  --th-bg:        var(--g-100);
+  --th-fg:        var(--g-950);
+  --th-line:      0 solid transparent;
+  --th-edit-bg:   var(--g-100);
+  --grp-bg:       var(--g-50);
+  --grp-fg:       var(--g-800);
+  --grp-line:     0 solid transparent;
+  --row-hover:    #F4F8F7;
+  --foot-bg:      var(--g-50);
+  --foot-edit-bg: var(--g-50);
+  --foot-line:    1px solid var(--line-strong);
+  --sum-line:     0 solid transparent;
+  --sec-line:     0 solid transparent;
+
+  --btn-line:     #B9CBC5;
+  --btn-radius:   8px;
+  --input-radius: 8px;
+  --tag-radius:   4px;
+  --tabs-bg:      var(--g-950);
+  --tabs-fg:      var(--g-300);
+  --tabs-on-fg:   #FFFFFF;
+  --tabs-line:    0 solid transparent;
+  --row-min:      40px;
+  --cell-pad-y:   8px;
+  --cell-pad-x:   10px;
+}
+@media (max-width: 699.98px) { :root { --title-size: 22px; --row-min: 44px; --cell-pad-y: 10px; --cell-pad-x: 8px; } }
+
+/* 무대: 제목 구역을 뷰포트 전폭 딥그린 띠로 (DOM 그대로, 배경만 가로로 늘린다) */
+.head { margin: calc(-1 * var(--s-5)) 0 var(--s-5); padding: var(--s-6) 0 var(--s-5); box-shadow: 0 0 0 100vmax var(--head-bg); clip-path: inset(0 -100vmax); }
+.head .ph h1 { font-weight: var(--fw-bold); }
+.head .btn { background: transparent; border-color: rgba(255, 255, 255, 0.35); color: var(--head-fg); }
+.head .btn:hover { background: rgba(255, 255, 255, 0.08); }
+.head .btn.p { background: var(--g-400); border-color: var(--g-400); color: var(--g-950); }
+.head .btn.p:hover { background: #8CCFBB; }
+.head .btn.p kbd { border-color: rgba(0, 33, 28, 0.4); color: var(--g-950); }
+.head .btn kbd { color: inherit; }
+.head .tag { background: var(--g-100); color: var(--g-900); border-color: transparent; }
+.head .b3 { color: var(--g-400); }
+.head .pnl { padding-top: var(--s-3); gap: var(--s-2) var(--s-8); }
+.head .pnl b { font-size: 20px; display: block; margin: 0; letter-spacing: var(--ls-head); }
+.head .pnl > span { display: inline-flex; flex-direction: column; font-size: var(--fs-sm); line-height: 1.35; }
+.head .pnl .warn { color: #F5C66B; justify-content: flex-end; }   /* on --g-900 9.4 */
+:focus-visible { outline-color: var(--focus); }
+.head :focus-visible { outline-color: var(--g-100); }
+
+.panel { overflow: hidden; }
+.form .panel { padding: var(--s-2) var(--s-5) var(--s-4); }
+.frow:last-of-type { border-bottom: 0; }
+.panel > table tbody td:first-child, .panel > table thead th:first-child, .panel > table tfoot td:first-child { padding-left: var(--s-4); }
+.panel > table tbody td:last-child, .panel > table thead th:last-child, .panel > table tfoot td:last-child { padding-right: var(--s-4); }
+.sum { background: var(--g-50); border-radius: 8px; padding: var(--s-2) var(--s-4); margin-bottom: var(--s-3); }
+.sec h2 { font-size: var(--fs-md); }
+.tabs a[aria-current] { box-shadow: inset 0 -2px 0 var(--g-400); }
+@media (max-width: 699.98px) {
+  .head { padding: var(--s-4) 0 var(--s-4); }
+  .head .pnl { gap: var(--s-2) var(--s-5); }
+  .head .pnl b { font-size: var(--fs-md); }
+  .panel > table tbody td:first-child, .panel > table thead th:first-child, .panel > table tfoot td:first-child { padding-left: var(--s-3); }
+  .panel > table tbody td:last-child, .panel > table thead th:last-child, .panel > table tfoot td:last-child { padding-right: var(--s-3); }
+}
+@media (max-width: 359.98px) { .tag.t { white-space: normal; } }

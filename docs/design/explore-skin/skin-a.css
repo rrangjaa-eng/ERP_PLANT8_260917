@@ -1,0 +1,54 @@
+/* skin-a.css — 안 A 「서류함」 [가장 안전한 안]
+ * 원장 구조·딥그린 상단 바는 그대로. 표를 흰 종이 한 장(1px 연한 선 · radius 6 · 은은한 그림자)에 올리고
+ * 바탕을 따뜻한 무채(웜 그레이)로 내린다. 2px 진한 선은 전부 1px 중간 선으로 바꾼다. */
+:root {
+  --fg:          #1A2421;   /* on --bg 16.0 · on canvas 15.0 */
+  --muted:       #55625E;   /* on --bg 6.3 · on canvas 5.9 */
+  --faint:       #636E6A;   /* on --bg 5.3 · on canvas 5.0 */
+  --surface:     #F4F6F4;
+  --line:        #E3E6E2;
+  --line-strong: #BCC6C2;   /* 이제 강한 선도 1px 중간 회녹 */
+  --radius:      6px;
+
+  --canvas:       #F2F5F4;  /* 차가운 회색 바탕 (2026-09-27 사용자: 웜톤 바탕 금지) */
+  --panel:        #FFFFFF;
+  --panel-line:   1px solid #E1E3DE;
+  --panel-radius: 6px;
+  --panel-shadow: 0 1px 2px rgba(26, 36, 33, 0.05), 0 1px 1px rgba(26, 36, 33, 0.03);
+  --panel-gap:    var(--s-4);
+
+  --bar-line:     0 solid transparent;
+  --title-size:   20px;
+
+  --th-bg:        #F8F9F7;
+  --th-line:      1px solid var(--line);
+  --th-edit-bg:   #EAF1EE;
+  --grp-bg:       #FBFBFA;
+  --grp-fg:       var(--muted);
+  --grp-line:     1px solid var(--line);
+  --row-hover:    #F6F8F7;
+  --foot-bg:      #F8F9F7;
+  --foot-edit-bg: #EAF1EE;
+  --foot-line:    1px solid var(--line-strong);
+  --sum-line:     1px solid var(--line-strong);
+  --sec-line:     1px solid var(--line);
+
+  --btn-line:     #C4CCC8;
+  --btn-shadow:   0 1px 1px rgba(26, 36, 33, 0.04);
+  --input-radius: 6px;
+  --btn-radius:   6px;
+  --tag-radius:   4px;
+  --tabs-line:    1px solid var(--line);
+  --row-min:      40px;
+  --cell-pad-y:   8px;
+  --cell-pad-x:   12px;
+}
+@media (max-width: 699.98px) { :root { --row-min: 44px; --cell-pad-y: 10px; --cell-pad-x: 10px; } }
+.form .panel { padding: var(--s-2) var(--s-5) var(--s-4); }
+.frow:last-of-type { border-bottom: 0; }
+.panel > table tbody td:first-child, .panel > table thead th:first-child, .panel > table tfoot td:first-child { padding-left: var(--s-4); }
+.panel > table tbody td:last-child, .panel > table thead th:last-child, .panel > table tfoot td:last-child { padding-right: var(--s-4); }
+.panel > table tfoot td:first-child { border-bottom-left-radius: 6px; }
+.panel > table tfoot td:last-child { border-bottom-right-radius: 6px; }
+.sum { border-bottom: 0; padding: var(--s-2) var(--s-1); }
+.btn.p { box-shadow: 0 1px 2px rgba(0, 49, 42, 0.18); }

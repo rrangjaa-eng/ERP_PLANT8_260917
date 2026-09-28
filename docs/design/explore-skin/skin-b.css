@@ -1,0 +1,98 @@
+/* skin-b.css — 안 B 「스튜디오」 [위험한 안]
+ * 쿨 그레이 캔버스 위 흰 패널(radius 10 · 층 그림자). 상단 바를 흰색으로 뒤집고 브랜드는 워드마크·필 메뉴로만.
+ * 행 44px · 본문 15px로 여백 중심. 과감함 한 곳: 네 숫자 줄과 합계 줄을 떠 있는 숫자 칩으로. */
+:root {
+  --fg:          #14201D;   /* on --bg 17.0 */
+  --muted:       #52605C;   /* on --bg 6.5 · on canvas 5.8 */
+  --faint:       #5E6B67;   /* on --bg 5.5 · on canvas 4.9 */
+  --surface:     #F2F5F4;
+  --line:        #E6EBE9;
+  --line-strong: #D3DBD8;
+  --radius:      10px;
+  --fs-base:     15px;
+
+  --canvas:       #EDF1F0;  /* 쿨 그레이, 그린 쪽으로 2° 기운 */
+  --panel:        #FFFFFF;
+  --panel-line:   0 solid transparent;
+  --panel-radius: 12px;
+  --panel-shadow: 0 1px 2px rgba(15, 35, 30, 0.06), 0 6px 16px -4px rgba(15, 35, 30, 0.10);
+  --panel-gap:    var(--s-5);
+
+  --bar:          #FFFFFF;
+  --bar-fg:       var(--fg);
+  --bar-muted:    var(--muted);
+  --bar-leaf:     var(--g-600);
+  --bar-h:        52px;
+  --bar-line:     1px solid var(--line);
+  --mark-fg:      var(--g-900);
+  --nav-fg:       var(--muted);
+  --nav-on-fg:    var(--g-800);
+  --nav-on-bg:    var(--g-50);
+  --nav-on-mark:  none;
+  --nav-radius:   999px;
+  --bar-kbd-line: var(--line-strong);
+
+  --title-size:   24px;
+  --th-bg:        #FFFFFF;
+  --th-fg:        var(--muted);
+  --th-line:      1px solid var(--line);
+  --th-edit-bg:   #FFFFFF;
+  --th-edit-fg:   var(--muted);
+  --grp-bg:       #F7F9F8;
+  --grp-fg:       var(--g-800);
+  --grp-line:     0 solid transparent;
+  --row-hover:    #F7FAF9;
+  --foot-bg:      #F7F9F8;
+  --foot-edit-bg: #F7F9F8;
+  --foot-line:    1px solid var(--line);
+  --sum-line:     0 solid transparent;
+  --sec-line:     0 solid transparent;
+
+  --btn-line:     #D3DBD8;
+  --btn-shadow:   0 1px 2px rgba(15, 35, 30, 0.08);
+  --btn-radius:   10px;
+  --input-radius: 10px;
+  --tag-radius:   999px;
+  --tabs-line:    1px solid var(--line);
+  --pnl-gap:      var(--s-3);
+
+  --row-min:      44px;
+  --cell-pad-y:   11px;
+  --cell-pad-x:   14px;
+  --control-h:    38px;
+}
+@media (max-width: 699.98px) { :root { --fs-base: 15px; --control-h: 42px; --cell-pad-x: 8px; } }
+
+.panel { overflow: hidden; }
+.form .panel { padding: var(--s-3) var(--s-6) var(--s-5); }
+.frow { border-bottom: 0; }
+.panel > table tbody td:first-child, .panel > table thead th:first-child, .panel > table tfoot td:first-child { padding-left: var(--s-5); }
+.panel > table tbody td:last-child, .panel > table thead th:last-child, .panel > table tfoot td:last-child { padding-right: var(--s-5); }
+thead th { padding-top: 12px; padding-bottom: 10px; }
+
+/* 상태 태그: 필(pill) + 옅은 틴트 면. 글자형(표 상태 열)도 필로 */
+.tag, .tag.t { border: 0; padding: 2px 10px; font-size: var(--fs-xs); background: var(--g-50); }
+.tag.d { background: var(--danger-weak); }
+.tag.w { background: var(--warning-weak); }
+.tag.m { background: var(--surface); }
+.tag.ok { background: var(--g-50); }
+.tag { color: var(--g-800); }
+
+/* 과감함 한 곳: 네 숫자와 합계를 떠 있는 숫자 칩으로 */
+.pnl { padding: var(--s-2) 0 var(--s-1); }
+.pnl > span { background: #FFFFFF; border-radius: 12px; box-shadow: var(--panel-shadow); padding: var(--s-2) var(--s-4); display: inline-flex; flex-direction: column; font-size: var(--fs-sm); line-height: 1.4; min-width: 128px; }
+.pnl > span.warn { justify-content: center; color: var(--warning); background: var(--warning-weak); box-shadow: none; }
+.pnl b { margin-left: 0; font-size: var(--fs-lg); letter-spacing: var(--ls-head); }
+.sum { background: #FFFFFF; border-radius: 12px; box-shadow: var(--panel-shadow); padding: var(--s-3) var(--s-5); margin-bottom: var(--s-4); }
+.sec { background: none; }
+.bar nav a span { padding: 6px 14px; margin: 0; }
+.btn.p { box-shadow: 0 2px 6px -1px rgba(0, 84, 70, 0.35); }
+@media (max-width: 699.98px) {
+  .pnl > span { min-width: 0; flex: 1 1 40%; padding: var(--s-2) var(--s-3); }
+  .pnl b { font-size: var(--fs-md); white-space: normal; }
+  .tag, .tag.t { padding: 2px 8px; }
+  .panel > table tbody td:first-child, .panel > table thead th:first-child, .panel > table tfoot td:first-child { padding-left: var(--s-3); }
+  .panel > table tbody td:last-child, .panel > table thead th:last-child, .panel > table tfoot td:last-child { padding-right: var(--s-3); }
+  .form .panel { padding: var(--s-2) var(--s-4) var(--s-4); }
+}
+@media (max-width: 359.98px) { .tag.t { white-space: normal; } }

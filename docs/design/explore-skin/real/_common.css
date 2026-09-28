@@ -1,0 +1,73 @@
+/* _common.css — 새 스킨(A·B·C·D) 공통 조각. 실제 앱 DOM(CSS 모듈 클래스)에 얹는 비교용 오버레이 — 앱 코드 아님.
+ * ① 등록 폼을 목록 위 모달로(목록이 밀리지 않게) ② 거래처 동작 열 「수정숨기기삭제」 붙음 간격 ③ 폰 표 셀 여백 */
+/* ① 등록 모달(PC: 가운데 창 640px · 두 칸 격자 / 폰: 아래에서 올라오는 시트). 목록은 그대로, 뒤에 가림막 */
+html body main > form:has([class*="__formActions"]) {
+  position: fixed; z-index: 60; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto;
+  background: #FFFFFF; border-radius: 12px; padding: 0 24px;
+  display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; align-content: start;
+  box-shadow: 0 24px 48px -12px rgba(0, 33, 28, 0.30), 0 2px 8px rgba(0, 33, 28, 0.10);
+}
+html body main > form:has([class*="__formActions"])::before {
+  content: "거래처 등록"; grid-column: 1 / -1; display: block; font-size: 18px; font-weight: 700; color: var(--fg);
+  letter-spacing: -0.02em; padding: 20px 0 16px; margin-bottom: 16px; border-bottom: 1px solid var(--line);
+}
+html body main:has(> form [class*="__formActions"])::after { content: ""; position: fixed; inset: 0; background: rgba(0, 33, 28, 0.40); z-index: 55; }
+/* 칸: 라벨 위 · 입력 아래 */
+html body main > form:has([class*="__formActions"]) > div:is([class*="__row"], [class*="__selectLabel"]) { display: flex !important; flex-direction: column; align-items: stretch; gap: 6px; margin: 0 0 16px !important; min-width: 0; }
+html body main > form:has([class*="__formActions"]) > div > :is(label, [class*="__label"]) { flex: none !important; padding: 0 !important; margin: 0 !important; font-size: 13px; font-weight: 600; color: var(--muted); }
+html body main > form:has([class*="__formActions"]) > div > [class*="__field"] { flex: none !important; }
+html body main > form:has([class*="__formActions"]) :is(input, select) { width: 100%; max-width: none; height: 40px; border-radius: 6px; border: 1px solid #B9C5C1; padding: 0 12px; font-size: 15px; background-color: #FFFFFF; }
+html body main > form:has([class*="__formActions"]) > div:nth-of-type(1),
+html body main > form:has([class*="__formActions"]) > div:nth-of-type(6) { grid-column: 1 / -1; }
+/* 아래 줄: 오른쪽 정렬 · 취소는 2차 버튼 모양 · 등록이 주 버튼 */
+html body main > form:has([class*="__formActions"]) > [class*="__formActions"] {
+  grid-column: 1 / -1; display: flex; flex-direction: row-reverse; justify-content: flex-start; gap: 8px; align-items: center;
+  margin: 8px -24px 0; padding: 16px 24px; border-top: 1px solid var(--line); background: #F7F9F8; border-radius: 0 0 12px 12px;
+  position: sticky; bottom: 0;
+}
+html body main > form:has([class*="__formActions"]) > [class*="__formActions"] a {
+  display: inline-flex; align-items: center; height: 40px; padding: 0 16px; border: 1px solid #B9C5C1; border-radius: 6px;
+  background: #FFFFFF; color: var(--fg); text-decoration: none; font-size: 14px; font-weight: 600;
+}
+html body main > form:has([class*="__formActions"]) > [class*="__formActions"] button { height: 40px; padding: 0 20px; font-size: 14px; border-radius: 6px; }
+@media (max-width: 699.98px) {
+  html body main > form:has([class*="__formActions"]) {
+    top: auto; bottom: 0; left: 0; transform: none; width: 100%; max-height: 88vh; border-radius: 16px 16px 0 0;
+    grid-template-columns: 1fr; padding: 0 16px;
+  }
+  html body main > form:has([class*="__formActions"])::before { padding-top: 16px; }
+  html body main > form:has([class*="__formActions"]) > [class*="__formActions"] { margin: 8px -16px 0; padding: 12px 16px 20px; border-radius: 0; }
+  html body main > form:has([class*="__formActions"]) > [class*="__formActions"] :is(a, span, button) { flex: 1; justify-content: center; }
+}
+/* ② 동작 열: 링크(수정)와 버튼(숨기기·삭제)을 같은 모양 · 같은 간격으로 */
+html body td:has(> [class*="__toggle"]) { white-space: nowrap; }
+html body td > [class*="__toggle"] ~ [class*="Button-module__"] { margin-left: 14px; }
+html body td > :is([class*="__toggle"], [class*="Button-module__"] [class*="__tertiary"]) {
+  font-size: 13px !important; font-weight: 600; color: var(--accent); border: 0 !important; padding: 0 !important; height: auto;
+  text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; background: none; line-height: 1.4;
+}
+html body td [class*="Button-module__"] [class*="__tertiary"] { font-size: 13px !important; font-weight: 600; border: 0 !important; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; line-height: 1.4; padding: 0 !important; }
+/* 모달 안 칸: 라벨 위 · 입력 아래 한 줄 기둥으로 통일 */
+html body main > form:has([class*="__formActions"]) div:is([class*="__row"], [class*="__selectLabel"]) { display: flex !important; flex-direction: column; align-items: stretch; gap: 4px; margin: 0 0 12px; }
+html body main > form:has([class*="__formActions"]) :is(label, [class*="__label"]) { padding: 0 !important; font-size: 13px; font-weight: 600; }
+
+/* ③ 화면 사용성 원칙(.claude/rules/frontend.md) — 안내 문구 최소 · 행동으로 유도 */
+/* 목록 부제 「진행 중인 프로젝트 원장」 = 설명문 → 뺀다(제목·메뉴가 위치를 말한다) */
+html body main:has([class*="projects-module__"][class*="__filterRow"]) [class*="PageHeader-module__"][class*="__subtitle"] { display: none; }
+/* 목록의 다음 행동 「프로젝트 등록」은 밑줄 글자가 아니라 주 버튼 하나로 */
+html body [class*="__filterRow"] > a[class*="__toggle"][href*="new=1"] {
+  display: inline-flex; align-items: center; height: 36px; padding: 0 16px; border-radius: 6px; margin-left: auto;
+  background: var(--accent); color: #FFFFFF; text-decoration: none; font-size: 14px; font-weight: 600;
+}
+/* 저장할 것이 없을 때 「바뀐 칸 없음」 문구 → 화면에서 빼고(스크린리더용 설명만 유지) 비활성 버튼 모양으로만 말한다 */
+html body [class*="Button-module__"][class*="__reasonInfo"] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+/* 빈 표: 「…없습니다」 설명보다 첫 행동이 먼저 보이게 — 행동을 2차 버튼으로 */
+html body [class*="Table-module__"][class*="__emptyCell"] { color: var(--muted); }
+html body [class*="Table-module__"][class*="__emptyAction"] {
+  display: inline-flex; align-items: center; height: 32px; padding: 0 12px; margin-left: 12px; border: 1px solid #B9C5C1; border-radius: 6px;
+  background: #FFFFFF; color: var(--fg); text-decoration: none; font-size: 13px; font-weight: 600;
+}
+/* 위험한 동작은 떨어뜨려 둔다: 삭제를 수정·숨기기와 떼고 위험 색으로 */
+html body td > [class*="__toggle"] ~ [class*="Button-module__"]:last-child { margin-left: 28px; }
+html body td > [class*="__toggle"] ~ [class*="Button-module__"]:last-child [class*="__tertiary"] { color: var(--danger) !important; }

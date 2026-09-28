@@ -1,0 +1,9 @@
+/* 안 A + 옆 패널 — 등록 폼을 가운데 모달 대신 오른쪽에서 나오는 패널(드로어)로. 목록 왼쪽 부분은 계속 보인다 */
+@media (min-width: 700px) {
+  html body main > form:has([class*="__formActions"]) {
+    left: auto; right: 0; top: 0; bottom: 0; transform: none; width: 480px; max-height: none; height: 100vh;
+    border-radius: 16px 0 0 16px; display: flex !important; flex-direction: column;
+  }
+  html body main > form:has([class*="__formActions"]) > [class*="__formActions"] { position: sticky; bottom: 0; margin-top: auto; border-radius: 0; }
+  html body main:has(> form [class*="__formActions"])::after { background: rgba(0, 33, 28, 0.20); }
+}

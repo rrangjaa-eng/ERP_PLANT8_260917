@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="skin-ledger.css">
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="relax.css">
+<script src="skin.mjs"></script>
+<title>거래처 등록 — 스킨 목업</title>
+</head>
+<body>
+<header class="bar">
+  <a class="mark" href="#" aria-label="PLANT8 내 차례">PL<i>A</i>NT8</a>
+  <nav aria-label="주 메뉴"><a href="#"><span>프로젝트</span></a><a href="#"><span>지출결의</span></a><a href="#"><span>법인카드</span></a><a href="#"><span>결재</span></a><a href="#"><span>손익</span></a></nav>
+  <div class="r"><a class="srch" href="#" aria-label="검색"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-search"></use></svg><kbd>Ctrl+K</kbd></a><div class="um"><button class="who" type="button" aria-haspopup="menu" aria-expanded="false">최지현<svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-down"></use></svg></button><div class="umenu" role="menu" hidden><a role="menuitem" href="#">관리</a><a role="menuitem" href="#">알림함 2</a><a role="menuitem" href="#">내 정보</a><a role="menuitem" href="#">로그아웃</a></div></div></div>
+</header>
+<main>
+  <div class="head">
+    <div class="ph"><div class="tt"><h1>거래처</h1></div></div>
+  </div>
+
+  <form class="form" onsubmit="return false">
+    <div class="panel">
+      <div class="frow"><label for="v-name">이름<span class="req" aria-hidden="true">*</span></label><div class="ctl"><input class="inp w-m" id="v-name" value="(주)무대공방" required></div></div>
+      <div class="frow"><label for="v-biz">사업자 번호</label><div class="ctl"><input class="inp w-s num" id="v-biz" value="214-88-31207" style="text-align:left"></div></div>
+      <div class="frow"><label for="v-evi">기본 증빙 종류</label><div class="ctl"><select class="inp w-m" id="v-evi"><option>선택 없음</option><option selected>세금계산서</option><option>계산서</option><option>카드 영수증</option><option>현금영수증</option><option>기타소득</option><option>인보이스(해외)</option></select><p class="help">부가세 별도 · 전자세금계산서 발행분</p></div></div>
+      <div class="frow"><label for="v-bank">계좌 은행</label><div class="ctl"><input class="inp w-s" id="v-bank" value="국민은행"></div></div>
+      <div class="frow"><label for="v-holder">예금주</label><div class="ctl"><input class="inp w-m" id="v-holder" value="(주)무대공방"></div></div>
+      <div class="frow"><label for="v-acct">계좌번호</label><div class="ctl"><input class="inp w-m num" id="v-acct" value="" autocomplete="off" style="text-align:left"></div></div>
+      <div class="frow"><label for="v-f1">담당자</label><div class="ctl"><input class="inp w-m" id="v-f1" value="오세진 실장"></div></div>
+      <div class="factions"><button class="btn p" type="submit">거래처 등록</button><a class="b3" href="#">취소</a></div>
+    </div>
+  </form>
+
+  <div class="filters"><a class="b3" href="#">숨김 포함</a></div>
+
+  <div class="panel">
+  <table>
+    <caption class="sr">거래처</caption>
+    <thead><tr><th>이름</th><th class="p2">사업자 번호</th><th class="p2">기본 증빙 종류</th><th>계좌</th><th class="p2">상태</th><th><span class="sr">동작</span></th></tr></thead>
+    <tbody>
+      <tr><td>(주)스테이지원커뮤니케이션즈<span class="fold">107-86-44120 · 세금계산서</span></td><td class="p2 num" style="text-align:left">107-86-44120</td><td class="p2">세금계산서</td><td><span class="num">신한 ****4471</span> <button class="b3" type="button">번호 보기</button></td><td class="p2">—</td><td><span class="rowacts"><a class="b3" href="#">수정</a><button class="b3" type="button">숨기기</button><button class="b3" type="button">삭제</button></span></td></tr>
+      <tr><td>한빛무대예술<span class="fold">312-81-90563 · 세금계산서</span></td><td class="p2 num" style="text-align:left">312-81-90563</td><td class="p2">세금계산서</td><td><span class="num">국민 ****2208</span> <button class="b3" type="button">번호 보기</button></td><td class="p2">—</td><td><span class="rowacts"><a class="b3" href="#">수정</a><button class="b3" type="button">숨기기</button><button class="b3" type="button">삭제</button></span></td></tr>
+      <tr><td>(주)이벤트스태프코리아<span class="fold">220-87-15534 · 계산서</span></td><td class="p2 num" style="text-align:left">220-87-15534</td><td class="p2">계산서</td><td><span class="num">우리 ****0915</span> <button class="b3" type="button">번호 보기</button></td><td class="p2">—</td><td><span class="rowacts"><a class="b3" href="#">수정</a><button class="b3" type="button">숨기기</button><button class="b3" type="button">삭제</button></span></td></tr>
+      <tr><td>Skyline Travel Pte Ltd<span class="fold">인보이스(해외)</span></td><td class="p2">—</td><td class="p2">인보이스(해외)</td><td>—</td><td class="p2">—</td><td><span class="rowacts"><a class="b3" href="#">수정</a><button class="b3" type="button">숨기기</button><button class="b3" type="button">삭제</button></span></td></tr>
+      <tr><td>김민지 (기타소득)<span class="fold">기타소득</span></td><td class="p2">—</td><td class="p2">기타소득</td><td><span class="num">카카오 ****3310</span> <button class="b3" type="button">번호 보기</button></td><td class="p2">—</td><td><span class="rowacts"><a class="b3" href="#">수정</a><button class="b3" type="button">숨기기</button><button class="b3" type="button">삭제</button></span></td></tr>
+      <tr><td>(주)엘이디월드<span class="fold">606-86-11873 · 세금계산서 · 숨김</span></td><td class="p2 num" style="text-align:left">606-86-11873</td><td class="p2">세금계산서</td><td><span class="num">기업 ****7702</span> <button class="b3" type="button">번호 보기</button></td><td class="p2"><span class="tag t m">숨김</span></td><td><span class="rowacts"><a class="b3" href="#">수정</a><button class="b3" type="button">보이기</button><button class="b3" type="button">삭제</button></span></td></tr>
+    </tbody>
+  </table>
+  </div>
+</main>
+<div class="toast" role="status"><span>거래처 등록됨 · (주)무대공방</span><button class="b3" type="button">되돌리기</button></div>
+<nav class="tabs" aria-label="하단 탭"><a href="#"><svg class="ic" width="20" height="20" aria-hidden="true"><use href="#i-inbox"></use></svg><span>내 차례 2</span></a><a href="#"><svg class="ic" width="20" height="20" aria-hidden="true"><use href="#i-check"></use></svg><span>결재</span></a><a href="#"><svg class="ic" width="20" height="20" aria-hidden="true"><use href="#i-chart"></use></svg><span>손익</span></a><a href="#"><svg class="ic" width="20" height="20" aria-hidden="true"><use href="#i-menu"></use></svg><span>더보기</span></a></nav>
+</body>
+</html>

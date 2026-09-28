@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 current_phase: 4
 current_phase_name: 프로젝트·견적 원장
 current_plan: 42
-status: executing
-stopped_at: Completed 04-42-PLAN.md
-last_updated: "2026-09-28T02:13:23.852Z"
+status: verifying
+stopped_at: Completed 04-31-PLAN.md — Phase 4 전체 완료(42/42)
+last_updated: "2026-09-28T05:10:46.693Z"
 last_activity: 2026-09-27
 last_activity_desc: Phase 4 execution started
-state_head: 9dbc4cf62da4632206767a44838c52169448fd82
+state_head: 3d53dc3b950f394d4eecb604ef3a9bd1bcd06b54
 progress:
   total_phases: 17
   completed_phases: 1
   total_plans: 140
-  completed_plans: 79
+  completed_plans: 80
   percent: 6
 ---
 
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-09-17)
 Phase: 4 (프로젝트·견적 원장) — EXECUTING
 Current Plan: 42
 Total Plans in Phase: 42
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-27 - Completed quick task 260927-jny: ROADMAP 17행 Phase 9 착수 조건을 테스트 데이터 검증 결정에 맞춤
 
 Progress: [█░░░░░░░░░] 6%
@@ -113,6 +113,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P07 | 36min | 3 tasks | 13 files |
 | Phase 04 P51 | 30 min | 2 tasks | 4 files |
 | Phase 4 P42 | 59 min | 3 tasks | 14 files |
+| Phase 4 P31 | 5h(다중세션) | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -286,6 +287,9 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-42 리뷰 후속: 대장 선택지는 쓰기 권한자에게만(클라이언트 vendor.value · 프로젝트 projects 보기 + project.value, 등록 명세로 투영), 읽는 사람의 프로젝트·증빙 이름은 대장 DTO(projectName · evidenceLabel) · ui/table 선택 prop groupAside로 머리글 오른쪽 굵은 잔액 · 붙여넣기(applyPaste) · 날짜 date 입력 · 저장 흐름 DR-5(오류 칸 남으면 첫 오류 쪽으로) · 폰 열 순서는 선언 순서 편차(ui/table에 폰 순서 prop 없음) · 편집 보관 localStorage는 견적 원장 패턴 유지(/cso 항목)
 - [Phase 4]: 04-51 결정 ② 임계값 (b): 순번 시작값 변경은 올해 카운터 발급 1건 이상 그리고 새 시작값 < 현재 시작값일 때만 거부 — 같은 값·올리는 값 통과, 옛 「발급 최대 이하 거부」와 「max+1 이상 입력」 안내 제거, 올려서 번호가 비는 점은 유지(사용자 2026-09-28, PR #85 댓글 5861849715) — 표시 순번 = 카운터 + 시작값 − 1이라 이 경우에만 번호가 겹침
 - [Phase 4]: 04-31 Task 2 사람 확인: (A)(B) 엑셀 캡처 원문은 PR #85 댓글 5861946973·5861989538이 정본(끝 \r\n, 금액 칸 앞뒤 공백 형식 포함) / (C) 프로젝트 간 복사·표→엑셀 (D) MS 한국어 입력기는 묶음 ④ 머지·스테이징 배포 직후 사람이 확인 — 플랜 「사람 확인 후속 금지」의 사용자 예외 승인(2026-09-28, 댓글 5862009470) — Task 2 체크포인트는 이 답으로 풀림; Task 3은 캡처 재생 반영 뒤
+- [Phase 4]: (C)(D) 사람 확인은 묶음 ④ 머지·스테이징 배포 직후로 미루는 사용자 예외 승인(PR #85 댓글) — 캡처 재생(A)(B)는 04-31 안에서 전부 통과
+- [Phase 4]: DR-P4-02(375 목록 정렬 머리글 <44px)는 ui/table 동결 지시로 Phase 04.6 제안으로 이월(HANDOFF id 68, 답 대기)
+- [Phase 4]: 04-51 결정 ② 채번 카운터 임계값 = (b) 실제로 겹칠 때만 거부 — Opus 실행자 + Opus 독립 검토로 별도 진행
 
 ### Pending Todos
 
@@ -352,6 +356,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-27T20:34:21.678Z
-Stopped at: Completed 04-42-PLAN.md
+Last session: 2026-09-28T05:10:46.420Z
+Stopped at: Completed 04-31-PLAN.md — Phase 4 전체 완료(42/42)
 Resume file: None

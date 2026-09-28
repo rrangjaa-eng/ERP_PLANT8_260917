@@ -280,10 +280,12 @@ export async function saveReserves(viewer: Viewer, input: SaveReservesInput, dep
     // 기존 줄의 클라이언트는 바뀌지 않으므로(사용자 D6) 잠글 id를 잠금 전에 읽어도 된다.
     const preStored = await repoFindEntriesByIds(viewer, entryIds, tx);
     const lockIds = [...new Set([...prepared.filter((row) => row.input.isNew).map((row) => row.input.clientId), ...preStored.map((row) => row.clientId)])].sort();
-    const locked = new Set(await repoLockReserveClients(viewer, lockIds, tx));
+    const lockedClients = await repoLockReserveClients(viewer, lockIds, tx);
+    const locked = new Set(lockedClients.map((client) => client.id));
+    const selectable = new Set(lockedClients.filter((client) => client.selectable).map((client) => client.id));
     await deps?.afterLock?.();
     const storedById = new Map((await repoFindEntriesByIds(viewer, entryIds, tx)).map((row) => [row.id, row]));
-    const plan = await planBatch(viewer, prepared, archivedIds, storedById, locked, tx);
+    const plan = await planBatch(viewer, prepared, archivedIds, storedById, selectable, tx);
 
     const ledger = new Map((await repoListActiveEntriesByClients(viewer, [...locked], tx)).map((row) => [row.id, toBalanceRow(row)]));
     for (const { row, stored } of plan.updates) {
@@ -307,7 +309,8 @@ async function planBatch(
   prepared: PreparedRow[],
   archivedIds: string[],
   storedById: Map<string, ReserveEntryRow>,
-  locked: Set<string>,
+  /** 잠근 클라이언트 중 새 줄이 고를 수 있는 것(보관·숨김 아님 — 리뷰 R10). */
+  selectable: Set<string>,
   tx: DbOrTx,
 ): Promise<Plan> {
   const errors: CellFormatError[] = [];
@@ -337,7 +340,7 @@ async function planBatch(
         }
         continue;
       }
-      if (!locked.has(input.clientId)) {
+      if (!selectable.has(input.clientId)) {
         errors.push(cellError(index, input.id, "clientId", "클라이언트", CLIENT_NOT_FOUND));
         continue;
       }

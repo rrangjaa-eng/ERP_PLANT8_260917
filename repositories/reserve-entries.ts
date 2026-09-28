@@ -9,17 +9,18 @@ export type ReserveEntryRow = InferSelectModel<typeof reserveEntries>;
 
 // 04-07(사용자 D5 · 엔지니어링 리뷰 B §1) — 리저브 쓰기의 직렬화 지점. 관련 클라이언트(vendors) 행을 **id 오름차순**
 // `FOR NO KEY UPDATE`로 잠근다: 한 배치가 여러 클라이언트를 건드려도 교착이 없고, 리저브 쓰기끼리는 한 줄로 서지만
-// 그 거래처를 가리키는 무관한 FK 쓰기(`FOR KEY SHARE`)는 막지 않는다. 잠근 id만 돌려준다 — 없는 클라이언트는 빠진다.
-export async function lockReserveClients(viewer: Viewer, clientIds: string[], tx: DbOrTx): Promise<string[]> {
+// 그 거래처를 가리키는 무관한 FK 쓰기(`FOR KEY SHARE`)는 막지 않는다. 잠근 행만 돌려준다 — 없는 클라이언트는 빠진다.
+// 묶음 ④ /review R10 — 새 줄이 고를 수 있는 거래처인지(보관·숨김 아님) 잠근 값으로 판정하도록 `selectable`을 싣는다.
+export async function lockReserveClients(viewer: Viewer, clientIds: string[], tx: DbOrTx): Promise<{ id: string; selectable: boolean }[]> {
   void viewer;
   if (clientIds.length === 0) return [];
   const rows = await tx
-    .select({ id: vendors.id })
+    .select({ id: vendors.id, archivedAt: vendors.archivedAt, hidden: vendors.hidden })
     .from(vendors)
     .where(inArray(vendors.id, clientIds))
     .orderBy(vendors.id)
     .for("no key update");
-  return rows.map((row) => row.id);
+  return rows.map((row) => ({ id: row.id, selectable: row.archivedAt === null && !row.hidden }));
 }
 
 export async function listActiveEntriesByClients(viewer: Viewer, clientIds: string[], tx: DbOrTx = db): Promise<ReserveEntryRow[]> {

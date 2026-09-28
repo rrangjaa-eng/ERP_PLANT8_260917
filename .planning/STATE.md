@@ -5,10 +5,10 @@ current_phase_name: 프로젝트·견적 원장
 current_plan: 42
 status: verifying
 stopped_at: Completed 04-31-PLAN.md — Phase 4 전체 완료(42/42)
-last_updated: "2026-09-28T05:40:21.594Z"
-last_activity: 2026-09-27
+last_updated: "2026-09-28T06:03:22.659Z"
+last_activity: 2026-09-28
 last_activity_desc: Phase 4 execution started
-state_head: 1db389687d78524a2a599bf06cc04ca7a80e049a
+state_head: c89ab1b13d2197ec50f6cbc0911dbf9d61604bbe
 progress:
   total_phases: 17
   completed_phases: 1
@@ -32,7 +32,7 @@ Phase: 4 (프로젝트·견적 원장) — EXECUTING
 Current Plan: 42
 Total Plans in Phase: 42
 Status: Phase complete — ready for verification
-Last activity: 2026-09-28 - Completed quick task 260928-7fp: 04-51 결정 ② (b) 채번 시작값 낮춤만 거부
+Last activity: 2026-09-28 - Completed quick task 260928-85f: 04-51 (b) 거부 문구 현재 값 기준
 
 Progress: [█░░░░░░░░░] 6%
 
@@ -290,6 +290,7 @@ Recent decisions affecting current work:
 - [Phase 4]: (C)(D) 사람 확인은 묶음 ④ 머지·스테이징 배포 직후로 미루는 사용자 예외 승인(PR #85 댓글) — 캡처 재생(A)(B)는 04-31 안에서 전부 통과
 - [Phase 4]: DR-P4-02(375 목록 정렬 머리글 <44px)는 ui/table 동결 지시로 Phase 04.6 제안으로 이월(HANDOFF id 68, 답 대기)
 - [Phase 4]: 04-51 결정 ② 채번 카운터 임계값 = (b) 실제로 겹칠 때만 거부 — Opus 실행자 + Opus 독립 검토로 별도 진행
+- [Phase 4]: 04-51 (b) 순번 시작값 낮춤 거부 문구는 현재 값 기준 「순번 시작값은 현재 값(N)보다 낮출 수 없음」 — 옛 「이미 매긴 번호(N)와 겹침」은 올린 뒤 낮출 때 N이 실제 최대보다 큼(사용자 결정 2026-09-28, PR #85 [지시] 5864259502, quick 260928-85f)
 
 ### Pending Todos
 
@@ -327,6 +328,7 @@ Recent decisions affecting current work:
 | 260927-ipy | 설정 pnl.start_gate.weeks_after_cutover 삭제 (손익을 테스트 데이터로 검증하기로 한 결정 반영) | 2026-09-27 | d11f1d5 | [260927-ipy-pnl-start-gate-weeks-after-cutover](./quick/260927-ipy-pnl-start-gate-weeks-after-cutover/) |
 | 260927-jny | ROADMAP 17행 Phase 9 착수 조건을 테스트 데이터 검증 결정에 맞춤 | 2026-09-27 | 9797108 | [260927-jny-roadmap-17-phase-9](./quick/260927-jny-roadmap-17-phase-9/) |
 | 260928-7fp | 04-51 결정 ② (b) 채번 시작값 낮춤만 거부 | 2026-09-28 | 1db3896 | [260928-7fp-04-51-b](./quick/260928-7fp-04-51-b/) |
+| 260928-85f | 04-51 (b) 거부 문구 현재 값 기준 | 2026-09-28 | c89ab1b | [260928-85f-04-51-b-dr-p4-02-04-6](./quick/260928-85f-04-51-b-dr-p4-02-04-6/) |
 
 ### Roadmap Evolution
 

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 20
-waived_count: 0
+open_count: 19
+waived_count: 1
 fixed_count: 17
 total_count: 37
-last_updated: 2026-09-28T05:08:25.963Z
+last_updated: 2026-09-28T06:03:22.837Z
 ---
 
 # Broken Windows Ledger
@@ -51,7 +51,7 @@ last_updated: 2026-09-28T05:08:25.963Z
 | 34 | 4 | unrun-verify | app/(app)/projects/[id]/revenue-section.tsx |  | 04-16 Task 3 독립 DOM 감사(S6 backstop 1280·1024·375·1000) 미실행 — 실행자 환경에 서브에이전트 도구 없음 | fixed |  | 2026-09-26T02:08:24.175Z | 2026-09-26T02:55:50.359Z |
 | 35 | 4 | unrun-verify | test/e2e/revenue-section.spec.ts |  | 04-16 Task 3 verify 'CI=true pnpm test' 전체 게이트 미실행 — 디스패치가 전체 pnpm test를 금지(대상 스펙만 CI=true 44 passed) | fixed |  | 2026-09-26T02:08:24.365Z | 2026-09-26T02:55:55.835Z |
 | 36 | 4 | deviation | ui/table/Table.tsx |  | 04-47: 새 줄 고정으로 한 쪽이 30줄을 넘는 동안 페이지 줄 범위 글자(pageRangeText)는 쪽 크기 산술이라 실제 줄 수와 어긋날 수 있음(1쪽 31줄에 1–30 표기) — 저장·페이지 이동 뒤 재분할되면 맞음 | open |  | 2026-09-26T13:58:34.328Z |  |
-| 37 | 4 | deviation | ui/table/Table.tsx |  | DR-P4-02: 375폭 목록 정렬 머리글 링크 20x19·51x19 <44px — ui/table 동결 지시(스킨 리프레시 병행)로 04-31에서 보류, Phase 04.6 제안 · 답 대기(HANDOFF id 68) | open |  | 2026-09-28T05:08:25.963Z |  |
+| 37 | 4 | deviation | ui/table/Table.tsx |  | DR-P4-02: 375폭 목록 정렬 머리글 링크 20x19·51x19 <44px — ui/table 동결 지시(스킨 리프레시 병행)로 04-31에서 보류, Phase 04.6 제안 · 답 대기(HANDOFF id 68) | waived | Phase 04.6(스킨 A) 범위로 이관 — 사용자 결정 2026-09-28, PR #85 [지시] 5864259502 항목 2. 묶음 ④ 머지를 막지 않음 | 2026-09-28T05:08:25.963Z | 2026-09-28T06:03:22.837Z |
 
 ````json
 [
@@ -530,10 +530,10 @@ last_updated: 2026-09-28T05:08:25.963Z
     "file": "ui/table/Table.tsx",
     "line": null,
     "description": "DR-P4-02: 375폭 목록 정렬 머리글 링크 20x19·51x19 <44px — ui/table 동결 지시(스킨 리프레시 병행)로 04-31에서 보류, Phase 04.6 제안 · 답 대기(HANDOFF id 68)",
-    "status": "open",
-    "reason": "",
+    "status": "waived",
+    "reason": "Phase 04.6(스킨 A) 범위로 이관 — 사용자 결정 2026-09-28, PR #85 [지시] 5864259502 항목 2. 묶음 ④ 머지를 막지 않음",
     "recorded_at": "2026-09-28T05:08:25.963Z",
-    "resolved_at": null,
+    "resolved_at": "2026-09-28T06:03:22.837Z",
     "milestone": null
   }
 ]

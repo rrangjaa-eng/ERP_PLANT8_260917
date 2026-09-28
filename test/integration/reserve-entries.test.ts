@@ -19,7 +19,7 @@ import { log } from "@/lib/log";
 import { addDays } from "@/lib/kst-date";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { insertRole } from "@/repositories/roles";
-import { archive, restore, ProtectedRowError } from "@/domain/archive";
+import { archive, listArchive, restore, ProtectedRowError } from "@/domain/archive";
 import { listArchivedAcrossEntities } from "@/repositories/archive";
 import { restoreReserve, ReserveBalanceRejectedError } from "@/domain/reserves";
 import { deferred, waitForLockWaiter } from "./lock-race";
@@ -547,6 +547,28 @@ describe("domain/reserves — 권한 · 노출 · 보관/복원 · 페이지 · 
 
     await saveReserves(finance, { rows: [], archived: [{ id: withdrawal.id, version: 2 }] });
     expect((await storedRow(withdrawal.id))?.archivedAt).not.toBeNull();
+  });
+
+  // 묶음 ④ /review R3 — B-15 「줄·건수·날짜까지(부분 노출 금지)」: 보관함 목록도 pnl 보기 + reserve.amount가 없으면
+  // 리저브 줄(날짜·클라이언트·구분·건수)을 싣지 않는다. 다른 보관 항목은 그대로다.
+  it("보관함 목록은 pnl 보기 + reserve.amount가 없는 보관함 열람자에게 리저브 줄을 빼고, 둘 다 있으면 싣는다", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const deposit = newRow(client.id, "2026-03-01", "deposit", 1_000_000);
+    const withdrawal = newRow(client.id, "2026-03-05", "withdrawal", 300_000);
+    await saveReserves(finance, { rows: [deposit, withdrawal] });
+    await saveReserves(finance, { rows: [], archived: [{ id: withdrawal.id, version: 1 }] });
+    const archiveReader = async (grants: [string, "view" | "write"][], reserveVisible: boolean) => {
+      const viewer = await createViewerWith({ permissions: [["admin.archive", "view"], ...grants], reserveVisible });
+      await upsertVisibility(SYSTEM_VIEWER, { roleId: viewer.roleId, infoItem: "archive.value", visible: true });
+      return viewer;
+    };
+    const reserveIds = async (viewer: Viewer) => (await listArchive(viewer)).filter((item) => item.entity === "reserve_entry").map((item) => item.id);
+
+    expect(await reserveIds(await archiveReader([], false))).toEqual([]);
+    expect(await reserveIds(await archiveReader([["pnl", "view"]], false))).toEqual([]);
+    expect(await reserveIds(await archiveReader([], true))).toEqual([]);
+    expect(await reserveIds(await archiveReader([["pnl", "view"]], true))).toEqual([withdrawal.id]);
   });
 
   it("입금 줄 보관으로 중간 날짜가 음수가 되는 배치는 거부되고 DB 무변경", async () => {

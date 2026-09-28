@@ -153,14 +153,17 @@ export function applyPaste<Row>(params: {
       }
 
       if (column.kind === "select") {
-        const match = column.options?.find((option) => option.label === trimmed || option.value === trimmed);
+        // 리뷰 R1 — 값(id)이 정확히 같으면 그 옵션. 라벨은 하나와만 같을 때만 고른다(거래처 이름은 unique가 아니다).
+        const options = column.options ?? [];
+        const labelMatches = options.filter((option) => option.label === trimmed);
+        const match = options.find((option) => option.value === trimmed) ?? (labelMatches.length === 1 ? labelMatches[0] : undefined);
         cells.push(
           match
             ? { rowIndex, columnKey: column.key, result: { status: "ok", value: match.value } }
             : {
                 rowIndex,
                 columnKey: column.key,
-                result: { status: "error", reason: `목록에 없는 값 · ${trimmed || "(빈 값)"}` },
+                result: { status: "error", reason: labelMatches.length > 1 ? "같은 이름 여럿 · 목록에서 고르기" : `목록에 없는 값 · ${trimmed || "(빈 값)"}` },
               },
         );
         return;

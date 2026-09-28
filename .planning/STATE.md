@@ -5,10 +5,10 @@ current_phase_name: 프로젝트·견적 원장
 current_plan: 42
 status: verifying
 stopped_at: Completed 04-31-PLAN.md — Phase 4 전체 완료(42/42)
-last_updated: "2026-09-28T05:10:46.693Z"
+last_updated: "2026-09-28T05:40:21.594Z"
 last_activity: 2026-09-27
 last_activity_desc: Phase 4 execution started
-state_head: 3d53dc3b950f394d4eecb604ef3a9bd1bcd06b54
+state_head: 1db389687d78524a2a599bf06cc04ca7a80e049a
 progress:
   total_phases: 17
   completed_phases: 1
@@ -32,7 +32,7 @@ Phase: 4 (프로젝트·견적 원장) — EXECUTING
 Current Plan: 42
 Total Plans in Phase: 42
 Status: Phase complete — ready for verification
-Last activity: 2026-09-27 - Completed quick task 260927-jny: ROADMAP 17행 Phase 9 착수 조건을 테스트 데이터 검증 결정에 맞춤
+Last activity: 2026-09-28 - Completed quick task 260928-7fp: 04-51 결정 ② (b) 채번 시작값 낮춤만 거부
 
 Progress: [█░░░░░░░░░] 6%
 
@@ -326,6 +326,7 @@ Recent decisions affecting current work:
 | 10 | 04-UI-SPEC 377 날짜 빈 칸 문구 「날짜 없음 · 날짜 고르기」(사용자 요청, 명사형 통일) | 2026-09-26 | 93f5af4 | — |
 | 260927-ipy | 설정 pnl.start_gate.weeks_after_cutover 삭제 (손익을 테스트 데이터로 검증하기로 한 결정 반영) | 2026-09-27 | d11f1d5 | [260927-ipy-pnl-start-gate-weeks-after-cutover](./quick/260927-ipy-pnl-start-gate-weeks-after-cutover/) |
 | 260927-jny | ROADMAP 17행 Phase 9 착수 조건을 테스트 데이터 검증 결정에 맞춤 | 2026-09-27 | 9797108 | [260927-jny-roadmap-17-phase-9](./quick/260927-jny-roadmap-17-phase-9/) |
+| 260928-7fp | 04-51 결정 ② (b) 채번 시작값 낮춤만 거부 | 2026-09-28 | 1db3896 | [260928-7fp-04-51-b](./quick/260928-7fp-04-51-b/) |
 
 ### Roadmap Evolution
 

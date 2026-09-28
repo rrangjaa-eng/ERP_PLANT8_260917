@@ -100,9 +100,12 @@ export async function loadDocumentNumberFormat(counterKey: string): Promise<Docu
 // 미리 읽어 넘긴다 — 카운터 행 잠금을 잡은 트랜잭션 안에서 전역 풀로 설정을
 // 읽으면 풀이 그 트랜잭션들로 가득 찼을 때 커넥션을 못 빌려 애플리케이션
 // 레벨 교착에 빠진다(풀 소진 교착, test/integration/projects-create-concurrency.test.ts).
+// 단 순번 시작값(seqStart)은 받지 않는다 — 잠금 뒤 같은 tx로 다시 읽는다(아래 04-51 리뷰 S1).
+// 전제: `counterKey`는 DOCUMENT_NUMBER_FORMAT_DEFS에 등록된 키여야 한다 — 아니면
+// 카운터를 올린 뒤 UnknownDocumentNumberCounterError를 던진다(tx를 넘긴 호출자는 함께 되돌린다).
 export async function allocateDocumentNumber(
   viewer: Viewer,
-  input: { counterKey: string; year: number; format: DocumentNumberFormat },
+  input: { counterKey: string; year: number; format: Omit<DocumentNumberFormat, "seqStart"> },
   tx?: DbOrTx,
 ): Promise<{ number: string; seq: number }> {
   const period = String(input.year);

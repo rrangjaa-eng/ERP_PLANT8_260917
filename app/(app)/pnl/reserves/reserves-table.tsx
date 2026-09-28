@@ -21,7 +21,7 @@ import { useCommaInput } from "@/ui/input/use-comma-input";
 import { savedNoticeText, type FooterNoticeItem } from "@/ui/table/footer-notice";
 import type { CellEditability, CellIssue, TableColumn } from "@/ui/table/types";
 import { formatForeignLine, formatKrw, parseNumberInput, type NumberInputKind } from "@/lib/format-number";
-import type { Currency } from "@/domain/money";
+import { toKrw, type Currency } from "@/domain/money";
 import type {
   ReserveBalanceRejection,
   ReserveCellEditability,
@@ -158,7 +158,8 @@ function sameValue(a: unknown, b: unknown): boolean {
 
 function withPatch(row: Row, patch: Patch): Row {
   const next = { ...row, ...patch };
-  if (patch.money) next.amountKrw = patch.money.currency === "KRW" ? patch.money.amount : Math.round(patch.money.amount * patch.money.fxRate);
+  // 리뷰 R6 — 서버와 같은 정수 스케일 환산(domain/money toKrw — 순수 함수라 클라이언트에서도 쓴다). 0.35 × 1,350 = 473.
+  if (patch.money) next.amountKrw = toKrw(patch.money);
   return next;
 }
 

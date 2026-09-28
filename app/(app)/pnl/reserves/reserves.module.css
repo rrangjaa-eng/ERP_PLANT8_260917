@@ -99,12 +99,12 @@
   color: var(--accent);
   font-weight: var(--fw-medium);
   text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 2px;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
 }
 
 .batchErrorLink:hover {
-  text-decoration-thickness: 2px;
+  text-decoration-thickness: var(--line-w-strong);
 }
 
 /* 04-04(D-68) — 저장 안 한 편집 복원 줄(견적 원장과 같은 모양). */

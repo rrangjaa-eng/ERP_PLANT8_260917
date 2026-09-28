@@ -230,8 +230,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       endDateNote={endDateNote}
       revisionId={revision.id}
       initialLines={lines}
-      vendors={references?.vendors ?? []}
-      subcategories={references?.subcategories ?? []}
+      vendors={references.vendors}
+      subcategories={references.subcategories}
       structural={structural}
       newLineCells={newLineCells}
       adjustmentStructural={adjustmentStructural}
@@ -254,7 +254,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     <RevisionSection
       projectId={project.id}
       summaries={revisionSummaries}
-      references={{ subcategories: references?.subcategories ?? [], vendors: references?.vendors ?? [] }}
+      references={{ subcategories: references.subcategories, vendors: references.vendors }}
     />
     </>
   );

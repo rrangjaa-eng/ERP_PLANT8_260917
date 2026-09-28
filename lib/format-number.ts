@@ -199,18 +199,6 @@ function buildTypedResult(scan: ScanResult): FormatNumberInputResult {
   return { text, caret };
 }
 
-function onlyDigits(text: string): string {
-  return text.replace(/[^0-9]/g, "");
-}
-
-// prev에서 raw로 한 글자가 빠졌을 때(raw.length === prev.length - 1) 그
-// 빠진 글자 하나를 돌려준다 — 공통 접두사 뒤 prev의 그 자리 글자.
-function removedChar(prev: string, raw: string): string {
-  let i = 0;
-  while (i < raw.length && prev[i] === raw[i]) i++;
-  return prev[i] ?? "";
-}
-
 // prev→raw로 바뀔 때 실제로 "새로 끼어든" 가운데 구간의 길이 — 공통 앞부분·
 // 뒷부분을 뺀 나머지. 순수 길이 차(raw.length - prev.length)로는 "9,800,000"
 // 전체를 선택해 7글자짜리 값을 붙여넣는 경우(길이가 오히려 줄어든다)를 통째
@@ -231,13 +219,18 @@ function formatTyped(raw: string, caret: number, maxDecimals: number, prev: stri
 
   // 쉼표 뒤 Backspace(C-02·C-20) — 네이티브 삭제가 쉼표만 지우고 숫자는
   // 그대로 남으면(자리 수가 안 줄면), 커서에 인접한 숫자를 대신 지워
-  // "쉼표만 사라지고 숫자는 그대로"인 상태를 만들지 않는다. 지워진 글자가
-  // 실제로 쉼표일 때만 적용한다 — '-'·'.' 삭제까지 숫자를 더 지우면 안 된다.
+  // "쉼표만 사라지고 숫자는 그대로"인 상태를 만들지 않는다. 지워진 자리가
+  // **캐럿 바로 그 자리**이고 그 자리가 쉼표일 때만 적용한다 — 문자열
+  // 어딘가에서 쉼표 하나가 사라졌다는 사실만으로는 부족하다. 캐럿까지
+  // 확인하지 않으면 필드를 통째로 다시 쓰는 입력(붙여넣기·프로그램적
+  // 값 설정 — caret이 끝에 있다)이 우연히 쉼표 하나만 빠진 값과 같아져
+  // 인접 숫자까지 잘못 지운다(04-31 E2-06 조사, 실측: "400,000"을 caret
+  // 끝에 두고 "400000"으로 덮어쓰면 40000이 되던 사고).
   if (
     prev !== undefined &&
     workingRaw.length === prev.length - 1 &&
-    onlyDigits(workingRaw) === onlyDigits(prev) &&
-    removedChar(prev, workingRaw) === ","
+    prev[workingCaret] === "," &&
+    prev.slice(0, workingCaret) + prev.slice(workingCaret + 1) === workingRaw
   ) {
     const idx = Math.max(0, workingCaret - 1);
     workingRaw = workingRaw.slice(0, idx) + workingRaw.slice(idx + 1);

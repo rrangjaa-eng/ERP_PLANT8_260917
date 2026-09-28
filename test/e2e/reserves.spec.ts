@@ -713,8 +713,28 @@ test.describe("리저브 대장 — 읽기 · 좁은 PC · 저장 중 잠금 · 
   });
 });
 
-
 // 묶음 ④ /review — 리저브 붙여넣기·복사·환산·보관 요청 오류.
+function footerPieces(page: Page): Promise<{ tone: string; text: string }[]> {
+  return ledger(page)
+    .locator("tfoot [data-tone]")
+    .evaluateAll((elements) => elements.map((element) => ({ tone: element.getAttribute("data-tone") ?? "", text: (element.textContent ?? "").trim() })));
+}
+
+async function seedUsdEntry(clientId: string, date: string, amount: number, fxRate: number): Promise<string> {
+  const [row] = await db
+    .insert(reserveEntries)
+    .values({
+      clientId,
+      entryDate: date,
+      direction: "deposit",
+      amountCurrency: "USD",
+      amountForeignAmount: String(amount),
+      amountFxRate: String(fxRate),
+      amountAmountKrw: Math.round(amount * fxRate),
+    })
+    .returning({ id: reserveEntries.id });
+  return row!.id;
+}
 
 test.describe("리저브 대장 — 묶음 ④ 리뷰", () => {
   test("같은 이름 클라이언트가 둘이면 붙여넣은 이름은 오류 칸 「같은 이름 여럿 · 목록에서 고르기」(R1)", async ({ page }) => {
@@ -731,5 +751,19 @@ test.describe("리저브 대장 — 묶음 ④ 리뷰", () => {
     const clientCell = cell(page, 1, COL.client);
     await expect(clientCell).toHaveAttribute("aria-invalid", "true");
     await expect(clientCell).toContainText("같은 이름 여럿 · 목록에서 고르기");
+  });
+
+  test("외화 줄 금액 칸에 붙이면 원화로 들어가고 합계 행에 「외화 1줄 원화로」(R4 · 견적 원장 D15와 같은 조각)", async ({ page }) => {
+    const roles = await createRoles();
+    const client = await createClient("E2E리저브외화붙여넣기");
+    await seedUsdEntry(client.id, "2026-10-01", 1_000, 1_350);
+    await openLedger(page, roles.finance);
+
+    await pasteText(page, cell(page, 0, COL.amount), "1,000");
+    await expect(cell(page, 0, COL.amount)).toHaveText("1,000");
+    await expect.poll(() => footerPieces(page)).toEqual([
+      { tone: "muted", text: "붙여넣기 1줄" },
+      { tone: "warning", text: "외화 1줄 원화로" },
+    ]);
   });
 });

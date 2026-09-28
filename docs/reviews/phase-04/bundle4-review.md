@@ -37,3 +37,14 @@
 - 연결 프로젝트가 보관·범위 밖이어도 리저브 연결 가능(adversarial 4) · 금액 편집기 잘못된 입력 시 옛 값으로 조용히 되돌림(4) · forward-Delete가 쉼표 앞 숫자 지움(4, 6ea2c77 이전부터) · 연말 자정 경합(4, 조사 항목) — 확신 4 이하(부록)
 - clientName을 reserve.amount만으로 보이는지, vendor.value도 요구할지(adversarial 4, INVESTIGATE) — 사용자 결정 필요 시 올림
 - 참고(simplification, ADVISORY 5건): isListDate 중복 · ReserveWriteDeps 미사용 주입 4개 · FxRateEditInput 중복 · readSourceKinds 이중 파싱 · onSelectAll 미사용 — 선택 사항, 이번엔 안 함
+
+## 진행 상태 (세션 08561e2c, 중간 저장 — 세션이 끊기면 여기서 이어받기)
+
+- 사전: quick 260928-85f(04-51 거부 문구 현재 값 기준) 6711ea9 RED → c89ab1b → 726f708 문서. DR-P4-02 WINDOWS id 37 waived(04.6 이관)
+- /review 수정 A(보안·데이터, Opus): R2 3f60856→46dc3e4 · R3 bdf8c8e→a551fe0 · R7 69c906a→4ce181d · R8 bc20ab8→7983d11 · R9 f9ee722→4a5775e · R10 73dbac1→bfdfb67 · R11 9651b5b→8c14806 · T1 a6410e5 · T3 e535bf0. 오케스트레이터가 수정 전 코드로 RED 재현·GREEN 재확인(6건). **편차:** 커밋 17개 중 verification은 첫 커밋 직전·마지막만 호출 · R2의 base 행 잔액·이름 제거 미실시(복원 테스트 없음) · T3 "0"은 스키마 min(0)이라 거부가 아닌 낮춤 처리 — 04-05 SUMMARY 「0/음수 거부」와 불일치, 결정 필요 시 올림
+- /review 수정 B(붙여넣기·돈·화면, Opus): R1 f733131→e3d09a7 · R4 b3f7cef→fc76ea2 · R5 c4f5cff→b83c41c · R6 1abe5a7→2bca228 · R12 e2dca2b→405b265 · R13 ec7acb8→411316d · R14 8f48d50→445ba9f · R15 e2c3e4c→930ab8f · T2 b6a5720 · T4 a83cadb. verification 커밋마다 호출 확인(transcript 대조). 단위 RED 재현 5건
+- 독립 DOM 감사(Opus, CI=true 프로덕션 빌드, 1280·1024·700·375): 전 항목 PASS, FAIL 0
+- /review 결과 기록(gstack-review-log) 완료. 게이트 줄은 훅이 자동 추가 → 되돌림, 마지막에 한 번에 넣기로 함(사용자 「판단해서 넣어」):
+  - `review 2026-09-28T06:06Z session=08561e2c-13e6-5d2d-a96f-e47c2d2a364d`
+  - `qa 2026-09-28T07:35Z session=08561e2c-13e6-5d2d-a96f-e47c2d2a364d`
+- 남은 순서: /qa(진행 중, 결과 docs/reviews/phase-04/bundle4-qa.md) → /cso(별도 worktree, 지정 항목: 로그아웃 뒤 localStorage 잔존 = R2로 수정됨 재확인, 리저브 clientName 노출 = R3 + vendor.value 여부 조사) → 게이트 줄 3개 추가 → 푸시·CI → PR #85 「[완료 보고]」 → /gsd-pause-work → 다음 세션

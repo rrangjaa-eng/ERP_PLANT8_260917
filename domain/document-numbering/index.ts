@@ -126,6 +126,29 @@ export async function allocateDocumentNumber(
 
 export class SeqStartOverlapError extends UserFacingError {}
 
+function seqStartEntryFor(key: string) {
+  return Object.entries(DOCUMENT_NUMBER_FORMAT_DEFS).find(([, defs]) => defs.seqStart.key === key);
+}
+
+// 묶음 ④ /review R7 — 순번 시작값 낮추기 가드 한 곳. 설정 화면 저장(setSimpleSettingValue)과 설정 가져오기
+// (domain/settings/export의 importSettings)가 **값을 쓰는 트랜잭션 안에서** 부른다. 시작값 키가 아니면 아무것도
+// 하지 않는다. 시작값 키면 채번과 같은 올해 카운터 행을 잠그고(직렬화) 같은 tx로 현재 시작값을 읽어, 올해 발급이
+// 1건 이상이고 새 값이 현재 값보다 작을 때만 SeqStartOverlapError를 던진다. `value`는 그 키의 스키마로 읽는다.
+export async function assertSeqStartNotLowered(viewer: Viewer, key: string, value: unknown, now: Date, tx: DbOrTx): Promise<void> {
+  const entry = seqStartEntryFor(key);
+  if (!entry) return;
+  const [counterKey, defs] = entry;
+  const next = defs.seqStart.schema.parse(value);
+  const counterValue = await lockDocumentCounter(viewer, counterKey, String(kstYear(now)), tx);
+  const currentStart = await getSettingValue(defs.seqStart, undefined, {
+    findSimpleValue: (v, k) => findSimpleValue(v, k, tx),
+  });
+  // 04-51 리뷰 B1 — 바꾸지 않은 값의 재저장(설정 화면 blur)은 낮추기가 아니므로 통과한다.
+  if (counterValue >= 1 && next < currentStart) {
+    throw new SeqStartOverlapError(`순번 시작값은 현재 값(${currentStart})보다 낮출 수 없음`);
+  }
+}
+
 // 04-51 결정 ②(b) — 사용자 2026-09-28(PR #85 댓글 5861849715). 설정 화면의 비이력형 저장 한 곳 —
 // 순번 시작값 키는 올해 카운터 발급이 1건 이상이고 새 시작값이 현재 시작값보다 작을 때만 거부한다.
 // 같은 값·올리는 값은 통과한다(올려서 비는 번호는 수용). 표시 순번 = 카운터 + 시작값 − 1이라 낮춘
@@ -141,21 +164,13 @@ export async function setSimpleSettingValue(
   value: unknown,
   now: Date,
 ): Promise<void> {
-  const entry = Object.entries(DOCUMENT_NUMBER_FORMAT_DEFS).find(([, defs]) => defs.seqStart.key === def.key);
-  if (!entry || !(await can(viewer, "admin.settings", "write"))) return setSettingValue(viewer, def, value);
-  const [counterKey, defs] = entry;
+  const defs = seqStartEntryFor(def.key)?.[1];
+  if (!defs || !(await can(viewer, "admin.settings", "write"))) return setSettingValue(viewer, def, value);
   const parsed = defs.seqStart.schema.safeParse(value);
   if (!parsed.success) return setSettingValue(viewer, def, value);
 
   await withTransaction(async (tx) => {
-    const counterValue = await lockDocumentCounter(viewer, counterKey, String(kstYear(now)), tx);
-    const currentStart = await getSettingValue(defs.seqStart, undefined, {
-      findSimpleValue: (v, k) => findSimpleValue(v, k, tx),
-    });
-    // 04-51 리뷰 B1 — 바꾸지 않은 값의 재저장(설정 화면 blur)은 낮추기가 아니므로 통과한다.
-    if (counterValue >= 1 && parsed.data < currentStart) {
-      throw new SeqStartOverlapError(`순번 시작값은 현재 값(${currentStart})보다 낮출 수 없음`);
-    }
+    await assertSeqStartNotLowered(viewer, def.key, parsed.data, now, tx);
     await setSettingValue(viewer, def, value, {
       can: () => Promise.resolve(true),
       upsertSimpleValue: (v, key, val, by) => upsertSimpleValue(v, key, val, by, tx),

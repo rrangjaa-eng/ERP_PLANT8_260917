@@ -74,7 +74,7 @@
 | **Severity** | medium |
 | **Category** | accessibility (키보드) |
 | **URL** | /pnl/reserves (클라이언트·구분·프로젝트·증빙 종류), /projects/[id] (소분류·거래처) |
-| **Fix Status** | _(진행 중)_ |
+| **Fix Status** | verified — c5dc811b (RED 0a8f7c17) |
 
 재현: 격자 클라이언트 칸 포커스 → Enter(`<select>` 열림, `activeElement=SELECT`) → ↓ → `activeElement=BODY`, 칸 값은 다음 옵션으로 확정. 마우스로 옵션을 골라도 같다(편집기 `onChange` 커밋 → 편집기 언마운트, 셀로 포커스 복귀 없음). 이어 누른 Ctrl+S는 격자에 닿지 않아 저장되지 않는다(실제 Chrome이면 「페이지 저장」 창). 견적 표 거래처 칸에서도 같다 — 공용 `ui/table/Table.tsx` renderCell의 `onCommit`이 Esc·Enter와 달리 셀 재포커스를 요청하지 않는다(90465dc에도 있던 결함, 새 리저브 대장이 더 드러낸다).
 증거: `screenshots/reserves-paste-focus-lost.png`(같은 증상), DOM 로그(`activeElement` BODY).
@@ -86,7 +86,7 @@
 | **Severity** | medium |
 | **Category** | accessibility (키보드) |
 | **URL** | /pnl/reserves, /projects/[id] |
-| **Fix Status** | _(진행 중)_ |
+| **Fix Status** | verified — c5dc811b (RED 0a8f7c17) |
 
 재현(리저브): Ctrl+A → Ctrl+C → Ctrl+Enter(새 줄) → Esc → 새 줄 날짜 칸에서 Ctrl+V → 3줄 붙음, 격자의 탭 정지(`td[tabindex=0]`)는 옮겨 간 줄(가나상사 그룹)에 있지만 `activeElement=BODY`. Ctrl+S 무반응(일괄 저장 3 그대로). 재현(견적): 「음향」 줄 소분류 칸에 `인력` 붙여넣기 → 줄이 「인력」 그룹으로 이동, `activeElement=BODY`. 붙여넣기 뒤 셀 재포커스가 없다.
 증거: `screenshots/reserves-paste-focus-lost.png`.
@@ -144,7 +144,8 @@
 
 ## Fixes
 
-_(수정 루프 진행 후 갱신)_
+- ISSUE-001 — c5dc811b: `ui/table/Table.tsx` onCommit이 편집기가 포커스를 쥔 확정이면 셀 재포커스(focusRequest cell). 회귀 E2E: quote-table·reserves 「/qa 포커스」(0a8f7c17).
+- ISSUE-002 — c5dc811b: 표 붙여넣기 뒤 탭 정지 셀로 재포커스. 회귀 E2E: quote-table 「(QA ISSUE-002)」(0a8f7c17).
 
 ## PR Summary
 

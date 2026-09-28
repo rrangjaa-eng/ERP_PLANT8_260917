@@ -859,3 +859,20 @@ test.describe("리저브 대장 — 묶음 ④ 리뷰", () => {
     await expect(dateCell).toContainText("줄을 찾을 수 없음 · 새로 고침");
   });
 });
+
+// Regression: QA ISSUE-001 — 선택 칸 확정 뒤 포커스가 <body>로 빠져 Ctrl+S가 격자에 닿지 않았다
+// Found by /qa on 2026-09-28 · Report: docs/reviews/phase-04/bundle4-qa.md
+test.describe("리저브 대장 — 묶음 ④ /qa 포커스", () => {
+  test("(QA ISSUE-001) 새 줄 클라이언트 칸에서 ↓로 고르면 포커스가 그 칸에 남는다", async ({ page }) => {
+    const roles = await createRoles();
+    await createClient("E2E리저브QA선택");
+    await openLedger(page, roles.finance);
+
+    await addReserveRow(page);
+    const select = page.getByRole("combobox", { name: "클라이언트", exact: true });
+    await expect(select).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(select).toHaveCount(0);
+    await expect(ledger(page).locator("td[data-grid-focus]")).toBeFocused();
+  });
+});

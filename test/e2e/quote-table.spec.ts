@@ -1827,3 +1827,46 @@ test.describe("견적 줄 표 — 저장됨 N줄(FINDING-012)", () => {
     await expect.poll(() => footerPieces(page)).toEqual([{ tone: "success", text: expect.stringMatching(/^저장됨 \d{2}:\d{2}$/) }]);
   });
 });
+
+// Regression: QA ISSUE-001·002 — 선택 칸 확정 · 그룹을 옮기는 붙여넣기 뒤 포커스가 <body>로 빠져 Ctrl+S가 격자에 닿지 않았다
+// Found by /qa on 2026-09-28 · Report: docs/reviews/phase-04/bundle4-qa.md
+test.describe("견적 줄 표 — 묶음 ④ /qa 포커스", () => {
+  test("(QA ISSUE-001) 소분류 칸에서 ↓로 고르면 포커스가 그 칸에 남고 이어 누른 Ctrl+S가 저장한다", async ({ page }) => {
+    await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "선택 포커스 줄", amount: 1000 }]);
+    const cell = quoteCell(page, 0, 1);
+    await expect(async () => {
+      await cell.focus();
+      await page.keyboard.press("Enter");
+      await expect(cell.locator("select")).toBeFocused({ timeout: 1000 });
+    }).toPass();
+    await page.keyboard.press("ArrowDown");
+    await expect(quoteTable(page).locator("select")).toHaveCount(0);
+    await expect(quoteTable(page).locator("td[data-grid-focus]")).toBeFocused();
+
+    const saved = page.waitForResponse((response) => isServerAction(response.request()));
+    await page.keyboard.press("Control+s");
+    await saved;
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+  });
+
+  test("(QA ISSUE-002) 소분류 칸에 다른 소분류를 붙여 줄이 다른 그룹으로 옮겨 가도 포커스가 탭 정지 칸에 남고 Ctrl+S가 저장한다", async ({ page }) => {
+    await openProjectWithSavedLines(page, [
+      { subcategory: "stage_construction", itemName: "붙여넣기 포커스 줄", amount: 1000 },
+      { subcategory: "stage_construction", itemName: "남는 줄", amount: 1000 },
+    ]);
+    const cell = quoteCell(page, 0, 1);
+    await expect(async () => {
+      await cell.focus();
+      await expect(cell).toHaveAttribute("tabindex", "0", { timeout: 1000 });
+    }).toPass();
+    await pasteIntoFocusedCell(page, "인력");
+    const focusCell = quoteTable(page).locator("td[data-grid-focus]");
+    await expect(focusCell).toHaveText("인력");
+    await expect(focusCell).toBeFocused();
+
+    const saved = page.waitForResponse((response) => isServerAction(response.request()));
+    await page.keyboard.press("Control+s");
+    await saved;
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+  });
+});

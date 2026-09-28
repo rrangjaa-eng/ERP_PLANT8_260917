@@ -137,8 +137,19 @@ describe("순번 시작값 낮추기(결정 ②)", () => {
     await issueThreeFrom100();
     const rejected = saveSeqStart(SYSTEM_VIEWER, 50);
     await expect(rejected).rejects.toBeInstanceOf(SeqStartOverlapError);
-    await expect(rejected).rejects.toHaveProperty("message", "순번 시작값이 이미 매긴 번호(102)와 겹침");
+    await expect(rejected).rejects.toHaveProperty("message", "순번 시작값은 현재 값(100)보다 낮출 수 없음");
     expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_START)).toBe(100);
+  });
+
+  // PR #85 댓글 5864259502 항목 1(사용자 2026-09-28) — 거부 문구 숫자는 현재 시작값이다. 올린 뒤에는 카운터 + 시작값 − 1이 매긴 적 없는 번호라서.
+  it("올린 뒤 낮추면(100 → 110 → 105) 현재 값 110 기준 문구로 거부되고 값은 110 그대로다", async () => {
+    await issueThreeFrom100();
+    await saveSeqStart(SYSTEM_VIEWER, 110);
+    expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_START)).toBe(110);
+    const rejected = saveSeqStart(SYSTEM_VIEWER, 105);
+    await expect(rejected).rejects.toBeInstanceOf(SeqStartOverlapError);
+    await expect(rejected).rejects.toHaveProperty("message", "순번 시작값은 현재 값(110)보다 낮출 수 없음");
+    expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_START)).toBe(110);
   });
 
   // 04-51 결정 ②(b) — 사용자 2026-09-28(PR #85 댓글 5861849715): 표시 순번 = 카운터 + 시작값 − 1이라 올리면 다음 번호가 이미 매긴 최대보다 크다.
@@ -191,10 +202,12 @@ describe("순번 시작값 낮추기(결정 ②)", () => {
     expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_DIGITS)).toBe(1);
   });
 
-  it("설정 쓰기 권한이 없으면 최대 번호를 알리지 않고 권한 거부로 끝난다", async () => {
+  it("설정 쓰기 권한이 없으면 현재 값을 알리지 않고 권한 거부로 끝난다", async () => {
     await issueThreeFrom100();
     const pmViewer: Viewer = { id: `pm-${randomUUID()}`, roleId: DEFAULT_ROLE_ID };
-    await expect(saveSeqStart(pmViewer, 50)).rejects.toBeInstanceOf(ForbiddenError);
+    const rejected = saveSeqStart(pmViewer, 50);
+    await expect(rejected).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(rejected).rejects.toHaveProperty("message", "설정 변경 권한 없음");
   });
 
   // 04-51 리뷰 S1 — 등록은 서식을 트랜잭션 전에 읽는다. 그 사이 시작값이 바뀌어도(올해 카운터 행이
@@ -268,7 +281,7 @@ describe("순번 시작값 낮추기(결정 ②)", () => {
     await issueThreeFrom100();
     await expect(setSimpleSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEQ_START, "50", NOW)).rejects.toHaveProperty(
       "message",
-      "순번 시작값이 이미 매긴 번호(102)와 겹침",
+      "순번 시작값은 현재 값(100)보다 낮출 수 없음",
     );
     await setSimpleSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEQ_START, "100", NOW);
     expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEQ_START)).toBe(100);

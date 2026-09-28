@@ -135,6 +135,13 @@
   cursor: pointer;
 }
 
+@media (max-width: 699.98px) {
+  /* 리뷰 R14 — 폰에서 복원·버림은 터치 최소 높이(견적 원장 S18과 같은 규칙). */
+  .restoreAction {
+    min-height: var(--touch-min);
+  }
+}
+
 /* §7-9 · 개정 ⑬ — 힌트 줄(ui/table Table.module.css .hintRow와 같은 모양). */
 .hintRow {
   margin-top: var(--s-3);

@@ -15,7 +15,8 @@ const STRICT = process.env.DESIGN_PRINCIPLES_STRICT === "1";
 
 async function snapshot(page: Page): Promise<ScreenSnapshot> {
   return page.evaluate(() => {
-    const visible = (el: Element) => (el as HTMLElement).offsetParent !== null && el.getClientRects().length > 0;
+    // offsetParent는 position: fixed 요소(옆 패널 버튼 등)에서 null이라 쓰지 않는다
+    const visible = (el: Element) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden";
     const main = document.querySelector("main") ?? document.body;
     const rgb = (c: string) => (c.match(/\d+(\.\d+)?/g) ?? []).map(Number);
     let bg = rgb(getComputedStyle(document.body).backgroundColor);
@@ -65,7 +66,14 @@ test("화면 사용성 원칙 점검(경고만)", async ({ page }) => {
   const report: Array<{ route: string; warnings: Warning[] }> = [];
   for (const route of routes) {
     const res = await page.goto(route);
-    if (!res || res.status() >= 400) continue;
+    const status = res?.status() ?? 0;
+    if (status === 0 || status >= 400) {
+      // 열리지 않은 화면은 조용히 건너뛰지 않는다 — 경고로 남기고 막는 모드에서는 실패시킨다
+      test.info().annotations.push({ type: "원칙 점검 건너뜀", description: `${route} — 응답 ${status}` });
+      console.log(`  ${route} · 건너뜀 · 응답 ${status}`);
+      if (STRICT) expect.soft(status, `${route} 응답`).toBeLessThan(400);
+      continue;
+    }
     await page.waitForLoadState("networkidle");
     const warnings = evaluatePrinciples(await snapshot(page));
     report.push({ route, warnings });

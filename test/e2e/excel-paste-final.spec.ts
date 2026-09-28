@@ -10,14 +10,19 @@ import { createAccount } from "@/domain/auth/accounts";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { parseTsv } from "@/ui/table/parse-tsv";
-import { REAL_EXCEL_WINDOWS_20260923, buildFortyFiveLineCapture } from "@/test/fixtures/excel-clipboard";
+import {
+  REAL_EXCEL_WINDOWS_20260923,
+  REAL_EXCEL_WINDOWS_20260928_SIX_COL,
+  REAL_EXCEL_WINDOWS_20260928_FORTY_FIVE,
+  buildFortyFiveLineCapture,
+} from "@/test/fixtures/excel-clipboard";
 
 // 04-31 Task 1 — 04-04 뒤에 바뀐 최종 견적 표(쪽 나눔 04-19 · 계산 열 무시·외화 경고·
 // 합계 행 한 줄·끝 줄바꿈 04-47 · 줄 수 상한 04-26)에서도 실제 엑셀 캡처 원문이 그대로
 // 재생되는지 다시 본다(사용자 D21, OV-7). 원문은 test/fixtures/excel-clipboard.ts
 // 하나뿐이다 — 손으로 만든 문자열이 아니다(2026-09-23 사용자 승인 — 04-04 방식).
 
-const COL = { subcategory: 1, itemName: 2, vendor: 3, quantity: 4, unitPrice: 5, quoteAmount: 6, execution: 7 } as const;
+const COL = { subcategory: 1, itemName: 2, vendor: 3, quantity: 4, unitPrice: 5, quoteAmount: 6, execution: 7, note: 10 } as const;
 
 type Account = { userId: string; email: string; password: string };
 
@@ -399,5 +404,100 @@ test.describe("실제 엑셀 캡처 원문 — 최종 견적 표 재생(04-31 Ta
     await expect(lastItem).toHaveText("상한최종덮기");
     await expectLineTotal(page, 300);
     await expect(quoteCell(page, 29, COL.itemName)).toHaveText("상한최종새300");
+  });
+
+  test("(e, 캡처 A) PR #85 실제 6열 캡처(헤더 행 포함) — 앱 열 순서와 어긋나 견적가 칸들이 ENG-D5 오류다", async ({ page }) => {
+    // 04-31 Task 2 인간 확인(2026-09-28, PR #85 댓글 5861946973) — 사람 눈 재확인 대신
+    // 원문(REAL_EXCEL_WINDOWS_20260928_SIX_COL, 헤더 행 A..F + 데이터 2행)을 손대지
+    // 않고 그대로 붙인다. 캡처의 6열(항목류·항목·거래처·수량·단가·실행가)과 앱 열
+    // (소분류·항목·거래처·수량·단가·견적가) 순서가 어긋나 6번째 값(실행가)이 잠긴
+    // 견적가 칸에 떨어진다 — 값이 헤더 글자 "F"든 실제 금액이든, 잠긴 칸은 값이
+    // 무엇이든 무조건 오류다(ENG-D5, applyPaste의 `!editable` 분기가 kind보다 먼저다).
+    const account = await makeAccount();
+    const project = await makeProject(account.userId, `E2E엑셀캡처A-${Date.now()}`);
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("1차 차수가 없습니다");
+    await seedLines(
+      revision.id,
+      Array.from({ length: 3 }, (_, index) => ({ subcategory: "stage_construction", itemName: `캡처A${index + 1}`, amount: 1000 })),
+    );
+
+    await login(page, account);
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
+
+    await focusGridCell(page, quoteCell(page, 0, COL.subcategory));
+    await pasteWithFormats(page, { "text/plain": REAL_EXCEL_WINDOWS_20260928_SIX_COL });
+
+    await expect(quoteCell(page, 0, COL.itemName)).toHaveText("B");
+    const row1Text = await quoteCell(page, 1, COL.itemName).textContent();
+    expect(row1Text).not.toContain("\r");
+    expect(row1Text).toBe("무대 설치\n2일차");
+    expect(await quoteCell(page, 2, COL.itemName).textContent()).toBe('"대형" 현수막');
+
+    for (const rowIndex of [0, 1, 2]) {
+      await expect(quoteCell(page, rowIndex, COL.quoteAmount)).toHaveAttribute("aria-invalid", "true");
+      await expect(quoteCell(page, rowIndex, COL.quoteAmount)).toContainText("읽기 전용·잠김 셀에 값 떨어짐");
+    }
+
+    // 04-47(DR-5) — 오류가 남아도 저장 버튼은 눌린다(거부 경로는 서버가 판단).
+    await expect(page.getByRole("button", { name: /일괄 저장/ })).toBeEnabled();
+  });
+
+  test("(f, 캡처 B) PR #85 실제 45줄 캡처 — 저장·새로고침 뒤에도 10번째 줄 빈 비고를 포함해 그대로다", async ({ page }) => {
+    // 04-31 Task 2 인간 확인(2026-09-28, PR #85 댓글 5861989538) — 원문
+    // (REAL_EXCEL_WINDOWS_20260928_FORTY_FIVE, 45줄·10번째 줄만 비고 칸이 빈 캡처)을
+    // 항목·거래처(사이) 때문에 04-04(g)와 같은 이유로 세 번(항목 · 수량+단가 ·
+    // 비고)에 나눠 붙인다. 저장·새로고침 뒤에도 값이 같은지 본다(고정 대기 없이
+    // page.waitForResponse로 서버 액션 응답을 기다린다).
+    const account = await makeAccount();
+    const project = await makeProject(account.userId, `E2E엑셀캡처B-${Date.now()}`);
+    const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
+    if (!revision) throw new Error("1차 차수가 없습니다");
+    await seedLines(revision.id, [{ subcategory: "stage_construction", itemName: "캡처B시작", amount: 1000 }]);
+
+    await login(page, account);
+    await page.goto(`/projects/${project.id}`);
+    await expect(page.getByRole("heading", { name: project.name })).toBeVisible();
+    await expect(quoteDataRows(page)).toHaveCount(1);
+
+    const capturedRows = parseTsv(REAL_EXCEL_WINDOWS_20260928_FORTY_FIVE);
+    expect(capturedRows).toHaveLength(45);
+    const itemNamePaste = capturedRows.map((row) => row[0]).join("\n");
+    const numberPaste = capturedRows.map((row) => `${row[1]}\t${row[2]}`).join("\n");
+    const notePaste = capturedRows.map((row) => row[3]).join("\n");
+
+    await focusGridCell(page, quoteCell(page, 0, COL.itemName));
+    await pasteIntoFocusedCell(page, itemNamePaste);
+    await focusGridCell(page, quoteCell(page, 0, COL.quantity));
+    await pasteIntoFocusedCell(page, numberPaste);
+    await focusGridCell(page, quoteCell(page, 0, COL.note));
+    await pasteIntoFocusedCell(page, notePaste);
+
+    await expectLineTotal(page, 45);
+    await expect(invalidCells(page)).toHaveCount(0);
+
+    await saveAndWait(page);
+    await expect(page.getByText(/저장됨/)).toBeVisible();
+
+    // 새로고침은 쪽 상태를 지우고 1쪽으로 돌아간다(04-47 §7-3 (자)).
+    await page.reload();
+    await expect(quoteDataRows(page)).toHaveCount(30);
+
+    await expect(quoteCell(page, 0, COL.itemName)).toHaveText("항목1");
+    await expect(quoteCell(page, 0, COL.quantity)).toHaveText("2");
+    await expect(quoteCell(page, 0, COL.unitPrice)).toHaveText("10,000");
+    await expect(quoteCell(page, 0, COL.note)).toHaveText("비고");
+
+    // 10번째 줄(0-based 9) — 캡처에서 비고 칸이 비어 있던 줄. 빈 비고의 읽기 표시는 "—"다.
+    await expect(quoteCell(page, 9, COL.itemName)).toHaveText("항목10");
+    await expect(quoteCell(page, 9, COL.note)).toHaveText("—");
+
+    await page.getByRole("navigation", { name: "견적 줄 페이지", exact: true }).getByRole("button", { name: "2", exact: true }).click();
+    await expect(quoteDataRows(page)).toHaveCount(15);
+    await expect(quoteCell(page, 14, COL.itemName)).toHaveText("항목45");
+    await expect(quoteCell(page, 14, COL.quantity)).toHaveText("2");
+    await expect(quoteCell(page, 14, COL.unitPrice)).toHaveText("10,000");
+    await expect(quoteCell(page, 14, COL.note)).toHaveText("비고");
   });
 });

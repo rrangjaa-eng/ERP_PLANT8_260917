@@ -214,6 +214,11 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     const collapsedBox = await collapsedRow.boundingBox();
     expect(collapsedBox?.height).toBeGreaterThanOrEqual(44);
 
+    // 04-31 DOM 감사 FAIL-2 — 접근 이름이 내부 UUID(clientKey)가 아니라 사람이 읽을 항목명이어야 한다(SYSTEM.md §10).
+    const accessibleName = await collapsedRow.evaluate((el) => el.getAttribute("aria-label"));
+    expect(accessibleName).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    expect(accessibleName).toContain("폰 시트 확인용 항목");
+
     await collapsedRow.click();
 
     const sheet = page.getByRole("dialog", { name: /폰 시트 확인용 항목|항목명 없음/ });

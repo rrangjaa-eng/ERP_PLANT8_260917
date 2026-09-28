@@ -126,10 +126,11 @@ export async function allocateDocumentNumber(
 
 export class SeqStartOverlapError extends UserFacingError {}
 
-// 04-51 결정 ②(a) — 사용자 답 2026-09-24(설정 검증). 설정 화면의 비이력형 저장 한 곳 — 순번 시작값
-// 키는 올해 이미 매긴 최대 표시 순번 이하이면 거부한다. 표시 순번 = 카운터 + 시작값 − 1이라 낮춘
-// 시작값은 언젠가 이미 매긴 번호와 겹쳐 UNIQUE(format_key, number)로 등록이 실패한다. 최대는 카운터
-// 행과 현재 시작값으로 계산한다 — 시작값이 이 검증을 거쳐 바뀌어 왔다면 실제 최대와 같거나 크다.
+// 04-51 결정 ②(b) — 사용자 2026-09-28(PR #85 댓글 5861849715). 설정 화면의 비이력형 저장 한 곳 —
+// 순번 시작값 키는 올해 카운터 발급이 1건 이상이고 새 시작값이 현재 시작값보다 작을 때만 거부한다.
+// 같은 값·올리는 값은 통과한다(올려서 비는 번호는 수용). 표시 순번 = 카운터 + 시작값 − 1이라 낮춘
+// 시작값만 이미 매긴 번호와 겹쳐 UNIQUE(format_key, number)로 등록이 실패한다. 시작값이 이 규칙으로만
+// 바뀌면 올해 번호는 단조 증가하므로 카운터 + 현재 시작값 − 1이 올해 실제로 매긴 최대(거부 문구의 숫자)다.
 // 리뷰 S1: 검증과 저장은 한 트랜잭션에서 채번과 같은 카운터 행 잠금을 잡고 한다(직렬화). 권한은 잠금
 // 전에 판정한다 — 잠금 안에서 전역 풀을 쓰지 않고(04-32 규칙), 권한 없는 호출에는 최대 번호를
 // 알리지 않고 setSettingValue의 권한 거부로 끝낸다. 시작값 키가 아니면 setSettingValue 그대로다.
@@ -150,12 +151,10 @@ export async function setSimpleSettingValue(
     const currentStart = await getSettingValue(defs.seqStart, undefined, {
       findSimpleValue: (v, k) => findSimpleValue(v, k, tx),
     });
-    // 04-51 리뷰 B1 — 바꾸지 않은 값의 재저장(설정 화면 blur)은 검증하지 않는다.
-    if (counterValue >= 1 && parsed.data !== currentStart) {
+    // 04-51 리뷰 B1 — 바꾸지 않은 값의 재저장(설정 화면 blur)은 낮추기가 아니므로 통과한다.
+    if (counterValue >= 1 && parsed.data < currentStart) {
       const maxIssued = counterValue + currentStart - 1;
-      if (parsed.data <= maxIssued) {
-        throw new SeqStartOverlapError(`순번 시작값이 이미 매긴 번호(${maxIssued})와 겹침 · ${maxIssued + 1} 이상 입력`);
-      }
+      throw new SeqStartOverlapError(`순번 시작값이 이미 매긴 번호(${maxIssued})와 겹침`);
     }
     await setSettingValue(viewer, def, value, {
       can: () => Promise.resolve(true),

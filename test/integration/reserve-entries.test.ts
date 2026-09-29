@@ -271,6 +271,25 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
     expect(stored?.version).toBe(1);
   });
 
+  // Opus 독립 검토 후속 — 저장된 projectId가 있는 줄의 변경만 「바꾼 연결」 항을 가른다(위 null → 보관 테스트는 그 항을 거치지 않는다).
+  it("저장된 줄의 프로젝트를 활성 프로젝트에서 보관된 프로젝트로 바꿔도 같은 이유로 거부, 저장된 활성 프로젝트 그대로(CEO-D18)", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const projectA = await createProjectFor(client.id);
+    const row = { ...newRow(client.id, "2026-03-01", "deposit", 1_000), projectId: projectA.id };
+    await saveReserves(finance, { rows: [row] });
+    const projectB = await createProjectFor(client.id);
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, projectB.id));
+
+    const edit = { ...row, isNew: undefined, version: 1, projectId: projectB.id };
+    const error = await rejection(saveReserves(finance, { rows: [edit] }));
+
+    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: row.id, field: "projectId", reason: "보관된 프로젝트 · 프로젝트 다시 고르기" })]);
+    const stored = await storedRow(row.id);
+    expect(stored?.projectId).toBe(projectA.id);
+    expect(stored?.version).toBe(1);
+  });
+
   it("묶인 뒤 보관된 프로젝트는 그 줄의 다른 칸 수정을 막지 않는다 — 프로젝트 칸 그대로 저장", async () => {
     const finance = await createFinanceViewer();
     const client = await createClient();

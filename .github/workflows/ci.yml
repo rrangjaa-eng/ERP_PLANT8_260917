@@ -2,10 +2,17 @@ name: ci
 
 # push 트리거는 두지 않는다 — main push는 deploy.yml이 workflow_call로 이 워크플로를
 # 먼저 부른다(01-06). 같은 커밋에 push·pull_request가 둘 다 걸리면 CI가 2회 돌고
-# concurrency로도 합쳐지지 않는다(ref가 다르다). 무료 플랜 비공개 저장소 Actions는
-# 월 2,000분 — CI 1회 ≈ 8~10분(플랜 리뷰 CEO 9A).
+# concurrency로도 합쳐지지 않는다(ref가 다르다).
+#
+# 두 갈래(2026-09-27 작업 방식 변경):
+#   draft PR  → quality 잡만(lint·typecheck·lint:sql·단위·훅 테스트, 약 2분). 실행 중인
+#               웨이브의 잦은 푸시가 15분짜리 전체 검사를 매번 돌리지 않게 한다.
+#   ready PR · workflow_call(main push) → integration·e2e를 각 2샤드로 병렬. 샤드 잡마다
+#               Postgres 서비스 컨테이너가 따로 떠서 공유 DB 경합(WINDOWS #25·#31)이 없다.
+# draft → ready 전환은 pull_request.types의 ready_for_review가 깨운다.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     # !docs/** 뒤의 재포함 목록은 unit 테스트가 실제로 읽는 docs 파일 전부와
     # 일치해야 한다(WR-09) — design-system-docs.test.ts(SYSTEM.md·tokens.css·
     # DECISIONS.md), ui/role-menu.test.ts(SYSTEM.md), docs-limits.test.ts
@@ -31,7 +38,8 @@ permissions:
 
 jobs:
   # 빠르고 값싼 검사만 — Postgres 없이 몇 초~수십 초 안에 끝난다. 여기서 실패하면
-  # integration-e2e(Postgres 컨테이너 + Playwright, 비용이 더 큰 잡)는 실행되지 않는다.
+  # integration·e2e(Postgres 컨테이너 + Playwright, 비용이 더 큰 잡)는 실행되지 않는다.
+  # draft PR은 이 잡만 돈다.
   quality:
     runs-on: ubuntu-latest
     steps:
@@ -46,12 +54,27 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint:sql
       - run: pnpm test:unit
+      # 훅 스크립트(.claude/hooks/*.sh) 회귀 — 훅 수정 PR이 3일에 6건 나왔다. jq·GNU date·
+      # sed·git만 쓰므로 ubuntu-latest에서 그대로 돈다(로컬 실측 5종 약 30초).
+      - name: hook tests
+        run: |
+          for t in .claude/hooks/tests/*.test.sh; do
+            echo "== $t"
+            bash "$t"
+          done
 
-  # quality 통과 뒤에만 Postgres 서비스 컨테이너 + 마이그레이션 + 통합 + E2E를 돈다
+  # quality 통과 뒤 Postgres 서비스 컨테이너 + 마이그레이션 + 통합 테스트를 2샤드로
   # (Eng Issue 14 — 3계층 테스트, D-01 — CI는 services.postgres로 실제 DB를 붙인다).
-  integration-e2e:
+  # 통합 파일은 DB를 공유해 잡 안에서는 직렬(vitest fileParallelism: false)이고,
+  # 샤드는 파일 단위로 나뉜다.
+  integration:
     runs-on: ubuntu-latest
     needs: quality
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     services:
       postgres:
         image: postgres:16
@@ -83,12 +106,51 @@ jobs:
       # BETTER_AUTH_SECRET이 없다(T-1-22).
       - run: echo "BETTER_AUTH_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
       - run: pnpm db:migrate
-      - run: pnpm test:integration
+      - run: pnpm test:integration --shard=${{ matrix.shard }}/2
+
+  # E2E는 자기 globalSetup이 erp_test를 비우고 마이그레이션·시드까지 하므로 db:migrate
+  # 스텝이 없다. Playwright 웹서버는 CI에서 프로덕션 빌드(pnpm build && pnpm start)를 쓴다.
+  e2e:
+    runs-on: ubuntu-latest
+    needs: quality
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: erp
+          POSTGRES_PASSWORD: erp
+          POSTGRES_DB: erp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://erp:erp@127.0.0.1:5432/erp_test
+      BETTER_AUTH_URL: http://127.0.0.1:3100
+      APP_ENV: local
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: echo "BETTER_AUTH_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:e2e
+      - run: pnpm test:e2e --shard=${{ matrix.shard }}/2
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: playwright-report/
           retention-days: 7

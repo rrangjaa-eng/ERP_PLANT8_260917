@@ -447,17 +447,6 @@ export const DOCUMENT_NUMBER_CERT_SEQ_START: SettingDef<number> = {
   default: 1,
 };
 
-export const PNL_START_GATE_WEEKS_AFTER_CUTOVER: SettingDef<number> = {
-  key: "pnl.start_gate.weeks_after_cutover",
-  kind: "simple",
-  schema: z.coerce.number().int().min(0),
-  label: "손익 착수 대기 주수",
-  hint: "전환 후 이 주(week)만큼 지나야 프로젝트 손익 계산을 시작합니다.",
-  namespace: "손익",
-  default: 2,
-  readBy: { phase: "9" },
-};
-
 // Phase 04.2(D-4202): tick 한 번이 새로 만드는 알림 수의 상한. 최대 5,000 —
 // 삽입 한 문장의 바인드 인자가 행마다 7개라 35,000 < PostgreSQL 한도 65,535.
 export const NOTIFY_TICK_BATCH_MAX: SettingDef<number> = {
@@ -500,7 +489,6 @@ export const SETTING_DEFS: SettingDef<unknown>[] = [
   PROJECT_FORCE_COMPLETE_ALLOW_UNMATCHED_ESTIMATE_LINES,
   PROJECT_FORCE_COMPLETE_ALLOW_MISSING_REVENUE,
   PROJECT_CUSTOMER_APPROVAL_GATE,
-  PNL_START_GATE_WEEKS_AFTER_CUTOVER,
   ...(env.CERT_FEATURE_ALLOWED === "true" ? [CERT_ENABLED] : []),
   CERT_LINK_EXPIRE_HOURS,
   CERT_RETENTION_YEARS,

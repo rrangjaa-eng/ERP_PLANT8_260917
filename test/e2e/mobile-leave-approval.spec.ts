@@ -190,4 +190,20 @@ test.describe("폰 결재 시트 (04.1-05)", () => {
     if (!content || !lineBox) throw new Error("본문 · 충돌 줄 없음");
     expect(content.y + content.height).toBeLessThanOrEqual(lineBox.y);
   });
+
+  test("폰 결재함 접힌 줄에 `기안자 · MM-DD · 잔여 초과 N일`, 문서 칸 2행은 폰에서 숨는다(UI-SPEC S4)", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 10, weekdays: 16 });
+    const org = await setupLeaveOrg(today);
+    await submitLeave(org.drafter.viewer, { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" });
+
+    const lead = await loginPage(browser, baseURL, org.teamLead, PHONE);
+    await lead.goto("/approvals");
+    const folded = lead.locator("main tbody tr", { hasText: new RegExp(`^${org.drafter.name} · \\d{2}-\\d{2} · 잔여 초과 \\d`) });
+    await expect(folded).toHaveCount(1);
+    await expect(folded.getByText(/잔여 초과/)).toHaveCSS("color", "rgb(138, 90, 0)");
+    // 같은 말을 두 번 하지 않는다 — 폰에서 보이는 `잔여 초과`는 접힌 줄 하나뿐.
+    await expect(lead.locator("main").getByText(/잔여 초과/).filter({ visible: true })).toHaveCount(1);
+  });
 });
+

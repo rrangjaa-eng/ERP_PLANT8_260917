@@ -124,7 +124,7 @@
 
 .tone-warning {
   color: var(--warning);
-  font-weight: var(--fw-bold);
+  font-weight: var(--fw-medium);
 }
 
 .actions {

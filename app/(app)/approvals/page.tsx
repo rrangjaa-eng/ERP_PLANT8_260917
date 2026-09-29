@@ -77,6 +77,8 @@ function toRow(item: Partial<ApprovalInboxItemDto>, group: InboxRow["group"]): I
     drafter: [item.drafterName, item.submittedAt ? kstDateOf(item.submittedAt).slice(5) : null].filter(Boolean).join(" · "),
     days: summary.days ?? "",
     status,
+    // 잔여 초과 줄(종류가 준 상세 행의 경고 한 줄) — `내 결재`만 상세를 읽는다(UI-SPEC S4 · /design-review).
+    overdraw: group === "mine" ? (item.detail?.rows.find((row) => row.tone === "warning")?.value ?? null) : null,
     sheet: group === "mine" ? toSheet(item) : null,
     decision: group === "mine" ? toDecision(item, summary) : null,
   };

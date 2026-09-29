@@ -47,6 +47,8 @@
   font-size: var(--fs-sm);
   overflow-wrap: anywhere;
   word-break: keep-all;
+  /* 반려 사유는 여러 줄로 적힌다(사용자 결정 2026-09-29 ②) — 줄을 지킨다. */
+  white-space: pre-line;
 }
 
 .end {

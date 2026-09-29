@@ -31,6 +31,8 @@ export type InboxRow = {
   drafter: string;
   days: string;
   status: { kind: StatusTagKind; label: string } | null;
+  // `잔여 초과 N일`(해당할 때만) — PC는 문서 칸 2행, 폰은 접힌 줄 끝(UI-SPEC S4). 막힘이 아니라 경고다.
+  overdraw: string | null;
   // `내 결재` 항목의 결재 시트 재료(서버 가능 행동 · 상세 · 결재선) — 처리함은 null.
   sheet: ApprovalSheetItem | null;
   // 반려 · 회수 확인 재료 — 처리함은 null.
@@ -96,6 +98,7 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
               {row.document}
             </button>
           ) : null}
+          {row.overdraw ? <span className={styles.overdraw}>{row.overdraw}</span> : null}
         </span>
       ),
     },
@@ -110,6 +113,12 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
         row.sheet ? (
           <button type="button" tabIndex={-1} className={styles.foldTap} onClick={() => setSheetItem(row.sheet)}>
             {row.drafter}
+            {row.overdraw ? (
+              <>
+                {" · "}
+                <span className={styles.overdrawInline}>{row.overdraw}</span>
+              </>
+            ) : null}
           </button>
         ) : row.group === "processed" && row.href ? (
           <Link href={row.href} tabIndex={-1} className={styles.foldTap}>

@@ -27,6 +27,19 @@
   font-size: var(--fs-sm);
 }
 
+/* 잔여 초과(UI-SPEC S4) — PC 문서 칸 2행, 폰에서는 접힌 줄 끝에만(같은 말을 두 번 보이지 않는다). */
+.overdraw {
+  display: block;
+  color: var(--warning);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.overdrawInline {
+  color: var(--warning);
+  font-weight: var(--fw-medium);
+}
+
 @media (max-width: 699.98px) {
   /* 행 전체가 탭 대상 — 문서 칸의 button · 링크가 ::after로 그 행을 덮는다(ui/table은 고치지 않는다). */
   tr:has(.rowTap, .rowLink, .foldTap) {
@@ -53,7 +66,8 @@
     inset: 0;
   }
 
-  .wideOnly {
+  .wideOnly,
+  .overdraw {
     display: none;
   }
 

@@ -45,6 +45,8 @@
   display: block;
   font-size: var(--fs-sm);
   word-break: keep-all;
+  /* 반려 사유는 여러 줄로 적힌다(사용자 결정 2026-09-29 ②) — 줄을 지킨다. */
+  white-space: pre-line;
 }
 
 .balance-default {
@@ -61,7 +63,7 @@
 .balance-warning {
   display: block;
   color: var(--warning);
-  font-weight: var(--fw-bold);
+  font-weight: var(--fw-medium);
 }
 
 /* 04.1-06 연차 목록(S1) — 머리 잔고 줄(formatBalanceLines가 준 한 줄 텍스트 그대로) · 필터 줄(연도 select 200 · 1차) · 행 링크. */

@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import "@/domain/leave";
-import { approveDocument, withdrawDocument } from "@/domain/approvals";
+import { approveDocument, rejectDocument, withdrawDocument } from "@/domain/approvals";
 import { submitLeave } from "@/domain/leave";
 import { seoulToday } from "@/lib/dates";
 import { leaveWeekdayRange } from "./leave-dates";
@@ -211,4 +211,41 @@ test.describe("연차 문서 화면 행동 줄 (04.1-05)", () => {
     await expect(dialog).toBeHidden();
     await expect(row.getByRole("button", { name: "반려" })).toBeFocused();
   });
+
+  test("결재함 PC 행 2행과 문서 화면 잔고 행에 `잔여 초과 N일` — --warning 600(UI-SPEC S4 · 표시 규칙)", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 9, weekdays: 16 });
+    const org = await setupLeaveOrg(today);
+    const doc = await submit(org, range);
+
+    const lead = await loginPage(browser, baseURL, org.teamLead);
+    await lead.goto("/approvals");
+    const row = lead.getByRole("row").filter({ hasText: documentLabel(range) });
+    const over = row.getByText(/^잔여 초과 \d/);
+    await expect(over).toBeVisible();
+    await expect(over).toHaveCSS("color", "rgb(138, 90, 0)");
+    await expect(over).toHaveCSS("font-weight", "600");
+
+    await lead.goto(`/leave/${doc.leaveId}`);
+    const docOver = lead.locator("main").getByText(/^잔여 초과 \d/);
+    await expect(docOver).toBeVisible();
+    await expect(docOver).toHaveCSS("font-weight", "600");
+  });
+
+  test("여러 줄 반려 사유는 문서 화면(반려 행 · 결재선)에서 줄을 지켜 보인다(사용자 결정 2026-09-29 ② · §6-3)", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 11, weekdays: 1 });
+    const org = await setupLeaveOrg(today);
+    const doc = await submit(org, range);
+    await rejectDocument(org.teamLead.viewer, { instanceId: doc.instanceId, expectedVersion: doc.version, reason: "일정 겹침\n다음 주로 옮겨 신청" });
+
+    const drafter = await loginPage(browser, baseURL, org.drafter);
+    await drafter.goto(`/leave/${doc.leaveId}`);
+    const lines = drafter.locator("main").getByText(/^사유 · 일정 겹침/);
+    await expect(lines.first()).toBeVisible();
+    for (const line of await lines.all()) {
+      expect(await line.innerText()).toBe("사유 · 일정 겹침\n다음 주로 옮겨 신청");
+    }
+  });
 });
+

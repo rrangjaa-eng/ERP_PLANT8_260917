@@ -49,7 +49,9 @@
     border: 0;
     background: none;
     color: inherit;
-    font: inherit;
+    font-family: var(--font-sans);
+    font-size: var(--fs-sm);
+    line-height: inherit;
     text-align: left;
     text-decoration: none;
     cursor: pointer;

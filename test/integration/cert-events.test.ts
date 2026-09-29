@@ -97,6 +97,16 @@ describe("createEvent — 한 트랜잭션 · 셀 오류", () => {
     expect(result).toEqual({ kind: "invalid", cellErrors: [], fieldErrors: { name: "required", wonOn: "required" }, noWinners: true });
   });
 
+  it("행사 이름은 NFC · trim 뒤 80자로 판정하고 NFC로 저장한다(NFD 80자 통과 · 81자 tooLong)", async () => {
+    const nfd80 = ` ${"가".repeat(80).normalize("NFD")} `;
+    const made = await createOk(SYSTEM_VIEWER, { name: nfd80 });
+    const [row] = await db.select({ name: certEvents.name }).from(certEvents).where(eq(certEvents.id, made.eventId));
+    expect(row?.name).toBe("가".repeat(80));
+
+    const result = await createEvent(SYSTEM_VIEWER, input({ name: "가".repeat(81).normalize("NFD") }));
+    expect(result).toMatchObject({ kind: "invalid", fieldErrors: { name: "tooLong" } });
+  });
+
   it("(E3-22) 당첨자 501줄은 거부(행 수 불변) · 500줄은 만들어진다", async () => {
     const rows = (n: number): WinnerInput[] =>
       Array.from({ length: n }, (_, i) => ({

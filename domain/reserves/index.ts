@@ -146,6 +146,7 @@ const ARCHIVED_ROW = "보관된 줄 · 새로 고침";
 const CLIENT_LOCKED = "클라이언트는 첫 저장 뒤 잠김 · 새 줄로 적기";
 const CLIENT_NOT_FOUND = "클라이언트 없음 · 클라이언트 다시 고르기";
 const PROJECT_CLIENT_MISMATCH = "다른 클라이언트의 프로젝트 · 프로젝트 다시 고르기";
+const PROJECT_ARCHIVED = "보관된 프로젝트 · 프로젝트 다시 고르기";
 const EVIDENCE_NOT_IN_TABLE = "코드표에 없는 증빙 종류 · 증빙 종류 고르기";
 const AMOUNT_NOT_POSITIVE = "금액 0 이하 · 금액 수정";
 const DIRECTION_INVALID = "구분 없음 · 구분 고르기";
@@ -373,9 +374,17 @@ async function planBatch(
         denyWrite(viewer, VERSION_CONFLICT_RULE, { clientIds: [input.clientId], entryIds: [input.id] }, new UserFacingError(VERSION_CONFLICT));
       }
     }
-    if (payload.projectId !== null && projectClients.get(payload.projectId) !== input.clientId) {
-      errors.push(cellError(index, input.id, "projectId", "프로젝트", PROJECT_CLIENT_MISMATCH));
-      continue;
+    if (payload.projectId !== null) {
+      const project = projectClients.get(payload.projectId);
+      if (project?.clientId !== input.clientId) {
+        errors.push(cellError(index, input.id, "projectId", "프로젝트", PROJECT_CLIENT_MISMATCH));
+        continue;
+      }
+      // Codex #5 · CEO-D18 — 새로 고르거나 바꾼 연결만, 이미 묶인 줄은 프로젝트가 나중에 보관돼도 저장(04-42 리뷰 S1과 같은 결).
+      if (project.archived && (input.isNew || stored?.projectId !== payload.projectId)) {
+        errors.push(cellError(index, input.id, "projectId", "프로젝트", PROJECT_ARCHIVED));
+        continue;
+      }
     }
     if (input.isNew) plan.inserts.push(row);
     else if (stored) plan.updates.push({ row, stored });

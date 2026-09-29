@@ -51,11 +51,12 @@ export async function findClientNames(viewer: Viewer, clientIds: string[], tx: D
   return new Map(rows.map((row) => [row.id, row.name]));
 }
 
-export async function findProjectClientIds(viewer: Viewer, projectIds: string[], tx: DbOrTx): Promise<Map<string, string>> {
+// Codex #5 · CEO-D18 — 보관 여부를 싣고 판정은 domain이 한다.
+export async function findProjectClientIds(viewer: Viewer, projectIds: string[], tx: DbOrTx): Promise<Map<string, { clientId: string; archived: boolean }>> {
   void viewer;
   if (projectIds.length === 0) return new Map();
-  const rows = await tx.select({ id: projects.id, clientId: projects.clientId }).from(projects).where(inArray(projects.id, projectIds));
-  return new Map(rows.map((row) => [row.id, row.clientId]));
+  const rows = await tx.select({ id: projects.id, clientId: projects.clientId, archivedAt: projects.archivedAt }).from(projects).where(inArray(projects.id, projectIds));
+  return new Map(rows.map((row) => [row.id, { clientId: row.clientId, archived: row.archivedAt !== null }]));
 }
 
 // 04-42 리뷰 B1 · S1 — 대장 줄이 가리키는 프로젝트 이름(보관된 프로젝트도 — 저장된 값을 그대로 보인다).

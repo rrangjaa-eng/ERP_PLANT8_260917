@@ -47,6 +47,9 @@ async function makeEvent(n = 1) {
   const winners = Array.from({ length: n }, (_, i) => ({
     name: `당첨자${i + 1}호`,
     phone: `010-5${pad4(i).slice(1)}-${pad4(i + 1)}`,
+    // 04.3-04 — 가린 이름이 같은 줄(당***호)이 공개 모양까지 같으면 만들기가
+    // 거부된다(shapeDuplicate). 경품을 달리해 줄마다 모양을 다르게 한다.
+    prizeName: `경품${i + 1}`,
   }));
   const event = await createCertEvent({ winners });
   const rows = await listWinnersForIntake(SYSTEM_VIEWER, event.eventId);

@@ -69,6 +69,11 @@ const rawSchema = z.object({
   // 앱이 뜬다(Phase 1 계약 그대로) — lib/crypto.ts가 있으면 새 암호화에 이
   // 버전을 쓰고, 없으면 v1만 쓴다. 회전 완료 후에만 v1을 지운다.
   APP_DATA_KEY_v2: optionalString(),
+  // 04.3-08 — 스테이징·프로덕션의 데이터 키는 Cloud KMS로 감싼 값(KMS 암호문의 한 줄
+  // base64)으로 받고, lib/crypto.ts loadDataKeys()가 기동 때 이 KMS 키로 한 번 푼다.
+  APP_DATA_KEY_KMS_KEY: optionalString(),
+  APP_DATA_KEY_v1_WRAPPED: optionalString(),
+  APP_DATA_KEY_v2_WRAPPED: optionalString(),
   SMTP_HOST: optionalString(),
   SMTP_USER: optionalString(),
   SMTP_PASSWORD: optionalString(),
@@ -132,6 +137,26 @@ const envSchema = rawSchema.superRefine((data, ctx) => {
       });
     }
   }
+  // 04.3-08 — 감싼 키는 KMS 키 이름 없이 풀 수 없다. 비로컬에서 같은 버전의 평문
+  // 변수가 함께 있으면 평문 시크릿이 아직 서비스에 붙어 있는 배포다 — 부팅에서 막는다.
+  for (const version of ["v1", "v2"] as const) {
+    const wrappedKey = `APP_DATA_KEY_${version}_WRAPPED` as const;
+    if (data[wrappedKey] === undefined) continue;
+    if (!data.APP_DATA_KEY_KMS_KEY) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["APP_DATA_KEY_KMS_KEY"],
+        message: `APP_DATA_KEY_KMS_KEY is required when ${wrappedKey} is set`,
+      });
+    }
+    if (data.APP_ENV !== "local" && data[`APP_DATA_KEY_${version}`] !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: [`APP_DATA_KEY_${version}`],
+        message: `APP_DATA_KEY_${version} must not be set together with ${wrappedKey} when APP_ENV is not local`,
+      });
+    }
+  }
   if (data.AUTH_PROVIDER === "google") {
     if (!data.GOOGLE_CLIENT_ID) {
       ctx.addIssue({
@@ -172,6 +197,9 @@ const ENV_KEYS = [
   "RATE_LIMIT_LOGIN_MAX",
   "APP_DATA_KEY_v1",
   "APP_DATA_KEY_v2",
+  "APP_DATA_KEY_KMS_KEY",
+  "APP_DATA_KEY_v1_WRAPPED",
+  "APP_DATA_KEY_v2_WRAPPED",
   "SMTP_HOST",
   "SMTP_USER",
   "SMTP_PASSWORD",

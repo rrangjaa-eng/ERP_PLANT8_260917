@@ -35,6 +35,9 @@ const ENV_KEYS = [
   "NOTIFY_TICK_SCHEDULER_SA",
   "NOTIFY_TICK_OIDC_DISABLED",
   "CERT_SIGNATURE_BUCKET",
+  "APP_DATA_KEY_KMS_KEY",
+  "APP_DATA_KEY_v1_WRAPPED",
+  "APP_DATA_KEY_v2_WRAPPED",
 ] as const;
 
 let saved: Record<string, string | undefined>;
@@ -199,5 +202,48 @@ describe("lib/env", () => {
     process.env.CERT_SIGNATURE_BUCKET = "p-plant8-prod-cert-signatures";
     const { env } = await import("@/lib/env");
     expect(env.CERT_SIGNATURE_BUCKET).toBe("p-plant8-prod-cert-signatures");
+  });
+
+  // 04.3-08 — KMS로 감싼 데이터 키. 감싼 변수는 KMS 키 이름 없이 풀 수 없고, 비로컬에서
+  // 같은 버전의 평문 변수가 함께 붙어 있으면 평문 시크릿이 여전히 서비스에 연결된 배포다.
+  it("감싼 데이터 키 변수가 있는데 APP_DATA_KEY_KMS_KEY가 없으면 throw하고 메시지가 KMS 키 이름을 가리킨다", async () => {
+    process.env.APP_DATA_KEY_v1_WRAPPED = "Q2lRQQ==";
+
+    await expect(import("@/lib/env")).rejects.toThrow(/APP_DATA_KEY_KMS_KEY/);
+  });
+
+  it("감싼 v2만 있어도 APP_DATA_KEY_KMS_KEY가 없으면 throw한다", async () => {
+    process.env.APP_DATA_KEY_v2_WRAPPED = "Q2lRQQ==";
+
+    await expect(import("@/lib/env")).rejects.toThrow(/APP_DATA_KEY_KMS_KEY/);
+  });
+
+  it("감싼 변수와 KMS 키 이름이 함께 있으면 파싱 성공하고 값을 읽는다", async () => {
+    process.env.APP_DATA_KEY_v1_WRAPPED = "Q2lRQQ==";
+    process.env.APP_DATA_KEY_KMS_KEY = "projects/p/locations/asia-northeast3/keyRings/r/cryptoKeys/k";
+
+    const { env } = await import("@/lib/env");
+    expect(env.APP_DATA_KEY_v1_WRAPPED).toBe("Q2lRQQ==");
+    expect(env.APP_DATA_KEY_KMS_KEY).toBe("projects/p/locations/asia-northeast3/keyRings/r/cryptoKeys/k");
+  });
+
+  it("비로컬에서 같은 버전의 평문 변수와 감싼 변수가 함께 있으면 throw한다", async () => {
+    process.env.APP_ENV = "staging";
+    process.env.BETTER_AUTH_SECRET = "a".repeat(32);
+    process.env.BETTER_AUTH_URL = "https://example.com";
+    process.env.APP_DATA_KEY_v1 = Buffer.alloc(32, 1).toString("base64");
+    process.env.APP_DATA_KEY_v1_WRAPPED = "Q2lRQQ==";
+    process.env.APP_DATA_KEY_KMS_KEY = "projects/p/locations/asia-northeast3/keyRings/r/cryptoKeys/k";
+
+    await expect(import("@/lib/env")).rejects.toThrow(/APP_DATA_KEY_v1/);
+  });
+
+  it("로컬에서는 평문 변수와 감싼 변수가 함께 있어도 파싱 성공한다", async () => {
+    process.env.APP_DATA_KEY_v1 = Buffer.alloc(32, 1).toString("base64");
+    process.env.APP_DATA_KEY_v1_WRAPPED = "Q2lRQQ==";
+    process.env.APP_DATA_KEY_KMS_KEY = "projects/p/locations/asia-northeast3/keyRings/r/cryptoKeys/k";
+
+    const { env } = await import("@/lib/env");
+    expect(env.APP_DATA_KEY_v1_WRAPPED).toBe("Q2lRQQ==");
   });
 });

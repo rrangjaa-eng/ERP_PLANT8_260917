@@ -41,6 +41,8 @@ export type TableProps<Row> = {
   rows: Row[];
   getRowId: (row: Row) => string;
   groupBy?: (row: Row) => string;
+  /** 그룹 머리글 글자. 없으면 groupBy 키 — 키(리저브의 clientId)와 보이는 이름이 다를 때 준다. */
+  groupHeader?: (row: Row) => string;
   /** 04-42(S9) — 그룹 머리글 행 오른쪽 칸(굵게). 그룹의 첫 줄로 부른다 — 리저브 대장의 클라이언트 최종 잔액. */
   groupAside?: (row: Row) => ReactNode;
   emptyMessage?: string;
@@ -155,14 +157,14 @@ function SortIcon({ direction }: { direction: "asc" | "desc" }) {
   );
 }
 
-function groupRows<Row>(rows: Row[], groupBy?: (row: Row) => string): { header: string | null; rows: Row[] }[] {
-  if (!groupBy) return [{ header: null, rows }];
-  const groups: { header: string; rows: Row[] }[] = [];
+function groupRows<Row>(rows: Row[], groupBy?: (row: Row) => string, groupHeader?: (row: Row) => string): { key: string | null; header: string | null; rows: Row[] }[] {
+  if (!groupBy) return [{ key: null, header: null, rows }];
+  const groups: { key: string; header: string; rows: Row[] }[] = [];
   for (const row of rows) {
-    const header = groupBy(row);
-    const existing = groups.find((group) => group.header === header);
+    const key = groupBy(row);
+    const existing = groups.find((group) => group.key === key);
     if (existing) existing.rows.push(row);
-    else groups.push({ header, rows: [row] });
+    else groups.push({ key, header: groupHeader ? groupHeader(row) : key, rows: [row] });
   }
   return groups;
 }
@@ -173,6 +175,7 @@ export function Table<Row>({
   rows,
   getRowId,
   groupBy,
+  groupHeader,
   groupAside,
   emptyMessage,
   emptyAction,
@@ -217,7 +220,7 @@ export function Table<Row>({
   );
 
   // 04-19 — 쪽 나눔은 그룹 정렬 뒤의 표시 순서를 자른다. 지금 쪽은 렌더마다 쪽 수 안으로 보정한다(clampPage — 04-29).
-  const allGroups = groupRows(rows, groupBy);
+  const allGroups = groupRows(rows, groupBy, groupHeader);
   const displayRows = allGroups.flatMap((group) => group.rows);
   const displayIds = displayRows.map(getRowId);
   const [requestedPage, setRequestedPage] = useState(1);
@@ -291,7 +294,7 @@ export function Table<Row>({
   // 리뷰 S-1 — 보정한 쪽을 요청 쪽에도 되돌린다(줄이 다시 늘 때 사라졌던 쪽으로 튀지 않게).
   if (pages && page !== targetPage) setRequestedPage(page);
   const pageIds = pages ? new Set(pages[page - 1]) : null;
-  const groups = pageIds ? groupRows(displayRows.filter((row) => pageIds.has(getRowId(row))), groupBy) : allGroups;
+  const groups = pageIds ? groupRows(displayRows.filter((row) => pageIds.has(getRowId(row))), groupBy, groupHeader) : allGroups;
   // phoneRowLink — 그룹 하나 = <tbody> 하나 대신, 그룹 머리글과 행(주 행 + 접힌 줄)마다 제 <tbody>다.
   const GroupBody: ElementType = phoneRowLink ? Fragment : "tbody";
   const RowBody: ElementType = phoneRowLink ? "tbody" : Fragment;
@@ -823,7 +826,7 @@ export function Table<Row>({
           </tr>
         </thead>
         {groups.map((group, groupIndex) => (
-          <GroupBody key={group.header ?? `group-${groupIndex}`}>
+          <GroupBody key={group.key ?? `group-${groupIndex}`}>
             {group.header !== null ? (
               <RowBody>
                 <tr className={styles.groupRow}>

@@ -591,9 +591,14 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
 
   // 그룹 머리글 = 클라이언트, 머리글 행 오른쪽 = 서버가 계산한 최종 잔액(굵게 — S9 · D-91 · 리뷰 S3). 저장 전 새 줄의 클라이언트가
   // 이 쪽에 없으면 이름만.
+  function groupKey(row: Row): string {
+    return row.clientId || "—";
+  }
+
+  // 이름이 같은 클라이언트는 선택지와 같은 라벨(vendorOptionLabels)로 가른다.
   function groupLabel(row: Row): string {
     if (!row.clientId) return "—";
-    return row.clientName || clientName(row.clientId);
+    return references.clients.find((client) => client.id === row.clientId)?.label ?? (row.clientName || clientName(row.clientId));
   }
 
   function groupBalance(row: Row): string | null {
@@ -1044,7 +1049,7 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
   function handlePasteAtCell(row: Row, columnKey: string, clipboard: { text: string; appMeta: string | null }): string[] {
     // 표가 그리는 순서(클라이언트 그룹 순)로 아래 줄을 센다.
     const grouped = new Map<string, Row[]>();
-    for (const candidate of rows) grouped.set(groupLabel(candidate), [...(grouped.get(groupLabel(candidate)) ?? []), candidate]);
+    for (const candidate of rows) grouped.set(groupKey(candidate), [...(grouped.get(groupKey(candidate)) ?? []), candidate]);
     const ordered = [...grouped.values()].flat();
     const rowIndex = ordered.indexOf(row);
     const colIndex = pasteColumns.findIndex((column) => column.key === columnKey);
@@ -1181,7 +1186,8 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
         getRowId={(row) => row.id}
         // 리뷰 R5 — 격자 복사에 앱 형식(줄별 통화)을 싣는다. 같은 앱 안 붙여넣기는 계산 열을 무시하고 외화 줄을 센다(견적 원장과 같다).
         copyMeta={(copyRows) => JSON.stringify(copyRows.map((row) => ({ currency: row.money.currency })))}
-        groupBy={groupLabel}
+        groupBy={groupKey}
+        groupHeader={groupLabel}
         groupAside={groupBalance}
         openCell={openCell}
         enableGridKeyboard

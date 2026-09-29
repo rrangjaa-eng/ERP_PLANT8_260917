@@ -52,7 +52,7 @@ describe("Table 그룹 키와 머리글 글자(groupHeader)", () => {
 
   it("머리글 글자가 같아도 키가 다르면 두 그룹 — 각자 첫 줄 잔액", () => {
     const cells = groupHeaderCells(
-      render({ rows: sameName, groupHeader: (row) => labels[row.group] ?? "", groupAside: (row) => `잔액 ${row.balance}` } as Partial<TableProps<Row>>),
+      render({ rows: sameName, groupHeader: (row) => labels[row.group] ?? "", groupAside: (row) => `잔액 ${row.balance}` }),
     );
     expect(cells).toHaveLength(2);
     expect(cells[0]).toMatch(/^<td[^>]*>같은이름 \(111-11-11111\)<span[^>]*>잔액 100<\/span><\/td>$/);

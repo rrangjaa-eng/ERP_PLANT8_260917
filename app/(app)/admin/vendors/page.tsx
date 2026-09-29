@@ -6,7 +6,7 @@ import { can } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
 import { listVendors, listVendorFieldDefinitions } from "@/domain/vendors";
 import { listCodeItems } from "@/domain/code-tables";
-import { maskTail4 } from "@/lib/crypto";
+import { maskTail4 } from "@/lib/mask-tail4";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { StatusTag } from "@/ui/status-tag/StatusTag";

@@ -28,7 +28,7 @@ async function createEmployee(): Promise<{ email: string; password: string; user
 }
 
 test.describe("폰 「더보기」 시트 계정 그룹 — 「알림함 N」 (04.2-09 Task 2)", () => {
-  test("알림 1건 — 계정 그룹이 「알림함 1」·「내 정보」·「설정」·「로그아웃」 순서이고 시트에 스크롤·잘림이 없다", async ({
+  test("알림 1건 — 계정 그룹이 「알림함 1」·「내 정보」·「연차」·「설정」·「로그아웃」 순서이고 시트에 스크롤·잘림이 없다", async ({
     page,
   }) => {
     const user = await createEmployee();
@@ -49,14 +49,14 @@ test.describe("폰 「더보기」 시트 계정 그룹 — 「알림함 N」 (0
 
     const accountItems = sheet.locator('li[role="presentation"] ~ li');
     const texts = await accountItems.allTextContents();
-    expect(texts.map((text) => text.trim())).toEqual(["알림함 1", "내 정보", "설정", "로그아웃"]);
+    expect(texts.map((text) => text.trim())).toEqual(["알림함 1", "내 정보", "연차", "설정", "로그아웃"]);
 
     // 항목(링크·버튼) 높이가 이웃과 같다(추가된 행이 목록 행 규격을 벗어나지 않는다).
     // <li> 자체가 아니라 안의 링크/버튼을 잰다 — 마지막 <li>만 border-bottom이 0이라
     // <li> 높이로 재면 1px 차이가 나 무관한 실패가 된다(MoreSheet.module.css .list li:last-child).
     const rows = sheet.locator('li[role="presentation"] ~ li > a, li[role="presentation"] ~ li > button');
     const heights = await rows.evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height));
-    expect(heights).toHaveLength(4);
+    expect(heights).toHaveLength(5);
     expect(new Set(heights.map((h) => Math.round(h))).size).toBe(1);
 
     // 시트에 스크롤·잘림이 없다 — 내부 스크롤 높이가 보이는 높이를 넘지 않는다.

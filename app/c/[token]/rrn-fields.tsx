@@ -65,6 +65,7 @@ export function RrnFields({
           aria-label="주민등록번호 앞 6자리"
           inputMode="numeric"
           maxLength={6}
+          autoComplete="off"
           placeholder="930412"
           value={front}
           onChange={handleFront}
@@ -83,7 +84,7 @@ export function RrnFields({
           type="password"
           inputMode="numeric"
           maxLength={7}
-          autoComplete="off"
+          autoComplete="new-password"
           placeholder="•••••••"
           value={back}
           onChange={(e) => onChange({ front, back: e.currentTarget.value.replace(/\D/g, "").slice(0, 7) })}

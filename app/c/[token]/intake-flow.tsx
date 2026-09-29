@@ -1008,6 +1008,7 @@ function IntakeForm({
           label="이름"
           size="external"
           maxLength={40}
+          autoComplete="off"
           value={draft.name}
           className={fieldErrors.includes("name") ? styles.fieldInvalid : undefined}
           onChange={(e) => edit("name", { name: e.target.value })}

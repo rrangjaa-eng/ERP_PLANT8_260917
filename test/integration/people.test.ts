@@ -260,6 +260,7 @@ describe("listPeople — 조회 횟수와 현재 소속(이슈 #56)", () => {
 });
 
 const INVERTED_MESSAGE = "퇴직일이 입사일보다 빠름 · 날짜 확인";
+const SELF_EDIT_MESSAGE = "본인 연차·입사일 변경 불가 · 다른 관리자에게 요청";
 
 async function datesOf(userId: string) {
   const [row] = await db
@@ -288,6 +289,26 @@ describe("입사일·퇴직일 — 권한 · 역전 · 로그 · DB CHECK(A-04 �
     await expect(setHireDate(pmViewer, userId, "2026-04-01")).rejects.toBeInstanceOf(ForbiddenError);
     await expect(setResignationDate(pmViewer, userId, "2026-12-31")).rejects.toBeInstanceOf(ForbiddenError);
     expect(await datesOf(userId)).toEqual(before);
+  });
+
+  it("사용자 결정(2026-09-29 A) — 관리자가 자기 입사일·퇴직일을 바꾸면 ForbiddenError이고 행이 그대로다 · 남의 것은 된다", async () => {
+    const { userId: adminId } = await registerPerson(SYSTEM_VIEWER, {
+      name: "자기변경관리자",
+      email: `${randomUUID()}@test.local`,
+      roleId: SYSADMIN_ROLE_ID,
+    });
+    await setHireDate(SYSTEM_VIEWER, adminId, "2026-03-10");
+    const before = await datesOf(adminId);
+    const self = { id: adminId, roleId: SYSADMIN_ROLE_ID };
+
+    await expect(setHireDate(self, adminId, "2020-01-01")).rejects.toThrow(SELF_EDIT_MESSAGE);
+    await expect(setHireDate(self, adminId, "2020-01-01")).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(setResignationDate(self, adminId, "2026-12-31")).rejects.toThrow(SELF_EDIT_MESSAGE);
+    expect(await datesOf(adminId)).toEqual(before);
+
+    const other = await makePlainPerson("남의입사일");
+    await setHireDate(self, other, "2026-04-01");
+    expect((await datesOf(other))?.hireDate).toBe("2026-04-01");
   });
 
   it("퇴직일 < 입사일이 되는 쓰기는 ValidationError이고 행이 그대로다 · 같은 날은 통과", async () => {

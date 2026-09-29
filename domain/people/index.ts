@@ -37,6 +37,9 @@ export class ValidationError extends UserFacingError {}
 export class SelfRoleChangeError extends UserFacingError {}
 export class UserNotFoundError extends UserFacingError {}
 
+// 사용자 결정(2026-09-29 A) — 관리자는 자기 연차 조정 · 입사일 · 퇴직일을 바꾸지 못한다(계급 변경과 같은 규칙).
+export const SELF_LEAVE_EDIT_ERROR = "본인 연차·입사일 변경 불가 · 다른 관리자에게 요청";
+
 const PEOPLE_MENU = "admin.people";
 const EFFECTIVE_FROM_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -373,6 +376,7 @@ async function setEmploymentDate(
   if (!(await canFn(viewer, PEOPLE_MENU, "write"))) {
     throw new ForbiddenError(field === "hire_date" ? "입사일 변경 권한 없음" : "퇴직일 변경 권한 없음");
   }
+  if (viewer.id === userId) throw new ForbiddenError(SELF_LEAVE_EDIT_ERROR);
   if (value !== null && !isCalendarDate(value)) {
     throw new ValidationError(field === "hire_date" ? HIRE_DATE_FORMAT_ERROR : RESIGNATION_DATE_FORMAT_ERROR);
   }

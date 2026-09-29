@@ -447,6 +447,20 @@ describe("조정 — 원자성 · 계약 · 기록 조회 · 권한(ENG-13 · CX
     expect(await countRows("leave_adjustments")).toBe(rows);
   });
 
+  it("사용자 결정(2026-09-29 A) — 관리자가 자기 연차를 조정하면 ForbiddenError(조정 · 로그 행 수 불변)", async () => {
+    const rows = await countRows("leave_adjustments");
+    const logs = await countRows("action_log");
+    const attempt = addLeaveAdjustment(
+      admin,
+      { userId: admin.id, bucket: "annual", fiscalYear: 2026, amountDays: 5, reason: "본인 보상" },
+      { now: NOW_0924 },
+    );
+    await expect(attempt).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(attempt).rejects.toThrow("본인 연차·입사일 변경 불가 · 다른 관리자에게 요청");
+    expect(await countRows("leave_adjustments")).toBe(rows);
+    expect(await countRows("action_log")).toBe(logs);
+  });
+
   it("A-04 — 기획 PM의 남의 조정은 ForbiddenError(조정 · 로그 행 수 불변), 관리자 잔고 조회도 ForbiddenError", async () => {
     const rows = await countRows("leave_adjustments");
     const logs = await countRows("action_log");

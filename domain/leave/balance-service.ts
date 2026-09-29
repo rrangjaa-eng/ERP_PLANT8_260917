@@ -4,7 +4,7 @@ import type { visible as defaultVisible } from "@/domain/permissions/visible";
 import { project, projectMany } from "@/domain/permissions/project";
 import { getSettingValue } from "@/domain/settings/registry";
 import { LEAVE_ANNUAL_DAYS } from "@/domain/settings/keys";
-import { ForbiddenError, UserNotFoundError, ValidationError } from "@/domain/people";
+import { ForbiddenError, SELF_LEAVE_EDIT_ERROR, UserNotFoundError, ValidationError } from "@/domain/people";
 import { loadActionLogGate, recordActionInTx, type TxLogDeps } from "@/domain/approvals/tx-log";
 import { withTransaction } from "@/lib/db-transaction";
 import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
@@ -294,6 +294,7 @@ export async function addLeaveAdjustment(
   if (!(await (deps?.can ?? defaultCan)(viewer, PEOPLE_MENU, "write"))) {
     throw new ForbiddenError("연차 조정 권한 없음");
   }
+  if (viewer.id === input.userId) throw new ForbiddenError(SELF_LEAVE_EDIT_ERROR);
   if (!BUCKETS.includes(input.bucket)) {
     throw new LeaveAdjustmentValidationError("bucket", "잔고 비어 있음 · 잔고 고르기");
   }

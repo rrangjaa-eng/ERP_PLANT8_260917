@@ -5,6 +5,7 @@ import {
   nextRrnRecheckConfirmed,
   recheckOutcome,
   resolveHistoryEntry,
+  restoreDraft,
   submitOutcomeFromValidationErrors,
 } from "@/app/c/[token]/flow-rules";
 
@@ -184,5 +185,28 @@ describe("submitOutcomeFromValidationErrors — 액션 스키마 거절을 칸 �
       kind: "invalid",
       fields: ["address"],
     });
+  });
+});
+
+// 검토 L7 — 확인 시간 지남 뒤 같은 자리 재확인은 값을 되살리지만, 동의는 그 판(동의 판 ·
+// 보존 기간)에 한 것이다. 재확인이 다른 판을 주면 동의를 풀어 새 판에 다시 동의하게 한다.
+describe("restoreDraft — 재확인 때 draft 되살림", () => {
+  const offer = { consentVersion: "2026-09", retentionYears: 5 };
+  const kept = { rowId: "row-a", name: "김하늘", consent: true, ...offer };
+
+  it("다른 자리의 draft는 되살리지 않는다(null)", () => {
+    expect(restoreDraft(kept, "row-b", offer)).toBeNull();
+    expect(restoreDraft(null, "row-a", offer)).toBeNull();
+  });
+
+  it("같은 자리 · 같은 판이면 동의까지 그대로", () => {
+    expect(restoreDraft(kept, "row-a", offer)).toEqual(kept);
+  });
+
+  it.each([
+    ["동의 판이 바뀜", { consentVersion: "2026-10", retentionYears: 5 }],
+    ["보존 기간이 바뀜", { consentVersion: "2026-09", retentionYears: 7 }],
+  ])("%s → 동의만 풀고 나머지 값은 남긴다 · 새 판을 싣는다", (_label, next) => {
+    expect(restoreDraft(kept, "row-a", next)).toEqual({ ...kept, ...next, consent: false });
   });
 });

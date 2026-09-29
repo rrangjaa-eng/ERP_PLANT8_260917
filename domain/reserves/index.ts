@@ -139,6 +139,7 @@ const CLIENT_LOCKED_RULE = "reserve.client-locked";
 const REPLAY_RULE = "reserve.replay-mismatch";
 const NEGATIVE_RULE = "reserve.balance-negative";
 const FORBIDDEN_RULE = "reserve.forbidden";
+const VERSION_CONFLICT_RULE = "reserve.version-conflict";
 const REPLAY_MISMATCH = "이미 저장된 줄과 값이 다름 · 새로 고침";
 const ENTRY_NOT_FOUND = "줄을 찾을 수 없음 · 새로 고침";
 const ARCHIVED_ROW = "보관된 줄 · 새로 고침";
@@ -369,7 +370,7 @@ async function planBatch(
       if (input.version === undefined || stored.version !== input.version) {
         // SF-2 선례 — 첫 커밋이 version을 하나 올렸고 값이 같으면 응답을 잃은 재전송이다.
         if (input.version !== undefined && stored.version === input.version + 1 && samePayload(stored, payload)) continue;
-        throw new UserFacingError(VERSION_CONFLICT);
+        denyWrite(viewer, VERSION_CONFLICT_RULE, { clientIds: [input.clientId], entryIds: [input.id] }, new UserFacingError(VERSION_CONFLICT));
       }
     }
     if (payload.projectId !== null && projectClients.get(payload.projectId) !== input.clientId) {
@@ -390,7 +391,7 @@ async function planBatch(
       continue;
     }
     // 리뷰 R9 — 화면이 본 뒤 다른 저장이 이 줄을 고쳤으면 보관하지 않는다(수정의 버전 충돌과 같은 배치 전체 거부).
-    if (stored.version !== version) throw new UserFacingError(VERSION_CONFLICT);
+    if (stored.version !== version) denyWrite(viewer, VERSION_CONFLICT_RULE, { clientIds: [stored.clientId], entryIds: [id] }, new UserFacingError(VERSION_CONFLICT));
     plan.archives.push(stored);
   }
 
@@ -465,7 +466,7 @@ async function writePlan(viewer: Viewer, plan: Plan, now: Date, tx: DbOrTx, deps
   }
   for (const { row, stored } of plan.updates) {
     const updated = await repoUpdateEntryIfVersionMatches(viewer, stored.id, stored.version, stored.clientId, row.payload, tx);
-    if (!updated) throw new UserFacingError(VERSION_CONFLICT);
+    if (!updated) denyWrite(viewer, VERSION_CONFLICT_RULE, { clientIds: [stored.clientId], entryIds: [stored.id] }, new UserFacingError(VERSION_CONFLICT));
     await recordAction(
       viewer,
       { actionType: "document_update", entity: RESERVE_ENTITY, entityId: stored.id, detail: { entryId: stored.id, clientId: stored.clientId, changed: changedFields(stored, row.payload) } },

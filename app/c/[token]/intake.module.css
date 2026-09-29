@@ -216,7 +216,7 @@
   font-size: var(--fs-md);
   color: var(--fg);
   line-height: var(--lh-body);
-  max-width: 64ch;
+  max-width: var(--measure);
   margin-top: var(--s-2);
 }
 

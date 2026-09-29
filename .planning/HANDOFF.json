@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-29T13:39:27.837Z",
+  "timestamp": "2026-09-29T14:00:20.793Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -20,6 +20,12 @@
       "name": "STATE·ROADMAP 갱신 43/44",
       "status": "done",
       "commit": "21ed78d2"
+    },
+    {
+      "id": 3,
+      "name": "/gsd-secure-phase 4 — 04-SECURITY.md(229행, 닫힘 227, 열림 2: T-04-31 high 차단 · T-04-373 medium 비차단)",
+      "status": "done",
+      "commit": "767c89f2"
     }
   ],
   "remaining_tasks": [
@@ -34,6 +40,11 @@
       "description": "gsd phase uat-passed 4 --require-verification = false — 04-UAT.md test 53 skipped(DR-P4-02 → 04.6, 사용자 이월 결정)를 막음으로 셈",
       "type": "human_action",
       "workaround": "사용자 결정: 그대로 두거나 이월 항목 통과 처리 방법(override 등)"
+    },
+    {
+      "description": "04-SECURITY.md threats_open 1 — T-04-31 번호 서식 구분자 검증 없음(domain/settings/keys.ts:294-302 z.string()). 전환·ship:pre 게이트가 막음",
+      "type": "human_action",
+      "workaround": "사용자 결정: (1) 허용 목록 추가(문자 집합 결정) → /gsd-quick TDD → secure-phase 재실행, 또는 (2) 수락 위험 기록"
     }
   ],
   "async_jobs": [],
@@ -42,6 +53,11 @@
       "action": "G-04-64 모서리 4건 판단(04-52-SUMMARY)",
       "context": "이월 — 막지 않음",
       "blocking": false
+    },
+    {
+      "action": "T-04-31 구분자 허용 문자 결정 또는 수락",
+      "context": "PR #104 댓글로 질문 — 기록에 없는 새 결정이라 세션이 정하지 않음",
+      "blocking": true
     }
   ],
   "decisions": [
@@ -344,11 +360,23 @@
       "decision": "validate-phase 4: 04-VALIDATION validated · nyquist_compliant true(COVERED 23 · 채운 빈틈 3 · MISSING 0)",
       "rationale": "91cee9bf",
       "phase": "04"
+    },
+    {
+      "decision": "secure-phase 4 감사를 gsd-security-auditor(Opus) 4명 병렬로 나눔(위협 229건)",
+      "rationale": "한 명에 229건은 컨텍스트 과다 — 판정 기준·검증 방식은 그대로, 인계에 편차로 밝힘",
+      "phase": "4"
+    },
+    {
+      "decision": "T-04-318은 사용자 결정(04-31 (C)(D) 자동 테스트로 갈음)을 근거로 수락 위험 AR-04-25, T-04-86·372는 사용자 결정(STATE.md:218)으로 수락 기록",
+      "rationale": "기존 사용자 결정 적용 — 새 결정 아님",
+      "phase": "4"
     }
   ],
-  "uncommitted_files": [],
-  "next_action": "/gsd-progress → /gsd-secure-phase 4(verify:post 두 번째 훅). 이어서 세션마다 /gsd-ui-review 4 → 전환. 전환 때 사용자 결정 ①(a) 적용: uat-passed가 UAT 53(DR-P4-02 → 04.6 이월) skipped를 통과로 보게(방법 확인 후).",
-  "context_notes": "세션 01REzuX1: validate-phase 4 끝(1dbc5163 · 91cee9bf), main #91 머지 4f20665f. 사용자 취침 중 — 한 단위씩 이어서 하고 각자 PR #104에 [완료 보고]. 04-52 갈래 G, 변이 3종 모두 잡힘. 04-53은 depends_on 04-52(D4) 충족.",
+  "uncommitted_files": [
+    " M .planning/phases/04-project-quote-ledger/.continue-here.md"
+  ],
+  "next_action": "/gsd-progress → /gsd-ui-review 4(verify:post 세 번째 훅). T-04-31 사용자 답 처리(quick 또는 수락 → /gsd-secure-phase 4 재실행)는 그다음 세션. 그 뒤 전환(①(a) 포함).",
+  "context_notes": "secure-phase 4 결과 BLOCKED(T-04-31 한 건, 실제 위험 낮음). ui-review 4는 보안 막힘과 독립이라 먼저 진행. 세션 01REzuX1: validate-phase 4 끝(1dbc5163 · 91cee9bf), main #91 머지 4f20665f. 사용자 취침 중 — 한 단위씩 이어서 하고 각자 PR #104에 [완료 보고]. 04-52 갈래 G, 변이 3종 모두 잡힘. 04-53은 depends_on 04-52(D4) 충족.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"

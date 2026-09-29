@@ -947,7 +947,8 @@ function IntakeForm({
     const data = result?.data;
     if (result?.validationErrors) {
       const outcome = submitOutcomeFromValidationErrors(result.validationErrors);
-      if (outcome) showFieldErrors(outcome.fields);
+      if (outcome?.kind === "invalid") showFieldErrors(outcome.fields);
+      else if (outcome?.kind === "expiredProof") onExpired();
       else setUnknownLine(true);
       return;
     }

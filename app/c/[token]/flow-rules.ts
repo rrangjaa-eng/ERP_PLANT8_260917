@@ -67,10 +67,12 @@ const SCHEMA_FIELD_ORDER: readonly [string, SubmitField][] = [
 ];
 
 // next-safe-action validationErrors(zod 거절)를 domain invalid와 같은 갈래로 바꾼다.
-// 수령자가 고칠 칸이 없으면(클라이언트가 만든 값만 거절) null — 결과 불명으로 다룬다.
+// 수령자가 고칠 칸이 없으면(증표 · 멱등 키 · winnerVersion · 동의 판 등 클라이언트가 만든 값만
+// 거절) 확인 시간 지남 — E3 재확인이 새 증표 · 판을 준다(같은 본문 재전송은 같은 거절뿐).
+// 해석할 수 없는 값만 null(결과 불명).
 export function submitOutcomeFromValidationErrors(
   validationErrors: unknown,
-): { kind: "invalid"; fields: SubmitField[] } | null {
+): { kind: "invalid"; fields: SubmitField[] } | { kind: "expiredProof" } | null {
   if (typeof validationErrors !== "object" || validationErrors === null) return null;
   const errors = validationErrors as Record<string, { _errors?: unknown } | undefined>;
   const fields: SubmitField[] = [];
@@ -78,7 +80,7 @@ export function submitOutcomeFromValidationErrors(
     const list = errors[schemaKey]?._errors;
     if (Array.isArray(list) && list.length > 0 && !fields.includes(field)) fields.push(field);
   }
-  return fields.length > 0 ? { kind: "invalid", fields } : null;
+  return fields.length > 0 ? { kind: "invalid", fields } : { kind: "expiredProof" };
 }
 
 // E4 제출 막힘 이유 — 빈 칸만 나열하고 마지막 항목의 받침에 맞춰 을/를을 붙인다.

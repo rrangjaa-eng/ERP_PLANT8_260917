@@ -236,6 +236,9 @@ describe("createEvent — 멱등(E3-22)", () => {
 
 describe("listEvents · getEventDetail — 범위(T-04.3-19)", () => {
   it("권한 줄이 없으면 PM listEvents가 notFound(권한 없음과 범위 밖이 같은 모양)", async () => {
+    // 04.3-09가 PM에게 certs.events를 기본으로 시드하므로 관리자가 권한표에서 끈 상태를 만든다.
+    await upsertPermission(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, menu: "certs.events", action: "view", allowed: false });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, menu: "certs.events", action: "write", allowed: false });
     const pm = await makeUser(DEFAULT_ROLE_ID);
     expect(await listEvents(pm)).toEqual({ kind: "notFound" });
   });

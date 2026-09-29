@@ -265,3 +265,17 @@
 **Effort:** M
 **Priority:** P3
 **Depends on:** Phase 7
+
+## Phase 04.1 알려진 한계(2026-09-24 CEO 리뷰)
+
+### 새 계급을 만들면 정보 노출표에서 결재·연차 정보를 켠다
+
+**What:** 관리자가 새 계급을 만들면 정보 노출표에서 결재 정보·연차 정보를 켠다. 안 켜면 그 계급 결재자의 결재함 줄이 비어 승인할 수 없다.
+
+**Why:** `createRole`은 노출 행을 만들지 않고 노출은 기본 숨김이다.
+
+**Context:** 한계 기록 테스트 `test/integration/approvals-inbox-projection.test.ts` 「새 계급 노출 한계(CEO-10)」(04.1-01 T4). `domain/permissions/roles.ts`는 04.1의 금지 파일이라 이 페이즈가 고치지 않았다.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** 노출 모델 결정(사용자)

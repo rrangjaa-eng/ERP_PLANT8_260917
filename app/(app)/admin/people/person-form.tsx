@@ -53,6 +53,7 @@ export function PersonForm({
       roleId: getStringField(formData, "roleId"),
       teamId: teamId || undefined,
       effectiveFrom: teamId ? getStringField(formData, "effectiveFrom") : undefined,
+      hireDate: getStringField(formData, "hireDate"),
     });
   }
 
@@ -71,6 +72,7 @@ export function PersonForm({
 
   const nameError = result.validationErrors?.name?._errors?.[0];
   const emailError = result.validationErrors?.email?._errors?.[0];
+  const hireDateError = result.validationErrors?.hireDate?._errors?.[0];
 
   return (
     <form ref={formRef} onSubmit={handleSubmit} id="person-form" className="single-column">
@@ -101,6 +103,8 @@ export function PersonForm({
         </select>
       </div>
       <TextField id="effectiveFrom" name="effectiveFrom" label="발령일" type="date" />
+      {/* 04.1-06(D-96): 입사일 필수 — 네이티브 필수 속성은 두지 않는다(브라우저 말풍선이 서버 문구를 가린다, §7-15 · C-13). */}
+      <TextField id="hireDate" name="hireDate" label="입사일" type="date" error={hireDateError} />
       {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
       <div className={styles.formActions}>
         <Button type="submit" variant="primary" pending={isExecuting}>

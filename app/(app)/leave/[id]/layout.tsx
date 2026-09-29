@@ -11,6 +11,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export default async function LeaveDocumentLayout({ children, params }: { children: ReactNode; params: Promise<{ id: string }> }) {
   const { viewer } = await requireSession();
   const { id } = await params;
-  if (!UUID.test(id) || !(await getLeave(viewer, id))) notFound();
+  if (!UUID.test(id)) notFound();
+  // 읽기 오류는 여기서 던지지 않는다 — error.tsx는 같은 세그먼트의 layout을 감싸지 않으므로(Next 16 error.md),
+  // page의 같은 읽기가 [id]/error.tsx 안에서 다시 던져 문서 전용 오류 화면이 뜨게 한다(검토 MEDIUM-2).
+  const leave = await getLeave(viewer, id).catch(() => undefined);
+  if (leave === null) notFound();
   return children;
 }

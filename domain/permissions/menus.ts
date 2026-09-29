@@ -47,4 +47,6 @@ export const MENUS: MenuDef[] = [
   { key: "certs.events", label: "확인증 행사" },
   // 04.2-11(ADMN-11): 공휴일 표 검토·연도 확정 — 「관리」 인덱스 「마스터」 끝.
   { key: "admin.holidays", label: "공휴일" },
+  // 04.3-04: 확인증 제출 내용 보기 — 있으면 모든 행사, 없으면 자기가 만든 행사만.
+  { key: "certs.submissions", label: "확인증 제출 내용" },
 ];

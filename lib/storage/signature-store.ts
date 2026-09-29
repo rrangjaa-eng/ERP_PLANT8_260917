@@ -2,11 +2,12 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { env } from "@/lib/env";
+import { createGcsObjectClient, type GcsRequest } from "@/lib/gcp/gcs";
 
 // 04.3-02 Task 2 ⑪ — 서명 이미지 저장소 포트. 키는 `signatures/` 접두어 +
-// 허용 문자만 받아 경로 순회를 막는다. 드라이버는 환경으로 고른다 — 이
-// 태스크는 로컬 드라이버(개발·테스트)만 만든다. 그 밖의 환경은 실패로
-// 닫힌다(04.3-05가 GCS 드라이버를 더한다).
+// 허용 문자만 받아 경로 순회를 막는다. 드라이버는 환경으로 고른다 — 로컬은
+// 가짜 드라이버(개발·테스트), 그 밖은 GCS 드라이버(04.3-05), 버킷 설정이
+// 없으면 실패로 닫힌다(서명 없이 제출이 저장되는 길이 없다).
 export type SignatureStore = {
   put(key: string, png: Buffer): Promise<void>;
   get(key: string): Promise<Buffer | null>;
@@ -14,7 +15,7 @@ export type SignatureStore = {
 };
 
 export class InvalidSignatureKeyError extends Error {}
-export class UnsupportedSignatureStoreDriverError extends Error {}
+export class SignatureStoreNotConfiguredError extends Error {}
 
 const KEY_PATTERN = /^signatures\/[A-Za-z0-9._/-]+$/;
 
@@ -48,15 +49,38 @@ function localDriver(): SignatureStore {
   };
 }
 
+function gcsDriver(bucket: string, request: GcsRequest | undefined): SignatureStore {
+  const client = createGcsObjectClient({ bucket, request });
+  return {
+    async put(key, png) {
+      assertValidKey(key);
+      await client.putObject(key, png, "image/png");
+    },
+    async get(key) {
+      assertValidKey(key);
+      return client.getObject(key);
+    },
+    async delete(key) {
+      assertValidKey(key);
+      await client.deleteObject(key);
+    },
+  };
+}
+
 let cached: SignatureStore | null = null;
 
-export function getSignatureStore(): SignatureStore {
-  if (cached) return cached;
+// deps.request는 테스트가 GCS 드라이버에 가짜 요청 함수를 넣는 자리다 — 주입한
+// 저장소는 캐시하지 않는다.
+export function getSignatureStore(deps?: { request?: GcsRequest }): SignatureStore {
+  if (cached && !deps) return cached;
+  let store: SignatureStore;
   if (env.APP_ENV === "local") {
-    cached = localDriver();
-    return cached;
+    store = localDriver();
+  } else if (env.CERT_SIGNATURE_BUCKET) {
+    store = gcsDriver(env.CERT_SIGNATURE_BUCKET, deps?.request);
+  } else {
+    throw new SignatureStoreNotConfiguredError("서명 저장소 설정 없음: CERT_SIGNATURE_BUCKET");
   }
-  throw new UnsupportedSignatureStoreDriverError(
-    `APP_ENV '${env.APP_ENV}'용 서명 저장소 드라이버 없음 — 04.3-05가 GCS 드라이버를 더한다`,
-  );
+  if (!deps) cached = store;
+  return store;
 }

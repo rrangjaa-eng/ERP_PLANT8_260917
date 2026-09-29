@@ -85,6 +85,9 @@ const rawSchema = z.object({
   CERT_FEATURE_ALLOWED: z
     .preprocess(unsetToUndefined, z.enum(["true", "false"]).optional())
     .transform((value) => value ?? "false"),
+  // 04.3-05 — 서명 이미지 GCS 버킷 이름(deploy.sh가 넣는다). 비로컬 refine에
+  // 넣지 않는다: 없으면 확인증 기능을 쓰는 순간 서명 저장소가 실패로 닫힌다.
+  CERT_SIGNATURE_BUCKET: optionalString(),
   // 04.2-05: /internal/notify-tick의 기대 호출자(Cloud Scheduler 서비스 계정 이메일 —
   // deploy.sh가 넣는다)와 로컬 전용 OIDC 검증 끄기("1"만 인정 — handle.ts).
   NOTIFY_TICK_SCHEDULER_SA: optionalString(),
@@ -180,6 +183,7 @@ const ENV_KEYS = [
   "MAX_INSTANCES",
   "STATUS_CONN_BANNER_RATIO",
   "CERT_FEATURE_ALLOWED",
+  "CERT_SIGNATURE_BUCKET",
   "NOTIFY_TICK_SCHEDULER_SA",
   "NOTIFY_TICK_OIDC_DISABLED",
 ] as const;

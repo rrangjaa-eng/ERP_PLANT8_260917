@@ -193,6 +193,24 @@ UserFacing "다른 저장이 끝나지 않음 · 잠시 뒤 다시 저장"로 �
 저장 셋 — 04-11·04-20·04-22·04-12가 같은 파일에 케이스를 더한다). (2)(4)(5)의
 함수는 같은 머지 묶음 ②(04-50 → 04-23) 안에서 만들어진다.
 
+## 4-9. 결재 모듈 계약(Phase 04.1 → Phase 5)
+
+(1) 종류 등록: `registerDocumentKind({kind, label, loadRouteConfig, href, describeDocuments,
+routeSettings?, canResubmit?, loadDetails?, detailDto?, buildDetailRows?})`(`domain/approvals/kinds.ts`).
+`canResubmit?: (viewer) => Promise<boolean>`이 있으면 반려 문서의 `다시 신청`이 그 판정을 따른다.
+`loadDetails`가 있으면 `detailDto` · `buildDetailRows`가 둘 다 필수(하나라도 없으면 등록 예외). 순서 고정:
+`loadDetails`(구조 필드만) → 엔진이 `detailDto`로 정보 항목별 `project()` → `buildDetailRows(projected)`가
+투영된 필드로만 `{title, subtitle, rows}`를 만든다 — 행 문자열을 만든 뒤 거르지 않는다. 새 종류는
+`app/(app)/document-kinds.ts`에 import 한 줄(`test/unit/document-kinds-import.test.ts`가 빠진 진입점을 잡는다).
+(2) 결재선은 제출 때 단계 행으로 고정되고, 담당은 표시·처리 시점의 조직으로 다시 해석한다.
+(3) 전이 순서: version → 종료 상태 → 후보(승인·반려) 또는 기안자(회수·다시 신청) 판정 → 상태 UPDATE
+먼저(version 조건) → 단계 행 → 같은 tx 행동 로그. 거부는 `approval.refused` 사유 코드(`conflict` ·
+`not_holder` · `final` · `not_drafter` · `invalid_state`)로 남는다.
+(4) 설정·소속 스냅숏은 트랜잭션을 열기 전에 읽는다(`prepareSubmission`) — §4-8 잠근 트랜잭션 규약 준수.
+(5) 결재함(`listMyInbox`)은 `scopeFor()`를 쓰지 않고 후보·처리자 기준, 노출은 요청 단위 메모(`createVisibleMemo`).
+(6) 차수는 승인 0건으로 끝나지 않는다(대표 폴백 `FALLBACK_ROLE_ID`) · 한 차수 한 사람 한 승인.
+(7) 「오늘」은 `seoulToday()`(`lib/dates.ts`).
+
 ## 5. DB·마이그레이션
 
 `drizzle-kit generate` → Squawk(`.squawk.toml`, `pnpm lint:sql`) → `scripts/migrate-runner.ts`

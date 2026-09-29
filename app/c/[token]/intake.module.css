@@ -245,13 +245,33 @@
 
 .signaturePlaceholder {
   position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  left: var(--s-3);
+  top: var(--s-2);
   color: var(--faint);
   font-size: var(--fs-sm);
   pointer-events: none;
+}
+
+/* 기준선 — 논리 y 155(아래에서 45/200), 좌우 --s-4 안쪽(§6-5 실물 .sig .base). */
+.signatureBaseline {
+  position: absolute;
+  left: var(--s-4);
+  right: var(--s-4);
+  bottom: 22.5%;
+  border-top: var(--line-w) dashed var(--line);
+  pointer-events: none;
+}
+
+/* 키 안내 줄 — 캔버스가 키보드 포커스(:focus-visible)를 받았을 때만 보인다.
+   숨어 있어도 캔버스 aria-describedby 설명으로는 읽힌다. */
+.keyGuide {
+  font-size: var(--fs-md);
+  color: var(--muted);
+  margin: var(--s-1) 0 0;
+}
+
+.keyGuideHidden {
+  display: none;
 }
 
 /* U14 — E5·E6-a 결과 블록: SYSTEM §6-5 / external-cert.html .state 그대로

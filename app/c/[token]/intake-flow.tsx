@@ -882,14 +882,16 @@ function IntakeForm({
     document.getElementById(FIELD_FOCUS_ID[field])?.focus();
   }, [fieldErrors, rrnMessage]);
 
-  const hasSignature = draft.strokes.some((s) => s.length > 0);
+  // 「서명 있음」은 서명 칸이 잉크 픽셀로 정한다(서버와 같은 함수 · 상수) · 「다시 쓰기」는 잉크가 조금이라도 있으면.
+  const [signed, setSigned] = useState(false);
+  const hasInk = draft.strokes.some((s) => s.length > 0);
   const missingFields: string[] = [];
   if (!draft.name.trim()) missingFields.push("이름");
   if (!(draft.rrnFront6.length === 6 && draft.rrnBack7.length === 7)) missingFields.push("주민등록번호");
   if (parcel && !draft.address.trim()) missingFields.push("주소");
   if (!draft.phone.trim()) missingFields.push("연락처");
   if (!draft.consent) missingFields.push("동의");
-  if (!hasSignature) missingFields.push("서명");
+  if (!signed) missingFields.push("서명");
   const canSubmit = missingFields.length === 0;
   const blockedReason = submitBlockedReason(missingFields);
 
@@ -1047,8 +1049,9 @@ function IntakeForm({
           id={FIELD_FOCUS_ID.signature}
           strokes={draft.strokes}
           onStrokesChange={(strokes) => edit("signature", { strokes })}
+          onSignedChange={setSigned}
         />
-        {hasSignature ? (
+        {hasInk ? (
           <div className={styles.signatureRedo}>
             <Button variant="tertiary" onClick={() => signatureRef.current?.clear()}>
               다시 쓰기

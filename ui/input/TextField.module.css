@@ -83,4 +83,14 @@
   .field {
     flex: 1 1 auto;
   }
+
+  /* 외부 수령자 칸(size="external")은 PC 폭에서도 라벨이 위다 — main 480 한 열(SYSTEM §6-5, DOM 감사 F1). */
+  .rowExternal {
+    display: block;
+  }
+
+  .rowExternal .label {
+    margin-bottom: var(--s-1);
+    padding-top: 0;
+  }
 }

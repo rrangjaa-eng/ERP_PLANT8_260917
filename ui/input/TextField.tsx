@@ -38,7 +38,7 @@ function PlainTextField({ id, label, error, numeric = false, size = "default", c
   const errorId = `${id}-error`;
 
   return (
-    <div className={styles.row}>
+    <div className={size === "external" ? `${styles.row} ${styles.rowExternal}` : styles.row}>
       <label htmlFor={id} className={styles.label}>
         {label}
       </label>

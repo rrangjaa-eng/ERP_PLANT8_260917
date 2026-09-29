@@ -6,6 +6,7 @@ import {
   pinCellErrors,
   pinFieldErrors,
   cellErrorSummary,
+  keepReproducedCellErrors,
   type CellErrorCode,
   type CreateFormSnapshot,
   type DraftWinnerRow,
@@ -197,5 +198,54 @@ describe("pinFieldErrors — 폼 두 칸", () => {
 
   it("당첨일이 달력에 없는 날(format)이면 기존 날짜 형식 문장", () => {
     expect(pinFieldErrors({ wonOn: "format" })).toEqual({ wonOn: "날짜 형식 오류 · 2026-09-18처럼" });
+  });
+});
+
+describe("keepReproducedCellErrors — 고정된 서버 셀 오류 중 아직 재현되는 것만", () => {
+  const winner = (overrides: Partial<DraftWinnerRow>) =>
+    draft({ name: "김민수", phone: "010-1111-2222", prizeName: "스타벅스 기프티콘", quantity: "2", delivery: "택배", ...overrides });
+
+  it("고정된 오류가 없으면 같은 객체를 그대로", () => {
+    const empty: Record<string, string> = {};
+    expect(keepReproducedCellErrors(empty, [winner({})])).toBe(empty);
+  });
+
+  it("모양 중복 두 줄 중 한 줄을 고치면(그 칸은 확정 때 지워짐) 다른 줄 오류도 사라진다", () => {
+    const a = winner({});
+    const b = winner({ name: "김문수", phone: "010-3333-4444" });
+    const pinned = pinCellErrors([
+      { rowKey: a.key, column: "distinguishLabel", code: "shapeDuplicate", shape: "김*수 · 스타벅스 기프티콘 2개", count: 2 },
+      { rowKey: b.key, column: "distinguishLabel", code: "shapeDuplicate", shape: "김*수 · 스타벅스 기프티콘 2개", count: 2 },
+    ]);
+    const afterCommit = { [`${a.key}:distinguishLabel`]: pinned[`${a.key}:distinguishLabel`]! };
+    expect(keepReproducedCellErrors(afterCommit, [a, { ...b, distinguishLabel: "오전 조" }])).toEqual({});
+  });
+
+  it("같은 사람 두 줄 중 한 줄을 지우면 남은 줄 오류가 사라진다", () => {
+    const a = winner({});
+    const pinned = pinCellErrors([{ rowKey: a.key, column: "name", code: "duplicatePerson" }]);
+    expect(keepReproducedCellErrors(pinned, [a])).toEqual({});
+  });
+
+  it("구별 표시에 든 이름의 줄 이름을 바꾸면(붙여넣기) labelName이 사라진다", () => {
+    const a = winner({ distinguishLabel: "김하늘 조" });
+    const b = winner({ name: "김하늘", phone: "010-4821-7730", prizeName: "갤럭시 탭 S10", quantity: "1" });
+    const pinned = pinCellErrors([{ rowKey: a.key, column: "distinguishLabel", code: "labelName" }]);
+    expect(keepReproducedCellErrors(pinned, [a, b])).toEqual(pinned);
+    expect(keepReproducedCellErrors(pinned, [a, { ...b, name: "이도윤" }])).toEqual({});
+  });
+
+  it("아직 재현되는 오류는 남기고 문장은 지금 줄 기준(3줄 → 2줄)", () => {
+    const a = winner({});
+    const b = winner({ name: "김문수", phone: "010-3333-4444" });
+    const c = winner({ name: "김지수", phone: "010-5555-6666" });
+    const pinned = pinCellErrors(
+      [a, b, c].map((row) => ({ rowKey: row.key, column: "distinguishLabel", code: "shapeDuplicate" as const, shape: "김*수 · 스타벅스 기프티콘 2개", count: 3 })),
+    );
+    const afterCommit = { ...pinned };
+    delete afterCommit[`${c.key}:distinguishLabel`];
+    const kept = keepReproducedCellErrors(afterCommit, [a, b, { ...c, distinguishLabel: "오후 조" }]);
+    expect(Object.keys(kept).sort()).toEqual([`${a.key}:distinguishLabel`, `${b.key}:distinguishLabel`].sort());
+    expect(kept[`${a.key}:distinguishLabel`]).toBe("수령자 목록에 김*수 · 스타벅스 기프티콘 2개 2줄 · 구별 표시를 서로 다르게 입력(예: 오전 조)");
   });
 });

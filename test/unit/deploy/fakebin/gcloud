@@ -108,8 +108,28 @@ case "$ARGS" in
     exit 0
     ;;
 
+  # 04.3-08: 시크릿 데이터는 상태 파일 secret-data-<이름>에 둔다(versions add가 쓰고
+  # versions access가 읽는다). 데이터 파일이 있으면 ENABLED 버전 하나가 있는 것이고,
+  # 없으면 예전처럼 공용 secret-version-exists를 따른다 — 단 감싼 시크릿(-wrapped-)은
+  # 데이터 파일 유무만 따른다(공용 상태 하나로 감싼 v2가 있는 것처럼 보이지 않게).
   "secrets versions list"*)
-    state_val secret-version-exists
+    secret="$(printf '%s\n' "$ARGS" | grep -oE -- '--secret=[^ ]+' | cut -d= -f2)"
+    if state_file "secret-data-${secret}"; then
+      echo "projects/test-proj/secrets/${secret}/versions/1"
+    else
+      case "$secret" in
+        *-wrapped-*) ;;
+        *) state_val secret-version-exists ;;
+      esac
+    fi
+    ;;
+  "secrets versions access latest "*)
+    secret="$(printf '%s\n' "$ARGS" | grep -oE -- '--secret=[^ ]+' | cut -d= -f2)"
+    state_file "secret-data-${secret}" || { echo "fake gcloud: secret version not found" >&2; exit 1; }
+    cat "$STATE/secret-data-${secret}"
+    ;;
+  "secrets describe "*"--format=value(labels.kms-key-version)"*)
+    state_val "secret-label-$3"
     ;;
   "secrets describe "*)
     state_file secret-exists || { echo "fake gcloud: secret not found" >&2; exit 1; }
@@ -117,8 +137,17 @@ case "$ARGS" in
   "secrets create "*)
     exit 0
     ;;
+  "secrets update "*"--update-labels=kms-key-version="*)
+    label="$(printf '%s\n' "$ARGS" | grep -oE -- '--update-labels=kms-key-version=[^ ]+' | cut -d= -f3)"
+    [ -n "$STATE" ] && printf '%s' "$label" >"$STATE/secret-label-$3"
+    exit 0
+    ;;
   "secrets versions add"*)
-    cat >/dev/null
+    if [ -n "$STATE" ]; then
+      cat >"$STATE/secret-data-$4"
+    else
+      cat >/dev/null
+    fi
     exit 0
     ;;
   "secrets add-iam-policy-binding"*)
@@ -307,6 +336,47 @@ case "$ARGS" in
 
   "projects add-iam-policy-binding"*)
     exit 0
+    ;;
+  # 04.3-08(교차 B4): 호출됐다는 것만 로그로 남긴다 — IAM은 흉내 내지 않는다.
+  "projects remove-iam-policy-binding"*)
+    exit 0
+    ;;
+
+  # 04.3-08: KMS. 존재는 상태 파일(kms-keyring-exists · kms-key-exists), 주 버전은
+  # kms-primary(없으면 1 — 소유자가 만든 새 주 버전을 테스트가 이 파일로 흉내 낸다).
+  # encrypt는 표준 입력 앞에 FAKEKMS<주 버전>을 붙이고, decrypt는 그 머리를 확인하고
+  # 뗀다(실제 KMS처럼 켜진 어느 버전의 암호문이든 푼다). 키 버전을 만드는 분기는
+  # 두지 않는다 — 배포는 버전을 만들지 않는다(끝 분기에서 실패).
+  "kms keyrings describe "*)
+    state_file kms-keyring-exists || { echo "fake gcloud: keyring not found" >&2; exit 1; }
+    ;;
+  "kms keyrings create "*)
+    exit 0
+    ;;
+  "kms keys describe "*"--format=value(primary.name)"*)
+    primary="$(state_val kms-primary)"
+    echo "projects/test-proj/locations/asia-northeast3/keyRings/r/cryptoKeys/app-data-key/cryptoKeyVersions/${primary:-1}"
+    ;;
+  "kms keys describe "*)
+    state_file kms-key-exists || { echo "fake gcloud: key not found" >&2; exit 1; }
+    ;;
+  "kms keys create "*)
+    exit 0
+    ;;
+  "kms keys add-iam-policy-binding "*)
+    exit 0
+    ;;
+  "kms encrypt "*)
+    primary="$(state_val kms-primary)"
+    printf 'FAKEKMS%s' "${primary:-1}"
+    cat
+    ;;
+  "kms decrypt "*)
+    data="$(cat)"
+    case "$data" in
+      FAKEKMS[0-9]*) printf '%s' "${data:8}" ;;
+      *) echo "fake gcloud: not a fake KMS ciphertext" >&2; exit 1 ;;
+    esac
     ;;
 
   "compute networks describe "*)

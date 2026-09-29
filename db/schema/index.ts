@@ -22,3 +22,4 @@ export * from "./cert-signature-uploads";
 export * from "./privacy-session-activity";
 export * from "./notifications";
 export * from "./holidays";
+export * from "./reserve-entries";

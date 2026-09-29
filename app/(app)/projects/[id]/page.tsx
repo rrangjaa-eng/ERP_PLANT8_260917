@@ -211,6 +211,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   return (
     <>
     <QuoteLedger
+      viewerId={session.viewer.id}
       projectId={project.id}
       status={status}
       period={{ startDate: project.startDate, endDate: project.endDate, rights: periodRights, todayKst }}

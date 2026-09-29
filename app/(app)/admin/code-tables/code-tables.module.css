@@ -19,6 +19,15 @@
   text-underline-offset: var(--underline-offset);
 }
 
+/* DR-P4-01: 현재 표 링크는 형제 링크와 구분한다 — §7-16 「현재 번호는
+   --fg 700, 밑줄 없음」·ui/shell/TopBar.module.css .navLink[aria-current]와
+   같은 결. */
+.toggle[aria-current="page"] {
+  color: var(--fg);
+  font-weight: var(--fw-bold);
+  text-decoration: none;
+}
+
 /* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. 밑줄 링크는 글자 줄 높이
    (19px 안팎)로 찌그러져 있었다 — 공유 Button .tertiary와 같은 폰 전용
    패턴으로 히트 영역만 키운다(PC는 그대로). */

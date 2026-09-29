@@ -17,8 +17,11 @@ export type TableColumn<Row> = {
   header: string;
   priority: ColumnPriority;
   align?: "left" | "right";
-  /** 정렬 가능 여부 — 04-05(목록)가 쓴다. 이 플랜은 쓰지 않는다. */
-  sortable?: boolean;
+  /**
+   * 04-18(§6-1) — 머리글 정렬. 있으면 머리글 글자가 `href`로 가는 링크다(GET 이동 — §10 「이동이면 `<a>`」).
+   * `direction`이 있는 열이 현재 정렬 열이고, 그 `<th>` 하나에만 `aria-sort`와 16px 방향 아이콘이 붙는다.
+   */
+  sort?: { href: string; direction: "asc" | "desc" | null };
   /** 읽기 렌더 — 값 그대로 보여준다(편집 중이 아닐 때). */
   cell: (row: Row) => ReactNode;
   /**
@@ -43,6 +46,13 @@ export type TableColumn<Row> = {
    * 건너뛰고, 붙여넣기의 논리 열 순서에는 남는다. 폰(<700)은 priority 규칙이 따로 접는다.
    */
   collapseBelow?: 1280 | 1024;
+  /** 04-19 — 격자 Ctrl+C(네이티브 copy 이벤트)가 이 열에 싣는 글자. 없으면 빈 칸. */
+  copyText?: (row: Row) => string;
+  /**
+   * 04-47(ENG-D5 · C-03) — 붙여넣기에서 이 열의 몫. `computed`(번호·견적가·차익·상태 같은 계산 열)는 앱에서 복사한
+   * 붙여넣기일 때만 값을 넣지 않고 무시해 센다 — 앱 형식이 없으면(엑셀) 04-04처럼 오류 칸이다. 기본 `input`.
+   */
+  pasteRole?: "input" | "computed";
 };
 
 export type TableGroup<Row> = {
@@ -50,8 +60,6 @@ export type TableGroup<Row> = {
   header: string;
   rows: Row[];
 };
-
-export type SortState = { key: string; direction: "asc" | "desc" } | null;
 
 // 04-04(§7-3 보강 (나)(다)) — 셀 오류·버전 충돌. 충돌은 오류 셀과 같은 고정
 // 모양이고, 이유 한 줄 + 다음 한 수(3차 버튼)를 함께 지닌다(D-65).

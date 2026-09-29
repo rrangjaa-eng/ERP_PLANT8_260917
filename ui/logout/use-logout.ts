@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
+import { clearAllDirtyEdits } from "@/ui/table/use-dirty-storage";
 
 // WR-06(02-REVIEW.md) — 로그아웃 세 경로(내 계정 버튼·상단 바 메뉴·「더보기」 시트)가
 // 전부 try/catch 없이 signOut()을 await했다. 실패하면 상단 바·시트는 호출 전에 표면을
@@ -32,6 +33,8 @@ export function useLogout(onSuccess?: () => void): UseLogout {
     try {
       const result = await authClient.signOut();
       if (result.error) throw new Error(result.error.message ?? LOGOUT_FAILED);
+      // 묶음 ④ /review R2 — 같은 브라우저의 다음 사용자가 이 사람의 저장 안 한 편집을 복원하지 못하게 지운다.
+      clearAllDirtyEdits();
       onSuccess?.();
       // 성공 시 pending을 내리지 않는다 — 곧 화면이 바뀌므로 버튼이 잠깐 되살아나
       // 두 번 눌리는 것을 막는다.

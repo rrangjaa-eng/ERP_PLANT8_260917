@@ -5,6 +5,7 @@ import { listRevisionLinesAction } from "../actions";
 import type { QuoteLineDto } from "@/domain/quotes/lines";
 import { QUOTE_LINE_KINDS, type QuoteLineKind } from "@/domain/quotes/edit-scope";
 import { formatForeignLine, formatKrw, formatQuantity } from "@/lib/format-number";
+import { QUOTE_TABLE_PAGE_SIZE } from "@/lib/paging";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
@@ -177,13 +178,23 @@ export function PreviousRevisionSection({
           }}
         />
       ) : (
-        <PreviousRevisionTable seq={seq} rows={entry.rows} references={references} />
+        <PreviousRevisionTable seq={seq} rows={entry.rows} references={references} headingId={headingId} />
       )}
     </section>
   );
 }
 
-function PreviousRevisionTable({ seq, rows, references }: { seq: number; rows: ReadRow[]; references: QuoteLineReadReferences }) {
+function PreviousRevisionTable({
+  seq,
+  rows,
+  references,
+  headingId,
+}: {
+  seq: number;
+  rows: ReadRow[];
+  references: QuoteLineReadReferences;
+  headingId: string;
+}) {
   const subcategoryLabel = (value: string) => references.subcategories.find((option) => option.value === value)?.label ?? value;
   const columns = quoteLineReadColumns<ReadRow>(references, (row) => rows.indexOf(row) + 1);
   return (
@@ -194,6 +205,8 @@ function PreviousRevisionTable({ seq, rows, references }: { seq: number; rows: R
       getRowId={(row) => row.id}
       groupBy={(row) => quoteLineGroupLabel(row, subcategoryLabel)}
       emptyMessage="이 차수에 견적 줄이 없습니다"
+      // 04-19(DR-13 · W2) — 쪽 나눔은 Table 한 구현. 쪽을 바꾸면 포커스는 섹션 제목으로.
+      pagination={{ pageSize: QUOTE_TABLE_PAGE_SIZE, unit: "줄", label: `상세 견적 ${seq}차 견적 줄`, resetKey: seq, focusHeadingId: headingId }}
       footer={
         <tr>
           <td colSpan={columns.length} className={styles.footerCell}>
@@ -229,9 +242,9 @@ function PreviousRevisionSkeleton() {
 
 // ── 04-24(DR-4 · W1) — 견적 줄 복사 형식과 이전 차수 보관본 복원 줄 ─────────────────────────────────────────────
 
-/** 앱 형식 — 줄마다 `{ currency }`(04-19 격자 복사가 같은 함수를 쓴다). */
+/** 앱 형식 — 줄마다 `{ currency, kind }`(04-19 격자 복사가 같은 함수를 쓴다 · kind는 /qa ISSUE-003). */
 export function quoteLineClipboardMeta(rows: QuoteLineCopyRow[]): string {
-  return JSON.stringify(rows.map((row) => ({ currency: row.unitPriceCurrency })));
+  return JSON.stringify(rows.map((row) => ({ currency: row.unitPriceCurrency, kind: row.lineKind })));
 }
 
 /** 견적 줄 복사의 유일한 직렬화 — `tsv`는 읽기 열 순서의 `copyText`, `json`은 앱 형식. */
@@ -302,10 +315,10 @@ function browserStorage(): EnumerableDirtyStorage | null {
 type RevisionRef = { id: string; seq: number };
 type Draft = { revisionId: string; seq: number; count: number };
 
-function readDrafts(projectId: string, currentRevisionId: string, revisions: RevisionRef[]): Draft[] {
+function readDrafts(draftScopeId: string, currentRevisionId: string, revisions: RevisionRef[]): Draft[] {
   const storage = browserStorage();
   if (!storage) return [];
-  return findOtherRevisionDrafts(storage, projectId, currentRevisionId, PROJECT_EDIT_OWNERS)
+  return findOtherRevisionDrafts(storage, draftScopeId, currentRevisionId, PROJECT_EDIT_OWNERS)
     .flatMap((draft) => {
       const revision = revisions.find((candidate) => candidate.id === draft.revisionId);
       return revision ? [{ ...draft, seq: revision.seq }] : [];
@@ -319,19 +332,22 @@ const subscribeNothing = () => () => {};
 // 합치지 않는다(줄 id가 다르다) — 「복사」와 「버림」만 있다.
 export function PreviousRevisionDraftRow({
   projectId,
+  draftScopeId,
   currentRevisionId,
   revisions,
   references,
   onSharedEditsCarried,
 }: {
   projectId: string;
+  /** 리뷰 R2 — 보관본 키의 scopeId(보는 사람 id + 프로젝트 id, viewerDirtyScope). */
+  draftScopeId: string;
   currentRevisionId: string;
   revisions: RevisionRef[];
   references: QuoteLineReadReferences;
   /** 검토 B1 — 다른 차수 보관본의 기간·총 매출 예상가 칸을 현재 차수 보관본으로 옮겼을 때(현재 차수 복원 줄이 다시 센다). */
   onSharedEditsCarried: () => void;
 }) {
-  const [drafts, setDrafts] = useState(() => readDrafts(projectId, currentRevisionId, revisions));
+  const [drafts, setDrafts] = useState(() => readDrafts(draftScopeId, currentRevisionId, revisions));
   // 서버·수화 첫 렌더는 저장소를 모른다 — 수화 뒤에만 그린다(use-dirty-storage와 같은 이유, React #418).
   const hydrated = useSyncExternalStore(subscribeNothing, () => true, () => false);
   const [rowsBySeq, setRowsBySeq] = useState<Record<number, ReadRow[]>>({});
@@ -345,8 +361,8 @@ export function PreviousRevisionDraftRow({
   // 검토 B1 — 차수와 무관한 칸은 이 줄이 아니라 현재 차수 복원 줄(「복원」)로 돌려준다.
   useEffect(() => {
     const storage = browserStorage();
-    if (storage && carrySharedEdits(storage, projectId, currentRevisionId, PROJECT_EDIT_OWNERS) > 0) onSharedEditsCarried();
-  }, [projectId, currentRevisionId, onSharedEditsCarried]);
+    if (storage && carrySharedEdits(storage, draftScopeId, currentRevisionId, PROJECT_EDIT_OWNERS) > 0) onSharedEditsCarried();
+  }, [draftScopeId, currentRevisionId, onSharedEditsCarried]);
 
   // 클릭 처리기 안에서 동기로 복사하려고 그 차수 줄을 미리 받아 둔다.
   useEffect(() => {
@@ -378,7 +394,7 @@ export function PreviousRevisionDraftRow({
   function copy(draft: Draft) {
     if (fetching) return;
     const storage = browserStorage();
-    const edits = storage ? loadDirtyEdits(storage, projectId, draft.revisionId) : null;
+    const edits = storage ? loadDirtyEdits(storage, draftScopeId, draft.revisionId) : null;
     const rows = rowsBySeq[draft.seq];
     let ok = false;
     const copyRows = edits && rows ? draftCopyRows(rows, edits) : [];
@@ -405,7 +421,7 @@ export function PreviousRevisionDraftRow({
 
   function discard(draft: Draft) {
     const storage = browserStorage();
-    if (storage) clearDirtyEdits(storage, projectId, draft.revisionId);
+    if (storage) clearDirtyEdits(storage, draftScopeId, draft.revisionId);
     setDrafts((prev) => prev.filter((candidate) => candidate.revisionId !== draft.revisionId));
     setCopyResult(null);
   }

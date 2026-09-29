@@ -3,6 +3,7 @@
 -- 한 쌍을 첫 문장 앞에 둔다. origin/main(0017_phase_04_2) 머지 뒤 옛 0017_cert_intake ·
 -- 0018_cert_winners_unique_deferrable을 지우고 pnpm db:generate로 다시 만든 뒤
 -- 두 파일의 손 편집(이 머리 · 끝의 지연 UNIQUE 다시 걸기)을 옮겨 적었다.
+-- origin/main(0018_reserve_entries, #85) 머지 뒤 0018_cert_intake를 지우고 다시 생성해 0019로 옮겼다(본문 동일).
 SET LOCAL lock_timeout = '1s';
 SET LOCAL statement_timeout = '5s';
 --> statement-breakpoint

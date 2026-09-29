@@ -8,6 +8,8 @@ import {
   readRestorableCount,
   findOtherRevisionDrafts,
   carrySharedEdits,
+  viewerDirtyScope,
+  clearAllDirtyEdits,
   type DirtyStorageLike,
   type EnumerableDirtyStorage,
 } from "@/ui/table/use-dirty-storage";
@@ -180,5 +182,59 @@ describe("차수와 무관한 칸(프로젝트 칸)은 이전 차수 보관본�
     });
     expect(carrySharedEdits(storage, "P", "R2", SHARED)).toBe(0);
     expect(loadDirtyEdits(storage, "P", "R2")).toBeNull();
+  });
+});
+
+// 묶음 ④ /review R2 — 같은 브라우저를 다음 사용자가 쓰면 앞 사용자의 저장 안 한 편집(금액·메모 등)이 복원 줄로
+// 보이면 안 된다. 보관본 키는 보는 사람 id를 포함하고, 로그아웃은 이 접두의 보관본을 전부 지운다.
+describe("보는 사람별 보관본 · 로그아웃 정리(리뷰 R2)", () => {
+  it("같은 화면이라도 보는 사람이 다르면 키가 다르고, 다른 사람의 보관본을 읽지 못한다", () => {
+    const storage = createFakeStorage();
+    const scopeA = viewerDirtyScope("user-a", "reserves");
+    const scopeB = viewerDirtyScope("user-b", "reserves");
+    expect(dirtyStorageKey(scopeA, "ledger")).not.toBe(dirtyStorageKey(scopeB, "ledger"));
+
+    saveDirtyEdits(storage, scopeA, "ledger", { "row-1:note": "앞 사용자 메모" });
+
+    expect(loadDirtyEdits(storage, scopeB, "ledger")).toBeNull();
+    expect(readRestorableCount(storage, scopeB, "ledger")).toBe(0);
+    expect(loadDirtyEdits(storage, scopeA, "ledger")).toEqual({ "row-1:note": "앞 사용자 메모" });
+  });
+
+  it("같은 사람의 다른 차수 보관본 찾기는 그 사람 것만 본다", () => {
+    const storage = createEnumerableStorage({
+      [dirtyStorageKey(viewerDirtyScope("user-a", "P"), "R1")]: JSON.stringify({ "line-1:itemName": "A의 1차" }),
+      [dirtyStorageKey(viewerDirtyScope("user-b", "P"), "R1")]: JSON.stringify({ "line-2:itemName": "B의 1차" }),
+    });
+    expect(findOtherRevisionDrafts(storage, viewerDirtyScope("user-b", "P"), "R2")).toEqual([{ revisionId: "R1", count: 1 }]);
+  });
+
+  it("clearAllDirtyEdits는 모든 사람·화면의 보관본을 지우고 다른 키는 남긴다", () => {
+    const storage = createEnumerableStorage({
+      [dirtyStorageKey(viewerDirtyScope("user-a", "reserves"), "ledger")]: JSON.stringify({ "row-1:note": "메모" }),
+      [dirtyStorageKey(viewerDirtyScope("user-a", "P"), "R1")]: JSON.stringify({ "line-1:itemName": "항목" }),
+      [dirtyStorageKey("P", "R9")]: JSON.stringify({ "line-9:itemName": "옛 형식 키" }),
+      "other-app:setting": "keep",
+    });
+
+    clearAllDirtyEdits(storage);
+
+    expect([...Array(storage.length).keys()].map((index) => storage.key(index))).toEqual(["other-app:setting"]);
+  });
+
+  it("저장소 접근이 막혀 있어도(던짐) clearAllDirtyEdits는 던지지 않는다", () => {
+    const blocked: EnumerableDirtyStorage = {
+      getItem: () => null,
+      setItem: () => {},
+      removeItem: () => {
+        throw new Error("SecurityError");
+      },
+      get length(): number {
+        throw new Error("SecurityError");
+      },
+      key: () => null,
+    };
+    expect(() => clearAllDirtyEdits(blocked)).not.toThrow();
+    expect(() => clearAllDirtyEdits(null)).not.toThrow();
   });
 });

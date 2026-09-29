@@ -71,6 +71,54 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
     expect(gap).toBeGreaterThan(0);
   });
 
+  // DR-P4-01(design-review) — 현재 표 링크가 형제 링크와 계산 스타일이 같아
+  // 어느 표가 켜져 있는지 시각으로 구분되지 않았다. §7-16 「현재 번호는
+  // --fg 700, 밑줄 없음」과 같은 결로 aria-current="page" 링크만 구분한다.
+  test("현재 표 링크는 형제 링크와 색·굵기·밑줄로 구분된다", async ({ page }) => {
+    const admin = await createFixtureUser({ roleId: "role-sysadmin" });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto("/admin/code-tables");
+
+    const nav = page.getByRole("navigation", { name: "코드표 선택" });
+    const current = nav.locator("a[aria-current='page']");
+    const sibling = nav.locator("a:not([aria-current='page'])");
+    await expect(current).toHaveCount(1);
+    await expect(sibling).toHaveCount(1);
+
+    // tokens.css --fg는 hex다 — 브라우저가 계산하는 rgb() 문자열과 직접
+    // 비교하려고 임시 요소에 먹여 같은 방식으로 정규화한다.
+    const fgAsRgb = await page.evaluate(() => {
+      const fgHex = getComputedStyle(document.documentElement).getPropertyValue("--fg").trim();
+      const probe = document.createElement("div");
+      probe.style.color = fgHex;
+      document.body.appendChild(probe);
+      const rgb = getComputedStyle(probe).color;
+      probe.remove();
+      return rgb;
+    });
+
+    const currentStyle = await current.evaluate((el) => {
+      const computed = getComputedStyle(el);
+      return {
+        color: computed.color,
+        fontWeight: computed.fontWeight,
+        textDecorationLine: computed.textDecorationLine,
+      };
+    });
+    expect(currentStyle.color).toBe(fgAsRgb);
+    expect(currentStyle.fontWeight).toBe("700");
+    expect(currentStyle.textDecorationLine).toBe("none");
+
+    const siblingTextDecoration = await sibling.evaluate((el) => getComputedStyle(el).textDecorationLine);
+    expect(siblingTextDecoration).toBe("underline");
+  });
+
   // F-07·F-08(260922-o2b) — SYSTEM.md §2-4 「모든 숫자 칸은 우측 정렬,
   // tabular-nums, nowrap」·「값이 없으면 — 하나」. 시드 코드(project_status)는
   // 전부 정상 상태라 상태 칸이 빈칸이었다.

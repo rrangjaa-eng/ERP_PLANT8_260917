@@ -190,13 +190,20 @@ test.describe("확인증 행사 — 시스템 관리자", () => {
     await expect(ownRow).toContainText("접수 중");
   });
 
-  test("(g) 기능 꺼짐 → /certs/events 404 · 범위를 나오면 다시 보인다", async ({ page }) => {
+  // 셸 안 §6-9 404 화면. 두 라우트는 loading.tsx(§7-7 뼈대)가 있어 응답이 먼저 200으로 스트리밍되므로
+  // notFound()는 HTTP 상태가 아니라 404 화면 + noindex로 온다(Next loading.md 「Status Codes」) — 화면으로 단언한다.
+  test("(g) 기능 꺼짐 → /certs/events · ?new=1 · 상세가 404 화면 · 범위를 나오면 다시 보인다", async ({ page }) => {
     await login(page, admin);
+    await page.goto("/certs/events");
+    const ownEvent = page.locator('a[data-row-link][href^="/certs/events/"]').first();
+    const detailHref = (await ownEvent.count()) > 0 ? await ownEvent.getAttribute("href") : null;
     await withCertFeatureOff(async () => {
-      const off = await page.goto("/certs/events");
-      expect(off?.status()).toBe(404);
-      const offNew = await page.goto("/certs/events?new=1");
-      expect(offNew?.status()).toBe(404);
+      for (const path of ["/certs/events", "/certs/events?new=1", ...(detailHref ? [detailHref] : [])]) {
+        await page.goto(path);
+        await expect(page.getByRole("heading", { name: "페이지 찾을 수 없음" })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "확인증 행사" })).toHaveCount(0);
+        await expect(page.locator("#cert-event-new")).toHaveCount(0);
+      }
     });
     const on = await page.goto("/certs/events");
     expect(on?.status()).toBe(200);

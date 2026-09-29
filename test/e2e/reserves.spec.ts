@@ -903,4 +903,18 @@ test.describe("리저브 대장 — 묶음 ④ /qa 동명 클라이언트", () =
     await expect(select.locator("option", { hasText: new RegExp(`^${single.name}$`) })).toHaveCount(1);
     await expect(select.locator("option", { hasText: new RegExp(`^${duplicate} · 1234$`) })).toHaveCount(1);
   });
+
+  test("(리뷰 P1) 라벨까지 같은 두 클라이언트도 그룹이 둘 — 머리글마다 제 잔액", async ({ page }) => {
+    const roles = await createRoles();
+    const duplicate = `E2E리저브동명그룹-${randomUUID().slice(0, 6)}`;
+    const first = await insertVendor(SYSTEM_VIEWER, { name: duplicate, normalizedName: duplicate.toLowerCase() });
+    const second = await insertVendor(SYSTEM_VIEWER, { name: duplicate, normalizedName: duplicate.toLowerCase() });
+    await seedEntries(first.id, [{ date: "2026-10-01", direction: "deposit", amount: 1_000 }]);
+    await seedEntries(second.id, [{ date: "2026-10-02", direction: "deposit", amount: 2_000 }]);
+    await openLedger(page, roles.finance);
+
+    const headers = groupHeader(page, duplicate);
+    await expect(headers).toHaveCount(2);
+    expect((await headers.locator("> span").allTextContents()).sort()).toEqual(["잔액 1,000", "잔액 2,000"]);
+  });
 });

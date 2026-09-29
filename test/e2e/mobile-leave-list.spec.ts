@@ -1,4 +1,5 @@
 import { test, expect, type Browser, type Page } from "@playwright/test";
+import { rejectDocument } from "@/domain/approvals";
 import { submitLeave } from "@/domain/leave";
 import { leaveWeekdayRange, onStableSeoulDay } from "./leave-dates";
 import { setupLeaveOrg, type Person } from "./leave-org";
@@ -79,6 +80,28 @@ test.describe("폰 375 연차 목록 (04.1-06 · S1 · S10)", () => {
       expect(noteBox.y + noteBox.height).toBeLessThanOrEqual(barAfter.y);
       await expect(bar.locator("kbd").filter({ visible: true })).toHaveCount(0);
       await noHorizontalScroll(page);
+      await page.context().close();
+    });
+  });
+
+  // DOM 감사 blocker(04.1-06): 다시 신청 모드의 결재선 한 줄이 폰 고정 행동 줄에 가리지 않는다 — 새 신청과 같은
+  // 자리(폼 안 라벨·값 목록 `결재선` 행)에 있어 행동 줄 여백 위에 온다.
+  test("다시 신청 폼(S3 폰): 스크롤을 끝까지 내리면 결재선 한 줄이 행동 줄 위에 다 보인다", async ({ browser, baseURL }) => {
+    await onStableSeoulDay(async (today) => {
+      const org = await setupLeaveOrg(today);
+      const range = leaveWeekdayRange(today, { week: 14, weekdays: 1 });
+      const rejected = await submitLeave(org.drafter.viewer, { kind: "full_day", half: "", ...range });
+      await rejectDocument(org.teamLead.viewer, { instanceId: rejected.instanceId, expectedVersion: rejected.version, reason: "일정 겹침" });
+      const page = await login(browser, baseURL, org.drafter);
+      await page.goto(`/leave/${rejected.leaveId}`);
+
+      const route = page.getByTestId("approval-route-line");
+      await expect(route).toBeVisible();
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      const routeBox = await route.boundingBox();
+      const barBox = await page.getByTestId("leave-form-actions").boundingBox();
+      if (!routeBox || !barBox) throw new Error("결재선 · 행동 줄 상자 없음");
+      expect(routeBox.y + routeBox.height).toBeLessThanOrEqual(barBox.y);
       await page.context().close();
     });
   });

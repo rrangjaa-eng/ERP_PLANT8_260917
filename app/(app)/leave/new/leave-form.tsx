@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { Form } from "@/ui/form/Form";
@@ -37,11 +37,13 @@ const CANCEL_HREF = "/leave";
 
 // 04.1-05(S3 반려된 내 문서): 다시 신청 모드 — 값이 채워진 같은 폼(두 벌을 만들지 않는다). 번호는 그대로,
 // 1차 라벨 `연차 다시 신청`, 액션 resubmitLeaveAction. 토스트는 문서 화면(호출부)이 띄운다 — 성공하면 같은
-// 화면이 다시 그려져 폼이 사라지기 때문이다. 결재선 한 줄도 문서 화면이 그린다(resubmitRoute).
+// 화면이 다시 그려져 폼이 사라지기 때문이다. 결재선 한 줄은 문서 화면이 그려 `route`로 넘기고, 폼은 새 신청과 같은
+// 자리(라벨·값 목록 `결재선` 행)에 둔다 — 폰 고정 행동 줄 여백 위에 와야 가리지 않는다(04.1-06 DOM 감사).
 export type LeaveFormResubmit = {
   leaveId: string;
   expectedVersion: number;
   initial: { kind: string; startDate: string; endDate: string; half: string | null; note: string | null };
+  route: ReactNode;
   onResubmitted: (toast: string) => void;
 };
 
@@ -265,7 +267,9 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
       ),
     });
   }
-  if (route) {
+  if (resubmit?.route) {
+    items.push({ label: "결재선", value: resubmit.route });
+  } else if (route) {
     items.push({
       label: "결재선",
       value: (

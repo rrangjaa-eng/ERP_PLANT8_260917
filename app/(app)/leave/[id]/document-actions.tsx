@@ -90,8 +90,7 @@ export function DocumentActions({ instanceId, version, actions, decision, reject
     <>
       {resubmit ? (
         <div className={styles.resubmit}>
-          <LeaveForm resubmit={{ ...resubmit, onResubmitted: showToast }} />
-          {resubmitRoute}
+          <LeaveForm resubmit={{ ...resubmit, route: resubmitRoute, onResubmitted: showToast }} />
         </div>
       ) : null}
       {canApprove || secondary ? (

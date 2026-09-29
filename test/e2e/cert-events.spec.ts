@@ -92,15 +92,23 @@ async function editCell(page: Page, row: number, col: number, value: string) {
 }
 
 // 폼을 열고 이름 · 붙여넣기 3줄. 구별 표시는 비어 있다(모양 중복 두 줄).
-async function openFormAndPaste(page: Page, name: string) {
+// via "editor" — 「첫 줄 만들기」가 연 이름 칸 편집 입력에 그대로 Ctrl+V(여러 칸 글이면 표 붙여넣기로 넘긴다).
+// via "grid" — 편집을 닫고 격자 셀에서 Ctrl+V(ui/table onPasteAtCell).
+async function openFormAndPaste(page: Page, name: string, via: "editor" | "grid" = "grid") {
   await page.goto("/certs/events?new=1");
   await page.getByLabel("행사 이름").fill(name);
   await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
   await expect(winnerRows(page)).toHaveCount(1);
-  await winnerCell(page, 0, COL.name).locator("input").press("Escape");
-  await focusGridCell(winnerCell(page, 0, COL.name));
+  const nameInput = winnerCell(page, 0, COL.name).locator("input");
+  if (via === "editor") {
+    await expect(nameInput).toBeFocused();
+  } else {
+    await nameInput.press("Escape");
+    await focusGridCell(winnerCell(page, 0, COL.name));
+  }
   await pasteIntoFocusedCell(page, PASTE_ROWS);
   await expect(winnerRows(page)).toHaveCount(3);
+  await expect(winnerCell(page, 0, COL.name)).toHaveText("김하늘");
 }
 
 async function fillDistinct(page: Page) {
@@ -123,8 +131,9 @@ test.describe("확인증 행사 — 시스템 관리자", () => {
     await page.goto("/certs/events");
     await page.getByRole("link", { name: "행사 만들기" }).first().click();
     await expect(page).toHaveURL(/\/certs\/events\?new=1$/);
-    await openFormAndPaste(page, name);
+    await openFormAndPaste(page, name, "editor");
     await expect(winnerCell(page, 2, COL.name)).toHaveText("김문수");
+    await expect(winnerCell(page, 1, COL.delivery)).toHaveText("택배");
     await expect(page.locator("tfoot")).toContainText("합계 · 3명");
 
     // (b) 서버 거부 — 두 줄 구별 표시 셀 오류 + 합계 행 요약

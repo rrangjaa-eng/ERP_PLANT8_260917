@@ -77,7 +77,8 @@ test.describe("연차 신청 → 결재함 승인 → 최종 승인 (04.1-02 트
     await expect(drafterPage).toHaveURL(/\/leave\/[0-9a-f-]{36}$/);
     const documentUrl = new URL(drafterPage.url()).pathname;
     await expect(drafterPage.getByText(/^LV/)).toBeVisible();
-    await expect(drafterPage.getByText("결재 중", { exact: true })).toBeVisible();
+    // 머리 태그(첫 번째) — 04.1-05부터 결재선 목록의 지금 단계도 `결재 중`이다.
+    await expect(drafterPage.getByText("결재 중", { exact: true }).first()).toBeVisible();
 
     // 결재 차례가 아닌 사람은 404다.
     const outsiderPage = await loginPage(browser, baseURL, outsider);
@@ -92,6 +93,6 @@ test.describe("연차 신청 → 결재함 승인 → 최종 승인 (04.1-02 트
     await approveFromInbox(await loginPage(browser, baseURL, ceo), documentLabel, "승인 · 최종 승인 · 2일 차감");
 
     await drafterPage.goto(documentUrl);
-    await expect(drafterPage.getByText("승인", { exact: true })).toBeVisible();
+    await expect(drafterPage.getByText("승인", { exact: true }).first()).toBeVisible();
   });
 });

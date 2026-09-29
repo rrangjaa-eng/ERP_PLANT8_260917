@@ -230,6 +230,7 @@ describe("bootstrap-gcp.sh — (d-2) 서명 버킷(04.3-05, 4차 W-2)", () => {
       expect(updates[0]).toContain("--uniform-bucket-level-access");
       expect(updates[0]).toContain("--public-access-prevention");
       expect(updates[0]).toContain("--clear-soft-delete");
+      expect(updates[0]).toContain("--no-versioning");
     }
     expect(r.log).not.toContain("storage buckets create");
   });

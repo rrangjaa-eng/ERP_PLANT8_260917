@@ -651,6 +651,7 @@ describe("deploy.sh — 서명 버킷(04.3-05)", () => {
     expect(update).toContain("--uniform-bucket-level-access");
     expect(update).toContain("--public-access-prevention");
     expect(update).toContain("--clear-soft-delete");
+    expect(update).toContain("--no-versioning");
 
     const bindings = lines.filter((l) => l.startsWith("storage buckets add-iam-policy-binding "));
     expect(bindings).toHaveLength(1);

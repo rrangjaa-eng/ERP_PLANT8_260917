@@ -3,12 +3,15 @@ import {
   countChangedCells,
   createBlockReason,
   createSubmitOutcome,
+  pinCellErrors,
+  pinFieldErrors,
+  cellErrorSummary,
   type CreateFormSnapshot,
   type DraftWinnerRow,
 } from "@/app/(app)/certs/events/create-form-rules";
 
 // 04.3-04 Task 3 ⓪ — I2 만들기 화면의 순수 판정(입력 버리기 N · 1차 막힘 이유 · 제출 응답 가르기).
-// 셀 오류 문장(pinCellErrors)은 오류 문구 결정 뒤에 더한다.
+// 셀 오류 문장(pinCellErrors)은 사용자 결정 A(2026-09-29 PR #88) — 명사형 「원인 · 다음 행동」.
 
 const TODAY = "2026-09-29";
 const INITIAL: CreateFormSnapshot = { name: "", wonOn: TODAY, rows: [] };
@@ -126,5 +129,68 @@ describe("createSubmitOutcome", () => {
     ["undefined", undefined],
   ])("%s → failed", (_label, response) => {
     expect(createSubmitOutcome(response)).toEqual({ kind: "failed" });
+  });
+});
+
+describe("pinCellErrors — 셀 오류 12종 명사형 문장(사용자 결정 A)", () => {
+  it.each([
+    ["phone", "phoneFormat", "전화번호 형식 아님 · 010-0000-0000처럼 입력"],
+    ["quantity", "quantity", "1 이상 정수 아님 · 1처럼 입력"],
+    ["delivery", "delivery", "현장 또는 택배 아님 · 둘 중 하나로 입력"],
+    ["name", "duplicatePerson", "같은 이름·전화번호 이미 있음 · 한 줄 수정"],
+    ["name", "nameTooLong", "40자 초과 · 40자 안으로"],
+    ["prizeName", "prizeTooLong", "80자 초과 · 80자 안으로"],
+    ["distinguishLabel", "labelTooLong", "10자 초과 · 10자 안으로"],
+    ["distinguishLabel", "labelDigits", "숫자 3개 이상 이어짐 · 전화번호 말고 오전 조처럼 입력"],
+    ["distinguishLabel", "labelName", "당첨자 이름 들어 있음 · 이름 말고 오전 조처럼 입력"],
+  ])("%s %s → %s", (column, code, text) => {
+    expect(pinCellErrors([{ rowKey: "d1", column, code }])).toEqual({ [`d1:${column}`]: text });
+  });
+
+  it.each([
+    ["name", "이름 비어 있음 · 입력"],
+    ["phone", "전화번호 비어 있음 · 입력"],
+    ["prizeName", "경품명 비어 있음 · 입력"],
+    ["quantity", "수량 비어 있음 · 입력"],
+    ["delivery", "전달 비어 있음 · 입력"],
+  ])("required — 칸 이름만 바뀐다(%s)", (column, text) => {
+    expect(pinCellErrors([{ rowKey: "d1", column, code: "required" }])).toEqual({ [`d1:${column}`]: text });
+  });
+
+  it("shapeDuplicate — 모양 · 줄 수를 넣는다", () => {
+    expect(
+      pinCellErrors([
+        { rowKey: "a", column: "distinguishLabel", code: "shapeDuplicate", shape: "김*수 · 스타벅스 기프티콘 2개", count: 2 },
+        { rowKey: "b", column: "distinguishLabel", code: "shapeDuplicate", shape: "김*수 · 스타벅스 기프티콘 2개", count: 2 },
+      ]),
+    ).toEqual({
+      "a:distinguishLabel": "수령자 목록에 김*수 · 스타벅스 기프티콘 2개 2줄 · 구별 표시를 서로 다르게 입력(예: 오전 조)",
+      "b:distinguishLabel": "수령자 목록에 김*수 · 스타벅스 기프티콘 2개 2줄 · 구별 표시를 서로 다르게 입력(예: 오전 조)",
+    });
+  });
+
+  it("tooManyWinners(04.3-10 몫) — 총원을 넣고 tone 키가 없다", () => {
+    expect(pinCellErrors([{ rowKey: "w9", column: "name", code: "tooManyWinners", total: 501 }])).toEqual({
+      "w9:name": "당첨자 501명 · 500명까지 줄이기",
+    });
+  });
+
+  it("어느 문장에도 높임말 종결 · 마침표가 없다", () => {
+    const codes = ["required", "phoneFormat", "quantity", "delivery", "duplicatePerson", "nameTooLong", "prizeTooLong", "labelTooLong", "labelDigits", "labelName"];
+    const texts = Object.values(pinCellErrors(codes.map((code, i) => ({ rowKey: `r${i}`, column: "name", code }))));
+    expect(texts).toHaveLength(codes.length);
+    for (const text of texts) expect(text).not.toMatch(/(?:습니다|세요|니다)|\.$/);
+  });
+
+  it("합계 문장 — 오류 N칸 · 전부 거부", () => {
+    expect(cellErrorSummary(2)).toBe("오류 2칸 · 전부 거부");
+  });
+});
+
+describe("pinFieldErrors — 폼 두 칸", () => {
+  it("빈 칸 · 행사 이름 80자 초과", () => {
+    expect(pinFieldErrors({ name: "required", wonOn: "required" })).toEqual({ name: "행사 이름 비어 있음 · 입력", wonOn: "당첨일 비어 있음 · 입력" });
+    expect(pinFieldErrors({ name: "tooLong" })).toEqual({ name: "80자 초과 · 80자 안으로" });
+    expect(pinFieldErrors({})).toEqual({});
   });
 });

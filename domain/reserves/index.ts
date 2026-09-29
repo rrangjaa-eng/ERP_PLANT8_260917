@@ -293,6 +293,13 @@ export async function saveReserves(viewer: Viewer, input: SaveReservesInput, dep
   if (formatErrors.length > 0) {
     denyWrite(viewer, INPUT_RULE, { clientIds: requestedClientIds, entryIds }, new SaveRejectedError([], formatErrors));
   }
+  // Codex ②③ — listReserveReferences와 같은 선택지 게이트를 트랜잭션 앞에서 읽는다(04-32). 권한 판정과 같은 주입 함수를 쓴다.
+  const [vendorShown, projectShown, projectScope] = await Promise.all([
+    (deps?.visible ?? defaultVisible)(viewer, "vendor.value"),
+    (deps?.visible ?? defaultVisible)(viewer, "project.value"),
+    defaultScopeFor(viewer, "project", { can: deps?.can ?? defaultCan }),
+  ]);
+  const pickable = { clients: vendorShown, projects: projectShown && projectScope.rows === "all" };
   const now = deps?.now?.() ?? new Date();
 
   const fxToRemember = await withTransaction(async (tx) => {
@@ -304,7 +311,7 @@ export async function saveReserves(viewer: Viewer, input: SaveReservesInput, dep
     const selectable = new Set(lockedClients.filter((client) => client.selectable).map((client) => client.id));
     await deps?.afterLock?.();
     const storedById = new Map((await repoFindEntriesByIds(viewer, entryIds, tx)).map((row) => [row.id, row]));
-    const plan = await planBatch(viewer, prepared, archived, storedById, selectable, evidence.active, tx);
+    const plan = await planBatch(viewer, prepared, archived, storedById, selectable, evidence.active, pickable, tx);
 
     const ledger = new Map((await repoListActiveEntriesByClients(viewer, [...locked], tx)).map((row) => [row.id, toBalanceRow(row)]));
     for (const { row, stored } of plan.updates) {
@@ -332,6 +339,8 @@ async function planBatch(
   selectable: Set<string>,
   /** Codex B — 활성·보관 아닌 증빙 코드(트랜잭션 앞에서 읽음). */
   activeEvidence: ReadonlySet<string>,
+  /** Codex ②③ — 새 줄 클라이언트는 vendor.value, 새로 고르거나 바꾼 프로젝트는 project.value + projects 보기 범위(트랜잭션 앞에서 읽음). */
+  pickable: { clients: boolean; projects: boolean },
   tx: DbOrTx,
 ): Promise<Plan> {
   const errors: CellFormatError[] = [];
@@ -361,7 +370,8 @@ async function planBatch(
         }
         continue;
       }
-      if (!selectable.has(input.clientId)) {
+      // Codex ③ — 새 줄 클라이언트는 선택지와 같은 vendor.value 게이트.
+      if (!pickable.clients || !selectable.has(input.clientId)) {
         errors.push(cellError(index, input.id, "clientId", "클라이언트", CLIENT_NOT_FOUND));
         continue;
       }
@@ -383,6 +393,12 @@ async function planBatch(
       }
     }
     if (payload.projectId !== null) {
+      // Codex ② — 프로젝트가 안 보이면 새로 고르거나 바꾼 연결만 거부, 저장된 연결은 그대로(Codex #5와 같은 결).
+      // 불일치·보관 판정보다 먼저 같은 이유로 거부해 존재·보관 여부를 알리지 않는다.
+      if (!pickable.projects && (input.isNew || stored?.projectId !== payload.projectId)) {
+        errors.push(cellError(index, input.id, "projectId", "프로젝트", PROJECT_CLIENT_MISMATCH));
+        continue;
+      }
       const project = projectClients.get(payload.projectId);
       if (project?.clientId !== input.clientId) {
         errors.push(cellError(index, input.id, "projectId", "프로젝트", PROJECT_CLIENT_MISMATCH));

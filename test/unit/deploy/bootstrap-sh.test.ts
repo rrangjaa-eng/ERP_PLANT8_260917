@@ -342,7 +342,7 @@ describe("bootstrap-gcp.sh — KMS 데이터 키(04.3-08)", () => {
     for (const l of projectBindings) expect(l.match(/--role=(\S+)/)?.[1]).not.toContain("cloudkms");
   });
 
-  it("배포자의 프로젝트 단위 cloudkms.admin을 remove-iam-policy-binding으로 제거하고, 제거가 실패해도(바인딩 없음) exit 0", () => {
+  it("배포자의 프로젝트 단위 cloudkms.admin을 remove-iam-policy-binding으로 제거하고, 제거가 실패해도(바인딩 없음) exit 0 · 실패는 gcloud 메시지와 함께 WARNING으로 보인다(검토 반영 L1)", () => {
     const r = bootstrap(ARGS, { "no-vpc-peering": true });
     const removal = r.log
       .split("\n")
@@ -352,5 +352,10 @@ describe("bootstrap-gcp.sh — KMS 데이터 키(04.3-08)", () => {
 
     const again = bootstrap(ARGS, { "no-vpc-peering": true, "fail-gcloud": "projects remove-iam-policy-binding" });
     expect(again.status).toBe(0);
+    for (const role of ["roles/cloudkms.admin", "roles/cloudkms.cryptoKeyEncrypterDecrypter"]) {
+      const warning = again.stderr.split("\n").find((l) => l.startsWith("WARNING:") && l.includes(role));
+      expect(warning, role).toBeDefined();
+    }
+    expect(again.stderr).toContain("fake gcloud: forced failure for 'projects remove-iam-policy-binding'");
   });
 });

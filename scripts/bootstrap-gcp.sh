@@ -144,8 +144,15 @@ for env in $ENVS; do
     --member="serviceAccount:${DEPLOYER_EMAIL}" --role=roles/cloudkms.viewer >/dev/null
 done
 # 예전에 줬을 수 있는 배포자의 프로젝트 단위 KMS 역할을 없앤다(바인딩이 없어도 계속 — 멱등).
-gcloud projects remove-iam-policy-binding "$PROJECT" --member="serviceAccount:${DEPLOYER_EMAIL}" --role=roles/cloudkms.admin >/dev/null 2>&1 || true
-gcloud projects remove-iam-policy-binding "$PROJECT" --member="serviceAccount:${DEPLOYER_EMAIL}" --role=roles/cloudkms.cryptoKeyEncrypterDecrypter >/dev/null 2>&1 || true
+# 실패는 숨기지 않는다(검토 반영 L1) — 바인딩이 없어서인지 권한 오류인지 gcloud 메시지로 보인다.
+remove_deployer_project_role() {
+  local err
+  if ! err="$(gcloud projects remove-iam-policy-binding "$PROJECT" --member="serviceAccount:${DEPLOYER_EMAIL}" --role="$1" 2>&1 >/dev/null)"; then
+    echo "WARNING: could not remove project-level $1 from ${DEPLOYER_SA} (fine if it was never granted): ${err}" >&2
+  fi
+}
+remove_deployer_project_role roles/cloudkms.admin
+remove_deployer_project_role roles/cloudkms.cryptoKeyEncrypterDecrypter
 
 # (d) 배포자 프로젝트 역할(넓게 시작 — 01-08이 실사용 권한으로 좁히는 절차를 문서화한다)
 for role in run.admin cloudsql.admin secretmanager.admin artifactregistry.admin monitoring.editor logging.admin serviceusage.serviceUsageAdmin compute.networkAdmin cloudscheduler.admin; do

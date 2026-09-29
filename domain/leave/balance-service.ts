@@ -13,7 +13,7 @@ import { listLeaveUsage, type LeaveUsageRow } from "@/repositories/leave-usage";
 import { findLeaveRequestsByIds, type LeaveRequestRow } from "@/repositories/leave-requests";
 import { insertLeaveAdjustment, listLeaveAdjustments, type LeaveAdjustmentWithAuthor } from "@/repositories/leave-adjustments";
 import { assertLeaveWrite, canSeeLeaveDocument, LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
-import { countLeaveQuarters, type LeaveDaysInput } from "@/domain/leave/days";
+import { countLeaveQuarters, leaveYearRange, type LeaveDaysInput } from "@/domain/leave/days";
 import {
   allocateLeave,
   balanceFiscalYears,
@@ -256,7 +256,8 @@ export async function previewLeaveBalance(
 ): Promise<Partial<LeaveRequestBalanceDto> | null> {
   await assertLeaveWrite(viewer);
   const today = seoulToday(deps?.now);
-  const days = countLeaveQuarters(input);
+  // 제출(submitLeave)과 같은 연도 범위 — 범위 밖 날짜는 날짜 전과 같다(그 해 잔고를 계산하지 않는다, Codex P2).
+  const days = countLeaveQuarters(input, leaveYearRange(today));
   const user = await findUserById(viewer, viewer.id);
   if (!user) throw new UserNotFoundError("사람 찾을 수 없음");
   if (!days.ok) {

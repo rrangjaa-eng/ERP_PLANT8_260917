@@ -241,6 +241,10 @@ describe("잔고 서비스 — 동시 승인 · 결재자 잔고 행 · 주입 �
     const beforeDates = await previewLeaveBalance(org.drafter, { kind: "full_day", startDate: "", endDate: "", half: "" }, { now });
     expect(beforeDates).toMatchObject({ annualRemaining: 16, monthlyRemaining: 20, pending: 0, thisRequest: 0 });
     expect(numbersIn(beforeDates)).not.toContain(36);
+
+    // Codex P2: 제출이 거부하는 연도 범위 밖 날짜(내년 + 1)는 미리보기도 날짜 전과 같다(그 해 잔고를 계산하지 않는다).
+    const outOfRange = await previewLeaveBalance(org.drafter, { kind: "full_day", startDate: "2029-03-15", endDate: "2029-03-15", half: "" }, { now });
+    expect(outOfRange).toEqual(beforeDates);
   });
 
   it("ENG-12 · D3 — 실제 신청 · 승인으로 만든 픽스처의 DTO와 문자열", async () => {

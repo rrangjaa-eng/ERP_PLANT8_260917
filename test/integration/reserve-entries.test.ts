@@ -800,7 +800,7 @@ describe("domain/reserves — 대장 참조와 DTO 이름 (04-42 리뷰 B1 · S1
     const project = await createProjectFor(client.id);
     const writer = await createRoleViewer({ permissions: WRITER, visible: ["reserve.amount", "vendor.value", "project.value"] });
     const refs = await listReserveReferences(writer);
-    expect(refs.clients).toContainEqual({ id: client.id, name: client.name });
+    expect(refs.clients).toContainEqual({ id: client.id, name: client.name, label: client.name });
     expect(refs.projects).toEqual([{ id: project.id, name: project.name, clientId: client.id }]);
     expect(refs.evidenceTypes.map((option) => option.value)).toContain("tax_invoice");
   });

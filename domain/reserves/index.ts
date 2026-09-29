@@ -33,6 +33,7 @@ import {
 } from "@/repositories/reserve-entries";
 import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 import { listVendors as repoListVendors } from "@/repositories/vendors";
+import { vendorOptionLabels } from "@/domain/vendors";
 
 export type ReserveDirection = "deposit" | "withdrawal";
 
@@ -591,7 +592,8 @@ export const RESERVE_INPUT_REASONS = {
   directionInvalid: DIRECTION_INVALID,
 } as const;
 
-type ReserveClientOption = { id: string; name: string };
+// label — 동명 클라이언트만 사업자번호 끝 4자리 병기(QA ISSUE-005). name과 같은 vendor.value 게이트다.
+type ReserveClientOption = { id: string; name: string; label: string };
 type ReserveProjectOption = { id: string; name: string; clientId: string };
 type ReserveEvidenceOption = { value: string; label: string; description: string | null };
 
@@ -603,7 +605,7 @@ export type ReserveReferences = {
 
 // 04-42 리뷰 B1 — 선택지도 명세로 투영한다(누수 스캔이 본다). 거래처 이름은 vendor.value, 프로젝트는 project.value와 all-of.
 const CLIENT_OPTION_SPEC: DtoSpec<ReserveClientOption, ReserveClientOption> = {
-  fields: (["id", "name"] as const).map((key) => ({ key, from: key, infoItem: [RESERVE_INFO_ITEM, "vendor.value"] })),
+  fields: (["id", "name", "label"] as const).map((key) => ({ key, from: key, infoItem: [RESERVE_INFO_ITEM, "vendor.value"] })),
 };
 const PROJECT_OPTION_SPEC: DtoSpec<ReserveProjectOption, ReserveProjectOption> = {
   fields: (["id", "name", "clientId"] as const).map((key) => ({ key, from: key, infoItem: PROJECT_NAME_INFO_ITEMS })),
@@ -635,8 +637,13 @@ export async function listReserveReferences(viewer: Viewer): Promise<ReserveRefe
     projectShown && projectScope.rows === "all" ? repoListProjectOptions(viewer) : [],
     repoListCodeItems(viewer, { tableKey: EVIDENCE_TYPE_TABLE, scope: { rows: "all", includeArchived: false }, includeInactive: false }),
   ]);
+  const clientLabels = vendorOptionLabels(vendorRows);
   return {
-    clients: (await projectMany(viewer, vendorRows.map((row) => ({ id: row.id, name: row.name })), CLIENT_OPTION_SPEC)) as ReserveClientOption[],
+    clients: (await projectMany(
+      viewer,
+      vendorRows.map((row) => ({ id: row.id, name: row.name, label: clientLabels.get(row.id) ?? row.name })),
+      CLIENT_OPTION_SPEC,
+    )) as ReserveClientOption[],
     projects: (await projectMany(viewer, projectRows, PROJECT_OPTION_SPEC)) as ReserveProjectOption[],
     evidenceTypes: (await projectMany(
       viewer,

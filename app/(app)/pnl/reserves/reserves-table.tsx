@@ -980,7 +980,7 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
           id={`reserve-client-${row.id}`}
           ariaLabel="클라이언트"
           initialValue={row.clientId}
-          options={references.clients.map((client) => ({ value: client.id, label: client.name }))}
+          options={references.clients.map((client) => ({ value: client.id, label: client.label }))}
           onCommit={ctx.onCommit}
           onCancel={ctx.onCancel}
         />
@@ -1008,7 +1008,11 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
     {
       key: "clientId",
       kind: "select",
-      options: references.clients.map((client) => ({ value: client.id, label: client.name })),
+      // QA ISSUE-005 — 이름만 붙이면 동명 여럿 오류(R1) 그대로, `이름 · 끝4자리` 라벨이 정확히 같으면 그 클라이언트.
+      options: references.clients.flatMap((client) => [
+        { value: client.id, label: client.name },
+        ...(client.label !== client.name ? [{ value: client.id, label: client.label }] : []),
+      ]),
       // 리뷰 R5 — 저장된 줄의 잠긴 클라이언트 칸도 값을 읽는다. 같은 클라이언트면 그대로 두고, 다른 클라이언트면 잠김 오류 칸(handlePasteAtCell).
       isEditable: (row) => editability(row, "clientId") !== "readonly",
     },

@@ -5,10 +5,10 @@ current_phase_name: 프로젝트·견적 원장
 current_plan: 42
 status: verifying
 stopped_at: Completed 04-31-PLAN.md — Phase 4 전체 완료(42/42)
-last_updated: "2026-09-29T01:17:13.651Z"
+last_updated: "2026-09-29T04:04:47.299Z"
 last_activity: 2026-09-28
 last_activity_desc: Phase 4 execution started
-state_head: 51949a02ba0aaacf3c5def8faf7320f9f0a74991
+state_head: 77d03804824d80bbe9a72e964741ceba840fe3bd
 progress:
   total_phases: 17
   completed_phases: 1
@@ -332,6 +332,7 @@ Recent decisions affecting current work:
 | 260927-jny | ROADMAP 17행 Phase 9 착수 조건을 테스트 데이터 검증 결정에 맞춤 | 2026-09-27 | 9797108 | [260927-jny-roadmap-17-phase-9](./quick/260927-jny-roadmap-17-phase-9/) |
 | 260928-7fp | 04-51 결정 ② (b) 채번 시작값 낮춤만 거부 | 2026-09-28 | 1db3896 | [260928-7fp-04-51-b](./quick/260928-7fp-04-51-b/) |
 | 260928-85f | 04-51 (b) 거부 문구 현재 값 기준 | 2026-09-28 | c89ab1b | [260928-85f-04-51-b-dr-p4-02-04-6](./quick/260928-85f-04-51-b-dr-p4-02-04-6/) |
+| 260929-49c | PR #85 Codex #3·#4·#5 수정(보관 요청 무한 실패·저장 300줄 상한·보관 프로젝트 연결 거부) | 2026-09-29 | 77d03804 | [260929-49c-reserves-codex-fixes-3-4-5](./quick/260929-49c-reserves-codex-fixes-3-4-5/) |
 
 ### Roadmap Evolution
 

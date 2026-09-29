@@ -1008,4 +1008,74 @@ test.describe("리저브 대장 — Codex 재검토 #3 · #4", () => {
     const [first] = await db.select().from(reserveEntries).where(eq(reserveEntries.id, ids[0]!));
     expect(first?.projectId).toBeNull();
   });
+
+  test("(Codex #4) 보낼 줄 300 상한 — 넘는 붙여넣기는 전부 거부, 300이면 줄 추가 비활성 · Ctrl+Enter 알림", async ({ page }) => {
+    const roles = await createRoles();
+    const client = await createClient("E2E리저브상한");
+    await seedEntries(client.id, [{ date: "2026-04-01", direction: "deposit", amount: 200_000 }]);
+    await openLedger(page, roles.finance);
+    await expect(dataRows(page)).toHaveCount(1);
+    const tfoot = ledger(page).locator("tfoot");
+    const notes = (count: number) => Array.from({ length: count }, (_, index) => `상한 메모 ${index + 1}`).join("\n");
+
+    // 저장된 줄 1 + 새 줄 300 = 301 — 한 칸도 바꾸지 않는다.
+    await pasteText(page, cell(page, 0, COL.note), notes(301));
+    await expect(tfoot).toContainText("붙여넣기 전부 거부 · 저장당 300줄 상한을 1줄 넘음");
+    await expect(dataRows(page)).toHaveCount(1);
+    await expect(saveButton(page)).toHaveText(/^일괄 저장(?! \d)/);
+
+    // 저장된 줄 1 + 새 줄 299 = 300 — 들어간다.
+    await pasteText(page, cell(page, 0, COL.note), notes(300));
+    await expect(dataRows(page)).toHaveCount(300);
+    await expect(saveButton(page)).toContainText("일괄 저장 300");
+    await expect(tfoot).not.toContainText("붙여넣기 전부 거부");
+
+    const addButton = page.getByRole("button", { name: "리저브 줄 추가", exact: true });
+    await expect(addButton).toHaveAttribute("aria-disabled", "true");
+    const reasonId = await addButton.getAttribute("aria-describedby");
+    expect(reasonId).toBeTruthy();
+    await expect(page.locator(`[id="${reasonId}"]`)).toHaveText("저장당 300줄 상한 · 먼저 저장");
+
+    await focusGridCell(cell(page, 0, COL.date));
+    await page.keyboard.press("Control+Enter");
+    await expect(tfoot).toContainText("저장당 300줄 상한 · 먼저 저장");
+    await expect(dataRows(page)).toHaveCount(300);
+  });
+
+  test("(Codex #4) 상한을 넘는 요청이 서버에 닿으면 합계 행에 상한 이유(일반 문구 아님)", async ({ page }) => {
+    const roles = await createRoles();
+    const client = await createClient("E2E리저브상한서버");
+    const ids = await seedEntries(client.id, [
+      { date: "2026-04-01", direction: "deposit", amount: 200_000 },
+      { date: "2026-04-02", direction: "deposit", amount: 100_000 },
+    ]);
+    await openLedger(page, roles.finance);
+
+    await focusGridCell(cell(page, 1, COL.date));
+    await page.keyboard.press("Delete");
+    await page.getByRole("dialog", { name: "리저브 줄 삭제" }).getByRole("button", { name: /^리저브 줄 삭제/ }).click();
+    await expect(dataRows(page)).toHaveCount(1);
+    await expect
+      .poll(() => page.evaluate(() => Object.keys(window.localStorage).filter((key) => key.startsWith("quote-ledger:dirty:")).length))
+      .toBe(1);
+    // 보관본 복원 병합만 상한을 넘을 수 있다 — 보관 요청 1 + 300 = 301.
+    await page.evaluate(() => {
+      const key = Object.keys(window.localStorage).find((candidate) => candidate.startsWith("quote-ledger:dirty:"))!;
+      const stored = JSON.parse(window.localStorage.getItem(key) ?? "{}") as Record<string, unknown>;
+      for (let index = 0; index < 300; index += 1) stored[`${crypto.randomUUID()}:archive`] = 1;
+      window.localStorage.setItem(key, JSON.stringify(stored));
+    });
+    await page.reload();
+    await page.getByRole("button", { name: "복원" }).click();
+    await expect(dataRows(page)).toHaveCount(1);
+
+    const saved = waitForSave(page);
+    await saveButton(page).click();
+    await saved;
+    const tfoot = ledger(page).locator("tfoot");
+    await expect(tfoot).toContainText("저장 전부 거부 · 저장당 300줄 상한");
+    await expect(tfoot).not.toContainText("저장 실패 · 입력값 확인");
+    const [kept] = await db.select().from(reserveEntries).where(eq(reserveEntries.id, ids[1]!));
+    expect(kept?.archivedAt).toBeNull();
+  });
 });

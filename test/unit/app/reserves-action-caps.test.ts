@@ -56,6 +56,21 @@ describe("saveReservesAction 입력 상한(리뷰 R8)", () => {
   it("보관 301개는 거부한다", () => {
     expect(captured.schema?.safeParse({ rows: [], archived: Array.from({ length: 301 }, (_, i) => archived(i)) }).success).toBe(false);
   });
+
+  // Codex #4 — 배열 수준 오류는 어느 칸에도 붙지 않으므로 화면이 그대로 보일 상한 이유여야 한다(zod 기본 영어 문구 아님).
+  function arrayMessages(input: unknown, key: "rows" | "archived") {
+    const parsed = captured.schema?.safeParse(input);
+    const issues = parsed?.success ? [] : (parsed?.error.issues ?? []);
+    return issues.filter((issue) => issue.path.length === 1 && issue.path[0] === key).map((issue) => issue.message);
+  }
+
+  it("(Codex #4) 줄 301개의 거부 이유는 rows 경로 한 줄 `저장 전부 거부 · 저장당 300줄 상한`", () => {
+    expect(arrayMessages({ rows: Array.from({ length: 301 }, (_, i) => row(i)) }, "rows")).toEqual(["저장 전부 거부 · 저장당 300줄 상한"]);
+  });
+
+  it("(Codex #4) 보관 301개의 거부 이유도 archived 경로 한 줄 같은 문구", () => {
+    expect(arrayMessages({ rows: [], archived: Array.from({ length: 301 }, (_, i) => archived(i)) }, "archived")).toEqual(["저장 전부 거부 · 저장당 300줄 상한"]);
+  });
 });
 
 // 묶음 ④ /review R12 — 보관 요청의 가장자리 검증 오류는 화면이 그 줄의 칸 오류로 붙인다. id든 version이든 이유는

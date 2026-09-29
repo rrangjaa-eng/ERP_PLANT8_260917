@@ -27,16 +27,6 @@
   font-size: var(--fs-sm);
 }
 
-.refresh {
-  padding: 0;
-  border: 0;
-  border-bottom: var(--line-w) solid var(--accent);
-  background: none;
-  color: var(--accent);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-}
-
 @media (max-width: 699.98px) {
   /* 행 전체가 탭 대상 — 문서 칸의 button · 링크가 ::after로 그 행을 덮는다(ui/table은 고치지 않는다). */
   tr:has(.rowTap, .rowLink, .foldTap) {

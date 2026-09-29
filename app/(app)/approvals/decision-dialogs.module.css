@@ -15,12 +15,18 @@
   font-weight: var(--fw-medium);
 }
 
-.reason input {
+/* 사유는 여러 줄(사용자 결정 2026-09-29 — 04.1-07 DOM 감사 ②): 글자에 따라 2~4줄로 늘고, 넘치면 칸 안에서 세로로
+   스크롤한다. 500자까지 쓸 수 있어 보내기 전에 한 번에 다시 읽게 한다. */
+.reason textarea {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  height: var(--control-h);
-  padding: 0 var(--s-2);
+  min-height: calc(2lh + var(--s-1) * 2 + var(--line-w) * 2);
+  max-height: calc(4lh + var(--s-1) * 2 + var(--line-w) * 2);
+  padding: var(--s-1) var(--s-2);
+  field-sizing: content;
+  resize: none;
+  line-height: var(--lh-body);
   border: var(--line-w) solid var(--line-ui);
   border-radius: var(--radius);
   background: var(--bg);
@@ -29,24 +35,14 @@
   font-size: var(--fs-base);
 }
 
-.reason input:focus-visible {
+.reason textarea:focus-visible {
   outline: var(--focus-w) solid var(--focus);
   outline-offset: var(--focus-offset);
 }
 
-.reason input[aria-disabled="true"] {
+.reason textarea[aria-disabled="true"] {
   background: var(--surface);
   color: var(--faint);
-}
-
-.refresh {
-  padding: 0;
-  border: 0;
-  border-bottom: var(--line-w) solid var(--accent);
-  background: none;
-  color: var(--accent);
-  font-size: var(--fs-sm);
-  cursor: pointer;
 }
 
 @media (max-width: 699.98px) {
@@ -58,7 +54,7 @@
     padding-top: 0;
   }
 
-  .reason input {
-    height: var(--touch-min);
+  .reason textarea {
+    min-height: max(var(--touch-min), calc(2lh + var(--s-1) * 2 + var(--line-w) * 2));
   }
 }

@@ -67,6 +67,12 @@ test.describe("연차 문서 화면 행동 줄 (04.1-05)", () => {
     await lead.goto(url);
     const number = (await lead.getByText(/^LV/).first().innerText()).trim();
     await waitForHydration(lead.getByRole("button", { name: "반려" }));
+    // PC 행동 줄은 DOM · Tab · 보이는 순서 모두 승인 → 반려 그대로(사용자 결정 2026-09-29 — 폰만 반려 → 승인).
+    expect(
+      await lead.locator("main").evaluate((main) =>
+        [...main.querySelectorAll("button")].map((button) => button.textContent?.trim() ?? "").filter((text) => text === "반려" || text.startsWith("승인")),
+      ),
+    ).toEqual([expect.stringMatching(/^승인/), "반려"]);
     await lead.getByRole("button", { name: "반려" }).click();
     const dialog = lead.getByRole("dialog");
     await expect(dialog.getByRole("heading", { level: 2 })).toHaveText("연차 반려");
@@ -79,6 +85,11 @@ test.describe("연차 문서 화면 행동 줄 (04.1-05)", () => {
     await expect(dialog.getByRole("button", { name: /^반려/ })).toHaveAttribute("aria-disabled", "true");
     // 막힘 이유는 1차 왼쪽 한 자리에 보인다(ui/button 안의 같은 글자는 숨긴 aria-describedby 대상 — 04-21).
     await expect(dialog.getByText("사유 없음 · 사유 적기").filter({ visible: true })).toHaveCount(1);
+    // 사용자 결정 2026-09-29(04.1-07 DOM 감사 ②): 사유 칸은 여러 줄 — 긴 사유는 칸 안에서 가로로 밀리지 않고 줄이 늘어난다.
+    await expect(reason).toHaveJSProperty("tagName", "TEXTAREA");
+    const shortHeight = (await reason.boundingBox())?.height ?? 0;
+    await reason.fill("일정이 겹쳐 이번 주 안에는 자리를 비우기 어렵습니다. ".repeat(4));
+    expect((await reason.boundingBox())?.height ?? 0).toBeGreaterThan(shortHeight);
     await reason.fill("일정 겹침");
     await lead.keyboard.press("Control+Enter");
     await expect(lead.getByRole("status").filter({ hasText: "반려 · " })).toHaveText(`반려 · ${org.drafter.name}에게 돌아감`);
@@ -152,6 +163,7 @@ test.describe("연차 문서 화면 행동 줄 (04.1-05)", () => {
     const lead = await loginPage(browser, baseURL, org.teamLead);
     await lead.goto(`/leave/${doc.leaveId}`);
     await withdrawDocument(org.drafter.viewer, { instanceId: doc.instanceId, expectedVersion: doc.version });
+    await waitForHydration(lead.getByRole("button", { name: /^승인/ }));
     await lead.getByRole("button", { name: /^승인/ }).click();
     const line = lead.getByRole("alert").filter({ hasText: /에 회수함/ });
     await expect(line).toContainText(new RegExp(`^${org.drafter.name}[이가] \\d{2}:\\d{2}에 회수함 ·`));

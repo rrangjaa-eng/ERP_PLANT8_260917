@@ -28,6 +28,9 @@ export type LeaveSectionProps = {
   balanceLines: string[];
   hireDate: string | null;
   resignationDate: string | null;
+  // 입사일 · 퇴직일이 잔고 DTO 투영(leave.value)을 지났는가 — 가려졌으면 빈 칸이 「없음」처럼 보여 실제 값을 덮어쓰게
+  // 되므로 두 칸을 그리지 않는다(/review red-team).
+  datesVisible: boolean;
   adjustments: LeaveAdjustmentRow[];
   canWrite: boolean;
   // 오늘 기준 월차 조정 거부 이유(04.1-03 checkLeaveAdjustment 문구 그대로) — 있으면 `월차` 옵션을 뺀다(CX-R5).
@@ -105,7 +108,7 @@ export function LeaveSection(props: LeaveSectionProps) {
         연차
       </h2>
       <div className="single-column">
-        {canWrite ? (
+        {canWrite && props.datesVisible ? (
           <Form onSubmit={(event) => event.preventDefault()}>
             <EmploymentDate userId={userId} id="hireDate" label="입사일" initial={props.hireDate} kind="hire" />
             <EmploymentDate userId={userId} id="resignationDate" label="퇴직일" initial={props.resignationDate} kind="resignation" />

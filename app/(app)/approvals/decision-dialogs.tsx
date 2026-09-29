@@ -3,6 +3,7 @@
 import { useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
+import { Button } from "@/ui/button/Button";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { rejectAction } from "./actions";
 import { withdrawLeaveAction } from "@/app/(app)/leave/actions";
@@ -32,9 +33,9 @@ export type DecisionTarget = {
 function RefreshStep() {
   const router = useRouter();
   return (
-    <button type="button" className={styles.refresh} onClick={() => router.refresh()}>
+    <Button variant="tertiary" onClick={() => router.refresh()}>
       새로 고침
-    </button>
+    </Button>
   );
 }
 
@@ -102,9 +103,9 @@ export function RejectDialog({
       evidenceField={
         <div className={styles.reason}>
           <label htmlFor={fieldId}>사유</label>
-          <input
+          <textarea
             id={fieldId}
-            type="text"
+            rows={2}
             autoComplete="off"
             value={reason}
             aria-disabled={pending ? "true" : undefined}

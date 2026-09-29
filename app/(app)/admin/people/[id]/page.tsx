@@ -126,6 +126,7 @@ export default async function PersonDetailPage({
         balanceLines={balanceLines}
         hireDate={hireDate}
         resignationDate={current.resignationDate ?? null}
+        datesVisible={"hireDate" in current}
         adjustments={adjustmentRows}
         canWrite={canWrite}
         monthlyBlockedReason={blocked?.field === "bucket" ? blocked.message : null}

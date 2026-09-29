@@ -1,10 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
 import "@/domain/leave";
-import { getApprovalView } from "@/domain/approvals";
+import { getApprovalView, withdrawDocument } from "@/domain/approvals";
 import { submitLeave } from "@/domain/leave";
 import { seoulToday } from "@/lib/dates";
 import { leaveWeekdayRange } from "./leave-dates";
-import { delayServerActions, documentLabel, documentTitle, loginPage, setupLeaveOrg } from "./leave-org";
+import { delayServerActions, documentLabel, documentTitle, loginPage, setupLeaveOrg, waitForHydration } from "./leave-org";
 
 // 04.1-05 트레이서(EXP-05 · ROADMAP 기준 3): 폰 375에서 결재함 `내 결재` 행 탭 → 결재 시트(근거 · 잔고 ·
 // 결재선) → 승인 → 처리함. 처리함 행은 문서 링크라 탭하면 문서 화면으로 간다(ENG-16 · T4). 두 번 탭은
@@ -152,5 +152,42 @@ test.describe("폰 결재 시트 (04.1-05)", () => {
 
     await lead.goto(`/leave/${leaveId}`);
     await expectRejectLeftOfApprove(lead.locator("main"));
+    // 사용자 결정 2026-09-29(04.1-07 DOM 감사 ①): 폰은 DOM · Tab 순서도 보이는 순서(반려 → 승인)와 같다(SYSTEM §10).
+    await waitForHydration(lead.getByRole("button", { name: "반려" }));
+    await expect
+      .poll(() =>
+        lead.locator("main").evaluate((main) =>
+          [...main.querySelectorAll("button")].map((button) => button.textContent?.trim() ?? "").filter((text) => text === "반려" || text.startsWith("승인")),
+        ),
+      )
+      .toEqual(["반려", expect.stringMatching(/^승인/)]);
+    await lead.getByRole("button", { name: "반려" }).focus();
+    await lead.keyboard.press("Tab");
+    await expect(lead.getByRole("button", { name: /^승인/ })).toBeFocused();
+  });
+
+  test("폰 문서 화면에서 동시 처리 줄이 뜨면 `새로 고침`은 44 높이이고, 본문 끝이 고정 행동 줄 밑에 숨지 않는다(/review 디자인)", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 3, weekdays: 2 });
+    const org = await setupLeaveOrg(today);
+    const doc = await submitLeave(org.drafter.viewer, { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" });
+
+    const lead = await loginPage(browser, baseURL, org.teamLead, PHONE);
+    await lead.goto(`/leave/${doc.leaveId}`);
+    await withdrawDocument(org.drafter.viewer, { instanceId: doc.instanceId, expectedVersion: doc.version });
+    await waitForHydration(lead.getByRole("button", { name: /^승인/ }));
+    await lead.getByRole("button", { name: /^승인/ }).click();
+    const line = lead.getByRole("alert").filter({ hasText: /에 회수함/ });
+    await expect(line).toBeVisible();
+    const refresh = await line.getByRole("button", { name: "새로 고침" }).boundingBox();
+    expect(refresh?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+    // 본문이 행동 줄까지 내려오도록 낮은 화면에서 끝까지 내린다(높은 화면에서는 짧은 문서가 애초에 가려지지 않는다).
+    await lead.setViewportSize({ width: 375, height: 420 });
+    await lead.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    const content = await lead.locator("main dl").last().boundingBox();
+    const lineBox = await line.boundingBox();
+    if (!content || !lineBox) throw new Error("본문 · 충돌 줄 없음");
+    expect(content.y + content.height).toBeLessThanOrEqual(lineBox.y);
   });
 });

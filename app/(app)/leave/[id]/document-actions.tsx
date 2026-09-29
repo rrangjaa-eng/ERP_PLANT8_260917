@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { Button } from "@/ui/button/Button";
@@ -20,6 +20,18 @@ import styles from "./document-actions.module.css";
 // disabled 아님 — §7-1 ⑦ DR-11) · 동기 ref 가드로 두 번째 누름 · 연속 Ctrl+Enter 무시(T7).
 
 type Action = "approve" | "reject" | "withdraw" | "resubmit";
+
+// 폰 폭(<700) 판정 — 서버 · 수화 중에는 PC(거짓). 폰의 보이는 순서는 CSS order가 처음부터 맞추고, 수화 뒤 DOM ·
+// Tab 순서도 반려 → 승인으로 바꾼다(사용자 결정 2026-09-29 · SYSTEM §10 포커스 순서 = 보이는 순서). PC는 승인 → 반려.
+const PHONE_QUERY = "(max-width: 699.98px)";
+function subscribePhone(onChange: () => void): () => void {
+  const media = window.matchMedia(PHONE_QUERY);
+  media.addEventListener("change", onChange);
+  return () => media.removeEventListener("change", onChange);
+}
+function usePhoneWidth(): boolean {
+  return useSyncExternalStore(subscribePhone, () => window.matchMedia(PHONE_QUERY).matches, () => false);
+}
 
 export type DocumentActionsProps = {
   instanceId: string | null;
@@ -86,6 +98,31 @@ export function DocumentActions({ instanceId, version, actions, decision, reject
 
   const secondary = actions.find((action): action is "reject" | "withdraw" => action === "reject" || action === "withdraw");
 
+  const phone = usePhoneWidth();
+  // 폰 고정 행동 줄 아래 여백 = 행동 줄의 실제 높이(충돌 줄이 뜨거나 줄바꿈하면 늘어난다 — /review 디자인). 수화 전에는 CSS 기본값.
+  const barRef = useRef<HTMLDivElement>(null);
+  const [barHeight, setBarHeight] = useState<number | null>(null);
+  const hasBar = canApprove || secondary !== undefined;
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar || !phone) return;
+    const observer = new ResizeObserver(() => setBarHeight(bar.offsetHeight));
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, [phone, hasBar]);
+  const secondaryButton =
+    secondary && decision ? (
+      <span className={styles.secondaryWrap}>
+        <Button
+          variant="secondary"
+          disabled={pending}
+          onClick={() => (secondary === "reject" ? setRejectTarget(decision) : setWithdrawTarget(decision))}
+        >
+          {secondary === "reject" ? "반려" : "회수"}
+        </Button>
+      </span>
+    ) : null;
+
   return (
     <>
       {resubmit ? (
@@ -95,9 +132,10 @@ export function DocumentActions({ instanceId, version, actions, decision, reject
       ) : null}
       {canApprove || secondary ? (
         <>
-          <div className={styles.bar}>
+          <div ref={barRef} className={styles.bar}>
             {conflict ? <ConflictLine message={conflict} /> : null}
             <div className={styles.buttons}>
+              {phone ? secondaryButton : null}
               {canApprove ? (
                 <span className={styles.primaryWrap}>
                   <Button variant="primary" shortcut="Ctrl+Enter" pending={pending} onClick={approve}>
@@ -105,20 +143,10 @@ export function DocumentActions({ instanceId, version, actions, decision, reject
                   </Button>
                 </span>
               ) : null}
-              {secondary && decision ? (
-                <span className={styles.secondaryWrap}>
-                  <Button
-                    variant="secondary"
-                    disabled={pending}
-                    onClick={() => (secondary === "reject" ? setRejectTarget(decision) : setWithdrawTarget(decision))}
-                  >
-                    {secondary === "reject" ? "반려" : "회수"}
-                  </Button>
-                </span>
-              ) : null}
+              {phone ? null : secondaryButton}
             </div>
           </div>
-          <div className={styles.spacer} aria-hidden="true" />
+          <div className={styles.spacer} style={phone && barHeight !== null ? { height: barHeight } : undefined} aria-hidden="true" />
         </>
       ) : null}
       <RejectDialog target={rejectTarget} messages={rejectMessages} onClose={() => setRejectTarget(null)} onDone={showToast} />

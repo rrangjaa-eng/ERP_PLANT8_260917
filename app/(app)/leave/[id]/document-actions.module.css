@@ -45,14 +45,16 @@
     z-index: var(--z-bar);
   }
 
-  /* 본문 아래 여백 = 행동 줄 높이(탭 44는 셸이 이미 비운다). */
+  /* 본문 아래 여백 = 행동 줄 높이(탭 44는 셸이 이미 비운다). 수화 뒤에는 행동 줄 실측 높이(충돌 줄 포함)가
+     덮어쓴다 — 이 값은 수화 전 기본(버튼 + 위아래 --s-2 + 윗선). */
   .spacer {
     display: block;
-    height: calc(var(--touch-min) + var(--s-4));
+    height: calc(var(--touch-min) + var(--s-2) * 2 + var(--line-w));
   }
 
   /* 폰은 결재 시트와 같이 반려(2차) 왼쪽 · 승인(1차) 오른쪽, 사이 --s-4 이상(사용자 결정 2026-09-29 —
-     DECISIONS.md 폰 결재 행동 줄). PC 순서(1차 왼쪽)는 그대로라 DOM 순서는 바꾸지 않는다. */
+     DECISIONS.md 폰 결재 행동 줄). 수화 뒤에는 DOM · Tab 순서도 반려 → 승인(document-actions usePhoneWidth);
+     order는 수화 전 보이는 순서를 같게 둔다. PC 순서(1차 왼쪽)는 그대로. */
   .buttons {
     gap: var(--s-4);
   }

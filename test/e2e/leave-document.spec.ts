@@ -4,7 +4,7 @@ import { approveDocument, withdrawDocument } from "@/domain/approvals";
 import { submitLeave } from "@/domain/leave";
 import { seoulToday } from "@/lib/dates";
 import { leaveWeekdayRange } from "./leave-dates";
-import { documentLabel, documentTitle, loginPage, makePerson, setupLeaveOrg, type LeaveOrg } from "./leave-org";
+import { documentLabel, documentTitle, loginPage, makePerson, setupLeaveOrg, waitForHydration, type LeaveOrg } from "./leave-org";
 
 // 04.1-05 Task 2(EXP-03 · EXP-04 · S3 · S4 · S6): 문서 화면 행동 줄은 서버 가능 행동 그대로 — 결재자 = 승인 + 반려,
 // 기안자 · 결재 중 = 회수, 기안자 · 반려 = 고쳐 쓰는 폼 + 연차 다시 신청. 반려 · 회수는 ui/confirm-dialog.
@@ -66,6 +66,7 @@ test.describe("연차 문서 화면 행동 줄 (04.1-05)", () => {
     const lead = await loginPage(browser, baseURL, org.teamLead);
     await lead.goto(url);
     const number = (await lead.getByText(/^LV/).first().innerText()).trim();
+    await waitForHydration(lead.getByRole("button", { name: "반려" }));
     await lead.getByRole("button", { name: "반려" }).click();
     const dialog = lead.getByRole("dialog");
     await expect(dialog.getByRole("heading", { level: 2 })).toHaveText("연차 반려");
@@ -85,6 +86,7 @@ test.describe("연차 문서 화면 행동 줄 (04.1-05)", () => {
     const drafter = await loginPage(browser, baseURL, org.drafter);
     await drafter.goto(url);
     await expect(drafter.getByLabel("시작일")).toHaveValue(range.startDate);
+    await waitForHydration(drafter.getByLabel("시작일"));
     await drafter.getByLabel("시작일").fill(again.startDate);
     await drafter.getByLabel("종료일").fill(again.endDate);
     await drafter.getByRole("button", { name: /^연차 다시 신청/ }).click();

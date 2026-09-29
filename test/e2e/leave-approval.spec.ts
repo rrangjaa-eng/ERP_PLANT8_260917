@@ -5,6 +5,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { assignTeam, createOrgUnit, createTeam, listTeams } from "@/domain/org";
 import { seoulToday } from "@/lib/dates";
 import { leaveWeekdayRange } from "./leave-dates";
+import { waitForHydration } from "./leave-org";
 
 // 04.1-02 Task 1 화면 트레이서(EXP-05): /leave/new 신청 → /leave/[id] → /approvals 승인 × 4 → 최종 승인.
 // 다른 스펙의 픽스처와 섞이지 않게 전용 본부 · 팀을 도메인 함수로 만들고 기안자 · 팀장 · 본부 책임자를
@@ -38,6 +39,7 @@ async function approveFromInbox(page: Page, documentLabel: string, toast: string
   const row = page.getByRole("row").filter({ hasText: documentLabel });
   // 문서 링크는 토큰 색(--accent) — 브라우저 기본 파랑이 아니다(SYSTEM §1 · DOM 감사 04.1-02).
   await expect(row.getByRole("link", { name: documentLabel })).toHaveCSS("color", "rgb(0, 84, 70)");
+  await waitForHydration(row.getByRole("button", { name: "승인" }));
   await row.getByRole("button", { name: "승인" }).click();
   await expect(page.getByRole("status").filter({ hasText: toast })).toHaveText(toast);
   // 그 행이 `처리함` 그룹 머리글 뒤로 옮겨 가고 행동 버튼이 없다.

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, type Browser, type Page } from "@playwright/test";
+import { expect, type Browser, type Locator, type Page } from "@playwright/test";
 import { createAccount } from "@/domain/auth/accounts";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { assignTeam, createOrgUnit, createTeam, listTeams } from "@/domain/org";
@@ -79,4 +79,12 @@ export async function delayServerActions(page: Page, ms: number): Promise<void> 
     }
     await route.continue();
   });
+}
+
+// 하이드레이션 전에 누른 클릭 · 넣은 입력은 버려진다(.continue-here 제약 — 계측으로 확인). React는 하이드레이션한
+// 호스트 요소에 `__reactProps$…` 키를 붙인다 — 그 요소의 이벤트 처리기가 붙은 뒤에 누르거나 넣는다(/review testing).
+export async function waitForHydration(target: Locator): Promise<void> {
+  await expect
+    .poll(() => target.evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactProps$"))))
+    .toBe(true);
 }

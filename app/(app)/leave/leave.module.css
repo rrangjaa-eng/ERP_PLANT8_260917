@@ -63,3 +63,68 @@
   color: var(--warning);
   font-weight: var(--fw-bold);
 }
+
+/* 04.1-06 연차 목록(S1) — 머리 잔고 줄(formatBalanceLines가 준 한 줄 텍스트 그대로) · 필터 줄(연도 select 200 · 1차) · 행 링크. */
+.balanceLines {
+  margin: 0 0 var(--s-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.balanceLines p {
+  margin: 0;
+}
+
+.filterRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-4);
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--s-3);
+}
+
+.yearField {
+  display: inline-block;
+  width: 200px;
+  max-width: 100%;
+}
+
+.noteCell {
+  display: block;
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 행 전체가 문서 링크 — 종류 · 기간 칸 링크의 ::after가 그 행을 덮는다. */
+tr:has(.rowLink) {
+  position: relative;
+}
+
+.rowLink::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.rowLink:focus-visible {
+  outline: none;
+}
+
+.rowLink:focus-visible::after {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: calc(var(--focus-w) * -1);
+}
+
+@media (max-width: 699.98px) {
+  .balanceLines {
+    font-size: var(--fs-sm);
+  }
+
+  .rowLink {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch-min);
+  }
+}

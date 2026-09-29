@@ -18,18 +18,18 @@
 
 | | Baseline | Final |
 |---|---|---|
-| **Score** | **92** (provisional) | _(수정 후 갱신)_ |
+| **Score** | **92** (provisional) | **98** (provisional) |
 
 | Category | Weight | Baseline | Final |
 |----------|--------|----------|-------|
-| Console | 15% | 100 | |
-| Links | 10% | 미측정(제외) | |
-| Visual | 10% | 100 | |
-| Functional | 20% | 89 (−8 ISSUE-003, −3 ISSUE-004) | |
-| UX | 15% | 92 (−8 ISSUE-005) | |
-| Performance | 10% | 미측정(제외) | |
-| Content | 5% | 100 | |
-| Accessibility | 15% | 81 (−8 ISSUE-001, −8 ISSUE-002, −3 ISSUE-006) | |
+| Console | 15% | 100 | 100 |
+| Links | 10% | 미측정(제외) | 미측정(제외) |
+| Visual | 10% | 100 | 100 |
+| Functional | 20% | 89 (−8 ISSUE-003, −3 ISSUE-004) | 97 (−3 ISSUE-004 보류) |
+| UX | 15% | 92 (−8 ISSUE-005) | 97 (−3 ISSUE-005 견적 칸 보류) |
+| Performance | 10% | 미측정(제외) | 미측정(제외) |
+| Content | 5% | 100 | 100 |
+| Accessibility | 15% | 81 (−8 ISSUE-001, −8 ISSUE-002, −3 ISSUE-006) | 97 (−3 ISSUE-006 보류) |
 
 측정 범위: 링크·성능은 이번 diff 범위 밖이라 재지 않았다(provisional, 가중치 0.80 기준).
 
@@ -98,7 +98,7 @@
 | **Severity** | medium |
 | **Category** | functional |
 | **URL** | /projects/[id] 단가, /pnl/reserves 금액·환율, 설정 숫자 칸 등 `useCommaInput` 전부 |
-| **Fix Status** | _(진행 중)_ |
+| **Fix Status** | verified — 49568f7 |
 
 재현: 단가 `1,500,000` 편집 → 캐럿 1(`1|,500,000`) → Delete → `500,000`(캐럿 0). 기대: 쉼표 뒤 숫자를 지워 `100,000`. `lib/format-number.ts` formatTyped의 「쉼표 뒤 Backspace」 보정이 Backspace와 Delete를 구분하지 못한다 — 네이티브 삭제 뒤 raw·caret이 두 키에서 똑같아(`1500,000`, caret 1) 늘 캐럿 앞 숫자를 지운다. 사용자는 틀린 자리가 지워진 값을 알아채지 못하면 그대로 저장할 수 있다.
 
@@ -120,7 +120,7 @@
 | **Severity** | medium |
 | **Category** | ux |
 | **URL** | /pnl/reserves 클라이언트 칸, /projects/[id] 거래처 칸 |
-| **Fix Status** | 리저브 verified (491b2df0 RED → 다음 커밋) · 견적 거래처 칸 deferred |
+| **Fix Status** | 리저브 verified (2f260787 (RED 491b2df0)) · 견적 거래처 칸 deferred |
 
 붙여넣기 오류가 「같은 이름 여럿 · 목록에서 고르기」라고 안내하지만 목록에는 `마바동명`이 두 번, 똑같이 보인다(옵션 라벨 = 이름뿐). 사용자는 어느 쪽이 맞는지 고를 근거가 없다. DECISIONS.md·UI-SPEC에 동명 표기 규칙 없음.
 선택지: (a) 옵션 라벨에 구분자 병기 — 사업자번호 끝 4자리 등(`마바동명 · 1234`) (b) 동명일 때만 뒤에 순번·등록일 병기 (c) 거래처 등록 단계에서 동명 금지(정규화 이름 unique). 추천: **(a)를 동명일 때만** — 평소 목록은 그대로, 동명 두 줄만 구분 글자가 붙고 붙여넣기 오류 문구와 맞는다.
@@ -144,10 +144,17 @@
 
 ## Fixes
 
+- ISSUE-003 — 49568f7: `lib/format-number.ts` 쉼표 앞 Delete가 캐럿 뒤 숫자를 지우도록(Backspace와 구분). 회귀 E2E: number-format 「(QA ISSUE-003)」.
 - ISSUE-001 — c5dc811b: `ui/table/Table.tsx` onCommit이 편집기가 포커스를 쥔 확정이면 셀 재포커스(focusRequest cell). 회귀 E2E: quote-table·reserves 「/qa 포커스」(0a8f7c17).
 - ISSUE-002 — c5dc811b: 표 붙여넣기 뒤 탭 정지 셀로 재포커스. 회귀 E2E: quote-table 「(QA ISSUE-002)」(0a8f7c17).
 - ISSUE-005 — 사용자 결정 (a) 리저브만(2026-09-29): 동명 클라이언트 옵션만 `이름 · 사업자번호 끝4자리`(`vendorOptionLabels`, 라벨은 클라이언트 옵션과 같은 `[reserve.amount, vendor.value]` 게이트), `이름 · 끝4자리` 붙여넣기는 그 클라이언트로. 회귀: 단위 vendor-option-labels · E2E reserves 「(QA ISSUE-005)」(491b2df0). 견적 거래처 칸은 옵션이 projects 보기 권한만 확인해 끝 4자리가 권한 밖으로 샐 수 있어 보류(후속 단위).
 
+## 최종 재점검 (2026-09-29, 세션 445b5aa2)
+
+- 수정 커밋마다 회귀 테스트를 `CI=true`로 돌렸다. ISSUE-001·002는 수정 전 Table.tsx로 새 E2E 3건 실패를 재현했고, 되살리니 7/7 통과했다. ISSUE-005는 수정을 빼면 단위 2건이 실패하고, 넣으면 통과했다.
+- 확인 결과: 단위 1740/1740, 통합(reserve-entries·leak-scan) 1236/1236, `CI=true` E2E reserves 28/28, 앞서 quote-table·reserves 79와 표·붙여넣기 스펙 10개 459 통과(실행자 보고, ISSUE-001·002 커밋 기준). lint·typecheck 0.
+- 브라우저 재방문은 하지 않았다. 판정은 DOM을 실측하는 E2E로 했다(CLAUDE.md §6). 전체 E2E는 PR CI가 돈다.
+
 ## PR Summary
 
-_(최종 갱신)_
+발견 6건 중 4건 수정(ISSUE-005는 리저브 칸만, 견적 거래처 칸은 권한 경로 때문에 보류). low 2건 보류. 건강 점수 92 → 98.

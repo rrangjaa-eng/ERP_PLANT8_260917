@@ -34,6 +34,7 @@ import {
 import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 import { listVendors as repoListVendors } from "@/repositories/vendors";
 import { vendorOptionLabels } from "@/domain/vendors";
+import { RESERVE_ARCHIVED_ROW_REASON } from "@/domain/reserves/save-contract";
 
 export type ReserveDirection = "deposit" | "withdrawal";
 
@@ -142,7 +143,7 @@ const FORBIDDEN_RULE = "reserve.forbidden";
 const VERSION_CONFLICT_RULE = "reserve.version-conflict";
 const REPLAY_MISMATCH = "이미 저장된 줄과 값이 다름 · 새로 고침";
 const ENTRY_NOT_FOUND = "줄을 찾을 수 없음 · 새로 고침";
-const ARCHIVED_ROW = "보관된 줄 · 새로 고침";
+const ARCHIVED_ROW = RESERVE_ARCHIVED_ROW_REASON;
 const CLIENT_LOCKED = "클라이언트는 첫 저장 뒤 잠김 · 새 줄로 적기";
 const CLIENT_NOT_FOUND = "클라이언트 없음 · 클라이언트 다시 고르기";
 const PROJECT_CLIENT_MISMATCH = "다른 클라이언트의 프로젝트 · 프로젝트 다시 고르기";

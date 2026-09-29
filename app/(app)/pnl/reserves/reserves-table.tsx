@@ -31,6 +31,7 @@ import type {
   ReserveListResult,
   ReserveReferences,
 } from "@/domain/reserves";
+import { RESERVE_ARCHIVED_ROW_REASON } from "@/domain/reserves/save-contract";
 import styles from "./reserves.module.css";
 
 // 04-42 — 클라이언트별 리저브 대장(S9). 셀 단계·잔액·클라이언트 잠금은 서버 DTO 그대로 그리고(T-04-43b), 화면은 편집을
@@ -529,15 +530,33 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
     },
     onSuccess: ({ data }) => {
       if (data?.rejected) {
+        // Codex #3 · 04-07 GAP 3 — 서버 거부는 계약이고, 이미 보관된 줄의 보관 요청은 목표를 이룬 것이라 큐에서 뺀다
+        // (빼지 않으면 그 줄은 걸러져 오류가 안 보이고 저장마다 같은 거부가 되풀이된다). 자동 재저장은 하지 않는다 —
+        // 남은 편집은 dirty로 남아 다음 저장이 보낸다. 같은 field "row"의 중복·없는 줄 거부는 목표를 못 이룬 것이라 남긴다.
+        const sentArchived = sentArchivedIdsRef.current;
+        const alreadyArchived = data.rejected.cells.flatMap((cell) =>
+          cell.rowId !== undefined && sentArchived.includes(cell.rowId) && cell.field === "row" && cell.reason === RESERVE_ARCHIVED_ROW_REASON ? [cell.rowId] : [],
+        );
+        const remaining = data.rejected.cells.filter((cell) => cell.rowId === undefined || !alreadyArchived.includes(cell.rowId));
+        if (alreadyArchived.length > 0) {
+          persistPendingRef.current = true;
+          setArchived((prev) => prev.filter((request) => !alreadyArchived.includes(request.id)));
+          // 그 줄은 DB에서 이미 보관됐고 지금 대장(줄 · 잔액 · 건수)이 낡았다. 보관 요청을 빼기만 하면 그 줄이 낡은 목록에서 되살아난다.
+          router.refresh();
+        }
         const next: CellErrors = {};
-        for (const cell of data.rejected.cells) {
+        for (const cell of remaining) {
           if (!cell.rowId) continue;
           next[cell.rowId] = { ...next[cell.rowId], [columnForField(cell.field)]: cell.reason };
         }
         setCellErrors(next);
-        setRejectionSummary(data.rejected.summary);
-        setRejectedRowIds(data.rejected.cells.flatMap((cell) => (cell.rowId ? [cell.rowId] : [])));
+        setRejectedRowIds(remaining.flatMap((cell) => (cell.rowId ? [cell.rowId] : [])));
         setBalanceRejection(data.rejected.balance);
+        if (remaining.length === 0) {
+          setRejectionSummary(null);
+          return;
+        }
+        setRejectionSummary(alreadyArchived.length > 0 ? `오류 ${remaining.length}칸 · 전부 거부` : data.rejected.summary);
         setIssueSignal((signal) => signal + 1);
         return;
       }

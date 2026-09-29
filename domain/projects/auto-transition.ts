@@ -149,11 +149,10 @@ export async function loadProjectForGate(
   if (!row) return null;
   await opts.afterLock?.();
 
-  // 읽기 입구의 후보 조건(lockAutoSettleCandidates)과 같다 — 진행 · 종료일 < 오늘(KST) · 보관 아님.
+  if (!(await allowsAutoSettle(row, kstToday(now())))) return row;
+  // 허용 뒤 종료일이 없으면 규칙 결함이다 — 던져 tx를 되돌린다(fail-closed). 발효일 계산용 타입 좁히기.
   const endDate = row.endDate;
-  if (row.status !== AUTO_SETTLE.from || endDate === null || endDate >= kstToday(now()) || row.archivedAt !== null) {
-    return row;
-  }
+  if (endDate === null) throw new Error("project.auto_settle_gate_no_end_date");
 
   const settled = await updateStatus(
     viewer,

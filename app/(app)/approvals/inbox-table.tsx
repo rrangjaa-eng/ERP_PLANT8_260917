@@ -12,6 +12,7 @@ import { Toast, type ToastTone } from "@/ui/toast/Toast";
 import { approveAction } from "./actions";
 import { approveToast } from "./approve-toast";
 import { ApprovalSheet, type ApprovalSheetItem } from "./approval-sheet";
+import { ConflictLine } from "./conflict-line";
 import { RejectDialog, WithdrawDialog, type DecisionTarget, type RejectMessages } from "./decision-dialogs";
 import leaveStyles from "@/app/(app)/leave/leave.module.css";
 import styles from "./inbox-table.module.css";
@@ -45,8 +46,11 @@ function documentCellId(row: InboxRow): string {
 export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectMessages: RejectMessages }) {
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
+  // 행 승인이 동시 처리로 거부되면 그 행 행동 칸에 한 줄 + 3차 `새로 고침`(토스트가 아니다 — 누른 자리 옆).
+  const [rowConflict, setRowConflict] = useState<{ rowId: string; message: string } | null>(null);
   // 행 제출 중 — 동기로 바뀌어 두 번째 누름을 무시한다(T7).
   const submittingRef = useRef(false);
+  const pendingIdRef = useRef<string | null>(null);
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const [sheetItem, setSheetItem] = useState<ApprovalSheetItem | null>(null);
   const [rejectTarget, setRejectTarget] = useState<DecisionTarget | null>(null);
@@ -59,10 +63,11 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
       router.refresh();
     },
     onError: ({ error }) => {
-      if (error.serverError) setToast({ message: error.serverError, tone: "error" });
+      if (error.serverError && pendingIdRef.current) setRowConflict({ rowId: pendingIdRef.current, message: error.serverError });
     },
     onSettled: () => {
       submittingRef.current = false;
+      pendingIdRef.current = null;
       setPendingId(null);
     },
   });
@@ -128,7 +133,9 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
                 onClick={() => {
                   if (submittingRef.current) return;
                   submittingRef.current = true;
+                  pendingIdRef.current = row.id;
                   setPendingId(row.id);
+                  setRowConflict(null);
                   execute({ instanceId, expectedVersion });
                 }}
               >
@@ -145,6 +152,7 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
                 반려
               </Button>
             ) : null}
+            {rowConflict?.rowId === row.id ? <ConflictLine message={rowConflict.message} /> : null}
           </span>
         );
       },

@@ -156,6 +156,22 @@ test.describe("연차 문서 화면 행동 줄 (04.1-05)", () => {
     await expect(line.getByRole("button", { name: "새로 고침" })).toBeVisible();
   });
 
+  test("동시 처리 — 결재함 PC 행 승인이 거부되면 그 행에 서버 문구 한 줄 + 새로 고침(토스트가 아니다)", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 7, weekdays: 1 });
+    const org = await setupLeaveOrg(today);
+    const doc = await submit(org, range);
+
+    const lead = await loginPage(browser, baseURL, org.teamLead);
+    await lead.goto("/approvals");
+    const row = lead.getByRole("row").filter({ hasText: documentLabel(range) });
+    await withdrawDocument(org.drafter.viewer, { instanceId: doc.instanceId, expectedVersion: doc.version });
+    await row.getByRole("button", { name: /^승인/ }).click();
+    await expect(row).toContainText(new RegExp(`${org.drafter.name}[이가] \\d{2}:\\d{2}에 회수함`));
+    await expect(row.getByRole("button", { name: "새로 고침" })).toBeVisible();
+    await expect(lead.getByRole("status").filter({ hasText: "회수함" })).toHaveCount(0);
+  });
+
   test("결재함 PC — 내 결재 글자는 그룹 머리글 한 번, 처리함 행 상태는 글자, 행 3차 반려가 같은 반려 모달을 연다", async ({ browser, baseURL }) => {
     const today = seoulToday();
     const first = leaveWeekdayRange(today, { week: 5, weekdays: 1 });

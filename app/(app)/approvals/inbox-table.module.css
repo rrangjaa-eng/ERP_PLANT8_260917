@@ -8,8 +8,9 @@
 /* PC 행 행동 — 승인↔반려 사이 --s-4(되돌릴 수 없는 두 행동을 떼어 둔다, #12). */
 .rowActions {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--s-4);
+  gap: var(--s-2) var(--s-4);
 }
 
 /* 터치 PC · 태블릿 — 행 행동 버튼 상자를 --touch-min으로(보이는 글자 크기는 그대로, #12). */

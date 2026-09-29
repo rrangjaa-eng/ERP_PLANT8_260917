@@ -41,3 +41,21 @@ describe("Table 그룹 머리글 오른쪽 칸(groupAside)", () => {
     expect(render()).not.toContain("groupAside");
   });
 });
+
+// 묶음 ④ 리뷰 P1 — 이름이 같은 두 클라이언트는 id(groupBy)로 따로 묶이고, 머리글 글자는 groupHeader가 정한다.
+describe("Table 그룹 키와 머리글 글자(groupHeader)", () => {
+  const sameName: Row[] = [
+    { id: "r1", group: "client-1", balance: "100" },
+    { id: "r2", group: "client-2", balance: "200" },
+  ];
+  const labels: Record<string, string> = { "client-1": "같은이름 (111-11-11111)", "client-2": "같은이름 (222-22-22222)" };
+
+  it("머리글 글자가 같아도 키가 다르면 두 그룹 — 각자 첫 줄 잔액", () => {
+    const cells = groupHeaderCells(
+      render({ rows: sameName, groupHeader: (row) => labels[row.group] ?? "", groupAside: (row) => `잔액 ${row.balance}` } as Partial<TableProps<Row>>),
+    );
+    expect(cells).toHaveLength(2);
+    expect(cells[0]).toMatch(/^<td[^>]*>같은이름 \(111-11-11111\)<span[^>]*>잔액 100<\/span><\/td>$/);
+    expect(cells[1]).toMatch(/^<td[^>]*>같은이름 \(222-22-22222\)<span[^>]*>잔액 200<\/span><\/td>$/);
+  });
+});

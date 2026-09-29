@@ -1637,7 +1637,7 @@ export function QuoteLedger({
       header: "번호",
       priority: "p3",
       collapseBelow: 1280,
-      align: "left",
+      align: "right",
       pasteRole: "computed",
       cell: (row) => lines.indexOf(row) + 1,
     },

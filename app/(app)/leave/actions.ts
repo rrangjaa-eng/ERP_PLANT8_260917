@@ -66,13 +66,19 @@ export const resubmitLeaveAction = authedActionClient
       if (error instanceof LeaveValidationError) return leaveRejected(error);
       throw error;
     }
-    return {
-      result: await projectActionResult(ctx.viewer, {
-        documentId: resubmitted.leaveId,
-        final: false,
-        nextHolderNames: resubmitted.nextHolderNames,
-      }),
-    };
+    // 다시 신청도 이미 커밋됐다 — 토스트 재료 투영이 실패해도 성공으로(신청과 같은 규칙, Codex P2).
+    try {
+      return {
+        result: await projectActionResult(ctx.viewer, {
+          documentId: resubmitted.leaveId,
+          final: false,
+          nextHolderNames: resubmitted.nextHolderNames,
+        }),
+      };
+    } catch (error) {
+      log.warn("leave.resubmit_toast_material_failed", { leaveId: resubmitted.leaveId, error: error instanceof Error ? error.message : String(error) });
+      return { result: { documentId: resubmitted.leaveId, final: false } };
+    }
   });
 
 const DAY_MS = 24 * 60 * 60 * 1000;

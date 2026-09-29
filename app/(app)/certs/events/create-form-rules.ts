@@ -1,4 +1,5 @@
 import type { WinnerRuleCode } from "@/domain/certs/winner-rules";
+import { FORMAT_ERROR as DATE_FORMAT_ERROR } from "@/domain/projects/period";
 
 // 04.3-04 Task 3 ⓪ — I2 행사 만들기 화면의 순수 판정. React · DB · 설정을 import하지 않는다
 // (app/(auth)/login/login-error.ts 선례). 화면은 이 함수들만 불러 N · 막힘 이유 · 제출 응답 갈래를 정한다.
@@ -156,5 +157,6 @@ export function pinFieldErrors(fieldErrors: SubmitFieldErrors): { name?: string;
   if (fieldErrors.name === "required") pinned.name = "행사 이름 비어 있음 · 입력";
   else if (fieldErrors.name === "tooLong") pinned.name = "80자 초과 · 80자 안으로";
   if (fieldErrors.wonOn === "required") pinned.wonOn = "당첨일 비어 있음 · 입력";
+  else if (fieldErrors.wonOn === "format") pinned.wonOn = DATE_FORMAT_ERROR;
   return pinned;
 }

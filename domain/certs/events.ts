@@ -16,6 +16,7 @@ import { isCertFeatureEnabled } from "@/domain/certs/feature";
 import { formatPhone, maskName, normalizeName } from "@/domain/certs/format";
 import { publicShape } from "@/domain/certs/roster-display";
 import { validateWinnerRows, type WinnerCellError } from "@/domain/certs/winner-rules";
+import { isCalendarDate } from "@/domain/projects/period";
 import { renderQrSvg } from "@/domain/certs/qr";
 import {
   findEventByCreateRequest,
@@ -58,7 +59,7 @@ const createEventInputSchema = z.object({
 
 export type CreateEventInput = z.input<typeof createEventInputSchema>;
 
-export type CreateEventFieldErrors = { name?: "required" | "tooLong"; wonOn?: "required" };
+export type CreateEventFieldErrors = { name?: "required" | "tooLong"; wonOn?: "required" | "format" };
 
 export type CreateEventResult =
   | { kind: "ok"; eventId: string; link: string }
@@ -107,6 +108,7 @@ export async function createEvent(
   if (name === "") fieldErrors.name = "required";
   else if (name.length > CERT_EVENT_NAME_MAX) fieldErrors.name = "tooLong";
   if (parsed.wonOn === "") fieldErrors.wonOn = "required";
+  else if (!isCalendarDate(parsed.wonOn)) fieldErrors.wonOn = "format";
 
   const checked = validateWinnerRows(parsed.winners.map((w, i) => ({ ...w, key: String(i) })));
   if (!checked.ok || Object.keys(fieldErrors).length > 0) {

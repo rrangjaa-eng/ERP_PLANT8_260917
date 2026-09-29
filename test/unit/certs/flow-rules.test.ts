@@ -162,10 +162,21 @@ describe("submitOutcomeFromValidationErrors — 액션 스키마 거절을 칸 �
     ).toEqual({ kind: "invalid", fields: ["name", "rrn", "phone", "signature"] });
   });
 
-  it("화면에 칸이 없는 키만 오면(idempotencyKey · winnerVersion 등) null", () => {
-    expect(
-      submitOutcomeFromValidationErrors({ idempotencyKey: { _errors: ["x"] }, winnerVersion: { _errors: ["x"] } }),
-    ).toBeNull();
+  // 검토 L5 — 수령자가 고칠 칸이 없는 거절은 확정 판정이다. 결과 불명 줄(「다시 눌러 주세요」)을
+  // 띄우면 같은 본문을 다시 보내 같은 거절만 받는다 — 확인 시간 지남 길(E3 다시 확인)로 새 증표 ·
+  // winnerVersion · 동의 판을 받는다.
+  it.each([
+    [{ idempotencyKey: { _errors: ["x"] }, winnerVersion: { _errors: ["x"] } }],
+    [{ consentVersion: { _errors: ["x"] } }],
+    [{ proof: { _errors: ["x"] }, retentionYears: { _errors: ["x"] } }],
+    [{ _errors: ["root"] }],
+  ])("화면에 칸이 없는 키만 오면 확인 시간 지남(E3 다시 확인) — %j", (errors) => {
+    expect(submitOutcomeFromValidationErrors(errors)).toEqual({ kind: "expiredProof" });
+  });
+
+  it("validationErrors가 객체가 아니면(해석 불가) null — 결과 불명", () => {
+    expect(submitOutcomeFromValidationErrors("oops")).toBeNull();
+    expect(submitOutcomeFromValidationErrors(null)).toBeNull();
   });
 
   it("_errors가 비어 있는 칸은 세지 않는다", () => {

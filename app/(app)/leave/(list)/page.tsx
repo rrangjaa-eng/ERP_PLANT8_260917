@@ -43,7 +43,10 @@ export default async function LeaveListPage({ searchParams }: { searchParams: Pr
   for (let y = lastYear; y >= firstYear; y--) yearOptions.push(y);
   const singleYear = yearOptions.length === 1;
 
-  const lines = balance.annual ? formatBalanceLines({ annual: balance.annual, monthly: balance.monthly ?? null }) : [];
+  // 보는 연도가 퇴직 연도면 퇴직 줄 하나(관리자 사람 상세와 같은 재료 — Codex P2).
+  const lines = balance.annual
+    ? formatBalanceLines({ annual: balance.annual, monthly: balance.monthly ?? null, resignation: balance.resignation ?? null })
+    : [];
   const rows: LeaveListRow[] = leaves.map((leave) => {
     const key = toLeaveStatusKey(leave.status);
     return {

@@ -1,9 +1,9 @@
 ---
-status: diagnosed
+status: complete
 phase: 04-project-quote-ledger
 source: [04-01..04-51 SUMMARY.md 42개]
 started: 2026-09-29T09:39:02Z
-updated: 2026-09-29T09:50:07Z
+updated: 2026-09-29T12:40:00Z
 method: 증거 대조(사용자 승인 2026-09-29) — 사람 확인 항목은 SUMMARY·DOM 감사·CI·테스트 이름으로 대조해 pass 기록, 증거 없는 항목만 사람에게 질문. 04-31 (C)(D)는 「사람 확인 생략(사용자 승인)」 — 자동 테스트로 갈음, 실제 엑셀·MS 입력기 확인은 하지 않음
 ---
 
@@ -33,10 +33,10 @@ evidence: projects-list.spec.ts:728 · :236, projects-loading.test.ts:22, projec
 
 ### 4. [04-05 D5b] 목록 오류 화면 문구
 expected: 목록을 못 불러오면 「프로젝트 목록 불러오기 실패 · 다시 시도」가 보인다
-result: issue
-reported: "증거 없음 — 사용자 결정(2026-09-29): 테스트 추가"
-severity: minor
-evidence_gap: projects/error.tsx를 다루는 테스트·감사 기록 없음
+result: pass
+source: evidence
+evidence: test/e2e/mobile-projects-error.spec.ts 1/1(04-52 13bf0c1b — fx.recent_rate.USD=0 → 「프로젝트 목록 불러오기 실패」·「다시 시도」 → 값 복구 → 목록 복귀) · 재실행 2026-09-29 이 세션 CI=true mobile-375 1 passed, 끝난 뒤 USD 1300 복원 확인 · 04-52 독립 검증 변이 M2(retry 무력화) 실패로 잡힘
+resolved_gap: G-04-4(04-52)
 
 ### 5. [04-08 D4] 진행 막대 미구현 결정 기록
 expected: 앱 어디에도 상단 진행 막대가 없다
@@ -106,10 +106,10 @@ evidence: 04-23-SUMMARY:167
 
 ### 16. [04-25 D2] 선택 칸: 오류가 힌트를 이김
 expected: 선택 칸에 오류가 있으면 설명 대신 오류가 보인다
-result: issue
-reported: "증거 없음 — 사용자 결정(2026-09-29): 단위 테스트 추가"
-severity: minor
-evidence_gap: 04-25-SUMMARY:63 — 커밋된 테스트 없음(호출부 없음)
+result: pass
+source: evidence
+evidence: test/unit/ui/select-error-hint.test.ts 4/4(04-52 13bf0c1b — 비제어·제어 × 오류 있음·없음) · 재실행 2026-09-29 이 세션 통과 · 04-52 독립 검증 변이 M1(힌트 우선) 2건 실패로 잡힘
+resolved_gap: G-04-16(04-52)
 
 ### 17. [04-25 D3] 소분류 설명 표시
 expected: 소분류 편집 중 코드표 설명이 셀 아래 한 줄로 보인다
@@ -395,10 +395,10 @@ evidence: revenue-section.spec.ts:666
 
 ### 64. [04-41 L26] 1024 미만 전환 시 매출 입력 유지
 expected: 매출 입력을 연 채 창을 1024 아래로 줄여도 값이 남는다
-result: issue
-reported: "증거 없음(재현 안 됨, 열린 채 이월) — 사용자 결정(2026-09-29): E2E로 확인, 실패하면 수정"
-severity: major
-evidence_gap: 04-41-SUMMARY:170 · .continue-here.md:311(재현 안 됨, 열린 채 이월)
+result: pass
+source: evidence
+evidence: test/e2e/revenue-section.spec.ts 「매출 입력을 연 채 1024 미만 전환 — 값 유지 (G-04-64 · UAT 64)」 (A)(B)(C) 3/3(04-52 05449580·68d13213, 갈래 G — 결함 없음·제품 코드 변경 0) · 재실행 2026-09-29 이 세션 CI=true desktop 3 passed · 04-52 독립 검증 변이 M3(onCommit 제거) 3건 실패로 잡힘. 모서리 넷(04-52-SUMMARY 「사용자 판단 대기」)은 이 항목 판정 기준 밖
+resolved_gap: G-04-64(04-52)
 
 ### 65. [04-01 D1] 프로젝트 등록 폼 제출 시 서버가 매긴 문서번호가 자동 배정되고 폼에는 번호 입력 칸이 없다(D-42)
 expected: 프로젝트 등록 폼 제출 시 서버가 매긴 문서번호가 자동 배정되고 폼에는 번호 입력 칸이 없다(D-42)
@@ -1255,8 +1255,8 @@ coverage_id: D3
 ## Summary
 
 total: 206
-passed: 202
-issues: 3
+passed: 205
+issues: 0
 pending: 0
 skipped: 1
 blocked: 0
@@ -1265,7 +1265,9 @@ blocked: 0
 
 - gap_id: G-04-4
   truth: "목록을 못 불러오면 「프로젝트 목록 불러오기 실패 · 다시 시도」가 보인다"
-  status: failed
+  status: resolved
+  resolved_by: 04-52-PLAN.md
+  resolved_at: 2026-09-29
   reason: "증거 없음: projects/error.tsx를 다루는 테스트·감사 기록 없음 — 사용자 결정: 테스트 추가"
   severity: minor
   test: 4
@@ -1280,7 +1282,9 @@ blocked: 0
   debug_session: .planning/debug/phase4-uat-gaps.md
 - gap_id: G-04-16
   truth: "선택 칸(ui/select)에 오류가 있으면 설명 힌트 대신 오류가 보인다"
-  status: failed
+  status: resolved
+  resolved_by: 04-52-PLAN.md
+  resolved_at: 2026-09-29
   reason: "증거 없음: 04-25-SUMMARY:63 커밋된 테스트 없음(호출부 없음) — 사용자 결정: 단위 테스트 추가"
   severity: minor
   test: 16
@@ -1293,7 +1297,9 @@ blocked: 0
   debug_session: .planning/debug/phase4-uat-gaps.md
 - gap_id: G-04-64
   truth: "매출 입력을 연 채 창을 1024 미만으로 줄여도 입력값이 남는다"
-  status: failed
+  status: resolved
+  resolved_by: 04-52-PLAN.md
+  resolved_at: 2026-09-29
   reason: "증거 없음: 04-41-SUMMARY:170 재현 안 됨·열린 채 이월 — 사용자 결정: E2E로 확인, 실패하면 수정"
   severity: major
   test: 64

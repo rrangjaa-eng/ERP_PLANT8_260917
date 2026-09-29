@@ -1,0 +1,83 @@
+name: restore-rehearsal
+
+# D8-08 복원 리허설 — 원본을 건드리지 않는다. 최신 성공 자동 백업을 임시 인스턴스
+# plant8-<env>-rehearsal-<실행 id>-<시도>에 복원하고, 사설망 Job(plant8-<env>-restore verify)으로
+# 확인하고, 임시를 지운 뒤 같은 Job의 record로 결과를 그 환경 DB에 한 번 남긴다
+# (scripts/restore-rehearsal.sh에 위임).
+# main·production 확인 입력 검사는 실수 방지 장치이고 권한 경계가 아니다: WIF는 저장소로만
+# 묶여 있어 실제 경계는 1인 소유 비공개 저장소의 write 권한이다(T-04.4-14, Codex #1 — Phase 8에서
+# 리허설 전용 최소 권한 SA · WIF ref 조건 검토). GitHub Environments 미사용(D-05).
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        type: choice
+        description: "대상 환경"
+        required: true
+        options:
+          - staging
+          - production
+        default: staging
+      confirm_production:
+        type: string
+        description: "production일 때만 plant8-prod-db를 그대로 입력"
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
+# 리허설 전용 그룹 — 리허설은 한 번에 하나. deploy.yml과 다른 그룹이라 배포는 리허설을
+# 기다리지도 취소되지도 않는다. 리허설 도중 배포가 끼면 스크립트가 이미지 digest 비교로 잡아
+# 실패로 남긴다: 배포가 겹쳐 실패로 남김 — 다시 돌리면 됩니다(사용자 결정 2026-09-24).
+concurrency:
+  group: restore-rehearsal
+  cancel-in-progress: false
+
+jobs:
+  rehearsal:
+    runs-on: ubuntu-latest
+    # 60(rehearse) + 40(finalize) + 준비 5
+    timeout-minutes: 105
+    steps:
+      - id: input-guard
+        shell: bash
+        env:
+          REF: ${{ github.ref }}
+          INPUT_ENV: ${{ inputs.env }}
+          CONFIRM_PRODUCTION: ${{ inputs.confirm_production }}
+        run: |
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::main에서만 돕니다 — main에서 다시 실행하세요" >&2
+            exit 1
+          fi
+          if [ "$INPUT_ENV" = "production" ] && [ "$CONFIRM_PRODUCTION" != "plant8-prod-db" ]; then
+            echo "::error::production은 confirm_production에 plant8-prod-db를 그대로 적어야 돕니다" >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/${{ vars.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/erp-repo
+          service_account: gha-deployer@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v3
+      - id: rehearse
+        timeout-minutes: 60
+        shell: bash
+        env:
+          INPUT_ENV: ${{ inputs.env }}
+          CONFIRM_PRODUCTION: ${{ inputs.confirm_production }}
+          PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+        run: bash scripts/restore-rehearsal.sh rehearse
+      - id: finalize
+        if: ${{ always() && steps.rehearse.outcome != 'skipped' }}
+        timeout-minutes: 40
+        shell: bash
+        env:
+          INPUT_ENV: ${{ inputs.env }}
+          CONFIRM_PRODUCTION: ${{ inputs.confirm_production }}
+          PROJECT: ${{ vars.GCP_PROJECT_ID }}
+          REGION: ${{ vars.GCP_REGION }}
+        run: bash scripts/restore-rehearsal.sh finalize

@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# 가짜 timeout — restore-rehearsal.sh 단위 테스트 전용. 받은 제한 초를 $DEPLOY_FAKE_LOG에
+# "timeout <초>[ @시각] <명령…>"으로 적는다. 첫 인자가 양의 정수가 아니면 TIMEOUT_NONPOSITIVE를
+# 적고 125(진짜 timeout 0은 제한을 끄므로 그 호출 자체를 잡는다). FAKE_TIMEOUT_EXPIRE=record이고
+# 명령에 --args=record가 있으면 돌리지 않고 124. 그 밖은 FAKE_UNDER_TIMEOUT=1로 명령을 exec한다.
+set -u
+LOG="${DEPLOY_FAKE_LOG:-/dev/null}"
+sec="${1:-}"
+shift || true
+at=""
+if [ -n "${FAKE_CLOCK_FILE:-}" ] && [ -f "$FAKE_CLOCK_FILE" ]; then
+  at=" @$(cat "$FAKE_CLOCK_FILE")"
+fi
+if ! [[ "$sec" =~ ^[1-9][0-9]*$ ]]; then
+  printf 'TIMEOUT_NONPOSITIVE %s%s %s\n' "$sec" "$at" "$*" >>"$LOG"
+  exit 125
+fi
+printf 'timeout %s%s %s\n' "$sec" "$at" "$*" >>"$LOG"
+if [ "${FAKE_TIMEOUT_EXPIRE:-}" = record ] && [[ "$*" == *--args=record* ]]; then
+  exit 124
+fi
+export FAKE_UNDER_TIMEOUT=1
+exec "$@"

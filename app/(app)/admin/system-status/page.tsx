@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
+import type { ReactNode } from "react";
 import {
   emailFailureBannerFrom,
   emailFailureBannerText,
@@ -12,6 +13,7 @@ import { Banner } from "@/ui/banner/Banner";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { KvList } from "@/ui/kv-list/KvList";
 import { PageHeader } from "@/ui/page-header/PageHeader";
+import { formatRestoreRehearsal } from "./restore-rehearsal-view";
 import styles from "./system-status.module.css";
 
 // D-18: 캐시·별도 저장 없음 — 화면 로드마다 pg_stat_activity·Cloud SQL Admin API를
@@ -123,11 +125,44 @@ export default async function SystemStatusPage() {
                   <StatusTag kind="muted">확인 불가</StatusTag>
                 ),
             },
+            {
+              // 04.4-01(D8-08): 「마지막 백업」 바로 다음 줄.
+              label: "복원 리허설",
+              value: restoreRehearsalValue(status.restoreRehearsal),
+            },
             { label: "알림 발송", value: notifyValue(status.notify) },
             { label: "이메일", value: emailValue(status.email, status.emailOutcome) },
           ]}
         />
       </div>
+    </>
+  );
+}
+
+function restoreRehearsalValue(restoreRehearsal: SystemStatus["restoreRehearsal"]): ReactNode {
+  if (restoreRehearsal.kind === "none") return "리허설 기록 없음 — 첫 리허설 전";
+  if (restoreRehearsal.kind === "unavailable") return <StatusTag kind="muted">확인 불가</StatusTag>;
+  const view = formatRestoreRehearsal(restoreRehearsal.record);
+  // 백업 id·실행 링크는 값이 없으면 앞의 구분자까지 통째로 뺀다(UI-SPEC #7).
+  return (
+    <>
+      {view.head}
+      {view.backupId === null ? null : (
+        <>
+          {" · 백업 "}
+          <span className={styles.backupId}>{view.backupId}</span>
+        </>
+      )}
+      {" · "}
+      {view.duration}
+      {view.runUrl === null ? null : (
+        <>
+          {" · "}
+          <a href={view.runUrl} className={styles.runLink}>
+            실행 기록
+          </a>
+        </>
+      )}
     </>
   );
 }

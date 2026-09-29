@@ -52,6 +52,8 @@ export type PersonDto = {
   archivedAt: Date | null;
   currentTeamId: string | null;
   currentTeamName: string | null;
+  firstLoginAt: Date | null;
+  passwordIsTemporary: boolean;
 };
 
 type PersonSource = UserRow & { roleName: string | null; currentTeamId: string | null; currentTeamName: string | null };
@@ -66,6 +68,8 @@ export const PERSON_DTO_SPEC: DtoSpec<PersonSource, PersonDto> = {
     { key: "archivedAt", from: "archivedAt", infoItem: "person.value" },
     { key: "currentTeamId", from: "currentTeamId", infoItem: "team.value" },
     { key: "currentTeamName", from: "currentTeamName", infoItem: "team.value" },
+    { key: "firstLoginAt", from: "firstLoginAt", infoItem: "person.value" },
+    { key: "passwordIsTemporary", from: "passwordIsTemporary", infoItem: "person.value" },
   ],
 };
 

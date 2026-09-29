@@ -43,7 +43,7 @@ describe("deploy.yml", () => {
 
   // WR-09: ci.yml과 동일한 구멍 — !docs/**가 unit 테스트가 읽는 docs 파일까지
   // 가려서 docs 전용 PR이 main에 머지된 뒤 배포 경로가 스킵될 수 있다.
-  it("push paths가 unit 테스트가 읽는 5개 docs 파일을 모두 재포함한다(ci.yml과 동일, 순서 포함)", () => {
+  it("push paths가 unit 테스트가 읽는 6개 docs 파일을 모두 재포함한다(ci.yml과 동일, 순서 포함)", () => {
     const patterns = [
       '- "**"',
       '- "!.planning/**"',
@@ -53,6 +53,7 @@ describe("deploy.yml", () => {
       '- "docs/design/DECISIONS.md"',
       '- "docs/ARCHITECTURE.md"',
       '- "docs/OPERATIONS.md"',
+      '- "docs/RESTORE.md"',
     ];
     const indexes = patterns.map((pattern) => deploy.indexOf(pattern));
     for (const [i, index] of indexes.entries()) {

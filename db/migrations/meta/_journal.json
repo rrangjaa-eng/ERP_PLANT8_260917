@@ -134,6 +134,13 @@
       "when": 1790530364208,
       "tag": "0018_reserve_entries",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790675593370,
+      "tag": "0019_restore_rehearsal_login_status",
+      "breakpoints": true
     }
   ]
 }

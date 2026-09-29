@@ -21,6 +21,7 @@ on:
       - "docs/design/DECISIONS.md"
       - "docs/ARCHITECTURE.md"
       - "docs/OPERATIONS.md"
+      - "docs/RESTORE.md"
   workflow_dispatch:
     inputs:
       target:

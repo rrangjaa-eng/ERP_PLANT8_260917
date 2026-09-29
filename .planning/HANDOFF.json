@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-29T01:16:57.153Z",
+  "timestamp": "2026-09-29T02:01:56.261Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -340,12 +340,24 @@
       "name": "04-51 결정 ② (b) 구현 — 별도 단위, risk(채번 카운터 잠금) → Opus 실행자 + Opus 독립 검토 1명. domain/document-numbering/index.ts SeqStartOverlapError 판정 + 단위·통합 테스트. TDD 경계: 발급 0건에 낮춤 통과 · 발급 ≥1건에 낮춤 거부 · 같은 값 통과 · 올림 통과. 옛 거부 문구의 「max+1 이상 입력」 제거 — 완료: quick 260928-7fp, 9e286b2(RED)·3fc1bf6(GREEN)·1db3896(검토 주석)·911d66b(문서)",
       "status": "done",
       "commit": "911d66b"
+    },
+    {
+      "id": 70,
+      "name": "묶음 ④ Post-build /review·/qa·/cso(세션 08561e2c·445b5aa2) + /ship(세션 92990d91, PR ready, CI 5개 초록)",
+      "status": "done",
+      "commit": "a46b8c0c"
+    },
+    {
+      "id": 72,
+      "name": "/ship 사전 검토 should-1: 사전 견적 칸 쉼표 앞 Delete(ISSUE-003 누락분)",
+      "status": "done",
+      "commit": "08c2c71c"
     }
   ],
   "remaining_tasks": [
     {
-      "id": 70,
-      "name": "묶음 ④ Post-build: /review(6ea2c77 포함) → /qa → /cso(리저브·견적 초안 금액 로그아웃 뒤 localStorage 잔존, 리저브 clientName 노출) — 04-51 (b) 뒤",
+      "id": 73,
+      "name": "Codex P1(리저브 대장 동명 클라이언트 그룹 합쳐짐·잔액 오표시, reserves-table.tsx:594) · P2(VERSION_CONFLICT denyWrite 우회, domain/reserves/index.ts:372) 수정 — 머지 전 필수",
       "status": "not_started"
     },
     {
@@ -510,6 +522,11 @@
       "description": "[세션 Q] PR #40이 main 7e70f31과 병합 충돌(HANDOFF.json·ROADMAP.md·docs/design/DECISIONS.md) — CI가 PR에서 돌지 않음",
       "type": "process",
       "workaround": "다음 플랜(04-11) 전에 코디네이터가 별도 세션에서 main 병합을 끝낸다"
+    },
+    {
+      "description": "PR #85 머지 보류 — Codex P1·P2 미수정",
+      "type": "technical",
+      "workaround": "다음 세션에서 수정 후 사용자 직접 머지"
     }
   ],
   "async_jobs": [],
@@ -892,10 +909,8 @@
       "phase": "4"
     }
   ],
-  "uncommitted_files": [
-    "M .planning/STATE.md"
-  ],
-  "next_action": "새 세션 → git status -sb(HEAD가 claude/gsd-progress-e1nzgu인지) → PR #85 최신 [지시] 확인(마지막 본 댓글: 내 [완료 보고] 5881770351) → CI(51949a02+인계 커밋) 초록 확인 → 묶음 ④ /ship(PR ready → 전체 CI integration·e2e) → PR #85는 위험 경로 포함이라 사용자가 GitHub에서 직접 머지(세션 머지 금지) → 머지·스테이징 뒤 (C)(D) 사람 확인 → /gsd-verify-work 4 → id 71 → Phase 04.6. 후속 단위 q-005b는 04.6 이후.",
+  "uncommitted_files": [],
+  "next_action": "새 세션 → `.claude/settings.json` 확인(한국어·effort high) → git status -sb(HEAD claude/gsd-progress-e1nzgu) → .continue-here.md 세션 92990d91 블록 Read → PR #85 최신 [지시](마지막 본 댓글 5882218122) → origin/main 머지 커밋 반영 → 이 세션 단위 = Codex P1·P2 수정(risk → Opus 실행자 TDD, Opus 독립 검토, P1 독립 DOM 감사) → 푸시 → CI 초록 → Codex 스레드 2개 답글·resolve → [완료 보고] → PR #85는 위험 경로라 사용자가 직접 머지 → (C)(D) 사람 확인 → /gsd-verify-work 4.",
   "context_notes": "세션 AQ(2026-09-28): 04-31 Task 1 실행(Sonnet 실행자), Task 2 체크포인트에서 멈춤. 독립 DOM 감사(Opus) FAIL 2 → 수정자(Sonnet) TDD 4커밋. 편차: parse-tsv.test.ts가 ui 경계(D-26)라 캡처 상수를 복제(role-menu.test.ts 선례) — fixture 머리 주석 「정의 1건」 문구가 사실과 달라 continuation이 정정할 것. reserves.spec.ts:282가 quote-table·projects-list 스펙과 함께 돌 때 잔액 100,000 기대·460,000 실측으로 1회 실패(단독 통과, 수정자 변경 전에도) — Task 3 전체 E2E 3회 전 조사 대상.\n\n세션 AN: 04-18 완료(실행·DOM 감사 30/0·Opus 검토 반영·전체 게이트 CI=true 통과, origin 8a5e2cf). 사용자 지시로 이 계정은 인계까지만, 다음은 다른 계정. Codex 재확인 목록에 04-18 추가.\n\n[세션 445b5aa2, 2026-09-29] 묶음 ④ Post-build /qa·/cso 끝. /qa: ISSUE-001·002 c5dc811b(RED 0a8f7c17), 003 49568f7, 005 리저브만 2f260787(RED 491b2df0), 004·006 low 보류, 점수 92→98(docs/reviews/phase-04/bundle4-qa.md). /cso 정적 감사 High·Med 0, Low C1(세션 만료 뒤 초안 잔존, 사용자별 키라 복원 안 됨)(bundle4-cso.md). 게이트 줄 review 06:06Z·qa 07:35Z(08561e2c)·cso 23:27Z(445b5aa2) 51949a02. CI quality 초록(51949a02). 브랜치 ccr-dd6b4285-ekko98도 같은 커밋으로 푸시됨(세션 지정 브랜치).",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",

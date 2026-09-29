@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-29T12:26:31.432Z",
+  "timestamp": "2026-09-29T12:49:00.044Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -29,7 +29,13 @@
       "status": "not_started"
     }
   ],
-  "blockers": [],
+  "blockers": [
+    {
+      "description": "gsd phase uat-passed 4 --require-verification = false — 04-UAT.md test 53 skipped(DR-P4-02 → 04.6, 사용자 이월 결정)를 막음으로 셈",
+      "type": "human_action",
+      "workaround": "사용자 결정: 그대로 두거나 이월 항목 통과 처리 방법(override 등)"
+    }
+  ],
   "async_jobs": [],
   "human_actions_pending": [
     {
@@ -318,10 +324,15 @@
       "decision": "Codex PRRT_kwDOUea1Js6m_4HY(증빙 코드 활성 판정 tx 밖 경합) 기록만",
       "rationale": "동시 관리자 변경 때만, 영향 작음(사용자 결정 2026-09-29)",
       "phase": "04"
+    },
+    {
+      "decision": "UAT 4·16·64 pass(04-52 증거 + 이 세션 재실행) · VERIFICATION 재검증 passed 9/10(p99 deferred Phase 9)",
+      "rationale": "04-52·04-53 실행·Post-build 끝, 사용자 결정(증거 대조·p99 Phase 9·PROJ-04 Pending) 그대로",
+      "phase": "4"
     }
   ],
   "uncommitted_files": [],
-  "next_action": "/gsd-progress → /gsd-verify-work 4 재실행(Post-build 묶음 끝: docs/reviews/phase-04/pr104-gaps-postbuild.md). UAT 4·16·64 pass 기록, VERIFICATION truth 8 재판정, PROJ-04 체크는 사용자 판단",
+  "next_action": "/gsd-progress → /gsd-validate-phase 4(verify:post 첫 훅). 이어서 세션마다 /gsd-secure-phase 4 → /gsd-ui-review 4. 전환 전 사용자 결정: uat-passed가 UAT 53(DR-P4-02 → 04.6 이월) skipped를 막음으로 셈",
   "context_notes": "04-52 갈래 G, 변이 3종 모두 잡힘. 04-53은 depends_on 04-52(D4) 충족.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",

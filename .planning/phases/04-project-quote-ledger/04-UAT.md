@@ -1,9 +1,9 @@
 ---
-status: complete
+status: diagnosed
 phase: 04-project-quote-ledger
 source: [04-01..04-51 SUMMARY.md 42개]
 started: 2026-09-29T09:39:02Z
-updated: 2026-09-29T09:40:15Z
+updated: 2026-09-29T09:50:07Z
 method: 증거 대조(사용자 승인 2026-09-29) — 사람 확인 항목은 SUMMARY·DOM 감사·CI·테스트 이름으로 대조해 pass 기록, 증거 없는 항목만 사람에게 질문. 04-31 (C)(D)는 「사람 확인 생략(사용자 승인)」 — 자동 테스트로 갈음, 실제 엑셀·MS 입력기 확인은 하지 않음
 ---
 
@@ -1269,24 +1269,43 @@ blocked: 0
   reason: "증거 없음: projects/error.tsx를 다루는 테스트·감사 기록 없음 — 사용자 결정: 테스트 추가"
   severity: minor
   test: 4
-  artifacts: []
-  missing: []
+  root_cause: "결함 아님 · 테스트 공백 — error.tsx는 계약대로(문구 + 다시 시도 onClick=retry, Next 16.3 표준 이름). 단위는 node·renderToStaticMarkup만이라 클릭을 못 보고, E2E에는 RSC 페이지를 실패시키는 장치가 없어 04-05 이후 검증 안 됨"
+  artifacts:
+    - path: "app/(app)/projects/error.tsx"
+      issue: "검증 테스트 없음"
+    - path: "app/(app)/projects/page.tsx:69,101"
+      issue: "?new=1 → recentFxRate(USD) schema.parse — settings_simple fx.recent_rate.USD=0이면 페이지가 던짐(실패 유도 경로)"
+  missing:
+    - "E2E 1건: fx.recent_rate.USD를 0으로 바꾸고 /projects?new=1 → 「프로젝트 목록 불러오기 실패」·「다시 시도」 보임 → 값 복구 뒤 다시 시도 → 목록 복귀, finally에서 값 복구. 제품 코드 변경 없음"
+  debug_session: .planning/debug/phase4-uat-gaps.md
 - gap_id: G-04-16
   truth: "선택 칸(ui/select)에 오류가 있으면 설명 힌트 대신 오류가 보인다"
   status: failed
   reason: "증거 없음: 04-25-SUMMARY:63 커밋된 테스트 없음(호출부 없음) — 사용자 결정: 단위 테스트 추가"
   severity: minor
   test: 16
-  artifacts: []
-  missing: []
+  root_cause: "결함 아님 · 테스트 공백 — ui/select/Select.tsx:39-69의 오류 우선 논리는 맞음(일회용 렌더 3건 통과). 04-25가 커밋 안 한 임시 vitest로만 확인했고 유일한 description 호출부(quote-table 소분류)는 error를 넘기지 않아 분기가 제품 경로에서 안 탐"
+  artifacts:
+    - path: "ui/select/Select.tsx"
+      issue: "error+description 분기 테스트 없음"
+  missing:
+    - "단위 테스트 커밋(node · renderToStaticMarkup): 비제어·제어 각각 error+설명 → 오류 문구만·aria-describedby=<id>-error·aria-invalid, error 없음 → 힌트·<id>-hint. 제품 코드 변경 없음"
+  debug_session: .planning/debug/phase4-uat-gaps.md
 - gap_id: G-04-64
   truth: "매출 입력을 연 채 창을 1024 미만으로 줄여도 입력값이 남는다"
   status: failed
   reason: "증거 없음: 04-41-SUMMARY:170 재현 안 됨·열린 채 이월 — 사용자 결정: E2E로 확인, 실패하면 수정"
   severity: major
   test: 64
-  artifacts: []
-  missing: []
+  root_cause: "진단 미결 — 정적 분석상 단순 리사이즈로 값·dirty가 사라지는 경로 없음(값은 키 입력마다 부모 issuedEntries/paidEntries로 올라가고, QuoteLedger는 폭 변화로 재마운트되지 않으며, dirty 있으면 1024 미만에서도 저장 버튼 유지). 재현 E2E는 미실행(훅이 일회용 스펙 작성을 막음)"
+  artifacts:
+    - path: "app/(app)/projects/[id]/revenue-section.tsx:173-179,241,268-380"
+      issue: "1024 미만이면 입력 → 글자 전환(canEditEntries)"
+    - path: "app/(app)/projects/[id]/quote-table.tsx:1222,1472,1606,2240"
+      issue: "매출 상태 보관·editableWidth·저장 버튼 조건"
+  missing:
+    - "재현 E2E(revenue-section.spec.ts의 openWithIssuedEntry 준비 재사용): (A) 기존 발행 줄 금액 키 입력(blur 없음) → 1000 → 375 → 1280, 값·「일괄 저장 N」 유지 (B) 새 발행·입금 줄 포커스 상태로 1000 → 1280 → 저장 → 새로고침 뒤 값 (C) 타이핑 도중 리사이즈. 통과하면 회귀 테스트로 남기고, 실패하면 매출 입력 포커스 동안 editableWidth를 참으로 유지(quote-table.tsx:1606 || cellEditing과 같은 결)"
+  debug_session: .planning/debug/phase4-uat-gaps.md
 
 ## Deferred Follow-Ups
 

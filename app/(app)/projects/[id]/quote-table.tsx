@@ -850,6 +850,7 @@ function HeaderCopyActions({ children }: { children?: ReactNode }) {
         <Button
           type="button"
           variant="secondary"
+          className={styles.headerTouchButton}
           aria-expanded={expanded}
           aria-controls={groupId}
           onClick={() => setExpanded((open) => !open)}

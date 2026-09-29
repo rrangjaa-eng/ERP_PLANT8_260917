@@ -9,6 +9,7 @@ import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import type { PeriodRights } from "@/domain/projects/period";
 import { unsavedEditsReason } from "./unsaved-edits";
+import styles from "./project-detail.module.css";
 
 // 04-21(PROJ-04 · S7) — 상세 머리 줄의 「상태 바꾸기」. 갈 곳·막힘 이유는 서버가
 // 판정해 보낸다(04-20 statusDestinations) — 이 파일은 그 결과를 그대로 그린다.
@@ -191,6 +192,7 @@ export function StatusChange({
       <Button
         type="button"
         variant="secondary"
+        className={styles.headerTouchButton}
         onClick={handleTrigger}
         pending={reverting && step.kind === "closed" && isExecuting}
         disabled={triggerBlockedReason !== null}

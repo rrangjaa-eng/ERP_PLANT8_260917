@@ -53,6 +53,21 @@ export function nextRrnRecheckConfirmed(input: { armedRrn: string | null; rrn: s
   return input.armedRrn !== null && input.armedRrn === input.rrn;
 }
 
+export type ConsentTerms = { consentVersion: string; retentionYears: number };
+
+// UI-SPEC E4 「값의 주인」 — 같은 자리를 다시 확인하면 draft를 되살린다. 동의는 그때 보인
+// 판(동의 판 · 보존 기간)에 한 것이라 재확인이 다른 판을 주면 동의만 푼다(검토 L7).
+// 다른 자리면 null — 부르는 쪽이 빈 draft를 만든다.
+export function restoreDraft<D extends ConsentTerms & { rowId: string; consent: boolean }>(
+  kept: D | null,
+  rowId: string,
+  offer: ConsentTerms,
+): D | null {
+  if (!kept || kept.rowId !== rowId) return null;
+  const sameTerms = kept.consentVersion === offer.consentVersion && kept.retentionYears === offer.retentionYears;
+  return { ...kept, ...offer, consent: sameTerms && kept.consent };
+}
+
 export type SubmitField = "name" | "rrn" | "address" | "phone" | "consent" | "signature";
 
 // 액션 입력 스키마의 칸 이름 → domain invalid 칸 이름. E4 시각 순서다.

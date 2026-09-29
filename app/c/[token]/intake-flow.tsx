@@ -10,8 +10,10 @@ import {
   nextRrnRecheckConfirmed,
   recheckOutcome,
   resolveHistoryEntry,
+  restoreDraft,
   submitBlockedReason,
   submitOutcomeFromValidationErrors,
+  type ConsentTerms,
   type HistoryStep,
   type RecheckTrigger,
   type SubmitField,
@@ -75,7 +77,8 @@ type FocusTarget = "input" | "row" | "result" | "prize" | "primary" | "group";
 // UI-SPEC E4 「값의 주인」 — E4 값(서명 획 포함)은 확정된 자리에 묶여 메모리에만
 // 있다. 확인 시간 지남으로 E3에 다녀와 같은 자리를 다시 통과하면 되살리고, E2 ·
 // E5 · E6으로 가면 버린다. armedRrn = 되물음(rrnRecheck)을 받은 요청이 보낸 번호.
-type FormDraft = {
+// consentVersion · retentionYears = 동의 칸이 가리키는 판(재확인이 다른 판을 주면 동의를 푼다).
+type FormDraft = ConsentTerms & {
   rowId: string;
   name: string;
   rrnFront6: string;
@@ -87,8 +90,19 @@ type FormDraft = {
   armedRrn: string | null;
 };
 
-function emptyDraft(rowId: string): FormDraft {
-  return { rowId, name: "", rrnFront6: "", rrnBack7: "", phone: "", address: "", consent: false, strokes: [], armedRrn: null };
+function emptyDraft(rowId: string, terms: ConsentTerms): FormDraft {
+  return {
+    rowId,
+    name: "",
+    rrnFront6: "",
+    rrnBack7: "",
+    phone: "",
+    address: "",
+    consent: false,
+    strokes: [],
+    armedRrn: null,
+    ...terms,
+  };
 }
 
 // 받은 순간 + 서버가 준 남은 초(기기 시계 차이 무시).
@@ -400,7 +414,8 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
     if (data?.kind === "ok") {
       history.replaceState({ step: "form" }, "");
       focusRef.current = "prize";
-      setDraft((kept) => (kept?.rowId === current.rowId ? kept : emptyDraft(current.rowId)));
+      const terms = { consentVersion: data.consent.version, retentionYears: data.consent.retentionYears };
+      setDraft((kept) => restoreDraft(kept, current.rowId, terms) ?? emptyDraft(current.rowId, terms));
       setStep({
         kind: "form",
         rowId: current.rowId,

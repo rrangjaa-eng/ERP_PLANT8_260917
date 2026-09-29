@@ -4,7 +4,7 @@ import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
-import { saveReservesAction } from "./actions";
+import { saveReservesAction, type ReserveRejectedCell } from "./actions";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { Button } from "@/ui/button/Button";
 import { Select } from "@/ui/select/Select";
@@ -221,6 +221,15 @@ function validationCellErrors(errors: unknown, sentIds: string[], sentArchivedId
 
 function countCells(errors: CellErrors): number {
   return Object.values(errors).reduce((sum, cells) => sum + Object.keys(cells).length, 0);
+}
+
+// Codex #3 — 보낸 보관 id · field row · 잎 상수 이유 세 조건이 모두 맞는 칸만 이미 이룬 보관으로 가른다(단위 테스트가 고정).
+export function splitAlreadyArchived(cells: ReserveRejectedCell[], sentArchived: string[]): { alreadyArchived: string[]; remaining: ReserveRejectedCell[] } {
+  const alreadyArchived = cells.flatMap((cell) =>
+    cell.rowId !== undefined && sentArchived.includes(cell.rowId) && cell.field === "row" && cell.reason === RESERVE_ARCHIVED_ROW_REASON ? [cell.rowId] : [],
+  );
+  const remaining = cells.filter((cell) => cell.rowId === undefined || !alreadyArchived.includes(cell.rowId));
+  return { alreadyArchived, remaining };
 }
 
 // 리뷰 S5 — 날짜 칸은 형식을 잡는 date 입력(매출 표 revenue-section 선례).
@@ -544,11 +553,7 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
         // Codex #3 · 04-07 GAP 3 — 서버 거부는 계약이고, 이미 보관된 줄의 보관 요청은 목표를 이룬 것이라 큐에서 뺀다
         // (빼지 않으면 그 줄은 걸러져 오류가 안 보이고 저장마다 같은 거부가 되풀이된다). 자동 재저장은 하지 않는다 —
         // 남은 편집은 dirty로 남아 다음 저장이 보낸다. 같은 field "row"의 중복·없는 줄 거부는 목표를 못 이룬 것이라 남긴다.
-        const sentArchived = sentArchivedIdsRef.current;
-        const alreadyArchived = data.rejected.cells.flatMap((cell) =>
-          cell.rowId !== undefined && sentArchived.includes(cell.rowId) && cell.field === "row" && cell.reason === RESERVE_ARCHIVED_ROW_REASON ? [cell.rowId] : [],
-        );
-        const remaining = data.rejected.cells.filter((cell) => cell.rowId === undefined || !alreadyArchived.includes(cell.rowId));
+        const { alreadyArchived, remaining } = splitAlreadyArchived(data.rejected.cells, sentArchivedIdsRef.current);
         if (alreadyArchived.length > 0) {
           persistPendingRef.current = true;
           setArchived((prev) => prev.filter((request) => !alreadyArchived.includes(request.id)));

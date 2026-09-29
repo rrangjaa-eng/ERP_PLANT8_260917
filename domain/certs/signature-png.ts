@@ -29,11 +29,12 @@ function paeth(a: number, b: number, c: number): number {
   return pb <= pc ? b : c;
 }
 
-// 청크 순회 — CRC · IHDR 첫 청크 · 끝 IEND(뒤 바이트 없음)를 보고 IDAT를 모은다.
+// 청크 순회 — CRC · IHDR 첫 청크 · 끝 IEND(뒤 바이트 없음) · IDAT는 한 줄로 이어짐을 보고 IDAT를 모은다.
 function collectIdat(bytes: Buffer): Buffer | null {
   const idat: Buffer[] = [];
   let offset = PNG_MAGIC.length;
   let first = true;
+  let idatEnded = false; // IDAT 뒤에 다른 청크가 왔다 — 그 뒤 IDAT는 끊긴 것이다(PNG 명세: 연속).
   while (offset + 12 <= bytes.length) {
     const length = bytes.readUInt32BE(offset);
     const end = offset + 12 + length;
@@ -48,10 +49,13 @@ function collectIdat(bytes: Buffer): Buffer | null {
     } else if (type === "IEND") {
       return end === bytes.length ? Buffer.concat(idat) : null;
     } else if (type === "IDAT") {
+      if (idatEnded) return null;
       idat.push(data);
     } else if (type === "IHDR" || (type.charCodeAt(0) & 0x20) === 0) {
       // 두 번째 IHDR · 모르는 필수 청크(첫 글자 대문자) — 부속 청크만 건너뛴다.
       return null;
+    } else if (idat.length > 0) {
+      idatEnded = true;
     }
     offset = end;
   }
@@ -99,6 +103,9 @@ function countInk(raw: Buffer): number | null {
   return ink;
 }
 
+// @types/node은 info: true일 때의 반환 모양({ buffer, engine })을 적지 않는다.
+type InflateInfo = { buffer: Buffer; engine: { bytesWritten: number } };
+
 export function inspectSignaturePng(bytes: Buffer): SignaturePngInspection {
   if (bytes.length > SIGNATURE_MAX_PNG_BYTES) return { ok: false, reason: "tooLarge" };
   if (bytes.length < PNG_MAGIC.length || PNG_MAGIC.some((b, i) => bytes[i] !== b)) return FORMAT;
@@ -108,8 +115,11 @@ export function inspectSignaturePng(bytes: Buffer): SignaturePngInspection {
 
   let raw: Buffer;
   try {
-    // 선언 크기보다 크게 풀리면 여기서 멈춘다(압축 폭탄 방어).
-    raw = inflateSync(idat, { maxOutputLength: INFLATED_BYTES });
+    // 선언 크기보다 크게 풀리면 여기서 멈춘다(압축 폭탄 방어). info의 engine.bytesWritten =
+    // 스트림 끝까지 읽은 입력 바이트 — zlib은 끝 뒤 바이트를 조용히 버리므로 직접 비교한다.
+    const inflated = inflateSync(idat, { maxOutputLength: INFLATED_BYTES, info: true }) as unknown as InflateInfo;
+    if (inflated.engine.bytesWritten !== idat.length) return FORMAT;
+    raw = inflated.buffer;
   } catch {
     return FORMAT;
   }

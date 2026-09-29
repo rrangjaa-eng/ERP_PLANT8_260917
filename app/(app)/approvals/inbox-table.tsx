@@ -33,7 +33,10 @@ export type InboxRow = {
   status: { kind: StatusTagKind; label: string } | null;
   // `잔여 초과 N일`(해당할 때만) — PC는 문서 칸 2행, 폰은 접힌 줄 끝(UI-SPEC S4). 막힘이 아니라 경고다.
   overdraw: string | null;
-  // `내 결재` 항목의 결재 시트 재료(서버 가능 행동 · 상세 · 결재선) — 처리함은 null.
+  // 서버 가능 행동(구조 값 — 결재 정보 노출과 무관, 사용자 결정 2026-09-29 A). 처리함은 빈 목록.
+  actions: ApprovalSheetItem["actions"];
+  // `내 결재` 항목의 결재 시트 재료(서버 가능 행동 · 상세 · 결재선) — 처리함은 null. 결재 정보가 꺼진 계급은 상세가
+  // 없어 null이다 — 그 행은 폰에서도 문서 링크로 문서 화면에 간다(거기 행동 줄이 있다).
   sheet: ApprovalSheetItem | null;
   // 반려 · 회수 확인 재료 — 처리함은 null.
   decision: DecisionTarget | null;
@@ -82,7 +85,7 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
       cell: (row) => (
         <span id={documentCellId(row)}>
           {row.href ? (
-            <Link href={row.href} className={[leaveStyles.link, row.group === "processed" ? styles.rowLink : styles.wideOnly].join(" ")}>
+            <Link href={row.href} className={[leaveStyles.link, row.sheet ? styles.wideOnly : styles.rowLink].join(" ")}>
               {row.document}
             </Link>
           ) : (
@@ -120,7 +123,7 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
               </>
             ) : null}
           </button>
-        ) : row.group === "processed" && row.href ? (
+        ) : row.href ? (
           <Link href={row.href} tabIndex={-1} className={styles.foldTap}>
             {row.drafter}
           </Link>
@@ -148,7 +151,7 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
         if (row.group !== "mine" || !row.instanceId || row.version === null) return null;
         const instanceId = row.instanceId;
         const expectedVersion = row.version;
-        const actions = row.sheet?.actions ?? [];
+        const actions = row.actions;
         const decision = row.decision;
         // PC 행은 서버 가능 행동에서 승인 · 반려만 그린다 — 회수는 행에 두지 않는다(T6 · #3, 문서 화면 · 폰 시트에서만).
         return (

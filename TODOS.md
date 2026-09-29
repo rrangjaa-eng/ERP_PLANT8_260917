@@ -345,3 +345,67 @@
 **Effort:** S
 **Priority:** P3
 **Depends on:** None
+
+## Phase 04.1 /review 이월(2026-09-29, PR #90)
+
+`/review`(전문 검토 7 + 적대적 1, 전부 Claude)에서 이 PR이 고치지 않고 넘긴 것. 고친 것은 PR #90 커밋 b4ed02f~6ea5b6e.
+
+### 결재 엔진의 연차 결합을 Phase 5 전에 걷어 낸다
+
+**What:** 범용 결재 엔진이 연차 개념을 직접 안다 — 최종 승인 토스트의 차감 일수(`describeDeduction`이 요약의 `daysQuarters`/`days` 키를 추측, `deductedDays`가 `leave.value` 뒤), `/approvals` 페이지가 요약을 `LeaveSummary`로 캐스트해 연차 서식으로 그림, 회수 액션이 `withdrawLeaveAction`(leave 메뉴 등록)에 있음, 제출(`submitDocument` = 행)과 다시 신청(`resubmitDocument` = 다음 담당 포함)의 반환 모양이 다름, 액션 봉투가 네 가지(`{result}` · `{rejected}` · `{documentId}` · `{added}`), ARCHITECTURE §4-9에 종류가 불러야 할 진입점(submit · resubmit · withdraw · getApprovalView · canSeeApprovalDocument)과 `describeDocuments` 반환 계약이 없음.
+
+**Why:** 지출결의 종류를 더하면 이 자리들이 타입 오류 없이 빈 칸 · 틀린 서식 · 잘못된 메뉴 판정이 된다.
+
+**Context:** /review api-contract · maintainability. 제안: 종류 정의에 `describeFinalApproval` 같은 훅, 요약 대신 종류가 표시 문자열을 준다, `withdrawAction`을 approvals로, 봉투 하나로 통일, §4-9 보강.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** Phase 5 지출결의 계획
+
+### 결재선 설정은 한 단계를 한 번에 저장한다
+
+**What:** 결재선 17키를 칸마다 따로 저장해, 여러 칸을 바꾸는 중간 상태(예: 3단 범위를 `전사`로 먼저 바꾸고 계급은 아직 `계급 무관`)가 그 사이 제출된 문서의 결재선으로 굳는다(단계 행은 제출 때 고정). `계급 무관 + 전사` 조합(회사 누구나 결재자)도 경고가 없다. 보관한 본부는 설정 경고가 「빈 자리로 건너뜀」이라 하지만 조직 스냅숏은 보관된 팀 · 본부를 거르지 않아 그 소속 사람에게 계속 간다.
+
+**Why:** 관리자가 보는 설정과 실제 결재 경로가 잠깐 또는 계속 어긋난다.
+
+**Context:** /review red-team(INVESTIGATE). 한 단계의 사용 · 계급 · 범위 · 부서를 한 액션 · 한 트랜잭션으로, `계급 무관 + 전사` 경고 또는 거부, 스냅숏과 경고가 보관 판정을 같게.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** 보관 본부 처리 방식(사용자 결정)
+
+### 결재 · 연차 읽기 경로의 중복 · 순차 조회
+
+**What:** `/leave/[id]` layout과 page가 같은 문서를 따로 읽고(보기 판정 · 결재 그래프 · 조직 스냅숏 약 4회), 신청 폼 미리보기가 잔고와 결재선을 순차로(칸을 바꿀 때마다 왕복 8회 안팎), 결재함 상세의 잔고가 기안자마다 순차 계산, 설정 경고가 단계마다 조회 한 번.
+
+**Why:** 10~30명에서는 체감이 작지만 결재함 · 폼 반응이 조회 수에 비례해 느려진다.
+
+**Context:** /review performance. React `cache()`로 요청 안 공유, `Promise.all`, `inArray` 일괄 조회, 설정 키 한 번에 읽기.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### 결재 · 연차 E2E 단언 보강
+
+**What:** 두 번 누름 테스트(신청 Ctrl+Enter · 더블클릭 · 폰 승인 두 번)가 행 수만 세서 클라이언트 중복 방지를 빼도 통과할 수 있다(POST 수를 세야 한다). 잔고 E2E 기대값을 앱과 같은 도메인 함수로 만들어 계산 오류를 못 잡는다(한 사례는 글자 그대로의 기대값). 결재함 행을 날짜 라벨로만 찾아 남은 문서와 겹치면 strict mode로 깨질 수 있다.
+
+**Why:** 회귀를 잡아야 할 테스트가 조용히 통과한다.
+
+**Context:** /review testing(LOW-4 이월 포함).
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### 기타 정리(선택)
+
+**What:** ① `users_resignation_on_or_after_hire_check`가 NOT VALID로 남음(기존 행은 두 열이 모두 null이라 기능 문제 없음 — 원하면 VALIDATE 마이그레이션 한 줄). ② 결재 표의 `status` · `self_approval` · `scope_kind` · `action`이 text라 도메인에 캐스트 약 20개 — `text({ enum })`(db/schema — 위험 경로, 사용자 머지). ③ 결재 시트가 `ui/kv-list`를 손으로 복제(84px · 7px · 6px 리터럴), 반려 라벨 `padding-top: 7px`. ④ 설정 화면 비활성 결재선 칸에 이유 글자 없음(§7-1 이유 규칙은 버튼 대상 — /design-review 판정). ⑤ 단순화 제안(선택, 이번에 적용 안 함): 달력 날짜 검사 네 벌을 `lib/dates` 하나로, 승인 · 반려 단계 기록 중복, 테스트 전용 `withDetails` 플래그, 쓰지 않는 deps 타입.
+
+**Why:** 동작 결함은 아니지만 다음 사람이 헷갈리거나 같은 값을 두 곳에서 고치게 된다.
+
+**Context:** /review data-migration · maintainability · design · simplification.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None

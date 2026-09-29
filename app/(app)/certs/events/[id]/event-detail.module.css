@@ -1,0 +1,129 @@
+/* 04.3-04 Task 4 ④ — I3 행사 상세(읽기). 토큰만(docs/design/tokens.css). */
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--s-3);
+}
+
+.titleBlock {
+  min-width: 0;
+  flex: 1 1 auto;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* 섹션 시작은 2px 강한 선(§3 「섹션 사이」 · project-detail.module.css .section 선례). */
+.section {
+  margin-top: var(--s-6);
+  padding-top: var(--s-3);
+  border-top: var(--line-w-strong) solid var(--line-strong);
+}
+
+.sectionLabel {
+  margin: 0 0 var(--s-3);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-bold);
+}
+
+/* QR 160×160 고정(폰도 160) — 모듈은 currentColor라 --fg on --bg, radius 0. */
+.qr {
+  width: 160px;
+  height: 160px;
+  color: var(--fg);
+  background: var(--bg);
+  border-radius: 0;
+}
+
+.qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.linkRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2) var(--s-4);
+  margin-top: var(--s-3);
+}
+
+.link {
+  min-width: 0;
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.copied {
+  font-size: var(--fs-sm);
+  color: var(--success);
+}
+
+.copyFailed {
+  font-size: var(--fs-sm);
+  color: var(--danger);
+}
+
+.closedLine {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.wrapText {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.nowrap {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.secondLine {
+  display: block;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.previewSecond {
+  display: block;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.footerCell {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+/* §7-7 LOADING 뼈대 — 머리글 + --surface 3행 + 합계 자리, 반짝임 없음. */
+.skeletonTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.skeletonTable th {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  text-align: left;
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+}
+
+.skeletonRow td {
+  height: var(--row-min);
+  background: var(--surface);
+  border-bottom: var(--line-w) solid var(--line);
+}
+
+.skeletonFooter td {
+  height: var(--row-min);
+  border-top: var(--line-w-strong) solid var(--line-strong);
+}

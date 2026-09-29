@@ -300,8 +300,14 @@ describe("키별 멱등 재생(맞음 · 증표)", () => {
     const json = JSON.stringify((await seat(s.id)).verifyIdemOutcome);
     expect(json).not.toContain(ok.proof);
     expect(json).not.toContain("211.34.56.78");
-    expect(json).not.toContain(s.last4);
-    expect(json).not.toContain("9999");
+    // 해시 키 · IP 해시 · 행 uuid · 암호문은 무작위 16진/base64라 네 자리 숫자가
+    // 우연히 들어갈 수 있다(실행당 약 0.7% — 간헐 실패). 그 토큰을 가린 뒤 평문만 본다.
+    const plain = json
+      .replace(/"v1:[^"]*"/g, '"<enc>"')
+      .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, "<uuid>")
+      .replace(/[0-9a-f]{32,64}/g, "<hash>");
+    expect(plain).not.toContain(s.last4);
+    expect(plain).not.toContain("9999");
   });
 });
 

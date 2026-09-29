@@ -197,3 +197,31 @@ tr:has(.rowLink) {
     display: none;
   }
 }
+
+/* 04.1-06 관리자 사람 상세 연차 섹션(S9) — `잔고` 옆 보는 연도 + 3차 링크 한 줄 · 조정 사유는 줄바꿈만(겹치지 않게). */
+.yearLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1) var(--s-3);
+  align-items: baseline;
+  margin-bottom: var(--s-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.wrapText {
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+}
+
+.sectionRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  margin: var(--s-4) 0;
+}
+
+.sectionLabel {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}

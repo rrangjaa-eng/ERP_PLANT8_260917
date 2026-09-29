@@ -34,6 +34,7 @@ export async function touchPrivacySession(
     return { kind: "expired" };
   }
 
-  await upsertPrivacyLastSeen(viewer, sessionId, now);
+  // 세션 행이 요청 도중 지워졌으면(다른 요청의 만료 · 로그아웃) 만료와 같다(검토 R-L3).
+  if (!(await upsertPrivacyLastSeen(viewer, sessionId, now))) return { kind: "expired" };
   return { kind: "ok" };
 }

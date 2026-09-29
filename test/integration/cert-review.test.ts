@@ -17,6 +17,7 @@ import {
   revealRrn,
 } from "@/domain/certs/review";
 import { touchPrivacySession } from "@/domain/certs/privacy-session";
+import { updateSubmissionIfVersion } from "@/repositories/cert-review";
 import { seedSubmittedCert } from "@/test/e2e/helpers/cert";
 import {
   FULL_GRANT,
@@ -194,6 +195,18 @@ describe("correctSubmission — D-1106 정정", () => {
     expect(await countLogs("cert_correct", seeded.submissionId)).toBe(0);
   });
 
+  it("보기만 거둔 viewer의 이름 · 연락처만 고치는 정정도 거부 · 무변경 · 로그 0줄(검토 R-L4)", async () => {
+    const seeded = await seedSubmittedCert();
+    const viewer = await makeReviewer({ view: false, write: true, value: true, unmasked: true });
+    const before = unchangedFields(await submissionRow(seeded.submissionId));
+
+    expect(
+      await correctSubmission(viewer, seeded.submissionId, { version: 1, name: "김하나", phone: "010-5555-6666" }),
+    ).toEqual({ kind: "denied" });
+    expect(unchangedFields(await submissionRow(seeded.submissionId))).toEqual(before);
+    expect(await countLogs("cert_correct", seeded.submissionId)).toBe(0);
+  });
+
   it("틀린 version → conflict(먼저 고친 사람 이름 · 시각) · 아무것도 안 바뀜", async () => {
     const seeded = await seedSubmittedCert();
     const first = await makeReviewer(FULL_GRANT, "이수아");
@@ -263,6 +276,22 @@ describe("correctSubmission — D-1106 정정", () => {
     ).toEqual({ kind: "unchanged" });
     expect((await submissionRow(seeded.submissionId)).version).toBe(1);
     expect(await countLogs("cert_correct", seeded.submissionId)).toBe(0);
+  });
+
+  it("updateSubmissionIfVersion은 파기된 행을 버전이 맞아도 고치지 않는다(0행 · 검토 R-L6)", async () => {
+    const seeded = await seedSubmittedCert();
+    const viewer = await makeReviewer(FULL_GRANT);
+    await db.update(certSubmissions).set({ purgedAt: new Date() }).where(eq(certSubmissions.id, seeded.submissionId));
+    const before = await submissionRow(seeded.submissionId);
+
+    const count = await db.transaction((tx) =>
+      updateSubmissionIfVersion(viewer, seeded.submissionId, 1, { phone: "01055556666" }, new Date(), tx),
+    );
+
+    expect(count).toBe(0);
+    const row = await submissionRow(seeded.submissionId);
+    expect(row.phone).toBe(before.phone);
+    expect(row.version).toBe(1);
   });
 
   it("정정 로그 INSERT가 던지면 correctSubmission도 던지고 확인증 칸 · version · updated_by가 그대로 · cert_correct 0줄(C6)", async () => {
@@ -429,6 +458,27 @@ describe("touchPrivacySession — 개인정보취급자 비활동(E3-10 · RB-5)
     expect(await touchPrivacySession(viewer, over, now)).toEqual({ kind: "expired" });
     expect(await sessionExists(over)).toBe(false);
     expect(await activity(over)).toHaveLength(0);
+  });
+
+  it("마지막 활동이 정확히 120분 전(설정 120) → ok(경과 ≤ 한도 · 검토 R-L6)", async () => {
+    const now = new Date();
+    const viewer = await makeReviewer(FULL_GRANT);
+    const id = await makeSession(viewer, 200, now);
+    await setLastSeen(id, new Date(now.getTime() - 120 * MINUTE));
+
+    expect(await touchPrivacySession(viewer, id, now)).toEqual({ kind: "ok" });
+    expect(await sessionExists(id)).toBe(true);
+    expect((await activity(id))[0]?.lastSeenAt.getTime()).toBe(now.getTime());
+  });
+
+  it("세션 행이 요청 도중 지워졌으면(만료 경합) FK 오류 대신 expired · 활동 행 없음(검토 R-L3)", async () => {
+    const now = new Date();
+    const viewer = await makeReviewer(FULL_GRANT);
+    const id = await makeSession(viewer, 10, now);
+    await db.delete(sessions).where(eq(sessions.id, id));
+
+    expect(await touchPrivacySession(viewer, id, now)).toEqual({ kind: "expired" });
+    expect(await activity(id)).toHaveLength(0);
   });
 
   it("설정을 10분으로 바꾸면 11분 전 → 만료", async () => {

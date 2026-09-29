@@ -274,6 +274,8 @@ export async function correctSubmission(
   if (!(await isCertFeatureEnabled())) return { kind: "notFound" };
   if (isCertPrivacyBarredRole(viewer)) return { kind: "denied" };
   if (!(await can(viewer, MENU, "write"))) return { kind: "denied" };
+  // 볼 수 없는 확인증은 어느 칸도 고칠 수 없다(검토 R-L4 — 주민등록번호만이 아니다).
+  if (!(await canViewSubmissions(viewer))) return { kind: "denied" };
   if (!(await visible(viewer, VALUE_ITEM))) return { kind: "denied" };
   if (!isUuid(id)) return { kind: "denied" };
 

@@ -157,6 +157,7 @@ describe("정보 노출 누수 스캔 (ADMN-03)", () => {
     it("리저브 선택지 DTO와 대장 DTO의 이름 칸 정보 항목이 등록돼 있다", () => {
       const infoItemOf = (dtoName: string, key: string) => DTO_REGISTRY.find((entry) => entry.name === dtoName)?.fields.find((field) => field.key === key)?.infoItem;
       expect(infoItemOf("ReserveClientOptionDto", "name")).toEqual(["reserve.amount", "vendor.value"]);
+      expect(infoItemOf("ReserveClientOptionDto", "label")).toEqual(["reserve.amount", "vendor.value"]);
       expect(infoItemOf("ReserveProjectOptionDto", "name")).toEqual(["reserve.amount", "project.value"]);
       expect(infoItemOf("ReserveEvidenceOptionDto", "label")).toBe("reserve.amount");
       expect(infoItemOf("ReserveEntryDto", "projectName")).toEqual(["reserve.amount", "project.value"]);

@@ -876,3 +876,31 @@ test.describe("리저브 대장 — 묶음 ④ /qa 포커스", () => {
     await expect(ledger(page).locator("td[data-grid-focus]")).toBeFocused();
   });
 });
+
+// Regression: QA ISSUE-005 (a) — 동명 클라이언트가 목록에서 똑같이 보여 고를 근거가 없었다
+// Found by /qa on 2026-09-28 · Report: docs/reviews/phase-04/bundle4-qa.md
+test.describe("리저브 대장 — 묶음 ④ /qa 동명 클라이언트", () => {
+  test("(QA ISSUE-005) 동명 클라이언트만 옵션에 사업자번호 끝 4자리가 붙고, `이름 · 끝4자리`를 붙이면 그 클라이언트로 들어간다", async ({ page }) => {
+    const roles = await createRoles();
+    const single = await createClient("E2E리저브단독");
+    const duplicate = `E2E리저브QA동명-${randomUUID().slice(0, 6)}`;
+    await insertVendor(SYSTEM_VIEWER, { name: duplicate, normalizedName: duplicate.toLowerCase(), businessNo: "123-45-61234" });
+    await insertVendor(SYSTEM_VIEWER, { name: duplicate, normalizedName: duplicate.toLowerCase(), businessNo: "987-65-43210" });
+    await seedEntries(single.id, [{ date: "2026-10-01", direction: "deposit", amount: 1_000 }]);
+    await openLedger(page, roles.finance);
+
+    await pasteText(page, cell(page, 0, COL.note), `메모\n둘째 메모\t${duplicate} · 3210`);
+    await expect(dataRows(page)).toHaveCount(2);
+    const pasted = ledger(page).locator('td[role="gridcell"]', { hasText: new RegExp(`^${duplicate}$`) });
+    await expect(pasted).toHaveCount(1);
+    await expect(pasted).not.toHaveAttribute("aria-invalid", "true");
+
+    await focusGridCell(pasted);
+    await page.keyboard.press("Enter");
+    const select = page.getByRole("combobox", { name: "클라이언트", exact: true });
+    await expect(select).toHaveValue(/.+/);
+    await expect(select.locator("option:checked")).toHaveText(`${duplicate} · 3210`);
+    await expect(select.locator("option", { hasText: new RegExp(`^${single.name}$`) })).toHaveCount(1);
+    await expect(select.locator("option", { hasText: new RegExp(`^${duplicate} · 1234$`) })).toHaveCount(1);
+  });
+});

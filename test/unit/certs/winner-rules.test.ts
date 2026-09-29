@@ -150,6 +150,11 @@ describe("domain/certs/winner-rules validateWinnerRows", () => {
       expect(codesOf([r])).toEqual([`${r.key}:distinguishLabel:labelDigits`]);
     });
 
+    it.each(["１２３조", "１-２-３", "７　７　３"])("전각 숫자 %s → labelDigits(NFKC 뒤 판정)", (label) => {
+      const r = row({ name: "이도윤", distinguishLabel: label });
+      expect(codesOf([r])).toEqual([`${r.key}:distinguishLabel:labelDigits`]);
+    });
+
     it("다른 줄 당첨자 이름 김하늘 포함 → labelName(행사 전체 이름)", () => {
       const a = row({ name: "김하늘" });
       const b = row({ name: "이도윤", phone: "010-2231-0045", distinguishLabel: "김하늘 친구" });
@@ -191,6 +196,30 @@ describe("domain/certs/winner-rules validateWinnerRows", () => {
       expect(validateWinnerRows([row({ prizeName: "나".repeat(80) })]).ok).toBe(true);
       const long = row({ prizeName: "나".repeat(81) });
       expect(codesOf([long])).toEqual([`${long.key}:prizeName:prizeTooLong`]);
+    });
+  });
+
+  describe("NFD 입력(macOS 붙여넣기) — NFC로 세고 NFC로 저장", () => {
+    it("NFD 경품명 80자 통과 · 저장값은 NFC · 81자 prizeTooLong", () => {
+      const ok = validateWinnerRows([row({ prizeName: "각".repeat(80).normalize("NFD") })]);
+      expect(ok.ok).toBe(true);
+      if (ok.ok) expect(ok.rows[0]!.prizeName).toBe("각".repeat(80));
+      const long = row({ prizeName: "각".repeat(81).normalize("NFD") });
+      expect(codesOf([long])).toEqual([`${long.key}:prizeName:prizeTooLong`]);
+    });
+
+    it("NFD 구별 표시 10자 통과 · 저장값은 NFC · 11자 labelTooLong", () => {
+      const ok = validateWinnerRows([row({ distinguishLabel: "열자까지되는구별표시".normalize("NFD") })]);
+      expect(ok.ok).toBe(true);
+      if (ok.ok) expect(ok.rows[0]!.distinguishLabel).toBe("열자까지되는구별표시");
+      const long = row({ distinguishLabel: "열한자가되는구별표시다".normalize("NFD") });
+      expect(codesOf([long])).toEqual([`${long.key}:distinguishLabel:labelTooLong`]);
+    });
+
+    it("NFD 이름 40자 통과 · 41자 nameTooLong", () => {
+      expect(validateWinnerRows([row({ name: "각".repeat(40).normalize("NFD") })]).ok).toBe(true);
+      const long = row({ name: "각".repeat(41).normalize("NFD") });
+      expect(codesOf([long])).toEqual([`${long.key}:name:nameTooLong`]);
     });
   });
 

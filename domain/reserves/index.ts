@@ -256,10 +256,14 @@ export async function canViewReserves(viewer: Viewer): Promise<boolean> {
 }
 
 // 트랜잭션 앞에서 읽는다(04-32 — 잠긴 트랜잭션 안에서 풀 db를 부르지 않는다).
-async function evidenceTypeValues(viewer: Viewer, rows: ReserveWriteRow[]): Promise<Set<string>> {
-  if (!rows.some((row) => row.evidenceType)) return new Set();
-  const items = await repoListCodeItems(viewer, { tableKey: EVIDENCE_TYPE_TABLE, scope: { rows: "all", includeArchived: false }, includeInactive: false });
-  return new Set(items.map((item) => item.value));
+// Codex B — known(비활성·보관 포함)은 모르는 값 거부용, active는 새로 고르거나 바꾼 증빙 판정용.
+async function evidenceTypeValues(viewer: Viewer, rows: ReserveWriteRow[]): Promise<{ known: Set<string>; active: Set<string> }> {
+  if (!rows.some((row) => row.evidenceType)) return { known: new Set(), active: new Set() };
+  const items = await repoListCodeItems(viewer, { tableKey: EVIDENCE_TYPE_TABLE, scope: { rows: "all", includeArchived: true }, includeInactive: true });
+  return {
+    known: new Set(items.map((item) => item.value)),
+    active: new Set(items.filter((item) => item.active && item.archivedAt === null).map((item) => item.value)),
+  };
 }
 
 type Plan = {
@@ -281,7 +285,8 @@ export async function saveReserves(viewer: Viewer, input: SaveReservesInput, dep
     denyWrite(viewer, FORBIDDEN_RULE, { clientIds: requestedClientIds, entryIds }, new ForbiddenError(FORBIDDEN_MESSAGE));
   }
   const formatErrors: CellFormatError[] = [];
-  const prepared = prepareRows(input.rows, await evidenceTypeValues(viewer, input.rows), formatErrors);
+  const evidence = await evidenceTypeValues(viewer, input.rows);
+  const prepared = prepareRows(input.rows, evidence.known, formatErrors);
   for (const id of archivedIds) {
     if (!UUID_SHAPE.test(id)) formatErrors.push(cellError(-1, id, "row", "줄", ENTRY_NOT_FOUND));
   }
@@ -299,7 +304,7 @@ export async function saveReserves(viewer: Viewer, input: SaveReservesInput, dep
     const selectable = new Set(lockedClients.filter((client) => client.selectable).map((client) => client.id));
     await deps?.afterLock?.();
     const storedById = new Map((await repoFindEntriesByIds(viewer, entryIds, tx)).map((row) => [row.id, row]));
-    const plan = await planBatch(viewer, prepared, archived, storedById, selectable, tx);
+    const plan = await planBatch(viewer, prepared, archived, storedById, selectable, evidence.active, tx);
 
     const ledger = new Map((await repoListActiveEntriesByClients(viewer, [...locked], tx)).map((row) => [row.id, toBalanceRow(row)]));
     for (const { row, stored } of plan.updates) {
@@ -325,6 +330,8 @@ async function planBatch(
   storedById: Map<string, ReserveEntryRow>,
   /** 잠근 클라이언트 중 새 줄이 고를 수 있는 것(보관·숨김 아님 — 리뷰 R10). */
   selectable: Set<string>,
+  /** Codex B — 활성·보관 아닌 증빙 코드(트랜잭션 앞에서 읽음). */
+  activeEvidence: ReadonlySet<string>,
   tx: DbOrTx,
 ): Promise<Plan> {
   const errors: CellFormatError[] = [];
@@ -386,6 +393,11 @@ async function planBatch(
         errors.push(cellError(index, input.id, "projectId", "프로젝트", PROJECT_ARCHIVED));
         continue;
       }
+    }
+    // Codex B — 새로 고르거나 바꾼 증빙만 활성 코드, 이미 붙은 증빙은 코드가 나중에 비활성·보관돼도 저장(Codex #5와 같은 결).
+    if (payload.evidenceType && !activeEvidence.has(payload.evidenceType) && (input.isNew || stored?.evidenceType !== payload.evidenceType)) {
+      errors.push(cellError(index, input.id, "evidenceType", "증빙 종류", EVIDENCE_NOT_IN_TABLE));
+      continue;
     }
     if (input.isNew) plan.inserts.push(row);
     else if (stored) plan.updates.push({ row, stored });

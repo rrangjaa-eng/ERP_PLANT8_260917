@@ -102,7 +102,7 @@ export async function createEvent(
     if (existing) return existing;
   }
 
-  const name = parsed.name.trim();
+  const name = parsed.name.normalize("NFC").trim();
   const fieldErrors: CreateEventFieldErrors = {};
   if (name === "") fieldErrors.name = "required";
   else if (name.length > CERT_EVENT_NAME_MAX) fieldErrors.name = "tooLong";

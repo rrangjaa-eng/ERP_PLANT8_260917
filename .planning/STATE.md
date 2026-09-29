@@ -5,14 +5,14 @@ current_phase_name: 프로젝트·견적 원장
 current_plan: 42
 status: verifying
 stopped_at: Completed 04-31-PLAN.md — Phase 4 전체 완료(42/42)
-last_updated: "2026-09-29T06:47:49.892Z"
+last_updated: "2026-09-29T10:12:15.277Z"
 last_activity: 2026-09-29
 last_activity_desc: Phase 4 execution started
-state_head: f39783d4ae0dfbeac346f39d22844f8abf9369c3
+state_head: 0a5f38bc71b7181b37f8e3b40780dee3b75077e1
 progress:
   total_phases: 17
   completed_phases: 1
-  total_plans: 140
+  total_plans: 141
   completed_plans: 80
   percent: 6
 ---
@@ -294,6 +294,10 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-51 거부 문구 (가) 현재 값 기준: 「순번 시작값은 현재 값(N)보다 낮출 수 없음」 (지시 5864259502, 구현 c89ab1b)
 - [Phase 4]: 묶음 ④ /qa ISSUE-005 (a): 동명 거래처 옵션에 사업자번호 끝 4자리 병기는 리저브 클라이언트 칸만. 견적 거래처 칸은 옵션이 projects 보기 권한만 확인해 vendor.value 밖으로 샐 수 있어 후속 단위 (사용자 2026-09-29)
 - [Phase 4]: 묶음 ④ /cso C2 (가): 리저브 clientName은 reserve.amount만 요구, vendor.value 추가 안 함 (사용자 2026-09-29)
+- [Phase 4]: UAT 방식: 사람 확인 항목은 기록된 증거(SUMMARY·DOM 감사·CI·테스트 이름)와 대조해 판정하고 증거 없는 것만 사람에게 묻는다. 04-31 (C)(D)는 자동 테스트로 갈음(실제 엑셀·MS 입력기 확인 안 함) — 사용자 결정 2026-09-29(채팅) — 속도 우선, 04-VERIFICATION·04-UAT에 기록
+- [Phase 4]: UAT 결함 처리: G-04-4 목록 오류 화면 E2E 추가 · G-04-16 Select 단위 테스트 추가 · G-04-64 재현 E2E(실패 시 수정) · DR-P4-02(375 정렬 머리글 44px)는 Phase 04.6으로 이월 — 사용자 결정 2026-09-29(채팅) — 04-UAT Gaps/Deferred
+- [Phase 4]: 자동 전환 진행→정산이 domain/rules.gate를 거치지 않는 검증 갭은 Phase 4 안에서 고친다(gap-closure 플랜, risk) — 사용자 결정 2026-09-29(채팅) — 04-VERIFICATION gaps
+- [Phase 4]: 목록 p99 500ms 측정은 Phase 9(테스트 데이터·스테이징 부하)로 넘긴다 · PROJ-04(정산→완료)는 Phase 5 결재와 함께 Complete · judgment 금지 항목 3건(04-02·04-08·04-21) 검증자 판정 수용 — 사용자 결정 2026-09-29(채팅) — 04-VERIFICATION human_verification
 
 ### Pending Todos
 

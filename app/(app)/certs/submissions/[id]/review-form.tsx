@@ -1,14 +1,16 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { Form } from "@/ui/form/Form";
-import { KvList } from "@/ui/kv-list/KvList";
+import { KvList, type KvItem } from "@/ui/kv-list/KvList";
 import { Button } from "@/ui/button/Button";
 import type { CorrectionField, CorrectionFieldError } from "@/domain/certs/review";
+import { LOGIN_REQUIRED_MESSAGE } from "@/lib/actions/user-facing-error";
 import { correctCertSubmissionAction } from "./actions";
-import { RrnField, RRN_CLOSED, isRrnDirty, type RrnState } from "./rrn-field";
+import { RrnField } from "./rrn-field";
+import { RRN_CLOSED, afterRrnSave, isRrnDirty, type RrnState } from "./rrn-state";
 import styles from "./review.module.css";
 
 // 04.3-07 — I4 정정 폼(UI-SPEC I4 · SYSTEM §6-3 · §7-15 정정 폼). 오류 문구는 사용자 결정 A
@@ -50,6 +52,8 @@ type Outcome =
   | { kind: "failed"; text: string }
   | null;
 
+const SAVE_FAILED: Outcome = { kind: "failed", text: "저장 실패 · 다시 시도" };
+
 export function ReviewForm(props: {
   submissionId: string;
   version: number;
@@ -72,9 +76,12 @@ export function ReviewForm(props: {
   const [version, setVersion] = useState(props.version);
   const [rrnMasked, setRrnMasked] = useState(props.rrnMasked);
   const [rrn, setRrn] = useState<RrnState>(RRN_CLOSED);
+  const [rrnPending, setRrnPending] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<CorrectionField, string>>>({});
   const [outcome, setOutcome] = useState<Outcome>(null);
   const [signatureFailed, setSignatureFailed] = useState(props.signatureDataUrl === null);
+  // 보낸 값 — 성공하면 이것이 저장된 값이다(DOM 감사 H1). 응답을 처리하면 비운다(평문 번호 포함 · 검토 R-M1).
+  const submittedRef = useRef<{ values: Values; rrn: string | null } | null>(null);
 
   const changedCount =
     (values.name !== saved.name ? 1 : 0) +
@@ -84,15 +91,22 @@ export function ReviewForm(props: {
 
   const correct = useAction(correctCertSubmissionAction, {
     onSuccess: ({ data }) => {
-      if (!data) return setOutcome({ kind: "failed", text: "저장 실패 · 다시 시도" });
+      const submitted = submittedRef.current;
+      submittedRef.current = null;
+      if (!data || !submitted) return setOutcome(SAVE_FAILED);
       if (data.kind === "sessionExpired") return router.push("/login");
       if (data.kind === "saved") {
-        setSaved(values);
+        setSaved(submitted.values);
         setVersion(data.version);
         setRrnMasked(data.rrnMasked);
-        setRrn(RRN_CLOSED);
+        setRrn((current) => afterRrnSave(current, submitted.rrn));
         setFieldErrors({});
         setOutcome({ kind: "saved", text: `저장됨 · ${data.fields.join(" · ")} · ${HHMM_FORMAT.format(new Date(data.at))}` });
+        // 저장 버튼이 결과 문장으로 바뀌어 사라진다 — 그 버튼의 포커스를 머리 줄 제목으로(DOM 감사 M2 · S16 선례).
+        const active = document.activeElement;
+        if (active instanceof HTMLButtonElement && active.type === "submit") {
+          document.querySelector<HTMLElement>("h1")?.focus();
+        }
         return;
       }
       if (data.kind === "conflict") {
@@ -111,22 +125,33 @@ export function ReviewForm(props: {
         return;
       }
       if (data.kind === "unchanged") return setOutcome(null);
-      setOutcome({ kind: "failed", text: "저장 실패 · 다시 시도" });
+      setOutcome(SAVE_FAILED);
     },
-    onError: () => setOutcome({ kind: "failed", text: "저장 실패 · 다시 시도" }),
+    onError: ({ error }) => {
+      submittedRef.current = null;
+      if (error.serverError === LOGIN_REQUIRED_MESSAGE) return router.push("/login");
+      setOutcome(SAVE_FAILED);
+    },
+    // 결과를 화면 상태로 옮긴 뒤 훅의 보낸 입력(주민등록번호 평문 포함)을 비운다(검토 R-M1).
+    onSettled: (): void => correct.reset(),
   });
+
+  // 진행 중엔 같은 폼의 다른 조작도 잠근다(§7-1 · DOM 감사 H1 · L1).
+  const busy = correct.isExecuting || rrnPending;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (changedCount === 0 || correct.isExecuting) return;
+    if (changedCount === 0 || busy) return;
     setOutcome(null);
+    const sentRrn = isRrnDirty(rrn) ? rrn.input : null;
+    submittedRef.current = { values, rrn: sentRrn };
     correct.execute({
       id: props.submissionId,
       version,
       name: values.name,
       phone: values.phone,
       ...(values.address !== null ? { address: values.address } : {}),
-      ...(isRrnDirty(rrn) && rrn.input !== null ? { rrn: rrn.input } : {}),
+      ...(sentRrn !== null ? { rrn: sentRrn } : {}),
     });
   }
 
@@ -144,7 +169,7 @@ export function ReviewForm(props: {
           name={field}
           type="text"
           autoComplete="off"
-          readOnly={!props.canCorrect}
+          readOnly={busy}
           inputMode={field === "phone" ? "tel" : undefined}
           className={[styles.textInput, error ? styles.textInputError : ""].filter(Boolean).join(" ")}
           value={values[field] ?? ""}
@@ -158,87 +183,119 @@ export function ReviewForm(props: {
     );
   }
 
+  const rrnField = (
+    <RrnField
+      id="cert-review-rrn"
+      submissionId={props.submissionId}
+      rrnMasked={rrnMasked}
+      canReveal={props.canReveal}
+      canEdit={props.canCorrect}
+      busy={correct.isExecuting}
+      state={rrn}
+      onChange={setRrn}
+      onPendingChange={setRrnPending}
+      error={fieldErrors.rrn}
+      idleMinutes={props.idleMinutes}
+    />
+  );
+
+  const detailItems: KvItem[] = [
+    { label: "경품", value: props.prizeLine },
+    { label: "동의", value: props.consentLine },
+    {
+      label: "서명",
+      value: (
+        <div className={styles.signature}>
+          {signatureFailed || props.signatureDataUrl === null ? (
+            <p className={styles.signatureError}>
+              서명 이미지 불러오기 실패 ·{" "}
+              <Button
+                variant="tertiary"
+                disabled={busy}
+                onClick={() => {
+                  setSignatureFailed(false);
+                  router.refresh();
+                }}
+              >
+                다시 시도
+              </Button>
+            </p>
+          ) : (
+            // 서버가 권한 확인 뒤 내려준 data URL — next/image 최적화 대상이 아니다.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              className={styles.signatureImage}
+              src={props.signatureDataUrl}
+              alt={`${props.name} 서명`}
+              onError={() => setSignatureFailed(true)}
+            />
+          )}
+          <span className={styles.signatureCaption}>수령자 서명 · 고칠 수 없음</span>
+        </div>
+      ),
+    },
+  ];
+
+  // 쓰기 권한이 없으면 값은 입력이 아니라 글자다(§6-3 · §7-2 · DOM 감사 L3).
+  if (!props.canCorrect) {
+    return (
+      <div className={styles.form}>
+        <KvList
+          items={[
+            {
+              label: FIELD_LABELS.name,
+              value: (
+                <>
+                  {values.name}
+                  {props.registeredName ? <Form.Hint>등록 이름 {props.registeredName}</Form.Hint> : null}
+                </>
+              ),
+            },
+            { label: FIELD_LABELS.rrn, value: rrnField },
+            { label: FIELD_LABELS.phone, value: <span className={styles.num}>{values.phone}</span> },
+            ...(values.address !== null ? [{ label: FIELD_LABELS.address, value: values.address }] : []),
+            ...detailItems,
+          ]}
+        />
+      </div>
+    );
+  }
+
   const showSavedText = outcome?.kind === "saved" && changedCount === 0;
+  const showReason = changedCount > 0 && outcome !== null && outcome.kind !== "saved" && !correct.isExecuting;
 
   return (
     <Form id="cert-review-form" className={styles.form} onSubmit={handleSubmit}>
       {textField("name", "long")}
       <Form.Field id="cert-review-rrn" label="주민등록번호" width="long">
-        <RrnField
-          id="cert-review-rrn"
-          submissionId={props.submissionId}
-          rrnMasked={rrnMasked}
-          canReveal={props.canReveal}
-          canEdit={props.canCorrect}
-          state={rrn}
-          onChange={setRrn}
-          error={fieldErrors.rrn}
-          idleMinutes={props.idleMinutes}
-        />
+        {rrnField}
       </Form.Field>
       {textField("phone", "short")}
       {values.address !== null ? textField("address", "long") : null}
 
-      <KvList
-        items={[
-          { label: "경품", value: props.prizeLine },
-          { label: "동의", value: props.consentLine },
-          {
-            label: "서명",
-            value: (
-              <div className={styles.signature}>
-                {signatureFailed || props.signatureDataUrl === null ? (
-                  <p className={styles.signatureError}>
-                    서명 이미지 불러오기 실패 ·{" "}
-                    <Button
-                      variant="tertiary"
-                      onClick={() => {
-                        setSignatureFailed(false);
-                        router.refresh();
-                      }}
-                    >
-                      다시 시도
-                    </Button>
-                  </p>
-                ) : (
-                  // 서버가 권한 확인 뒤 내려준 data URL — next/image 최적화 대상이 아니다.
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    className={styles.signatureImage}
-                    src={props.signatureDataUrl}
-                    alt={`${props.name} 서명`}
-                    onError={() => setSignatureFailed(true)}
-                  />
-                )}
-                <span className={styles.signatureCaption}>수령자 서명 · 고칠 수 없음</span>
-              </div>
-            ),
-          },
-        ]}
-      />
+      <KvList items={detailItems} />
 
-      {props.canCorrect ? (
-        <div className={styles.actionsBar}>
-          <Form.Actions>
-            {showSavedText ? (
-              <p className={styles.savedText} role="status">
-                {outcome?.text}
-              </p>
-            ) : (
-              <Button
-                type="submit"
-                variant="primary"
-                pending={correct.isExecuting}
-                disabled={changedCount === 0}
-                disabledReason="바뀐 칸 없음"
-                reasonTone="info"
-                reasonId={REASON_ID}
-                aria-describedby={changedCount > 0 && outcome && outcome.kind !== "saved" ? REASON_ID : undefined}
-              >
-                고친 내용 저장
-              </Button>
-            )}
-            {changedCount > 0 && outcome && outcome.kind !== "saved" && !correct.isExecuting ? (
+      <div className={styles.actionsBar}>
+        <Form.Actions>
+          {showSavedText ? null : (
+            <Button
+              type="submit"
+              variant="primary"
+              className={styles.saveButton}
+              pending={correct.isExecuting}
+              disabled={changedCount === 0 || rrnPending}
+              disabledReason={changedCount === 0 ? "바뀐 칸 없음" : undefined}
+              reasonTone="info"
+              reasonId={REASON_ID}
+              aria-describedby={changedCount > 0 && outcome && outcome.kind !== "saved" ? REASON_ID : undefined}
+            >
+              고친 내용 저장
+            </Button>
+          )}
+          {/* 결과 · 실패 문장은 늘 있는 알림 영역 안에서 바뀐다(DOM 감사 M3). */}
+          <div aria-live="polite">
+            {showSavedText ? <p className={styles.savedText}>{outcome?.text}</p> : null}
+            {showReason && outcome ? (
               <p id={REASON_ID} className={styles.reason}>
                 {outcome.text}
                 {outcome.kind === "conflict" ? (
@@ -248,9 +305,9 @@ export function ReviewForm(props: {
                 ) : null}
               </p>
             ) : null}
-          </Form.Actions>
-        </div>
-      ) : null}
+          </div>
+        </Form.Actions>
+      </div>
     </Form>
   );
 }

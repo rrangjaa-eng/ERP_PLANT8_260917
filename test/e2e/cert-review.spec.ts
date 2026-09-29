@@ -1,18 +1,22 @@
+import { randomUUID } from "node:crypto";
 import { test, expect, type Browser, type Page, type Request } from "@playwright/test";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, certSubmissions, privacySessionActivity, sessions } from "@/db/schema";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { setPermissionCell } from "@/domain/permissions/matrix";
 import { findUserByEmail } from "@/repositories/users";
+import { insertRole, setRoleArchived } from "@/repositories/roles";
+import { upsertVisibility } from "@/repositories/permissions";
 import { createFixtureUser } from "./fixtures";
 import { seedSubmittedCert, withCertFeatureOff } from "./helpers/cert";
 
 // 04.3-07 Task 3 — I4 확인증 확인 · 정정(데스크톱). 가림 · 전체 보기 로그 · 가리기 · 고친 값 재열람 ·
 // 정정 · 동시 정정 · 브라우저 인쇄 차단 · 권한 404(비활동 시계 안 건드림) · 비활동 만료 · 게이트 꺼짐 직접 POST.
 // 전제: 이 권한은 시드 기본값이 아니라 cert.setup이 켠 것이다(E3-13) — role-sysadmin의 certs.submissions(보기 · 쓰기) ·
-// cert.rrn_unmasked · cert_submission.value는 test/e2e/cert.setup.ts가 이 스펙보다 먼저 한 번 켠다. 이 스펙은 권한 ·
-// 설정을 직접 바꾸지 않고, 게이트를 끄는 케이스는 withCertFeatureOff 안에서만 한다(C4).
+// cert.rrn_unmasked · cert_submission.value는 test/e2e/cert.setup.ts가 이 스펙보다 먼저 한 번 켠다. 이 스펙은 공유 계급의
+// 권한 · 설정을 바꾸지 않고(「보기만」은 이 스펙이 만든 임시 계급), 게이트를 끄는 케이스는 withCertFeatureOff 안에서만 한다(C4).
 // 제출 표본은 seedSubmittedCert()만으로 만든다(E3-32). 오류 문구는 사용자 결정 A — 명사형.
 
 test.describe.configure({ mode: "serial" });
@@ -73,6 +77,104 @@ async function sessionIdsOf(account: Account): Promise<string[]> {
 const reviewPath = (id: string) => `/certs/submissions/${id}`;
 const notFoundHeading = (page: Page) => page.getByRole("heading", { name: "페이지 찾을 수 없음" });
 const saveButton = (page: Page) => page.getByRole("button", { name: "고친 내용 저장" });
+// 가린 상태의 「주민등록번호」 묶음(group)과 겹치지 않게 입력 칸은 역할로 찾는다.
+const rrnInput = (page: Page) => page.getByRole("textbox", { name: "주민등록번호" });
+
+// 서버 액션 요청을 ms만큼 늦춰 보낸다(대기 중 상태를 재기 위해).
+async function delayServerActions(page: Page, ms: number): Promise<void> {
+  await page.route("**/certs/submissions/**", async (route) => {
+    if (isServerAction(route.request())) await new Promise((resolve) => setTimeout(resolve, ms));
+    await route.continue();
+  });
+}
+
+function nextActionResponse(page: Page) {
+  return page.waitForResponse((response) => isServerAction(response.request()));
+}
+
+async function setVisibility(page: Page, state: "hidden" | "visible"): Promise<void> {
+  await page.evaluate((value) => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => value });
+    document.dispatchEvent(new Event("visibilitychange"));
+  }, state);
+}
+
+// 검토 R-M1 — DOM 밖(React 훅 상태 · props)에 문자열이 남았는지. 정정 폼(ReviewForm) 아래 트리만 훑는다.
+async function reactStateHas(page: Page, needles: string[]): Promise<boolean> {
+  return page.evaluate((targets) => {
+    type Fiber = {
+      tag: number;
+      stateNode: unknown;
+      return: Fiber | null;
+      child: Fiber | null;
+      sibling: Fiber | null;
+      memoizedState: unknown;
+      memoizedProps: unknown;
+    };
+    const form = document.getElementById("cert-review-form");
+    if (!form) throw new Error("정정 폼 없음");
+    const key = Object.keys(form).find((name) => name.startsWith("__reactFiber$"));
+    if (!key) throw new Error("React fiber 없음");
+    const isReviewForm = (fiber: Fiber): boolean => {
+      const props = fiber.memoizedProps;
+      return typeof props === "object" && props !== null && "submissionId" in props && "idleMinutes" in props;
+    };
+    // DOM 노드의 fiber는 지난 렌더의 짝(alternate)일 수 있다 — HostRoot(tag 3)의 FiberRoot.current에서
+    // 지금 커밋된 트리를 다시 내려가 ReviewForm을 찾는다.
+    let up: Fiber | null = (form as unknown as Record<string, Fiber>)[key] ?? null;
+    while (up && up.tag !== 3) up = up.return;
+    const committed = (up?.stateNode as { current?: Fiber } | undefined)?.current ?? null;
+    let root: Fiber | null = null;
+    const search: Fiber[] = committed ? [committed] : [];
+    while (search.length > 0 && !root) {
+      const fiber = search.pop();
+      if (!fiber) break;
+      if (isReviewForm(fiber)) root = fiber;
+      if (fiber.child) search.push(fiber.child);
+      if (fiber.sibling) search.push(fiber.sibling);
+    }
+    if (!root) throw new Error("ReviewForm 없음");
+
+    const seen = new Set<object>();
+    const hit = (value: unknown, depth: number): boolean => {
+      if (typeof value === "string") return targets.some((target) => value.includes(target));
+      if (value === null || typeof value !== "object" || depth > 12 || seen.has(value)) return false;
+      seen.add(value);
+      if (value instanceof Node) return false;
+      if ("return" in value && "memoizedProps" in value) return false; // 다른 fiber — 트리 순회가 따로 본다
+      for (const name of Object.keys(value)) {
+        let inner: unknown;
+        try {
+          inner = (value as Record<string, unknown>)[name];
+        } catch {
+          continue;
+        }
+        if (hit(inner, depth + 1)) return true;
+      }
+      return false;
+    };
+
+    const stack: Fiber[] = [root];
+    while (stack.length > 0) {
+      const fiber = stack.pop();
+      if (!fiber) break;
+      if (hit(fiber.memoizedState, 0) || hit(fiber.memoizedProps, 0)) return true;
+      if (fiber.child) stack.push(fiber.child);
+      if (fiber !== root && fiber.sibling) stack.push(fiber.sibling);
+    }
+    return false;
+  }, needles);
+}
+
+// 폰 제출 줄(sticky)의 위쪽 좌표 — 저장 버튼에서 위로 올라가 sticky 조상을 찾는다.
+async function stickyBarTop(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    let node = document.querySelector("#cert-review-form button[type=submit]")?.parentElement ?? null;
+    while (node && getComputedStyle(node).position !== "sticky") node = node.parentElement;
+    if (!node) throw new Error("sticky 제출 줄 없음");
+    return node.getBoundingClientRect().top;
+  });
+}
 
 test("가림 · 전체 보기(로그) · 가리기 · 연락처 정정 · 동시 정정 · 다시 불러오기", async ({ page, browser }) => {
   const seeded = await seedSubmittedCert();
@@ -88,12 +190,12 @@ test("가림 · 전체 보기(로그) · 가리기 · 연락처 정정 · 동시
   await expect(page.getByText("바뀐 칸 없음")).toBeVisible();
 
   await page.getByRole("button", { name: "전체 보기" }).click();
-  await expect(page.getByLabel("주민등록번호")).toHaveValue(RRN_FULL);
+  await expect(rrnInput(page)).toHaveValue(RRN_FULL);
   expect(await countLogs("mask_reveal", seeded.submissionId)).toBe(1);
 
   await page.getByRole("button", { name: "가리기" }).click();
   await expect(page.getByText("930412-2******")).toBeVisible();
-  await expect(page.getByLabel("주민등록번호")).toHaveCount(0);
+  await expect(rrnInput(page)).toHaveCount(0);
   expect(await page.content()).not.toContain(RRN_FULL);
 
   await page.getByLabel("연락처").fill("010-5555-6666");
@@ -133,20 +235,20 @@ test("택배는 주소 칸 · 주민등록번호를 고쳐 가리면 「저장 �
   await expect(page.getByLabel("주소")).toHaveValue("서울시 강남구 테헤란로 1");
 
   await page.getByRole("button", { name: "전체 보기" }).click();
-  await page.getByLabel("주민등록번호").fill("930412-1234560");
+  await rrnInput(page).fill("930412-1234560");
   await page.getByRole("button", { name: "가리기" }).click();
   await expect(page.getByText("930412-1****** · 저장 안 함")).toBeVisible();
   expect(await page.content()).not.toContain("930412-1234560");
   expect(await countLogs("mask_reveal", seeded.submissionId)).toBe(1);
 
   await page.getByRole("button", { name: "전체 보기" }).click();
-  await expect(page.getByLabel("주민등록번호")).toHaveValue("930412-1234560");
+  await expect(rrnInput(page)).toHaveValue("930412-1234560");
   expect(await countLogs("mask_reveal", seeded.submissionId)).toBe(2);
 
   await saveButton(page).click();
   await expect(page.getByText(/^저장됨 · 주민등록번호 · \d{2}:\d{2}$/)).toBeVisible();
   await expect(page.getByText("930412-1******")).toBeVisible();
-  await expect(page.getByLabel("주민등록번호")).toHaveCount(0);
+  await expect(rrnInput(page)).toHaveCount(0);
   expect((await submission(seeded.submissionId)).rrnMasked).toBe("930412-1******");
 });
 
@@ -206,11 +308,11 @@ test("게이트 꺼짐 — 잡아 둔 세 액션을 직접 보내도 평문 · �
   });
 
   await page.getByRole("button", { name: "전체 보기" }).click();
-  await page.getByLabel("주민등록번호").fill("930412-1234560");
+  await rrnInput(page).fill("930412-1234560");
   await page.getByRole("button", { name: "가리기" }).click();
   await page.getByRole("button", { name: "전체 보기" }).click();
-  await expect(page.getByLabel("주민등록번호")).toHaveValue("930412-1234560");
-  await page.getByLabel("주민등록번호").fill(RRN_FULL);
+  await expect(rrnInput(page)).toHaveValue("930412-1234560");
+  await rrnInput(page).fill(RRN_FULL);
   await page.getByLabel("연락처").fill("010-5555-6666");
   await saveButton(page).click();
   await expect(page.getByText(/^저장됨 · /)).toBeVisible();
@@ -247,4 +349,210 @@ test("게이트 꺼짐 — 잡아 둔 세 액션을 직접 보내도 평문 · �
     await expect(notFoundHeading(pmPage)).toBeVisible();
     await pmPage.context().close();
   });
+});
+
+// ── 04.3-07 검토 · 독립 DOM 감사 반영 ────────────────────────────────────────────────
+
+test("전체 보기 뒤 가리기 · 번호 저장 뒤에는 React 상태에도 평문이 남지 않는다(검토 R-M1)", async ({ page }) => {
+  const seeded = await seedSubmittedCert();
+  await login(page, admin);
+  await page.goto(reviewPath(seeded.submissionId));
+
+  await page.getByRole("button", { name: "전체 보기" }).click();
+  await expect(rrnInput(page)).toHaveValue(RRN_FULL);
+  expect(await reactStateHas(page, ["2123458"])).toBe(true); // 훑개가 연 상태의 평문은 찾는다
+
+  await page.getByRole("button", { name: "가리기" }).click();
+  await expect(rrnInput(page)).toHaveCount(0);
+  await expect.poll(() => reactStateHas(page, ["2123458"])).toBe(false);
+
+  await page.getByRole("button", { name: "전체 보기" }).click();
+  await rrnInput(page).fill("930412-1234560");
+  await saveButton(page).click();
+  await expect(page.getByText(/^저장됨 · 주민등록번호 · \d{2}:\d{2}$/)).toBeVisible();
+  await expect.poll(() => reactStateHas(page, ["2123458", "1234560"])).toBe(false);
+});
+
+test("화면이 가려진 동안 늦게 온 전체 보기 응답은 칸을 열지 않는다(검토 R-L5)", async ({ page }) => {
+  const seeded = await seedSubmittedCert();
+  await login(page, admin);
+  await page.goto(reviewPath(seeded.submissionId));
+  await delayServerActions(page, 1000);
+
+  const response = nextActionResponse(page);
+  await page.getByRole("button", { name: "전체 보기" }).click();
+  await setVisibility(page, "hidden");
+  await response;
+  await expect.poll(() => countLogs("mask_reveal", seeded.submissionId)).toBe(1);
+
+  // 응답 처리가 끝날 때까지(대기 중 「전체 보기」가 사라질 때까지) 기다린 뒤 잰다.
+  await expect(page.locator('button[aria-disabled="true"]', { hasText: "전체 보기" })).toHaveCount(0);
+  await expect(rrnInput(page)).toHaveCount(0);
+  await expect.poll(() => reactStateHas(page, ["2123458"])).toBe(false);
+  await setVisibility(page, "visible");
+  await expect(page.getByText("930412-2******")).toBeVisible();
+});
+
+test("세션이 없어진 뒤 전체 보기 · 저장은 로그인 화면으로 보낸다(검토 R-L2)", async ({ page }) => {
+  const seeded = await seedSubmittedCert();
+  const account = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+  const dropSessions = async () => {
+    await db.delete(sessions).where(inArray(sessions.id, await sessionIdsOf(account)));
+  };
+
+  await login(page, account);
+  await page.goto(reviewPath(seeded.submissionId));
+  await dropSessions();
+  await page.getByRole("button", { name: "전체 보기" }).click();
+  await expect(page).toHaveURL(/\/login/);
+
+  await login(page, account);
+  await page.goto(reviewPath(seeded.submissionId));
+  await page.getByLabel("연락처").fill("010-5555-6666");
+  await dropSessions();
+  await saveButton(page).click();
+  await expect(page).toHaveURL(/\/login/);
+  expect((await submission(seeded.submissionId)).version).toBe(1);
+});
+
+test("액션 단 비활동 만료는 로그인으로 · 화면 가림 · 비활동 시간이 지나면 저절로 가린다(검토 R-L6)", async ({ page }) => {
+  const seeded = await seedSubmittedCert();
+  const account = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+  await login(page, account);
+  await page.goto(reviewPath(seeded.submissionId));
+
+  await page.getByRole("button", { name: "전체 보기" }).click();
+  await expect(rrnInput(page)).toHaveValue(RRN_FULL);
+  await setVisibility(page, "hidden");
+  await expect(rrnInput(page)).toHaveCount(0);
+  await setVisibility(page, "visible");
+
+  await page.clock.install();
+  await page.goto(reviewPath(seeded.submissionId));
+  await page.getByRole("button", { name: "전체 보기" }).click();
+  await expect(rrnInput(page)).toHaveValue(RRN_FULL);
+  await page.clock.fastForward("02:00:05");
+  await expect(rrnInput(page)).toHaveCount(0);
+  await expect.poll(() => reactStateHas(page, ["2123458"])).toBe(false);
+
+  await db
+    .update(privacySessionActivity)
+    .set({ lastSeenAt: new Date(Date.now() - 121 * 60_000) })
+    .where(inArray(privacySessionActivity.sessionId, await sessionIdsOf(account)));
+  await page.getByRole("button", { name: "전체 보기" }).click();
+  await expect(page).toHaveURL(/\/login/);
+});
+
+test("저장 대기 중에는 칸 · 가리기가 잠기고, 결과는 보낸 값 기준이다(DOM 감사 H1 · L1)", async ({ page }) => {
+  const seeded = await seedSubmittedCert();
+  await login(page, admin);
+  await page.goto(reviewPath(seeded.submissionId));
+  await page.getByRole("button", { name: "전체 보기" }).click();
+  await expect(rrnInput(page)).toHaveValue(RRN_FULL);
+  await page.getByLabel("연락처").fill("010-5555-6666");
+  await delayServerActions(page, 1500);
+
+  const response = nextActionResponse(page);
+  await saveButton(page).click();
+  await expect(page.getByLabel("이름")).toHaveAttribute("readonly", "");
+  await expect(page.getByLabel("연락처")).toHaveAttribute("readonly", "");
+  await expect(rrnInput(page)).toHaveAttribute("readonly", "");
+  await expect(page.getByRole("button", { name: "가리기" })).toHaveAttribute("aria-disabled", "true");
+  await page.getByLabel("이름").focus();
+  await page.keyboard.type("가");
+  await expect(page.getByLabel("이름")).toHaveValue(seeded.name);
+  await response;
+
+  await expect(page.getByText(/^저장됨 · 연락처 · \d{2}:\d{2}$/)).toBeVisible();
+  expect((await submission(seeded.submissionId)).name).toBe(seeded.name);
+  await expect(page.getByLabel("이름")).toHaveValue(seeded.name);
+
+  // 전체 보기 대기 중에도 바뀐 칸이 있는 저장은 잠긴다
+  await page.getByLabel("연락처").fill("010-7777-8888");
+  const revealResponse = nextActionResponse(page);
+  await page.getByRole("button", { name: "전체 보기" }).click();
+  await expect(saveButton(page)).toHaveAttribute("aria-disabled", "true");
+  await revealResponse;
+  await expect(rrnInput(page)).toHaveValue(RRN_FULL);
+  await expect(saveButton(page)).not.toHaveAttribute("aria-disabled", "true");
+});
+
+test("가린 주민등록번호는 이름 붙은 묶음이고 「전체 보기」가 번호 오류 줄을 가리킨다(DOM 감사 M1)", async ({ page }) => {
+  const seeded = await seedSubmittedCert();
+  await login(page, admin);
+  await page.goto(reviewPath(seeded.submissionId));
+  await expect(page.getByRole("group", { name: "주민등록번호" })).toContainText("930412-2******");
+
+  await page.getByRole("button", { name: "전체 보기" }).click();
+  await rrnInput(page).fill("931312-1234567");
+  await saveButton(page).click();
+  await expect(page.locator("#cert-review-rrn-error")).toHaveText("주민등록번호 맞지 않음 · 앞 6자리와 뒤 7자리 확인");
+  await page.getByRole("button", { name: "가리기" }).click();
+
+  await expect(page.getByRole("group", { name: "주민등록번호" })).toContainText("저장 안 함");
+  const describedBy = await page.getByRole("button", { name: "전체 보기" }).getAttribute("aria-describedby");
+  expect(describedBy?.split(" ")).toContain("cert-review-rrn-error");
+});
+
+test("저장 결과 · 실패는 늘 있는 알림 영역에서 읽히고, 성공하면 포커스가 제목으로 간다(DOM 감사 M2 · M3)", async ({ page }) => {
+  const seeded = await seedSubmittedCert();
+  await login(page, admin);
+  await page.goto(reviewPath(seeded.submissionId));
+  const live = page.locator('#cert-review-form [aria-live="polite"]');
+  await expect(live).toHaveCount(1);
+
+  await page.getByLabel("연락처").fill("02-1");
+  await saveButton(page).click();
+  await expect(live).toContainText("저장 실패 · 연락처 1칸");
+
+  await page.getByLabel("연락처").fill("010-5555-6666");
+  await saveButton(page).click();
+  await expect(live).toContainText(/저장됨 · 연락처 · \d{2}:\d{2}/);
+  await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
+});
+
+test("폰 — 1차 저장은 44 높이 · 넓게, 포커스된 주소 칸이 제출 줄에 가리지 않는다(DOM 감사 M4 · L2)", async ({ page }) => {
+  const seeded = await seedSubmittedCert({ delivery: "parcel", address: "서울시 강남구 테헤란로 1" });
+  await login(page, admin);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(reviewPath(seeded.submissionId));
+  const box = await saveButton(page).boundingBox();
+  expect(box?.height).toBeGreaterThanOrEqual(44);
+  expect(box?.width).toBeGreaterThanOrEqual(195);
+
+  await page.setViewportSize({ width: 320, height: 640 });
+  const address = page.getByLabel("주소");
+  const assertAddressClear = async () => {
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await address.focus();
+    const rect = await address.boundingBox();
+    expect((rect?.y ?? 0) + (rect?.height ?? 0)).toBeLessThanOrEqual(await stickyBarTop(page));
+  };
+  await assertAddressClear();
+
+  await address.fill("");
+  await saveButton(page).click();
+  await expect(page.locator("#cert-review-address-error")).toBeVisible();
+  await assertAddressClear();
+});
+
+test("보기만 계급은 값이 입력 칸이 아니라 글자다(DOM 감사 L3)", async ({ page }) => {
+  const roleId = `role-e2e-cert-view-${randomUUID()}`;
+  await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 보기만 ${roleId.slice(-12)}`, sortOrder: 99 });
+  await setPermissionCell(SYSTEM_VIEWER, { roleId, menu: "certs.submissions", action: "view", allowed: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "cert_submission.value", visible: true });
+  const viewer = await createFixtureUser({ roleId });
+  const seeded = await seedSubmittedCert({ delivery: "parcel", address: "서울시 강남구 테헤란로 1" });
+
+  try {
+    await login(page, viewer);
+    await page.goto(reviewPath(seeded.submissionId));
+    await expect(page.getByText("930412-2******")).toBeVisible();
+    await expect(page.getByRole("textbox")).toHaveCount(0);
+    await expect(page.getByRole("definition").filter({ hasText: "010-4821-7730" })).toBeVisible();
+    await expect(page.getByRole("definition").filter({ hasText: "서울시 강남구 테헤란로 1" })).toBeVisible();
+    await expect(saveButton(page)).toHaveCount(0);
+  } finally {
+    await setRoleArchived(SYSTEM_VIEWER, roleId, true);
+  }
 });

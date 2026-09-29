@@ -1,7 +1,7 @@
 import { createSafeActionClient } from "next-safe-action";
 import { getSession } from "@/lib/viewer";
 import { handleServerError } from "@/lib/actions/handle-server-error";
-import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { LOGIN_REQUIRED_MESSAGE, UserFacingError } from "@/lib/actions/user-facing-error";
 import { checkPayloadSize } from "@/lib/actions/payload-size";
 
 // Issue 2: 이 파일이 이후 모든 페이즈의 유일한 Server Action 진입점이다
@@ -31,7 +31,7 @@ export const authedActionClient = actionClient.use(async ({ next, clientInput })
 
   const session = await getSession();
   if (!session) {
-    throw new UserFacingError("로그인 필요 · 다시 로그인");
+    throw new UserFacingError(LOGIN_REQUIRED_MESSAGE);
   }
   // viewer 투영: repositories가 scopeFor(viewer)로 쓸 최소 정보만 ctx에 싣는다.
   return next({ ctx: { viewer: session.viewer, user: session.user } });

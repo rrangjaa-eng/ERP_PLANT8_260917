@@ -121,6 +121,24 @@
     bottom: calc(var(--touch-min) + var(--line-w-strong));
     background: var(--bg);
   }
+
+  /* §6-3 폰 제출 줄의 1차는 --touch-min(44) 높이 · 줄 폭을 채운다. ui/button .btn(높이 --control-h)보다
+     앞서도록 두 클래스로 건다(.btn.external 선례 · DOM 감사 M4). */
+  .actionsBar .saveButton {
+    height: var(--touch-min);
+    width: 100%;
+    justify-content: center;
+  }
+
+  .actionsBar span:has(> .saveButton) {
+    flex: 1 1 auto;
+  }
+
+  /* 포커스된 칸이 sticky 제출 줄 · 하단 탭 밑으로 들어가지 않게 — 스크롤 여백 = 탭 + 제출 줄(§6-3 「본문 아래
+     여백 = 탭 44 + 제출 줄 높이」 · DOM 감사 L2). 제출 줄이 두 줄로 접히는 오류 상태까지 덮는다. */
+  :global(html):has(.actionsBar) {
+    scroll-padding-bottom: calc(var(--touch-min) * 2 + var(--line-w-strong) + var(--s-4) + var(--s-8));
+  }
 }
 
 /* 브라우저 인쇄 — 이 화면은 찍지 않는다(UI-SPEC I4 · D-1108). 화면에서는 한 줄을 숨기고, 인쇄

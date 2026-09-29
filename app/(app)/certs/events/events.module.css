@@ -1,0 +1,151 @@
+/* 04.3-04 — I1 확인증 행사 목록 · I2 행사 만들기. 토큰만(docs/design/tokens.css). */
+
+/* §6-1 표 위 행동 줄 — 필터가 없어 오른쪽 1차 하나(UI-SPEC I1 · X-8). */
+.actionRow {
+  display: flex;
+  justify-content: flex-end;
+  margin: var(--s-3) 0;
+}
+
+/* 행사 이름 · 경품명은 줄바꿈(UI Considerations long-text). */
+.wrapText {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* 전화 · 날짜 · 수 숫자는 줄바꿈하지 않는다. */
+.nowrap {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
+}
+
+.link:hover {
+  text-decoration-thickness: var(--line-w-strong);
+}
+
+/* I2 — 폼 제목 · 섹션 라벨 · 상시 힌트. */
+.createSection {
+  margin: var(--s-3) 0 var(--s-6);
+}
+
+.createTitle {
+  margin: 0 0 var(--s-3);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+}
+
+.sectionLabel {
+  margin: var(--s-6) 0 0;
+  padding-top: var(--s-3);
+  border-top: var(--line-w-strong) solid var(--line-strong);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-bold);
+}
+
+.hint {
+  margin: var(--s-1) 0 var(--s-3);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+.textInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 var(--s-2);
+  border: var(--line-w) solid var(--line-ui);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+}
+
+.textInput::placeholder {
+  color: var(--faint);
+}
+
+.textInput[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.textInput:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+/* 편집 셀 입력 — 리저브 대장 편집 셀과 같은 모양(app/(app)/pnl/reserves). */
+.cellInput,
+.cellInputNumeric,
+.cellSelect {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: var(--control-h);
+  padding: 0 var(--s-1);
+  border: 0;
+  border-bottom: var(--line-w) solid var(--accent);
+  background: var(--g-50);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+}
+
+.cellInputNumeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cellInput:focus-visible,
+.cellInputNumeric:focus-visible,
+.cellSelect:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+/* 수령자 화면 계산 열 — 1행 가린 이름 + 2행 --fs-sm --muted(E2 목록 행과 같은 모양). */
+.previewSecond {
+  display: block;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.footerCell {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+/* §7-7 LOADING 뼈대 — 머리글 + --surface 3행 + 합계 자리, 반짝임 없음. */
+.skeletonTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.skeletonTable th {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  text-align: left;
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+}
+
+.skeletonRow td {
+  height: var(--row-min);
+  background: var(--surface);
+  border-bottom: var(--line-w) solid var(--line);
+}
+
+.skeletonFooter td {
+  height: var(--row-min);
+  border-top: var(--line-w-strong) solid var(--line-strong);
+}

@@ -198,11 +198,27 @@ describe("제출 — 동시 제출(T-04.3-07)", () => {
     const { eventId, token, ids } = await makeEvent(2);
     const v = await verify(token, ids[0]!);
 
+    // 검토 L9 — 둘 다 잠그기 전 검사와 put을 통과한 뒤에야 트랜잭션에 들어가게 묶는다
+    // (묶지 않으면 한쪽이 먼저 커밋해 다른 쪽이 잠그기 전 검사에서 빠져 경합을 재지 않는다).
+    let arrived = 0;
+    let release: () => void = () => {};
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const store = storeWith({
+      afterPut: async () => {
+        arrived++;
+        if (arrived === 2) release();
+        await barrier;
+      },
+    });
+
     const results = await Promise.all([
-      submitCertificate(token, inputFor(ids[0]!, v)),
-      submitCertificate(token, inputFor(ids[0]!, v)),
+      submitCertificate(token, inputFor(ids[0]!, v), { signatureStore: store }),
+      submitCertificate(token, inputFor(ids[0]!, v), { signatureStore: store }),
     ]);
 
+    expect(arrived).toBe(2);
     expect(results.map((r) => r.kind).sort()).toEqual(["alreadySubmitted", "saved"]);
     expect(await submissionsFor(ids[0]!)).toHaveLength(1);
     expect(objectsFor(eventId, ids[0]!)).toHaveLength(1);

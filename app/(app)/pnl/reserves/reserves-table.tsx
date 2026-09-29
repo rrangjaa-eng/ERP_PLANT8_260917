@@ -31,7 +31,7 @@ import type {
   ReserveListResult,
   ReserveReferences,
 } from "@/domain/reserves";
-import { RESERVE_ARCHIVED_ROW_REASON } from "@/domain/reserves/save-contract";
+import { RESERVE_ARCHIVED_ROW_REASON, RESERVE_SAVE_MAX_ROWS } from "@/domain/reserves/save-contract";
 import styles from "./reserves.module.css";
 
 // 04-42 — 클라이언트별 리저브 대장(S9). 셀 단계·잔액·클라이언트 잠금은 서버 DTO 그대로 그리고(T-04-43b), 화면은 편집을
@@ -128,6 +128,8 @@ const COPY = {
   invalidInput: "저장 실패 · 입력값 확인",
   /** ui/table applyPaste의 잠김 셀 이유와 같은 문자열. */
   lockedPaste: "읽기 전용·잠김 셀에 값 떨어짐",
+  saveCap: `저장당 ${RESERVE_SAVE_MAX_ROWS}줄 상한 · 먼저 저장`,
+  pasteOverCap: (over: number) => `붙여넣기 전부 거부 · 저장당 ${RESERVE_SAVE_MAX_ROWS}줄 상한을 ${over}줄 넘음`,
 };
 
 function rowFromDto(dto: ReserveEntryDto): Row {
@@ -179,6 +181,13 @@ function firstReason(node: unknown): string | null {
     if (found) return found;
   }
   return null;
+}
+
+// Codex #4 — 배열 노드 자신의 이유(저장당 줄 상한). 칸에 붙지 않으므로 자식으로 내려가지 않는다.
+function ownReason(node: unknown): string | null {
+  if (!isRecord(node)) return null;
+  const own = node._errors;
+  return Array.isArray(own) && typeof own[0] === "string" ? own[0] : null;
 }
 
 type CellErrors = Record<string, Record<string, string>>;
@@ -514,6 +523,8 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
   const [rejectionSummary, setRejectionSummary] = useState<string | null>(null);
   // 리뷰 S4 — 붙여넣기 묶음(합계 행 오른쪽 한 줄, 견적 원장과 같은 조각). 저장을 시도하면 지운다.
   const [pasteNotices, setPasteNotices] = useState<FooterNoticeItem[]>([]);
+  // Codex #4 · D-86 — 저장당 줄 상한 이유(합계 행 danger 항목). 저장을 시도하거나 붙여넣기가 들어가면 지운다.
+  const [capNotice, setCapNotice] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [sentCount, setSentCount] = useState(0);
   const [openCell, setOpenCell] = useState<{ rowId: string; columnKey: string } | null>(null);
@@ -582,9 +593,12 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
           persistPendingRef.current = true;
           setArchived((prev) => prev.filter((request) => !rejectedArchive.includes(request.id)));
         }
+        // Codex #4 — 배열 수준 이유(저장당 줄 상한)는 어느 칸에도 붙지 않으므로 요약이 그 이유를 말한다.
+        const validation = isRecord(error.validationErrors) ? error.validationErrors : {};
+        const arrayReason = ownReason(validation.rows) ?? ownReason(validation.archived);
         setCellErrors(next);
         setRejectedRowIds(Object.keys(next));
-        setRejectionSummary(countCells(next) > 0 ? `오류 ${countCells(next)}칸 · 전부 거부` : COPY.invalidInput);
+        setRejectionSummary(arrayReason ?? (countCells(next) > 0 ? `오류 ${countCells(next)}칸 · 전부 거부` : COPY.invalidInput));
         setIssueSignal((signal) => signal + 1);
       }
     },
@@ -596,6 +610,8 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
     ...newRows.filter((row) => row.page === list.page),
   ];
   const dirtyCount = Object.keys(edits).length + newRows.length + archivedIds.length;
+  // Codex #4 · D-86 — 한 저장이 액션 가장자리 상한을 넘지 않게 화면이 먼저 막는다(보낼 줄 = 고친 줄 + 새 줄).
+  const atSaveCap = Object.keys(edits).length + newRows.length >= RESERVE_SAVE_MAX_ROWS;
   const dirtyStorage = useDirtyStorage(viewerDirtyScope(viewerId, "reserves"), "ledger", dirtyCount);
   const { persist } = dirtyStorage;
   useEffect(() => {
@@ -719,8 +735,18 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
     };
   }
 
+  // 04-47(DR-16) 선례 — 상한 이유는 합계 행 danger 항목이고, 직전 저장 결과(성공은 혼자 선다)를 지운다.
+  function showCapNotice(text: string) {
+    setSavedAt(null);
+    setCapNotice(text);
+  }
+
   function addRow() {
     if (!newRowCells || isExecuting) return;
+    if (atSaveCap) {
+      showCapNotice(COPY.saveCap);
+      return;
+    }
     const row = blankNewRow(newRowCells);
     const id = row.id;
     setSavedAt(null);
@@ -784,6 +810,7 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
     setSavedAt(null);
     setRejectionSummary(null);
     setPasteNotices([]);
+    setCapNotice(null);
     setDiscardedEdits(null);
     const sent = [...Object.values(edits).map((edit) => withPatch(edit.base, edit.patch)), ...newRows];
     sentIdsRef.current = sent.map((row) => row.id);
@@ -1114,6 +1141,15 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
       patches.set(target.id, { ...patches.get(target.id), ...pastePatch(cell.columnKey, cell.result.value) });
     }
 
+    // Codex #4 · D-86 — 붙인 뒤 보낼 줄(고친 줄 + 새 줄)이 상한을 넘으면 한 칸도 바꾸지 않고 전부 거부한다.
+    const sending = new Set([...Object.keys(edits), ...newRows.map((newRow) => newRow.id), ...patches.keys(), ...created.map((newRow) => newRow.id)]);
+    const overCap = sending.size - RESERVE_SAVE_MAX_ROWS;
+    if (overCap > 0) {
+      setPasteNotices([]);
+      showCapNotice(COPY.pasteOverCap(overCap));
+      return [];
+    }
+    setCapNotice(null);
     setSavedAt(null);
     persistPendingRef.current = true;
     for (const { rowId, columnKey: key } of cleared) clearCellError(rowId, key);
@@ -1141,7 +1177,7 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
   // 합계 행 오른쪽 한 줄 — 거부 요약은 지금 보이는 줄의 오류 칸 수를 말할 때만 표가 세는 수를 대신한다(다른 쪽 줄이면 0칸).
   const displayedIds = new Set(rows.map((row) => row.id));
   const claimedErrorCells = rejectedRowIds.filter((id) => displayedIds.has(id)).length;
-  const footerNotices: FooterNoticeItem[] = [...pasteNotices];
+  const footerNotices: FooterNoticeItem[] = [...(capNotice ? [{ tone: "danger" as const, text: capNotice }] : []), ...pasteNotices];
   if (rejectionSummary) footerNotices.push({ tone: "danger", text: rejectionSummary, replacesIssueCount: { errorCells: claimedErrorCells, conflictRows: 0 } });
   if (result.serverError) footerNotices.push({ tone: "danger", text: result.serverError });
 
@@ -1240,8 +1276,9 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
         <div className={styles.addLine}>
           <Button
             variant="tertiary"
-            disabled={saveLocked}
-            aria-describedby={saveLocked ? saveButtonId : undefined}
+            disabled={atSaveCap || saveLocked}
+            disabledReason={atSaveCap ? COPY.saveCap : undefined}
+            aria-describedby={!atSaveCap && saveLocked ? saveButtonId : undefined}
             onClick={() => (saveLocked ? undefined : addRow())}
           >
             {COPY.addRow}

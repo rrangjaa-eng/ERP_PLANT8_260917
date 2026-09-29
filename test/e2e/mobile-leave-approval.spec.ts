@@ -162,8 +162,8 @@ test.describe("폰 결재 시트 (04.1-05)", () => {
     await expectRejectLeftOfApprove(lead.getByRole("dialog"));
 
     await lead.goto(`/leave/${leaveId}`);
-    await expectRejectLeftOfApprove(lead.locator("main"));
     // 사용자 결정 2026-09-29(04.1-07 DOM 감사 ①): 폰은 DOM · Tab 순서도 보이는 순서(반려 → 승인)와 같다(SYSTEM §10).
+    // 수화 직후 폰 폭 판정이 두 버튼을 이 순서로 다시 그린다(노드 교체) — 교체가 끝난 뒤에 잰다(그 전에 재면 떨어진 노드라 상자가 null).
     await waitForHydration(lead.getByRole("button", { name: "반려" }));
     await expect
       .poll(() =>
@@ -172,6 +172,7 @@ test.describe("폰 결재 시트 (04.1-05)", () => {
         ),
       )
       .toEqual(["반려", expect.stringMatching(/^승인/)]);
+    await expectRejectLeftOfApprove(lead.locator("main"));
     await lead.getByRole("button", { name: "반려" }).focus();
     await lead.keyboard.press("Tab");
     await expect(lead.getByRole("button", { name: /^승인/ })).toBeFocused();

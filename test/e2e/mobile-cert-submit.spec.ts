@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test, expect, type Page, type Request } from "@playwright/test";
+import { test, expect, type Locator, type Page, type Request } from "@playwright/test";
 import { and, eq, like } from "drizzle-orm";
 import { db } from "@/db/client";
 import { certSignatureUploads, certSubmissions, certWinners } from "@/db/schema";
@@ -376,4 +376,87 @@ test("C1 직접 POST — 기능이 꺼진 동안 진짜 제출 요청을 보내�
   expect(on.ok()).toBe(true);
   expect(await submissionCount(winnerId)).toBe(1);
   expect(localObjects(eventId, winnerId)).toHaveLength(1);
+});
+
+// DOM 감사 F1 — 외부 수령자 화면은 480 한 열이라 PC 폭에서도 라벨이 칸 위다(SYSTEM §6-5).
+async function expectLabelAbove(label: Locator, input: Locator) {
+  const l = await label.boundingBox();
+  const i = await input.boundingBox();
+  if (!l || !i) throw new Error("라벨이나 칸을 찾지 못했다");
+  expect(l.y + l.height).toBeLessThanOrEqual(i.y);
+}
+
+test("1280 — E3 · E4 모든 라벨은 칸 위(F1) · 이름 · 주민등록번호 자동 완성 끔(M2)", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const { link } = await createCertEvent({
+    name: "제출E2E1280",
+    winners: [
+      { name: "김하늘", phone: "010-4821-7730", delivery: "parcel" },
+      { name: "이도윤", phone: "010-2231-0045" },
+    ],
+  });
+  await page.goto(link);
+  await page.getByRole("button", { name: "김*늘" }).click();
+  await expectLabelAbove(page.locator('label[for="last4"]'), page.locator("#last4"));
+  await page.getByLabel("전화번호 뒤 4자리").fill("7730");
+  await page.getByRole("button", { name: "전화번호 확인" }).click();
+  await expect(page.getByText("경품", { exact: true })).toBeVisible();
+
+  await expectLabelAbove(page.locator('label[for="name"]'), page.locator("#name"));
+  await expectLabelAbove(page.locator('[role="group"] > span').first(), page.locator("#rrn-front"));
+  await expectLabelAbove(page.locator('label[for="address"]'), page.locator("#address"));
+  await expectLabelAbove(page.locator('label[for="phone"]'), page.locator("#phone"));
+  await expectLabelAbove(page.getByText("서명", { exact: true }), canvasOf(page));
+
+  // 검토 M2 — 브라우저가 이름 · 주민등록번호를 기억하거나 비밀번호로 저장하자고 하지 않는다.
+  await expect(page.locator("#name")).toHaveAttribute("autocomplete", "off");
+  await expect(page.locator("#rrn-front")).toHaveAttribute("autocomplete", "off");
+  await expect(page.locator("#rrn-back")).toHaveAttribute("autocomplete", "new-password");
+});
+
+// DOM 감사 N2 — 서버가 이름 · 주소 · 동의를 invalid로 돌려주면 그 칸이 aria-invalid이고,
+// 제출 줄이 그 칸을 부르면 칸의 aria-describedby가 그 줄을 가리킨다(새 문구 없음).
+// 화면 검사가 막는 값이라 제출 본문을 가로채 바꿔 진짜 서버 판정을 받는다.
+test("서버 칸 오류 — 이름 · 주소 invalid → aria-invalid + 제출 줄 연결 · 동의 거절 → 동의 칸 aria-invalid", async ({ page }) => {
+  const { link } = await createCertEvent({
+    name: "제출E2E칸오류",
+    winners: [
+      { name: "김하늘", phone: "010-4821-7730", delivery: "parcel" },
+      { name: "이도윤", phone: "010-2231-0045" },
+    ],
+  });
+  await openForm(page, link, "김*늘", "7730");
+  await fillFields(page, { phone: "010-4821-7730" });
+  await page.getByLabel(/^주소/).fill("서울시 중구 세종대로 110");
+  await signWell(page);
+
+  let posts = 0;
+  await page.route(link, async (route, request) => {
+    if (!isSubmitPost(link, request)) return route.continue();
+    posts++;
+    const args = JSON.parse(request.postData() ?? "[]") as Record<string, unknown>[];
+    const body = args[0];
+    if (!body) throw new Error("제출 본문을 읽지 못했다");
+    if (posts === 1) Object.assign(body, { name: "   ", address: "   " }); // 서버 domain이 invalid
+    else Object.assign(body, { consent: false }); // 액션 스키마가 거절
+    await route.continue({ postData: JSON.stringify(args) });
+  });
+
+  await submitButton(page).click();
+  const fixLine = page.getByText("이름 · 주소를 고쳐 주세요 · 나머지는 채워졌습니다");
+  await expect(fixLine).toBeVisible();
+  const lineId = await fixLine.getAttribute("id");
+  expect(lineId).toBeTruthy();
+  for (const selector of ["#name", "#address"]) {
+    await expect(page.locator(selector)).toHaveAttribute("aria-invalid", "true");
+    await expect(page.locator(selector)).toHaveAttribute("aria-describedby", lineId ?? "");
+  }
+  await expect(page.locator("#name")).toBeFocused();
+
+  await submitButton(page).click();
+  const consent = page.getByRole("checkbox", { name: "개인정보 수집·이용에 동의합니다" });
+  await expect(consent).toHaveAttribute("aria-invalid", "true");
+  await expect(consent).toBeFocused();
+  await expect(page.locator("#name")).not.toHaveAttribute("aria-invalid", "true");
+  expect(posts).toBe(2);
 });

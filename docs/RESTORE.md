@@ -93,6 +93,8 @@ gcloud sql backups restore <2의 백업 id> --restore-instance=plant8-$ENV-db \
   --backup-instance=plant8-$ENV-db --project=$GCP_PROJECT_ID
 ```
 
+명령이 대기 시간(약 600초)에서 끊겨도 복원은 계속된다 — `gcloud sql operations list --instance=plant8-$ENV-db --filter="status!=DONE" --format='value(name)' --project=$GCP_PROJECT_ID`가 빌 때까지 5로 가지 않는다.
+
 **5. 스키마 맞추기(닫힌 채)** — 백업은 서빙 중인 이미지보다 오래된 스키마일 수 있다.
 
 - 먼저 `plant8-$ENV-migrate`·`plant8-$ENV-seed` Job 이미지

@@ -109,6 +109,24 @@ describe("domain/document-numbering 서식 설정 (ADMN-09, 실제 Postgres)", (
     const { number } = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026, format });
     expect(number).toBe("26-001");
   });
+
+  it("허용 목록 밖 구분자(#)는 저장이 거부되고 기존 서식이 유지된다", async () => {
+    await expect(setSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEPARATOR, "#")).rejects.toThrow();
+
+    expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEPARATOR)).toBe("");
+    const format = await loadDocumentNumberFormat("project");
+    const { number } = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026, format });
+    expect(number).toBe("26001");
+  });
+
+  it("두 글자 구분자(--)는 저장이 거부되고 기존 서식이 유지된다", async () => {
+    await expect(setSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEPARATOR, "--")).rejects.toThrow();
+
+    expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEPARATOR)).toBe("");
+    const format = await loadDocumentNumberFormat("project");
+    const { number } = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026, format });
+    expect(number).toBe("26001");
+  });
 });
 
 // 04-51 결정 ②(b) — 사용자 2026-09-28(PR #85 댓글 5861849715): 올해 카운터 발급이 1건 이상이고

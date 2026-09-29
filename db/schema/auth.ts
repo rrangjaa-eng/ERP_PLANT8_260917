@@ -22,6 +22,8 @@ export const users = pgTable("users", {
   roleId: text("role_id").references(() => roles.id),
   // D-08: 관리자가 발급·재발급한 초기 비밀번호를 쓰고 있다는 표시. 본인이 바꾸면 해제.
   passwordIsTemporary: boolean("password_is_temporary").notNull().default(false),
+  // D8-07 첫 로그인 시각 — 세션 생성 훅(databaseHooks.session.create.after)이 NULL일 때만 한 번 쓴다. sessions는 판정 근거가 아니다.
+  firstLoginAt: timestamp("first_login_at"),
   // Phase 3(03-05): 사람은 마스터(MAST-02)라 03-01이 정한 경계(보관함 컬럼은
   // 마스터 성격의 표에만)에 해당한다. 사람 목록의 행 필터, 사람 등록 실패 시
   // 보상 조치, 03-07의 사람 화면 "삭제"(보관)가 전부 이 두 컬럼을 쓴다.

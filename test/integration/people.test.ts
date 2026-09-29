@@ -169,6 +169,8 @@ describe("listPeople — 조회 횟수와 현재 소속(이슈 #56)", () => {
     // 테스트마다 표를 비우므로 한 명은 먼저 넣어 둔다 — 빈 목록은 조회를 건너뛴다.
     await register(0);
     const before = await countQueries();
+    // 04.4-04 변경 전 측정값(PLAN_BASE c222083): 1명 기준 전체 조회 9 — 새 칸이 고정 조회를 더하면 빨개진다.
+    expect(before).toBeLessThanOrEqual(9);
     for (let i = 1; i <= 3; i++) {
       await register(i);
     }

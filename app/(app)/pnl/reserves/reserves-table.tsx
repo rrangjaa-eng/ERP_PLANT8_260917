@@ -589,12 +589,12 @@ export function ReservesTable({ viewerId, list: initialList, references, usdDefa
   const projectName = (id: string | null) => (id ? (references.projects.find((project) => project.id === id)?.name ?? null) : null);
   const evidenceLabel = (value: string | null) => (value ? (references.evidenceTypes.find((item) => item.value === value)?.label ?? null) : null);
 
-  // 그룹 머리글 = 클라이언트, 머리글 행 오른쪽 = 서버가 계산한 최종 잔액(굵게 — S9 · D-91 · 리뷰 S3). 저장 전 새 줄의 클라이언트가
-  // 이 쪽에 없으면 이름만.
   function groupKey(row: Row): string {
     return row.clientId || "—";
   }
 
+  // 그룹 머리글 = 클라이언트, 머리글 행 오른쪽 = 서버가 계산한 최종 잔액(굵게 — S9 · D-91 · 리뷰 S3). 저장 전 새 줄의 클라이언트가
+  // 이 쪽에 없으면 이름만.
   // 이름이 같은 클라이언트는 선택지와 같은 라벨(vendorOptionLabels)로 가른다.
   function groupLabel(row: Row): string {
     if (!row.clientId) return "—";

@@ -194,4 +194,8 @@ describe("pinFieldErrors — 폼 두 칸", () => {
     expect(pinFieldErrors({ name: "tooLong" })).toEqual({ name: "80자 초과 · 80자 안으로" });
     expect(pinFieldErrors({})).toEqual({});
   });
+
+  it("당첨일이 달력에 없는 날(format)이면 기존 날짜 형식 문장", () => {
+    expect(pinFieldErrors({ wonOn: "format" })).toEqual({ wonOn: "날짜 형식 오류 · 2026-09-18처럼" });
+  });
 });

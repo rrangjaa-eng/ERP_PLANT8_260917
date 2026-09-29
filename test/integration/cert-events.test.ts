@@ -107,6 +107,18 @@ describe("createEvent — 한 트랜잭션 · 셀 오류", () => {
     expect(result).toMatchObject({ kind: "invalid", fieldErrors: { name: "tooLong" } });
   });
 
+  it("당첨일이 달력에 없는 날(2026-13-45 · 2026-02-30)이면 fieldErrors.wonOn format · 행 수 불변", async () => {
+    const before = await counts();
+    for (const wonOn of ["2026-13-45", "2026-02-30"]) {
+      expect(await createEvent(SYSTEM_VIEWER, input({ wonOn }))).toEqual({
+        kind: "invalid",
+        cellErrors: [],
+        fieldErrors: { wonOn: "format" },
+      });
+    }
+    expect(await counts()).toEqual(before);
+  });
+
   it("(E3-22) 당첨자 501줄은 거부(행 수 불변) · 500줄은 만들어진다", async () => {
     const rows = (n: number): WinnerInput[] =>
       Array.from({ length: n }, (_, i) => ({

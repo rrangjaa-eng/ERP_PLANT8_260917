@@ -7,7 +7,7 @@ import { Button } from "@/ui/button/Button";
 import styles from "./vendors.module.css";
 
 // 03-UI-SPEC.md 「마스킹된 값의 표시와 해제」. 기본은 뒤 4자리만(masked
-// prop — 서버가 lib/crypto.maskTail4로 미리 만든 문자열). 해제 가능 여부
+// prop — 서버가 lib/mask-tail4의 maskTail4로 미리 만든 문자열). 해제 가능 여부
 // (canReveal)는 서버가 계산해 행마다 실어 보낸 값이다 — 권한이 없으면
 // 「번호 보기」가 이유 있는 비활성이 아니라 처음부터 렌더되지 않는다(권한이
 // 없다는 사실 자체를 화면에 노출하지 않는다).

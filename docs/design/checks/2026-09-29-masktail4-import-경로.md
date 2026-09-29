@@ -1,6 +1,6 @@
 # 04.3-08 ③-e maskTail4 import 경로만 옮김 — 점검표(화면 변경 없음)
-화면: app/(app)/admin/vendors/vendor-form.tsx, app/(app)/admin/vendors/page.tsx
-기준: BRIEF.md · frontend.md 화면 사용성 원칙 · CHECKLIST.md §1 · SYSTEM.md — 이 변경은 두 파일의 `maskTail4` import 줄 하나씩(`@/lib/crypto` → `@/lib/mask-tail4`)만 바꾼다. 함수 본문은 한 글자도 바뀌지 않고 그대로 옮겼다(E3-11 — 클라이언트 번들이 `lib/crypto.ts` → `lib/gcp/kms.ts` → `google-auth-library`를 끌어와 `pnpm build`가 `child_process`로 실패했기 때문)
+화면: app/(app)/admin/vendors/vendor-form.tsx, app/(app)/admin/vendors/page.tsx, app/(app)/admin/vendors/account-number.tsx
+기준: BRIEF.md · frontend.md 화면 사용성 원칙 · CHECKLIST.md §1 · SYSTEM.md — 이 변경은 두 파일의 `maskTail4` import 줄 하나씩(`@/lib/crypto` → `@/lib/mask-tail4`)과, 검토 반영 L5로 `account-number.tsx`의 옛 경로를 가리키던 주석 한 줄만 바꾼다. 함수 본문은 한 글자도 바뀌지 않고 그대로 옮겼다(E3-11 — 클라이언트 번들이 `lib/crypto.ts` → `lib/gcp/kms.ts` → `google-auth-library`를 끌어와 `pnpm build`가 `child_process`로 실패했기 때문)
 
 ## 원칙
 - [x] 안내 문구 — 근거: 해당 없음 — 렌더되는 JSX · 문구 변경 없음(`git diff`가 두 파일에서 import 줄 한 줄씩뿐)

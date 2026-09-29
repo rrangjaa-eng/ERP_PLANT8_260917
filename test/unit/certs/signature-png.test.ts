@@ -1,3 +1,4 @@
+import { deflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { countInkPixels, SIGNATURE_MIN_INK_PIXELS } from "@/domain/certs/signature-ink";
 import {
@@ -10,6 +11,7 @@ import {
   chunkOffsets,
   encodePng,
   padPngTo,
+  pngChunk,
   rgbaWithInk,
   signaturePngWithLine,
   SIG_HEIGHT,
@@ -158,6 +160,45 @@ describe("inspectSignaturePng — 형식", () => {
     const raw = Buffer.alloc(400 * (1 + SIG_WIDTH * 4));
     raw[0] = 5;
     expect(inspectSignaturePng(encodePng(ink, { rawIdat: raw }))).toEqual({ ok: false, reason: "format" });
+  });
+});
+
+describe("inspectSignaturePng — IDAT 이어짐 · zlib 끝 뒤 바이트(검토 M3)", () => {
+  // 유효 PNG의 시그니처 · IHDR · IEND를 그대로 두고 그 사이 청크만 바꿔 끼운다.
+  const base = signaturePngWithLine(60);
+  const offsets = chunkOffsets(base);
+  const ihdr = offsets.find((c) => c.type === "IHDR");
+  const iend = offsets.find((c) => c.type === "IEND");
+  if (!ihdr || !iend) throw new Error("IHDR · IEND 없음");
+  const head = base.subarray(0, ihdr.end);
+  const tail = base.subarray(iend.start);
+  const raw = Buffer.alloc(400 * (1 + SIG_WIDTH * 4));
+  for (let x = 100; x < 160; x++) {
+    for (let y = 300; y < 306; y++) raw[y * (1 + SIG_WIDTH * 4) + 1 + x * 4 + 3] = 255;
+  }
+  const stream = deflateSync(raw);
+  const half = Math.floor(stream.length / 2);
+  const text = pngChunk("tEXt", Buffer.from("k\0v", "latin1"));
+  const build = (...chunks: Buffer[]) => Buffer.concat([head, ...chunks, tail]);
+
+  it("IDAT 둘이 바로 이어짐 → ok(대조군)", () => {
+    const png = build(pngChunk("IDAT", stream.subarray(0, half)), pngChunk("IDAT", stream.subarray(half)));
+    expect(inspectSignaturePng(png)).toEqual({ ok: true });
+  });
+
+  it("IDAT 사이에 부속 청크(tEXt)가 끼어 IDAT가 끊김 → format", () => {
+    const png = build(pngChunk("IDAT", stream.subarray(0, half)), text, pngChunk("IDAT", stream.subarray(half)));
+    expect(inspectSignaturePng(png)).toEqual({ ok: false, reason: "format" });
+  });
+
+  it("zlib 스트림이 끝난 뒤 같은 IDAT 안에 바이트가 더 있음 → format", () => {
+    const png = build(pngChunk("IDAT", Buffer.concat([stream, Buffer.from("trailing")])));
+    expect(inspectSignaturePng(png)).toEqual({ ok: false, reason: "format" });
+  });
+
+  it("zlib 스트림이 끝난 뒤 이어진 IDAT에 바이트가 더 있음 → format", () => {
+    const png = build(pngChunk("IDAT", stream), pngChunk("IDAT", Buffer.from("trailing")));
+    expect(inspectSignaturePng(png)).toEqual({ ok: false, reason: "format" });
   });
 });
 

@@ -70,6 +70,7 @@ function submissionInputFor(rowId: string, proof: string, consent: { version: st
     idempotencyKey: randomUUID(),
     consentVersion: consent.version,
     retentionYears: consent.retentionYears,
+    winnerVersion: 1,
   };
 }
 
@@ -87,7 +88,7 @@ describe("확인증 공개 흐름 — 정상 제출·인증 거부", () => {
 
     const result = await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent));
 
-    expect(result.kind).toBe("submitted");
+    expect(result.kind).toBe("saved");
     const [submissionRow] = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
     expect(submissionRow).toBeDefined();
   });
@@ -287,7 +288,7 @@ describe("확인증 공개 흐름 — 동의 묶음(#15)", () => {
 
     // 받은 consent 그대로(5년) 제출 — 저장된다.
     const result = await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent));
-    expect(result.kind).toBe("submitted");
+    expect(result.kind).toBe("saved");
 
     const [submissionRow] = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
     expect(submissionRow?.retentionYears).toBe(5);
@@ -392,14 +393,14 @@ describe("확인증 공개 흐름 — 규약 C3 서명 업로드 의도 행(T1)"
     const result = await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent), {
       signatureStore: spyStore,
     });
-    expect(result.kind).toBe("submitted");
+    expect(result.kind).toBe("saved");
     expect(sawIntentDuringPut).toBe(true);
 
     const intents = await db.select().from(certSignatureUploads);
     expect(intents).toHaveLength(0);
   });
 
-  it("put 뒤 트랜잭션이 실패하면 객체가 지워지고 의도 행이 0이다", async () => {
+  it("put 뒤 트랜잭션이 실패하면 객체가 지워지고 의도 행 1이 남는다(예외 갈래 — 04.3-12가 치운다)", async () => {
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
     const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
@@ -432,7 +433,7 @@ describe("확인증 공개 흐름 — 규약 C3 서명 업로드 의도 행(T1)"
 
     expect(await realStore.get(key)).toBeNull();
     const intents = await db.select().from(certSignatureUploads);
-    expect(intents).toHaveLength(0);
+    expect(intents).toHaveLength(1);
   });
 
   it("트랜잭션 실패 + 객체 지우기 실패를 함께 주입하면 의도 행 1이 남고 listStaleSignatureUploadIntents가 그 키를 돌려준다", async () => {
@@ -571,13 +572,14 @@ describe("확인증 공개 흐름 — 풀 교착 없음(T-04.3-140)", () => {
               idempotencyKey: randomUUID(),
               consentVersion: p.consent.version,
               retentionYears: p.consent.retentionYears,
+              winnerVersion: 1,
             },
             { signatureStore: barrierStore },
           ),
         ),
       );
 
-      expect(results.every((r) => r.kind === "submitted")).toBe(true);
+      expect(results.every((r) => r.kind === "saved")).toBe(true);
       const submissionRows = await db.select().from(certSubmissions).where(eq(certSubmissions.eventId, eventId));
       expect(submissionRows).toHaveLength(concurrency);
       expect(new Set(submissionRows.map((r) => r.certNo)).size).toBe(concurrency);
@@ -642,14 +644,14 @@ describe("확인증 공개 흐름 — E3-02 제출 로그 같은 tx(로그 실�
 
     // 같은 증표 · 같은 입력으로 다시 제출 — 롤백이 증표를 되살렸다.
     const retry = await submitCertificate(token, input);
-    expect(retry.kind).toBe("submitted");
+    expect(retry.kind).toBe("saved");
     const afterRetry = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
     expect(afterRetry).toHaveLength(1);
 
     // T4 — 재시도 뒤 document_submit 로그가 정확히 1건이다.
     const { queryActionLog } = await import("@/repositories/action-log");
     const logs = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_submit" });
-    expect(logs.filter((l) => l.entityId === winnerId)).toHaveLength(1);
+    expect(logs.filter((l) => l.entityId === afterRetry[0]!.id)).toHaveLength(1);
   });
 
   it("설정에서 document_submit을 끄면 제출은 저장되고 로그는 0건이다", async () => {
@@ -663,16 +665,17 @@ describe("확인증 공개 흐름 — E3-02 제출 로그 같은 tx(로그 실�
     if (verified.kind !== "ok") throw new Error("unreachable");
 
     const result = await submitCertificate(token, submissionInputFor(winnerId, verified.proof, verified.consent));
-    expect(result.kind).toBe("submitted");
+    expect(result.kind).toBe("saved");
 
     const logs = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_submit" });
-    const logsForThisSubmission = logs.filter((l) => l.entityId === winnerId);
+    const [submissionRow] = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
+    const logsForThisSubmission = logs.filter((l) => l.entityId === submissionRow!.id);
     expect(logsForThisSubmission).toHaveLength(0);
   });
 });
 
 describe("확인증 공개 흐름 — 같은 자리 두 번째 제출(T2)", () => {
-  it("같은 증표 · 같은 멱등 키로 순서대로 다시 제출하면 거부되고, 행 · 카운터 · 의도 행 · 로그가 늘지 않는다", async () => {
+  it("같은 증표 · 같은 멱등 키로 순서대로 다시 제출하면 첫 결과를 재생하고(04.3-06), 행 · 카운터 · 의도 행 · 로그가 늘지 않는다", async () => {
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
     const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
@@ -680,7 +683,7 @@ describe("확인증 공개 흐름 — 같은 자리 두 번째 제출(T2)", () =
 
     const input = submissionInputFor(winnerId, verified.proof, verified.consent);
     const first = await submitCertificate(token, input);
-    expect(first.kind).toBe("submitted");
+    expect(first.kind).toBe("saved");
 
     const { findDocumentCounter } = await import("@/repositories/document-counters");
     const { kstYear } = await import("@/lib/kst-date");
@@ -688,7 +691,7 @@ describe("확인증 공개 흐름 — 같은 자리 두 번째 제출(T2)", () =
     const counterBefore = await findDocumentCounter(SYSTEM_VIEWER, "cert", period);
 
     const second = await submitCertificate(token, input);
-    expect(second.kind).toBe("expiredProof");
+    expect(second).toEqual(first);
 
     const rows = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
     expect(rows).toHaveLength(1);
@@ -701,7 +704,7 @@ describe("확인증 공개 흐름 — 같은 자리 두 번째 제출(T2)", () =
 
     const { queryActionLog } = await import("@/repositories/action-log");
     const logs = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_submit" });
-    const logsForThisSubmission = logs.filter((l) => l.entityId === winnerId);
+    const logsForThisSubmission = logs.filter((l) => l.entityId === rows[0]!.id);
     expect(logsForThisSubmission).toHaveLength(1);
     expect(Object.keys(logsForThisSubmission[0]!.detail as Record<string, unknown>)).toEqual(["eventId"]);
   });
@@ -722,7 +725,7 @@ describe("확인증 공개 흐름 — Task 3 ⑦ 주민등록번호 되묻기", 
     expect(rowsAfterFirst).toHaveLength(0);
 
     const second = await submitCertificate(token, { ...input, rrnRecheckConfirmed: true });
-    expect(second.kind).toBe("submitted");
+    expect(second.kind).toBe("saved");
     const rowsAfterSecond = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId));
     expect(rowsAfterSecond).toHaveLength(1);
   });
@@ -838,7 +841,7 @@ describe("확인증 공개 흐름 — 제출 확인과 트랜잭션 사이 경�
     };
   }
 
-  it("확인을 통과한 뒤 트랜잭션 전에 담당자가 링크를 닫으면 notFound, 제출 행 0 · 의도 행 0", async () => {
+  it("확인을 통과한 뒤 트랜잭션 전에 담당자가 링크를 닫으면 closed, 제출 행 0 · 의도 행 0", async () => {
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
     const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
@@ -850,7 +853,7 @@ describe("확인증 공개 흐름 — 제출 확인과 트랜잭션 사이 경�
       }),
     });
 
-    expect(result).toEqual({ kind: "notFound" });
+    expect(result).toMatchObject({ kind: "closed", reason: "manual" });
     expect(await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId))).toHaveLength(0);
     expect(await db.select().from(certSignatureUploads)).toHaveLength(0);
   });
@@ -878,7 +881,7 @@ describe("확인증 공개 흐름 — 닫힌 행사에는 제출하지 않는다
   it.each([
     ["수동으로 닫힘", { closedAt: new Date(), closedReason: "manual" as const }],
     ["기한 지남", { expiresAt: new Date(Date.now() - 60_000) }],
-  ])("증표를 받은 뒤 %s → notFound, put 0 · 제출 행 0", async (_label, patch) => {
+  ])("증표를 받은 뒤 %s → closed, put 0 · 제출 행 0", async (_label, patch) => {
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
     const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
@@ -890,7 +893,7 @@ describe("확인증 공개 흐름 — 닫힌 행사에는 제출하지 않는다
       signatureStore: { put, get: vi.fn(), delete: vi.fn() },
     });
 
-    expect(result).toEqual({ kind: "notFound" });
+    expect(result).toMatchObject({ kind: "closed" });
     expect(put).not.toHaveBeenCalled();
     expect(await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId))).toHaveLength(0);
   });

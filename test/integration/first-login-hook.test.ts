@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { auth } from "@/lib/auth";
-import { pool } from "@/db/client";
+import { eq } from "drizzle-orm";
+import { db, pool } from "@/db/client";
+import { users } from "@/db/schema";
 import { CLIENT_IP_HEADER } from "@/lib/client-ip";
 import { log } from "@/lib/log";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -47,9 +49,10 @@ function signIn(email: string, password: string): Promise<Response> {
   );
 }
 
+// 앱과 같은 drizzle 매핑으로 읽는다 — timestamp(시간대 없음)를 pg 기본 파서로 읽으면 로컬 시간대로 해석돼 UTC가 아닌 PC에서 어긋난다.
 async function firstLoginAt(userId: string): Promise<Date | null> {
-  const result = await pool.query<{ first_login_at: Date | null }>("select first_login_at from users where id = $1", [userId]);
-  return result.rows[0]?.first_login_at ?? null;
+  const [row] = await db.select({ firstLoginAt: users.firstLoginAt }).from(users).where(eq(users.id, userId));
+  return row?.firstLoginAt ?? null;
 }
 
 async function newAccount(prefix: string): Promise<{ userId: string; email: string; tempPassword: string }> {

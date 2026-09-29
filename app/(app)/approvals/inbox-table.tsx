@@ -99,7 +99,26 @@ export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectM
         </span>
       ),
     },
-    { key: "drafter", header: "기안", priority: "p2", cell: (row) => row.drafter },
+    {
+      key: "drafter",
+      header: "기안",
+      priority: "p2",
+      cell: (row) => row.drafter,
+      // 폰 접힌 줄(`기안자 · MM-DD`)도 행의 일부라 주 행과 같은 곳으로 간다(04.1-07 DOM 감사 ① · `/leave` 04.1-06 #6과 같은 방식).
+      // 접힌 줄은 ui/table이 aria-hidden으로 그리므로 탭 순서에서 빼고(주 행 대상 하나만 초점) ::after로 그 줄을 덮는다.
+      summary: (row) =>
+        row.sheet ? (
+          <button type="button" tabIndex={-1} className={styles.foldTap} onClick={() => setSheetItem(row.sheet)}>
+            {row.drafter}
+          </button>
+        ) : row.group === "processed" && row.href ? (
+          <Link href={row.href} tabIndex={-1} className={styles.foldTap}>
+            {row.drafter}
+          </Link>
+        ) : (
+          row.drafter
+        ),
+    },
     { key: "days", header: "일수", priority: "p1", align: "right", cell: (row) => row.days },
     {
       key: "status",

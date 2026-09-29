@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import "@/domain/leave";
 import { getApprovalView } from "@/domain/approvals";
 import { submitLeave } from "@/domain/leave";
@@ -11,6 +11,14 @@ import { delayServerActions, documentLabel, documentTitle, loginPage, setupLeave
 // 한 번만 처리된다(T7). 날짜는 테스트 맨 앞 서울 오늘 한 번에서만(CXF2-B-RF03 · week 2~3 — 다른 스펙과 겹치지 않게).
 
 const PHONE = { width: 375, height: 800 };
+
+// 폰 접힌 줄(`기안자 · MM-DD`, ui/table이 주 행 아래에 따로 그림)도 행의 일부 — 그 줄 가운데를 눌러도 같은 곳으로 간다(04.1-07 DOM 감사 ①).
+async function tapFoldedRow(page: Page, drafterName: string): Promise<void> {
+  const folded = page.locator("main tbody tr", { hasText: new RegExp(`^${drafterName} · \\d{2}-\\d{2}$`) });
+  const box = await folded.boundingBox();
+  if (!box) throw new Error("접힌 줄 없음");
+  await page.mouse.click(box.x + box.width * 0.6, box.y + box.height / 2);
+}
 
 test.describe("폰 결재 시트 (04.1-05)", () => {
   test("팀장이 폰으로 내 결재 행을 탭해 근거를 보고 승인하면 그 행이 처리함 문서 링크가 된다", async ({ browser, baseURL }) => {
@@ -36,6 +44,10 @@ test.describe("폰 결재 시트 (04.1-05)", () => {
     // 내 결재 행 탭 대상 = button + aria-haspopup="dialog"(T4).
     const trigger = lead.getByRole("button", { name: documentLabel(range) });
     await expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
+    await tapFoldedRow(lead, org.drafter.name);
+    await expect(lead.getByRole("dialog")).toBeVisible();
+    await lead.keyboard.press("Escape");
+    await expect(lead.getByRole("dialog")).toBeHidden();
     await trigger.click();
 
     const sheet = lead.getByRole("dialog");
@@ -61,6 +73,9 @@ test.describe("폰 결재 시트 (04.1-05)", () => {
     await expect(processed).toBeVisible();
     await expect(processed).not.toHaveAttribute("aria-haspopup", /.*/);
     await expect(lead.getByRole("button", { name: documentLabel(range) })).toHaveCount(0);
+    await tapFoldedRow(lead, org.drafter.name);
+    await expect(lead).toHaveURL(/\/leave\/[0-9a-f-]{36}$/);
+    await lead.goBack();
     await processed.click();
     await expect(lead).toHaveURL(/\/leave\/[0-9a-f-]{36}$/);
     await expect(lead.getByRole("dialog")).toHaveCount(0);

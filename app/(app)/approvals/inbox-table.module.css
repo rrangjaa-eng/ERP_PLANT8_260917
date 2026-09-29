@@ -39,8 +39,26 @@
 
 @media (max-width: 699.98px) {
   /* 행 전체가 탭 대상 — 문서 칸의 button · 링크가 ::after로 그 행을 덮는다(ui/table은 고치지 않는다). */
-  tr:has(.rowTap, .rowLink) {
+  tr:has(.rowTap, .rowLink, .foldTap) {
     position: relative;
+  }
+
+  /* 접힌 줄 대상 — 글자 모양은 접힌 줄 그대로(04.1-07 DOM 감사 ①). */
+  .foldTap {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .foldTap::after {
+    content: "";
+    position: absolute;
+    inset: 0;
   }
 
   .wideOnly {

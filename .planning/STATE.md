@@ -5,10 +5,10 @@ current_phase_name: 프로젝트·견적 원장
 current_plan: 42
 status: verifying
 stopped_at: Completed 04-31-PLAN.md — Phase 4 전체 완료(42/42)
-last_updated: "2026-09-29T04:04:47.299Z"
-last_activity: 2026-09-28
+last_updated: "2026-09-29T06:47:49.892Z"
+last_activity: 2026-09-29
 last_activity_desc: Phase 4 execution started
-state_head: 77d03804824d80bbe9a72e964741ceba840fe3bd
+state_head: f39783d4ae0dfbeac346f39d22844f8abf9369c3
 progress:
   total_phases: 17
   completed_phases: 1
@@ -334,6 +334,7 @@ Recent decisions affecting current work:
 | 260928-85f | 04-51 (b) 거부 문구 현재 값 기준 | 2026-09-28 | c89ab1b | [260928-85f-04-51-b-dr-p4-02-04-6](./quick/260928-85f-04-51-b-dr-p4-02-04-6/) |
 | 260929-49c | PR #85 Codex #3·#4·#5 수정(보관 요청 무한 실패·저장 300줄 상한·보관 프로젝트 연결 거부) | 2026-09-29 | 77d03804 | [260929-49c-reserves-codex-fixes-3-4-5](./quick/260929-49c-reserves-codex-fixes-3-4-5/) |
 | 260929-6gr | PR #85 검토 후속: 활성→보관 프로젝트 변경 거부 통합 테스트 · 보관 거부 판정 순수 함수 추출+단위 테스트(capNotice는 기록만) | 2026-09-29 | 41db5a8b | [260929-6gr-reserves-review-follow-up-tests-and-capn](./quick/260929-6gr-reserves-review-follow-up-tests-and-capn/) |
+| 260929-8ls | PR #85 Codex B: 비활성·보관 증빙 코드가 붙은 기존 리저브 줄 수정 허용(새 줄·값 변경만 활성 검사) | 2026-09-29 | f39783d4 | [260929-8ls-codex-b-evidence-inactive-code-on-existi](./quick/260929-8ls-codex-b-evidence-inactive-code-on-existi/) |
 
 ### Roadmap Evolution
 

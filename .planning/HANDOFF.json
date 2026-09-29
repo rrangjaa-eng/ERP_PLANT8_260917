@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-29T14:00:20.793Z",
+  "timestamp": "2026-09-29T14:15:41.905Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -26,6 +26,12 @@
       "name": "/gsd-secure-phase 4 — 04-SECURITY.md(229행, 닫힘 227, 열림 2: T-04-31 high 차단 · T-04-373 medium 비차단)",
       "status": "done",
       "commit": "767c89f2"
+    },
+    {
+      "id": 4,
+      "name": "/gsd-ui-review 4 — 04-UI-REVIEW.md 19/24(Copy 3·Visuals 3·Color 4·Typo 3·Spacing 3·XD 3), DOM 실측 CI=true 9화면×4폭=36회",
+      "status": "done",
+      "commit": "3aee0aa4"
     }
   ],
   "remaining_tasks": [
@@ -58,6 +64,16 @@
       "action": "T-04-31 구분자 허용 문자 결정 또는 수락",
       "context": "PR #104 댓글로 질문 — 기록에 없는 새 결정이라 세션이 정하지 않음",
       "blocking": true
+    },
+    {
+      "action": "UI-REVIEW 사용자 판단 3건: ① 등록 폼 제출 오류 문구 정본(코드 `등록 실패 · {칸} {n}칸` vs UI-SPEC:385 `등록하지 못했습니다 · 클라이언트 1칸`) ② 견적 표 행 번호가 숫자 규칙(tabular·우측·nowrap) 대상인지 ③ S19 「오류로 이동」을 폼(등록 폼 빈 제출 → 첫 오류 칸 포커스)에도 적용할지",
+      "context": "04-UI-REVIEW.md — 기록된 결정 없음. PR #104 댓글로 질문. 막지 않음(ui 훅 onError skip)",
+      "blocking": false
+    },
+    {
+      "action": "UI-REVIEW 계약 위반 2건 수정 여부·시점: 폰 상세 「더보기」·「상태 바꾸기」 40px(UI-SPEC Spacing --touch-min 44) · 폰 목록 정렬 머리글 19px(SYSTEM §3 44)",
+      "context": "계약이 정한 값이라 새 결정은 아니지만 이 세션 단위 밖 — 사용자 지시 「고칠 것은 인계·사용자 판단」. 수정은 /gsd-quick(화면 → design-gate·DOM 감사)",
+      "blocking": false
     }
   ],
   "decisions": [
@@ -375,7 +391,7 @@
   "uncommitted_files": [
     " M .planning/phases/04-project-quote-ledger/.continue-here.md"
   ],
-  "next_action": "/gsd-progress → /gsd-ui-review 4(verify:post 세 번째 훅). T-04-31 사용자 답 처리(quick 또는 수락 → /gsd-secure-phase 4 재실행)는 그다음 세션. 그 뒤 전환(①(a) 포함).",
+  "next_action": "새 세션 → 시작 점검(설정·HEAD·continue-here 세션 014Fu9ZZ(ui-review)·01RVH7oW 블록·PR #104 [지시]·main) → T-04-31 [지시] 답이 있으면 처리((1) /gsd-quick TDD 또는 (2) 수락 기록) → /gsd-secure-phase 4 재실행. 답이 없으면 PR #104에 「[막힘] T-04-31 답 대기」 한 줄 남기고 다음 세션을 만들지 않고 멈춤(전환은 SECURITY threats_open 0이 필요). UI-REVIEW 판단 3건·계약 위반 2건도 [지시] 확인",
   "context_notes": "secure-phase 4 결과 BLOCKED(T-04-31 한 건, 실제 위험 낮음). ui-review 4는 보안 막힘과 독립이라 먼저 진행. 세션 01REzuX1: validate-phase 4 끝(1dbc5163 · 91cee9bf), main #91 머지 4f20665f. 사용자 취침 중 — 한 단위씩 이어서 하고 각자 PR #104에 [완료 보고]. 04-52 갈래 G, 변이 3종 모두 잡힘. 04-53은 depends_on 04-52(D4) 충족.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",

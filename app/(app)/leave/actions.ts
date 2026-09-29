@@ -4,10 +4,12 @@ import { z } from "zod";
 import { authedActionClient } from "@/lib/actions/client";
 import "@/app/(app)/document-kinds";
 import { formatRequestBalanceRow, formatRequestBalanceRowBeforeDates, LEAVE_DOCUMENT_KIND, LeaveValidationError, submitLeave } from "@/domain/leave";
-import { countLeaveQuarters, type LeaveFieldError } from "@/domain/leave/days";
+import { countLeaveQuarters, leaveYearRange, type LeaveFieldError } from "@/domain/leave/days";
+import { seoulToday } from "@/lib/dates";
 import { assertLeaveWrite } from "@/domain/leave/access";
 import { previewLeaveBalance } from "@/domain/leave/balance-service";
-import { currentHolderNames, previewRoute, projectActionResult, RouteBlockedError, withdrawDocument, type RoutePreviewDTO } from "@/domain/approvals";
+import { currentHolderNames, projectActionResult, withdrawDocument } from "@/domain/approvals";
+import { previewRouteOrBlocked } from "./route-preview";
 import { resubmitLeave } from "@/domain/leave/resubmit";
 import "./actions.registry";
 
@@ -39,7 +41,7 @@ export const submitLeaveAction = authedActionClient.schema(leaveInputSchema).act
 
 // 회수 — 기안자 판정만(leave write와 무관 — 계획 가정 4). 이름 · 일수 없는 `회수 · 결재 멈춤`이라 투영할 필드가 없다.
 export const withdrawLeaveAction = authedActionClient
-  .schema(z.object({ instanceId: z.string().min(1).max(64), expectedVersion: z.number().int().min(1) }))
+  .schema(z.object({ instanceId: z.string().uuid(), expectedVersion: z.number().int().min(1) }))
   .action(async ({ parsedInput, ctx }) => {
     const withdrawn = await withdrawDocument(ctx.viewer, parsedInput);
     return { documentId: withdrawn.documentId };
@@ -47,7 +49,7 @@ export const withdrawLeaveAction = authedActionClient
 
 // 다시 신청 — leave write 판정 · 칸 검증은 도메인(resubmitLeave 첫 줄 · countLeaveQuarters).
 export const resubmitLeaveAction = authedActionClient
-  .schema(z.object({ leaveId: z.string().min(1).max(64), expectedVersion: z.number().int().min(1), input: leaveInputSchema }))
+  .schema(z.object({ leaveId: z.string().uuid(), expectedVersion: z.number().int().min(1), input: leaveInputSchema }))
   .action(async ({ parsedInput, ctx }) => {
     let resubmitted: Awaited<ReturnType<typeof resubmitLeave>>;
     try {
@@ -73,7 +75,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // 통과할 때만)을 한 응답으로 준다. 이번 신청 일수는 잔고 행에만 있다(힌트에 싣지 않는다).
 export const previewLeaveAction = authedActionClient.schema(leaveInputSchema).action(async ({ parsedInput, ctx }) => {
   await assertLeaveWrite(ctx.viewer);
-  const days = countLeaveQuarters(parsedInput);
+  const days = countLeaveQuarters(parsedInput, leaveYearRange(seoulToday()));
   let weekendDays: number | null = null;
   let balance: ReturnType<typeof formatRequestBalanceRow> = null;
   if (days.ok) {
@@ -86,14 +88,7 @@ export const previewLeaveAction = authedActionClient.schema(leaveInputSchema).ac
   }
   // 결재선이 막혀도(대표 없음) 잔고 행은 버리지 않고 막힌 이유를 결재선 자리에 준다 — 제출해야 처음 보이지 않게
   // (04.1-06 코드 검토 L3). 다른 오류는 그대로 던진다.
-  let route: RoutePreviewDTO | null = null;
-  let routeBlocked: string | null = null;
-  try {
-    route = await previewRoute(ctx.viewer, { kind: LEAVE_DOCUMENT_KIND });
-  } catch (error) {
-    if (!(error instanceof RouteBlockedError)) throw error;
-    routeBlocked = error.message;
-  }
+  const { route, blocked: routeBlocked } = await previewRouteOrBlocked(ctx.viewer);
   return { remote: days.ok && days.kind === "remote", weekendDays, balance, route, routeBlocked };
 });
 

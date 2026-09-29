@@ -46,7 +46,7 @@ import {
   setLeaveNumber,
   type LeaveRequestWithApproval,
 } from "@/repositories/leave-requests";
-import { countLeaveQuarters, formatLeaveDays, type HalfPeriod, type LeaveFieldError, type LeaveKind } from "@/domain/leave/days";
+import { countLeaveQuarters, formatLeaveDays, leaveYearRange, type HalfPeriod, type LeaveFieldError, type LeaveKind } from "@/domain/leave/days";
 import { LEAVE_REQUEST_DTO_SPEC, type LeaveRequestBalanceDto, type LeaveRequestDto } from "@/domain/leave/dto";
 import { assertLeaveWrite, canSeeLeaveDocument, canWriteLeave, LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
 import { getLeaveBalancesForRequests } from "@/domain/leave/balance-service";
@@ -298,9 +298,10 @@ export async function submitLeave(
   deps?: SubmitLeaveDeps,
 ): Promise<{ leaveId: string; instanceId: string; number: string; version: number }> {
   await assertLeaveWrite(viewer);
-  const days = countLeaveQuarters(input);
+  const today = seoulToday(deps?.now);
+  const days = countLeaveQuarters(input, leaveYearRange(today));
   if (!days.ok) throw new LeaveValidationError(days.errors);
-  const year = Number(seoulToday(deps?.now).slice(0, 4));
+  const year = Number(today.slice(0, 4));
 
   const prepared = await prepareSubmission(viewer, { kind: LEAVE_DOCUMENT_KIND, drafterId: viewer.id }, { now: deps?.now });
   const format = await loadDocumentNumberFormat(LEAVE_DOCUMENT_KIND);

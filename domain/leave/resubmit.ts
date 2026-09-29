@@ -4,7 +4,8 @@ import { withTransaction } from "@/lib/db-transaction";
 import { NOT_HOLDER_MESSAGE, NotCurrentHolderError, prepareSubmission, resubmitDocument } from "@/domain/approvals";
 import type { TxLogDeps } from "@/domain/approvals/tx-log";
 import { findLeaveRequestById, updateLeaveRequestFields } from "@/repositories/leave-requests";
-import { countLeaveQuarters } from "@/domain/leave/days";
+import { countLeaveQuarters, leaveYearRange } from "@/domain/leave/days";
+import { seoulToday } from "@/lib/dates";
 import { assertLeaveWrite, LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
 import { LeaveValidationError, type SubmitLeaveInput } from "@/domain/leave";
 
@@ -22,7 +23,7 @@ export async function resubmitLeave(
 ): Promise<{ leaveId: string; instanceId: string; version: number; round: number; nextHolderNames: string | null }> {
   await assertLeaveWrite(viewer);
   // 검증된 값만 저장한다 — countLeaveQuarters가 돌려준 {kind, half}와 날짜(입력 원문을 쓰지 않는다).
-  const days = countLeaveQuarters(input.input);
+  const days = countLeaveQuarters(input.input, leaveYearRange(seoulToday(deps?.now)));
   if (!days.ok) throw new LeaveValidationError(days.errors);
   const note = input.input.note?.trim() ? input.input.note.trim() : null;
 

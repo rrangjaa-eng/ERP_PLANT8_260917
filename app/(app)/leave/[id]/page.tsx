@@ -6,7 +6,6 @@ import { formatLeaveTitle, formatRequestBalanceRow, getLeave, LEAVE_DOCUMENT_KIN
 import { getLeaveBalanceForRequest } from "@/domain/leave/balance-service";
 import {
   getApprovalView,
-  previewRoute,
   REJECT_REASON_EMPTY_MESSAGE,
   REJECT_REASON_MAX,
   REJECT_REASON_TOO_LONG_MESSAGE,
@@ -18,6 +17,7 @@ import { ApprovalRoute } from "@/ui/approval-route/ApprovalRoute";
 import { DayNumbers } from "../day-numbers";
 import { formatLeavePeriod, HALF_LABELS, LEAVE_KIND_LABELS } from "../labels";
 import { leaveStatusDisplay, routeListSteps, seoulMinuteOf, toLeaveStatusKey, withdrawResultLines } from "../status-display";
+import { previewRouteOrBlocked } from "../route-preview";
 import { DocumentActions } from "./document-actions";
 import { SubmittedToast } from "./submitted-toast";
 import styles from "../leave.module.css";
@@ -108,7 +108,7 @@ export default async function LeaveDocumentPage({
   }
 
   // 다시 신청 미리보기 — 지금 설정 · 소속으로 다시 해석한 제출 전 한 줄(S3 반려 편집).
-  const preview = resubmitting ? await previewRoute(viewer, { kind: LEAVE_DOCUMENT_KIND }) : null;
+  const { route: preview, blocked: routeBlocked } = resubmitting ? await previewRouteOrBlocked(viewer) : { route: null, blocked: null };
   const skipped = preview?.steps.filter((step) => step.skipped).map((step) => `${step.label ?? ""} 단계 건너뜀(자기 승인 없음)`) ?? [];
 
   return (
@@ -153,6 +153,8 @@ export default async function LeaveDocumentPage({
               steps={preview.steps.filter((step) => !step.skipped).map((step) => ({ person: step.holderNames ?? "", label: step.label ?? "" }))}
               skippedNote={skipped.join(" · ") || null}
             />
+          ) : routeBlocked ? (
+            <span className={styles.blockedReason}>{routeBlocked}</span>
           ) : null
         }
       />

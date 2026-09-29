@@ -25,6 +25,15 @@ const WEEKEND_ONLY_ERROR = "주말만 고른 기간 · 평일 넣기";
 const FISCAL_YEAR_ERROR = "기간이 회계연도를 넘음 · 12-31과 01-01로 나눠 신청";
 const SINGLE_DAY_ERROR = "반차·반반차는 하루뿐 · 날짜 하나만 적기";
 
+// 연차 날짜 연도 범위 — 서버 입구(제출 · 다시 신청)는 [MIN_LEAVE_YEAR, 올해 + 1]만 받는다(/review). 아래 끝은
+// `/leave` · 관리자 연차 섹션의 `?year=` 해석과 같은 값이다.
+export const MIN_LEAVE_YEAR = 2000;
+export type LeaveYearRange = { minYear: number; maxYear: number };
+
+export function leaveYearRange(today: string): LeaveYearRange {
+  return { minYear: MIN_LEAVE_YEAR, maxYear: Number(today.slice(0, 4)) + 1 };
+}
+
 export type LeaveDaysInput = { kind: string; startDate: string; endDate: string; half: string };
 export type LeaveFieldError = { field: "kind" | "startDate" | "endDate" | "half"; message: string };
 export type LeaveDaysResult =
@@ -66,7 +75,7 @@ function countWeekdays(startMs: number, endMs: number): number {
   return count;
 }
 
-export function countLeaveQuarters(input: LeaveDaysInput): LeaveDaysResult {
+export function countLeaveQuarters(input: LeaveDaysInput, range?: LeaveYearRange): LeaveDaysResult {
   if (!isLeaveKind(input.kind)) return { ok: false, errors: [{ field: "kind", message: LEAVE_KIND_EMPTY_ERROR }] };
   const kind = input.kind;
   const singleDay = kind === "half_day" || kind === "quarter_day";
@@ -90,6 +99,10 @@ export function countLeaveQuarters(input: LeaveDaysInput): LeaveDaysResult {
   }
   if (errors.length > 0 || startMs === null || endMs === null) return { ok: false, errors };
 
+  const startYear = Number(input.startDate.slice(0, 4));
+  if (range && (startYear < range.minYear || startYear > range.maxYear)) {
+    return { ok: false, errors: [{ field: "startDate", message: `연도 범위 밖 · ${range.minYear}~${range.maxYear}년 날짜 고르기` }] };
+  }
   if (singleDay && endMs !== startMs) return { ok: false, errors: [{ field: "endDate", message: SINGLE_DAY_ERROR }] };
   if (endMs < startMs) return { ok: false, errors: [{ field: "endDate", message: END_BEFORE_START_ERROR }] };
   if (input.startDate.slice(0, 4) !== endDate.slice(0, 4)) {

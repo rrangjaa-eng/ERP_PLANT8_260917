@@ -7,7 +7,7 @@ import { CEO_ROLE_ID, DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID, createRole } from "@/d
 import { setPermissionCell } from "@/domain/permissions/matrix";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { getApprovalView, rejectDocument, withdrawDocument } from "@/domain/approvals";
-import { submitLeave, LEAVE_DOCUMENT_KIND } from "@/domain/leave";
+import { submitLeave, LEAVE_DOCUMENT_KIND, LeaveValidationError } from "@/domain/leave";
 import { resubmitLeave } from "@/domain/leave/resubmit";
 import { previewLeaveBalance } from "@/domain/leave/balance-service";
 import { countRows, makePerson, NOW_2026 } from "./approvals-fixtures";
@@ -73,5 +73,28 @@ describe("연차 쓰기 권한의 도메인 강제(Codex HIGH 02)", () => {
 
     await setLeaveWrite(true);
     expect(await actionsOf(drafter, rejected.leaveId)).toEqual(["resubmit"]);
+  });
+});
+
+// /review(red-team): 서버 입구는 [2000, 올해 + 1] 밖 날짜를 저장하지 않는다(9999년 신청이 목록 연도 선택지를 수천 개로 만든다).
+describe("연차 날짜 연도 범위 — 제출 · 다시 신청", () => {
+  const FAR = { kind: "full_day", startDate: "9999-01-04", endDate: "9999-01-04", half: "" };
+
+  it("범위 밖 날짜의 제출 · 다시 신청은 LeaveValidationError(시작일 칸)이고 행이 늘지 않는다", async () => {
+    const drafter = await makePerson("박서연", DEFAULT_ROLE_ID, "기획1팀");
+    const lead = await makePerson("김팀장", TEAM_LEAD_ROLE_ID, "기획1팀");
+    await makePerson("최대표", CEO_ROLE_ID, null);
+    const before = await countRows("leave_requests");
+    const submitError = await submitLeave(drafter, FAR, { now: NOW_2026 }).catch((error: unknown) => error);
+    expect(submitError).toBeInstanceOf(LeaveValidationError);
+    expect((submitError as LeaveValidationError).fieldErrors).toEqual([{ field: "startDate", message: "연도 범위 밖 · 2000~2027년 날짜 고르기" }]);
+    expect(await countRows("leave_requests")).toBe(before);
+
+    const doc = await submitLeave(drafter, { ...FAR, startDate: "2026-10-01", endDate: "2026-10-01" }, { now: NOW_2026 });
+    await rejectDocument(lead, { instanceId: doc.instanceId, expectedVersion: doc.version, reason: "날짜 확인" }, { now: NOW_2026 });
+    const resubmitError = await resubmitLeave(drafter, { leaveId: doc.leaveId, expectedVersion: doc.version + 1, input: FAR }, { now: NOW_2026 }).catch(
+      (error: unknown) => error,
+    );
+    expect(resubmitError).toBeInstanceOf(LeaveValidationError);
   });
 });

@@ -5,6 +5,8 @@ import {
   DEFAULT_HALF_PERIOD,
   LEAVE_KIND_EMPTY_ERROR,
   LEAVE_HALF_EMPTY_ERROR,
+  leaveYearRange,
+  MIN_LEAVE_YEAR,
 } from "@/domain/leave/days";
 
 // LEAV-01: 일수는 정수 1/4일(쿼터). 종일 = 평일 수 × 4, 반차 = 2, 반반차 = 1,
@@ -111,6 +113,35 @@ describe("countLeaveQuarters — 단위", () => {
     expect(LEAVE_KIND_EMPTY_ERROR).toBe("종류 비어 있음 · 종류 고르기");
     expect(LEAVE_HALF_EMPTY_ERROR).toBe("시간 비어 있음 · 시간 고르기");
     expect(DEFAULT_HALF_PERIOD).toBe("am");
+  });
+});
+
+// /review(red-team): 서버에 연도 끝이 없으면 9999년 신청이 저장돼 `/leave` 연도 선택지가 수천 개가 되고, 1999년
+// 신청은 목록 연도 해석(2000 미만 거부)에서 빠져 URL로만 닿는다. 서버 입구는 [2000, 올해 + 1]만 받는다.
+describe("countLeaveQuarters — 연도 범위", () => {
+  const range = leaveYearRange("2026-09-29");
+
+  it("범위는 [MIN_LEAVE_YEAR(2000), 올해 + 1]", () => {
+    expect(MIN_LEAVE_YEAR).toBe(2000);
+    expect(range).toEqual({ minYear: 2000, maxYear: 2027 });
+  });
+
+  it("범위 밖 시작일(9999 · 1999)은 시작일 칸 오류, 범위 안(2027 · 2000)은 통과", () => {
+    const message = "연도 범위 밖 · 2000~2027년 날짜 고르기";
+    expect(countLeaveQuarters({ kind: "full_day", startDate: "9999-01-04", endDate: "9999-01-04", half: "" }, range)).toEqual({
+      ok: false,
+      errors: [{ field: "startDate", message }],
+    });
+    expect(countLeaveQuarters({ kind: "half_day", startDate: "1999-03-02", endDate: "", half: "am" }, range)).toEqual({
+      ok: false,
+      errors: [{ field: "startDate", message }],
+    });
+    expect(countLeaveQuarters({ kind: "full_day", startDate: "2027-01-04", endDate: "2027-01-04", half: "" }, range).ok).toBe(true);
+    expect(countLeaveQuarters({ kind: "full_day", startDate: "2000-01-03", endDate: "2000-01-03", half: "" }, range).ok).toBe(true);
+  });
+
+  it("범위를 넘기지 않으면(화면 계산) 연도를 막지 않는다", () => {
+    expect(countLeaveQuarters({ kind: "full_day", startDate: "9999-01-04", endDate: "9999-01-04", half: "" }).ok).toBe(true);
   });
 });
 

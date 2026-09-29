@@ -6,13 +6,13 @@ import { authedActionClient } from "@/lib/actions/client";
 import { seoulToday } from "@/lib/dates";
 import { setHireDate, setResignationDate } from "@/domain/people";
 import { addLeaveAdjustment, LeaveAdjustmentValidationError } from "@/domain/leave/balance-service";
+import { MIN_LEAVE_YEAR } from "@/domain/leave/days";
 import { parseAdjustmentDays } from "./adjustment-days";
 import "./actions.registry";
 
 // 04.1-06 Task 3(S9 · D-96 · D-97): 관리자 사람 상세 `연차` 섹션 액션 — 입사일 · 퇴직일 즉시 저장, 연차 · 월차 조정 추가.
 // 권한(admin.people write) · 형식 · 퇴직일 ≥ 입사일 · 0.25 단위 · 사유 필수 · 월차 소멸 판정은 도메인(04.1-03)이 한다.
 // 성공하면 사람 상세 경로를 무효화해 잔고 줄 · 조정 기록 · 월차 옵션이 서버 재렌더로 바뀐다(CXF2-C-F2-02).
-const MIN_LEAVE_YEAR = 2000;
 
 const employmentDateSchema = z.object({ userId: z.string().min(1).max(64), date: z.string().max(10) });
 

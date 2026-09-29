@@ -234,10 +234,11 @@ describe("bootstrap-gcp.sh — (d-2) 서명 버킷(04.3-05, 4차 W-2)", () => {
     expect(r.log).not.toContain("storage buckets create");
   });
 
-  it.each([
+  const bucketStates: Array<[string, Record<string, true>]> = [
     ["새 버킷", {}],
-    ["있는 버킷", { "bucket-exists": true } as Record<string, true>],
-  ])("%s: 배포자에게 그 버킷에만 roles/storage.admin, 프로젝트 수준 저장소 역할은 누구에게도 없다", (_name, state) => {
+    ["있는 버킷", { "bucket-exists": true }],
+  ];
+  it.each(bucketStates)("%s: 배포자에게 그 버킷에만 roles/storage.admin, 프로젝트 수준 저장소 역할은 누구에게도 없다", (_name, state) => {
     const r = bootstrap(ARGS, { "no-vpc-peering": true, ...state });
     expect(r.status).toBe(0);
     const lines = r.log.split("\n");

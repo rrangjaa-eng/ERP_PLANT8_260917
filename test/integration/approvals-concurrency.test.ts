@@ -79,10 +79,15 @@ describe("결재선 설정 스냅숏 — 한 제출 = 한 커밋 시점의 설�
       written();
       await held;
     });
-    await wrote;
-    expect(await roles12(drafter.id)).toEqual([TEAM_LEAD_ROLE_ID, DIVISION_HEAD_ROLE_ID]);
-    release();
-    await tx;
+    // 트랜잭션이 쓰기 전에 실패하면 wrote가 영영 풀리지 않는다 — tx와 경주시켜 오류로 끝낸다. 트랜잭션 안의
+    // 단언이 실패해도 release로 커넥션 · 행 잠금을 돌려준다(다음 테스트의 TRUNCATE가 막히지 않게 — /review).
+    await Promise.race([wrote, tx]);
+    try {
+      expect(await roles12(drafter.id)).toEqual([TEAM_LEAD_ROLE_ID, DIVISION_HEAD_ROLE_ID]);
+    } finally {
+      release();
+      await tx;
+    }
     expect(await roles12(drafter.id)).toEqual([DEFAULT_ROLE_ID, DEFAULT_ROLE_ID]);
   });
 

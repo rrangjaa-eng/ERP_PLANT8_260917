@@ -19,6 +19,7 @@ import {
   countChangedCells,
   createBlockReason,
   createSubmitOutcome,
+  keepReproducedCellErrors,
   pinCellErrors,
   pinFieldErrors,
   type DraftWinnerRow,
@@ -158,7 +159,9 @@ export function EventCreateForm({
 
   const emptyFields = [...(name.trim() === "" ? ["행사 이름"] : []), ...(wonOn === "" ? ["당첨일"] : [])];
   const block = createBlockReason({ contactMissing: contactMissingNow, canOpenSettings, emptyFields, rowCount: rows.length });
-  const errorCount = Object.keys(cellErrors).length;
+  // 줄 확정 · 삭제 · 붙여넣기로 줄이 바뀌면 고정된 서버 셀 오류 중 아직 재현되는 것만 보인다.
+  const liveCellErrors = keepReproducedCellErrors(cellErrors, rows);
+  const errorCount = Object.keys(liveCellErrors).length;
 
   function newRow(): DraftWinnerRow {
     return { key: crypto.randomUUID(), ...NEW_ROW_DEFAULTS };
@@ -312,7 +315,7 @@ export function EventCreateForm({
   );
 
   const issueIdOf = (row: DraftWinnerRow, column: string) =>
-    cellErrors[`${row.key}:${column}`] ? `${row.key}-${column}-issue` : undefined;
+    liveCellErrors[`${row.key}:${column}`] ? `${row.key}-${column}-issue` : undefined;
 
   const textColumn = (
     key: DraftColumn,
@@ -400,7 +403,7 @@ export function EventCreateForm({
   ];
 
   const cellIssue = (row: DraftWinnerRow, column: string): CellIssue | undefined => {
-    const message = cellErrors[`${row.key}:${column}`];
+    const message = liveCellErrors[`${row.key}:${column}`];
     return message ? { kind: "error", message } : undefined;
   };
 

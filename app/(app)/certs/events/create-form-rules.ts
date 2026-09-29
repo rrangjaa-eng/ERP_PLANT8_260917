@@ -1,4 +1,4 @@
-import type { WinnerRuleCode } from "@/domain/certs/winner-rules";
+import { validateWinnerRows, type WinnerRuleCode } from "@/domain/certs/winner-rules";
 import { FORMAT_ERROR as DATE_FORMAT_ERROR } from "@/domain/projects/period";
 
 // 04.3-04 Task 3 ⓪ — I2 행사 만들기 화면의 순수 판정. React · DB · 설정을 import하지 않는다
@@ -146,6 +146,15 @@ export function pinCellErrors(cellErrors: SubmitCellError[]): Record<string, str
   const pinned: Record<string, string> = {};
   for (const error of cellErrors) pinned[`${error.rowKey}:${error.column}`] = cellErrorText(error);
   return pinned;
+}
+
+// 서버 셀 오류는 여러 줄에 걸친다(모양 중복 · 같은 사람 · 구별 표시의 이름) — 한 줄을 고치거나 지우면 다른 줄
+// 오류도 풀릴 수 있다. 지금 줄로 같은 판정(validateWinnerRows)을 다시 돌려 아직 재현되는 고정 오류만 남긴다(문장도 지금 줄 기준).
+export function keepReproducedCellErrors(pinned: Record<string, string>, rows: DraftWinnerRow[]): Record<string, string> {
+  if (Object.keys(pinned).length === 0) return pinned;
+  const checked = validateWinnerRows(rows);
+  if (checked.ok) return {};
+  return pinCellErrors(checked.cellErrors.filter((error) => `${error.rowKey}:${error.column}` in pinned));
 }
 
 export function cellErrorSummary(count: number): string {

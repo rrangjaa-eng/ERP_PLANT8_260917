@@ -58,7 +58,8 @@ async function v1Sample(plaintext: string): Promise<string> {
   return stored;
 }
 
-function memoryTarget(rows: { id: string; value: string | null }[]) {
+// changed = writeRow가 실제로 바꾼 행 수(조건부 update가 정정에 밀리면 0).
+function memoryTarget(rows: { id: string; value: string | null }[], changed = 1) {
   const writes: { id: string; value: string; previous: string }[] = [];
   return {
     writes,
@@ -67,7 +68,7 @@ function memoryTarget(rows: { id: string; value: string | null }[]) {
       fetchRows: () => Promise.resolve(rows),
       writeRow: (id: string, value: string, previous: string) => {
         writes.push({ id, value, previous });
-        return Promise.resolve();
+        return Promise.resolve(changed);
       },
     },
   };
@@ -121,5 +122,22 @@ describe("scripts/rotate-key — KMS 감싼 키로 회전(04.3-08)", () => {
       "cert_submissions.rrn_encrypted",
       "cert_events.token_encrypted",
     ]);
+  });
+
+  // 검토 반영 M3 — 조건부 update가 행을 바꾸지 않았으면(읽은 뒤 정정이 먼저 씀) rotated로 세지 않는다.
+  it("writeRow가 0행을 바꾸면 rotated가 아니라 skipped로 센다", async () => {
+    const stored = await v1Sample("123-456");
+    process.env.APP_DATA_KEY_v1_WRAPPED = "wrapped-v1";
+    process.env.APP_DATA_KEY_v2_WRAPPED = "wrapped-v2";
+    process.env.APP_DATA_KEY_KMS_KEY = KMS_KEY;
+    const { loadDataKeys } = await import("@/lib/crypto");
+    const { rotateKey } = await import("@/scripts/rotate-key");
+    await loadDataKeys({ unwrap: fakeUnwrap });
+
+    const { target, writes } = memoryTarget([{ id: "a", value: stored }], 0);
+    const results = await rotateKey([target]);
+
+    expect(writes).toHaveLength(1);
+    expect(results).toEqual([{ target: "fake.column", rotated: 0, skipped: 1 }]);
   });
 });

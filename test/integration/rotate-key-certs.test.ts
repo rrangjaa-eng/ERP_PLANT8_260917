@@ -38,13 +38,13 @@ describe("rotate-key 확인증 대상(04.3-08)", () => {
     // 읽은 뒤 정정이 먼저 쓴 상황: 옛 값(stale)을 previous로 넘기면 아무것도 안 바뀐다.
     const corrected = encrypt("9304122999999");
     await db.update(certSubmissions).set({ rrnEncrypted: corrected }).where(eq(certSubmissions.id, row.id));
-    await rrn.writeRow(row.id, encrypt("9304122123458"), current);
+    expect(await rrn.writeRow(row.id, encrypt("9304122123458"), current)).toBe(0);
     const [afterStale] = await db.select().from(certSubmissions).where(eq(certSubmissions.id, row.id));
     expect(afterStale?.rrnEncrypted).toBe(corrected);
 
     // previous가 지금 값과 같으면 쓴다.
     const rotated = encrypt("9304122999999");
-    await rrn.writeRow(row.id, rotated, corrected);
+    expect(await rrn.writeRow(row.id, rotated, corrected)).toBe(1);
     const [afterWrite] = await db.select().from(certSubmissions).where(eq(certSubmissions.id, row.id));
     expect(afterWrite?.rrnEncrypted).toBe(rotated);
   });
@@ -60,12 +60,12 @@ describe("rotate-key 확인증 대상(04.3-08)", () => {
 
     const replaced = encrypt("다른 토큰");
     await db.update(certEvents).set({ tokenEncrypted: replaced }).where(eq(certEvents.id, event.id));
-    await token.writeRow(event.id, encrypt("옛 토큰 재암호문"), event.tokenEncrypted);
+    expect(await token.writeRow(event.id, encrypt("옛 토큰 재암호문"), event.tokenEncrypted)).toBe(0);
     const [afterStale] = await db.select().from(certEvents).where(eq(certEvents.id, event.id));
     expect(afterStale?.tokenEncrypted).toBe(replaced);
 
     const rotated = encrypt("다른 토큰");
-    await token.writeRow(event.id, rotated, replaced);
+    expect(await token.writeRow(event.id, rotated, replaced)).toBe(1);
     const [afterWrite] = await db.select().from(certEvents).where(eq(certEvents.id, event.id));
     expect(afterWrite?.tokenEncrypted).toBe(rotated);
   });

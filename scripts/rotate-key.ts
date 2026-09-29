@@ -21,7 +21,8 @@ type RotateTarget = {
   fetchRows: () => Promise<{ id: string; value: string | null }[]>;
   // previous = 읽은 암호문. 확인증 대상은 지금 값이 previous와 같을 때만 쓴다 —
   // 회전 도중 정정(04.3-07)이 먼저 쓴 값을 옛 값의 재암호문으로 덮지 않는다.
-  writeRow: (id: string, value: string, previous: string) => Promise<void>;
+  // 돌려주는 값 = 실제로 바꾼 행 수(검토 반영 M3 — 0이면 rotated로 세지 않는다).
+  writeRow: (id: string, value: string, previous: string) => Promise<number>;
 };
 
 export const TARGETS: RotateTarget[] = [
@@ -34,7 +35,12 @@ export const TARGETS: RotateTarget[] = [
         .where(isNotNull(vendors.accountNumberEncrypted));
     },
     async writeRow(id, value) {
-      await db.update(vendors).set({ accountNumberEncrypted: value, updatedAt: new Date() }).where(eq(vendors.id, id));
+      const updated = await db
+        .update(vendors)
+        .set({ accountNumberEncrypted: value, updatedAt: new Date() })
+        .where(eq(vendors.id, id))
+        .returning({ id: vendors.id });
+      return updated.length;
     },
   },
   {
@@ -46,10 +52,12 @@ export const TARGETS: RotateTarget[] = [
         .where(isNotNull(certSubmissions.rrnEncrypted));
     },
     async writeRow(id, value, previous) {
-      await db
+      const updated = await db
         .update(certSubmissions)
         .set({ rrnEncrypted: value })
-        .where(and(eq(certSubmissions.id, id), eq(certSubmissions.rrnEncrypted, previous)));
+        .where(and(eq(certSubmissions.id, id), eq(certSubmissions.rrnEncrypted, previous)))
+        .returning({ id: certSubmissions.id });
+      return updated.length;
     },
   },
   {
@@ -61,10 +69,12 @@ export const TARGETS: RotateTarget[] = [
         .where(isNotNull(certEvents.tokenEncrypted));
     },
     async writeRow(id, value, previous) {
-      await db
+      const updated = await db
         .update(certEvents)
         .set({ tokenEncrypted: value })
-        .where(and(eq(certEvents.id, id), eq(certEvents.tokenEncrypted, previous)));
+        .where(and(eq(certEvents.id, id), eq(certEvents.tokenEncrypted, previous)))
+        .returning({ id: certEvents.id });
+      return updated.length;
     },
   },
 ];
@@ -101,8 +111,11 @@ export async function rotateKey(targets: RotateTarget[] = TARGETS): Promise<Rota
       }
       const plaintext = decrypt(value);
       const reencrypted = encrypt(plaintext);
-      await target.writeRow(row.id, reencrypted, value);
-      rotated++;
+      if ((await target.writeRow(row.id, reencrypted, value)) > 0) {
+        rotated++;
+      } else {
+        skipped++;
+      }
     }
 
     results.push({ target: target.label, rotated, skipped });

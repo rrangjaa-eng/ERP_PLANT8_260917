@@ -1,12 +1,12 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-29T11:29:01.828Z",
+  "timestamp": "2026-09-29T12:11:04.566Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
   "plan": 53,
-  "task": 0,
-  "total_tasks": 1,
+  "task": 3,
+  "total_tasks": 3,
   "status": "paused",
   "completed_tasks": [
     {
@@ -321,7 +321,7 @@
     }
   ],
   "uncommitted_files": [],
-  "next_action": "/gsd-progress → /gsd-execute-phase 4 --gaps-only 웨이브 32(04-53만, Opus 실행자 + Opus 독립 검토)",
+  "next_action": "/gsd-progress → Post-build 묶음(04-52·04-53): /review → /qa → (해당 시 /cso, 먼저 알림) · /design-review 생략 알림 → /gsd-verify-work 4 재실행",
   "context_notes": "04-52 갈래 G, 변이 3종 모두 잡힘. 04-53은 depends_on 04-52(D4) 충족.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",

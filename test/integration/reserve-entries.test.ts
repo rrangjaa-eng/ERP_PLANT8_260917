@@ -16,6 +16,7 @@ import { FX_RECENT_RATE_USD } from "@/domain/settings/keys";
 import { getSettingValue } from "@/domain/settings/registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { log } from "@/lib/log";
+import { recordAction } from "@/domain/action-log/record";
 import { addDays } from "@/lib/kst-date";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { insertRole } from "@/repositories/roles";
@@ -356,7 +357,9 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
       const deposit = await savedDeposit(finance);
       await saveReserves(finance, { rows: [{ ...deposit, isNew: undefined, version: 1, amount: krw(900_000) }] });
 
-      const error = await userFacing(saveReserves(finance, { rows: [{ ...deposit, isNew: undefined, version: 1, note: "낡은 탭" }] }));
+      const error = await expectOneDenied("reserve.version-conflict", () =>
+        userFacing(saveReserves(finance, { rows: [{ ...deposit, isNew: undefined, version: 1, note: "낡은 탭" }] })),
+      );
 
       expect(error.message).toBe("다른 사람이 먼저 이 줄을 바꿈 · 새로 고침");
       expect(await storedRow(deposit.id)).toMatchObject({ version: 2, amountAmountKrw: 900_000, note: null });
@@ -385,6 +388,36 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
       expect(await storedRow(deposit.id)).toMatchObject({ version: 2, amountAmountKrw: 900_000 });
       expect((await reserveLogs("document_update")).filter((row) => row.entityId === deposit.id)).toHaveLength(1);
     });
+  });
+
+  it("판정 뒤 조건부 갱신이 경합으로 0행이면 버전 충돌, write.denied 한 번(규칙 reserve.version-conflict), 배치 전체 롤백", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const deposit = newRow(client.id, "2026-03-01", "deposit", 1_000_000);
+    await saveReserves(finance, { rows: [deposit] });
+    const added = newRow(client.id, "2026-03-02", "deposit", 10);
+    let bumped = false;
+
+    const error = await expectOneDenied("reserve.version-conflict", () =>
+      userFacing(
+        saveReserves(
+          finance,
+          { rows: [added, { ...deposit, isNew: undefined, version: 1, note: "경합" }] },
+          {
+            recordAction: async (...args: Parameters<typeof recordAction>) => {
+              if (!bumped) {
+                bumped = true;
+                await db.update(reserveEntries).set({ version: 2 }).where(eq(reserveEntries.id, deposit.id));
+              }
+              return recordAction(...args);
+            },
+          },
+        ),
+      ),
+    );
+
+    expect(error.message).toBe("다른 사람이 먼저 이 줄을 바꿈 · 새로 고침");
+    expect(await countRows(client.id)).toBe(1);
   });
 
   it("기존 줄의 클라이언트를 바꾸면 `클라이언트는 첫 저장 뒤 잠김 · 새 줄로 적기`, DB 무변경(사용자 D6)", async () => {
@@ -539,7 +572,9 @@ describe("domain/reserves — 권한 · 노출 · 보관/복원 · 페이지 · 
     await saveReserves(finance, { rows: [deposit, withdrawal] });
     await saveReserves(finance, { rows: [{ ...withdrawal, isNew: undefined, version: 1, amount: krw(250_000) }] });
 
-    const error = await userFacing(saveReserves(finance, { rows: [], archived: [{ id: withdrawal.id, version: 1 }] }));
+    const error = await expectOneDenied("reserve.version-conflict", () =>
+      userFacing(saveReserves(finance, { rows: [], archived: [{ id: withdrawal.id, version: 1 }] })),
+    );
 
     expect(error.message).toBe("다른 사람이 먼저 이 줄을 바꿈 · 새로 고침");
     expect(await storedRow(withdrawal.id)).toMatchObject({ archivedAt: null, version: 2 });

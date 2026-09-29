@@ -151,7 +151,7 @@ for env in $ENVS; do
       --uniform-bucket-level-access --public-access-prevention --soft-delete-duration=0
   else
     gcloud storage buckets update "$bucket" --project="$PROJECT" \
-      --uniform-bucket-level-access --public-access-prevention --clear-soft-delete
+      --uniform-bucket-level-access --public-access-prevention --clear-soft-delete --no-versioning
   fi
   gcloud storage buckets add-iam-policy-binding "$bucket" --project="$PROJECT" \
     --member="serviceAccount:${DEPLOYER_EMAIL}" --role=roles/storage.admin >/dev/null

@@ -312,7 +312,7 @@ ensure_cert_bucket() {
   fi
   hint="cert bucket ${bucket} not managed by the deployer — run scripts/bootstrap-gcp.sh first (docs/OPERATIONS.md §8)"
   run gcloud storage buckets update "gs://${bucket}" --project="$PROJECT" \
-    --uniform-bucket-level-access --public-access-prevention --clear-soft-delete >/dev/null ||
+    --uniform-bucket-level-access --public-access-prevention --clear-soft-delete --no-versioning >/dev/null ||
     { echo "$hint" >&2; return 1; }
   run gcloud storage buckets add-iam-policy-binding "gs://${bucket}" --project="$PROJECT" \
     --member="serviceAccount:${runtime_email}" --role=roles/storage.objectUser >/dev/null ||

@@ -11,7 +11,7 @@
 | Cloud Run 서비스 | `plant8-staging` | `plant8-prod` |
 | Cloud SQL 인스턴스 | `plant8-staging-db` | `plant8-prod-db` |
 | 시크릿 접미사 | `-staging` | `-prod` |
-| 서명 버킷(서울·비공개·소프트 삭제 0·부트스트랩이 만든다) | `<프로젝트>-plant8-staging-cert-signatures` | `<프로젝트>-plant8-prod-cert-signatures` |
+| 서명 버킷(서울·비공개·소프트 삭제 0·버전 관리 끔·부트스트랩이 만든다) | `<프로젝트>-plant8-staging-cert-signatures` | `<프로젝트>-plant8-prod-cert-signatures` |
 | 접속 주소 | `gcloud run services describe plant8-staging --format='value(status.url)'` | 같은 명령, `plant8-prod` |
 
 접속 주소는 **`status.url` 실측값**만 쓴다. 프로젝트 번호로 만든 "결정적" 형식

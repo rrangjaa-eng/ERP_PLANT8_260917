@@ -130,6 +130,23 @@ describe("복원 리허설 기록 → 시스템 상태 (04.4-01 트레이서)", 
     IT_TIMEOUT_MS,
   );
 
+  it(
+    "APP_ENV=prod CLI record는 원본 production으로 한 줄이 된다",
+    async () => {
+      const { status, stderr } = runCli(
+        SUCCESS_ARGS.map((token) => (token === "1-1" ? "60-1" : token)),
+        "prod",
+      );
+      expect(stderr).toBe("");
+      expect(status).toBe(0);
+      const stored = await db.execute<{ source: string }>(
+        sql`select source from restore_rehearsals where run_key = '60-1'`,
+      );
+      expect(stored.rows.map((row) => row.source)).toEqual(["production"]);
+    },
+    IT_TIMEOUT_MS,
+  );
+
   it("종료 시각이 늦은 기록, 같으면 나중에 넣은 기록(seq)이 선택된다", async () => {
     const base = {
       source: "staging" as const,
@@ -228,6 +245,7 @@ describe("복원 리허설 기록 → 시스템 상태 (04.4-01 트레이서)", 
       ["--finished-at 누락", withoutFlag("--finished-at")],
       ["--run-key 누락", withoutFlag("--run-key")],
       ["하위 명령 없음", []],
+      ["--failed-stage 모르는 값", [...SUCCESS_ARGS, "--failed-stage", "bogus"]],
     ])("%s → UsageError", (_name, argv) => {
       expect(() => parseArgs(argv)).toThrow(UsageError);
     });

@@ -60,6 +60,16 @@ describe("restore-rehearsal-cli verify — 대상 가드", () => {
     expect(console.log).toHaveBeenCalledWith("복원본 확인을 통과했습니다.");
   });
 
+  it("prod 임시 인스턴스가 대상이면 확인을 돌린다", async () => {
+    const prodRehearsal = "p:asia-northeast3:plant8-prod-rehearsal-9-1";
+    vi.stubEnv("APP_ENV", "prod");
+    vi.stubEnv("CLOUD_SQL_CONNECTION_NAME", prodRehearsal);
+    verifyMock.mockResolvedValueOnce({ ok: true, checks: [{ name: "마이그레이션", ok: true, detail: "적용 19개" }] });
+    await main(["verify", "--target", prodRehearsal]);
+    expect(process.exitCode ?? 0).toBe(0);
+    expect(console.log).toHaveBeenCalledWith("복원본 확인을 통과했습니다.");
+  });
+
   it("확인 결과가 실패면 1이다", async () => {
     vi.stubEnv("CLOUD_SQL_CONNECTION_NAME", REHEARSAL);
     verifyMock.mockResolvedValueOnce({ ok: false, checks: [{ name: "roles", ok: false, detail: "0행" }] });

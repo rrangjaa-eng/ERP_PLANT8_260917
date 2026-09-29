@@ -165,8 +165,8 @@ describe("결재선 미리보기 RoutePreviewDTO(CX-R3)", () => {
   });
 });
 
-describe("새 계급 노출 한계(CEO-10)", () => {
-  it("알려진 한계 — 새 계급은 정보 노출표에서 결재·연차 정보를 켜야 함(TODOS): 결재함 줄은 잡히지만 DTO에 결재 필드가 없다", async () => {
+describe("새 계급 · 결재 정보 꺼짐(CEO-10 → 사용자 결정 2026-09-29 A)", () => {
+  it("결재 정보가 꺼진 계급의 결재자도 결재한다 — 구조 값(id · version · 링크 · 상태 · 동작)은 투영 밖, 이름 · 시각 · 요약은 없다", async () => {
     // 기획1팀에 팀장 없음 · 본부 책임자 없음 → 1·2단 빈 자리, 3단 경영관리팀의 새 계급 사람이 후보.
     const drafter = await makePerson("박서연", DEFAULT_ROLE_ID, "기획1팀");
     await makePerson("최대표", CEO_ROLE_ID, null);
@@ -175,9 +175,28 @@ describe("새 계급 노출 한계(CEO-10)", () => {
     const newcomer = await makePerson("새담당", role.id, "경영관리팀");
     await submitLeave(drafter, DAY(5), { now: NOW_2026 });
 
-    const inbox = await listMyInbox(newcomer, { now: NOW_2026 });
+    const inbox = await listMyInbox(newcomer, { now: NOW_2026, withDetails: true });
     expect(inbox.mine).toHaveLength(1);
-    expect(Object.keys(inbox.mine[0] ?? {})).toEqual([]);
+    const item = inbox.mine[0];
+    expect(Object.keys(item ?? {}).sort()).toEqual(
+      ["actions", "documentId", "href", "instanceId", "kind", "kindLabel", "status", "version"].sort(),
+    );
+    expect(item?.actions).toEqual(["approve", "reject"]);
+    const itemJson = JSON.stringify(inbox);
+    for (const name of ["박서연", "최대표", "새담당"]) expect(itemJson).not.toContain(name);
+
+    const documentId = item?.documentId ?? "";
+    const view = await getApprovalView(newcomer, { kind: LEAVE_DOCUMENT_KIND, documentId }, { now: NOW_2026 });
+    expect(Object.keys(view ?? {}).sort()).toEqual(
+      ["actions", "currentStepIndex", "documentId", "instanceId", "kind", "round", "status", "version"].sort(),
+    );
+    expect(view?.actions).toEqual(["approve", "reject"]);
+    expect(JSON.stringify(view)).not.toContain("박서연");
+
+    // 문서가 멈추지 않는다 — 구조 값만으로 승인이 되고 다음 단계(대표)로 간다.
+    await approveDocument(newcomer, { instanceId: item?.instanceId ?? "", expectedVersion: item?.version ?? -1 }, { now: NOW_2026 });
+    const graph = await findApprovalGraphByDocument(SYSTEM_VIEWER, { documentKind: LEAVE_DOCUMENT_KIND, documentId });
+    expect(graph?.instance.version).toBe((item?.version ?? 0) + 1);
   });
 });
 

@@ -322,15 +322,15 @@
 
 ### 새 계급을 만들면 정보 노출표에서 결재·연차 정보를 켠다
 
-**What:** 관리자가 새 계급을 만들면 정보 노출표에서 결재 정보·연차 정보를 켠다. 안 켜면 그 계급 결재자의 결재함 줄이 비어 승인할 수 없다.
+**What:** 관리자가 새 계급을 만들면 정보 노출표에서 결재 정보·연차 정보를 켠다. 안 켜도 결재는 된다(구조 값은 투영 밖 — 사용자 결정 2026-09-29 A). 다만 그 계급 결재자는 기안자 이름 · 기간 · 잔고 · 결재선 이름 없이 결재하게 된다.
 
 **Why:** `createRole`은 노출 행을 만들지 않고 노출은 기본 숨김이다.
 
-**Context:** 한계 기록 테스트 `test/integration/approvals-inbox-projection.test.ts` 「새 계급 노출 한계(CEO-10)」(04.1-01 T4). `domain/permissions/roles.ts`는 04.1의 금지 파일이라 이 페이즈가 고치지 않았다.
+**Context:** 테스트 `test/integration/approvals-inbox-projection.test.ts` 「새 계급 · 결재 정보 꺼짐」. `domain/permissions/roles.ts`는 04.1의 금지 파일이라 이 페이즈가 고치지 않았다.
 
 **Effort:** S
-**Priority:** P2
-**Depends on:** 노출 모델 결정(사용자)
+**Priority:** P3
+**Depends on:** 새 계급의 노출 기본값 결정(사용자)
 
 ## Design review 이연(2026-09-29 /design-review, PR #91 Phase 04.4)
 

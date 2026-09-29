@@ -42,17 +42,18 @@ import { getDocumentKind, type DetailFields, type DocumentDetailRows, type LoadD
 import { buildConflictMessage, isApprovalParty } from "@/domain/approvals/conflict-message";
 import { loadActionLogGate as defaultLoadActionLogGate, recordActionInTx, type ActionLogGate, type TxLogDeps } from "@/domain/approvals/tx-log";
 import {
-  APPROVAL_INBOX_ITEM_DTO_SPEC,
-  APPROVAL_VIEW_DTO_SPEC,
+  projectApprovalView,
+  projectInboxItem,
   ROUTE_PREVIEW_DTO_SPEC,
   ROUTE_PREVIEW_STEP_DTO_SPEC,
   type RoutePreviewDTO,
   type RoutePreviewStepDTO,
   type ApprovalAction,
-  type ApprovalInboxItemDto,
+  type ApprovalInboxItem,
   type ApprovalInboxItemSource,
   type ApprovalRouteEndLine,
   type ApprovalStepView,
+  type ApprovalView,
   type ApprovalViewDto,
 } from "@/domain/approvals/dto";
 
@@ -60,7 +61,7 @@ export { registerDocumentKind, getDocumentKind, listDocumentKinds } from "@/doma
 export type { DocumentDetailRow, DocumentDetailRows, DocumentKindDef, RouteConfig, RouteConfigStep, RouteSettingDefs } from "@/domain/approvals/kinds";
 export { nextStep, resolveHolders, walkRoute } from "@/domain/approvals/route";
 export { loadActionLogGate, recordActionInTx } from "@/domain/approvals/tx-log";
-export type { ApprovalInboxItemDto, ApprovalViewDto, RoutePreviewDTO, RoutePreviewStepDTO } from "@/domain/approvals/dto";
+export type { ApprovalInboxItem, ApprovalInboxItemDto, ApprovalView, ApprovalViewDto, RoutePreviewDTO, RoutePreviewStepDTO } from "@/domain/approvals/dto";
 export { projectActionResult } from "@/domain/approvals/dto";
 export type { ApprovalActionResult } from "@/domain/approvals/dto";
 
@@ -885,7 +886,7 @@ export async function getApprovalView(
   viewer: Viewer,
   input: { kind: string; documentId: string },
   deps?: ApprovalDeps,
-): Promise<Partial<ApprovalViewDto> | null> {
+): Promise<ApprovalView | null> {
   const graph = await findApprovalGraphByDocument(viewer, { documentKind: input.kind, documentId: input.documentId });
   if (!graph) return null;
   const state = await readApprovalState(viewer, graph, {
@@ -944,7 +945,7 @@ export async function getApprovalView(
     currentStepIndex,
     actions,
   };
-  return project(viewer, source, APPROVAL_VIEW_DTO_SPEC, { visible: createVisibleMemo(deps?.findVisibility) });
+  return projectApprovalView(viewer, source, { visible: createVisibleMemo(deps?.findVisibility) });
 }
 
 // 04.1-05(Codex MEDIUM · ENG-17): 종류 하나의 상세를 id 목록으로 한 번에 — 원시 구조 필드 → detailDto로
@@ -971,7 +972,7 @@ export async function loadKindDetails(
   return result;
 }
 
-export type InboxResult = { mine: Partial<ApprovalInboxItemDto>[]; processed: Partial<ApprovalInboxItemDto>[] };
+export type InboxResult = { mine: ApprovalInboxItem[]; processed: ApprovalInboxItem[] };
 
 const PROCESSED_LIMIT = 50;
 
@@ -1079,7 +1080,7 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
   }
 
   return {
-    mine: await Promise.all(mineSources.map((source) => project(viewer, source, APPROVAL_INBOX_ITEM_DTO_SPEC, { visible }))),
-    processed: await Promise.all(processedSources.map((source) => project(viewer, source, APPROVAL_INBOX_ITEM_DTO_SPEC, { visible }))),
+    mine: await Promise.all(mineSources.map((source) => projectInboxItem(viewer, source, { visible }))),
+    processed: await Promise.all(processedSources.map((source) => projectInboxItem(viewer, source, { visible }))),
   };
 }

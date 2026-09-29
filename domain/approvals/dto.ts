@@ -4,8 +4,10 @@ import { registerDto } from "@/domain/permissions/dto-registry";
 import type { ApprovalStatus, DisplayState } from "@/domain/approvals/route";
 import type { DocumentDetailRows } from "@/domain/approvals/kinds";
 
-// 04.1(ROADMAP 기준 5): 결재 DTO — 필드 전부 approval.value에 매핑되어 누수 스캔
-// DTO 축에 들어간다. domain/approvals의 유일한 출구다(project()).
+// 04.1(ROADMAP 기준 5): 결재 DTO — domain/approvals의 유일한 출구다(project()).
+// 사용자 결정(2026-09-29 A, PR #90 5891993737): 노출 설정은 「무엇을 보여 줄지」이지 「결재를 할 수 있는지」가
+// 아니다 — 구조 값(id · 종류 · 링크 · 상태 · version · 단계 번호 · 가능 행동)은 투영 밖에서 그대로 붙이고(액션
+// 결과 DTO의 B-A1과 같은 방식), 이름 · 시각 · 사유 · 요약만 approval.value 뒤에 둔다(누수 스캔 DTO 축).
 
 export type ApprovalStepView = {
   stepIndex: number;
@@ -49,17 +51,15 @@ export type ApprovalInboxItemDto = {
 
 export type ApprovalInboxItemSource = ApprovalInboxItemDto;
 
-export const APPROVAL_INBOX_ITEM_DTO_SPEC: DtoSpec<ApprovalInboxItemSource, ApprovalInboxItemDto> = {
+const INBOX_ITEM_STRUCTURE_KEYS = ["instanceId", "kind", "kindLabel", "documentId", "href", "status", "version", "actions"] as const;
+type ApprovalInboxItemStructure = Pick<ApprovalInboxItemDto, (typeof INBOX_ITEM_STRUCTURE_KEYS)[number]>;
+type ApprovalInboxItemValues = Omit<ApprovalInboxItemDto, keyof ApprovalInboxItemStructure>;
+export type ApprovalInboxItem = ApprovalInboxItemStructure & Partial<ApprovalInboxItemValues>;
+
+export const APPROVAL_INBOX_ITEM_DTO_SPEC: DtoSpec<ApprovalInboxItemValues, ApprovalInboxItemValues> = {
   fields: [
-    { key: "instanceId", from: "instanceId", infoItem: "approval.value" },
-    { key: "kind", from: "kind", infoItem: "approval.value" },
-    { key: "kindLabel", from: "kindLabel", infoItem: "approval.value" },
-    { key: "documentId", from: "documentId", infoItem: "approval.value" },
-    { key: "href", from: "href", infoItem: "approval.value" },
     { key: "drafterName", from: "drafterName", infoItem: "approval.value" },
     { key: "submittedAt", from: "submittedAt", infoItem: "approval.value" },
-    { key: "status", from: "status", infoItem: "approval.value" },
-    { key: "version", from: "version", infoItem: "approval.value" },
     { key: "stepLabel", from: "stepLabel", infoItem: "approval.value" },
     { key: "holderNames", from: "holderNames", infoItem: "approval.value" },
     { key: "actedAt", from: "actedAt", infoItem: "approval.value" },
@@ -68,7 +68,6 @@ export const APPROVAL_INBOX_ITEM_DTO_SPEC: DtoSpec<ApprovalInboxItemSource, Appr
     { key: "detail", from: "detail", infoItem: "approval.value" },
     { key: "steps", from: "steps", infoItem: "approval.value" },
     { key: "endLines", from: "endLines", infoItem: "approval.value" },
-    { key: "actions", from: "actions", infoItem: "approval.value" },
   ],
 };
 
@@ -91,21 +90,48 @@ export type ApprovalViewDto = {
 
 export type ApprovalViewSource = ApprovalViewDto;
 
-export const APPROVAL_VIEW_DTO_SPEC: DtoSpec<ApprovalViewSource, ApprovalViewDto> = {
+const VIEW_STRUCTURE_KEYS = ["instanceId", "kind", "documentId", "status", "version", "round", "currentStepIndex", "actions"] as const;
+type ApprovalViewStructure = Pick<ApprovalViewDto, (typeof VIEW_STRUCTURE_KEYS)[number]>;
+type ApprovalViewValues = Omit<ApprovalViewDto, keyof ApprovalViewStructure>;
+export type ApprovalView = ApprovalViewStructure & Partial<ApprovalViewValues>;
+
+export const APPROVAL_VIEW_DTO_SPEC: DtoSpec<ApprovalViewValues, ApprovalViewValues> = {
   fields: [
-    { key: "instanceId", from: "instanceId", infoItem: "approval.value" },
-    { key: "kind", from: "kind", infoItem: "approval.value" },
-    { key: "documentId", from: "documentId", infoItem: "approval.value" },
-    { key: "status", from: "status", infoItem: "approval.value" },
-    { key: "version", from: "version", infoItem: "approval.value" },
-    { key: "round", from: "round", infoItem: "approval.value" },
     { key: "drafterName", from: "drafterName", infoItem: "approval.value" },
     { key: "steps", from: "steps", infoItem: "approval.value" },
     { key: "endLines", from: "endLines", infoItem: "approval.value" },
-    { key: "currentStepIndex", from: "currentStepIndex", infoItem: "approval.value" },
-    { key: "actions", from: "actions", infoItem: "approval.value" },
   ],
 };
+
+function pickStructure<T extends object, K extends keyof T>(source: T, keys: readonly K[]): Pick<T, K> {
+  const result = {} as Pick<T, K>;
+  for (const key of keys) result[key] = source[key];
+  return result;
+}
+
+function omitStructure<T extends object, K extends keyof T>(source: T, keys: readonly K[]): Omit<T, K> {
+  const result = { ...source };
+  for (const key of keys) delete result[key];
+  return result;
+}
+
+export async function projectInboxItem(
+  viewer: Viewer,
+  source: ApprovalInboxItemDto,
+  deps?: Partial<ProjectDeps>,
+): Promise<ApprovalInboxItem> {
+  const values = await project(viewer, omitStructure(source, INBOX_ITEM_STRUCTURE_KEYS), APPROVAL_INBOX_ITEM_DTO_SPEC, deps);
+  return { ...pickStructure(source, INBOX_ITEM_STRUCTURE_KEYS), ...values };
+}
+
+export async function projectApprovalView(
+  viewer: Viewer,
+  source: ApprovalViewDto,
+  deps?: Partial<ProjectDeps>,
+): Promise<ApprovalView> {
+  const values = await project(viewer, omitStructure(source, VIEW_STRUCTURE_KEYS), APPROVAL_VIEW_DTO_SPEC, deps);
+  return { ...pickStructure(source, VIEW_STRUCTURE_KEYS), ...values };
+}
 
 registerDto({
   name: "approvalInboxItem",

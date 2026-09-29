@@ -1010,6 +1010,9 @@ test.describe("리저브 대장 — Codex 재검토 #3 · #4", () => {
   });
 
   test("(Codex #4) 보낼 줄 300 상한 — 넘는 붙여넣기는 전부 거부, 300이면 줄 추가 비활성 · Ctrl+Enter 알림", async ({ page }) => {
+    // 편집 표에 300줄이 그려지면 CI 빌드에서도 다시 그리기 한 번이 수 초다(기존 표 성능 — 이 테스트의 범위 밖). 그래서 시간을 넉넉히 두고
+    // 포커스를 다시 주는 반복(focusGridCell) 대신 붙여넣기가 돌려준 탭 정지 칸에서 바로 키를 누른다.
+    test.setTimeout(90_000);
     const roles = await createRoles();
     const client = await createClient("E2E리저브상한");
     await seedEntries(client.id, [{ date: "2026-04-01", direction: "deposit", amount: 200_000 }]);
@@ -1026,7 +1029,7 @@ test.describe("리저브 대장 — Codex 재검토 #3 · #4", () => {
 
     // 저장된 줄 1 + 새 줄 299 = 300 — 들어간다.
     await pasteText(page, cell(page, 0, COL.note), notes(300));
-    await expect(dataRows(page)).toHaveCount(300);
+    await expect(dataRows(page)).toHaveCount(300, { timeout: 60_000 });
     await expect(saveButton(page)).toContainText("일괄 저장 300");
     await expect(tfoot).not.toContainText("붙여넣기 전부 거부");
 
@@ -1036,7 +1039,7 @@ test.describe("리저브 대장 — Codex 재검토 #3 · #4", () => {
     expect(reasonId).toBeTruthy();
     await expect(page.locator(`[id="${reasonId}"]`)).toHaveText("저장당 300줄 상한 · 먼저 저장");
 
-    await focusGridCell(cell(page, 0, COL.date));
+    await expect(ledger(page).locator("td[data-grid-focus]")).toBeFocused();
     await page.keyboard.press("Control+Enter");
     await expect(tfoot).toContainText("저장당 300줄 상한 · 먼저 저장");
     await expect(dataRows(page)).toHaveCount(300);

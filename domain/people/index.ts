@@ -13,6 +13,8 @@ import { findRoleById as defaultFindRoleById, findRolesByIds as defaultFindRoles
 import { findTeamById as defaultFindTeamById } from "@/repositories/teams";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { isCheckViolation } from "@/lib/pg-errors";
+import { withTransaction } from "@/lib/db-transaction";
+import { loadActionLogGate, recordActionInTx, type TxLogDeps } from "@/domain/approvals/tx-log";
 import {
   listUsers as repoListUsers,
   findUserById as repoFindUserById,
@@ -358,10 +360,7 @@ function isCalendarDate(value: string): boolean {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
-export type EmploymentDateDeps = {
-  can: typeof defaultCan;
-  recordAction: typeof defaultRecordAction;
-};
+export type EmploymentDateDeps = { can: typeof defaultCan } & TxLogDeps;
 
 async function setEmploymentDate(
   viewer: Viewer,
@@ -372,7 +371,7 @@ async function setEmploymentDate(
 ): Promise<void> {
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, PEOPLE_MENU, "write"))) {
-    throw new ForbiddenError(field === "hire_date" ? "입사일을 바꿀 권한이 없습니다." : "퇴직일을 바꿀 권한이 없습니다.");
+    throw new ForbiddenError(field === "hire_date" ? "입사일 변경 권한 없음" : "퇴직일 변경 권한 없음");
   }
   if (value !== null && !isCalendarDate(value)) {
     throw new ValidationError(field === "hire_date" ? HIRE_DATE_FORMAT_ERROR : RESIGNATION_DATE_FORMAT_ERROR);
@@ -386,16 +385,24 @@ async function setEmploymentDate(
     throw new ValidationError(DATES_INVERTED_ERROR);
   }
 
+  // 날짜는 연차 발생 일수 · 결재자 판정을 바꾼다 — 값과 행동 로그는 같은 tx(연차 조정과 같은 규칙, /review).
+  const gate = await loadActionLogGate();
   try {
-    if (field === "hire_date") await repoUpdateUserHireDate(viewer, userId, value);
-    else await repoUpdateUserResignationDate(viewer, userId, value);
+    await withTransaction(async (tx) => {
+      if (field === "hire_date") await repoUpdateUserHireDate(viewer, userId, value, tx);
+      else await repoUpdateUserResignationDate(viewer, userId, value, tx);
+      await recordActionInTx(
+        viewer,
+        { actionType: "document_update", entity: "user", entityId: userId, detail: { field } },
+        tx,
+        gate,
+        { appendActionLog: deps?.appendActionLog },
+      );
+    });
   } catch (error) {
     if (isCheckViolation(error, DATES_CHECK_CONSTRAINT)) throw new ValidationError(DATES_INVERTED_ERROR);
     throw error;
   }
-
-  const recordAction = deps?.recordAction ?? defaultRecordAction;
-  await recordAction(viewer, { actionType: "document_update", entity: "user", entityId: userId, detail: { field } });
 }
 
 export async function setHireDate(

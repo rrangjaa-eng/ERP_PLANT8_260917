@@ -29,6 +29,7 @@ import {
 import { LEAVE_ANNUAL_DAYS } from "@/domain/settings/keys";
 import { ForbiddenError, ValidationError, archivePerson, setHireDate, setResignationDate } from "@/domain/people";
 import { listOrgSnapshot } from "@/repositories/org-snapshot";
+import { findUserById } from "@/repositories/users";
 import { insertHistorizedValue } from "@/repositories/settings";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import type { appendActionLog } from "@/repositories/action-log";
@@ -530,5 +531,21 @@ describe("결재자 잔고 행 — 연차 · 월차 분리(11:43 · R1/D5 · D3 
     expect(april[0]).toContain("월차 남음 6일");
     expect(april).toEqual(await formattedFor(org.lead, doc.leaveId, "full_day", NOW_270415));
     expect(april).not.toEqual(march);
+  });
+});
+
+// /review(security): 입사일 · 퇴직일은 연차 발생 일수와 결재자 판정을 바꾼다 — 바꾼 값과 행동 로그는 한 트랜잭션이다
+// (연차 조정과 같은 규칙). 로그 쓰기가 실패하면 날짜도 남지 않는다.
+describe("입사일 · 퇴직일 변경과 행동 로그 원자성", () => {
+  const failingAppend: typeof appendActionLog = () => Promise.reject(new Error("log down"));
+
+  it("로그 쓰기가 실패하면 입사일 · 퇴직일이 바뀌지 않는다", async () => {
+    const person = await makePerson("원자성", DEFAULT_ROLE_ID, "기획1팀");
+    await setHireDate(SYSTEM_VIEWER, person.id, "2025-01-01");
+    await expect(setHireDate(SYSTEM_VIEWER, person.id, "2025-06-01", { appendActionLog: failingAppend })).rejects.toThrow("log down");
+    await expect(setResignationDate(SYSTEM_VIEWER, person.id, "2026-12-31", { appendActionLog: failingAppend })).rejects.toThrow("log down");
+    const row = await findUserById(SYSTEM_VIEWER, person.id);
+    expect(row?.hireDate).toBe("2025-01-01");
+    expect(row?.resignationDate).toBeNull();
   });
 });

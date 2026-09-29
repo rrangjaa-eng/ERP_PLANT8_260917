@@ -184,11 +184,22 @@ test.describe("확인증 행사 — 시스템 관리자", () => {
     // (e) 만들기 → 상세 · 토스트 · QR · 링크 · 미제출 셋 · 합계 → 목록 자기 행 0/3
     await primary(page).click();
     await expect(page).toHaveURL(/\/certs\/events\/[0-9a-f-]{36}/);
-    await expect(page.getByRole("status")).toContainText(`행사 만들기 · ${name} · 당첨자 3명`);
+    await expect(page.getByRole("status").filter({ hasText: "행사 만들기 ·" })).toContainText(`행사 만들기 · ${name} · 당첨자 3명`);
     await expect(page.getByRole("heading", { name })).toBeVisible();
     await expect(page.getByRole("img", { name: `${name} 확인증 QR` })).toBeVisible();
     await expect(page.getByText(/\/c\/[A-Za-z0-9_-]+$/)).toBeVisible();
     await expect(page.getByRole("button", { name: "링크 복사" })).toBeVisible();
+
+    // 「링크 복사」 — status 영역은 누르기 전부터 빈 채로 있고, 누른 뒤 포커스는 같은 버튼(라벨 자리 결과)에 남는다.
+    const qr = page.locator("section").filter({ has: page.getByRole("heading", { name: "QR", exact: true }) });
+    const copyStatus = qr.getByRole("status");
+    await expect(copyStatus).toHaveCount(1);
+    await expect(copyStatus).toHaveText("");
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await qr.getByRole("button", { name: "링크 복사" }).click();
+    await expect(copyStatus).toHaveText("링크 복사됨");
+    await expect(qr.getByRole("button", { name: "링크 복사됨" })).toBeFocused();
+    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("BUTTON");
     await expect(page.getByText("미제출", { exact: true })).toHaveCount(3);
     await expect(page.locator("tfoot")).toContainText("합계 · 3명 · 제출 0명");
 

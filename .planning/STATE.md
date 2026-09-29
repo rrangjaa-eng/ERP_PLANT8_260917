@@ -32,7 +32,7 @@ Phase: 4 (프로젝트·견적 원장) — EXECUTING
 Current Plan: 42
 Total Plans in Phase: 42
 Status: Phase complete — ready for verification
-Last activity: 2026-09-28 - Completed quick task 260928-85f: 04-51 (b) 거부 문구 현재 값 기준
+Last activity: 2026-09-29 - Completed quick task 260929-6gr: PR #85 검토 후속 테스트 2건
 
 Progress: [█░░░░░░░░░] 6%
 
@@ -333,6 +333,7 @@ Recent decisions affecting current work:
 | 260928-7fp | 04-51 결정 ② (b) 채번 시작값 낮춤만 거부 | 2026-09-28 | 1db3896 | [260928-7fp-04-51-b](./quick/260928-7fp-04-51-b/) |
 | 260928-85f | 04-51 (b) 거부 문구 현재 값 기준 | 2026-09-28 | c89ab1b | [260928-85f-04-51-b-dr-p4-02-04-6](./quick/260928-85f-04-51-b-dr-p4-02-04-6/) |
 | 260929-49c | PR #85 Codex #3·#4·#5 수정(보관 요청 무한 실패·저장 300줄 상한·보관 프로젝트 연결 거부) | 2026-09-29 | 77d03804 | [260929-49c-reserves-codex-fixes-3-4-5](./quick/260929-49c-reserves-codex-fixes-3-4-5/) |
+| 260929-6gr | PR #85 검토 후속: 활성→보관 프로젝트 변경 거부 통합 테스트 · 보관 거부 판정 순수 함수 추출+단위 테스트(capNotice는 기록만) | 2026-09-29 | 41db5a8b | [260929-6gr-reserves-review-follow-up-tests-and-capn](./quick/260929-6gr-reserves-review-follow-up-tests-and-capn/) |
 
 ### Roadmap Evolution
 

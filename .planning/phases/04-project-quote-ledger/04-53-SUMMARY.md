@@ -130,7 +130,18 @@ Task 1은 tracer — GREEN 뒤 verify(통합 24/24 · 단위 24/24 · negative g
 
 ## 독립 검토
 
-**대기 — 오케스트레이터가 띄움.** risk 플랜(Task 3 ⑥): 실행자가 아닌 Opus 1명(general-purpose, `model: opus`)이 이 플랜 커밋 범위(195764ff..e24a4685)의 diff를 점검한다 — 단일 판정점 · 동작 불변(SKIP LOCKED · 잠금 순서 · UPDATE 가드 · 로그 같은 tx · 발효일 · 읽기 fail-open · 쓰기 fail-closed) · 규칙 등록 누락 경로 · import 순환 · 잠근 tx 안 풀 호출(§4-8 (3)) · 위험 경로/새 의존성 0. 결과(must / should / nit)는 이 절에 적고, must는 실행자가 `fix(04-53): …`로 고친다.
+**판정 PASS, must 0.** risk 플랜(Task 3 ⑥): 실행자가 아닌 Opus 1명이 이 플랜 커밋 범위(195764ff..e24a4685)의 diff를 독립 검토했다.
+
+- RED 직접 재현: c33b15c2 2 failed | 22 passed, d6d15b4b 2 failed | 24 passed.
+- HEAD 초록: 통합 project-auto-settlement 26/26, 단위 넷 79/79, typecheck 0, lint:sql 0.
+- 변이:
+  - M1 settle에 허용 id 대신 후보 전부를 넘김 → 생존(should). (g2b) 추가로 막았다(83723702) — 같은 변이에서 통합 27건 중 1 failed | 26 passed, HEAD는 27/27.
+  - M2 규칙의 보관 조건 삭제 → 잡힘.
+  - M3 ctx archived를 항상 false로 → 잡힘.
+  - M4 쓰기 입구가 gate 거부를 무시 → 잡힘.
+  - M5 SKIP LOCKED 제거 → 잡힘.
+  - M6 settleProjectsByIds 상태 가드 제거 → 생존(nit). 잠근 행 아래의 여분 방어라 그대로 둔다.
+- nit: 후보 SQL WHERE가 규칙 조건을 다시 적는다. 주석에 「좁히기, 규칙보다 넓거나 같아야」를 명시해 수용한다.
 
 ## 이후
 

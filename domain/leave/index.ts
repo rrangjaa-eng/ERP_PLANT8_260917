@@ -207,13 +207,9 @@ registerDto({
 });
 
 async function loadLeaveDetails(viewer: Viewer, ids: string[], deps: LoadDetailsDeps): Promise<Map<string, LeaveDetailDto>> {
-  // 시계는 받은 now만 쓴다 — 없으면 보임 규칙 입구(access.ts)가 정한다(CX-B2, 이 층은 시계를 읽지 않는다).
-  const seeDeps = deps.now ? { today: seoulToday(deps.now) } : undefined;
-  const rows = await findLeaveRequestsByIds(viewer, { ids, documentKind: LEAVE_DOCUMENT_KIND });
-  const visibleRows: LeaveRequestWithApproval[] = [];
-  for (const row of rows) {
-    if (await canSeeLeaveDocument(viewer, row, seeDeps)) visibleRows.push(row);
-  }
+  // 엔진은 `내 결재`(지금 단계 후보 — listMyInbox가 이미 보임 판정을 지난 문서) id만 넘긴다 — 문서마다 다시
+  // 판정하면 그래프 · 스냅숏 읽기가 건수만큼 는다(검토 MEDIUM-1).
+  const visibleRows = await findLeaveRequestsByIds(viewer, { ids, documentKind: LEAVE_DOCUMENT_KIND });
   const counted = visibleRows.filter((row) => row.kind !== "remote");
   // 재택은 잔고 행이 없다 — 잔고 재료를 읽지 않는다.
   const balances = await getLeaveBalancesForRequests(

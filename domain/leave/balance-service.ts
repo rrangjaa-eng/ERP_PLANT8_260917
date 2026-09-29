@@ -209,7 +209,7 @@ export type RequestBalancesDeps = {
   now?: Date;
   // 요청 단위 노출 메모(결재함 한 번이 같은 메모를 쓴다 — CEO-17).
   visible?: typeof defaultVisible;
-  // 호출자가 이미 읽은 연차 행(결재함 상세 — 연차 행을 다시 읽지 않는다, CXF2-B-RF02).
+  // 호출자가 이미 읽고 보임 판정을 마친 연차 행(결재함 상세 — 연차 행을 다시 읽거나 판정하지 않는다, CXF2-B-RF02 · 검토 MEDIUM-1).
   leaves?: LeaveRequestRow[];
 };
 
@@ -228,7 +228,7 @@ export async function getLeaveBalancesForRequests(
   const reads = createBalanceReads(viewer);
   const result = new Map<string, Partial<LeaveRequestBalanceDto>>();
   for (const leave of leaves) {
-    if (!(await canSeeLeaveDocument(viewer, leave, { today }))) continue;
+    if (!deps?.leaves && !(await canSeeLeaveDocument(viewer, leave, { today }))) continue;
     const drafter = await reads.user(leave.drafterId);
     if (!drafter) continue;
     result.set(

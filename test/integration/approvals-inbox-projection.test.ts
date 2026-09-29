@@ -13,6 +13,10 @@ vi.mock("@/repositories/leave-adjustments", async () => {
   const actual = await vi.importActual<typeof import("@/repositories/leave-adjustments")>("@/repositories/leave-adjustments");
   return { ...actual, listLeaveAdjustments: vi.fn(actual.listLeaveAdjustments) };
 });
+vi.mock("@/repositories/approvals", async () => {
+  const actual = await vi.importActual<typeof import("@/repositories/approvals")>("@/repositories/approvals");
+  return { ...actual, findApprovalGraphByDocument: vi.fn(actual.findApprovalGraphByDocument) };
+});
 vi.mock("@/domain/settings/registry", async () => {
   const actual = await vi.importActual<typeof import("@/domain/settings/registry")>("@/domain/settings/registry");
   return { ...actual, getSettingValue: vi.fn(actual.getSettingValue) };
@@ -27,6 +31,7 @@ import { formatBalanceRow } from "@/domain/leave/balance";
 import type { LeaveRequestBalanceDto } from "@/domain/leave/dto";
 import { setHireDate, setResignationDate } from "@/domain/people";
 import { getSettingValue, setSettingValue } from "@/domain/settings/registry";
+import { findApprovalGraphByDocument } from "@/repositories/approvals";
 import { APPROVAL_ROUTE_LEAVE_SELF_APPROVAL } from "@/domain/settings/keys";
 import { findVisibility, upsertVisibility } from "@/repositories/permissions";
 import { findLeaveRequestsByIds } from "@/repositories/leave-requests";
@@ -236,6 +241,18 @@ describe("결재함 상세 withDetails(CEO-17 · CEO-9 · ENG-17 · CXF2-B-RF01)
     }
 
     expect(counted).toEqual(await listMyInbox(ceo, { now: NOW_2026, withDetails: true }));
+  }, 60000);
+
+  it("상세를 더해도 문서별 결재 그래프 읽기(보임 재판정)가 늘지 않는다 — `내 결재`는 이미 보임 판정을 지났다(검토 MEDIUM-1)", async () => {
+    const { ceo } = await fourDrafterInbox(5);
+    vi.mocked(findApprovalGraphByDocument).mockClear();
+    await listMyInbox(ceo, { now: NOW_2026 });
+    const plain = vi.mocked(findApprovalGraphByDocument).mock.calls.length;
+    vi.mocked(findApprovalGraphByDocument).mockClear();
+    const inbox = await listMyInbox(ceo, { now: NOW_2026, withDetails: true });
+    expect(inbox.mine).toHaveLength(20);
+    expect(inbox.mine.every((item) => balanceRowText(item.detail).length === 1)).toBe(true);
+    expect(vi.mocked(findApprovalGraphByDocument).mock.calls.length).toBe(plain);
   }, 60000);
 
   it("진행 중 5건(기안자 4명)이어도 연차 행 읽기는 2 그대로다(N+1 없음 — CXF2-B-RF02)", async () => {

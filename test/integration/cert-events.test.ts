@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/db/client";
 import { certEvents, certWinners } from "@/db/schema";
@@ -11,6 +11,9 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { setSettingValue } from "@/domain/settings/registry";
 import { CERT_CONTACT_PHONE, CERT_ENABLED } from "@/domain/settings/keys";
 import { createEvent, getCreateGate, getEventDetail, listEvents, type CreateEventInput } from "@/domain/certs/events";
+import { maskName } from "@/domain/certs/format";
+import { encrypt } from "@/lib/crypto";
+import { env } from "@/lib/env";
 
 // 04.3-04 Task 2 — 행사 목록 · 상세 · 만들기 domain(실제 Postgres). 매 테스트 전
 // setup.ts가 TRUNCATE + 시드한다 — 테스트가 준 권한 · 노출 행은 다음 테스트
@@ -134,6 +137,62 @@ describe("createEvent — 멱등(E3-22)", () => {
     expect(await counts()).toEqual({ events: 1, winners: 1 });
   });
 
+  it("다른 사용자가 A의 requestId로 만들면 A의 링크를 받지 못하고(던짐) 행 수 불변", async () => {
+    await grantPmCertEvents();
+    const pmA = await makeUser(DEFAULT_ROLE_ID, "PM 가");
+    const pmB = await makeUser(DEFAULT_ROLE_ID, "PM 나");
+    const requestId = randomUUID();
+    await createOk(pmA, { requestId });
+    const before = await counts();
+    await expect(createEvent(pmB, input({ requestId }))).rejects.toThrow();
+    expect(await counts()).toEqual(before);
+  });
+
+  it("찾기와 삽입 사이에 같은 사람의 같은 requestId가 끼면 unique 위반 분기에서 먼저 만든 행사를 돌려준다", async () => {
+    const requestId = randomUUID();
+    const token = randomBytes(32).toString("base64url");
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let preId = "";
+    let signalInserted: () => void = () => {};
+    const inserted = new Promise<void>((resolve) => (signalInserted = resolve));
+    // 커밋하지 않은 행 — createEvent의 찾기는 못 보고, 삽입은 unique 인덱스에서 이 트랜잭션을 기다린다.
+    const holder = db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(certEvents)
+        .values({
+          name: "먼저 만든 행사",
+          wonOn: "2026-09-13",
+          tokenHash: createHash("sha256").update(token).digest("hex"),
+          tokenEncrypted: encrypt(token),
+          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+          contactPhone: "02-123-4567",
+          createdBy: null,
+          createRequestId: requestId,
+        })
+        .returning({ id: certEvents.id });
+      preId = row!.id;
+      signalInserted();
+      await gate;
+    });
+    await inserted;
+
+    const creating = createEvent(SYSTEM_VIEWER, input({ requestId }));
+    await expect
+      .poll(async () => {
+        const result = await db.execute<{ n: number }>(
+          sql`select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query ilike 'insert into "cert_events"%'`,
+        );
+        return result.rows[0]?.n;
+      })
+      .toBe(1);
+    release();
+    await holder;
+
+    expect(await creating).toEqual({ kind: "ok", eventId: preId, link: `${env.BETTER_AUTH_URL}/c/${token}` });
+    expect(await counts()).toEqual({ events: 1, winners: 0 });
+  });
+
   it("requestId가 없으면 부를 때마다 새 행사", async () => {
     await createOk(SYSTEM_VIEWER);
     await createOk(SYSTEM_VIEWER);
@@ -183,6 +242,20 @@ describe("listEvents · getEventDetail — 범위(T-04.3-19)", () => {
   });
 });
 
+describe("범위 — certs.events 보기 없음", () => {
+  it("certs.submissions 보기만 있고 certs.events 보기가 없으면 목록 · 상세 notFound", async () => {
+    const made = await createOk(SYSTEM_VIEWER);
+    const roleId = `role-cert-it-${randomUUID()}`;
+    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `통합 ${roleId.slice(-8)}`, sortOrder: 99 });
+    await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "certs.submissions", action: "view", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "cert_event.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "cert_winner.value", visible: true });
+    const viewer = await makeUser(roleId);
+    expect(await listEvents(viewer)).toEqual({ kind: "notFound" });
+    expect(await getEventDetail(viewer, made.eventId)).toEqual({ kind: "notFound" });
+  });
+});
+
 describe("기능 꺼짐(C1)", () => {
   it("목록 · 상세 · 만들기 전부 notFound", async () => {
     const made = await createOk(SYSTEM_VIEWER);
@@ -214,6 +287,9 @@ describe("실제 반환값 비노출(Codex #22 · T-04.3-81)", () => {
     expect(winner).toBeDefined();
     expect(winner).not.toHaveProperty("name");
     expect(winner).not.toHaveProperty("phone");
+    expect(winner).not.toHaveProperty("recipientName");
+    expect(winner).not.toHaveProperty("recipientSecondLine");
+    expect(dump).not.toContain(maskName("김하늘"));
 
     const shown = await makeUser(await makeRole({ submissions: true, winnerValue: true }));
     const visibleDetail = await getEventDetail(shown, created.eventId);
@@ -247,5 +323,15 @@ describe("상세 DTO 링크 · QR", () => {
     expect(closed.event.status).toBe("closed");
     expect(closed.event).not.toHaveProperty("link");
     expect(closed.event).not.toHaveProperty("qrSvg");
+  });
+
+  it("기한이 지났지만 닫지 않은 행사도 link · qrSvg 키가 없다", async () => {
+    const made = await createOk(SYSTEM_VIEWER);
+    await db.update(certEvents).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(certEvents.id, made.eventId));
+    const expired = await getEventDetail(SYSTEM_VIEWER, made.eventId);
+    if (expired.kind !== "ok") throw new Error("상세 실패");
+    expect(expired.event).toMatchObject({ status: "closed", closedReason: "expired" });
+    expect(expired.event).not.toHaveProperty("link");
+    expect(expired.event).not.toHaveProperty("qrSvg");
   });
 });

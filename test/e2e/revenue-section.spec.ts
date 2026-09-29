@@ -716,3 +716,30 @@ test.describe("매출 금액 입력 오류 → 그 셀 고정 오류 · 표별 �
     expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, projectId))).toHaveLength(3);
   });
 });
+
+// 04-52(G-04-64 · UAT 64) — 매출 입력을 연 채 창을 1024 미만으로 줄여도 입력값이 읽기 표·「일괄 저장 N」·복귀 뒤 칸에 그대로 남는다.
+// 폭 전환은 setViewportSize만 쓴다(새로고침·goto는 서버 값으로 돌아가 재현이 무의미하다).
+test.describe("매출 입력을 연 채 1024 미만 전환 — 값 유지 (G-04-64 · UAT 64)", () => {
+  test("(A) 기존 발행 줄 금액을 키로 고친 채 1000 → 375 → 1280 — 읽기 표·「일괄 저장 1」·복귀 값이 그대로다", async ({ page }) => {
+    await openWithIssuedEntry(page);
+    const issuedTable = revenueTable(page, "발행 줄");
+    const amount = issuedTable.getByLabel("발행액");
+
+    await amount.click();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("4500000");
+    await expect(amount).toHaveValue("4,500,000");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+
+    for (const width of [1000, 375]) {
+      await page.setViewportSize({ width, height: 800 });
+      await expect(issuedTable.getByLabel("발행액")).toHaveCount(0);
+      await expect(issuedTable.getByText("4,500,000").first()).toBeVisible();
+      await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+    }
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(issuedTable.getByLabel("발행액")).toHaveValue("4,500,000");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+  });
+});

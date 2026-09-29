@@ -222,7 +222,7 @@ describe("inspectSignaturePng — 크기 상한(Codex #27)", () => {
 });
 
 describe("본문 한도 예산 — 서명 상한 + 나머지 칸 최대치가 262,144바이트 아래", () => {
-  // 공개 제출 액션(app/c/[token]/actions.ts)의 칸 최대 길이. 이름 · 주소는 3바이트 한글.
+  // 공개 제출 액션 스키마(app/c/[token]/submit-schema.ts)의 칸 최대 길이. 이름 · 주소는 3바이트 한글.
   function maxPayload(signatureBytes: number) {
     return {
       token: "t".repeat(128),

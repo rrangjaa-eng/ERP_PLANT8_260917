@@ -166,6 +166,13 @@ test.describe("관리자 사람 상세 연차 섹션 (04.1-06 Task 3 · S9)", ()
       await expect(section(page).getByLabel("잔고")).toHaveValue("annual");
       await addAdjustment(page, { days: "-1", reason: "무단 결근" });
       await expect(balance(page).first()).toContainText("조정 -1일");
+      // 잔고·일수 숫자는 700 — `/leave` 잔고 줄과 같은 DayNumbers(UI-SPEC Typography · 04.1-07 DOM 감사 ②).
+      const firstLine = await balance(page).first().innerText();
+      const numbers = balance(page).first().locator("b");
+      await expect(numbers).toHaveText(firstLine.match(/-?\d+(?:\.\d+)?(?=일)/g) ?? []);
+      for (const weight of await numbers.evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).fontWeight))) {
+        expect(weight).toBe("700");
+      }
       await expect(section(page).getByLabel("일수")).toHaveValue("");
       await expect(section(page).getByLabel("사유")).toHaveValue("");
       expect(await fiscalYearOf(target.id, "무단 결근")).toBe(year);

@@ -11,6 +11,7 @@ import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
 import { addLeaveAdjustmentAction, setHireDateAction, setResignationDateAction } from "./actions";
 import leaveStyles from "@/app/(app)/leave/leave.module.css";
+import { DayNumbers } from "@/app/(app)/leave/day-numbers";
 import styles from "../people.module.css";
 
 // 04.1-06 S9 — 관리자 사람 상세 `연차` 섹션. 2px 섹션 선 + 제목(발령 이력 섹션과 같은 모양), 칸은 단일 기둥 720 ·
@@ -131,7 +132,9 @@ export function LeaveSection(props: LeaveSectionProps) {
             </span>
             <div data-testid="person-leave-balance" className={leaveStyles.balanceLines}>
               {props.balanceLines.map((line) => (
-                <p key={line}>{line}</p>
+                <p key={line}>
+                  <DayNumbers text={line} />
+                </p>
               ))}
             </div>
           </div>

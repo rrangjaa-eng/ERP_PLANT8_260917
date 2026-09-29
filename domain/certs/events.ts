@@ -61,8 +61,9 @@ export type CreateEventInput = z.input<typeof createEventInputSchema>;
 
 export type CreateEventFieldErrors = { name?: "required" | "tooLong"; wonOn?: "required" | "format" };
 
+// link는 행사가 열려 있을 때만 싣는다 — 닫힌(기한 지난) 행사의 재전송은 eventId만.
 export type CreateEventResult =
-  | { kind: "ok"; eventId: string; link: string }
+  | { kind: "ok"; eventId: string; link?: string }
   | { kind: "contactMissing" }
   | { kind: "notFound" }
   | { kind: "invalid"; cellErrors: WinnerCellError[]; fieldErrors: CreateEventFieldErrors; noWinners?: true };
@@ -73,9 +74,11 @@ function linkOf(token: string): string {
   return `${env.BETTER_AUTH_URL}/c/${token}`;
 }
 
-async function findByRequest(viewer: Viewer, requestId: string): Promise<{ kind: "ok"; eventId: string; link: string } | null> {
+async function findByRequest(viewer: Viewer, requestId: string): Promise<{ kind: "ok"; eventId: string; link?: string } | null> {
   const row = await findEventByCreateRequest(viewer, { requestId, createdBy: createdByOf(viewer) });
-  return row ? { kind: "ok", eventId: row.id, link: linkOf(decrypt(row.tokenEncrypted)) } : null;
+  if (!row) return null;
+  const open = row.closedAt === null && row.expiresAt.getTime() > Date.now();
+  return open ? { kind: "ok", eventId: row.id, link: linkOf(decrypt(row.tokenEncrypted)) } : { kind: "ok", eventId: row.id };
 }
 
 function createdByOf(viewer: Viewer): string | null {

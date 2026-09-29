@@ -51,10 +51,11 @@ export async function createCertEvent(opts: {
 
   if (result.kind !== "ok") throw new Error(`createCertEvent 실패: ${result.kind}`);
 
-  const token = result.link.split("/c/").pop();
-  if (!token) throw new Error("createCertEvent: 링크에서 토큰을 찾지 못했습니다.");
+  const link = result.link;
+  const token = link?.split("/c/").pop();
+  if (!link || !token) throw new Error("createCertEvent: 링크에서 토큰을 찾지 못했습니다.");
 
-  return { eventId: result.eventId, eventName, link: result.link, token };
+  return { eventId: result.eventId, eventName, link, token };
 }
 
 // 기능을 끄고 fn을 돌린 뒤 되돌린다(끄기 전 값으로 복원 — finally).

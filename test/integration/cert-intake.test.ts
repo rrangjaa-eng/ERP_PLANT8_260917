@@ -756,7 +756,7 @@ describe("확인증 공개 흐름 — createEvent 문의 전화(T9)", () => {
     });
     expect(result.kind).toBe("ok");
     if (result.kind !== "ok") throw new Error("unreachable");
-    const token = result.link.split("/c/").pop();
+    const token = result.link?.split("/c/").pop();
     if (!token) throw new Error("링크에서 토큰을 찾지 못했다");
 
     await setSettingValue(SYSTEM_VIEWER, CERT_CONTACT_PHONE, "031-123-4567");

@@ -48,14 +48,13 @@ describe("Table 그룹 키와 머리글 글자(groupHeader)", () => {
     { id: "r1", group: "client-1", balance: "100" },
     { id: "r2", group: "client-2", balance: "200" },
   ];
-  const labels: Record<string, string> = { "client-1": "같은이름 (111-11-11111)", "client-2": "같은이름 (222-22-22222)" };
 
   it("머리글 글자가 같아도 키가 다르면 두 그룹 — 각자 첫 줄 잔액", () => {
     const cells = groupHeaderCells(
-      render({ rows: sameName, groupHeader: (row) => labels[row.group] ?? "", groupAside: (row) => `잔액 ${row.balance}` }),
+      render({ rows: sameName, groupHeader: () => "같은이름", groupAside: (row) => `잔액 ${row.balance}` }),
     );
     expect(cells).toHaveLength(2);
-    expect(cells[0]).toMatch(/^<td[^>]*>같은이름 \(111-11-11111\)<span[^>]*>잔액 100<\/span><\/td>$/);
-    expect(cells[1]).toMatch(/^<td[^>]*>같은이름 \(222-22-22222\)<span[^>]*>잔액 200<\/span><\/td>$/);
+    expect(cells[0]).toMatch(/^<td[^>]*>같은이름<span[^>]*>잔액 100<\/span><\/td>$/);
+    expect(cells[1]).toMatch(/^<td[^>]*>같은이름<span[^>]*>잔액 200<\/span><\/td>$/);
   });
 });

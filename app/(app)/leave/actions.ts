@@ -3,9 +3,11 @@
 import { z } from "zod";
 import { authedActionClient } from "@/lib/actions/client";
 import "@/app/(app)/document-kinds";
-import { LEAVE_DOCUMENT_KIND, LeaveValidationError, submitLeave } from "@/domain/leave";
-import type { LeaveFieldError } from "@/domain/leave/days";
-import { currentHolderNames, projectActionResult, withdrawDocument } from "@/domain/approvals";
+import { formatRequestBalanceRow, LEAVE_DOCUMENT_KIND, LeaveValidationError, submitLeave } from "@/domain/leave";
+import { countLeaveQuarters, type LeaveFieldError } from "@/domain/leave/days";
+import { assertLeaveWrite } from "@/domain/leave/access";
+import { previewLeaveBalance } from "@/domain/leave/balance-service";
+import { currentHolderNames, previewRoute, projectActionResult, withdrawDocument } from "@/domain/approvals";
 import { resubmitLeave } from "@/domain/leave/resubmit";
 import "./actions.registry";
 
@@ -62,3 +64,24 @@ export const resubmitLeaveAction = authedActionClient
       }),
     };
   });
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// 04.1-06(S2 · Codex MEDIUM · CX-R3 · T8): 신청 창 미리보기 — 저장 없음. 첫 문장이 leave write 판정이다(previewRoute는
+// 결재 모듈 함수라 연차 권한을 모른다). 힌트 재료(주말 제외 일수 · 재택 여부)와 잔고 행(formatBalanceRow — 연차 ·
+// 월차 따로, 합계 없음, 재택이면 null)과 결재선(04.1-01 RoutePreviewDTO 그대로 — 이름은 approval.value 투영을
+// 통과할 때만)을 한 응답으로 준다. 이번 신청 일수는 잔고 행에만 있다(힌트에 싣지 않는다).
+export const previewLeaveAction = authedActionClient.schema(leaveInputSchema).action(async ({ parsedInput, ctx }) => {
+  await assertLeaveWrite(ctx.viewer);
+  const days = countLeaveQuarters(parsedInput);
+  let weekendDays: number | null = null;
+  let balance: ReturnType<typeof formatRequestBalanceRow> = null;
+  if (days.ok) {
+    const span = (Date.parse(`${days.endDate}T00:00:00Z`) - Date.parse(`${days.startDate}T00:00:00Z`)) / DAY_MS + 1;
+    weekendDays = days.kind === "full_day" ? span - days.quarters / 4 : null;
+    balance = formatRequestBalanceRow(await previewLeaveBalance(ctx.viewer, parsedInput), days.kind);
+  }
+  const route = await previewRoute(ctx.viewer, { kind: LEAVE_DOCUMENT_KIND });
+  return { remote: days.ok && days.kind === "remote", weekendDays, balance, route };
+});
+

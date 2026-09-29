@@ -16,8 +16,9 @@ export const LEAVE_HALF_EMPTY_ERROR = "시간 비어 있음 · 시간 고르기"
 // 반차·반반차 `시간` Select의 처음 값(UI-SPEC 사용자 확인 대상 #1 — `오전`).
 export const DEFAULT_HALF_PERIOD: HalfPeriod = "am";
 
-const START_EMPTY_ERROR = "시작일 비어 있음 · 시작일 적기";
-const DATE_EMPTY_ERROR = "날짜 비어 있음 · 날짜 적기";
+// 04.1-06: 신청 폼 막힘 문구도 같은 글자를 쓴다(종일·재택 = 시작일, 반차·반반차 = 날짜).
+export const LEAVE_START_EMPTY_ERROR = "시작일 비어 있음 · 시작일 적기";
+export const LEAVE_DATE_EMPTY_ERROR = "날짜 비어 있음 · 날짜 적기";
 const DATE_FORMAT_ERROR = "날짜 형식 오류 · 2026-09-18처럼";
 const END_BEFORE_START_ERROR = "종료일이 시작일보다 빠름 · 종료일 고치기";
 const WEEKEND_ONLY_ERROR = "주말만 고른 기간 · 평일 넣기";
@@ -72,7 +73,7 @@ export function countLeaveQuarters(input: LeaveDaysInput): LeaveDaysResult {
 
   const errors: LeaveFieldError[] = [];
   if (input.startDate === "") {
-    errors.push({ field: "startDate", message: singleDay ? DATE_EMPTY_ERROR : START_EMPTY_ERROR });
+    errors.push({ field: "startDate", message: singleDay ? LEAVE_DATE_EMPTY_ERROR : LEAVE_START_EMPTY_ERROR });
   }
   const startMs = input.startDate === "" ? null : parseDate(input.startDate);
   if (input.startDate !== "" && startMs === null) errors.push({ field: "startDate", message: DATE_FORMAT_ERROR });

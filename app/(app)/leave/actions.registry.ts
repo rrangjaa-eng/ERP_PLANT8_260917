@@ -25,3 +25,12 @@ registerAction({
   action: "write",
   dtoName: "ApprovalActionResultDto",
 });
+
+// 04.1-06 신청 창 미리보기 — 신청 창 전용이고 판정이 leave write(첫 문장 assertLeaveWrite)라 동작도 write다.
+// 잔고 행 재료는 leaveRequestBalance 투영, 결재선은 04.1-01 routePreview · routePreviewStep 투영을 지난다.
+registerAction({
+  name: "previewLeaveAction",
+  menu: "leave",
+  action: "write",
+  dtoName: "leaveRequestBalance",
+});

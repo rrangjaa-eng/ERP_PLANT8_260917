@@ -20,6 +20,18 @@ function firstLine(content: string, needle: string): number {
   return content.slice(0, index).split("\n").length;
 }
 
+// 잡 블록은 "\n  <이름>:" 로 자른다 — "pnpm test:integration" 같은 스텝 문자열과 헷갈리지 않게.
+function jobBlock(ci: string, name: string, nextName?: string): string {
+  const start = ci.indexOf(`\n  ${name}:`);
+  expect(start, `ci.yml에 ${name} 잡이 있어야 한다`).toBeGreaterThan(-1);
+  const end = nextName ? ci.indexOf(`\n  ${nextName}:`) : ci.length;
+  expect(end, `ci.yml에 ${nextName} 잡이 있어야 한다`).toBeGreaterThan(start);
+  return ci.slice(start, end);
+}
+
+// draft PR은 quality만 돈다. integration·e2e는 ready(또는 workflow_call/push)에서만.
+const FULL_RUN_IF = "github.event_name != 'pull_request' || github.event.pull_request.draft == false";
+
 describe("ci-guard: .github/workflows 메타 검사", () => {
   it("어떤 워크플로에도 drizzle-kit push 하위 명령이 없다", () => {
     for (const file of workflowFiles()) {
@@ -39,10 +51,12 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
       "pnpm typecheck",
       "pnpm lint:sql",
       "pnpm test:unit",
+      ".claude/hooks/tests",
       "pnpm db:migrate",
       "pnpm test:integration",
       "playwright install",
       "pnpm test:e2e",
+      "--shard=",
     ];
     for (const token of required) {
       expect(ci, `ci.yml에 "${token}"가 있어야 한다`).toContain(token);
@@ -60,6 +74,15 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
     expect(hasPushTrigger).toBe(false);
   });
 
+  it("pull_request types에 ready_for_review가 있다(draft → ready 전환이 전체 CI를 깨운다)", () => {
+    const ci = readWorkflow("ci.yml");
+    const typesLine = ci.split("\n").find((line) => /^\s*types:\s*\[/.test(line));
+    expect(typesLine, "pull_request 아래 types: [...] 줄이 있어야 한다").toBeDefined();
+    for (const t of ["opened", "synchronize", "reopened", "ready_for_review"]) {
+      expect(typesLine).toContain(t);
+    }
+  });
+
   it("pull_request 트리거는 paths + ! 형태를 쓰고 paths-ignore는 없다(GitHub이 문서로 지원하는 형태만 사용)", () => {
     const ci = readWorkflow("ci.yml");
     expect(ci).not.toContain("paths-ignore");
@@ -72,42 +95,77 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
     expect(indexes).toEqual([...indexes].sort((a, b) => a - b));
   });
 
-  it("quality 잡 내부 순서: lint < typecheck < lint:sql < test:unit", () => {
+  it("quality 잡 내부 순서: lint < typecheck < lint:sql < test:unit < 훅 테스트", () => {
     const ci = readWorkflow("ci.yml");
-    const qualityStart = ci.indexOf("quality:");
-    const integrationStart = ci.indexOf("integration-e2e:");
-    expect(qualityStart).toBeGreaterThan(-1);
-    expect(integrationStart).toBeGreaterThan(qualityStart);
-    const qualityBlock = ci.slice(qualityStart, integrationStart);
-    const order = ["pnpm lint", "pnpm typecheck", "pnpm lint:sql", "pnpm test:unit"].map(
-      (token) => firstLine(qualityBlock, token),
+    const qualityBlock = jobBlock(ci, "quality", "integration");
+    const order = [
+      "pnpm lint",
+      "pnpm typecheck",
+      "pnpm lint:sql",
+      "pnpm test:unit",
+      ".claude/hooks/tests",
+    ].map((token) => firstLine(qualityBlock, token));
+    for (const line of order) expect(line).toBeGreaterThan(-1);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
+  it("quality 잡은 if 조건 없이 항상 돈다(draft PR의 빠른 경로)", () => {
+    const ci = readWorkflow("ci.yml");
+    const qualityBlock = jobBlock(ci, "quality", "integration");
+    const hasIf = qualityBlock.split("\n").some((line) => /^\s{4}if:/.test(line));
+    expect(hasIf).toBe(false);
+  });
+
+  it("integration·e2e 잡은 각각 quality를 needs로 요구하고 Postgres 서비스 컨테이너를 쓴다", () => {
+    const ci = readWorkflow("ci.yml");
+    for (const block of [jobBlock(ci, "integration", "e2e"), jobBlock(ci, "e2e")]) {
+      expect(block).toContain("needs: quality");
+      expect(block).toContain("services:");
+      expect(block).toContain("image: postgres:16");
+      expect(block).toContain("pg_isready");
+    }
+  });
+
+  it("integration·e2e 잡은 draft PR에서 건너뛰고 ready·workflow_call에서만 돈다", () => {
+    const ci = readWorkflow("ci.yml");
+    for (const block of [jobBlock(ci, "integration", "e2e"), jobBlock(ci, "e2e")]) {
+      expect(block).toContain(FULL_RUN_IF);
+    }
+  });
+
+  it("integration·e2e 잡은 2샤드 matrix로 돌고 fail-fast를 끈다(한 샤드 실패가 다른 샤드 결과를 가리지 않게)", () => {
+    const ci = readWorkflow("ci.yml");
+    for (const block of [jobBlock(ci, "integration", "e2e"), jobBlock(ci, "e2e")]) {
+      expect(block).toContain("shard: [1, 2]");
+      expect(block).toContain("fail-fast: false");
+      expect(block).toContain("--shard=${{ matrix.shard }}/2");
+    }
+  });
+
+  it("integration 잡 내부 순서: db:migrate < test:integration, e2e는 없다", () => {
+    const ci = readWorkflow("ci.yml");
+    const block = jobBlock(ci, "integration", "e2e");
+    const order = ["pnpm db:migrate", "pnpm test:integration"].map((token) =>
+      firstLine(block, token),
     );
     for (const line of order) expect(line).toBeGreaterThan(-1);
     expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(block).not.toContain("pnpm test:e2e");
   });
 
-  it("integration-e2e 잡은 quality를 needs로 요구하고, Postgres 서비스 컨테이너를 쓴다", () => {
+  it("e2e 잡 내부 순서: playwright install < test:e2e, 통합 테스트는 없다", () => {
     const ci = readWorkflow("ci.yml");
-    const integrationStart = ci.indexOf("integration-e2e:");
-    const integrationBlock = ci.slice(integrationStart);
-    expect(integrationBlock).toContain("needs: quality");
-    expect(integrationBlock).toContain("services:");
-    expect(integrationBlock).toContain("image: postgres:16");
-    expect(integrationBlock).toContain("pg_isready");
-  });
-
-  it("integration-e2e 잡 내부 순서: db:migrate < test:integration < playwright install < test:e2e", () => {
-    const ci = readWorkflow("ci.yml");
-    const integrationStart = ci.indexOf("integration-e2e:");
-    const integrationBlock = ci.slice(integrationStart);
-    const order = [
-      "pnpm db:migrate",
-      "pnpm test:integration",
-      "playwright install",
-      "pnpm test:e2e",
-    ].map((token) => firstLine(integrationBlock, token));
+    const block = jobBlock(ci, "e2e");
+    const order = ["playwright install", "pnpm test:e2e"].map((token) => firstLine(block, token));
     for (const line of order) expect(line).toBeGreaterThan(-1);
     expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(block).not.toContain("pnpm test:integration");
+  });
+
+  it("e2e 실패 리포트 아티팩트 이름에 샤드 번호가 들어간다(두 샤드가 같은 이름으로 충돌하지 않게)", () => {
+    const ci = readWorkflow("ci.yml");
+    const block = jobBlock(ci, "e2e");
+    expect(block).toContain("name: playwright-report-${{ matrix.shard }}");
   });
 
   // WR-09: !docs/**가 unit 테스트가 실제로 읽는 docs 파일까지 가려서, 그 파일만

@@ -1,0 +1,79 @@
+/* relax.css — docs/DESIGN.md §5 밖 완화 후보 9개 (2026-09-27 사용자 [지시], 확정 아님 · SKIN-EXPLORE.md §4)
+ * html에 r1~r9 클래스가 붙으면 켜진다(skin.mjs). 모든 규칙은 낮은 우선순위(:where)라서
+ * 스킨(A·B·C)이 이미 정한 값은 그대로 두고, 스킨이 정하지 않은 곳만 채운다.
+ * → 「원장 + 후보 전부」는 원장 구조를 유지한 채 피부만 부드럽게 한 네 번째 비교안이 된다.
+ * 로드 순서: skin-ledger → base → relax → skin-X. 계속 금지: 그라디언트·블러 · fade-up · hover 확대 · 크림+세리프 · 가짜 01/02/03 · 버튼 끝 → · 빈 CTA · 모노 라벨 */
+
+/* 1. 선 굵기 → 명도: 2px 진한 선을 1px 중간 톤으로, 위계는 머리글·그룹·합계 행의 옅은 틴트 면으로 */
+:root:where(.r1) {
+  --line-strong: #B4C1BC;             /* 1px 중간 톤 · on --bg 1.9 (장식선, 텍스트 아님) */
+  --bar-line:    0 solid transparent;
+  --th-bg:       var(--surface);
+  --th-line:     var(--line-w) solid var(--line);
+  --grp-bg:      var(--g-50);
+  --grp-fg:      var(--g-800);        /* on --g-50 9.9 */
+  --grp-line:    0 solid transparent;
+  --foot-bg:     var(--surface);
+  --foot-line:   var(--line-w) solid var(--line-strong);
+  --sum-line:    var(--line-w) solid var(--line-strong);
+  --sec-line:    var(--line-w) solid var(--line);
+  --tabs-line:   var(--line-w) solid var(--line);
+}
+
+/* 2. 타이포 대비: 제목 22px/700 · 라벨 muted 600 · 숫자 tabular(기존) · 행 42px */
+:root:where(.r2) { --title-size: 22px; --row-min: 42px; --cell-pad-y: 9px; }
+@media (max-width: 699.98px) { :root:where(.r2) { --title-size: 20px; --row-min: 44px; --cell-pad-y: 10px; } }
+:where(.r2) .ph h1 { font-weight: var(--fw-bold); }
+:where(.r2) .filters label, :where(.r2) .meta, :where(.r2) .pnl, :where(.r2) .pager > span { font-weight: var(--fw-medium); }
+:where(.r2) .meta b, :where(.r2) .pnl b { font-weight: var(--fw-bold); }
+
+/* 3. 면 한 단계: 기운 무채 바탕 + 흰 면(표·폼)만. 카드 안 카드 없음(면 안에서는 선·틴트로만 나눈다) */
+:root:where(.r3) {
+  --canvas:       #F3F5F4;            /* 그린 쪽으로 기운 무채 · --muted on it 6.2 */
+  --panel:        #FFFFFF;
+  --panel-line:   var(--line-w) solid var(--line);
+  --panel-radius: var(--radius);
+  --panel-gap:    var(--s-4);
+}
+:where(.r3) .form .panel { padding: var(--s-2) var(--s-5) var(--s-4); }
+:where(.r3) .frow:last-of-type { border-bottom: 0; }
+:where(.r3) .panel > table :is(th, td):first-child { padding-left: var(--s-4); }
+:where(.r3) .panel > table :is(th, td):last-child { padding-right: var(--s-4); }
+@media (max-width: 699.98px) {
+  :where(.r3) .panel > table :is(th, td):first-child { padding-left: var(--s-3); }
+  :where(.r3) .panel > table :is(th, td):last-child { padding-right: var(--s-3); }
+  :where(.r3) .form .panel { padding: var(--s-2) var(--s-4) var(--s-4); }
+}
+
+/* 4. 아이콘 최소 도입: 한 세트 · 16/20px · 굵기 1.75 — 하단 탭 · 검색 · 메뉴(사용자 메뉴·더보기)에만 */
+:where(.r4) .ic { display: inline-block; }
+:where(.r4) .tabs { height: 56px; }
+:where(.r4) .tabs a { flex-direction: column; gap: 2px; font-size: var(--fs-xs); }
+@media (max-width: 699.98px) {
+  :where(.r4) .srch { display: inline-flex; color: var(--nav-on-fg); padding: var(--s-2); margin-right: calc(-1 * var(--s-2)); }
+  :where(.r4) .srch .ic { width: 20px; height: 20px; }
+  :where(.r4) .toast { bottom: calc(56px + var(--s-3)); }
+}
+
+/* 5. 떠 있는 요소만 그림자: 모달·시트·토스트·사용자 메뉴에 한 단계(딥그린 잉크) */
+:root:where(.r5) { --float-shadow: 0 12px 28px -8px rgba(0, 33, 28, 0.32), 0 2px 6px rgba(0, 33, 28, 0.14); }
+:where(.r5) :is(.toast, .umenu) { box-shadow: var(--float-shadow); border: var(--line-w) solid var(--line); }
+
+/* 6. 상단 바 50px · 본문 15px (밀도와 맞바꿈 — 1280×800에서 표 약 2줄 덜 보임) */
+:root:where(.r6) { --bar-h: 50px; --fs-base: 15px; }
+
+/* 7. 포커스·선택: 링이 radius를 따라감 · 편집 칸은 링 + 옅은 틴트, 대비 3:1 이상(--focus on --bg 8.9) */
+:where(.r7) td .in { outline: 0; border: 0; box-shadow: 0 0 0 var(--focus-w) var(--focus); border-radius: max(4px, calc(var(--input-radius) / 2)); background: var(--bg); padding: 2px 6px; }
+:where(.r7) td.dirty { box-shadow: inset 0 0 0 1px var(--g-600); background: var(--g-100); }
+:where(.r7) :focus-visible { outline-offset: 2px; }
+
+/* 8. 응답형 모션만: 메뉴·시트·토스트가 열릴 때 180ms 페이드 + 4px 이동. 연출 모션 금지 · 줄이기 설정 존중 */
+@keyframes relax-in { from { opacity: 0; transform: translateY(-4px); } }
+@keyframes relax-up { from { opacity: 0; transform: translateY(4px); } }
+:where(.r8) .umenu:not([hidden]) { animation: relax-in var(--dur-sheet) var(--ease-sheet); }
+:where(.r8) .toast { animation: relax-up var(--dur-sheet) var(--ease-sheet); }
+@media (prefers-reduced-motion: reduce) { :where(.r8) :is(.umenu, .toast) { animation: none; } }
+
+/* 9. 견적 원장 네 숫자 19px (32px는 대시보드 KPI에만) */
+:where(.r9) .pnl b { font-size: 19px; letter-spacing: var(--ls-head); }
+@media (max-width: 699.98px) { :where(.r9) .pnl b { font-size: var(--fs-md); } }

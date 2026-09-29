@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { invalidSubmitField, submitBlockedReason, isDefiniteResult, recheckOutcome, resolveHistoryEntry } from "@/app/c/[token]/flow-rules";
+import {
+  invalidSubmitField,
+  submitBlockedReason,
+  isDefiniteResult,
+  nextRrnRecheckConfirmed,
+  recheckOutcome,
+  resolveHistoryEntry,
+  submitOutcomeFromValidationErrors,
+} from "@/app/c/[token]/flow-rules";
 
 // 04.3-03 Task 2a ③ — 외부 수령자 흐름의 순수 판정(브라우저 API 없음).
 
@@ -108,5 +116,73 @@ describe("submitBlockedReason — 빈 칸 나열과 받침에 맞는 조사(/des
 
   it("빈 칸이 없으면 이유 없음", () => {
     expect(submitBlockedReason([])).toBeUndefined();
+  });
+});
+
+// 04.3-06 Task 2 ① — 제출 결과 종류 · 되물음 표시 · 스키마 거절 → 칸 오류.
+describe("isDefiniteResult — 제출 결과 종류(04.3-06)", () => {
+  it.each([
+    [{ data: { kind: "saved" } }],
+    [{ data: { kind: "alreadySubmitted", maskedName: "김*늘", submittedAt: "2026-09-26T00:00:00Z" } }],
+    [{ data: { kind: "invalid", fields: ["phone"] } }],
+    [{ data: { kind: "rrnRecheck" } }],
+    [{ validationErrors: { signaturePngBase64: { _errors: ["x"] } } }],
+  ])("%o → true", (result) => {
+    expect(isDefiniteResult(result)).toBe(true);
+  });
+
+  it.each([[{ data: { kind: "throttled" } }], [{ serverError: "x" }], [undefined], [{ data: { kind: "somethingElse" } }]])(
+    "%o → false",
+    (result) => {
+      expect(isDefiniteResult(result)).toBe(false);
+    },
+  );
+});
+
+describe("nextRrnRecheckConfirmed — 되물음 표시는 값에 묶인다(codex-final3-B 2)", () => {
+  it("되물음을 받은 값 그대로면 true", () => {
+    expect(nextRrnRecheckConfirmed({ armedRrn: "9304122123458", rrn: "9304122123458" })).toBe(true);
+  });
+
+  it("값이 바뀌면 false", () => {
+    expect(nextRrnRecheckConfirmed({ armedRrn: "9304122123458", rrn: "9304122123459" })).toBe(false);
+  });
+
+  it("되물음을 받은 적 없으면 false", () => {
+    expect(nextRrnRecheckConfirmed({ armedRrn: null, rrn: "9304122123458" })).toBe(false);
+  });
+});
+
+describe("submitOutcomeFromValidationErrors — 액션 스키마 거절을 칸 오류로", () => {
+  it("서명 길이 초과 → invalid [signature](결과 불명이 아니다)", () => {
+    expect(submitOutcomeFromValidationErrors({ signaturePngBase64: { _errors: ["too long"] } })).toEqual({
+      kind: "invalid",
+      fields: ["signature"],
+    });
+  });
+
+  it("여러 칸은 E4 시각 순서(이름 먼저, 두 주민등록번호 칸은 rrn 하나)", () => {
+    expect(
+      submitOutcomeFromValidationErrors({
+        signaturePngBase64: { _errors: ["x"] },
+        rrnBack7: { _errors: ["x"] },
+        rrnFront6: { _errors: ["x"] },
+        name: { _errors: ["x"] },
+        phone: { _errors: ["x"] },
+      }),
+    ).toEqual({ kind: "invalid", fields: ["name", "rrn", "phone", "signature"] });
+  });
+
+  it("화면에 칸이 없는 키만 오면(idempotencyKey · winnerVersion 등) null", () => {
+    expect(
+      submitOutcomeFromValidationErrors({ idempotencyKey: { _errors: ["x"] }, winnerVersion: { _errors: ["x"] } }),
+    ).toBeNull();
+  });
+
+  it("_errors가 비어 있는 칸은 세지 않는다", () => {
+    expect(submitOutcomeFromValidationErrors({ name: { _errors: [] }, address: { _errors: ["x"] } })).toEqual({
+      kind: "invalid",
+      fields: ["address"],
+    });
   });
 });

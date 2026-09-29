@@ -21,8 +21,8 @@ test.describe("폰 결재 시트 (04.1-05)", () => {
     // 기안자(입사일 없음 — 월차 부여 없음)가 폰에서 종일 3평일을 신청한다.
     const drafterPage = await loginPage(browser, baseURL, org.drafter, PHONE);
     await drafterPage.goto("/leave/new");
-    // 하이드레이션 전에 채운 입력은 버려진다 — 마운트 미리보기의 잔고 행이 뜬 뒤(= 하이드레이션 끝) 입력한다.
-    await expect(drafterPage.getByTestId("leave-balance-row")).toBeVisible();
+    // 하이드레이션 전에 채운 입력은 버려진다 — 마운트 미리보기의 결재선 한 줄이 뜬 뒤(= 하이드레이션 끝) 입력한다.
+    await expect(drafterPage.getByTestId("approval-route-line")).toBeVisible();
     await drafterPage.getByLabel("시작일").fill(range.startDate);
     await drafterPage.getByLabel("종료일").fill(range.endDate);
     await drafterPage.getByRole("button", { name: "연차 신청" }).click();

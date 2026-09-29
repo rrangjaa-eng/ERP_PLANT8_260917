@@ -143,6 +143,13 @@ tr:has(.foldLink) {
     align-items: center;
     min-height: var(--touch-min);
   }
+
+  /* 사람 상세 연차 섹션의 연도 링크 — 폰 터치 영역 44(SYSTEM §10 · 04.1-06 DOM 감사 #7). */
+  .yearLine a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch-min);
+  }
 }
 
 /* 04.1-06 신청 폼(S2) 행동 줄 — PC는 폼 맨 아래 한 줄(1차 · 막힘 이유 + 다음 한 수 · 오른쪽 끝 2차), 폰은 하단 탭 위

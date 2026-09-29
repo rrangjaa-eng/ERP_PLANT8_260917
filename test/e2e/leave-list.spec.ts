@@ -299,8 +299,8 @@ async function openForm(browser: Browser, baseURL: string | undefined, person: {
   const page = await login(browser, baseURL, person);
   await page.goto("/leave/new");
   await expect(page.getByLabel("종류")).toHaveValue("full_day");
-  // 하이드레이션 전에 채운 입력은 버려진다 — 마운트 미리보기의 잔고 행이 뜬 뒤(= 하이드레이션 끝) 입력한다.
-  await expect(page.getByTestId("leave-balance-row")).toBeVisible();
+  // 하이드레이션 전에 채운 입력은 버려진다 — 마운트 미리보기의 결재선 한 줄이 뜬 뒤(= 하이드레이션 끝) 입력한다.
+  await expect(page.getByTestId("approval-route-line")).toBeVisible();
   return page;
 }
 
@@ -344,6 +344,8 @@ test.describe("연차 신청 폼 /leave/new (04.1-06 Task 2 · S2)", () => {
       expect(expected.lines[0]).toBe(`연차 남음 ${formatLeaveDays(expected.annualDays * 4)} · 결재 중 0일 · 이번 신청 6일`);
       expect(((await form(page).innerText()).match(/이번 신청/g) ?? []).length).toBe(1);
       await expect(routeLine(page)).toHaveText(new RegExp(`^${org.drafter.name} → .* · 결재 규칙$`));
+      // 단계 사이 화살표도 읽힌다 — 보조 기술이 단계를 구분 없이 이어 읽지 않게(DOM 감사 #9 · SYSTEM §10 읽기 순서).
+      await expect(routeLine(page).locator('[aria-hidden="true"]')).toHaveCount(0);
       await page.context().close();
     });
   });
@@ -513,7 +515,7 @@ test.describe("연차 신청 폼 /leave/new (04.1-06 Task 2 · S2)", () => {
       await expect(page).toHaveURL(/\/leave$/);
 
       await page.goto("/leave/new");
-      await expect(page.getByTestId("leave-balance-row")).toBeVisible();
+      await expect(page.getByTestId("approval-route-line")).toBeVisible();
       await page.getByLabel("종류").focus();
       await page.keyboard.press("Escape");
       await expect(page).toHaveURL(/\/leave$/);

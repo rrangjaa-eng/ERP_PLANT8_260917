@@ -34,7 +34,8 @@ export type LeaveSectionProps = {
 };
 
 // 04.1-03 checkLeaveAdjustment의 사유 빈 칸 문구와 같은 글자(서버도 같은 문구로 거부한다).
-const REASON_EMPTY = "사유 비어 있음 · 사유 적기";
+const REASON_CAUSE = "사유 비어 있음";
+const REASON_NEXT = "사유 적기";
 
 const COLUMNS: TableColumn<LeaveAdjustmentRow>[] = [
   { key: "date", header: "날짜", priority: "p2", cell: (row) => row.date },
@@ -187,10 +188,19 @@ export function LeaveSection(props: LeaveSectionProps) {
                 variant="primary"
                 pending={isExecuting}
                 disabled={reasonBlocked}
-                disabledReason={reasonBlocked ? REASON_EMPTY : undefined}
+                aria-describedby={reasonBlocked ? "adjust-blocked" : undefined}
               >
                 {primaryLabel}
               </Button>
+              {/* 막힘 줄 = 이유 + 다음 한 수 3차(SYSTEM §7-15 · 신청 폼 blockedLine과 같은 모양, 04.1-06 DOM 감사 #8). */}
+              {reasonBlocked && !isExecuting ? (
+                <span className={leaveStyles.blockedLine}>
+                  <span id="adjust-blocked" className={leaveStyles.blockedReason}>{`${REASON_CAUSE} · `}</span>
+                  <Button variant="tertiary" onClick={() => document.getElementById("adjustReason")?.focus()}>
+                    {REASON_NEXT}
+                  </Button>
+                </span>
+              ) : null}
               {result.serverError ? <span className={leaveStyles.blockedReason}>{result.serverError}</span> : null}
             </Form.Actions>
           </Form>

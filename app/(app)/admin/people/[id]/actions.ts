@@ -6,6 +6,7 @@ import { authedActionClient } from "@/lib/actions/client";
 import { seoulToday } from "@/lib/dates";
 import { setHireDate, setResignationDate } from "@/domain/people";
 import { addLeaveAdjustment, LeaveAdjustmentValidationError } from "@/domain/leave/balance-service";
+import { parseAdjustmentDays } from "./adjustment-days";
 import "./actions.registry";
 
 // 04.1-06 Task 3(S9 · D-96 · D-97): 관리자 사람 상세 `연차` 섹션 액션 — 입사일 · 퇴직일 즉시 저장, 연차 · 월차 조정 추가.
@@ -53,7 +54,7 @@ export const addLeaveAdjustmentAction = authedActionClient.schema(adjustmentSche
       userId: parsedInput.userId,
       bucket: parsedInput.bucket,
       fiscalYear: parsedInput.fiscalYear ?? null,
-      amountDays: Number(parsedInput.amountDays.trim()),
+      amountDays: parseAdjustmentDays(parsedInput.amountDays),
       reason: parsedInput.reason,
     });
   } catch (error) {

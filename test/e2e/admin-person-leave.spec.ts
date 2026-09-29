@@ -186,6 +186,12 @@ test.describe("관리자 사람 상세 연차 섹션 (04.1-06 Task 3 · S9)", ()
       await expect(page).toHaveURL(new RegExp(`\\?year=${year - 1}$`));
       await expect(section(page).getByText(`${year - 1} 회계연도`, { exact: true })).toBeVisible();
       await expect(section(page).getByRole("link", { name: "올해 보기" })).toBeVisible();
+      // 폰(375)에서 연도 링크 터치 영역 ≥ 44(DOM 감사 #7 · SYSTEM §10).
+      await page.setViewportSize({ width: 375, height: 800 });
+      for (const name of [`${year - 2} 회계연도`, "올해 보기"]) {
+        expect((await section(page).getByRole("link", { name }).boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+      }
+      await page.setViewportSize({ width: 1280, height: 720 });
       await expect(primary(page)).toHaveText(new RegExp(`^${year - 1} 연차 조정 추가`));
       await section(page).getByLabel("잔고").selectOption({ label: "월차" });
       await expect(primary(page)).toHaveText(/^연차 조정 추가/);
@@ -251,7 +257,10 @@ test.describe("관리자 사람 상세 연차 섹션 (04.1-06 Task 3 · S9)", ()
 
       await section(page).getByLabel("일수").fill("-1");
       await expect(primary(page)).toBeDisabled();
-      await expect(section(page).getByText("사유 비어 있음 · 사유 적기", { exact: true })).toBeVisible();
+      // 막힘 줄 = 이유 + 다음 한 수 3차(SYSTEM §7-15 Form.Actions · DOM 감사 #8) — 3차가 사유 칸으로 포커스.
+      await expect(section(page).getByText("사유 비어 있음 ·", { exact: true })).toBeVisible();
+      await section(page).getByRole("button", { name: "사유 적기" }).click();
+      await expect(section(page).getByLabel("사유")).toBeFocused();
 
       await section(page).getByLabel("일수").fill("0.3");
       await section(page).getByLabel("사유").fill("단위 확인");

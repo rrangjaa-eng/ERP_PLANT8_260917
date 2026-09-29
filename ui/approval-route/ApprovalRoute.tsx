@@ -34,11 +34,8 @@ export function ApprovalRoute(props: ApprovalRouteProps) {
         {props.steps.map((step, index) => (
           <Fragment key={`${step.label}-${index}`}>
             {/* 04.1-06(CX-R3): 이름이 투영에서 빠지면 기안자 없이 첫 단계부터, 사람 없이 단계 이름만 그린다. */}
-            {props.drafter || index > 0 ? (
-              <span className={styles.arrow} aria-hidden="true">
-                {" → "}
-              </span>
-            ) : null}
+            {/* 화살표도 읽힌다 — 숨기면 보조 기술이 단계를 구분 없이 이어 읽는다(04.1-06 DOM 감사 #9 · SYSTEM §10). */}
+            {props.drafter || index > 0 ? <span className={styles.arrow}>{" → "}</span> : null}
             {step.person ? (
               <>
                 <span>{step.person}</span>{" "}

@@ -6,6 +6,7 @@ import {
   pinCellErrors,
   pinFieldErrors,
   cellErrorSummary,
+  type CellErrorCode,
   type CreateFormSnapshot,
   type DraftWinnerRow,
 } from "@/app/(app)/certs/events/create-form-rules";
@@ -109,7 +110,7 @@ describe("createSubmitOutcome", () => {
   });
 
   it("invalid → 셀 오류 · 칸 오류 그대로", () => {
-    const cellErrors = [{ rowKey: "0", column: "phone", code: "phoneFormat" }];
+    const cellErrors = [{ rowKey: "0", column: "phone", code: "phoneFormat" as const }];
     expect(createSubmitOutcome({ data: { kind: "invalid", cellErrors, fieldErrors: { name: "required" } } })).toEqual({
       kind: "invalid",
       cellErrors,
@@ -143,7 +144,7 @@ describe("pinCellErrors — 셀 오류 12종 명사형 문장(사용자 결정 A
     ["distinguishLabel", "labelTooLong", "10자 초과 · 10자 안으로"],
     ["distinguishLabel", "labelDigits", "숫자 3개 이상 이어짐 · 전화번호 말고 오전 조처럼 입력"],
     ["distinguishLabel", "labelName", "당첨자 이름 들어 있음 · 이름 말고 오전 조처럼 입력"],
-  ])("%s %s → %s", (column, code, text) => {
+  ] as const)("%s %s → %s", (column, code, text) => {
     expect(pinCellErrors([{ rowKey: "d1", column, code }])).toEqual({ [`d1:${column}`]: text });
   });
 
@@ -176,7 +177,7 @@ describe("pinCellErrors — 셀 오류 12종 명사형 문장(사용자 결정 A
   });
 
   it("어느 문장에도 높임말 종결 · 마침표가 없다", () => {
-    const codes = ["required", "phoneFormat", "quantity", "delivery", "duplicatePerson", "nameTooLong", "prizeTooLong", "labelTooLong", "labelDigits", "labelName"];
+    const codes: CellErrorCode[] = ["required", "phoneFormat", "quantity", "delivery", "duplicatePerson", "nameTooLong", "prizeTooLong", "labelTooLong", "labelDigits", "labelName"];
     const texts = Object.values(pinCellErrors(codes.map((code, i) => ({ rowKey: `r${i}`, column: "name", code }))));
     expect(texts).toHaveLength(codes.length);
     for (const text of texts) expect(text).not.toMatch(/(?:습니다|세요|니다)|\.$/);

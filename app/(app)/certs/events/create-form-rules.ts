@@ -1,3 +1,5 @@
+import type { WinnerRuleCode } from "@/domain/certs/winner-rules";
+
 // 04.3-04 Task 3 ⓪ — I2 행사 만들기 화면의 순수 판정. React · DB · 설정을 import하지 않는다
 // (app/(auth)/login/login-error.ts 선례). 화면은 이 함수들만 불러 N · 막힘 이유 · 제출 응답 갈래를 정한다.
 
@@ -67,7 +69,9 @@ export function createBlockReason(input: {
   return null;
 }
 
-export type SubmitCellError = { rowKey: string; column: string; code: string; shape?: string; count?: number; total?: number };
+// validateWinnerRows의 11종 + 04.3-10 saveWinners가 만드는 tooManyWinners(E3-35) = 12종.
+export type CellErrorCode = WinnerRuleCode | "tooManyWinners";
+export type SubmitCellError = { rowKey: string; column: string; code: CellErrorCode; shape?: string; count?: number; total?: number };
 export type SubmitFieldErrors = { name?: string; wonOn?: string };
 
 export type SubmitOutcome =
@@ -99,4 +103,58 @@ export function createSubmitOutcome(response: unknown): SubmitOutcome {
   }
   if (data.kind === "contactMissing") return { kind: "contactMissing" };
   return { kind: "failed" };
+}
+
+// 셀 오류 문장 — 사용자 결정 A(2026-09-29 PR #88): 내부 화면 오류는 명사형 「원인 · 다음 행동」
+// (DECISIONS 2026-09-26). UI-SPEC 「I2 셀 오류」 문장의 뜻을 그대로 옮긴다. 반환은 문장 맵뿐(tone 없음).
+const COLUMN_LABEL: Record<string, string> = {
+  name: "이름",
+  phone: "전화번호",
+  prizeName: "경품명",
+  quantity: "수량",
+  delivery: "전달",
+  distinguishLabel: "구별 표시",
+};
+
+const CELL_ERROR_TEXT: Record<Exclude<CellErrorCode, "required" | "shapeDuplicate" | "tooManyWinners">, string> = {
+  phoneFormat: "전화번호 형식 아님 · 010-0000-0000처럼 입력",
+  quantity: "1 이상 정수 아님 · 1처럼 입력",
+  delivery: "현장 또는 택배 아님 · 둘 중 하나로 입력",
+  duplicatePerson: "같은 이름·전화번호 이미 있음 · 한 줄 수정",
+  nameTooLong: "40자 초과 · 40자 안으로",
+  prizeTooLong: "80자 초과 · 80자 안으로",
+  labelTooLong: "10자 초과 · 10자 안으로",
+  labelDigits: "숫자 3개 이상 이어짐 · 전화번호 말고 오전 조처럼 입력",
+  labelName: "당첨자 이름 들어 있음 · 이름 말고 오전 조처럼 입력",
+};
+
+function cellErrorText(error: SubmitCellError): string {
+  switch (error.code) {
+    case "required":
+      return `${COLUMN_LABEL[error.column] ?? error.column} 비어 있음 · 입력`;
+    case "shapeDuplicate":
+      return `수령자 목록에 ${error.shape ?? ""} ${error.count ?? 0}줄 · 구별 표시를 서로 다르게 입력(예: 오전 조)`;
+    case "tooManyWinners":
+      return `당첨자 ${error.total ?? 0}명 · ${CERT_CREATE_MAX_WINNERS}명까지 줄이기`;
+    default:
+      return CELL_ERROR_TEXT[error.code];
+  }
+}
+
+export function pinCellErrors(cellErrors: SubmitCellError[]): Record<string, string> {
+  const pinned: Record<string, string> = {};
+  for (const error of cellErrors) pinned[`${error.rowKey}:${error.column}`] = cellErrorText(error);
+  return pinned;
+}
+
+export function cellErrorSummary(count: number): string {
+  return `오류 ${count}칸 · 전부 거부`;
+}
+
+export function pinFieldErrors(fieldErrors: SubmitFieldErrors): { name?: string; wonOn?: string } {
+  const pinned: { name?: string; wonOn?: string } = {};
+  if (fieldErrors.name === "required") pinned.name = "행사 이름 비어 있음 · 입력";
+  else if (fieldErrors.name === "tooLong") pinned.name = "80자 초과 · 80자 안으로";
+  if (fieldErrors.wonOn === "required") pinned.wonOn = "당첨일 비어 있음 · 입력";
+  return pinned;
 }

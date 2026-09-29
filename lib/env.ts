@@ -99,6 +99,8 @@ const rawSchema = z.object({
   NOTIFY_TICK_OIDC_DISABLED: optionalString(),
 });
 
+const KMS_KEY_NAME = /^projects\/[^/]+\/locations\/[^/]+\/keyRings\/[^/]+\/cryptoKeys\/[^/]+$/;
+
 const envSchema = rawSchema.superRefine((data, ctx) => {
   if (data.APP_ENV !== "local") {
     if (!data.BETTER_AUTH_SECRET || data.BETTER_AUTH_SECRET.length < 32) {
@@ -137,25 +139,34 @@ const envSchema = rawSchema.superRefine((data, ctx) => {
       });
     }
   }
-  // 04.3-08 — 감싼 키는 KMS 키 이름 없이 풀 수 없다. 비로컬에서 같은 버전의 평문
-  // 변수가 함께 있으면 평문 시크릿이 아직 서비스에 붙어 있는 배포다 — 부팅에서 막는다.
+  // 04.3-08 — 감싼 키는 KMS 키 이름 없이 풀 수 없다. 비로컬에서 감싼 키가 하나라도 있는데
+  // 평문 변수가 (어느 버전이든) 함께 있으면 평문 시크릿이 아직 서비스에 붙어 있는 배포다 —
+  // 부팅에서 막는다(검토 반영 L4).
+  const anyWrapped = data.APP_DATA_KEY_v1_WRAPPED !== undefined || data.APP_DATA_KEY_v2_WRAPPED !== undefined;
   for (const version of ["v1", "v2"] as const) {
     const wrappedKey = `APP_DATA_KEY_${version}_WRAPPED` as const;
-    if (data[wrappedKey] === undefined) continue;
-    if (!data.APP_DATA_KEY_KMS_KEY) {
+    if (data[wrappedKey] !== undefined && !data.APP_DATA_KEY_KMS_KEY) {
       ctx.addIssue({
         code: "custom",
         path: ["APP_DATA_KEY_KMS_KEY"],
         message: `APP_DATA_KEY_KMS_KEY is required when ${wrappedKey} is set`,
       });
     }
-    if (data.APP_ENV !== "local" && data[`APP_DATA_KEY_${version}`] !== undefined) {
+    if (anyWrapped && data.APP_ENV !== "local" && data[`APP_DATA_KEY_${version}`] !== undefined) {
       ctx.addIssue({
         code: "custom",
         path: [`APP_DATA_KEY_${version}`],
-        message: `APP_DATA_KEY_${version} must not be set together with ${wrappedKey} when APP_ENV is not local`,
+        message: `APP_DATA_KEY_${version} must not be set together with a wrapped data key when APP_ENV is not local`,
       });
     }
+  }
+  // 검토 반영 L3 — KMS 키 이름은 cryptoKeys 경로(버전 없이)여야 한다.
+  if (data.APP_DATA_KEY_KMS_KEY !== undefined && !KMS_KEY_NAME.test(data.APP_DATA_KEY_KMS_KEY)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["APP_DATA_KEY_KMS_KEY"],
+      message: "APP_DATA_KEY_KMS_KEY must be projects/<p>/locations/<l>/keyRings/<r>/cryptoKeys/<k>",
+    });
   }
   if (data.AUTH_PROVIDER === "google") {
     if (!data.GOOGLE_CLIENT_ID) {

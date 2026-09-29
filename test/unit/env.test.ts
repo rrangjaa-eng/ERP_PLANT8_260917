@@ -246,4 +246,37 @@ describe("lib/env", () => {
     const { env } = await import("@/lib/env");
     expect(env.APP_DATA_KEY_v1_WRAPPED).toBe("Q2lRQQ==");
   });
+
+  // 04.3-08 검토 반영 L3 — KMS 키 이름은 cryptoKeys 경로 모양이어야 한다(버전 경로 · 잘린 경로 거부).
+  it.each([
+    "projects/p/locations/asia-northeast3/keyRings/r",
+    "projects/p/locations/asia-northeast3/keyRings/r/cryptoKeys/k/cryptoKeyVersions/1",
+    "plant8-staging/app-data-key",
+  ])("APP_DATA_KEY_KMS_KEY가 cryptoKeys 경로 모양이 아니면(%s) throw한다", async (keyName) => {
+    process.env.APP_DATA_KEY_v1_WRAPPED = "Q2lRQQ==";
+    process.env.APP_DATA_KEY_KMS_KEY = keyName;
+
+    await expect(import("@/lib/env")).rejects.toThrow(/APP_DATA_KEY_KMS_KEY/);
+  });
+
+  // 04.3-08 검토 반영 L4 — 비로컬에서 감싼 키가 하나라도 있으면 평문 데이터 키 변수는 어떤 버전도 없어야 한다.
+  it("비로컬에서 감싼 v1이 있으면 다른 버전의 평문 변수(APP_DATA_KEY_v2)도 throw한다", async () => {
+    process.env.APP_ENV = "staging";
+    process.env.BETTER_AUTH_SECRET = "a".repeat(32);
+    process.env.BETTER_AUTH_URL = "https://example.com";
+    process.env.APP_DATA_KEY_v2 = Buffer.alloc(32, 2).toString("base64");
+    process.env.APP_DATA_KEY_v1_WRAPPED = "Q2lRQQ==";
+    process.env.APP_DATA_KEY_KMS_KEY = "projects/p/locations/asia-northeast3/keyRings/r/cryptoKeys/k";
+
+    await expect(import("@/lib/env")).rejects.toThrow(/APP_DATA_KEY_v2/);
+  });
+
+  it("로컬에서는 감싼 v1과 평문 v2가 함께 있어도 파싱 성공한다", async () => {
+    process.env.APP_DATA_KEY_v2 = Buffer.alloc(32, 2).toString("base64");
+    process.env.APP_DATA_KEY_v1_WRAPPED = "Q2lRQQ==";
+    process.env.APP_DATA_KEY_KMS_KEY = "projects/p/locations/asia-northeast3/keyRings/r/cryptoKeys/k";
+
+    const { env } = await import("@/lib/env");
+    expect(env.APP_DATA_KEY_v2).toBe(Buffer.alloc(32, 2).toString("base64"));
+  });
 });

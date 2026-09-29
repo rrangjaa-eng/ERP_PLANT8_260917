@@ -106,11 +106,11 @@ export function validateWinnerRows(rows: WinnerRowInput[], context?: WinnerRules
 
   const normalized = rows.map((r) => {
     const name = normalizeName(r.name);
-    const prizeName = r.prizeName.trim();
+    const prizeName = r.prizeName.normalize("NFC").trim();
     const phone = r.phone.trim() === "" ? null : normalizePhone(r.phone);
     const quantity = parseQuantity(r.quantity);
     const delivery = DELIVERY_BY_INPUT[r.delivery.trim()];
-    const label = (r.distinguishLabel ?? "").trim();
+    const label = (r.distinguishLabel ?? "").normalize("NFC").trim();
 
     if (name === "") setError({ rowKey: r.key, column: "name", code: "required" });
     else if (name.length > WINNER_NAME_MAX) setError({ rowKey: r.key, column: "name", code: "nameTooLong" });
@@ -130,7 +130,7 @@ export function validateWinnerRows(rows: WinnerRowInput[], context?: WinnerRules
       const compactLabel = compact(label);
       if (label.length > WINNER_LABEL_MAX) {
         setError({ rowKey: r.key, column: "distinguishLabel", code: "labelTooLong" });
-      } else if (/\d{3,}/.test(label.replace(/[\s\-.]/g, ""))) {
+      } else if (/\p{Nd}{3,}/u.test(label.normalize("NFKC").replace(/[\s\-.]/g, ""))) {
         setError({ rowKey: r.key, column: "distinguishLabel", code: "labelDigits" });
       } else if (eventNames.some((n) => compactLabel.includes(n))) {
         setError({ rowKey: r.key, column: "distinguishLabel", code: "labelName" });

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -88,6 +88,32 @@ describe("표시 지점 스캔", () => {
 
   it.each(displayFiles)("%s에 개별 로캘 변환 호출(toLocaleString)이 없다", (...path) => {
     expect(read(...path)).not.toMatch(/\.toLocaleString\(/);
+  });
+
+  // D-95 전수 스캔 — 손 목록에 없는 새 파일도 잡도록 app/(app)/projects·ui 아래 모든 .ts/.tsx를 훑는다.
+  // 예외 허용 목록은 없다(현재 위반 0). 날짜 등 비숫자에 쓸 일이 생기면 여기에 이유와 함께 좁게 추가한다.
+  function listSources(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = resolve(dir, entry.name);
+      if (entry.isDirectory()) return listSources(full);
+      return /\.tsx?$/.test(entry.name) ? [full] : [];
+    });
+  }
+  const scanned = [
+    ...listSources(resolve(process.cwd(), "app", "(app)", "projects")),
+    ...listSources(resolve(process.cwd(), "ui")),
+  ];
+
+  it("전수 스캔이 실제로 파일을 잡는다(빈 목록으로 통과하지 않는다)", () => {
+    expect(scanned.length).toBeGreaterThan(40);
+    for (const name of ["list-totals.tsx", "previous-revision.tsx", "revision-section.tsx", "revision-dialogs.tsx", "pre-estimate-field.tsx"]) {
+      expect(scanned.some((file) => file.endsWith(name))).toBe(true);
+    }
+  });
+
+  it("app/(app)/projects·ui 전체에 toLocaleString( · new Intl.NumberFormat 호출이 없다", () => {
+    const offenders = scanned.filter((file) => /\.toLocaleString\(|new Intl\.NumberFormat/.test(readFileSync(file, "utf8")));
+    expect(offenders).toEqual([]);
   });
 
   it("ui/pagination/page-window.ts에 Intl.NumberFormat 생성이 없다(04-29 이관)", () => {

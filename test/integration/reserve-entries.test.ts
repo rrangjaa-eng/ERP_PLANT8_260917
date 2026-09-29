@@ -240,6 +240,68 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
     expect((await storedRow(row.id))?.projectId).toBe(project.id);
   });
 
+  // Codex #5(PR #85 스레드 PRRT_kwDOUea1Js6m7_MR) · CEO-D18 — 보관된 프로젝트로의 새 연결·바꾼 연결만 거부하고, 이미 묶인 줄은 그대로 저장.
+  it("새 줄이 보관된 프로젝트를 고르면 `보관된 프로젝트 · 프로젝트 다시 고르기`로 전부 거부, DB 무변경(CEO-D18)", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const project = await createProjectFor(client.id);
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, project.id));
+    const row = { ...newRow(client.id, "2026-03-01", "deposit", 1_000), projectId: project.id };
+
+    const error = await rejection(saveReserves(finance, { rows: [row] }));
+
+    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: row.id, field: "projectId", reason: "보관된 프로젝트 · 프로젝트 다시 고르기" })]);
+    expect(await countRows(client.id)).toBe(0);
+  });
+
+  it("저장된 줄의 프로젝트를 보관된 프로젝트로 바꾸면 같은 이유로 거부, 저장된 값 그대로(CEO-D18)", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const deposit = newRow(client.id, "2026-03-01", "deposit", 1_000);
+    await saveReserves(finance, { rows: [deposit] });
+    const project = await createProjectFor(client.id);
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, project.id));
+
+    const edit = { ...deposit, isNew: undefined, version: 1, projectId: project.id };
+    const error = await rejection(saveReserves(finance, { rows: [edit] }));
+
+    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: deposit.id, field: "projectId", reason: "보관된 프로젝트 · 프로젝트 다시 고르기" })]);
+    const stored = await storedRow(deposit.id);
+    expect(stored?.projectId).toBeNull();
+    expect(stored?.version).toBe(1);
+  });
+
+  it("묶인 뒤 보관된 프로젝트는 그 줄의 다른 칸 수정을 막지 않는다 — 프로젝트 칸 그대로 저장", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const project = await createProjectFor(client.id);
+    const row = { ...newRow(client.id, "2026-03-01", "deposit", 1_000), projectId: project.id };
+    await saveReserves(finance, { rows: [row] });
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, project.id));
+
+    const edit = { ...row, isNew: undefined, version: 1, amount: krw(2_000) };
+    await saveReserves(finance, { rows: [edit] });
+
+    const stored = await storedRow(row.id);
+    expect(stored?.amountAmountKrw).toBe(2_000);
+    expect(stored?.projectId).toBe(project.id);
+    expect(stored?.version).toBe(2);
+  });
+
+  it("새 줄 재전송(ENG-D10)은 그 사이 프로젝트가 보관돼도 no-op — 한 행 그대로", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const project = await createProjectFor(client.id);
+    const row = { ...newRow(client.id, "2026-03-01", "deposit", 1_000), projectId: project.id };
+    await saveReserves(finance, { rows: [row] });
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, project.id));
+
+    await saveReserves(finance, { rows: [row] });
+
+    expect(await countRows(client.id)).toBe(1);
+    expect((await storedRow(row.id))?.projectId).toBe(project.id);
+  });
+
   it("없는 clientId는 PG 23503이 아니라 `클라이언트 없음 · 클라이언트 다시 고르기`로 거부된다", async () => {
     const finance = await createFinanceViewer();
     const row = newRow(randomUUID(), "2026-03-01", "deposit", 1_000);

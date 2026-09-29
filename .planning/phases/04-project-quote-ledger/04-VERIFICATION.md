@@ -1,8 +1,8 @@
 ---
 phase: 04-project-quote-ledger
-verified: 2026-09-29T10:00:01Z
-status: gaps_found
-score: 8/10 must-haves verified
+verified: 2026-09-29T12:41:03Z
+status: passed
+score: 9/10 must-haves verified
 covered_files:
   - ".planning/REQUIREMENTS.md"
   - ".planning/ROADMAP.md"
@@ -90,6 +90,10 @@ covered_files:
   - ".planning/phases/04-project-quote-ledger/04-50-SUMMARY.md"
   - ".planning/phases/04-project-quote-ledger/04-51-PLAN.md"
   - ".planning/phases/04-project-quote-ledger/04-51-SUMMARY.md"
+  - ".planning/phases/04-project-quote-ledger/04-52-PLAN.md"
+  - ".planning/phases/04-project-quote-ledger/04-52-SUMMARY.md"
+  - ".planning/phases/04-project-quote-ledger/04-53-PLAN.md"
+  - ".planning/phases/04-project-quote-ledger/04-53-SUMMARY.md"
   - "app/(app)/pnl/reserves/reserves-table.tsx"
   - "app/(app)/projects/[id]/quote-table.tsx"
   - "app/(app)/projects/actions.ts"
@@ -121,46 +125,47 @@ covered_files:
   - "repositories/projects.ts"
   - "ui/select/Select.tsx"
   - "ui/table/Table.tsx"
-covered_digest: "v1:sha256:69d53cf8d3eeea8314ca381e1e9c9c044a3d13c58bf3f03d4491295ef89ec5da"
+covered_digest: "v1:sha256:f5f94a17750835f762c48c10efbca097b743c6d6e24d8da5b1a8dc571867a22b"
 behavior_unverified: 0
 overrides_applied: 0
-gaps:
-  - truth: "상태 전환(사람 다섯)과 자동 전환 진행 → 정산이 전부 기준 3의 게이트(domain/rules.gate 단일 진입점)를 지난다 (ROADMAP 기준 4)"
-    status: partial
-    reason: "사람의 전환 넷은 gate(project, \"project.transition\")(domain/projects/status.ts:180), 정산 → 진행은 gate(\"project.period-edit\")(domain/projects/ledger.ts:227)를 지난다. 그러나 자동 전환 진행 → 정산은 gate()를 한 번도 부르지 않는다 — 읽기 입구 applyAutoSettlement(domain/projects/auto-transition.ts:48-90)는 repositories/projects.ts:492-495의 SQL 조건(status = from · end_date < 오늘 · 보관 아님)으로, 쓰기 입구 loadProjectForGate(auto-transition.ts:121-126)는 같은 조건을 JS로 한 번 더 적어 판정한다. domain/rules/register.ts에 자동 전환 규칙이 없다(등록 규칙 10개 중 auto/settle 0개). 같은 판정이 두 곳에 손으로 적혀 있어 기준 3이 막으려던 「게이트 밖 판정」이 된다"
-    artifacts:
-      - path: "domain/projects/auto-transition.ts"
-        issue: "applyAutoSettlement·loadProjectForGate가 gate()를 부르지 않는다 — 판정이 121-126행 JS 조건"
-      - path: "repositories/projects.ts"
-        issue: "settleOverdueProjects(492-495행)가 전환 판정 조건을 SQL로 직접 가진다"
-      - path: "domain/rules/register.ts"
-        issue: "자동 전환(진행 → 정산) 게이트 규칙 미등록"
-    missing:
-      - "domain/rules/register.ts에 자동 전환 규칙(예: project.auto-settle — from/to가 AUTO_TRANSITIONS에 있고 종료일 < 오늘(KST)·보관 아님)을 등록하고, loadProjectForGate와 applyAutoSettlement(행마다 또는 선택된 행 재확인)가 gate()로 판정하게 한다. 통합 테스트 project-auto-settlement가 그대로 초록이어야 한다"
-      - "또는 사용자가 의도된 편차로 받아들이면 아래 override 제안을 frontmatter에 넣는다(시스템 행위자 전환이라 권한 판정이 없고, 전이 데이터 AUTO_TRANSITIONS는 게이트 규칙과 같은 표를 읽는다)"
-human_verification:
-  - test: "목록 응답 p99 500ms (ROADMAP 기준 1 끝 구절)"
-    expected: "실제 규모 데이터(수백~수천 건 프로젝트·견적 줄)에서 /projects 목록 요청 p99 ≤ 500ms"
-    why_human: "이 페이즈는 측정하지 않았고(docs/ARCHITECTURE.md:163-166, 04-VALIDATION.md:113 Manual-Only) 측정 자리를 「Phase 8 이전 리허설 데이터」로 미뤘는데, 2026-09-23 데이터 이전 철회로 그 리허설이 없어졌다(ROADMAP Phase 8:19). 측정 자리가 사라진 미룸 — 어느 페이즈(예: Phase 9 테스트 데이터 · 스테이징 부하)에서 잴지 사용자 결정 필요"
-  - test: "judgment 금지 항목 3건 사람 확인(04-02 · 04-08 · 04-21)"
-    expected: "04-02: 매출 입금 역산의 1원 차이를 서버가 맞추지 않고 화면에 보인다 · 04-08: 이 페이즈의 SYSTEM.md 개정이 전부 DECISIONS.md 기록을 거쳤다 · 04-21: 상태 변경 로그를 사람별로 집계하는 화면·내보내기가 없다"
-    why_human: "verification: judgment 항목은 자동 판정이 비권위적이다. 검증자 판정(비권위): 셋 다 지켜짐 — domain/revenue/index.ts:85 「조정하지 않는다」, DECISIONS.md 「Phase 4(04-08)」 17건, status_change 소비처는 마지막 변경일 파생(domain/projects/status.ts:230)·자동 정산 발효일(repositories/projects.ts:480-512)뿐"
+re_verification:
+  previous_status: gaps_found
+  previous_score: 8/10
+  gaps_closed:
+    - "상태 전환(사람 다섯)과 자동 전환 진행 → 정산이 전부 기준 3의 게이트(domain/rules.gate 단일 진입점)를 지난다 (ROADMAP 기준 4) — 04-53: 규칙 project.auto-settle 등록(domain/rules/register.ts:143-165) · 두 입구가 allowsAutoSettle → gate(row, \"project.auto-settle\", ctx)(domain/projects/auto-transition.ts:31-44, 91, 152)"
+  gaps_remaining: []
+  regressions: []
+deferred:
+  - truth: "(ROADMAP 기준 1) 목록 응답 p99 500ms 이내"
+    addressed_in: "Phase 9"
+    evidence: "사용자 결정 2026-09-29(.planning/STATE.md:302, 커밋 cb4d60a4) 「목록 p99 500ms 측정은 Phase 9(테스트 데이터·스테이징 부하)로 넘긴다」 · ROADMAP Phase 9 기준 7 「같은 데이터셋을 스테이징에 넣어」. 단 Phase 9 성공 기준 본문에 p99 문구 자체는 아직 없다(아래 Deferred Items 메모)"
+advisory:
+  - finding: "자동 정산 후보 SQL(repositories/projects.ts:494-497)이 규칙 project.auto-settle의 조건(상태 = 진행 · 종료일 있음 · 종료일 < 오늘 · 보관 아님)을 다시 적는다. 「WHERE는 규칙보다 넓거나 같아야 한다」는 불변식이 주석(:478-482)으로만 지켜지고 테스트가 없다"
+    category: architectural
+    reason: "판정은 gate가 한다 — (g2)(g2b)가 gate 거부 시 SQL 후보도 정산되지 않음을 증명하고, 쓰기 입구(loadProjectForGate)는 id로 잠근 뒤 gate만으로 판정해 후보 SQL을 거치지 않는다. WHERE는 FOR UPDATE SKIP LOCKED의 잠금 범위(빼면 목록 읽기마다 진행 중 전 행을 잠근다)라 남길 이유가 있다. 규칙을 넓히고 WHERE를 잊으면 읽기 입구만 덜 정산하는 쪽(fail-closed)으로 어긋난다. 해소: 규칙 결정표의 허용 케이스를 후보 SQL로도 잡는지 보는 통합 단언 1건, 또는 수용"
+    evidence_status: "none provided"
+  - finding: "정산 → 진행의 상태 결과(종료일 ≥ 오늘이면 진행)는 domain/projects/period.ts:41 resolvePeriodSave가 계산하고, gate(\"project.period-edit\")(ledger.ts:227)는 저장 허용 여부(권리·칸 오류)만 본다"
+    category: architectural
+    reason: "04-53 이전부터 있던 코드이고 이번 라운드에서 바뀌지 않았다(0a5f38bc..HEAD diff 밖). 첫 검증은 이 전환을 「gate를 지난다」로 인정했다 — 허용·거부는 gate가 하고, 상태 변화는 저장된 값의 결과(D-80)다. 규칙 쪽으로 옮길지는 Phase 5 이후 정리 대상으로만 기록"
+    evidence_status: "none provided"
 ---
 
 # Phase 4: 프로젝트·견적 원장 검증 보고서
 
 **Phase Goal:** 기획 PM이 프로젝트를 등록하고 엑셀처럼 견적 줄을 입력하면 차익이 서버에서 계산되며, 사전→상세 차수와 고객 승인, 매출 칸, 수주중→진행→완료(정산) + 미수주 상태 전환까지 프로젝트의 돈 뼈대가 선다. 모든 돈 칸은 `domain/money` 하나의 금액 모델(통화·환율·원화 환산액)을 쓰고 게이트 판정은 `domain/rules.gate` 하나를 지나며, 경영관리는 클라이언트별 리저브 대장을 기록한다
-**Verified:** 2026-09-29T10:00:01Z
-**Status:** gaps_found
-**Re-verification:** No — 첫 검증(이전 04-VERIFICATION.md 없음)
-**기준 커밋:** `ca7ead03`(origin/main, PR #85 머지 포함 · 42개 플랜 SUMMARY 전부 있음)
+**Verified:** 2026-09-29T12:41:03Z
+**Status:** passed
+**Re-verification:** Yes — 갭 닫기(04-53) 뒤 재검증. 이전: gaps_found 8/10(2026-09-29T10:00:01Z)
+**기준 커밋:** `7c51f6cd`(브랜치 claude/gsd-verify-work-4). 이전 검증 이후 제품 코드 변경은 `git diff 0a5f38bc..HEAD --stat -- app ui domain lib repositories db` 기준 세 파일뿐 — `domain/projects/auto-transition.ts`(+49/−) · `domain/rules/register.ts`(+28/−) · `repositories/projects.ts`(+36/−). 04-52는 테스트만.
 
 > **MVP 모드 메모:** ROADMAP은 Phase 4를 `**Mode:** mvp`로 적지만 Goal이 User Story 형식(「As a …, I want to …, so that ….」)이 아니다(`user-story.validate` → false). Phase 3·04.2와 같은 판단으로 User Flow Coverage 표 대신 ROADMAP 성공 기준 1~6을 계약으로 삼는 표준 goal-backward 검증을 했다. 형식 불일치는 ℹ️로만 남긴다. 기준 7(인트라넷 추출·변환)은 2026-09-23 사용자 결정으로 철회되어 검증 대상에서 뺐다.
 
 ## 방법
 
-- 계약 = ROADMAP 성공 기준 1~6(철회된 7 제외). 기준 1·4는 성질이 다른 구절을 나눠 참(truth) 10개로 만들었다. 42개 PLAN의 must_haves(참 약 700개)는 기준별로 핵심 산출물·배선을 코드에서 직접 확인하고, 해당 통합 테스트를 이 검증 안에서 한 번에 하나씩 실행해 행동 증거로 삼았다.
-- 이 검증에서 직접 실행: `pnpm lint`(exit 0 · 경고만) · `pnpm typecheck`(exit 0) · `pnpm test:unit`(125 파일 · 1748건 통과 · 0 실패) · 통합 스펙 17개(누수 스캔 포함) 단독 순차 실행(아래 표). E2E 전체는 실행하지 않았다(지시). E2E 행동 증거는 오케스트레이터가 알린 main CI 초록(ca7ead03)·스테이징 배포 run 36547181683 초록에 기댄다 — 이 환경에 `gh`가 없어 검증자가 CI 결과를 직접 조회하지는 못했다.
+- 계약 = ROADMAP 성공 기준 1~6(철회된 7 제외). 기준 1·4는 성질이 다른 구절을 나눠 참(truth) 10개로 만들었다.
+- 재검증 방식: 실패였던 truth 8은 3단계(존재 · 실질 · 배선) 전부 + 행동 테스트를 이 검증 안에서 다시 돌렸다. 통과였던 truth 1~3·5~7·9~10은 회귀 확인만 — 바뀐 제품 코드 세 파일이 그 truth의 근거를 건드리는지 보고, 줄 번호가 밀린 인용을 고쳤다.
+- 이 검증에서 직접 실행(한 번에 하나, 통합은 순차): 단위 3파일 · 통합 4스펙 · `pnpm typecheck` · `pnpm lint`(아래 Spot-Checks 표). 전체 단위·전체 E2E는 돌리지 않았다(지시). 나머지 통합 스펙 결과는 이전 검증(10:00Z) 실행분이고, 그 스펙들이 기대는 코드는 이번 라운드에서 바뀌지 않았다.
+- 사용자 결정(2026-09-29, `.planning/STATE.md:299,302`, 커밋 `cb4d60a4`)은 다시 묻지 않고 그대로 반영했다.
 
 ## Goal Achievement
 
@@ -168,49 +173,73 @@ human_verification:
 
 | # | Truth (ROADMAP 기준) | Status | Evidence |
 |---|---|---|---|
-| 1 | (기준 1) 프로젝트 등록·목록·상세, 서식 번호 자동 부여 — 카운터 행을 같은 tx에서 `UPDATE … RETURNING`으로 잠가 증가, 번호 UNIQUE, 실패 tx 결번 허용, 동시 제출 통합 테스트 | ✓ VERIFIED | `repositories/document-counters.ts:48-67`(insert-onConflictDoNothing → `UPDATE … RETURNING`, 문서 INSERT와 같은 tx) · `db/schema/document-counters.ts` 복합 PK(counter_key, period) · `db/schema/projects.ts:44` `projects_number_key` UNIQUE · 서식 5요소(`domain/document-numbering/index.ts:29-49`) · 실행: `document-counters-concurrency` 3/3(두 tx 동시 증가 값 불겹침 · 실패 tx 롤백) · `document-numbering` 31/31 · `projects-list` 37/37. 컬럼 이름은 ROADMAP 예시(`format_key, scope_key, next_no`)가 아니라 `counter_key, period, value` — 같은 구조 |
-| 2 | (기준 1) 클라이언트·거래처 자동완성, 이전 프로젝트·견적 줄 복사, 기본값 채움 | ✓ VERIFIED | 복사 등록 `createProjectAction.copyFromProjectId`(`app/(app)/projects/actions.ts:49`) · 출처 PM·팀·클라이언트 기본값(`project-form.tsx:256-300`) · 실행: `project-copy` 11/11. 자동완성은 네이티브 `<select>` 타이핑 점프로 성립시킨다는 계획 판단(⑨, `ui/select/Select.tsx:6-10`) — ℹ️ 참고 |
-| 3 | (기준 1) 목록 합계 집계 쿼리 1회 · 목록·검색 인덱스 목록이 ARCHITECTURE에 · 요청 본문 1MB 한도 | ✓ VERIFIED | `repositories/projects.ts:302-332` 합계 한 문장(GROUP BY 귀속 구간) · `domain/projects/index.ts:386`(0건일 때만 필터 없는 건수 1회 더) · `docs/ARCHITECTURE.md:149-161` §4-7 인덱스 표 · 쓰기는 전부 Server Action이고 Next 기본 `serverActions.bodySizeLimit` 1MB(`node_modules/next/dist/docs/01-app/02-guides/server-actions.md:83`), `next.config.ts`가 바꾸지 않음 |
-| 4 | (기준 1) 목록 응답 p99 500ms 이내 | ? UNCERTAIN | 측정 없음. `docs/ARCHITECTURE.md:163-166`·`04-VALIDATION.md:113`이 「Phase 8 이전 리허설 데이터」로 미뤘으나 데이터 이전 철회로 그 자리가 없다(ROADMAP Phase 8 :19). → 사람 확인·결정(아래) |
-| 5 | (기준 2) 견적 줄 표 키보드 계약(Tab/Enter·방향키·여러 칸 복사·붙여넣기·Esc·저장/새 줄 단축키), 차익 서버 계산·저장, 견적가 0 「견적 외 비용」 줄, 브라우저 계산값 비저장, 서버 검증 즉시 안내·저장 실패/중복/유실 없음, 승인·삭제·상태 변경 GET 불가 | ✓ VERIFIED | 저장 스키마에 `amountKrw`·차익 칸 없음(`actions.ts:35-38` `moneyInputSchema` = 통화·금액·환율뿐) · 주입한 `quoteAmountKrw/profitKrw`를 서버가 무시하는 통합 단언(`test/integration/quote-lines.test.ts:95-105`) · 줄 종류 CHECK(`db/schema/quote-lines.ts:49`) · 실행: `quote-lines` 53/53 · `quote-lines-conflict` 7/7 · `quote-line-kinds` 21/21 · 단위(표 키보드·붙여넣기·TSV·저장 래치 — `table-paging`·`grid-keyboard-composing`·`use-clipboard-paste`·`parse-tsv`·`save-lock`) 통과 · 변경 경로는 Server Action만(route handler는 auth·health·notify-tick뿐) · 화면 키보드 흐름은 E2E `quote-table.spec.ts`·`excel-paste-final.spec.ts`(CI) |
-| 6 | (기준 3) 사전→상세 차수, 차수마다 고객 승인 표시, 승인 전 차수 줄의 지출 동작 비활성(설정으로 끔), 판정은 `domain/rules.gate` 단일 진입점 | ✓ VERIFIED | `domain/rules/gate.ts:32-38` 단일 진입점(미등록 규칙은 던짐) · `quote.customer-approval` 규칙(`register.ts:222-230`, 설정 `project.customer_approval_gate`, 이전 승인 차수 대신 보지 않음) · 차수 생성·승인 토글도 gate 경유(`domain/quotes/revisions.ts:97,211`) · 실행: `quote-revisions` 23/23(a10: 1차 승인 + 2차 미승인이면 거부) · 단위 `rules-gate`. 지출결의·구매 요청 호출자는 Phase 5(규칙 주석 `register.ts:207`) |
-| 7 | (기준 4) 세금계산서 발행/입금 기록, 계약 금액 = 승인된 현재 차수 합계에서 파생, 정산 = 실행가 + 견적가 0 새 줄만, 잠김은 완료뿐, 음수 규칙(매출·조정 음수 허용), 연결 문서 있는 줄은 취소 상태·RESTRICT | ✓ VERIFIED | `projects.contract_*` 삭제(0015) · 매출 금액 음수 제약 없음(`db/schema/revenue-entries.ts:8-10`) · 견적 줄 실행가 음수는 견적 외 비용·조정만(`domain/quotes/lines.ts:715-733`) · 취소 줄 견적가 0(`lines.ts:456`) · 연결 문서 판정 훅(`linkedDocumentsByLine`, 문서 표는 Phase 5) · FK `onDelete: "restrict"`(`quote-lines.ts:18`, `revenue-entries.ts:16`) · 실행: `revenue-entries` 43/43 · `contract-invariant` 8/8 · `project-status` 22/22(미수주 비잠금 포함) · `migration-upgrade` 7/7 |
-| 8 | (기준 4) 사람의 전환 다섯과 **자동 전환 진행 → 정산**이 전부 기준 3의 게이트를 지난다 | ✗ FAILED (partial) | 사람 넷: `status.ts:180` gate(`project.transition`) · 정산 → 진행: `ledger.ts:227` gate(`project.period-edit`). **자동 전환은 gate()를 부르지 않는다** — `auto-transition.ts:48-90`(SQL 조건 `repositories/projects.ts:492-495`) · `auto-transition.ts:121-126`(같은 조건 JS 재기술). `register.ts`에 자동 전환 규칙 없음. 동작 자체는 통합 `project-auto-settlement` 22/22로 맞다 — 빠진 것은 「게이트 단일 진입점」 계약 |
-| 9 | (기준 5) `domain/money` 단일 모듈(branded Money · round · toKrw · splitWithRemainder · grossFromTotal · applyTaxRule 4종), 모듈 밖 산술 린트 차단, 규칙×절사 표 단위 테스트, 환율 기본값 = 통화별 최근 환율, 원화 정수·외화 2자리·환율 4자리, 입금액 합계 → 역산·차이 표시 | ✓ VERIFIED | `domain/money/index.ts:15-205` · `tax.ts:59` · `currency.ts:30-44`(recentFxRate·rememberFxRate) · 컬럼 `money-columns.ts`(numeric(14,2) · numeric(12,4) · bigint) · 린트 `plant8/money-boundary: error`(`eslint.config.*:78`) · 환율 기본값 배선(`projects/page.tsx:101`, `[id]/page.tsx:115`, `pnl/reserves/page.tsx:24`) · 역산 `domain/revenue/index.ts:95` · 단위 `money.test.ts`·`money-tax.test.ts` 통과 · `pnpm lint` exit 0 |
-| 10 | (기준 6) 경영관리의 클라이언트별 리저브 대장 — 날짜순 입금·출금·서버 계산 잔액, 프로젝트 연결, 금액 모델, 정보 노출표 새 항목 `reserve.amount`(기획본부 기본 숨김) | ✓ VERIFIED | `domain/reserves/index.ts:87-95` 누적 잔액 · 음수 거부 `:324-325,464` · `db/schema/reserve-entries.ts`(Money 묶음·프로젝트 선택·CHECK) · `info-items.ts:61` `reserve.amount` staffDefault false(→ `domain/seed/index.ts:221-232` 기획 PM 계급 숨김) · 실행: `reserve-entries` 74/74 · `visibility` 7/7 · 누수 스캔 `leak-scan`(아래 표) |
+| 1 | (기준 1) 프로젝트 등록·목록·상세, 서식 번호 자동 부여 — 카운터 행을 같은 tx에서 `UPDATE … RETURNING`으로 잠가 증가, 번호 UNIQUE, 실패 tx 결번 허용, 동시 제출 통합 테스트 | ✓ VERIFIED (회귀 없음) | 근거 파일(`repositories/document-counters.ts` · `db/schema/*` · `domain/document-numbering`) 이번 라운드 변경 0. 이전: `document-counters-concurrency` 3/3 · `document-numbering` 31/31 · `projects-list` 37/37 |
+| 2 | (기준 1) 클라이언트·거래처 자동완성, 이전 프로젝트·견적 줄 복사, 기본값 채움 | ✓ VERIFIED (회귀 없음) | `app/`·`ui/` 변경 0. 이전: `project-copy` 11/11. 자동완성 = 네이티브 `<select>` 타이핑 점프(ℹ️) |
+| 3 | (기준 1) 목록 합계 집계 쿼리 1회 · 목록·검색 인덱스 목록이 ARCHITECTURE에 · 요청 본문 1MB 한도 | ✓ VERIFIED (회귀 없음) | `repositories/projects.ts:302-332` 합계 한 문장 — 이번 diff는 473행 이후만 바꿈. `docs/ARCHITECTURE.md:149-161` · Next 기본 `bodySizeLimit` 1MB 그대로 |
+| 4 | (기준 1) 목록 응답 p99 500ms 이내 | ⏭ DEFERRED → Phase 9 | 사용자 결정(`STATE.md:302`) — Phase 9 테스트 데이터·스테이징 부하에서 잰다. 아래 Deferred Items |
+| 5 | (기준 2) 견적 줄 표 키보드 계약, 차익 서버 계산·저장, 견적가 0 「견적 외 비용」 줄, 브라우저 계산값 비저장, 서버 검증 즉시 안내·저장 실패/중복/유실 없음, 승인·삭제·상태 변경 GET 불가 | ✓ VERIFIED (회귀 없음) | `domain/quotes/lines.ts`·`app/` 변경 0. 견적 줄 저장이 부르는 `loadProjectForGate`(`lines.ts:812,1080`)는 바뀌었지만 반환 계약(판정 뒤 행)은 같다 — 04-53 SUMMARY의 `quote-lines` 53/53, 이 검증의 `quote-revisions` 23/23(같은 입구) |
+| 6 | (기준 3) 사전→상세 차수, 차수마다 고객 승인 표시, 승인 전 차수 줄의 지출 동작 비활성(설정으로 끔), 판정은 `domain/rules.gate` 단일 진입점 | ✓ VERIFIED (회귀 없음) | `domain/rules/gate.ts:32-38` 변경 0(미등록 규칙은 던짐) · `quote.customer-approval` 규칙은 24줄 밀려 `register.ts:245-252`(Phase 5 호출자 주석 `:232`) · 이 검증 실행: `quote-revisions` 23/23 · 단위 `rules-gate` 통과(아래) |
+| 7 | (기준 4) 세금계산서 발행/입금 기록, 계약 금액 파생, 정산 = 실행가 + 견적가 0 새 줄만, 잠김은 완료뿐, 음수 규칙, 연결 문서 있는 줄 취소·RESTRICT | ✓ VERIFIED (회귀 없음) | 근거 파일(`db/schema/*` · `domain/quotes/lines.ts` · `domain/revenue`) 변경 0. 이 검증 실행: `project-status` 22/22(미수주 비잠금 포함). 이전: `revenue-entries` 43/43 · `contract-invariant` 8/8 · `migration-upgrade` 7/7 |
+| 8 | (기준 4) 사람의 전환 다섯과 **자동 전환 진행 → 정산**이 전부 기준 3의 게이트를 지난다 | ✓ VERIFIED (갭 닫힘) | **존재:** 규칙 `project.auto-settle` 등록 `domain/rules/register.ts:156-165`(ctx 타입 `:146-152`, 전이표 `AUTO_TRANSITIONS`를 읽음 `:159`, 권한 사실 없음). **실질:** 결정표 — 전이표에 없는 쌍 거부 `:159-160` · 종료일 없음/오늘 이후 거부 `:161` · 보관 거부 `:162`. **배선:** 보조 함수 `allowsAutoSettle`이 `gate(row, "project.auto-settle", ctx)`를 부른다(`domain/projects/auto-transition.ts:31-44`, 규칙 등록 side-effect import `:5`). 읽기 입구 `applyAutoSettlement`는 후보를 잠근 뒤 후보마다 gate → 허용 id만 `settleProjectsByIds`(`:84-94`), 쓰기 입구 `loadProjectForGate`는 잠근 행을 gate로 판정(`:152`) — 옛 JS 조건(`status !== from \|\| endDate >= today \|\| archivedAt`)은 사라졌다. 옛 `settleOverdueProjects`는 코드 전역에 0건. 사람 넷 `status.ts:180` gate(`project.transition`) · 정산 → 진행 `ledger.ts:227` gate(`project.period-edit`) 그대로. **행동:** 통합 `project-auto-settlement` 27/27 — (g1)(g3) 두 입구가 규칙을 정확한 ctx로 한 번씩 부름, (g2)(g2b)(g4) gate가 거부하면 SQL 후보(종료일 지난 진행)도 정산되지 않음. 단위 `auto-settle-gate-registration`이 auto-transition만 import한 그래프(Phase 7 예약 작업)에서도 규칙 등록을 확인 |
+| 9 | (기준 5) `domain/money` 단일 모듈, 모듈 밖 산술 린트 차단, 규칙×절사 표, 환율 기본값, 자릿수, 입금액 합계 → 역산·차이 표시 | ✓ VERIFIED (회귀 없음) | `domain/money/*` 변경 0 · 이 검증 `pnpm lint` exit 0(`plant8/money-boundary` 오류 0) |
+| 10 | (기준 6) 경영관리의 클라이언트별 리저브 대장, 정보 노출표 `reserve.amount`(기획본부 기본 숨김) | ✓ VERIFIED (회귀 없음) | `domain/reserves` · `info-items.ts` 변경 0. 이전: `reserve-entries` 74/74 · `visibility` 7/7 · `leak-scan` 1189/1189 |
 
-**Score:** 8/10 truths verified (1 FAILED · 1 UNCERTAIN · 0 present-behavior-unverified)
+**Score:** 9/10 truths verified · 1 deferred(truth 4 → Phase 9) · 0 FAILED · 0 present-behavior-unverified
+
+#### truth 8 — 남은 SQL 조건 판단
+
+`grep -rnE "endDate\s*(<|>=|<=|>)|end_date\s*<|lt\(projects\.endDate" domain repositories app lib` 결과 7곳을 하나씩 봤다.
+
+- `domain/rules/register.ts:161` — 규칙 본체. 판정 자리.
+- `repositories/projects.ts:494-497` `lockAutoSettleCandidates` WHERE — **판정이 아니라 후보 좁히기로 수용한다.** 이유: (1) 정산 여부를 정하는 것은 gate다. (g2)·(g2b)가 스파이로 gate만 거부시켰을 때 SQL 후보가 정산되지 않음을 증명한다. (2) 쓰기 입구는 id로 잠근 뒤(`lockProjectForWrite`) gate만으로 판정한다. 이 SQL을 거치지 않는다. (3) WHERE는 `FOR UPDATE SKIP LOCKED`의 잠금 범위다. 빼면 목록을 읽을 때마다 진행 중인 모든 행을 잠가 저장과 부딪친다. (4) 규칙과 WHERE가 어긋나면 결과가 「덜 정산」 쪽(fail-closed)으로만 간다. WHERE 밖의 행을 정산하는 경로는 없다. 남는 약점은 「WHERE ⊇ 규칙」이 주석(`:478-482`)으로만 지켜진다는 것 → 📋 Advisory.
+- `domain/projects/period.ts:41` `resolvePeriodSave` — 정산 → 진행(D-80)의 상태 결과 계산. 허용·거부는 gate(`project.period-edit`)가 한다. 이번 라운드에서 바뀌지 않았고, 첫 검증도 게이트 경유로 인정했다 → 📋 Advisory(새 범위, 증거 없음 — 막지 않음).
+- `period.ts:84,88` — 기간 칸 오류(gate `project.period-edit`의 ctx.errors 재료). `period.ts:113` — 미리보기 문구. `status.ts:334` `isEndDatePassed` — 수주중 종료일 지남 **표시**(D-81, 전환 아님). 셋 다 전환 판정이 아니다.
 
 ### Deferred Items
 
-없음 — 실패 truth 8(자동 전환 게이트)은 뒤 페이즈 성공 기준이 덮지 않는다(Phase 7 tick은 같은 `applyAutoSettlement`를 「부르기만」 한다 — `auto-transition.ts:20`). p99 측정의 옛 미룸 대상(Phase 8 리허설)은 철회되어 미룸으로 인정할 수 없다.
+| # | Item | Addressed In | Evidence |
+|---|------|-------------|----------|
+| 1 | (기준 1) 목록 응답 p99 500ms | Phase 9 | 사용자 결정 2026-09-29(`.planning/STATE.md:302`) 「Phase 9(테스트 데이터·스테이징 부하)」 · ROADMAP Phase 9 기준 7(시나리오 데이터셋을 스테이징에 넣음) |
 
-사용자가 정한 후속 PR 이월(갭 아님): 견적 표 낡은 savedAt 알림 · 표별 클립보드 형식 · 리저브 보관/복원 version+1 · 같은 이름 머리글 서버 라벨.
+메모: ROADMAP Phase 9 성공 기준 본문에는 「p99 500ms」 문구가 아직 없다. 옛 미룸 대상(Phase 8 리허설)이 사라진 것과 같은 일이 되풀이되지 않으려면 Phase 9 계획 때 기준 한 줄로 옮겨 적어야 한다(`/gsd-phase` 또는 Phase 9 plan-phase). 결정을 바꾸자는 것이 아니다. 추적 자리를 만들자는 것이다.
+
+사용자가 정한 후속 PR 이월(갭 아님): 견적 표 낡은 savedAt 알림 · 표별 클립보드 형식 · 리저브 보관/복원 version+1 · 같은 이름 머리글 서버 라벨 · DR-P4-02 정렬 머리글 터치 목표 → 04.6(04-UAT skipped 1건).
 기록만(갭 아님): 수정·삭제 300줄 상한 · 증빙/권한 검사의 tx 밖 경합 · 안 보이는 사용자의 projectId null 비우기(`docs/reviews/phase-04/260929-9zo-cso.md` 알려진 한계 1·2).
+
+### Advisory (New Scope, Unevidenced)
+
+| # | Finding | Category | Why Advisory |
+|---|---------|----------|--------------|
+| 1 | 자동 정산 후보 WHERE(`repositories/projects.ts:494-497`)가 규칙 조건을 다시 적는다. 「WHERE ⊇ 규칙」은 주석으로만 지켜지고 테스트가 없다 | architectural | 판정은 gate가 한다(g2·g2b). 어긋나면 fail-closed. 04-53 독립 검토도 nit로 수용. 결정적 증거(빨간 테스트) 없음 |
+| 2 | 정산 → 진행 상태 결과가 `period.ts:41`에서 계산된다(허용은 gate `project.period-edit`) | architectural | 이번 라운드 변경 밖이고 첫 검증이 인정한 구조. 새 범위, 증거 없음 |
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |---|---|---|---|
-| `domain/money/{index,tax,currency}.ts` | 금액 모델 단일 지점 | ✓ VERIFIED | 390줄, 앱·도메인 전역에서 import · 린트 규칙 배선 |
-| `domain/rules/{gate,register}.ts` | 게이트 단일 진입점 + 규칙 10개 | ✓ VERIFIED(자동 전환 규칙 없음 — truth 8) | gate() 호출처 13곳(projects·quotes) |
-| `repositories/document-counters.ts` · `domain/document-numbering/index.ts` | 원자 증가·서식 | ✓ VERIFIED | `createProject`가 같은 tx에서 호출 |
-| `db/migrations/0009~0018` | 원장·매출·설명·상태 5값·범위·줄 종류·계약 칸 삭제·bigint·리저브 | ✓ VERIFIED | `migration-upgrade` 7/7, 0012·0015 롤백 하한(04-50) |
-| `app/(app)/projects/**` · `app/(app)/pnl/reserves/**` | 목록·등록·상세·견적 표·매출·차수·상태·리저브 화면 | ✓ VERIFIED | 04-31 독립 DOM 감사 FAIL 2건(F-1 44px · F-2 UUID 이름) 수정 확인: `ui/table/Table.module.css:300-307` `.collapsedCellTap{height:var(--touch-min)}` · `Table.tsx:964` `rowLabel` |
-| `ui/table/*` | 엑셀식 표 공용 컴포넌트 | ✓ VERIFIED | 키보드·붙여넣기·페이지·저장 래치 단위 테스트 |
+| `domain/money/{index,tax,currency}.ts` | 금액 모델 단일 지점 | ✓ VERIFIED | 이번 라운드 변경 0 |
+| `domain/rules/{gate,register}.ts` | 게이트 단일 진입점 + 규칙 11개 | ✓ VERIFIED | `registerGateRule` 11개 — `project.auto-settle`(04-53) 추가, 등록 목록 주석 `register.ts:14`에도 적힘. `await gate(` 호출 13곳(자동 정산 보조 함수 포함). `gsd-tools verify.artifacts 04-53-PLAN.md` 6/6 |
+| `domain/projects/auto-transition.ts` | 두 입구가 같은 보조 함수로 gate 판정 | ✓ VERIFIED | `allowsAutoSettle` `:31-44` · 읽기 `:84-94` · 쓰기 `:152` · 허용 뒤 종료일 null이면 던짐(fail-closed 타입 좁히기) `:155` |
+| `repositories/projects.ts` | `lockAutoSettleCandidates` · `settleProjectsByIds` | ✓ VERIFIED | 후보 잠금 `:483-502`(SKIP LOCKED) · 허용 id만 UPDATE + 상태 가드 `:507-529` |
+| `repositories/document-counters.ts` · `domain/document-numbering/index.ts` | 원자 증가·서식 | ✓ VERIFIED | 변경 0 |
+| `db/migrations/0009~0018` | 원장·매출·설명·상태 5값·범위·줄 종류·계약 칸 삭제·bigint·리저브 | ✓ VERIFIED | `db/` 변경 0(04-53 범위 `195764ff..HEAD`에서도 0) |
+| `app/(app)/projects/**` · `app/(app)/pnl/reserves/**` | 목록·등록·상세·견적 표·매출·차수·상태·리저브 화면 | ✓ VERIFIED | 변경 0 |
+| `ui/table/*` | 엑셀식 표 공용 컴포넌트 | ✓ VERIFIED | 변경 0 |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |---|---|---|---|---|
-| `createProjectAction` | `allocateNumber` | 같은 tx 문서 INSERT | WIRED | 동시성 통합 3/3 |
-| 견적 저장 액션 | `domain/money.quoteAmount/profit` | 서버 재계산 | WIRED | 주입값 무시 단언 `quote-lines.test.ts:95-105` |
-| 상태 바꾸기 | `gate("project.transition")` | `domain/projects/status.ts:180` | WIRED | `project-status` 22/22 |
-| 기간 연장(정산 → 진행) | `gate("project.period-edit")` | `ledger.ts:227` | WIRED | |
-| 자동 정산(진행 → 정산) | `gate()` | — | NOT_WIRED | truth 8 |
-| 매출 입금 | `grossFromTotal`·`applyTaxRule` | `domain/revenue/index.ts:75,95` | WIRED | `revenue-entries` 43/43 |
-| 리저브 DTO | 정보 노출표 `reserve.amount` | `RESERVE_DTO_SPEC` · 누수 스캔 | WIRED | `leak-scan.test.ts:157-160` |
-| 화면 환율 칸 | `recentFxRate` | 세 페이지 서버 컴포넌트 | WIRED | |
+| `createProjectAction` | `allocateNumber` | 같은 tx 문서 INSERT | WIRED | 변경 0 |
+| 견적 저장 액션 | `domain/money.quoteAmount/profit` | 서버 재계산 | WIRED | 변경 0 |
+| 상태 바꾸기 | `gate("project.transition")` | `domain/projects/status.ts:180` | WIRED | 이 검증 `project-status` 22/22 |
+| 기간 연장(정산 → 진행) | `gate("project.period-edit")` | `ledger.ts:227` | WIRED | 이 검증 `project-period` 33/33 |
+| 자동 정산(진행 → 정산) · 읽기 입구 | `gate("project.auto-settle")` | `applyAutoSettlement` → `lockAutoSettleCandidates` → 후보마다 `allowsAutoSettle` → `settleProjectsByIds`(`auto-transition.ts:84-94`) | WIRED | (g1)(g2)(g2b) · `project-auto-settlement` 27/27 |
+| 자동 정산(진행 → 정산) · 쓰기 입구 | `gate("project.auto-settle")` | `loadProjectForGate` → `allowsAutoSettle`(`auto-transition.ts:152`) — 호출처 `status.ts:281` · `ledger.ts:188,330` · `revisions.ts:83,182` · `lines.ts:812,1080` | WIRED | (g3)(g4) · `project-period` 33/33 · `quote-revisions` 23/23 |
+| `auto-transition.ts` | `register.ts` 규칙 등록 | side-effect `import "@/domain/rules/register"`(`:5`) | WIRED | 단위 `auto-settle-gate-registration` 통과 · `gsd-tools verify.key-links 04-53-PLAN.md` 4/4 |
+| 매출 입금 | `grossFromTotal`·`applyTaxRule` | `domain/revenue/index.ts:75,95` | WIRED | 변경 0 |
+| 리저브 DTO | 정보 노출표 `reserve.amount` | `RESERVE_DTO_SPEC` · 누수 스캔 | WIRED | 변경 0 |
+| 화면 환율 칸 | `recentFxRate` | 세 페이지 서버 컴포넌트 | WIRED | 변경 0 |
 
 ### Data-Flow Trace (Level 4)
 
@@ -220,31 +249,24 @@ human_verification:
 | 상세 견적 표 | lines·합계 | `domain/quotes/lines.ts` → `quote_lines` | 예 | ✓ FLOWING |
 | 매출 섹션 계약 금액 | 승인 차수 합계 | 현재 승인 차수 줄 합(04-16/04-41) | 예 | ✓ FLOWING |
 | 리저브 잔액 열 | balanceKrw | `runningBalance`(서버, 원장 전체 누적) | 예 | ✓ FLOWING |
+| 자동 정산 로그 발효일 | lastChangeAt | `settleProjectsByIds` RETURNING 하위 선택(`repositories/projects.ts:517-525`) | 예 | ✓ FLOWING |
 
-### Behavioral Spot-Checks (이 검증에서 실행)
+### Behavioral Spot-Checks
+
+이 재검증에서 실행(2026-09-29 12:37~12:40Z, 통합은 한 번에 하나):
 
 | Behavior | Command | Result | Status |
 |---|---|---|---|
-| 린트 | `pnpm lint` | exit 0(boundaries v6 이관 경고만) | ✓ PASS |
+| 규칙 결정표 · 등록 가드 · 자동 전환 단위 | `pnpm vitest run --project unit test/unit/domain/rules-gate.test.ts test/unit/domain/auto-settle-gate-registration.test.ts test/unit/domain/auto-transition.test.ts` | 3 files · 77 passed · 0 failed | ✓ PASS |
+| 자동 정산(g1~g4 포함) | `pnpm vitest run --project integration test/integration/project-auto-settlement.test.ts` | 27 passed · 0 failed | ✓ PASS |
+| 상태 전환 | `… test/integration/project-status.test.ts` | 22 passed · 0 failed | ✓ PASS |
+| 기간 · 정산 → 진행 · 재판정 | `… test/integration/project-period.test.ts` | 33 passed · 0 failed | ✓ PASS |
+| 차수·승인(쓰기 입구 호출처) | `… test/integration/quote-revisions.test.ts` | 23 passed · 0 failed | ✓ PASS |
 | 타입 | `pnpm typecheck` | exit 0 | ✓ PASS |
-| 단위 | `pnpm test:unit` | 125 files · 1748 passed · 0 failed | ✓ PASS |
-| 카운터 동시성 | `vitest --project integration document-counters-concurrency` | 3/3 | ✓ PASS |
-| 번호 서식·시작값 | `… document-numbering` | 31/31 | ✓ PASS |
-| 자동 정산 | `… project-auto-settlement` | 22/22 | ✓ PASS |
-| 상태 전환 | `… project-status` | 22/22 | ✓ PASS |
-| 견적 줄 | `… quote-lines` / `quote-lines-conflict` / `quote-line-kinds` | 53 / 7 / 21 | ✓ PASS |
-| 차수·승인 | `… quote-revisions` | 23/23 | ✓ PASS |
-| 매출 | `… revenue-entries` | 43/43 | ✓ PASS |
-| 계약 불변식 | `… contract-invariant` | 8/8 | ✓ PASS |
-| 복사 등록 | `… project-copy` | 11/11 | ✓ PASS |
-| 목록 | `… projects-list` | 37/37 | ✓ PASS |
-| 리저브 | `… reserve-entries` | 74/74 | ✓ PASS |
-| 노출 | `… visibility` / `quote-line-visibility` | 7 / 2 | ✓ PASS |
-| 마이그레이션 업그레이드 | `… migration-upgrade` | 7/7 | ✓ PASS |
-| 누수 스캔 | `… leak-scan` | 1189/1189 · exit 0 | ✓ PASS |
-| 전체 E2E | — | 실행 안 함(지시). CI 초록은 오케스트레이터 보고 | ? SKIP |
+| 린트 | `pnpm lint` | exit 0(오류 0 · boundaries v6 이관 경고만) | ✓ PASS |
+| 전체 E2E | — | 실행 안 함(지시). 화면 코드 변경 0 | ? SKIP |
 
-누수 스캔 메모: 첫 두 번은 400s·180s 제한 시간에 걸려 끊겼다. systematic-debugging으로 원인을 봤다 — 멈춤이 아니라 생성 케이스(DTO×칸×계급)마다 DB 왕복 약 0.5초라 느린 것이다(180s 동안 343건 통과·실패 0). 제한 없이 다시 돌린 결과가 위 표다.
+이전 검증(10:00Z) 실행분 — 근거 코드가 이번 라운드에서 바뀌지 않아 그대로 인용: `pnpm test:unit` 1748/1748 · `document-counters-concurrency` 3/3 · `document-numbering` 31/31 · `quote-lines` 53/53 · `quote-lines-conflict` 7/7 · `quote-line-kinds` 21/21 · `revenue-entries` 43/43 · `contract-invariant` 8/8 · `project-copy` 11/11 · `projects-list` 37/37 · `reserve-entries` 74/74 · `visibility` 7 · `quote-line-visibility` 2 · `migration-upgrade` 7/7 · `leak-scan` 1189/1189.
 
 ### Probe Execution
 
@@ -254,10 +276,10 @@ human_verification:
 
 | Requirement | Source Plan | Description | Status | Evidence |
 |---|---|---|---|---|
-| PROJ-01 | 04-01·05·15·17·18·29·48 | 등록·목록·상세 | ✓ SATISFIED | truth 1~3 (p99는 truth 4) |
+| PROJ-01 | 04-01·05·15·17·18·29·48 | 등록·목록·상세 | ✓ SATISFIED | truth 1~3 (p99는 truth 4 → Phase 9 deferred) |
 | PROJ-02 | 04-01·04·12·13·23·30·32·40·49 | 서버 차익·브라우저 값 비저장·취소 상태 | ✓ SATISFIED | truth 5·7 |
 | PROJ-03 | 04-02·16·41·43·50 | 파생 계약 금액·발행·입금 역산 | ✓ SATISFIED | truth 7·9 |
-| PROJ-04 | 04-06·11·20·21·22·27·32·43·44·50 | 다섯 상태·전환 | ⚠️ PARTIAL | 전환 동작은 충족, 자동 전환의 게이트 경유만 빠짐(truth 8). REQUIREMENTS.md 체크박스·추적표가 아직 `Pending`(:29, :200) — 정산 → 완료 결재·완료 잠금의 지출결의 쪽은 Phase 5 몫이라 이 페이즈에서 닫을지 사용자 판단 |
+| PROJ-04 | 04-06·11·20·21·22·27·32·43·44·50·53 | 다섯 상태·전환 | ⚠️ PARTIAL (사용자 결정으로 Pending 유지) | 이 페이즈 몫(다섯 상태 · 사람 전환 · 자동 전환의 게이트 경유)은 truth 7·8로 충족 — 04-53으로 게이트 갭 닫힘. 정산 → 완료의 PM 결재 요청 → 대표 승인(D-79)과 완료 잠금의 지출결의 쪽은 Phase 5. 사용자 결정 2026-09-29(`STATE.md:302`) 「PROJ-04는 Phase 5 결재와 함께 Complete」 — REQUIREMENTS.md `:29`·`:200` `Pending` 그대로가 맞다 |
 | PROJ-05 | 04-14·15·19·24·31·47 | 복사·기본값 | ✓ SATISFIED | truth 2 |
 | PROJ-07 | 04-14·24·40·44 | 차수·고객 승인·게이트 | ✓ SATISFIED | truth 6 |
 | ADMN-09 | 04-05·51 | 문서 번호 서식 설정 | ✓ SATISFIED(프로젝트 서식) | 다른 문서 종류 서식은 그 문서가 생기는 페이즈가 같은 표에 한 줄 추가(`document-numbering/index.ts:52-56`) |
@@ -268,75 +290,57 @@ human_verification:
 
 고아 요구사항: 없음(REQUIREMENTS가 Phase 4에 매핑한 11개 전부 플랜이 선언).
 
-### 사람 확인 생략(사용자 승인)
+### 사람 확인 — 사용자 결정으로 해소
 
-04-31 (C)(D) 사람 확인 — 프로젝트 간 복사 · 표 → 엑셀 · 한국어 입력기 Ctrl+Enter 연타/Esc — 는 2026-09-29 사용자 결정으로 자동 테스트로 대체했다. 근거 테스트(존재·테스트 이름 확인):
-- `test/e2e/project-copy.spec.ts:94,138`(복사 등록 트레이서 · Esc 입력 버리기)
-- `test/e2e/quote-table.spec.ts:232,1231,1297,1357`(실제 엑셀 인코딩 · Ctrl+A → Ctrl+C 다른 프로젝트 붙여넣기)
-- `test/e2e/excel-paste-final.spec.ts:148-447`(캡처 A·B 재생 포함 7건)
-- `test/e2e/project-register.spec.ts`(등록 폼 Ctrl+Enter)
-- `test/unit/lib/shortcut.test.ts:27,31`(isComposing이면 단축키 거짓) · `test/unit/ui/grid-keyboard-composing.test.ts`
-04-31의 judgment 금지 항목 둘(손으로 만든 문자열 E2E의 한계 · 사람 확인 후속 금지)도 이 사용자 결정으로 해소된 것으로 기록한다.
+- **04-31 (C)(D)** 프로젝트 간 복사 · 표 → 엑셀 · 한국어 입력기 Ctrl+Enter 연타/Esc — 2026-09-29 사용자 결정(`STATE.md:299`)으로 자동 테스트로 대체. 근거 테스트: `test/e2e/project-copy.spec.ts:94,138` · `test/e2e/quote-table.spec.ts:232,1231,1297,1357` · `test/e2e/excel-paste-final.spec.ts:148-447` · `test/e2e/project-register.spec.ts` · `test/unit/lib/shortcut.test.ts:27,31` · `test/unit/ui/grid-keyboard-composing.test.ts`. 04-31의 judgment 금지 항목 둘도 이 결정으로 해소.
+- **목록 p99 500ms** — Phase 9로 미룸(`STATE.md:302`) → Deferred Items.
+- **judgment 금지 항목 3건(04-02 · 04-08 · 04-21)** — 사용자가 검증자 판정을 수용(`STATE.md:302`). 판정: 셋 다 지켜짐 — `domain/revenue/index.ts:85` 「조정하지 않는다」 · DECISIONS.md 「Phase 4(04-08)」 17건 · status_change 소비처는 마지막 변경일 파생(`domain/projects/status.ts:230`)과 자동 정산 발효일(`repositories/projects.ts:517-525` · `auto-transition.ts:165-169`)뿐, 사람별 집계 화면·내보내기 없음.
+- **UAT** — `04-UAT.md` status complete(205 pass · 0 issues · 1 skipped = DR-P4-02 → 04.6), 증거 대조 방식(사용자 결정).
 
 ### 금지 항목(prohibitions)
 
-- test 등급 44건: 각 플랜 SUMMARY가 가리키는 테스트 파일 존재 확인(없는 두 경로는 임시 DOM 감사 스펙 삭제 · `test/unit/app/revenue-cells.test.ts`로 경로 이동 — 실재). 이 검증에서 직접 실행해 확인한 것: 04-01(브라우저 값 무시) · 04-06(미수주 비잠금) · 04-07(리저브 누수·음수) · 04-11(읽기 실패 격리) · 04-12(정산 편집·로그 한 tx) · 04-43(`.planning/` 수정 범위 — 커밋 `1111278`이 REQUIREMENTS·ROADMAP 두 파일 3줄만). 나머지는 존재 수준 증거.
-- judgment 등급 5건: 04-31 두 건은 위 사용자 결정으로 해소. 04-02·04-08·04-21 세 건은 검증자 판정(비권위) 「지켜짐」 + `unverified-prohibition — human review recommended`(frontmatter human_verification).
+- test 등급 44건: 각 플랜 SUMMARY가 가리키는 테스트 파일 존재 확인(첫 검증). 04-53의 금지 — 위험 경로 · 의존성 변경 없음: `git diff --stat 195764ff..HEAD -- domain/permissions domain/auth db lib/crypto* scripts .github infra .claude CLAUDE.md package.json pnpm-lock.yaml` → `.claude/gates/phase-04.log` 3줄뿐(계획 검토 게이트 기록, 커밋 86a41669 — 04-53 실행 전 계획 단계 커밋. SUMMARY 편차 1과 일치). 코드·스키마·의존성 변경 0.
+- judgment 등급 5건: 전부 사용자 결정으로 해소(위).
 
 ### Decision Coverage
 
-53/55 honored. 미반영 2건 D-72·D-73은 2026-09-23 데이터 이전 철회로 「더 이상 적용되지 않는다」고 CONTEXT에 적힌 결정이다 — 경고 없음으로 본다. (상태 판정에 영향 없음)
+53/55 honored. 미반영 2건 D-72·D-73은 2026-09-23 데이터 이전 철회로 「더 이상 적용되지 않는다」고 CONTEXT에 적힌 결정이다. (상태 판정에 영향 없음)
 
 ### Test Quality Audit
 
 | 영역 | 비활성(skip/todo/only) | 순환 기대값 | 판정 |
 |---|---|---|---|
-| `test/unit`·`test/integration`·`test/e2e` 전체 | 0건(grep `.skip(`·`.todo(`·`.only(`·`xit(`) | 발견 없음(금액 기대값은 표 기반 수식·사람 입력 캡처) | 통과 |
+| 04-53 새 테스트((g1)~(g4)·(g2b) · 결정표 · 등록 가드) | 0건 | 없음 — (g1)(g3)은 ctx 값을 고정 리터럴로 단언, (g2)(g2b)(g4)는 DB 상태·로그로 단언. 04-53 SUMMARY에 RED 기록(2 failed \| 22 passed · 2 failed \| 24 passed)과 변이 2건 확인 | 통과 |
+| 그 밖 | 첫 검증과 같음 | — | 통과 |
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |---|---|---|---|---|
-| 페이즈 코드 전체 | — | TBD/FIXME/XXX | 없음 | — |
-| `app/(app)/projects/[id]/quote-table.tsx` | 420, 1765 | 화면 미리보기 원화 환산이 `Math.round(amount × fxRate)` — 서버 `toKrw`(정수 스케일)와 1원 어긋날 수 있음(리저브 쪽은 /review R6로 `toKrw` 재사용으로 고침) | ⚠️ Warning | 저장값은 서버 재계산이라 돈이 틀리지 않음. 저장 전 읽기 칸에 1원 차이가 잠깐 보일 수 있음 |
-| `domain/money/index.ts` | 64-75 | 2^53 초과 경로가 `round()` 대신 BigInt로 자체 반올림 | ℹ️ Info | 같은 「반이면 +∞」 규칙, 90억 원 초과 곱에서만 |
-| `ui/select/Select.tsx` | 6-10 | 「자동완성」을 네이티브 select 타이핑 점프로 해석 | ℹ️ Info | 접두어 일치만. 계획 판단으로 기록됨 |
-| `/projects` 375 정렬 머리글 | — | DR-P4-02 터치 목표 44 미만(20×19·51×19) | ℹ️ Info | 04.6 이관 기록(WINDOWS id 37 waived) — SYSTEM §3 규칙이라 04.6 성공 기준에 명시돼 있지 않음은 참고 |
+| 이번 라운드 변경 세 파일 | — | TBD/FIXME/XXX | 없음(grep 0건) | — |
+| `repositories/projects.ts` | 494-497 | 후보 WHERE가 규칙 조건 재기술 | 📋 Advisory | 위 Advisory 1 |
+| `app/(app)/projects/[id]/quote-table.tsx` | 420, 1765 | 화면 미리보기 원화 환산이 `Math.round(amount × fxRate)` — 서버 `toKrw`와 1원 어긋날 수 있음 | ⚠️ Warning | 저장값은 서버 재계산이라 돈이 틀리지 않음(첫 검증과 같음) |
+| `domain/money/index.ts` | 64-75 | 2^53 초과 경로가 BigInt 자체 반올림 | ℹ️ Info | 같은 규칙, 90억 원 초과 곱에서만 |
+| `ui/select/Select.tsx` | 6-10 | 「자동완성」을 네이티브 select 타이핑 점프로 해석 | ℹ️ Info | 계획 판단으로 기록됨 |
+| `/projects` 375 정렬 머리글 | — | DR-P4-02 터치 목표 44 미만 | ℹ️ Info | 04.6 이관(사용자 결정) |
 | ROADMAP Phase 4 | — | `Mode: mvp`인데 Goal이 User Story 형식 아님 | ℹ️ Info | 표준 검증으로 대체 |
 
 ### Human Verification Required
 
-상태가 `gaps_found`라 frontmatter `human_verification`은 기록용이다. 갭을 닫은 뒤 재검증에서 남으면 `human_needed`가 된다.
-
-#### 1. 목록 p99 500ms
-**Test:** 실제 규모 데이터로 `/projects` 목록 요청 p99를 잰다(측정 자리 결정 포함).
-**Expected:** p99 ≤ 500ms.
-**Why human:** 측정되지 않았고, 옛 미룸 대상(Phase 8 이전 리허설)이 데이터 이전 철회로 없어졌다.
-
-#### 2. judgment 금지 항목 3건(04-02 · 04-08 · 04-21)
-**Test:** 매출 입금 역산 차이 표시 · SYSTEM.md 개정의 DECISIONS 기록 · 상태 로그 집계 화면 부재를 사람이 확인.
-**Expected:** 셋 다 지켜짐(검증자 비권위 판정과 같음).
-**Why human:** judgment 등급은 자동 판정이 권위가 없다.
+없음 — 첫 검증의 두 항목은 사용자 결정(2026-09-29)으로 해소되거나 미뤄졌다(위 「사람 확인 — 사용자 결정으로 해소」).
 
 ### Gaps Summary
 
-돈 뼈대 자체(등록·번호·견적 줄 서버 계산·차수·고객 승인·매출·다섯 상태·금액 모델·리저브)는 코드와 테스트로 섰다. 이 검증에서 돌린 린트·타입·단위 1748건·통합 스펙 17개가 전부 초록이다.
+막던 갭 하나가 닫혔다. **자동 전환 진행 → 정산이 이제 `domain/rules.gate`를 지난다.** 규칙 `project.auto-settle`이 `register.ts:156-165`에 등록돼 있다. 읽기 입구 `applyAutoSettlement`와 쓰기 입구 `loadProjectForGate`는 같은 보조 함수(`auto-transition.ts:31-44`)로 그 규칙을 부른다. 옛 JS 조건과 SQL 한 문장 정산(`settleOverdueProjects`)은 없어졌다. gate가 거부하면 SQL 후보도 정산되지 않는다. 이것을 통합 테스트 (g2)·(g2b)·(g4)가 증명하고, 이 검증에서 27/27 초록이었다. 기존 동작도 그대로다. KST 자정 경계 · 멱등 · 동시 호출 로그 1줄 · SKIP LOCKED · 읽기 fail-open · 쓰기 fail-closed를 확인하는 기존 22건과 호출처 스펙(`project-status` 22 · `project-period` 33 · `quote-revisions` 23)이 모두 초록이다.
 
-막는 갭은 하나다: **자동 전환 진행 → 정산이 `domain/rules.gate`를 지나지 않는다.** ROADMAP 기준 4는 04-43이 사용자 D16 승인으로 「자동 전환 … 이 전부 3의 게이트를 지난다」로 다시 쓴 문구인데, 04-11 구현은 판정을 SQL(`repositories/projects.ts:492-495`)과 JS(`auto-transition.ts:121-126`) 두 곳에 손으로 적었다. 동작은 맞지만 기준 3의 「단일 진입점」 계약이 이 한 전환에서 깨진다. 고치는 방법은 규칙 하나 등록 + 두 입구에서 gate() 호출이다.
+회귀 없음. 바뀐 제품 코드는 세 파일뿐이고, 다른 truth의 근거 줄은 번호만 밀렸다(인용 갱신).
 
-**의도된 편차로 받아들인다면** frontmatter에 다음을 넣고 재검증한다:
-
-```yaml
-overrides:
-  - must_have: "자동 전환 진행 → 정산이 기준 3의 게이트를 지난다"
-    reason: "시스템 행위자의 날짜 전환이라 권한 판정이 없고, 전이 데이터(AUTO_TRANSITIONS)는 게이트 규칙과 같은 표를 읽으며 쓰기 경로는 loadProjectForGate로 잠금 안에서 재판정한다"
-    accepted_by: "{사용자}"
-    accepted_at: "{ISO 시각}"
-```
-
-사람 결정이 필요한 것 둘: 목록 p99 500ms를 어디서 잴지(미룸 대상 소멸), REQUIREMENTS PROJ-04를 이 페이즈에서 Complete로 닫을지(정산 → 완료 결재는 Phase 5).
+남은 것은 막지 않는 항목뿐이다.
+- p99는 Phase 9로 미뤘다(사용자 결정). ROADMAP Phase 9 기준에는 아직 적혀 있지 않다.
+- PROJ-04는 사용자 결정대로 Phase 5 결재와 함께 Complete로 바꾼다.
+- 후보 WHERE의 조건 재기술은 Advisory다.
 
 ---
 
-_Verified: 2026-09-29T10:00:01Z_
+_Verified: 2026-09-29T12:41:03Z_
 _Verifier: Claude (gsd-verifier)_

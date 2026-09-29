@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  invalidSubmitField,
   submitBlockedReason,
   isDefiniteResult,
   nextRrnRecheckConfirmed,
@@ -91,16 +90,6 @@ describe("recheckOutcome — 잠금 다시 확인 응답 → {next, focus}(4차 
       expect(recheckOutcome(result, "visible")).toEqual({ next: "stay", focus: "none" });
     },
   );
-});
-
-describe("invalidSubmitField — 제출 입력 거부를 어느 칸에 보일지(/review)", () => {
-  it.each([
-    [["signature"], "signature"],
-    [["phone"], "phone"],
-    [["rrn"], "rrn"],
-  ] as const)("%o → %s", (fields, expected) => {
-    expect(invalidSubmitField(fields)).toBe(expected);
-  });
 });
 
 describe("submitBlockedReason — 빈 칸 나열과 받침에 맞는 조사(/design-review)", () => {

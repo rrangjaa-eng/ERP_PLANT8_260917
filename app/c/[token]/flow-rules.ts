@@ -18,12 +18,26 @@ export function resolveHistoryEntry(input: {
   return { render: "E2", back: true };
 }
 
-const DEFINITE_KINDS = new Set(["wrong", "locked", "hardLocked", "ok", "submitted", "closed", "expiredProof", "notFound"]);
+const DEFINITE_KINDS = new Set([
+  "wrong",
+  "locked",
+  "hardLocked",
+  "ok",
+  "submitted",
+  "closed",
+  "expiredProof",
+  "notFound",
+  // 04.3-06 — 제출 결과(E5 · E6-a · 칸 오류 · 주민등록번호 되묻기).
+  "saved",
+  "alreadySubmitted",
+  "invalid",
+  "rrnRecheck",
+]);
 
 type ActionResultLike = { data?: { kind?: string; [field: string]: unknown } | null; validationErrors?: unknown; serverError?: unknown } | undefined;
 
-// 확정 판정 아홉(틀림 · 잠김 · 누적 잠김 · 맞음 · 이미 제출 · 닫힘 · 확인 시간
-// 지남 · 자리 없음 · 입력 거부)만 멱등 키를 끝낸다. throttled · serverError(잠금 · 풀 시간
+// 확정 판정(틀림 · 잠김 · 누적 잠김 · 맞음 · 이미 제출 · 닫힘 · 확인 시간
+// 지남 · 자리 없음 · 입력 거부 · 제출 저장 · 칸 오류 · 되묻기)만 멱등 키를 끝낸다. throttled · serverError(잠금 · 풀 시간
 // 초과 포함) · 연결 끊김 · 모르는 응답은 결과 불명 — 같은 키로 다시 보낸다.
 export function isDefiniteResult(result: ActionResultLike): boolean {
   if (!result) return false;
@@ -32,12 +46,39 @@ export function isDefiniteResult(result: ActionResultLike): boolean {
   return typeof kind === "string" && DEFINITE_KINDS.has(kind);
 }
 
-// 제출 입력 거부(invalid)의 fields → 오류를 보일 칸. 서명이 거부되면 서명을
-// 지우고 다시 받는다(주민등록번호 오류로 안내하지 않는다).
-export function invalidSubmitField(fields: readonly string[]): "signature" | "phone" | "rrn" {
-  if (fields.includes("signature")) return "signature";
-  if (fields.includes("phone")) return "phone";
-  return "rrn";
+// 04.3-06 — 되물음(rrnRecheck)을 받은 요청이 보낸 주민등록번호(armedRrn)와 지금
+// 두 칸 값이 같을 때만 「그대로 제출」 표시를 싣는다. 직전 결과를 보지 않으므로
+// 사이에 결과 불명이 끼어도 같은 값이면 같은 본문이다(같은 키 재전송).
+export function nextRrnRecheckConfirmed(input: { armedRrn: string | null; rrn: string }): boolean {
+  return input.armedRrn !== null && input.armedRrn === input.rrn;
+}
+
+export type SubmitField = "name" | "rrn" | "address" | "phone" | "consent" | "signature";
+
+// 액션 입력 스키마의 칸 이름 → domain invalid 칸 이름. E4 시각 순서다.
+const SCHEMA_FIELD_ORDER: readonly [string, SubmitField][] = [
+  ["name", "name"],
+  ["rrnFront6", "rrn"],
+  ["rrnBack7", "rrn"],
+  ["address", "address"],
+  ["phone", "phone"],
+  ["consent", "consent"],
+  ["signaturePngBase64", "signature"],
+];
+
+// next-safe-action validationErrors(zod 거절)를 domain invalid와 같은 갈래로 바꾼다.
+// 수령자가 고칠 칸이 없으면(클라이언트가 만든 값만 거절) null — 결과 불명으로 다룬다.
+export function submitOutcomeFromValidationErrors(
+  validationErrors: unknown,
+): { kind: "invalid"; fields: SubmitField[] } | null {
+  if (typeof validationErrors !== "object" || validationErrors === null) return null;
+  const errors = validationErrors as Record<string, { _errors?: unknown } | undefined>;
+  const fields: SubmitField[] = [];
+  for (const [schemaKey, field] of SCHEMA_FIELD_ORDER) {
+    const list = errors[schemaKey]?._errors;
+    if (Array.isArray(list) && list.length > 0 && !fields.includes(field)) fields.push(field);
+  }
+  return fields.length > 0 ? { kind: "invalid", fields } : null;
 }
 
 // E4 제출 막힘 이유 — 빈 칸만 나열하고 마지막 항목의 받침에 맞춰 을/를을 붙인다.

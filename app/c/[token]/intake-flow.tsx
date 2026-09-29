@@ -1,21 +1,24 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { useAction } from "next-safe-action/hooks";
 import { Button } from "@/ui/button/Button";
 import { TextField } from "@/ui/input/TextField";
 import { formatContactPhone, formatSubmittedAtKst } from "@/domain/certs/format";
 import { recheckLockAction, selectWinnerAction, submitCertificateAction, verifyLast4Action } from "./actions";
 import {
-  invalidSubmitField,
   isDefiniteResult,
+  nextRrnRecheckConfirmed,
   recheckOutcome,
   resolveHistoryEntry,
   submitBlockedReason,
+  submitOutcomeFromValidationErrors,
   type HistoryStep,
   type RecheckTrigger,
+  type SubmitField,
 } from "./flow-rules";
-import { SignaturePad, type SignaturePadHandle } from "./signature-pad";
+import { ConsentBlock, CONSENT_CHECKBOX_ID } from "./consent-block";
+import { RrnFields, RRN_FRONT_ID } from "./rrn-fields";
+import { SignaturePad, type SignaturePadHandle, type Stroke } from "./signature-pad";
 import styles from "./intake.module.css";
 
 export type IntakeRowDto = { rowId: string; maskedName: string; prizeLine?: string; label?: string };
@@ -62,13 +65,31 @@ type Step =
       consentVersion: string;
       retentionYears: number;
       winnerVersion: number;
-      rrnRecheck: boolean;
     }
   | { kind: "submitted"; name: string; submittedAt: string; prizeLine: string; delivery: "onsite" | "parcel" }
   | { kind: "alreadySubmitted"; maskedName: string; submittedAt: string }
   | { kind: "closed"; reason: ClosedReason; at: string };
 
 type FocusTarget = "input" | "row" | "result" | "prize" | "primary" | "group";
+
+// UI-SPEC E4 「값의 주인」 — E4 값(서명 획 포함)은 확정된 자리에 묶여 메모리에만
+// 있다. 확인 시간 지남으로 E3에 다녀와 같은 자리를 다시 통과하면 되살리고, E2 ·
+// E5 · E6으로 가면 버린다. armedRrn = 되물음(rrnRecheck)을 받은 요청이 보낸 번호.
+type FormDraft = {
+  rowId: string;
+  name: string;
+  rrnFront6: string;
+  rrnBack7: string;
+  phone: string;
+  address: string;
+  consent: boolean;
+  strokes: Stroke[];
+  armedRrn: string | null;
+};
+
+function emptyDraft(rowId: string): FormDraft {
+  return { rowId, name: "", rrnFront6: "", rrnBack7: "", phone: "", address: "", consent: false, strokes: [], armedRrn: null };
+}
 
 // 받은 순간 + 서버가 준 남은 초(기기 시계 차이 무시).
 function deadlineAfter(seconds: number): number {
@@ -186,6 +207,7 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
   const recheckFailId = useId();
   const [recheckBusy, setRecheckBusy] = useState(false);
   const recheckInFlightRef = useRef(false);
+  const [draft, setDraft] = useState<FormDraft | null>(null);
 
   // U12 — 문의 전화는 어디서나 tel: 링크(숫자만)로 건다, 보이는 값은 하이픈 표기.
   const contactLine: ReactNode = (
@@ -231,6 +253,7 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
   useEffect(() => {
     function backToPick() {
       pendingKeyRef.current = null;
+      setDraft(null);
       focusRef.current = "row";
       setStep({ kind: "pick" });
     }
@@ -295,6 +318,7 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
   }, [shortLock, submitAreaId]);
 
   function toResult(next: Step) {
+    setDraft(null);
     history.replaceState({ step: "result" }, "");
     focusRef.current = "result";
     setStep(next);
@@ -303,6 +327,7 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
   async function pick(row: IntakeRowDto) {
     if (pendingRowId !== null) return;
     lastRowRef.current = row.rowId;
+    setDraft(null);
     setStep({ kind: "pick" });
     setShowProgress(false);
     setPendingRowId(row.rowId);
@@ -375,6 +400,7 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
     if (data?.kind === "ok") {
       history.replaceState({ step: "form" }, "");
       focusRef.current = "prize";
+      setDraft((kept) => (kept?.rowId === current.rowId ? kept : emptyDraft(current.rowId)));
       setStep({
         kind: "form",
         rowId: current.rowId,
@@ -384,7 +410,6 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
         consentVersion: data.consent.version,
         retentionYears: data.consent.retentionYears,
         winnerVersion: data.version,
-        rrnRecheck: false,
       });
     } else if (data?.kind === "submitted") {
       toResult({ kind: "alreadySubmitted", maskedName: data.maskedName, submittedAt: data.submittedAt });
@@ -677,17 +702,54 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
   }
 
   if (step.kind === "form") {
+    // 값의 주인은 같은 자리의 draft — 확인 통과와 같은 순간에 선다.
+    if (draft?.rowId !== step.rowId) return null;
     return (
       <div>
+        {progressBar}
         <h1 className={styles.title}>{TITLE}</h1>
         <IntakeForm
           token={token}
           step={step}
+          draft={draft}
+          busy={busy}
           contactLine={contactLine}
-          onSubmitted={(name, submittedAt) =>
-            toResult({ kind: "submitted", name, submittedAt, prizeLine: step.prizeLine, delivery: step.delivery })
+          stepRef={stepRef}
+          onDraft={(patch) => setDraft((d) => (d && d.rowId === step.rowId ? { ...d, ...patch } : d))}
+          onBusy={(value) => {
+            if (value) setShowProgress(false);
+            setBusy(value);
+          }}
+          onSaved={(data) =>
+            toResult({
+              kind: "submitted",
+              name: data.name,
+              submittedAt: data.submittedAt,
+              prizeLine: data.prizeLine,
+              delivery: data.delivery,
+            })
           }
-          onExpired={() => setStep({ kind: "pick" })}
+          onAlreadySubmitted={(maskedName, submittedAt) => toResult({ kind: "alreadySubmitted", maskedName, submittedAt })}
+          onClosed={(reason, at) => toResult({ kind: "closed", reason, at })}
+          onExpired={() => {
+            // E4 → E3(값은 draft에 남는다 — 같은 자리 재확인이 되살린다).
+            history.replaceState({ step: "verify" }, "");
+            pendingKeyRef.current = null;
+            focusRef.current = "input";
+            setStep({
+              kind: "verify",
+              rowId: step.rowId,
+              maskedName: rows.find((r) => r.rowId === step.rowId)?.maskedName ?? "",
+              last4: "",
+              fieldError: { kind: "expired" },
+            });
+          }}
+          onNotFound={() => {
+            history.replaceState(null, "");
+            setDraft(null);
+            focusRef.current = "row";
+            setStep({ kind: "pick", error: true });
+          }}
         />
       </div>
     );
@@ -706,7 +768,7 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
     return (
       <div>
         <h1 className={styles.title}>{TITLE}</h1>
-        <section className={styles.resultBlock}>
+        <section className={styles.resultBlock} aria-live="polite">
           <p id={RESULT_LEAD_ID} tabIndex={-1} className={styles.resultLead}>
             제출되었습니다 · 다시 제출할 수 없습니다
           </p>
@@ -739,188 +801,283 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
   );
 }
 
+const FIELD_LABEL: Record<SubmitField, string> = {
+  name: "이름",
+  rrn: "주민등록번호",
+  address: "주소",
+  phone: "연락처",
+  consent: "동의",
+  signature: "서명",
+};
+
+const FIELD_FOCUS_ID: Record<SubmitField, string> = {
+  name: "name",
+  rrn: RRN_FRONT_ID,
+  address: "address",
+  phone: "phone",
+  consent: CONSENT_CHECKBOX_ID,
+  signature: "cert-signature",
+};
+
+const RRN_ERROR = "주민등록번호가 맞지 않습니다 · 앞 6자리(생년월일)와 뒤 7자리를 다시 확인해 주세요";
+const PHONE_ERROR = "연락처 형식이 아닙니다 · 010-0000-0000처럼 적어 주세요";
+const SUBMIT_UNKNOWN = "제출됐는지 확인하지 못했습니다 · 다시 눌러 주세요 · 적은 내용은 남아 있습니다";
+
+// 칸 오류 제출 줄 — §6-5 확정 문장 `주민등록번호를 고쳐 주세요 · 나머지는 채워졌습니다`의
+// 꼴로 틀린 칸 이름을 나열한다(받침에 맞는 을/를).
+function fixFieldsLine(fields: readonly SubmitField[]): string | undefined {
+  const names = fields.filter((f) => f !== "signature" && f !== "consent").map((f) => FIELD_LABEL[f]);
+  if (names.length === 0) return undefined;
+  const last = names[names.length - 1] ?? "";
+  const code = last.charCodeAt(last.length - 1) - 0xac00;
+  const particle = code >= 0 && code <= 11171 && code % 28 !== 0 ? "을" : "를";
+  return `${names.join(" · ")}${particle} 고쳐 주세요 · 나머지는 채워졌습니다`;
+}
+
+type SavedData = { name: string; submittedAt: string; prizeLine: string; delivery: "onsite" | "parcel" };
+
 function IntakeForm({
   token,
   step,
+  draft,
+  busy,
   contactLine,
-  onSubmitted,
+  stepRef,
+  onDraft,
+  onBusy,
+  onSaved,
+  onAlreadySubmitted,
+  onClosed,
   onExpired,
+  onNotFound,
 }: {
   token: string;
   step: Extract<Step, { kind: "form" }>;
+  draft: FormDraft;
+  busy: boolean;
   contactLine: ReactNode;
-  onSubmitted: (name: string, submittedAt: string) => void;
+  stepRef: { current: Step };
+  onDraft: (patch: Partial<FormDraft>) => void;
+  onBusy: (busy: boolean) => void;
+  onSaved: (data: SavedData) => void;
+  onAlreadySubmitted: (maskedName: string, submittedAt: string) => void;
+  onClosed: (reason: ClosedReason, at: string) => void;
   onExpired: () => void;
+  onNotFound: () => void;
 }) {
-  const submitAction = useAction(submitCertificateAction);
-  const [name, setName] = useState("");
-  const [rrnFront6, setRrnFront6] = useState("");
-  const [rrnBack7, setRrnBack7] = useState("");
-  const [phone, setPhone] = useState("");
-  const [address, setAddress] = useState("");
-  const [consent, setConsent] = useState(false);
-  const [showFullConsent, setShowFullConsent] = useState(false);
-  const [rrnError, setRrnError] = useState<string | undefined>(undefined);
-  const [phoneError, setPhoneError] = useState<string | undefined>(undefined);
-  const [hasSignature, setHasSignature] = useState(false);
-  const [rrnRecheckConfirmed, setRrnRecheckConfirmed] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<SubmitField[]>([]);
+  const [rrnMessage, setRrnMessage] = useState<string | undefined>(undefined);
+  const [unknownLine, setUnknownLine] = useState(false);
   const signatureRef = useRef<SignaturePadHandle>(null);
-  const consentSummaryId = useId();
+  const focusFieldRef = useRef<SubmitField | null>(null);
+  // 멱등 키는 시도 단위 — 결과 불명이고 보낼 본문이 그대로일 때만 같은 키를 다시 쓴다.
+  const pendingSubmitRef = useRef<{ key: string; fingerprint: string } | null>(null);
+  const dangerLineId = useId();
+  const parcel = step.delivery === "parcel";
 
+  useEffect(() => {
+    const field = focusFieldRef.current;
+    if (!field) return;
+    focusFieldRef.current = null;
+    document.getElementById(FIELD_FOCUS_ID[field])?.focus();
+  }, [fieldErrors, rrnMessage]);
+
+  const hasSignature = draft.strokes.some((s) => s.length > 0);
   const missingFields: string[] = [];
-  if (!name) missingFields.push("이름");
-  if (!(rrnFront6.length === 6 && rrnBack7.length === 7)) missingFields.push("주민등록번호");
-  if (step.delivery === "parcel" && !address) missingFields.push("주소");
-  if (!phone) missingFields.push("연락처");
-  if (!consent) missingFields.push("동의");
+  if (!draft.name.trim()) missingFields.push("이름");
+  if (!(draft.rrnFront6.length === 6 && draft.rrnBack7.length === 7)) missingFields.push("주민등록번호");
+  if (parcel && !draft.address.trim()) missingFields.push("주소");
+  if (!draft.phone.trim()) missingFields.push("연락처");
+  if (!draft.consent) missingFields.push("동의");
   if (!hasSignature) missingFields.push("서명");
-
   const canSubmit = missingFields.length === 0;
   const blockedReason = submitBlockedReason(missingFields);
 
+  const fixLine = fixFieldsLine(fieldErrors);
+  const dangerLine = unknownLine ? SUBMIT_UNKNOWN : fixLine;
+
+  function edit(field: SubmitField, patch: Partial<FormDraft>) {
+    onDraft(patch);
+    setUnknownLine(false);
+    if (fieldErrors.includes(field)) setFieldErrors((list) => list.filter((f) => f !== field));
+    if (field === "rrn") setRrnMessage(undefined);
+  }
+
+  function showFieldErrors(fields: SubmitField[]) {
+    if (fields.includes("signature")) signatureRef.current?.clear();
+    setRrnMessage(fields.includes("rrn") ? RRN_ERROR : undefined);
+    focusFieldRef.current = fields[0] ?? null;
+    setFieldErrors(fields);
+  }
+
   async function submit() {
-    const signaturePngBase64 = signatureRef.current?.toPngBase64() ?? "";
-    const result = await submitAction.executeAsync({
+    if (busy || !canSubmit) return;
+    const rrn = `${draft.rrnFront6}${draft.rrnBack7}`;
+    const body = {
       token,
       rowId: step.rowId,
       proof: step.proof,
-      name,
-      rrnFront6,
-      rrnBack7,
-      phone,
-      address: step.delivery === "parcel" ? address : undefined,
-      consent: true,
-      signaturePngBase64,
-      idempotencyKey: randomIdemKey(),
+      name: draft.name,
+      rrnFront6: draft.rrnFront6,
+      rrnBack7: draft.rrnBack7,
+      phone: draft.phone,
+      address: parcel ? draft.address : undefined,
+      consent: true as const,
+      signaturePngBase64: signatureRef.current?.toPngBase64() ?? "",
+      winnerVersion: step.winnerVersion,
       consentVersion: step.consentVersion,
       retentionYears: step.retentionYears,
-      winnerVersion: step.winnerVersion,
-      rrnRecheckConfirmed,
-    });
+      rrnRecheckConfirmed: nextRrnRecheckConfirmed({ armedRrn: draft.armedRrn, rrn }),
+    };
+    const fingerprint = JSON.stringify(body);
+    const reused = pendingSubmitRef.current;
+    const key = reused && reused.fingerprint === fingerprint ? reused.key : randomIdemKey();
+    pendingSubmitRef.current = { key, fingerprint };
+    onBusy(true);
+    const result = await withDeadline(() => submitCertificateAction({ ...body, idempotencyKey: key }));
+    onBusy(false);
+    // 그사이 E4를 떠났으면 늦은 응답을 버린다.
+    const latest = stepRef.current;
+    if (latest.kind !== "form" || latest.rowId !== step.rowId || pendingSubmitRef.current?.key !== key) return;
+    if (isDefiniteResult(result)) pendingSubmitRef.current = null;
+    setUnknownLine(false);
+
     const data = result?.data;
+    if (result?.validationErrors) {
+      const outcome = submitOutcomeFromValidationErrors(result.validationErrors);
+      if (outcome) showFieldErrors(outcome.fields);
+      else setUnknownLine(true);
+      return;
+    }
     if (data?.kind === "saved") {
-      onSubmitted(data.name, data.submittedAt);
-    } else if (data?.kind === "rrnRecheck") {
-      setRrnError("주민등록번호가 맞지 않습니다 · 앞 6자리(생년월일)와 뒤 7자리를 다시 확인해 주세요");
-      setRrnRecheckConfirmed(true);
+      onSaved(data);
     } else if (data?.kind === "invalid") {
-      const field = invalidSubmitField(data.fields);
-      if (field === "signature") {
-        signatureRef.current?.clear();
-      } else if (field === "phone") {
-        setPhoneError("연락처 형식이 아닙니다 · 010-0000-0000처럼 적어 주세요");
-      } else {
-        setRrnError("주민등록번호가 맞지 않습니다 · 앞 6자리(생년월일)와 뒤 7자리를 다시 확인해 주세요");
-      }
-    } else if (data?.kind === "expiredProof" || data?.kind === "notFound") {
+      showFieldErrors(data.fields.filter((f): f is SubmitField => f in FIELD_LABEL));
+    } else if (data?.kind === "rrnRecheck") {
+      onDraft({ armedRrn: rrn });
+      showFieldErrors(["rrn"]);
+    } else if (data?.kind === "expiredProof") {
       onExpired();
+    } else if (data?.kind === "alreadySubmitted") {
+      onAlreadySubmitted(data.maskedName, data.submittedAt);
+    } else if (data?.kind === "closed") {
+      onClosed(data.reason, data.at);
+    } else if (data?.kind === "notFound") {
+      onNotFound();
+    } else {
+      // 결과 불명(연결 끊김 · 20초 · 5xx · serverError · 해석 불가) — 값 그대로 · 같은 키로 다시.
+      setUnknownLine(true);
     }
   }
 
   return (
-    <div>
-      <p id={PRIZE_ID} tabIndex={-1} className={styles.prizeLine}>
-        {step.prizeLine}
-      </p>
-      <p className={styles.inquiryLine}>경품이나 받는 방법이 다르면 제출하기 전에 {contactLine}에 전화해 주세요</p>
+    <form
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        void submit();
+      }}
+    >
+      <div id={PRIZE_ID} tabIndex={-1} className={styles.prizeBlock}>
+        <span className={styles.prizeLabel}>경품</span>
+        <span className={styles.prizeValue}>{step.prizeLine}</span>
+      </div>
+      <p className={styles.prizeInquiry}>경품이나 받는 방법이 다르면 제출하기 전에 {contactLine}에 전화해 주세요</p>
 
-      <TextField
-        id="name"
-        label="이름"
-        size="external"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-      />
-
-      <div className={styles.rrnRow}>
+      <div className={styles.formFields}>
         <TextField
-          id="rrn-front"
-          label="주민등록번호"
+          id="name"
+          label="이름"
           size="external"
-          maxLength={6}
-          inputMode="numeric"
-          value={rrnFront6}
-          onChange={(e) => {
-            setRrnFront6(e.target.value.replace(/\D/g, "").slice(0, 6));
-            setRrnRecheckConfirmed(false);
-            setRrnError(undefined);
-          }}
-          error={rrnError}
+          maxLength={40}
+          value={draft.name}
+          className={fieldErrors.includes("name") ? styles.fieldInvalid : undefined}
+          onChange={(e) => edit("name", { name: e.target.value })}
         />
+
+        <RrnFields
+          front={draft.rrnFront6}
+          back={draft.rrnBack7}
+          error={rrnMessage}
+          onChange={({ front, back }) => edit("rrn", { rrnFront6: front, rrnBack7: back })}
+        />
+
+        {parcel ? (
+          <div className={styles.fieldRow}>
+            <label htmlFor="address" className={styles.fieldLabel}>
+              주소 <span className={styles.labelSub}>택배로 보내 드립니다</span>
+            </label>
+            <input
+              id="address"
+              maxLength={200}
+              placeholder="도로명 주소"
+              value={draft.address}
+              aria-invalid={fieldErrors.includes("address") || undefined}
+              className={fieldErrors.includes("address") ? `${styles.textInput} ${styles.fieldInvalid}` : styles.textInput}
+              onChange={(e) => edit("address", { address: e.target.value })}
+            />
+          </div>
+        ) : null}
+
         <TextField
-          id="rrn-back"
-          label=""
+          id="phone"
+          label="연락처"
           size="external"
-          type="password"
-          maxLength={7}
-          inputMode="numeric"
-          value={rrnBack7}
-          onChange={(e) => {
-            setRrnBack7(e.target.value.replace(/\D/g, "").slice(0, 7));
-            setRrnRecheckConfirmed(false);
-            setRrnError(undefined);
-          }}
+          inputMode="tel"
+          maxLength={40}
+          placeholder="010-0000-0000"
+          value={draft.phone}
+          onChange={(e) => edit("phone", { phone: e.target.value })}
+          error={fieldErrors.includes("phone") ? PHONE_ERROR : undefined}
         />
       </div>
 
-      {step.delivery === "parcel" ? (
-        <>
-          <p className={styles.fieldSubtitle}>택배로 보내 드립니다</p>
-          <TextField id="address" label="주소" size="external" value={address} onChange={(e) => setAddress(e.target.value)} />
-        </>
-      ) : null}
-
-      <TextField
-        id="phone"
-        label="연락처"
-        size="external"
-        value={phone}
-        onChange={(e) => {
-          setPhone(e.target.value);
-          setPhoneError(undefined);
-        }}
-        error={phoneError}
+      <ConsentBlock
+        checked={draft.consent}
+        parcel={parcel}
+        retentionYears={step.retentionYears}
+        invalid={fieldErrors.includes("consent")}
+        onChange={(consent) => edit("consent", { consent })}
       />
 
-      <div className={styles.consentBlock}>
-        <label className={styles.consentLabel}>
-          <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-          <span id={consentSummaryId}>
-            수집 항목 이름 · 주민등록번호 · {step.delivery === "parcel" ? "주소 · " : ""}연락처 · 서명 — 기타소득 세무
-            신고와 경품 전달에만 씁니다. 제출한 해가 끝나고 법정 신고기한이 지난 날부터 {step.retentionYears}년 동안
-            보관한 뒤 파기합니다. 동의하지 않으면 경품을 드릴 수 없습니다.
-          </span>
-        </label>
-        <Button variant="tertiary" aria-expanded={showFullConsent} onClick={() => setShowFullConsent((v) => !v)}>
-          {showFullConsent ? "전문 접기" : "전문 보기"}
-        </Button>
-        {showFullConsent ? <p className={styles.consentFull}>{consentFullText(step.retentionYears)}</p> : null}
+      <div className={styles.fieldRow}>
+        <span className={styles.fieldLabel}>서명</span>
+        <SignaturePad
+          ref={signatureRef}
+          id={FIELD_FOCUS_ID.signature}
+          strokes={draft.strokes}
+          onStrokesChange={(strokes) => edit("signature", { strokes })}
+        />
+        {hasSignature ? (
+          <div className={styles.signatureRedo}>
+            <Button variant="tertiary" onClick={() => signatureRef.current?.clear()}>
+              다시 쓰기
+            </Button>
+          </div>
+        ) : null}
       </div>
-
-      <SignaturePad ref={signatureRef} hasStroke={hasSignature} onChange={setHasSignature} />
-      {hasSignature ? (
-        <Button variant="tertiary" onClick={() => signatureRef.current?.clear()}>
-          다시 쓰기
-        </Button>
-      ) : null}
 
       <div className={styles.stickySubmit}>
         <Button
+          type="submit"
           variant="primary"
           size="external"
           disabled={!canSubmit}
           disabledReason={blockedReason}
           reasonTone="info"
-          pending={submitAction.isExecuting}
-          onClick={() => void submit()}
+          pending={busy}
+          aria-describedby={dangerLine ? dangerLineId : undefined}
         >
           확인증 제출
         </Button>
+        <div aria-live="polite">
+          {dangerLine ? (
+            <p id={dangerLineId} className={styles.blockedDanger}>
+              {dangerLine}
+            </p>
+          ) : null}
+        </div>
       </div>
-    </div>
+    </form>
   );
-}
-
-function consentFullText(retentionYears: number): string {
-  return `수집한 개인정보(이름·주민등록번호·주소·연락처·서명)는 기타소득 세무 신고와 경품 전달 목적으로만 사용합니다. 제출한 해가 끝나고 법정 신고기한이 지난 날부터 ${retentionYears}년 동안 보관한 뒤 파기합니다. 동의하지 않으면 경품을 드릴 수 없습니다.`;
 }

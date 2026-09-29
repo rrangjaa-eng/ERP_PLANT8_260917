@@ -87,49 +87,141 @@
   color: var(--accent);
 }
 
+/* 제출 줄(E3 · E4) — main 안 sticky, 위 2px --line-strong, 안전 영역 더함(§6-5 실물 .submit). */
 .stickySubmit {
   position: sticky;
   bottom: 0;
   background: var(--bg);
-  border-top: var(--line-w) solid var(--line);
-  padding: var(--s-4) 0;
+  border-top: var(--line-w-strong) solid var(--line-strong);
+  padding: var(--s-4) 0 calc(var(--s-4) + env(safe-area-inset-bottom, 0px));
   margin-top: var(--s-4);
+  z-index: var(--z-bar);
 }
 
-.prizeLine {
-  font-size: var(--fs-md);
+/* 04.3-06 — E4 경품 블록(라벨 「경품」 + 값, §6-5 실물 .pay) · 아래 문의 줄. */
+.prizeBlock {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-4);
+  border-top: var(--line-w-strong) solid var(--line-strong);
+  padding-top: var(--s-3);
+}
+
+.prizeLabel {
+  font-size: var(--fs-sm);
+  color: var(--muted);
   font-weight: var(--fw-medium);
 }
 
-.fieldSubtitle {
-  font-size: var(--fs-md);
-  color: var(--muted);
-  margin: 0 0 var(--s-1);
+.prizeValue {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  text-align: right;
 }
 
+.prizeInquiry {
+  font-size: var(--fs-md);
+  color: var(--muted);
+  margin: var(--s-2) 0 0;
+}
+
+.formFields {
+  border-top: var(--line-w-strong) solid var(--line-strong);
+  margin-top: var(--s-4);
+  padding-top: var(--s-3);
+}
+
+.fieldRow {
+  margin-bottom: var(--s-4);
+}
+
+.labelSub {
+  font-size: var(--fs-md);
+  color: var(--muted);
+  font-weight: var(--fw-regular);
+}
+
+/* 화면 전용 칸은 ui/input의 외부 칸 모양을 그대로 가져온다(개정 ⑦ (a)). */
+.textInput {
+  composes: input external from "../../../ui/input/TextField.module.css";
+}
+
+.fieldInvalid {
+  composes: inputError from "../../../ui/input/TextField.module.css";
+}
+
+/* 주민등록번호 두 칸(UI-SPEC E4) — 앞 · 하이픈 · 뒤. */
 .rrnRow {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: var(--s-2);
+  align-items: center;
+}
+
+.rrnInput {
+  composes: input external from "../../../ui/input/TextField.module.css";
+  font-variant-numeric: tabular-nums;
+}
+
+.rrnInputError {
+  composes: inputError from "../../../ui/input/TextField.module.css";
+}
+
+.rrnDash {
+  color: var(--faint);
+}
+
+.rrnError {
+  composes: error errorExternal from "../../../ui/input/TextField.module.css";
 }
 
 .consentBlock {
   border-top: var(--line-w) solid var(--line);
   border-bottom: var(--line-w) solid var(--line);
-  padding: var(--s-4) 0;
+  padding: var(--s-3) 0;
   margin: var(--s-4) 0;
 }
 
+/* 라벨 전체가 클릭 영역(44 확보), 체크박스 20×20. */
 .consentLabel {
   display: flex;
-  align-items: flex-start;
-  gap: var(--s-2);
+  align-items: center;
+  gap: var(--s-3);
+  min-height: var(--touch-min);
   font-size: var(--fs-md);
+  cursor: pointer;
 }
 
-.consentFull {
-  font-size: var(--fs-sm);
+.consentBox {
+  flex: 0 0 auto;
+  width: var(--s-5);
+  height: var(--s-5);
+  margin: 0;
+}
+
+.consentSummary {
+  font-size: var(--fs-md);
   color: var(--muted);
+  line-height: var(--lh-body);
+  margin: 0;
+}
+
+.consentToggle {
+  font-size: var(--fs-sm);
+}
+
+/* 전문 — 같은 블록 안 제자리 펼침(개정 ①-f). */
+.consentFull {
+  font-size: var(--fs-md);
+  color: var(--fg);
+  line-height: var(--lh-body);
+  max-width: 64ch;
   margin-top: var(--s-2);
+}
+
+.consentFull p {
+  margin: 0 0 var(--s-2);
 }
 
 .signatureWrap {
@@ -143,6 +235,12 @@
   width: 100%;
   height: 100%;
   display: block;
+  touch-action: none;
+}
+
+.signatureRedo {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .signaturePlaceholder {

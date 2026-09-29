@@ -1,9 +1,9 @@
 ---
 phase: "04"
 slug: "project-quote-ledger"
-status: open
+status: verified
 # threats_open = count of OPEN threats at or above workflow.security_block_on severity (the blocking gate)
-threats_open: 1
+threats_open: 0
 asvs_level: 1
 created: "2026-09-29"
 ---
@@ -15,7 +15,8 @@ created: "2026-09-29"
 - 기준: ASVS Level 1 · block_on: high · 대상 HEAD `21d68269`(브랜치 `claude/gsd-verify-work-4`)
 - 등록부: 계획 시점에 작성된 44개 PLAN의 `<threat_model>` 전부(고유 위협 228행 — T-04-210은 04-40·04-41이 서로 다른 위협에 같은 ID를 써서 두 행으로 셈) + 모든 플랜에 반복되는 공통 T-04-SC 1행 = 229행. SUMMARY 「Threat Flags」 13건은 모두 「새 표면 없음」.
 - 방식: gsd-security-auditor(Opus) 4명이 플랜 묶음을 나눠 병렬 대조(A 04-01~11 · B 04-12~19 · C 04-20~31 · D 04-32~53 + T-04-SC). 읽기·grep·git만, 테스트 실행 없음(`pnpm lint:sql` 0건만 실행). 오케스트레이터가 열린 항목과 표본 증거를 직접 재확인.
-- 집계: **229행 · 닫힘 227(완화 202 · 수락 25) · 열림 2(차단 1 = T-04-31 high · 비차단 1 = T-04-373 medium)** — T-04-318(medium)은 감사에서 열림이었으나 사용자 결정(04-31 (C)(D) 자동 테스트로 갈음)을 근거로 수락 위험에 기록해 닫힘에 셈.
+- 재감사(2026-09-29, 대상 HEAD `4b63f73e`): T-04-31 닫힘 — 아래 「재감사로 닫힌 위협」. 나머지 행은 단락 규칙(차단 열림 0 · 계획 시점 등록부 · ASVS 1)에 따라 감사자 재실행 없음.
+- 집계(재감사 뒤): **229행 · 닫힘 228(완화 203 · 수락 25) · 열림 1(차단 0 · 비차단 1 = T-04-373 medium)**. 최초 감사 집계: 닫힘 227 · 열림 2(차단 1 = T-04-31 high · 비차단 1 = T-04-373 medium) — T-04-318(medium)은 감사에서 열림이었으나 사용자 결정(04-31 (C)(D) 자동 테스트로 갈음)을 근거로 수락 위험에 기록해 닫힘에 셈.
 
 ---
 
@@ -31,26 +32,27 @@ created: "2026-09-29"
 | 브라우저 URL → 목록 서버 페이지 | 정렬·필터·연도·페이지 파라미터는 허용 목록 정규화 뒤에만 SQL에 닿음 | 검색 파라미터 |
 | 클립보드 ↔ 표 | 붙여넣기는 상한(줄 300)·형식 검증, 복사는 이미 보이는 열만 | 표 데이터 |
 | 마이그레이션 → 운영 DB / 트래픽 롤백 → 새 스키마 | 코드표 교체·컬럼 DROP(0015) 가드, rollback.sh 스키마 하한 | 스키마·업무 데이터 |
-| 설정 화면 → 문서 번호 서식 | 서식 키 스키마가 자릿수·구분자를 검증(구분자 검증 빠짐 — T-04-31) | 번호 서식 |
+| 설정 화면 → 문서 번호 서식 | 서식 키 스키마가 자릿수·구분자를 검증(구분자는 허용 목록 — T-04-31) | 번호 서식 |
 
 ---
 
 ## 열린 위협
-
-### T-04-31 — Tampering · high · **OPEN (차단)** — 사용자 판단 필요
-
-- 계획(04-05): 「서식 키 스키마가 자릿수·구분자를 검증하고, 순번이 자릿수를 넘쳐도 번호를 자르지 않는다(유일성 보존). UNIQUE 제약이 최후 방어선」.
-- 있음: 연도 자릿수 1~4 `domain/settings/keys.ts:273` · 순번 자릿수 ≥1 `:283` · 순번 넘침 무절단 `domain/document-numbering/index.ts:44-48`(테스트 `test/unit/domain/document-number-format.test.ts:42`) · UNIQUE `projects_number_key`(`db/schema/projects.ts:44`).
-- 없음: **구분자 검증** — `DOCUMENT_NUMBER_PROJECT_SEPARATOR.schema`가 `z.string()` 그대로(`domain/settings/keys.ts:294-302`), 길이·문자 제한 없음. 04-05-SUMMARY key-decisions가 「빈 구분자 거부」를 기본 서식 `26001`(구분자 없음)과 충돌해 풀었고, 그 과정에서 문자 허용 목록도 빠졌다.
-- 실제 위험: 낮음 — 설정 쓰기 권한자만 바꿀 수 있고, 번호 유일성은 무절단+UNIQUE로 유지, 화면 출력은 React 텍스트 노드. 다만 계획이 정한 완화가 코드에 없으므로 규칙상 OPEN.
-- 위험 경로(권한·인증·암호화) 아님 — 고치면 `domain/settings/keys.ts` 한 곳 + 단위 테스트.
-- **결정 필요(사용자)**: (1) 허용 목록 추가 — 빈 문자열 포함, 예 `z.string().regex(/^[-_./]?$/)`(한 글자 기호만) · 허용 문자 집합은 사용자가 정함, `/gsd-quick`로 TDD 수정 후 `/gsd-secure-phase 4` 재실행 (2) 수락 위험으로 기록.
 
 ### T-04-373 — Repudiation · medium · OPEN (비차단, high 미만)
 
 - 있음: `playwright.config.ts:51` `retries: 0` · 04-31-SUMMARY:111,150 새 DB `CI=true` 전체 E2E 3회 연속 499/499 · 실패 원인 기록 :220-237.
 - 없음: 「첫 실패 trace 보존」 — 04-31-SUMMARY:239가 1·2차 실패 trace가 같은 `--output` 이름으로 덮어써졌다고 기록(콘솔 로그의 파일:줄·오류는 남음).
 - 권고: 다음 최종 게이트부터 재시작마다 다른 `--output`. 코드 변경 대상 아님.
+
+## 재감사로 닫힌 위협
+
+### T-04-31 — Tampering · high · **CLOSED** (2026-09-29 재감사)
+
+- 사용자 결정(PR #104 [지시] 5894471814): (1) 허용 목록 — 빈 값 또는 `-` `_` `.` `/` 한 글자.
+- 완화: `DOCUMENT_NUMBER_PROJECT_SEPARATOR.schema = z.string().regex(/^[-_./]?$/)`(`domain/settings/keys.ts:290-303`, GREEN c1180ca6). JS 정규식 `$`는 m 플래그 없이 입력 끝만 맞으므로 끝 줄바꿈 우회 없음.
+- 강제 지점: 저장 `domain/settings/registry.ts:113,142` `def.schema.parse` · 가져오기 `domain/settings/export.ts:118,129` `safeParse` · 읽기 `registry.ts:86,95,249` `parse`.
+- 테스트(RED 5218a03b): 단위 `test/unit/settings/document-number-separator.test.ts`(허용 5 · 거부 7 — `#` `--` `a` 공백 `-_` `가` `-\n` · 거부 문구 · 입력 칸 종류) 14 통과 · 통합 `test/integration/document-numbering.test.ts`(`#`·`--` 저장 거부, 번호 `26001` 유지) + `test/integration/settings-export.test.ts`(e)(`#` 가져오기 거부) 두 파일 41 통과.
+- 오케스트레이터 재현: `keys.ts`를 c1180ca6^로 되돌리면 단위 8 실패 → 복원 뒤 통과, 작업 트리 변경 0.
 
 ---
 
@@ -86,7 +88,7 @@ created: "2026-09-29"
 | T-04-28 (04-05) | Information Disclosure | high | mitigate | CLOSED | Shared row-filter descriptor projectFilterConditions repositories/projects.ts:150-165 used by both listProjectsPage :251 and aggregateProjects :314; both short-circuit scope none :244,307; tests projects-list.test.ts:294 (same filter), :423 (archived excluded), :883. Note: no team-lead row scope exists (Scope = all\|none, domain/permissions/scope-for.ts:11), so the planned "팀장 범위" test has no target; parity tests cover the descriptor |
 | T-04-29 (04-05) | Information Disclosure | high | mitigate | CLOSED | Server-side key gating domain/projects/index.ts:194-227,270-285; key-set tests projects-list.test.ts:446,476,643 |
 | T-04-30 (04-05) | Tampering | medium | mitigate | CLOSED | Allowlist PROJECT_SORT_KEYS repositories/projects.ts:104-114; fallback to DEFAULT_SORT domain/projects/index.ts:237-243; typed switch resolveSortColumn repositories/projects.ts:205+ |
-| T-04-31 (04-05) | Tampering | high | mitigate | OPEN | Present: digit validation domain/settings/keys.ts:273 (year 1–4), :283 (seq ≥1); no truncation domain/document-numbering/index.ts:44-48 + test test/unit/domain/document-number-format.test.ts:42; UNIQUE projects_number_key. MISSING: separator validation — DOCUMENT_NUMBER_PROJECT_SEPARATOR schema is bare z.string() (keys.ts:294-302; also prefix keys.ts:263), plan Task ② required "구분자는 허용 문자만"; no allowlist anywhere (grep). 04-05-SUMMARY:55 documents keeping z.string() only to allow the empty separator |
+| T-04-31 (04-05) | Tampering | high | mitigate | CLOSED | Present: digit validation domain/settings/keys.ts:273 (year 1–4), :283 (seq ≥1); no truncation domain/document-numbering/index.ts:44-48 + test test/unit/domain/document-number-format.test.ts:42; UNIQUE projects_number_key. Separator allowlist `z.string().regex(/^[-_./]?$/)` keys.ts:295-303 (c1180ca6), enforced on save registry.ts:113,142 and import export.ts:118,129; tests test/unit/settings/document-number-separator.test.ts + test/integration/document-numbering.test.ts + settings-export.test.ts (5218a03b). Re-audit 2026-09-29 |
 | T-04-32 (04-05) | Denial of Service | medium | mitigate | CLOSED | "더 보기" count param replaced by numbered pages with fixed server size: LIST_PAGE_SIZE=50 lib/paging.ts:3, clampPage :7-13; resolveListPage limit fixed domain/projects/list-view.ts:99-106; no client-controlled size |
 | T-04-33 (04-05) | Denial of Service | low | accept | CLOSED (accepted) | Accepted: p99 500ms only meaningful at real data scale (04-VALIDATION Manual-Only); indexes documented, measurement deferred to Phase 8 rehearsal |
 | T-04-40 (04-06) | Tampering | medium | mitigate | CLOSED | 0012_project_status_five_values.sql: RAISE guards on code table + projects rows :24,:31, projects remapped by UPDATE settled→completed :35 (not DELETE), lock timeouts :7-8; tests migration-upgrade.test.ts:148 (a), :182 (b RAISE, nothing changed) |
@@ -355,6 +357,7 @@ created: "2026-09-29"
 - 계획의 마이그레이션 번호(0004·0005·0016)는 실제 파일 0009·0010·0018로 바뀜.
 - `domain/quotes/lines.ts:570` `revisionId`가 `z.string().min(1)`(uuid 아님) — T-04-169는 프로젝트·줄 id만 uuid를 요구하며 그건 지켜짐. 파라미터화 SQL이라 최악 PG 22P02 오류.
 - `linkedDocumentsByLine`(`lines.ts:248-253`) 빈 반환 · `quote.customer-approval` 게이트 호출처 없음 — Phase 5 연결 예정(설계대로).
+- T-04-31 관련: 번호 **접두어** 키 스키마는 `z.string()` 그대로(`domain/settings/keys.ts:263`) — 04-05 계획의 완화 범위(자릿수·구분자)와 PR #104 결정(구분자 허용 목록) 밖이라 위협 판정에 넣지 않음. 설정 쓰기 권한자만 변경, 번호 유일성은 무절단+UNIQUE.
 - T-04-SC: Phase 04 자체 커밋의 의존성 추가 0 — package.json을 건드린 두 커밋(fbe26a16 scripts 2개 추가 · 6b7519fa 제거)은 순증 0, pnpm-lock.yaml 변경 커밋 없음. a25d0fb0^ 대비 유일한 차이 `nodemailer 10.0.10`은 04.2-15(e33d7c61)가 main 병합(379b837d, PR #73)으로 들어온 것.
 
 ---
@@ -364,6 +367,7 @@ created: "2026-09-29"
 | Audit Date | Threats Total | Closed | Open | Run By |
 |------------|---------------|--------|------|--------|
 | 2026-09-29 | 229 | 227 | 2 (차단 1 · 비차단 1) | gsd-security-auditor(Opus) ×4 병렬 + 오케스트레이터 재확인 — 세션 01RVH7oW |
+| 2026-09-29 (재감사) | 229 | 228 | 1 (차단 0 · 비차단 1 = T-04-373) | 오케스트레이터 — T-04-31 grep·테스트 실행·되돌림 재현, 단락 규칙으로 감사자 생략 (HEAD 4b63f73e) |
 
 ---
 
@@ -371,7 +375,7 @@ created: "2026-09-29"
 
 - [x] All threats have a disposition (mitigate / accept / transfer)
 - [x] Accepted risks documented in Accepted Risks Log
-- [ ] `threats_open: 0` confirmed — **T-04-31 사용자 결정 대기**
-- [ ] `status: verified` set in frontmatter
+- [x] `threats_open: 0` confirmed — T-04-31 닫힘(2026-09-29 재감사), T-04-373은 medium 비차단으로 열림 유지
+- [x] `status: verified` set in frontmatter
 
-**Approval:** pending
+**Approval:** verified 2026-09-29

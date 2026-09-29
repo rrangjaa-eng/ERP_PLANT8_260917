@@ -11,6 +11,7 @@
 | Cloud Run 서비스 | `plant8-staging` | `plant8-prod` |
 | Cloud SQL 인스턴스 | `plant8-staging-db` | `plant8-prod-db` |
 | 시크릿 접미사 | `-staging` | `-prod` |
+| 서명 버킷(서울·비공개·소프트 삭제 0·부트스트랩이 만든다) | `<프로젝트>-plant8-staging-cert-signatures` | `<프로젝트>-plant8-prod-cert-signatures` |
 | 접속 주소 | `gcloud run services describe plant8-staging --format='value(status.url)'` | 같은 명령, `plant8-prod` |
 
 접속 주소는 **`status.url` 실측값**만 쓴다. 프로젝트 번호로 만든 "결정적" 형식
@@ -89,6 +90,7 @@ db-bootstrap Job → migrate Job(16A 커넥션 검사, 위반이면 exit 3으로
 Origin 검사) → 경보 3개 upsert. (`/healthz`가 아니라 `/api/health`인 이유: `/healthz`는
 Cloud Run/구글 엣지가 예약 경로로 취급해 컨테이너까지 도달하지 못하고 404를
 돌려줬다 — 2026-09-18 실제 스테이징에서 확인.)
+`ensure_cert_bucket`은 서명 버킷을 만들지 않는다 — 확인·설정 맞춤·런타임 바인딩만, 없으면 §8 부트스트랩을 먼저.
 
 **승격(스테이징 → **production**):** 스테이징에서 확인 → GitHub Actions "Run workflow" →
 target=production, sha 입력(비우면 스테이징이 서빙 중인 SHA) → 가드가 그 SHA 이미지가
@@ -191,6 +193,9 @@ WIF 풀·프로바이더, 서비스 계정 5개(배포자 + 환경별 런타임�
 접근, 조직 정책 확인. 저장소 수준 GitHub Actions 변수 4개를 설정한다: `GCP_PROJECT_ID`,
 `GCP_PROJECT_NUMBER`, `GCP_REGION`, `ALERT_EMAIL`(Secrets 탭은 비워 둔다 — WIF라 키
 파일이 없다. GitHub Environments도 만들지 않는다).
+(d-2)가 환경별 서명 버킷(`…-cert-signatures`)을 만들고 배포자에게 그 버킷에만 `roles/storage.admin`을 준다.
+이미 부트스트랩된 프로젝트는 PR 머지 전에 PR 브랜치의 `scripts/bootstrap-gcp.sh`를 소유자가 한 번 다시
+돌린다(멱등 · 머지 = 스테이징 자동 배포라 머지 뒤에는 늦다).
 
 ## 9. 시크릿 목록
 

@@ -16,6 +16,7 @@ VPC_RANGE=google-managed-services-default
 WIF_POOL=github
 WIF_PROVIDER=erp-repo
 DEPLOYER_SA=gha-deployer
+CERT_BUCKET_SUFFIX=cert-signatures   # infra/names.sh cert_bucket과 같은 이름: {프로젝트}-plant8-{환경}-cert-signatures
 
 PROJECT=""
 GITHUB_REPO=""
@@ -76,7 +77,7 @@ gcloud services enable \
   cloudresourcemanager.googleapis.com orgpolicy.googleapis.com compute.googleapis.com \
   servicenetworking.googleapis.com run.googleapis.com sqladmin.googleapis.com \
   secretmanager.googleapis.com artifactregistry.googleapis.com monitoring.googleapis.com \
-  logging.googleapis.com \
+  logging.googleapis.com storage.googleapis.com \
   --project="$PROJECT"
 
 # WIF 프로바이더 생성 전에 조직 정책이 외부 IdP를 막는지 확인한다 — 막혀 있으면
@@ -140,6 +141,20 @@ done
 for env in $ENVS; do
   gcloud iam service-accounts add-iam-policy-binding "plant8-${env}-scheduler@${PROJECT}.iam.gserviceaccount.com" --project="$PROJECT" \
     --member="serviceAccount:${DEPLOYER_EMAIL}" --role=roles/iam.serviceAccountUser >/dev/null
+done
+
+# (d-2) 서명 버킷 — 버킷은 소유자가 만든다 · 배포자는 이 버킷에만 관리 역할(프로젝트 수준 저장소 역할 없음, 04.3-05)
+for env in $ENVS; do
+  bucket="gs://${PROJECT}-plant8-${env}-${CERT_BUCKET_SUFFIX}"
+  if ! gcloud storage buckets describe "$bucket" --project="$PROJECT" >/dev/null 2>&1; then
+    gcloud storage buckets create "$bucket" --project="$PROJECT" --location="$REGION" \
+      --uniform-bucket-level-access --public-access-prevention --soft-delete-duration=0
+  else
+    gcloud storage buckets update "$bucket" --project="$PROJECT" \
+      --uniform-bucket-level-access --public-access-prevention --clear-soft-delete
+  fi
+  gcloud storage buckets add-iam-policy-binding "$bucket" --project="$PROJECT" \
+    --member="serviceAccount:${DEPLOYER_EMAIL}" --role=roles/storage.admin >/dev/null
 done
 
 # (e) WIF 바인딩: gha-deployer는 이 리포에서만 대신 사용할 수 있다(T-1-29)

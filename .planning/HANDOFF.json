@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-29T18:32:54.107Z",
+  "timestamp": "2026-09-29T19:19:43.766Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -67,9 +67,9 @@
   ],
   "blockers": [
     {
-      "description": "gsd phase uat-passed 4 --require-verification = false — ① 04-UAT test 53 skipped(설치본 gsd-core 1.14.0 판정기는 skipped·이월 지원 없음) ② policy: verification status=stale(260929-opt가 covered_files 변경)",
+      "description": "gsd phase uat-passed 4 --require-verification = false — 04-UAT test 53 skipped(설치본 gsd-core 1.14.0 판정기는 skipped·이월 지원 없음). stale은 83f86f11 재검증으로 해소",
       "type": "human_action",
-      "workaround": "② 재검증(다음 단위, 결정 불필요). ① PR #104 질문: (A) /gsd-update 1.15.0(#4546 Deferred follow-up 비차단) · (B) #4546 부분 이식 · (C) npq로 고쳐졌으니 증거 대조로 test 53 pass 재기록"
+      "workaround": "PR #104 질문: (A) /gsd-update 1.15.0(#4546 Deferred follow-up 비차단) · (B) #4546 부분 이식 · (C) npq로 고쳐졌으니 증거 대조로 test 53 pass 재기록"
     }
   ],
   "async_jobs": [],
@@ -435,10 +435,15 @@
       "decision": "UI (가) 명사형 유지(UI-SPEC:385를 코드에 맞춤) (나) 행 번호 숫자 규칙 적용 (다) 등록 폼 첫 오류 칸 포커스",
       "rationale": "사용자 채팅 답(2026-09-29), PR #104 [지시] 5894569505",
       "phase": "4"
+    },
+    {
+      "decision": "Phase 4 재검증은 /gsd-verify-work 4 안에서 gsd-verifier(Opus) 재검증 모드로 수행(Route V.stale·선례 01Wvj7eF)",
+      "rationale": "스킬 관문 훅이 워크플로 밖 gsd-verifier를 막음. 결과 passed 9/10, 전환은 사용자 답 대기",
+      "phase": "04"
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션(이 계정 plant8 환경) → `.claude/settings.json` 확인 → git status -sb(HEAD `claude/gsd-verify-work-4`, 떨어져 있으면 원격과 같은지 확인 후 checkout -B, 얕으면 unshallow) → .continue-here.md BLOCKING CONSTRAINTS와 세션 0a13ae7c 블록 Read → PR #104 최신 [지시] 확인·구독(전환 방법 A/B/C 답 · 폰 40px 3개 답 — 왔으면 인계에 반영, 처리는 별도 단위) → origin/main 머지 커밋 반영(푸시 직전 한 번 더). 이번 단위: **Phase 4 재검증 — 04-VERIFICATION stale 해소**: execute-phase.md `verify_phase_goal` 단계를 쓰여 있는 그대로(gsd-verifier, model opus — aac80a28 선례)로 04-VERIFICATION.md를 다시 만들어 covered_digest를 새로 고친다(원인: 260929-opt가 covered_files의 quote-table.tsx·project-form.tsx를 바꿈). 확인: `gsd-tools query verification.status .planning/phases/04-project-quote-ledger` = passed(stale 아님) · 기존 결정(p99 → Phase 9 deferred, 04-31 (C)(D) 자동 테스트 갈음, PROJ-04 Pending) 유지. 전환(⑤)은 PR #104 A/B/C 답이 온 뒤 — 답 없으면 그 다음 단위도 새 결정 없이 할 수 있는 것만. 끝나면 커밋·푸시 → /gsd-pause-work → PR #104 「[완료 보고]」 한 줄 → 같은 설정(environment_id=PLANT8_ENV_ID 또는 env_01BjvDha7fqn18V6L1UywqDh · source_url · source_revision · outcome_branch = claude/gsd-verify-work-4 · model 명시)으로 다음 세션 생성. 사용자 부재(2026-09-30 09:00 KST = 00:00Z까지 — 「막힘 없이 진행」 지시): 기록에 없는 새 결정이 필요하면 멈추지 말고 그 항목만 질문으로 인계·PR #104 댓글에 남긴 뒤 새 결정 없이 할 수 있는 다음 단위로 넘어간다(순서 건너뛸 때는 이유를 인계에 적는다).",
+  "next_action": "전환 방법 사용자 답 대기 → 답에 따라 처리. 새 세션(이 계정 plant8 환경, 사용자가 직접 엶) → `.claude/settings.json` 확인 → git status -sb(HEAD `claude/gsd-verify-work-4`, 떨어져 있으면 원격과 같은지 확인 후 checkout -B, 얕으면 unshallow) → .continue-here.md BLOCKING CONSTRAINTS와 세션 72537190 블록 Read → PR #104 최신 [지시] 확인·구독 → origin/main 머지 커밋 반영(푸시 직전 한 번 더). **답이 (A)**: `/gsd-update`로 gsd-core 1.15.0 — `.claude/` 위험 경로라 별도 PR(사용자 머지), 업데이트 전체 변화 검토 뒤 `gsd phase uat-passed 4 --require-verification` passed 확인 → /gsd-verify-work 4 전환. **(B)**: 1.14.0 `uat-predicate.cjs`에 #4546 DEFERRED_REASON_RE 부분만 이식 — 위험 경로 별도 PR(사용자 머지) → 같은 확인 → 전환. **(C)**: /gsd-verify-work 4에서 test 53을 증거 대조(260929-npq 43dd5de4 · `test/e2e/mobile-touch-targets.spec.ts` 375·320 44×44 · DOM 감사 PASS 24)로 pass 재기록 + ROADMAP 04.6의 DR-P4-02 정리 → uat-passed passed 확인 → 전환(transition.md). 폰 40px 3개 답이 오면 별도 /gsd-quick. 04-VERIFICATION은 83f86f11 기준 passed(fresh) — 그 뒤 covered_files가 바뀌면 다시 stale이니 전환 직전 `query verification.status` 재확인. 답이 없으면 새 결정 없이 할 수 있는 단위가 없으므로 대기.",
   "context_notes": "세션 0a13ae7c: ⑤ 전환 미실행 — 설치본 1.14.0 판정기 PASSING_RESULTS={passed,pass}, 상류 1.15.0 #4546이 Deferred follow-up skipped 비차단(모의 실행 test 53 통과). 추가 막힘 verification stale(260929-opt). 다음: 재검증. secure-phase 4 결과 BLOCKED(T-04-31 한 건, 실제 위험 낮음). ui-review 4는 보안 막힘과 독립이라 먼저 진행. 세션 01REzuX1: validate-phase 4 끝(1dbc5163 · 91cee9bf), main #91 머지 4f20665f. 사용자 취침 중 — 한 단위씩 이어서 하고 각자 PR #104에 [완료 보고]. 04-52 갈래 G, 변이 3종 모두 잡힘. 04-53은 depends_on 04-52(D4) 충족.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",

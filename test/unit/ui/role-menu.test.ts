@@ -149,6 +149,11 @@ function adminRouteExists(key: string): boolean {
   return existsSync(resolve(process.cwd(), "app", "(app)", "admin", name, "page.tsx"));
 }
 
+// 04.3-09(개정 ④): 「관리」 인덱스 넷째 그룹 「확인증」의 키. admin.* 라우트 규칙
+// (/admin/<이름>)을 따르지 않으므로 ADMIN_MENU_KEYS에 섞지 않고 따로 둔다 —
+// adminRouteExists가 없는 admin/events/page.tsx를 찾지 않게 한다(E3-19).
+const CERT_ADMIN_MENU_KEYS = ["certs.events"];
+
 describe("roleMenu — 관리자 메뉴 진입점 (「관리」 한 줄로 접힘, D-17)", () => {
   it("전제 확인: 위에 복제한 admin.* 키 11개 전부 실제 라우트 디렉터리가 있고, /admin 인덱스 라우트도 있다", () => {
     expect(ADMIN_MENU_KEYS.length).toBe(11);
@@ -156,6 +161,11 @@ describe("roleMenu — 관리자 메뉴 진입점 (「관리」 한 줄로 접�
       expect(adminRouteExists(key)).toBe(true);
     }
     expect(adminIndexPageExists()).toBe(true);
+  });
+
+  it("전제 확인: 확인증 메뉴 키의 실제 라우트(certs/events)가 있다", () => {
+    expect(CERT_ADMIN_MENU_KEYS).toEqual(["certs.events"]);
+    expect(existsSync(resolve(process.cwd(), "app", "(app)", "certs", "events", "page.tsx"))).toBe(true);
   });
 
   it("allowedMenus에 admin.system-status 하나만 있어도 관리자 메뉴는 정확히 「관리」 한 줄이다", () => {
@@ -181,6 +191,17 @@ describe("roleMenu — 관리자 메뉴 진입점 (「관리」 한 줄로 접�
     expect(roleMenu(viewer).adminMenu).toEqual([{ label: "관리", href: "/admin" }]);
   });
 
+  it("certs.events 하나만 허용돼도(기획 PM) 관리자 메뉴는 「관리」 한 줄이다", () => {
+    const viewer: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["projects", "certs.events"] };
+    expect(roleMenu(viewer).adminMenu).toEqual([{ label: "관리", href: "/admin" }]);
+  });
+
+  it("1차 메뉴는 certs.events를 허용해도 다섯 그대로다(D-22)", () => {
+    const viewer: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["certs.events"] };
+    expect(roleMenu(viewer).topBarMenu).toHaveLength(5);
+    expect(roleMenu(viewer).bottomTabs).toHaveLength(4);
+  });
+
   it("허용된 관리자 메뉴는 매번 같은 순서로 나온다(allowedMenus의 순서와 무관, 순수 함수)", () => {
     const forward: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [...ADMIN_MENU_KEYS] };
     const reversed: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: [...ADMIN_MENU_KEYS].reverse() };
@@ -188,22 +209,38 @@ describe("roleMenu — 관리자 메뉴 진입점 (「관리」 한 줄로 접�
   });
 });
 
-describe("adminIndexGroups — 「관리」 인덱스 3그룹 (SYSTEM.md §6-10 표가 정본)", () => {
+describe("adminIndexGroups — 「관리」 인덱스 4그룹 (SYSTEM.md §6-10 표가 정본)", () => {
   const expectedGroups = expectedAdminIndexGroups(SYSTEM);
 
-  it("전제 확인: SYSTEM.md §6-10 표에서 그룹 3개를 읽었고 항목 합이 admin.* 키 11개와 같다", () => {
-    expect(expectedGroups).toHaveLength(3);
+  it("전제 확인: SYSTEM.md §6-10 표에서 그룹 4개를 읽었고 항목 합이 admin.* 키 11개 + 확인증 키 1개와 같다", () => {
+    expect(expectedGroups).toHaveLength(4);
     const totalItems = expectedGroups.reduce((sum, group) => sum + group.items.length, 0);
-    expect(totalItems).toBe(ADMIN_MENU_KEYS.length);
+    expect(totalItems).toBe(ADMIN_MENU_KEYS.length + CERT_ADMIN_MENU_KEYS.length);
   });
 
-  it("11개 전부 허용이면 그룹 3개, 라벨·항목 순서가 SYSTEM.md §6-10 표와 원소 단위로 같다", () => {
-    const viewer: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ADMIN_MENU_KEYS };
+  it("전부 허용이면 그룹 4개(마스터 → 설정·권한 → 운영 기록 → 확인증), 라벨·항목 순서가 SYSTEM.md §6-10 표와 원소 단위로 같다", () => {
+    const viewer: RoleMenuViewer = {
+      roleId: SYSADMIN_ROLE_ID,
+      allowedMenus: [...ADMIN_MENU_KEYS, ...CERT_ADMIN_MENU_KEYS],
+    };
     const groups = adminIndexGroups(viewer);
+    expect(groups.map((group) => group.label)).toEqual(["마스터", "설정·권한", "운영 기록", "확인증"]);
     expect(groups.map((group) => group.label)).toEqual(expectedGroups.map((group) => group.label));
     groups.forEach((group, index) => {
       expect(group.items.map((item) => item.label)).toEqual(expectedGroups[index]?.items);
     });
+  });
+
+  it("기획 PM(projects · certs.events)이면 「확인증」 그룹 하나만 돌아오고 항목은 「확인증 행사」(/certs/events)다", () => {
+    const viewer: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["projects", "certs.events"] };
+    expect(adminIndexGroups(viewer)).toEqual([
+      { label: "확인증", items: [{ label: "확인증 행사", href: "/certs/events" }] },
+    ]);
+  });
+
+  it("certs.events가 없으면 「확인증」 그룹이 없다", () => {
+    const groups = adminIndexGroups({ roleId: SYSADMIN_ROLE_ID, allowedMenus: [...ADMIN_MENU_KEYS] });
+    expect(groups.map((group) => group.label)).not.toContain("확인증");
   });
 
   it("빈 allowedMenus면 []다", () => {

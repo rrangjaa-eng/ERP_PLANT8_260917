@@ -23,3 +23,13 @@ describe("MENUS(domain, 정본) ↔ adminIndexGroups(ui/shell/role-menu.ts) — 
     );
   });
 });
+
+// 04.3-09(개정 ④, E3-19): 확인증 메뉴는 admin.* 이름 규칙을 따르지 않는다 —
+// MENUS에 키가 있고 「관리」 인덱스에 /certs/events로 나타나야 한다.
+describe("MENUS(domain, 정본) ↔ adminIndexGroups — 확인증 키 대조 (04.3-09)", () => {
+  it("MENUS에 certs.events가 있고 /admin 인덱스에 정확히 /certs/events로 나타난다", () => {
+    expect(MENUS.map((menu) => menu.key)).toContain("certs.events");
+    const groups = adminIndexGroups({ roleId: "role-sysadmin", allowedMenus: ["certs.events"] });
+    expect(groups.flatMap((group) => group.items).map((item) => item.href)).toEqual(["/certs/events"]);
+  });
+});

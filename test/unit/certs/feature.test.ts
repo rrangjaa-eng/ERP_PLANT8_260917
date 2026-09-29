@@ -76,3 +76,54 @@ describe("SETTING_DEFS의 cert.enabled 노출 (규약 C1)", () => {
     expect(SETTING_DEFS.some((def) => def.key === "cert.enabled")).toBe(true);
   });
 });
+
+// 04.3-09 — 셸(app/(app)/layout.tsx)과 「관리」 인덱스가 allowedMenus를 넘기기 전에
+// 기능이 꺼져 있으면 확인증 메뉴(certs.* 키)를 걷어 낸다. ui 경계는 domain을
+// import할 수 없어 이 거르기는 domain에서 하고 여기서 본다(E3-18).
+describe("withCertMenusGated (04.3-09)", () => {
+  const MENUS_IN = ["projects", "certs.events", "certs.submissions", "admin.people"];
+
+  it("환경 게이트가 꺼져 있으면 certs.* 키를 걷은 새 배열을 돌려주고 설정을 읽지 않는다", async () => {
+    vi.resetModules();
+    vi.stubEnv("CERT_FEATURE_ALLOWED", "false");
+    const { withCertMenusGated } = await import("@/domain/certs/feature");
+    const getSettingValue = vi.fn().mockResolvedValue(true);
+
+    const result = await withCertMenusGated(MENUS_IN, { getSettingValue });
+
+    expect(result).toEqual(["projects", "admin.people"]);
+    expect(getSettingValue).not.toHaveBeenCalled();
+  });
+
+  it("환경 true + 설정 끔이면 certs.* 키를 걷는다", async () => {
+    vi.resetModules();
+    vi.stubEnv("CERT_FEATURE_ALLOWED", "true");
+    const { withCertMenusGated } = await import("@/domain/certs/feature");
+    const getSettingValue = vi.fn().mockResolvedValue(false);
+
+    expect(await withCertMenusGated(MENUS_IN, { getSettingValue })).toEqual(["projects", "admin.people"]);
+  });
+
+  it("환경 true + 설정 켬이면 입력을 순서 그대로 담은 새 배열이다", async () => {
+    vi.resetModules();
+    vi.stubEnv("CERT_FEATURE_ALLOWED", "true");
+    const { withCertMenusGated } = await import("@/domain/certs/feature");
+    const getSettingValue = vi.fn().mockResolvedValue(true);
+
+    const result = await withCertMenusGated(MENUS_IN, { getSettingValue });
+
+    expect(result).toEqual(MENUS_IN);
+    expect(result).not.toBe(MENUS_IN);
+  });
+
+  it("입력 배열을 바꾸지 않는다", async () => {
+    vi.resetModules();
+    vi.stubEnv("CERT_FEATURE_ALLOWED", "false");
+    const { withCertMenusGated } = await import("@/domain/certs/feature");
+    const input = [...MENUS_IN];
+
+    await withCertMenusGated(input, { getSettingValue: vi.fn().mockResolvedValue(true) });
+
+    expect(input).toEqual(MENUS_IN);
+  });
+});

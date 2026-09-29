@@ -62,6 +62,8 @@ async function callWithin(call: () => Promise<unknown>): Promise<unknown> {
   }
 }
 
+// 편집 입력의 Ctrl+V가 여러 칸 글(탭 · 줄바꿈)이면 입력에 넣지 않고 표 붙여넣기로 넘긴다 — 빈 표는 「첫 줄 만들기」가
+// 이름 칸을 편집 상태로 열기 때문에 엑셀 범위를 붙여 넣는 첫 자리가 이 입력이다(ui/table은 입력 안 붙여넣기를 가로채지 않는다).
 function TextEditCell({
   label,
   initialValue,
@@ -69,6 +71,7 @@ function TextEditCell({
   numeric,
   describedBy,
   onCommit,
+  onMultiPaste,
 }: {
   label: string;
   initialValue: string;
@@ -76,7 +79,9 @@ function TextEditCell({
   numeric?: boolean;
   describedBy?: string;
   onCommit: (value: string) => void;
+  onMultiPaste: (text: string) => void;
 }) {
+  const handedOff = useRef(false);
   return (
     <input
       aria-label={label}
@@ -88,12 +93,21 @@ function TextEditCell({
       defaultValue={initialValue}
       autoFocus
       className={numeric ? styles.cellInputNumeric : styles.cellInput}
-      onBlur={(event) => onCommit(event.currentTarget.value)}
+      onBlur={(event) => {
+        if (!handedOff.current) onCommit(event.currentTarget.value);
+      }}
       onKeyDown={(event) => {
         if (event.key === "Enter") {
           event.preventDefault();
           onCommit(event.currentTarget.value);
         }
+      }}
+      onPaste={(event) => {
+        const text = event.clipboardData.getData("text/plain");
+        if (!/[\t\n]/.test(text.replace(/\r?\n$/, ""))) return;
+        event.preventDefault();
+        handedOff.current = true;
+        onMultiPaste(text);
       }}
     />
   );
@@ -126,7 +140,6 @@ export function EventCreateForm({
   const [issueSignal, setIssueSignal] = useState(0);
   const [openCell, setOpenCell] = useState<{ rowId: string; columnKey: string } | null>(null);
   const [discardCount, setDiscardCount] = useState<number | null>(null);
-  const rowSeq = useRef(0);
   const leavingRef = useRef(false);
 
   const changed = countChangedCells({ name: "", wonOn: today, rows: [] }, { name, wonOn, rows });
@@ -148,8 +161,7 @@ export function EventCreateForm({
   const errorCount = Object.keys(cellErrors).length;
 
   function newRow(): DraftWinnerRow {
-    rowSeq.current += 1;
-    return { key: `w${rowSeq.current}`, ...NEW_ROW_DEFAULTS };
+    return { key: crypto.randomUUID(), ...NEW_ROW_DEFAULTS };
   }
 
   function clearCellError(rowKey: string, column: string) {
@@ -324,6 +336,11 @@ export function EventCreateForm({
         numeric={opts.numeric}
         describedBy={[opts.describedBy, issueIdOf(row, key)].filter(Boolean).join(" ") || undefined}
         onCommit={ctx.onCommit}
+        onMultiPaste={(text) => {
+          pasteAt(row, key, text);
+          // 편집기를 닫고 포커스를 셀로 돌린다 — 값은 pasteAt이 이미 넣은 첫 칸 값과 같다.
+          ctx.onCommit(parseTsv(text)[0]?.[0]?.trim() ?? "");
+        }}
       />
     ),
   });

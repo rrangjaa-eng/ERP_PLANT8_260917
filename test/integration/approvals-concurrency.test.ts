@@ -4,6 +4,7 @@ import { db, pool } from "@/db/client";
 import { approvalInstances, approvalRoutes, approvalSteps, leaveRequests } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, DIVISION_HEAD_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import { setVisibilityCell } from "@/domain/permissions/matrix";
 import {
   approveDocument,
   prepareSubmission,
@@ -256,6 +257,17 @@ describe("승인 ↔ 회수 · 승인 ↔ 반려 — 두 순서(EXP-03 concurren
     const loser = results.find((result) => result.status === "rejected");
     expect(loser?.status === "rejected" ? (loser.reason as Error).message : "").toBe(await detailText(doc.instanceId, winner, "이", "승인함"));
     expect(await actedCountOf(doc.instanceId)).toBe(1);
+  });
+
+  it("(review) 보는 사람 계급에 approval.value가 꺼져 있으면 충돌 문구에 이름 · 시각이 없다 — `지금 담당이 아님`, conflict는 그대로", async () => {
+    const o = await org();
+    await setVisibilityCell(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, infoItem: "approval.value", visible: false });
+    const doc = await submitLeave(o.drafter, FULL_DAY_T3, T3);
+    await approveDocument(o.lead, { instanceId: doc.instanceId, expectedVersion: 1 }, T3);
+    const error = await caught(withdrawDocument(o.drafter, { instanceId: doc.instanceId, expectedVersion: 1 }, T3));
+    expect(error).toBeInstanceOf(ApprovalConflictError);
+    expect(error.message).toBe("지금 담당이 아님 · 새로 고침");
+    expect(error.message).not.toContain("김팀장");
   });
 
   it("같은 사람이 같은 version으로 두 번 승인 — 두 번째가 충돌, 단계 기록 1건", async () => {

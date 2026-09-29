@@ -385,10 +385,13 @@ function closedFor(status: ApprovalStatus, event: TransitionEvent, isDrafter: bo
 }
 
 // 지금 행으로 만든 상세 문구(관련자에게만) — 마지막으로 바꾼 사람(updated_by)은 기안자이거나 처리 기록의 한 사람이다.
-function conflictMessageOf(graph: ApprovalGraph, attempted: TransitionEvent): string {
+// 이름 · 시각은 approval.value 뒤에 있다(B-A1) — 꺼진 계급에는 이름 없는 `지금 담당이 아님`으로 간다.
+async function conflictMessageOf(viewer: Viewer, graph: ApprovalGraph, attempted: TransitionEvent, pre: TransitionPre): Promise<string> {
   const { instance } = graph;
-  const actorName =
-    instance.updatedBy === instance.drafterId
+  const namesVisible = await (pre.visible ?? defaultVisible)(viewer, "approval.value");
+  const actorName = !namesVisible
+    ? null
+    : instance.updatedBy === instance.drafterId
       ? instance.drafterName
       : (graph.routes.flatMap((route) => route.steps).find((step) => step.actedBy === instance.updatedBy)?.actedByName ?? null);
   return buildConflictMessage({
@@ -413,16 +416,17 @@ function isPartyOf(viewer: Viewer, graph: ApprovalGraph, holders: WalkRouteResul
 // (1) version 불일치 · (2) 종결 — 관련자면 지금 상태의 상세 문구, 아니면 이름 · 시각 · 상태가 없는
 // `지금 담당이 아님`(handleServerError가 UserFacingError 문구를 그대로 화면에 보낸다). 상세 문구
 // (buildConflictMessage)는 이 판정 갈래 안에서만 만든다.
-function refuseStaleOrClosed(
+async function refuseStaleOrClosed(
   viewer: Viewer,
   graph: ApprovalGraph,
   holders: WalkRouteResult | null,
   attempted: TransitionEvent,
   reason: "conflict" | "final" | "invalid_state",
   fields: RefusalFields,
-): Error {
+  pre: TransitionPre,
+): Promise<Error> {
   if (!isPartyOf(viewer, graph, holders)) return refuse("not_holder", new NotCurrentHolderError(NOT_HOLDER_MESSAGE), fields);
-  return refuse(reason, new ApprovalConflictError(conflictMessageOf(graph, attempted)), fields);
+  return refuse(reason, new ApprovalConflictError(await conflictMessageOf(viewer, graph, attempted, pre)), fields);
 }
 
 type TransitionContext = {
@@ -442,7 +446,13 @@ type TransitionPlan<T> = {
   write: (updated: ApprovalInstanceRow) => Promise<{ detail: Record<string, unknown>; result: T }>;
 };
 
-type TransitionPre = { snapshot: SnapshotPerson[]; gate: ActionLogGate; appendActionLog?: TxLogDeps["appendActionLog"] };
+type TransitionPre = {
+  snapshot: SnapshotPerson[];
+  gate: ActionLogGate;
+  appendActionLog?: TxLogDeps["appendActionLog"];
+  // 충돌 문구의 이름 노출 판정(없으면 기본 visible).
+  visible?: typeof defaultVisible;
+};
 
 // 공용 전이 — 고정 순서(CEO-6): 트랜잭션 전 읽기(snapshot · gate — 호출자) → tx로 인스턴스·차수·단계 읽기 →
 // (1) version 불일치 → (2) 사건별 종결 → (3) 후보(승인 · 반려 — 반려는 기안자 제외) 또는 기안자(회수 ·
@@ -468,12 +478,12 @@ async function runTransition<T>(
 
   // (1) version 불일치 — 후보 · 기안자 판정보다 먼저(진 쪽 관련자는 무슨 일이 있었는지 받는다).
   if (instance.version !== input.expectedVersion) {
-    throw refuseStaleOrClosed(viewer, graph, holders, input.event, "conflict", fields);
+    throw await refuseStaleOrClosed(viewer, graph, holders, input.event, "conflict", fields, pre);
   }
   // (2) 사건별 종결.
   if (closedFor(status, input.event, isDrafter)) {
     const reason = IN_PROGRESS.includes(status) ? "invalid_state" : "final";
-    throw refuseStaleOrClosed(viewer, graph, holders, input.event, reason, fields);
+    throw await refuseStaleOrClosed(viewer, graph, holders, input.event, reason, fields, pre);
   }
   // (3) 후보 또는 기안자.
   const route = currentRouteOf(graph);
@@ -502,7 +512,7 @@ async function runTransition<T>(
   if (!updated) {
     // (5) 0행 — 이 viewer는 (3)을 통과한 관련자다. 경쟁자가 커밋한 지금 행을 다시 읽어 상세 문구를 만든다.
     const current = await findApprovalGraphById(viewer, input.instanceId, tx);
-    const message = current ? conflictMessageOf(current, input.event) : NOT_HOLDER_MESSAGE;
+    const message = current ? await conflictMessageOf(viewer, current, input.event, pre) : NOT_HOLDER_MESSAGE;
     throw refuse("conflict", new ApprovalConflictError(message), { ...fields, actualVersion: current?.instance.version ?? null });
   }
   // (6) 단계 · 폴백 · 차수 행.
@@ -529,6 +539,7 @@ async function readTransitionPre(viewer: Viewer, deps?: ApprovalDeps): Promise<T
     snapshot: await readSnapshot(viewer, deps),
     gate: await (deps?.loadActionLogGate ?? defaultLoadActionLogGate)(),
     appendActionLog: deps?.appendActionLog,
+    visible: createVisibleMemo(deps?.findVisibility),
   };
 }
 

@@ -812,6 +812,7 @@ export function Table<Row>({
                   column.align === "right" ? styles.alignRight : "",
                 ].join(" ")}
                 aria-sort={column.sort?.direction ? (column.sort.direction === "asc" ? "ascending" : "descending") : undefined}
+                aria-describedby={column.headerDescribedBy}
               >
                 {column.sort ? (
                   <Link href={column.sort.href} className={styles.sortLink}>

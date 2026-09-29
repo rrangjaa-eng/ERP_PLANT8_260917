@@ -14,6 +14,10 @@ export type TextFieldProps = Omit<
   label: string;
   /** 서버 검증 오류 문자열 — next-safe-action의 validationErrors 필드값을 그대로 넣는다. */
   error?: string;
+  /** 칸 아래 줄 없이 틀림만 알릴 때(오류 문장이 칸 밖 다른 줄에 있을 때 — 04.3-06 N2).
+   * error가 있으면 error가 이긴다. */
+  "aria-invalid"?: true;
+  "aria-describedby"?: string;
   /** 금액 입력용 우측 정렬 + tabular-nums 변형. */
   numeric?: boolean;
   /** 쉼표 입력 칸(UI-SPEC S15, 04-09) — 있으면 useCommaInput으로 렌더한다.
@@ -34,7 +38,17 @@ export function TextField(props: TextFieldProps) {
   return <PlainTextField {...props} />;
 }
 
-function PlainTextField({ id, label, error, numeric = false, size = "default", className, ...rest }: TextFieldProps) {
+function PlainTextField({
+  id,
+  label,
+  error,
+  numeric = false,
+  size = "default",
+  className,
+  "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedBy,
+  ...rest
+}: TextFieldProps) {
   const errorId = `${id}-error`;
 
   return (
@@ -46,8 +60,8 @@ function PlainTextField({ id, label, error, numeric = false, size = "default", c
         <input
           id={id}
           {...rest}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? errorId : undefined}
+          aria-invalid={error ? true : ariaInvalid}
+          aria-describedby={error ? errorId : ariaDescribedBy}
           className={[
             styles.input,
             numeric ? styles.numeric : "",
@@ -80,6 +94,8 @@ function CommaTextField({
   name,
   defaultValue,
   size,
+  "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedBy,
   ...rest
 }: TextFieldProps & { numberKind: NumberInputKind }) {
   void size; // 쉼표 입력 칸은 external 변형을 쓰지 않는다 — native size 유출만 막는다.
@@ -102,8 +118,8 @@ function CommaTextField({
           inputMode={numberKind === "krw" ? "numeric" : "decimal"}
           value={value}
           onChange={onChange}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? errorId : undefined}
+          aria-invalid={error ? true : ariaInvalid}
+          aria-describedby={error ? errorId : ariaDescribedBy}
           className={[styles.input, styles.numeric, error ? styles.inputError : "", className]
             .filter(Boolean)
             .join(" ")}

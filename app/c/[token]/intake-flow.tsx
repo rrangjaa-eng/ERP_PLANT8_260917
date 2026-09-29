@@ -912,6 +912,8 @@ function IntakeForm({
 
   const fixLine = fixFieldsLine(fieldErrors);
   const dangerLine = unknownLine ? SUBMIT_UNKNOWN : fixLine;
+  // 제출 줄이 칸 이름을 부르는 동안만 그 칸이 줄을 가리킨다(N2 — 칸 아래 줄이 없는 이름 · 주소).
+  const fixLineId = !unknownLine && fixLine ? dangerLineId : undefined;
 
   function edit(field: SubmitField, patch: Partial<FormDraft>) {
     onDraft(patch);
@@ -1010,6 +1012,8 @@ function IntakeForm({
           maxLength={40}
           autoComplete="off"
           value={draft.name}
+          aria-invalid={fieldErrors.includes("name") || undefined}
+          aria-describedby={fieldErrors.includes("name") ? fixLineId : undefined}
           className={fieldErrors.includes("name") ? styles.fieldInvalid : undefined}
           onChange={(e) => edit("name", { name: e.target.value })}
         />
@@ -1032,6 +1036,7 @@ function IntakeForm({
               placeholder="도로명 주소"
               value={draft.address}
               aria-invalid={fieldErrors.includes("address") || undefined}
+              aria-describedby={fieldErrors.includes("address") ? fixLineId : undefined}
               className={fieldErrors.includes("address") ? `${styles.textInput} ${styles.fieldInvalid}` : styles.textInput}
               onChange={(e) => edit("address", { address: e.target.value })}
             />

@@ -7,8 +7,8 @@
 # 원칙: jq 파싱 실패·입력 없음 등 예상 못 한 상황에서는 절대 차단하지 않는다(exit 0).
 #
 # 결정 사항(spec 열린 질문 D 대체):
-#   1) 머지 승인: Codex 기한 전엔 사용자 타이핑 「머지해」만(밤 예외 없음).
-#      기한 뒤엔 「머지해」 또는 「잘게」(10시간 안) 또는 현재 KST 00~08시.
+#   1) 머지: 승인 문구 판정 없음(2026-09-27) — 머지 정책(게이트·위험 경로)은 plant8-skill-gate.sh merge가 맡는다.
+#      사용자 결정: 조건 충족 시 세션이 머지, 위험 경로만 사용자가 GitHub에서 머지.
 #   2) git push --force/-f/+refspec 차단. --force-with-lease는 경고만(차단 아님).
 #   3) 커밋 접두어 docs/feat/fix/chore 외(test/style/perf/refactor…)는 경고만.
 #      접두어 자체가 없으면 차단하되 Merge/Revert 제목, -m/-F 없는 commit, -F 파일은 항상 통과.
@@ -21,7 +21,6 @@ export LC_ALL=C
 PROJECT="${CLAUDE_PROJECT_DIR:-.}"
 NOW_EPOCH="${PLANT8_NOW:-$(date +%s 2>/dev/null || echo 0)}"
 [[ "$NOW_EPOCH" =~ ^[0-9]+$ ]] || NOW_EPOCH=0
-CODEX_UNTIL="${PLANT8_CODEX_BLOCK_UNTIL:-2026-09-29T07:13:00+09:00}"
 
 payload="$(cat 2>/dev/null)"
 [ -n "${payload:-}" ] || exit 0
@@ -39,7 +38,6 @@ if ! date -d @0 +%s >/dev/null 2>&1 || ! sed --version >/dev/null 2>&1; then
 - GNU date/sed가 없어 규칙 훅(plant8-rule-guard) 검사를 건너뛰었다. 지침(CLAUDE.md)을 직접 지켜라."
   exit 0
 fi
-CODEX_UNTIL_EPOCH="$(date -d "$CODEX_UNTIL" +%s 2>/dev/null || echo 0)"
 
 WARNS=()
 warn() { WARNS+=("$1"); }
@@ -62,11 +60,7 @@ finish() {
   exit 0
 }
 
-codex_active() {
-  [ "${PLANT8_CODEX_ALLOW:-0}" != "1" ] && [ "$NOW_EPOCH" -lt "$CODEX_UNTIL_EPOCH" ] 2>/dev/null
-}
-
-CODEX_MSG='Codex는 한도로 2026-09-29 07:13 KST까지 호출 금지(지침 §3). 대신 Opus 독립 검토를 하고 "한도 풀리면 Codex 재확인 필요"를 기록하라. 재시도하지 마라.'
+# Codex 검토는 2026-09-27 폐지 — 관련 차단 규칙(옛 R3)은 없다.
 
 # --- 사용자 승인 판정 (R7·R8) ------------------------------------------------
 # 사람 글로 인정하는 것은 두 가지뿐이다.
@@ -148,32 +142,6 @@ approval_query() {  # $1=transcript $2=hook|merge $3=pr번호 → hook: "1|0", m
 
 hook_approved() {  # $1=transcript
   [ "$(approval_query "$1" hook)" = "1" ]
-}
-
-kst_night_now() {  # tzdata 없이 epoch 계산(KST=UTC+9)
-  [ $(( (NOW_EPOCH + 32400) / 3600 % 24 )) -lt 8 ]
-}
-
-R7_APPROVE_MSG='머지는 사용자가 채팅에 「머지해」를 직접 쳤을 때만 한다(지침 §6). 변경 요약·위험·판정을 올리고 「머지해」를 받아라. 카드 버튼·질문은 승인이 아니다.'
-R7_NOTRANSCRIPT_MSG='머지 승인을 확인할 수 없다(트랜스크립트 없음). 사용자에게 「머지해」를 받아라.'
-R7_NIGHT_WARN='밤 자동 머지: 승인 없이 진행 전 7개 확인 — CI 초록·충돌 없음·Codex 포함 게이트·/review 막는 지적 없음·마이그레이션 재생성+가드 테스트·운영 배포/데이터 변경 없음·남은 사람 확인 없음, 머지 후 채팅 기록.'
-
-r7_check() {  # $1=pr번호(비어 있을 수 있음)
-  local prn="$1" transcript r
-  transcript="$(printf '%s' "$payload" | jq -r '.transcript_path // empty' 2>/dev/null)"
-  if [ -z "${transcript:-}" ] || [ ! -r "$transcript" ]; then
-    block "$R7_NOTRANSCRIPT_MSG"
-    return 0
-  fi
-  r="$(approval_query "$transcript" merge "$prn")"
-  [ "${r%% *}" = "1" ] && return 0
-  if ! codex_active; then
-    if [ "${r#* }" = "1" ] || kst_night_now; then
-      warn "$R7_NIGHT_WARN"
-      return 0
-    fi
-  fi
-  block "$R7_APPROVE_MSG"
 }
 
 # --- Bash 명령 해석 -----------------------------------------------------------
@@ -424,7 +392,7 @@ check_gh() {
         for a in "${A[@]:2}"; do
           if [[ "$a" =~ ^#?([0-9]+)$ ]] || [[ "$a" =~ /pull/([0-9]+) ]]; then prn="${BASH_REMATCH[1]}"; break; fi
         done
-        r7_check "$prn" ;;
+        : ;;  # 머지 승인 판정 없음(정책은 skill-gate merge)
       create)
         for a in "${A[@]:2}"; do
           case "$a" in --draft|--draft=true|-d) draft=1 ;; esac
@@ -442,7 +410,6 @@ check_gh() {
       esac
       [[ "$a" =~ pulls/([0-9]+)/merge ]] && path="${BASH_REMATCH[1]}"
     done
-    if [ -n "$path" ] && [ "$put" -eq 1 ]; then r7_check "$path"; fi
   fi
 }
 
@@ -485,20 +452,6 @@ check_segment() {
   case "$cmd" in
     git) check_git "${ARGS[@]}" ;;
     gh) check_gh "${ARGS[@]}" ;;
-    codex)
-      if codex_active; then
-        case "${ARGS[0]:-}" in
-          --version|-V|--help|-h|login) ;;
-          *) block "$CODEX_MSG" ;;
-        esac
-      fi ;;
-    npx|bunx|pnpm|npm)
-      # 실행(npx, bunx, pnpm dlx/exec, npm exec)만 막는다 — 설치는 Codex 호출이 아니다.
-      if codex_active && { [ "$cmd" = npx ] || [ "$cmd" = bunx ] || [[ "${ARGS[0]:-}" =~ ^(dlx|exec|x)$ ]]; }; then
-        for a in "${ARGS[@]}"; do
-          case "$a" in @openai/codex|@openai/codex@*) block "$CODEX_MSG" ;; esac
-        done
-      fi ;;&
     npm)
       local sub=""
       for a in "${ARGS[@]}"; do case "$a" in -*) ;; *) sub="$a"; break ;; esac; done
@@ -678,25 +631,6 @@ case "$tool" in
     fi
     ;;
 
-  Skill)
-    if codex_active; then
-      skill="$(printf '%s' "$payload" | jq -r '.tool_input.skill // empty' 2>/dev/null | sed -e 's/^\///' -e 's/^[^:]*://' -e 's/[[:space:]].*$//')"
-      args="$(printf '%s' "$payload" | jq -r '.tool_input.args // empty' 2>/dev/null)"
-      if [ "$skill" = "codex" ]; then
-        block "$CODEX_MSG"
-      fi
-      case "$skill" in
-        gsd-review|gsd-plan-review-convergence)
-          if printf '%s' "$args" | grep -Eq -- '--codex' 2>/dev/null; then
-            block "$CODEX_MSG"
-          elif ! printf '%s' "$args" | grep -Eq -- '--claude' 2>/dev/null; then
-            warn "기본 리뷰어에 Codex가 있으면 실제 codex 호출은 막힌다. --claude 레인만 쓰거나 Opus 독립 검토로."
-          fi
-          ;;
-      esac
-    fi
-    ;;
-
   Bash)
     cmd="$(printf '%s' "$payload" | jq -r '.tool_input.command // empty' 2>/dev/null)"
 
@@ -710,7 +644,7 @@ case "$tool" in
       || printf '%s' "$cmd" | grep -Eq 'drizzle-kit[[:space:]]+(push|migrate)' 2>/dev/null \
       || printf '%s' "$cmd" | grep -Eq 'pnpm[[:space:]]+db:(migrate|push)' 2>/dev/null; then
       is_prod=0
-      printf '%s' "$cmd" | grep -Eq 'plant8-509002|/cloudsql/|prod' 2>/dev/null && is_prod=1
+      printf '%s' "$cmd" | grep -Eq '/cloudsql/|prod' 2>/dev/null && is_prod=1
       dburl="$(printf '%s' "$cmd" | grep -oE 'DATABASE_URL=[^ ]+' 2>/dev/null)"
       if [ -n "$dburl" ]; then
         host="$(printf '%s' "$dburl" | sed -E 's#.*://[^@]*@##; s#[/:].*##')"
@@ -783,11 +717,6 @@ case "$tool" in
   mcp__hearthbot__set_thread_label)
     fields="$(printf '%s' "$payload" | jq -r '[(.tool_input.label//empty)] | .[] | select(.!="") | @base64' 2>/dev/null)"
     r4_check "$fields" ""
-    ;;
-
-  mcp__github__merge_pull_request|mcp__github__enable_pr_auto_merge)
-    prn="$(printf '%s' "$payload" | jq -r '.tool_input.pullNumber // empty' 2>/dev/null)"
-    r7_check "$prn"
     ;;
 
   mcp__github__create_pull_request)

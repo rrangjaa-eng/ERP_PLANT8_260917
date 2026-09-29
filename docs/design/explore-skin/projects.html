@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="skin-ledger.css">
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="relax.css">
+<script src="skin.mjs"></script>
+<title>프로젝트 목록 — 스킨 목업</title>
+</head>
+<body>
+<header class="bar">
+  <a class="mark" href="#" aria-label="PLANT8 내 차례">PL<i>A</i>NT8</a>
+  <nav aria-label="주 메뉴"><a href="#" aria-current="page"><span>프로젝트</span></a><a href="#"><span>지출결의</span></a><a href="#"><span>법인카드</span></a><a href="#"><span>결재</span></a><a href="#"><span>손익</span></a></nav>
+  <div class="r"><a class="srch" href="#" aria-label="검색"><svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-search"></use></svg><kbd>Ctrl+K</kbd></a><div class="um"><button class="who" type="button" aria-haspopup="menu" aria-expanded="false">박서연<svg class="ic" width="16" height="16" aria-hidden="true"><use href="#i-down"></use></svg></button><div class="umenu" role="menu" hidden><a role="menuitem" href="#">알림함 2</a><a role="menuitem" href="#">내 정보</a><a role="menuitem" href="#">로그아웃</a></div></div></div>
+</header>
+<main>
+  <div class="head">
+    <div class="ph"><div class="tt"><h1>프로젝트</h1><p class="sub">진행 중인 프로젝트 원장</p></div></div>
+  </div>
+
+  <form class="filters" onsubmit="return false">
+    <label>상태 <select class="inp" id="f-st"><option>전체 상태</option><option>견적 중</option><option>진행 중</option><option>정산 중</option><option>완료</option><option>보류</option></select></label>
+    <label>팀 <select class="inp" id="f-team"><option>전체 팀</option><option>기획1팀</option><option>기획2팀</option></select></label>
+    <label>연도 <select class="inp" id="f-yr"><option>2026</option><option>전체 연도</option></select></label>
+    <label>검색 <input class="inp w-s" id="f-q" placeholder="프로젝트명 · 고객사"></label>
+    <a class="b3" href="#">필터 지우기</a>
+    <a class="btn p end" href="#">프로젝트 등록</a>
+  </form>
+
+  <p class="sum" aria-live="polite"><span class="lbl">합계 (2026 · 125건)</span><span class="ex">실행가 <b class="num">3,284,516,300</b> · 차익 <b class="num">872,963,700</b></span><span class="amt num">견적 4,157,480,000</span></p>
+
+  <div class="panel">
+  <table>
+    <caption class="sr">프로젝트</caption>
+    <thead><tr>
+      <th class="p3 c1280">번호</th><th>프로젝트명</th><th class="p2">담당 PM</th><th class="p3 c1280">팀</th><th class="p2">기간</th>
+      <th class="num p3">견적</th><th class="num p3 c1280">실행가</th><th class="num p3">차익</th><th>상태</th>
+    </tr></thead>
+    <tbody>
+      <tr class="grp"><td colspan="9">2026-09</td></tr>
+      <tr><td class="p3 c1280 num">P-2026-0412</td><td><a class="name" href="project.html">2026 현대자동차 아이오닉9 미디어 론칭 쇼케이스</a><span class="sub2">현대자동차(주)</span><span class="fold">박서연 · 09-12 ~ 09-16 · 견적 48,000,000</span></td><td class="p2">박서연</td><td class="p3 c1280">기획1팀</td><td class="p2 num">09-12 ~ 09-16</td><td class="num p3">48,000,000</td><td class="num p3 c1280">37,097,280</td><td class="num p3">10,902,720</td><td><span class="tag t">진행 중</span></td></tr>
+      <tr><td class="p3 c1280 num">P-2026-0409</td><td><a class="name" href="#">삼성전자 비스포크 AI 팝업스토어 성수</a><span class="sub2">삼성전자(주)</span><span class="fold">이도윤 · 09-05 ~ 10-06 · 견적 126,500,000</span></td><td class="p2">이도윤</td><td class="p3 c1280">기획2팀</td><td class="p2 num">09-05 ~ 10-06</td><td class="num p3">126,500,000</td><td class="num p3 c1280">98,340,000</td><td class="num p3">28,160,000</td><td><span class="tag t">진행 중</span></td></tr>
+      <tr><td class="p3 c1280 num">P-2026-0407</td><td><a class="name" href="#">LG유플러스 대학생 서포터즈 발대식</a><span class="sub2">(주)LG유플러스</span><span class="fold">정하은 · 09-20 · 견적 18,700,000</span></td><td class="p2">정하은</td><td class="p3 c1280">기획1팀</td><td class="p2 num">09-20 ~ 09-20</td><td class="num p3">18,700,000</td><td class="num p3 c1280">13,090,000</td><td class="num p3">5,610,000</td><td><span class="tag t m">견적 중</span></td></tr>
+      <tr><td class="p3 c1280 num">P-2026-0403</td><td><a class="name" href="#">CJ제일제당 비비고 페스타 부산</a><span class="sub2">CJ제일제당(주)</span><span class="fold">박서연 · 09-26 ~ 09-28 · 견적 72,300,000</span></td><td class="p2">박서연</td><td class="p3 c1280">기획1팀</td><td class="p2 num">09-26 ~ 09-28</td><td class="num p3">72,300,000</td><td class="num p3 c1280">54,860,500</td><td class="num p3">17,439,500</td><td><span class="tag t">진행 중</span></td></tr>
+      <tr><td class="p3 c1280 num">P-2026-0398</td><td><a class="name" href="#">KB국민카드 트래블러스 로드쇼 (전국 6개 도시 순회)</a><span class="sub2">KB국민카드</span><span class="fold">김태오 · 09-01 ~ 11-30 · 견적 241,000,000</span></td><td class="p2">김태오</td><td class="p3 c1280">기획2팀</td><td class="p2 num">09-01 ~ 11-30</td><td class="num p3">241,000,000</td><td class="num p3 c1280">190,392,000</td><td class="num p3">50,608,000</td><td><span class="tag t">진행 중</span></td></tr>
+      <tr class="grp"><td colspan="9">2026-08</td></tr>
+      <tr><td class="p3 c1280 num">P-2026-0371</td><td><a class="name" href="#">한국관광공사 K-컬처 페어 도쿄</a><span class="sub2">한국관광공사</span><span class="fold">이도윤 · 08-22 ~ 08-25 · 견적 96,800,000</span></td><td class="p2">이도윤</td><td class="p3 c1280">기획2팀</td><td class="p2 num">08-22 ~ 08-25</td><td class="num p3">96,800,000</td><td class="num p3 c1280">81,432,640</td><td class="num p3">15,367,360</td><td><span class="tag t w">정산 중</span></td></tr>
+      <tr><td class="p3 c1280 num">P-2026-0366</td><td><a class="name" href="#">SK텔레콤 T Day 임직원 행사</a><span class="sub2">SK텔레콤(주)</span><span class="fold">정하은 · 08-14 · 견적 33,000,000</span></td><td class="p2">정하은</td><td class="p3 c1280">기획1팀</td><td class="p2 num">08-14 ~ 08-14</td><td class="num p3">33,000,000</td><td class="num p3 c1280">24,750,000</td><td class="num p3">8,250,000</td><td><span class="tag t ok">완료</span></td></tr>
+      <tr><td class="p3 c1280 num">P-2026-0352</td><td><a class="name" href="#">오리온 꼬북칩 대학 축제 샘플링</a><span class="sub2">오리온</span><span class="fold">김태오 · 08-01 ~ 08-31 · 견적 15,400,000</span></td><td class="p2">김태오</td><td class="p3 c1280">기획2팀</td><td class="p2 num">08-01 ~ 08-31</td><td class="num p3">15,400,000</td><td class="num p3 c1280">16,120,000</td><td class="num p3">-720,000</td><td><span class="tag t ok">완료</span></td></tr>
+      <tr><td class="p3 c1280 num">P-2026-0349</td><td><a class="name" href="#">네이버 웨일 개발자 밋업</a><span class="sub2">네이버(주)</span><span class="fold">박서연</span></td><td class="p2">박서연</td><td class="p3 c1280">기획1팀</td><td class="p2">—</td><td class="num p3">—</td><td class="num p3 c1280">—</td><td class="num p3">—</td><td><span class="tag t m">보류</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="pager"><span>1–50 / 125건</span><nav aria-label="페이지"><span aria-disabled="true">이전</span><a href="#" aria-current="page">1</a><a href="#">2</a><a href="#">3</a><a href="#">다음</a></nav></div>
+</main>
+<nav class="tabs" aria-label="하단 탭"><a href="#"><svg class="ic" width="20" height="20" aria-hidden="true"><use href="#i-inbox"></use></svg><span>내 차례 3</span></a><a href="#" aria-current="page"><svg class="ic" width="20" height="20" aria-hidden="true"><use href="#i-folder"></use></svg><span>프로젝트</span></a><a href="#"><svg class="ic" width="20" height="20" aria-hidden="true"><use href="#i-receipt"></use></svg><span>지출결의</span></a><a href="#"><svg class="ic" width="20" height="20" aria-hidden="true"><use href="#i-menu"></use></svg><span>더보기</span></a></nav>
+</body>
+</html>

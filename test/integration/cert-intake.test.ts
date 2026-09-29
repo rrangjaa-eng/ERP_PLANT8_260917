@@ -883,9 +883,9 @@ describe("확인증 공개 흐름 — 제출 확인과 트랜잭션 사이 경�
 
 describe("확인증 공개 흐름 — 닫힌 행사에는 제출하지 않는다(/review 보강)", () => {
   it.each([
-    ["수동으로 닫힘", { closedAt: new Date(), closedReason: "manual" as const }],
-    ["기한 지남", { expiresAt: new Date(Date.now() - 60_000) }],
-  ])("증표를 받은 뒤 %s → closed, put 0 · 제출 행 0", async (_label, patch) => {
+    ["수동으로 닫힘", { closedAt: new Date(), closedReason: "manual" as const }, "manual"],
+    ["기한 지남", { expiresAt: new Date(Date.now() - 60_000) }, "expired"],
+  ])("증표를 받은 뒤 %s → closed · 사유 그대로, put 0 · 제출 행 0", async (_label, patch, reason) => {
     const { eventId, token } = await makeEvent();
     const winnerId = await winnerIdOf(eventId, "김하늘");
     const verified = await verifyLast4(token, winnerId, "7730", randomUUID(), null);
@@ -897,7 +897,7 @@ describe("확인증 공개 흐름 — 닫힌 행사에는 제출하지 않는다
       signatureStore: { put, get: vi.fn(), delete: vi.fn() },
     });
 
-    expect(result).toMatchObject({ kind: "closed" });
+    expect(result).toMatchObject({ kind: "closed", reason });
     expect(put).not.toHaveBeenCalled();
     expect(await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId))).toHaveLength(0);
   });

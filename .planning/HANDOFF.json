@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-29T04:34:11.191Z",
+  "timestamp": "2026-09-29T06:08:16.323Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -962,11 +962,26 @@
       "decision": "300줄 붙여넣기 격자 렌더 ~20초는 기록만 남기고 후속 과제로 올리지 않는다",
       "rationale": "사용자 결정 2026-09-29 — 평소 수십 줄",
       "phase": "04"
+    },
+    {
+      "decision": "300줄 상한 관련 지적(capNotice 잔존·수정/삭제 경로 상한)은 기록만",
+      "rationale": "저장당 300줄은 실제 사용에서 거의 닿지 않음(사용자)",
+      "phase": "4"
+    },
+    {
+      "decision": "Codex B(비활성 증빙 코드가 붙은 기존 줄 수정 거부)는 PR #85 안에서 수정",
+      "rationale": "사용자 결정 — 코드 비활성화는 흔히 일어나 기존 줄이 못 고쳐짐",
+      "phase": "4"
+    },
+    {
+      "decision": "260929-6gr DOM 감사 생략",
+      "rationale": "판정 식 함수 이동만, 동작 변화 없음, 리저브 E2E 33 통과(사용자 승인)",
+      "phase": "4"
     }
   ],
   "uncommitted_files": [],
-  "next_action": "새 세션(env_01X9mcoNj9giznLpgqrJSzcY) → settings.json 확인 → git status -sb → .continue-here.md 세션 cd166f5b 블록 → PR #85 [지시](마지막 5883698197) → main 반영 → /gsd-quick 검토 후속: 통합 A→보관 B 거부 테스트 · 단위 DUPLICATE_ROW·ENTRY_NOT_FOUND 보관 거부 유지 테스트 · capNotice 300 미만이면 숨김(design-gate, TDD) → Opus 실행자 + Opus 검토, 화면이면 DOM 감사(CI=true) → 푸시 → CI 초록 → [완료 보고] → 사용자 직접 머지 → (C)(D) → /gsd-verify-work 4.",
-  "context_notes": "[세션 51788198, 2026-09-29] Codex P1·P2 수정 끝(75b62d23·e9c8a403·1654744d·572a6e62·1ae49b98·ad132704·0f841e2d), CI 0f841e2d 초록, 스레드 resolve. Codex 재검토 새 지적 5건 트리아지: #3·#4·#5 REAL → 다음 세션 PR #85 안에서 수정, #1·#2 PARTIAL → 사용자 결정 후속 PR. 머지 보류(사용자 결정).\n\n세션 AQ(2026-09-28): 04-31 Task 1 실행(Sonnet 실행자), Task 2 체크포인트에서 멈춤. 독립 DOM 감사(Opus) FAIL 2 → 수정자(Sonnet) TDD 4커밋. 편차: parse-tsv.test.ts가 ui 경계(D-26)라 캡처 상수를 복제(role-menu.test.ts 선례) — fixture 머리 주석 「정의 1건」 문구가 사실과 달라 continuation이 정정할 것. reserves.spec.ts:282가 quote-table·projects-list 스펙과 함께 돌 때 잔액 100,000 기대·460,000 실측으로 1회 실패(단독 통과, 수정자 변경 전에도) — Task 3 전체 E2E 3회 전 조사 대상.\n\n세션 AN: 04-18 완료(실행·DOM 감사 30/0·Opus 검토 반영·전체 게이트 CI=true 통과, origin 8a5e2cf). 사용자 지시로 이 계정은 인계까지만, 다음은 다른 계정. Codex 재확인 목록에 04-18 추가.\n\n[세션 445b5aa2, 2026-09-29] 묶음 ④ Post-build /qa·/cso 끝. /qa: ISSUE-001·002 c5dc811b(RED 0a8f7c17), 003 49568f7, 005 리저브만 2f260787(RED 491b2df0), 004·006 low 보류, 점수 92→98(docs/reviews/phase-04/bundle4-qa.md). /cso 정적 감사 High·Med 0, Low C1(세션 만료 뒤 초안 잔존, 사용자별 키라 복원 안 됨)(bundle4-cso.md). 게이트 줄 review 06:06Z·qa 07:35Z(08561e2c)·cso 23:27Z(445b5aa2) 51949a02. CI quality 초록(51949a02). 브랜치 ccr-dd6b4285-ekko98도 같은 커밋으로 푸시됨(세션 지정 브랜치). | 세션 cd166f5b: Codex #3·#4·#5 수정 끝(bd7f5e3b CI 초록, 스레드 resolve, [완료 보고] 5883698197). 검토 should 2건+nit 1건은 훅(세션당 실행자 1회) 때문에 다음 세션.",
+  "next_action": "새 세션(env_01X9mcoNj9giznLpgqrJSzcY) → settings.json 확인 → git status -sb → .continue-here.md 세션 018vd65x 블록 → PR #85 [지시] → main 반영 → /gsd-quick: Codex B(비활성 증빙 코드가 붙은 기존 줄 수정 거부) 수정 — 새 줄이거나 증빙 값이 바뀐 경우만 활성 검사, Opus 실행자 TDD + Opus 검토 → 푸시 → CI 초록 → Codex 확인 → 스레드 PRRT_kwDOUea1Js6m-CC1 resolve → [완료 보고] → 사용자 직접 머지 → (C)(D) → /gsd-verify-work 4.",
+  "context_notes": "[세션 018vd65x, 2026-09-29] quick 260929-6gr 끝(c912b7e6·41db5a8b·56a715f9), CI 56a715f9 초록. capNotice는 사용자 결정 기록만. Codex 새 지적 A(수정·삭제 경로 300줄 상한) 기록만·resolve, B(비활성 증빙 코드) 이 PR에서 다음 세션 수정.\n\n[세션 51788198, 2026-09-29] Codex P1·P2 수정 끝(75b62d23·e9c8a403·1654744d·572a6e62·1ae49b98·ad132704·0f841e2d), CI 0f841e2d 초록, 스레드 resolve. Codex 재검토 새 지적 5건 트리아지: #3·#4·#5 REAL → 다음 세션 PR #85 안에서 수정, #1·#2 PARTIAL → 사용자 결정 후속 PR. 머지 보류(사용자 결정).\n\n세션 AQ(2026-09-28): 04-31 Task 1 실행(Sonnet 실행자), Task 2 체크포인트에서 멈춤. 독립 DOM 감사(Opus) FAIL 2 → 수정자(Sonnet) TDD 4커밋. 편차: parse-tsv.test.ts가 ui 경계(D-26)라 캡처 상수를 복제(role-menu.test.ts 선례) — fixture 머리 주석 「정의 1건」 문구가 사실과 달라 continuation이 정정할 것. reserves.spec.ts:282가 quote-table·projects-list 스펙과 함께 돌 때 잔액 100,000 기대·460,000 실측으로 1회 실패(단독 통과, 수정자 변경 전에도) — Task 3 전체 E2E 3회 전 조사 대상.\n\n세션 AN: 04-18 완료(실행·DOM 감사 30/0·Opus 검토 반영·전체 게이트 CI=true 통과, origin 8a5e2cf). 사용자 지시로 이 계정은 인계까지만, 다음은 다른 계정. Codex 재확인 목록에 04-18 추가.\n\n[세션 445b5aa2, 2026-09-29] 묶음 ④ Post-build /qa·/cso 끝. /qa: ISSUE-001·002 c5dc811b(RED 0a8f7c17), 003 49568f7, 005 리저브만 2f260787(RED 491b2df0), 004·006 low 보류, 점수 92→98(docs/reviews/phase-04/bundle4-qa.md). /cso 정적 감사 High·Med 0, Low C1(세션 만료 뒤 초안 잔존, 사용자별 키라 복원 안 됨)(bundle4-cso.md). 게이트 줄 review 06:06Z·qa 07:35Z(08561e2c)·cso 23:27Z(445b5aa2) 51949a02. CI quality 초록(51949a02). 브랜치 ccr-dd6b4285-ekko98도 같은 커밋으로 푸시됨(세션 지정 브랜치). | 세션 cd166f5b: Codex #3·#4·#5 수정 끝(bd7f5e3b CI 초록, 스레드 resolve, [완료 보고] 5883698197). 검토 should 2건+nit 1건은 훅(세션당 실행자 1회) 때문에 다음 세션.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"

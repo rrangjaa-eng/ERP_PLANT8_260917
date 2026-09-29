@@ -15,6 +15,8 @@
 #   FAKE_FAIL=create|restore|users|verify|record
 #   FAKE_LIST_FAIL=403|503|auth            인스턴스 목록이 실패한다(FAKE_LIST_FAIL_AFTER_CREATE=1이면 생성 뒤부터,
 #                                          그때부터 임시 describe도 NOT_FOUND 문구로 실패한다)
+#   FAKE_LIST_FAIL_ONCE=1                  첫 정확한 이름 목록만 503으로 실패
+#   FAKE_OP_FAIL=create|restore            --async 생성·복원 작업의 operations wait가 실패
 #   FAKE_NEVER_RUNNABLE=1                  상태 조회가 늘 PENDING_CREATE
 #   FAKE_KILL_AFTER=started|create|restore 그 호출에서 스크립트 셸을 kill -KILL(EXIT trap이 못 돈다)
 #   FAKE_PENDING_OP=1|forever              끝나지 않은 작업 하나(1: 한 번 · forever: 늘, wait는 --timeout만큼 시계를 당기고 실패)
@@ -24,7 +26,7 @@
 #   FAKE_RECORD_ACK_LOST=1                 첫 record는 행을 적은 뒤 실행 결과만 실패
 #   FAKE_RECORD_LOGS=none                  record 실행의 로그가 빈다
 #   FAKE_DEPLOY_AT=create|restore|before-verify|verify|cleanup|record  그 시점에 Job 이미지를 새 참조로(한 번)
-#   FAKE_IMAGE_FAIL=<n>                    n번째 digest 조회가 실패
+#   FAKE_IMAGE_FAIL=<n>[,<n>…]             그 번째 digest 조회가 실패
 #   FAKE_ADVANCE=create:<초>               생성 호출이 가짜 시계를 당긴다
 set -u
 
@@ -132,6 +134,13 @@ kill_at() {
 
 instance_exists() { [ -f "$STATE/instances/$1" ]; }
 
+# --async로 시작한 Cloud SQL 작업: ops/에 남기고 이름을 낸다(--format='value(name)' 흉내)
+start_op() {
+  local op="op-$1-$2-$(next_counter "op-$2")"
+  echo "$1 $2" >"$STATE/ops/$op"
+  echo "$op"
+}
+
 list_failing() {
   [ -n "${FAKE_LIST_FAIL:-}" ] || return 1
   if [ -n "${FAKE_LIST_FAIL_AFTER_CREATE:-}" ] && [ ! -f "$STATE/created-any" ]; then
@@ -165,6 +174,10 @@ case "$ARGS" in
     filter="$(arg_value --filter || true)"
     case "$filter" in
       "name="*)
+        if [ -n "${FAKE_LIST_FAIL_ONCE:-}" ] && once list-fail; then
+          echo "ERROR: (gcloud.sql.instances.list) HTTPError 503: UNAVAILABLE" >&2
+          exit 1
+        fi
         deploy_at cleanup
         want="${filter#name=}"
         if instance_exists "$want"; then echo "$want"; fi
@@ -209,19 +222,24 @@ case "$ARGS" in
     ;;
 
   "sql instances create "*)
+    has_arg --async || exit 1
     arg_value --region >"$STATE/instances/$4"
     : >"$STATE/created-any"
     advance_at create
     deploy_at create
     kill_at create
     fail_if create
+    start_op "$4" create
     ;;
 
   "sql backups restore "*)
+    has_arg --async || exit 1
     deploy_at restore
     kill_at restore
     fail_if restore
-    instance_exists "$(arg_value --restore-instance)" || not_found
+    instance="$(arg_value --restore-instance)"
+    instance_exists "$instance" || not_found
+    start_op "$instance" restore
     ;;
 
   "sql users list "*)
@@ -261,6 +279,13 @@ case "$ARGS" in
     [ -f "$STATE/ops/$op" ] || exit 1
     read -r op_instance op_kind <"$STATE/ops/$op"
     case "$op_kind" in
+      create | restore)
+        if [ "${FAKE_OP_FAIL:-}" = "$op_kind" ]; then
+          rm -f "$STATE/ops/$op"
+          echo "ERROR: (gcloud.sql.operations.wait) Operation $op failed: forced failure ($op_kind)." >&2
+          exit 1
+        fi
+        ;;
       forever | slowdelete)
         clock_add "$(arg_value --timeout)"
         echo "ERROR: (gcloud.sql.operations.wait) Operation $op did not finish within the timeout." >&2
@@ -300,7 +325,7 @@ case "$ARGS" in
 
   "artifacts docker images describe "*)
     n="$(next_counter digest)"
-    if [ "${FAKE_IMAGE_FAIL:-}" = "$n" ]; then
+    if [[ ",${FAKE_IMAGE_FAIL:-}," == *",$n,"* ]]; then
       echo "ERROR: (gcloud.artifacts.docker.images.describe) forced failure" >&2
       exit 1
     fi

@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -186,6 +186,7 @@ function assertInvariants(ctx: Ctx, opts: { allowRecordRetry?: boolean } = {}): 
       expect(t[3]).toBe(ctx.temp);
       expect(t).toContain("--no-assign-ip");
       expect(t).toContain("--network=projects/test-project/global/networks/default");
+      expect(t).toContain("--async");
       expect(
         t.some((x) => x.startsWith("--assign-ip") || x.startsWith("--authorized-networks")),
       ).toBe(false);
@@ -196,6 +197,7 @@ function assertInvariants(ctx: Ctx, opts: { allowRecordRetry?: boolean } = {}): 
     }
     if (line.includes("--restore-instance=")) {
       expect(t).toContain(`--restore-instance=${ctx.temp}`);
+      expect(t).toContain("--async");
     }
     if (line.startsWith("sql users create ")) {
       expect(t).toContain(`--instance=${ctx.temp}`);
@@ -232,8 +234,10 @@ describe("restore-rehearsal.sh 행복 경로(트레이서)", { timeout: 60_000 }
       "backups",
       "source-disk",
       "create",
+      "ops-wait",
       "state",
       "restore",
+      "ops-wait",
       "state",
       "users-list",
       "users-create",
@@ -255,14 +259,14 @@ describe("restore-rehearsal.sh 행복 경로(트레이서)", { timeout: 60_000 }
     expect(lines[3]).toContain("--filter=type=AUTOMATED AND status=SUCCESSFUL");
     expect(lines[3]).toContain("--sort-by=~startTime");
     expect(lines[3]).toContain("--limit=1");
-    expect(tokens(lines[7] ?? "")).toContain(BACKUP_ID);
-    expect(lines[7]).toContain(`--restore-instance=${ctx.temp}`);
-    expect(lines[7]).toContain(`--backup-instance=${ctx.source}`);
-    expect(lines[10]).toContain(`plant8-staging-runtime@${PROJECT}.iam`);
-    expect(lines[10]).toContain("--type=cloud_iam_service_account");
+    expect(tokens(lines[8] ?? "")).toContain(BACKUP_ID);
+    expect(lines[8]).toContain(`--restore-instance=${ctx.temp}`);
+    expect(lines[8]).toContain(`--backup-instance=${ctx.source}`);
+    expect(lines[12]).toContain(`plant8-staging-runtime@${PROJECT}.iam`);
+    expect(lines[12]).toContain("--type=cloud_iam_service_account");
     const conn = `${PROJECT}:${REGION}:${ctx.temp}`;
-    expect(lines[12]).toContain(`--args=verify,--target,${conn}`);
-    expect(lines[12]).toContain(`--update-env-vars=CLOUD_SQL_CONNECTION_NAME=${conn}`);
+    expect(lines[14]).toContain(`--args=verify,--target,${conn}`);
+    expect(lines[14]).toContain(`--update-env-vars=CLOUD_SQL_CONNECTION_NAME=${conn}`);
 
     expect(stateValue(ctx, "STAGE")).toBe("verified");
     expect(stateValue(ctx, "IMAGE")).toBe(DEFAULT_IMAGE);
@@ -918,9 +922,9 @@ describe("배포 겹침 — 시작 기준선 digest와 비교(사용자 결정 2
     assertInvariants(ctx);
   });
 
-  it("이미지 확인 불가 — 기준선 digest 조회 실패면 아무것도 만들지 않고 멈추고 restore 기록", () => {
+  it("이미지 확인 불가 — 기준선 digest 조회가 3번 다 실패면 아무것도 만들지 않고 멈추고 restore 기록", () => {
     const ctx = makeCtx();
-    const env = { FAKE_IMAGE_FAIL: "1" };
+    const env = { FAKE_IMAGE_FAIL: "1,2,3" };
     expect(run(ctx, ["rehearse"], env).status).toBe(1);
     expect(labels(ctx)).not.toContain("backups");
     expect(labels(ctx)).not.toContain("create");
@@ -931,8 +935,8 @@ describe("배포 겹침 — 시작 기준선 digest와 비교(사용자 결정 2
     assertInvariants(ctx);
   });
 
-  it.each(["2", "3"])(
-    "이미지 확인 불가 — %s번째 digest 조회(verify 실행 · 기록 직전) 실패면 verified여도 verify 기록",
+  it.each(["2,3,4", "3,4,5"])(
+    "이미지 확인 불가 — digest 조회 %s번째(verify 실행 · 기록 직전 3번 다) 실패면 verified여도 verify 기록",
     (n) => {
       const ctx = makeCtx();
       const env = { FAKE_IMAGE_FAIL: n };
@@ -967,6 +971,102 @@ describe("겹친 실패 — 우선순위 정리 > 복원 > 검증, --failed-stag
     expect(records.length).toBe(1);
     expect(records[0]).toContain(`--failed-stage,${expected},`);
     expect((records[0] ?? "").split("--failed-stage").length - 1).toBe(1);
+    assertInvariants(ctx);
+  });
+});
+
+describe("비동기 생성 · 복원 — gcloud 기본 대기(600초) 대신 마감까지 operations wait", { timeout: 60_000 }, () => {
+  it("생성 · 복원은 --async로 부르고 곧바로 그 작업을 operations wait, --timeout은 남은 시간 이하이고 600초에 묶이지 않는다", () => {
+    const ctx = makeCtx();
+    const clock = withClock();
+    expect(run(ctx, ["rehearse"], { FAKE_CLOCK_FILE: clock.file }).status).toBe(0);
+    const log = clockedLog(ctx).filter((line) => line.kind === "gcloud");
+    for (const kind of ["create", "restore"]) {
+      const i = log.findIndex((line) => label(ctx, line.text) === kind);
+      expect(i).toBeGreaterThan(-1);
+      expect(tokens(log[i]?.text ?? "")).toContain("--async");
+      const wait = log[i + 1];
+      expect(wait && label(ctx, wait.text)).toBe("ops-wait");
+      expect(tokens(wait?.text ?? "")[3]).toMatch(new RegExp(`^op-${ctx.temp}-${kind}-`));
+      const n = Number(/--timeout=(\d+)/.exec(wait?.text ?? "")?.[1]);
+      expect(n).toBeGreaterThan(600);
+      expect(n).toBeLessThanOrEqual(3420 - ((wait?.at ?? 0) - CLOCK_START));
+    }
+    expect(readdirSync(join(ctx.stateDir, "ops"))).toEqual([]);
+    assertInvariants(ctx);
+  });
+
+  it.each([
+    ["create", "임시 인스턴스를 만들지 못했습니다."],
+    ["restore", "백업을 임시 인스턴스에 복원하지 못했습니다."],
+  ])("%s 작업의 operations wait가 실패하면 같은 문구로 restore 실패, 임시 삭제", (kind, message) => {
+    const ctx = makeCtx();
+    const env = { FAKE_OP_FAIL: kind };
+    const rehearse = run(ctx, ["rehearse"], env);
+    expect(rehearse.status).toBe(1);
+    expect(rehearse.stderr).toContain(message);
+    expect(stateValue(ctx, "STAGE")).toBe("restore");
+    expect(labels(ctx)).toContain("delete");
+    expect(labels(ctx)).not.toContain("verify");
+    const finalize = run(ctx, ["finalize"], env);
+    expect(finalize.status).toBe(1);
+    expect(recordCalls(ctx)[0]).toContain("--succeeded,false,--failed-stage,restore");
+    assertInvariants(ctx);
+  });
+});
+
+describe("조회 재시도 — 조회 전용 gcloud의 일시 오류 한 번은 넘긴다(3번까지)", { timeout: 60_000 }, () => {
+  it.each([
+    ["verify 실행 digest", "2"],
+    ["기록 직전 digest", "3"],
+    ["기록 뒤 digest", "4"],
+  ])("%s 조회가 한 번만 실패하면 다시 읽어 성공으로 기록(POST_RECORD=ok)", (_name, n) => {
+    const ctx = makeCtx();
+    const env = { FAKE_IMAGE_FAIL: n };
+    expect(run(ctx, ["rehearse"], env).status).toBe(0);
+    expect(stateValue(ctx, "VERIFY_DIGEST")).toBe(digestOf(DEFAULT_IMAGE));
+    const finalize = run(ctx, ["finalize"], env);
+    expect(finalize.status, finalize.stderr).toBe(0);
+    expect(recordCalls(ctx)[0]).toContain("--succeeded,true,");
+    expect(stateValue(ctx, "POST_RECORD")).toBe("ok");
+    expect(rawLog(ctx)).toContain("sleep 5");
+    assertInvariants(ctx);
+  });
+
+  it("기록 뒤 digest 조회가 3번 다 실패하면 행은 성공이어도 POST_RECORD=unknown, 종료 코드 1", () => {
+    const ctx = makeCtx();
+    const env = { FAKE_IMAGE_FAIL: "4,5,6" };
+    expect(run(ctx, ["rehearse"], env).status).toBe(0);
+    const finalize = run(ctx, ["finalize"], env);
+    expect(finalize.status).toBe(1);
+    expect(recordCalls(ctx)[0]).toContain("--succeeded,true,");
+    expect(stateValue(ctx, "POST_RECORD")).toBe("unknown");
+    expect(finalize.summary).toContain(`기록 뒤 확인: ${DEPLOY_OVERLAP}`);
+    assertInvariants(ctx);
+  });
+
+  it.each([
+    ["rehearse EXIT 정리", "rehearse"],
+    ["finalize 정리", "finalize"],
+  ])("%s의 정확한 이름 목록이 한 번만 실패하면 다시 읽어 부재 확인 → 성공", (_name, when) => {
+    const ctx = makeCtx();
+    const env = { FAKE_LIST_FAIL_ONCE: "1" };
+    const rehearse = run(ctx, ["rehearse"], when === "rehearse" ? env : {});
+    expect(rehearse.status, rehearse.stderr).toBe(0);
+    expect(stateValue(ctx, "CLEANUP")).toBe("absent");
+    const finalize = run(ctx, ["finalize"], when === "finalize" ? env : {});
+    expect(finalize.status, finalize.stderr).toBe(0);
+    expect(finalize.summary).toContain("기록된 결과: 성공");
+    expect(existsSync(join(ctx.stateDir, "once-list-fail"))).toBe(true);
+    assertInvariants(ctx);
+  });
+
+  it("정확한 이름 목록이 3번 다 실패하면 정리 한 번에 목록 3번, 그 뒤 unknown(오늘과 같은 판정)", () => {
+    const ctx = makeCtx();
+    const env = { FAKE_LIST_FAIL: "503", FAKE_LIST_FAIL_AFTER_CREATE: "1" };
+    expect(run(ctx, ["rehearse"], env).status).toBe(1);
+    expect(labels(ctx).filter((l) => l === "list-exact").length).toBe(3);
+    expect(stateValue(ctx, "CLEANUP")).toBe("unknown");
     assertInvariants(ctx);
   });
 });

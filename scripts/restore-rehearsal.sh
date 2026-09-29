@@ -123,13 +123,28 @@ gc() {
   timeout "$left" gcloud "$@"
 }
 
+# 조회 전용 gcloud: gc_read <예비 초> <gcloud 인자…>. 일시 오류에 3번까지, 사이 5초(마감 안에서만).
+# 변경 명령에는 쓰지 않는다.
+gc_read() {
+  local reserve="$1" try out
+  for try in 1 2 3; do
+    if out="$(gc "$@")"; then
+      printf '%s\n' "$out"
+      return 0
+    fi
+    [ "$try" -lt 3 ] || return 1
+    [ "$(remaining "$reserve")" -gt 5 ] || return 1
+    sleep 5
+  done
+}
+
 # ── 이미지 ─────────────────────────────────────────────────────────────────
 # Job 지금 이미지: "<참조> <digest>" 한 줄(못 읽으면 실패)
 job_image() {
   local ref digest
-  ref="$(gc "$1" run jobs describe "$JOB" --region="$REGION" --project="$PROJECT" \
+  ref="$(gc_read "$1" run jobs describe "$JOB" --region="$REGION" --project="$PROJECT" \
     --format='value(spec.template.spec.template.spec.containers[0].image)')" && [ -n "$ref" ] || return 1
-  digest="$(gc "$1" artifacts docker images describe "$ref" --format='value(image_summary.digest)')" &&
+  digest="$(gc_read "$1" artifacts docker images describe "$ref" --format='value(image_summary.digest)')" &&
     [ -n "$digest" ] || return 1
   printf '%s %s\n' "$ref" "$digest"
 }
@@ -137,9 +152,9 @@ job_image() {
 # 그 실행이 실제로 쓴 이미지의 digest(못 읽으면 실패)
 exec_digest() {
   local ref digest
-  ref="$(gc "$1" run jobs executions describe "$2" --region="$REGION" --project="$PROJECT" \
+  ref="$(gc_read "$1" run jobs executions describe "$2" --region="$REGION" --project="$PROJECT" \
     --format='value(spec.template.spec.containers[0].image)')" && [ -n "$ref" ] || return 1
-  digest="$(gc "$1" artifacts docker images describe "$ref" --format='value(image_summary.digest)')" &&
+  digest="$(gc_read "$1" artifacts docker images describe "$ref" --format='value(image_summary.digest)')" &&
     [ -n "$digest" ] || return 1
   printf '%s\n' "$digest"
 }
@@ -179,6 +194,12 @@ wait_runnable() {
   return 1
 }
 
+# --async로 시작한 작업을 마감까지 기다린다(gcloud 동기 대기는 600초에서 끊겨 오래 걸리는 복원을 실패로 본다).
+wait_op() {
+  [ -n "$1" ] || return 1
+  gc 0 sql operations wait "$1" --project="$PROJECT" --timeout="$(remaining 0)" >/dev/null
+}
+
 # 임시 인스턴스의 끝나지 않은 작업을 기다린다. 작업 목록 조회가 실패하면 기다리지 않는다.
 wait_pending_ops() {
   local reserve="$1" ops op left
@@ -199,7 +220,7 @@ cleanup_temp() {
   CLEANUP_RESULT=unknown
   guard_name "$TEMP" || return 1
   while :; do
-    if ! listed="$(gc "$reserve" sql instances list --project="$PROJECT" --filter="name=$TEMP" --format='value(name)')"; then
+    if ! listed="$(gc_read "$reserve" sql instances list --project="$PROJECT" --filter="name=$TEMP" --format='value(name)')"; then
       echo "임시 인스턴스 목록을 조회하지 못해 남았는지 확인 불가입니다: $TEMP" >&2
       CLEANUP_RESULT=unknown
       return 1
@@ -283,14 +304,17 @@ cmd_rehearse() {
     fail "원본 디스크 크기를 읽지 못했습니다."
   fi
 
-  gc 0 sql instances create "$TEMP" --project="$PROJECT" --region="$REGION" \
+  local op
+  op="$(gc 0 sql instances create "$TEMP" --project="$PROJECT" --region="$REGION" \
     --database-version="$DB_VERSION" --tier="$DB_TIER" --edition=ENTERPRISE \
     --storage-type=HDD --storage-size="$disk" --availability-type=ZONAL --no-backup \
     --no-assign-ip --network="projects/$PROJECT/global/networks/$NETWORK" \
-    --database-flags=cloudsql.iam_authentication=on || fail "임시 인스턴스를 만들지 못했습니다."
+    --database-flags=cloudsql.iam_authentication=on --async --format='value(name)')" &&
+    wait_op "$op" || fail "임시 인스턴스를 만들지 못했습니다."
   wait_runnable || exit 1
-  gc 0 sql backups restore "$backup_id" --restore-instance="$TEMP" --backup-instance="$SOURCE" \
-    --project="$PROJECT" --quiet || fail "백업을 임시 인스턴스에 복원하지 못했습니다."
+  op="$(gc 0 sql backups restore "$backup_id" --restore-instance="$TEMP" --backup-instance="$SOURCE" \
+    --project="$PROJECT" --quiet --async --format='value(name)')" &&
+    wait_op "$op" || fail "백업을 임시 인스턴스에 복원하지 못했습니다."
   wait_runnable || exit 1
 
   # 복원이 IAM DB 사용자를 가져온다고 가정하지 않는다(멱등 보정).

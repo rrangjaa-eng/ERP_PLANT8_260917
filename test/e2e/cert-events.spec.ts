@@ -171,7 +171,10 @@ test.describe("확인증 행사 — 시스템 관리자", () => {
     await labelInput.press("Escape");
 
     // (d) 우회 숫자 · 이름 → 셀 오류 → 오전 조 · 오후 조
+    // 한 줄만 고쳐도 다른 줄의 모양 중복 오류가 풀린다(고정 오류 재판정 — 검토 반영 2).
     await editCell(page, 2, COL.label, "오후 조");
+    await expect(winnerCell(page, 1, COL.label)).not.toHaveAttribute("aria-invalid", "true");
+    await expect(page.locator("tfoot")).not.toContainText("전부 거부");
     await editCell(page, 1, COL.label, "7-7-3");
     await primary(page).click();
     await expect(winnerCell(page, 1, COL.label)).toContainText("숫자 3개 이상 이어짐 · 전화번호 말고 오전 조처럼 입력");

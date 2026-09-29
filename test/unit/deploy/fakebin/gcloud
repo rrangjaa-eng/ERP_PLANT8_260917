@@ -340,6 +340,19 @@ case "$ARGS" in
     exit 0
     ;;
 
+  "storage buckets describe "*)
+    state_file bucket-exists || { echo "fake gcloud: bucket not found" >&2; exit 1; }
+    ;;
+  "storage buckets create "*)
+    exit 0
+    ;;
+  "storage buckets update "*)
+    exit 0
+    ;;
+  "storage buckets add-iam-policy-binding "*)
+    exit 0
+    ;;
+
   *)
     echo "fake gcloud: unhandled invocation: $ARGS" >&2
     exit 1

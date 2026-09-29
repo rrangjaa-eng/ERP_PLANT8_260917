@@ -45,11 +45,20 @@ interface DeployResult {
 function deploy(
   repoDir: string,
   args: string[],
-  opts: { env?: Record<string, string>; alertEmail?: string | null; state?: Record<string, string | true> } = {},
+  opts: {
+    env?: Record<string, string>;
+    alertEmail?: string | null;
+    state?: Record<string, string | true>;
+    // 04.3-05(B3): 서명 버킷은 부트스트랩이 만든다 — 기본은 버킷 있음.
+    bucketExists?: boolean;
+  } = {},
 ): DeployResult {
   const stateDir = mkdtempSync(join(tmpdir(), "deploy-state-"));
   for (const [name, value] of Object.entries(opts.state ?? {})) {
     writeFileSync(join(stateDir, name), value === true ? "" : value);
+  }
+  if (opts.bucketExists ?? true) {
+    writeFileSync(join(stateDir, "bucket-exists"), "");
   }
   const logDir = mkdtempSync(join(tmpdir(), "deploy-log-"));
   const logPath = join(logDir, "log");
@@ -613,6 +622,80 @@ describe("deploy.sh — 확인증 환경 게이트(E3-07)", () => {
     });
     expect(r.status).toBe(0);
     expect(r.log).not.toContain("CERT_FEATURE_ALLOWED");
+  });
+});
+
+describe("deploy.sh — 서명 버킷(04.3-05)", () => {
+  let repoDir: string;
+  beforeEach(() => {
+    repoDir = setupRepo();
+  });
+
+  const BUCKET = "gs://test-proj-plant8-staging-cert-signatures";
+
+  it("있는 버킷은 describe → 같은 세 설정으로 update → 런타임에 그 버킷의 objectUser만 바인딩하고, 만들지 않는다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
+    expect(r.status).toBe(0);
+    const lines = r.log.split("\n");
+
+    const describeIdx = lines.findIndex((l) => l.startsWith(`storage buckets describe ${BUCKET} `));
+    const updateIdx = lines.findIndex((l) => l.startsWith(`storage buckets update ${BUCKET} `));
+    const bindIdx = lines.findIndex((l) => l.startsWith(`storage buckets add-iam-policy-binding ${BUCKET} `));
+    const deployIdx = lines.findIndex((l) => l.startsWith("run deploy plant8-staging "));
+    expect(describeIdx).toBeGreaterThan(-1);
+    expect(updateIdx).toBeGreaterThan(describeIdx);
+    expect(bindIdx).toBeGreaterThan(updateIdx);
+    expect(deployIdx).toBeGreaterThan(bindIdx);
+
+    const update = lines[updateIdx];
+    expect(update).toContain("--uniform-bucket-level-access");
+    expect(update).toContain("--public-access-prevention");
+    expect(update).toContain("--clear-soft-delete");
+
+    const bindings = lines.filter((l) => l.startsWith("storage buckets add-iam-policy-binding "));
+    expect(bindings).toHaveLength(1);
+    expect(bindings[0]).toContain("--member=serviceAccount:plant8-staging-runtime@test-proj.iam.gserviceaccount.com");
+    expect(bindings[0]).toContain("--role=roles/storage.objectUser");
+
+    expect(r.log).not.toContain("storage buckets create");
+    expect(r.log).not.toMatch(/--role=roles\/storage\.(admin|objectAdmin)/);
+    expect(r.log).not.toMatch(/^projects add-iam-policy-binding .*roles\/storage\./m);
+
+    const deployLine = lines[deployIdx];
+    expect(deployLine).toContain("CERT_SIGNATURE_BUCKET=test-proj-plant8-staging-cert-signatures");
+    const enableLine = lines.find((l) => l.startsWith("services enable"));
+    expect(enableLine).toContain("storage.googleapis.com");
+  });
+
+  it("프로덕션도 자기 버킷 이름을 서비스 환경 변수로 받는다", () => {
+    const PROD_SHA = "0123456789abcdef0123456789abcdef01234567";
+    const r = deploy(repoDir, ["--env", "prod", "--project", "test-proj", "--sha", PROD_SHA], {
+      state: { "image-exists": true },
+    });
+    expect(r.status).toBe(0);
+    const deployLine = r.log.split("\n").find((l) => l.startsWith("run deploy plant8-prod "));
+    expect(deployLine).toContain("CERT_SIGNATURE_BUCKET=test-proj-plant8-prod-cert-signatures");
+    expect(r.log).toContain("storage buckets update gs://test-proj-plant8-prod-cert-signatures ");
+  });
+
+  it("버킷이 없으면(부트스트랩 전) 서비스를 바꾸기 전에 부트스트랩 단계를 알리고 ensure_cert_bucket에서 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], { bucketExists: false });
+    expect(r.status).toBe(1);
+    const errLines = r.stderr.trim().split("\n");
+    expect(errLines.filter((l) => l.includes("scripts/bootstrap-gcp.sh"))).toHaveLength(1);
+    expect(errLines.at(-1)).toBe("deploy failed at ensure_cert_bucket");
+    expect(r.log).not.toContain("storage buckets create");
+    expect(r.log).not.toContain("run deploy ");
+  });
+
+  it("update가 실패하면(배포자 버킷 역할 없음) 같은 안내와 함께 ensure_cert_bucket에서 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "fail-gcloud": "storage buckets update" },
+    });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain("scripts/bootstrap-gcp.sh");
+    expect(r.stderr.trim().split("\n").at(-1)).toBe("deploy failed at ensure_cert_bucket");
+    expect(r.log).not.toContain("run deploy ");
   });
 });
 

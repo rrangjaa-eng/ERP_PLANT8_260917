@@ -17,7 +17,13 @@ import {
 // 트랜잭션(커밋·롤백)·리포지토리·로그를 메모리 가짜로 두고, 날짜 경계·멱등·발효일·
 // 실패 격리를 단언한다. 실제 SQL(SKIP LOCKED · 보관·종료일 없음 제외)은 통합 테스트가 본다.
 
-type FakeProject = { id: string; status: string; endDate: string | null; lastChangeAt: Date | null };
+type FakeProject = {
+  id: string;
+  status: string;
+  endDate: string | null;
+  lastChangeAt: Date | null;
+  archivedAt?: Date | null;
+};
 type LoggedAction = { viewer: Viewer; entry: RecordActionEntry };
 
 const FAKE_TX = {} as DbOrTx;
@@ -38,14 +44,21 @@ function makeStore(initial: FakeProject[]) {
     return result;
   };
 
-  const settle: AutoSettlementDeps["settle"] = (_viewer, input) => {
-    const targets = working.filter(
-      (project) =>
-        project.status === input.from &&
-        project.endDate !== null &&
-        project.endDate < input.todayKst &&
-        (input.projectIds === undefined || input.projectIds.includes(project.id)),
+  // 후보는 projectIds로만 거른다 — 상태·날짜·보관 판정은 실제 gate(project.auto-settle)가 한다(04-53).
+  const lockCandidates: AutoSettlementDeps["lockCandidates"] = (_viewer, input) =>
+    Promise.resolve(
+      working
+        .filter((project) => input.projectIds === undefined || input.projectIds.includes(project.id))
+        .map((project) => ({
+          id: project.id,
+          status: project.status,
+          endDate: project.endDate,
+          archivedAt: project.archivedAt ?? null,
+        })),
     );
+
+  const settle: AutoSettlementDeps["settle"] = (_viewer, input) => {
+    const targets = working.filter((project) => input.ids.includes(project.id) && project.status === input.from);
     for (const project of targets) project.status = input.to;
     return Promise.resolve(
       targets.map((project) => ({ id: project.id, endDate: project.endDate ?? "", lastChangeAt: project.lastChangeAt })),
@@ -59,6 +72,7 @@ function makeStore(initial: FakeProject[]) {
 
   return {
     transaction,
+    lockCandidates,
     settle,
     recordAction,
     status: (id: string) => committed.find((project) => project.id === id)?.status,

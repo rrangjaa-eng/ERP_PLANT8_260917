@@ -473,19 +473,21 @@ export async function updateProjectPreEstimate(
 
 export type SettledProjectRow = { id: string; endDate: string; lastChangeAt: Date | null };
 
-// 04-11(D-76 · OV-5 · Pitfall 7): 종료일이 지난 from 상태 프로젝트를 to로 바꾼다. 대상은
-// FOR UPDATE SKIP LOCKED 하위 선택으로 잠근다 — 누가 저장·전환으로 잡은 행은 기다리지
-// 않고 건너뛴다(그 쓰기가 자기 잠금 안에서 같은 판정을 한다). 오늘(KST)은 인자로만
-// 받는다 — DB의 현재 날짜·서버 시간대를 쓰지 않는다. 바뀐 행마다 그 프로젝트의 직전
-// status_change 시각(발효일 계산용)을 같은 문장에서 돌려준다.
-export async function settleOverdueProjects(
+export type AutoSettleCandidateRow = Pick<ProjectRow, "id" | "status" | "endDate" | "archivedAt">;
+
+// 04-11(D-76 · OV-5 · Pitfall 7) · 04-53: 자동 정산 후보를 FOR UPDATE SKIP LOCKED로 잠근다 —
+// 누가 저장·전환으로 잡은 행은 기다리지 않고 건너뛴다(그 쓰기가 자기 잠금 안에서 같은 규칙으로
+// 판정한다). 이 WHERE는 판정이 아니라 후보 좁히기(잠금 범위 · 인덱스)다 — 판정은 gate
+// `project.auto-settle`이고, 이 WHERE는 그 규칙보다 넓거나 같아야 한다. 오늘(KST)은 인자로만
+// 받는다 — DB의 현재 날짜·서버 시간대를 쓰지 않는다.
+export async function lockAutoSettleCandidates(
   viewer: Viewer,
-  input: { todayKst: string; projectIds?: string[]; from: string; to: string },
+  input: { todayKst: string; projectIds?: string[]; from: string },
   tx: DbOrTx,
-): Promise<SettledProjectRow[]> {
+): Promise<AutoSettleCandidateRow[]> {
   void viewer;
-  const targets = tx
-    .select({ id: projects.id })
+  return tx
+    .select({ id: projects.id, status: projects.status, endDate: projects.endDate, archivedAt: projects.archivedAt })
     .from(projects)
     .where(
       and(
@@ -497,11 +499,21 @@ export async function settleOverdueProjects(
       ),
     )
     .for("update", { skipLocked: true });
+}
 
+// 04-53: gate가 허용한 id만 from → to로 바꾼다(같은 tx에서 lockAutoSettleCandidates가 잠근 행).
+// 상태 = from 조건은 잠근 행에 대한 낙관 가드다. 바뀐 행마다 그 프로젝트의 직전 status_change
+// 시각(발효일 계산용)을 같은 문장에서 돌려준다.
+export async function settleProjectsByIds(
+  viewer: Viewer,
+  input: { ids: string[]; from: string; to: string },
+  tx: DbOrTx,
+): Promise<SettledProjectRow[]> {
+  void viewer;
   const rows = await tx
     .update(projects)
     .set({ status: input.to, version: sql`${projects.version} + 1`, updatedAt: new Date() })
-    .where(and(inArray(projects.id, targets), eq(projects.status, input.from)))
+    .where(and(inArray(projects.id, input.ids), eq(projects.status, input.from)))
     .returning({
       id: projects.id,
       endDate: projects.endDate,
@@ -512,6 +524,6 @@ export async function settleOverdueProjects(
           and ${actionLog.actionType} = 'status_change'
       )`.mapWith(actionLog.occurredAt),
     });
-  // 하위 선택이 종료일 없는 행을 거르므로 endDate는 항상 있다 — 타입만 좁힌다.
+  // 허용된 id는 종료일이 있는 후보뿐이다(후보 WHERE · gate) — 타입만 좁힌다.
   return rows.flatMap((row) => (row.endDate === null ? [] : [{ id: row.id, endDate: row.endDate, lastChangeAt: row.lastChangeAt }]));
 }

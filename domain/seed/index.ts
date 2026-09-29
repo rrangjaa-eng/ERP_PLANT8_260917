@@ -158,6 +158,19 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
   let permissionsCount = 0;
   for (const menu of MENUS) {
     for (const action of PERMISSION_ACTIONS) {
+      // certs.submissions는 확인증 개인정보 열람 메뉴라 다른 새 메뉴처럼 시드가 자동으로 켜지 않는다 —
+      // 소유자가 시스템 관리자 계급에서 끄면 배포가 되살리지 않는다(E3-13).
+      if (menu.key === "certs.submissions") {
+        await insertPermissionIfAbsent(viewer, {
+          roleId: SYSADMIN_ROLE_ID,
+          menu: menu.key,
+          action,
+          allowed: false,
+          updatedBy: null,
+        });
+        permissionsCount++;
+        continue;
+      }
       await upsertPermission(viewer, {
         roleId: SYSADMIN_ROLE_ID,
         menu: menu.key,
@@ -181,6 +194,19 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
     await insertPermissionIfAbsent(viewer, {
       roleId: DEFAULT_ROLE_ID,
       menu: "projects",
+      action,
+      allowed: true,
+      updatedBy: null,
+    });
+    permissionsCount++;
+  }
+
+  // 04.3-09: 기획 PM의 확인증 행사 기본 권한(CONTEXT 재량 「기획 PM·경영관리를 기본으로」).
+  // 경영관리는 시드 계급이 아니라 권한표에서 켠다 — 없을 때만 넣어 관리자가 끈 값을 덮지 않는다.
+  for (const action of ["view", "write"] as const) {
+    await insertPermissionIfAbsent(viewer, {
+      roleId: DEFAULT_ROLE_ID,
+      menu: "certs.events",
       action,
       allowed: true,
       updatedBy: null,
@@ -212,12 +238,23 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
   const staffDefaultRoles = [DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID, DIVISION_HEAD_ROLE_ID];
   let visibilityCount = 0;
   for (const item of INFO_ITEMS) {
-    await upsertVisibility(viewer, {
-      roleId: SYSADMIN_ROLE_ID,
-      infoItem: item.key,
-      visible: true,
-      updatedBy: null,
-    });
+    // 소유자가 시스템 관리자 계급에서 확인증 개인정보 전체 보기를 끄면 배포가 되살리지 않는다 —
+    // 담당자 계급(박서연)의 접근은 cert.setup(04.3-02)이 별도로 켠다(E3-13).
+    if (item.key === "cert.rrn_unmasked" || item.key === "cert_submission.value") {
+      await insertVisibilityIfAbsent(viewer, {
+        roleId: SYSADMIN_ROLE_ID,
+        infoItem: item.key,
+        visible: false,
+        updatedBy: null,
+      });
+    } else {
+      await upsertVisibility(viewer, {
+        roleId: SYSADMIN_ROLE_ID,
+        infoItem: item.key,
+        visible: true,
+        updatedBy: null,
+      });
+    }
     for (const roleId of staffDefaultRoles) {
       // 04-16(D-85 · CEO 리뷰 B-29): 발행액은 기획 PM 행만 upsert해 재시드한 기존 DB에도 공개하고,
       // 팀장·본부 책임자 행은 없을 때만 숨김으로 넣는다 — 관리자가 노출표에서 켠다.

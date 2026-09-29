@@ -63,4 +63,7 @@ export const INFO_ITEMS: InfoItemDef[] = [
   // 이름 · 전화. 담당 PM이 매일 다루는 자기 행사라 기본값 참.
   { key: "cert_event.value", label: "확인증 행사 정보", staffDefault: true },
   { key: "cert_winner.value", label: "당첨자 정보", staffDefault: true },
+  // 04.3-07: 제출된 확인증의 값 칸(I4) · 주민등록번호 전체 보기. 개인정보라 기본값 숨김.
+  { key: "cert_submission.value", label: "확인증 제출 내용", staffDefault: false },
+  { key: "cert.rrn_unmasked", label: "주민등록번호 전체 보기", staffDefault: false },
 ];

@@ -9,6 +9,7 @@ import { CERT_ENABLED, CERT_PRIVACY_IDLE_MINUTES } from "@/domain/settings/keys"
 import { project } from "@/domain/permissions/project";
 import {
   CERT_SUBMISSION_REVIEW_DTO_SPEC,
+  type CertSubmissionReviewRow,
   correctSubmission,
   getSubmissionForReview,
   isCertPrivacyBarredRole,
@@ -86,7 +87,23 @@ describe("getSubmissionForReview — 투영 · 404", () => {
     ).toEqual({ kind: "denied" });
     expect(unchangedFields(await submissionRow(seeded.submissionId))).toEqual(before);
 
-    const sample = Object.fromEntries(CERT_SUBMISSION_REVIEW_DTO_SPEC.fields.map((f) => [f.from, "x"]));
+    const sample: CertSubmissionReviewRow = {
+      id: seeded.submissionId,
+      certNo: seeded.certNo,
+      eventName: seeded.eventName,
+      submittedAt: "2026-09-20T09:42:00.000Z",
+      name: "김하늘",
+      registeredName: null,
+      rrnMasked: "930412-2******",
+      phone: "010-4821-7730",
+      address: null,
+      delivery: "onsite",
+      prizeName: "갤럭시 탭 S10",
+      quantity: 1,
+      consentAt: "2026-09-20T09:42:00.000Z",
+      signatureDataUrl: null,
+      version: 1,
+    };
     expect(await project(viewer, sample, CERT_SUBMISSION_REVIEW_DTO_SPEC)).toEqual({});
     const allowed = await makeReviewer(FULL_GRANT);
     const projected = await project(allowed, sample, CERT_SUBMISSION_REVIEW_DTO_SPEC);

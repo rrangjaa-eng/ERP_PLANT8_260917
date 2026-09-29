@@ -35,6 +35,8 @@ export const CORE_ACTION_TYPES = [
   "account_lock",
   "account_unlock",
   "holiday_change",
+  // 04.3-07 D-1106: 확인증 정정 — document_update는 설정으로 끌 수 있어 「고칠 때마다」를 보장하지 못한다.
+  "cert_correct",
 ] as const;
 
 export type CoreActionType = (typeof CORE_ACTION_TYPES)[number];
@@ -66,6 +68,7 @@ export const ACTION_TYPE_LABELS: Record<CoreActionType, string> = {
   account_lock: "계정 잠금",
   account_unlock: "잠금 해제",
   holiday_change: "공휴일 변경",
+  cert_correct: "확인증 정정",
 };
 
 // OPS-05: Excel 내보내기·마스킹 해제·행동 로그 정리는 설정으로 못 끄는 핵심
@@ -81,6 +84,8 @@ export const ALWAYS_ON_ACTION_TYPES: CoreActionType[] = [
   "account_lock",
   "account_unlock",
   "holiday_change",
+  // 04.3-07 D-1106: 확인증 정정은 정정 UPDATE와 한 트랜잭션으로 남기는 기록이라 끌 수 없다
+  "cert_correct",
 ];
 
 export class UnknownActionTypeError extends UserFacingError {}

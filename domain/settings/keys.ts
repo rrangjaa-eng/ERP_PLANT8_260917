@@ -397,6 +397,18 @@ export const CERT_VERIFY_LOCK_MINUTES: SettingDef<number> = {
   default: 3,
 };
 
+// 04.3-07 — 개인정보취급자 비활동 만료(CONTEXT 「이미 확정된 입력」 2시간). 확인증
+// 개인정보 경로(I4 · 전체 보기 · 정정 · 인쇄)의 마지막 활동 뒤 이 분이 지나면 세션을 끊는다.
+export const CERT_PRIVACY_IDLE_MINUTES: SettingDef<number> = {
+  key: "cert.privacy.idle_minutes",
+  kind: "simple",
+  schema: z.coerce.number().int().min(10).max(120),
+  label: "개인정보취급자 비활동 만료(분)",
+  hint: "확인증 개인정보 화면에서 이 시간(분) 동안 활동이 없으면 로그인을 다시 요구합니다.",
+  namespace: "확인증",
+  default: 120,
+};
+
 export const DOCUMENT_NUMBER_CERT_PREFIX: SettingDef<string> = {
   key: "document_number.cert.prefix",
   kind: "simple",
@@ -495,6 +507,7 @@ export const SETTING_DEFS: SettingDef<unknown>[] = [
   CERT_CONTACT_PHONE,
   CERT_VERIFY_MAX_ATTEMPTS,
   CERT_VERIFY_LOCK_MINUTES,
+  CERT_PRIVACY_IDLE_MINUTES,
   DOCUMENT_NUMBER_CERT_PREFIX,
   DOCUMENT_NUMBER_CERT_YEAR_DIGITS,
   DOCUMENT_NUMBER_CERT_SEQ_DIGITS,

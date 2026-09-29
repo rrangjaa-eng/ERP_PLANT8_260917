@@ -464,6 +464,16 @@ async function seedLinkedRow(clientId: string): Promise<{ projectName: string; e
   return { projectName, evidenceLabel };
 }
 
+// Codex #3 — 그 클라이언트의 활성 프로젝트 하나(seedLinkedRow와 같은 네 호출). 선택지는 페이지를 열 때 읽으므로 openLedger 전에 만든다.
+async function seedActiveProject(clientId: string): Promise<{ id: string; name: string }> {
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E리저브본부-${randomUUID().slice(0, 8)}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E리저브팀-${randomUUID().slice(0, 8)}` });
+  const { userId } = await createAccount(SYSTEM_VIEWER, { email: `rsv-pm-${randomUUID()}@example.test`, name: "리저브 PM", roleId: DEFAULT_ROLE_ID });
+  const name = `E2E리저브활성프로젝트-${randomUUID().slice(0, 6)}`;
+  const project = await createProject(SYSTEM_VIEWER, { clientId, teamId: team.id, pmUserId: userId, name });
+  return { id: project.id, name };
+}
+
 test.describe("리저브 대장 — 그룹 머리글 오른쪽 굵은 잔액(리뷰 S3 · DOM 감사 #18)", () => {
   for (const width of [1280, 1024, 375]) {
     test(`${width}px — 클라이언트 이름은 왼쪽, 최종 잔액은 머리글 행 오른쪽 끝에 굵게(700) 본문 색`, async ({ page }) => {
@@ -916,5 +926,86 @@ test.describe("리저브 대장 — 묶음 ④ /qa 동명 클라이언트", () =
     const headers = groupHeader(page, duplicate);
     await expect(headers).toHaveCount(2);
     expect((await headers.locator("> span").allTextContents()).sort()).toEqual(["잔액 1,000", "잔액 2,000"]);
+  });
+});
+
+// Codex 재검토(PR #85) — #3 이미 보관된 줄의 보관 요청 거부 뒤 큐 정리 · #4 저장당 줄 상한.
+test.describe("리저브 대장 — Codex 재검토 #3 · #4", () => {
+  test("(Codex #3) 이미 보관된 줄의 보관 요청은 거부 뒤 큐에서 빠지고 다음 저장이 같은 묶음의 다른 편집을 저장한다", async ({ page }) => {
+    const roles = await createRoles();
+    const client = await createClient("E2E리저브보관거부");
+    const ids = await seedEntries(client.id, [
+      { date: "2026-04-01", direction: "deposit", amount: 200_000 },
+      { date: "2026-04-02", direction: "deposit", amount: 100_000 },
+    ]);
+    await openLedger(page, roles.finance);
+
+    await typeInto(page, cell(page, 0, COL.note), "메모", "코덱스3 메모");
+    await focusGridCell(cell(page, 1, COL.date));
+    await page.keyboard.press("Delete");
+    await page.getByRole("dialog", { name: "리저브 줄 삭제" }).getByRole("button", { name: /^리저브 줄 삭제/ }).click();
+    await expect(saveButton(page)).toContainText("일괄 저장 2");
+    // 다른 탭 · 응답 유실 재시도 재현 — 그 줄은 DB에서 이미 보관됐다.
+    await db.update(reserveEntries).set({ archivedAt: new Date() }).where(eq(reserveEntries.id, ids[1]!));
+
+    const rejected = waitForSave(page);
+    await saveButton(page).click();
+    await rejected;
+    await expect(saveButton(page)).toContainText("일괄 저장 1");
+    await expect(dataRows(page)).toHaveCount(1);
+    await expect(ledger(page).locator("tfoot")).not.toContainText("전부 거부");
+    await expect
+      .poll(() =>
+        page.evaluate((archiveKey) => {
+          const key = Object.keys(window.localStorage).find((candidate) => candidate.startsWith("quote-ledger:dirty:"));
+          const stored = JSON.parse((key && window.localStorage.getItem(key)) || "{}") as Record<string, unknown>;
+          return archiveKey in stored;
+        }, `${ids[1]!}:archive`),
+      )
+      .toBe(false);
+
+    const saved = waitForSave(page);
+    await saveButton(page).click();
+    await saved;
+    await expect
+      .poll(async () => (await db.select().from(reserveEntries).where(eq(reserveEntries.id, ids[0]!)))[0]?.note)
+      .toBe("코덱스3 메모");
+    const [archived] = await db.select().from(reserveEntries).where(eq(reserveEntries.id, ids[1]!));
+    expect(archived?.archivedAt).not.toBeNull();
+  });
+
+  test("(Codex #3) 같은 응답의 다른 칸 오류는 남고 요약은 남은 칸 수 — 이미 보관된 줄의 보관 요청은 세지 않는다", async ({ page }) => {
+    const roles = await createRoles();
+    const client = await createClient("E2E리저브혼합거부");
+    const ids = await seedEntries(client.id, [
+      { date: "2026-04-01", direction: "deposit", amount: 200_000 },
+      { date: "2026-04-02", direction: "deposit", amount: 100_000 },
+    ]);
+    const project = await seedActiveProject(client.id);
+    await openLedger(page, roles.finance);
+
+    await focusGridCell(cell(page, 0, COL.project));
+    await page.keyboard.press("Enter");
+    await page.getByRole("combobox", { name: "프로젝트", exact: true }).selectOption({ label: project.name });
+    await expect(cell(page, 0, COL.project)).toContainText(project.name);
+    await expect(saveButton(page)).toContainText("일괄 저장 1");
+    await focusGridCell(cell(page, 1, COL.date));
+    await page.keyboard.press("Delete");
+    await page.getByRole("dialog", { name: "리저브 줄 삭제" }).getByRole("button", { name: /^리저브 줄 삭제/ }).click();
+    await expect(saveButton(page)).toContainText("일괄 저장 2");
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, project.id));
+    await db.update(reserveEntries).set({ archivedAt: new Date() }).where(eq(reserveEntries.id, ids[1]!));
+
+    const rejected = waitForSave(page);
+    await saveButton(page).click();
+    await rejected;
+    await expect(saveButton(page)).toContainText("일괄 저장 1");
+    await expect(ledger(page).locator("tfoot")).toContainText("오류 1칸 · 전부 거부");
+    const projectCell = cell(page, 0, COL.project);
+    await expect(projectCell).toHaveAttribute("aria-invalid", "true");
+    await expect(projectCell).toContainText("보관된 프로젝트 · 프로젝트 다시 고르기");
+    await expect(dataRows(page)).toHaveCount(1);
+    const [first] = await db.select().from(reserveEntries).where(eq(reserveEntries.id, ids[0]!));
+    expect(first?.projectId).toBeNull();
   });
 });

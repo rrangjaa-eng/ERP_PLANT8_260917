@@ -215,8 +215,15 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     const projectName = `E2E연타-${Date.now()}`;
     const teamSelect = await fillRequiredFields(page, vendor.name, projectName);
 
-    await teamSelect.press("Control+Enter");
-    await teamSelect.press("Control+Enter");
+    // 04-31 E2-06 조사(systematic-debugging) — 순서대로 await하면 첫 번째
+    // 제출의 서버 왕복 + 이동이 두 번째 press의 locator 재탐색보다 먼저
+    // 끝나는 경우가 있다(실측: teamSelect가 이미 언마운트돼 "팀" 라벨을
+    // 못 찾고 30초 타임아웃). 두 keydown을 Promise.all로 거의 동시에
+    // 보내 실제 "빠른 연타"에 더 가깝게 만든다 — 앱의 submittedRef 래치는
+    // keydown에서 동기로 세워지므로(project-form.tsx handleSubmit) 이
+    // 경합과 무관하게 항상 한 건만 제출된다. 어느 쪽이 실제로 폼에 닿았든
+    // 최종 단언(프로젝트 정확히 1건)은 그대로다.
+    await Promise.all([teamSelect.press("Control+Enter"), teamSelect.press("Control+Enter")]);
 
     await expect(page).toHaveURL(/\/projects\/.+/);
     await page.goto(`/projects?q=${encodeURIComponent(projectName)}`);

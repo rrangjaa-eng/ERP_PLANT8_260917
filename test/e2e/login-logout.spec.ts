@@ -63,6 +63,30 @@ test.describe("로그인 → 세션 영속 → 로그아웃 (AUTH-02, D-07)", ()
   });
 });
 
+// 묶음 ④ /review R2 — 같은 브라우저의 다음 사용자가 앞 사용자의 저장 안 한 편집을 복원 줄로 보지 않게, 로그아웃이
+// 미저장 편집 보관본(quote-ledger:dirty*)을 전부 지운다. 다른 키는 남긴다.
+test("로그아웃하면 이 브라우저의 미저장 편집 보관본이 모두 지워진다", async ({ page }) => {
+  const user = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+
+  await page.goto("/login");
+  await page.getByLabel("이메일").fill(user.email);
+  await page.getByLabel("비밀번호").fill(user.password);
+  await page.getByRole("button", { name: "로그인" }).click();
+  await expect(page).toHaveURL(/\/account$/);
+  await page.evaluate(() => {
+    window.localStorage.setItem("quote-ledger:dirty:someone:reserves:ledger", JSON.stringify({ "row-1:note": "앞 사용자 메모" }));
+    window.localStorage.setItem("quote-ledger:dirty:project-1:revision-1", JSON.stringify({ "line-1:itemName": "옛 형식" }));
+    window.localStorage.setItem("other-app:setting", "keep");
+  });
+
+  await page.getByRole("button", { name: "로그아웃" }).click();
+  await expect(page).toHaveURL(/\/login$/);
+
+  const keys = await page.evaluate(() => Object.keys(window.localStorage));
+  expect(keys.filter((key) => key.startsWith("quote-ledger:dirty"))).toEqual([]);
+  expect(keys).toContain("other-app:setting");
+});
+
 test.describe("로그인 버튼 위치 (/design-review 발견 4)", () => {
   // SYSTEM.md §6-7 로그인 화면 실물 스케치는 제출 버튼이 폼 가운데 온다.
   test("로그인 버튼이 폼 안에서 가운데 정렬된다(§6-7)", async ({ page }) => {

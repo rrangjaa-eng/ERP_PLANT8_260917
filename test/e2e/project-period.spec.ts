@@ -448,6 +448,27 @@ test.describe("상세 총 매출 예상가 칸 (04-44, PROJ-07)", () => {
     expect(row?.preEstimateAmountKrw).toBe(50_000_000);
   });
 
+  // Regression: ISSUE-003 — 사전 견적 칸이 inputType을 넘기지 않아 쉼표 바로 앞 Delete가 앞 숫자를 지웠다
+  // Found by /ship pre-landing review on 2026-09-29 · Report: docs/reviews/phase-04/bundle4-qa.md
+  test("(7b) 총 매출 예상가 1,500,000에서 쉼표 바로 앞 Delete는 쉼표 뒤 숫자를 지워 100,000", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team);
+    const lead = await makeAccount("role-team-lead", team, `팀장${randomUUID().slice(0, 6)}`);
+    const project = await makeProject({ teamId: team, pmUserId: pm.userId, status: "bidding", endDate: addDays(TODAY, 20) });
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await page.getByRole("button", { name: "총 매출 예상가 바꾸기" }).click();
+    const amount = page.getByLabel("총 매출 예상가", { exact: true });
+    await amount.fill("1500000");
+    await expect(amount).toHaveValue("1,500,000");
+
+    await amount.evaluate((element) => (element as HTMLInputElement).setSelectionRange(1, 1));
+    await page.keyboard.press("Delete");
+    await expect(amount).toHaveValue("100,000");
+    expect(await amount.evaluate((element) => (element as HTMLInputElement).selectionStart)).toBe(1);
+  });
+
   test("(8) 정산 프로젝트의 담당 PM에게는 값만 있고 「총 매출 예상가 바꾸기」가 없다(권리 none)", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team);

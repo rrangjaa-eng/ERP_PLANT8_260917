@@ -40,7 +40,8 @@ export function useCommaInput(kind: NumberInputKind, initial: string): UseCommaI
   function onChange(event: ChangeEvent<HTMLInputElement>) {
     const raw = event.target.value;
     const caret = event.target.selectionStart ?? raw.length;
-    const result = formatNumberInput({ raw, caret, kind, prev: text });
+    const inputType = (event.nativeEvent as InputEvent).inputType;
+    const result = formatNumberInput({ raw, caret, kind, prev: text, inputType });
 
     setError(result.rejected ? numberInputRejectionReason(kind, result.rejected) : null);
     pendingCaretRef.current = result.caret;

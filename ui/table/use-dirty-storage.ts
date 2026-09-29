@@ -23,6 +23,12 @@ export function dirtyStorageKey(scopeId: string, subScopeId: string): string {
   return `${STORAGE_PREFIX}:${scopeId}:${subScopeId}`;
 }
 
+// 묶음 ④ /review R2 — 같은 브라우저를 다음 사용자가 쓰면 앞 사용자의 저장 안 한 편집이 복원 줄로 보이면 안 된다.
+// 화면은 보관본의 scopeId를 이 함수로 만들어 보는 사람 id를 앞세운다(서버가 준 viewer id).
+export function viewerDirtyScope(viewerId: string, scopeId: string): string {
+  return `${viewerId}:${scopeId}`;
+}
+
 export function saveDirtyEdits(
   storage: DirtyStorageLike,
   scopeId: string,
@@ -152,12 +158,28 @@ export type UseDirtyStorageResult = {
 };
 
 // window가 없는 SSR/테스트 환경에서도 안전하게 no-op으로 동작한다.
-function browserStorage(): DirtyStorageLike | null {
+function browserStorage(): EnumerableDirtyStorage | null {
   if (typeof window === "undefined") return null;
   try {
     return window.localStorage;
   } catch {
     return null;
+  }
+}
+
+// 묶음 ④ /review R2 — 로그아웃 성공 시 이 브라우저의 미저장 편집 보관본(모든 사람·화면, 옛 형식 키 포함)을 지운다.
+// 다른 키는 남긴다. 저장소가 없거나 접근이 막혀 있으면 조용히 넘긴다(지울 것도 읽을 것도 없다).
+export function clearAllDirtyEdits(storage: EnumerableDirtyStorage | null = browserStorage()): void {
+  if (!storage) return;
+  try {
+    const keys: string[] = [];
+    for (let index = 0; index < storage.length; index++) {
+      const key = storage.key(index);
+      if (key?.startsWith(STORAGE_PREFIX)) keys.push(key);
+    }
+    for (const key of keys) storage.removeItem(key);
+  } catch {
+    // SecurityError 등 — 저장소를 쓸 수 없는 브라우저에는 보관본도 없다.
   }
 }
 

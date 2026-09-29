@@ -28,7 +28,8 @@ describe("myLeaveYearRange(C-04)", () => {
     await submitLeave(drafter, fullDay("2025-11-03", "2025-11-04"), deps);
     await submitLeave(drafter, fullDay("2027-01-05", "2027-01-06"), deps);
     await submitLeave(other, fullDay("2023-05-01", "2023-05-02"), deps);
-    await submitLeave(other, fullDay("2028-01-04", "2028-01-05"), deps);
+    // 제출 입구는 [2000, 올해 + 1]만 받는다(/review) — 2028년 신청은 2027년에 낸 것으로 둔다.
+    await submitLeave(other, fullDay("2028-01-04", "2028-01-05"), { ...deps, now: new Date("2027-06-01T00:00:00Z") });
 
     let calls = 0;
     const counted: typeof findLeaveFiscalYearRange = (...args) => {

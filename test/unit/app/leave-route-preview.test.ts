@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // 목은 평범한 함수 변수로 둔다(모듈 위 vi.fn에 거부를 넣으면 잡아도 실패로 친다 — .continue-here).
 class RouteBlockedError extends Error {}
 let previewImpl: () => Promise<unknown> = () => Promise.resolve({ steps: [] });
+vi.mock("@/app/(app)/document-kinds", () => ({}));
 vi.mock("@/domain/approvals", () => ({
   RouteBlockedError,
   previewRoute: () => previewImpl(),

@@ -1,3 +1,4 @@
+import "@/app/(app)/document-kinds";
 import { previewRoute, RouteBlockedError, type RoutePreviewDTO } from "@/domain/approvals";
 import { LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
 import type { Viewer } from "@/domain/viewer";

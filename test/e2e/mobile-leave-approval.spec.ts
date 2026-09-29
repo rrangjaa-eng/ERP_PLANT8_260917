@@ -8,7 +8,7 @@ import { delayServerActions, documentLabel, documentTitle, loginPage, setupLeave
 
 // 04.1-05 트레이서(EXP-05 · ROADMAP 기준 3): 폰 375에서 결재함 `내 결재` 행 탭 → 결재 시트(근거 · 잔고 ·
 // 결재선) → 승인 → 처리함. 처리함 행은 문서 링크라 탭하면 문서 화면으로 간다(ENG-16 · T4). 두 번 탭은
-// 한 번만 처리된다(T7). 날짜는 테스트 맨 앞 seoulToday() 한 번에서만(CXF2-B-RF03 · week 2~3 — 다른 스펙과 겹치지 않게).
+// 한 번만 처리된다(T7). 날짜는 테스트 맨 앞 서울 오늘 한 번에서만(CXF2-B-RF03 · week 2~3 — 다른 스펙과 겹치지 않게).
 
 const PHONE = { width: 375, height: 800 };
 
@@ -89,5 +89,26 @@ test.describe("폰 결재 시트 (04.1-05)", () => {
     await expect(sheet).toBeHidden();
     const view = await getApprovalView(org.teamLead.viewer, { kind: "leave", documentId: submitted.leaveId });
     expect(view?.steps?.filter((step) => step.state === "approved")).toHaveLength(1);
+  });
+
+  test("결재 시트의 반려는 결재 시트를 닫고 반려 확인 시트를 열며, 확인 시트를 닫으면 목록 행으로 포커스가 돌아간다", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 2, weekdays: 1 });
+    const org = await setupLeaveOrg(today);
+    await submitLeave(org.drafter.viewer, { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" });
+
+    const lead = await loginPage(browser, baseURL, org.teamLead, PHONE);
+    await lead.goto("/approvals");
+    const trigger = lead.getByRole("button", { name: documentLabel(range) });
+    await trigger.click();
+    await lead.getByRole("dialog").getByRole("button", { name: "반려" }).click();
+
+    const dialogs = lead.getByRole("dialog");
+    await expect(dialogs).toHaveCount(1);
+    await expect(dialogs.getByRole("heading", { level: 2 })).toHaveText("연차 반려");
+    await expect(dialogs.getByLabel("사유")).toBeFocused();
+    await dialogs.getByRole("button", { name: "닫기" }).click();
+    await expect(dialogs).toHaveCount(0);
+    await expect(trigger).toBeFocused();
   });
 });

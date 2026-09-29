@@ -49,7 +49,7 @@ import { countLeaveQuarters, formatLeaveDays, type HalfPeriod, type LeaveFieldEr
 import { LEAVE_REQUEST_DTO_SPEC, type LeaveRequestBalanceDto, type LeaveRequestDto } from "@/domain/leave/dto";
 import { assertLeaveWrite, canSeeLeaveDocument, canWriteLeave, LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
 import { getLeaveBalancesForRequests } from "@/domain/leave/balance-service";
-import { formatBalanceRow, type RequestBalance } from "@/domain/leave/balance";
+import { formatBalanceRow, type BalanceLine, type RequestBalance } from "@/domain/leave/balance";
 
 export { LEAVE_DOCUMENT_KIND, canSeeLeaveDocument } from "@/domain/leave/access";
 export type { LeaveRequestDto } from "@/domain/leave/dto";
@@ -241,16 +241,17 @@ async function loadLeaveDetails(viewer: Viewer, ids: string[], deps: LoadDetails
 
 const BALANCE_KEYS: readonly (keyof RequestBalance)[] = ["annualRemaining", "monthlyRemaining", "pending", "thisRequest", "plannedDeduction", "over"];
 
-function completeBalance(balance: Partial<LeaveRequestBalanceDto> | null | undefined): RequestBalance | null {
+// 잔고 행 글자(04.1-03 formatBalanceRow 그대로) — 투영에서 칸이 하나라도 빠졌거나 재택이면 null(행 없음).
+// 결재 시트(buildDetailRows)와 문서 화면이 같이 쓴다.
+export function formatRequestBalanceRow(balance: Partial<LeaveRequestBalanceDto> | null | undefined, kind: LeaveKind): BalanceLine[] | null {
   if (!balance || !BALANCE_KEYS.every((key) => key in balance)) return null;
-  return balance as RequestBalance;
+  return formatBalanceRow(balance as RequestBalance, kind);
 }
 
 // 투영된 필드만으로 행을 만든다 — 숨긴 정보 항목의 값은 여기 올 수 없다(ENG-17). `일수` 행은 잔고 행이
 // 없을 때만(재택 — 잔고 행 1행의 `이번 신청`과 같은 숫자를 두 자리에 쓰지 않는다, T8).
 function buildLeaveDetailRows(projected: Partial<LeaveDetailDto>): DocumentDetailRows {
-  const balance = completeBalance(projected.balance);
-  const balanceLines = balance && projected.kind ? formatBalanceRow(balance, projected.kind) : null;
+  const balanceLines = projected.kind ? formatRequestBalanceRow(projected.balance, projected.kind) : null;
   const rows: DocumentDetailRow[] = [];
   if (projected.kind) rows.push({ label: "종류", value: kindWord(projected), tone: "default" });
   if (projected.startDate) {

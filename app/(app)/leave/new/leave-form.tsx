@@ -10,7 +10,7 @@ import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { Toast } from "@/ui/toast/Toast";
 import { DEFAULT_HALF_PERIOD, LEAVE_KINDS, HALF_PERIODS, type LeaveFieldError } from "@/domain/leave/days";
 import { HALF_LABELS, LEAVE_KIND_LABELS } from "../labels";
-import { submitLeaveAction } from "../actions";
+import { resubmitLeaveAction, submitLeaveAction } from "../actions";
 import styles from "../leave.module.css";
 
 // 04.1-02 S2 첫 형태 — 종류 · 날짜(종일·재택은 시작·종료, 반차·반반차는 하루 + 오전/오후) · 비고.
@@ -24,12 +24,22 @@ function fieldValue(formData: FormData, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
-export function LeaveForm() {
+// 04.1-05(S3 반려된 내 문서): 다시 신청 모드 — 값이 채워진 같은 폼(두 벌을 만들지 않는다). 번호는 그대로,
+// 1차 라벨 `연차 다시 신청`, 액션 resubmitLeaveAction. 토스트는 문서 화면(호출부)이 띄운다 — 성공하면 같은
+// 화면이 다시 그려져 폼이 사라지기 때문이다.
+export type LeaveFormResubmit = {
+  leaveId: string;
+  expectedVersion: number;
+  initial: { kind: string; startDate: string; endDate: string; half: string | null; note: string | null };
+  onResubmitted: (toast: string) => void;
+};
+
+export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
   const router = useRouter();
-  const [kind, setKind] = useState<string>("full_day");
-  const [half, setHalf] = useState<string>(DEFAULT_HALF_PERIOD);
+  const [kind, setKind] = useState<string>(resubmit?.initial.kind ?? "full_day");
+  const [half, setHalf] = useState<string>(resubmit?.initial.half ?? DEFAULT_HALF_PERIOD);
   const [toast, setToast] = useState<string | null>(null);
-  const { execute, result, isExecuting } = useAction(submitLeaveAction, {
+  const submitted = useAction(submitLeaveAction, {
     onSuccess: ({ data }) => {
       if (!data || !("result" in data)) return;
       const names = data.result.nextHolderNames;
@@ -37,24 +47,37 @@ export function LeaveForm() {
       router.push(`/leave/${data.result.documentId}`);
     },
   });
+  const resubmitted = useAction(resubmitLeaveAction, {
+    onSuccess: ({ data }) => {
+      if (!data || !("result" in data)) return;
+      const names = data.result.nextHolderNames;
+      resubmit?.onResubmitted(names ? `연차 다시 신청 · 결재 요청됨 → ${names}` : "연차 다시 신청 · 결재 요청됨");
+      router.refresh();
+    },
+  });
+  const { result, isExecuting } = resubmit ? resubmitted : submitted;
 
   const singleDay = kind === "half_day" || kind === "quarter_day";
   const fieldErrors: LeaveFieldError[] = result.data && "rejected" in result.data ? result.data.rejected.errors : [];
   const errorOf = (field: LeaveFieldError["field"]) => fieldErrors.find((error) => error.field === field)?.message;
-  const noteError = result.validationErrors?.note?._errors?.[0];
+  const noteError = resubmit
+    ? resubmitted.result.validationErrors?.input?.note?._errors?.[0]
+    : submitted.result.validationErrors?.note?._errors?.[0];
   const blockedReason = result.serverError ?? fieldErrors[0]?.message;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const startDate = fieldValue(formData, "startDate");
-    execute({
+    const input = {
       kind,
       startDate,
       endDate: singleDay ? startDate : fieldValue(formData, "endDate"),
       half: singleDay ? half : "",
       note: fieldValue(formData, "note"),
-    });
+    };
+    if (resubmit) resubmitted.execute({ leaveId: resubmit.leaveId, expectedVersion: resubmit.expectedVersion, input });
+    else submitted.execute(input);
   }
 
   const startError = errorOf("startDate");
@@ -71,6 +94,7 @@ export function LeaveForm() {
             id="startDate"
             name="startDate"
             type="date"
+            defaultValue={resubmit?.initial.startDate}
             className={styles.textInput}
             aria-invalid={startError ? true : undefined}
             aria-describedby={startError ? "startDate-error" : undefined}
@@ -88,6 +112,7 @@ export function LeaveForm() {
               id="endDate"
               name="endDate"
               type="date"
+              defaultValue={resubmit?.initial.endDate}
               className={styles.textInput}
               aria-invalid={endError ? true : undefined}
               aria-describedby={endError ? "endDate-error" : undefined}
@@ -103,6 +128,7 @@ export function LeaveForm() {
             type="text"
             maxLength={500}
             autoComplete="off"
+            defaultValue={resubmit?.initial.note ?? undefined}
             className={styles.textInput}
             aria-invalid={noteError ? true : undefined}
             aria-describedby={noteError ? "note-error" : undefined}
@@ -112,12 +138,14 @@ export function LeaveForm() {
 
         <Form.Actions>
           <Button type="submit" variant="primary" pending={isExecuting}>
-            연차 신청
+            {resubmit ? "연차 다시 신청" : "연차 신청"}
           </Button>
           {blockedReason ? <span className={styles.blockedReason}>{blockedReason}</span> : null}
-          <Link href="/leave" className={buttonLinkClassName("secondary")}>
-            취소
-          </Link>
+          {resubmit ? null : (
+            <Link href="/leave" className={buttonLinkClassName("secondary")}>
+              취소
+            </Link>
+          )}
         </Form.Actions>
       </Form>
       {toast ? <Toast message={toast} onDismiss={() => setToast(null)} /> : null}

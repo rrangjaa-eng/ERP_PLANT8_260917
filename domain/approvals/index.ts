@@ -77,6 +77,9 @@ export class NotCurrentHolderError extends UserFacingError {}
 export class RouteBlockedError extends UserFacingError {}
 
 export const NOT_HOLDER_MESSAGE = "지금 담당이 아님 · 새로 고침";
+// 04.1-05(T14 · UI-SPEC 사용자 확인 대상 #2): 결재할 사람이 없어 멈춘 진행 중 문서 — 기안자에게만 결재선 끝 줄로.
+// 다음 행동은 같은 행동 줄의 2차 `회수`다. 화면은 막힘을 따로 추론하지 않고 이 줄을 그리기만 한다.
+export const ROUTE_BLOCKED_DRAFTER_LINE = "결재할 사람 없음 · 회수 후 새로 신청";
 const NO_FALLBACK_MESSAGE = "대표 없음 · 관리자에게 대표 계급 확인 요청";
 
 const IN_PROGRESS: readonly string[] = ["submitted", "in_review"];
@@ -635,9 +638,10 @@ export async function approveDocument(
   });
 }
 
-const REJECT_REASON_MAX = 500;
-const REJECT_REASON_EMPTY_MESSAGE = "사유 없음 · 사유 적기";
-const REJECT_REASON_TOO_LONG_MESSAGE = "사유 500자 넘음 · 줄여 적기";
+// 반려 사유 규칙 — 화면(반려 확인 막힘 자리)도 이 상수를 받아 쓴다(코디네이터 결정 R1).
+export const REJECT_REASON_MAX = 500;
+export const REJECT_REASON_EMPTY_MESSAGE = "사유 없음 · 사유 적기";
+export const REJECT_REASON_TOO_LONG_MESSAGE = "사유 500자 넘음 · 줄여 적기";
 
 export class RejectReasonError extends UserFacingError {}
 
@@ -920,7 +924,12 @@ export async function getApprovalView(
     round: graph.instance.currentRound,
     drafterName: graph.instance.drafterName,
     steps,
-    endLines: routeEndLines(graph.instance.status as ApprovalStatus, steps, graph.instance.updatedAt),
+    endLines: [
+      ...routeEndLines(graph.instance.status as ApprovalStatus, steps, graph.instance.updatedAt),
+      ...(state.walk?.outcome.kind === "blocked" && graph.instance.drafterId === viewer.id
+        ? [{ text: ROUTE_BLOCKED_DRAFTER_LINE, tone: "danger" as const }]
+        : []),
+    ],
     currentStepIndex,
     actions,
   };

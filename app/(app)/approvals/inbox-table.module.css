@@ -5,6 +5,22 @@
   display: none;
 }
 
+/* PC 행 행동 — 승인↔반려 사이 --s-4(되돌릴 수 없는 두 행동을 떼어 둔다, #12). */
+.rowActions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+/* 터치 PC · 태블릿 — 행 행동 버튼 상자를 --touch-min으로(보이는 글자 크기는 그대로, #12). */
+@media (pointer: coarse) {
+  .rowActions button {
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+}
+
 .conflict {
   color: var(--danger);
   font-size: var(--fs-sm);

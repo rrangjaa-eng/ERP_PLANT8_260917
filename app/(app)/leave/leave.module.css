@@ -39,3 +39,27 @@
   text-decoration: underline;
   text-underline-offset: var(--underline-offset);
 }
+
+/* 04.1-05 문서 화면 — 잔고 행 2행 · 잔여 초과(S3), 반려 행 사유 줄. */
+.subLine {
+  display: block;
+  font-size: var(--fs-sm);
+  word-break: keep-all;
+}
+
+.balance-default {
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+
+.balance-muted {
+  display: block;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.balance-warning {
+  display: block;
+  color: var(--warning);
+  font-weight: var(--fw-bold);
+}

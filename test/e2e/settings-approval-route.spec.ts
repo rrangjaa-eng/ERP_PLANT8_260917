@@ -1,5 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
+import "@/domain/leave";
+import { submitLeave } from "@/domain/leave";
+import { seoulToday } from "@/lib/dates";
+import { leaveWeekdayRange } from "./leave-dates";
+import { documentLabel, loginPage, setupLeaveOrg } from "./leave-org";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { getSettingValue, setSettingValue } from "@/domain/settings/registry";
@@ -102,6 +107,49 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
       }).toPass();
     } finally {
       await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID, original);
+    }
+  });
+
+  // 04.1-05(CXF-B-F01 · CXF2-B-RF01 · T6): 본인 승인이면 팀장 자기 문서의 행동 줄 = 1차 승인 + 2차 회수(반려 없음).
+  // PC 결재함 행에는 3차 승인 하나(회수는 문서 화면 · 폰 시트에서만), 폰 결재 시트는 승인 + 회수.
+  test("본인 승인 — 팀장 자기 문서: 문서 화면 승인 + 회수, PC 결재함 행 승인 하나, 폰 시트 승인 + 회수", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 9, weekdays: 2 });
+    const original = await getSettingValue(APPROVAL_ROUTE_LEAVE_SELF_APPROVAL);
+    try {
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_SELF_APPROVAL, "self_approve");
+      const org = await setupLeaveOrg(today);
+      const doc = await submitLeave(org.teamLead.viewer, { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" });
+      const lead = await loginPage(browser, baseURL, org.teamLead);
+
+      await lead.goto(`/leave/${doc.leaveId}`);
+      await expect(lead.getByRole("button", { name: /^승인/ })).toBeVisible();
+      await expect(lead.getByRole("button", { name: /^회수/ })).toBeVisible();
+      await expect(lead.getByRole("button", { name: "반려" })).toHaveCount(0);
+
+      await lead.goto("/approvals");
+      const row = lead.getByRole("row").filter({ hasText: documentLabel(range) });
+      await expect(row.getByRole("button", { name: /^승인/ })).toHaveCount(1);
+      await expect(row.getByRole("button", { name: /^회수/ })).toHaveCount(0);
+      await expect(row.getByRole("button", { name: "반려" })).toHaveCount(0);
+
+      await lead.setViewportSize({ width: 375, height: 800 });
+      await lead.getByRole("button", { name: documentLabel(range) }).click();
+      const sheet = lead.getByRole("dialog");
+      await expect(sheet.getByRole("button", { name: /^승인/ })).toBeVisible();
+      await expect(sheet.getByRole("button", { name: "회수" })).toBeVisible();
+      await expect(sheet.getByRole("button", { name: "반려" })).toHaveCount(0);
+      await lead.keyboard.press("Escape");
+      await expect(sheet).toBeHidden();
+      await lead.setViewportSize({ width: 1280, height: 800 });
+
+      await lead.goto(`/leave/${doc.leaveId}`);
+      await lead.getByRole("button", { name: /^승인/ }).click();
+      await expect(lead.getByRole("status").filter({ hasText: "승인 · " })).toBeVisible();
+      await expect(lead.getByRole("button", { name: /^승인/ })).toHaveCount(0);
+      await expect(lead.getByRole("button", { name: /^회수/ })).toHaveCount(1);
+    } finally {
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_SELF_APPROVAL, original);
     }
   });
 

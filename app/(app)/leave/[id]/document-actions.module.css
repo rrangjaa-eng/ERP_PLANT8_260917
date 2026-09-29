@@ -1,0 +1,82 @@
+/* 04.1-05 S3 문서 화면 행동 줄 — PC는 KvList 아래 한 줄(1차 왼쪽 · 2차 오른쪽 끝, 폼 열 720), 폰은 하단 탭 위
+   고정 · 1차가 2차의 두 배 폭 · 높이 --touch-min(§6-3 제출 줄 · §7-8). 색·서체·radius는 토큰 참조만(D-20). */
+
+.bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  max-width: var(--form-max);
+  margin-top: var(--s-4);
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.secondaryWrap {
+  margin-left: auto;
+}
+
+.spacer {
+  display: none;
+}
+
+.resubmit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  max-width: var(--form-max);
+  margin-top: var(--s-4);
+}
+
+@media (max-width: 699.98px) {
+  .bar {
+    position: fixed;
+    right: 0;
+    bottom: calc(var(--touch-min) + var(--line-w-strong));
+    left: 0;
+    max-width: none;
+    margin: 0;
+    padding: var(--s-2) var(--pad-page);
+    border-top: var(--line-w) solid var(--line);
+    background: var(--bg);
+    z-index: var(--z-bar);
+  }
+
+  /* 본문 아래 여백 = 행동 줄 높이(탭 44는 셸이 이미 비운다). */
+  .spacer {
+    display: block;
+    height: calc(var(--touch-min) + var(--s-4));
+  }
+
+  .primaryWrap {
+    display: block;
+    flex: 2;
+  }
+
+  .secondaryWrap {
+    display: block;
+    flex: 1;
+    margin-left: 0;
+  }
+
+  .primaryWrap > span,
+  .secondaryWrap > span {
+    display: flex;
+  }
+
+  .primaryWrap > span > button,
+  .secondaryWrap > span > button {
+    justify-content: center;
+    width: 100%;
+    height: var(--touch-min);
+    font-size: var(--fs-base);
+  }
+
+  /* 폰에서는 kbd를 그리지 않는다(§7-9). */
+  .primaryWrap kbd {
+    display: none;
+  }
+}

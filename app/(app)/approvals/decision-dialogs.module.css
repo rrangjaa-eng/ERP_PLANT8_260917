@@ -1,0 +1,64 @@
+/* 04.1-05 S6 반려 확인 근거 칸 — 라벨 + 남은 폭(실물 sheet-modal.html .reason, #16). 480 모달의 좌우 패딩
+   안에 들어가고 폰은 전폭. 색·서체·radius는 토큰 참조만(D-20). */
+
+.reason {
+  display: grid;
+  grid-template-columns: var(--label-w) minmax(0, 1fr);
+  gap: var(--s-1) var(--s-3);
+  align-items: start;
+}
+
+.reason label {
+  padding-top: 7px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.reason input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: var(--control-h);
+  padding: 0 var(--s-2);
+  border: var(--line-w) solid var(--line-ui);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+}
+
+.reason input:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.reason input[aria-disabled="true"] {
+  background: var(--surface);
+  color: var(--faint);
+}
+
+.refresh {
+  padding: 0;
+  border: 0;
+  border-bottom: var(--line-w) solid var(--accent);
+  background: none;
+  color: var(--accent);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+@media (max-width: 699.98px) {
+  .reason {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reason label {
+    padding-top: 0;
+  }
+
+  .reason input {
+    height: var(--touch-min);
+  }
+}

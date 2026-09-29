@@ -12,6 +12,7 @@ import { Toast, type ToastTone } from "@/ui/toast/Toast";
 import { approveAction } from "./actions";
 import { approveToast } from "./approve-toast";
 import { ApprovalSheet, type ApprovalSheetItem } from "./approval-sheet";
+import { RejectDialog, WithdrawDialog, type DecisionTarget, type RejectMessages } from "./decision-dialogs";
 import leaveStyles from "@/app/(app)/leave/leave.module.css";
 import styles from "./inbox-table.module.css";
 
@@ -31,6 +32,8 @@ export type InboxRow = {
   status: { kind: StatusTagKind; label: string } | null;
   // `내 결재` 항목의 결재 시트 재료(서버 가능 행동 · 상세 · 결재선) — 처리함은 null.
   sheet: ApprovalSheetItem | null;
+  // 반려 · 회수 확인 재료 — 처리함은 null.
+  decision: DecisionTarget | null;
 };
 
 const GROUP_HEADERS: Record<InboxRow["group"], string> = { mine: "내 결재", processed: "처리함" };
@@ -39,13 +42,16 @@ function documentCellId(row: InboxRow): string {
   return `inbox-doc-${row.id.replace(/[^a-zA-Z0-9-]/g, "-")}`;
 }
 
-export function InboxTable({ rows }: { rows: InboxRow[] }) {
+export function InboxTable({ rows, rejectMessages }: { rows: InboxRow[]; rejectMessages: RejectMessages }) {
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
   // 행 제출 중 — 동기로 바뀌어 두 번째 누름을 무시한다(T7).
   const submittingRef = useRef(false);
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const [sheetItem, setSheetItem] = useState<ApprovalSheetItem | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<DecisionTarget | null>(null);
+  const [withdrawTarget, setWithdrawTarget] = useState<DecisionTarget | null>(null);
+  const showToast = (message: string) => setToast({ message, tone: "default" });
   const { execute } = useAction(approveAction, {
     onSuccess: ({ data }) => {
       if (!data) return;
@@ -109,20 +115,37 @@ export function InboxTable({ rows }: { rows: InboxRow[] }) {
         if (row.group !== "mine" || !row.instanceId || row.version === null) return null;
         const instanceId = row.instanceId;
         const expectedVersion = row.version;
+        const actions = row.sheet?.actions ?? [];
+        const decision = row.decision;
+        // PC 행은 서버 가능 행동에서 승인 · 반려만 그린다 — 회수는 행에 두지 않는다(T6 · #3, 문서 화면 · 폰 시트에서만).
         return (
-          <Button
-            variant="tertiary"
-            pending={pendingId === row.id}
-            aria-describedby={documentCellId(row)}
-            onClick={() => {
-              if (submittingRef.current) return;
-              submittingRef.current = true;
-              setPendingId(row.id);
-              execute({ instanceId, expectedVersion });
-            }}
-          >
-            승인
-          </Button>
+          <span className={styles.rowActions}>
+            {actions.includes("approve") ? (
+              <Button
+                variant="tertiary"
+                pending={pendingId === row.id}
+                aria-describedby={documentCellId(row)}
+                onClick={() => {
+                  if (submittingRef.current) return;
+                  submittingRef.current = true;
+                  setPendingId(row.id);
+                  execute({ instanceId, expectedVersion });
+                }}
+              >
+                승인
+              </Button>
+            ) : null}
+            {actions.includes("reject") && decision ? (
+              <Button
+                variant="tertiary"
+                disabled={pendingId === row.id}
+                aria-describedby={documentCellId(row)}
+                onClick={() => setRejectTarget(decision)}
+              >
+                반려
+              </Button>
+            ) : null}
+          </span>
         );
       },
     },
@@ -134,9 +157,16 @@ export function InboxTable({ rows }: { rows: InboxRow[] }) {
       <ApprovalSheet
         item={sheetItem}
         onClose={() => setSheetItem(null)}
-        onApproved={(message) => setToast({ message, tone: "default" })}
-        onSecondary={() => undefined}
+        onApproved={showToast}
+        onSecondary={(action, item) => {
+          const row = rows.find((candidate) => candidate.sheet?.instanceId === item.instanceId);
+          if (!row?.decision) return;
+          if (action === "reject") setRejectTarget(row.decision);
+          else setWithdrawTarget(row.decision);
+        }}
       />
+      <RejectDialog target={rejectTarget} messages={rejectMessages} onClose={() => setRejectTarget(null)} onDone={showToast} />
+      <WithdrawDialog target={withdrawTarget} onClose={() => setWithdrawTarget(null)} onDone={showToast} />
       {toast ? <Toast message={toast.message} tone={toast.tone} onDismiss={() => setToast(null)} /> : null}
     </>
   );

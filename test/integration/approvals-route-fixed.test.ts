@@ -24,6 +24,7 @@ import {
   submitDocument,
   ApprovalConflictError,
   NotCurrentHolderError,
+  ROUTE_BLOCKED_DRAFTER_LINE,
 } from "@/domain/approvals";
 import { submitLeave, getLeave, LEAVE_DOCUMENT_KIND } from "@/domain/leave";
 import {
@@ -462,6 +463,24 @@ describe("담당 소멸 뒤 고아 최종 — 막힘으로 다룬다(ENG-3 · D2
     expect((await stepsOf(instanceId)).find((step) => step.stepIndex === 1)).toMatchObject({ action: "approved", actedBy: ceo.id });
     const withdrawLogs = await db.select().from(actionLog).where(eq(actionLog.entityId, instanceId));
     expect(withdrawLogs.filter((row) => row.actionType === "document_withdraw")).toHaveLength(1);
+  });
+
+  // 04.1-05(T14 · #11 · UI-SPEC 사용자 확인 대상 #2): 멈춘 문서의 끝 줄은 기안자에게만 — 서버 표시 목록이 싣는다.
+  it("기안자 표시 목록 끝 줄에 ROUTE_BLOCKED_DRAFTER_LINE(danger)이 한 번 · 기안자 [회수] · 대표에게는 없음 · 담당 복구 뒤 사라짐", async () => {
+    const { leaveId, drafter, ceo } = await setupOrphanFinal();
+    const blockedLine = { text: ROUTE_BLOCKED_DRAFTER_LINE, tone: "danger" };
+
+    const drafterView = await getApprovalView(drafter, { kind: LEAVE_DOCUMENT_KIND, documentId: leaveId }, { now: NOW_2026 });
+    expect(drafterView?.endLines?.filter((line) => line.text === ROUTE_BLOCKED_DRAFTER_LINE)).toEqual([blockedLine]);
+    expect(drafterView?.endLines?.at(-1)).toEqual(blockedLine);
+    expect(drafterView?.actions).toContain("withdraw");
+
+    const ceoView = await getApprovalView(ceo, { kind: LEAVE_DOCUMENT_KIND, documentId: leaveId }, { now: NOW_2026 });
+    expect(ceoView?.endLines?.some((line) => line.text === ROUTE_BLOCKED_DRAFTER_LINE)).toBe(false);
+
+    await makePerson("새담당", DEFAULT_ROLE_ID, "경영관리팀");
+    const restored = await getApprovalView(drafter, { kind: LEAVE_DOCUMENT_KIND, documentId: leaveId }, { now: NOW_2026 });
+    expect(restored?.endLines?.some((line) => line.text === ROUTE_BLOCKED_DRAFTER_LINE)).toBe(false);
   });
 });
 

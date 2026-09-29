@@ -119,7 +119,7 @@ function CommaInput({
         className={dirty ? `${styles.periodInput} ${styles.periodInputDirty}` : styles.periodInput}
         onChange={(event) => {
           const raw = event.target.value;
-          const result = formatNumberInput({ raw, caret: event.target.selectionStart ?? raw.length, kind, prev: value });
+          const result = formatNumberInput({ raw, caret: event.target.selectionStart ?? raw.length, kind, prev: value, inputType: (event.nativeEvent as InputEvent).inputType });
           setRejection(result.rejected ? { value: result.text, reason: numberInputRejectionReason(kind, result.rejected) } : null);
           pendingCaretRef.current = result.caret;
           onChange(result.text);

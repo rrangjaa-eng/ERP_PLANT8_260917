@@ -234,6 +234,25 @@ describe("lib/crypto loadDataKeys — KMS 봉투(04.3-08)", () => {
     expect(() => encrypt("x")).toThrow(MissingEncryptionKeyError);
   });
 
+  // 검토 반영 L6 — 도중에 던지면 이미 채워진 칸은 그대로다(새 Map을 다 채운 뒤에만 바꾼다).
+  it("이미 채워진 칸이 있을 때 loadDataKeys가 실패하면 칸은 같은 Map 그대로이고 앞 키로 계속 푼다", async () => {
+    setWrapped("v1");
+    setWrapped("v2");
+    const keys: Record<string, string> = { "wrapped-v1": VALID_KEY_V1, "wrapped-v2": VALID_KEY_V2 };
+    const { loadDataKeys, encrypt, decrypt } = await loadCrypto();
+    await loadDataKeys({ unwrap: ({ ciphertext }) => Promise.resolve(Buffer.from(keys[ciphertext] ?? "")) });
+    const slotBefore = (globalThis as unknown as Record<symbol, unknown>)[DATA_KEY_SLOT];
+    const stored = encrypt("앞 키");
+
+    // v1은 다른 키로 풀리고 v2에서 던진다 — 반쯤 채운 새 Map이 칸에 들어가면 안 된다.
+    const unwrap = ({ ciphertext }: { ciphertext: string }) =>
+      ciphertext === "wrapped-v2" ? Promise.reject(new Error("KMS down")) : Promise.resolve(Buffer.from(VALID_KEY_V2));
+    await expect(loadDataKeys({ unwrap })).rejects.toThrow("KMS down");
+
+    expect((globalThis as unknown as Record<symbol, unknown>)[DATA_KEY_SLOT]).toBe(slotBefore);
+    expect(decrypt(stored)).toBe("앞 키");
+  });
+
   it("풀린 텍스트가 32바이트로 해석되지 않으면(16바이트 키) InvalidEncryptionKeyLengthError", async () => {
     setWrapped("v1");
     const { loadDataKeys, InvalidEncryptionKeyLengthError } = await loadCrypto();

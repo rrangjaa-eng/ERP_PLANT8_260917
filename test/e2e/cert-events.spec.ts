@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { certEvents } from "@/db/schema/cert-events";
 import { createEvent } from "@/domain/certs/events";
+import { maskName } from "@/domain/certs/format";
 import { setPermissionCell } from "@/domain/permissions/matrix";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -376,6 +377,9 @@ test.describe("확인증 행사 — 임시 계급(자기 행사만 · 노출 대
       expect(hiddenBody).not.toContain("김하늘");
       expect(hiddenBody).not.toContain("01048217730");
       expect(hiddenBody).not.toContain("010-4821-7730");
+      expect(hiddenBody).not.toContain(maskName("김하늘"));
+      expect(hiddenBody).not.toContain("recipientName");
+      expect(hiddenBody).not.toContain("recipientSecondLine");
 
       await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "cert_winner.value", visible: true });
       const shown = await page.request.get(`/certs/events/${created.eventId}`);
@@ -383,6 +387,8 @@ test.describe("확인증 행사 — 임시 계급(자기 행사만 · 노출 대
       const shownBody = await shown.text();
       expect(shownBody).toContain(name);
       expect(shownBody).toContain("김하늘");
+      expect(shownBody).toContain(maskName("김하늘"));
+      expect(shownBody).toContain("recipientName");
     } finally {
       await page.context().close();
     }

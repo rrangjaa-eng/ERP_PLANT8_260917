@@ -4,6 +4,8 @@
 // 늦어도 11월로 묶어 회계연도를 넘지 않는다. 날짜 산술은 UTC 자정 기준(시간대가 날짜를
 // 밀지 않게). Playwright를 import하지 않는다 — 단위 테스트 대상이다.
 
+import { seoulToday } from "@/lib/dates";
+
 const DAY_MS = 86_400_000;
 
 function toIso(ms: number): string {
@@ -36,4 +38,19 @@ export function leaveWeekdayRange(
     cursor += DAY_MS;
   }
   return { startDate: toIso(start), endDate: toIso(end) };
+}
+
+// 04.1-06(CX-R8): 날짜로 기대값을 만드는 E2E 사례의 본문을 감싼다 — d0 = today()로 본문을 돌리고, 실패했을 때
+// 서울 날짜가 d0와 다르면(사례 도중 자정을 넘김) 새 날짜로 한 번만 다시 돈다. 날짜가 그대로면 그 오류를 그대로
+// 던진다. 스펙과 E2E 서버는 같은 호스트 시계를 쓴다 — 운영 코드에 테스트용 시계 입구를 만들지 않는다.
+export async function onStableSeoulDay<T>(body: (today: string) => Promise<T>, deps?: { today?: () => string }): Promise<T> {
+  const today = deps?.today ?? (() => seoulToday());
+  const d0 = today();
+  try {
+    return await body(d0);
+  } catch (error) {
+    const d1 = today();
+    if (d1 === d0) throw error;
+    return body(d1);
+  }
 }

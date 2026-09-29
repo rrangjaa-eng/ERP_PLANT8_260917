@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, min } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { approvalInstances, leaveRequests, users } from "@/db/schema";
@@ -97,6 +97,16 @@ export async function listLeaveRequestsByDrafter(
     .where(and(eq(leaveRequests.drafterId, input.drafterId), eq(leaveRequests.fiscalYear, input.fiscalYear)))
     .orderBy(asc(leaveRequests.startDate), asc(leaveRequests.createdAt));
   return rows.map(flatten);
+}
+
+// 04.1-06(C-04 · C-P1): 한 기안자의 가장 이른 회계연도 — min(fiscal_year) 한 번. 신청이 없으면 null.
+export async function findEarliestLeaveFiscalYear(viewer: Viewer, drafterId: string): Promise<number | null> {
+  void viewer;
+  const [row] = await db
+    .select({ earliest: min(leaveRequests.fiscalYear) })
+    .from(leaveRequests)
+    .where(eq(leaveRequests.drafterId, drafterId));
+  return row?.earliest ?? null;
 }
 
 // 04.1-02: 다시 신청 — 번호는 그대로, 검증된 칸만 갱신한다(호출자의 tx).

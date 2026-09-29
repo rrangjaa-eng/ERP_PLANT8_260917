@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { leaveWeekdayRange } from "../../e2e/leave-dates";
+import { leaveWeekdayRange, onStableSeoulDay } from "../../e2e/leave-dates";
 
 // 04.1-02(Codex HIGH 06): E2E가 만드는 연차 날짜는 실행하는 날이 1월 1일이든
 // 12월 31일이든 그해 안의 평일 범위다 — 「그해 3월 첫 월요일 + 주 오프셋」.
@@ -51,5 +51,94 @@ describe("leaveWeekdayRange", () => {
     [{ week: 1.5, weekdays: 1 }],
   ])("범위 밖 인자 %o는 예외", (options) => {
     expect(() => leaveWeekdayRange("2026-09-26", options)).toThrow();
+  });
+});
+
+// 04.1-06(CX-R8): 날짜로 기대값을 만드는 E2E 사례는 서울 날짜가 사례 도중 바뀌어 실패하면 새 날짜로 한 번만
+// 다시 돈다. 날짜 함수를 주입한다(벽시계 없음).
+describe("onStableSeoulDay", () => {
+  function clock(dates: string[]): { today: () => string; calls: () => number } {
+    let index = 0;
+    return {
+      today: () => dates[Math.min(index++, dates.length - 1)] ?? "",
+      calls: () => index,
+    };
+  }
+
+  it("날짜가 그대로이고 body가 통과하면 d0로 한 번만 돈다", async () => {
+    const seen: string[] = [];
+    const result = await onStableSeoulDay(
+      (day) => {
+        seen.push(day);
+        return Promise.resolve("ok");
+      },
+      { today: clock(["2026-09-29", "2026-09-29"]).today },
+    );
+    expect(result).toBe("ok");
+    expect(seen).toEqual(["2026-09-29"]);
+  });
+
+  it("body가 실패하고 날짜가 그대로면 그 오류를 다시 던지고 한 번만 돈다", async () => {
+    const seen: string[] = [];
+    const failure = new Error("같은 날 실패");
+    let caught: unknown = null;
+    try {
+      await onStableSeoulDay(
+        (day) => {
+          seen.push(day);
+          return Promise.reject(failure);
+        },
+        { today: clock(["2026-09-29", "2026-09-29"]).today },
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBe(failure);
+    expect(seen).toEqual(["2026-09-29"]);
+  });
+
+  it("body가 실패하는 동안 날짜가 d1로 바뀌면 d1로 한 번 더 불러 그 결과를 돌려준다", async () => {
+    const seen: string[] = [];
+    const result = await onStableSeoulDay(
+      (day) => {
+        seen.push(day);
+        return day === "2026-12-31" ? Promise.reject(new Error("자정을 넘김")) : Promise.resolve(day);
+      },
+      { today: clock(["2026-12-31", "2027-01-01", "2027-01-01"]).today },
+    );
+    expect(result).toBe("2027-01-01");
+    expect(seen).toEqual(["2026-12-31", "2027-01-01"]);
+  });
+
+  it("둘째 실행도 실패하면 던지고 세 번 돌지 않는다", async () => {
+    const seen: string[] = [];
+    let caught: unknown = null;
+    try {
+      await onStableSeoulDay(
+        (day) => {
+          seen.push(day);
+          return Promise.reject(new Error(`실패 ${day}`));
+        },
+        { today: clock(["2026-12-31", "2027-01-01", "2027-01-02"]).today },
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toBe("실패 2027-01-01");
+    expect(seen).toEqual(["2026-12-31", "2027-01-01"]);
+  });
+
+  it("body가 통과했으면 날짜가 바뀌었어도 다시 돌지 않는다", async () => {
+    const seen: string[] = [];
+    const tick = clock(["2026-12-31", "2027-01-01"]);
+    await onStableSeoulDay(
+      (day) => {
+        seen.push(day);
+        return Promise.resolve();
+      },
+      { today: tick.today },
+    );
+    expect(seen).toEqual(["2026-12-31"]);
   });
 });

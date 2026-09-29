@@ -1128,6 +1128,8 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 
 **이유**: 실물 `system/sheet-modal.html`과 §7-17 슬롯 순서(2차 · 1차)가 이 순서다. 폰 결재 시트(반려 왼쪽 · 승인 오른쪽)에서 `반려`를 눌러 확인 시트로 넘어가도 주 버튼 자리가 뒤바뀌지 않고, 엄지가 닿는 오른쪽에 주 버튼이 오는 규칙 하나로 폰 행동 줄이 맞는다.
 
+**결과(독립 검토 L2)**: 근거 칸(사유)에서 Tab 한 번은 이제 2차(`취소`)다 — 확인은 `Ctrl+Enter`(kbd 표시 그대로) 또는 Tab 두 번. 보이는 순서 = Tab 순서(§10)를 지킨 결과라 안내 문구를 더하지 않는다.
+
 **버린 대안**: 폰에서만 통일(PC 확인 창은 1차 왼쪽 유지) · 결재 행동에만 두고 확인 창 · 폼은 그대로.
 
 **범위**: SYSTEM.md §6-3 · §7-8 · §7-17. 코드: `ui/confirm-dialog/ConfirmDialog.tsx` · `app/(app)/leave/new/leave-form.tsx` · `app/(app)/leave/leave.module.css` · `app/(app)/leave/use-phone-width.ts`(문서 화면 행동 줄과 같이 씀). 회귀: `test/unit/ui/confirm-dialog.test.ts` · `test/e2e/leave-document.spec.ts`(PC 반려 모달) · `test/e2e/mobile-leave-approval.spec.ts`(폰 반려 확인 시트) · `test/e2e/mobile-leave-list.spec.ts`(폰 제출 줄).

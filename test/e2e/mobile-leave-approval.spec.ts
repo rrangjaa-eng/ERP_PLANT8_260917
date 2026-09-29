@@ -111,4 +111,29 @@ test.describe("폰 결재 시트 (04.1-05)", () => {
     await expect(dialogs).toHaveCount(0);
     await expect(trigger).toBeFocused();
   });
+
+  // 사용자 결정(2026-09-29 · PR #90 A2·A3): 폰 행동 줄은 결재 시트와 문서 화면 모두 반려(2차) 왼쪽 · 승인(1차)
+  // 오른쪽이고, 두 버튼 사이는 --s-4(16px) 이상이다.
+  test("폰 결재 시트와 문서 화면 행동 줄은 반려가 왼쪽 · 승인이 오른쪽이고 사이가 16px 이상이다", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 3, weekdays: 1 });
+    const org = await setupLeaveOrg(today);
+    const { leaveId } = await submitLeave(org.drafter.viewer, { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" });
+
+    const lead = await loginPage(browser, baseURL, org.teamLead, PHONE);
+    const expectRejectLeftOfApprove = async (scope: ReturnType<typeof lead.locator>) => {
+      const reject = await scope.getByRole("button", { name: "반려" }).boundingBox();
+      const approve = await scope.getByRole("button", { name: /^승인/ }).boundingBox();
+      if (!reject || !approve) throw new Error("행동 버튼 없음");
+      expect(approve.x - (reject.x + reject.width)).toBeGreaterThanOrEqual(16);
+    };
+
+    await lead.goto("/approvals");
+    await lead.getByRole("button", { name: documentLabel(range) }).click();
+    await expect(lead.getByRole("dialog")).toBeVisible();
+    await expectRejectLeftOfApprove(lead.getByRole("dialog"));
+
+    await lead.goto(`/leave/${leaveId}`);
+    await expectRejectLeftOfApprove(lead.locator("main"));
+  });
 });

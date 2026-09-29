@@ -51,6 +51,12 @@
     height: calc(var(--touch-min) + var(--s-4));
   }
 
+  /* 폰은 결재 시트와 같이 반려(2차) 왼쪽 · 승인(1차) 오른쪽, 사이 --s-4 이상(사용자 결정 2026-09-29 —
+     DECISIONS.md 폰 결재 행동 줄). PC 순서(1차 왼쪽)는 그대로라 DOM 순서는 바꾸지 않는다. */
+  .buttons {
+    gap: var(--s-4);
+  }
+
   .primaryWrap {
     display: block;
     flex: 2;
@@ -59,6 +65,7 @@
   .secondaryWrap {
     display: block;
     flex: 1;
+    order: -1;
     margin-left: 0;
   }
 

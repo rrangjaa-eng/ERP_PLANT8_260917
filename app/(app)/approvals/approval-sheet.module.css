@@ -136,9 +136,10 @@
   border-top: var(--line-w) solid var(--line);
 }
 
+/* 반려(2차) 왼쪽 · 승인(1차) 오른쪽, 사이 --s-4 이상(사용자 결정 2026-09-29 — DECISIONS.md 폰 결재 행동 줄). */
 .buttons {
   display: flex;
-  gap: var(--s-3);
+  gap: var(--s-4);
 }
 
 /* 1차가 2차의 두 배 폭, 높이 --touch-min. Button.tsx 내부 span·button은 이 모듈 밖 클래스라 요소 선택자로 닿는다. */

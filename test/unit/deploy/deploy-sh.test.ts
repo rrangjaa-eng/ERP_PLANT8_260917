@@ -1172,4 +1172,155 @@ describe("deploy.sh — 데이터 키 KMS 봉투(04.3-08)", () => {
     expect(r.log).not.toContain(`secrets add-iam-policy-binding ${PLAIN} `);
     expect(r.log).not.toContain("app-data-key-v2-staging");
   });
+
+  // 04.3-08 검토 반영 B1 — 데이터 키 경로의 존재 확인은 오류를 삼키지 않는다. NOT_FOUND만
+  // 「없음」이고, 다른 오류는 배포를 멈춘다(새 키를 만들거나 감싼 v1을 바꾸지 않는다).
+  function expectNoKeyChange(r: DeployResult, { wrapped = false } = {}): void {
+    expect(r.status).not.toBe(0);
+    if (!wrapped) expect(r.log).not.toContain("kms encrypt");
+    expect(r.log).not.toContain(`secrets versions add ${WRAPPED_V1} `);
+    expect(r.log).not.toMatch(/^run deploy /m);
+  }
+
+  it("B1 재현 1 — 평문 v1이 있는데 평문 버전 목록 조회가 실패하면 새 키를 만들지 않고 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: {
+        [`secret-data-${PLAIN}`]: ORIGINAL_KEY_TEXT,
+        "fail-gcloud": `secrets versions list --secret=${PLAIN} `,
+      },
+    });
+    expectNoKeyChange(r);
+    expect(r.stderr).toContain("forced failure");
+  });
+
+  it("B1 — 평문 시크릿 조회(describe)가 NOT_FOUND가 아닌 오류로 실패하면 새 키를 만들지 않고 gcloud 메시지를 보이며 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: {
+        [`secret-data-${PLAIN}`]: ORIGINAL_KEY_TEXT,
+        "fail-gcloud": `secrets describe ${PLAIN} `,
+      },
+    });
+    expectNoKeyChange(r);
+    expect(r.stderr).toContain("forced failure");
+    expect(r.stderr.trim().split("\n").at(-1)).toBe("deploy failed at ensure_secrets");
+  });
+
+  it("B1 재현 2 — 평문 파기 뒤 감싼 v1 버전 목록 조회가 실패하면 감싼 v1을 바꾸지 않고 멈춘다", () => {
+    const wrappedV1 = Buffer.from(`FAKEKMS1${ORIGINAL_KEY_TEXT}`).toString("base64");
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: {
+        [`secret-data-${WRAPPED_V1}`]: wrappedV1,
+        [`secret-label-${WRAPPED_V1}`]: "1",
+        "fail-gcloud": `secrets versions list --secret=${WRAPPED_V1} `,
+      },
+    });
+    expectNoKeyChange(r);
+    expect(stateFile(r.stateDir, `secret-data-${WRAPPED_V1}`)).toBe(wrappedV1);
+  });
+
+  it("B1 — 감싼 v1에 버전이 있지만 ENABLED가 없으면(끔) 평문이 있어도 다시 감싸지 않고 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: {
+        [`secret-data-${PLAIN}`]: ORIGINAL_KEY_TEXT,
+        [`secret-disabled-${WRAPPED_V1}`]: true,
+      },
+    });
+    expectNoKeyChange(r);
+    expect(r.stderr).toContain(WRAPPED_V1);
+  });
+
+  it("B1 — 평문 시크릿은 있는데 ENABLED 버전이 없고 감싼 v1이 비었으면 새 키를 만들지 않고 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { [`secret-disabled-${PLAIN}`]: true },
+    });
+    expectNoKeyChange(r);
+    expect(r.stderr).toContain(PLAIN);
+  });
+
+  it("B1 — 감싼 v1 시크릿만 있고 버전이 없으면(앞 배포가 만든 뒤 멈춤) 평문 확인 뒤 새로 감싼다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { [`secret-data-${PLAIN}`]: ORIGINAL_KEY_TEXT, [`secret-created-${WRAPPED_V1}`]: true },
+    });
+    expect(r.stderr).not.toContain("deploy failed at");
+    expect(r.status).toBe(0);
+    expect(r.log).not.toContain(`secrets create ${WRAPPED_V1} `);
+    expect(sha256(unwrapFake(stateFile(r.stateDir, `secret-data-${WRAPPED_V1}`) ?? "").plaintext)).toBe(
+      sha256(ORIGINAL_KEY_TEXT),
+    );
+  });
+
+  // 04.3-08 검토 반영 H2 — 감싼 v2가 있는데 버전 조회가 실패하면 v2 없이 배포하지 않는다.
+  it("H2 — 감싼 v2가 있는데 v2 버전 목록 조회가 실패하면 v2 없는 리비전을 배포하지 않고 멈춘다", () => {
+    const wrappedV1 = Buffer.from(`FAKEKMS1${ORIGINAL_KEY_TEXT}`).toString("base64");
+    const wrappedV2 = Buffer.from(`FAKEKMS2${ORIGINAL_KEY_TEXT}`).toString("base64");
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: {
+        [`secret-data-${WRAPPED_V1}`]: wrappedV1,
+        [`secret-label-${WRAPPED_V1}`]: "1",
+        [`secret-data-${WRAPPED_V2}`]: wrappedV2,
+        [`secret-label-${WRAPPED_V2}`]: "2",
+        "fail-gcloud": `secrets versions list --secret=${WRAPPED_V2} `,
+      },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.log).not.toMatch(/^run deploy /m);
+  });
+
+  it("H2 — 감싼 v2 시크릿 조회(describe)가 NOT_FOUND가 아닌 오류면 배포하지 않고 멈춘다", () => {
+    const wrappedV1 = Buffer.from(`FAKEKMS1${ORIGINAL_KEY_TEXT}`).toString("base64");
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: {
+        [`secret-data-${WRAPPED_V1}`]: wrappedV1,
+        [`secret-label-${WRAPPED_V1}`]: "1",
+        "fail-gcloud": `secrets describe ${WRAPPED_V2} `,
+      },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("forced failure");
+    expect(r.log).not.toMatch(/^run deploy /m);
+  });
+
+  // 04.3-08 검토 반영 M1 — 왕복 확인이 실제로 어긋남을 잡는다(가짜 KMS가 다른 평문을 돌려줌).
+  it("M1 — kms decrypt가 32바이트가 아닌 키를 돌려주면 (bytes)로 멈추고 감싼 시크릿 · 서비스를 바꾸지 않는다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "kms-decrypt-plaintext": `${Buffer.alloc(16, 3).toString("base64")}\n` },
+    });
+    expectNoKeyChange(r, { wrapped: true });
+    expect(r.stderr).toContain(`wrapped data key round trip failed: ${PLAIN} (bytes)`);
+  });
+
+  it("M1 — 옮기기에서 kms decrypt가 다른 32바이트 키를 돌려주면 (hash)로 멈추고 감싼 시크릿 · 서비스를 바꾸지 않는다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: {
+        [`secret-data-${PLAIN}`]: ORIGINAL_KEY_TEXT,
+        "kms-decrypt-plaintext": `${Buffer.alloc(32, 4).toString("base64")}\n`,
+      },
+    });
+    expectNoKeyChange(r, { wrapped: true });
+    expect(r.stderr).toContain(`wrapped data key round trip failed: ${PLAIN} (hash)`);
+  });
+
+  // 04.3-08 검토 반영 M2 — 주 버전 조회 실패가 빈 라벨로 흘러가지 않는다.
+  it("M2 — KMS 주 버전 조회가 실패하면 빈 라벨로 감싸지 않고 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: {
+        "fail-gcloud":
+          "kms keys describe app-data-key --keyring=plant8-staging --location=asia-northeast3 --project=test-proj --format",
+      },
+    });
+    expectNoKeyChange(r);
+    expect(r.log).not.toContain(`secrets update ${WRAPPED_V1} `);
+  });
+
+  // 04.3-08 검토 반영 L2 — KMS 키 확인 실패가 NOT_FOUND가 아니면 gcloud 메시지를 그대로 보인다.
+  it("L2 — KMS 키 확인이 NOT_FOUND가 아닌 오류(권한 등)면 gcloud 메시지를 보이고 ensure_kms_key에서 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "fail-gcloud": "kms keys describe" },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("forced failure");
+    expect(r.stderr).not.toContain("missing — run scripts/bootstrap-gcp.sh first");
+    expect(r.stderr.trim().split("\n").at(-1)).toBe("deploy failed at ensure_kms_key");
+    expect(r.log).not.toMatch(/^run deploy /m);
+  });
 });

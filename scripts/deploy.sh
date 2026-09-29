@@ -39,6 +39,7 @@ SERVICE_URL=""
 CONN_NAME=""
 EXISTS=0
 ADD_DATA_KEY_V2=0
+WRAPPED_V2_ATTACH=0
 
 usage() {
   cat >&2 <<'USAGE'
@@ -295,24 +296,56 @@ _ensure_secret() {
 # 권한은 기동 때 instrumentation.ts의 loadDataKeys와 스모크가 실제로 증명한다.
 ensure_kms_key() {
   STAGE=ensure_kms_key
-  if ! run gcloud kms keys describe "$(kms_key)" --keyring="$(kms_keyring "$ENV")" --location="$REGION" --project="$PROJECT" >/dev/null 2>&1; then
+  local err
+  if err="$(run gcloud kms keys describe "$(kms_key)" --keyring="$(kms_keyring "$ENV")" --location="$REGION" --project="$PROJECT" 2>&1 >/dev/null)"; then
+    return 0
+  fi
+  printf '%s\n' "$err" >&2
+  if printf '%s' "$err" | grep -q 'NOT_FOUND'; then
     echo "KMS key $(kms_keyring "$ENV")/$(kms_key) missing — run scripts/bootstrap-gcp.sh first (docs/OPERATIONS.md §9)" >&2
+  else
+    echo "cannot read KMS key $(kms_keyring "$ENV")/$(kms_key) — check the deployer's roles on that key (docs/OPERATIONS.md §9)" >&2
+  fi
+  return 1
+}
+
+# 검토 반영 M2: 조회 실패나 빈 값을 빈 라벨로 흘려보내지 않는다 — 부르는 쪽은 대입으로 받아 멈춘다.
+_kms_primary_version() {
+  local primary
+  primary="$(run gcloud kms keys describe "$(kms_key)" --keyring="$(kms_keyring "$ENV")" --location="$REGION" --project="$PROJECT" --format='value(primary.name)')" || return 1
+  primary="${primary##*/}"
+  if [ -z "$primary" ]; then
+    echo "cannot read the primary version of KMS key $(kms_keyring "$ENV")/$(kms_key)" >&2
+    return 1
+  fi
+  printf '%s\n' "$primary"
+}
+
+# 검토 반영 B1 · H2: 데이터 키 경로의 조회는 오류를 삼키지 않는다. NOT_FOUND만 「없음」(absent)이고
+# 일시 · 권한 오류는 gcloud 메시지를 보이고 실패한다 — 「없음」으로 읽어 새 키를 만들지 않는다.
+# 부르는 쪽은 local과 따로 대입해 받는다(대입이 실패하면 set -e가 멈춘다).
+_secret_presence() {
+  local err
+  if err="$(run gcloud secrets describe "$1" --project="$PROJECT" 2>&1 >/dev/null)"; then
+    echo present
+  elif printf '%s' "$err" | grep -q 'NOT_FOUND'; then
+    echo absent
+  else
+    printf '%s\n' "$err" >&2
+    echo "cannot read secret $1 — stopped before touching the data key" >&2
     return 1
   fi
 }
 
-_kms_primary_version() {
-  local primary
-  primary="$(run gcloud kms keys describe "$(kms_key)" --keyring="$(kms_keyring "$ENV")" --location="$REGION" --project="$PROJECT" --format='value(primary.name)')"
-  printf '%s\n' "${primary##*/}"
-}
-
-_secret_enabled_version() {
-  run gcloud secrets versions list --secret="$1" --project="$PROJECT" --filter='state:ENABLED' --format='value(name)' 2>/dev/null || true
+# 버전 이름 목록(인자를 더 주면 --filter 등으로 좁힌다) — 실패는 그대로 실패다.
+_secret_versions() {
+  local name="$1"
+  shift
+  run gcloud secrets versions list --secret="$name" --project="$PROJECT" "$@" --format='value(name)'
 }
 
 _wrapped_label() {
-  run gcloud secrets describe "$1" --project="$PROJECT" --format='value(labels.kms-key-version)' 2>/dev/null || true
+  run gcloud secrets describe "$1" --project="$PROJECT" --format='value(labels.kms-key-version)'
 }
 
 # 감싼 값(KMS 암호문의 한 줄 base64)을 실제 KMS로 풀어 본다 — 푼 base64 텍스트가 seed_bytes
@@ -345,22 +378,38 @@ _verify_wrapped_data_key() {
 }
 
 # 인코딩 계약: KMS 평문 = 평문 시크릿과 같은 base64 텍스트, 감싼 시크릿 = KMS 암호문의 한 줄
-# base64. 평문 시크릿에 버전이 있으면 그 값 그대로를(새 키를 만들지 않는다), 없으면 새
-# seed_bytes 키를 감싼다. 왕복 확인이 통과해야 라벨(감쌀 때의 주 버전) → 버전 순으로 넣는다.
+# base64. 평문 시크릿에 버전이 있으면 그 값 그대로를(새 키를 만들지 않는다), 평문 시크릿이
+# 확실히 없을 때(NOT_FOUND)만 새 seed_bytes 키를 감싼다. 감싼 시크릿에 버전이 하나라도 있으면
+# (어떤 상태든) 새로 감싸거나 바꾸지 않는다 — ENABLED가 없으면 멈춘다(검토 반영 B1).
+# 왕복 확인이 통과해야 라벨(감쌀 때의 주 버전) → 버전 순으로 넣는다.
 # 권한 · 빠진 라벨은 여기가 아니라 _ensure_wrapped_data_key_access가 매번 보장한다.
 _ensure_wrapped_data_key() {
   local base="$1" seed_bytes="$2"
-  local name plain_name
+  local name plain_name presence versions
   name="$(secret_name "${base}-wrapped" "$ENV")"
   plain_name="$(secret_name "$base" "$ENV")"
-  if ! run gcloud secrets describe "$name" --project="$PROJECT" >/dev/null 2>&1; then
+  presence="$(_secret_presence "$name")"
+  if [ "$presence" = absent ]; then
     run gcloud secrets create "$name" --replication-policy=user-managed --locations="$REGION" --project="$PROJECT"
-  fi
-  if [ -n "$(_secret_enabled_version "$name")" ]; then
-    return 0
+  else
+    versions="$(_secret_versions "$name")"
+    if [ -n "$versions" ]; then
+      versions="$(_secret_versions "$name" --filter='state:ENABLED')"
+      if [ -n "$versions" ]; then
+        return 0
+      fi
+      echo "${name} has versions but none ENABLED — not wrapping a data key again (docs/OPERATIONS.md §9)" >&2
+      return 1
+    fi
   fi
   local from_plain=0 version wrapped
-  if [ -n "$(_secret_enabled_version "$plain_name")" ]; then
+  presence="$(_secret_presence "$plain_name")"
+  if [ "$presence" = present ]; then
+    versions="$(_secret_versions "$plain_name" --filter='state:ENABLED')"
+    if [ -z "$versions" ]; then
+      echo "${plain_name} has no ENABLED version and ${name} is empty — not generating a new data key (docs/OPERATIONS.md §9)" >&2
+      return 1
+    fi
     from_plain=1
   fi
   version="$(_kms_primary_version)"
@@ -379,13 +428,18 @@ _ensure_wrapped_data_key() {
 }
 
 _ensure_wrapped_data_key_access() {
-  local name runtime_email
+  local name runtime_email enabled label primary
   name="$(secret_name "${1}-wrapped" "$ENV")"
   runtime_email="$(runtime_sa "$ENV")@${PROJECT}.iam.gserviceaccount.com"
   run gcloud secrets add-iam-policy-binding "$name" --project="$PROJECT" \
     --member="serviceAccount:${runtime_email}" --role=roles/secretmanager.secretAccessor
-  if [ -n "$(_secret_enabled_version "$name")" ] && [ -z "$(_wrapped_label "$name")" ]; then
-    run gcloud secrets update "$name" --project="$PROJECT" --update-labels="kms-key-version=$(_kms_primary_version)" >/dev/null
+  enabled="$(_secret_versions "$name" --filter='state:ENABLED')"
+  if [ -n "$enabled" ]; then
+    label="$(_wrapped_label "$name")"
+    if [ -z "$label" ]; then
+      primary="$(_kms_primary_version)"
+      run gcloud secrets update "$name" --project="$PROJECT" --update-labels="kms-key-version=${primary}" >/dev/null
+    fi
   fi
 }
 
@@ -396,9 +450,14 @@ ensure_secrets() {
   # 런타임 secretAccessor를 되살리지 않는다(AX-2, docs/OPERATIONS.md §9).
   _ensure_wrapped_data_key app-data-key-v1 32
   _ensure_wrapped_data_key_access app-data-key-v1
-  local wrapped_v2
+  # 검토 반영 H2: 감싼 v2를 붙일지는 여기서 한 번 오류를 삼키지 않고 정한다(deploy_service가 쓴다).
+  local wrapped_v2 v2_presence v2_enabled=""
   wrapped_v2="$(secret_name app-data-key-v2-wrapped "$ENV")"
-  if [ "$ADD_DATA_KEY_V2" = "1" ] && [ -z "$(_secret_enabled_version "$wrapped_v2")" ]; then
+  v2_presence="$(_secret_presence "$wrapped_v2")"
+  if [ "$v2_presence" = present ]; then
+    v2_enabled="$(_secret_versions "$wrapped_v2" --filter='state:ENABLED')"
+  fi
+  if [ "$ADD_DATA_KEY_V2" = "1" ] && [ -z "$v2_enabled" ]; then
     # v2는 v1과 다른 KMS 키 버전으로 감싼다 — 새 주 버전은 소유자가 만든다(배포는 만들지 않는다).
     local primary v1_label
     primary="$(_kms_primary_version)"
@@ -408,9 +467,11 @@ ensure_secrets() {
       exit 1
     fi
     _ensure_wrapped_data_key app-data-key-v2 32
+    v2_enabled=1
   fi
-  if [ -n "$(_secret_enabled_version "$wrapped_v2")" ]; then
+  if [ -n "$v2_enabled" ]; then
     _ensure_wrapped_data_key_access app-data-key-v2
+    WRAPPED_V2_ATTACH=1
   fi
   _ensure_secret smtp-host sentinel
   _ensure_secret smtp-user sentinel
@@ -602,10 +663,9 @@ deploy_service() {
   local secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest,APP_DATA_KEY_v1_WRAPPED=${app_data_key_secret}:latest,SMTP_HOST=${smtp_host_secret}:latest,SMTP_USER=${smtp_user_secret}:latest,SMTP_PASSWORD=${smtp_password_secret}:latest,SMTP_FROM=${smtp_from_secret}:latest"
   # 04.3-08(codex C1): 감싼 v2가 한 번 생기면 플래그와 무관하게 이후 배포마다 붙인다 —
   # 회전으로 DB가 v2 암호문이 된 뒤에도 돌고 있는 서비스가 읽는다.
-  local app_data_key_v2_secret
-  app_data_key_v2_secret="$(secret_name app-data-key-v2-wrapped "$ENV")"
-  if [ "$DRY_RUN" != "1" ] && [ -n "$(_secret_enabled_version "$app_data_key_v2_secret")" ]; then
-    secrets="${secrets},APP_DATA_KEY_v2_WRAPPED=${app_data_key_v2_secret}:latest"
+  # 붙일지는 ensure_secrets가 오류를 삼키지 않고 정했다(검토 반영 H2).
+  if [ "$DRY_RUN" != "1" ] && [ "$WRAPPED_V2_ATTACH" = "1" ]; then
+    secrets="${secrets},APP_DATA_KEY_v2_WRAPPED=$(secret_name app-data-key-v2-wrapped "$ENV"):latest"
   fi
 
   # 신규·기존 서비스 모두 바로 100% 트래픽으로 배포한다(--no-traffic/--tag

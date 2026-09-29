@@ -112,9 +112,15 @@ case "$ARGS" in
   # versions access가 읽는다). 데이터 파일이 있으면 ENABLED 버전 하나가 있는 것이고,
   # 없으면 예전처럼 공용 secret-version-exists를 따른다 — 단 감싼 시크릿(-wrapped-)은
   # 데이터 파일 유무만 따른다(공용 상태 하나로 감싼 v2가 있는 것처럼 보이지 않게).
+  # 검토 반영 B1: secret-disabled-<이름>이면 버전은 있지만 ENABLED는 없다(끈 버전).
   "secrets versions list"*)
     secret="$(printf '%s\n' "$ARGS" | grep -oE -- '--secret=[^ ]+' | cut -d= -f2)"
-    if state_file "secret-data-${secret}"; then
+    if state_file "secret-disabled-${secret}"; then
+      case "$ARGS" in
+        *"state:ENABLED"*) ;;
+        *) echo "projects/test-proj/secrets/${secret}/versions/1" ;;
+      esac
+    elif state_file "secret-data-${secret}"; then
       echo "projects/test-proj/secrets/${secret}/versions/1"
     else
       case "$secret" in
@@ -131,10 +137,15 @@ case "$ARGS" in
   "secrets describe "*"--format=value(labels.kms-key-version)"*)
     state_val "secret-label-$3"
     ;;
+  # 검토 반영 B1: 시크릿마다 존재를 본다(공용 secret-exists · 데이터 · 만든 기록 · 끈 버전).
+  # 없으면 실제 gcloud처럼 NOT_FOUND를 말한다 — 배포는 그 말만 「없음」으로 읽는다.
   "secrets describe "*)
-    state_file secret-exists || { echo "fake gcloud: secret not found" >&2; exit 1; }
+    state_file secret-exists || state_file "secret-data-$3" || state_file "secret-created-$3" ||
+      state_file "secret-disabled-$3" ||
+      { echo "ERROR: (gcloud.secrets.describe) NOT_FOUND: fake secret $3 not found" >&2; exit 1; }
     ;;
   "secrets create "*)
+    [ -n "$STATE" ] && : >"$STATE/secret-created-$3"
     exit 0
     ;;
   "secrets update "*"--update-labels=kms-key-version="*)
@@ -358,7 +369,7 @@ case "$ARGS" in
     echo "projects/test-proj/locations/asia-northeast3/keyRings/r/cryptoKeys/app-data-key/cryptoKeyVersions/${primary:-1}"
     ;;
   "kms keys describe "*)
-    state_file kms-key-exists || { echo "fake gcloud: key not found" >&2; exit 1; }
+    state_file kms-key-exists || { echo "ERROR: (gcloud.kms.keys.describe) NOT_FOUND: fake key not found" >&2; exit 1; }
     ;;
   "kms keys create "*)
     exit 0
@@ -371,8 +382,13 @@ case "$ARGS" in
     printf 'FAKEKMS%s' "${primary:-1}"
     cat
     ;;
+  # 검토 반영 M1: kms-decrypt-plaintext가 있으면 그 내용을 평문으로 돌려준다(왕복 어긋남 흉내).
   "kms decrypt "*)
     data="$(cat)"
+    if state_file kms-decrypt-plaintext; then
+      state_val kms-decrypt-plaintext
+      exit 0
+    fi
     case "$data" in
       FAKEKMS[0-9]*) printf '%s' "${data:8}" ;;
       *) echo "fake gcloud: not a fake KMS ciphertext" >&2; exit 1 ;;

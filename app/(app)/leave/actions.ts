@@ -11,6 +11,7 @@ import { previewLeaveBalance } from "@/domain/leave/balance-service";
 import { currentHolderNames, projectActionResult, withdrawDocument } from "@/domain/approvals";
 import { previewRouteOrBlocked } from "./route-preview";
 import { resubmitLeave } from "@/domain/leave/resubmit";
+import { log } from "@/lib/log";
 import "./actions.registry";
 
 // 04.1-02: 연차 신청 액션. kind · half는 문자열 그대로 도메인으로 넘긴다 — 빈 값 · 목록 밖 판정과
@@ -35,8 +36,15 @@ export const submitLeaveAction = authedActionClient.schema(leaveInputSchema).act
     if (error instanceof LeaveValidationError) return leaveRejected(error);
     throw error;
   }
-  const nextHolderNames = await currentHolderNames(ctx.viewer, { kind: LEAVE_DOCUMENT_KIND, documentId: submitted.leaveId });
-  return { result: await projectActionResult(ctx.viewer, { documentId: submitted.leaveId, final: false, nextHolderNames }) };
+  // 신청은 이미 커밋됐다 — 토스트 재료(다음 담당 이름 · 투영) 읽기가 실패해도 성공으로 돌려준다. 실패로 돌려주면 폼이 다시
+  // 신청하게 두고, 신청에는 멱등 키가 없어 두 번째 신청이 생긴다(Codex P2). 재료가 없으면 토스트는 이름 조각을 뺀다.
+  try {
+    const nextHolderNames = await currentHolderNames(ctx.viewer, { kind: LEAVE_DOCUMENT_KIND, documentId: submitted.leaveId });
+    return { result: await projectActionResult(ctx.viewer, { documentId: submitted.leaveId, final: false, nextHolderNames }) };
+  } catch (error) {
+    log.warn("leave.submit_toast_material_failed", { leaveId: submitted.leaveId, error: error instanceof Error ? error.message : String(error) });
+    return { result: { documentId: submitted.leaveId, final: false } };
+  }
 });
 
 // 회수 — 기안자 판정만(leave write와 무관 — 계획 가정 4). 이름 · 일수 없는 `회수 · 결재 멈춤`이라 투영할 필드가 없다.

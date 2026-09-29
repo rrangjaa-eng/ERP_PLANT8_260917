@@ -119,6 +119,12 @@ test.describe("사람 목록 로그인 상태 배지 · 행 머리글 (04.4-05, 
     const second = await status.getByText("임시 비밀번호 사용 중", { exact: true }).boundingBox();
     expect(first!.y).toBe(second!.y);
 
+    // 두 배지 사이 구분자는 배지와 같은 크기·색이다(본문 크기·색이면 배지보다 크고 진하다, /review 디자인 지적).
+    const glyph = (el: Element) => ({ fontSize: getComputedStyle(el).fontSize, color: getComputedStyle(el).color });
+    const badgeGlyph = await status.getByText("첫 로그인 전", { exact: true }).evaluate(glyph);
+    const sepGlyph = await status.getByText("·", { exact: true }).evaluate(glyph);
+    expect(sepGlyph).toEqual(badgeGlyph);
+
     await expect(personRow(page, admin.email)).toBeVisible();
     await expect(statusCell(personRow(page, admin.email))).not.toContainText("첫 로그인 전");
 

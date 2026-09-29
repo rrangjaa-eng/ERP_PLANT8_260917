@@ -110,6 +110,12 @@
   white-space: nowrap;
 }
 
+/* 구분자는 배지와 같은 크기·색 — 본문 크기·색이면 배지보다 크고 진하다. */
+.peopleTable .badgeSep {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
 @media (max-width: 699.98px) {
   .peopleTable .prioP2 {
     display: none;

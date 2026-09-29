@@ -1,0 +1,152 @@
+/* 04.3-07 — I4 확인증 확인 · 정정(SYSTEM §6-3 · §7-15 · UI-SPEC I4). 토큰만(docs/design/tokens.css). */
+
+/* 머리 줄도 폼 열 720에 맞춘다(§6-3). */
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--s-3);
+  max-width: var(--form-max);
+}
+
+.titleBlock {
+  min-width: 0;
+  flex: 1 1 auto;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.form {
+  margin-top: var(--s-6);
+}
+
+/* 입력 칸 — ui/input/TextField.module.css 입력 모양 그대로(§7-2). */
+.textInput {
+  composes: input from "../../../../../ui/input/TextField.module.css";
+}
+
+.textInputError {
+  composes: inputError from "../../../../../ui/input/TextField.module.css";
+}
+
+.fieldError {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 주민등록번호 — 가린 텍스트(또는 입력 280) + 3차 한 줄. */
+.rrnRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: var(--control-h);
+}
+
+.rrnInput {
+  flex: 0 1 280px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rrnText {
+  word-break: keep-all;
+}
+
+.unsaved {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+/* 서명 — 읽기 전용 이미지(폭 320 · 비율 520/200, 폰 전폭), 테두리 없이 아래 1px 선. */
+.signature {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.signatureImage {
+  display: block;
+  width: 320px;
+  max-width: 100%;
+  aspect-ratio: 520 / 200;
+  object-fit: contain;
+  border-bottom: var(--line-w) solid var(--line);
+}
+
+.signatureError {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1);
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+.signatureCaption {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.savedText {
+  margin: 0;
+  color: var(--success);
+  font-weight: var(--fw-medium);
+}
+
+.reason {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1);
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+@media (max-width: 699.98px) {
+  .signatureImage {
+    width: 100%;
+  }
+
+  /* §6-3 폰 규칙 — 제출 줄은 하단 탭 위에 얹혀 고정(탭 유지). */
+  .actionsBar {
+    position: sticky;
+    bottom: calc(var(--touch-min) + var(--line-w-strong));
+    background: var(--bg);
+  }
+}
+
+/* 브라우저 인쇄 — 이 화면은 찍지 않는다(UI-SPEC I4 · D-1108). 화면에서는 한 줄을 숨기고, 인쇄
+   미디어에서는 그 한 줄만 남긴다. 셸(상단 바 · 하단 탭)은 셸 CSS를 고치지 않고 이 화면 루트에서
+   숨긴다 — 인쇄 줄을 품지 않은 요소를 전부 display: none으로 접어, 조상 줄기만 남는다. */
+.printLine {
+  display: none;
+}
+
+@media print {
+  :global(body):has(.printLine) *:not(:has(.printLine)):not(.printLine) {
+    display: none !important;
+  }
+
+  .printLine {
+    display: block;
+    margin: 0;
+    color: var(--fg);
+    font-size: var(--fs-base);
+  }
+}
+
+.root {
+  min-width: 0;
+}
+
+.screen {
+  min-width: 0;
+}

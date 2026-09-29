@@ -37,6 +37,29 @@ const defaultRequest: KmsRequest = async ({ url, body }) => {
   return { status: res.status, data: res.data };
 };
 
+// 검토 반영 H1 — 일시 오류(네트워크 · 429 · 5xx)는 지수 백오프(500ms → 1000ms)로 최대 3번까지
+// 부른다. 시도마다 시간 초과는 10초 그대로다. 권한 · 요청 오류(4xx)와 빈 응답은 다시 부르지 않는다.
+const MAX_ATTEMPTS = 3;
+const BACKOFF_MS = 500;
+
+function isRetryable(cause: number | "network"): boolean {
+  return cause === "network" || cause === 429 || cause >= 500;
+}
+
+async function attemptDecrypt(request: KmsRequest, url: string, ciphertext: string): Promise<Buffer | number | "network"> {
+  let res: KmsResponse;
+  try {
+    res = await request({ url, body: { ciphertext } });
+  } catch {
+    return "network";
+  }
+  const plaintext = res.data?.plaintext;
+  if (res.status < 200 || res.status >= 300 || typeof plaintext !== "string") {
+    return res.status;
+  }
+  return Buffer.from(plaintext, "base64");
+}
+
 export async function decryptWithKms({
   keyName,
   ciphertext,
@@ -46,17 +69,14 @@ export async function decryptWithKms({
   ciphertext: string;
   request?: KmsRequest;
 }): Promise<Buffer> {
-  let res: KmsResponse;
-  try {
-    res = await request({ url: `${API}/${keyName}:decrypt`, body: { ciphertext: ciphertext.trim() } });
-  } catch {
-    log.warn("kms.decrypt_failed", { status: "network" });
-    throw new KmsUnavailableError("network");
+  const url = `${API}/${keyName}:decrypt`;
+  for (let attempt = 1; ; attempt++) {
+    const result = await attemptDecrypt(request, url, ciphertext.trim());
+    if (Buffer.isBuffer(result)) return result;
+    log.warn("kms.decrypt_failed", { status: result, attempt });
+    if (attempt >= MAX_ATTEMPTS || !isRetryable(result)) {
+      throw new KmsUnavailableError(result);
+    }
+    await new Promise((resolve) => setTimeout(resolve, BACKOFF_MS * 2 ** (attempt - 1)));
   }
-  const plaintext = res.data?.plaintext;
-  if (res.status < 200 || res.status >= 300 || typeof plaintext !== "string") {
-    log.warn("kms.decrypt_failed", { status: res.status });
-    throw new KmsUnavailableError(res.status);
-  }
-  return Buffer.from(plaintext, "base64");
 }

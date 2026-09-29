@@ -106,7 +106,7 @@ append-only다).
 접두어의 버전으로 키를 골라 v1·v2가 동시에 있어도 둘 다 복호화된다. 마스킹
 표시용 뒤 4자리는 암호문과 별도 평문 컬럼에 함께 저장한다(목록이 복호화
 없이 그려지고, 복호화 호출 자체가 "마스킹 해제"라는 의미를 갖는다).
-봉투(04.3-08): 스테이징·프로덕션은 Cloud KMS로 감싼 `APP_DATA_KEY_v*_WRAPPED`를 받아 `instrumentation.ts`가 기동 때 `loadDataKeys()`로 한 번 풀어 `globalThis[Symbol.for("plant8.appDataKeys")]`에 둔다 — 인터페이스·접두어는 그대로, 로컬은 평문 변수.
+봉투(04.3-08): 스테이징·프로덕션은 Cloud KMS로 감싼 `APP_DATA_KEY_v*_WRAPPED`를 받아 `instrumentation.ts`가 첫 요청 때 `loadDataKeys()`로 한 번 풀어(못 풀면 프로세스 종료 → 인스턴스 교체) `globalThis[Symbol.for("plant8.appDataKeys")]`에 둔다 — 인터페이스·접두어는 그대로, 로컬은 평문 변수.
 
 ## 4-5. 커스텀 필드 규약(Phase 3, 03-06)
 

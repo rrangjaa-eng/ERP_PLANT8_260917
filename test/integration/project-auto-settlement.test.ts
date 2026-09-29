@@ -544,4 +544,38 @@ describe("게이트 단일 진입점 — 자동 정산 (04-53 · V-04-auto-settl
     expect(await statusOf(projectId)).toBe("in_progress");
     expect(await settleLogs(projectId)).toEqual([]);
   });
+
+  it("(g3) 쓰기 입구는 잠근 행을 gate(\"project.auto-settle\")로 한 번 판정하고 정산한다", async () => {
+    const viewer = await makeViewer(DEFAULT_ROLE_ID);
+    const projectId = await makeProject({ status: "in_progress", endDate: "2026-09-17" });
+    vi.mocked(gate).mockClear();
+
+    const row = await withTransaction((tx) => loadProjectForGate(viewer, projectId, { tx, now: () => AFTER_MIDNIGHT }));
+
+    const calls = autoSettleCalls(projectId);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[2]).toEqual({
+      from: "in_progress",
+      to: "settling",
+      endDate: "2026-09-17",
+      archived: false,
+      todayKst: "2026-09-18",
+    });
+    expect(row?.status).toBe("settling");
+    expect(await statusOf(projectId)).toBe("settling");
+    expect(await settleLogs(projectId)).toHaveLength(1);
+  });
+
+  it("(g4) 쓰기 입구 — gate가 거부하면 던지지 않고 잠근 행을 그대로 돌려주며 정산하지 않는다", async () => {
+    const viewer = await makeViewer(DEFAULT_ROLE_ID);
+    const projectId = await makeProject({ status: "in_progress", endDate: "2026-09-17" });
+
+    const row = await withAutoSettleDenied(() =>
+      withTransaction((tx) => loadProjectForGate(viewer, projectId, { tx, now: () => AFTER_MIDNIGHT })),
+    );
+
+    expect(row?.status).toBe("in_progress");
+    expect(await statusOf(projectId)).toBe("in_progress");
+    expect(await settleLogs(projectId)).toEqual([]);
+  });
 });

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, max, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, max, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
@@ -235,26 +235,37 @@ export async function listActiveInstances(viewer: Viewer): Promise<ActiveInstanc
 export type ProcessedInstance = ApprovalInstanceWithDrafter & { actedAt: Date; action: string; submittedAt: Date };
 
 // 내가 처리한 인스턴스 — 인스턴스마다 가장 최근 처리 한 건, 처리 내림차순 limit건.
+// 인스턴스별 최근 한 건(DISTINCT ON)을 하위 질의로 고른 뒤 바깥에서 정렬 · 자르기를 한다 — 처리 이력 전체를
+// 메모리로 가져오지 않는다(/review — 대표처럼 오래 결재한 사람의 이력은 끝없이 늘어난다).
 export async function listProcessedInstances(viewer: Viewer, userId: string, limit: number): Promise<ProcessedInstance[]> {
   void viewer;
-  const rows = await db
-    .selectDistinctOn([approvalInstances.id], {
-      instance: approvalInstances,
-      drafterName: drafters.name,
+  const latest = db
+    .selectDistinctOn([approvalRoutes.instanceId], {
+      instanceId: approvalRoutes.instanceId,
       actedAt: approvalSteps.actedAt,
       action: approvalSteps.action,
       submittedAt: approvalRoutes.submittedAt,
     })
     .from(approvalSteps)
     .innerJoin(approvalRoutes, eq(approvalRoutes.id, approvalSteps.routeId))
-    .innerJoin(approvalInstances, eq(approvalInstances.id, approvalRoutes.instanceId))
+    .where(and(eq(approvalSteps.actedBy, userId), isNotNull(approvalSteps.actedAt), isNotNull(approvalSteps.action)))
+    .orderBy(approvalRoutes.instanceId, desc(approvalSteps.actedAt))
+    .as("latest");
+  const rows = await db
+    .select({
+      instance: approvalInstances,
+      drafterName: drafters.name,
+      actedAt: latest.actedAt,
+      action: latest.action,
+      submittedAt: latest.submittedAt,
+    })
+    .from(latest)
+    .innerJoin(approvalInstances, eq(approvalInstances.id, latest.instanceId))
     .innerJoin(drafters, eq(drafters.id, approvalInstances.drafterId))
-    .where(eq(approvalSteps.actedBy, userId))
-    .orderBy(approvalInstances.id, desc(approvalSteps.actedAt));
+    .orderBy(desc(latest.actedAt))
+    .limit(limit);
 
   return rows
     .filter((row): row is typeof row & { actedAt: Date; action: string } => row.actedAt !== null && row.action !== null)
-    .map((row) => ({ ...row.instance, drafterName: row.drafterName, actedAt: row.actedAt, action: row.action, submittedAt: row.submittedAt }))
-    .sort((a, b) => b.actedAt.getTime() - a.actedAt.getTime())
-    .slice(0, limit);
+    .map((row) => ({ ...row.instance, drafterName: row.drafterName, actedAt: row.actedAt, action: row.action, submittedAt: row.submittedAt }));
 }

@@ -1,3 +1,5 @@
+import type { ApprovalSelfApprovalValue } from "@/domain/settings/keys";
+
 // 04.1(EXP-03·EXP-04): 결재 모듈의 순수 함수 — DB·설정·시계를 import하지 않는다.
 // 문서 종류 이름으로 분기하지 않는다(종류별 차이는 호출자가 넘기는 입력 —
 // 자기 승인 값 · 단계 행 — 으로만 들어온다).
@@ -28,7 +30,8 @@ export function nextStep(status: ApprovalStatus, event: ApprovalEvent): Approval
 }
 
 export type ScopeKind = "team" | "org_unit" | "company";
-export type SelfApproval = "skip" | "self_approve";
+// 선택지 원본은 설정 키 한 곳(APPROVAL_SELF_APPROVAL_VALUES) — 한쪽만 늘면 컴파일이 잡는다(/review).
+export type SelfApproval = ApprovalSelfApprovalValue;
 
 // 제출 때 고정된 단계 행(+ 처리 기록). 사람은 처리 기록(actedBy)에만 있다.
 export type RouteStep = {

@@ -3,13 +3,15 @@ import type { SettingDef } from "@/domain/settings/registry";
 import type { visible as defaultVisible } from "@/domain/permissions/visible";
 import type { SelfApproval } from "@/domain/approvals/route";
 import type { InfoItemRef } from "@/domain/permissions/project";
+import type { ApprovalRouteScopeValue } from "@/domain/settings/keys";
 
 // 04.1(ROADMAP 기준 1): 문서 종류 등록부 — 결재 모듈은 문서 종류를 하드코딩하지
 // 않는다. 종류 모듈(domain/leave 등)이 적재될 때 registerDocumentKind로 자기를
 // 등록하고, 결재 모듈은 등록된 정의(결재선 설정 로더 · 요약 함수)로만 종류별
 // 차이를 받는다 — approvals가 종류 모듈을 import하지 않는다.
 
-export type RouteConfigScope = "drafter_team" | "drafter_org_unit" | "company" | "org_unit";
+// 선택지 원본은 설정 키 한 곳(APPROVAL_ROUTE_SCOPE_VALUES) — 한쪽만 늘면 컴파일이 잡는다(/review).
+export type RouteConfigScope = ApprovalRouteScopeValue;
 
 export type RouteConfigStep = {
   enabled: boolean;

@@ -5,10 +5,10 @@ current_phase_name: 프로젝트·견적 원장
 current_plan: 42
 status: verifying
 stopped_at: Completed 04-31-PLAN.md — Phase 4 전체 완료(42/42)
-last_updated: "2026-09-28T06:03:22.659Z"
+last_updated: "2026-09-29T01:17:13.651Z"
 last_activity: 2026-09-28
 last_activity_desc: Phase 4 execution started
-state_head: c89ab1b13d2197ec50f6cbc0911dbf9d61604bbe
+state_head: 51949a02ba0aaacf3c5def8faf7320f9f0a74991
 progress:
   total_phases: 17
   completed_phases: 1
@@ -291,6 +291,9 @@ Recent decisions affecting current work:
 - [Phase 4]: DR-P4-02(375 목록 정렬 머리글 <44px)는 ui/table 동결 지시로 Phase 04.6 제안으로 이월(HANDOFF id 68, 답 대기)
 - [Phase 4]: 04-51 결정 ② 채번 카운터 임계값 = (b) 실제로 겹칠 때만 거부 — Opus 실행자 + Opus 독립 검토로 별도 진행
 - [Phase 4]: 04-51 (b) 순번 시작값 낮춤 거부 문구는 현재 값 기준 「순번 시작값은 현재 값(N)보다 낮출 수 없음」 — 옛 「이미 매긴 번호(N)와 겹침」은 올린 뒤 낮출 때 N이 실제 최대보다 큼(사용자 결정 2026-09-28, PR #85 [지시] 5864259502, quick 260928-85f)
+- [Phase 4]: 04-51 거부 문구 (가) 현재 값 기준: 「순번 시작값은 현재 값(N)보다 낮출 수 없음」 (지시 5864259502, 구현 c89ab1b)
+- [Phase 4]: 묶음 ④ /qa ISSUE-005 (a): 동명 거래처 옵션에 사업자번호 끝 4자리 병기는 리저브 클라이언트 칸만. 견적 거래처 칸은 옵션이 projects 보기 권한만 확인해 vendor.value 밖으로 샐 수 있어 후속 단위 (사용자 2026-09-29)
+- [Phase 4]: 묶음 ④ /cso C2 (가): 리저브 clientName은 reserve.amount만 요구, vendor.value 추가 안 함 (사용자 2026-09-29)
 
 ### Pending Todos
 

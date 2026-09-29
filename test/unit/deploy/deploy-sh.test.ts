@@ -1280,6 +1280,24 @@ describe("deploy.sh — 데이터 키 KMS 봉투(04.3-08)", () => {
     expect(r.log).not.toMatch(/^run deploy /m);
   });
 
+  // 04.3-08 재검토 L-b — 감싼 v2에 버전이 있는데 ENABLED가 없으면(끔) 플래그 없이도 v2 없는
+  // 리비전을 배포하지 않는다(v2로 회전한 행을 못 읽게 된다) — v1의 「none ENABLED」와 같이 멈춘다.
+  it("L-b — 감싼 v2에 버전이 있지만 ENABLED가 없으면 --add-data-key-v2 없이도 배포하지 않고 멈춘다", () => {
+    const wrappedV1 = Buffer.from(`FAKEKMS1${ORIGINAL_KEY_TEXT}`).toString("base64");
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: {
+        [`secret-data-${WRAPPED_V1}`]: wrappedV1,
+        [`secret-label-${WRAPPED_V1}`]: "1",
+        [`secret-disabled-${WRAPPED_V2}`]: true,
+      },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain(`${WRAPPED_V2} has versions but none ENABLED`);
+    expect(r.stderr.trim().split("\n").at(-1)).toBe("deploy failed at ensure_secrets");
+    expect(r.log).not.toContain("kms encrypt");
+    expect(r.log).not.toMatch(/^run deploy /m);
+  });
+
   // 04.3-08 검토 반영 M1 — 왕복 확인이 실제로 어긋남을 잡는다(가짜 KMS가 다른 평문을 돌려줌).
   it("M1 — kms decrypt가 32바이트가 아닌 키를 돌려주면 (bytes)로 멈추고 감싼 시크릿 · 서비스를 바꾸지 않는다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
@@ -1313,13 +1331,16 @@ describe("deploy.sh — 데이터 키 KMS 봉투(04.3-08)", () => {
   });
 
   // 04.3-08 검토 반영 L2 — KMS 키 확인 실패가 NOT_FOUND가 아니면 gcloud 메시지를 그대로 보인다.
-  it("L2 — KMS 키 확인이 NOT_FOUND가 아닌 오류(권한 등)면 gcloud 메시지를 보이고 ensure_kms_key에서 멈춘다", () => {
+  it("L2 · L-a — KMS 키 확인이 NOT_FOUND가 아닌 오류(권한 등)면 gcloud 메시지와 함께 키 없음 · 권한 없음 둘 다를 안내하고 ensure_kms_key에서 멈춘다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
       state: { "fail-gcloud": "kms keys describe" },
     });
     expect(r.status).not.toBe(0);
     expect(r.stderr).toContain("forced failure");
-    expect(r.stderr).not.toContain("missing — run scripts/bootstrap-gcp.sh first");
+    // 재검토 L-a: 키 단위 viewer에게 실제 KMS는 없는 키도 PERMISSION_DENIED로 답한다 — 두 원인을 함께 이름 댄다.
+    expect(r.stderr).toContain("missing or not readable");
+    expect(r.stderr).toContain("run scripts/bootstrap-gcp.sh first");
+    expect(r.stderr).toContain("check the deployer's roles");
     expect(r.stderr.trim().split("\n").at(-1)).toBe("deploy failed at ensure_kms_key");
     expect(r.log).not.toMatch(/^run deploy /m);
   });

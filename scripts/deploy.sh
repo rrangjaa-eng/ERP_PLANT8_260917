@@ -304,7 +304,8 @@ ensure_kms_key() {
   if printf '%s' "$err" | grep -q 'NOT_FOUND'; then
     echo "KMS key $(kms_keyring "$ENV")/$(kms_key) missing — run scripts/bootstrap-gcp.sh first (docs/OPERATIONS.md §9)" >&2
   else
-    echo "cannot read KMS key $(kms_keyring "$ENV")/$(kms_key) — check the deployer's roles on that key (docs/OPERATIONS.md §9)" >&2
+    # 재검토 L-a: 키 단위 viewer에게 실제 KMS는 없는 키 · 키링도 PERMISSION_DENIED("or it may not exist")로 답한다.
+    echo "KMS key $(kms_keyring "$ENV")/$(kms_key) missing or not readable — run scripts/bootstrap-gcp.sh first, or check the deployer's roles on that key (docs/OPERATIONS.md §9)" >&2
   fi
   return 1
 }
@@ -451,11 +452,19 @@ ensure_secrets() {
   _ensure_wrapped_data_key app-data-key-v1 32
   _ensure_wrapped_data_key_access app-data-key-v1
   # 검토 반영 H2: 감싼 v2를 붙일지는 여기서 한 번 오류를 삼키지 않고 정한다(deploy_service가 쓴다).
-  local wrapped_v2 v2_presence v2_enabled=""
+  local wrapped_v2 v2_presence v2_enabled="" v2_versions
   wrapped_v2="$(secret_name app-data-key-v2-wrapped "$ENV")"
   v2_presence="$(_secret_presence "$wrapped_v2")"
   if [ "$v2_presence" = present ]; then
     v2_enabled="$(_secret_versions "$wrapped_v2" --filter='state:ENABLED')"
+    # 재검토 L-b: 버전은 있는데 ENABLED가 없으면 v2 없이 배포하지 않는다(v2로 회전한 행을 못 읽는다).
+    if [ -z "$v2_enabled" ]; then
+      v2_versions="$(_secret_versions "$wrapped_v2")"
+      if [ -n "$v2_versions" ]; then
+        echo "${wrapped_v2} has versions but none ENABLED — not deploying without it (docs/OPERATIONS.md §9)" >&2
+        return 1
+      fi
+    fi
   fi
   if [ "$ADD_DATA_KEY_V2" = "1" ] && [ -z "$v2_enabled" ]; then
     # v2는 v1과 다른 KMS 키 버전으로 감싼다 — 새 주 버전은 소유자가 만든다(배포는 만들지 않는다).

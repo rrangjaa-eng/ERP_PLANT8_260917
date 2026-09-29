@@ -444,3 +444,9 @@ export function formatBalanceRow(row: RequestBalance, kind: LeaveKind): BalanceL
   if (row.over > 0) lines.push({ text: `잔여 초과 ${days(row.over)}`, tone: "warning" });
   return lines;
 }
+
+// 신청 창에서 날짜를 고르기 전(계산 전) 잔고 행 — `이번 신청`·차감 예정 없이 두 남음과 결재 중만 한 줄(UI-SPEC S2).
+export function formatBalanceRowBeforeDates(row: RequestBalance): BalanceLine[] {
+  const monthly = row.monthlyRemaining !== null ? ` · 월차 남음 ${days(row.monthlyRemaining)}` : "";
+  return [{ text: `연차 남음 ${days(row.annualRemaining)}${monthly} · 결재 중 ${days(row.pending)}`, tone: "default" }];
+}

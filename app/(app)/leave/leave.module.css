@@ -225,3 +225,8 @@ tr:has(.rowLink) {
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
 }
+
+/* 04.1-06 DOM 감사 #4 — 잔고·일수 숫자만 700(day-numbers.tsx). */
+.dayNumber {
+  font-weight: var(--fw-bold);
+}

@@ -3,11 +3,11 @@
 import { z } from "zod";
 import { authedActionClient } from "@/lib/actions/client";
 import "@/app/(app)/document-kinds";
-import { formatRequestBalanceRow, LEAVE_DOCUMENT_KIND, LeaveValidationError, submitLeave } from "@/domain/leave";
+import { formatRequestBalanceRow, formatRequestBalanceRowBeforeDates, LEAVE_DOCUMENT_KIND, LeaveValidationError, submitLeave } from "@/domain/leave";
 import { countLeaveQuarters, type LeaveFieldError } from "@/domain/leave/days";
 import { assertLeaveWrite } from "@/domain/leave/access";
 import { previewLeaveBalance } from "@/domain/leave/balance-service";
-import { currentHolderNames, previewRoute, projectActionResult, withdrawDocument } from "@/domain/approvals";
+import { currentHolderNames, previewRoute, projectActionResult, RouteBlockedError, withdrawDocument, type RoutePreviewDTO } from "@/domain/approvals";
 import { resubmitLeave } from "@/domain/leave/resubmit";
 import "./actions.registry";
 
@@ -80,8 +80,20 @@ export const previewLeaveAction = authedActionClient.schema(leaveInputSchema).ac
     const span = (Date.parse(`${days.endDate}T00:00:00Z`) - Date.parse(`${days.startDate}T00:00:00Z`)) / DAY_MS + 1;
     weekendDays = days.kind === "full_day" ? span - days.quarters / 4 : null;
     balance = formatRequestBalanceRow(await previewLeaveBalance(ctx.viewer, parsedInput), days.kind);
+  } else if (parsedInput.kind !== "remote") {
+    // 날짜 전(계산 전) — 두 남음 · 결재 중만(UI-SPEC S2). 재택은 차감이 없어 잔고 행이 없다.
+    balance = formatRequestBalanceRowBeforeDates(await previewLeaveBalance(ctx.viewer, parsedInput));
   }
-  const route = await previewRoute(ctx.viewer, { kind: LEAVE_DOCUMENT_KIND });
-  return { remote: days.ok && days.kind === "remote", weekendDays, balance, route };
+  // 결재선이 막혀도(대표 없음) 잔고 행은 버리지 않고 막힌 이유를 결재선 자리에 준다 — 제출해야 처음 보이지 않게
+  // (04.1-06 코드 검토 L3). 다른 오류는 그대로 던진다.
+  let route: RoutePreviewDTO | null = null;
+  let routeBlocked: string | null = null;
+  try {
+    route = await previewRoute(ctx.viewer, { kind: LEAVE_DOCUMENT_KIND });
+  } catch (error) {
+    if (!(error instanceof RouteBlockedError)) throw error;
+    routeBlocked = error.message;
+  }
+  return { remote: days.ok && days.kind === "remote", weekendDays, balance, route, routeBlocked };
 });
 

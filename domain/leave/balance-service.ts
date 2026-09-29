@@ -257,9 +257,13 @@ export async function previewLeaveBalance(
   await assertLeaveWrite(viewer);
   const today = seoulToday(deps?.now);
   const days = countLeaveQuarters(input);
-  if (!days.ok) return null;
   const user = await findUserById(viewer, viewer.id);
   if (!user) throw new UserNotFoundError("사람 찾을 수 없음");
+  if (!days.ok) {
+    // 날짜 전(계산 전) — 오늘 회계연도의 두 남음 · 결재 중만(이번 신청 0, UI-SPEC S2 · 04.1-06 DOM 감사 #2).
+    const { summary, allocations } = await computeBalance(viewer, user, yearOf(today), today);
+    return project(viewer, requestBalanceOf(summary, allocations, PREVIEW_REQUEST_ID), LEAVE_REQUEST_BALANCE_DTO_SPEC);
+  }
   return requestBalanceDto(
     viewer,
     user,

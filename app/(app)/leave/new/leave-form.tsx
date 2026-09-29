@@ -6,7 +6,6 @@ import { useAction } from "next-safe-action/hooks";
 import { Form } from "@/ui/form/Form";
 import { Select } from "@/ui/select/Select";
 import { Button } from "@/ui/button/Button";
-import { Toast } from "@/ui/toast/Toast";
 import { KvList, type KvItem } from "@/ui/kv-list/KvList";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { ApprovalRoute } from "@/ui/approval-route/ApprovalRoute";
@@ -21,6 +20,7 @@ import {
   LEAVE_START_EMPTY_ERROR,
   type LeaveFieldError,
 } from "@/domain/leave/days";
+import { DayNumbers } from "../day-numbers";
 import { HALF_LABELS, LEAVE_KIND_LABELS } from "../labels";
 import { previewLeaveAction, resubmitLeaveAction, submitLeaveAction } from "../actions";
 import styles from "../leave.module.css";
@@ -110,14 +110,12 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
     note: resubmit?.initial.note ?? "",
   }));
   const [values, setValues] = useState<Values>(initial);
-  const [toast, setToast] = useState<string | null>(null);
   const [discardCount, setDiscardCount] = useState<number | null>(null);
   const [networkFailed, setNetworkFailed] = useState(false);
   // 제출 중 — 누른 즉시 켠다(렌더 상태 + 동기 ref). 서버 액션 순차 전송 때문에 제출이 대기 중인 미리보기 뒤에 줄을 서도
   // 1차는 누른 직후 `연차 신청…`이다(C-P2). ref는 한 렌더 사이에 온 두 keydown을 막는다(CEO-12).
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
-  const lastInputRef = useRef<LeaveInput | null>(null);
 
   function release() {
     submittingRef.current = false;
@@ -132,9 +130,8 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
         release();
         return;
       }
-      const names = data.result.nextHolderNames;
-      setToast(names ? `연차 신청 · 결재 요청됨 → ${names}` : "연차 신청 · 결재 요청됨");
-      router.push(`/leave/${data.result.documentId}`);
+      // 토스트는 착지 화면(문서 화면)이 띄운다 — 이 폼은 이동하며 사라진다(04.1-06 DOM 감사 #3).
+      router.push(`/leave/${data.result.documentId}?submitted=1`);
     },
     onError: ({ error }) => {
       release();
@@ -194,7 +191,6 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
     submittingRef.current = true;
     setSubmitting(true);
     setNetworkFailed(false);
-    lastInputRef.current = input;
     if (resubmit) resubmitted.execute({ leaveId: resubmit.leaveId, expectedVersion: resubmit.expectedVersion, input });
     else submitted.execute(input);
   }
@@ -204,10 +200,8 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
     run(toInput(values));
   }
 
-  // 네트워크 실패 뒤 3차 `다시 신청` = 같은 입력으로 같은 제출을 한 번 더(ref 가드 그대로, #24).
-  function retry() {
-    if (lastInputRef.current) run(lastInputRef.current);
-  }
+  // 네트워크 실패 뒤 3차 `다시 신청` = 지금 칸의 값으로 같은 제출을 한 번 더(ref 가드 그대로, #24). 실패 뒤 고친
+  // 입력을 옛 입력으로 덮어 보내지 않는다(04.1-06 코드 검토 L2).
 
   function cancel() {
     if (submittingRef.current) return;
@@ -260,7 +254,7 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
         <span data-testid="leave-balance-row">
           {preview.balance.map((line) => (
             <span key={line.text} className={styles[`balance-${line.tone}`]}>
-              {line.text}
+              <DayNumbers text={line.text} />
             </span>
           ))}
         </span>
@@ -269,6 +263,9 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
   }
   if (resubmit?.route) {
     items.push({ label: "결재선", value: resubmit.route });
+  } else if (!resubmit && preview?.routeBlocked) {
+    // 결재선이 막히면 이유를 결재선 자리에 한 줄(04.1-06 코드 검토 L3) — 제출해도 같은 이유로 거부된다.
+    items.push({ label: "결재선", value: <span className={styles.blockedReason}>{preview.routeBlocked}</span> });
   } else if (route) {
     items.push({
       label: "결재선",
@@ -287,7 +284,9 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
   const endError = errorOf("endDate");
   const hintLine = hint ? (
     <div data-testid="leave-days-hint">
-      <Form.Hint>{hint}</Form.Hint>
+      <Form.Hint>
+        <DayNumbers text={hint} />
+      </Form.Hint>
     </div>
   ) : null;
   const [blockedCause, blockedNext] = blocked ? splitReason(blocked.message) : ["", ""];
@@ -369,6 +368,7 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
         <div className={styles.formBar} data-testid="leave-form-actions">
           <Form.Actions>
             <Button
+              id="leave-submit"
               type="submit"
               variant="primary"
               shortcut="Ctrl+Enter"
@@ -389,14 +389,21 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
             {!blocked && networkFailed ? (
               <span className={styles.blockedLine}>
                 <span className={styles.blockedReason}>신청 실패 · 네트워크 · </span>
-                <Button variant="tertiary" onClick={retry}>
+                <Button variant="tertiary" onClick={submit}>
                   다시 신청
                 </Button>
               </span>
             ) : null}
             {!blocked && failure ? <span className={styles.blockedReason}>{failure}</span> : null}
             <span className={styles.cancelWrap}>
-              <Button variant="secondary" shortcut="Esc" disabled={submitting} onClick={cancel}>
+              {/* 제출 중 비활성 이유 = 제출 중인 1차(UX-06 · 04.1-06 코드 검토 L5). */}
+              <Button
+                variant="secondary"
+                shortcut="Esc"
+                disabled={submitting}
+                aria-describedby={submitting ? "leave-submit" : undefined}
+                onClick={cancel}
+              >
                 취소
               </Button>
             </span>
@@ -413,7 +420,6 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
         subtitle={`${primaryLabel} · ${discardCount ?? 0}칸`}
         primary={{ label: "입력 버리기", onConfirm: () => router.push(CANCEL_HREF) }}
       />
-      {toast ? <Toast message={toast} onDismiss={() => setToast(null)} /> : null}
     </>
   );
 }

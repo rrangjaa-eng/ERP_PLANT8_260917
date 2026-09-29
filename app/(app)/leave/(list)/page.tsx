@@ -8,6 +8,7 @@ import { getMyLeaveBalance } from "@/domain/leave/balance-service";
 import { formatBalanceLines } from "@/domain/leave/balance";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
+import { DayNumbers } from "../day-numbers";
 import { formatLeavePeriod } from "../labels";
 import { leaveStatusDisplay, toLeaveStatusKey } from "../status-display";
 import { resolveLeaveYear } from "../year-param";
@@ -64,7 +65,9 @@ export default async function LeaveListPage({ searchParams }: { searchParams: Pr
       {lines.length > 0 ? (
         <div className={styles.balanceLines} data-testid="leave-balance">
           {lines.map((line) => (
-            <p key={line.text}>{line.text}</p>
+            <p key={line.text}>
+              <DayNumbers text={line.text} />
+            </p>
           ))}
         </div>
       ) : null}

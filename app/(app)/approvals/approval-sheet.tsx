@@ -6,6 +6,7 @@ import { useAction } from "next-safe-action/hooks";
 import { Button } from "@/ui/button/Button";
 import { ApprovalRoute, type ApprovalRouteEndLine, type ApprovalRouteListStep } from "@/ui/approval-route/ApprovalRoute";
 import { approveAction } from "./actions";
+import { DayNumbers } from "@/app/(app)/leave/day-numbers";
 import { approveToast } from "./approve-toast";
 import { ConflictLine } from "./conflict-line";
 import styles from "./approval-sheet.module.css";
@@ -38,6 +39,8 @@ export type ApprovalSheetProps = {
 };
 
 const SECONDARY_LABEL: Record<"reject" | "withdraw", string> = { reject: "반려", withdraw: "회수" };
+// 잔고·일수 숫자만 700(문서 화면과 같은 행 — 04.1-06 DOM 감사 #4).
+const DAY_NUMBER_ROWS = new Set(["잔고", "일수"]);
 
 export function ApprovalSheet({ item, onClose, onApproved, onSecondary }: ApprovalSheetProps) {
   const router = useRouter();
@@ -166,7 +169,7 @@ export function ApprovalSheet({ item, onClose, onApproved, onSecondary }: Approv
                   <dd>
                     {row.lines.map((line, index) => (
                       <span key={index} className={styles[`tone-${line.tone}`]}>
-                        {line.text}
+                        {DAY_NUMBER_ROWS.has(row.label) ? <DayNumbers text={line.text} /> : line.text}
                       </span>
                     ))}
                   </dd>

@@ -71,10 +71,12 @@ test.describe("연차 신청 → 결재함 승인 → 최종 승인 (04.1-02 트
     // 기안자가 /leave/new에서 종일 두 평일을 신청한다.
     const drafterPage = await loginPage(browser, baseURL, drafter);
     await drafterPage.goto("/leave/new");
+    // 하이드레이션 전에 채운 입력은 버려진다 — 마운트 미리보기의 잔고 행이 뜬 뒤(= 하이드레이션 끝) 입력한다.
+    await expect(drafterPage.getByTestId("leave-balance-row")).toBeVisible();
     await drafterPage.getByLabel("시작일").fill(startDate);
     await drafterPage.getByLabel("종료일").fill(endDate);
     await drafterPage.getByRole("button", { name: "연차 신청" }).click();
-    await expect(drafterPage).toHaveURL(/\/leave\/[0-9a-f-]{36}$/);
+    await expect(drafterPage).toHaveURL(/\/leave\/[0-9a-f-]{36}\?submitted=1$/);
     const documentUrl = new URL(drafterPage.url()).pathname;
     await expect(drafterPage.getByText(/^LV/)).toBeVisible();
     // 머리 줄(문서 번호 · 상태 태그) 안에서만 본다 — 04.1-05부터 결재선 목록의 지금 단계도 `결재 중`이다(검토 LOW-3).

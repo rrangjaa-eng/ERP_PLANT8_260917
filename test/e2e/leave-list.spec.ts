@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { test, expect, type Browser, type Page } from "@playwright/test";
+import { test, expect, type Browser, type Locator, type Page } from "@playwright/test";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createRole, DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { setPermissionCell, setVisibilityCell } from "@/domain/permissions/matrix";
@@ -70,6 +70,15 @@ function balanceLines(page: Page) {
   return page.getByTestId("leave-balance").locator("p");
 }
 
+// DOM 감사 #4(UI-SPEC Typography): 잔고·일수 숫자는 700 — `일` 앞 숫자 토막이 굵은 요소로 따로 있다.
+async function expectDayNumbersBold(scope: Locator, expected: string[]): Promise<void> {
+  const numbers = scope.locator("b");
+  await expect(numbers).toHaveText(expected);
+  for (const weight of await numbers.evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).fontWeight))) {
+    expect(weight).toBe("700");
+  }
+}
+
 // 이 스펙 전용 기안자의 신청 두 건 — 하나는 팀장이 반려, 하나는 결재 중.
 async function submitTwo(drafter: Viewer, teamLead: Viewer, today: string): Promise<void> {
   const rejected = await submitLeave(drafter, { kind: "full_day", half: "", ...leaveWeekdayRange(today, { week: 10, weekdays: 2 }) });
@@ -99,6 +108,8 @@ test.describe("연차 목록 /leave (04.1-06 Task 1 · S1 · S10)", () => {
         `연차 ${formatLeaveDays(expected.annualDays * 4)} · 사용 0일 · 결재 중 0일 · 남음 ${formatLeaveDays(expected.annualDays * 4)}`,
         "월차 계산 불가 · 입사일 없음",
       ]);
+      const annual = formatLeaveDays(expected.annualDays * 4).replace("일", "");
+      await expectDayNumbersBold(page.getByTestId("leave-balance"), [annual, "0", "0", annual]);
       await expect(page.getByText("신청한 연차가 없습니다", { exact: true })).toBeVisible();
       // 머리 1차는 없고 EMPTY 3차 하나만 — 연도는 EMPTY에 쓰지 않는다(#6).
       await expect(page.getByRole("link", { name: "연차 신청" })).toHaveCount(1);
@@ -264,6 +275,8 @@ async function openForm(browser: Browser, baseURL: string | undefined, person: {
   const page = await login(browser, baseURL, person);
   await page.goto("/leave/new");
   await expect(page.getByLabel("종류")).toHaveValue("full_day");
+  // 하이드레이션 전에 채운 입력은 버려진다 — 마운트 미리보기의 잔고 행이 뜬 뒤(= 하이드레이션 끝) 입력한다.
+  await expect(page.getByTestId("leave-balance-row")).toBeVisible();
   return page;
 }
 
@@ -300,11 +313,51 @@ test.describe("연차 신청 폼 /leave/new (04.1-06 Task 2 · S2)", () => {
       await fillRange(page, range);
 
       await expect(form(page).getByText("주말 2일 제외", { exact: true })).toBeVisible();
+      await expectDayNumbersBold(page.getByTestId("leave-days-hint"), ["2"]);
       const expected = await expectedRow(null, today, { startDate: range.startDate, quarters: 24 }, "full_day");
       await expect(balanceRow(page)).toHaveText(expected.lines);
+      await expectDayNumbersBold(page.getByTestId("leave-balance-row"), [formatLeaveDays(expected.annualDays * 4).replace("일", ""), "0", "6"]);
       expect(expected.lines[0]).toBe(`연차 남음 ${formatLeaveDays(expected.annualDays * 4)} · 결재 중 0일 · 이번 신청 6일`);
       expect(((await form(page).innerText()).match(/이번 신청/g) ?? []).length).toBe(1);
       await expect(routeLine(page)).toHaveText(new RegExp(`^${org.drafter.name} → .* · 결재 규칙$`));
+      await page.context().close();
+    });
+  });
+
+  test("날짜 전(DOM 감사 #2 · UI-SPEC S2 계산 전): 잔고 행 `연차 남음 · 결재 중`이 먼저 있고, 평일 하루를 골라도 1차가 움직이지 않는다", async ({ browser, baseURL }) => {
+    await onStableSeoulDay(async (today) => {
+      const org = await setupLeaveOrg(today);
+      const page = await openForm(browser, baseURL, org.drafter);
+      const annual = formatLeaveDays((await expectedBalance(null, today)).annualDays * 4);
+      await expect(balanceRow(page)).toHaveText([`연차 남음 ${annual} · 결재 중 0일`]);
+      const primary = page.getByRole("button", { name: /^연차 신청/ });
+      const before = await primary.boundingBox();
+
+      await page.getByLabel("시작일").fill(leaveWeekdayRange(today, { week: 15, weekdays: 1 }).startDate);
+      await expect(balanceRow(page)).toHaveText([`연차 남음 ${annual} · 결재 중 0일 · 이번 신청 1일`]);
+      const after = await primary.boundingBox();
+      if (!before || !after) throw new Error("1차 버튼 상자 없음");
+      expect(after.y).toBe(before.y);
+      await page.context().close();
+    });
+  });
+
+  test("신청 성공(DOM 감사 #3 · UI-SPEC S2): 문서 화면으로 옮긴 뒤 토스트 `연차 신청 · 결재 요청됨 → 담당`이 보이고, 닫히면 주소에서 표시가 빠진다", async ({ browser, baseURL }) => {
+    await onStableSeoulDay(async (today) => {
+      const org = await setupLeaveOrg(today);
+      const page = await openForm(browser, baseURL, org.drafter);
+      await page.getByLabel("시작일").fill(leaveWeekdayRange(today, { week: 16, weekdays: 1 }).startDate);
+      await expect(balanceRow(page).first()).toHaveText(/ · 이번 신청 1일$/);
+      await page.getByRole("button", { name: /^연차 신청/ }).click();
+
+      await expect(page).toHaveURL(/\/leave\/[0-9a-f-]{36}\?submitted=1$/);
+      const toast = page.getByRole("status").filter({ hasText: "연차 신청 · " });
+      await expect(toast).toHaveText(`연차 신청 · 결재 요청됨 → ${org.teamLead.name}`);
+      // 4초 뒤 스스로 닫히면(§7-6) 주소에서 표시를 떼어 새로 고침이 토스트를 다시 띄우지 않는다.
+      await expect(toast).toHaveCount(0, { timeout: 8000 });
+      await expect(page).toHaveURL(/\/leave\/[0-9a-f-]{36}$/);
+      await page.reload();
+      await expect(page.getByRole("status").filter({ hasText: "연차 신청 · " })).toHaveCount(0);
       await page.context().close();
     });
   });
@@ -383,7 +436,7 @@ test.describe("연차 신청 폼 /leave/new (04.1-06 Task 2 · S2)", () => {
       const primary = page.getByRole("button", { name: /^연차 신청/ });
       await expect(primary).toBeEnabled();
       await primary.click();
-      await expect(page).toHaveURL(/\/leave\/[0-9a-f-]{36}$/);
+      await expect(page).toHaveURL(/\/leave\/[0-9a-f-]{36}\?submitted=1$/);
       await page.context().close();
     });
   });
@@ -436,6 +489,7 @@ test.describe("연차 신청 폼 /leave/new (04.1-06 Task 2 · S2)", () => {
       await expect(page).toHaveURL(/\/leave$/);
 
       await page.goto("/leave/new");
+      await expect(page.getByTestId("leave-balance-row")).toBeVisible();
       await page.getByLabel("종류").focus();
       await page.keyboard.press("Escape");
       await expect(page).toHaveURL(/\/leave$/);
@@ -468,8 +522,11 @@ test.describe("연차 신청 폼 /leave/new (04.1-06 Task 2 · S2)", () => {
       await expect(page.getByLabel("비고")).toHaveValue("병원");
       expect(await myLeaveCount(org.drafter.viewer, yearOf(today))).toBe(before);
 
+      // 코드 검토 L2: 실패 뒤 고친 입력이 `다시 신청`에 그대로 실린다(옛 입력을 다시 보내지 않는다).
+      await page.getByLabel("비고").fill("병원 진료");
       await page.getByRole("button", { name: "다시 신청" }).click();
-      await expect(page).toHaveURL(/\/leave\/[0-9a-f-]{36}$/);
+      await expect(page).toHaveURL(/\/leave\/[0-9a-f-]{36}\?submitted=1$/);
+      await expect(page.getByText("병원 진료", { exact: true })).toBeVisible();
       expect(await myLeaveCount(org.drafter.viewer, yearOf(today))).toBe(before + 1);
       await page.context().close();
     });
@@ -593,8 +650,12 @@ test.describe("연차 신청 폼 /leave/new (04.1-06 Task 2 · S2)", () => {
       await expect(page.getByRole("button", { name: /^연차 신청/ })).toHaveText(/연차 신청…/);
       const cancel = page.getByRole("button", { name: /^취소/ });
       await expect(cancel).toHaveAttribute("aria-disabled", "true");
+      // 코드 검토 L5(UX-06): 비활성 이유 = 제출 중인 1차 — 취소가 aria-describedby로 1차를 가리킨다.
+      const primaryId = await page.getByRole("button", { name: /^연차 신청/ }).getAttribute("id");
+      expect(primaryId).toBeTruthy();
+      await expect(cancel).toHaveAttribute("aria-describedby", primaryId ?? "");
       expect(await cancel.getAttribute("disabled")).toBeNull();
-      await expect(page).toHaveURL(/\/leave\/[0-9a-f-]{36}$/);
+      await expect(page).toHaveURL(/\/leave\/[0-9a-f-]{36}\?submitted=1$/);
       expect(await myLeaveCount(org.drafter.viewer, year)).toBe(before + 1);
       await page.context().close();
 
@@ -603,7 +664,7 @@ test.describe("연차 신청 폼 /leave/new (04.1-06 Task 2 · S2)", () => {
       await expect(balanceRow(second).first()).toHaveText(/ · 이번 신청 1일$/);
       await delayServerActions(second, 1500);
       await second.getByRole("button", { name: /^연차 신청/ }).dblclick();
-      await expect(second).toHaveURL(/\/leave\/[0-9a-f-]{36}$/);
+      await expect(second).toHaveURL(/\/leave\/[0-9a-f-]{36}\?submitted=1$/);
       expect(await myLeaveCount(org.drafter.viewer, year)).toBe(before + 2);
       await second.context().close();
     });

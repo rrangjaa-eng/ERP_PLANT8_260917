@@ -50,7 +50,7 @@ import { countLeaveQuarters, formatLeaveDays, type HalfPeriod, type LeaveFieldEr
 import { LEAVE_REQUEST_DTO_SPEC, type LeaveRequestBalanceDto, type LeaveRequestDto } from "@/domain/leave/dto";
 import { assertLeaveWrite, canSeeLeaveDocument, canWriteLeave, LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
 import { getLeaveBalancesForRequests } from "@/domain/leave/balance-service";
-import { formatBalanceRow, type BalanceLine, type RequestBalance } from "@/domain/leave/balance";
+import { formatBalanceRow, formatBalanceRowBeforeDates, type BalanceLine, type RequestBalance } from "@/domain/leave/balance";
 
 export { LEAVE_DOCUMENT_KIND, canSeeLeaveDocument } from "@/domain/leave/access";
 export type { LeaveRequestDto } from "@/domain/leave/dto";
@@ -243,6 +243,12 @@ const BALANCE_KEYS: readonly (keyof RequestBalance)[] = ["annualRemaining", "mon
 export function formatRequestBalanceRow(balance: Partial<LeaveRequestBalanceDto> | null | undefined, kind: LeaveKind): BalanceLine[] | null {
   if (!balance || !BALANCE_KEYS.every((key) => key in balance)) return null;
   return formatBalanceRow(balance as RequestBalance, kind);
+}
+
+// 신청 창 날짜 전(계산 전) 잔고 행 — 같은 투영 계약, 글자는 formatBalanceRowBeforeDates(UI-SPEC S2).
+export function formatRequestBalanceRowBeforeDates(balance: Partial<LeaveRequestBalanceDto> | null | undefined): BalanceLine[] | null {
+  if (!balance || !BALANCE_KEYS.every((key) => key in balance)) return null;
+  return formatBalanceRowBeforeDates(balance as RequestBalance);
 }
 
 // 투영된 필드만으로 행을 만든다 — 숨긴 정보 항목의 값은 여기 올 수 없다(ENG-17). `일수` 행은 잔고 행이

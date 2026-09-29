@@ -235,6 +235,11 @@ describe("잔고 서비스 — 동시 승인 · 결재자 잔고 행 · 주입 �
     expect(Object.keys(preview ?? {})).toEqual(LEAVE_REQUEST_BALANCE_DTO_SPEC.fields.map((f) => f.key));
     expect(preview).toMatchObject({ annualRemaining: 16, monthlyRemaining: 20, thisRequest: 24, plannedDeduction: { monthly: 20, annual: 4 } });
     expect(numbersIn(preview)).not.toContain(36);
+
+    // DOM 감사 #2(UI-SPEC S2 계산 전): 날짜를 고르기 전에도 오늘 회계연도의 두 남음 · 결재 중을 준다(이번 신청 0).
+    const beforeDates = await previewLeaveBalance(org.drafter, { kind: "full_day", startDate: "", endDate: "", half: "" }, { now });
+    expect(beforeDates).toMatchObject({ annualRemaining: 16, monthlyRemaining: 20, pending: 0, thisRequest: 0 });
+    expect(numbersIn(beforeDates)).not.toContain(36);
   });
 
   it("ENG-12 · D3 — 실제 신청 · 승인으로 만든 픽스처의 DTO와 문자열", async () => {

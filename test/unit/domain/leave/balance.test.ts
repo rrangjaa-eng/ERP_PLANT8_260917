@@ -4,6 +4,7 @@ import {
   checkLeaveAdjustment,
   formatBalanceLines,
   formatBalanceRow,
+  formatBalanceRowBeforeDates,
   formatResignationLine,
   requestBalanceOf,
   summarizeLeaveBalance,
@@ -60,6 +61,12 @@ describe("배분 — 소멸 빠른 순 · 같으면 월차 먼저 · 모자라�
     const row = requestBalanceOf(summary, allocations, "r");
     expect(row).toMatchObject({ annualRemaining: 0, monthlyRemaining: null, over: 4 });
     expect(texts(formatBalanceRow(row, "full_day"))).toEqual(["연차 남음 0일 · 결재 중 0일 · 이번 신청 1일", "잔여 초과 1일"]);
+  });
+
+  it("DOM 감사 #2(UI-SPEC S2 계산 전) — 날짜 전 잔고 행은 `연차 남음 · 월차 남음 · 결재 중`까지만 한 줄", () => {
+    const row = { annualRemaining: 60, monthlyRemaining: 8, pending: 4, thisRequest: 0, plannedDeduction: { monthly: 0, annual: 0 }, over: 0 };
+    expect(texts(formatBalanceRowBeforeDates(row))).toEqual(["연차 남음 15일 · 월차 남음 2일 · 결재 중 1일"]);
+    expect(texts(formatBalanceRowBeforeDates({ ...row, monthlyRemaining: null }))).toEqual(["연차 남음 15일 · 결재 중 1일"]);
   });
 });
 

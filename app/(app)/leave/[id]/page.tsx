@@ -15,9 +15,11 @@ import { PageHeader } from "@/ui/page-header/PageHeader";
 import { KvList, type KvItem } from "@/ui/kv-list/KvList";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { ApprovalRoute } from "@/ui/approval-route/ApprovalRoute";
+import { DayNumbers } from "../day-numbers";
 import { formatLeavePeriod, HALF_LABELS, LEAVE_KIND_LABELS } from "../labels";
 import { leaveStatusDisplay, routeListSteps, seoulMinuteOf, toLeaveStatusKey, withdrawResultLines } from "../status-display";
 import { DocumentActions } from "./document-actions";
+import { SubmittedToast } from "./submitted-toast";
 import styles from "../leave.module.css";
 
 // 04.1-02 S3 첫 형태 + 04.1-05(S3 · A3): 머리(제목 · 번호 · 상태 태그) + KvList(종류 · 기간 · (일수) · 비고 · (잔고) ·
@@ -29,9 +31,16 @@ export const dynamic = "force-dynamic";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const IN_PROGRESS: readonly string[] = ["submitted", "in_review"];
 
-export default async function LeaveDocumentPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function LeaveDocumentPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ submitted?: string }>;
+}) {
   const { viewer } = await requireSession();
   const { id } = await params;
+  const { submitted } = await searchParams;
   if (!UUID.test(id)) notFound();
   const leave = await getLeave(viewer, id);
   if (!leave) notFound();
@@ -49,6 +58,18 @@ export default async function LeaveDocumentPage({ params }: { params: Promise<{ 
 
   const actions = view?.actions ?? [];
   const resubmitting = actions.includes("resubmit");
+  // 신청 직후 착지(`?submitted=1`, 신청 폼이 붙인다) — 결재 중이고 기안자(회수 가능)일 때만 토스트. 이름은 주소에
+  // 싣지 않고 지금 단계 담당(투영된 이름)에서 만든다(04.1-06 DOM 감사 #3).
+  const holderNames = (view?.steps ?? [])
+    .filter((step) => step.state === "current" && step.holderNames)
+    .map((step) => step.holderNames)
+    .join(", ");
+  const submittedToast =
+    submitted === "1" && inProgress && actions.includes("withdraw")
+      ? holderNames
+        ? `연차 신청 · 결재 요청됨 → ${holderNames}`
+        : "연차 신청 · 결재 요청됨"
+      : null;
   const steps = routeListSteps(view?.steps);
   const route = <ApprovalRoute mode="list" steps={steps} endLines={view?.endLines ?? []} />;
 
@@ -68,14 +89,14 @@ export default async function LeaveDocumentPage({ params }: { params: Promise<{ 
   } else {
     items.push({ label: "종류", value: kindLabel }, { label: "기간", value: period });
     // `일수` 행은 잔고 행이 없을 때만 — 잔고 1행의 `이번 신청`과 같은 숫자를 두 자리에 쓰지 않는다(T8).
-    if (!balanceLines) items.push({ label: "일수", value: leave.days ?? "" });
+    if (!balanceLines) items.push({ label: "일수", value: <DayNumbers text={leave.days ?? ""} /> });
     items.push({ label: "비고", value: leave.note || "—" });
     if (balanceLines) {
       items.push({
         label: "잔고",
         value: balanceLines.map((line) => (
           <span key={line.text} className={styles[`balance-${line.tone}`]}>
-            {line.text}
+            <DayNumbers text={line.text} />
           </span>
         )),
       });
@@ -135,6 +156,7 @@ export default async function LeaveDocumentPage({ params }: { params: Promise<{ 
           ) : null
         }
       />
+      {submittedToast ? <SubmittedToast message={submittedToast} href={`/leave/${id}`} /> : null}
     </>
   );
 }

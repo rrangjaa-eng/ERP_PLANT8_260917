@@ -71,6 +71,17 @@ test.describe("폰 375 연차 목록 (04.1-06 · S1 · S10)", () => {
       await page.getByLabel("시작일").fill(leaveWeekdayRange(today, { week: 13, weekdays: 1 }).startDate);
 
       const bar = page.getByTestId("leave-form-actions");
+      // 사용자 결정 2026-09-29 A(PR #90 5894348076) — 폰 고정 제출 줄도 취소 왼쪽 · 1차 오른쪽, DOM · Tab 순서도 취소 → 연차 신청.
+      const [cancelBox, submitBox] = [
+        await bar.getByRole("button", { name: /^취소/ }).boundingBox(),
+        await bar.getByRole("button", { name: /^연차 신청/ }).boundingBox(),
+      ];
+      expect(cancelBox?.x ?? 0).toBeLessThan(submitBox?.x ?? 0);
+      expect(
+        await bar.evaluate((node) =>
+          [...node.querySelectorAll("button")].map((button) => button.textContent?.trim() ?? "").filter((text) => /^(취소|연차 신청)/.test(text)),
+        ),
+      ).toEqual([expect.stringMatching(/^취소/), expect.stringMatching(/^연차 신청/)]);
       const tabs = page.getByRole("navigation", { name: "하단 탭" });
       const barBox = await bar.boundingBox();
       const tabsBox = await tabs.boundingBox();

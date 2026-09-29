@@ -167,6 +167,10 @@ tr:has(.foldLink) {
   margin-left: auto;
 }
 
+.submitWrap {
+  display: contents;
+}
+
 .formBarSpacer {
   display: none;
 }
@@ -188,7 +192,9 @@ tr:has(.foldLink) {
     height: calc(var(--touch-min) * 2 + var(--s-6));
   }
 
-  .formBar > div > span:first-child {
+  /* 폰은 취소(2차) 왼쪽 · 1차 오른쪽(사용자 결정 2026-09-29 A). 수화 뒤에는 DOM도 취소 → 1차(leave-form usePhoneWidth);
+     order는 수화 전 보이는 순서를 같게 둔다. */
+  .formBar .submitWrap {
     display: flex;
     flex: 2;
   }
@@ -196,15 +202,17 @@ tr:has(.foldLink) {
   .formBar .cancelWrap {
     display: flex;
     flex: 1;
+    order: -1;
     margin-left: 0;
   }
 
+  .formBar .submitWrap > span,
   .formBar .cancelWrap > span {
     display: flex;
     width: 100%;
   }
 
-  .formBar > div > span:first-child > button,
+  .formBar .submitWrap button,
   .formBar .cancelWrap button {
     justify-content: center;
     width: 100%;

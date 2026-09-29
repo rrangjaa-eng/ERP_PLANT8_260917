@@ -128,7 +128,8 @@ export default async function PersonDetailPage({
         resignationDate={current.resignationDate ?? null}
         datesVisible={"hireDate" in current}
         adjustments={adjustmentRows}
-        canWrite={canWrite}
+        // 사용자 결정(2026-09-29 A) — 자기 연차 · 입사일 · 퇴직일은 바꾸지 못한다(서버도 거부) — 쓰기 칸을 그리지 않는다.
+        canWrite={canWrite && session.viewer.id !== id}
         monthlyBlockedReason={blocked?.field === "bucket" ? blocked.message : null}
       />
 

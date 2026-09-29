@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { Button } from "@/ui/button/Button";
@@ -11,6 +11,7 @@ import { approveToast } from "@/app/(app)/approvals/approve-toast";
 import { ConflictLine } from "@/app/(app)/approvals/conflict-line";
 import { RejectDialog, WithdrawDialog, type DecisionTarget, type RejectMessages } from "@/app/(app)/approvals/decision-dialogs";
 import { LeaveForm } from "../new/leave-form";
+import { usePhoneWidth } from "../use-phone-width";
 import styles from "./document-actions.module.css";
 
 // 04.1-05 S3 행동 줄 — 서버 가능 행동 목록을 **전부** 그대로 그린다(클라이언트는 상태로 고르지 않는다 · 권한을
@@ -20,18 +21,6 @@ import styles from "./document-actions.module.css";
 // disabled 아님 — §7-1 ⑦ DR-11) · 동기 ref 가드로 두 번째 누름 · 연속 Ctrl+Enter 무시(T7).
 
 type Action = "approve" | "reject" | "withdraw" | "resubmit";
-
-// 폰 폭(<700) 판정 — 서버 · 수화 중에는 PC(거짓). 폰의 보이는 순서는 CSS order가 처음부터 맞추고, 수화 뒤 DOM ·
-// Tab 순서도 반려 → 승인으로 바꾼다(사용자 결정 2026-09-29 · SYSTEM §10 포커스 순서 = 보이는 순서). PC는 승인 → 반려.
-const PHONE_QUERY = "(max-width: 699.98px)";
-function subscribePhone(onChange: () => void): () => void {
-  const media = window.matchMedia(PHONE_QUERY);
-  media.addEventListener("change", onChange);
-  return () => media.removeEventListener("change", onChange);
-}
-function usePhoneWidth(): boolean {
-  return useSyncExternalStore(subscribePhone, () => window.matchMedia(PHONE_QUERY).matches, () => false);
-}
 
 export type DocumentActionsProps = {
   instanceId: string | null;

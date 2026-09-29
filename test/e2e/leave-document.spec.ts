@@ -91,6 +91,17 @@ test.describe("연차 문서 화면 행동 줄 (04.1-05)", () => {
     await reason.fill("일정이 겹쳐 이번 주 안에는 자리를 비우기 어렵습니다. ".repeat(4));
     expect((await reason.boundingBox())?.height ?? 0).toBeGreaterThan(shortHeight);
     await reason.fill("일정 겹침");
+    // 사용자 결정 2026-09-29 A(PR #90 5894348076) — 확인 창은 PC도 2차 왼쪽 · 1차 오른쪽, DOM · Tab 순서도 취소 → 반려.
+    const [cancelBox, rejectBox] = [
+      await dialog.getByRole("button", { name: /^취소/ }).boundingBox(),
+      await dialog.getByRole("button", { name: /^반려/ }).boundingBox(),
+    ];
+    expect(cancelBox?.x ?? 0).toBeLessThan(rejectBox?.x ?? 0);
+    expect(
+      await dialog.evaluate((node) =>
+        [...node.querySelectorAll("button")].map((button) => button.textContent?.trim() ?? "").filter((text) => /^(취소|반려)/.test(text)),
+      ),
+    ).toEqual([expect.stringMatching(/^취소/), expect.stringMatching(/^반려/)]);
     await lead.keyboard.press("Control+Enter");
     await expect(lead.getByRole("status").filter({ hasText: "반려 · " })).toHaveText(`반려 · ${org.drafter.name}에게 돌아감`);
 

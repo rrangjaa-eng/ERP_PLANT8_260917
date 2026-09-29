@@ -23,6 +23,7 @@ import {
 import { DayNumbers } from "../day-numbers";
 import { HALF_LABELS, LEAVE_KIND_LABELS } from "../labels";
 import { previewLeaveAction, resubmitLeaveAction, submitLeaveAction } from "../actions";
+import { usePhoneWidth } from "../use-phone-width";
 import styles from "../leave.module.css";
 
 // 04.1-02 S2 첫 형태 → 04.1-06 완성형(S2): 종류에 따라 칸이 바뀐다(종일·재택 = 시작 · 종료, 반차·반반차 = 날짜 하나 +
@@ -102,6 +103,7 @@ function splitReason(message: string): [string, string] {
 
 export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
   const router = useRouter();
+  const phone = usePhoneWidth();
   const [initial] = useState<Values>(() => ({
     kind: resubmit?.initial.kind ?? "full_day",
     half: resubmit?.initial.half ?? DEFAULT_HALF_PERIOD,
@@ -292,6 +294,24 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
   const [blockedCause, blockedNext] = blocked ? splitReason(blocked.message) : ["", ""];
   const primaryLabel = resubmit ? "연차 다시 신청" : "연차 신청";
 
+  // 사용자 결정(2026-09-29 A, PR #90 5894348076) — 폰 고정 제출 줄은 취소(2차) 왼쪽 · 1차 오른쪽, 수화 뒤 DOM · Tab 순서도
+  // 취소 → 1차(문서 화면 행동 줄과 같은 방식 — 수화 전 보이는 순서는 CSS order). PC 폼 줄은 §6-3대로 1차 왼쪽.
+  const submitButton = (
+    <span className={styles.submitWrap}>
+      <Button
+        id="leave-submit"
+        type="submit"
+        variant="primary"
+        shortcut="Ctrl+Enter"
+        pending={submitting}
+        disabled={blocked !== null}
+        aria-describedby={blocked ? "leave-blocked" : undefined}
+      >
+        {primaryLabel}
+      </Button>
+    </span>
+  );
+
   return (
     <>
       <Form id="leave-form" onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
@@ -367,17 +387,7 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
 
         <div className={styles.formBar} data-testid="leave-form-actions">
           <Form.Actions>
-            <Button
-              id="leave-submit"
-              type="submit"
-              variant="primary"
-              shortcut="Ctrl+Enter"
-              pending={submitting}
-              disabled={blocked !== null}
-              aria-describedby={blocked ? "leave-blocked" : undefined}
-            >
-              {primaryLabel}
-            </Button>
+            {phone ? null : submitButton}
             {blocked && !submitting ? (
               <span className={styles.blockedLine}>
                 <span id="leave-blocked" className={styles.blockedReason}>{`${blockedCause} · `}</span>
@@ -407,6 +417,7 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
                 취소
               </Button>
             </span>
+            {phone ? submitButton : null}
           </Form.Actions>
         </div>
         <div className={styles.formBarSpacer} aria-hidden="true" />

@@ -167,6 +167,23 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   }
 
   const resolvedSecondaryLabel = secondaryLabel ?? (primary ? secondaryLabelFor(primary.label) : "닫기");
+  // 사용자 결정(2026-09-29 A, PR #90 5894348076) — PC · 폰 모두 2차 왼쪽 · 1차 오른쪽이고 DOM · Tab 순서도 같다
+  // (실물 sheet-modal · §7-17 슬롯 순서, 결재 시트 → 확인 시트로 넘어가도 주 버튼 자리가 그대로).
+  const secondaryButton = (
+    <span className={styles.secondaryWrap}>
+      <Button
+        variant="secondary"
+        shortcut="Esc"
+        disabled={submitting}
+        onClick={() => {
+          if (submitting) return;
+          closeNow();
+        }}
+      >
+        {resolvedSecondaryLabel}
+      </Button>
+    </span>
+  );
 
   return (
     <dialog
@@ -249,6 +266,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
               </span>
             ) : null}
             {primary.nextStep ? <span className={styles.nextStep}>{primary.nextStep}</span> : null}
+            {secondaryButton}
             <span ref={primaryWrapRef} className={styles.primaryWrap}>
               <Button
                 variant="primary"
@@ -264,20 +282,9 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
               </Button>
             </span>
           </>
-        ) : null}
-        <span className={styles.secondaryWrap}>
-          <Button
-            variant="secondary"
-            shortcut="Esc"
-            disabled={submitting}
-            onClick={() => {
-              if (submitting) return;
-              closeNow();
-            }}
-          >
-            {resolvedSecondaryLabel}
-          </Button>
-        </span>
+        ) : (
+          secondaryButton
+        )}
       </div>
     </dialog>
   );

@@ -1119,3 +1119,15 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **버린 대안**: ① 지금처럼 두고 §10 예외로 기록 ② 한 줄 유지 ③ 폰의 모든 입력 · 버튼을 44로(전 화면 영향).
 
 **범위**: SYSTEM.md §3 · §7-8 · §10. 코드: `app/(app)/leave/[id]/document-actions.tsx`(폰 DOM 순서) · `app/(app)/approvals/decision-dialogs.tsx` · `decision-dialogs.module.css`(사유 칸). 회귀: `test/e2e/mobile-leave-approval.spec.ts`(폰 Tab) · `test/e2e/leave-document.spec.ts`(PC 순서 · 사유 칸 여러 줄).
+
+## 2026-09-29 — 확인 창 · 폰 제출 줄 순서: 2차 왼쪽 · 1차 오른쪽 (사용자 결정 2026-09-29)
+
+**결정**: ① 공용 확인 창 `ui/confirm-dialog`(PC 모달 · 폰 시트 — 반려 · 회수 · 삭제 등 모든 확인)의 행동 줄은 2차(`취소`/`닫기`) 왼쪽 · 1차 오른쪽이고 DOM · Tab 순서도 2차 → 1차다. 막힘 이유 · 다음 한 수는 그 왼쪽 그대로다. ② 폰(<700) 고정 제출 줄(연차 신청 폼 · 다시 신청 폼)도 2차 왼쪽 · 1차 오른쪽이고, 수화 뒤 DOM · Tab 순서도 2차 → 1차다(문서 화면 행동 줄과 같은 방식 — 수화 전 보이는 순서는 CSS `order`). PC 폼 줄 · PC 문서 화면 행동 줄은 §6-3대로 1차 왼쪽 그대로다. 새 토큰은 없다.
+
+**결정자**: 사용자(2026-09-29, 채팅 — PR #90 「[사용자 결정 요청]」 5894348076 추천안 A, 기록 댓글 5894626002).
+
+**이유**: 실물 `system/sheet-modal.html`과 §7-17 슬롯 순서(2차 · 1차)가 이 순서다. 폰 결재 시트(반려 왼쪽 · 승인 오른쪽)에서 `반려`를 눌러 확인 시트로 넘어가도 주 버튼 자리가 뒤바뀌지 않고, 엄지가 닿는 오른쪽에 주 버튼이 오는 규칙 하나로 폰 행동 줄이 맞는다.
+
+**버린 대안**: 폰에서만 통일(PC 확인 창은 1차 왼쪽 유지) · 결재 행동에만 두고 확인 창 · 폼은 그대로.
+
+**범위**: SYSTEM.md §6-3 · §7-8 · §7-17. 코드: `ui/confirm-dialog/ConfirmDialog.tsx` · `app/(app)/leave/new/leave-form.tsx` · `app/(app)/leave/leave.module.css` · `app/(app)/leave/use-phone-width.ts`(문서 화면 행동 줄과 같이 씀). 회귀: `test/unit/ui/confirm-dialog.test.ts` · `test/e2e/leave-document.spec.ts`(PC 반려 모달) · `test/e2e/mobile-leave-approval.spec.ts`(폰 반려 확인 시트) · `test/e2e/mobile-leave-list.spec.ts`(폰 제출 줄).

@@ -124,6 +124,17 @@ test.describe("폰 결재 시트 (04.1-05)", () => {
     await expect(dialogs).toHaveCount(1);
     await expect(dialogs.getByRole("heading", { level: 2 })).toHaveText("연차 반려");
     await expect(dialogs.getByLabel("사유")).toBeFocused();
+    // 사용자 결정 2026-09-29 A(PR #90 5894348076) — 반려 확인 시트도 결재 시트와 같이 취소 왼쪽 · 반려 오른쪽, DOM · Tab 순서도 같다.
+    const [cancelBox, rejectBox] = [
+      await dialogs.getByRole("button", { name: /^취소/ }).boundingBox(),
+      await dialogs.getByRole("button", { name: /^반려/ }).boundingBox(),
+    ];
+    expect(cancelBox?.x ?? 0).toBeLessThan(rejectBox?.x ?? 0);
+    expect(
+      await dialogs.evaluate((node) =>
+        [...node.querySelectorAll("button")].map((button) => button.textContent?.trim() ?? "").filter((text) => /^(취소|반려)/.test(text)),
+      ),
+    ).toEqual([expect.stringMatching(/^취소/), expect.stringMatching(/^반려/)]);
     await dialogs.getByRole("button", { name: "닫기" }).click();
     await expect(dialogs).toHaveCount(0);
     await expect(trigger).toBeFocused();

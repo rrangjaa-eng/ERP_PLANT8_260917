@@ -370,6 +370,19 @@ test.describe("관리자 사람 상세 연차 섹션 (04.1-06 Task 3 · S9)", ()
     });
   });
 
+  test("본인 계정(사용자 결정 2026-09-29 A): 쓰기 권한이 있어도 자기 입사일 · 퇴직일 칸과 연차 조정 폼이 없고 잔고는 보인다", async ({ browser, baseURL }) => {
+    const creds = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+    const self = (await listPeople(SYSTEM_VIEWER)).find((candidate) => candidate.email === creds.email);
+    if (!self) throw new Error("관리자 본인 없음");
+    const page = await login(browser, baseURL, creds);
+    await page.goto(`/admin/people/${self.id}`);
+    await expect(page.getByTestId("person-leave-balance")).toBeVisible();
+    await expect(page.locator("#hireDate")).toHaveCount(0);
+    await expect(page.locator("#resignationDate")).toHaveCount(0);
+    await expect(page.locator("#leave-adjustment-form")).toHaveCount(0);
+    await page.context().close();
+  });
+
   test("권한(CX-R2 · CXF-C-F06): 보기만이면 읽기 전용 기록 · 노출 없으면 사유가 응답에 없음 · 권한 없으면 404", async ({ browser, baseURL }) => {
     await onStableSeoulDay(async (today) => {
       const target = await makeTarget("권한");

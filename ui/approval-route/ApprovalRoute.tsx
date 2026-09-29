@@ -29,14 +29,22 @@ export type ApprovalRouteProps =
 export function ApprovalRoute(props: ApprovalRouteProps) {
   if (props.mode === "line") {
     return (
-      <p className={styles.line}>
-        <span className={styles.drafter}>{props.drafter}</span>
+      <p className={styles.line} data-testid="approval-route-line">
+        {props.drafter ? <span className={styles.drafter}>{props.drafter}</span> : null}
         {props.steps.map((step, index) => (
           <Fragment key={`${step.label}-${index}`}>
-            <span className={styles.arrow} aria-hidden="true">
-              {" → "}
-            </span>
-            <span>{step.person}</span> <span className={styles.label}>{step.label}</span>
+            {/* 04.1-06(CX-R3): 이름이 투영에서 빠지면 기안자 없이 첫 단계부터, 사람 없이 단계 이름만 그린다. */}
+            {props.drafter || index > 0 ? (
+              <span className={styles.arrow} aria-hidden="true">
+                {" → "}
+              </span>
+            ) : null}
+            {step.person ? (
+              <>
+                <span>{step.person}</span>{" "}
+              </>
+            ) : null}
+            <span className={styles.label}>{step.label}</span>
           </Fragment>
         ))}
         {props.skippedNote ? <span className={styles.label}>{` · ${props.skippedNote}`}</span> : null}

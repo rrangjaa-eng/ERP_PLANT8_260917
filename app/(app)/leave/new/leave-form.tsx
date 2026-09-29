@@ -1,32 +1,43 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { useAction } from "next-safe-action/hooks";
 import { Form } from "@/ui/form/Form";
 import { Select } from "@/ui/select/Select";
-import { Button, buttonLinkClassName } from "@/ui/button/Button";
+import { Button } from "@/ui/button/Button";
 import { Toast } from "@/ui/toast/Toast";
-import { DEFAULT_HALF_PERIOD, LEAVE_KINDS, HALF_PERIODS, type LeaveFieldError } from "@/domain/leave/days";
+import { KvList, type KvItem } from "@/ui/kv-list/KvList";
+import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
+import { ApprovalRoute } from "@/ui/approval-route/ApprovalRoute";
+import { isCtrlCombo } from "@/lib/shortcut";
+import {
+  DEFAULT_HALF_PERIOD,
+  HALF_PERIODS,
+  LEAVE_DATE_EMPTY_ERROR,
+  LEAVE_HALF_EMPTY_ERROR,
+  LEAVE_KIND_EMPTY_ERROR,
+  LEAVE_KINDS,
+  LEAVE_START_EMPTY_ERROR,
+  type LeaveFieldError,
+} from "@/domain/leave/days";
 import { HALF_LABELS, LEAVE_KIND_LABELS } from "../labels";
-import { resubmitLeaveAction, submitLeaveAction } from "../actions";
+import { previewLeaveAction, resubmitLeaveAction, submitLeaveAction } from "../actions";
 import styles from "../leave.module.css";
 
-// 04.1-02 S2 첫 형태 — 종류 · 날짜(종일·재택은 시작·종료, 반차·반반차는 하루 + 오전/오후) · 비고.
-// 잔고 행 · 결재선 한 줄 · Ctrl+Enter · 입력 버리기 확인은 04.1-06이 더한다. 칸 오류는 서버가 돌려준
-// 칸별 문구를 칸 아래 한 줄로(입력값은 비제어 칸이라 그대로 남는다).
+// 04.1-02 S2 첫 형태 → 04.1-06 완성형(S2): 종류에 따라 칸이 바뀐다(종일·재택 = 시작 · 종료, 반차·반반차 = 날짜 하나 +
+// 오전/오후). 제어 기본값(종류 `종일` · 시간 = DEFAULT_HALF_PERIOD — `—`로 열리지 않는다, T1) · 시작일을 고르면 종료일이
+// 비었거나 더 빠를 때 시작일로 채운다(T10) · 칸이 바뀔 때마다 서버 미리보기 한 번(previewLeaveAction — 힌트 재료 · 잔고 행 ·
+// 결재선. 서버 액션 순차 전송이라 늦은 옛 응답이 최신 입력을 덮지 않는다, CX-R4) · `Ctrl+Enter` 제출 · `Esc`/`취소` =
+// 입력이 있으면 `입력 버리기` 확인. 제출 중에는 1차 pending + 동기 ref로 두 번째 누름 · `Ctrl+Enter`를 무시한다(CEO-12) —
+// 새 신청 · 다시 신청 두 모드가 같은 가드를 쓴다.
 const KIND_OPTIONS = LEAVE_KINDS.map((kind) => ({ value: kind, label: LEAVE_KIND_LABELS[kind] ?? kind }));
 const HALF_OPTIONS = HALF_PERIODS.map((half) => ({ value: half, label: HALF_LABELS[half] ?? half }));
-
-function fieldValue(formData: FormData, key: string): string {
-  const value = formData.get(key);
-  return typeof value === "string" ? value : "";
-}
+const CANCEL_HREF = "/leave";
 
 // 04.1-05(S3 반려된 내 문서): 다시 신청 모드 — 값이 채워진 같은 폼(두 벌을 만들지 않는다). 번호는 그대로,
 // 1차 라벨 `연차 다시 신청`, 액션 resubmitLeaveAction. 토스트는 문서 화면(호출부)이 띄운다 — 성공하면 같은
-// 화면이 다시 그려져 폼이 사라지기 때문이다.
+// 화면이 다시 그려져 폼이 사라지기 때문이다. 결재선 한 줄도 문서 화면이 그린다(resubmitRoute).
 export type LeaveFormResubmit = {
   leaveId: string;
   expectedVersion: number;
@@ -34,59 +45,261 @@ export type LeaveFormResubmit = {
   onResubmitted: (toast: string) => void;
 };
 
+type Values = { kind: string; half: string; startDate: string; endDate: string; note: string };
+type LeaveInput = { kind: string; startDate: string; endDate: string; half: string; note: string };
+type Blocked = { field: "kind" | "half" | "startDate"; message: string };
+
+const FIELD_LABELS: Record<LeaveFieldError["field"], string> = { kind: "종류", startDate: "시작일", endDate: "종료일", half: "시간" };
+
+function isSingleDay(kind: string): boolean {
+  return kind === "half_day" || kind === "quarter_day";
+}
+
+function toInput(values: Values): LeaveInput {
+  const singleDay = isSingleDay(values.kind);
+  return {
+    kind: values.kind,
+    startDate: values.startDate,
+    endDate: singleDay ? values.startDate : values.endDate,
+    half: singleDay ? values.half : "",
+    note: values.note,
+  };
+}
+
+// 종료일 = 시작일로 채우는 규칙(T10) — 종료일이 비었거나 시작일보다 빠르면. 종료일 칸에 「비어 있음」 상태가 없다.
+function withEndFilled(values: Values): Values {
+  if (isSingleDay(values.kind) || values.startDate === "") return values;
+  return values.endDate === "" || values.endDate < values.startDate ? { ...values, endDate: values.startDate } : values;
+}
+
+// 사용자가 바꾼 칸 수(T10) — 제어 기본값 · 자동으로 채운 종료일(= 시작일)은 세지 않는다.
+function changedFieldCount(initial: Values, current: Values): number {
+  const singleDay = isSingleDay(current.kind);
+  let count = 0;
+  if (current.kind !== initial.kind) count++;
+  if (singleDay && current.half !== initial.half) count++;
+  if (current.startDate !== initial.startDate) count++;
+  if (!singleDay && current.endDate !== initial.endDate && current.endDate !== current.startDate) count++;
+  if (current.note !== initial.note) count++;
+  return count;
+}
+
+function blockedOf(values: Values): Blocked | null {
+  const singleDay = isSingleDay(values.kind);
+  if (values.kind === "") return { field: "kind", message: LEAVE_KIND_EMPTY_ERROR };
+  if (singleDay && values.half === "") return { field: "half", message: LEAVE_HALF_EMPTY_ERROR };
+  if (values.startDate === "") return { field: "startDate", message: singleDay ? LEAVE_DATE_EMPTY_ERROR : LEAVE_START_EMPTY_ERROR };
+  return null;
+}
+
+// 「원인 · 다음 행동」 — 다음 행동은 그 칸으로 가는 3차 버튼이다.
+function splitReason(message: string): [string, string] {
+  const index = message.lastIndexOf(" · ");
+  return index < 0 ? [message, ""] : [message.slice(0, index), message.slice(index + 3)];
+}
+
 export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
   const router = useRouter();
-  const [kind, setKind] = useState<string>(resubmit?.initial.kind ?? "full_day");
-  const [half, setHalf] = useState<string>(resubmit?.initial.half ?? DEFAULT_HALF_PERIOD);
+  const [initial] = useState<Values>(() => ({
+    kind: resubmit?.initial.kind ?? "full_day",
+    half: resubmit?.initial.half ?? DEFAULT_HALF_PERIOD,
+    startDate: resubmit?.initial.startDate ?? "",
+    endDate: resubmit?.initial.endDate ?? "",
+    note: resubmit?.initial.note ?? "",
+  }));
+  const [values, setValues] = useState<Values>(initial);
   const [toast, setToast] = useState<string | null>(null);
+  const [discardCount, setDiscardCount] = useState<number | null>(null);
+  const [networkFailed, setNetworkFailed] = useState(false);
+  // 제출 중 — 누른 즉시 켠다(렌더 상태 + 동기 ref). 서버 액션 순차 전송 때문에 제출이 대기 중인 미리보기 뒤에 줄을 서도
+  // 1차는 누른 직후 `연차 신청…`이다(C-P2). ref는 한 렌더 사이에 온 두 keydown을 막는다(CEO-12).
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const lastInputRef = useRef<LeaveInput | null>(null);
+
+  function release() {
+    submittingRef.current = false;
+    setSubmitting(false);
+  }
+
+  const previewed = useAction(previewLeaveAction);
+  const preview = previewed.result.data ?? null;
   const submitted = useAction(submitLeaveAction, {
     onSuccess: ({ data }) => {
-      if (!data || !("result" in data)) return;
+      if (!data || !("result" in data)) {
+        release();
+        return;
+      }
       const names = data.result.nextHolderNames;
       setToast(names ? `연차 신청 · 결재 요청됨 → ${names}` : "연차 신청 · 결재 요청됨");
       router.push(`/leave/${data.result.documentId}`);
     },
+    onError: ({ error }) => {
+      release();
+      if (error.thrownError) setNetworkFailed(true);
+    },
   });
   const resubmitted = useAction(resubmitLeaveAction, {
     onSuccess: ({ data }) => {
-      if (!data || !("result" in data)) return;
+      if (!data || !("result" in data)) {
+        release();
+        return;
+      }
       const names = data.result.nextHolderNames;
       resubmit?.onResubmitted(names ? `연차 다시 신청 · 결재 요청됨 → ${names}` : "연차 다시 신청 · 결재 요청됨");
+      release();
       router.refresh();
     },
+    onError: ({ error }) => {
+      release();
+      if (error.thrownError) setNetworkFailed(true);
+    },
   });
-  const { result, isExecuting } = resubmit ? resubmitted : submitted;
+  const { result } = resubmit ? resubmitted : submitted;
 
-  const singleDay = kind === "half_day" || kind === "quarter_day";
+  // 처음 연 값으로 미리보기 한 번 — 결재선 한 줄은 날짜 전에도 보인다. 하이드레이션 전에 들어온 입력이 이 효과보다 먼저
+  // 처리되면(React가 이벤트를 다시 재생한다) 그 입력의 미리보기가 이미 나갔으므로 건너뛴다 — 처음 값 미리보기가 나중에
+  // 나가 최신 입력의 결과를 덮지 않게.
+  const previewedOnce = useRef(false);
+  useEffect(() => {
+    if (previewedOnce.current) return;
+    previewedOnce.current = true;
+    previewed.execute(toInput(initial));
+  });
+
+  function change(next: Values, refreshPreview = true) {
+    const filled = withEndFilled(next);
+    setValues(filled);
+    if (!refreshPreview) return;
+    previewedOnce.current = true;
+    previewed.execute(toInput(filled));
+  }
+
+  const singleDay = isSingleDay(values.kind);
+  const blocked = blockedOf(values);
   const fieldErrors: LeaveFieldError[] = result.data && "rejected" in result.data ? result.data.rejected.errors : [];
   const errorOf = (field: LeaveFieldError["field"]) => fieldErrors.find((error) => error.field === field)?.message;
   const noteError = resubmit
     ? resubmitted.result.validationErrors?.input?.note?._errors?.[0]
     : submitted.result.validationErrors?.note?._errors?.[0];
-  const blockedReason = result.serverError ?? fieldErrors[0]?.message;
+  const firstField = fieldErrors[0]?.field;
+  const failure = networkFailed
+    ? null
+    : (result.serverError ?? (firstField ? `신청 실패 · ${FIELD_LABELS[firstField]} ${fieldErrors.length}칸` : noteError ? "신청 실패 · 비고 1칸" : null));
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    const startDate = fieldValue(formData, "startDate");
-    const input = {
-      kind,
-      startDate,
-      endDate: singleDay ? startDate : fieldValue(formData, "endDate"),
-      half: singleDay ? half : "",
-      note: fieldValue(formData, "note"),
-    };
+  function run(input: LeaveInput) {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    setNetworkFailed(false);
+    lastInputRef.current = input;
     if (resubmit) resubmitted.execute({ leaveId: resubmit.leaveId, expectedVersion: resubmit.expectedVersion, input });
     else submitted.execute(input);
   }
 
+  function submit() {
+    if (submittingRef.current || blocked) return;
+    run(toInput(values));
+  }
+
+  // 네트워크 실패 뒤 3차 `다시 신청` = 같은 입력으로 같은 제출을 한 번 더(ref 가드 그대로, #24).
+  function retry() {
+    if (lastInputRef.current) run(lastInputRef.current);
+  }
+
+  function cancel() {
+    if (submittingRef.current) return;
+    const count = changedFieldCount(initial, values);
+    if (count === 0) router.push(CANCEL_HREF);
+    else setDiscardCount(count);
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    submit();
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLFormElement>) {
+    if (isCtrlCombo(event, "Enter")) {
+      event.preventDefault();
+      submit();
+      return;
+    }
+    // `Enter` 기본 제출은 막는다 — 제출은 `Ctrl+Enter`와 1차 누름뿐(§7-15).
+    if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "Escape") {
+      // 열린 네이티브 선택 목록 · 자동 완성이 먼저 처리했으면 아무것도 하지 않는다(DR-27). 기본 동작(열린 다이얼로그
+      // 닫기)도 막는다 — 이 Escape가 방금 연 확인을 바로 닫지 않게(project-form 04-46 편차와 같다).
+      if (event.defaultPrevented || event.nativeEvent.isComposing) return;
+      event.preventDefault();
+      cancel();
+    }
+  }
+
+  function focusField(field: Blocked["field"]) {
+    document.getElementById(field)?.focus();
+  }
+
+  const hint = preview ? (preview.remote ? "재택 · 차감 없음" : preview.weekendDays ? `주말 ${preview.weekendDays}일 제외` : null) : null;
+  const route = !resubmit && preview ? preview.route : null;
+  const skippedNote =
+    route?.steps
+      .filter((step) => step.skipped)
+      .map((step) => `${step.label ?? ""} 단계 건너뜀(자기 승인 없음)`)
+      .join(" · ") || null;
+  const items: KvItem[] = [];
+  if (preview?.balance) {
+    items.push({
+      label: "잔고",
+      value: (
+        <span data-testid="leave-balance-row">
+          {preview.balance.map((line) => (
+            <span key={line.text} className={styles[`balance-${line.tone}`]}>
+              {line.text}
+            </span>
+          ))}
+        </span>
+      ),
+    });
+  }
+  if (route) {
+    items.push({
+      label: "결재선",
+      value: (
+        <ApprovalRoute
+          mode="line"
+          drafter={route.drafterName ?? ""}
+          steps={route.steps.filter((step) => !step.skipped).map((step) => ({ person: step.holderNames ?? "", label: step.label ?? "" }))}
+          skippedNote={skippedNote}
+        />
+      ),
+    });
+  }
+
   const startError = errorOf("startDate");
   const endError = errorOf("endDate");
+  const hintLine = hint ? (
+    <div data-testid="leave-days-hint">
+      <Form.Hint>{hint}</Form.Hint>
+    </div>
+  ) : null;
+  const [blockedCause, blockedNext] = blocked ? splitReason(blocked.message) : ["", ""];
+  const primaryLabel = resubmit ? "연차 다시 신청" : "연차 신청";
+
   return (
     <>
-      <Form id="leave-form" onSubmit={handleSubmit}>
+      <Form id="leave-form" onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
         <Form.Field id="kind" label="종류" width="select">
-          <Select id="kind" options={KIND_OPTIONS} value={kind} onChange={(event) => setKind(event.target.value)} error={errorOf("kind")} />
+          <Select
+            id="kind"
+            options={KIND_OPTIONS}
+            value={values.kind}
+            onChange={(event) => change({ ...values, kind: event.target.value })}
+            error={errorOf("kind")}
+          />
         </Form.Field>
 
         <Form.Field id="startDate" label={singleDay ? "날짜" : "시작일"} width="short">
@@ -94,17 +307,25 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
             id="startDate"
             name="startDate"
             type="date"
-            defaultValue={resubmit?.initial.startDate}
+            value={values.startDate}
+            onChange={(event) => change({ ...values, startDate: event.target.value })}
             className={styles.textInput}
             aria-invalid={startError ? true : undefined}
             aria-describedby={startError ? "startDate-error" : undefined}
           />
           {startError ? <Form.Error id="startDate-error">{startError}</Form.Error> : null}
+          {singleDay ? hintLine : null}
         </Form.Field>
 
         {singleDay ? (
           <Form.Field id="half" label="시간" width="select">
-            <Select id="half" options={HALF_OPTIONS} value={half} onChange={(event) => setHalf(event.target.value)} error={errorOf("half")} />
+            <Select
+              id="half"
+              options={HALF_OPTIONS}
+              value={values.half}
+              onChange={(event) => change({ ...values, half: event.target.value })}
+              error={errorOf("half")}
+            />
           </Form.Field>
         ) : (
           <Form.Field id="endDate" label="종료일" width="short">
@@ -112,12 +333,14 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
               id="endDate"
               name="endDate"
               type="date"
-              defaultValue={resubmit?.initial.endDate}
+              value={values.endDate}
+              onChange={(event) => change({ ...values, endDate: event.target.value })}
               className={styles.textInput}
               aria-invalid={endError ? true : undefined}
               aria-describedby={endError ? "endDate-error" : undefined}
             />
             {endError ? <Form.Error id="endDate-error">{endError}</Form.Error> : null}
+            {hintLine}
           </Form.Field>
         )}
 
@@ -128,7 +351,8 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
             type="text"
             maxLength={500}
             autoComplete="off"
-            defaultValue={resubmit?.initial.note ?? undefined}
+            value={values.note}
+            onChange={(event) => change({ ...values, note: event.target.value }, false)}
             className={styles.textInput}
             aria-invalid={noteError ? true : undefined}
             aria-describedby={noteError ? "note-error" : undefined}
@@ -136,18 +360,55 @@ export function LeaveForm({ resubmit }: { resubmit?: LeaveFormResubmit } = {}) {
           {noteError ? <Form.Error id="note-error">{noteError}</Form.Error> : null}
         </Form.Field>
 
-        <Form.Actions>
-          <Button type="submit" variant="primary" pending={isExecuting}>
-            {resubmit ? "연차 다시 신청" : "연차 신청"}
-          </Button>
-          {blockedReason ? <span className={styles.blockedReason}>{blockedReason}</span> : null}
-          {resubmit ? null : (
-            <Link href="/leave" className={buttonLinkClassName("secondary")}>
-              취소
-            </Link>
-          )}
-        </Form.Actions>
+        {items.length > 0 ? <KvList items={items} /> : null}
+
+        <div className={styles.formBar} data-testid="leave-form-actions">
+          <Form.Actions>
+            <Button
+              type="submit"
+              variant="primary"
+              shortcut="Ctrl+Enter"
+              pending={submitting}
+              disabled={blocked !== null}
+              aria-describedby={blocked ? "leave-blocked" : undefined}
+            >
+              {primaryLabel}
+            </Button>
+            {blocked && !submitting ? (
+              <span className={styles.blockedLine}>
+                <span id="leave-blocked" className={styles.blockedReason}>{`${blockedCause} · `}</span>
+                <Button variant="tertiary" onClick={() => focusField(blocked.field)}>
+                  {blockedNext}
+                </Button>
+              </span>
+            ) : null}
+            {!blocked && networkFailed ? (
+              <span className={styles.blockedLine}>
+                <span className={styles.blockedReason}>신청 실패 · 네트워크 · </span>
+                <Button variant="tertiary" onClick={retry}>
+                  다시 신청
+                </Button>
+              </span>
+            ) : null}
+            {!blocked && failure ? <span className={styles.blockedReason}>{failure}</span> : null}
+            <span className={styles.cancelWrap}>
+              <Button variant="secondary" shortcut="Esc" disabled={submitting} onClick={cancel}>
+                취소
+              </Button>
+            </span>
+          </Form.Actions>
+        </div>
+        <div className={styles.formBarSpacer} aria-hidden="true" />
       </Form>
+
+      {/* <form> 밖(형제)에 렌더해 다이얼로그 안의 Esc · Enter가 폼 keydown · 폼 제출로 가지 않게 한다(project-form 선례). */}
+      <ConfirmDialog
+        open={discardCount !== null}
+        onClose={() => setDiscardCount(null)}
+        title="입력 버리기"
+        subtitle={`${primaryLabel} · ${discardCount ?? 0}칸`}
+        primary={{ label: "입력 버리기", onConfirm: () => router.push(CANCEL_HREF) }}
+      />
       {toast ? <Toast message={toast} onDismiss={() => setToast(null)} /> : null}
     </>
   );

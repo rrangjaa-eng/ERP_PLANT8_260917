@@ -128,3 +128,72 @@ tr:has(.rowLink) {
     min-height: var(--touch-min);
   }
 }
+
+/* 04.1-06 신청 폼(S2) 행동 줄 — PC는 폼 맨 아래 한 줄(1차 · 막힘 이유 + 다음 한 수 · 오른쪽 끝 2차), 폰은 하단 탭 위
+   고정 · 1차가 2차의 두 배 폭 · 높이 --touch-min · kbd 없음(§6-3 제출 줄 · §7-9, 04.1-05 문서 화면 행동 줄과 같은 값). */
+.blockedLine {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-1);
+}
+
+.cancelWrap {
+  margin-left: auto;
+}
+
+.formBarSpacer {
+  display: none;
+}
+
+@media (max-width: 699.98px) {
+  .formBar {
+    position: fixed;
+    right: 0;
+    bottom: calc(var(--touch-min) + var(--line-w-strong));
+    left: 0;
+    padding: 0 var(--pad-page) var(--s-2);
+    background: var(--bg);
+    z-index: var(--z-bar);
+  }
+
+  /* 본문 아래 여백 = 행동 줄 높이(탭 44는 셸이 이미 비운다). 막힘 이유 한 줄까지. */
+  .formBarSpacer {
+    display: block;
+    height: calc(var(--touch-min) * 2 + var(--s-6));
+  }
+
+  .formBar > div > span:first-child {
+    display: flex;
+    flex: 2;
+  }
+
+  .formBar .cancelWrap {
+    display: flex;
+    flex: 1;
+    margin-left: 0;
+  }
+
+  .formBar .cancelWrap > span {
+    display: flex;
+    width: 100%;
+  }
+
+  .formBar > div > span:first-child > button,
+  .formBar .cancelWrap button {
+    justify-content: center;
+    width: 100%;
+    height: var(--touch-min);
+    font-size: var(--fs-base);
+  }
+
+  .blockedLine,
+  .formBar > div > .blockedReason {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .formBar kbd {
+    display: none;
+  }
+}

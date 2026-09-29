@@ -54,4 +54,32 @@ test.describe("폰 375 연차 목록 (04.1-06 · S1 · S10)", () => {
       await page.context().close();
     });
   });
+
+  test("신청 폼(S2 폰): 행동 줄이 하단 탭 위에 고정되고 비고 칸이 가려지지 않는다", async ({ browser, baseURL }) => {
+    await onStableSeoulDay(async (today) => {
+      const org = await setupLeaveOrg(today);
+      const page = await login(browser, baseURL, org.drafter);
+      await page.goto("/leave/new");
+      await page.getByLabel("시작일").fill(leaveWeekdayRange(today, { week: 13, weekdays: 1 }).startDate);
+
+      const bar = page.getByTestId("leave-form-actions");
+      const tabs = page.getByRole("navigation", { name: "하단 탭" });
+      const barBox = await bar.boundingBox();
+      const tabsBox = await tabs.boundingBox();
+      if (!barBox || !tabsBox) throw new Error("행동 줄 · 하단 탭 상자 없음");
+      expect(await bar.evaluate((node) => getComputedStyle(node).position)).toBe("fixed");
+      expect(barBox.y + barBox.height).toBeLessThanOrEqual(tabsBox.y + 1);
+
+      const note = page.getByLabel("비고");
+      await note.scrollIntoViewIfNeeded();
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      const noteBox = await note.boundingBox();
+      const barAfter = await bar.boundingBox();
+      if (!noteBox || !barAfter) throw new Error("비고 · 행동 줄 상자 없음");
+      expect(noteBox.y + noteBox.height).toBeLessThanOrEqual(barAfter.y);
+      await expect(bar.locator("kbd").filter({ visible: true })).toHaveCount(0);
+      await noHorizontalScroll(page);
+      await page.context().close();
+    });
+  });
 });

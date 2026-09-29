@@ -1,6 +1,16 @@
 import type { Viewer } from "@/domain/viewer";
-import { allocateNumber as repoAllocateNumber, type DbOrTx } from "@/repositories/document-counters";
-import { getSettingValue, type SettingDef } from "@/domain/settings/registry";
+import {
+  allocateNumber as repoAllocateNumber,
+  lockDocumentCounter,
+  type DbOrTx,
+} from "@/repositories/document-counters";
+import { findSimpleValue, upsertSimpleValue } from "@/repositories/settings";
+import { getSettingValue, setSettingValue, type SettingDef } from "@/domain/settings/registry";
+import { recordAction } from "@/domain/action-log/record";
+import { can } from "@/domain/permissions/can";
+import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { withTransaction } from "@/lib/db-transaction";
+import { kstYear } from "@/lib/kst-date";
 import {
   DOCUMENT_NUMBER_PROJECT_PREFIX,
   DOCUMENT_NUMBER_PROJECT_YEAR_DIGITS,
@@ -90,14 +100,84 @@ export async function loadDocumentNumberFormat(counterKey: string): Promise<Docu
 // 미리 읽어 넘긴다 — 카운터 행 잠금을 잡은 트랜잭션 안에서 전역 풀로 설정을
 // 읽으면 풀이 그 트랜잭션들로 가득 찼을 때 커넥션을 못 빌려 애플리케이션
 // 레벨 교착에 빠진다(풀 소진 교착, test/integration/projects-create-concurrency.test.ts).
+// 단 순번 시작값(seqStart)은 받지 않는다 — 잠금 뒤 같은 tx로 다시 읽는다(아래 04-51 리뷰 S1).
+// 전제: `counterKey`는 DOCUMENT_NUMBER_FORMAT_DEFS에 등록된 키여야 한다 — 아니면
+// 카운터를 올린 뒤 UnknownDocumentNumberCounterError를 던진다(tx를 넘긴 호출자는 함께 되돌린다).
 export async function allocateDocumentNumber(
   viewer: Viewer,
-  input: { counterKey: string; year: number; format: DocumentNumberFormat },
+  input: { counterKey: string; year: number; format: Omit<DocumentNumberFormat, "seqStart"> },
   tx?: DbOrTx,
 ): Promise<{ number: string; seq: number }> {
   const period = String(input.year);
   const seq = tx
     ? await repoAllocateNumber(viewer, input.counterKey, period, tx)
     : await repoAllocateNumber(viewer, input.counterKey, period);
-  return { number: documentNumberFormat({ year: input.year, seq }, input.format), seq };
+  // 04-51 리뷰 S1 — 순번 시작값만은 카운터 행 잠금 뒤 같은 tx로 다시 읽는다(전역 풀이 아니라 tx라
+  // 풀 소진 교착과 무관). 트랜잭션 전에 읽은 값은 그 사이 저장된 시작값보다 낡았을 수 있다 —
+  // 시작값 저장(setSimpleSettingValue)이 같은 행 잠금 안에서 검증하므로 이 값과 카운터가 맞물린다.
+  const seqStartDef = DOCUMENT_NUMBER_FORMAT_DEFS[input.counterKey]?.seqStart;
+  if (!seqStartDef) {
+    throw new UnknownDocumentNumberCounterError(
+      `document-numbering: counterKey '${input.counterKey}'의 서식 설정이 등록되지 않았습니다.`,
+    );
+  }
+  const seqStart = await getSettingValue(seqStartDef, undefined, {
+    findSimpleValue: (v, k) => findSimpleValue(v, k, tx),
+  });
+  return { number: documentNumberFormat({ year: input.year, seq }, { ...input.format, seqStart }), seq };
+}
+
+export class SeqStartOverlapError extends UserFacingError {}
+
+function seqStartEntryFor(key: string) {
+  return Object.entries(DOCUMENT_NUMBER_FORMAT_DEFS).find(([, defs]) => defs.seqStart.key === key);
+}
+
+// 묶음 ④ /review R7 — 순번 시작값 낮추기 가드 한 곳. 설정 화면 저장(setSimpleSettingValue)과 설정 가져오기
+// (domain/settings/export의 importSettings)가 **값을 쓰는 트랜잭션 안에서** 부른다. 시작값 키가 아니면 아무것도
+// 하지 않는다. 시작값 키면 채번과 같은 올해 카운터 행을 잠그고(직렬화) 같은 tx로 현재 시작값을 읽어, 올해 발급이
+// 1건 이상이고 새 값이 현재 값보다 작을 때만 SeqStartOverlapError를 던진다. `value`는 그 키의 스키마로 읽는다.
+export async function assertSeqStartNotLowered(viewer: Viewer, key: string, value: unknown, now: Date, tx: DbOrTx): Promise<void> {
+  const entry = seqStartEntryFor(key);
+  if (!entry) return;
+  const [counterKey, defs] = entry;
+  const next = defs.seqStart.schema.parse(value);
+  const counterValue = await lockDocumentCounter(viewer, counterKey, String(kstYear(now)), tx);
+  const currentStart = await getSettingValue(defs.seqStart, undefined, {
+    findSimpleValue: (v, k) => findSimpleValue(v, k, tx),
+  });
+  // 04-51 리뷰 B1 — 바꾸지 않은 값의 재저장(설정 화면 blur)은 낮추기가 아니므로 통과한다.
+  if (counterValue >= 1 && next < currentStart) {
+    throw new SeqStartOverlapError(`순번 시작값은 현재 값(${currentStart})보다 낮출 수 없음`);
+  }
+}
+
+// 04-51 결정 ②(b) — 사용자 2026-09-28(PR #85 댓글 5861849715). 설정 화면의 비이력형 저장 한 곳 —
+// 순번 시작값 키는 올해 카운터 발급이 1건 이상이고 새 시작값이 현재 시작값보다 작을 때만 거부한다.
+// 같은 값·올리는 값은 통과한다(올려서 비는 번호는 수용). 표시 순번 = 카운터 + 시작값 − 1이라 낮춘
+// 시작값만 이미 매긴 번호와 겹쳐 UNIQUE(format_key, number)로 등록이 실패한다. 거부 문구의 숫자는
+// 현재 시작값(바꾸기 전 값)이다 — 사용자 2026-09-28(PR #85 댓글 5864259502 항목 1). 카운터 + 현재
+// 시작값 − 1은 발급 뒤 시작값을 올린 적이 있으면 매긴 적 없는 번호라 문구에 쓰지 않는다.
+// 리뷰 S1: 검증과 저장은 한 트랜잭션에서 채번과 같은 카운터 행 잠금을 잡고 한다(직렬화). 권한은 잠금
+// 전에 판정한다 — 잠금 안에서 전역 풀을 쓰지 않고(04-32 규칙), 권한 없는 호출에는 현재 값을
+// 알리지 않고 setSettingValue의 권한 거부로 끝낸다. 시작값 키가 아니면 setSettingValue 그대로다.
+export async function setSimpleSettingValue(
+  viewer: Viewer,
+  def: SettingDef<unknown>,
+  value: unknown,
+  now: Date,
+): Promise<void> {
+  const defs = seqStartEntryFor(def.key)?.[1];
+  if (!defs || !(await can(viewer, "admin.settings", "write"))) return setSettingValue(viewer, def, value);
+  const parsed = defs.seqStart.schema.safeParse(value);
+  if (!parsed.success) return setSettingValue(viewer, def, value);
+
+  await withTransaction(async (tx) => {
+    await assertSeqStartNotLowered(viewer, def.key, parsed.data, now, tx);
+    await setSettingValue(viewer, def, value, {
+      can: () => Promise.resolve(true),
+      upsertSimpleValue: (v, key, val, by) => upsertSimpleValue(v, key, val, by, tx),
+      recordAction: (v, logEntry) => recordAction(v, logEntry, { tx }),
+    });
+  });
 }

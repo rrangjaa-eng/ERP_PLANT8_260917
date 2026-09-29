@@ -35,6 +35,11 @@ button, input, select, textarea {
   color: inherit;
 }
 
+/* §2-1 서체 확정 — 모노 서체 없음. kbd의 UA 기본 monospace를 걷어낸다(크기·색은 각 컴포넌트가 정한다). */
+kbd {
+  font-family: var(--font-sans);
+}
+
 /* §6-0 최소 폭 320px — select는 가장 긴 선택지 글자 폭만큼 넓어진다. 가로 필터 줄
    안에서 부모 폭을 넘지 않게 전역으로 막는다(긴 선택지는 닫힌 상태에서 잘린다). */
 select {

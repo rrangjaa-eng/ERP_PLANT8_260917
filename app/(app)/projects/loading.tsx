@@ -1,7 +1,8 @@
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import styles from "./projects.module.css";
 
-// §7-7 LOADING — 머리글·합계 행 뼈대 + `--surface` 행 3개, 반짝임 없음.
+// §7-7 LOADING — 합계 줄 자리 라벨만(금액 막대 없음, 04-48) + 머리글 + `--surface` 행 3개, 반짝임 없음.
+// 필터·정렬·쪽 이동은 전체 문서 GET이라 이 뼈대가 스트리밍된다 — 상단 진행 막대는 만들지 않는다(사용자 D17).
 // `loading.tsx`는 Next.js가 이 라우트 세그먼트를 자동으로 Suspense로
 // 감싸는 규약이라 데이터 패치 동안 이 파일이 즉시 보인다 — 300ms 안에
 // 스트리밍이 끝나면 실제 내용으로 바로 교체돼 이 자리가 눈에 띄지
@@ -17,6 +18,9 @@ export default function ProjectsLoading() {
   return (
     <>
       <PageHeader title="프로젝트" />
+      <section className={styles.totals} aria-hidden="true">
+        <p className={styles.totalsTitle}>합계</p>
+      </section>
       <table className={styles.table} aria-hidden="true">
         <caption className="sr-only">프로젝트</caption>
         <thead>
@@ -36,13 +40,6 @@ export default function ProjectsLoading() {
             </tr>
           ))}
         </tbody>
-        <tfoot>
-          <tr>
-            <td colSpan={6} className={styles.footerCell}>
-              &nbsp;
-            </td>
-          </tr>
-        </tfoot>
       </table>
     </>
   );

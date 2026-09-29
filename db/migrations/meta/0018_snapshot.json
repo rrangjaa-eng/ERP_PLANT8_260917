@@ -1,5 +1,5 @@
 {
-  "id": "ce5d3502-16a6-4e3f-82fc-efa5f6de6d7b",
+  "id": "13d5b4e9-3c7d-4f30-a056-91c52470459c",
   "prevId": "b146a772-c570-4fd6-bd8d-ba8bf8e1f6cc",
   "version": "7",
   "dialect": "postgresql",
@@ -472,12 +472,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
-        },
-        "first_login_at": {
-          "name": "first_login_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         },
         "archived_at": {
           "name": "archived_at",
@@ -2923,105 +2917,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.restore_rehearsals": {
-      "name": "restore_rehearsals",
-      "schema": "",
-      "columns": {
-        "seq": {
-          "name": "seq",
-          "type": "bigint",
-          "primaryKey": true,
-          "notNull": true,
-          "identity": {
-            "type": "byDefault",
-            "name": "restore_rehearsals_seq_seq",
-            "schema": "public",
-            "increment": "1",
-            "startWith": "1",
-            "minValue": "1",
-            "maxValue": "9223372036854775807",
-            "cache": "1",
-            "cycle": false
-          }
-        },
-        "source": {
-          "name": "source",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "succeeded": {
-          "name": "succeeded",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "failed_stage": {
-          "name": "failed_stage",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "backup_id": {
-          "name": "backup_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "started_at": {
-          "name": "started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "finished_at": {
-          "name": "finished_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "run_url": {
-          "name": "run_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "run_key": {
-          "name": "run_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "restore_rehearsals_run_key_unique": {
-          "name": "restore_rehearsals_run_key_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "run_key"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "restore_rehearsals_source_check": {
-          "name": "restore_rehearsals_source_check",
-          "value": "\"restore_rehearsals\".\"source\" in ('staging', 'production')"
-        },
-        "restore_rehearsals_stage_check": {
-          "name": "restore_rehearsals_stage_check",
-          "value": "(\"restore_rehearsals\".\"succeeded\" and \"restore_rehearsals\".\"failed_stage\" is null) or (not \"restore_rehearsals\".\"succeeded\" and \"restore_rehearsals\".\"failed_stage\" is not null and \"restore_rehearsals\".\"failed_stage\" in ('restore', 'verify', 'cleanup'))"
-        },
-        "restore_rehearsals_failed_run_url_check": {
-          "name": "restore_rehearsals_failed_run_url_check",
-          "value": "\"restore_rehearsals\".\"succeeded\" or \"restore_rehearsals\".\"run_url\" is not null"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.notification_log": {
       "name": "notification_log",
       "schema": "",
@@ -3301,6 +3196,210 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.reserve_entries": {
+      "name": "reserve_entries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entry_date": {
+          "name": "entry_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "direction": {
+          "name": "direction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_currency": {
+          "name": "amount_currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'KRW'"
+        },
+        "amount_foreign_amount": {
+          "name": "amount_foreign_amount",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "amount_fx_rate": {
+          "name": "amount_fx_rate",
+          "type": "numeric(12, 4)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'1.0000'"
+        },
+        "amount_amount_krw": {
+          "name": "amount_amount_krw",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "evidence_type": {
+          "name": "evidence_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tax_invoice_number": {
+          "name": "tax_invoice_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'demo'"
+        },
+        "custom_fields": {
+          "name": "custom_fields",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "archived_by": {
+          "name": "archived_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "reserve_entries_client_date_idx": {
+          "name": "reserve_entries_client_date_idx",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "entry_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "reserve_entries_custom_fields_idx": {
+          "name": "reserve_entries_custom_fields_idx",
+          "columns": [
+            {
+              "expression": "custom_fields",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "reserve_entries_client_id_vendors_id_fk": {
+          "name": "reserve_entries_client_id_vendors_id_fk",
+          "tableFrom": "reserve_entries",
+          "tableTo": "vendors",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "reserve_entries_project_id_projects_id_fk": {
+          "name": "reserve_entries_project_id_projects_id_fk",
+          "tableFrom": "reserve_entries",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "reserve_entries_direction_check": {
+          "name": "reserve_entries_direction_check",
+          "value": "\"reserve_entries\".\"direction\" in ('deposit', 'withdrawal')"
+        }
+      },
       "isRLSEnabled": false
     }
   },

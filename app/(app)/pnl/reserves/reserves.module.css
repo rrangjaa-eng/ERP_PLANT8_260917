@@ -1,0 +1,185 @@
+/* 04-42 — 리저브 대장(S9). 토큰만 쓴다(docs/design/tokens.css) — 새 색·서체·radius 없음. */
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+.titleBlock {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* 셀 편집기 — 견적 표 편집 셀(project-detail.module.css)과 같은 모양. */
+.cellSelect,
+.cellInput,
+.cellInputNumeric {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 var(--s-1);
+  border: 0;
+  border-bottom: var(--line-w) solid var(--accent);
+  background: var(--g-50);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+}
+
+.cellInputNumeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cellSelect:focus-visible,
+.cellInput:focus-visible,
+.cellInputNumeric:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.cellEditError {
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+/* 금액 편집 — 통화 · 금액 · (외화면) 환율 한 줄. */
+.moneyRow {
+  display: flex;
+  gap: var(--s-2);
+  align-items: center;
+}
+
+/* S9 — 잔액은 계산값이지만 값이다: 흐린 색이 아니라 본문 색. */
+.balance {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+/* S9 · §2-4 — 세금계산서 번호는 숫자 고정 폭, 꺾이지 않는다. */
+.taxInvoice {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* S9 long-text — 메모는 긴 칸 규칙 아래 PC에서 한 줄 말줄임(행 높이를 늘리지 않는다). */
+.noteText {
+  display: block;
+  max-width: 40ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.footerCell {
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-top: var(--line-w-strong) solid var(--line-strong);
+  color: var(--fg);
+  font-weight: var(--fw-bold);
+}
+
+.addLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  margin-top: var(--s-3);
+}
+
+/* Codex #7 — 다른 쪽 줄의 잔액 거부. 표 위 한 줄(오류 색 토큰) + 3차 링크. */
+.batchError {
+  margin: var(--s-2) 0;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+.batchErrorLink {
+  color: var(--accent);
+  font-weight: var(--fw-medium);
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
+}
+
+.batchErrorLink:hover {
+  text-decoration-thickness: var(--line-w-strong);
+}
+
+/* 04-04(D-68) — 저장 안 한 편집 복원 줄(견적 원장과 같은 모양). */
+.restoreBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--s-2);
+  margin: var(--s-2) 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  word-break: keep-all;
+}
+
+.restoreActions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: var(--s-2);
+}
+
+.restoreAction {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+@media (max-width: 699.98px) {
+  /* 리뷰 R14 — 폰에서 복원·버림은 터치 최소 높이(견적 원장 S18과 같은 규칙). */
+  .restoreAction {
+    min-height: var(--touch-min);
+  }
+}
+
+/* §7-9 · 개정 ⑬ — 힌트 줄(ui/table Table.module.css .hintRow와 같은 모양). */
+.hintRow {
+  margin-top: var(--s-3);
+  color: var(--faint);
+  font-size: var(--fs-sm);
+}
+
+.hintRow kbd {
+  padding: 0 var(--s-1);
+  border: var(--line-w) solid var(--line);
+  color: var(--faint);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-head);
+}
+
+@media (max-width: 1023.98px) {
+  .hintRow {
+    display: none;
+  }
+}
+
+/* §7-7 LOADING 뼈대(loading.tsx) — projects.module.css 목록 뼈대와 같은 모양. */
+.skeleton {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.skeleton th {
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-align: left;
+}
+
+.skeletonRow td {
+  height: var(--row-min);
+  border-bottom: var(--line-w) solid var(--line);
+  background: var(--surface);
+}

@@ -71,7 +71,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### 리저브·외화 (RSV, FX)
 
-- [ ] **RSV-01**: 클라이언트별 리저브 대장: 입금·출금·잔액을 날짜순으로 기록하고 본다. 각 줄은 프로젝트에 연결할 수 있고, 통화·환율·원화 환산액을 함께 적는다
+- [x] **RSV-01**: 클라이언트별 리저브 대장: 입금·출금·잔액을 날짜순으로 기록하고 본다. 각 줄은 프로젝트에 연결할 수 있고, 통화·환율·원화 환산액을 함께 적는다
 - [ ] **RSV-02**: 프로젝트 매출을 리저브에서 충당하면 대장에 출금으로 남고, 그 금액이 손익의 매출(설정된 매출 기준)에 반영된다. 잔액이 부족하면 이유와 함께 막힌다
 - [x] **FX-01**: 매출·지출결의·증빙·법인카드·리저브 금액에 통화·외화 금액·환율·원화 환산액을 함께 기록한다. 환율은 입력할 때 사람이 적고 기본값은 설정(통화별 최근 환율)에서 온다. 손익·목표·내보내기는 원화 환산액 기준이며 원래 통화·금액이 함께 표시된다. 원화는 정수 원, 외화 금액은 소수 2자리, 환율은 소수 4자리이고 반올림은 서버의 단일 함수에서만 한다. 분할 시 합계가 원금과 같도록 마지막 회차에서 보정한다
 
@@ -230,7 +230,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PNL-07 | Phase 10 | Pending |
 | PNL-08 | Phase 9 | Pending |
 | PNL-09 | Phase 9 | Pending |
-| RSV-01 | Phase 4 | Pending |
+| RSV-01 | Phase 4 | Complete |
 | RSV-02 | Phase 9 | Pending |
 | FX-01 | Phase 4 | Complete |
 | GOAL-01 | Phase 10 | Pending |

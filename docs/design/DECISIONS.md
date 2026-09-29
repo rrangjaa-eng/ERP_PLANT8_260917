@@ -971,6 +971,24 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 
 **범위**: `domain/projects/references.ts` · `app/(app)/projects/page.tsx` · `app/(app)/projects/project-form.tsx`. SYSTEM.md 문구는 바꾸지 않는다.
 
+## 2026-09-26 — 견적 줄 표 붙여넣기 읽기 규칙 3건 (코디네이터 대리 결정 2026-09-26 · /qa ISSUE-003 · 004 · 011 (a))
+
+- **줄 종류(ISSUE-003)**: 앱 형식 `application/x-plant8-quote-lines+json`은 줄마다 `{ currency, kind }`를 싣고, 붙여넣기로 새로 생기는 줄은 원본과 같은 종류(견적 외 비용이면 견적 외 비용 줄)가 되며 그 줄의 잠긴 칸(소분류·수량·단가)의 종류 표시 글자는 오류 없이 넘긴다 — TSV 글자와 외부(엑셀) 붙여넣기는 그대로, 이미 있는 줄의 종류는 바꾸지 않는다.
+- **`원`(ISSUE-004)**: 숫자 칸 붙여넣기에서 앞뒤 `원`은 ₩$¥￦와 같은 통화 기호로 지운다(`1,234원` → 1234, `stripNumberInput` 공용 규칙).
+- **비고 `—`(ISSUE-011)**: 비고 칸에 붙인 `—`(앱의 빈 값 표시)는 빈 비고(null)로 읽는다 — 거래처 `—`(ISSUE-001)와 같다.
+
+**범위**: `ui/table/use-clipboard-paste.ts` · `lib/format-number.ts` · `app/(app)/projects/[id]/quote-table.tsx` · `app/(app)/projects/[id]/previous-revision.tsx`. SYSTEM.md 문구는 바꾸지 않는다.
+
+## 2026-09-26 — 목록 · 견적 원장 화면 다듬기 4건 (코디네이터 대리 결정 2026-09-26 · /design-review FINDING-001 (b) · 012 · 013 · 015 (a))
+
+- **목록 등록 = 링크(FINDING-001 (b))**: `/projects` 「프로젝트 등록」은 2026-09-21 결정대로 관리자 목록의 등록과 같은 등록 행동 링크로 둔다. 04-UI-SPEC S1 · Copywriting의 「1차」 표기를 링크로 고쳤다.
+  - 「목록 등록을 1차 버튼으로 전환」(`/projects`와 관리자 마스터 목록을 함께 `buttonLinkClassName("primary")`로) — **재검토 후보(사용자 확인 대기)**.
+- **저장됨 N줄(FINDING-012)**: N = 이번 저장에서 바뀐 견적 줄(만든 + 고친 + 지운) 수. 0이면 `저장됨 HH:MM`.
+- **목록 기간 필터 = 네이티브 날짜 칸(FINDING-013)**: 2026-09-26 「날짜 입력 네이티브 통일」을 목록 기간 필터에도 적용한다. 폭은 `10ch`가 아니라 네이티브 칸의 고유 폭(10ch는 날짜를 자른다). 묶음 제출 · Enter · 서버 판정 오류 줄 · 연도 자동 전환 · 폰 요약은 그대로. `SYSTEM.md` §6-1 필터 날짜 칸 폭 문장을 고쳤다.
+- **폰 목록 행 전체 = 링크 하나(FINDING-015)**: 폰(<700)에서 행(주 행 + 접힌 줄)의 어디를 눌러도 그 행의 이름 링크다. `ui/table`의 opt-in `phoneRowLink`(행마다 `<tbody>` + 링크 `::after`). 행 안 포커스 가능 요소는 링크 하나.
+
+**범위**: `app/(app)/projects/filter-bar.tsx` · `projects.module.css` · `projects-table.tsx` · `page.tsx` · `error.tsx`(부제 「프로젝트 원장」, FINDING-014) · `app/(app)/projects/[id]/quote-table.tsx` · `ui/table/Table.tsx` · `Table.module.css` · `footer-notice.ts`. FINDING-005(편집 표 합계 행 `--g-100` + 더 진한 성공 글자)는 tokens.css에 더 진한 성공 의미 토큰이 없어 보류했다(새 색 금지).
+
 ## 2026-09-26 — §7-5 길이 예외: 첫 로그인 전 · 임시 비밀번호 사용 중 (Phase 04.4 · D8-07)
 
 **결정**: 사람 목록 「상태」 칸의 `첫 로그인 전` · `임시 비밀번호 사용 중`을 §7-5 「두 글자~네 글자 명사」 길이 규칙의 예외로 둔다. 의미는 `--muted`(대기·임시), `StatusTag variant="text"`로만 쓴다. SYSTEM.md §7-5 길이 규칙 줄 바로 다음에 새 줄 `(Phase 04.4 보강)`로 적는다.
@@ -998,3 +1016,19 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **왜**: people·vendors·holidays·notifications 네 표 모두 `.table th { border-bottom: var(--line-w-strong) solid var(--line-strong); }`(2px)로 이미 구현돼 있다. 코드가 맞고 문서(§7-3)가 어긋나 있었다 — 코드를 문서에 맞춰 2px→1px로 되돌리면 네 표를 전부 고쳐야 하고 §4-2와 다시 어긋난다.
 
 **범위**: `docs/design/SYSTEM.md` §7-3 머리글 규칙 문장만 고친다(2px로). 코드 변경 없음.
+
+## 2026-09-27 — 결정 ② (a) 설정 검증: 순번 시작값은 올해 이미 매긴 번호 이하로 낮출 수 없다 (사용자 답 2026-09-24 · 04-51 · PR #38 알려진 문제)
+
+**결정**: 문서 번호 순번 시작값(`document_number.project.seq_start`) 저장이 올해(KST) 이미 매긴 최대 표시 순번 이하이면 저장하지 않고 그 칸에 `순번 시작값이 이미 매긴 번호({최대})와 겹침 · {최대 + 1} 이상 입력`을 보인다. 최대 표시 순번 = 올해 카운터 + 현재 시작값 − 1(`domain/document-numbering`의 `assertSeqStartAvailable`, 설정 저장 액션이 저장 전에 부른다). 올해 매긴 번호가 없으면 어떤 값이든 저장된다. 이미 매긴 번호는 바꾸지 않는다(ADMN-09) — 채번 코드는 그대로다.
+
+**왜**: 표시 순번은 해마다 1부터 도는 카운터 위의 오프셋(04-05)이라, 연중에 시작값을 이미 매긴 번호보다 낮추면 카운터가 그 번호에 닿는 날 `UNIQUE(format_key, number)` 위반으로 프로젝트 등록이 실패한다. 제안 문구 「…겹칩니다 · … 이상으로 적어 주세요」는 2026-09-26 「오류 문구 명사형 통일」에 맞춰 같은 뜻의 명사형으로 옮겼고, 숫자 뒤 조사가 받침에 따라 틀리지 않게 숫자를 괄호에 넣었다.
+
+**버린 대안**: (b) 카운터 보정 — 낮춘 값을 저장하고 채번이 행 잠금 안에서 이미 매긴 최대 뒤로 이어 간다(저장한 값이 올해 번호에 바로 보이지 않고 채번 경로가 커진다).
+
+**범위**: `domain/document-numbering/index.ts` · `app/(app)/admin/settings/actions.ts` · `test/integration/document-numbering.test.ts`. 시작값을 올린 뒤 아직 번호를 매기지 않았으면 최대가 실제보다 크게 계산돼 거부 쪽으로만 틀린다. SYSTEM.md는 바꾸지 않는다.
+
+## 2026-09-29 — 동명 거래처 선택 옵션: 리저브 클라이언트 칸만 사업자번호 끝 4자리 병기 (사용자 결정 2026-09-28·29 · 묶음 ④ /qa ISSUE-005 (a))
+
+**결정**: 이름이 같은 거래처가 2개 이상일 때만 옵션 라벨을 `이름 · 사업자번호 끝4자리`로 적는다(사업자번호가 없으면 이름만). 동명이 아니면 이름만. `이름 · 끝4자리`를 붙여넣으면 그 거래처로 받는다.
+
+**범위**: /pnl/reserves 클라이언트 칸만. 견적 거래처 칸(/projects/[id])은 옵션이 projects 보기 권한만 확인해서, 끝 4자리가 vendor.value 없는 사람에게 샌다 — 권한 경로 변경이 필요해 후속 단위로 보류.

@@ -392,6 +392,84 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
     expect((await storedRow(good.id))?.evidenceType).toBe("tax_invoice");
   });
 
+  // PR #85 Codex B — 활성 코드 규칙은 새 줄·바꾼 증빙에만, 이미 붙은 증빙은 코드가 나중에 비활성·보관돼도 그 줄의 다른 칸 수정을 막지 않는다(Codex #5와 같은 결).
+  describe("증빙 종류 코드가 비활성·보관된 뒤 (Codex B)", () => {
+    const OFF: [string, { active?: boolean; archivedAt?: Date }][] = [
+      ["비활성", { active: false }],
+      ["보관된", { archivedAt: new Date() }],
+    ];
+
+    function evidenceCode() {
+      return insertCodeItem(SYSTEM_VIEWER, { tableKey: "evidence_type", value: `codexb-${randomUUID().slice(0, 8)}`, label: "옛 증빙" });
+    }
+
+    async function turnOff(codeId: string, change: { active?: boolean; archivedAt?: Date }) {
+      await db.update(codeItems).set(change).where(eq(codeItems.id, codeId));
+    }
+
+    it.each(OFF)("(Codex B) %s 증빙 종류가 붙은 저장된 줄은 메모만 고쳐도 저장된다 — 증빙 칸 그대로", async (_label, change) => {
+      const finance = await createFinanceViewer();
+      const client = await createClient();
+      const code = await evidenceCode();
+      const row = { ...newRow(client.id, "2026-03-01", "deposit", 1_000), evidenceType: code.value };
+      await saveReserves(finance, { rows: [row] });
+      await turnOff(code.id, change);
+
+      await saveReserves(finance, { rows: [{ ...row, isNew: undefined, version: 1, note: "코드 정리 뒤 메모" }] });
+
+      const stored = await storedRow(row.id);
+      expect(stored?.note).toBe("코드 정리 뒤 메모");
+      expect(stored?.evidenceType).toBe(code.value);
+      expect(stored?.version).toBe(2);
+    });
+
+    it.each(OFF)("(Codex B) 저장된 줄의 증빙 종류를 %s 코드로 바꾸면 `코드표에 없는 증빙 종류 · 증빙 종류 고르기`로 거부, 저장된 증빙 그대로", async (_label, change) => {
+      const finance = await createFinanceViewer();
+      const client = await createClient();
+      const codeA = await evidenceCode();
+      const codeB = await evidenceCode();
+      const row = { ...newRow(client.id, "2026-03-01", "deposit", 1_000), evidenceType: codeA.value };
+      await saveReserves(finance, { rows: [row] });
+      await turnOff(codeB.id, change);
+
+      const error = await rejection(saveReserves(finance, { rows: [{ ...row, isNew: undefined, version: 1, evidenceType: codeB.value }] }));
+
+      expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: row.id, field: "evidenceType", reason: "코드표에 없는 증빙 종류 · 증빙 종류 고르기" })]);
+      const stored = await storedRow(row.id);
+      expect(stored?.evidenceType).toBe(codeA.value);
+      expect(stored?.version).toBe(1);
+    });
+
+    it.each(OFF)("(Codex B) 새 줄이 %s 증빙 종류를 고르면 같은 이유로 전부 거부, DB 무변경", async (_label, change) => {
+      const finance = await createFinanceViewer();
+      const client = await createClient();
+      const code = await evidenceCode();
+      await turnOff(code.id, change);
+      const row = { ...newRow(client.id, "2026-03-01", "deposit", 1_000), evidenceType: code.value };
+
+      const error = await rejection(saveReserves(finance, { rows: [row] }));
+
+      expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: row.id, field: "evidenceType", reason: "코드표에 없는 증빙 종류 · 증빙 종류 고르기" })]);
+      expect(await countRows(client.id)).toBe(0);
+    });
+
+    it("(Codex B) 새 줄 재전송(ENG-D10)은 그 사이 증빙 코드가 비활성돼도 no-op — 한 행 그대로", async () => {
+      const finance = await createFinanceViewer();
+      const client = await createClient();
+      const code = await evidenceCode();
+      const row = { ...newRow(client.id, "2026-03-01", "deposit", 1_000), evidenceType: code.value };
+      await saveReserves(finance, { rows: [row] });
+      await turnOff(code.id, { active: false });
+
+      await saveReserves(finance, { rows: [row] });
+
+      expect(await countRows(client.id)).toBe(1);
+      const stored = await storedRow(row.id);
+      expect(stored?.evidenceType).toBe(code.value);
+      expect(stored?.version).toBe(1);
+    });
+  });
+
   it("재전송(ENG-D10): 같은 배치를 두 번 보내도 한 행 · 잔액 한 번 · document_create 한 번", async () => {
     const finance = await createFinanceViewer();
     const client = await createClient();

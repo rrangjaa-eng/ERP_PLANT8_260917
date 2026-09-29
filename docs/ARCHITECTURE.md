@@ -106,6 +106,7 @@ append-only다).
 접두어의 버전으로 키를 골라 v1·v2가 동시에 있어도 둘 다 복호화된다. 마스킹
 표시용 뒤 4자리는 암호문과 별도 평문 컬럼에 함께 저장한다(목록이 복호화
 없이 그려지고, 복호화 호출 자체가 "마스킹 해제"라는 의미를 갖는다).
+봉투(04.3-08): 스테이징·프로덕션은 Cloud KMS로 감싼 `APP_DATA_KEY_v*_WRAPPED`를 받아 `instrumentation.ts`가 기동 때 `loadDataKeys()`로 한 번 풀어 `globalThis[Symbol.for("plant8.appDataKeys")]`에 둔다 — 인터페이스·접두어는 그대로, 로컬은 평문 변수.
 
 ## 4-5. 커스텀 필드 규약(Phase 3, 03-06)
 
@@ -246,6 +247,7 @@ domain 모듈 = 단위, 새 액션·DTO = 통합(+Phase 3부터 누수 생성), 
 | `LOCKOUT_THRESHOLD`·`LOCKOUT_WINDOW_MINUTES` | 잠금 | Phase 3부터 설정 레지스트리 키(`auth.lockout.*`)의 기본값 출처로만 남는다 |
 | `RATE_LIMIT_LOGIN_MAX` | 속도 제한 | 부팅 시 1회(`lib/auth.ts` better-auth 설정) — 레지스트리 밖, 런타임 변경 불가 |
 | `APP_DATA_KEY_v1`·`APP_DATA_KEY_v2` | 암호화 키(Phase 3부터 사용, v2는 회전용 두 번째 버전) | Secret Manager |
+| `APP_DATA_KEY_v1_WRAPPED`·`APP_DATA_KEY_v2_WRAPPED`·`APP_DATA_KEY_KMS_KEY` | KMS로 감싼 데이터 키(한 줄 base64)와 그 KMS 키 이름 — 감싼 값이 있으면 키 이름 필수, 비로컬에서 같은 버전 평문과 함께 두지 않는다(04.3-08) | Secret Manager / deploy.sh가 주입 |
 | `SMTP_HOST`·`SMTP_USER`·`SMTP_PASSWORD`·`SMTP_FROM` | 이메일 — 넷 다 채워져야 켜짐(Phase 04.2, D-711) | Secret Manager |
 | `NOTIFY_TICK_SCHEDULER_SA` | `/internal/notify-tick` OIDC 기대 호출자(스케줄러 서비스 계정 이메일) | deploy.sh가 주입 |
 | `NOTIFY_TICK_OIDC_DISABLED` | 로컬 전용 OIDC 우회(`1`) — 비로컬이면 부팅 거부·deploy.sh 거부 | `.env.local`만 |

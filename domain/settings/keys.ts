@@ -288,13 +288,14 @@ export const DOCUMENT_NUMBER_PROJECT_SEQ_DIGITS: SettingDef<number> = {
 };
 
 // 기본값이 빈 문자열이다 — 확정된 프로젝트 서식(`26001`)이 연도와 순번
-// 사이에 구분자를 두지 않는다. z.string()은 값 자체(빈 문자열 포함)를
-// 허용하고, 키가 아예 비어 값이 없는 상태(undefined)만 막는다 — 빈
-// 문자열을 거부하면 이 기본 서식 자체가 저장 불가능해진다.
+// 사이에 구분자를 두지 않는다. 허용 값은 빈 문자열 또는 `-` `_` `.` `/`
+// 중 한 글자뿐이고, 그 밖의 문자·두 글자 이상·공백은 저장·가져오기 전에
+// 거부된다(T-04-31, PR #104 사용자 결정). z.enum이 아니라 문자열 + 정규식인
+// 이유: enum이면 설정 화면 입력이 선택 목록으로 바뀐다.
 export const DOCUMENT_NUMBER_PROJECT_SEPARATOR: SettingDef<string> = {
   key: "document_number.project.separator",
   kind: "simple",
-  schema: z.string(),
+  schema: z.string().regex(/^[-_./]?$/),
   label: "프로젝트 번호 구분자",
   hint: "연도와 순번 사이에 넣을 문자입니다(기본값은 없음).",
   namespace: "문서 번호",

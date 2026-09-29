@@ -545,6 +545,31 @@ describe("게이트 단일 진입점 — 자동 정산 (04-53 · V-04-auto-settl
     expect(await settleLogs(projectId)).toEqual([]);
   });
 
+  it("(g2b) 후보 둘 중 gate가 한 id만 거부하면 그 행만 진행으로 남는다", async () => {
+    const allowedId = await makeProject({ status: "in_progress", endDate: "2026-09-17" });
+    const deniedId = await makeProject({ status: "in_progress", endDate: "2026-09-17" });
+    const passThrough = vi.mocked(gate).getMockImplementation();
+    if (!passThrough) throw new Error("gate 통과형 스파이가 없습니다");
+    vi.mocked(gate).mockImplementation((doc, rule, ctx) =>
+      rule === AUTO_SETTLE_RULE && (doc as { id?: unknown }).id === deniedId
+        ? Promise.resolve({ allowed: false, reason: "테스트 거부" })
+        : passThrough(doc, rule, ctx),
+    );
+
+    let settled: string[];
+    try {
+      settled = await applyAutoSettlement({ projectIds: [allowedId, deniedId] }, { now: () => AFTER_MIDNIGHT });
+    } finally {
+      vi.mocked(gate).mockImplementation(passThrough);
+    }
+
+    expect(settled).toEqual([allowedId]);
+    expect(await statusOf(allowedId)).toBe("settling");
+    expect(await statusOf(deniedId)).toBe("in_progress");
+    expect(await settleLogs(allowedId)).toHaveLength(1);
+    expect(await settleLogs(deniedId)).toEqual([]);
+  });
+
   it("(g3) 쓰기 입구는 잠근 행을 gate(\"project.auto-settle\")로 한 번 판정하고 정산한다", async () => {
     const viewer = await makeViewer(DEFAULT_ROLE_ID);
     const projectId = await makeProject({ status: "in_progress", endDate: "2026-09-17" });

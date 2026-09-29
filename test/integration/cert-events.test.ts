@@ -215,6 +215,18 @@ describe("createEvent — 멱등(E3-22)", () => {
     expect(await counts()).toEqual({ events: 1, winners: 0 });
   });
 
+  it("같은 요청 재전송 때 행사가 닫혔거나 기한이 지났으면 link 없이 eventId만", async () => {
+    const closedReq = randomUUID();
+    const closed = await createOk(SYSTEM_VIEWER, { requestId: closedReq });
+    await db.update(certEvents).set({ closedAt: new Date(), closedReason: "manual" }).where(eq(certEvents.id, closed.eventId));
+    expect(await createEvent(SYSTEM_VIEWER, input({ requestId: closedReq }))).toEqual({ kind: "ok", eventId: closed.eventId });
+
+    const expiredReq = randomUUID();
+    const expired = await createOk(SYSTEM_VIEWER, { requestId: expiredReq });
+    await db.update(certEvents).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(certEvents.id, expired.eventId));
+    expect(await createEvent(SYSTEM_VIEWER, input({ requestId: expiredReq }))).toEqual({ kind: "ok", eventId: expired.eventId });
+  });
+
   it("requestId가 없으면 부를 때마다 새 행사", async () => {
     await createOk(SYSTEM_VIEWER);
     await createOk(SYSTEM_VIEWER);

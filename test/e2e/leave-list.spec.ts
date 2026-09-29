@@ -169,6 +169,30 @@ test.describe("연차 목록 /leave (04.1-06 Task 1 · S1 · S10)", () => {
     });
   });
 
+  test("다음 해 신청(사용자 결정 2026-09-29): 연말에 낸 다음 해 신청이 있으면 연도 select 위 끝이 다음 해이고 ?year로 그 신청을 본다", async ({ browser, baseURL }) => {
+    await onStableSeoulDay(async (today) => {
+      const next = yearOf(today) + 1;
+      // 다음 해 1월 둘째 주의 첫 평일(설 · 신정과 겹치지 않는다).
+      const day = [5, 6, 7, 8, 9].find((d) => { const w = new Date(Date.UTC(next, 0, d)).getUTCDay(); return w >= 1 && w <= 5; }) ?? 5;
+      const date = `${next}-01-${String(day).padStart(2, "0")}`;
+      const org = await setupLeaveOrg(today);
+      await submitLeave(org.drafter.viewer, { kind: "full_day", half: "", startDate: date, endDate: date });
+      const page = await login(browser, baseURL, org.drafter);
+
+      await page.goto("/leave");
+      const select = page.getByRole("combobox", { name: "연도" });
+      await expect(select).toHaveValue(String(next - 1));
+      expect(await select.locator("option").allTextContents()).toEqual(expect.arrayContaining([String(next), String(next - 1)]));
+
+      await page.goto(`/leave?year=${next}`);
+      await expect(select).toHaveValue(String(next));
+      expect(await groupHeaders(page)).toEqual(["결재 중"]);
+      // 올해와 다른 해의 기간은 ISO(DOM 감사 #5 · UI-SPEC Typography).
+      await expect(page.getByRole("link", { name: new RegExp(`종일 ${date}`) })).toBeVisible();
+      await page.context().close();
+    });
+  });
+
   test("입사 다음 해 사용자(11:43 · R1/D5): 연차 줄은 비례 부여, 월차 줄은 따로, 두 남음의 합은 어디에도 없다", async ({ browser, baseURL }) => {
     await onStableSeoulDay(async (today) => {
       const year = yearOf(today);

@@ -3,13 +3,13 @@ import { requireSession } from "@/lib/viewer";
 import { seoulToday } from "@/lib/dates";
 import { kstDateOf } from "@/lib/kst-date";
 import { can } from "@/domain/permissions/can";
-import { earliestMyLeaveYear, listMyLeave } from "@/domain/leave";
+import { listMyLeave, myLeaveYearRange } from "@/domain/leave";
 import { getMyLeaveBalance } from "@/domain/leave/balance-service";
 import { formatBalanceLines } from "@/domain/leave/balance";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { DayNumbers } from "../day-numbers";
-import { formatLeavePeriod } from "../labels";
+import { formatLeavePeriod, formatTableDate } from "../labels";
 import { leaveStatusDisplay, toLeaveStatusKey } from "../status-display";
 import { resolveLeaveYear } from "../year-param";
 import { LeaveFilterRow, LeaveTable, type LeaveListRow } from "./leave-table";
@@ -25,19 +25,22 @@ export default async function LeaveListPage({ searchParams }: { searchParams: Pr
   const { viewer } = await requireSession();
   if (!(await can(viewer, "leave", "view"))) notFound();
   const thisYear = Number(seoulToday().slice(0, 4));
-  const year = resolveLeaveYear((await searchParams).year, thisYear);
+  // 위 끝 = max(올해, 내 신청의 가장 늦은 연도) — 연말에 낸 다음 해 신청을 ?year로 볼 수 있게(사용자 결정 2026-09-29).
+  const range = await myLeaveYearRange(viewer);
+  const lastYear = Math.max(thisYear, range?.latest ?? thisYear);
+  const year = resolveLeaveYear((await searchParams).year, lastYear, thisYear);
 
-  const [balance, leaves, earliest, canWrite] = await Promise.all([
+  const [balance, leaves, canWrite] = await Promise.all([
     getMyLeaveBalance(viewer, { fiscalYear: year }),
     listMyLeave(viewer, { fiscalYear: year }),
-    earliestMyLeaveYear(viewer),
     can(viewer, "leave", "write"),
   ]);
 
-  // 옵션 = min(가장 이른 신청 연도, 보는 연도) ~ 올해(계획 가정 1 — 옵션 범위로 조회를 거르지 않는다).
-  const firstYear = Math.min(earliest ?? thisYear, year);
+  // 옵션 = min(가장 이른 신청 연도, 보는 연도, 올해) ~ 위 끝(계획 가정 1 — 옵션 범위로 조회를 거르지 않는다). 올해는
+  // 늘 옵션에 있다 — 다음 해 신청만 있는 사람이 다음 해를 볼 때도 올해로 돌아올 수 있게.
+  const firstYear = Math.min(range?.earliest ?? thisYear, year, thisYear);
   const yearOptions: number[] = [];
-  for (let y = thisYear; y >= firstYear; y--) yearOptions.push(y);
+  for (let y = lastYear; y >= firstYear; y--) yearOptions.push(y);
   const singleYear = yearOptions.length === 1;
 
   const lines = balance.annual ? formatBalanceLines({ annual: balance.annual, monthly: balance.monthly ?? null }) : [];
@@ -46,12 +49,12 @@ export default async function LeaveListPage({ searchParams }: { searchParams: Pr
     return {
       id: leave.id ?? "",
       number: leave.number ?? "",
-      period: formatLeavePeriod(leave),
+      period: formatLeavePeriod(leave, thisYear),
       startDate: leave.startDate ?? "",
       days: leave.days ?? "",
       statusKey: key,
       status: key ? leaveStatusDisplay(key) : null,
-      requestedOn: leave.createdAt ? kstDateOf(leave.createdAt).slice(5) : "",
+      requestedOn: leave.createdAt ? formatTableDate(kstDateOf(leave.createdAt), thisYear) : "",
       note: leave.note ?? "",
     };
   });

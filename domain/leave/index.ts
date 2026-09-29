@@ -38,7 +38,7 @@ import type { findVisibility } from "@/repositories/permissions";
 import type { DescribeDeps, DocumentDetailRow, DocumentDetailRows, LoadDetailsDeps, RouteConfigStep } from "@/domain/approvals/kinds";
 import type { TxLogDeps } from "@/domain/approvals/tx-log";
 import {
-  findEarliestLeaveFiscalYear,
+  findLeaveFiscalYearRange,
   findLeaveRequestById,
   findLeaveRequestsByIds,
   insertLeaveRequest,
@@ -361,11 +361,12 @@ export async function listMyLeave(
   return result;
 }
 
-// 04.1-06(C-04 · C-P1): 내 신청의 가장 이른 회계연도(없으면 null) — `/leave` 연도 select 옵션의 아래 끝.
-// listMyLeave와 같이 viewer 본인 신청만 센다(다른 사람 id를 받지 않는다). 쿼리 한 번.
-export async function earliestMyLeaveYear(
+// 04.1-06(C-04 · C-P1 · 사용자 결정 2026-09-29): 내 신청의 가장 이른 · 가장 늦은 회계연도(없으면 null) — `/leave`
+// 연도 select 옵션의 두 끝(위 끝은 max(올해, 가장 늦은 연도) — 연말에 낸 다음 해 신청이 보이게). listMyLeave와 같이
+// viewer 본인 신청만 센다(다른 사람 id를 받지 않는다). 쿼리 한 번.
+export async function myLeaveYearRange(
   viewer: Viewer,
-  deps?: { findEarliestLeaveFiscalYear?: typeof findEarliestLeaveFiscalYear },
-): Promise<number | null> {
-  return (deps?.findEarliestLeaveFiscalYear ?? findEarliestLeaveFiscalYear)(viewer, viewer.id);
+  deps?: { findLeaveFiscalYearRange?: typeof findLeaveFiscalYearRange },
+): Promise<{ earliest: number; latest: number } | null> {
+  return (deps?.findLeaveFiscalYearRange ?? findLeaveFiscalYearRange)(viewer, viewer.id);
 }

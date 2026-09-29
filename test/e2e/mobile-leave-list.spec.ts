@@ -50,6 +50,11 @@ test.describe("폰 375 연차 목록 (04.1-06 · S1 · S10)", () => {
       expect(rowBox?.height ?? 0).toBeGreaterThanOrEqual(44);
       await noHorizontalScroll(page);
 
+      // 접힌 줄을 눌러도 그 문서로 간다 — 행 전체가 링크(DOM 감사 #6 · UI-SPEC S1).
+      await table.getByText(`신청 ${today.slice(5)}`, { exact: true }).click();
+      await expect(page).toHaveURL(/\/leave\/[0-9a-f-]{36}$/);
+      await page.goBack();
+
       await page.getByRole("link", { name: "연차 신청" }).click();
       await expect(page).toHaveURL(/\/leave\/new$/);
       await page.context().close();

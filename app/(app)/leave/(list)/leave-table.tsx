@@ -65,7 +65,19 @@ const COLUMNS: TableColumn<LeaveListRow>[] = [
         </StatusTag>
       ) : null,
   },
-  { key: "requestedOn", header: "신청일", priority: "p2", cell: (row) => row.requestedOn, summary: (row) => `신청 ${row.requestedOn}` },
+  {
+    key: "requestedOn",
+    header: "신청일",
+    priority: "p2",
+    cell: (row) => row.requestedOn,
+    // 폰 접힌 줄도 행의 일부라 같은 문서로 간다(04.1-06 DOM 감사 #6). 접힌 줄은 ui/table이 aria-hidden으로 그리므로
+    // 이 링크는 탭 순서에서 빼고(주 행 링크 하나만 초점), ::after로 그 줄을 덮는다 — ui/table은 고치지 않는다.
+    summary: (row) => (
+      <Link href={`/leave/${row.id}`} tabIndex={-1} className={styles.foldLink}>
+        {`신청 ${row.requestedOn}`}
+      </Link>
+    ),
+  },
   { key: "note", header: "비고", priority: "p3", cell: (row) => <span className={styles.noteCell}>{row.note}</span> },
 ];
 

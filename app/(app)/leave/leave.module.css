@@ -112,6 +112,22 @@ tr:has(.rowLink) {
   outline: none;
 }
 
+/* 폰 접힌 줄(`신청 MM-DD`)도 같은 문서 링크 — 그 줄을 ::after로 덮는다(04.1-06 DOM 감사 #6). */
+tr:has(.foldLink) {
+  position: relative;
+}
+
+.foldLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.foldLink::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
 .rowLink:focus-visible::after {
   outline: var(--focus-w) solid var(--focus);
   outline-offset: calc(var(--focus-w) * -1);

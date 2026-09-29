@@ -30,4 +30,10 @@ describe("resolveLeaveYear", () => {
     expect(resolveLeaveYear("2027", 2026, 2025)).toBe(2025);
     expect(resolveLeaveYear("2024", 2026, 2025)).toBe(2024);
   });
+
+  it("위 끝을 올해보다 뒤로 주면(내 다음 해 신청 — 사용자 결정 2026-09-29) 그 연도까지 그대로, 그 뒤는 대체 연도", () => {
+    expect(resolveLeaveYear("2027", 2027, 2026)).toBe(2027);
+    expect(resolveLeaveYear("2028", 2027, 2026)).toBe(2026);
+    expect(resolveLeaveYear(undefined, 2027, 2026)).toBe(2026);
+  });
 });

@@ -468,6 +468,22 @@ describe("domain/reserves — 입력 계약 · 재전송 · 환율 · 수정 로
       expect(stored?.evidenceType).toBe(code.value);
       expect(stored?.version).toBe(1);
     });
+
+    it("(Codex B) 증빙을 바꾼 수정의 재전송(SF-2)은 그 사이 증빙 코드가 비활성돼도 no-op — version 2 그대로", async () => {
+      const finance = await createFinanceViewer();
+      const client = await createClient();
+      const code = await evidenceCode();
+      const row = newRow(client.id, "2026-03-01", "deposit", 1_000);
+      await saveReserves(finance, { rows: [row] });
+      const edit = { ...row, isNew: undefined, version: 1, evidenceType: code.value };
+      await saveReserves(finance, { rows: [edit] });
+      await turnOff(code.id, { active: false });
+
+      await saveReserves(finance, { rows: [edit] });
+
+      expect(await storedRow(row.id)).toMatchObject({ version: 2, evidenceType: code.value });
+      expect((await reserveLogs("document_update")).filter((log) => log.entityId === row.id)).toHaveLength(1);
+    });
   });
 
   it("재전송(ENG-D10): 같은 배치를 두 번 보내도 한 행 · 잔액 한 번 · document_create 한 번", async () => {

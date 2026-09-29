@@ -215,6 +215,10 @@ describe("확인증 공개 흐름 — 연락처 정규화 실패(S8)", () => {
   });
 });
 
+// 04.3-06 D-1102 — 마지막 자리 제출이 링크를 닫으므로, 제출 뒤에도 열린 링크가
+// 필요한 케이스는 미제출 자리를 하나 더 둔다.
+const OPEN_AFTER_SEED = { extraWinners: [{ name: "이바다", phone: "010-1111-2222" }] };
+
 describe("확인증 공개 흐름 — verifyLast4 틀림 · 이미 제출(T3)", () => {
   it("열린 자리에서 틀린 뒤 4자리 — wrong, 증표는 저장되지 않는다", async () => {
     const { eventId, token } = await makeEvent();
@@ -228,13 +232,13 @@ describe("확인증 공개 흐름 — verifyLast4 틀림 · 이미 제출(T3)", 
   });
 
   it("제출된 자리 + 맞는 뒤 4자리 — submitted", async () => {
-    const seeded = await seedSubmittedCert();
+    const seeded = await seedSubmittedCert(OPEN_AFTER_SEED);
     const result = await verifyLast4(seeded.token, seeded.winnerId, seeded.phone.slice(-4), randomUUID(), null);
     expect(result.kind).toBe("submitted");
   });
 
   it("제출된 자리 + 틀린 뒤 4자리 — wrong(E6-a 비공개, 이미 제출됐다는 사실이 새지 않는다)", async () => {
-    const seeded = await seedSubmittedCert();
+    const seeded = await seedSubmittedCert(OPEN_AFTER_SEED);
     const result = await verifyLast4(seeded.token, seeded.winnerId, "0000", randomUUID(), null);
     expect(result.kind).toBe("wrong");
   });

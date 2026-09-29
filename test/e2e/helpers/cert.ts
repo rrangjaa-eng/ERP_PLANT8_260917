@@ -187,12 +187,13 @@ export async function seedSubmittedCert(opts: SeedSubmittedCertOptions = {}): Pr
     idempotencyKey: randomUUID(),
     consentVersion: verified.consent.version,
     retentionYears: verified.consent.retentionYears,
+    winnerVersion: verified.version,
     rrnRecheckConfirmed: true,
   });
-  if (submitted.kind !== "submitted") throw new Error(`seedSubmittedCert submitCertificate 실패: ${submitted.kind}`);
 
+  // 성공 판정은 결과 kind 이름이 아니라 winner_id로 읽은 제출 행이다.
   const submissionRow = await findSubmissionByWinnerId(SYSTEM_VIEWER, winnerId);
-  if (!submissionRow) throw new Error("seedSubmittedCert: 제출 행을 찾지 못했다.");
+  if (!submissionRow) throw new Error(`seedSubmittedCert: 제출 행을 찾지 못했다(${submitted.kind}).`);
 
   return {
     eventId,

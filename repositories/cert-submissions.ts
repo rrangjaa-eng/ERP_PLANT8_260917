@@ -1,4 +1,4 @@
-import { eq, lt } from "drizzle-orm";
+import { and, eq, lt } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { certSignatureUploads, certSubmissions } from "@/db/schema";
@@ -19,6 +19,7 @@ export type InsertCertSubmissionInput = {
   consentVersion: string;
   retentionYears: number;
   signatureKey: string;
+  idempotencyKeyHash: string;
   submittedAt: Date;
 };
 
@@ -39,6 +40,38 @@ export async function insertSubmission(
 export async function findSubmissionByWinnerId(viewer: Viewer, winnerId: string): Promise<CertSubmissionRow | null> {
   void viewer;
   const [row] = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId)).limit(1);
+  return row ?? null;
+}
+
+// 04.3-06 — 제출 재생(같은 키) · 잠근 뒤 재판정이 읽는다. 행사 id를 함께 건다.
+export async function findSubmissionForWinner(
+  viewer: Viewer,
+  eventId: string,
+  winnerId: string,
+  tx: DbOrTx = db,
+): Promise<CertSubmissionRow | null> {
+  void viewer;
+  const [row] = await tx
+    .select()
+    .from(certSubmissions)
+    .where(and(eq(certSubmissions.eventId, eventId), eq(certSubmissions.winnerId, winnerId)))
+    .limit(1);
+  return row ?? null;
+}
+
+// 04.3-06 — 커밋 결과 불명 뒤 이 요청이 올린 객체를 가리키는 제출 줄이 있는지.
+export async function findSubmissionBySignatureKey(
+  viewer: Viewer,
+  eventId: string,
+  signatureKey: string,
+  tx: DbOrTx,
+): Promise<CertSubmissionRow | null> {
+  void viewer;
+  const [row] = await tx
+    .select()
+    .from(certSubmissions)
+    .where(and(eq(certSubmissions.eventId, eventId), eq(certSubmissions.signatureKey, signatureKey)))
+    .limit(1);
   return row ?? null;
 }
 

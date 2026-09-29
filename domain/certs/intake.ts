@@ -5,6 +5,7 @@ import { isCertFeatureEnabled } from "@/domain/certs/feature";
 import { buildPublicRows, type PublicRosterEntry, type WinnerForDisplay } from "@/domain/certs/roster-display";
 import { maskName, maskRrn, normalizeName, normalizePhone } from "@/domain/certs/format";
 import { validateRrn } from "@/domain/certs/rrn";
+import { inspectSignaturePng } from "@/domain/certs/signature-png";
 import { CERT_CONSENT_VERSION } from "@/domain/certs/consent";
 import { getSettingValue } from "@/domain/settings/registry";
 import {
@@ -36,7 +37,12 @@ import { log } from "@/lib/log";
 import { kstYear } from "@/lib/kst-date";
 import { getSignatureStore, type SignatureStore } from "@/lib/storage/signature-store";
 import { findUserById } from "@/repositories/users";
-import { findEventByTokenHash, lockEventForUpdate, type CertEventRow } from "@/repositories/cert-events";
+import {
+  closeEventAllSubmitted,
+  countOpenWinners,
+  findEventByTokenHash,
+  type CertEventRow,
+} from "@/repositories/cert-events";
 import {
   countRecentMisses,
   countRecentMissesUnlocked,
@@ -51,9 +57,11 @@ import {
 } from "@/repositories/cert-winners";
 import {
   deleteSignatureUploadIntent,
-  findSubmissionByWinnerId,
+  findSubmissionBySignatureKey,
+  findSubmissionForWinner,
   insertSignatureUploadIntent,
   insertSubmission,
+  type CertSubmissionRow,
 } from "@/repositories/cert-submissions";
 
 // 04.3-02 Task 2 ⑩ — 공개 흐름의 유일한 domain 진입점. can·visible·scopeFor나
@@ -62,15 +70,6 @@ import {
 
 // 증표 유효 기간(설계 /cso 검토 대상) — 확인 뒤 이 시간 안에만 제출할 수 있다.
 export const VERIFY_PROOF_TTL_MINUTES = 30;
-
-// 04.3-06이 domain/certs/signature-png.ts의 inspectSignaturePng로 대체한다 —
-// 트레이서는 시그니처·크기만 인라인으로 본다.
-const SIGNATURE_MAX_PNG_BYTES = 184_320;
-const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-
-function isValidSignaturePng(png: Buffer): boolean {
-  return png.length > 0 && png.length <= SIGNATURE_MAX_PNG_BYTES && png.subarray(0, 8).equals(PNG_MAGIC);
-}
 
 function sha256Hex(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -464,103 +463,167 @@ export async function verifyLast4(
 
 // ── submitCertificate ───────────────────────────────────────────────────
 
-const submitCertificateInputSchema = z.object({
+// 04.3-06 — 봉투(클라이언트가 만든 값 · 확인 응답에서 받은 값)는 모양이 틀리면
+// 던진다(액션 스키마가 먼저 거른다). 사람이 적은 칸은 (d)에서 칸 오류로 판정한다.
+const submitEnvelopeSchema = z.object({
   rowId: z.string().min(1),
   proof: z.string().min(1),
-  name: z.string().min(1).max(40),
-  rrnFront6: z.string().regex(/^\d{6}$/),
-  rrnBack7: z.string().regex(/^\d{7}$/),
-  phone: z.string().min(1),
-  address: z.string().max(200).optional(),
-  consent: z.literal(true),
-  signaturePngBase64: z.string().min(1),
-  idempotencyKey: z.string().min(1),
+  idempotencyKey: z.string().regex(/^[A-Za-z0-9_-]{22,64}$/),
+  winnerVersion: z.number().int().min(1),
   consentVersion: z.string().min(1),
-  retentionYears: z.coerce.number().int().min(1),
+  retentionYears: z.number().int().min(1),
   rrnRecheckConfirmed: z.boolean().optional().default(false),
 });
 
-export type SubmitCertificateInput = z.input<typeof submitCertificateInputSchema>;
+export type SubmitCertificateInput = z.input<typeof submitEnvelopeSchema> & {
+  name: string;
+  rrnFront6: string;
+  rrnBack7: string;
+  phone: string;
+  address?: string;
+  consent: boolean;
+  signaturePngBase64: string;
+};
+
+type SavedResult = {
+  kind: "saved";
+  name: string;
+  submittedAt: string;
+  prizeLine: string;
+  delivery: "onsite" | "parcel";
+  managerName: string;
+  contactPhone: string;
+};
 
 export type SubmitCertificateResult =
   | { kind: "notFound" }
+  | ClosedResult
   | { kind: "expiredProof" }
   | { kind: "invalid"; fields: string[] }
   | { kind: "rrnRecheck" }
-  | {
-      kind: "submitted";
-      name: string;
-      submittedAt: string;
-      prizeLine: string;
-      delivery: "onsite" | "parcel";
-      managerName: string;
-      contactPhone: string;
-    };
+  | { kind: "alreadySubmitted"; maskedName: string; submittedAt: string }
+  | SavedResult;
 
 export type SubmitCertificateDeps = {
   loadDocumentNumberFormat: typeof defaultLoadDocumentNumberFormat;
   signatureStore: SignatureStore;
-  appendActionLog?: RecordActionDeps["appendActionLog"];
+  appendActionLog: RecordActionDeps["appendActionLog"];
+  // 요청 도착 시각 — (a)에서 한 번만 부른다(증표 만료 · 행사 기한 판정).
+  now: () => Date;
+  // 테스트가 커밋 전 · 뒤 예외를 끼운다(커밋 결과 불명 갈래).
+  withTransaction: typeof withTransaction;
+  findSubmissionBySignatureKey: typeof findSubmissionBySignatureKey;
 };
 
-// 트랜잭션 안에서만 쓰는 내부 신호 — 다른 요청이 이미 같은 자리를 제출로
-// 확정했을 때(0행) 커밋할 것이 없으므로 롤백해 밖에서 기존 제출을 읽는다.
-class AlreadySubmittedSignal extends Error {}
-// 트랜잭션 안에서 잠근 행으로 다시 판정했을 때 확인 뒤 상태가 바뀐 경우 —
-// 링크가 닫혔거나(자리 파기 포함) 증표·묶인 동의가 더는 맞지 않는다.
-class ClosedSinceCheckSignal extends Error {}
-class ProofChangedSinceCheckSignal extends Error {}
+// 저장 트랜잭션의 판정 — stored만 이 요청이 쓴 것이다.
+type LockedDecision =
+  | { kind: "stored"; row: CertSubmissionRow }
+  | { kind: "replay"; row: CertSubmissionRow }
+  | ClosedResult
+  | { kind: "alreadySubmitted"; maskedName: string; submittedAt: string }
+  | { kind: "expiredProof" }
+  | { kind: "notFound" };
+
+function proofStillValid(
+  row: CertWinnerRow,
+  envelope: z.infer<typeof submitEnvelopeSchema>,
+  proofHash: string,
+  now: Date,
+): boolean {
+  return (
+    row.verifyProofHash !== null &&
+    row.verifyProofHash === proofHash &&
+    row.verifiedUntil !== null &&
+    now < row.verifiedUntil &&
+    envelope.winnerVersion === row.version &&
+    envelope.consentVersion === row.offeredConsentVersion &&
+    envelope.retentionYears === row.offeredRetentionYears
+  );
+}
+
+// 사람이 적은 칸 — E4 시각 순서로 모은다(name · rrn · address · phone · consent · signature).
+function checkFields(
+  input: SubmitCertificateInput,
+  delivery: string,
+  now: Date,
+): { fields: string[]; name: string; phone: string; address: string | null; png: Buffer; rrnMismatch: boolean } {
+  const fields: string[] = [];
+  const name = typeof input.name === "string" ? normalizeName(input.name) : "";
+  if (name.length === 0 || name.length > 40) fields.push("name");
+  const rrn = validateRrn(String(input.rrnFront6 ?? ""), String(input.rrnBack7 ?? ""), now);
+  if (!rrn.ok) fields.push("rrn");
+  const address = typeof input.address === "string" ? input.address.trim() : "";
+  if (delivery === "parcel" && (address.length === 0 || address.length > 200)) fields.push("address");
+  const phone = typeof input.phone === "string" ? normalizePhone(input.phone) : null;
+  if (phone === null) fields.push("phone");
+  if (input.consent !== true) fields.push("consent");
+  const png = Buffer.from(typeof input.signaturePngBase64 === "string" ? input.signaturePngBase64 : "", "base64");
+  if (!inspectSignaturePng(png).ok) fields.push("signature");
+  return {
+    fields,
+    name,
+    phone: phone ?? "",
+    address: delivery === "parcel" ? address : null,
+    png,
+    rrnMismatch: rrn.ok && rrn.checkDigit === "mismatch",
+  };
+}
+
+async function savedResult(
+  row: Pick<CertSubmissionRow, "name" | "submittedAt">,
+  winner: CertWinnerRow,
+  event: CertEventRow,
+): Promise<SavedResult> {
+  return {
+    kind: "saved",
+    name: row.name ?? "",
+    submittedAt: row.submittedAt.toISOString(),
+    prizeLine: `${winner.prizeName} ${winner.quantity}개`,
+    delivery: winner.delivery as "onsite" | "parcel",
+    managerName: await managerNameFor(event),
+    contactPhone: event.contactPhone,
+  };
+}
 
 export async function submitCertificate(
   token: string,
   input: SubmitCertificateInput,
-  deps?: Partial<SubmitCertificateDeps>,
-  now: Date = new Date(),
+  deps: Partial<SubmitCertificateDeps> = {},
 ): Promise<SubmitCertificateResult> {
+  // (a) 플래그 · 토큰 → 행사 → 자리. 요청 도착 시각은 여기서 한 번만 잡는다 —
+  // 잠금을 기다린 시간만큼 증표 수명이 늘거나 기한 판정이 바뀌지 않는다(X-10 M-2).
   if (!(await isCertFeatureEnabled())) return { kind: "notFound" };
+  const now = deps.now?.() ?? new Date();
 
   const event = await findEventByTokenHash(SYSTEM_VIEWER, sha256Hex(token));
   if (!event) return { kind: "notFound" };
-  if (resolveEventState(event, now).status === "closed") return { kind: "notFound" };
-
-  const parsed = submitCertificateInputSchema.parse(input);
-
-  const winner = await findWinnerInEvent(SYSTEM_VIEWER, event.id, parsed.rowId);
+  const envelope = submitEnvelopeSchema.parse(input);
+  const winner = await findWinnerInEvent(SYSTEM_VIEWER, event.id, envelope.rowId);
   if (!winner || winner.name === null) return { kind: "notFound" };
+  const keyHash = sha256Hex(envelope.idempotencyKey);
 
-  // 1. 증표 확인 — 없음·불일치·시간 지남은 모두 같은 판정이다(공격자가
-  // "틀린 증표"와 "지난 증표"를 구별하지 못하게 한다).
-  // 2. 동의 묶음 검사(#15) — 확인 때 그 자리에 묶인 값과 같을 때만 저장한다.
-  // 트랜잭션 안에서 잠근 자리 행으로 한 번 더 본다(확인 뒤 경합).
-  const proofHash = sha256Hex(parsed.proof);
-  const proofAndConsentMatch = (row: typeof winner) =>
-    row.verifyProofHash !== null &&
-    row.verifyProofHash === proofHash &&
-    row.verifiedUntil !== null &&
-    row.verifiedUntil > now &&
-    parsed.consentVersion === row.offeredConsentVersion &&
-    parsed.retentionYears === row.offeredRetentionYears;
-  if (!proofAndConsentMatch(winner)) return { kind: "expiredProof" };
+  // (b) 같은 키 재생 — 증표 전에 허용되는 유일한 판정이다(닫힘보다 먼저: 마지막
+  // 자리 재전송이 E6-b로 빠지지 않는다). 키가 다르면 제출 여부를 말하지 않는다.
+  const existing = await findSubmissionForWinner(SYSTEM_VIEWER, event.id, winner.id);
+  if (existing && existing.idempotencyKeyHash === keyHash) return savedResult(existing, winner, event);
 
-  // 3. 주민등록번호 규칙.
-  const rrnResult = validateRrn(parsed.rrnFront6, parsed.rrnBack7, now);
-  if (!rrnResult.ok) return { kind: "invalid", fields: ["rrn"] };
-  if (rrnResult.checkDigit === "mismatch" && !parsed.rrnRecheckConfirmed) {
-    return { kind: "rrnRecheck" };
-  }
+  // (c) 닫힘(공개 상태) → 증표 · version · 동의 묶음. 제출된 자리는 증표 해시가
+  // 비워져 있어 다른 키의 요청은 미제출 자리의 틀린 증표와 같은 expiredProof다.
+  const state = resolveEventState(event, now);
+  if (state.status === "closed") return { kind: "closed", reason: state.reason, at: state.at };
+  const proofHash = sha256Hex(envelope.proof);
+  if (!proofStillValid(winner, envelope, proofHash, now)) return { kind: "expiredProof" };
 
-  // 3-b. 연락처 — 정규화에 실패하면 빈 문자열로 저장하지 않고 되돌린다(S8).
-  const normalizedPhone = normalizePhone(parsed.phone);
-  if (normalizedPhone === null) return { kind: "invalid", fields: ["phone"] };
-
-  // 4. 서명 PNG.
-  const signaturePng = Buffer.from(parsed.signaturePngBase64, "base64");
-  if (!isValidSignaturePng(signaturePng)) return { kind: "invalid", fields: ["signature"] };
+  // (d) 칸 검사 → 주민등록번호 되묻기(한 번). 상태를 바꾸지 않은 판정은 키에 묶지 않는다.
+  const checked = checkFields(input, winner.delivery, now);
+  if (checked.fields.length > 0) return { kind: "invalid", fields: checked.fields };
+  if (checked.rrnMismatch && !envelope.rrnRecheckConfirmed) return { kind: "rrnRecheck" };
+  const rrnPlain = `${input.rrnFront6}${input.rrnBack7}`;
   const objectKey = `signatures/${event.id}/${winner.id}-${randomUUID()}.png`;
 
-  // 4-b. 업로드 전에 읽기(E3-27) — 서식·로그 스위치는 의도 행·put보다
-  // 먼저 읽는다. 여기서 실패하면 의도 행도 put도 없어 고아가 없다.
-  const loadDocumentNumberFormat = deps?.loadDocumentNumberFormat ?? defaultLoadDocumentNumberFormat;
+  // 업로드 전에 읽기(E3-27) — 서식 · 로그 스위치는 의도 행 · put보다 먼저. 설정은
+  // 트랜잭션을 열기 전에 읽는다(잠금을 쥔 채 풀의 두 번째 연결을 잡지 않는다).
+  const loadDocumentNumberFormat = deps.loadDocumentNumberFormat ?? defaultLoadDocumentNumberFormat;
   const format = await loadDocumentNumberFormat("cert");
   let submitLogEnabled = true;
   try {
@@ -570,121 +633,135 @@ export async function submitCertificate(
     submitLogEnabled = true; // fail-open — record.ts의 defaultIsActionTypeEnabled와 같은 규칙
   }
 
-  // 5. 규약 C3 — 저장소를 먼저 확정한다(non-local 환경에서 드라이버가 없으면
-  // 여기서 fail-closed로 던져 의도 행이 커밋되기 전에 끝난다, S3) → 의도
-  // 행을 먼저(자기 문장으로) 커밋 → put. put 자체가 실패하면(객체가 없다)
-  // 의도 행을 바로 지운다 — 24시간 파기를 기다릴 고아가 아니다.
-  const signatureStore = deps?.signatureStore ?? getSignatureStore();
+  // (e) 규약 C3 — 저장소를 먼저 확정(드라이버 없음은 여기서 던진다) → 의도 행을
+  // 자기 문장으로 커밋 → put. put이 실패하면 지우기가 성공했을 때만 의도 행을 지운다.
+  const signatureStore = deps.signatureStore ?? getSignatureStore();
   await insertSignatureUploadIntent(SYSTEM_VIEWER, objectKey);
   try {
-    await signatureStore.put(objectKey, signaturePng);
+    await signatureStore.put(objectKey, checked.png);
   } catch (putError) {
-    // put 자체가 거부·타임아웃 등으로 실패해도 객체가 실제로 없다고
-    // 단정할 수 없다(예: 응답만 못 받은 경우) — tx 실패 갈래와 같은 규칙:
-    // 지우기가 성공했을 때만 의도 행도 지운다. 지우기가 실패하면 의도
-    // 행을 남겨 04.3-12 파기(24시간 뒤)가 치우게 한다.
     try {
       await signatureStore.delete(objectKey);
       await deleteSignatureUploadIntent(SYSTEM_VIEWER, objectKey);
     } catch {
-      // 지우기 실패 — 의도 행을 남긴다.
+      // 지우기 실패 — 의도 행을 남긴다(04.3-12가 24시간 뒤 치운다).
     }
     throw putError;
   }
 
-  const submittedAt = now;
-
+  // (f) 저장 트랜잭션 — 행사 행 → 자리 행 순서로 잠근 뒤 잠긴 값으로 다시 판정한다.
+  // 순서가 계약이다: 같은 키 재생 → 닫힘 → 다른 키 제출 → 증표 · version · 동의.
+  let decision: LockedDecision;
   try {
-    await withTransaction(async (tx) => {
-      // 행사 행 → 자리 행 순서로 잠그고, 잠근 값으로 닫힘 · 증표를 다시 판정한다.
-      const lockedEvent = await lockEventForUpdate(SYSTEM_VIEWER, event.id, tx);
-      if (!lockedEvent || resolveEventState(lockedEvent, now).status === "closed") {
-        throw new ClosedSinceCheckSignal();
+    decision = await (deps.withTransaction ?? withTransaction)(async (tx): Promise<LockedDecision> => {
+      const lockedEvent = await lockEventRow(SYSTEM_VIEWER, event.id, tx);
+      if (!lockedEvent) return { kind: "notFound" };
+      const locked = await lockWinnerInEvent(SYSTEM_VIEWER, event.id, winner.id, tx);
+      if (!locked || locked.name === null) return { kind: "notFound" };
+
+      if (locked.submittedAt) {
+        const stored = await findSubmissionForWinner(SYSTEM_VIEWER, event.id, winner.id, tx);
+        if (stored && stored.idempotencyKeyHash === keyHash) return { kind: "replay", row: stored };
       }
-      const lockedWinner = await lockWinnerInEvent(SYSTEM_VIEWER, event.id, winner.id, tx);
-      if (!lockedWinner || lockedWinner.name === null) throw new ClosedSinceCheckSignal();
-      if (lockedWinner.submittedAt) throw new AlreadySubmittedSignal();
-      if (!proofAndConsentMatch(lockedWinner)) throw new ProofChangedSinceCheckSignal();
+      const lockedState = resolveEventState(lockedEvent, now);
+      if (lockedState.status === "closed") return { kind: "closed", reason: lockedState.reason, at: lockedState.at };
+      if (locked.submittedAt) {
+        return {
+          kind: "alreadySubmitted",
+          maskedName: maskName(normalizeName(locked.name)),
+          submittedAt: locked.submittedAt.toISOString(),
+        };
+      }
+      if (!proofStillValid(locked, envelope, proofHash, now)) return { kind: "expiredProof" };
 
-      const updatedRows = await markWinnerSubmitted(SYSTEM_VIEWER, winner.id, submittedAt, tx);
-      if (updatedRows === 0) throw new AlreadySubmittedSignal();
-
+      const updatedRows = await markWinnerSubmitted(SYSTEM_VIEWER, winner.id, now, tx);
+      if (updatedRows === 0) return { kind: "expiredProof" };
       const { number: certNo } = await allocateDocumentNumber(
         SYSTEM_VIEWER,
-        { counterKey: "cert", year: kstYear(submittedAt), format },
+        { counterKey: "cert", year: kstYear(now), format },
         tx,
       );
-
-      await insertSubmission(
+      const row = await insertSubmission(
         SYSTEM_VIEWER,
         {
           winnerId: winner.id,
           eventId: event.id,
           certNo,
-          name: normalizeName(parsed.name),
-          rrnEncrypted: encrypt(`${parsed.rrnFront6}${parsed.rrnBack7}`),
-          rrnMasked: maskRrn(`${parsed.rrnFront6}${parsed.rrnBack7}`),
-          phone: normalizedPhone,
-          address: winner.delivery === "parcel" ? (parsed.address ?? null) : null,
-          consentAt: submittedAt,
-          consentVersion: parsed.consentVersion,
-          retentionYears: parsed.retentionYears,
+          name: checked.name,
+          rrnEncrypted: encrypt(rrnPlain),
+          rrnMasked: maskRrn(rrnPlain),
+          phone: checked.phone,
+          address: checked.address,
+          consentAt: now,
+          consentVersion: envelope.consentVersion,
+          retentionYears: envelope.retentionYears,
           signatureKey: objectKey,
-          submittedAt,
+          idempotencyKeyHash: keyHash,
+          submittedAt: now,
         },
         tx,
       );
-
       await deleteSignatureUploadIntent(SYSTEM_VIEWER, objectKey, tx);
 
-      await recordAction(SYSTEM_VIEWER, {
-        actionType: "document_submit",
-        entity: "cert_submission",
-        entityId: winner.id,
-        detail: { eventId: event.id },
-      }, {
-        tx,
-        isActionTypeEnabled: () => Promise.resolve(submitLogEnabled),
-        ...(deps?.appendActionLog ? { appendActionLog: deps.appendActionLog } : {}),
-      });
+      // D-1102 — 마지막 미제출 자리면 같은 트랜잭션에서 링크를 닫는다. 행사 행을
+      // 잠갔으므로 마지막 두 자리가 동시에 와도 닫힘은 한 번이다.
+      if ((await countOpenWinners(SYSTEM_VIEWER, event.id, tx)) === 0) {
+        await closeEventAllSubmitted(SYSTEM_VIEWER, event.id, now, tx);
+      }
 
+      // (h) 제출 로그도 같은 트랜잭션 — 실패하면 제출 전체가 롤백된다(최종 리뷰 B5).
+      await recordAction(
+        SYSTEM_VIEWER,
+        { actionType: "document_submit", entity: "cert_submission", entityId: row.id, detail: { eventId: event.id } },
+        {
+          tx,
+          isActionTypeEnabled: () => Promise.resolve(submitLogEnabled),
+          ...(deps.appendActionLog ? { appendActionLog: deps.appendActionLog } : {}),
+        },
+      );
+      return { kind: "stored", row };
     });
-
-    const managerName = await managerNameFor(event);
-    return {
-      kind: "submitted",
-      name: normalizeName(parsed.name),
-      submittedAt: submittedAt.toISOString(),
-      prizeLine: `${winner.prizeName} ${winner.quantity}개`,
-      delivery: winner.delivery as "onsite" | "parcel",
-      managerName,
-      contactPhone: event.contactPhone,
-    };
   } catch (error) {
-    // 7. 트랜잭션 실패 — 방금 올린 객체를 지우고, 지우기가 성공했을 때만
-    // 의도 행을 지운다(실패하면 04.3-12 파기가 24시간 뒤 치운다).
+    // (g) 예외 갈래 — 커밋 결과 불명. commit 응답만 잃었을 수 있으므로 같은 잠금
+    // 순서로 확정된 상태를 읽어 이 객체를 가리키는 제출 줄이 있으면 saved를 돌려준다.
+    let committed: CertSubmissionRow | null;
+    try {
+      committed = await (deps.withTransaction ?? withTransaction)(async (tx) => {
+        await lockEventRow(SYSTEM_VIEWER, event.id, tx);
+        await lockWinnerInEvent(SYSTEM_VIEWER, event.id, winner.id, tx);
+        return (deps.findSubmissionBySignatureKey ?? findSubmissionBySignatureKey)(
+          SYSTEM_VIEWER,
+          event.id,
+          objectKey,
+          tx,
+        );
+      });
+    } catch {
+      // 조회마저 실패 — 아무것도 지우지 않는다(커밋됐으면 줄이 객체를 가리키고,
+      // 롤백됐으면 의도 행이 남아 04.3-12가 치운다).
+      throw error;
+    }
+    if (committed) return savedResult(committed, winner, event);
+    // 롤백됐다 — 객체만 지운다. 의도 행은 저장 트랜잭션 안에서만 지워지므로 남은
+    // 행이 「커밋되지 않음」의 기록이다(04.3-12가 24시간 뒤 치운다).
     try {
       await signatureStore.delete(objectKey);
-      await deleteSignatureUploadIntent(SYSTEM_VIEWER, objectKey);
     } catch {
-      // 지우기 실패 — 의도 행을 남긴다.
-    }
-
-    if (error instanceof ClosedSinceCheckSignal) return { kind: "notFound" };
-    if (error instanceof ProofChangedSinceCheckSignal) return { kind: "expiredProof" };
-    if (error instanceof AlreadySubmittedSignal) {
-      const existing = await findSubmissionByWinnerId(SYSTEM_VIEWER, winner.id);
-      const managerName = await managerNameFor(event);
-      return {
-        kind: "submitted",
-        name: existing?.name ?? normalizeName(parsed.name),
-        submittedAt: (existing?.submittedAt ?? submittedAt).toISOString(),
-        prizeLine: `${winner.prizeName} ${winner.quantity}개`,
-        delivery: winner.delivery as "onsite" | "parcel",
-        managerName,
-        contactPhone: event.contactPhone,
-      };
+      // 지우기 실패 — 의도 행이 남아 있다.
     }
     throw error;
   }
+
+  if (decision.kind === "stored") return savedResult(decision.row, winner, event);
+
+  // (g) 판정 갈래 — 트랜잭션은 확정적으로 끝났고 이 객체는 어느 제출 줄도 가리키지
+  // 않는다. 지우기가 성공(404 포함)했을 때만 의도 행을 지운다.
+  try {
+    await signatureStore.delete(objectKey);
+    await deleteSignatureUploadIntent(SYSTEM_VIEWER, objectKey);
+  } catch {
+    // 지우기 실패 — 의도 행을 남긴다.
+  }
+  if (decision.kind === "replay") return savedResult(decision.row, winner, event);
+  return decision;
 }

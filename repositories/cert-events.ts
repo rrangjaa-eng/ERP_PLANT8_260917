@@ -36,12 +36,23 @@ export async function findEventByTokenHash(viewer: Viewer, tokenHash: string): P
   return row ?? null;
 }
 
-// 04.3-02 Task 2 ⑩ — 제출 트랜잭션이 행사 행을 잠근다(FOR UPDATE). 호출자가
-// 연 트랜잭션 안에서만 부른다(tx 필수).
-export async function lockEventForUpdate(viewer: Viewer, eventId: string, tx: DbOrTx): Promise<CertEventRow | null> {
+// 04.3-06 — 같은 행사의 파기되지 않은 미제출 자리 수(제출 트랜잭션 안).
+export async function countOpenWinners(viewer: Viewer, eventId: string, tx: DbOrTx): Promise<number> {
   void viewer;
-  const [row] = await tx.select().from(certEvents).where(eq(certEvents.id, eventId)).for("update");
-  return row ?? null;
+  const [row] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(certWinners)
+    .where(and(eq(certWinners.eventId, eventId), isNull(certWinners.submittedAt), isNull(certWinners.purgedAt)));
+  return row?.count ?? 0;
+}
+
+// 04.3-06 — 마지막 자리 제출이 같은 트랜잭션에서 링크를 닫는다(비어 있을 때만).
+export async function closeEventAllSubmitted(viewer: Viewer, eventId: string, at: Date, tx: DbOrTx): Promise<void> {
+  void viewer;
+  await tx
+    .update(certEvents)
+    .set({ closedAt: at, closedReason: "all_submitted", updatedAt: new Date() })
+    .where(and(eq(certEvents.id, eventId), isNull(certEvents.closedAt)));
 }
 
 // 04.3-04 Task 2 ④ — 내부 목록 · 상세. 범위 서술자: createdBy가 undefined면

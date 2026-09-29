@@ -61,6 +61,7 @@ type Step =
       delivery: "onsite" | "parcel";
       consentVersion: string;
       retentionYears: number;
+      winnerVersion: number;
       rrnRecheck: boolean;
     }
   | { kind: "submitted"; name: string; submittedAt: string; prizeLine: string; delivery: "onsite" | "parcel" }
@@ -382,6 +383,7 @@ export function IntakeFlow({ token, eventName, wonOn, rows, managerName, contact
         delivery: data.delivery,
         consentVersion: data.consent.version,
         retentionYears: data.consent.retentionYears,
+        winnerVersion: data.version,
         rrnRecheck: false,
       });
     } else if (data?.kind === "submitted") {
@@ -792,10 +794,11 @@ function IntakeForm({
       idempotencyKey: randomIdemKey(),
       consentVersion: step.consentVersion,
       retentionYears: step.retentionYears,
+      winnerVersion: step.winnerVersion,
       rrnRecheckConfirmed,
     });
     const data = result?.data;
-    if (data?.kind === "submitted") {
+    if (data?.kind === "saved") {
       onSubmitted(data.name, data.submittedAt);
     } else if (data?.kind === "rrnRecheck") {
       setRrnError("주민등록번호가 맞지 않습니다 · 앞 6자리(생년월일)와 뒤 7자리를 다시 확인해 주세요");

@@ -32,7 +32,7 @@ Phase: 4 (project-quote-ledger) — READY TO EXECUTE
 Current Plan: 44
 Total Plans in Phase: 44
 Status: Ready to execute
-Last activity: 2026-09-29 - Completed quick task 260929-n41: T-04-31 번호 서식 구분자 허용 목록
+Last activity: 2026-09-29 - Completed quick task 260929-npq: 폰 터치 44px 위반 2건
 
 Progress: [█░░░░░░░░░] 6%
 
@@ -345,6 +345,7 @@ Recent decisions affecting current work:
 | 260929-8ls | PR #85 Codex B: 비활성·보관 증빙 코드가 붙은 기존 리저브 줄 수정 허용(새 줄·값 변경만 활성 검사) | 2026-09-29 | f39783d4 | [260929-8ls-codex-b-evidence-inactive-code-on-existi](./quick/260929-8ls-codex-b-evidence-inactive-code-on-existi/) |
 | 260929-9zo | PR #85 Codex ②③: 리저브 쓰기 새 줄 클라이언트(vendor.value)·새로 고르거나 바꾼 프로젝트(project.value+projects 범위) 가시성 검사 | 2026-09-29 | 328e48bb | [260929-9zo-pr-85-codex-reserve-write-visibility](./quick/260929-9zo-pr-85-codex-reserve-write-visibility/) |
 | 260929-n41 | T-04-31 프로젝트 번호 구분자 허용 목록(빈 값 또는 - _ . / 한 글자, 그 밖 저장·가져오기 거부 — PR #104 사용자 결정) | 2026-09-29 | c1180ca6 | [260929-n41-t-04-31-separator-allowlist](./quick/260929-n41-t-04-31-separator-allowlist/) |
+| 260929-npq | 폰 터치 44px 위반 2건 — 상세 「상태 바꾸기」·「더보기」 40→44, 목록 정렬 머리글 「프로젝트명」·「견적」 19→44(PR #104 [지시]) | 2026-09-29 | 43dd5de4 | [260929-npq-phone-44px-touch-targets-detail-more-sta](./quick/260929-npq-phone-44px-touch-targets-detail-more-sta/) |
 
 ### Roadmap Evolution
 

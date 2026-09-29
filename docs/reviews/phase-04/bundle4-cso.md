@@ -28,3 +28,7 @@
 ## 커버리지·한계
 - gstack-cso 헬퍼 run은 시작했지만 소스는 git으로 직접 읽었다. worktree가 base 커밋(90465dc)에 있어서 PR 브랜치 `origin/ccr-dd6b4285-ekko98`를 git show/diff로 읽었다. 스캐너·런타임 재현은 없다.
 - 보지 못한 부분: `reserves-table.tsx`(1267줄)의 렌더링 세부, 마이그레이션 0018의 권한(REVOKE) 세부.
+
+## 사용자 결정
+
+- 2026-09-28 채팅: 항목 2(C2) → **(가) 지금대로.** 리저브 clientName은 reserve.amount만 요구한다(B-15). vendor.value는 추가하지 않는다. 코드 변경 없음.

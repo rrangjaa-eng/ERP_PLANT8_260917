@@ -61,7 +61,7 @@
 |----------|-------|
 | Critical | 0 |
 | High | 0 |
-| Medium | 4 (ISSUE-001·002·003 수정 대상, ISSUE-005 NEEDS DECISION) |
+| Medium | 4 (ISSUE-001·002·003 수정 대상, ISSUE-005 부분 수정) |
 | Low | 2 (ISSUE-004·006 보류) |
 | **Total** | **6** |
 
@@ -113,14 +113,14 @@
 
 새 줄 단가 `0` 칸 Enter(캐럿 끝) → `400000` 타이핑 → 입력 칸에 `0,400,000`. 커밋 값은 400,000으로 맞다. 앞자리 0을 떼지 않는 표시 문제.
 
-### ISSUE-005: 동명 거래처가 선택 목록에서 구분되지 않음 — NEEDS DECISION
+### ISSUE-005: 동명 거래처가 선택 목록에서 구분되지 않음 — 부분 수정(리저브), 견적 보류
 
 | Field | Value |
 |-------|-------|
 | **Severity** | medium |
 | **Category** | ux |
 | **URL** | /pnl/reserves 클라이언트 칸, /projects/[id] 거래처 칸 |
-| **Fix Status** | NEEDS DECISION |
+| **Fix Status** | 리저브 verified (491b2df0 RED → 다음 커밋) · 견적 거래처 칸 deferred |
 
 붙여넣기 오류가 「같은 이름 여럿 · 목록에서 고르기」라고 안내하지만 목록에는 `마바동명`이 두 번, 똑같이 보인다(옵션 라벨 = 이름뿐). 사용자는 어느 쪽이 맞는지 고를 근거가 없다. DECISIONS.md·UI-SPEC에 동명 표기 규칙 없음.
 선택지: (a) 옵션 라벨에 구분자 병기 — 사업자번호 끝 4자리 등(`마바동명 · 1234`) (b) 동명일 때만 뒤에 순번·등록일 병기 (c) 거래처 등록 단계에서 동명 금지(정규화 이름 unique). 추천: **(a)를 동명일 때만** — 평소 목록은 그대로, 동명 두 줄만 구분 글자가 붙고 붙여넣기 오류 문구와 맞는다.
@@ -146,6 +146,7 @@
 
 - ISSUE-001 — c5dc811b: `ui/table/Table.tsx` onCommit이 편집기가 포커스를 쥔 확정이면 셀 재포커스(focusRequest cell). 회귀 E2E: quote-table·reserves 「/qa 포커스」(0a8f7c17).
 - ISSUE-002 — c5dc811b: 표 붙여넣기 뒤 탭 정지 셀로 재포커스. 회귀 E2E: quote-table 「(QA ISSUE-002)」(0a8f7c17).
+- ISSUE-005 — 사용자 결정 (a) 리저브만(2026-09-29): 동명 클라이언트 옵션만 `이름 · 사업자번호 끝4자리`(`vendorOptionLabels`, 라벨은 클라이언트 옵션과 같은 `[reserve.amount, vendor.value]` 게이트), `이름 · 끝4자리` 붙여넣기는 그 클라이언트로. 회귀: 단위 vendor-option-labels · E2E reserves 「(QA ISSUE-005)」(491b2df0). 견적 거래처 칸은 옵션이 projects 보기 권한만 확인해 끝 4자리가 권한 밖으로 샐 수 있어 보류(후속 단위).
 
 ## PR Summary
 

@@ -43,16 +43,13 @@ export function QrSection(props: { eventName: string; qrSvg: string; link: strin
       <div role="img" aria-label={`${props.eventName} 확인증 QR`} className={styles.qr} dangerouslySetInnerHTML={{ __html: props.qrSvg }} />
       <div className={styles.linkRow}>
         <span className={styles.link}>{props.link}</span>
-        {copy === "copied" ? (
-          <span className={styles.copied} role="status">
-            링크 복사됨
-          </span>
-        ) : (
-          <Button variant="tertiary" onClick={() => void copyLink(props.link)}>
-            링크 복사
-          </Button>
-        )}
-        {copy === "failed" ? <span className={styles.copyFailed}>복사 실패 · 링크를 길게 눌러 복사</span> : null}
+        {/* 버튼은 그대로 두고 라벨 자리만 바꾼다 — 누른 뒤 포커스가 버튼에 남는다. status는 처음부터 빈 채로 둔다. */}
+        <Button variant="tertiary" onClick={() => void copyLink(props.link)}>
+          {copy === "copied" ? <span className={styles.copied}>링크 복사됨</span> : "링크 복사"}
+        </Button>
+        <span role="status" className={copy === "failed" ? styles.copyFailed : "sr-only"}>
+          {copy === "copied" ? "링크 복사됨" : copy === "failed" ? "복사 실패 · 링크를 길게 눌러 복사" : ""}
+        </span>
       </div>
     </section>
   );

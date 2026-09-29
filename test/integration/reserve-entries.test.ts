@@ -1033,3 +1033,152 @@ describe("domain/reserves — 대장 참조와 DTO 이름 (04-42 리뷰 B1 · S1
     expect(hiddenRow).not.toHaveProperty("projectName");
   });
 });
+
+// PR #85 Codex ②③ — 새 줄 클라이언트는 vendor.value, 새로 고르거나 바꾼 프로젝트는 project.value + projects 보기(listReserveReferences와 같은 판정), 저장된 값·재전송은 막지 않는다(Codex #5 · Codex B와 같은 결).
+describe("domain/reserves — 쓰기 경로 노출 게이트, 선택지와 같은 판정 (PR #85 Codex ②③)", () => {
+  const PROJECT_HIDDEN: [string, { permissions: [string, "view" | "write"][]; visible: string[] }][] = [
+    ["project.value 없음", { permissions: WRITER, visible: ["reserve.amount", "vendor.value"] }],
+    ["projects 보기 없음", { permissions: [["pnl", "view"], ["pnl", "write"]], visible: ["reserve.amount", "vendor.value", "project.value"] }],
+  ];
+  const CLIENT_NOT_FOUND_REASON = "클라이언트 없음 · 클라이언트 다시 고르기";
+  const PROJECT_MISMATCH_REASON = "다른 클라이언트의 프로젝트 · 프로젝트 다시 고르기";
+
+  function hideFromCeo(infoItem: string) {
+    return upsertVisibility(SYSTEM_VIEWER, { roleId: "role-ceo", infoItem, visible: false });
+  }
+
+  it("(Codex ③) vendor.value 없는 쓰기 권한자의 새 줄은 `클라이언트 없음 · 클라이언트 다시 고르기`로 전부 거부, DB 무변경", async () => {
+    const client = await createClient();
+    const writer = await createRoleViewer({ permissions: WRITER, visible: ["reserve.amount", "project.value"] });
+    const row = newRow(client.id, "2026-03-01", "deposit", 1_000);
+
+    const error = await expectOneDenied("reserve.input", () => rejection(saveReserves(writer, { rows: [row] })));
+
+    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: row.id, field: "clientId", reason: CLIENT_NOT_FOUND_REASON })]);
+    expect(await countRows(client.id)).toBe(0);
+  });
+
+  it("(Codex ③) vendor.value 없는 쓰기 권한자도 저장된 줄의 메모는 고칠 수 있다 — 클라이언트 칸 그대로", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const row = newRow(client.id, "2026-03-01", "deposit", 1_000);
+    await saveReserves(finance, { rows: [row] });
+    const writer = await createRoleViewer({ permissions: WRITER, visible: ["reserve.amount", "project.value"] });
+
+    await saveReserves(writer, { rows: [{ ...row, isNew: undefined, version: 1, note: "메모 고침" }] });
+
+    expect(await storedRow(row.id)).toMatchObject({ note: "메모 고침", clientId: client.id, version: 2 });
+  });
+
+  it("(Codex ③) 새 줄 재전송(ENG-D10)은 그 사이 vendor.value가 꺼져도 no-op — 한 행 그대로", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const row = newRow(client.id, "2026-03-01", "deposit", 1_000);
+    await saveReserves(finance, { rows: [row] });
+    await hideFromCeo("vendor.value");
+
+    await saveReserves(finance, { rows: [row] });
+
+    expect(await countRows(client.id)).toBe(1);
+  });
+
+  it.each(PROJECT_HIDDEN)("(Codex ②) %s — 새 줄이 프로젝트를 고르면 `다른 클라이언트의 프로젝트 · 프로젝트 다시 고르기`로 전부 거부, DB 무변경", async (_label, role) => {
+    const client = await createClient();
+    const project = await createProjectFor(client.id);
+    const writer = await createRoleViewer(role);
+    const row = { ...newRow(client.id, "2026-03-01", "deposit", 1_000), projectId: project.id };
+
+    const error = await expectOneDenied("reserve.input", () => rejection(saveReserves(writer, { rows: [row] })));
+
+    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: row.id, field: "projectId", reason: PROJECT_MISMATCH_REASON })]);
+    expect(await countRows(client.id)).toBe(0);
+  });
+
+  it.each(PROJECT_HIDDEN)("(Codex ②) %s — 저장된 줄에 프로젝트를 새로 붙이면 같은 이유로 거부, 저장된 값 그대로", async (_label, role) => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const project = await createProjectFor(client.id);
+    const row = newRow(client.id, "2026-03-01", "deposit", 1_000);
+    await saveReserves(finance, { rows: [row] });
+    const writer = await createRoleViewer(role);
+
+    const error = await rejection(saveReserves(writer, { rows: [{ ...row, isNew: undefined, version: 1, projectId: project.id }] }));
+
+    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: row.id, field: "projectId", reason: PROJECT_MISMATCH_REASON })]);
+    expect(await storedRow(row.id)).toMatchObject({ projectId: null, version: 1 });
+  });
+
+  it.each(PROJECT_HIDDEN)("(Codex ②) %s — 보관된 프로젝트를 골라도 보관 여부를 알리지 않고 같은 이유로 거부", async (_label, role) => {
+    const client = await createClient();
+    const project = await createProjectFor(client.id);
+    await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, project.id));
+    const writer = await createRoleViewer(role);
+    const row = { ...newRow(client.id, "2026-03-01", "deposit", 1_000), projectId: project.id };
+
+    const error = await rejection(saveReserves(writer, { rows: [row] }));
+
+    expect(error.formatErrors).toEqual([expect.objectContaining({ rowId: row.id, field: "projectId", reason: PROJECT_MISMATCH_REASON })]);
+    expect(await countRows(client.id)).toBe(0);
+  });
+
+  it.each(PROJECT_HIDDEN)("(④) %s — 대장 DTO 그대로 메모만 고쳐 저장하면 프로젝트 연결이 그대로다", async (_label, role) => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const project = await createProjectFor(client.id);
+    const row = { ...newRow(client.id, "2026-03-01", "deposit", 1_000), projectId: project.id };
+    await saveReserves(finance, { rows: [row] });
+    const writer = await createRoleViewer(role);
+
+    const dto = (await listReserves(writer, { page: 1 })).rows.find((entry) => entry.id === row.id);
+    expect(dto?.projectId).toBe(project.id);
+    if (!dto) return;
+    await saveReserves(writer, {
+      rows: [
+        {
+          id: dto.id,
+          version: dto.version,
+          clientId: dto.clientId,
+          entryDate: dto.entryDate,
+          direction: dto.direction,
+          amount: { currency: dto.amount.currency, amount: dto.amount.amount, fxRate: dto.amount.fxRate },
+          projectId: dto.projectId,
+          evidenceType: dto.evidenceType,
+          taxInvoiceNumber: dto.taxInvoiceNumber,
+          note: "메모 고침",
+        },
+      ],
+    });
+
+    expect(await storedRow(row.id)).toMatchObject({ note: "메모 고침", projectId: project.id, version: 2 });
+  });
+
+  it("(Codex ②) 새 줄 재전송(ENG-D10)은 그 사이 project.value가 꺼져도 no-op — 한 행 그대로", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const project = await createProjectFor(client.id);
+    const row = { ...newRow(client.id, "2026-03-01", "deposit", 1_000), projectId: project.id };
+    await saveReserves(finance, { rows: [row] });
+    await hideFromCeo("project.value");
+
+    await saveReserves(finance, { rows: [row] });
+
+    expect(await countRows(client.id)).toBe(1);
+    expect((await storedRow(row.id))?.projectId).toBe(project.id);
+  });
+
+  it("(Codex ②) 프로젝트를 바꾼 수정의 재전송(SF-2)은 그 사이 project.value가 꺼져도 no-op — version 2 그대로", async () => {
+    const finance = await createFinanceViewer();
+    const client = await createClient();
+    const project = await createProjectFor(client.id);
+    const row = newRow(client.id, "2026-03-01", "deposit", 1_000);
+    await saveReserves(finance, { rows: [row] });
+    const edit = { ...row, isNew: undefined, version: 1, projectId: project.id };
+    await saveReserves(finance, { rows: [edit] });
+    await hideFromCeo("project.value");
+
+    await saveReserves(finance, { rows: [edit] });
+
+    expect(await storedRow(row.id)).toMatchObject({ version: 2, projectId: project.id });
+    expect((await reserveLogs("document_update")).filter((log) => log.entityId === row.id)).toHaveLength(1);
+  });
+});

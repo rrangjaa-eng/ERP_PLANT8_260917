@@ -225,7 +225,9 @@ test.describe("견적 줄 종류 — 조정 · 견적 외 비용 화면 (04-23, 
     await expect(footer).toContainText("차익 30,000");
 
     await page.goto(`/projects?q=${encodeURIComponent(project.name)}`);
-    await expect(page.getByText(/실행가 270,000/)).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "합계" }).locator("dt:text-is('실행가') + dd"),
+    ).toHaveText("270,000");
   });
   test("PM — 완료 프로젝트의 조정 행이 같은 표 맨 아래 조정 그룹에 보이고 「조정 줄 추가」가 없다(T-04-66)", async ({ page }) => {
     await openProject(page, {

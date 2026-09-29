@@ -131,8 +131,15 @@
     {
       "idx": 18,
       "version": "7",
-      "when": 1790498949279,
-      "tag": "0018_boring_morlun",
+      "when": 1790530364208,
+      "tag": "0018_reserve_entries",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790676803580,
+      "tag": "0019_yielding_lady_deathstrike",
       "breakpoints": true
     }
   ]

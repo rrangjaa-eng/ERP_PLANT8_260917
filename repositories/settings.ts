@@ -133,9 +133,10 @@ export type SettingsImportInput = {
 // 항목을 먼저 검증한 뒤에만 이 함수를 부른다. 한 트랜잭션 안에서 적용해
 // 부분 적용 상태가 남지 않는다. 이력 항목은 이미 있는 (key, effectiveFrom)
 // 이면 건너뛰어(onConflictDoNothing) 같은 JSON을 두 번 가져와도 멱등이다.
-export async function applySettingsImport(viewer: Viewer, input: SettingsImportInput): Promise<void> {
+// 묶음 ④ /review R7 — tx를 받으면 그 트랜잭션에서 쓴다(가져오기가 같은 tx에서 순번 시작값 가드를 먼저 지난다).
+export async function applySettingsImport(viewer: Viewer, input: SettingsImportInput, outerTx?: DbOrTx): Promise<void> {
   void viewer;
-  await db.transaction(async (tx) => {
+  const apply = async (tx: DbOrTx) => {
     for (const item of input.simple) {
       await tx
         .insert(settingsSimple)
@@ -156,7 +157,9 @@ export async function applySettingsImport(viewer: Viewer, input: SettingsImportI
         })
         .onConflictDoNothing({ target: [settingsHistorized.key, settingsHistorized.effectiveFrom] });
     }
-  });
+  };
+  if (outerTx) await apply(outerTx);
+  else await db.transaction(apply);
 }
 
 // 04.1(Codex HIGH 스냅숏): 여러 비이력형 키를 SELECT 한 문장으로 읽는다 —

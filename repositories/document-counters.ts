@@ -65,3 +65,28 @@ export async function allocateNumber(
   if (!row) throw new Error("document_counters 증가가 행을 반환하지 않았습니다.");
   return row.value;
 }
+
+// 04-51 리뷰 S1 — 순번 시작값 저장이 채번(allocateNumber)과 같은 행 잠금을 잡는다. 행이 없으면
+// 0 행을 만든 뒤 `SELECT … FOR UPDATE`로 잠그고 현재 값을 돌려준다 — 저장 트랜잭션이 끝날
+// 때까지 같은 (counterKey, period)의 채번이 기다리고, 커밋 전 채번이 있으면 이쪽이 기다린다.
+export async function lockDocumentCounter(
+  viewer: Viewer,
+  counterKey: string,
+  period: string,
+  tx: DbOrTx,
+): Promise<number> {
+  void viewer;
+  await tx
+    .insert(documentCounters)
+    .values({ counterKey, period, value: 0 })
+    .onConflictDoNothing({ target: [documentCounters.counterKey, documentCounters.period] });
+
+  const [row] = await tx
+    .select({ value: documentCounters.value })
+    .from(documentCounters)
+    .where(and(eq(documentCounters.counterKey, counterKey), eq(documentCounters.period, period)))
+    .for("update");
+
+  if (!row) throw new Error("document_counters 잠금이 행을 반환하지 않았습니다.");
+  return row.value;
+}

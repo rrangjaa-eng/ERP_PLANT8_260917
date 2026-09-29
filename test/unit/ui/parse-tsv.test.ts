@@ -50,6 +50,13 @@ describe("parseTsv", () => {
   // 영역(헤더 행 + 번호 열 포함)을 복사한 clipboard text/plain 원문.
   // 처음 구현은 따옴표만 있고 줄바꿈은 없는 칸(`"대형" 현수막`)도 인용된
   // 칸으로 오인해 따옴표를 지워 버렸다 — 이 회귀 테스트가 그 결함을 잡는다.
+  // 04-31 — 정본은 test/fixtures/excel-clipboard.ts(04-04 방식 재사용, 사용자
+  // 승인 2026-09-23). 이 파일은 경로에 "ui/"를 포함해 boundaries/element-types가
+  // "ui" 요소로 잡는다(role-menu.test.ts의 SEED_ROLE_NAMES·ADMIN_MENU_KEYS와
+  // 같은 이유, tests.md 함정) — "ui"는 "test" 요소를 import할 수 없어 이 상수를
+  // 여기 복제한다. E2E(test/e2e/excel-paste-final.spec.ts)는 fixture 모듈을
+  // 그대로 import해 같은 바이트를 재생한다 — 바이트가 어긋나면 둘 중 하나가 아니라
+  // 파서가 틀린 것이다.
   const REAL_EXCEL_WINDOWS_20260923 =
     '\tA\tB\tC\r\n1\t무대 설치\t2\t 1,200,000 \r\n2\t"대형" 현수막\t5\t 35,000 \r\n3\t"비고 첫 줄\r\n둘째 줄"\t1\t₩450,000 ';
 
@@ -72,6 +79,60 @@ describe("parseTsv", () => {
 
   it("인용된 칸 안의 CRLF는 LF 하나로 정규화된다(캐리지 리턴이 값에 남지 않는다)", () => {
     expect(parseTsv('a\t"1행\r\n2행"\tb')).toEqual([["a", "1행\n2행", "b"]]);
+  });
+
+  // 04-47(C-05) — 엑셀은 복사 영역 끝에 줄바꿈 하나를 붙인다. 그 하나는 빈 줄이 아니다(45줄 복사 = 45줄 붙여넣기).
+  it('끝 줄바꿈 하나(CRLF)는 빈 줄이 되지 않는다 — "a\\tb\\r\\n" → 한 줄', () => {
+    expect(parseTsv("a\tb\r\n")).toEqual([["a", "b"]]);
+  });
+
+  it('끝 줄바꿈 하나(LF)도 같다 — "a\\tb\\n" → 한 줄', () => {
+    expect(parseTsv("a\tb\n")).toEqual([["a", "b"]]);
+  });
+
+  it("끝 줄바꿈은 하나만 뗀다 — 두 번째 줄바꿈 앞의 빈 줄은 남는다", () => {
+    expect(parseTsv("a\tb\r\n\r\n")).toEqual([["a", "b"], [""]]);
+  });
+
+  it("45줄 + 끝 CRLF는 45줄이다", () => {
+    const text = Array.from({ length: 45 }, (_, index) => `항목${index + 1}\t${index + 1}`).join("\r\n") + "\r\n";
+    expect(parseTsv(text)).toHaveLength(45);
+  });
+
+  it("인용 칸이 끝 줄바꿈 바로 앞에 있어도 그 칸 안의 줄바꿈은 그대로다", () => {
+    expect(parseTsv('a\t"b\nc"\n')).toEqual([["a", "b\nc"]]);
+  });
+
+  // 04-31 Task 2 인간 확인(2026-09-28, PR #85 댓글 5861946973·5861989538) — 실제
+  // Windows Excel 캡처 (A)(B). 정본은 test/fixtures/excel-clipboard.ts(같은 이유로
+  // 여기 복제 — tests.md boundaries 함정). 바이트가 어긋나면 이 상수가 아니라
+  // 파서가 틀린 것이다.
+  const REAL_EXCEL_WINDOWS_20260928_SIX_COL =
+    'A\tB\tC\tD\tE\tF\r\n무대·시공\t"무대 설치\n2일차"\t가나기획\t2\t1,200,000\t1,000,000\r\n인쇄\t"대형" 현수막\t다라인쇄\t5\t35,000\t30,000\r\n';
+
+  const REAL_EXCEL_WINDOWS_20260928_FORTY_FIVE =
+    '항목1\t2\t 10,000 \t비고\r\n항목2\t2\t 10,000 \t비고\r\n항목3\t2\t 10,000 \t비고\r\n항목4\t2\t 10,000 \t비고\r\n항목5\t2\t 10,000 \t비고\r\n항목6\t2\t 10,000 \t비고\r\n항목7\t2\t 10,000 \t비고\r\n항목8\t2\t 10,000 \t비고\r\n항목9\t2\t 10,000 \t비고\r\n항목10\t2\t 10,000 \t\r\n항목11\t2\t 10,000 \t비고\r\n항목12\t2\t 10,000 \t비고\r\n항목13\t2\t 10,000 \t비고\r\n항목14\t2\t 10,000 \t비고\r\n항목15\t2\t 10,000 \t비고\r\n항목16\t2\t 10,000 \t비고\r\n항목17\t2\t 10,000 \t비고\r\n항목18\t2\t 10,000 \t비고\r\n항목19\t2\t 10,000 \t비고\r\n항목20\t2\t 10,000 \t비고\r\n항목21\t2\t 10,000 \t비고\r\n항목22\t2\t 10,000 \t비고\r\n항목23\t2\t 10,000 \t비고\r\n항목24\t2\t 10,000 \t비고\r\n항목25\t2\t 10,000 \t비고\r\n항목26\t2\t 10,000 \t비고\r\n항목27\t2\t 10,000 \t비고\r\n항목28\t2\t 10,000 \t비고\r\n항목29\t2\t 10,000 \t비고\r\n항목30\t2\t 10,000 \t비고\r\n항목31\t2\t 10,000 \t비고\r\n항목32\t2\t 10,000 \t비고\r\n항목33\t2\t 10,000 \t비고\r\n항목34\t2\t 10,000 \t비고\r\n항목35\t2\t 10,000 \t비고\r\n항목36\t2\t 10,000 \t비고\r\n항목37\t2\t 10,000 \t비고\r\n항목38\t2\t 10,000 \t비고\r\n항목39\t2\t 10,000 \t비고\r\n항목40\t2\t 10,000 \t비고\r\n항목41\t2\t 10,000 \t비고\r\n항목42\t2\t 10,000 \t비고\r\n항목43\t2\t 10,000 \t비고\r\n항목44\t2\t 10,000 \t비고\r\n항목45\t2\t 10,000 \t비고\r\n';
+
+  it("실제 엑셀(Windows, 2026-09-28 캡처 A) 원문 — 끝 CRLF는 빈 줄을 만들지 않고 헤더+2행이다", () => {
+    expect(parseTsv(REAL_EXCEL_WINDOWS_20260928_SIX_COL)).toEqual([
+      ["A", "B", "C", "D", "E", "F"],
+      ["무대·시공", "무대 설치\n2일차", "가나기획", "2", "1,200,000", "1,000,000"],
+      ["인쇄", '"대형" 현수막', "다라인쇄", "5", "35,000", "30,000"],
+    ]);
+  });
+
+  it("실제 엑셀(Windows, 2026-09-28 캡처 B) 원문 — 끝 CRLF 포함 45줄이고 10번째 줄 4번째 칸은 빈 문자열이다", () => {
+    const rows = parseTsv(REAL_EXCEL_WINDOWS_20260928_FORTY_FIVE);
+    expect(rows).toHaveLength(45);
+    expect(rows[9]).toEqual(["항목10", "2", " 10,000 ", ""]);
+    expect(rows[9]).toHaveLength(4);
+    expect(rows[0]).toEqual(["항목1", "2", " 10,000 ", "비고"]);
+    expect(rows[44]).toEqual(["항목45", "2", " 10,000 ", "비고"]);
+  });
+
+  it('실제 엑셀(캡처 B) 단가 칸 " 10,000 "은 앞뒤 공백·쉼표를 지우면 10000이다', () => {
+    const rows = parseTsv(REAL_EXCEL_WINDOWS_20260928_FORTY_FIVE);
+    expect(normalizeNumericPaste(rows[0]![2]!)).toBe(10_000);
   });
 });
 
@@ -111,6 +172,12 @@ describe("normalizeNumericPaste", () => {
     expect(normalizeNumericPaste("$4,400.00")).toBe(4400);
     expect(normalizeNumericPaste("¥1,000")).toBe(1000);
     expect(normalizeNumericPaste("￦1,000")).toBe(1000);
+  });
+
+  // /qa ISSUE-004 (a) — 한국 스프레드시트 `#,##0원` 표시값. 앞뒤 `원`은 통화 기호로 지운다.
+  it('"1,234원" → 1234 · "원1,234" → 1234(앞뒤 원은 통화 기호)', () => {
+    expect(normalizeNumericPaste("1,234원")).toBe(1234);
+    expect(normalizeNumericPaste("원1,234")).toBe(1234);
   });
 
   it('"-1,200" → -1200(음수)', () => {

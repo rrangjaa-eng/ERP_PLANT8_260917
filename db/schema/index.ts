@@ -19,3 +19,4 @@ export * from "./approvals";
 export * from "./leave";
 export * from "./notifications";
 export * from "./holidays";
+export * from "./reserve-entries";

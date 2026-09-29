@@ -1,5 +1,5 @@
 {
-  "id": "141a7317-79ab-4f46-99ed-0dfea890b9e8",
+  "id": "13d5b4e9-3c7d-4f30-a056-91c52470459c",
   "prevId": "b146a772-c570-4fd6-bd8d-ba8bf8e1f6cc",
   "version": "7",
   "dialect": "postgresql",
@@ -187,382 +187,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.approval_instances": {
-      "name": "approval_instances",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "document_kind": {
-          "name": "document_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "document_id": {
-          "name": "document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "drafter_id": {
-          "name": "drafter_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'draft'"
-        },
-        "current_round": {
-          "name": "current_round",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "version": {
-          "name": "version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "approval_instances_status_idx": {
-          "name": "approval_instances_status_idx",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "approval_instances_drafter_id_users_id_fk": {
-          "name": "approval_instances_drafter_id_users_id_fk",
-          "tableFrom": "approval_instances",
-          "tableTo": "users",
-          "columnsFrom": [
-            "drafter_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "approval_instances_updated_by_users_id_fk": {
-          "name": "approval_instances_updated_by_users_id_fk",
-          "tableFrom": "approval_instances",
-          "tableTo": "users",
-          "columnsFrom": [
-            "updated_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "approval_instances_kind_document_key": {
-          "name": "approval_instances_kind_document_key",
-          "nullsNotDistinct": false,
-          "columns": [
-            "document_kind",
-            "document_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "approval_instances_status_check": {
-          "name": "approval_instances_status_check",
-          "value": "\"approval_instances\".\"status\" IN ('draft','submitted','in_review','approved','rejected','withdrawn')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.approval_routes": {
-      "name": "approval_routes",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "instance_id": {
-          "name": "instance_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "round": {
-          "name": "round",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "self_approval": {
-          "name": "self_approval",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "drafter_team_id": {
-          "name": "drafter_team_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "drafter_org_unit_id": {
-          "name": "drafter_org_unit_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "submitted_at": {
-          "name": "submitted_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "approval_routes_instance_id_approval_instances_id_fk": {
-          "name": "approval_routes_instance_id_approval_instances_id_fk",
-          "tableFrom": "approval_routes",
-          "tableTo": "approval_instances",
-          "columnsFrom": [
-            "instance_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "approval_routes_instance_round_key": {
-          "name": "approval_routes_instance_round_key",
-          "nullsNotDistinct": false,
-          "columns": [
-            "instance_id",
-            "round"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "approval_routes_self_approval_check": {
-          "name": "approval_routes_self_approval_check",
-          "value": "\"approval_routes\".\"self_approval\" IN ('skip','self_approve')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.approval_steps": {
-      "name": "approval_steps",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "route_id": {
-          "name": "route_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "step_index": {
-          "name": "step_index",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "label": {
-          "name": "label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "role_id": {
-          "name": "role_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "scope_kind": {
-          "name": "scope_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "scope_target_id": {
-          "name": "scope_target_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "is_fallback": {
-          "name": "is_fallback",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "acted_by": {
-          "name": "acted_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "acted_at": {
-          "name": "acted_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "action": {
-          "name": "action",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "self_approved": {
-          "name": "self_approved",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        }
-      },
-      "indexes": {
-        "approval_steps_acted_by_idx": {
-          "name": "approval_steps_acted_by_idx",
-          "columns": [
-            {
-              "expression": "acted_by",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "approval_steps_route_id_approval_routes_id_fk": {
-          "name": "approval_steps_route_id_approval_routes_id_fk",
-          "tableFrom": "approval_steps",
-          "tableTo": "approval_routes",
-          "columnsFrom": [
-            "route_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "approval_steps_acted_by_users_id_fk": {
-          "name": "approval_steps_acted_by_users_id_fk",
-          "tableFrom": "approval_steps",
-          "tableTo": "users",
-          "columnsFrom": [
-            "acted_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "approval_steps_route_step_key": {
-          "name": "approval_steps_route_step_key",
-          "nullsNotDistinct": false,
-          "columns": [
-            "route_id",
-            "step_index"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "approval_steps_scope_kind_check": {
-          "name": "approval_steps_scope_kind_check",
-          "value": "\"approval_steps\".\"scope_kind\" IN ('team','org_unit','company')"
-        },
-        "approval_steps_action_check": {
-          "name": "approval_steps_action_check",
-          "value": "\"approval_steps\".\"action\" IS NULL OR \"approval_steps\".\"action\" IN ('approved','rejected')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.accounts": {
@@ -874,18 +498,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "hire_date": {
-          "name": "hire_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "resignation_date": {
-          "name": "resignation_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -915,12 +527,7 @@
         }
       },
       "policies": {},
-      "checkConstraints": {
-        "users_resignation_on_or_after_hire_check": {
-          "name": "users_resignation_on_or_after_hire_check",
-          "value": "\"users\".\"resignation_date\" IS NULL OR \"users\".\"hire_date\" IS NULL OR \"users\".\"resignation_date\" >= \"users\".\"hire_date\""
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.verifications": {
@@ -3310,270 +2917,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.leave_adjustments": {
-      "name": "leave_adjustments",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "bucket": {
-          "name": "bucket",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "fiscal_year": {
-          "name": "fiscal_year",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "amount_quarters": {
-          "name": "amount_quarters",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reason": {
-          "name": "reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "leave_adjustments_user_idx": {
-          "name": "leave_adjustments_user_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "leave_adjustments_user_id_users_id_fk": {
-          "name": "leave_adjustments_user_id_users_id_fk",
-          "tableFrom": "leave_adjustments",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "leave_adjustments_created_by_users_id_fk": {
-          "name": "leave_adjustments_created_by_users_id_fk",
-          "tableFrom": "leave_adjustments",
-          "tableTo": "users",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "leave_adjustments_bucket_check": {
-          "name": "leave_adjustments_bucket_check",
-          "value": "\"leave_adjustments\".\"bucket\" IN ('annual','monthly')"
-        },
-        "leave_adjustments_amount_quarters_check": {
-          "name": "leave_adjustments_amount_quarters_check",
-          "value": "\"leave_adjustments\".\"amount_quarters\" <> 0"
-        },
-        "leave_adjustments_fiscal_year_check": {
-          "name": "leave_adjustments_fiscal_year_check",
-          "value": "(\"leave_adjustments\".\"bucket\" = 'annual') = (\"leave_adjustments\".\"fiscal_year\" IS NOT NULL)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.leave_requests": {
-      "name": "leave_requests",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "number": {
-          "name": "number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "drafter_id": {
-          "name": "drafter_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "start_date": {
-          "name": "start_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "end_date": {
-          "name": "end_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "half": {
-          "name": "half",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "days_quarters": {
-          "name": "days_quarters",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "fiscal_year": {
-          "name": "fiscal_year",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "note": {
-          "name": "note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "leave_requests_drafter_year_idx": {
-          "name": "leave_requests_drafter_year_idx",
-          "columns": [
-            {
-              "expression": "drafter_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "fiscal_year",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "leave_requests_drafter_id_users_id_fk": {
-          "name": "leave_requests_drafter_id_users_id_fk",
-          "tableFrom": "leave_requests",
-          "tableTo": "users",
-          "columnsFrom": [
-            "drafter_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "leave_requests_number_unique": {
-          "name": "leave_requests_number_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "number"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "leave_requests_kind_check": {
-          "name": "leave_requests_kind_check",
-          "value": "\"leave_requests\".\"kind\" IN ('full_day','half_day','quarter_day','remote')"
-        },
-        "leave_requests_half_check": {
-          "name": "leave_requests_half_check",
-          "value": "\"leave_requests\".\"half\" IS NULL OR \"leave_requests\".\"half\" IN ('am','pm')"
-        },
-        "leave_requests_days_quarters_check": {
-          "name": "leave_requests_days_quarters_check",
-          "value": "\"leave_requests\".\"days_quarters\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.notification_log": {
       "name": "notification_log",
       "schema": "",
@@ -3853,6 +3196,210 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.reserve_entries": {
+      "name": "reserve_entries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entry_date": {
+          "name": "entry_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "direction": {
+          "name": "direction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_currency": {
+          "name": "amount_currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'KRW'"
+        },
+        "amount_foreign_amount": {
+          "name": "amount_foreign_amount",
+          "type": "numeric(14, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "amount_fx_rate": {
+          "name": "amount_fx_rate",
+          "type": "numeric(12, 4)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'1.0000'"
+        },
+        "amount_amount_krw": {
+          "name": "amount_amount_krw",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "evidence_type": {
+          "name": "evidence_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tax_invoice_number": {
+          "name": "tax_invoice_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'demo'"
+        },
+        "custom_fields": {
+          "name": "custom_fields",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "archived_by": {
+          "name": "archived_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "reserve_entries_client_date_idx": {
+          "name": "reserve_entries_client_date_idx",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "entry_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "reserve_entries_custom_fields_idx": {
+          "name": "reserve_entries_custom_fields_idx",
+          "columns": [
+            {
+              "expression": "custom_fields",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "reserve_entries_client_id_vendors_id_fk": {
+          "name": "reserve_entries_client_id_vendors_id_fk",
+          "tableFrom": "reserve_entries",
+          "tableTo": "vendors",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "reserve_entries_project_id_projects_id_fk": {
+          "name": "reserve_entries_project_id_projects_id_fk",
+          "tableFrom": "reserve_entries",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "reserve_entries_direction_check": {
+          "name": "reserve_entries_direction_check",
+          "value": "\"reserve_entries\".\"direction\" in ('deposit', 'withdrawal')"
+        }
+      },
       "isRLSEnabled": false
     }
   },

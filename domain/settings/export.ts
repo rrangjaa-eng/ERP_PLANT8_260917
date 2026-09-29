@@ -12,6 +12,8 @@ import {
   SettingNotFoundError,
 } from "@/domain/settings/registry";
 import { applySettingsImport as defaultApplySettingsImport } from "@/repositories/settings";
+import { assertSeqStartNotLowered } from "@/domain/document-numbering";
+import { withTransaction } from "@/lib/db-transaction";
 
 // ADMN-06: 설정 JSON 내보내기·가져오기. 내보내기는 excel_export(끌 수 없는
 // 종류)로 행동 로그에 남는다 — 새 종류를 만들지 않는다(CORE_ACTION_TYPES는
@@ -161,8 +163,14 @@ export async function importSettings(
     throw new ImportValidationError(issues);
   }
 
+  // 묶음 ④ /review R7 — 순번 시작값 키는 설정 화면 저장과 같은 낮추기 가드(카운터 행 잠금 + 비교)를 쓰기와 같은
+  // 트랜잭션에서 지난다. 하나라도 거부되면 트랜잭션 전체가 되돌아가 아무것도 적용되지 않는다.
   const applySettingsImport = deps?.applySettingsImport ?? defaultApplySettingsImport;
-  await applySettingsImport(viewer, { simple, historized });
+  const now = new Date();
+  await withTransaction(async (tx) => {
+    for (const item of simple) await assertSeqStartNotLowered(viewer, item.key, item.value, now, tx);
+    await applySettingsImport(viewer, { simple, historized }, tx);
+  });
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, {

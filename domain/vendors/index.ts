@@ -72,6 +72,18 @@ export function normalizeVendorName(name: string): string {
   return name.normalize("NFC").trim().toLowerCase();
 }
 
+// QA ISSUE-005 (a) — 선택 목록 라벨. 이름이 같은 거래처가 둘 이상일 때만 `이름 · 사업자번호 끝 4자리`(숫자만), 사업자번호가 없으면 이름만.
+export function vendorOptionLabels(vendors: readonly { id: string; name: string; businessNo: string | null }[]): Map<string, string> {
+  const counts = new Map<string, number>();
+  for (const vendor of vendors) counts.set(vendor.name, (counts.get(vendor.name) ?? 0) + 1);
+  return new Map(
+    vendors.map((vendor) => {
+      const last4 = (vendor.businessNo ?? "").replace(/\D/g, "").slice(-4);
+      return [vendor.id, (counts.get(vendor.name) ?? 0) > 1 && last4 ? `${vendor.name} · ${last4}` : vendor.name];
+    }),
+  );
+}
+
 // 코드 포인트 기준 길이 — 한글이 서로게이트 쌍이 아니어도 이 기준이 일관된다.
 function codePointLength(value: string): number {
   return Array.from(value).length;

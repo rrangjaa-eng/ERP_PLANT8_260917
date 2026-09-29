@@ -1,6 +1,14 @@
 import { test, expect } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { and, eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { documentCounters, settingsSimple } from "@/db/schema";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { DOCUMENT_NUMBER_PROJECT_SEQ_START } from "@/domain/settings/keys";
+import { findSimpleValue, upsertSimpleValue } from "@/repositories/settings";
+import { findDocumentCounter, upsertDocumentCounter } from "@/repositories/document-counters";
+import { kstYear } from "@/lib/kst-date";
 
 // ADMN-05·06, 성공 기준 4: 설정 화면이 레지스트리에서 자동 생성되고, 값
 // 변경이 저장 버튼 없이 즉시 반영되는 것과 이력형 키의 「예정」 상태를
@@ -111,6 +119,52 @@ test.describe("설정 화면 (ADMN-05, 성공 기준 4)", () => {
     await witaxContainer.locator(`label[for="${witaxId}"]`).click();
     const witaxInputFocused = await witaxDateInput.evaluate((el) => el === document.activeElement);
     expect(witaxInputFocused).toBe(true);
+  });
+
+  // 묶음 ④ /review T2 — 올해 프로젝트 번호가 1건 이상 매겨진 뒤 순번 시작값을 낮추면 화면 경로(blur 저장)에서 칸 오류로 거부하고
+  // 값은 그대로다. 같은 값의 재저장(blur)은 낮추기가 아니므로 통과한다. 공용 설정·카운터는 끝나면 원래대로 돌린다.
+  test("올해 번호가 매겨진 뒤 순번 시작값을 100에서 50으로 낮추면 칸 오류이고 값은 100 그대로, 100 재저장은 오류 없음", async ({ page }) => {
+    const key = DOCUMENT_NUMBER_PROJECT_SEQ_START.key;
+    const period = String(kstYear(new Date()));
+    const originalSetting = await findSimpleValue(SYSTEM_VIEWER, key);
+    const originalCounter = await findDocumentCounter(SYSTEM_VIEWER, "project", period);
+    await upsertSimpleValue(SYSTEM_VIEWER, key, 100, null);
+    if ((originalCounter?.value ?? 0) < 1) await upsertDocumentCounter(SYSTEM_VIEWER, { counterKey: "project", period, value: 1 });
+    try {
+      const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+      await page.goto("/login");
+      await page.getByLabel("이메일").fill(admin.email);
+      await page.getByLabel("비밀번호").fill(admin.password);
+      await page.getByRole("button", { name: "로그인" }).click();
+      await expect(page).toHaveURL(/\/account$/);
+      await page.goto("/admin/settings");
+
+      const field = page.getByLabel(DOCUMENT_NUMBER_PROJECT_SEQ_START.label, { exact: true });
+      await expect(field).toHaveValue("100");
+      const isServerAction = (response: { request: () => { method: () => string; headers: () => Record<string, string> } }) =>
+        response.request().method() === "POST" && response.request().headers()["next-action"] !== undefined;
+
+      await field.fill("50");
+      let saved = page.waitForResponse(isServerAction);
+      await field.blur();
+      await saved;
+      const rejection = page.getByText("순번 시작값은 현재 값(100)보다 낮출 수 없음");
+      await expect(rejection).toBeVisible();
+      expect((await findSimpleValue(SYSTEM_VIEWER, key))?.value).toBe(100);
+
+      await field.fill("100");
+      saved = page.waitForResponse(isServerAction);
+      await field.blur();
+      await saved;
+      await expect(rejection).toHaveCount(0);
+      await page.reload();
+      await expect(page.getByLabel(DOCUMENT_NUMBER_PROJECT_SEQ_START.label, { exact: true })).toHaveValue("100");
+    } finally {
+      if (originalSetting) await upsertSimpleValue(SYSTEM_VIEWER, key, originalSetting.value, originalSetting.updatedBy);
+      else await db.delete(settingsSimple).where(eq(settingsSimple.key, key));
+      if (!originalCounter) await db.delete(documentCounters).where(and(eq(documentCounters.counterKey, "project"), eq(documentCounters.period, period)));
+      else if (originalCounter.value < 1) await upsertDocumentCounter(SYSTEM_VIEWER, { counterKey: "project", period, value: originalCounter.value });
+    }
   });
 
   test("설정 메뉴 권한이 없는 기본 계급은 이 화면에서 404를 받는다", async ({ page }) => {

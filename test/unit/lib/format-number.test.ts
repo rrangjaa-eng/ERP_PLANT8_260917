@@ -161,6 +161,43 @@ describe("formatNumberInput — 타이핑 중 쉼표 삽입 + 커서 보존", ()
     expect(formatNumberInput({ raw: "1234", caret: 1, kind: "krw", prev: "1,234" })).toEqual({ text: "234", caret: 0 });
   });
 
+  it("(리뷰 T4) 쉼표 여러 개 — '1,234,567' 둘째 쉼표 뒤 Backspace는 그 앞 숫자 4를 지우고 다시 묶는다", () => {
+    // caret=6(둘째 쉼표 바로 뒤) Backspace → 네이티브는 쉼표만 지운 "1,234567"(caret=5). 지울 숫자는 쉼표 앞 '4'.
+    // 남는 숫자 123567 → "123,567", 커서는 지운 자리(앞 숫자 3개 뒤).
+    expect(formatNumberInput({ raw: "1,234567", caret: 5, kind: "krw", prev: "1,234,567" })).toEqual({ text: "123,567", caret: 3 });
+  });
+
+  it("(리뷰 T4) 음수 — '-1,234' 쉼표 뒤 Backspace는 쉼표 앞 숫자 1을 지우고 부호는 남는다", () => {
+    // caret=3(쉼표 바로 뒤) Backspace → 네이티브 "-1234"(caret=2). 지울 숫자는 '1' → "-234", 커서는 부호 뒤.
+    expect(formatNumberInput({ raw: "-1234", caret: 2, kind: "krw", prev: "-1,234" })).toEqual({ text: "-234", caret: 1 });
+  });
+
+  // Regression: ISSUE-003 — 쉼표 바로 앞 Delete가 캐럿 앞 숫자를 지웠다(`1|,500,000` → `500,000`)
+  // Found by /qa on 2026-09-28 · Report: docs/reviews/phase-04/bundle4-qa.md
+  // 네이티브 삭제 뒤 raw·caret은 Backspace(`1,|500,000`)와 똑같다("1500,000", caret 1) — 키는 inputType으로만 갈린다.
+  it("(QA ISSUE-003) 쉼표 바로 앞 Delete — 쉼표 뒤 숫자 5를 지우고 커서는 제자리", () => {
+    expect(
+      formatNumberInput({ raw: "1500,000", caret: 1, kind: "krw", prev: "1,500,000", inputType: "deleteContentForward" }),
+    ).toEqual({ text: "100,000", caret: 1 });
+  });
+
+  it("(QA ISSUE-003) 같은 raw·caret이라도 Backspace(inputType deleteContentBackward)는 쉼표 앞 숫자 1을 지운다", () => {
+    expect(
+      formatNumberInput({ raw: "1500,000", caret: 1, kind: "krw", prev: "1,500,000", inputType: "deleteContentBackward" }),
+    ).toEqual({ text: "500,000", caret: 0 });
+  });
+
+  it("(04-31 E2-06) 캐럿이 끝에 있는 통째 덮어쓰기 — 쉼표 하나가 우연히 사라져도 인접 숫자를 지우지 않는다", () => {
+    // "400,000"이 보이는 칸을 사용자가 커서를 끝에 둔 채 "400000"으로 통째로
+    // 덮어쓰면(붙여넣기·프로그램적 값 설정 — Playwright .fill()과 같은 모양)
+    // 쉼표 하나만 빠진 문자열이 caret=6(끝)으로 들어온다. 캐럿 위치의 문자가
+    // 쉼표인지 확인하지 않으면 "쉼표 뒤 Backspace" 규칙이 오발동해 인접
+    // 숫자(끝자리 0)까지 지워 40000이 된다 — 캐럿이 실제 쉼표 자리(3)가
+    // 아니라 문자열 끝(6)에 있으므로 이 규칙은 적용되면 안 된다.
+    const result = formatNumberInput({ raw: "400000", caret: 6, kind: "krw", prev: "400,000" });
+    expect(result.text).toBe("400,000");
+  });
+
   it("Backspace로 '-'를 지워도 숫자가 그대로 남는다(쉼표 뒤 규칙이 '-' 삭제에는 적용되지 않는다)", () => {
     expect(formatNumberInput({ raw: "1,234", caret: 0, kind: "krw", prev: "-1,234" })).toEqual({
       text: "1,234",

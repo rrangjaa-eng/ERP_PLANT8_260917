@@ -50,3 +50,83 @@ const STATUS_KEYS: readonly string[] = ["draft", "submitted", "in_review", "appr
 export function toLeaveStatusKey(status: string | null | undefined): LeaveStatusKey | null {
   return status && STATUS_KEYS.includes(status) ? (status as LeaveStatusKey) : null;
 }
+
+// 04.1-05(S7 · A3): 서버가 해석한 결재선 표시 목록 → ui/approval-route 목록 한 줄. 자기 승인 건너뜀 단계는
+// 줄이 아니라 끝 줄(서버 endLines)이 말한다. 처리한 단계 = 저장된 처리자, 지금 · 남은 단계 = 표시 시점 담당.
+export type RouteStepSource = Partial<{
+  stepIndex: number;
+  label: string;
+  state: "approved" | "rejected" | "current" | "pending" | "empty" | "skipped_self" | "blocked";
+  holderNames: string;
+  actedByName: string | null;
+  actedAt: Date | null;
+  reason: string | null;
+  viewerHolds: boolean;
+}>;
+
+export type RouteListStep = {
+  key: string;
+  person: string;
+  label: string;
+  result: { text: string; kind: StatusTagKind };
+  at: string | null;
+  reason: string | null;
+};
+
+const SEOUL_MINUTE = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Seoul",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+// `09-18 14:02`(서울).
+export function seoulMinuteOf(at: Date): string {
+  const parts = Object.fromEntries(SEOUL_MINUTE.formatToParts(at).map((part) => [part.type, part.value]));
+  return `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+function stepResult(step: RouteStepSource): LeaveStatusDisplay | null {
+  switch (step.state) {
+    case "approved":
+      return leaveStatusDisplay("approved");
+    case "rejected":
+      return leaveStatusDisplay("rejected");
+    case "current":
+      return leaveStatusDisplay(step.viewerHolds ? "mine" : "submitted");
+    case "pending":
+      return leaveStatusDisplay("waiting");
+    case "empty":
+    case "blocked":
+      return leaveStatusDisplay("vacant");
+    default:
+      return null;
+  }
+}
+
+function stepPerson(step: RouteStepSource): string {
+  if (step.state === "empty" || step.state === "blocked") return "—";
+  if (step.state === "approved" || step.state === "rejected") return step.actedByName ?? step.holderNames ?? "";
+  const names = step.holderNames ?? "";
+  // 후보가 한 명이고 그 사람이 보는 사람이면 `(나)`.
+  return step.viewerHolds && !names.includes(" · ") && !names.includes(" 외 ") ? `${names}(나)` : names;
+}
+
+export function routeListSteps(steps: RouteStepSource[] | null | undefined): RouteListStep[] {
+  const result: RouteListStep[] = [];
+  for (const [index, step] of (steps ?? []).entries()) {
+    const display = stepResult(step);
+    if (!display) continue;
+    result.push({
+      key: `${step.stepIndex ?? index}-${step.label ?? ""}`,
+      person: stepPerson(step),
+      label: step.label ?? "",
+      result: { text: display.label, kind: display.kind },
+      at: step.actedAt ? seoulMinuteOf(step.actedAt) : null,
+      reason: step.state === "rejected" ? (step.reason ?? null) : null,
+    });
+  }
+  return result;
+}

@@ -2,7 +2,9 @@ import type { Viewer } from "@/domain/viewer";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
 import { seoulToday } from "@/lib/dates";
-import { project } from "@/domain/permissions/project";
+import { kstDateOf } from "@/lib/kst-date";
+import { project, type DtoSpec } from "@/domain/permissions/project";
+import { registerDto } from "@/domain/permissions/dto-registry";
 import { getSimpleSettingValues } from "@/domain/settings/registry";
 import {
   APPROVAL_ROUTE_LEAVE_SELF_APPROVAL,
@@ -33,7 +35,7 @@ import {
   type RouteSettingDefs,
 } from "@/domain/approvals";
 import type { findVisibility } from "@/repositories/permissions";
-import type { DescribeDeps, RouteConfigStep } from "@/domain/approvals/kinds";
+import type { DescribeDeps, DocumentDetailRow, DocumentDetailRows, LoadDetailsDeps, RouteConfigStep } from "@/domain/approvals/kinds";
 import type { TxLogDeps } from "@/domain/approvals/tx-log";
 import {
   findLeaveRequestById,
@@ -44,8 +46,10 @@ import {
   type LeaveRequestWithApproval,
 } from "@/repositories/leave-requests";
 import { countLeaveQuarters, formatLeaveDays, type HalfPeriod, type LeaveFieldError, type LeaveKind } from "@/domain/leave/days";
-import { LEAVE_REQUEST_DTO_SPEC, type LeaveRequestDto } from "@/domain/leave/dto";
+import { LEAVE_REQUEST_DTO_SPEC, type LeaveRequestBalanceDto, type LeaveRequestDto } from "@/domain/leave/dto";
 import { assertLeaveWrite, canSeeLeaveDocument, canWriteLeave, LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
+import { getLeaveBalancesForRequests } from "@/domain/leave/balance-service";
+import { formatBalanceRow, type RequestBalance } from "@/domain/leave/balance";
 
 export { LEAVE_DOCUMENT_KIND, canSeeLeaveDocument } from "@/domain/leave/access";
 export type { LeaveRequestDto } from "@/domain/leave/dto";
@@ -148,6 +152,123 @@ async function describeLeaveDocuments(viewer: Viewer, ids: string[], deps?: Desc
   return result;
 }
 
+// 04.1-05(T18 · UI-SPEC 사용자 확인 대상 #5): 제목 자리의 종류 · 기간 — 구분자 ` — `는 이 함수 한 곳이다.
+// 문서 화면 머리와 결재 시트 머리가 같이 쓴다(표 셀은 `·` — 표에서 `—`는 「비어 있음」이다).
+const KIND_WORDS: Record<LeaveKind, string> = { full_day: "종일", half_day: "반차", quarter_day: "반반차", remote: "재택" };
+const HALF_WORDS: Record<HalfPeriod, string> = { am: "오전", pm: "오후" };
+
+type LeaveTitleSource = { kind?: LeaveKind; half?: HalfPeriod | null; startDate?: string; endDate?: string };
+
+function kindWord(leave: LeaveTitleSource): string {
+  if (!leave.kind) return "";
+  return `${KIND_WORDS[leave.kind]}${leave.half ? ` ${HALF_WORDS[leave.half]}` : ""}`;
+}
+
+export function formatLeaveTitle(leave: LeaveTitleSource): string {
+  if (!leave.kind || !leave.startDate) return "연차";
+  const end = leave.endDate && leave.endDate !== leave.startDate ? ` ~ ${leave.endDate.slice(5)}` : "";
+  return `연차 — ${kindWord(leave)} ${leave.startDate.slice(5)}${end}`;
+}
+
+// 04.1-05(ENG-17 · CEO-9): 결재 시트 상세 — loadDetails는 구조 필드만, 행 문자열은 투영 뒤 buildDetailRows가.
+// 연차 필드는 leave.value(04.1-03 신청용 잔고 DTO와 같은 항목), 기안 이름 · 기안일은 approval.value
+// (04.1-01 결재함 DTO와 같은 항목) — 새 정보 항목 없음. 잔고는 신청용 DTO(입사일 · 퇴직일 없음)만.
+export type LeaveDetailDto = {
+  number: string | null;
+  kind: LeaveKind;
+  half: HalfPeriod | null;
+  startDate: string;
+  endDate: string;
+  days: string;
+  note: string | null;
+  balance: Partial<LeaveRequestBalanceDto> | null;
+  drafterName: string;
+  createdAt: Date;
+};
+
+export const LEAVE_DETAIL_DTO_SPEC: DtoSpec<LeaveDetailDto, LeaveDetailDto> = {
+  fields: [
+    { key: "number", from: "number", infoItem: "leave.value" },
+    { key: "kind", from: "kind", infoItem: "leave.value" },
+    { key: "half", from: "half", infoItem: "leave.value" },
+    { key: "startDate", from: "startDate", infoItem: "leave.value" },
+    { key: "endDate", from: "endDate", infoItem: "leave.value" },
+    { key: "days", from: "days", infoItem: "leave.value" },
+    { key: "note", from: "note", infoItem: "leave.value" },
+    { key: "balance", from: "balance", infoItem: "leave.value" },
+    { key: "drafterName", from: "drafterName", infoItem: "approval.value" },
+    { key: "createdAt", from: "createdAt", infoItem: "approval.value" },
+  ],
+};
+
+registerDto({
+  name: "leaveDetail",
+  fields: LEAVE_DETAIL_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
+});
+
+async function loadLeaveDetails(viewer: Viewer, ids: string[], deps: LoadDetailsDeps): Promise<Map<string, LeaveDetailDto>> {
+  // 시계는 받은 now만 쓴다 — 없으면 보임 규칙 입구(access.ts)가 정한다(CX-B2, 이 층은 시계를 읽지 않는다).
+  const seeDeps = deps.now ? { today: seoulToday(deps.now) } : undefined;
+  const rows = await findLeaveRequestsByIds(viewer, { ids, documentKind: LEAVE_DOCUMENT_KIND });
+  const visibleRows: LeaveRequestWithApproval[] = [];
+  for (const row of rows) {
+    if (await canSeeLeaveDocument(viewer, row, seeDeps)) visibleRows.push(row);
+  }
+  const counted = visibleRows.filter((row) => row.kind !== "remote");
+  // 재택은 잔고 행이 없다 — 잔고 재료를 읽지 않는다.
+  const balances = await getLeaveBalancesForRequests(
+    viewer,
+    counted.map((row) => row.id),
+    { visible: deps.visible, now: deps.now, leaves: counted },
+  );
+  const result = new Map<string, LeaveDetailDto>();
+  for (const row of visibleRows) {
+    result.set(row.id, {
+      number: row.number,
+      kind: row.kind as LeaveKind,
+      half: row.half as HalfPeriod | null,
+      startDate: row.startDate,
+      endDate: row.endDate,
+      days: formatLeaveDays(row.daysQuarters),
+      note: row.note,
+      balance: balances.get(row.id) ?? null,
+      drafterName: row.drafterName,
+      createdAt: row.createdAt,
+    });
+  }
+  return result;
+}
+
+const BALANCE_KEYS: readonly (keyof RequestBalance)[] = ["annualRemaining", "monthlyRemaining", "pending", "thisRequest", "plannedDeduction", "over"];
+
+function completeBalance(balance: Partial<LeaveRequestBalanceDto> | null | undefined): RequestBalance | null {
+  if (!balance || !BALANCE_KEYS.every((key) => key in balance)) return null;
+  return balance as RequestBalance;
+}
+
+// 투영된 필드만으로 행을 만든다 — 숨긴 정보 항목의 값은 여기 올 수 없다(ENG-17). `일수` 행은 잔고 행이
+// 없을 때만(재택 — 잔고 행 1행의 `이번 신청`과 같은 숫자를 두 자리에 쓰지 않는다, T8).
+function buildLeaveDetailRows(projected: Partial<LeaveDetailDto>): DocumentDetailRows {
+  const balance = completeBalance(projected.balance);
+  const balanceLines = balance && projected.kind ? formatBalanceRow(balance, projected.kind) : null;
+  const rows: DocumentDetailRow[] = [];
+  if (projected.kind) rows.push({ label: "종류", value: kindWord(projected), tone: "default" });
+  if (projected.startDate) {
+    const end = projected.endDate && projected.endDate !== projected.startDate ? ` ~ ${projected.endDate}` : "";
+    rows.push({ label: "기간", value: `${projected.startDate}${end}`, tone: "default" });
+  }
+  if (!balanceLines && projected.days !== undefined) rows.push({ label: "일수", value: projected.days, tone: "default" });
+  if (projected.note !== undefined) rows.push({ label: "비고", value: projected.note || "—", tone: "default" });
+  for (const line of balanceLines ?? []) rows.push({ label: "잔고", value: line.text, tone: line.tone });
+  const drafted = [projected.drafterName, projected.createdAt ? kstDateOf(projected.createdAt) : null].filter(Boolean).join(" · ");
+  if (drafted) rows.push({ label: "기안", value: drafted, tone: "default" });
+  return {
+    title: formatLeaveTitle(projected),
+    subtitle: [projected.number, projected.drafterName].filter(Boolean).join(" · "),
+    rows,
+  };
+}
+
 registerDocumentKind({
   kind: LEAVE_DOCUMENT_KIND,
   label: "연차",
@@ -156,6 +277,9 @@ registerDocumentKind({
   describeDocuments: describeLeaveDocuments,
   routeSettings: LEAVE_ROUTE_SETTINGS,
   canResubmit: canWriteLeave,
+  loadDetails: loadLeaveDetails,
+  detailDto: LEAVE_DETAIL_DTO_SPEC,
+  buildDetailRows: buildLeaveDetailRows,
 });
 
 export type SubmitLeaveInput = { kind: string; startDate: string; endDate: string; half: string; note?: string | null };

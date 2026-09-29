@@ -1,5 +1,6 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
+import type { visible as defaultVisible } from "@/domain/permissions/visible";
 import { project, projectMany } from "@/domain/permissions/project";
 import { getSettingValue } from "@/domain/settings/registry";
 import { LEAVE_ANNUAL_DAYS } from "@/domain/settings/keys";
@@ -8,9 +9,9 @@ import { loadActionLogGate, recordActionInTx, type TxLogDeps } from "@/domain/ap
 import { withTransaction } from "@/lib/db-transaction";
 import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
 import { findUserById, type UserRow } from "@/repositories/users";
-import { listLeaveUsage } from "@/repositories/leave-usage";
-import { findLeaveRequestById } from "@/repositories/leave-requests";
-import { insertLeaveAdjustment, listLeaveAdjustments } from "@/repositories/leave-adjustments";
+import { listLeaveUsage, type LeaveUsageRow } from "@/repositories/leave-usage";
+import { findLeaveRequestsByIds, type LeaveRequestRow } from "@/repositories/leave-requests";
+import { insertLeaveAdjustment, listLeaveAdjustments, type LeaveAdjustmentWithAuthor } from "@/repositories/leave-adjustments";
 import { assertLeaveWrite, canSeeLeaveDocument, LEAVE_DOCUMENT_KIND } from "@/domain/leave/access";
 import { countLeaveQuarters, type LeaveDaysInput } from "@/domain/leave/days";
 import {
@@ -63,19 +64,54 @@ function yearOf(date: string): number {
   return Number(date.slice(0, 4));
 }
 
+// 잔고 재료 읽기 — 호출 하나 안에서만 사는 지역 메모(모듈 전역 캐시 없음). 여러 문서의 잔고를 한 번에
+// 만들 때 사용 · 조정은 기안자별 한 번, 연차 일수 설정은 회계연도별 한 번만 읽는다(CEO-17 · Codex MEDIUM).
+type BalanceReads = {
+  annualDays: (year: number) => Promise<number>;
+  usage: (drafterId: string, years: number[]) => Promise<LeaveUsageRow[]>;
+  adjustments: (userId: string) => Promise<LeaveAdjustmentWithAuthor[]>;
+  user: (userId: string) => Promise<UserRow | null>;
+};
+
+function memoized<K, V>(read: (key: K) => Promise<V>): (key: K) => Promise<V> {
+  const memo = new Map<K, Promise<V>>();
+  return (key) => {
+    let value = memo.get(key);
+    if (!value) {
+      value = read(key);
+      memo.set(key, value);
+    }
+    return value;
+  };
+}
+
+function createBalanceReads(viewer: Viewer): BalanceReads {
+  const usageByKey = memoized((key: string) => {
+    const [drafterId = "", years = ""] = key.split("|");
+    return listLeaveUsage(viewer, { drafterId, fiscalYears: years.split(",").map(Number), documentKind: LEAVE_DOCUMENT_KIND });
+  });
+  return {
+    annualDays: memoized((year: number) => getSettingValue(LEAVE_ANNUAL_DAYS, { asOf: seoulDateToUtcDate(`${year}-01-01`) })),
+    usage: (drafterId, years) => usageByKey(`${drafterId}|${years.join(",")}`),
+    adjustments: memoized((userId: string) => listLeaveAdjustments(viewer, userId)),
+    user: memoized((userId: string) => findUserById(viewer, userId)),
+  };
+}
+
 async function computeBalance(
   viewer: Viewer,
   user: UserRow,
   fiscalYear: number,
   today: string,
   extra?: LeaveRequestInput,
+  reads: BalanceReads = createBalanceReads(viewer),
 ): Promise<{ summary: LeaveBalanceSummary; allocations: LeaveAllocation[] }> {
   const years = balanceFiscalYears(user.hireDate, fiscalYear);
   const annualDaysByYear: Record<number, number> = {};
   for (const year of years) {
-    annualDaysByYear[year] = await getSettingValue(LEAVE_ANNUAL_DAYS, { asOf: seoulDateToUtcDate(`${year}-01-01`) });
+    annualDaysByYear[year] = await reads.annualDays(year);
   }
-  const usage = await listLeaveUsage(viewer, { drafterId: user.id, fiscalYears: years, documentKind: LEAVE_DOCUMENT_KIND });
+  const usage = await reads.usage(user.id, years);
   const requests: LeaveRequestInput[] = usage.map((row) => ({
     id: row.id,
     startDate: row.startDate,
@@ -84,7 +120,7 @@ async function computeBalance(
   }));
   if (extra && !requests.some((request) => request.id === extra.id)) requests.push(extra);
   // 조정은 대상자의 전부를 넘기고 창 규칙(연차 = 그 회계연도 · 월차 = 월차 창)이 거른다.
-  const adjustments = (await listLeaveAdjustments(viewer, user.id)).map((row) => ({
+  const adjustments = (await reads.adjustments(user.id)).map((row) => ({
     id: row.id,
     bucket: row.bucket as LeaveBucket,
     fiscalYear: row.fiscalYear,
@@ -153,9 +189,11 @@ async function requestBalanceDto(
   request: LeaveRequestInput,
   fiscalYear: number,
   today: string,
+  reads?: BalanceReads,
+  visible?: typeof defaultVisible,
 ): Promise<Partial<LeaveRequestBalanceDto>> {
-  const { summary, allocations } = await computeBalance(viewer, user, fiscalYear, today, request);
-  return project(viewer, requestBalanceOf(summary, allocations, request.id), LEAVE_REQUEST_BALANCE_DTO_SPEC);
+  const { summary, allocations } = await computeBalance(viewer, user, fiscalYear, today, request, reads);
+  return project(viewer, requestBalanceOf(summary, allocations, request.id), LEAVE_REQUEST_BALANCE_DTO_SPEC, visible ? { visible } : undefined);
 }
 
 // 결재자 · 기안자가 보는 한 문서의 잔고 행 — 그 문서를 볼 수 없으면 null.
@@ -164,20 +202,51 @@ export async function getLeaveBalanceForRequest(
   leaveId: string,
   deps?: { now?: Date },
 ): Promise<Partial<LeaveRequestBalanceDto> | null> {
-  const today = seoulToday(deps?.now);
-  const leave = await findLeaveRequestById(viewer, { id: leaveId, documentKind: LEAVE_DOCUMENT_KIND });
-  if (!leave) return null;
-  if (!(await canSeeLeaveDocument(viewer, leave, { today }))) return null;
-  const drafter = await findUserById(viewer, leave.drafterId);
-  if (!drafter) return null;
-  return requestBalanceDto(
-    viewer,
-    drafter,
-    { id: leave.id, startDate: leave.startDate, quarters: leave.daysQuarters, status: "pending" },
-    leave.fiscalYear,
-    today,
-  );
+  return (await getLeaveBalancesForRequests(viewer, [leaveId], deps)).get(leaveId) ?? null;
 }
+
+export type RequestBalancesDeps = {
+  now?: Date;
+  // 요청 단위 노출 메모(결재함 한 번이 같은 메모를 쓴다 — CEO-17).
+  visible?: typeof defaultVisible;
+  // 호출자가 이미 읽은 연차 행(결재함 상세 — 연차 행을 다시 읽지 않는다, CXF2-B-RF02).
+  leaves?: LeaveRequestRow[];
+};
+
+// 결재자 · 기안자가 보는 문서들의 잔고 행(신청용 DTO — 입사일 · 퇴직일 없음, CEO-9) — 볼 수 없는 문서는
+// 결과에 없다. 사용 · 조정은 기안자별 한 번, 연차 일수 설정은 회계연도별 한 번 읽는다(CEO-17). 「오늘」은
+// 이 입구의 서울 날짜 한 번(deps.now)뿐이다(CX-B2).
+export async function getLeaveBalancesForRequests(
+  viewer: Viewer,
+  leaveIds: string[],
+  deps?: RequestBalancesDeps,
+): Promise<Map<string, Partial<LeaveRequestBalanceDto>>> {
+  const today = seoulToday(deps?.now);
+  const leaves = deps?.leaves
+    ? deps.leaves.filter((leave) => leaveIds.includes(leave.id))
+    : await findLeaveRequestsByIds(viewer, { ids: leaveIds, documentKind: LEAVE_DOCUMENT_KIND });
+  const reads = createBalanceReads(viewer);
+  const result = new Map<string, Partial<LeaveRequestBalanceDto>>();
+  for (const leave of leaves) {
+    if (!(await canSeeLeaveDocument(viewer, leave, { today }))) continue;
+    const drafter = await reads.user(leave.drafterId);
+    if (!drafter) continue;
+    result.set(
+      leave.id,
+      await requestBalanceDto(
+        viewer,
+        drafter,
+        { id: leave.id, startDate: leave.startDate, quarters: leave.daysQuarters, status: "pending" },
+        leave.fiscalYear,
+        today,
+        reads,
+        deps?.visible,
+      ),
+    );
+  }
+  return result;
+}
+
 
 // 신청 폼 미리보기 — 저장 전 신청의 같은 계산. 입력이 아직 신청이 되지 않으면 null.
 export async function previewLeaveBalance(

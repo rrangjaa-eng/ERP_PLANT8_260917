@@ -2,6 +2,7 @@ import { project, type DtoSpec, type ProjectDeps } from "@/domain/permissions/pr
 import type { Viewer } from "@/domain/viewer";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import type { ApprovalStatus, DisplayState } from "@/domain/approvals/route";
+import type { DocumentDetailRows } from "@/domain/approvals/kinds";
 
 // 04.1(ROADMAP 기준 5): 결재 DTO — 필드 전부 approval.value에 매핑되어 누수 스캔
 // DTO 축에 들어간다. domain/approvals의 유일한 출구다(project()).
@@ -15,7 +16,13 @@ export type ApprovalStepView = {
   actedByName: string | null;
   actedAt: Date | null;
   selfApproved: boolean;
+  // 04.1-05: 반려 단계의 사유(그 밖 null) · 보는 사람이 지금 단계 담당인가(`(나)` · `내 결재`).
+  reason: string | null;
+  viewerHolds: boolean;
 };
+
+// 04.1-05(S7 끝 줄): 해당할 때만 — 자기 승인 건너뜀 · 회수 시각 · 멈춘 문서의 기안자 줄(danger).
+export type ApprovalRouteEndLine = { text: string; tone: "muted" | "danger" };
 
 export type ApprovalInboxItemDto = {
   instanceId: string;
@@ -32,6 +39,12 @@ export type ApprovalInboxItemDto = {
   actedAt: Date | null;
   actedAction: string | null;
   summary: object | null;
+  // 04.1-05(CEO-17 · withDetails): `내 결재` 항목의 결재 시트 재료 — 종류 상세(detailDto 투영 뒤 행) ·
+  // 결재선 표시 목록 · 끝 줄 · 가능 행동. withDetails가 아니거나 처리함 항목이면 null.
+  detail: DocumentDetailRows | null;
+  steps: ApprovalStepView[] | null;
+  endLines: ApprovalRouteEndLine[] | null;
+  actions: ApprovalAction[] | null;
 };
 
 export type ApprovalInboxItemSource = ApprovalInboxItemDto;
@@ -52,6 +65,10 @@ export const APPROVAL_INBOX_ITEM_DTO_SPEC: DtoSpec<ApprovalInboxItemSource, Appr
     { key: "actedAt", from: "actedAt", infoItem: "approval.value" },
     { key: "actedAction", from: "actedAction", infoItem: "approval.value" },
     { key: "summary", from: "summary", infoItem: "approval.value" },
+    { key: "detail", from: "detail", infoItem: "approval.value" },
+    { key: "steps", from: "steps", infoItem: "approval.value" },
+    { key: "endLines", from: "endLines", infoItem: "approval.value" },
+    { key: "actions", from: "actions", infoItem: "approval.value" },
   ],
 };
 
@@ -67,6 +84,7 @@ export type ApprovalViewDto = {
   round: number;
   drafterName: string;
   steps: ApprovalStepView[];
+  endLines: ApprovalRouteEndLine[];
   currentStepIndex: number | null;
   actions: ApprovalAction[];
 };
@@ -83,6 +101,7 @@ export const APPROVAL_VIEW_DTO_SPEC: DtoSpec<ApprovalViewSource, ApprovalViewDto
     { key: "round", from: "round", infoItem: "approval.value" },
     { key: "drafterName", from: "drafterName", infoItem: "approval.value" },
     { key: "steps", from: "steps", infoItem: "approval.value" },
+    { key: "endLines", from: "endLines", infoItem: "approval.value" },
     { key: "currentStepIndex", from: "currentStepIndex", infoItem: "approval.value" },
     { key: "actions", from: "actions", infoItem: "approval.value" },
   ],

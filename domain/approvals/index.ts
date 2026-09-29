@@ -38,7 +38,7 @@ import {
   type SnapshotPerson,
   type WalkRouteResult,
 } from "@/domain/approvals/route";
-import { getDocumentKind, type RouteConfigStep } from "@/domain/approvals/kinds";
+import { getDocumentKind, type DetailFields, type DocumentDetailRows, type LoadDetailsDeps, type RouteConfigStep } from "@/domain/approvals/kinds";
 import { buildConflictMessage, isApprovalParty } from "@/domain/approvals/conflict-message";
 import { loadActionLogGate as defaultLoadActionLogGate, recordActionInTx, type ActionLogGate, type TxLogDeps } from "@/domain/approvals/tx-log";
 import {
@@ -51,12 +51,13 @@ import {
   type ApprovalAction,
   type ApprovalInboxItemDto,
   type ApprovalInboxItemSource,
+  type ApprovalRouteEndLine,
   type ApprovalStepView,
   type ApprovalViewDto,
 } from "@/domain/approvals/dto";
 
 export { registerDocumentKind, getDocumentKind, listDocumentKinds } from "@/domain/approvals/kinds";
-export type { DocumentKindDef, RouteConfig, RouteConfigStep, RouteSettingDefs } from "@/domain/approvals/kinds";
+export type { DocumentDetailRow, DocumentDetailRows, DocumentKindDef, RouteConfig, RouteConfigStep, RouteSettingDefs } from "@/domain/approvals/kinds";
 export { nextStep, resolveHolders, walkRoute } from "@/domain/approvals/route";
 export { loadActionLogGate, recordActionInTx } from "@/domain/approvals/tx-log";
 export type { ApprovalInboxItemDto, ApprovalViewDto, RoutePreviewDTO, RoutePreviewStepDTO } from "@/domain/approvals/dto";
@@ -87,6 +88,8 @@ export type ApprovalDeps = {
   appendActionLog?: TxLogDeps["appendActionLog"];
   // 노출표 조회 — 테스트가 호출 수를 세려고 주입한다.
   findVisibility?: typeof defaultFindVisibility;
+  // 04.1-05(CEO-17): 결재함 `내 결재` 항목에 결재 시트 재료(종류 상세 · 결재선 · 가능 행동)를 붙인다.
+  withDetails?: boolean;
 };
 
 // 요청 단위 노출 메모(CEO-17) — 정보 항목마다 visible()을 한 번만 부른다. 요청마다
@@ -745,7 +748,7 @@ export async function resubmitDocument(
 
 // ── 조회 ────────────────────────────────────────────────────────────────
 
-function toStepView(step: {
+type StepViewInput = {
   stepIndex: number;
   label: string;
   state: ApprovalStepView["state"];
@@ -754,7 +757,9 @@ function toStepView(step: {
   actedByName: string | null;
   actedAt: Date | null;
   selfApproved: boolean;
-}): ApprovalStepView {
+};
+
+function toStepView(step: StepViewInput, extra?: { reason?: string | null; viewerHolds?: boolean }): ApprovalStepView {
   return {
     stepIndex: step.stepIndex,
     label: step.label,
@@ -764,7 +769,38 @@ function toStepView(step: {
     actedByName: step.actedByName,
     actedAt: step.actedAt,
     selfApproved: step.selfApproved,
+    reason: extra?.reason ?? null,
+    viewerHolds: extra?.viewerHolds ?? false,
   };
+}
+
+// 진행 중 결재선의 표시 목록(walkRoute before_action) — 보는 사람이 지금 단계 후보면 viewerHolds.
+function walkStepViews(viewer: Viewer, walk: WalkRouteResult): ApprovalStepView[] {
+  return walk.display.map((step) => toStepView(step, { viewerHolds: step.state === "current" && step.holderIds.includes(viewer.id) }));
+}
+
+const SEOUL_MINUTE = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Seoul",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+// `09-19 10:00`(서울).
+function seoulMinute(at: Date): string {
+  const parts = Object.fromEntries(SEOUL_MINUTE.formatToParts(at).map((part) => [part.type, part.value]));
+  return `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+// S7 끝 줄 — 자기 승인 건너뜀(진행 중 표시 목록에서) · 회수 시각.
+function routeEndLines(status: ApprovalStatus, steps: ApprovalStepView[], updatedAt: Date): ApprovalRouteEndLine[] {
+  const lines: ApprovalRouteEndLine[] = steps
+    .filter((step) => step.state === "skipped_self")
+    .map((step) => ({ text: `${step.label} 단계 건너뜀(자기 승인 없음)`, tone: "muted" }));
+  if (status === "withdrawn") lines.push({ text: `회수 ${seoulMinute(updatedAt)}`, tone: "muted" });
+  return lines;
 }
 
 type ApprovalState = {
@@ -795,8 +831,11 @@ async function readApprovalState(
 // 결재함 상세 · 폰 시트도 이 함수 결과를 싣는다(CXF2-B-RF01). 지금 담당이면 `승인`, 기안자가 아닌 담당이면
 // `반려`, 기안자면 진행 중일 때 `회수`(막힘 · 고아 최종이어도, D2), 반려됐고 종류의 다시 신청 권한이 있으면
 // `다시 신청`(CX-W1). 기안자 = 지금 담당(W5 · W8)이면 [승인, 회수]이고 `반려`는 없다(CXF-B-F01).
-async function possibleActions(viewer: Viewer, state: ApprovalState): Promise<ApprovalAction[]> {
-  const { instance } = state.graph;
+async function possibleActions(
+  viewer: Viewer,
+  state: { instance: { status: string; drafterId: string; documentKind: string }; isCandidate: boolean },
+): Promise<ApprovalAction[]> {
+  const { instance } = state;
   const status = instance.status as ApprovalStatus;
   const isDrafter = instance.drafterId === viewer.id;
   const actions: ApprovalAction[] = [];
@@ -846,7 +885,7 @@ export async function getApprovalView(
   let currentStepIndex: number | null = null;
   const actions: ApprovalAction[] = [];
   if (state.walk) {
-    steps = state.walk.display.map(toStepView);
+    steps = walkStepViews(viewer, state.walk);
     const outcome = state.walk.outcome;
     if (outcome.kind !== "final") currentStepIndex = outcome.stepIndex;
   } else {
@@ -854,20 +893,23 @@ export async function getApprovalView(
     steps = (route?.steps ?? [])
       .filter((step) => step.action !== null)
       .map((step) =>
-        toStepView({
-          stepIndex: step.stepIndex,
-          label: step.label,
-          state: step.action === "rejected" ? "rejected" : "approved",
-          isFallback: step.isFallback,
-          holderNames: step.actedByName ?? "",
-          actedByName: step.actedByName,
-          actedAt: step.actedAt,
-          selfApproved: step.selfApproved,
-        }),
+        toStepView(
+          {
+            stepIndex: step.stepIndex,
+            label: step.label,
+            state: step.action === "rejected" ? "rejected" : "approved",
+            isFallback: step.isFallback,
+            holderNames: step.actedByName ?? "",
+            actedByName: step.actedByName,
+            actedAt: step.actedAt,
+            selfApproved: step.selfApproved,
+          },
+          { reason: step.action === "rejected" ? step.reason : null },
+        ),
       );
   }
 
-  actions.push(...(await possibleActions(viewer, state)));
+  actions.push(...(await possibleActions(viewer, { instance: graph.instance, isCandidate: state.isCandidate })));
 
   const source: ApprovalViewDto = {
     instanceId: graph.instance.id,
@@ -878,10 +920,35 @@ export async function getApprovalView(
     round: graph.instance.currentRound,
     drafterName: graph.instance.drafterName,
     steps,
+    endLines: routeEndLines(graph.instance.status as ApprovalStatus, steps, graph.instance.updatedAt),
     currentStepIndex,
     actions,
   };
   return project(viewer, source, APPROVAL_VIEW_DTO_SPEC, { visible: createVisibleMemo(deps?.findVisibility) });
+}
+
+// 04.1-05(Codex MEDIUM · ENG-17): 종류 하나의 상세를 id 목록으로 한 번에 — 원시 구조 필드 → detailDto로
+// 정보 항목별 project() → 투영 결과만 buildDetailRows → 문자열 칸만 남긴 행. 원시 결과는 행 조립에 닿지 않는다.
+export async function loadKindDetails(
+  viewer: Viewer,
+  kind: string,
+  documentIds: string[],
+  deps: LoadDetailsDeps,
+): Promise<Map<string, DocumentDetailRows>> {
+  const def = getDocumentKind(kind);
+  const result = new Map<string, DocumentDetailRows>();
+  if (!def.loadDetails || !def.detailDto || !def.buildDetailRows || documentIds.length === 0) return result;
+  const raw = await def.loadDetails(viewer, documentIds, { visible: deps.visible, now: deps.now });
+  for (const [documentId, fields] of raw) {
+    const projected = await project<DetailFields, DetailFields>(viewer, fields, def.detailDto, { visible: deps.visible });
+    const built = def.buildDetailRows(projected);
+    result.set(documentId, {
+      title: built.title,
+      subtitle: built.subtitle,
+      rows: built.rows.map((row) => ({ label: row.label, value: row.value, tone: row.tone })),
+    });
+  }
+  return result;
 }
 
 export type InboxResult = { mine: Partial<ApprovalInboxItemDto>[]; processed: Partial<ApprovalInboxItemDto>[] };
@@ -919,6 +986,8 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
     if (outcome.kind !== "actionable" || !outcome.candidateIds.includes(viewer.id)) continue;
     const current = walk.display.find((step) => step.stepIndex === outcome.stepIndex && step.state === "current");
     const def = getDocumentKind(instance.documentKind);
+    // 상세의 결재선 · 가능 행동은 `mine`을 가를 때 계산한 이 walk를 그대로 쓴다(다시 계산하지 않는다, X-1).
+    const steps = deps?.withDetails ? walkStepViews(viewer, walk) : null;
     mineSources.push({
       instanceId: instance.id,
       kind: instance.documentKind,
@@ -934,6 +1003,10 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
       actedAt: null,
       actedAction: null,
       summary: null,
+      detail: null,
+      steps,
+      endLines: steps ? routeEndLines(instance.status as ApprovalStatus, steps, instance.updatedAt) : null,
+      actions: deps?.withDetails ? await possibleActions(viewer, { instance, isCandidate: true }) : null,
     });
   }
 
@@ -955,6 +1028,10 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
       actedAt: row.actedAt,
       actedAction: row.action,
       summary: null,
+      detail: null,
+      steps: null,
+      endLines: null,
+      actions: null,
     };
   });
 
@@ -968,6 +1045,18 @@ export async function listMyInbox(viewer: Viewer, deps?: ApprovalDeps): Promise<
     for (const [id, summary] of described) summaries.set(`${kind}:${id}`, summary);
   }
   for (const source of all) source.summary = summaries.get(`${source.kind}:${source.documentId}`) ?? null;
+
+  // 04.1-05(CEO-17): `내 결재` 상세 — 종류마다 id 목록으로 loadDetails 한 번, 같은 노출 메모 · 같은 시계.
+  if (deps?.withDetails) {
+    const mineIdsByKind = new Map<string, string[]>();
+    for (const source of mineSources) mineIdsByKind.set(source.kind, [...(mineIdsByKind.get(source.kind) ?? []), source.documentId]);
+    for (const [kind, ids] of mineIdsByKind) {
+      const details = await loadKindDetails(viewer, kind, [...new Set(ids)], { visible, now: deps.now });
+      for (const source of mineSources) {
+        if (source.kind === kind) source.detail = details.get(source.documentId) ?? null;
+      }
+    }
+  }
 
   return {
     mine: await Promise.all(mineSources.map((source) => project(viewer, source, APPROVAL_INBOX_ITEM_DTO_SPEC, { visible }))),

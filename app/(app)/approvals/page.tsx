@@ -5,8 +5,9 @@ import { listMyInbox, type ApprovalInboxItemDto } from "@/domain/approvals";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { formatLeavePeriod, type LeavePeriodSource } from "@/app/(app)/leave/labels";
-import { leaveStatusDisplay, toLeaveStatusKey } from "@/app/(app)/leave/status-display";
+import { leaveStatusDisplay, routeListSteps, toLeaveStatusKey } from "@/app/(app)/leave/status-display";
 import { InboxTable, type InboxRow } from "./inbox-table";
+import type { ApprovalSheetItem, SheetDetailRow } from "./approval-sheet";
 
 // 04.1-02 S4 첫 형태 — 개인 결재함. 메뉴 게이트가 없다(세션만) — 내용은 결재선 후보 · 처리 기록으로만
 // 정해진다(listMyInbox). 그룹 `내 결재`(지금 내가 담당) · `처리함`(내가 처리한 최근 50건).
@@ -14,6 +15,32 @@ import { InboxTable, type InboxRow } from "./inbox-table";
 export const dynamic = "force-dynamic";
 
 type LeaveSummary = LeavePeriodSource & { days?: string };
+
+// 종류가 준 상세 행(같은 라벨이 이어지면 한 칸의 여러 줄 — 잔고 1행 · 2행 · 잔여 초과)을 라벨 · 값 목록으로.
+function sheetRows(rows: NonNullable<ApprovalInboxItemDto["detail"]>["rows"]): SheetDetailRow[] {
+  const grouped: SheetDetailRow[] = [];
+  for (const row of rows) {
+    const last = grouped[grouped.length - 1];
+    if (last && last.label === row.label) last.lines.push({ text: row.value, tone: row.tone });
+    else grouped.push({ label: row.label, lines: [{ text: row.value, tone: row.tone }] });
+  }
+  return grouped;
+}
+
+// 04.1-05(S5): `내 결재` 항목의 결재 시트 재료 — 서버가 준 상세 · 결재선 · 가능 행동을 그대로 옮긴다.
+function toSheet(item: Partial<ApprovalInboxItemDto>): ApprovalSheetItem | null {
+  if (!item.instanceId || item.version === undefined || !item.detail || !item.actions) return null;
+  return {
+    instanceId: item.instanceId,
+    version: item.version,
+    title: item.detail.title,
+    subtitle: item.detail.subtitle,
+    rows: sheetRows(item.detail.rows),
+    steps: routeListSteps(item.steps),
+    endLines: item.endLines ?? [],
+    actions: item.actions,
+  };
+}
 
 function toRow(item: Partial<ApprovalInboxItemDto>, group: InboxRow["group"]): InboxRow {
   const summary = (item.summary ?? {}) as LeaveSummary;
@@ -29,12 +56,14 @@ function toRow(item: Partial<ApprovalInboxItemDto>, group: InboxRow["group"]): I
     drafter: [item.drafterName, item.submittedAt ? kstDateOf(item.submittedAt).slice(5) : null].filter(Boolean).join(" · "),
     days: summary.days ?? "",
     status,
+    sheet: group === "mine" ? toSheet(item) : null,
   };
 }
 
 export default async function ApprovalsPage() {
   const { viewer } = await requireSession();
-  const inbox = await listMyInbox(viewer);
+  // 상세까지 한 번에 — 같은 노출 메모 · 종류마다 loadDetails 한 번(CEO-17).
+  const inbox = await listMyInbox(viewer, { withDetails: true });
   const rows = [...inbox.mine.map((item) => toRow(item, "mine")), ...inbox.processed.map((item) => toRow(item, "processed"))];
 
   return (

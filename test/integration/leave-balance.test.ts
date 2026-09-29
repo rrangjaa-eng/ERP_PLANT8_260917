@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID, TEAM_LEAD_ROLE_ID, createRole } from "@/domain/permissions/roles";
-import { approveDocument } from "@/domain/approvals";
+import { approveDocument, listMyInbox, withdrawDocument } from "@/domain/approvals";
 import { submitLeave } from "@/domain/leave";
 import {
   addLeaveAdjustment,
@@ -453,5 +453,77 @@ describe("조정 — 원자성 · 계약 · 기록 조회 · 권한(ENG-13 · CX
     await expect(getLeaveBalanceForUser(pm, org.lead.id, { fiscalYear: 2026 }, { now: NOW_0924 })).rejects.toBeInstanceOf(
       ForbiddenError,
     );
+  });
+});
+
+// ── 04.1-05: 결재자가 결재함 상세(withDetails)로 받는 잔고 행 ──────────────────────
+
+function balanceRows(inbox: Awaited<ReturnType<typeof listMyInbox>>, documentId: string): string[] {
+  const item = inbox.mine.find((candidate) => candidate.documentId === documentId);
+  return (item?.detail?.rows ?? []).filter((row) => row.label === "잔고").map((row) => row.value);
+}
+
+async function formattedFor(viewer: Viewer, leaveId: string, kind: "full_day" | "half_day", now: Date): Promise<string[]> {
+  const dto = await getLeaveBalanceForRequest(viewer, leaveId, { now });
+  return (formatBalanceRow(dto as LeaveRequestBalanceDto, kind) ?? []).map((line) => line.text);
+}
+
+// 2027-03-15 12:00 · 2027-04-15 12:00 · 2027-01-05 12:00 · 2028-03-15 12:00 서울.
+const NOW_270315 = new Date("2027-03-15T03:00:00Z");
+const NOW_270415 = new Date("2027-04-15T03:00:00Z");
+const NOW_270105 = new Date("2027-01-05T03:00:00Z");
+const NOW_280315 = new Date("2028-03-15T03:00:00Z");
+
+describe("결재자 잔고 행 — 연차 · 월차 분리(11:43 · R1/D5 · D3 · D4 · CX-B2)", () => {
+  let org: Org;
+  beforeEach(async () => {
+    org = await leaveOrg();
+  });
+
+  it("입사 2026-10-01 기안자의 2027-03-15 6평일 — 연차 남음 4일 · 월차 남음 5일, 차감 예정 월차 5일 · 연차 1일, 합계 9일 없음 · DTO는 쿼터", async () => {
+    await setHireDate(SYSTEM_VIEWER, org.drafter.id, "2026-10-01");
+    const doc = await submitLeave(org.drafter, { kind: "full_day", startDate: "2027-03-15", endDate: "2027-03-22", half: "" }, { now: NOW_270315 });
+
+    const inbox = await listMyInbox(org.lead, { now: NOW_270315, withDetails: true });
+    expect(balanceRows(inbox, doc.leaveId)).toEqual(["연차 남음 4일 · 월차 남음 5일 · 결재 중 0일 · 이번 신청 6일", "차감 예정 월차 5일 · 연차 1일"]);
+
+    const dto = await getLeaveBalanceForRequest(org.lead, doc.leaveId, { now: NOW_270315 });
+    expect(dto).toEqual({
+      annualRemaining: 16,
+      monthlyRemaining: 20,
+      pending: 0,
+      thisRequest: 24,
+      plannedDeduction: { monthly: 20, annual: 4 },
+      over: 0,
+    });
+    const detail = JSON.stringify(inbox.mine.find((item) => item.documentId === doc.leaveId)?.detail);
+    expect(detail).not.toMatch(/(?<![\d.])9일/);
+  });
+
+  it("입사 2026-12-15 기안자의 2027-01 반차 — 월차 남음 0일 칸이 있고, 근속 1년 뒤 2028-03 반차에는 월차 칸이 없다(D4 · D5)", async () => {
+    await setHireDate(SYSTEM_VIEWER, org.drafter.id, "2026-12-15");
+    const first = await submitLeave(org.drafter, { kind: "half_day", startDate: "2027-01-06", endDate: "2027-01-06", half: "am" }, { now: NOW_270105 });
+    const firstRows = balanceRows(await listMyInbox(org.lead, { now: NOW_270105, withDetails: true }), first.leaveId);
+    expect(firstRows[0]).toBe("연차 남음 0.75일 · 월차 남음 0일 · 결재 중 0일 · 이번 신청 0.5일");
+    expect(firstRows).toEqual(await formattedFor(org.lead, first.leaveId, "half_day", NOW_270105));
+
+    await withdrawDocument(org.drafter, { instanceId: first.instanceId, expectedVersion: first.version }, { now: NOW_270105 });
+    const later = await submitLeave(org.drafter, { kind: "half_day", startDate: "2028-03-15", endDate: "2028-03-15", half: "am" }, { now: NOW_280315 });
+    const laterRows = balanceRows(await listMyInbox(org.lead, { now: NOW_280315, withDetails: true }), later.leaveId);
+    expect(laterRows[0]).toBe("연차 남음 15일 · 결재 중 0일 · 이번 신청 0.5일");
+    expect(laterRows.join(" ")).not.toContain("월차");
+  });
+
+  it("CX-B2 — 결재함에 주입한 now가 상세 잔고까지 닿는다(2027-03-15 · 2027-04-15가 서로 다른 값)", async () => {
+    await setHireDate(SYSTEM_VIEWER, org.drafter.id, "2026-10-01");
+    const doc = await submitLeave(org.drafter, { kind: "full_day", startDate: "2027-03-15", endDate: "2027-03-22", half: "" }, { now: NOW_270315 });
+
+    const march = balanceRows(await listMyInbox(org.lead, { now: NOW_270315, withDetails: true }), doc.leaveId);
+    expect(march).toEqual(await formattedFor(org.lead, doc.leaveId, "full_day", NOW_270315));
+
+    const april = balanceRows(await listMyInbox(org.lead, { now: NOW_270415, withDetails: true }), doc.leaveId);
+    expect(april[0]).toContain("월차 남음 6일");
+    expect(april).toEqual(await formattedFor(org.lead, doc.leaveId, "full_day", NOW_270415));
+    expect(april).not.toEqual(march);
   });
 });

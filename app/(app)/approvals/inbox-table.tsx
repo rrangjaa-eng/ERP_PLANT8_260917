@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
@@ -10,11 +10,15 @@ import { Button } from "@/ui/button/Button";
 import { StatusTag, type StatusTagKind } from "@/ui/status-tag/StatusTag";
 import { Toast, type ToastTone } from "@/ui/toast/Toast";
 import { approveAction } from "./actions";
-import styles from "@/app/(app)/leave/leave.module.css";
+import { approveToast } from "./approve-toast";
+import { ApprovalSheet, type ApprovalSheetItem } from "./approval-sheet";
+import leaveStyles from "@/app/(app)/leave/leave.module.css";
+import styles from "./inbox-table.module.css";
 
-// 04.1-02 S4 첫 형태 — 그룹 `내 결재`(비면 머리글째 없음) · `처리함`. `내 결재` 행의 상태 칸은 비우고
-// (그룹 머리글이 말한다), PC 행동 칸에 3차 `승인` — 확인 없이 즉시(사용자 결정 #3). 반려 버튼 · 폰 결재
-// 시트는 04.1-05. 성공하면 토스트 + 서버가 목록을 다시 그려 그 행이 `처리함`으로 옮겨 간다.
+// 04.1-02 S4 · 04.1-05(S4 · S5 · T4 · ENG-16) — 그룹 `내 결재`(비면 머리글째 없음) · `처리함`. `내 결재` 행의 상태
+// 칸은 비우고(그룹 머리글이 말한다), PC 행동 칸에 3차 `승인` — 확인 없이 즉시(사용자 결정 #3). 폰(<700)에서
+// `내 결재` 행 = 전체 폭 button(aria-haspopup="dialog") → 결재 시트, `처리함` 행 = 전체 폭 문서 링크 → 문서 화면
+// (처리함에는 상세를 미리 읽지 않는다). 갈래는 서버가 넘긴 그룹 값으로 정하고 상태 글자를 보지 않는다.
 export type InboxRow = {
   id: string;
   group: "mine" | "processed";
@@ -25,6 +29,8 @@ export type InboxRow = {
   drafter: string;
   days: string;
   status: { kind: StatusTagKind; label: string } | null;
+  // `내 결재` 항목의 결재 시트 재료(서버 가능 행동 · 상세 · 결재선) — 처리함은 null.
+  sheet: ApprovalSheetItem | null;
 };
 
 const GROUP_HEADERS: Record<InboxRow["group"], string> = { mine: "내 결재", processed: "처리함" };
@@ -36,24 +42,23 @@ function documentCellId(row: InboxRow): string {
 export function InboxTable({ rows }: { rows: InboxRow[] }) {
   const router = useRouter();
   const [pendingId, setPendingId] = useState<string | null>(null);
+  // 행 제출 중 — 동기로 바뀌어 두 번째 누름을 무시한다(T7).
+  const submittingRef = useRef(false);
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
+  const [sheetItem, setSheetItem] = useState<ApprovalSheetItem | null>(null);
   const { execute } = useAction(approveAction, {
     onSuccess: ({ data }) => {
       if (!data) return;
-      const message = data.final
-        ? data.deductedDays
-          ? `승인 · 최종 승인 · ${data.deductedDays} 차감`
-          : "승인 · 최종 승인"
-        : data.nextHolderNames
-          ? `승인 · 결재 요청됨 → ${data.nextHolderNames}`
-          : "승인 · 결재 요청됨";
-      setToast({ message, tone: "default" });
+      setToast({ message: approveToast(data), tone: "default" });
       router.refresh();
     },
     onError: ({ error }) => {
       if (error.serverError) setToast({ message: error.serverError, tone: "error" });
     },
-    onSettled: () => setPendingId(null),
+    onSettled: () => {
+      submittingRef.current = false;
+      setPendingId(null);
+    },
   });
 
   const columns: TableColumn<InboxRow>[] = [
@@ -64,12 +69,22 @@ export function InboxTable({ rows }: { rows: InboxRow[] }) {
       cell: (row) => (
         <span id={documentCellId(row)}>
           {row.href ? (
-            <Link href={row.href} className={styles.link}>
+            <Link href={row.href} className={[leaveStyles.link, row.group === "processed" ? styles.rowLink : styles.wideOnly].join(" ")}>
               {row.document}
             </Link>
           ) : (
-            row.document
+            <span className={row.sheet ? styles.wideOnly : undefined}>{row.document}</span>
           )}
+          {row.sheet ? (
+            <button
+              type="button"
+              className={styles.rowTap}
+              aria-haspopup="dialog"
+              onClick={() => setSheetItem(row.sheet)}
+            >
+              {row.document}
+            </button>
+          ) : null}
         </span>
       ),
     },
@@ -100,7 +115,8 @@ export function InboxTable({ rows }: { rows: InboxRow[] }) {
             pending={pendingId === row.id}
             aria-describedby={documentCellId(row)}
             onClick={() => {
-              if (pendingId) return;
+              if (submittingRef.current) return;
+              submittingRef.current = true;
               setPendingId(row.id);
               execute({ instanceId, expectedVersion });
             }}
@@ -115,6 +131,12 @@ export function InboxTable({ rows }: { rows: InboxRow[] }) {
   return (
     <>
       <Table caption="결재함" columns={columns} rows={rows} getRowId={(row) => row.id} groupBy={(row) => GROUP_HEADERS[row.group]} />
+      <ApprovalSheet
+        item={sheetItem}
+        onClose={() => setSheetItem(null)}
+        onApproved={(message) => setToast({ message, tone: "default" })}
+        onSecondary={() => undefined}
+      />
       {toast ? <Toast message={toast.message} tone={toast.tone} onDismiss={() => setToast(null)} /> : null}
     </>
   );

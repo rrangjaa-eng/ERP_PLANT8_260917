@@ -1,0 +1,71 @@
+/* 04.1-05 결재함 표(S4) — 폰 행 탭 대상 · 행 행동 간격 · 동시 처리 한 줄. 색·서체·radius는 토큰 참조만(D-20). */
+
+/* 폰에서만 보이는 `내 결재` 행 탭 대상 — PC에는 없다(문서 칸 링크 + 행 행동). */
+.rowTap {
+  display: none;
+}
+
+.conflict {
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+.refresh {
+  padding: 0;
+  border: 0;
+  border-bottom: var(--line-w) solid var(--accent);
+  background: none;
+  color: var(--accent);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+@media (max-width: 699.98px) {
+  /* 행 전체가 탭 대상 — 문서 칸의 button · 링크가 ::after로 그 행을 덮는다(ui/table은 고치지 않는다). */
+  tr:has(.rowTap, .rowLink) {
+    position: relative;
+  }
+
+  .wideOnly {
+    display: none;
+  }
+
+  .rowTap {
+    display: block;
+    width: 100%;
+    min-height: var(--touch-min);
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: var(--fs-base);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .rowLink {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch-min);
+  }
+
+  .rowTap::after,
+  .rowLink::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+
+  /* 전체 폭 행의 포커스 링은 행 안쪽(inset — UI-SPEC Color 4, §4-4 예외). */
+  .rowTap:focus-visible,
+  .rowLink:focus-visible {
+    outline: none;
+  }
+
+  .rowTap:focus-visible::after,
+  .rowLink:focus-visible::after {
+    outline: var(--focus-w) solid var(--focus);
+    outline-offset: calc(var(--focus-w) * -1);
+  }
+}

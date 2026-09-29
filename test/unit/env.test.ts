@@ -34,6 +34,7 @@ const ENV_KEYS = [
   "STATUS_CONN_BANNER_RATIO",
   "NOTIFY_TICK_SCHEDULER_SA",
   "NOTIFY_TICK_OIDC_DISABLED",
+  "CERT_SIGNATURE_BUCKET",
 ] as const;
 
 let saved: Record<string, string | undefined>;
@@ -178,5 +179,25 @@ describe("lib/env", () => {
     process.env.NOTIFY_TICK_SCHEDULER_SA = "s@x.iam.gserviceaccount.com";
     const { env } = await import("@/lib/env");
     expect(env.NOTIFY_TICK_SCHEDULER_SA).toBe("s@x.iam.gserviceaccount.com");
+  });
+
+  // 04.3-05: 서명 버킷 이름은 선택 문자열이다 — 없어도 앱이 뜨고(플래그가 꺼진
+  // 동안 기동을 막지 않는다), 확인증 기능을 쓰는 순간 드라이버가 실패로 닫힌다.
+  it("CERT_SIGNATURE_BUCKET은 선택값이고 로컬 밖에서도 없어도 파싱되며 값을 읽는다", async () => {
+    process.env.APP_ENV = "prod";
+    process.env.BETTER_AUTH_SECRET = "a".repeat(32);
+    process.env.BETTER_AUTH_URL = "https://example.com";
+    const { env: bare } = await import("@/lib/env");
+    expect(bare.CERT_SIGNATURE_BUCKET).toBeUndefined();
+
+    vi.resetModules();
+    process.env.CERT_SIGNATURE_BUCKET = "__unset__";
+    const { env: unset } = await import("@/lib/env");
+    expect(unset.CERT_SIGNATURE_BUCKET).toBeUndefined();
+
+    vi.resetModules();
+    process.env.CERT_SIGNATURE_BUCKET = "p-plant8-prod-cert-signatures";
+    const { env } = await import("@/lib/env");
+    expect(env.CERT_SIGNATURE_BUCKET).toBe("p-plant8-prod-cert-signatures");
   });
 });

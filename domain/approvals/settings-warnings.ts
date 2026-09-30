@@ -1,7 +1,7 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan, ForbiddenError } from "@/domain/permissions/can";
 import { listDocumentKinds } from "@/domain/approvals/kinds";
-import { getSimpleSettingValues } from "@/domain/settings/registry";
+import { getSimpleSettingValuesOrDefault } from "@/domain/settings/registry";
 import { findSimpleValues as defaultFindSimpleValues } from "@/repositories/settings";
 import { listOrgUnits as defaultListOrgUnits } from "@/repositories/org-units";
 
@@ -33,7 +33,7 @@ export async function listApprovalRouteSettingWarnings(
   for (const kind of (deps?.listDocumentKinds ?? listDocumentKinds)()) {
     if (!kind.routeSettings) continue;
     for (const step of kind.routeSettings.steps) {
-      const [enabled, scope, orgUnitId] = await getSimpleSettingValues([step.enabled, step.scope, step.orgUnitId] as const, {
+      const [enabled, scope, orgUnitId] = await getSimpleSettingValuesOrDefault([step.enabled, step.scope, step.orgUnitId] as const, {
         findSimpleValues: deps?.findSimpleValues,
       });
       if (enabled === true && scope === "org_unit" && !liveOrgUnitIds.has(orgUnitId ?? "")) {

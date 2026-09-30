@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 // 04.3-11 — P1 확인증 인쇄물(셸 밖 · (app) 레이아웃의 requireSession이 앞서지 않는다). 순서: 기능 게이트(C1 —
 // 로그인 전 요청도 404, 레이아웃과 페이지는 병렬로 렌더되므로 페이지도 첫 판정으로 본다) → 세션 → 개인정보취급자
 // 비활동 판정(볼 수 없는 사람은 시계를 건드리지 않고 404 · 만료면 로그인) → 조회(project 투영 — 값이 안 보이면
-// 404). 문서 제목은 고정이다 — 번호를 넣는 generateMetadata는 같은 순서를 따로 밟아야 해서 두지 않는다(E3-30).
+// 404). 문서 제목은 고정이다 — 번호를 넣는 동적 제목 함수는 같은 순서를 따로 밟아야 해서 두지 않는다(E3-30).
 export const metadata: Metadata = { title: "확인증 인쇄" };
 
 export default async function CertPrintPage({ params }: { params: Promise<{ id: string }> }) {

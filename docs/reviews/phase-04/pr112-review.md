@@ -6,7 +6,7 @@
 | 브랜치 | claude/pr104-followup-f2 (origin/main 9d695fc 이미 반영 — 머지 불필요, 검토 헤드 27e1ce7) |
 | 범위 | `git diff 9d695fc..27e1ce7`, `.planning` 제외 18파일 +577/−61 |
 | 검토자 | 핵심 패스(오케스트레이터) + 전문 5명(testing · maintainability · performance · design · simplification, Opus) + Red Team 1 + 적대 1(Opus). security는 인증·권한 변경 없음(scope)으로 제외. Codex 패스 생략 — CLAUDE.md 외부 검토 금지 |
-| 결과 | critical 0 · 수정 3(아래 F1~F3) · 사용자 결정 요청 1(D1) · 참고(수정 안 함) 6 · 품질 8.5/10 |
+| 결과 | critical 0 · 수정 4(아래 F1~F4) · 사용자 결정 요청 1(D1) · 참고(수정 안 함) 6 · 품질 8.5/10 |
 | 확인 | typecheck rc=0 · lint rc=0 · 단위 `test/unit/ui/text-field-hint.test.ts` 8/8 · `CI=true` E2E `settings-approval-route.spec.ts` + `quote-revisions.spec.ts` 55/55 |
 
 Scope Check: CLEAN — Intent: ISSUE-001 · DR-104-01~05 · G1~G3(PR 본문 · PLAN) · Delivered: 같은 항목. PLAN 항목 모두 반영(260930-kc9-PLAN.md 대조).
@@ -15,9 +15,13 @@ Scope Check: CLEAN — Intent: ISSUE-001 · DR-104-01~05 · G1~G3(PR 본문 · P
 
 | # | 출처 | 발견 | 수정 · 확인 |
 |---|---|---|---|
-| F1 | 적대 (conf 8) | `.rowNumber`에 굵기가 없어 행 번호가 400으로 그려진다. SYSTEM §2-2 `--fs-xs`는 11 / 1.4 / **600**이고 용도에 「행 번호」가 있다 | `project-detail.module.css` `.rowNumber`에 `font-weight: var(--fw-medium)`. RED: `quote-revisions` DR-104-04 fontWeight 400 ≠ 600 → GREEN |
+| F1 | 적대 (conf 8) + 수렴 패스 | `.rowNumber`에 굵기 · 줄높이가 없어 행 번호가 400 · 1.6(상속)으로 그려진다. SYSTEM §2-2 `--fs-xs`는 11 / **1.4** / **600**이고 용도에 「행 번호」가 있다 | `project-detail.module.css` `.rowNumber`에 `font-weight: var(--fw-medium)` · `line-height: var(--lh-head)`. RED: `quote-revisions` DR-104-04 fontWeight 400 ≠ 600, lineHeight 17.6px ≠ 15.4px → GREEN |
 | F2 | Red Team (conf 8) | 설정 화면 결재선 복원 줄 「복원」·「버림」이 폰에서 폭 32.3 — DR-104-01과 같은 결함인데 상세 · 리저브만 고쳤다(SYSTEM §3 3차 44×44) | `settings.module.css` 폰 `.restoreAction`에 `min-width: var(--touch-min)`. 새 E2E `settings-approval-route` 「DR-104-01」 375 · 320 RED 32.3 → GREEN. 점검표 `2026-09-30-설정-힌트-이력-쉼표.md` 갱신 |
 | F3 | maintainability (conf 6) | `text-field-hint.test.ts`의 RED 단계 주석과 `Record<string, unknown>` + `as TextFieldProps` 단언이 hintId 도입 뒤에도 남아 props 타입 검사를 끈다 | 주석 삭제, `Partial<TextFieldProps>`로 바꾸고 단언 제거. typecheck · 단위 8/8 |
+
+| F4 | 수렴 패스 (conf high) | F2 뒤 점검표 `2026-09-30-설정-힌트-이력-쉼표.md`에 「CSS 변경 없음 · CSS 변경 0」이 남아 스스로 어긋났다 | 문구를 CSS 한 줄(--touch-min)로 고침 |
+
+수렴 패스: 수정분 `27e1ce7..HEAD`만 Opus 1명이 다시 검토 — F1 줄높이 · F4 문구 2건을 찾아 반영했다. 7명 전체 재실행은 하지 않았다(수정이 CSS 두 줄 · 테스트 · 문서라 전체 diff 판정이 바뀌지 않음).
 
 ## 사용자 결정 요청
 

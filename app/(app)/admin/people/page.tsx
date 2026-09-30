@@ -58,7 +58,7 @@ export default async function PeoplePage({
     {
       key: "role",
       label: "계급",
-      visible: hasKey("roleName", "roleId"),
+      visible: hasKey("roleName"),
       value: (person: PersonDto) => person.roleName ?? roleNameById.get(person.roleId ?? "") ?? "—",
     },
     { key: "team", label: "현재 소속", visible: hasKey("currentTeamName"), value: (person: PersonDto) => person.currentTeamName ?? "—" },
@@ -88,7 +88,10 @@ export default async function PeoplePage({
       ) : null}
 
       {people.length === 0 ? (
-        <ListEmpty message="등록된 사람이 없습니다" action={{ label: "사람 등록", href: "/admin/people?new=1#person-form" }} />
+        <ListEmpty
+          message="등록된 사람이 없습니다"
+          action={canWrite ? { label: "사람 등록", href: "/admin/people?new=1#person-form" } : undefined}
+        />
       ) : !rowHeaderColumn ? (
         // 사람·계급·팀 정보가 모두 꺼진 계급(새 계급 기본값) — 보는 사람은 노출표를 바꿀 수 없어 다음 한 수 없이 사실만(§8-3).
         <ListEmpty message="정보 노출표 · 사람 정보 잠김" />

@@ -11,6 +11,7 @@ import { kstToday } from "@/lib/kst-date";
 // quick 260929-npq — 04-UI-REVIEW 지적 1·3. SYSTEM §3 폰 터치 목표 44×44 · UI-SPEC `--touch-min`.
 // 프로젝트 상세 머리 줄 「상태 바꾸기」·「더보기」와 목록 정렬 머리글 「프로젝트명」·「견적」이 폰 375·320에서 44×44 이상,
 // PC 1280·경계 700 치수는 그대로(폰 미디어 쿼리 밖으로 규칙이 새지 않음). 파일명 mobile- 접두 → mobile-375 프로젝트.
+// quick 260930-4xr · 사용자 2026-09-30 폰 40px 3개 → 44: 머리 줄 1차 「일괄 저장」과 펼친 「복사해 새 차수」·「프로젝트 복사」.
 const TOUCH_MIN = 44;
 const WIDTHS_PHONE = [375, 320] as const;
 const WIDTHS_PC = [1280, 700] as const;
@@ -139,6 +140,33 @@ test.describe("폰 터치 목표 44 (quick 260929-npq · 04-UI-REVIEW 지적 1·
     }
   });
 
+  test("폰 상세 머리 줄 「일괄 저장」·「복사해 새 차수」·「프로젝트 복사」 — 375·320에서 44×44 이상, 가로 넘침 없음", async ({ page }) => {
+    await login(page, seed.pm);
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto(`/projects/${seed.projectId}`);
+    const main = page.getByRole("main");
+    await main.getByRole("button", { name: "더보기", exact: true }).click();
+    const copyRevision = main.getByRole("button", { name: "복사해 새 차수", exact: true });
+    const copyProject = main.getByRole("link", { name: "프로젝트 복사", exact: true });
+    await expect(copyRevision).toBeVisible();
+    await expect(copyProject).toBeVisible();
+    // 기간 칸을 바꿔 1차 「일괄 저장」을 띄운다(quote-edit-scope (l) 선례).
+    await page.locator("#period-open").click();
+    await page.locator("#period-end").fill(kstToday(new Date()));
+    const save = main.getByRole("button", { name: /일괄 저장/ });
+    await expect(save).toBeVisible();
+
+    for (const width of WIDTHS_PHONE) {
+      await page.setViewportSize({ width, height: 800 });
+      for (const [label, locator] of [["일괄 저장", save], ["복사해 새 차수", copyRevision], ["프로젝트 복사", copyProject]] as const) {
+        const b = await box(locator, `${label} @${width}`);
+        expect.soft(b.height, `${label} @${width} 높이`).toBeGreaterThanOrEqual(TOUCH_MIN);
+        expect.soft(b.width, `${label} @${width} 폭`).toBeGreaterThanOrEqual(TOUCH_MIN);
+      }
+      await expectNoOverflow(page, `상세 일괄 저장·복사 @${width}`);
+    }
+  });
+
   test("PC 1280·경계 700 — 「상태 바꾸기」 높이 32 · 「더보기」 없음 · 정렬 머리글 높이 그대로", async ({ page }) => {
     for (const width of WIDTHS_PC) {
       await login(page, seed.lead);
@@ -160,7 +188,14 @@ test.describe("폰 터치 목표 44 (quick 260929-npq · 04-UI-REVIEW 지적 1·
       // 「더보기」는 폰에서만 — 프로젝트 쓰기 권한이 있어 복사 묶음이 있는 PM으로 본다.
       await login(page, seed.pm);
       await page.goto(`/projects/${seed.projectId}`);
-      await expect(page.getByRole("main").getByRole("link", { name: "프로젝트 복사" })).toBeVisible();
+      const copyProjectLink = page.getByRole("main").getByRole("link", { name: "프로젝트 복사", exact: true });
+      await expect(copyProjectLink).toBeVisible();
+      const cpb = await box(copyProjectLink, `프로젝트 복사 @${width}`);
+      expect.soft(cpb.height, `프로젝트 복사 @${width} 높이`).toBeCloseTo(32, 0);
+      const copyRevisionButton = page.getByRole("main").getByRole("button", { name: "복사해 새 차수", exact: true });
+      await expect(copyRevisionButton).toBeVisible();
+      const crb = await box(copyRevisionButton, `복사해 새 차수 @${width}`);
+      expect.soft(crb.height, `복사해 새 차수 @${width} 높이`).toBeCloseTo(32, 0);
       await expect.soft(detailButtons(page).more, `더보기 @${width} 숨김`).toBeHidden();
     }
   });

@@ -243,6 +243,22 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
       expect.soft(box!.height, detail).toBeGreaterThanOrEqual(44);
       expect.soft(box!.x, detail).toBeGreaterThanOrEqual(0);
       expect.soft(box!.x + box!.width, detail).toBeLessThanOrEqual(width);
+
+      // 04.4 DOM 감사 W-A: 44×44 상자 전체가 실제로 링크로 탭된다(다음 항목 dt/dd가 아래쪽을 가리지 않는다).
+      const misses = await link.evaluate((el) => {
+        const rect = el.getBoundingClientRect();
+        const missed: string[] = [];
+        for (const fx of [0, 0.25, 0.5, 0.75, 1]) {
+          for (const fy of [0, 0.25, 0.5, 0.75, 1]) {
+            const x = rect.left + 1 + fx * (rect.width - 2);
+            const y = rect.top + 1 + fy * (rect.height - 2);
+            const hit = document.elementFromPoint(x, y);
+            if (!hit || !(hit === el || el.contains(hit))) missed.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+          }
+        }
+        return missed;
+      });
+      expect.soft(misses, `${detail} 링크가 아닌 적중점`).toEqual([]);
     }
   });
 });

@@ -152,7 +152,7 @@
 
 **Why:** `table-row-min.spec.ts`가 전체 E2E에서 실행 순서에 따라 실패한다 — 다른 스펙이 erp_test에 보관 항목을 남기면 걸린다(260930-nto 전체 실행 1회 실패, 감사가 소수점까지 재현). ready 전환 뒤 CI 전체 E2E를 빨갛게 할 수 있다.
 
-**Context:** base `9f0bd3d`(PR #108)에도 같은 규칙 — PR #111 변경 아님. 감사 보고서 `.planning/quick/260930-nto-row-actions-gap-and-tertiary-underline/260930-nto-DOM-AUDIT.md`.
+**Context:** base `3774333`(PR #108)에도 같은 규칙 — PR #111 변경 아님. 감사 보고서 `.planning/quick/260930-nto-row-actions-gap-and-tertiary-underline/260930-nto-DOM-AUDIT.md`.
 
 **Effort:** S · **Priority:** P2 · **Depends on:** None
 

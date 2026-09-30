@@ -9,3 +9,4 @@ qa 2026-09-29T11:15Z session=1e9dd85a-8e86-56cd-adca-d7a2edf40c24
 design-review 2026-09-29T11:23Z session=1e9dd85a-8e86-56cd-adca-d7a2edf40c24
 cso 2026-09-29T12:50Z session=1e9dd85a-8e86-56cd-adca-d7a2edf40c24 (--diff base 21133ab4, gstack-cso run 1790686250260-50cdc2defa9a65b5 partial · 지원 결함 0. 범위: 04.4 자체 변경 — restore-rehearsal.sh --async·operations wait·조회 재시도, 0019 재생성(내용 동일). main 병합분은 각 PR 몫이라 제외, 스캐너 미실행(Docker 없음), 실제 gcloud 동작은 Task 3에서 확인)
 ship 2026-09-29T12:58Z session=1e9dd85a-8e86-56cd-adca-d7a2edf40c24
+gsd-verify-work 2026-09-30T06:33Z session=1e9dd85a-8e86-56cd-adca-d7a2edf40c24

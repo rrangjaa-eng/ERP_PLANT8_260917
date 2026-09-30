@@ -28,17 +28,18 @@ export default async function PeoplePage({
   if (!(await can(session.viewer, "admin.people", "view"))) notFound();
 
   const { new: newParam } = await searchParams;
-  // §6-1: 목록이 화면이고 등록은 목록 머리글의 행동이다 — 기본 진입에는
-  // 폼이 없다(D-39, DECISIONS.md 2026-09-21).
-  const showForm = newParam === "1";
-
-  const [people, roles, orgUnits, teams, canArchive] = await Promise.all([
+  const [people, roles, orgUnits, teams, canArchive, canWrite] = await Promise.all([
     listPeople(session.viewer),
     listRoles(session.viewer),
     listOrgUnits(session.viewer),
     listTeams(session.viewer),
     can(session.viewer, "admin.archive", "write"),
+    can(session.viewer, "admin.people", "write"),
   ]);
+  // §6-1: 목록이 화면이고 등록은 목록 머리글의 행동이다 — 기본 진입에는
+  // 폼이 없다(D-39, DECISIONS.md 2026-09-21).
+  // 쓰기 권한이 없으면 제출이 거부될 폼·링크를 보이지 않는다(§7 할 수 없는 선택지는 숨김). 거부 판정은 서버(createAccount).
+  const showForm = newParam === "1" && canWrite;
 
   const roleNameById = new Map(roles.map((role) => [role.id, role.name]));
   const orgUnitNameById = new Map(orgUnits.map((org) => [org.id, org.name]));
@@ -54,7 +55,7 @@ export default async function PeoplePage({
 
       {showForm ? (
         <PersonForm roles={roles} teams={teamOptions} cancelHref="/admin/people" />
-      ) : people.length > 0 ? (
+      ) : canWrite && people.length > 0 ? (
         // §6-1 「새 지출결의」와 같은 자리 — 목록 머리글의 등록 행동. 폼이
         // 열려 있으면 그 폼의 「취소」가 같은 역할을 하므로 이 줄 자체가 없다.
         // 목록이 비면 §7-7 EMPTY가 같은 이름·같은 곳의 「다음 한 수」를 이미

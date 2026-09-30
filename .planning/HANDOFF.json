@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-30T11:28:13.858Z",
+  "timestamp": "2026-09-30T11:44:10.562Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -116,12 +116,18 @@
       "name": "origin/main a53762b(#106) 머지 커밋 — 충돌 STATE·phase-04.log 양쪽 줄 합침(새 줄 0), 단위 2243/2243, CI quality 초록",
       "status": "done",
       "commit": "61e03ca"
+    },
+    {
+      "id": "review-e",
+      "name": "PR #104 /review 4차 — E1~E5 변경분(0c9384b..eb20fef) 재확인, 핵심+전문3(testing·maintainability·performance)+적대1(Opus), critical 0 · 참고 3(G1~G3) · 자동 수정 0 · 코드 변경 없음, 보고서 docs/reviews/phase-04/pr104-postbuild-review-4.md, CI 979a2a9 quality 초록, [완료 보고] 5910500613",
+      "status": "done",
+      "commit": "979a2a9"
     }
   ],
   "remaining_tasks": [
     {
-      "id": "review-e",
-      "name": "E 변경분(0c9384b..eb20fef, 코드 5커밋) /review 재확인",
+      "id": "decision-g",
+      "name": "[사용자 결정 요청] G1~G3(/review 4차 참고 — export.ts:61 주석 범위 · PC 테스트 제목 「일괄 저장」 · SYSTEM.md §7-1 역참조 일반화) 처리 — /ship 전 반영 여부",
       "status": "not_started"
     },
     {
@@ -212,6 +218,16 @@
     {
       "action": "F(2) 후속: Phase 4 머지 뒤 ISSUE-001 · DR-104-01~05 별도 /gsd-quick PR",
       "context": "[지시] 5909292999",
+      "blocking": false
+    },
+    {
+      "action": "[사용자 결정 요청] G1~G3 처리(PR #104 [완료 보고] 5910500613)",
+      "context": "/review 4차 참고 3건, 모두 주석·제목·문서. 고치면 /gsd-quick 한 단위, 아니면 그대로 /ship",
+      "blocking": true
+    },
+    {
+      "action": "게이트 기록: phase-04.log에 `review 2026-09-30T11:31Z session=56ab3f54-01c4-5f2a-b586-0384ac8499e2`",
+      "context": "훅이 phase-02.log(미추적)에 오기. [지시] 5909847801의 5줄도 아직 없음(세션 재시도 안 함 — 권한 분류기 거부 선례)",
       "blocking": false
     }
   ],
@@ -580,14 +596,21 @@
       "decision": "훅 페이즈 오인 — /gsd-verify-work 4 문맥 설정용 호출(UAT 진행 안 함) 후 훅이 적은 phase-04.log 줄 되돌림",
       "rationale": "사용자 2026-09-30 채팅 승인(세션 a447d798)",
       "phase": "4"
+    },
+    {
+      "decision": "/review 4차는 보고서만(자동 수정 0) · /qa·/design-review 재실행 안 함(화면 코드 변경 0) · gstack 1.91.9 업그레이드 건너뜀(묶음 중간)",
+      "rationale": "선례 2·3차 · 세션 지시 · 도구 변경 최소",
+      "phase": "4"
     }
   ],
-  "uncommitted_files": [],
-  "next_action": "새 세션(plant8 환경, 브랜치 claude/gsd-verify-work-4) → settings·git status -sb → .continue-here.md → PR #104 최신 [지시] 확인·구독 → origin/main 머지 커밋 반영 → E 변경분 /review 재확인(보고서 docs/reviews/phase-04/pr104-postbuild-review-4.md) → 세션 한 단위 원칙상 /ship은 그다음 세션(또는 사용자 지시) → [완료 보고]",
-  "context_notes": "Phase 4 GSD 완료. PR #104 Post-build: /review 3차(8bb0fa3) · /qa·/design-review(63845be) · /cso(6031760, docs/reviews/phase-04/pr104-cso.md) 끝. 남은 것: /ship → 사용자 머지. 결정 E·F 답 대기.",
+  "uncommitted_files": [
+    "?? .claude/gates/phase-02.log"
+  ],
+  "next_action": "새 세션(plant8 환경, 브랜치 claude/gsd-verify-work-4) → settings·git status -sb → .continue-here.md → PR #104 최신 [지시](G1~G3 결정) 확인·구독 → origin/main 머지 커밋 반영 → 결정대로: G 반영이면 /gsd-quick 한 단위, 아니면 /ship(draft→ready는 사용자에게 먼저, 머지는 사용자) → [완료 보고]",
+  "context_notes": "Phase 4 GSD 완료. PR #104 Post-build: /review 4차(979a2a9) · /qa·/design-review(63845be) · /cso(6031760) 끝. 남은 것: G1~G3 결정 → /ship → 사용자 머지.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"
   ],
-  "uncommitted_files_note": "git status --porcelain 비어 있음(2026-09-30T11:28Z 측정)"
+  "uncommitted_files_note": "phase-02.log는 훅 오기 — 커밋하지 않음(지시)"
 }

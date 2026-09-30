@@ -183,6 +183,8 @@
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   color: var(--accent);
+  /* .rowActions(inline-flex) 안에서 칸이 좁으면 항목이 줄어 「상/세」로 쪼개진다(design-review FINDING-001) — 「삭제」(.tertiary)와 같이 한 줄. */
+  white-space: nowrap;
   text-decoration: underline;
   text-decoration-thickness: var(--line-w);
   text-underline-offset: var(--underline-offset);

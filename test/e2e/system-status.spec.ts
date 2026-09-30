@@ -233,7 +233,8 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
       value.evaluate((dd) => {
         const a = dd.querySelector("a") as HTMLAnchorElement;
         const range = document.createRange();
-        range.selectNodeContents(a);
+        // 보이는 글자(첫 글자 노드)만 잰다 — 뒤의 sr-only 「 (새 탭)」은 링크 상자 안쪽에 떠 있어 그 사각형이 섞이면 글자 위치가 아니다.
+        range.selectNodeContents(a.firstChild as Node);
         const rects = Array.from(range.getClientRects());
         const cs = getComputedStyle(dd);
         return {

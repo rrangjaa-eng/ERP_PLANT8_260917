@@ -1,46 +1,46 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 4
-current_phase_name: 프로젝트·견적 원장
-current_plan: 42
-status: verifying
-stopped_at: Completed 04-31-PLAN.md — Phase 4 전체 완료(42/42)
-last_updated: "2026-09-29T06:47:49.892Z"
-last_activity: 2026-09-29
-last_activity_desc: Phase 4 execution started
-state_head: f39783d4ae0dfbeac346f39d22844f8abf9369c3
+current_phase: 2
+current_phase_name: 디자인 시스템·앱 셸
+current_plan: Not started
+status: planning
+stopped_at: Phase 4 complete, ready to plan Phase 2
+last_updated: "2026-09-30T02:32:25.396Z"
+last_activity: 2026-09-30
+last_activity_desc: Phase 4 complete, transitioned to Phase 2
+state_head: 4c3ca814e5d7ba7cc6d7d5cc3b78b462a8e170f0
 progress:
   total_phases: 17
-  completed_phases: 1
-  total_plans: 140
-  completed_plans: 80
-  percent: 6
+  completed_phases: 2
+  total_plans: 142
+  completed_plans: 88
+  percent: 18
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-17)
+See: .planning/PROJECT.md (updated 2026-09-30)
 
 **Core value:** 기획본부와 경영관리본부가 프로젝트마다 같은 숫자(견적·예상 비용·확정 비용·손익)를 본다. 기획본부는 계산식·근거 없이 결과 숫자로 납득하고, 경영관리·대표는 근거 줄까지 본다.
-**Current focus:** Phase 4 — 프로젝트·견적 원장
+**Current focus:** Phase 2 — 디자인 시스템·앱 셸
 
 ## Current Position
 
-Phase: 4 (프로젝트·견적 원장) — EXECUTING
-Current Plan: 42
-Total Plans in Phase: 42
-Status: Phase complete — ready for verification
-Last activity: 2026-09-29 - Completed quick task 260929-9zo: PR #85 Codex ②③ 리저브 쓰기 가시성
+Phase: 2 — 디자인 시스템·앱 셸
+Current Plan: Not started
+Total Plans in Phase: 44
+Status: Ready to plan
+Last activity: 2026-09-30 - Completed quick task 260930-ee9: PR #104 /review 3차 참고 E1~E5
 
-Progress: [█░░░░░░░░░] 6%
+Progress: [██░░░░░░░░] 18%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 8
+- Total plans completed: 52
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -49,6 +49,7 @@ Progress: [█░░░░░░░░░] 6%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 8 | - | - |
+| 4 | 44 | - | - |
 
 **Recent Trend:**
 
@@ -114,6 +115,8 @@ Progress: [█░░░░░░░░░] 6%
 | Phase 04 P51 | 30 min | 2 tasks | 4 files |
 | Phase 4 P42 | 59 min | 3 tasks | 14 files |
 | Phase 4 P31 | 5h(다중세션) | 3 tasks | 15 files |
+| Phase 4 P52 | 11min | 3 tasks | 5 files |
+| Phase 04 P53 | 25min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -294,6 +297,13 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-51 거부 문구 (가) 현재 값 기준: 「순번 시작값은 현재 값(N)보다 낮출 수 없음」 (지시 5864259502, 구현 c89ab1b)
 - [Phase 4]: 묶음 ④ /qa ISSUE-005 (a): 동명 거래처 옵션에 사업자번호 끝 4자리 병기는 리저브 클라이언트 칸만. 견적 거래처 칸은 옵션이 projects 보기 권한만 확인해 vendor.value 밖으로 샐 수 있어 후속 단위 (사용자 2026-09-29)
 - [Phase 4]: 묶음 ④ /cso C2 (가): 리저브 clientName은 reserve.amount만 요구, vendor.value 추가 안 함 (사용자 2026-09-29)
+- [Phase 4]: UAT 방식: 사람 확인 항목은 기록된 증거(SUMMARY·DOM 감사·CI·테스트 이름)와 대조해 판정하고 증거 없는 것만 사람에게 묻는다. 04-31 (C)(D)는 자동 테스트로 갈음(실제 엑셀·MS 입력기 확인 안 함) — 사용자 결정 2026-09-29(채팅) — 속도 우선, 04-VERIFICATION·04-UAT에 기록
+- [Phase 4]: UAT 결함 처리: G-04-4 목록 오류 화면 E2E 추가 · G-04-16 Select 단위 테스트 추가 · G-04-64 재현 E2E(실패 시 수정) · DR-P4-02(375 정렬 머리글 44px)는 Phase 04.6으로 이월 — 사용자 결정 2026-09-29(채팅) — 04-UAT Gaps/Deferred
+- [Phase 4]: 자동 전환 진행→정산이 domain/rules.gate를 거치지 않는 검증 갭은 Phase 4 안에서 고친다(gap-closure 플랜, risk) — 사용자 결정 2026-09-29(채팅) — 04-VERIFICATION gaps
+- [Phase 4]: 목록 p99 500ms 측정은 Phase 9(테스트 데이터·스테이징 부하)로 넘긴다 · PROJ-04(정산→완료)는 Phase 5 결재와 함께 Complete · judgment 금지 항목 3건(04-02·04-08·04-21) 검증자 판정 수용 — 사용자 결정 2026-09-29(채팅) — 04-VERIFICATION human_verification
+- [Phase 4]: 04-53: 자동 전환 진행 → 정산 판정은 gate 규칙 project.auto-settle 하나 — 리포지토리 후보 WHERE는 잠금 범위 좁히기로만 남긴다
+- [Phase 4]: 04-53: 쓰기 입구 gate 허용 뒤 종료일 null이면 project.auto_settle_gate_no_end_date로 던진다(fail-closed 타입 좁히기)
+- [Phase 4]: DR-P4-02(375 정렬 머리글 44px)는 04.6 이월 대신 Phase 4에서 해소 — quick 260929-npq(43dd5de4) · E2E mobile-touch-targets · DOM 감사 PASS 24로 UAT test 53 증거 대조 pass 재기록, gsd-core 업데이트·판정기 이식 없음 — 사용자 결정 2026-09-30 「[지시] 전환 (C)」(PR #104)
 
 ### Pending Todos
 
@@ -304,15 +314,12 @@ Recent decisions affecting current work:
 
 ### Blockers/Concerns
 
-- [Phase 4]: 11개 요구사항(금액 모델·리저브 대장·문서 카운터·게이트·추출/변환 포함)으로 5플랜 상한에 닿을 수 있다 — 계획 단계에서 넘기면 리저브 대장(RSV-01)을 별도 페이즈로 뗀다
 - [Phase 7]: 회사 Google Workspace SMTP 릴레이(앱 비밀번호·발송 한도)는 계획 단계에서 확인(TODOS P2)
 - [Phase 9]: 정산(완료) 시점은 D3(정산 결재 대표 승인)로 확정. 매출 기준·연도 귀속을 기획본부·경영관리가 합의하는 절차는 여전히 PROJECT.md에 없다 — 계획 단계에서 사용자와 확정. 착수 조건은 전환 후 N주(설정, 기본 2주) 실입력(Eng OV-1)
 - [Phase 11]: CERT 활성화 조건은 `/cso` 보안 감사 통과. 개인정보보호법 적용 범위·보존 기간은 감사에서 재확인(리서치 Gap). 감사 뒤 KMS 봉투 승격(Issue 7)
 - [All]: 과잉 설계 재발 방지 — 페이즈마다 "인트라넷보다 못한가"로 검증하고, 실제 사용자 로그인·입력이 있어야 완료로 본다
 - [Phase 2]: `docs/design/`(SYSTEM.md 725줄·tokens.css·DECISIONS.md·BRIEF.md·EXPLORE.md)은 **이미 있다**(2026-09-18 확인). Phase 2는 이 시스템을 앱 셸·임시 화면에 적용하는 일이며, 새 화면은 SYSTEM.md 기준을 따르고 시스템을 벗어나면 DECISIONS.md에 이유를 남긴 뒤 SYSTEM.md를 고친다
 - [Phase 2] 02-02: ci.yml/deploy.yml paths+! 트리거 실제 동작 미검증 — tokens.css 단독 PR이 CI를 타는지, 일반 소스 PR도 여전히 타는지 GitHub에서 사람이 확인해야 한다. (2)가 실패하면 즉시 paths-ignore로 되돌린다
-- 04-09 S15 backstop DOM audit (coverage D4) was self-performed by the executor, not a separate sub-agent as the plan's Task 3 ⑥ requires — orchestrator should confirm or dispatch an independent check before /gsd-verify-work
-- 04-19 독립 DOM 감사(1280·1024·375)와 CI=true pnpm test 전체 게이트 미실행 — 오케스트레이터가 돌리고 04-19-SUMMARY에 보고서를 붙인다
 
 ### Quick Tasks Completed
 
@@ -336,6 +343,11 @@ Recent decisions affecting current work:
 | 260929-6gr | PR #85 검토 후속: 활성→보관 프로젝트 변경 거부 통합 테스트 · 보관 거부 판정 순수 함수 추출+단위 테스트(capNotice는 기록만) | 2026-09-29 | 41db5a8b | [260929-6gr-reserves-review-follow-up-tests-and-capn](./quick/260929-6gr-reserves-review-follow-up-tests-and-capn/) |
 | 260929-8ls | PR #85 Codex B: 비활성·보관 증빙 코드가 붙은 기존 리저브 줄 수정 허용(새 줄·값 변경만 활성 검사) | 2026-09-29 | f39783d4 | [260929-8ls-codex-b-evidence-inactive-code-on-existi](./quick/260929-8ls-codex-b-evidence-inactive-code-on-existi/) |
 | 260929-9zo | PR #85 Codex ②③: 리저브 쓰기 새 줄 클라이언트(vendor.value)·새로 고르거나 바꾼 프로젝트(project.value+projects 범위) 가시성 검사 | 2026-09-29 | 328e48bb | [260929-9zo-pr-85-codex-reserve-write-visibility](./quick/260929-9zo-pr-85-codex-reserve-write-visibility/) |
+| 260929-n41 | T-04-31 프로젝트 번호 구분자 허용 목록(빈 값 또는 - _ . / 한 글자, 그 밖 저장·가져오기 거부 — PR #104 사용자 결정) | 2026-09-29 | c1180ca6 | [260929-n41-t-04-31-separator-allowlist](./quick/260929-n41-t-04-31-separator-allowlist/) |
+| 260929-npq | 폰 터치 44px 위반 2건 — 상세 「상태 바꾸기」·「더보기」 40→44, 목록 정렬 머리글 「프로젝트명」·「견적」 19→44(PR #104 [지시]) | 2026-09-29 | 43dd5de4 | [260929-npq-phone-44px-touch-targets-detail-more-sta](./quick/260929-npq-phone-44px-touch-targets-detail-more-sta/) |
+| 260929-opt | UI (가)(나)(다) — UI-SPEC 등록 오류 문구를 코드 `등록 실패 · {칸} {n}칸`에 맞춤 · 견적 표 「번호」 열 숫자 규칙(우측·tabular·nowrap) · 등록 폼 거부 시 첫 오류 칸 포커스(PR #104 [지시]) | 2026-09-29 | 0aaa91a7 | [260929-opt-ui-ga-na-da-form-error-copy-row-number-n](./quick/260929-opt-ui-ga-na-da-form-error-copy-row-number-n/) |
+| 260930-4xr | PR #104 /review 2차 결정 — A(2) 허용 밖 저장 구분자는 읽을 때 기본값 대체 + log.error · B 구분자 힌트 「빈칸 또는 - _ . / 중 한 글자」 · C 접두어 수락 위험 기록 · 폰 머리 줄 「일괄 저장」·「복사해 새 차수」·「프로젝트 복사」 44(PR #104 [지시] 5903477924) | 2026-09-30 | 0149cc6 | [260930-4xr-pr104-review-2-decisions-separator-read-](./quick/260930-4xr-pr104-review-2-decisions-separator-read-/) |
+| 260930-ee9 | PR #104 /review 3차 참고 E1~E5 — registry 주석 · 일괄 읽기 엄격 단위 테스트 · export 실효값 주석 · SYSTEM.md §7-1·§7-8 §3 역참조 · PC 「일괄 저장」 32 E2E 단언(동작 변경 없음, PR #104 [지시] 5909292999) | 2026-09-30 | ab9b818 | [260930-ee9-pr104-review-3-e1-e5-comment-test-doc-fi](./quick/260930-ee9-pr104-review-3-e1-e5-comment-test-doc-fi/) |
 | 260930-aq2 | 04.4 UI-REVIEW WARNING 3건: 사람 목록 id 없는 계급 key·상세·삭제(W1) · PC 배지 넘침 미재현(W2, 수치만) · 폰 「실행 기록」 줄 높이(W3) + 감사 W-A 누름 영역 | 2026-09-30 | 5d6a4a3 | [260930-aq2-04-4-ui-review-warning-3](./quick/260930-aq2-04-4-ui-review-warning-3/) |
 | 260930-f3l | 04.4 후속 과제: 사람 목록 가림 열·잠김 한 줄(DR-4·5)·등록 권한(DR-6)·행동 간격(DR-7) · 행동 로그 사람 필터 · 상태 화면 일시 tabular-nums·실행 기록 새 탭 · 3차 밑줄 hover 13곳 · 표 행 높이 --row-min | 2026-09-30 | 318657d | [260930-f3l-04-4-follow-ups-people-action-log-hidden](./quick/260930-f3l-04-4-follow-ups-people-action-log-hidden/) |
 
@@ -368,6 +380,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-28T05:10:46.420Z
-Stopped at: Completed 04-31-PLAN.md — Phase 4 전체 완료(42/42)
+Last session: 2026-09-30T02:40:00Z
+Stopped at: Phase 4 complete, ready to plan Phase 2
 Resume file: None

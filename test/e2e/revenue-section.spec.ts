@@ -716,3 +716,119 @@ test.describe("매출 금액 입력 오류 → 그 셀 고정 오류 · 표별 �
     expect(await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, projectId))).toHaveLength(3);
   });
 });
+
+// 04-52(G-04-64 · UAT 64) — 매출 입력을 연 채 창을 1024 미만으로 줄여도 입력값이 읽기 표·「일괄 저장 N」·복귀 뒤 칸에 그대로 남는다.
+// 폭 전환은 setViewportSize만 쓴다(새로고침·goto는 서버 값으로 돌아가 재현이 무의미하다).
+test.describe("매출 입력을 연 채 1024 미만 전환 — 값 유지 (G-04-64 · UAT 64)", () => {
+  test("(A) 기존 발행 줄 금액을 키로 고친 채 1000 → 375 → 1280 — 읽기 표·「일괄 저장 1」·복귀 값이 그대로다", async ({ page }) => {
+    await openWithIssuedEntry(page);
+    const issuedTable = revenueTable(page, "발행 줄");
+    const amount = issuedTable.getByLabel("발행액");
+
+    await amount.click();
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("4500000");
+    await expect(amount).toHaveValue("4,500,000");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+
+    for (const width of [1000, 375]) {
+      await page.setViewportSize({ width, height: 800 });
+      await expect(issuedTable.getByLabel("발행액")).toHaveCount(0);
+      await expect(issuedTable.getByText("4,500,000").first()).toBeVisible();
+      await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+    }
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(issuedTable.getByLabel("발행액")).toHaveValue("4,500,000");
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+  });
+
+  test("(B) 새 발행 줄(날짜·금액·메모)·새 입금 줄(날짜·금액)을 입력한 채 1000 → 1280 — 값·「일괄 저장 2」 유지, 저장·새로고침 뒤 DB에 있다", async ({ page }) => {
+    const projectUrl = await openWithIssuedEntry(page);
+    const projectId = projectUrl.split("/").pop() ?? "";
+    const issuedTable = revenueTable(page, "발행 줄");
+    const paidTable = revenueTable(page, "입금 줄");
+
+    await page.getByRole("button", { name: "발행 줄 추가" }).click();
+    await issuedTable.getByLabel("발행일").last().fill("2026-09-10");
+    await issuedTable.getByLabel("발행액").last().fill("1200000");
+    await issuedTable.getByLabel("메모").last().fill("G-04-64 메모");
+    await page.getByRole("button", { name: "입금 줄 추가" }).click();
+    await paidTable.getByLabel("입금일").last().fill("2026-09-12");
+    // 포커스가 입금액 칸에 있는 채로 창을 줄인다.
+    await paidTable.getByLabel("입금액").last().click();
+    await page.keyboard.type("1320000");
+    await expect(page.getByRole("button", { name: /일괄 저장 2/ })).toBeVisible();
+
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await expect(issuedTable.getByLabel("발행액")).toHaveCount(0);
+    await expect(paidTable.getByLabel("입금액")).toHaveCount(0);
+    for (const text of ["2026-09-10", "1,200,000", "G-04-64 메모"]) await expect(issuedTable).toContainText(text);
+    for (const text of ["2026-09-12", "1,320,000"]) await expect(paidTable).toContainText(text);
+    await expect(page.getByRole("button", { name: /일괄 저장 2/ })).toBeVisible();
+
+    const expectFilledFields = async () => {
+      await expect(issuedTable.getByLabel("발행일").last()).toHaveValue("2026-09-10");
+      await expect(issuedTable.getByLabel("발행액").last()).toHaveValue("1,200,000");
+      await expect(issuedTable.getByLabel("메모").last()).toHaveValue("G-04-64 메모");
+      await expect(paidTable.getByLabel("입금일").last()).toHaveValue("2026-09-12");
+      await expect(paidTable.getByLabel("입금액").last()).toHaveValue("1,320,000");
+    };
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expectFilledFields();
+    await expect(page.getByRole("button", { name: /일괄 저장 2/ })).toBeVisible();
+
+    await page.getByRole("button", { name: /일괄 저장 2/ }).click();
+    await expect(page.getByText("바뀐 칸 없음", { exact: true })).toBeVisible();
+    await page.reload();
+    await expectFilledFields();
+
+    const rows = await db.select().from(revenueEntries).where(eq(revenueEntries.projectId, projectId));
+    const issued = rows.filter((row) => row.kind === "issue").sort((a, b) => a.entryDate.localeCompare(b.entryDate));
+    const paid = rows.filter((row) => row.kind === "payment");
+    expect(issued).toHaveLength(2);
+    expect(issued[1]).toMatchObject({ entryDate: "2026-09-10", note: "G-04-64 메모", amountAmountKrw: 1_200_000 });
+    expect(paid).toHaveLength(1);
+    expect(paid[0]).toMatchObject({ entryDate: "2026-09-12" });
+  });
+
+  test("(C) 발행액을 타이핑하는 도중 1000으로 줄여도 칸에 마지막으로 들어간 숫자가 읽기 표에 그대로 있고, 1280 복귀·저장·새로고침 뒤에도 같다", async ({ page }) => {
+    await openWithIssuedEntry(page);
+    const issuedTable = revenueTable(page, "발행 줄");
+    const amount = issuedTable.getByLabel("발행액");
+
+    await amount.click();
+    await page.keyboard.press("Control+a");
+    // 칸에 마지막으로 들어간 숫자열 기록기 — React가 값을 정리한 뒤(setTimeout 0)의 칸 값을 읽는다.
+    await amount.evaluate((el) => {
+      const input = el as HTMLInputElement;
+      input.addEventListener("input", () => {
+        setTimeout(() => {
+          (window as unknown as { __g0464Last: string }).__g0464Last = input.value.replace(/\D/g, "");
+        }, 0);
+      });
+    });
+    const typing = page.keyboard.type("123456789", { delay: 100 });
+    await expect.poll(async () => (await amount.inputValue()).replace(/\D/g, "").length).toBeGreaterThanOrEqual(3);
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await typing;
+
+    const last = await page.evaluate(() => (window as unknown as { __g0464Last: string }).__g0464Last);
+    // 칸이 사라진 뒤 친 키 수(9 − 길이)를 보고서에 남긴다 — 0이면 타이핑이 끝난 뒤에 줄인 것이라 도중 전환이 아니다.
+    test.info().annotations.push({ type: "G-04-64 recorder", description: `${last} (${last.length}/9)` });
+    expect(last.length).toBeGreaterThanOrEqual(3);
+    expect("123456789".startsWith(last)).toBe(true);
+    expect(last).not.toBe("3000000");
+    const formatted = Number(last).toLocaleString("en-US");
+    await expect(issuedTable.getByLabel("발행액")).toHaveCount(0);
+    await expect(issuedTable.locator("tbody td").filter({ hasText: formatted }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /일괄 저장 1/ })).toBeVisible();
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(issuedTable.getByLabel("발행액")).toHaveValue(formatted);
+    await page.getByRole("button", { name: /일괄 저장 1/ }).click();
+    await expect(page.getByText("바뀐 칸 없음", { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(issuedTable.getByLabel("발행액")).toHaveValue(formatted);
+  });
+});

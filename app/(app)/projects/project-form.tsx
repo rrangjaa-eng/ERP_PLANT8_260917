@@ -138,6 +138,13 @@ export function ProjectForm({
     }
   }, []);
 
+  // PR #104 [지시] (다) — S19 「오류로 이동」을 §7-15 폼에: 거부 응답이 올 때만 첫 오류 칸으로.
+  useEffect(() => {
+    const rejected = result.validationErrors !== undefined || (result.data !== undefined && "rejected" in result.data);
+    if (!rejected) return;
+    document.getElementById("project-form")?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [result]);
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submittedRef.current || isExecuting) return;

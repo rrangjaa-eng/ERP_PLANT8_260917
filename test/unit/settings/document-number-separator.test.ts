@@ -32,6 +32,10 @@ describe("프로젝트 번호 구분자 허용 목록 (T-04-31)", () => {
     expect(koreanZodErrorMessage(result.error)).toBe("형식 오류 · 값 확인");
   });
 
+  it("힌트는 「빈칸 또는 - _ . / 중 한 글자」다", () => {
+    expect(DOCUMENT_NUMBER_PROJECT_SEPARATOR.hint).toBe("빈칸 또는 - _ . / 중 한 글자");
+  });
+
   it("설정 화면 입력 칸은 문자열 입력 그대로다", () => {
     expect(describeSettingField(DOCUMENT_NUMBER_PROJECT_SEPARATOR)).toEqual({ kind: "string" });
   });

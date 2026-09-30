@@ -32,6 +32,8 @@ const UNDERLINE = /text-decoration(?:-line)?\s*:[^;]*\bunderline\b/;
 const BASE_THICKNESS = /text-decoration-thickness\s*:\s*var\(--line-w\)/;
 const HOVER_THICKNESS = /text-decoration-thickness\s*:\s*var\(--line-w-strong\)/;
 // §4-4 「text-underline-offset: 2px」 — 값은 토큰으로(사용자 결정 2026-09-30 /review D1).
+// 2026-09-30 실측: app/ · ui/ 밑줄 규칙 선택자 22개.
+const CHECKED_FLOOR = 22;
 const OFFSET = /text-underline-offset\s*:\s*var\(--underline-offset\)/;
 
 function violations(file: string): { checked: number; found: string[] } {
@@ -66,10 +68,10 @@ describe("3차 링크 · 버튼 밑줄 두께 — 1px → hover 2px (SYSTEM §4-
     expect(files.length).toBeGreaterThan(20);
   });
 
-  it("밑줄 규칙마다 기본 var(--line-w)와 :hover var(--line-w-strong) 규칙이 있다", () => {
+  it("밑줄 규칙마다 기본 var(--line-w) · offset var(--underline-offset)와 :hover var(--line-w-strong) 규칙이 있다", () => {
     const results = files.map((file) => violations(file));
-    // 파서가 아무 규칙도 못 잡으면 빈 목록으로 통과해 버린다 — 이 플랜이 맞춘 13개 규칙 이상을 실제로 검사했는지 본다.
-    expect(results.reduce((sum, result) => sum + result.checked, 0)).toBeGreaterThanOrEqual(13);
+    // 파서가 규칙을 못 잡으면 빈 목록으로 통과해 버린다 — 지금 검사하는 선택자 수를 하한으로 둔다(밑줄 규칙을 지우면 이 수를 함께 고친다).
+    expect(results.reduce((sum, result) => sum + result.checked, 0)).toBeGreaterThanOrEqual(CHECKED_FLOOR);
     expect(results.flatMap((result) => result.found)).toEqual([]);
   });
 });

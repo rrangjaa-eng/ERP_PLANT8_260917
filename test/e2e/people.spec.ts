@@ -210,3 +210,31 @@ test.describe("PC 1280 — 「상세」와 「삭제」 사이가 --s-4 이상�
     expect(gap, `「상세」↔「삭제」 간격 ${gap}px`).toBeGreaterThanOrEqual(gapToken - 0.5);
   });
 });
+
+test.describe("PC — 「삭제」 확인 줄이 표를 가로로 넘치게 하지 않는다 (/review Red Team)", () => {
+  for (const width of [768, 1024, 1280]) {
+    test(`${width}: 「삭제」를 누른 뒤에도 페이지 가로 넘침이 없다`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await loginAsAdmin(page);
+      const email = await registerPerson(page, `확인줄대상${width}`);
+      const row = personRow(page, email);
+      await row.getByRole("button", { name: "삭제" }).click();
+      await expect(row.getByRole("button", { name: "취소" })).toBeVisible();
+      const overflow = await page.evaluate(() => {
+        const scroller = document.scrollingElement ?? document.documentElement;
+        return scroller.scrollWidth - scroller.clientWidth;
+      });
+      expect(overflow, `${width}px 가로 넘침 ${overflow}px`).toBeLessThanOrEqual(0);
+      // 조상이 넘침을 가려도 잡히게 표 오른쪽 끝이 부모 안에 있는지 본다.
+      const tableOverflow = await row.evaluate((element) => {
+        const table = element.closest("table");
+        const parent = table?.parentElement;
+        if (!table || !parent) return Number.POSITIVE_INFINITY;
+        const parentRect = parent.getBoundingClientRect();
+        const style = getComputedStyle(parent);
+        return table.getBoundingClientRect().right - (parentRect.right - parseFloat(style.paddingRight));
+      });
+      expect(tableOverflow, `${width}px 표가 부모 밖으로 ${tableOverflow}px`).toBeLessThanOrEqual(0.5);
+    });
+  }
+});

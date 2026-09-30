@@ -168,14 +168,13 @@
   align-items: center;
   /* 폰에서 줄바꿈되면 위아래로도 같은 간격 — 「삭제」가 「상세」 44 상자에 붙지 않는다. */
   gap: var(--s-4);
-  white-space: nowrap;
 }
 
-/* PC는 줄바꿈하지 않는다 — wrap이면 표가 이 칸을 최소 폭으로 눌러 「삭제」가 「상세」 아래로 내려간다(다른 열이 긴 행 실측). 폰만 좁으면 줄바꿈. */
+/* PC는 줄바꿈하지 않는다 — wrap이면 표가 이 칸을 최소 폭으로 눌러 「삭제」가 「상세」 아래로 내려간다(다른 열이 긴 행 실측). 폰만 좁으면 줄바꿈.
+   white-space는 두지 않는다 — 「삭제」 확인 줄 안내 글자까지 한 줄로 묶여 768에서 표가 넘쳤다(/review 실측). */
 @media (max-width: 699.98px) {
   .rowActions {
     flex-wrap: wrap;
-    white-space: normal;
   }
 }
 

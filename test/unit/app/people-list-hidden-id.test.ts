@@ -26,9 +26,7 @@ vi.mock("@/domain/permissions/can", () => ({
     Promise.resolve(menu === "admin.people" && action === "write" ? writeAllowed : true),
 }));
 vi.mock("@/domain/people", () => ({ listPeople: () => Promise.resolve(people) }));
-// 계급 목록도 role.value로 가려진다(ROLE_DTO_SPEC) — 꺼진 계급에서는 id · 이름 없는 DTO가 온다.
-let roles: { id?: string; name?: string }[] = [{ id: "role-pm", name: "기획 PM" }];
-vi.mock("@/domain/permissions/roles", () => ({ listRoles: () => Promise.resolve(roles) }));
+vi.mock("@/domain/permissions/roles", () => ({ listRoles: () => Promise.resolve([{ id: "role-pm", name: "기획 PM" }]) }));
 vi.mock("@/domain/org", () => ({ listOrgUnits: () => Promise.resolve([]), listTeams: () => Promise.resolve([]) }));
 vi.mock("@/app/(app)/admin/people/person-form", async () => {
   const { createElement: h } = await import("react");
@@ -74,7 +72,6 @@ async function render(searchParams: { new?: string } = {}) {
 beforeEach(() => {
   people = [];
   writeAllowed = true;
-  roles = [{ id: "role-pm", name: "기획 PM" }];
 });
 
 describe("사람 목록 — person.id가 없는 행", () => {
@@ -213,7 +210,6 @@ describe("사람 목록 — 계급만 가려진 계급(사람 · 팀 보임)", (
     people = [
       { id: "u-1", name: "가나", email: "a@x.kr", roleId: "role-pm", archivedAt: null, currentTeamId: null, currentTeamName: null, firstLoginAt: new Date(), passwordIsTemporary: false },
     ];
-    roles = [{}];
     const { html } = await render();
     expect(headerCells(html).map((header) => header.text)).toEqual(["이름", "이메일", "현재 소속", "상태", "동작"]);
     const folded = firstFoldedCell(html);
@@ -244,6 +240,14 @@ describe("사람 목록 — 「사람 등록」은 admin.people 쓰기 권한이
     writeAllowed = false;
     expect((await render()).html).not.toContain("/admin/people?new=1");
     expect((await render({ new: "1" })).html).not.toContain("data-person-form");
+  });
+
+  it("쓰기 권한이 있으면 빈 목록 줄에 「사람 등록」이 있다", async () => {
+    people = [];
+    writeAllowed = true;
+    const { html } = await render();
+    expect(html).toContain("등록된 사람이 없습니다");
+    expect(html).toContain('href="/admin/people?new=1#person-form"');
   });
 
   it("쓰기 권한이 없으면 빈 목록 줄에도 「사람 등록」이 없다", async () => {

@@ -149,14 +149,14 @@ export default async function PeoplePage({
                       <td>
                         {/* person.value가 꺼진 계급의 DTO에는 id가 없다 — 갈 상세·보관할 대상이 없어 「상세」·삭제를 그리지 않는다. */}
                         {person.id ? (
-                          <>
+                          <span className={styles.rowActions}>
                             <Link href={`/admin/people/${person.id}`} className={styles.detailLink}>
                               상세
                             </Link>
                             {!person.archivedAt && canArchive ? (
                               <PersonDeleteButton userId={person.id} name={person.name} />
                             ) : null}
-                          </>
+                          </span>
                         ) : null}
                       </td>
                     ) : null}

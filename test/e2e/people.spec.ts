@@ -195,7 +195,8 @@ test.describe("PC 1280 — 「상세」와 「삭제」 사이가 --s-4 이상�
   test("같은 행의 「상세」 오른쪽 끝과 「삭제」 왼쪽 끝 간격을 잰다", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
     await loginAsAdmin(page);
-    const email = await registerPerson(page, "간격 확인");
+    // 긴 이름으로 표를 좁혀도 동작 칸이 세로로 쌓이지 않는지 함께 본다(전체 실행에서 다른 사람 행 때문에 좁아졌던 경우).
+    const email = await registerPerson(page, "간격 확인 ".repeat(20).trim());
     const row = personRow(page, email);
     const detail = await row.getByRole("link", { name: "상세" }).boundingBox();
     const remove = await row.getByRole("button", { name: "삭제" }).boundingBox();

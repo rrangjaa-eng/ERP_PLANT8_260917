@@ -152,6 +152,20 @@
   letter-spacing: var(--ls-num);
 }
 
+/* 동작 칸의 두 행동 사이 --s-4 — SYSTEM §6-1 결재함 행과 같은 값, 위험한 동작은 떨어뜨려 둔다.
+   PC는 한 줄 그대로(표가 좁아져도 동작 칸이 세로로 쌓이지 않는다), 폰만 줄바꿈을 허용한다. */
+.rowActions {
+  display: inline-flex;
+  align-items: center;
+  column-gap: var(--s-4);
+}
+
+@media (max-width: 699.98px) {
+  .rowActions {
+    flex-wrap: wrap;
+  }
+}
+
 /* §7-1 3차 버튼 — 위 .toggle과 같은 모양이다. 기본 규칙이 통째로 빠져 있어
    브라우저 기본 파랑(#0000EE) 14px 400으로 렌더됐다(design-review A-H4):
    관리자 화면 전체에서 팔레트 밖 색은 이 링크 하나뿐이었다(§11 「새 색 0개」). */

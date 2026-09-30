@@ -102,3 +102,37 @@
     min-height: var(--touch-min);
   }
 }
+
+/* 사용자 결정 2026-09-30 A-2 — 저장 안 한 결재선 단계 복원 줄(§7-3 (마) D-68 · 리저브 대장과 같은 모양). */
+.restoreBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--s-2);
+  margin: var(--s-2) 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  word-break: keep-all;
+}
+
+.restoreActions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: var(--s-2);
+}
+
+.restoreAction {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+@media (max-width: 699.98px) {
+  .restoreAction {
+    min-height: var(--touch-min);
+  }
+}

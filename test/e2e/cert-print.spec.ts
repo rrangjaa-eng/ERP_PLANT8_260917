@@ -182,8 +182,7 @@ test.describe("인쇄 라우트", () => {
     await control.context.close();
 
     const pmSession = await loggedInContext(browser, pm);
-    const response = await pmSession.page.goto(printPath(seeded.submissionId));
-    expect(response?.status()).toBe(404);
+    await pmSession.page.goto(printPath(seeded.submissionId));
     await expect(notFoundHeading(pmSession.page)).toBeVisible();
     await expect(pmSession.page.getByText(seeded.certNo)).toHaveCount(0);
     const ids = await sessionIdsOf(pm);

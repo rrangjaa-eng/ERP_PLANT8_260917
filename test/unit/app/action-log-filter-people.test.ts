@@ -7,7 +7,7 @@ import type { PersonDto } from "@/domain/people";
 // 그대로 option을 만들어 key undefined 중복 · 빈 value option이 그려졌다. 행위자 이름은 DETAIL_INFO_ITEM이 따로 가려서
 // 행에 이름은 보이는데 고를 id는 없는 계급이 있을 수 있다 — 고를 사람이 0명이면 「사람」 칸째 숨긴다.
 let people: Partial<PersonDto>[] = [];
-const queryActionLog = vi.hoisted(() => vi.fn((_viewer: unknown, _filter: { actorId?: string }) => Promise.resolve([])));
+const queryActionLog = vi.hoisted(() => vi.fn<(viewer: unknown, filter: { actorId?: string }) => Promise<never[]>>(() => Promise.resolve([])));
 
 vi.mock("@/lib/viewer", () => ({ getSession: () => Promise.resolve({ viewer: { id: "viewer", roleId: "role-x" } }) }));
 vi.mock("next/navigation", () => ({

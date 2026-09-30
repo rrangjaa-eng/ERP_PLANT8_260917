@@ -52,8 +52,9 @@
   border-bottom: var(--line-w-strong) solid var(--line-strong);
 }
 
+/* 표 칸에는 min-height가 적용되지 않는다 — 칸의 height가 패딩 포함 최소 높이로 동작한다(holidays.module.css 선례). */
 .table td {
-  min-height: var(--row-min);
+  height: var(--row-min);
   padding: var(--cell-pad-y) var(--cell-pad-x);
   font-size: var(--fs-base);
   border-bottom: var(--line-w) solid var(--line);

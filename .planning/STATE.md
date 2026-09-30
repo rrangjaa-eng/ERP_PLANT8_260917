@@ -336,6 +336,7 @@ Recent decisions affecting current work:
 | 260929-6gr | PR #85 검토 후속: 활성→보관 프로젝트 변경 거부 통합 테스트 · 보관 거부 판정 순수 함수 추출+단위 테스트(capNotice는 기록만) | 2026-09-29 | 41db5a8b | [260929-6gr-reserves-review-follow-up-tests-and-capn](./quick/260929-6gr-reserves-review-follow-up-tests-and-capn/) |
 | 260929-8ls | PR #85 Codex B: 비활성·보관 증빙 코드가 붙은 기존 리저브 줄 수정 허용(새 줄·값 변경만 활성 검사) | 2026-09-29 | f39783d4 | [260929-8ls-codex-b-evidence-inactive-code-on-existi](./quick/260929-8ls-codex-b-evidence-inactive-code-on-existi/) |
 | 260929-9zo | PR #85 Codex ②③: 리저브 쓰기 새 줄 클라이언트(vendor.value)·새로 고르거나 바꾼 프로젝트(project.value+projects 범위) 가시성 검사 | 2026-09-29 | 328e48bb | [260929-9zo-pr-85-codex-reserve-write-visibility](./quick/260929-9zo-pr-85-codex-reserve-write-visibility/) |
+| 260930-aq2 | 04.4 UI-REVIEW WARNING 3건: 사람 목록 id 없는 계급 key·상세·삭제(W1) · PC 배지 넘침 미재현(W2, 수치만) · 폰 「실행 기록」 줄 높이(W3) + 감사 W-A 누름 영역 | 2026-09-30 | 5d6a4a3 | [260930-aq2-04-4-ui-review-warning-3](./quick/260930-aq2-04-4-ui-review-warning-3/) |
 
 ### Roadmap Evolution
 

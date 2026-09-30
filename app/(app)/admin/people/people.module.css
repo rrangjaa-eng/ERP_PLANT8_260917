@@ -171,7 +171,7 @@
 }
 
 /* PC는 줄바꿈하지 않는다 — wrap이면 표가 이 칸을 최소 폭으로 눌러 「삭제」가 「상세」 아래로 내려간다(다른 열이 긴 행 실측). 폰만 좁으면 줄바꿈.
-   white-space는 두지 않는다 — 「삭제」 확인 줄 안내 글자까지 한 줄로 묶여 768에서 표가 넘쳤다(/review 실측). */
+   white-space는 칸이 아니라 「상세」에만 둔다 — 칸에 두면 「삭제」 확인 줄 안내 글자까지 한 줄로 묶여 768에서 표가 넘쳤다(/review 실측). */
 @media (max-width: 699.98px) {
   .rowActions {
     flex-wrap: wrap;
@@ -188,6 +188,8 @@
   text-decoration: underline;
   text-decoration-thickness: var(--line-w);
   text-underline-offset: var(--underline-offset);
+  /* 긴 행이 동작 칸을 눌러도 「상세」가 「상」/「세」로 쪼개지지 않는다(전역 overflow-wrap: anywhere — ui/button .tertiary와 같은 방식). */
+  white-space: nowrap;
 }
 
 /* §4-4 · §7-1 3차 밑줄 1px → hover 2px. */

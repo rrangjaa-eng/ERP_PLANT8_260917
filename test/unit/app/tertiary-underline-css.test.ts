@@ -32,9 +32,9 @@ const UNDERLINE = /text-decoration(?:-line)?\s*:[^;]*\bunderline\b/;
 const BASE_THICKNESS = /text-decoration-thickness\s*:\s*var\(--line-w\)/;
 const HOVER_THICKNESS = /text-decoration-thickness\s*:\s*var\(--line-w-strong\)/;
 // §4-4 「text-underline-offset: 2px」 — 값은 토큰으로(사용자 결정 2026-09-30 /review D1).
+const OFFSET = /text-underline-offset\s*:\s*var\(--underline-offset\)/;
 // 2026-09-30 실측: app/ · ui/ 밑줄 규칙 선택자 22개.
 const CHECKED_FLOOR = 22;
-const OFFSET = /text-underline-offset\s*:\s*var\(--underline-offset\)/;
 
 function violations(file: string): { checked: number; found: string[] } {
   const rules = parseRules(readFileSync(join(ROOT, file), "utf8"));

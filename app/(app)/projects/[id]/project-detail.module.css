@@ -233,6 +233,7 @@
   display: inline-block;
   min-width: 28px;
   font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
   color: var(--faint);
 }
 

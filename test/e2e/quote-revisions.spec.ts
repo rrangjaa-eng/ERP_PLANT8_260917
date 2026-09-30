@@ -1180,7 +1180,7 @@ async function bodyNumberLook(table: Locator) {
     const cells = rows.map((row) => {
       const td = (row as HTMLTableRowElement).cells[index] as HTMLElement;
       const style = getComputedStyle(td.firstElementChild ?? td);
-      return { text: (td.textContent ?? "").trim(), fontSize: style.fontSize, color: style.color, minWidth: style.minWidth };
+      return { text: (td.textContent ?? "").trim(), fontSize: style.fontSize, fontWeight: style.fontWeight, color: style.color, minWidth: style.minWidth };
     });
     return { head: { fontSize: headStyle.fontSize, color: headStyle.color }, cells };
   });
@@ -1215,7 +1215,7 @@ test.describe("PR #104 후속 — 비활성 1차 kbd (DR-104-02) · 「번호」
     expect((await saveKbdLook(active)).opacity, "활성 kbd opacity").toBe("0.8");
   });
 
-  test("DR-104-04 — 1280 현재 격자와 이전 차수 읽기 표의 「번호」 본문 칸 글자가 11px · --faint · 최소 폭 28px, 머리글은 그대로", async ({ page }) => {
+  test("DR-104-04 — 1280 현재 격자와 이전 차수 읽기 표의 「번호」 본문 칸 글자가 11px · 600 · --faint · 최소 폭 28px, 머리글은 그대로", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
     const project = await makeProject({
@@ -1234,7 +1234,7 @@ test.describe("PR #104 후속 — 비활성 1차 kbd (DR-104-02) · 「번호」
     await revisionTable(page).getByRole("button", { name: "차수 열기" }).click();
     await expect(previousTable(page, 1).getByText("번호 모양 무대", { exact: true })).toBeVisible();
 
-    const bodyLook = { fontSize: "11px", color: "rgb(95, 110, 106)", minWidth: "28px" };
+    const bodyLook = { fontSize: "11px", fontWeight: "600", color: "rgb(95, 110, 106)", minWidth: "28px" };
     const expectedCells = [
       { text: "1", ...bodyLook },
       { text: "2", ...bodyLook },

@@ -119,3 +119,16 @@ dd line-height 24px, font-size 15px. 수정 후에도 링크 boundingBox는 44×
 
 - 파일 존재: test/unit/app/people-list-hidden-id.test.ts, docs/design/checks/2026-09-30-04.4-ui-review-warnings.md, 수정한 page.tsx·system-status.module.css·system-status.spec.ts
 - 커밋 존재: 1fed66b, a3f989b, 4622e9d, 321167d, 0408cb7, 5d6a4a3 (`git rev-list --count 5888119..HEAD` = 6)
+
+## Post-build (오케스트레이터)
+
+- `/review`: 차단 지적 없음(P1·P2 0). P3 3건 반영 — 07cb16e(단위 테스트 tbody 한정 href 단언 · E2E 폭 변경 뒤 scrollIntoViewIfNeeded · 점검표 폭별 문구). 나머지 P3(이웃 줄 겹침 주석, `lh` 단위 Firefox 111–119 미지원 시 옛 동작, serial 의존)는 그대로 둔다.
+- `/qa`: 문제 0건, 건강 점수 100(성능·접근성 미채점). 두 계급 × 7폭 넘침 0 · 콘솔 오류 0 · 「실행 기록」 아래 가장자리 클릭 → 이동.
+- `/design-review`: Design B · AI Slop A. 두 수정은 의도대로 동작.
+  - DR-1(사용자 결정 필요): 폰 360·375에서 링크가 줄바꿈으로 혼자 떨어지면 44 상자 둘레 포커스 링(52×52)이 윗줄 글자에 9.4px 걸린다. 줄을 부풀리지 않는 W3와 「링크 상자 44×44」(계획 기준)를 함께 지키는 한 피할 수 없다. 해법은 히트 영역을 `::after`로 옮기고 링크 상자는 글자 크기로 두는 것 — 계획 기준 문구를 바꾸므로 사용자 결정으로 넘긴다.
+  - DR-2(후속): 링크 밑줄 굵기 1px → 호버 2px(SYSTEM §4-4·§7-1)가 `.runLink`·사람 `.detailLink`·`.toggle`에 없다. 이 PR 전부터이고 여러 화면에 걸쳐 있다.
+
+## 후속 과제(범위 밖, 기록만)
+
+- action-log 필터(`app/(app)/admin/action-log/filter-bar.tsx:60`, `page.tsx:86`): person.value가 꺼진 계급에서 id·이름 없는 option이 key undefined로 중복된다 — W1과 같은 부류. 근본 원인은 `PersonDto.id`가 항상 있는 것으로 타입이 선언된 점.
+- 사람 목록(권한 좁은 계급): 이름·이메일·상태·동작 열이 전부 비어 있음(DR-4, 제품 결정 필요) · 폰 요약 줄이 「 · 」로 시작(DR-5) · 보기 권한만 있는 계급에 「사람 등록」 버튼이 보임(DR-6) · 「상세」「삭제」 사이 간격 0(DR-7) · 표 행 높이가 `--row-min` 미달(DR-8).

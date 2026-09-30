@@ -3,7 +3,7 @@ status: complete
 phase: 04-project-quote-ledger
 source: [04-01..04-51 SUMMARY.md 42개]
 started: 2026-09-29T09:39:02Z
-updated: 2026-09-29T12:40:00Z
+updated: 2026-09-30T02:35:00Z
 method: 증거 대조(사용자 승인 2026-09-29) — 사람 확인 항목은 SUMMARY·DOM 감사·CI·테스트 이름으로 대조해 pass 기록, 증거 없는 항목만 사람에게 질문. 04-31 (C)(D)는 「사람 확인 생략(사용자 승인)」 — 자동 테스트로 갈음, 실제 엑셀·MS 입력기 확인은 하지 않음
 ---
 
@@ -329,9 +329,10 @@ evidence: projects-list.spec.ts:383
 
 ### 53. [04-18 L15] 폰 정렬 머리글 터치 목표
 expected: 375에서 정렬 머리글 링크가 44×44 이상이다
-result: skipped
-reason: "Deferred follow-up: DR-P4-02 실측 20×19px — 사용자 결정(2026-09-29) Phase 04.6으로 이월"
-evidence_gap: 04-31-design-review.md:52-54 · 86-88 실측 20×19px(DR-P4-02 DEFERRED, 04.6 이월 제안 — STATE:291 답 대기)
+result: pass
+source: evidence
+evidence: quick 260929-npq 43dd5de4(ui/table/Table.module.css 폰 미디어 쿼리 정렬 링크 셀 높이 채움) · test/e2e/mobile-touch-targets.spec.ts:124 「프로젝트명」 375 189.58×44 / 320 157×44 · 「견적」 375 65.69×44 / 320 52.73×44(260929-npq-SUMMARY.md:49-50) · 독립 DOM 감사 PASS 24 · FAIL 0(260929-npq-SUMMARY.md:91) · 재실행 2026-09-30 이 세션 a1f08be8 CI=true mobile-375 3 passed
+resolved_note: "이전 기록 skipped(Deferred follow-up: DR-P4-02 실측 20×19px → Phase 04.6 이월, 04-31-design-review.md:50-54) — 사용자 결정 「[지시] 전환 (C)」(PR #104, 2026-09-30)으로 증거 대조 pass 재기록"
 
 ### 54. [04-24 L16] 복사해 새 차수
 expected: 두 번 빠르게 눌러도 2차가 하나만 생기고 토스트·부제가 바뀐다
@@ -1255,10 +1256,10 @@ coverage_id: D3
 ## Summary
 
 total: 206
-passed: 205
+passed: 206
 issues: 0
 pending: 0
-skipped: 1
+skipped: 0
 blocked: 0
 
 ## Gaps
@@ -1318,3 +1319,4 @@ blocked: 0
 - test: 53
   idea: "DR-P4-02 목록 375 정렬 머리글 링크 터치 목표 44px — Phase 04.6(공용 표 컴포넌트 정돈)에서 수정"
   deferred_at: 2026-09-29
+  resolved_by: quick 260929-npq(43dd5de4) — test 53 pass 재기록 2026-09-30(「[지시] 전환 (C)」)

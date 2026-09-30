@@ -6,6 +6,8 @@ import { setPermissionCell } from "@/domain/permissions/matrix";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
 import { upsertVisibility } from "@/repositories/permissions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { expectGapsAtLeastToken, expectNoRowOverflow, loginAsSysadmin, textLineCount } from "./row-actions-helpers";
+import { insertVendor, setVendorArchived } from "@/repositories/vendors";
 
 // MAST-01: 거래처를 등록하고, 계좌번호가 뒤 4자리만 보이며, 마스킹 해제
 // 권한이 있는 계급만 「번호 보기」를 볼 수 있고 그 해제가 로그에 남는 것을
@@ -215,4 +217,60 @@ test.describe("거래처 목록 — 계좌번호 없음 빈 칸 em dash (§2-4 �
     await row.getByRole("button", { name: "숨기기" }).click();
     await expect(page.getByText(vendorName)).toHaveCount(0);
   });
+});
+
+// 260930-f3l /design-review FINDING-001: 거래처 표 행 동작 「수정 · 숨기기 · 삭제」 사이 가로 간격이 0px라 한 낱말처럼 읽혔다.
+// 사람 목록(PR #108)의 .rowActions 규칙(--s-4)을 같은 이름으로 적용한다(SYSTEM §6-1). 700은 .rowActions가 nowrap을 지키는 가장 좁은 폭(D3).
+test.describe("거래처 행 동작 간격 --s-4 (260930-f3l FINDING-001)", () => {
+  async function seed(): Promise<{ target: string; cleanup: () => Promise<void> }> {
+    const stamp = randomUUID().slice(0, 8);
+    // 다른 열이 긴 행이 있어야 동작 칸이 눌린다 — 앞 테스트가 남긴 데이터에 기대지 않는다.
+    const long = await insertVendor(SYSTEM_VIEWER, { name: `${"가".repeat(60)}${stamp}`, normalizedName: `긴행-${randomUUID()}` });
+    const target = await insertVendor(SYSTEM_VIEWER, { name: `간격대상-${stamp}`, normalizedName: `간격대상-${randomUUID()}` });
+    return {
+      target: target.name,
+      cleanup: async () => {
+        await setVendorArchived(SYSTEM_VIEWER, long.id, true);
+        await setVendorArchived(SYSTEM_VIEWER, target.id, true);
+      },
+    };
+  }
+
+  for (const width of [1280, 768, 700]) {
+    test(`${width}: 수정 · 숨기기 · 삭제 사이가 한 줄에서 --s-4 이상이고 표가 넘치지 않는다`, async ({ page }) => {
+      const { target, cleanup } = await seed();
+      try {
+        await page.setViewportSize({ width, height: 800 });
+        await loginAsSysadmin(page);
+        await page.goto("/admin/vendors");
+        const row = page.locator("tr", { hasText: target });
+        const edit = row.getByRole("link", { name: "수정" });
+        const hide = row.getByRole("button", { name: "숨기기" });
+        const remove = row.getByRole("button", { name: "삭제" });
+        await expectNoRowOverflow(page, row, `${width}px 일반 상태`);
+        const gaps = await expectGapsAtLeastToken(page, [edit, hide, remove], `${width}px`);
+        expect(gaps.every((item) => item.horizontal), `${width}px 한 줄`).toBe(true);
+        expect(await textLineCount(edit), "「수정」 글자 줄 수").toBe(1);
+      } finally {
+        await cleanup();
+      }
+    });
+  }
+
+  for (const width of [700, 768, 1024, 1280]) {
+    test(`${width}: 「삭제」를 누른 뒤에도 페이지와 표가 가로로 넘치지 않는다`, async ({ page }) => {
+      const { target, cleanup } = await seed();
+      try {
+        await page.setViewportSize({ width, height: 800 });
+        await loginAsSysadmin(page);
+        await page.goto("/admin/vendors");
+        const row = page.locator("tr", { hasText: target });
+        await row.getByRole("button", { name: "삭제" }).click();
+        await expect(row.getByRole("button", { name: "취소" })).toBeVisible();
+        await expectNoRowOverflow(page, row, `${width}px 확인 상태`);
+      } finally {
+        await cleanup();
+      }
+    });
+  }
 });

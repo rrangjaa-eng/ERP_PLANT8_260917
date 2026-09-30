@@ -1,0 +1,265 @@
+/* 04.1-02 연차 신청 폼 첫 형태 — projects.module.css의 입력 칸과 같은 토큰(새 값 없음). */
+.textInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 var(--s-2);
+  border: var(--line-w) solid var(--line-ui);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+}
+
+.textInput[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.textInput:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.blockedReason {
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+.headerLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  align-items: baseline;
+  font-variant-numeric: tabular-nums;
+}
+
+.link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: var(--underline-offset);
+}
+
+/* 04.1-05 문서 화면 — 잔고 행 2행 · 잔여 초과(S3), 반려 행 사유 줄. */
+.subLine {
+  display: block;
+  font-size: var(--fs-sm);
+  word-break: keep-all;
+  /* 반려 사유는 여러 줄로 적힌다(사용자 결정 2026-09-29 ②) — 줄을 지킨다. */
+  white-space: pre-line;
+}
+
+.balance-default {
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+
+.balance-muted {
+  display: block;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.balance-warning {
+  display: block;
+  color: var(--warning);
+  font-weight: var(--fw-medium);
+}
+
+/* 04.1-06 연차 목록(S1) — 머리 잔고 줄(formatBalanceLines가 준 한 줄 텍스트 그대로) · 필터 줄(연도 select 200 · 1차) · 행 링크. */
+.balanceLines {
+  margin: 0 0 var(--s-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.balanceLines p {
+  margin: 0;
+}
+
+.filterRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-4);
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--s-3);
+}
+
+.yearField {
+  display: inline-block;
+  width: 200px;
+  max-width: 100%;
+}
+
+.noteCell {
+  display: block;
+  max-width: 24ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 행 전체가 문서 링크 — 종류 · 기간 칸 링크의 ::after가 그 행을 덮는다. */
+tr:has(.rowLink) {
+  position: relative;
+}
+
+.rowLink::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.rowLink:focus-visible {
+  outline: none;
+}
+
+/* 폰 접힌 줄(`신청 MM-DD`)도 같은 문서 링크 — 그 줄을 ::after로 덮는다(04.1-06 DOM 감사 #6). */
+tr:has(.foldLink) {
+  position: relative;
+}
+
+.foldLink {
+  color: inherit;
+  text-decoration: none;
+}
+
+.foldLink::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.rowLink:focus-visible::after {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: calc(var(--focus-w) * -1);
+}
+
+@media (max-width: 699.98px) {
+  .balanceLines {
+    font-size: var(--fs-sm);
+  }
+
+  .rowLink {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch-min);
+  }
+
+  /* 사람 상세 연차 섹션의 연도 링크 — 폰 터치 영역 44(SYSTEM §10 · 04.1-06 DOM 감사 #7). */
+  .yearLine a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch-min);
+  }
+}
+
+/* 04.1-06 신청 폼(S2) 행동 줄 — PC는 폼 맨 아래 한 줄(1차 · 막힘 이유 + 다음 한 수 · 오른쪽 끝 2차), 폰은 하단 탭 위
+   고정 · 1차가 2차의 두 배 폭 · 높이 --touch-min · kbd 없음(§6-3 제출 줄 · §7-9, 04.1-05 문서 화면 행동 줄과 같은 값). */
+.blockedLine {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-1);
+}
+
+.cancelWrap {
+  margin-left: auto;
+}
+
+.submitWrap {
+  display: contents;
+}
+
+.formBarSpacer {
+  display: none;
+}
+
+@media (max-width: 699.98px) {
+  .formBar {
+    position: fixed;
+    right: 0;
+    bottom: calc(var(--touch-min) + var(--line-w-strong));
+    left: 0;
+    padding: 0 var(--pad-page) var(--s-2);
+    background: var(--bg);
+    z-index: var(--z-bar);
+  }
+
+  /* 본문 아래 여백 = 행동 줄 높이(탭 44는 셸이 이미 비운다). 막힘 이유 한 줄까지. */
+  .formBarSpacer {
+    display: block;
+    height: calc(var(--touch-min) * 2 + var(--s-6));
+  }
+
+  /* 폰은 취소(2차) 왼쪽 · 1차 오른쪽(사용자 결정 2026-09-29 A). 수화 뒤에는 DOM도 취소 → 1차(leave-form usePhoneWidth);
+     order는 수화 전 보이는 순서를 같게 둔다. */
+  .formBar .submitWrap {
+    display: flex;
+    flex: 2;
+  }
+
+  .formBar .cancelWrap {
+    display: flex;
+    flex: 1;
+    order: -1;
+    margin-left: 0;
+  }
+
+  .formBar .submitWrap > span,
+  .formBar .cancelWrap > span {
+    display: flex;
+    width: 100%;
+  }
+
+  .formBar .submitWrap button,
+  .formBar .cancelWrap button {
+    justify-content: center;
+    width: 100%;
+    height: var(--touch-min);
+    font-size: var(--fs-base);
+  }
+
+  .blockedLine,
+  .formBar > div > .blockedReason {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .formBar kbd {
+    display: none;
+  }
+}
+
+/* 04.1-06 관리자 사람 상세 연차 섹션(S9) — `잔고` 옆 보는 연도 + 3차 링크 한 줄 · 조정 사유는 줄바꿈만(겹치지 않게). */
+.yearLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-1) var(--s-3);
+  align-items: baseline;
+  margin-bottom: var(--s-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.wrapText {
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+}
+
+.sectionRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  margin: var(--s-4) 0;
+}
+
+.sectionLabel {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+/* 04.1-06 DOM 감사 #4 — 잔고·일수 숫자만 700(day-numbers.tsx). */
+.dayNumber {
+  font-weight: var(--fw-bold);
+}

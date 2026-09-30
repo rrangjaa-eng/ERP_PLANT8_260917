@@ -23,6 +23,7 @@ export const registerPersonAction = authedActionClient
       roleId: z.string().min(1, "계급 필요 · 계급 선택"),
       teamId: z.string().min(1).optional(),
       effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "발령일 형식 오류 · 2026-09-18처럼").optional(),
+      hireDate: z.string().min(1, "입사일 비어 있음 · 입사일 적기"),
     }),
   )
   .action(async ({ parsedInput, ctx }) => {

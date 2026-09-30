@@ -220,3 +220,8 @@ describe("정보 노출 누수 스캔 (ADMN-03)", () => {
     });
   });
 });
+import "@/domain/approvals";
+import "@/domain/leave";
+import "@/app/(app)/leave/actions.registry";
+import "@/app/(app)/approvals/actions.registry";
+import "@/app/(app)/admin/people/[id]/actions.registry";

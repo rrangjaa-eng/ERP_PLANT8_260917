@@ -1,7 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { roleMenu } from "@/ui/shell/role-menu";
+import { randomUUID } from "node:crypto";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { can } from "@/domain/permissions/can";
+import { MENUS } from "@/domain/permissions/menus";
 
 // SYSTEM.md §6-0 폰 셸(<700) 계약 — 성공 기준 3(폰 375px)을 자동 검사로 고정한다.
 // 이 파일은 playwright.config.ts의 "mobile-*.spec.ts" 파일명 접두어 규칙으로
@@ -147,7 +150,12 @@ test.describe("폰 375 공통 셸 (성공 기준 3 · §6-0 폰 전략 · §10 �
     const sheet = page.getByRole("dialog", { name: "더보기" });
     await expect(sheet).toBeVisible();
 
-    const { accountGroup } = roleMenu({ roleId: DEFAULT_ROLE_ID, allowedMenus: [] });
+    // 04.1-06(ENG-7): 기대값을 layout과 같은 권한 계산으로 만든다 — 시드가 기본 계급에 leave view를 준다.
+    const allowedMenus = (
+      await Promise.all(MENUS.map(async (menu) => ((await can({ id: randomUUID(), roleId: DEFAULT_ROLE_ID }, menu.key, "view")) ? menu.key : null)))
+    ).filter((key): key is string => key !== null);
+    expect(allowedMenus).toContain("leave");
+    const { accountGroup } = roleMenu({ roleId: DEFAULT_ROLE_ID, allowedMenus });
     // "계정" 그룹 헤더(role="presentation") 다음에 오는 형제 <li>들이 계정 그룹 항목이다.
     const accountItems = sheet.locator('li[role="presentation"] ~ li');
     const texts = await accountItems.allTextContents();

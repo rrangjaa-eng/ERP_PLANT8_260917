@@ -440,17 +440,198 @@ Plan is design-complete (every pass 8+). Run /design-review after implementation
 ### Unresolved Decisions
 None open in this review. All seven were auto-decided under the standing instruction and await the user's confirmation in PR #111 「사용자 결정 필요」.
 
+## CEO review (/plan-ceo-review, 2026-09-30, reviewer: orchestrator Opus, session B)
+
+Target: this plan. Why it ran: `plant8-skill-gate.sh` reads STATE.md `current_phase: 2` and requires a plan-ceo-review record before the executor; CLAUDE.md §4 keeps CEO review at milestone level, so running it on a quick is recorded as PR #111 「사용자 결정 필요」 1 (conservative = do not bypass the gate).
+Decision mode: same standing instruction as the eng and design reviews (user asleep, 2026-09-30 prompt: 「모호한 점은 가장 보수적인 선택으로 진행하고 PR 본문의 「사용자 결정 필요」 절에 적는다」; this session's handoff adds 「범위를 넓히는 제안은 받아들이지 않는 쪽이 보수적이다」). Every question below was auto-decided on that instruction (recommended = most conservative) and is listed in PR #111.
+Review depth: implementation-ready (the plan already names files, rules and tests; this review checks them, it does not redesign).
+
+### Pre-review system audit
+- Branch `ccr-e0753b24-rowactions-underline` = PR #108 branch (`ccr-73fab648-aw1b9o`, 3774333) + 4 planning/gate files; no code change yet, no stash. Base included (merge-base check).
+- Facts re-verified at HEAD ab3b4dd: `ui/button/Button.module.css:53-65` `.tertiary` border-bottom + hover border-bottom-width; `.btn` transition covers background-color and color only (so the new text-decoration-thickness hover is instant — no flaky mid-transition reads in the 1280 hover test); `app/(app)/admin/people/people.module.css:164-179` `.rowActions` exists; `test/unit/app/tertiary-underline-css.test.ts` exists; `app/(app)/admin/corp-cards/page.tsx:181-196` renders 수정 Link · CorpCardActiveToggle · CorpCardDeleteButton (plan correct; TODOS.md :111 lists only 「비활성화 · 삭제」 for corp-cards — factual slip in the TODO text, no plan impact); `app/globals.css:30-36` gives `button` the same `font-family`/`letter-spacing`/`color: inherit` as text, so the D4 parity check does not need font-family; `package.json:34` `test:e2e:ci` exists (R4 command valid).
+- TODOS.md: 「04.4 후속 이연」 :107-117 (row gap) and 「공유 Button `.tertiary` 밑줄을 글자 밑줄로」 (~:180-193) are exactly this scope. TODOS.md history never deletes an entry; resolved items get an inline 「해결: `hash`」 note (:227). The plan never closes its two TODO entries → C1.
+- Retrospective: same defect class fixed before (ListEmpty FINDING-005, `2342b01`); #108 fixed people only → FINDING-001 「화면 하나만 예외」. Recurring pattern = per-screen copies of shared visual rules (4 `.rowActions` copies after this plan; eng F1 / PR decision 4 already records it).
+- UI scope: yes (Section 11 runs). Design doc: none (quick; source of truth = 260930-f3l DESIGN-REVIEW FINDING-001/002). Office-hours offer skipped: user absent and the problem is measured, not exploratory.
+- Landscape check: skipped — search not attempted (CSS glyph underline and flex gap are Layer 1; no product-category question). Prior learnings: none.
+
+### Step 0
+- 0A Premise: real problem, solved directly. Measured pain: 1280 row reads 「수정숨기기삭제」 as one word (0px), 「삭제」 glued to its neighbour; phone 375 tertiary underline 13.5px under the glyphs and a 19→20px hover jump. Do-nothing cost: mis-taps on 「삭제」 on phone (0px between 44 boxes) and two 3차 looks in one cell, violating 「화면 하나만 예외 금지」. Not a proxy.
+- 0B Leverage: `.rowActions` (people.module.css:164-179) and the ListEmpty underline (ListEmpty.module.css:22-25) reused verbatim; `noHorizontalOverflow` and people.spec.ts gap/one-line patterns reused. No rebuild.
+- 0C Dream state:
+```
+  CURRENT                           THIS PLAN                          12-MONTH IDEAL
+  people row: 16px + glyph line  -> vendors/corp-cards/code-tables  -> one 3차 look everywhere (NextTurn,
+  other admin rows: 0px, border     rows 16px; shared Button glyph     Table emptyAction too — eng R3 TODO);
+  shared tertiary: border-bottom    underline; sweep counts Button     row-action rule shared, not copied 4x
+                                                                       (PR decision 4)
+```
+- 0D: no approach choice needed — the approach was fixed by the user (reuse #108 rule and the unit sweep) and by eng R1–R4 / design D0–D6.
+- 0E Mode: HOLD SCOPE. Auto-decided (standing instruction; handoff: 「범위를 넓히는 제안은 받아들이지 않는 쪽이 보수적이다」). Rationale: the plan is a measured fix of two user-scoped TODO items on existing screens; the file count (17, 10 of them tests) is below the 15-changed-source threshold that would call for reduction, and expansion would widen a PR the user scoped while asleep. Approved decisions carried: R1–R4 (eng), D0–D6 (design). No question log (no question asked; QUESTION_TUNING false).
+- 0G HOLD checks: (1) complexity — 17 files but 0 new classes/services, 7 source files; minimum already. (2) nothing deferrable without failing a must-have; every test maps to a must_haves truth or an approved R/D row. (3) invariants kept: people.module.css untouched, no new token/color/copy, permission conditions byte-identical.
+- 0I Temporal interrogation (human: ~1 day / CC: ~1.5h wall incl. full E2E):
+  - Hour 1: read FINDING-001/002 and the checklist; hooks require design-gate + TDD skills before app/ui edits and systematic-debugging after a RED run.
+  - Hour 2-3: Task 1 CSS stays uncommitted while Task 2's RED test commit happens — the executor must stage test files only (`git add` by path), or the hook rejects/mixes intents. Already implied by 「commit tests only」; no new decision.
+  - Hour 4-5: base is #108's branch; people.spec.ts / tertiary sweep come from #108, so this PR merges only after #108 (PR body line 1). No code dependency beyond that.
+  - Hour 6+: full `pnpm test:e2e:ci` (R4) is the long pole; a failure there must be triaged against the base branch before blaming the Button change (systematic-debugging).
+  Feasibility blockers: none.
+
+### Section 1 Architecture: No issues found.
+```
+ app/(app)/admin/{vendors,corp-cards,code-tables}/page.tsx
+        │ <span className={styles.rowActions}> (was Fragment)          people.module.css (#108, unchanged)
+        ├── Link 수정  className = toggle + rowLink(nowrap)             └─ source of the copied rule
+        ├── *Toggle ──► ui/button <Button variant="tertiary">
+        └── *DeleteButton ─► DeleteToArchive ─► ui/button tertiary ─► Button.module.css .tertiary
+                                                                        (glyph underline; ~24 callers)
+```
+No new data flow, state machine, endpoint or coupling; the only shared dependency is the existing Button (~24 callers — R4 full suite covers it). Rollback: revert the two `fix:` commits (CSS/markup only), minutes.
+
+### Section 2 Error & Rescue Map: No issues found.
+No new method, service, request or exception class. CSS/markup cannot throw at runtime. Error-like outcomes are visual: overflow (R2/D3 tests), underline hidden by a local `text-decoration: none` override (eng probe + R4), hover jump (1280 test).
+
+### Section 3 Security & Threat Model: No issues found.
+No new input, endpoint, secret or dependency. `canWrite`/`canArchive`/`archivedAt` conditions stay byte-identical (T-nto-01); code-tables-write-gate and vendors permission E2E rerun in Task 3.
+
+### Section 4 Data Flow & Interaction Edge Cases
+No data flow. Interactions:
+| INTERACTION | EDGE CASE | HANDLED? | HOW |
+|---|---|---|---|
+| press 「삭제」 | confirm row in nowrap flex widens cell | yes | confirm-state overflow tests 320–1280 incl. 700 (D3) |
+| press toggle twice fast | pending 「…」 splits underline, widens label | accepted | D5 (transient, unchanged Button markup) |
+| long row name (60 chars) | table squeezes actions column | yes | seeded long name + gap/one-line tests |
+| zero rows / archived row | no actions rendered (`archivedAt ? null`) | yes | unchanged condition; wrapper only inside the non-null branch |
+| read-only user | no actions `<td>` | yes | `canWrite || canArchive` unchanged |
+No unhandled edge case.
+
+### Section 5 Code Quality
+- (carried, eng F1) four `.rowActions` copies — PR decision 4, not re-asked.
+- No other issues: `.rowLink` name says what it is for; composition follows archive-table.tsx:66.
+
+### Section 6 Test Review
+Diagram and coverage are the eng review's (Section 3 there) plus D3/D4. Assertion check: every must_haves truth maps to a named test (gap/one-line → vendors/corp-cards/code-tables specs; phone gap + 44 → mobile-vendors/corp-cards; overflow normal+confirm → same specs; D4 parity → design-review-p2; glyph underline/hover → mobile-design-review-p2 + design-review-p2 + unit sweep; disabled underline color → unit). 2am-Friday test = R4 full CI=true suite. Flakiness: hover read is instant (no transition on text-decoration — verified `.btn` transition list). No new gaps.
+
+### Section 7 Performance: No issues found (CSS only).
+
+### Section 8 Observability: No issues found. The standing signal is `test/e2e/design-principles.spec.ts:34` (warning-only row-action classifier) plus the unit sweep floor; no runtime codepath to log.
+
+### Section 9 Deployment & Rollout
+- Stacked PR: #111 merges only after #108 and after its base is retargeted to main (PR body line 1). Not a new decision — recorded here so the /ship session does not merge out of order.
+- No migration, flag or data change. Post-deploy check: staging /admin/vendors row shows three separated actions (the DOM audit/QA already measures this pre-merge).
+
+### Section 10 Long-term trajectory
+- Reversibility 5/5. Debt: 4 `.rowActions` copies (PR decision 4) · NextTurn/Table border underline (eng R3 TODO) · TODO bookkeeping gap → C1.
+
+### Section 11 Design & UX: covered by /plan-design-review (9/10, D0–D6). No new issues.
+```
+ row (≥700): [수정]─16─[숨기기]─16─[삭제] ──press 삭제──► [수정]─16─[숨기기]─16─[확인 문구 · 삭제 확인 · 취소]
+                                                          └─취소─► back to row
+ row (<700): wraps, 16px vertical; each 44×44
+```
+
+### Outside voice
+Codex not installed (`which codex` → not found) and CLAUDE.md §4 forbids external (Codex) review. Native fallback needs TaskOutput, which this session does not declare → unavailable. No clean credit; no outside coverage.
+
+## CEO decision ledger
+
+| ID and owner | Contract and evidence | Current | Proposed | Status | Exact approval and scope |
+|---|---|---|---|---|---|
+| MODE (orchestrator) | handoff 「범위를 넓히는 제안은 받아들이지 않는 쪽이 보수적이다」 | — | HOLD SCOPE | approved | auto-decided under the standing instruction (admin choice) |
+| C1 (orchestrator, Section 10 / audit) | TODOS.md :107-117 and 「공유 Button `.tertiary` …」 entry are this plan's scope; history never deletes entries, resolved ones get 「해결: `hash`」 (:227) | plan's docs commit adds R3 TODO only; the two resolved entries stay open | A) append 「해결: `<fix commit>` (quick 260930-nto, PR #111)」 to both entries in the orchestrator's docs commit, text otherwise unchanged · B) leave open | approved | A, auto-decided (standing instruction; conservative = follow the repo's own convention, no deletion, no scope change) — Implementation Task T7 |
+
+### C1: close the two resolved TODO entries
+Finding: audit/Section 10, P3, 8/10. Plan's docs step adds the R3 TODO but never marks FINDING-001/002 TODO entries resolved, so TODOS.md would keep advertising fixed work.
+Question D1 — C1: mark both TODO entries resolved? Recommendation: A because it follows the file's own 「해결:」 convention and changes no behavior.
+Options:
+A) Mark resolved (recommended) — one inline 「해결: `hash`」 per entry in the orchestrator's docs commit. Effort S, risk low.
+B) Leave open — zero work; TODOS.md stays stale.
+Actual answer: A (auto-decided, standing instruction 2026-09-30).
+
+Approval readiness: PASS (MODE — auto-decided admin choice; C1 — A, auto-decided; R1–R4 and D0–D6 carried unchanged from their own ledgers)
+
+### NOT in scope (CEO)
+- Scope expansions: none proposed (HOLD SCOPE).
+- Carried: org/roles screens · `.rowActions` consolidation (PR decision 4) · NextTurn/Table border underline (eng R3 TODO) · 「삭제」 danger color and confirm redesign (design NOT in scope).
+
+### What already exists (CEO)
+Same as the eng and design lists; nothing new found.
+
+### Dream state delta
+After this plan: every admin row with more than one action uses one spacing rule, and the shared tertiary Button matches every other 3차 link. Left for the ideal: NextTurn/Table (R3) and one shared row-action rule instead of four copies (user decision).
+
+### Error & Rescue Registry
+No failing methods introduced — 0 rows, 0 critical gaps.
+
+### Failure Modes Registry
+```
+  CODEPATH                | FAILURE MODE                         | RESCUED? | TEST? | USER SEES?          | LOGGED?
+  ------------------------|--------------------------------------|----------|-------|---------------------|--------
+  .rowActions nowrap      | cell widens table (normal/confirm)   | n/a      | Y R2/D3 | overflow (caught pre-merge) | E2E
+  Button .tertiary        | local text-decoration:none hides line| n/a      | Y R4  | no underline (caught) | E2E
+  Button .tertiary hover  | box height jump                      | n/a      | Y 1280 | caught             | E2E
+  merge order #108→#111   | merged before #108 / wrong base      | n/a      | N (process) | n/a        | PR body line 1
+```
+0 critical gaps (no RESCUED=N + TEST=N + silent row).
+
+### Stale diagram audit
+Files touched carry no ASCII diagrams (CSS/TSX/spec). Plan diagrams above and in eng/design sections are current.
+
+## Implementation Tasks (CEO review)
+- [ ] **T7 (P3, human: ~5min / CC: ~1min)** — TODOS.md — mark the two resolved entries 「해결: `<fix commit>` (quick 260930-nto, PR #111)」 (C1)
+  - Surfaced by: pre-review audit / Section 10 — TODOS.md :107-117 and the 「공유 Button `.tertiary`」 entry
+  - Files: TODOS.md (orchestrator docs commit, together with the eng R3 entry)
+  - Verify: `grep -n "260930-nto" TODOS.md` shows both notes; no heading removed (`git diff TODOS.md` has no `-###`)
+
+### Completion Summary (CEO)
+```
+  +====================================================================+
+  |            MEGA PLAN REVIEW — COMPLETION SUMMARY                   |
+  +====================================================================+
+  | Mode selected        | HOLD SCOPE (auto, standing instruction)     |
+  | System Audit         | facts re-verified; TODO close-out missing   |
+  | Step 0               | HOLD; premise real; no approach choice      |
+  | Section 1  (Arch)    | 0 issues found                              |
+  | Section 2  (Errors)  | 0 error paths mapped, 0 GAPS                |
+  | Section 3  (Security)| 0 issues found, 0 High severity             |
+  | Section 4  (Data/UX) | 5 edge cases mapped, 0 unhandled            |
+  | Section 5  (Quality) | 1 carried (eng F1), 0 new                   |
+  | Section 6  (Tests)   | Diagram carried (eng), 0 gaps               |
+  | Section 7  (Perf)    | 0 issues found                              |
+  | Section 8  (Observ)  | 0 gaps found                                |
+  | Section 9  (Deploy)  | 1 risk flagged (stacked merge order, known) |
+  | Section 10 (Future)  | Reversibility: 5/5, debt items: 3           |
+  | Section 11 (Design)  | 0 new issues (covered by design review)     |
+  +--------------------------------------------------------------------+
+  | NOT in scope         | written (6 items)                           |
+  | What already exists  | written                                     |
+  | Dream state delta    | written                                     |
+  | Error/rescue registry| 0 rows, 0 CRITICAL GAPS                     |
+  | Failure modes        | 4 total, 0 CRITICAL GAPS                    |
+  | TODOS.md updates     | 0 new items proposed (C1 closes 2 entries)  |
+  | Scope proposals      | 0 proposed, 0 accepted (HOLD)               |
+  | CEO plan             | skipped by mode                             |
+  | Outside voice        | codex unavailable (not installed, forbidden)|
+  | Lake Score           | N/A (no coverage questions)                 |
+  | Diagrams produced    | 3 (dream state, architecture, UI flow)      |
+  | Stale diagrams found | 0                                           |
+  | Unresolved decisions | 0                                           |
+  +====================================================================+
+```
+
+### Unresolved Decisions (CEO)
+None. MODE and C1 were auto-decided under the standing instruction and are listed in PR #111 「사용자 결정 필요」.
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
-| CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | — | — |
-| Outside Review | codex (plan-eng-review, plan-design-review) | Independent 2nd opinion | 2 | unavailable | not run — CLAUDE.md §4 forbids external review |
+| CEO Review | `/plan-ceo-review` | Scope & strategy | 1 | CLEAR | mode: HOLD_SCOPE, 0 critical gaps (1 finding C1, applied) |
+| Outside Review | codex (plan-eng-review, plan-design-review, plan-ceo-review) | Independent 2nd opinion | 3 | unavailable | not installed + CLAUDE.md §4 forbids external review; no completed external review |
 | Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | ISSUES OPEN (mapped) | 4 issues, 0 critical gaps |
 | Design Review | `/plan-design-review` | UI/UX gaps | 1 | clean | score: 6/10 → 9/10, 7 decisions |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
 
-- **OUTSIDE COVERAGE:** codex, design phase, unavailable (external review forbidden by CLAUDE.md §4); native Claude subagent (in-host, Opus) completed — 6 findings, merged as D1–D6. Native fallback is not outside coverage.
-- **VERDICT:** DESIGN CLEARED (plan) — eng review findings dispositioned (R1–R4 mapped into Tasks 2–3); CEO review pending (hook requirement, PR #111 decision 1).
+- **OUTSIDE COVERAGE:** codex, ceo phase, unavailable (not installed; external review forbidden by CLAUDE.md §4; native fallback lacks TaskOutput) — no completed external review. Design phase: native Claude subagent completed (6 findings, D1–D6), not outside coverage. Eng phase: unavailable.
+- **VERDICT:** CEO + DESIGN CLEARED (plan) — eng review findings dispositioned (R1–R4 mapped into Tasks 2–3); ready for `/gsd-quick` execution in a new session.
 
 NO UNRESOLVED DECISIONS
+

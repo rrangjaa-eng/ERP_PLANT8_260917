@@ -62,8 +62,10 @@
   white-space: nowrap;
 }
 
+/* 표 칸에는 min-height가 적용되지 않는다 — 전역 border-box라 칸의 height가 패딩 포함 최소 높이로 동작하고
+   내용이 많으면 늘어난다(holidays.module.css 선례). 접힌 줄 칸은 자기 행에 붙은 줄이라 대상이 아니다. */
 .table td {
-  min-height: var(--row-min);
+  height: var(--row-min);
   padding: var(--cell-pad-y) var(--cell-pad-x);
   font-size: var(--fs-base);
   border-bottom: var(--line-w) solid var(--line);
@@ -83,7 +85,7 @@
 /* 이름 행 머리글은 셀과 같은 모양 — UA 기본 th의 굵게·가운데 정렬을 지운다. 공백 없는
    긴 이름도 칸 안에서 줄바꿈된다. */
 .peopleTable tbody th[scope="row"] {
-  min-height: var(--row-min);
+  height: var(--row-min);
   padding: var(--cell-pad-y) var(--cell-pad-x);
   font-size: var(--fs-base);
   font-weight: var(--fw-regular);
@@ -102,6 +104,7 @@
 }
 
 .peopleTable .collapsedCell {
+  height: auto;
   padding: 0 var(--cell-pad-x) var(--cell-pad-y);
   font-size: var(--fs-sm);
   font-weight: var(--fw-regular);

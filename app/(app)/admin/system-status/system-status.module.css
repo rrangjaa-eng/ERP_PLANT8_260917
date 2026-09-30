@@ -9,7 +9,8 @@
   text-underline-offset: var(--underline-offset);
 }
 
-/* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44(.detailLink와 같은 결). */
+/* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44(.detailLink와 같은 결). 문장 속 링크라 히트 영역만 44 —
+   위아래 음수 margin이 줄 상자를 글자 한 줄 높이로 되돌린다. */
 @media (max-width: 699.98px) {
   .runLink {
     display: inline-flex;
@@ -17,6 +18,7 @@
     justify-content: center;
     min-width: var(--touch-min);
     min-height: var(--touch-min);
+    margin-block: calc((1lh - var(--touch-min)) / 2);
   }
 }
 

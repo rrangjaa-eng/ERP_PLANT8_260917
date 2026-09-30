@@ -159,7 +159,7 @@ function restoreRehearsalValue(restoreRehearsal: SystemStatus["restoreRehearsal"
         <>
           {" · "}
           <a href={view.runUrl} className={styles.runLink} target="_blank" rel="noopener noreferrer">
-            실행 기록
+            실행 기록<span className="sr-only"> (새 탭)</span>
           </a>
         </>
       )}

@@ -9,6 +9,7 @@ export type CertReviewSourceRow = {
   id: string;
   certNo: string;
   eventName: string;
+  wonOn: string;
   submittedAt: Date;
   name: string | null;
   registeredName: string | null;
@@ -32,6 +33,7 @@ export async function findSubmissionForReview(viewer: Viewer, id: string): Promi
       id: certSubmissions.id,
       certNo: certSubmissions.certNo,
       eventName: certEvents.name,
+      wonOn: certEvents.wonOn,
       submittedAt: certSubmissions.submittedAt,
       name: certSubmissions.name,
       registeredName: certWinners.name,

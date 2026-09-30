@@ -6,7 +6,7 @@ import { project, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { recordAction, type RecordActionDeps } from "@/domain/action-log/record";
 import { isCertFeatureEnabled } from "@/domain/certs/feature";
-import { formatPhone, maskRrn, normalizeName, normalizePhone } from "@/domain/certs/format";
+import { formatPhone, formatSubmittedAtKst, maskRrn, normalizeName, normalizePhone } from "@/domain/certs/format";
 import { validateRrn } from "@/domain/certs/rrn";
 import { getSettingValue } from "@/domain/settings/registry";
 import { CERT_PRIVACY_IDLE_MINUTES } from "@/domain/settings/keys";
@@ -163,6 +163,86 @@ export async function getSubmissionForReview(
     canCorrect: await can(viewer, MENU, "write"),
     idleMinutes: await getSettingValue(CERT_PRIVACY_IDLE_MINUTES),
   };
+}
+
+// 04.3-11 — 인쇄 DTO(D-1108). 저장된 가린 번호만 싣고 복호화하지 않는다(이 경로에 lib/crypto 없음 ·
+// mask_reveal 없음). 값 칸 전부가 cert_submission.value 하나에 걸려 항목이 꺼지면 투영이 빈다(codex r2 C3).
+export type CertificatePrintRow = {
+  certNo: string;
+  eventName: string;
+  wonOn: string;
+  prizeName: string;
+  quantity: number;
+  name: string;
+  rrnMasked: string;
+  phone: string;
+  address: string | null;
+  submittedAt: string;
+  signatureDataUrl: string | null;
+};
+
+export type CertificatePrintDto = CertificatePrintRow;
+
+export const CERTIFICATE_PRINT_DTO_SPEC: DtoSpec<CertificatePrintRow, CertificatePrintDto> = {
+  fields: [
+    { key: "certNo", from: "certNo", infoItem: VALUE_ITEM },
+    { key: "eventName", from: "eventName", infoItem: VALUE_ITEM },
+    { key: "wonOn", from: "wonOn", infoItem: VALUE_ITEM },
+    { key: "prizeName", from: "prizeName", infoItem: VALUE_ITEM },
+    { key: "quantity", from: "quantity", infoItem: VALUE_ITEM },
+    { key: "name", from: "name", infoItem: VALUE_ITEM },
+    { key: "rrnMasked", from: "rrnMasked", infoItem: VALUE_ITEM },
+    { key: "phone", from: "phone", infoItem: VALUE_ITEM },
+    { key: "address", from: "address", infoItem: VALUE_ITEM },
+    { key: "submittedAt", from: "submittedAt", infoItem: VALUE_ITEM },
+    { key: "signatureDataUrl", from: "signatureDataUrl", infoItem: VALUE_ITEM },
+  ],
+};
+
+registerDto({
+  name: "CertificatePrintDto",
+  fields: CERTIFICATE_PRINT_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
+});
+
+export type GetCertificatePrintDeps = { signatureStore: SignatureStore; now: () => Date };
+
+export type CertificatePrintResult =
+  | { kind: "ok"; print: Partial<CertificatePrintDto>; printedAt: string }
+  | { kind: "notFound" };
+
+export async function getCertificatePrint(
+  viewer: Viewer,
+  id: string,
+  deps?: Partial<GetCertificatePrintDeps>,
+): Promise<CertificatePrintResult> {
+  if (!(await isCertFeatureEnabled())) return { kind: "notFound" };
+  if (isCertPrivacyBarredRole(viewer)) return { kind: "notFound" };
+  if (!(await canViewSubmissions(viewer))) return { kind: "notFound" };
+  if (!isUuid(id)) return { kind: "notFound" };
+
+  const row = await findSubmissionForReview(viewer, id);
+  if (!row || row.purgedAt || row.name === null || row.rrnMasked === null || row.phone === null) {
+    return { kind: "notFound" };
+  }
+
+  const source: CertificatePrintRow = {
+    certNo: row.certNo,
+    eventName: row.eventName,
+    wonOn: row.wonOn,
+    prizeName: row.prizeName,
+    quantity: row.quantity,
+    name: row.name,
+    rrnMasked: row.rrnMasked,
+    phone: formatPhone(row.phone),
+    address: row.delivery === "parcel" ? row.address : null,
+    submittedAt: row.submittedAt.toISOString(),
+    signatureDataUrl: await readSignatureDataUrl(deps?.signatureStore ?? getSignatureStore(), row.signatureKey),
+  };
+
+  const print = await project(viewer, source, CERTIFICATE_PRINT_DTO_SPEC);
+  if (Object.keys(print).length === 0) return { kind: "notFound" };
+
+  return { kind: "ok", print, printedAt: formatSubmittedAtKst((deps?.now ?? (() => new Date()))().toISOString()) };
 }
 
 export type RevealRrnDeps = {

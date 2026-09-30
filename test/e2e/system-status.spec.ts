@@ -146,7 +146,7 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
     await insertRehearsal({ runKey: "9002-1", failedStage: "verify", minutes: 4, runUrl: RUN_URL_FAILED });
     const value = await openStatusAsAdmin(page);
     await expect(value).toHaveText(
-      "실패 · 검증 · 스테이징 · 2026-09-24 03:14 · 백업 1758684000000 · 4분 · 실행 기록",
+      "실패 · 검증 · 스테이징 · 2026-09-24 03:14 · 백업 1758684000000 · 4분 · 실행 기록 (새 탭)",
     );
     const link = value.getByRole("link", { name: "실행 기록" });
     await expect(link).toHaveAttribute("href", RUN_URL_FAILED);
@@ -164,6 +164,8 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
 
     // 04.4 후속 항목 9(사용자 결정 2026-09-30): 앱 밖(GitHub Actions)으로 가는 링크는 새 탭 — opener를 끊는다.
     await expect(link).toHaveAttribute("target", "_blank");
+    // 사용자 결정 D2(2026-09-30): 새 탭으로 열림을 스크린 리더에도 알린다 — 눈에는 안 보이고 링크 이름에만 붙는다.
+    await expect(link).toHaveAccessibleName(/새 탭/);
     const rel = (await link.getAttribute("rel")) ?? "";
     expect(rel.split(/\s+/)).toEqual(expect.arrayContaining(["noopener", "noreferrer"]));
 
@@ -196,7 +198,7 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
     await insertRehearsal({ runKey: "9003-1", failedStage: "cleanup", minutes: 9, runUrl: RUN_URL_FAILED });
     const value = await openStatusAsAdmin(page);
     await expect(value).toHaveText(
-      "실패 · 정리 · 스테이징 · 2026-09-24 03:14 · 백업 1758684000000 · 9분 · 실행 기록",
+      "실패 · 정리 · 스테이징 · 2026-09-24 03:14 · 백업 1758684000000 · 9분 · 실행 기록 (새 탭)",
     );
     await expectNoStatusColors(page, value);
   });

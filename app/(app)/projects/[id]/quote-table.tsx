@@ -16,6 +16,7 @@ import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { Toast } from "@/ui/toast/Toast";
 import { useDirtyStorage, viewerDirtyScope } from "@/ui/table/use-dirty-storage";
 import { useEditableWidth } from "@/ui/table/use-editable-width";
+import { usePhoneWidth } from "@/app/(app)/leave/use-phone-width";
 import { applyPaste, type PasteColumn } from "@/ui/table/use-clipboard-paste";
 import { savedNoticeText, type FooterNoticeItem } from "@/ui/table/footer-notice";
 import { normalizeNumericPaste } from "@/ui/table/parse-tsv";
@@ -1605,6 +1606,7 @@ export function QuoteLedger({
   // 04-49(DR-14 · DR-24 · DR-36 · 계약 6) — 1024 미만이면 견적 줄 표·매출 표는 보기 전용이다(표 밖 칸만 편집).
   // 리뷰 B-1 — 편집기가 열린 동안 폭이 줄면 읽기 표 전환을 커밋(blur·Enter) 뒤로 미룬다(친 값을 버리지 않는다).
   const editableWidth = useEditableWidth() || cellEditing;
+  const phone = usePhoneWidth();
   // 04-26(D-86) — 화면의 활성 줄(보관할 줄은 이미 빠져 있고 새 줄은 포함)이 상한이면 줄을 더하지 않는다.
   const atLineCap = lines.length >= lineCap;
   const lineCapReason = `${lineCap}줄 상한 · 상한은 관리자 설정`;
@@ -2184,6 +2186,45 @@ export function QuoteLedger({
 
   const openSheetRow = sheetRowKey ? lines.find((line) => line.clientKey === sheetRowKey) : undefined;
 
+  const copyActions = (
+    <HeaderCopyActions key="copy">
+      {newRevision ? <NewRevisionDialog {...newRevision} dirtyCount={dirtyCount} onCreated={setStatusToast} /> : null}
+      {copyProjectHref ? (
+        <Link href={copyProjectHref} className={`${buttonLinkClassName()} ${styles.headerTouchButton}`}>
+          프로젝트 복사
+        </Link>
+      ) : null}
+    </HeaderCopyActions>
+  );
+  const statusActions = statusChange ? (
+    <StatusChange
+      key="status"
+      {...statusChange}
+      dirtyCount={dirtyCount}
+      onChanged={setStatusToast}
+      onOpenPeriodField={openPeriodField}
+    />
+  ) : null;
+  // 04-49(후속 결정 R1) — 1024 미만에서는 dirty가 하나라도 있을 때만(복원한 표 칸 포함, 같은 dirty 셈).
+  const saveAction =
+    canSave && (editableWidth || dirtyCount > 0) ? (
+      <Button
+        key="save"
+        id={saveButtonId}
+        type="button"
+        variant="primary"
+        className={styles.headerTouchButton}
+        pending={isExecuting}
+        disabled={dirtyCount === 0 && !cellEditing}
+        disabledReason={saveDisabledReason}
+        reasonTone="info"
+        shortcut="Ctrl+S"
+        onClick={attemptSave}
+      >
+        일괄 저장{dirtyCount > 0 ? ` ${dirtyCount}` : ""}
+      </Button>
+    ) : null;
+
   return (
     <>
       <div className={styles.header}>
@@ -2221,39 +2262,9 @@ export function QuoteLedger({
           {endDateNote ? <span className={styles.endDateNote}>{endDateNote}</span> : null}
         </span>
         <div className={styles.headerActions}>
-          <HeaderCopyActions>
-            {newRevision ? <NewRevisionDialog {...newRevision} dirtyCount={dirtyCount} onCreated={setStatusToast} /> : null}
-            {copyProjectHref ? (
-              <Link href={copyProjectHref} className={`${buttonLinkClassName()} ${styles.headerTouchButton}`}>
-                프로젝트 복사
-              </Link>
-            ) : null}
-          </HeaderCopyActions>
-          {statusChange ? (
-            <StatusChange
-              {...statusChange}
-              dirtyCount={dirtyCount}
-              onChanged={setStatusToast}
-              onOpenPeriodField={openPeriodField}
-            />
-          ) : null}
-          {/* 04-49(후속 결정 R1) — 1024 미만에서는 dirty가 하나라도 있을 때만(복원한 표 칸 포함, 같은 dirty 셈). */}
-          {canSave && (editableWidth || dirtyCount > 0) ? (
-            <Button
-              id={saveButtonId}
-              type="button"
-              variant="primary"
-              className={styles.headerTouchButton}
-              pending={isExecuting}
-              disabled={dirtyCount === 0 && !cellEditing}
-              disabledReason={saveDisabledReason}
-              reasonTone="info"
-              shortcut="Ctrl+S"
-              onClick={attemptSave}
-            >
-              일괄 저장{dirtyCount > 0 ? ` ${dirtyCount}` : ""}
-            </Button>
-          ) : null}
+          {/* 폰(<700)은 수화 뒤 DOM · Tab 순서 = 보이는 순서 — SYSTEM §10, DR-104-05. 서버 · 수화 중에는 PC DOM 순서이고
+              그때 보이는 순서는 기존 CSS order가 맞춘다 — 연차 화면 usePhoneWidth 선례(DECISIONS 2026-09-29). key 덕에 순서가 바뀌어도 다시 마운트되지 않는다. */}
+          {phone ? [statusActions, saveAction, copyActions] : [copyActions, statusActions, saveAction]}
         </div>
       </div>
 

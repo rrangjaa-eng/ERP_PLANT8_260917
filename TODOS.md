@@ -146,6 +146,16 @@
 
 **Effort:** S · **Priority:** P2 · **Depends on:** PR #111
 
+### 코드표 보관 행 높이 35.39px < `--row-min`(quick 260930-nto 독립 DOM 감사)
+
+**What:** `app/(app)/admin/code-tables/code-tables.module.css`의 `.table td { min-height: var(--row-min) }`는 표 칸에 적용되지 않는다. 입력 칸이 없는 보관 행(시스템 관리자에게 보임)이 1280에서 35.39px로 36px 아래다. 거래처 · 법인카드 · 보관함처럼 `height: var(--row-min)`으로 바꾸고, `test/e2e/table-row-min.spec.ts`에 보관 항목을 심어 매번 잡히게 한다.
+
+**Why:** `table-row-min.spec.ts`가 전체 E2E에서 실행 순서에 따라 실패한다 — 다른 스펙이 erp_test에 보관 항목을 남기면 걸린다(260930-nto 전체 실행 1회 실패, 감사가 소수점까지 재현). ready 전환 뒤 CI 전체 E2E를 빨갛게 할 수 있다.
+
+**Context:** base `9f0bd3d`(PR #108)에도 같은 규칙 — PR #111 변경 아님. 감사 보고서 `.planning/quick/260930-nto-row-actions-gap-and-tertiary-underline/260930-nto-DOM-AUDIT.md`.
+
+**Effort:** S · **Priority:** P2 · **Depends on:** None
+
 ## 운영 배포 준비: 보안 스캐너 CI(2026-09-30, Phase 8 전)
 
 ### 보안 스캐너 5종을 CI에 넣기 (#109)

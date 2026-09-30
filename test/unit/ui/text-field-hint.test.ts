@@ -5,10 +5,9 @@ import { TextField, type TextFieldProps } from "../../../ui/input/TextField";
 
 // ISSUE-001(PR #104 /qa) — TextField의 선택 prop hintId는 칸 밖에 그린 힌트 요소의 id를 aria-describedby에 오류 id 뒤로 더한다.
 // hintId를 주지 않는 다른 화면은 전과 같다(오류 때 `{id}-error` 하나, 없으면 속성 없음). jsdom 없이 renderToStaticMarkup 문자열로 단언한다.
-// hintId는 구현 전에 타입에 없으므로 props를 단언으로 넘겨 RED 커밋에서도 typecheck가 통과한다.
 
-function renderField(props: Record<string, unknown>) {
-  return renderToStaticMarkup(createElement(TextField, { id: "t", label: "칸", ...props } as TextFieldProps));
+function renderField(props: Partial<TextFieldProps>) {
+  return renderToStaticMarkup(createElement(TextField, { id: "t", label: "칸", ...props }));
 }
 
 const VARIANTS = [

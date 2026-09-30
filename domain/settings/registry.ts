@@ -323,7 +323,9 @@ export type SimpleSettingValues<Defs extends readonly SettingDef<unknown>[]> = {
 };
 
 // 04.1(Codex HIGH 스냅숏): 비이력형 키 여러 개를 findSimpleValues **한 번**(SELECT
-// 한 문장)으로 읽어 정의 순서대로 돌려준다 — 행이 있으면 schema.parse, 없으면
+// 한 문장)으로 읽어 정의 순서대로 돌려준다 — 행이 있으면 parseStoredSimpleValue로
+// 읽는다. readInvalidAsDefault 표시와 default가 있는 키는 허용 밖 저장값을 default로
+// 바꾸고 log.error를 남기며, 그 밖의 키는 schema.parse가 던진다. 행이 없으면
 // default, default도 없으면 undefined(던지지 않는다 — 호출자가 정한다).
 // 이력형이 섞이면 거부한다.
 export async function getSimpleSettingValues<const Defs extends readonly SettingDef<unknown>[]>(

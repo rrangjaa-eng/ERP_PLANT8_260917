@@ -181,18 +181,18 @@ export default async function CorpCardsPage({
                 {canWrite || canArchive ? (
                   <td>
                     {card.archivedAt ? null : (
-                      <>
+                      <span className={styles.rowActions}>
                         {canWrite ? (
                           <Link
                             href={corpCardsHref(includeInactive, { editId: card.id })}
-                            className={styles.toggle}
+                            className={`${styles.toggle} ${styles.rowLink}`}
                           >
                             수정
                           </Link>
                         ) : null}
                         {canWrite ? <CorpCardActiveToggle id={card.id} active={card.active} /> : null}
                         {canArchive ? <CorpCardDeleteButton id={card.id} label={card.label} /> : null}
-                      </>
+                      </span>
                     )}
                   </td>
                 ) : null}

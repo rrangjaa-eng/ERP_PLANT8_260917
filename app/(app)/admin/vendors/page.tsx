@@ -161,15 +161,18 @@ export default async function VendorsPage({
                     {hasActions ? (
                       <td>
                         {vendor.archivedAt ? null : (
-                          <>
+                          <span className={styles.rowActions}>
                             {canWrite ? (
-                              <Link href={vendorsHref(includeHidden, { editId: vendor.id })} className={styles.toggle}>
+                              <Link
+                                href={vendorsHref(includeHidden, { editId: vendor.id })}
+                                className={`${styles.toggle} ${styles.rowLink}`}
+                              >
                                 수정
                               </Link>
                             ) : null}
                             {canWrite ? <VendorHiddenToggle id={vendor.id} hidden={vendor.hidden} /> : null}
                             {canArchive ? <VendorDeleteButton id={vendor.id} name={vendor.name} /> : null}
-                          </>
+                          </span>
                         )}
                       </td>
                     ) : null}

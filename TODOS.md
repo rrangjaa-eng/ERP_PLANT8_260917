@@ -52,6 +52,58 @@
 **Priority:** P2
 **Depends on:** Phase 7 Scheduler 기반
 
+## Phase 04.4 CEO 리뷰 이연(2026-09-26, Phase 8 전)
+
+리뷰 원문: `docs/designs/plant8-erp-phase04.4-ceo-review-260926.md`. 여섯 항목 모두 Phase 8(전환) 전에 처리한다.
+
+### 프로덕션 리허설 전 실입력 표를 확인 목록에 더하기 (CEO-3)
+
+**What:** `domain/ops/restore-check-tables.ts` `RESTORE_CHECK_TABLES`에 그때 main에 있는 직원 입력 표(프로젝트·견적 줄 등)를 「비어 있지 않음」으로 더한다.
+
+**Why:** 04.4의 목록은 시드가 채우는 표뿐이다. 그래서 프로덕션 리허설 성공이 「직원 입력이 복원된다」를 증명하지 못한다.
+
+**Effort:** S / S · **Priority:** P1 · **Depends on:** Phase 4 머지, 04.4 완료
+
+### GCP 예산 경보 등록 (CEO-4)
+
+**What:** D-06 상한($30)에 맞춘 GCP 예산 경보를 등록한다(부트스트랩 스크립트 또는 OPERATIONS §2 수동 절차).
+
+**Why:** 러너를 잃어 남은 리허설 임시 인스턴스(db-f1-micro)는 다음 수동 실행 때만 잡힌다. 한 달 남으면 상한의 약 1/3이 조용히 샌다. 지금 비용 확인은 매월 초 수동뿐이다.
+
+**Effort:** S / S · **Priority:** P2 · **Depends on:** 없음
+
+### 리허설 전용 최소 권한 SA·WIF ref 조건 (CEO-5)
+
+**What:** 리허설 워크플로가 `roles/cloudsql.admin` 배포 SA 대신 임시 인스턴스만 다루는 전용 SA를 쓰게 하고, WIF에 main ref 조건을 건다.
+
+**Why:** 04.4는 이 분리를 「Phase 8 후속」으로 미뤘는데(04.4-03 T-04.4-14), 플랜 본문 말고는 추적되는 곳이 없었다.
+
+**Effort:** M / S · **Priority:** P2 · **Depends on:** 04.4 완료
+
+### 프로덕션 리허설은 전환 최소 1주 전 (CEO-6)
+
+**What:** Phase 8 전환일 체크리스트에 「프로덕션 원본 리허설은 전환일이 아니라 최소 1주 전에 돌린다」를 넣는다.
+
+**Why:** 프로덕션 경로(`plant8-prod-restore`, 운영 IAM DB 사용자, 확인 입력)는 04.4에서 한 번도 실제로 돌지 않는다. 첫 실패를 고칠 시간이 필요하다.
+
+**Effort:** S / S · **Priority:** P1 · **Depends on:** Phase 8 계획
+
+### 체크리스트의 리허설 확인은 일시까지 본다 (CEO-7)
+
+**What:** Phase 8 체크리스트의 「복원 리허설 결과 확인」은 상태 화면 행의 결과뿐 아니라 일시가 그 리허설 날짜인지까지 본다.
+
+**Why:** 기록 전에 일찍 실패하면(WIF 인증 등) 화면에 이전 성공이 최신처럼 남는다(04.4 UI-SPEC 139행).
+
+**Effort:** S / S · **Priority:** P2 · **Depends on:** Phase 8 계획
+
+### PITR 켜기 사용자 결정 (CEO-8)
+
+**What:** 전환 전에 Cloud SQL PITR(바이너리 로그)을 켤지 사용자 결정 카드로 묻는다.
+
+**Why:** 지금 복원 단위는 하루 1회 자동 백업이라 RPO가 24시간이다. 돈 데이터로 전환한 뒤에는 하루치 지출결의를 잃을 수 있다. 작은 DB에서는 월 몇 달러 수준이다(D-06 상한 안에서 따져 본다).
+
+**Effort:** S / S · **Priority:** P1 · **Depends on:** 없음
+
 ## Completed
 
 ### FINDING-001 PC에서 「내 차례」(`/`)로 돌아가는 길이 없다
@@ -265,3 +317,107 @@
 **Effort:** M
 **Priority:** P3
 **Depends on:** Phase 7
+
+## Phase 04.1 알려진 한계(2026-09-24 CEO 리뷰)
+
+### 새 계급을 만들면 정보 노출표에서 결재·연차 정보를 켠다
+
+**What:** 관리자가 새 계급을 만들면 정보 노출표에서 결재 정보·연차 정보를 켠다. 안 켜도 결재는 된다(구조 값은 투영 밖 — 사용자 결정 2026-09-29 A). 다만 그 계급 결재자는 기안자 이름 · 기간 · 잔고 · 결재선 이름 없이 결재하게 된다.
+
+**Why:** `createRole`은 노출 행을 만들지 않고 노출은 기본 숨김이다.
+
+**Context:** 테스트 `test/integration/approvals-inbox-projection.test.ts` 「새 계급 · 결재 정보 꺼짐」. `domain/permissions/roles.ts`는 04.1의 금지 파일이라 이 페이즈가 고치지 않았다.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** 새 계급의 노출 기본값 결정(사용자)
+
+## Design review 이연(2026-09-29 /design-review, PR #91 Phase 04.4)
+
+### 관리자 목록 동작 칸의 두 동작이 간격 없이 붙는다
+
+**What:** PC 관리자 목록의 마지막 칸에서 두 동작 사이 간격이 0px이다 — 사람 목록 「상세」+「삭제」, 코드표 「비활성화」+「삭제」가 붙어 「상세삭제」처럼 한 낱말로 읽힌다(DOM 실측: 두 요소 bounding box 간격 0).
+
+**Why:** CLAUDE.md §7 「행동은 동작·컴포넌트·디자인으로」 — 되돌리기 어려운 동작(보관)이 옆 동작과 한 덩어리로 보이면 잘못 누르기 쉽다. SYSTEM.md:693은 붉은 버튼 대신 확인으로 구분하므로 색으로는 떨어뜨리지 않는다 — 간격이 유일한 분리 수단이다.
+
+**Context:** 04.4가 바꾸지 않은 마크업(main과 같음)이고 공유 삭제 컴포넌트(DeleteToArchive 계열)가 여러 관리자 화면에 쓰여 이 PR 범위 밖이다. 동작 칸을 `display: flex; gap: var(--s-3)`(기존 토큰)로 묶고 폰(<700)의 44×44 배치와 겹치지 않게 한 번에 맞춘다.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+## Phase 04.1 /review 이월(2026-09-29, PR #90)
+
+`/review`(전문 검토 7 + 적대적 1, 전부 Claude)에서 이 PR이 고치지 않고 넘긴 것. 고친 것은 PR #90 커밋 b4ed02f~6ea5b6e.
+
+### 결재 엔진의 연차 결합을 Phase 5 전에 걷어 낸다
+
+**What:** 범용 결재 엔진이 연차 개념을 직접 안다 — 최종 승인 토스트의 차감 일수(`describeDeduction`이 요약의 `daysQuarters`/`days` 키를 추측, `deductedDays`가 `leave.value` 뒤), `/approvals` 페이지가 요약을 `LeaveSummary`로 캐스트해 연차 서식으로 그림, 회수 액션이 `withdrawLeaveAction`(leave 메뉴 등록)에 있음, 제출(`submitDocument` = 행)과 다시 신청(`resubmitDocument` = 다음 담당 포함)의 반환 모양이 다름, 액션 봉투가 네 가지(`{result}` · `{rejected}` · `{documentId}` · `{added}`), ARCHITECTURE §4-9에 종류가 불러야 할 진입점(submit · resubmit · withdraw · getApprovalView · canSeeApprovalDocument)과 `describeDocuments` 반환 계약이 없음.
+
+**Why:** 지출결의 종류를 더하면 이 자리들이 타입 오류 없이 빈 칸 · 틀린 서식 · 잘못된 메뉴 판정이 된다.
+
+**Context:** /review api-contract · maintainability. 제안: 종류 정의에 `describeFinalApproval` 같은 훅, 요약 대신 종류가 표시 문자열을 준다, `withdrawAction`을 approvals로, 봉투 하나로 통일, §4-9 보강.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** Phase 5 지출결의 계획
+
+### 결재선 설정은 한 단계를 한 번에 저장한다
+
+**What:** 결재선 17키를 칸마다 따로 저장해, 여러 칸을 바꾸는 중간 상태(예: 3단 범위를 `전사`로 먼저 바꾸고 계급은 아직 `계급 무관`)가 그 사이 제출된 문서의 결재선으로 굳는다(단계 행은 제출 때 고정). `계급 무관 + 전사` 조합(회사 누구나 결재자)도 경고가 없다. 보관한 본부는 설정 경고가 「빈 자리로 건너뜀」이라 하지만 조직 스냅숏은 보관된 팀 · 본부를 거르지 않아 그 소속 사람에게 계속 간다.
+
+**Why:** 관리자가 보는 설정과 실제 결재 경로가 잠깐 또는 계속 어긋난다.
+
+**Context:** /review red-team(INVESTIGATE). 한 단계의 사용 · 계급 · 범위 · 부서를 한 액션 · 한 트랜잭션으로, `계급 무관 + 전사` 경고 또는 거부, 스냅숏과 경고가 보관 판정을 같게.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** 보관 본부 처리 방식(사용자 결정)
+
+### 결재 · 연차 읽기 경로의 중복 · 순차 조회
+
+**What:** `/leave/[id]` layout과 page가 같은 문서를 따로 읽고(보기 판정 · 결재 그래프 · 조직 스냅숏 약 4회), 신청 폼 미리보기가 잔고와 결재선을 순차로(칸을 바꿀 때마다 왕복 8회 안팎), 결재함 상세의 잔고가 기안자마다 순차 계산, 설정 경고가 단계마다 조회 한 번.
+
+**Why:** 10~30명에서는 체감이 작지만 결재함 · 폼 반응이 조회 수에 비례해 느려진다.
+
+**Context:** /review performance. React `cache()`로 요청 안 공유, `Promise.all`, `inArray` 일괄 조회, 설정 키 한 번에 읽기.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### 결재 · 연차 E2E 단언 보강
+
+**What:** 두 번 누름 테스트(신청 Ctrl+Enter · 더블클릭 · 폰 승인 두 번)가 행 수만 세서 클라이언트 중복 방지를 빼도 통과할 수 있다(POST 수를 세야 한다). 잔고 E2E 기대값을 앱과 같은 도메인 함수로 만들어 계산 오류를 못 잡는다(한 사례는 글자 그대로의 기대값). 결재함 행을 날짜 라벨로만 찾아 남은 문서와 겹치면 strict mode로 깨질 수 있다.
+
+**Why:** 회귀를 잡아야 할 테스트가 조용히 통과한다.
+
+**Context:** /review testing(LOW-4 이월 포함).
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### 기타 정리(선택)
+
+**What:** ① `users_resignation_on_or_after_hire_check`가 NOT VALID로 남음(기존 행은 두 열이 모두 null이라 기능 문제 없음 — 원하면 VALIDATE 마이그레이션 한 줄). ② 결재 표의 `status` · `self_approval` · `scope_kind` · `action`이 text라 도메인에 캐스트 약 20개 — `text({ enum })`(db/schema — 위험 경로, 사용자 머지). ③ 결재 시트가 `ui/kv-list`를 손으로 복제(84px · 7px · 6px 리터럴), 반려 라벨 `padding-top: 7px`. ④ 설정 화면 비활성 결재선 칸에 이유 글자 없음(§7-1 이유 규칙은 버튼 대상 — /design-review 판정). ⑤ 단순화 제안(선택, 이번에 적용 안 함): 달력 날짜 검사 네 벌을 `lib/dates` 하나로, 승인 · 반려 단계 기록 중복, 테스트 전용 `withDetails` 플래그, 쓰지 않는 deps 타입.
+
+**Why:** 동작 결함은 아니지만 다음 사람이 헷갈리거나 같은 값을 두 곳에서 고치게 된다.
+
+**Context:** /review data-migration · maintainability · design · simplification.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
+### 04.1 화면 /design-review 이연(2026-09-29)
+
+**What:** ① `/leave` 목록 상태 칸이 그룹 머리글을 되풀이한다 — UI-SPEC 236줄 `팀장 결재 중` · `승인 09-18`(04.1-06 「listMyLeave DTO 단계 이름 · 결정일」 후속 후보와 같은 건, 목록 DTO에 지금 단계 이름 · 결정일이 필요). 처리함 상태 날짜도 같은 원천(최종 결정일)이 필요하다(지금 DTO의 actedAt은 「내가 처리한 날」이라 쓰지 않았다). ② 동시 처리 줄이 화면마다 다르다 — 문서 화면은 버튼 위 줄(UI-SPEC S3은 1차 왼쪽 막힘 자리), 확인 창은 1차를 막고, 결재함 행 · 시트 · 문서 줄은 1차가 살아 있다. 한 규칙으로. ③ 폰 고정 행동 줄이 두 방식(문서 화면 `.bar` 윗선 · 실측 여백 / 신청 폼 `.formBar` 선 없음 · 고정 여백). ④ 관리자 연차 조정 폼은 Enter로 제출되고 Ctrl+Enter · kbd가 없다(신청 폼과 다름). ⑤ 관리자 연차 섹션 입사일이 날 `<input>`에 /leave 경로 CSS를 빌려 쓰고, 조정 기록 표 날짜가 ISO 전체(`/leave`는 formatTableDate). ⑥ 문서 화면 `기안` 행에 시각이 없다(UI-SPEC `2026-09-15 11:20`), 번호 · 상태 태그가 제목 옆이 아니라 다음 줄.
+
+**Why:** UI-SPEC · 「같은 행동은 같은 모양」 원칙과 어긋나지만 동작 결함은 아니고, ①은 목록 조회 · 투영 변경이 필요하다.
+
+**Context:** /design-review 2026-09-29(독립 DOM 감사는 통과 — blocker · major 0). 폰 주 버튼 오른쪽 규칙 확장은 PR #90 「[사용자 결정 요청]」.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** ① 없음 · ② 사용자 결정 여부 판단

@@ -77,7 +77,7 @@ export default defineConfig({
   projects: [
     {
       name: "desktop",
-      testIgnore: [MOBILE_SPEC_PATTERN, CERT_SPEC_PATTERN],
+      testIgnore: [MOBILE_SPEC_PATTERN, CERT_SPEC_PATTERN, "settings-approval-route.spec.ts"],
     },
     {
       name: "mobile-375",
@@ -127,6 +127,14 @@ export default defineConfig({
       testMatch: CERT_SPEC_PATTERN,
       workers: 1,
       dependencies: ["cert-setup"],
+    },
+    {
+      // 공유 erp_test의 전역 결재선을 바꾸는 스펙이라 다른 모든 스펙 뒤에 돈다(CEO-14).
+      // 스펙 안 finally 복원과 함께 쓰는 이중 장치다. 확인증 프로젝트(certs)도
+      // 「다른 모든 스펙」이라 그 뒤에 둔다.
+      name: "desktop-settings",
+      testMatch: "settings-approval-route.spec.ts",
+      dependencies: ["mobile-375", "certs"],
     },
   ],
 });

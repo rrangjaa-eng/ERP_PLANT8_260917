@@ -127,7 +127,7 @@ GitHub Environments·승인 버튼은 없다(D-05, 무료 플랜 비공개 저�
 없거나 로컬 이력에 없어도 같다 — 이력이 없는 경우는 최신 main을 fetch한 체크아웃에서
 다시 실행). 복구는 `docs/design/DECISIONS.md` 04-50 항목의 절차(전진 수정이 먼저 —
 불가피하면 쓰기를 멈추고 역 SQL 적용 후 수동 `update-traffic`)를 따른다. 데이터 손상은
-여전히 백업 복원(OPS-03, 별도 페이즈)으로 대응한다.
+여전히 백업 복원(§14, `docs/RESTORE.md`)으로 대응한다.
 
 ## 6. 경보 3개
 
@@ -248,7 +248,7 @@ Workspace 관리자에게 확인할 네 가지: 발송 주소(`SMTP_FROM`) · �
 ## 10. 상태 화면
 
 `/admin/system-status`(권한표의 시스템 상태 보기 권한이 있는 계급만, 권한이 없으면 404) — 배포 버전(git SHA + 배포 시각), DB
-커넥션 수/한도, 마지막 백업(ok/none/확인 불가). 커넥션 비율이 80% 이상이면 배너.
+커넥션 수/한도, 마지막 백업(ok/none/확인 불가), 복원 리허설(결과·원본·일시·백업 id·소요, 기록 없음/확인 불가). 커넥션 비율이 80% 이상이면 배너.
 로컬처럼 GCP 조회가 안 되면 "확인 불가"로 표시한다(D-18).
 
 ## 11. 로그·IP 규칙
@@ -265,10 +265,16 @@ JSON 구조화 로그(`severity`·`message`·`event`·필드), Cloud Logging에�
 내보내기는 화면(관리자 > 설정)에서 JSON 다운로드로 하지만, 가져오기는 파일 업로드
 화면이 없다 — `db:rotate-key`와 같은 결로 로컬 전용 CLI 하나뿐이다: `pnpm
 settings:import --file <내보낸 JSON 경로>`. Cloud Run Job이 아니다(migrate·seed·
-account·db-bootstrap 넷만 자동 프로비저닝 단계라 Job으로 존재한다) — `.env.local`에
+account·db-bootstrap·restore 다섯만 Job으로 존재한다) — `.env.local`에
 대상 환경 `DATABASE_URL`을 맞춘 로컬에서 운영자가 손으로 돌린다.
 
 `importSettings`는 파일의 모든 키를 먼저 검증하고 하나라도 스키마를 만족하지 않으면
 **아무것도 쓰지 않는다**(단일 트랜잭션). 부분적으로만 유효한 파일을 넣으면 CLI가 실패한
 항목을 한 줄씩 나열하고 종료 코드 1로 끝난다 — 상태는 가져오기 전 그대로다. 파일이
 없거나 JSON이 아니거나 `settings` 필드가 없으면 사용법 오류(종료 코드 2)다.
+
+## 14. 백업·복원 (OPS-03)
+
+자동 백업은 `deploy.sh`가 켠다(`--backup-start-time=18:00` UTC · `--retained-backups-count=7`, 확인: `gcloud sql instances describe plant8-{env}-db --format='value(settings.backupConfiguration)'`). PITR은 꺼져 있다 — 복원 단위는 하루 1회 자동 백업이고 그 뒤 입력은 복원에서 사라진다.
+리허설: Actions `restore-rehearsal.yml`을 main에서 실행(production은 `confirm_production`에 `plant8-prod-db`) → 임시 `plant8-{env}-rehearsal-<실행 id>-<시도>`에 최신 백업 복원 → `plant8-{env}-restore` Job 확인 → 삭제 → 그 환경 DB에 기록.
+결과는 `/admin/system-status` 「복원 리허설」과 Actions 요약 — 기록 단계 전 이른 실패(WIF 인증 등)는 화면에 남지 않아 이전 결과가 최신처럼 보인다, Actions 실행 결과를 먼저 본다. 남은 임시 인스턴스 정리와 실제 사고 복원은 [`docs/RESTORE.md`](RESTORE.md).

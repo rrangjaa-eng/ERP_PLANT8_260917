@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { Fragment } from "react";
 import Link from "next/link";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
@@ -9,6 +10,7 @@ import { PageHeader } from "@/ui/page-header/PageHeader";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { PersonForm, PersonDeleteButton } from "./person-form";
+import { personLoginStatus } from "./person-status";
 import styles from "./people.module.css";
 
 // 사람·계급·조직 세 화면은 같은 권한(admin.people)으로 관리되는 한 묶음이라
@@ -67,42 +69,82 @@ export default async function PeoplePage({
       {people.length === 0 ? (
         <ListEmpty message="등록된 사람이 없습니다" action={{ label: "사람 등록", href: "/admin/people?new=1#person-form" }} />
       ) : (
-        <table className={styles.table}>
+        <table className={`${styles.table} ${styles.peopleTable}`}>
           <caption className="sr-only">사람</caption>
           <thead>
             <tr>
               <th scope="col">이름</th>
-              <th scope="col">이메일</th>
-              <th scope="col">계급</th>
-              <th scope="col">현재 소속</th>
+              <th scope="col" className={styles.prioP2}>
+                이메일
+              </th>
+              <th scope="col" className={styles.prioP2}>
+                계급
+              </th>
+              <th scope="col" className={styles.prioP2}>
+                현재 소속
+              </th>
               <th scope="col">상태</th>
               <th scope="col">동작</th>
             </tr>
           </thead>
           <tbody>
-            {people.map((person) => (
-              <tr key={person.id}>
-                <td>{person.name}</td>
-                <td>{person.email}</td>
-                <td>{person.roleName ?? roleNameById.get(person.roleId ?? "") ?? "—"}</td>
-                <td>{person.currentTeamName ?? "—"}</td>
-                <td>
-                  {person.archivedAt ? (
-                    <StatusTag kind="muted" variant="text">
-                      보관됨
-                    </StatusTag>
-                  ) : "—"}
-                </td>
-                <td>
-                  <Link href={`/admin/people/${person.id}`} className={styles.detailLink}>
-                    상세
-                  </Link>
-                  {!person.archivedAt && canArchive ? (
-                    <PersonDeleteButton userId={person.id} name={person.name} />
-                  ) : null}
-                </td>
-              </tr>
-            ))}
+            {people.map((person, index) => {
+              // 행 머리글 id는 순번으로 — person.value가 꺼진 계급의 DTO에는 id가 없다(UI-SPEC 접근성 관계 ①).
+              const nameId = `people-row-${index}-name`;
+              const roleName = person.roleName ?? roleNameById.get(person.roleId ?? "") ?? "—";
+              const teamName = person.currentTeamName ?? "—";
+              const loginStatus = personLoginStatus(person);
+              return (
+                <Fragment key={person.id}>
+                  <tr>
+                    <th scope="row" id={nameId}>
+                      {person.name}
+                    </th>
+                    <td className={styles.prioP2}>{person.email}</td>
+                    <td className={styles.prioP2}>{roleName}</td>
+                    <td className={styles.prioP2}>{teamName}</td>
+                    <td>
+                      {loginStatus.kind === "archived" ? (
+                        <StatusTag kind="muted" variant="text">
+                          보관됨
+                        </StatusTag>
+                      ) : loginStatus.badges.length === 0 ? (
+                        "—"
+                      ) : (
+                        // D8-07: PC는 · 로 한 줄, 폰은 구분자를 숨기고 세로로 쌓는다.
+                        <span className={styles.badges}>
+                          {loginStatus.badges.map((badge, badgeIndex) => (
+                            <Fragment key={badge}>
+                              {badgeIndex > 0 ? <span className={styles.badgeSep}> · </span> : null}
+                              <StatusTag kind="muted" variant="text">
+                                {badge}
+                              </StatusTag>
+                            </Fragment>
+                          ))}
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      <Link href={`/admin/people/${person.id}`} className={styles.detailLink}>
+                        상세
+                      </Link>
+                      {!person.archivedAt && canArchive ? (
+                        <PersonDeleteButton userId={person.id} name={person.name} />
+                      ) : null}
+                    </td>
+                  </tr>
+                  {/* §7-3 폰 칸 접기: P2 값의 유일한 출처라 aria-hidden을 두지 않는다(UI-SPEC ④). */}
+                  <tr className={styles.collapsedRow}>
+                    <td colSpan={6} headers={nameId} className={styles.collapsedCell}>
+                      <span className="sr-only">이메일 </span>
+                      {person.email} · <span className="sr-only">계급 </span>
+                      {roleName} · <span className="sr-only">현재 소속 </span>
+                      {teamName}
+                    </td>
+                  </tr>
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       )}

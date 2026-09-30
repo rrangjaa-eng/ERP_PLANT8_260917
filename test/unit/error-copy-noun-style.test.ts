@@ -47,6 +47,9 @@ const ERROR_SITES: RegExp[] = [
   /\bsuper\(\s*["`]([^"`\n]*[가-힣][^"`\n]*)["`]/g,
   // /review 맹점 (b) — next-safe-action returnValidationErrors의 필드 오류 배열.
   /_errors:\s*\[\s*["`]([^"`\n]*[가-힣][^"`\n]*)["`]/g,
+  // /review 맹점 (d) — 오류 생성자 인자가 삼항식이면 `?` 갈래와 `:` 갈래 문구(클래스 · 문구 두 그룹).
+  /new (\w*Error)\([^;\n]*?\?\s*["`]([^"`\n]*[가-힣][^"`\n]*)["`]/g,
+  /new (\w*Error)\([^;\n]*?:\s*["`]([^"`\n]*[가-힣][^"`\n]*)["`]\s*\)/g,
 ];
 // 다음 행동 표기는 「새로 고침」(UI-SPEC F1)으로 통일한다 — 붙여 쓴 「새로고침」도 걸린다.
 // 폼·행동 실패 요약 「~하지 못했습니다」는 어디에 있든 오류다.
@@ -124,6 +127,9 @@ describe("오류 문구 명사형 통일 (결정 4 · SYSTEM.md §8-3)", () => {
     'returnValidationErrors(schema, { date: { _errors: ["형식이 틀렸습니다."] } });',
     // /review 맹점 (c) — 여러 줄 JSX 텍스트 자식이 그 줄 하나를 통째로 차지하는 경우.
     '<span id={REASON_ID} className={styles.rowError}>\n  추가하지 못했습니다 · 다시 시도\n</span>',
+    // /review 맹점 (d) — 오류 생성자 인자가 삼항식이면 두 갈래 문구 모두.
+    'throw new ForbiddenError(field === "a" ? "입사일을 바꿀 권한이 없습니다." : "퇴직일 권한 없음");',
+    'throw new ForbiddenError(field === "a" ? "입사일 권한 없음" : "퇴직일을 바꿀 권한이 없습니다.");',
   ])("알려진 나쁜 예 %s 를 잡는다", (sample) => {
     expect(offendersIn("sample.ts", sample)).not.toEqual([]);
   });

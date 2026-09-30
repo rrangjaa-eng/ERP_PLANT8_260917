@@ -50,11 +50,12 @@ describe("app/(app)/approvals/page.tsx — 결재함 EMPTY (§7-7)", () => {
 
   it("SYSTEM.md가 이 화면의 예시로 적어 둔 문구·이동 대상을 쓴다", () => {
     // §7-7 EMPTY 행의 예시가 이 화면을 직접 지목한다:
-    //   `결재할 건이 없습니다 · 지출결의 목록 보기`
-    // 결재는 지출결의에서 올라오므로 이동 대상이 의미를 갖는다.
-    expect(SYSTEM).toContain("결재할 건이 없습니다");
+    //   `결재할 건이 없습니다 · 연차 목록 보기`
+    // 04.1(오케스트레이터 결정 11 · DECISIONS.md 2026-09-26): 지출결의 목록은 Phase 5 화면이라
+    // 이 페이즈의 결재 문서는 연차뿐이다 — 이동 대상은 연차 목록이다.
+    expect(SYSTEM).toContain("결재할 건이 없습니다 · 연차 목록 보기");
     expect(source).toContain("결재할 건이 없습니다");
-    expect(source).toContain("/expenses");
+    expect(source).toContain('href: "/leave"');
     expect(source).not.toContain("/pnl");
   });
 });
@@ -125,10 +126,15 @@ describe("관리자 표 — 빈 상태 칸 em dash (F-08)", () => {
     ["vendors/page.tsx", ["app", "(app)", "admin", "vendors", "page.tsx"]],
     ["corp-cards/page.tsx", ["app", "(app)", "admin", "corp-cards", "page.tsx"]],
     ["code-tables/page.tsx", ["app", "(app)", "admin", "code-tables", "page.tsx"]],
-    ["people/page.tsx", ["app", "(app)", "admin", "people", "page.tsx"]],
   ])("%s의 정상 상태 칸이 —를 렌더한다", (_name, parts) => {
     const source = read(...parts);
     expect(source).toMatch(/<\/StatusTag>\s*\)\s*:\s*"—"\s*\}/);
+  });
+
+  // 04.4-05(D8-07): 사람 목록 상태 칸은 보관됨 / 로그인 배지 / — 세 갈래다 — 배지가 0개인 정상 상태가 —다.
+  it("people/page.tsx의 정상 상태 칸(로그인 배지 0개)이 —를 렌더한다", () => {
+    const source = read("app", "(app)", "admin", "people", "page.tsx");
+    expect(source).toMatch(/loginStatus\.badges\.length === 0 \?\s*\(\s*"—"\s*\)/);
   });
 
   it("roles-client.tsx의 「시드 여부」 칸이 비시드일 때 —를 렌더한다", () => {

@@ -24,6 +24,7 @@ test.describe("법인카드 관리 화면 (MAST-03)", () => {
     await page.getByLabel("이름").fill("카드소지자");
     await page.getByLabel("이메일").fill(holderEmail);
     await page.getByLabel("계급").selectOption(DEFAULT_ROLE_ID);
+    await page.getByLabel("입사일").fill("2026-01-01");
     await page.getByRole("button", { name: "사람 등록" }).click();
     await expect(page.getByText(`초기 비밀번호 — ${holderEmail}`)).toBeVisible();
 

@@ -1,5 +1,5 @@
 {
-  "id": "312e23b6-a29a-4d55-a98f-00ebc1a24499",
+  "id": "5494d4eb-949f-42a7-bcbe-5c2a1a765f41",
   "prevId": "13d5b4e9-3c7d-4f30-a056-91c52470459c",
   "version": "7",
   "dialect": "postgresql",
@@ -473,6 +473,12 @@
           "notNull": true,
           "default": false
         },
+        "first_login_at": {
+          "name": "first_login_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
         "archived_at": {
           "name": "archived_at",
           "type": "timestamp",
@@ -579,609 +585,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.cert_events": {
-      "name": "cert_events",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "won_on": {
-          "name": "won_on",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "token_hash": {
-          "name": "token_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "token_encrypted": {
-          "name": "token_encrypted",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "closed_at": {
-          "name": "closed_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "closed_reason": {
-          "name": "closed_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "closed_by": {
-          "name": "closed_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "contact_phone": {
-          "name": "contact_phone",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expense_document_id": {
-          "name": "expense_document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "create_request_id": {
-          "name": "create_request_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "cert_events_closed_by_users_id_fk": {
-          "name": "cert_events_closed_by_users_id_fk",
-          "tableFrom": "cert_events",
-          "tableTo": "users",
-          "columnsFrom": [
-            "closed_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "cert_events_created_by_users_id_fk": {
-          "name": "cert_events_created_by_users_id_fk",
-          "tableFrom": "cert_events",
-          "tableTo": "users",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "cert_events_token_hash_unique": {
-          "name": "cert_events_token_hash_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "token_hash"
-          ]
-        },
-        "cert_events_create_request_id_unique": {
-          "name": "cert_events_create_request_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "create_request_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "cert_events_closed_reason_check": {
-          "name": "cert_events_closed_reason_check",
-          "value": "\"cert_events\".\"closed_reason\" is null or \"cert_events\".\"closed_reason\" in ('all_submitted','manual')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.cert_signature_uploads": {
-      "name": "cert_signature_uploads",
-      "schema": "",
-      "columns": {
-        "object_key": {
-          "name": "object_key",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.cert_submissions": {
-      "name": "cert_submissions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "winner_id": {
-          "name": "winner_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "event_id": {
-          "name": "event_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cert_no": {
-          "name": "cert_no",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "rrn_encrypted": {
-          "name": "rrn_encrypted",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "rrn_masked": {
-          "name": "rrn_masked",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "phone": {
-          "name": "phone",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "address": {
-          "name": "address",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "consent_at": {
-          "name": "consent_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "consent_version": {
-          "name": "consent_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "retention_years": {
-          "name": "retention_years",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "signature_key": {
-          "name": "signature_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "idempotency_key_hash": {
-          "name": "idempotency_key_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "submitted_at": {
-          "name": "submitted_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "purged_at": {
-          "name": "purged_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "version": {
-          "name": "version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "cert_submissions_winner_id_cert_winners_id_fk": {
-          "name": "cert_submissions_winner_id_cert_winners_id_fk",
-          "tableFrom": "cert_submissions",
-          "tableTo": "cert_winners",
-          "columnsFrom": [
-            "winner_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "cert_submissions_event_id_cert_events_id_fk": {
-          "name": "cert_submissions_event_id_cert_events_id_fk",
-          "tableFrom": "cert_submissions",
-          "tableTo": "cert_events",
-          "columnsFrom": [
-            "event_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "cert_submissions_updated_by_users_id_fk": {
-          "name": "cert_submissions_updated_by_users_id_fk",
-          "tableFrom": "cert_submissions",
-          "tableTo": "users",
-          "columnsFrom": [
-            "updated_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "cert_submissions_winner_id_unique": {
-          "name": "cert_submissions_winner_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "winner_id"
-          ]
-        },
-        "cert_submissions_cert_no_unique": {
-          "name": "cert_submissions_cert_no_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "cert_no"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.cert_winners": {
-      "name": "cert_winners",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "event_id": {
-          "name": "event_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "phone": {
-          "name": "phone",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "distinguish_label": {
-          "name": "distinguish_label",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "prize_name": {
-          "name": "prize_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "quantity": {
-          "name": "quantity",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "delivery": {
-          "name": "delivery",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sort_order": {
-          "name": "sort_order",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "failed_attempts": {
-          "name": "failed_attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "locked_until": {
-          "name": "locked_until",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cumulative_failed_attempts": {
-          "name": "cumulative_failed_attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "hard_locked_at": {
-          "name": "hard_locked_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verify_idem_outcome": {
-          "name": "verify_idem_outcome",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verify_proof_hash": {
-          "name": "verify_proof_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verified_until": {
-          "name": "verified_until",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "offered_consent_version": {
-          "name": "offered_consent_version",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "offered_retention_years": {
-          "name": "offered_retention_years",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "submitted_at": {
-          "name": "submitted_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "expense_line_id": {
-          "name": "expense_line_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "purged_at": {
-          "name": "purged_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "version": {
-          "name": "version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "updated_by": {
-          "name": "updated_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "cert_winners_event_id_idx": {
-          "name": "cert_winners_event_id_idx",
-          "columns": [
-            {
-              "expression": "event_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "cert_winners_event_id_cert_events_id_fk": {
-          "name": "cert_winners_event_id_cert_events_id_fk",
-          "tableFrom": "cert_winners",
-          "tableTo": "cert_events",
-          "columnsFrom": [
-            "event_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "cert_winners_updated_by_users_id_fk": {
-          "name": "cert_winners_updated_by_users_id_fk",
-          "tableFrom": "cert_winners",
-          "tableTo": "users",
-          "columnsFrom": [
-            "updated_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "cert_winners_event_id_name_phone_unique": {
-          "name": "cert_winners_event_id_name_phone_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "event_id",
-            "name",
-            "phone"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "cert_winners_quantity_check": {
-          "name": "cert_winners_quantity_check",
-          "value": "\"cert_winners\".\"quantity\" >= 1"
-        },
-        "cert_winners_delivery_check": {
-          "name": "cert_winners_delivery_check",
-          "value": "\"cert_winners\".\"delivery\" in ('onsite','parcel')"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.code_items": {
@@ -3520,44 +2923,103 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.privacy_session_activity": {
-      "name": "privacy_session_activity",
+    "public.restore_rehearsals": {
+      "name": "restore_rehearsals",
       "schema": "",
       "columns": {
-        "session_id": {
-          "name": "session_id",
-          "type": "text",
+        "seq": {
+          "name": "seq",
+          "type": "bigint",
           "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "restore_rehearsals_seq_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
           "notNull": true
         },
-        "last_seen_at": {
-          "name": "last_seen_at",
-          "type": "timestamp",
+        "succeeded": {
+          "name": "succeeded",
+          "type": "boolean",
           "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
+          "notNull": true
+        },
+        "failed_stage": {
+          "name": "failed_stage",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "backup_id": {
+          "name": "backup_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "run_url": {
+          "name": "run_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "run_key": {
+          "name": "run_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
         }
       },
       "indexes": {},
-      "foreignKeys": {
-        "privacy_session_activity_session_id_sessions_id_fk": {
-          "name": "privacy_session_activity_session_id_sessions_id_fk",
-          "tableFrom": "privacy_session_activity",
-          "tableTo": "sessions",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "restore_rehearsals_run_key_unique": {
+          "name": "restore_rehearsals_run_key_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "run_key"
+          ]
         }
       },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "restore_rehearsals_source_check": {
+          "name": "restore_rehearsals_source_check",
+          "value": "\"restore_rehearsals\".\"source\" in ('staging', 'production')"
+        },
+        "restore_rehearsals_stage_check": {
+          "name": "restore_rehearsals_stage_check",
+          "value": "(\"restore_rehearsals\".\"succeeded\" and \"restore_rehearsals\".\"failed_stage\" is null) or (not \"restore_rehearsals\".\"succeeded\" and \"restore_rehearsals\".\"failed_stage\" is not null and \"restore_rehearsals\".\"failed_stage\" in ('restore', 'verify', 'cleanup'))"
+        },
+        "restore_rehearsals_failed_run_url_check": {
+          "name": "restore_rehearsals_failed_run_url_check",
+          "value": "\"restore_rehearsals\".\"succeeded\" or \"restore_rehearsals\".\"run_url\" is not null"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.notification_log": {

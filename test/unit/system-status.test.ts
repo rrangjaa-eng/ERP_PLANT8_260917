@@ -17,6 +17,8 @@ const employeeViewer: Viewer = { id: "emp-1", roleId: "role-pm" };
 // 스텁해 Postgres 없이 두 계급을 흉내낸다.
 const allowCan = () => Promise.resolve(true);
 const denyCan = () => Promise.resolve(false);
+// 04.4-01: 복원 리허설 기록 조회 — 기존 테스트는 기록 없음(null)만 주입한다.
+const noRehearsal = () => Promise.resolve(null);
 
 // 04.2-13: 새 항목(알림 발송·이메일)의 읽기를 기본으로 스텁해 기존 케이스가 DB 없이 돈다.
 const quietDeps: Partial<StatusDeps> = {
@@ -54,6 +56,7 @@ describe("getSystemStatus", () => {
       countConnections: () => Promise.resolve(1),
       maxConnections: () => Promise.resolve(25),
       getLastBackup: () => Promise.resolve({ kind: "none" as const }),
+      getLatestRestoreRehearsal: noRehearsal,
     });
     expect(status.backup.kind).toBe("none");
   });
@@ -65,6 +68,7 @@ describe("getSystemStatus", () => {
       countConnections: () => Promise.resolve(3),
       maxConnections: () => Promise.resolve(25),
       getLastBackup: () => Promise.resolve({ kind: "unavailable" as const, reason: "not-configured" }),
+      getLatestRestoreRehearsal: noRehearsal,
     });
 
     expect("unavailable" in status.db).toBe(false);
@@ -87,6 +91,7 @@ describe("getSystemStatus", () => {
         },
         maxConnections: () => Promise.resolve(25),
         getLastBackup: () => Promise.resolve({ kind: "none" as const }),
+        getLatestRestoreRehearsal: noRehearsal,
       });
 
       expect(status.db).toEqual({ unavailable: true });
@@ -110,8 +115,51 @@ describe("getSystemStatus", () => {
       countConnections: () => Promise.resolve(1),
       maxConnections: () => Promise.resolve(25),
       getLastBackup: () => Promise.resolve({ kind: "none" as const }),
+      getLatestRestoreRehearsal: noRehearsal,
     });
     expect(status.backup.kind).toBe("none");
+  });
+});
+
+describe("getSystemStatus — 복원 리허설 (04.4-01)", () => {
+  it("기록이 없으면 restoreRehearsal이 none이다", async () => {
+    const status = await getSystemStatus(adminViewer, {
+      ...quietDeps,
+      can: allowCan,
+      countConnections: () => Promise.resolve(1),
+      maxConnections: () => Promise.resolve(25),
+      getLastBackup: () => Promise.resolve({ kind: "none" as const }),
+      getLatestRestoreRehearsal: noRehearsal,
+    });
+    expect(status.restoreRehearsal).toEqual({ kind: "none" });
+  });
+
+  it("권한 없는 viewer는 NotAdminError이고 리허설 기록을 조회하지 않는다", async () => {
+    const getLatestRestoreRehearsal = vi.fn(noRehearsal);
+    await expect(
+      getSystemStatus(employeeViewer, { ...quietDeps, can: denyCan, getLatestRestoreRehearsal }),
+    ).rejects.toBeInstanceOf(NotAdminError);
+    expect(getLatestRestoreRehearsal).not.toHaveBeenCalled();
+  });
+
+  it("리허설 조회가 throw하면 restoreRehearsal만 unavailable이고 나머지는 정상이다", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const status = await getSystemStatus(adminViewer, {
+        ...quietDeps,
+        can: allowCan,
+        countConnections: () => Promise.resolve(3),
+        maxConnections: () => Promise.resolve(25),
+        getLastBackup: () => Promise.resolve({ kind: "none" as const }),
+        getLatestRestoreRehearsal: () => Promise.reject(new Error("lock timeout")),
+      });
+      expect(status.restoreRehearsal).toEqual({ kind: "unavailable" });
+      expect(status.db).toMatchObject({ connections: 3, maxConnections: 25 });
+      expect(status.backup).toEqual({ kind: "none" });
+      expect(status.version.sha).toBe("local");
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 });
 
@@ -126,6 +174,7 @@ function statusDeps(extra: Partial<StatusDeps>): Partial<StatusDeps> {
     countConnections: () => Promise.resolve(1),
     maxConnections: () => Promise.resolve(25),
     getLastBackup: () => Promise.resolve({ kind: "none" as const }),
+    getLatestRestoreRehearsal: noRehearsal,
     now: () => new Date("2026-09-24T03:00:00Z"),
     ...extra,
   };

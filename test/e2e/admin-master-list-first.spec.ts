@@ -105,6 +105,7 @@ test.describe("사람 화면 — 목록이 첫 화면, 등록은 행동 (§6-1)"
     await page.getByLabel("이름").fill("목록우선대상");
     await page.getByLabel("이메일").fill(newEmail);
     await page.getByLabel("계급").selectOption(DEFAULT_ROLE_ID);
+    await page.getByLabel("입사일").fill("2026-01-01");
     await page.getByRole("button", { name: "사람 등록" }).click();
     await expect(page.getByText(`초기 비밀번호 — ${newEmail}`)).toBeVisible();
   });

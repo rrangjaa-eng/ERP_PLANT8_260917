@@ -165,10 +165,15 @@ export function adminIndexGroups(viewer: RoleMenuViewer): AdminMenuGroup[] {
     .filter((group) => group.items.length > 0);
 }
 
-function buildAccountGroup(): AccountEntry[] {
+// 04.1-06(A1 · UI-SPEC S10): 연차 — 계정 그룹의 셀프 서비스. 권한표 `leave` view가 있을 때만(계급 이름 분기 없음).
+const LEAVE_MENU_KEY = "leave";
+
+function buildAccountGroup(viewer: RoleMenuViewer): AccountEntry[] {
+  const leave: AccountEntry[] = viewer.allowedMenus.includes(LEAVE_MENU_KEY) ? [{ kind: "link", label: "연차", href: "/leave" }] : [];
   return [
     { kind: "link", label: "알림함", href: NOTIFICATIONS_HREF },
     { kind: "link", label: "내 정보", href: "/account" },
+    ...leave,
     SETTINGS_ENTRY,
     { kind: "action", label: "로그아웃", action: "logout" },
   ];
@@ -227,7 +232,7 @@ export function roleMenu(viewer: RoleMenuViewer): RoleMenu {
   return {
     topBarMenu: [...TOP_BAR_MENU],
     adminMenu: buildAdminMenu(viewer),
-    accountGroup: buildAccountGroup(),
+    accountGroup: buildAccountGroup(viewer),
     bottomTabs: buildBottomTabs(viewer),
   };
 }

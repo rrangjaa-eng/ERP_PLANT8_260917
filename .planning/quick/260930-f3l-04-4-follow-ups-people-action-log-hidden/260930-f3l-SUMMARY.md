@@ -70,7 +70,8 @@ actuals:
 | 계급 표(같은 `.table`) | 44.5 | 44.5 | 61 | 61 | 미달 없음 | 모양 변화 없음 확인 |
 | 거래처 | 35.69 | 36 이상(허용 오차 0.05 스펙 통과) | 109 | 통과 | 독립 DOM 감사 후 미달 확정 | `.table td` `height` + `.collapsedCell` height auto |
 | 법인카드 | 35.69 → 전체 실행 35.39 | 통과 | 152.5 | 통과 | 전체 실행 데이터에서 재현 | `.table td` `height` |
-| 코드표 | 44.5 | 미변경 | 111 | 미변경 | 미달 없음 | 코드 변경 없음 |
+| 코드표(관리자, 입력 칸) | 44.5 | 미변경 | 111 | 미변경 | 미달 없음 | 입력 44.5px이 칸 높이를 가렸다 |
+| 코드표(보기만 하는 계급, 글자 행) | 34.89 | 36 이상(스펙 통과) | 44 이상(미달 없음) | 통과 | 재현(/review) | `.table td` `height: var(--row-min)`, 폰은 격자 항목이라 `height: auto` + `min-height: var(--row-min)` (칸에 `height`만 주면 입력이 6px 넘쳐 mobile-code-tables 실패 — 실측) |
 | 행동 로그 | 34.89 | 36 | 44 | 44 | 재현 | `.table td` `height` + `.collapsedCell` height auto |
 | 보관함 | 35.69 | 36 이상(허용 오차 0.05 스펙 통과) | 64 | 통과 | 독립 DOM 감사 후 미달 확정 | `.table td` `height` + `.collapsedCell` height auto |
 | 소속 발령 이력(ui/history-list) | 34.89 | 36 | 44.5 | 44.5 | 재현 | `.table td` `height` |
@@ -94,7 +95,13 @@ actuals:
 
 **독립 DOM 감사 후속 수정**: (a) 허용 오차 0.5px가 거래처·보관함 PC 35.69px 미달을 가렸다 — 0.05px로 줄이고(0fd0b6d) 두 표를 `height: var(--row-min)`로 고쳤다(6152454, 위 표 갱신). (b) 폰 375에서 사람 목록 「상세」·「삭제」가 세로로 쌓여 간격 0px → 폰 미디어 쿼리 `.rowActions`에 `row-gap: var(--s-4)`(7bf864c 테스트 RED 0px, 9bd8e7e 수정, 통과). 위 Deviation 2의 미확인 위험이 실제로 나타난 경우다.
 
-**5. 그 외**: 스윕 테스트 규칙 정규식은 계획의 명세대로이며, 커밋 접두어 `test:`는 훅 경고(docs/feat/fix/chore 권장)가 났으나 계획이 지정한 형식을 따랐다.
+**5. [/review 수정 · D1 사용자 결정] 행동 로그 actorId**: D1 사용자 결정(2026-09-30): 고를 사람이 없는 계급은 URL actorId를 적용하지 않는다 — 계획 <context>의 「URL actorId 서버 필터는 그대로」를 대체 (조회 필터·내보내기·정리·필터 줄 모두).
+
+**6. [/review 수정 · D2 사용자 결정] 상태 화면 「실행 기록」**: 링크에 sr-only 「 (새 탭)」. W3 실측의 글자 위치 범위를 첫 글자 노드로 좁혔다(sr-only 사각형이 섞여 14px 어긋남 — 측정 문제, 레이아웃 변화 아님).
+
+**7. [/review 수정] 사람 목록**: 계급 열 조건 `hasKey("roleName")`(role.value 키), 빈 목록 action은 canWrite일 때만. 스펙 위생: table-row-min이 만든 계급은 끝에 보관, roles import 병합, people.spec DR-7 describe 제목에서 뷰포트 제거.
+
+**8. 그 외**: 스윕 테스트 규칙 정규식은 계획의 명세대로이며, 커밋 접두어 `test:`는 훅 경고(docs/feat/fix/chore 권장)가 났으나 계획이 지정한 형식을 따랐다.
 
 ## 판단 근거
 

@@ -189,3 +189,18 @@ test.describe("사람 목록 로그인 상태 배지 · 행 머리글 (04.4-05, 
     expect(parseFloat(head.borderBottomWidth)).toBe(lineStrong);
   });
 });
+
+test.describe("PC 1280 — 「상세」와 「삭제」 사이가 --s-4 이상이다 (DR-7)", () => {
+  test("한 행의 「상세」 링크 오른쪽 끝과 「삭제」 버튼 왼쪽 끝 간격이 --s-4 이상이다", async ({ page }) => {
+    await loginAsAdmin(page);
+    const email = await registerPerson(page, "간격대상");
+    const gapToken = await tokenNumber(page, "--s-4");
+
+    const row = personRow(page, email);
+    const detail = await row.getByRole("link", { name: "상세" }).boundingBox();
+    const remove = await row.getByRole("button", { name: "삭제" }).boundingBox();
+    if (!detail || !remove) throw new Error("「상세」 또는 「삭제」 상자를 잴 수 없다");
+    const gap = remove.x - (detail.x + detail.width);
+    expect(gap, `「상세」↔「삭제」 간격 ${gap}px`).toBeGreaterThanOrEqual(gapToken - 0.5);
+  });
+});

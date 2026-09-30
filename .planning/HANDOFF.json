@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-30T14:03:22.732Z",
+  "timestamp": "2026-09-30T17:36:48.817Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -134,121 +134,67 @@
       "name": "PR #104 /ship — 사용자 게이트 로그 커밋 4af5cf3(머지 13b2749)·9c2ca08(ff) 반영, 단위 2245 · 통합 2578 · CI=true build 통과, 푸시, PR 본문 재작성, ready 전환(D3), CI 9c2ca08 quality·integration(1)(2)·e2e(1)(2) 초록, Codex 앱 13b2749 지적 0, [완료 보고] 5912863709",
       "status": "done",
       "commit": "9c2ca08"
+    },
+    {
+      "id": 22,
+      "name": "F(2) /gsd-quick 260930-kc9 — ISSUE-001 · DR-104-01~05 · G1~G3, 독립 DOM 감사 A~G PASS, draft PR #112, CI quality 초록, [완료 보고] 5916447218",
+      "status": "done",
+      "commit": "6950a27"
     }
   ],
   "remaining_tasks": [
     {
-      "id": "merge-104",
-      "name": "PR #104 머지 — 사용자(위험 경로 .claude/gates)",
+      "id": 1,
+      "name": "PR #112 /review (범위 origin/main..6950a27)",
       "status": "not_started"
     },
     {
-      "id": "f2-quick",
-      "name": "Phase 4 머지 뒤 별도 /gsd-quick PR: ISSUE-001 · DR-104-01~05 · G1~G3 (ISSUE-002 그대로)",
+      "id": 2,
+      "name": "PR #112 /qa · /design-review (화면 변경 있음)",
+      "status": "not_started"
+    },
+    {
+      "id": 3,
+      "name": "/cso 해당 여부 판단 · draft→ready 사용자 확인 · /ship",
       "status": "not_started"
     }
   ],
   "blockers": [
     {
-      "description": "04-VERIFICATION stale — phase.complete의 ROADMAP 변경이 covered_digest를 어긋나게 함",
-      "type": "technical",
-      "workaround": "페이즈 완료는 기록됨. 재검증 여부는 사용자 판단, digest 수동 수정 금지"
+      "description": "PR #112 draft→ready 전환은 사용자 확인 필요",
+      "type": "human_action",
+      "workaround": "Post-build 끝난 뒤 묻는다"
     },
     {
-      "description": "스킬 관문 훅이 STATE current_phase 2로 판정 — Phase 4 작업의 gsd-executor 등 페이즈 게이트 에이전트를 막을 수 있음",
+      "description": "훅이 STATE current_phase 2로 봄 — 페이즈 게이트 에이전트 막힘 가능",
       "type": "technical",
-      "workaround": "우회하지 않고 사용자에게 먼저 묻는다. 세션 21099081은 사용자 승인(「1번」)으로 /gsd-verify-work 4를 문맥 설정용으로 호출하고 훅이 적은 phase-04.log 줄을 되돌림"
+      "workaround": "사용자에게 먼저 묻고, 승인 시 /gsd-verify-work 4 문맥 호출 뒤 phase-04.log 줄 되돌림"
     }
   ],
   "async_jobs": [],
   "human_actions_pending": [
     {
-      "action": "G-04-64 모서리 4건 판단(04-52-SUMMARY)",
-      "context": "이월 — 막지 않음",
-      "blocking": false
-    },
-    {
-      "action": "T-04-31 구분자 허용 문자 결정 또는 수락",
-      "context": "해결 — [지시] 5894471814, quick 260929-n41(c1180ca6). secure-phase 4 재실행으로 닫힘 확인 필요",
-      "blocking": false
-    },
-    {
-      "action": "UI-REVIEW 사용자 판단 3건: ① 등록 폼 제출 오류 문구 정본(코드 `등록 실패 · {칸} {n}칸` vs UI-SPEC:385 `등록하지 못했습니다 · 클라이언트 1칸`) ② 견적 표 행 번호가 숫자 규칙(tabular·우측·nowrap) 대상인지 ③ S19 「오류로 이동」을 폼(등록 폼 빈 제출 → 첫 오류 칸 포커스)에도 적용할지",
-      "context": "해결 — PR #104 [지시] 5894569505, quick 260929-opt(0aaa91a7)",
-      "blocking": false
-    },
-    {
-      "action": "배포 전 스테이징·프로덕션 설정 「프로젝트 번호 구분자」 값이 빈 값 또는 - _ . / 인지 확인",
-      "context": "T-04-31 스키마가 읽기에도 적용 — 허용 밖 값이 저장돼 있으면 번호 서식 읽기 실패",
-      "blocking": false
-    },
-    {
-      "action": "Phase 4 전환 방법 결정: (A) gsd-core 1.15.0 업데이트 · (B) 판정기 부분 이식 · (C) test 53 증거 대조 pass 재기록",
-      "context": "PR #104 질문(세션 0a13ae7c) — 답 오기 전 전환 보류, 재검증은 먼저 진행",
+      "action": "PR #112 ready 전환 승인",
+      "context": "Post-build 뒤, ready가 Codex 앱 자동 검토를 트리거",
       "blocking": true
     },
     {
-      "action": "게이트 기록: 훅이 이 /review를 .claude/gates/phase-02.log(미추적)에 적음 — 올바른 줄은 phase-04.log에 `review 2026-09-30T02:42Z session=ab976a3b-12ba-53c4-8ea6-b93b9394b1f7`",
-      "context": "해결 — 사용자가 phase-04.log에 직접 넣음(4af5cf3 6줄 · 9c2ca08 ship 줄)",
+      "action": "운영·스테이징 「프로젝트 번호 구분자」 설정이 허용 목록 값인지 배포 전 1회 확인",
+      "context": "T-04-31",
       "blocking": false
-    },
-    {
-      "action": "[사용자 결정 요청] E — /review 3차 참고 E1~E5(주석 1줄 · 일괄 읽기 엄격 테스트 · SYSTEM.md §7-1·§7-8 역참조 · E2E PC 「일괄 저장」 32 가드 · 내보내기=실효값 주석) 처리 방법",
-      "context": "해결 — E(1) [지시] 5909292999, quick 260930-ee9",
-      "blocking": false
-    },
-    {
-      "action": "게이트 기록: phase-04.log에 `review 2026-09-30T07:07Z session=486526e8-538d-537a-b95c-16713e3da5c0`",
-      "context": "해결 — 사용자가 phase-04.log에 직접 넣음(4af5cf3 6줄 · 9c2ca08 ship 줄)",
-      "blocking": false
-    },
-    {
-      "action": "결정 F — /qa ISSUE-001·002 · /design-review DR-104-01~05 처리 방법",
-      "context": "해결 — F(2) 머지 뒤 별도 /gsd-quick PR(ISSUE-002 그대로) [지시] 5909292999",
-      "blocking": false
-    },
-    {
-      "action": "phase-04.log에 qa 07:22Z · design-review 07:34Z (session 57f75736) 두 줄 추가",
-      "context": "훅이 phase-02.log에 오기",
-      "blocking": false
-    },
-    {
-      "action": "게이트 기록: phase-04.log에 `cso 2026-09-30T08:02Z session=efcaa672-fc1d-5f87-90e1-a41d52429074`",
-      "context": "해결 — 사용자가 phase-04.log에 직접 넣음(4af5cf3 6줄 · 9c2ca08 ship 줄)",
-      "blocking": false
-    },
-    {
-      "action": "결정 F 선택지를 PR #104에 다시 올림 — 세션 57f75736의 [완료 보고]가 PR 댓글에 없었음",
-      "context": "해결 — F(2) 머지 뒤 별도 /gsd-quick PR(ISSUE-002 그대로) [지시] 5909292999",
-      "blocking": false
-    },
-    {
-      "action": "phase-04.log 게이트 5줄([지시] 5909847801: review 02:42Z·07:07Z · qa 07:22Z · design-review 07:34Z · cso 08:02Z) — 세션이 넣으려 했으나 권한 분류기가 「Logging/Audit Tampering」으로 거부. 사용자가 직접 넣거나 권한 규칙 추가 필요",
-      "context": "세션 a447d798이 우회하지 않고 사용자에게 보고",
-      "blocking": false
-    },
-    {
-      "action": "F(2) 후속: Phase 4 머지 뒤 ISSUE-001 · DR-104-01~05 별도 /gsd-quick PR",
-      "context": "[지시] 5909292999",
-      "blocking": false
-    },
-    {
-      "action": "[사용자 결정 요청] G1~G3 처리(PR #104 [완료 보고] 5910500613)",
-      "context": "해결 — [지시] 5910572972: 머지 뒤 F(2) 후속 PR에 함께",
-      "blocking": false
-    },
-    {
-      "action": "게이트 기록: phase-04.log에 `review 2026-09-30T11:31Z session=56ab3f54-01c4-5f2a-b586-0384ac8499e2`",
-      "context": "해결 — 사용자가 phase-04.log에 직접 넣음(4af5cf3 6줄 · 9c2ca08 ship 줄)",
-      "blocking": false
-    },
-    {
-      "action": "PR #104 머지(ready · CI 초록 · clean)",
-      "context": "위험 경로 .claude/gates 포함 — 세션 머지 금지",
-      "blocking": true
     }
   ],
   "decisions": [
+    {
+      "decision": "ISSUE-001 설정 칸 전부 · DR-104-04 §7-3 · DR-104-05 폭별 렌더 순서+CSS order 유지 · G1 주석만",
+      "rationale": "사용자 2026-09-30 채팅(추천안)",
+      "phase": "4"
+    },
+    {
+      "decision": "훅 막힘은 앞 세션처럼 풀기",
+      "rationale": "사용자 2026-09-30 채팅",
+      "phase": "4"
+    },
     {
       "decision": "PR 머지 정책: PR #38(04-01·02·04·05 + 계획·리뷰 문서)을 지금 Post-build 후 머지하고, 남은 Phase 4는 묶음(상태 전환 / 차수·승인 / 목록·리저브)마다 새 PR로 머지한다. 엔지 리뷰 R11(Phase 4는 한 PR)을 대체한다",
       "rationale": "사용자 결정 2026-09-23 — PR이 계속 커지고 스테이징(main 푸시) 실사용 확인이 페이즈 끝까지 밀림. gstack decision dd47caea",
@@ -640,14 +586,12 @@
       "phase": "4"
     }
   ],
-  "uncommitted_files": [
-    "?? .claude/gates/phase-02.log"
-  ],
-  "next_action": "PR #104 사용자 머지 대기. 머지 뒤 새 세션(plant8 환경)에서 origin/main 기준으로 F(2) /gsd-quick(ISSUE-001 · DR-104-01~05 · G1~G3) 시작",
-  "context_notes": "Phase 4 GSD 완료. PR #104 Post-build: /review 4차(979a2a9) · /qa·/design-review(63845be) · /cso(6031760) 끝. 남은 것: G1~G3 결정 → /ship → 사용자 머지.",
+  "uncommitted_files": [],
+  "next_action": "새 세션(plant8 환경, 브랜치 claude/pr104-followup-f2)에서 settings · git status -sb · .continue-here BLOCKING CONSTRAINTS · PR #104/#112 최신 [지시] 확인 → PR #112 /review",
+  "context_notes": "PR #104 머지됨(f3242c8). F(2)는 draft PR #112로 올라감. 남은 것은 Post-build 묶음과 /ship. 위험 경로 없음.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"
   ],
-  "uncommitted_files_note": "?? .claude/gates/phase-02.log — 훅 오기(ship 줄), 커밋 금지. 같은 줄은 phase-04.log에 사용자가 넣음(9c2ca08)"
+  "uncommitted_files_note": "git status --porcelain 측정(17:37Z): 인계 파일 2개뿐 — 이 커밋으로 비워짐. phase-02.log 없음"
 }

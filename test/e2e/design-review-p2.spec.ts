@@ -3,7 +3,7 @@ import { test, expect, type Locator, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { insertVendor, setVendorArchived } from "@/repositories/vendors";
+import { insertVendor, setVendorHidden } from "@/repositories/vendors";
 
 // /design-review 2026-09-24(Phase 2 화면) 회귀 — 실측 결함의 재발 방지.
 //   FINDING-002: 상단 바 메뉴·사용자 트리거에 hover 상태가 없었다(§5 hover 120ms).
@@ -114,7 +114,7 @@ test.describe("PC 1280 공유 Button 3차(표 행 「숨기기」)의 글자 밑
       const after = await hide.boundingBox();
       expect(after!.height).toBe(before!.height);
     } finally {
-      await setVendorArchived(SYSTEM_VIEWER, vendor.id, true);
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
     }
   });
 });

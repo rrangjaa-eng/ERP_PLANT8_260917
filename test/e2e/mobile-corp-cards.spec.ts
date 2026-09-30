@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { expectGapsAtLeastToken, expectNoRowOverflow, loginAsSysadmin } from "./row-actions-helpers";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { findUserByEmail } from "@/repositories/users";
-import { insertCorpCard, setCorpCardArchived } from "@/repositories/corp-cards";
+import { insertCorpCard, setCorpCardActive } from "@/repositories/corp-cards";
 
 // defect 4(wave 5 DOM 감사, 375px):
 // 1) ui/button/Button.module.css의 .tertiary는 height: auto + padding: 0라,
@@ -124,8 +124,8 @@ async function seedPhoneRow(): Promise<{ target: string; cleanup: () => Promise<
   return {
     target: target.label,
     cleanup: async () => {
-      await setCorpCardArchived(SYSTEM_VIEWER, long.id, true);
-      await setCorpCardArchived(SYSTEM_VIEWER, target.id, true);
+      await setCorpCardActive(SYSTEM_VIEWER, long.id, false);
+      await setCorpCardActive(SYSTEM_VIEWER, target.id, false);
     },
   };
 }

@@ -5,7 +5,7 @@ import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { expectGapsAtLeastToken, expectNoRowOverflow, loginAsSysadmin, textLineCount } from "./row-actions-helpers";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { findUserByEmail } from "@/repositories/users";
-import { insertCorpCard, setCorpCardArchived } from "@/repositories/corp-cards";
+import { insertCorpCard, setCorpCardActive } from "@/repositories/corp-cards";
 
 // MAST-03: 법인카드를 개인/팀 구분과 함께 등록·비활성화할 수 있고, 소지자와
 // 팀이 동시에 채워진 카드를 만들 수 없다는 것을 화면·액션·domain 세 곳에서
@@ -154,8 +154,8 @@ test.describe("법인카드 행 동작 간격 --s-4 (260930-f3l FINDING-001)", (
     return {
       target: target.label,
       cleanup: async () => {
-        await setCorpCardArchived(SYSTEM_VIEWER, long.id, true);
-        await setCorpCardArchived(SYSTEM_VIEWER, target.id, true);
+        await setCorpCardActive(SYSTEM_VIEWER, long.id, false);
+        await setCorpCardActive(SYSTEM_VIEWER, target.id, false);
       },
     };
   }

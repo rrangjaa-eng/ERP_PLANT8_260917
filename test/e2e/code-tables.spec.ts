@@ -3,7 +3,7 @@ import { createFixtureUser } from "./fixtures";
 import { expectGapsAtLeastToken, expectNoRowOverflow, loginAsSysadmin } from "./row-actions-helpers";
 import { randomUUID } from "node:crypto";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { insertCodeItem, setCodeItemArchived } from "@/repositories/code-tables";
+import { insertCodeItem, setCodeItemActive } from "@/repositories/code-tables";
 
 test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 코드에 계급 이름 분기 없음)", () => {
   test("시스템 관리자 계급은 코드표 항목을 추가하고 목록에서 확인한다", async ({ page }) => {
@@ -387,8 +387,8 @@ test.describe("코드표 행 동작 간격 --s-4 (260930-f3l FINDING-001)", () =
     return {
       target: target.value,
       cleanup: async () => {
-        await setCodeItemArchived(SYSTEM_VIEWER, long.id, true);
-        await setCodeItemArchived(SYSTEM_VIEWER, target.id, true);
+        await setCodeItemActive(SYSTEM_VIEWER, long.id, false);
+        await setCodeItemActive(SYSTEM_VIEWER, target.id, false);
       },
     };
   }

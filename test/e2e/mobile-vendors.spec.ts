@@ -4,7 +4,7 @@ import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { randomUUID } from "node:crypto";
 import { expectGapsAtLeastToken, expectNoRowOverflow, loginAsSysadmin } from "./row-actions-helpers";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { insertVendor, setVendorArchived } from "@/repositories/vendors";
+import { insertVendor, setVendorHidden } from "@/repositories/vendors";
 
 // defect 2(wave 6 DOM 감사, 375px): ui/button/Button.module.css의 .tertiary가
 // height: auto + padding: 0라 §3 터치 목표(44×44)를 무시하고 텍스트 줄
@@ -67,8 +67,8 @@ async function seedPhoneRow(): Promise<{ target: string; cleanup: () => Promise<
   return {
     target: target.name,
     cleanup: async () => {
-      await setVendorArchived(SYSTEM_VIEWER, long.id, true);
-      await setVendorArchived(SYSTEM_VIEWER, target.id, true);
+      await setVendorHidden(SYSTEM_VIEWER, long.id, true);
+      await setVendorHidden(SYSTEM_VIEWER, target.id, true);
     },
   };
 }

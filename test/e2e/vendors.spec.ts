@@ -7,7 +7,7 @@ import { insertRole, setRoleArchived } from "@/repositories/roles";
 import { upsertVisibility } from "@/repositories/permissions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { expectGapsAtLeastToken, expectNoRowOverflow, loginAsSysadmin, textLineCount } from "./row-actions-helpers";
-import { insertVendor, setVendorArchived } from "@/repositories/vendors";
+import { insertVendor, setVendorHidden } from "@/repositories/vendors";
 
 // MAST-01: 거래처를 등록하고, 계좌번호가 뒤 4자리만 보이며, 마스킹 해제
 // 권한이 있는 계급만 「번호 보기」를 볼 수 있고 그 해제가 로그에 남는 것을
@@ -230,8 +230,8 @@ test.describe("거래처 행 동작 간격 --s-4 (260930-f3l FINDING-001)", () =
     return {
       target: target.name,
       cleanup: async () => {
-        await setVendorArchived(SYSTEM_VIEWER, long.id, true);
-        await setVendorArchived(SYSTEM_VIEWER, target.id, true);
+        await setVendorHidden(SYSTEM_VIEWER, long.id, true);
+        await setVendorHidden(SYSTEM_VIEWER, target.id, true);
       },
     };
   }

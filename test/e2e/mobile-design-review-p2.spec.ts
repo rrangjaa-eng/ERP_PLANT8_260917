@@ -3,7 +3,7 @@ import { test, expect } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { insertVendor, setVendorArchived } from "@/repositories/vendors";
+import { insertVendor, setVendorHidden } from "@/repositories/vendors";
 
 // /design-review 2026-09-24 FINDING-005: 폰에서 EMPTY 「다음 한 수」 링크의 밑줄이
 // border-bottom이라 44px 터치 상자 바닥에 붙어 글자에서 12px 떠 있었다. §4-4는
@@ -55,7 +55,7 @@ test.describe("폰 375 공유 Button 3차(표 행 「숨기기」)의 밑줄 (§
       expect(box!.width).toBeGreaterThanOrEqual(44);
       expect(box!.height).toBeGreaterThanOrEqual(44);
     } finally {
-      await setVendorArchived(SYSTEM_VIEWER, vendor.id, true);
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
     }
   });
 });

@@ -396,11 +396,18 @@ Plans:
 12. 글자·바탕 대비 4.5:1 미만(큰 글자 3:1)을 자동 검사가 막는다
 13. 시스템 변경은 `docs/design/DECISIONS.md` 기록 → `docs/design/SYSTEM.md` 수정 순서로 한다(`.claude/rules/frontend.md`): radius 0 · 그림자 없음 · 2px 진한 선 결정 뒤집기, D-39 폼 배치 → 옆 패널, 고른 완화 후보
 
-**Plans:** 0 plans
+**Plans:** 0/8 plans executed
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 04.6 to break down)
+- [ ] 04.6-01-PLAN.md — ① UQ-1·2·3·6·7 확인 → DECISIONS → SYSTEM → 역할 토큰 두 단 · stylelint/eslint 래칫 · 모음 페이지 뼈대(트레이서: 토큰 → lint → 버튼 → /dev/components)
+- [ ] 04.6-02-PLAN.md — ① [위험 경로 별도 PR · 사용자 머지] 시각 회귀 기준 사진 워크플로 + CI 실패 사진 업로드
+- [ ] 04.6-03-PLAN.md — ② UQ-8 확인 → 거래처 옆 패널 트레이서 · 틀 3종·공용 컴포넌트 · ui/** 스킨
+- [ ] 04.6-04-PLAN.md — ③ /projects · /projects/[id] · /admin/vendors 이관 · 시각 회귀 스펙 · 기준 사진 대조 · 완화 후보 보드와 UQ-4·5 요청
+- [ ] 04.6-05-PLAN.md — ④ 관리 한 건 폼 여섯 화면 옆 패널(+04.5·04.3 머지 시)
+- [ ] 04.6-06-PLAN.md — ④ 나머지 화면 틀 이관(업무·관리·손익·로그인, +04.3 머지 시)
+- [ ] 04.6-07-PLAN.md — ④ UQ-4·5 사람 확인 · [위험 경로 별도 PR · 사용자 머지] CHECKLIST §1
+- [ ] 04.6-08-PLAN.md — ⑤ 고른 후보 · 옛 토큰·표시 0 · 원칙 막는 모드·a11y·글자 위계 · CI 기준 사진
 
 ### Phase 04.1: 결재 모듈·연차 (INSERTED)
 

@@ -63,8 +63,8 @@ function findTbody(node: ReactNode): ReactElement<{ children?: ReactNode }> | nu
 async function render(searchParams: { new?: string } = {}) {
   const tree = await PeoplePage({ searchParams: Promise.resolve(searchParams) });
   const tbody = findTbody(tree);
-  if (!tbody) throw new Error("tbody 없음");
-  const rowElements = Array.isArray(tbody.props.children) ? (tbody.props.children as ReactElement[]) : [];
+  // 전부 가린 계급은 표가 없다(잠김 한 줄) — tbody 없음이 정상이다.
+  const rowElements = Array.isArray(tbody?.props.children) ? (tbody.props.children as ReactElement[]) : [];
   return { keys: rowElements.map((row) => row.key), html: renderToStaticMarkup(createElement("div", null, tree)) };
 }
 

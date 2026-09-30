@@ -228,6 +228,14 @@
   cursor: pointer;
 }
 
+/* §7-3 첫 칸 행 번호(사용자 결정 (나)) — 정렬 · tabular-nums · nowrap은 td의 .alignRight 그대로, 글자 모양만 이 요소가 싣는다. */
+.rowNumber {
+  display: inline-block;
+  min-width: 28px;
+  font-size: var(--fs-xs);
+  color: var(--faint);
+}
+
 /* 04-04(나) — 저장 거부 요약(--danger). */
 .rejectionSummary {
   color: var(--danger);

@@ -1639,7 +1639,7 @@ export function QuoteLedger({
       collapseBelow: 1280,
       align: "right",
       pasteRole: "computed",
-      cell: (row) => lines.indexOf(row) + 1,
+      cell: (row) => <span className={styles.rowNumber}>{lines.indexOf(row) + 1}</span>,
     },
     {
       key: "subcategory",

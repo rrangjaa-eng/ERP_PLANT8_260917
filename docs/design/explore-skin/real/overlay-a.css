@@ -1,0 +1,29 @@
+/* 안 A 「정돈」 — 가장 안전. 구조·딥그린 상단 바 유지, 차가운 회색 바탕 + 흰 표 면(r8) · 2px 선 → 1px + 틴트 · 행 44 · 제목 22 */
+html:root {
+  --canvas-a: #F2F5F4; --panel-line: #DDE5E2;
+  --line: #E4EAE7; --line-strong: #C9D4D0; --radius: 6px;
+  --muted: #52615C; --fg: #13201C;
+  --m-radius: 12px;
+}
+html body { background: var(--canvas-a); }
+/* 상단 바 */
+html body [class*="TopBar-module__"][class*="__bar"] { height: 48px; border-bottom: 0; }
+/* 제목 */
+html body [class*="PageHeader-module__"][class*="__title"] { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+/* 표 = 흰 면 한 장 */
+html body main table { background: #FFFFFF; border-collapse: separate !important; border-spacing: 0; border: 1px solid var(--panel-line); border-radius: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(0, 33, 28, 0.05); }
+html body main table thead th { background: #F6F8F7; border-bottom: 1px solid var(--line) !important; color: var(--muted); font-weight: 600; padding-top: 10px; padding-bottom: 10px; }
+html body main table td { border-bottom: 1px solid var(--line) !important; border-top: 0 !important; }
+html body main table tbody tr:last-child td { border-bottom: 0 !important; }
+html body main table th:first-child, html body main table td:first-child { padding-left: 16px; }
+html body main table th:last-child, html body main table td:last-child { padding-right: 16px; }
+html body [class*="Table-module__"][class*="__groupHeader"] { background: #EBF2F0; color: #00443A; border-bottom: 0 !important; border-top: 0 !important; font-weight: 600; padding-top: 8px !important; padding-bottom: 8px !important; }
+html body [class*="Table-module__"][class*="__cell"]:not([class*="__cellSecondary"]) { height: 44px; }
+html body tfoot td, html body [class*="__footerCell"] { background: #F6F8F7; border-top: 1px solid var(--line-strong) !important; }
+/* 합계 줄 · 섹션 선 */
+html body [class*="__summaryRow"] { background: #FFFFFF; border: 1px solid var(--panel-line) !important; border-radius: 8px; padding: 12px 16px !important; margin-top: 12px; }
+html body [class*="project-detail-module__"][class*="__section"] { border-top: 1px solid var(--line) !important; }
+/* 버튼 · 입력 · 태그 */
+html body [class*="Button-module__"][class*="__btn"]:not([class*="__tertiary"]) { border-radius: 6px; }
+html body input, html body select { border-radius: 6px; }
+html body [class*="StatusTag-module__"][class*="__tag"] { border-radius: 4px; }

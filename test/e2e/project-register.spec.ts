@@ -215,8 +215,15 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     const projectName = `E2E연타-${Date.now()}`;
     const teamSelect = await fillRequiredFields(page, vendor.name, projectName);
 
-    await teamSelect.press("Control+Enter");
-    await teamSelect.press("Control+Enter");
+    // 04-31 E2-06 조사(systematic-debugging) — 순서대로 await하면 첫 번째
+    // 제출의 서버 왕복 + 이동이 두 번째 press의 locator 재탐색보다 먼저
+    // 끝나는 경우가 있다(실측: teamSelect가 이미 언마운트돼 "팀" 라벨을
+    // 못 찾고 30초 타임아웃). 두 keydown을 Promise.all로 거의 동시에
+    // 보내 실제 "빠른 연타"에 더 가깝게 만든다 — 앱의 submittedRef 래치는
+    // keydown에서 동기로 세워지므로(project-form.tsx handleSubmit) 이
+    // 경합과 무관하게 항상 한 건만 제출된다. 어느 쪽이 실제로 폼에 닿았든
+    // 최종 단언(프로젝트 정확히 1건)은 그대로다.
+    await Promise.all([teamSelect.press("Control+Enter"), teamSelect.press("Control+Enter")]);
 
     await expect(page).toHaveURL(/\/projects\/.+/);
     await page.goto(`/projects?q=${encodeURIComponent(projectName)}`);
@@ -421,6 +428,41 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     await fxRate.press("Control+Enter");
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
     expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(1300);
+  });
+
+  test("(f1) 빈 폼 제출이 거부되면 포커스가 첫 오류 칸(클라이언트)으로 가고, 그 뒤 쉼표 칸 입력은 포커스를 뺏기지 않는다 (PR #104 (다))", async ({ page }) => {
+    await loginAndOpenForm(page);
+    await page.getByRole("button", { name: "프로젝트 등록" }).click();
+
+    await expect(page.locator("#project-form #name")).toHaveAttribute("aria-invalid", "true");
+    const client = page.locator("#project-form #clientId");
+    await expect(client).toHaveAttribute("aria-invalid", "true");
+    await expect(client).toBeFocused();
+
+    // 쉼표 칸 입력은 다시 그리기를 일으킨다 — effect가 매 렌더 돌면 포커스가 클라이언트로 튄다.
+    const amount = page.getByLabel("총 매출 예상가");
+    await amount.fill("1000");
+    await expect(amount).toHaveValue("1,000");
+    await expect(amount).toBeFocused();
+  });
+
+  test("(f2) 종료일이 시작일보다 앞선 등록을 1차 클릭으로 보내면 포커스가 종료일 칸으로 간다 (PR #104 (다))", async ({ page }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2E오류포커스클라이언트-${Date.now()}`,
+      normalizedName: `e2e오류포커스클라이언트-${Date.now()}`,
+    });
+    await loginAndOpenForm(page);
+    await fillRequiredFields(page, vendor.name, `E2E오류포커스-${Date.now()}`);
+    const today = kstToday(new Date());
+    await page.locator("#startDate").fill(addDays(today, 5));
+    await page.locator("#endDate").fill(addDays(today, 1));
+
+    await page.getByRole("button", { name: "프로젝트 등록" }).click();
+
+    const endDate = page.locator("#project-form #endDate");
+    await expect(endDate).toHaveAttribute("aria-invalid", "true");
+    await expect(endDate).toBeFocused();
+    await expect(page).toHaveURL(/\/projects\?new=1/);
   });
 });
 

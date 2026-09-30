@@ -3,10 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { AccountEntry, MenuLink } from "./role-menu";
+import { NOTIFICATIONS_HREF, type AccountEntry, type MenuLink } from "./role-menu";
 import { isCurrentPath } from "./current-path";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { useLogout } from "@/ui/logout/use-logout";
+import { useUnreadCount, unreadCountLabel, notificationsMenuLabel } from "./unread-count";
 import styles from "./TopBar.module.css";
 
 // SYSTEM.md §6-0 공통 셸 · PC 상단 바. 앱 유일의 딥그린 면 + 1차 메뉴 + 사용자 진입점.
@@ -41,9 +42,21 @@ function isSettingsEntry(entry: AccountEntry): boolean {
   return entry.kind === "link" && entry.href === "/settings";
 }
 
+// 04.2-09 Task 1(S1-b): 「알림함」 항목 라벨 뒤에 건수를 붙인다. NOTIFICATIONS_HREF로
+// 판별한다(라벨 문자열이 아니라 URL로 — 위 isSettingsEntry와 같은 이유).
+function menuItemLabel(entry: AccountEntry | MenuLink, unreadCount: number | null): string {
+  if ("href" in entry && entry.href === NOTIFICATIONS_HREF) {
+    return notificationsMenuLabel(entry.label, unreadCount);
+  }
+  return entry.label;
+}
+
 export function TopBar({ topBarMenu, adminMenu, accountGroup, userName }: TopBarProps) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  // S1-a(04.2-07): 안 읽은 알림 배지 — 0이면 렌더하지 않는다(unreadCountLabel).
+  const { count: unreadCount } = useUnreadCount();
+  const badgeLabel = unreadCountLabel(unreadCount);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const firstItemRef = useRef<HTMLAnchorElement | HTMLButtonElement>(null);
@@ -157,7 +170,15 @@ export function TopBar({ topBarMenu, adminMenu, accountGroup, userName }: TopBar
             aria-expanded={open}
             onClick={() => setOpen((value) => !value)}
           >
-            {userName}
+            <span className={styles.userTriggerName}>{userName}</span>
+            {badgeLabel ? (
+              <>
+                <span aria-hidden="true" className={styles.badge}>
+                  {badgeLabel}
+                </span>
+                <span className="sr-only"> · 안 읽은 알림 {unreadCount}건</span>
+              </>
+            ) : null}
           </button>
           {open ? (
             <ul role="menu" className={styles.userMenu}>
@@ -171,7 +192,7 @@ export function TopBar({ topBarMenu, adminMenu, accountGroup, userName }: TopBar
                       ref={index === 0 ? (firstItemRef as React.RefObject<HTMLAnchorElement>) : undefined}
                       onClick={close}
                     >
-                      {item.entry.label}
+                      {menuItemLabel(item.entry, unreadCount)}
                     </a>
                   ) : (
                     <button

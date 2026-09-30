@@ -71,7 +71,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### 리저브·외화 (RSV, FX)
 
-- [ ] **RSV-01**: 클라이언트별 리저브 대장: 입금·출금·잔액을 날짜순으로 기록하고 본다. 각 줄은 프로젝트에 연결할 수 있고, 통화·환율·원화 환산액을 함께 적는다
+- [x] **RSV-01**: 클라이언트별 리저브 대장: 입금·출금·잔액을 날짜순으로 기록하고 본다. 각 줄은 프로젝트에 연결할 수 있고, 통화·환율·원화 환산액을 함께 적는다
 - [ ] **RSV-02**: 프로젝트 매출을 리저브에서 충당하면 대장에 출금으로 남고, 그 금액이 손익의 매출(설정된 매출 기준)에 반영된다. 잔액이 부족하면 이유와 함께 막힌다
 - [x] **FX-01**: 매출·지출결의·증빙·법인카드·리저브 금액에 통화·외화 금액·환율·원화 환산액을 함께 기록한다. 환율은 입력할 때 사람이 적고 기본값은 설정(통화별 최근 환율)에서 온다. 손익·목표·내보내기는 원화 환산액 기준이며 원래 통화·금액이 함께 표시된다. 원화는 정수 원, 외화 금액은 소수 2자리, 환율은 소수 4자리이고 반올림은 서버의 단일 함수에서만 한다. 분할 시 합계가 원금과 같도록 마지막 회차에서 보정한다
 
@@ -83,10 +83,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### 알림 (NOTI)
 
-- [ ] **NOTI-01**: 앱 안 알림함과 미읽음 배지가 있다
-- [ ] **NOTI-02**: 같은 알림이 이메일로도 간다. 발송은 회사 Google 계정 SMTP(환경 변수 host·user·password·from; Workspace 릴레이 설정은 TODOS.md)이며, 발송 실패는 알림함과 관리자 배너에 남는다
+- [x] **NOTI-01**: 앱 안 알림함과 미읽음 배지가 있다
+- [x] **NOTI-02**: 같은 알림이 이메일로도 간다. 발송은 회사 Google 계정 SMTP(환경 변수 host·user·password·from; Workspace 릴레이 설정은 TODOS.md)이며, 발송 실패는 알림함과 관리자 배너에 남는다
 - [ ] **NOTI-03**: 관리자가 설정에서 알림 규칙을 새로 만든다. 조건 종류(상태 + 기준일로부터 N일 전/후, '프로젝트 종료 후 지출결의 없음' 같은 교차 문서 조건 등)는 코드에 등록되고, 규칙 = 조건 종류 × 파라미터(대상 문서(지출결의·구매 요청·결재·증빙·프로젝트·연차), N일, 받는 사람(계급·담당자·팀장), 채널)의 인스턴스다. 기본 규칙 4개(종료 후 지출결의 없음, 지급 예정일 임박, 결재 대기 초과, 증빙 미첨부)는 시드로 제공
-- [ ] **NOTI-04**: 같은 건이 두 번 발송되지 않는다. 스케줄러가 하루 몇 번 호출하는 단일 엔드포인트로 동작한다(큐 없음). tick은 advisory lock으로 동시 실행을 막고 notification_log 유니크 제약으로 중복 발송을 막는다
+- [x] **NOTI-04**: 같은 건이 두 번 발송되지 않는다. 스케줄러가 하루 몇 번 호출하는 단일 엔드포인트로 동작한다(큐 없음). tick은 advisory lock으로 동시 실행을 막고 notification_log 유니크 제약으로 중복 발송을 막는다
 
 ### 연차 (LEAV)
 
@@ -112,7 +112,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **ADMN-08**: 계급 종류를 추가·이름 변경한다(데이터)
 - [x] **ADMN-09**: 문서 번호 서식(프로젝트·견적·지출결의·구매 요청·연차 등)을 설정에서 정의한다: 접두어·연도·순번 자릿수·구분자·순번 범위(전사/프로젝트별). 예: 프로젝트 26001, 지출결의 26001-0001. 번호 부여 시점: 지출결의는 제출 시, 구매 요청은 생성 시
 - [ ] **ADMN-10**: 대표·경영관리·관리자가 행동 로그 화면에서 핵심 로그 위주로 보고, 사람·기간·행동 종류·문서로 걸러 Excel로 내보낸다(사고 증거·인사평가 참고용). 어떤 행동을 핵심으로 남길지는 설정에서 고른다. 열람 권한은 정보 노출표로 통제
-- [ ] **ADMN-11**: 영업일·공휴일: 법정 공휴일 규칙으로 매년 후보가 자동 생성되고 관리자가 검토·확정·수동 추가한다. 지급일·마감·알림 계산이 이 표를 쓴다
+- [x] **ADMN-11**: 영업일·공휴일: 법정 공휴일 규칙으로 매년 후보가 자동 생성되고 관리자가 검토·확정·수동 추가한다. 지급일·마감·알림 계산이 이 표를 쓴다
 - [ ] **ADMN-12**: "지우지 않는다": 사용자가 무엇을 삭제해도 보관함으로 이동하며, 관리자만 보관함에서 보고 복원할 수 있다. 삭제·복원은 행동 로그에 남는다
 
 ### 전환 (MIG)
@@ -126,7 +126,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **OPS-01**: 배포 스크립트 한 번으로 새 GCP 프로젝트에 기동한다. 프로젝트 ID·리전·DB 접속은 환경 변수. Cloud SQL은 공인 IP 없이 커넥터+IAM 인증(로컬은 Auth Proxy). 배포 스크립트는 max-instances × 풀 ≤ DB max_connections − 5 를 검사해 초과 시 거부하고, 확장-축소 마이그레이션 뒤 새 리비전을 배포·스모크하며, 스모크에 실패한 리비전을 트래픽에 남기지 않는다(실패 시 이전 배포로 1회 자동 롤백 후 실패 종료). rollback.sh로 수동 롤백도 된다. (2026-09-19 재정의 — ROADMAP Phase 1 기준 6 참조) Cloud Monitoring 경보 3개(5xx>5%·tick 24h 미성공·백업 실패)가 관리자 메일로 간다
 - [x] **OPS-02**: 사용 없을 때 비용이 0에 가깝고(스케일-투-제로), 월 비용 목표가 문서화된다
-- [ ] **OPS-03**: DB가 자동 백업되고 복원 절차가 문서화되며 복원 리허설을 1회 한다
+- [x] **OPS-03**: DB가 자동 백업되고 복원 절차가 문서화되며 복원 리허설을 1회 한다
 - [x] **OPS-04**: 린트(`any` 금지)·타입체크·핵심 흐름(로그인→지출결의→결재→손익) 통합 테스트가 CI에서 돈다. ESLint import 경계(app↛repositories/db, domain↛app, repository는 viewer 필수)와 Server Action zod 검증 필수 린트가 포함된다
 - [ ] **OPS-05**: 직원 계정별 핵심 행동만 로그로 남긴다: 로그인, 문서 생성·제출·승인·반려·회수·삭제, 지급·구매 처리, 설정·권한 변경, 민감 정보(손익·인센티브·주민등록번호) 열람. 단순 조회·화면 이동 같은 잡음은 남기지 않는다. 관리자는 로그를 정리(수정·삭제)할 수 있다. Excel 내보내기와 마스킹 해제는 설정으로 끌 수 없는 핵심 로그다
 - [x] **OPS-06**: 관리자 시스템 상태 화면: 마지막 알림 tick·백업·복원 리허설·계산 불가 건수·DB 커넥션·배포 버전을 보이고 한도 초과 시 배너가 뜬다. 서버 로그는 JSON 형식이다 (2026-09-23: 데이터 이전이 없어 '이전 실행' 항목을 '복원 리허설'로 바꿈)
@@ -230,16 +230,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PNL-07 | Phase 10 | Pending |
 | PNL-08 | Phase 9 | Pending |
 | PNL-09 | Phase 9 | Pending |
-| RSV-01 | Phase 4 | Pending |
+| RSV-01 | Phase 4 | Complete |
 | RSV-02 | Phase 9 | Pending |
 | FX-01 | Phase 4 | Complete |
 | GOAL-01 | Phase 10 | Pending |
 | GOAL-02 | Phase 10 | Pending |
 | GOAL-03 | Phase 10 | Pending |
-| NOTI-01 | Phase 7 | Pending |
-| NOTI-02 | Phase 7 | Pending |
+| NOTI-01 | Phase 04.2 | Complete |
+| NOTI-02 | Phase 04.2 | Complete |
 | NOTI-03 | Phase 7 | Pending |
-| NOTI-04 | Phase 7 | Pending |
+| NOTI-04 | Phase 04.2 | Complete |
 | LEAV-01 | Phase 04.1 | Pending |
 | CERT-01 | Phase 11 | Pending |
 | CERT-02 | Phase 11 | Pending |
@@ -255,13 +255,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ADMN-08 | Phase 3 | Pending |
 | ADMN-09 | Phase 4 | Complete |
 | ADMN-10 | Phase 3 | Pending |
-| ADMN-11 | Phase 7 | Pending |
+| ADMN-11 | Phase 04.2 | Complete |
 | ADMN-12 | Phase 3 | Pending |
 | MIG-04 | Phase 8 | Pending |
 | MIG-05 | Phase 8 | Pending |
 | OPS-01 | Phase 1 | Complete |
 | OPS-02 | Phase 1 | Complete |
-| OPS-03 | Phase 04.4 | Pending |
+| OPS-03 | Phase 04.4 | Complete |
 | OPS-04 | Phase 1 | Complete |
 | OPS-05 | Phase 3 | Pending |
 | OPS-06 | Phase 1 (상태 화면 「복원 리허설」 항목은 Phase 04.4가 구현) | Complete |
@@ -279,9 +279,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 - Mapped to phases: 86
 - Unmapped: 0 ✓
 
-**By phase:** 1 (9) · 2 (1) · 3 (13) · 4 (11) · 04.1 (5) · 04.4 (1) · 5 (8) · 6 (10) · 7 (7) · 8 (2) · 9 (10) · 10 (5) · 11 (4)
+**By phase:** 1 (9) · 2 (1) · 3 (13) · 4 (11) · 04.1 (5) · 04.2 (4) · 04.4 (1) · 5 (8) · 6 (10) · 7 (3) · 8 (2) · 9 (10) · 10 (5) · 11 (4)
 
 ---
 *Requirements defined: 2026-09-17*
+*2026-09-24: Phase 7에서 Phase 04.2로 ADMN-11·NOTI-01·NOTI-02·NOTI-04 이동(PR #50 분리 — 옮긴 4 + 남긴 3 = 원래 7)*
 *Last updated: 2026-09-23 — 데이터 이전 제외(사용자 결정): MIG-01·02·03 → Out of Scope, MIG-04·05를 수기 입력 전환으로 재정의, OPS-06 '이전 실행' → '복원 리허설', 인트라넷 미러링 사유 정정, v1 89 → 86 (86/86 mapped)*
 *Earlier update: 2026-09-17 after /plan-ceo-review (23 findings + D3·D4·D5 + OV-1..8 folded in; OPS-06·OPS-07 added; OV-3 redefined → EXP-15 증빙 종류별 세금 자동 계산; CERT-01 QR 진입; EXP-16 경영관리 카드 사용 대리 등록·개인 비용 팀 귀속·경품 대납 세금 비용 포함; 89/89 mapped; /plan-eng-review decisions 1–15 + OV-1..8 folded: 본부·계급×조직 범위·자기 승인, 세율 기준일·절사, effectiveCost 식 공유, upsert 이전·결정적 번호·amount_basis·중복 후보, demo 입력; roadmap Phase 6 split per Eng OV-6 → 11 phases, traceability renumbered: old 6 → 6/7, old 7~10 → 8~11; 회사 GCP Phase 1부터)*

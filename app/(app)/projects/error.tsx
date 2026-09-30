@@ -13,7 +13,7 @@ export default function ProjectsError({ error, retry }: { error: Error & { diges
 
   return (
     <>
-      <PageHeader title="프로젝트" subtitle="진행 중인 프로젝트 원장" />
+      <PageHeader title="프로젝트" subtitle="프로젝트 원장" />
       <ListEmpty
         message="프로젝트 목록 불러오기 실패"
         action={{ label: "다시 시도", onClick: retry }}

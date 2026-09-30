@@ -79,6 +79,10 @@ const rawSchema = z.object({
   APP_DEPLOYED_AT: optionalString(),
   MAX_INSTANCES: optionalNumber(),
   STATUS_CONN_BANNER_RATIO: numberWithDefault(0.8),
+  // 04.2-05: /internal/notify-tick의 기대 호출자(Cloud Scheduler 서비스 계정 이메일 —
+  // deploy.sh가 넣는다)와 로컬 전용 OIDC 검증 끄기("1"만 인정 — handle.ts).
+  NOTIFY_TICK_SCHEDULER_SA: optionalString(),
+  NOTIFY_TICK_OIDC_DISABLED: optionalString(),
 });
 
 const envSchema = rawSchema.superRefine((data, ctx) => {
@@ -95,6 +99,13 @@ const envSchema = rawSchema.superRefine((data, ctx) => {
         code: "custom",
         path: ["BETTER_AUTH_URL"],
         message: "BETTER_AUTH_URL is required when APP_ENV is not local",
+      });
+    }
+    if (data.NOTIFY_TICK_OIDC_DISABLED !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["NOTIFY_TICK_OIDC_DISABLED"],
+        message: "NOTIFY_TICK_OIDC_DISABLED is only allowed when APP_ENV=local",
       });
     }
   }
@@ -162,6 +173,8 @@ const ENV_KEYS = [
   "APP_DEPLOYED_AT",
   "MAX_INSTANCES",
   "STATUS_CONN_BANNER_RATIO",
+  "NOTIFY_TICK_SCHEDULER_SA",
+  "NOTIFY_TICK_OIDC_DISABLED",
 ] as const;
 
 function loadEnv(): Env {

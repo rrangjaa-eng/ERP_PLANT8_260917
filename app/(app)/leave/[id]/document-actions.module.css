@@ -1,0 +1,91 @@
+/* 04.1-05 S3 문서 화면 행동 줄 — PC는 KvList 아래 한 줄(1차 왼쪽 · 2차 오른쪽 끝, 폼 열 720), 폰은 하단 탭 위
+   고정 · 1차가 2차의 두 배 폭 · 높이 --touch-min(§6-3 제출 줄 · §7-8). 색·서체·radius는 토큰 참조만(D-20). */
+
+.bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  max-width: var(--form-max);
+  margin-top: var(--s-4);
+}
+
+.buttons {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.secondaryWrap {
+  margin-left: auto;
+}
+
+.spacer {
+  display: none;
+}
+
+.resubmit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  max-width: var(--form-max);
+  margin-top: var(--s-4);
+}
+
+@media (max-width: 699.98px) {
+  .bar {
+    position: fixed;
+    right: 0;
+    bottom: calc(var(--touch-min) + var(--line-w-strong));
+    left: 0;
+    max-width: none;
+    margin: 0;
+    padding: var(--s-2) var(--pad-page);
+    border-top: var(--line-w) solid var(--line);
+    background: var(--bg);
+    z-index: var(--z-bar);
+  }
+
+  /* 본문 아래 여백 = 행동 줄 높이(탭 44는 셸이 이미 비운다). 수화 뒤에는 행동 줄 실측 높이(충돌 줄 포함)가
+     덮어쓴다 — 이 값은 수화 전 기본(버튼 + 위아래 --s-2 + 윗선). */
+  .spacer {
+    display: block;
+    height: calc(var(--touch-min) + var(--s-2) * 2 + var(--line-w));
+  }
+
+  /* 폰은 결재 시트와 같이 반려(2차) 왼쪽 · 승인(1차) 오른쪽, 사이 --s-4 이상(사용자 결정 2026-09-29 —
+     DECISIONS.md 폰 결재 행동 줄). 수화 뒤에는 DOM · Tab 순서도 반려 → 승인(document-actions usePhoneWidth);
+     order는 수화 전 보이는 순서를 같게 둔다. PC 순서(1차 왼쪽)는 그대로. */
+  .buttons {
+    gap: var(--s-4);
+  }
+
+  .primaryWrap {
+    display: block;
+    flex: 2;
+  }
+
+  .secondaryWrap {
+    display: block;
+    flex: 1;
+    order: -1;
+    margin-left: 0;
+  }
+
+  .primaryWrap > span,
+  .secondaryWrap > span {
+    display: flex;
+  }
+
+  .primaryWrap > span > button,
+  .secondaryWrap > span > button {
+    justify-content: center;
+    width: 100%;
+    height: var(--touch-min);
+    font-size: var(--fs-base);
+  }
+
+  /* 폰에서는 kbd를 그리지 않는다(§7-9). */
+  .primaryWrap kbd {
+    display: none;
+  }
+}

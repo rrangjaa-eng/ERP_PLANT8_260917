@@ -13,6 +13,8 @@
   "env": {
     "BASH_MAX_TIMEOUT_MS": "1200000"
   },
+  "language": "korean",
+  "effortLevel": "high",
   "hooks": {
     "SessionStart": [
       {
@@ -21,10 +23,6 @@
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR\"/scripts/install_pkgs.sh"
-          },
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR\"/scripts/install-codex.sh"
           },
           {
             "type": "command",
@@ -59,11 +57,6 @@
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/plant8-skill-gate.sh record-prompt",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/plant8-coordinator-check.sh",
             "timeout": 10
           }
         ]
@@ -146,7 +139,7 @@
         ]
       },
       {
-        "matcher": "Agent|Skill|Bash|Write|Edit|NotebookEdit|mcp__hearthbot__.*|mcp__github__merge_pull_request|mcp__github__enable_pr_auto_merge|mcp__github__create_pull_request",
+        "matcher": "Agent|Skill|Bash|Write|Edit|NotebookEdit|mcp__github__merge_pull_request|mcp__github__enable_pr_auto_merge|mcp__github__create_pull_request|mcp__github__update_pull_request",
         "hooks": [
           {
             "type": "command",
@@ -168,12 +161,8 @@
         ]
       },
       {
+        "matcher": "Bash|Write|Edit|Agent|Skill",
         "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/plant8-claude-md-reminder.sh",
-            "timeout": 10
-          },
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/plant8-session-boundary.sh post-tool",
@@ -200,11 +189,6 @@
           {
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/plant8-session-boundary.sh stop",
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/plant8-status-page-guard.sh",
             "timeout": 10
           }
         ]

@@ -137,6 +137,26 @@ test.describe("숫자 서식(D-95, 04-09)", () => {
     await expect(page.getByRole("gridcell", { name: "800,000" })).toBeVisible();
   });
 
+  // Regression: ISSUE-003 — 쉼표 바로 앞 Delete가 캐럿 앞 숫자를 지웠다
+  // Found by /qa on 2026-09-28 · Report: docs/reviews/phase-04/bundle4-qa.md
+  test("(QA ISSUE-003) 단가 1,500,000에서 쉼표 바로 앞 Delete는 쉼표 뒤 숫자를 지워 100,000", async ({ page }) => {
+    await loginAndOpenProject(page);
+
+    await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
+    const dataRow = page.locator("tbody tr").nth(1);
+    await dataRow.getByRole("gridcell").nth(5).focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Control+a");
+    await page.keyboard.type("1500000");
+    const input = page.getByRole("textbox", { name: "단가", exact: true });
+    await expect(input).toHaveValue("1,500,000");
+
+    await input.evaluate((element) => (element as HTMLInputElement).setSelectionRange(1, 1));
+    await page.keyboard.press("Delete");
+    await expect(input).toHaveValue("100,000");
+    expect(await input.evaluate((element) => (element as HTMLInputElement).selectionStart)).toBe(1);
+  });
+
   // Task 3 ⑤(b) — 설정 화면 숫자 칸도 이 훅을 쓴다. 소수 자리 상한(4)을
   // 넘는 한 글자는 조용히 무시된다(C-02, lib/format-number.ts scanTyped).
   test("(b) 설정 화면 USD 최근 환율 칸에 1318.18181을 치면 1,318.1818까지만 들어간다", async ({ page }) => {
@@ -317,6 +337,10 @@ test.describe("숫자 서식(D-95, 04-09)", () => {
     // 버튼이 다시 비활성(dirtyCount 0)으로 돌아오는 것으로 저장 완료를 본다.
     const saveButton = page.getByRole("button", { name: /일괄 저장/ });
     await saveButton.click();
+    // 저장 중에도 aria-disabled라(Button pending) toBeDisabled만으로는 저장 완료가 아니다 —
+    // 진행 표시 「…」가 사라진 뒤(pending 끝) 다시 비활성인지 봐야 reload가 저장을 끊지 않는다.
+    await expect(saveButton).toBeDisabled();
+    await expect(saveButton).not.toContainText("…");
     await expect(saveButton).toBeDisabled();
 
     await page.reload();

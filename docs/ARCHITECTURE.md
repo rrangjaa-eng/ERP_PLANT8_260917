@@ -193,6 +193,24 @@ UserFacing "다른 저장이 끝나지 않음 · 잠시 뒤 다시 저장"로 �
 저장 셋 — 04-11·04-20·04-22·04-12가 같은 파일에 케이스를 더한다). (2)(4)(5)의
 함수는 같은 머지 묶음 ②(04-50 → 04-23) 안에서 만들어진다.
 
+## 4-9. 결재 모듈 계약(Phase 04.1 → Phase 5)
+
+(1) 종류 등록: `registerDocumentKind({kind, label, loadRouteConfig, href, describeDocuments,
+routeSettings?, canResubmit?, loadDetails?, detailDto?, buildDetailRows?})`(`domain/approvals/kinds.ts`).
+`canResubmit?: (viewer) => Promise<boolean>`이 있으면 반려 문서의 `다시 신청`이 그 판정을 따른다.
+`loadDetails`가 있으면 `detailDto` · `buildDetailRows`가 둘 다 필수(하나라도 없으면 등록 예외). 순서 고정:
+`loadDetails`(구조 필드만) → 엔진이 `detailDto`로 정보 항목별 `project()` → `buildDetailRows(projected)`가
+투영된 필드로만 `{title, subtitle, rows}`를 만든다 — 행 문자열을 만든 뒤 거르지 않는다. 새 종류는
+`app/(app)/document-kinds.ts`에 import 한 줄(`test/unit/document-kinds-import.test.ts`가 빠진 진입점을 잡는다).
+(2) 결재선은 제출 때 단계 행으로 고정되고, 담당은 표시·처리 시점의 조직으로 다시 해석한다.
+(3) 전이 순서: version → 종료 상태 → 후보(승인·반려) 또는 기안자(회수·다시 신청) 판정 → 상태 UPDATE
+먼저(version 조건) → 단계 행 → 같은 tx 행동 로그. 거부는 `approval.refused` 사유 코드(`conflict` ·
+`not_holder` · `final` · `not_drafter` · `invalid_state`)로 남는다.
+(4) 설정·소속 스냅숏은 트랜잭션을 열기 전에 읽는다(`prepareSubmission`) — §4-8 잠근 트랜잭션 규약 준수.
+(5) 결재함(`listMyInbox`)은 `scopeFor()`를 쓰지 않고 후보·처리자 기준, 노출은 요청 단위 메모(`createVisibleMemo`).
+(6) 차수는 승인 0건으로 끝나지 않는다(대표 폴백 `FALLBACK_ROLE_ID`) · 한 차수 한 사람 한 승인.
+(7) 「오늘」은 `seoulToday()`(`lib/dates.ts`).
+
 ## 5. DB·마이그레이션
 
 `drizzle-kit generate` → Squawk(`.squawk.toml`, `pnpm lint:sql`) → `scripts/migrate-runner.ts`
@@ -246,7 +264,9 @@ domain 모듈 = 단위, 새 액션·DTO = 통합(+Phase 3부터 누수 생성), 
 | `LOCKOUT_THRESHOLD`·`LOCKOUT_WINDOW_MINUTES` | 잠금 | Phase 3부터 설정 레지스트리 키(`auth.lockout.*`)의 기본값 출처로만 남는다 |
 | `RATE_LIMIT_LOGIN_MAX` | 속도 제한 | 부팅 시 1회(`lib/auth.ts` better-auth 설정) — 레지스트리 밖, 런타임 변경 불가 |
 | `APP_DATA_KEY_v1`·`APP_DATA_KEY_v2` | 암호화 키(Phase 3부터 사용, v2는 회전용 두 번째 버전) | Secret Manager |
-| `SMTP_HOST`·`SMTP_USER`·`SMTP_PASSWORD`·`SMTP_FROM` | 이메일(Phase 1은 정의만) | Secret Manager |
+| `SMTP_HOST`·`SMTP_USER`·`SMTP_PASSWORD`·`SMTP_FROM` | 이메일 — 넷 다 채워져야 켜짐(Phase 04.2, D-711) | Secret Manager |
+| `NOTIFY_TICK_SCHEDULER_SA` | `/internal/notify-tick` OIDC 기대 호출자(스케줄러 서비스 계정 이메일) | deploy.sh가 주입 |
+| `NOTIFY_TICK_OIDC_DISABLED` | 로컬 전용 OIDC 우회(`1`) — 비로컬이면 부팅 거부·deploy.sh 거부 | `.env.local`만 |
 | `GCP_PROJECT_ID`·`CLOUD_SQL_INSTANCE_ID` | 상태 화면의 GCP 조회 | 배포 워크플로 변수 |
 | `APP_GIT_SHA`·`APP_DEPLOYED_AT` | 상태 화면 배포 버전 표시 | deploy.sh가 주입 |
 | `MAX_INSTANCES` | 16A 커넥션 규칙 계산 | 배포 워크플로 변수 |
@@ -261,5 +281,6 @@ domain 모듈 = 단위, 새 액션·DTO = 통합(+Phase 3부터 누수 생성), 
   나머지 여섯 플랜은 이 경로 위의 확장
 - **Phase 4:** `domain/money`·`domain/rules.gate`·문서 번호 채번은 구현됨(§4) — 남은 것:
   프로젝트·견적 원장, 통화·리저브 대장
-- **Phase 7:** 이메일 발송 활성화(SMTP 4개 변수 실사용), 알림 tick(현재 경보는
-  `enabled: false`)
+- **Phase 04.2:** 이메일 채널(SMTP 4개 실사용)·알림 tick(`/internal/notify-tick`,
+  tick 정체 경보 켜짐)·공휴일 표·영업일 함수
+- **Phase 7:** 실제 알림 조건 종류·규칙 관리·지급일·마감이 영업일 함수를 씀

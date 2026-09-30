@@ -1,13 +1,19 @@
+import { isDeepStrictEqual } from "node:util";
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { SETTING_DEFS } from "@/domain/settings/keys";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
 import {
   getSettingValue as defaultGetSettingValue,
   listSettingHistory as defaultListSettingHistory,
+  validateEffectiveFrom,
+  SettingNotFoundError,
 } from "@/domain/settings/registry";
 import { applySettingsImport as defaultApplySettingsImport } from "@/repositories/settings";
+import { assertSeqStartNotLowered } from "@/domain/document-numbering";
+import { withTransaction } from "@/lib/db-transaction";
 
 // ADMN-06: 설정 JSON 내보내기·가져오기. 내보내기는 excel_export(끌 수 없는
 // 종류)로 행동 로그에 남는다 — 새 종류를 만들지 않는다(CORE_ACTION_TYPES는
@@ -52,6 +58,7 @@ export async function exportSettings(viewer: Viewer, deps?: Partial<ExportDeps>)
       continue;
     }
     try {
+      // 저장 원값이 아니라 실효값을 쓴다 — 허용 밖 저장값은 기본값으로 읽히므로(readInvalidAsDefault) 이 파일을 되가져오면 원값과 log.error 신호가 사라진다.
       settings[def.key] = await getSettingValue(def);
     } catch {
       // 기본값도 없고 값도 없는 키(신규 등록 직후)는 내보내기에서 건너뛴다.
@@ -70,6 +77,8 @@ export async function exportSettings(viewer: Viewer, deps?: Partial<ExportDeps>)
 
 export type ImportDeps = ExportDeps & {
   applySettingsImport: typeof defaultApplySettingsImport;
+  // 04.1-04: 적용 시작일 규칙의 서울 오늘 기준 시각(테스트 주입).
+  now: Date;
 };
 
 type HistorizedImportEntry = { effectiveFrom?: unknown; value?: unknown };
@@ -86,6 +95,8 @@ export async function importSettings(
   const allowed = await can(viewer, "admin.settings", "write");
   if (!allowed) throw new ForbiddenError("설정 가져오기 권한 없음");
 
+  const getSettingValue = deps?.getSettingValue ?? defaultGetSettingValue;
+  const today = seoulToday(deps?.now);
   const issues: string[] = [];
   const simple: Array<{ key: string; value: unknown; by: string | null }> = [];
   const historized: Array<{ key: string; effectiveFrom: string; value: unknown; by: string | null }> = [];
@@ -118,6 +129,23 @@ export async function importSettings(
           issues.push(`'${key}'(${effectiveFrom}) 값이 스키마를 만족하지 않습니다.`);
           continue;
         }
+        // 04.1-04(ENG-5): 일반 저장과 같은 적용 시작일 검증. 지난 연도는 그날 이미 유효한
+        // 값(기존 행 또는 기본값)과 같은 무변화 행만 통과 — 어느 날의 유효값도 바꾸지 않는다.
+        const violation = validateEffectiveFrom(def, effectiveFrom, today);
+        if (violation?.reason === "format") {
+          issues.push(`'${key}'(${effectiveFrom}) ${violation.message}`);
+          continue;
+        }
+        if (violation?.reason === "past_year") {
+          const effective: unknown = await getSettingValue(def, { asOf: seoulDateToUtcDate(effectiveFrom) }).catch((caught: unknown) => {
+            if (caught instanceof SettingNotFoundError) return undefined;
+            throw caught;
+          });
+          if (!isDeepStrictEqual(effective, parsed.data)) {
+            issues.push(`'${key}'(${effectiveFrom}) ${violation.message}`);
+            continue;
+          }
+        }
         seenDates.add(effectiveFrom);
         historized.push({ key, effectiveFrom, value: parsed.data, by: viewer.id });
       }
@@ -136,8 +164,14 @@ export async function importSettings(
     throw new ImportValidationError(issues);
   }
 
+  // 묶음 ④ /review R7 — 순번 시작값 키는 설정 화면 저장과 같은 낮추기 가드(카운터 행 잠금 + 비교)를 쓰기와 같은
+  // 트랜잭션에서 지난다. 하나라도 거부되면 트랜잭션 전체가 되돌아가 아무것도 적용되지 않는다.
   const applySettingsImport = deps?.applySettingsImport ?? defaultApplySettingsImport;
-  await applySettingsImport(viewer, { simple, historized });
+  const now = new Date();
+  await withTransaction(async (tx) => {
+    for (const item of simple) await assertSeqStartNotLowered(viewer, item.key, item.value, now, tx);
+    await applySettingsImport(viewer, { simple, historized }, tx);
+  });
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, {

@@ -120,6 +120,7 @@ test.describe("보관된 계급을 가진 사람의 상세 화면", () => {
     await page.getByLabel("이름").fill(personName);
     await page.getByLabel("이메일").fill(`e2e-archived-role-${stamp}@example.test`);
     await page.getByLabel("계급").selectOption({ label: roleName });
+    await page.getByLabel("입사일").fill("2026-01-01");
     await page.getByRole("button", { name: "사람 등록" }).click();
     await expect(page.getByText(/초기 비밀번호 — /)).toBeVisible();
 

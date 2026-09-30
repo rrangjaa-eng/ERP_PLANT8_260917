@@ -19,6 +19,33 @@
   text-align: left;
 }
 
+/* 04-18(§6-1) — 정렬 머리글 링크: 머리글 글자 색 · 크기 그대로, 밑줄은 hover · focus에서만(행동 링크처럼 보이지 않게). */
+.sortLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  color: inherit;
+  text-decoration: none;
+}
+
+.sortLink:hover,
+.sortLink:focus-visible {
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
+}
+
+.sortIcon {
+  flex: none;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  stroke: currentColor;
+  stroke-width: var(--icon-stroke);
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* (가) — 편집 가능한 셀이 하나라도 있으면 --g-100 + --g-950 머리글(편집
    가능 신호). 읽기 표는 흰 바탕 그대로다. */
 .editable .headerCell {
@@ -30,6 +57,11 @@
   padding: var(--cell-pad-y) var(--cell-pad-x);
   border-bottom: var(--line-w) solid var(--line);
   vertical-align: top;
+}
+
+/* §7-3 「행: hover --surface」 — 읽기 표(편집 셀 0개)의 줄. 편집 표는 편집 셀 hover(.editableCell)가 대신한다. */
+.table:not(.editable) tbody tr:hover > .cell {
+  background: var(--surface);
 }
 
 .alignRight {
@@ -57,10 +89,19 @@
 }
 
 .groupHeader {
-  border-bottom: var(--line-w-strong) solid var(--line-strong);
+  padding-inline: var(--cell-pad-x);
+  border-bottom: var(--line-w) solid var(--line-strong);
   color: var(--muted);
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
+}
+
+/* 04-42(S9) — 그룹 머리글 행 오른쪽 칸(리저브 최종 잔액): 값이라 본문 색 · 굵게 · 숫자 고정 폭. */
+.groupAside {
+  float: inline-end;
+  color: var(--fg);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
 }
 
 /* (가) 편집 단계 — 편집 가능 셀만 상호작용 신호(커서 + 포커스 링). 읽기
@@ -194,8 +235,32 @@
   }
 }
 
+/* 04-18(S1 열 폭) — 좁은 단계(TableProps.collapseEarly): 1280 이상에서도 1024~1279의 열 집합을 쓴다. */
+.collapseEarly .collapse-1280 {
+  display: none;
+}
+
+/* SYSTEM.md §7-9 — 단축키 힌트 줄(04-19: 표 안으로 옮김 — 페이지 줄 다음). 1024 미만(셀 편집 없음)에서 숨는다. */
+.hintRow {
+  margin-top: var(--s-3);
+  color: var(--faint);
+  font-size: var(--fs-sm);
+}
+
+.hintRow kbd {
+  padding: 0 var(--s-1);
+  border: var(--line-w) solid var(--line);
+  color: var(--faint);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-head);
+}
+
 @media (max-width: 1023.98px) {
   .collapse-1024 {
+    display: none;
+  }
+
+  .hintRow {
     display: none;
   }
 }
@@ -212,6 +277,17 @@
     display: table-row;
   }
 
+  /* FINDING-015 — 행 전체가 행 링크 하나의 누름 자리(주 행 + 접힌 줄, §3 44px). 링크 ::after가 행 <tbody>를 덮는다. */
+  .rowLinkGroup {
+    position: relative;
+  }
+
+  .rowLinkGroup [data-row-link]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+
   /* 접힌 줄은 자기 행에 붙는다 — 선은 주 행 아래가 아니라 접힌 줄 아래에 긋는다. */
   tr:has(+ .collapsedRow) > .cell {
     border-bottom: 0;
@@ -221,8 +297,58 @@
     border-bottom: var(--line-w) solid var(--line);
   }
 
+  /* 04-31 DOM 감사 FAIL-1 — onRowTap이 있으면 이 칸이 행 시트를 여는 유일한 자리다.
+     §3(195행) 터치 목표 44px 미만(30px)이었다. table-cell은 auto layout에서
+     min-height를 행 높이 계산에 반영하지 않는다(실측 — min-height:44px을
+     주어도 30px 그대로) — height는 셀이 줄어들 수 없어 사실상 최소값으로
+     동작한다(실측 44px). */
+  .collapsedCellTap {
+    height: var(--touch-min);
+  }
+
   .cell,
   .headerCell {
     padding: var(--cell-pad-y) var(--cell-pad-x);
   }
+
+  /* §3 폰 터치 목표 44×44 — 정렬 머리글 링크가 머리글 셀 높이를 채운다(음수 margin이 셀 위아래 패딩을 상쇄). */
+  .sortLink {
+    display: flex;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+    margin-block: calc(-1 * var(--cell-pad-y));
+  }
+
+  .alignRight > .sortLink {
+    justify-content: flex-end;
+  }
+}
+
+/* 04-47(DR-16) — 합계 행 오른쪽 한 줄. 조각은 제 톤이고 조각 안에서는 줄을 바꾸지 않는다(줄바꿈은 조각 경계). */
+.footerNotice {
+  margin-left: var(--s-3);
+  font-weight: var(--fw-medium);
+}
+
+.noticePiece {
+  white-space: nowrap;
+}
+
+.tone-danger {
+  color: var(--danger);
+  font-weight: var(--fw-medium);
+}
+
+.tone-warning {
+  color: var(--warning);
+  font-weight: var(--fw-medium);
+}
+
+.tone-muted {
+  color: var(--muted);
+}
+
+.tone-success {
+  color: var(--success);
+  font-weight: var(--fw-medium);
 }

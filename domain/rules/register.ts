@@ -1,5 +1,5 @@
 import { registerGateRule } from "@/domain/rules/gate";
-import { ALLOWED_TRANSITIONS } from "@/domain/projects/status-transitions";
+import { ALLOWED_TRANSITIONS, AUTO_TRANSITIONS } from "@/domain/projects/status-transitions";
 import {
   lineCellEditability,
   linkedDocumentReason,
@@ -11,7 +11,7 @@ import {
 
 // Phase 4의 프로젝트 게이트 규칙을 등록하는 한 곳 — 규칙마다 등록한 플랜을
 // 주석 한 줄로 적는다: `project.line-edit`(04-06 · 04-12 · 04-13), `quote.line-cap`(04-26),
-// `project.transition`(04-20), `project.period-edit`(04-22), `project.pre-estimate-edit`(04-44),
+// `project.transition`(04-20), `project.auto-settle`(04-53), `project.period-edit`(04-22), `project.pre-estimate-edit`(04-44),
 // `project.start-date-required`(04-20), `quote.revision-create`·`quote.customer-approval`·`quote.approval-toggle`·`quote.vendor-required`(04-14).
 //
 // side-effect import 모듈 — `import "@/domain/rules/register"`로 불러
@@ -136,6 +136,30 @@ registerGateRule<unknown, ProjectTransitionCtx>({
     const hasMenu = transition.menu === "projects.complete" ? ctx.actorMenus.complete : ctx.actorMenus.status;
     if (!hasMenu) return { allowed: false, reason: "상태 바꾸기 권한 없음" };
     if (!ctx.actorCoversTeam) return { allowed: false, reason: "다른 팀 프로젝트 · 상태 바꾸기 권한 없음" };
+    return { allowed: true };
+  },
+});
+
+// 04-11(D-76) · 04-53(V-04-auto-settle-gate) — 날짜로 일어나는 자동 전환(진행 → 정산)의 판정 한 곳.
+// 전이표(AUTO_TRANSITIONS)에 있는 쌍 · 종료일이 오늘(KST)보다 앞 · 보관 아님. 시스템 행위자 — 권한 사실 없음.
+// 잠근 tx 안에서 불리므로 순수하다 — 오늘은 ctx로만 받는다(ARCHITECTURE §4-8 (3)).
+export type ProjectAutoSettleCtx = {
+  from: string;
+  to: string;
+  endDate: string | null;
+  archived: boolean;
+  todayKst: string;
+};
+
+const NOT_AUTO_SETTLE_TARGET = "자동 정산 대상 아님";
+
+registerGateRule<unknown, ProjectAutoSettleCtx>({
+  name: "project.auto-settle",
+  check: (_doc, ctx) => {
+    const transition = AUTO_TRANSITIONS.find((entry) => entry.from === ctx.from && entry.to === ctx.to);
+    if (!transition) return { allowed: false, reason: NOT_AUTO_SETTLE_TARGET };
+    if (ctx.endDate === null || ctx.endDate >= ctx.todayKst) return { allowed: false, reason: NOT_AUTO_SETTLE_TARGET };
+    if (ctx.archived) return { allowed: false, reason: NOT_AUTO_SETTLE_TARGET };
     return { allowed: true };
   },
 });

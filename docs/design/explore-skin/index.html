@@ -1,0 +1,114 @@
+<title>PLANT8 스킨 보드</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700&display=swap">
+<style>
+:root{
+  --bg:#F3F5F4; --fg:#10201C; --muted:#4E5D59; --line:#D5DEDA; --panel:#FFFFFF; --accent:#005446; --on-accent:#FFFFFF; --chip:#E6EEEB;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0E1714;--fg:#E4ECE9;--muted:#9DB0AA;--line:#2A3833;--panel:#16211E;--accent:#6FBFA9;--on-accent:#00211C;--chip:#1F2C28;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0E1714;--fg:#E4ECE9;--muted:#9DB0AA;--line:#2A3833;--panel:#16211E;--accent:#6FBFA9;--on-accent:#00211C;--chip:#1F2C28;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 'Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',system-ui,sans-serif;word-break:keep-all;letter-spacing:-.01em}
+.wrap{padding-inline:16px;padding-block:16px 32px;max-width:1360px;margin:0 auto}
+h1{font-size:20px;margin:0 0 2px;text-wrap:balance}
+.lead{color:var(--muted);margin:0 0 12px;font-size:13px}
+.ctl{display:flex;flex-wrap:wrap;gap:8px 20px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.ctl .lb{font-size:12px;font-weight:600;color:var(--muted);min-width:40px}
+.seg{display:flex;flex-wrap:wrap;gap:4px}
+.seg button,.chips label{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:6px;padding:4px 10px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chips label{display:inline-flex;gap:6px;align-items:center}
+.chips input{accent-color:var(--accent);margin:0}
+.chips label:has(input:checked){border-color:var(--accent);background:var(--chip)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.note{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 14px;margin:8px 0 12px;font-size:13px}
+.note b{font-size:14px}
+.note p{margin:2px 0 0;color:var(--muted)}
+.stage{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;overflow:hidden}
+.frame{position:relative;margin:0 auto;overflow:hidden}
+.frame iframe{border:0;transform-origin:0 0;position:absolute;left:0;top:0;background:#fff;box-shadow:0 0 0 1px var(--line)}
+.meta{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:8px}
+.meta a{color:var(--accent)}
+</style>
+
+<div class="wrap">
+  <h1>PLANT8 스킨 리프레시 보드</h1>
+  <p class="lead">같은 세 화면을 현재 원장과 스킨 3안으로 비교합니다. DOM은 모두 같고 CSS만 바뀝니다. 서체는 Pretendard 대신 Noto Sans KR로 대체해 보여 줍니다.</p>
+
+  <div class="ctl"><span class="lb">스킨</span><div class="seg" id="skin">
+    <button type="button" data-v="ledger">현재 원장</button><button type="button" data-v="a">A 서류함</button><button type="button" data-v="b">B 스튜디오</button><button type="button" data-v="c">C 스테이지</button>
+  </div></div>
+  <div class="ctl"><span class="lb">화면</span><div class="seg" id="screen">
+    <button type="button" data-v="projects">프로젝트 목록</button><button type="button" data-v="project">견적 원장</button><button type="button" data-v="vendors">거래처 등록</button>
+  </div></div>
+  <div class="ctl"><span class="lb">폭</span><div class="seg" id="width">
+    <button type="button" data-v="1280">PC 1280</button><button type="button" data-v="390">폰 390</button><button type="button" data-v="320">폰 320</button>
+  </div></div>
+  <div class="ctl"><span class="lb">완화 후보</span><div class="chips" id="relax">
+    <label><input type="checkbox" id="r1" value="r1">1 선→명도</label>
+    <label><input type="checkbox" id="r2" value="r2">2 타이포 대비</label>
+    <label><input type="checkbox" id="r3" value="r3">3 면 한 단계</label>
+    <label><input type="checkbox" id="r4" value="r4">4 아이콘</label>
+    <label><input type="checkbox" id="r5" value="r5">5 떠 있는 그림자</label>
+    <label><input type="checkbox" id="r6" value="r6">6 바 50·본문 15</label>
+    <label><input type="checkbox" id="r7" value="r7">7 포커스·선택</label>
+    <label><input type="checkbox" id="r8" value="r8">8 응답형 모션</label>
+    <label><input type="checkbox" id="r9" value="r9">9 네 숫자 19px</label>
+    <label><input type="checkbox" id="rm" value="m">사용자 메뉴 열기</label>
+  </div><div class="seg"><button type="button" id="all">후보 전부</button><button type="button" id="none">후보 끄기</button></div></div>
+
+  <div class="note" id="note"></div>
+  <div class="stage" id="stage"><div class="frame" id="frame"><iframe id="ifr" title="스킨 목업"></iframe></div></div>
+  <div class="meta"><span id="cap"></span><span>후보는 스킨이 이미 정한 값은 두고 빈 곳만 채웁니다 — 「현재 원장 + 후보 전부」가 네 번째 비교안(원장 완화)입니다.</span></div>
+</div>
+
+<script>
+const NOTES = {
+  ledger: ['현재 원장', '2026-09-18 결정 그대로: radius 0 · 그림자 없음 · 2px 진한 선 · 14px 글자 · 36px 행. 비교 기준입니다.'],
+  a: ['A 서류함 — 가장 안전한 안', '구조·딥그린 상단 바는 그대로. 웜 그레이 바탕 위 흰 종이 한 장(1px 연한 선 · radius 6 · 은은한 그림자), 2px 선을 전부 1px로, 행 40px. 과감함: 표를 종이 한 장에 올린 것 하나.'],
+  b: ['B 스튜디오 — 위험한 안', '쿨 그레이 캔버스 위 흰 패널(radius 12 · 층 그림자), 흰 상단 바 + 필 메뉴, 필 태그, 본문 15px · 행 44px. 과감함: 네 숫자·합계를 떠 있는 숫자 칩으로(§6-2 「타일 금지」를 넘는 안). 밀도가 가장 낮습니다.'],
+  c: ['C 스테이지 — 브랜드 안', '상단 바와 제목 구역을 하나의 딥그린 무대(전폭)로 잇고 본문은 밝게. 표 머리글·그룹·합계는 그린 틴트 면, 흰 패널 radius 8. 과감함: 무대 위 28px 제목과 20px 네 숫자. 사이드 면은 DOM이 바뀌어 제목 무대로 대신했습니다.']
+};
+const H = { 1280: 860, 390: 844, 320: 700 };
+const state = { skin: 'ledger', screen: 'project', width: 1280, relax: [] };
+try { Object.assign(state, JSON.parse(localStorage.getItem('skinboard') || '{}')); } catch (e) {}
+if (window.innerWidth < 700 && !('savedWidth' in state)) state.width = 390;
+
+const $ = (id) => document.getElementById(id);
+const ifr = $('ifr'), frame = $('frame'), stage = $('stage');
+
+function hash() {
+  const r = state.relax.filter((v) => v !== 'm');
+  const all = r.length === 9 ? ['all'] : r;
+  return [state.skin, ...all, ...(state.relax.includes('m') ? ['m'] : [])].join('-');
+}
+function fit() {
+  const w = state.width, h = H[w];
+  const avail = stage.clientWidth - 24;
+  const s = Math.min(1, avail / w);
+  ifr.style.width = w + 'px'; ifr.style.height = h + 'px';
+  ifr.style.transform = 'scale(' + s + ')';
+  frame.style.width = Math.round(w * s) + 'px'; frame.style.height = Math.round(h * s) + 'px';
+  $('cap').textContent = w + '×' + h + (s < 1 ? ' · ' + Math.round(s * 100) + '% 축소 표시' : ' · 실제 크기');
+}
+function render() {
+  for (const g of ['skin', 'screen', 'width'])
+    for (const b of $(g).querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.v == state[g]));
+  for (const c of $('relax').querySelectorAll('input')) c.checked = state.relax.includes(c.value);
+  const [t, d] = NOTES[state.skin];
+  $('note').innerHTML = '<b></b><p></p>';
+  $('note').querySelector('b').textContent = t; $('note').querySelector('p').textContent = d;
+  const src = state.screen + '.html#' + hash();
+  if (ifr.getAttribute('src') !== src) ifr.setAttribute('src', src);
+  fit();
+  try { localStorage.setItem('skinboard', JSON.stringify(state)); } catch (e) {}
+}
+for (const g of ['skin', 'screen', 'width'])
+  $(g).addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; state[g] = g === 'width' ? Number(b.dataset.v) : b.dataset.v; if (g === 'width') state.savedWidth = 1; render(); });
+$('relax').addEventListener('change', () => { state.relax = [...$('relax').querySelectorAll('input:checked')].map((c) => c.value); render(); });
+$('all').addEventListener('click', () => { state.relax = ['r1','r2','r3','r4','r5','r6','r7','r8','r9'].concat(state.relax.includes('m') ? ['m'] : []); render(); });
+$('none').addEventListener('click', () => { state.relax = []; render(); });
+new ResizeObserver(fit).observe(stage);
+render();
+</script>

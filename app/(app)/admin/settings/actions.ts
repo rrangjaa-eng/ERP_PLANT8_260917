@@ -1,12 +1,15 @@
 "use server";
 
+import "@/app/(app)/document-kinds";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { SETTING_DEFS } from "@/domain/settings/keys";
-import { setSettingValue, addHistorizedValue, cancelHistorizedValue, type SettingDef } from "@/domain/settings/registry";
+import { addHistorizedValue, cancelHistorizedValue, type SettingDef } from "@/domain/settings/registry";
 import { exportSettings } from "@/domain/settings/export";
+import { setSimpleSettingValue } from "@/domain/document-numbering";
+import { isRouteStepSettingKey, saveRouteStepSettings } from "@/domain/approvals/route-step-settings";
 import "./actions.registry";
 
 // ADMN-05: 화면 코드에 설정 키 문자열이 하드코딩돼 있지 않다 — 클라이언트가
@@ -27,7 +30,25 @@ export const setSimpleSettingAction = authedActionClient
   .schema(z.object({ key: z.string().min(1), value: z.unknown() }))
   .action(async ({ parsedInput, ctx }) => {
     const def = findSettingDef(parsedInput.key);
-    await setSettingValue(ctx.viewer, def, parsedInput.value);
+    // 결재선 단계 칸은 네 칸을 한 번에(saveApprovalRouteStepAction) — 칸 하나 저장은 중간 결재선을 만든다.
+    if (isRouteStepSettingKey(def.key)) throw new UserFacingError("결재선 단계 칸 단독 저장 불가 · 단계 저장으로");
+    await setSimpleSettingValue(ctx.viewer, def, parsedInput.value, new Date());
+    revalidatePath("/admin/settings");
+  });
+
+// 사용자 결정(2026-09-30 A): 결재선 한 단계의 네 칸을 한 트랜잭션에 — 값 검증은 도메인이 키 정의의 스키마로 한다.
+export const saveApprovalRouteStepAction = authedActionClient
+  .schema(
+    z.object({
+      kind: z.string().min(1),
+      stepIndex: z.number().int().min(1),
+      values: z.object({ enabled: z.unknown(), roleId: z.unknown(), scope: z.unknown(), orgUnitId: z.unknown() }),
+      // 화면을 열 때의 저장값 — 그 사이 다른 저장이 있었으면 도메인이 거부한다(손대지 않은 칸을 옛 값으로 덮지 않게).
+      expected: z.object({ enabled: z.unknown(), roleId: z.unknown(), scope: z.unknown(), orgUnitId: z.unknown() }),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    await saveRouteStepSettings(ctx.viewer, parsedInput);
     revalidatePath("/admin/settings");
   });
 

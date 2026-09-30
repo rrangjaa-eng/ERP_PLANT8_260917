@@ -7,7 +7,8 @@ import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
-import { aggregateProjects, createProject, findProject, listProjects, settleForProjectList } from "@/domain/projects";
+import { createProject, findProject, loadProjectList, settleForProjectList } from "@/domain/projects";
+import { aggregateProjects as repoAggregateProjects, listProjectsPage as repoListProjectsPage } from "@/repositories/projects";
 import { changeProjectStatus, lastStatusChangeOn } from "@/domain/projects/status";
 import { applyAutoSettlement, loadProjectForGate } from "@/domain/projects/auto-transition";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
@@ -16,7 +17,15 @@ import { setPermissionCell } from "@/domain/permissions/matrix";
 import { projectResponsibles } from "@/domain/projects/responsibles";
 import { teamLeadCandidatesAtDate } from "@/repositories/team-memberships";
 import { addDays, kstToday } from "@/lib/kst-date";
+import { gate } from "@/domain/rules/gate";
 import { deferred } from "./lock-race";
+
+// 04-53(V-04-auto-settle-gate): 자동 정산이 어느 규칙·행으로 판정했는지 보려고 gate를 통과형 스파이로
+// 감싼다 — 판정 결과는 원본 그대로다(선례 project-period.test.ts).
+vi.mock("@/domain/rules/gate", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/domain/rules/gate")>();
+  return { ...actual, gate: vi.fn(actual.gate) };
+});
 
 // 04-11(D-76 · CEO A-01·A-08·A-15·A-29·OV-5 · 엔지 리뷰 A P3) — 진행 → 정산 자동 전환을
 // 실제 DB에서 본다. 로그 단언은 「그 프로젝트의 그 전환(진행 → 정산) 1회당 한 줄」로 센다 —
@@ -251,47 +260,43 @@ async function allStatusLogs(projectId: string) {
 }
 
 describe("목록 요청의 판정 한 번 · 보기 권한 (04-11 Task 2 ② · A-07 · 엔지 리뷰 A P3)", () => {
-  it("(f) settleForProjectList 뒤 listProjects가 지난 진행을 정산으로 돌려준다", async () => {
+  it("(f) loadProjectList가 판정을 먼저 한 번 하고 지난 진행을 정산으로 돌려준다", async () => {
     const viewer = await makeViewer(DEFAULT_ROLE_ID);
     const projectId = await makeProject({ status: "in_progress", endDate: addDays(kstToday(new Date()), -1) });
 
-    await settleForProjectList(viewer);
-    const rows = await listProjects(viewer, {});
+    const { rows } = await loadProjectList(viewer, { year: "all" });
 
     expect(rows.find((row) => row.id === projectId)?.status).toBe("settling");
     expect(await settleLogs(projectId)).toHaveLength(1);
   });
 
-  it("(f2) settleForProjectList 없이 listProjects·aggregateProjects만 부르면 지난 진행은 진행 그대로다", async () => {
-    const viewer = await makeViewer(DEFAULT_ROLE_ID);
+  it("(f2) 판정 없이 리포지토리 목록·집계만 부르면 지난 진행은 진행 그대로다(판정은 입구의 한 번뿐)", async () => {
+    await makeViewer(DEFAULT_ROLE_ID);
     const projectId = await makeProject({ status: "in_progress", endDate: addDays(kstToday(new Date()), -1) });
 
-    const [rows, aggregate] = await Promise.all([
-      listProjects(viewer, {}),
-      aggregateProjects(viewer, { status: "in_progress" }),
+    const scope = { rows: "all", includeArchived: false } as const;
+    const [rows, buckets] = await Promise.all([
+      repoListProjectsPage(SYSTEM_VIEWER, { scope, filter: {}, sort: { key: "endDate", direction: "asc" }, offset: 0, limit: 50 }),
+      repoAggregateProjects(SYSTEM_VIEWER, { scope, filter: { status: "in_progress" } }),
     ]);
 
     expect(rows.find((row) => row.id === projectId)?.status).toBe("in_progress");
-    expect(aggregate.count).toBe(1);
+    expect(buckets.reduce((sum, bucket) => sum + bucket.count, 0)).toBe(1);
     expect(await statusOf(projectId)).toBe("in_progress");
     expect(await settleLogs(projectId)).toEqual([]);
   });
 
-  it("(f3) settleForProjectList 한 번 뒤 정산 목록 건수와 합계 건수가 같다", async () => {
+  it("(f3) loadProjectList의 판정 한 번 뒤 정산 목록 건수와 합계 건수가 같다", async () => {
     const viewer = await makeViewer(DEFAULT_ROLE_ID);
     const yesterday = addDays(kstToday(new Date()), -1);
     await makeProject({ status: "in_progress", endDate: yesterday });
     await makeProject({ status: "in_progress", endDate: addDays(yesterday, -5) });
     await makeProject({ status: "settling", endDate: addDays(yesterday, -9) });
 
-    await settleForProjectList(viewer);
-    const [rows, aggregate] = await Promise.all([
-      listProjects(viewer, { filter: { status: "settling" } }),
-      aggregateProjects(viewer, { status: "settling" }),
-    ]);
+    const { rows, totals } = await loadProjectList(viewer, { year: "all", status: "settling" });
 
     expect(rows).toHaveLength(3);
-    expect(aggregate.count).toBe(rows.length);
+    expect(totals.count).toBe(rows.length);
   });
 
   it("(f4) projects 보기 권한이 없는 viewer의 settleForProjectList는 판정하지 않는다", async () => {
@@ -408,8 +413,7 @@ describe("쓰기 경로의 잠금 안 선판정 · 경합 · 번호 연도 (04-1
     expect(await statusOf(projectId)).toBe("in_progress");
     expect(await allStatusLogs(projectId)).toEqual([]);
 
-    await settleForProjectList(lead);
-    const rows = await listProjects(lead, {});
+    const { rows } = await loadProjectList(lead, { year: "all" });
 
     expect(rows.find((row) => row.id === projectId)?.status).toBe("settling");
     const logs = await settleLogs(projectId);
@@ -484,5 +488,119 @@ describe("팀장 이름 출처 — teamLeadCandidatesAtDate 한 쿼리 (04-11 Ta
     await setPermissionCell(SYSTEM_VIEWER, { roleId: "role-team-lead", menu: "projects.status", action: "write", allowed: false });
 
     expect(await teamLeadCandidatesAtDate(SYSTEM_VIEWER, { teamId, date: today })).toEqual([]);
+  });
+});
+
+describe("게이트 단일 진입점 — 자동 정산 (04-53 · V-04-auto-settle-gate)", () => {
+  const AUTO_SETTLE_RULE = "project.auto-settle";
+
+  function autoSettleCalls(projectId: string) {
+    return vi
+      .mocked(gate)
+      .mock.calls.filter(([doc, rule]) => rule === AUTO_SETTLE_RULE && (doc as { id?: unknown }).id === projectId);
+  }
+
+  // 그 규칙만 거부하고 나머지 규칙은 통과형 구현으로 넘긴다. 끝나면 통과형으로 되돌린다.
+  async function withAutoSettleDenied<T>(fn: () => Promise<T>): Promise<T> {
+    const passThrough = vi.mocked(gate).getMockImplementation();
+    if (!passThrough) throw new Error("gate 통과형 스파이가 없습니다");
+    vi.mocked(gate).mockImplementation((doc, rule, ctx) =>
+      rule === AUTO_SETTLE_RULE ? Promise.resolve({ allowed: false, reason: "테스트 거부" }) : passThrough(doc, rule, ctx),
+    );
+    try {
+      return await fn();
+    } finally {
+      vi.mocked(gate).mockImplementation(passThrough);
+    }
+  }
+
+  it("(g1) 읽기 입구는 후보 프로젝트를 gate(\"project.auto-settle\")로 한 번 판정하고 정산한다", async () => {
+    const projectId = await makeProject({ status: "in_progress", endDate: "2026-09-17" });
+    vi.mocked(gate).mockClear();
+
+    expect(await applyAutoSettlement({ projectIds: [projectId] }, { now: () => AFTER_MIDNIGHT })).toEqual([projectId]);
+
+    const calls = autoSettleCalls(projectId);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[2]).toEqual({
+      from: "in_progress",
+      to: "settling",
+      endDate: "2026-09-17",
+      archived: false,
+      todayKst: "2026-09-18",
+    });
+    expect(await statusOf(projectId)).toBe("settling");
+    expect(await settleLogs(projectId)).toHaveLength(1);
+  });
+
+  it("(g2) 읽기 입구 — gate가 거부하면 SQL 후보로 잡힌 지난 진행도 정산하지 않는다", async () => {
+    const projectId = await makeProject({ status: "in_progress", endDate: "2026-09-17" });
+
+    const settled = await withAutoSettleDenied(() =>
+      applyAutoSettlement({ projectIds: [projectId] }, { now: () => AFTER_MIDNIGHT }),
+    );
+
+    expect(settled).toEqual([]);
+    expect(await statusOf(projectId)).toBe("in_progress");
+    expect(await settleLogs(projectId)).toEqual([]);
+  });
+
+  it("(g2b) 후보 둘 중 gate가 한 id만 거부하면 그 행만 진행으로 남는다", async () => {
+    const allowedId = await makeProject({ status: "in_progress", endDate: "2026-09-17" });
+    const deniedId = await makeProject({ status: "in_progress", endDate: "2026-09-17" });
+    const passThrough = vi.mocked(gate).getMockImplementation();
+    if (!passThrough) throw new Error("gate 통과형 스파이가 없습니다");
+    vi.mocked(gate).mockImplementation((doc, rule, ctx) =>
+      rule === AUTO_SETTLE_RULE && (doc as { id?: unknown }).id === deniedId
+        ? Promise.resolve({ allowed: false, reason: "테스트 거부" })
+        : passThrough(doc, rule, ctx),
+    );
+
+    let settled: string[];
+    try {
+      settled = await applyAutoSettlement({ projectIds: [allowedId, deniedId] }, { now: () => AFTER_MIDNIGHT });
+    } finally {
+      vi.mocked(gate).mockImplementation(passThrough);
+    }
+
+    expect(settled).toEqual([allowedId]);
+    expect(await statusOf(allowedId)).toBe("settling");
+    expect(await statusOf(deniedId)).toBe("in_progress");
+    expect(await settleLogs(allowedId)).toHaveLength(1);
+    expect(await settleLogs(deniedId)).toEqual([]);
+  });
+
+  it("(g3) 쓰기 입구는 잠근 행을 gate(\"project.auto-settle\")로 한 번 판정하고 정산한다", async () => {
+    const viewer = await makeViewer(DEFAULT_ROLE_ID);
+    const projectId = await makeProject({ status: "in_progress", endDate: "2026-09-17" });
+    vi.mocked(gate).mockClear();
+
+    const row = await withTransaction((tx) => loadProjectForGate(viewer, projectId, { tx, now: () => AFTER_MIDNIGHT }));
+
+    const calls = autoSettleCalls(projectId);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.[2]).toEqual({
+      from: "in_progress",
+      to: "settling",
+      endDate: "2026-09-17",
+      archived: false,
+      todayKst: "2026-09-18",
+    });
+    expect(row?.status).toBe("settling");
+    expect(await statusOf(projectId)).toBe("settling");
+    expect(await settleLogs(projectId)).toHaveLength(1);
+  });
+
+  it("(g4) 쓰기 입구 — gate가 거부하면 던지지 않고 잠근 행을 그대로 돌려주며 정산하지 않는다", async () => {
+    const viewer = await makeViewer(DEFAULT_ROLE_ID);
+    const projectId = await makeProject({ status: "in_progress", endDate: "2026-09-17" });
+
+    const row = await withAutoSettleDenied(() =>
+      withTransaction((tx) => loadProjectForGate(viewer, projectId, { tx, now: () => AFTER_MIDNIGHT })),
+    );
+
+    expect(row?.status).toBe("in_progress");
+    expect(await statusOf(projectId)).toBe("in_progress");
+    expect(await settleLogs(projectId)).toEqual([]);
   });
 });

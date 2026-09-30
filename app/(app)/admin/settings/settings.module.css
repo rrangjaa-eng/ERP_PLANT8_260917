@@ -54,8 +54,16 @@
   height: var(--control-h);
   border: var(--line-w) solid var(--line-ui);
   background: var(--bg);
+  color: var(--fg);
   padding: 0 var(--s-2);
   font-size: var(--fs-base);
+}
+
+/* SYSTEM.md §1-2: 비활성 글자는 --faint on --surface. 반투명은 --scrim 하나뿐이라 UA opacity를 끈다. */
+.select:disabled {
+  color: var(--faint);
+  background: var(--surface);
+  opacity: 1;
 }
 
 .hint {
@@ -67,6 +75,12 @@
 .error {
   font-size: var(--fs-sm);
   color: var(--danger);
+  margin: var(--s-1) 0 0 0;
+}
+
+.warning {
+  font-size: var(--fs-sm);
+  color: var(--warning);
   margin: var(--s-1) 0 0 0;
 }
 
@@ -85,6 +99,40 @@
    클릭 영역」이라 라벨 높이를 키운다. glyph(--icon-lg, 20×20)는 그대로다. */
 @media (max-width: 699.98px) {
   .checkboxLabel {
+    min-height: var(--touch-min);
+  }
+}
+
+/* 사용자 결정 2026-09-30 A-2 — 저장 안 한 결재선 단계 복원 줄(§7-3 (마) D-68 · 리저브 대장과 같은 모양). */
+.restoreBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--s-2);
+  margin: var(--s-2) 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  word-break: keep-all;
+}
+
+.restoreActions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: var(--s-2);
+}
+
+.restoreAction {
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+@media (max-width: 699.98px) {
+  .restoreAction {
     min-height: var(--touch-min);
   }
 }

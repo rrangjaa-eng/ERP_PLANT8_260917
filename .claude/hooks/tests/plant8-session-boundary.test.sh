@@ -254,41 +254,67 @@ hook plant8-session-boundary.sh stop "$(payload_session "$Sold")" "$projOld"
 expect_empty "D-01 older report commit doesn't count: stop empty" "$HOOK_STDOUT"
 
 # ---------------------------------------------------------------------------
-# D-03, new quick SUMMARY
+# quick 완료는 세션 경계가 아니다(2026-09-27: 세션 단위 = 웨이브). D-03 폐기.
 projQ="$(new_project)"
-Q="sid-d03-quick-$$"
+Q="sid-quick-not-boundary-$$"
 hook plant8-session-boundary.sh session-start "$(payload_session_start "$Q" startup)" "$projQ"
 mkdir -p "$projQ/.planning/quick/260101-abc-x"
 echo "summary" > "$projQ/.planning/quick/260101-abc-x/260101-abc-SUMMARY.md"
 
 hook plant8-session-boundary.sh post-tool "$(payload_tool "$Q" Read)" "$projQ"
-expect_contains "D-03 new quick SUMMARY: post-tool announces" "$HOOK_STDOUT" "260101-abc"
+expect_empty "quick SUMMARY: post-tool does not announce" "$HOOK_STDOUT"
 
 hook plant8-session-boundary.sh pre-tool "$(payload_agent "$Q" gsd-executor)" "$projQ"
-expect_rc "D-03 new quick SUMMARY: pre-tool blocks gsd-executor" 2 "$HOOK_RC"
-expect_contains "D-03 new quick SUMMARY: pre-tool message" "$HOOK_STDERR" "이미 플랜이 끝났다"
+expect_rc "quick SUMMARY: pre-tool does not block gsd-executor" 0 "$HOOK_RC"
 
 hook plant8-session-boundary.sh stop "$(payload_session "$Q")" "$projQ"
-expect_contains "D-03 new quick SUMMARY: stop blocks once" "$HOOK_STDOUT" '"decision":"block"'
-hook plant8-session-boundary.sh stop "$(payload_session "$Q")" "$projQ"
-expect_empty "D-03 new quick SUMMARY: second stop empty" "$HOOK_STDOUT"
+expect_empty "quick SUMMARY: stop not blocked" "$HOOK_STDOUT"
 
-# D-03, quick SUMMARY that existed before session start
-projQ2="$(new_project)"
-mkdir -p "$projQ2/.planning/quick/260102-xyz-y"
-echo "summary" > "$projQ2/.planning/quick/260102-xyz-y/260102-xyz-SUMMARY.md"
-Q2="sid-d03-baseline-$$"
-hook plant8-session-boundary.sh session-start "$(payload_session_start "$Q2" startup)" "$projQ2"
-hook plant8-session-boundary.sh post-tool "$(payload_tool "$Q2" Read)" "$projQ2"
-expect_empty "D-03 pre-existing quick SUMMARY not announced" "$HOOK_STDOUT"
-
-# D-03, missing quick dir
+# missing quick dir still fine
 projQ3="$(new_project)"
 rm -rf "$projQ3/.planning/quick"
-Q3="sid-d03-missing-$$"
+Q3="sid-quick-missing-$$"
 hook plant8-session-boundary.sh session-start "$(payload_session_start "$Q3" startup)" "$projQ3"
-expect_rc "D-03 missing quick dir: session-start exit 0" 0 "$HOOK_RC"
-expect_rc "D-03 missing quick dir: baseline file written" 0 "$([ -f "${TMPDIR}/plant8-session-boundary/${Q3}.baseline" ] && echo 0 || echo 1)"
+expect_rc "missing quick dir: session-start exit 0" 0 "$HOOK_RC"
+expect_rc "missing quick dir: baseline file written" 0 "$([ -f "${TMPDIR}/plant8-session-boundary/${Q3}.baseline" ] && echo 0 || echo 1)"
+
+# ---------------------------------------------------------------------------
+# 웨이브 경계: 실행자가 디스패치된 세션은 그 웨이브의 플랜이 전부 끝날 때만 경계
+projWv="$(new_project)"
+WV="sid-wave-$$"
+printf -- '---\nwave: 1\n---\n' > "$projWv/.planning/phases/04-test/04-01-PLAN.md"
+printf -- '---\nwave: 1\n---\n' > "$projWv/.planning/phases/04-test/04-02-PLAN.md"
+printf -- '---\nwave: 2\n---\n' > "$projWv/.planning/phases/04-test/04-03-PLAN.md"
+hook plant8-session-boundary.sh session-start "$(payload_session_start "$WV" startup)" "$projWv"
+hook plant8-session-boundary.sh pre-tool "$(payload_agent "$WV" gsd-executor)" "$projWv"
+expect_rc "wave: first executor dispatch (wave 1) -> exit 0" 0 "$HOOK_RC"
+echo "summary" > "$projWv/.planning/phases/04-test/04-01-SUMMARY.md"
+hook plant8-session-boundary.sh post-tool "$(payload_tool "$WV" Write)" "$projWv"
+expect_empty "wave: one of two wave-1 plans done -> no announce" "$HOOK_STDOUT"
+hook plant8-session-boundary.sh pre-tool "$(payload_agent "$WV" gsd-executor)" "$projWv"
+expect_rc "wave: wave 1 still open -> executor allowed" 0 "$HOOK_RC"
+echo "summary" > "$projWv/.planning/phases/04-test/04-02-SUMMARY.md"
+hook plant8-session-boundary.sh post-tool "$(payload_tool "$WV" Write)" "$projWv"
+expect_contains "wave: wave 1 complete -> announces 웨이브" "$HOOK_STDOUT" "웨이브"
+expect_contains "wave: announcement names plant8 environment id (fallback when PLANT8_ENV_ID unset)" "$HOOK_STDOUT" "env_01BjvDha7fqn18V6L1UywqDh"
+expect_contains "wave: announcement names the PLANT8_ENV_ID variable so another account knows what to set" "$HOOK_STDOUT" "PLANT8_ENV_ID"
+# 다른 계정의 환경: PLANT8_ENV_ID가 있으면 그 값을 쓰고 이 계정의 id는 나오지 않는다(새 세션·새 프로젝트로 경계를 다시 만든다)
+projWv2="$(new_project)"
+WV2="sid-wave-other-$$"
+printf -- '---\nwave: 1\n---\n' > "$projWv2/.planning/phases/04-test/04-01-PLAN.md"
+hook plant8-session-boundary.sh session-start "$(payload_session_start "$WV2" startup)" "$projWv2"
+hook plant8-session-boundary.sh pre-tool "$(payload_agent "$WV2" gsd-executor)" "$projWv2"
+echo "summary" > "$projWv2/.planning/phases/04-test/04-01-SUMMARY.md"
+HOOK_STDOUT_OTHER="$(printf '%s' "$(payload_tool "$WV2" Write)" | PLANT8_ENV_ID=env_01OtherAccountPlant8 CLAUDE_PROJECT_DIR="$projWv2" bash "$HOOKS/plant8-session-boundary.sh" post-tool 2>/dev/null)"
+expect_contains "wave: PLANT8_ENV_ID set -> announcement uses that id" "$HOOK_STDOUT_OTHER" "env_01OtherAccountPlant8"
+expect_true "wave: PLANT8_ENV_ID set -> this account's id must not appear" "$(printf '%s' "$HOOK_STDOUT_OTHER" | grep -qF env_01BjvDha7fqn18V6L1UywqDh && echo false || echo true)"
+hook plant8-session-boundary.sh pre-tool "$(payload_agent "$WV" gsd-executor)" "$projWv"
+expect_rc "wave: after wave 1 complete, executor (wave 2) blocked" 2 "$HOOK_RC"
+expect_contains "wave: block message mentions 웨이브" "$HOOK_STDERR" "웨이브"
+hook plant8-session-boundary.sh stop "$(payload_session "$WV")" "$projWv"
+expect_contains "wave: stop blocks once" "$HOOK_STDOUT" '"decision":"block"'
+hook plant8-session-boundary.sh stop "$(payload_session "$WV")" "$projWv"
+expect_empty "wave: second stop empty" "$HOOK_STDOUT"
 
 # ---------------------------------------------------------------------------
 # Existing behavior still holds: new phase SUMMARY still announces

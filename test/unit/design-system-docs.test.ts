@@ -168,8 +168,14 @@ describe("docs/design/SYSTEM.md — 2026-09-23 개정(04-08)", () => {
   });
 
   it("옛 목록 페이지(`더 보기 50건`)·옛 완료 라벨(`완료(정산)`)이 0개다(항목 4)", () => {
-    expect(SYSTEM).not.toContain("더 보기 50건");
+    const inbox = section(SYSTEM, "### 7-12.", "### 7-13.");
+    expect(SYSTEM.replace(inbox, "")).not.toContain("더 보기 50건");
     expect(SYSTEM).not.toContain("완료(정산)");
+  });
+
+  it("§7-12 알림함의 `더 보기 50건`은 기록된 임시 예외다(04.2 병합, D-91 적용 범위)", () => {
+    expect(section(SYSTEM, "### 7-12.", "### 7-13.")).toContain("기록된 임시 예외");
+    expect(DECISIONS).toContain("알림함 「더 보기 50건」을 기록된 임시 예외로");
   });
 
   it("`실행가만 고칠 수 있음`이 0개다(항목 5, D-78 개정 CEO-D10·D12)", () => {
@@ -372,5 +378,40 @@ describe("docs/design/SYSTEM.md · DECISIONS.md — 2026-09-23 개정(04-29, DR-
     const entry = DECISIONS.slice(start, nextHeadingIndex === -1 ? undefined : nextHeadingIndex);
     expect(entry).toContain("C-27");
     expect(entry).toContain("6쪽부터");
+  });
+});
+
+// 04.4-05 Task 3(UI-SPEC 갱신 ①②③): 시스템 문서가 복원 리허설 · 사람 목록 화면과 같다.
+describe("docs/design/SYSTEM.md — Phase 04.4 복원 리허설 · 사람 목록 (04.4-05)", () => {
+  const status = section(SYSTEM, "### 6-8", "### 6-9");
+  const table = section(SYSTEM, "### 7-3", "### 7-4");
+  const tag = section(SYSTEM, "### 7-5", "### 7-6");
+
+  it("§6-8 와이어프레임에 「복원 리허설」 줄이 「마지막 백업」 바로 다음에 있다", () => {
+    const lines = status.split("\n");
+    const backup = lines.findIndex((line) => line.includes("│ 마지막 백업"));
+    expect(backup).toBeGreaterThan(-1);
+    expect(lines[backup + 1]).toContain("│ 복원 리허설");
+  });
+
+  it("§6-8 항목 목록에 「복원 리허설」이 있고 고정 개수 문구가 없다", () => {
+    expect(status).toMatch(/항목:.*복원 리허설\(/);
+    expect(status).not.toMatch(/세 항목|3줄/);
+  });
+
+  it("§7-5에 두 로그인 문구의 길이 예외 줄이 있다", () => {
+    expect(tag).toContain("첫 로그인 전");
+    expect(tag).toContain("임시 비밀번호 사용 중");
+  });
+
+  it("§7-3 P1 줄에 금액 열이 없는 표의 규칙이 있다", () => {
+    const p1 = table.split("\n").find((line) => line.startsWith("- P1은"));
+    expect(p1).toContain("금액 열이 없는 표");
+  });
+
+  it("DECISIONS.md에 §7-5 길이 예외와 §7-3 금액 열 없는 표의 P1 항목이 있다", () => {
+    const headings = DECISIONS.split("\n").filter((line) => line.startsWith("## "));
+    expect(headings.some((line) => line.includes("§7-5") && line.includes("첫 로그인 전"))).toBe(true);
+    expect(headings.some((line) => line.includes("§7-3") && line.includes("금액 열"))).toBe(true);
   });
 });

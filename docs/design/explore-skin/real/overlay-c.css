@@ -1,0 +1,27 @@
+/* 안 C 「스테이지」 — 상단 바 + 제목 구역을 딥그린 무대 한 띠로, 본문은 밝게. 표 머리글·그룹 그린 틴트, 흰 표 면 r8 */
+html:root { --line: #DCE6E2; --line-strong: #9DBDB4; --muted: #4B5B57; --fg: #10201C; --m-radius: 12px; }
+html body { background: #F6F9F8; }
+html body [class*="TopBar-module__"][class*="__bar"] { background: #00211C; height: 48px; border-bottom: 0; }
+html body [class*="TopBar-module__"][class*="__navLink"][aria-current] { box-shadow: none !important; background: rgba(255, 255, 255, 0.10); border-radius: 6px; padding: 4px 10px !important; }
+/* 무대: 페이지 머리(PageHeader + 상세 머리) 전폭 딥그린 */
+html body main > [class*="__header"]:first-child { background: #00312A; color: #F2F7F5; box-shadow: 0 0 0 100vmax #00312A; clip-path: inset(0 -100vmax); padding-top: 20px; padding-bottom: 20px; margin-top: -20px; margin-bottom: 20px; }
+html body main > [class*="__header"]:first-child :is(h1, [class*="__title"]) { color: #FFFFFF; font-size: 28px; font-weight: 700; letter-spacing: -0.025em; }
+html body main > [class*="__header"]:first-child :is(p, span, [class*="__subtitle"], [class*="__periodLine"]) { color: #BFD6CF; }
+html body main > [class*="__header"]:first-child [class*="Button-module__"][class*="__tertiary"] { color: #9FE0CB; border-color: #9FE0CB; }
+html body main > [class*="__header"]:first-child [class*="Button-module__"][class*="__secondary"] { background: transparent; color: #F2F7F5; border-color: rgba(255, 255, 255, 0.4); border-radius: 8px; }
+html body main > [class*="__header"]:first-child [class*="Button-module__"][class*="__primary"] { background: #6FBFA9; color: #00211C; border-color: #6FBFA9; border-radius: 8px; }
+html body main > [class*="__header"]:first-child [class*="StatusTag-module__"] { background: #DCE8E4; color: #00312A !important; border-color: transparent !important; border-radius: 4px; }
+html body main table { background: #FFFFFF; border-collapse: separate !important; border-spacing: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+html body main table thead th { background: #DCE8E4; color: #00211C; border-bottom: 0 !important; font-weight: 600; padding-top: 10px; padding-bottom: 10px; }
+html body main table td { border-bottom: 1px solid var(--line) !important; border-top: 0 !important; }
+html body main table tbody tr:last-child td { border-bottom: 0 !important; }
+html body main table th:first-child, html body main table td:first-child { padding-left: 16px; }
+html body main table th:last-child, html body main table td:last-child { padding-right: 16px; }
+html body [class*="Table-module__"][class*="__groupHeader"] { background: #EBF2F0; color: #00443A; border: 0 !important; font-weight: 700; padding-top: 8px !important; padding-bottom: 8px !important; }
+html body [class*="Table-module__"][class*="__cell"]:not([class*="__cellSecondary"]) { height: 44px; }
+html body tfoot td, html body [class*="__footerCell"] { background: #EBF2F0; border-top: 1px solid var(--line-strong) !important; }
+html body [class*="__summaryRow"] { background: #EBF2F0; border: 0 !important; border-radius: 8px; padding: 12px 16px !important; margin-top: 12px; }
+html body [class*="project-detail-module__"][class*="__section"] { border-top: 0 !important; }
+html body [class*="project-detail-module__"][class*="__sectionTitle"] { font-size: 18px; }
+html body [class*="Button-module__"][class*="__btn"]:not([class*="__tertiary"]) { border-radius: 8px; }
+html body input, html body select { border-radius: 8px; }

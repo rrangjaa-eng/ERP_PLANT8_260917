@@ -1,22 +1,15 @@
 #!/usr/bin/env bash
-# UserPromptSubmit 훅 — 매 턴 CLAUDE.md의 "건너뛰면 안 되는 것"만 짧게 주입한다.
-# CLAUDE.md 전문은 이미 프롬프트 프리픽스에 들어가지만, Phase 3에서 그걸
-# 갖고도 Post-build 게이트를 전부 건너뛴 일이 있었다. 문장을 다시 읽히는 게
-# 아니라 매 턴 눈앞에 두는 것이 목적이라 체크리스트만 넣는다(토큰 절약).
+# UserPromptSubmit 훅 — 매 턴 CLAUDE.md 중 "훅이 기계로 막지 못하는 것"만 짧게 넣는다.
+# 스킬 순서·커밋 전 스킬·게이트 기록·머지 정책·세션 경계는 skill-gate·rule-guard·
+# session-boundary가 막으므로 여기 되풀이하지 않는다(2026-09-27: 10줄 → 4줄, 토큰 절약).
 set -euo pipefail
 
 read -r -d '' CHECKLIST <<'EOF' || true
-[CLAUDE.md 절차 체크 — 이번 턴에 해당하는 것만]
-1. 절차를 건너뛰지 않는다. 건너뛰는 게 맞다고 판단되면 먼저 말하고 승인받는다.
-2. 페이즈/기능이 끝나면 Post-build 넷을 실제로 호출한다: /review → /qa → (인증·권한·암호화·외부 입력을 건드렸으면)/cso → /ship.
-3. Superpowers 스킬은 호출한다: 버그·테스트·CI 실패 전 systematic-debugging, "완료" 말하기 전 verification-before-completion, 구현 전 test-driven-development.
-4. TDD: 실패 테스트(RED 확인) → 최소 구현 → 리팩터. 실제 실행 확인 없이 "완료" 금지.
-5. 로컬 dev 통과는 완료 신호가 아니다 — CI=true로 확인한다.
-6. 화면 검증 순서: 싼 게이트(lint·typecheck·build) → 독립 DOM 감사 → 수정 → 전체 게이트 한 번.
-7. 서브에이전트는 model을 명시한다. 판단·검토·계획은 Opus 5. Fable 5는 정말 필요한 순간(되돌리기 어려운 결정·Opus 5가 갈리는 문제·명시 요청)에만.
-8. 금지: .planning/ 수동 편집 · git push --force · 프로덕션 DB 직접 명령 · CLAUDE.md 임의 수정.
-9. 스킬을 먼저 부른다(hook이 막는다): 계획 /gsd-plan-phase → 게이트 /plan-ceo-review → /plan-eng-review(UI면 /plan-design-review) 뒤에만 실행 /gsd-execute-phase · UI 계약 /gsd-ui-phase — 워크플로 단계를 그대로 따르고 바꾸려면 먼저 승인. 코드 작성 전 test-driven-development, 커밋 전 verification-before-completion, 실패 뒤 systematic-debugging, 페이즈 완료 전 /gsd-verify-work·/review·/qa(UI면 /design-review), 머지 전 /review·/qa.
-10. 플랜 하나가 끝나면(SUMMARY 생성 · 계획 완료) 이 세션에서 더 나아가지 않는다: 커밋·푸시 → /gsd-pause-work → 새 세션(/gsd-progress).
+[CLAUDE.md 체크 — 훅이 못 막는 것만]
+1. 절차를 건너뛰거나 바꾸려면 먼저 말하고 승인받는다. 조용히 생략하거나 즉석 방법으로 대체하지 않는다.
+2. 완료 판정은 CI=true — 로컬은 lint·typecheck·build·단위·통합 + 건드린 화면의 E2E 스펙만, 전체 E2E는 CI가 한 번 돈다. 실제 실행 확인 없이 "완료" 금지.
+3. 화면: 싼 게이트 → 독립 DOM 감사(별도 에이전트, CI=true 실측) → 수정 → 전체 게이트 한 번. 스크린샷 육안 판정 금지.
+4. 모델: 계획·판단·검토 Opus, 실행자는 Sonnet 기본(돈·권한·DB 잠금·마이그레이션 플랜만 Opus), Fable은 페이즈 최종 전체 검토·되돌리기 어려운 결정·명시 요청에만. 서브에이전트는 model을 명시한다.
 EOF
 
 jq -nc --arg ctx "$CHECKLIST" \

@@ -1,0 +1,539 @@
+import { describe, expect, it } from "vitest";
+import { and, asc, eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { actionLog, approvalInstances, approvalRoutes, approvalSteps, settingsSimple } from "@/db/schema";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import {
+  CEO_ROLE_ID,
+  DEFAULT_ROLE_ID,
+  DIVISION_HEAD_ROLE_ID,
+  SYSADMIN_ROLE_ID,
+  TEAM_LEAD_ROLE_ID,
+  createRole,
+} from "@/domain/permissions/roles";
+import { setPermissionCell } from "@/domain/permissions/matrix";
+import { can, ForbiddenError } from "@/domain/permissions/can";
+import { approveDocument, currentHolderNames, getApprovalView } from "@/domain/approvals";
+import { listApprovalRouteOptions } from "@/domain/approvals/settings-options";
+import { listApprovalRouteSettingWarnings } from "@/domain/approvals/settings-warnings";
+import { isRouteStepSettingKey, saveRouteStepSettings } from "@/domain/approvals/route-step-settings";
+import { recordAction } from "@/domain/action-log/record";
+import { submitLeave, LEAVE_DOCUMENT_KIND, LEAVE_ROUTE_SETTINGS } from "@/domain/leave";
+import { getSettingValue, setSettingValue } from "@/domain/settings/registry";
+import {
+  APPROVAL_ROUTE_LEAVE_SELF_APPROVAL,
+  APPROVAL_ROUTE_LEAVE_STEP2_ENABLED,
+  APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID,
+  APPROVAL_ROUTE_LEAVE_STEP2_SCOPE,
+  APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID,
+  APPROVAL_ROUTE_LEAVE_STEP3_SCOPE,
+} from "@/domain/settings/keys";
+import { listRoles } from "@/repositories/roles";
+import { findSimpleValues, upsertSimpleValue } from "@/repositories/settings";
+import { listOrgUnits } from "@/repositories/org-units";
+import { makePerson, orgUnitIdByName, NOW_2026 } from "./approvals-fixtures";
+
+// 04.1-04 트레이서(ADMN-04 · EXP-04): 관리자가 설정 저장 경로(setSettingValue)로 바꾼
+// 결재선은 그 뒤 제출한 문서부터 적용되고, 진행 중 문서의 단계 행은 그대로다.
+
+const FULL_DAY = { kind: "full_day", startDate: "2026-09-21", endDate: "2026-09-21", half: "" };
+const deps = { now: NOW_2026 };
+
+async function stepsOf(instanceId: string) {
+  return db
+    .select({
+      stepIndex: approvalSteps.stepIndex,
+      label: approvalSteps.label,
+      roleId: approvalSteps.roleId,
+      scopeKind: approvalSteps.scopeKind,
+      scopeTargetId: approvalSteps.scopeTargetId,
+      isFallback: approvalSteps.isFallback,
+    })
+    .from(approvalSteps)
+    .innerJoin(approvalRoutes, eq(approvalRoutes.id, approvalSteps.routeId))
+    .where(eq(approvalRoutes.instanceId, instanceId))
+    .orderBy(asc(approvalSteps.stepIndex));
+}
+
+async function routeOf(instanceId: string) {
+  const [row] = await db.select().from(approvalRoutes).where(eq(approvalRoutes.instanceId, instanceId));
+  if (!row) throw new Error("결재선이 없습니다");
+  return row;
+}
+
+async function viewOf(viewer: Viewer, leaveId: string) {
+  return getApprovalView(viewer, { kind: LEAVE_DOCUMENT_KIND, documentId: leaveId }, deps);
+}
+
+async function baseOrg() {
+  const drafter = await makePerson("박서연", DEFAULT_ROLE_ID, "기획1팀");
+  const lead = await makePerson("김팀장", TEAM_LEAD_ROLE_ID, "기획1팀");
+  const ceo = await makePerson("최대표", CEO_ROLE_ID, null);
+  return { drafter, lead, ceo };
+}
+
+describe("설정 변경 → 새 제출만 반영 · 진행 중 문서는 그대로(ADMN-04 · EXP-04)", () => {
+  it("2단 사용을 끄면 그 뒤 문서는 3단(1 · 3 · 4)이고, 앞 문서는 4단과 지금 단계가 그대로다", async () => {
+    const org = await baseOrg();
+    const docA = await submitLeave(org.drafter, FULL_DAY, deps);
+    const stepsA = await stepsOf(docA.instanceId);
+    expect(stepsA.map((step) => step.stepIndex)).toEqual([1, 2, 3, 4]);
+    const currentA = (await viewOf(org.lead, docA.leaveId))?.currentStepIndex;
+
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_ENABLED, false);
+    const docB = await submitLeave(org.drafter, FULL_DAY, deps);
+
+    expect((await stepsOf(docB.instanceId)).map((step) => step.stepIndex)).toEqual([1, 3, 4]);
+    expect(await stepsOf(docA.instanceId)).toEqual(stepsA);
+    expect((await viewOf(org.lead, docA.leaveId))?.currentStepIndex).toBe(currentA);
+  });
+
+  it("자기 승인을 본인 승인으로 바꾸면 그 뒤 팀장 기안 문서는 1단 후보가 기안자 본인이고, 앞 문서는 건너뜀 그대로다", async () => {
+    const org = await baseOrg();
+    const docD = await submitLeave(org.lead, FULL_DAY, deps);
+    const viewDBefore = await viewOf(org.lead, docD.leaveId);
+    expect(viewDBefore?.currentStepIndex).not.toBe(1);
+
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_SELF_APPROVAL, "self_approve");
+    const docC = await submitLeave(org.lead, FULL_DAY, deps);
+
+    expect((await routeOf(docC.instanceId)).selfApproval).toBe("self_approve");
+    const viewC = await viewOf(org.lead, docC.leaveId);
+    expect(viewC?.currentStepIndex).toBe(1);
+    expect(viewC?.actions).toEqual(["approve", "withdraw"]);
+
+    expect((await routeOf(docD.instanceId)).selfApproval).toBe("skip");
+    const viewDAfter = await viewOf(org.lead, docD.leaveId);
+    expect(viewDAfter?.currentStepIndex).toBe(viewDBefore?.currentStepIndex);
+    expect(viewDAfter?.actions).toEqual(["withdraw"]);
+  });
+
+  it("2단 계급을 바꾸면 그 뒤 문서만 바뀌고, 같은 값을 두 번 저장해도 결과가 같다(행 1개 · settings_change 로그)", async () => {
+    const org = await baseOrg();
+    const before = await submitLeave(org.drafter, FULL_DAY, deps);
+
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID, DEFAULT_ROLE_ID);
+    const first = await submitLeave(org.drafter, FULL_DAY, deps);
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID, DEFAULT_ROLE_ID);
+    const second = await submitLeave(org.drafter, FULL_DAY, deps);
+
+    const step2Role = async (instanceId: string) => (await stepsOf(instanceId)).find((step) => step.stepIndex === 2)?.roleId;
+    expect(await step2Role(before.instanceId)).toBe(DIVISION_HEAD_ROLE_ID);
+    expect(await step2Role(first.instanceId)).toBe(DEFAULT_ROLE_ID);
+    expect(await stepsOf(second.instanceId)).toEqual(await stepsOf(first.instanceId));
+
+    const rows = await db.select().from(settingsSimple).where(eq(settingsSimple.key, APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID.key));
+    expect(rows.map((row) => row.value)).toEqual([DEFAULT_ROLE_ID]);
+    const logs = await db
+      .select()
+      .from(actionLog)
+      .where(and(eq(actionLog.actionType, "settings_change"), eq(actionLog.entityId, APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID.key)));
+    expect(logs).toHaveLength(2);
+  });
+});
+
+describe("네 단계를 모두 꺼도 결재 없이 승인되지 않는다(CEO-1)", () => {
+  it("그 뒤 제출은 submitted · 지금 단계 = 대표 폴백 · 담당 = 대표, 대표 승인 뒤에야 approved", async () => {
+    const org = await baseOrg();
+    for (const step of LEAVE_ROUTE_SETTINGS.steps) await setSettingValue(SYSTEM_VIEWER, step.enabled, false);
+
+    const doc = await submitLeave(org.drafter, FULL_DAY, deps);
+    const [instance] = await db.select().from(approvalInstances).where(eq(approvalInstances.id, doc.instanceId));
+    expect(instance?.status).toBe("submitted");
+
+    const view = await viewOf(org.ceo, doc.leaveId);
+    const current = view?.steps?.find((step) => step.state === "current");
+    expect(current?.isFallback).toBe(true);
+    expect(view?.currentStepIndex).toBe(current?.stepIndex);
+    expect(await currentHolderNames(org.drafter, { kind: LEAVE_DOCUMENT_KIND, documentId: doc.leaveId }, deps)).toBe("최대표");
+
+    const result = await approveDocument(org.ceo, { instanceId: doc.instanceId, expectedVersion: 1 }, deps);
+    expect(result.status).toBe("approved");
+  });
+});
+
+// 평일 열 개 — 반복마다 다른 날짜(같은 기안자의 같은 날 신청을 피한다).
+const RACE_DATES = [
+  "2026-09-21",
+  "2026-09-22",
+  "2026-09-23",
+  "2026-09-28",
+  "2026-09-29",
+  "2026-09-30",
+  "2026-10-01",
+  "2026-10-02",
+  "2026-10-06",
+  "2026-10-07",
+];
+
+describe("두 관리자 동시 저장 + 제출 경주(ADMN-04 concurrency · Codex HIGH)", () => {
+  it("10회 — 오류 0 · 행 1개 · 최종 값 ∈ {Y, Z} · 문서 2단 계급 ∈ {X, Y, Z} · 제출 뒤 단계 행 불변", async () => {
+    const adminY = await makePerson("관리자와이", SYSADMIN_ROLE_ID, null);
+    const adminZ = await makePerson("관리자지", SYSADMIN_ROLE_ID, null);
+    await makePerson("김팀장", TEAM_LEAD_ROLE_ID, "기획1팀");
+    await makePerson("최대표", CEO_ROLE_ID, null);
+    const drafters: Viewer[] = [];
+    for (let i = 0; i < 6; i++) drafters.push(await makePerson(`기안자${i}`, DEFAULT_ROLE_ID, "기획1팀"));
+
+    const X = DIVISION_HEAD_ROLE_ID;
+    const Y = DEFAULT_ROLE_ID;
+    const Z = TEAM_LEAD_ROLE_ID;
+    const KEY = APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID;
+    const submittedSteps = new Map<string, Awaited<ReturnType<typeof stepsOf>>>();
+
+    for (const date of RACE_DATES) {
+      await setSettingValue(SYSTEM_VIEWER, KEY, X);
+      const results = await Promise.allSettled([
+        setSettingValue(adminY, KEY, Y),
+        setSettingValue(adminZ, KEY, Z),
+        ...drafters.map(async (drafter) => {
+          const doc = await submitLeave(drafter, { kind: "full_day", startDate: date, endDate: date, half: "" }, deps);
+          submittedSteps.set(doc.instanceId, await stepsOf(doc.instanceId));
+        }),
+      ]);
+      expect(results.filter((result) => result.status === "rejected")).toEqual([]);
+
+      const rows = await db.select().from(settingsSimple).where(eq(settingsSimple.key, KEY.key));
+      expect(rows).toHaveLength(1);
+      expect([Y, Z]).toContain(rows[0]?.value);
+    }
+
+    expect(submittedSteps.size).toBe(RACE_DATES.length * drafters.length);
+    for (const [instanceId, steps] of submittedSteps) {
+      expect([X, Y, Z]).toContain(steps.find((step) => step.stepIndex === 2)?.roleId);
+      expect(await stepsOf(instanceId)).toEqual(steps);
+    }
+  }, 60000);
+});
+
+describe("설정 보기 권한만으로 옵션 전부(Codex MEDIUM)", () => {
+  it("admin.settings view만 있는 계급은 계급 · 본부 목록을 빠짐없이 보고, view가 없으면 ForbiddenError", async () => {
+    const settingsOnly = await createRole(SYSTEM_VIEWER, { name: `설정만-${Date.now()}` });
+    await setPermissionCell(SYSTEM_VIEWER, { roleId: settingsOnly.id, menu: "admin.settings", action: "view", allowed: true });
+    const viewer = await makePerson("설정담당", settingsOnly.id, null);
+    expect(await can(viewer, "admin.people", "view")).toBe(false);
+
+    const options = await listApprovalRouteOptions(viewer);
+    const roles = await listRoles(SYSTEM_VIEWER);
+    const units = await listOrgUnits(SYSTEM_VIEWER, { scope: { rows: "all", includeArchived: false } });
+    expect(options.roles.filter((role) => !role.archived)).toEqual(roles.map((role) => ({ id: role.id, name: role.name, archived: false })));
+    expect(options.orgUnits.filter((unit) => !unit.archived)).toEqual(units.map((unit) => ({ id: unit.id, name: unit.name, archived: false })));
+    expect(options.orgUnits.length).toBeGreaterThan(0);
+
+    const noView = await createRole(SYSTEM_VIEWER, { name: `권한없음-${Date.now()}` });
+    const outsider = await makePerson("외부인", noView.id, null);
+    await expect(listApprovalRouteOptions(outsider)).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+describe("비활성 칸의 저장값 보존(CX-W2)", () => {
+  it("3단 범위를 기안자 팀으로 바꿔도 3단 부서는 그대로이고, 다시 특정 부서로 두면 3단이 경영관리본부다", async () => {
+    const org = await baseOrg();
+    const mgmt = await orgUnitIdByName("경영관리본부");
+
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP3_SCOPE, "drafter_team");
+    expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID)).toBe(mgmt);
+
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP3_SCOPE, "org_unit");
+    const doc = await submitLeave(org.drafter, FULL_DAY, deps);
+    const step3 = (await stepsOf(doc.instanceId)).find((step) => step.stepIndex === 3);
+    expect([step3?.scopeKind, step3?.scopeTargetId]).toEqual(["org_unit", mgmt]);
+  });
+
+  it("2단 사용을 꺼도 2단 계급 · 범위 저장값이 그대로이고, 다시 켜면 그 값으로 2단이 생긴다", async () => {
+    const org = await baseOrg();
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID, TEAM_LEAD_ROLE_ID);
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_SCOPE, "company");
+
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_ENABLED, false);
+    expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID)).toBe(TEAM_LEAD_ROLE_ID);
+    expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_SCOPE)).toBe("company");
+
+    await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_ENABLED, true);
+    const doc = await submitLeave(org.drafter, FULL_DAY, deps);
+    const step2 = (await stepsOf(doc.instanceId)).find((step) => step.stepIndex === 2);
+    expect([step2?.roleId, step2?.scopeKind]).toEqual([TEAM_LEAD_ROLE_ID, "company"]);
+  });
+
+  it("옵션의 steps에 연차 결재선 단계 16키가 종류 · 단계 번호 · 칸 이름과 함께 있다(2026-09-30 A)", async () => {
+    const options = await listApprovalRouteOptions(SYSTEM_VIEWER);
+    LEAVE_ROUTE_SETTINGS.steps.forEach((step, index) => {
+      for (const field of ["enabled", "roleId", "scope", "orgUnitId"] as const) {
+        expect(options.steps[step[field].key]).toEqual({ kind: LEAVE_DOCUMENT_KIND, stepIndex: index + 1, field });
+      }
+    });
+    expect(options.steps[LEAVE_ROUTE_SETTINGS.selfApproval.key]).toBeUndefined();
+  });
+
+  it("옵션의 values는 단계 16키 저장값을 SELECT 한 문장으로 읽는다 — 화면 기준값이 두 저장 사이로 섞이지 않는다(Codex r4141687065)", async () => {
+    await saveRouteStepSettings(SYSTEM_VIEWER, {
+      kind: LEAVE_DOCUMENT_KIND,
+      stepIndex: 2,
+      values: { enabled: true, roleId: CEO_ROLE_ID, scope: "company", orgUnitId: "" },
+    });
+    const reads: string[][] = [];
+    const options = await listApprovalRouteOptions(SYSTEM_VIEWER, {
+      findSimpleValues: async (...args: Parameters<typeof findSimpleValues>) => {
+        reads.push(args[1]);
+        return findSimpleValues(...args);
+      },
+    });
+    const stepDefs = LEAVE_ROUTE_SETTINGS.steps.flatMap((step) => [step.enabled, step.roleId, step.scope, step.orgUnitId]);
+    expect(reads).toHaveLength(1);
+    expect([...reads[0]!].sort()).toEqual(stepDefs.map((def) => def.key).sort());
+    for (const def of stepDefs) {
+      expect(options.values[def.key]).toEqual(await getSettingValue<unknown>(def).catch(() => undefined));
+    }
+    expect(options.values[LEAVE_ROUTE_SETTINGS.steps[1]!.roleId.key]).toBe(CEO_ROLE_ID);
+  });
+
+  it("단계 칸 저장값 하나가 형식에 맞지 않아도 옵션은 던지지 않고 그 칸만 기본값이다 — 설정 화면이 열려야 고친다", async () => {
+    const STEP2 = LEAVE_ROUTE_SETTINGS.steps[1]!;
+    const before = await getSettingValue(STEP2.roleId);
+    await upsertSimpleValue(SYSTEM_VIEWER, STEP2.roleId.key, 12345, SYSTEM_VIEWER.id);
+    try {
+      const options = await listApprovalRouteOptions(SYSTEM_VIEWER);
+      expect(options.values[STEP2.roleId.key]).toBe(STEP2.roleId.default);
+      expect(options.values[STEP2.enabled.key]).toBe(await getSettingValue(STEP2.enabled));
+    } finally {
+      await upsertSimpleValue(SYSTEM_VIEWER, STEP2.roleId.key, before, SYSTEM_VIEWER.id);
+    }
+  });
+
+  it("단계 칸 저장값이 형식에 맞지 않아도 경고 계산은 던지지 않는다 — 그 칸은 기본값으로 본다", async () => {
+    const STEP2 = LEAVE_ROUTE_SETTINGS.steps[1]!;
+    const before = await getSettingValue(STEP2.scope);
+    await upsertSimpleValue(SYSTEM_VIEWER, STEP2.scope.key, 123, SYSTEM_VIEWER.id);
+    try {
+      await expect(listApprovalRouteSettingWarnings(SYSTEM_VIEWER)).resolves.toBeDefined();
+    } finally {
+      await upsertSimpleValue(SYSTEM_VIEWER, STEP2.scope.key, before, SYSTEM_VIEWER.id);
+    }
+  });
+
+  it("단계 칸 저장값이 형식에 맞지 않으면 화면이 보인 기본값을 기대값으로 보내 저장할 수 있다 — 고칠 길이 막히지 않는다", async () => {
+    const STEP2 = LEAVE_ROUTE_SETTINGS.steps[1]!;
+    const [enabled, roleId, scope, orgUnitId] = await Promise.all([
+      getSettingValue(STEP2.enabled),
+      getSettingValue(STEP2.roleId),
+      getSettingValue(STEP2.scope),
+      getSettingValue(STEP2.orgUnitId),
+    ]);
+    await upsertSimpleValue(SYSTEM_VIEWER, STEP2.roleId.key, 12345, SYSTEM_VIEWER.id);
+    try {
+      const options = await listApprovalRouteOptions(SYSTEM_VIEWER);
+      const shown = { enabled, roleId: options.values[STEP2.roleId.key], scope, orgUnitId };
+      await saveRouteStepSettings(SYSTEM_VIEWER, {
+        kind: LEAVE_DOCUMENT_KIND,
+        stepIndex: 2,
+        values: { ...shown, roleId: CEO_ROLE_ID },
+        expected: shown,
+      });
+      expect(await getSettingValue(STEP2.roleId)).toBe(CEO_ROLE_ID);
+    } finally {
+      await upsertSimpleValue(SYSTEM_VIEWER, STEP2.roleId.key, roleId, SYSTEM_VIEWER.id);
+    }
+  });
+
+  it("옵션의 activeWhen에 연차 결재선 12키가 있다", async () => {
+    const options = await listApprovalRouteOptions(SYSTEM_VIEWER);
+    for (const step of LEAVE_ROUTE_SETTINGS.steps) {
+      for (const def of [step.roleId, step.scope, step.orgUnitId]) expect(options.activeWhen[def.key]).toBeDefined();
+    }
+  });
+});
+
+// 사용자 결정(2026-09-30 A · PR #90 Codex r4137164384): 결재선 한 단계(사용 · 계급 · 범위 · 부서)는 한 번에 저장한다 —
+// 두 칸을 바꾸는 사이의 중간 결재선(예: 「팀장 · 전사」)이 그 사이 제출된 문서에 굳지 않게.
+describe("결재선 한 단계 원자 저장(사용자 결정 2026-09-30 A)", () => {
+  const STEP2 = LEAVE_ROUTE_SETTINGS.steps[1]!;
+  const CEO_COMPANY = { enabled: true, roleId: CEO_ROLE_ID, scope: "company", orgUnitId: "" };
+
+  async function step2Values() {
+    return Promise.all([
+      getSettingValue(STEP2.enabled),
+      getSettingValue(STEP2.roleId),
+      getSettingValue(STEP2.scope),
+      getSettingValue(STEP2.orgUnitId),
+    ]);
+  }
+
+  it("2단을 「대표 · 전사」로 한 번에 저장하면 그 뒤 문서의 2단이 대표 · 전사이고 settings_change 로그가 칸마다 한 줄", async () => {
+    const org = await baseOrg();
+    await saveRouteStepSettings(SYSTEM_VIEWER, { kind: LEAVE_DOCUMENT_KIND, stepIndex: 2, values: CEO_COMPANY });
+
+    const doc = await submitLeave(org.drafter, FULL_DAY, deps);
+    const step2 = (await stepsOf(doc.instanceId)).find((step) => step.stepIndex === 2);
+    expect([step2?.roleId, step2?.scopeKind]).toEqual([CEO_ROLE_ID, "company"]);
+
+    for (const def of [STEP2.enabled, STEP2.roleId, STEP2.scope, STEP2.orgUnitId]) {
+      const logs = await db
+        .select()
+        .from(actionLog)
+        .where(and(eq(actionLog.actionType, "settings_change"), eq(actionLog.entityId, def.key)));
+      expect(logs).toHaveLength(1);
+    }
+  });
+
+  it("저장 도중(두 칸을 쓴 뒤) 제출된 문서는 옛 2단(본부장 · 기안자 본부 → 본부로 고정) 그대로다 — 중간 결재선 없음", async () => {
+    const org = await baseOrg();
+    let writes = 0;
+    let midSteps: Awaited<ReturnType<typeof stepsOf>> | null = null;
+    await saveRouteStepSettings(
+      SYSTEM_VIEWER,
+      { kind: LEAVE_DOCUMENT_KIND, stepIndex: 2, values: CEO_COMPANY },
+      {
+        upsertSimpleValue: async (...args: Parameters<typeof upsertSimpleValue>) => {
+          await upsertSimpleValue(...args);
+          writes += 1;
+          if (writes === 2) {
+            const doc = await submitLeave(org.drafter, FULL_DAY, deps);
+            midSteps = await stepsOf(doc.instanceId);
+          }
+        },
+      },
+    );
+
+    const mid = (midSteps as Awaited<ReturnType<typeof stepsOf>> | null)?.find((step) => step.stepIndex === 2);
+    expect([mid?.roleId, mid?.scopeKind]).toEqual([DIVISION_HEAD_ROLE_ID, "org_unit"]);
+  });
+
+  it("마지막 칸의 로그 쓰기가 실패하면 네 칸 모두 옛 값이다", async () => {
+    const before = await step2Values();
+    let logs = 0;
+    await expect(
+      saveRouteStepSettings(
+        SYSTEM_VIEWER,
+        { kind: LEAVE_DOCUMENT_KIND, stepIndex: 2, values: CEO_COMPANY },
+        {
+          recordAction: async (...args: Parameters<typeof recordAction>) => {
+            logs += 1;
+            if (logs === 4) throw new Error("로그 쓰기 실패 주입");
+            await recordAction(...args);
+          },
+        },
+      ),
+    ).rejects.toThrow("로그 쓰기 실패 주입");
+    expect(await step2Values()).toEqual(before);
+  });
+
+  it("한 칸이 잘못된 값(부서 id가 uuid 아님)이면 아무 칸도 바뀌지 않는다", async () => {
+    const before = await step2Values();
+    await expect(
+      saveRouteStepSettings(SYSTEM_VIEWER, {
+        kind: LEAVE_DOCUMENT_KIND,
+        stepIndex: 2,
+        values: { ...CEO_COMPANY, scope: "org_unit", orgUnitId: "not-a-uuid" },
+      }),
+    ).rejects.toThrow();
+    expect(await step2Values()).toEqual(before);
+  });
+
+  it("설정 쓰기 권한이 없으면 ForbiddenError이고 아무 칸도 바뀌지 않는다", async () => {
+    const before = await step2Values();
+    const viewOnly = await createRole(SYSTEM_VIEWER, { name: `설정보기만-${Date.now()}` });
+    await setPermissionCell(SYSTEM_VIEWER, { roleId: viewOnly.id, menu: "admin.settings", action: "view", allowed: true });
+    const viewer = await makePerson("설정보기", viewOnly.id, null);
+
+    await expect(
+      saveRouteStepSettings(viewer, { kind: LEAVE_DOCUMENT_KIND, stepIndex: 2, values: CEO_COMPANY }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    expect(await step2Values()).toEqual(before);
+  });
+
+  it("화면을 연 뒤 다른 관리자가 그 단계를 먼저 저장했으면(기대값 불일치) 거부하고 아무 칸도 바뀌지 않는다", async () => {
+    const loaded = await step2Values();
+    const expected = { enabled: loaded[0], roleId: loaded[1], scope: loaded[2], orgUnitId: loaded[3] };
+    await setSettingValue(SYSTEM_VIEWER, STEP2.scope, "company");
+
+    await expect(
+      saveRouteStepSettings(SYSTEM_VIEWER, {
+        kind: LEAVE_DOCUMENT_KIND,
+        stepIndex: 2,
+        values: { ...expected, roleId: CEO_ROLE_ID },
+        expected,
+      }),
+    ).rejects.toThrow("다른 저장이 먼저 됨 · 새로 고침");
+    expect(await step2Values()).toEqual([loaded[0], loaded[1], "company", loaded[3]]);
+
+    const current = await step2Values();
+    await saveRouteStepSettings(SYSTEM_VIEWER, {
+      kind: LEAVE_DOCUMENT_KIND,
+      stepIndex: 2,
+      values: { enabled: current[0], roleId: CEO_ROLE_ID, scope: current[2], orgUnitId: current[3] },
+      expected: { enabled: current[0], roleId: current[1], scope: current[2], orgUnitId: current[3] },
+    });
+    expect(await getSettingValue(STEP2.roleId)).toBe(CEO_ROLE_ID);
+  });
+
+  it("3단 특정 부서 행이 없어도(기본값 없음 — 결재선 로더는 빈 값) 3단을 저장하고 부서는 빈 값이 된다", async () => {
+    const STEP3 = LEAVE_ROUTE_SETTINGS.steps[2]!;
+    await db.delete(settingsSimple).where(eq(settingsSimple.key, STEP3.orgUnitId.key));
+    const loaded = { enabled: true, roleId: "", scope: "org_unit", orgUnitId: undefined };
+
+    await saveRouteStepSettings(SYSTEM_VIEWER, {
+      kind: LEAVE_DOCUMENT_KIND,
+      stepIndex: 3,
+      values: { ...loaded, scope: "company" },
+      expected: loaded,
+    });
+    const [row] = await db.select().from(settingsSimple).where(eq(settingsSimple.key, STEP3.orgUnitId.key));
+    expect(row?.value).toBe("");
+    expect(await getSettingValue(STEP3.scope)).toBe("company");
+  });
+
+  it("3단 특정 부서 행이 없을 때 두 관리자가 같은 화면에서 동시에 저장하면 뒤 저장은 거부된다(Codex r4141474150)", async () => {
+    const STEP3 = LEAVE_ROUTE_SETTINGS.steps[2]!;
+    const [first, second] = (await listOrgUnits(SYSTEM_VIEWER, { scope: { rows: "all", includeArchived: false } })).map((unit) => unit.id);
+    await db.delete(settingsSimple).where(eq(settingsSimple.key, STEP3.orgUnitId.key));
+    const loaded = { enabled: true, roleId: "", scope: "org_unit", orgUnitId: undefined };
+
+    let release: () => void = () => {};
+    const paused = new Promise<void>((resolve) => (release = resolve));
+    let enteredA: () => void = () => {};
+    const aEntered = new Promise<void>((resolve) => (enteredA = resolve));
+    let writesA = 0;
+    const saveA = saveRouteStepSettings(
+      SYSTEM_VIEWER,
+      { kind: LEAVE_DOCUMENT_KIND, stepIndex: 3, values: { ...loaded, orgUnitId: first }, expected: loaded },
+      {
+        upsertSimpleValue: async (...args: Parameters<typeof upsertSimpleValue>) => {
+          writesA += 1;
+          if (writesA === 1) {
+            enteredA();
+            await paused;
+          }
+          await upsertSimpleValue(...args);
+        },
+      },
+    );
+    await aEntered;
+    const saveB = saveRouteStepSettings(SYSTEM_VIEWER, {
+      kind: LEAVE_DOCUMENT_KIND,
+      stepIndex: 3,
+      values: { ...loaded, orgUnitId: second },
+      expected: loaded,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    release();
+
+    const results = await Promise.allSettled([saveA, saveB]);
+    expect(results.map((result) => result.status)).toEqual(["fulfilled", "rejected"]);
+    expect((results[1] as PromiseRejectedResult).reason).toBeInstanceOf(Error);
+    expect(((results[1] as PromiseRejectedResult).reason as Error).message).toBe("다른 저장이 먼저 됨 · 새로 고침");
+    expect(await getSettingValue(STEP3.orgUnitId)).toBe(first);
+  });
+
+  it("단계 칸 키 판정 — 네 단계 16키만 참이고 자기 승인은 거짓", () => {
+    for (const step of LEAVE_ROUTE_SETTINGS.steps) {
+      for (const def of [step.enabled, step.roleId, step.scope, step.orgUnitId]) expect(isRouteStepSettingKey(def.key)).toBe(true);
+    }
+    expect(isRouteStepSettingKey(LEAVE_ROUTE_SETTINGS.selfApproval.key)).toBe(false);
+  });
+
+  it("없는 단계(5단)는 거부한다", async () => {
+    await expect(
+      saveRouteStepSettings(SYSTEM_VIEWER, { kind: LEAVE_DOCUMENT_KIND, stepIndex: 5, values: CEO_COMPANY }),
+    ).rejects.toThrow("결재선 단계 없음");
+  });
+});

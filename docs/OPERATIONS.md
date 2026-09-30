@@ -125,7 +125,7 @@ GitHub Environments·승인 버튼은 없다(D-05, 무료 플랜 비공개 저�
 없거나 로컬 이력에 없어도 같다 — 이력이 없는 경우는 최신 main을 fetch한 체크아웃에서
 다시 실행). 복구는 `docs/design/DECISIONS.md` 04-50 항목의 절차(전진 수정이 먼저 —
 불가피하면 쓰기를 멈추고 역 SQL 적용 후 수동 `update-traffic`)를 따른다. 데이터 손상은
-여전히 백업 복원(OPS-03, 별도 페이즈)으로 대응한다.
+여전히 백업 복원(§14, `docs/RESTORE.md`)으로 대응한다.
 
 ## 6. 경보 3개
 
@@ -133,11 +133,18 @@ GitHub Environments·승인 버튼은 없다(D-05, 무료 플랜 비공개 저�
 |---|---|
 | 5xx > 5% | 최근 배포를 의심 → `rollback.sh` 검토, Cloud Logging에서 오류 확인 |
 | Cloud SQL 백업 실패 | Cloud SQL 콘솔에서 확인, 수동 백업 실행. 정책→채널→메일 경로는 스테이징 합성 로그로 검증됨(2026-09-24, §7 끝의 방법). 실제 백업 실패 로그가 이 필터에 맞는지는 실패 없이는 검증 불가 — 미검증인 동안은 상태 화면 "마지막 백업"을 주 1회 눈으로 확인 |
-| notify tick 24h 미성공 | Phase 7까지 `enabled: false`(tick 자체가 없다) |
+| notify tick 25h 미성공 | 스케줄러 잡(`plant8-{env}-notify-tick`) 실행 기록과 Cloud Logging `notify.tick` 확인 → 401이면 `NOTIFY_TICK_SCHEDULER_SA`·잡의 OIDC 계정·audience 대조, 409면 다른 실행 중(다음 날 자동) · 새 환경·첫 배포 뒤에는 잡을 한 번 수동 실행해 첫 성공을 확인한다(성공이 한 번도 없으면 이 경보가 울리지 않는다) · 옛 `…stale 23h30m` 비활성 정책은 콘솔에서 지워도 된다 |
 
 알림 채널은 환경 변수 **`ALERT_EMAIL`** 하나 — 스테이징·프로덕션 모두 같은 주소, 정책
 이름·제목에 환경을 표시해 구분한다(D-16). 배포 자체의 실패는 GitHub Actions 워크플로
 실패 알림(GitHub 기본)으로 받는다.
+
+### 알림 발송 스케줄러
+
+- 잡 `plant8-{env}-notify-tick`: 매일 09:00 KST에 `POST /internal/notify-tick`(OIDC, 재시도 0, 시도 마감 180초). 비영업일에는 앱이 보내지 않고 `비영업일`로 기록한다.
+- 수동 실행: `gcloud scheduler jobs run plant8-{env}-notify-tick --location=asia-northeast3 --project="$PROJECT"`. 결과는 `gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="plant8-{env}" AND jsonPayload.event="notify.tick" AND jsonPayload.ok=true' --project="$PROJECT" --freshness=1h --limit=1 --format='value(timestamp,jsonPayload.remaining)'` — 빈 출력이면 실패, `remaining`이 0보다 크면 같은 날 한 번 더 실행해 잇는다(이미 메일을 받은 사람은 다음 영업일로 미뤄진다). 환경마다 첫 배포 뒤 이 둘을 한 번 해 첫 성공을 확인한다.
+- 스케줄러 SA `plant8-{env}-scheduler`는 bootstrap이 만든다 — 이 권한이 생긴 뒤(Phase 04.2) 소유자가 bootstrap을 1회 다시 실행해야 배포가 잡을 만든다. 서울 리전을 스케줄러가 거부하면(`INVALID_ARGUMENT`) 가장 가까운 지원 리전으로 바꾸고 여기에 적는다.
+- 배포 셸에 `NOTIFY_TICK_OIDC_DISABLED`가 있으면 배포가 거부된다(exit 2). 배포 스모크는 토큰 없는 POST가 401인지 본다 — 404는 엣지가 경로를 먹은 것이다.
 
 ## 7. 계정 운영
 
@@ -180,7 +187,7 @@ P=<GCP_PROJECT_ID 값>; curl -sS -X POST https://logging.googleapis.com/v2/entri
 
 사용자가 Cloud Shell에서 **`scripts/bootstrap-gcp.sh`**를 1회 실행한다 — 단일 파일이라
 비공개 리포를 클론하지 않고 파일 하나만 붙여넣어 실행할 수 있다. 만드는 것: API 활성화,
-WIF 풀·프로바이더, 서비스 계정 3개(배포자 + 환경별 런타임 2개), VPC 프라이빗 서비스
+WIF 풀·프로바이더, 서비스 계정 5개(배포자 + 환경별 런타임·스케줄러 각 2개), VPC 프라이빗 서비스
 접근, 조직 정책 확인. 저장소 수준 GitHub Actions 변수 4개를 설정한다: `GCP_PROJECT_ID`,
 `GCP_PROJECT_NUMBER`, `GCP_REGION`, `ALERT_EMAIL`(Secrets 탭은 비워 둔다 — WIF라 키
 파일이 없다. GitHub Environments도 만들지 않는다).
@@ -226,10 +233,16 @@ openssl rand -base64 32 | gcloud secrets versions add app-data-key-v1-prod    --
 키(`app-data-key-v1-{env}`)를 지운다 — 먼저 지우면 아직 재암호화되지 않은 행이 영구히
 읽히지 않는다.
 
+### 이메일(SMTP) 확인 경로
+
+Workspace 관리자에게 확인할 네 가지: 발송 주소(`SMTP_FROM`) · 인증 방식(앱 비밀번호 또는 Workspace SMTP 릴레이) · 사용자별 일 발송 한도 · 호스트·포트(587, STARTTLS). 확인된 값은 기존 비밀 네 개(`smtp-host-{env}`·`smtp-user-{env}`·`smtp-password-{env}`·`smtp-from-{env}`)에 새 버전으로 넣는다 — 값은 문서·명령줄에 적지 않고 표준 입력으로 붙여넣는다(Ctrl-D로 끝):
+`gcloud secrets versions add smtp-password-{env} --project="$PROJECT" --data-file=-`
+네 값이 모두 채워지기 전(하나라도 `__unset__`)에는 앱이 이메일을 보내지 않고 시스템 상태 「이메일」이 `미설정`이다(D-711). 첫 설정 뒤 스테이징에서 본인에게 1통 받아 확인한다.
+
 ## 10. 상태 화면
 
 `/admin/system-status`(권한표의 시스템 상태 보기 권한이 있는 계급만, 권한이 없으면 404) — 배포 버전(git SHA + 배포 시각), DB
-커넥션 수/한도, 마지막 백업(ok/none/확인 불가). 커넥션 비율이 80% 이상이면 배너.
+커넥션 수/한도, 마지막 백업(ok/none/확인 불가), 복원 리허설(결과·원본·일시·백업 id·소요, 기록 없음/확인 불가). 커넥션 비율이 80% 이상이면 배너.
 로컬처럼 GCP 조회가 안 되면 "확인 불가"로 표시한다(D-18).
 
 ## 11. 로그·IP 규칙
@@ -246,7 +259,7 @@ JSON 구조화 로그(`severity`·`message`·`event`·필드), Cloud Logging에�
 내보내기는 화면(관리자 > 설정)에서 JSON 다운로드로 하지만, 가져오기는 파일 업로드
 화면이 없다 — `db:rotate-key`와 같은 결로 로컬 전용 CLI 하나뿐이다: `pnpm
 settings:import --file <내보낸 JSON 경로>`. Cloud Run Job이 아니다(migrate·seed·
-account·db-bootstrap 넷만 자동 프로비저닝 단계라 Job으로 존재한다) — `.env.local`에
+account·db-bootstrap·restore 다섯만 Job으로 존재한다) — `.env.local`에
 대상 환경 `DATABASE_URL`을 맞춘 로컬에서 운영자가 손으로 돌린다.
 
 `importSettings`는 파일의 모든 키를 먼저 검증하고 하나라도 스키마를 만족하지 않으면
@@ -254,17 +267,8 @@ account·db-bootstrap 넷만 자동 프로비저닝 단계라 Job으로 존재�
 항목을 한 줄씩 나열하고 종료 코드 1로 끝난다 — 상태는 가져오기 전 그대로다. 파일이
 없거나 JSON이 아니거나 `settings` 필드가 없으면 사용법 오류(종료 코드 2)다.
 
-## 13. Codex 교차 리뷰
+## 14. 백업·복원 (OPS-03)
 
-`/gsd-review N --codex`는 `scripts/install-codex.sh`(SessionStart)로 Codex CLI를 설치한다.
-구독 자격은 PC 전용이라 아래로 옮긴다: 1) PC에서 `codex login`(브라우저) →
-`~/.codex/auth.json` 생성 2) base64 한 줄 변환:
-```bash
-base64 -w0 ~/.codex/auth.json                                            # Linux
-base64 -i ~/.codex/auth.json | tr -d '\n'                                # macOS
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("$env:USERPROFILE\.codex\auth.json"))  # PowerShell
-```
-3) claude.ai 환경(Environment) 변수 `CODEX_AUTH_JSON_B64`에 붙여넣기 4) 같은 환경 네트워크
-허용 목록에 `api.openai.com`·`chatgpt.com`·`auth.openai.com` 추가(빠지면 설치는 되지만
-리뷰 호출이 403) 5) 새 세션에서 `/gsd-review N --codex` 사용 6) 갱신 실패 시 2번을 다시 해
-값 교체 7) 토큰은 리포·커밋·문서에 절대 넣지 않는다.
+자동 백업은 `deploy.sh`가 켠다(`--backup-start-time=18:00` UTC · `--retained-backups-count=7`, 확인: `gcloud sql instances describe plant8-{env}-db --format='value(settings.backupConfiguration)'`). PITR은 꺼져 있다 — 복원 단위는 하루 1회 자동 백업이고 그 뒤 입력은 복원에서 사라진다.
+리허설: Actions `restore-rehearsal.yml`을 main에서 실행(production은 `confirm_production`에 `plant8-prod-db`) → 임시 `plant8-{env}-rehearsal-<실행 id>-<시도>`에 최신 백업 복원 → `plant8-{env}-restore` Job 확인 → 삭제 → 그 환경 DB에 기록.
+결과는 `/admin/system-status` 「복원 리허설」과 Actions 요약 — 기록 단계 전 이른 실패(WIF 인증 등)는 화면에 남지 않아 이전 결과가 최신처럼 보인다, Actions 실행 결과를 먼저 본다. 남은 임시 인스턴스 정리와 실제 사고 복원은 [`docs/RESTORE.md`](RESTORE.md).

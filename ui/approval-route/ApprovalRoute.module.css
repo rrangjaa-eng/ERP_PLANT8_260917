@@ -1,0 +1,62 @@
+/* SYSTEM.md §6-3 결재선 · A3 — 제출 전 한 줄 · 제출 뒤 단계 목록. 색·서체는 토큰 참조만(D-20). */
+
+.line {
+  margin: 0;
+  word-break: keep-all;
+}
+
+.drafter {
+  font-weight: var(--fw-bold);
+}
+
+.arrow {
+  color: var(--faint);
+}
+
+.label {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  word-break: keep-all;
+}
+
+.result {
+  font-size: var(--fs-base);
+}
+
+.at {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 반려 사유 — 다음 줄, 줄 수 제한 없음. */
+.reason {
+  display: block;
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+  /* 반려 사유는 여러 줄로 적힌다(사용자 결정 2026-09-29 ②) — 줄을 지킨다. */
+  white-space: pre-line;
+}
+
+.end {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.endDanger {
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}

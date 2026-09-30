@@ -49,6 +49,8 @@ export default defineConfig({
   globalSetup: "./test/e2e/global-setup.ts",
   fullyParallel: false,
   retries: 0,
+  // CI는 실패를 GitHub 주석으로도 남긴다 — 잡 로그를 못 여는 곳에서도 실패 테스트 이름을 API로 읽는다.
+  reporter: process.env.CI ? [["github"], ["dot"]] : "list",
   webServer: {
     command: process.env.CI ? "pnpm build && pnpm start" : "pnpm dev",
     url: "http://127.0.0.1:3100/api/health",
@@ -68,7 +70,7 @@ export default defineConfig({
   projects: [
     {
       name: "desktop",
-      testIgnore: MOBILE_SPEC_PATTERN,
+      testIgnore: [MOBILE_SPEC_PATTERN, "settings-approval-route.spec.ts"],
     },
     {
       name: "mobile-375",
@@ -97,9 +99,19 @@ export default defineConfig({
       // 진짜 해결은 워커별 DB 분리(후속 과제)다. 375px 표 오버플로 자체는
       // 2026-09-26 §7-3 칸 접기로 고쳤다(mobile-320-no-overflow.spec.ts).
       dependencies: ["desktop"],
+      // 공용 설정을 잠깐 바꾸는 폰 스펙(mobile-projects-error — 04-52 G-04-4)이 있어 폰 스펙은 한 워커로 줄 세운다.
+      // desktop은 dependencies로 이미 끝나 있어, 그 값이 쓰인 동안 도는 스펙이 그 하나뿐이다.
+      workers: 1,
       use: {
         viewport: { width: 375, height: 800 },
       },
+    },
+    {
+      // 공유 erp_test의 전역 결재선을 바꾸는 스펙이라 다른 모든 스펙 뒤에 돈다(CEO-14).
+      // 스펙 안 finally 복원과 함께 쓰는 이중 장치다.
+      name: "desktop-settings",
+      testMatch: "settings-approval-route.spec.ts",
+      dependencies: ["mobile-375"],
     },
   ],
 });

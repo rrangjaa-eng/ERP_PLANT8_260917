@@ -144,6 +144,7 @@ test.describe("법인카드 소유자 수정 (성공 기준 5 「수정」)", ()
     await page.getByLabel("이름").fill(holderName);
     await page.getByLabel("이메일").fill(`e2e-left-holder-${stamp}@example.test`);
     await page.getByLabel("계급").selectOption(DEFAULT_ROLE_ID);
+    await page.getByLabel("입사일").fill("2026-01-01");
     await page.getByRole("button", { name: "사람 등록" }).click();
     await expect(page.getByText(/초기 비밀번호 — /)).toBeVisible();
 

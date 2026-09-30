@@ -1,4 +1,4 @@
-import { and, desc, eq, lte } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { settingsSimple, settingsHistorized } from "@/db/schema";
@@ -133,9 +133,10 @@ export type SettingsImportInput = {
 // 항목을 먼저 검증한 뒤에만 이 함수를 부른다. 한 트랜잭션 안에서 적용해
 // 부분 적용 상태가 남지 않는다. 이력 항목은 이미 있는 (key, effectiveFrom)
 // 이면 건너뛰어(onConflictDoNothing) 같은 JSON을 두 번 가져와도 멱등이다.
-export async function applySettingsImport(viewer: Viewer, input: SettingsImportInput): Promise<void> {
+// 묶음 ④ /review R7 — tx를 받으면 그 트랜잭션에서 쓴다(가져오기가 같은 tx에서 순번 시작값 가드를 먼저 지난다).
+export async function applySettingsImport(viewer: Viewer, input: SettingsImportInput, outerTx?: DbOrTx): Promise<void> {
   void viewer;
-  await db.transaction(async (tx) => {
+  const apply = async (tx: DbOrTx) => {
     for (const item of input.simple) {
       await tx
         .insert(settingsSimple)
@@ -156,5 +157,29 @@ export async function applySettingsImport(viewer: Viewer, input: SettingsImportI
         })
         .onConflictDoNothing({ target: [settingsHistorized.key, settingsHistorized.effectiveFrom] });
     }
-  });
+  };
+  if (outerTx) await apply(outerTx);
+  else await db.transaction(apply);
+}
+
+// 04.1(Codex HIGH 스냅숏): 여러 비이력형 키를 SELECT 한 문장으로 읽는다 —
+// Postgres 문장 스냅숏이라 한 호출의 값은 한 시점에 커밋된 설정 한 벌에서만
+// 나온다(키마다 따로 읽으면 그 사이의 관리자 저장이 섞인다).
+// 결재선 단계 저장(사용자 결정 2026-09-30 A)의 기대값 비교 — 같은 tx에서 행을 잠그고 읽는다(키 순서로 잠근다).
+export async function lockSimpleValues(viewer: Viewer, keys: string[], tx: DbOrTx): Promise<SettingSimpleRow[]> {
+  void viewer;
+  return tx.select().from(settingsSimple).where(inArray(settingsSimple.key, keys)).orderBy(asc(settingsSimple.key)).for("update");
+}
+
+// Codex r4141474150: 없는 행은 FOR UPDATE로 잠기지 않는다(3단 특정 부서처럼 기본값 없는 키) — 같은 단계의
+// 저장 트랜잭션을 줄 세워, 뒤 저장이 앞 저장의 새 행을 보고 비교하게 한다. 트랜잭션 끝에 풀린다.
+export async function lockRouteStep(viewer: Viewer, step: string, tx: DbOrTx): Promise<void> {
+  void viewer;
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${"approval_route_step:" + step}, 0))`);
+}
+
+export async function findSimpleValues(viewer: Viewer, keys: string[], tx?: DbOrTx): Promise<SettingSimpleRow[]> {
+  void viewer;
+  if (keys.length === 0) return [];
+  return (tx ?? db).select().from(settingsSimple).where(inArray(settingsSimple.key, keys));
 }

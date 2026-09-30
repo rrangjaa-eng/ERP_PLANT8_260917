@@ -1,4 +1,5 @@
-import { pgTable, text, timestamp, boolean, integer, bigint } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { pgTable, text, timestamp, boolean, integer, bigint, date, check } from "drizzle-orm/pg-core";
 import { roles } from "./roles";
 
 // better-auth 1.7 core 스키마(node_modules/better-auth 문서 concepts/database 필드명 그대로) +
@@ -22,6 +23,8 @@ export const users = pgTable("users", {
   roleId: text("role_id").references(() => roles.id),
   // D-08: 관리자가 발급·재발급한 초기 비밀번호를 쓰고 있다는 표시. 본인이 바꾸면 해제.
   passwordIsTemporary: boolean("password_is_temporary").notNull().default(false),
+  // D8-07 첫 로그인 시각 — 세션 생성 훅(databaseHooks.session.create.after)이 NULL일 때만 한 번 쓴다. sessions는 판정 근거가 아니다.
+  firstLoginAt: timestamp("first_login_at"),
   // Phase 3(03-05): 사람은 마스터(MAST-02)라 03-01이 정한 경계(보관함 컬럼은
   // 마스터 성격의 표에만)에 해당한다. 사람 목록의 행 필터, 사람 등록 실패 시
   // 보상 조치, 03-07의 사람 화면 "삭제"(보관)가 전부 이 두 컬럼을 쓴다.
@@ -31,7 +34,18 @@ export const users = pgTable("users", {
   archivedBy: text("archived_by"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+  // 04.1-03(D-96 · D-97): 입사일(월차 적립 · 입사 다음 해 연차 비례)과 퇴직일(월차
+  // 적립 중단 · 결재선 후보 제외 · 퇴직 줄). 둘 다 서울 날짜 문자열, 비면 null.
+  hireDate: date("hire_date"),
+  resignationDate: date("resignation_date"),
+}, (table) => [
+  // A2-02: 입사일·퇴직일을 동시에 고쳐 앱 검증이 옛 상대값을 봐도 역전이 커밋되지 않게
+  // DB가 마지막으로 막는다(마이그레이션에서 NOT VALID — 새 열이라 기존 행은 null).
+  check(
+    "users_resignation_on_or_after_hire_check",
+    sql`${table.resignationDate} IS NULL OR ${table.hireDate} IS NULL OR ${table.resignationDate} >= ${table.hireDate}`,
+  ),
+]);
 
 export const sessions = pgTable("sessions", {
   id: text("id").primaryKey(),

@@ -23,6 +23,7 @@ import "@/domain/projects";
 import "@/domain/quotes/lines";
 import "@/domain/quotes/revisions";
 import "@/domain/revenue";
+import "@/domain/reserves";
 import "@/domain/action-log/export";
 import "@/domain/archive";
 import "@/app/(app)/admin/code-tables/actions.registry";
@@ -34,7 +35,9 @@ import "@/app/(app)/admin/action-log/actions.registry";
 import "@/app/(app)/admin/archive/actions.registry";
 import "@/app/(app)/admin/permissions/actions.registry";
 import "@/app/(app)/admin/visibility/actions.registry";
+import "@/app/(app)/admin/holidays/actions.registry";
 import "@/app/(app)/projects/actions.registry";
+import "@/app/(app)/pnl/reserves/actions.registry";
 
 // D-38: 이 페이즈의 정본 예외 목록은 이 하나뿐이다(03-04가 이 이름으로
 // 등록한다) — dtoName이 null인 내보내기는 사람 단위 정보 항목이 없는
@@ -138,6 +141,29 @@ describe("정보 노출 누수 스캔 (ADMN-03)", () => {
       expect(typeof result).toBe("boolean");
     });
 
+    // 04-18(ENG-D3 ② · T-04-93) — 목록 행의 매출은 발행 항목 하나, 기준 · 수익금 · 수익률은 견적 · 발행 all-of로 등록돼
+    // 이 스캔이 두 항목을 모두 펼쳐 본다(투영 전 손 삭제가 아니라 명세가 규칙이다).
+    it("ProjectListItemDto의 매출 · 기준 · 수익금 · 수익률 정보 항목이 등록돼 있다", () => {
+      const dto = DTO_REGISTRY.find((entry) => entry.name === "ProjectListItemDto");
+      const infoItemOf = (key: string) => dto?.fields.find((field) => field.key === key)?.infoItem;
+      expect(infoItemOf("revenueKrw")).toBe("revenue.issued_amount");
+      for (const key of ["profitBasis", "profitKrw", "profitRate"]) {
+        expect(infoItemOf(key), key).toEqual(["quote.amount", "revenue.issued_amount"]);
+      }
+    });
+
+    // 04-42 리뷰 B1 — 리저브 대장의 선택지(클라이언트 · 프로젝트 · 증빙 종류)와 대장 DTO의 이름 칸도 명세로 등록돼 이 스캔이
+    // 본다 — 거래처 이름은 vendor.value, 프로젝트 이름은 project.value와 reserve.amount의 all-of다.
+    it("리저브 선택지 DTO와 대장 DTO의 이름 칸 정보 항목이 등록돼 있다", () => {
+      const infoItemOf = (dtoName: string, key: string) => DTO_REGISTRY.find((entry) => entry.name === dtoName)?.fields.find((field) => field.key === key)?.infoItem;
+      expect(infoItemOf("ReserveClientOptionDto", "name")).toEqual(["reserve.amount", "vendor.value"]);
+      expect(infoItemOf("ReserveClientOptionDto", "label")).toEqual(["reserve.amount", "vendor.value"]);
+      expect(infoItemOf("ReserveProjectOptionDto", "name")).toEqual(["reserve.amount", "project.value"]);
+      expect(infoItemOf("ReserveEvidenceOptionDto", "label")).toBe("reserve.amount");
+      expect(infoItemOf("ReserveEntryDto", "projectName")).toEqual(["reserve.amount", "project.value"]);
+      expect(infoItemOf("ReserveEntryDto", "evidenceLabel")).toBe("reserve.amount");
+    });
+
     it("registerDto가 빈 목록 infoItem: []을 거부한다", () => {
       expect(() =>
         registerDto({
@@ -194,3 +220,8 @@ describe("정보 노출 누수 스캔 (ADMN-03)", () => {
     });
   });
 });
+import "@/domain/approvals";
+import "@/domain/leave";
+import "@/app/(app)/leave/actions.registry";
+import "@/app/(app)/approvals/actions.registry";
+import "@/app/(app)/admin/people/[id]/actions.registry";

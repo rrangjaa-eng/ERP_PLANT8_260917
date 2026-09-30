@@ -109,7 +109,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   const [lines, references, revenue, usdDefaultFxRate, destinations, catalog, statusSince, lineCap, revisionSummaries] = await Promise.all([
     listQuoteLines(session.viewer, revision.id, { status: project.status, canWrite: canEditLines, canAdjust: canAdjustLines }),
     // 04-23(CEO 리뷰 B-23) — 조정 권한만 있어도 조정 줄의 거래처 칸을 고른다.
-    canWrite || canAdjust ? listProjectFormReferences(session.viewer) : Promise.resolve(null),
+    // 2026-09-28 — 보기만 하는 계급도 소분류·거래처를 이름으로 읽는다(목록은 "projects" view로만 게이트하는 id·name 축소 투영).
+    listProjectFormReferences(session.viewer),
     listRevenue(session.viewer, project.id),
     recentFxRate("USD"),
     statusDestinations(session.viewer, project),
@@ -210,6 +211,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   return (
     <>
     <QuoteLedger
+      viewerId={session.viewer.id}
       projectId={project.id}
       status={status}
       period={{ startDate: project.startDate, endDate: project.endDate, rights: periodRights, todayKst }}
@@ -229,8 +231,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       endDateNote={endDateNote}
       revisionId={revision.id}
       initialLines={lines}
-      vendors={references?.vendors ?? []}
-      subcategories={references?.subcategories ?? []}
+      vendors={references.vendors}
+      subcategories={references.subcategories}
       structural={structural}
       newLineCells={newLineCells}
       adjustmentStructural={adjustmentStructural}
@@ -253,7 +255,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     <RevisionSection
       projectId={project.id}
       summaries={revisionSummaries}
-      references={{ subcategories: references?.subcategories ?? [], vendors: references?.vendors ?? [] }}
+      references={{ subcategories: references.subcategories, vendors: references.vendors }}
     />
     </>
   );

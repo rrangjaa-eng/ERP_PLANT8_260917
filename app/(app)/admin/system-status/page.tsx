@@ -158,7 +158,7 @@ function restoreRehearsalValue(restoreRehearsal: SystemStatus["restoreRehearsal"
       {view.runUrl === null ? null : (
         <>
           {" · "}
-          <a href={view.runUrl} className={styles.runLink}>
+          <a href={view.runUrl} className={styles.runLink} target="_blank" rel="noopener noreferrer">
             실행 기록
           </a>
         </>

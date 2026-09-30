@@ -1174,3 +1174,17 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **버린 대안**: 빈 열을 `—`로 유지 · 빈 표 · 「등록된 사람이 없습니다」.
 
 **범위**: `app/(app)/admin/people/page.tsx`. 회귀: `test/unit/app/people-list-hidden-id.test.ts`. SYSTEM.md 문장은 바꾸지 않는다(§7-3 · §8-3의 적용). 관리자(모두 보임) 출력은 그대로다.
+
+---
+
+## 2026-09-30 — 앱 밖으로 가는 링크는 새 탭 (사용자 결정 2026-09-30 · 04.4 UI-REVIEW INFO)
+
+**결정**: 상태 화면 「복원 리허설」 「실행 기록」(GitHub Actions 실행 페이지)은 `target="_blank"` · `rel="noopener noreferrer"`로 새 탭에서 연다. 앱 밖으로 가는 링크가 더 생기면 같은 규칙이다. 04.4-UI-SPEC Color 「탭 동작: 같은 탭」을 이 항목이 바꾼다.
+
+**결정자**: 사용자(2026-09-30, 채팅 — quick 260930-f3l 범위).
+
+**이유**: 관리자가 실패 기록을 보러 나가도 상태 화면을 잃지 않는다. `noopener noreferrer`로 새 탭이 `window.opener`를 잡지 못하게 한다.
+
+**버린 대안**: 같은 탭(04.4 UI-SPEC가 규정 부재에서 고른 기본값).
+
+**범위**: `app/(app)/admin/system-status/page.tsx`. 회귀: `test/e2e/system-status.spec.ts`. SYSTEM.md 문장은 바꾸지 않는다(탭 동작 규정 없음 — 2026-09-29 「복원 리허설 실패는 색 없이」와 같은 처리).

@@ -94,6 +94,12 @@ describe("ui/button .tertiary — 글자 밑줄 (FINDING-002)", () => {
     expect(OFFSET.test(base!.body)).toBe(true);
   });
 
+  it("hover 굵기는 aria-disabled 3차에 적용하지 않는다", () => {
+    const hover = rules.find((rule) => rule.selectors.some((selector) => selector.startsWith(".tertiary:hover")));
+    expect(hover?.selectors).toContain('.tertiary:hover:not([aria-disabled="true"])');
+    expect(hover?.body).toMatch(HOVER_THICKNESS);
+  });
+
   it("aria-disabled 3차는 밑줄 색을 var(--line)으로 흐리게 한다", () => {
     const disabled = rules.find((rule) => rule.selectors.includes('.tertiary[aria-disabled="true"]'));
     expect(disabled?.body).toMatch(/text-decoration-color\s*:\s*var\(--line\)/);

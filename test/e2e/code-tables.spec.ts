@@ -406,7 +406,6 @@ test.describe("코드표 행 동작 간격 --s-4 (260930-f3l FINDING-001)", () =
         await expectNoRowOverflow(page, row, `${width}px 일반 상태`);
         const gaps = await expectGapsAtLeastToken(page, [deactivate, remove], `${width}px`);
         expect(gaps.every((item) => item.horizontal), `${width}px 한 줄`).toBe(true);
-
       } finally {
         await cleanup();
       }

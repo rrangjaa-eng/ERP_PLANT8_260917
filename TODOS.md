@@ -370,6 +370,8 @@
 
 **Context:** /review red-team(INVESTIGATE). 한 단계의 사용 · 계급 · 범위 · 부서를 한 액션 · 한 트랜잭션으로, `계급 무관 + 전사` 경고 또는 거부, 스냅숏과 경고가 보관 판정을 같게.
 
+**Status (2026-09-30):** 한 단계 원자 저장은 반영(사용자 결정 A — 설정 화면 `N단 저장`, `domain/approvals/route-step-settings.ts`). 보관 팀 · 본부 판정은 PR #90에서 스냅숏이 보관 행을 거르게 맞춤. 남은 것: `계급 무관 + 전사` 경고 또는 거부.
+
 **Effort:** M
 **Priority:** P2
 **Depends on:** 보관 본부 처리 방식(사용자 결정)

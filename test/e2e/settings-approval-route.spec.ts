@@ -10,13 +10,18 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { getSettingValue, setSettingValue } from "@/domain/settings/registry";
 import {
   APPROVAL_ROUTE_LEAVE_SELF_APPROVAL,
+  APPROVAL_ROUTE_LEAVE_STEP1_ENABLED,
   APPROVAL_ROUTE_LEAVE_STEP1_ORG_UNIT_ID,
+  APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID,
+  APPROVAL_ROUTE_LEAVE_STEP2_SCOPE,
   APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID,
 } from "@/domain/settings/keys";
+import { CEO_ROLE_ID } from "@/domain/permissions/roles";
 
 // 04.1-04(ADMN-04 · CEO-14): 설정 화면 `연차 결재선` 섹션. 결재선은 공유 erp_test의
 // 전역 값이라 이 스펙은 `desktop-settings` 프로젝트(다른 모든 스펙 뒤)에서만 돌고,
-// 바꾼 값은 finally에서 도메인 함수로 되돌린다. 단계 사용 체크는 누르지 않는다.
+// 바꾼 값은 finally에서 도메인 함수로 되돌린다. 단계 사용 체크는 저장하지 않는다.
+// 사용자 결정(2026-09-30 A): 단계 네 칸은 화면에 모았다가 `N단 저장` 한 번에 저장한다.
 
 async function openSettings(page: Page) {
   const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
@@ -91,7 +96,7 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     }
   });
 
-  test("3단 특정 부서를 —로 바꾸면 칸 아래 경고가 보이고 저장은 된다", async ({ page }) => {
+  test("3단 특정 부서를 —로 바꾸고 3단 저장을 누르면 칸 아래 경고가 보이고 저장은 된다", async ({ page }) => {
     const original = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID);
     try {
       await openSettings(page);
@@ -100,6 +105,7 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
       await expect(field.getByText("부서 없음 · 이 단계는 빈 자리로 건너뜀")).toHaveCount(0);
 
       await step3OrgUnit.selectOption({ label: "—" });
+      await page.getByRole("button", { name: "3단 저장" }).click();
       await expect(async () => {
         await page.reload();
         await expect(page.getByLabel("3단 특정 부서")).toHaveValue("");
@@ -107,6 +113,103 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
       }).toPass();
     } finally {
       await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID, original);
+    }
+  });
+
+  test("2단 계급 · 범위는 2단 저장 전까지 저장되지 않고, 저장 한 번에 둘 다 저장된 뒤 버튼이 다시 꺼진다", async ({ page }) => {
+    const originalRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);
+    const originalScope = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_SCOPE);
+    try {
+      await openSettings(page);
+      const save = page.getByRole("button", { name: "2단 저장" });
+      await expect(save).toHaveAttribute("aria-disabled", "true");
+      await expect(save).toHaveAccessibleDescription("바뀐 칸 없음");
+
+      await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+      await page.getByLabel("2단 조직 범위").selectOption({ label: "전사" });
+      await expect(save).not.toHaveAttribute("aria-disabled", "true");
+      // 즉시 저장이었다면 이 사이에 요청이 나갔다 — 네트워크가 멈춘 뒤에 저장값을 읽는다.
+      await page.waitForLoadState("networkidle");
+      expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID)).toBe(originalRole);
+      expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_SCOPE)).toBe(originalScope);
+
+      await save.click();
+      // 이유 줄은 대기(pending) 중에는 없다 — 저장 · 새로 그리기가 끝나 바뀐 칸이 없어진 뒤에만 보인다.
+      await expect(save).toHaveAccessibleDescription("바뀐 칸 없음");
+      expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID)).toBe(CEO_ROLE_ID);
+      expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_SCOPE)).toBe("company");
+      await page.reload();
+      await expect(checkedText(page, "2단 담당 계급")).toHaveText("대표");
+      await expect(checkedText(page, "2단 조직 범위")).toHaveText("전사");
+    } finally {
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID, originalRole);
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_SCOPE, originalScope);
+    }
+  });
+
+  test("1단 사용을 끄면 저장 전에도 1단 칸이 바로 비활성이고, 저장하지 않고 떠나면 이탈 경고 뒤 그대로다", async ({ page }) => {
+    const original = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP1_ENABLED);
+    expect(original).toBe(true);
+    try {
+      await openSettings(page);
+      await page.getByLabel("1단 사용").uncheck();
+      await expect(page.getByLabel("1단 담당 계급")).toBeDisabled();
+      await expect(page.getByLabel("1단 조직 범위")).toBeDisabled();
+      await expect(page.getByRole("button", { name: "1단 저장" })).not.toHaveAttribute("aria-disabled", "true");
+
+      await page.getByLabel("1단 사용").check();
+      await expect(page.getByLabel("1단 담당 계급")).toBeEnabled();
+      await expect(page.getByRole("button", { name: "1단 저장" })).toHaveAttribute("aria-disabled", "true");
+
+      await page.getByLabel("1단 사용").uncheck();
+      const dialog = page.waitForEvent("dialog");
+      const reload = page.reload();
+      const leaving = await dialog;
+      expect(leaving.type()).toBe("beforeunload");
+      await leaving.accept();
+      await reload;
+      await expect(page.getByLabel("1단 사용")).toBeChecked();
+      expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP1_ENABLED)).toBe(original);
+    } finally {
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP1_ENABLED, original);
+    }
+  });
+
+  test("화면을 연 뒤 다른 관리자가 2단을 먼저 저장했으면 2단 저장이 거부되고 이유가 버튼에 붙는다", async ({ page }) => {
+    const originalRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);
+    const originalScope = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_SCOPE);
+    try {
+      await openSettings(page);
+      await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_SCOPE, "company");
+
+      const save = page.getByRole("button", { name: "2단 저장" });
+      await save.click();
+      const reason = "저장 실패 · 다른 저장이 먼저 됨 · 새로 고침";
+      await expect(page.getByRole("alert").filter({ hasText: reason })).toBeVisible();
+      await expect(save).toHaveAccessibleDescription(reason);
+      await expect(save).not.toHaveAttribute("aria-disabled", "true");
+      expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID)).toBe(originalRole);
+      expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_SCOPE)).toBe("company");
+    } finally {
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID, originalRole);
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_SCOPE, originalScope);
+    }
+  });
+
+  test("손대지 않은 단계는 다른 관리자의 저장을 새로 그릴 때 새 값을 따라가고 저장 버튼이 꺼진 채다", async ({ page }) => {
+    const originalOrg = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID);
+    const originalSelf = await getSettingValue(APPROVAL_ROUTE_LEAVE_SELF_APPROVAL);
+    try {
+      await openSettings(page);
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID, "");
+      // 자기 승인은 즉시 저장이라 저장 뒤 화면이 새 저장값으로 다시 그려진다.
+      await page.getByLabel("자기 승인").selectOption({ label: "본인 승인" });
+      await expect(page.getByLabel("3단 특정 부서")).toHaveValue("");
+      await expect(page.getByRole("button", { name: "3단 저장" })).toHaveAttribute("aria-disabled", "true");
+    } finally {
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID, originalOrg);
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_SELF_APPROVAL, originalSelf);
     }
   });
 
@@ -154,9 +257,11 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
   });
 
   // 파일 안 테스트는 선언 순서로 돈다(fullyParallel: false) — 앞 테스트들의 복원 증명.
-  test("복원 확인 — 자기 승인이 건너뜀 · 3단 특정 부서가 경영관리본부다", async ({ page }) => {
+  test("복원 확인 — 자기 승인이 건너뜀 · 2단이 본부 책임자 · 기안자 본부 · 3단 특정 부서가 경영관리본부다", async ({ page }) => {
     await openSettings(page);
     await expect(checkedText(page, "자기 승인")).toHaveText("건너뜀");
+    await expect(checkedText(page, "2단 담당 계급")).toHaveText("본부 책임자");
+    await expect(checkedText(page, "2단 조직 범위")).toHaveText("기안자 본부");
     await expect(checkedText(page, "3단 특정 부서")).toHaveText("경영관리본부");
   });
 });

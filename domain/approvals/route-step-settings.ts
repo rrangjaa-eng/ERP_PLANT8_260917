@@ -1,8 +1,8 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan, ForbiddenError } from "@/domain/permissions/can";
-import { getDocumentKind } from "@/domain/approvals/kinds";
+import { getDocumentKind, listDocumentKinds } from "@/domain/approvals/kinds";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
-import { upsertSimpleValue as defaultUpsertSimpleValue } from "@/repositories/settings";
+import { lockSimpleValues, upsertSimpleValue as defaultUpsertSimpleValue } from "@/repositories/settings";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
 
@@ -18,9 +18,25 @@ export type RouteStepSettingsDeps = {
   recordAction: typeof defaultRecordAction;
 };
 
+// 칸 하나 저장 경로(setSimpleSettingAction)가 단계 칸을 거부하는 판정 — 단계 칸은 이 파일의 저장으로만 쓴다.
+export function isRouteStepSettingKey(key: string): boolean {
+  return listDocumentKinds().some((kind) =>
+    (kind.routeSettings?.steps ?? []).some((step) => [step.enabled, step.roleId, step.scope, step.orgUnitId].some((def) => def.key === key)),
+  );
+}
+
+export const ROUTE_STEP_STALE_ERROR = "다른 저장이 먼저 됨 · 새로 고침";
+
+// 특정 부서는 기본값이 없는 단계가 있다 — 결재선 로더처럼 값이 없으면 빈 값(빈 자리)으로 본다.
+function withOrgUnitFallback(values: RouteStepValues): RouteStepValues {
+  return { ...values, orgUnitId: values.orgUnitId ?? "" };
+}
+
 export async function saveRouteStepSettings(
   viewer: Viewer,
-  input: { kind: string; stepIndex: number; values: RouteStepValues },
+  // expected = 화면을 열 때의 저장값. 주면 같은 tx에서 행을 잠그고 비교해, 그 사이 다른 저장이 있었으면 거부한다
+  // (오래된 화면이 손대지 않은 칸까지 옛 값으로 덮어쓰지 않게).
+  input: { kind: string; stepIndex: number; values: RouteStepValues; expected?: RouteStepValues },
   deps?: Partial<RouteStepSettingsDeps>,
 ): Promise<void> {
   const can = deps?.can ?? defaultCan;
@@ -28,18 +44,33 @@ export async function saveRouteStepSettings(
 
   const step = getDocumentKind(input.kind).routeSettings?.steps[input.stepIndex - 1];
   if (!step) throw new UserFacingError("결재선 단계 없음");
+  const defs = [step.enabled, step.roleId, step.scope, step.orgUnitId];
 
   // 쓰기 전에 네 칸을 전부 검증한다 — 한 칸이라도 틀리면 아무것도 쓰지 않는다.
+  const values = withOrgUnitFallback(input.values);
   const entries = [
-    { key: step.enabled.key, value: step.enabled.schema.parse(input.values.enabled) },
-    { key: step.roleId.key, value: step.roleId.schema.parse(input.values.roleId) },
-    { key: step.scope.key, value: step.scope.schema.parse(input.values.scope) },
-    { key: step.orgUnitId.key, value: step.orgUnitId.schema.parse(input.values.orgUnitId) },
+    { key: step.enabled.key, value: step.enabled.schema.parse(values.enabled) },
+    { key: step.roleId.key, value: step.roleId.schema.parse(values.roleId) },
+    { key: step.scope.key, value: step.scope.schema.parse(values.scope) },
+    { key: step.orgUnitId.key, value: step.orgUnitId.schema.parse(values.orgUnitId) },
   ];
 
   const upsertSimpleValue = deps?.upsertSimpleValue ?? defaultUpsertSimpleValue;
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await withTransaction(async (tx) => {
+    if (input.expected) {
+      const rows = await lockSimpleValues(viewer, defs.map((def) => def.key), tx);
+      const stored = new Map(rows.map((row) => [row.key, row.value]));
+      const current = withOrgUnitFallback({
+        enabled: stored.has(step.enabled.key) ? stored.get(step.enabled.key) : step.enabled.default,
+        roleId: stored.has(step.roleId.key) ? stored.get(step.roleId.key) : step.roleId.default,
+        scope: stored.has(step.scope.key) ? stored.get(step.scope.key) : step.scope.default,
+        orgUnitId: stored.has(step.orgUnitId.key) ? stored.get(step.orgUnitId.key) : step.orgUnitId.default,
+      });
+      const expected = withOrgUnitFallback(input.expected);
+      const fields = ["enabled", "roleId", "scope", "orgUnitId"] as const;
+      if (fields.some((field) => current[field] !== expected[field])) throw new UserFacingError(ROUTE_STEP_STALE_ERROR);
+    }
     for (const entry of entries) {
       await upsertSimpleValue(viewer, entry.key, entry.value, viewer.id, tx);
       await recordAction(

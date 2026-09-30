@@ -1133,3 +1133,17 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **버린 대안**: 폰에서만 통일(PC 확인 창은 1차 왼쪽 유지) · 결재 행동에만 두고 확인 창 · 폼은 그대로.
 
 **범위**: SYSTEM.md §6-3 · §7-8 · §7-17. 코드: `ui/confirm-dialog/ConfirmDialog.tsx` · `app/(app)/leave/new/leave-form.tsx` · `app/(app)/leave/leave.module.css` · `app/(app)/leave/use-phone-width.ts`(문서 화면 행동 줄과 같이 씀). 회귀: `test/unit/ui/confirm-dialog.test.ts` · `test/e2e/leave-document.spec.ts`(PC 반려 모달) · `test/e2e/mobile-leave-approval.spec.ts`(폰 반려 확인 시트) · `test/e2e/mobile-leave-list.spec.ts`(폰 제출 줄).
+
+## 2026-09-30 — 결재선 설정은 단계마다 「N단 저장」 (사용자 결정 2026-09-30)
+
+**결정**: 설정 화면(§7-2 「설정 저장 시점」)의 비이력형 칸은 즉시 저장 그대로이되, **결재선 한 단계(사용 · 담당 계급 · 조직 범위 · 특정 부서)는 네 칸을 화면에 모아 두고 단계 끝 2차 버튼 `N단 저장` 하나로 한 트랜잭션에 저장한다.** 버튼은 그 단계에 저장값과 다른 칸이 있을 때만 켜지고, 아니면 비활성 + 이유 `바뀐 칸 없음`(§7-1 이유 줄, info 색). 칸의 활성 · 비활성(사용이 꺼지면 계급 · 범위 · 부서, 범위가 특정 부서가 아니면 부서)은 저장 전 화면의 값으로 바로 바뀐다. 자기 승인 등 단계 밖 칸은 즉시 저장 그대로다. 새 토큰은 없다.
+
+**결정자**: 사용자(2026-09-30, 채팅 — PR #90 「[사용자 결정 요청]」 5896711045 추천안 A, Codex 스레드 r4137164384).
+
+**이유**: 칸마다 저장하면 두 칸을 바꾸는 사이(예: 2단 「팀장 · 기안자 팀」 → 「대표 · 전사」 중 「팀장 · 전사」)의 중간 결재선이 잠깐 유효하고, 그 사이 제출된 문서는 단계 행이 제출 때 고정돼 되돌리기 어렵다. 단계 하나는 네 칸이 함께 뜻을 갖는 가장 작은 단위다.
+
+**버린 대안**: 칸마다 즉시 저장 + 알려진 한계로 기록(B) · 결재선 섹션 전체를 한 번에 저장(C).
+
+**리뷰 보강(같은 PR)**: 화면을 연 뒤 그 단계에 다른 저장이 먼저 됐으면 저장을 거부하고 버튼 아래 `저장 실패 · 다른 저장이 먼저 됨 · 새로 고침`(손대지 않은 칸을 옛 값으로 덮지 않게). 손대지 않은 단계는 새로 그릴 때 새 저장값을 따른다. 저장하지 않은 단계가 있으면 떠날 때 브라우저 이탈 경고(§7-3 편집 표와 같은 방식, 문구 없음). 칸 하나 저장 액션은 단계 칸을 거부한다(서버에서도 한 번에만).
+
+**범위**: SYSTEM.md §7-2. 코드: `app/(app)/admin/settings/`(settings-form-client.tsx · page.tsx · actions.ts · actions.registry.ts) · `domain/approvals/route-step-settings.ts` · `domain/approvals/settings-options.ts` · `repositories/settings.ts`(lockSimpleValues). 회귀: `test/integration/settings-approval-route.test.ts` · `test/e2e/settings-approval-route.spec.ts` · `test/unit/app/settings-step-key-guard.test.ts`.

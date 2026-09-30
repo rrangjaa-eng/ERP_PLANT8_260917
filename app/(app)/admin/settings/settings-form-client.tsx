@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
@@ -8,6 +8,7 @@ import { HistoryList, type HistoryEntry } from "@/ui/history-list/HistoryList";
 import { parseNumberInput, type NumberInputKind } from "@/lib/format-number";
 import {
   setSimpleSettingAction,
+  saveApprovalRouteStepAction,
   addHistorizedSettingAction,
   cancelHistorizedSettingAction,
   exportSettingsAction,
@@ -34,6 +35,11 @@ export type SettingsFieldViewModel = {
   options?: { value: string; label: string }[];
   disabled?: boolean;
   warning?: string;
+  // 결재선 단계 칸(사용자 결정 2026-09-30 A): 켜짐 조건과 속한 단계 — 단계 네 칸은 화면에 모았다가 한 번에 저장한다.
+  // 모양은 domain/approvals/settings-options의 SettingCondition · RouteStepField와 같다 — "use client" 파일은
+  // 결재 모듈을 import하지 않는다(test/unit/document-kinds-import.test.ts).
+  activeWhen?: { key: string; equals: unknown }[];
+  step?: { kind: string; stepIndex: number; field: "enabled" | "roleId" | "scope" | "orgUnitId" };
 };
 
 export type SettingsSection = {
@@ -202,6 +208,119 @@ function SimpleFieldEditor({
   );
 }
 
+function savedValueOf(field: SettingsFieldViewModel): unknown {
+  return field.field.kind === "simple" ? field.field.value : undefined;
+}
+
+type StepValues = Record<string, unknown>;
+
+function sameValues(a: StepValues, b: StepValues): boolean {
+  return Object.keys(b).every((key) => a[key] === b[key]);
+}
+
+// 사용자 결정(2026-09-30 A · PR #90 Codex r4137164384): 결재선 한 단계의 네 칸은 칸마다 저장하지 않고 화면에
+// 모았다가 `N단 저장` 하나로 한 트랜잭션에 저장한다 — 두 칸을 바꾸는 사이의 중간 결재선이 생기지 않게.
+// 칸의 비활성은 저장 전 화면 값으로 다시 판정한다(서버가 넘긴 조건 그대로). base = 초안을 시작한 저장값 —
+// 저장 때 기대값으로 보내, 그 사이 다른 저장이 있었으면 도메인이 거부한다. 손대지 않은 단계는 새 저장값을 따라간다.
+function RouteStepEditor({ kind, stepIndex, fields }: { kind: string; stepIndex: number; fields: SettingsFieldViewModel[] }) {
+  const { execute, result, isExecuting } = useAction(saveApprovalRouteStepAction);
+  const errorId = useId();
+  const saved: StepValues = Object.fromEntries(fields.map((field) => [field.key, savedValueOf(field)]));
+  const [state, setState] = useState(() => ({ base: saved, draft: saved }));
+  let { base, draft } = state;
+  if (!sameValues(base, saved) && (sameValues(draft, base) || sameValues(draft, saved))) {
+    base = saved;
+    draft = saved;
+    setState({ base, draft });
+  }
+  const dirty = !sameValues(draft, base);
+  const error = dirty ? errorMessageOf(result) : null;
+
+  // 이 화면에서 저장하지 않은 값은 단계 칸뿐이다 — 떠날 때 경고한다(§7-3 편집 표와 같은 방식, 문구 없음).
+  useEffect(() => {
+    if (!dirty) return;
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [dirty]);
+
+  function change(key: string, value: unknown) {
+    setState((current) => ({ ...current, draft: { ...current.draft, [key]: value } }));
+  }
+
+  function valuesOf(source: StepValues) {
+    const valueOf = (name: NonNullable<SettingsFieldViewModel["step"]>["field"]) => {
+      const field = fields.find((candidate) => candidate.step?.field === name);
+      return field ? source[field.key] : undefined;
+    };
+    return { enabled: valueOf("enabled"), roleId: valueOf("roleId"), scope: valueOf("scope"), orgUnitId: valueOf("orgUnitId") };
+  }
+
+  return (
+    <div role="group" aria-label={`${stepIndex}단`}>
+      {fields.map((field) => {
+        const value = draft[field.key];
+        const disabled = !(field.activeWhen ?? []).every((condition) => draft[condition.key] === condition.equals);
+        if (field.field.kind === "simple" && field.field.descriptor.kind === "boolean") {
+          return (
+            <div key={field.key} className={styles.field}>
+              <label className={styles.checkboxLabel}>
+                <input type="checkbox" checked={value === true} onChange={(event) => change(field.key, event.target.checked)} />
+                {field.label}
+              </label>
+              {field.hint ? <p className={styles.hint}>{field.hint}</p> : null}
+            </div>
+          );
+        }
+        // 경고는 저장값 기준이다 — 초안에서 칸이 꺼졌거나 값이 바뀌면 그 칸에 맞지 않아 숨긴다.
+        const showWarning = Boolean(field.warning) && !disabled && value === base[field.key];
+        return (
+          <div key={field.key} className={styles.field}>
+            <label className={styles.selectLabel}>
+              {field.label}
+              <select
+                className={styles.select}
+                value={typeof value === "string" ? value : ""}
+                disabled={disabled}
+                onChange={(event) => change(field.key, event.target.value)}
+              >
+                {(field.options ?? []).map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {field.hint ? <p className={styles.hint}>{field.hint}</p> : null}
+            {showWarning ? <p className={styles.warning}>{field.warning}</p> : null}
+          </div>
+        );
+      })}
+      <div className={styles.field}>
+        <Button
+          variant="secondary"
+          pending={isExecuting}
+          disabled={!dirty}
+          disabledReason="바뀐 칸 없음"
+          reasonTone="info"
+          aria-describedby={error ? errorId : undefined}
+          onClick={() => execute({ kind, stepIndex, values: valuesOf(draft), expected: valuesOf(base) })}
+        >
+          {stepIndex}단 저장
+        </Button>
+        {error ? (
+          <p id={errorId} role="alert" className={styles.error}>
+            {error}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function HistorizedFieldEditor({
   fieldKey,
   label,
@@ -277,6 +396,53 @@ function ExportButton() {
   );
 }
 
+// 결재선 단계 칸은 (종류, 단계)마다 한 묶음으로 — 첫 칸 자리에 그린다(SETTING_DEFS 순서가 바뀌어도 묶음이 쪼개지지 않게).
+function renderFields(fields: SettingsFieldViewModel[]): ReactNode[] {
+  const groups = new Map<string, SettingsFieldViewModel[]>();
+  for (const field of fields) {
+    if (!field.step) continue;
+    const key = `${field.step.kind}-${field.step.stepIndex}`;
+    groups.set(key, [...(groups.get(key) ?? []), field]);
+  }
+
+  const nodes: ReactNode[] = [];
+  const rendered = new Set<string>();
+  for (const field of fields) {
+    if (field.step) {
+      const key = `${field.step.kind}-${field.step.stepIndex}`;
+      if (rendered.has(key)) continue;
+      rendered.add(key);
+      nodes.push(<RouteStepEditor key={key} kind={field.step.kind} stepIndex={field.step.stepIndex} fields={groups.get(key) ?? []} />);
+      continue;
+    }
+    nodes.push(
+      field.field.kind === "historized" ? (
+        <HistorizedFieldEditor
+          key={field.key}
+          fieldKey={field.key}
+          label={field.label}
+          hint={field.hint}
+          descriptor={field.field.descriptor}
+          entries={field.field.entries}
+        />
+      ) : (
+        <SimpleFieldEditor
+          key={field.key}
+          fieldKey={field.key}
+          label={field.label}
+          hint={field.hint}
+          descriptor={field.field.descriptor}
+          initialValue={field.field.value}
+          options={field.options}
+          disabled={field.disabled}
+          warning={field.warning}
+        />
+      ),
+    );
+  }
+  return nodes;
+}
+
 export function SettingsFormClient({ sections }: { sections: SettingsSection[] }) {
   return (
     <div>
@@ -284,30 +450,7 @@ export function SettingsFormClient({ sections }: { sections: SettingsSection[] }
       {sections.map((section) => (
         <section key={section.namespace} className={styles.section}>
           <h2 className={styles.sectionTitle}>{section.namespace}</h2>
-          {section.fields.map((field) =>
-            field.field.kind === "historized" ? (
-              <HistorizedFieldEditor
-                key={field.key}
-                fieldKey={field.key}
-                label={field.label}
-                hint={field.hint}
-                descriptor={field.field.descriptor}
-                entries={field.field.entries}
-              />
-            ) : (
-              <SimpleFieldEditor
-                key={field.key}
-                fieldKey={field.key}
-                label={field.label}
-                hint={field.hint}
-                descriptor={field.field.descriptor}
-                initialValue={field.field.value}
-                options={field.options}
-                disabled={field.disabled}
-                warning={field.warning}
-              />
-            ),
-          )}
+          {renderFields(section.fields)}
         </section>
       ))}
     </div>

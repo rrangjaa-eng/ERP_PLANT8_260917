@@ -433,3 +433,15 @@
 **Effort:** M
 **Priority:** P2
 **Depends on:** ① 없음 · ② 사용자 결정 여부 판단
+
+### 04.4 후속 /qa · /review 이연(2026-09-30)
+
+**What:** ① 행동 로그 화면 500 — `admin.action-log` 보기는 있고 `action_log.detail` 노출이 꺼진 계급(새 계급 기본값)으로 열면 `queryActionLog`(domain/action-log/index.ts:264)가 ForbiddenError를 던지고 `app/(app)/admin/action-log/page.tsx`가 잡지 않아 「화면 불러오기 실패」. 사람 목록처럼 잠김 한 줄로 보일지 결정 필요. ② 사람 목록 — `team.value`만 켠 계급은 행 머리글이 「현재 소속」이 되어 「—」 행끼리 구분되지 않는다(people/page.tsx 행 머리글 선택). ③ 코드표 — `code_item.value`가 꺼진 보기 전용 계급에서 값 · 이름 · 정렬 열이 모든 행에서 비고, 폰 375에서 빈 이름 칸이 44px 블록으로 쌓인다(사람 목록의 「가려진 열은 그리지 않는다」가 코드표엔 없음). ④ 행동 로그 내보내기 · 정리 액션은 URL로 넘어온 actorId를 그대로 받고, 행위자 이름이 person.value를 따르지 않는다(domain/action-log — 화면의 D1 결정은 page.tsx에만 적용).
+
+**Why:** ①은 메뉴 보기만 준 계급에서 화면이 늘 깨진다. ②③은 표시 규칙이 화면마다 다르다. ④는 이름은 드러나지 않지만 UUID로 행동을 가려낼 수 있다. 모두 main에 이미 있던 동작이고 PR #107 범위(app/ 표시)가 아니다.
+
+**Context:** PR #107 /qa(2026-09-30, 회귀 0 · 건강 점수 97) · /review 재검토. ①④는 domain/ 변경, ②③은 디자인 판단.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** ① ② ③ 사용자 결정(잠김 표시 방식)

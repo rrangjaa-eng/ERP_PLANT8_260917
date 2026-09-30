@@ -303,7 +303,8 @@ test.describe("I4 인쇄 버튼", () => {
     await expect(printButton).toHaveAttribute("aria-disabled", "true");
     await expect(page.getByText("저장 안 한 칸 1 · 먼저 저장", { exact: true })).toBeVisible();
     const pagesBefore = context.pages().length;
-    await printButton.click();
+    // aria-disabled 버튼은 Playwright 동작 가능성 검사에서 「사용 불가」라 force로 눌러 컴포넌트의 클릭 막기를 잰다.
+    await printButton.click({ force: true });
     await page.waitForTimeout(500);
     expect(context.pages().length).toBe(pagesBefore);
 

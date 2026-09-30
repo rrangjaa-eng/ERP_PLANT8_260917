@@ -34,9 +34,10 @@ estimate:
 
 must_haves:
   truths:
-    - "/admin/vendors · /admin/corp-cards · /admin/code-tables at 1280 and 768: every pair of adjacent row actions (수정 · 숨기기/비활성화 · 삭제) sits on one line with a horizontal gap >= --s-4 (16px); 「수정」 stays one text line"
+    - "/admin/vendors · /admin/corp-cards · /admin/code-tables at 1280 · 768 · 700 (design review D3): every pair of adjacent row actions (수정 · 숨기기/비활성화 · 삭제) sits on one line with a horizontal gap >= --s-4 (16px); 「수정」 stays one text line"
     - "Phone 375 /admin/vendors · /admin/corp-cards: adjacent row actions are >= 16px apart (horizontal when on one line, vertical when wrapped) and each keeps a >= 44x44 box (code-tables action column is hidden < 700 by design — not measured on phone)"
-    - "After pressing 「삭제」 (DeleteToArchive confirm state) the page and the table do not overflow horizontally on the three screens at 768 · 1024 · 1280, and on vendors · corp-cards at 320 · 375"
+    - "After pressing 「삭제」 (DeleteToArchive confirm state) the page and the table do not overflow horizontally on the three screens at 700 · 768 · 1024 · 1280, and on vendors · corp-cards at 320 · 375"
+    - "(design review D4) At 1280 the row 「수정」 link and the tertiary Button 「숨기기」 in the same /admin/vendors row report equal computed font-size, font-weight, color, text-decoration-line, text-decoration-thickness, text-underline-offset and text-decoration-color"
     - "Shared ui/button .tertiary draws its underline as a glyph underline: text-decoration-line underline, text-underline-offset 2px, border-bottom-style none; at 1280 hover thickens the underline 1px -> 2px without changing the box height; on phone 375 the underline sits under the glyphs of a >= 44x44 box"
     - "A disabled (aria-disabled) tertiary Button keeps its dimmed underline via text-decoration-color var(--line)"
     - "No new colors / tokens / radius / copy; people.module.css (PR #108) is unchanged"
@@ -108,6 +109,7 @@ Established facts (verified by planner on branch `ccr-e0753b24-rowactions-underl
     - Unit sweep: `.tertiary` is now counted by the existing sweep; `CHECKED_FLOOR` equals the new measured total (expected 23 = 22 + 1 — use the measured number); comment line 7 no longer says ui/button is outside the sweep.
     - E2E phone 375 (mobile-design-review-p2.spec.ts, new describe next to the FINDING-005 one): a real tertiary Button in a table row (e.g. /admin/vendors row 「숨기기」, a VendorHiddenToggle tertiary Button per mobile-vendors.spec.ts:5) has `text-decoration-line: underline`, `text-underline-offset: 2px`, `border-bottom-style: none`, box >= 44x44. Fails today (text-decoration none, border solid).
     - E2E desktop 1280 (design-review-p2.spec.ts, new describe): same Button — box height before hover equals box height after `hover()`, and computed `text-decoration-thickness` goes 1px -> 2px. Fails today (19 -> 20px).
+    - (design review D4, accepted) E2E desktop 1280, same describe: in one /admin/vendors row, read computed `font-size`, `font-weight`, `color`, `text-decoration-line`, `text-decoration-thickness`, `text-underline-offset`, `text-decoration-color` from the row 「수정」 Link and from the 「숨기기」 tertiary Button (the `<button>`, not its `.wrap` span) before hover, and assert each pair is equal. Fails today (Button text-decoration-line none).
     - E2E revenue-section.spec.ts:397-404: replace the `borderBottomColor` read with `textDecorationLine` (contains "underline") and `textDecorationColor` (equals `--accent`), keep the transparent background assertion. Fails today.
   </behavior>
   <action>
@@ -126,10 +128,10 @@ Established facts (verified by planner on branch `ccr-e0753b24-rowactions-underl
   <files>test/e2e/row-actions-helpers.ts, test/e2e/vendors.spec.ts, test/e2e/corp-cards.spec.ts, test/e2e/code-tables.spec.ts, test/e2e/mobile-vendors.spec.ts, test/e2e/mobile-corp-cards.spec.ts, app/(app)/admin/vendors/page.tsx, app/(app)/admin/vendors/vendors.module.css, app/(app)/admin/corp-cards/page.tsx, app/(app)/admin/corp-cards/corp-cards.module.css, app/(app)/admin/code-tables/page.tsx, app/(app)/admin/code-tables/code-tables.module.css</files>
   <behavior>
     - Helper `test/e2e/row-actions-helpers.ts` exports a function that takes a row Locator and the ordered action locators and returns, for each adjacent pair, the gap in px: horizontal (next.x - (prev.x + prev.width)) when their boxes share a line (vertical overlap), otherwise vertical (next.y - (prev.y + prev.height)); plus a `--s-4` token reader (copy of `tokenNumber` from people.spec.ts:76). No `any`.
-    - Desktop (vendors.spec.ts · corp-cards.spec.ts · code-tables.spec.ts, new describe each): seed one row with a long name (60 chars, as people.spec.ts:196-200 does) plus the target row; at 1280 and 768 (`page.setViewportSize`) every adjacent-action gap is horizontal and >= token - 0.5; 「수정」 (vendors · corp-cards) renders as one text line (Range.getClientRects distinct tops = 1, people.spec.ts:212-217). Fails today (0px; code-tables 768 vertical 3px).
-    - Desktop confirm state (same describes): at 768 · 1024 · 1280 click the row 「삭제」, wait for 「취소」, then page scrollWidth - clientWidth <= 0 and table right edge <= parent content edge + 0.5 (people.spec.ts:221-258 pattern or `noHorizontalOverflow`). Regression guard — may already pass before the fix; must still pass after.
+    - Desktop (vendors.spec.ts · corp-cards.spec.ts · code-tables.spec.ts, new describe each): seed one row with a long name (60 chars, as people.spec.ts:196-200 does) plus the target row; at 1280 · 768 · 700 (`page.setViewportSize`; 700 = narrowest width where `.rowActions` stays nowrap — design review D3) every adjacent-action gap is horizontal and >= token - 0.5; 「수정」 (vendors · corp-cards) renders as one text line (Range.getClientRects distinct tops = 1, people.spec.ts:212-217). Fails today (0px; code-tables 768 vertical 3px).
+    - Desktop confirm state (same describes): at 700 · 768 · 1024 · 1280 click the row 「삭제」, wait for 「취소」, then page scrollWidth - clientWidth <= 0 and table right edge <= parent content edge + 0.5 (people.spec.ts:221-258 pattern or `noHorizontalOverflow`). Regression guard — may already pass before the fix; must still pass after.
     - Phone 375 (mobile-vendors.spec.ts · mobile-corp-cards.spec.ts, new describe each): every adjacent-action gap (horizontal or vertical) >= token - 0.5 and each action box >= 44x44. Fails today (0 / 0-3px). Plus a `test.use({ viewport: { width: 320, height: 800 } })` describe and the 375 default: after 「삭제」 -> 「취소」 visible, no page or table horizontal overflow.
-    - (eng review R2, accepted) Normal state too: before pressing 「삭제」, no page or table horizontal overflow at every measured width (1280 · 768 on the three screens; 320 · 375 on vendors · corp-cards) — the new nowrap flex must not widen the actions column past the table.
+    - (eng review R2, accepted) Normal state too: before pressing 「삭제」, no page or table horizontal overflow at every measured width (1280 · 768 · 700 on the three screens; 320 · 375 on vendors · corp-cards) — the new nowrap flex must not widen the actions column past the table.
   </behavior>
   <action>
     RED: add the helper and the tests above, following each spec's existing login/seeding (e.g. `createFixtureUser({ roleId: SYSADMIN_ROLE_ID })` + login form; `insertVendor` for vendors; the UI registration flow already used in corp-cards / code-tables specs). Run with CI=true, confirm the gap tests fail for the measured reason, commit tests only as `test: ...`. Invoke `systematic-debugging` before the next code edit (expected RED; hook flag).
@@ -139,7 +141,7 @@ Established facts (verified by planner on branch `ccr-e0753b24-rowactions-underl
   <verify>
     <automated>pnpm db:reset:test && CI=true pnpm test:e2e test/e2e/vendors.spec.ts test/e2e/corp-cards.spec.ts test/e2e/code-tables.spec.ts test/e2e/mobile-vendors.spec.ts test/e2e/mobile-corp-cards.spec.ts</automated>
   </verify>
-  <done>RED commit (tests only) observed failing on the gap assertions; after the fix all five specs pass under CI=true with gaps >= 16px (1280 · 768 horizontal; 375 any direction), 「수정」 one line, no overflow in the confirm state at 320 · 375 · 768 · 1024 · 1280; diff of the three page.tsx files is only the span wrapper and the 「수정」 className.</done>
+  <done>RED commit (tests only) observed failing on the gap assertions; after the fix all five specs pass under CI=true with gaps >= 16px (1280 · 768 · 700 horizontal; 375 any direction), 「수정」 one line, no overflow in the normal and confirm states at 320 · 375 · 700 · 768 · 1024 · 1280; diff of the three page.tsx files is only the span wrapper and the 「수정」 className.</done>
 </task>
 
 <task type="auto">
@@ -147,7 +149,7 @@ Established facts (verified by planner on branch `ccr-e0753b24-rowactions-underl
   <files>docs/design/checks/2026-09-30-관리표-행행동-간격-3차-밑줄.md</files>
   <action>
     Invoke `verification-before-completion`. Run cheap gates: `pnpm lint`, `pnpm typecheck`, `pnpm test:unit`, `pnpm build`. Then one CI=true E2E run over every touched or affected spec: vendors, vendor-edit, corp-cards, code-tables, code-tables-write-gate, archive, people, admin-master-list-first, revenue-section, notify-inbox, design-review-p2, design-principles, and all `test/e2e/mobile-*.spec.ts` (the trailing `test/e2e/mobile-` argument in verify is a Playwright path regex filter that matches them all). Report counts only; quote only failing parts (invoke `systematic-debugging` on any failure — no guessed fixes).
-    Fill every box of the checklist with one-line evidence (no `- [ ]`, no empty 「근거:」): copy unchanged (diff has no text-node changes); decisions/disabled choices/primary button/empty state/keyboard order unchanged (span wrapper keeps DOM order); 「삭제」 separated from neighbours by the measured px at 1280 · 768 · 375; same-kind actions same shape = Button tertiary now reports the same `text-decoration-line`/offset as the 3차 links (measured values); §1 user decisions untouched; only existing tokens used (`--s-4`, `--line-w`, `--line-w-strong`, `--underline-offset`, `--line`); 320 no overflow + 44 touch from the E2E; screenshot line follows the precedent in earlier checklists: 「없음. 스크린샷 육안 판정 금지(CLAUDE.md §6) — CI=true DOM 실측 E2E(spec 경로)로 대체, 독립 DOM 감사는 오케스트레이터가 한다」.
+    Fill every box of the checklist with one-line evidence (no `- [ ]`, no empty 「근거:」): copy unchanged (diff has no text-node changes); decisions/disabled choices/primary button/empty state/keyboard order unchanged (span wrapper keeps DOM order); 「삭제」 separated from neighbours by the measured px at 1280 · 768 · 700 · 375 — and for the 「위험 색」 half of that box write 「위험 색 아님 — SYSTEM §7-1 「위험 행동은 색이 아니라 확인으로 구분 · 붉은 버튼 없음」(SYSTEM.md:699), 구분은 DeleteToArchive 인라인 확인(:700 기록된 예외)」; do NOT add `--danger` or any color to 「삭제」 (design review D1); same-kind actions same shape = the D4 equality assertion (「수정」 link vs 「숨기기」 Button, measured values) — and for 「링크·버튼 섞지 않음」 write 「요소 종류는 그대로 — 페이지 이동 「수정」은 `<a>`, 행 안 동작은 `<button>`(SYSTEM.md:1146 「3차 버튼은 `<button>`(페이지 이동이면 `<a>`)」); 모양은 같다(D4 실측)」; do NOT convert 「수정」 into a Button or the Buttons into links (design review D2); add one plain note line (not a checkbox) under the checklist's 「## 원칙」 list recording the accepted, unchanged states from the design review state table (D5 · D6): pending 「…」 underline in two pieces, disabled `--surface` fill, reason text outside the underline, confirm row centred beside live 「수정」/「숨기기」 (copied from people.module.css #108 — not a new decision); §1 user decisions untouched; only existing tokens used (`--s-4`, `--line-w`, `--line-w-strong`, `--underline-offset`, `--line`); 320 no overflow + 44 touch from the E2E; screenshot line follows the precedent in earlier checklists: 「없음. 스크린샷 육안 판정 금지(CLAUDE.md §6) — CI=true DOM 실측 E2E(spec 경로)로 대체, 독립 DOM 감사는 오케스트레이터가 한다」.
     Commit in two intents (English prefix title, Korean body): (1) `fix:` Button.module.css + the filled checklist — glyph underline for shared tertiary Button (FINDING-002); (2) `fix:` the three page.tsx + three module CSS — row action gap --s-4 (FINDING-001) (hook accepts the checklist already committed on this branch). Do not push force; no .planning/ hand edits beyond the SUMMARY the workflow writes. In SUMMARY record: org/roles out of scope (one action per row); four per-module `.rowActions` copies (people · vendors · corp-cards · code-tables) — consolidation into shared CSS is a user decision, not done; post-build gates (/review, /design-review + independent DOM audit, /qa) are the orchestrator's.
   </action>
   <verify>
@@ -299,17 +301,156 @@ Worktree parallelization: Sequential implementation, no parallelization opportun
 
 Completion summary: Step 0 scope accepted as-is · Architecture 0 · Code quality 1 · Tests diagram produced, 2 gaps · Performance 0 · NOT in scope written · What already exists written · TODOS 1 proposed · Critical gaps 0 · Unresolved 0 · Outside voice unavailable (Codex not installed + forbidden by CLAUDE.md; no TaskOutput for native fallback) · Parallelization 0 lanes · Lake Score 2/2.
 
+## Design review (/plan-design-review, 2026-09-30, reviewer: orchestrator Opus + independent Claude subagent Opus)
+
+Target: this plan. Decision mode: same standing instruction as the eng review (user asleep, 2026-09-30 prompt: 「모호한 점은 가장 보수적인 선택으로 진행하고 PR 본문의 「사용자 결정 필요」 절에 적는다」). Each finding below was decided individually on that instruction (recommended = most conservative option) and is listed in PR #111 「사용자 결정 필요」.
+
+### System audit
+- UI scope: existing screens only — /admin/vendors · /admin/corp-cards · /admin/code-tables row action cell, and the shared `ui/button` `.tertiary` (~24 callers). No new screen, component, copy or token.
+- Design system: `docs/design/SYSTEM.md` exists (§4-4 3차 밑줄 · §6-1 `--s-4` · §7-1 3차 row · :699 위험 행동 = 확인, 붉은 버튼 없음 · :700 DeleteToArchive 예외 · :1146 `<button>`/`<a>`). All decisions calibrate against it.
+- Prior design review of this area: 260930-f3l /design-review FINDING-001 (high) · 002 (medium) — the source of this plan; ListEmpty FINDING-005 fixed the same underline defect earlier. Reviewed aggressively.
+- Classifier: OPERATE (admin app UI). Prior learnings: none found (project-scoped search; `cross_project_learnings` left unset — config not changed while the user is away).
+
+### Step 0
+- 0A initial rating: 7/10 — measured, token-exact fix and strong regression tests; missing: checklist evidence that could push the implementer against SYSTEM (위험 색 · 링크/버튼), parity with the neighbouring link not asserted, 700px not measured, pending/disabled/confirm states unrecorded. A 10 = every state of the changed controls written down, every width where the new nowrap wrapper applies measured, and checklist evidence that cites the SYSTEM rule instead of inviting a new color or element swap.
+- 0B: SYSTEM.md present — calibrated.
+- 0C reuse: `.rowActions` (people.module.css:164-179), ListEmpty glyph underline (ListEmpty.module.css:22-25), row 「수정」 `.toggle` (vendors.module.css:13-25 — fs-sm · `--fw-medium` · accent · 1px underline offset 2px · hover 2px), global `:focus-visible` (globals.css:62), DeleteToArchive `.confirmRow` (archive.module.css:73-83).
+- 0D focus: all 7 passes (auto-decided, standing instruction).
+- Step 0.5 mockups: NOT generated (D0). Outside voices: Codex not run (CLAUDE.md §4 forbids external review); independent Claude subagent (Opus) ran — 6 findings, all verified against source and merged below.
+
+### Pass 1 Information Architecture: 9/10 → 10/10
+Cell order unchanged (수정 → 숨기기/비활성화 → 삭제, 삭제 last); separation specified. Gap: "same kind, same shape" only checked against fixed values, not against the neighbouring 「수정」 link in the same cell → D4. After D4 the cell reads as three equal 3차 actions, 16px apart, verified by measurement.
+```
+[ 이름 … | … | 수정 ␣16␣ 숨기기 ␣16␣ 삭제 ]   (≥700: one line, nowrap)
+[ 이름 … | … | 수정 ␣16␣ 숨기기 ]            (<700: wraps, 16px vertical)
+[           | 삭제                    ]
+confirm:  [ 수정 ␣16␣ 숨기기 ␣16␣ (확인 문구 · 삭제 확인 · 취소) ]  ← .confirmRow wraps inside
+```
+
+### Pass 2 Interaction States: 6/10 → 9/10
+| Control | Default | Hover (PC) | Focus-visible | Disabled (aria-disabled) | Pending | Confirm (DeleteToArchive) |
+|---|---|---|---|---|---|---|
+| tertiary Button (숨기기 · 비활성화 · 삭제) | accent 600 fs-sm, glyph underline 1px, offset 2px | underline 2px, box height unchanged | global ring 2px `--focus` offset 2px (unchanged) | `--faint` text, `--surface` fill (existing `.btn[aria-disabled]`, 0,2,0), underline color `--line` | 「…」 appended with `.btn` 8px gap → underline in two pieces (was one border line); label widens a few px for the request's duration | n/a |
+| row 「수정」 link | same as Button (D4) | underline 2px | same ring | n/a | n/a | stays live beside confirm row |
+| `.rowActions` cell | 16px gaps | — | — | — | — | confirm row (`.confirmRow`, own wrap) centred (`align-items: center`) beside live 「수정」/「숨기기」 — copied from #108 |
+Disabled reason text sits outside the `<button>` (Button.tsx `.wrap` sibling span) so it is never underlined; none of these cells passes a reason today. Remaining 1 point: pending underline split and pending width are accepted, not measured (transient, D5).
+
+### Pass 3 User Journey: 8/10 → 9/10
+| Step | User does | User feels | Plan specifies? |
+|---|---|---|---|
+| 1 | scans a row | sees three separate actions, not 「수정숨기기삭제」 | yes — 16px gap, one line ≥700 |
+| 2 | hovers 숨기기 | same feedback as hovering 수정 | yes — 1→2px, box stable (D4 parity) |
+| 3 | presses 삭제 | confirm appears in place, siblings still reachable, nothing jumps sideways | yes — overflow checks normal + confirm, 320–1280 (+700, D3); layout recorded (D6) |
+| 4 | on phone taps | 44 boxes, 16px apart | yes — 375 gaps + 44 |
+5-sec: calmer row. 5-min: fewer mis-taps on 삭제. 5-year: one 3차 look across the app (remaining NextTurn/Table → eng R3 TODO).
+
+### Pass 4 AI Slop Risk: 10/10 → 10/10
+OPERATE. Hard rejections: none. Litmus: 1 n/a (existing shell) · 2 n/a · 3 yes (no copy change) · 4 yes · 5 no cards · 6 no motion added · 7 yes (no shadows). Existing tokens only, no decorative change. No issues.
+
+### Pass 5 Design System Alignment: 6/10 → 10/10
+Tokens exact (`--s-4`, `--line-w`, `--line-w-strong`, `--underline-offset`, `--line`). Gaps were in the checklist evidence Task 3 asks the implementer to fill: D1 (「위험 색」) and D2 (「링크·버튼 섞지 않음」). Both now cite SYSTEM rules and forbid the wrong fix.
+
+### Pass 6 Responsive & Accessibility: 7/10 → 9/10
+1280 · 768 · 375 · 320 specified; 44 touch on phone; keyboard order unchanged (span wrapper, no role); focus ring 2px+2px offset fits inside the 16px gap. Gap: 700–767 (narrowest nowrap width; code-tables action column visible from 700) unmeasured → D3. Remaining 1 point: pending-width push not measured (D5, accepted).
+
+### Pass 7 Unresolved decisions: 7 resolved (D0–D6), 0 deferred
+
+## Design decision ledger
+
+### D0: visual mockups (gstack designer)
+Finding: Step 0.5, process. Designer binary available, but CLAUDE.md §6 forbids screenshot visual judgment and the design-gate skill says design comparison uses the real app screen only; the change is CSS on existing screens with no new layout.
+Options: A) Skip mockups — evidence = CI=true DOM measurement + independent DOM audit (recommended). B) Generate AI mockups.
+Actual answer: A (auto-decided, standing instruction; project rule wins over skill default). PR #111 「사용자 결정 필요」.
+
+### D1: checklist 「위험한 동작 … 위험 색이다」 vs SYSTEM :699
+Finding: Pass 5, high (subagent 1, verified SYSTEM.md:699-700). Checklist line would push the implementer to color 「삭제」 red.
+Options: A) Evidence cites :699/:700 — separation 16px, no danger color, distinction by DeleteToArchive confirm (recommended). B) Add `--danger` to 「삭제」 (violates SYSTEM, new decision).
+Actual answer: A. Accepted scope: Task 3 action text.
+
+### D2: checklist 「링크·버튼 섞지 않음」
+Finding: Pass 5, medium (subagent 2, verified SYSTEM.md:1146). Row mixes `<a>` 수정 and `<button>`s; SYSTEM allows `<a>` for navigation.
+Options: A) Evidence cites :1146, element types unchanged, same look proven by D4 (recommended). B) Convert 수정 to a Button / Buttons to links (behavior change, out of scope).
+Actual answer: A. Accepted scope: Task 3 action text.
+
+### D3: 700px not measured
+Finding: Pass 6, medium (subagent 3). `.rowActions` is nowrap from 700; checks started at 768.
+Options: A) Add 700 to gap + normal/confirm overflow checks on the three screens (recommended, test-only). B) Keep 768.
+Actual answer: A. Accepted scope: must_haves truths 1 · 3, Task 2 behavior + done.
+
+### D4: parity with the neighbouring 「수정」 link
+Finding: Pass 1, medium (subagent 4). FINDING-002 is about matching the link in the same cell; plan asserted fixed values only.
+Options: A) 1280 equality assertion on 7 computed properties, 「수정」 vs 「숨기기」 in one vendors row (recommended). B) Fixed values only.
+Actual answer: A. Accepted scope: new must_haves truth, Task 1 behavior bullet (design-review-p2.spec.ts, file already listed).
+
+### D5: pending / disabled states
+Finding: Pass 2, low (subagent 5, verified Button.tsx:85 `…` span, `.btn` gap 8px, `.btn[aria-disabled]` fill). Underline splits during pending; disabled underline sits on `--surface`.
+Options: A) Record as accepted unchanged states; no Button.tsx change (recommended). B) Change Button markup/CSS for pending (widens scope on a shared component).
+Actual answer: A. Accepted scope: Pass 2 state table + checklist note (Task 3).
+
+### D6: confirm-state layout
+Finding: Pass 2/3, low (subagent 6, verified archive.module.css:73-83). Confirm row centred beside live siblings, copied from #108.
+Options: A) Record in checklist as copied from people.module.css, not a new decision (recommended). B) Redesign confirm layout (DeleteToArchive out of scope).
+Actual answer: A. Accepted scope: checklist note (Task 3).
+
+### NOT in scope (design)
+- 「삭제」 danger color — SYSTEM :699 forbids.
+- Hiding siblings during confirm / new confirm layout — DeleteToArchive is a recorded exception (:700), out of scope.
+- Pending-state underline continuity — shared Button markup change, not requested.
+- `.btn[aria-disabled]` `--surface` fill on tertiary — existing, not in FINDING-002.
+- NextTurn `.tertiary` · Table `.emptyAction` border-bottom — eng R3 TODO.
+- Consolidating four `.rowActions` copies — user decision (PR #111 item 4).
+
+### What already exists (design)
+`.rowActions` (people.module.css:164-179) · ListEmpty glyph underline (ListEmpty.module.css:22-25) · `.toggle` 3차 link rules (vendors/corp-cards/code-tables module CSS) · global focus ring (globals.css:62) · DeleteToArchive `.confirmRow` (archive.module.css:73-83) · SYSTEM §4-4/§6-1/§7-1.
+
+### TODOS.md updates
+No new design TODO — every finding was either folded into this plan (D3 · D4, D1 · D2 evidence) or recorded as an accepted unchanged state (D5 · D6). Eng R3 TODO stands.
+
+### Implementation Tasks (design review)
+- [ ] **T4 (P2, human: ~20min / CC: ~3min)** — admin row tests — add 700 to gap + normal/confirm overflow checks (D3). Files: vendors/corp-cards/code-tables specs. Verify: CI=true E2E.
+- [ ] **T5 (P2, human: ~20min / CC: ~3min)** — design-review-p2 1280 — 「수정」 vs 「숨기기」 computed-style equality (D4). Verify: RED before CSS, GREEN after, CI=true.
+- [ ] **T6 (P2, human: ~10min / CC: ~2min)** — design-gate checklist — D1 · D2 evidence wording + D5 · D6 state note (Task 3). Verify: hook accepts the commit; no `--danger`/element changes in diff.
+
+### Completion Summary (design)
+```
+  +====================================================================+
+  |         DESIGN PLAN REVIEW — COMPLETION SUMMARY                    |
+  +====================================================================+
+  | System Audit         | SYSTEM.md present; UI scope = 3 admin cells + shared tertiary |
+  | Step 0               | 7/10; focus all 7 passes                    |
+  | Pass 1  (Info Arch)  | 9/10 → 10/10 after fixes                   |
+  | Pass 2  (States)     | 6/10 → 9/10 after fixes                    |
+  | Pass 3  (Journey)    | 8/10 → 9/10 after fixes                    |
+  | Pass 4  (AI Slop)    | 10/10 → 10/10 after fixes                  |
+  | Pass 5  (Design Sys) | 6/10 → 10/10 after fixes                   |
+  | Pass 6  (Responsive) | 7/10 → 9/10 after fixes                    |
+  | Pass 7  (Decisions)  | 7 resolved, 0 deferred                     |
+  +--------------------------------------------------------------------+
+  | NOT in scope         | written (6 items)                           |
+  | What already exists  | written                                     |
+  | TODOS.md updates     | 0 items proposed                            |
+  | Approved Mockups     | 0 generated, 0 approved (D0)                |
+  | Decisions made       | 7 added to plan (auto, standing instruction)|
+  | Decisions deferred   | 0                                           |
+  | Overall design score | 6/10 → 9/10                                 |
+  +====================================================================+
+```
+Plan is design-complete (every pass 8+). Run /design-review after implementation for visual QA (real app, DOM measurement).
+
+### Unresolved Decisions
+None open in this review. All seven were auto-decided under the standing instruction and await the user's confirmation in PR #111 「사용자 결정 필요」.
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
 | CEO Review | `/plan-ceo-review` | Scope & strategy | 0 | — | — |
-| Outside Review | codex (plan-eng-review) | Independent 2nd opinion | 1 | unavailable | not installed; CLAUDE.md forbids external review |
+| Outside Review | codex (plan-eng-review, plan-design-review) | Independent 2nd opinion | 2 | unavailable | not run — CLAUDE.md §4 forbids external review |
 | Eng Review | `/plan-eng-review` | Architecture & tests (required) | 1 | ISSUES OPEN (mapped) | 4 issues, 0 critical gaps |
-| Design Review | `/plan-design-review` | UI/UX gaps | 0 | — | — |
+| Design Review | `/plan-design-review` | UI/UX gaps | 1 | clean | score: 6/10 → 9/10, 7 decisions |
 | DX Review | `/plan-devex-review` | Developer experience gaps | 0 | — | — |
 
-- **OUTSIDE COVERAGE:** codex, plan-review, unavailable (not installed; external review forbidden by CLAUDE.md §4), no findings.
-- **VERDICT:** Eng review findings all dispositioned (R1–R4 approved, mapped into Tasks 2–3); design review pending.
+- **OUTSIDE COVERAGE:** codex, design phase, unavailable (external review forbidden by CLAUDE.md §4); native Claude subagent (in-host, Opus) completed — 6 findings, merged as D1–D6. Native fallback is not outside coverage.
+- **VERDICT:** DESIGN CLEARED (plan) — eng review findings dispositioned (R1–R4 mapped into Tasks 2–3); CEO review pending (hook requirement, PR #111 decision 1).
 
 NO UNRESOLVED DECISIONS

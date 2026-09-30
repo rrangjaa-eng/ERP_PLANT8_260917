@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-29T19:19:43.766Z",
+  "timestamp": "2026-09-30T02:39:13.427Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -56,20 +56,52 @@
       "name": "/gsd-secure-phase 4 재실행 — T-04-31 닫힘(허용 목록 c1180ca6 · 테스트 5218a03b, 단위 14·통합 41 통과, 되돌리면 8 실패), threats_open 0 · status verified, T-04-373 medium 비차단 열림 유지",
       "status": "done",
       "commit": "c8404e86"
+    },
+    {
+      "id": "transition-c-uat53",
+      "name": "UAT test 53 증거 대조 pass 재기록(전환 (C)) — 43dd5de4 · mobile-touch-targets CI=true 3 passed(이 세션) · DOM 감사 PASS 24",
+      "status": "done",
+      "commit": "4c3ca81"
+    },
+    {
+      "id": "transition-phase4",
+      "name": "Phase 4 전환(transition.md) — phase.complete · PROJ-04 되돌림 · PROJECT/STATE 갱신",
+      "status": "done",
+      "commit": "5569a2e"
     }
   ],
   "remaining_tasks": [
     {
-      "id": 3,
-      "name": "웨이브 32 — 04-53 자동 정산 gate(risk: Opus 실행자 + Opus 독립 검토)",
+      "id": "post-review",
+      "name": "/review PR #104(c1180ca·43dd5de·0aaa91a 포함)",
+      "status": "not_started"
+    },
+    {
+      "id": "post-qa",
+      "name": "/qa · /design-review",
+      "status": "not_started"
+    },
+    {
+      "id": "post-cso",
+      "name": "/cso(외부 입력 검증 변경)",
+      "status": "not_started"
+    },
+    {
+      "id": "post-ship",
+      "name": "/ship — ready 전환은 사용자에게 먼저, 머지는 사용자(.claude/gates 포함)",
       "status": "not_started"
     }
   ],
   "blockers": [
     {
-      "description": "gsd phase uat-passed 4 --require-verification = false — 04-UAT test 53 skipped(설치본 gsd-core 1.14.0 판정기는 skipped·이월 지원 없음). stale은 83f86f11 재검증으로 해소",
+      "description": "폰 40px 버튼 3개(일괄 저장·복사해 새 차수·프로젝트 복사) 44로 맞출지 사용자 답 없음",
       "type": "human_action",
-      "workaround": "PR #104 질문: (A) /gsd-update 1.15.0(#4546 Deferred follow-up 비차단) · (B) #4546 부분 이식 · (C) npq로 고쳐졌으니 증거 대조로 test 53 pass 재기록"
+      "workaround": "전환과 무관 — 답 오면 별도 /gsd-quick"
+    },
+    {
+      "description": "04-VERIFICATION stale — phase.complete의 ROADMAP 변경이 covered_digest를 어긋나게 함",
+      "type": "technical",
+      "workaround": "페이즈 완료는 기록됨. 재검증 여부는 사용자 판단, digest 수동 수정 금지"
     }
   ],
   "async_jobs": [],
@@ -440,11 +472,23 @@
       "decision": "Phase 4 재검증은 /gsd-verify-work 4 안에서 gsd-verifier(Opus) 재검증 모드로 수행(Route V.stale·선례 01Wvj7eF)",
       "rationale": "스킬 관문 훅이 워크플로 밖 gsd-verifier를 막음. 결과 passed 9/10, 전환은 사용자 답 대기",
       "phase": "04"
+    },
+    {
+      "decision": "전환 (C): test 53 증거 대조 pass, gsd-core 업데이트·판정기 이식 없음, .claude/ 무변경",
+      "rationale": "사용자 [지시] 5902859466(2026-09-30)",
+      "phase": "4"
+    },
+    {
+      "decision": "phase.complete가 바꾼 PROJ-04 Complete를 되돌림",
+      "rationale": "사용자 결정: PROJ-04는 Phase 5 결재와 함께 Complete",
+      "phase": "4"
     }
   ],
-  "uncommitted_files": [],
-  "next_action": "전환 방법 사용자 답 대기 → 답에 따라 처리. 새 세션(이 계정 plant8 환경, 사용자가 직접 엶) → `.claude/settings.json` 확인 → git status -sb(HEAD `claude/gsd-verify-work-4`, 떨어져 있으면 원격과 같은지 확인 후 checkout -B, 얕으면 unshallow) → .continue-here.md BLOCKING CONSTRAINTS와 세션 72537190 블록 Read → PR #104 최신 [지시] 확인·구독 → origin/main 머지 커밋 반영(푸시 직전 한 번 더). **답이 (A)**: `/gsd-update`로 gsd-core 1.15.0 — `.claude/` 위험 경로라 별도 PR(사용자 머지), 업데이트 전체 변화 검토 뒤 `gsd phase uat-passed 4 --require-verification` passed 확인 → /gsd-verify-work 4 전환. **(B)**: 1.14.0 `uat-predicate.cjs`에 #4546 DEFERRED_REASON_RE 부분만 이식 — 위험 경로 별도 PR(사용자 머지) → 같은 확인 → 전환. **(C)**: /gsd-verify-work 4에서 test 53을 증거 대조(260929-npq 43dd5de4 · `test/e2e/mobile-touch-targets.spec.ts` 375·320 44×44 · DOM 감사 PASS 24)로 pass 재기록 + ROADMAP 04.6의 DR-P4-02 정리 → uat-passed passed 확인 → 전환(transition.md). 폰 40px 3개 답이 오면 별도 /gsd-quick. 04-VERIFICATION은 83f86f11 기준 passed(fresh) — 그 뒤 covered_files가 바뀌면 다시 stale이니 전환 직전 `query verification.status` 재확인. 답이 없으면 새 결정 없이 할 수 있는 단위가 없으므로 대기.",
-  "context_notes": "세션 0a13ae7c: ⑤ 전환 미실행 — 설치본 1.14.0 판정기 PASSING_RESULTS={passed,pass}, 상류 1.15.0 #4546이 Deferred follow-up skipped 비차단(모의 실행 test 53 통과). 추가 막힘 verification stale(260929-opt). 다음: 재검증. secure-phase 4 결과 BLOCKED(T-04-31 한 건, 실제 위험 낮음). ui-review 4는 보안 막힘과 독립이라 먼저 진행. 세션 01REzuX1: validate-phase 4 끝(1dbc5163 · 91cee9bf), main #91 머지 4f20665f. 사용자 취침 중 — 한 단위씩 이어서 하고 각자 PR #104에 [완료 보고]. 04-52 갈래 G, 변이 3종 모두 잡힘. 04-53은 depends_on 04-52(D4) 충족.",
+  "uncommitted_files": [
+    "?? .planning/phases/04-project-quote-ledger/.continue-here.md"
+  ],
+  "next_action": "새 세션(plant8, 브랜치 claude/gsd-verify-work-4) → settings.json 확인 → git status -sb → .continue-here BLOCKING CONSTRAINTS Read → PR #104 최신 [지시]·구독 → origin/main 머지 반영 → /review로 PR #104 검토(마지막 /review 뒤 c1180ca·43dd5de·0aaa91a). 끝나면 커밋·푸시 → pause-work → 다음 세션 /qa·/design-review.",
+  "context_notes": "Phase 4 GSD 완료(5569a2e). STATE 현재 위치는 도구 판정대로 Phase 2. 이 레인에 남은 것은 PR #104 Post-build 넷과 사용자 머지.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"

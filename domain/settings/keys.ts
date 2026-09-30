@@ -292,6 +292,8 @@ export const DOCUMENT_NUMBER_PROJECT_SEQ_DIGITS: SettingDef<number> = {
 // 중 한 글자뿐이고, 그 밖의 문자·두 글자 이상·공백은 저장·가져오기 전에
 // 거부된다(T-04-31, PR #104 사용자 결정). z.enum이 아니라 문자열 + 정규식인
 // 이유: enum이면 설정 화면 입력이 선택 목록으로 바뀐다.
+// 읽기에서는 허용 밖 저장값을 기본값(빈 값)으로 대체하고 log.error를 남겨 번호 채번이
+// 막히지 않는다(PR #104 /review 2차 A(2), 사용자 2026-09-30).
 export const DOCUMENT_NUMBER_PROJECT_SEPARATOR: SettingDef<string> = {
   key: "document_number.project.separator",
   kind: "simple",
@@ -300,6 +302,7 @@ export const DOCUMENT_NUMBER_PROJECT_SEPARATOR: SettingDef<string> = {
   hint: "연도와 순번 사이에 넣을 문자입니다(기본값은 없음).",
   namespace: "문서 번호",
   default: "",
+  readInvalidAsDefault: true,
 };
 
 export const DOCUMENT_NUMBER_PROJECT_SEQ_START: SettingDef<number> = {

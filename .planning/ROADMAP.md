@@ -396,7 +396,7 @@ Plans:
 12. 글자·바탕 대비 4.5:1 미만(큰 글자 3:1)을 자동 검사가 막는다
 13. 시스템 변경은 `docs/design/DECISIONS.md` 기록 → `docs/design/SYSTEM.md` 수정 순서로 한다(`.claude/rules/frontend.md`): radius 0 · 그림자 없음 · 2px 진한 선 결정 뒤집기, D-39 폼 배치 → 옆 패널, 고른 완화 후보
 
-**Plans:** 0/33 plans executed
+**Plans:** 0/32 plans executed
 
 Plans:
 **Wave 1**
@@ -407,9 +407,9 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 04.6-04-PLAN.md — ② UQ-8 확인 → 트레이서: 거래처 옆 패널(SidePanel·PanelForm·ListScreen·Form layout)
-- [ ] 04.6-05-PLAN.md — ② 공용 표현 컴포넌트(Num·RowActions·TableSkeleton·status-map·ListEmpty)
-- [ ] 04.6-06-PLAN.md — ② DetailScreen · /dev/components 뼈대(로그인·운영 404)
+- [ ] 04.6-04-PLAN.md — ② UQ-8·R9·DR1·DR5 확인 → 트레이서: 거래처 옆 패널(SidePanel·PanelForm·ListScreen·Form layout)
+- [ ] 04.6-05-PLAN.md — ② 공용 표현 컴포넌트(Num·RowActions·TableSkeleton·StaticTable·status-map·ListEmpty)
+- [ ] 04.6-06-PLAN.md — ② DetailScreen · /dev/components 뼈대(로그인·운영 404) · 원칙 점검 도구(isStrict·data-ui·모달 인지)
 - [ ] 04.6-07-PLAN.md — ② 스킨: 표·입력·확인 창·배지 + 역할 간격 값
 - [ ] 04.6-08-PLAN.md — ② 스킨: 셸·버튼·머리글·바탕
 - [ ] 04.6-09-PLAN.md — ② 스킨: 알림·목록 보조·권한 격자·인증 틀
@@ -429,6 +429,7 @@ Plans:
 - [ ] 04.6-17-PLAN.md — ④ 결재함 · 결재 시트 SidePanel · 뼈대
 - [ ] 04.6-20-PLAN.md — ④ 내 계정·설정·시스템 상태
 - [ ] 04.6-23-PLAN.md — ④ (04.5·04.3 머지 뒤) 화면 항목 관리·행사 목록 패널
+- [ ] 04.6-25-PLAN.md — ④ 기준 사진 대조 · 완화 후보 보드 · UQ-4·5 요청(웨이브 ③ 세 화면)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -437,7 +438,6 @@ Plans:
 - [ ] 04.6-21-PLAN.md — ⑤ 관리 인덱스·권한표·노출표·로그인
 - [ ] 04.6-22-PLAN.md — ⑤ 행동 로그·보관함·적립금
 - [ ] 04.6-24-PLAN.md — ⑤ (04.3 머지 뒤) 확인증 상세·외부 수령자
-- [ ] 04.6-25-PLAN.md — ⑤ 기준 사진 대조 · 완화 후보 보드 · UQ-4·5 요청
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
@@ -445,16 +445,13 @@ Plans:
 - [ ] 04.6-27-PLAN.md — ⑥ E2E 옛 토큰 이름 문자열 → 역할 이름
 - [ ] 04.6-28-PLAN.md — ⑥ 래칫 표시 0 · StatusTag kind 삭제
 - [ ] 04.6-29-PLAN.md — ⑥ 원칙 점검 막는 모드 · a11y 전 화면 · 글자 위계
+- [ ] 04.6-30-PLAN.md — ⑥ [위험 경로 별도 PR · 사용자 머지] CHECKLIST §1 사용자 결정(PR #113 답 직접 인용)
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 04.6-30-PLAN.md — ⑦ [위험 경로 별도 PR · 사용자 머지] CHECKLIST §1 사용자 결정(04.6-26 답 인용 뒤)
-- [ ] 04.6-31-PLAN.md — ⑦ 옛 토큰 이름 삭제 · 인쇄 토큰 · SYSTEM §11
+- [ ] 04.6-31-PLAN.md — ⑦ 옛 토큰 이름 삭제 · 인쇄 토큰 · SYSTEM §11 · 늦게 머지될 페이즈 알림 · R19 확인 → TODOS 대조
 - [ ] 04.6-33-PLAN.md — ⑦ (UQ-4에 4일 때만) 아이콘 · (UQ-5 B면) lucide-react 사람 확인·판 고정
-
-**Wave 8** *(blocked on Wave 7 completion)*
-
-- [ ] 04.6-32-PLAN.md — ⑧ CI 기준 사진 · 늦게 머지될 페이즈 알림
+- ~~04.6-32-PLAN.md~~ — superseded → COMMON §9 0단계(오케스트레이터가 웨이브 ⑦ 세션에서 31·33 뒤 CI 기준 사진 — 플랜 아님)
 
 ### Phase 04.1: 결재 모듈·연차 (INSERTED)
 

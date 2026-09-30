@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-30T02:39:13.427Z",
+  "timestamp": "2026-09-30T03:01:58.724Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -68,12 +68,24 @@
       "name": "Phase 4 전환(transition.md) — phase.complete · PROJ-04 되돌림 · PROJECT/STATE 갱신",
       "status": "done",
       "commit": "5569a2e"
+    },
+    {
+      "id": "post-review",
+      "name": "/review PR #104 2차(c1180ca·43dd5de·0aaa91a·1dbc516 포함, 핵심+전문6+적대+Red Team, Opus) — critical 0 · 참고 4(A~D) · 자동 수정 0 · 품질 8.0, 보고서 docs/reviews/phase-04/pr104-postbuild-review-2.md",
+      "status": "done",
+      "commit": "59aa0d5"
+    },
+    {
+      "id": "merge-main-90",
+      "name": "origin/main #90(Phase 04.1) 머지 — 충돌 settings-export.test.ts 두 쪽 살림, typecheck·lint 0 · 통합 47/47 · 단위 2236/2236, 병합 전용 점검표",
+      "status": "done",
+      "commit": "cd48abd"
     }
   ],
   "remaining_tasks": [
     {
-      "id": "post-review",
-      "name": "/review PR #104(c1180ca·43dd5de·0aaa91a 포함)",
+      "id": "review-decisions",
+      "name": "/review 2차 결정 A~C 답에 따라 /gsd-quick(고치면 그 변경분 /review 재확인)",
       "status": "not_started"
     },
     {
@@ -102,6 +114,11 @@
       "description": "04-VERIFICATION stale — phase.complete의 ROADMAP 변경이 covered_digest를 어긋나게 함",
       "type": "technical",
       "workaround": "페이즈 완료는 기록됨. 재검증 여부는 사용자 판단, digest 수동 수정 금지"
+    },
+    {
+      "description": "/review 2차 [사용자 결정 요청] A(허용 밖 저장 구분자 읽기 처리)·B(구분자 힌트에 허용 문자)·C(접두어 제약) 답 없음",
+      "type": "human_action",
+      "workaround": "답 전에는 /qa·/design-review를 시작하지 않는다(B가 화면 문구를 바꿀 수 있음)"
     }
   ],
   "async_jobs": [],
@@ -145,6 +162,16 @@
       "action": "Phase 4 전환 방법 결정: (A) gsd-core 1.15.0 업데이트 · (B) 판정기 부분 이식 · (C) test 53 증거 대조 pass 재기록",
       "context": "PR #104 질문(세션 0a13ae7c) — 답 오기 전 전환 보류, 재검증은 먼저 진행",
       "blocking": true
+    },
+    {
+      "action": "/review 2차 결정 A~C — PR #104 [사용자 결정 요청] 댓글",
+      "context": "docs/reviews/phase-04/pr104-postbuild-review-2.md",
+      "blocking": true
+    },
+    {
+      "action": "게이트 기록: 훅이 이 /review를 .claude/gates/phase-02.log(미추적)에 적음 — 올바른 줄은 phase-04.log에 `review 2026-09-30T02:42Z session=ab976a3b-12ba-53c4-8ea6-b93b9394b1f7`",
+      "context": "전환 뒤 STATE 현재 페이즈가 Phase 2라 훅이 오인. 세션은 gates를 쓰지 않음",
+      "blocking": false
     }
   ],
   "decisions": [
@@ -482,13 +509,18 @@
       "decision": "phase.complete가 바꾼 PROJ-04 Complete를 되돌림",
       "rationale": "사용자 결정: PROJ-04는 Phase 5 결재와 함께 Complete",
       "phase": "4"
+    },
+    {
+      "decision": "/review 2차: Codex 패스 생략(외부 검토 금지) · 자동 수정 0 · A~C는 기록 밖 결정이라 사용자 결정 요청, D(검색 LIKE 이스케이프)는 PR 밖 기존 코드라 기록만 · 다음 세션은 답이 올 때까지 만들지 않음",
+      "rationale": "세션 지시 3·직전 세션 선례",
+      "phase": "4"
     }
   ],
   "uncommitted_files": [
-    "?? .planning/phases/04-project-quote-ledger/.continue-here.md"
+    "?? .claude/gates/phase-02.log (훅 생성, 커밋 안 함 — 사용자 판단)"
   ],
-  "next_action": "새 세션(plant8, 브랜치 claude/gsd-verify-work-4) → settings.json 확인 → git status -sb → .continue-here BLOCKING CONSTRAINTS Read → PR #104 최신 [지시]·구독 → origin/main 머지 반영 → /review로 PR #104 검토(마지막 /review 뒤 c1180ca·43dd5de·0aaa91a). 끝나면 커밋·푸시 → pause-work → 다음 세션 /qa·/design-review.",
-  "context_notes": "Phase 4 GSD 완료(5569a2e). STATE 현재 위치는 도구 판정대로 Phase 2. 이 레인에 남은 것은 PR #104 Post-build 넷과 사용자 머지.",
+  "next_action": "새 세션(plant8, 브랜치 claude/gsd-verify-work-4) → settings.json → git status -sb → .continue-here BLOCKING CONSTRAINTS → PR #104 최신 [지시](/review 2차 결정 A~C 답) 확인·구독 → origin/main 머지 커밋 → 답에 따라 /gsd-quick(고친 변경분 /review 재확인) 또는 /qa·/design-review. 폰 40px 3개 답이 오면 별도 /gsd-quick",
+  "context_notes": "Phase 4 GSD 완료. PR #104 Post-build: /review 2차 끝(59aa0d5), main #90 머지(cd48abd). 남은 것: 결정 A~C → /qa·/design-review → /cso → /ship, 머지는 사용자.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"

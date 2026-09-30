@@ -138,7 +138,7 @@
 
 ### NextTurn `.tertiary` · Table `.emptyAction` 밑줄도 글자 밑줄로(quick 260930-nto eng review R3)
 
-**What:** `ui/next-turn/NextTurn.module.css:123-135`(`.tertiary` border-bottom · hover `border-bottom-width`)와 `ui/table/Table.module.css:216-225`(`.emptyAction` border-bottom)의 3차 밑줄을 공유 Button `.tertiary`(`ff64212`)와 같은 글자 밑줄(`text-decoration: underline` · `--underline-offset` · hover 두께 `--line-w-strong`)로 바꾸고, `test/unit/app/tertiary-underline-css.test.ts` 점검 범위에 넣는다.
+**What:** `ui/next-turn/NextTurn.module.css:124-137`(`.tertiary` border-bottom · hover `border-bottom-width`)와 `ui/table/Table.module.css:216-225`(`.emptyAction` border-bottom)의 3차 밑줄을 공유 Button `.tertiary`(`ff64212`)와 같은 글자 밑줄(`text-decoration: underline` · `--underline-offset` · hover 두께 `--line-w-strong`)로 바꾸고, `test/unit/app/tertiary-underline-css.test.ts` 점검 범위에 넣는다.
 
 **Why:** §4-4 3차 밑줄 규칙과 다르고, 같은 결함(폰 44px 상자 바닥 밑줄 · hover 때 상자 높이 변화)이 컴포넌트마다 남는다. PR #111은 사용자 범위(공유 Button)만 고쳤다.
 

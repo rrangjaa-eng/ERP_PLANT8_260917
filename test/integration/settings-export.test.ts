@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db/client";
 import { settingsSimple, settingsHistorized } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { queryActionLog } from "@/repositories/action-log";
+import { upsertSimpleValue } from "@/repositories/settings";
+import { log } from "@/lib/log";
 import {
   SETTING_DEFS,
   AUTH_LOCKOUT_THRESHOLD,
@@ -12,7 +14,7 @@ import {
 } from "@/domain/settings/keys";
 import { getSettingValue, setSettingValue, addHistorizedValue, listSettingHistory } from "@/domain/settings/registry";
 import { exportSettings, importSettings, ImportValidationError } from "@/domain/settings/export";
-import { DOCUMENT_NUMBER_PROJECT_SEQ_START } from "@/domain/settings/keys";
+import { DOCUMENT_NUMBER_PROJECT_SEPARATOR, DOCUMENT_NUMBER_PROJECT_SEQ_START } from "@/domain/settings/keys";
 import { allocateDocumentNumber, loadDocumentNumberFormat, SeqStartOverlapError } from "@/domain/document-numbering";
 import { kstYear } from "@/lib/kst-date";
 
@@ -78,6 +80,35 @@ describe("설정 JSON 내보내기·가져오기 (ADMN-06, 실제 Postgres)", ()
     await exportSettings(SYSTEM_VIEWER);
     const afterLogs = await queryActionLog(SYSTEM_VIEWER, { actionType: "excel_export" });
     expect(afterLogs.length).toBe(beforeLogs.length + 1);
+  });
+
+  it("(e) 허용 목록 밖 구분자(#)를 가져오면 거부되고 값은 그대로다", async () => {
+    const badPayload = {
+      schemaVersion: "1",
+      exportedAt: new Date().toISOString(),
+      settings: { [DOCUMENT_NUMBER_PROJECT_SEPARATOR.key]: "#" },
+    };
+
+    await expect(importSettings(SYSTEM_VIEWER, badPayload)).rejects.toBeInstanceOf(ImportValidationError);
+    expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEPARATOR)).toBe("");
+  });
+
+  describe("저장된 구분자가 허용 목록 밖일 때 (PR #104 /review 2차 A(2))", () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it("(j) 허용 밖 구분자(#)가 저장돼 있으면 내보내기는 기본값(빈 값)을 담고 log.error를 남기며, 그 파일은 다시 가져올 수 있다", async () => {
+      const spy = vi.spyOn(log, "error").mockImplementation(() => {});
+      await upsertSimpleValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEPARATOR.key, "#", null);
+
+      const exported = await exportSettings(SYSTEM_VIEWER);
+
+      expect(exported.settings[DOCUMENT_NUMBER_PROJECT_SEPARATOR.key]).toBe("");
+      expect(spy).toHaveBeenCalledWith(
+        "settings.invalid_stored_value",
+        expect.objectContaining({ key: DOCUMENT_NUMBER_PROJECT_SEPARATOR.key }),
+      );
+      await expect(importSettings(SYSTEM_VIEWER, exported)).resolves.toBeUndefined();
+    });
   });
 
   // 04.1-04(ENG-5 · B-NEW02): 가져오기도 적용 시작일 공통 검증을 거친다 — 지난 연도는

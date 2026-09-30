@@ -107,6 +107,9 @@ export default defineConfig({
       // 진짜 해결은 워커별 DB 분리(후속 과제)다. 375px 표 오버플로 자체는
       // 2026-09-26 §7-3 칸 접기로 고쳤다(mobile-320-no-overflow.spec.ts).
       dependencies: ["desktop"],
+      // 공용 설정을 잠깐 바꾸는 폰 스펙(mobile-projects-error — 04-52 G-04-4)이 있어 폰 스펙은 한 워커로 줄 세운다.
+      // desktop은 dependencies로 이미 끝나 있어, 그 값이 쓰인 동안 도는 스펙이 그 하나뿐이다.
+      workers: 1,
       use: {
         viewport: { width: 375, height: 800 },
       },

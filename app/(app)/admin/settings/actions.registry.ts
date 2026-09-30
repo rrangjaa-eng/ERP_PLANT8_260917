@@ -13,6 +13,13 @@ registerAction({
 });
 
 registerAction({
+  name: "saveApprovalRouteStepAction",
+  menu: "admin.settings",
+  action: "write",
+  dtoName: null,
+});
+
+registerAction({
   name: "addHistorizedSettingAction",
   menu: "admin.settings",
   action: "write",

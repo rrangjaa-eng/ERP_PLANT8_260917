@@ -1,705 +1,251 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-29T07:48:24.464Z",
+  "timestamp": "2026-09-30T14:03:22.732Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
-  "plan": 42,
-  "task": 42,
-  "total_tasks": 42,
+  "plan": 53,
+  "task": 3,
+  "total_tasks": 3,
   "status": "paused",
   "completed_tasks": [
     {
       "id": 1,
-      "name": "04-04 Task 3 — 엑셀 클립보드 원문 재생으로 확인·완료",
+      "name": "웨이브 31 — 04-52 UAT 공백 셋 테스트 종결(갈래 G)",
       "status": "done",
-      "commit": "0c3a7a3"
+      "commit": "5e1bd6b1"
     },
     {
       "id": 2,
-      "name": "/plan-design-review(DR-1..38) → UI-SPEC rev 5 승인",
+      "name": "STATE·ROADMAP 갱신 43/44",
       "status": "done",
-      "commit": "4f248a7"
+      "commit": "21ed78d2"
     },
     {
       "id": 3,
-      "name": "재계획(그룹 A/B/C) + 계획 검사 2회차(막는 문제 0)",
+      "name": "/gsd-secure-phase 4 — 04-SECURITY.md(229행, 닫힘 227, 열림 2: T-04-31 high 차단 · T-04-373 medium 비차단)",
       "status": "done",
-      "commit": "2984e3c"
+      "commit": "767c89f2"
     },
     {
       "id": 4,
-      "name": "UI-SPEC 후속 결정 R1~R4 기록",
+      "name": "/gsd-ui-review 4 — 04-UI-REVIEW.md 19/24(Copy 3·Visuals 3·Color 4·Typo 3·Spacing 3·XD 3), DOM 실측 CI=true 9화면×4폭=36회",
       "status": "done",
-      "commit": "d7c3cd4"
+      "commit": "3aee0aa4"
     },
     {
       "id": 5,
-      "name": "범위 변경: 인트라넷 데이터 이관 없음 — 04-03 철회",
+      "name": "/gsd-quick 260929-n41 T-04-31 구분자 허용 목록(빈 값 또는 - _ . / 한 글자) — RED 5218a03b · GREEN c1180ca6",
       "status": "done",
-      "commit": "34577d2"
+      "commit": "6f8dfdf6"
     },
     {
-      "id": 6,
-      "name": "hook 3종: 스킬 관문 · CLAUDE.md 주기 상기 · 세션 경계",
+      "id": "quick-260929-npq",
+      "name": "폰 터치 44px 위반 2건",
       "status": "done",
-      "commit": "3b3e98e"
+      "commit": "43dd5de4"
     },
     {
       "id": 7,
-      "name": "/plan-ceo-review r2 (HOLD SCOPE, 사용자 부재 중 이전 결정 적용·자동 결정) — 14건, 반영 지시 8",
+      "name": "/gsd-quick 260929-opt UI (가)(나)(다) — UI-SPEC 문구 · 번호 열 숫자 규칙 · 등록 폼 첫 오류 칸 포커스",
       "status": "done",
-      "commit": "b1e9645"
+      "commit": "0aaa91a7"
     },
     {
       "id": 8,
-      "name": "/plan-eng-review r2 — 10건(치명 1: E2-04 롤백 가드), CEO r2와 병합한 반영 지시 1~13, codex 외부 의견 반영",
+      "name": "/gsd-secure-phase 4 재실행 — T-04-31 닫힘(허용 목록 c1180ca6 · 테스트 5218a03b, 단위 14·통합 41 통과, 되돌리면 8 실패), threats_open 0 · status verified, T-04-373 medium 비차단 열림 유지",
       "status": "done",
-      "commit": "14ef895"
+      "commit": "c8404e86"
     },
     {
-      "id": 9,
-      "name": "[세션 A] /gsd-quick 260923-odg — hook 보강 ①게이트 리뷰 종료=세션 경계 ②문서 커밋도 verification-before-completion ③quick 완료=세션 경계 ④세션당 gsd-executor 1회(skill-gate agent 끝에서, 통과한 호출만 셈). 시험 47/47·21/21",
+      "id": "transition-c-uat53",
+      "name": "UAT test 53 증거 대조 pass 재기록(전환 (C)) — 43dd5de4 · mobile-touch-targets CI=true 3 passed(이 세션) · DOM 감사 PASS 24",
       "status": "done",
-      "commit": "3bed7b1"
+      "commit": "4c3ca81"
     },
     {
-      "id": 10,
-      "name": "[세션 B] PR #38 Post-build(/review·/qa+디자인 DOM 감사·/cso·/ship) → main 머지. 수정: IDOR 3건·감사 기록 롤백·합계 bigint(b0b6cf7), 조회 누수·환율0·시드 권한·금액숨김·반올림(a283a5c), 보관 프로젝트 쓰기(a6ce3ff), 금액 0·10배·100배 저장·저장 오류 미표시·목록 쉼표(229b33d), 금액숨김 직급 저장 시 단가 0 덮어씀(5b6b0c5), 문서(121d955). CI 초록 후 머지 3c1b015",
+      "id": "transition-phase4",
+      "name": "Phase 4 전환(transition.md) — phase.complete · PROJ-04 되돌림 · PROJECT/STATE 갱신",
       "status": "done",
-      "commit": "3c1b015"
+      "commit": "5569a2e"
     },
     {
-      "id": 11,
-      "name": "[세션 C] /gsd-plan-phase 4 — 반영 지시 1~13·묶음 경계(② w2~18 끝 04-23 / ③ w19~24 끝 04-41 / ④ w25~30 끝 04-31)·04-48/49/50/51 신설·알려진 문제 배정·열린 질문 2개 checkpoint(04-07·04-51). 체커 2회차 통과. draft PR #40",
+      "id": "post-review",
+      "name": "/review PR #104 2차(c1180ca·43dd5de·0aaa91a·1dbc516 포함, 핵심+전문6+적대+Red Team, Opus) — critical 0 · 참고 4(A~D) · 자동 수정 0 · 품질 8.0, 보고서 docs/reviews/phase-04/pr104-postbuild-review-2.md",
       "status": "done",
-      "commit": "a4d1f29"
+      "commit": "59aa0d5"
     },
     {
-      "id": 12,
-      "name": "[세션 D] 04-50 실행 — rollback.sh 스키마 하한(E2-04) + deploy.yml main 전용 ref-guard(ENG-D12). executor 커밋 5a55b2c·0b85305·7a72883·a2cfd47·21b0f00·667f398. 오케스트레이터 검토에서 치명 회귀 발견·수정: 표시 없는 마이그레이션만 있는 저장소(현재 실제 상태)에서 xargs 빈 입력 rc=123으로 롤백이 update-traffic 전에 조용히 죽음 → RED ad68f2d · fix 152d90e. 전체 게이트 CI=true: 단위 751·통합 1027·E2E 165 통과, lint·typecheck·lint:sql 0. 원격 cbdb9e0(세션 C가 기록한 사용자 답) 병합 6131504",
+      "id": "merge-main-90",
+      "name": "origin/main #90(Phase 04.1) 머지 — 충돌 settings-export.test.ts 두 쪽 살림, typecheck·lint 0 · 통합 47/47 · 단위 2236/2236, 병합 전용 점검표",
       "status": "done",
-      "commit": "6131504"
+      "commit": "cd48abd"
     },
     {
-      "id": 13,
-      "name": "[세션 E] 04-08 실행 — D-94 트레이서(isCtrlCombo·등록 폼 Ctrl+Enter 래치·Esc 빈 폼 갈래·상단 바 Ctrl+K) + DECISIONS 15건·SYSTEM.md 개정 14건·스케치 셋·대기 muted. executor 183e113·5555ca2·8307745(RED)·329ba5d·2e457c1·83ff41f·be71d04(RED)·832757e·eccc194·5ccefd7. 오케스트레이터: RED 두 건 별도 워크트리 재현(2 실패씩), Task 1 diff 실제 저장소 대입 검토(next-safe-action onError가 validationErrors·serverError에서 불림 확인), d6b41cf 기준 불변 재검(얕은 clone이라 안 보였음 — deepen 후 tokens·lock·의존성 동일), 독립 DOM 감사(opus, CI=true, 1280·1024·375 FAIL 0 — 대기 태그는 홈이 빈 배열이라 DOM 미관측, 소스 확인). 전체 게이트 CI=true: 단위 787·통합 1027·E2E 170, lint·typecheck·lint:sql 0. 푸시 5ccefd7",
+      "id": "quick-review2",
+      "name": "/gsd-quick 260930-4xr — A(2) 읽기 기본값 대체+log.error · B 힌트 · C 수락 위험 기록 · 폰 40px 3개 44",
       "status": "done",
-      "commit": "5ccefd7"
+      "commit": "4936139"
     },
     {
-      "id": 14,
-      "name": "[세션 F] 04-32 실행 — withTransaction lock_timeout 5s·풀 connectionTimeoutMillis 5000·시간 초과 UserFacing 변환, recordAction/appendActionLog/findSimpleValue tx, ARCHITECTURE §4-8, project() 항목당 한 번·projectMany·all-of. executor b395483·ce424ab(RED)·c9e70ea·af47867(RED)·518ad0f·34986bc. 오케스트레이터: RED 두 건 별도 워크트리 재현(2 실패·3+1 실패), diff 실제 저장소 대입 검토에서 결함 발견 — executor의 ENG-D11 편차가 saveProjectLedger 전체(커밋 뒤 recordAction·listRevenue 포함)를 시간 초과 변환으로 감싸 이미 저장된 뒤 「잠시 뒤 다시 저장」을 띄움(새 줄 중복 저장, UX-04) → systematic-debugging·TDD로 RED 2bea596(tx-safety (d)) · fix 4f54fcf(변환을 커밋 전까지로). tx-safety 5회 연속 초록. 의존성 객체·lock d6b41cf와 동일, 금지 4파일 diff 0. 전체 게이트 CI=true: 단위 791·통합 1036·E2E 170, lint·typecheck·lint:sql 0. 웨이브 후 게이트 훅 3개 차단 없음. 푸시 4f54fcf",
+      "id": "post-review-recheck",
+      "name": "/review 3차 — quick 260930-4xr 고친 변경분(0d7050e..49e709b) 재확인(핵심+전문6+적대+Red Team, Opus) — 2차 A·B·폰 40px 해소 확인, critical 0 · 참고 5(E1~E5) · 부록 1 · 품질 7.5 · 코드 변경 없음, 보고서 docs/reviews/phase-04/pr104-postbuild-review-3.md",
       "status": "done",
-      "commit": "4f54fcf"
+      "commit": "8bb0fa3"
     },
     {
-      "id": 15,
-      "name": "[세션 G] 04-43 실행 — REQUIREMENTS PROJ-03·04 + ROADMAP 기준 4 (D16 2차 보강). executor 1111278·e97b39b·24229ab. 오케스트레이터 검토: diff 세 줄뿐·D-75~D-84 일치·코드 변경 0·검증 4개 재실행 초록. 전체 게이트 CI=true: 단위 791·통합 1036·E2E 170, lint·typecheck·lint:sql 0",
+      "id": "pr104-qa-design-review",
+      "name": "PR #104 /qa(low 2) · /design-review(diff 결함 0, polish 5) — 보고 전용, 코드 변경 없음",
       "status": "done",
-      "commit": "24229ab"
+      "commit": "63845be"
     },
     {
-      "id": 16,
-      "name": "세션 H: 04-10 코드표 값 설명",
+      "id": "pr104-cso",
+      "name": "PR #104 /cso(run 1790755400956-b1e667c201b51b88, --code --diff --offline, partial) — No supported findings, 로그 원값 0",
       "status": "done",
-      "commit": "92a33ff"
+      "commit": "6031760"
     },
     {
-      "id": 17,
-      "name": "세션 I: 04-46 Button aria-disabled·reasonTone + ui/confirm-dialog + 입력 버리기, DOM 감사 PASS, 전체 게이트 CI=true 초록(819/1056/190), Tab 가두기 조임 cae45c0, 코드표 E2E 경합 수정 3eb8dd6",
+      "id": "quick-260930-ee9",
+      "name": "PR #104 /review 3차 참고 E1~E5(사용자 결정 E(1), [지시] 5909292999) — d84123d·2888ba0·156a8ec·f2010c3·ab9b818, docs eb20fef, 동작 변경 없음. 재검증 lint·typecheck 0 · 설정 단위 78/78 · CI=true E2E 530/530",
       "status": "done",
-      "commit": "e79c67b"
+      "commit": "eb20fef"
     },
     {
-      "id": 18,
-      "name": "세션 J: 04-25 코드표 값 설명 폰 P2 행 접기 + 하위분류 설명 전달. executor Opus, 격리 강제 none(dispatch-isolation --force-isolation none, 설정 기본 worktree를 명시로 강등, main 작업트리 순차 실행). 허용 편차 1건(vendors/page.tsx 한 줄). 독립 Sonnet DOM 감사(S14 백스톱, 1280·1024·375) 전부 PASS. 전체 게이트 CI=true: 단위 819·통합 1058·E2E 192. PR #40 CI 초록(fc1bfd8, quality·integration-e2e)",
+      "id": "merge-main-106",
+      "name": "origin/main a53762b(#106) 머지 커밋 — 충돌 STATE·phase-04.log 양쪽 줄 합침(새 줄 0), 단위 2243/2243, CI quality 초록",
       "status": "done",
-      "commit": "fc1bfd8"
+      "commit": "61e03ca"
     },
     {
-      "id": 19,
-      "name": "세션 K: 04-28 견적 표 Ctrl 전용 단축키·저장 래치·힌트 줄·저장 거부 봉투. executor Opus, 격리 none. Opus 검토 수정 3건(02a8b23~95a4dcd). 독립 DOM 감사 8/8 PASS. 전체 게이트 CI=true: 단위 837·통합 1061·E2E 200",
+      "id": "review-e",
+      "name": "PR #104 /review 4차 — E1~E5 변경분(0c9384b..eb20fef) 재확인, 핵심+전문3(testing·maintainability·performance)+적대1(Opus), critical 0 · 참고 3(G1~G3) · 자동 수정 0 · 코드 변경 없음, 보고서 docs/reviews/phase-04/pr104-postbuild-review-4.md, CI 979a2a9 quality 초록, [완료 보고] 5910500613",
       "status": "done",
-      "commit": "1026713"
+      "commit": "979a2a9"
     },
     {
-      "id": 20,
-      "name": "세션 L: 04-29 공용 페이지 나눔 ui/pagination·lib/kst-date·lib/paging + SYSTEM.md §7-16. executor Sonnet, 격리 none. TDD RED 확인, 편차 1건(ENG-D11). Opus 검토 수정 2건(8b32c68·bf5f33d). 전체 CI=true: 단위 903·통합 1061, E2E 156 통과·1 실패(04-29 무관 기존 결함, master-edit-team-select-bug.md)·43 미실행. 푸시 bf5f33d",
+      "id": "merge-main-105",
+      "name": "origin/main 85806c7(#105) 머지 커밋 — 충돌 DECISIONS.md 양쪽 항목 모두 살림(빠진 줄 0·새 줄 0), typecheck·lint 0 · 단위 2245/2245 · 설정 통합 84/84",
       "status": "done",
-      "commit": "bf5f33d"
+      "commit": "6aac7ea"
     },
     {
-      "id": 21,
-      "name": "04-06 프로젝트 상태 다섯 값·project.line-edit",
+      "id": "ship",
+      "name": "PR #104 /ship — 사용자 게이트 로그 커밋 4af5cf3(머지 13b2749)·9c2ca08(ff) 반영, 단위 2245 · 통합 2578 · CI=true build 통과, 푸시, PR 본문 재작성, ready 전환(D3), CI 9c2ca08 quality·integration(1)(2)·e2e(1)(2) 초록, Codex 앱 13b2749 지적 0, [완료 보고] 5912863709",
       "status": "done",
-      "commit": "9b8fd63"
-    },
-    {
-      "id": 22,
-      "name": "[세션 N] 04-09 숫자 표시·쉼표 입력(D-95). executor 커밋 15개(b64d01a…57a48ad, SUMMARY f0592ce). Opus 검토 결함 1(‘-’·‘.’ 삭제 시 숫자 삭제) + 독립 DOM 감사 결함(숫자 셀 줄바꿈 S15, 표 안 Ctrl+V 막힘) + NaN 저장 → 수정 cba99c0…8ffc9be, SUMMARY 1e25f4c. main 병합 0d05fb7(충돌 1건, 마이그레이션 변화 없음). 추가 77a9cf8(고정 대기 제거)·d81391f·a09fa5a(375px 공급가액 보조 줄 넘침). CI 수정 92c30cb·6b5da59(04-06 업그레이드 테스트: en_US.utf8 vs C.UTF-8 정렬, pg-pool end() 타이밍). 전체 게이트 CI=true(병합 후, 77a9cf8 이전): 단위 949·통합 1066·E2E 211, 이후 대상 스펙 재실행 통과",
-      "status": "done",
-      "commit": "a09fa5a"
-    },
-    {
-      "id": 23,
-      "name": "[세션 O] 04-27 계급 업무 범위(team|company)·0013_role_work_scope·계급 화면 선택 칸. RED 97bb210·4f2dfe4 → feat 5caf481, SUMMARY 10843c3·72129ea. 독립 DOM 감사 결함 0, Opus 검토 막음 0·중요 0·참고 8. 전체 게이트 CI=true: 단위 949·통합 1083·E2E 215, lint·typecheck·lint:sql 0. 앞서 PR #40 CI(master-edit 팀 칸 자동 선택)는 a8c95fa로 수정, run 349 초록",
-      "status": "done",
-      "commit": "72129ea"
-    },
-    {
-      "id": 24,
-      "name": "[세션 P] 04-20 실행(웨이브 8) — 사람 상태 전환 PROJ-04 일부·권한표 메뉴 projects.status/projects.complete·팀장 자기 팀 범위 actorCoversProjectTeam·FOR UPDATE 잠금+조건부 UPDATE+로그 한 트랜잭션·denyWrite·시드 「없을 때만」 권한·노출(시스템 관리자만 upsert) — PR #38 알려진 문제 「배포마다 노출표 되돌림」 닫힘. executor Opus, 격리 none(worktree base-check fork-ref-unknown 자동 강등). 커밋 RED 70b9897→GREEN 22abaf5(Task1)·RED 00f87bc→GREEN 3823ee3(Task2)·e8fa3f6(Task3 테스트만, 노출 되돌림 회귀는 옛 upsertVisibility로 되돌려 RED 확인)·SUMMARY abe1f74·STATE/ROADMAP 27a5cf9·state.json 1d16193. 편차 9건(SUMMARY: role-ceo 시드 없음 가정하던 통합 테스트 3곳 준비 코드 변경·단언 불변, roles.ts 상수 3개, denyWrite err.constructor.name, evaluateTransition·loadStatusChangeFacts export, 기준 d6b41cf 얕은 clone → deepen 뒤 확인). Opus 독립 검토(/mnt/project-files/phase4-prep/04-20-review-opus.md): 막음 0·중요 1(M1 권한 판정 전에 오래된 from 검사 → 권한 없는 사람이 틀린 from으로 상태 값을 알아냄) → 110c8cd로 수정(잠근 뒤 project.transition 먼저, RED 확인 통합 테스트)·참고 7건은 파일에 남김(미수정, 한도 풀리면 Codex 재확인). 전체 게이트 1차 CI=true: 단위1047·통합1106 통과, E2E permissions-grid.spec.ts:172 단독 실패(04-20 메뉴 2개로 표 폭 2,515px > .wrap 1,240px, 휠 좌표가 .wrap 밖 → 앱 결함 아님) → 86d078b로 좌표를 .wrap 중앙으로 수정(단언 불변, 변이 2개로 실패 확인). 전체 게이트 최종 CI=true(110c8cd): 단위1047·통합1107·E2E215 통과, lint·typecheck 0, lint:sql 0(1차). 진행 17/42",
-      "status": "done",
-      "commit": "1d16193"
-    },
-    {
-      "id": 25,
-      "name": "[세션 Q] 04-21 실행(웨이브 9) 단일 플랜. executor Opus, 격리 none(dispatch-isolation --force-isolation none, main 작업트리 순차), 실행 컨텍스트 executor Read(세션 I·J와 동일). 커밋 916035b·bf0fb2e·c820cc4·b19ff10·00d9c85·e4d6e20·3e3ad22·1865707·8e44b7a(executor) → 검토 수정 548e7af·43fa92c·4e17605·457253b → STATE/state.json 1e28b1d. Opus 독립 검토(/mnt/project-files/phase4-prep/04-21-review-opus.md): B1(포커스 복귀 안 됨) → 43fa92c로 수정, S1(stale-from 회귀 E2E 없음) → 4e17605로 추가. 독립 DOM 감사(/mnt/project-files/phase4-prep/04-21-dom-audit.md) 1280·1024·375 전부 PASS — 「더보기」 펼침·375 미저장 편집 머리글 2건은 04-24/04-15 뒤 재감사 필요. Codex 교차 검토는 한도로 미실행(한도 풀리면 재확인). 전체 게이트 CI=true(457253b): lint·typecheck·lint:sql 0, 단위 1055·통합 1114·E2E 227 통과. 진행 18/42",
-      "status": "done",
-      "commit": "457253b"
-    },
-    {
-      "id": 26,
-      "name": "[세션 R] 04-11 실행(웨이브 10) — 만료된 진행중 프로젝트 자동 정산(상세 조회 시 gate write·목록은 read) + 종료일 경과 안내에 팀장 이름 표시. executor Opus(DB 잠금·권한 판정). 커밋 bf8fc47(feat)·96433ce(RED)·d5d5a59(feat)·23abcd4(RED)·371a94b(feat)·5b32bb6(RED)·f47550a(fix: 가드가 조건부 UPDATE 0행 매치 시 로그 대신 throw)·9115e78·f219640(docs/state)·6f851f1(SUMMARY)·b46cbf4(docs: 검토·DOM 감사·전체 게이트 기록). 독립 DOM 감사 6/6 PASS(/mnt/project-files/phase4-prep/04-11-dom-audit.md). Opus 검토(/mnt/project-files/phase4-prep/04-11-review-opus.md) BLOCKING 0 · SHOULD-FIX 2 · NIT 9 — NIT1(가드 0행 매치 시 로그만 남기고 계속 진행) f47550a로 수정, NIT 2~9는 04-11-SUMMARY에 이월. Codex 재확인은 한도로 미실행(한도 풀리면 재확인). 전체 게이트 CI=true: 단위 1079·통합 1139·E2E 230 통과, lint·typecheck·lint:sql 0. 진행 19/42",
-      "status": "done",
-      "commit": "b46cbf4"
-    },
-    {
-      "id": 27,
-      "name": "[세션 S] 04-22 실행(웨이브 11) — 기간 칸·기간 권리(사용자 결정 「기간만 수정」: 새 권한 projects.period를 팀장·본부 책임자·대표에 시드)·seenStatus 전부 거부·미저장 보관 배선. executor Opus. Opus 검토 BLOCKING 0·SHOULD-FIX 5·NIT 7 — S1·S4·S5 수정, S2·S3·N1~N7 이월(04-22-SUMMARY). 전체 게이트 1차 단위 1건(metaKey) → 625ef89, 2차 CI=true 단위 1120·통합 1166·E2E 236. Codex 재확인 한도 풀리면 필요",
-      "status": "done",
-      "commit": "43e936a"
-    },
-    {
-      "id": 28,
-      "name": "[세션 S] 04-44 실행(웨이브 12) — 총 매출 예상가 칸 · 상태 모달 「기간 적기」/「기간 바꾸기」 연결 · 폰 부제 순서. executor Opus. 커밋 8f8e685·14a10f8·cd41ec0·e3c8bbe·5c7eab9·39ff3d9·7f525ce·6553c39(executor) → 검토 수정 f2cf213·8c7cdf2·f38f484·8c5d3ff·2cd962c·0307584·3561658·4a9a052(review fixes) → 66aefe4(gate record). 독립 DOM 감사 1280·1024·375 전부 PASS(/mnt/project-files/phase4-prep/04-44-dom-audit.md). Opus 검토(/mnt/project-files/phase4-prep/04-44-review-opus.md) BLOCKING 0 · SHOULD-FIX 4(전부 반영) · NIT 9(2 반영, 나머지 이월). 전체 게이트 CI=true: 단위 1130 · 통합 1178 · E2E 246 통과, lint·typecheck·lint:sql 0. Codex 재확인 한도 풀리면 필요. 진행 21/42",
-      "status": "done",
-      "commit": "66aefe4"
-    },
-    {
-      "id": 29,
-      "name": "[세션 T] 04-12 실행(웨이브 13) — 정산 견적 줄 칸 범위(실행가·새 줄만) · 세 단계 저장(잠근 tx 안 풀 호출 없음) · 새 줄 재전송 ON CONFLICT · 순서 · 보관/복원 tx · denyWrite. executor Opus. 커밋 80ce0b7·ba3cafd·63ee5e0·6fb63c0·1cfbb37·e13d0e4·5d490d2·37982ae → 검토 수정 d2c7ccd·7dff0a4·2932c9c·42b48c0·68b092c·aae8520·ce37af5. 독립 DOM 감사(/mnt/project-files/phase4-prep/04-12-dom-audit.md): 진행·완료·넘침 PASS, 정산 칸별 잠김 FAIL — 화면 배선은 04-30 소관(04-30-PLAN:29), 서버는 거부. Opus 검토(04-12-review-opus.md) BLOCKING 0 · SHOULD-FIX 6(S1·S2·S3·S5·S6 수정, S4는 플랜:170대로 기록) · NIT 10(1 반영). 전체 게이트 CI=true(ce37af5): 단위 1161 · 통합 1226 · E2E 246 통과, lint·typecheck·lint:sql 0. 스킬 호출 기록 /mnt/project-files/phase4-prep/04-12-skill-calls.md. Codex 재확인 한도 풀리면 필요. 진행 22/42",
-      "status": "done",
-      "commit": "ce37af5"
-    },
-    {
-      "id": 30,
-      "name": "[세션 U] 04-30 실행(웨이브 14) — 정산 견적 줄 칸별 편집(서버 DTO cellEditability, page.tsx 한 boolean 뭉개기 제거 → 04-12 DOM 감사 FAIL 해소) · 구조 컨트롤 · 정산 새 줄(수량1·단가0 잠금) · 표 위 잠김 줄 · 잠긴 칸 이유 줄 · 힌트 줄 · EMPTY 변형 · 삭제/취소 모달 · 순서 전송 · 열린 편집기 값 Ctrl+S 커밋. executor Opus. 커밋 1fd4a4d·77d82a2·8bfe103·ed68368·5dc15aa(executor) → 6c33240(metaKey 제거) → 검토 반영 569c610·6c995f7·4d9dca0·e2ecc57·ceca8cf·b2cd0d7(SUMMARY) → 9b90265 origin/main 병합(roles.spec.ts 충돌 해소, 두 describe 모두 유지). 독립 DOM 감사(/mnt/project-files/phase4-prep/04-30-dom-audit.md, Opus, CI=true 1280) PASS 23 · FAIL 1(기존 React #418 수화 오류, 04-22부터, 04-30 결함 아님) · INFO 5. Opus 검토(/mnt/project-files/phase4-prep/04-30-review-opus.md) BLOCKING 1 · SHOULD-FIX 6 · NIT 6 — B-1·S-1·S-2·S-3·S-6 반영, S-4·S-5 이월(04-49). 병합 후 lint·tsc·단위 1174·CI=true roles 4/4. 스킬 호출 기록 /mnt/project-files/phase4-prep/04-30-skill-calls.md: 검토 수정자가 커밋 6개 중 5개 앞에 verification 호출 없음. 진행 23/42",
-      "status": "done",
-      "commit": "9b90265"
-    },
-    {
-      "id": 25,
-      "name": "[세션 V] 04-49 실행(웨이브 15) — 04-30 위: 저장 중 잠금 DR-3, 1024 미만 견적 표 보기 전용 DR-36/14/24, 좁은 PC 폭 칸 접기, 복원 줄 전체 폭, 폰 행 시트, React #418 수화 오류 수정(ui/table/use-dirty-storage.ts, useSyncExternalStore), S-5는 Table.onEditingChange로 해소, fx 1280 미만 2줄 가격 쌓기(ef6445f, 커밋 제목은 1024라 오기). 19개 커밋 d8d414e..8f446d3, PR #40. 독립 Opus DOM 감사(CI=true, 1280·1100·1024·1000·375): PASS 52 · FAIL 1(수정) — /mnt/project-files/phase4-prep/04-49-dom-audit.md. 전체 게이트 CI=true(ef6445f): 단위 1176 · 통합 1226 · E2E 279 통과. Opus 검토(/mnt/project-files/phase4-prep/04-49-review-opus.md) B1·S6·N7 → B-1·S-1·S-2·S-4·S-6 반영(75f9bcc·208358e·ceb871d·9d91cc0·a96bf4c), 반영 후 lint/typecheck/build/단위 1178 + CI=true 대상 E2E 4스펙 초록. 스킬 기록 /mnt/project-files/phase4-prep/04-49-skill-calls.md(커밋마다 verification 확인). 이월: S-3(Ctrl+C 복사 미구현, must_have truth 언급)·S-5(1280 단가 칸 truth vs backstop 충돌) 사용자 판단 필요. DOM 감사 INFO: 375에서 짧은 복원 문구로 버튼 두 개가 한 줄에 남음. Codex 09-29까지 한도, Opus로 교차 검토 대체. 진행 24/42",
-      "status": "done",
-      "commit": "8f446d3"
-    },
-    {
-      "id": 25,
-      "name": "[세션 W] 04-26 차수당 견적 줄 상한(웨이브 16) — 설정 키 quote_line.max_per_revision(룰 이름 quote.line-cap), 추가 때만 거부(잠금 뒤 tx 셈, 보관 제외)·복원·재전송 멱등·「줄 추가」 aria-disabled+이유·Ctrl+Enter/Ctrl+D 무동작·넘치는 붙여넣기 전부 거부. executor Opus. 커밋 c21473a(RED)·9fc70f2·1aa0b8f(RED)·c6ac896·fc58f7e·ec539c5(SUMMARY) → 검토 반영 d1bff01·203f61e → eb754df(STATE·ROADMAP). 독립 Opus DOM 감사 PASS 35·FAIL 0·INFO 6. Opus 검토(Codex 대체) BLOCKING 0·SHOULD-FIX 1(반영)·NIT 5 이월. 전체 게이트 CI=true 단위 1178·통합 1235·E2E 288. 진행 25/42",
-      "status": "done",
-      "commit": "eb754df"
-    },
-    {
-      "id": 30,
-      "name": "04-24 차수 화면(새 차수·고객 승인·차수 섹션·이전 차수 초안) + 검토 반영",
-      "status": "done",
-      "commit": "5a0f8d2"
-    },
-    {
-      "id": 26,
-      "name": "04-13 줄 종류(견적·견적 외 비용·조정) 서버 규칙 + 검토 반영",
-      "status": "done",
-      "commit": "18ac07e"
-    },
-    {
-      "id": 27,
-      "name": "[세션 Y] 04-23 조정·견적 외 비용 줄 화면(웨이브 18) — 맨 아래 조정 그룹, 경영관리 「조정 줄 추가」·삭제 확인(ConfirmDialog), PM 권한 밖 줄(무반응·글자 없음·붙여넣기 건너뜀 요약), 「견적 외 비용 줄 추가」, 소분류 설명 힌트, page.tsx 서버 계산 조정 권한. executor Opus. 커밋 3b9f5ba·5566600·4ab5752·68b706b·7dcd737·3f7127c·f4af023·e0ffe3c → 검토 반영 55d34ce(S-1 조정 줄 순서를 조정 묶음 기준으로)·ae350e1(S-2)·fcc771b(S-3 상한 aria-disabled, ui/button reasonId)·1e4e5c3·a419a68. 독립 Sonnet DOM 감사 8/8 PASS. Opus 검토(Codex 대체) BLOCKING 0·SHOULD-FIX 3(반영)·NIT 6(1 반영). 전체 게이트 CI=true 단위 1207·통합 1263·E2E 301. 진행 27/42",
-      "status": "done",
-      "commit": "a419a68"
-    },
-    {
-      "id": 35,
-      "name": "04-14(웨이브 19) 실행 — 견적 새 차수·고객 승인 표시·차수 요약·이전 차수 잠긴 보기 + 검토 반영",
-      "status": "done",
-      "commit": "addcbe6"
-    },
-    {
-      "id": 36,
-      "name": "04-40(웨이브 20) 실행 — 차수 경쟁 재확인·금액 정규화/상한·승인 차수 잠금 + 검토 반영(원화 외 숫자 칸 넘침)",
-      "status": "done",
-      "commit": "19bebf3"
-    },
-    {
-      "id": 38,
-      "name": "04-15(웨이브 22) 실행 — 프로젝트 복사 등록·총 매출 예상가·기간 확인 + 검토 반영(환율 오류 칸, 보관 프로젝트 복사 숨김, USD 환율 E2E)",
-      "status": "done",
-      "commit": "17268d8"
-    },
-    {
-      "id": 39,
-      "name": "04-16 웨이브 23 — 매출 섹션 계약 금액 파생·발행/입금 공개 범위·매출 두 표 상태",
-      "status": "done",
-      "commit": "19271bd"
-    },
-    {
-      "id": 32,
-      "name": "[세션 AE] 04-41 실행(웨이브 24) — 계약 금액 쓰기 경로 제거·0015 drop_project_contract_columns·매출 줄 수정 id/version/project_id/kind 조건·클라이언트 UUID ON CONFLICT·정규화 셀 오류·S-4 봉투 수정. executor 196a91e·9ca2d56·6292105·2dd528b·d097f3f·48d5cec·35b3f60·e1d6170 → 검토 반영 f0461ba(SF-1)·a36716b(SF-2)·bf1169f(N-6 fixes) → 4291979(SUMMARY 게이트 기록)",
-      "status": "done",
-      "commit": "4291979"
-    },
-    {
-      "id": 41,
-      "name": "묶음 ②·③ /review 게이트 — 막는 문제 4건 반영(시드 PM 발행액·매출 날짜·수량 소수·복원 동시수정), 재검토 CLOSED",
-      "status": "done",
-      "commit": "9039452"
-    },
-    {
-      "id": 42,
-      "name": "묶음 ②·③ /qa 게이트 — 헬스 90→93, 복원 충돌·수량 소수 PASS, ISSUE-002 매출 입금일 칸 오류 표시 누락 고침(a7db637 RED/4ee33b3 GREEN, 재확인 verified)",
-      "status": "done",
-      "commit": "545f75d"
-    },
-    {
-      "id": 43,
-      "name": "묶음 ②·③ /design-review 게이트 — 10화면×5폭 CI=true DOM 실측(Sonnet)+Opus 교차 검토+Opus 판정: 디자인 B+·AI 티 A·트렁크 10/10. 고침 5건: H-1+P-7 매출 줄 추가 3차 Button·저장 중 비활성(8d09e0b/61fc8b4), M-1 새 매출 줄 날짜 KST(6c0dd71/0eef9b9), M-4 ConfirmDialog 폰 44px·비활성 색(d5a2af4), P-1 힌트 kbd 토큰(fca90cb), P-6 노출로 빠진 차수 요약 열 제거(05c0d68/3f979a2). 사용자 결정 8·미룸 6은 보고서",
-      "status": "done",
-      "commit": "b718cdb"
-    },
-    {
-      "id": 44,
-      "name": "[세션 AJ] 04-17 실행(웨이브 25) — 브랜치를 origin/main 93590d8(PR #40 머지)에서 재시작, 새 draft PR #85. executor Opus, 격리 none. 커밋 016c8e5(RED)·43e66d1(GREEN)·e330e68(RED)·6d2bc70(GREEN)·7230cc1(SUMMARY)·4f3668f(STATE·ROADMAP)·88b0c34(E2E 단언 수정 — 합계가 표 위 dt/dd로 옮겨져 quote-line-kinds.spec.ts:228 옛 문구 단언 실패, 화면 값은 정상). 독립 DOM 감사(Sonnet, CI=true, 1280·1024·375) 17 PASS·1 FAIL(375 기간 칸 2행 귀속 라벨 누락, Table.tsx:418-422 p2Values가 secondaryLine 미포함 — 04-18 몫, /mnt/project-files/phase4-prep/04-17-dom-audit.md). Opus 코드 검토 BLOCKER 0·SHOULD-FIX 1(repositories/projects.ts:128 profitKrw·:136 netProfitKrw 이름·의미가 04-18-PLAN.md:167,173-177 가정과 어긋남 — 04-18 시작 때 정리)·NIT 4(04-48 몫: year=0000 PG 날짜 오류 화면, 올해 0건인데 빈 목록 문구, filter-bar.tsx 주석·`?? \"\"` 폴백, quote-line-kinds:95 낡은 주석, /mnt/project-files/phase4-prep/04-17-review-opus.md). 전체 게이트 CI=true: lint·typecheck·lint:sql 0, 단위 1320·통합 1499·E2E 351 통과. Codex 한도로 Opus 대체(한도 풀리면 재확인). 스킬 기록 /mnt/project-files/phase4-prep/04-17-skill-calls.md. 진행 34/42",
-      "status": "done",
-      "commit": "88b0c34"
-    },
-    {
-      "id": 45,
-      "name": "[세션 AJ~AK] 04-19(웨이브 25) 실행 — 견적 표 30줄 페이지 나눔·쪽 경계 키·Tab·Ctrl+A/C·힌트 줄. executor 커밋 dfa6508(RED)→9d95a95(GREEN, Task1), 4a90b0d(RED)→e1e503c(GREEN, Task2), cc40569(04-26 300줄 E2E를 30줄 쪽에 맞춤), SUMMARY 80eb51a, STATE/ROADMAP df77337, main 머지 343f451(#82 KRW bigint). 검토 반영: B-1 Enter 편집 확정 뒤 아래로·쪽 넘김(1d7f605→a6e81c9), S-1 쪽 번호 보정(313413f→16aadf5), S-2 한글 조합 중 Tab(663c23e→0189b3a), N-1 auto-repeat Ctrl+A(f029e93→30fe9f0), N-4 92ba37c, N-5 f40aae5, SUMMARY 갱신 eca21eb, main 재머지 e094b60(#78·#83·사용자 CLAUDE.md a9a90e4). 독립 DOM 감사(Sonnet, CI=true 1280·1024·375) PASS 22·FAIL 0·INFO 3(/mnt/project-files/phase4-prep/04-19-dom-audit.md). Opus 검토 BLOCKING 1·SHOULD-FIX 2·NIT 5(/mnt/project-files/phase4-prep/04-19-review-opus.md) — B-1·S-1·S-2·N-1·N-4·N-5 반영, N-2(lib/shortcut.ts)·N-3(quote-table.tsx)는 04-47 참고로 이월. 전체 게이트 CI=true 단위 1351·통합 1504·E2E 364 통과, lint·typecheck·lint:sql 0; 두 번째 main 머지 뒤 단위 1351·CI=true 표 E2E 324 재통과. 스킬 기록 /mnt/project-files/phase4-prep/04-19-skill-calls.md. PR #85 CI는 e094b60에서 실행 중(이 인계 시점). 세션 중: 컨테이너 재시작으로 실행자가 Task2 GREEN 도중 끊김 → 작업 트리 보존, 세션 경계 훅(gsd-executor 1회) 때문에 general-purpose Opus 이어가기 에이전트로 재개; state.begin-phase가 current_plan을 1로 되돌려 원복 후 생략; 격리 none(origin/HEAD 미해결로 base-check 강등); 로컬 deploy-sh.test.ts가 전역 ssh 커밋 서명 서버 503으로 1회 실패(환경 문제, 단독 재실행 23/23). 진행 35/42.",
-      "status": "done",
-      "commit": "e094b60"
-    },
-    {
-      "id": 46,
-      "name": "[세션 AL · 다른 계정] 04-47(웨이브 26) 실행 — 붙여넣기 계산 열·통화·끝 줄바꿈·쪽 넘김, 새 줄 고정, 합계 행 한 줄(DR-16), 오류가 남은 채 1차(DR-5), 거부 뒤 첫 오류 쪽과 `오류 N`. executor Opus 061b64b(RED)·c0ddce4·1d13e42(RED)·13ce68c·704ae05·222fdfa → main #86 머지 97f38f5 → 검토 반영 d462412·f488398·b0d835d·67dae50·11bdec6(RED)·133be10·c663fe0·ea6c62d·2fccb3b → SUMMARY 기록 52b9f33. RED 전부 직접 재현. 독립 Opus DOM 감사 1280·1024·375 FAIL 0. Opus 검토(Codex 대체) BLOCKING 0·SHOULD-FIX 4(전부 반영)·NIT 6(1 반영). 전체 게이트 CI=true 단위 1387·통합 1512·E2E 384, lint·typecheck·lint:sql 0. 푸시 52b9f33",
-      "status": "done",
-      "commit": "52b9f33"
-    },
-    {
-      "id": 47,
-      "name": "[세션 AM] PR #73(Phase 04.2) main 머지 379b837 · PR #92(#87 인계 문서) main 머지 7a02037 확인, main을 머지 커밋으로 브랜치에 반영(be3fecd #73 · 6fdc2c1 #92). PR #85 CI 빨간불 수정: F3(test/e2e/projects-list.spec.ts) 1280에서 1px 실패 — CI Chrome 153(Chrome for Testing)이 Pretendard 날짜 텍스트로 date input 폭을 다르게 잡음 → f66ef6e가 .periodInput에 min-width: calc(16.5ch + 2 * (--cell-pad-x + --line-w)) 추가(기존 토큰만). 800px에서 팀 칸이 넓으면(CI 전체 스위트의 긴 팀 이름) 기간 그룹이 2행으로 내려가고 오류 줄 row-gap이 기간 행을 밀어내는 것은 FINDING-013(네이티브 date input)부터의 기존 동작 — 사용자 결정(카드, 2026-09-27 14:52 KST) 「테스트 기준 조정」 → 5e45615로 F3 계약 변경(기간 행을 뺀 나머지 행은 고정·오류 줄 위, 기간 행만 첫 행이 아닐 때 측정된 row-gap만큼 내려갈 수 있음, 1280/1024 엄격 유지). CI on 6fdc2c1: quality·integration-e2e green. /review(Opus, 3a762bd..6fdc2c1) PASS·막힘 0 — P2 1건(ui/table/Table.module.css:241-250 폰 행 전체 탭 영역, iPhone Safari 수동 확인 필요)·P3 3건(filter-bar.tsx 잘못된 `?from=` URL 값·반쪽 입력 날짜가 필터를 지움, SYSTEM.md §6-1·DECISIONS가 f66ef6e의 16.5ch min-width와 어긋남, 폰 행 포커스 링이 이름 글자만 감쌈). /qa(Sonnet, CI=true 프로덕션 빌드): 헬스 100, 변경 스펙 E2E 133/133 + 단위 155 + 통합 121 통과, 관찰(playwright webServer가 \"next start\" does not work with \"output: standalone\" 출력 — CI webServer를 node .next/standalone/server.js로 바꿔야 할지 확인 필요). hook이 게이트 줄 2개를 로컬 .claude/gates/phase-04.log에만 기록(커밋 금지 파일, 사용자가 GitHub 웹으로 추가해야 함): review 2026-09-27T06:03Z·qa 2026-09-27T06:03Z(session=72233dfb-b9f7-56bd-8238-ba2145765ae3). PR #85는 묶음 ④ 끝날 때까지 머지 보류(PR 본문·C-26, 위험 없는 것만 머지)",
-      "status": "done",
-      "commit": "6fdc2c1"
-    },
-    {
-      "id": 48,
-      "name": "[세션 AP] 웨이브 29 = 04-51·04-42 실행(Opus 실행자, 격리 none). 04-51: 결정 ② (a) 설정 검증(STATE 2026-09-24 답) — 42677ab·be5275e·8e962dc, Opus 검토 B1(값 그대로 재저장도 거부)·S1(설정 저장과 채번 비원자)·S2 반영 3fe33fb·867fce2·6c7ce5c·b501b53. 문구 명사형 변환 `순번 시작값이 이미 매긴 번호(${max})와 겹침 · ${max + 1} 이상 입력`. 04-42: 리저브 대장 화면 03af6d9·af17080·cc161c5·886e48a, Opus 검토(B1 1·S 9·N 11)+독립 DOM 감사(Opus, CI=true, PASS 38·FAIL 3) 반영 e78f611~fbe22f2(11커밋, ui/table groupAside prop 추가 — 플랜 truth 그룹 머리글 잔액). 오케스트레이터 신선 확인: lint·typecheck·lint:sql 0, 단위 1706, CI=true 통합 1933. 수정자 보고: CI=true build 0, reserves.spec 21, group 사용 화면 E2E 110. 전체 E2E는 PR CI(fbe22f2) 몫.",
-      "status": "done",
-      "commit": "fbe22f2"
-    },
-    {
-      "id": 62,
-      "name": "04-31 Task 1: 실제 엑셀 캡처 원문 fixture + 최종 표 재생 E2E (a)(a2)(b)(c)(d)",
-      "status": "done",
-      "commit": "c2a15b4·d7a6f03·4c61201"
-    },
-    {
-      "id": 63,
-      "name": "04-31 Task 2 앞부분: 페이즈 최종 독립 DOM 감사(Opus, CI=true 1280·1024·1000·375) PASS 51·FAIL 2·INFO 8 → FAIL 2건 수정",
-      "status": "in_progress",
-      "commit": "da5bc9a·002d58c·5a34bfb·2ae788e",
-      "progress": "DOM 감사·수정 끝. /design-review(§11 대조 1회) 남음 → 사람 확인(A)(B)(C)(D)"
-    },
-    {
-      "id": 67,
-      "name": "04-31 Task 2 /design-review 1회(페이즈 화면 전체 SYSTEM §11) — A−·PASS, 보고서 docs/reviews/phase-04/04-31-design-review.md; DR-P4-01 코드표 현재 표 링크 ebed3c2(RED)→8353610, 독립 재측정 PASS 6/6; DR-P4-02 폰 정렬 머리글 터치(ui/table) ui/ 동결로 이월",
-      "status": "done",
-      "commit": "40fea8b"
-    },
-    {
-      "id": 64,
-      "name": "04-31 continuation(다음 단위, Sonnet 실행자·gsd-executor 1회): (A)(B) 캡처 원문(PR #85 댓글 5861946973·5861989538)을 바이트 그대로 test/fixtures/excel-clipboard.ts 상수로 추가 → parse-tsv 단언(끝 \\r\\n에 빈 줄 없음·칸 안 LF 한 칸 두 줄·따옴표만 있는 칸 그대로·금액 칸 앞뒤 공백 ` 10,000 `·(B) 10번째 줄 비고 빈 칸) + 최종 표 재생 E2E((A) 6열 앱 형식 아님 → 견적가 자리 오류 칸 ENG-D5 확인, (B) 45줄 저장 뒤 다시 열어도 값 같음) + fixture 머리 주석 「정의 1건」 정정. (C)(D)는 스테이징 후 사람 확인",
-      "status": "done",
-      "commit": "49774ef·d6a04f8·907ec5e",
-      "progress": "세션 AS: 캡처 (A)(B) 상수(바이트 === 확인)·parse-tsv 단언(바로 통과=회귀 고정)·재생 E2E (e)(f)·주석 정정. 단위 32/32, CI=true excel-paste-final 7/7, lint·typecheck 0"
-    },
-    {
-      "id": 65,
-      "name": "04-31 Task 3 — reserves.spec.ts:282 간섭 = lib/format-number.ts 쉼표 뒤 Backspace 규칙이 캐럿 무시(끝 캐럿 통째 덮어쓰기 400000→40000 저장, 앱 버그) 6ea2c77 · 플레이크 2건 0fb7e7b(Ctrl+Enter 연타 경합)·fa91922(48화면 순회 30초 예산 → 90초) · 마이그레이션 journal ok·rollback-floor 0012·0015만(0016 없음 = 결정 ① (b) 일치)·가드 케이스 이미 있음 · CI=true 전체 E2E 새 DB 3회 499/499×3(11.1·10.7·11.1분)",
-      "status": "done",
-      "commit": "fa91922"
-    },
-    {
-      "id": 66,
-      "name": "04-31 SUMMARY·STATE·ROADMAP(플랜 완료, Phase 4 42/42) — 편차 기록, DR-P4-02 WINDOWS.md open",
-      "status": "done",
-      "commit": "914686f"
-    },
-    {
-      "id": 69,
-      "name": "04-51 결정 ② (b) 구현 — 별도 단위, risk(채번 카운터 잠금) → Opus 실행자 + Opus 독립 검토 1명. domain/document-numbering/index.ts SeqStartOverlapError 판정 + 단위·통합 테스트. TDD 경계: 발급 0건에 낮춤 통과 · 발급 ≥1건에 낮춤 거부 · 같은 값 통과 · 올림 통과. 옛 거부 문구의 「max+1 이상 입력」 제거 — 완료: quick 260928-7fp, 9e286b2(RED)·3fc1bf6(GREEN)·1db3896(검토 주석)·911d66b(문서)",
-      "status": "done",
-      "commit": "911d66b"
-    },
-    {
-      "id": 70,
-      "name": "묶음 ④ Post-build /review·/qa·/cso(세션 08561e2c·445b5aa2) + /ship(세션 92990d91, PR ready, CI 5개 초록)",
-      "status": "done",
-      "commit": "a46b8c0c"
-    },
-    {
-      "id": 72,
-      "name": "/ship 사전 검토 should-1: 사전 견적 칸 쉼표 앞 Delete(ISSUE-003 누락분)",
-      "status": "done",
-      "commit": "08c2c71c"
+      "commit": "9c2ca08"
     }
   ],
   "remaining_tasks": [
     {
-      "id": 73,
-      "name": "Codex P1(리저브 대장 동명 클라이언트 그룹 합쳐짐·잔액 오표시, reserves-table.tsx:594) · P2(VERSION_CONFLICT denyWrite 우회, domain/reserves/index.ts:372) 수정 — 머지 전 필수",
+      "id": "merge-104",
+      "name": "PR #104 머지 — 사용자(위험 경로 .claude/gates)",
       "status": "not_started"
     },
     {
-      "id": 60,
-      "name": "새 세션: PR #85 CI(fbe22f2) 결과 확인 — 빨강이면 systematic-debugging으로 원인 수정·푸시 먼저. 그다음 웨이브 30 = 04-31(`/gsd-execute-phase 4 --wave 30`, autonomous:false, 묶음 ④ 끝) → 묶음 ④ Post-build(/review·/qa·/design-review·/cso — /cso 항목: 리저브·견적 초안 금액이 로그아웃 뒤 localStorage에 남음, 리저브 clientName은 reserve.amount만 검사). 머지는 묶음 ④ 끝까지 하지 않음",
-      "status": "in_progress",
-      "progress": "세션 AQ: CI 초록 확인·04-31 Task 1·DOM 감사 수정 끝, Task 2 체크포인트에서 멈춤"
-    },
-    {
-      "id": 55,
-      "name": "[코디네이터 지시 14:10] 묶음 ④ 머지 요청 전 /qa와 /design-review(CI=true DOM 감사)를 실제로 실행(04-19의 Table.tsx +602줄 등 포함)하고 결과를 SUMMARY 또는 게이트 기록에 남긴다. 게이트 기록(.claude/gates) 줄은 직접 쓰지 말고 사용자에게 줄을 보여 준다(사용자 지시 2026-09-26). wip 커밋은 그대로, 히스토리 재작성 금지",
-      "status": "not_started"
-    },
-    {
-      "id": 56,
-      "name": "04-47 이월 NIT 5(04-47-SUMMARY 「검토 반영」): 계산 열 오류 칸(엑셀 6열)은 줄 삭제로만 풀림 — DR-5가 고칠 수 없는 칸으로 보낼 수 있음(04-31 확인) · `저장됨 N줄` 글자 · 뒤 쪽 고정 새 줄에서 시작한 붙여넣기의 `N쪽까지` 누락 · 다시 불러오기가 pasteNotices를 안 지울 수 있음(확인 필요) · 테스트 공백(매출 칸 오류만 남은 1차, 다음 붙여넣기 조각 교체, B-24 조정 줄 추가) · 1024–1279 숨은 차익 칸 오류는 지울 수 없음(기존). 1024 미만 서버 거부 숨은 열 포커스는 E2E 없음",
-      "status": "not_started"
-    },
-    {
-      "id": 50,
-      "name": "**계정 인계**: 이 계정은 주간 한도가 없어 Phase 4를 04-19까지만 하고 종료. 다음 계정이 PR #85(브랜치 claude/gsd-progress-e1nzgu)를 이어받는다 — 저장소 CLAUDE.md 새 절 「다른 계정 작업과 코디네이터 지시」(작업 시작·재개·푸시 전마다 PR #85 최신 [코디네이터 지시] 댓글 확인·반영, 끝나면 [완료 보고] 댓글, main 새 머지는 머지 커밋으로만, 머지는 사용자 「머지해」 때만) 참고.",
-      "status": "in_progress"
-    },
-    {
-      "id": 9,
-      "name": "04-18(웨이브 25, 04-19 뒤 또는 병행): 폰 375 기간 칸 2행 귀속 라벨(ui/table/Table.tsx:418-422 p2Values에 column.secondaryLine 포함, Table.module.css:205-213) + profitKrw/netProfitKrw 이름·의미 정리(04-17 SHOULD-FIX 1)",
-      "status": "not_started"
-    },
-    {
-      "id": 10,
-      "name": "04-48(웨이브 26): year=0000 PG 날짜 오류 화면(연도 범위 검사), 올해 0건이면 다른 해에 있어도 「등록된 프로젝트가 없습니다」로 나오는 빈 목록 갈래, filter-bar.tsx:10-12 낡은 주석·`?? \"\"` 폴백, test/.../quote-line-kinds:95 낡은 주석(04-17 NIT 4건)",
-      "status": "not_started"
-    },
-    {
-      "id": 2,
-      "name": "묶음 끝(04-23·04-41·04-31) Post-build + 머지, Phase 4 종료 검증",
-      "status": "not_started"
-    },
-    {
-      "id": 3,
-      "name": "04-49 이월: S-3(Ctrl+C 복사 미구현, must_have truth 하나가 언급) — /gsd-verify-work 때 truth를 낮추거나 플랜을 추가할지 사용자 결정",
-      "status": "not_started"
-    },
-    {
-      "id": 4,
-      "name": "04-49 이월: S-5(1280 단가 칸 truth vs backstop 스펙 충돌 확인)",
-      "status": "not_started"
-    },
-    {
-      "id": 5,
-      "name": "04-49 후속: 매출 표 입력 열린 채 폭 1024 미만으로 떨어질 때 입력 유실 가능(매출 표가 편집 중 상태 미보고), 계약 입력 칸은 1024 미만에서도 편집 가능(묶음 ③ 몫)",
-      "status": "not_started"
-    },
-    {
-      "id": 6,
-      "name": "04-46 E2E quote-table.spec.ts (h) 일괄 저장 건수 +1 단언 복원 — 04-12·04-30이 둘 다 끝났는데 이 세션(04-49) 기록엔 복원 여부 언급이 없음, 묶음 ② /review 때 실제로 됐는지 확인 필요",
-      "status": "not_started"
-    },
-    {
-      "id": 7,
-      "name": "04-40 이월: NIT 7건(04-40-SUMMARY 검토 반영 절), 새 셀 오류 문구 4개 UI-SPEC 반영, profit_krw 넘침(DR-9 범위 밖 — 6254858로 차익 칸은 셀 오류 처리됨, 남은 경로는 SUMMARY 참고)",
-      "status": "not_started"
-    },
-    {
-      "id": 8,
-      "name": "04-24 사람 확인: S4 승인 다이얼로그 부제 표시 번호(플랜 `26001-2차` vs UI-SPEC S3 `26001 · 상세 견적 2차 · 고객 승인 …`, 현재 UI-SPEC 쪽 구현) 확정 + UI-SPEC에 새 문구 `처리하지 못함 · 닫고 다시 시도`(비서버 실패)와 04-40 새 셀 오류 문구 4개 반영",
-      "status": "not_started"
-    },
-    {
-      "id": 9,
-      "name": "04-18 몫 2건 — 폰 375 기간 칸 2행 귀속 라벨(ui/table/Table.tsx p2Values에 column.secondaryLine 포함, Table.module.css), profitKrw/netProfitKrw 이름·의미 정리(repositories/projects.ts, 04-17 SHOULD-FIX 1)",
-      "status": "not_started"
-    },
-    {
-      "id": 10,
-      "name": "04-48 몫 NIT 4건 — year=0000 PG 날짜 오류 화면(연도 범위 검사), 올해 0건이면 다른 해에 있어도 「등록된 프로젝트가 없습니다」 빈 목록 갈래, filter-bar.tsx:10-12 낡은 주석·`?? \"\"` 폴백, test/.../quote-line-kinds:95 낡은 주석",
-      "status": "not_started"
-    },
-    {
-      "id": 52,
-      "name": "04-19 이월: N-2(lib/shortcut.ts)·N-3(quote-table.tsx) — 검토의 04-47 참고. dev 서버(비 CI) E2E 3건 간헐 실패(Alt+↓ 따라가기·Ctrl+A/C 45줄·cap2 — 페이지 상호작용 준비 전 키 입력 유실, CI=true에선 통과) — 준비 대기 추가 후속. — [세션 AL] 04-47이 「1쪽 그룹 B 새 줄이 2쪽에 떨어져 openCell이 안 열리는 경로」를 해소(B-24 E2E). N-2·N-3은 그대로",
-      "status": "not_started"
-    },
-    {
-      "id": 58,
-      "name": "[세션 AM] /review(3a762bd..6fdc2c1) 이월 P3 3건: ① app/(app)/projects/filter-bar.tsx:210-235 네이티브 date input — 잘못된 `?from=` URL 값이 빈 칸 옆에 서버 오류로 나타나고 focusout이 \"\"로 재제출, 반쯤 입력한 날짜가 \"\"로 읽혀 기존 필터가 지워질 수 있음 ② docs/design/SYSTEM.md §6-1·DECISIONS가 날짜 필터 폭을 intrinsic이라 적었지만 f66ef6e가 .periodInput에 16.5ch min-width를 추가함(문서 드리프트) ③ 폰 행 포커스 링이 이름 글자에만 둘러쳐짐",
-      "status": "not_started"
-    },
-    {
-      "id": 59,
-      "name": "[세션 AM] /qa 관찰: playwright webServer가 `\"next start\" does not work with \"output: standalone\"`을 출력 — CI webServer를 `node .next/standalone/server.js`로 바꿔야 할지 확인 필요",
-      "status": "not_started"
-    },
-    {
-      "id": 61,
-      "name": "04-42 이월: 폰 375 열·접힌 줄 순서가 S9 나열(날짜·금액·구분 / 프로젝트·잔액·메모)과 다름 — ui/table에 폰 순서 prop 없음, 선언 순서 따름(편차 기록). 리뷰 NIT 11건은 04-42-SUMMARY Review follow-up",
-      "status": "not_started"
-    },
-    {
-      "id": 68,
-      "name": "DR-P4-02 이월: 375 목록 표 머리글 정렬 링크 20×19·51×19(<44) — ui/table/Table.module.css:23-29 폰 구간 .sortLink min-height/min-width var(--touch-min). 스킨 리프레시(ui/ 동결) 끝난 뒤 별도 처리",
-      "status": "deferred"
-    },
-    {
-      "id": 71,
-      "name": "docs/design/DECISIONS.md ~1000행 결정 ② 기록을 (b)로 갱신(옛 (a)·「이상 입력」 문구·없는 assertSeqStartAvailable 언급) — design-gate 경유",
-      "status": "not_started"
-    },
-    {
-      "id": "q-005b",
-      "name": "견적 거래처 칸 동명 라벨 — listProjectFormReferences에 vendor.value 게이트 추가 후 끝 4자리 병기(권한 경로라 Opus 실행자+Opus 검토, 위험 경로 별도 PR 검토)",
-      "status": "not_started"
-    },
-    {
-      "id": "codex-3",
-      "name": "리저브 거부된 보관 요청이 archived에 남아 무한 실패(reserves-table.tsx:531-541) — PR #85",
-      "status": "not_started"
-    },
-    {
-      "id": "codex-4",
-      "name": "리저브 300줄 상한 클라이언트 가드·rows._errors 안내(actions.ts:32) — PR #85",
-      "status": "not_started"
-    },
-    {
-      "id": "codex-5",
-      "name": "findProjectClientIds 보관 프로젝트 거부(새/바뀐 projectId만) — PR #85, risk",
-      "status": "not_started"
-    },
-    {
-      "id": "codex-1",
-      "name": "후속 PR: 리저브 클립보드 형식 분리(APP_CLIPBOARD_FORMAT 표 구분자)",
-      "status": "not_started"
-    },
-    {
-      "id": "codex-2",
-      "name": "후속 PR: 리저브 보관/복원 때 version+1",
-      "status": "not_started"
-    },
-    {
-      "id": "same-name-header",
-      "name": "후속: 읽기 전용 사용자 동명 머리글 구분(서버 라벨)",
+      "id": "f2-quick",
+      "name": "Phase 4 머지 뒤 별도 /gsd-quick PR: ISSUE-001 · DR-104-01~05 · G1~G3 (ISSUE-002 그대로)",
       "status": "not_started"
     }
   ],
   "blockers": [
     {
-      "description": "04-31 Task 2 checkpoint:human-verify(gate=blocking) — 엑셀 캡처 원문 2종(6열·45줄)과 PC 전용 확인(C)(D)는 사람만 할 수 있음. auto-mode 꺼짐, 기록에 답 없음",
-      "type": "human_action",
-      "workaround": "그 전까지 /design-review(Task 2 앞부분)만 진행 가능. Task 3은 Task 2 뒤 순서라 먼저 돌리지 않음(바꾸려면 사용자 승인)"
-    },
-    {
-      "description": "04-25 열린 항목: UX-04는 형제 플랜이 아직 열려 있어 완료 표시 안 함 — 마지막 형제 플랜에서 완료 처리",
+      "description": "04-VERIFICATION stale — phase.complete의 ROADMAP 변경이 covered_digest를 어긋나게 함",
       "type": "technical",
-      "workaround": "형제 플랜(04-28 등) 완료 시 함께 마감"
+      "workaround": "페이즈 완료는 기록됨. 재검증 여부는 사용자 판단, digest 수동 수정 금지"
     },
     {
-      "description": "04-25 열린 항목: 「오류가 힌트를 대체」 E2E는 오류·힌트가 동시에 있는 셀이 필요 — 04-23/04-07이 그 셀을 만든 뒤에나 작성 가능",
+      "description": "스킬 관문 훅이 STATE current_phase 2로 판정 — Phase 4 작업의 gsd-executor 등 페이즈 게이트 에이전트를 막을 수 있음",
       "type": "technical",
-      "workaround": "04-23/04-07 실행 세션에서 추가"
-    },
-    {
-      "description": "04-25 열린 항목: 하위분류 설명은 04-25가 값만 전달했고, 화면에 나타나려면 04-23이 quote-table.tsx를 배선해야 함",
-      "type": "technical",
-      "workaround": "04-23 실행 세션에서 배선"
-    },
-    {
-      "description": "04-25 감사가 로컬 erp_test DB에 zz* evidence_type 행 + 보관된 임시 역할 1개를 남김(로컬 전용)",
-      "type": "technical",
-      "workaround": "필요 시 별도로 정리, 배포 DB에는 없음"
-    },
-    {
-      "description": "[세션 N] 입금·발행액 9,999,999,999 이상 저장 시 일반 오류 알림(서버 로그 없음, 원인 미조사 — int 열 한계 추정)",
-      "type": "technical",
-      "workaround": "원인 미조사, 후속 세션에서 조사 필요"
-    },
-    {
-      "description": "[세션 N] 320px 프로젝트 상세 화면 가로 넘침(scrollWidth 362)",
-      "type": "technical",
-      "workaround": "미수정, 후속 세션에서 조사 필요"
-    },
-    {
-      "description": "[세션 N] 04-09-SUMMARY 「남긴 후속」 6건: 통화 전환 시 KRW 칸 소수 유지, 거절된 붙여넣기 뒤 캐럿 위치, CommaTextField numeric prop 누수, 앞자리 0 서식, Enter 확정 뒤 포커스가 body로 이동, RED 선행 없는 커밋 3개. Table.module.css:48 낡은 주석",
-      "type": "technical",
-      "workaround": "범위 밖, 후속 플랜에서 처리"
-    },
-    {
-      "description": "[세션 O] 04-27 참고 8건(/mnt/project-files/phase4-prep/04-27-review-opus.md): 값 변경·로그가 한 트랜잭션 아님(renameRole과 같음), 보관 계급도 서버 직접 호출로 변경 가능, 보관 행 비활성 분기는 화면에 보관 계급이 안 나와 실행 안 됨, 0013 업그레이드 자동 테스트 없음 등",
-      "type": "technical",
-      "workaround": "막는 문제 아님, 후속 플랜에서 판단"
-    },
-    {
-      "description": "[세션 Q] PR #40이 main 7e70f31과 병합 충돌(HANDOFF.json·ROADMAP.md·docs/design/DECISIONS.md) — CI가 PR에서 돌지 않음",
-      "type": "process",
-      "workaround": "다음 플랜(04-11) 전에 코디네이터가 별도 세션에서 main 병합을 끝낸다"
-    },
-    {
-      "description": "PR #85 머지 보류 — Codex P1·P2 미수정",
-      "type": "technical",
-      "workaround": "다음 세션에서 수정 후 사용자 직접 머지"
+      "workaround": "우회하지 않고 사용자에게 먼저 묻는다. 세션 21099081은 사용자 승인(「1번」)으로 /gsd-verify-work 4를 문맥 설정용으로 호출하고 훅이 적은 phase-04.log 줄을 되돌림"
     }
   ],
   "async_jobs": [],
   "human_actions_pending": [
     {
-      "action": "묶음 ④ 머지·스테이징 배포 직후 (C) 프로젝트 간 Ctrl+A→C→V 왕복과 표→엑셀 붙여넣기 열 어긋남 없음 (D) MS 한국어 입력기 조합 중 Ctrl+Enter 연타·길게 누름 1건만 생성·조합 중 Esc가 입력을 버리지 않음·조합 중 Tab 확인 — 어긋나면 바로 수정 PR",
-      "context": "사용자 예외 승인 2026-09-28(PR #85 댓글 5862009470). (A)(B)는 받음",
+      "action": "G-04-64 모서리 4건 판단(04-52-SUMMARY)",
+      "context": "이월 — 막지 않음",
       "blocking": false
     },
     {
-      "action": "/cso 전체 검사(Docker 있는 PC)",
-      "context": "운영 배포 전",
+      "action": "T-04-31 구분자 허용 문자 결정 또는 수락",
+      "context": "해결 — [지시] 5894471814, quick 260929-n41(c1180ca6). secure-phase 4 재실행으로 닫힘 확인 필요",
       "blocking": false
     },
     {
-      "action": "/cso 미평가 범위(의존성·CI/CD·인프라·git 이력) 재감사",
-      "context": "PR #38 /cso는 diff 정적 PARTIAL(run 1790189154262-c090f651571dd2c3). Docker 전체 검사와 함께",
+      "action": "UI-REVIEW 사용자 판단 3건: ① 등록 폼 제출 오류 문구 정본(코드 `등록 실패 · {칸} {n}칸` vs UI-SPEC:385 `등록하지 못했습니다 · 클라이언트 1칸`) ② 견적 표 행 번호가 숫자 규칙(tabular·우측·nowrap) 대상인지 ③ S19 「오류로 이동」을 폼(등록 폼 빈 제출 → 첫 오류 칸 포커스)에도 적용할지",
+      "context": "해결 — PR #104 [지시] 5894569505, quick 260929-opt(0aaa91a7)",
       "blocking": false
     },
     {
-      "action": "배포 창 판단(T-04-372/T-04-86): migrate가 트래픽 전환 전에 돌아 옛 코드가 새 스키마(0012·0015) 위에서 몇 분 동작",
-      "context": "묶음 ② /ship 전, ③ /ship 전",
+      "action": "배포 전 스테이징·프로덕션 설정 「프로젝트 번호 구분자」 값이 빈 값 또는 - _ . / 인지 확인",
+      "context": "T-04-31 스키마가 읽기에도 적용 — 허용 밖 값이 저장돼 있으면 번호 서식 읽기 실패",
       "blocking": false
     },
     {
-      "action": "스테이징 DB 0010 계약 컬럼이 데모 값뿐인지 확인",
-      "context": "04-41 가드 전제, 묶음 ③ 전",
+      "action": "Phase 4 전환 방법 결정: (A) gsd-core 1.15.0 업데이트 · (B) 판정기 부분 이식 · (C) test 53 증거 대조 pass 재기록",
+      "context": "PR #104 질문(세션 0a13ae7c) — 답 오기 전 전환 보류, 재검증은 먼저 진행",
+      "blocking": true
+    },
+    {
+      "action": "게이트 기록: 훅이 이 /review를 .claude/gates/phase-02.log(미추적)에 적음 — 올바른 줄은 phase-04.log에 `review 2026-09-30T02:42Z session=ab976a3b-12ba-53c4-8ea6-b93b9394b1f7`",
+      "context": "해결 — 사용자가 phase-04.log에 직접 넣음(4af5cf3 6줄 · 9c2ca08 ship 줄)",
       "blocking": false
     },
     {
-      "action": "QA 남은 16건 세부 목록 유실 — 「키보드 포커스 F1」 포함 재진술 요청",
-      "context": "세션 B 컨테이너에만 있었음",
+      "action": "[사용자 결정 요청] E — /review 3차 참고 E1~E5(주석 1줄 · 일괄 읽기 엄격 테스트 · SYSTEM.md §7-1·§7-8 역참조 · E2E PC 「일괄 저장」 32 가드 · 내보내기=실효값 주석) 처리 방법",
+      "context": "해결 — E(1) [지시] 5909292999, quick 260930-ee9",
       "blocking": false
     },
     {
-      "action": "플래너 판단 확인: ②/③ 경계 04-23 뒤(04-26 뒤도 가능), ENG-D12 04-50 이동(실행 완료), QA 해석(날짜 순서→04-15, 폰 편집→04-49)",
-      "context": "기록 밖 판단",
+      "action": "게이트 기록: phase-04.log에 `review 2026-09-30T07:07Z session=486526e8-538d-537a-b95c-16713e3da5c0`",
+      "context": "해결 — 사용자가 phase-04.log에 직접 넣음(4af5cf3 6줄 · 9c2ca08 ship 줄)",
       "blocking": false
     },
     {
-      "action": "04-43-SUMMARY 「남은 낡은 문구」 5자리(ROADMAP Goal·기준 1·기준 5·트레일링 문단, REQUIREMENTS PROJ-06의 완료(정산))를 /gsd-phase 편집으로 고칠지 결정",
-      "context": "사용자 D16은 세 곳만 승인 — 나머지는 수동 편집 금지라 남겨 둠",
+      "action": "결정 F — /qa ISSUE-001·002 · /design-review DR-104-01~05 처리 방법",
+      "context": "해결 — F(2) 머지 뒤 별도 /gsd-quick PR(ISSUE-002 그대로) [지시] 5909292999",
       "blocking": false
     },
     {
-      "action": "Codex 재확인: 04-27 검토(Opus로 대체)",
-      "context": "Codex 한도 09-29 이후",
+      "action": "phase-04.log에 qa 07:22Z · design-review 07:34Z (session 57f75736) 두 줄 추가",
+      "context": "훅이 phase-02.log에 오기",
       "blocking": false
     },
     {
-      "action": "Codex 재확인: 04-11 검토(Opus로 대체)",
-      "context": "Codex 한도 09-29 이후",
+      "action": "게이트 기록: phase-04.log에 `cso 2026-09-30T08:02Z session=efcaa672-fc1d-5f87-90e1-a41d52429074`",
+      "context": "해결 — 사용자가 phase-04.log에 직접 넣음(4af5cf3 6줄 · 9c2ca08 ship 줄)",
       "blocking": false
     },
     {
-      "action": "state.advance-plan이 Current Plan을 2→3으로 옮김(04-40 순서 밖 실행) — 카운터가 기대와 맞는지 확인",
-      "context": "04-40 실행자 보고",
+      "action": "결정 F 선택지를 PR #104에 다시 올림 — 세션 57f75736의 [완료 보고]가 PR 댓글에 없었음",
+      "context": "해결 — F(2) 머지 뒤 별도 /gsd-quick PR(ISSUE-002 그대로) [지시] 5909292999",
       "blocking": false
     },
     {
-      "action": "04-24 S4 승인 다이얼로그 부제 표시 번호 결정: 플랜 `26001-2차` vs UI-SPEC S3 `26001 · 상세 견적 2차 · 고객 승인 …` — 어느 쪽이 맞는지 확정(현재 UI-SPEC 쪽으로 구현됨)",
-      "context": "04-24 검토 SHOULD-FIX S4",
+      "action": "phase-04.log 게이트 5줄([지시] 5909847801: review 02:42Z·07:07Z · qa 07:22Z · design-review 07:34Z · cso 08:02Z) — 세션이 넣으려 했으나 권한 분류기가 「Logging/Audit Tampering」으로 거부. 사용자가 직접 넣거나 권한 규칙 추가 필요",
+      "context": "세션 a447d798이 우회하지 않고 사용자에게 보고",
       "blocking": false
     },
     {
-      "action": "UI-SPEC rev 5에 새 문구 `처리하지 못함 · 닫고 다시 시도`(04-24 세 다이얼로그의 비서버 실패) + 04-40 새 셀 오류 문구 4개 추가",
-      "context": "04-24·04-40이 화면에 새로 쓴 문구가 UI-SPEC에 없음",
+      "action": "F(2) 후속: Phase 4 머지 뒤 ISSUE-001 · DR-104-01~05 별도 /gsd-quick PR",
+      "context": "[지시] 5909292999",
       "blocking": false
     },
     {
-      "action": "기존 DB에서 시드를 다시 돌리면 role-pm 발행액 행이 켜진다(B-1 upsert). 운영 DB는 04-17/04-18 배포 전 시드 재실행 여부 확인",
-      "context": "04-16 검토 반영 B-1(role-pm만 upsert)",
+      "action": "[사용자 결정 요청] G1~G3 처리(PR #104 [완료 보고] 5910500613)",
+      "context": "해결 — [지시] 5910572972: 머지 뒤 F(2) 후속 PR에 함께",
       "blocking": false
     },
     {
-      "action": "0015 배포 창 처리 확인(/ship 전)",
-      "context": "묶음 ③ /ship 전 — migrate가 트래픽 전환 전에 돌아 옛 코드가 새 스키마(0015) 위에서 몇 분 동작(T-04-86)",
+      "action": "게이트 기록: phase-04.log에 `review 2026-09-30T11:31Z session=56ab3f54-01c4-5f2a-b586-0384ac8499e2`",
+      "context": "해결 — 사용자가 phase-04.log에 직접 넣음(4af5cf3 6줄 · 9c2ca08 ship 줄)",
       "blocking": false
     },
     {
-      "action": "운영 DB에 실제 계약 금액 입력이 있었는지 확인(0015 가드가 source<>'demo'만 셈, Eng OV-1 전제)",
-      "context": "/review 후속, /ship 전",
-      "blocking": false
-    },
-    {
-      "action": "Codex 재확인: 묶음 ②·③ /review(Opus로 대체)",
-      "context": "Codex 한도 09-29 이후",
-      "blocking": false
-    },
-    {
-      "action": "/design-review 사용자 결정 8건(날짜 입력 방식 통일·빈 날짜 문구, 등록 폼 PM·팀 기본값, 700~1023 열 접기 SYSTEM⑶ vs UI-SPEC 509, 오류 문구 말투, 코드표 설명 「—」, 「버림」 되돌리기, 견적 충돌 시 매출 합계 문구, 새 설정 힌트 말투)",
-      "context": "/mnt/project-files/phase4-prep/postbuild3-design/REPORT.md — 코디네이터가 모아 물음",
-      "blocking": false
-    },
-    {
-      "action": "Codex 재확인: 묶음 ②·③ /design-review(Opus로 대체)",
-      "context": "Codex 한도 09-29 이후",
-      "blocking": false
-    },
-    {
-      "action": "/cso(cdf79a5) 결정: 프로젝트 생성(createProject)에도 팀 범위(work_scope=team)를 적용할지 — 지금은 projects write만 보고 다른 팀·임의 PM 지정 가능, 상태·기간 변경은 팀 범위로 막힘",
-      "context": "/mnt/project-files/phase4-prep/postbuild3-cso/REPORT.md, /ship 전",
-      "blocking": false
-    },
-    {
-      "action": "Codex 재확인: 묶음 ②·③ /cso(Opus로 대체)",
-      "context": "Codex 한도 09-29 이후",
-      "blocking": false
-    },
-    {
-      "action": "Codex 재확인(09-29 07:13 한도 해제 뒤) — 04-19 검토(Opus 대체)·04-47 검토(Opus 대체)·04-17 검토·04-27 검토·04-11 검토, 묶음 ②·③ /review·/qa·/design-review·/cso 게이트, PR #84 게이트, PR #70·#71·#54·#72·#74~#78·#80·#81, 04.4, PR #73, Phase 4 플랜 04-29 이후 계획 검토와 실행된 플랜 검토 전부",
-      "context": "Codex 한도로 전부 Opus 교차 검토로 대체됨 — 한도 해제 뒤 일괄 재확인",
-      "blocking": false
-    },
-    {
-      "action": "04-31 사람 확인에 추가: 한글 IME 조합 중 Tab",
-      "context": "04-19 review S-2에서 발견된 조합 중 Tab 처리(0189b3a로 수정됨)를 04-31 최종 PC 확인 항목에도 포함",
-      "blocking": false
-    },
-    {
-      "action": "[세션 AL] 보고 방식 확인: 사용자 지시 「10분마다 PR #85에 [진행 보고]」와 새 코디네이터 지시(14:02 「[진행 보고] 그만, [완료 보고]·[막힘]만」)가 충돌 — CLAUDE.md대로 코디네이터를 따라 타이머를 껐음. 사용자가 원하면 다시 켠다",
-      "context": "세션 AL 판단, 채팅으로 알림",
-      "blocking": false
-    },
-    {
-      "action": "iPhone Safari에서 폰 행 전체 탭 영역 수동 확인(ui/table/Table.module.css:241-250, position:relative + link ::after — E2E는 Chromium만 실행)",
-      "context": "/review(Opus, 3a762bd..6fdc2c1) P2, 세션 AM",
-      "blocking": false
-    },
-    {
-      "action": "게이트 기록 두 줄을 GitHub 웹에서 PR #85에 직접 추가: `review 2026-09-27T06:03Z session=72233dfb-b9f7-56bd-8238-ba2145765ae3`, `qa 2026-09-27T06:03Z session=72233dfb-b9f7-56bd-8238-ba2145765ae3`",
-      "context": "hook이 로컬 .claude/gates/phase-04.log에만 기록(커밋 금지 파일) — 코디네이터 지시(2026-09-26)대로 사용자에게 줄을 보여주고 직접 추가받는다",
-      "blocking": false
-    },
-    {
-      "action": "Codex 재확인(09-29 이후): 세션 AM의 /review·/qa(3a762bd..6fdc2c1, F3 계약 변경 5e45615 포함)",
-      "context": "Codex 09-29까지 한도로 이번에도 Opus·Sonnet이 대체",
-      "blocking": false
-    },
-    {
-      "action": "Codex 재확인(09-29 이후): 04-51·04-42 검토(Opus가 대체)",
-      "context": "Codex 한도",
-      "blocking": false
+      "action": "PR #104 머지(ready · CI 초록 · clean)",
+      "context": "위험 경로 .claude/gates 포함 — 세션 머지 금지",
+      "blocking": true
     }
   ],
   "decisions": [
@@ -982,13 +528,126 @@
       "decision": "Codex PRRT_kwDOUea1Js6m_4HY(증빙 코드 활성 판정 tx 밖 경합) 기록만",
       "rationale": "동시 관리자 변경 때만, 영향 작음(사용자 결정 2026-09-29)",
       "phase": "04"
+    },
+    {
+      "decision": "UAT 4·16·64 pass(04-52 증거 + 이 세션 재실행) · VERIFICATION 재검증 passed 9/10(p99 deferred Phase 9)",
+      "rationale": "04-52·04-53 실행·Post-build 끝, 사용자 결정(증거 대조·p99 Phase 9·PROJ-04 Pending) 그대로",
+      "phase": "4"
+    },
+    {
+      "decision": "uat-passed가 UAT 53(DR-P4-02, 04.6 이월) skipped를 막는 문제는 (a) 판정기가 이월 항목을 통과로 보게 처리",
+      "rationale": "사용자 결정 2026-09-29(세션 01REzuX1) — 방법은 전환 세션이 확인·적용",
+      "phase": "04"
+    },
+    {
+      "decision": "/review 미결 참고 2건(loadProjectForGate 종료일 없음 throw 테스트 · applyAutoSettlement 보관·비진행 음성 사례)을 validate-phase 4 빈틈에 넣어 처리 — 1dbc5163로 끝",
+      "rationale": "사용자 결정 2026-09-29(세션 01REzuX1)",
+      "phase": "04"
+    },
+    {
+      "decision": "validate-phase 4: 04-VALIDATION validated · nyquist_compliant true(COVERED 23 · 채운 빈틈 3 · MISSING 0)",
+      "rationale": "91cee9bf",
+      "phase": "04"
+    },
+    {
+      "decision": "secure-phase 4 감사를 gsd-security-auditor(Opus) 4명 병렬로 나눔(위협 229건)",
+      "rationale": "한 명에 229건은 컨텍스트 과다 — 판정 기준·검증 방식은 그대로, 인계에 편차로 밝힘",
+      "phase": "4"
+    },
+    {
+      "decision": "T-04-318은 사용자 결정(04-31 (C)(D) 자동 테스트로 갈음)을 근거로 수락 위험 AR-04-25, T-04-86·372는 사용자 결정(STATE.md:218)으로 수락 기록",
+      "rationale": "기존 사용자 결정 적용 — 새 결정 아님",
+      "phase": "4"
+    },
+    {
+      "decision": "T-04-31 (1) 구분자 허용 목록 = 빈 값 또는 - _ . / 한 글자(사용자), 구현은 z.string().regex — z.enum 배제(화면 입력 종류 유지)",
+      "rationale": "PR #104 [지시] 사용자 결정 · 화면 무변경",
+      "phase": "4"
+    },
+    {
+      "decision": "UI (가) 명사형 유지(UI-SPEC:385를 코드에 맞춤) (나) 행 번호 숫자 규칙 적용 (다) 등록 폼 첫 오류 칸 포커스",
+      "rationale": "사용자 채팅 답(2026-09-29), PR #104 [지시] 5894569505",
+      "phase": "4"
+    },
+    {
+      "decision": "Phase 4 재검증은 /gsd-verify-work 4 안에서 gsd-verifier(Opus) 재검증 모드로 수행(Route V.stale·선례 01Wvj7eF)",
+      "rationale": "스킬 관문 훅이 워크플로 밖 gsd-verifier를 막음. 결과 passed 9/10, 전환은 사용자 답 대기",
+      "phase": "04"
+    },
+    {
+      "decision": "전환 (C): test 53 증거 대조 pass, gsd-core 업데이트·판정기 이식 없음, .claude/ 무변경",
+      "rationale": "사용자 [지시] 5902859466(2026-09-30)",
+      "phase": "4"
+    },
+    {
+      "decision": "phase.complete가 바꾼 PROJ-04 Complete를 되돌림",
+      "rationale": "사용자 결정: PROJ-04는 Phase 5 결재와 함께 Complete",
+      "phase": "4"
+    },
+    {
+      "decision": "/review 2차: Codex 패스 생략(외부 검토 금지) · 자동 수정 0 · A~C는 기록 밖 결정이라 사용자 결정 요청, D(검색 LIKE 이스케이프)는 PR 밖 기존 코드라 기록만 · 다음 세션은 답이 올 때까지 만들지 않음",
+      "rationale": "세션 지시 3·직전 세션 선례",
+      "phase": "4"
+    },
+    {
+      "decision": "사용자 2026-09-30 채팅 「추천대로 해」([지시] 5903477924): A(2) 허용 밖 저장 구분자는 읽을 때 기본값(빈 값) 대체 + log.error · B 힌트 「빈칸 또는 - _ . / 중 한 글자」 · C 접두어 제약 없음(수락 위험 기록) · 폰 40px 3개(일괄 저장·복사해 새 차수·프로젝트 복사) 44로",
+      "rationale": "/review 2차 결정 요청 답",
+      "phase": "4"
+    },
+    {
+      "decision": "A(2) 허용 밖 저장 구분자 읽기 대체+log.error · B 힌트 문구 · C 접두어 수락 위험 · 폰 머리 줄 3개 44 — 반영(260930-4xr)",
+      "rationale": "사용자 2026-09-30 「추천대로」, [지시] 5903477924",
+      "phase": "4"
+    },
+    {
+      "decision": "SYSTEM.md §3는 「프로젝트 상세 머리 줄」만 명시, 일반 규칙화 안 함",
+      "rationale": "일반 규칙은 앞으로의 화면까지 묶는 새 결정 — 사용자 결정 필요 시 별도",
+      "phase": "4"
+    },
+    {
+      "decision": "E(1) 고침 · F(2) 머지 뒤 별도 PR",
+      "rationale": "사용자 2026-09-30 채팅 선택, [지시] 5909292999",
+      "phase": "4"
+    },
+    {
+      "decision": "훅 페이즈 오인 — /gsd-verify-work 4 문맥 설정용 호출(UAT 진행 안 함) 후 훅이 적은 phase-04.log 줄 되돌림",
+      "rationale": "사용자 2026-09-30 채팅 승인(세션 a447d798)",
+      "phase": "4"
+    },
+    {
+      "decision": "/review 4차는 보고서만(자동 수정 0) · /qa·/design-review 재실행 안 함(화면 코드 변경 0) · gstack 1.91.9 업그레이드 건너뜀(묶음 중간)",
+      "rationale": "선례 2·3차 · 세션 지시 · 도구 변경 최소",
+      "phase": "4"
+    },
+    {
+      "decision": "G1~G3는 PR #104에서 고치지 않고 Phase 4 머지 뒤 F(2) 후속 PR에 함께",
+      "rationale": "사용자 채팅 「추천대로 해」 — 동작 영향 없음, 머지 지연 방지",
+      "phase": "4"
+    },
+    {
+      "decision": "/ship Step 7·8·9·11·18은 /review 1~4차·/qa·/design-review·/cso·04-VERIFICATION 기록으로 갈음(D1)",
+      "rationale": "사용자 선택 — 4차 979a2a9 뒤 PR 내용 변화는 .planning·게이트 로그뿐, 재실행 시 새 변경이 게이트 대상을 바꿈",
+      "phase": "4"
+    },
+    {
+      "decision": "VERSION·CHANGELOG 만들지 않음, PR 제목 버전 접두어 없음(D2)",
+      "rationale": "사용자 선택 — 저장소 관례에 없음",
+      "phase": "4"
+    },
+    {
+      "decision": "quality 초록 확인 뒤 ready 전환(D3)",
+      "rationale": "사용자 선택",
+      "phase": "4"
     }
   ],
-  "uncommitted_files": [],
-  "next_action": "새 세션(이 계정 plant8 환경 env_01X9mcoNj9giznLpgqrJSzcY) → `.claude/settings.json` 확인(한국어·effort high) → git status -sb(HEAD claude/gsd-progress-e1nzgu, 떨어져 있으면 원격과 같은지 확인 후 checkout -B, 얕으면 unshallow) → .continue-here.md 세션 01U1XgF2 블록 Read → PR #85 최신 [지시] 확인 → PR #85 최신 head CI 5개 초록인지 직접 조회(구독 실패) → 스레드 PRRT_kwDOUea1Js6m-5Xf·PRRT_kwDOUea1Js6m_mq7이 답글·resolve됐는지 확인(안 됐으면 처리: ② 328e48bb·③ 같은 커밋, 통합 13건) → Codex 새 지적 확인 → 없으면 [완료 보고] 확인 → 사용자 직접 머지(위험 경로) → 스테이징 (C)(D) 사람 확인 → /gsd-verify-work 4. 후속 PR: #1 표마다 복사 형식 분리 · #2 보관/복원 version+1 · 동명 머리글 서버 라벨 · 견적 표 savedAt 잔존(①). 기록만: 300줄 상한 관련 · 증빙/권한 판정 tx 밖 경합 · 불가시 사용자 projectId null 비우기 · 검토 should(deps 주입 테스트)·nit.",
-  "context_notes": "세션 01U1XgF2: quick 260929-9zo(Codex ②③) 끝, 945a5db2 푸시, CI 진행 중. Codex _4HY 경합 지적은 사용자 결정 기록만(resolve). 스레드 ②③는 CI 초록 뒤 이 세션이 처리 예정.",
+  "uncommitted_files": [
+    "?? .claude/gates/phase-02.log"
+  ],
+  "next_action": "PR #104 사용자 머지 대기. 머지 뒤 새 세션(plant8 환경)에서 origin/main 기준으로 F(2) /gsd-quick(ISSUE-001 · DR-104-01~05 · G1~G3) 시작",
+  "context_notes": "Phase 4 GSD 완료. PR #104 Post-build: /review 4차(979a2a9) · /qa·/design-review(63845be) · /cso(6031760) 끝. 남은 것: G1~G3 결정 → /ship → 사용자 머지.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"
-  ]
+  ],
+  "uncommitted_files_note": "?? .claude/gates/phase-02.log — 훅 오기(ship 줄), 커밋 금지. 같은 줄은 phase-04.log에 사용자가 넣음(9c2ca08)"
 }

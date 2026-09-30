@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { gate, registerGateRule, listGateRules, UnknownGateRuleError, GateBlockedError } from "@/domain/rules/gate";
 import "@/domain/rules/register";
-import type { ProjectLineEditCtx } from "@/domain/rules/register";
+import type { ProjectAutoSettleCtx, ProjectLineEditCtx } from "@/domain/rules/register";
 import { denyWrite, type DenyWriteIds } from "@/domain/rules/deny-write";
 
 // Phase 4 Task 2 ⑫ — 등록·판정·미등록 규칙 오류. register.ts를 side-effect
@@ -420,5 +420,49 @@ describe("project.line-edit — 승인 차수(04-40)", () => {
 
   it("승인이 없으면 같은 수량 변경은 통과", async () => {
     await expect(gate({}, "project.line-edit", { ...approvedCtx({ kind: "update", fields: ["quantity"], quoteAmountUnchanged: true }), approvedSeq: null })).resolves.toEqual({ allowed: true });
+  });
+});
+
+// 04-53(V-04-auto-settle-gate · D-76) — 자동 전환 진행 → 정산의 판정표. 오늘(KST) = 9/18.
+describe("project.auto-settle (04-53)", () => {
+  const allowedCtx: ProjectAutoSettleCtx = {
+    from: "in_progress",
+    to: "settling",
+    endDate: "2026-09-17",
+    archived: false,
+    todayKst: "2026-09-18",
+  };
+
+  async function allowed(overrides: Partial<ProjectAutoSettleCtx>): Promise<boolean> {
+    const decision = await gate({}, "project.auto-settle", { ...allowedCtx, ...overrides });
+    return decision.allowed;
+  }
+
+  it("listGateRules에 project.auto-settle이 있다", () => {
+    expect(listGateRules()).toContain("project.auto-settle");
+  });
+
+  it("진행 · 종료일이 어제 · 보관 아님이면 정산으로 허용", async () => {
+    expect(await allowed({})).toBe(true);
+  });
+
+  it("종료일이 오늘 · 내일 · 없음이면 거부", async () => {
+    expect(await allowed({ endDate: "2026-09-18" })).toBe(false);
+    expect(await allowed({ endDate: "2026-09-19" })).toBe(false);
+    expect(await allowed({ endDate: null })).toBe(false);
+  });
+
+  it("보관된 프로젝트는 거부", async () => {
+    expect(await allowed({ archived: true })).toBe(false);
+  });
+
+  it("진행이 아닌 상태(수주중 · 미수주 · 정산 · 완료)는 거부", async () => {
+    for (const from of ["bidding", "lost", "settling", "completed"]) {
+      expect(await allowed({ from }), from).toBe(false);
+    }
+  });
+
+  it("자동 전환표에 없는 쌍(진행 → 완료)은 거부", async () => {
+    expect(await allowed({ to: "completed" })).toBe(false);
   });
 });

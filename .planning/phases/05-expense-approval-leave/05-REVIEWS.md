@@ -1,53 +1,57 @@
 ---
 phase: 5
-round: 3
+round: 4
 sources:
-  - design-review.md (`/plan-design-review 5`, 99d74bd, Opus 독립 디자인 검토 — Codex 대체, 한도 해제 뒤 Codex 재확인 필요)
-reviewers: [plan-design-review, opus-outside-voice]
+  - code-drift-review.md (계획 ↔ main f3242c8 코드 대조, Opus 독립 조사 — 05-01 Task 1 ⓪ · ⓪-b 기준, 04.1 #90 · 결재선 단계 저장 #105 · 04.4 #91 · #106 · Phase 4 #104)
+reviewers: [opus-code-drift]
 prior_rounds:
   - "Round 1 — 1108e20 (ceo-review.md, 반영 완료: 각 플랜 Ledger `### Round 1 — 1108e20`)"
   - "Round 2 — 69fb7ea (eng-review.md, 반영 완료: 각 플랜 Ledger `### Round 2 — 69fb7ea`)"
+  - "Round 3 — efd6c67 (design-review.md, 반영 완료: 각 플랜 Ledger `### Round 3 — efd6c67`)"
 ---
 
-# Phase 5 — Reviews (Round 3)
+# Phase 5 — Reviews (Round 4: main 코드 대조)
 
-> `/gsd-plan-phase 5 --reviews` Round 3 입력. 정본은 `design-review.md`이고 이 파일은 그 지적을 반영용 목록으로 옮긴 것이다(내용 추가 없음, 사용자 결정 G1~G4만 덧붙임).
-> P1 D1(UI-SPEC ↔ 플랜 불일치)은 design 게이트가 99d74bd에서 UI-SPEC에 직접 반영해 해소됐다 — 이 라운드 대상 아님.
-> Round 1(CEO) · Round 2(eng) 지적은 각 판(1108e20 · 69fb7ea)의 이 파일에 있고 각 플랜 Ledger에 반영됐다.
+> `/gsd-plan-phase 5 --reviews` Round 4 입력. 정본은 `code-drift-review.md`(파일:줄 근거 · name_map · premise_check 포함)이고 이 파일은 그 지적을 반영용 목록으로 옮긴 것이다(내용 추가 없음, 사용자 결정 Z1~Z3만 덧붙임).
+> 계획(09-26) 뒤 main에 04.1 결재 모듈 · 결재선 단계 저장 · 04.4 · Phase 4 완료가 들어왔다. 중복 구현은 없고 Phase 4 완료분(`changeProjectStatus` · `loadStatusChangeFacts` · `projects.complete` · 번호 · 행동 로그 · 세율 · journal)은 계획 전제와 같다.
+> Round 1~3 지적은 각 판의 이 파일에 있고 각 플랜 Ledger에 반영됐다.
 
-## User Decisions (코디네이터 경유 — 전제)
+## User Decisions (PR #89 issuecomment-5913942679, 사용자 결정 2026-09-30 「#89는 추천대로 해」)
 
-- **G1: A** (2026-09-27 01:1x KST, PR #89 issuecomment-5847791230) — 증빙이 무효 처리되면 기안자 첫 화면 「내 차례」에 [막힘] `증빙 무효 · 증빙 올리기` 한 줄. 새 증빙을 올리면 사라짐
-- **G2: A** (같은 댓글) — 마지막 살아 있는 증빙까지 무효 처리 허용. 0개는 G1 신호 + Phase 6 점검이 잡음
-- **G3: A** (같은 댓글) — 무효 해제 없음. 사유와 함께 영구 기록, 잘못 무효로 했으면 같은 파일을 다시 올림
-- **G4: A** (같은 댓글) — 정산 결재 문서 화면에 견적 표에 이미 있는 합계(견적가 합 · 실행가 합)를 한 행씩 표시(새 계산 없음)
-- 앞선 결정 U1 · U2 · `expenses.evidence_void` A · E1 A · E2 A는 그대로 전제
+- **Z1: A** (D1) — `ConflictState`에 선택 필드 `versionReason`을 더하고 `buildConflictMessage`가 상태 switch보다 먼저 `증빙을 바꿈`을 판정하도록 05-01 ④ 문장만 고친다(행 → 구조체 변환 `conflictMessageOf`가 `versionReason`을 넘김). ⓪-b E4는 「모양 차이」로 본다
+- **Z2: A** (D2) — 05-01에 `DocumentSummary` 타입(`describeDocuments` 반환)을 두는 단계를 더하고, 결재함의 `LeaveSummary` 캐스트를 종류 중립으로 바꾼다. ⓪-b E5는 「모양 차이」로 본다
+- **Z3: A** (D3) — 결재 시트는 `ui/`로 옮기지 않는다(`app/(app)/approvals/approval-sheet.tsx` 제자리). 결재 액션 연결만 prop으로 뺀다(05-01 Task 3 · 05-10). E7 import 감사 (마) 멈춤은 이동이 없으므로 사라진다
+- 앞선 결정(U1 · U2 · `expenses.evidence_void` A · E1 A · E2 A · G1~G4 A · R1 A)은 그대로 전제
+- 이 라운드의 ⓪-b 게이트 문장: Z1 · Z2로 E4 · E5는 「모양 차이 — 결정 반영됨」이므로 실행 때 ⓪-b가 이 두 줄 때문에 멈추지 않도록 05-01 ⓪-b 기대 문장을 실제 모양으로 고친다
 
 ## Consensus Summary
 
-### HIGH (P1)
-- 없음(D1은 99d74bd에서 해소)
+### HIGH (P1 — 이 라운드 반영)
+- **D1** ⓪-b E4 — 충돌 문구 함수 입력이 인스턴스 행이 아니라 `ConflictState{status, round, actorName, at, attempted}`. 지금 `in_review` + `updated_by` = 기안자면 `…이 HH:MM에 승인함`이 되므로 증빙 갈래는 switch 앞에서. 수리: Z1 A. 영향: 05-01 ⓪-b · ④ · key_links(`conflict-message.ts`), `domain/approvals/index.ts`(`conflictMessageOf`)를 files_modified에
+- **D2** ⓪-b E5 — `describeDocuments`가 `Map<string, object>`, 엔진은 `describeDeduction`에서 duck-typing, 결재함 `page.tsx`가 `as LeaveSummary`, 요약 전체가 `approval.value` 뒤. 수리: Z2 A — `kinds.ts`에 `DocumentSummary`(선택 `measure` 등) · `listMyInbox`가 `measureHeader` 계산 · 결재함 캐스트 종류 중립(D8과 함께). 영향: 05-01 E5 · 05-10
+- **D3** E7 — 시트가 `DayNumbers`(leave) · `ConflictLine`(approvals) · `DAY_NUMBER_ROWS` 연차 분기를 가짐. 수리: Z3 A — 이동 없음, `useAction(approveAction)` 등 결재 액션만 콜백 prop으로, 두 번째 사용처 `app/(app)/home-approval-actions.tsx`(05-10)가 app 경로로 import. E7 must_haves · Task 3 ④ · acceptance · 05-10의 `ui/approval-sheet` 참조를 전부 고친다
+- **D4** 착수 게이트 P-4 · P-5 — P-4는 머지 커밋 dc5a8fc로 통과(확인함). P-5는 `05-VALIDATION.md` `status: draft` — 실행 전 `/gsd-validate-phase 5`가 채운다(절차 그대로). 수리: P-5 설명에 이 라운드 P2 항목(결재함 중립화 · 연차 회귀 · 단계 저장 · 폰 Tab 순서)을 VALIDATION 행 후보로 적는다. 영향: 05-01 「선행 의존」
 
 ### MEDIUM (P2 — 이 라운드 반영)
-- **D2** 올리는 중 제출의 막힘 이유가 틀린 안내가 된다 — UI-SPEC S4 · S6. 파일 완료 전엔 서버상 증빙 0개라 막힘 ⑧ `증빙 없음 · 증빙 올리기 Ctrl+U`가 뜨는데 사용자는 이미 올리는 중. 수리: 올리는 행이 하나라도 있으면 1차 `aria-disabled` + `증빙 올리는 중 · 잠시 뒤 제출`(막힘 ⑧ 앞의 클라이언트 상태). S3 「떠날 때」에 올리는 행이 있으면 `beforeunload` 경고. 영향: UI-SPEC S3 · S4 · S6, 05-05
-- **D3** E2(`incoming/` → `evidence/` 이동) 뒤 `다시 올리기`의 뜻이 정해지지 않음 — `05-UI-SPEC.md:263 · :414-418`, 05-04 완료 통보. 서명 PUT은 끝났는데 완료(이동 · 확인)만 실패하는 경우가 새로 생김. 수리: 문구는 `올리지 못함 · 다시 올리기` 하나, 서버가 갈래를 돌려준다 — 의도가 살아 있으면 완료 통보만 다시, 만료면 처음부터. 이동 중에도 메타는 `올리는 중…`(새 상태 없음). 영향: UI-SPEC S4 · Copywriting, 05-04
-- **D4** 결재함 행 · 「내 차례」 행에서 `승인`이 막힐 때 이유가 설 자리가 없음 — S9 · S11(04.1 행 위), `진행으로 바뀜 · 반려` · `최종 승인 담당 아님 · 새로 고침`. 수리: 그 셀에서 `승인`을 빼고 이유 글자(`--fs-sm --danger`) + 3차 `반려`(S1 행 행동 셀과 같은 규칙). 영향: UI-SPEC S9 · S11, 05-10 · 05-11
-- **D5** 무효 처리 상태가 UI Considerations 표에 없음 — `05-UI-SPEC.md:690~`. 수리: 무효 처리의 loading(확인 버튼 pending) · error(`무효 처리하지 못했습니다 · 다시 시도`) · populated(무효 행) · a11y 행 추가. Color 매핑(`무효` → `--muted`) · 「Accent reserved for」 목록 점검. 영향: UI-SPEC
-- **D6** 무효 행 접근성 — 취소선은 스크린리더가 읽지 않음. 수리: DOM 순서 「무효」 → 파일명, 파일명에 `aria-describedby` = 2행, 결과는 기존 첨부 `aria-live="polite"`가 읽음. 폰 파일 행 3차 두 개(`크게 보기` · `무효 처리`)는 각각 `--touch-min` 영역, 둘 사이 `--s-4`(위험 동작 분리). 영향: UI-SPEC S4, 05-09
-- **D7** 새 표기 두 가지가 디자인 정본에 기록되지 않음 — 취소선(DECISIONS 2026-09-18 #7 「취소선이라는 새 표기를 만들지 않는다」와 충돌 — U1이 사용자 결정이라 유지)과 `무효` 낱말 · 정산 즉시 승인 §7 예외. 수리: 05-02 개정 제안 목록에 B8(§7-10 무효 행 · §7-5 `무효` 낱말 · 충돌 기록)과 정산 즉시 승인 예외 한 항목 추가 → DECISIONS.md 먼저, SYSTEM.md 다음(CLAUDE.md §6). 영향: 05-02
+- **D5** `canResubmit`이 `(viewer)`뿐이라 정산 결재의 settling 조건을 못 담음 — 수리(추천): 05-01 E 덧붙임에 선택 둘째 인자 `documentId`(연차는 무시). 영향: 05-01 · 05-11
+- **D6** E2 — `approveDocument` 입력은 `{instanceId, expectedVersion}`, 트랜잭션 전엔 kind · documentId를 모름, (4)는 사건이 아니라 status `approved`. 수리: 05-01 ③에 「트랜잭션 전 `findApprovalGraphById`(또는 인스턴스만 읽는 함수)로 kind · documentId」 · 「훅 조건 = 계산된 status `approved`」. 영향: 05-01
+- **D7** 결재 DTO 구조 값 / 값(`approval.value`) 축(04.1 2026-09-29 결정) — `approveBlockedReason` · `measureHeader`는 구조 키(`INBOX_ITEM_STRUCTURE_KEYS` 등)에 둔다. 영향: 05-01 E3 · E5
+- **D8** 결재함 화면 · 확인 창 · 승인 토스트가 연차 전용(`page.tsx` 캐스트 · `decision-dialogs.tsx` 「연차 반려/회수」 · `withdrawLeaveAction` · `approve-toast.ts` 차감 일수만 · `inbox-table.tsx`의 `leave.module.css`) — 어느 플랜 files_modified에도 없음. 수리: 결재함 종류 중립화 작업 하나(문서 칸 · 부제 글자를 종류가 줌, 확인 창 제목 `{kindLabel} 반려/회수`, 회수 액션 종류 중립, 토스트 재료 종류 훅) + files_modified에 `decision-dialogs.tsx` · `approve-toast.ts` · `approvals/actions.ts`. 영향: 05-10(또는 05-01) · 05-09 · 05-11(토스트 `승인 · 최종 승인 · {프로젝트 번호} 완료`)
+- **D9** 증빙 상세 행 갈래가 `loadKindDetails`(`index.ts:969` `{label, value, tone}` 재매핑)와 `page.tsx` `sheetRows`에서 잘림. 수리: 05-10 files_modified에 `domain/approvals/index.ts`, 갈래별 복사(evidence는 id · 이름 · 크기 · 형식), `sheetRows` 갈래 전달. 영향: 05-10
+- **D10** E6 매핑 파일은 `app/(app)/leave/status-display.ts`(`RouteStepSource`에 `selfApproved` 없음, 프로젝트 화면도 import). 수리: 05-01 files_modified에 추가, `selfApproved` → `본인 승인`(success), name_map에 기록. 영향: 05-01
+- **D11** 반려 사유 검증 함수가 없음(inline). 수리(추천): 05-09가 `validateRejectReason`을 `domain/approvals/index.ts`로 빼내 `rejectDocument` · `voidEvidence`가 같이 씀, files_modified에 추가. 영향: 05-09
+- **D12** 결재선 「N단 저장」(#105, DECISIONS 2026-09-30 · SYSTEM §7-2 예외) — 단계 칸 단독 저장 거부. 수리: 05-03 · 05-11 설정 섹션 문장에 N단 저장, E2E 단언을 단계 저장 모양으로, 픽스처는 `upsertSimpleValue` · `saveRouteStepSettings`, UI-SPEC S13 한 줄. 영향: 05-03 · 05-11 · UI-SPEC
+- **D13** 폰 제출 줄 · 폰 문서 행동 줄 순서(DECISIONS 2026-09-29 두 건: 2차 왼쪽 · 1차 오른쪽, DOM · Tab 같음, 사이 `--s-4` 이상) — UI-SPEC S3 폰 · S7 폰에 한 줄씩, 05-05 must_haves · E2E에 「폰 제출 줄 Tab 순서 2차 → 1차」, 문서 행동 줄은 04.1 `document-actions.tsx` 재사용 여부를 05-05가 정함. 영향: UI-SPEC · 05-05
+- **D14** 첫 화면 → `domain/next-turn` → `listMyInbox` 간접 경로를 `document-kinds-import` 가드가 못 잡음 [ASSUMED]. 수리: 05-10 ④에 「`app/(app)/page.tsx`는 `@/app/(app)/document-kinds`를 import」 + acceptance grep. 영향: 05-10
 
 ### LOW (P3)
-1. **D8** F1 문구는 04.1의 `지금 담당이 아님 · 새로 고침`을 다시 쓰는 편이 낱말 수를 줄인다 — 새 문구를 유지하면 §8 규칙 3대로 `· 담당 {이름}` 꼬리 검토(현재 UI-SPEC은 플랜 문구 그대로 등록). 영향: 05-11 · UI-SPEC
-2. **D9** 무효 처리 오류 `이미 무효 · 새로 고침`을 04.1 동시 처리 꼴 `{이름}이 HH:MM에 무효 처리함 · 새로 고침`으로 바꾸면 원인 · 다음 행동 규칙과 맞다. 영향: 05-09 · UI-SPEC
-3. **D10** 무효 처리 성공 토스트는 결과가 그 자리 행에 바로 보여(§7-7 SUCCESS) 중복 — 유지한다면 「확인 창을 닫을 때 토스트로 이어짐」 한 줄을 §7-8 근거로 명시. 영향: 05-09 · UI-SPEC
-4. **D11** S10 (나) 와이어의 `손익` 행(`:580대`) ↔ 05-11:54 「이 페이즈에서는 모든 계급에 행째 없다」 불일치 — 와이어에 「Phase 9부터」 표시(G4 답과 함께 정리). 영향: UI-SPEC S10 · 05-11
-
-### 사용자 결정 반영 (G1~G4 — 이 라운드 반영)
-- **G1** → UI-SPEC S11(「내 차례」) · 05-09(무효 처리 뒤 신호 원천) · 05-10(「내 차례」 행): 기안자에게 [막힘] `증빙 무효 · 증빙 올리기`, 살아 있는 증빙이 새로 올라오면 사라짐
-- **G2** → 05-09 `voidEvidence`: 마지막 살아 있는 파일도 허용(04 live 판정 · 제출 막힘 ⑧과 별개 — 승인 문서라 제출 경로 없음), 통합 사례 1
-- **G3** → 05-09 · UI-SPEC: 무효 해제 동작 없음을 명시(확인 창 = 되돌릴 수 없는 일)
-- **G4** → UI-SPEC S10 · 05-11: 정산 결재 문서 화면에 견적가 합 · 실행가 합 한 행씩(기존 견적 합계 재사용, 새 계산 없음, 권한 판정은 기존 금액 보임 규칙 그대로)
+1. **D15** 05-02 read_first 줄 번호(SYSTEM §7-5 「839행~」 → 지금 860행) · DECISIONS 끝이 09-30 항목 — 절 이름 grep · 날짜는 실행일. 영향: 05-02
+2. **D16** 복원 확인 표 `RESTORE_CHECK_TABLES`(04.4)에 Phase 5 새 표 없음 — 05-13 정리의 선택 항목으로. 영향: 05-13
+3. **D17** 회수 뒤 다시 제출 문서의 옛 version 충돌 문구가 엔진 공통 `…이 HH:MM에 다시 신청함`(UI-SPEC 지출결의 낱말은 「다시 제출」) — 추천: 04.1 문구 재사용 원칙대로 그대로 두고 기록(새 사용자 결정 없음), 바꾸려면 종류 `label` 기반. 영향: 05-01 또는 UI-SPEC 「거부 — 동시 처리」
+4. **D18** 05-11 ③ `listQuoteLines(viewer, revisionId, ctx: {status, canWrite, …})` ctx 필수 · 반환 `quoteAmountKrw` · `execution`. 영향: 05-11
+5. **D19** `google-auth-library` 기존 사용처는 04.4 뒤 `lib/gcp/cloud-sql-admin.ts`(충돌 없음, 확인만). 영향: 05-12
+6. **D20** 04.4 · 04.2 알림과 겹침 없음 — 조치 없음
 
 ## Divergent Views
 
-- 없음. Opus 독립 디자인 검토의 critical 1 · high 6 · medium 6 + 사용자 결정 4는 design-review가 D1~D11 · G1~G4로 흡수했다
+- 없음. D17만 문구 선택 여지가 있고 추천(그대로)을 따른다

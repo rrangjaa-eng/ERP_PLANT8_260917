@@ -198,5 +198,20 @@ test.describe("폰 터치 목표 44 (quick 260929-npq · 04-UI-REVIEW 지적 1·
       expect.soft(crb.height, `복사해 새 차수 @${width} 높이`).toBeCloseTo(32, 0);
       await expect.soft(detailButtons(page).more, `더보기 @${width} 숨김`).toBeHidden();
     }
+
+    // /review 3차 E4 — 폰 44 규칙이 PC로 새는지 1차 「일괄 저장」도 본다. 회차마다 편집하면 저장 안 한 편집이
+    // localStorage에 남아 다음 회차에 복원 줄이 뜨므로, 폰 테스트처럼 한 번 띄우고 폭만 바꾼다.
+    await login(page, seed.pm);
+    await page.setViewportSize({ width: WIDTHS_PC[0], height: 800 });
+    await page.goto(`/projects/${seed.projectId}`);
+    await page.locator("#period-open").click();
+    await page.locator("#period-end").fill(kstToday(new Date()));
+    const save = page.getByRole("main").getByRole("button", { name: /일괄 저장/ });
+    await expect(save).toBeVisible();
+    for (const width of WIDTHS_PC) {
+      await page.setViewportSize({ width, height: 800 });
+      const svb = await box(save, `일괄 저장 @${width}`);
+      expect.soft(svb.height, `일괄 저장 @${width} 높이`).toBeCloseTo(32, 0);
+    }
   });
 });

@@ -163,6 +163,28 @@ describe("사람 목록 — 팀 정보만 가려진 계급 (DR-5)", () => {
   });
 });
 
+// person.value는 보이고 role.value만 꺼진 DTO — roleId는 person.value 키라 있고 roleName은 role.value 키라 없다(ROLE_DTO_SPEC · PERSON_DTO_SPEC).
+const roleHiddenPeople: Partial<PersonDto>[] = [
+  { id: "u-1", name: "가나", email: "a@x.kr", roleId: "role-pm", archivedAt: null, currentTeamId: null, currentTeamName: null, firstLoginAt: new Date(), passwordIsTemporary: false },
+  { id: "u-2", name: "다라", email: "b@x.kr", roleId: "role-pm", archivedAt: null, currentTeamId: null, currentTeamName: null, firstLoginAt: new Date(), passwordIsTemporary: false },
+];
+
+describe("사람 목록 — 계급 정보(role.value)만 가려진 계급 (DR-4)", () => {
+  beforeEach(() => {
+    people = roleHiddenPeople;
+    writeAllowed = true;
+  });
+
+  it("roleName 키가 없으면 「계급」 머리글·칸이 없고 접힌 줄에도 계급이 없다", async () => {
+    const { html } = await render();
+    expect(headerLabels(html)).toEqual(["이름", "이메일", "현재 소속", "상태", "동작"]);
+    const cells = collapsedCells(html);
+    expect(cells[0]).toEqual({ colSpan: "5", headers: "people-row-0-name", text: "a@x.kr · —" });
+    expect(html).not.toContain("계급");
+    expect(html).not.toContain("기획 PM");
+  });
+});
+
 describe("사람 목록 — 모두 보이는 계급 회귀 (DR-4)", () => {
   beforeEach(() => {
     people = visibleIdPeople;
@@ -199,6 +221,26 @@ describe("사람 목록 — 「사람 등록」 쓰기 권한 (DR-6)", () => {
     expect(list.html).toContain('href="/admin/people?new=1#person-form"');
     const withParam = await render({ new: "1" });
     expect(withParam.html).toContain("data-person-form");
+  });
+});
+
+describe("사람 목록 — 빈 목록의 「사람 등록」 (SYSTEM §8-5)", () => {
+  beforeEach(() => {
+    people = [];
+  });
+
+  it("쓰기 권한이 없으면 문구만 있고 등록 링크가 없다", async () => {
+    writeAllowed = false;
+    const { html } = await render();
+    expect(html).toContain("등록된 사람이 없습니다");
+    expect(html).not.toContain("/admin/people?new=1#person-form");
+  });
+
+  it("쓰기 권한이 있으면 등록 링크가 있다", async () => {
+    writeAllowed = true;
+    const { html } = await render();
+    expect(html).toContain("등록된 사람이 없습니다");
+    expect(html).toContain('href="/admin/people?new=1#person-form"');
   });
 });
 

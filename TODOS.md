@@ -104,6 +104,16 @@
 
 **Effort:** S / S · **Priority:** P1 · **Depends on:** 없음
 
+## 운영 배포 준비: 보안 스캐너 CI(2026-09-30, Phase 8 전)
+
+### 보안 스캐너 5종을 CI에 넣기 (#109)
+
+**What:** GitHub Actions에 gitleaks · semgrep · zizmor · osv-scanner · trivy를 넣고, main 전체로 첫 결과를 확인한다. 결함은 별도 PR로 고친다.
+
+**Why:** 04.4 `/cso`는 클라우드 컨테이너에 Docker가 없어 스캐너를 돌리지 못하고 정적 검토로만 통과했다(`.claude/gates/phase-04.4.log`). `ci.yml`에는 비밀 유출 · 의존성 취약점 · 워크플로 보안 검사가 없다. 사용자 결정(2026-09-30): 로컬 Docker 대신 CI(선택 A), 운영 배포 준비 때.
+
+**Effort:** S / S · **Priority:** P1 · **Depends on:** Phase 8 계획 · `.github/workflows/` 변경이라 사용자가 머지
+
 ## Completed
 
 ### FINDING-001 PC에서 「내 차례」(`/`)로 돌아가는 길이 없다

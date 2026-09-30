@@ -449,7 +449,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 04.6-31-PLAN.md — ⑦ 옛 토큰 이름 삭제 · 인쇄 토큰 · SYSTEM §11 · 늦게 머지될 페이즈 알림 · R19 확인 → TODOS 대조
+- [ ] 04.6-31-PLAN.md — ⑦ 옛 토큰 이름 삭제 · 인쇄 토큰 · SYSTEM §11 · 늦게 머지될 페이즈 알림 · TODOS 대조 → R19 샤드 줄(마지막)
 - [ ] 04.6-33-PLAN.md — ⑦ (UQ-4에 4일 때만) 아이콘 · (UQ-5 B면) lucide-react 사람 확인·판 고정
 - ~~04.6-32-PLAN.md~~ — superseded → COMMON §9 0단계(오케스트레이터가 웨이브 ⑦ 세션에서 31·33 뒤 CI 기준 사진 — 플랜 아님)
 

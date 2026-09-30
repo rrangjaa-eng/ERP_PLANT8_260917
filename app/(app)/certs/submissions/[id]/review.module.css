@@ -16,6 +16,21 @@
   overflow-wrap: anywhere;
 }
 
+/* 머리 줄의 행동 자리 — 2차 「인쇄」(quote-table 머리 줄 선례). 좁은 폭에서는 줄바꿈으로 내려가고 숨기지 않는다. */
+.headerActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+  margin-left: auto;
+}
+
+.printLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+
 .form {
   margin-top: var(--s-6);
 }

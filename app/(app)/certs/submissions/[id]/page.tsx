@@ -6,8 +6,6 @@ import { assertCertFeatureEnabled } from "@/lib/certs/feature-guard";
 import { touchPrivacySession } from "@/domain/certs/privacy-session";
 import { getSubmissionForReview } from "@/domain/certs/review";
 import { formatSubmittedAtKst } from "@/domain/certs/format";
-import { PageHeader } from "@/ui/page-header/PageHeader";
-import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { ReviewForm } from "./review-form";
 import styles from "./review.module.css";
 
@@ -52,17 +50,11 @@ export default async function CertSubmissionReviewPage({ params }: { params: Pro
   return (
     <div className={styles.root}>
       <div className={styles.screen}>
-        <div className={styles.header}>
-          <div className={styles.titleBlock}>
-            <PageHeader title={`기타소득 확인증 — ${submission.name ?? ""}`} subtitle={subtitle} />
-          </div>
-          <StatusTag kind="success" variant="tag">
-            제출됨
-          </StatusTag>
-        </div>
         <ReviewForm
           key={submission.version}
           submissionId={id}
+          title={`기타소득 확인증 — ${submission.name ?? ""}`}
+          subtitle={subtitle}
           version={submission.version ?? 1}
           name={submission.name ?? ""}
           registeredName={submission.registeredName ?? null}

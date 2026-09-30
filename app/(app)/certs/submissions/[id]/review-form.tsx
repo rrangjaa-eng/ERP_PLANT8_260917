@@ -6,6 +6,8 @@ import { useAction } from "next-safe-action/hooks";
 import { Form } from "@/ui/form/Form";
 import { KvList, type KvItem } from "@/ui/kv-list/KvList";
 import { Button } from "@/ui/button/Button";
+import { PageHeader } from "@/ui/page-header/PageHeader";
+import { StatusTag } from "@/ui/status-tag/StatusTag";
 import type { CorrectionField, CorrectionFieldError } from "@/domain/certs/review";
 import { LOGIN_REQUIRED_MESSAGE } from "@/lib/actions/user-facing-error";
 import { correctCertSubmissionAction } from "./actions";
@@ -56,6 +58,8 @@ const SAVE_FAILED: Outcome = { kind: "failed", text: "저장 실패 · 다시 �
 
 export function ReviewForm(props: {
   submissionId: string;
+  title: string;
+  subtitle: string;
   version: number;
   name: string;
   registeredName: string | null;
@@ -88,6 +92,46 @@ export function ReviewForm(props: {
     (values.phone !== saved.phone ? 1 : 0) +
     (values.address !== saved.address ? 1 : 0) +
     (isRrnDirty(rrn) ? 1 : 0);
+
+  // 머리 줄 — PageHeader에는 행동 자리가 없어(D-25) 폼이 그린다. 2차 「인쇄」는 저장된 값을 찍는 인쇄 라우트를 새 탭으로
+  // 연다 — 고친 칸이 있으면 화면 값과 인쇄물이 달라지므로 비활성 + 이유(aria-disabled, UI-SPEC I4 머리 2차 · D-7).
+  const header = (
+    <div className={styles.header}>
+      <div className={styles.titleBlock}>
+        <PageHeader title={props.title} subtitle={props.subtitle} />
+      </div>
+      <StatusTag kind="success" variant="tag">
+        제출됨
+      </StatusTag>
+      <div className={styles.headerActions}>
+        <Button
+          variant="secondary"
+          disabled={changedCount > 0}
+          disabledReason={changedCount > 0 ? `저장 안 한 칸 ${changedCount} · 먼저 저장` : undefined}
+          onClick={() => window.open(`/print/certs/${props.submissionId}`, "_blank", "noopener")}
+        >
+          <span className={styles.printLabel}>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinejoin="round"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="M4 6V2h8v4" />
+              <path d="M4 12H2V6h12v6h-2" />
+              <path d="M4 9.5h8V14H4z" />
+            </svg>
+            인쇄
+          </span>
+        </Button>
+      </div>
+    </div>
+  );
 
   const correct = useAction(correctCertSubmissionAction, {
     onSuccess: ({ data }) => {
@@ -239,25 +283,28 @@ export function ReviewForm(props: {
   // 쓰기 권한이 없으면 값은 입력이 아니라 글자다(§6-3 · §7-2 · DOM 감사 L3).
   if (!props.canCorrect) {
     return (
-      <div className={styles.form}>
-        <KvList
-          items={[
-            {
-              label: FIELD_LABELS.name,
-              value: (
-                <>
-                  {values.name}
-                  {props.registeredName ? <Form.Hint>등록 이름 {props.registeredName}</Form.Hint> : null}
-                </>
-              ),
-            },
-            { label: FIELD_LABELS.rrn, value: rrnField },
-            { label: FIELD_LABELS.phone, value: <span className={styles.num}>{values.phone}</span> },
-            ...(values.address !== null ? [{ label: FIELD_LABELS.address, value: values.address }] : []),
-            ...detailItems,
-          ]}
-        />
-      </div>
+      <>
+        {header}
+        <div className={styles.form}>
+          <KvList
+            items={[
+              {
+                label: FIELD_LABELS.name,
+                value: (
+                  <>
+                    {values.name}
+                    {props.registeredName ? <Form.Hint>등록 이름 {props.registeredName}</Form.Hint> : null}
+                  </>
+                ),
+              },
+              { label: FIELD_LABELS.rrn, value: rrnField },
+              { label: FIELD_LABELS.phone, value: <span className={styles.num}>{values.phone}</span> },
+              ...(values.address !== null ? [{ label: FIELD_LABELS.address, value: values.address }] : []),
+              ...detailItems,
+            ]}
+          />
+        </div>
+      </>
     );
   }
 
@@ -265,49 +312,52 @@ export function ReviewForm(props: {
   const showReason = changedCount > 0 && outcome !== null && outcome.kind !== "saved" && !correct.isExecuting;
 
   return (
-    <Form id="cert-review-form" className={styles.form} onSubmit={handleSubmit}>
-      {textField("name", "long")}
-      <Form.Field id="cert-review-rrn" label="주민등록번호" width="long">
-        {rrnField}
-      </Form.Field>
-      {textField("phone", "short")}
-      {values.address !== null ? textField("address", "long") : null}
+    <>
+      {header}
+      <Form id="cert-review-form" className={styles.form} onSubmit={handleSubmit}>
+        {textField("name", "long")}
+        <Form.Field id="cert-review-rrn" label="주민등록번호" width="long">
+          {rrnField}
+        </Form.Field>
+        {textField("phone", "short")}
+        {values.address !== null ? textField("address", "long") : null}
 
-      <KvList items={detailItems} />
+        <KvList items={detailItems} />
 
-      <div className={styles.actionsBar}>
-        <Form.Actions>
-          {showSavedText ? null : (
-            <Button
-              type="submit"
-              variant="primary"
-              className={styles.saveButton}
-              pending={correct.isExecuting}
-              disabled={changedCount === 0 || rrnPending}
-              disabledReason={changedCount === 0 ? "바뀐 칸 없음" : undefined}
-              reasonTone="info"
-              reasonId={REASON_ID}
-              aria-describedby={changedCount > 0 && outcome && outcome.kind !== "saved" ? REASON_ID : undefined}
-            >
-              고친 내용 저장
-            </Button>
-          )}
-          {/* 결과 · 실패 문장은 늘 있는 알림 영역 안에서 바뀐다(DOM 감사 M3). */}
-          <div aria-live="polite">
-            {showSavedText ? <p className={styles.savedText}>{outcome?.text}</p> : null}
-            {showReason && outcome ? (
-              <p id={REASON_ID} className={styles.reason}>
-                {outcome.text}
-                {outcome.kind === "conflict" ? (
-                  <Button variant="tertiary" onClick={() => router.refresh()}>
-                    다시 불러오기
-                  </Button>
-                ) : null}
-              </p>
-            ) : null}
-          </div>
-        </Form.Actions>
-      </div>
-    </Form>
+        <div className={styles.actionsBar}>
+          <Form.Actions>
+            {showSavedText ? null : (
+              <Button
+                type="submit"
+                variant="primary"
+                className={styles.saveButton}
+                pending={correct.isExecuting}
+                disabled={changedCount === 0 || rrnPending}
+                disabledReason={changedCount === 0 ? "바뀐 칸 없음" : undefined}
+                reasonTone="info"
+                reasonId={REASON_ID}
+                aria-describedby={changedCount > 0 && outcome && outcome.kind !== "saved" ? REASON_ID : undefined}
+              >
+                고친 내용 저장
+              </Button>
+            )}
+            {/* 결과 · 실패 문장은 늘 있는 알림 영역 안에서 바뀐다(DOM 감사 M3). */}
+            <div aria-live="polite">
+              {showSavedText ? <p className={styles.savedText}>{outcome?.text}</p> : null}
+              {showReason && outcome ? (
+                <p id={REASON_ID} className={styles.reason}>
+                  {outcome.text}
+                  {outcome.kind === "conflict" ? (
+                    <Button variant="tertiary" onClick={() => router.refresh()}>
+                      다시 불러오기
+                    </Button>
+                  ) : null}
+                </p>
+              ) : null}
+            </div>
+          </Form.Actions>
+        </div>
+      </Form>
+    </>
   );
 }

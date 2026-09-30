@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { db } from "@/db/client";
 import { projects, teams } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
@@ -13,7 +13,8 @@ import {
 } from "@/domain/document-numbering";
 import { ForbiddenError, getSettingValue, setSettingValue } from "@/domain/settings/registry";
 import { lockDocumentCounter } from "@/repositories/document-counters";
-import { upsertSimpleValue } from "@/repositories/settings";
+import { findSimpleValue, upsertSimpleValue } from "@/repositories/settings";
+import { log } from "@/lib/log";
 import { insertVendor } from "@/repositories/vendors";
 import { createAccount } from "@/domain/auth/accounts";
 import { createProject } from "@/domain/projects";
@@ -126,6 +127,39 @@ describe("domain/document-numbering 서식 설정 (ADMN-09, 실제 Postgres)", (
     const format = await loadDocumentNumberFormat("project");
     const { number } = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "project", year: 2026, format });
     expect(number).toBe("26001");
+  });
+
+  describe("저장된 구분자가 허용 목록 밖일 때 (PR #104 /review 2차 A(2))", () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it("허용 밖 구분자(#)가 이미 저장돼 있어도 프로젝트 등록은 기본 서식(26001)으로 되고 log.error를 남긴다", async () => {
+      const spy = vi.spyOn(log, "error").mockImplementation(() => {});
+      await upsertSimpleValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEPARATOR.key, "#", null);
+
+      expect(await getSettingValue(DOCUMENT_NUMBER_PROJECT_SEPARATOR)).toBe("");
+
+      const client = await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}`, normalizedName: `거래처-${randomUUID()}` });
+      const { userId: pmUserId } = await createAccount(SYSTEM_VIEWER, {
+        email: `pm-${randomUUID()}@example.test`,
+        name: "허용 밖 구분자 테스트 PM",
+        roleId: DEFAULT_ROLE_ID,
+      });
+      const [team] = await db.select().from(teams).limit(1);
+      if (!team) throw new Error("시드된 팀이 없습니다");
+      const created = await createProject(
+        SYSTEM_VIEWER,
+        { clientId: client.id, teamId: team.id, pmUserId, name: `번호-${randomUUID()}` },
+        { now: () => new Date("2026-06-01T03:00:00Z") },
+      );
+
+      expect(created.number).toBe("26001");
+      expect(spy).toHaveBeenCalledWith(
+        "settings.invalid_stored_value",
+        expect.objectContaining({ key: DOCUMENT_NUMBER_PROJECT_SEPARATOR.key }),
+      );
+      const stored = await findSimpleValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEPARATOR.key);
+      expect(stored?.value).toBe("#");
+    });
   });
 });
 

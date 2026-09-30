@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
+import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { HistoryList, type HistoryEntry } from "@/ui/history-list/HistoryList";
 import { parseNumberInput, type NumberInputKind } from "@/lib/format-number";
 import {
@@ -222,7 +224,19 @@ function sameValues(a: StepValues, b: StepValues): boolean {
 // 모았다가 `N단 저장` 하나로 한 트랜잭션에 저장한다 — 두 칸을 바꾸는 사이의 중간 결재선이 생기지 않게.
 // 칸의 비활성은 저장 전 화면 값으로 다시 판정한다(서버가 넘긴 조건 그대로). base = 초안을 시작한 저장값 —
 // 저장 때 기대값으로 보내, 그 사이 다른 저장이 있었으면 도메인이 거부한다. 손대지 않은 단계는 새 저장값을 따라간다.
-function RouteStepEditor({ kind, stepIndex, fields }: { kind: string; stepIndex: number; fields: SettingsFieldViewModel[] }) {
+type StepDirtyChange = (key: string, stepIndex: number, dirty: boolean) => void;
+
+function RouteStepEditor({
+  kind,
+  stepIndex,
+  fields,
+  onDirtyChange,
+}: {
+  kind: string;
+  stepIndex: number;
+  fields: SettingsFieldViewModel[];
+  onDirtyChange: StepDirtyChange;
+}) {
   const { execute, result, isExecuting } = useAction(saveApprovalRouteStepAction);
   const errorId = useId();
   const saved: StepValues = Object.fromEntries(fields.map((field) => [field.key, savedValueOf(field)]));
@@ -235,8 +249,10 @@ function RouteStepEditor({ kind, stepIndex, fields }: { kind: string; stepIndex:
   }
   const dirty = !sameValues(draft, base);
   const error = dirty ? errorMessageOf(result) : null;
+  // 저장 대기(isExecuting) 중엔 칸을 잠근다 — 대기 중 바꾼 값이 다음 저장의 기대값(base)을 어긋나게 하지 않게(Codex P2).
 
-  // 이 화면에서 저장하지 않은 값은 단계 칸뿐이다 — 떠날 때 경고한다(§7-3 편집 표와 같은 방식, 문구 없음).
+  // 이 화면에서 저장하지 않은 값은 단계 칸뿐이다 — 새로 고침 · 창 닫기는 브라우저 이탈 경고(§7-3 편집 표와 같은
+  // 방식, 문구 없음). 바뀐 칸과 같은 커밋에 등록한다(부모를 거치면 한 박자 늦어 곧바로 새로 고치면 빠진다).
   useEffect(() => {
     if (!dirty) return;
     function handleBeforeUnload(event: BeforeUnloadEvent) {
@@ -246,6 +262,11 @@ function RouteStepEditor({ kind, stepIndex, fields }: { kind: string; stepIndex:
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [dirty]);
+
+  // 앱 안 링크 확인은 화면 전체에서 한 번 — 저장하지 않은 단계를 SettingsFormClient에 알린다.
+  const stepKey = `${kind}-${stepIndex}`;
+  useEffect(() => onDirtyChange(stepKey, stepIndex, dirty), [stepKey, stepIndex, dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange(stepKey, stepIndex, false), [stepKey, stepIndex, onDirtyChange]);
 
   function change(key: string, value: unknown) {
     setState((current) => ({ ...current, draft: { ...current.draft, [key]: value } }));
@@ -268,7 +289,12 @@ function RouteStepEditor({ kind, stepIndex, fields }: { kind: string; stepIndex:
           return (
             <div key={field.key} className={styles.field}>
               <label className={styles.checkboxLabel}>
-                <input type="checkbox" checked={value === true} onChange={(event) => change(field.key, event.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={value === true}
+                  disabled={isExecuting}
+                  onChange={(event) => change(field.key, event.target.checked)}
+                />
                 {field.label}
               </label>
               {field.hint ? <p className={styles.hint}>{field.hint}</p> : null}
@@ -284,7 +310,7 @@ function RouteStepEditor({ kind, stepIndex, fields }: { kind: string; stepIndex:
               <select
                 className={styles.select}
                 value={typeof value === "string" ? value : ""}
-                disabled={disabled}
+                disabled={disabled || isExecuting}
                 onChange={(event) => change(field.key, event.target.value)}
               >
                 {(field.options ?? []).map((option) => (
@@ -397,7 +423,7 @@ function ExportButton() {
 }
 
 // 결재선 단계 칸은 (종류, 단계)마다 한 묶음으로 — 첫 칸 자리에 그린다(SETTING_DEFS 순서가 바뀌어도 묶음이 쪼개지지 않게).
-function renderFields(fields: SettingsFieldViewModel[]): ReactNode[] {
+function renderFields(fields: SettingsFieldViewModel[], onDirtyChange: StepDirtyChange): ReactNode[] {
   const groups = new Map<string, SettingsFieldViewModel[]>();
   for (const field of fields) {
     if (!field.step) continue;
@@ -412,7 +438,15 @@ function renderFields(fields: SettingsFieldViewModel[]): ReactNode[] {
       const key = `${field.step.kind}-${field.step.stepIndex}`;
       if (rendered.has(key)) continue;
       rendered.add(key);
-      nodes.push(<RouteStepEditor key={key} kind={field.step.kind} stepIndex={field.step.stepIndex} fields={groups.get(key) ?? []} />);
+      nodes.push(
+        <RouteStepEditor
+          key={key}
+          kind={field.step.kind}
+          stepIndex={field.step.stepIndex}
+          fields={groups.get(key) ?? []}
+          onDirtyChange={onDirtyChange}
+        />,
+      );
       continue;
     }
     nodes.push(
@@ -443,16 +477,65 @@ function renderFields(fields: SettingsFieldViewModel[]): ReactNode[] {
   return nodes;
 }
 
+// 저장하지 않은 단계가 있으면 앱 안 링크로 떠날 때 확인한다 — next/link는 beforeunload 없이 이동한다(Codex P2
+// r4140619759). 연차 신청 폼과 같은 `입력 버리기` 확인. 새로 고침 · 창 닫기는 각 단계의 브라우저 이탈 경고.
+function useLeaveGuard(dirtySteps: number[]) {
+  const [leaveHref, setLeaveHref] = useState<string | null>(null);
+  const dirty = dirtySteps.length > 0;
+
+  useEffect(() => {
+    if (!dirty) return;
+    // 캡처 단계에서 앱 안 링크 누름을 먼저 받아 이동을 멈춘다(React 루트의 Link 처리보다 앞선다).
+    function handleClick(event: MouseEvent) {
+      if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      if (!(anchor instanceof HTMLAnchorElement) || anchor.hasAttribute("download")) return;
+      if (anchor.target && anchor.target !== "_self") return;
+      const url = new URL(anchor.href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+      if (url.pathname === window.location.pathname && url.search === window.location.search) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setLeaveHref(url.pathname + url.search + url.hash);
+    }
+    document.addEventListener("click", handleClick, true);
+    return () => document.removeEventListener("click", handleClick, true);
+  }, [dirty]);
+
+  return { leaveHref, setLeaveHref };
+}
+
 export function SettingsFormClient({ sections }: { sections: SettingsSection[] }) {
+  const router = useRouter();
+  const [dirtyByStep, setDirtyByStep] = useState<Record<string, number>>({});
+  const onDirtyChange = useCallback<StepDirtyChange>((key, stepIndex, dirty) => {
+    setDirtyByStep((current) => {
+      if (dirty === key in current) return current;
+      const next = { ...current };
+      if (dirty) next[key] = stepIndex;
+      else delete next[key];
+      return next;
+    });
+  }, []);
+  const dirtySteps = Object.values(dirtyByStep).sort((a, b) => a - b);
+  const { leaveHref, setLeaveHref } = useLeaveGuard(dirtySteps);
+
   return (
     <div>
       <ExportButton />
       {sections.map((section) => (
         <section key={section.namespace} className={styles.section}>
           <h2 className={styles.sectionTitle}>{section.namespace}</h2>
-          {renderFields(section.fields)}
+          {renderFields(section.fields, onDirtyChange)}
         </section>
       ))}
+      <ConfirmDialog
+        open={leaveHref !== null}
+        onClose={() => setLeaveHref(null)}
+        title="입력 버리기"
+        subtitle={`결재선 ${dirtySteps.map((step) => `${step}단`).join(" · ")}`}
+        primary={{ label: "입력 버리기", onConfirm: () => leaveHref && router.push(leaveHref) }}
+      />
     </div>
   );
 }

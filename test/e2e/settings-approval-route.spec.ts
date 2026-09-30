@@ -213,6 +213,52 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     }
   });
 
+  // Codex P2(PR #105 r4140619759): 앱 안 링크(next/link — 상단 로고)는 beforeunload 없이 떠난다 → 입력 버리기 확인.
+  test("저장 안 한 단계가 있으면 앱 안 링크로 떠날 때 입력 버리기 확인이 뜨고, 취소하면 남고 확인하면 떠난다", async ({ page }) => {
+    const originalRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);
+    await openSettings(page);
+    await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+
+    await page.getByRole("link", { name: "PLANT8 내 차례" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: "입력 버리기" })).toBeVisible();
+    await expect(dialog).toContainText("결재선 2단");
+    await dialog.getByRole("button", { name: "취소" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page).toHaveURL(/\/admin\/settings$/);
+    await expect(page.getByLabel("2단 담당 계급")).toHaveValue(CEO_ROLE_ID);
+
+    await page.getByRole("link", { name: "PLANT8 내 차례" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "입력 버리기" }).click();
+    await expect(page).not.toHaveURL(/\/admin\/settings$/);
+    expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID)).toBe(originalRole);
+  });
+
+  // Codex P2(PR #105 r4140619761): 저장 대기 중 칸을 또 바꾸면 다음 저장이 옛 기대값을 보내 거부된다 → 대기 중엔 칸을 잠근다.
+  test("단계 저장 대기 중에는 그 단계 칸이 잠기고, 끝나면 다시 풀린다", async ({ page }) => {
+    const originalRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);
+    try {
+      await openSettings(page);
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => (release = resolve));
+      await page.route("**/admin/settings", async (route) => {
+        if (route.request().method() === "POST") await held;
+        await route.continue();
+      });
+      await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+      await page.getByRole("button", { name: "2단 저장" }).click();
+      await expect(page.getByLabel("2단 조직 범위")).toBeDisabled();
+      await expect(page.getByLabel("2단 담당 계급")).toBeDisabled();
+      await expect(page.getByLabel("2단 사용")).toBeDisabled();
+      release();
+      await expect(page.getByRole("button", { name: "2단 저장" })).toHaveAccessibleDescription("바뀐 칸 없음");
+      await expect(page.getByLabel("2단 담당 계급")).toBeEnabled();
+      await page.unroute("**/admin/settings");
+    } finally {
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID, originalRole);
+    }
+  });
+
   // 04.1-05(CXF-B-F01 · CXF2-B-RF01 · T6): 본인 승인이면 팀장 자기 문서의 행동 줄 = 1차 승인 + 2차 회수(반려 없음).
   // PC 결재함 행에는 3차 승인 하나(회수는 문서 화면 · 폰 시트에서만), 폰 결재 시트는 승인 + 회수.
   test("본인 승인 — 팀장 자기 문서: 문서 화면 승인 + 회수, PC 결재함 행 승인 하나, 폰 시트 승인 + 회수", async ({ browser, baseURL }) => {

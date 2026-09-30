@@ -1144,6 +1144,6 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 
 **버린 대안**: 칸마다 즉시 저장 + 알려진 한계로 기록(B) · 결재선 섹션 전체를 한 번에 저장(C).
 
-**리뷰 보강(같은 PR)**: 화면을 연 뒤 그 단계에 다른 저장이 먼저 됐으면 저장을 거부하고 버튼 아래 `저장 실패 · 다른 저장이 먼저 됨 · 새로 고침`(손대지 않은 칸을 옛 값으로 덮지 않게). 손대지 않은 단계는 새로 그릴 때 새 저장값을 따른다. 저장하지 않은 단계가 있으면 떠날 때 브라우저 이탈 경고(§7-3 편집 표와 같은 방식, 문구 없음). 칸 하나 저장 액션은 단계 칸을 거부한다(서버에서도 한 번에만).
+**리뷰 보강(같은 PR)**: 화면을 연 뒤 그 단계에 다른 저장이 먼저 됐으면 저장을 거부하고 버튼 아래 `저장 실패 · 다른 저장이 먼저 됨 · 새로 고침`(손대지 않은 칸을 옛 값으로 덮지 않게). 손대지 않은 단계는 새로 그릴 때 새 저장값을 따른다. 저장하지 않은 단계가 있으면 새로 고침 · 창 닫기는 브라우저 이탈 경고(§7-3 편집 표와 같은 방식, 문구 없음), 앱 안 링크(next/link는 beforeunload를 거치지 않는다 — Codex P2 r4140619759)는 연차 신청 폼과 같은 `입력 버리기` 확인(대상 `결재선 N단`). 저장 대기 중엔 그 단계 칸을 잠근다(대기 중 바꾼 값이 다음 저장을 옛 기대값으로 보내 거부되던 것 — Codex P2 r4140619761). 칸 하나 저장 액션은 단계 칸을 거부한다(서버에서도 한 번에만).
 
 **범위**: SYSTEM.md §7-2. 코드: `app/(app)/admin/settings/`(settings-form-client.tsx · page.tsx · actions.ts · actions.registry.ts) · `domain/approvals/route-step-settings.ts` · `domain/approvals/settings-options.ts` · `repositories/settings.ts`(lockSimpleValues). 회귀: `test/integration/settings-approval-route.test.ts` · `test/e2e/settings-approval-route.spec.ts` · `test/unit/app/settings-step-key-guard.test.ts`.

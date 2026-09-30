@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-30T20:03:22.004Z",
+  "timestamp": "2026-09-30T20:47:51.859Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -145,21 +145,22 @@
       "name": "PR #112 /review",
       "status": "done",
       "commit": "f9bdfa7"
+    },
+    {
+      "id": 24,
+      "name": "PR #112 /qa",
+      "status": "done",
+      "commit": "bde88e2"
     }
   ],
   "remaining_tasks": [
     {
       "id": 1,
-      "name": "PR #112 /review (범위 origin/main..6950a27)",
+      "name": "PR #112 /design-review (화면 변경 있음)",
       "status": "not_started"
     },
     {
       "id": 2,
-      "name": "PR #112 /qa · /design-review (화면 변경 있음)",
-      "status": "not_started"
-    },
-    {
-      "id": 3,
       "name": "/cso 해당 여부 판단 · draft→ready 사용자 확인 · /ship",
       "status": "not_started"
     }
@@ -597,9 +598,10 @@
     }
   ],
   "uncommitted_files": [
+    " M .planning/phases/04-project-quote-ledger/.continue-here.md",
     "?? .claude/gates/phase-02.log"
   ],
-  "next_action": "새 세션(plant8 환경, 브랜치 claude/pr104-followup-f2)에서 git status -sb · .continue-here BLOCKING CONSTRAINTS · PR #112 최신 [지시]·D1 답 확인 → PR #112 /qa",
+  "next_action": "새 세션(plant8 환경, 브랜치 claude/pr104-followup-f2)에서 git status -sb · .continue-here BLOCKING CONSTRAINTS · PR #112 최신 [지시]·D1 답 확인 · origin/main 머지 → PR #112 /design-review (기록 docs/reviews/phase-04/pr112-design-review.md) → 다음 세션 /cso 판단 → ship",
   "context_notes": "PR #104 머지됨(f3242c8). F(2)는 draft PR #112로 올라감. 남은 것은 Post-build 묶음과 /ship. 위험 경로 없음.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",

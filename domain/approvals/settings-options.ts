@@ -4,7 +4,7 @@ import { listDocumentKinds, type RouteSettingDefs } from "@/domain/approvals/kin
 import { listRoles as defaultListRoles } from "@/repositories/roles";
 import { listOrgUnits as defaultListOrgUnits } from "@/repositories/org-units";
 import { findSimpleValues as defaultFindSimpleValues } from "@/repositories/settings";
-import { getSimpleSettingValues } from "@/domain/settings/registry";
+import { getSimpleSettingValuesOrDefault } from "@/domain/settings/registry";
 
 // 04.1-04(U3 · Codex MEDIUM): 설정 화면 결재선 칸의 동적 옵션. 설정 보기 권한만 보고
 // 리포지토리에서 계급 · 본부의 id · 이름 · 보관 여부만 읽는다 — 사람 관리 권한 범위
@@ -82,7 +82,8 @@ export async function listApprovalRouteOptions(viewer: Viewer, deps?: Partial<Se
   const stepDefs = kinds.flatMap((kind) =>
     (kind.routeSettings?.steps ?? []).flatMap((step) => [step.enabled, step.roleId, step.scope, step.orgUnitId]),
   );
-  const stepValues = await getSimpleSettingValues(stepDefs, { findSimpleValues: deps?.findSimpleValues });
+  // 형식이 맞지 않는 칸은 그 칸만 기본값 — 한 칸 때문에 설정 화면이 열리지 않으면 고칠 곳이 없다.
+  const stepValues = await getSimpleSettingValuesOrDefault(stepDefs, { findSimpleValues: deps?.findSimpleValues });
   const values = Object.fromEntries(stepDefs.map((def, index) => [def.key, stepValues[index]]));
 
   return {

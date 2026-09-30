@@ -309,6 +309,28 @@ export type SimpleSettingValues<Defs extends readonly SettingDef<unknown>[]> = {
   [K in keyof Defs]: Defs[K] extends SettingDef<infer V> ? V | undefined : never;
 };
 
+// 형식이 맞지 않는 저장값은 그 칸만 기본값으로 본다(PR #105 · Codex r4141687065 후속) — 설정 화면(보기 · 경고 ·
+// 결재선 단계 저장의 기대값 비교)이 한 칸 때문에 열리지 않거나 저장이 늘 거부되면 고칠 길이 없다. 계산 경로(결재선
+// 로더 등)는 그대로 엄격하다.
+export function simpleValueOrDefault<T>(def: SettingDef<T>, row: { value: unknown } | undefined): T | undefined {
+  if (!row) return def.default;
+  const parsed = def.schema.safeParse(row.value);
+  return parsed.success ? parsed.data : def.default;
+}
+
+export async function getSimpleSettingValuesOrDefault<const Defs extends readonly SettingDef<unknown>[]>(
+  defs: Defs,
+  deps?: { findSimpleValues?: typeof defaultFindSimpleValues },
+): Promise<SimpleSettingValues<Defs>> {
+  const findSimpleValues = deps?.findSimpleValues ?? defaultFindSimpleValues;
+  const rows = await findSimpleValues(
+    SYSTEM_VIEWER,
+    defs.map((def) => def.key),
+  );
+  const byKey = new Map(rows.map((row) => [row.key, row]));
+  return defs.map((def) => simpleValueOrDefault(def, byKey.get(def.key))) as SimpleSettingValues<Defs>;
+}
+
 // 04.1(Codex HIGH 스냅숏): 비이력형 키 여러 개를 findSimpleValues **한 번**(SELECT
 // 한 문장)으로 읽어 정의 순서대로 돌려준다 — 행이 있으면 schema.parse, 없으면
 // default, default도 없으면 undefined(던지지 않는다 — 호출자가 정한다).

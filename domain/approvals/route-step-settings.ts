@@ -5,6 +5,7 @@ import { recordAction as defaultRecordAction } from "@/domain/action-log/record"
 import { lockRouteStep, lockSimpleValues, upsertSimpleValue as defaultUpsertSimpleValue } from "@/repositories/settings";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
+import { simpleValueOrDefault } from "@/domain/settings/registry";
 
 // 사용자 결정(2026-09-30 A · PR #90 Codex r4137164384): 결재선 한 단계(사용 · 담당 계급 · 조직 범위 · 특정 부서)는
 // 네 칸을 한 트랜잭션에 저장한다 — 칸마다 저장하면 그 사이의 중간 결재선이 제출된 문서에 굳는다. 결재선 로더는
@@ -61,12 +62,13 @@ export async function saveRouteStepSettings(
     await lockRouteStep(viewer, `${input.kind}:${input.stepIndex}`, tx);
     if (input.expected) {
       const rows = await lockSimpleValues(viewer, defs.map((def) => def.key), tx);
-      const stored = new Map(rows.map((row) => [row.key, row.value]));
+      // 화면과 같은 규칙으로 읽는다 — 형식이 맞지 않는 저장값은 기본값(화면이 보인 값)이어야 기대값과 맞는다.
+      const stored = new Map(rows.map((row) => [row.key, row]));
       const current = withOrgUnitFallback({
-        enabled: stored.has(step.enabled.key) ? stored.get(step.enabled.key) : step.enabled.default,
-        roleId: stored.has(step.roleId.key) ? stored.get(step.roleId.key) : step.roleId.default,
-        scope: stored.has(step.scope.key) ? stored.get(step.scope.key) : step.scope.default,
-        orgUnitId: stored.has(step.orgUnitId.key) ? stored.get(step.orgUnitId.key) : step.orgUnitId.default,
+        enabled: simpleValueOrDefault(step.enabled, stored.get(step.enabled.key)),
+        roleId: simpleValueOrDefault(step.roleId, stored.get(step.roleId.key)),
+        scope: simpleValueOrDefault(step.scope, stored.get(step.scope.key)),
+        orgUnitId: simpleValueOrDefault(step.orgUnitId, stored.get(step.orgUnitId.key)),
       });
       const expected = withOrgUnitFallback(input.expected);
       const fields = ["enabled", "roleId", "scope", "orgUnitId"] as const;

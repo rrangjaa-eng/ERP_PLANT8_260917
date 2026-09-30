@@ -15,6 +15,7 @@ import { setPermissionCell } from "@/domain/permissions/matrix";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { approveDocument, currentHolderNames, getApprovalView } from "@/domain/approvals";
 import { listApprovalRouteOptions } from "@/domain/approvals/settings-options";
+import { listApprovalRouteSettingWarnings } from "@/domain/approvals/settings-warnings";
 import { isRouteStepSettingKey, saveRouteStepSettings } from "@/domain/approvals/route-step-settings";
 import { recordAction } from "@/domain/action-log/record";
 import { submitLeave, LEAVE_DOCUMENT_KIND, LEAVE_ROUTE_SETTINGS } from "@/domain/leave";
@@ -284,6 +285,54 @@ describe("비활성 칸의 저장값 보존(CX-W2)", () => {
       expect(options.values[def.key]).toEqual(await getSettingValue<unknown>(def).catch(() => undefined));
     }
     expect(options.values[LEAVE_ROUTE_SETTINGS.steps[1]!.roleId.key]).toBe(CEO_ROLE_ID);
+  });
+
+  it("단계 칸 저장값 하나가 형식에 맞지 않아도 옵션은 던지지 않고 그 칸만 기본값이다 — 설정 화면이 열려야 고친다", async () => {
+    const STEP2 = LEAVE_ROUTE_SETTINGS.steps[1]!;
+    const before = await getSettingValue(STEP2.roleId);
+    await upsertSimpleValue(SYSTEM_VIEWER, STEP2.roleId.key, 12345, SYSTEM_VIEWER.id);
+    try {
+      const options = await listApprovalRouteOptions(SYSTEM_VIEWER);
+      expect(options.values[STEP2.roleId.key]).toBe(STEP2.roleId.default);
+      expect(options.values[STEP2.enabled.key]).toBe(await getSettingValue(STEP2.enabled));
+    } finally {
+      await upsertSimpleValue(SYSTEM_VIEWER, STEP2.roleId.key, before, SYSTEM_VIEWER.id);
+    }
+  });
+
+  it("단계 칸 저장값이 형식에 맞지 않아도 경고 계산은 던지지 않는다 — 그 칸은 기본값으로 본다", async () => {
+    const STEP2 = LEAVE_ROUTE_SETTINGS.steps[1]!;
+    const before = await getSettingValue(STEP2.scope);
+    await upsertSimpleValue(SYSTEM_VIEWER, STEP2.scope.key, 123, SYSTEM_VIEWER.id);
+    try {
+      await expect(listApprovalRouteSettingWarnings(SYSTEM_VIEWER)).resolves.toBeDefined();
+    } finally {
+      await upsertSimpleValue(SYSTEM_VIEWER, STEP2.scope.key, before, SYSTEM_VIEWER.id);
+    }
+  });
+
+  it("단계 칸 저장값이 형식에 맞지 않으면 화면이 보인 기본값을 기대값으로 보내 저장할 수 있다 — 고칠 길이 막히지 않는다", async () => {
+    const STEP2 = LEAVE_ROUTE_SETTINGS.steps[1]!;
+    const [enabled, roleId, scope, orgUnitId] = await Promise.all([
+      getSettingValue(STEP2.enabled),
+      getSettingValue(STEP2.roleId),
+      getSettingValue(STEP2.scope),
+      getSettingValue(STEP2.orgUnitId),
+    ]);
+    await upsertSimpleValue(SYSTEM_VIEWER, STEP2.roleId.key, 12345, SYSTEM_VIEWER.id);
+    try {
+      const options = await listApprovalRouteOptions(SYSTEM_VIEWER);
+      const shown = { enabled, roleId: options.values[STEP2.roleId.key], scope, orgUnitId };
+      await saveRouteStepSettings(SYSTEM_VIEWER, {
+        kind: LEAVE_DOCUMENT_KIND,
+        stepIndex: 2,
+        values: { ...shown, roleId: CEO_ROLE_ID },
+        expected: shown,
+      });
+      expect(await getSettingValue(STEP2.roleId)).toBe(CEO_ROLE_ID);
+    } finally {
+      await upsertSimpleValue(SYSTEM_VIEWER, STEP2.roleId.key, roleId, SYSTEM_VIEWER.id);
+    }
   });
 
   it("옵션의 activeWhen에 연차 결재선 12키가 있다", async () => {

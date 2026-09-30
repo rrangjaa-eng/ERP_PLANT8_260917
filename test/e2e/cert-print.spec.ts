@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, certSubmissions, privacySessionActivity, sessions } from "@/db/schema";
+import { actionLog, certEvents, certSubmissions, privacySessionActivity, sessions } from "@/db/schema";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { CERT_EVENT_NAME_MAX } from "@/domain/certs/events";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { findUserByEmail } from "@/repositories/users";
 import { getSignatureStore } from "@/lib/storage/signature-store";
@@ -83,6 +84,45 @@ async function repointSignature(submissionId: string, png: Buffer | null): Promi
   await db.update(certSubmissions).set({ signatureKey: key }).where(eq(certSubmissions.id, submissionId));
 }
 
+
+// 공백이 섞인 한글 문장을 정확히 len자로 만든다(실제 행사 이름 · 도로명 주소처럼 어절 단위로 꺾이게).
+function textOfLength(len: number, unit: string): string {
+  const out = Array.from({ length: len }, (_, index) => unit[index % unit.length] ?? "가").join("");
+  return out.trimEnd().length === len ? out : `${out.slice(0, -1)}가`;
+}
+
+// 인쇄 미디어 · A4 폭에서 흐름이 하단 여백(20mm) 안에 있고 PDF가 한 장인지 잰다(독립 DOM 감사 M1).
+async function measureA4(page: Page): Promise<{
+  labelBottom: number;
+  footTop: number;
+  limit: number;
+  scrollHeight: number;
+  clientHeight: number;
+  pdfPages: number;
+}> {
+  await page.setViewportSize({ width: 794, height: 1123 });
+  await page.emulateMedia({ media: "print" });
+  const box = await page.evaluate(() => {
+    const sheet = document.querySelector("main > section");
+    if (!sheet) throw new Error("인쇄 본문 없음");
+    const top = sheet.getBoundingClientRect().top;
+    const spans = [...sheet.querySelectorAll("span")];
+    const label = spans.find((el) => el.textContent === "서명");
+    const foot = spans.find((el) => el.textContent === "PLANT8 ERP");
+    if (!label || !foot) throw new Error("서명 라벨 · 바닥줄 없음");
+    return {
+      sheetHeight: sheet.getBoundingClientRect().height,
+      labelBottom: label.getBoundingClientRect().bottom - top,
+      footTop: foot.getBoundingClientRect().top - top,
+      scrollHeight: sheet.scrollHeight,
+      clientHeight: sheet.clientHeight,
+    };
+  });
+  const pdf = await page.pdf({ preferCSSPageSize: true });
+  const pdfPages = (pdf.toString("latin1").match(/\/Type\s*\/Page\b/g) ?? []).length;
+  return { ...box, limit: (box.sheetHeight * (297 - 20)) / 297, pdfPages };
+}
+
 const printPath = (id: string) => `/print/certs/${id}`;
 const reviewPath = (id: string) => `/certs/submissions/${id}`;
 
@@ -131,6 +171,70 @@ test.describe("인쇄 라우트", () => {
     await context.close();
   });
 
+  for (const size of [
+    { label: "플랜 최악치(행사 이름 40자 + 주소 71자)", event: 40, address: 71 },
+    { label: "주소가 한 줄 더 꺾인 경우(40자 + 100자)", event: 40, address: 100 },
+    { label: "입력 한도 최대치(행사 이름 80자 + 주소 200자)", event: CERT_EVENT_NAME_MAX, address: 200 },
+  ]) {
+    test(`A4 한 장 — ${size.label}: 흐름이 하단 여백 안 · 바닥줄과 겹치지 않음 · PDF 1장(M1)`, async ({ browser }) => {
+      const seeded = await seedSubmittedCert({
+        delivery: "parcel",
+        address: textOfLength(size.address, "서울특별시 마포구 월드컵북로 "),
+      });
+      await db
+        .update(certEvents)
+        .set({ name: textOfLength(size.event, "2026 현대자동차 아이오닉 미디어 론칭 ") })
+        .where(eq(certEvents.id, seeded.eventId));
+      const { context, page } = await loggedInContext(browser, admin);
+      await page.goto(printPath(seeded.submissionId));
+      await expect(page.locator("[data-ready]")).toHaveCount(1);
+
+      const m = await measureA4(page);
+      expect(m.labelBottom, "서명 라벨 아래가 하단 여백(20mm) 안").toBeLessThanOrEqual(m.limit);
+      expect(m.labelBottom, "서명 라벨이 바닥줄을 침범하지 않음").toBeLessThan(m.footTop);
+      expect(m.scrollHeight, "본문이 종이 밖으로 넘치지 않음").toBeLessThanOrEqual(m.clientHeight);
+      expect(m.pdfPages, "PDF 쪽수").toBe(1);
+      await context.close();
+    });
+  }
+
+  test("숫자 칸은 줄바꿈하지 않는다 · 제목이 화면 문서에 있다(L4)", async ({ browser }) => {
+    const seeded = await seedSubmittedCert();
+    const { context, page } = await loggedInContext(browser, admin);
+    await page.goto(printPath(seeded.submissionId));
+    await expect(page.locator("[data-ready]")).toHaveCount(1);
+    const whiteSpace = await page.getByText("930412-2******").evaluate((el) => getComputedStyle(el).whiteSpace);
+    expect(whiteSpace).toBe("nowrap");
+    await context.close();
+  });
+
+  test("404 변종은 제목이 확인증 인쇄로 남지 않고 바탕이 --surface다(L3)", async ({ browser }) => {
+    const seeded = await seedSubmittedCert();
+    const pmSession = await loggedInContext(browser, pm);
+    const admin404 = await loggedInContext(browser, admin);
+    for (const { page, url } of [
+      { page: pmSession.page, url: printPath(seeded.submissionId) },
+      { page: admin404.page, url: printPath(randomUUID()) },
+      { page: admin404.page, url: "/print/certs/not-a-uuid" },
+    ]) {
+      await page.goto(url);
+      await expect(notFoundHeading(page)).toBeVisible();
+      await expect(page).not.toHaveTitle("확인증 인쇄");
+      const [surface, main] = await page.evaluate(() => {
+        const probe = document.createElement("div");
+        probe.style.background = "var(--surface)";
+        document.body.append(probe);
+        const expected = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        const target = document.querySelector("main");
+        return [expected, target ? getComputedStyle(target).backgroundColor : "main 없음"];
+      });
+      expect(main).toBe(surface);
+    }
+    await pmSession.context.close();
+    await admin404.context.close();
+  });
+
   test("현장 확인증의 주소는 —다", async ({ browser }) => {
     const seeded = await seedSubmittedCert();
     const { context, page } = await loggedInContext(browser, admin);
@@ -149,6 +253,7 @@ test.describe("인쇄 라우트", () => {
 
     await expect(page.getByText(PRINT_ERROR)).toBeVisible();
     await expect(page.getByRole("button", { name: "다시 시도" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: PRINT_ERROR })).toHaveCount(1);
     await expect(page.locator("[data-ready]")).toHaveCount(0);
     await page.waitForTimeout(300);
     expect(await printCalls(page)).toBe(0);

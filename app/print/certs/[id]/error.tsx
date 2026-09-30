@@ -10,16 +10,17 @@ import styles from "./print-cert.module.css";
 export default function CertPrintError({ error, retry }: { error: Error & { digest?: string }; retry: () => void }) {
   useEffect(() => {
     console.error(error);
+    document.title = "확인증 인쇄";
   }, [error]);
 
   return (
     <main className={styles.root}>
-      <p className={styles.errorLine}>
-        인쇄물 만들기 실패 ·{" "}
+      <div className={styles.errorLine}>
+        <h1 className={styles.errorTitle}>인쇄물 만들기 실패 ·</h1>
         <Button variant="secondary" onClick={retry}>
           다시 시도
         </Button>
-      </p>
+      </div>
       <p className={styles.notReady}>인쇄물이 아직 준비되지 않았습니다 · 화면이 다 뜬 뒤 다시 인쇄해 주세요</p>
     </main>
   );

@@ -25,10 +25,19 @@ type Props = {
 
 type State = "loading" | "ready" | "error";
 
+// 칸 폭(약 120mm)에 14px 한글이 한 줄 32자쯤 들어간다 — 이보다 길면 줄이 꺾일 수 있어 세로 간격을 줄인 배치로 바꾼다(M1).
+const COMPACT_OVER = 28;
+
 export function PrintSheet(props: Props) {
   const [state, setState] = useState<State>(props.signatureDataUrl === null ? "error" : "loading");
   const imageRef = useRef<HTMLImageElement>(null);
   const printed = useRef(false);
+  const compact = Array.from(props.eventName).length > COMPACT_OVER || Array.from(props.address).length > COMPACT_OVER;
+
+  // 문서 제목은 고정이다 — 이 화면(성공 · 실패 줄)만 정하고 404 변종은 기본 제목을 쓴다(L3).
+  useEffect(() => {
+    document.title = "확인증 인쇄";
+  }, []);
 
   useEffect(() => {
     const image = imageRef.current;
@@ -57,14 +66,14 @@ export function PrintSheet(props: Props) {
   return (
     <main className={styles.root} data-ready={state === "ready" ? "" : undefined}>
       {state === "error" ? (
-        <p className={styles.errorLine}>
-          인쇄물 만들기 실패 ·{" "}
+        <div className={styles.errorLine}>
+          <h1 className={styles.errorTitle}>인쇄물 만들기 실패 ·</h1>
           <Button variant="secondary" onClick={() => window.location.reload()}>
             다시 시도
           </Button>
-        </p>
+        </div>
       ) : (
-        <section className={styles.sheet}>
+        <section className={compact ? `${styles.sheet} ${styles.compact}` : styles.sheet}>
           <div className={styles.top}>
             <span className={styles.mark}>PLANT8</span>
             <span>

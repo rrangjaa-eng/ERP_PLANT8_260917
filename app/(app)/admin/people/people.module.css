@@ -166,7 +166,8 @@
   display: inline-flex;
   flex-wrap: nowrap;
   align-items: center;
-  column-gap: var(--s-4);
+  /* 폰에서 줄바꿈되면 위아래로도 같은 간격 — 「삭제」가 「상세」 44 상자에 붙지 않는다. */
+  gap: var(--s-4);
   white-space: nowrap;
 }
 

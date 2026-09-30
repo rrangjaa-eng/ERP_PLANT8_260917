@@ -148,6 +148,7 @@
   font-weight: var(--fw-medium);
   text-decoration: underline;
   text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
   cursor: pointer;
 }
 

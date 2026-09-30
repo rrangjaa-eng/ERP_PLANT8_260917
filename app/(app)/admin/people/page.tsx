@@ -43,7 +43,6 @@ export default async function PeoplePage({
   // 폼을 그리지 않는다(표시 조건 — 서버 판정은 createAccount가 따로 한다).
   const showForm = newParam === "1" && canWrite;
 
-  const roleNameById = new Map(roles.map((role) => [role.id, role.name]));
   const orgUnitNameById = new Map(orgUnits.map((org) => [org.id, org.name]));
   const teamOptions = teams.map((team) => ({
     id: team.id,
@@ -57,11 +56,12 @@ export default async function PeoplePage({
   const textColumns: { key: string; label: string; value: (person: Person) => string | null | undefined }[] = [];
   if (has("name")) textColumns.push({ key: "name", label: "이름", value: (person) => person.name });
   if (has("email")) textColumns.push({ key: "email", label: "이메일", value: (person) => person.email });
-  if (has("roleName") || has("roleId")) {
+  // 계급 이름은 role.value 소관이다 — roleId(person.value)만 있으면 계급 목록도 가려져 이름을 얻을 수 없다.
+  if (has("roleName")) {
     textColumns.push({
       key: "role",
       label: "계급",
-      value: (person) => person.roleName ?? roleNameById.get(person.roleId ?? "") ?? "—",
+      value: (person) => person.roleName ?? "—",
     });
   }
   if (has("currentTeamName")) {
@@ -90,7 +90,10 @@ export default async function PeoplePage({
       ) : null}
 
       {people.length === 0 ? (
-        <ListEmpty message="등록된 사람이 없습니다" action={{ label: "사람 등록", href: "/admin/people?new=1#person-form" }} />
+        <ListEmpty
+          message="등록된 사람이 없습니다"
+          action={canWrite ? { label: "사람 등록", href: "/admin/people?new=1#person-form" } : undefined}
+        />
       ) : textColumns.length === 0 ? (
         // 사람 · 계급 · 팀 정보가 모두 꺼진 계급(새 계급 기본값) — 보는 사람이 바꿀 수 없는 잠김이라 행동이 없다.
         // 사람이 없다는 말이 아니다(보는 사람 자신이 늘 1행 — SYSTEM.md §7-3 · §8-3, DECISIONS.md 2026-09-30).

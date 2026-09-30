@@ -41,7 +41,7 @@
   font-size: var(--fs-sm);
   text-decoration: underline;
   text-decoration-thickness: var(--line-w);
-  text-underline-offset: 2px;
+  text-underline-offset: var(--underline-offset);
   cursor: pointer;
 }
 

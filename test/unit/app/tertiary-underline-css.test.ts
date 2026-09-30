@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 // SYSTEM §4-4 · §7-1 「3차 버튼 밑줄 1px → hover 2px」: 글자 밑줄로 그리는 3차 링크 · 버튼은 기본 두께 var(--line-w)와
@@ -31,25 +31,32 @@ function parseRules(source: string): Rule[] {
 const UNDERLINE = /text-decoration(?:-line)?\s*:[^;]*\bunderline\b/;
 const BASE_THICKNESS = /text-decoration-thickness\s*:\s*var\(--line-w\)/;
 const HOVER_THICKNESS = /text-decoration-thickness\s*:\s*var\(--line-w-strong\)/;
+// §4-4 「text-underline-offset: 2px」 — 값은 토큰으로(사용자 결정 2026-09-30 /review D1).
+const OFFSET = /text-underline-offset\s*:\s*var\(--underline-offset\)/;
 
-function violations(file: string): string[] {
+function violations(file: string): { checked: number; found: string[] } {
   const rules = parseRules(readFileSync(join(ROOT, file), "utf8"));
   const found: string[] = [];
+  let checked = 0;
   for (const rule of rules) {
     if (!UNDERLINE.test(rule.body)) continue;
     // hover · focus 때만 긋는 규칙은 기본 밑줄이 아니다.
     if (rule.selectors.some((selector) => /:hover|:focus/.test(selector))) continue;
     for (const selector of rule.selectors) {
+      checked += 1;
       const hasBase = BASE_THICKNESS.test(rule.body);
+      const hasOffset = OFFSET.test(rule.body);
       const hasHover = rules.some(
         (other) => HOVER_THICKNESS.test(other.body) && other.selectors.some((item) => item.startsWith(`${selector}:hover`)),
       );
-      if (!hasBase || !hasHover) {
-        found.push(`${file}: ${selector}${hasBase ? "" : " (기본 두께 없음)"}${hasHover ? "" : " (hover 두께 없음)"}`);
+      if (!hasBase || !hasHover || !hasOffset) {
+        found.push(
+          `${file}: ${selector}${hasBase ? "" : " (기본 두께 없음)"}${hasHover ? "" : " (hover 두께 없음)"}${hasOffset ? "" : " (offset 토큰 없음)"}`,
+        );
       }
     }
   }
-  return found;
+  return { checked, found };
 }
 
 describe("3차 링크 · 버튼 밑줄 두께 — 1px → hover 2px (SYSTEM §4-4 · §7-1)", () => {
@@ -60,7 +67,9 @@ describe("3차 링크 · 버튼 밑줄 두께 — 1px → hover 2px (SYSTEM §4-
   });
 
   it("밑줄 규칙마다 기본 var(--line-w)와 :hover var(--line-w-strong) 규칙이 있다", () => {
-    const all = files.flatMap((file) => violations(relative(ROOT, join(ROOT, file))));
-    expect(all).toEqual([]);
+    const results = files.map((file) => violations(file));
+    // 파서가 아무 규칙도 못 잡으면 빈 목록으로 통과해 버린다 — 이 플랜이 맞춘 13개 규칙 이상을 실제로 검사했는지 본다.
+    expect(results.reduce((sum, result) => sum + result.checked, 0)).toBeGreaterThanOrEqual(13);
+    expect(results.flatMap((result) => result.found)).toEqual([]);
   });
 });

@@ -167,7 +167,7 @@ test.describe("폰 터치 목표 44 (quick 260929-npq · 04-UI-REVIEW 지적 1·
     }
   });
 
-  test("PC 1280·경계 700 — 「상태 바꾸기」 높이 32 · 「더보기」 없음 · 정렬 머리글 높이 그대로", async ({ page }) => {
+  test("PC 1280·경계 700 — 「상태 바꾸기」·「일괄 저장」 높이 32 · 「더보기」 없음 · 정렬 머리글 높이 그대로", async ({ page }) => {
     for (const width of WIDTHS_PC) {
       await login(page, seed.lead);
       await page.setViewportSize({ width, height: 800 });

@@ -92,7 +92,7 @@
     display: flex;
   }
 
-  /* §3 폰 터치 목표 44×44 — 머리 줄 2차 「상태 바꾸기」·「더보기」, 목록 「필터」와 같은 규칙(공유 Button의 .btn보다 한 단계 높은 선택자). */
+  /* §3 폰 터치 목표 44×44 — 머리 줄 「상태 바꾸기」·「더보기」·「일괄 저장」과 펼친 「복사해 새 차수」·「프로젝트 복사」(DECISIONS.md 2026-09-30), 목록 「필터」와 같은 규칙(공유 Button의 .btn보다 한 단계 높은 선택자). */
   .headerActions .headerTouchButton {
     min-width: var(--touch-min);
     min-height: var(--touch-min);

@@ -1133,3 +1133,14 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **버린 대안**: 폰에서만 통일(PC 확인 창은 1차 왼쪽 유지) · 결재 행동에만 두고 확인 창 · 폼은 그대로.
 
 **범위**: SYSTEM.md §6-3 · §7-8 · §7-17. 코드: `ui/confirm-dialog/ConfirmDialog.tsx` · `app/(app)/leave/new/leave-form.tsx` · `app/(app)/leave/leave.module.css` · `app/(app)/leave/use-phone-width.ts`(문서 화면 행동 줄과 같이 씀). 회귀: `test/unit/ui/confirm-dialog.test.ts` · `test/e2e/leave-document.spec.ts`(PC 반려 모달) · `test/e2e/mobile-leave-approval.spec.ts`(폰 반려 확인 시트) · `test/e2e/mobile-leave-list.spec.ts`(폰 제출 줄).
+
+## 2026-09-30 — 폰 프로젝트 상세 머리 줄 행동 버튼 44 (사용자 결정 2026-09-30)
+
+**결정**: 폰(<700) 프로젝트 상세 머리 줄의 1차 「일괄 저장」과 「더보기」로 펼친 「복사해 새 차수」 · 「프로젝트 복사」를 `--touch-min`(44)으로 한다. 같은 줄 「상태 바꾸기」 · 「더보기」(quick 260929-npq)와 같다. PC(≥700)는 32 그대로이고 새 토큰은 없다.
+**결정자**: 사용자(2026-09-30 채팅 「추천대로」, PR #104 [지시] 5903477924 — /review 2차 Red Team 「폰 40px 3개」).
+
+**이유**: 같은 머리 줄에서 「상태 바꾸기」 · 「더보기」만 44이고 이 셋은 40이었다(pr104-postbuild-review-2.md 「알려진 질문」).
+
+**버린 대안**: 40 유지.
+
+**범위**: SYSTEM.md §3. 코드: `app/(app)/projects/[id]/quote-table.tsx` · `revision-dialogs.tsx` · `project-detail.module.css`(주석). 회귀: `test/e2e/mobile-touch-targets.spec.ts`.

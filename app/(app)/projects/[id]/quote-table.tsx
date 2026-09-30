@@ -2224,7 +2224,7 @@ export function QuoteLedger({
           <HeaderCopyActions>
             {newRevision ? <NewRevisionDialog {...newRevision} dirtyCount={dirtyCount} onCreated={setStatusToast} /> : null}
             {copyProjectHref ? (
-              <Link href={copyProjectHref} className={buttonLinkClassName()}>
+              <Link href={copyProjectHref} className={`${buttonLinkClassName()} ${styles.headerTouchButton}`}>
                 프로젝트 복사
               </Link>
             ) : null}
@@ -2243,6 +2243,7 @@ export function QuoteLedger({
               id={saveButtonId}
               type="button"
               variant="primary"
+              className={styles.headerTouchButton}
               pending={isExecuting}
               disabled={dirtyCount === 0 && !cellEditing}
               disabledReason={saveDisabledReason}

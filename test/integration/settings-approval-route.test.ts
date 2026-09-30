@@ -411,6 +411,48 @@ describe("결재선 한 단계 원자 저장(사용자 결정 2026-09-30 A)", ()
     expect(await getSettingValue(STEP3.scope)).toBe("company");
   });
 
+  it("3단 특정 부서 행이 없을 때 두 관리자가 같은 화면에서 동시에 저장하면 뒤 저장은 거부된다(Codex r4141474150)", async () => {
+    const STEP3 = LEAVE_ROUTE_SETTINGS.steps[2]!;
+    const [first, second] = (await listOrgUnits(SYSTEM_VIEWER, { scope: { rows: "all", includeArchived: false } })).map((unit) => unit.id);
+    await db.delete(settingsSimple).where(eq(settingsSimple.key, STEP3.orgUnitId.key));
+    const loaded = { enabled: true, roleId: "", scope: "org_unit", orgUnitId: undefined };
+
+    let release: () => void = () => {};
+    const paused = new Promise<void>((resolve) => (release = resolve));
+    let enteredA: () => void = () => {};
+    const aEntered = new Promise<void>((resolve) => (enteredA = resolve));
+    let writesA = 0;
+    const saveA = saveRouteStepSettings(
+      SYSTEM_VIEWER,
+      { kind: LEAVE_DOCUMENT_KIND, stepIndex: 3, values: { ...loaded, orgUnitId: first }, expected: loaded },
+      {
+        upsertSimpleValue: async (...args: Parameters<typeof upsertSimpleValue>) => {
+          writesA += 1;
+          if (writesA === 1) {
+            enteredA();
+            await paused;
+          }
+          await upsertSimpleValue(...args);
+        },
+      },
+    );
+    await aEntered;
+    const saveB = saveRouteStepSettings(SYSTEM_VIEWER, {
+      kind: LEAVE_DOCUMENT_KIND,
+      stepIndex: 3,
+      values: { ...loaded, orgUnitId: second },
+      expected: loaded,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    release();
+
+    const results = await Promise.allSettled([saveA, saveB]);
+    expect(results.map((result) => result.status)).toEqual(["fulfilled", "rejected"]);
+    expect((results[1] as PromiseRejectedResult).reason).toBeInstanceOf(Error);
+    expect(((results[1] as PromiseRejectedResult).reason as Error).message).toBe("다른 저장이 먼저 됨 · 새로 고침");
+    expect(await getSettingValue(STEP3.orgUnitId)).toBe(first);
+  });
+
   it("단계 칸 키 판정 — 네 단계 16키만 참이고 자기 승인은 거짓", () => {
     for (const step of LEAVE_ROUTE_SETTINGS.steps) {
       for (const def of [step.enabled, step.roleId, step.scope, step.orgUnitId]) expect(isRouteStepSettingKey(def.key)).toBe(true);

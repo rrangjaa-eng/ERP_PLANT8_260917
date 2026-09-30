@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, lte } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { settingsSimple, settingsHistorized } from "@/db/schema";
@@ -169,6 +169,13 @@ export async function applySettingsImport(viewer: Viewer, input: SettingsImportI
 export async function lockSimpleValues(viewer: Viewer, keys: string[], tx: DbOrTx): Promise<SettingSimpleRow[]> {
   void viewer;
   return tx.select().from(settingsSimple).where(inArray(settingsSimple.key, keys)).orderBy(asc(settingsSimple.key)).for("update");
+}
+
+// Codex r4141474150: 없는 행은 FOR UPDATE로 잠기지 않는다(3단 특정 부서처럼 기본값 없는 키) — 같은 단계의
+// 저장 트랜잭션을 줄 세워, 뒤 저장이 앞 저장의 새 행을 보고 비교하게 한다. 트랜잭션 끝에 풀린다.
+export async function lockRouteStep(viewer: Viewer, step: string, tx: DbOrTx): Promise<void> {
+  void viewer;
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${"approval_route_step:" + step}, 0))`);
 }
 
 export async function findSimpleValues(viewer: Viewer, keys: string[], tx?: DbOrTx): Promise<SettingSimpleRow[]> {

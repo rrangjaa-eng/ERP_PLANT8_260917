@@ -2,7 +2,7 @@ import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan, ForbiddenError } from "@/domain/permissions/can";
 import { getDocumentKind, listDocumentKinds } from "@/domain/approvals/kinds";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
-import { lockSimpleValues, upsertSimpleValue as defaultUpsertSimpleValue } from "@/repositories/settings";
+import { lockRouteStep, lockSimpleValues, upsertSimpleValue as defaultUpsertSimpleValue } from "@/repositories/settings";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { withTransaction } from "@/lib/db-transaction";
 
@@ -58,6 +58,7 @@ export async function saveRouteStepSettings(
   const upsertSimpleValue = deps?.upsertSimpleValue ?? defaultUpsertSimpleValue;
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await withTransaction(async (tx) => {
+    await lockRouteStep(viewer, `${input.kind}:${input.stepIndex}`, tx);
     if (input.expected) {
       const rows = await lockSimpleValues(viewer, defs.map((def) => def.key), tx);
       const stored = new Map(rows.map((row) => [row.key, row.value]));

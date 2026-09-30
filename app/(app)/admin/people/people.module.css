@@ -164,9 +164,18 @@
 /* 행 안 두 행동(「상세」·「삭제」) 사이 --s-4 — SYSTEM §6-1 결재함 행과 같은 값, 위험한 동작은 떨어뜨려 둔다. */
 .rowActions {
   display: inline-flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   column-gap: var(--s-4);
+  white-space: nowrap;
+}
+
+/* PC는 줄바꿈하지 않는다 — wrap이면 표가 이 칸을 최소 폭으로 눌러 「삭제」가 「상세」 아래로 내려간다(다른 열이 긴 행 실측). 폰만 좁으면 줄바꿈. */
+@media (max-width: 699.98px) {
+  .rowActions {
+    flex-wrap: wrap;
+    white-space: normal;
+  }
 }
 
 /* §7-1 3차 버튼 — 위 .toggle과 같은 모양이다. 기본 규칙이 통째로 빠져 있어

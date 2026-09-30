@@ -192,6 +192,12 @@ test.describe("사람 목록 로그인 상태 배지 · 행 머리글 (04.4-05, 
 
 test.describe("PC 1280 — 「상세」와 「삭제」 사이가 --s-4 이상이다 (DR-7)", () => {
   test("한 행의 「상세」 링크 오른쪽 끝과 「삭제」 버튼 왼쪽 끝 간격이 --s-4 이상이다", async ({ page }) => {
+    // 다른 열이 긴 행이 있어도 「삭제」가 「상세」 아래로 내려가지 않는다(wrap이면 표가 이 칸을 최소 폭으로 눌렀다).
+    await createAccount(SYSTEM_VIEWER, {
+      email: `e2e-${"x".repeat(70)}-${Date.now()}@${"long".repeat(15)}.test`,
+      name: "가".repeat(60),
+      roleId: DEFAULT_ROLE_ID,
+    });
     await loginAsAdmin(page);
     const email = await registerPerson(page, "간격대상");
     const gapToken = await tokenNumber(page, "--s-4");

@@ -205,4 +205,21 @@ test.describe("PC 1280 — 「상세」와 「삭제」 사이가 --s-4 이상�
     const space4 = await tokenNumber(page, "--s-4");
     expect(gap, `상세↔삭제 간격 ${gap}px < --s-4 ${space4}px`).toBeGreaterThanOrEqual(space4 - 0.5);
   });
+
+  // 폰에서는 동작 칸이 줄바꿈을 허용해 두 행동이 세로로 쌓일 수 있다 — 쌓이면 세로 간격, 한 줄이면 가로 간격이 --s-4 이상이어야 한다.
+  test("폰 375 — 「상세」와 「삭제」가 쌓이거나 한 줄이어도 떨어진 거리가 --s-4 이상이다", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await loginAsAdmin(page);
+    const email = await registerPerson(page, "간격 확인 ".repeat(20).trim());
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto("/admin/people");
+    const row = personRow(page, email);
+    const detail = await row.getByRole("link", { name: "상세" }).boundingBox();
+    const remove = await row.getByRole("button", { name: "삭제" }).boundingBox();
+    if (!detail || !remove) throw new Error("상세 링크 · 삭제 버튼 상자를 못 잰다");
+    const stacked = remove.y >= detail.y + detail.height - 0.5;
+    const gap = stacked ? remove.y - (detail.y + detail.height) : remove.x - (detail.x + detail.width);
+    const space4 = await tokenNumber(page, "--s-4");
+    expect(gap, `폰 375 상세↔삭제 ${stacked ? "세로" : "가로"} 간격 ${gap}px < --s-4 ${space4}px`).toBeGreaterThanOrEqual(space4 - 0.5);
+  });
 });

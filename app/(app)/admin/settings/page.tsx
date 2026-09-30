@@ -89,10 +89,15 @@ async function buildSections(viewer: Viewer): Promise<SettingsSection[]> {
       field = { kind: "historized", descriptor, entries };
     } else {
       let currentValue: unknown;
-      try {
-        currentValue = await getSettingValue(def);
-      } catch {
-        currentValue = undefined;
+      if (def.key in routeOptions.values) {
+        // 결재선 단계 칸은 옵션이 한 문장으로 읽은 값(Codex r4141687065) — 단계 기준값이 두 저장 사이로 섞이지 않게.
+        currentValue = routeOptions.values[def.key];
+      } else {
+        try {
+          currentValue = await getSettingValue(def);
+        } catch {
+          currentValue = undefined;
+        }
       }
       field = { kind: "simple", descriptor, value: currentValue };
       values[def.key] = currentValue;
@@ -112,10 +117,16 @@ async function buildSections(viewer: Viewer): Promise<SettingsSection[]> {
     else sections.set(def.namespace, [viewModel]);
   }
 
-  // CX-W2: 켜짐 판정은 저장값 전부를 모은 뒤에 한다 — 판정은 값을 지우지 않는다.
+  // CX-W2: 켜짐 판정은 저장값 전부를 모은 뒤에 한다 — 판정은 값을 지우지 않는다. 결재선 단계 칸은
+  // 저장 전 화면 값으로 다시 판정하도록 조건과 단계를 함께 넘긴다(사용자 결정 2026-09-30 A).
   return Array.from(sections.entries()).map(([namespace, fields]) => ({
     namespace,
-    fields: fields.map((field) => ({ ...field, disabled: !isSettingActive(routeOptions.activeWhen[field.key], values) })),
+    fields: fields.map((field) => ({
+      ...field,
+      disabled: !isSettingActive(routeOptions.activeWhen[field.key], values),
+      activeWhen: routeOptions.activeWhen[field.key],
+      step: routeOptions.steps[field.key],
+    })),
   }));
 }
 
@@ -130,7 +141,7 @@ export default async function SettingsPage() {
     <>
       <PageHeader title="설정" />
       <div className="single-column">
-        <SettingsFormClient sections={sections} />
+        <SettingsFormClient sections={sections} viewerId={session.viewer.id} />
       </div>
     </>
   );

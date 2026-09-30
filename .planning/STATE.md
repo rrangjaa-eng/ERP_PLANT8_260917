@@ -32,7 +32,7 @@ Phase: 2 — 디자인 시스템·앱 셸
 Current Plan: Not started
 Total Plans in Phase: 44
 Status: Ready to plan
-Last activity: 2026-09-30 - Completed quick task 260930-ee9: PR #104 /review 3차 참고 E1~E5
+Last activity: 2026-09-30 - Completed quick task 260930-kc9: F(2) PR #104 후속 ISSUE-001 · DR-104-01~05 · G1~G3
 
 Progress: [██░░░░░░░░] 18%
 
@@ -349,6 +349,7 @@ Recent decisions affecting current work:
 | 260930-4xr | PR #104 /review 2차 결정 — A(2) 허용 밖 저장 구분자는 읽을 때 기본값 대체 + log.error · B 구분자 힌트 「빈칸 또는 - _ . / 중 한 글자」 · C 접두어 수락 위험 기록 · 폰 머리 줄 「일괄 저장」·「복사해 새 차수」·「프로젝트 복사」 44(PR #104 [지시] 5903477924) | 2026-09-30 | 0149cc6 | [260930-4xr-pr104-review-2-decisions-separator-read-](./quick/260930-4xr-pr104-review-2-decisions-separator-read-/) |
 | 260930-ee9 | PR #104 /review 3차 참고 E1~E5 — registry 주석 · 일괄 읽기 엄격 단위 테스트 · export 실효값 주석 · SYSTEM.md §7-1·§7-8 §3 역참조 · PC 「일괄 저장」 32 E2E 단언(동작 변경 없음, PR #104 [지시] 5909292999) | 2026-09-30 | ab9b818 | [260930-ee9-pr104-review-3-e1-e5-comment-test-doc-fi](./quick/260930-ee9-pr104-review-3-e1-e5-comment-test-doc-fi/) |
 | 260930-aq2 | 04.4 UI-REVIEW WARNING 3건: 사람 목록 id 없는 계급 key·상세·삭제(W1) · PC 배지 넘침 미재현(W2, 수치만) · 폰 「실행 기록」 줄 높이(W3) + 감사 W-A 누름 영역 | 2026-09-30 | 5d6a4a3 | [260930-aq2-04-4-ui-review-warning-3](./quick/260930-aq2-04-4-ui-review-warning-3/) |
+| 260930-kc9 | F(2) PR #104 후속 — ISSUE-001 설정 힌트 aria-describedby 전부 · DR-104-01 폰 복원 줄 폭 44 · DR-104-02 비활성 1차 kbd 대비 · DR-104-03 이력 숫자 쉼표 · DR-104-04 번호 칸 §7-3 · DR-104-05 폰 머리 줄 DOM 순서 = 보이는 순서 · G1 export 주석 · G2 PC 테스트 제목 · G3 SYSTEM.md 44 예외 역참조(ISSUE-002 제외, 독립 DOM 감사 A~G PASS) | 2026-09-30 | 4d23611 | [260930-kc9-f-2-pr104-followup-issue-001-dr-104-01-0](./quick/260930-kc9-f-2-pr104-followup-issue-001-dr-104-01-0/) |
 
 ### Roadmap Evolution
 

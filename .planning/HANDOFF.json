@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-30T17:36:48.817Z",
+  "timestamp": "2026-09-30T20:03:22.004Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -140,6 +140,11 @@
       "name": "F(2) /gsd-quick 260930-kc9 — ISSUE-001 · DR-104-01~05 · G1~G3, 독립 DOM 감사 A~G PASS, draft PR #112, CI quality 초록, [완료 보고] 5916447218",
       "status": "done",
       "commit": "6950a27"
+    },
+    {
+      "name": "PR #112 /review",
+      "status": "done",
+      "commit": "f9bdfa7"
     }
   ],
   "remaining_tasks": [
@@ -181,6 +186,11 @@
     {
       "action": "운영·스테이징 「프로젝트 번호 구분자」 설정이 허용 목록 값인지 배포 전 1회 확인",
       "context": "T-04-31",
+      "blocking": false
+    },
+    {
+      "action": "PR #112 D1 결정(댓글 5918701321)",
+      "context": "머리 줄 재배치와 확인 창 모달 상실 — 추천 (다)+(가) 후속",
       "blocking": false
     }
   ],
@@ -586,12 +596,14 @@
       "phase": "4"
     }
   ],
-  "uncommitted_files": [],
-  "next_action": "새 세션(plant8 환경, 브랜치 claude/pr104-followup-f2)에서 settings · git status -sb · .continue-here BLOCKING CONSTRAINTS · PR #104/#112 최신 [지시] 확인 → PR #112 /review",
+  "uncommitted_files": [
+    "?? .claude/gates/phase-02.log"
+  ],
+  "next_action": "새 세션(plant8 환경, 브랜치 claude/pr104-followup-f2)에서 git status -sb · .continue-here BLOCKING CONSTRAINTS · PR #112 최신 [지시]·D1 답 확인 → PR #112 /qa",
   "context_notes": "PR #104 머지됨(f3242c8). F(2)는 draft PR #112로 올라감. 남은 것은 Post-build 묶음과 /ship. 위험 경로 없음.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"
   ],
-  "uncommitted_files_note": "git status --porcelain 측정(17:37Z): 인계 파일 2개뿐 — 이 커밋으로 비워짐. phase-02.log 없음"
+  "uncommitted_files_note": "훅 오기 게이트 로그 — 커밋 금지(PR #104 선례)"
 }

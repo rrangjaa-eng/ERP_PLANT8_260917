@@ -95,7 +95,7 @@ export default async function PeoplePage({
               const teamName = person.currentTeamName ?? "—";
               const loginStatus = personLoginStatus(person);
               return (
-                <Fragment key={person.id}>
+                <Fragment key={person.id ?? nameId}>
                   <tr>
                     <th scope="row" id={nameId}>
                       {person.name}
@@ -125,11 +125,16 @@ export default async function PeoplePage({
                       )}
                     </td>
                     <td>
-                      <Link href={`/admin/people/${person.id}`} className={styles.detailLink}>
-                        상세
-                      </Link>
-                      {!person.archivedAt && canArchive ? (
-                        <PersonDeleteButton userId={person.id} name={person.name} />
+                      {/* person.value가 꺼진 계급의 DTO에는 id가 없다 — 갈 상세·보관할 대상이 없어 「상세」·삭제를 그리지 않는다. */}
+                      {person.id ? (
+                        <>
+                          <Link href={`/admin/people/${person.id}`} className={styles.detailLink}>
+                            상세
+                          </Link>
+                          {!person.archivedAt && canArchive ? (
+                            <PersonDeleteButton userId={person.id} name={person.name} />
+                          ) : null}
+                        </>
                       ) : null}
                     </td>
                   </tr>

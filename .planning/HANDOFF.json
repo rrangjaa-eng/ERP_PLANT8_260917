@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-30T20:47:51.859Z",
+  "timestamp": "2026-09-30T21:12:24.451Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -151,16 +151,17 @@
       "name": "PR #112 /qa",
       "status": "done",
       "commit": "bde88e2"
+    },
+    {
+      "id": null,
+      "name": "PR #112 /design-review",
+      "status": "done",
+      "commit": "17af444"
     }
   ],
   "remaining_tasks": [
     {
       "id": 1,
-      "name": "PR #112 /design-review (화면 변경 있음)",
-      "status": "not_started"
-    },
-    {
-      "id": 2,
       "name": "/cso 해당 여부 판단 · draft→ready 사용자 확인 · /ship",
       "status": "not_started"
     }
@@ -192,6 +193,16 @@
     {
       "action": "PR #112 D1 결정(댓글 5918701321)",
       "context": "머리 줄 재배치와 확인 창 모달 상실 — 추천 (다)+(가) 후속",
+      "blocking": false
+    },
+    {
+      "action": "PR #112 D2 답(DR-112-01 행 번호 열 폭 · DR-112-02 이력 비율 표시) — 댓글 5919814462, 추천 (가) 후속 quick",
+      "context": "/design-review polish 2건, ship을 막지 않음",
+      "blocking": false
+    },
+    {
+      "action": "phase-04.log에 design-review 2026-09-30T20:51Z session=1162371b-3833-558f-b6ed-a218d2eda9f2 줄 추가",
+      "context": "훅이 phase-02.log(미추적)에 오기",
       "blocking": false
     }
   ],
@@ -598,10 +609,9 @@
     }
   ],
   "uncommitted_files": [
-    " M .planning/phases/04-project-quote-ledger/.continue-here.md",
     "?? .claude/gates/phase-02.log"
   ],
-  "next_action": "새 세션(plant8 환경, 브랜치 claude/pr104-followup-f2)에서 git status -sb · .continue-here BLOCKING CONSTRAINTS · PR #112 최신 [지시]·D1 답 확인 · origin/main 머지 → PR #112 /design-review (기록 docs/reviews/phase-04/pr112-design-review.md) → 다음 세션 /cso 판단 → ship",
+  "next_action": "새 세션(plant8 환경, 브랜치 claude/pr104-followup-f2)에서 git status -sb · .continue-here BLOCKING CONSTRAINTS · PR #112 최신 [지시]·D1·D2 답 확인 · origin/main 머지 → /cso 해당 여부 판단(밝힘) → draft→ready는 사용자 확인 뒤 → /ship",
   "context_notes": "PR #104 머지됨(f3242c8). F(2)는 draft PR #112로 올라감. 남은 것은 Post-build 묶음과 /ship. 위험 경로 없음.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",

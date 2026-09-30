@@ -14,7 +14,8 @@ import { loginAsAdmin } from "./people-list-helpers";
 // 04.4 후속 항목 6(DR-8): 수작업 표(ui/table 밖 표 칸)의 `min-height: var(--row-min)`은 표 칸에 적용되지 않아 주 행이
 // --row-min(PC 36 · 폰 44)보다 낮아질 수 있다. 표마다 CI=true 프로덕션 빌드에서 주 행(접힌 줄 제외) 높이를 재
 // 1280 · 375에서 --row-min 이상임을 고정한다. 수치는 getBoundingClientRect / getComputedStyle로만 판정한다(스크린샷 육안 금지).
-const TOLERANCE = 0.5;
+// 계획 기준은 주 행 ≥ --row-min 그대로다 — 소수점 반올림 오차만 허용한다(0.5px는 실제 미달 35.69px를 가렸다).
+const TOLERANCE = 0.05;
 const WIDTHS = [
   { width: 1280, height: 720 },
   { width: 375, height: 800 },
@@ -41,7 +42,7 @@ async function measureMainRows(page: Page, caption?: string): Promise<Measure> {
   }, caption ?? null);
 }
 
-// 두 폭에서 주 행 높이를 재 최저값이 --row-min − 0.5 이상인지 단언한다. 실패 메시지에 표 이름 · 폭 · 최저 행 높이가 나온다.
+// 두 폭에서 주 행 높이를 재 최저값이 --row-min − 0.05 이상인지 단언한다. 실패 메시지에 표 이름 · 폭 · 최저 행 높이가 나온다.
 // 한 폭이 미달해도 다른 폭 수치를 함께 얻도록 두 폭을 다 잰 뒤에 단언한다.
 async function expectRowsAtRowMin(page: Page, name: string, path: string, caption?: string): Promise<void> {
   const shortfalls: string[] = [];

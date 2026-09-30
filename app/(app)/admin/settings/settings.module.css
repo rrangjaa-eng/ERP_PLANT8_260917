@@ -54,8 +54,16 @@
   height: var(--control-h);
   border: var(--line-w) solid var(--line-ui);
   background: var(--bg);
+  color: var(--fg);
   padding: 0 var(--s-2);
   font-size: var(--fs-base);
+}
+
+/* SYSTEM.md §1-2: 비활성 글자는 --faint on --surface. 반투명은 --scrim 하나뿐이라 UA opacity를 끈다. */
+.select:disabled {
+  color: var(--faint);
+  background: var(--surface);
+  opacity: 1;
 }
 
 .hint {
@@ -67,6 +75,12 @@
 .error {
   font-size: var(--fs-sm);
   color: var(--danger);
+  margin: var(--s-1) 0 0 0;
+}
+
+.warning {
+  font-size: var(--fs-sm);
+  color: var(--warning);
   margin: var(--s-1) 0 0 0;
 }
 

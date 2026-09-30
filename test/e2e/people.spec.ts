@@ -33,6 +33,7 @@ test.describe("사람 등록 → 계정·초기 비밀번호 발급 → 로그�
     await page.getByLabel("계급").selectOption(DEFAULT_ROLE_ID);
     await page.getByLabel("팀").selectOption({ label: "기획본부 · 기획1팀" });
     await page.getByLabel("발령일").fill("2026-01-01");
+    await page.getByLabel("입사일").fill("2026-01-01");
     await page.getByRole("button", { name: "사람 등록" }).click();
 
     await expect(page.getByText(`초기 비밀번호 — ${newEmail}`)).toBeVisible();

@@ -141,6 +141,13 @@
       "when": 1790675593370,
       "tag": "0019_restore_rehearsal_login_status",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790688566184,
+      "tag": "0020_hot_maestro",
+      "breakpoints": true
     }
   ]
 }

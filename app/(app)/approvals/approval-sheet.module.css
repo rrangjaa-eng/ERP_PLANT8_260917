@@ -1,0 +1,167 @@
+/* 04.1-05 S5 폰 결재 시트 — SYSTEM.md §7-8 시트 골격(머리 · 행동 줄 고정, 본문 스크롤 최대 85vh, 행동 줄
+   --touch-min, 1차가 2차의 두 배 폭). ui/confirm-dialog 폰 시트와 같은 토큰. 색·서체·radius는 토큰 참조만. */
+
+.sheet {
+  position: fixed;
+  inset-block-start: auto;
+  inset-block-end: 0;
+  inset-inline: 0;
+  width: 100%;
+  max-width: none;
+  max-height: 85vh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-top: var(--line-w-strong) solid var(--line-strong);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.sheet[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet::backdrop {
+  background: var(--scrim);
+}
+
+.hd {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--pad-page) var(--s-2);
+  border-bottom: var(--line-w) solid var(--line);
+}
+
+.titleBlock {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-head);
+  word-break: keep-all;
+}
+
+.subtitle {
+  margin: var(--s-1) 0 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--touch-min);
+  height: var(--touch-min);
+  margin: calc(var(--s-2) * -1) calc(var(--s-3) * -1) 0 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.closeIcon {
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+  stroke: currentColor;
+  stroke-width: var(--icon-stroke);
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--s-2) var(--pad-page);
+}
+
+/* 시트 상세 = 라벨 · 값 목록(§7-8) — ui/kv-list와 같은 골격(폰 라벨 폭 84). */
+.kv {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 0 var(--s-3);
+  margin: 0;
+}
+
+.kv dt {
+  margin: 0;
+  padding: 7px 0;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  border-bottom: var(--line-w) dotted var(--line);
+}
+
+.kv dd {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 0;
+  border-bottom: var(--line-w) dotted var(--line);
+  word-break: keep-all;
+}
+
+.tone-default {
+  font-variant-numeric: tabular-nums;
+}
+
+.tone-muted {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.tone-warning {
+  color: var(--warning);
+  font-weight: var(--fw-medium);
+}
+
+.actions {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--pad-page) var(--s-4);
+  border-top: var(--line-w) solid var(--line);
+}
+
+/* 반려(2차) 왼쪽 · 승인(1차) 오른쪽, 사이 --s-4 이상(사용자 결정 2026-09-29 — DECISIONS.md 폰 결재 행동 줄). */
+.buttons {
+  display: flex;
+  gap: var(--s-4);
+}
+
+/* 1차가 2차의 두 배 폭, 높이 --touch-min. Button.tsx 내부 span·button은 이 모듈 밖 클래스라 요소 선택자로 닿는다. */
+.primaryWrap {
+  display: block;
+  flex: 2;
+}
+
+.secondaryWrap {
+  display: block;
+  flex: 1;
+}
+
+.primaryWrap > span,
+.secondaryWrap > span {
+  display: flex;
+}
+
+.primaryWrap > span > button,
+.secondaryWrap > span > button {
+  justify-content: center;
+  width: 100%;
+  height: var(--touch-min);
+  font-size: var(--fs-base);
+}

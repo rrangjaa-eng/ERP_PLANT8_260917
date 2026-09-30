@@ -1,6 +1,6 @@
 import { and, eq, isNull, isNotNull } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, type DbOrTx } from "@/db/client";
 import { users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { Scope } from "@/domain/permissions/scope-for";
@@ -63,4 +63,21 @@ export async function setUserArchived(viewer: Viewer, userId: string, value: boo
       .set({ archivedAt: null, archivedBy: null })
       .where(and(eq(users.id, userId), isNotNull(users.archivedAt)));
   }
+}
+
+// 04.1-03(D-96 · D-97): 입사일·퇴직일 갱신. 판정(권한 · 형식 · 역전)은 domain/people이
+// 하고, 동시 수정으로 역전되면 users CHECK(23514)가 막는다(호출자가 판별).
+export async function updateUserHireDate(viewer: Viewer, userId: string, hireDate: string | null, tx: DbOrTx = db): Promise<void> {
+  void viewer;
+  await tx.update(users).set({ hireDate, updatedAt: new Date() }).where(eq(users.id, userId));
+}
+
+export async function updateUserResignationDate(
+  viewer: Viewer,
+  userId: string,
+  resignationDate: string | null,
+  tx: DbOrTx = db,
+): Promise<void> {
+  void viewer;
+  await tx.update(users).set({ resignationDate, updatedAt: new Date() }).where(eq(users.id, userId));
 }

@@ -97,6 +97,18 @@ describe("ConfirmDialog — 정적 렌더(슬롯 · 파생 라벨 · 막힌 1차
     expect(html).toMatch(/>취소<\/span>/);
   });
 
+  it("사용자 결정(2026-09-29 A) — 행동 줄 DOM · Tab 순서는 2차(취소) → 1차(PC · 폰 모두 2차 왼쪽 · 1차 오른쪽)", () => {
+    const html = render({
+      title: "반려",
+      primary: { label: "반려", onConfirm: () => {} },
+    });
+    const actions = html.slice(html.indexOf(`class="${styles.actions}"`));
+    const secondaryAt = actions.indexOf(`class="${styles.secondaryWrap}"`);
+    const primaryAt = actions.indexOf(`class="${styles.primaryWrap}"`);
+    expect(secondaryAt).toBeGreaterThan(-1);
+    expect(primaryAt).toBeGreaterThan(secondaryAt);
+  });
+
   it("막힌 1차(disabledReason)는 aria-disabled고 이유 글자가 보인다", () => {
     const html = render({
       title: "고객 승인 표시",

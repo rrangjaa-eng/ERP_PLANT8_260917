@@ -21,6 +21,8 @@ export async function registerPerson(page: Page, name: string): Promise<string> 
   await page.getByLabel("이름").fill(name);
   await page.getByLabel("이메일").fill(email);
   await page.getByLabel("계급").selectOption(DEFAULT_ROLE_ID);
+  // 04.1-06(D-96): 등록 폼 입사일 필수 — roles · master-edit 스펙과 같은 한 줄(사용자 승인 2026-09-29).
+  await page.getByLabel("입사일").fill("2026-01-01");
   await page.getByRole("button", { name: "사람 등록" }).click();
   await expect(page.getByText(`초기 비밀번호 — ${email}`)).toBeVisible();
   await page.goto("/admin/people");

@@ -1,13 +1,18 @@
+import "@/app/(app)/document-kinds";
 import { notFound, redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
+import type { Viewer } from "@/domain/viewer";
 import { SETTING_DEFS } from "@/domain/settings/keys";
 import {
   getSettingValue,
   listSettingHistory,
   describeSettingField,
+  type SettingDef,
   type SettingFieldDescriptor,
 } from "@/domain/settings/registry";
+import { isSettingActive, listApprovalRouteOptions, type ApprovalRouteOptions } from "@/domain/approvals/settings-options";
+import { listApprovalRouteSettingWarnings } from "@/domain/approvals/settings-warnings";
 import type { HistoryEntry } from "@/ui/history-list/HistoryList";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { SettingsFormClient, type SettingsSection, type SettingsFieldViewModel } from "./settings-form-client";
@@ -31,8 +36,37 @@ function formatValue(descriptor: SettingFieldDescriptor, value: unknown): string
   return "(값 없음)";
 }
 
-async function buildSections(): Promise<SettingsSection[]> {
+// 04.1-04(U3): 키 정의의 optionLabels · dynamicOptions로 select 옵션을 만든다. 동적
+// 옵션은 맨 앞에 빈 값(라벨은 optionLabels[""], 없으면 —)을 두고, 저장값이 지금 목록에
+// 없으면(보관됨) 그 값을 (보관됨) 한 옵션으로 남겨 저장값이 조용히 바뀌지 않게 한다.
+function optionsFor(
+  def: SettingDef<unknown>,
+  descriptor: SettingFieldDescriptor,
+  value: unknown,
+  routeOptions: ApprovalRouteOptions,
+): SettingsFieldViewModel["options"] {
+  if (def.dynamicOptions) {
+    const list = def.dynamicOptions === "roles" ? routeOptions.roles : routeOptions.orgUnits;
+    const options = [
+      { value: "", label: def.optionLabels?.[""] ?? "—" },
+      ...list.filter((item) => !item.archived).map((item) => ({ value: item.id, label: item.name })),
+    ];
+    if (typeof value === "string" && !options.some((option) => option.value === value)) {
+      options.push({ value, label: "(보관됨)" });
+    }
+    return options;
+  }
+  if (def.optionLabels && descriptor.kind === "enum") {
+    return descriptor.options.map((option) => ({ value: option, label: def.optionLabels?.[option] ?? option }));
+  }
+  return undefined;
+}
+
+async function buildSections(viewer: Viewer): Promise<SettingsSection[]> {
   const sections = new Map<string, SettingsFieldViewModel[]>();
+  const values: Record<string, unknown> = {};
+  const routeOptions = await listApprovalRouteOptions(viewer);
+  const warnings = await listApprovalRouteSettingWarnings(viewer);
 
   for (const def of SETTING_DEFS) {
     const descriptor = describeSettingField(def);
@@ -61,6 +95,7 @@ async function buildSections(): Promise<SettingsSection[]> {
         currentValue = undefined;
       }
       field = { kind: "simple", descriptor, value: currentValue };
+      values[def.key] = currentValue;
     }
 
     const viewModel: SettingsFieldViewModel = {
@@ -68,6 +103,8 @@ async function buildSections(): Promise<SettingsSection[]> {
       label: def.label,
       hint: def.hint,
       field,
+      options: field.kind === "simple" ? optionsFor(def, descriptor, field.value, routeOptions) : undefined,
+      warning: warnings[def.key],
     };
 
     const bucket = sections.get(def.namespace);
@@ -75,7 +112,11 @@ async function buildSections(): Promise<SettingsSection[]> {
     else sections.set(def.namespace, [viewModel]);
   }
 
-  return Array.from(sections.entries()).map(([namespace, fields]) => ({ namespace, fields }));
+  // CX-W2: 켜짐 판정은 저장값 전부를 모은 뒤에 한다 — 판정은 값을 지우지 않는다.
+  return Array.from(sections.entries()).map(([namespace, fields]) => ({
+    namespace,
+    fields: fields.map((field) => ({ ...field, disabled: !isSettingActive(routeOptions.activeWhen[field.key], values) })),
+  }));
 }
 
 export default async function SettingsPage() {
@@ -83,7 +124,7 @@ export default async function SettingsPage() {
   if (!session) redirect("/login");
   if (!(await can(session.viewer, "admin.settings", "view"))) notFound();
 
-  const sections = await buildSections();
+  const sections = await buildSections(session.viewer);
 
   return (
     <>

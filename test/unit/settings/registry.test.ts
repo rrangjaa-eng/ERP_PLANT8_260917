@@ -1,7 +1,8 @@
 import { z } from "zod";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getSettingValue,
+  getSimpleSettingValues,
   setSettingValue,
   addHistorizedValue,
   cancelHistorizedValue,
@@ -14,6 +15,7 @@ import {
 } from "@/domain/settings/registry";
 import { SETTING_DEFS } from "@/domain/settings/keys";
 import type { Viewer } from "@/domain/viewer";
+import { log } from "@/lib/log";
 
 const viewer: Viewer = { id: "u1", roleId: "role-sysadmin" };
 
@@ -118,6 +120,20 @@ describe("getSettingValue (ADMN-05)", () => {
     });
     const result = await getSettingValue(oddDef, undefined, { findSimpleValue });
     expect(result).toBe(0.123456789);
+  });
+});
+
+describe("getSimpleSettingValues (일괄 읽기)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("표시 없는 키는 일괄 읽기에서도 범위 밖 저장값을 거부한다 — 기본값 대체·log.error 없음", async () => {
+    const errorSpy = vi.spyOn(log, "error").mockImplementation(() => {});
+    const findSimpleValues = vi.fn().mockResolvedValue([{ key: SIMPLE_DEF.key, value: 1.5 }]);
+
+    await expect(getSimpleSettingValues([SIMPLE_DEF] as const, { findSimpleValues })).rejects.toThrow();
+
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(findSimpleValues).toHaveBeenCalledTimes(1);
   });
 });
 

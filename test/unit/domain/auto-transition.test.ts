@@ -17,7 +17,13 @@ import {
 // 트랜잭션(커밋·롤백)·리포지토리·로그를 메모리 가짜로 두고, 날짜 경계·멱등·발효일·
 // 실패 격리를 단언한다. 실제 SQL(SKIP LOCKED · 보관·종료일 없음 제외)은 통합 테스트가 본다.
 
-type FakeProject = { id: string; status: string; endDate: string | null; lastChangeAt: Date | null };
+type FakeProject = {
+  id: string;
+  status: string;
+  endDate: string | null;
+  lastChangeAt: Date | null;
+  archivedAt?: Date | null;
+};
 type LoggedAction = { viewer: Viewer; entry: RecordActionEntry };
 
 const FAKE_TX = {} as DbOrTx;
@@ -38,14 +44,21 @@ function makeStore(initial: FakeProject[]) {
     return result;
   };
 
-  const settle: AutoSettlementDeps["settle"] = (_viewer, input) => {
-    const targets = working.filter(
-      (project) =>
-        project.status === input.from &&
-        project.endDate !== null &&
-        project.endDate < input.todayKst &&
-        (input.projectIds === undefined || input.projectIds.includes(project.id)),
+  // 후보는 projectIds로만 거른다 — 상태·날짜·보관 판정은 실제 gate(project.auto-settle)가 한다(04-53).
+  const lockCandidates: AutoSettlementDeps["lockCandidates"] = (_viewer, input) =>
+    Promise.resolve(
+      working
+        .filter((project) => input.projectIds === undefined || input.projectIds.includes(project.id))
+        .map((project) => ({
+          id: project.id,
+          status: project.status,
+          endDate: project.endDate,
+          archivedAt: project.archivedAt ?? null,
+        })),
     );
+
+  const settle: AutoSettlementDeps["settle"] = (_viewer, input) => {
+    const targets = working.filter((project) => input.ids.includes(project.id) && project.status === input.from);
     for (const project of targets) project.status = input.to;
     return Promise.resolve(
       targets.map((project) => ({ id: project.id, endDate: project.endDate ?? "", lastChangeAt: project.lastChangeAt })),
@@ -59,6 +72,7 @@ function makeStore(initial: FakeProject[]) {
 
   return {
     transaction,
+    lockCandidates,
     settle,
     recordAction,
     status: (id: string) => committed.find((project) => project.id === id)?.status,
@@ -106,6 +120,62 @@ describe("applyAutoSettlement — KST 자정 경계 · 로그 · 멱등 (D-76)",
       },
     ]);
     expect(logger.info).toHaveBeenCalledWith("project.auto_settle", { count: 1 });
+  });
+
+  it("(리뷰 ②) 보관·진행 밖 후보는 종료일이 지나도 settle 대상·로그에서 빠지고 유효 후보만 정산된다", async () => {
+    const store = makeStore([]);
+    const candidates = [
+      { id: "archived", status: "in_progress", endDate: "2026-09-01", archivedAt: new Date("2026-09-02T00:00:00Z") },
+      { id: "bidding", status: "bidding", endDate: "2026-09-01", archivedAt: null },
+      { id: "valid", status: "in_progress", endDate: "2026-09-01", archivedAt: null },
+    ];
+    const settle = vi.fn<AutoSettlementDeps["settle"]>((_viewer, input) =>
+      Promise.resolve(input.ids.map((id) => ({ id, endDate: "2026-09-01", lastChangeAt: null }))),
+    );
+    const recordAction = vi.fn(store.recordAction);
+
+    await applyAutoSettlement(
+      {},
+      {
+        ...store,
+        lockCandidates: () => Promise.resolve(candidates),
+        settle,
+        recordAction,
+        logger: quietLogger(),
+        now: () => AFTER_MIDNIGHT,
+      },
+    );
+
+    expect(settle).toHaveBeenCalledTimes(1);
+    expect(settle.mock.calls[0]?.[1].ids).toEqual(["valid"]);
+    expect(recordAction).toHaveBeenCalledTimes(1);
+    expect(recordAction.mock.calls[0]?.[1].entityId).toBe("valid");
+  });
+
+  it("(리뷰 ②) 유효 후보가 하나도 없으면 settle도 recordAction도 부르지 않는다", async () => {
+    const store = makeStore([]);
+    const settle = vi.fn(store.settle);
+    const recordAction = vi.fn(store.recordAction);
+
+    const changed = await applyAutoSettlement(
+      {},
+      {
+        ...store,
+        lockCandidates: () =>
+          Promise.resolve([
+            { id: "archived", status: "in_progress", endDate: "2026-09-01", archivedAt: new Date("2026-09-02T00:00:00Z") },
+            { id: "bidding", status: "bidding", endDate: "2026-09-01", archivedAt: null },
+          ]),
+        settle,
+        recordAction,
+        logger: quietLogger(),
+        now: () => AFTER_MIDNIGHT,
+      },
+    );
+
+    expect(changed).toEqual([]);
+    expect(settle).not.toHaveBeenCalled();
+    expect(recordAction).not.toHaveBeenCalled();
   });
 
   it("같은 날 두 번 부르면 두 번째는 바뀐 것이 없고 로그는 여전히 한 줄이다", async () => {

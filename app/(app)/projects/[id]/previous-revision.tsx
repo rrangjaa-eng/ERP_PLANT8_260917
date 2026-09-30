@@ -53,7 +53,7 @@ export function quoteLineReadColumns<Row extends QuoteLineCopyRow>(
     copyText: text,
   });
   return [
-    column({ key: "sort", header: "번호", priority: "p3", collapseBelow: 1280, align: "left", text: (row) => String(rowNumber(row)) }),
+    column({ key: "sort", header: "번호", priority: "p3", collapseBelow: 1280, align: "right", text: (row) => String(rowNumber(row)) }),
     column({ key: "subcategory", header: "소분류", priority: "p3", collapseBelow: 1024, text: (row) => quoteLineGroupLabel(row, subcategoryLabel) }),
     column({ key: "itemName", header: "항목", priority: "p1", text: (row) => row.itemName }),
     column({ key: "vendor", header: "거래처", priority: "p2", text: (row) => vendorLabel(row.vendorId) }),

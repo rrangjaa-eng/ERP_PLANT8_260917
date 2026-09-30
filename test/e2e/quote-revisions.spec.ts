@@ -1077,3 +1077,58 @@ test.describe("이전 차수 보관본 복원 줄 (04-24 Task 4 — DR-4 · DR-3
     await expect(previousDraftRow(page, 1)).toHaveText(/^1차 저장 안 한 편집 1칸/);
   });
 });
+
+// PR #104 [지시] (나) — SYSTEM §2 177행 숫자 칸 규칙: 「번호」 머리글·칸의 정렬·줄바꿈·숫자 폭.
+async function numberColumnCells(table: Locator) {
+  return table.evaluate((node) => {
+    const el = node as HTMLTableElement;
+    const headers = Array.from(el.querySelectorAll("thead th"));
+    const index = headers.findIndex((th) => (th.textContent ?? "").trim() === "번호");
+    if (index < 0) return [];
+    const rows = Array.from(el.querySelectorAll("tbody tr")).filter((row) => (row as HTMLTableRowElement).cells.length > 1);
+    const cells = [headers[index], ...rows.map((row) => (row as HTMLTableRowElement).cells[index])];
+    return cells.map((cell) => {
+      const style = getComputedStyle(cell as Element);
+      return {
+        text: (cell?.textContent ?? "").trim(),
+        textAlign: style.textAlign,
+        whiteSpace: style.whiteSpace,
+        fontVariantNumeric: style.fontVariantNumeric,
+      };
+    });
+  });
+}
+
+test.describe("견적 줄 「번호」 열 숫자 규칙 (PR #104 [지시] (나) — SYSTEM §2 숫자 칸)", () => {
+  test("1280에서 현재 차수 견적 줄 표와 이전 차수 읽기 표의 「번호」 머리글·칸이 숫자 규칙(오른쪽 정렬 · tabular-nums · nowrap)이다 (PR #104 (나))", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({
+      teamId: team.id,
+      pmUserId: pm.userId,
+      lines: [
+        { itemName: "번호 무대", unitPrice: 1_000_000, execution: 600_000 },
+        { itemName: "번호 조명", unitPrice: 500_000, execution: 300_000 },
+      ],
+    });
+    await copyRevision(project.id, project.revisionId);
+    await login(page, pm);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/projects/${project.id}`);
+    await expect(quoteRows(page)).toHaveCount(2);
+    await expect(quoteTable(page).getByRole("columnheader", { name: "번호", exact: true })).toBeVisible();
+
+    const rule = { textAlign: "right", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" };
+    const expected = [
+      { text: "번호", ...rule },
+      { text: "1", ...rule },
+      { text: "2", ...rule },
+    ];
+    expect.soft(await numberColumnCells(quoteTable(page))).toEqual(expected);
+
+    await revisionTable(page).getByRole("button", { name: "차수 열기" }).click();
+    await expect(previousTable(page, 1)).toBeVisible();
+    await expect(previousTable(page, 1).getByText("번호 무대", { exact: true })).toBeVisible();
+    expect.soft(await numberColumnCells(previousTable(page, 1))).toEqual(expected);
+  });
+});

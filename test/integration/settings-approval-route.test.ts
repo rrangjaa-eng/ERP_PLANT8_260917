@@ -15,6 +15,8 @@ import { setPermissionCell } from "@/domain/permissions/matrix";
 import { can, ForbiddenError } from "@/domain/permissions/can";
 import { approveDocument, currentHolderNames, getApprovalView } from "@/domain/approvals";
 import { listApprovalRouteOptions } from "@/domain/approvals/settings-options";
+import { saveRouteStepSettings } from "@/domain/approvals/route-step-settings";
+import { recordAction } from "@/domain/action-log/record";
 import { submitLeave, LEAVE_DOCUMENT_KIND, LEAVE_ROUTE_SETTINGS } from "@/domain/leave";
 import { getSettingValue, setSettingValue } from "@/domain/settings/registry";
 import {
@@ -26,6 +28,7 @@ import {
   APPROVAL_ROUTE_LEAVE_STEP3_SCOPE,
 } from "@/domain/settings/keys";
 import { listRoles } from "@/repositories/roles";
+import { upsertSimpleValue } from "@/repositories/settings";
 import { listOrgUnits } from "@/repositories/org-units";
 import { makePerson, orgUnitIdByName, NOW_2026 } from "./approvals-fixtures";
 
@@ -251,10 +254,125 @@ describe("비활성 칸의 저장값 보존(CX-W2)", () => {
     expect([step2?.roleId, step2?.scopeKind]).toEqual([TEAM_LEAD_ROLE_ID, "company"]);
   });
 
+  it("옵션의 steps에 연차 결재선 단계 16키가 종류 · 단계 번호 · 칸 이름과 함께 있다(2026-09-30 A)", async () => {
+    const options = await listApprovalRouteOptions(SYSTEM_VIEWER);
+    LEAVE_ROUTE_SETTINGS.steps.forEach((step, index) => {
+      for (const field of ["enabled", "roleId", "scope", "orgUnitId"] as const) {
+        expect(options.steps[step[field].key]).toEqual({ kind: LEAVE_DOCUMENT_KIND, stepIndex: index + 1, field });
+      }
+    });
+    expect(options.steps[LEAVE_ROUTE_SETTINGS.selfApproval.key]).toBeUndefined();
+  });
+
   it("옵션의 activeWhen에 연차 결재선 12키가 있다", async () => {
     const options = await listApprovalRouteOptions(SYSTEM_VIEWER);
     for (const step of LEAVE_ROUTE_SETTINGS.steps) {
       for (const def of [step.roleId, step.scope, step.orgUnitId]) expect(options.activeWhen[def.key]).toBeDefined();
     }
+  });
+});
+
+// 사용자 결정(2026-09-30 A · PR #90 Codex r4137164384): 결재선 한 단계(사용 · 계급 · 범위 · 부서)는 한 번에 저장한다 —
+// 두 칸을 바꾸는 사이의 중간 결재선(예: 「팀장 · 전사」)이 그 사이 제출된 문서에 굳지 않게.
+describe("결재선 한 단계 원자 저장(사용자 결정 2026-09-30 A)", () => {
+  const STEP2 = LEAVE_ROUTE_SETTINGS.steps[1]!;
+  const CEO_COMPANY = { enabled: true, roleId: CEO_ROLE_ID, scope: "company", orgUnitId: "" };
+
+  async function step2Values() {
+    return Promise.all([
+      getSettingValue(STEP2.enabled),
+      getSettingValue(STEP2.roleId),
+      getSettingValue(STEP2.scope),
+      getSettingValue(STEP2.orgUnitId),
+    ]);
+  }
+
+  it("2단을 「대표 · 전사」로 한 번에 저장하면 그 뒤 문서의 2단이 대표 · 전사이고 settings_change 로그가 칸마다 한 줄", async () => {
+    const org = await baseOrg();
+    await saveRouteStepSettings(SYSTEM_VIEWER, { kind: LEAVE_DOCUMENT_KIND, stepIndex: 2, values: CEO_COMPANY });
+
+    const doc = await submitLeave(org.drafter, FULL_DAY, deps);
+    const step2 = (await stepsOf(doc.instanceId)).find((step) => step.stepIndex === 2);
+    expect([step2?.roleId, step2?.scopeKind]).toEqual([CEO_ROLE_ID, "company"]);
+
+    for (const def of [STEP2.enabled, STEP2.roleId, STEP2.scope, STEP2.orgUnitId]) {
+      const logs = await db
+        .select()
+        .from(actionLog)
+        .where(and(eq(actionLog.actionType, "settings_change"), eq(actionLog.entityId, def.key)));
+      expect(logs).toHaveLength(1);
+    }
+  });
+
+  it("저장 도중(두 칸을 쓴 뒤) 제출된 문서는 옛 2단(본부장 · 기안자 본부 → 본부로 고정) 그대로다 — 중간 결재선 없음", async () => {
+    const org = await baseOrg();
+    let writes = 0;
+    let midSteps: Awaited<ReturnType<typeof stepsOf>> | null = null;
+    await saveRouteStepSettings(
+      SYSTEM_VIEWER,
+      { kind: LEAVE_DOCUMENT_KIND, stepIndex: 2, values: CEO_COMPANY },
+      {
+        upsertSimpleValue: async (...args: Parameters<typeof upsertSimpleValue>) => {
+          await upsertSimpleValue(...args);
+          writes += 1;
+          if (writes === 2) {
+            const doc = await submitLeave(org.drafter, FULL_DAY, deps);
+            midSteps = await stepsOf(doc.instanceId);
+          }
+        },
+      },
+    );
+
+    const mid = (midSteps as Awaited<ReturnType<typeof stepsOf>> | null)?.find((step) => step.stepIndex === 2);
+    expect([mid?.roleId, mid?.scopeKind]).toEqual([DIVISION_HEAD_ROLE_ID, "org_unit"]);
+  });
+
+  it("마지막 칸의 로그 쓰기가 실패하면 네 칸 모두 옛 값이다", async () => {
+    const before = await step2Values();
+    let logs = 0;
+    await expect(
+      saveRouteStepSettings(
+        SYSTEM_VIEWER,
+        { kind: LEAVE_DOCUMENT_KIND, stepIndex: 2, values: CEO_COMPANY },
+        {
+          recordAction: async (...args: Parameters<typeof recordAction>) => {
+            logs += 1;
+            if (logs === 4) throw new Error("로그 쓰기 실패 주입");
+            await recordAction(...args);
+          },
+        },
+      ),
+    ).rejects.toThrow("로그 쓰기 실패 주입");
+    expect(await step2Values()).toEqual(before);
+  });
+
+  it("한 칸이 잘못된 값(부서 id가 uuid 아님)이면 아무 칸도 바뀌지 않는다", async () => {
+    const before = await step2Values();
+    await expect(
+      saveRouteStepSettings(SYSTEM_VIEWER, {
+        kind: LEAVE_DOCUMENT_KIND,
+        stepIndex: 2,
+        values: { ...CEO_COMPANY, scope: "org_unit", orgUnitId: "not-a-uuid" },
+      }),
+    ).rejects.toThrow();
+    expect(await step2Values()).toEqual(before);
+  });
+
+  it("설정 쓰기 권한이 없으면 ForbiddenError이고 아무 칸도 바뀌지 않는다", async () => {
+    const before = await step2Values();
+    const viewOnly = await createRole(SYSTEM_VIEWER, { name: `설정보기만-${Date.now()}` });
+    await setPermissionCell(SYSTEM_VIEWER, { roleId: viewOnly.id, menu: "admin.settings", action: "view", allowed: true });
+    const viewer = await makePerson("설정보기", viewOnly.id, null);
+
+    await expect(
+      saveRouteStepSettings(viewer, { kind: LEAVE_DOCUMENT_KIND, stepIndex: 2, values: CEO_COMPANY }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    expect(await step2Values()).toEqual(before);
+  });
+
+  it("없는 단계(5단)는 거부한다", async () => {
+    await expect(
+      saveRouteStepSettings(SYSTEM_VIEWER, { kind: LEAVE_DOCUMENT_KIND, stepIndex: 5, values: CEO_COMPANY }),
+    ).rejects.toThrow("결재선 단계 없음");
   });
 });

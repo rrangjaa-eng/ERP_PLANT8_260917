@@ -10,11 +10,14 @@ import { listOrgUnits as defaultListOrgUnits } from "@/repositories/org-units";
 
 export type SettingCondition = { key: string; equals: unknown };
 export type RouteOption = { id: string; name: string; archived: boolean };
+export type RouteStepField = { kind: string; stepIndex: number; field: "enabled" | "roleId" | "scope" | "orgUnitId" };
 export type ApprovalRouteOptions = {
   roles: RouteOption[];
   orgUnits: RouteOption[];
   // 설정 키 → 켜짐 조건(CX-W2). 조건이 없는 키는 늘 활성이다.
   activeWhen: Record<string, SettingCondition[]>;
+  // 설정 키 → 그 키가 속한 결재선 단계(사용자 결정 2026-09-30 A — 화면이 단계 네 칸을 모아 한 번에 저장).
+  steps: Record<string, RouteStepField>;
 };
 
 export type SettingsOptionsDeps = {
@@ -37,6 +40,16 @@ export function routeActiveWhen(settings: RouteSettingDefs): Record<string, Sett
   return result;
 }
 
+export function routeStepFields(kind: string, settings: RouteSettingDefs): Record<string, RouteStepField> {
+  const result: Record<string, RouteStepField> = {};
+  settings.steps.forEach((step, index) => {
+    for (const field of ["enabled", "roleId", "scope", "orgUnitId"] as const) {
+      result[step[field].key] = { kind, stepIndex: index + 1, field };
+    }
+  });
+  return result;
+}
+
 export function isSettingActive(conditions: SettingCondition[] | undefined, values: Record<string, unknown>): boolean {
   return (conditions ?? []).every((condition) => values[condition.key] === condition.equals);
 }
@@ -53,13 +66,17 @@ export async function listApprovalRouteOptions(viewer: Viewer, deps?: Partial<Se
   const orgUnits = await listOrgUnits(viewer, { scope: { rows: "all", includeArchived: true } });
 
   const activeWhen: Record<string, SettingCondition[]> = {};
+  const steps: Record<string, RouteStepField> = {};
   for (const kind of kinds) {
-    if (kind.routeSettings) Object.assign(activeWhen, routeActiveWhen(kind.routeSettings));
+    if (!kind.routeSettings) continue;
+    Object.assign(activeWhen, routeActiveWhen(kind.routeSettings));
+    Object.assign(steps, routeStepFields(kind.kind, kind.routeSettings));
   }
 
   return {
     roles: roles.map((row) => ({ id: row.id, name: row.name, archived: row.archivedAt !== null })),
     orgUnits: orgUnits.map((row) => ({ id: row.id, name: row.name, archived: row.archivedAt !== null })),
     activeWhen,
+    steps,
   };
 }

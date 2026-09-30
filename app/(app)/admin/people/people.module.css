@@ -20,7 +20,13 @@
   font-weight: var(--fw-medium);
   color: var(--accent);
   text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
   text-underline-offset: var(--underline-offset);
+}
+
+/* §4-4 · §7-1 3차 밑줄 1px → hover 2px */
+.toggle:hover {
+  text-decoration-thickness: var(--line-w-strong);
 }
 
 /* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. */
@@ -174,7 +180,13 @@
   font-weight: var(--fw-medium);
   color: var(--accent);
   text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
   text-underline-offset: var(--underline-offset);
+}
+
+/* §4-4 · §7-1 3차 밑줄 1px → hover 2px */
+.detailLink:hover {
+  text-decoration-thickness: var(--line-w-strong);
 }
 
 /* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44 — "상세"는 글자 2개짜리

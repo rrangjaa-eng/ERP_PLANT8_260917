@@ -108,6 +108,8 @@
 
 ### 관리 표 행 행동 간격 `--s-4` — 거래처 · 법인카드 · 코드표
 
+해결: `89f19f8` (quick 260930-nto, PR #111)
+
 **What:** /admin/vendors(「수정 · 숨기기 · 삭제」) · /admin/corp-cards(「비활성화 · 삭제」) · /admin/code-tables 행 행동 사이가 1280에서 0px라 한 단어처럼 읽히고 「삭제」가 옆 행동에 붙는다. 사람 목록 `.rowActions`(inline-flex · gap `var(--s-4)` · 700 미만만 줄바꿈 · 「상세」 같은 짧은 링크는 자체 `white-space: nowrap`)와 같은 규칙으로 맞춘다. 「공유 Button `.tertiary` 밑줄을 글자 밑줄로」와 한 quick으로.
 
 **Why:** SYSTEM §6-1 행 안 두 행동 `--s-4` 이상 · 「위험한 동작은 떨어뜨려 둔다」. PR #108이 사람 목록만 맞춰 「화면 하나만 예외 금지」에 걸린다(`/design-review` FINDING-001, high).
@@ -133,6 +135,16 @@
 **Context:** `domain/` 변경이라 PR #108 범위 밖. ①은 정리(prune) 범위라 되돌릴 수 없는 동작과 이어진다 — 우선.
 
 **Effort:** M · **Priority:** P1(① · ②) / P2(③) · **Depends on:** None
+
+### NextTurn `.tertiary` · Table `.emptyAction` 밑줄도 글자 밑줄로(quick 260930-nto eng review R3)
+
+**What:** `ui/next-turn/NextTurn.module.css:123-135`(`.tertiary` border-bottom · hover `border-bottom-width`)와 `ui/table/Table.module.css:216-225`(`.emptyAction` border-bottom)의 3차 밑줄을 공유 Button `.tertiary`(`ff64212`)와 같은 글자 밑줄(`text-decoration: underline` · `--underline-offset` · hover 두께 `--line-w-strong`)로 바꾸고, `test/unit/app/tertiary-underline-css.test.ts` 점검 범위에 넣는다.
+
+**Why:** §4-4 3차 밑줄 규칙과 다르고, 같은 결함(폰 44px 상자 바닥 밑줄 · hover 때 상자 높이 변화)이 컴포넌트마다 남는다. PR #111은 사용자 범위(공유 Button)만 고쳤다.
+
+**Context:** 원천 소스만 읽었고 실측 전. 셀 입력 밑줄(`project-detail.module.css:110` · `reserves.module.css:25`)은 3차가 아니라 대상 아님.
+
+**Effort:** S · **Priority:** P2 · **Depends on:** PR #111
 
 ## 운영 배포 준비: 보안 스캐너 CI(2026-09-30, Phase 8 전)
 
@@ -181,6 +193,8 @@
 **Depends on:** Phase 4 `ui/form`
 
 ### 공유 Button `.tertiary` 밑줄을 글자 밑줄로
+
+해결: `ff64212` (quick 260930-nto, PR #111)
 
 **What:** `ui/button/Button.module.css:52-81`의 3차 버튼이 `border-bottom` 밑줄이라 폰 44px 상자에서 글자와 떨어진다. FINDING-005(`ListEmpty`, 고침 `2342b01`)와 같은 수정(`text-decoration: underline` + `--underline-offset`)을 관리자·Phase 4 화면을 잰 뒤 적용한다.
 

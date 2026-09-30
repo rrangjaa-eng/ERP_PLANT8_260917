@@ -189,3 +189,19 @@ test.describe("사람 목록 로그인 상태 배지 · 행 머리글 (04.4-05, 
     expect(parseFloat(head.borderBottomWidth)).toBe(lineStrong);
   });
 });
+
+// 04.4 후속 DR-7: 행 안 두 행동(「상세」 · 「삭제」) 사이는 --s-4 이상 — SYSTEM §6-1 결재함 행과 같은 값, 위험한 동작은 떨어뜨려 둔다.
+test.describe("PC 1280 — 「상세」와 「삭제」 사이가 --s-4 이상이다 (DR-7)", () => {
+  test("같은 행의 「상세」 오른쪽 끝과 「삭제」 왼쪽 끝 간격을 잰다", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await loginAsAdmin(page);
+    const email = await registerPerson(page, "간격 확인");
+    const row = personRow(page, email);
+    const detail = await row.getByRole("link", { name: "상세" }).boundingBox();
+    const remove = await row.getByRole("button", { name: "삭제" }).boundingBox();
+    if (!detail || !remove) throw new Error("상세 링크 · 삭제 버튼 상자를 못 잰다");
+    const gap = remove.x - (detail.x + detail.width);
+    const space4 = await tokenNumber(page, "--s-4");
+    expect(gap, `상세↔삭제 간격 ${gap}px < --s-4 ${space4}px`).toBeGreaterThanOrEqual(space4 - 0.5);
+  });
+});

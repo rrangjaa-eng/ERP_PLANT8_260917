@@ -58,10 +58,10 @@ export async function exportSettings(viewer: Viewer, deps?: Partial<ExportDeps>)
       continue;
     }
     try {
-      // 저장 원값이 아니라 실효값을 쓴다 — 허용 밖 저장값은 기본값으로 읽히므로(readInvalidAsDefault) 이 파일을 되가져오면 원값과 log.error 신호가 사라진다.
+      // 저장 원값이 아니라 실효값을 쓴다 — readInvalidAsDefault 표시 키는 허용 밖 저장값이 기본값으로 읽히므로 이 파일을 되가져오면 원값과 log.error 신호가 사라진다.
       settings[def.key] = await getSettingValue(def);
     } catch {
-      // 기본값도 없고 값도 없는 키(신규 등록 직후)는 내보내기에서 건너뛴다.
+      // 기본값도 없고 값도 없는 키(신규 등록 직후)는 내보내기에서 건너뛴다. 표시 없는 키의 허용 밖 저장값도 여기서 건너뛴다.
     }
   }
 

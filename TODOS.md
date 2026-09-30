@@ -176,6 +176,26 @@
 
 **Effort:** S · **Priority:** P3 · **Depends on:** None
 
+### 폰 코드표에서 비활성화 · 삭제를 할 수 없다(PR #111 /design-review FINDING-002)
+
+**What:** `code-tables.module.css:157-181`이 동작 열(6열)을 700 미만에서 `display: none`으로 숨겨 699/375/320에서 「비활성화」「삭제」가 0×0이다. 거래처 · 법인카드 · 사람은 폰에서도 행동이 보인다. P2로 접거나 P1에 두어 같은 방식으로 맞춘다.
+
+**Why:** SYSTEM §7-3 「상세 화면이 없는 목록은 P3로 숨기지 않고 P2로 접는다(숨기면 폰에서 볼 길이 없다)」 위반. 관리 마스터 화면끼리도 다르다(§6-1).
+
+**Context:** PR #111 이전부터(이 PR의 `.rowActions` 폰 줄바꿈 규칙은 코드표에서 적용될 일이 없다). DOM 실측은 PR #111 /design-review.
+
+**Effort:** S · **Priority:** P2 · **Depends on:** None
+
+### 관리 표 행 행동 주변 작은 불일치(PR #111 /design-review 폴리시)
+
+**What:** ① 거래처 · 법인카드 · 코드표 표 칸 line-height가 본문 값 19.2px(1.6)이라 행동 상자가 19.19px, 사람 목록은 `--lh-table` 18px(§2-3 「표 셀 line-height 1.5」) — 세 모듈 `.table td`에 `line-height: var(--lh-table)`. ② 폰 375에서 거래처 · 법인카드 행이 44px 목표 3개가 세로로 쌓여 184.5/213px(§7-3 폰 P1 「행동 1개 · 두 줄」과 긴장) — 폰 P1에 행동을 하나만 둘지 결정. ③ 짧은 행 링크 한 줄 유지 방식이 세 가지(사람 `.detailLink` 복사 · 거래처/법인카드 `.toggle`+`.rowLink` · Button `.tertiary` 내장)이고, `.rowLink` 이름은 결재함 · 연차의 「행 전체 탭 링크」와 뜻이 다르다. ④ 폰에서 `.toggle` · `.tertiary`는 좌우 padding `--s-2`가 있고 사람 `.detailLink`는 없어, 가로로 놓일 때 보이는 글자 간격이 24px/32px로 다를 수 있다(미실측).
+
+**Why:** 같은 패턴이 화면마다 조금씩 갈라진다(「화면 하나만 예외 금지」).
+
+**Context:** 모두 PR #111 이전부터 있던 것. ③ ④는 소스 검토, ① ②는 DOM 실측.
+
+**Effort:** S · **Priority:** P3 · **Depends on:** PR #111
+
 ## 운영 배포 준비: 보안 스캐너 CI(2026-09-30, Phase 8 전)
 
 ### 보안 스캐너 5종을 CI에 넣기 (#109)

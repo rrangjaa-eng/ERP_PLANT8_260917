@@ -205,4 +205,61 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
       expect(overflow).toBe(true);
     });
   });
+
+  // 04.4 UI-REVIEW W3: 폰에서 「실행 기록」 링크(44 상자)가 문장 속 dd 줄 상자를 부풀리지 않는다. 앞 「정리」 테스트가 넣은 행을 쓴다.
+  // 폭마다 test를 나누면 앞 실패가 serial로 뒤를 건너뛰므로 한 테스트 안에서 폭을 바꿔 가며 잰다.
+  test("폰 360 · 640 — 링크가 dd 줄 상자와 글자 위치를 밀어내지 않고 44×44 화면 안이다", async ({ page }) => {
+    const value = await openStatusAsAdmin(page);
+    const link = value.getByRole("link", { name: "실행 기록" });
+    const measure = () =>
+      value.evaluate((dd) => {
+        const a = dd.querySelector("a") as HTMLAnchorElement;
+        const range = document.createRange();
+        range.selectNodeContents(a);
+        const rects = Array.from(range.getClientRects());
+        const cs = getComputedStyle(dd);
+        return {
+          ddHeight: dd.getBoundingClientRect().height,
+          lineHeight: cs.lineHeight,
+          fontSize: cs.fontSize,
+          linkTextBottomInDd: (rects[rects.length - 1] as DOMRect).bottom - dd.getBoundingClientRect().top,
+        };
+      });
+
+    for (const width of [360, 640]) {
+      await page.setViewportSize({ width, height: 800 });
+      await link.scrollIntoViewIfNeeded();
+      const asIs = await measure();
+      await link.evaluate((el) => el.style.setProperty("display", "inline", "important"));
+      const reference = await measure();
+      await link.evaluate((el) => el.style.removeProperty("display"));
+      const detail = JSON.stringify({ width, asIs, reference });
+
+      expect.soft(Math.abs(asIs.ddHeight - reference.ddHeight), detail).toBeLessThanOrEqual(1);
+      expect.soft(Math.abs(asIs.linkTextBottomInDd - reference.linkTextBottomInDd), detail).toBeLessThanOrEqual(1);
+
+      const box = await link.boundingBox();
+      expect(box).not.toBeNull();
+      expect.soft(box!.width, detail).toBeGreaterThanOrEqual(44);
+      expect.soft(box!.height, detail).toBeGreaterThanOrEqual(44);
+      expect.soft(box!.x, detail).toBeGreaterThanOrEqual(0);
+      expect.soft(box!.x + box!.width, detail).toBeLessThanOrEqual(width);
+
+      // 04.4 DOM 감사 W-A: 44×44 상자 전체가 실제로 링크로 탭된다(다음 항목 dt/dd가 아래쪽을 가리지 않는다).
+      const misses = await link.evaluate((el) => {
+        const rect = el.getBoundingClientRect();
+        const missed: string[] = [];
+        for (const fx of [0, 0.25, 0.5, 0.75, 1]) {
+          for (const fy of [0, 0.25, 0.5, 0.75, 1]) {
+            const x = rect.left + 1 + fx * (rect.width - 2);
+            const y = rect.top + 1 + fy * (rect.height - 2);
+            const hit = document.elementFromPoint(x, y);
+            if (!hit || !(hit === el || el.contains(hit))) missed.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+          }
+        }
+        return missed;
+      });
+      expect.soft(misses, `${detail} 링크가 아닌 적중점`).toEqual([]);
+    }
+  });
 });

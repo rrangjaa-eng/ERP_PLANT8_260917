@@ -219,7 +219,7 @@ lib/gcp/storage.ts         # ObjectStorage 인터페이스 + gcs 드라이버(V4
 app/(app)/expenses/        # page.tsx(목록 S8) · new/ · [id]/(폼 S3 · 문서 S7) · actions.ts · actions.registry.ts
 app/(app)/projects/[id]/settlement/  # 정산 결재 문서 화면 S10(나)
 app/api/storage-local/[...key]/route.ts  # 로컬 드라이버 PUT/GET — STORAGE_DRIVER=local일 때만
-ui/attachments/ · ui/pick-dialog/ · ui/approval-sheet/(04.1에서 이동)
+ui/attachments/ · ui/pick-dialog/   # 결재 시트는 04.1 app/(app)/approvals/ 제자리(Round 4 Z3 A — 05-01 E7)
 ```
 
 ### Pattern 1: 04.1 엔진과의 통합 계약 — 「가정할 것」과 「더할 것」
@@ -250,7 +250,9 @@ ui/attachments/ · ui/pick-dialog/ · ui/approval-sheet/(04.1에서 이동)
 | E4 | 증빙 변경이 결재자 승인을 막음 | UI S4 · S9 「`박서연이 14:01에 증빙을 더함 · 새로 고침`」 | 리포지토리 `bumpInstanceVersion(viewer, {instanceId, expectedVersion?, updatedBy, reason: "evidence"}, tx)` — 증빙 추가 · 삭제 트랜잭션이 인스턴스 행을 `version + 1`로 올린다(상태 불변). `buildConflictMessage`에 「상태가 같고 `updated_by` = 기안자」 갈래 한 줄. 결재자는 인스턴스 `version` 하나로 막힌다(두 번째 토큰을 엔진에 넣지 않는다) |
 | E5 | 결재함 숫자 열 · 문서 칸 | UI S9 — 금액/일수 머리글을 서버가 표에 있는 종류로 정함 | `describeDocuments` 요약 DTO에 선택 `measure?: { kind: "money", krw, currency, foreignAmount, fxRate } \| { kind: "days", … } \| null` |
 | E6 | `본인 승인` 낱말 | UI B2 · UA-607 | 04.1 결재 상태 표시 파일에 `self_approved` 단계 → `본인 승인 {시각}`(`success`) 한 줄. 엔진은 이미 `self_approved` 열을 쓴다 |
-| E7 | 결재 시트 `ui/` 이동 | UI S9 · S11 두 번째 사용처 | `app/(app)/approvals/approval-sheet.tsx` → `ui/approval-sheet/ApprovalSheet.tsx`(04.1 인벤토리가 예고한 조건) |
+| E7 | 결재 시트 두 번째 사용처 | UI S9 · S11 두 번째 사용처 | (Round 4에서 대체 — 사용자 결정 Z3 A) 옮기지 않는다: `app/(app)/approvals/approval-sheet.tsx` 제자리 · 결재 액션 연결만 콜백 prop. 정본은 05-01 Task 3 ④ |
+
+> **Round 4(0ded729) 뒤 정본**: 위 「더할 것」 표의 E2 · E4 · E5 · E6 · E7 권하는 모양은 main 코드 대조(`code-drift-review.md`)로 05-01 PLAN이 고쳐 적었다 — E2 훅 조건은 계산된 status `approved` · 트랜잭션 전 그래프 읽기, E4는 `ConflictState.versionReason`, E5는 요약 타입 `DocumentSummary`(금액은 숫자 네 필드), E6 매핑 파일은 `app/(app)/leave/status-display.ts`. 실행자는 이 표가 아니라 05-01 PLAN을 따른다.
 
 `canResubmit`(04.1에 이미 선택 필드): 지출결의 = `can(viewer, "expenses", "write")`, 정산 결재 = 그 프로젝트 쓰기 권리 **그리고 프로젝트 상태 `settling`**(S10 `진행 중 · 정산 뒤 다시 올리기`).
 

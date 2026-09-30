@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-30T21:12:24.451Z",
+  "timestamp": "2026-09-30T21:19:03.524Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -157,12 +157,18 @@
       "name": "PR #112 /design-review",
       "status": "done",
       "commit": "17af444"
+    },
+    {
+      "id": null,
+      "name": "PR #112 /cso 해당 여부 판단 — 해당 없음",
+      "status": "done",
+      "commit": "21e84bd"
     }
   ],
   "remaining_tasks": [
     {
       "id": 1,
-      "name": "/cso 해당 여부 판단 · draft→ready 사용자 확인 · /ship",
+      "name": "draft→ready 사용자 확인 · /ship",
       "status": "not_started"
     }
   ],
@@ -180,6 +186,11 @@
   ],
   "async_jobs": [],
   "human_actions_pending": [
+    {
+      "action": "PR #112 draft→ready 전환 승인",
+      "context": "Post-build(/review·/qa·/design-review·/cso 판단) 끝. ready가 Codex 앱 자동 검토 트리거",
+      "blocking": true
+    },
     {
       "action": "PR #112 ready 전환 승인",
       "context": "Post-build 뒤, ready가 Codex 앱 자동 검토를 트리거",
@@ -207,6 +218,11 @@
     }
   ],
   "decisions": [
+    {
+      "decision": "PR #112 /cso 해당 없음",
+      "rationale": "f3242c8..3e02740 30파일에 인증·권한·암호화·외부 입력 변경 0 — docs/reviews/phase-04/pr112-cso.md",
+      "phase": "4"
+    },
     {
       "decision": "ISSUE-001 설정 칸 전부 · DR-104-04 §7-3 · DR-104-05 폭별 렌더 순서+CSS order 유지 · G1 주석만",
       "rationale": "사용자 2026-09-30 채팅(추천안)",
@@ -608,10 +624,8 @@
       "phase": "4"
     }
   ],
-  "uncommitted_files": [
-    "?? .claude/gates/phase-02.log"
-  ],
-  "next_action": "새 세션(plant8 환경, 브랜치 claude/pr104-followup-f2)에서 git status -sb · .continue-here BLOCKING CONSTRAINTS · PR #112 최신 [지시]·D1·D2 답 확인 · origin/main 머지 → /cso 해당 여부 판단(밝힘) → draft→ready는 사용자 확인 뒤 → /ship",
+  "uncommitted_files": [],
+  "next_action": "새 세션(plant8 환경, 브랜치 claude/pr104-followup-f2)에서 git status -sb · .continue-here BLOCKING CONSTRAINTS · PR #112 최신 [지시]·D1·D2 답 확인 · origin/main 머지 → draft→ready 전환을 사용자에게 먼저 묻기 → 승인 뒤 /ship",
   "context_notes": "PR #104 머지됨(f3242c8). F(2)는 draft PR #112로 올라감. 남은 것은 Post-build 묶음과 /ship. 위험 경로 없음.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",

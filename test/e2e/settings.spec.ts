@@ -5,7 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { documentCounters, settingsSimple } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { DOCUMENT_NUMBER_PROJECT_SEQ_START } from "@/domain/settings/keys";
+import { DOCUMENT_NUMBER_PROJECT_SEQ_START, DOCUMENT_NUMBER_PROJECT_SEPARATOR, SETTING_DEFS } from "@/domain/settings/keys";
 import { findSimpleValue, upsertSimpleValue } from "@/repositories/settings";
 import { findDocumentCounter, upsertDocumentCounter } from "@/repositories/document-counters";
 import { kstYear } from "@/lib/kst-date";
@@ -178,5 +178,89 @@ test.describe("설정 화면 (ADMN-05, 성공 기준 4)", () => {
 
     const response = await page.goto("/admin/settings");
     expect(response?.status()).toBe(404);
+  });
+});
+
+// PR #104 후속 F(2) — ISSUE-001(/qa): 설정 칸의 힌트 <p>가 id를 갖고 칸(또는 묶음)의 aria-describedby가 그 id를 가리킨다.
+// DR-104-03(/design-review): 이력 목록 숫자가 쉼표 포맷터로 그려진다. 키에 점이 있어 id는 속성 선택자로 집는다.
+test.describe("PR #104 후속 — 설정 힌트 aria-describedby (ISSUE-001) · 이력 숫자 쉼표 (DR-104-03)", () => {
+  async function openSettings(page: import("@playwright/test").Page) {
+    const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto("/admin/settings");
+    await expect(page.getByRole("heading", { name: "로그인 잠금" })).toBeVisible();
+  }
+
+  test("ISSUE-001 — hint 있는 모든 설정 키의 힌트가 id를 갖고 칸 · fieldset · 이력 묶음의 aria-describedby에 들어간다, 매달린 id 없음", async ({ page }) => {
+    await openSettings(page);
+    const hinted = SETTING_DEFS.filter((def) => def.hint).map((def) => ({ key: def.key, hint: def.hint as string }));
+    expect(hinted.length).toBeGreaterThan(0);
+
+    const problems = await page.evaluate((defs) => {
+      const found: string[] = [];
+      for (const { key, hint } of defs) {
+        const hintId = `setting-${key}-hint`;
+        const hintEls = document.querySelectorAll(`[id="${hintId}"]`);
+        if (hintEls.length !== 1) {
+          found.push(`${key}: 힌트 id 요소 ${hintEls.length}개`);
+          continue;
+        }
+        if (hintEls[0]!.textContent?.trim() !== hint) found.push(`${key}: 힌트 글자 불일치`);
+        const owners = document.querySelectorAll(`[aria-describedby~="${hintId}"]`);
+        if (owners.length !== 1) {
+          found.push(`${key}: aria-describedby 연결 ${owners.length}개`);
+          continue;
+        }
+        const owner = owners[0]!;
+        const ok = ["INPUT", "SELECT", "FIELDSET"].includes(owner.tagName) || owner.getAttribute("role") === "group";
+        if (!ok) found.push(`${key}: 연결 요소가 ${owner.tagName}`);
+      }
+      for (const el of document.querySelectorAll("main [aria-describedby]")) {
+        for (const token of (el.getAttribute("aria-describedby") ?? "").split(/\s+/).filter(Boolean)) {
+          if (!document.getElementById(token)) found.push(`매달린 id: ${token}`);
+        }
+      }
+      return found;
+    }, hinted);
+    expect(problems).toEqual([]);
+  });
+
+  test("ISSUE-001 — 오류 없는 텍스트 칸(잠금 임계값)의 aria-describedby는 힌트 id 하나다", async ({ page }) => {
+    await openSettings(page);
+    await expect(page.getByLabel("로그인 잠금 임계값")).toHaveAttribute("aria-describedby", "setting-auth.lockout.threshold-hint");
+  });
+
+  test("ISSUE-001 — 구분자 칸에 허용 밖 글자를 넣고 blur하면 aria-describedby가 오류 id 다음 힌트 id이고 저장은 거부된다", async ({ page }) => {
+    await openSettings(page);
+    const key = DOCUMENT_NUMBER_PROJECT_SEPARATOR.key;
+    const field = page.locator(`[id="setting-${key}"]`);
+    await expect(field).toBeVisible();
+    const isServerAction = (response: { request: () => { method: () => string; headers: () => Record<string, string> } }) =>
+      response.request().method() === "POST" && response.request().headers()["next-action"] !== undefined;
+
+    await field.fill("#");
+    const saved = page.waitForResponse(isServerAction);
+    await field.blur();
+    await saved;
+    await expect(field).toHaveAttribute("aria-invalid", "true");
+    await expect(field).toHaveAttribute("aria-describedby", `setting-${key}-error setting-${key}-hint`);
+    expect((await findSimpleValue(SYSTEM_VIEWER, key))?.value).not.toBe("#");
+  });
+
+  test("DR-104-03 — 이력 목록 숫자: 면제 기준 125,000, 비율은 저장값 그대로(0.088 · 0.1)", async ({ page }) => {
+    await openSettings(page);
+    // 시드 이력 행의 적용 시작일 — domain/seed/index.ts SEED_HISTORIZED_EFFECTIVE_FROM(export 안 된 상수).
+    const seedDate = "2000-01-01";
+    const valueOf = async (caption: string) => {
+      const row = page.getByRole("table", { name: caption }).getByRole("row").filter({ hasText: seedDate });
+      return (await row.getByRole("cell").nth(1).innerText()).trim();
+    };
+    expect(await valueOf("기타소득 원천징수 면제 기준(지급액) 이력")).toBe("125,000");
+    expect(await valueOf("기타소득 원천징수율 이력")).toBe("0.088");
+    expect(await valueOf("부가세율 이력")).toBe("0.1");
   });
 });

@@ -1149,3 +1149,15 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **뒤로 · 앞으로(사용자 결정 2026-09-30 A-2, Codex P2 r4141687057)**: 브라우저 뒤로 · 앞으로(popstate)는 링크 누름도 문서 이탈도 아니라 확인 없이 초안이 사라졌다. 브라우저 기록을 한 칸 더 쌓아 뒤로 가기를 붙잡는 가드를 먼저 넣었으나, Chrome의 기록 조작 개입(사용자 활성화 없이 쌓은 기록은 뒤로 가기가 건너뛴다)으로 확인 창에서 Esc를 누르거나 뒤로를 두 번 누르면 확인 없이 떠나는 구멍이 코드로 막히지 않았고, 중복 기록 · 스크롤 튐 · 첫 기록 같은 결함이 이어졌다(독립 검토). 그래서 뒤로 · 앞으로는 막지 않고, 저장하지 않은 단계를 브라우저 저장소에 보관해 다시 열 때 `저장 안 한 편집 N단 · 복원 / 버림` 한 줄로 되살린다 — §7-3 (마) D-68과 같은 모양 · 같은 저장소 키 규칙(보는 사람 id를 앞세움, 로그아웃 때 지움). 보관 뒤 그 단계에 다른 저장이 있었으면(보관 때 기준값 ≠ 지금 저장값) 옛 값 위에서 만든 초안이라 줄에서 뺀다. 보관본은 복원 · 버림 전까지 남고, 이번 방문에 고친 단계는 그 편집이 보관본을 대신하며 줄에서 빠진다. 보관본의 칸 값이 지금 선택지에 없거나 형식이 다르면(그 사이 보관된 계급 · 부서) 그 칸은 저장값으로 되살린다. `입력 버리기`로 떠나면 이번에 고친 단계만, 저장하면 그 단계만 지운다. 같은 PR에서 단계 칸 저장값 하나가 형식에 맞지 않아도 설정 화면은 열리고 그 칸만 기본값으로 보이며, 그 단계를 저장해 고칠 수 있다 — 보기 · 경고 · 단계 저장의 기대값 비교가 같은 규칙(`simpleValueOrDefault`)으로 읽는다(결재선 로더 등 계산 경로는 그대로 엄격). `버림`은 확인 없이 지우고 알림 `되돌리기`(2026-09-26 C-1과 같은 규칙). 버린 대안: 기록 가드 보완(구멍 남음) · 가드 없이 알려진 한계로 둠(초안 잃음). 알려진 한계: Cmd+클릭은 D-94(앱 코드에 메타 키 참조 금지)로 걸러내지 못해 새 탭 대신 `입력 버리기` 확인이 뜬다(Codex r4141474263).
 
 **범위**: SYSTEM.md §7-2. 코드: `app/(app)/admin/settings/`(settings-form-client.tsx · page.tsx · actions.ts · actions.registry.ts · settings.module.css) · `domain/approvals/route-step-settings.ts` · `domain/approvals/settings-options.ts` · `domain/approvals/settings-warnings.ts` · `domain/settings/registry.ts`(simpleValueOrDefault) · `repositories/settings.ts`(lockSimpleValues · lockRouteStep). 회귀: `test/integration/settings-approval-route.test.ts` · `test/e2e/settings-approval-route.spec.ts` · `test/unit/app/settings-step-key-guard.test.ts`.
+
+## 2026-09-30 — 사람 목록: 가려진 정보의 열은 그리지 않고, 모두 가려지면 잠김 한 줄 (사용자 결정 2026-09-30 · aq2 /design-review DR-4)
+
+**결정**: /admin/people은 투영된 DTO에 키가 없는 열의 머리글 · 칸 · 접힌 줄 값을 그리지 않는다. 이름이 가려지면 첫 보이는 문자 칸이 행 머리글(id `people-row-<순번>-name`은 그대로)이 되고, 접힌 줄은 보이는 값만 「 · 」로 잇는다(값이 없으면 줄이 없다). 보이는 열이 하나도 없으면(사람 · 계급 · 팀 정보가 모두 꺼진 새 계급 기본값) 표 대신 ListEmpty 한 줄 「정보 노출표 · 사람 정보 잠김」을 그린다 — 행동 없음(2026-09-21 보관함 예외에 이은 두 번째 action 생략).
+
+**결정자**: 사용자(2026-09-30, 채팅 — quick 260930-f3l 범위).
+
+**이유**: §7-3 칸 수 가변(서버가 안 보낸 열은 처음부터 없다 · 빈 자리를 —로 채우지 않는다) · SYSTEM.md 「사람 목록은 보는 사람 자신이 항상 1행」이라 「등록된 사람이 없습니다」는 사실이 아니다 · frontend.md 「잠김 같은 상태에만 한 줄」 · §8-3(보는 사람에게 다음 행동이 없으면 사실까지). 잠김 문구는 `완료 · 견적 줄 잠김`(domain/quotes/edit-scope.ts)과 같은 「원인 · 대상 잠김」에 메뉴 라벨 「정보 노출표」 · 노출 항목 라벨 「사람 정보」다.
+
+**버린 대안**: 빈 열을 —로 유지 · 빈 표 · 「등록된 사람이 없습니다」.
+
+**범위**: `app/(app)/admin/people/page.tsx` · 회귀 `test/unit/app/people-list-hidden-id.test.ts`. SYSTEM.md 문장은 바꾸지 않는다(§7-3 · §8-3의 적용). 관리자(모두 보임) 출력은 그대로다.

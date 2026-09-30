@@ -62,9 +62,9 @@ function findTbody(node: ReactNode): ReactElement<{ children?: ReactNode }> | nu
 
 async function render(searchParams: { new?: string } = {}) {
   const tree = await PeoplePage({ searchParams: Promise.resolve(searchParams) });
+  // 보이는 열이 없으면 표(tbody)가 없다 — 행 key 목록은 비운다.
   const tbody = findTbody(tree);
-  if (!tbody) throw new Error("tbody 없음");
-  const rowElements = Array.isArray(tbody.props.children) ? (tbody.props.children as ReactElement[]) : [];
+  const rowElements = tbody && Array.isArray(tbody.props.children) ? (tbody.props.children as ReactElement[]) : [];
   return { keys: rowElements.map((row) => row.key), html: renderToStaticMarkup(createElement("div", null, tree)) };
 }
 

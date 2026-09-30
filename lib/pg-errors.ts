@@ -17,3 +17,11 @@ export function isUniqueViolation(error: unknown, constraint: string): boolean {
   const candidates = [asPgErrorShape(error), asPgErrorShape(error.cause)];
   return candidates.some((candidate) => candidate?.code === "23505" && candidate?.constraint === constraint);
 }
+
+// 04.1-03(A2-02): check 위반(23514) — isUniqueViolation과 같은 모양(오류와 .cause 둘 다).
+export function isCheckViolation(error: unknown, constraint: string): boolean {
+  if (!(error instanceof Error)) return false;
+
+  const candidates = [asPgErrorShape(error), asPgErrorShape(error.cause)];
+  return candidates.some((candidate) => candidate?.code === "23514" && candidate?.constraint === constraint);
+}

@@ -31,6 +31,7 @@ test.describe("폰 375 /admin/corp-cards 3차 버튼·터치 목표 (defect 4)",
     await page.getByLabel("이름").fill("폰카드소지자");
     await page.getByLabel("이메일").fill(holderEmail);
     await page.getByLabel("계급").selectOption(DEFAULT_ROLE_ID);
+    await page.getByLabel("입사일").fill("2026-01-01");
     await page.getByRole("button", { name: "사람 등록" }).click();
     await expect(page.getByText(`초기 비밀번호 — ${holderEmail}`)).toBeVisible();
 

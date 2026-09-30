@@ -106,8 +106,10 @@ const SEED_ROLE_NAMES: ReadonlyArray<[roleId: string, name: string]> = [
 const SYSADMIN_ROLE_ID = "role-sysadmin";
 const DEFAULT_ROLE_ID = "role-pm";
 
-const ADMIN: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ["admin.system-status"] };
-const EMPLOYEE: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: [] };
+const ADMIN: RoleMenuViewer = { roleId: SYSADMIN_ROLE_ID, allowedMenus: ["admin.system-status", "leave"] };
+const EMPLOYEE: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: ["leave"] };
+// 04.1-06(A1): 권한표에서 연차 view를 끈 계급 — 계정 그룹에 「연차」가 없다.
+const EMPLOYEE_WITHOUT_LEAVE: RoleMenuViewer = { roleId: DEFAULT_ROLE_ID, allowedMenus: [] };
 
 describe("roleMenu — 상단 바 1차 메뉴 (D-22)", () => {
   it("시스템 관리자 입력이면 1차 메뉴 5개가 전부 들어 있다", () => {
@@ -347,6 +349,29 @@ describe("roleMenu — 계정 그룹 (SYSTEM.md 목록과 원소 단위로 같�
   it("accountGroup 라벨 순서가 SYSTEM.md 「계정」 그룹 목록과 원소 단위로 같다(순서 포함, 04.2-09 Task 1)", () => {
     const actualLabels = roleMenu(ADMIN).accountGroup.map((entry) => entry.label);
     expect(actualLabels).toEqual(expectedLabels);
+  });
+
+  // 04.1-06(A1 · UI-SPEC S10): 연차는 계정 그룹의 셀프 서비스 — `leave` view가 있을 때만 「내 정보」 다음에 있다.
+  it("SYSTEM.md 계정 그룹 목록에 「연차」가 「내 정보」 바로 다음에 있다(전제 확인, A1)", () => {
+    expect(expectedLabels[expectedLabels.indexOf("내 정보") + 1]).toBe("연차");
+  });
+
+  it("allowedMenus에 leave가 있으면 「연차」 항목이 /leave 링크다", () => {
+    expect(roleMenu(EMPLOYEE).accountGroup.find((entry) => entry.label === "연차")).toEqual({
+      kind: "link",
+      label: "연차",
+      href: "/leave",
+    });
+  });
+
+  it("allowedMenus에 leave가 없으면 계정 그룹은 SYSTEM.md 목록에서 「연차」만 뺀 것과 같다(순서 포함)", () => {
+    const actualLabels = roleMenu(EMPLOYEE_WITHOUT_LEAVE).accountGroup.map((entry) => entry.label);
+    expect(actualLabels).toEqual(expectedLabels.filter((label) => label !== "연차"));
+  });
+
+  it("leave 유무와 무관하게 1차 메뉴 · 폰 하단 탭은 같다(D-22 다섯 고정 · 탭 넷)", () => {
+    expect(roleMenu(EMPLOYEE).topBarMenu).toEqual(roleMenu(EMPLOYEE_WITHOUT_LEAVE).topBarMenu);
+    expect(roleMenu(EMPLOYEE).bottomTabs).toEqual(roleMenu(EMPLOYEE_WITHOUT_LEAVE).bottomTabs);
   });
 });
 

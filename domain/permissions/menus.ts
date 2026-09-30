@@ -45,3 +45,7 @@ export const MENUS: MenuDef[] = [
   // 04.2-11(ADMN-11): 공휴일 표 검토·연도 확정 — 「관리」 인덱스 「마스터」 끝.
   { key: "admin.holidays", label: "공휴일" },
 ];
+
+// 04.1-02(UI-SPEC S10 · A1): 연차 — 계정 그룹의 셀프 서비스. 계급 5종 view·write 기본
+// 허용은 domain/seed/approvals-leave.ts가 넣는다(시스템 관리자는 위 시드 루프가 받는다).
+MENUS.push({ key: "leave", label: "연차" });

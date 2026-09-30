@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-30T11:44:10.562Z",
+  "timestamp": "2026-09-30T11:48:52.491076Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -126,11 +126,6 @@
   ],
   "remaining_tasks": [
     {
-      "id": "decision-g",
-      "name": "[사용자 결정 요청] G1~G3(/review 4차 참고 — export.ts:61 주석 범위 · PC 테스트 제목 「일괄 저장」 · SYSTEM.md §7-1 역참조 일반화) 처리 — /ship 전 반영 여부",
-      "status": "not_started"
-    },
-    {
       "id": "ship",
       "name": "PR #104 /ship (draft→ready는 사용자에게 먼저, 머지는 사용자)",
       "status": "not_started"
@@ -222,8 +217,8 @@
     },
     {
       "action": "[사용자 결정 요청] G1~G3 처리(PR #104 [완료 보고] 5910500613)",
-      "context": "/review 4차 참고 3건, 모두 주석·제목·문서. 고치면 /gsd-quick 한 단위, 아니면 그대로 /ship",
-      "blocking": true
+      "context": "해결 — [지시] 5910572972: 머지 뒤 F(2) 후속 PR에 함께",
+      "blocking": false
     },
     {
       "action": "게이트 기록: phase-04.log에 `review 2026-09-30T11:31Z session=56ab3f54-01c4-5f2a-b586-0384ac8499e2`",
@@ -601,12 +596,17 @@
       "decision": "/review 4차는 보고서만(자동 수정 0) · /qa·/design-review 재실행 안 함(화면 코드 변경 0) · gstack 1.91.9 업그레이드 건너뜀(묶음 중간)",
       "rationale": "선례 2·3차 · 세션 지시 · 도구 변경 최소",
       "phase": "4"
+    },
+    {
+      "decision": "G1~G3는 PR #104에서 고치지 않고 Phase 4 머지 뒤 F(2) 후속 PR에 함께",
+      "rationale": "사용자 채팅 「추천대로 해」 — 동작 영향 없음, 머지 지연 방지",
+      "phase": "4"
     }
   ],
   "uncommitted_files": [
     "?? .claude/gates/phase-02.log"
   ],
-  "next_action": "새 세션(plant8 환경, 브랜치 claude/gsd-verify-work-4) → settings·git status -sb → .continue-here.md → PR #104 최신 [지시](G1~G3 결정) 확인·구독 → origin/main 머지 커밋 반영 → 결정대로: G 반영이면 /gsd-quick 한 단위, 아니면 /ship(draft→ready는 사용자에게 먼저, 머지는 사용자) → [완료 보고]",
+  "next_action": "새 세션(plant8 환경, 브랜치 claude/gsd-verify-work-4) → settings·git status -sb → .continue-here.md → PR #104 최신 [지시] 5910572972 확인·구독 → origin/main 머지 커밋 반영 → /ship(draft→ready는 사용자에게 먼저, 머지는 사용자) → [완료 보고] → /gsd-pause-work",
   "context_notes": "Phase 4 GSD 완료. PR #104 Post-build: /review 4차(979a2a9) · /qa·/design-review(63845be) · /cso(6031760) 끝. 남은 것: G1~G3 결정 → /ship → 사용자 머지.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",

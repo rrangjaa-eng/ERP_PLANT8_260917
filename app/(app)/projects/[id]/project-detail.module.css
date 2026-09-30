@@ -307,6 +307,7 @@
   /* 04-49(S18) — 폰에서 복원·버림은 터치 최소 높이. */
   .restoreAction {
     min-height: var(--touch-min);
+    min-width: var(--touch-min);
   }
 }
 

@@ -228,6 +228,7 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
 
     for (const width of [360, 640]) {
       await page.setViewportSize({ width, height: 800 });
+      await link.scrollIntoViewIfNeeded();
       const asIs = await measure();
       await link.evaluate((el) => el.style.setProperty("display", "inline", "important"));
       const reference = await measure();

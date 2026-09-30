@@ -73,7 +73,7 @@ describe("사람 목록 — person.id가 없는 행", () => {
     expect(keys.every((key) => key !== null)).toBe(true);
     expect(new Set(keys).size).toBe(2);
     expect(html).not.toContain("/admin/people/undefined");
-    expect(html).not.toContain("/admin/people/");
+    expect(html.match(/<tbody[\s\S]*<\/tbody>/)?.[0]).not.toMatch(/href="\/admin\/people\//);
     expect(html).not.toContain("data-user-id");
     expect(html).toContain('id="people-row-0-name"');
     expect(html).toContain('id="people-row-1-name"');

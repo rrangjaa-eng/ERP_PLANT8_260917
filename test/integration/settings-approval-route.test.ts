@@ -28,7 +28,7 @@ import {
   APPROVAL_ROUTE_LEAVE_STEP3_SCOPE,
 } from "@/domain/settings/keys";
 import { listRoles } from "@/repositories/roles";
-import { upsertSimpleValue } from "@/repositories/settings";
+import { findSimpleValues, upsertSimpleValue } from "@/repositories/settings";
 import { listOrgUnits } from "@/repositories/org-units";
 import { makePerson, orgUnitIdByName, NOW_2026 } from "./approvals-fixtures";
 
@@ -262,6 +262,28 @@ describe("비활성 칸의 저장값 보존(CX-W2)", () => {
       }
     });
     expect(options.steps[LEAVE_ROUTE_SETTINGS.selfApproval.key]).toBeUndefined();
+  });
+
+  it("옵션의 values는 단계 16키 저장값을 SELECT 한 문장으로 읽는다 — 화면 기준값이 두 저장 사이로 섞이지 않는다(Codex r4141687065)", async () => {
+    await saveRouteStepSettings(SYSTEM_VIEWER, {
+      kind: LEAVE_DOCUMENT_KIND,
+      stepIndex: 2,
+      values: { enabled: true, roleId: CEO_ROLE_ID, scope: "company", orgUnitId: "" },
+    });
+    const reads: string[][] = [];
+    const options = await listApprovalRouteOptions(SYSTEM_VIEWER, {
+      findSimpleValues: async (...args: Parameters<typeof findSimpleValues>) => {
+        reads.push(args[1]);
+        return findSimpleValues(...args);
+      },
+    });
+    const stepDefs = LEAVE_ROUTE_SETTINGS.steps.flatMap((step) => [step.enabled, step.roleId, step.scope, step.orgUnitId]);
+    expect(reads).toHaveLength(1);
+    expect([...reads[0]!].sort()).toEqual(stepDefs.map((def) => def.key).sort());
+    for (const def of stepDefs) {
+      expect(options.values[def.key]).toEqual(await getSettingValue<unknown>(def).catch(() => undefined));
+    }
+    expect(options.values[LEAVE_ROUTE_SETTINGS.steps[1]!.roleId.key]).toBe(CEO_ROLE_ID);
   });
 
   it("옵션의 activeWhen에 연차 결재선 12키가 있다", async () => {

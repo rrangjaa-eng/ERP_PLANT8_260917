@@ -3,6 +3,8 @@ import { can as defaultCan, ForbiddenError } from "@/domain/permissions/can";
 import { listDocumentKinds, type RouteSettingDefs } from "@/domain/approvals/kinds";
 import { listRoles as defaultListRoles } from "@/repositories/roles";
 import { listOrgUnits as defaultListOrgUnits } from "@/repositories/org-units";
+import { findSimpleValues as defaultFindSimpleValues } from "@/repositories/settings";
+import { getSimpleSettingValues } from "@/domain/settings/registry";
 
 // 04.1-04(U3 · Codex MEDIUM): 설정 화면 결재선 칸의 동적 옵션. 설정 보기 권한만 보고
 // 리포지토리에서 계급 · 본부의 id · 이름 · 보관 여부만 읽는다 — 사람 관리 권한 범위
@@ -18,6 +20,9 @@ export type ApprovalRouteOptions = {
   activeWhen: Record<string, SettingCondition[]>;
   // 설정 키 → 그 키가 속한 결재선 단계(사용자 결정 2026-09-30 A — 화면이 단계 네 칸을 모아 한 번에 저장).
   steps: Record<string, RouteStepField>;
+  // 설정 키 → 단계 칸 저장값(Codex r4141687065). 단계 칸 전부를 SELECT 한 문장으로 읽는다 — 키마다 읽으면
+  // 그 사이 커밋된 다른 단계 저장이 섞여, 한 번도 저장된 적 없는 결재선이 화면 기준값이 된다.
+  values: Record<string, unknown>;
 };
 
 export type SettingsOptionsDeps = {
@@ -25,6 +30,7 @@ export type SettingsOptionsDeps = {
   listRoles: typeof defaultListRoles;
   listOrgUnits: typeof defaultListOrgUnits;
   listDocumentKinds: typeof listDocumentKinds;
+  findSimpleValues: typeof defaultFindSimpleValues;
 };
 
 // 단계마다 담당 계급 · 조직 범위 · 특정 부서는 그 단계 사용이 켜져야, 특정 부서는
@@ -73,10 +79,17 @@ export async function listApprovalRouteOptions(viewer: Viewer, deps?: Partial<Se
     Object.assign(steps, routeStepFields(kind.kind, kind.routeSettings));
   }
 
+  const stepDefs = kinds.flatMap((kind) =>
+    (kind.routeSettings?.steps ?? []).flatMap((step) => [step.enabled, step.roleId, step.scope, step.orgUnitId]),
+  );
+  const stepValues = await getSimpleSettingValues(stepDefs, { findSimpleValues: deps?.findSimpleValues });
+  const values = Object.fromEntries(stepDefs.map((def, index) => [def.key, stepValues[index]]));
+
   return {
     roles: roles.map((row) => ({ id: row.id, name: row.name, archived: row.archivedAt !== null })),
     orgUnits: orgUnits.map((row) => ({ id: row.id, name: row.name, archived: row.archivedAt !== null })),
     activeWhen,
     steps,
+    values,
   };
 }

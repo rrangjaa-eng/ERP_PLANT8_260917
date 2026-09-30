@@ -89,10 +89,15 @@ async function buildSections(viewer: Viewer): Promise<SettingsSection[]> {
       field = { kind: "historized", descriptor, entries };
     } else {
       let currentValue: unknown;
-      try {
-        currentValue = await getSettingValue(def);
-      } catch {
-        currentValue = undefined;
+      if (def.key in routeOptions.values) {
+        // 결재선 단계 칸은 옵션이 한 문장으로 읽은 값(Codex r4141687065) — 단계 기준값이 두 저장 사이로 섞이지 않게.
+        currentValue = routeOptions.values[def.key];
+      } else {
+        try {
+          currentValue = await getSettingValue(def);
+        } catch {
+          currentValue = undefined;
+        }
       }
       field = { kind: "simple", descriptor, value: currentValue };
       values[def.key] = currentValue;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { TextField } from "@/ui/input/TextField";
@@ -256,6 +256,7 @@ function RouteStepEditor({
   useEffect(() => {
     if (!dirty) return;
     function handleBeforeUnload(event: BeforeUnloadEvent) {
+      if (leaveConfirmed) return;
       event.preventDefault();
       event.returnValue = "";
     }
@@ -479,9 +480,51 @@ function renderFields(fields: SettingsFieldViewModel[], onDirtyChange: StepDirty
 
 // 저장하지 않은 단계가 있으면 앱 안 링크로 떠날 때 확인한다 — next/link는 beforeunload 없이 이동한다(Codex P2
 // r4140619759). 연차 신청 폼과 같은 `입력 버리기` 확인. 새로 고침 · 창 닫기는 각 단계의 브라우저 이탈 경고.
+// 뒤로 · 앞으로도 같은 확인(Codex P2 r4141687057 — popstate는 링크 누름도 문서 이탈도 아니다).
+const LEAVE_BACK = "back";
+// 뒤로 가기 확인 뒤 떠나는 중 — 앞 화면이 다른 문서면 각 단계의 브라우저 이탈 경고가 한 번 더 뜨므로 건너뛴다.
+let leaveConfirmed = false;
+
 function useLeaveGuard(dirtySteps: number[]) {
+  const router = useRouter();
   const [leaveHref, setLeaveHref] = useState<string | null>(null);
   const dirty = dirtySteps.length > 0;
+  const trapped = useRef(false);
+  useEffect(() => {
+    leaveConfirmed = false;
+  }, []);
+
+  // 지금 기록을 한 칸 더 쌓아 두고, 뒤로 가면 다시 쌓아 머문 채 확인을 연다(앞으로 갈 기록은 쌓을 때 사라진다).
+  // 저장할 것이 없어지면 쌓은 칸을 되돌려 뒤로 가기 한 번이 그대로 앞 화면으로 간다.
+  useEffect(() => {
+    if (!dirty) {
+      if (trapped.current) {
+        trapped.current = false;
+        window.history.back();
+      }
+      return;
+    }
+    if (!trapped.current) {
+      window.history.pushState(window.history.state, "", window.location.href);
+      trapped.current = true;
+    }
+    function handlePopState() {
+      if (leaveConfirmed) return;
+      window.history.pushState(window.history.state, "", window.location.href);
+      setLeaveHref(LEAVE_BACK);
+    }
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [dirty]);
+
+  function leave() {
+    if (leaveHref === LEAVE_BACK) {
+      leaveConfirmed = true;
+      window.history.go(-2);
+    } else if (leaveHref) {
+      router.push(leaveHref);
+    }
+  }
 
   useEffect(() => {
     if (!dirty) return;
@@ -502,11 +545,10 @@ function useLeaveGuard(dirtySteps: number[]) {
     return () => document.removeEventListener("click", handleClick, true);
   }, [dirty]);
 
-  return { leaveHref, setLeaveHref };
+  return { leaveHref, setLeaveHref, leave };
 }
 
 export function SettingsFormClient({ sections }: { sections: SettingsSection[] }) {
-  const router = useRouter();
   const [dirtyByStep, setDirtyByStep] = useState<Record<string, number>>({});
   const onDirtyChange = useCallback<StepDirtyChange>((key, stepIndex, dirty) => {
     setDirtyByStep((current) => {
@@ -518,7 +560,7 @@ export function SettingsFormClient({ sections }: { sections: SettingsSection[] }
     });
   }, []);
   const dirtySteps = Object.values(dirtyByStep).sort((a, b) => a - b);
-  const { leaveHref, setLeaveHref } = useLeaveGuard(dirtySteps);
+  const { leaveHref, setLeaveHref, leave } = useLeaveGuard(dirtySteps);
 
   return (
     <div>
@@ -534,7 +576,7 @@ export function SettingsFormClient({ sections }: { sections: SettingsSection[] }
         onClose={() => setLeaveHref(null)}
         title="입력 버리기"
         subtitle={`결재선 ${dirtySteps.map((step) => `${step}단`).join(" · ")}`}
-        primary={{ label: "입력 버리기", onConfirm: () => leaveHref && router.push(leaveHref) }}
+        primary={{ label: "입력 버리기", onConfirm: leave }}
       />
     </div>
   );

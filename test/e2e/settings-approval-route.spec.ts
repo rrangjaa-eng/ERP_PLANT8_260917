@@ -234,6 +234,71 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID)).toBe(originalRole);
   });
 
+  // Codex P2(PR #105 r4141687057): 브라우저 뒤로 · 앞으로(앱 안 이동)는 popstate — 링크 누름도 문서 이탈도 아니다.
+  // 칸을 바꾸면 화면이 기록을 한 칸 쌓는다 — 쌓이기 전(사람 손으로는 못 누르는 간격)에 뒤로 가지 않게 기다린다.
+  async function editStep2Role(page: Page) {
+    const length = await page.evaluate(() => window.history.length);
+    await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await expect.poll(() => page.evaluate(() => window.history.length)).toBe(length + 1);
+  }
+
+  test("저장 안 한 단계가 있으면 뒤로 가기에도 입력 버리기 확인이 뜨고, 취소하면 남고 확인하면 앞 화면으로 간다", async ({ page }) => {
+    const originalRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);
+    await openSettings(page);
+    await page.goto("/admin");
+    const home = page.url();
+    await page.getByRole("link", { name: "시스템 설정" }).first().click();
+    await expect(page.getByRole("heading", { name: "연차 결재선" })).toBeVisible();
+    await editStep2Role(page);
+
+    await page.goBack();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: "입력 버리기" })).toBeVisible();
+    await expect(dialog).toContainText("결재선 2단");
+    await dialog.getByRole("button", { name: "취소" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page).toHaveURL(/\/admin\/settings$/);
+    await expect(page.getByLabel("2단 담당 계급")).toHaveValue(CEO_ROLE_ID);
+
+    await page.goBack();
+    await page.getByRole("dialog").getByRole("button", { name: "입력 버리기" }).click();
+    await expect(page).toHaveURL(home);
+    expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID)).toBe(originalRole);
+  });
+
+  test("바꾼 칸을 되돌려 저장할 것이 없어지면 뒤로 가기 한 번으로 앞 화면에 간다", async ({ page }) => {
+    await openSettings(page);
+    await page.goto("/admin");
+    const home = page.url();
+    await page.getByRole("link", { name: "시스템 설정" }).first().click();
+    const role = page.getByLabel("2단 담당 계급");
+    const original = await role.inputValue();
+    await role.selectOption(CEO_ROLE_ID);
+    await expect(page.getByRole("button", { name: "2단 저장" })).not.toHaveAccessibleDescription("바뀐 칸 없음");
+    await role.selectOption(original);
+    await expect(page.getByRole("button", { name: "2단 저장" })).toHaveAccessibleDescription("바뀐 칸 없음");
+
+    await page.goBack();
+    await expect(page).toHaveURL(home);
+  });
+
+  test("앞 화면이 다른 문서여도 뒤로 가기 확인 뒤 브라우저 이탈 경고가 한 번 더 뜨지 않는다", async ({ page }) => {
+    const originalRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);
+    await openSettings(page);
+    const dialogs: string[] = [];
+    page.on("dialog", (native) => {
+      dialogs.push(native.type());
+      void native.dismiss();
+    });
+    await editStep2Role(page);
+
+    await page.goBack();
+    await page.getByRole("dialog").getByRole("button", { name: "입력 버리기" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    expect(dialogs).toEqual([]);
+    expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID)).toBe(originalRole);
+  });
+
   // Codex P2(PR #105 r4140619761): 저장 대기 중 칸을 또 바꾸면 다음 저장이 옛 기대값을 보내 거부된다 → 대기 중엔 칸을 잠근다.
   test("단계 저장 대기 중에는 그 단계 칸이 잠기고, 끝나면 다시 풀린다", async ({ page }) => {
     const originalRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);

@@ -141,7 +141,7 @@ export default async function SettingsPage() {
     <>
       <PageHeader title="설정" />
       <div className="single-column">
-        <SettingsFormClient sections={sections} />
+        <SettingsFormClient sections={sections} viewerId={session.viewer.id} />
       </div>
     </>
   );

@@ -1,4 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
+import { eq } from "drizzle-orm";
+import { db } from "@/db/client";
+import { settingsSimple } from "@/db/schema";
 import { createFixtureUser } from "./fixtures";
 import "@/domain/leave";
 import { submitLeave } from "@/domain/leave";
@@ -234,69 +237,199 @@ test.describe("설정 화면 연차 결재선 (ADMN-04)", () => {
     expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID)).toBe(originalRole);
   });
 
-  // Codex P2(PR #105 r4141687057): 브라우저 뒤로 · 앞으로(앱 안 이동)는 popstate — 링크 누름도 문서 이탈도 아니다.
-  // 칸을 바꾸면 화면이 기록을 한 칸 쌓는다 — 쌓이기 전(사람 손으로는 못 누르는 간격)에 뒤로 가지 않게 기다린다.
-  async function editStep2Role(page: Page) {
-    const length = await page.evaluate(() => window.history.length);
-    await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
-    await expect.poll(() => page.evaluate(() => window.history.length)).toBe(length + 1);
-  }
-
-  test("저장 안 한 단계가 있으면 뒤로 가기에도 입력 버리기 확인이 뜨고, 취소하면 남고 확인하면 앞 화면으로 간다", async ({ page }) => {
-    const originalRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);
+  // Codex P2(PR #105 r4141687057 · 사용자 결정 2026-09-30 A-2): 뒤로 · 앞으로(popstate)는 막지 않는다 — 저장 안 한 단계를
+  // 브라우저 저장소에 보관하고, 다시 열면 `저장 안 한 편집 N단 · 복원 / 버림` 한 줄(§7-3 (마) D-68과 같은 모양).
+  async function openSettingsInApp(page: Page) {
     await openSettings(page);
     await page.goto("/admin");
-    const home = page.url();
     await page.getByRole("link", { name: "시스템 설정" }).first().click();
     await expect(page.getByRole("heading", { name: "연차 결재선" })).toBeVisible();
-    await editStep2Role(page);
+  }
 
-    await page.goBack();
-    const dialog = page.getByRole("dialog");
-    await expect(dialog.getByRole("heading", { name: "입력 버리기" })).toBeVisible();
-    await expect(dialog).toContainText("결재선 2단");
-    await dialog.getByRole("button", { name: "취소" }).click();
-    await expect(dialog).toBeHidden();
-    await expect(page).toHaveURL(/\/admin\/settings$/);
-    await expect(page.getByLabel("2단 담당 계급")).toHaveValue(CEO_ROLE_ID);
+  // 칸을 바꾸면 한 박자 뒤 저장소에 보관된다 — 사람 손으로는 못 누르는 간격에 떠나지 않게 보관을 기다린다.
+  async function waitStashed(page: Page, steps: string[]) {
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const key = Object.keys(window.localStorage).find((name) => name.endsWith(":settings:approval-route"));
+          return Object.keys(JSON.parse((key && window.localStorage.getItem(key)) || "{}") as object).sort();
+        }),
+      )
+      .toEqual(steps);
+  }
 
-    await page.goBack();
-    await page.getByRole("dialog").getByRole("button", { name: "입력 버리기" }).click();
-    await expect(page).toHaveURL(home);
-    expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID)).toBe(originalRole);
-  });
-
-  test("바꾼 칸을 되돌려 저장할 것이 없어지면 뒤로 가기 한 번으로 앞 화면에 간다", async ({ page }) => {
-    await openSettings(page);
-    await page.goto("/admin");
-    const home = page.url();
-    await page.getByRole("link", { name: "시스템 설정" }).first().click();
-    const role = page.getByLabel("2단 담당 계급");
-    const original = await role.inputValue();
-    await role.selectOption(CEO_ROLE_ID);
-    await expect(page.getByRole("button", { name: "2단 저장" })).not.toHaveAccessibleDescription("바뀐 칸 없음");
-    await role.selectOption(original);
-    await expect(page.getByRole("button", { name: "2단 저장" })).toHaveAccessibleDescription("바뀐 칸 없음");
-
-    await page.goBack();
-    await expect(page).toHaveURL(home);
-  });
-
-  test("앞 화면이 다른 문서여도 뒤로 가기 확인 뒤 브라우저 이탈 경고가 한 번 더 뜨지 않는다", async ({ page }) => {
+  test("저장 안 한 단계는 뒤로 갔다 돌아오면 복원 줄로 되살릴 수 있다", async ({ page }) => {
     const originalRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);
-    await openSettings(page);
-    const dialogs: string[] = [];
-    page.on("dialog", (native) => {
-      dialogs.push(native.type());
-      void native.dismiss();
-    });
-    await editStep2Role(page);
+    await openSettingsInApp(page);
+    await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await waitStashed(page, ["leave-2"]);
 
     await page.goBack();
-    await page.getByRole("dialog").getByRole("button", { name: "입력 버리기" }).click();
-    await expect(page).toHaveURL(/\/account$/);
-    expect(dialogs).toEqual([]);
+    await expect(page).toHaveURL(/\/admin$/);
+    await page.getByRole("link", { name: "시스템 설정" }).first().click();
+    const line = page.getByText("저장 안 한 편집 2단");
+    await expect(line).toBeVisible();
+    await expect(page.getByLabel("2단 담당 계급")).toHaveValue(originalRole);
+
+    await page.getByRole("button", { name: "복원" }).click();
+    await expect(line).toBeHidden();
+    await expect(page.getByLabel("2단 사용")).toBeFocused();
+    await expect(page.getByLabel("2단 담당 계급")).toHaveValue(CEO_ROLE_ID);
+    await expect(page.getByRole("button", { name: "2단 저장" })).not.toHaveAccessibleDescription("바뀐 칸 없음");
     expect(await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID)).toBe(originalRole);
+  });
+
+  test("복원 줄의 버림은 확인 없이 지우고 알림의 되돌리기로 되살린다", async ({ page }) => {
+    const originalRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);
+    await openSettingsInApp(page);
+    await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await waitStashed(page, ["leave-2"]);
+    page.once("dialog", (leaving) => void leaving.accept());
+    await page.reload();
+    await expect(page.getByText("저장 안 한 편집 2단")).toBeVisible();
+
+    await page.getByRole("button", { name: "버림" }).click();
+    await expect(page.getByText("저장 안 한 편집 2단")).toBeHidden();
+    await expect(page.getByLabel("2단 담당 계급")).toHaveValue(originalRole);
+    await page.getByRole("button", { name: "되돌리기" }).click();
+    await expect(page.getByLabel("2단 담당 계급")).toHaveValue(CEO_ROLE_ID);
+    await waitStashed(page, ["leave-2"]);
+    page.once("dialog", (leaving) => void leaving.accept());
+    await page.reload();
+    await expect(page.getByText("저장 안 한 편집 2단")).toBeVisible();
+  });
+
+  test("고치지 않고 다시 떠나도 보관본은 남고, 다른 단계를 고치면 두 단계가 함께 남는다", async ({ page }) => {
+    await openSettingsInApp(page);
+    await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await waitStashed(page, ["leave-2"]);
+    await page.goBack();
+    await page.getByRole("link", { name: "시스템 설정" }).first().click();
+    await expect(page.getByText("저장 안 한 편집 2단")).toBeVisible();
+
+    await page.goBack();
+    await page.getByRole("link", { name: "시스템 설정" }).first().click();
+    await expect(page.getByText("저장 안 한 편집 2단")).toBeVisible();
+
+    await page.getByLabel("3단 담당 계급").selectOption(CEO_ROLE_ID);
+    await waitStashed(page, ["leave-2", "leave-3"]);
+    await page.goBack();
+    await page.getByRole("link", { name: "시스템 설정" }).first().click();
+    await expect(page.getByText("저장 안 한 편집 2단 · 3단")).toBeVisible();
+  });
+
+  test("이번에 고친 단계는 복원 줄에서 빠진다", async ({ page }) => {
+    await openSettingsInApp(page);
+    await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await waitStashed(page, ["leave-2"]);
+    await page.goBack();
+    await page.getByRole("link", { name: "시스템 설정" }).first().click();
+    await expect(page.getByText("저장 안 한 편집 2단")).toBeVisible();
+
+    const scope = page.getByLabel("2단 조직 범위");
+    const originalScope = await scope.inputValue();
+    await scope.selectOption("company");
+    await expect(page.getByText("저장 안 한 편집 2단")).toHaveCount(0);
+    await scope.selectOption(originalScope);
+    await expect(page.getByRole("button", { name: "2단 저장" })).toHaveAccessibleDescription("바뀐 칸 없음");
+    await expect(page.getByText("저장 안 한 편집 2단")).toHaveCount(0);
+  });
+
+  test("3단 특정 부서 저장값이 없어도 보관한 부서를 되살린다", async ({ page }) => {
+    const [row] = await db.select().from(settingsSimple).where(eq(settingsSimple.key, APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID.key));
+    await db.delete(settingsSimple).where(eq(settingsSimple.key, APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID.key));
+    try {
+      await openSettingsInApp(page);
+      const unit = page.getByLabel("3단 특정 부서");
+      const choice = await unit.locator("option").evaluateAll((options) =>
+        options.map((option) => (option as HTMLOptionElement).value).find((value) => value !== ""),
+      );
+      if (!choice) throw new Error("고를 부서 없음");
+      await unit.selectOption(choice);
+      await waitStashed(page, ["leave-3"]);
+      await page.goBack();
+      await page.getByRole("link", { name: "시스템 설정" }).first().click();
+      await expect(page.getByText("저장 안 한 편집 3단")).toBeVisible();
+      await page.getByRole("button", { name: "복원" }).click();
+      await expect(page.getByLabel("3단 특정 부서")).toHaveValue(choice);
+    } finally {
+      if (row) await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP3_ORG_UNIT_ID, row.value as string);
+    }
+  });
+
+  test("보관본의 칸 값이 지금 선택지에 없으면 그 칸은 저장값으로 되살린다", async ({ page }) => {
+    const originalRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);
+    await openSettingsInApp(page);
+    await page.getByLabel("2단 조직 범위").selectOption("company");
+    await waitStashed(page, ["leave-2"]);
+    await page.goBack();
+    await page.evaluate((roleKey) => {
+      const key = Object.keys(window.localStorage).find((name) => name.endsWith(":settings:approval-route"));
+      if (!key) throw new Error("보관본 없음");
+      const stash = JSON.parse(window.localStorage.getItem(key) ?? "{}") as Record<string, { draft: Record<string, unknown> }>;
+      stash["leave-2"]!.draft[roleKey] = "no-such-role";
+      window.localStorage.setItem(key, JSON.stringify(stash));
+    }, APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID.key);
+    await page.getByRole("link", { name: "시스템 설정" }).first().click();
+
+    await page.getByRole("button", { name: "복원" }).click();
+    await expect(page.getByLabel("2단 조직 범위")).toHaveValue("company");
+    await expect(page.getByLabel("2단 담당 계급")).toHaveValue(originalRole);
+  });
+
+  test("버림 뒤 새로 고치면 복원 줄이 없다", async ({ page }) => {
+    await openSettingsInApp(page);
+    await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+    await waitStashed(page, ["leave-2"]);
+    page.once("dialog", (leaving) => void leaving.accept());
+    await page.reload();
+    await page.getByRole("button", { name: "버림" }).click();
+    await expect(page.getByText("저장 안 한 편집 2단")).toBeHidden();
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "연차 결재선" })).toBeVisible();
+    await expect(page.getByText("저장 안 한 편집 2단")).toHaveCount(0);
+  });
+
+  test("보관 뒤 다른 저장이 그 단계를 바꿨으면 복원 줄을 띄우지 않는다", async ({ page }) => {
+    const originalRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);
+    const originalScope = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_SCOPE);
+    try {
+      await openSettingsInApp(page);
+      await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+      await waitStashed(page, ["leave-2"]);
+      await page.goBack();
+      await expect(page).toHaveURL(/\/admin$/);
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_SCOPE, "company");
+      await page.getByRole("link", { name: "시스템 설정" }).first().click();
+      await expect(page.getByRole("heading", { name: "연차 결재선" })).toBeVisible();
+      await expect(page.getByText("저장 안 한 편집 2단")).toHaveCount(0);
+    } finally {
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID, originalRole);
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_SCOPE, originalScope);
+    }
+  });
+
+  test("입력 버리기로 떠났거나 저장한 단계는 돌아와도 복원 줄이 없다", async ({ page }) => {
+    const originalRole = await getSettingValue(APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID);
+    try {
+      await openSettingsInApp(page);
+      await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+      await page.getByRole("link", { name: "PLANT8 내 차례" }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "입력 버리기" }).click();
+      await expect(page).not.toHaveURL(/\/admin\/settings$/);
+      await page.goto("/admin/settings");
+      await expect(page.getByRole("heading", { name: "연차 결재선" })).toBeVisible();
+      await expect(page.getByText("저장 안 한 편집 2단")).toHaveCount(0);
+
+      await page.getByLabel("2단 담당 계급").selectOption(CEO_ROLE_ID);
+      await page.getByRole("button", { name: "2단 저장" }).click();
+      await expect(page.getByRole("button", { name: "2단 저장" })).toHaveAccessibleDescription("바뀐 칸 없음");
+      await page.reload();
+      await expect(page.getByRole("heading", { name: "연차 결재선" })).toBeVisible();
+      await expect(page.getByText("저장 안 한 편집 2단")).toHaveCount(0);
+    } finally {
+      await setSettingValue(SYSTEM_VIEWER, APPROVAL_ROUTE_LEAVE_STEP2_ROLE_ID, originalRole);
+    }
   });
 
   // Codex P2(PR #105 r4140619761): 저장 대기 중 칸을 또 바꾸면 다음 저장이 옛 기대값을 보내 거부된다 → 대기 중엔 칸을 잠근다.

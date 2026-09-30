@@ -299,7 +299,7 @@ export const DOCUMENT_NUMBER_PROJECT_SEPARATOR: SettingDef<string> = {
   kind: "simple",
   schema: z.string().regex(/^[-_./]?$/),
   label: "프로젝트 번호 구분자",
-  hint: "연도와 순번 사이에 넣을 문자입니다(기본값은 없음).",
+  hint: "빈칸 또는 - _ . / 중 한 글자",
   namespace: "문서 번호",
   default: "",
   readInvalidAsDefault: true,

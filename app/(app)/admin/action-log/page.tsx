@@ -83,7 +83,8 @@ export default async function ActionLogPage({ searchParams }: { searchParams: Pr
       <PageHeader title="행동 로그" />
 
       <FilterBar
-        people={people.map((person) => ({ id: person.id, name: person.name }))}
+        // person.value가 꺼진 계급의 DTO에는 id · 이름이 없다 — 고를 수 있는 사람만 넘긴다.
+        people={people.filter((person) => "id" in person).map((person) => ({ id: person.id, name: person.name }))}
         actionTypes={actionTypeOptions}
         defaultValues={filterValues}
         hasFilter={hasFilter}

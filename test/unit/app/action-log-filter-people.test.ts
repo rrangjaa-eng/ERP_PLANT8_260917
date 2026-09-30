@@ -50,8 +50,8 @@ describe("행동 로그 「사람」 필터 — id 없는 사람", () => {
     const html = await render();
     expect(html).not.toContain('id="actorId"');
     expect(html).not.toContain(">사람</label>");
-    for (const id of ["from", "to", "actionType", "documentId", "includePruned"]) {
-      expect(html, id).toContain(`id="${id}"`);
+    for (const name of ["from", "to", "actionType", "documentId", "includePruned"]) {
+      expect(html, name).toContain(`name="${name}"`);
     }
   });
 

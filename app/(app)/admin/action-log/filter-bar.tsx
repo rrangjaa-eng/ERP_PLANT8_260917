@@ -46,23 +46,26 @@ export function FilterBar({
 
   return (
     <form ref={formRef} method="get" className={styles.filterRow} aria-label="행동 로그 필터">
-      <div className={styles.selectLabel}>
-        <label htmlFor="actorId">사람</label>
-        <select
-          id="actorId"
-          name={ACTOR_KEY}
-          className={styles.select}
-          defaultValue={defaultValues.actorId ?? ""}
-          onChange={() => formRef.current?.requestSubmit()}
-        >
-          <option value="">전체</option>
-          {people.map((person) => (
-            <option key={person.id} value={person.id}>
-              {person.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      {/* 고를 사람이 없으면(사람 정보가 꺼진 계급) 「전체」 하나뿐인 select는 할 수 없는 선택이라 칸째 숨긴다. */}
+      {people.length > 0 ? (
+        <div className={styles.selectLabel}>
+          <label htmlFor="actorId">사람</label>
+          <select
+            id="actorId"
+            name={ACTOR_KEY}
+            className={styles.select}
+            defaultValue={defaultValues.actorId ?? ""}
+            onChange={() => formRef.current?.requestSubmit()}
+          >
+            <option value="">전체</option>
+            {people.map((person) => (
+              <option key={person.id} value={person.id}>
+                {person.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
 
       <div className={styles.selectLabel}>
         <label htmlFor="from">시작일</label>

@@ -349,6 +349,7 @@ Recent decisions affecting current work:
 | 260930-4xr | PR #104 /review 2차 결정 — A(2) 허용 밖 저장 구분자는 읽을 때 기본값 대체 + log.error · B 구분자 힌트 「빈칸 또는 - _ . / 중 한 글자」 · C 접두어 수락 위험 기록 · 폰 머리 줄 「일괄 저장」·「복사해 새 차수」·「프로젝트 복사」 44(PR #104 [지시] 5903477924) | 2026-09-30 | 0149cc6 | [260930-4xr-pr104-review-2-decisions-separator-read-](./quick/260930-4xr-pr104-review-2-decisions-separator-read-/) |
 | 260930-ee9 | PR #104 /review 3차 참고 E1~E5 — registry 주석 · 일괄 읽기 엄격 단위 테스트 · export 실효값 주석 · SYSTEM.md §7-1·§7-8 §3 역참조 · PC 「일괄 저장」 32 E2E 단언(동작 변경 없음, PR #104 [지시] 5909292999) | 2026-09-30 | ab9b818 | [260930-ee9-pr104-review-3-e1-e5-comment-test-doc-fi](./quick/260930-ee9-pr104-review-3-e1-e5-comment-test-doc-fi/) |
 | 260930-aq2 | 04.4 UI-REVIEW WARNING 3건: 사람 목록 id 없는 계급 key·상세·삭제(W1) · PC 배지 넘침 미재현(W2, 수치만) · 폰 「실행 기록」 줄 높이(W3) + 감사 W-A 누름 영역 | 2026-09-30 | 5d6a4a3 | [260930-aq2-04-4-ui-review-warning-3](./quick/260930-aq2-04-4-ui-review-warning-3/) |
+| 260930-f3l | 04.4 후속: 사람 목록 보이는 열만·전부 가림 잠김 한 줄(DR-4·5)·쓰기 없으면 등록 없음(DR-6)·동작 간격 --s-4(DR-7, 폰 포함) · 행동 로그 「사람」 필터 식별 가능한 사람만 · 상태 화면 일시 tabular-nums·「실행 기록」 새 탭 · 3차 밑줄 hover 2px(13곳) · 수작업 표 행 높이 --row-min(사람·행동 로그·발령 이력·법인카드·거래처·보관함) | 2026-09-30 | 9bd8e7e | [260930-f3l-04-4-follow-ups-people-action-log-hidden](./quick/260930-f3l-04-4-follow-ups-people-action-log-hidden/) |
 
 ### Roadmap Evolution
 

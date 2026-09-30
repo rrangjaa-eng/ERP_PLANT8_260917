@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "timestamp": "2026-09-30T03:29:10.315Z",
+  "timestamp": "2026-09-30T07:02:48.692Z",
   "phase": "4",
   "phase_name": "프로젝트·견적 원장",
   "phase_dir": ".planning/phases/04-project-quote-ledger",
@@ -80,12 +80,18 @@
       "name": "origin/main #90(Phase 04.1) 머지 — 충돌 settings-export.test.ts 두 쪽 살림, typecheck·lint 0 · 통합 47/47 · 단위 2236/2236, 병합 전용 점검표",
       "status": "done",
       "commit": "cd48abd"
+    },
+    {
+      "id": "quick-review2",
+      "name": "/gsd-quick 260930-4xr — A(2) 읽기 기본값 대체+log.error · B 힌트 · C 수락 위험 기록 · 폰 40px 3개 44",
+      "status": "done",
+      "commit": "4936139"
     }
   ],
   "remaining_tasks": [
     {
-      "id": "quick-review2",
-      "name": "/gsd-quick 한 단위 — A(2) 읽기 기본값 대체+log.error · B 힌트 · C 수락 위험 기록 · 폰 40px 3개 44, 뒤이어 고친 변경분 /review 재확인",
+      "id": "post-review-recheck",
+      "name": "고친 변경분(0d7050e..4936139) /review 재확인",
       "status": "not_started"
     },
     {
@@ -111,9 +117,9 @@
       "workaround": "페이즈 완료는 기록됨. 재검증 여부는 사용자 판단, digest 수동 수정 금지"
     },
     {
-      "description": "/review 2차 [사용자 결정 요청] A(허용 밖 저장 구분자 읽기 처리)·B(구분자 힌트에 허용 문자)·C(접두어 제약) 답 없음",
-      "type": "human_action",
-      "workaround": "답 전에는 /qa·/design-review를 시작하지 않는다(B가 화면 문구를 바꿀 수 있음)"
+      "description": "스킬 관문 훅이 STATE current_phase 2로 판정 — Phase 4 작업의 gsd-executor 등 페이즈 게이트 에이전트를 막을 수 있음",
+      "type": "technical",
+      "workaround": "우회하지 않고 사용자에게 먼저 묻는다. 세션 21099081은 사용자 승인(「1번」)으로 /gsd-verify-work 4를 문맥 설정용으로 호출하고 훅이 적은 phase-04.log 줄을 되돌림"
     }
   ],
   "async_jobs": [],
@@ -494,15 +500,24 @@
       "decision": "사용자 2026-09-30 채팅 「추천대로 해」([지시] 5903477924): A(2) 허용 밖 저장 구분자는 읽을 때 기본값(빈 값) 대체 + log.error · B 힌트 「빈칸 또는 - _ . / 중 한 글자」 · C 접두어 제약 없음(수락 위험 기록) · 폰 40px 3개(일괄 저장·복사해 새 차수·프로젝트 복사) 44로",
       "rationale": "/review 2차 결정 요청 답",
       "phase": "4"
+    },
+    {
+      "decision": "A(2) 허용 밖 저장 구분자 읽기 대체+log.error · B 힌트 문구 · C 접두어 수락 위험 · 폰 머리 줄 3개 44 — 반영(260930-4xr)",
+      "rationale": "사용자 2026-09-30 「추천대로」, [지시] 5903477924",
+      "phase": "4"
+    },
+    {
+      "decision": "SYSTEM.md §3는 「프로젝트 상세 머리 줄」만 명시, 일반 규칙화 안 함",
+      "rationale": "일반 규칙은 앞으로의 화면까지 묶는 새 결정 — 사용자 결정 필요 시 별도",
+      "phase": "4"
     }
   ],
-  "uncommitted_files": [
-    "?? .claude/gates/phase-02.log (훅 생성, 커밋 안 함 — 사용자 판단)"
-  ],
-  "next_action": "새 세션(plant8, 브랜치 claude/gsd-verify-work-4) → settings.json → git status -sb → .continue-here BLOCKING CONSTRAINTS → PR #104 최신 [지시] 5903477924 확인·구독 → origin/main 머지 커밋 → /gsd-quick(A(2)·B·C 기록·폰 40px 3개). 끝나면 커밋·푸시·CI → [완료 보고] → pause → 다음 세션(고친 부분 /review 재확인 → /qa·/design-review)",
-  "context_notes": "Phase 4 GSD 완료. PR #104 Post-build: /review 2차 끝(59aa0d5), main #90 머지(cd48abd). 남은 것: 결정 A~C → /qa·/design-review → /cso → /ship, 머지는 사용자.",
+  "uncommitted_files": [],
+  "next_action": "새 세션(plant8, 브랜치 claude/gsd-verify-work-4) → settings.json → git status -sb → .continue-here BLOCKING CONSTRAINTS → PR #104 최신 [지시]·구독 → origin/main 머지 커밋 반영 → /review로 고친 변경분(0d7050e..HEAD) 재확인 → 커밋·푸시·CI → [완료 보고] → pause → 다음 세션(/qa·/design-review)",
+  "context_notes": "Phase 4 GSD 완료. PR #104 Post-build: /review 2차(59aa0d5) 결정 A~C·폰 44를 quick 260930-4xr로 반영(4936139, CI quality 초록, 독립 RED 재현·DOM 감사 PASS). 남은 것: 고친 부분 /review 재확인 → /qa·/design-review → /cso → /ship → 사용자 머지.",
   "open_questions": [
     "04-07: 줄당 21억 원 초과 int vs bigint",
     "04-51: 채번 seq_start 하향 충돌 — 설정 검증 vs 카운터 보정"
-  ]
+  ],
+  "uncommitted_files_note": "커밋 직전 git status --porcelain 측정: 이 인계 2파일(HANDOFF.json · .continue-here.md)만 — 이 WIP 커밋에 포함되어 커밋 뒤 작업 트리 clean"
 }

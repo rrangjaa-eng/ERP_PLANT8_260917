@@ -850,6 +850,7 @@ function HeaderCopyActions({ children }: { children?: ReactNode }) {
         <Button
           type="button"
           variant="secondary"
+          className={styles.headerTouchButton}
           aria-expanded={expanded}
           aria-controls={groupId}
           onClick={() => setExpanded((open) => !open)}
@@ -1636,7 +1637,7 @@ export function QuoteLedger({
       header: "번호",
       priority: "p3",
       collapseBelow: 1280,
-      align: "left",
+      align: "right",
       pasteRole: "computed",
       cell: (row) => lines.indexOf(row) + 1,
     },
@@ -2223,7 +2224,7 @@ export function QuoteLedger({
           <HeaderCopyActions>
             {newRevision ? <NewRevisionDialog {...newRevision} dirtyCount={dirtyCount} onCreated={setStatusToast} /> : null}
             {copyProjectHref ? (
-              <Link href={copyProjectHref} className={buttonLinkClassName()}>
+              <Link href={copyProjectHref} className={`${buttonLinkClassName()} ${styles.headerTouchButton}`}>
                 프로젝트 복사
               </Link>
             ) : null}
@@ -2242,6 +2243,7 @@ export function QuoteLedger({
               id={saveButtonId}
               type="button"
               variant="primary"
+              className={styles.headerTouchButton}
               pending={isExecuting}
               disabled={dirtyCount === 0 && !cellEditing}
               disabledReason={saveDisabledReason}

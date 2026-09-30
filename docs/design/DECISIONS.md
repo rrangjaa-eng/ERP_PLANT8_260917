@@ -1134,6 +1134,17 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 
 **범위**: SYSTEM.md §6-3 · §7-8 · §7-17. 코드: `ui/confirm-dialog/ConfirmDialog.tsx` · `app/(app)/leave/new/leave-form.tsx` · `app/(app)/leave/leave.module.css` · `app/(app)/leave/use-phone-width.ts`(문서 화면 행동 줄과 같이 씀). 회귀: `test/unit/ui/confirm-dialog.test.ts` · `test/e2e/leave-document.spec.ts`(PC 반려 모달) · `test/e2e/mobile-leave-approval.spec.ts`(폰 반려 확인 시트) · `test/e2e/mobile-leave-list.spec.ts`(폰 제출 줄).
 
+## 2026-09-30 — 폰 프로젝트 상세 머리 줄 행동 버튼 44 (사용자 결정 2026-09-30)
+
+**결정**: 폰(<700) 프로젝트 상세 머리 줄의 1차 「일괄 저장」과 「더보기」로 펼친 「복사해 새 차수」 · 「프로젝트 복사」를 `--touch-min`(44)으로 한다. 같은 줄 「상태 바꾸기」 · 「더보기」(quick 260929-npq)와 같다. PC(≥700)는 32 그대로이고 새 토큰은 없다.
+**결정자**: 사용자(2026-09-30 채팅 「추천대로」, PR #104 [지시] 5903477924 — /review 2차 Red Team 「폰 40px 3개」).
+
+**이유**: 같은 머리 줄에서 「상태 바꾸기」 · 「더보기」만 44이고 이 셋은 40이었다(pr104-postbuild-review-2.md 「알려진 질문」).
+
+**버린 대안**: 40 유지.
+
+**범위**: SYSTEM.md §3. 코드: `app/(app)/projects/[id]/quote-table.tsx` · `revision-dialogs.tsx` · `project-detail.module.css`(주석). 회귀: `test/e2e/mobile-touch-targets.spec.ts`.
+
 ## 2026-09-30 — 결재선 설정은 단계마다 「N단 저장」 (사용자 결정 2026-09-30)
 
 **결정**: 설정 화면(§7-2 「설정 저장 시점」)의 비이력형 칸은 즉시 저장 그대로이되, **결재선 한 단계(사용 · 담당 계급 · 조직 범위 · 특정 부서)는 네 칸을 화면에 모아 두고 단계 끝 2차 버튼 `N단 저장` 하나로 한 트랜잭션에 저장한다.** 버튼은 그 단계에 저장값과 다른 칸이 있을 때만 켜지고, 아니면 비활성 + 이유 `바뀐 칸 없음`(§7-1 이유 줄, info 색). 칸의 활성 · 비활성(사용이 꺼지면 계급 · 범위 · 부서, 범위가 특정 부서가 아니면 부서)은 저장 전 화면의 값으로 바로 바뀐다. 자기 승인 등 단계 밖 칸은 즉시 저장 그대로다. 새 토큰은 없다.

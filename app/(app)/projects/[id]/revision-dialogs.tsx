@@ -73,6 +73,7 @@ export function NewRevisionDialog({
       <Button
         type="button"
         variant="secondary"
+        className={styles.headerTouchButton}
         onClick={() => {
           setRejection(null);
           setOpen(true);

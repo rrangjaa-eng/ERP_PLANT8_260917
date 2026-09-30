@@ -6,6 +6,7 @@ import { can as defaultCan } from "@/domain/permissions/can";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { seoulToday } from "@/lib/dates";
+import { log } from "@/lib/log";
 import {
   findSimpleValue as defaultFindSimpleValue,
   findSimpleValues as defaultFindSimpleValues,
@@ -41,6 +42,8 @@ export type SettingDef<T> = {
    * 그대로 렌더한다(자릿수 설정처럼 식별자에 가까운 값은 지정하지 않는다). */
   numberKind?: NumberInputKind;
   default?: T;
+  /** 비이력형 전용 — 저장값이 스키마를 못 지나면 읽기가 default로 대체하고 log.error를 남긴다(쓰기 검증은 그대로). PR #104 /review 2차 A(2), 사용자 2026-09-30. */
+  readInvalidAsDefault?: true;
   /** 미래 페이즈가 읽을 키의 예외 표시 — 미사용 키 검출에서 제외되되 목록으로 남는다. */
   readBy?: { phase: string };
   /** 04.1(U3): enum 값 → 화면 라벨. 동작(설정 화면 배선)은 04.1-04. */
@@ -137,7 +140,17 @@ export async function getSettingValue<T>(
     if (def.default !== undefined) return def.default;
     throw new SettingNotFoundError(`설정 키 '${def.key}'에 값이 없습니다.`);
   }
-  return def.schema.parse(row.value);
+  return parseStoredSimpleValue(def, row.value);
+}
+
+// 비이력형 읽기 전용. readInvalidAsDefault 표시가 있고 default가 있는 키만 허용 밖 저장값을
+// default로 대체한다 — 로그에는 키와 zod 오류 코드만 남기고 원래 값은 넣지 않는다.
+function parseStoredSimpleValue<T>(def: SettingDef<T>, raw: unknown): T {
+  if (!def.readInvalidAsDefault || def.default === undefined) return def.schema.parse(raw);
+  const parsed = def.schema.safeParse(raw);
+  if (parsed.success) return parsed.data;
+  log.error("settings.invalid_stored_value", { key: def.key, issues: parsed.error.issues.map((issue) => issue.code) });
+  return def.default;
 }
 
 // 비이력형 전용. 이력형 키에 부르면 거부한다.
@@ -332,7 +345,9 @@ export async function getSimpleSettingValuesOrDefault<const Defs extends readonl
 }
 
 // 04.1(Codex HIGH 스냅숏): 비이력형 키 여러 개를 findSimpleValues **한 번**(SELECT
-// 한 문장)으로 읽어 정의 순서대로 돌려준다 — 행이 있으면 schema.parse, 없으면
+// 한 문장)으로 읽어 정의 순서대로 돌려준다 — 행이 있으면 parseStoredSimpleValue로
+// 읽는다. readInvalidAsDefault 표시와 default가 있는 키는 허용 밖 저장값을 default로
+// 바꾸고 log.error를 남기며, 그 밖의 키는 schema.parse가 던진다. 행이 없으면
 // default, default도 없으면 undefined(던지지 않는다 — 호출자가 정한다).
 // 이력형이 섞이면 거부한다.
 export async function getSimpleSettingValues<const Defs extends readonly SettingDef<unknown>[]>(
@@ -349,5 +364,5 @@ export async function getSimpleSettingValues<const Defs extends readonly Setting
     defs.map((def) => def.key),
   );
   const byKey = new Map(rows.map((row) => [row.key, row.value]));
-  return defs.map((def) => (byKey.has(def.key) ? def.schema.parse(byKey.get(def.key)) : def.default)) as SimpleSettingValues<Defs>;
+  return defs.map((def) => (byKey.has(def.key) ? parseStoredSimpleValue(def, byKey.get(def.key)) : def.default)) as SimpleSettingValues<Defs>;
 }

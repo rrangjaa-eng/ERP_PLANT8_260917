@@ -429,6 +429,41 @@ test.describe("프로젝트 등록 폼 — Ctrl+Enter 제출 · Esc 취소 (Phas
     await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
     expect(await getSettingValue(FX_RECENT_RATE_USD)).toBe(1300);
   });
+
+  test("(f1) 빈 폼 제출이 거부되면 포커스가 첫 오류 칸(클라이언트)으로 가고, 그 뒤 쉼표 칸 입력은 포커스를 뺏기지 않는다 (PR #104 (다))", async ({ page }) => {
+    await loginAndOpenForm(page);
+    await page.getByRole("button", { name: "프로젝트 등록" }).click();
+
+    await expect(page.locator("#project-form #name")).toHaveAttribute("aria-invalid", "true");
+    const client = page.locator("#project-form #clientId");
+    await expect(client).toHaveAttribute("aria-invalid", "true");
+    await expect(client).toBeFocused();
+
+    // 쉼표 칸 입력은 다시 그리기를 일으킨다 — effect가 매 렌더 돌면 포커스가 클라이언트로 튄다.
+    const amount = page.getByLabel("총 매출 예상가");
+    await amount.fill("1000");
+    await expect(amount).toHaveValue("1,000");
+    await expect(amount).toBeFocused();
+  });
+
+  test("(f2) 종료일이 시작일보다 앞선 등록을 1차 클릭으로 보내면 포커스가 종료일 칸으로 간다 (PR #104 (다))", async ({ page }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `E2E오류포커스클라이언트-${Date.now()}`,
+      normalizedName: `e2e오류포커스클라이언트-${Date.now()}`,
+    });
+    await loginAndOpenForm(page);
+    await fillRequiredFields(page, vendor.name, `E2E오류포커스-${Date.now()}`);
+    const today = kstToday(new Date());
+    await page.locator("#startDate").fill(addDays(today, 5));
+    await page.locator("#endDate").fill(addDays(today, 1));
+
+    await page.getByRole("button", { name: "프로젝트 등록" }).click();
+
+    const endDate = page.locator("#project-form #endDate");
+    await expect(endDate).toHaveAttribute("aria-invalid", "true");
+    await expect(endDate).toBeFocused();
+    await expect(page).toHaveURL(/\/projects\?new=1/);
+  });
 });
 
 // 결정 2(사용자 결정 2026-09-26) — 담당 PM은 등록하는 사람, 팀은 그 사람의 오늘 소속 팀으로 미리 채운다.

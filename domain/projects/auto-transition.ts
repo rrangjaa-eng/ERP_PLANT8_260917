@@ -1,12 +1,16 @@
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { AUTO_TRANSITIONS } from "@/domain/projects/status-transitions";
+import { gate } from "@/domain/rules/gate";
+import "@/domain/rules/register";
+import type { ProjectAutoSettleCtx } from "@/domain/rules/register";
 import { withTransaction } from "@/lib/db-transaction";
 import { addDays, kstDateOf, kstToday } from "@/lib/kst-date";
 import { log } from "@/lib/log";
 import {
+  lockAutoSettleCandidates,
   lockProjectForWrite,
-  settleOverdueProjects,
+  settleProjectsByIds,
   updateProjectStatusIfCurrent,
   type ProjectRow,
 } from "@/repositories/projects";
@@ -21,11 +25,29 @@ import type { DbOrTx } from "@/repositories/document-counters";
 
 const PROJECT_ENTITY = "project";
 const [AUTO_SETTLE] = AUTO_TRANSITIONS;
+const AUTO_SETTLE_RULE = "project.auto-settle";
+
+// 04-53(V-04-auto-settle-gate) — 두 입구가 같이 쓰는 판정. 판정 조건은 규칙 한 곳(domain/rules/register.ts)이다.
+async function allowsAutoSettle(
+  row: Pick<ProjectRow, "status" | "endDate" | "archivedAt">,
+  todayKst: string,
+): Promise<boolean> {
+  const ctx: ProjectAutoSettleCtx = {
+    from: row.status,
+    to: AUTO_SETTLE.to,
+    endDate: row.endDate,
+    archived: row.archivedAt !== null,
+    todayKst,
+  };
+  const decision = await gate(row, AUTO_SETTLE_RULE, ctx);
+  return decision.allowed;
+}
 
 export type AutoSettlementDeps = {
   now: () => Date;
   transaction: typeof withTransaction;
-  settle: typeof settleOverdueProjects;
+  lockCandidates: typeof lockAutoSettleCandidates;
+  settle: typeof settleProjectsByIds;
   recordAction: typeof defaultRecordAction;
   logger: Pick<typeof log, "info" | "error">;
 };
@@ -51,17 +73,25 @@ export async function applyAutoSettlement(
 ): Promise<string[]> {
   const now = deps?.now ?? (() => new Date());
   const transaction = deps?.transaction ?? withTransaction;
-  const settle = deps?.settle ?? settleOverdueProjects;
+  const lockCandidates = deps?.lockCandidates ?? lockAutoSettleCandidates;
+  const settle = deps?.settle ?? settleProjectsByIds;
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   const logger = deps?.logger ?? log;
 
   try {
     const settled = await transaction(async (tx) => {
-      const rows = await settle(
+      const todayKst = kstToday(now());
+      const candidates = await lockCandidates(
         SYSTEM_VIEWER,
-        { todayKst: kstToday(now()), projectIds: opts.projectIds, from: AUTO_SETTLE.from, to: AUTO_SETTLE.to },
+        { todayKst, projectIds: opts.projectIds, from: AUTO_SETTLE.from },
         tx,
       );
+      const allowedIds: string[] = [];
+      for (const candidate of candidates) {
+        if (await allowsAutoSettle(candidate, todayKst)) allowedIds.push(candidate.id);
+      }
+      if (allowedIds.length === 0) return [];
+      const rows = await settle(SYSTEM_VIEWER, { ids: allowedIds, from: AUTO_SETTLE.from, to: AUTO_SETTLE.to }, tx);
       for (const row of rows) {
         const lastChangeOn = row.lastChangeAt ? kstDateOf(row.lastChangeAt) : null;
         await recordAction(
@@ -85,7 +115,7 @@ export async function applyAutoSettlement(
     if (settled.length > 0) logger.info("project.auto_settle", { count: settled.length });
     return settled;
   } catch (error) {
-    // 읽기를 막지 않는다 — 쓰기 경로는 잠금 안에서 같은 판정을 다시 한다(loadProjectForGate).
+    // 읽기를 막지 않는다 — 쓰기 경로는 잠금 안에서 같은 규칙(project.auto-settle)으로 다시 판정한다(loadProjectForGate).
     logger.error("project.auto_settle_failed", { projectIds: opts.projectIds ?? null, reason: failureReason(error) });
     return [];
   }
@@ -119,11 +149,10 @@ export async function loadProjectForGate(
   if (!row) return null;
   await opts.afterLock?.();
 
-  // 읽기 입구의 SQL 조건(settleOverdueProjects)과 같다 — 진행 · 종료일 < 오늘(KST) · 보관 아님.
+  if (!(await allowsAutoSettle(row, kstToday(now())))) return row;
+  // 허용 뒤 종료일이 없으면 규칙 결함이다 — 던져 tx를 되돌린다(fail-closed). 발효일 계산용 타입 좁히기.
   const endDate = row.endDate;
-  if (row.status !== AUTO_SETTLE.from || endDate === null || endDate >= kstToday(now()) || row.archivedAt !== null) {
-    return row;
-  }
+  if (endDate === null) throw new Error("project.auto_settle_gate_no_end_date");
 
   const settled = await updateStatus(
     viewer,

@@ -142,7 +142,7 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
     await expectNoStatusColors(page, value);
   });
 
-  test("검증 실패 행은 단계와 같은 탭 「실행 기록」 링크를 보인다", async ({ page }) => {
+  test("검증 실패 행은 단계와 새 탭 「실행 기록」 링크를 보이고 일시는 고정폭 숫자다", async ({ page }) => {
     await insertRehearsal({ runKey: "9002-1", failedStage: "verify", minutes: 4, runUrl: RUN_URL_FAILED });
     const value = await openStatusAsAdmin(page);
     await expect(value).toHaveText(
@@ -150,7 +150,22 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
     );
     const link = value.getByRole("link", { name: "실행 기록" });
     await expect(link).toHaveAttribute("href", RUN_URL_FAILED);
-    expect(await link.getAttribute("target")).toBeNull();
+    // 항목 8: 「일시」 글자를 직접 담은 요소가 tabular-nums다(UI-REVIEW INFO 2).
+    const dateNumeric = await value.evaluate((root) => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        if (node.textContent?.includes("2026-09-24 03:14")) {
+          return node.parentElement ? getComputedStyle(node.parentElement).fontVariantNumeric : "부모 없음";
+        }
+      }
+      return "글자 없음";
+    });
+    expect(dateNumeric).toContain("tabular-nums");
+
+    // 04.4 후속 항목 9(사용자 결정 2026-09-30): 앱 밖(GitHub Actions)으로 가는 링크는 새 탭 — opener를 끊는다.
+    await expect(link).toHaveAttribute("target", "_blank");
+    const rel = (await link.getAttribute("rel")) ?? "";
+    expect(rel.split(/\s+/)).toEqual(expect.arrayContaining(["noopener", "noreferrer"]));
 
     // .detailLink와 같은 다섯 속성 — 크기 · 굵기 · 색 · 밑줄 · 밑줄 간격.
     const tokens = {

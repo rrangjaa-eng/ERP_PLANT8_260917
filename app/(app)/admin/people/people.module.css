@@ -172,6 +172,7 @@
 @media (max-width: 699.98px) {
   .rowActions {
     flex-wrap: wrap;
+    row-gap: var(--s-4);
   }
 }
 

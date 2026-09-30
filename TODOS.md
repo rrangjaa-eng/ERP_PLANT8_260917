@@ -442,6 +442,8 @@
 
 **Context:** PR #107 /qa(2026-09-30, 회귀 0 · 건강 점수 97) · /review 재검토. ①④는 domain/ 변경, ②③은 디자인 판단.
 
+/design-review(같은 날) 기존 결함 추가: ⑤ 같은 행의 3차 링크(「상세」, text-decoration)와 3차 버튼(「삭제」, ui/button `.tertiary`의 border-bottom) 밑줄 높이가 약 3px 다르다(§4-4 offset 2px — ui/button 공용 변경). ⑥ /admin/corp-cards 폰 375에서 7열이 모두 table-cell로 남고 P1/P2 접기가 없다(§7-3 「P1 최대 3열」 · 직접 만든 표도 같은 접힌 줄, DECISIONS 예외 없음). ⑦ 시스템 상태 복원 리허설 「12분」과 「DB 커넥션 2 / 100」이 tabular-nums 밖(§2-1). ⑧ 표 행간 `--lh-table`(1.5)을 사람 목록만 쓰고 나머지 수작업 표는 `--lh-body`(1.6)를 물려받는다(보이는 차이 0.2px).
+
 **Effort:** M
 **Priority:** P2
 **Depends on:** ① ② ③ 사용자 결정(잠김 표시 방식)

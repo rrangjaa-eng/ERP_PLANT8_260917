@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { createProject } from "@/domain/projects";
-import { DEFAULT_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
+import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID, TEAM_LEAD_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
@@ -23,7 +23,7 @@ const PC_SORT_LINK_HEIGHT: Record<(typeof WIDTHS_PC)[number], { name: number; qu
 };
 
 type Credentials = { email: string; password: string };
-type Seed = { lead: Credentials; pm: Credentials; projectId: string; projectName: string };
+type Seed = { lead: Credentials; pm: Credentials; admin: Credentials; projectId: string; projectName: string };
 let seed: Seed;
 
 test.beforeAll(async () => {
@@ -38,6 +38,7 @@ test.beforeAll(async () => {
   };
   const lead = await makeAccount(TEAM_LEAD_ROLE_ID);
   const pm = await makeAccount(DEFAULT_ROLE_ID);
+  const admin = await makeAccount(SYSADMIN_ROLE_ID);
   const vendor = await insertVendor(SYSTEM_VIEWER, {
     name: `E2E터치클라이언트-${randomUUID()}`,
     normalizedName: `e2e터치클라이언트-${randomUUID()}`,
@@ -54,6 +55,7 @@ test.beforeAll(async () => {
   seed = {
     lead: { email: lead.email, password: lead.password },
     pm: { email: pm.email, password: pm.password },
+    admin: { email: admin.email, password: admin.password },
     projectId: project.id,
     projectName,
   };
@@ -212,6 +214,94 @@ test.describe("폰 터치 목표 44 (quick 260929-npq · 04-UI-REVIEW 지적 1·
       await page.setViewportSize({ width, height: 800 });
       const svb = await box(save, `일괄 저장 @${width}`);
       expect.soft(svb.height, `일괄 저장 @${width} 높이`).toBeCloseTo(32, 0);
+    }
+  });
+});
+
+// PR #104 후속 F(2) — DR-104-01(/design-review): 폰 복원 줄 「복원」·「버림」 폭이 글자 폭(32)에 그쳐 44 미만.
+// DR-104-05: 폰 머리 줄 DOM · Tab 순서가 보이는 순서와 달랐다(SYSTEM §10 포커스 순서 = 시각 순서).
+test.describe("PR #104 후속 — 폰 복원 줄 44 (DR-104-01) · 머리 줄 Tab 순서 (DR-104-05)", () => {
+  test("DR-104-01 — 폰 상세 복원 줄 「복원」·「버림」 375·320에서 44×44 이상", async ({ page }) => {
+    await login(page, seed.pm);
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto(`/projects/${seed.projectId}`);
+    await page.locator("#period-open").click();
+    await page.locator("#period-end").fill(kstToday(new Date()));
+    // 보관이 끝나야 다시 열 때 복원 줄이 뜬다(reserves.spec 선례).
+    await expect
+      .poll(() => page.evaluate(() => Object.keys(window.localStorage).filter((key) => key.startsWith("quote-ledger:dirty:")).length))
+      .toBeGreaterThan(0);
+    await page.reload();
+    const main = page.getByRole("main");
+    const restore = main.getByRole("button", { name: "복원", exact: true });
+    const discard = main.getByRole("button", { name: "버림", exact: true });
+    await expect(restore).toBeVisible();
+    await expect(discard).toBeVisible();
+
+    for (const width of WIDTHS_PHONE) {
+      await page.setViewportSize({ width, height: 800 });
+      for (const [label, locator] of [["복원", restore], ["버림", discard]] as const) {
+        const b = await box(locator, `${label} @${width}`);
+        expect.soft(b.height, `${label} @${width} 높이`).toBeGreaterThanOrEqual(TOUCH_MIN);
+        expect.soft(b.width, `${label} @${width} 폭`).toBeGreaterThanOrEqual(TOUCH_MIN);
+      }
+    }
+  });
+
+  test("DR-104-05 — 폰 머리 줄 보이는 순서 = Tab 순서(상태 바꾸기 → 일괄 저장 → 더보기 → 복사해 새 차수 → 프로젝트 복사), PC 1280 순서는 그대로", async ({ page }) => {
+    await login(page, seed.admin);
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto(`/projects/${seed.projectId}`);
+    const main = page.getByRole("main");
+    await page.locator("#period-open").click();
+    await page.locator("#period-end").fill(kstToday(new Date()));
+    const save = main.getByRole("button", { name: /일괄 저장/ });
+    await expect(save).toBeVisible();
+    const status = main.getByRole("button", { name: "상태 바꾸기", exact: true });
+    const more = main.getByRole("button", { name: "더보기", exact: true });
+    await more.click();
+    const copyRevision = main.getByRole("button", { name: "복사해 새 차수", exact: true });
+    const copyProject = main.getByRole("link", { name: "프로젝트 복사", exact: true });
+    await expect(copyRevision).toBeVisible();
+    await expect(copyProject).toBeVisible();
+
+    for (const width of WIDTHS_PHONE) {
+      await page.setViewportSize({ width, height: 800 });
+      const named = [
+        ["상태 바꾸기", status],
+        ["일괄 저장", save],
+        ["더보기", more],
+        ["복사해 새 차수", copyRevision],
+        ["프로젝트 복사", copyProject],
+      ] as const;
+      const placed = await Promise.all(named.map(async ([name, locator]) => ({ name, b: await box(locator, `${name} @${width}`) })));
+      // 보이는 순서 — 위에서 아래, 같은 줄이면 왼쪽에서 오른쪽(반올림한 y, x). RED에서도 통과해야 하는 가드.
+      const visual = placed.sort((a, b) => Math.round(a.b.y) - Math.round(b.b.y) || a.b.x - b.b.x).map((item) => item.name);
+      expect(visual, `보이는 순서 @${width}`).toEqual(["상태 바꾸기", "일괄 저장", "더보기", "복사해 새 차수", "프로젝트 복사"]);
+    }
+
+    await page.setViewportSize({ width: 375, height: 800 });
+    await status.focus();
+    for (const [name, locator] of [["일괄 저장", save], ["더보기", more], ["복사해 새 차수", copyRevision], ["프로젝트 복사", copyProject]] as const) {
+      await page.keyboard.press("Tab");
+      await expect(locator, `폰 Tab → ${name}`).toBeFocused();
+    }
+
+    // PC 1280 — DOM · Tab 순서는 그대로(복사해 새 차수 → 프로젝트 복사 → 상태 바꾸기 → 일괄 저장). 폭을 바꾸면 훅이 순서를 다시 맞춘다.
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(more).toBeHidden();
+    await expect
+      .poll(async () =>
+        copyRevision.evaluate(
+          (node, other) => Boolean(other && node.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING),
+          await status.elementHandle(),
+        ),
+      )
+      .toBe(true);
+    await copyRevision.focus();
+    for (const [name, locator] of [["프로젝트 복사", copyProject], ["상태 바꾸기", status], ["일괄 저장", save]] as const) {
+      await page.keyboard.press("Tab");
+      await expect(locator, `PC Tab → ${name}`).toBeFocused();
     }
   });
 });

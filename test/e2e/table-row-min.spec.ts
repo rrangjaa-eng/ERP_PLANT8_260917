@@ -83,15 +83,16 @@ test.describe("수작업 표 주 행 높이 ≥ --row-min (1280 · 375)", () => 
   test("사람 목록 — person.value가 꺼진 계급(계급 · 현재 소속만)", async ({ browser, baseURL }) => {
     const suffix = randomUUID().slice(0, 8);
     const role = await createRole(SYSTEM_VIEWER, { name: `E2E 사람가림 ${suffix}` });
-    await setPermissionCell(SYSTEM_VIEWER, { roleId: role.id, menu: "admin.people", action: "view", allowed: true });
-    for (const infoItem of ["role.value", "team.value"] as const) {
-      await setVisibilityCell(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
-    }
-    const page = await loginFresh(browser, baseURL, await createFixtureUser({ roleId: role.id, withTeam: true }));
+    let page: Page | undefined;
     try {
+      await setPermissionCell(SYSTEM_VIEWER, { roleId: role.id, menu: "admin.people", action: "view", allowed: true });
+      for (const infoItem of ["role.value", "team.value"] as const) {
+        await setVisibilityCell(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+      }
+      page = await loginFresh(browser, baseURL, await createFixtureUser({ roleId: role.id, withTeam: true }));
       await expectRowsAtRowMin(page, "사람(person.value 꺼짐)", "/admin/people");
     } finally {
-      await page.context().close();
+      await page?.context().close();
       await setRoleArchived(SYSTEM_VIEWER, role.id, true);
     }
   });
@@ -132,12 +133,13 @@ test.describe("수작업 표 주 행 높이 ≥ --row-min (1280 · 375)", () => 
   // 관리자 행의 이름·설명 칸에는 입력(44.5px)이 있어 칸 높이가 가려진다 — 쓰기 권한 없는 계급은 글자 행이라 min-height 무효가 드러난다.
   test("코드표 항목 표 — 보기만 하는 계급(글자 행)", async ({ browser, baseURL }) => {
     const role = await createRole(SYSTEM_VIEWER, { name: `E2E 코드표보기 ${randomUUID().slice(0, 8)}` });
-    await setPermissionCell(SYSTEM_VIEWER, { roleId: role.id, menu: "admin.code-tables", action: "view", allowed: true });
-    const page = await loginFresh(browser, baseURL, await createFixtureUser({ roleId: role.id }));
+    let page: Page | undefined;
     try {
+      await setPermissionCell(SYSTEM_VIEWER, { roleId: role.id, menu: "admin.code-tables", action: "view", allowed: true });
+      page = await loginFresh(browser, baseURL, await createFixtureUser({ roleId: role.id }));
       await expectRowsAtRowMin(page, "코드표(보기만)", "/admin/code-tables");
     } finally {
-      await page.context().close();
+      await page?.context().close();
       await setRoleArchived(SYSTEM_VIEWER, role.id, true);
     }
   });

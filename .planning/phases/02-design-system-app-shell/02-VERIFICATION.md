@@ -291,7 +291,7 @@ covered_files:
   - "ui/table/Table.module.css"
   - "ui/toast/Toast.module.css"
   - "ui/toast/Toast.tsx"
-covered_digest: "v1:sha256:3e643ae301cc81ace75e4471c7c88a271e7913ec612fbed2c09d308c469b095d"
+covered_digest: "v1:sha256:fdf3dfce8cc11b3fb27ceb7828e07253d984cbca1a407f46a9e49f5a708d06b6"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
@@ -447,6 +447,8 @@ ROADMAP은 `Mode: mvp`지만 목표 문장이 User Story 형식이 아니다(`mv
 2. **배포본 확인** — 질문: 「시스템 관리자 계정으로 스테이징에서 `/admin`: 관리 화면 묶음이 보이는지, `/admin/permissions`: 권한표에 빈 칸이 없는지 열어 보고 결과만 알려 주세요. 상단 바·서체가 평소대로면 셸 확인도 함께 끝납니다」. 응답: 「둘 다 정상」(03:13:40Z(#103 staging 완료 확인 뒤 질문)~03:20Z 사이). 그때 스테이징은 #103(f85c9af). 사용자가 본 것은 `/admin`·`/admin/permissions`와 그 화면의 셸(상단 바·서체)이다. **내 계정 화면은 관찰되지 않았다**(E2E로만 덮임). 로그인 화면은 질문 밖이라 검증자 curl·E2E가 근거다. bada253 변경분은 사람이 보지 않았고 #104 CI E2E가 근거다.
 
 참고(2026-10-01T04:54Z 추가 — 검증 뒤 오케스트레이터) — 02-02-SUMMARY의 사람 확인 「tokens.css 단독 PR에서 CI가 도는가」(이 보고서의 human_verification 밖, STATE 미결 항목)는 2026-10-01 확인용 draft PR #118에서 기계로 실측해 해소했다(ci run 36816314681이 pull_request로 뜸, 머지 안 함 — 02-UAT 3번).
+
+참고(2026-10-01T05:31Z 추가 — 오케스트레이터) — covered 파일 중 `.planning/REQUIREMENTS.md`만 바뀌어(phase.complete 02·03, Phase 3 요구사항 MAST-01·ADMN-03 되돌림) 같은 목록으로 covered_digest를 다시 계산했다. 코드 변경 0, 판정 영향 없음.
 
 ### Gaps Summary
 

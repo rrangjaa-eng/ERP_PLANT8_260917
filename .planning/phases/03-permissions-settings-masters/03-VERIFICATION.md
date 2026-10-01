@@ -3,7 +3,7 @@ phase: 03-permissions-settings-masters
 verified: 2026-10-01T04:38:30Z
 status: passed
 score: 6/6 must-haves verified
-covered_digest: "v1:sha256:3ac668a06d3f6216bc4c1be89ec3d05bcfa2173eb07864f0aa5c8d9057558e96"
+covered_digest: "v1:sha256:f58ad8bbf5d149646d7c05e132207edb23ec30c0c55ab8f975598453c3f1396c"
 covered_files:
   - ".github/workflows/account.yml"
   - ".planning/REQUIREMENTS.md"
@@ -372,7 +372,7 @@ re_verification:
     bada253_judgment: "Phase 3 계약 변경 없음. 관리자 화면 3개(`vendors`·`corp-cards`·`code-tables` page.tsx)는 행 동작을 감싸던 프래그먼트 `<>…</>`를 `<span className={styles.rowActions}>`로 바꾸고 「수정」 링크에 `rowLink` 클래스를 더했을 뿐 — `canWrite`·`canArchive`·`archivedAt ? null` 조건, `*ActiveToggle`·`VendorHiddenToggle`·`*DeleteButton`(보관함 이동) 호출과 인자, `hasActions`·`canWrite || canArchive` 열 게이트는 diff의 문맥 줄로 그대로다(제거 줄은 `<>`·`</>`·`className={styles.toggle}` 셋뿐). CSS 모듈 3개는 `.rowActions`(gap --s-4)·`.rowLink`(nowrap) 추가만. `ui/button/Button.module.css` `.tertiary`는 border-bottom 밑줄을 text-decoration 밑줄로 바꾸고 aria-disabled 밑줄 색을 흐리게 함 — 표시 전용, `Button.tsx`(aria-disabled 클릭 차단) 무변경. `/admin` 인덱스·`/admin/permissions`·`ui/permission-grid`·`ui/shell`은 bada253이 건드리지 않았고 3차 버튼도 쓰지 않는다. Phase 3 E2E 5개 스펙은 추가만(제거 줄은 `mobile-vendors.spec.ts`의 import 한 줄을 확장한 것뿐), 새 단언은 행 동작 간격 ≥ --s-4·44×44·가로 넘침 없음. domain·repositories·db·lib·판정 함수 변경 0"
     48da153_judgment: "`.claude/hooks/plant8-skill-gate.sh`·그 테스트·`.claude/gates/phase-02.log`·`.planning` 문서만 — 앱 코드·테스트 0, Phase 3 무관"
     gates_this_process: "코드 트리 9a03686(= d49ad56의 코드), 2026-10-01 04:30–04:36Z: `pnpm lint` exit 0(error 0, 기존 boundaries v5→v6 경고만) · `pnpm typecheck` exit 0 · `pnpm test:unit` 171 files · 2277 passed(7회차 2272 → +5는 bada253의 `tertiary-underline-css.test.ts` 새 describe 1개 · 테스트 5건) · 대상 단위 9파일(`tertiary-underline-css`·`admin-menu-registry`·`no-admin-boolean`·`ui/admin-index-css`·`ui/admin-index-link`·`ui/admin-master-list-first`·`ui/admin-table-caption`·`ui/single-column`·`design-system-docs`) 160 passed. 통합은 다시 돌리지 않았다 — bada253·48da153이 domain·repositories·db·통합 테스트를 건드리지 않았고 CI #104 integration 2샤드가 bada253에서 green"
-    digest_restamp: "2026-10-01T04:54Z(49f6dff) — 오케스트레이터가 covered 파일 중 03-UAT.md 문구만(질문 원문 둘째 문장 · 03:13:40Z~03:20Z 시간 창) 고친 뒤 같은 목록으로 digest를 다시 계산. 코드 변경 0, 판정 영향 없음 · 2026-10-01T05:12Z phase.complete 02가 ROADMAP.md 진행 표의 Phase 2 줄(In Progress→Complete)만 바꿔 같은 목록으로 다시 계산. 판정 영향 없음"
+    digest_restamp: "2026-10-01T04:54Z(49f6dff) — 오케스트레이터가 covered 파일 중 03-UAT.md 문구만(질문 원문 둘째 문장 · 03:13:40Z~03:20Z 시간 창) 고친 뒤 같은 목록으로 digest를 다시 계산. 코드 변경 0, 판정 영향 없음 · 2026-10-01T05:12Z phase.complete 02가 ROADMAP.md 진행 표의 Phase 2 줄(In Progress→Complete)만 바꿔 같은 목록으로 다시 계산. 판정 영향 없음 · 2026-10-01T05:31Z phase.complete 03과 requirements revert-phase(MAST-01·ADMN-03 → Gaps Found, PR #117 Codex 지적)가 REQUIREMENTS.md만 바꿔 같은 목록으로 다시 계산. 판정 영향 없음"
     ci: "deploy run #104(id 36810353354, main bada253, 2026-10-01T03:24:22Z): ci/quality · ci/integration (1)·(2) · ci/e2e (1)·(2) · staging 전부 success(staging 03:39:18–03:43:44Z), production skipped(수동 승격). main 푸시라 E2E는 전체 스위트(CLAUDE.md §5). deploy run #105(id 36814444345, main 48da153): 이 시점 completed — quality·integration×2·e2e×2·staging 전부 success, production skipped"
 history_round_6:
   previous_status: passed
@@ -681,6 +681,8 @@ human_verification:
 ### Gaps Summary
 
 **gap 없음, 회귀 없음, 열린 사람 판정 없음 → passed (addendum 뒤에도 유지 — bada253은 행 동작 표시만 바꿨고 CI #104 전체 green, 이번 lint·typecheck·단위 2277 green).** 본판정에서 성공 기준 6개가 현재 코드와 이번 게이트(lint·typecheck·lint:sql exit 0, 단위 2272, Phase 3 통합 1768 + 재시드 named 4, 코드 트리가 같은 PR head의 CI E2E 2샤드)로 뒷받침된다. 6회차 이후 167개 covered 파일 변경은 세 갈래다 — (1) 이후 페이즈가 Phase 3 메커니즘에 **등록만으로** 올라탐(메뉴·정보 항목·행동 종류·설정 키·DTO/액션 레지스트리·보관함 도메인 복원기), (2) 판정을 더 엄격하게 하는 확장(all-of 노출, 빈 목록 거부, 가져오기 적용일 검증, 리저브 보관 항목 가림), (3) 문구 명사형·표시 정돈(게이트 순감 0). 6회차가 deferred로 둔 재시드 노출표 원복 결함은 04-20이 고쳤고 이번 라운드에 named test로 확인했다. 새 advisory 둘(세 함수 밖 업무 범위 판정, 시스템 관리자 행 재시드)은 리뷰된 설계라 gap이 아니다.
+
+**검증 뒤 추가(2026-10-01, 오케스트레이터 — PR #117 Codex 리뷰 P1):** (1)의 「등록만으로」에 예외가 있다. Phase 4의 `domain/projects/references.ts` `listProjectFormReferences`는 메뉴 권한(`can`)만 보고 거래처·사람·팀 행을 `visible()`/`project()` 없이 `{ id, name }`으로 돌려주며, `ProjectReferenceOption`은 누수 스캔 DTO 등록부에 없다 — 노출표에서 `vendor.value`·`person.value`·`team.value`를 끈 계급에도 프로젝트 폼이 이름을 보여 줄 수 있다. 이것은 Phase 3 메커니즘의 결함이 아니라 Phase 4 소비 코드의 우회이므로 이 보고서의 판정(passed)은 유지하되, 요구사항 ADMN-03(우회 없음)과 MAST-01(소비 화면 미구현, Deferred Items 참조)은 `requirements revert-phase`로 `Gaps Found`로 되돌렸다. 코드 수정은 별도 작업이다.
 
 ---
 

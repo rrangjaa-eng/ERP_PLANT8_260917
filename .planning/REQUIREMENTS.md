@@ -16,7 +16,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### 마스터·코드표 (MAST)
 
-- [x] **MAST-01**: 거래처·클라이언트를 등록·수정하고, 미사용은 삭제 대신 숨김 표시한다. 입력 시 자동완성된다. 거래처 계좌번호는 앱 단에서 암호화 저장하고 기본은 뒤 4자리만 보이며, 마스킹 해제는 정보 노출표 항목이다. 거래처마다 기본 증빙 종류(세금계산서·계산서·카드 전표·기타소득·사업소득 등)를 두어 지출결의·카드 사용 등록 때 자동으로 채워진다
+- [ ] **MAST-01**: 거래처·클라이언트를 등록·수정하고, 미사용은 삭제 대신 숨김 표시한다. 입력 시 자동완성된다. 거래처 계좌번호는 앱 단에서 암호화 저장하고 기본은 뒤 4자리만 보이며, 마스킹 해제는 정보 노출표 항목이다. 거래처마다 기본 증빙 종류(세금계산서·계산서·카드 전표·기타소득·사업소득 등)를 두어 지출결의·카드 사용 등록 때 자동으로 채워진다
 - [x] **MAST-02**: 직원 등록 = 사람 + 계급 + 팀 선택. 입사자 추가에 코드 수정이 없다. 팀은 본부에 속한다(팀 ⊂ 본부). 팀 소속은 발령일 이력으로 남고, 비용 귀속·팀 손익은 사용일 시점의 소속 팀을 따른다
 - [x] **MAST-03**: 법인카드 마스터: 직원별 개인 지급 카드와 팀 전용 카드를 등록하고, 카드마다 소지자(직원) 또는 소속 팀을 지정한다
 - [x] **MAST-04**: 견적 대분류·소분류, 지급 방식, 프로젝트 상태 같은 코드표를 관리 화면에서 추가·수정·비활성화한다
@@ -104,7 +104,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **ADMN-01**: 권한표: 계급 × 메뉴 × 동작(보기/쓰기/승인) 체크박스
 - [x] **ADMN-02**: 정보 노출표: 계급 × 정보 항목(손익 숫자·팀 비용·목표·인센티브·거래처 금액 등). 기획본부 기본값은 인트라넷 수준, 새 기능 정보는 기본 숨김
-- [x] **ADMN-03**: 정보 노출은 화면·API·Excel 내보내기·자동완성·검색에 동일하게 적용된다(우회 경로 없음). 강제 지점은 리포지토리의 viewer 투영이며(화면 코드가 아님), 누수 테스트가 서버 액션 레지스트리 × DTO 타입 목록 × Excel 내보내기 함수 × 계급에서 자동 생성되고, 노출표 항목에 매핑되지 않은 DTO 타입이 있으면 테스트가 실패한다
+- [ ] **ADMN-03**: 정보 노출은 화면·API·Excel 내보내기·자동완성·검색에 동일하게 적용된다(우회 경로 없음). 강제 지점은 리포지토리의 viewer 투영이며(화면 코드가 아님), 누수 테스트가 서버 액션 레지스트리 × DTO 타입 목록 × Excel 내보내기 함수 × 계급에서 자동 생성되고, 노출표 항목에 매핑되지 않은 DTO 타입이 있으면 테스트가 실패한다
 - [ ] **ADMN-04**: 결재 단계·담당 계급, 규칙 on/off, 알림 시점·대상, 세율·수식을 설정 화면에서 바꾼다
 - [x] **ADMN-05**: 설정 키는 레지스트리 한 곳에 등록되며 설정 화면이 자동 생성된다. 등록된 키를 서버가 읽는지 테스트가 강제한다
 - [x] **ADMN-06**: 설정을 JSON으로 내보내고 빈 환경에 가져온다
@@ -190,7 +190,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTH-02 | Phase 1 | Complete |
 | AUTH-03 | Phase 1 | Complete |
 | AUTH-04 | Phase 1 | Complete |
-| MAST-01 | Phase 3 | Complete |
+| MAST-01 | Phase 3 | Gaps Found |
 | MAST-02 | Phase 3 | Complete |
 | MAST-03 | Phase 3 | Complete |
 | MAST-04 | Phase 3 | Complete |
@@ -247,7 +247,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CERT-04 | Phase 11 | Pending |
 | ADMN-01 | Phase 3 | Complete |
 | ADMN-02 | Phase 3 | Complete |
-| ADMN-03 | Phase 3 | Complete |
+| ADMN-03 | Phase 3 | Gaps Found |
 | ADMN-04 | Phase 04.1 (결재 부분 — 단계·담당 계급·조직 범위·규칙 on/off·문서 종류별 자기 승인 + 연차 연간 일수. 알림 시점·대상은 Phase 7, 세율·수식은 Phase 5) | Pending |
 | ADMN-05 | Phase 3 | Complete |
 | ADMN-06 | Phase 3 | Complete |

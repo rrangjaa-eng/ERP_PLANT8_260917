@@ -82,10 +82,11 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const sortDirection = firstListParam(params.dir) === "desc" ? "desc" : "asc";
   const statusLabel = statusOptions.find((option) => option.value === status)?.label;
 
-  const [references, canWrite, canWriteVendors, list, copySource, usdDefaultFxRate] = await Promise.all([
+  const [references, canWrite, canWriteVendors, canViewVendors, list, copySource, usdDefaultFxRate] = await Promise.all([
     listProjectFormReferences(session.viewer),
     can(session.viewer, "projects", "write"),
     can(session.viewer, "admin.vendors", "write"),
+    can(session.viewer, "admin.vendors", "view"),
     loadProjectList(session.viewer, {
       status,
       statusLabel,
@@ -189,7 +190,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       {total > 0 ? <ListTotals totals={totals} /> : null}
 
       {emptyKind === "none" ? (
-        <ListEmpty {...projectsEmptyState({ ...createChoices, vendorShown: references.vendorShown, canWriteVendors })} />
+        <ListEmpty {...projectsEmptyState({ ...createChoices, vendorShown: references.vendorShown, canWriteVendors, canViewVendors })} />
       ) : emptyKind === "default-view" ? (
         <ListEmpty message={`${year}년에 걸친 프로젝트가 없습니다`} action={{ label: "전체 연도 보기", href: "/projects?year=all" }} />
       ) : emptyKind === "filtered" ? (

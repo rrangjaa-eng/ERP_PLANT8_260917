@@ -22,7 +22,7 @@ describe("canCreateProject", () => {
 });
 
 describe("projectsEmptyState", () => {
-  const base = { ...ready, clientCount: 0, vendorShown: true, canWriteVendors: true };
+  const base = { ...ready, clientCount: 0, vendorShown: true, canWriteVendors: true, canViewVendors: true };
 
   it("등록할 수 있으면 프로젝트 등록", () => {
     expect(projectsEmptyState({ ...base, clientCount: 3 })).toEqual({
@@ -45,6 +45,10 @@ describe("projectsEmptyState", () => {
 
   it("거래처 정보가 가려져 목록이 빈 계급에는 거래처 등록을 보이지 않는다", () => {
     expect(projectsEmptyState({ ...base, vendorShown: false })).toEqual({ message: "등록된 프로젝트가 없습니다", action: undefined });
+  });
+
+  it("거래처 화면 보기 권한이 없으면 행동 없음(쓰기만 있으면 링크가 404로 간다 — Codex 리뷰 P2)", () => {
+    expect(projectsEmptyState({ ...base, canViewVendors: false }).action).toBeUndefined();
   });
 
   it("거래처 쓰기 권한이 없으면 행동 없음", () => {

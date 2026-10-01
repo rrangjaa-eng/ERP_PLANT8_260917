@@ -21,7 +21,10 @@ import { ZodError } from "zod";
 import { pool } from "@/db/client";
 import { closeCertEventForTest, createCertEvent, seedIpSubmissionsForTest, signaturePngFixture } from "@/test/e2e/helpers/cert";
 import { leakPatternsFor, scanForLeaks } from "@/test/e2e/helpers/cert-leak";
-import { waitForLockWaiter } from "@/test/integration/lock-race";
+import { deferred, waitForLockWaiter } from "@/test/integration/lock-race";
+import { withTransaction } from "@/lib/db-transaction";
+import { lockEventRow } from "@/repositories/cert-events";
+import { listPrizesForEvent } from "@/repositories/cert-prizes";
 import { runTick } from "@/domain/notify/tick";
 import { decrypt } from "@/lib/crypto";
 import { addDays, kstDayStart, kstToday } from "@/lib/kst-date";
@@ -589,12 +592,26 @@ describe("savePrizes — 접수 중 · 닫힘 경품 표 저장(Task 2)", () => 
     }
   });
 
-  it("경합 — 가액 49,000 저장과 그 경품 제출을 겹치면 먼저 잠근 쪽이 이기고 제출은 saved 또는 prizeGone", async () => {
+  it("경합 — 제출이 잠그고 경품을 읽은 뒤 멈춘 사이 가액 49,000 저장은 잠금을 기다리고, 제출은 73,519로 saved · 그다음 저장 saved(독립 검토 W7 · ARCHITECTURE §4-8(5))", async () => {
     const manager = await makeUser(await managerRole(), "경영 이수아");
     const ev = await createCertEvent({ name: "경합 행사", prizes: [{ name: "경합 경품", unitValueKrw: 73_519 }] });
     const prizeId = ev.prizeIds[0] ?? "";
-    const holder = await holdEventRow(ev.eventId);
-    const save = savePrizes(manager, ev.eventId, { changes: { updates: [{ id: prizeId, version: 1, unitValue: "49,000" }] } });
+
+    // 제출의 잠근 트랜잭션을 「행사 행 잠금 · 경품 읽기」 뒤에 멈춘다(첫 트랜잭션만 — 결과 불명 재확인 갈래는 그대로).
+    const locked = deferred();
+    const release = deferred();
+    let calls = 0;
+    const pausingTransaction: typeof withTransaction = (fn) =>
+      calls++ > 0
+        ? withTransaction(fn)
+        : withTransaction(async (tx) => {
+            await lockEventRow(SYSTEM_VIEWER, ev.eventId, tx);
+            await listPrizesForEvent(SYSTEM_VIEWER, ev.eventId, tx);
+            locked.resolve();
+            await release.promise;
+            return fn(tx);
+          });
+
     const submit = submitCertificate(
       ev.token ?? "",
       {
@@ -611,13 +628,24 @@ describe("savePrizes — 접수 중 · 닫힘 경품 표 저장(Task 2)", () => 
         rrnRecheckConfirmed: true,
       },
       "203.0.113.77",
+      { withTransaction: pausingTransaction },
     );
+    await locked.promise;
+    let saveSettled = false;
+    const save = savePrizes(manager, ev.eventId, { changes: { updates: [{ id: prizeId, version: 1, unitValue: "49,000" }] } }).finally(
+      () => {
+        saveSettled = true;
+      },
+    );
+    // 저장이 잠금 대기자다 — 잠금 없이 썼다면 대기자가 생기지 않아 여기서 실패한다.
     await waitForLockWaiter(pool);
-    await holder.commit();
-    const [saved, submitted] = await Promise.all([save, submit]);
+    expect(saveSettled).toBe(false);
+    release.resolve();
+
+    const submitted = await submit;
+    expect(submitted.kind).toBe("saved");
+    const saved = await save;
     expect(saved.kind).toBe("saved");
-    expect(["saved", "prizeGone"]).toContain(submitted.kind);
-    // 제출이 이겼으면 가액 변경 전(73,519)에 판정됐고, 저장이 이겼으면 제출은 49,000을 보고 prizeGone이다 — 둘 다 아닌 조합은 없다.
     const valueLogs = await valueLogsOfEvent(ev.eventId);
     expect(valueLogs).toEqual([{ eventId: ev.eventId, prizeId, name: "경합 경품", from: 73_519, to: 49_000 }]);
   });

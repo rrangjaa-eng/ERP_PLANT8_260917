@@ -89,6 +89,11 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 전달(현장 · 택배)은 한 낱말 — 긴 경품명이 열을 좁혀도 두 줄로 쪼개지지 않는다(쪼개지면 모든 행이 두 줄 높이 — DOM 감사 A-L3). */
+.nowrap {
+  white-space: nowrap;
+}
+
 /* 편집 셀 입력 — 옛 I2 · 리저브 대장 편집 셀과 같은 모양. */
 .cellInput,
 .cellInputNumeric,

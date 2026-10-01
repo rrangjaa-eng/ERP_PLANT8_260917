@@ -227,7 +227,7 @@ function PrizeReadTable({ prizes, canManagePrizes }: Props) {
           },
         ]
       : []),
-    { key: "delivery", header: "전달", priority: "p2", cell: (row) => row.delivery },
+    { key: "delivery", header: "전달", priority: "p2", cell: (row) => <span className={styles.nowrap}>{row.delivery}</span> },
     {
       key: "winnerCount",
       header: "당첨 수",
@@ -548,7 +548,7 @@ function PrizeEditor({ eventId, eventName, status, prizes, contactMissing: initi
       key: "delivery",
       header: "전달",
       priority: "p2",
-      cell: (row) => row.delivery,
+      cell: (row) => <span className={styles.nowrap}>{row.delivery}</span>,
       copyText: (row) => row.delivery,
       editability: (row) => editabilityOf(row, "delivery"),
       editCell: (row, ctx) => (

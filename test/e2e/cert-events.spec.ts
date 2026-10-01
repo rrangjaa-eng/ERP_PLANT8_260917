@@ -370,6 +370,34 @@ test.describe("04.3-10 Task 2 — I′3 경품 표(1280)", () => {
     await page.context().close();
   });
 
+  test("1024 — 긴 경품명이 열을 좁혀도 전달(현장)은 한 줄 · 한 줄 행은 한 줄 높이(DOM 감사 A-L3)", async ({ browser }) => {
+    const ev = await createCertEvent({
+      name: "E2E 행 높이",
+      prizes: [
+        { name: "삼성 갤럭시 탭 에스텐 울트라 와이파이 오백십이기가 그라파이트 색상 정품 키보드 커버 포함 묶음 상품 한정판 기념", unitValueKrw: 1_290_000 },
+        { name: "SAMSUNGGALAXYTABS10ULTRA512GBWIFIGRAPHITEKEYBOARDCOVERBUNDLE2026LIMITEDEDITION12", unitValueKrw: 599_000 },
+        { name: "카드", unitValueKrw: 60_000 },
+      ],
+    });
+    const context = await browser.newContext({ viewport: { width: 1024, height: 900 } });
+    const page = await context.newPage();
+    await login(page, manager);
+    await page.goto(`/certs/events/${ev.eventId}`);
+    const shortRow = page.getByRole("row").filter({ hasText: "카드" });
+    await expect(shortRow).toBeVisible();
+    const heights = await shortRow.evaluate((tr) => ({
+      row: tr.getBoundingClientRect().height,
+      delivery: [...tr.children].map((td) => {
+        const range = document.createRange();
+        range.selectNodeContents(td);
+        return new Set([...range.getClientRects()].map((rect) => Math.round(rect.top))).size;
+      }),
+    }));
+    expect(heights.delivery.every((lines) => lines <= 1)).toBe(true);
+    expect(heights.row).toBeLessThan(40);
+    await context.close();
+  });
+
   test("닫힌 행사는 가액 · 당첨 수만 편집 · 신청됨은 힌트 줄 「저장 Ctrl+S」 · 1차 QR 생성(kbd 없음)", async ({ browser }) => {
     const closed = await createCertEvent({ name: "E2E 닫힌표", status: "closed", prizes: [{ name: "닫힌 경품", unitValueKrw: 120_000 }] });
     const requested = await createCertEvent({ name: "E2E 신청표", status: "requested", createdBy: pmId });

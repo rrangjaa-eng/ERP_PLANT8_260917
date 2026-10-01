@@ -350,6 +350,10 @@ expect_true "settings.json wires PostToolUse -> gsd-context-monitor.js" "$WIRED_
 WIRED_SL="$(jq -e '.statusLine.command // "" | test("gsd-statusline\\.js")' "$REPO/.claude/settings.json" 2>/dev/null)"
 [ "$WIRED_SL" = "true" ] || WIRED_SL="false"
 expect_true "settings.json statusLine -> gsd-statusline.js (context monitor bridge)" "$WIRED_SL"
+# 사용자 결정(2026-10-01): 문맥은 40만 토큰 창에서 자동 압축으로 이어 간다 — 모든 환경(계정)에 같은 기준
+ACW="$(jq -e '.autoCompactWindow == 400000' "$REPO/.claude/settings.json" 2>/dev/null)"
+[ "$ACW" = "true" ] || ACW="false"
+expect_true "settings.json autoCompactWindow = 400000" "$ACW"
 
 # ---------------------------------------------------------------------------
 # Isolation: real gate logs unchanged

@@ -106,4 +106,11 @@ describe("recordAction (OPS-05)", () => {
     expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain("cert_prize_value");
     expect((ACTION_TYPE_LABELS as Record<string, string>).cert_prize_value).toBe("경품 가액 변경");
   });
+
+  // 04.3-12(CERT-02): 확인증 파기 실행 기록은 칸 비우기와 한 트랜잭션으로 남기는 기록이라 끌 수 없다.
+  it("cert_purge(확인증 파기)가 세 배열에 함께 있고 끌 수 없다", () => {
+    expect(CORE_ACTION_TYPES as readonly string[]).toContain("cert_purge");
+    expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain("cert_purge");
+    expect((ACTION_TYPE_LABELS as Record<string, string>).cert_purge).toBe("확인증 파기");
+  });
 });

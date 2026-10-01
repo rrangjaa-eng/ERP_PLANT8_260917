@@ -209,13 +209,13 @@ describe("사람의 상태 전환 트레이서 — 시드만 있는 DB (04-20, E
   it("자기 팀 팀장이 시작일만 있는 수주중 프로젝트를 진행으로 바꾸면 상태·종료일·로그 한 줄이 남고 상세를 본다", async () => {
     const teamA = await makeTeam();
     const lead = await makeActor("role-team-lead", teamA);
-    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2099-10-01" });
 
     await changeProjectStatus(lead, projectId, { from: "bidding", to: "in_progress" });
 
     const row = await reloadProject(projectId);
     expect(row.status).toBe("in_progress");
-    expect(row.endDate).toBe("2026-10-01");
+    expect(row.endDate).toBe("2099-10-01");
     const logs = await statusLogs(projectId);
     expect(logs).toHaveLength(1);
     expect(logs[0]?.actorId).toBe(lead.id);
@@ -228,7 +228,7 @@ describe("사람의 상태 전환 트레이서 — 시드만 있는 DB (04-20, E
 
   it("담당 PM이 changeProjectStatus를 직접 불러도 권한 거부이고 상태·로그가 그대로다", async () => {
     const teamA = await makeTeam();
-    const { projectId, pm } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+    const { projectId, pm } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2099-10-01" });
     const before = await reloadProject(projectId);
 
     const attempt = changeProjectStatus(pm, projectId, { from: "bidding", to: "in_progress" });
@@ -247,10 +247,10 @@ describe("사람의 전환 넷 · 팀 범위 · 완료 주체 · 코드표 목�
     const ceo = await makeActor("role-ceo");
 
     const cases = [
-      { actor: lead, status: "bidding", to: "in_progress", start: "2026-10-01", end: null, expectEnd: "2026-10-01" },
-      { actor: lead, status: "bidding", to: "lost", start: "2026-10-01", end: null, expectEnd: null },
-      { actor: lead, status: "lost", to: "in_progress", start: "2026-11-02", end: null, expectEnd: "2026-11-02" },
-      { actor: ceo, status: "settling", to: "completed", start: "2026-10-01", end: "2026-10-05", expectEnd: "2026-10-05" },
+      { actor: lead, status: "bidding", to: "in_progress", start: "2099-10-01", end: null, expectEnd: "2099-10-01" },
+      { actor: lead, status: "bidding", to: "lost", start: "2099-10-01", end: null, expectEnd: null },
+      { actor: lead, status: "lost", to: "in_progress", start: "2099-11-02", end: null, expectEnd: "2099-11-02" },
+      { actor: ceo, status: "settling", to: "completed", start: "2099-10-01", end: "2099-10-05", expectEnd: "2099-10-05" },
     ] as const;
 
     for (const c of cases) {
@@ -271,7 +271,7 @@ describe("사람의 전환 넷 · 팀 범위 · 완료 주체 · 코드표 목�
 
   it("(b) 미수주 → 진행은 번호·견적 줄이 그대로다", async () => {
     const lost = await setupProjectWithLine("lost");
-    await db.update(projects).set({ startDate: "2026-10-01" }).where(eq(projects.id, lost.project.id));
+    await db.update(projects).set({ startDate: "2099-10-01" }).where(eq(projects.id, lost.project.id));
     const linesBefore = await db.select().from(quoteLines).where(eq(quoteLines.revisionId, lost.revision.id));
 
     await changeProjectStatus(SYSTEM_VIEWER, lost.project.id, { from: "lost", to: "in_progress" });
@@ -279,7 +279,7 @@ describe("사람의 전환 넷 · 팀 범위 · 완료 주체 · 코드표 목�
     const after = await reloadProject(lost.project.id);
     expect(after.status).toBe("in_progress");
     expect(after.number).toBe(lost.project.number);
-    expect(after.endDate).toBe("2026-10-01");
+    expect(after.endDate).toBe("2099-10-01");
     const linesAfter = await db.select().from(quoteLines).where(eq(quoteLines.revisionId, lost.revision.id));
     expect(linesAfter).toEqual(linesBefore);
   });
@@ -288,9 +288,9 @@ describe("사람의 전환 넷 · 팀 범위 · 완료 주체 · 코드표 목�
     const teamA = await makeTeam();
     const lead = await makeActor("role-team-lead", teamA);
 
-    const outOfTable = await makeStatusProject({ teamId: teamA, status: "in_progress", startDate: "2026-10-01" });
+    const outOfTable = await makeStatusProject({ teamId: teamA, status: "in_progress", startDate: "2099-10-01" });
     const noStart = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: null });
-    const settling = await makeStatusProject({ teamId: teamA, status: "settling", startDate: "2026-10-01" });
+    const settling = await makeStatusProject({ teamId: teamA, status: "settling", startDate: "2099-10-01" });
 
     const attempts = [
       { projectId: outOfTable.projectId, from: "in_progress", to: "lost", reason: "갈 수 없는 상태 · 새로 고침" },
@@ -318,7 +318,7 @@ describe("사람의 전환 넷 · 팀 범위 · 완료 주체 · 코드표 목�
       ["settling", "completed"],
     ] as const;
     for (const [from, to] of pairs) {
-      const { projectId, pm } = await makeStatusProject({ teamId: teamA, status: from, startDate: "2026-10-01" });
+      const { projectId, pm } = await makeStatusProject({ teamId: teamA, status: from, startDate: "2099-10-01" });
       await expect(changeProjectStatus(pm, projectId, { from, to })).rejects.toThrow("상태 바꾸기 권한 없음");
       expect((await reloadProject(projectId)).status).toBe(from);
       expect(await statusLogs(projectId)).toEqual([]);
@@ -331,14 +331,14 @@ describe("사람의 전환 넷 · 팀 범위 · 완료 주체 · 코드표 목�
     const sysadmin = await makeActor("role-sysadmin");
     const lead = await makeActor("role-team-lead", teamA);
 
-    const forCeo = await makeStatusProject({ teamId: teamA, status: "settling", startDate: "2026-10-01" });
-    const forSysadmin = await makeStatusProject({ teamId: teamA, status: "settling", startDate: "2026-10-01" });
+    const forCeo = await makeStatusProject({ teamId: teamA, status: "settling", startDate: "2099-10-01" });
+    const forSysadmin = await makeStatusProject({ teamId: teamA, status: "settling", startDate: "2099-10-01" });
     await changeProjectStatus(ceo, forCeo.projectId, { from: "settling", to: "completed" });
     await changeProjectStatus(sysadmin, forSysadmin.projectId, { from: "settling", to: "completed" });
     expect((await reloadProject(forCeo.projectId)).status).toBe("completed");
     expect((await reloadProject(forSysadmin.projectId)).status).toBe("completed");
 
-    const denied = await makeStatusProject({ teamId: teamA, status: "settling", startDate: "2026-10-01" });
+    const denied = await makeStatusProject({ teamId: teamA, status: "settling", startDate: "2099-10-01" });
     await expect(changeProjectStatus(lead, denied.projectId, { from: "settling", to: "completed" })).rejects.toThrow(
       "상태 바꾸기 권한 없음",
     );
@@ -355,7 +355,7 @@ describe("사람의 전환 넷 · 팀 범위 · 완료 주체 · 코드표 목�
     const otherLead = await makeActor("role-team-lead", teamB);
     const divisionHead = await makeActor("role-division-head");
 
-    const project = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+    const project = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2099-10-01" });
     await expect(changeProjectStatus(otherLead, project.projectId, { from: "bidding", to: "lost" })).rejects.toThrow(
       "다른 팀 프로젝트 · 상태 바꾸기 권한 없음",
     );
@@ -369,7 +369,7 @@ describe("사람의 전환 넷 · 팀 범위 · 완료 주체 · 코드표 목�
     const movedLead = await makeActor("role-team-lead", teamA, "2026-01-01");
     await assignTeam(SYSTEM_VIEWER, { userId: movedLead.id, teamId: teamB, effectiveFrom: "2026-06-10" });
     const now = () => new Date("2026-06-11T03:00:00Z");
-    const oldTeamProject = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+    const oldTeamProject = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2099-10-01" });
     await expect(
       changeProjectStatus(movedLead, oldTeamProject.projectId, { from: "bidding", to: "lost" }, { now }),
     ).rejects.toThrow("다른 팀 프로젝트 · 상태 바꾸기 권한 없음");
@@ -401,7 +401,7 @@ describe("사람의 전환 넷 · 팀 범위 · 완료 주체 · 코드표 목�
     await setVisibilityCell(SYSTEM_VIEWER, { roleId: "role-team-lead", infoItem: "team.value", visible: false });
     const teamA = await makeTeam();
     const lead = await makeActor("role-team-lead", teamA);
-    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2099-10-01" });
 
     await changeProjectStatus(lead, projectId, { from: "bidding", to: "lost" });
     expect((await reloadProject(projectId)).status).toBe("lost");
@@ -416,7 +416,7 @@ describe("원자성·경합·시드 보존(A-01·A-11·OV-3·A-05·ENG-D3 ③·A
   it("A-01 — 로그 쓰기가 실패하면 상태·version·로그가 전부 그대로다", async () => {
     const teamA = await makeTeam();
     const lead = await makeActor("role-team-lead", teamA);
-    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2099-10-01" });
     const before = await reloadProject(projectId);
 
     await expect(
@@ -439,7 +439,7 @@ describe("원자성·경합·시드 보존(A-01·A-11·OV-3·A-05·ENG-D3 ③·A
     const teamA = await makeTeam();
     const lead = await makeActor("role-team-lead", teamA);
     const colleague = await makeActor("role-team-lead", teamA);
-    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2099-10-01" });
 
     await changeProjectStatus(colleague, projectId, { from: "bidding", to: "lost" });
     await expect(changeProjectStatus(lead, projectId, { from: "bidding", to: "in_progress" })).rejects.toThrow(
@@ -454,7 +454,7 @@ describe("원자성·경합·시드 보존(A-01·A-11·OV-3·A-05·ENG-D3 ③·A
     const teamA = await makeTeam();
     const teamB = await makeTeam();
     const otherLead = await makeActor("role-team-lead", teamB);
-    const { projectId, pm } = await makeStatusProject({ teamId: teamA, status: "lost", startDate: "2026-10-01" });
+    const { projectId, pm } = await makeStatusProject({ teamId: teamA, status: "lost", startDate: "2099-10-01" });
 
     for (const [actor, reason] of [
       [pm, "상태 바꾸기 권한 없음"],
@@ -474,7 +474,7 @@ describe("원자성·경합·시드 보존(A-01·A-11·OV-3·A-05·ENG-D3 ③·A
     const teamA = await makeTeam();
     const leadA = await makeActor("role-team-lead", teamA);
     const leadB = await makeActor("role-team-lead", teamA);
-    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2099-10-01" });
 
     const locked = deferred();
     const release = deferred();
@@ -554,7 +554,7 @@ describe("원자성·경합·시드 보존(A-01·A-11·OV-3·A-05·ENG-D3 ③·A
 
   it("거부 운영 로그 — 권한 없는 전환 한 번에 write.denied 한 줄(규칙·프로젝트 id·from·to, 이유 문자열·금액 키 없음)", async () => {
     const teamA = await makeTeam();
-    const { projectId, pm } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+    const { projectId, pm } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2099-10-01" });
 
     const lines: string[] = [];
     vi.spyOn(console, "log").mockImplementation((line: string) => {
@@ -588,7 +588,7 @@ describe("원자성·경합·시드 보존(A-01·A-11·OV-3·A-05·ENG-D3 ③·A
   it("A-23 — 바깥 트랜잭션을 넘기고 그 트랜잭션을 되돌리면 상태·로그가 둘 다 없다", async () => {
     const teamA = await makeTeam();
     const lead = await makeActor("role-team-lead", teamA);
-    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2099-10-01" });
     const facts = await loadStatusChangeFacts(lead);
 
     await expect(
@@ -608,13 +608,13 @@ describe("부제의 마지막 변경일 (04-21, D-50 · CEO A-30 · 엔지 리�
     const teamA = await makeTeam();
     const lead = await makeActor("role-team-lead", teamA);
 
-    const untouched = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+    const untouched = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2099-10-01" });
     const untouchedDto = await findProject(lead, untouched.projectId);
     if (!untouchedDto) throw new Error("팀장이 상세를 보지 못했습니다");
     const untouchedRow = await reloadProject(untouched.projectId);
     expect(await lastStatusChangeOn(lead, untouchedDto)).toBe(kstDateOf(untouchedRow.createdAt));
 
-    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2026-10-01" });
+    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: "2099-10-01" });
     await changeProjectStatus(lead, projectId, { from: "bidding", to: "in_progress" });
     const [log] = await statusLogs(projectId);
     if (!log) throw new Error("status_change 로그가 없습니다");

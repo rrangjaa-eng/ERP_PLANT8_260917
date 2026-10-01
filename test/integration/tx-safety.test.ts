@@ -329,7 +329,7 @@ describe("잠금·풀 시간 제한(ENG-D3 ①)", () => {
       "(e) 풀 크기 2에서 같은 수주중 프로젝트에 수주중 → 진행 셋을 동시에 보내면 10초 안에 한 건 성공 · 두 건 「상태가 진행으로 바뀜 · 새로 고침」, 시간 초과 0",
       async () => {
         const { project } = await setupProject();
-        await db.update(projects).set({ startDate: "2026-10-01" }).where(eq(projects.id, project.id));
+        await db.update(projects).set({ startDate: "2099-10-01" }).where(eq(projects.id, project.id));
         const { userId } = await createAccount(SYSTEM_VIEWER, {
           email: `division-${randomUUID()}@example.test`,
           name: "통합테스트 본부 책임자",

@@ -91,12 +91,13 @@
 - 페이즈 종료: `/gsd-verify-work` → `/gsd-complete-milestone`
 
 **[Post-build] gstack — 변경 종류에 맞는 게이트만 (묶음 = PR마다 한 번, 사용자 결정 2026-10-01)**
-- 문서·계획만(`.planning/`·`*.md`, `.claude/`·이 파일 제외): 게이트 없음 — CI 초록이면 된다
+- 문서·계획만(`*.md`·`.claude/gates/` 로그, `.claude/`·이 파일 제외): 게이트 없음 — CI 초록이면 된다
 - 코드: `/review`
-- 화면(`app/`·`ui/`의 `.tsx`·`.css`): `/review` + 브라우저 검증 `/design-review` → `/qa`(읽기 전용 `/qa-only`)
-- 인증·권한·암호화·외부 입력·돈·결재(`domain/money`·`corp-cards`·`reserves`·`revenue`·`approvals`): `/review` + 독립 검토 `/cso`
+- 화면 영향(`app/`의 `.tsx`·`.css`, `ui/` 전부, `docs/design/tokens.css`): `/review` + 브라우저 검증 `/design-review` → `/qa`(읽기 전용 `/qa-only`)
+- 돈·결재(`domain/`의 `money`·`corp-cards`·`reserves`·`revenue`·`approvals`, `repositories/`의 `corp-cards`·`approvals`·`reserve-entries`·`revenue-entries`): `/review` + 독립 검토 `/cso`
+- 인증·권한·암호화는 위험 경로라 사용자가 머지하고, 외부 입력(`app/api/` 등)은 판단해서 `/cso`를 더한다(이 둘은 훅이 강제하지 않는다)
 - 그다음 `/ship` PR → 머지(아래 규칙) → `/retro` 회고. 회고에서 나온 규칙은 이 파일이 아니라 `.planning/` 또는 `/learn`에 남긴다
-- **해당하는 게이트는 건너뛰지 않는다.** 즉석 검증으로 대체하지 말고 실제로 호출한다. 해당하지 않는 게이트를 관성으로 덧붙이지도 않는다. 플랜마다 되풀이하지 않고 묶음마다 한 번이다. 머지 게이트는 훅이 이 표대로 강제한다
+- **해당하는 게이트는 건너뛰지 않는다.** 즉석 검증으로 대체하지 말고 실제로 호출한다. 해당하지 않는 게이트를 관성으로 덧붙이지도 않는다. 플랜마다 되풀이하지 않고 묶음마다 한 번이다. 머지 게이트(문서·코드·화면·돈·결재)는 훅이 이 표대로 강제한다
 
 **머지**
 - 조건이 전부 맞으면 **세션이 머지한다**(사용자 부재 중에도): PR ready · 최신 커밋 CI 초록 · main과 충돌 없음 · 게이트 기록(위 Post-build 표대로 — 문서만이면 없음) · 직전 main 스테이징 배포 초록 · 사용자 「[지시] 머지 보류」 댓글이나 `hold` 라벨 없음

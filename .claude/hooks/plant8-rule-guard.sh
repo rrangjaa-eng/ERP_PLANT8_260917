@@ -12,7 +12,8 @@
 #   2) git push --force/-f/+refspec 차단. --force-with-lease는 경고만(차단 아님).
 #   3) 커밋 접두어 docs/feat/fix/chore 외(test/style/perf/refactor…)는 경고만.
 #      접두어 자체가 없으면 차단하되 Merge/Revert 제목, -m/-F 없는 commit, -F 파일은 항상 통과.
-#   4) Codex 해제 시각은 KST로 본다.
+#   4) Codex는 디자인 검토에서만(사용자 결정 2026-10-01) — 세션 스킬 기록(plant8-skill-gate)에
+#      design-review·plan-design-review가 있을 때만 codex 실행을 허용한다(R3).
 set -uo pipefail
 # 로케일 고정: 셸·grep·sed는 바이트 단위(C)로 돌리고, 한글 판정은 모두 jq(항상 UTF-8)로 한다.
 # 사용자 로케일(C.UTF-8 등)에 따라 결과가 바뀌지 않게 한다.
@@ -60,7 +61,18 @@ finish() {
   exit 0
 }
 
-# Codex 검토는 2026-09-27 폐지 — 관련 차단 규칙(옛 R3)은 없다.
+# --- R3: Codex는 디자인 검토에서만 (사용자 결정 2026-10-01) ------------------------
+# 1차 차단은 gstack codex_reviews disabled(scripts/install-gstack.sh)다. 이 규칙은 그 설정을 따르지
+# 않는 경로(/codex·/office-hours·/spec 등, 손으로 친 codex)를 막는다. 허용 = 이 세션의 스킬 기록
+# (plant8-skill-gate.sh record-skill이 쓰는 세션 전체 파일)에 design-review나 plan-design-review가
+# 있을 때. 한계: 기록은 세션 단위라 디자인 검토 뒤 같은 세션의 codex 호출은 통과한다.
+CODEX_MSG='Codex는 디자인 검토(/design-review·/plan-design-review)에서만 쓴다(CLAUDE.md §6, 사용자 결정 2026-10-01). 그 밖의 검토는 Claude 독립 검토로.'
+codex_allowed() {
+  local session
+  session="$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null)"
+  [ -n "$session" ] || return 1
+  grep -Eqx '(design-review|plan-design-review)' "${TMPDIR:-/tmp}/plant8-skill-gate/${session}.skills" 2>/dev/null
+}
 
 # --- 사용자 승인 판정 (R7·R8) ------------------------------------------------
 # 사람 글로 인정하는 것은 두 가지뿐이다.
@@ -423,13 +435,31 @@ check_segment() {
     w="${W[$k]}"
     case "$w" in
       '{'|'}'|'!'|if|then|elif|else|do|while|until|nohup|time|exec|builtin) k=$((k + 1)); continue ;;
-      env|sudo|nice)
-        k=$((k + 1))
-        while [ "$k" -lt "$n" ] && { [[ "${W[$k]}" == -* ]] || [[ "${W[$k]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; }; do k=$((k + 1)); done
-        continue ;;
-      timeout)
+      command)
+        # command -v/-V는 조회다 — 뒤 단어를 실행하지 않는다.
+        case "${W[$((k + 1))]:-}" in -v|-V) break ;; esac
         k=$((k + 1))
         while [ "$k" -lt "$n" ] && [[ "${W[$k]}" == -* ]]; do k=$((k + 1)); done
+        continue ;;
+      env|sudo|nice|stdbuf|setsid|xargs|unbuffer)
+        # 값을 따로 받는 옵션(nice -n 5, env -u X, xargs -n 1 …)은 그 값까지 건너뛴다.
+        local valued
+        case "$w" in
+          nice) valued="n" ;; env) valued="uCS" ;; sudo) valued="ugChpUDrt" ;;
+          xargs) valued="nILPdEsa" ;; stdbuf) valued="ioe" ;; *) valued="" ;;
+        esac
+        k=$((k + 1))
+        while [ "$k" -lt "$n" ] && { [[ "${W[$k]}" == -* ]] || [[ "${W[$k]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; }; do
+          if [ -n "$valued" ] && [[ "${W[$k]}" =~ ^-[$valued]$ ]]; then k=$((k + 1)); fi
+          k=$((k + 1))
+        done
+        continue ;;
+      timeout|gtimeout|_gstack_codex_timeout_wrapper)
+        k=$((k + 1))
+        while [ "$k" -lt "$n" ] && [[ "${W[$k]}" == -* ]]; do
+          case "${W[$k]}" in -s|-k|--signal|--kill-after) k=$((k + 1)) ;; esac
+          k=$((k + 1))
+        done
         k=$((k + 1)); continue ;;
     esac
     if [[ "$w" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then k=$((k + 1)); continue; fi
@@ -452,6 +482,20 @@ check_segment() {
   case "$cmd" in
     git) check_git "${ARGS[@]}" ;;
     gh) check_gh "${ARGS[@]}" ;;
+    codex)
+      case "${ARGS[0]:-} ${ARGS[1]:-}" in
+        "--version "*|"-V "*|"--help "*|"-h "*|"login status") ;;
+        *) codex_allowed || block "$CODEX_MSG" ;;
+      esac ;;
+    npx|bunx|pnpm|npm)
+      # 실행(npx, bunx, pnpm/npm dlx·exec·x, pnpm <bin>)만 막는다 — 설치(pnpm add -g)는 Codex 호출이 아니다.
+      local first=""
+      for a in "${ARGS[@]}"; do case "$a" in -*) ;; *) first="$a"; break ;; esac; done
+      if [ "$cmd" = npx ] || [ "$cmd" = bunx ] || [[ "$first" =~ ^(dlx|exec|x)$ ]] || { [ "$cmd" = pnpm ] && [ "$first" = codex ]; }; then
+        for a in "${ARGS[@]}"; do
+          case "$a" in codex|*@openai/codex*) codex_allowed || block "$CODEX_MSG" ;; esac
+        done
+      fi ;;&
     npm)
       local sub=""
       for a in "${ARGS[@]}"; do case "$a" in -*) ;; *) sub="$a"; break ;; esac; done

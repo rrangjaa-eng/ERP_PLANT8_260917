@@ -189,6 +189,8 @@ test.describe("04.3-10 tracer — QR 생성 신청 → QR 생성(1280)", () => {
     await createCertEvent({ name: "E2E 기존 신청", status: "requested", createdBy: pmRow?.id ?? null });
     const pmPage = await loggedInPage(browser, pm);
     await pmPage.goto("/certs/events");
+    // 스트리밍 응답은 로딩 뼈대 표가 선 채 숨긴 자리에 먼저 꽂힌다 — 실제 목록(1차가 있는 화면)이 보인 뒤에 잰다(04.3-17 재실행 중 경합 확인).
+    await expect(pmPage.getByRole("button", { name: "QR 생성 신청" })).toBeVisible();
     // 패널이 열려도 목록 표는 움직이지 않는다 — 1차 자리(행동 줄)가 높이를 지킨다(DOM 감사 A-M2).
     const listTable = pmPage.locator("table").first();
     const tableTopBefore = (await listTable.boundingBox())?.y;

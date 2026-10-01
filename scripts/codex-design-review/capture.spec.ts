@@ -91,11 +91,23 @@ function measurePage(): Omit<ScreenMeasure, "route" | "width" | "screenshot" | "
     }
     return parts.join(" > ");
   };
+  // 시각적으로 숨긴 요소(.sr-only처럼 clip으로 잘린 1px 상자와 그 안, 문서 위·왼쪽 밖의 건너뛰기 링크)는
+  // 스크린샷에 없으니 재지 않는다. 화면 아래쪽 내용은 전체 화면 스크린샷에 있으니 잰다.
+  const clippedAway = (el: Element) => {
+    for (let cur: Element | null = el; cur && cur !== document.body; cur = cur.parentElement) {
+      const style = getComputedStyle(cur);
+      const r = cur.getBoundingClientRect();
+      const clipped = style.clip !== "auto" || style.clipPath !== "none" || style.overflow !== "visible";
+      if (clipped && r.width <= 1 && r.height <= 1) return true;
+    }
+    return false;
+  };
   const visible = (el: Element) => {
     const r = el.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0) return false;
+    if (r.bottom + window.scrollY <= 0 || r.right + window.scrollX <= 0) return false;
     const style = getComputedStyle(el);
-    return style.visibility !== "hidden" && Number(style.opacity) > 0 && el.checkVisibility();
+    return style.visibility !== "hidden" && Number(style.opacity) > 0 && el.checkVisibility() && !clippedAway(el);
   };
   const isScroller = (el: Element) => {
     const x = getComputedStyle(el).overflowX;

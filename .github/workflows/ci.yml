@@ -168,3 +168,24 @@ jobs:
           name: playwright-report-${{ matrix.shard }}
           path: playwright-report/
           retention-days: 7
+
+  # 검사한 tree 기록(2026-10-01 사용자 결정 — 배포 CI 중복 제거). PR 병합 결과(refs/pull/N/merge)의
+  # tree가 quality·integration·e2e를 모두 통과했다는 표시를 아티팩트 이름으로 남긴다. deploy.yml은
+  # main 커밋 tree와 같은 기록이 있으면 CI를 다시 돌리지 않는다. if에 상태 함수가 없어 needs가
+  # 하나라도 실패·건너뜀(draft · .claude만 바뀐 PR)이면 이 잡도 돌지 않는다.
+  tested-tree:
+    runs-on: ubuntu-latest
+    needs: [quality, integration, e2e]
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - id: tree
+        run: |
+          tree=$(git rev-parse 'HEAD^{tree}')
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+          echo "$tree" > tested-tree.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tested-tree-${{ steps.tree.outputs.tree }}
+          path: tested-tree.txt
+          retention-days: 7

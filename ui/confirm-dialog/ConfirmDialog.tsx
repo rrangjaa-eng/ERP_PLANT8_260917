@@ -27,8 +27,8 @@ export type ConfirmDialogPrimary = {
    */
   blockedBy?: string;
   /**
-   * 04.3-17 — 다시 보내면 되는 실패(연결 끊김 · 결과 불명) 한 줄. disabledReason이 없을 때만 1차 왼쪽 이유 자리에
-   * role="alert"로 그리고 1차는 막지 않는다(DECISIONS 2026-09-30 §7-17 실패 줄).
+   * 04.3-17 — 다시 보내면 되는 실패(연결 끊김 · 결과 불명) 한 줄. disabledReason이 없을 때만 막힘 묶음(이유 자리 —
+   * 폰은 버튼 윗줄)에 role="alert"로 그리고 nextStep과 함께 설 수 있으며 1차는 막지 않는다(DECISIONS 2026-09-30 §7-17 실패 줄).
    */
   failure?: string;
 };
@@ -318,17 +318,17 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
       <div className={styles.actions}>
         {primary ? (
           <>
-            {disabledReason || nextStep ? (
-              // 막힘 이유 + 다음 한 수 한 묶음 — PC는 행동 줄 왼쪽 그대로(display: contents), 폰은 버튼 윗줄(사용자 결정 2026-10-01).
+            {disabledReason || primary.failure || nextStep ? (
+              // 막힘 이유(또는 다시 보낼 실패) + 다음 한 수 한 묶음 — PC는 행동 줄 왼쪽 그대로(display: contents), 폰은 버튼 윗줄(사용자 결정 2026-10-01).
               <span className={styles.blocker}>
                 {disabledReason ? (
                   <span className={primary.reasonTone === "info" ? styles.reasonInfo : styles.reason}>{disabledReason}</span>
+                ) : primary.failure ? (
+                  <span className={styles.reason} role="alert">
+                    {primary.failure}
+                  </span>
                 ) : null}
                 {nextStep ? <span className={styles.nextStep}>{nextStep}</span> : null}
-              </span>
-            ) : primary.failure ? (
-              <span className={styles.reason} role="alert">
-                {primary.failure}
               </span>
             ) : null}
             {secondaryButton}

@@ -58,6 +58,8 @@ export type UseGridKeyboardParams = {
 export type UseGridKeyboardResult = {
   focus: GridPosition;
   setFocus: (pos: GridPosition) => void;
+  /** 셀 자신이 받은 focus — 같은 셀이면 선택을 두고 좌표만 기억한다. */
+  syncFocus: (pos: GridPosition) => void;
   /** 04-19 — 아직 그리지 않은 쪽의 셀로(쪽을 넘길 때). */
   setFocusCell: (cell: FocusCell) => void;
   selectionAnchor: GridPosition | null;
@@ -154,6 +156,12 @@ export function useGridKeyboard({
     setAllSelected(false);
   }
 
+  // 셀이 받은 focus. 같은 셀로 다시 온 focus(이동 뒤 DOM 포커스 맞추기 · React가 수화 뒤 다시 보내는 focusin)는 좌표만 기억하고 선택은 둔다.
+  function syncFocus(pos: GridPosition) {
+    if (pos.row === focus.row && pos.col === focus.col) setStored({ cell: cellAt(pos), at: pos });
+    else setFocus(pos);
+  }
+
   function clearSelection() {
     setAnchorCell(null);
     setAllSelected(false);
@@ -224,6 +232,8 @@ export function useGridKeyboard({
     if (!editing && event.ctrlKey && event.key.toLowerCase() === "a") {
       event.preventDefault();
       if (isCtrlCombo(event, "a")) {
+        // 누른 셀을 격자 포커스로 — 수화 전에 받은 포커스는 좌표에 남지 않았다(나중에 오는 같은 셀 focus가 선택을 풀지 않게).
+        setStored({ cell: cellAt(pos), at: pos });
         setAnchorCell(null);
         setAllSelected(true);
         onSelectAll?.();
@@ -306,5 +316,5 @@ export function useGridKeyboard({
     }
   }
 
-  return { focus, setFocus, setFocusCell, selectionAnchor, allSelected, clearSelection, isInSelection, handleKeyDown };
+  return { focus, setFocus, syncFocus, setFocusCell, selectionAnchor, allSelected, clearSelection, isInSelection, handleKeyDown };
 }

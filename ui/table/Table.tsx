@@ -897,8 +897,11 @@ export function Table<Row>({
                               setActiveCell({ rowId, columnKey: column.key });
                             }
                           }}
-                          onFocus={() => {
-                            if (enableGridKeyboard) keyboardState.setFocus(pos);
+                          onFocus={(event) => {
+                            if (!enableGridKeyboard) return;
+                            // 셀 안 편집기·버튼으로 들어가는 focus는 전처럼 선택을 푼다.
+                            if (event.target === event.currentTarget) keyboardState.syncFocus(pos);
+                            else keyboardState.setFocus(pos);
                           }}
                           onKeyDown={
                             enableGridKeyboard

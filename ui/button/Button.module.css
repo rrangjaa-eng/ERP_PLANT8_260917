@@ -111,6 +111,12 @@
   line-height: var(--lh-head);
 }
 
+/* 비활성 · 진행 중 1차는 --accent 면이 아니라 --surface 면이라 기본 kbd 값(SYSTEM §7-1 · §1-2 --faint on --surface 4.95). */
+.btn[aria-disabled="true"] .kbdOnAccent {
+  opacity: 1;
+  border-color: var(--line);
+}
+
 .reason {
   color: var(--danger);
   font-size: var(--fs-sm);

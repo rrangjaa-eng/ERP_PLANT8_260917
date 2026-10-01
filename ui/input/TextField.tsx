@@ -19,6 +19,8 @@ export type TextFieldProps = Omit<
   /** 쉼표 입력 칸(UI-SPEC S15, 04-09) — 있으면 useCommaInput으로 렌더한다.
    * numeric은 이때 의미가 없다(항상 우측 정렬 + tabular-nums). */
   numberKind?: NumberInputKind;
+  /** 칸 밖에 그린 힌트 요소의 id — aria-describedby에 오류 id 뒤로 더한다. */
+  hintId?: string;
 };
 
 // 훅은 조건 없이 호출해야 한다(Rules of Hooks) — numberKind 유무로 다른
@@ -30,7 +32,11 @@ export function TextField(props: TextFieldProps) {
   return <PlainTextField {...props} />;
 }
 
-function PlainTextField({ id, label, error, numeric = false, className, ...rest }: TextFieldProps) {
+function describedBy(errorId: string | undefined, hintId: string | undefined): string | undefined {
+  return [errorId, hintId].filter(Boolean).join(" ") || undefined;
+}
+
+function PlainTextField({ id, label, error, numeric = false, className, hintId, ...rest }: TextFieldProps) {
   const errorId = `${id}-error`;
 
   return (
@@ -43,7 +49,7 @@ function PlainTextField({ id, label, error, numeric = false, className, ...rest 
           id={id}
           {...rest}
           aria-invalid={error ? true : undefined}
-          aria-describedby={error ? errorId : undefined}
+          aria-describedby={describedBy(error ? errorId : undefined, hintId)}
           className={[styles.input, numeric ? styles.numeric : "", error ? styles.inputError : "", className]
             .filter(Boolean)
             .join(" ")}
@@ -69,6 +75,7 @@ function CommaTextField({
   numberKind,
   name,
   defaultValue,
+  hintId,
   ...rest
 }: TextFieldProps & { numberKind: NumberInputKind }) {
   const initial = defaultValue === undefined || defaultValue === null ? "" : String(defaultValue);
@@ -91,7 +98,7 @@ function CommaTextField({
           value={value}
           onChange={onChange}
           aria-invalid={error ? true : undefined}
-          aria-describedby={error ? errorId : undefined}
+          aria-describedby={describedBy(error ? errorId : undefined, hintId)}
           className={[styles.input, styles.numeric, error ? styles.inputError : "", className]
             .filter(Boolean)
             .join(" ")}

@@ -230,6 +230,16 @@
   cursor: pointer;
 }
 
+/* §7-3 첫 칸 행 번호(사용자 결정 (나)) — 정렬 · tabular-nums · nowrap은 td의 .alignRight 그대로, 글자 모양만 이 요소가 싣는다. */
+.rowNumber {
+  display: inline-block;
+  min-width: 28px;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-head);
+  color: var(--faint);
+}
+
 /* §4-4 · §7-1 3차 밑줄 1px → hover 2px. */
 .restoreAction:hover:not([aria-disabled="true"]) {
   text-decoration-thickness: var(--line-w-strong);
@@ -314,6 +324,7 @@
   /* 04-49(S18) — 폰에서 복원·버림은 터치 최소 높이. */
   .restoreAction {
     min-height: var(--touch-min);
+    min-width: var(--touch-min);
   }
 }
 

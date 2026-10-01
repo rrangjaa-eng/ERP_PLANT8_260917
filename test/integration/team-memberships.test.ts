@@ -95,6 +95,20 @@ describe("team-memberships (MAST-02, 실제 Postgres) — 발령 이력·시점 
     expect(remaining.some((a) => a.effectiveFrom === today)).toBe(true);
   });
 
+  it("오늘 판정은 서울 날짜 기준이다 — KST 01:30(UTC 전날)에 오늘 발령은 취소가 거부된다", async () => {
+    const userId = await makeTestUser();
+    const teamId = await makeTestTeam();
+    const now = () => new Date("2026-10-01T16:30:00Z"); // = 2026-10-02 01:30 KST
+
+    await assignTeam(SYSTEM_VIEWER, { userId, teamId, effectiveFrom: "2026-10-02" });
+
+    await expect(
+      cancelFutureAssignment(SYSTEM_VIEWER, { userId, effectiveFrom: "2026-10-02" }, { now }),
+    ).rejects.toBeInstanceOf(PastAssignmentCancelError);
+    const remaining = await listAssignments(SYSTEM_VIEWER, userId);
+    expect(remaining.some((a) => a.effectiveFrom === "2026-10-02")).toBe(true);
+  });
+
   it("같은 사람에게 두 발령이 동시에 들어와도 둘 다 남고 시점 조회는 발령일 기준으로 하나를 고른다", async () => {
     const userId = await makeTestUser();
     const teamA = await makeTestTeam();

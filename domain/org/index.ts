@@ -5,6 +5,7 @@ import { project, type DtoSpec, type ProjectDeps } from "@/domain/permissions/pr
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { kstToday } from "@/lib/kst-date";
 import {
   listOrgUnits as repoListOrgUnits,
   findOrgUnitById as repoFindOrgUnitById,
@@ -268,10 +269,6 @@ export type CancelAssignmentDeps = {
   now: () => Date;
 };
 
-function todayIsoDate(now: () => Date): string {
-  return now().toISOString().slice(0, 10);
-}
-
 // append-only 원칙: 발령일이 오늘 이전(또는 오늘)이면 거부한다 — 미래로
 // 예정된 발령만 취소할 수 있다.
 export async function cancelFutureAssignment(
@@ -283,7 +280,7 @@ export async function cancelFutureAssignment(
   await assertPeopleWrite(viewer, canFn);
 
   const now = deps?.now ?? (() => new Date());
-  if (input.effectiveFrom <= todayIsoDate(now)) {
+  if (input.effectiveFrom <= kstToday(now())) {
     throw new PastAssignmentCancelError("과거·오늘 발령은 취소할 수 없음 — 미래로 예정된 발령만 취소 가능");
   }
 

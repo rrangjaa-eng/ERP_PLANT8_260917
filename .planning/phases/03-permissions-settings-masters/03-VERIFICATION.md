@@ -372,6 +372,7 @@ re_verification:
     bada253_judgment: "Phase 3 계약 변경 없음. 관리자 화면 3개(`vendors`·`corp-cards`·`code-tables` page.tsx)는 행 동작을 감싸던 프래그먼트 `<>…</>`를 `<span className={styles.rowActions}>`로 바꾸고 「수정」 링크에 `rowLink` 클래스를 더했을 뿐 — `canWrite`·`canArchive`·`archivedAt ? null` 조건, `*ActiveToggle`·`VendorHiddenToggle`·`*DeleteButton`(보관함 이동) 호출과 인자, `hasActions`·`canWrite || canArchive` 열 게이트는 diff의 문맥 줄로 그대로다(제거 줄은 `<>`·`</>`·`className={styles.toggle}` 셋뿐). CSS 모듈 3개는 `.rowActions`(gap --s-4)·`.rowLink`(nowrap) 추가만. `ui/button/Button.module.css` `.tertiary`는 border-bottom 밑줄을 text-decoration 밑줄로 바꾸고 aria-disabled 밑줄 색을 흐리게 함 — 표시 전용, `Button.tsx`(aria-disabled 클릭 차단) 무변경. `/admin` 인덱스·`/admin/permissions`·`ui/permission-grid`·`ui/shell`은 bada253이 건드리지 않았고 3차 버튼도 쓰지 않는다. Phase 3 E2E 5개 스펙은 추가만(제거 줄은 `mobile-vendors.spec.ts`의 import 한 줄을 확장한 것뿐), 새 단언은 행 동작 간격 ≥ --s-4·44×44·가로 넘침 없음. domain·repositories·db·lib·판정 함수 변경 0"
     48da153_judgment: "`.claude/hooks/plant8-skill-gate.sh`·그 테스트·`.claude/gates/phase-02.log`·`.planning` 문서만 — 앱 코드·테스트 0, Phase 3 무관"
     gates_this_process: "코드 트리 9a03686(= d49ad56의 코드), 2026-10-01 04:30–04:36Z: `pnpm lint` exit 0(error 0, 기존 boundaries v5→v6 경고만) · `pnpm typecheck` exit 0 · `pnpm test:unit` 171 files · 2277 passed(7회차 2272 → +5는 bada253의 `tertiary-underline-css.test.ts` 새 describe 1개 · 테스트 5건) · 대상 단위 9파일(`tertiary-underline-css`·`admin-menu-registry`·`no-admin-boolean`·`ui/admin-index-css`·`ui/admin-index-link`·`ui/admin-master-list-first`·`ui/admin-table-caption`·`ui/single-column`·`design-system-docs`) 160 passed. 통합은 다시 돌리지 않았다 — bada253·48da153이 domain·repositories·db·통합 테스트를 건드리지 않았고 CI #104 integration 2샤드가 bada253에서 green"
+    digest_restamp: "2026-10-01T04:54Z(49f6dff) — 오케스트레이터가 covered 파일 중 03-UAT.md 문구만(질문 원문 둘째 문장 · 03:13:40Z~03:20Z 시간 창) 고친 뒤 같은 목록으로 digest를 다시 계산. 코드 변경 0, 판정 영향 없음"
     ci: "deploy run #104(id 36810353354, main bada253, 2026-10-01T03:24:22Z): ci/quality · ci/integration (1)·(2) · ci/e2e (1)·(2) · staging 전부 success(staging 03:39:18–03:43:44Z), production skipped(수동 승격). main 푸시라 E2E는 전체 스위트(CLAUDE.md §5). deploy run #105(id 36814444345, main 48da153): 이 시점 completed — quality·integration×2·e2e×2·staging 전부 success, production skipped"
 history_round_6:
   previous_status: passed
@@ -495,7 +496,7 @@ human_verification:
 | run | SHA | 잡 | 결과 |
 | --- | --- | -- | ---- |
 | deploy #104 (36810353354) | bada253 (PR #111) | ci/quality · ci/integration (1)·(2) · ci/e2e (1)·(2) · staging | **전부 success** (03:24:25–03:43:44Z), production skipped(수동 승격). main 푸시 = 전체 E2E 스위트 |
-| deploy #105 (36814444345) | 48da153 (PR #115, `.claude`만) | ci/quality · integration ×2 · e2e ×2 | completed — quality·integration×2·e2e×2·staging 전부 success, production skipped |
+| deploy #105 (36814444345) | 48da153 (PR #115, `.claude`만) | ci/quality · integration ×2 · e2e ×2 · staging | completed — quality·integration×2·e2e×2·staging 전부 success, production skipped |
 
 **addendum 판정:** bada253은 Phase 3 관리자 화면의 행 동작 표시(간격·밑줄)만 바꿨고 권한 게이트·보관 흐름·노출/DTO 투영·판정 함수는 그대로다. 성공 기준 6개의 판정과 근거는 본판정 그대로 유효하고, bada253 코드는 CI #104 전체 스위트와 이번 lint·typecheck·단위로 덮인다. **status passed 유지.**
 
@@ -523,7 +524,7 @@ human_verification:
 
 ### CI (E2E — 이 컨테이너에서는 돌리지 않음)
 
-`f85c9af`는 PR #112의 squash 머지다. PR head `f7abfab`와 `aa5464e`의 트리 차이는 `.claude/rules/sessions.md`(+11줄, 세션 이름 규칙 문서)와 `.planning/.continue-here.md` 두 파일뿐이라 본판정 시점의 코드·테스트 트리가 같았다(현재 HEAD는 bada253을 더 포함 — 위 addendum의 CI #104가 덮는다). `gh api …/commits/f7abfab…/check-runs`: **quality · integration (1) · integration (2) · e2e (1) · e2e (2) 전부 success**(2026-10-01 02:28–02:40Z). E2E 2샤드가 돈 것은 ready PR의 전체 스위트다(CLAUDE.md §5 — CI가 `CI=true` 프로덕션 빌드). 아래 truth 표가 인용한 E2E 스펙(`permissions-grid`·`settings`·`action-log`·`archive`·`vendors`·`people`·`admin-nav` 등)은 이 실행 집합에 들어 있다. 2d7f73e 이후 이 스펙들의 diff는 문구 기대 갱신·새 회귀 테스트 추가·스크롤 좌표 보정뿐이고 기존 단언을 지운 줄은 없다(`permissions-grid.spec.ts:11` 「셀을 켜면 저장 버튼 없이 즉시 저장되고, 그 계급이 실제로 코드표 화면에 들어갈 수 있게 된다」·`:73` 권한 없는 계급 404 유지).
+`f85c9af`는 PR #112의 squash 머지다. PR head `f7abfab`와 `aa5464e`의 트리 차이는 `.claude/rules/sessions.md`(+11줄, 세션 이름 규칙 문서)와 `.planning/.continue-here.md` 두 파일뿐이라 본판정 시점의 코드·테스트 트리가 같았다(현재 HEAD는 bada253을 더 포함 — 위 addendum의 CI #104가 덮는다). `gh api …/commits/f7abfab…/check-runs`: **quality · integration (1) · integration (2) · e2e (1) · e2e (2) 전부 success**(2026-10-01 02:25–02:40Z). E2E 2샤드가 돈 것은 ready PR의 전체 스위트다(CLAUDE.md §5 — CI가 `CI=true` 프로덕션 빌드). 아래 truth 표가 인용한 E2E 스펙(`permissions-grid`·`settings`·`action-log`·`archive`·`vendors`·`people`·`admin-nav` 등)은 이 실행 집합에 들어 있다. 2d7f73e 이후 이 스펙들의 diff는 문구 기대 갱신·새 회귀 테스트 추가·스크롤 좌표 보정뿐이고 기존 단언을 지운 줄은 없다(`permissions-grid.spec.ts:11` 「셀을 켜면 저장 버튼 없이 즉시 저장되고, 그 계급이 실제로 코드표 화면에 들어갈 수 있게 된다」·`:73` 권한 없는 계급 404 유지).
 
 ## Goal Achievement
 

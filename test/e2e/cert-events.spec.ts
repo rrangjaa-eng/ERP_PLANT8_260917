@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { test, expect, type Browser, type Page } from "@playwright/test";
+import { test, expect, type Browser, type Locator, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { users } from "@/db/schema";
 import { setPermissionCell } from "@/domain/permissions/matrix";
-import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { upsertVisibility } from "@/repositories/permissions";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
 import { createFixtureUser } from "./fixtures";
 import { createCertEvent, seedSubmittedCert, withCertFeatureOff } from "./helpers/cert";
@@ -133,5 +133,117 @@ test.describe("확인증 행사 — 임시 계급(자기 행사만)", () => {
       await expect(page.getByRole("img", { name: `${c.event.eventName} 확인증 QR` })).toHaveCount(c.svg);
     }
     await page.context().close();
+  });
+});
+
+// ── 04.3-10 tracer — 기획본부 「QR 생성 신청」 → 경영관리 알림함 → I′3 경품 한 줄 → 「QR 생성」 → 신청자 알림 → 수령자 링크 ──
+
+function kstToday(offsetDays = 0): string {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Seoul" }).format(new Date(Date.now() + offsetDays * 86_400_000));
+}
+
+const prizeGrid = (page: Page) => page.getByRole("grid", { name: "경품" });
+const prizeRows = (page: Page) => prizeGrid(page).locator("tbody > tr");
+const prizeCell = (page: Page, row: number, col: number) => prizeRows(page).nth(row).locator("td").nth(col);
+const PRIZE_COL = { name: 1, value: 2, delivery: 3, winners: 4, submitted: 5 } as const;
+
+async function editPrizeCell(page: Page, row: number, col: number, value: string) {
+  const cell: Locator = prizeCell(page, row, col);
+  if ((await cell.locator("input").count()) === 0) await cell.click();
+  const input = cell.locator("input");
+  await input.fill(value);
+  await input.press("Enter");
+  await expect(cell.locator("input")).toHaveCount(0);
+}
+
+test.describe("04.3-10 tracer — QR 생성 신청 → QR 생성(1280)", () => {
+  let pm: { email: string; password: string };
+  let manager: { email: string; password: string };
+  let managerRoleId: string;
+
+  test.beforeAll(async () => {
+    pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    // 경영관리 고정물(E11) — 시스템 관리자가 아니다. 모든 메뉴를 가진 박서연으로는 권한 조합 결함이 드러나지 않는다.
+    managerRoleId = `role-e2e-qr-${randomUUID()}`;
+    await insertRole(SYSTEM_VIEWER, { id: managerRoleId, name: `E2E 경영 ${managerRoleId.slice(-12)}`, sortOrder: 99 });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: managerRoleId, menu: "certs.events", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: managerRoleId, menu: "certs.qr", action: "write", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: managerRoleId, infoItem: "cert_event.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: managerRoleId, infoItem: "cert_prize.value", visible: true });
+    manager = await createFixtureUser({ roleId: managerRoleId });
+  });
+
+  test.afterAll(async () => {
+    await setRoleArchived(SYSTEM_VIEWER, managerRoleId, true);
+  });
+
+  test("PM 신청(옆 패널) → 경영관리 알림함 · 경품 한 줄 · QR 생성 → PM 알림함 · 수령자 링크에 그 경품", async ({ browser }) => {
+    const eventName = `E2E 신청-${randomUUID().slice(0, 8)}`;
+    const prizeName = `E2E 경품-${randomUUID().slice(0, 6)}`;
+    const today = kstToday();
+
+    // ① PM — 목록 1차 → 옆 패널(첫 칸 포커스 · 열린 동안 화면의 1차는 패널 1차 하나 — DR-9)
+    const pmPage = await loggedInPage(browser, pm);
+    await pmPage.goto("/certs/events");
+    await pmPage.getByRole("button", { name: "QR 생성 신청" }).click();
+    const panel = pmPage.getByRole("dialog", { name: "QR 생성 신청" });
+    await expect(panel).toBeVisible();
+    await expect(panel.getByLabel("행사 이름")).toBeFocused();
+    await expect(pmPage.getByRole("button", { name: "QR 생성 신청" })).toHaveCount(1);
+    await expect(panel.getByRole("button", { name: "QR 생성 신청" })).toHaveCount(1);
+
+    // ② 막힘 한 번에 하나 — 당첨일 빔 → 어제(지난 날짜) → 오늘(계산 줄)
+    await panel.getByLabel("행사 이름").fill(eventName);
+    await panel.getByRole("button", { name: "QR 생성 신청" }).click();
+    await expect(panel.getByText("당첨일 비어 있음 · 당첨일 적기")).toBeVisible();
+    await panel.getByLabel("당첨일").fill(kstToday(-1));
+    await expect(panel.getByText("지난 날짜 · 당첨일 확인")).toBeVisible();
+    await panel.getByLabel("당첨일").fill(today);
+    await expect(panel.getByText(new RegExp(`^열림 ${today.slice(5)} 00:00 · 마감 \\d{2}-\\d{2} \\d{2}:\\d{2}$`))).toBeVisible();
+    await expect(panel.getByText("지난 날짜 · 당첨일 확인")).toHaveCount(0);
+
+    // ③ 신청 → 패널 닫힘 · 새 행 신청됨 그룹 · 포커스 = 그 행 · 토스트
+    await panel.getByRole("button", { name: "QR 생성 신청" }).click();
+    await expect(panel).toBeHidden();
+    const newRow = eventRow(pmPage, eventName);
+    await expect(newRow).toBeVisible();
+    await expect(newRow.getByRole("link", { name: eventName })).toBeFocused();
+    await expect(pmPage.getByRole("status").filter({ hasText: `QR 생성 신청 · ${eventName}` })).toBeVisible();
+    await expect(newRow.getByText("신청됨", { exact: true })).toBeVisible();
+
+    // ④ 경영관리 — 알림함 → 목록 그 행 → I′3 경품 첫 줄 → QR 생성
+    const mPage = await loggedInPage(browser, manager);
+    await mPage.goto("/notifications");
+    await expect(mPage.getByText(`QR 생성 신청 · ${eventName} · ${today} · E2E Employee`)).toBeVisible();
+    await mPage.goto("/certs/events");
+    await eventRow(mPage, eventName).getByRole("link", { name: eventName }).click();
+    await expect(mPage.getByRole("heading", { name: eventName, level: 1 })).toBeVisible();
+    await mPage.getByRole("button", { name: /첫 줄 만들기/ }).click();
+    await expect(prizeRows(mPage)).toHaveCount(1);
+    await editPrizeCell(mPage, 0, PRIZE_COL.name, prizeName);
+    await editPrizeCell(mPage, 0, PRIZE_COL.value, "1,290,000");
+    await expect(prizeCell(mPage, 0, PRIZE_COL.delivery)).toHaveText("현장");
+    await mPage.getByRole("button", { name: "QR 생성", exact: true }).click();
+
+    // ⑤ 같은 화면이 접수 중으로 · QR 섹션 · 포커스 = QR 섹션 라벨 · 토스트
+    const qrHeading = mPage.getByRole("heading", { name: "QR", level: 2 });
+    await expect(qrHeading).toBeVisible();
+    await expect(qrHeading).toBeFocused();
+    await expect(mPage.getByText("접수 중", { exact: true })).toBeVisible();
+    await expect(mPage.getByRole("status").filter({ hasText: `QR 생성 · ${eventName}` })).toBeVisible();
+    const link = (await mPage.locator('[class*="linkRow"] span').first().textContent())?.trim() ?? "";
+    expect(link).toMatch(/\/c\/[A-Za-z0-9_-]+$/);
+
+    // ⑥ PM 알림함 · 수령자 링크에 그 경품
+    await pmPage.goto("/notifications");
+    await expect(pmPage.getByText(`QR 생성 · ${eventName}`, { exact: true })).toBeVisible();
+    const recipient = await browser.newContext();
+    const rPage = await recipient.newPage();
+    await rPage.goto(link);
+    await expect(rPage.getByRole("button", { name: new RegExp(prizeName) })).toBeVisible();
+
+    await recipient.close();
+    await pmPage.context().close();
+    await mPage.context().close();
   });
 });

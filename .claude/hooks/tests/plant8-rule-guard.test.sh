@@ -222,6 +222,14 @@ r3_case "R3-36: pnpm exec codex + design-review -> 0" 0 'pnpm exec codex exec x'
 r3_case "R3-37: pnpm exec playwright(다른 도구) -> 0" 0 'pnpm exec playwright test' "$r3_none"
 r3_case "R3-38: pnpm -s test -> 0" 0 'pnpm -s test' "$r3_none"
 r3_case "R3-39: command -v codex(조회) -> 0" 0 'command -v codex' "$r3_none"
+# 패키지 실행기의 값 받는 옵션(-C/--dir/--prefix/--filter) 뒤 하위 명령 우회(PR #116 Codex 리뷰)
+r3_case "R3-40: pnpm -C /tmp exec codex -> 2" 2 'pnpm -C /tmp exec codex exec x' "$r3_none"
+r3_case "R3-41: pnpm --dir /tmp exec codex -> 2" 2 'pnpm --dir /tmp exec codex exec x' "$r3_none"
+r3_case "R3-42: npm --prefix /tmp exec codex -> 2" 2 'npm --prefix /tmp exec codex exec x' "$r3_none"
+r3_case "R3-43: pnpm -C /tmp codex -> 2" 2 'pnpm -C /tmp codex exec x' "$r3_none"
+r3_case "R3-44: pnpm --filter web dlx @openai/codex -> 2" 2 'pnpm --filter web dlx @openai/codex exec x' "$r3_none"
+r3_case "R3-45: pnpm -C /tmp add -g @openai/codex(설치) -> 0" 0 'pnpm -C /tmp add -g @openai/codex@0.155.1' "$r3_none"
+r3_case "R3-46: pnpm -C /tmp test(다른 명령) -> 0" 0 'pnpm -C /tmp test' "$r3_none"
 hook "$(payload_skill gsd-review '04.3')"
 expect_rc "R3-23: gsd-review 스킬 호출 자체는 막지 않는다 -> 0" 0 "$HOOK_RC"
 

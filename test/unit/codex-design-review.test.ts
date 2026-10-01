@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -10,8 +10,11 @@ import {
   buildPrompt,
   codexArgs,
   codexEnv,
+  assertRealPaths,
   countLines,
   crossCheck,
+  envFileSecrets,
+  fillRoute,
   measurementsToMarkdown,
   parseArgs,
   parseCodexFindings,
@@ -122,8 +125,62 @@ describe("parseArgs", () => {
     [["/x", "--out", ".planning/r.md", "--plan", ".env.local"], "--plan"],
     [["/x", "--out", ".planning/r.md", "--plan", "/root/.codex/auth.json"], "--plan"],
     [["/x", "--out", ".planning/r.md", "--plan", "docs/../.env.md"], "--plan"],
+    // 경로는 앱 출처 안이어야 한다 — //host·역슬래시는 다른 호스트로 풀린다.
+    [["//169.254.169.254/latest/meta-data/", "--out", ".planning/r.md"], "경로"],
+    [["/\\attacker.example/x", "--out", ".planning/r.md"], "경로"],
   ])("잘못된 인자 %j는 오류다", (argv, message) => {
     expect(() => parseArgs(argv)).toThrow(message);
+  });
+});
+
+describe("assertRealPaths", () => {
+  function repo() {
+    const root = mkdtempSync(join(tmpdir(), "codex-dr-root-"));
+    mkdirSync(join(root, ".planning"));
+    mkdirSync(join(root, "docs"));
+    writeFileSync(join(root, "CLAUDE.md"), "x");
+    writeFileSync(join(root, "docs", "plan.md"), "p");
+    return root;
+  }
+
+  it("실제 파일·없는 보고서 경로는 통과한다", () => {
+    const root = repo();
+    expect(() => assertRealPaths({ out: ".planning/new.md", plans: ["docs/plan.md"] }, root)).not.toThrow();
+  });
+
+  it("--out이 심볼릭 링크면 거부한다(보호 파일 덮어쓰기)", () => {
+    const root = repo();
+    symlinkSync(join(root, "CLAUDE.md"), join(root, ".planning", "r.md"));
+    expect(() => assertRealPaths({ out: ".planning/r.md", plans: [] }, root)).toThrow("--out");
+  });
+
+  it("--out 상위 폴더가 링크로 저장소 밖을 가리키면 거부한다", () => {
+    const root = repo();
+    const outside = mkdtempSync(join(tmpdir(), "codex-dr-outside-"));
+    symlinkSync(outside, join(root, ".planning", "esc"));
+    expect(() => assertRealPaths({ out: ".planning/esc/r.md", plans: [] }, root)).toThrow("--out");
+  });
+
+  it("--plan이 심볼릭 링크면 거부한다(비밀 파일 전송)", () => {
+    const root = repo();
+    const secret = join(mkdtempSync(join(tmpdir(), "codex-dr-secret-")), "auth.json");
+    writeFileSync(secret, "{}");
+    symlinkSync(secret, join(root, "docs", "leak.md"));
+    expect(() => assertRealPaths({ out: ".planning/r.md", plans: ["docs/leak.md"] }, root)).toThrow("--plan");
+  });
+});
+
+describe("fillRoute · envFileSecrets", () => {
+  it("{adminId} 자리를 캡처 때 만든 관리자 id로 바꾼다", () => {
+    expect(fillRoute("/admin/people/{adminId}", { adminId: "u-1" })).toBe("/admin/people/u-1");
+    expect(fillRoute("/admin/people", { adminId: "u-1" })).toBe("/admin/people");
+  });
+
+  it(".env 파일의 값(8자 이상)을 가릴 비밀로 모은다", () => {
+    const secrets = envFileSecrets(['BETTER_AUTH_SECRET="a1b2c3d4e5f6"\n# 주석\nAPP_ENV=local\nDATABASE_URL=postgres://erp:erp@127.0.0.1:5432/erp']);
+    expect(secrets).toContain("a1b2c3d4e5f6");
+    expect(secrets).toContain("postgres://erp:erp@127.0.0.1:5432/erp");
+    expect(secrets).not.toContain("local");
   });
 });
 
@@ -446,6 +503,18 @@ describe("scripts/codex-design-review.sh 건너뜀 계약", () => {
   it("--out이 없으면 2로 끝난다", () => {
     const { result } = run(["/admin/people"]);
     expect(result.status).toBe(2);
+  });
+
+  it("--out이 보호 파일을 가리키는 링크면 2로 끝나고 대상을 쓰지 않는다", () => {
+    const dir = join("test-results", `codex-dr-link-${process.pid}`);
+    mkdirSync(dir, { recursive: true });
+    const target = join(mkdtempSync(join(tmpdir(), "codex-dr-target-")), "CLAUDE.md");
+    writeFileSync(target, "원본");
+    symlinkSync(target, join(dir, "r.md"));
+    written.push(join(dir, "r.md"));
+    const { result } = run(["/admin/people", "--out", join(dir, "r.md")]);
+    expect(result.status).toBe(2);
+    expect(readFileSync(target, "utf8")).toBe("원본");
   });
 
   it("--out이 .planning/·test-results/의 .md가 아니면 2로 끝나고 쓰지 않는다", () => {

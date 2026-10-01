@@ -23,6 +23,16 @@ case "$out" in
   .planning/*.md|test-results/*.md) ;;
   *) out="" ;;
 esac
+# 링크를 따라가면 보호 파일을 덮을 수 있다 — 링크 자체와, 실제 경로가 허용 폴더 밖인 경우를 거부한다.
+if [ -n "$out" ]; then
+  root="$(pwd -P)"
+  real="$(realpath -m -- "$out")"
+  case "$real" in
+    "$root"/.planning/*|"$root"/test-results/*) ;;
+    *) out="" ;;
+  esac
+  [ -L "$out" ] && out=""
+fi
 if [ -z "$out" ]; then
   echo "--out은 .planning/·test-results/ 아래 .md여야 한다" >&2
   echo "사용법: bash scripts/codex-design-review.sh <경로…> --out <보고서.md> [--base <ref>] [--plan <파일>]… [--sections <id,…>]" >&2

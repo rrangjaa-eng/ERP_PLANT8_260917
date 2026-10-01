@@ -1,13 +1,15 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
   VIEWPORTS,
+  assertRealPaths,
   buildPrompt,
   codexArgs,
   codexEnv,
   crossCheck,
+  envFileSecrets,
   measurementsToMarkdown,
   parseArgs,
   parseCodexFindings,
@@ -21,6 +23,7 @@ import {
 // scripts/codex-design-review.sh가 자격 확인 뒤 부른다. 캡처(Playwright, CI=true 빌드) →
 // 프롬프트 → codex exec → 실측 대조 → 보고서. Codex stderr는 파일로만 남기고 출력하지 않는다.
 const args = parseArgs(process.argv.slice(2));
+assertRealPaths(args);
 const stamp = `${new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15)}-${process.pid}`;
 const artifactsDir = join("test-results/codex-design-review", stamp);
 const absDir = resolve(artifactsDir);
@@ -88,15 +91,32 @@ const prompt = buildPrompt({
 });
 writeFileSync(join(absDir, "prompt.md"), prompt);
 
-const codex = spawnSync("codex", codexArgs(prompt, images.map((i) => i.file)), {
+// Codex는 저장소 밖 빈 임시 폴더에서 돌린다(스크린샷 사본만 둔다). 읽기 전용 샌드박스도 파일은 읽을 수
+// 있어서, 저장소에서 돌리면 .env.local 같은 비밀 파일을 읽을 수 있다. 프롬프트에 필요한 것은 다 들어 있다.
+const codexDir = mkdtempSync(join(tmpdir(), "codex-design-review-"));
+const codexImages = images.map((img, i) => {
+  const copy = join(codexDir, `${i + 1}-${img.width}.png`);
+  copyFileSync(img.file, copy);
+  return copy;
+});
+const codex = spawnSync("codex", codexArgs(prompt, codexImages), {
+  cwd: codexDir,
   env: codexEnv(process.env),
   stdio: ["ignore", "pipe", "pipe"],
   encoding: "utf8",
   timeout: 900_000,
   maxBuffer: 20 * 1024 * 1024,
 });
-// Codex 출력은 파일로 남기기 전에 비밀을 가린다(자격 원본과 auth.json 토큰 값, 토큰 모양).
-const secrets = [authB64 ?? ""];
+rmSync(codexDir, { recursive: true, force: true });
+// Codex 출력은 파일로 남기기 전에 비밀을 가린다(자격 원본, auth.json 토큰 값, 저장소 .env* 값, 토큰 모양).
+const secrets = [
+  authB64 ?? "",
+  ...envFileSecrets(
+    readdirSync(".")
+      .filter((f) => /^\.env/.test(f))
+      .map((f) => readFileSync(f, "utf8")),
+  ),
+];
 try {
   const auth = JSON.parse(readFileSync(join(process.env.CODEX_HOME ?? join(homedir(), ".codex"), "auth.json"), "utf8")) as {
     tokens?: Record<string, unknown>;

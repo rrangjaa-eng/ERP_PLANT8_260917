@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 import { createAccount } from "@/domain/auth/accounts";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { VIEWPORTS, countLines, screenshotName, type ScreenMeasure } from "./lib";
+import { VIEWPORTS, countLines, fillRoute, screenshotName, type ScreenMeasure } from "./lib";
 
 // Codex 디자인 검토 캡처(playwright.codex-design.config.ts 전용). 요청 경로마다 4폭 전체 화면
 // 스크린샷과 DOM 실측(가로 넘침·요소 높이·줄 수·넘침·세로 간격)을 남긴다. 판정은 이 실측으로 한다.
@@ -17,7 +17,8 @@ for (const route of routes) {
   test(`캡처 ${route}`, async ({ page, baseURL }) => {
     test.setTimeout(180_000);
     const email = `e2e-${randomUUID()}@example.test`;
-    const { tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E Admin", roleId: SYSADMIN_ROLE_ID });
+    const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E Admin", roleId: SYSADMIN_ROLE_ID });
+    const target = fillRoute(route, { adminId: userId });
     await page.goto("/login");
     await page.getByLabel("이메일").fill(email);
     await page.getByLabel("비밀번호").fill(tempPassword);
@@ -27,10 +28,14 @@ for (const route of routes) {
     const screens: ScreenMeasure[] = [];
     for (const viewport of VIEWPORTS) {
       await page.setViewportSize(viewport);
-      const response = await page.goto(route);
-      // 리다이렉트·오류 페이지를 요청한 화면으로 재지 않는다.
-      expect(response?.ok(), `${route} 응답 ${response?.status()}`).toBe(true);
-      expect(new URL(page.url()).pathname).toBe(new URL(route, baseURL).pathname);
+      const wanted = new URL(target, baseURL);
+      // 앱 출처 밖으로는 가지 않는다(경로는 parseArgs가 이미 거른다 — 한 번 더 막는다).
+      expect(wanted.origin).toBe(new URL(baseURL ?? "").origin);
+      const response = await page.goto(wanted.href);
+      // 리다이렉트·오류 페이지를 요청한 화면으로 재지 않는다(쿼리로 고르는 화면이 있어 search까지 비교).
+      expect(response?.ok(), `${target} 응답 ${response?.status()}`).toBe(true);
+      const landed = new URL(page.url());
+      expect(landed.pathname + landed.search).toBe(wanted.pathname + wanted.search);
       await page.waitForLoadState("networkidle");
       await page.evaluate(() => document.fonts.ready.then(() => true));
       const screenshot = screenshotName(route, viewport.width);
@@ -60,7 +65,7 @@ function measurePage(): Omit<ScreenMeasure, "route" | "width" | "screenshot" | "
     if (tag === "input" || tag === "select" || tag === "textarea") return "input";
     if (tag === "th" || tag === "td") return "cell";
     if (tag === "tr" || el.getAttribute("role") === "row") return "row";
-    return "nav";
+    return el.closest("nav") ? "nav" : "link";
   };
   const part = (el: Element): string => {
     if (el.id) return `#${CSS.escape(el.id)}`;
@@ -115,7 +120,8 @@ function measurePage(): Omit<ScreenMeasure, "route" | "width" | "screenshot" | "
 
   const root = document.documentElement;
   // 조작 요소·제목을 먼저, 표 칸·행을 뒤에 — 상한에 걸려도 버튼·입력이 빠지지 않게.
-  const controls = [...document.querySelectorAll("h1,h2,h3,label,button,input,select,textarea,nav a")].filter(visible);
+  // 링크로 그린 행동(주 버튼 모양 Link 등)도 잰다 — nav 밖 a[href]는 kind "link".
+  const controls = [...document.querySelectorAll("h1,h2,h3,label,button,input,select,textarea,a[href]")].filter(visible);
   const cells = [...document.querySelectorAll("th,td,tr,[role=row]")].filter(visible);
   const all = [...controls, ...cells];
   const elements = all.slice(0, LIMIT).map((el) => {

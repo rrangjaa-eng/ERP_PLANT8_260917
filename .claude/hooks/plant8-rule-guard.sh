@@ -489,8 +489,17 @@ check_segment() {
       esac ;;
     npx|bunx|pnpm|npm)
       # 실행(npx, bunx, pnpm/npm dlx·exec·x, pnpm <bin>)만 막는다 — 설치(pnpm add -g)는 Codex 호출이 아니다.
-      local first=""
-      for a in "${ARGS[@]}"; do case "$a" in -*) ;; *) first="$a"; break ;; esac; done
+      # 값을 따로 받는 옵션(-C·--dir·--prefix·-F·--filter·-w·--workspace)은 그 값까지 건너뛰고 하위 명령을 찾는다.
+      local first="" skipv=0
+      for a in "${ARGS[@]}"; do
+        if [ "$skipv" -eq 1 ]; then skipv=0; continue; fi
+        case "$a" in
+          -C|--dir|--prefix|-F|--filter|--workspace) skipv=1 ;;
+          -w) [ "$cmd" = npm ] && skipv=1 ;;
+          -*) ;;
+          *) first="$a"; break ;;
+        esac
+      done
       if [ "$cmd" = npx ] || [ "$cmd" = bunx ] || [[ "$first" =~ ^(dlx|exec|x)$ ]] || { [ "$cmd" = pnpm ] && [ "$first" = codex ]; }; then
         for a in "${ARGS[@]}"; do
           case "$a" in codex|*@openai/codex*) codex_allowed || block "$CODEX_MSG" ;; esac

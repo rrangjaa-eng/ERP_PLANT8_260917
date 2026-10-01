@@ -3,7 +3,8 @@
 // 프롬프트로 묶고, Codex 지적을 실측표와 대조한 보고서를 만든다. Codex 지적은 후보이고 결함
 // 판정은 DOM 실측으로만 한다(CLAUDE.md §6 「스크린샷 육안 판정 금지」).
 
-import { isAbsolute, relative, resolve } from "node:path";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 
 export const VIEWPORTS = [
   { width: 375, height: 800 },
@@ -22,7 +23,7 @@ const SECTIONS_BUDGET_BYTES = 55_000;
 
 export type ElementMeasure = {
   selector: string;
-  kind: "heading" | "label" | "button" | "input" | "cell" | "row" | "nav";
+  kind: "heading" | "label" | "button" | "input" | "cell" | "row" | "nav" | "link";
   text: string;
   width: number;
   height: number;
@@ -78,7 +79,10 @@ export function parseArgs(argv: string[], root = process.cwd()): ReviewArgs {
       else if (arg === "--base") base = value;
       else if (arg === "--plan") plans.push(value);
       else for (const id of value.split(",").map((s) => s.trim())) if (id && !sections.includes(id)) sections.push(id);
-    } else if (!arg.startsWith("/")) throw new Error(`경로는 /로 시작해야 한다: ${arg}`);
+    } else if (!arg.startsWith("/") || arg.startsWith("//") || arg.includes("\\")) {
+      // //host·역슬래시는 URL 해석에서 다른 호스트로 풀린다 — 앱 출처 안의 경로만 받는다.
+      throw new Error(`경로는 /로 시작하는 앱 안 경로여야 한다: ${arg}`);
+    }
     else routes.push(arg);
   }
   if (routes.length === 0) throw new Error("검토할 경로를 하나 이상 준다(예: /admin/people)");
@@ -94,6 +98,50 @@ export function parseArgs(argv: string[], root = process.cwd()): ReviewArgs {
 
 // 텍스트 노드 상자 [top, bottom]들을 줄 수로 센다. 세로 중심이 이미 센 줄 안에 들면 같은 줄이다
 // (요소 범위 전체의 getClientRects는 하위 요소 상자까지 섞여 한 줄을 2줄로 센다).
+// 파일 시스템으로 다시 확인한다: 심볼릭 링크를 거부하고, 실제 경로(상위 폴더 포함)가 허용 폴더 안인지 본다.
+// 글자만 보는 parseArgs 검사는 .planning/r.md -> ../../CLAUDE.md 같은 링크를 통과시킨다.
+export function assertRealPaths(args: { out: string; plans: string[] }, root = process.cwd()): void {
+  const realRoot = realpathSync(root);
+  const inside = (real: string, dirs: string[]) =>
+    dirs.some((dir) => {
+      const rel = relative(resolve(realRoot, dir), real);
+      return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+    });
+  const nearestReal = (path: string): string => {
+    let cur = path;
+    while (!existsSync(cur)) cur = dirname(cur);
+    return resolve(realpathSync(cur), relative(cur, path));
+  };
+  const outAbs = resolve(root, args.out);
+  if ((existsSync(outAbs) && lstatSync(outAbs).isSymbolicLink()) || !inside(nearestReal(outAbs), [".planning", "test-results"])) {
+    throw new Error(`--out은 링크가 아닌 .planning/·test-results/ 안 파일이어야 한다: ${args.out}`);
+  }
+  for (const plan of args.plans) {
+    const abs = resolve(root, plan);
+    if (!existsSync(abs) || lstatSync(abs).isSymbolicLink() || !inside(realpathSync(abs), [".planning", "docs"])) {
+      throw new Error(`--plan은 링크가 아닌 .planning/·docs/ 안 파일이어야 한다: ${plan}`);
+    }
+  }
+}
+
+// 동적 경로 자리 표시: {adminId} = 캡처 때 만든 관리자 계정 id(예: /admin/people/{adminId}).
+export function fillRoute(route: string, vars: { adminId: string }): string {
+  return route.replaceAll("{adminId}", vars.adminId);
+}
+
+// .env 계열 파일에서 가릴 값을 모은다(8자 이상). Codex 출력에 섞여도 파일로 남기기 전에 가린다.
+export function envFileSecrets(texts: string[]): string[] {
+  const values: string[] = [];
+  for (const text of texts) {
+    for (const line of text.split("\n")) {
+      const match = /^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*(.*)$/.exec(line);
+      const value = (match?.[1] ?? "").trim().replace(/^(["'])(.*)\1$/, "$2");
+      if (value.length >= 8) values.push(value);
+    }
+  }
+  return values;
+}
+
 export function countLines(rects: Array<[number, number]>): number | null {
   const lines: Array<[number, number]> = [];
   for (const [top, bottom] of [...rects].sort((a, b) => a[0] - b[0])) {

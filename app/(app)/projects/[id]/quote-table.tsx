@@ -1694,7 +1694,14 @@ export function QuoteLedger({
           id: `vendor-edit-${row.clientKey}`,
           ariaLabel: "거래처",
           initialValue: row.vendorId ?? "",
-          options: vendors.map((option) => ({ value: option.id, label: option.name })),
+          // quick 261001-85g — 현재 값이 선택지에 없으면(가려진 거래처 정보 · 보관 거래처) 읽기 글자 그대로 한 선택지로
+          // 둔다. 없으면 select가 「—」로 열려 손대지 않고 나가도 거래처가 비워진다.
+          options: [
+            ...(row.vendorId && !vendors.some((option) => option.id === row.vendorId)
+              ? [{ value: row.vendorId, label: vendorLabel(row.vendorId) }]
+              : []),
+            ...vendors.map((option) => ({ value: option.id, label: option.name })),
+          ],
           onCommit: (value) => {
             commitCell(row.clientKey, "vendor", { vendorId: value || null });
             ctx.onCommit(value);

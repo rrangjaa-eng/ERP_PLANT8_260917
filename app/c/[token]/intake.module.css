@@ -71,8 +71,17 @@
   margin-bottom: var(--s-1);
 }
 
+/* §3 터치 목표: tel: 3차는 폰에서 최소 44×44(.runLink와 같은 결). 문장 속 링크라 히트 영역만 44 —
+   위아래 음수 margin이 줄 상자를 글자 한 줄 높이로 되돌리고, position: relative가 앞뒤 줄에 가려지지 않게 한다. */
 .telLink {
   color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+  margin-block: calc((1lh - var(--touch-min)) / 2);
+  position: relative;
 }
 
 /* 제출 줄(E′4) — main 안 sticky, 위 2px --line-strong, 안전 영역 더함(§6-5 실물 .submit). */

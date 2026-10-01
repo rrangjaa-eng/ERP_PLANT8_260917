@@ -2,7 +2,7 @@ import { test, expect, type Page, type Request } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { certEvents, certSubmissions } from "@/db/schema";
-import { createCertEvent, withCertFeatureOff } from "./helpers/cert";
+import { closeCertEventForTest, createCertEvent, withCertFeatureOff } from "./helpers/cert";
 import { drawSignature, fillIntakeForm, submitButton } from "./helpers/cert-form";
 
 test.use({ viewport: { width: 375, height: 800 } });
@@ -187,4 +187,79 @@ test("닫힌 링크 첫 진입 — 이 링크는 닫혔습니다 · 제목 「�
   await expect(page.getByText("이 링크는 닫혔습니다")).toBeVisible();
   await expect(page.getByText(/담당자가 접수를 마쳤습니다/)).toBeVisible();
   await expect(page).toHaveTitle("링크 닫힘 · 기타소득 지급 확인");
+});
+
+// DOM 감사 M1 — 문의 전화 tel: 링크는 3차(§6-5 E′2)라 §3 터치 목표 44×44. 문장 속 링크라 히트 영역만 키우고
+// 줄 상자는 그대로여야 한다(375에서 링크를 보통 인라인으로 되돌린 높이와 같음), 상자 위 · 아래 끝도 링크가 받는다.
+async function expectTelLinkTouch(page: Page, scope: string, state: string) {
+  const link = page.locator(`${scope} a[href^="tel:"]`);
+  await expect(link).toHaveCount(1);
+  for (const width of [375, 320]) {
+    await page.setViewportSize({ width, height: 800 });
+    const detail = `${state} @${width}`;
+    const box = await link.boundingBox();
+    expect(box, detail).not.toBeNull();
+    expect.soft(box!.width, detail).toBeGreaterThanOrEqual(44);
+    expect.soft(box!.height, detail).toBeGreaterThanOrEqual(44);
+    if (width === 320) {
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect.soft(overflow, `${detail} 가로 넘침`).toBeLessThanOrEqual(0);
+      continue;
+    }
+    const lineBox = await link.evaluate((el) => {
+      const p = el.closest("p");
+      if (!p) return null;
+      const asIs = p.getBoundingClientRect().height;
+      el.setAttribute("style", "display: inline; min-height: 0; margin-block: 0");
+      const plain = p.getBoundingClientRect().height;
+      el.removeAttribute("style");
+      return { asIs, plain };
+    });
+    expect(lineBox, detail).not.toBeNull();
+    expect.soft(Math.abs(lineBox!.asIs - lineBox!.plain), `${detail} ${JSON.stringify(lineBox)}`).toBeLessThanOrEqual(0.5);
+    const edges = await link.evaluate((el) => {
+      el.scrollIntoView({ block: "center" });
+      const rect = el.getBoundingClientRect();
+      const x = rect.left + rect.width / 2;
+      const hits = (y: number) => {
+        const hit = document.elementFromPoint(x, y);
+        return hit !== null && (hit === el || el.contains(hit));
+      };
+      return { top: hits(rect.top + 2), bottom: hits(rect.bottom - 2) };
+    });
+    expect.soft(edges, detail).toEqual({ top: true, bottom: true });
+  }
+  await page.setViewportSize({ width: 375, height: 800 });
+}
+
+test("DOM 감사 M1 — 문의 전화 tel: 링크는 E′2 · E′4 · E5 · E6-b(담당자 · 기한) 모두 375 · 320에서 44×44, 줄 상자 그대로(§3 터치 목표)", async ({
+  page,
+}) => {
+  const { link, eventId } = await createCertEvent({ name: "모바일E2E문의44" });
+  if (!link) throw new Error("링크 없음");
+
+  await page.goto(link);
+  await expectTelLinkTouch(page, "p[class*=inquiryLine]", "E′2");
+
+  await prizeRow(page, "갤럭시 탭 S10").click();
+  await expectTelLinkTouch(page, "p[class*=prizeInquiry]", "E′4");
+
+  await fillIntakeForm(page, { phone: "010-4821-7730" });
+  await drawSignature(page);
+  await submitButton(page).click();
+  await expect(page.getByText("제출되었습니다", { exact: true })).toBeVisible();
+  await expectTelLinkTouch(page, "section[class*=resultBlock]", "E5");
+
+  await closeCertEventForTest(eventId);
+  await page.goto(link);
+  await expect(page.getByText(/담당자가 접수를 마쳤습니다/)).toBeVisible();
+  await expectTelLinkTouch(page, "section[class*=resultBlock]", "E6-b 담당자");
+
+  await db
+    .update(certEvents)
+    .set({ closedAt: null, closedReason: null, expiresAt: new Date(Date.now() - 60 * 60 * 1000) })
+    .where(eq(certEvents.id, eventId));
+  await page.goto(link);
+  await expect(page.getByText(/이 지났습니다/)).toBeVisible();
+  await expectTelLinkTouch(page, "section[class*=resultBlock]", "E6-b 기한");
 });

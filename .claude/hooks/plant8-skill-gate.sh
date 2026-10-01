@@ -338,11 +338,13 @@ $(printf '%s\n' "$body" | sed -n 's/^[[:space:]]*화면:[[:space:]]*//p' | tr ',
         pr_gate_added="$(gh api "$pr/files" --paginate --jq '.[] | select(.filename | test("^\\.claude/gates/[^/]+\\.log$")) | .patch // ""' 2>/dev/null || true)"
         base_ref="$(gh api "$pr" --jq '.base.ref' 2>/dev/null || true)"
         [ -n "$base_ref" ] || deny "PR 대상 브랜치를 읽지 못해 게이트 로그를 판정할 수 없다(gh api ${pr} .base.ref). 다시 시도하라."
+        base_ref="$(jq -rn --arg s "$base_ref" '$s|@uri')"   # release#1 같은 이름이 쿼리를 자르지 않게
         while IFS= read -r f; do
           [[ "$f" =~ ^\.claude/gates/[A-Za-z0-9._-]+\.log$ ]] || deny "게이트 로그 이름(${f})을 판정할 수 없다 — .claude/gates/ 로그 이름은 영문·숫자·._-만 쓴다."
           # 대상 브랜치에 없는 새 로그(404)만 빈 내용으로 보고, 그 밖의 실패는 막는다(빼기가 꺼지면 앞 PR 줄로 통과한다)
-          if ! base_log="$(gh api "${pr%/pulls/*}/contents/$f?ref=$base_ref" -H 'Accept: application/vnd.github.raw' 2>/dev/null)"; then
-            case "$base_log" in *'"Not Found"'*) base_log="" ;; *) deny "대상 브랜치의 게이트 로그(${f})를 읽지 못했다(gh api contents). 다시 시도하라." ;; esac
+          if ! base_log="$(gh api "${pr%/pulls/*}/contents/$f?ref=$base_ref" -H 'Accept: application/vnd.github.raw' 2>&1)"; then
+            # gh는 404 본문(JSON)을 stdout에, 「gh: Not Found (HTTP 404)」를 stderr에 낸다 — 어느 쪽이든 404로 본다
+            case "$base_log" in *'"Not Found"'*|*'(HTTP 404)'*) base_log="" ;; *) deny "대상 브랜치의 게이트 로그(${f})를 읽지 못했다(gh api contents). 다시 시도하라." ;; esac
           fi
           base_gate_lines+="$base_log"$'\n'
         done <<<"$gate_files"

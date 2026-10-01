@@ -26,6 +26,11 @@
           },
           {
             "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/scripts/install-codex.sh",
+            "timeout": 180
+          },
+          {
+            "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR\"/scripts/dev-db.sh"
           },
           {

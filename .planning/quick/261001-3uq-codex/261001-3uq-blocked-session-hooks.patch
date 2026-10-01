@@ -1,0 +1,51 @@
+diff --git a/test/unit/session-hooks.test.ts b/test/unit/session-hooks.test.ts
+index 203afa5..369b7d1 100644
+--- a/test/unit/session-hooks.test.ts
++++ b/test/unit/session-hooks.test.ts
+@@ -4,9 +4,9 @@ import { describe, expect, it } from "vitest";
+ 
+ // .claude/settings.json SessionStart 훅 순서와 scripts/install-gstack.sh·install-codex.sh의
+ // 고정 계약을 고정한다. 세 가지 계약을 지킨다:
+-// 1) 훅 순서 — install_pkgs.sh(패키지) → dev-db.sh(로컬 DB) → install-gstack.sh(gstack
+-//    팀 모드). gstack 설치가 가장 오래 걸리므로 DB 훅 뒤에 둔다. install-codex 훅 줄과 그 순서
+-//    단언은 settings.json 승인 뒤 함께 넣는다(261001-3uq-BLOCKED-CHANGES.md).
++// 1) 훅 순서 — install_pkgs.sh(패키지) → install-codex.sh(Codex CLI+자격, 디자인 검토 전용) →
++//    dev-db.sh(로컬 DB) → install-gstack.sh(gstack 팀 모드). gstack 설치가 가장 오래 걸리므로
++//    DB 훅 뒤에 둔다.
+ // 2) 고정 버전 — install-gstack.sh는 클라우드 세션에서만 돌고(CLAUDE_CODE_REMOTE), 커밋 SHA를
+ //    못 박아 받으며(GSTACK_PIN), 팀 모드 setup이 켜는 자동 업그레이드를 끈다. 세션마다 다른
+ //    gstack으로 /review·/design-review가 돌지 않게 하는 장치다. Codex는 디자인 검토에서만 쓰므로
+@@ -44,12 +44,13 @@ function startupResumeEntry(): SettingsHookEntry | undefined {
+ }
+ 
+ describe(".claude/settings.json SessionStart 훅 순서", () => {
+-  it("install_pkgs.sh < dev-db.sh < install-gstack.sh 순서로 등록된다", () => {
++  it("install_pkgs.sh < install-codex.sh < dev-db.sh < install-gstack.sh 순서로 등록된다", () => {
+     const entry = startupResumeEntry();
+     expect(entry, "matcher가 startup|resume인 SessionStart 항목이 있어야 한다").toBeDefined();
+     const commands = (entry?.hooks ?? []).map((hook) => hook.command ?? "");
+     const indexes = [
+       commands.findIndex((command) => command.includes("scripts/install_pkgs.sh")),
++      commands.findIndex((command) => command.includes("scripts/install-codex.sh")),
+       commands.findIndex((command) => command.includes("scripts/dev-db.sh")),
+       commands.findIndex((command) => command.includes("scripts/install-gstack.sh")),
+     ];
+@@ -57,6 +58,18 @@ describe(".claude/settings.json SessionStart 훅 순서", () => {
+     expect(indexes).toEqual([...indexes].sort((a, b) => a - b));
+   });
+ 
++  it("install-codex 훅 command가 올바른 형식·type·timeout을 갖는다", () => {
++    const entry = startupResumeEntry();
++    const codexHook = (entry?.hooks ?? []).find((hook) =>
++      (hook.command ?? "").includes("scripts/install-codex.sh"),
++    );
++    expect(codexHook).toBeDefined();
++    expect(codexHook?.command).toContain('bash "$CLAUDE_PROJECT_DIR"/scripts/install-codex.sh');
++    expect(codexHook?.type).toBe("command");
++    // 첫 세션은 플랫폼 바이너리를 내려받는다 — 기본 60초에 잘리지 않게.
++    expect(codexHook?.timeout ?? 0).toBeGreaterThanOrEqual(120);
++  });
++
+   it("install-gstack 훅 command가 올바른 형식·type·넉넉한 timeout을 갖는다", () => {
+     const entry = startupResumeEntry();
+     const gstackHook = (entry?.hooks ?? []).find((hook) =>

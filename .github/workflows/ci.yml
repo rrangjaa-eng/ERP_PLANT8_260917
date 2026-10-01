@@ -126,6 +126,8 @@ jobs:
   # 스텝이 없다. Playwright 웹서버는 CI에서 프로덕션 빌드(pnpm build && pnpm start)를 쓴다.
   e2e:
     runs-on: ubuntu-latest
+    # 평소 13분 안쪽. playwright 설치가 멈추면 기본 360분을 기다리므로 끊는다.
+    timeout-minutes: 30
     needs: quality
     if: github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.quality.outputs.app == 'true')
     strategy:
@@ -160,7 +162,20 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: echo "BETTER_AUTH_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
-      - run: pnpm exec playwright install --with-deps chromium
+      # 브라우저는 Playwright 버전별로 캐시하고, 맞으면 OS 의존성(apt)만 설치한다.
+      - id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - if: steps.pw-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 10
+        run: pnpm exec playwright install --with-deps chromium
+      - if: steps.pw-cache.outputs.cache-hit == 'true'
+        timeout-minutes: 10
+        run: pnpm exec playwright install-deps chromium
       - run: pnpm test:e2e --shard=${{ matrix.shard }}/2
       - if: failure()
         uses: actions/upload-artifact@v4

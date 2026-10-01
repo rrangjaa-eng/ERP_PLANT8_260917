@@ -1132,6 +1132,33 @@ test.describe("견적 줄 표 — 쪽 경계 키보드·전체 복사·힌트 �
     expect(JSON.parse(json)).toEqual(Array.from({ length: 45 }, () => ({ currency: "KRW", kind: "quote" })));
   });
 
+  test("수화 중에 받은 포커스를 React가 Control+a 뒤에 같은 셀로 다시 보내도 전체 선택이 남아 Control+c가 45줄을 싣는다", async ({ page }) => {
+    await openProjectWithSavedLines(page, fortyFiveLines());
+    const cell = quoteCell(page, 3, 2);
+    await expect.poll(() => cell.evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactFiber")))).toBe(true);
+    // 수화가 끝나기 전 포커스 — React는 그 focusin을 받지 못하고 큐에 넣는다(격자 포커스는 (0,0)에 남는다).
+    await cell.evaluate((element) => {
+      const block = (event: Event) => event.stopImmediatePropagation();
+      window.addEventListener("focusin", block, true);
+      (element as HTMLElement).focus();
+      window.removeEventListener("focusin", block, true);
+    });
+    await page.keyboard.press("Control+a");
+    await expect(quoteCell(page, 29, 2)).toHaveClass(/selectedCell/);
+    // React 19가 수화 뒤 큐의 focusin을 같은 셀에 다시 보낸다(CI 실측 — Control+a와 Control+c 사이에 끼었다).
+    await cell.evaluate((element) => element.dispatchEvent(new FocusEvent("focusin", { bubbles: true })));
+    await expect(quoteCell(page, 29, 2)).toHaveClass(/selectedCell/);
+
+    await page.evaluate(() => {
+      window.addEventListener("copy", (event) => {
+        (window as unknown as { __copied?: string }).__copied = event.clipboardData?.getData("application/x-plant8-quote-lines+json") ?? "";
+      });
+    });
+    await page.keyboard.press("Control+c");
+    const copied = await page.waitForFunction(() => (window as unknown as { __copied?: string }).__copied);
+    expect(JSON.parse((await copied.jsonValue()) as string)).toHaveLength(45);
+  });
+
   test("힌트 줄은 일곱 항목이고 페이지 줄 바로 다음 형제 · 매출 표 아래에는 없고 · 1000 폭에서는 없다", async ({ page }) => {
     await openProjectWithSavedLines(page, fortyFiveLines());
     const hint = page.locator("p", { has: page.locator("kbd", { hasText: "Ctrl+D" }) });

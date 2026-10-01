@@ -898,7 +898,9 @@ export function Table<Row>({
                             }
                           }}
                           onFocus={() => {
-                            if (enableGridKeyboard) keyboardState.setFocus(pos);
+                            // 같은 셀로 다시 오는 focus(이동 뒤 DOM 포커스 맞추기 · React가 수화 뒤 다시 보내는 focusin)는 선택을 지우지 않는다.
+                            const same = keyboardState.focus.row === pos.row && keyboardState.focus.col === pos.col;
+                            if (enableGridKeyboard && !same) keyboardState.setFocus(pos);
                           }}
                           onKeyDown={
                             enableGridKeyboard

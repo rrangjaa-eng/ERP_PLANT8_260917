@@ -224,6 +224,8 @@ export function useGridKeyboard({
     if (!editing && event.ctrlKey && event.key.toLowerCase() === "a") {
       event.preventDefault();
       if (isCtrlCombo(event, "a")) {
+        // 누른 셀을 격자 포커스로 — 수화 전에 받은 포커스는 좌표에 남지 않았다(나중에 오는 같은 셀 focus가 선택을 풀지 않게).
+        setStored({ cell: cellAt(pos), at: pos });
         setAnchorCell(null);
         setAllSelected(true);
         onSelectAll?.();

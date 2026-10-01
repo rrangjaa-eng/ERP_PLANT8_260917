@@ -298,8 +298,9 @@ test("1280 — E′4 모든 라벨은 칸 위(F1) · 이름 · 주민등록번�
 
 // DOM 감사 N2 — 서버가 이름 · 주소 · 동의를 invalid로 돌려주면 그 칸이 aria-invalid이고,
 // 제출 줄이 그 칸을 부르면 칸의 aria-describedby가 그 줄을 가리킨다(새 문구 없음).
-// 화면 검사가 막는 값이라 제출 본문을 가로채 바꿔 진짜 서버 판정을 받는다.
-test("서버 칸 오류 — 이름 · 주소 invalid → aria-invalid + 제출 줄 연결 · 동의 거절 → 동의 칸 aria-invalid", async ({ page }) => {
+// 화면 검사가 막는 값이라 제출 본문을 가로채 바꿔 진짜 서버 판정을 받는다. 빈 주소는 낡은 목록이라 서버가 prizeGone으로
+// 돌려주므로(5931337199) 주소는 200자 초과로 액션 스키마가 거절하게 한다.
+test("서버 칸 오류 — 이름 invalid · 주소 거절 → aria-invalid + 제출 줄 연결 · 동의 거절 → 동의 칸 aria-invalid", async ({ page }) => {
   const { link } = await createCertEvent({ name: "제출E2E칸오류", prizes: [{ delivery: "parcel" }] });
   if (!link) throw new Error("링크 없음");
   await openForm(page, link, "갤럭시 탭 S10");
@@ -313,26 +314,35 @@ test("서버 칸 오류 — 이름 · 주소 invalid → aria-invalid + 제출 �
     const args = JSON.parse(request.postData() ?? "[]") as Record<string, unknown>[];
     const body = args[0];
     if (!body) throw new Error("제출 본문을 읽지 못했다");
-    if (posts === 1) Object.assign(body, { name: "   ", address: "   " }); // 서버 domain이 invalid
+    if (posts === 1) Object.assign(body, { name: "   " }); // 서버 domain이 invalid
+    else if (posts === 2) Object.assign(body, { address: "가".repeat(201) }); // 액션 스키마가 거절
     else Object.assign(body, { consent: false }); // 액션 스키마가 거절
     await route.continue({ postData: JSON.stringify(args) });
   });
 
   await submitButton(page).click();
-  const fixLine = page.getByText("이름 · 주소를 고쳐 주세요 · 나머지는 채워졌습니다");
-  await expect(fixLine).toBeVisible();
-  const lineId = await fixLine.getAttribute("id");
-  expect(lineId).toBeTruthy();
-  for (const selector of ["#name", "#address"]) {
-    await expect(page.locator(selector)).toHaveAttribute("aria-invalid", "true");
-    await expect(page.locator(selector)).toHaveAttribute("aria-describedby", lineId ?? "");
-  }
+  const nameLine = page.getByText("이름을 고쳐 주세요 · 나머지는 채워졌습니다");
+  await expect(nameLine).toBeVisible();
+  const nameLineId = await nameLine.getAttribute("id");
+  expect(nameLineId).toBeTruthy();
+  await expect(page.locator("#name")).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#name")).toHaveAttribute("aria-describedby", nameLineId ?? "");
   await expect(page.locator("#name")).toBeFocused();
+
+  await submitButton(page).click();
+  const addressLine = page.getByText("주소를 고쳐 주세요 · 나머지는 채워졌습니다");
+  await expect(addressLine).toBeVisible();
+  const addressLineId = await addressLine.getAttribute("id");
+  expect(addressLineId).toBeTruthy();
+  await expect(page.locator("#address")).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator("#address")).toHaveAttribute("aria-describedby", addressLineId ?? "");
+  await expect(page.locator("#address")).toBeFocused();
+  await expect(page.locator("#name")).not.toHaveAttribute("aria-invalid", "true");
 
   await submitButton(page).click();
   const consent = page.getByRole("checkbox");
   await expect(consent).toHaveAttribute("aria-invalid", "true");
   await expect(consent).toBeFocused();
-  await expect(page.locator("#name")).not.toHaveAttribute("aria-invalid", "true");
-  expect(posts).toBe(2);
+  await expect(page.locator("#address")).not.toHaveAttribute("aria-invalid", "true");
+  expect(posts).toBe(3);
 });

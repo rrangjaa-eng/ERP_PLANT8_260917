@@ -47,7 +47,7 @@ export async function findPrizeInEvent(
 export async function insertPrizes(
   viewer: Viewer,
   rows: InsertCertPrizeInput[],
-  tx: DbOrTx = db,
+  tx: DbOrTx,
 ): Promise<CertPrizeRow[]> {
   void viewer;
   if (rows.length === 0) return [];

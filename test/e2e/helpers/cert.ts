@@ -4,12 +4,13 @@ import { asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { certEvents, certPrizes, certSubmissions } from "@/db/schema";
 import { decrypt, encrypt } from "@/lib/crypto";
+import { withTransaction } from "@/lib/db-transaction";
 import { env } from "@/lib/env";
 import { kstToday } from "@/lib/kst-date";
 import { loadIntake, submitCertificate } from "@/domain/certs/intake";
 import { getSettingValue, setSettingValue } from "@/domain/settings/registry";
 import { CERT_CONTACT_PHONE, CERT_ENABLED, CERT_LINK_EXPIRE_HOURS } from "@/domain/settings/keys";
-import { insertEvent } from "@/repositories/cert-events";
+import { insertEvent, lockEventRow } from "@/repositories/cert-events";
 import { insertPrizes } from "@/repositories/cert-prizes";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 
@@ -88,17 +89,21 @@ export async function createCertEvent(opts: CreateCertEventOptions = {}): Promis
   }
 
   const prizes = opts.prizes ?? (status === "requested" ? [] : [{}]);
-  const rows = await insertPrizes(
-    SYSTEM_VIEWER,
-    prizes.map((p, i) => ({
-      eventId: event.id,
-      name: p.name ?? DEFAULT_PRIZE.name,
-      unitValueKrw: p.unitValueKrw ?? DEFAULT_PRIZE.unitValueKrw,
-      delivery: p.delivery ?? DEFAULT_PRIZE.delivery,
-      winnerCount: p.winnerCount ?? DEFAULT_PRIZE.winnerCount,
-      sortOrder: i,
-    })),
-  );
+  const rows = await withTransaction(async (tx) => {
+    await lockEventRow(SYSTEM_VIEWER, event.id, tx);
+    return insertPrizes(
+      SYSTEM_VIEWER,
+      prizes.map((p, i) => ({
+        eventId: event.id,
+        name: p.name ?? DEFAULT_PRIZE.name,
+        unitValueKrw: p.unitValueKrw ?? DEFAULT_PRIZE.unitValueKrw,
+        delivery: p.delivery ?? DEFAULT_PRIZE.delivery,
+        winnerCount: p.winnerCount ?? DEFAULT_PRIZE.winnerCount,
+        sortOrder: i,
+      })),
+      tx,
+    );
+  });
 
   return {
     eventId: event.id,

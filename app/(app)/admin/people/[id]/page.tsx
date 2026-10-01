@@ -18,10 +18,6 @@ import { LeaveSection, type LeaveAdjustmentRow } from "./leave-section";
 
 export const dynamic = "force-dynamic";
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 // settings/page.tsx의 buildSections()와 같은 이유로 별도 함수로 뺀다 —
 // 컴포넌트 본문 안에서 클로저 변수를 재할당하면 eslint-plugin-react-hooks의
 // immutability 규칙이 발동한다(서버 컴포넌트라 실제로는 안전하지만 규칙이
@@ -71,7 +67,7 @@ export default async function PersonDetailPage({
     label: `${orgUnitNameById.get(team.orgUnitId) ?? ""} · ${team.name}`,
   }));
 
-  const entries = buildHistoryEntries(detail.assignments, todayIso());
+  const entries = buildHistoryEntries(detail.assignments, seoulToday());
 
   // 04.1-06 S9 연차 섹션(C-N01 · CXF2-C-F2-01 · S9-FY) — 읽기 순서 고정: ① 올해 잔고(입사일 · 퇴직일은 조회 연도와 무관하게
   // 실린다) → 대체 연도(퇴직자 = min(퇴직 연도, 올해), 그 밖 올해)로 섹션 연도를 한 번 정하고 → ② 섹션 연도가 올해와 다를

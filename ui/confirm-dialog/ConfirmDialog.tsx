@@ -69,7 +69,9 @@ export function splitRefreshTail(reason: string | undefined): { reason: string |
 
 // 거부는 화면이 본 값이 낡았다는 뜻이라 다시 받은 뒤 이 다이얼로그의 값도 낡았다 — 화면을 다시 받고 닫는다.
 // 새 화면이 그려진 뒤에 닫는다(먼저 닫으면 다시 열어 낡은 값으로 또 보낼 수 있고, 포커스는 사라질 트리거로 간다).
-function RefreshStep({ onDone }: { onDone: () => void }) {
+// 다이얼로그 밖 막힘 이유(04-21 즉시 되돌리기 트리거)도 같은 버튼을 쓴다 — onDone이 그 거부를 지운다. onStart는 누른 순간
+// (새 화면이 이 버튼째 지울 수 있어 onDone이 오지 않을 때 호출처가 포커스를 정하려고 둔다).
+export function RefreshStep({ onDone, onStart }: { onDone: () => void; onStart?: () => void }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const startedRef = useRef(false);
@@ -84,6 +86,7 @@ function RefreshStep({ onDone }: { onDone: () => void }) {
       pending={pending}
       onClick={() => {
         startedRef.current = true;
+        onStart?.();
         startTransition(() => router.refresh());
       }}
     >

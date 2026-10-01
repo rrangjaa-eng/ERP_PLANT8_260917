@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
-import { SYSADMIN_ROLE_ID, DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
+import { loginAsAdmin } from "./people-list-helpers";
 
 // SYSTEM §3 「터치 목표」 · DECISIONS.md 2026-09-29 ③(폰 44/40 정리) 계약을 §7-14 이력 목록에 고정한다.
 // 폰: 3차(닫힌 목록 「새 이력 추가」 · 예정 행 「취소」)는 44, 편집 행의 폼 입력과 2차·1차 버튼은 40(시트 밖).
@@ -13,14 +14,11 @@ const PHONE_CONTROL = 40;
 const PC_CONTROL = 32;
 const WIDTHS_PHONE = [390, 320] as const;
 
-type Seed = { admin: { email: string; password: string }; personId: string };
-let seed: Seed;
+let personId: string;
 
 test.beforeAll(async () => {
   const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E본부-${randomUUID()}` });
   const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E팀-${randomUUID().slice(0, 8)}` });
-  const adminEmail = `e2e-${randomUUID()}@example.test`;
-  const admin = await createAccount(SYSTEM_VIEWER, { email: adminEmail, name: "E2E Admin", roleId: SYSADMIN_ROLE_ID });
   const person = await createAccount(SYSTEM_VIEWER, {
     email: `e2e-${randomUUID()}@example.test`,
     name: "E2E 이력대상",
@@ -29,16 +27,8 @@ test.beforeAll(async () => {
   // 적용 중 1행 + 예정 1행 — 예정 행에만 3차 「취소」가 그려진다.
   await assignTeam(SYSTEM_VIEWER, { userId: person.userId, teamId: team.id, effectiveFrom: "2020-01-01" });
   await assignTeam(SYSTEM_VIEWER, { userId: person.userId, teamId: team.id, effectiveFrom: "2999-01-01" });
-  seed = { admin: { email: adminEmail, password: admin.tempPassword }, personId: person.userId };
+  personId = person.userId;
 });
-
-async function login(page: Page) {
-  await page.goto("/login");
-  await page.getByLabel("이메일").fill(seed.admin.email);
-  await page.getByLabel("비밀번호").fill(seed.admin.password);
-  await page.getByRole("button", { name: "로그인" }).click();
-  await expect(page).toHaveURL(/\/account$/);
-}
 
 async function box(locator: Locator, label: string) {
   await expect(locator, label).toBeVisible();
@@ -80,10 +70,10 @@ function vatSection(page: Page) {
 
 test.describe("§7-14 이력 목록 터치 목표 — 폰 3차 44 · 편집 행 40, PC 편집 행 32", () => {
   test("사람 상세 발령 이력 — 폰 390·320", async ({ page }) => {
-    await login(page);
+    await loginAsAdmin(page);
     for (const width of WIDTHS_PHONE) {
       await page.setViewportSize({ width, height: 800 });
-      await page.goto(`/admin/people/${seed.personId}`);
+      await page.goto(`/admin/people/${personId}`);
       const section = personSection(page);
       await expectTouchMin(section.locator("tbody").getByRole("button", { name: "취소", exact: true }), `@${width} 예정 행 취소`);
       const trigger = section.getByRole("button", { name: "새 이력 추가", exact: true });
@@ -94,7 +84,7 @@ test.describe("§7-14 이력 목록 터치 목표 — 폰 3차 44 · 편집 행 
   });
 
   test("설정 부가세율 이력 — 폰 390·320", async ({ page }) => {
-    await login(page);
+    await loginAsAdmin(page);
     for (const width of WIDTHS_PHONE) {
       await page.setViewportSize({ width, height: 800 });
       await page.goto("/admin/settings");
@@ -107,10 +97,10 @@ test.describe("§7-14 이력 목록 터치 목표 — 폰 3차 44 · 편집 행 
   });
 
   test("PC 1280 — 두 화면 편집 행 32", async ({ page }) => {
-    await login(page);
+    await loginAsAdmin(page);
     await page.setViewportSize({ width: 1280, height: 800 });
 
-    await page.goto(`/admin/people/${seed.personId}`);
+    await page.goto(`/admin/people/${personId}`);
     const person = personSection(page);
     await person.getByRole("button", { name: "새 이력 추가", exact: true }).click();
     await expectEditRow(person, PC_CONTROL, "사람 상세 @1280");

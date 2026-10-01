@@ -23,6 +23,8 @@ export type QuoteLineCopyRow = {
   subcategory: string;
   itemName: string;
   vendorId: string | null;
+  /** /qa ISSUE-001 — 서버가 실은 저장된 거래처(보관 · 숨김이면 선택지에 없다). 그 id일 때만 이름을 쓴다. */
+  savedVendor?: QuoteTableOption | null;
   quantity: number;
   unitPriceAmount: number;
   unitPriceCurrency: string;
@@ -41,13 +43,26 @@ export type QuoteLineReadReferences = { subcategories: QuoteTableCodeOption[]; v
 /** `copyText` — 그 열의 화면 첫 줄 글자 그대로(2행 없음). 견적 줄 복사 글자의 유일한 정의다(W1). */
 export type QuoteLineReadColumn<Row extends QuoteLineCopyRow> = TableColumn<Row> & { copyText: (row: Row) => string };
 
+// /qa ISSUE-001 — 선택지에 있으면 그 이름, 없으면(보관 · 숨김) 그 줄이 저장된 거래처 이름. 바꾼 값에는 저장된 이름을 쓰지 않는다.
+export function quoteLineVendorLabel(row: Pick<QuoteLineCopyRow, "vendorId" | "savedVendor">, vendors: QuoteTableOption[]): string {
+  if (!row.vendorId) return "—";
+  const option = vendors.find((vendor) => vendor.id === row.vendorId);
+  if (option) return option.name;
+  return row.savedVendor?.id === row.vendorId ? row.savedVendor.name : "—";
+}
+
+// 복제 · 복원한 새 줄은 거래처 id만 있다 — 같은 거래처를 가진 줄이 서버에서 받은 이름을 잇는다.
+export function savedVendorFrom(rows: Pick<QuoteLineCopyRow, "savedVendor">[], vendorId: string | null): QuoteTableOption | null {
+  if (!vendorId) return null;
+  return rows.find((row) => row.savedVendor?.id === vendorId)?.savedVendor ?? null;
+}
+
 // 견적 줄 표(quote-table.tsx)와 같은 열 키·순서·머리글·우선순위·좁은 PC 접기·셀 글자·외화 2행의 읽기 렌더.
 export function quoteLineReadColumns<Row extends QuoteLineCopyRow>(
   references: QuoteLineReadReferences,
   rowNumber: (row: Row) => number,
 ): QuoteLineReadColumn<Row>[] {
   const subcategoryLabel = (value: string) => references.subcategories.find((option) => option.value === value)?.label ?? value;
-  const vendorLabel = (id: string | null) => (id ? (references.vendors.find((vendor) => vendor.id === id)?.name ?? id) : "—");
   const column = ({ text, ...rest }: Omit<QuoteLineReadColumn<Row>, "cell" | "copyText"> & { text: (row: Row) => string }) => ({
     ...rest,
     cell: text,
@@ -60,7 +75,7 @@ export function quoteLineReadColumns<Row extends QuoteLineCopyRow>(
     },
     column({ key: "subcategory", header: "소분류", priority: "p3", collapseBelow: 1024, text: (row) => quoteLineGroupLabel(row, subcategoryLabel) }),
     column({ key: "itemName", header: "항목", priority: "p1", text: (row) => row.itemName }),
-    column({ key: "vendor", header: "거래처", priority: "p2", text: (row) => vendorLabel(row.vendorId) }),
+    column({ key: "vendor", header: "거래처", priority: "p2", text: (row) => quoteLineVendorLabel(row, references.vendors) }),
     column({
       key: "quantity",
       header: "수량",
@@ -106,6 +121,7 @@ function readRow(dto: QuoteLineDto): ReadRow {
     subcategory: dto.subcategory,
     itemName: dto.itemName,
     vendorId: dto.vendorId,
+    savedVendor: dto.vendorId && dto.vendorName ? { id: dto.vendorId, name: dto.vendorName } : null,
     quantity: dto.quantity,
     unitPriceAmount: dto.unitPrice?.amount ?? 0,
     unitPriceCurrency: dto.unitPrice?.currency ?? "KRW",
@@ -271,7 +287,7 @@ const NEW_LINE_FIELDS = [
 
 // 보관본(D-68 모양)을 그 차수 줄 위에 덮는다 — 보관된 편집이 있는 줄만, 보관본에만 있는 새 줄은 보관값만.
 // 계산 열(견적가·차익)은 표와 같이 저장 전에 다시 계산하지 않는다.
-function draftCopyRows(rows: ReadRow[], edits: Record<string, unknown>): QuoteLineCopyRow[] {
+export function draftCopyRows(rows: ReadRow[], edits: Record<string, unknown>): QuoteLineCopyRow[] {
   const patched = new Map<string, QuoteLineCopyRow>();
   const added: QuoteLineCopyRow[] = [];
   for (const [key, value] of Object.entries(edits)) {
@@ -298,7 +314,7 @@ function draftCopyRows(rows: ReadRow[], edits: Record<string, unknown>): QuoteLi
         note: null,
       };
       for (const [field, storedColumn] of NEW_LINE_FIELDS) row = { ...row, ...restoredCellPatch(storedColumn, stored[field]) };
-      added.push(row);
+      added.push({ ...row, savedVendor: savedVendorFrom(rows, row.vendorId) });
       continue;
     }
     const base = patched.get(owner) ?? rows.find((row) => row.id === owner);

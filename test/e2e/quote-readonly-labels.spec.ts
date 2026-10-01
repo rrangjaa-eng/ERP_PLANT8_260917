@@ -143,6 +143,21 @@ test("비활성 견적 분류를 쓰던 줄도 편집 · 보기 전용 계정 �
     await page.keyboard.press("Escape");
     await expect(offCell).toHaveText(item.label);
     await expect(page.getByText("소분류 필요")).toHaveCount(0);
+
+    // /review red team — 끈 분류 줄에서 Ctrl+Enter로 만든 새 줄은 끈 분류를 물려받지 않는다(새 입력엔 끈 분류를 고를 수 없다).
+    const dataRows = table.locator('tbody tr:has(td[role="gridcell"])');
+    const offLabelRows = dataRows.filter({ has: page.getByRole("gridcell", { name: item.label, exact: true }) });
+    const before = await dataRows.count();
+    await page.keyboard.press("Control+Enter");
+    await expect(dataRows).toHaveCount(before + 1);
+    await expect(offLabelRows).toHaveCount(1);
+    // 복제(Ctrl+D)도 같다 — 항목 · 금액은 복사하되 끈 분류는 물려받지 않는다.
+    await page.keyboard.press("Escape");
+    await offRow.getByRole("gridcell").nth(2).focus();
+    await page.keyboard.press("Control+d");
+    await expect(dataRows).toHaveCount(before + 2);
+    await expect(offLabelRows).toHaveCount(1);
+    await expect(dataRows.filter({ hasText: "끈 분류 줄" })).toHaveCount(2);
   } finally {
     await setCodeItemArchived(SYSTEM_VIEWER, item.id, true);
   }

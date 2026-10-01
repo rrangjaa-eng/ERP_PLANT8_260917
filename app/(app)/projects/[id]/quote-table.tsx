@@ -1394,7 +1394,10 @@ export function QuoteLedger({
   const addLine = useCallback(
     (afterRow?: DraftLine) => {
       // 04-23 — 견적 줄에서만 소분류를 물려받는다(조정·견적 외 비용 줄의 소분류 칸은 종류 값이다).
-      const inheritedSubcategory = (afterRow?.lineKind === "quote" ? afterRow.subcategory : undefined) ?? subcategories[0]?.value ?? "";
+      // /review red team — 끈 · 보관 분류는 물려받지 않는다(새 입력엔 고를 수 없다).
+      const afterSubcategory = afterRow?.lineKind === "quote" ? afterRow.subcategory : undefined;
+      const inheritedSubcategory =
+        (subcategories.some((option) => option.value === afterSubcategory) ? afterSubcategory : undefined) ?? subcategories[0]?.value ?? "";
       persistPendingRef.current = true;
       setLines((prev) => [...prev, newDraftLine(inheritedSubcategory, newLineCells)]);
     },
@@ -1417,9 +1420,14 @@ export function QuoteLedger({
       const source = prev.find((line) => line.clientKey === clientKey);
       // 04-23(D-83) — 조정 줄은 복제하지 않는다(구조는 추가·삭제만).
       if (!source || source.lineKind === "adjustment") return prev;
+      // /review red team — 견적 줄의 끈 · 보관 분류는 복제하지 않는다(새 입력엔 고를 수 없다 — 줄 추가와 같은 기본값).
+      const subcategory =
+        source.lineKind === "quote" && !subcategories.some((option) => option.value === source.subcategory)
+          ? (subcategories[0]?.value ?? "")
+          : source.subcategory;
       const copy: DraftLine = {
         // 04-23(D-48) — 견적 외 비용 줄의 복제는 같은 종류다.
-        ...newDraftLine(source.subcategory, source.lineKind === "out_of_quote" ? outOfQuoteLineCells : newLineCells),
+        ...newDraftLine(subcategory, source.lineKind === "out_of_quote" ? outOfQuoteLineCells : newLineCells),
         lineKind: source.lineKind,
         itemName: source.itemName,
         vendorId: source.vendorId,

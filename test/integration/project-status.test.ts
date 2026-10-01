@@ -20,7 +20,7 @@ import {
 } from "@/domain/projects/status";
 import { recordAction } from "@/domain/action-log/record";
 import { findLatestActionFor } from "@/repositories/action-log";
-import { kstDateOf } from "@/lib/kst-date";
+import { addDays, kstDateOf, kstToday } from "@/lib/kst-date";
 import { setPermissionCell, setVisibilityCell } from "@/domain/permissions/matrix";
 import { seedMasterData } from "@/domain/seed";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
@@ -224,6 +224,32 @@ describe("사람의 상태 전환 트레이서 — 시드만 있는 DB (04-20, E
     const detail = await findProject(lead, projectId);
     expect(detail?.number).toBe(row.number);
     expect(detail?.name).toBe(row.name);
+  });
+
+  // 사용자 결정 2026-10-01(A): 시작일이 지난 프로젝트를 진행으로 바꾸면 종료일이 그 시작일로
+  // 채워지고, 다음 조회에서 자동 정산된다. 발효일은 바꾼 날(A-08).
+  it("시작일이 지난 수주중 프로젝트를 진행으로 바꾸면 다음 조회에서 정산이 되고 발효일은 바꾼 날이다", async () => {
+    const teamA = await makeTeam();
+    const lead = await makeActor("role-team-lead", teamA);
+    const pastStart = addDays(kstToday(new Date()), -10);
+    const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: pastStart });
+
+    await changeProjectStatus(lead, projectId, { from: "bidding", to: "in_progress" });
+    const changed = await reloadProject(projectId);
+    expect(changed.status).toBe("in_progress");
+    expect(changed.endDate).toBe(pastStart);
+
+    expect((await findProject(lead, projectId))?.status).toBe("settling");
+
+    expect((await reloadProject(projectId)).status).toBe("settling");
+    const logs = (await statusLogs(projectId)).sort((a, b) => a.seq - b.seq);
+    // 발효일은 수동 전환 로그의 KST 날짜다 — 자정 경계에서도 흔들리지 않게 그 로그에서 읽는다.
+    const changedOn = kstDateOf(logs[0]!.occurredAt);
+    expect(changedOn > addDays(pastStart, 1)).toBe(true);
+    expect(logs.map((log) => log.detail)).toEqual([
+      { from: "bidding", to: "in_progress", trigger: "manual" },
+      { from: "in_progress", to: "settling", trigger: "end_date_passed", effectiveOn: changedOn },
+    ]);
   });
 
   it("담당 PM이 changeProjectStatus를 직접 불러도 권한 거부이고 상태·로그가 그대로다", async () => {

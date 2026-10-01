@@ -231,20 +231,24 @@ describe("사람의 상태 전환 트레이서 — 시드만 있는 DB (04-20, E
   it("시작일이 지난 수주중 프로젝트를 진행으로 바꾸면 다음 조회에서 정산이 되고 발효일은 바꾼 날이다", async () => {
     const teamA = await makeTeam();
     const lead = await makeActor("role-team-lead", teamA);
-    const today = kstToday(new Date());
-    const pastStart = addDays(today, -10);
+    const pastStart = addDays(kstToday(new Date()), -10);
     const { projectId } = await makeStatusProject({ teamId: teamA, status: "bidding", startDate: pastStart });
 
     await changeProjectStatus(lead, projectId, { from: "bidding", to: "in_progress" });
-    expect((await reloadProject(projectId)).endDate).toBe(pastStart);
+    const changed = await reloadProject(projectId);
+    expect(changed.status).toBe("in_progress");
+    expect(changed.endDate).toBe(pastStart);
 
-    await findProject(lead, projectId);
+    expect((await findProject(lead, projectId))?.status).toBe("settling");
 
     expect((await reloadProject(projectId)).status).toBe("settling");
-    const details = (await statusLogs(projectId)).sort((a, b) => a.seq - b.seq).map((log) => log.detail);
-    expect(details).toEqual([
+    const logs = (await statusLogs(projectId)).sort((a, b) => a.seq - b.seq);
+    // 발효일은 수동 전환 로그의 KST 날짜다 — 자정 경계에서도 흔들리지 않게 그 로그에서 읽는다.
+    const changedOn = kstDateOf(logs[0]!.occurredAt);
+    expect(changedOn > addDays(pastStart, 1)).toBe(true);
+    expect(logs.map((log) => log.detail)).toEqual([
       { from: "bidding", to: "in_progress", trigger: "manual" },
-      { from: "in_progress", to: "settling", trigger: "end_date_passed", effectiveOn: today },
+      { from: "in_progress", to: "settling", trigger: "end_date_passed", effectiveOn: changedOn },
     ]);
   });
 

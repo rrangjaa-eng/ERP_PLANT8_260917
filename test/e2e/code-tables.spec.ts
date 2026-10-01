@@ -1,5 +1,9 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
+import { expectGapsAtLeastToken, expectNoRowOverflow, loginAsSysadmin } from "./row-actions-helpers";
+import { randomUUID } from "node:crypto";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { insertCodeItem, setCodeItemActive } from "@/repositories/code-tables";
 
 test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 코드에 계급 이름 분기 없음)", () => {
   test("시스템 관리자 계급은 코드표 항목을 추가하고 목록에서 확인한다", async ({ page }) => {
@@ -360,4 +364,68 @@ test.describe("코드표 항목 설명 (D-93, UI-SPEC rev 5 S14, DR-29)", () => 
     await controlResponse;
     expect(actionRequests).toBe(1);
   });
+});
+
+// 260930-f3l /design-review FINDING-001: 코드표 표 행 동작 「비활성화 · 삭제」 사이 가로 간격이 0px라 한 낱말처럼 읽혔다.
+// 사람 목록(PR #108)의 .rowActions 규칙(--s-4)을 같은 이름으로 적용한다(SYSTEM §6-1). 700은 .rowActions가 nowrap을 지키는 가장 좁은 폭(D3).
+test.describe("코드표 행 동작 간격 --s-4 (260930-f3l FINDING-001)", () => {
+  async function seed(): Promise<{ target: string; cleanup: () => Promise<void> }> {
+    const stamp = randomUUID().slice(0, 8);
+    // 다른 열이 긴 행이 있어야 동작 칸이 눌린다 — 앞 테스트가 남긴 데이터에 기대지 않는다.
+    const long = await insertCodeItem(SYSTEM_VIEWER, {
+      tableKey: "project_status",
+      value: `gap-long-${stamp}-${"x".repeat(50)}`,
+      label: `${"가".repeat(60)}${stamp}`,
+      sortOrder: 900,
+    });
+    const target = await insertCodeItem(SYSTEM_VIEWER, {
+      tableKey: "project_status",
+      value: `gap-target-${stamp}`,
+      label: `간격대상-${stamp}`,
+      sortOrder: 901,
+    });
+    return {
+      target: target.value,
+      cleanup: async () => {
+        await setCodeItemActive(SYSTEM_VIEWER, long.id, false);
+        await setCodeItemActive(SYSTEM_VIEWER, target.id, false);
+      },
+    };
+  }
+
+  for (const width of [1280, 768, 700]) {
+    test(`${width}: 비활성화 · 삭제 사이가 한 줄에서 --s-4 이상이고 표가 넘치지 않는다`, async ({ page }) => {
+      const { target, cleanup } = await seed();
+      try {
+        await page.setViewportSize({ width, height: 800 });
+        await loginAsSysadmin(page);
+        await page.goto("/admin/code-tables");
+        const row = page.locator("tr", { hasText: target });
+        const deactivate = row.getByRole("button", { name: "비활성화" });
+        const remove = row.getByRole("button", { name: "삭제" });
+        await expectNoRowOverflow(page, row, `${width}px 일반 상태`);
+        const gaps = await expectGapsAtLeastToken(page, [deactivate, remove], `${width}px`);
+        expect(gaps.every((item) => item.horizontal), `${width}px 한 줄`).toBe(true);
+      } finally {
+        await cleanup();
+      }
+    });
+  }
+
+  for (const width of [700, 768, 1024, 1280]) {
+    test(`${width}: 「삭제」를 누른 뒤에도 페이지와 표가 가로로 넘치지 않는다`, async ({ page }) => {
+      const { target, cleanup } = await seed();
+      try {
+        await page.setViewportSize({ width, height: 800 });
+        await loginAsSysadmin(page);
+        await page.goto("/admin/code-tables");
+        const row = page.locator("tr", { hasText: target });
+        await row.getByRole("button", { name: "삭제" }).click();
+        await expect(row.getByRole("button", { name: "취소" })).toBeVisible();
+        await expectNoRowOverflow(page, row, `${width}px 확인 상태`);
+      } finally {
+        await cleanup();
+      }
+    });
+  }
 });

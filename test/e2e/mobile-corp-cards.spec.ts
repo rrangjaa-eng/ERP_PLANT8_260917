@@ -1,6 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { randomUUID } from "node:crypto";
+import { expectGapsAtLeastToken, expectNoRowOverflow, loginAsSysadmin } from "./row-actions-helpers";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { findUserByEmail } from "@/repositories/users";
+import { insertCorpCard, setCorpCardActive } from "@/repositories/corp-cards";
 
 // defect 4(wave 5 DOM 감사, 375px):
 // 1) ui/button/Button.module.css의 .tertiary는 height: auto + padding: 0라,
@@ -93,5 +98,74 @@ test.describe("폰 375 /admin/corp-cards 3차 버튼·터치 목표 (defect 4)",
     expect(box).not.toBeNull();
     expect(box!.width).toBeGreaterThanOrEqual(44);
     expect(box!.height).toBeGreaterThanOrEqual(44);
+  });
+});
+
+// 260930-f3l /design-review FINDING-001: 폰에서도 행 동작이 0px로 붙어 「삭제」가 옆 동작과 맞닿았다(탭 실수).
+// 가로로 놓이든 줄바꿈으로 세로로 놓이든 인접 동작은 --s-4 이상 떨어지고 각 상자는 44x44를 지킨다.
+async function seedPhoneRow(): Promise<{ target: string; cleanup: () => Promise<void> }> {
+  const stamp = randomUUID().slice(0, 8);
+  const holder = await findUserByEmail(SYSTEM_VIEWER, (await createFixtureUser({ roleId: DEFAULT_ROLE_ID })).email);
+  const issuer = `간격카드사-${stamp}`;
+  const long = await insertCorpCard(SYSTEM_VIEWER, {
+    issuer,
+    numberLast4: "1111",
+    label: `${"가".repeat(60)}${stamp}`,
+    kind: "personal",
+    holderUserId: holder!.id,
+  });
+  const target = await insertCorpCard(SYSTEM_VIEWER, {
+    issuer,
+    numberLast4: "2222",
+    label: `간격대상-${stamp}`,
+    kind: "personal",
+    holderUserId: holder!.id,
+  });
+  return {
+    target: target.label,
+    cleanup: async () => {
+      await setCorpCardActive(SYSTEM_VIEWER, long.id, false);
+      await setCorpCardActive(SYSTEM_VIEWER, target.id, false);
+    },
+  };
+}
+
+async function measureRowActionsOnPhone(page: Page, withGaps: boolean): Promise<void> {
+  const { target, cleanup } = await seedPhoneRow();
+  try {
+    await loginAsSysadmin(page);
+    await page.goto("/admin/corp-cards");
+    const row = page.locator("tr", { hasText: target });
+    const edit = row.getByRole("link", { name: "수정" });
+    const deactivate = row.getByRole("button", { name: "비활성화" });
+    const remove = row.getByRole("button", { name: "삭제" });
+    await expectNoRowOverflow(page, row, "일반 상태");
+    if (withGaps) {
+      await expectGapsAtLeastToken(page, [edit, deactivate, remove], "폰");
+      for (const action of [edit, deactivate, remove]) {
+        const box = await action.boundingBox();
+        expect(box!.width).toBeGreaterThanOrEqual(44);
+        expect(box!.height).toBeGreaterThanOrEqual(44);
+      }
+    }
+    await remove.click();
+    await expect(row.getByRole("button", { name: "취소" })).toBeVisible();
+    await expectNoRowOverflow(page, row, "확인 상태");
+  } finally {
+    await cleanup();
+  }
+}
+
+test.describe("폰 375 /admin/corp-cards 행 동작 간격 --s-4 (260930-f3l FINDING-001)", () => {
+  test("인접 동작이 --s-4 이상 떨어지고 44x44이며 「삭제」 확인 줄도 넘치지 않는다", async ({ page }) => {
+    await measureRowActionsOnPhone(page, true);
+  });
+});
+
+test.describe("폰 320 /admin/corp-cards 행 동작 넘침 없음 (260930-f3l FINDING-001)", () => {
+  test.use({ viewport: { width: 320, height: 800 } });
+
+  test("일반 상태와 「삭제」 확인 상태 모두 가로로 넘치지 않는다", async ({ page }) => {
+    await measureRowActionsOnPhone(page, false);
   });
 });

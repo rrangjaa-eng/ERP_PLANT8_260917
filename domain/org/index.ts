@@ -32,6 +32,7 @@ import {
 export class ForbiddenError extends UserFacingError {}
 export class NotFoundError extends UserFacingError {}
 export class PastAssignmentCancelError extends UserFacingError {}
+export class ValidationError extends UserFacingError {}
 
 const PEOPLE_MENU = "admin.people";
 
@@ -269,6 +270,12 @@ export type CancelAssignmentDeps = {
   now: () => Date;
 };
 
+function isIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
 // append-only 원칙: 발령일이 오늘 이전(또는 오늘)이면 거부한다 — 미래로
 // 예정된 발령만 취소할 수 있다.
 export async function cancelFutureAssignment(
@@ -279,6 +286,11 @@ export async function cancelFutureAssignment(
   const canFn = deps?.can ?? defaultCan;
   await assertPeopleWrite(viewer, canFn);
 
+  // 아래 판정은 문자열 비교라 실제 YYYY-MM-DD 날짜가 아니면 Postgres가 다른 날짜로
+  // 읽어 과거 발령을 지우거나(예: "2026-9-30") 쿼리가 실패한다(예: "2027-02-30").
+  if (!isIsoDate(input.effectiveFrom)) {
+    throw new ValidationError("발령일 형식 오류 — YYYY-MM-DD로");
+  }
   const now = deps?.now ?? (() => new Date());
   if (input.effectiveFrom <= kstToday(now())) {
     throw new PastAssignmentCancelError("과거·오늘 발령은 취소할 수 없음 — 미래로 예정된 발령만 취소 가능");

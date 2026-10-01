@@ -245,7 +245,16 @@
   margin-top: var(--s-2);
 }
 
-.consentFull p {
+/* 전문 <dl> — 절 제목 <dt>(--fs-md 600) · 본문 <dd>(--fs-md). 제목과 본문 사이 구분 글자 없음(G0 DR-7). */
+.consentFull dl {
+  margin: 0;
+}
+
+.consentFull dt {
+  font-weight: var(--fw-medium);
+}
+
+.consentFull dd {
   margin: 0 0 var(--s-2);
 }
 

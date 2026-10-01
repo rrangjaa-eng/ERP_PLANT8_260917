@@ -377,6 +377,7 @@ export function IntakeFlow({ token, eventName, wonOn, prizes, terms, managerName
           token={token}
           prize={prize}
           terms={termsNow}
+          contactPhone={contactPhone}
           draft={draft}
           busy={busy}
           inquiryText={inquiryText}
@@ -492,7 +493,8 @@ const FIELD_LABEL: Record<SubmitField, string> = {
   rrn: "주민등록번호",
   address: "주소",
   phone: "연락처",
-  consent: "동의",
+  // 04.3-14 G0 F11 — 동의가 아니라 수집 안내 확인 체크(사용자 결정 ①).
+  consent: "안내 확인 체크",
   signature: "서명",
 };
 
@@ -527,6 +529,7 @@ function IntakeForm({
   token,
   prize,
   terms,
+  contactPhone,
   draft,
   busy,
   inquiryText,
@@ -544,6 +547,7 @@ function IntakeForm({
   token: string;
   prize: IntakePrizeDto;
   terms: IntakeTermsDto;
+  contactPhone: string;
   draft: FormDraft;
   busy: boolean;
   inquiryText: ReactNode;
@@ -600,7 +604,7 @@ function IntakeForm({
   if (!(draft.rrnFront6.length === 6 && draft.rrnBack7.length === 7)) missingFields.push("주민등록번호");
   if (parcel && !draft.address.trim()) missingFields.push("주소");
   if (!draft.phone.trim()) missingFields.push("연락처");
-  if (!draft.consent) missingFields.push("동의");
+  if (!draft.consent) missingFields.push(FIELD_LABEL.consent);
   if (!signed) missingFields.push("서명");
   const canSubmit = missingFields.length === 0;
   const blockedReason = submitBlockedReason(missingFields);
@@ -765,6 +769,7 @@ function IntakeForm({
         checked={draft.consent}
         parcel={parcel}
         retentionYears={terms.retentionYears}
+        contactPhone={contactPhone}
         invalid={fieldErrors.includes("consent")}
         onChange={(consent) => edit("consent", { consent })}
       />

@@ -82,7 +82,7 @@ export default async function CertSubmissionReviewPage({ params }: { params: Pro
           prizeLine={`${submission.prizeName ?? ""} ${submission.quantity ?? ""}개 · ${
             submission.delivery === "parcel" ? "택배" : "현장 수령"
           }`}
-          consentLine={`동의함 · ${submission.consentAt ? formatSubmittedAtKst(submission.consentAt) : "—"}`}
+          consentLine={`확인함 · ${submission.consentAt ? formatSubmittedAtKst(submission.consentAt) : "—"}`}
           signatureDataUrl={submission.signatureDataUrl ?? null}
           canReveal={review.canReveal}
           canCorrect={review.canCorrect}

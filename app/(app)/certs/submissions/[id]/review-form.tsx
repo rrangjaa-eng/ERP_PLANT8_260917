@@ -366,7 +366,7 @@ export function ReviewForm(props: {
 
   const detailItems: KvItem[] = [
     { label: "경품", value: props.prizeLine },
-    { label: "동의", value: props.consentLine },
+    { label: "수집 안내", value: props.consentLine },
     {
       label: "서명",
       value: (
@@ -416,7 +416,7 @@ export function ReviewForm(props: {
               { label: FIELD_LABELS.phone, value: "—" },
               ...(props.address !== null ? [{ label: FIELD_LABELS.address, value: "—" }] : []),
               { label: "경품", value: props.prizeLine },
-              { label: "동의", value: props.consentLine },
+              { label: "수집 안내", value: props.consentLine },
               { label: "서명", value: "—" },
             ]}
           />

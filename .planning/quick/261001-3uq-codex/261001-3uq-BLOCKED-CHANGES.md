@@ -1,5 +1,7 @@
 # 261001-3uq — 승인이 필요해 막힌 변경
 
+> **반영 상태(2026-10-01):** 사용자 승인(「훅 고쳐 — 261001-3uq 막힌 변경 반영」) 뒤 1·2·3을 PR #116에 반영했다. 반영 결과는 각 패치와 같다(`git apply -R --check` 통과). 검증: session-hooks·install-codex 29 passed, rule-guard 하네스 PASS=282 FAIL=0. **4(CLAUDE.md)는 아직 사용자 붙여 넣기 대기.**
+
 이 quick 작업에서 훅이나 사용자 관리 규칙 때문에 세션이 직접 쓰지 못한 변경이다. 패치는 이 폴더에 있고, 모두 `git apply --check`를 통과했다(origin/main fe6ab22 기준).
 
 | 파일 | 막은 장치 | 결과 |

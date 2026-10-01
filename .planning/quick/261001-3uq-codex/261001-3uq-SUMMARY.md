@@ -70,6 +70,12 @@ commits: [64bc045, 8f50889, 8d52843]
   - R3 패치: 접두 명령·옵션 값·패키지 실행기 우회 보강(사본 282/0). 못 막는 경로는 BLOCKED-CHANGES에 적음.
 - 남긴 것: inline 요소 넘침 측정, Codex 실행 실패 시 exit 0(사용자 결정: 실패면 한 줄 남기고 진행), erp_test 데이터가 적어 데이터 의존 배치 문제가 안 보임, Codex 읽기 전용 샌드박스 동작(이 커널) 미확인.
 
+## 승인 뒤 반영(2026-10-01)
+
+- 사용자 승인으로 settings 훅 줄·session-hooks 단언·rule-guard R3를 #116에 반영(별도 PR 대신 — 세션이 쓸 수 있는 브랜치가 하나뿐이고 #116이 이미 사용자 머지 대상). 패치와 동일함을 역적용 검사로 확인.
+- 검증: session-hooks·install-codex 29 passed, rule-guard 282/0, skill-gate 147/0, session-boundary 70/0(`PLANT8_ENV_ID`를 뺀 실행 — 이 세션 env에 값이 있어 「미설정 기본값」 단언 1건이 반영 전 HEAD에서도 실패, 이 변경과 무관), lint 0, typecheck 0, 단위 173 files / 2344 passed.
+- CLAUDE.md 문장은 여전히 사용자 붙여 넣기 대기.
+
 ## 검증(새로 실행한 결과)
 
 - 다 통과했다. lint 0 · typecheck 0 · `pnpm test:unit` 171 files / 2305 passed · `pnpm build` 0.

@@ -17,7 +17,14 @@ for arg in "$@"; do
   [ "$prev" = "--out" ] && out="$arg"
   prev="$arg"
 done
+# 보고서는 .planning/·test-results/ 아래 .md에만 쓴다(보호 파일 덮어쓰기 방지 — lib.ts parseArgs와 같은 규칙).
+case "$out" in
+  *..*) out="" ;;
+  .planning/*.md|test-results/*.md) ;;
+  *) out="" ;;
+esac
 if [ -z "$out" ]; then
+  echo "--out은 .planning/·test-results/ 아래 .md여야 한다" >&2
   echo "사용법: bash scripts/codex-design-review.sh <경로…> --out <보고서.md> [--base <ref>] [--plan <파일>]… [--sections <id,…>]" >&2
   exit 2
 fi
@@ -25,7 +32,7 @@ fi
 reason=""
 if ! command -v codex >/dev/null 2>&1; then
   reason="codex CLI 없음 (scripts/install-codex.sh)"
-elif ! codex login status 2>&1 | grep -q '^Logged in'; then
+elif ! codex login status 2>&1 | grep -q '^Logged in using ChatGPT'; then
   reason="ChatGPT 로그인 안 됨 (CODEX_AUTH_JSON_B64)"
 fi
 

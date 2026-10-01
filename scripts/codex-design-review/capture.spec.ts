@@ -9,12 +9,12 @@ import { VIEWPORTS, countLines, screenshotName, type ScreenMeasure } from "./lib
 
 // Codex 디자인 검토 캡처(playwright.codex-design.config.ts 전용). 요청 경로마다 4폭 전체 화면
 // 스크린샷과 DOM 실측(가로 넘침·요소 높이·줄 수·넘침·세로 간격)을 남긴다. 판정은 이 실측으로 한다.
-const routes = (process.env.CODEX_REVIEW_ROUTES ?? "").split(",").filter(Boolean);
+const routes = JSON.parse(process.env.CODEX_REVIEW_ROUTES ?? "[]") as string[];
 const dir = process.env.CODEX_REVIEW_DIR ?? "";
-if (routes.length === 0 || !dir) throw new Error("CODEX_REVIEW_ROUTES·CODEX_REVIEW_DIR가 필요하다");
+if (routes.length === 0 || !dir) throw new Error("CODEX_REVIEW_ROUTES(JSON 배열)·CODEX_REVIEW_DIR가 필요하다");
 
 for (const route of routes) {
-  test(`캡처 ${route}`, async ({ page }) => {
+  test(`캡처 ${route}`, async ({ page, baseURL }) => {
     test.setTimeout(180_000);
     const email = `e2e-${randomUUID()}@example.test`;
     const { tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E Admin", roleId: SYSADMIN_ROLE_ID });
@@ -27,7 +27,10 @@ for (const route of routes) {
     const screens: ScreenMeasure[] = [];
     for (const viewport of VIEWPORTS) {
       await page.setViewportSize(viewport);
-      await page.goto(route);
+      const response = await page.goto(route);
+      // 리다이렉트·오류 페이지를 요청한 화면으로 재지 않는다.
+      expect(response?.ok(), `${route} 응답 ${response?.status()}`).toBe(true);
+      expect(new URL(page.url()).pathname).toBe(new URL(route, baseURL).pathname);
       await page.waitForLoadState("networkidle");
       await page.evaluate(() => document.fonts.ready.then(() => true));
       const screenshot = screenshotName(route, viewport.width);
@@ -48,6 +51,7 @@ for (const route of routes) {
 // 브라우저 안에서 도는 함수 — 바깥 변수를 쓰지 않는다.
 type RawElement = Omit<ScreenMeasure["elements"][number], "lines"> & { textRects: Array<[number, number]> };
 function measurePage(): Omit<ScreenMeasure, "route" | "width" | "screenshot" | "elements"> & { elements: RawElement[] } {
+  const LIMIT = 400;
   const kindOf = (el: Element): ScreenMeasure["elements"][number]["kind"] => {
     const tag = el.tagName.toLowerCase();
     if (/^h[1-6]$/.test(tag)) return "heading";
@@ -59,30 +63,42 @@ function measurePage(): Omit<ScreenMeasure, "route" | "width" | "screenshot" | "
     return "nav";
   };
   const part = (el: Element): string => {
-    if (el.id) return `#${el.id}`;
+    if (el.id) return `#${CSS.escape(el.id)}`;
     const tag = el.tagName.toLowerCase();
     const cls = el.classList[0];
-    let s = cls ? `${tag}.${cls}` : tag;
+    let s = cls ? `${tag}.${CSS.escape(cls)}` : tag;
     const parent = el.parentElement;
     if (parent) {
-      const same = [...parent.children].filter((c) => c.tagName === el.tagName && c.classList[0] === cls);
-      if (same.length > 1) s += `:nth-of-type(${[...parent.children].filter((c) => c.tagName === el.tagName).indexOf(el) + 1})`;
+      const sameTag = [...parent.children].filter((c) => c.tagName === el.tagName);
+      const same = sameTag.filter((c) => c.classList[0] === cls);
+      // 표 행·목록 항목은 늘 순번을 붙인다 — 행마다 같은 선택자가 되지 않게.
+      if (same.length > 1 || tag === "tr" || tag === "li") s += `:nth-of-type(${sameTag.indexOf(el) + 1})`;
     }
     return s;
   };
   const selectorOf = (el: Element): string => {
     const parts: string[] = [];
     let cur: Element | null = el;
-    for (let depth = 0; cur && depth < 4 && cur !== document.body; depth++) {
+    for (let depth = 0; cur && depth < 6 && cur !== document.body; depth++) {
       parts.unshift(part(cur));
-      if (cur.id) break;
+      if (cur.id || cur.tagName === "MAIN") break;
       cur = cur.parentElement;
     }
     return parts.join(" > ");
   };
   const visible = (el: Element) => {
     const r = el.getBoundingClientRect();
-    return r.width > 0 && r.height > 0;
+    if (r.width <= 0 || r.height <= 0) return false;
+    const style = getComputedStyle(el);
+    return style.visibility !== "hidden" && Number(style.opacity) > 0 && el.checkVisibility();
+  };
+  const isScroller = (el: Element) => {
+    const x = getComputedStyle(el).overflowX;
+    return x === "auto" || x === "scroll";
+  };
+  const insideScroller = (el: Element) => {
+    for (let cur = el.parentElement; cur && cur !== document.body; cur = cur.parentElement) if (isScroller(cur)) return true;
+    return false;
   };
   // 텍스트 노드 상자만 모은다 — 요소 범위 전체는 하위 요소 상자까지 섞인다. 줄 수는 countLines(lib)가 센다.
   const textRectsOf = (el: Element): Array<[number, number]> => {
@@ -98,25 +114,26 @@ function measurePage(): Omit<ScreenMeasure, "route" | "width" | "screenshot" | "
   };
 
   const root = document.documentElement;
-  const elements = [...document.querySelectorAll("h1,h2,h3,label,button,input,select,textarea,th,td,tr,[role=row],nav a")]
-    .filter(visible)
-    .slice(0, 400)
-    .map((el) => {
-      const r = el.getBoundingClientRect();
-      const style = getComputedStyle(el);
-      const scrollable = style.overflowX === "auto" || style.overflowX === "scroll";
-      return {
-        selector: selectorOf(el),
-        kind: kindOf(el),
-        text: (el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 40),
-        width: Math.round(r.width),
-        height: Math.round(r.height),
-        textRects: textRectsOf(el),
-        overflowsSelf: !scrollable && el.scrollWidth > el.clientWidth + 1,
-        exceedsViewport: r.right > window.innerWidth + 0.5,
-        scrollContainer: scrollable,
-      };
-    });
+  // 조작 요소·제목을 먼저, 표 칸·행을 뒤에 — 상한에 걸려도 버튼·입력이 빠지지 않게.
+  const controls = [...document.querySelectorAll("h1,h2,h3,label,button,input,select,textarea,nav a")].filter(visible);
+  const cells = [...document.querySelectorAll("th,td,tr,[role=row]")].filter(visible);
+  const all = [...controls, ...cells];
+  const elements = all.slice(0, LIMIT).map((el) => {
+    const r = el.getBoundingClientRect();
+    const scrollable = isScroller(el);
+    return {
+      selector: selectorOf(el),
+      kind: kindOf(el),
+      text: (el.textContent ?? "").trim().replace(/\s+/g, " ").slice(0, 40),
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+      textRects: textRectsOf(el),
+      overflowsSelf: !scrollable && el.scrollWidth > el.clientWidth + 1,
+      // 의도된 가로 스크롤 칸 안의 요소는 화면 밖으로 세지 않는다.
+      exceedsViewport: r.right > window.innerWidth + 0.5 && !insideScroller(el),
+      scrollContainer: scrollable,
+    };
+  });
 
   const gaps: ScreenMeasure["gaps"] = [];
   const walk = (parent: Element, depth: number) => {
@@ -133,5 +150,12 @@ function measurePage(): Omit<ScreenMeasure, "route" | "width" | "screenshot" | "
   };
   walk(document.querySelector("main") ?? document.body, 1);
 
-  return { scrollWidth: root.scrollWidth, clientWidth: root.clientWidth, overflowX: root.scrollWidth > root.clientWidth, elements, gaps };
+  return {
+    scrollWidth: root.scrollWidth,
+    clientWidth: root.clientWidth,
+    overflowX: root.scrollWidth > root.clientWidth,
+    elements,
+    gaps,
+    omitted: Math.max(0, all.length - LIMIT),
+  };
 }

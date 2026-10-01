@@ -45,31 +45,48 @@ if [ -n "${CODEX_AUTH_JSON_B64:-}" ]; then
     echo "install-codex: failed to create $CODEX_DIR" >&2
     exit 0
   fi
-  TMP="$(mktemp "$CODEX_DIR/auth.json.XXXXXX")"
+  if ! TMP="$(mktemp "$CODEX_DIR/auth.json.XXXXXX" 2>/dev/null)"; then
+    echo "install-codex: mktemp in $CODEX_DIR failed — auth.json not written" >&2
+    exit 0
+  fi
   printf '%s' "$CODEX_AUTH_JSON_B64" | base64 -d > "$TMP" 2>/dev/null
 
-  # 검증: JSON이고 tokens.refresh_token이 비어있지 않은 문자열인지만 본다.
+  # 검증: JSON이고 tokens.refresh_token이 비어있지 않은 문자열인지 본다(0=쓴다, 1=잘못됨, 2=기존 유지).
+  # refresh 토큰은 갱신마다 바뀐다 — 기존 auth.json이 유효하고 last_refresh가 env 사본보다 늦지 않으면
+  # 덮지 않는다(재개 때 낡은 사본으로 덮으면 로그인이 풀린다).
   # try/catch로 감싸 오류 메시지를 절대 출력하지 않는다 — V8 JSON.parse 오류는
   # 입력 일부를 그대로 담아 토큰을 흘릴 수 있다.
-  if node -e '
-    try {
-      const fs = require("fs");
-      const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-      if (typeof data.tokens?.refresh_token === "string" && data.tokens.refresh_token.length > 0) {
-        process.exit(0);
+  node -e '
+    const fs = require("fs");
+    const read = (path) => {
+      try {
+        const data = JSON.parse(fs.readFileSync(path, "utf8"));
+        return typeof data.tokens?.refresh_token === "string" && data.tokens.refresh_token.length > 0 ? data : null;
+      } catch {
+        return null;
       }
-      process.exit(1);
-    } catch {
-      process.exit(1);
-    }
-  ' "$TMP" >/dev/null 2>&1; then
-    chmod 600 "$TMP"
-    mv -f "$TMP" "$CODEX_DIR/auth.json"
-    echo "install-codex: restored $CODEX_DIR/auth.json"
-  else
-    rm -f "$TMP"
-    echo "install-codex: CODEX_AUTH_JSON_B64 is not valid base64 JSON with tokens.refresh_token — auth.json not written" >&2
-  fi
+    };
+    const fresh = read(process.argv[1]);
+    if (!fresh) process.exit(1);
+    const current = read(process.argv[2]);
+    const at = (data) => Date.parse(data?.last_refresh ?? "") || 0;
+    process.exit(current && at(current) >= at(fresh) ? 2 : 0);
+  ' "$TMP" "$CODEX_DIR/auth.json" >/dev/null 2>&1
+  case $? in
+    0)
+      chmod 600 "$TMP"
+      mv -f "$TMP" "$CODEX_DIR/auth.json"
+      echo "install-codex: restored $CODEX_DIR/auth.json"
+      ;;
+    2)
+      rm -f "$TMP"
+      echo "install-codex: kept $CODEX_DIR/auth.json (refreshed after the CODEX_AUTH_JSON_B64 copy)"
+      ;;
+    *)
+      rm -f "$TMP"
+      echo "install-codex: CODEX_AUTH_JSON_B64 is not valid base64 JSON with tokens.refresh_token — auth.json not written" >&2
+      ;;
+  esac
 else
   echo "install-codex: CODEX_AUTH_JSON_B64 not set — codex installed but not logged in"
 fi

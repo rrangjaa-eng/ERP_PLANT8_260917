@@ -1,19 +1,21 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { dirname, join, resolve } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
 import {
   DEFAULT_SECTIONS,
   PROMPT_BUDGET_BYTES,
   VIEWPORTS,
   buildPrompt,
   codexArgs,
+  codexEnv,
   countLines,
   crossCheck,
   measurementsToMarkdown,
   parseArgs,
   parseCodexFindings,
+  redactSecrets,
   renderReport,
   screenshotName,
   selectSystemSections,
@@ -52,6 +54,7 @@ function screen(partial: Partial<ScreenMeasure>): ScreenMeasure {
     overflowX: false,
     elements: [],
     gaps: [],
+    omitted: 0,
     ...partial,
   };
 }
@@ -79,27 +82,46 @@ describe("countLines", () => {
 
 describe("parseArgs", () => {
   it("경로를 모으고 --base 기본값은 origin/main, 섹션은 기본값 + 추가(중복 없이)", () => {
-    const args = parseArgs(["/admin/people", "/admin", "--out", "r.md", "--sections", "6-10,3"]);
+    const args = parseArgs(["/admin/people", "/admin", "--out", ".planning/r.md", "--sections", "6-10,3"]);
     expect(args.routes).toEqual(["/admin/people", "/admin"]);
-    expect(args.out).toBe("r.md");
+    expect(args.out).toBe(".planning/r.md");
     expect(args.base).toBe("origin/main");
     expect(args.plans).toEqual([]);
     expect(args.sections).toEqual([...DEFAULT_SECTIONS, "6-10"]);
   });
 
   it("--plan은 반복할 수 있다", () => {
-    const args = parseArgs(["/x", "--out", "r.md", "--plan", "a.md", "--plan", "b.md", "--base", "HEAD~1"]);
-    expect(args.plans).toEqual(["a.md", "b.md"]);
+    const args = parseArgs([
+      "/x",
+      "--out",
+      "test-results/r.md",
+      "--plan",
+      ".planning/p/a-PLAN.md",
+      "--plan",
+      "docs/design/b.md",
+      "--base",
+      "HEAD~1",
+    ]);
+    expect(args.plans).toEqual([".planning/p/a-PLAN.md", "docs/design/b.md"]);
     expect(args.base).toBe("HEAD~1");
   });
 
   it.each([
-    [["/x", "--out", "r.md", "--base", "--output=/tmp/x"], "--base"],
+    [["/x", "--out", ".planning/r.md", "--base", "--output=/tmp/x"], "--base"],
     [["/x", "--out"], "--out"],
-    [["/x", "--out", "r.md", "--plan"], "--plan"],
-    [["--out", "r.md"], "경로"],
-    [["admin/people", "--out", "r.md"], "/"],
+    [["/x", "--out", ".planning/r.md", "--plan"], "--plan"],
+    [["--out", ".planning/r.md"], "경로"],
+    [["admin/people", "--out", ".planning/r.md"], "/"],
     [["/admin/people"], "--out"],
+    // 보고서는 .planning/·test-results/의 .md에만 쓴다(보호 파일 덮어쓰기 방지).
+    [["/x", "--out", "CLAUDE.md"], "--out"],
+    [["/x", "--out", ".claude/settings.json"], "--out"],
+    [["/x", "--out", ".planning/../CLAUDE.md"], "--out"],
+    [["/x", "--out", ".planning/r.txt"], "--out"],
+    // 계획은 저장소 .planning/·docs/의 .md만 Codex에 보낸다(비밀 파일 전송 방지).
+    [["/x", "--out", ".planning/r.md", "--plan", ".env.local"], "--plan"],
+    [["/x", "--out", ".planning/r.md", "--plan", "/root/.codex/auth.json"], "--plan"],
+    [["/x", "--out", ".planning/r.md", "--plan", "docs/../.env.md"], "--plan"],
   ])("잘못된 인자 %j는 오류다", (argv, message) => {
     expect(() => parseArgs(argv)).toThrow(message);
   });
@@ -151,6 +173,14 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("…(잘림:");
   });
 
+  it("상한보다 긴 한 줄도 앞부분은 남긴다", () => {
+    const changeText = "가".repeat(60_000);
+    const prompt = buildPrompt({ mode: "diff", changeText, systemSections: "S", measurementsMd: "M", images });
+    expect(Buffer.byteLength(prompt)).toBeLessThanOrEqual(PROMPT_BUDGET_BYTES);
+    expect(prompt).toContain("가".repeat(1000));
+    expect(prompt).not.toContain("\uFFFD");
+  });
+
   it("diff 모드에서 변경이 비면 현재 화면 전체를 검토하라고 적는다", () => {
     const prompt = buildPrompt({ mode: "diff", changeText: "", systemSections: "S", measurementsMd: "M", images });
     expect(prompt).toContain("변경 없음 — 현재 화면 전체를 SYSTEM.md 기준으로 검토");
@@ -197,6 +227,20 @@ describe("measurementsToMarkdown", () => {
     expect(md).toContain("button.save");
     expect(Buffer.byteLength(md)).toBeLessThanOrEqual(10_000);
   });
+
+  it("상한을 폭마다 나눠 모든 폭의 머리와 넘침 줄이 남고, 생략된 요소 수를 적는다", () => {
+    const many = Array.from({ length: 300 }, (_, i) => el({ selector: `td.c${i}`, kind: "cell" }));
+    const screens = [375, 320, 768, 1280].map((width) =>
+      screen({ width, omitted: 7, elements: [...many, el({ selector: `button.w${width}`, overflowsSelf: true })] }),
+    );
+    const md = measurementsToMarkdown(screens, 8_000);
+    expect(Buffer.byteLength(md)).toBeLessThanOrEqual(8_000);
+    for (const width of [375, 320, 768, 1280]) {
+      expect(md).toContain(`· ${width}px`);
+      expect(md).toContain(`button.w${width}`);
+    }
+    expect(md).toContain("측정 생략 7개");
+  });
 });
 
 describe("parseCodexFindings", () => {
@@ -218,9 +262,9 @@ describe("parseCodexFindings", () => {
     expect(parseCodexFindings(stdout)).toEqual([]);
   });
 
-  it("형태가 틀린 항목(문자열 폭·모르는 지표·빠진 필드·객체 아님)은 버린다", () => {
+  it("형태가 틀린 항목(모르는 지표·빠진 필드·객체 아님)은 버리고 숫자 문자열 폭은 숫자로 읽는다", () => {
     const items = [finding, { ...finding, width: "320" }, { ...finding, metric: "color" }, { route: "/x" }, "문자열", null];
-    expect(parseCodexFindings(`\`\`\`json\n${JSON.stringify(items)}\n\`\`\``)).toEqual([finding]);
+    expect(parseCodexFindings(`\`\`\`json\n${JSON.stringify(items)}\n\`\`\``)).toEqual([finding, finding]);
   });
 });
 
@@ -240,6 +284,12 @@ describe("crossCheck", () => {
     const [row] = crossCheck([{ ...base, selector: "button.save", metric: "lines" }], screens);
     expect(row?.measured).toContain("56");
     expect(row?.measured).toContain("2줄");
+  });
+
+  it("같은 선택자가 여럿이면 첫 값을 붙이지 않고 모호하다고 적는다", () => {
+    const twice = [screen({ width: 320, elements: [el({ selector: "td > button" }), el({ selector: "td > button" })] })];
+    const [row] = crossCheck([{ ...base, selector: "td > button", metric: "height" }], twice);
+    expect(row?.measured).toBe("모호(2개 일치) — 실측 필요");
   });
 
   it("overflowX는 페이지 scrollWidth/clientWidth를 붙인다", () => {
@@ -281,13 +331,42 @@ describe("renderReport · skipLine", () => {
         },
       ],
       measurementsMd: "MEASURE",
-      codexRaw: "RAW",
+      codexOutputPath: "test-results/codex-design-review/x/codex-output.md",
     });
     expect(report).toContain("Codex 지적은 후보다");
     expect(report).toContain("| 자동 대조 | 실측 확인 |");
     expect(report).toMatch(/\| 측정표에 없음 — 실측 필요 \|\s*\|\n/);
     expect(report).toContain("Codex 실행: 완료(exit 0)");
     expect(report).toContain("test-results/codex-design-review/x");
+    expect(report).toContain("test-results/codex-design-review/x/codex-output.md");
+  });
+
+  it("Codex 문자열의 마크다운·HTML을 무력화하고 길이를 자른다", () => {
+    const report = renderReport({
+      mode: "diff",
+      base: "origin/main",
+      plans: [],
+      artifactsDir: "d",
+      codexStatus: "s",
+      rows: [
+        {
+          route: "/x",
+          width: 320,
+          selector: "td",
+          metric: "visual",
+          claim: `![b](https://evil.example/?d=1) <img src=x> [l](http://a) \`c\`\r${"가".repeat(500)}`,
+          expected: "e",
+          measured: "m",
+        },
+      ],
+      measurementsMd: "",
+      codexOutputPath: "d/codex-output.md",
+    });
+    expect(report).not.toContain("![");
+    expect(report).not.toContain("<img");
+    expect(report).not.toContain("](http");
+    expect(report).not.toContain("\r");
+    expect(report).not.toContain("가".repeat(400));
   });
 
   it("skipLine은 한 줄 접두어를 붙인다", () => {
@@ -295,8 +374,37 @@ describe("renderReport · skipLine", () => {
   });
 });
 
+describe("redactSecrets · codexEnv", () => {
+  it("비밀 값 그대로·JWT·refresh 토큰 모양을 가린다", () => {
+    const secret = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=";
+    const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJlLXZhbHVl";
+    const out = redactSecrets(`a ${secret} b ${jwt} c rt_abcdefghijklmnopqrstu d`, [secret, ""]);
+    expect(out).not.toContain(secret);
+    expect(out).not.toContain(jwt);
+    expect(out).not.toContain("rt_abcdefghijklmnopqrstu");
+    expect(out).toContain("[가림]");
+  });
+
+  it("codex에는 허용 목록 환경 변수만 넘긴다(자격 원본·DB 주소 제외)", () => {
+    const env = codexEnv({
+      PATH: "/bin",
+      HOME: "/root",
+      HTTPS_PROXY: "http://p",
+      NODE_EXTRA_CA_CERTS: "/ca",
+      CODEX_AUTH_JSON_B64: "secret",
+      DATABASE_URL: "postgres://x",
+      BETTER_AUTH_SECRET: "s",
+    });
+    expect(env).toEqual({ PATH: "/bin", HOME: "/root", HTTPS_PROXY: "http://p", NODE_EXTRA_CA_CERTS: "/ca" });
+  });
+});
+
 describe("scripts/codex-design-review.sh 건너뜀 계약", () => {
   const SCRIPT = resolve(process.cwd(), "scripts/codex-design-review.sh");
+  const written: string[] = [];
+  afterAll(() => {
+    for (const file of written) rmSync(dirname(file), { recursive: true, force: true });
+  });
 
   function run(args: string[], stubCodex?: string) {
     const dir = mkdtempSync(join(tmpdir(), "codex-dr-"));
@@ -304,11 +412,12 @@ describe("scripts/codex-design-review.sh 건너뜀 계약", () => {
       writeFileSync(join(dir, "codex"), `#!/bin/sh\n${stubCodex}\n`);
       chmodSync(join(dir, "codex"), 0o755);
     }
-    const out = join(dir, "report.md");
+    const out = join("test-results", `codex-dr-unit-${process.pid}-${Math.random().toString(36).slice(2)}`, "report.md");
     const result = spawnSync("/bin/bash", [SCRIPT, ...args.map((a) => (a === "OUT" ? out : a))], {
       env: { ...process.env, PATH: `${dir}:/usr/bin:/bin`, HOME: dir },
       encoding: "utf8",
     });
+    written.push(out);
     return { result, out };
   }
 
@@ -328,8 +437,21 @@ describe("scripts/codex-design-review.sh 건너뜀 계약", () => {
     expect(text).toContain("로그인");
   });
 
+  it("API 키 로그인은 구독 로그인이 아니므로 건너뛴다", () => {
+    const { result, out } = run(["/admin/people", "--out", "OUT"], 'echo "Logged in using an API key - sk-***"');
+    expect(result.status).toBe(0);
+    expect(readFileSync(out, "utf8")).toContain("로그인");
+  });
+
   it("--out이 없으면 2로 끝난다", () => {
     const { result } = run(["/admin/people"]);
     expect(result.status).toBe(2);
+  });
+
+  it("--out이 .planning/·test-results/의 .md가 아니면 2로 끝나고 쓰지 않는다", () => {
+    const dir = mkdtempSync(join(tmpdir(), "codex-dr-out-"));
+    const { result } = run(["/admin/people", "--out", join(dir, "CLAUDE.md")]);
+    expect(result.status).toBe(2);
+    expect(existsSync(join(dir, "CLAUDE.md"))).toBe(false);
   });
 });

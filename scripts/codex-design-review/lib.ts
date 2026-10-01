@@ -3,6 +3,8 @@
 // 프롬프트로 묶고, Codex 지적을 실측표와 대조한 보고서를 만든다. Codex 지적은 후보이고 결함
 // 판정은 DOM 실측으로만 한다(CLAUDE.md §6 「스크린샷 육안 판정 금지」).
 
+import { isAbsolute, relative, resolve } from "node:path";
+
 export const VIEWPORTS = [
   { width: 375, height: 800 },
   { width: 320, height: 800 },
@@ -39,6 +41,7 @@ export type ScreenMeasure = {
   overflowX: boolean;
   elements: ElementMeasure[];
   gaps: GapMeasure[];
+  omitted: number; // 측정 상한(400개)을 넘어 빠진 요소 수
 };
 export type Finding = {
   route: string;
@@ -50,7 +53,15 @@ export type Finding = {
 };
 export type ReviewArgs = { routes: string[]; out: string; base: string; plans: string[]; sections: string[] };
 
-export function parseArgs(argv: string[]): ReviewArgs {
+// root 아래 dirs 중 하나에 들고 .md로 끝나는 상대 경로인지 본다(.. 탈출·절대 경로·점 파일 거부).
+function insideMd(path: string, dirs: string[], root: string): boolean {
+  const rel = relative(root, resolve(root, path));
+  if (isAbsolute(path) || rel.startsWith("..") || !rel.endsWith(".md")) return false;
+  if (rel.split("/").some((part, i) => i > 0 && part.startsWith("."))) return false;
+  return dirs.some((dir) => rel.startsWith(`${dir}/`));
+}
+
+export function parseArgs(argv: string[], root = process.cwd()): ReviewArgs {
   const routes: string[] = [];
   const plans: string[] = [];
   const sections = [...DEFAULT_SECTIONS];
@@ -72,6 +83,12 @@ export function parseArgs(argv: string[]): ReviewArgs {
   }
   if (routes.length === 0) throw new Error("검토할 경로를 하나 이상 준다(예: /admin/people)");
   if (!out) throw new Error("--out <보고서.md>가 필요하다");
+  // 보고서는 .planning/·test-results/의 .md에만 쓴다 — 보호 파일(CLAUDE.md·.claude/)을 덮지 않게.
+  if (!insideMd(out, [".planning", "test-results"], root)) throw new Error(`--out은 .planning/·test-results/ 아래 .md여야 한다: ${out}`);
+  // 계획 글은 Codex로 나간다 — 저장소 .planning/·docs/의 .md만(비밀 파일 전송 방지).
+  for (const plan of plans) {
+    if (!insideMd(plan, [".planning", "docs"], root)) throw new Error(`--plan은 .planning/·docs/ 아래 .md여야 한다: ${plan}`);
+  }
   return { routes, out, base, plans, sections };
 }
 
@@ -120,37 +137,55 @@ function trimToBytes(text: string, maxBytes: number): string {
   let used = 0;
   for (const line of text.split("\n")) {
     const size = Buffer.byteLength(line) + 1;
-    if (used + size > room) break;
+    if (used + size > room) {
+      // 한 줄이 남은 자리보다 길면 UTF-8 경계에서 잘라 앞부분을 남긴다.
+      if (kept.length === 0) {
+        const head = Buffer.from(line).subarray(0, room - used).toString("utf8").replace(/\uFFFD+$/, "");
+        kept.push(head);
+        used += Buffer.byteLength(head) + 1;
+      }
+      break;
+    }
     kept.push(line);
     used += size;
   }
   return `${kept.join("\n")}\n…(잘림: ${total - used}바이트 생략)`;
 }
 
-const cell = (value: string | number | null) => String(value ?? "—").replace(/\|/g, "\\|").replace(/\n/g, " ");
+const cell = (value: string | number | null) => String(value ?? "—").replace(/\|/g, "\\|").replace(/[\r\n]/g, " ");
+
+// Codex가 만든 글을 커밋되는 보고서에 넣기 전에 무력화한다: 링크·이미지·HTML·코드 기호를 바꾸고 300자로 자른다.
+const untrustedCell = (value: string) =>
+  cell(
+    value
+      .slice(0, 300)
+      .replace(/[<>]/g, (c) => (c === "<" ? "‹" : "›"))
+      .replace(/[[\]()!`]/g, (c) => `\\${c}`),
+  );
 
 export function measurementsToMarkdown(screens: ScreenMeasure[], maxBytes: number): string {
-  const out: string[] = [];
-  for (const s of screens) {
-    out.push(`### ${s.route} · ${s.width}px (${s.screenshot})`);
-    out.push(
+  // 상한을 폭마다 나눈다 — 첫 폭이 다 먹어 나머지 폭이 통째로 빠지지 않게. 폭 안에서는 머리·넘침 줄·간격이 먼저다.
+  const perScreen = Math.floor(maxBytes / Math.max(1, screens.length)) - 2;
+  const row = (e: ElementMeasure) =>
+    `| ${cell(e.selector)} | ${e.kind} | ${cell(e.text)} | ${e.width}×${e.height} | ${cell(e.lines)} | ${e.overflowsSelf ? "예" : ""} | ${e.exceedsViewport ? "예" : ""} | ${e.scrollContainer ? "예" : ""} |`;
+  const flagged = (e: ElementMeasure) => e.overflowsSelf || e.exceedsViewport || (e.lines ?? 0) >= 2;
+  const header = ["| 선택자 | 종류 | 글 | 너비×높이 | 줄 | 자기 넘침 | 화면 밖 | 스크롤 칸 |", "|---|---|---|---|---|---|---|---|"];
+  const blocks = screens.map((s) => {
+    const out = [
+      `### ${s.route} · ${s.width}px (${s.screenshot})`,
       `- 페이지 가로: scrollWidth ${s.scrollWidth} / clientWidth ${s.clientWidth} → ${s.overflowX ? "**가로 넘침**" : "넘침 없음"}`,
-    );
-    const flagged = (e: ElementMeasure) => e.overflowsSelf || e.exceedsViewport || (e.lines ?? 0) >= 2;
-    const ordered = [...s.elements.filter(flagged), ...s.elements.filter((e) => !flagged(e))];
-    out.push("", "| 선택자 | 종류 | 글 | 너비×높이 | 줄 | 자기 넘침 | 화면 밖 | 스크롤 칸 |", "|---|---|---|---|---|---|---|---|");
-    for (const e of ordered) {
-      out.push(
-        `| ${cell(e.selector)} | ${e.kind} | ${cell(e.text)} | ${e.width}×${e.height} | ${cell(e.lines)} | ${e.overflowsSelf ? "예" : ""} | ${e.exceedsViewport ? "예" : ""} | ${e.scrollContainer ? "예" : ""} |`,
-      );
-    }
+    ];
+    if (s.omitted > 0) out.push(`- 측정 생략 ${s.omitted}개(요소 상한 400)`);
+    const marked = s.elements.filter(flagged);
+    if (marked.length > 0) out.push("", "넘침·줄바꿈 표시 요소", "", ...header, ...marked.map(row));
     if (s.gaps.length > 0) {
       out.push("", "| 부모 | 앞 | 뒤 | 세로 간격 |", "|---|---|---|---|");
       for (const g of s.gaps) out.push(`| ${cell(g.parent)} | ${cell(g.before)} | ${cell(g.after)} | ${g.gap} |`);
     }
-    out.push("");
-  }
-  return trimToBytes(out.join("\n"), maxBytes);
+    out.push("", "나머지 요소", "", ...header, ...s.elements.filter((e) => !flagged(e)).map(row), "");
+    return trimToBytes(out.join("\n"), perScreen);
+  });
+  return blocks.join("\n");
 }
 
 export function buildPrompt(input: {
@@ -207,7 +242,15 @@ export function parseCodexFindings(stdout: string): Finding[] {
     return [];
   }
   // Codex 출력은 신뢰하지 않는다 — Finding 형태가 맞는 항목만 남긴다.
-  return Array.isArray(parsed) ? parsed.filter(isFinding) : [];
+  // 폭은 숫자 문자열("375")도 숫자로 읽는다.
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .map((v: unknown) =>
+      typeof v === "object" && v !== null && typeof (v as { width?: unknown }).width === "string" && /^\d+$/.test((v as { width: string }).width)
+        ? { ...v, width: Number((v as { width: string }).width) }
+        : v,
+    )
+    .filter(isFinding);
 }
 
 const METRICS: ReadonlyArray<Finding["metric"]> = ["overflowX", "overflow", "height", "lines", "gap", "visual"];
@@ -236,13 +279,53 @@ export function crossCheck(findings: Finding[], screens: ScreenMeasure[]): Array
       const gaps = s.gaps.filter((g) => g.before === f.selector || g.after === f.selector);
       if (gaps.length > 0) measured = gaps.map((g) => `${g.before}→${g.after} ${g.gap}px`).join(", ");
     } else if (s) {
-      const e = s.elements.find((x) => x.selector === f.selector);
-      if (e) {
+      const matches = s.elements.filter((x) => x.selector === f.selector);
+      const e = matches.length === 1 ? matches[0] : undefined;
+      if (matches.length > 1) measured = `모호(${matches.length}개 일치) — 실측 필요`;
+      else if (e) {
         measured = `${e.width}×${e.height}px · ${e.lines ?? "—"}줄 · 자기 넘침 ${e.overflowsSelf ? "예" : "아니오"} · 화면 밖 ${e.exceedsViewport ? "예" : "아니오"}`;
       }
     }
     return { ...f, measured };
   });
+}
+
+// codex에 넘길 환경 변수 허용 목록. 자격 원본(CODEX_AUTH_JSON_B64)·DB 주소·앱 비밀은 넘기지 않는다
+// (Codex 셸 도구가 env를 읽을 수 있고, 그 출력이 보고서로 들어온다).
+const CODEX_ENV_KEYS = [
+  "PATH",
+  "HOME",
+  "CODEX_HOME",
+  "LANG",
+  "LC_ALL",
+  "TMPDIR",
+  "HTTPS_PROXY",
+  "HTTP_PROXY",
+  "NO_PROXY",
+  "https_proxy",
+  "http_proxy",
+  "no_proxy",
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+];
+
+export function codexEnv(env: Record<string, string | undefined>): NodeJS.ProcessEnv {
+  const picked: Record<string, string> = {};
+  for (const key of CODEX_ENV_KEYS) {
+    const value = env[key];
+    if (typeof value === "string") picked[key] = value;
+  }
+  return picked as NodeJS.ProcessEnv;
+}
+
+// 파일로 남기기 전에 비밀 값 그대로와 토큰 모양(JWT·rt_/sk- 접두 토큰)을 가린다.
+export function redactSecrets(text: string, secrets: string[]): string {
+  let out = text;
+  for (const secret of secrets) if (secret.length >= 8) out = out.split(secret).join("[가림]");
+  return out
+    .replace(/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g, "[가림]")
+    .replace(/\b(?:rt|sk)[-_][A-Za-z0-9_-]{16,}/g, "[가림]");
 }
 
 export function skipLine(reason: string): string {
@@ -257,7 +340,7 @@ export function renderReport(input: {
   codexStatus: string;
   rows: Array<Finding & { measured: string }>;
   measurementsMd: string;
-  codexRaw: string;
+  codexOutputPath: string;
 }): string {
   const source = input.mode === "plan" ? `계획: ${input.plans.join(", ")}` : `diff 기준: ${input.base}...HEAD`;
   const lines = [
@@ -268,12 +351,13 @@ export function renderReport(input: {
     "",
     `- ${input.codexStatus}`,
     `- ${source}`,
-    `- 산출물(스크린샷·measurements.json·Codex 원문): \`${input.artifactsDir}\``,
+    `- 산출물(스크린샷·measurements.json): \`${input.artifactsDir}\``,
+    `- Codex 원문(비밀 가림, 커밋 안 함): \`${input.codexOutputPath}\``,
     "",
     "## 지적 후보",
     "",
   ];
-  if (input.rows.length === 0) lines.push("지적 없음(또는 JSON을 읽지 못함 — 아래 원문 참고).");
+  if (input.rows.length === 0) lines.push("지적 없음(또는 JSON을 읽지 못함 — Codex 원문 참고).");
   else {
     lines.push(
       "| # | 경로 | 폭 | 선택자 | 지표 | 지적 | 기대(SYSTEM.md) | 자동 대조 | 실측 확인 |",
@@ -281,7 +365,7 @@ export function renderReport(input: {
     );
     input.rows.forEach((r, i) => {
       lines.push(
-        `| ${i + 1} | ${cell(r.route)} | ${r.width} | ${cell(r.selector)} | ${r.metric} | ${cell(r.claim)} | ${cell(r.expected)} | ${cell(r.measured)} |  |`,
+        `| ${i + 1} | ${untrustedCell(r.route)} | ${r.width} | ${untrustedCell(r.selector)} | ${r.metric} | ${untrustedCell(r.claim)} | ${untrustedCell(r.expected)} | ${cell(r.measured)} |  |`,
       );
     });
   }
@@ -290,12 +374,6 @@ export function renderReport(input: {
     "## DOM 실측표",
     "",
     input.measurementsMd,
-    "",
-    "## Codex 원문",
-    "",
-    "````text",
-    input.codexRaw.replace(/````/g, "'''"),
-    "````",
     "",
   );
   return lines.join("\n");

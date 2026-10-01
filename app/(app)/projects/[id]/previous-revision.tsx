@@ -35,7 +35,8 @@ export type QuoteLineCopyRow = {
   note: string | null;
 };
 
-export type QuoteLineReadReferences = { subcategories: QuoteTableCodeOption[]; vendors: QuoteTableOption[] };
+// vendorShown — quick 261001-85g: 거래처 정보가 가려진 계급이면 거짓, 거래처 열을 그리지 않는다(가려진 정보의 열은 그리지 않는다).
+export type QuoteLineReadReferences = { subcategories: QuoteTableCodeOption[]; vendors: QuoteTableOption[]; vendorShown: boolean };
 
 /** `copyText` — 그 열의 화면 첫 줄 글자 그대로(2행 없음). 견적 줄 복사 글자의 유일한 정의다(W1). */
 export type QuoteLineReadColumn<Row extends QuoteLineCopyRow> = TableColumn<Row> & { copyText: (row: Row) => string };
@@ -52,7 +53,7 @@ export function quoteLineReadColumns<Row extends QuoteLineCopyRow>(
     cell: text,
     copyText: text,
   });
-  return [
+  const columns: QuoteLineReadColumn<Row>[] = [
     {
       ...column({ key: "sort", header: "번호", priority: "p3", collapseBelow: 1280, align: "right", text: (row) => String(rowNumber(row)) }),
       cell: (row: Row) => <span className={styles.rowNumber}>{rowNumber(row)}</span>,
@@ -93,6 +94,7 @@ export function quoteLineReadColumns<Row extends QuoteLineCopyRow>(
     column({ key: "status", header: "상태", priority: "p1", text: (row) => (row.lineKind === "adjustment" ? "—" : lineStatusLabel(row.lineStatus)) }),
     column({ key: "note", header: "비고", priority: "p3", collapseBelow: 1024, text: (row) => row.note ?? "—" }),
   ];
+  return references.vendorShown ? columns : columns.filter((entry) => entry.key !== "vendor");
 }
 
 type ReadRow = QuoteLineCopyRow & { id: string };

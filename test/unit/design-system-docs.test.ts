@@ -27,6 +27,11 @@ function section(doc: string, startHeading: string, endHeading: string): string 
 
 const FIVE_STATES = ["LOADING", "EMPTY", "ERROR", "SUCCESS", "PARTIAL"];
 
+// quick 261001-85g(UX-01) — 확인 모달의 ERROR 자리. §7-7 「시트/모달(§7-8)」 행과 §7-17이 같은 글자로 말한다(구현: ConfirmDialog
+// disabledReason = 행동 줄 왼쪽 막힘 자리, blockedBy = 근거 칸 아래 Form.Error를 가리키고 왼쪽에 다시 쓰지 않음).
+const CONFIRM_SERVER_REJECT = "서버 거부 문자열은 막힘 자리(행동 줄 왼쪽 — 2차 · 1차 앞)에 그대로 붙고 다이얼로그는 닫히지 않는다";
+const CONFIRM_EVIDENCE_ERROR = "근거 칸 입력 오류(날짜 칸의 빈 값 · 형식)만 칸 아래 `Form.Error` 한 줄";
+
 describe("docs/design/SYSTEM.md — 신설 절 5개 (§6-7·§6-8·§6-9·§7-11·§7-12)", () => {
   it.each(["### 6-7", "### 6-8", "### 6-9", "### 6-10", "### 7-11", "### 7-12", "### 7-13", "### 7-14"])(
     "머리글 '%s'를 포함한다",
@@ -50,7 +55,10 @@ describe("docs/design/SYSTEM.md — 신설 절 5개 (§6-7·§6-8·§6-9·§7-11
     ["7-11 배너", "### 7-11", "### 7-12"],
     ["7-12 알림함·배지", "### 7-12", "### 7-13"],
     ["7-13 체크박스 매트릭스", "### 7-13", "### 7-14"],
-    ["7-14 이력 목록", "### 7-14", "## 8. 카피 규칙"],
+    ["7-14 이력 목록", "### 7-14", "### 7-15"],
+    ["7-15 폼", "### 7-15", "### 7-16"],
+    ["7-16 페이지 줄", "### 7-16", "### 7-17"],
+    ["7-17 확인 모달", "### 7-17", "## 8. 카피 규칙"],
   ];
 
   it.each(sectionBounds)("'%s' 절이 다섯 상태를 전부 명시한다", (_name, start, end) => {
@@ -58,6 +66,23 @@ describe("docs/design/SYSTEM.md — 신설 절 5개 (§6-7·§6-8·§6-9·§7-11
     for (const state of FIVE_STATES) {
       expect(sec).toContain(state);
     }
+  });
+});
+
+describe("docs/design/SYSTEM.md — 확인 모달 ERROR 자리 (§7-7 ↔ §7-17, UX-01)", () => {
+  const headers = ["컴포넌트", "LOADING", "EMPTY", "ERROR", "SUCCESS", "PARTIAL"];
+  const row = section(SYSTEM, "### 7-7", "### 7-8")
+    .split("\n")
+    .find((line) => line.startsWith("| 시트/모달(§7-8) |"));
+  const errorCell = row?.split("|").slice(1, -1)[headers.indexOf("ERROR")] ?? "";
+  const confirmModal = section(SYSTEM, "### 7-17", "## 8. 카피 규칙");
+
+  it.each([
+    ["서버 거부 자리", CONFIRM_SERVER_REJECT],
+    ["근거 칸 입력 오류 자리", CONFIRM_EVIDENCE_ERROR],
+  ])("§7-7 시트/모달 ERROR 칸과 §7-17이 %s를 같은 글자로 말한다", (_name, phrase) => {
+    expect(errorCell).toContain(phrase);
+    expect(confirmModal).toContain(phrase);
   });
 });
 

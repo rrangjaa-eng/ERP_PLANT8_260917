@@ -423,3 +423,20 @@ test.describe("I4 인쇄 버튼", () => {
     await context.close();
   });
 });
+
+// 04.3-14 Task 1(사용자 결정 U3 a) — 인쇄 라우트를 열 때도 끌 수 없는 cert_view 한 줄(detail via: "print").
+test.describe("인쇄 접속기록", () => {
+  test("그 테스트 안에서 로그인한 계정이 인쇄 라우트를 한 번 열면 via print인 cert_view가 정확히 1줄", async ({ browser }) => {
+    const seeded = await seedSubmittedCert();
+    const { context, page } = await loggedInContext(browser, admin);
+    await page.goto(printPath(seeded.submissionId));
+    await expect(page.getByText(seeded.certNo)).toBeVisible();
+
+    const rows = (await db.select().from(actionLog).where(eq(actionLog.actionType, "cert_view"))).filter(
+      (row) => row.entityId === seeded.submissionId && (row.detail as { via?: string }).via === "print",
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.detail).toMatchObject({ submissionId: seeded.submissionId, via: "print" });
+    await context.close();
+  });
+});

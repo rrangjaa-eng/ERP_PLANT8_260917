@@ -113,4 +113,19 @@ describe("recordAction (OPS-05)", () => {
     expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain("cert_purge");
     expect((ACTION_TYPE_LABELS as Record<string, string>).cert_purge).toBe("확인증 파기");
   });
+
+  // 04.3-14(사용자 결정 ⑤): 확인증 조회 접속기록 — 안전성 확보조치 기준 제2조3호 요소라 끌 수 없다.
+  it("cert_view(확인증 조회)가 세 배열에 함께 있고 선택 로그 설정에서 빼도 기록된다", async () => {
+    expect(CORE_ACTION_TYPES as readonly string[]).toContain("cert_view");
+    expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain("cert_view");
+    expect((ACTION_TYPE_LABELS as Record<string, string>).cert_view).toBe("확인증 조회");
+
+    const appendActionLog = vi.fn().mockResolvedValue(undefined);
+    await recordAction(
+      viewer,
+      { actionType: "cert_view", entity: "cert_submission", entityId: "s1" },
+      { appendActionLog, isActionTypeEnabled: () => Promise.resolve(false) },
+    );
+    expect(appendActionLog).toHaveBeenCalledTimes(1);
+  });
 });

@@ -591,3 +591,44 @@ test("주민번호만 비운 I4 — 열림 · 주민등록번호 `—` · 전체
   await page.goto(`/print/certs/${seeded.submissionId}`);
   await expect(notFoundHeading(page)).toBeVisible();
 });
+
+// 04.3-14 Task 1(사용자 결정 ⑤ · E4-B2 · E4-B11) — I4를 열 때마다 끌 수 없는 cert_view 한 줄(접속지 IP · 확인증 id).
+// 미리 가져오기는 프로덕션 빌드(CI=true)에서만 켜진다 — I3를 열고 끝까지 스크롤하고 링크 위에 머무는 동안 0줄이어야 한다.
+test("접속기록 cert_view — I3 로드 · 스크롤 · 링크 머무름 0줄 · 누르면 1줄(IP) · 새로 고치면 2줄", async ({ page }) => {
+  const IP = "203.0.113.7";
+  const seeded = await seedSubmittedCert();
+  await page.setExtraHTTPHeaders({ "x-forwarded-for": IP });
+  await login(page, admin);
+
+  const viewRows = async () =>
+    (await db.select().from(actionLog).where(eq(actionLog.actionType, "cert_view"))).filter(
+      (row) => row.entityId === seeded.submissionId,
+    );
+  const base = (await viewRows()).length;
+
+  const reviewRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes(`/certs/submissions/${seeded.submissionId}`)) reviewRequests.push(request.url());
+  });
+
+  await page.goto(`/certs/events/${seeded.eventId}`);
+  await page.waitForLoadState("networkidle");
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  const link = page.getByRole("link", { name: new RegExp(`^제출 내용 · ${seeded.name} · `) });
+  await link.scrollIntoViewIfNeeded();
+  await expect(link).toBeVisible();
+  await link.hover();
+  await page.waitForTimeout(1000);
+  expect(reviewRequests).toEqual([]);
+  expect((await viewRows()).length).toBe(base);
+
+  await link.click();
+  await expect(page.getByRole("heading", { name: `기타소득 확인증 — ${seeded.name}` })).toBeVisible();
+  const opened = await viewRows();
+  expect(opened.length).toBe(base + 1);
+  expect(opened.at(-1)?.detail).toEqual({ ip: IP, submissionId: seeded.submissionId });
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: `기타소득 확인증 — ${seeded.name}` })).toBeVisible();
+  expect((await viewRows()).length).toBe(base + 2);
+});

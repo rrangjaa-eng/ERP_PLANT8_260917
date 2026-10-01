@@ -16,7 +16,7 @@
 - `.planning/` 수동 편집 · `git push --force` · 프로덕션 DB 직접 명령 · 이 파일에 진행 상황 추가
 - pnpm 외 패키지 매니저 (§1) · `docs/ARCHITECTURE.md`·`docs/DESIGN.md` import (§1)
 - 세션 중 이 파일·@import 대상 수정, 자주 바뀌는 파일 @import (§0)
-- 승인 없이 절차 건너뛰기·즉석 방법으로 대체 (§4 공통) · `/review` 통과 없이 ship (§4)
+- 승인 없이 절차 건너뛰기·즉석 방법으로 대체 (§4 공통) · 코드 PR을 `/review` 통과 없이 ship (§4)
 - 웹 브라우징에 `/browse` 외 사용, `mcp__claude-in-chrome__*` 사용 (§4 공통)
 - 실제 실행 확인 없이 "완료" · 추측 수정 · 승인 없는 새 의존성 (§5)
 - 시크릿을 코드·커밋에 · `any` · 요청받지 않은 리팩터·주석·파일 이동 (§5)
@@ -84,22 +84,22 @@
 
 **[Build] GSD가 뼈대, Superpowers가 규율**
 - `/gsd-execute-phase`로 실행. 상태의 단일 출처는 `.planning/`
-- **세션 하나 = 웨이브 하나.** 웨이브가 끝나면 커밋·푸시 → `/gsd-pause-work` → plant8 환경의 새 세션에서 `/gsd-progress`. 훅이 강제한다(같은 웨이브의 플랜은 몇 개든 한 세션에서)
+- **세션 종료는 웨이브가 아니라 문맥·독립 검토로 정한다**(사용자 결정 2026-10-01). 같은 세션에서 다음 웨이브와 지적 반영을 이어 간다. 끊는 때: 문맥 경고(`gsd-context-monitor`, 남은 문맥 35% 이하)가 뜨면 지금 단위를 마무리하고, 계획 완료 뒤(실행 전 독립 게이트 리뷰)·게이트 리뷰 종료 뒤. 끊을 때는 커밋·푸시 → `/gsd-pause-work` → plant8 환경의 새 세션에서 `/gsd-progress`. 계획·게이트 리뷰 경계는 훅이 강제한다
 - 실행자는 Sonnet 기본. 돈·권한·DB 잠금·마이그레이션을 건드리는 플랜(`risk:` 태그)만 Opus 실행자 + Opus 독립 검토 1명. 화면 플랜은 독립 DOM 감사(§6)
 - 실행 중 Superpowers 스킬은 **호출**한다(켜졌다고 가정만 하지 않는다): 버그·테스트 실패·CI 실패를 쫓기 전에 `systematic-debugging`, "완료"를 말하기 전에 `verification-before-completion`, 구현 전에 `test-driven-development`. 서브에이전트에 위임할 때도 프롬프트에 그 스킬을 명시한다
-- 페이즈 밖 소규모 작업: `/gsd-quick` 또는 `/superpowers:brainstorm → write-plan → execute-plan` 중 하나만
+- 페이즈 밖 소규모 작업: `/gsd-quick` 또는 `/superpowers:brainstorm → write-plan → execute-plan` 중 **한 흐름만** — GSD·Superpowers·gstack의 계획·검토·검증을 겹쳐 쌓지 않는다
 - 페이즈 종료: `/gsd-verify-work` → `/gsd-complete-milestone`
 
-**[Post-build] gstack — 검증하고 내보내기 (묶음 = PR마다 한 번)**
-1. `/review` 코드 리뷰 (통과 없이 ship 금지)
-2. `/qa` 실제 브라우저 QA (읽기 전용 `/qa-only`) · UI 변경은 `/design-review`
-3. `/cso` 보안 감사 (인증·결제·외부 입력 다룰 때 필수)
-4. `/ship` PR → 머지(아래 규칙) → `/retro` 회고
-- 회고에서 나온 규칙은 이 파일이 아니라 `.planning/` 또는 `/learn`에 남긴다
-- **Post-build 넷은 건너뛰지 않는다.** 페이즈 실행이 끝나면 즉석 검증으로 대체하지 말고 `/review` → `/qa` → (해당 시)`/cso` → `/ship`을 실제로 호출한다. 페이즈가 인증·권한·암호화·외부 입력을 건드렸으면 `/cso`는 선택이 아니다. 플랜마다 되풀이하지 않고 묶음마다 한 번이다
+**[Post-build] gstack — 변경 종류에 맞는 게이트만 (묶음 = PR마다 한 번, 사용자 결정 2026-10-01)**
+- 문서·계획만(`.planning/`·`*.md`, `.claude/`·이 파일 제외): 게이트 없음 — CI 초록이면 된다
+- 코드: `/review`
+- 화면(`app/`·`ui/`의 `.tsx`·`.css`): `/review` + 브라우저 검증 `/design-review` → `/qa`(읽기 전용 `/qa-only`)
+- 인증·권한·암호화·외부 입력·돈·결재(`domain/money`·`corp-cards`·`reserves`·`revenue`·`approvals`): `/review` + 독립 검토 `/cso`
+- 그다음 `/ship` PR → 머지(아래 규칙) → `/retro` 회고. 회고에서 나온 규칙은 이 파일이 아니라 `.planning/` 또는 `/learn`에 남긴다
+- **해당하는 게이트는 건너뛰지 않는다.** 즉석 검증으로 대체하지 말고 실제로 호출한다. 해당하지 않는 게이트를 관성으로 덧붙이지도 않는다. 플랜마다 되풀이하지 않고 묶음마다 한 번이다. 머지 게이트는 훅이 이 표대로 강제한다
 
 **머지**
-- 조건이 전부 맞으면 **세션이 머지한다**(사용자 부재 중에도): PR ready · 최신 커밋 CI 초록 · main과 충돌 없음 · 게이트 기록(`/review`, 화면이 바뀌었으면 `/qa`·`/design-review`, 해당 시 `/cso`) · 직전 main 스테이징 배포 초록 · 사용자 「[지시] 머지 보류」 댓글이나 `hold` 라벨 없음
+- 조건이 전부 맞으면 **세션이 머지한다**(사용자 부재 중에도): PR ready · 최신 커밋 CI 초록 · main과 충돌 없음 · 게이트 기록(위 Post-build 표대로 — 문서만이면 없음) · 직전 main 스테이징 배포 초록 · 사용자 「[지시] 머지 보류」 댓글이나 `hold` 라벨 없음
 - 머지한 세션은 스테이징 배포 결과를 지켜본다. 빨간불이면 자동 되돌리기 대신 무인 머지를 멈추고 사용자에게 알린다. 한 번에 PR 하나, 배포가 초록이 된 뒤 다음
 - **위험 경로가 바뀐 PR은 사용자가 GitHub에서 직접 머지한다**(훅이 세션 머지를 막는다): `db/migrations/`·`db/schema/`·`domain/auth/`·`domain/permissions/`·`lib/crypto*`·`scripts/deploy.sh`·`rollback.sh`·`bootstrap-gcp.sh`·`promote-guard.sh`·`.github/workflows/`·`infra/`·`.claude/`·이 파일. 위험 경로 변경은 별도 PR로 떼어 나머지가 무인으로 흐르게 한다
 
@@ -110,7 +110,8 @@
 
 ## 5. 코딩 규칙
 - TDD: 실패 테스트 → 최소 구현 → 리팩터. 실제 실행 확인 없이 "완료" 금지
-- **로컬 dev 통과는 완료 신호가 아니다.** `playwright.config.ts`가 CI에서만 프로덕션 빌드를 쓴다 — 배포·완료 판정은 `CI=true`로 확인한다. 로컬은 lint·typecheck·build·단위·통합 + 건드린 화면의 E2E 스펙만, 전체 E2E는 CI가 한 번 돈다(draft PR은 quality만, ready·main은 전체)
+- **로컬 dev 통과는 완료 신호가 아니다.** `playwright.config.ts`가 CI에서만 프로덕션 빌드를 쓴다 — 배포·완료 판정은 `CI=true`로 확인한다
+- **테스트는 단계에 맞게**(사용자 결정 2026-10-01): 작업 중에는 lint·typecheck + 바뀐 파일과 관련된 단위·통합 테스트 + 건드린 화면의 E2E 스펙만(DB 초기화가 드는 전체 통합은 돌리지 않는다). PR을 ready로 바꿀 때 build + 전체 단위·통합을 한 번 돌리고, 전체 E2E는 CI가 한 번 돈다(draft PR은 quality만, ready·main은 전체)
 - 버그: 재현 → 원인 → 수정 → 회귀 테스트. 추측 수정 금지
 - 한 커밋 한 의도. 커밋 메시지 언어: 제목은 영어 접두어(docs:/feat:/fix:/chore:) + 짧은 요약, 본문은 한국어
 - 새 의존성은 이유 한 줄 + 승인 후
@@ -133,7 +134,7 @@
 - 파일은 Grep으로 위치 찾고 필요한 범위만 Read. 500줄 이상은 range 필수
 - 테스트·빌드 출력은 요약만. 실패 시 실패 부분만 인용
 - **토큰을 아낀다.** 이미 읽은 파일·이미 받은 도구 결과를 다시 조회하지 않는다. 나머지 수단은 위 세 줄(위임·범위 Read·출력 요약)이다
-- 웨이브 끝나면 `/compact` 대신 새 세션(plant8 환경). 재개는 `/gsd-progress`
+- 세션을 끊을 때(§4 Build — 문맥 경고·독립 검토 경계)는 `/compact` 대신 새 세션(plant8 환경). 재개는 `/gsd-progress`
 - 반복 규칙(포맷·린트·테스트)은 문장이 아니라 hooks(`.claude/settings.json`)로
 - 응답은 짧게. 결과와 다음 행동만
 

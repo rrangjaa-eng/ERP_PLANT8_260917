@@ -362,8 +362,10 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await primary.click();
 
     await expect(confirm).toBeVisible();
-    const reason = confirm.getByText("상태가 미수주로 바뀜 · 새로 고침", { exact: true }).filter({ visible: true });
+    // 꼬리 ` · 새로 고침`은 글자가 아니라 다음 한 수 3차 버튼이다(SYSTEM.md §7-17 ERROR, 2026-10-01).
+    const reason = confirm.getByText("상태가 미수주로 바뀜", { exact: true }).filter({ visible: true });
     await expect(reason).toHaveCount(1);
+    await expect(confirm.getByRole("button", { name: "새로 고침" })).toBeVisible();
     await expect(primary).toHaveAttribute("aria-disabled", "true");
     const reasonBox = await reason.boundingBox();
     const primaryBox = await primary.boundingBox();
@@ -451,7 +453,7 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(headerTag(page, "미수주")).toBeVisible();
     await Promise.all(actionRequests);
     expect(actionRequests).toHaveLength(1);
-    await expect(page.getByText("상태가 미수주로 바뀜 · 새로 고침")).toHaveCount(0);
+    await expect(page.getByText("상태가 미수주로 바뀜")).toHaveCount(0);
     const logs = await db.select().from(actionLog).where(eq(actionLog.entityId, project.id));
     expect(logs.filter((log) => log.actionType === "status_change")).toHaveLength(1);
   });

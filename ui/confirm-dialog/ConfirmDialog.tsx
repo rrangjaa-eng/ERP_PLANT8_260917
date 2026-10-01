@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { Button, type ButtonReasonTone } from "@/ui/button/Button";
 import { isCtrlCombo } from "@/lib/shortcut";
 import styles from "./ConfirmDialog.module.css";
@@ -18,7 +19,7 @@ export type ConfirmDialogPrimary = {
   disabledReason?: string;
   /** §7-1 개정 ⑦ — 막힘(block, 기본) · 정상 상태(info) 이유 색. */
   reasonTone?: ButtonReasonTone;
-  /** 막힘 이유 옆에 두는 다음 한 수 3차(예: 04-21 「기간 적기」). */
+  /** 막힘 이유 옆에 두는 다음 한 수 3차(예: 04-21 「기간 적기」). 주면 이유 끝 ` · 새로 고침`을 버튼으로 바꾸지 않는다. */
   nextStep?: ReactNode;
   /**
    * 04-24 — 이유가 이미 근거 칸 아래(Form.Error)에 있을 때 그 요소의 id. 1차를 막고 aria-describedby로 그 글자를
@@ -55,6 +56,31 @@ export type ConfirmDialogProps = ConfirmDialogBaseProps &
 // 「닫기」, 그 밖에는 「취소」다(§7-8 보강, Phase 4).
 export function secondaryLabelFor(primaryLabel: string): string {
   return primaryLabel.includes("취소") ? "닫기" : "취소";
+}
+
+// 막힘 이유가 ` · 새로 고침`으로 끝나면 그 꼬리는 글자가 아니라 다음 한 수 3차 버튼이다(§7-17 ERROR — 같은 말을
+// 두 자리에 쓰지 않는다). 서버 거부 문자열 · 서버가 계산한 막힘 이유 모두 같다.
+const REFRESH_TAIL = " · 새로 고침";
+
+export function splitRefreshTail(reason: string | undefined): { reason: string | undefined; refresh: boolean } {
+  if (!reason?.endsWith(REFRESH_TAIL)) return { reason, refresh: false };
+  return { reason: reason.slice(0, -REFRESH_TAIL.length), refresh: true };
+}
+
+// 거부는 화면이 본 값이 낡았다는 뜻이라 다시 받은 뒤 이 다이얼로그의 값도 낡았다 — 화면을 다시 받고 닫는다.
+function RefreshStep({ onDone }: { onDone: () => void }) {
+  const router = useRouter();
+  return (
+    <Button
+      variant="tertiary"
+      onClick={() => {
+        router.refresh();
+        onDone();
+      }}
+    >
+      새로 고침
+    </Button>
+  );
 }
 
 // 열릴 때 첫 포커스 — 확인 근거 칸 → 없으면 1차(막혔어도) → 목록형이면 첫 행.
@@ -166,6 +192,10 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     closeNow();
   }
 
+  const refreshSplit = primary?.nextStep ? { reason: primary.disabledReason, refresh: false } : splitRefreshTail(primary?.disabledReason);
+  const disabledReason = refreshSplit.reason;
+  const nextStep = primary?.nextStep ?? (refreshSplit.refresh ? <RefreshStep onDone={closeNow} /> : null);
+
   const resolvedSecondaryLabel = secondaryLabel ?? (primary ? secondaryLabelFor(primary.label) : "닫기");
   // 사용자 결정(2026-09-29 A, PR #90 5894348076) — PC · 폰 모두 2차 왼쪽 · 1차 오른쪽이고 DOM · Tab 순서도 같다
   // (실물 sheet-modal · §7-17 슬롯 순서, 결재 시트 → 확인 시트로 넘어가도 주 버튼 자리가 그대로).
@@ -260,21 +290,19 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
       <div className={styles.actions}>
         {primary ? (
           <>
-            {primary.disabledReason ? (
-              <span className={primary.reasonTone === "info" ? styles.reasonInfo : styles.reason}>
-                {primary.disabledReason}
-              </span>
+            {disabledReason ? (
+              <span className={primary.reasonTone === "info" ? styles.reasonInfo : styles.reason}>{disabledReason}</span>
             ) : null}
-            {primary.nextStep ? <span className={styles.nextStep}>{primary.nextStep}</span> : null}
+            {nextStep ? <span className={styles.nextStep}>{nextStep}</span> : null}
             {secondaryButton}
             <span ref={primaryWrapRef} className={styles.primaryWrap}>
               <Button
                 variant="primary"
                 shortcut={primary.shortcut ?? "Ctrl+Enter"}
                 pending={primary.pending}
-                disabled={Boolean(primary.disabledReason || primary.blockedBy)}
-                disabledReason={primary.disabledReason}
-                aria-describedby={primary.disabledReason ? undefined : primary.blockedBy}
+                disabled={Boolean(disabledReason || primary.blockedBy)}
+                disabledReason={disabledReason}
+                aria-describedby={disabledReason ? undefined : primary.blockedBy}
                 reasonTone={primary.reasonTone}
                 onClick={primary.onConfirm}
               >

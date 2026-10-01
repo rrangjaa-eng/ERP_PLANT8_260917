@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
   SidePanel,
-  dismissSidePanel,
+  closeSidePanel,
   isPanelCloseKey,
   openSidePanel,
   type PanelDialogLike,
@@ -73,14 +73,21 @@ describe("isPanelCloseKey — Esc로 닫힘(조합 중 · 안쪽 컨트롤이 �
   });
 });
 
-describe("dismissSidePanel — Esc · × · 2차로 닫으면 onClose 뒤 여는 버튼으로 포커스", () => {
-  it("열린 패널을 닫고 onClose → focusOpener 순서", () => {
+describe("closeSidePanel — 닫히면 여는 버튼으로 포커스(성공으로 닫을 때는 호출부가 새 결과로 옮긴다)", () => {
+  it("열린 패널을 닫은 뒤 여는 버튼에 포커스", () => {
     const { dialog } = fakeDialog();
     dialog.open = true;
     const order: string[] = [];
-    dismissSidePanel(dialog, { onClose: () => order.push("onClose"), focusOpener: () => order.push("focusOpener") });
+    closeSidePanel(dialog, { focus: () => order.push(`focus(open=${dialog.open})`) });
     expect(dialog.calls).toEqual(["close"]);
-    expect(order).toEqual(["onClose", "focusOpener"]);
+    expect(order).toEqual(["focus(open=false)"]);
+  });
+
+  it("여는 버튼이 없으면(성공 — returnFocus 끔) 닫기만", () => {
+    const { dialog } = fakeDialog();
+    dialog.open = true;
+    closeSidePanel(dialog, null);
+    expect(dialog.calls).toEqual(["close"]);
   });
 });
 

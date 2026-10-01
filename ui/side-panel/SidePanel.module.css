@@ -1,0 +1,116 @@
+/* SYSTEM.md §7-8 개정 ⑰(04.3-10 · D-d) — 옆 패널. 토큰만(docs/design/tokens.css). 새 색 · radius · 그림자 없음.
+   PC(700 이상): 오른쪽 고정 480(--modal-w — §7-8 모달과 같은 폭), 목록 위에 겹쳐 서고 밀지 않는다. 스크림 없음 —
+   show()로 열려 뒤를 막지 않는다. 폰(700 미만): 아래 @media — §7-8 시트 골격(ui/table/RowSheet.module.css 선례). */
+
+.panel {
+  position: fixed;
+  inset-block: 0;
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+  z-index: var(--z-modal);
+  box-sizing: border-box;
+  width: var(--modal-w);
+  max-width: 100%;
+  height: auto;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-inline-start: var(--line-w-strong) solid var(--line-strong);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.panel[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.hd {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--pad-page) var(--s-2);
+  border-bottom: var(--line-w) solid var(--line);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--ls-head);
+  line-height: var(--lh-head);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.close {
+  flex: none;
+  width: var(--touch-min);
+  height: var(--touch-min);
+  margin: calc(var(--s-2) * -1) calc(var(--s-3) * -1) 0 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.close:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.closeIcon {
+  width: var(--icon-lg);
+  height: var(--icon-lg);
+  stroke: currentColor;
+  stroke-width: var(--icon-stroke);
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 본문만 스크롤 — 머리 · 행동 줄은 고정. */
+.body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--s-4) var(--pad-page);
+}
+
+/* 행동 줄 — 2차 왼쪽 · 1차 오른쪽(받은 순서 그대로), 오른쪽 끝에 붙는다. 막힘 이유가 길면 줄을 바꾼다. */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--s-2) var(--s-4);
+  padding: var(--s-3) var(--pad-page);
+  border-top: var(--line-w) solid var(--line);
+}
+
+@media (max-width: 699px) {
+  .panel {
+    inset-block-start: auto;
+    inset-block-end: 0;
+    inset-inline: 0;
+    width: 100%;
+    max-width: none;
+    max-height: 85vh;
+    border-inline-start: 0;
+    border-top: var(--line-w-strong) solid var(--line-strong);
+  }
+
+  .panel::backdrop {
+    background: var(--scrim);
+  }
+
+  /* 시트 행동 줄 버튼은 터치 목표 44(§7-8 · §3 「터치 목표」). */
+  .actions button {
+    min-height: var(--touch-min);
+  }
+}

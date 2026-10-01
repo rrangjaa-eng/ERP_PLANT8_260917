@@ -264,3 +264,39 @@ test.describe("PR #104 후속 — 설정 힌트 aria-describedby (ISSUE-001) · 
     expect(await valueOf("부가세율 이력")).toBe("0.1");
   });
 });
+
+// tokens.css --danger #9B1C1C · --focus(→ --g-700) #005446을 rgb로.
+const DANGER_RGB = "rgb(155, 28, 28)";
+const FOCUS_RGB = "rgb(0, 84, 70)";
+
+test.describe("내부 칸 오류 상태(04.3-03 F2 · F3 · 04.3-15 R3)", () => {
+  test("F2 · F3 — 설정 쉼표 칸 오류는 포커스 중에도 --danger 테두리 · 포커스 링 유지 · 글자 12px · 높이 32 그대로", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+    await page.goto("/admin/settings");
+
+    const field = page.getByLabel("USD 최근 환율");
+    await field.fill("1.12345");
+    const error = page.getByText("환율은 소수 4자리까지", { exact: true });
+    await expect(error).toBeVisible();
+    await expect(field).toBeFocused();
+    await expect(field).toHaveCSS("border-top-color", DANGER_RGB);
+    await expect(field).toHaveCSS("outline-color", FOCUS_RGB);
+    await expect(field).toHaveCSS("outline-style", "solid");
+    await expect(error).toHaveCSS("font-size", "12px");
+    await expect(field).toHaveCSS("height", "32px");
+
+    await page.keyboard.press("End");
+    await page.keyboard.press("Backspace");
+    await expect(error).toHaveCount(0);
+    await expect(field).not.toHaveCSS("border-top-color", DANGER_RGB);
+    await page.keyboard.type("0");
+  });
+});

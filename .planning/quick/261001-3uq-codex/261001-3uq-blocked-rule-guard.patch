@@ -30,16 +30,43 @@
  
  # --- 사용자 승인 판정 (R7·R8) ------------------------------------------------
  # 사람 글로 인정하는 것은 두 가지뿐이다.
-@@ -427,7 +439,7 @@
+@@ -423,13 +435,31 @@
+     w="${W[$k]}"
+     case "$w" in
+       '{'|'}'|'!'|if|then|elif|else|do|while|until|nohup|time|exec|builtin) k=$((k + 1)); continue ;;
+-      env|sudo|nice)
++      command)
++        # command -v/-V는 조회다 — 뒤 단어를 실행하지 않는다.
++        case "${W[$((k + 1))]:-}" in -v|-V) break ;; esac
          k=$((k + 1))
-         while [ "$k" -lt "$n" ] && { [[ "${W[$k]}" == -* ]] || [[ "${W[$k]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; }; do k=$((k + 1)); done
+-        while [ "$k" -lt "$n" ] && { [[ "${W[$k]}" == -* ]] || [[ "${W[$k]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; }; do k=$((k + 1)); done
++        while [ "$k" -lt "$n" ] && [[ "${W[$k]}" == -* ]]; do k=$((k + 1)); done
          continue ;;
 -      timeout)
-+      timeout|gtimeout|_gstack_codex_timeout_wrapper)
++      env|sudo|nice|stdbuf|setsid|xargs|unbuffer)
++        # 값을 따로 받는 옵션(nice -n 5, env -u X, xargs -n 1 …)은 그 값까지 건너뛴다.
++        local valued
++        case "$w" in
++          nice) valued="n" ;; env) valued="uCS" ;; sudo) valued="ugChpUDrt" ;;
++          xargs) valued="nILPdEsa" ;; stdbuf) valued="ioe" ;; *) valued="" ;;
++        esac
          k=$((k + 1))
-         while [ "$k" -lt "$n" ] && [[ "${W[$k]}" == -* ]]; do k=$((k + 1)); done
+-        while [ "$k" -lt "$n" ] && [[ "${W[$k]}" == -* ]]; do k=$((k + 1)); done
++        while [ "$k" -lt "$n" ] && { [[ "${W[$k]}" == -* ]] || [[ "${W[$k]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; }; do
++          if [ -n "$valued" ] && [[ "${W[$k]}" =~ ^-[$valued]$ ]]; then k=$((k + 1)); fi
++          k=$((k + 1))
++        done
++        continue ;;
++      timeout|gtimeout|_gstack_codex_timeout_wrapper)
++        k=$((k + 1))
++        while [ "$k" -lt "$n" ] && [[ "${W[$k]}" == -* ]]; do
++          case "${W[$k]}" in -s|-k|--signal|--kill-after) k=$((k + 1)) ;; esac
++          k=$((k + 1))
++        done
          k=$((k + 1)); continue ;;
-@@ -452,6 +464,18 @@
+     esac
+     if [[ "$w" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; then k=$((k + 1)); continue; fi
+@@ -452,6 +482,20 @@
    case "$cmd" in
      git) check_git "${ARGS[@]}" ;;
      gh) check_gh "${ARGS[@]}" ;;
@@ -49,10 +76,12 @@
 +        *) codex_allowed || block "$CODEX_MSG" ;;
 +      esac ;;
 +    npx|bunx|pnpm|npm)
-+      # 실행(npx, bunx, pnpm/npm dlx·exec·x)만 막는다 — 설치는 Codex 호출이 아니다.
-+      if [ "$cmd" = npx ] || [ "$cmd" = bunx ] || [[ "${ARGS[0]:-}" =~ ^(dlx|exec|x)$ ]]; then
++      # 실행(npx, bunx, pnpm/npm dlx·exec·x, pnpm <bin>)만 막는다 — 설치(pnpm add -g)는 Codex 호출이 아니다.
++      local first=""
++      for a in "${ARGS[@]}"; do case "$a" in -*) ;; *) first="$a"; break ;; esac; done
++      if [ "$cmd" = npx ] || [ "$cmd" = bunx ] || [[ "$first" =~ ^(dlx|exec|x)$ ]] || { [ "$cmd" = pnpm ] && [ "$first" = codex ]; }; then
 +        for a in "${ARGS[@]}"; do
-+          case "$a" in @openai/codex|@openai/codex@*) codex_allowed || block "$CODEX_MSG" ;; esac
++          case "$a" in codex|*@openai/codex*) codex_allowed || block "$CODEX_MSG" ;; esac
 +        done
 +      fi ;;&
      npm)
@@ -70,7 +99,7 @@
  #   5) 훅·settings 승인 = 사용자 글에 "훅"+(넣어/고쳐/걸어/수정/추가/만들어), 물음표로 끝나면 불인정
  # payload를 stdin으로 넣어 각 이벤트를 검증한다. 실제 리포를 절대 건드리지 않는다.
  set -uo pipefail
-@@ -168,12 +169,44 @@
+@@ -168,12 +169,61 @@
  payload_bash() { jq -nc --arg c "$1" '{tool_name:"Bash", tool_input:{command:$c}}'; }
  payload_skill() { jq -nc --arg s "$1" --arg a "$2" '{tool_name:"Skill", tool_input:{skill:$s, args:$a}}'; }
  
@@ -113,6 +142,23 @@
 +r3_case "R3-20: pnpm dlx @openai/codex -> 2" 2 'pnpm dlx @openai/codex exec x' "$r3_none"
 +r3_case "R3-21: pnpm add -g @openai/codex(설치) -> 0" 0 'pnpm add -g @openai/codex@0.155.1' "$r3_none"
 +r3_case "R3-22: session_id 없음 -> 2" 2 'codex exec x' ""
++# 접두 명령·옵션 값·패키지 실행기 우회(adversarial 리뷰 2026-10-01)
++r3_case "R3-24: timeout -s KILL 60 codex -> 2" 2 'timeout -s KILL 60 codex exec x' "$r3_none"
++r3_case "R3-25: nice -n 5 codex -> 2" 2 'nice -n 5 codex exec x' "$r3_none"
++r3_case "R3-26: env -u FOO codex -> 2" 2 'env -u FOO codex exec x' "$r3_none"
++r3_case "R3-27: command codex -> 2" 2 'command codex exec x' "$r3_none"
++r3_case "R3-28: stdbuf -oL codex -> 2" 2 'stdbuf -oL codex exec x' "$r3_none"
++r3_case "R3-29: setsid codex -> 2" 2 'setsid codex exec x' "$r3_none"
++r3_case "R3-30: xargs codex -> 2" 2 'echo x | xargs codex exec' "$r3_none"
++r3_case "R3-31: pnpm exec codex -> 2" 2 'pnpm exec codex exec x' "$r3_none"
++r3_case "R3-32: pnpm codex -> 2" 2 'pnpm codex exec x' "$r3_none"
++r3_case "R3-33: npx codex -> 2" 2 'npx codex exec x' "$r3_none"
++r3_case "R3-34: npx --package=@openai/codex -> 2" 2 'npx --package=@openai/codex codex exec x' "$r3_none"
++r3_case "R3-35: pnpm -s dlx @openai/codex -> 2" 2 'pnpm -s dlx @openai/codex exec x' "$r3_none"
++r3_case "R3-36: pnpm exec codex + design-review -> 0" 0 'pnpm exec codex exec x' "$r3_dr"
++r3_case "R3-37: pnpm exec playwright(다른 도구) -> 0" 0 'pnpm exec playwright test' "$r3_none"
++r3_case "R3-38: pnpm -s test -> 0" 0 'pnpm -s test' "$r3_none"
++r3_case "R3-39: command -v codex(조회) -> 0" 0 'command -v codex' "$r3_none"
  hook "$(payload_skill gsd-review '04.3')"
 -expect_rc "R3-2: gsd-review -> 0" 0 "$HOOK_RC"
 -expect_empty "R3-2: Codex 경고 없음" "$HOOK_STDOUT"
@@ -120,7 +166,7 @@
  
  # ---------------------------------------------------------------------------
  echo "== R4: 사용자에게 보이는 글 한국어 =="
-@@ -609,7 +642,7 @@
+@@ -609,7 +659,7 @@
  hook "$(payload_bash 'cat CLAUDE.md > /tmp/c.md')"
  expect_rc "B5-5: read CLAUDE.md into other file -> 0" 0 "$HOOK_RC"
  
@@ -129,7 +175,7 @@
  hook "$(payload_bash 'git commit -m "docs: 리뷰 기록 (codex 한도로 Opus 대체)"')"
  expect_rc "B6-1: commit message with (codex -> 0" 0 "$HOOK_RC"
  hook "$(payload_bash "$(printf 'git commit -m "$(cat <<'"'"'EOF'"'"'\nfix: y\n\n`codex exec`는 한도로 못 씀 "인용"\nEOF\n)"')")"
-@@ -618,16 +651,16 @@
+@@ -618,16 +668,16 @@
  hook "$(payload_bash 'echo "a | codex b"')"
  expect_rc "B6-3: echo \"a | codex b\" -> 0" 0 "$HOOK_RC"
  hook "$(payload_bash 'codex --version && codex exec review')"
@@ -151,7 +197,7 @@
  hook "$(payload_bash 'echo "unterminated | codex exec')"
  expect_rc "B6-7: unparsable quoting -> 0 (경고로 낮춤)" 0 "$HOOK_RC"
  
-@@ -790,7 +823,7 @@
+@@ -790,7 +840,7 @@
  expect_empty "P3-12: no new-dependency warning" "$HOOK_STDOUT"
  hook "$(payload_skill gsd-review '04.3 --all')"
  expect_rc "P3-13: gsd-review --all -> 0" 0 "$HOOK_RC"

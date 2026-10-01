@@ -1,6 +1,6 @@
 # 261001-3uq — 승인이 필요해 막힌 변경
 
-이 quick 작업에서 훅이나 사용자 관리 규칙 때문에 세션이 직접 쓰지 못한 변경이다. 패치는 이 폴더에 있고, 모두 `git apply --check`를 통과했다(커밋 8d52843 기준).
+이 quick 작업에서 훅이나 사용자 관리 규칙 때문에 세션이 직접 쓰지 못한 변경이다. 패치는 이 폴더에 있고, 모두 `git apply --check`를 통과했다(origin/main fe6ab22 기준).
 
 | 파일 | 막은 장치 | 결과 |
 |---|---|---|
@@ -26,12 +26,17 @@
 ## 3. rule-guard R3 — 디자인 밖 Codex 차단 (`261001-3uq-blocked-rule-guard.patch`)
 
 - 목적: gstack `codex_reviews disabled`(이미 적용, install-gstack.sh)를 따르지 않는 경로를 막는다. 해당 경로는 `/codex`·`/office-hours`·`/spec`·`design-consultation`과 손으로 친 `codex`다.
-- 규칙: Bash의 `codex`를 막는다. 맨 명령, 경로 지정, `timeout`·`gtimeout`·`_gstack_codex_timeout_wrapper` 경유가 모두 해당한다. 예외는 `--version`·`-V`·`--help`·`-h`·`login status`다.
-  - `npx`·`bunx`·`pnpm|npm dlx|exec|x`로 `@openai/codex`를 실행하는 것도 막는다. 설치(`pnpm add -g`)는 막지 않는다.
+- 규칙: Bash의 `codex`를 막는다. 예외는 `--version`·`-V`·`--help`·`-h`·`login status`다.
+  - 맨 명령, 경로 지정, 접두 명령 경유가 모두 해당한다: `timeout`·`gtimeout`·`_gstack_codex_timeout_wrapper`(`-s`·`-k` 값 포함), `env`·`sudo`·`nice`·`stdbuf`·`setsid`·`xargs`·`unbuffer`(값 받는 옵션 포함), `command`(`command -v`는 조회라 통과).
+  - 패키지 실행기도 막는다: `npx`·`bunx`·`pnpm|npm dlx|exec|x`·`pnpm codex`에서 인자 중 `codex`나 `@openai/codex`가 있으면. 설치(`pnpm add -g`)는 막지 않는다.
   - 허용 조건: 세션 스킬 기록 `${TMPDIR}/plant8-skill-gate/<session>.skills`에 `design-review`나 `plan-design-review`가 정확히 있을 때.
   - `scripts/codex-design-review.sh`는 맨 `codex` 명령이 아니라서 통과한다.
-- 검증: 사본 하네스로 확인했다. 기준선은 PASS=245 FAIL=0이다. 테스트만 바꾸면 FAIL=16(RED)이다. 가드까지 바꾸면 PASS=266 FAIL=0이다(R3 23건, B6-4·5·8·9 갱신).
-- 남는 한계: 스킬 기록이 세션 단위라 같은 세션에서 `/design-review`를 부른 뒤의 codex 호출은 통과한다. 다른 리뷰 스킬은 gstack `codex_reviews disabled`가 1차로 막는다.
+- 검증: 사본 하네스로 확인했다. 기준선은 PASS=245 FAIL=0이다. 1차 RED는 FAIL=16, 1차 GREEN은 266/0이다. /review의 adversarial 지적(접두 명령·옵션 값·패키지 실행기 우회) 반영: 2차 RED는 FAIL=12, 최종은 PASS=282 FAIL=0이다(R3 39건, B6-4·5·8·9 갱신).
+- 남는 한계(토큰 단위 검사로는 못 막는다 — 1차 차단은 gstack `codex_reviews disabled`):
+  - 스킬 기록이 세션 단위라 같은 세션에서 `/design-review`를 부른 뒤의 codex 호출은 통과한다.
+  - 스킬 기록 파일(`${TMPDIR}/plant8-skill-gate/`)은 세션이 직접 쓸 수 있다(skill-gate 전체의 공통 한계).
+  - `bash -c "codex …"`는 경고로만 낮춘다(B6-5, 기존 판정 불확실 규칙). `node -e`·변수 간접 호출(`X=codex; $X`)·`find -exec`는 잡지 못한다.
+  - `scripts/codex-design-review.sh`는 스킬 기록 없이도 통과한다. 대신 디자인 검토 프롬프트만 만들고 `--plan`은 `.planning/`·`docs/`의 .md만 받는다.
 
 ## 4. CLAUDE.md — 사용자가 붙여 넣을 문장
 

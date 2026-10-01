@@ -58,6 +58,18 @@ commits: [64bc045, 8f50889, 8d52843]
    - 세션의 CLAUDE.md 읽기를 자동 모드 분류기가 「자기 수정」으로 거부했다. 사본 작업은 멈추고 사본을 지웠다.
    - 붙여 넣을 문장은 지시에 적힌 위치·문구로 BLOCKED-CHANGES.md에 적었다.
 
+## /review 반영(d36ae1b 이후)
+
+- 핵심 리뷰(3건)와 독립 adversarial 리뷰(26건)를 받아 범위 안의 것을 TDD로 고쳤다. Codex 패스는 `codex_reviews disabled`로 건너뜀(의도대로).
+  - 비밀: codex에는 허용 목록 env만(자격 원본·DB 주소 제외), 캡처에도 자격 원본을 넘기지 않음, Codex 출력은 비밀 값·토큰 모양을 가린 뒤 gitignored 파일로만 남기고 커밋되는 보고서에는 넣지 않음.
+  - 신뢰 경계: Codex 지적은 형태 검증 뒤에만 쓰고, 보고서 칸은 링크·이미지·HTML을 무력화하고 300자로 자름.
+  - 경로: `--out`은 `.planning/`·`test-results/`의 .md, `--plan`은 `.planning/`·`docs/`의 .md만. 옵션처럼 보이는 값 거부.
+  - install-codex.sh: 재개 때 더 새로 갱신된 auth.json을 env의 낡은 사본으로 덮지 않음(last_refresh 비교, 행동 테스트 6건). mktemp 실패 처리.
+  - 측정: 표 행 순번으로 선택자 중복 0, 같은 선택자 여러 개면 「모호」, 폭별 예산·생략 수, 숨은 요소·스크롤 칸 오탐 제거, 리다이렉트·오류 페이지 거부, CSS.escape.
+  - 로그인 판정은 「Logged in using ChatGPT」만(API 키 로그인은 건너뜀).
+  - R3 패치: 접두 명령·옵션 값·패키지 실행기 우회 보강(사본 282/0). 못 막는 경로는 BLOCKED-CHANGES에 적음.
+- 남긴 것: inline 요소 넘침 측정, Codex 실행 실패 시 exit 0(사용자 결정: 실패면 한 줄 남기고 진행), erp_test 데이터가 적어 데이터 의존 배치 문제가 안 보임, Codex 읽기 전용 샌드박스 동작(이 커널) 미확인.
+
 ## 검증(새로 실행한 결과)
 
 - 다 통과했다. lint 0 · typecheck 0 · `pnpm test:unit` 171 files / 2305 passed · `pnpm build` 0.

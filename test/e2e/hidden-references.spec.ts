@@ -226,6 +226,40 @@ test.describe("가려진 참조 정보의 화면(quick 261001-85g)", () => {
     await expect(page.getByRole("link", { name: /프로젝트 복사/ })).toHaveCount(0);
   });
 
+  // /qa ISSUE-001(PR #121) — 보관 거래처는 선택지에 없어 칸 · 편집기 선택지가 UUID를 그렸다. 줄이 실은 이름을 그린다.
+  test("D4: 보관된 거래처 줄은 거래처 칸 · 편집기 선택지에 실제 이름이 보인다", async ({ page }) => {
+    const teamId = await makeTeam();
+    const writer = await makeWriter(teamId, "");
+    const { projectId, client } = await makeProjectWithVendorLine(teamId, writer);
+    await db.update(vendors).set({ archivedAt: new Date() }).where(eq(vendors.id, client.id));
+
+    await login(page, writer);
+    await page.goto(`/projects/${projectId}`);
+    const cell = vendorCell(page, 0);
+    await expect(cell).toHaveText(client.name);
+
+    await cell.focus();
+    await page.keyboard.press("Enter");
+    const select = page.getByRole("combobox", { name: "거래처" });
+    await expect(select.locator(`option[value="${client.id}"]`)).toHaveText(client.name);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("main")).not.toContainText(client.id);
+  });
+
+  // /review(PR #128) — 줄 복제(Ctrl+D)는 거래처 id만 옮겨 복제 줄이 「—」로 보였다(값은 거래처가 있는데 빈 칸처럼).
+  test("D5: 보관된 거래처 줄을 복제해도 복제 줄 거래처 칸에 실제 이름이 보인다", async ({ page }) => {
+    const teamId = await makeTeam();
+    const writer = await makeWriter(teamId, "");
+    const { projectId, client } = await makeProjectWithVendorLine(teamId, writer);
+    await db.update(vendors).set({ archivedAt: new Date() }).where(eq(vendors.id, client.id));
+
+    await login(page, writer);
+    await page.goto(`/projects/${projectId}`);
+    await vendorCell(page, 0).focus();
+    await page.keyboard.press("Control+d");
+    await expect(vendorCell(page, 1)).toHaveText(client.name);
+  });
+
   test("대조: 셋 다 보이는 계급에는 등록 진입점이 있다", async ({ page }) => {
     const teamId = await makeTeam();
     const writer = await makeWriter(teamId, "");

@@ -43,7 +43,7 @@ import type { RevenueDto } from "@/domain/revenue";
 import type { Currency, Money } from "@/domain/money";
 import { RevenueSection, type EntryDraft } from "./revenue-section";
 import { otherCellsRejectedText, quoteTableRejectionText, routeRejectedRevenueCells } from "./revenue-cells";
-import { PreviousRevisionDraftRow, quoteLineClipboardMeta, quoteLineReadColumns } from "./previous-revision";
+import { PreviousRevisionDraftRow, quoteLineClipboardMeta, quoteLineReadColumns, quoteLineVendorLabel, savedVendorFrom } from "./previous-revision";
 import { StatusChange, type StatusChangeProps } from "./status-change";
 import { CustomerApprovalLine, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
 import { PeriodField, periodText, type PeriodDraft, type PeriodFieldError } from "./period-field";
@@ -78,6 +78,8 @@ type DraftLine = {
   subcategory: string;
   itemName: string;
   vendorId: string | null;
+  /** /qa ISSUE-001 — 서버가 실은 저장된 거래처(quoteLineVendorLabel). */
+  savedVendor?: QuoteTableOption | null;
   quantity: number;
   unitPriceAmount: number;
   unitPriceCurrency: Currency;
@@ -270,6 +272,7 @@ function fromDto(dto: QuoteLineDto): DraftLine {
     subcategory: dto.subcategory,
     itemName: dto.itemName,
     vendorId: dto.vendorId ?? null,
+    savedVendor: dto.vendorId && dto.vendorName ? { id: dto.vendorId, name: dto.vendorName } : null,
     quantity: dto.quantity,
     unitPriceAmount: dto.unitPrice?.amount ?? 0,
     unitPriceCurrency: dto.unitPrice?.currency ?? "KRW",
@@ -561,7 +564,7 @@ export function mergeRestoredEdits(
     }
     if (column === "new") {
       const line = restoredNewLine(value, defaultSubcategory, kindCells, owner);
-      if (line) added.push(line);
+      if (line) added.push({ ...line, savedVendor: savedVendorFrom(lines, line.vendorId) });
       continue;
     }
     const patch = restoredCellPatch(column, value);
@@ -1426,6 +1429,7 @@ export function QuoteLedger({
         duplicatedFrom: source.isNew ? source.duplicatedFrom : source.id,
         itemName: source.itemName,
         vendorId: source.vendorId,
+        savedVendor: source.savedVendor,
         quantity: source.quantity,
         unitPriceAmount: source.unitPriceAmount,
         unitPriceCurrency: source.unitPriceCurrency,
@@ -1640,7 +1644,7 @@ export function QuoteLedger({
     if (saveRequests > 0) saveAfterCommit();
   }, [saveRequests]);
 
-  const vendorLabel = (id: string | null) => (id ? (vendors.find((v) => v.id === id)?.name ?? id) : "—");
+  const vendorLabel = (row: DraftLine) => quoteLineVendorLabel(row, vendors);
   const subcategoryLabel = (value: string) => subcategories.find((option) => option.value === value)?.label ?? value;
 
   // 04-49(DR-36) — 1024 미만이면 셀 편집 가능성을 전부 거둬 캡션 있는 읽기 표로 그린다(dirty 인셋은 그대로).
@@ -1701,7 +1705,7 @@ export function QuoteLedger({
       header: "거래처",
       priority: "p2",
       editability: (row) => atWidth(row.cells.vendorId),
-      cell: (row) => vendorLabel(row.vendorId),
+      cell: (row) => vendorLabel(row),
       editCell: (row, ctx) =>
         selectEditCell({
           id: `vendor-edit-${row.clientKey}`,
@@ -1711,7 +1715,7 @@ export function QuoteLedger({
           // 둔다. 없으면 select가 「—」로 열려 손대지 않고 나가도 거래처가 비워진다.
           options: [
             ...(row.vendorId && !vendors.some((option) => option.id === row.vendorId)
-              ? [{ value: row.vendorId, label: vendorLabel(row.vendorId) }]
+              ? [{ value: row.vendorId, label: vendorLabel(row) }]
               : []),
             ...vendors.map((option) => ({ value: option.id, label: option.name })),
           ],
@@ -2496,7 +2500,7 @@ export function QuoteLedger({
           title={openSheetRow.itemName || "(항목명 없음)"}
           subtitle={
             vendorShown
-              ? `${subcategoryLabel(openSheetRow.subcategory)} · ${vendorLabel(openSheetRow.vendorId)}`
+              ? `${subcategoryLabel(openSheetRow.subcategory)} · ${vendorLabel(openSheetRow)}`
               : subcategoryLabel(openSheetRow.subcategory)
           }
           items={[

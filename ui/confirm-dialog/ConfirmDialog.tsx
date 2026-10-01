@@ -25,6 +25,11 @@ export type ConfirmDialogPrimary = {
    * 가리키며, 1차 왼쪽 이유 자리에는 다시 쓰지 않는다(같은 사실을 두 자리에 쓰지 않는다). disabledReason이 먼저다.
    */
   blockedBy?: string;
+  /**
+   * 04.3-17 — 다시 보내면 되는 실패(연결 끊김 · 결과 불명) 한 줄. disabledReason이 없을 때만 1차 왼쪽 이유 자리에
+   * role="alert"로 그리고 1차는 막지 않는다(DECISIONS 2026-09-30 §7-17 실패 줄).
+   */
+  failure?: string;
 };
 
 export type ConfirmDialogOption = {
@@ -263,6 +268,10 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
             {primary.disabledReason ? (
               <span className={primary.reasonTone === "info" ? styles.reasonInfo : styles.reason}>
                 {primary.disabledReason}
+              </span>
+            ) : primary.failure ? (
+              <span className={styles.reason} role="alert">
+                {primary.failure}
               </span>
             ) : null}
             {primary.nextStep ? <span className={styles.nextStep}>{primary.nextStep}</span> : null}

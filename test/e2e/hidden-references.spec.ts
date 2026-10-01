@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { codeItems, vendors } from "@/db/schema";
+import { codeItems, quoteLines, vendors } from "@/db/schema";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -18,6 +18,7 @@ import { addDays, kstToday } from "@/lib/kst-date";
 // A · B: 클라이언트 · 담당 PM 선택지가 0개면 등록 진입점이 없다(팀 0개와 같은 규칙).
 const TODAY = kstToday(new Date());
 const COL_VENDOR = 3;
+const COL_ITEM = 2;
 
 type Account = { userId: string; email: string; password: string };
 
@@ -49,14 +50,16 @@ async function login(page: Page, account: Account) {
   await expect(page).toHaveURL(/\/account$/);
 }
 
-function vendorCell(page: Page, rowIndex: number): Locator {
+function dataRow(page: Page, rowIndex: number): Locator {
   return page
     .getByRole("table", { name: "견적 줄" })
     .or(page.getByRole("grid", { name: "견적 줄" }))
     .locator("tbody tr:not([class*='groupRow']):not([class*='collapsedRow'])")
-    .nth(rowIndex)
-    .locator("> td")
-    .nth(COL_VENDOR);
+    .nth(rowIndex);
+}
+
+function vendorCell(page: Page, rowIndex: number): Locator {
+  return dataRow(page, rowIndex).locator("> td").nth(COL_VENDOR);
 }
 
 test.describe("가려진 참조 정보의 화면(quick 261001-85g)", () => {
@@ -92,7 +95,7 @@ test.describe("가려진 참조 정보의 화면(quick 261001-85g)", () => {
         },
       ],
     });
-    return { projectId: created.id, client };
+    return { projectId: created.id, client, revisionId: revision.id };
   }
 
   test("D: 거래처 정보가 가려진 계급의 견적 표에는 거래처 열이 없다(가려진 정보의 열은 그리지 않는다)", async ({ page }) => {
@@ -133,6 +136,50 @@ test.describe("가려진 참조 정보의 화면(quick 261001-85g)", () => {
 
     await expect(select).toHaveCount(0);
     await expect(cell).toHaveText(before ?? "");
+  });
+
+  // Codex 리뷰 P1(PR #125) — 거래처 id가 없는 DTO로 그린 줄을 고쳐 저장해도 거부되지 않고, 거래처는 그대로다.
+  test("D4: 거래처 정보가 가려진 계급이 기존 줄의 항목을 고쳐 저장하면 저장되고 거래처는 그대로다", async ({ page }) => {
+    const teamId = await makeTeam();
+    const writer = await makeWriter(teamId, "vendor.value");
+    const { projectId, client, revisionId } = await makeProjectWithVendorLine(teamId, writer);
+
+    await login(page, writer);
+    await page.goto(`/projects/${projectId}`);
+    const itemCell = dataRow(page, 0).getByRole("gridcell").nth(COL_ITEM);
+    await expect(itemCell).toHaveText("가림 거래처 줄");
+    await itemCell.focus();
+    await page.keyboard.press("Enter");
+    await page.getByRole("textbox", { name: "항목", exact: true }).fill("가림 줄 고침");
+    await page.keyboard.press("Enter");
+    await itemCell.focus();
+    await page.keyboard.press("Control+s");
+    await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
+
+    const rows = await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revisionId));
+    expect(rows.map((row) => [row.itemName, row.vendorId])).toEqual([["가림 줄 고침", client.id]]);
+  });
+
+  // Codex 리뷰 P1(PR #125) — 바뀌지 않은 원본 줄을 복제해 저장해도 새 줄이 원본 거래처를 받는다.
+  test("D5: 거래처 정보가 가려진 계급이 줄을 복제해 저장하면 새 줄도 원본 거래처를 갖는다", async ({ page }) => {
+    const teamId = await makeTeam();
+    const writer = await makeWriter(teamId, "vendor.value");
+    const { projectId, client, revisionId } = await makeProjectWithVendorLine(teamId, writer);
+
+    await login(page, writer);
+    await page.goto(`/projects/${projectId}`);
+    const itemCell = dataRow(page, 0).getByRole("gridcell").nth(COL_ITEM);
+    await expect(itemCell).toHaveText("가림 거래처 줄");
+    await itemCell.focus();
+    await page.keyboard.press("Control+d");
+    await expect(dataRow(page, 1).getByRole("gridcell").nth(COL_ITEM)).toHaveText("가림 거래처 줄");
+    await itemCell.focus();
+    await page.keyboard.press("Control+s");
+    await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
+
+    const rows = await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revisionId));
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.vendorId)).toEqual([client.id, client.id]);
   });
 
   test("D3: 팀 업무 범위인데 오늘 팀이 없는 계급에게는 「프로젝트 복사」가 없다(목록 등록 진입점과 같은 좁힌 규칙)", async ({ page }) => {

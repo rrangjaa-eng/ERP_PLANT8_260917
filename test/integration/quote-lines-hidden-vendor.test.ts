@@ -102,4 +102,54 @@ describe("거래처 정보가 가려진 계급의 견적 줄(Codex 리뷰 P1)", 
     expect(stored?.itemName).toBe("가림 줄 고침");
     expect(stored?.vendorId).toBe(client.id);
   });
+
+  // Codex 리뷰 P1(PR #125) — 원본 줄이 요청에 없어도(바뀌지 않은 줄) 복제한 새 줄은 원본의 거래처를 받는다.
+  it("가려진 계급이 바뀌지 않은 줄을 복제해 저장하면 새 줄이 원본 거래처를 받는다", async () => {
+    const { pm, client, revisionId, lineId, subcategory } = await setup(false);
+    const copyId = randomUUID();
+
+    await saveQuoteLines(pm, revisionId, {
+      rows: [
+        {
+          id: copyId,
+          isNew: true as const,
+          duplicatedFrom: lineId,
+          lineKind: "quote" as const,
+          subcategory,
+          itemName: "가림 줄",
+          quantity: 1,
+          unitPrice: { currency: "KRW" as const, amount: 100_000, fxRate: 1 },
+          execution: { currency: "KRW" as const, amount: 80_000, fxRate: 1 },
+        },
+      ],
+    });
+
+    const [copy] = await db.select().from(quoteLines).where(eq(quoteLines.id, copyId));
+    expect(copy?.vendorId).toBe(client.id);
+  });
+
+  it("복제 원본이 다른 차수의 줄이면 저장을 거부한다", async () => {
+    const { pm, revisionId, subcategory } = await setup(false);
+    const other = await setup(false);
+
+    await expect(
+      saveQuoteLines(pm, revisionId, {
+        rows: [
+          {
+            id: randomUUID(),
+            isNew: true as const,
+            duplicatedFrom: other.lineId,
+            lineKind: "quote" as const,
+            subcategory,
+            itemName: "남의 줄 복제",
+            quantity: 1,
+            unitPrice: { currency: "KRW" as const, amount: 100_000, fxRate: 1 },
+            execution: { currency: "KRW" as const, amount: 80_000, fxRate: 1 },
+          },
+        ],
+      }),
+    ).rejects.toThrow("차수와 프로젝트가 맞지 않음");
+    const rows = await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revisionId));
+    expect(rows).toHaveLength(1);
+  });
 });

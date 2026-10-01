@@ -844,8 +844,13 @@ export async function writeQuoteLinesInTx(
 
   // (b)
   const existingIds = [...new Set([...input.rows.filter((row) => !row.isNew).map((row) => row.id), ...archivedIds])];
-  const currentRows = await repoFindQuoteLinesByIds(viewer, existingIds, { revisionId }, tx);
-  const currentById = new Map(currentRows.map((row) => [row.id, row] as const));
+  // Codex 리뷰 P1(PR #125) — 복제 원본은 요청에 없을 수 있다(바뀌지 않은 줄). 같은 차수 조회에 함께 읽어 거래처를 넘긴다.
+  const sourceIds = [...new Set(input.rows.flatMap((row) => (row.isNew && row.duplicatedFrom ? [row.duplicatedFrom] : [])))].filter(
+    (id) => !existingIds.includes(id),
+  );
+  const lockedRows = await repoFindQuoteLinesByIds(viewer, [...existingIds, ...sourceIds], { revisionId }, tx);
+  const currentById = new Map(lockedRows.map((row) => [row.id, row] as const));
+  const currentRows = lockedRows.filter((row) => !sourceIds.includes(row.id));
   const activeBefore = await repoListQuoteLinesByRevision(viewer, revisionId, tx);
   const order = input.order
     ? orderChange(
@@ -859,7 +864,8 @@ export async function writeQuoteLinesInTx(
   const deny = (rule: string, error: Error) => {
     denial ??= { rule, error };
   };
-  if (currentRows.length !== existingIds.length) deny(MEMBERSHIP_RULE, new UserFacingError(MEMBERSHIP_MISMATCH));
+  const missingSource = sourceIds.some((id) => !currentById.has(id));
+  if (currentRows.length !== existingIds.length || missingSource) deny(MEMBERSHIP_RULE, new UserFacingError(MEMBERSHIP_MISMATCH));
   else if (currentRows.some((row) => row.archivedAt !== null)) deny(MEMBERSHIP_RULE, new UserFacingError(ARCHIVED_LINE));
   else if (order === "mismatch") deny(MEMBERSHIP_RULE, new UserFacingError(ORDER_MISMATCH));
 

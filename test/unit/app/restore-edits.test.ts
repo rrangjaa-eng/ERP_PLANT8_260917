@@ -82,4 +82,16 @@ describe("복원 — 보관할 때의 기준값으로 충돌 판정(검토 8)", 
 
     expect(restored.period).toEqual({});
   });
+
+  // Codex 리뷰 P1(PR #125) — 복제한 새 줄은 복원 뒤에도 원본 id를 싣는다(거래처가 가려진 계급의 거래처를 서버가 원본에서 넘긴다).
+  it("새 줄: 복제한 줄의 원본 id를 되살린다", () => {
+    const newId = "6f1c2b8e-3d4a-4f5b-9c6d-7e8f9a0b1c2d";
+    const sourceId = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+    const copy: Line = { ...savedLine(1, 1000), clientKey: newId, id: newId, isNew: true, version: undefined, duplicatedFrom: sourceId, dirty: true };
+    const stash = JSON.parse(JSON.stringify(editsSnapshot([copy], null, PERIOD_V1, null, null))) as Record<string, unknown>;
+
+    const [restored] = mergeRestoredEdits([], stash, "print", { quote: {} } as KindCells).lines;
+
+    expect(restored).toMatchObject({ id: newId, isNew: true, duplicatedFrom: sourceId });
+  });
 });

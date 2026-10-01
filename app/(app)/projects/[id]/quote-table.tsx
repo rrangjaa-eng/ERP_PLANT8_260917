@@ -69,6 +69,8 @@ type DraftLine = {
   id?: string;
   /** 04-30(ENG-D10) — 화면이 만든 uuid로 아직 저장되지 않은 줄. 재전송에도 같은 id를 싣는다. */
   isNew?: true;
+  /** Codex 리뷰 P1(PR #125) — 복제한 새 줄의 원본(저장된 줄) id. 거래처가 가려진 계급의 거래처를 서버가 원본에서 넘긴다. */
+  duplicatedFrom?: string;
   /** 04-23(D-83 · D-48) — 줄 종류(서버 DTO). 새 줄에서만 정해지고 바뀌지 않는다. */
   lineKind: QuoteLineKind;
   version?: number;
@@ -248,7 +250,8 @@ function baselineFromDto(dto: QuoteLineDto): QuoteLineBaseline {
   return {
     subcategory: dto.subcategory,
     itemName: dto.itemName,
-    vendorId: dto.vendorId,
+    // Codex 리뷰 P1(PR #125) — 거래처가 가려진 계급의 DTO에는 vendorId가 없다(저장 스키마는 null을 받는다).
+    vendorId: dto.vendorId ?? null,
     quantity: dto.quantity,
     unitPriceAmountKrw: dto.unitPrice?.amountKrw ?? 0,
     executionAmountKrw: dto.execution?.amountKrw ?? 0,
@@ -265,7 +268,7 @@ function fromDto(dto: QuoteLineDto): DraftLine {
     version: dto.version,
     subcategory: dto.subcategory,
     itemName: dto.itemName,
-    vendorId: dto.vendorId,
+    vendorId: dto.vendorId ?? null,
     quantity: dto.quantity,
     unitPriceAmount: dto.unitPrice?.amount ?? 0,
     unitPriceCurrency: dto.unitPrice?.currency ?? "KRW",
@@ -339,6 +342,7 @@ type StoredLineBase = { version: number; baseline: QuoteLineBaseline };
 type StoredPeriodBase = { startDate: string | null; endDate: string | null };
 type StoredNewLine = {
   lineKind: QuoteLineKind;
+  duplicatedFrom?: string;
   subcategory: string;
   itemName: string;
   vendorId: string | null;
@@ -362,6 +366,7 @@ export function editsSnapshot(
     if (line.isNew || !line.id) {
       const stored: StoredNewLine = {
         lineKind: line.lineKind,
+        duplicatedFrom: line.duplicatedFrom,
         subcategory: line.subcategory,
         itemName: line.itemName,
         vendorId: line.vendorId,
@@ -498,6 +503,7 @@ function restoredNewLine(value: unknown, defaultSubcategory: string, kindCells: 
   let line: DraftLine = {
     ...newDraftLine(lineKind === "quote" ? defaultSubcategory : "", cells, UUID_PATTERN.test(storedId) ? storedId : crypto.randomUUID()),
     lineKind,
+    ...(typeof value.duplicatedFrom === "string" && UUID_PATTERN.test(value.duplicatedFrom) ? { duplicatedFrom: value.duplicatedFrom } : {}),
   };
   for (const [field, column] of [
     ["subcategory", "subcategory"],
@@ -1415,6 +1421,8 @@ export function QuoteLedger({
         // 04-23(D-48) — 견적 외 비용 줄의 복제는 같은 종류다.
         ...newDraftLine(source.subcategory, source.lineKind === "out_of_quote" ? outOfQuoteLineCells : newLineCells),
         lineKind: source.lineKind,
+        // Codex 리뷰 P1(PR #125) — 저장되지 않은 줄의 복제는 그 줄의 원본을 잇는다.
+        duplicatedFrom: source.isNew ? source.duplicatedFrom : source.id,
         itemName: source.itemName,
         vendorId: source.vendorId,
         quantity: source.quantity,
@@ -1552,6 +1560,7 @@ export function QuoteLedger({
               rows: dirtyLines.map((line) => ({
                 id: line.id,
                 isNew: line.isNew,
+                duplicatedFrom: line.isNew ? line.duplicatedFrom : undefined,
                 version: line.isNew ? undefined : line.version,
                 lineKind: line.isNew ? line.lineKind : undefined,
                 subcategory: line.subcategory,

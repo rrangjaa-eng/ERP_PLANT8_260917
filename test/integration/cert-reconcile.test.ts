@@ -360,6 +360,18 @@ describe("cancelRequest — 「신청 취소」(경품 0일 때만 · 행 삭제
     await expect(cancelRequest(pm, requested.eventId)).rejects.toBeInstanceOf(ForbiddenError);
     expect(await eventRow(requested.eventId)).not.toBeNull();
   });
+
+  // 04.3-17 독립 검토 X5 — 쓰기 권한이 하나도 없으면 행을 읽기 전에 Forbidden(없는 id · 있는 id가 같은 답 — 존재를 가르지 않는다).
+  it("certs.qr 쓰기도 certs.events 쓰기도 없는 계정 → 있는 id · 없는 id 모두 Forbidden(행을 읽기 전)", async () => {
+    const pm = await makeViewer(PM, "기획 PM");
+    const viewOnly = await makeViewer({ eventsView: true }, "보기만");
+    const requested = await createCertEvent({ name: "보기만 취소", status: "requested", createdBy: pm.id });
+    await expect(cancelRequest(viewOnly, requested.eventId)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(cancelRequest(viewOnly, randomUUID())).rejects.toBeInstanceOf(ForbiddenError);
+    expect(await eventRow(requested.eventId)).not.toBeNull();
+    // 쓰기가 있는 신청자 계급은 없는 id에 notFound 그대로다.
+    expect(await cancelRequest(pm, randomUUID())).toEqual({ kind: "notFound" });
+  });
 });
 
 describe("경합(E13) — 잠금을 거치는 실제 함수끼리 겹쳐도 500 없음", () => {

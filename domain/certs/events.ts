@@ -910,12 +910,14 @@ export type CancelRequestResult = { kind: "cancelled"; name: string } | { kind: 
 export async function cancelRequest(viewer: Viewer, eventId: string, deps?: Partial<CertEventWriteDeps>): Promise<CancelRequestResult> {
   if (!(await isCertFeatureEnabled())) return { kind: "notFound" };
   if (!UUID_PATTERN.test(eventId)) return { kind: "notFound" };
-  const creator = await findEventCreator(viewer, eventId);
-  if (creator === undefined) return { kind: "notFound" };
+  // 권한을 행보다 먼저 본다 — 쓰기가 하나도 없으면 행을 읽지 않고 Forbidden(있는 id · 없는 id가 같은 답, 검토 X5).
   const me = createdByOf(viewer);
   const canAsManager = await defaultCan(viewer, CERT_QR_MENU, "write");
-  const canAsApplicant = me !== null && creator === me && (await defaultCan(viewer, CERT_EVENTS_MENU, "write"));
-  if (!canAsManager && !canAsApplicant) throw new ForbiddenError(CERT_FORBIDDEN_MESSAGE);
+  const canWriteEvents = !canAsManager && me !== null && (await defaultCan(viewer, CERT_EVENTS_MENU, "write"));
+  if (!canAsManager && !canWriteEvents) throw new ForbiddenError(CERT_FORBIDDEN_MESSAGE);
+  const creator = await findEventCreator(viewer, eventId);
+  if (creator === undefined) return { kind: "notFound" };
+  if (!canAsManager && creator !== me) throw new ForbiddenError(CERT_FORBIDDEN_MESSAGE);
   if (!(await inScope(viewer, eventId))) return { kind: "notFound" };
 
   return (deps?.withTransaction ?? withTransaction)(async (tx): Promise<CancelRequestResult> => {

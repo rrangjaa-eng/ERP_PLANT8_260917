@@ -114,7 +114,9 @@ export function assertRealPaths(args: { out: string; plans: string[] }, root = p
     return resolve(realpathSync(cur), relative(cur, path));
   };
   const outAbs = resolve(root, args.out);
-  if ((existsSync(outAbs) && lstatSync(outAbs).isSymbolicLink()) || !inside(nearestReal(outAbs), [".planning", "test-results"])) {
+  // 하드링크는 realpath로 드러나지 않는다 — 이미 있는 파일의 링크 수가 1보다 크면 거부한다.
+  const linked = existsSync(outAbs) && (lstatSync(outAbs).isSymbolicLink() || lstatSync(outAbs).nlink > 1);
+  if (linked || !inside(nearestReal(outAbs), [".planning", "test-results"])) {
     throw new Error(`--out은 링크가 아닌 .planning/·test-results/ 안 파일이어야 한다: ${args.out}`);
   }
   for (const plan of args.plans) {
@@ -136,7 +138,10 @@ export function envFileSecrets(texts: string[]): string[] {
   for (const text of texts) {
     for (const line of text.split("\n")) {
       const match = /^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*(.*)$/.exec(line);
-      const value = (match?.[1] ?? "").trim().replace(/^(["'])(.*)\1$/, "$2");
+      const raw = (match?.[1] ?? "").trim();
+      // dotenv 문법: 따옴표 값은 닫는 따옴표까지, 따옴표 없는 값은 인라인 주석(" #") 앞까지.
+      const quoted = /^(["'`])(.*?)\1/.exec(raw);
+      const value = quoted ? (quoted[2] ?? "") : raw.replace(/\s+#.*$/, "");
       if (value.length >= 8) values.push(value);
     }
   }
@@ -280,7 +285,8 @@ export function buildPrompt(input: {
 
 export function codexArgs(prompt: string, imageFiles: string[]): string[] {
   // -i <FILE>...은 뒤 인자를 모두 파일로 먹는다 — 프롬프트를 첫 -i보다 앞에 둔다.
-  return ["exec", "--skip-git-repo-check", "-s", "read-only", prompt, ...imageFiles.flatMap((f) => ["-i", f])];
+  // --ephemeral: 프롬프트·실행 기록을 CODEX_HOME 세션 파일로 남기지 않는다(가리기 전 원문이 남지 않게).
+  return ["exec", "--ephemeral", "--skip-git-repo-check", "-s", "read-only", prompt, ...imageFiles.flatMap((f) => ["-i", f])];
 }
 
 export function parseCodexFindings(stdout: string): Finding[] {

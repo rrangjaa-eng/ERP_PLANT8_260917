@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -161,6 +161,12 @@ describe("assertRealPaths", () => {
     expect(() => assertRealPaths({ out: ".planning/esc/r.md", plans: [] }, root)).toThrow("--out");
   });
 
+  it("--out이 하드링크(링크 수 > 1)면 거부한다(보호 파일 덮어쓰기)", () => {
+    const root = repo();
+    linkSync(join(root, "CLAUDE.md"), join(root, ".planning", "r.md"));
+    expect(() => assertRealPaths({ out: ".planning/r.md", plans: [] }, root)).toThrow("--out");
+  });
+
   it("--plan이 심볼릭 링크면 거부한다(비밀 파일 전송)", () => {
     const root = repo();
     const secret = join(mkdtempSync(join(tmpdir(), "codex-dr-secret-")), "auth.json");
@@ -181,6 +187,14 @@ describe("fillRoute · envFileSecrets", () => {
     expect(secrets).toContain("a1b2c3d4e5f6");
     expect(secrets).toContain("postgres://erp:erp@127.0.0.1:5432/erp");
     expect(secrets).not.toContain("local");
+  });
+
+  it("dotenv 문법대로 인라인 주석을 떼고 따옴표 안 #은 값으로 둔다", () => {
+    const secrets = envFileSecrets(["SECRET=abcdefgh # local credential\nQUOTED='p#ss word 99' # 주석\nexport TOKEN=\"x1y2z3w4\"#c"]);
+    expect(secrets).toContain("abcdefgh");
+    expect(secrets).toContain("p#ss word 99");
+    expect(secrets).toContain("x1y2z3w4");
+    expect(secrets.some((v) => v.includes("credential") || v.includes("주석"))).toBe(false);
   });
 });
 
@@ -266,7 +280,7 @@ describe("buildPrompt", () => {
 describe("codexArgs", () => {
   it("프롬프트가 첫 -i보다 앞이고 이미지마다 -i가 붙는다", () => {
     const args = codexArgs("PROMPT", ["a.png", "b.png"]);
-    expect(args.slice(0, 4)).toEqual(["exec", "--skip-git-repo-check", "-s", "read-only"]);
+    expect(args.slice(0, 5)).toEqual(["exec", "--ephemeral", "--skip-git-repo-check", "-s", "read-only"]);
     expect(args.indexOf("PROMPT")).toBeLessThan(args.indexOf("-i"));
     expect(args.slice(args.indexOf("PROMPT") + 1)).toEqual(["-i", "a.png", "-i", "b.png"]);
   });
@@ -522,6 +536,18 @@ describe("scripts/codex-design-review.sh 건너뜀 계약", () => {
     const target = join(mkdtempSync(join(tmpdir(), "codex-dr-target-")), "CLAUDE.md");
     writeFileSync(target, "원본");
     symlinkSync(target, join(dir, "r.md"));
+    written.push(join(dir, "r.md"));
+    const { result } = run(["/admin/people", "--out", join(dir, "r.md")]);
+    expect(result.status).toBe(2);
+    expect(readFileSync(target, "utf8")).toBe("원본");
+  });
+
+  it("--out이 보호 파일의 하드링크면 2로 끝나고 대상을 쓰지 않는다", () => {
+    const dir = join("test-results", `codex-dr-hard-${process.pid}`);
+    mkdirSync(dir, { recursive: true });
+    const target = join(dir, "CLAUDE.md");
+    writeFileSync(target, "원본");
+    linkSync(target, join(dir, "r.md"));
     written.push(join(dir, "r.md"));
     const { result } = run(["/admin/people", "--out", join(dir, "r.md")]);
     expect(result.status).toBe(2);

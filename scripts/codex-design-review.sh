@@ -32,6 +32,8 @@ if [ -n "$out" ]; then
     *) out="" ;;
   esac
   [ -L "$out" ] && out=""
+  # 하드링크(링크 수 > 1)도 보호 파일과 내용을 같이 쓴다 — 거부한다.
+  [ -n "$out" ] && [ -e "$out" ] && [ "$(stat -c %h -- "$out")" -gt 1 ] && out=""
 fi
 if [ -z "$out" ]; then
   echo "--out은 .planning/·test-results/ 아래 .md여야 한다" >&2

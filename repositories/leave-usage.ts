@@ -1,6 +1,6 @@
-import { and, asc, eq, inArray, lt } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { approvalInstances, leaveAdjustments, leaveRequests } from "@/db/schema";
+import { approvalInstances, leaveRequests } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
 // 04.1-03(LEAV-01): 잔고 계산 재료 — 한 사람의 연차 신청과 결재 상태를 쿼리 한 번으로
@@ -43,18 +43,4 @@ export async function listLeaveUsage(
     )
     .orderBy(asc(leaveRequests.startDate), asc(leaveRequests.id));
   return rows.map((row) => ({ ...row, status: row.status === "approved" ? "approved" : "pending" }));
-}
-
-// quick 261001-85g(ADMN-06): 설정 가져오기의 「빈 새 환경」 판정 재료 — 그 회계연도 전의 연차 신청 · 연차 조정이
-// 한 건이라도 있으면 실제로 운영된 환경이다(지난 연도 연차 일수를 바꾸면 그 잔고가 다시 계산된다).
-export async function hasLeaveRecordsBefore(viewer: Viewer, fiscalYear: number): Promise<boolean> {
-  void viewer;
-  const [request] = await db.select({ id: leaveRequests.id }).from(leaveRequests).where(lt(leaveRequests.fiscalYear, fiscalYear)).limit(1);
-  if (request) return true;
-  const [adjustment] = await db
-    .select({ id: leaveAdjustments.id })
-    .from(leaveAdjustments)
-    .where(lt(leaveAdjustments.fiscalYear, fiscalYear))
-    .limit(1);
-  return adjustment !== undefined;
 }

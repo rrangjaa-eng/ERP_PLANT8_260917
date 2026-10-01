@@ -142,8 +142,8 @@ describe("설정 JSON 내보내기·가져오기 (ADMN-06, 실제 Postgres)", ()
       if (savedRows.length > 0) await db.insert(settingsHistorized).values(savedRows);
     });
 
-    // 빈 새 환경에는 연차 기록이 없다 — 통합 DB는 다른 파일이 남긴 연차 기록을 공유하므로 이 확인만 주입한다((n)이 실제 조회를 덮는다).
-    const noLeaveRecords = { ...importDeps, hasPastLeaveRecords: () => Promise.resolve(false) };
+    // 빈 새 환경에는 올해 전 업무 기록이 없다 — 통합 DB는 다른 파일이 남긴 기록을 공유하므로 이 확인만 주입한다((n)이 실제 조회를 덮는다).
+    const noPastRecords = { ...importDeps, hasPastBusinessRecords: () => Promise.resolve(false) };
 
     // 대상 환경을 「시드 행 하나」(배포 시드 2000-01-01 = 기본값)로 맞춘다.
     async function onlySeedRow(): Promise<void> {
@@ -193,7 +193,7 @@ describe("설정 JSON 내보내기·가져오기 (ADMN-06, 실제 Postgres)", ()
             { effectiveFrom: "2027-01-01", value: 17 },
           ],
         }),
-        noLeaveRecords,
+        noPastRecords,
       );
       expect(await listSettingHistory(LEAVE_ANNUAL_DAYS)).toEqual([
         { effectiveFrom: "2027-01-01", value: 17 },
@@ -210,7 +210,7 @@ describe("설정 JSON 내보내기·가져오기 (ADMN-06, 실제 Postgres)", ()
       await db.delete(settingsHistorized);
       await db.delete(settingsSimple);
 
-      await importSettings(SYSTEM_VIEWER, exported, noLeaveRecords);
+      await importSettings(SYSTEM_VIEWER, exported, noPastRecords);
       expect(await snapshot()).toEqual(before);
     });
 
@@ -221,7 +221,7 @@ describe("설정 JSON 내보내기·가져오기 (ADMN-06, 실제 Postgres)", ()
       const error = await importSettings(
         SYSTEM_VIEWER,
         payload({ [LEAVE_ANNUAL_DAYS.key]: [{ effectiveFrom: "2025-01-01", value: 16 }] }),
-        noLeaveRecords,
+        noPastRecords,
       ).catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(ImportValidationError);
       expect((error as ImportValidationError).issues.join("\n")).toContain("지난 연도");
@@ -248,6 +248,17 @@ describe("설정 JSON 내보내기·가져오기 (ADMN-06, 실제 Postgres)", ()
       } finally {
         if (adjustment) await db.delete(leaveAdjustments).where(eq(leaveAdjustments.id, adjustment.id));
       }
+    });
+
+    it("(o) 미설정 키라도 시드 날짜(2000-01-01)에 다른 값은 거부 — 조용히 버려지지 않는다", async () => {
+      await onlySeedRow();
+      const error = await importSettings(
+        SYSTEM_VIEWER,
+        payload({ [LEAVE_ANNUAL_DAYS.key]: [{ effectiveFrom: "2000-01-01", value: 16 }] }),
+        noPastRecords,
+      ).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ImportValidationError);
+      expect((error as ImportValidationError).issues.join("\n")).toContain("지난 연도");
     });
   });
 

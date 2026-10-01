@@ -31,6 +31,9 @@ export type ProjectFormReferences = {
   pmUsers: ProjectReferenceOption[];
   // 견적 줄 표의 거래처(선택) 셀 — 클라이언트와 같은 vendors 표를 쓴다.
   vendors: ProjectReferenceOption[];
+  // quick 261001-85g(사용자 결정 2026-10-01) — 거래처 정보(vendor.value)가 가려진 계급이면 거짓. 견적 표는 거래처 열을
+  // 그리지 않고(가려진 정보의 열은 그리지 않는다), 빈 거래처 목록을 「거래처 없음」과 구분한다.
+  vendorShown: boolean;
   subcategories: CodeOption[];
 };
 
@@ -90,17 +93,25 @@ export async function listProjectFormReferences(
     }),
   ]);
 
+  // /review 5 — 투영은 위 선판정을 그대로 쓴다(항목마다 노출표 조회 한 번, 두 판정이 어긋날 틈 없음).
+  const shown = new Map([
+    ["vendor.value", vendorShown],
+    ["team.value", teamShown],
+    ["person.value", personShown],
+  ]);
+  const projectDeps = { visible: (_viewer: Viewer, item: string) => Promise.resolve(shown.get(item) === true) };
   const vendorOptions = (await projectMany(
     viewer,
     vendorRows.map((row) => ({ id: row.id, name: row.name })),
     VENDOR_OPTION_SPEC,
-    { visible: visibleFn },
+    projectDeps,
   )) as ProjectReferenceOption[];
   return {
     clients: vendorOptions,
-    teams: (await projectMany(viewer, teamRows.map((row) => ({ id: row.id, name: row.name })), TEAM_OPTION_SPEC, { visible: visibleFn })) as ProjectReferenceOption[],
-    pmUsers: (await projectMany(viewer, userRows.map((row) => ({ id: row.id, name: row.name })), PERSON_OPTION_SPEC, { visible: visibleFn })) as ProjectReferenceOption[],
+    teams: (await projectMany(viewer, teamRows.map((row) => ({ id: row.id, name: row.name })), TEAM_OPTION_SPEC, projectDeps)) as ProjectReferenceOption[],
+    pmUsers: (await projectMany(viewer, userRows.map((row) => ({ id: row.id, name: row.name })), PERSON_OPTION_SPEC, projectDeps)) as ProjectReferenceOption[],
     vendors: vendorOptions,
+    vendorShown,
     subcategories: subcategoryRows.map((row) => ({ value: row.value, label: row.label, description: row.description })),
   };
 }

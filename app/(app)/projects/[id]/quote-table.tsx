@@ -894,6 +894,7 @@ export function QuoteLedger({
   revisionId,
   initialLines,
   vendors,
+  vendorShown,
   subcategories,
   structural,
   newLineCells,
@@ -941,6 +942,8 @@ export function QuoteLedger({
   revisionId: string;
   initialLines: QuoteLineDto[];
   vendors: QuoteTableOption[];
+  /** quick 261001-85g(사용자 결정 2026-10-01) — 거래처 정보가 가려진 계급이면 거짓: 거래처 열을 그리지 않는다. */
+  vendorShown: boolean;
   subcategories: QuoteTableCodeOption[];
   /** 04-30(사용자 D10) — 줄 구조 편집 가능성(서버 structuralEditability). */
   structural: StructuralEditability;
@@ -1633,7 +1636,7 @@ export function QuoteLedger({
   // 04-49(DR-36) — 1024 미만이면 셀 편집 가능성을 전부 거둬 캡션 있는 읽기 표로 그린다(dirty 인셋은 그대로).
   const atWidth = (level: CellEditability): CellEditability => (editableWidth ? level : "readonly");
 
-  const columns: TableColumn<DraftLine>[] = [
+  const allColumns: TableColumn<DraftLine>[] = [
     {
       key: "sort",
       header: "번호",
@@ -1859,16 +1862,18 @@ export function QuoteLedger({
         }),
     },
   ];
+  // quick 261001-85g — 가려진 정보의 열은 그리지 않는다(거래처 정보가 가려진 계급).
+  const columns = vendorShown ? allColumns : allColumns.filter((column) => column.key !== "vendor");
   // 04-19 — 격자 Ctrl+C 글자는 04-24 읽기 열의 copyText(견적 줄 복사 글자의 유일한 정의)를 열 키로 붙인다.
   const copyTextByKey = new Map(
-    quoteLineReadColumns<DraftLine>({ subcategories, vendors }, (row) => lines.indexOf(row) + 1).map((column) => [column.key, column.copyText]),
+    quoteLineReadColumns<DraftLine>({ subcategories, vendors, vendorShown }, (row) => lines.indexOf(row) + 1).map((column) => [column.key, column.copyText]),
   );
   for (const column of columns) column.copyText = copyTextByKey.get(column.key);
 
   // 04-04(다) — 붙여넣기 열 정의. columns와 같은 순서·같은 길이여야 한다
   // (Table이 colIndex로 이 둘을 함께 참조한다).
-  const pasteColumns: PasteColumn<DraftLine>[] = useMemo(
-    () => [
+  const pasteColumns: PasteColumn<DraftLine>[] = useMemo(() => {
+    const all: PasteColumn<DraftLine>[] = [
       { key: "sort", kind: "text", isEditable: () => false },
       {
         key: "subcategory",
@@ -1891,9 +1896,10 @@ export function QuoteLedger({
       { key: "profit", kind: "text", isEditable: () => false },
       { key: "status", kind: "text", isEditable: () => false },
       { key: "note", kind: "text", isEditable: (row) => row.cells.note === "edit" },
-    ],
-    [subcategories, vendors],
-  );
+    ];
+    // quick 261001-85g — columns와 같은 열을 뺀다(colIndex로 함께 참조).
+    return vendorShown ? all : all.filter((column) => column.key !== "vendor");
+  }, [subcategories, vendors, vendorShown]);
 
   // 04-30(DR-35) — 잠긴 셀은 표 위 한 줄과 같은 이유(quoteLockReason), 읽기 전용 셀은 연결 문서 이유(DTO).
   // 이유가 없는 잠김은 아무것도 띄우지 않는다(DR-22).
@@ -2325,7 +2331,7 @@ export function QuoteLedger({
         draftScopeId={draftScopeId}
         currentRevisionId={revisionId}
         revisions={revisions}
-        references={{ subcategories, vendors }}
+        references={{ subcategories, vendors, vendorShown }}
         onSharedEditsCarried={dirtyStorage.recount}
       />
       {lockLine ? <p className={styles.lockLine}>{lockLine}</p> : null}
@@ -2478,7 +2484,11 @@ export function QuoteLedger({
           open
           onClose={() => setSheetRowKey(null)}
           title={openSheetRow.itemName || "(항목명 없음)"}
-          subtitle={`${subcategoryLabel(openSheetRow.subcategory)} · ${vendorLabel(openSheetRow.vendorId)}`}
+          subtitle={
+            vendorShown
+              ? `${subcategoryLabel(openSheetRow.subcategory)} · ${vendorLabel(openSheetRow.vendorId)}`
+              : subcategoryLabel(openSheetRow.subcategory)
+          }
           items={[
             { label: "수량", value: openSheetRow.quantity },
             { label: "단가", value: formatKrw(openSheetRow.unitPriceAmountKrw) },

@@ -633,12 +633,12 @@ SETTING_DEFS.push(
   DOCUMENT_NUMBER_LEAVE_SEQ_START,
 );
 
-// 04.1-03(LEAV-01 · 입력 §5): 회계연도(1월 시작) 연차 일수 — 이력형이라 값을 바꿔도 지난
-// 연도 잔고가 소급해 바뀌지 않는다(잔고는 각 회계연도 1월 1일 시점 값을 읽는다). 적용 시작일
-// 1월 1일 강제와 지난 연도 거부는 04.1-04 레지스트리 검증이 한다.
 // 이력형 키의 배포 시드 기본 행 날짜 — 시드(domain/seed)가 넣고, 가져오기(export.ts)가 「시드 행뿐인 키」를 알아본다.
 export const SEED_HISTORIZED_EFFECTIVE_FROM = "2000-01-01";
 
+// 04.1-03(LEAV-01 · 입력 §5): 회계연도(1월 시작) 연차 일수 — 이력형이라 값을 바꿔도 지난
+// 연도 잔고가 소급해 바뀌지 않는다(잔고는 각 회계연도 1월 1일 시점 값을 읽는다). 적용 시작일
+// 1월 1일 강제와 지난 연도 거부는 04.1-04 레지스트리 검증이 한다.
 export const LEAVE_ANNUAL_DAYS: SettingDef<number> = {
   key: "leave.annual_days",
   kind: "historized",

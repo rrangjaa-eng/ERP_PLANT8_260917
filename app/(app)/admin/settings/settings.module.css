@@ -128,11 +128,19 @@
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
   cursor: pointer;
+}
+
+/* §4-4 · §7-1 3차 밑줄 1px → hover 2px. */
+.restoreAction:hover {
+  text-decoration-thickness: var(--line-w-strong);
 }
 
 @media (max-width: 699.98px) {
   .restoreAction {
     min-height: var(--touch-min);
+    min-width: var(--touch-min);
   }
 }

@@ -27,6 +27,8 @@ export type TextFieldProps = Omit<
    * --s-12 · --fs-md). 기본값은 기존 모양(HTML `size` 속성을 가린다 —
    * 이 저장소의 27개 기존 호출부는 그 속성을 쓰지 않는다). */
   size?: "default" | "external";
+  /** 칸 밖에 그린 힌트 요소의 id — aria-describedby에 오류 id 뒤로 더한다. */
+  hintId?: string;
 };
 
 // 훅은 조건 없이 호출해야 한다(Rules of Hooks) — numberKind 유무로 다른
@@ -38,6 +40,10 @@ export function TextField(props: TextFieldProps) {
   return <PlainTextField {...props} />;
 }
 
+function describedBy(errorId: string | undefined, hintId: string | undefined): string | undefined {
+  return [errorId, hintId].filter(Boolean).join(" ") || undefined;
+}
+
 function PlainTextField({
   id,
   label,
@@ -45,6 +51,7 @@ function PlainTextField({
   numeric = false,
   size = "default",
   className,
+  hintId,
   "aria-invalid": ariaInvalid,
   "aria-describedby": ariaDescribedBy,
   ...rest
@@ -61,7 +68,7 @@ function PlainTextField({
           id={id}
           {...rest}
           aria-invalid={error ? true : ariaInvalid}
-          aria-describedby={error ? errorId : ariaDescribedBy}
+          aria-describedby={describedBy(error ? errorId : ariaDescribedBy, hintId)}
           className={[
             styles.input,
             numeric ? styles.numeric : "",
@@ -94,6 +101,7 @@ function CommaTextField({
   name,
   defaultValue,
   size,
+  hintId,
   "aria-invalid": ariaInvalid,
   "aria-describedby": ariaDescribedBy,
   ...rest
@@ -119,7 +127,7 @@ function CommaTextField({
           value={value}
           onChange={onChange}
           aria-invalid={error ? true : ariaInvalid}
-          aria-describedby={error ? errorId : ariaDescribedBy}
+          aria-describedby={describedBy(error ? errorId : ariaDescribedBy, hintId)}
           className={[styles.input, styles.numeric, error ? styles.inputError : "", className]
             .filter(Boolean)
             .join(" ")}

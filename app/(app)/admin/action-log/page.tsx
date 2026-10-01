@@ -38,12 +38,17 @@ export default async function ActionLogPage({ searchParams }: { searchParams: Pr
   // filter와 filterValues가 같은 값을 쓰게 한다 — filterValues를 정규화하지
   // 않으면 그 ""가 내보내기·정리 액션의 z.string().min(1)에 걸려, 필터를 화면에서
   // 한 번 건드린 뒤에는 두 기능이 다 막힌다.
-  const actorId = params.actorId || undefined;
   const actionType = params.actionType || undefined;
   const documentId = params.documentId || undefined;
   const from = isValidDateString(params.from) ? params.from : undefined;
   const to = isValidDateString(params.to) ? params.to : undefined;
   const includePruned = params.includePruned === "1";
+
+  // D1(사용자 결정 2026-09-30): 고를 사람이 없는 계급은 「사람」 칸이 없어 끌 수 없으므로 URL actorId를 적용하지 않는다.
+  const [people, canWrite] = await Promise.all([listPeople(session.viewer), can(session.viewer, "admin.action-log", "write")]);
+  // person.value가 꺼진 계급의 DTO에는 id · 이름 키가 없다 — 고를 수 없는 사람은 선택지에 올리지 않는다.
+  const selectablePeople = people.filter((person) => "id" in person).map((person) => ({ id: person.id, name: person.name }));
+  const actorId = selectablePeople.length > 0 ? params.actorId || undefined : undefined;
 
   const filter: ActionLogFilter = {
     actorId,
@@ -56,11 +61,7 @@ export default async function ActionLogPage({ searchParams }: { searchParams: Pr
 
   const hasFilter = Boolean(actorId || actionType || documentId || from || to);
 
-  const [rows, canWrite, people] = await Promise.all([
-    queryActionLog(session.viewer, filter),
-    can(session.viewer, "admin.action-log", "write"),
-    listPeople(session.viewer),
-  ]);
+  const rows = await queryActionLog(session.viewer, filter);
 
   const pruneCount = rows.filter((row) => !row.prunedAt && row.actionType !== "action_log_prune").length;
 
@@ -83,7 +84,7 @@ export default async function ActionLogPage({ searchParams }: { searchParams: Pr
       <PageHeader title="행동 로그" />
 
       <FilterBar
-        people={people.map((person) => ({ id: person.id, name: person.name }))}
+        people={selectablePeople}
         actionTypes={actionTypeOptions}
         defaultValues={filterValues}
         hasFilter={hasFilter}

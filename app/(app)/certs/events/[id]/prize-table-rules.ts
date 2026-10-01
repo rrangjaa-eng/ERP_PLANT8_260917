@@ -179,7 +179,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 // ForbiddenError 문장(domain CERT_FORBIDDEN_MESSAGE) — serverError로 온다.
-const FORBIDDEN_SERVER_ERROR = "권한 없음";
+export const FORBIDDEN_SERVER_ERROR = "권한 없음";
 
 // 액션 응답(또는 "unreachable")을 갈래로. 모르는 모양 · 연결 끊김 · 그 밖 serverError는 결과 불명(failed — 같은 요청 키로 다시).
 export function generateOutcome(response: unknown): GenerateOutcome {

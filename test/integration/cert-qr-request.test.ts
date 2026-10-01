@@ -195,6 +195,8 @@ describe("받는 사람 · 범위(E11 · E22)", () => {
     expect(Object.keys(pmPrize)).not.toContain("unitValueKrw");
     expect(Object.keys(pmPrize)).not.toContain("quantityCounts");
     expect(Object.keys(pmPrize)).not.toContain("purgeTargetCount");
+    expect(Object.keys(pmPrize)).not.toContain("updatedAt");
+    expect(Object.keys(pmPrize)).not.toContain("updatedByName");
     expect(JSON.stringify(forPm)).not.toMatch(/1,?290,?000/);
   });
 
@@ -488,7 +490,10 @@ describe("savePrizes — 접수 중 · 닫힘 경품 표 저장(Task 2)", () => 
       { updates: [{ id: ev.p2, version: 1, delivery: "현장" }] },
       { deletes: [{ id: ev.p2, version: 1 }] },
     ]) {
-      expect(await savePrizes(manager, ev.eventId, { changes })).toEqual({ kind: "readOnly" });
+      // readOnly도 지금 경품 줄을 싣는다 — 화면이 그 줄의 잠김을 갱신한다(독립 검토 W4 ⓐ).
+      const result = await savePrizes(manager, ev.eventId, { changes });
+      expect(result.kind).toBe("readOnly");
+      expect(result.kind === "readOnly" && result.prizes.find((p) => p.id === ev.p2)?.locked).toBe(true);
     }
     expect(await versionOf(ev.p2)).toBe(1);
     expect((await savePrizes(manager, ev.eventId, { changes: { updates: [{ id: ev.p2, version: 1, unitValue: "49,000", winnerCount: "4" }] } })).kind).toBe("saved");
@@ -498,8 +503,8 @@ describe("savePrizes — 접수 중 · 닫힘 경품 표 저장(Task 2)", () => 
     const manager = await makeUser(await managerRole(), "경영 이수아");
     const ev = await openWithPrizes({ closed: true });
     const insert = { inserts: [{ key: "n1", name: "새 경품", unitValue: "100,000", delivery: "현장" }] };
-    expect(await savePrizes(manager, ev.eventId, { changes: insert })).toEqual({ kind: "readOnly" });
-    expect(await savePrizes(manager, ev.eventId, { changes: { updates: [{ id: ev.p1, version: 1, name: "새 이름" }] } })).toEqual({ kind: "readOnly" });
+    expect((await savePrizes(manager, ev.eventId, { changes: insert })).kind).toBe("readOnly");
+    expect((await savePrizes(manager, ev.eventId, { changes: { updates: [{ id: ev.p1, version: 1, name: "새 이름" }] } })).kind).toBe("readOnly");
     expect((await savePrizes(manager, ev.eventId, { changes: { updates: [{ id: ev.p1, version: 1, unitValue: "700,000" }] } })).kind).toBe("saved");
   });
 
@@ -519,6 +524,20 @@ describe("savePrizes — 접수 중 · 닫힘 경품 표 저장(Task 2)", () => 
     });
     expect(await versionOf(ev.p1)).toBe(1);
     expect(await valueLogsOfEvent(ev.eventId)).toEqual([]);
+  });
+
+  it("충돌 줄은 바꾼 시각 · 바꾼 사람 이름을 싣는다(경영관리 DTO만 — §7-3 (나), 독립 검토 W2)", async () => {
+    const first = await makeUser(await managerRole(), "경영 이수아");
+    const second = await makeUser(await managerRole(), "경영 최도윤");
+    const ev = await openWithPrizes();
+    const before = Date.now();
+    expect((await savePrizes(first, ev.eventId, { changes: { updates: [{ id: ev.p1, version: 1, unitValue: "9,800,000" }] } })).kind).toBe("saved");
+    const conflict = await savePrizes(second, ev.eventId, { changes: { updates: [{ id: ev.p1, version: 1, unitValue: "1,300,000" }] } });
+    expect(conflict.kind).toBe("conflict");
+    const row = conflict.kind === "conflict" ? conflict.prizes.find((p) => p.id === ev.p1) : undefined;
+    expect(row).toMatchObject({ version: 2, unitValueKrw: 9_800_000, updatedByName: "경영 이수아" });
+    expect(typeof row?.updatedAt).toBe("string");
+    expect(new Date(row?.updatedAt ?? 0).getTime()).toBeGreaterThanOrEqual(before - 1000);
   });
 
   it("같은 줄 id가 두 번(지우기 둘 · 고치기와 지우기) · 배열 501줄 → 입력 오류(ZodError — 500 아님) · 쓰기 0(독립 검토 W6)", async () => {

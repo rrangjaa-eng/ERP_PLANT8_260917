@@ -100,6 +100,9 @@ export type CertPrizeDto = {
   unitValueKrw: number;
   quantityCounts: Array<{ quantity: number; count: number }>;
   purgeTargetCount: number;
+  // 버전 충돌 셀 이유(§7-3 (나) — 값 · 사람 · 시각)의 재료. 경영관리 DTO만(독립 검토 W2).
+  updatedAt: string;
+  updatedByName: string | null;
 };
 
 export type CertEventDetailDto = CertEventListDto & {
@@ -146,7 +149,7 @@ export const CERT_EVENT_DETAIL_DTO_SPEC: DtoSpec<CertEventDetailDto, CertEventDe
 };
 
 const PRIZE_EVENT_FIELDS = ["id", "name", "delivery", "winnerCount", "submittedCount", "locked", "version"] as const;
-const PRIZE_VALUE_FIELDS = ["unitValueKrw", "quantityCounts", "purgeTargetCount"] as const;
+const PRIZE_VALUE_FIELDS = ["unitValueKrw", "quantityCounts", "purgeTargetCount", "updatedAt", "updatedByName"] as const;
 
 // 가액 세 키는 cert_prize.value(staffDefault false)에 등록한다 — 다른 액션 · 내보내기가 이 DTO를 재사용해도 누수 스캔이
 // 잡는다(E12). 나머지는 행사 칸(cert_event.value).
@@ -262,6 +265,10 @@ export async function getEventDetail(
 
 // 경품 줄 DTO — 가액 세 키는 경영관리(canManagePrizes)일 때만 만들고, 투영이 cert_prize.value로 한 번 더 거른다.
 async function prizeDtos(viewer: Viewer, rows: CertPrizeSummaryRow[], canManagePrizes: boolean): Promise<Partial<CertPrizeDto>[]> {
+  const updaterIds = canManagePrizes ? [...new Set(rows.flatMap((row) => (row.updatedBy ? [row.updatedBy] : [])))] : [];
+  const updaterNames = new Map(
+    await Promise.all(updaterIds.map(async (id) => [id, (await findUserById(viewer, id))?.name ?? null] as const)),
+  );
   const dtos = rows.map((row) => {
     const base = {
       id: row.id,
@@ -276,7 +283,14 @@ async function prizeDtos(viewer: Viewer, rows: CertPrizeSummaryRow[], canManageP
     const purgeTargetCount = row.quantityCounts
       .filter((q) => certRrnPurgeTarget(row.unitValueKrw, q.quantity))
       .reduce((sum, q) => sum + q.count, 0);
-    return { ...base, unitValueKrw: row.unitValueKrw, quantityCounts: row.quantityCounts, purgeTargetCount };
+    return {
+      ...base,
+      unitValueKrw: row.unitValueKrw,
+      quantityCounts: row.quantityCounts,
+      purgeTargetCount,
+      updatedAt: row.updatedAt.toISOString(),
+      updatedByName: row.updatedBy ? (updaterNames.get(row.updatedBy) ?? null) : null,
+    };
   });
   // 가액 키가 없는 줄도 같은 spec으로 투영한다 — project는 원본에 없는 키를 건너뛴다.
   return projectMany(viewer, dtos as CertPrizeDto[], CERT_PRIZE_DTO_SPEC);
@@ -420,7 +434,7 @@ export type PrizeChanges = z.input<typeof prizeChangesSchema>;
 type ApplyResult =
   | { kind: "ok"; rows: Array<{ unitValueKrw: number }>; counts: { updated: number; inserted: number; deleted: number } }
   | { kind: "invalid"; cellErrors: PrizeCellError[] }
-  | { kind: "readOnly" }
+  | { kind: "readOnly"; summaries: CertPrizeSummaryRow[] }
   | PrizeRowsInTx;
 
 // 잠근 트랜잭션은 원시 줄(summaries)만 돌려준다 — 권한 투영(projectMany는 전역 풀로 노출표를 읽는다)은 커밋 · 롤백
@@ -480,6 +494,7 @@ async function applyPrizeChanges(
     closed: opts.closed,
     deletedIds: [...deleteIds],
   });
+  if (checked.kind === "readOnly") return { kind: "readOnly", summaries: saved };
   if (checked.kind !== "ok") return checked;
   if (conflictIds.length > 0) return { kind: "conflict", summaries: saved };
 
@@ -592,6 +607,7 @@ export async function generateQr(
       if (locked.tokenHash) return locked.qrRequestId === parsed.requestId ? { kind: "ok" } : { kind: "alreadyGenerated" };
 
       const applied = await applyPrizeChanges(viewer, locked, parsed.changes, { closed: false, tx });
+      if (applied.kind === "readOnly") return { kind: "readOnly" };
       if (applied.kind !== "ok") return applied;
       if (applied.rows.length === 0) throw new RollbackWith<GenerateQrResult>({ kind: "blocked", reason: "noPrize" });
       if (!applied.rows.some((row) => certPrizeListed(row.unitValueKrw))) {
@@ -653,7 +669,8 @@ export type SavePrizesInput = z.input<typeof savePrizesSchema>;
 export type SavePrizesResult =
   | { kind: "saved"; rows: number; prizes: Partial<CertPrizeDto>[] }
   | { kind: "invalid"; cellErrors: PrizeCellError[] }
-  | { kind: "readOnly" }
+  // 지금 경품 줄을 싣는다 — 편집 중 제출이 들어와 잠긴 줄을 화면이 안다(독립 검토 W4 ⓐ).
+  | { kind: "readOnly"; prizes: Partial<CertPrizeDto>[] }
   | { kind: "conflict"; prizes: Partial<CertPrizeDto>[] }
   | { kind: "notFound" };
 
@@ -673,8 +690,9 @@ export async function savePrizes(
   const recordAction = deps?.recordAction ?? defaultRecordAction;
 
   type InTx =
-    | Exclude<SavePrizesResult, { kind: "saved" | "conflict" }>
+    | Exclude<SavePrizesResult, { kind: "saved" | "conflict" | "readOnly" }>
     | PrizeRowsInTx
+    | { kind: "readOnly"; summaries: CertPrizeSummaryRow[] }
     | { kind: "saved"; rows: number; summaries: CertPrizeSummaryRow[] };
   const result = await withTransaction(async (tx): Promise<InTx> => {
     const locked = await lockEventRow(viewer, eventId, tx);
@@ -694,5 +712,6 @@ export async function savePrizes(
   });
   if (result.kind === "saved") return { kind: "saved", rows: result.rows, prizes: await prizeDtos(viewer, result.summaries, true) };
   if (result.kind === "conflict") return { kind: "conflict", prizes: await prizeDtos(viewer, result.summaries, true) };
+  if (result.kind === "readOnly") return { kind: "readOnly", prizes: await prizeDtos(viewer, result.summaries, true) };
   return result;
 }

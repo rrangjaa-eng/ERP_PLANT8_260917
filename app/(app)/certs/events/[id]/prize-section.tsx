@@ -14,20 +14,24 @@ import { CERT_PRIZE_NAME_MAX, parsePrizeAmount, validatePrizeRows } from "@/doma
 import type { CertEventStatus, CertPrizeDto } from "@/domain/certs/events";
 import { generateCertQrAction, saveCertPrizesAction } from "../actions";
 import {
-  CONFLICT_REASON,
+  ALREADY_GENERATED_TEXT,
   GENERATE_UNKNOWN_TEXT,
   NEW_PRIZE_DEFAULTS,
   READ_ONLY_REASON,
   cellErrorSummary,
   dirtyCellCount,
   generateOutcome,
+  mergeConflict,
   pinPrizeCellErrors,
   prizeChangesBody,
   qrBlockReason,
+  resolveConflict,
   saveOutcome,
   saveResultText,
   submitCellPreview,
+  withServerLocks,
   type DraftPrizeRow,
+  type PrizeConflict,
   type SubmitCell,
 } from "./prize-table-rules";
 import styles from "./event-detail.module.css";
@@ -250,7 +254,7 @@ function PrizeEditor({ eventId, eventName, status, prizes, contactMissing: initi
   const [rows, setRows] = useState<Row[]>(() => rowsFromProps(prizes, true));
   const [deleted, setDeleted] = useState<Array<{ id: string; version: number }>>([]);
   const [cellErrors, setCellErrors] = useState<Record<string, string>>({});
-  const [conflicts, setConflicts] = useState<Record<string, Row>>({});
+  const [conflicts, setConflicts] = useState<Record<string, PrizeConflict<Row>>>({});
   const [reason, setReason] = useState<{ rowKey: string; column: string } | null>(null);
   const [resultLine, setResultLine] = useState<string | null>(null);
   const [successLine, setSuccessLine] = useState<string | null>(null);
@@ -410,16 +414,25 @@ function PrizeEditor({ eventId, eventName, status, prizes, contactMissing: initi
     return true;
   }
 
-  // §7-3 (나) — 버전이 다른 줄을 충돌 셀로 고정한다(서버의 지금 줄을 두고 「덮어쓰기 / 그 값으로」).
+  // §7-3 (나) — 서버의 지금 줄로 표를 맞추고, 버전이 다른 줄은 실제로 달라진 칸만 충돌 셀로 고정한다(값 · 사람 · 시각 ·
+  // 「덮어쓰기 / 그 값으로」). 서버에만 있는 줄은 더하고, 서버가 지운 줄은 내가 고쳤을 때만 고정한다(독립 검토 W2 · W4).
   function applyConflict(prizesNow: Array<Record<string, unknown>>) {
-    const pinned: Record<string, Row> = {};
-    for (const prize of prizesNow) {
-      const server = rowFromPrize(prize, true);
-      if (!server) continue;
-      const mine = saved.find((r) => r.key === server.key);
-      if (!mine || mine.version !== server.version) pinned[server.key] = server;
-    }
-    setConflicts(pinned);
+    const server = prizesNow.flatMap((prize) => {
+      const row = rowFromPrize(prize, true);
+      if (!row) return [];
+      return [
+        {
+          row,
+          updatedAt: typeof prize.updatedAt === "string" ? prize.updatedAt : null,
+          updatedByName: typeof prize.updatedByName === "string" ? prize.updatedByName : null,
+        },
+      ];
+    });
+    const merged = mergeConflict({ saved, rows, deleted, server });
+    setSaved(merged.saved);
+    setRows(merged.rows);
+    setDeleted(merged.deleted);
+    setConflicts(merged.conflicts);
     setIssueSignal((n) => n + 1);
   }
 
@@ -437,6 +450,12 @@ function PrizeEditor({ eventId, eventName, status, prizes, contactMissing: initi
     if (outcome.kind === "conflict") {
       applyConflict(outcome.prizes);
       return;
+    }
+    if (outcome.kind === "readOnly" && outcome.prizes) {
+      // 편집 중 제출이 들어와 잠긴 줄 — 잠김을 표에 옮겨 그 줄의 경품명 · 전달이 읽기 전용이 된다(W4 ⓐ).
+      const prizesNow = outcome.prizes;
+      setRows((prev) => withServerLocks(prev, prizesNow));
+      setSaved((prev) => withServerLocks(prev, prizesNow));
     }
     const text = saveResultText(outcome, new Date());
     if (outcome.kind === "saved") setSuccessLine(text);
@@ -459,9 +478,12 @@ function PrizeEditor({ eventId, eventName, status, prizes, contactMissing: initi
     setGenerateRequestId(null);
     switch (outcome.kind) {
       case "ok":
-      case "alreadyGenerated":
         focusQrRef.current = true;
         setToast(`QR 생성 · ${eventName}`);
+        return;
+      case "alreadyGenerated":
+        // 다른 키로 이미 생성 — 내 편집은 저장되지 않았다. 서버가 다시 그린 화면(접수 중 · QR 섹션) 위에 사실 한 줄(W3).
+        setResultLine(ALREADY_GENERATED_TEXT);
         return;
       case "blocked":
         if (outcome.reason === "contactMissing") setContactMissing(true);
@@ -476,7 +498,7 @@ function PrizeEditor({ eventId, eventName, status, prizes, contactMissing: initi
         setResultLine(saveResultText(outcome, new Date()));
         return;
       case "conflict":
-        setResultLine(GENERATE_UNKNOWN_TEXT);
+        applyConflict(outcome.prizes);
     }
   }
 
@@ -557,20 +579,22 @@ function PrizeEditor({ eventId, eventName, status, prizes, contactMissing: initi
   const cellIssue = (row: Row, column: string): CellIssue | undefined => {
     const message = cellErrors[`${row.key}:${column}`];
     if (message) return { kind: "error", message };
-    const server = conflicts[row.key];
-    if (server && column === "name") {
-      const resolve = (next: Row, replaceValues: boolean) => {
-        setSaved((prev) => prev.map((r) => (r.key === row.key ? next : r)));
-        if (replaceValues) setRows((prev) => prev.map((r) => (r.key === row.key ? next : r)));
-        setConflicts((prev) => Object.fromEntries(Object.entries(prev).filter(([key]) => key !== row.key)));
+    const conflictMessage = conflicts[row.key]?.cells[column as EditColumn];
+    if (conflictMessage) {
+      const resolve = (choice: "mine" | "theirs") => {
+        const next = resolveConflict({ saved, rows, deleted, conflicts }, row.key, choice);
+        setSaved(next.saved);
+        setRows(next.rows);
+        setDeleted(next.deleted);
+        setConflicts(next.conflicts);
       };
       return {
         kind: "conflict",
-        message: CONFLICT_REASON,
+        message: conflictMessage,
         actions: [
-          // 덮어쓰기 — 내 값을 남기고 서버의 지금 버전으로 다시 보낸다. 그 값으로 — 서버 줄로 바꾼다.
-          { label: "덮어쓰기", onClick: () => resolve(server, false) },
-          { label: "그 값으로", onClick: () => resolve(server, true) },
+          // 덮어쓰기 — 내 뜻을 서버의 지금 버전 위에 다시 보낸다. 그 값으로 — 서버 줄로 바꾼다.
+          { label: "덮어쓰기", onClick: () => resolve("mine") },
+          { label: "그 값으로", onClick: () => resolve("theirs") },
         ],
       };
     }

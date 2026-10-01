@@ -27,7 +27,8 @@ export const generateCertQrAction = authedActionClient
       requestId: parsedInput.requestId,
       changes: parsedInput.changes,
     });
-    if (result.kind === "ok") revalidatePath(`/certs/events/${parsedInput.eventId}`);
+    // 이미 생성됨도 화면을 다시 그린다 — 다른 키로 생긴 QR · 접수 중 상태를 보여 준다(독립 검토 W3).
+    if (result.kind === "ok" || result.kind === "alreadyGenerated") revalidatePath(`/certs/events/${parsedInput.eventId}`);
     return result;
   });
 

@@ -154,10 +154,13 @@ export type GenerateOutcome =
   | { kind: "blocked"; reason: "contactMissing" | "noPrize" | "noListedPrize" }
   | { kind: "invalid"; cellErrors: PrizeCellError[] }
   | { kind: "readOnly" }
-  | { kind: "conflict" }
+  | { kind: "conflict"; prizes: Array<Record<string, unknown>> }
   | { kind: "forbidden" }
   | { kind: "notFound" }
   | { kind: "failed" };
+
+// 다른 키로 이미 생성됨 — 성공 토스트가 아니라 사실 한 줄(화면은 서버가 다시 그린다 — 독립 검토 W3, /design-review 확인).
+export const ALREADY_GENERATED_TEXT = "다른 사람이 먼저 QR 생성 · 표 편집 저장 안 됨";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -176,9 +179,10 @@ export function generateOutcome(response: unknown): GenerateOutcome {
     case "ok":
     case "alreadyGenerated":
     case "readOnly":
-    case "conflict":
     case "notFound":
       return { kind: data.kind };
+    case "conflict":
+      return Array.isArray(data.prizes) ? { kind: "conflict", prizes: data.prizes as Array<Record<string, unknown>> } : { kind: "failed" };
     case "blocked":
       return data.reason === "contactMissing" || data.reason === "noPrize" || data.reason === "noListedPrize"
         ? { kind: "blocked", reason: data.reason }
@@ -195,7 +199,7 @@ export function generateOutcome(response: unknown): GenerateOutcome {
 export type SaveOutcome =
   | { kind: "saved"; rows: number }
   | { kind: "invalid"; cellErrors: PrizeCellError[] }
-  | { kind: "readOnly" }
+  | { kind: "readOnly"; prizes?: Array<Record<string, unknown>> }
   | { kind: "conflict"; prizes: Array<Record<string, unknown>> }
   | { kind: "forbidden" }
   | { kind: "notFound" }
@@ -214,6 +218,7 @@ export function saveOutcome(response: unknown): SaveOutcome {
     case "conflict":
       return Array.isArray(data.prizes) ? { kind: "conflict", prizes: data.prizes as Array<Record<string, unknown>> } : { kind: "failed" };
     case "readOnly":
+      return Array.isArray(data.prizes) ? { kind: "readOnly", prizes: data.prizes as Array<Record<string, unknown>> } : { kind: "readOnly" };
     case "notFound":
       return { kind: data.kind };
     default:
@@ -245,5 +250,162 @@ export function saveResultText(outcome: SaveOutcome, at: Date): string | null {
 export const READ_ONLY_REASON = "제출 있음 · 가액 · 당첨 수만 고침";
 // 결과 불명 — 신청 · 생성과 같은 명사형(옛 I2 선례 꼴, /design-review 확인 요청).
 export const SAVE_UNKNOWN_TEXT = "저장 결과 모름 · 다시 누르기";
-// 버전 충돌(§7-3 (나)) — 그 줄을 오류 셀 모양으로 고정하고 다음 한 수 둘. 바뀐 값 · 사람 · 시각은 이 표 DTO에 없어 적지 않는다.
-export const CONFLICT_REASON = "다른 사람이 먼저 바꿈 · 덮어쓰기 / 그 값으로";
+
+// ── 버전 충돌(§7-3 (나) — 그 줄에서 실제로 값이 달라진 칸만 고정, 이유에 값 · 사람 · 시각, 다음 한 수 둘) ─────────────────
+
+const CONFLICT_NEXT = " · 덮어쓰기 / 그 값으로";
+// 서버가 지운 줄을 내가 고쳤다 — 덮어쓰기는 새 줄로, 그 값으로는 빼기(독립 검토 W4 ⓒ, /design-review 확인).
+export const SERVER_DELETED_REASON = `다른 사람이 지움${CONFLICT_NEXT}`;
+
+// 마지막 글자 받침 — 한글 음절이면 그 글자, 숫자면 읽는 소리(영 · 일 · 삼 · 육 · 칠 · 팔 받침), 그 밖은 받침 있음으로 둔다.
+function finalConsonant(text: string): "none" | "rieul" | "other" {
+  const last = text.trim().slice(-1);
+  const digit = "0123456789".indexOf(last);
+  if (digit !== -1) return (["other", "rieul", "none", "other", "none", "none", "other", "rieul", "rieul", "none"] as const)[digit] ?? "other";
+  const code = last.charCodeAt(0);
+  if (code < 0xac00 || code > 0xd7a3) return "other";
+  const jong = (code - 0xac00) % 28;
+  return jong === 0 ? "none" : jong === 8 ? "rieul" : "other";
+}
+
+function conflictText(meta: { updatedAt?: string | null; updatedByName?: string | null }, value: string): string {
+  const who = meta.updatedByName ? `${meta.updatedByName}${finalConsonant(meta.updatedByName) === "none" ? "가" : "이"}` : "다른 사람이";
+  const at = meta.updatedAt ? ` ${KST_TIME.format(new Date(meta.updatedAt))}에` : "";
+  const to = finalConsonant(value) === "other" ? "으로" : "로";
+  return `${who}${at} ${value}${to} 바꿈${CONFLICT_NEXT}`;
+}
+
+export type ServerPrize<T extends DraftPrizeRow> = { row: T; updatedAt?: string | null; updatedByName?: string | null };
+export type PrizeConflict<T extends DraftPrizeRow> = {
+  /** 서버의 지금 줄 — 서버가 지웠으면 null. */
+  server: T | null;
+  /** 고정할 칸과 그 이유. */
+  cells: Partial<Record<(typeof EDIT_COLUMNS)[number], string>>;
+  /** 내가 지운 줄을 다른 사람이 바꿔 되살렸다. */
+  deletedByMe: boolean;
+};
+export type ConflictState<T extends DraftPrizeRow> = {
+  saved: T[];
+  rows: T[];
+  deleted: Array<{ id: string; version: number }>;
+  conflicts: Record<string, PrizeConflict<T>>;
+};
+
+/**
+ * 충돌 응답의 서버 줄로 표를 맞춘다. 표에 있는 줄 가운데 버전이 다른 줄은 기준(saved)과 달라진 칸만 고정하고 내 편집은 남긴다.
+ * 서버에만 있는 줄(다른 사람이 더한 줄)은 표 · 기준에 더한다. 내가 지운 줄의 버전이 달라졌으면 서버 값으로 되살려 고정한다.
+ * 서버가 지운 줄은 내가 고쳤으면 고정하고, 안 고쳤으면 조용히 뺀다.
+ */
+export function mergeConflict<T extends DraftPrizeRow>(input: {
+  saved: readonly T[];
+  rows: readonly T[];
+  deleted: ReadonlyArray<{ id: string; version: number }>;
+  server: ReadonlyArray<ServerPrize<T>>;
+}): ConflictState<T> {
+  const serverByKey = new Map(input.server.map((entry) => [entry.row.key, entry]));
+  const savedByKey = new Map(input.saved.map((row) => [row.key, row]));
+  const conflicts: Record<string, PrizeConflict<T>> = {};
+  const changedCells = (before: T | undefined, entry: ServerPrize<T>) => {
+    const cells: PrizeConflict<T>["cells"] = {};
+    for (const column of EDIT_COLUMNS) {
+      if (!before || !sameCell(column, before[column], entry.row[column])) cells[column] = conflictText(entry, entry.row[column]);
+    }
+    return Object.keys(cells).length > 0 ? cells : { name: conflictText(entry, entry.row.name) };
+  };
+
+  const rows: T[] = [];
+  const dropped = new Set<string>();
+  for (const row of input.rows) {
+    const before = savedByKey.get(row.key);
+    if (!row.id || !before) {
+      rows.push(row);
+      continue;
+    }
+    const entry = serverByKey.get(row.key);
+    if (!entry) {
+      const edited = EDIT_COLUMNS.some((column) => !sameCell(column, before[column], row[column]));
+      if (edited) {
+        conflicts[row.key] = { server: null, cells: { name: SERVER_DELETED_REASON }, deletedByMe: false };
+        rows.push(row);
+      } else {
+        dropped.add(row.key);
+      }
+      continue;
+    }
+    if (entry.row.version !== before.version) conflicts[row.key] = { server: entry.row, cells: changedCells(before, entry), deletedByMe: false };
+    rows.push(row);
+  }
+
+  const inTable = new Set(input.rows.map((row) => row.key));
+  const deletedById = new Map(input.deleted.map((d) => [d.id, d]));
+  const deleted: Array<{ id: string; version: number }> = [];
+  const added: T[] = [];
+  for (const entry of input.server) {
+    if (inTable.has(entry.row.key)) continue;
+    const mine = entry.row.id ? deletedById.get(entry.row.id) : undefined;
+    if (mine && mine.version === entry.row.version) continue;
+    added.push(entry.row);
+    if (mine) conflicts[entry.row.key] = { server: entry.row, cells: changedCells(savedByKey.get(entry.row.key), entry), deletedByMe: true };
+  }
+  for (const d of input.deleted) {
+    const entry = serverByKey.get(d.id);
+    if (entry && entry.row.version === d.version) deleted.push(d);
+  }
+
+  const saved = [
+    ...input.saved.filter((row) => !dropped.has(row.key) && (serverByKey.has(row.key) || conflicts[row.key])),
+    ...added.filter((row) => !savedByKey.has(row.key)),
+  ];
+  return { saved, rows: [...rows, ...added], deleted, conflicts };
+}
+
+/** 충돌 한 줄 풀기 — mine(덮어쓰기: 내 뜻을 서버의 지금 버전 위에) · theirs(그 값으로). */
+export function resolveConflict<T extends DraftPrizeRow>(state: ConflictState<T>, key: string, choice: "mine" | "theirs"): ConflictState<T> {
+  const conflict = state.conflicts[key];
+  if (!conflict) return state;
+  const conflicts = Object.fromEntries(Object.entries(state.conflicts).filter(([k]) => k !== key));
+  const { server } = conflict;
+  if (!server) {
+    // 서버가 지운 줄 — 덮어쓰기는 같은 값의 새 줄, 그 값으로는 표에서 뺀다.
+    const saved = state.saved.filter((row) => row.key !== key);
+    if (choice === "theirs") return { ...state, saved, rows: state.rows.filter((row) => row.key !== key), conflicts };
+    const rows = state.rows.map((row) => {
+      if (row.key !== key) return row;
+      const fresh = { ...row };
+      delete fresh.id;
+      delete fresh.version;
+      return fresh;
+    });
+    return { ...state, saved, rows, conflicts };
+  }
+  const saved = state.saved.some((row) => row.key === key)
+    ? state.saved.map((row) => (row.key === key ? server : row))
+    : [...state.saved, server];
+  if (conflict.deletedByMe && choice === "mine" && server.id && server.version !== undefined) {
+    return {
+      saved,
+      rows: state.rows.filter((row) => row.key !== key),
+      deleted: [...state.deleted, { id: server.id, version: server.version }],
+      conflicts,
+    };
+  }
+  const rows = choice === "theirs" ? state.rows.map((row) => (row.key === key ? server : row)) : state.rows;
+  return { ...state, saved, rows, conflicts };
+}
+
+/** 「일괄 저장」 readOnly 뒤 — 서버 줄의 잠김 · 제출 수를 표 줄에 옮긴다(값은 그대로 — 독립 검토 W4 ⓐ). */
+export function withServerLocks<T extends { key: string; locked: boolean; submittedCount: number }>(
+  rows: readonly T[],
+  server: ReadonlyArray<{ id?: unknown; locked?: unknown; submittedCount?: unknown }>,
+): T[] {
+  const byId = new Map(server.flatMap((prize) => (typeof prize.id === "string" ? [[prize.id, prize] as const] : [])));
+  return rows.map((row) => {
+    const prize = byId.get(row.key);
+    if (!prize) return row;
+    return {
+      ...row,
+      locked: prize.locked === true,
+      submittedCount: typeof prize.submittedCount === "number" ? prize.submittedCount : row.submittedCount,
+    };
+  });
+}

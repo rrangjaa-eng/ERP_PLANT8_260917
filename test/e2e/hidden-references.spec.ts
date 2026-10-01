@@ -133,6 +133,26 @@ test.describe("가려진 참조 정보의 화면(quick 261001-85g)", () => {
     await expect(cell).toHaveText(before ?? "");
   });
 
+  test("D3: 팀 업무 범위인데 오늘 팀이 없는 계급에게는 「프로젝트 복사」가 없다(목록 등록 진입점과 같은 좁힌 규칙)", async ({ page }) => {
+    const teamId = await makeTeam();
+    const owner = await makeWriter(teamId, "");
+    const { projectId } = await makeProjectWithVendorLine(teamId, owner);
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E팀없음-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "write", allowed: true });
+    for (const infoItem of ["project.value", "quote.amount", "vendor.value", "team.value", "person.value"]) {
+      await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+    }
+    const email = `e2e-noteam-${randomUUID()}@example.test`;
+    const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 팀없음", roleId: role.id });
+    const noTeam: Account = { userId, email, password: tempPassword };
+
+    await login(page, noTeam);
+    await page.goto(`/projects/${projectId}`);
+    await expect(page.getByRole("table", { name: "견적 줄" }).or(page.getByRole("grid", { name: "견적 줄" }))).toBeVisible();
+    await expect(page.getByRole("link", { name: /프로젝트 복사/ })).toHaveCount(0);
+  });
+
   test("대조: 셋 다 보이는 계급에는 등록 진입점이 있다", async ({ page }) => {
     const teamId = await makeTeam();
     const writer = await makeWriter(teamId, "");

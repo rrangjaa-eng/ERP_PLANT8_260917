@@ -50,7 +50,8 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
   // .filterRow가 display:flex인데 gap이 없다(code-tables.module.css) — 링크가
   // 하나뿐인 「숨김 포함」 줄에서는 드러나지 않았지만, 코드표 선택 nav는 링크가
   // 둘이라 두 이름이 한 덩어리로 읽힌다.
-  test("코드표 선택 링크 둘이 서로 붙어 있지 않다", async ({ page }) => {
+  // quick 261001-hfi(MAST-04) — 견적 분류가 세 번째 표로 늘었다. 이웃한 링크 쌍마다 간격을 본다.
+  test("코드표 선택 링크 셋이 서로 붙어 있지 않다", async ({ page }) => {
     const admin = await createFixtureUser({ roleId: "role-sysadmin" });
 
     await page.goto("/login");
@@ -63,16 +64,33 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
 
     const nav = page.getByRole("navigation", { name: "코드표 선택" });
     const links = nav.getByRole("link");
-    await expect(links).toHaveCount(2);
+    await expect(links).toHaveCount(3);
+    await expect(links.nth(2)).toHaveText("견적 분류");
 
-    const first = await links.nth(0).boundingBox();
-    const second = await links.nth(1).boundingBox();
-    expect(first).not.toBeNull();
-    expect(second).not.toBeNull();
+    for (const index of [0, 1]) {
+      const left = await links.nth(index).boundingBox();
+      const right = await links.nth(index + 1).boundingBox();
+      expect(left).not.toBeNull();
+      expect(right).not.toBeNull();
+      // 두 상자 사이의 가로 간격. 붙어 있으면 0이다.
+      const gap = right!.x - (left!.x + left!.width);
+      expect(gap).toBeGreaterThan(0);
+    }
+  });
 
-    // 두 상자 사이의 가로 간격. 붙어 있으면 0이다.
-    const gap = second!.x - (first!.x + first!.width);
-    expect(gap).toBeGreaterThan(0);
+  test("「견적 분류」를 고르면 견적 분류 코드표(시드 「무대·시공」)가 보인다", async ({ page }) => {
+    const admin = await createFixtureUser({ roleId: "role-sysadmin" });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto("/admin/code-tables");
+    await page.getByRole("navigation", { name: "코드표 선택" }).getByRole("link", { name: "견적 분류" }).click();
+    await expect(page).toHaveURL(/tableKey=quote_subcategory/);
+    await expect(page.locator("main table").first().getByText("stage_construction")).toBeVisible();
   });
 
   // DR-P4-01(design-review) — 현재 표 링크가 형제 링크와 계산 스타일이 같아
@@ -93,7 +111,7 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
     const current = nav.locator("a[aria-current='page']");
     const sibling = nav.locator("a:not([aria-current='page'])");
     await expect(current).toHaveCount(1);
-    await expect(sibling).toHaveCount(1);
+    await expect(sibling).toHaveCount(2);
 
     // tokens.css --fg는 hex다 — 브라우저가 계산하는 rgb() 문자열과 직접
     // 비교하려고 임시 요소에 먹여 같은 방식으로 정규화한다.
@@ -119,7 +137,7 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
     expect(currentStyle.fontWeight).toBe("700");
     expect(currentStyle.textDecorationLine).toBe("none");
 
-    const siblingTextDecoration = await sibling.evaluate((el) => getComputedStyle(el).textDecorationLine);
+    const siblingTextDecoration = await sibling.first().evaluate((el) => getComputedStyle(el).textDecorationLine);
     expect(siblingTextDecoration).toBe("underline");
   });
 

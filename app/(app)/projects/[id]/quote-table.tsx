@@ -899,6 +899,7 @@ export function QuoteLedger({
   vendors,
   vendorShown,
   subcategories,
+  subcategoryLabels,
   structural,
   newLineCells,
   adjustmentStructural,
@@ -948,6 +949,8 @@ export function QuoteLedger({
   /** quick 261001-85g(사용자 결정 2026-10-01) — 거래처 정보가 가려진 계급이면 거짓: 거래처 열을 그리지 않는다. */
   vendorShown: boolean;
   subcategories: QuoteTableCodeOption[];
+  /** quick 261001-hfi(MAST-04) — 이름 읽기용(비활성 · 보관 분류 포함). 선택지는 subcategories. */
+  subcategoryLabels: QuoteTableCodeOption[];
   /** 04-30(사용자 D10) — 줄 구조 편집 가능성(서버 structuralEditability). */
   structural: StructuralEditability;
   /** 04-30(사용자 D12) — 저장 전 새 줄의 칸별 편집 단계(서버 lineCellEditability isNewLine). */
@@ -1635,7 +1638,7 @@ export function QuoteLedger({
   }, [saveRequests]);
 
   const vendorLabel = (row: DraftLine) => quoteLineVendorLabel(row, vendors);
-  const subcategoryLabel = (value: string) => subcategories.find((option) => option.value === value)?.label ?? value;
+  const subcategoryLabel = (value: string) => subcategoryLabels.find((option) => option.value === value)?.label ?? value;
 
   // 04-49(DR-36) — 1024 미만이면 셀 편집 가능성을 전부 거둬 캡션 있는 읽기 표로 그린다(dirty 인셋은 그대로).
   const atWidth = (level: CellEditability): CellEditability => (editableWidth ? level : "readonly");
@@ -1870,7 +1873,7 @@ export function QuoteLedger({
   const columns = vendorShown ? allColumns : allColumns.filter((column) => column.key !== "vendor");
   // 04-19 — 격자 Ctrl+C 글자는 04-24 읽기 열의 copyText(견적 줄 복사 글자의 유일한 정의)를 열 키로 붙인다.
   const copyTextByKey = new Map(
-    quoteLineReadColumns<DraftLine>({ subcategories, vendors, vendorShown }, (row) => lines.indexOf(row) + 1).map((column) => [column.key, column.copyText]),
+    quoteLineReadColumns<DraftLine>({ subcategories: subcategoryLabels, vendors, vendorShown }, (row) => lines.indexOf(row) + 1).map((column) => [column.key, column.copyText]),
   );
   for (const column of columns) column.copyText = copyTextByKey.get(column.key);
 
@@ -2335,7 +2338,7 @@ export function QuoteLedger({
         draftScopeId={draftScopeId}
         currentRevisionId={revisionId}
         revisions={revisions}
-        references={{ subcategories, vendors, vendorShown }}
+        references={{ subcategories: subcategoryLabels, vendors, vendorShown }}
         onSharedEditsCarried={dirtyStorage.recount}
       />
       {lockLine ? <p className={styles.lockLine}>{lockLine}</p> : null}

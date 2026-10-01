@@ -35,6 +35,8 @@ export type ProjectFormReferences = {
   // 그리지 않고(가려진 정보의 열은 그리지 않는다), 빈 거래처 목록을 「거래처 없음」과 구분한다.
   vendorShown: boolean;
   subcategories: CodeOption[];
+  // quick 261001-hfi(MAST-04) — 이름표: 비활성 · 보관 분류까지. 그 분류를 쓰던 줄이 코드값이 아니라 이름으로 읽힌다(선택지는 subcategories).
+  subcategoryLabels: { value: string; label: string }[];
 };
 
 // quick 261001-85g(ADMN-03) — 선택지도 명세로 투영한다(누수 스캔이 본다). 정보 항목은 각 마스터 DTO의 이름 칸과 같다 —
@@ -88,8 +90,8 @@ export async function listProjectFormReferences(
     personShown ? repoListUsers(viewer, { scope: { rows: "all", includeArchived: false }, includeArchived: false }) : [],
     repoListCodeItems(viewer, {
       tableKey: QUOTE_SUBCATEGORY_TABLE_KEY,
-      scope: { rows: "all", includeArchived: false },
-      includeInactive: false,
+      scope: { rows: "all", includeArchived: true },
+      includeInactive: true,
     }),
   ]);
 
@@ -112,7 +114,10 @@ export async function listProjectFormReferences(
     pmUsers: (await projectMany(viewer, userRows.map((row) => ({ id: row.id, name: row.name })), PERSON_OPTION_SPEC, projectDeps)) as ProjectReferenceOption[],
     vendors: vendorOptions,
     vendorShown,
-    subcategories: subcategoryRows.map((row) => ({ value: row.value, label: row.label, description: row.description })),
+    subcategories: subcategoryRows
+      .filter((row) => row.active && row.archivedAt === null)
+      .map((row) => ({ value: row.value, label: row.label, description: row.description })),
+    subcategoryLabels: subcategoryRows.map((row) => ({ value: row.value, label: row.label })),
   };
 }
 

@@ -122,23 +122,26 @@ function signatureOf(status: CertEventStatus, prizes: Partial<CertPrizeDto>[]): 
   return `${status}|${prizes.map((p) => `${p.id ?? ""}:${p.version ?? ""}:${p.submittedCount ?? ""}`).join(",")}`;
 }
 
-function previewOf(row: Row): SubmitCell {
+// 닫힌 행사면 `미제출 {k}`(닫힘 ∧ 목록 경품 ∧ N < 당첨 수 — 04.3-17 UD-3 a)까지 본다. 편집 중 당첨 수를 곧바로 반영한다.
+function previewOf(row: Row, closed: boolean): SubmitCell {
   return submitCellPreview({
     unitValue: row.unitValue,
     ...(row.savedUnitValueKrw !== undefined ? { savedUnitValueKrw: row.savedUnitValueKrw } : {}),
     submittedCount: row.submittedCount,
     quantityCounts: row.quantityCounts,
+    closed,
+    winnerCount: row.winnerCount,
   });
 }
 
-// 제출 셀 — 숫자만(열 머리글이 단위 — DR-15), `파기 대상 {p}`는 --warning, `확인증 없음`은 --muted.
+// 제출 셀 — 숫자만(열 머리글이 단위 — DR-15), `파기 대상 {p}` · `미제출 {k}`는 --warning(그 낱말만), `확인증 없음`은 --muted.
 function SubmitCellView({ cell }: { cell: SubmitCell }) {
   if (cell.kind === "noCert") return <span className={styles.mutedText}>확인증 없음</span>;
-  if (cell.kind === "purge") {
+  if (cell.kind === "purge" || cell.kind === "missing") {
     return (
       <span className={styles.num}>
         {`${cell.n} · `}
-        <span className={styles.warningText}>{`파기 대상 ${cell.p}`}</span>
+        <span className={styles.warningText}>{cell.kind === "purge" ? `파기 대상 ${cell.p}` : `미제출 ${cell.k}`}</span>
       </span>
     );
   }
@@ -211,7 +214,7 @@ export function PrizeSection(props: Props) {
 
 // 읽기 표 — 기획본부(N7 a: 경품명 · 전달 · 당첨 수 · 제출 건수, 가액 열 · 확인증 없음 · 파기 대상 없음) · 700~1023 · 폰의 경영관리
 // (저장된 가액으로 같은 제출 셀). 폰 칸 접기: P1 경품명 · (경영관리면 1개 가액) · 제출, P2 `{현장|택배} · 당첨 {M}명`.
-function PrizeReadTable({ prizes, canManagePrizes }: Props) {
+function PrizeReadTable({ prizes, canManagePrizes, status }: Props) {
   const rows = rowsFromProps(prizes, canManagePrizes);
   const showValue = canManagePrizes && rows.some((row) => row.savedUnitValueKrw !== undefined);
   const columns: TableColumn<Row>[] = [
@@ -241,7 +244,8 @@ function PrizeReadTable({ prizes, canManagePrizes }: Props) {
       header: "제출",
       priority: "p1",
       align: "right",
-      cell: (row) => (showValue ? <SubmitCellView cell={previewOf(row)} /> : <span className={styles.num}>{row.submittedCount}</span>),
+      cell: (row) =>
+        showValue ? <SubmitCellView cell={previewOf(row, status === "closed")} /> : <span className={styles.num}>{row.submittedCount}</span>,
     },
   ];
   const emptyMessage = canManagePrizes ? "경품이 없습니다" : "경품이 없습니다 · 등록은 경영관리";
@@ -572,7 +576,7 @@ function PrizeEditor({ eventId, eventName, status, prizes, contactMissing: initi
       priority: "p1",
       align: "right",
       pasteRole: "computed",
-      cell: (row) => <SubmitCellView cell={previewOf(row)} />,
+      cell: (row) => <SubmitCellView cell={previewOf(row, closed)} />,
     },
   ];
 

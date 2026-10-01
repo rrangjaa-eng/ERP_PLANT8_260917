@@ -77,28 +77,40 @@ export function dirtyCellCount(body: PrizeChangesBody): number {
 
 // ── 제출 셀 미리 보기(편집 중 가액 — 판정은 저장 때 서버, G0 DR-2 · 「개정 (2026-10-01)」 T4) ─────────────────
 
-export type SubmitCell = { kind: "count"; n: number } | { kind: "noCert" } | { kind: "purge"; n: number; p: number };
+export type SubmitCell =
+  | { kind: "count"; n: number }
+  | { kind: "noCert" }
+  | { kind: "purge"; n: number; p: number }
+  | { kind: "missing"; n: number; k: number };
 
 // 한 칸에 하나: ① 그 줄 제출 가운데 가액 × 수량 ≤ 50,000인 건 p ≥ 1 → `{N} · 파기 대상 {p}` ② 1개 가액 ≤ 50,000 ∧ N = 0 →
-// `확인증 없음` ③ 그 밖 `{N}`. N · p는 대조 제외를 뺀 수(서버가 준 quantityCounts). 편집 중 값이 금액이 아니면 저장된 가액.
-// 닫힘 ∧ N < 당첨 수의 `미제출 {k}`는 04.3-17(UD-3 a)이다.
+// `확인증 없음` ③ 닫힘 ∧ 1개 가액 > 50,000 ∧ N < 당첨 수 M → `{N} · 미제출 {k}`(k = M − N — 04.3-17 E9 c · UD-3 a · DR-4) ④ 그 밖
+// `{N}`. N · p는 대조 제외를 뺀 수(서버가 준 quantityCounts). 편집 중 값이 금액이 아니면 저장된 가액, 당첨 수 칸이 정수가 아니면
+// 미제출을 세지 않는다. 접수 중 · 신청됨(closed 아님)에는 미제출이 서지 않는다(행사 중 모자람은 정상).
 export function submitCellPreview(input: {
   unitValue: string;
   savedUnitValueKrw?: number;
   submittedCount: number;
   quantityCounts: ReadonlyArray<{ quantity: number; count: number }>;
+  closed?: boolean;
+  winnerCount?: string;
 }): SubmitCell {
   const amount = parsePrizeAmount(input.unitValue) ?? input.savedUnitValueKrw ?? null;
   if (amount === null) return { kind: "count", n: input.submittedCount };
   const p = input.quantityCounts.filter((q) => certRrnPurgeTarget(amount, q.quantity)).reduce((sum, q) => sum + q.count, 0);
   if (p > 0) return { kind: "purge", n: input.submittedCount, p };
   if (!certPrizeListed(amount) && input.submittedCount === 0) return { kind: "noCert" };
+  const winners = /^\d+$/.test((input.winnerCount ?? "").trim()) ? Number(input.winnerCount) : null;
+  if (input.closed && certPrizeListed(amount) && winners !== null && input.submittedCount < winners) {
+    return { kind: "missing", n: input.submittedCount, k: winners - input.submittedCount };
+  }
   return { kind: "count", n: input.submittedCount };
 }
 
 export function submitCellText(cell: SubmitCell): string {
   if (cell.kind === "noCert") return "확인증 없음";
   if (cell.kind === "purge") return `${cell.n} · 파기 대상 ${cell.p}`;
+  if (cell.kind === "missing") return `${cell.n} · 미제출 ${cell.k}`;
   return String(cell.n);
 }
 

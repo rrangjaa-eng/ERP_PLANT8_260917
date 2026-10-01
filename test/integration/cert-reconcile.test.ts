@@ -239,9 +239,7 @@ async function logsOf(entityId: string, actionType: string) {
   return rows;
 }
 
-const throwingLog: typeof appendActionLog = async () => {
-  throw new Error("로그 실패 주입");
-};
+const throwingLog: typeof appendActionLog = () => Promise.reject(new Error("로그 실패 주입"));
 
 // 첫 트랜잭션만 「행사 행 잠금」 뒤에 멈춘다 — 상대가 잠금 대기자인지 확인한 뒤 푼다(04.3-10 W7 선례).
 function pausingAfterLock(eventId: string) {
@@ -476,7 +474,8 @@ describe("excludeSubmission — 「대조 제외」(E1 b · 게이트 = 쓰기, 
     const [rolled] = await db.select().from(certSubmissions).where(eq(certSubmissions.id, f.a1));
     expect(rolled).toEqual(before);
 
-    const stale = await excludeSubmission(manager, f.a1, { version: (before?.version ?? 0) - 1 });
+    // 화면이 본 버전과 다르다(그새 정정됨) — 첫 버전이 1이라 다음 값으로 어긋나게 한다.
+    const stale = await excludeSubmission(manager, f.a1, { version: (before?.version ?? 1) + 1 });
     expect(stale.kind).toBe("conflict");
     const [unchanged] = await db.select().from(certSubmissions).where(eq(certSubmissions.id, f.a1));
     expect(unchanged).toEqual(before);

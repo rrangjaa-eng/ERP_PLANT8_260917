@@ -8,9 +8,11 @@ import { KvList, type KvItem } from "@/ui/kv-list/KvList";
 import { Button } from "@/ui/button/Button";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
+import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import type { CorrectionField, CorrectionFieldError } from "@/domain/certs/review";
+import { formatSubmittedAtKst } from "@/domain/certs/format";
 import { LOGIN_REQUIRED_MESSAGE } from "@/lib/actions/user-facing-error";
-import { correctCertSubmissionAction } from "./actions";
+import { correctCertSubmissionAction, excludeCertSubmissionAction } from "./actions";
 import { RrnField } from "./rrn-field";
 import { RRN_CLOSED, afterRrnSave, isRrnDirty, type RrnState } from "./rrn-state";
 import styles from "./review.module.css";
@@ -24,10 +26,12 @@ const FIELD_LABELS: Record<CorrectionField, string> = {
   rrn: "주민등록번호",
   phone: "연락처",
   address: "주소",
+  quantity: "수량",
 };
 
 function fieldErrorText(field: CorrectionField, code: CorrectionFieldError): string {
   if (field === "rrn") return "주민등록번호 맞지 않음 · 앞 6자리와 뒤 7자리 확인";
+  if (field === "quantity") return "1~99 정수 아님 · 1처럼 입력";
   if (field === "phone") return "연락처 형식 아님 · 010-0000-0000처럼 입력";
   if (code === "tooLong") return field === "name" ? "40자 초과 · 40자 안으로" : "200자 초과 · 200자 안으로";
   return `${FIELD_LABELS[field]} 비어 있음 · 입력`;
@@ -46,7 +50,7 @@ const HHMM_FORMAT = new Intl.DateTimeFormat("en-GB", {
   hour12: false,
 });
 
-type Values = { name: string; phone: string; address: string | null };
+type Values = { name: string; phone: string; address: string | null; quantity: string };
 
 type Outcome =
   | { kind: "saved"; text: string }
@@ -55,6 +59,10 @@ type Outcome =
   | null;
 
 const SAVE_FAILED: Outcome = { kind: "failed", text: "저장 실패 · 다시 시도" };
+// 04.3-17 「대조 제외」 실패 — 다시 보내면 되는 실패는 모달 안 1차 왼쪽 줄(§7-17 failure). 충돌은 정정 충돌 꼴(동사만 바뀜).
+const EXCLUDE_FAILED = "제외하지 못했습니다 · 다시 시도";
+
+type ExcludeResponse = Awaited<ReturnType<typeof excludeCertSubmissionAction>> | undefined;
 
 export function ReviewForm(props: {
   submissionId: string;
@@ -73,9 +81,20 @@ export function ReviewForm(props: {
   idleMinutes: number;
   /** 04.3-17 — 가액 × 수량 ≤ 50,000(서버 판정 결과만 — 가액 숫자 없음). */
   purgeTarget: boolean;
+  /** 04.3-17 — 수량 정정 칸(N3 a · 1~99). */
+  quantity: number;
+  /** 04.3-17 「대조 제외」 확인 창 부제 재료 — `{이름} · {경품명} · {MM-dd HH:mm} 제출`. */
+  prizeName: string;
+  submittedAt: string;
+  /** 04.3-17 — I4 머리 2차 「대조 제외」(정정과 같은 쓰기 판정 ∧ 제외 안 된 제출 — 서버 판정, NF-2). */
+  canExclude: boolean;
+  /** 04.3-17 — 대조 제외된 제출(DR-1 제외된 I4 — 값 `—` · 행동 없음). */
+  excluded: boolean;
+  /** 04.3-17 ⑥-b — 주민등록번호 암호문이 비었다(값 `—` · 전체 보기 · 주민번호 정정 · 인쇄 없음). */
+  rrnCleared: boolean;
 }) {
   const router = useRouter();
-  const initial: Values = { name: props.name, phone: props.phone, address: props.address };
+  const initial: Values = { name: props.name, phone: props.phone, address: props.address, quantity: String(props.quantity) };
   const [saved, setSaved] = useState<Values>(initial);
   const [values, setValues] = useState<Values>(initial);
   const [version, setVersion] = useState(props.version);
@@ -85,6 +104,10 @@ export function ReviewForm(props: {
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<CorrectionField, string>>>({});
   const [outcome, setOutcome] = useState<Outcome>(null);
   const [signatureFailed, setSignatureFailed] = useState(props.signatureDataUrl === null);
+  const [purgeTarget, setPurgeTarget] = useState(props.purgeTarget);
+  const [excludeOpen, setExcludeOpen] = useState(false);
+  const [excluding, setExcluding] = useState(false);
+  const [excludeFailure, setExcludeFailure] = useState<{ text: string; reload: boolean } | null>(null);
   // 보낸 값 — 성공하면 이것이 저장된 값이다(DOM 감사 H1). 응답을 처리하면 비운다(평문 번호 포함 · 검토 R-M1).
   const submittedRef = useRef<{ values: Values; rrn: string | null } | null>(null);
 
@@ -92,7 +115,65 @@ export function ReviewForm(props: {
     (values.name !== saved.name ? 1 : 0) +
     (values.phone !== saved.phone ? 1 : 0) +
     (values.address !== saved.address ? 1 : 0) +
+    (values.quantity !== saved.quantity ? 1 : 0) +
     (isRrnDirty(rrn) ? 1 : 0);
+
+  // 04.3-17 「대조 제외」 — 확인 창(§7-17) → 성공이면 I′3로 돌아가 그 줄에 포커스 + 토스트(착지 화면이 띄운다, T3).
+  async function confirmExclude() {
+    if (excluding) return;
+    setExcluding(true);
+    setExcludeFailure(null);
+    let response: ExcludeResponse;
+    try {
+      response = await excludeCertSubmissionAction({ id: props.submissionId, version });
+    } catch {
+      response = undefined;
+    }
+    const data = response?.data;
+    if (data?.kind === "excluded") {
+      router.push(`/certs/events/${data.eventId}?excluded=${props.submissionId}`);
+      return;
+    }
+    setExcluding(false);
+    if (data?.kind === "sessionExpired") return router.push("/login");
+    if (data?.kind === "alreadyExcluded") {
+      setExcludeOpen(false);
+      router.refresh();
+      return;
+    }
+    if (data?.kind === "conflict") {
+      const name = data.byName || "다른 사람";
+      const at = HHMM_FORMAT.format(new Date(data.at));
+      setExcludeFailure({ text: `제외하지 못했습니다 · ${name}${subjectParticle(name)} ${at}에 먼저 고침 · `, reload: true });
+      return;
+    }
+    setExcludeFailure({ text: EXCLUDE_FAILED, reload: false });
+  }
+
+  const excludeDialog = props.canExclude ? (
+    <ConfirmDialog
+      open={excludeOpen}
+      onClose={() => setExcludeOpen(false)}
+      title="대조 제외"
+      subtitle={`${props.name} · ${props.prizeName} · ${formatSubmittedAtKst(props.submittedAt).slice(5)} 제출`}
+      resultLines={["주민등록번호 · 주소 · 연락처 · 서명을 지웁니다 · 되돌릴 수 없습니다", "지급 대상에서 빠집니다"]}
+      primary={{
+        label: "대조 제외",
+        pending: excluding,
+        onConfirm: () => void confirmExclude(),
+        ...(excludeFailure ? { failure: excludeFailure.text } : {}),
+        ...(excludeFailure?.reload
+          ? {
+              nextStep: (
+                <Button variant="tertiary" onClick={() => router.refresh()}>
+                  다시 불러오기
+                </Button>
+              ),
+            }
+          : {}),
+      }}
+    />
+  ) : null;
 
   // 머리 줄 — PageHeader에는 행동 자리가 없어(D-25) 폼이 그린다. 2차 「인쇄」는 저장된 값을 찍는 인쇄 라우트를 새 탭으로
   // 연다 — 고친 칸이 있으면 화면 값과 인쇄물이 달라지므로 비활성 + 이유(aria-disabled, UI-SPEC I4 머리 2차 · D-7).
@@ -101,36 +182,59 @@ export function ReviewForm(props: {
       <div className={styles.titleBlock}>
         <PageHeader title={props.title} subtitle={props.subtitle} />
       </div>
-      <StatusTag kind="success" variant="tag">
-        제출됨
-      </StatusTag>
-      <div className={styles.headerActions}>
-        <Button
-          variant="secondary"
-          disabled={changedCount > 0}
-          disabledReason={changedCount > 0 ? `저장 안 한 칸 ${changedCount} · 먼저 저장` : undefined}
-          onClick={() => window.open(`/print/certs/${props.submissionId}`, "_blank", "noopener")}
-        >
-          <span className={styles.printLabel}>
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 16 16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinejoin="round"
-              aria-hidden="true"
-              focusable="false"
+      {props.excluded ? (
+        <StatusTag kind="muted" variant="tag">
+          대조 제외
+        </StatusTag>
+      ) : (
+        <StatusTag kind="success" variant="tag">
+          제출됨
+        </StatusTag>
+      )}
+      {/* 04.3-17 — 「인쇄」는 대조 제외 · 주민번호만 비운 제출에 없다(인쇄 라우트 404 — DR-1 · ⑥-b). */}
+      {props.canExclude || !(props.excluded || props.rrnCleared) ? (
+        <div className={styles.headerActions}>
+          {/* 04.3-17 「대조 제외」 — 「인쇄」 왼쪽(정정 1차와 떨어진 쪽 · UD-2 a). 저장 안 한 정정 칸이 있어도 켜진다(그 값도 지워질 값). */}
+          {props.canExclude ? (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setExcludeFailure(null);
+                setExcludeOpen(true);
+              }}
             >
-              <path d="M4 6V2h8v4" />
-              <path d="M4 12H2V6h12v6h-2" />
-              <path d="M4 9.5h8V14H4z" />
-            </svg>
-            인쇄
-          </span>
-        </Button>
-      </div>
+              대조 제외
+            </Button>
+          ) : null}
+          {props.excluded || props.rrnCleared ? null : (
+            <Button
+              variant="secondary"
+              disabled={changedCount > 0}
+              disabledReason={changedCount > 0 ? `저장 안 한 칸 ${changedCount} · 먼저 저장` : undefined}
+              onClick={() => window.open(`/print/certs/${props.submissionId}`, "_blank", "noopener")}
+            >
+              <span className={styles.printLabel}>
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <path d="M4 6V2h8v4" />
+                  <path d="M4 12H2V6h12v6h-2" />
+                  <path d="M4 9.5h8V14H4z" />
+                </svg>
+                인쇄
+              </span>
+            </Button>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 
@@ -144,6 +248,7 @@ export function ReviewForm(props: {
         setSaved(submitted.values);
         setVersion(data.version);
         setRrnMasked(data.rrnMasked);
+        setPurgeTarget(data.purgeTarget);
         setRrn((current) => afterRrnSave(current, submitted.rrn));
         setFieldErrors({});
         setOutcome({ kind: "saved", text: `저장됨 · ${data.fields.join(" · ")} · ${HHMM_FORMAT.format(new Date(data.at))}` });
@@ -197,6 +302,7 @@ export function ReviewForm(props: {
       phone: values.phone,
       ...(values.address !== null ? { address: values.address } : {}),
       ...(sentRrn !== null ? { rrn: sentRrn } : {}),
+      quantity: values.quantity,
     });
   }
 
@@ -204,7 +310,7 @@ export function ReviewForm(props: {
     setValues((current) => ({ ...current, [field]: value }));
   }
 
-  function textField(field: "name" | "phone" | "address", width: "short" | "long") {
+  function textField(field: "name" | "phone" | "address" | "quantity", width: "short" | "long") {
     const id = `cert-review-${field}`;
     const error = fieldErrors[field];
     return (
@@ -215,7 +321,7 @@ export function ReviewForm(props: {
           type="text"
           autoComplete="off"
           readOnly={busy}
-          inputMode={field === "phone" ? "tel" : undefined}
+          inputMode={field === "phone" ? "tel" : field === "quantity" ? "numeric" : undefined}
           className={[styles.textInput, error ? styles.textInputError : ""].filter(Boolean).join(" ")}
           value={values[field] ?? ""}
           onChange={(event) => update(field, event.target.value)}
@@ -227,7 +333,12 @@ export function ReviewForm(props: {
     );
   }
 
-  const rrnField = (
+  // ⑥-b — 주민등록번호 암호문이 빈 줄은 값 `—` 글자 하나(전체 보기 · 주민번호 정정 · 파기 대상 표시 없음).
+  const rrnField = props.rrnCleared ? (
+    <div className={styles.rrnRow} role="group" aria-label="주민등록번호">
+      <span className={styles.rrnText}>—</span>
+    </div>
+  ) : (
     <RrnField
       id="cert-review-rrn"
       submissionId={props.submissionId}
@@ -240,7 +351,7 @@ export function ReviewForm(props: {
       onPendingChange={setRrnPending}
       error={fieldErrors.rrn}
       idleMinutes={props.idleMinutes}
-      purgeTarget={props.purgeTarget}
+      purgeTarget={purgeTarget}
     />
   );
 
@@ -281,6 +392,30 @@ export function ReviewForm(props: {
     },
   ];
 
+  // 04.3-17 — 대조 제외된 제출(DR-1): 이름 · 수량은 글자, 주민등록번호 · 연락처 · 주소 · 서명 `—`, 행동(저장 · 전체 보기 · 인쇄 ·
+  // 대조 제외)은 그리지 않는다.
+  if (props.excluded) {
+    return (
+      <>
+        {header}
+        <div className={styles.form}>
+          <KvList
+            items={[
+              { label: FIELD_LABELS.name, value: props.name },
+              { label: FIELD_LABELS.quantity, value: <span className={styles.num}>{props.quantity}</span> },
+              { label: FIELD_LABELS.rrn, value: "—" },
+              { label: FIELD_LABELS.phone, value: "—" },
+              ...(props.address !== null ? [{ label: FIELD_LABELS.address, value: "—" }] : []),
+              { label: "경품", value: props.prizeLine },
+              { label: "동의", value: props.consentLine },
+              { label: "서명", value: "—" },
+            ]}
+          />
+        </div>
+      </>
+    );
+  }
+
   // 쓰기 권한이 없으면 값은 입력이 아니라 글자다(§6-3 · §7-2 · DOM 감사 L3).
   if (!props.canCorrect) {
     return (
@@ -296,10 +431,12 @@ export function ReviewForm(props: {
               { label: FIELD_LABELS.rrn, value: rrnField },
               { label: FIELD_LABELS.phone, value: <span className={styles.num}>{values.phone}</span> },
               ...(values.address !== null ? [{ label: FIELD_LABELS.address, value: values.address }] : []),
+              { label: FIELD_LABELS.quantity, value: <span className={styles.num}>{values.quantity}</span> },
               ...detailItems,
             ]}
           />
         </div>
+        {excludeDialog}
       </>
     );
   }
@@ -317,6 +454,7 @@ export function ReviewForm(props: {
         </Form.Field>
         {textField("phone", "short")}
         {values.address !== null ? textField("address", "long") : null}
+        {textField("quantity", "short")}
 
         <KvList items={detailItems} />
 
@@ -354,6 +492,7 @@ export function ReviewForm(props: {
           </Form.Actions>
         </div>
       </Form>
+      {excludeDialog}
     </>
   );
 }

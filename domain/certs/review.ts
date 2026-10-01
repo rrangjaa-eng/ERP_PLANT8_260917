@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Viewer } from "@/domain/viewer";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { can } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
 import { project, type DtoSpec } from "@/domain/permissions/project";
@@ -17,10 +17,14 @@ import { getSignatureStore, type SignatureStore } from "@/lib/storage/signature-
 import {
   findLastCorrection,
   findSubmissionForReview,
+  lockSubmissionForUpdate,
   lockSubmissionRrnForShare,
   updateSubmissionIfVersion,
   type CorrectSubmissionPatch,
 } from "@/repositories/cert-review";
+import { lockEventRow } from "@/repositories/cert-events";
+import { markSubmissionExcluded } from "@/repositories/cert-submissions";
+import { clearSubmissionPersonalFields } from "@/repositories/cert-purge";
 
 // 04.3-07 — I4 확인·정정(경영관리). 네 함수 모두 맨 앞에서 기능 게이트(C1)를 보고
 // 꺼져 있으면 notFound, 다음으로 대표 계급을 거른다(권한표가 켜도 — CONTEXT 「전체
@@ -45,8 +49,10 @@ export type CertSubmissionReviewRow = {
   eventName: string;
   submittedAt: string;
   name: string;
-  rrnMasked: string;
-  phone: string;
+  // 04.3-17 — 주민번호만 비운 제출(⑥-b) · 대조 제외된 제출은 null.
+  rrnMasked: string | null;
+  // 04.3-17 — 대조 제외된 제출은 null(E1 b).
+  phone: string | null;
   address: string | null;
   delivery: CertSubmissionReviewDelivery;
   prizeName: string;
@@ -87,6 +93,15 @@ async function canViewSubmissions(viewer: Viewer): Promise<boolean> {
   return can(viewer, MENU, "view");
 }
 
+// 정정 · 「대조 제외」의 한 판정(대표 계급 아님 · certs.submissions 쓰기 · 보기 · cert_submission.value) — 되돌릴 수 없는 「대조 제외」도
+// 보기가 아니라 이 쓰기 판정이다(새 흐름 설계 /cso NF-2). 볼 수 없는 확인증은 어느 칸도 고칠 수 없다(검토 R-L4).
+async function canWriteSubmissions(viewer: Viewer): Promise<boolean> {
+  if (isCertPrivacyBarredRole(viewer)) return false;
+  if (!(await can(viewer, MENU, "write"))) return false;
+  if (!(await canViewSubmissions(viewer))) return false;
+  return visible(viewer, VALUE_ITEM);
+}
+
 // 결정 ⑧ — 메뉴 보기와 정보 항목을 함께 본다(둘은 서로 독립, D-35).
 async function canRevealRrn(viewer: Viewer): Promise<boolean> {
   return (await canViewSubmissions(viewer)) && (await visible(viewer, UNMASKED_ITEM));
@@ -107,6 +122,12 @@ export type SubmissionForReviewResult =
       idleMinutes: number;
       // 04.3-17 — 주민등록번호 줄 ` · 파기 대상` 표시(N10 a — 표시만). 가액 숫자는 싣지 않고 판정 결과만.
       purgeTarget: boolean;
+      // 04.3-17 ⑥-b — 주민등록번호 암호문이 비었다(rrn_encrypted IS NULL — 제외 여부와 무관한 키 하나).
+      rrnCleared: boolean;
+      // 04.3-17 — I4 머리 2차 「대조 제외」(UD-2 a) — 정정과 같은 쓰기 판정 ∧ 제외되지 않은 제출(NF-2).
+      canExclude: boolean;
+      // 04.3-17 — 대조 제외된 제출이면 제외 시각 · 제외한 사람(DR-1 제외된 I4 부제).
+      excluded: { at: string; byName: string | null } | null;
     }
   | { kind: "notFound" };
 
@@ -131,9 +152,11 @@ export async function getSubmissionForReview(
   if (!isUuid(id)) return { kind: "notFound" };
 
   const row = await findSubmissionForReview(viewer, id);
-  if (!row || row.purgedAt || row.name === null || row.rrnMasked === null || row.phone === null) {
-    return { kind: "notFound" };
-  }
+  if (!row || row.purgedAt || row.name === null) return { kind: "notFound" };
+  // 가린 주민번호가 비었으면 「주민번호만 비운」 줄(rrnCleared)일 때만 연다 · 연락처가 비었으면 대조 제외된 줄일 때만 연다(DR-1).
+  const excluded = row.excludedAt !== null;
+  if (row.rrnMasked === null && !row.rrnCleared) return { kind: "notFound" };
+  if (row.phone === null && !excluded) return { kind: "notFound" };
 
   const name = row.name;
   const source: CertSubmissionReviewRow = {
@@ -142,14 +165,15 @@ export async function getSubmissionForReview(
     eventName: row.eventName,
     submittedAt: row.submittedAt.toISOString(),
     name,
-    rrnMasked: row.rrnMasked,
-    phone: formatPhone(row.phone),
-    address: row.delivery === "parcel" ? row.address : null,
+    rrnMasked: row.rrnCleared ? null : row.rrnMasked,
+    phone: row.phone === null ? null : formatPhone(row.phone),
+    address: row.delivery === "parcel" && !excluded ? row.address : null,
     delivery: row.delivery === "parcel" ? "parcel" : "onsite",
     prizeName: row.prizeName,
     quantity: row.quantity,
     consentAt: row.consentAt.toISOString(),
-    signatureDataUrl: await readSignatureDataUrl(deps?.signatureStore ?? getSignatureStore(), row.signatureKey),
+    // 대조 제외된 줄의 서명 객체는 삭제 대기다 — 읽지 않는다.
+    signatureDataUrl: excluded ? null : await readSignatureDataUrl(deps?.signatureStore ?? getSignatureStore(), row.signatureKey),
     version: row.version,
   };
 
@@ -159,10 +183,13 @@ export async function getSubmissionForReview(
   return {
     kind: "ok",
     submission,
-    canReveal: await visible(viewer, UNMASKED_ITEM),
-    canCorrect: await can(viewer, MENU, "write"),
+    canReveal: !row.rrnCleared && !excluded && (await visible(viewer, UNMASKED_ITEM)),
+    canCorrect: !excluded && (await can(viewer, MENU, "write")),
     idleMinutes: await getSettingValue(CERT_PRIVACY_IDLE_MINUTES),
-    purgeTarget: certRrnPurgeTarget(row.unitValueKrw, row.quantity),
+    purgeTarget: !row.rrnCleared && !excluded && certRrnPurgeTarget(row.unitValueKrw, row.quantity),
+    rrnCleared: row.rrnCleared,
+    canExclude: !excluded && (await canWriteSubmissions(viewer)),
+    excluded: row.excludedAt ? { at: row.excludedAt.toISOString(), byName: row.excludedByName } : null,
   };
 }
 
@@ -222,7 +249,8 @@ export async function getCertificatePrint(
   if (!isUuid(id)) return { kind: "notFound" };
 
   const row = await findSubmissionForReview(viewer, id);
-  if (!row || row.purgedAt || row.name === null || row.rrnMasked === null || row.phone === null) {
+  // 대조 제외 · 주민번호만 비운 제출(rrnCleared — 제외 여부와 무관한 키)은 인쇄하지 않는다(라우트 404 — DR-1 · ⑥-b).
+  if (!row || row.purgedAt || row.excludedAt || row.rrnCleared || row.name === null || row.rrnMasked === null || row.phone === null) {
     return { kind: "notFound" };
   }
 
@@ -265,7 +293,7 @@ export async function revealRrn(viewer: Viewer, id: string, deps?: Partial<Revea
   const decrypt = deps?.decrypt ?? defaultDecrypt;
   return withTransaction(async (tx): Promise<RevealRrnResult> => {
     const row = await lockSubmissionRrnForShare(viewer, id, tx);
-    if (!row || row.purgedAt || !row.rrnEncrypted) return { kind: "denied" };
+    if (!row || row.purgedAt || row.excludedAt || !row.rrnEncrypted) return { kind: "denied" };
 
     await recordAction(
       viewer,
@@ -292,7 +320,7 @@ export async function recordRrnReopen(
   if (!isUuid(id)) return { kind: "denied" };
 
   const row = await findSubmissionForReview(viewer, id);
-  if (!row || row.purgedAt) return { kind: "denied" };
+  if (!row || row.purgedAt || row.excludedAt || row.rrnCleared) return { kind: "denied" };
 
   await recordAction(
     viewer,
@@ -308,9 +336,11 @@ export type CorrectSubmissionInput = {
   phone: string;
   address?: string | null;
   rrn?: string;
+  // 04.3-17(N3 a · E30) — 정수 1~99.
+  quantity?: number | string;
 };
 
-export type CorrectionField = "name" | "rrn" | "phone" | "address";
+export type CorrectionField = "name" | "rrn" | "phone" | "address" | "quantity";
 export type CorrectionFieldError = "empty" | "tooLong" | "format" | "invalid" | "notAllowed";
 
 // 칸 이름(로그 detail · 성공 문장) — 폼 순서.
@@ -319,10 +349,11 @@ export const CORRECTION_FIELD_LABELS: Record<CorrectionField, string> = {
   rrn: "주민등록번호",
   phone: "연락처",
   address: "주소",
+  quantity: "수량",
 };
 
 export type CorrectSubmissionResult =
-  | { kind: "saved"; fields: string[]; at: string; version: number; rrnMasked: string }
+  | { kind: "saved"; fields: string[]; at: string; version: number; rrnMasked: string; purgeTarget: boolean }
   | { kind: "conflict"; byName: string; at: string }
   | { kind: "invalid"; fields: Partial<Record<CorrectionField, CorrectionFieldError>> }
   | { kind: "unchanged" }
@@ -341,9 +372,11 @@ const correctInputSchema = z.object({
   phone: z.string().max(40),
   address: z.string().max(1000).nullish(),
   rrn: z.string().max(20).optional(),
+  quantity: z.union([z.number(), z.string().max(10)]).optional(),
 });
 
 const NAME_MAX = 40;
+const QUANTITY_PATTERN = /^[1-9][0-9]?$/;
 const ADDRESS_MAX = 200;
 
 export async function correctSubmission(
@@ -353,11 +386,7 @@ export async function correctSubmission(
   deps?: Partial<CorrectSubmissionDeps>,
 ): Promise<CorrectSubmissionResult> {
   if (!(await isCertFeatureEnabled())) return { kind: "notFound" };
-  if (isCertPrivacyBarredRole(viewer)) return { kind: "denied" };
-  if (!(await can(viewer, MENU, "write"))) return { kind: "denied" };
-  // 볼 수 없는 확인증은 어느 칸도 고칠 수 없다(검토 R-L4 — 주민등록번호만이 아니다).
-  if (!(await canViewSubmissions(viewer))) return { kind: "denied" };
-  if (!(await visible(viewer, VALUE_ITEM))) return { kind: "denied" };
+  if (!(await canWriteSubmissions(viewer))) return { kind: "denied" };
   if (!isUuid(id)) return { kind: "denied" };
 
   const parsed = correctInputSchema.safeParse(input);
@@ -365,7 +394,10 @@ export async function correctSubmission(
   const data = parsed.data;
 
   const row = await findSubmissionForReview(viewer, id);
-  if (!row || row.purgedAt) return { kind: "denied" };
+  // 대조 제외된 제출은 고치지 않는다(DR-1). 주민번호만 비운 줄(⑥-b)은 주민등록번호를 정정으로 다시 받지 않는다 — 전체 보기가
+  // 없는 줄은 주민등록번호 정정도 없다(D-1106).
+  if (!row || row.purgedAt || row.excludedAt) return { kind: "denied" };
+  if (row.rrnCleared && data.rrn !== undefined) return { kind: "denied" };
   const isParcel = row.delivery === "parcel";
 
   const errors: Partial<Record<CorrectionField, CorrectionFieldError>> = {};
@@ -393,6 +425,13 @@ export async function correctSubmission(
     else if (Array.from(address).length > ADDRESS_MAX) errors.address = "tooLong";
   }
 
+  let quantity: number | null = null;
+  if (data.quantity !== undefined) {
+    const text = String(data.quantity).trim();
+    if (QUANTITY_PATTERN.test(text)) quantity = Number(text);
+    else errors.quantity = "format";
+  }
+
   if (Object.keys(errors).length > 0) return { kind: "invalid", fields: errors };
 
   // 주민등록번호를 바꾸는 정정은 전체 보기와 같은 두 판정을 더 본다(codex final C1).
@@ -418,13 +457,19 @@ export async function correctSubmission(
     patch.address = address;
     changed.push("address");
   }
+  if (quantity !== null && quantity !== row.quantity) {
+    patch.quantity = quantity;
+    changed.push("quantity");
+  }
   if (changed.length === 0) return { kind: "unchanged" };
 
   const fields = changed.map((field) => CORRECTION_FIELD_LABELS[field]);
   const at = (deps?.now ?? (() => new Date()))();
 
-  // C6 — 정정 UPDATE와 cert_correct 로그를 한 트랜잭션에. 로그가 실패하면 정정도 되돌아간다.
+  // C6 — 정정 UPDATE와 cert_correct 로그를 한 트랜잭션에. 로그가 실패하면 정정도 되돌아간다. 제출을 바꾸는 쓰기라 행사 행
+  // 잠금을 먼저 잡는다(04.3-15 규약 · 04.3-17 「대조 제외」 · 「링크 닫기」와 직렬화).
   const updated = await withTransaction(async (tx) => {
+    if (!(await lockEventRow(viewer, row.eventId, tx))) return false;
     const count = await updateSubmissionIfVersion(viewer, id, data.version, patch, at, tx);
     if (count === 0) return false;
     await recordAction(
@@ -437,7 +482,7 @@ export async function correctSubmission(
 
   if (!updated) {
     const last = await findLastCorrection(viewer, id);
-    if (!last || last.purgedAt) return { kind: "denied" };
+    if (!last || last.purgedAt || last.excludedAt) return { kind: "denied" };
     return { kind: "conflict", byName: last.byName ?? "", at: last.at.toISOString() };
   }
 
@@ -447,5 +492,68 @@ export async function correctSubmission(
     at: at.toISOString(),
     version: data.version + 1,
     rrnMasked: patch.rrnMasked ?? row.rrnMasked ?? "",
+    // 04.3-17 — 수량을 고치면 파기 대상 판정이 새 값으로 바뀐다(화면이 다시 읽지 않고 따라간다).
+    purgeTarget: !row.rrnCleared && certRrnPurgeTarget(row.unitValueKrw, patch.quantity ?? row.quantity),
   };
+}
+
+// ── 「대조 제외」(I4 머리 2차 — 04.3-17 E1 b · UD-2 a) ──────────────────────────────────────────
+
+export type ExcludeSubmissionResult =
+  | { kind: "excluded"; eventId: string; name: string }
+  | { kind: "alreadyExcluded" }
+  | { kind: "conflict"; byName: string; at: string }
+  | { kind: "denied" }
+  | { kind: "notFound" };
+
+export type ExcludeSubmissionDeps = {
+  appendActionLog: RecordActionDeps["appendActionLog"];
+  now: () => Date;
+};
+
+const excludeInputSchema = z.object({ version: z.number().int().min(1) });
+
+// 게이트(notFound) → 정정과 같은 쓰기 판정(대표 아님 · certs.submissions 쓰기 · 보기 · cert_submission.value — 보기 판정이 아니다,
+// /cso NF-2) — 권한 읽기는 트랜잭션 전(W1) → 트랜잭션: 그 제출의 행사 행 잠금 먼저(null이면 notFound — E13) → 제출 행 FOR UPDATE
+// (파기면 notFound · 이미 제외면 alreadyExcluded · 버전이 다르면 충돌) → 제외 칸 채움 → 04.3-12 clearSubmissionPersonalFields
+// exclude 모드(주민등록번호 · 주소 · 연락처 · IP 가명 비움 · 서명 객체 삭제 대기) → 같은 tx로 끌 수 없는 cert_purge(개인정보 없음).
+// 되돌리는 함수는 두지 않는다. 지급명세서(Phase 11)는 excluded_at IS NULL인 제출만 쓴다.
+export async function excludeSubmission(
+  viewer: Viewer,
+  id: string,
+  input: { version: number },
+  deps?: Partial<ExcludeSubmissionDeps>,
+): Promise<ExcludeSubmissionResult> {
+  if (!(await isCertFeatureEnabled())) return { kind: "notFound" };
+  if (!(await canWriteSubmissions(viewer))) return { kind: "denied" };
+  if (!isUuid(id)) return { kind: "denied" };
+  const parsed = excludeInputSchema.safeParse(input);
+  if (!parsed.success) return { kind: "denied" };
+
+  const row = await findSubmissionForReview(viewer, id);
+  if (!row || row.purgedAt) return { kind: "notFound" };
+  const at = (deps?.now ?? (() => new Date()))();
+
+  type InTx = ExcludeSubmissionResult | { kind: "stale" };
+  const result = await withTransaction(async (tx): Promise<InTx> => {
+    if (!(await lockEventRow(viewer, row.eventId, tx))) return { kind: "notFound" };
+    const current = await lockSubmissionForUpdate(viewer, id, tx);
+    if (!current || current.purgedAt) return { kind: "notFound" };
+    if (current.excludedAt) return { kind: "alreadyExcluded" };
+    if (current.version !== parsed.data.version) return { kind: "stale" };
+
+    await markSubmissionExcluded(viewer, id, { at, by: viewer.id }, tx);
+    await clearSubmissionPersonalFields(SYSTEM_VIEWER, [id], { mode: "exclude", at }, tx);
+    await recordAction(
+      viewer,
+      { actionType: "cert_purge", entity: ENTITY, entityId: id, detail: { submissions: 1, reason: "excluded" } },
+      { tx, appendActionLog: deps?.appendActionLog },
+    );
+    return { kind: "excluded", eventId: row.eventId, name: current.name ?? "" };
+  });
+
+  if (result.kind !== "stale") return result;
+  const last = await findLastCorrection(viewer, id);
+  if (!last || last.purgedAt) return { kind: "notFound" };
+  return { kind: "conflict", byName: last.byName ?? "", at: last.at.toISOString() };
 }

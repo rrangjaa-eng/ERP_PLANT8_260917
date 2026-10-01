@@ -45,6 +45,8 @@ export default async function CertSubmissionReviewPage({ params }: { params: Pro
     submission.certNo ?? "—",
     submission.eventName ?? "—",
     `${submission.submittedAt ? formatSubmittedAtKst(submission.submittedAt) : "—"} 제출`,
+    // 04.3-17 제외된 I4(DR-1) — 부제 끝 ` · 대조 제외 {MM-dd HH:mm} · {제외한 사람}`.
+    ...(review.excluded ? [`대조 제외 ${formatSubmittedAtKst(review.excluded.at).slice(5)}`, review.excluded.byName ?? "—"] : []),
   ].join(" · ");
 
   return (
@@ -59,6 +61,12 @@ export default async function CertSubmissionReviewPage({ params }: { params: Pro
           name={submission.name ?? ""}
           rrnMasked={submission.rrnMasked ?? ""}
           phone={submission.phone ?? ""}
+          quantity={submission.quantity ?? 1}
+          prizeName={submission.prizeName ?? ""}
+          submittedAt={submission.submittedAt ?? new Date(0).toISOString()}
+          canExclude={review.canExclude}
+          excluded={review.excluded !== null}
+          rrnCleared={review.rrnCleared}
           address={submission.delivery === "parcel" ? (submission.address ?? "") : null}
           prizeLine={`${submission.prizeName ?? ""} ${submission.quantity ?? ""}개 · ${
             submission.delivery === "parcel" ? "택배" : "현장 수령"

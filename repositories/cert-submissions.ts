@@ -130,6 +130,23 @@ export async function listSubmissionsForReconcile(viewer: Viewer, eventId: strin
     .orderBy(asc(certSubmissions.submittedAt), asc(certSubmissions.id));
 }
 
+// 04.3-17 「대조 제외」(E1 b) — 잠근 행사 행 아래에서 제외 시각 · 제외한 사람을 채운다(아직 제외 · 파기되지 않았을 때만).
+// 개인정보 칸 비우기는 같은 tx의 04.3-12 clearSubmissionPersonalFields(exclude 모드)가 한다. 되돌리는 함수는 없다.
+export async function markSubmissionExcluded(
+  viewer: Viewer,
+  id: string,
+  input: { at: Date; by: string },
+  tx: DbOrTx,
+): Promise<number> {
+  void viewer;
+  const rows = await tx
+    .update(certSubmissions)
+    .set({ excludedAt: input.at, excludedBy: input.by })
+    .where(and(eq(certSubmissions.id, id), isNull(certSubmissions.excludedAt), isNull(certSubmissions.purgedAt)))
+    .returning({ id: certSubmissions.id });
+  return rows.length;
+}
+
 // 04.3-06 — 커밋 결과 불명 뒤 이 요청이 올린 객체를 가리키는 제출 줄이 있는지.
 export async function findSubmissionBySignatureKey(
   viewer: Viewer,

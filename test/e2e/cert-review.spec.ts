@@ -584,7 +584,10 @@ test("주민번호만 비운 I4 — 열림 · 주민등록번호 `—` · 전체
   await expect(page.getByRole("group", { name: "주민등록번호" })).toHaveText("—");
   await expect(page.getByRole("button", { name: "전체 보기" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /인쇄/ })).toHaveCount(0);
-  await expect(page.getByText("대조 제외", { exact: true })).toHaveCount(0);
+  // 머리 태그는 그대로 `제출됨`(태그 · 부제 추가 없음 — 「대조 제외」 태그가 아니다).
+  await expect(page.getByText("제출됨", { exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "연락처" })).toBeVisible();
-  expect((await page.request.get(`/print/certs/${seeded.submissionId}`)).status()).toBe(404);
+  // 인쇄 라우트는 404 화면(스트리밍 응답이라 HTTP 상태가 아니라 404 제목으로 본다 — cert-print.spec 선례).
+  await page.goto(`/print/certs/${seeded.submissionId}`);
+  await expect(notFoundHeading(page)).toBeVisible();
 });

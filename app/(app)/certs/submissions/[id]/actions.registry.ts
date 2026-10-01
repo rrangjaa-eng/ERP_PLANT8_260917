@@ -24,3 +24,11 @@ registerAction({
   action: "write",
   dtoName: "CertSubmissionReviewDto",
 });
+
+// 04.3-17 — 「대조 제외」는 결과 종류 · 행사 id · 이름만 돌려준다(행 DTO 없음 — 이름은 그 사람이 I4에서 이미 본 값).
+registerAction({
+  name: "excludeCertSubmissionAction",
+  menu: "certs.submissions",
+  action: "write",
+  dtoName: null,
+});

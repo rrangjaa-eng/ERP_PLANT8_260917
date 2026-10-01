@@ -298,7 +298,9 @@ test("「대조 제외」 — I4 머리 2차 → 확인 → I′3 그 줄 포커
   await expect(page.getByRole("button", { name: "전체 보기" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /인쇄/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "대조 제외" })).toHaveCount(0);
-  expect((await page.request.get(`/print/certs/${ev.a1.id}`)).status()).toBe(404);
+  // 인쇄 라우트는 404 화면(스트리밍 응답이라 HTTP 상태가 아니라 404 제목으로 본다 — cert-print.spec 선례).
+  await page.goto(`/print/certs/${ev.a1.id}`);
+  await expect(page.getByRole("heading", { name: "페이지 찾을 수 없음" })).toBeVisible();
   await page.context().close();
 });
 

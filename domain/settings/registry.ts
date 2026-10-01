@@ -115,7 +115,9 @@ export type RegistryDeps = {
 // opts.asOf는 이력형 키에서만 쓰이고 비이력형은 무시한다. 「어느 날짜를
 // 넘길지」는 호출자의 책임이다 — 원천징수·회사 대납은 지급일(미지급이면
 // 지급 예정일), 부가세는 증빙일(없으면 작성일)이라는 규칙(Eng OV-5)은
-// Phase 4의 금액 모듈이 결정해 asOf로 넘긴다. 읽기는 권한 판정을 거치지
+// Phase 4의 금액 모듈이 결정해 asOf로 넘긴다. asOf를 생략하면 서울 오늘이고,
+// 넘길 때는 seoulDateToUtcDate로 만든 UTC 자정 Date여야 한다(앞 10자를 날짜로
+// 쓴다 — 현재 시각 Date를 넘기면 KST 0~9시에 하루 밀린다). 읽기는 권한 판정을 거치지
 // 않는다 — 설정 값은 domain 전역에서 자유롭게 읽히는 계산 입력이고, 게이트는
 // 설정 "화면"(admin.settings 보기 권한)에 있다.
 export async function getSettingValue<T>(
@@ -125,7 +127,7 @@ export async function getSettingValue<T>(
 ): Promise<T> {
   if (def.kind === "historized") {
     const findEffectiveValue = deps?.findEffectiveValue ?? defaultFindEffectiveValue;
-    const asOf = dateOnly(opts?.asOf ?? new Date());
+    const asOf = opts?.asOf ? dateOnly(opts.asOf) : seoulToday(deps?.now);
     const row = await findEffectiveValue(SYSTEM_VIEWER, def.key, asOf);
     if (!row) {
       if (def.default !== undefined) return def.default;

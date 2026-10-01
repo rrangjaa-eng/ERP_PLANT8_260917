@@ -542,7 +542,7 @@ test("320×568 — E′4 문서 scroll-padding-bottom이 sticky 제출 줄 높�
       const bar = document.querySelector<HTMLElement>("[class*=stickySubmit]");
       const wrap = document.querySelector<HTMLElement>("[class*=signatureWrap]");
       const probe = document.createElement("span");
-      probe.style.width = "var(--s-4)";
+      probe.style.cssText = "display: block; width: var(--s-4);";
       document.body.appendChild(probe);
       const s4 = probe.getBoundingClientRect().width;
       probe.remove();

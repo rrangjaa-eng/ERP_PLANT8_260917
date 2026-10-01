@@ -4,7 +4,7 @@
 
 .section {
   border-top: var(--line-w-strong) solid var(--line-strong);
-  padding-top: var(--s-6);
+  padding-top: var(--s-3);
   margin-top: var(--s-6);
 }
 
@@ -48,6 +48,36 @@
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   color: var(--muted);
+}
+
+/* §6-3 · §7-2 · §7-15 — PC 폼 라벨 열 96(--label-w) + --s-2(TextField · Form.Field와
+   같은 열), select 200. 폰(<700px)은 위 세로 쌓기가 기본값이다. */
+@media (min-width: 700px) {
+  .selectLabel {
+    display: grid;
+    grid-template-columns: var(--label-w) minmax(0, 1fr);
+    column-gap: var(--s-2);
+    align-items: start;
+    /* 라벨이 글자 노드라 padding을 줄 수 없다 — 묶음을 --s-1 내리고 select만 되돌려
+       라벨 글자 높이를 TextField 라벨(padding-top --s-1)과 맞춘다. */
+    padding-top: var(--s-1);
+  }
+
+  .selectLabel > :not(label) {
+    grid-column: 2;
+  }
+
+  .selectLabel > select {
+    width: 200px;
+    margin-top: calc(-1 * var(--s-1));
+  }
+
+  /* 칸 아래 힌트 · 경고 · 오류는 select와 같은 x에서 시작한다(§7-2 「입력 아래」). */
+  .selectLabel ~ .hint,
+  .selectLabel ~ .warning,
+  .selectLabel ~ .error {
+    margin-left: calc(var(--label-w) + var(--s-2));
+  }
 }
 
 .select {

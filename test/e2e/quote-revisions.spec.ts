@@ -1132,3 +1132,118 @@ test.describe("견적 줄 「번호」 열 숫자 규칙 (PR #104 [지시] (나)
     expect.soft(await numberColumnCells(previousTable(page, 1))).toEqual(expected);
   });
 });
+
+// PR #104 후속 F(2) — DR-104-02(/design-review): 비활성 1차 「일괄 저장」 안 kbd가 on-accent 값(opacity 0.8)이라 --surface 면 위 대비 3.34.
+// DR-104-04: 「번호」 본문 칸 글자가 14px 본문 색이라 행 번호 모양(§7-3 첫 칸: --fs-xs · --faint)이 아니다. 글자 요소(td 첫 자식, 없으면 td)를 잰다.
+function parseRgb(value: string): [number, number, number] {
+  const parts = value.match(/[\d.]+/g)?.slice(0, 3).map(Number);
+  if (!parts || parts.length < 3) throw new Error(`색을 읽을 수 없음: ${value}`);
+  return [parts[0]!, parts[1]!, parts[2]!];
+}
+
+function luminance([r, g, b]: [number, number, number]): number {
+  const channel = (value: number) => {
+    const c = value / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+}
+
+// 글자색에 opacity를 섞어 면 위에 올린 값의 WCAG 대비.
+function contrastOnSurface(text: [number, number, number], alpha: number, surface: [number, number, number]): number {
+  const blended = text.map((value, index) => value * alpha + surface[index]! * (1 - alpha)) as [number, number, number];
+  const [hi, lo] = [luminance(blended), luminance(surface)].sort((a, b) => b - a) as [number, number];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+async function saveKbdLook(save: Locator) {
+  return save.evaluate((node) => {
+    const kbd = node.querySelector("kbd") as HTMLElement;
+    const kbdStyle = getComputedStyle(kbd);
+    return {
+      opacity: kbdStyle.opacity,
+      borderTopColor: kbdStyle.borderTopColor,
+      color: kbdStyle.color,
+      background: getComputedStyle(node).backgroundColor,
+    };
+  });
+}
+
+async function bodyNumberLook(table: Locator) {
+  return table.evaluate((node) => {
+    const el = node as HTMLTableElement;
+    const headers = Array.from(el.querySelectorAll("thead th"));
+    const index = headers.findIndex((th) => (th.textContent ?? "").trim() === "번호");
+    if (index < 0) return { head: null, cells: [] };
+    const headStyle = getComputedStyle(headers[index] as Element);
+    const rows = Array.from(el.querySelectorAll("tbody tr")).filter((row) => (row as HTMLTableRowElement).cells.length > 1);
+    const cells = rows.map((row) => {
+      const td = (row as HTMLTableRowElement).cells[index] as HTMLElement;
+      const style = getComputedStyle(td.firstElementChild ?? td);
+      return { text: (td.textContent ?? "").trim(), fontSize: style.fontSize, fontWeight: style.fontWeight, lineHeight: style.lineHeight, color: style.color, minWidth: style.minWidth };
+    });
+    return { head: { fontSize: headStyle.fontSize, color: headStyle.color }, cells };
+  });
+}
+
+test.describe("PR #104 후속 — 비활성 1차 kbd (DR-104-02) · 「번호」 본문 칸 모양 (DR-104-04)", () => {
+  test("DR-104-02 — 편집 없는 비활성 「일괄 저장」 kbd는 opacity 1 · --line 테두리 · --faint 글자, 면 위 대비 4.5 이상 · 활성 kbd는 그대로(0.8)", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "kbd 줄", unitPrice: 1_000_000, execution: 600_000 }] });
+    await login(page, pm);
+
+    for (const width of [1280, 1024]) {
+      await page.setViewportSize({ width, height: 800 });
+      await page.goto(`/projects/${project.id}`);
+      const save = page.getByRole("main").getByRole("button", { name: /일괄 저장/ });
+      await expect(save).toHaveAttribute("aria-disabled", "true");
+      const look = await saveKbdLook(save);
+      expect.soft(look.opacity, `비활성 kbd opacity @${width}`).toBe("1");
+      expect.soft(look.borderTopColor, `비활성 kbd 테두리 @${width}`).toBe("rgb(207, 219, 215)");
+      expect.soft(look.color, `비활성 kbd 글자 @${width}`).toBe("rgb(95, 110, 106)");
+      const ratio = contrastOnSurface(parseRgb(look.color), Number(look.opacity), parseRgb(look.background));
+      expect.soft(ratio, `비활성 kbd 대비 @${width}`).toBeGreaterThanOrEqual(4.5);
+    }
+
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/projects/${project.id}`);
+    await page.locator("#period-open").click();
+    await page.locator("#period-end").fill(TODAY);
+    const active = page.getByRole("main").getByRole("button", { name: /일괄 저장/ });
+    await expect(active).not.toHaveAttribute("aria-disabled", "true");
+    expect((await saveKbdLook(active)).opacity, "활성 kbd opacity").toBe("0.8");
+  });
+
+  test("DR-104-04 — 1280 현재 격자와 이전 차수 읽기 표의 「번호」 본문 칸 글자가 11px · 600 · 1.4 · --faint · 최소 폭 28px, 머리글은 그대로", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const project = await makeProject({
+      teamId: team.id,
+      pmUserId: pm.userId,
+      lines: [
+        { itemName: "번호 모양 무대", unitPrice: 1_000_000, execution: 600_000 },
+        { itemName: "번호 모양 조명", unitPrice: 500_000, execution: 300_000 },
+      ],
+    });
+    await copyRevision(project.id, project.revisionId);
+    await login(page, pm);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`/projects/${project.id}`);
+    await expect(quoteRows(page)).toHaveCount(2);
+    await revisionTable(page).getByRole("button", { name: "차수 열기" }).click();
+    await expect(previousTable(page, 1).getByText("번호 모양 무대", { exact: true })).toBeVisible();
+
+    const bodyLook = { fontSize: "11px", fontWeight: "600", lineHeight: "15.4px", color: "rgb(95, 110, 106)", minWidth: "28px" };
+    const expectedCells = [
+      { text: "1", ...bodyLook },
+      { text: "2", ...bodyLook },
+    ];
+    for (const [label, table] of [["현재 격자", quoteTable(page)], ["이전 차수 읽기 표", previousTable(page, 1)]] as const) {
+      const look = await bodyNumberLook(table);
+      expect.soft(look.cells, `${label} 번호 칸`).toEqual(expectedCells);
+      expect.soft(look.head?.fontSize, `${label} 번호 머리글 글자 크기`).toBe("12px");
+      expect.soft(look.head?.color, `${label} 번호 머리글 색은 faint 아님`).not.toBe("rgb(95, 110, 106)");
+    }
+  });
+});

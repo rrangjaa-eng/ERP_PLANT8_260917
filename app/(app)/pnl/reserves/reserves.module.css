@@ -146,6 +146,7 @@
   /* 리뷰 R14 — 폰에서 복원·버림은 터치 최소 높이(견적 원장 S18과 같은 규칙). */
   .restoreAction {
     min-height: var(--touch-min);
+    min-width: var(--touch-min);
   }
 }
 

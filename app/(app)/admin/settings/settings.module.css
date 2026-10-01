@@ -141,5 +141,6 @@
 @media (max-width: 699.98px) {
   .restoreAction {
     min-height: var(--touch-min);
+    min-width: var(--touch-min);
   }
 }

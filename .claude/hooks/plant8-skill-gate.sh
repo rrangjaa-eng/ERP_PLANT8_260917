@@ -20,8 +20,8 @@
 #                                            테스트·빌드 실패 뒤 코드 수정은 systematic-debugging 뒤에만
 #   failure        PostToolUseFailure(Bash) — 테스트·빌드 실패를 표시
 #   merge          PreToolUse(PR 머지)      — 변경 종류에 맞는 게이트만(사용자 결정 2026-10-01): 문서만 바뀐 PR은
-#                                            게이트 없음, 코드는 /review, 화면 파일은 /qa·/design-review 더,
-#                                            돈·결재 경로는 /cso 더. 위험 경로(마이그레이션·스키마·
+#                                            게이트 없음, 코드는 /review, 화면 영향(app/의 .tsx·.css, ui/ 전부,
+#                                            docs/design/tokens.css)은 /qa·/design-review 더, 돈·결재 경로는 /cso 더. 위험 경로(마이그레이션·스키마·
 #                                            인증·권한·암호화·배포·.claude·CLAUDE.md)는 세션이 머지하지 않는다 —
 #                                            사용자가 GitHub에서 머지(2026-09-27). 그 밖은 세션이 머지한다
 # 게이트 기록(.claude/gates/phase-NN[.N].log)은 커밋해 세션을 넘어 남긴다.
@@ -232,9 +232,10 @@ $(printf '%s\n' "$body" | sed -n 's/^[[:space:]]*화면:[[:space:]]*//p' | tr ',
     ;;
 
   merge)
-    # 게이트는 변경 종류로 정한다(사용자 결정 2026-10-01): 문서만 바꾼 PR(.planning/·.claude/gates/ 아래 파일,
-    # *.md — 단 CLAUDE.md와 .claude/ 아래 .md 제외)은 게이트 없음, 코드는 /review, 화면 파일은 /qa·/design-review 더,
-    # 돈·결재 경로(domain/money·corp-cards·reserves·revenue·approvals)는 /cso 더. gh가 우선이다: 목록을 못 읽거나 받은 수가 changed_files와
+    # 게이트는 변경 종류로 정한다(사용자 결정 2026-10-01): 문서만 바꾼 PR(.claude/gates/ 로그, *.md — 단 CLAUDE.md와
+    # .claude/ 아래 .md 제외. .planning/도 .md만)은 게이트 없음, 코드는 /review, 화면 영향(app/의 .tsx·.css, ui/ 전부,
+    # docs/design/tokens.css)은 /qa·/design-review 더, 돈·결재 경로(domain/money·corp-cards·reserves·revenue·approvals,
+    # repositories/의 같은 저장소)는 /cso 더. gh가 우선이다: 목록을 못 읽거나 받은 수가 changed_files와
     # 다르면 문서만으로 보지 않는다. gh가 없거나 실패하면(클라우드 세션) origin ls-remote로 얻은
     # GitHub 병합 커밋(refs/pull/N/merge)의 첫 부모(PR 대상 브랜치) 대비 diff(옛 경로 포함, 사용자
     # 승인 2026-09-26)에 같은 규칙을 쓴다. 로컬 origin/main은 쓰지 않는다(대상이 main이 아니거나 위조).
@@ -296,7 +297,7 @@ $(printf '%s\n' "$body" | sed -n 's/^[[:space:]]*화면:[[:space:]]*//p' | tr ',
     [ -n "$pr_files" ] || deny "PR 변경 파일을 판정할 수 없어 머지하지 않는다(gh 없음·실패, 또는 PR 병합 커밋이 로컬에 없음). git fetch origin pull/${pull_number:-N}/head pull/${pull_number:-N}/merge 뒤 다시 시도하라."
     ui_changed=0 money_changed=0
     if [ -n "$pr_files" ]; then
-      awk -F'\t' '{ for (i = 1; i <= NF; i++) if (!($i ~ /^(\.planning|\.claude\/gates)\// || ($i ~ /\.md$/ && $i !~ /^\.claude\// && $i !~ /(^|\/)CLAUDE\.md$/))) bad = 1 }
+      awk -F'\t' '{ for (i = 1; i <= NF; i++) if (!($i ~ /^\.claude\/gates\// || ($i ~ /\.md$/ && $i !~ /^\.claude\// && $i !~ /(^|\/)CLAUDE\.md$/))) bad = 1 }
                   END { exit bad }' <<<"$pr_files" && docs_only=1
       # 위험 경로(마이그레이션·스키마·인증·권한·암호화·배포·훅/규칙·CLAUDE.md)는 세션이 머지하지 않는다 —
       # 사용자가 GitHub에서 직접 머지한다(사용자 결정 2026-09-27: 그 밖의 PR은 조건 충족 시 세션이 머지).
@@ -305,8 +306,8 @@ $(printf '%s\n' "$body" | sed -n 's/^[[:space:]]*화면:[[:space:]]*//p' | tr ',
         | { grep -E '^(db/migrations/|db/schema/|domain/auth/|domain/permissions/|lib/crypto|scripts/(deploy|rollback|bootstrap-gcp|promote-guard)\.sh$|\.github/workflows/|infra/|\.claude/|CLAUDE\.md$)' || true; } \
         | { grep -vE '^\.claude/gates/' || true; } | head -n 3 | tr '\n' ' ')"
       [ -z "$risky" ] || deny "위험 경로가 바뀐 PR(${risky% })은 세션이 머지하지 않는다 — 마이그레이션·스키마·인증·권한·암호화·배포·훅·규칙·CLAUDE.md는 사용자가 GitHub에서 직접 머지한다."
-      if printf '%s\n' "$pr_files" | tr '\t' '\n' | grep -Eq '^(app|ui)/.*\.(tsx|css)$'; then ui_changed=1; fi
-      if printf '%s\n' "$pr_files" | tr '\t' '\n' | grep -Eq '^domain/(money|corp-cards|reserves|revenue|approvals)/'; then money_changed=1; fi
+      if printf '%s\n' "$pr_files" | tr '\t' '\n' | grep -Eq '^(app/.*\.(tsx|css)$|ui/|docs/design/tokens\.css$)'; then ui_changed=1; fi
+      if printf '%s\n' "$pr_files" | tr '\t' '\n' | grep -Eq '^(domain/(money|corp-cards|reserves|revenue|approvals)/|repositories/(corp-cards|approvals|reserve-entries|revenue-entries)\.ts$)'; then money_changed=1; fi
     fi
     [ "$docs_only" = 1 ] && exit 0
     if awk -F'\t' '{ for (i = 1; i <= NF; i++) if ($i ~ /^\.claude\/gates\/[^\/]+\.log$/) hit = 1 } END { exit !hit }' <<<"$pr_files"; then
@@ -342,10 +343,10 @@ $(printf '%s\n' "$body" | sed -n 's/^[[:space:]]*화면:[[:space:]]*//p' | tr ',
     if [ "$ui_changed" = 1 ]; then
       missing=""
       for g in qa design-review; do gate_has "$g" || missing="$missing /$g"; done
-      [ -z "$missing" ] || deny "화면 파일(app/·ui/의 .tsx·.css)이 바뀐 PR은 브라우저 검증 기록이 있어야 머지한다(없음:${missing}, CLAUDE.md §6: UI 완료 판정 = /design-review → /qa). 호출 뒤 다시 시도하라.${push_note}"
+      [ -z "$missing" ] || deny "화면에 영향을 주는 파일(app/의 .tsx·.css, ui/, docs/design/tokens.css)이 바뀐 PR은 브라우저 검증 기록이 있어야 머지한다(없음:${missing}, CLAUDE.md §6: UI 완료 판정 = /design-review → /qa). 호출 뒤 다시 시도하라.${push_note}"
     fi
     if [ "$money_changed" = 1 ] && ! gate_has cso; then
-      deny "돈·결재 경로(domain/money·corp-cards·reserves·revenue·approvals)가 바뀐 PR은 독립 검토 /cso 기록이 있어야 머지한다. 호출 뒤 다시 시도하라.${push_note}"
+      deny "돈·결재 경로(domain/money·corp-cards·reserves·revenue·approvals와 그 저장소)가 바뀐 PR은 독립 검토 /cso 기록이 있어야 머지한다. 호출 뒤 다시 시도하라.${push_note}"
     fi
     ;;
 esac

@@ -564,6 +564,23 @@ write_gate_line "$projM3" review "$M3"
 merge_hook "$M3" "$projM3" $'docs/x.md
 domain/moneyish/x.ts'
 expect_rc "merge: 이름만 비슷한 경로(domain/moneyish)는 돈 경로 아님 + review -> 통과" 0 "$HOOK_RC"
+# 독립 검토 지적(2026-10-01): 화면 판정에 전역 토큰·ui/ 전부, 돈 판정에 저장소 계층, .planning/은 .md만 문서
+for f in 'docs/design/tokens.css' 'ui/input/use-comma-input.ts'; do
+  merge_hook "$M3" "$projM3" "$f"
+  expect_rc "merge: 화면 영향 $f + review만 -> exit 2" 2 "$HOOK_RC"
+  expect_contains "merge: 화면 영향 $f 메시지에 /qa" "$HOOK_STDERR" "/qa"
+done
+for f in 'repositories/corp-cards.ts' 'repositories/approvals.ts' 'repositories/reserve-entries.ts' 'repositories/revenue-entries.ts'; do
+  merge_hook "$M3" "$projM3" "$f"
+  expect_rc "merge: 돈·결재 저장소 $f + review(cso 없음) -> exit 2" 2 "$HOOK_RC"
+  expect_contains "merge: 돈·결재 저장소 $f 메시지에 /cso" "$HOOK_STDERR" "/cso"
+done
+projM4="$(new_project)"
+M4="sid-merge4-$$"
+merge_hook "$M4" "$projM4" $'.planning/config.json'
+expect_rc "merge: .planning/ 아래 .md 아닌 파일 + 게이트 없음 -> exit 2(/review 필요)" 2 "$HOOK_RC"
+merge_hook "$M4" "$projM4" $'.planning/phases/04-test/04-01-PLAN.md\n.planning/STATE.md'
+expect_rc "merge: .planning/ 아래 .md만 + 게이트 없음 -> 통과" 0 "$HOOK_RC"
 
 # ---------------------------------------------------------------------------
 # merge: 파일 목록을 못 읽으면 review·qa가 다 있어도 막는다 — 위험 경로 판정이 불가능하다(2026-09-27 #96)

@@ -1,9 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { settingsSimple, settingsHistorized } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { queryActionLog } from "@/repositories/action-log";
-import { upsertSimpleValue } from "@/repositories/settings";
+import { seedHistorizedValue, upsertSimpleValue } from "@/repositories/settings";
 import { log } from "@/lib/log";
 import {
   SETTING_DEFS,
@@ -123,28 +124,90 @@ describe("설정 JSON 내보내기·가져오기 (ADMN-06, 실제 Postgres)", ()
     return { annual: await listSettingHistory(LEAVE_ANNUAL_DAYS), threshold: await getSettingValue(AUTH_LOCKOUT_THRESHOLD) };
   }
 
-  it("(e) 값이 다른 지난 연도 항목은 전체 거부 — 함께 넣은 단순 키도 그대로", async () => {
-    const before = await annualAndThreshold();
-    const error = await importSettings(
-      SYSTEM_VIEWER,
-      payload({ [LEAVE_ANNUAL_DAYS.key]: [{ effectiveFrom: "2025-01-01", value: 20 }], [AUTH_LOCKOUT_THRESHOLD.key]: 3 }),
-      importDeps,
-    ).catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(ImportValidationError);
-    expect((error as ImportValidationError).issues.join("\n")).toContain("지난 연도");
-    expect(await annualAndThreshold()).toEqual(before);
-  });
+  // quick 261001-85g(ADMN-06) — 지난 연도 비교는 「설정된」 키(기본값과 다른 이력이 한 행이라도 있는 키)에만 걸린다.
+  // 이 묶음은 leave.annual_days 행을 바꾸므로 테스트마다 시작 전 행을 그대로 되돌린다(뒤 (f) · (h)가 이어 쓴다).
+  describe("지난 연도 이력 가져오기 — 설정된 키 · 미설정 키", () => {
+    let savedRows: Array<{ key: string; effectiveFrom: string; value: unknown; createdBy: string | null }> = [];
 
-  it("(e2) 지난 연도 비교 조회가 DB 오류로 실패하면 검증 오류로 바꾸지 않고 그 오류를 그대로 올린다", async () => {
-    const before = await annualAndThreshold();
-    const outage = new Error("connection terminated");
-    const error = await importSettings(
-      SYSTEM_VIEWER,
-      payload({ [LEAVE_ANNUAL_DAYS.key]: [{ effectiveFrom: "2025-01-01", value: 20 }] }),
-      { ...importDeps, getSettingValue: () => Promise.reject(outage) },
-    ).catch((caught: unknown) => caught);
-    expect(error).toBe(outage);
-    expect(await annualAndThreshold()).toEqual(before);
+    beforeEach(async () => {
+      savedRows = (await db.select().from(settingsHistorized).where(eq(settingsHistorized.key, LEAVE_ANNUAL_DAYS.key))).map(
+        (row) => ({ key: row.key, effectiveFrom: row.effectiveFrom, value: row.value, createdBy: row.createdBy }),
+      );
+    });
+
+    afterEach(async () => {
+      await db.delete(settingsHistorized).where(eq(settingsHistorized.key, LEAVE_ANNUAL_DAYS.key));
+      if (savedRows.length > 0) await db.insert(settingsHistorized).values(savedRows);
+    });
+
+    // 대상 환경을 「시드 행 하나」(배포 시드 2000-01-01 = 기본값)로 맞춘다.
+    async function onlySeedRow(): Promise<void> {
+      await db.delete(settingsHistorized).where(eq(settingsHistorized.key, LEAVE_ANNUAL_DAYS.key));
+      await seedHistorizedValue(SYSTEM_VIEWER, LEAVE_ANNUAL_DAYS.key, "2000-01-01", LEAVE_ANNUAL_DAYS.default);
+    }
+
+    // 기본값과 다른 이력이 이미 있는 「설정된 환경」(2024-01-01 = 17).
+    async function configured(): Promise<void> {
+      await onlySeedRow();
+      await seedHistorizedValue(SYSTEM_VIEWER, LEAVE_ANNUAL_DAYS.key, "2024-01-01", 17);
+    }
+
+    it("(e) 설정된 환경(2024 = 17)에 값이 다른 지난 연도 항목은 전체 거부 — 함께 넣은 단순 키도 그대로", async () => {
+      await configured();
+      const before = await annualAndThreshold();
+      const error = await importSettings(
+        SYSTEM_VIEWER,
+        payload({ [LEAVE_ANNUAL_DAYS.key]: [{ effectiveFrom: "2025-01-01", value: 20 }], [AUTH_LOCKOUT_THRESHOLD.key]: 3 }),
+        importDeps,
+      ).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ImportValidationError);
+      expect((error as ImportValidationError).issues.join("\n")).toContain("지난 연도");
+      expect(await annualAndThreshold()).toEqual(before);
+    });
+
+    it("(e2) 설정된 환경(2024 = 17)에서 지난 연도 비교 조회가 DB 오류로 실패하면 검증 오류로 바꾸지 않고 그 오류를 그대로 올린다", async () => {
+      await configured();
+      const before = await annualAndThreshold();
+      const outage = new Error("connection terminated");
+      const error = await importSettings(
+        SYSTEM_VIEWER,
+        payload({ [LEAVE_ANNUAL_DAYS.key]: [{ effectiveFrom: "2025-01-01", value: 20 }] }),
+        { ...importDeps, getSettingValue: () => Promise.reject(outage) },
+      ).catch((caught: unknown) => caught);
+      expect(error).toBe(outage);
+      expect(await annualAndThreshold()).toEqual(before);
+    });
+
+    it("(k) 시드 행뿐인(미설정) 환경에 비기본값 지난 연도 + 미래 행을 가져오면 그대로 들어간다", async () => {
+      await onlySeedRow();
+      await importSettings(
+        SYSTEM_VIEWER,
+        payload({
+          [LEAVE_ANNUAL_DAYS.key]: [
+            { effectiveFrom: "2025-01-01", value: 16 },
+            { effectiveFrom: "2027-01-01", value: 17 },
+          ],
+        }),
+        importDeps,
+      );
+      expect(await listSettingHistory(LEAVE_ANNUAL_DAYS)).toEqual([
+        { effectiveFrom: "2027-01-01", value: 17 },
+        { effectiveFrom: "2025-01-01", value: 16 },
+        { effectiveFrom: "2000-01-01", value: LEAVE_ANNUAL_DAYS.default },
+      ]);
+    });
+
+    it("(l) 지난 연도 비기본값 이력(2025 = 16)이 있는 환경을 내보내 빈 환경에 가져오면 모든 키의 조회 결과가 같다", async () => {
+      await seedHistorizedValue(SYSTEM_VIEWER, LEAVE_ANNUAL_DAYS.key, "2025-01-01", 16);
+      const before = await snapshot();
+      const exported = await exportSettings(SYSTEM_VIEWER);
+
+      await db.delete(settingsHistorized);
+      await db.delete(settingsSimple);
+
+      await importSettings(SYSTEM_VIEWER, exported, importDeps);
+      expect(await snapshot()).toEqual(before);
+    });
   });
 
   it("(f) 무변화 지난 행(2000-01-01 · 시드 15) + 미래 행은 통과하고 미래 행만 늘어난다", async () => {

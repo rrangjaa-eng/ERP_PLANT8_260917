@@ -96,6 +96,7 @@ export async function importSettings(
   if (!allowed) throw new ForbiddenError("설정 가져오기 권한 없음");
 
   const getSettingValue = deps?.getSettingValue ?? defaultGetSettingValue;
+  const listSettingHistory = deps?.listSettingHistory ?? defaultListSettingHistory;
   const today = seoulToday(deps?.now);
   const issues: string[] = [];
   const simple: Array<{ key: string; value: unknown; by: string | null }> = [];
@@ -114,6 +115,8 @@ export async function importSettings(
         continue;
       }
       const seenDates = new Set<string>();
+      // quick 261001-85g(ADMN-06): 대상 환경의 이력이 전부 기본값(0행 포함 — 배포 시드의 2000-01-01 행)이면 미설정 키다.
+      let unconfigured: boolean | undefined;
       for (const entry of raw as HistorizedImportEntry[]) {
         const effectiveFrom = entry?.effectiveFrom;
         if (typeof effectiveFrom !== "string") {
@@ -131,12 +134,16 @@ export async function importSettings(
         }
         // 04.1-04(ENG-5): 일반 저장과 같은 적용 시작일 검증. 지난 연도는 그날 이미 유효한
         // 값(기존 행 또는 기본값)과 같은 무변화 행만 통과 — 어느 날의 유효값도 바꾸지 않는다.
+        // quick 261001-85g: 미설정 키(이력이 기본값뿐)는 지난 연도 행을 그대로 받는다 — 바꿀 설정된 값이 없다.
         const violation = validateEffectiveFrom(def, effectiveFrom, today);
         if (violation?.reason === "format") {
           issues.push(`'${key}'(${effectiveFrom}) ${violation.message}`);
           continue;
         }
         if (violation?.reason === "past_year") {
+          unconfigured ??= (await listSettingHistory(def)).every((row) => isDeepStrictEqual(row.value, def.default));
+        }
+        if (violation?.reason === "past_year" && !unconfigured) {
           const effective: unknown = await getSettingValue(def, { asOf: seoulDateToUtcDate(effectiveFrom) }).catch((caught: unknown) => {
             if (caught instanceof SettingNotFoundError) return undefined;
             throw caught;

@@ -6,6 +6,7 @@ import { recordAction as defaultRecordAction } from "@/domain/action-log/record"
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { kstToday } from "@/lib/kst-date";
+import { withTransaction } from "@/lib/db-transaction";
 import {
   listOrgUnits as repoListOrgUnits,
   findOrgUnitById as repoFindOrgUnitById,
@@ -267,6 +268,7 @@ export async function assignTeam(
 export type CancelAssignmentDeps = {
   can: typeof defaultCan;
   deleteMembership: typeof repoDeleteMembership;
+  recordAction: typeof defaultRecordAction;
   now: () => Date;
 };
 
@@ -296,11 +298,26 @@ export async function cancelFutureAssignment(
     throw new PastAssignmentCancelError("과거·오늘 발령은 취소할 수 없음 — 미래로 예정된 발령만 취소 가능");
   }
 
+  // quick 261001-85g — 삭제와 document_delete 기록을 한 트랜잭션에 묶는다(기록이 실패하면 발령도 남는다).
+  // 행이 사라진 뒤에도 누구의 어떤 발령이었는지 남도록 detail에 사람 · 발령일을 싣는다.
   const deleteMembership = deps?.deleteMembership ?? repoDeleteMembership;
-  const deleted = await deleteMembership(viewer, input.userId, input.effectiveFrom);
-  if (deleted === 0) {
-    throw new NotFoundError("취소할 발령 찾을 수 없음");
-  }
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  await withTransaction(async (tx) => {
+    const deletedId = await deleteMembership(viewer, input.userId, input.effectiveFrom, tx);
+    if (deletedId === null) {
+      throw new NotFoundError("취소할 발령 찾을 수 없음");
+    }
+    await recordAction(
+      viewer,
+      {
+        actionType: "document_delete",
+        entity: "team_membership",
+        entityId: deletedId,
+        detail: { userId: input.userId, effectiveFrom: input.effectiveFrom },
+      },
+      { tx },
+    );
+  });
 }
 
 // 사람 상세 화면의 §7-14 이력 목록이 그대로 쓰는 발령 이력 전체 — 발령일

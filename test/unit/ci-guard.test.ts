@@ -30,7 +30,8 @@ function jobBlock(ci: string, name: string, nextName?: string): string {
 }
 
 // draft PR은 quality만 돈다. integration·e2e는 ready(또는 workflow_call/push)에서만.
-const FULL_RUN_IF = "github.event_name != 'pull_request' || github.event.pull_request.draft == false";
+const FULL_RUN_IF =
+  "github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.quality.outputs.app == 'true')";
 
 describe("ci-guard: .github/workflows 메타 검사", () => {
   it("어떤 워크플로에도 drizzle-kit push 하위 명령이 없다", () => {
@@ -126,7 +127,7 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
     }
   });
 
-  it("integration·e2e 잡은 draft PR에서 건너뛰고 ready·workflow_call에서만 돈다", () => {
+  it("integration·e2e 잡은 draft PR·.claude만 바뀐 PR에서 건너뛰고 ready·workflow_call에서만 돈다", () => {
     const ci = readWorkflow("ci.yml");
     for (const block of [jobBlock(ci, "integration", "e2e"), jobBlock(ci, "e2e")]) {
       expect(block).toContain(FULL_RUN_IF);

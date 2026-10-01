@@ -12,9 +12,11 @@ import {
   listAssignments,
   teamAtDate,
   PastAssignmentCancelError,
+  NotFoundError,
   ValidationError,
 } from "@/domain/org";
 import { queryActionLog } from "@/repositories/action-log";
+import { listMemberships } from "@/repositories/team-memberships";
 
 async function makeTestUser(): Promise<string> {
   const id = `test-user-${randomUUID()}`;
@@ -160,5 +162,46 @@ describe("team-memberships (MAST-02, 실제 Postgres) — 발령 이력·시점 
 
     const log = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_create" });
     expect(log.some((entry) => entry.entity === "team_membership")).toBe(true);
+  });
+
+  // quick 261001-85g — 미래 발령 취소(물리 삭제)도 같은 트랜잭션에서 행동 로그에 남는다.
+  async function futureAssignment(): Promise<{ userId: string; membershipId: string }> {
+    const userId = await makeTestUser();
+    await assignTeam(SYSTEM_VIEWER, { userId, teamId: await makeTestTeam(), effectiveFrom: "2999-01-01" });
+    const [row] = await listMemberships(SYSTEM_VIEWER, userId);
+    if (!row) throw new Error("발령 행이 없습니다.");
+    return { userId, membershipId: row.id };
+  }
+
+  async function deleteLogsFor(userId: string) {
+    const log = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_delete" });
+    return log.filter((entry) => entry.entity === "team_membership" && (entry.detail as { userId?: string }).userId === userId);
+  }
+
+  it("미래 발령을 취소하면 document_delete 기록이 지운 발령 행 id로 한 건 남는다", async () => {
+    const { userId, membershipId } = await futureAssignment();
+    await cancelFutureAssignment(SYSTEM_VIEWER, { userId, effectiveFrom: "2999-01-01" });
+
+    const logs = await deleteLogsFor(userId);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.entityId).toBe(membershipId);
+    expect(logs[0]?.detail).toEqual({ userId, effectiveFrom: "2999-01-01" });
+  });
+
+  it("취소 기록이 실패하면 발령도 지워지지 않는다(같은 트랜잭션)", async () => {
+    const { userId } = await futureAssignment();
+    const failure = new Error("action log down");
+    await expect(
+      cancelFutureAssignment(SYSTEM_VIEWER, { userId, effectiveFrom: "2999-01-01" }, { recordAction: () => Promise.reject(failure) }),
+    ).rejects.toBe(failure);
+
+    const remaining = await listAssignments(SYSTEM_VIEWER, userId);
+    expect(remaining.some((a) => a.effectiveFrom === "2999-01-01")).toBe(true);
+  });
+
+  it("없는 발령 취소는 NotFoundError이고 기록을 남기지 않는다", async () => {
+    const userId = await makeTestUser();
+    await expect(cancelFutureAssignment(SYSTEM_VIEWER, { userId, effectiveFrom: "2999-01-01" })).rejects.toBeInstanceOf(NotFoundError);
+    expect(await deleteLogsFor(userId)).toEqual([]);
   });
 });

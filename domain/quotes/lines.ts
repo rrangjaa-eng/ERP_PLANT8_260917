@@ -59,6 +59,7 @@ import {
   findLatestQuoteRevision as repoFindLatestQuoteRevision,
 } from "@/repositories/quote-revisions";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
+import { findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
 import { getSettingValue } from "@/domain/settings/registry";
 import { QUOTE_LINE_MAX_PER_REVISION } from "@/domain/settings/keys";
 
@@ -87,6 +88,7 @@ type QuoteLineProjectable = {
   subcategory: string;
   itemName: string;
   vendorId: string | null;
+  vendorName: string | null;
   quantity: number;
   unitPrice: MoneyDto;
   execution: MoneyDto;
@@ -109,7 +111,7 @@ type LineEditFacts = {
   readonlyReason: string | null;
 };
 
-function toProjectable(row: QuoteLineRow, facts: LineEditFacts): QuoteLineProjectable {
+function toProjectable(row: QuoteLineRow, facts: LineEditFacts, vendorName: string | null): QuoteLineProjectable {
   return {
     id: row.id,
     revisionId: row.revisionId,
@@ -117,6 +119,7 @@ function toProjectable(row: QuoteLineRow, facts: LineEditFacts): QuoteLineProjec
     subcategory: row.subcategory,
     itemName: row.itemName,
     vendorId: row.vendorId,
+    vendorName,
     quantity: Number(row.quantity),
     unitPrice: moneyToDto(
       moneyFromRow({
@@ -155,6 +158,8 @@ export type QuoteLineDto = {
   subcategory: string;
   itemName: string;
   vendorId: string | null;
+  // /qa ISSUE-001 — 거래처 이름(보관 · 숨김 거래처도). 선택지에 없는 거래처를 UUID 대신 이름으로 그린다.
+  vendorName: string | null;
   quantity: number;
   unitPrice: MoneyDto;
   execution: MoneyDto;
@@ -181,7 +186,10 @@ export const QUOTE_LINE_DTO_SPEC: DtoSpec<QuoteLineProjectable, QuoteLineDto> = 
     { key: "sortOrder", from: "sortOrder", infoItem: "project.value" },
     { key: "subcategory", from: "subcategory", infoItem: "project.value" },
     { key: "itemName", from: "itemName", infoItem: "project.value" },
-    { key: "vendorId", from: "vendorId", infoItem: "project.value" },
+    // quick 261001-85g(Codex 리뷰 P1) — 거래처 정보가 가려진 계급에게는 거래처 id도 싣지 않는다(저장은 서버가 기존 값을 지킨다).
+    { key: "vendorId", from: "vendorId", infoItem: ["project.value", "vendor.value"] },
+    // /qa ISSUE-001 — 거래처 이름은 거래처 정보다. 프로젝트 정보와 함께 볼 때만(all-of, 리저브 선택지와 같은 결).
+    { key: "vendorName", from: "vendorName", infoItem: ["project.value", "vendor.value"] },
     { key: "quantity", from: "quantity", infoItem: "project.value" },
     { key: "unitPrice", from: "unitPrice", infoItem: "quote.amount" },
     { key: "execution", from: "execution", infoItem: "quote.amount" },
@@ -263,6 +271,8 @@ async function projectLines(
   ctx: QuoteLineListCtx,
   linked: LinkedDocumentsByLine,
 ): Promise<QuoteLineDto[]> {
+  const vendorIds = [...new Set(rows.flatMap((row) => (row.vendorId ? [row.vendorId] : [])))];
+  const vendorNames = await repoFindVendorNamesByIds(viewer, vendorIds);
   const projectables = rows.map((row) => {
     const firstLinked = linked.get(row.id)?.[0];
     const hasLinkedDocuments = firstLinked !== undefined;
@@ -278,7 +288,7 @@ async function projectLines(
       }),
       hasLinkedDocuments,
       readonlyReason: firstLinked ? linkedDocumentReason(firstLinked.number) : null,
-    });
+    }, row.vendorId ? (vendorNames.get(row.vendorId) ?? null) : null);
   });
   return (await projectMany(viewer, projectables, QUOTE_LINE_DTO_SPEC)) as QuoteLineDto[];
 }
@@ -612,6 +622,8 @@ export type PreparedQuoteLineSave = {
   /** 04-13 — `projects` 쓰기와 `projects.adjustment` 쓰기(입구는 둘 중 하나, 줄마다의 판정은 게이트). */
   canWrite: boolean;
   canAdjust: boolean;
+  /** quick 261001-85g — 거래처 정보(vendor.value)를 보는가. 거짓이면 요청의 거래처 칸을 읽지 않고 기존 값을 지킨다. */
+  vendorShown: boolean;
 };
 
 export async function prepareQuoteLineSave(
@@ -641,6 +653,7 @@ export async function prepareQuoteLineSave(
     lineCap: await getSettingValue(QUOTE_LINE_MAX_PER_REVISION),
     canWrite,
     canAdjust,
+    vendorShown: await defaultVisible(viewer, "vendor.value"),
   };
 }
 
@@ -650,6 +663,18 @@ function normalizeForKind(row: QuoteLineWriteRow, kind: QuoteLineKind): QuoteLin
   if (kind === "quote") return row;
   const zeroQuote = { ...row, subcategory: kind, quantity: 1, unitPrice: { currency: "KRW" as const, amount: 0, fxRate: 1 }, unitPriceFxRateTouched: false };
   return kind === "adjustment" ? { ...zeroQuote, lineStatus: "not_started" } : zeroQuote;
+}
+
+// quick 261001-85g(Codex 리뷰 P1) — 거래처 정보가 가려진 계급은 거래처 id를 받지 못한다(DTO에 없음). 요청의 거래처 칸은
+// 읽지 않고 기존 줄은 DB 값(baseline도 같은 값 — 충돌로 보지 않는다), 복제한 새 줄은 원본 줄 값, 그 밖의 새 줄은 비운다.
+function keepHiddenVendor(
+  row: QuoteLineWriteRow,
+  current: QuoteLineRow | undefined,
+  currentById: Map<string, QuoteLineRow>,
+): QuoteLineWriteRow {
+  const source = current ?? (row.duplicatedFrom ? currentById.get(row.duplicatedFrom) : undefined);
+  const vendorId = source?.vendorId ?? undefined;
+  return { ...row, vendorId, baseline: row.baseline && current ? { ...row.baseline, vendorId: current.vendorId } : row.baseline };
 }
 
 // 04-13(엔지 리뷰 B §2 · T-04-64) — 판정·저장이 보는 종류. 새 줄은 요청 값(없으면 quote), 기존 줄은 잠근 tx로 다시 읽은
@@ -889,9 +914,10 @@ export async function writeQuoteLinesInTx(
       if (archived) await judgeStructure(id, lineKindOf(archived), { kind: "archive", quoteAmountZero: archived.quoteAmountKrw === 0 });
     }
 
-    for (const [rowIndex, requested] of input.rows.entries()) {
+    for (const [rowIndex, received] of input.rows.entries()) {
       // 04-13 — 판정·저장이 보는 종류: 기존 줄은 잠근 tx로 다시 읽은 DB 행, 새 줄만 요청 값(없으면 quote).
-      const current = requested.isNew ? undefined : currentById.get(requested.id);
+      const current = received.isNew ? undefined : currentById.get(received.id);
+      const requested = prepared.vendorShown ? received : keepHiddenVendor(received, current, currentById);
       const resolved = resolveLineKind(requested, current && lineKindOf(current));
       if (resolved === null) deny(LINE_EDIT_RULE, new UserFacingError(KIND_CHANGED));
       const kind = resolved ?? lineKindOf(current!);

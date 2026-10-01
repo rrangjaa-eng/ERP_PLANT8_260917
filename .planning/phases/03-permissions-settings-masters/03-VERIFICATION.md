@@ -3,7 +3,7 @@ phase: 03-permissions-settings-masters
 verified: 2026-10-01T04:38:30Z
 status: passed
 score: 6/6 must-haves verified
-covered_digest: "v1:sha256:b07eda242fc47e1b448fafef853920e84388725172b04777097dd6d1e19c3e78"
+covered_digest: "v1:sha256:07b581e4f04847fe41fdfb02e32bad8b66d83dbf67ea1f7398d9ea65da232aa2"
 covered_files:
   - ".github/workflows/account.yml"
   - ".planning/REQUIREMENTS.md"
@@ -369,9 +369,9 @@ re_verification:
     head: "d49ad56 (코드 트리 = 9a03686 = bada253 코드 + 48da153 `.claude` 변경)"
     range: "aa5464e..d49ad56 — 커밋 11개(first-parent 9). 이 중 `.planning`·`.claude` 밖 파일을 바꾼 것은 bada253 하나"
     trigger: "7회차 작성 뒤 origin/main 머지(bada253 PR #111, 48da153 PR #115)로 covered_files 12개가 바뀌었는데, 오케스트레이터가 재검증 없이 covered_digest만 다시 계산했다(PR #117 리뷰 CRITICAL). 이 addendum이 그 재검증이다"
-    bada253_judgment: "Phase 3 계약 변경 없음. 관리자 화면 3개(`vendors`·`corp-cards`·`code-tables` page.tsx)는 행 동작을 감싸던 프래그먼트 `<>…</>`를 `<span className={styles.rowActions}>`로 바꾸고 「수정」 링크에 `rowLink` 클래스를 더했을 뿐 — `canWrite`·`canArchive`·`archivedAt ? null` 조건, `*ActiveToggle`·`VendorHiddenToggle`·`*DeleteButton`(보관함 이동) 호출과 인자, `hasActions`·`canWrite || canArchive` 열 게이트는 diff의 문맥 줄로 그대로다(제거 줄은 `<>`·`</>`·`className={styles.toggle}` 셋뿐). CSS 모듈 3개는 `.rowActions`(gap --s-4)·`.rowLink`(nowrap) 추가만. `ui/button/Button.module.css` `.tertiary`는 border-bottom 밑줄을 text-decoration 밑줄로 바꾸고 aria-disabled 밑줄 색을 흐리게 함 — 표시 전용, `Button.tsx`(aria-disabled 클릭 차단) 무변경. `/admin` 인덱스·`/admin/permissions`·`ui/permission-grid`·`ui/shell`은 bada253이 건드리지 않았고 3차 버튼도 쓰지 않는다. E2E 5개 스펙은 추가만(제거 줄은 `mobile-vendors.spec.ts`의 import 한 줄을 확장한 것뿐), 새 단언은 행 동작 간격 ≥ --s-4·44×44·가로 넘침 없음. domain·repositories·db·lib·판정 함수 변경 0"
+    bada253_judgment: "Phase 3 계약 변경 없음. 관리자 화면 3개(`vendors`·`corp-cards`·`code-tables` page.tsx)는 행 동작을 감싸던 프래그먼트 `<>…</>`를 `<span className={styles.rowActions}>`로 바꾸고 「수정」 링크에 `rowLink` 클래스를 더했을 뿐 — `canWrite`·`canArchive`·`archivedAt ? null` 조건, `*ActiveToggle`·`VendorHiddenToggle`·`*DeleteButton`(보관함 이동) 호출과 인자, `hasActions`·`canWrite || canArchive` 열 게이트는 diff의 문맥 줄로 그대로다(제거 줄은 `<>`·`</>`·`className={styles.toggle}` 셋뿐). CSS 모듈 3개는 `.rowActions`(gap --s-4)·`.rowLink`(nowrap) 추가만. `ui/button/Button.module.css` `.tertiary`는 border-bottom 밑줄을 text-decoration 밑줄로 바꾸고 aria-disabled 밑줄 색을 흐리게 함 — 표시 전용, `Button.tsx`(aria-disabled 클릭 차단) 무변경. `/admin` 인덱스·`/admin/permissions`·`ui/permission-grid`·`ui/shell`은 bada253이 건드리지 않았고 3차 버튼도 쓰지 않는다. Phase 3 E2E 5개 스펙은 추가만(제거 줄은 `mobile-vendors.spec.ts`의 import 한 줄을 확장한 것뿐), 새 단언은 행 동작 간격 ≥ --s-4·44×44·가로 넘침 없음. domain·repositories·db·lib·판정 함수 변경 0"
     48da153_judgment: "`.claude/hooks/plant8-skill-gate.sh`·그 테스트·`.claude/gates/phase-02.log`·`.planning` 문서만 — 앱 코드·테스트 0, Phase 3 무관"
-    gates_this_process: "HEAD d49ad56(코드 = 9a03686), 2026-10-01 04:30–04:36Z: `pnpm lint` exit 0(error 0, 기존 boundaries v5→v6 경고만) · `pnpm typecheck` exit 0 · `pnpm test:unit` 171 files · 2277 passed(7회차 2272 → +5는 bada253의 `tertiary-underline-css.test.ts` 새 describe 5건) · 대상 단위 9파일(`tertiary-underline-css`·`admin-menu-registry`·`no-admin-boolean`·`ui/admin-index-css`·`ui/admin-index-link`·`ui/admin-master-list-first`·`ui/admin-table-caption`·`ui/single-column`·`design-system-docs`) 160 passed. 통합은 다시 돌리지 않았다 — bada253·48da153이 domain·repositories·db·통합 테스트를 건드리지 않았고 CI #104 integration 2샤드가 bada253에서 green"
+    gates_this_process: "코드 트리 9a03686(= d49ad56의 코드), 2026-10-01 04:30–04:36Z: `pnpm lint` exit 0(error 0, 기존 boundaries v5→v6 경고만) · `pnpm typecheck` exit 0 · `pnpm test:unit` 171 files · 2277 passed(7회차 2272 → +5는 bada253의 `tertiary-underline-css.test.ts` 새 describe 1개 · 테스트 5건) · 대상 단위 9파일(`tertiary-underline-css`·`admin-menu-registry`·`no-admin-boolean`·`ui/admin-index-css`·`ui/admin-index-link`·`ui/admin-master-list-first`·`ui/admin-table-caption`·`ui/single-column`·`design-system-docs`) 160 passed. 통합은 다시 돌리지 않았다 — bada253·48da153이 domain·repositories·db·통합 테스트를 건드리지 않았고 CI #104 integration 2샤드가 bada253에서 green"
     ci: "deploy run #104(id 36810353354, main bada253, 2026-10-01T03:24:22Z): ci/quality · ci/integration (1)·(2) · ci/e2e (1)·(2) · staging 전부 success(staging 03:39:18–03:43:44Z), production skipped(수동 승격). main 푸시라 E2E는 전체 스위트(CLAUDE.md §5). deploy run #105(id 36814444345, main 48da153): 이 시점 completed — quality·integration×2·e2e×2·staging 전부 success, production skipped"
 history_round_6:
   previous_status: passed
@@ -437,7 +437,7 @@ human_verification:
     expected: "`/admin`에 관리 화면 묶음이 보이고 `/admin/permissions` 권한표에 빈 칸이 없다. 스테이징 배포(deploy #103 · main f85c9af)가 성공했다"
     why_human: "스테이징 페이지 자체는 이 컨테이너에서 열린다(2026-10-01 04:35Z `curl https://plant8-staging-67rumhdgba-du.a.run.app/login` → 200 — 6회차의 「프록시 403」은 지금 사실이 아니다). 막힌 것은 로그인이다 — Claude가 시스템 관리자 자격 증명으로 로그인하는 것을 auto-mode가 차단해 관리자 화면을 직접 볼 수 없었다"
     status: resolved
-    resolution: "2026-10-01 사용자 확인(채팅, 03:20Z 전). 오케스트레이터 질문 원문: 「시스템 관리자 계정으로 스테이징에서 `/admin`: 관리 화면 묶음이 보이는지, `/admin/permissions`: 권한표에 빈 칸이 없는지 열어 보고 결과만 알려 주세요. 상단 바·서체가 평소대로면 셸 확인도 함께 끝납니다」 → 사용자 답: 「둘 다 정상」. 답이 온 시각에 스테이징은 deploy run #103(id 36807956531, main f85c9af — staging job 03:08:13–03:13:40Z success)을 서비스하고 있었다(#104 staging은 03:39:18Z 시작 · 03:43:44Z 끝). 사용자는 열 수를 답하지 않았다 — 「빈 칸 없음」만 관찰이고, 시드 MENUS 22 × 동작 3 = 66열은 코드에서 센 값이지 관찰이 아니다. deploy run #103과 앞선 #101(36799772848, 844e8ae)·#102(36805788826, fe6ab22)의 success는 사용자 보고가 아니라 Claude가 `gh run list`로 확인했다(이 addendum에서 다시 읽음). bada253(#104)은 `/admin` 인덱스·`/admin/permissions`를 건드리지 않았으므로 이 확인의 범위는 현재 HEAD에도 그대로 적용된다"
+    resolution: "2026-10-01 사용자 확인(채팅, 03:13:40Z(#103 staging 완료 확인 뒤 질문)~03:20Z 사이). 오케스트레이터 질문 원문: 「시스템 관리자 계정으로 스테이징에서 `/admin`: 관리 화면 묶음이 보이는지, `/admin/permissions`: 권한표에 빈 칸이 없는지 열어 보고 결과만 알려 주세요. 상단 바·서체가 평소대로면 셸 확인도 함께 끝납니다」 → 사용자 답: 「둘 다 정상」. 답이 온 시각에 스테이징은 deploy run #103(id 36807956531, main f85c9af — staging job 03:08:13–03:13:40Z success)을 서비스하고 있었다(#104 staging은 03:39:18Z 시작 · 03:43:44Z 끝). 사용자는 열 수를 답하지 않았다 — 「빈 칸 없음」만 관찰이고, 시드 MENUS 22 × 동작 3 = 66열은 코드에서 센 값이지 관찰이 아니다. deploy run #103과 앞선 #101(36799772848, 844e8ae)·#102(36805788826, fe6ab22)의 success는 사용자 보고가 아니라 Claude가 `gh run list`로 확인했다(이 addendum에서 다시 읽음). bada253(#104)은 `/admin` 인덱스·`/admin/permissions`를 건드리지 않았으므로 이 확인의 범위는 현재 HEAD에도 그대로 적용된다"
   - test: "스테이징 `/admin/permissions` 격자 + 배포 Job 3종 (5회차 사람 판정 1)"
     expected: "격자가 빈 칸 없이 렌더된다"
     why_human: "5회차 항목 — 이미 닫힘"
@@ -476,7 +476,7 @@ human_verification:
 | 노출·DTO 투영 | 무관 | domain·repositories·db·lib·`domain/permissions/*` 변경 0 |
 | 행 동작 | 표시만 | `.rowActions`(inline-flex, gap `--s-4`, 699.98px 이하 wrap)·`.rowLink`(nowrap) 추가. `.tertiary` 밑줄이 border-bottom → text-decoration(1px → hover 2px, aria-disabled면 `--line` 색) — `Button.tsx` 무변경이라 aria-disabled 클릭 차단 그대로 |
 | `/admin` 인덱스 · 권한표 | 무관 | `app/(app)/admin/page.tsx`·`admin/permissions/**`·`ui/permission-grid`·`ui/shell` 변경 0, 이 화면들은 3차 버튼도 쓰지 않는다(grep) → 사람 판정 1의 확인 범위는 현재 HEAD에도 그대로 |
-| 테스트 | 강화만 | Phase 3 E2E 5개 스펙은 추가만(유일한 제거 줄은 `mobile-vendors.spec.ts` import 확장). 새 단언: 행 동작 간격 ≥ `--s-4`, 폰 44×44, 「삭제」 확인 줄 포함 가로 넘침 없음. 단위 `tertiary-underline-css` 밑줄 선택자 하한 22 → 23, 새 describe 5건 |
+| 테스트 | 강화만 | Phase 3 E2E 5개 스펙은 추가만(유일한 제거 줄은 `mobile-vendors.spec.ts` import 확장). 새 단언: 행 동작 간격 ≥ `--s-4`, 폰 44×44, 「삭제」 확인 줄 포함 가로 넘침 없음. 단위 `tertiary-underline-css` 밑줄 선택자 하한 22 → 23, 새 describe 1개 · 테스트 5건 |
 
 ### 이 프로세스에서 직접 돌린 것 (HEAD `d49ad56`, 코드 = `9a03686`)
 
@@ -557,7 +557,7 @@ human_verification:
 | 6회차 항목 | 7회차 판정 | 근거 |
 | ---------- | --------- | ---- |
 | deferred 1 — 배포 시드가 노출표 선택을 되돌린다 | **해결 (04-20)** | 기획 PM·팀장·본부 책임자·대표 행은 `insertVisibilityIfAbsent`(onConflictDoNothing), 기획 PM 발행액만 `upsertVisibilityIfUnedited`(`updated_by IS NULL`일 때만). 관리자가 바꾼 행은 `setVisibilityCell`이 `updatedBy: viewer.id`(`matrix.ts:172`)로 남겨 두 함수 모두 건드리지 않는다. 이번 실행 named 4건 green. 시스템 관리자 행만 설계상 덮어씀(advisory 7) |
-| 사람 판정 1 — PR #38 뒤 스테이징 `/admin` + 권한표 | **해결 (사용자 확인 2026-10-01)** | deploy run #103(36807956531) success @f85c9af, #101·#102 success — 셋 다 Claude가 `gh run list`로 확인. 사용자 「둘 다 정상」(03:20Z 전, 스테이징 = #103) — 질문은 「관리 화면 묶음이 보이는지 · 권한표에 빈 칸이 없는지」였고 열 수는 답하지 않았다. 6회차의 46열 기대는 낡아 「빈 칸 없음」으로 좁혔다(시드 기준 22 × 3 = 66은 코드에서 센 값, 관찰 아님) |
+| 사람 판정 1 — PR #38 뒤 스테이징 `/admin` + 권한표 | **해결 (사용자 확인 2026-10-01)** | deploy run #103(36807956531) success @f85c9af, #101·#102 success — 셋 다 Claude가 `gh run list`로 확인. 사용자 「둘 다 정상」(03:13:40Z(#103 staging 완료 확인 뒤 질문)~03:20Z 사이, 스테이징 = #103) — 질문은 「관리 화면 묶음이 보이는지 · 권한표에 빈 칸이 없는지」였고 열 수는 답하지 않았다. 6회차의 46열 기대는 낡아 「빈 칸 없음」으로 좁혔다(시드 기준 22 × 3 = 66은 코드에서 센 값, 관찰 아님) |
 | advisory F1·F2·F4·keys 주석·MVP 모드 | 유지 | 줄 번호만 갱신(F1 `:89`, F2 `:388-405`) |
 
 ### Advisory (New Scope, Unevidenced)
@@ -665,7 +665,7 @@ human_verification:
 
 #### 1. PR #38 뒤 스테이징 `/admin` 인덱스 + 권한표 — ✓ 닫힘 (2026-10-01, 사용자 확인)
 
-**질문(오케스트레이터 → 사용자, 채팅 2026-10-01, 03:20Z 전):** 「시스템 관리자 계정으로 스테이징에서 `/admin`: 관리 화면 묶음이 보이는지, `/admin/permissions`: 권한표에 빈 칸이 없는지 열어 보고 결과만 알려 주세요. 상단 바·서체가 평소대로면 셸 확인도 함께 끝납니다」
+**질문(오케스트레이터 → 사용자, 채팅 2026-10-01, 03:13:40Z(#103 staging 완료 확인 뒤 질문)~03:20Z 사이):** 「시스템 관리자 계정으로 스테이징에서 `/admin`: 관리 화면 묶음이 보이는지, `/admin/permissions`: 권한표에 빈 칸이 없는지 열어 보고 결과만 알려 주세요. 상단 바·서체가 평소대로면 셸 확인도 함께 끝납니다」
 
 **답:** 「둘 다 정상」
 

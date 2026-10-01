@@ -17,8 +17,9 @@ import {
   revealRrn,
 } from "@/domain/certs/review";
 import { touchPrivacySession } from "@/domain/certs/privacy-session";
+import { getCertificatePrint } from "@/domain/certs/review";
 import { updateSubmissionIfVersion } from "@/repositories/cert-review";
-import { seedSubmittedCert } from "@/test/e2e/helpers/cert";
+import { seedSubmittedCert, setCertPrizeValueForTest } from "@/test/e2e/helpers/cert";
 import {
   FULL_GRANT,
   countLogs,
@@ -491,3 +492,119 @@ describe("touchPrivacySession — 개인정보취급자 비활동(E3-10 · RB-5)
   });
 });
 
+
+// 04.3-17 — I4 수량 정정(N3 a · E30 — 정수 1~99) · 파기 대상 판정이 새 수량을 따라간다.
+describe("correctSubmission — 수량(04.3-17)", () => {
+  it("quantity 3 → saved · 수량 3 · cert_correct fields에 수량 · 파기 대상이 가액 × 새 수량으로 바뀐다", async () => {
+    const seeded = await seedSubmittedCert();
+    await setCertPrizeValueForTest(seeded.prizeId, 30_000);
+    const viewer = await makeReviewer(FULL_GRANT);
+    const before = await getSubmissionForReview(viewer, seeded.submissionId);
+    expect(before.kind === "ok" && before.purgeTarget).toBe(true);
+
+    const result = await correctSubmission(viewer, seeded.submissionId, {
+      version: 1,
+      name: seeded.name,
+      phone: seeded.phone,
+      quantity: 3,
+    });
+    expect(result.kind).toBe("saved");
+    expect(result.kind === "saved" && result.fields).toEqual(["수량"]);
+    expect((await submissionRow(seeded.submissionId)).quantity).toBe(3);
+    const logs = await db.select().from(actionLog).where(eq(actionLog.actionType, "cert_correct"));
+    expect(logs.filter((l) => l.entityId === seeded.submissionId).map((l) => l.detail)).toEqual([{ fields: ["수량"] }]);
+    const after = await getSubmissionForReview(viewer, seeded.submissionId);
+    expect(after.kind === "ok" && after.purgeTarget).toBe(false);
+  });
+
+  it("수량 0 · abc · 100 → 칸 오류(무변경) · 옛 버전 → conflict", async () => {
+    const seeded = await seedSubmittedCert();
+    const viewer = await makeReviewer(FULL_GRANT);
+    for (const quantity of [0, "abc", 100, 1.5] as const) {
+      expect(
+        await correctSubmission(viewer, seeded.submissionId, { version: 1, name: seeded.name, phone: seeded.phone, quantity }),
+      ).toEqual({ kind: "invalid", fields: { quantity: "format" } });
+    }
+    expect((await submissionRow(seeded.submissionId)).quantity).toBe(1);
+    await correctSubmission(viewer, seeded.submissionId, { version: 1, name: seeded.name, phone: seeded.phone, quantity: 2 });
+    const stale = await correctSubmission(viewer, seeded.submissionId, { version: 1, name: seeded.name, phone: seeded.phone, quantity: 5 });
+    expect(stale.kind).toBe("conflict");
+    expect((await submissionRow(seeded.submissionId)).quantity).toBe(2);
+  });
+});
+
+// 04.3-17 ⑥-b — 「주민번호만 비운 I4」(CS-2 a — 04.3-12 belowThreshold 파기 적용 뒤). 판정 키는 rrn_encrypted IS NULL 하나(제외 여부 무관).
+describe("주민번호만 비운 I4 — rrnCleared(04.3-17 ⑥-b)", () => {
+  async function clearedSample() {
+    const seeded = await seedSubmittedCert({ delivery: "parcel", address: "서울시 마포구 월드컵로 1" });
+    await db.update(certSubmissions).set({ rrnEncrypted: null, rrnMasked: null }).where(eq(certSubmissions.id, seeded.submissionId));
+    return seeded;
+  }
+
+  it("I4는 열린다 · rrnCleared · 가린 값 null · 이름 · 연락처 · 주소 있음 · 전체 보기 없음 · 인쇄 notFound", async () => {
+    const seeded = await clearedSample();
+    const viewer = await makeReviewer(FULL_GRANT);
+    const result = await getSubmissionForReview(viewer, seeded.submissionId);
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    expect(result.rrnCleared).toBe(true);
+    expect(result.submission.rrnMasked).toBeNull();
+    expect(result.submission.name).toBe(seeded.name);
+    expect(result.submission.phone).toBe("010-4821-7730");
+    expect(result.submission.address).toBe("서울시 마포구 월드컵로 1");
+    expect(result.canReveal).toBe(false);
+    expect(result.canCorrect).toBe(true);
+    expect(await getCertificatePrint(viewer, seeded.submissionId)).toEqual({ kind: "notFound" });
+  });
+
+  it("revealRrn → denied(복호화 0번) · recordRrnReopen → denied(mask_reveal 0줄)", async () => {
+    const seeded = await clearedSample();
+    const viewer = await makeReviewer(FULL_GRANT);
+    const spy = decryptSpy();
+    expect(await revealRrn(viewer, seeded.submissionId, { decrypt: spy.fn })).toEqual({ kind: "denied" });
+    expect(spy.calls).toBe(0);
+    expect(await recordRrnReopen(viewer, seeded.submissionId)).toEqual({ kind: "denied" });
+    expect(await countLogs("mask_reveal", seeded.submissionId)).toBe(0);
+  });
+
+  it("주민등록번호를 보낸 정정 → denied(암호문 NULL 그대로 · 로그 0줄) · 연락처만 고치면 saved", async () => {
+    const seeded = await clearedSample();
+    const viewer = await makeReviewer(FULL_GRANT);
+    expect(
+      await correctSubmission(viewer, seeded.submissionId, {
+        version: 1,
+        name: seeded.name,
+        phone: "010-9999-0000",
+        address: "서울시 마포구 월드컵로 1",
+        rrn: NEW_RRN,
+      }),
+    ).toEqual({ kind: "denied" });
+    expect((await submissionRow(seeded.submissionId)).rrnEncrypted).toBeNull();
+    expect(await countLogs("cert_correct", seeded.submissionId)).toBe(0);
+    const saved = await correctSubmission(viewer, seeded.submissionId, {
+      version: 1,
+      name: seeded.name,
+      phone: "010-9999-0000",
+      address: "서울시 마포구 월드컵로 1",
+    });
+    expect(saved.kind).toBe("saved");
+  });
+
+  it("대조 제외된 제출(암호문 NULL)도 같은 키로 rrnCleared · 인쇄 notFound · 대조군(암호문 있음)은 rrnCleared false · 전체 보기 · 인쇄 ok", async () => {
+    const viewer = await makeReviewer(FULL_GRANT);
+    const excluded = await seedSubmittedCert();
+    await db
+      .update(certSubmissions)
+      .set({ excludedAt: new Date(), excludedBy: viewer.id, rrnEncrypted: null, rrnMasked: null, phone: null })
+      .where(eq(certSubmissions.id, excluded.submissionId));
+    const excludedResult = await getSubmissionForReview(viewer, excluded.submissionId);
+    expect(excludedResult.kind === "ok" && excludedResult.rrnCleared).toBe(true);
+    expect(await getCertificatePrint(viewer, excluded.submissionId)).toEqual({ kind: "notFound" });
+
+    const control = await seedSubmittedCert();
+    const controlResult = await getSubmissionForReview(viewer, control.submissionId);
+    expect(controlResult.kind === "ok" && controlResult.rrnCleared).toBe(false);
+    expect(controlResult.kind === "ok" && controlResult.canReveal).toBe(true);
+    expect((await getCertificatePrint(viewer, control.submissionId)).kind).toBe("ok");
+  });
+});

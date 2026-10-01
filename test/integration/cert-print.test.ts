@@ -10,6 +10,7 @@ import { project } from "@/domain/permissions/project";
 import {
   CERTIFICATE_PRINT_DTO_SPEC,
   type CertificatePrintRow,
+  correctSubmission,
   getCertificatePrint,
 } from "@/domain/certs/review";
 import { decrypt } from "@/lib/crypto";
@@ -167,5 +168,17 @@ describe("getCertificatePrint — 정보 항목 cert_submission.value 투영(cod
     const allowed = await makeReviewer(FULL_GRANT);
     const projected = await project(allowed, sample, CERTIFICATE_PRINT_DTO_SPEC);
     expect(Object.keys(projected).sort()).toEqual(CERTIFICATE_PRINT_DTO_SPEC.fields.map((f) => f.key).sort());
+  });
+});
+
+// 04.3-17 E36 — I4에서 수량을 고치면 인쇄 DTO의 경품 줄 수량이 따라간다.
+describe("getCertificatePrint — 수량 정정 뒤(04.3-17 E36)", () => {
+  it("수량을 3으로 정정한 뒤 인쇄 DTO quantity가 3", async () => {
+    const seeded = await seedSubmittedCert();
+    const viewer = await makeReviewer(FULL_GRANT);
+    const saved = await correctSubmission(viewer, seeded.submissionId, { version: 1, name: seeded.name, phone: seeded.phone, quantity: 3 });
+    expect(saved.kind).toBe("saved");
+    const print = await getCertificatePrint(viewer, seeded.submissionId, { signatureStore: storeWith(signaturePngFixture()) });
+    expect(print.kind === "ok" && print.print.quantity).toBe(3);
   });
 });

@@ -130,6 +130,28 @@ describe("ConfirmDialog — 정적 렌더(슬롯 · 파생 라벨 · 막힌 1차
     expect(html).not.toContain(`class="${styles.reason}"`);
   });
 
+  // 04.3-17 — 다시 누를 수 있는 실패 줄(DECISIONS 2026-09-30 §7-17 실패 줄): 1차 왼쪽 막힘 자리에 role="alert", 1차는 막지 않는다.
+  it("primary.failure만 있으면 1차 왼쪽 이유 자리에 role=alert 줄이 서고 1차는 aria-disabled가 아니다", () => {
+    const html = render({
+      title: "링크 닫기",
+      primary: { label: "링크 닫기", onConfirm: () => {}, failure: "닫지 못했습니다 · 다시 시도" },
+    });
+    expect(html).toContain(`<span class="${styles.reason}" role="alert">닫지 못했습니다 · 다시 시도</span>`);
+    expect(html).not.toContain('aria-disabled="true"');
+    const actions = html.slice(html.indexOf(`class="${styles.actions}"`));
+    expect(actions.indexOf("닫지 못했습니다")).toBeLessThan(actions.indexOf(`class="${styles.primaryWrap}"`));
+  });
+
+  it("disabledReason이 있으면 그것만 그리고 failure는 그리지 않는다", () => {
+    const html = render({
+      title: "링크 닫기",
+      primary: { label: "링크 닫기", onConfirm: () => {}, disabledReason: "권한 없음", failure: "닫지 못했습니다 · 다시 시도" },
+    });
+    expect(html).toContain("권한 없음");
+    expect(html).not.toContain("닫지 못했습니다");
+    expect(html).not.toContain('role="alert"');
+  });
+
   it("목록형(options)은 1차가 없고 행마다 라벨 + 설명이 있다", () => {
     const html = render({
       title: "상태 바꾸기",

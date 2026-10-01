@@ -556,3 +556,35 @@ test("보기만 계급은 값이 입력 칸이 아니라 글자다(DOM 감사 L3
     await setRoleArchived(SYSTEM_VIEWER, roleId, true);
   }
 });
+
+// 04.3-17 — I4 `수량` 정정(N3 a · E30): 짧은 칸 · 「고친 내용 저장」 · 결과 줄 · 새로 고친 뒤 값.
+test("수량 정정 — 3 → 고친 내용 저장 → 결과 줄 · 새로 고친 뒤 3", async ({ page }) => {
+  const seeded = await seedSubmittedCert();
+  await login(page, admin);
+  await page.goto(reviewPath(seeded.submissionId));
+  const quantity = page.getByRole("textbox", { name: "수량" });
+  await expect(quantity).toHaveValue("1");
+  await quantity.fill("3");
+  await saveButton(page).click();
+  await expect(page.getByText(/^저장됨 · 수량 · \d{2}:\d{2}$/)).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("textbox", { name: "수량" })).toHaveValue("3");
+  expect((await submission(seeded.submissionId)).quantity).toBe(3);
+});
+
+// 04.3-17 ⑥-b — 「주민번호만 비운 I4」(CS-2 a — UI-SPEC 「개정 (2026-10-01 결정 확정)」 Copywriting): 열린다 · 값 `—` ·
+// 전체 보기 · 인쇄 없음(인쇄 라우트 404) · 태그 · 부제 추가 없음 · 연락처 정정 칸은 있다.
+test("주민번호만 비운 I4 — 열림 · 주민등록번호 `—` · 전체 보기 · 인쇄 0 · 연락처 칸 있음 · 인쇄 라우트 404", async ({ page }) => {
+  const seeded = await seedSubmittedCert();
+  await db.update(certSubmissions).set({ rrnEncrypted: null, rrnMasked: null }).where(eq(certSubmissions.id, seeded.submissionId));
+  await login(page, admin);
+  await page.goto(reviewPath(seeded.submissionId));
+  await expect(notFoundHeading(page)).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(seeded.name);
+  await expect(page.getByRole("group", { name: "주민등록번호" })).toHaveText("—");
+  await expect(page.getByRole("button", { name: "전체 보기" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /인쇄/ })).toHaveCount(0);
+  await expect(page.getByText("대조 제외", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "연락처" })).toBeVisible();
+  expect((await page.request.get(`/print/certs/${seeded.submissionId}`)).status()).toBe(404);
+});

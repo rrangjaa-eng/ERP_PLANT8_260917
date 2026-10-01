@@ -84,6 +84,53 @@ describe("submitCellPreview — 편집 중 가액으로 제출 셀(한 칸에 �
   });
 });
 
+// 04.3-17 — 닫은 뒤 과세 대상 경고(E9 c · UD-3 a — DR-4, 정본 UI-SPEC 「개정 (2026-10-01 결정 확정)」 T4): 닫힘 ∧ 편집 중 1개 가액 >
+// 50,000 ∧ N < 당첨 수 → `{N} · 미제출 {k}`. 우선순위 ① 파기 대상 ② 확인증 없음(제출 0) ③ 미제출 ④ 숫자. N은 대조 제외 뺀 수.
+describe("submitCellPreview — 미제출(닫힘 ∧ 목록 경품 ∧ N < 당첨 수)", () => {
+  const one = [{ quantity: 1, count: 1 }];
+
+  it("닫힘 · 73,519 · 당첨 3 · 제출 1 → 1 · 미제출 2", () => {
+    const cell = submitCellPreview({ unitValue: "73,519", submittedCount: 1, quantityCounts: one, closed: true, winnerCount: "3" });
+    expect(cell).toEqual({ kind: "missing", n: 1, k: 2 });
+    expect(submitCellText(cell)).toBe("1 · 미제출 2");
+  });
+
+  it("접수 중(닫히지 않음)이면 같은 줄도 숫자만", () => {
+    expect(submitCellPreview({ unitValue: "73,519", submittedCount: 1, quantityCounts: one, closed: false, winnerCount: "3" })).toEqual({
+      kind: "count",
+      n: 1,
+    });
+  });
+
+  it("닫힘이어도 N ≥ 당첨 수면 숫자만 · 당첨 수 칸이 숫자가 아니면 미제출을 세지 않는다", () => {
+    expect(submitCellPreview({ unitValue: "73,519", submittedCount: 3, quantityCounts: [{ quantity: 1, count: 3 }], closed: true, winnerCount: "3" })).toEqual({
+      kind: "count",
+      n: 3,
+    });
+    expect(submitCellPreview({ unitValue: "73,519", submittedCount: 1, quantityCounts: one, closed: true, winnerCount: "x" })).toEqual({
+      kind: "count",
+      n: 1,
+    });
+  });
+
+  it("우선순위 — 닫힘 · 49,000 · 제출 0 → 확인증 없음 · 제출 1(수량 1) → 파기 대상(미제출 아님)", () => {
+    expect(submitCellPreview({ unitValue: "49,000", submittedCount: 0, quantityCounts: [], closed: true, winnerCount: "3" })).toEqual({
+      kind: "noCert",
+    });
+    expect(submitCellPreview({ unitValue: "49,000", submittedCount: 1, quantityCounts: one, closed: true, winnerCount: "3" })).toEqual({
+      kind: "purge",
+      n: 1,
+      p: 1,
+    });
+  });
+
+  it("닫힘 · 30,000 × 2만 남은 줄(파기 대상 0 · 목록 아님) → 숫자만", () => {
+    expect(
+      submitCellPreview({ unitValue: "30,000", submittedCount: 1, quantityCounts: [{ quantity: 2, count: 1 }], closed: true, winnerCount: "3" }),
+    ).toEqual({ kind: "count", n: 1 });
+  });
+});
+
 describe("saveOutcome · saveResultText — 저장 결과 갈래(G10 a — 사실만, 「다시 시도」 없음)", () => {
   const at = new Date("2026-10-01T05:02:00Z"); // 14:02 KST
 

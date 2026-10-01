@@ -1,16 +1,24 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/db/client";
-import { certSubmissions } from "@/db/schema";
+import { actionLog, certEvents, certPrizes, certSubmissions, notificationLog } from "@/db/schema";
+import { pool } from "@/db/client";
+import { ForbiddenError } from "@/domain/permissions/can";
+import { withTransaction } from "@/lib/db-transaction";
+import { lockEventRow } from "@/repositories/cert-events";
+import { listPrizesForEvent } from "@/repositories/cert-prizes";
+import { appendActionLog } from "@/repositories/action-log";
+import { runCertPurge } from "@/domain/certs/purge";
+import { deferred, waitForLockWaiter } from "@/test/integration/lock-race";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { setSettingValue } from "@/domain/settings/registry";
 import { CERT_CONTACT_PHONE, CERT_ENABLED } from "@/domain/settings/keys";
-import { getEventDetail } from "@/domain/certs/events";
-import { getSubmissionForReview } from "@/domain/certs/review";
+import { cancelRequest, closeEvent, getEventDetail, requestQr, savePrizes } from "@/domain/certs/events";
+import { correctSubmission, excludeSubmission, getCertificatePrint, getSubmissionForReview, revealRrn } from "@/domain/certs/review";
 import { loadIntake, submitCertificate } from "@/domain/certs/intake";
 import { createCertEvent, setCertPrizeValueForTest, signaturePngFixture } from "@/test/e2e/helpers/cert";
 
@@ -216,5 +224,303 @@ describe("I4 파기 대상 표시(Task 1 — 가액 × 수량 ≤ 50,000, 가액
     expect(await purgeOf(f.a1)).toBe(true);
     await setCertPrizeValueForTest(f.prizeA, 73_519);
     expect(await purgeOf(f.a1)).toBe(false);
+  });
+});
+
+// ── Task 2 — 「링크 닫기」 · 「신청 취소」 · 경합 · 「대조 제외」 ─────────────────────────────────────
+
+async function eventRow(eventId: string) {
+  const [row] = await db.select().from(certEvents).where(eq(certEvents.id, eventId));
+  return row ?? null;
+}
+
+async function logsOf(entityId: string, actionType: string) {
+  const rows = await db.select().from(actionLog).where(and(eq(actionLog.entityId, entityId), eq(actionLog.actionType, actionType)));
+  return rows;
+}
+
+const throwingLog: typeof appendActionLog = async () => {
+  throw new Error("로그 실패 주입");
+};
+
+// 첫 트랜잭션만 「행사 행 잠금」 뒤에 멈춘다 — 상대가 잠금 대기자인지 확인한 뒤 푼다(04.3-10 W7 선례).
+function pausingAfterLock(eventId: string) {
+  const locked = deferred();
+  const release = deferred();
+  let calls = 0;
+  const run: typeof withTransaction = (fn) =>
+    calls++ > 0
+      ? withTransaction(fn)
+      : withTransaction(async (tx) => {
+          await lockEventRow(SYSTEM_VIEWER, eventId, tx);
+          await listPrizesForEvent(SYSTEM_VIEWER, eventId, tx);
+          locked.resolve();
+          await release.promise;
+          return fn(tx);
+        });
+  return { run, locked, release };
+}
+
+describe("closeEvent — 「링크 닫기」(같은 tx 로그 · IP 가명 비움 · 다시 여는 함수 없음)", () => {
+  it("닫힘 칸 셋 · submit_ip_hash 전부 NULL · closed{submitted} · status_change 1줄 · 두 번째 alreadyClosed · loadIntake closed manual", async () => {
+    const f = await reconcileFixture();
+    const manager = await makeViewer(MANAGER, "경영관리");
+    await db.update(certSubmissions).set({ excludedAt: new Date(), excludedBy: manager.id }).where(eq(certSubmissions.id, f.a3));
+
+    const result = await closeEvent(manager, f.eventId);
+    expect(result).toEqual({ kind: "closed", submitted: 3 });
+    const row = await eventRow(f.eventId);
+    expect(row?.closedAt).not.toBeNull();
+    expect(row?.closedReason).toBe("manual");
+    expect(row?.closedBy).toBe(manager.id);
+    const hashes = await db.select({ h: certSubmissions.submitIpHash }).from(certSubmissions).where(eq(certSubmissions.eventId, f.eventId));
+    expect(hashes.map((r) => r.h)).toEqual([null, null, null, null]);
+    const logs = await logsOf(f.eventId, "status_change");
+    expect(logs.map((l) => l.detail)).toEqual([{ from: "open", to: "closed", reason: "manual" }]);
+
+    expect(await closeEvent(manager, f.eventId)).toEqual({ kind: "alreadyClosed" });
+    expect(await logsOf(f.eventId, "status_change")).toHaveLength(1);
+    const intake = await loadIntake(f.token ?? "");
+    expect(intake.kind === "closed" && intake.reason).toBe("manual");
+  });
+
+  it("마감이 이미 지난 행사 → alreadyClosed(쓰기 0 — E38)", async () => {
+    const manager = await makeViewer(MANAGER, "경영관리");
+    const ev = await createCertEvent({ name: "마감 지남" });
+    await db.update(certEvents).set({ expiresAt: new Date(Date.now() - 60_000) }).where(eq(certEvents.id, ev.eventId));
+    expect(await closeEvent(manager, ev.eventId)).toEqual({ kind: "alreadyClosed" });
+    expect((await eventRow(ev.eventId))?.closedAt).toBeNull();
+    expect(await logsOf(ev.eventId, "status_change")).toHaveLength(0);
+  });
+
+  it("로그 INSERT가 던지면 closeEvent가 던지고 닫힘 칸 · IP 가명이 그대로 — 정상 재시도는 닫힘 · 로그 1줄", async () => {
+    const f = await reconcileFixture();
+    const manager = await makeViewer(MANAGER, "경영관리");
+    await expect(closeEvent(manager, f.eventId, { appendActionLog: throwingLog })).rejects.toThrow("로그 실패 주입");
+    expect((await eventRow(f.eventId))?.closedAt).toBeNull();
+    const [one] = await db.select().from(certSubmissions).where(eq(certSubmissions.id, f.a1));
+    expect(one?.submitIpHash).not.toBeNull();
+
+    expect((await closeEvent(manager, f.eventId)).kind).toBe("closed");
+    expect(await logsOf(f.eventId, "status_change")).toHaveLength(1);
+  });
+
+  it("신청됨 → notFound · PM → Forbidden · 게이트 꺼짐 → notFound(쓰기 0)", async () => {
+    const manager = await makeViewer(MANAGER, "경영관리");
+    const pm = await makeViewer(PM, "기획 PM");
+    const requested = await createCertEvent({ name: "신청됨", status: "requested", createdBy: pm.id });
+    expect(await closeEvent(manager, requested.eventId)).toEqual({ kind: "notFound" });
+
+    const ev = await createCertEvent({ name: "열림", createdBy: pm.id });
+    await expect(closeEvent(pm, ev.eventId)).rejects.toBeInstanceOf(ForbiddenError);
+    await setSettingValue(SYSTEM_VIEWER, CERT_ENABLED, false);
+    expect(await closeEvent(manager, ev.eventId)).toEqual({ kind: "notFound" });
+    await setSettingValue(SYSTEM_VIEWER, CERT_ENABLED, true);
+    expect((await eventRow(ev.eventId))?.closedAt).toBeNull();
+  });
+});
+
+describe("cancelRequest — 「신청 취소」(경품 0일 때만 · 행 삭제 · document_delete 같은 tx)", () => {
+  it("신청자 · 경영관리 → 경품 0이면 cancelled(행 없음 · document_delete 1줄 · 알림함 행은 남음)", async () => {
+    const pm = await makeViewer(PM, "기획 PM");
+    const manager = await makeViewer(MANAGER, "경영관리");
+    for (const actor of [pm, manager]) {
+      const requested = await requestQr(pm, { name: `취소 ${actor.id.slice(0, 4)}`, wonOn: "2099-01-01", requestId: randomUUID() });
+      if (requested.kind !== "ok") throw new Error(requested.kind);
+      const notified = await db.select().from(notificationLog).where(eq(notificationLog.entityId, requested.eventId));
+      const result = await cancelRequest(actor, requested.eventId);
+      expect(result).toEqual({ kind: "cancelled", name: `취소 ${actor.id.slice(0, 4)}` });
+      expect(await eventRow(requested.eventId)).toBeNull();
+      const logs = await logsOf(requested.eventId, "document_delete");
+      expect(logs.map((l) => l.detail)).toEqual([{ name: `취소 ${actor.id.slice(0, 4)}` }]);
+      expect(await db.select().from(notificationLog).where(eq(notificationLog.entityId, requested.eventId))).toHaveLength(notified.length);
+    }
+  });
+
+  it("경품 1줄 → hasPrizes{count: 1}(쓰기 0) · QR 생성 뒤 → notFound", async () => {
+    const pm = await makeViewer(PM, "기획 PM");
+    const manager = await makeViewer(MANAGER, "경영관리");
+    const withPrize = await createCertEvent({ name: "경품 있음", status: "requested", createdBy: pm.id, prizes: [{ name: "경품" }] });
+    expect(await cancelRequest(manager, withPrize.eventId)).toEqual({ kind: "hasPrizes", count: 1 });
+    expect(await cancelRequest(pm, withPrize.eventId)).toEqual({ kind: "hasPrizes", count: 1 });
+    expect(await eventRow(withPrize.eventId)).not.toBeNull();
+    expect(await logsOf(withPrize.eventId, "document_delete")).toHaveLength(0);
+
+    const open = await createCertEvent({ name: "열림", createdBy: pm.id, prizes: [] });
+    expect(await cancelRequest(manager, open.eventId)).toEqual({ kind: "notFound" });
+    expect(await eventRow(open.eventId)).not.toBeNull();
+  });
+
+  it("신청자도 경영관리도 아닌 PM → Forbidden · 신청자였으나 계급에서 certs.events 쓰기를 뺀 계정 → Forbidden(H-2)", async () => {
+    const pm = await makeViewer(PM, "기획 PM");
+    const otherPm = await makeViewer(PM, "다른 PM");
+    const requested = await createCertEvent({ name: "남의 신청", status: "requested", createdBy: pm.id });
+    await expect(cancelRequest(otherPm, requested.eventId)).rejects.toBeInstanceOf(ForbiddenError);
+
+    await upsertPermission(SYSTEM_VIEWER, { roleId: pm.roleId ?? "", menu: "certs.events", action: "write", allowed: false });
+    await expect(cancelRequest(pm, requested.eventId)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(await eventRow(requested.eventId)).not.toBeNull();
+  });
+});
+
+describe("경합(E13) — 잠금을 거치는 실제 함수끼리 겹쳐도 500 없음", () => {
+  it("cancelRequest가 잠근 사이 savePrizes(새 줄)는 잠금을 기다리고 cancelled + notFound — 순서가 반대면 saved + hasPrizes", async () => {
+    const pm = await makeViewer(PM, "기획 PM");
+    const manager = await makeViewer(MANAGER, "경영관리");
+    const NEW_ROW = { inserts: [{ key: "n1", name: "새 경품", unitValue: "73,519", delivery: "현장" }] };
+
+    const first = await createCertEvent({ name: "경합 취소", status: "requested", createdBy: pm.id });
+    const pause = pausingAfterLock(first.eventId);
+    const cancel = cancelRequest(manager, first.eventId, { withTransaction: pause.run });
+    await pause.locked.promise;
+    const save = savePrizes(manager, first.eventId, { changes: NEW_ROW });
+    await waitForLockWaiter(pool);
+    pause.release.resolve();
+    expect(await cancel).toEqual({ kind: "cancelled", name: first.eventName });
+    expect(await save).toEqual({ kind: "notFound" });
+    expect(await db.select().from(certPrizes).where(eq(certPrizes.eventId, first.eventId))).toHaveLength(0);
+
+    const second = await createCertEvent({ name: "경합 저장", status: "requested", createdBy: pm.id });
+    expect((await savePrizes(manager, second.eventId, { changes: NEW_ROW })).kind).toBe("saved");
+    expect(await cancelRequest(manager, second.eventId)).toEqual({ kind: "hasPrizes", count: 1 });
+  });
+
+  it("submitCertificate가 잠근 사이 closeEvent는 기다리고 saved + closed(제출 시각 < 닫힌 시각) — closeEvent가 먼저 잠그면 closed + closed", async () => {
+    const manager = await makeViewer(MANAGER, "경영관리");
+    const submitInput = async (token: string, prizeId: string) => {
+      const intake = await loadIntake(token);
+      if (intake.kind !== "open") throw new Error(intake.kind);
+      return {
+        prizeId,
+        idempotencyKey: randomUUID(),
+        consentVersion: intake.terms.consentVersion,
+        retentionYears: intake.terms.retentionYears,
+        name: "김하늘",
+        rrnFront6: "930412",
+        rrnBack7: "2123458",
+        phone: "010-4821-7730",
+        consent: true,
+        signaturePngBase64: signaturePngFixture().toString("base64"),
+        rrnRecheckConfirmed: true,
+      };
+    };
+
+    const a = await createCertEvent({ name: "제출 먼저" });
+    const pa = pausingAfterLock(a.eventId);
+    const submitted = submitCertificate(a.token ?? "", await submitInput(a.token ?? "", a.prizeIds[0] ?? ""), "198.51.100.201", {
+      withTransaction: pa.run,
+    });
+    await pa.locked.promise;
+    const closed = closeEvent(manager, a.eventId);
+    await waitForLockWaiter(pool);
+    pa.release.resolve();
+    expect((await submitted).kind).toBe("saved");
+    expect(await closed).toEqual({ kind: "closed", submitted: 1 });
+    const [sub] = await db.select().from(certSubmissions).where(eq(certSubmissions.eventId, a.eventId));
+    const closedAt = (await eventRow(a.eventId))?.closedAt;
+    expect(sub && closedAt && sub.submittedAt.getTime() <= closedAt.getTime()).toBe(true);
+
+    const b = await createCertEvent({ name: "닫기 먼저" });
+    const input = await submitInput(b.token ?? "", b.prizeIds[0] ?? "");
+    const pb = pausingAfterLock(b.eventId);
+    const closing = closeEvent(manager, b.eventId, { withTransaction: pb.run });
+    await pb.locked.promise;
+    const late = submitCertificate(b.token ?? "", input, "198.51.100.202");
+    await waitForLockWaiter(pool);
+    pb.release.resolve();
+    expect(await closing).toEqual({ kind: "closed", submitted: 0 });
+    expect((await late).kind).toBe("closed");
+    expect(await db.select().from(certSubmissions).where(eq(certSubmissions.eventId, b.eventId))).toHaveLength(0);
+  });
+});
+
+describe("excludeSubmission — 「대조 제외」(E1 b · 게이트 = 쓰기, NF-2)", () => {
+  it("같은 tx에서 excluded_at/by · 주민 암호문 · 가린 값 · 연락처 · 주소 · IP 가명 NULL · 이름 · purged_at 그대로 · cert_purge 1줄 · 두 번째 alreadyExcluded", async () => {
+    const f = await reconcileFixture();
+    const manager = await makeViewer(MANAGER, "경영관리");
+    const before = (await db.select().from(certSubmissions).where(eq(certSubmissions.id, f.a2)))[0];
+    const result = await excludeSubmission(manager, f.a2, { version: before?.version ?? 0 });
+    expect(result).toEqual({ kind: "excluded", eventId: f.eventId, name: "김 하늘" });
+    const [row] = await db.select().from(certSubmissions).where(eq(certSubmissions.id, f.a2));
+    expect(row).toMatchObject({
+      excludedBy: manager.id,
+      rrnEncrypted: null,
+      rrnMasked: null,
+      phone: null,
+      address: null,
+      submitIpHash: null,
+      name: "김 하늘",
+      purgedAt: null,
+    });
+    expect(row?.excludedAt).not.toBeNull();
+    const logs = await logsOf(f.a2, "cert_purge");
+    expect(logs.map((l) => l.detail)).toEqual([{ submissions: 1, reason: "excluded" }]);
+
+    expect(await excludeSubmission(manager, f.a2, { version: row?.version ?? 0 })).toEqual({ kind: "alreadyExcluded" });
+    expect(await logsOf(f.a2, "cert_purge")).toHaveLength(1);
+
+    // 다음 파기 적용 실행이 그 서명 객체를 지운다(04.3-12 삭제 대기).
+    expect(row?.signatureKey).not.toBeNull();
+    await runCertPurge({ now: new Date(), apply: true });
+    const [after] = await db.select().from(certSubmissions).where(eq(certSubmissions.id, f.a2));
+    expect(after?.signatureKey).toBeNull();
+  });
+
+  it("로그가 던지면 전부 롤백 · 옛 버전 → conflict(쓰기 0)", async () => {
+    const f = await reconcileFixture();
+    const manager = await makeViewer(MANAGER, "경영관리");
+    const [before] = await db.select().from(certSubmissions).where(eq(certSubmissions.id, f.a1));
+    await expect(excludeSubmission(manager, f.a1, { version: before?.version ?? 0 }, { appendActionLog: throwingLog })).rejects.toThrow(
+      "로그 실패 주입",
+    );
+    const [rolled] = await db.select().from(certSubmissions).where(eq(certSubmissions.id, f.a1));
+    expect(rolled).toEqual(before);
+
+    const stale = await excludeSubmission(manager, f.a1, { version: (before?.version ?? 0) - 1 });
+    expect(stale.kind).toBe("conflict");
+    const [unchanged] = await db.select().from(certSubmissions).where(eq(certSubmissions.id, f.a1));
+    expect(unchanged).toEqual(before);
+  });
+
+  it("PM · 대표 계급 · 보기 + 값만(쓰기 없음) → denied(쓰기 0) · 그 계급의 I4에는 canExclude가 없다(NF-2)", async () => {
+    const f = await reconcileFixture();
+    const pm = await makeViewer(PM, "기획 PM");
+    const ceo = await makeViewer(MANAGER, "대표", "role-ceo");
+    const viewOnly = await makeViewer({ ...MANAGER, submissionsWrite: false }, "보기 전용");
+    const [before] = await db.select().from(certSubmissions).where(eq(certSubmissions.id, f.a1));
+    for (const viewer of [pm, ceo, viewOnly]) {
+      expect(await excludeSubmission(viewer, f.a1, { version: before?.version ?? 0 })).toEqual({ kind: "denied" });
+    }
+    const [after] = await db.select().from(certSubmissions).where(eq(certSubmissions.id, f.a1));
+    expect(after).toEqual(before);
+    const review = await getSubmissionForReview(viewOnly, f.a1);
+    expect(review.kind === "ok" && review.canExclude).toBe(false);
+    const managerReview = await getSubmissionForReview(await makeViewer(MANAGER, "경영관리"), f.a1);
+    expect(managerReview.kind === "ok" && managerReview.canExclude).toBe(true);
+  });
+
+  it("제외된 제출 — I4는 열리고(제외 표시 · 정정 · 전체 보기 · 제외 없음) 전체 보기 · 정정 · 인쇄 조회는 거부", async () => {
+    const f = await reconcileFixture();
+    const manager = await makeViewer(MANAGER, "경영관리");
+    const [before] = await db.select().from(certSubmissions).where(eq(certSubmissions.id, f.a1));
+    await excludeSubmission(manager, f.a1, { version: before?.version ?? 0 });
+    const [row] = await db.select().from(certSubmissions).where(eq(certSubmissions.id, f.a1));
+
+    const review = await getSubmissionForReview(manager, f.a1);
+    expect(review.kind).toBe("ok");
+    if (review.kind !== "ok") return;
+    expect(review.excluded).toMatchObject({ byName: "경영관리" });
+    expect(review.canCorrect).toBe(false);
+    expect(review.canReveal).toBe(false);
+    expect(review.canExclude).toBe(false);
+    expect(review.submission.phone).toBeNull();
+    expect(review.submission.rrnMasked).toBeNull();
+    expect(review.submission.signatureDataUrl).toBeNull();
+
+    expect(await revealRrn(manager, f.a1)).toEqual({ kind: "denied" });
+    expect(await correctSubmission(manager, f.a1, { version: row?.version ?? 0, name: "김하늘", phone: "010-9999-0000" })).toEqual({
+      kind: "denied",
+    });
+    expect(await getCertificatePrint(manager, f.a1)).toEqual({ kind: "notFound" });
   });
 });

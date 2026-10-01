@@ -330,7 +330,9 @@ export async function requestQr(viewer: Viewer, input: RequestQrInput, deps?: Pa
   const contactPhone = await getSettingValue(CERT_CONTACT_PHONE);
   if (contactPhone === "") return { kind: "contactMissing" };
   const requester = createdBy ? await findUserById(viewer, createdBy) : null;
-  const recipients = (await listActiveUserIdsAllowed(viewer, QR_REQUEST_RECIPIENTS)).filter((id) => id !== createdBy);
+  const recipients = (await listActiveUserIdsAllowed(viewer, QR_REQUEST_RECIPIENTS, undefined, [PRIZE_VALUE_ITEM])).filter(
+    (id) => id !== createdBy,
+  );
   const message = `QR 생성 신청 · ${name} · ${parsed.wonOn} · ${requester?.name ?? "—"}`;
 
   let eventId: string;

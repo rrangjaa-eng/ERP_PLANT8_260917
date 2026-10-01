@@ -288,6 +288,8 @@ async function alertSubmitLimit(
       { menu: "certs.events", action: "view" },
     ],
     tx,
+    // 행동할 수 있는 사람만 — 링크를 닫는 경품 화면은 cert_prize.value가 보이는 사람의 것이다(W5 a · 5928674957).
+    ["cert_prize.value"],
   );
   await insert(
     SYSTEM_VIEWER,

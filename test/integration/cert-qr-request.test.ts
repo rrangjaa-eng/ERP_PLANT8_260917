@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db/client";
 import { actionLog, certEvents, certPrizes, notificationLog } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
-import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { ForbiddenError } from "@/domain/permissions/can";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertRole } from "@/repositories/roles";
@@ -192,6 +192,16 @@ describe("받는 사람 · 범위(E11 · E22)", () => {
     expect(Object.keys(pmPrize)).not.toContain("quantityCounts");
     expect(Object.keys(pmPrize)).not.toContain("purgeTargetCount");
     expect(JSON.stringify(forPm)).not.toMatch(/1,?290,?000/);
+  });
+
+  it("cert_prize.value가 꺼진 시스템 관리자 계급(certs.qr 쓰기 · certs.events 보기)은 신청 알림을 받지 않는다 — 행동할 수 있는 사람만(W5 a · 5928674957)", async () => {
+    const pm = await makeUser(DEFAULT_ROLE_ID, "기획 김민지");
+    const sysadmin = await makeUser(SYSADMIN_ROLE_ID, "담당 박서연");
+    const manager = await makeUser(await managerRole(), "경영 이수아");
+    const eventId = await requestOk(pm);
+    expect((await notificationsOf(eventId, "cert_qr_request")).map((r) => r.recipientId)).toEqual([manager.id]);
+    // 받지 않는 까닭 — 그 사람은 「QR 생성」을 할 수 없다(E12 같은 두 조건).
+    await expect(generateQr(sysadmin, eventId, { requestId: randomUUID(), changes: ONE_PRIZE })).rejects.toBeInstanceOf(ForbiddenError);
   });
 
   it("신청자가 certs.qr도 가지면 그 사람 행 0 · 생성자 = 신청자면 cert_qr_created 0", async () => {

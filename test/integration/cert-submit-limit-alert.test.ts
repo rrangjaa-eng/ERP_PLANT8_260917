@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/db/client";
 import { certSubmissions, notificationLog } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
@@ -28,12 +29,13 @@ beforeEach(async () => {
   await setSettingValue(SYSTEM_VIEWER, CERT_ENABLED, true);
 });
 
-async function roleWith(opts: { eventsView: boolean; qrWrite: boolean }): Promise<string> {
+async function roleWith(opts: { eventsView: boolean; qrWrite: boolean; prizeValue?: boolean }): Promise<string> {
   const roleId = `role-limit-it-${randomUUID()}`;
   await insertRole(SYSTEM_VIEWER, { id: roleId, name: `한도 ${roleId.slice(-8)}`, sortOrder: 99 });
   await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "certs.events", action: "view", allowed: opts.eventsView });
   await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "certs.qr", action: "write", allowed: opts.qrWrite });
   await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "cert_event.value", visible: true });
+  await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "cert_prize.value", visible: opts.prizeValue ?? true });
   return roleId;
 }
 
@@ -42,14 +44,18 @@ async function user(roleId: string, name: string): Promise<string> {
   return userId;
 }
 
-// 받는 사람 고정물 셋 — 경영관리(받음) · 같은 조합 보관됨(안 받음) · certs.qr 쓰기만(안 받음).
+// 받는 사람 고정물 — 경영관리(받음) · 같은 조합 보관됨(안 받음) · certs.qr 쓰기만(안 받음) · 시드 시스템 관리자 계급
+// (certs.qr 쓰기 · certs.events 보기지만 cert_prize.value 꺼짐 — 행동할 수 없어 안 받음, W5 a · 5928674957) ·
+// 같은 조합에 cert_prize.value만 꺼진 계급(안 받음).
 async function recipients() {
   const managerRole = await roleWith({ eventsView: true, qrWrite: true });
   const manager = await user(managerRole, "경영 이수아");
   const archived = await user(managerRole, "경영 퇴사자");
   await setUserArchived(SYSTEM_VIEWER, archived, true);
   const qrOnly = await user(await roleWith({ eventsView: false, qrWrite: true }), "QR만");
-  return { manager, archived, qrOnly };
+  const sysadmin = await user(SYSADMIN_ROLE_ID, "담당 박서연");
+  const noValue = await user(await roleWith({ eventsView: true, qrWrite: true, prizeValue: false }), "가액 없음");
+  return { manager, archived, qrOnly, sysadmin, noValue };
 }
 
 async function openEvent() {

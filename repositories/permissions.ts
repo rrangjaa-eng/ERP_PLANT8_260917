@@ -163,15 +163,31 @@ export async function listVisibility(
     .where(opts?.roleId ? eq(visibilityMatrix.roleId, opts.roleId) : undefined);
 }
 
-// 04.3-10(eng-review newflow E11) — 사건 알림의 받는 사람: 계급 권한표에서 요건(메뉴 · 동작)을 **전부** 허용받은
-// 보관 안 된 사람의 id. 권한 판정(can)이 아니라 받는 사람 조회다 — 공개 제출 경로(intake.ts)도 부른다.
+// 04.3-10(eng-review newflow E11) — 사건 알림의 받는 사람: 계급 권한표에서 요건(메뉴 · 동작)을 **전부** 허용받고
+// 노출표에서 정보 항목(visibleItems)이 **전부** 보이는 보관 안 된 사람의 id — 행동할 수 있는 사람만(W5 a · 5928674957).
+// 권한 판정(can · visible)이 아니라 받는 사람 조회다 — 공개 제출 경로(intake.ts)도 부른다.
 export async function listActiveUserIdsAllowed(
   viewer: Viewer,
   requirements: ReadonlyArray<{ menu: string; action: string }>,
   tx: DbOrTx = db,
+  visibleItems: ReadonlyArray<string> = [],
 ): Promise<string[]> {
   void viewer;
   if (requirements.length === 0) return [];
+  const shown = visibleItems.map((infoItem) =>
+    exists(
+      tx
+        .select({ one: visibilityMatrix.roleId })
+        .from(visibilityMatrix)
+        .where(
+          and(
+            eq(visibilityMatrix.roleId, users.roleId),
+            eq(visibilityMatrix.infoItem, infoItem),
+            eq(visibilityMatrix.visible, true),
+          ),
+        ),
+    ),
+  );
   const allowed = requirements.map((requirement) =>
     exists(
       tx
@@ -190,7 +206,7 @@ export async function listActiveUserIdsAllowed(
   const rows = await tx
     .select({ id: users.id })
     .from(users)
-    .where(and(isNull(users.archivedAt), ...allowed))
+    .where(and(isNull(users.archivedAt), ...allowed, ...shown))
     .orderBy(asc(users.createdAt), asc(users.id));
   return rows.map((row) => row.id);
 }

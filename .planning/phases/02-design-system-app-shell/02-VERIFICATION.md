@@ -291,7 +291,7 @@ covered_files:
   - "ui/table/Table.module.css"
   - "ui/toast/Toast.module.css"
   - "ui/toast/Toast.tsx"
-covered_digest: "v1:sha256:fdf3dfce8cc11b3fb27ceb7828e07253d984cbca1a407f46a9e49f5a708d06b6"
+covered_digest: "v1:sha256:15d36b4d9e544585c1aec2e76c82e277dcdca6c1a5920db238433d1d6660abca"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
@@ -449,6 +449,8 @@ ROADMAP은 `Mode: mvp`지만 목표 문장이 User Story 형식이 아니다(`mv
 참고(2026-10-01T04:54Z 추가 — 검증 뒤 오케스트레이터) — 02-02-SUMMARY의 사람 확인 「tokens.css 단독 PR에서 CI가 도는가」(이 보고서의 human_verification 밖, STATE 미결 항목)는 2026-10-01 확인용 draft PR #118에서 기계로 실측해 해소했다(ci run 36816314681이 pull_request로 뜸, 머지 안 함 — 02-UAT 3번).
 
 참고(2026-10-01T05:31Z 추가 — 오케스트레이터) — covered 파일 중 `.planning/REQUIREMENTS.md`만 바뀌어(phase.complete 02·03, Phase 3 요구사항 MAST-01·ADMN-03 되돌림) 같은 목록으로 covered_digest를 다시 계산했다. 코드 변경 0, 판정 영향 없음.
+
+참고(2026-10-01 추가 — 오케스트레이터, PR #117 Codex 2차 리뷰): 요구사항 UX-01(모든 컴포넌트 계약에 다섯 상태)은 위 경고처럼 SYSTEM.md §7-16·§7-17에 다섯 상태 정의가 없고 §7-17 ERROR 위치가 §7-7과 어긋나며, `design-system-docs.test.ts`의 7-14 검사 구간이 `## 8.`까지 이어져 §7-15~17을 한 덩어리로 통과시킨다. 이 보고서의 판정(ROADMAP 성공 기준 기준 passed)은 유지하되 요구사항 UX-01은 `Gaps Found`로 되돌렸다. 문서·테스트 보완은 별도 작업이다.
 
 ### Gaps Summary
 

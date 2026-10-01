@@ -233,6 +233,9 @@ r3_case "R3-46: pnpm -C /tmp test(다른 명령) -> 0" 0 'pnpm -C /tmp test' "$r
 r3_case "R3-47: corepack pnpm dlx @openai/codex -> 2" 2 'corepack pnpm dlx @openai/codex exec hello' "$r3_none"
 r3_case "R3-48: corepack npm exec codex -> 2" 2 'corepack npm exec codex exec x' "$r3_none"
 r3_case "R3-49: corepack pnpm install(다른 명령) -> 0" 0 'corepack pnpm install' "$r3_none"
+r3_case "R3-50: env -S 'codex exec x' -> 2" 2 "env -S 'codex exec x'" "$r3_none"
+r3_case "R3-51: env --split-string='codex exec x' -> 2" 2 "env --split-string='codex exec x'" "$r3_none"
+r3_case "R3-52: env -S 'node app.js'(다른 명령) -> 0" 0 "env -S 'node app.js'" "$r3_none"
 hook "$(payload_skill gsd-review '04.3')"
 expect_rc "R3-23: gsd-review 스킬 호출 자체는 막지 않는다 -> 0" 0 "$HOOK_RC"
 

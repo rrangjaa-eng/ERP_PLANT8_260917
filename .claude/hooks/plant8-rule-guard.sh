@@ -455,6 +455,16 @@ check_segment() {
         esac
         k=$((k + 1))
         while [ "$k" -lt "$n" ] && { [[ "${W[$k]}" == -* ]] || [[ "${W[$k]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; }; do
+          # env -S/--split-string은 값을 다시 명령으로 쪼갠다 — 그 안의 codex 실행도 R3로 본다.
+          local split=""
+          if [ "$w" = env ]; then
+            case "${W[$k]}" in
+              -S|--split-string) split="${W[$((k + 1))]:-}" ;;
+              --split-string=*) split="${W[$k]#--split-string=}" ;;
+              -S?*) split="${W[$k]#-S}" ;;
+            esac
+          fi
+          if [[ "$split" =~ (^|[[:space:]/])codex([[:space:]]|$) ]]; then codex_allowed || block "$CODEX_MSG"; fi
           if [ -n "$valued" ] && [[ "${W[$k]}" =~ ^-[$valued]$ ]]; then k=$((k + 1)); fi
           k=$((k + 1))
         done

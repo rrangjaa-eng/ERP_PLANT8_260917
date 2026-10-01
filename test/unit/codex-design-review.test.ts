@@ -190,6 +190,13 @@ describe("screenshotName", () => {
     expect(screenshotName("/", 320)).toMatch(/^root-[0-9a-f]{8}-320\.png$/);
   });
 
+  it("긴 경로도 파일 이름이 255바이트 안이다(읽기용 부분만 줄이고 해시는 유지)", () => {
+    const long = `/projects?filter=${"a".repeat(300)}`;
+    const name = screenshotName(long, 1280);
+    expect(Buffer.byteLength(name)).toBeLessThanOrEqual(255);
+    expect(name).not.toBe(screenshotName(`/projects?filter=${"a".repeat(299)}b`, 1280));
+  });
+
   it("문장부호만 다른 경로도 이름이 겹치지 않는다", () => {
     expect(screenshotName("/projects?new=1&editId=x", 375)).not.toBe(screenshotName("/projects?new=1/editId=x", 375));
   });

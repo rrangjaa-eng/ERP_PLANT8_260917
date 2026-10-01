@@ -153,8 +153,9 @@ export function countLines(rects: Array<[number, number]>): number | null {
 }
 
 export function screenshotName(route: string, width: number): string {
-  const slug = route.replace(/^\/+|\/+$/g, "").replace(/[^A-Za-z0-9]+/g, "_") || "root";
-  // 문장부호만 다른 경로가 같은 파일로 겹치지 않게 경로 해시를 붙인다.
+  // 읽기용 부분은 80자로 자른다(파일 이름 255바이트 상한). 문장부호만 다른 경로·잘린 경로가 같은
+  // 파일로 겹치지 않게 전체 경로 해시를 붙인다.
+  const slug = (route.replace(/^\/+|\/+$/g, "").replace(/[^A-Za-z0-9]+/g, "_") || "root").slice(0, 80);
   const hash = createHash("sha256").update(route).digest("hex").slice(0, 8);
   return `${slug}-${hash}-${width}.png`;
 }

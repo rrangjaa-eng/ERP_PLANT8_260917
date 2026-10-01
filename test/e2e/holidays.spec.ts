@@ -501,7 +501,7 @@ test.describe("공휴일 보관함(quick 261001-hfi)", () => {
     const date = `2039-${String(1 + randomInt(12)).padStart(2, "0")}-${String(1 + randomInt(28)).padStart(2, "0")}`;
     const active = { date, name: `충돌 · 활성 ${randomUUID().slice(0, 6)}` };
     const conflicted = { date, name: `충돌 보관 공휴일 ${randomUUID().slice(0, 6)}` };
-    const [activeRow] = await db.insert(holidays).values({ ...active, kind: "temporary" }).returning({ id: holidays.id });
+    await db.insert(holidays).values({ ...active, kind: "temporary" });
     await db.insert(holidays).values({ ...conflicted, kind: "temporary", archivedAt: new Date(), archivedBy: null });
     try {
       await loginAsSysadmin(page);
@@ -514,8 +514,8 @@ test.describe("공휴일 보관함(quick 261001-hfi)", () => {
       await page.reload();
       await expect(archiveRow).toHaveCount(1);
     } finally {
-      // 활성 행은 보관해 둔다 — 다른 스펙의 연도 목록에 2039년이 끼지 않게.
-      if (activeRow) await db.update(holidays).set({ archivedAt: new Date() }).where(eq(holidays.id, activeRow.id));
+      // 이 describe의 다른 정리처럼 날짜로 지운다 — 2039년 행이 쌓이거나 연도 목록에 끼지 않게.
+      await db.delete(holidays).where(eq(holidays.date, date));
     }
   });
 });

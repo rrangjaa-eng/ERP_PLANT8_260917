@@ -359,6 +359,17 @@ CW="$(jq -e '.hooks.context_warnings == false' "$REPO/.planning/config.json" 2>/
 [ "$CW" = "true" ] || CW="false"
 expect_true ".planning/config.json hooks.context_warnings = false" "$CW"
 
+# 상태줄 미터는 환경변수가 없으면 settings.json autoCompactWindow로 압축 시점을 맞춘다(PR #124 Codex 지적)
+# 1M 창·남은 70% — 40만 창이면 75%, 50만 창이면 60%
+SL_DIR="$(mktemp -d)"
+mkdir -p "$SL_DIR/.claude"
+echo '{"autoCompactWindow":400000}' > "$SL_DIR/.claude/settings.json"
+SL_PAYLOAD="{\"model\":{\"display_name\":\"X\"},\"workspace\":{\"current_dir\":\"$SL_DIR\"},\"context_window\":{\"total_tokens\":1000000,\"remaining_percentage\":70}}"
+SL_OUT="$(printf '%s' "$SL_PAYLOAD" | env -u CLAUDE_CODE_AUTO_COMPACT_WINDOW node "$HOOKS/gsd-statusline.js")"
+expect_contains "statusline: no env -> settings autoCompactWindow (75%)" "$SL_OUT" " 75%"
+SL_OUT="$(printf '%s' "$SL_PAYLOAD" | CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000 node "$HOOKS/gsd-statusline.js")"
+expect_contains "statusline: env wins over settings (60%)" "$SL_OUT" " 60%"
+
 # ---------------------------------------------------------------------------
 # Isolation: real gate logs unchanged
 REAL_GATES_AFTER="$(gates_checksum)"

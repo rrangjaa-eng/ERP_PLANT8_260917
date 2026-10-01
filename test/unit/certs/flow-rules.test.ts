@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  draftAfterBack,
+  draftAfterPrizeGone,
   submitBlockedReason,
   isDefiniteResult,
   nextRrnRecheckConfirmed,
@@ -140,5 +142,50 @@ describe("submitOutcomeFromValidationErrors — 액션 스키마 거절을 칸 �
       kind: "invalid",
       fields: ["address"],
     });
+  });
+});
+
+// 04.3-16 Task 1 ② — 값 규칙: 경품 빠짐 · 「다른 경품 고르기」(표시 있는 뒤로)는 주소만 버리고, 표시 없는 뒤로(브라우저 뒤로)는
+// 전부 버린다. 서명 획 · 되물음 표시도 같은 사람의 값이라 남는다.
+describe("draftAfterPrizeGone · draftAfterBack — E′2로 돌아갈 때 남기는 값(04.3-16)", () => {
+  const draft = {
+    name: "김하늘",
+    rrnFront6: "930412",
+    rrnBack7: "2123458",
+    phone: "010-4821-7730",
+    address: "서울시 마포구 월드컵로 1",
+    consent: true,
+    strokes: [[{ x: 1, y: 2 }]],
+    armedRrn: "9304122123458" as string | null,
+  };
+  const empty = { name: "", rrnFront6: "", rrnBack7: "", phone: "", address: "", consent: false, strokes: [], armedRrn: null };
+
+  it("경품 빠짐 — 주소만 비우고 나머지(이름 · 주민등록번호 · 연락처 · 동의 · 서명)는 그대로", () => {
+    expect(draftAfterPrizeGone(draft)).toEqual({ ...draft, address: "" });
+  });
+
+  it("표시 없는 뒤로(브라우저 뒤로) — 전부 비운 값", () => {
+    expect(draftAfterBack({ draft, empty, keep: false })).toEqual(empty);
+  });
+
+  it("「다른 경품 고르기」 표시가 있는 뒤로 — 주소만 비운 값", () => {
+    expect(draftAfterBack({ draft, empty, keep: true })).toEqual({ ...draft, address: "" });
+  });
+
+  it("받은 값을 고치지 않는다", () => {
+    const before = structuredClone(draft);
+    draftAfterPrizeGone(draft);
+    draftAfterBack({ draft, empty, keep: true });
+    expect(draft).toEqual(before);
+  });
+});
+
+describe("확정 판정 · 결과 불명 경계(04.3-16 E39 · T-04.3-413)", () => {
+  it.each(["prizeGone", "termsChanged", "closed", "notYetOpen"])("%s는 확정 판정 — 멱등 키를 끝낸다", (kind) => {
+    expect(isDefiniteResult({ data: { kind } })).toBe(true);
+  });
+
+  it("throttled는 결과 불명 쪽 — 같은 키로 다시 보낸다", () => {
+    expect(isDefiniteResult({ data: { kind: "throttled" } })).toBe(false);
   });
 });

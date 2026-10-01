@@ -125,7 +125,7 @@ export async function getSettingValue<T>(
 ): Promise<T> {
   if (def.kind === "historized") {
     const findEffectiveValue = deps?.findEffectiveValue ?? defaultFindEffectiveValue;
-    const asOf = dateOnly(opts?.asOf ?? new Date());
+    const asOf = opts?.asOf ? dateOnly(opts.asOf) : seoulToday(deps?.now);
     const row = await findEffectiveValue(SYSTEM_VIEWER, def.key, asOf);
     if (!row) {
       if (def.default !== undefined) return def.default;

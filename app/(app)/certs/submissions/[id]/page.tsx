@@ -26,14 +26,17 @@ const loadReview = cache(async (id: string) => {
   // 끊기면 로그인 화면에 이유 줄 · 다시 로그인하면 이 I4로(04.3-14 U5 a).
   const sessionId = await getSessionId();
   if (!sessionId) redirect(privacyLoginHref(reviewPath(id)));
-  const touched = await touchPrivacySession(viewer, sessionId);
+
+  const judgedAt = new Date();
+  const touched = await touchPrivacySession(viewer, sessionId, judgedAt);
   if (touched.kind === "notAllowed") notFound();
   if (touched.kind === "expired") redirect(privacyLoginHref(reviewPath(id)));
 
   const result = await getSubmissionForReview(viewer, id, { ip: clientIp(await headers()) });
   if (result.kind === "notFound") notFound();
-  // 무입력 화면 이동의 한도(분)는 비활동 판정이 읽은 값 그대로(설정을 한 번 더 읽지 않는다 — U4 a).
-  return { ...result, idleMinutes: touched.idleMinutes };
+  // 무입력 화면 이동의 한도(분)는 비활동 판정이 읽은 값 그대로(설정을 한 번 더 읽지 않는다 — U4 a). 판정 시각은 이 렌더의
+  // 표지다 — 라우터 캐시로 다시 붙은 화면을 알아본다(검토 Y1).
+  return { ...result, idleMinutes: touched.idleMinutes, judgedAt: judgedAt.getTime() };
 });
 
 function reviewPath(id: string): string {
@@ -61,7 +64,7 @@ export default async function CertSubmissionReviewPage({ params }: { params: Pro
 
   return (
     <div className={styles.root}>
-      <PrivacyIdleLogout idleMinutes={review.idleMinutes} returnPath={reviewPath(id)} />
+      <PrivacyIdleLogout idleMinutes={review.idleMinutes} judgedAt={review.judgedAt} returnPath={reviewPath(id)} />
       <div className={styles.screen}>
         <ReviewForm
           key={submission.version}

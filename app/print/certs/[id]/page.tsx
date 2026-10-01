@@ -20,16 +20,19 @@ export const dynamic = "force-dynamic";
 
 export default async function CertPrintPage({ params }: { params: Promise<{ id: string }> }) {
   await assertCertFeatureEnabled();
-  const { viewer } = await requireSession();
 
-  // 끊기면 로그인 화면에 이유 줄 · 다시 로그인하면 이 인쇄 화면으로(04.3-14 U5 a).
+  // 끊기면 로그인 화면에 이유 줄 · 다시 로그인하면 그 확인증의 I4로 — 인쇄 창이 예고 없이 뜨지 않게, 무입력 이동(G8 a)과
+  // 같은 곳이다(04.3-14 U5 a · 사용자 결정 5936870579 Y3). 세션이 이미 없어졌어도 같은 길(검토 Y5 ①).
   const { id } = await params;
   const printPath = `/print/certs/${id}`;
+  const returnPath = `/certs/submissions/${id}`;
   const sessionId = await getSessionId();
-  if (!sessionId) redirect(privacyLoginHref(printPath));
-  const touched = await touchPrivacySession(viewer, sessionId);
+  if (!sessionId) redirect(privacyLoginHref(returnPath));
+  const { viewer } = await requireSession();
+  const judgedAt = new Date();
+  const touched = await touchPrivacySession(viewer, sessionId, judgedAt);
   if (touched.kind === "notAllowed") notFound();
-  if (touched.kind === "expired") redirect(privacyLoginHref(printPath));
+  if (touched.kind === "expired") redirect(privacyLoginHref(returnPath));
 
   const result = await getCertificatePrint(viewer, id, { ip: clientIp(await headers()) });
   if (result.kind === "notFound") notFound();
@@ -38,7 +41,7 @@ export default async function CertPrintPage({ params }: { params: Promise<{ id: 
   // 무입력 한도면 화면이 스스로 로그인으로 — 되돌아갈 곳은 그 확인증의 I4(U4 a · G8 a).
   return (
     <>
-      <PrivacyIdleLogout idleMinutes={touched.idleMinutes} returnPath={printPath} />
+      <PrivacyIdleLogout idleMinutes={touched.idleMinutes} judgedAt={judgedAt.getTime()} returnPath={printPath} />
       <PrintSheet
         printedAt={result.printedAt}
         certNo={print.certNo ?? "—"}

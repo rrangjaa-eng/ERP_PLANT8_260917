@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
-import { SETTING_DEFS } from "@/domain/settings/keys";
+import { LEAVE_ANNUAL_DAYS, SEED_HISTORIZED_EFFECTIVE_FROM, SETTING_DEFS } from "@/domain/settings/keys";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
 import {
@@ -12,6 +12,7 @@ import {
   SettingNotFoundError,
 } from "@/domain/settings/registry";
 import { applySettingsImport as defaultApplySettingsImport } from "@/repositories/settings";
+import { hasLeaveRecordsBefore } from "@/repositories/leave-usage";
 import { assertSeqStartNotLowered } from "@/domain/document-numbering";
 import { withTransaction } from "@/lib/db-transaction";
 
@@ -79,6 +80,8 @@ export type ImportDeps = ExportDeps & {
   applySettingsImport: typeof defaultApplySettingsImport;
   // 04.1-04: 적용 시작일 규칙의 서울 오늘 기준 시각(테스트 주입).
   now: Date;
+  // quick 261001-85g: 올해 전 연차 기록이 있는가(빈 새 환경 판정 — 테스트 주입).
+  hasPastLeaveRecords: (fiscalYear: number) => Promise<boolean>;
 };
 
 type HistorizedImportEntry = { effectiveFrom?: unknown; value?: unknown };
@@ -97,6 +100,7 @@ export async function importSettings(
 
   const getSettingValue = deps?.getSettingValue ?? defaultGetSettingValue;
   const listSettingHistory = deps?.listSettingHistory ?? defaultListSettingHistory;
+  const hasPastLeaveRecords = deps?.hasPastLeaveRecords ?? ((fiscalYear: number) => hasLeaveRecordsBefore(viewer, fiscalYear));
   const today = seoulToday(deps?.now);
   const issues: string[] = [];
   const simple: Array<{ key: string; value: unknown; by: string | null }> = [];
@@ -115,7 +119,10 @@ export async function importSettings(
         continue;
       }
       const seenDates = new Set<string>();
-      // quick 261001-85g(ADMN-06): 대상 환경의 이력이 전부 기본값(0행 포함 — 배포 시드의 2000-01-01 행)이면 미설정 키다.
+      // quick 261001-85g(ADMN-06): 대상 환경의 이력이 0행이거나 배포 시드 행(2000-01-01 = 기본값) 하나뿐이면 미설정 키다
+      // (시드가 아닌 행은 기본값과 같아도 설정된 값 — 같은 날 다른 값이 조용히 무시되지 않게 기존 검증을 탄다).
+      // 연차 일수는 올해 전 연차 기록이 있으면 실제 운영된 환경이라 미설정으로 보지 않는다(사용자 결정 2026-10-01 —
+      // 지난 연도 값을 바꾸면 그 잔고가 다시 계산된다. 소급은 막고 새 환경 이관만 받는다).
       let unconfigured: boolean | undefined;
       for (const entry of raw as HistorizedImportEntry[]) {
         const effectiveFrom = entry?.effectiveFrom;
@@ -141,7 +148,10 @@ export async function importSettings(
           continue;
         }
         if (violation?.reason === "past_year") {
-          unconfigured ??= (await listSettingHistory(def)).every((row) => isDeepStrictEqual(row.value, def.default));
+          unconfigured ??=
+            (await listSettingHistory(def)).every(
+              (row) => row.effectiveFrom === SEED_HISTORIZED_EFFECTIVE_FROM && isDeepStrictEqual(row.value, def.default),
+            ) && !(def.key === LEAVE_ANNUAL_DAYS.key && (await hasPastLeaveRecords(Number(today.slice(0, 4)))));
         }
         if (violation?.reason === "past_year" && !unconfigured) {
           const effective: unknown = await getSettingValue(def, { asOf: seoulDateToUtcDate(effectiveFrom) }).catch((caught: unknown) => {

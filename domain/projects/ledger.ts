@@ -70,7 +70,7 @@ export type PreEstimateInput = {
 export type SaveProjectLedgerInput = {
   // DR-6 · 계약 4 — 화면이 본 상태. 잠금 직후 첫 판정 행과 다르면 저장 전체를 거부한다.
   seenStatus: ProjectStatus;
-  quoteLines?: { revisionId: string; rows: QuoteLineWriteRow[]; order?: string[]; archivedLineIds?: string[]; vendorShown?: boolean };
+  quoteLines?: { revisionId: string; rows: QuoteLineWriteRow[]; order?: string[]; archivedLineIds?: string[] };
   revenue?: SaveRevenueInput;
   period?: PeriodInput;
   preEstimate?: PreEstimateInput;
@@ -338,12 +338,7 @@ export async function saveProjectLedger(
           ? await writeQuoteLinesInTx(
               viewer,
               preparedQuoteLines,
-              {
-                rows: input.quoteLines.rows,
-                order: input.quoteLines.order,
-                archivedLineIds: input.quoteLines.archivedLineIds,
-                vendorShown: input.quoteLines.vendorShown,
-              },
+              { rows: input.quoteLines.rows, order: input.quoteLines.order, archivedLineIds: input.quoteLines.archivedLineIds },
               tx,
               { now, recordAction },
             )

@@ -104,8 +104,8 @@ describe("거래처 정보가 가려진 계급의 견적 줄(Codex 리뷰 P1)", 
     expect(stored?.vendorId).toBe(client.id);
   });
 
-  // /review 적대 검토 — 가려진 채 그린 화면은 거래처를 null로 들고 있다. 그 사이 거래처가 보이게 바뀌어도 화면이 그릴 때의
-  // 노출(vendorShown 거짓)을 저장에 실어, 본 적 없는 거래처를 지우지 않는다.
+  // /review 적대 검토 — 가려진 채 그린 줄은 거래처를 null로 들고 있다. 그 사이 거래처가 보이게 바뀌어도 그 줄은
+  // 거래처를 가린 채 그렸다는 표시(vendorHidden)를 실어, 본 적 없는 거래처를 지우지 않는다.
   const editRow = (lineId: string, version: number, subcategory: string, vendorId?: string) => ({
     id: lineId,
     version,
@@ -127,7 +127,7 @@ describe("거래처 정보가 가려진 계급의 견적 줄(Codex 리뷰 P1)", 
     },
   });
 
-  it("가려진 채 그린 화면이 노출표가 바뀐 뒤 저장해도 거래처를 지우지 않는다", async () => {
+  it("가려진 채 그린 줄은 노출표가 바뀐 뒤 저장해도 거래처를 지우지 않는다", async () => {
     const { pm, client, projectId, revisionId, lineId, subcategory } = await setup(false);
     const [line] = await listQuoteLines(pm, revisionId, ctx);
     if (!line || !pm.roleId) throw new Error("줄 · 계급이 없습니다");
@@ -135,7 +135,7 @@ describe("거래처 정보가 가려진 계급의 견적 줄(Codex 리뷰 P1)", 
 
     await saveProjectLedger(pm, projectId, {
       seenStatus: "bidding",
-      quoteLines: { revisionId, vendorShown: false, rows: [editRow(lineId, line.version, subcategory)] },
+      quoteLines: { revisionId, rows: [{ ...editRow(lineId, line.version, subcategory), vendorHidden: true as const }] },
     });
 
     const [stored] = await db.select().from(quoteLines).where(eq(quoteLines.id, lineId));
@@ -144,13 +144,13 @@ describe("거래처 정보가 가려진 계급의 견적 줄(Codex 리뷰 P1)", 
   });
 
   // 가려진 때 보관한 편집(baseline 거래처 null)을 거래처가 보이는 화면에서 복원해 거래처를 바꾸면 그 값이 저장된다.
-  it("거래처가 보이는 화면은 baseline 거래처가 null이어도 고른 거래처를 저장한다", async () => {
+  it("거래처가 보이는 줄은 baseline 거래처가 null이어도 고른 거래처를 저장한다", async () => {
     const { pm, revisionId, lineId, subcategory } = await setup(true);
     const [line] = await listQuoteLines(pm, revisionId, ctx);
     if (!line) throw new Error("줄이 없습니다");
     const other = await insertVendor(SYSTEM_VIEWER, { name: `다른거래처-${randomUUID()}`, normalizedName: `다른거래처-${randomUUID()}` });
 
-    await saveQuoteLines(pm, revisionId, { vendorShown: true, rows: [editRow(lineId, line.version, subcategory, other.id)] });
+    await saveQuoteLines(pm, revisionId, { rows: [editRow(lineId, line.version, subcategory, other.id)] });
 
     const [stored] = await db.select().from(quoteLines).where(eq(quoteLines.id, lineId));
     expect(stored?.vendorId).toBe(other.id);
@@ -210,6 +210,17 @@ describe("거래처 정보가 가려진 계급의 견적 줄(Codex 리뷰 P1)", 
     const copyId = randomUUID();
 
     await saveQuoteLines(pm, revisionId, { rows: [copyRow(subcategory, lineId, copyId)], archivedLineIds: [lineId] });
+
+    const [copy] = await db.select().from(quoteLines).where(eq(quoteLines.id, copyId));
+    expect(copy?.vendorId).toBe(client.id);
+  });
+
+  // 적대 검토(PR #135) P3 — 가려진 때 복제한 줄을 거래처가 보이는 화면에서 복원해 저장해도 원본 거래처를 받는다.
+  it("거래처를 가린 채 복제한 줄은 거래처가 보이는 계급이 저장해도 원본 거래처를 받는다", async () => {
+    const { pm, client, revisionId, lineId, subcategory } = await setup(true);
+    const copyId = randomUUID();
+
+    await saveQuoteLines(pm, revisionId, { rows: [{ ...copyRow(subcategory, lineId, copyId), vendorId: null, vendorHidden: true as const }] });
 
     const [copy] = await db.select().from(quoteLines).where(eq(quoteLines.id, copyId));
     expect(copy?.vendorId).toBe(client.id);

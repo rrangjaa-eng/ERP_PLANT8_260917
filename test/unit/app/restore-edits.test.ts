@@ -95,6 +95,30 @@ describe("복원 — 보관할 때의 기준값으로 충돌 판정(검토 8)", 
     expect(restored).toMatchObject({ id: newId, isNew: true, duplicatedFrom: sourceId });
   });
 
+  // 적대 검토(PR #135) — 거래처를 가린 채 그린 줄이라는 표시는 보관 · 복원을 지나도 남는다(서버가 거래처를 원본 · 기존 값으로 둔다).
+  it("새 줄: 거래처를 가린 채 복제한 줄의 표시를 되살린다", () => {
+    const newId = "6f1c2b8e-3d4a-4f5b-9c6d-7e8f9a0b1c2d";
+    const sourceId = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+    const copy: Line = { ...savedLine(1, 1000), clientKey: newId, id: newId, isNew: true, version: undefined, duplicatedFrom: sourceId, vendorHidden: true, dirty: true };
+    const stash = JSON.parse(JSON.stringify(editsSnapshot([copy], null, PERIOD_V1, null, null))) as Record<string, unknown>;
+
+    const [restored] = mergeRestoredEdits([], stash, "print", { quote: {} } as KindCells).lines;
+
+    expect(restored).toMatchObject({ duplicatedFrom: sourceId, vendorHidden: true });
+  });
+
+  it("줄 칸: 거래처를 가린 채 고친 편집을 거래처가 보이는 줄에 복원하면 거래처 기준값은 지금 값이다(본 적 없는 칸의 충돌 없음)", () => {
+    const vendorId = "vendor-1";
+    const edited: Line = { ...savedLine(1, 1000), vendorHidden: true, itemName: "배너 고침", dirty: true };
+    const stash = JSON.parse(JSON.stringify(editsSnapshot([edited], null, PERIOD_V1, null, null))) as Record<string, unknown>;
+
+    const fresh = { ...savedLine(2, 1000), vendorId, baseline: { ...savedLine(2, 1000).baseline, vendorId } };
+    const [restored] = mergeRestoredEdits([fresh], stash, "print", KIND_CELLS).lines;
+
+    expect(restored).toMatchObject({ itemName: "배너 고침", version: 1, vendorId, baseline: { itemName: "배너", vendorId } });
+    expect(restored).not.toHaveProperty("vendorHidden");
+  });
+
   it("새 줄: 모양이 틀린 원본 id는 버린다(서버 uuid 검증에 저장 전체가 막히지 않게)", () => {
     const newId = "6f1c2b8e-3d4a-4f5b-9c6d-7e8f9a0b1c2d";
     for (const duplicatedFrom of ["not-a-uuid", 123]) {

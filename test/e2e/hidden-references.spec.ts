@@ -20,7 +20,7 @@ const TODAY = kstToday(new Date());
 const COL_VENDOR = 3;
 const COL_ITEM = 2;
 
-type Account = { userId: string; email: string; password: string };
+type Account = { userId: string; email: string; password: string; roleId?: string };
 
 async function makeTeam(): Promise<string> {
   const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E본부-${randomUUID()}` });
@@ -39,7 +39,7 @@ async function makeWriter(teamId: string, hiddenItem: string): Promise<Account> 
   const email = `e2e-hidden-${randomUUID()}@example.test`;
   const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 가림", roleId: role.id });
   await assignTeam(SYSTEM_VIEWER, { userId, teamId, effectiveFrom: TODAY });
-  return { userId, email, password: tempPassword };
+  return { userId, email, password: tempPassword, roleId: role.id };
 }
 
 async function login(page: Page, account: Account) {
@@ -204,6 +204,41 @@ test.describe("가려진 참조 정보의 화면(quick 261001-85g)", () => {
 
     const rows = await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revisionId));
     expect(rows.map((row) => row.vendorId)).toEqual([client.id, client.id, client.id]);
+  });
+
+  // /review 적대 검토(PR #135) — 가려진 채 그린 줄은 그 뒤 화면만 다시 그려져(줄 밖 저장의 revalidate) 거래처가 보이게
+  // 바뀌어도 거래처를 본 적이 없다. 그 줄을 고쳐 저장해도 거래처를 지우지 않는다.
+  test("D7: 가려진 채 그린 줄은 노출표가 바뀐 뒤 화면이 다시 그려져도 저장이 거래처를 지우지 않는다", async ({ page }) => {
+    const teamId = await makeTeam();
+    const writer = await makeWriter(teamId, "vendor.value");
+    const { projectId, client, revisionId } = await makeProjectWithVendorLine(teamId, writer);
+
+    await login(page, writer);
+    await page.goto(`/projects/${projectId}`);
+    const itemCell = dataRow(page, 0).getByRole("gridcell").nth(COL_ITEM);
+    await expect(itemCell).toHaveText("가림 거래처 줄");
+    if (!writer.roleId) throw new Error("계급이 없습니다");
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: writer.roleId, infoItem: "vendor.value", visible: true });
+
+    // 줄 밖 저장(총 매출 예상가) — 화면은 다시 그려지지만 견적 줄 상태는 그대로다.
+    await page.getByRole("button", { name: "총 매출 예상가 바꾸기" }).click();
+    const amount = page.getByLabel("총 매출 예상가", { exact: true });
+    await amount.fill("1000000");
+    await amount.press("Control+s");
+    await expect(page.getByText("총 매출 예상가 1,000,000", { exact: true })).toBeVisible();
+    const table = page.getByRole("table", { name: "견적 줄" }).or(page.getByRole("grid", { name: "견적 줄" }));
+    await expect(table.getByRole("columnheader", { name: "거래처" })).toBeVisible();
+
+    await itemCell.focus();
+    await page.keyboard.press("Enter");
+    await page.getByRole("textbox", { name: "항목", exact: true }).fill("가림 줄 고침");
+    await page.keyboard.press("Enter");
+    await itemCell.focus();
+    await page.keyboard.press("Control+s");
+    await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
+
+    const rows = await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revisionId));
+    expect(rows.map((row) => [row.itemName, row.vendorId])).toEqual([["가림 줄 고침", client.id]]);
   });
 
   test("D3: 팀 업무 범위인데 오늘 팀이 없는 계급에게는 「프로젝트 복사」가 없다(목록 등록 진입점과 같은 좁힌 규칙)", async ({ page }) => {

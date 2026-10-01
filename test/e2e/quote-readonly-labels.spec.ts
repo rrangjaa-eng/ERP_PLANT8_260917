@@ -5,6 +5,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { createOrgUnit, createTeam } from "@/domain/org";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
+import { createRevisionFromCurrent } from "@/domain/quotes/revisions";
 import { insertVendor } from "@/repositories/vendors";
 import { insertRole } from "@/repositories/roles";
 import { listPermissions, listVisibility, upsertPermission, upsertVisibility } from "@/repositories/permissions";
@@ -90,6 +91,8 @@ test("비활성 견적 분류를 쓰던 줄도 편집 · 보기 전용 계정 �
     { id: randomUUID(), isNew: true, subcategory: "stage_construction", itemName: "켠 분류 줄", quantity: 1, vendorId: vendor.id,
       unitPrice: { currency: "KRW", amount: 1_000_000, fxRate: 1 }, execution: { currency: "KRW", amount: 500_000, fxRate: 1 } },
   ] });
+  // 끈 분류는 지난 차수에 가장 자주 남는다 — 2차를 만들어 1차(이전 차수 읽기 섹션)도 이름으로 보는지 본다(/review 2차 testing).
+  await createRevisionFromCurrent(SYSTEM_VIEWER, { projectId: project.id, fromRevisionId: revision.id });
   await setCodeItemActive(SYSTEM_VIEWER, item.id, false);
 
   try {
@@ -107,6 +110,13 @@ test("비활성 견적 분류를 쓰던 줄도 편집 · 보기 전용 계정 �
       await expect(table.getByText("끈 분류 줄")).toBeVisible();
       await expect(table.getByText(item.label, { exact: true }).first()).toBeVisible();   // 그룹 머리글 + 소분류 칸
       await expect(table.getByText(item.value)).toHaveCount(0);
+
+      const revisions = page.locator("table", { has: page.locator("caption", { hasText: /^차수$/ }) });
+      await revisions.locator("tbody").getByRole("button", { name: "차수 열기" }).click();
+      const previous = page.locator("table", { has: page.locator("caption", { hasText: /^상세 견적 1차 견적 줄$/ }) });
+      await expect(previous.getByText("끈 분류 줄")).toBeVisible();
+      await expect(previous.getByText(item.label, { exact: true }).first()).toBeVisible();
+      await expect(previous.getByText(item.value)).toHaveCount(0);
     }
 
     // 편집 계정(PM)의 소분류 선택지 — 켠 분류 줄의 소분류 칸을 열어 본다.

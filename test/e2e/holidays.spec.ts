@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { and, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
@@ -497,17 +497,26 @@ test.describe("공휴일 보관함(quick 261001-hfi)", () => {
 
   // /review(#138) — 그 날짜에 다른 공휴일이 생긴 행은 복원이 거부되고, 원인이 토스트에 실린다(행은 보관함에 남는다).
   test("같은 날짜에 다른 공휴일이 있으면 보관함 복원은 원인을 실은 오류 토스트이고 행이 남는다", async ({ page }) => {
-    const conflicted = { date: ROW_B.date, name: "충돌 보관 공휴일 테스트" };
+    // 원인 문구는 마지막 「 · 」 앞까지 — 이름에 「 · 」가 든 공휴일과 부딪혀 잘리지 않음을 본다(/review 2차 testing).
+    const date = `2039-${String(1 + randomInt(12)).padStart(2, "0")}-${String(1 + randomInt(28)).padStart(2, "0")}`;
+    const active = { date, name: `충돌 · 활성 ${randomUUID().slice(0, 6)}` };
+    const conflicted = { date, name: `충돌 보관 공휴일 ${randomUUID().slice(0, 6)}` };
+    const [activeRow] = await db.insert(holidays).values({ ...active, kind: "temporary" }).returning({ id: holidays.id });
     await db.insert(holidays).values({ ...conflicted, kind: "temporary", archivedAt: new Date(), archivedBy: null });
-    await loginAsSysadmin(page);
-    await page.goto("/admin/archive");
-    const archiveRow = page.locator("tr", { hasText: `${conflicted.date} ${conflicted.name}` });
-    await expect(archiveRow).toHaveCount(1);
+    try {
+      await loginAsSysadmin(page);
+      await page.goto("/admin/archive");
+      const archiveRow = page.locator("tr", { hasText: `${conflicted.date} ${conflicted.name}` });
+      await expect(archiveRow).toHaveCount(1);
 
-    await archiveRow.getByRole("button", { name: "복원" }).click();
-    await expect(page.getByText(`복원 · 실패 · 이미 공휴일(${ROW_B.name})`, { exact: true })).toBeVisible({ timeout: 15000 });
-    await page.reload();
-    await expect(archiveRow).toHaveCount(1);
+      await archiveRow.getByRole("button", { name: "복원" }).click();
+      await expect(page.getByText(`복원 · 실패 · 이미 공휴일(${active.name})`, { exact: true })).toBeVisible({ timeout: 15000 });
+      await page.reload();
+      await expect(archiveRow).toHaveCount(1);
+    } finally {
+      // 활성 행은 보관해 둔다 — 다른 스펙의 연도 목록에 2039년이 끼지 않게.
+      if (activeRow) await db.update(holidays).set({ archivedAt: new Date() }).where(eq(holidays.id, activeRow.id));
+    }
   });
 });
 

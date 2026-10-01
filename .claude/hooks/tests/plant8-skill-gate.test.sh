@@ -455,8 +455,12 @@ cat > "$GH_STUB_DIR/gh" <<'STUB'
 [ "${GH_STUB_RC:-0}" = "0" ] || exit "$GH_STUB_RC"
 case " $* " in
   *patch*) cat "$GH_STUB_PATCH" ;;                                       # 게이트 로그 패치(.patch) — files보다 먼저
-  */contents/*) cat "$GH_STUB_BASE" ;;                                   # 대상 브랜치의 게이트 로그(raw)
-  *base.ref*) echo main ;;                                               # PR 대상 브랜치
+  */contents/*) case "${GH_STUB_CONTENTS:-ok}" in                        # 대상 브랜치의 게이트 로그(raw)
+                  404) echo '{"message":"Not Found","status":"404"}'; exit 1 ;;
+                  fail) echo '{"message":"Server Error","status":"502"}'; exit 1 ;;
+                  *) cat "$GH_STUB_BASE" ;;
+                esac ;;
+  *base.ref*) printf '%s\n' "${GH_STUB_BASEREF-main}" ;;                # PR 대상 브랜치
   */files\ *) cat "$GH_STUB_FILES" ;;                                  # 파일 목록(이름 바꾸기는 "새<TAB>옛")
   *) printf '%s\n' "${GH_STUB_COUNT:-$(grep -c . "$GH_STUB_FILES")}" ;;  # changed_files
 esac
@@ -802,6 +806,14 @@ expect_rc "merge(PR 게이트): 쌓인 PR — 패치의 + 줄이 대상 브랜�
 expect_contains "merge(PR 게이트): 거부 메시지에 커밋·푸시 안내" "$HOOK_STDERR" "커밋·푸시"
 merge_hook "$SGs" "$projGs" $'domain/x.ts\n.claude/gates/phase-04.log' 0 "" "" $'@@ -0,0 +1,4 @@\n+review 2026-09-30T00:00Z session=a\n+qa 2026-09-30T00:01Z session=a\n+review 2026-10-01T00:00Z session=b\n+qa 2026-10-01T00:01Z session=b' "$OLD_A"
 expect_rc "merge(PR 게이트): 쌓인 PR이 자기 review·qa도 더함 -> 통과" 0 "$HOOK_RC"
+GH_STUB_CONTENTS=fail merge_hook "$SGs" "$projGs" $'domain/x.ts\n.claude/gates/phase-04.log' 0 "" "" $'@@ -0,0 +1,2 @@\n+review 2026-09-30T00:00Z session=a\n+qa 2026-09-30T00:01Z session=a' "$OLD_A"
+expect_rc "merge(PR 게이트): 대상 브랜치 로그를 못 읽음(502) -> exit 2" 2 "$HOOK_RC"
+GH_STUB_CONTENTS=404 merge_hook "$SGs" "$projGs" $'domain/x.ts\n.claude/gates/phase-09.log' 0 "" "" $'@@ -0,0 +1,2 @@\n+review 2026-10-01T00:00Z session=b\n+qa 2026-10-01T00:01Z session=b'
+expect_rc "merge(PR 게이트): 새 로그(대상 브랜치에 없음, 404) + review·qa -> 통과" 0 "$HOOK_RC"
+GH_STUB_BASEREF="" merge_hook "$SGs" "$projGs" $'domain/x.ts\n.claude/gates/phase-04.log' 0 "" "" $'@@ -0,0 +1,2 @@\n+review 2026-10-01T00:00Z session=b\n+qa 2026-10-01T00:01Z session=b'
+expect_rc "merge(PR 게이트): PR 대상 브랜치를 모름 -> exit 2" 2 "$HOOK_RC"
+merge_hook "$SGs" "$projGs" $'domain/x.ts\n.claude/gates/x#y.log' 0 "" "" $'@@ -0,0 +1,2 @@\n+review 2026-10-01T00:00Z session=b\n+qa 2026-10-01T00:01Z session=b'
+expect_rc "merge(PR 게이트): URL에 못 넣는 게이트 로그 이름 -> exit 2" 2 "$HOOK_RC"
 # 대체 경로: payload cwd가 하위 폴더여도 게이트 로그 diff를 읽는다
 projGt="$(pr_project o r)"; SGt="sid-prgates-t-$$"
 pr_commit "$projGt" domain/x.ts

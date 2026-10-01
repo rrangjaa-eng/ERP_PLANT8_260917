@@ -455,6 +455,8 @@ cat > "$GH_STUB_DIR/gh" <<'STUB'
 [ "${GH_STUB_RC:-0}" = "0" ] || exit "$GH_STUB_RC"
 case " $* " in
   *patch*) cat "$GH_STUB_PATCH" ;;                                       # 게이트 로그 패치(.patch) — files보다 먼저
+  */contents/*) cat "$GH_STUB_BASE" ;;                                   # 대상 브랜치의 게이트 로그(raw)
+  *base.ref*) echo main ;;                                               # PR 대상 브랜치
   */files\ *) cat "$GH_STUB_FILES" ;;                                  # 파일 목록(이름 바꾸기는 "새<TAB>옛")
   *) printf '%s\n' "${GH_STUB_COUNT:-$(grep -c . "$GH_STUB_FILES")}" ;;  # changed_files
 esac
@@ -464,18 +466,20 @@ payload_merge() {  # $1=session $2=expectedHeadSha(선택)
   local session="$1" sha="${2:-}"
   if [ -n "$sha" ]; then
     jq -nc --arg s "$session" --arg sha "$sha" --arg o "${PM_OWNER:-o}" --arg r "${PM_REPO:-r}" \
-      '{session_id:$s, tool_name:"mcp__github__merge_pull_request", tool_input:{owner:$o, repo:$r, pullNumber:7, expectedHeadSha:$sha}}'
+      '{session_id:$s, tool_name:"mcp__github__merge_pull_request", tool_input:{owner:$o, repo:$r, pullNumber:7, expectedHeadSha:$sha}}' \
+      | jq -c --arg c "${PM_CWD:-}" 'if $c != "" then .cwd = $c else . end'
   else
     jq -nc --arg s "$session" --arg o "${PM_OWNER:-o}" --arg r "${PM_REPO:-r}" \
       '{session_id:$s, tool_name:"mcp__github__merge_pull_request", tool_input:{owner:$o, repo:$r, pullNumber:7}}'
   fi
 }
-merge_hook() {  # $1=session $2=project $3=files(줄바꿈) $4=gh rc $5=changed_files(기본: 목록 줄 수) $6=expectedHeadSha $7=게이트 로그 패치(기본: 빈)
+merge_hook() {  # $1=session $2=project $3=files(줄바꿈) $4=gh rc $5=changed_files(기본: 목록 줄 수) $6=expectedHeadSha $7=게이트 로그 패치(기본: 빈) $8=대상 브랜치 게이트 로그(기본: 빈)
   printf '%s\n' "$3" > "$TMPDIR/gh-files"  # 큰 목록은 환경 변수 한도를 넘으므로 파일로
   printf '%s\n' "${7:-}" > "$TMPDIR/gh-patch"
+  printf '%s\n' "${8:-}" > "$TMPDIR/gh-base"
   local errfile
   errfile="$(mktemp "$TMPDIR/stderr.XXXXXX")"
-  HOOK_STDOUT="$(payload_merge "$1" "${6:-}" | PATH="$GH_STUB_DIR:$PATH" GH_STUB_FILES="$TMPDIR/gh-files" GH_STUB_PATCH="$TMPDIR/gh-patch" GH_STUB_RC="${4:-0}" GH_STUB_COUNT="${5:-}" \
+  HOOK_STDOUT="$(payload_merge "$1" "${6:-}" | PATH="$GH_STUB_DIR:$PATH" GH_STUB_FILES="$TMPDIR/gh-files" GH_STUB_PATCH="$TMPDIR/gh-patch" GH_STUB_BASE="$TMPDIR/gh-base" GH_STUB_RC="${4:-0}" GH_STUB_COUNT="${5:-}" \
     CLAUDE_PROJECT_DIR="$2" bash "$HOOKS/plant8-skill-gate.sh" merge 2>"$errfile")"
   HOOK_RC=$?
   HOOK_STDERR="$(cat "$errfile")"
@@ -790,6 +794,47 @@ expect_rc "merge(로그 안 건드림): review·qa가 다른 페이즈 로그에
 write_gate_line "$projGc" review "$SGc" phase-02; write_gate_line "$projGc" qa "$SGc" phase-02
 merge_hook "$SGc" "$projGc" 'domain/x.ts'
 expect_rc "merge(로그 안 건드림): STATE 페이즈(02) 로그에 review·qa -> 통과" 0 "$HOOK_RC"
+# /review 지적(2026-10-01): 대상 브랜치의 같은 로그에 이미 있는 줄은 "더한 줄"이 아니다
+projGs="$(new_project)"; SGs="sid-prgates-s-$$"
+OLD_A=$'review 2026-09-30T00:00Z session=a\nqa 2026-09-30T00:01Z session=a'
+merge_hook "$SGs" "$projGs" $'domain/x.ts\n.claude/gates/phase-04.log' 0 "" "" $'@@ -0,0 +1,2 @@\n+review 2026-09-30T00:00Z session=a\n+qa 2026-09-30T00:01Z session=a' "$OLD_A"
+expect_rc "merge(PR 게이트): 쌓인 PR — 패치의 + 줄이 대상 브랜치 로그에 이미 있음(squash된 앞 PR) -> exit 2" 2 "$HOOK_RC"
+expect_contains "merge(PR 게이트): 거부 메시지에 커밋·푸시 안내" "$HOOK_STDERR" "커밋·푸시"
+merge_hook "$SGs" "$projGs" $'domain/x.ts\n.claude/gates/phase-04.log' 0 "" "" $'@@ -0,0 +1,4 @@\n+review 2026-09-30T00:00Z session=a\n+qa 2026-09-30T00:01Z session=a\n+review 2026-10-01T00:00Z session=b\n+qa 2026-10-01T00:01Z session=b' "$OLD_A"
+expect_rc "merge(PR 게이트): 쌓인 PR이 자기 review·qa도 더함 -> 통과" 0 "$HOOK_RC"
+# 대체 경로: payload cwd가 하위 폴더여도 게이트 로그 diff를 읽는다
+projGt="$(pr_project o r)"; SGt="sid-prgates-t-$$"
+pr_commit "$projGt" domain/x.ts
+write_gate_line "$projGt" qa "$SGt"
+git -C "$projGt" add .claude/gates/phase-04.log && git -C "$projGt" commit -q -m "gates" >/dev/null
+pr_push "$projGt"
+PM_CWD="$projGt/domain" merge_hook "$SGt" "$projGt" "" 127 "" "$(git -C "$projGt" rev-parse HEAD)"
+expect_rc "merge(gh 없음, PR 게이트): cwd가 하위 폴더 + PR이 review·qa 추가 -> 통과" 0 "$HOOK_RC"
+# 대체 경로: 끝 줄바꿈 없는 옛 줄이 다시 나와도(- 뒤 +) 더한 줄이 아니다
+projGn="$(pr_project o r)"; SGn="sid-prgates-n-$$"
+git -C "$projGn" checkout -q main
+printf 'review 2026-09-29T00:00Z session=old' > "$projGn/.claude/gates/phase-04.log"
+git -C "$projGn" add .claude/gates/phase-04.log && git -C "$projGn" commit -q -m "old" >/dev/null
+git -C "$projGn" push -q origin main >/dev/null 2>&1
+git -C "$projGn" checkout -q -b featureGn
+pr_commit "$projGn" domain/x.ts
+printf 'review 2026-09-29T00:00Z session=old\nqa 2026-10-01T00:00Z session=n\n' > "$projGn/.claude/gates/phase-04.log"
+git -C "$projGn" add .claude/gates/phase-04.log && git -C "$projGn" commit -q -m "qa" >/dev/null
+pr_push "$projGn"
+merge_hook "$SGn" "$projGn" "" 127 "" "$(git -C "$projGn" rev-parse HEAD)"
+expect_rc "merge(gh 없음, PR 게이트): 끝 줄바꿈 없던 옛 review가 다시 나옴 + qa만 추가 -> exit 2" 2 "$HOOK_RC"
+# 대체 경로: 옛 로그 이름 바꾸기는 그 줄을 더한 것이 아니다
+projGr="$(pr_project o r)"; SGr="sid-prgates-r-$$"
+git -C "$projGr" checkout -q main
+write_gate_line "$projGr" review old phase-02; write_gate_line "$projGr" qa old phase-02
+git -C "$projGr" add .claude/gates/phase-02.log && git -C "$projGr" commit -q -m "old" >/dev/null
+git -C "$projGr" push -q origin main >/dev/null 2>&1
+git -C "$projGr" checkout -q -b featureGr
+pr_commit "$projGr" domain/x.ts
+git -C "$projGr" mv .claude/gates/phase-02.log .claude/gates/phase-09.log && git -C "$projGr" commit -q -m "mv" >/dev/null
+pr_push "$projGr"
+merge_hook "$SGr" "$projGr" "" 127 "" "$(git -C "$projGr" rev-parse HEAD)"
+expect_rc "merge(gh 없음, PR 게이트): 옛 로그 이름만 바꿈(review·qa는 옛 줄) -> exit 2" 2 "$HOOK_RC"
 
 # ---------------------------------------------------------------------------
 # DG: 디자인 관문(사용자 결정 2026-09-28) — 화면 파일 편집은 design-gate 스킬 뒤에만,

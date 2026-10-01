@@ -316,14 +316,19 @@ describe("domain/quotes/lines saveQuoteLines — 거래처 충돌 이유의 거�
       (error: unknown) => error,
     );
     expect(rejected).toBeInstanceOf(SaveRejectedError);
-    const conflict = (rejected as SaveRejectedError).conflicts.find((c) => c.field === "vendorId");
+    return { conflicts: (rejected as SaveRejectedError).conflicts, vendorB };
+  }
+
+  function vendorCell(conflicts: SaveRejectedError["conflicts"]) {
+    const conflict = conflicts.find((c) => c.field === "vendorId");
     if (!conflict) throw new Error("거래처 칸 충돌이 없다");
-    return { conflict, vendorB };
+    return conflict;
   }
 
   it("project.value · vendor.value를 다 보는 사람은 충돌 이유에서 바뀐 거래처의 이름을 본다(UUID가 아니다)", async () => {
     const saver = await createSaver(["quote.amount", "project.value", "vendor.value"]);
-    const { conflict, vendorB } = await vendorConflict(saver);
+    const { conflicts, vendorB } = await vendorConflict(saver);
+    const conflict = vendorCell(conflicts);
     expect(conflict.reason).not.toContain(vendorB.id);
     expect(conflict.reason).toMatch(new RegExp(`^다른 사람이 \\d{2}:\\d{2}에 ${vendorB.name}으로 바꿈 · 덮어쓰기 / 그 값으로$`));
     expect(conflict.theirRaw).toBe(vendorB.id); // 「그 값으로」는 여전히 id로 받는다.
@@ -331,7 +336,7 @@ describe("domain/quotes/lines saveQuoteLines — 거래처 충돌 이유의 거�
 
   it("다른 사람이 거래처를 비우면 충돌 이유는 「—」이다", async () => {
     const saver = await createSaver(["quote.amount", "project.value", "vendor.value"]);
-    const { conflict } = await vendorConflict(saver, { clear: true });
+    const conflict = vendorCell((await vendorConflict(saver, { clear: true })).conflicts);
     expect(conflict.theirRaw).toBeNull();
     expect(conflict.reason).toMatch(/^다른 사람이 \d{2}:\d{2}에 —으로 바꿈 · 덮어쓰기 \/ 그 값으로$/);
   });
@@ -379,12 +384,18 @@ describe("domain/quotes/lines saveQuoteLines — 거래처 충돌 이유의 거�
     expect(conflict?.reason).not.toContain(vendorB.id);
   });
 
-  it.each([
-    ["vendor.value 없음", ["quote.amount", "project.value"]],
-    ["project.value 없음", ["quote.amount", "vendor.value"]],
-  ])("%s — 충돌 이유에 거래처 이름도 UUID도 싣지 않는다(「다른 값」)", async (_label, visible) => {
-    const saver = await createSaver(visible);
-    const { conflict, vendorB } = await vendorConflict(saver);
+  it("vendor.value 없음 — 거래처 칸을 기존 값으로 지키므로(261001-85g) 거래처 충돌도, 이름 · UUID도 없다", async () => {
+    const saver = await createSaver(["quote.amount", "project.value"]);
+    const { conflicts, vendorB } = await vendorConflict(saver);
+    expect(conflicts.find((c) => c.field === "vendorId")).toBeUndefined();
+    expect(JSON.stringify(conflicts)).not.toContain(vendorB.name);
+    expect(JSON.stringify(conflicts)).not.toContain(vendorB.id);
+  });
+
+  it("project.value 없음 — 충돌 이유에 거래처 이름도 UUID도 싣지 않는다(「다른 값」)", async () => {
+    const saver = await createSaver(["quote.amount", "vendor.value"]);
+    const { conflicts, vendorB } = await vendorConflict(saver);
+    const conflict = vendorCell(conflicts);
     expect(conflict.reason).not.toContain(vendorB.name);
     expect(conflict.reason).not.toContain(vendorB.id);
     expect(conflict.theirValue).not.toContain(vendorB.name);

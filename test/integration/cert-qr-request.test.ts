@@ -17,6 +17,7 @@ import { loadIntake, submitCertificate } from "@/domain/certs/intake";
 import { CERT_CONSENT_VERSION } from "@/domain/certs/consent";
 import { CERT_RETENTION_YEARS } from "@/domain/settings/keys";
 import { Client } from "pg";
+import { ZodError } from "zod";
 import { pool } from "@/db/client";
 import { closeCertEventForTest, createCertEvent, seedIpSubmissionsForTest, signaturePngFixture } from "@/test/e2e/helpers/cert";
 import { leakPatternsFor, scanForLeaks } from "@/test/e2e/helpers/cert-leak";
@@ -515,6 +516,23 @@ describe("savePrizes — 접수 중 · 닫힘 경품 표 저장(Task 2)", () => 
     });
     expect(await versionOf(ev.p1)).toBe(1);
     expect(await valueLogsOfEvent(ev.eventId)).toEqual([]);
+  });
+
+  it("같은 줄 id가 두 번(지우기 둘 · 고치기와 지우기) · 배열 501줄 → 입력 오류(ZodError — 500 아님) · 쓰기 0(독립 검토 W6)", async () => {
+    const manager = await makeUser(await managerRole(), "경영 이수아");
+    const ev = await openWithPrizes();
+    await expect(
+      savePrizes(manager, ev.eventId, { changes: { deletes: [{ id: ev.p3, version: 1 }, { id: ev.p3, version: 1 }] } }),
+    ).rejects.toBeInstanceOf(ZodError);
+    await expect(
+      savePrizes(manager, ev.eventId, {
+        changes: { updates: [{ id: ev.p3, version: 1, unitValue: "60,000" }], deletes: [{ id: ev.p3, version: 1 }] },
+      }),
+    ).rejects.toBeInstanceOf(ZodError);
+    const many = Array.from({ length: 501 }, (_, i) => ({ key: `k${i}`, name: `경품 ${i}`, unitValue: "60,000", delivery: "현장" }));
+    await expect(savePrizes(manager, ev.eventId, { changes: { inserts: many } })).rejects.toBeInstanceOf(ZodError);
+    expect(await versionOf(ev.p3)).toBe(1);
+    expect(await db.select().from(certPrizes).where(eq(certPrizes.eventId, ev.eventId))).toHaveLength(3);
   });
 
   it("당첨 수 0 · abc · 1000 → 셀 오류 · 2 · 999 → 저장(설계 /cso H-3 — 서버 · 화면 같은 판정)", async () => {

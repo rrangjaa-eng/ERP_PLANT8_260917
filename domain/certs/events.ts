@@ -377,33 +377,43 @@ export async function requestQr(viewer: Viewer, input: RequestQrInput, deps?: Pa
 // ── 경품 줄 적용(generateQr · savePrizes 공용) ────────────────────────────
 
 const amountInput = z.union([z.string(), z.number()]);
+// 한 번에 보내는 줄 상한 — 잠근 tx 안에서 도는 줄 수를 막는다(독립 검토 W6).
+const PRIZE_CHANGES_MAX = 500;
 
-export const prizeChangesSchema = z.object({
-  updates: z
-    .array(
-      z.object({
-        id: z.string().uuid(),
-        version: z.number().int(),
-        name: z.string().optional(),
-        unitValue: amountInput.optional(),
-        delivery: z.string().optional(),
-        winnerCount: amountInput.optional(),
-      }),
-    )
-    .optional(),
-  inserts: z
-    .array(
-      z.object({
-        key: z.string().min(1).max(64),
-        name: z.string(),
-        unitValue: amountInput,
-        delivery: z.string(),
-        winnerCount: amountInput.optional(),
-      }),
-    )
-    .optional(),
-  deletes: z.array(z.object({ id: z.string().uuid(), version: z.number().int() })).optional(),
-});
+export const prizeChangesSchema = z
+  .object({
+    updates: z
+      .array(
+        z.object({
+          id: z.string().uuid(),
+          version: z.number().int(),
+          name: z.string().optional(),
+          unitValue: amountInput.optional(),
+          delivery: z.string().optional(),
+          winnerCount: amountInput.optional(),
+        }),
+      )
+      .max(PRIZE_CHANGES_MAX)
+      .optional(),
+    inserts: z
+      .array(
+        z.object({
+          key: z.string().min(1).max(64),
+          name: z.string(),
+          unitValue: amountInput,
+          delivery: z.string(),
+          winnerCount: amountInput.optional(),
+        }),
+      )
+      .max(PRIZE_CHANGES_MAX)
+      .optional(),
+    deletes: z.array(z.object({ id: z.string().uuid(), version: z.number().int() })).max(PRIZE_CHANGES_MAX).optional(),
+  })
+  // 같은 줄 id가 고치기 ∪ 지우기에 두 번이면 입력 오류 — 둘째 쓰기가 0행이 되어 500이 나지 않게(W6).
+  .superRefine((changes, ctx) => {
+    const ids = [...(changes.updates ?? []), ...(changes.deletes ?? [])].map((row) => row.id);
+    if (new Set(ids).size !== ids.length) ctx.addIssue({ code: "custom", message: "duplicate prize id" });
+  });
 
 export type PrizeChanges = z.input<typeof prizeChangesSchema>;
 

@@ -1,6 +1,11 @@
 "use client";
 
-import { useId, type ButtonHTMLAttributes, type MouseEvent, type ReactNode } from "react";
+import {
+  useId,
+  type ButtonHTMLAttributes,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import styles from "./Button.module.css";
 
 // SYSTEM.md §7-1 버튼 위계: 1차(면) · 2차(테두리) · 3차(밑줄 텍스트).
@@ -10,7 +15,10 @@ export type ButtonVariant = "primary" | "secondary" | "tertiary";
 // SYSTEM.md §7-1 개정 ⑦(DR-10) — 비활성 이유의 두 색.
 export type ButtonReasonTone = "block" | "info";
 
-export type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "disabled"> & {
+export type ButtonProps = Omit<
+  ButtonHTMLAttributes<HTMLButtonElement>,
+  "disabled"
+> & {
   variant?: ButtonVariant;
   /** 서버 액션 대기 중 — 라벨 뒤 "…". 네이티브 disabled가 아니라 aria-disabled다(§7-1 개정 ⑦, DR-11). */
   pending?: boolean;
@@ -22,6 +30,8 @@ export type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "disable
   reasonId?: string;
   /** 비활성 사유의 색 — block(기본) = --danger, info = --muted(§7-1 개정 ⑦, DR-10, U-4). */
   reasonTone?: ButtonReasonTone;
+  /** 이유 옆 다음 한 수 3차(§7-1 「이유 텍스트 + 다음 한 수」) — 이유와 한 덩어리라 좁은 폭에서는 둘이 함께 버튼 아래 줄로 내려간다. 이유가 보일 때만 렌더한다. */
+  nextStep?: ReactNode;
   /** 단축키 표기, 라벨 오른쪽에 kbd로 병기(§7-1). */
   shortcut?: string;
   /** 04.3-02 UI-SPEC 개정 ⑦(a) — external은 외부 수령자 화면 전용(높이
@@ -31,7 +41,9 @@ export type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "disable
 };
 
 // 04-15(§7-1 — 이동은 링크) — 페이지 이동을 버튼 위계로 보일 때 링크(<a>)에 같은 클래스를 준다.
-export function buttonLinkClassName(variant: ButtonVariant = "secondary"): string {
+export function buttonLinkClassName(
+  variant: ButtonVariant = "secondary",
+): string {
   return `${styles.btn} ${styles[variant]}`;
 }
 
@@ -42,6 +54,7 @@ export function Button({
   disabledReason,
   reasonId: givenReasonId,
   reasonTone = "block",
+  nextStep,
   shortcut,
   size = "default",
   children,
@@ -55,11 +68,20 @@ export function Button({
   const ownReasonId = useId();
   const reasonId = givenReasonId ?? ownReasonId;
   const showReason = disabled && !pending && Boolean(disabledReason);
-  const describedBy = [ariaDescribedBy, showReason ? reasonId : undefined].filter(Boolean).join(" ") || undefined;
+  const describedBy =
+    [ariaDescribedBy, showReason ? reasonId : undefined]
+      .filter(Boolean)
+      .join(" ") || undefined;
 
   // 다른 요소의 이유를 aria-describedby로 가리키면 이유 글자가 이미 화면에 한 번 있다
   // (04.3-⑦(b) — 누적 잠김 1차가 알림 묶음의 두 줄을 이유로 삼는다).
-  if (process.env.NODE_ENV !== "production" && disabled && !pending && !disabledReason && !ariaDescribedBy) {
+  if (
+    process.env.NODE_ENV !== "production" &&
+    disabled &&
+    !pending &&
+    !disabledReason &&
+    !ariaDescribedBy
+  ) {
     // 이유 없는 비활성 버튼은 금지된다(UX-06, SYSTEM.md §7-1). 런타임 동작은 바꾸지 않고
     // 개발 중에만 알린다 — 이 파일에 예외 없이 색 리터럴을 두지 않는 것과 같은 종류의 계약.
 
@@ -76,15 +98,37 @@ export function Button({
     onClick?.(event);
   }
 
+  const reason = showReason ? (
+    <span
+      id={reasonId}
+      className={reasonTone === "info" ? styles.reasonInfo : styles.reason}
+    >
+      {disabledReason}
+    </span>
+  ) : null;
+
   return (
-    <span className={size === "external" ? styles.wrapExternal : styles.wrap}>
+    <span
+      className={
+        size === "external"
+          ? styles.wrapExternal
+          : reason && nextStep
+            ? `${styles.wrap} ${styles.wrapWithNext}`
+            : styles.wrap
+      }
+    >
       <button
         type={type ?? "button"}
         {...rest}
         aria-disabled={inactive ? "true" : undefined}
         aria-describedby={describedBy}
         onClick={handleClick}
-        className={[styles.btn, styles[variant], size === "external" ? styles.external : "", className]
+        className={[
+          styles.btn,
+          styles[variant],
+          size === "external" ? styles.external : "",
+          className,
+        ]
           .filter(Boolean)
           .join(" ")}
       >
@@ -93,14 +137,21 @@ export function Button({
         {/* 04.3-⑦(c) — 진행 중을 보조기술에도 알린다(「…」는 aria-hidden 그대로). */}
         {pending ? <span className="sr-only">처리 중</span> : null}
         {shortcut ? (
-          <kbd className={variant === "primary" ? styles.kbdOnAccent : styles.kbd}>{shortcut}</kbd>
+          <kbd
+            className={variant === "primary" ? styles.kbdOnAccent : styles.kbd}
+          >
+            {shortcut}
+          </kbd>
         ) : null}
       </button>
-      {showReason ? (
-        <span id={reasonId} className={reasonTone === "info" ? styles.reasonInfo : styles.reason}>
-          {disabledReason}
+      {reason && nextStep ? (
+        <span className={styles.reasonLine}>
+          {reason}
+          {nextStep}
         </span>
-      ) : null}
+      ) : (
+        reason
+      )}
     </span>
   );
 }

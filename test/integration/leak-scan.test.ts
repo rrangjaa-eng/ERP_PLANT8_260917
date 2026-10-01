@@ -39,7 +39,6 @@ import "@/app/(app)/admin/holidays/actions.registry";
 import "@/app/(app)/projects/actions.registry";
 import "@/app/(app)/pnl/reserves/actions.registry";
 import "@/domain/certs/events";
-import "@/app/(app)/certs/events/actions.registry";
 import "@/domain/certs/review";
 import "@/app/(app)/certs/submissions/[id]/actions.registry";
 

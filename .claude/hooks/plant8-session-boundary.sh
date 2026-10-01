@@ -15,7 +15,7 @@
 #   session-start : 새 세션이면 이 세션의 경계 기록을 지운다
 #   post-tool     : 경계를 처음 감지하면 인계 순서를 컨텍스트에 넣는다
 #   pre-tool      : 게이트 리뷰 시작 중·후에 다른 단위를 새로 시작하려 하면 막는다(exit 2).
-#                   계획 완료 뒤 gsd-executor를 띄우려 해도 막는다(exit 2)
+#                   계획 완료 뒤 게이트 리뷰·계획·실행 단위를 시작하려 해도 막는다(exit 2)
 #   stop          : 경계가 났는데 인계를 안 했으면 한 번 멈춤을 막고 인계를 시킨다
 set -euo pipefail
 
@@ -135,12 +135,19 @@ case "$event" in
       fi
     fi
 
-    [ "$subagent" = "gsd-executor" ] || exit 0
-    if [ -f "$flag_plan_phase" ]; then
-      echo "차단됨: 이 세션에서 계획이 끝났다(계획 완료). 실행 전 독립 게이트 리뷰가 있어야 하므로 실행은 새 세션에서 한다 — 커밋·푸시 → /gsd-pause-work → 새 세션(/gsd-progress)." >&2
-      exit 2
-    fi
-    exit 0
+    # 계획 완료 뒤에는 실행·다른 계획·게이트 리뷰를 이 세션에서 시작하지 않는다 — 게이트 리뷰는 계획과 다른 눈으로(Codex 지적, PR #122)
+    [ -f "$flag_plan_phase" ] || exit 0
+    is_new_unit=0
+    case "$subagent" in
+      gsd-executor|gsd-planner) is_new_unit=1 ;;
+    esac
+    case "$skill" in
+      gsd-plan-phase|gsd-execute-phase|gsd-quick|gsd-quick-batch|gsd-autonomous) is_new_unit=1 ;;
+    esac
+    if [ -n "$skill" ] && printf '%s\n' "$skill" | grep -Eq "^(${gate_reviews})\$"; then is_new_unit=1; fi
+    [ "$is_new_unit" = 1 ] || exit 0
+    echo "차단됨: 이 세션에서 계획이 끝났다(계획 완료). 게이트 리뷰·실행은 계획과 다른 눈으로 보도록 새 세션에서 한다 — 커밋·푸시 → /gsd-pause-work → 새 세션(/gsd-progress)." >&2
+    exit 2
     ;;
 
   stop)

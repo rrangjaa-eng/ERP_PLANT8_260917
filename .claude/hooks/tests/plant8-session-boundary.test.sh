@@ -321,6 +321,18 @@ expect_rc "plan done: gsd-executor blocked" 2 "$HOOK_RC"
 expect_contains "plan done: block message mentions 계획 완료" "$HOOK_STDERR" "계획 완료"
 hook plant8-session-boundary.sh stop "$(payload_session "$P")" "$projP"
 expect_contains "plan done: stop blocks once" "$HOOK_STDOUT" '"decision":"block"'
+# Codex 지적(PR #122): 계획을 끝낸 세션이 같은 세션에서 게이트 리뷰·다른 계획·실행 단위를 시작하지 못한다(독립 검토)
+for sk in plan-eng-review plan-design-review plan-ceo-review gsd-execute-phase gsd-plan-phase gsd-quick; do
+  hook plant8-session-boundary.sh pre-tool "$(payload_skill "$P" "$sk")" "$projP"
+  expect_rc "plan done: Skill $sk blocked" 2 "$HOOK_RC"
+  expect_contains "plan done: Skill $sk message mentions 계획 완료" "$HOOK_STDERR" "계획 완료"
+done
+hook plant8-session-boundary.sh pre-tool "$(payload_skill "$P" gsd-pause-work)" "$projP"
+expect_rc "plan done: gsd-pause-work allowed" 0 "$HOOK_RC"
+hook plant8-session-boundary.sh pre-tool "$(payload_skill "$P" verification-before-completion)" "$projP"
+expect_rc "plan done: verification-before-completion allowed" 0 "$HOOK_RC"
+hook plant8-session-boundary.sh pre-tool "$(payload_skill "$P" plan-eng-review sub1)" "$projP"
+expect_rc "plan done: subagent payload passes" 0 "$HOOK_RC"
 hook plant8-session-boundary.sh session-start "$(payload_session_start "$P" startup)" "$projP"
 hook plant8-session-boundary.sh pre-tool "$(payload_agent "$P" gsd-executor)" "$projP"
 expect_rc "plan done: fresh startup clears the flag" 0 "$HOOK_RC"
@@ -330,6 +342,14 @@ expect_rc "plan done: fresh startup clears the flag" 0 "$HOOK_RC"
 WIRED="$(jq -e '[.hooks.PreToolUse[]? | select(.matcher=="Skill") | .hooks[]? | select(.command | test("plant8-session-boundary\\.sh pre-tool"))] | length > 0' "$REPO/.claude/settings.json" 2>/dev/null)"
 [ "$WIRED" = "true" ] || WIRED="false"
 expect_true "settings.json wires PreToolUse Skill -> plant8-session-boundary.sh pre-tool" "$WIRED"
+
+# Wiring: 세션 종료의 문맥 기준(남은 35% 이하 경고)이 실제로 뜨도록 statusline 브리지와 context monitor를 건다(Codex 지적, PR #122)
+WIRED_CTX="$(jq -e '[.hooks.PostToolUse[]? | .hooks[]? | select(.command | test("gsd-context-monitor\\.js"))] | length > 0' "$REPO/.claude/settings.json" 2>/dev/null)"
+[ "$WIRED_CTX" = "true" ] || WIRED_CTX="false"
+expect_true "settings.json wires PostToolUse -> gsd-context-monitor.js" "$WIRED_CTX"
+WIRED_SL="$(jq -e '.statusLine.command // "" | test("gsd-statusline\\.js")' "$REPO/.claude/settings.json" 2>/dev/null)"
+[ "$WIRED_SL" = "true" ] || WIRED_SL="false"
+expect_true "settings.json statusLine -> gsd-statusline.js (context monitor bridge)" "$WIRED_SL"
 
 # ---------------------------------------------------------------------------
 # Isolation: real gate logs unchanged

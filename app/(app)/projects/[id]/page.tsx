@@ -124,7 +124,8 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
   ]);
   const currentSummary = revisionSummaries.find((row) => row.revisionId === revision.id);
   // /qa ISSUE-002 · /design-review — 「프로젝트 복사」는 목록 등록 진입점과 같은 규칙(업무 범위로 좁힌 팀 · 담당 PM).
-  const scopedCreateReferences = canWrite ? await scopeCreateFormReferences(session.viewer, references, { todayKst }) : null;
+  const scopedCreateReferences =
+    canWrite && project.archivedAt === null ? await scopeCreateFormReferences(session.viewer, references, { todayKst }) : null;
   const canCopyProject =
     project.archivedAt === null &&
     canCreateProject({

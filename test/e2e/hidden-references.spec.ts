@@ -115,6 +115,8 @@ test.describe("가려진 참조 정보의 화면(quick 261001-85g)", () => {
     const writer = await makeWriter(teamId, "");
     const { projectId, client } = await makeProjectWithVendorLine(teamId, writer);
     await db.update(vendors).set({ archivedAt: new Date() }).where(eq(vendors.id, client.id));
+    // 대조 단언(「프로젝트 복사」 있음)은 클라이언트 선택지가 하나라도 있어야 한다 — 다른 테스트가 남긴 거래처에 기대지 않는다.
+    await insertVendor(SYSTEM_VIEWER, { name: `E2E살아있는거래처-${randomUUID()}`, normalizedName: `e2e살아있는거래처-${randomUUID()}` });
 
     await login(page, writer);
     await page.goto(`/projects/${projectId}`);

@@ -1,5 +1,8 @@
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
+import { visible as defaultVisible } from "@/domain/permissions/visible";
+import { projectMany, type DtoSpec } from "@/domain/permissions/project";
+import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { listVendors as repoListVendors } from "@/repositories/vendors";
 import { listTeams as repoListTeams } from "@/repositories/teams";
@@ -31,6 +34,25 @@ export type ProjectFormReferences = {
   subcategories: CodeOption[];
 };
 
+// quick 261001-85g(ADMN-03) — 선택지도 명세로 투영한다(누수 스캔이 본다). 정보 항목은 각 마스터 DTO의 이름 칸과 같다 —
+// 이 목록은 프로젝트 정보가 아니라 회사의 거래처 · 팀 · 사람 이름 목록 자체다.
+const VENDOR_OPTION_SPEC: DtoSpec<ProjectReferenceOption, ProjectReferenceOption> = {
+  fields: (["id", "name"] as const).map((key) => ({ key, from: key, infoItem: "vendor.value" })),
+};
+const TEAM_OPTION_SPEC: DtoSpec<ProjectReferenceOption, ProjectReferenceOption> = {
+  fields: (["id", "name"] as const).map((key) => ({ key, from: key, infoItem: "team.value" })),
+};
+const PERSON_OPTION_SPEC: DtoSpec<ProjectReferenceOption, ProjectReferenceOption> = {
+  fields: (["id", "name"] as const).map((key) => ({ key, from: key, infoItem: "person.value" })),
+};
+for (const [name, spec] of [
+  ["ProjectVendorOptionDto", VENDOR_OPTION_SPEC],
+  ["ProjectTeamOptionDto", TEAM_OPTION_SPEC],
+  ["ProjectPersonOptionDto", PERSON_OPTION_SPEC],
+] as const) {
+  registerDto({ name, fields: spec.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
+}
+
 // 프로젝트 등록 폼의 클라이언트·담당 PM·팀 select 세 칸(⑨) — D-38 "클라이언트·
 // 거래처는 자동완성되고" 요구를 채운다. `listVendors`/`listTeams`/`listPeople`가
 // 각각 "admin.vendors"/"admin.people" 메뉴 view를 요구해(scope-for.ts
@@ -41,20 +63,26 @@ export type ProjectFormReferences = {
 // view 기본 참으로 바꾸는 시도는 그 테스트를 깬다) 두 메뉴 권한을 넓히지
 // 않는다. 대신 "projects" 메뉴 view 권한 하나로 게이트하는 축소 투영
 // (id·name만, 계좌번호·이메일 등 없음)을 이 파일에 따로 둔다 — admin 화면의
-// 세부 노출과는 다른, 더 좁은 안전 표면이다.
+// 세부 노출과는 다른, 더 좁은 안전 표면이다. 축소 투영은 위 세 명세를 지난다 — 가려진 목록은 조회 없이 빈 배열.
 export async function listProjectFormReferences(
   viewer: Viewer,
-  deps?: Partial<{ can: typeof defaultCan }>,
+  deps?: Partial<{ can: typeof defaultCan; visible: typeof defaultVisible }>,
 ): Promise<ProjectFormReferences> {
   const canFn = deps?.can ?? defaultCan;
+  const visibleFn = deps?.visible ?? defaultVisible;
   if (!(await canFn(viewer, "projects", "view"))) {
     throw new ForbiddenError("프로젝트 조회 권한 없음");
   }
 
+  const [vendorShown, teamShown, personShown] = await Promise.all([
+    visibleFn(viewer, "vendor.value"),
+    visibleFn(viewer, "team.value"),
+    visibleFn(viewer, "person.value"),
+  ]);
   const [vendorRows, teamRows, userRows, subcategoryRows] = await Promise.all([
-    repoListVendors(viewer, { scope: { rows: "all", includeArchived: false }, includeHidden: false }),
-    repoListTeams(viewer, { scope: { rows: "all", includeArchived: false } }),
-    repoListUsers(viewer, { scope: { rows: "all", includeArchived: false }, includeArchived: false }),
+    vendorShown ? repoListVendors(viewer, { scope: { rows: "all", includeArchived: false }, includeHidden: false }) : [],
+    teamShown ? repoListTeams(viewer, { scope: { rows: "all", includeArchived: false } }) : [],
+    personShown ? repoListUsers(viewer, { scope: { rows: "all", includeArchived: false }, includeArchived: false }) : [],
     repoListCodeItems(viewer, {
       tableKey: QUOTE_SUBCATEGORY_TABLE_KEY,
       scope: { rows: "all", includeArchived: false },
@@ -62,11 +90,16 @@ export async function listProjectFormReferences(
     }),
   ]);
 
+  const vendorOptions = (await projectMany(
+    viewer,
+    vendorRows.map((row) => ({ id: row.id, name: row.name })),
+    VENDOR_OPTION_SPEC,
+  )) as ProjectReferenceOption[];
   return {
-    clients: vendorRows.map((row) => ({ id: row.id, name: row.name })),
-    teams: teamRows.map((row) => ({ id: row.id, name: row.name })),
-    pmUsers: userRows.map((row) => ({ id: row.id, name: row.name })),
-    vendors: vendorRows.map((row) => ({ id: row.id, name: row.name })),
+    clients: vendorOptions,
+    teams: (await projectMany(viewer, teamRows.map((row) => ({ id: row.id, name: row.name })), TEAM_OPTION_SPEC)) as ProjectReferenceOption[],
+    pmUsers: (await projectMany(viewer, userRows.map((row) => ({ id: row.id, name: row.name })), PERSON_OPTION_SPEC)) as ProjectReferenceOption[],
+    vendors: vendorOptions,
     subcategories: subcategoryRows.map((row) => ({ value: row.value, label: row.label, description: row.description })),
   };
 }

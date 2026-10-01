@@ -394,9 +394,11 @@ describe("제출 — 서명 PNG · 칸 검사(저장 전 거부)", () => {
     expect(await intentCount()).toBe(0);
   });
 
-  it("택배 경품에 주소 없음 → invalid(address) · 현장 경품에 주소가 와도 저장값은 null", async () => {
+  it("택배 경품에 주소 없음 → prizeGone(낡은 목록 — 5931337199) · 200자 넘는 주소는 invalid(address) · 현장 경품에 주소가 와도 저장값은 null", async () => {
     const parcel = await makeEvent("parcel");
-    expect(await submitCertificate(parcel.token, await inputFor(parcel.prizeId, { address: "  " }), IP)).toEqual({
+    const gone = await submitCertificate(parcel.token, await inputFor(parcel.prizeId, { address: "  " }), IP);
+    expect(gone.kind).toBe("prizeGone");
+    expect(await submitCertificate(parcel.token, await inputFor(parcel.prizeId, { address: "가".repeat(201) }), IP)).toEqual({
       kind: "invalid",
       fields: ["address"],
     });

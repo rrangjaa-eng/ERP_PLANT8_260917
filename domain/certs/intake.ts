@@ -358,6 +358,11 @@ export async function submitCertificate(
 
   // (g) 칸 검사 → 주민등록번호 되묻기(한 번). 상태를 바꾸지 않은 판정은 키에 묶지 않는다.
   const checkedDelivery = deliveryOf(chosen);
+  // 낡은 목록 — 현장일 때 열었다가 택배로 바뀐 경품은 주소 칸이 없어 빈 주소로 온다. invalid(address)는 막다른 길이라
+  // 지금 목록을 돌려준다(사용자 결정 2026-10-01 · PR #88 5931337199). 클라이언트가 막는 값이라 여기엔 낡은 목록만 닿는다.
+  if (checkedDelivery === "parcel" && (typeof input.address !== "string" || input.address.trim().length === 0)) {
+    return { kind: "prizeGone", prizes: publicPrizes(prizes) };
+  }
   const checked = checkFields(input, checkedDelivery, now);
   if (checked.fields.length > 0) return { kind: "invalid", fields: checked.fields };
   if (checked.rrnMismatch && !envelope.rrnRecheckConfirmed) return { kind: "rrnRecheck" };

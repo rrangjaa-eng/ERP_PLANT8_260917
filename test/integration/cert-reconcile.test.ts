@@ -9,6 +9,7 @@ import { withTransaction } from "@/lib/db-transaction";
 import { lockEventRow } from "@/repositories/cert-events";
 import { listPrizesForEvent } from "@/repositories/cert-prizes";
 import { appendActionLog } from "@/repositories/action-log";
+import { recordAction } from "@/domain/action-log/record";
 import { runCertPurge } from "@/domain/certs/purge";
 import { deferred, waitForLockWaiter } from "@/test/integration/lock-race";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
@@ -429,6 +430,69 @@ describe("경합(E13) — 잠금을 거치는 실제 함수끼리 겹쳐도 500 
     expect(await closing).toEqual({ kind: "closed", submitted: 0 });
     expect((await late).kind).toBe("closed");
     expect(await db.select().from(certSubmissions).where(eq(certSubmissions.eventId, b.eventId))).toHaveLength(0);
+  });
+
+  // 04.3-17 독립 검토 X6 — 아래 셋은 멈춘 쪽이 실제 함수(또는 실제 함수의 잠금)이고, 기다리는 쪽이 이 플랜의 잠금이다:
+  // 기다리는 함수가 행사 행 잠금을 빼면 셋 다 실패한다(①은 DELETE가 FK에 걸려 던지고, ② ③은 잠금 대기자가 생기지 않는다).
+  it("① savePrizes가 잠근 채(새 줄 INSERT 뒤 로그 직전) 멈춘 사이 cancelRequest는 잠금을 기다리고 saved + hasPrizes", async () => {
+    const pm = await makeViewer(PM, "기획 PM");
+    const manager = await makeViewer(MANAGER, "경영관리");
+    const ev = await createCertEvent({ name: "경합 저장 먼저", status: "requested", createdBy: pm.id });
+    const locked = deferred();
+    const release = deferred();
+    const pausingRecord: typeof recordAction = async (...args) => {
+      locked.resolve();
+      await release.promise;
+      return recordAction(...args);
+    };
+    const save = savePrizes(
+      manager,
+      ev.eventId,
+      { changes: { inserts: [{ key: "n1", name: "새 경품", unitValue: "73,519", delivery: "현장" }] } },
+      { recordAction: pausingRecord },
+    );
+    await locked.promise;
+    const cancel = cancelRequest(manager, ev.eventId);
+    await waitForLockWaiter(pool);
+    release.resolve();
+    expect((await save).kind).toBe("saved");
+    expect(await cancel).toEqual({ kind: "hasPrizes", count: 1 });
+    expect(await db.select().from(certPrizes).where(eq(certPrizes.eventId, ev.eventId))).toHaveLength(1);
+    expect(await eventRow(ev.eventId)).not.toBeNull();
+    expect(await logsOf(ev.eventId, "document_delete")).toHaveLength(0);
+  });
+
+  it("② closeEvent가 잠근 사이 excludeSubmission은 잠금을 기다리고 closed + excluded", async () => {
+    const f = await reconcileFixture();
+    const manager = await makeViewer(MANAGER, "경영관리");
+    const [before] = await db.select().from(certSubmissions).where(eq(certSubmissions.id, f.a2));
+    const pause = pausingAfterLock(f.eventId);
+    const closing = closeEvent(manager, f.eventId, { withTransaction: pause.run });
+    await pause.locked.promise;
+    const excluding = excludeSubmission(manager, f.a2, { version: before?.version ?? 0 });
+    await waitForLockWaiter(pool);
+    pause.release.resolve();
+    expect(await closing).toEqual({ kind: "closed", submitted: 4 });
+    expect(await excluding).toEqual({ kind: "excluded", eventId: f.eventId, name: "김 하늘" });
+  });
+
+  it("③ closeEvent가 잠근 사이 correctSubmission(수량)은 잠금을 기다리고 closed + saved", async () => {
+    const f = await reconcileFixture();
+    const manager = await makeViewer(MANAGER, "경영관리");
+    const [before] = await db.select().from(certSubmissions).where(eq(certSubmissions.id, f.a3));
+    const pause = pausingAfterLock(f.eventId);
+    const closing = closeEvent(manager, f.eventId, { withTransaction: pause.run });
+    await pause.locked.promise;
+    const correcting = correctSubmission(manager, f.a3, {
+      version: before?.version ?? 0,
+      name: "이도윤",
+      phone: "010-1111-2222",
+      quantity: "2",
+    });
+    await waitForLockWaiter(pool);
+    pause.release.resolve();
+    expect(await closing).toEqual({ kind: "closed", submitted: 4 });
+    expect((await correcting).kind).toBe("saved");
   });
 });
 

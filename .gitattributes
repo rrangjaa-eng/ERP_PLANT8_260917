@@ -1,3 +1,7 @@
 # Shell scripts must stay LF so they run on the Linux cloud VM even when
 # committed from Windows (core.autocrlf).
 *.sh text eol=lf
+
+# Gate logs are append-only; every merged PR used to conflict the next one.
+# union keeps both sides' lines so main merges stop conflicting.
+.claude/gates/*.log merge=union

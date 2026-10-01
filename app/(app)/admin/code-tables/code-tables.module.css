@@ -121,6 +121,31 @@
   margin: var(--s-2) 0;
 }
 
+/* §6-3 · §7-2 · §7-15 — PC 폼 라벨 열 96(--label-w) + --s-2(TextField · Form.Field와
+   같은 열), select 200. 폰(<700px)은 위 세로 쌓기가 기본값이다. */
+@media (min-width: 700px) {
+  .selectLabel {
+    display: grid;
+    grid-template-columns: var(--label-w) minmax(0, 1fr);
+    column-gap: var(--s-2);
+    align-items: start;
+  }
+
+  /* 라벨 글자 높이를 TextField 라벨(padding-top --s-1)과 맞춘다. */
+  .selectLabel > label {
+    padding-top: var(--s-1);
+  }
+
+  .selectLabel > :not(label) {
+    grid-column: 2;
+  }
+
+  .selectLabel > select {
+    width: 200px;
+    max-width: 100%;
+  }
+}
+
 /* MAST-04 「수정」의 행 인라인 이름 입력 전용. 폭을 칸에 맞추지 않으면
    <td> 안에서 브라우저 기본 입력 폭(~170px+)을 그대로 써서 폰 375에서 표가
    뷰포트를 넘는다(실측 489 > 375) — people.module.css의 .select가 defect 3

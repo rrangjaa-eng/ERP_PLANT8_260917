@@ -484,17 +484,15 @@ test.describe("공휴일 보관함(quick 261001-hfi)", () => {
     await expect(rowOf(page, ROW_A.name)).toHaveCount(1);
   });
 
-  test("지난 날짜로 보관된 공휴일은 보관함에서 복원하면 원인을 실은 오류 토스트이고 보관함에 남는다", async ({ page }) => {
+  // 독립 검토(#138) — 복원할 수 없는 행은 「복원」을 내놓지 않는다(§7 할 수 없는 선택지는 숨김). 동작 칸은 빈 칸 표기 「—」.
+  test("지난 날짜로 보관된 공휴일은 보관함에 남되 「복원」 버튼이 없다", async ({ page }) => {
     await db.insert(holidays).values({ ...PAST_ARCHIVED, kind: "temporary", archivedAt: new Date(), archivedBy: null });
     await loginAsSysadmin(page);
     await page.goto("/admin/archive");
     const archiveRow = page.locator("tr", { hasText: `${PAST_ARCHIVED.date} ${PAST_ARCHIVED.name}` });
     await expect(archiveRow).toHaveCount(1);
-
-    await archiveRow.getByRole("button", { name: "복원" }).click();
-    await expect(page.getByText("복원 · 실패 · 오늘·지난 날짜", { exact: true })).toBeVisible({ timeout: 15000 });
-    await page.reload();
-    await expect(archiveRow).toHaveCount(1);
+    await expect(archiveRow.getByRole("button", { name: "복원" })).toHaveCount(0);
+    await expect(archiveRow.locator("td").last()).toHaveText("—");
   });
 });
 

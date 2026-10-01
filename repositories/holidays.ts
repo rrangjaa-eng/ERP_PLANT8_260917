@@ -300,7 +300,7 @@ export async function restoreHolidayById(viewer: Viewer, id: string, tx: DbOrTx 
 
 export async function listArchivedHolidays(
   viewer: Viewer,
-): Promise<{ id: string; name: string; archivedAt: Date; archivedBy: string | null }[]> {
+): Promise<{ id: string; name: string; date: string; archivedAt: Date; archivedBy: string | null }[]> {
   void viewer;
   const rows = await db
     .select({
@@ -315,6 +315,7 @@ export async function listArchivedHolidays(
   return rows.map((row) => ({
     id: row.id,
     name: `${row.date} ${row.name}`,
+    date: row.date,
     archivedAt: row.archivedAt as Date,
     archivedBy: row.archivedBy,
   }));

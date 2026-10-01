@@ -38,6 +38,8 @@ export type ArchivedItem = {
   name: string;
   archivedAt: Date;
   archivedBy: string | null;
+  // 공휴일만 — 복원 가능 판정(소급 금지)에 쓰는 날짜. 화면 DTO에는 싣지 않는다.
+  date?: string;
 };
 
 export type ArchivableEntry = {

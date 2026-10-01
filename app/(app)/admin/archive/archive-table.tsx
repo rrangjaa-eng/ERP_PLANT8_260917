@@ -15,6 +15,7 @@ export type ArchiveTableRow = {
   name: string;
   archivedAtLabel: string;
   archivedBy: string | null;
+  restorable: boolean;
 };
 
 // ADMN-12: page.tsx가 EMPTY/표 갈림을 여기로 넘긴 이유 — 복원은
@@ -66,15 +67,20 @@ export function ArchiveTable({ rows }: { rows: ArchiveTableRow[] }) {
                   <td className={`${styles.archivedAt} ${styles.p2}`}>{item.archivedAtLabel}</td>
                   <td className={styles.p2}>{item.archivedBy ?? "—"}</td>
                   <td>
-                    <RestoreRowButton
-                      entity={item.entity}
-                      id={item.id}
-                      name={item.name}
-                      onRestored={(name) => setToast({ message: `복원 · ${name} 복원됨`, tone: "default" })}
-                      onFailed={(reason) =>
-                        setToast({ message: `복원 · 실패 · ${reason?.split(" · ")[0] ?? "다시 시도"}`, tone: "error" })
-                      }
-                    />
+                    {/* 복원할 수 없는 행(지난 날짜 공휴일 등)은 버튼을 숨긴다(§7) — 빈 칸 표기는 보관한 사람 칸과 같은 「—」. */}
+                    {item.restorable ? (
+                      <RestoreRowButton
+                        entity={item.entity}
+                        id={item.id}
+                        name={item.name}
+                        onRestored={(name) => setToast({ message: `복원 · ${name} 복원됨`, tone: "default" })}
+                        onFailed={(reason) =>
+                          setToast({ message: `복원 · 실패 · ${reason?.split(" · ")[0] ?? "다시 시도"}`, tone: "error" })
+                        }
+                      />
+                    ) : (
+                      "—"
+                    )}
                   </td>
                 </tr>
                 <tr className={styles.collapsedRow}>

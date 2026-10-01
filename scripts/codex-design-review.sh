@@ -32,6 +32,11 @@ if [ -n "$out" ]; then
     *) out="" ;;
   esac
   [ -L "$out" ] && out=""
+  # 하드링크(링크 수 > 1)도 보호 파일과 내용을 같이 쓴다 — 거부한다. 확인이 실패해도 거부한다.
+  if [ -n "$out" ] && [ -e "$out" ]; then
+    links="$(find "$out" -prune -links +1 2>/dev/null)" || out=""
+    [ -n "$links" ] && out=""
+  fi
 fi
 if [ -z "$out" ]; then
   echo "--out은 .planning/·test-results/ 아래 .md여야 한다" >&2
@@ -49,7 +54,9 @@ fi
 if [ -n "$reason" ]; then
   mkdir -p "$(dirname "$out")"
   line="Codex 디자인 검토 건너뜀: $reason"
-  printf '%s\n' "$line" > "$out"
+  # 새 임시 파일에 쓴 뒤 mv로 바꿔 끼운다 — 그 사이 링크가 생겨도 링크 대상을 덮지 않는다.
+  tmp="$(mktemp "$out.XXXXXX")" || exit 1
+  { printf '%s\n' "$line" > "$tmp" && chmod 644 "$tmp" && mv -fT -- "$tmp" "$out"; } || { rm -f -- "$tmp"; exit 1; }
   echo "$line"
   exit 0
 fi

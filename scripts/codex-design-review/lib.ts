@@ -4,8 +4,8 @@
 // 판정은 DOM 실측으로만 한다(CLAUDE.md §6 「스크린샷 육안 판정 금지」).
 
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, realpathSync } from "node:fs";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 export const VIEWPORTS = [
   { width: 375, height: 800 },
@@ -114,7 +114,9 @@ export function assertRealPaths(args: { out: string; plans: string[] }, root = p
     return resolve(realpathSync(cur), relative(cur, path));
   };
   const outAbs = resolve(root, args.out);
-  if ((existsSync(outAbs) && lstatSync(outAbs).isSymbolicLink()) || !inside(nearestReal(outAbs), [".planning", "test-results"])) {
+  // 하드링크는 realpath로 드러나지 않는다 — 이미 있는 파일의 링크 수가 1보다 크면 거부한다.
+  const linked = existsSync(outAbs) && (lstatSync(outAbs).isSymbolicLink() || lstatSync(outAbs).nlink > 1);
+  if (linked || !inside(nearestReal(outAbs), [".planning", "test-results"])) {
     throw new Error(`--out은 링크가 아닌 .planning/·test-results/ 안 파일이어야 한다: ${args.out}`);
   }
   for (const plan of args.plans) {
@@ -125,19 +127,51 @@ export function assertRealPaths(args: { out: string; plans: string[] }, root = p
   }
 }
 
+// 보고서는 같은 폴더의 새 임시 파일에 쓴 뒤 rename으로 바꿔 끼운다. 검사와 쓰기 사이에 그 자리가
+// 링크(심볼릭·하드)로 바뀌어도 rename은 링크 자리만 바꾸므로 링크 대상(보호 파일)을 덮지 않는다.
+export function writeReport(path: string, text: string): void {
+  mkdirSync(dirname(resolve(path)), { recursive: true });
+  const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    writeFileSync(tmp, text, { flag: "wx" });
+    renameSync(tmp, path);
+  } catch (error) {
+    rmSync(tmp, { force: true });
+    throw error;
+  }
+}
+
+// 폴더의 .env* 파일 내용(가릴 비밀 후보). 심볼릭 링크는 따라가 읽고(워크트리에서 흔하다) 폴더는 건너뛴다.
+export function envFileTexts(dir: string): string[] {
+  return readdirSync(dir)
+    .filter((name) => /^\.env/.test(name) && statSync(join(dir, name), { throwIfNoEntry: false })?.isFile())
+    .map((name) => readFileSync(join(dir, name), "utf8"));
+}
+
 // 동적 경로 자리 표시: {adminId} = 캡처 때 만든 관리자 계정 id(예: /admin/people/{adminId}).
 export function fillRoute(route: string, vars: { adminId: string }): string {
   return route.replaceAll("{adminId}", vars.adminId);
 }
 
 // .env 계열 파일에서 가릴 값을 모은다(8자 이상). Codex 출력에 섞여도 파일로 남기기 전에 가린다.
+// dotenv(@next/env)와 같은 문법으로 읽는다: 따옴표 값은 이스케이프·여러 줄 포함 닫는 따옴표까지,
+// 따옴표 없는 값은 첫 # 앞까지. 여러 줄 값(개인 키 등)은 줄마다도 가린다(일부만 되풀이돼도 가리게).
+const DOTENV_LINE =
+  /^\s*(?:export\s+)?[\w.-]+(?:\s*=\s*?|:\s+?)(\s*'(?:\\'|[^'])*'|\s*"(?:\\"|[^"])*"|\s*`(?:\\`|[^`])*`|[^#\r\n]+)?\s*(?:#.*)?$/gm;
 export function envFileSecrets(texts: string[]): string[] {
   const values: string[] = [];
   for (const text of texts) {
-    for (const line of text.split("\n")) {
-      const match = /^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*(.*)$/.exec(line);
-      const value = (match?.[1] ?? "").trim().replace(/^(["'])(.*)\1$/, "$2");
-      if (value.length >= 8) values.push(value);
+    for (const match of text.replace(/\r\n?/g, "\n").matchAll(DOTENV_LINE)) {
+      const raw = (match[1] ?? "").trim();
+      const quote = raw[0];
+      let value = raw;
+      if ((quote === "'" || quote === '"' || quote === "`") && raw.endsWith(quote) && raw.length >= 2) {
+        value = raw.slice(1, -1);
+        if (quote === '"') value = value.replace(/\\n/g, "\n").replace(/\\r/g, "\r");
+      }
+      for (const v of [value, ...(value.includes("\n") ? value.split("\n") : [])]) {
+        if (v.trim().length >= 8) values.push(v.includes("\n") ? v : v.trim());
+      }
     }
   }
   return values;
@@ -280,7 +314,8 @@ export function buildPrompt(input: {
 
 export function codexArgs(prompt: string, imageFiles: string[]): string[] {
   // -i <FILE>...은 뒤 인자를 모두 파일로 먹는다 — 프롬프트를 첫 -i보다 앞에 둔다.
-  return ["exec", "--skip-git-repo-check", "-s", "read-only", prompt, ...imageFiles.flatMap((f) => ["-i", f])];
+  // --ephemeral: Codex 세션 파일(프롬프트·도구 실행 기록)을 CODEX_HOME에 남기지 않는다.
+  return ["exec", "--ephemeral", "--skip-git-repo-check", "-s", "read-only", prompt, ...imageFiles.flatMap((f) => ["-i", f])];
 }
 
 export function parseCodexFindings(stdout: string): Finding[] {

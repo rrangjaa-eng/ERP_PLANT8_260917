@@ -91,11 +91,29 @@ function measurePage(): Omit<ScreenMeasure, "route" | "width" | "screenshot" | "
     }
     return parts.join(" > ");
   };
+  // 시각적으로 숨긴 요소는 스크린샷에 없으니 재지 않는다: .sr-only처럼 잘린 1px 상자와 접힌 칸(높이 0 +
+  // overflow 숨김) 안, 문서 위로 띄워 둔 절대 위치 요소(건너뛰기 링크). 왼쪽·오른쪽 밖으로 밀린 요소와
+  // 화면 아래쪽 내용은 잰다(넘침 결함이거나 전체 화면 스크린샷에 있다).
+  const clippedAway = (el: Element) => {
+    for (let cur: Element | null = el; cur && cur !== document.body; cur = cur.parentElement) {
+      const style = getComputedStyle(cur);
+      if (style.display === "contents") continue; // 상자가 없어 0×0으로 잡힌다
+      const r = cur.getBoundingClientRect();
+      const cut = style.clip !== "auto" || style.clipPath !== "none";
+      // 자기 자신: .sr-only(잘린 1px 상자). 조상: clip으로 잘린 칸, 높이 0으로 접힌 칸(overflow 숨김).
+      // 폭만 0으로 눌린 칸은 숨김이 아니라 레이아웃 결함일 수 있어 잰다.
+      if (cur === el && (cut || style.overflow !== "visible") && r.width <= 1 && r.height <= 1) return true;
+      if (cur !== el && ((cut && (r.width <= 1 || r.height <= 1)) || (style.overflow !== "visible" && r.height <= 1))) return true;
+    }
+    return false;
+  };
   const visible = (el: Element) => {
     const r = el.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0) return false;
     const style = getComputedStyle(el);
-    return style.visibility !== "hidden" && Number(style.opacity) > 0 && el.checkVisibility();
+    const lifted = style.position === "absolute" || style.position === "fixed";
+    if (lifted && r.bottom + window.scrollY <= 0) return false;
+    return style.visibility !== "hidden" && Number(style.opacity) > 0 && el.checkVisibility() && !clippedAway(el);
   };
   const isScroller = (el: Element) => {
     const x = getComputedStyle(el).overflowX;

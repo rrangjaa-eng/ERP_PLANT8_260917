@@ -10,6 +10,7 @@ import {
   codexEnv,
   crossCheck,
   envFileSecrets,
+  envFileTexts,
   measurementsToMarkdown,
   parseArgs,
   parseCodexFindings,
@@ -17,6 +18,7 @@ import {
   renderReport,
   selectSystemSections,
   skipLine,
+  writeReport,
   type ScreenMeasure,
 } from "./lib";
 
@@ -111,11 +113,7 @@ rmSync(codexDir, { recursive: true, force: true });
 // Codex 출력은 파일로 남기기 전에 비밀을 가린다(자격 원본, auth.json 토큰 값, 저장소 .env* 값, 토큰 모양).
 const secrets = [
   authB64 ?? "",
-  ...envFileSecrets(
-    readdirSync(".")
-      .filter((f) => /^\.env/.test(f))
-      .map((f) => readFileSync(f, "utf8")),
-  ),
+  ...envFileSecrets(envFileTexts(".")),
 ];
 try {
   const auth = JSON.parse(readFileSync(join(process.env.CODEX_HOME ?? join(homedir(), ".codex"), "auth.json"), "utf8")) as {
@@ -133,8 +131,8 @@ const codexFailure = codex.error ? (codex.error as NodeJS.ErrnoException).code ?
 const codexStatus = codex.status === 0 ? "Codex 실행: 완료(exit 0)" : skipLine(`codex exec 실패(${codexFailure})`);
 
 const rows = crossCheck(parseCodexFindings(codexRaw), screens);
-mkdirSync(dirname(resolve(args.out)), { recursive: true });
-writeFileSync(
+assertRealPaths(args); // 캡처·codex 동안 경로가 바뀌었을 수 있다 — 쓰기 직전에 다시 본다
+writeReport(
   args.out,
   renderReport({ mode, base: args.base, plans: args.plans, artifactsDir, codexStatus, rows, measurementsMd, codexOutputPath }),
 );

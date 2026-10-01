@@ -24,3 +24,20 @@ registerAction({
   action: "write",
   dtoName: "CertPrizeDto",
 });
+
+// 04.3-17 — 「링크 닫기」는 결과 종류와 제출 수만 돌려준다(행 DTO 없음).
+registerAction({
+  name: "closeCertEventAction",
+  menu: "certs.qr",
+  action: "write",
+  dtoName: null,
+});
+
+// 04.3-17 — 「신청 취소」는 결과 종류 · 행사 이름 · 경품 줄 수만 돌려준다(행 DTO 없음). 신청자(certs.events 쓰기) 또는
+// 경영관리(certs.qr 쓰기)가 부른다 — 판정은 domain cancelRequest(H-2).
+registerAction({
+  name: "cancelCertRequestAction",
+  menu: "certs.events",
+  action: "write",
+  dtoName: null,
+});

@@ -8,6 +8,8 @@ import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { QrSection } from "./qr-section";
 import { PrizeSection } from "./prize-section";
 import { SubmissionsSection } from "./submissions-section";
+import { HeaderActions } from "./header-actions";
+import { LandingToast } from "../landing-toast";
 import { QR_SECTION_LABEL_ID } from "./prize-table-rules";
 import styles from "./event-detail.module.css";
 
@@ -30,13 +32,21 @@ function closedLine(event: Partial<CertEventDetailDto>): string {
 const STATUS_LABEL = { requested: "신청됨", open: "접수 중", closed: "닫힘" } as const;
 
 // 04.3-04 Task 4 ① · 04.3-15 · 04.3-10 — I′3 행사 상세 머리 · QR 섹션 · 경품 섹션(§6-2 ⑯). 기능이 꺼져 있거나 범위 밖이면
-// 셸 안 404(C1 · T-04.3-19). 제출 섹션 · 「링크 닫기」 · 「신청 취소」는 04.3-17이 더한다(빈 버튼을 두지 않는다). 섹션에
-// key를 준다 — QR 생성 뒤 QR 섹션이 앞에 끼어도 경품 섹션(토스트 · 포커스 상태)이 다시 마운트되지 않는다.
-export default async function CertEventDetailPage({ params }: { params: Promise<{ id: string }> }) {
+// 셸 안 404(C1 · T-04.3-19). 04.3-17 — 머리 2차 「링크 닫기」 · 「신청 취소」와 제출 섹션(대조). 섹션에 key를 준다 — QR 생성 뒤
+// QR 섹션이 앞에 끼어도 경품 섹션(토스트 · 포커스 상태)이 다시 마운트되지 않는다. `?excluded={제출 id}`는 I4 「대조 제외」 뒤
+// 착지 — 그 줄(제외된 줄)의 이름으로 토스트 · 그 줄 「제출 내용」에 포커스(T3).
+export default async function CertEventDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ excluded?: string }>;
+}) {
   const { viewer } = await requireSession();
   await assertCertFeatureEnabled();
 
   const { id } = await params;
+  const { excluded } = await searchParams;
   const detail = await getEventDetail(viewer, id);
   if (detail.kind === "notFound") notFound();
   const event = detail.event;
@@ -54,6 +64,9 @@ export default async function CertEventDetailPage({ params }: { params: Promise<
   // 파생 태그 `접수 전`(UD-1 b) — QR이 있고 당첨일 00:00 KST 전. 행동은 접수 중과 같다.
   const tag = open && event.beforeOpen ? "접수 전" : event.status ? STATUS_LABEL[event.status] : null;
   const gate = event.canManagePrizes && event.status === "requested" ? await getCreateGate(viewer) : null;
+  const excludedRow = excluded
+    ? event.submissions?.flatMap((group) => group.rows).find((row) => row.id === excluded && row.excluded)
+    : undefined;
 
   return (
     <>
@@ -65,6 +78,16 @@ export default async function CertEventDetailPage({ params }: { params: Promise<
           <StatusTag kind={open && !event.beforeOpen ? "accent" : "muted"} variant="tag">
             {tag}
           </StatusTag>
+        ) : null}
+        {event.id ? (
+          <HeaderActions
+            eventId={event.id}
+            eventName={name}
+            submittedCount={event.submittedCount ?? 0}
+            canClose={event.canClose === true}
+            cancelRole={event.cancelRole ?? null}
+            prizeCount={event.prizes?.length ?? 0}
+          />
         ) : null}
       </div>
 
@@ -89,7 +112,14 @@ export default async function CertEventDetailPage({ params }: { params: Promise<
       ) : null}
 
       {/* 04.3-17 — 제출 섹션: 접수 중(접수 전 포함) · 닫힘이고 서버가 키를 실었을 때만(I4를 열 수 있는 사람 — N7 a). */}
-      {event.status !== "requested" && event.submissions ? <SubmissionsSection key="submissions" groups={event.submissions} /> : null}
+      {event.status !== "requested" && event.submissions ? (
+        <SubmissionsSection
+          key="submissions"
+          groups={event.submissions}
+          {...(excludedRow?.id ? { focusSubmissionId: excludedRow.id } : {})}
+        />
+      ) : null}
+      {excludedRow ? <LandingToast message={`대조 제외 · ${excludedRow.name ?? ""}`} href={`/certs/events/${id}`} /> : null}
     </>
   );
 }

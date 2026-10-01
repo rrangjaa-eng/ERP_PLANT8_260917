@@ -298,3 +298,12 @@
     border-bottom: var(--line-w) solid var(--line);
   }
 }
+
+/* 04.3-17 머리 2차(링크 닫기 · 신청 취소) — 제목 · 태그 오른쪽 끝, 막힘 이유는 버튼 옆(§7-1). */
+.headerActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  margin-left: auto;
+}

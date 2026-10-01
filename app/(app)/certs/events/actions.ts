@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
 import { assertCertFeatureEnabled } from "@/lib/certs/feature-guard";
-import { generateQr, prizeChangesSchema, requestQr, savePrizes } from "@/domain/certs/events";
+import { cancelRequest, closeEvent, generateQr, prizeChangesSchema, requestQr, savePrizes } from "@/domain/certs/events";
 import "./actions.registry";
 
 // 04.3-10 — 「QR 생성 신청」(I′2) · 「QR 생성」(I′3 신청됨 1차) · 경품 표 저장(I′3 「일괄 저장」 · Ctrl+S). 첫 줄 기능 게이트(C1) → domain 함수 하나 → 결과 유니온
@@ -38,5 +38,29 @@ export const saveCertPrizesAction = authedActionClient
     await assertCertFeatureEnabled();
     const result = await savePrizes(ctx.viewer, parsedInput.eventId, { changes: parsedInput.changes });
     if (result.kind === "saved") revalidatePath(`/certs/events/${parsedInput.eventId}`);
+    return result;
+  });
+
+// 04.3-17 — 「링크 닫기」(I′3 머리 2차 · 확인 모달). 이미 닫혔어도 화면을 다시 그린다(다른 사람이 닫은 상태를 보인다).
+export const closeCertEventAction = authedActionClient
+  .schema(z.object({ eventId: z.string().uuid() }))
+  .action(async ({ parsedInput, ctx }) => {
+    await assertCertFeatureEnabled();
+    const result = await closeEvent(ctx.viewer, parsedInput.eventId);
+    if (result.kind !== "notFound") {
+      revalidatePath(`/certs/events/${parsedInput.eventId}`);
+      revalidatePath("/certs/events");
+    }
+    return result;
+  });
+
+// 04.3-17 — 「신청 취소」(I′3 머리 2차 · 경품 0일 때만 · 확인 없음). 성공이면 화면이 목록으로 간다.
+export const cancelCertRequestAction = authedActionClient
+  .schema(z.object({ eventId: z.string().uuid() }))
+  .action(async ({ parsedInput, ctx }) => {
+    await assertCertFeatureEnabled();
+    const result = await cancelRequest(ctx.viewer, parsedInput.eventId);
+    if (result.kind === "cancelled") revalidatePath("/certs/events");
+    if (result.kind === "hasPrizes") revalidatePath(`/certs/events/${parsedInput.eventId}`);
     return result;
   });

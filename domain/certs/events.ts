@@ -5,7 +5,7 @@ import { can as defaultCan, ForbiddenError } from "@/domain/permissions/can";
 import { visible as defaultVisible } from "@/domain/permissions/visible";
 import { project, projectMany, type DtoSpec } from "@/domain/permissions/project";
 import { registerDto } from "@/domain/permissions/dto-registry";
-import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
+import { recordAction as defaultRecordAction, type RecordActionDeps } from "@/domain/action-log/record";
 import { withTransaction } from "@/lib/db-transaction";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import { decrypt, encrypt } from "@/lib/crypto";
@@ -24,7 +24,11 @@ import { validatePrizeRows, type PrizeCellError, type PrizeRowInput } from "@/do
 import { isCalendarDate } from "@/domain/projects/period";
 import type { DbOrTx } from "@/repositories/document-counters";
 import {
+  clearEventIpHashes,
+  closeEventManual,
+  deleteRequestedEvent,
   findEventByCreateRequest,
+  findEventCreator,
   insertEvent,
   listEventSummaries,
   lockEventRow,
@@ -33,8 +37,18 @@ import {
   type CertEventScope,
   type CertEventSummaryRow,
 } from "@/repositories/cert-events";
-import { applyPrizeRows, listPrizeSummaries, type CertPrizeSummaryRow, type PrizeRowValues } from "@/repositories/cert-prizes";
-import { listSubmissionsForReconcile, type CertSubmissionReconcileRow } from "@/repositories/cert-submissions";
+import {
+  applyPrizeRows,
+  listPrizeSummaries,
+  listPrizesForEvent,
+  type CertPrizeSummaryRow,
+  type PrizeRowValues,
+} from "@/repositories/cert-prizes";
+import {
+  countActiveSubmissionsByEvent,
+  listSubmissionsForReconcile,
+  type CertSubmissionReconcileRow,
+} from "@/repositories/cert-submissions";
 import { insertEventNotifications } from "@/repositories/notifications";
 import { listActiveUserIdsAllowed } from "@/repositories/permissions";
 import { findUserById } from "@/repositories/users";
@@ -139,6 +153,10 @@ export type CertEventDetailDto = CertEventListDto & {
   qrSvg: string;
   requestedAt: string;
   canManagePrizes: boolean;
+  // 04.3-17 머리 2차 — 「링크 닫기」(접수 중 + certs.qr 쓰기) · 「신청 취소」(신청됨 + certs.qr 쓰기면 manager ·
+  // 신청자 ∧ certs.events 쓰기면 applicant — 서버 cancelRequest와 같은 판정, H-2). 화면은 이 값만 본다.
+  canClose: boolean;
+  cancelRole: "manager" | "applicant" | null;
   prizes: Partial<CertPrizeDto>[];
   // I4를 열 수 있는 사람(대표 계급 아님 · certs.submissions 보기 · cert_submission.value)에게만 — 아니면 키 자체가 없다(N7 a).
   submissions: CertSubmissionGroupDto[];
@@ -172,6 +190,8 @@ const DETAIL_FIELDS = [
   "qrSvg",
   "requestedAt",
   "canManagePrizes",
+  "canClose",
+  "cancelRole",
   "prizes",
 ] as const satisfies ReadonlyArray<keyof CertEventDetailDto>;
 
@@ -306,12 +326,21 @@ export async function getEventDetail(
   const head = toListDto(row, now);
   const canManagePrizes = await canManagePrizesOf(viewer);
   const prizeRows = await listPrizeSummaries(viewer, eventId);
+  const qrWrite = await defaultCan(viewer, CERT_QR_MENU, "write");
+  const me = createdByOf(viewer);
+  let cancelRole: CertEventDetailDto["cancelRole"] = null;
+  if (head.status === "requested") {
+    if (qrWrite) cancelRole = "manager";
+    else if (me !== null && row.createdBy === me && (await defaultCan(viewer, CERT_EVENTS_MENU, "write"))) cancelRole = "applicant";
+  }
   const detail: Omit<CertEventDetailDto, "link" | "qrSvg" | "submissions"> &
     Partial<Pick<CertEventDetailDto, "link" | "qrSvg" | "submissions">> = {
     ...head,
     expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
     requestedAt: row.createdAt.toISOString(),
     canManagePrizes,
+    canClose: head.status === "open" && qrWrite,
+    cancelRole,
     prizes: await prizeDtos(viewer, prizeRows, canManagePrizes),
   };
   if (await canSeeSubmissionsOf(viewer)) {
@@ -826,4 +855,80 @@ export async function savePrizes(
   if (result.kind === "conflict") return { kind: "conflict", prizes: await prizeDtos(viewer, result.summaries, true) };
   if (result.kind === "readOnly") return { kind: "readOnly", prizes: await prizeDtos(viewer, result.summaries, true) };
   return result;
+}
+
+// ── 「링크 닫기」 · 「신청 취소」(I′3 머리 2차 — 04.3-17) ─────────────────────────────────────
+
+export type CertEventWriteDeps = {
+  now: () => Date;
+  appendActionLog: RecordActionDeps["appendActionLog"];
+  withTransaction: typeof withTransaction;
+};
+
+export type CloseEventResult = { kind: "closed"; submitted: number } | { kind: "alreadyClosed" } | { kind: "notFound" };
+
+// 게이트(notFound) → certs.qr 쓰기(아니면 Forbidden) → 범위(notFound) — 권한 · 범위는 전역 풀 읽기라 트랜잭션 전(W1) →
+// 트랜잭션: 행사 행 잠금 먼저(null이면 notFound — E13) → 신청됨(QR 없음)이면 notFound → 이미 닫힘(닫힌 시각 또는 마감 지남 —
+// E38)이면 alreadyClosed(쓰기 0) → 닫힘 UPDATE(manual · 닫은 사람) → 그 행사 제출의 IP 가명 비움(E21) → 같은 tx로 끌 수 없는
+// status_change — 로그가 실패하면 닫힘도 되돌아간다. 닫힌 시각은 잠근 뒤의 시각이다(앞서 잠근 제출의 시각보다 늦다). 다시 여는
+// 함수는 두지 않는다.
+export async function closeEvent(viewer: Viewer, eventId: string, deps?: Partial<CertEventWriteDeps>): Promise<CloseEventResult> {
+  if (!(await isCertFeatureEnabled())) return { kind: "notFound" };
+  if (!(await defaultCan(viewer, CERT_QR_MENU, "write"))) throw new ForbiddenError(CERT_FORBIDDEN_MESSAGE);
+  if (!(await inScope(viewer, eventId))) return { kind: "notFound" };
+  const by = createdByOf(viewer);
+
+  return (deps?.withTransaction ?? withTransaction)(async (tx): Promise<CloseEventResult> => {
+    const locked = await lockEventRow(viewer, eventId, tx);
+    if (!locked || locked.tokenHash === null) return { kind: "notFound" };
+    const at = deps?.now?.() ?? new Date();
+    const expired = locked.expiresAt !== null && locked.expiresAt.getTime() <= at.getTime();
+    if (locked.closedAt !== null || expired) return { kind: "alreadyClosed" };
+
+    await closeEventManual(viewer, eventId, { at, by }, tx);
+    await clearEventIpHashes(viewer, eventId, tx);
+    const submitted = await countActiveSubmissionsByEvent(viewer, eventId, tx);
+    await defaultRecordAction(
+      viewer,
+      {
+        actionType: "status_change",
+        entity: "cert_event",
+        entityId: eventId,
+        detail: { from: "open", to: "closed", reason: "manual" },
+      },
+      { tx, appendActionLog: deps?.appendActionLog },
+    );
+    return { kind: "closed", submitted };
+  });
+}
+
+export type CancelRequestResult = { kind: "cancelled"; name: string } | { kind: "hasPrizes"; count: number } | { kind: "notFound" };
+
+// 게이트(notFound) → (신청자 ∧ certs.events 쓰기) 또는 certs.qr 쓰기(아니면 Forbidden — 신청자 갈래도 쓰기를 다시 본다, 새 흐름
+// 설계 /cso H-2) → 범위(notFound) → 트랜잭션: 행사 행 잠금 먼저(null이면 notFound — E13) → QR이 생겼으면 notFound → 저장된 경품
+// 줄이 있으면 hasPrizes(쓰기 0 — N4 a) → 행 삭제(N16 a) → 같은 tx로 document_delete(행사 이름뿐).
+export async function cancelRequest(viewer: Viewer, eventId: string, deps?: Partial<CertEventWriteDeps>): Promise<CancelRequestResult> {
+  if (!(await isCertFeatureEnabled())) return { kind: "notFound" };
+  if (!UUID_PATTERN.test(eventId)) return { kind: "notFound" };
+  const creator = await findEventCreator(viewer, eventId);
+  if (creator === undefined) return { kind: "notFound" };
+  const me = createdByOf(viewer);
+  const canAsManager = await defaultCan(viewer, CERT_QR_MENU, "write");
+  const canAsApplicant = me !== null && creator === me && (await defaultCan(viewer, CERT_EVENTS_MENU, "write"));
+  if (!canAsManager && !canAsApplicant) throw new ForbiddenError(CERT_FORBIDDEN_MESSAGE);
+  if (!(await inScope(viewer, eventId))) return { kind: "notFound" };
+
+  return (deps?.withTransaction ?? withTransaction)(async (tx): Promise<CancelRequestResult> => {
+    const locked = await lockEventRow(viewer, eventId, tx);
+    if (!locked || locked.tokenHash !== null) return { kind: "notFound" };
+    const prizes = await listPrizesForEvent(viewer, eventId, tx);
+    if (prizes.length > 0) return { kind: "hasPrizes", count: prizes.length };
+    if ((await deleteRequestedEvent(viewer, eventId, tx)) === 0) return { kind: "notFound" };
+    await defaultRecordAction(
+      viewer,
+      { actionType: "document_delete", entity: "cert_event", entityId: eventId, detail: { name: locked.name } },
+      { tx, appendActionLog: deps?.appendActionLog },
+    );
+    return { kind: "cancelled", name: locked.name };
+  });
 }

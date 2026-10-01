@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db, type DbOrTx } from "@/db/client";
@@ -98,6 +98,51 @@ export async function setQrGenerated(
     .where(eq(certEvents.id, eventId));
 }
 
+// 04.3-17 「링크 닫기」 — 잠근 행(lockEventRow)에 닫힌 시각 · 사유(manual) · 닫은 사람을 채운다. 아직 닫히지 않았을 때만(조건부).
+export async function closeEventManual(
+  viewer: Viewer,
+  eventId: string,
+  input: { at: Date; by: string | null },
+  tx: DbOrTx,
+): Promise<number> {
+  void viewer;
+  const rows = await tx
+    .update(certEvents)
+    .set({ closedAt: input.at, closedReason: "manual", closedBy: input.by, updatedAt: input.at })
+    .where(and(eq(certEvents.id, eventId), isNull(certEvents.closedAt)))
+    .returning({ id: certEvents.id });
+  return rows.length;
+}
+
+// 04.3-17(E21) — 닫은 행사 제출의 속도 제한용 IP 가명(submit_ip_hash)을 비운다. 15분 셈에만 쓰는 가명이라 닫히면 쓸 일이 없다
+// (보호법 제21조①). 마감으로 닫힌 행사는 04.3-12 파기 Job이 비운다. version은 올리지 않는다(I4 낙관적 잠금과 무관).
+export async function clearEventIpHashes(viewer: Viewer, eventId: string, tx: DbOrTx): Promise<number> {
+  void viewer;
+  const rows = await tx
+    .update(certSubmissions)
+    .set({ submitIpHash: null })
+    .where(and(eq(certSubmissions.eventId, eventId), isNotNull(certSubmissions.submitIpHash)))
+    .returning({ id: certSubmissions.id });
+  return rows.length;
+}
+
+// 04.3-17 「신청 취소」 — 신청됨(토큰 없음) 행사 행을 지운다(N16 a — 보관함 규약 예외). 호출자가 잠근 뒤 경품 0을 확인했다.
+export async function deleteRequestedEvent(viewer: Viewer, eventId: string, tx: DbOrTx): Promise<number> {
+  void viewer;
+  const rows = await tx
+    .delete(certEvents)
+    .where(and(eq(certEvents.id, eventId), isNull(certEvents.tokenHash)))
+    .returning({ id: certEvents.id });
+  return rows.length;
+}
+
+// 04.3-17 「신청 취소」 권한 판정 재료 — 신청자(created_by). 행이 없으면 undefined. 잠그지 않는다(트랜잭션 전 판정).
+export async function findEventCreator(viewer: Viewer, eventId: string): Promise<string | null | undefined> {
+  void viewer;
+  const [row] = await db.select({ createdBy: certEvents.createdBy }).from(certEvents).where(eq(certEvents.id, eventId)).limit(1);
+  return row ? row.createdBy : undefined;
+}
+
 // 04.3-04 Task 2 ④ — 내부 목록 · 상세. 범위 서술자: createdBy가 undefined면
 // 전부, 값이면 그 사람이 만든 행사만(null = 시스템이 만든 행사).
 export type CertEventScope = { createdBy?: string | null };
@@ -111,6 +156,8 @@ export type CertEventSummaryRow = {
   closedAt: Date | null;
   closedReason: string | null;
   tokenEncrypted: string | null;
+  // 04.3-17 — 「신청 취소」 신청자 갈래(H-2) 판정 재료.
+  createdBy: string | null;
   ownerName: string | null;
   closerName: string | null;
   submittedCount: number;
@@ -150,6 +197,7 @@ export async function listEventSummaries(
       closedAt: certEvents.closedAt,
       closedReason: certEvents.closedReason,
       tokenEncrypted: certEvents.tokenEncrypted,
+      createdBy: certEvents.createdBy,
       ownerName: owner.name,
       closerName: closer.name,
       submittedCount: sql<number>`coalesce(${tally.submitted}, 0)`,

@@ -2,17 +2,17 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { eq, like, sql } from "drizzle-orm";
+import { and, eq, like, sql } from "drizzle-orm";
 import { Client } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db/client";
-import { certEvents, certSignatureUploads, certSubmissions } from "@/db/schema";
+import { certEvents, certSignatureUploads, certSubmissions, documentCounters } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { loadIntake, submitCertificate, type SubmitCertificateInput } from "@/domain/certs/intake";
 import { CERT_CONSENT_VERSION } from "@/domain/certs/consent";
 import { getSettingValue, setSettingValue } from "@/domain/settings/registry";
 import { CERT_ENABLED, CERT_RETENTION_YEARS } from "@/domain/settings/keys";
-import { addDays, kstDayStart, kstToday } from "@/lib/kst-date";
+import { addDays, kstDayStart, kstToday, kstYear } from "@/lib/kst-date";
 import { env } from "@/lib/env";
 import { log } from "@/lib/log";
 import { handleServerError } from "@/lib/actions/handle-server-error";
@@ -506,6 +506,32 @@ describe("경합 — 제출과 가액 변경(행사 행 잠금 규약)", () => {
       .from(certSignatureUploads)
       .where(like(certSignatureUploads.objectKey, `signatures/${ev.eventId}/%`));
     expect(intents).toHaveLength(0);
+  });
+
+  it("E13 — 제출이 행사 행 잠금을 기다리는 사이 행사 행이 지워지면 notFound · 저장 0 · 번호 카운터 그대로 · 객체 0", async () => {
+    const ev = await leakEvent();
+    const counterOf = async () => {
+      const [row] = await db
+        .select({ value: documentCounters.value })
+        .from(documentCounters)
+        .where(and(eq(documentCounters.counterKey, "cert"), eq(documentCounters.period, String(kstYear(new Date())))));
+      return row?.value ?? null;
+    };
+    const counterBefore = await counterOf();
+    let holder: Awaited<ReturnType<typeof holdEventRow>> | undefined;
+    const result = await submitCertificate(ev.token, inputFor(ev.prizeA, await currentTerms()), "203.0.113.9", {
+      signatureStore: storeAfterPut(async () => {
+        holder = await holdEventRow(ev.eventId, async (client) => {
+          await client.query("DELETE FROM cert_prizes WHERE event_id = $1", [ev.eventId]);
+          await client.query("DELETE FROM cert_events WHERE id = $1", [ev.eventId]);
+        });
+        setTimeout(() => void holder?.commit(), 300);
+      }),
+    });
+    expect(result.kind).toBe("notFound");
+    expect(await submissionsOf(ev.eventId)).toHaveLength(0);
+    expect(await counterOf()).toBe(counterBefore);
+    expect(objectCount(ev.eventId)).toBe(0);
   });
 });
 

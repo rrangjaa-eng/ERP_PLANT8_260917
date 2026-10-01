@@ -1,16 +1,14 @@
 ---
 phase: 02-design-system-app-shell
-verified: 2026-09-24T09:42:24Z
-status: human_needed
+verified: 2026-10-01T03:40:00Z
+status: passed
 score: 5/5 must-haves verified
 mode: mvp
 mvp_user_story_valid: false
 covered_files:
-  - ".dockerignore"
   - ".github/workflows/ci.yml"
   - ".github/workflows/deploy.yml"
   - ".planning/REQUIREMENTS.md"
-  - ".planning/WINDOWS.md"
   - ".planning/phases/02-design-system-app-shell/02-01-PLAN.md"
   - ".planning/phases/02-design-system-app-shell/02-01-SUMMARY.md"
   - ".planning/phases/02-design-system-app-shell/02-02-PLAN.md"
@@ -27,283 +25,97 @@ covered_files:
   - ".planning/phases/02-design-system-app-shell/02-07-SUMMARY.md"
   - ".planning/phases/02-design-system-app-shell/02-08-PLAN.md"
   - ".planning/phases/02-design-system-app-shell/02-08-SUMMARY.md"
-  - ".planning/phases/02-design-system-app-shell/02-CONTEXT.md"
-  - ".planning/phases/02-design-system-app-shell/02-REVIEW-FIX.md"
-  - ".planning/phases/02-design-system-app-shell/02-REVIEW.md"
-  - ".planning/quick/260924-cj5-pc-wordmark-links-to-home/260924-cj5-PLAN.md"
-  - ".planning/quick/260924-cj5-pc-wordmark-links-to-home/260924-cj5-SUMMARY.md"
-  - "TODOS.md"
-  - "app/(app)/account/account.module.css"
-  - "app/(app)/account/change-password-form.tsx"
-  - "app/(app)/account/logout-button.tsx"
   - "app/(app)/account/page.tsx"
-  - "app/(app)/admin/system-status/page.tsx"
-  - "app/(app)/approvals/page.tsx"
-  - "app/(app)/cards/page.tsx"
-  - "app/(app)/error.tsx"
-  - "app/(app)/expenses/page.tsx"
   - "app/(app)/layout.tsx"
-  - "app/(app)/not-found.tsx"
-  - "app/(app)/page.tsx"
-  - "app/(app)/pnl/page.tsx"
-  - "app/(app)/projects/page.tsx"
-  - "app/(app)/settings/page.tsx"
   - "app/(auth)/login/login-error.ts"
-  - "app/(auth)/login/login-form.module.css"
-  - "app/(auth)/login/login-form.tsx"
   - "app/(auth)/login/page.tsx"
   - "app/globals.css"
   - "app/layout.tsx"
-  - "app/not-found.tsx"
-  - "docs/ARCHITECTURE.md"
   - "docs/design/BRIEF.md"
   - "docs/design/DECISIONS.md"
   - "docs/design/EXPLORE.md"
   - "docs/design/SYSTEM.md"
   - "docs/design/tokens.css"
-  - "eslint.config.mjs"
-  - "next.config.ts"
   - "package.json"
-  - "playwright.config.ts"
-  - "pnpm-lock.yaml"
-  - "public/fonts/pretendard/LICENSE.txt"
-  - "public/fonts/pretendard/pretendard-dynamic-subset.css"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.0.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.1.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.10.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.11.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.12.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.13.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.14.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.15.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.16.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.17.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.18.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.19.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.2.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.20.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.21.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.22.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.23.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.24.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.25.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.26.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.27.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.28.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.29.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.3.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.30.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.31.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.32.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.33.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.34.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.35.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.36.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.37.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.38.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.39.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.4.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.40.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.41.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.42.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.43.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.44.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.45.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.46.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.47.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.48.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.49.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.5.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.50.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.51.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.52.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.53.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.54.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.55.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.56.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.57.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.58.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.59.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.6.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.60.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.61.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.62.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.63.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.64.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.65.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.66.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.67.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.68.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.69.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.7.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.70.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.71.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.72.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.73.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.74.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.75.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.76.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.77.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.78.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.79.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.8.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.80.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.81.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.82.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.83.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.84.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.85.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.86.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.87.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.88.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.89.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.9.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.90.woff2"
-  - "public/fonts/pretendard/woff2-dynamic-subset/PretendardVariable.subset.91.woff2"
   - "stylelint.config.mjs"
   - "test/e2e/a11y.spec.ts"
   - "test/e2e/change-password.spec.ts"
-  - "test/e2e/design-review-p2.spec.ts"
   - "test/e2e/fonts.spec.ts"
   - "test/e2e/keyboard-nav.spec.ts"
   - "test/e2e/login-logout.spec.ts"
-  - "test/e2e/logout-failure.spec.ts"
-  - "test/e2e/mobile-design-review-p2.spec.ts"
-  - "test/e2e/mobile-next-turn.spec.ts"
   - "test/e2e/mobile-page-chrome.spec.ts"
   - "test/e2e/mobile-shell.spec.ts"
-  - "test/e2e/mobile-wordmark-home.spec.ts"
   - "test/e2e/page-chrome.spec.ts"
-  - "test/e2e/single-column.spec.ts"
-  - "test/e2e/system-status.spec.ts"
   - "test/e2e/tablet-shell.spec.ts"
   - "test/e2e/user-menu.spec.ts"
-  - "test/e2e/wordmark-home.spec.ts"
-  - "test/unit/ci-guard.test.ts"
-  - "test/unit/deploy/workflows.test.ts"
   - "test/unit/design-system-docs.test.ts"
   - "test/unit/stylelint-config.test.ts"
   - "test/unit/ui/current-path.test.ts"
-  - "test/unit/ui/next-turn-action.test.ts"
-  - "test/unit/ui/next-turn.test.ts"
   - "test/unit/ui/role-menu.test.ts"
-  - "test/unit/ui/single-column.test.ts"
   - "test/unit/ui/system-md-compliance.test.ts"
-  - "test/unit/ui/toast-timer.test.ts"
   - "ui/auth-frame/AuthFrame.module.css"
-  - "ui/auth-frame/AuthFrame.tsx"
-  - "ui/banner/Banner.module.css"
-  - "ui/banner/Banner.tsx"
-  - "ui/button/Button.module.css"
-  - "ui/button/Button.tsx"
-  - "ui/form-alert/FormAlert.module.css"
-  - "ui/form-alert/FormAlert.tsx"
-  - "ui/input/TextField.module.css"
-  - "ui/input/TextField.tsx"
-  - "ui/kv-list/KvList.module.css"
-  - "ui/kv-list/KvList.tsx"
-  - "ui/list-empty/ListEmpty.module.css"
   - "ui/list-empty/ListEmpty.tsx"
-  - "ui/logout/use-logout.ts"
-  - "ui/next-turn/NextTurn.module.css"
-  - "ui/next-turn/NextTurn.tsx"
-  - "ui/next-turn/build-next-turn-view.ts"
-  - "ui/page-header/PageHeader.module.css"
   - "ui/page-header/PageHeader.tsx"
-  - "ui/shell/BottomTabs.module.css"
   - "ui/shell/BottomTabs.tsx"
-  - "ui/shell/MoreSheet.module.css"
   - "ui/shell/MoreSheet.tsx"
-  - "ui/shell/Shell.module.css"
   - "ui/shell/Shell.tsx"
   - "ui/shell/TopBar.module.css"
   - "ui/shell/TopBar.tsx"
-  - "ui/shell/current-path.ts"
   - "ui/shell/role-menu.ts"
-  - "ui/status-tag/StatusTag.module.css"
-  - "ui/status-tag/StatusTag.tsx"
-  - "ui/toast/Toast.module.css"
-  - "ui/toast/Toast.tsx"
-covered_digest: "v1:sha256:202d2b8dce5b614228399c6e26438d08eefc2a3dd4dc7e28b1c262d4bc9dc70b"
+covered_digest: "v1:sha256:292bd2d1e8117395f8a8feaa8cac10dbfa3b49158adb627677ca2b368f890647"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
   previous_status: human_needed
   previous_score: 5/5
-  previous_verified: 2026-09-24T08:02:48Z (HEAD 3c1b015, 커밋 1c93526)
-  reason_latest: "stale — 70e3449..2d7f73e(/design-review FINDING-001~005 수정, /qa ISSUE-001 수정, /review 후 TODOS.md)가 covered_files(TopBar·ListEmpty·account·keyboard-nav 스펙)를 바꿈"
-  changed_latest:
-    - "ui/shell/TopBar.tsx: 워드마크를 next/link href=/ (aria-label 「PLANT8 내 차례」)로 감쌈 — Tab 순서 스킵 링크 → 워드마크 → 프로젝트 (257c2ab)"
-    - "ui/shell/TopBar.module.css: .markLink·.navLink/.userTrigger hover, 사용자 트리거 padding 9px 0(히트 37px), .userMenu top 100%(PC) — 토큰·간격만 (e1435e2, e71aeb9)"
-    - "ui/list-empty/ListEmpty.module.css: EMPTY 3차 링크 밑줄을 border-bottom → text-decoration(토큰) (2342b01)"
-    - "app/(app)/account: 로그아웃을 .accountActions 묶음(--s-6 + 1px --line)으로 분리 (28d9b87)"
-    - "test/e2e/keyboard-nav.spec.ts: 기대 Tab 순서에 워드마크 1줄 추가(단언 삭제 없음) + 신규 wordmark-home·mobile-wordmark-home·design-review-p2·mobile-design-review-p2 스펙"
-    - "human item 「/design-review + /qa」 해소 — 실제 호출됨, 이연 항목은 TODOS.md(0c99443·f2ee86e·2d7f73e)"
-  behavior_checks_closed:
-    - "성공 기준 3 — HEAD 2d7f73e CI=true E2E 176 passed(3.6m, exit 0, failed·flaky 0). 165(3c1b015) + 신규 11(wordmark-home 4 · mobile-wordmark-home 1 · design-review-p2 3 · mobile-design-review-p2 1 · projects-filter-reset 2), 삭제된 test() 0"
-  resolved_human_items:
-    - "gstack /design-review + /qa 호출 — 2026-09-24 실행 완료(FINDING-001~005 수정, QA 6건 중 ISSUE-001 수정·5건 TODOS 이연, /review 치명 0·정보 2)"
-  reason: "stale — covered_files 중 셸(TopBar·MoreSheet·BottomTabs·Shell·role-menu)·tokens.css·SYSTEM.md·DECISIONS.md·globals.css·E2E 스펙·app 화면이 dd8dd81 이후 바뀜(Phase 3·quick 260922-i3k/o2b·Phase 4 04-01)"
-  changed_since_previous:
-    - "docs/design/tokens.css: --auth-max 360px 신설(간격 토큰, DECISIONS.md 2026-09-22 기록) + --form-max 주석. 색·서체·radius 토큰 변화 0"
-    - "docs/design/SYSTEM.md: §6-0 (a)·§7-8 「관리」 한 줄로 개정, §6-10 관리 인덱스·§7-13 체크박스 매트릭스·§7-14 이력 목록·§7-15 폼 신설, §7-3 편집 표 구현 계약 보강, §6-0 하단 탭 표 계급 5종"
-    - "ui/shell: systemStatus → adminMenu(「관리」 한 줄), role-menu.ts가 isAdmin → roleId+allowedMenus(권한표), 폰 44 터치 목표 CSS, MoreSheet 그룹 머리글·inset-block-start, 로그아웃 실패 FormAlert(use-logout)"
-    - "app/globals.css: .single-column 유틸(max-width: var(--form-max)) 추가만"
-    - "E2E 스펙: isAdmin → roleId 픽스처 교체, 단언 삭제 0건(제거된 줄은 픽스처 호출뿐), 신규 fonts·tablet-shell·mobile-next-turn·user-menu·logout-failure·single-column"
+  previous_verified: 2026-09-24T09:42:24Z (HEAD 2d7f73e)
+  reason: "stale — covered_files 중 SYSTEM.md·DECISIONS.md·globals.css·셸(TopBar·MoreSheet·role-menu)·login-error.ts·E2E 스펙이 Phase 3·4·04.1~04.4·quick 작업에서 바뀜(33937dd → HEAD aa5464e, docs/design·app·ui 비이미지 100파일 +3626/−89)"
+  head: "aa5464e (브랜치 claude/close-phases-02-03, origin/main f85c9af + .planning/.continue-here.md 삭제 1건)"
   gaps_closed: []
-  behavior_checks_closed:
-    - "성공 기준 3 — 셸 컴포넌트 변경 후 키보드·375·태블릿 E2E를 현재 HEAD에서 CI=true로 재실행해 통과(165/165)"
   gaps_remaining: []
   regressions: []
+  resolved_human_items:
+    - "SYSTEM.md 신설 절 결정 출처 대조 — 사용자 승인 2026-10-01"
+    - "배포본 확인 — staging deploy #103(f85c9af) success + 사용자 로그인 확인 2026-10-01"
 human_verification:
-  - test: "02-01 체크포인트 응답(24개 항목)과 SYSTEM.md 신설 절(§6-7·§6-8·§6-9·§7-11·§7-12)의 문장을 대조해, 결정되지 않은 제품 동작이 확정 문장으로 들어가지 않았는지 확인한다(02-01 금지 조항 ①). 이후 추가된 §6-10·§7-13·§7-14·§7-15는 DECISIONS.md 2026-09-20~22 기록에 근거가 있는지 같은 기준으로 본다. 2026-09-24 워드마크 홈 링크는 origin/main의 d1398e6(PR #51)이 SYSTEM.md §6-0·DECISIONS.md에 이미 기록했다(이 브랜치에는 아직 없음) — 대조 대상에 포함한다"
-    expected: "신설 절의 모든 확정 문장이 체크포인트 응답 또는 DECISIONS.md 기록에 근거한다"
-    why_human: "결정의 출처가 사람인지는 코드·문서 대조로 알 수 없다(2026-09-22 금지 조항 30건 재판정에서 유일한 판정불가 항목, 그대로 이월)"
-  - test: "스테이징·프로덕션 Cloud Run URL에서 배포 리비전이 현재 HEAD(2d7f73e 이후 커밋)와 같은지, 로그인·내 계정·셸이 토큰 스타일(Pretendard·딥그린 상단 바·--danger 오류 문구·360 로그인 틀)로 렌더되는지 본다"
-    expected: "성공 기준 2의 '배포된 앱' 조건 — 배포 리비전이 검증한 코드와 같고, 로컬 E2E가 잰 계산값과 같은 모양이 나온다"
-    why_human: "이 컨테이너의 프록시가 *.run.app에 403을 돌려 배포본을 볼 수 없다"
+  - test: "02-01 체크포인트 응답(24개)·DECISIONS.md와 SYSTEM.md 신설 절(§6-7·§6-8·§6-9·§6-10·§7-11~§7-17)을 대조해, 사람이 정하지 않은 제품 동작이 확정 문장으로 들어가지 않았는지 확인(02-01 금지 조항 ①)"
+    expected: "신설 절의 모든 확정 문장이 체크포인트 응답 또는 DECISIONS.md 날짜 기록에 근거한다"
+    why_human: "결정의 출처가 사람인지는 코드·문서 대조로 알 수 없다"
+    status: resolved
+    resolution: "사용자 판정(2026-10-01 채팅) 「사람이 정한 결정 맞음」 승인. 보조 근거: 33937dd 이후 SYSTEM.md 변경(§6-1·§6-10·§7-12 개정, §7-16·§7-17 신설 등)마다 DECISIONS.md 날짜 기록(2026-09-23~09-30 50여 건)이 있고 /plan-design-review·/design-review를 거쳤다"
+  - test: "스테이징 배포본이 검증한 코드와 같은 커밋인지, 로그인·셸·내 계정·관리 화면이 토큰 스타일(Pretendard·딥그린 상단 바·360 로그인 틀)로 렌더되는지 확인"
+    expected: "성공 기준 2의 '배포된 앱' 조건 — 배포 리비전 = 검증 코드, 화면이 토큰 스타일로 정상"
+    why_human: "로그인한 셸은 자격 증명이 필요하다(자동 모드 분류기가 Claude의 자격 증명 사용을 막음)"
+    status: resolved
+    resolution: "deploy 워크플로 run #103(id 36807956531, main f85c9afa…, 2026-10-01T02:53Z 시작) — ci/quality·integration(2)·e2e(2)·staging 전부 success(검증자가 gh로 재확인). 스테이징 /login 200, HTML이 pretendard/pretendard-dynamic-subset.css를 로드(검증자가 curl로 재측정). 로그인 뒤 셸·상단 바·서체·/admin·/admin/permissions는 사용자가 시스템 관리자로 직접 보고 「둘 다 정상」(2026-10-01) — 로그인 화면 이후는 사용자의 관찰이다"
 ---
 
 # Phase 2: 디자인 시스템·앱 셸 Verification Report
 
 **Phase Goal:** 직원이 폰과 PC에서 `docs/design/SYSTEM.md` 기준으로 만들어진 앱 셸(로그인·내 계정·내비게이션)을 쓰고, 이후 모든 화면은 이 토큰·컴포넌트만 쓴다
-**Verified:** 2026-09-24T09:42:24Z (HEAD `2d7f73e`, 브랜치 claude/project-thread-pajnzt)
-**Status:** human_needed
-**Re-verification:** Yes — stale 재검증. 이전 판정(2026-09-19T22:45Z, human_needed 5/5) 이후 셸·토큰·SYSTEM.md·스펙이 Phase 3·quick·Phase 4에서 바뀌어 성공 기준을 현재 코드에서 다시 도출했다. 이전 보고서의 주장은 물려받지 않았다.
+**Verified:** 2026-10-01T03:40:00Z (HEAD `aa5464e`, 브랜치 claude/close-phases-02-03, 기반 origin/main `f85c9af`)
+**Status:** passed
+**Re-verification:** Yes — stale 재검증(페이즈 종료용). 이전 판정(2026-09-24, human_needed 5/5)의 주장은 물려받지 않고 다섯 성공 기준을 현재 코드에서 다시 확인했다. 판정 기준은 "코드가 그대로인가"가 아니라 "이후 페이즈가 넓힌 SYSTEM.md·셸·토큰 위에서 Phase 2 계약이 여전히 성립하는가"다.
 
 ## MVP 모드 불일치 (이월, 변화 없음)
 
-ROADMAP은 `Mode: mvp`지만 목표 문장이 User Story 형식이 아니다(`user-story.validate` → `valid: false`). 이전과 같이 ROADMAP 성공 기준 다섯을 계약으로 삼아 목표 역방향으로 검증했다.
+ROADMAP은 `Mode: mvp`지만 목표 문장이 User Story 형식이 아니다(`mvp_user_story_valid: false`). 이전과 같이 ROADMAP 성공 기준 다섯을 계약으로 삼아 목표 역방향으로 검증했다.
 
-## 이번 재검증에서 바뀐 것 (dd8dd81 → 3c1b015)
+## 이번 재검증 범위 (33937dd → aa5464e)
 
-`git diff --stat dd8dd81 HEAD -- ui docs/design app/globals.css` → 36파일 +3496/−119. 이 페이즈 계약에 걸리는 변화만 추렸다:
+shallow 클론이라 이전 판정의 `2d7f73e`는 없다. 이전 VERIFICATION.md가 들어간 마지막 커밋 `33937dd`(2026-09-24 22:18, PR #66)를 기준으로 삼았다.
 
-| 영역 | 변화 | 커밋(대표) |
-|------|------|-----------|
-| `docs/design/tokens.css` | `--auth-max: 360px` 신설(간격), `--form-max` 주석. **색·서체·radius 토큰 변화 0** | `472c461`, `6decee6` |
-| `docs/design/SYSTEM.md` | §6-0 (a)·§7-8 「관리」 한 줄, §6-10·§7-13·§7-14·§7-15 신설, §7-3 구현 계약 보강, 하단 탭 표 계급 5종 | `c5e6bd3`, `603d25b`, `713cdcc`, `839d534` 외 |
-| `docs/design/DECISIONS.md` | 2026-09-20~22 기록 14건 추가(아래 표) | 위와 같음 |
-| `ui/shell/*` | `systemStatus` → `adminMenu`, `role-menu.ts` 입력 `isAdmin` → `roleId`+`allowedMenus`, 폰 44 터치 목표, MoreSheet 그룹 머리글·`inset-block-start: auto`, 로그아웃 실패 `FormAlert` | Phase 3 03-02, quick 260922-i3k/o2b |
-| `app/globals.css` | `.single-column { max-width: var(--form-max) }` 추가만 | `35421a3` |
-| `ui/auth-frame` | 최대 폭 `--modal-w`(480) → `--auth-max`(360) | `472c461` |
-| `ui/button`·`ui/list-empty` | 폰 3차 버튼 44×44(토큰만), `ListEmpty.action` 선택화(보관함 예외, DECISIONS 2026-09-21) | Phase 3 |
-
-## 2026-09-24 후속 변경 (3c1b015 → 2d7f73e) — 이번 재검증의 대상
-
-`git diff --stat 3c1b015 HEAD`의 코드 변경: `ui/shell/TopBar.{tsx,module.css}`, `ui/list-empty/ListEmpty.module.css`, `app/(app)/account/{page.tsx,account.module.css}`, `app/(app)/projects/{page.tsx,filter-bar.tsx}`(Phase 4 화면, /qa ISSUE-001), E2E 스펙 6개(1개 수정 + 5개 신규). `docs/design/`은 바이트 동일(`git diff --quiet` exit 0).
-
-| 커밋 | 내용 | 이 페이즈 계약 영향 |
-|------|------|--------------------|
-| `e1435e2` FINDING-002 | 상단 바 메뉴·사용자 트리거 hover | `--bar-fg`·`--dur-hover`·`--ease-out`·`--underline-offset` 토큰만 |
-| `e71aeb9` FINDING-003 | PC 사용자 트리거 히트 영역 19→37px | padding `9px 0`(간격, D-20 범위 밖) |
-| `28d9b87` FINDING-004 | /account 로그아웃을 별도 묶음으로 | `--s-6` + `--line-w solid --line` — §3 「묶음 사이 24px + 1px 선」 적용 |
-| `2342b01` FINDING-005 | EMPTY 다음 한 수 링크 밑줄을 글자 밑줄로 | §4-4 밑줄 규칙, 토큰만 |
-| `2e977e0`·`257c2ab` FINDING-001 | 워드마크 = `/` 링크(`next/link`, aria-label 「PLANT8 내 차례」), Tab 순서 스킵 → 워드마크 → 프로젝트 | 토큰만. 셸 동작 변화라 성공 기준 3의 행동 증거를 다시 요구한다 |
-| `01c3b6c`·`ebe86da` ISSUE-001 | /projects 필터 칸을 URL과 동기화 | Phase 4 화면 — 이 페이즈 계약 무관 |
-| `0c99443`·`f2ee86e`·`2d7f73e` | 이연 항목을 TODOS.md에 기록 | 아래 Anti-Patterns 참고 |
-
-**gstack 호출 증거(검증자가 확인한 것):** /design-review 수정 커밋 5건과 회귀 스펙(`70e3449` RED → 수정 커밋), /qa 보고서 `.gstack/qa-reports/qa-report-127-0-0-1-2026-09-24.md`(6건 발견·1건 수정·5건 이연, health 95→97, gitignore 대상이라 covered_files 밖), TODOS.md의 「Design review 이연」·「QA 이연」 절, quick 260924-cj5 PLAN/SUMMARY. /review 결과(치명 0·정보 2)와 워드마크 독립 DOM 감사 18/18(1280·768·390)은 오케스트레이터 보고이며 검증자가 재현하지 않았다.
+| 영역 | 변화 | Phase 2 계약 영향 |
+|------|------|------------------|
+| `docs/design/tokens.css` | **변화 없음** — 마지막 변경은 `3c1b015`(이전 판정 이전). 색·서체·radius 토큰 그대로(`--radius: 0`, `--font-sans` 하나) | 없음 |
+| `stylelint.config.mjs`·`app/layout.tsx`·`public/fonts`·`BRIEF.md`·`EXPLORE.md` | 변화 없음 | 없음 |
+| `docs/design/SYSTEM.md` | +280줄: §6-1 연차 목록 편입, §6-10 관리 11개, §7-12 구현(04.2)·배지·더 보기 예외, §7-16 페이지 줄·§7-17 확인 모달 신설, §7-3 편집 표 보강, §8 카피 규칙 개정(명사형 오류 문구) | 아래 성공 기준 4 경고 참고 |
+| `docs/design/DECISIONS.md` | +633줄, 2026-09-23~09-30 기록 50여 건 | SYSTEM.md 변경의 출처 기록 |
+| `docs/design/SKIN-EXPLORE.md`·`explore-skin/` | 스킨 리프레시 발산 목업(「확정이 아니다」). 앱 코드에서 import 0건 | tokens.css 미적용 — 절차(DECISIONS → SYSTEM → tokens) 대기 중 |
+| `app/globals.css` | `kbd { font-family: var(--font-sans) }`, `select { max-width: 100% }` 추가 | 토큰만 |
+| `app/(auth)/login/login-error.ts` | 일반 오류 문구 「이메일 또는 비밀번호 오류」(§8 명사형, DECISIONS 2026-09-26), 잠김 판정 `isLockedMessage` | 계약 유지 |
+| `app/(app)/layout.tsx`·`ui/shell/*` | `UnreadCountProvider`·알림 배지(04.2), 「알림함」이 계정 그룹 첫 항목 | 셸은 여전히 `roleMenu()` 계산 결과만 렌더 |
+| 그 밖 | Phase 4·04.x 화면·`ui/table`·`ui/confirm-dialog`·`ui/pagination` 등 | "이후 모든 화면은 토큰·컴포넌트만" 검사 대상 |
 
 ## Goal Achievement
 
@@ -311,111 +123,94 @@ ROADMAP은 `Mode: mvp`지만 목표 문장이 User Story 형식이 아니다(`us
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | SYSTEM.md·tokens.css가 존재하고 §1 브리프(BRIEF.md) → §2 발산(EXPLORE.md) → §3 수렴 산출물이며 `/plan-design-review`를 통과했다. 260907 화면은 참고하지 않았다 | ✓ VERIFIED | `docs/design/{BRIEF,EXPLORE,SYSTEM,DECISIONS}.md`·`tokens.css` 존재. `BRIEF.md`·`EXPLORE.md`는 `dd8dd81`과 바이트 동일(`git diff --quiet` exit 0). 이후 SYSTEM.md 변경은 모두 DECISIONS.md 날짜 기록을 동반한다(§6-10 ↔ 2026-09-22 「관리」 한 줄, §7-13 ↔ 2026-09-20 D-40, §7-14 ↔ 2026-09-20, §7-15 ↔ 2026-09-22 Phase 4, 하단 탭 표 ↔ 2026-09-20) — CLAUDE.md 「DECISIONS 기록 후 SYSTEM 수정」 규칙 준수. `/plan-design-review` 통과는 역사적 사실이라 재실행 대상 아님(ROADMAP 전제문) |
-| 2 | 배포된 앱의 로그인·내 계정·앱 셸이 SYSTEM.md 컴포넌트와 tokens.css 토큰만 쓴다. 새 색·서체·radius 없음, Phase 1 임시 화면 없음 | ✓ VERIFIED (코드 기준) — '배포된' 부분은 사람 항목 3 | **직접 실행:** `pnpm exec stylelint "ui/**/*.module.css" "app/globals.css" "app/**/*.module.css"` → exit 0 (CSS 34파일: module 33 + globals). 모든 CSS의 `var(--*)` 참조 82종이 전부 `tokens.css` 정의에 존재(미정의 0, 로컬 커스텀 속성 정의 0). `font-weight`·`line-height`·`letter-spacing`·`border-radius`·`@font-face`·`@import`에서 `var()` 아닌 값은 `globals.css:33-34`의 `inherit` 둘뿐. `ui/`·`app/` TSX에 `style={{`·hex·`rgb(`·`fontFamily`·`borderRadius` 0건. tokens.css 신규 토큰은 `--auth-max`(간격) 하나로 D-20 금지 범위(색·서체·radius) 밖이며 DECISIONS.md 2026-09-22에 기록. `public/fonts`·`app/layout.tsx`·`stylelint.config.mjs`·`ui/{page-header,form-alert,kv-list,banner,status-tag}`·`ui/shell/current-path.ts`는 `dd8dd81`과 바이트 동일 — 페이지 층 갭(이전 성공 기준 2 갭)을 닫은 산출물이 그대로다. 맨 `<h1>`은 로그인 sr-only 1건 + PageHeader 1건뿐이고 `app/(app)/**/page.tsx` 전부가 PageHeader(또는 notFound/redirect)를 쓴다. 임시 화면·TBD/FIXME/XXX 0건. 계산값(getComputedStyle) 재확인: 로컬 게이트 E2E에서 `page-chrome`(14)·`mobile-page-chrome`(6)·`fonts`(2)·`single-column`(13) 전부 통과 |
-| 3 | 폰(375px)과 PC에서 같은 셸이 깨지지 않고, 키보드만으로 로그인·내비게이션·비밀번호 변경이 된다 | ✓ VERIFIED | 코드: `Shell.tsx` 스킵 링크 + `main#main-content`; `TopBar.tsx` 워드마크 링크(`tabIndex` 우회 없음, 스킵 다음 Tab 정지) · 사용자 메뉴 Esc 닫힘·트리거 포커스 복귀·↑↓/Home/End·Tab 이탈 시 닫힘; `MoreSheet.tsx` 네이티브 `<dialog>` 트랩 + 포커스 복귀; `BottomTabs.module.css` 폰(<700)만 표시. `keyboard-nav.spec.ts` 변경은 기대 Tab 순서에 워드마크 한 줄 추가뿐(단언 삭제 0). **행동 증거:** HEAD `2d7f73e` 로컬 게이트 CI=true E2E **176 passed / 0 failed / 0 flaky**(3.6m, exit 0 — 로그 `scratchpad/gate/e2e.log` 마지막 줄 직접 확인). 176 = 3c1b015의 165 + 신규 `test()` 11(wordmark-home 4 · mobile-wordmark-home 1 · design-review-p2 3 · mobile-design-review-p2 1 · projects-filter-reset 2), 삭제된 `test()` 0 — 따라서 keyboard-nav(워드마크 Tab 순서 포함)·mobile-shell·tablet-shell·a11y·login-logout·change-password·user-menu·logout-failure 전부 통과 |
-| 4 | 핵심 컴포넌트 계약(서버 검증 오류 폼·grid·비활성+이유 버튼·알림함·배지·폰 목록·시트)이 SYSTEM.md에 있고, 모든 계약이 5상태를 필수 정의하며 EMPTY·ERROR는 다음 행동을 유도한다 | ✓ VERIFIED | §7-2·§7-15(폼), §7-3(grid), §7-1(버튼, §7-7 표 버튼 행), §7-12(알림함·배지), §6-1/§7-8(폰 목록·시트) 존재. 신설 계약 §7-13·§7-14·§7-15 각각 다섯 상태 표를 가짐(SYSTEM.md 916-924, 960-968, 995-1003), §7-7 컴포넌트 표에 관리자 마스터 화면 행 추가. EMPTY 다음 한 수 예외는 §7-12 알림함·보관함(DECISIONS 2026-09-20·09-21 사용자 승인/기록) 둘뿐 — `ListEmpty`를 `action` 없이 쓰는 곳은 `archive-table.tsx:45` 한 곳, 나머지 8곳은 전부 `action=` 있음. `vitest run --project unit` 대상 12파일(`design-system-docs`·`system-md-compliance`·`role-menu`(§6-10 표 대조) 등) 183/183 통과 |
-| 5 | grid는 동작 계약만 확정(Tab/Enter·방향키, 범위 복사·붙여넣기, Esc, 저장·새 줄 단축키, 전부 저장/전부 거부 + 충돌·오류 칸). 구현 선택은 Phase 4 | ✓ VERIFIED | §7-3 본문에 Tab/Shift+Tab·Enter·방향키·Esc·⌘C/⌘V·⌘↵·⌘S·「일괄 저장은 전부 저장 또는 전부 거부」·충돌 셀 고정 문장이 그대로 있다. `ui/table/*`의 구현은 Phase 4(04-04)가 ROADMAP대로 만든 것이며 이 페이즈 계약을 바꾸지 않고 보강(§7-3 (나)~(사), DECISIONS 2026-09-22)만 했다 |
+| 1 | SYSTEM.md·tokens.css가 존재하고 §1 브리프 → §2 발산 → §3 수렴 산출물이며 `/plan-design-review`를 통과했다. 260907 화면은 참고하지 않았다 | ✓ VERIFIED | `docs/design/{BRIEF,EXPLORE,SYSTEM,DECISIONS}.md`·`tokens.css` 존재. BRIEF·EXPLORE·tokens.css는 `33937dd` 이후 바이트 동일(`git diff --stat` 빈 출력). SYSTEM.md 이후 변경은 DECISIONS.md 날짜 기록을 동반한다(§7-16 ↔ 2026-09-23 ⑧, §7-17 ↔ ⑮, §7-12 더 보기 예외 ↔ 2026-09-26, §6-10 11개·연차 ↔ 2026-09-29 A1·A4 등). 출처가 사람 결정인지는 사용자가 2026-10-01 승인(사람 항목 1, resolved). `/plan-design-review` 통과는 역사적 사실(ROADMAP 전제문) |
+| 2 | 배포된 앱의 로그인·내 계정·앱 셸이 SYSTEM.md 컴포넌트와 tokens.css 토큰만 쓴다. 새 색·서체·radius 없음, Phase 1 임시 화면 없음 | ✓ VERIFIED | **직접 실행:** `pnpm lint`(eslint + stylelint `ui/**/*.module.css`·`app/globals.css`·`app/**/*.module.css`) exit 0. 앱 CSS 47파일의 `var(--*)` 참조 87종 ↔ tokens.css 정의 `comm -23` → **미정의 0**, 앱 CSS 안 로컬 커스텀 속성 정의 0, `@font-face`·`@import` 0. `font-weight`·`line-height`·`letter-spacing`·`border-radius`·`font-family`의 var() 아닌 값은 `inherit` 3건뿐(globals 2 · inbox-table 1). `ui/`·`app/` TSX에 hex·`rgb(`·`fontFamily`·`borderRadius`·`style={{` 0건(정규식 매치 1건은 주석의 `#104`). `style=` 1건은 `document-actions.tsx:138` 높이 값(간격 — D-20 금지 범위 밖). tokens.css 무변경이라 새 색·서체·radius 토큰 0. `<h1>`은 로그인 sr-only 1건 + PageHeader뿐이고 `app/(app)/**/page.tsx` 29개 전부 PageHeader/notFound/redirect 사용. ui·셸·로그인·내 계정·globals·tokens에 TBD/FIXME/XXX 0. **배포본:** deploy #103(f85c9af = 이 HEAD의 코드) staging success, 스테이징 `/login` 200 + Pretendard CSS 로드(검증자 curl 재측정), 로그인 뒤 셸은 사용자 확인 「정상」(사람 항목 2, resolved) |
+| 3 | 폰(375px)과 PC에서 같은 셸이 깨지지 않고, 키보드만으로 로그인·내비게이션·비밀번호 변경이 된다 | ✓ VERIFIED | 코드: `app/(app)/layout.tsx` → `roleMenu({roleId, allowedMenus})` → `Shell`, 셸 컴포넌트에 계급 분기 0(`roleId`/`isAdmin` grep 0). **행동 증거:** deploy run #103(main `f85c9afa…`, 이 HEAD와 코드 동일 — 차이는 `.planning/.continue-here.md` 삭제뿐)의 `ci / e2e (1)`·`ci / e2e (2)` 둘 다 **success**(CI=true 프로덕션 빌드 전체 E2E, `gh run view` 재확인; 로그 본문은 프록시가 403이라 건수 미확인). 그 E2E에 keyboard-nav·mobile-shell·tablet-shell·a11y·login-logout·change-password·user-menu·page-chrome·mobile-page-chrome·fonts 스펙이 모두 있고 `test.skip/fixme/only` 0. `33937dd` 이후 이 스펙들에서 지워진 단언 2줄은 문구 개정(§8 명사형)에 따른 교체(`현재 비밀번호 오류 · 다시 입력`, `8자 미만 · 8자 이상으로`)이고, user-menu는 「알림함」 첫 포커스 + ArrowDown 단언이 추가됐다 — 약화 0 |
+| 4 | 핵심 컴포넌트 계약(서버 검증 오류 폼·grid·비활성+이유 버튼·알림함·배지·폰 목록·시트)이 SYSTEM.md에 있고, 모든 계약이 5상태를 필수 정의하며 EMPTY·ERROR는 다음 행동을 유도한다 | ✓ VERIFIED (⚠️ 경고 1) | §7-2·§7-15(폼, 다섯 상태 표), §7-3(grid), §7-1(버튼 — 비활성 이유 두 색·aria-disabled, DECISIONS ⑦), §7-12(알림함·배지, 다섯 상태 목록), §6-1/§7-8(폰 목록·시트), §7-7 컴포넌트별 다섯 상태 표 존재. `design-system-docs.test.ts`(§6-7~§7-14 다섯 상태 검사 포함) 통과. EMPTY에 다음 한 수가 없는 `ListEmpty` 6곳은 모두 기록된 예외 또는 권한 규칙: 보관함(DECISIONS 2026-09-21)·알림함(§7-12)·`/leave`와 연차 조정 기록(「다음 한 수는 할 수 있는 사람에게만」 2026-09-26 — `/leave`는 `canWrite`면 `연차 신청` 있음, 조정 기록은 바로 위 조정 폼)·사람 목록 잠김 한 줄(2026-09-30)·공휴일 후보 오류. **경고:** 아래 Anti-Patterns 첫 행 |
+| 5 | grid는 동작 계약만 확정(Tab/Enter·방향키, 범위 복사·붙여넣기, Esc, 저장·새 줄 단축키, 전부 저장/전부 거부 + 충돌·오류 칸). 구현 선택은 Phase 4 | ✓ VERIFIED | §7-3에 Shift+Tab·방향키·Esc·Ctrl+C/Ctrl+V·Ctrl+Enter·Ctrl+S·「전부 저장 또는 전부 거부」(2회)·충돌 셀 문장이 있다. 단축키 표기는 ⌘ → Ctrl로 바뀌었으나(D-94, Windows 기준 — 계약 내용 동일) 구현은 Phase 4가 ROADMAP대로 했다 |
 
 **Score:** 5/5 truths verified (0 present-but-behavior-unverified)
 
-### Required Artifacts (현재 코드 재확인)
+### Required Artifacts (현재 코드)
 
 | Artifact | Status | Details |
 |----------|--------|---------|
-| `docs/design/tokens.css` | ✓ VERIFIED | 색·서체·radius 토큰 불변, `--auth-max` 1개 추가(기록됨) |
-| `docs/design/SYSTEM.md` | ✓ VERIFIED | 성공 기준 4·5 절 존재, 신설 절 5상태 정의 |
-| `app/globals.css` | ✓ VERIFIED | body·§4-4·포커스 링 블록 불변, `.single-column` 추가(토큰만) — `app/(app)/account/page.tsx`에서 사용 |
-| `ui/shell/{Shell,TopBar,BottomTabs,MoreSheet}.tsx` | ✓ WIRED | `app/(app)/layout.tsx` → `roleMenu({roleId, allowedMenus})` → `Shell` props. 셸 컴포넌트에 계급 분기 없음(D-23), `aria-current`는 `isCurrentPath`(불변) |
-| `ui/shell/role-menu.ts` | ✓ VERIFIED | 하단 탭 표가 SYSTEM.md §6-0 계급 5종 표와 일치(`role-menu.test.ts`가 SYSTEM.md 표를 읽어 대조, 통과) |
-| `ui/auth-frame/AuthFrame.module.css` | ✓ VERIFIED | `max-width: var(--auth-max)` = §6-7 「최대 폭 360」 |
-| `ui/{page-header,form-alert,kv-list}` | ✓ VERIFIED | `dd8dd81`과 바이트 동일 |
+| `docs/design/tokens.css` | ✓ VERIFIED | `3c1b015` 이후 무변경, 136개 정의, 앱 CSS 참조 87종 전부 포함 |
+| `docs/design/SYSTEM.md` | ✓ VERIFIED | 성공 기준 4·5 절 존재. §7-16·§7-17 신설(경고 참고) |
+| `stylelint.config.mjs` | ✓ VERIFIED | 무변경 — font-family·font-size·border-radius 허용 목록, 색 리터럴·색 함수·이름 색·`font` 축약 금지 |
+| `app/globals.css` | ✓ VERIFIED | 추가 2블록 모두 토큰/비색 값 |
+| `ui/shell/{Shell,TopBar,BottomTabs,MoreSheet}.tsx`·`role-menu.ts` | ✓ WIRED | layout → `roleMenu()` → `Shell` props, 계급 분기 0 |
+| `ui/page-header`·`ui/list-empty`·`ui/auth-frame` | ✓ VERIFIED | 모든 앱 페이지가 PageHeader 사용, AuthFrame `--auth-max` |
 
 ### Key Link Verification
 
 | From | To | Via | Status |
 |------|----|-----|--------|
-| `app/(app)/layout.tsx` | `ui/shell/Shell.tsx` | `roleMenu()` 결과 4필드 전달 | ✓ WIRED |
-| `TopBar.tsx`/`MoreSheet.tsx` | `ui/logout/use-logout.ts` | `useLogout(close)` — 성공 시에만 닫음, 실패는 `FormAlert` | ✓ WIRED |
-| `app/layout.tsx` | `app/globals.css` + `tokens.css` | 루트 import(불변) | ✓ WIRED |
-| `AuthFrame.module.css` | `tokens.css --auth-max` | `var()` | ✓ WIRED |
+| `app/(app)/layout.tsx` | `ui/shell/Shell.tsx` | `can()` × MENUS → `allowedMenus` → `roleMenu()` 4필드 + `userName` | ✓ WIRED |
+| `app/(app)/layout.tsx` | `ui/shell/unread-count.tsx` | `UnreadCountProvider initial/refresh` (실패해도 셸 렌더) | ✓ WIRED |
+| `app/layout.tsx` | `app/globals.css` + `tokens.css` | 루트 import(무변경) | ✓ WIRED |
+| `package.json` `lint` | `stylelint.config.mjs` | 앱 CSS glob 3종 | ✓ WIRED |
 
 ### Behavioral Spot-Checks (직접 실행)
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| 색·서체·radius 리터럴 금지 | `pnpm exec stylelint "ui/**/*.module.css" "app/globals.css" "app/**/*.module.css"` | exit 0 | ✓ PASS |
-| CSS 변수 전부 tokens.css 정의 | `var(--*)` 82종 ↔ tokens.css 정의 `comm -23` | 미정의 0 | ✓ PASS |
-| 인라인 스타일·색 리터럴 없음 | `grep -rnE "#hex\|rgba?\(\|fontFamily\|borderRadius\|style={{" ui app --include=*.tsx` | 0건 | ✓ PASS |
-| 문서·셸·린트 규칙 단위 테스트 | `pnpm vitest run --project unit` design-system-docs · stylelint-config · ui/{role-menu,current-path,next-turn,next-turn-action,system-md-compliance,single-column,toast-timer,admin-index-link,admin-index-css} · ci-guard | 12 files / 183 tests passed (1.36s) | ✓ PASS |
-| 셸 키보드·375·태블릿 E2E (3c1b015) | 로컬 게이트 `pnpm test:e2e:ci` 결과 + `CI=true pnpm exec playwright test --list`(목록만, 서버 기동 없음)로 스펙 수 대조 | 165 passed / 목록 165건 | ✓ PASS (이전 HEAD) |
-| 셸 키보드·워드마크 E2E (2d7f73e) | 로컬 게이트 `pnpm test:e2e:ci`(CI=true) 로그 확인 + 신규 `test()` 수 대조(`git diff 3c1b015 HEAD -- test/e2e`: +11 / −0) | 176 passed = 165 + 11 | ✓ PASS |
-| 2d7f73e 토큰 검사 | `pnpm exec stylelint ...` + `var(--*)` ↔ tokens.css 대조 | exit 0 · 미정의 0 | ✓ PASS |
-| 2d7f73e 문서·셸 단위 테스트 | `pnpm vitest run --project unit` design-system-docs · ui/system-md-compliance · ui/role-menu · ui/current-path · stylelint-config | 5 files / 130 passed | ✓ PASS |
+| eslint + stylelint | `pnpm lint` | exit 0 (기존 boundaries v5→v6 이관 경고만) | ✓ PASS |
+| 타입 | `pnpm typecheck` | exit 0 | ✓ PASS |
+| CSS 변수 전부 tokens.css 정의 | `var(--*)` 87종 ↔ tokens.css `comm -23` | 미정의 0 | ✓ PASS |
+| 인라인 색·서체·radius 없음 | `grep -rnE "style=\{\{\|#hex\|rgba?\(\|fontFamily\|borderRadius" ui app` | 실매치 0(주석 1) | ✓ PASS |
+| 문서·셸·린트 규칙·컴포넌트 단위 테스트 | `pnpm exec vitest run --project unit` design-system-docs · stylelint-config · ui/{role-menu,current-path,system-md-compliance,single-column,next-turn,next-turn-action,toast-timer,admin-index-link,admin-index-css,grid-keyboard-composing,button,confirm-dialog,pagination,unread-count,logout-copy} | 17 files / 303 tests passed (4.3s) | ✓ PASS |
+| 전체 E2E(키보드·375·태블릿 포함) | `gh run view 36807956531` (deploy #103, f85c9af) | ci/quality·integration(1·2)·e2e(1·2)·staging success, production skipped | ✓ PASS (CI) |
+| 스테이징 로그인 화면 | `curl https://plant8-staging-67rumhdgba-du.a.run.app/login` | 200, `pretendard/pretendard-dynamic-subset.css` 로드 | ✓ PASS |
 
-### 로컬 게이트 (완료 — HEAD `3c1b015`, 2026-09-24 07:48–08:10Z, 같은 컨테이너)
+전체 E2E는 로컬에서 돌리지 않았다(CLAUDE.md §5 — 전체 E2E는 CI가 한 번).
 
-오케스트레이터가 전체 게이트를 돌렸다. E2E는 로그(`scratchpad/e2e.log`) 마지막 줄 `165 passed (3.7m)`을 직접 확인했다. dot 리포터라 로그에 스펙 이름이 없어서, `CI=true pnpm exec playwright test --list`(목록만 출력, 서버·DB 기동 없음)로 "Total: 165 tests in 44 files"를 얻어 통과 수와 대조했다. 로그에 failed·flaky 줄은 0건이다.
+### Probe Execution
 
-| 게이트 | 결과 |
-|--------|------|
-| `pnpm lint`(eslint + stylelint) | exit 0 — 기존 boundaries v5→v6 설정 이관 경고만 있음(IN-07, 이 페이즈 무관) |
-| `pnpm typecheck` | exit 0 |
-| `pnpm lint:sql` | exit 0 |
-| `pnpm test:unit` | 76 files / 743 tests passed |
-| `pnpm test:integration` | 38 files / 1027 tests passed |
-| `pnpm test:e2e:ci`(db:reset:test + CI=true 프로덕션 빌드) | **165 passed, 0 failed, 0 flaky** (3.7m) |
-
-이 페이즈 판정에 쓴 E2E 스펙과 테스트 수(`--list` 기준, 전부 통과 165건에 포함): keyboard-nav 7 · mobile-shell 15 · tablet-shell 4 · a11y 8 · login-logout 4 · change-password 1 · system-status 2 · user-menu 5 · logout-failure 4 · page-chrome 14 · mobile-page-chrome 6 · fonts 2 · mobile-next-turn 2 · single-column 13.
-
-### 로컬 게이트 — HEAD `2d7f73e` (완료, 2026-09-24 09:27–09:41Z, 같은 컨테이너)
-
-오케스트레이터가 돌린 게이트다. 검증자는 `scratchpad/gate/{unit,int,e2e}.log`의 요약 줄을 직접 확인했다(e2e 로그에 failed·flaky 줄 0).
-
-| 게이트 | 결과 |
-|--------|------|
-| `pnpm lint` | exit 0 (기존 boundaries v5→v6 이관 경고만) |
-| `pnpm typecheck` | exit 0 |
-| `pnpm test:unit` | 76 files / 743 tests passed |
-| `pnpm test:integration` | 38 files / 1027 tests passed |
-| `pnpm test:e2e:ci`(db:reset:test + CI=true 프로덕션 빌드) | **176 passed**, 0 failed, 0 flaky (3.6m, exit 0) |
+해당 없음 — 이 페이즈 PLAN/SUMMARY가 `scripts/*/tests/probe-*.sh`를 선언하지 않는다.
 
 ### Requirements Coverage
 
 | Requirement | Source Plan | Description | Status | Evidence |
 |-------------|-------------|-------------|--------|----------|
-| UX-01 | 02-01…02-08 | SYSTEM.md 먼저 확정, 모든 화면이 토큰·컴포넌트만 사용, 계약 5상태 필수, EMPTY·ERROR 다음 행동 | ✓ SATISFIED (코드 기준) | 성공 기준 2·4 근거. Phase 3·4가 추가한 화면·컴포넌트 CSS도 같은 stylelint·토큰 검사를 통과한다. REQUIREMENTS.md L139 `[x]`, L269 Complete |
+| UX-01 | 02-01…02-08 | SYSTEM.md 먼저 확정, 모든 화면이 토큰·컴포넌트만 사용, 계약 5상태 필수, EMPTY·ERROR 다음 행동 | ✓ SATISFIED | 성공 기준 2·4. Phase 3·4·04.x가 더한 화면·컴포넌트 CSS 47파일도 같은 stylelint·토큰 검사를 통과. REQUIREMENTS.md L139 `[x]`, L269 Complete |
 
-고아 요구사항 없음(REQUIREMENTS.md에서 Phase 2에 매핑된 ID는 UX-01 하나).
+고아 요구사항 없음(Phase 2 매핑 ID는 UX-01 하나).
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| — | — | TBD/FIXME/XXX (ui/·셸·페이즈 2 화면·globals.css·tokens.css) | 없음 | 부채 표지 게이트 통과 |
-| `ui/input/TextField.module.css` | 31 | `::placeholder` | ℹ️ Info | CSS 의사 요소 이름일 뿐 스텁 아님 |
-| `ui/shell/TopBar.module.css` | `.markLink:focus-visible`·`.navLink`·`.userTrigger` | 상단 바 포커스 링 위아래 잘림(링 offset 2px 바깥 + 바 높이를 거의 채우는 히트 영역) | ⚠️ Warning | /review 발견(신뢰도 중간, 실측 필요), TODOS.md 「상단 바 포커스 링이 위아래로 잘린다」 P2로 이연 — SYSTEM.md 포커스 링 규정 결정이 먼저. 좌우 변은 보여 포커스 위치는 알 수 있으므로 성공 기준 3을 거짓으로 만들지는 않는다. `.navLink`는 이번 변경 전부터 같은 모양 |
-| `ui/shell/TopBar.tsx` | 워드마크 `<Link>` | 이 브랜치의 SYSTEM.md에는 워드마크 링크 문장이 없다 | ℹ️ Info (기록됨, 브랜치 차이뿐) | origin/main `d1398e6`(PR #51)이 SYSTEM.md §6-0(「워드마크는 「내 차례」(`/`)로 가는 링크 … Tab 순서는 스킵 링크 → 워드마크 → 1차 메뉴」)과 DECISIONS.md에 기록했다(`git show d1398e6:docs/design/SYSTEM.md` L293 확인). 이 브랜치가 main을 병합하면 해소된다 — 결함 아님 |
-| TODOS.md | Design review 이연 3건 · QA 이연 5건 + 1 | 이연 | ℹ️ Info | FINDING-006(로딩 300ms 지연)·007(/account 서버 오류 칸 묶기)·공유 Button 밑줄, ISSUE-002~006·action-log 필터 — 모두 이 페이즈 성공 기준 밖의 품질 항목이거나 Phase 4·7 범위다 |
+| `docs/design/SYSTEM.md` | §7-16·§7-17·§7-7 시트/모달 행 | 신설 컴포넌트 절 §7-16 「페이지 줄」·§7-17 「확인 모달」에 자체 다섯 상태 정의가 없다. §7-17은 §7-8 모달·시트의 구현이라 §7-7 「시트/모달(§7-8)」 행이 다섯 상태를 대신하지만, ERROR 자리가 어긋난다 — §7-7 행은 「사유 칸 아래 「원인 · 다음 행동」」, §7-17은 「서버 거부 문자열은 막힘 자리(행동 줄 왼쪽)」. `design-system-docs.test.ts`의 다섯 상태 검사 범위도 §7-11~§7-14에서 멈춰 §7-15~§7-17을 안 본다 | ⚠️ Warning | Phase 4가 들인 문서 표류다. Phase 2 계약(핵심 계약 존재 + 다섯 상태 정의 + EMPTY·ERROR 다음 행동)을 거짓으로 만들지는 않는다 — 모달·시트의 다섯 상태는 §7-7 표에 있고, 페이지 줄은 §7-9 힌트 줄처럼 표·목록에 딸린 정적 요소이며 EMPTY(한 페이지면 줄 없음)는 정의돼 있다. 정리 제안: §7-7 시트/모달 행 ERROR를 §7-17 막힘 자리로 맞추고(DECISIONS 기록 뒤), 다섯 상태 테스트 범위에 §7-15~§7-17 추가 |
+| `ui/shell/TopBar.module.css` | 포커스 링 | 상단 바 포커스 링 위아래 잘림 | ⚠️ Warning (이월) | TODOS.md L271 「상단 바 포커스 링이 위아래로 잘린다」에 이연된 그대로. 좌우 변이 보여 성공 기준 3을 거짓으로 만들지 않는다 |
+| `app/(app)/leave/[id]/document-actions.tsx` | 138 | `style={… { height: barHeight } …}` 인라인 높이 | ℹ️ Info | 간격·크기 값 — D-20 금지 범위(색·서체·radius) 밖 |
+| `docs/design/SKIN-EXPLORE.md`·`explore-skin/` | — | 스킨 리프레시 발산(radius 0·그림자·2px 선 뒤집기 후보) | ℹ️ Info | 「확정이 아니다」, tokens.css·SYSTEM.md 미적용, 앱에서 import 0. 적용 시 DECISIONS → SYSTEM → tokens 순서를 따라야 한다 |
+| origin/main `bada253` | — | 이 검증 뒤 main에 PR #111(`ui/button/Button.module.css` 3차 밑줄·관리표 행 행동 간격)이 들어왔다 | ℹ️ Info | 이 HEAD(f85c9af 기반)에는 없다 — 병합 후 CI stylelint가 같은 규칙으로 검사한다 |
 
-회귀 없음: 토큰 전용 규칙, 새 색·서체·radius 금지, 셸 계급 분기 금지(D-23), SYSTEM.md ↔ DECISIONS.md 추적 모두 현재 코드에서 유지된다.
+부채 표지(TBD/FIXME/XXX): ui·셸·로그인·내 계정·globals·tokens에 0건.
 
-### Human Verification Required
+### Human Verification
 
-1. **SYSTEM.md 신설 절의 결정 출처** — 02-01 체크포인트 24개 응답·DECISIONS.md와 대조(이월). 이후 추가 절(§6-10·§7-13~15)도 같은 기준으로. 워드마크 홈 링크는 origin/main `d1398e6`(PR #51)에 이미 기록돼 있다.
-2. **배포본 확인** — 스테이징·프로덕션 Cloud Run 리비전이 HEAD와 같은지, 셸이 토큰 스타일로 렌더되는지. 프록시가 `*.run.app`에 403을 돌려 여기서 확인 불가.
+사람 항목 2건 모두 **해소**(frontmatter `human_verification[].status: resolved`).
 
-**해소:** gstack `/design-review` + `/qa` — 2026-09-24 실제 호출(위 「후속 변경」 표와 증거). 남은 발견은 TODOS.md에 이연.
-
-**게이트:** 성공 기준 3은 2d7f73e CI=true E2E 176/176으로 닫혔다.
+1. **SYSTEM.md 신설 절의 결정 출처** — 사용자 판정 2026-10-01 「사람이 정한 결정 맞음」.
+2. **배포본 확인** — deploy #103(f85c9af) staging success, `/login` 200 + Pretendard(검증자 재측정), 로그인 뒤 셸·/admin·/admin/permissions는 사용자가 시스템 관리자로 확인 「둘 다 정상」. Claude는 자격 증명 사용이 막혀 로그인 화면 이후를 직접 보지 못했다 — 그 부분은 사용자 관찰이 근거다.
 
 ### Gaps Summary
 
-성공 기준을 거스르는 갭은 없다. Phase 3·4와 quick 작업이 셸·토큰·SYSTEM.md를 크게 바꿨지만(36파일 +3496줄), (a) 색·서체·radius 토큰은 하나도 늘지 않았고 새 토큰 `--auth-max`는 간격이며 기록돼 있다. (b) 모든 CSS가 stylelint를 통과하고 tokens.css에 정의된 변수만 참조한다. (c) SYSTEM.md 변경마다 DECISIONS.md 날짜 기록이 있다. (d) 신설 컴포넌트 계약은 모두 5상태를 정의한다. (e) 셸은 여전히 계급 분기 없이 `role-menu.ts` 계산 결과만 렌더한다. 2026-09-24 /design-review·/qa 수정분(3c1b015 → 2d7f73e)도 토큰만 쓰고 stylelint를 통과하며 docs/design은 바뀌지 않았다. 성공 기준 3은 TopBar가 바뀐 뒤의 2d7f73e CI=true E2E 176/176으로 확인했다. 판정이 `passed`가 아닌 이유는 사람 항목 2건(결정 출처 대조 · 배포본 확인)이 남아 있기 때문이다. `/design-review`+`/qa` 사람 항목은 해소됐다.
+성공 기준을 거스르는 갭은 없다. 이후 페이즈가 SYSTEM.md(+280줄)·DECISIONS.md(+633줄)·셸(알림 배지·계정 그룹)·화면을 크게 늘렸지만 (a) tokens.css는 이전 판정 이후 한 바이트도 바뀌지 않았고, (b) 앱 CSS 47파일이 stylelint를 통과하며 tokens.css에 정의된 변수만 참조하고, (c) 셸은 여전히 권한표 계산(`roleMenu`) 결과만 그리며, (d) SYSTEM.md 변경마다 DECISIONS.md 기록이 있고 사용자가 출처를 승인했으며, (e) 키보드·375·태블릿 셸 E2E를 포함한 전체 E2E가 이 코드와 같은 main 커밋의 CI에서 통과했고 배포본도 확인됐다. 남은 것은 경고 2건(§7-16·§7-17 다섯 상태 문서 표류, 상단 바 포커스 링 이연)으로 Phase 2 계약을 깨지 않는다.
 
 ---
 
 ## 이력 — 이전 판정 기록
+
+### 2026-10-01T03:40Z 페이즈 종료 재검증 (passed 5/5) — 이 보고서
+
+stale 사유: 33937dd 이후 Phase 3·4·04.1~04.4·quick 작업이 covered_files(SYSTEM.md·DECISIONS.md·globals.css·셸·login-error.ts·E2E 스펙)를 바꿈. 현재 HEAD `aa5464e`에서 다섯 기준을 다시 확인했다. tokens.css 무변경, `pnpm lint`·`typecheck` exit 0, 관련 단위 17파일 303건 통과, CI(deploy #103) 전체 E2E success. 사람 항목 2건은 사용자가 2026-10-01 해소. 새로 찾은 경고: §7-16·§7-17 다섯 상태 문서 표류.
+
+### 2026-09-24T09:42:24Z stale 재검증 (human_needed 5/5)
+
+HEAD `2d7f73e`. /design-review FINDING-001~005·/qa ISSUE-001 수정분(워드마크 홈 링크, 상단 바 hover, /account 로그아웃 묶음, EMPTY 링크 밑줄)이 토큰만 쓰고 stylelint를 통과함을 확인했다. 로컬 게이트 CI=true E2E 176 passed(0 failed·0 flaky), unit 743·integration 1027 통과. 그 전 재검증(3c1b015)에서는 `--auth-max` 신설(간격, DECISIONS 2026-09-22)과 §6-10·§7-13~§7-15 신설 절의 다섯 상태를 확인, E2E 165 통과. 사람 항목 2건(결정 출처 · 배포본)이 남아 human_needed였다 — 2026-10-01 해소. 전문은 `git show 33937dd:.planning/phases/02-design-system-app-shell/02-VERIFICATION.md`.
 
 ### 2026-09-19T18:53:19Z 첫 검증 (gaps_found 4/5)
 
@@ -425,25 +220,23 @@ ROADMAP은 `Mode: mvp`지만 목표 문장이 User Story 형식이 아니다(`us
 
 02-08(갭 해소)로 성공 기준 2 갭을 닫았다. page-chrome·mobile-page-chrome 17건과 기존 E2E 30건, unit 291건, build를 직접 돌렸다. 전문은 `git show dd8dd81:.planning/phases/02-design-system-app-shell/02-VERIFICATION.md`.
 
-## Re-verification 2026-09-22 — human_verification 9건 재검토
+### Re-verification 2026-09-22 — human_verification 9건 재검토
 
-사람 판정 9건을 다시 읽고 "정말 사람 손이 필요한가"를 판정했다. 결과: 이미 해소 3건, 자동화로 닫음 4건, 사람 2건(위 frontmatter).
+사람 판정 9건을 다시 읽고 "정말 사람 손이 필요한가"를 판정했다. 결과: 이미 해소 3건, 자동화로 닫음 4건, 사람 2건(2026-10-01 해소).
 
 | # | 항목 | 결과 | 근거 |
 |---|------|------|------|
 | 1 | Windows Pretendard·전송량·tnum (D-32) | 자동화로 닫음 | Pretendard는 자체 호스팅 웹폰트라 OS와 무관하다. `test/e2e/fonts.spec.ts`가 `document.fonts.check`·body font-family·첫 로드 woff2 합 ≤ 300KB·tnum 등폭(1 vs 0 자릿수 폭)을 실측. CI=true 통과 |
 | 2 | 태블릿 700·900·1023 | 자동화로 닫음 | `test/e2e/tablet-shell.spec.ts` — 세 폭에서 주 메뉴 5개 가시·하단 탭 숨김·가로 스크롤 0, 699에서 하단 탭 4개로 전환 |
 | 3 | 375 시각 품질 | 자동화로 닫음 | 독립 에이전트가 CI=true 프로덕션 빌드로 7개 화면 DOM 실측: 겹침·잘림·오버플로 0건(더보기 시트의 겹침 9쌍은 `::backdrop` 스크림 뒤 오탐). §10 터치 목표 44 미달은 별도 윈도우로 등록 |
-| 4 | /design-review + /qa | 남음 | frontmatter 참고 — 스킬 호출 불가, 대체 검증은 수행 |
+| 4 | /design-review + /qa | 남음 → 2026-09-24 해소 | /design-review·/qa가 실제로 호출돼 FINDING-001~005·ISSUE-001을 고치고 나머지를 TODOS.md에 이연했다 |
 | 5 | 「내 차례」 폰 두 줄 | 자동화로 닫음 + **결함 발견·수정** | `test/e2e/mobile-next-turn.spec.ts`가 실제 컴포넌트를 esbuild로 SSR해 375px에서 실측. 원래 grid(auto 1fr auto)는 자동 배치가 행동 링크를 2행으로 밀어 §7-4 "1행 태그·대상·행동, 2행 금액·이유"와 달랐다(preview.html 실물도 동일). 행·칸을 명시해 고쳤고 행동 링크 터치 목표 44도 확보 |
-| 6 | 금지 조항 27건 판정 | 독립 재판정 완료 | Fable 리뷰어가 파일:줄 근거로 30건 전수(27은 오기: 24+6) — 위반 0, 판정불가 1(02-01 ①, 사람) |
+| 6 | 금지 조항 27건 판정 | 독립 재판정 완료 | Fable 리뷰어가 파일:줄 근거로 30건 전수(27은 오기: 24+6) — 위반 0, 판정불가 1(02-01 ①, 사람 → 2026-10-01 사용자 승인) |
 | 7 | §7-12 EMPTY 예외 | 이미 해소 | DECISIONS.md 2026-09-20 사용자 승인 기록 |
 | 8 | `--fs-2xl` §2-2 vs §6-9 | 이미 결정 | DECISIONS.md 2026-09-20 "KPI 타일까지 미룸", WINDOWS #7 |
 | 9 | 로그인 실패 영문 문구 | 이미 해소 | 커밋 9c6c5aa, `app/(auth)/login/login-error.ts`, WINDOWS #6 fixed |
 
-(2026-09-24 주: 위 4번은 해소됐다 — /design-review·/qa가 실제로 호출돼 FINDING-001~005·ISSUE-001을 고치고 나머지를 TODOS.md에 이연했다. 1·2·5번 스펙은 3c1b015 게이트에서 통과했다.)
-
 ---
 
-_Verified: 2026-09-24T09:42:24Z_
-_Verifier: Claude (gsd-verifier) — stale 재검증_
+_Verified: 2026-10-01T03:40:00Z_
+_Verifier: Claude (gsd-verifier) — 페이즈 종료 stale 재검증_

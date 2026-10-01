@@ -133,6 +133,26 @@ test.describe("가려진 참조 정보의 화면(quick 261001-85g)", () => {
     await expect(cell).toHaveText(before ?? "");
   });
 
+  // /qa ISSUE-001(PR #121) — 보관 거래처는 선택지에 없어 칸 · 편집기 선택지가 UUID를 그렸다. 줄이 실은 이름을 그린다.
+  test("D3: 보관된 거래처 줄은 거래처 칸 · 편집기 선택지에 실제 이름이 보인다", async ({ page }) => {
+    const teamId = await makeTeam();
+    const writer = await makeWriter(teamId, "");
+    const { projectId, client } = await makeProjectWithVendorLine(teamId, writer);
+    await db.update(vendors).set({ archivedAt: new Date() }).where(eq(vendors.id, client.id));
+
+    await login(page, writer);
+    await page.goto(`/projects/${projectId}`);
+    const cell = vendorCell(page, 0);
+    await expect(cell).toHaveText(client.name);
+
+    await cell.focus();
+    await page.keyboard.press("Enter");
+    const select = page.getByRole("combobox", { name: "거래처" });
+    await expect(select.locator(`option[value="${client.id}"]`)).toHaveText(client.name);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("main")).not.toContainText(client.id);
+  });
+
   test("대조: 셋 다 보이는 계급에는 등록 진입점이 있다", async ({ page }) => {
     const teamId = await makeTeam();
     const writer = await makeWriter(teamId, "");

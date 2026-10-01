@@ -108,6 +108,8 @@
 
 ### 관리 표 행 행동 간격 `--s-4` — 거래처 · 법인카드 · 코드표
 
+해결: `89f19f8` (quick 260930-nto, PR #111)
+
 **What:** /admin/vendors(「수정 · 숨기기 · 삭제」) · /admin/corp-cards(「비활성화 · 삭제」) · /admin/code-tables 행 행동 사이가 1280에서 0px라 한 단어처럼 읽히고 「삭제」가 옆 행동에 붙는다. 사람 목록 `.rowActions`(inline-flex · gap `var(--s-4)` · 700 미만만 줄바꿈 · 「상세」 같은 짧은 링크는 자체 `white-space: nowrap`)와 같은 규칙으로 맞춘다. 「공유 Button `.tertiary` 밑줄을 글자 밑줄로」와 한 quick으로.
 
 **Why:** SYSTEM §6-1 행 안 두 행동 `--s-4` 이상 · 「위험한 동작은 떨어뜨려 둔다」. PR #108이 사람 목록만 맞춰 「화면 하나만 예외 금지」에 걸린다(`/design-review` FINDING-001, high).
@@ -133,6 +135,70 @@
 **Context:** `domain/` 변경이라 PR #108 범위 밖. ①은 정리(prune) 범위라 되돌릴 수 없는 동작과 이어진다 — 우선.
 
 **Effort:** M · **Priority:** P1(① · ②) / P2(③) · **Depends on:** None
+
+### NextTurn `.tertiary` · Table `.emptyAction` 밑줄도 글자 밑줄로(quick 260930-nto eng review R3)
+
+**What:** `ui/next-turn/NextTurn.module.css:124-137`(`.tertiary` border-bottom · hover `border-bottom-width`)와 `ui/table/Table.module.css:216-225`(`.emptyAction` border-bottom)의 3차 밑줄을 공유 Button `.tertiary`(`ff64212`)와 같은 글자 밑줄(`text-decoration: underline` · `--underline-offset` · hover 두께 `--line-w-strong`)로 바꾸고, `test/unit/app/tertiary-underline-css.test.ts` 점검 범위에 넣는다.
+
+**Why:** §4-4 3차 밑줄 규칙과 다르고, 같은 결함(폰 44px 상자 바닥 밑줄 · hover 때 상자 높이 변화)이 컴포넌트마다 남는다. PR #111은 사용자 범위(공유 Button)만 고쳤다.
+
+**Context:** 원천 소스만 읽었고 실측 전. 셀 입력 밑줄(`project-detail.module.css:110` · `reserves.module.css:25`)은 3차가 아니라 대상 아님.
+
+**Effort:** S · **Priority:** P2 · **Depends on:** PR #111
+
+### 코드표 보관 행 높이 35.39px < `--row-min`(quick 260930-nto 독립 DOM 감사)
+
+**해결:** PR #108(252985e)이 `height: var(--row-min)`과 보관 항목 시드 E2E로 고쳤다.
+
+**What:** `app/(app)/admin/code-tables/code-tables.module.css`의 `.table td { min-height: var(--row-min) }`는 표 칸에 적용되지 않는다. 입력 칸이 없는 보관 행(시스템 관리자에게 보임)이 1280에서 35.39px로 36px 아래다. 거래처 · 법인카드 · 보관함처럼 `height: var(--row-min)`으로 바꾸고, `test/e2e/table-row-min.spec.ts`에 보관 항목을 심어 매번 잡히게 한다.
+
+**Why:** `table-row-min.spec.ts`가 전체 E2E에서 실행 순서에 따라 실패한다 — 다른 스펙이 erp_test에 보관 항목을 남기면 걸린다(260930-nto 전체 실행 1회 실패, 감사가 소수점까지 재현). ready 전환 뒤 CI 전체 E2E를 빨갛게 할 수 있다.
+
+**Context:** base `3774333`(PR #108)에도 같은 규칙 — PR #111 변경 아님. 감사 보고서 `.planning/quick/260930-nto-row-actions-gap-and-tertiary-underline/260930-nto-DOM-AUDIT.md`.
+
+**Effort:** S · **Priority:** P2 · **Depends on:** None
+
+### 대기 중 3차 버튼 밑줄 두 토막(PR #111 /review · /qa)
+
+**해결:** PR #111(Codex 리뷰 P2) — `.tertiary`의 flex gap을 0으로 둬 「…」가 라벨에 붙고 밑줄이 한 줄로 이어진다(3차 버튼엔 kbd 병기가 없다). 단위 CSS 단언 + E2E 대기 상태 실측(간격 8 → 0px).
+
+**What:** 공유 Button `.tertiary` 밑줄이 `<button>`(flex)에 걸려 대기 중에는 라벨 `<span>`과 「…」 `<span>`에 따로 그어지고 사이 8px(`--s-2`)는 비어 보인다(/qa 실측: 라벨 29.38px + 간격 8px + 「…」 9.8px, 밑줄 색 `--line`). 밑줄을 라벨 span에만 걸지(`.tertiary > span:first-child`) 정한다.
+
+**Why:** 예전 border-bottom은 한 줄이었다. 요청 중 잠깐만 보이지만 3차 버튼 약 35곳 전부 해당.
+
+**Context:** D5(대기 「…」 그대로) 결정과 같은 쪽으로 PR #111에서 고치지 않았다. 고치면 D4 계산 스타일 일치 단언 · hover 규칙 구조가 바뀐다.
+
+**Effort:** S · **Priority:** P3 · **Depends on:** PR #111
+
+### 폰 법인카드 「삭제」 확인 문구가 66~89px 폭에 10~11줄(PR #111 /qa)
+
+**What:** 폰 375/320에서 법인카드 행 「삭제」 확인 문구(`<이름> 삭제 · 보관함으로 이동합니다 · 관리자가 복원할 수 있습니다`)가 동작 칸 폭 105/82px 안에서 89/66px로 눌려 10/11줄이 된다(거래처는 151/124px, 5/7줄). 표가 내용 폭이라 긴 다른 열이 동작 칸을 누른다. 넘침은 0.
+
+**Why:** 되돌릴 수 없는 일의 확인 문구가 세로로 길게 쪼개져 읽기 어렵다(§7 사용성).
+
+**Context:** base `3774333`에서도 차이 2px 이내·줄 수 같음 — PR #111 변경 아님(/qa가 base 빌드와 비교 실측).
+
+**Effort:** S · **Priority:** P3 · **Depends on:** None
+
+### 폰 코드표에서 비활성화 · 삭제를 할 수 없다(PR #111 /design-review FINDING-002)
+
+**What:** `code-tables.module.css:157-181`이 동작 열(6열)을 700 미만에서 `display: none`으로 숨겨 699/375/320에서 「비활성화」「삭제」가 0×0이다. 거래처 · 법인카드 · 사람은 폰에서도 행동이 보인다. P2로 접거나 P1에 두어 같은 방식으로 맞춘다.
+
+**Why:** SYSTEM §7-3 「상세 화면이 없는 목록은 P3로 숨기지 않고 P2로 접는다(숨기면 폰에서 볼 길이 없다)」 위반. 관리 마스터 화면끼리도 다르다(§6-1).
+
+**Context:** PR #111 이전부터(이 PR의 `.rowActions` 폰 줄바꿈 규칙은 코드표에서 적용될 일이 없다). DOM 실측은 PR #111 /design-review.
+
+**Effort:** S · **Priority:** P2 · **Depends on:** None
+
+### 관리 표 행 행동 주변 작은 불일치(PR #111 /design-review 폴리시)
+
+**What:** ① 거래처 · 법인카드 · 코드표 표 칸 line-height가 본문 값 19.2px(1.6)이라 행동 상자가 19.19px, 사람 목록은 `--lh-table` 18px(§2-3 「표 셀 line-height 1.5」) — 세 모듈 `.table td`에 `line-height: var(--lh-table)`. ② 폰 375에서 거래처 · 법인카드 행이 44px 목표 3개가 세로로 쌓여 184.5/213px(§7-3 폰 P1 「행동 1개 · 두 줄」과 긴장) — 폰 P1에 행동을 하나만 둘지 결정. ③ 짧은 행 링크 한 줄 유지 방식이 세 가지(사람 `.detailLink` 복사 · 거래처/법인카드 `.toggle`+`.rowLink` · Button `.tertiary` 내장)이고, `.rowLink` 이름은 결재함 · 연차의 「행 전체 탭 링크」와 뜻이 다르다. ④ 폰에서 `.toggle` · `.tertiary`는 좌우 padding `--s-2`가 있고 사람 `.detailLink`는 없어, 가로로 놓일 때 보이는 글자 간격이 24px/32px로 다를 수 있다(미실측).
+
+**Why:** 같은 패턴이 화면마다 조금씩 갈라진다(「화면 하나만 예외 금지」).
+
+**Context:** 모두 PR #111 이전부터 있던 것. ③ ④는 소스 검토, ① ②는 DOM 실측.
+
+**Effort:** S · **Priority:** P3 · **Depends on:** PR #111
 
 ## 운영 배포 준비: 보안 스캐너 CI(2026-09-30, Phase 8 전)
 
@@ -181,6 +247,8 @@
 **Depends on:** Phase 4 `ui/form`
 
 ### 공유 Button `.tertiary` 밑줄을 글자 밑줄로
+
+해결: `ff64212` (quick 260930-nto, PR #111)
 
 **What:** `ui/button/Button.module.css:52-81`의 3차 버튼이 `border-bottom` 밑줄이라 폰 44px 상자에서 글자와 떨어진다. FINDING-005(`ListEmpty`, 고침 `2342b01`)와 같은 수정(`text-decoration: underline` + `--underline-offset`)을 관리자·Phase 4 화면을 잰 뒤 적용한다.
 

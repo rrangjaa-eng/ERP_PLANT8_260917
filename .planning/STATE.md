@@ -351,6 +351,7 @@ Recent decisions affecting current work:
 | 260930-aq2 | 04.4 UI-REVIEW WARNING 3건: 사람 목록 id 없는 계급 key·상세·삭제(W1) · PC 배지 넘침 미재현(W2, 수치만) · 폰 「실행 기록」 줄 높이(W3) + 감사 W-A 누름 영역 | 2026-09-30 | 5d6a4a3 | [260930-aq2-04-4-ui-review-warning-3](./quick/260930-aq2-04-4-ui-review-warning-3/) |
 | 260930-f3l | 04.4 후속 과제: 사람 목록 가림 열·잠김 한 줄(DR-4·5)·등록 권한(DR-6)·행동 간격(DR-7) · 행동 로그 사람 필터 · 상태 화면 일시 tabular-nums·실행 기록 새 탭 · 3차 밑줄 hover 13곳 · 표 행 높이 --row-min | 2026-09-30 | 318657d | [260930-f3l-04-4-follow-ups-people-action-log-hidden](./quick/260930-f3l-04-4-follow-ups-people-action-log-hidden/) |
 | 260930-kc9 | F(2) PR #104 후속 — ISSUE-001 설정 힌트 aria-describedby 전부 · DR-104-01 폰 복원 줄 폭 44 · DR-104-02 비활성 1차 kbd 대비 · DR-104-03 이력 숫자 쉼표 · DR-104-04 번호 칸 §7-3 · DR-104-05 폰 머리 줄 DOM 순서 = 보이는 순서 · G1 export 주석 · G2 PC 테스트 제목 · G3 SYSTEM.md 44 예외 역참조(ISSUE-002 제외, 독립 DOM 감사 A~G PASS) | 2026-09-30 | 4d23611 | [260930-kc9-f-2-pr104-followup-issue-001-dr-104-01-0](./quick/260930-kc9-f-2-pr104-followup-issue-001-dr-104-01-0/) |
+| 260930-nto | 04.4 후속 이연 2건: 관리 표 행 행동 간격 --s-4(거래처 · 법인카드 · 코드표, FINDING-001) · 공유 Button .tertiary 글자 밑줄(FINDING-002) | 2026-09-30 | 3655ab5 | [260930-nto-row-actions-gap-and-tertiary-underline](./quick/260930-nto-row-actions-gap-and-tertiary-underline/) |
 
 ### Roadmap Evolution
 

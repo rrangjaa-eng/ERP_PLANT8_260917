@@ -3,10 +3,12 @@ import {
   formatContactPhone,
   formatPhone,
   formatSubmittedAtKst,
+  maskPhone,
   maskRrn,
   normalizeContactPhone,
   normalizeName,
   normalizePhone,
+  sameNameKey,
 } from "@/domain/certs/format";
 
 describe("domain/certs/format", () => {
@@ -74,6 +76,27 @@ describe("domain/certs/format", () => {
   describe("formatSubmittedAtKst (U13)", () => {
     it("ISO 문자열을 KST 고정 YYYY-MM-DD HH:mm로 그린다(로케일 의존 없음)", () => {
       expect(formatSubmittedAtKst("2026-09-20T09:42:00.000Z")).toBe("2026-09-20 18:42");
+    });
+  });
+
+  // 04.3-17 — I′3 제출 섹션 가린 연락처(N11 a · SYSTEM §2-4 ⑲) · 같은 이름 정규형(E6 a · DR-2).
+  describe("maskPhone", () => {
+    it.each([
+      ["010-4821-7730", "010-****-7730"],
+      ["01048217730", "010-****-7730"],
+      ["0111234567", "011-***-4567"],
+      ["011-123-4567", "011-***-4567"],
+      ["", ""],
+    ])("maskPhone(%j) → %j", (input, expected) => {
+      expect(maskPhone(input)).toBe(expected);
+    });
+  });
+
+  describe("sameNameKey", () => {
+    it("NFC + 모든 공백(전각 포함) 제거 — `김 하늘` = `김하늘`", () => {
+      expect(sameNameKey("김 하늘")).toBe(sameNameKey("김하늘"));
+      expect(sameNameKey(" 김\u3000하 늘 ".normalize("NFD"))).toBe("김하늘");
+      expect(sameNameKey("김하늘")).not.toBe(sameNameKey("김하눌"));
     });
   });
 });

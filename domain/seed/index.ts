@@ -240,8 +240,8 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
   let visibilityCount = 0;
   for (const item of INFO_ITEMS) {
     // 소유자가 시스템 관리자 계급에서 확인증 개인정보 전체 보기를 끄면 배포가 되살리지 않는다 —
-    // 담당자 계급(박서연)의 접근은 cert.setup(04.3-02)이 별도로 켠다(E3-13).
-    if (item.key === "cert.rrn_unmasked" || item.key === "cert_submission.value") {
+    // 담당자 계급(박서연)의 접근은 cert.setup(04.3-02)이 별도로 켠다(E3-13). 04.3-10 경품 가액(E12)도 같은 규칙.
+    if (item.key === "cert.rrn_unmasked" || item.key === "cert_submission.value" || item.key === "cert_prize.value") {
       await insertVisibilityIfAbsent(viewer, {
         roleId: SYSADMIN_ROLE_ID,
         infoItem: item.key,

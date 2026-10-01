@@ -63,10 +63,11 @@ export const INFO_ITEMS: InfoItemDef[] = [
   // 04-07(D-59 · CEO 리뷰 B-15): 리저브 대장 전체를 게이트한다 — 금액만이 아니라 줄·건수·날짜까지(부분 노출 금지).
   // 클라이언트와 회사 사이의 돈이라 기획본부 기본값은 숨김(새 기능 정보는 기본 숨김).
   { key: "reserve.amount", label: "리저브 금액", staffDefault: false },
-  // 04.3-04: 확인증 행사 칸(이름 · 당첨일 · 담당 · 제출 수 · 링크 · QR)과 당첨자
-  // 이름 · 전화. 담당 PM이 매일 다루는 자기 행사라 기본값 참.
+  // 04.3-04: 확인증 행사 칸(이름 · 당첨일 · 담당 · 제출 수 · 링크 · QR). 담당 PM이 매일 다루는 자기 행사라 기본값 참.
   { key: "cert_event.value", label: "확인증 행사 정보", staffDefault: true },
-  { key: "cert_winner.value", label: "당첨자 정보", staffDefault: true },
+  // 04.3-10(eng-review newflow E12): 경품 1개 가액 · 수량별 제출 수 · 파기 대상 수. 수령자 · 기획본부에 보이지 않는
+  // 돈이라 기본값 거짓(reserve.amount 선례) — cert_event.value(PM 기본 참)로 거르면 PM에 가액이 샌다.
+  { key: "cert_prize.value", label: "확인증 경품 가액", staffDefault: false },
   // 04.3-07: 제출된 확인증의 값 칸(I4) · 주민등록번호 전체 보기. 개인정보라 기본값 숨김.
   { key: "cert_submission.value", label: "확인증 제출 내용", staffDefault: false },
   { key: "cert.rrn_unmasked", label: "주민등록번호 전체 보기", staffDefault: false },

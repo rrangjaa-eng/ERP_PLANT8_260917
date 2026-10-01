@@ -50,6 +50,54 @@ export async function lockEventRow(viewer: Viewer, eventId: string, tx: DbOrTx):
   return row ?? null;
 }
 
+// 04.3-10 — 「QR 생성 신청」 멱등 키로 찾는다(같은 사람 · 같은 키만 — 다른 사람의 키를 넘겨받지 않는다).
+export async function findEventByCreateRequest(
+  viewer: Viewer,
+  input: { requestId: string; createdBy: string | null },
+  tx: DbOrTx = db,
+): Promise<CertEventRow | null> {
+  void viewer;
+  const createdBy = input.createdBy === null ? isNull(certEvents.createdBy) : eq(certEvents.createdBy, input.createdBy);
+  const [row] = await tx
+    .select()
+    .from(certEvents)
+    .where(and(eq(certEvents.createRequestId, input.requestId), createdBy))
+    .limit(1);
+  return row ?? null;
+}
+
+// 04.3-10 「QR 생성」 — 잠근 행(lockEventRow)에 토큰 · 해시 · 암호문 · 마감 · 생성 시각 · 생성자 · 요청 키를 함께 채우고
+// 문의 전화 사본을 지금 설정값으로 다시 찍는다(신청과 공개가 며칠 떨어진다 — eng-review newflow E28).
+export async function setQrGenerated(
+  viewer: Viewer,
+  eventId: string,
+  input: {
+    tokenHash: string;
+    tokenEncrypted: string;
+    expiresAt: Date;
+    at: Date;
+    by: string | null;
+    requestId: string;
+    contactPhone: string;
+  },
+  tx: DbOrTx,
+): Promise<void> {
+  void viewer;
+  await tx
+    .update(certEvents)
+    .set({
+      tokenHash: input.tokenHash,
+      tokenEncrypted: input.tokenEncrypted,
+      expiresAt: input.expiresAt,
+      qrCreatedAt: input.at,
+      qrCreatedBy: input.by,
+      qrRequestId: input.requestId,
+      contactPhone: input.contactPhone,
+      updatedAt: input.at,
+    })
+    .where(eq(certEvents.id, eventId));
+}
+
 // 04.3-04 Task 2 ④ — 내부 목록 · 상세. 범위 서술자: createdBy가 undefined면
 // 전부, 값이면 그 사람이 만든 행사만(null = 시스템이 만든 행사).
 export type CertEventScope = { createdBy?: string | null };
@@ -58,6 +106,7 @@ export type CertEventSummaryRow = {
   id: string;
   name: string;
   wonOn: string;
+  createdAt: Date;
   expiresAt: Date | null;
   closedAt: Date | null;
   closedReason: string | null;
@@ -96,6 +145,7 @@ export async function listEventSummaries(
       id: certEvents.id,
       name: certEvents.name,
       wonOn: certEvents.wonOn,
+      createdAt: certEvents.createdAt,
       expiresAt: certEvents.expiresAt,
       closedAt: certEvents.closedAt,
       closedReason: certEvents.closedReason,

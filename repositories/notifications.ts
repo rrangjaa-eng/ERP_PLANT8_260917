@@ -1,5 +1,5 @@
 import { and, desc, eq, gt, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, type DbOrTx } from "@/db/client";
 import { withDeadlineTransaction, type DeadlineTx } from "@/db/deadline-transaction";
 import { notificationLog, notifyTickRuns, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
@@ -87,6 +87,32 @@ export async function insertNotifications(
   viewer: Viewer,
   rows: readonly NotificationInsert[],
   tx: NotifyTx,
+): Promise<number[]> {
+  void viewer;
+  if (rows.length === 0) return [];
+  const inserted = await tx
+    .insert(notificationLog)
+    .values([...rows])
+    .onConflictDoNothing({
+      target: [
+        notificationLog.conditionKind,
+        notificationLog.entity,
+        notificationLog.entityId,
+        notificationLog.recipientId,
+        notificationLog.round,
+      ],
+    })
+    .returning({ id: notificationLog.id });
+  return inserted.map((row) => row.id);
+}
+
+// 04.3-10 — 사건 알림: 정기 tick이 아니라 행동(신청 · QR 생성 · 제출 한도)이 그 트랜잭션 안에서 곧바로 넣는 행이다.
+// tick 잠금을 잡지 않는다 — 같은 중복 키(위 insertNotifications와 같은 충돌 대상)가 같은 행을 막고, email_status 기본
+// pending이라 다음 영업일 tick의 이메일 묶음이 보낸다(04.2 D-4203 규칙 그대로). 돌려준 id 수가 실제 삽입 수다.
+export async function insertEventNotifications(
+  viewer: Viewer,
+  rows: readonly NotificationInsert[],
+  tx: DbOrTx,
 ): Promise<number[]> {
   void viewer;
   if (rows.length === 0) return [];

@@ -1,4 +1,4 @@
-import { and, eq, gte, lt, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { certSignatureUploads, certSubmissions } from "@/db/schema";
@@ -85,6 +85,16 @@ export async function countRecentSubmissionsByEvent(
     .select({ count: sql<number>`count(*)::int` })
     .from(certSubmissions)
     .where(and(eq(certSubmissions.eventId, input.eventId), gte(certSubmissions.submittedAt, input.since)));
+  return row?.count ?? 0;
+}
+
+// 04.3-10(설계 /cso E10) — 행사 누적 제출 수(대조 제외 뺀 행). 제출 한도 알림 조건일 뿐 제출을 막지 않는다.
+export async function countActiveSubmissionsByEvent(viewer: Viewer, eventId: string, tx: DbOrTx = db): Promise<number> {
+  void viewer;
+  const [row] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(certSubmissions)
+    .where(and(eq(certSubmissions.eventId, eventId), isNull(certSubmissions.excludedAt)));
   return row?.count ?? 0;
 }
 

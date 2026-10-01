@@ -83,3 +83,19 @@ describe("복원 — 보관할 때의 기준값으로 충돌 판정(검토 8)", 
     expect(restored.period).toEqual({});
   });
 });
+
+// /review(PR #128) — 보관본에서 되살린 새 줄(보관 거래처 줄의 복제)은 거래처 id만 남아 칸이 「—」였다.
+// 표의 다른 줄이 서버에서 받은 같은 거래처 이름을 잇는다.
+describe("복원 — 새 줄의 보관 거래처 이름", () => {
+  it("같은 거래처를 가진 줄이 받은 이름을 새 줄에 잇는다", () => {
+    const archived = { id: "vendor-archived", name: "보관 거래처" };
+    const saved = { ...savedLine(1, 1000), vendorId: archived.id, savedVendor: archived };
+    const added = { ...saved, clientKey: "new-1", id: "", isNew: true as const, dirty: true };
+    const stash = editsSnapshot([added], null, PERIOD_V1, null, null);
+    const cells = { quote: { vendorId: "edit" } } as unknown as KindCells;
+
+    const restored = mergeRestoredEdits([saved], stash, "print", cells).lines.at(-1);
+
+    expect(restored).toMatchObject({ vendorId: archived.id, savedVendor: archived });
+  });
+});

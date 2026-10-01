@@ -165,6 +165,12 @@ describe("정보 노출 누수 스캔 (ADMN-03)", () => {
       expect(infoItemOf("ReserveEntryDto", "evidenceLabel")).toBe("reserve.amount");
     });
 
+    // /qa ISSUE-001(PR #121) — 견적 줄의 거래처 이름은 프로젝트 정보와 거래처 정보를 모두 볼 때만(all-of).
+    it("QuoteLineDto의 거래처 이름 정보 항목이 등록돼 있다", () => {
+      const dto = DTO_REGISTRY.find((entry) => entry.name === "QuoteLineDto");
+      expect(dto?.fields.find((field) => field.key === "vendorName")?.infoItem).toEqual(["project.value", "vendor.value"]);
+    });
+
     // quick 261001-85g(ADMN-03) — 프로젝트 등록 폼 선택지(거래처 · 팀 · 사람)도 명세로 등록돼 이 스캔이 본다.
     // 정보 항목은 각 마스터 DTO의 이름 칸과 같다(마스터 목록 자체를 싣기 때문).
     it("프로젝트 등록 폼 선택지 DTO의 정보 항목이 등록돼 있다", () => {

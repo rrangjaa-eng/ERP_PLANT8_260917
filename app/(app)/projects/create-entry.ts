@@ -10,13 +10,14 @@ export function canCreateProject(input: CreateChoices): boolean {
 // 빈 화면은 무엇이 없는지 · 다음 한 수(SYSTEM.md §7-7 EMPTY). 거래처만 없어 등록할 수 없고 거래처를 만들 수 있을 때만
 // 「거래처 등록」 — 거래처 정보가 가려져 목록이 빈 계급(vendorShown 거짓)은 거래처가 없는 것이 아니라 행동이 없다.
 export function projectsEmptyState(
-  input: CreateChoices & { vendorShown: boolean; canWriteVendors: boolean },
+  input: CreateChoices & { vendorShown: boolean; canWriteVendors: boolean; canViewVendors: boolean },
 ): { message: string; action: { label: string; href: string } | undefined } {
   if (canCreateProject(input)) {
     return { message: "등록된 프로젝트가 없습니다", action: { label: "프로젝트 등록", href: "/projects?new=1#project-form" } };
   }
   const onlyClientsMissing = input.clientCount === 0 && canCreateProject({ ...input, clientCount: 1 });
-  if (onlyClientsMissing && input.vendorShown && input.canWriteVendors) {
+  // Codex 리뷰 P2 — 거래처 화면은 보기 권한이 없으면 404다. 쓰기만 있는 계급에게 링크를 주지 않는다.
+  if (onlyClientsMissing && input.vendorShown && input.canWriteVendors && input.canViewVendors) {
     return { message: "등록된 거래처가 없습니다", action: { label: "거래처 등록", href: "/admin/vendors?new=1#vendor-form" } };
   }
   return { message: "등록된 프로젝트가 없습니다", action: undefined };

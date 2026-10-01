@@ -166,4 +166,19 @@ describe("docs/CERT-PURGE.md", () => {
   it("OPERATIONS.md가 이 문서를 가리킨다", () => {
     expect(readDoc("OPERATIONS.md")).toContain("CERT-PURGE.md");
   });
+
+  // 04.3-14 반영 — 접속기록 월 1회 점검 절차(사용자 결정 5936195107 · 안전성 확보조치 기준 제8조②). 정리 제외는 5936870579.
+  it.each([
+    "접속기록 월 1회 점검",
+    "개인정보 보호책임자",
+    "2026-10-30",
+    "/admin/action-log",
+    "cert_view",
+    "mask_reveal",
+    "cert_correct",
+    'via: "print"',
+    "정리할 수 없다",
+  ])("접속기록 점검 절이 '%s'를 포함한다", (token) => {
+    expect(content).toContain(token);
+  });
 });

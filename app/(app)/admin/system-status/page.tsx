@@ -146,7 +146,7 @@ function restoreRehearsalValue(restoreRehearsal: SystemStatus["restoreRehearsal"
   // 백업 id·실행 링크는 값이 없으면 앞의 구분자까지 통째로 뺀다(UI-SPEC #7).
   return (
     <>
-      {view.head}
+      <span className={styles.num}>{view.head}</span>
       {view.backupId === null ? null : (
         <>
           {" · 백업 "}
@@ -158,8 +158,8 @@ function restoreRehearsalValue(restoreRehearsal: SystemStatus["restoreRehearsal"
       {view.runUrl === null ? null : (
         <>
           {" · "}
-          <a href={view.runUrl} className={styles.runLink}>
-            실행 기록
+          <a href={view.runUrl} className={styles.runLink} target="_blank" rel="noopener noreferrer">
+            실행 기록<span className="sr-only"> (새 탭)</span>
           </a>
         </>
       )}

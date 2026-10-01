@@ -104,6 +104,36 @@
 
 **Effort:** S / S · **Priority:** P1 · **Depends on:** 없음
 
+## 04.4 후속 이연(2026-09-30 quick 260930-f3l · PR #108)
+
+### 관리 표 행 행동 간격 `--s-4` — 거래처 · 법인카드 · 코드표
+
+**What:** /admin/vendors(「수정 · 숨기기 · 삭제」) · /admin/corp-cards(「비활성화 · 삭제」) · /admin/code-tables 행 행동 사이가 1280에서 0px라 한 단어처럼 읽히고 「삭제」가 옆 행동에 붙는다. 사람 목록 `.rowActions`(inline-flex · gap `var(--s-4)` · 700 미만만 줄바꿈 · 「상세」 같은 짧은 링크는 자체 `white-space: nowrap`)와 같은 규칙으로 맞춘다. 「공유 Button `.tertiary` 밑줄을 글자 밑줄로」와 한 quick으로.
+
+**Why:** SYSTEM §6-1 행 안 두 행동 `--s-4` 이상 · 「위험한 동작은 떨어뜨려 둔다」. PR #108이 사람 목록만 맞춰 「화면 하나만 예외 금지」에 걸린다(`/design-review` FINDING-001, high).
+
+**Context:** 출처 `vendors/page.tsx:161-174` · `corp-cards/page.tsx:188-194` · `code-tables/page.tsx:173-174`. 함정: 칸 전체에 `white-space: nowrap`을 두면 삭제 확인 줄이 표를 넘친다(768에서 14.66px 실측) — 짧은 링크에만 둔다. 사용자 결정(2026-09-30): 별도 quick.
+
+**Effort:** S · **Priority:** P2 · **Depends on:** None
+
+### 디자인 다듬기 3건(/design-review polish)
+
+**What:** ① /admin/system-status 「DB 커넥션 8 / 100」 · 배포 버전 · 마지막 백업 일시에 tabular-nums(`system-status/page.tsx:95-121`, §2-4) ② 삭제 확인 문구가 행 이름을 되풀이하고 「-습니다」 두 문장(`archive/delete-to-archive.tsx:50`, §8 규칙 3·5·6) — 44자 이름에서 행이 1280 55→97px · 375 124.5→236.5px ③ /admin/action-log 「사람」 select가 가장 긴 이름만큼(1280에서 502px) 늘어 필터 줄이 두 줄(§6-1 한 줄) — `.select`에 `ch` 기준 max-width.
+
+**Why:** SYSTEM 규칙과 어긋나지만 기능 영향 없음(polish).
+
+**Effort:** S · **Priority:** P3 · **Depends on:** None
+
+### 행동 로그 · 사람 DTO 기존 결함 3건(/review 범위 밖)
+
+**What:** ① ~~「사람」 칸이 숨겨진 계급(person.value 꺼짐)도 URL `actorId`가 조회 · 엑셀 내보내기 · 정리(prune) 범위를 좁힌다~~ — 해결: 페이지가 고를 사람이 없으면 URL actorId를 버린다(D1, PR #108 — #107에서 옮김) ② action_log.detail 노출이 꺼진 계급은 /admin/action-log가 500(`domain/action-log/index.ts:265`) ③ `domain/people/index.ts:104`가 `Partial<PersonDto>`를 `PersonDto`로 단언해 「키가 없을 수 있음」이 타입에 안 보인다 — 다른 화면에서 같은 id 누락 버그가 다시 난다.
+
+**Why:** 권한이 좁은 계급의 화면이 깨지거나 보이지 않는 조건으로 동작한다. ②는 오류 화면.
+
+**Context:** `domain/` 변경이라 PR #108 범위 밖. ①은 정리(prune) 범위라 되돌릴 수 없는 동작과 이어진다 — 우선.
+
+**Effort:** M · **Priority:** P1(① · ②) / P2(③) · **Depends on:** None
+
 ## 운영 배포 준비: 보안 스캐너 CI(2026-09-30, Phase 8 전)
 
 ### 보안 스캐너 5종을 CI에 넣기 (#109)
@@ -156,10 +186,10 @@
 
 **Why:** §4-4 3차 버튼 밑줄 규칙과 다르고 화면마다 밑줄 방식이 갈린다.
 
-**Context:** Phase 2 화면에는 렌더되지 않아 이번 리뷰 범위 밖이었다.
+**Context:** Phase 2 화면에는 렌더되지 않아 이번 리뷰 범위 밖이었다. 2026-09-30 quick 260930-f3l `/design-review` FINDING-002가 다시 확인했다 — 폰 375에서 「삭제」 밑줄이 글자 아래 13.5px(보관함 「복원」 12.9px), hover 때 상자 19→20px · 글자 0.5px 이동. 같은 칸의 「상세」(글자 밑줄)와 모양이 다르다. 「관리 표 행 행동 간격」(아래 04.4 후속 이연)과 한 quick으로 묶는다(사용자 결정 2026-09-30).
 
 **Effort:** S
-**Priority:** P3
+**Priority:** P2
 **Depends on:** None
 
 ## QA 이연(2026-09-24 /qa, Phase 2 화면)

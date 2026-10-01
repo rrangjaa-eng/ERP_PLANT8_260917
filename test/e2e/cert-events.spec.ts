@@ -9,7 +9,8 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
 import { createFixtureUser } from "./fixtures";
-import { createCertEvent, seedSubmittedCert, withCertFeatureOff } from "./helpers/cert";
+import { createCertEvent, seedIpSubmissionsForTest, seedSubmittedCert, withCertFeatureOff } from "./helpers/cert";
+import { collectCertResponses, leakPatternsFor, scanForLeaks } from "./helpers/cert-leak";
 
 // 04.3-04 Task 4 ⑤ · 04.3-15 — I′1 확인증 행사 목록 · I′3 상세 머리. 행사 만들기(I2)는 명단과 함께 없어졌다
 // (새 「QR 생성 신청」은 04.3-10). 전역 설정(기능 · 문의 전화)은 cert.setup.ts가 켠다 — 이 스펙은 기능 끄기를
@@ -30,7 +31,7 @@ async function groupHeaders(page: Page): Promise<string[]> {
   // 폰 접힌 줄(P2 `당첨일 · 담당`)도 td[colspan]이라 그룹 이름만 거른다(leave-list 전례).
   return (await page.locator("tbody tr td[colspan]").allTextContents())
     .map((text) => text.trim())
-    .filter((text) => ["신청됨", "접수 중", "닫힘"].includes(text));
+    .filter((text) => ["신청됨", "접수 전", "접수 중", "닫힘"].includes(text));
 }
 
 function eventRow(page: Page, eventName: string) {
@@ -248,5 +249,170 @@ test.describe("04.3-10 tracer — QR 생성 신청 → QR 생성(1280)", () => {
     await recipient.close();
     await pmPage.context().close();
     await mPage.context().close();
+  });
+});
+
+// ── 04.3-10 Task 2 — I′3 경품 표 전체 계약(1280) ──────────────────────────────────────────────
+
+// 표 격자 셀에 포커스 — 로빙 tabindex가 그 셀로 옮겨질 때까지(excel-paste-final.spec.ts 선례).
+async function focusGridCell(target: Locator) {
+  await expect(async () => {
+    await target.evaluate((element) => (element as HTMLElement).blur());
+    await target.focus();
+    await expect(target).toHaveAttribute("tabindex", "0", { timeout: 1_000 });
+  }).toPass();
+}
+
+async function pasteIntoFocusedCell(page: Page, text: string) {
+  await page.evaluate((clipboardText) => {
+    const dt = new DataTransfer();
+    dt.setData("text/plain", clipboardText);
+    document.activeElement?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+  }, text);
+}
+
+test.describe("04.3-10 Task 2 — I′3 경품 표(1280)", () => {
+  let pm: { email: string; password: string };
+  let pmId: string;
+  let manager: { email: string; password: string };
+  let managerRoleId: string;
+
+  test.beforeAll(async () => {
+    pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
+    const [me] = await db.select({ id: users.id }).from(users).where(eq(users.email, pm.email));
+    pmId = me?.id ?? "";
+    managerRoleId = `role-e2e-qr2-${randomUUID()}`;
+    await insertRole(SYSTEM_VIEWER, { id: managerRoleId, name: `E2E 경영2 ${managerRoleId.slice(-12)}`, sortOrder: 99 });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: managerRoleId, menu: "certs.events", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: managerRoleId, menu: "certs.qr", action: "write", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: managerRoleId, infoItem: "cert_event.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: managerRoleId, infoItem: "cert_prize.value", visible: true });
+    manager = await createFixtureUser({ roleId: managerRoleId });
+  });
+
+  test.afterAll(async () => {
+    await setRoleArchived(SYSTEM_VIEWER, managerRoleId, true);
+  });
+
+  test("미리 보기 · Ctrl+S · 읽기 전용 이유 · 셀 오류 · 1차 → 첫 오류 · 엑셀 붙여넣기 · 당첨 수 · 합계 행", async ({ browser }) => {
+    const ev = await createCertEvent({
+      name: "E2E 경품표",
+      prizes: [
+        { name: "갤럭시 탭 S10", unitValueKrw: 1_290_000, winnerCount: 3 },
+        { name: "다이슨 에어랩", unitValueKrw: 599_000, delivery: "parcel", winnerCount: 2 },
+        { name: "스타벅스 카드", unitValueKrw: 73_519 },
+      ],
+    });
+    await seedIpSubmissionsForTest(ev.eventId, { ip: "203.0.113.88", count: 1, prizeId: ev.prizeIds[1] });
+    const page = await loggedInPage(browser, manager);
+    await page.goto(`/certs/events/${ev.eventId}`);
+
+    await expect(prizeGrid(page).getByRole("columnheader", { name: "당첨 수" })).toBeVisible();
+    await expect(page.locator("tfoot")).toContainText("합계 · 경품 3개 · 제출 1건");
+    await expect(page.getByRole("button", { name: /^일괄 저장/ })).toBeVisible();
+
+    // 편집 중 가액이 제출 셀을 곧바로 바꾼다(저장 전 미리 보기) → Ctrl+S → 합계 행 결과
+    await editPrizeCell(page, 2, PRIZE_COL.value, "49,000");
+    await expect(prizeCell(page, 2, PRIZE_COL.submitted)).toHaveText("확인증 없음");
+    await page.keyboard.press("Control+s");
+    await expect(page.locator("tfoot")).toContainText(/저장됨 1줄 \d{2}:\d{2}/);
+
+    // 제출 있는 줄의 경품명 = 읽기 전용 + 이유(DR-2)
+    await focusGridCell(prizeCell(page, 1, PRIZE_COL.name));
+    await page.keyboard.press("Enter");
+    await expect(prizeCell(page, 1, PRIZE_COL.name).locator("input")).toHaveCount(0);
+    await expect(page.getByText("제출 있음 · 가액 · 당첨 수만 고침")).toBeVisible();
+
+    // 새 줄(빈 경품명) + 가액 abc → Ctrl+S → 셀 오류 문장 + 합계 행 · 1차 → 첫 오류 셀
+    await focusGridCell(prizeCell(page, 2, PRIZE_COL.name));
+    await page.keyboard.press("Control+Enter");
+    await expect(prizeRows(page)).toHaveCount(4);
+    await prizeCell(page, 3, PRIZE_COL.name).locator("input").press("Escape");
+    await editPrizeCell(page, 3, PRIZE_COL.value, "abc");
+    await page.keyboard.press("Control+s");
+    await expect(page.locator("tfoot")).toContainText("오류 2칸 · 전부 거부");
+    await expect(page.getByText("비어 있음 · 경품명 적기")).toBeAttached();
+    await page.getByRole("button", { name: /^일괄 저장/ }).click();
+    await expect(prizeCell(page, 3, PRIZE_COL.name)).toBeFocused();
+
+    // 엑셀 붙여넣기(경품명 · 가액 · 전달) 두 줄 — 오류 줄을 덮고 한 줄 더
+    await pasteIntoFocusedCell(page, "에어팟 프로\t250,000\t택배\n버즈 3\t180,000\t현장");
+    await expect(prizeRows(page)).toHaveCount(5);
+    await expect(prizeCell(page, 3, PRIZE_COL.name)).toHaveText("에어팟 프로");
+    await expect(prizeCell(page, 4, PRIZE_COL.delivery)).toHaveText("현장");
+    await page.keyboard.press("Control+s");
+    await expect(page.locator("tfoot")).toContainText(/저장됨 2줄 \d{2}:\d{2}/);
+    await page.context().close();
+  });
+
+  test("닫힌 행사는 가액 · 당첨 수만 편집 · 신청됨은 힌트 줄 「저장 Ctrl+S」 · 1차 QR 생성(kbd 없음)", async ({ browser }) => {
+    const closed = await createCertEvent({ name: "E2E 닫힌표", status: "closed", prizes: [{ name: "닫힌 경품", unitValueKrw: 120_000 }] });
+    const requested = await createCertEvent({ name: "E2E 신청표", status: "requested", createdBy: pmId });
+    const page = await loggedInPage(browser, manager);
+    await page.goto(`/certs/events/${closed.eventId}`);
+    await focusGridCell(prizeCell(page, 0, PRIZE_COL.name));
+    await page.keyboard.press("Enter");
+    await expect(prizeCell(page, 0, PRIZE_COL.name).locator("input")).toHaveCount(0);
+    await prizeCell(page, 0, PRIZE_COL.value).click();
+    await expect(prizeCell(page, 0, PRIZE_COL.value).locator("input")).toHaveCount(1);
+    await expect(page.getByRole("button", { name: /첫 줄 만들기/ })).toHaveCount(0);
+
+    await page.goto(`/certs/events/${requested.eventId}`);
+    await expect(page.getByText("경품이 없습니다")).toBeVisible();
+    await expect(page.locator("kbd", { hasText: "Ctrl+S" }).first()).toBeVisible();
+    await expect(page.getByText("저장", { exact: true })).toBeVisible();
+    const qr = page.getByRole("button", { name: "QR 생성", exact: true });
+    await expect(qr.locator("kbd")).toHaveCount(0);
+    await expect(page.getByText("경품 없음 · 첫 줄 만들기")).toBeVisible();
+    await page.context().close();
+  });
+
+  test("가액 누수 — 경영관리 차등 대조군 먼저(E17) → PM I′3 문서 · RSC에 가액 0건 · 가액 열 없음 · 기획본부 EMPTY · 접수 전", async ({ browser }) => {
+    const values = [612_345, 88_888, 49_731];
+    const patterns = leakPatternsFor(values);
+    const ev = await createCertEvent({
+      name: "E2E 누수표",
+      createdBy: pmId,
+      prizes: [
+        { name: "누수대조-A", unitValueKrw: values[0] },
+        { name: "누수대조-B", unitValueKrw: values[1], delivery: "parcel", winnerCount: 4 },
+        { name: "누수대조-C", unitValueKrw: values[2] },
+      ],
+    });
+
+    const mPage = await loggedInPage(browser, manager);
+    const mCollector = await collectCertResponses(mPage);
+    await mPage.goto(`/certs/events/${ev.eventId}`);
+    await expect(prizeGrid(mPage)).toBeVisible();
+    const mCorpus = await mCollector.finish();
+    expect(scanForLeaks(mCorpus.corpus, patterns).length).toBeGreaterThan(0);
+
+    const pPage = await loggedInPage(browser, pm);
+    const pCollector = await collectCertResponses(pPage);
+    await pPage.goto(`/certs/events/${ev.eventId}`);
+    await expect(pPage.getByRole("table", { name: "경품" })).toBeVisible();
+    const pCorpus = await pCollector.finish();
+    expect(pCorpus.corpus).toContain("누수대조-B");
+    expect(scanForLeaks(pCorpus.corpus, patterns)).toEqual([]);
+    await expect(pPage.getByRole("columnheader", { name: "1개 가액" })).toHaveCount(0);
+    await expect(pPage.getByRole("columnheader", { name: "당첨 수" })).toBeVisible();
+    await expect(pPage.getByText("확인증 없음")).toHaveCount(0);
+    await expect(pPage.getByRole("button", { name: /일괄 저장|QR 생성/ })).toHaveCount(0);
+
+    // 기획본부 신청됨 I′3 경품 EMPTY(DR-13)
+    const requested = await createCertEvent({ name: "E2E 기획 신청", status: "requested", createdBy: pmId });
+    await pPage.goto(`/certs/events/${requested.eventId}`);
+    await expect(pPage.getByText("경품이 없습니다 · 등록은 경영관리")).toBeVisible();
+
+    // 당첨일 내일 + QR 있음 → I′3 태그 · I′1 그룹 `접수 전`(UD-1 b)
+    const before = await createCertEvent({ name: "E2E 접수전", createdBy: pmId, wonOn: kstToday(1) });
+    await pPage.goto(`/certs/events/${before.eventId}`);
+    await expect(pPage.getByText("접수 전", { exact: true })).toBeVisible();
+    await pPage.goto("/certs/events");
+    expect(await groupHeaders(pPage)).toContain("접수 전");
+    await expect(eventRow(pPage, before.eventName).getByText("접수 전", { exact: true })).toBeVisible();
+
+    await mPage.context().close();
+    await pPage.context().close();
   });
 });

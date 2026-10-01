@@ -186,3 +186,22 @@ describe("상세 DTO 링크 · QR", () => {
     expect(requested.event).not.toHaveProperty("qrSvg");
   });
 });
+
+// 04.3-10 Task 2 ⑤ — 상세 DTO 경품 줄(prizes) 키 규칙. 행사 칸(경품명 · 전달 · 당첨 수 · 제출 수 · 잠김 · 버전)은 행사를 보는
+// 사람 모두, 가액 · 수량별 제출 수 · 파기 대상 수는 certs.qr 쓰기 ∧ cert_prize.value인 사람에게만(키 자체 — N7 a · E12).
+describe("상세 DTO 경품 줄", () => {
+  it("PM(만든 사람)은 경품명 · 전달 · 당첨 수 · 제출 수만 · 가액 키 없음 · canManagePrizes 거짓", async () => {
+    await grantPmCertEvents();
+    const pm = await makeUser(DEFAULT_ROLE_ID, "PM 가");
+    const made = await createCertEvent({
+      createdBy: pm.id,
+      prizes: [{ name: "갤럭시 탭 S10", unitValueKrw: 1_290_000, delivery: "parcel", winnerCount: 3 }],
+    });
+    const detail = await getEventDetail(pm, made.eventId);
+    if (detail.kind !== "ok") throw new Error("상세 실패");
+    expect(detail.event.canManagePrizes).toBe(false);
+    expect(detail.event.prizes).toEqual([
+      { id: made.prizeIds[0], name: "갤럭시 탭 S10", delivery: "parcel", winnerCount: 3, submittedCount: 0, locked: false, version: 1 },
+    ]);
+  });
+});

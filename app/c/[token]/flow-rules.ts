@@ -1,43 +1,39 @@
-// 04.3-03 Task 2a ③ · 2b ② — 외부 수령자 흐름의 순수 판정. 브라우저 API를
-// 부르지 않는다(단위 테스트가 node 환경에서 그대로 부른다).
+// 04.3-03 Task 2a ③ · 2b ② · 04.3-15 — 외부 수령자 흐름의 순수 판정. 브라우저 API를
+// 부르지 않는다(단위 테스트가 node 환경에서 그대로 부른다). 기록 단계는 E′2(pick) ·
+// E4(form) · 결과(result) — 명단 · 확인 단계는 없다(5909578685).
 
-export type HistoryStep = "verify" | "form" | "result";
-export type HistoryRender = "E2" | "E3" | "E4" | "result";
+export type HistoryStep = "pick" | "form" | "result";
+export type HistoryRender = "E2′" | "E4" | "result";
 
-const RENDER_OF: Record<HistoryStep, HistoryRender> = { verify: "E3", form: "E4", result: "result" };
+const RENDER_OF: Record<HistoryStep, HistoryRender> = { pick: "E2′", form: "E4", result: "result" };
 
-// 고아 기록 항목(UI-SPEC E3 「뒤로 가기」): 화면이 E2가 아닌 기록 항목 위에
-// 있는데 메모리에 그 단계가 없으면 E2를 그리고 history.back()으로 E2 항목에
-// 돌아간다(replaceState로 바꾸면 E2 항목이 둘이 된다).
+// 고아 기록 항목: 화면이 E′2가 아닌 기록 항목 위에 있는데 메모리에 그 단계가 없으면(앞으로 가기 ·
+// 새로 고침 · bfcache 복원) E′2를 그리고 history.back()으로 E′2 항목에 돌아간다(replaceState로 바꾸면
+// E′2 항목이 둘이 된다).
 export function resolveHistoryEntry(input: {
   stateStep: HistoryStep | null;
   memoryStep: HistoryStep | null;
 }): { render: HistoryRender; back: boolean } {
-  if (input.stateStep === null) return { render: "E2", back: false };
+  if (input.stateStep === null || input.stateStep === "pick") return { render: "E2′", back: false };
   if (input.stateStep === input.memoryStep) return { render: RENDER_OF[input.stateStep], back: false };
-  return { render: "E2", back: true };
+  return { render: "E2′", back: true };
 }
 
+// 확정 판정 — 멱등 키를 끝낸다. throttled는 넣지 않는다(결과 불명 쪽 — 같은 키로 다시 보낸다, E26).
 const DEFINITE_KINDS = new Set([
-  "wrong",
-  "locked",
-  "hardLocked",
-  "ok",
-  "submitted",
-  "closed",
-  "expiredProof",
-  "notFound",
-  // 04.3-06 — 제출 결과(E5 · E6-a · 칸 오류 · 주민등록번호 되묻기).
   "saved",
-  "alreadySubmitted",
   "invalid",
   "rrnRecheck",
+  "closed",
+  "notFound",
+  "notYetOpen",
+  "prizeGone",
+  "termsChanged",
 ]);
 
 type ActionResultLike = { data?: { kind?: string; [field: string]: unknown } | null; validationErrors?: unknown; serverError?: unknown } | undefined;
 
-// 확정 판정(틀림 · 잠김 · 누적 잠김 · 맞음 · 이미 제출 · 닫힘 · 확인 시간
-// 지남 · 자리 없음 · 입력 거부 · 제출 저장 · 칸 오류 · 되묻기)만 멱등 키를 끝낸다. throttled · serverError(잠금 · 풀 시간
+// 확정 판정(DEFINITE_KINDS · 입력 거부)만 멱등 키를 끝낸다. throttled · serverError(잠금 · 풀 시간
 // 초과 포함) · 연결 끊김 · 모르는 응답은 결과 불명 — 같은 키로 다시 보낸다.
 export function isDefiniteResult(result: ActionResultLike): boolean {
   if (!result) return false;
@@ -51,21 +47,6 @@ export function isDefiniteResult(result: ActionResultLike): boolean {
 // 사이에 결과 불명이 끼어도 같은 값이면 같은 본문이다(같은 키 재전송).
 export function nextRrnRecheckConfirmed(input: { armedRrn: string | null; rrn: string }): boolean {
   return input.armedRrn !== null && input.armedRrn === input.rrn;
-}
-
-export type ConsentTerms = { consentVersion: string; retentionYears: number };
-
-// UI-SPEC E4 「값의 주인」 — 같은 자리를 다시 확인하면 draft를 되살린다. 동의는 그때 보인
-// 판(동의 판 · 보존 기간)에 한 것이라 재확인이 다른 판을 주면 동의만 푼다(검토 L7).
-// 다른 자리면 null — 부르는 쪽이 빈 draft를 만든다.
-export function restoreDraft<D extends ConsentTerms & { rowId: string; consent: boolean }>(
-  kept: D | null,
-  rowId: string,
-  offer: ConsentTerms,
-): D | null {
-  if (!kept || kept.rowId !== rowId) return null;
-  const sameTerms = kept.consentVersion === offer.consentVersion && kept.retentionYears === offer.retentionYears;
-  return { ...kept, ...offer, consent: sameTerms && kept.consent };
 }
 
 export type SubmitField = "name" | "rrn" | "address" | "phone" | "consent" | "signature";
@@ -82,12 +63,11 @@ const SCHEMA_FIELD_ORDER: readonly [string, SubmitField][] = [
 ];
 
 // next-safe-action validationErrors(zod 거절)를 domain invalid와 같은 갈래로 바꾼다.
-// 수령자가 고칠 칸이 없으면(증표 · 멱등 키 · winnerVersion · 동의 판 등 클라이언트가 만든 값만
-// 거절) 확인 시간 지남 — E3 재확인이 새 증표 · 판을 준다(같은 본문 재전송은 같은 거절뿐).
-// 해석할 수 없는 값만 null(결과 불명).
+// 수령자가 고칠 칸이 없는 거절(경품 id · 멱등 키 · 안내 판처럼 페이지가 만든 값만)과 해석할 수 없는
+// 값은 null(결과 불명 줄 — 값을 잃지 않는 쪽, 갈래 화면은 04.3-16).
 export function submitOutcomeFromValidationErrors(
   validationErrors: unknown,
-): { kind: "invalid"; fields: SubmitField[] } | { kind: "expiredProof" } | null {
+): { kind: "invalid"; fields: SubmitField[] } | null {
   if (typeof validationErrors !== "object" || validationErrors === null) return null;
   const errors = validationErrors as Record<string, { _errors?: unknown } | undefined>;
   const fields: SubmitField[] = [];
@@ -95,7 +75,7 @@ export function submitOutcomeFromValidationErrors(
     const list = errors[schemaKey]?._errors;
     if (Array.isArray(list) && list.length > 0 && !fields.includes(field)) fields.push(field);
   }
-  return fields.length > 0 ? { kind: "invalid", fields } : { kind: "expiredProof" };
+  return fields.length > 0 ? { kind: "invalid", fields } : null;
 }
 
 // E4 제출 막힘 이유 — 빈 칸만 나열하고 마지막 항목의 받침에 맞춰 을/를을 붙인다.
@@ -106,23 +86,4 @@ export function submitBlockedReason(missing: readonly string[]): string | undefi
   const code = last.charCodeAt(last.length - 1) - 0xac00;
   const particle = code >= 0 && code <= 11171 && code % 28 !== 0 ? "을" : "를";
   return `${missing.join(" · ")}${particle} 채우면 제출할 수 있습니다`;
-}
-
-export type RecheckTrigger = "visible" | "button";
-export type RecheckOutcome = {
-  next: "closed" | "open" | "shortLock" | "stay" | "networkError";
-  focus: "step" | "input" | "group" | "none";
-};
-
-// 잠금 다시 확인(누적 잠김 복구 길) 응답 → 다음 화면과 포커스. 보임 이벤트의
-// 누적 잠김 · 실패는 조용하고(포커스 · 글 불변), 누름의 누적 잠김은 실패 줄
-// 없이 포커스만 묶음으로, 누름의 실패는 묶음 안 실패 줄이다(UI-SPEC 6차 손질 2).
-// 이 길은 E6-a로 가지 않는다 — 잠금 밖 응답(submitted 등)은 모르는 응답이다.
-export function recheckOutcome(result: ActionResultLike, trigger: RecheckTrigger): RecheckOutcome {
-  const kind = result?.data?.kind;
-  if (kind === "closed") return { next: "closed", focus: "step" };
-  if (kind === "shortLocked") return { next: "shortLock", focus: "group" };
-  if (kind === "open") return { next: "open", focus: "input" };
-  if (kind === "hardLocked") return { next: "stay", focus: trigger === "button" ? "group" : "none" };
-  return trigger === "button" ? { next: "networkError", focus: "group" } : { next: "stay", focus: "none" };
 }

@@ -1,4 +1,4 @@
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, gte, lt, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { certSignatureUploads, certSubmissions } from "@/db/schema";
@@ -7,8 +7,10 @@ import type { Viewer } from "@/domain/viewer";
 export type CertSubmissionRow = InferSelectModel<typeof certSubmissions>;
 
 export type InsertCertSubmissionInput = {
-  winnerId: string;
   eventId: string;
+  prizeId: string;
+  quantity: number;
+  submitIpHash: string;
   certNo: string;
   name: string;
   rrnEncrypted: string;
@@ -37,26 +39,53 @@ export async function insertSubmission(
   return row;
 }
 
-export async function findSubmissionByWinnerId(viewer: Viewer, winnerId: string): Promise<CertSubmissionRow | null> {
-  void viewer;
-  const [row] = await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId)).limit(1);
-  return row ?? null;
-}
-
-// 04.3-06 — 제출 재생(같은 키) · 잠근 뒤 재판정이 읽는다. 행사 id를 함께 건다.
-export async function findSubmissionForWinner(
+// 04.3-15 — 같은 멱등 키 재전송(잠금 전 · 잠근 뒤). 행사 id를 함께 건다.
+export async function findSubmissionByIdempotency(
   viewer: Viewer,
   eventId: string,
-  winnerId: string,
+  keyHash: string,
   tx: DbOrTx = db,
 ): Promise<CertSubmissionRow | null> {
   void viewer;
   const [row] = await tx
     .select()
     .from(certSubmissions)
-    .where(and(eq(certSubmissions.eventId, eventId), eq(certSubmissions.winnerId, winnerId)))
+    .where(and(eq(certSubmissions.eventId, eventId), eq(certSubmissions.idempotencyKeyHash, keyHash)))
     .limit(1);
   return row ?? null;
+}
+
+// 04.3-15 속도 제한(설계 /cso E10) — 창 안에 저장된 제출 행 수. 대조 제외 · 파기 칸과 무관하게 센다.
+export async function countRecentSubmissionsByIp(
+  viewer: Viewer,
+  input: { eventId: string; ipHash: string; since: Date },
+  tx: DbOrTx = db,
+): Promise<number> {
+  void viewer;
+  const [row] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(certSubmissions)
+    .where(
+      and(
+        eq(certSubmissions.eventId, input.eventId),
+        eq(certSubmissions.submitIpHash, input.ipHash),
+        gte(certSubmissions.submittedAt, input.since),
+      ),
+    );
+  return row?.count ?? 0;
+}
+
+export async function countRecentSubmissionsByEvent(
+  viewer: Viewer,
+  input: { eventId: string; since: Date },
+  tx: DbOrTx = db,
+): Promise<number> {
+  void viewer;
+  const [row] = await tx
+    .select({ count: sql<number>`count(*)::int` })
+    .from(certSubmissions)
+    .where(and(eq(certSubmissions.eventId, input.eventId), gte(certSubmissions.submittedAt, input.since)));
+  return row?.count ?? 0;
 }
 
 // 04.3-06 — 커밋 결과 불명 뒤 이 요청이 올린 객체를 가리키는 제출 줄이 있는지.

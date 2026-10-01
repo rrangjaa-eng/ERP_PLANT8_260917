@@ -62,7 +62,6 @@ export function ReviewForm(props: {
   subtitle: string;
   version: number;
   name: string;
-  registeredName: string | null;
   rrnMasked: string;
   phone: string;
   address: string | null;
@@ -221,7 +220,6 @@ export function ReviewForm(props: {
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? `${id}-error` : undefined}
         />
-        {field === "name" && props.registeredName ? <Form.Hint>등록 이름 {props.registeredName}</Form.Hint> : null}
         {error ? <Form.Error id={`${id}-error`}>{error}</Form.Error> : null}
       </Form.Field>
     );
@@ -290,12 +288,7 @@ export function ReviewForm(props: {
             items={[
               {
                 label: FIELD_LABELS.name,
-                value: (
-                  <>
-                    {values.name}
-                    {props.registeredName ? <Form.Hint>등록 이름 {props.registeredName}</Form.Hint> : null}
-                  </>
-                ),
+                value: values.name,
               },
               { label: FIELD_LABELS.rrn, value: rrnField },
               { label: FIELD_LABELS.phone, value: <span className={styles.num}>{values.phone}</span> },

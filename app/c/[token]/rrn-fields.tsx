@@ -6,6 +6,7 @@ import styles from "./intake.module.css";
 
 // 04.3-06 Task 2 ② — 화면 전용 부품 「주민등록번호 두 칸」(UI-SPEC E4). 보이는
 // 라벨이 묶음(role=group)의 이름이고 칸마다 접근 이름이 있다. 검사는 서버만 한다.
+// 04.3-15(G5 a) — 라벨 옆 부제 `세무 신고용`(주소 칸 부제와 같은 부품 · 모양).
 export const RRN_FRONT_ID = "rrn-front";
 
 export function RrnFields({
@@ -57,7 +58,7 @@ export function RrnFields({
   return (
     <div role="group" aria-labelledby={labelId} className={styles.fieldRow}>
       <span id={labelId} className={styles.fieldLabel}>
-        주민등록번호
+        주민등록번호 <span className={styles.labelSub}>세무 신고용</span>
       </span>
       <div className={styles.rrnRow}>
         <input

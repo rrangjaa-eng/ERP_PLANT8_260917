@@ -334,7 +334,7 @@ export const CERT_ENABLED: SettingDef<boolean> = {
 // 04.3-02 Task 2 ④ — 규약 C1의 나머지 여덟 키(환경 게이트·cert.enabled는
 // Task 1이 이미 등록). 링크 만료 시간·보존 연수·행사별 문의 전화 사본
 // 기본값·확인증 번호 서식 다섯. 이 여덟 키는 전부 이 태스크의 코드
-// (createEvent·verifyLast4·allocateDocumentNumber)가 읽는다
+// (수령자 제출 · allocateDocumentNumber · 04.3-10 QR 생성)가 읽는다
 // (registry-coverage).
 export const CERT_LINK_EXPIRE_HOURS: SettingDef<number> = {
   key: "cert.link.expire_hours",

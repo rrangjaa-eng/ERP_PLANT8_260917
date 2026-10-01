@@ -7,11 +7,12 @@ import { StatusTag } from "@/ui/status-tag/StatusTag";
 import type { CertEventListDto } from "@/domain/certs/events";
 import styles from "./events.module.css";
 
-// 04.3-04 Task 3 ② — I1 읽기 표(흰 머리글). domain이 접수 중 → 닫힘, 그룹 안 당첨일 내림차순으로 정렬해 준 순서 그대로.
+// 04.3-04 Task 3 ② · 04.3-15 — I′1 읽기 표(흰 머리글). domain이 신청됨 → 접수 중 → 닫힘, 그룹 안 당첨일
+// 내림차순으로 정렬해 준 순서 그대로. 제출 셀 = 건수 하나(명단이 없어 분모가 없다 — 대조 제외 뺀 수), 신청됨은 `—`.
 // 폰(<700)은 칸 접기 — P1 행사 · 제출 · 상태, P2 접힌 줄 `당첨일 · 담당`, 행 전체가 상세 링크(phoneRowLink).
 type Row = Partial<CertEventListDto> & { id: string };
 
-const STATUS_LABEL = { open: "접수 중", closed: "닫힘" } as const;
+const STATUS_LABEL = { requested: "신청됨", open: "접수 중", closed: "닫힘" } as const;
 
 export function EventsTable({ rows }: { rows: Row[] }) {
   const columns: TableColumn<Row>[] = [
@@ -34,12 +35,15 @@ export function EventsTable({ rows }: { rows: Row[] }) {
       header: "제출",
       priority: "p1",
       align: "right",
-      cell: (row) => (
-        <>
-          <span aria-hidden="true" className={styles.nowrap}>{`${row.submittedCount ?? 0}/${row.totalCount ?? 0}`}</span>
-          <span className="sr-only">{`제출 ${row.submittedCount ?? 0}명 / 전체 ${row.totalCount ?? 0}명`}</span>
-        </>
-      ),
+      cell: (row) =>
+        row.status === "requested" ? (
+          "—"
+        ) : (
+          <>
+            <span aria-hidden="true" className={styles.nowrap}>{`${row.submittedCount ?? 0}`}</span>
+            <span className="sr-only">{`제출 ${row.submittedCount ?? 0}건`}</span>
+          </>
+        ),
     },
     {
       key: "status",
@@ -62,7 +66,7 @@ export function EventsTable({ rows }: { rows: Row[] }) {
       columns={columns}
       rows={rows}
       getRowId={(row) => row.id}
-      groupBy={(row) => (row.status === "closed" ? STATUS_LABEL.closed : STATUS_LABEL.open)}
+      groupBy={(row) => STATUS_LABEL[row.status ?? "open"]}
       phoneRowLink
     />
   );

@@ -44,7 +44,6 @@ export type CertSubmissionReviewRow = {
   eventName: string;
   submittedAt: string;
   name: string;
-  registeredName: string | null;
   rrnMasked: string;
   phone: string;
   address: string | null;
@@ -66,7 +65,6 @@ export const CERT_SUBMISSION_REVIEW_DTO_SPEC: DtoSpec<CertSubmissionReviewRow, C
     { key: "eventName", from: "eventName", infoItem: VALUE_ITEM },
     { key: "submittedAt", from: "submittedAt", infoItem: VALUE_ITEM },
     { key: "name", from: "name", infoItem: VALUE_ITEM },
-    { key: "registeredName", from: "registeredName", infoItem: VALUE_ITEM },
     { key: "rrnMasked", from: "rrnMasked", infoItem: VALUE_ITEM },
     { key: "phone", from: "phone", infoItem: VALUE_ITEM },
     { key: "address", from: "address", infoItem: VALUE_ITEM },
@@ -141,7 +139,6 @@ export async function getSubmissionForReview(
     eventName: row.eventName,
     submittedAt: row.submittedAt.toISOString(),
     name,
-    registeredName: row.registeredName !== null && row.registeredName !== name ? row.registeredName : null,
     rrnMasked: row.rrnMasked,
     phone: formatPhone(row.phone),
     address: row.delivery === "parcel" ? row.address : null,

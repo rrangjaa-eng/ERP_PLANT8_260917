@@ -21,9 +21,17 @@ async function insertEventRow(values: { tokenHash: string | null; tokenEncrypted
 }
 
 describe("cert_* 표 — 경품 목록 모델", () => {
-  it("cert_prizes가 있고 옛 당첨자 표는 없다", async () => {
+  it("확인증 표는 행사 · 경품 · 제출 · 서명 의도 넷이다(cert_prizes가 있고 옛 당첨자 표는 없다)", async () => {
     expect(await tableExists("cert_prizes")).toBe(true);
-    expect(await tableExists("cert_winners")).toBe(false);
+    const rows = await db.execute<{ table_name: string }>(
+      sql`select table_name from information_schema.tables where table_schema = 'public' and left(table_name, 5) = 'cert_' order by table_name`,
+    );
+    expect(rows.rows.map((r) => r.table_name)).toEqual([
+      "cert_events",
+      "cert_prizes",
+      "cert_signature_uploads",
+      "cert_submissions",
+    ]);
   });
 
   it("제약 여섯이 pg_constraint에 있다", async () => {

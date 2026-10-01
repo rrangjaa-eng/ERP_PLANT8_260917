@@ -94,7 +94,6 @@ describe("getSubmissionForReview — 투영 · 404", () => {
       eventName: seeded.eventName,
       submittedAt: "2026-09-20T09:42:00.000Z",
       name: "김하늘",
-      registeredName: null,
       rrnMasked: "930412-2******",
       phone: "010-4821-7730",
       address: null,

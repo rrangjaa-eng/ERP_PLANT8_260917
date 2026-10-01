@@ -1,4 +1,4 @@
-// 04.3-02 Task 2 ⑥ — 순수 함수: 이름 정규화·가림, 전화번호 정규화·표시(당첨자
+// 04.3-02 Task 2 ⑥ — 순수 함수: 이름 정규화, 전화번호 정규화·표시(당첨자
 // 전용 · 문의 전화 전용 두 계약으로 나뉜다), 주민등록번호 가림. DB·설정을
 // 읽지 않는다 — 단위 테스트가 그대로 고정한다.
 
@@ -6,31 +6,6 @@
 // 거치면 같은 문자열이 된다.
 export function normalizeName(name: string): string {
   return name.normalize("NFC").trim();
-}
-
-// UI-SPEC 「이름 가림 규칙」 — 공백을 뺀 글자 수 n으로 판정하되 공백은 원래
-// 자리에 그대로 남긴다. n===1 → 전체 마스킹, n===2 → 마지막 글자만, n>=3 →
-// 처음·마지막을 남기고 가운데를 전부 마스킹.
-export function maskName(name: string): string {
-  const chars = Array.from(name.normalize("NFC"));
-  const nonSpaceIndices = chars.reduce<number[]>((acc, ch, i) => {
-    if (ch !== " ") acc.push(i);
-    return acc;
-  }, []);
-  const n = nonSpaceIndices.length;
-  if (n === 0) return name;
-
-  const result = [...chars];
-  if (n === 1) {
-    result[nonSpaceIndices[0]!] = "*";
-  } else if (n === 2) {
-    result[nonSpaceIndices[1]!] = "*";
-  } else {
-    for (let k = 1; k < n - 1; k++) {
-      result[nonSpaceIndices[k]!] = "*";
-    }
-  }
-  return result.join("");
 }
 
 // 당첨자 전화 전용 — 뒤 4자리 확인의 대상이라 휴대전화 형식만 받는다.

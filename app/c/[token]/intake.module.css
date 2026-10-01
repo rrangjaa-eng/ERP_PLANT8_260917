@@ -71,23 +71,11 @@
   margin-bottom: var(--s-1);
 }
 
-.verifyNameRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--s-4);
-}
-
-.verifyName {
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-bold);
-}
-
 .telLink {
   color: var(--accent);
 }
 
-/* 제출 줄(E3 · E4) — main 안 sticky, 위 2px --line-strong, 안전 영역 더함(§6-5 실물 .submit). */
+/* 제출 줄(E′4) — main 안 sticky, 위 2px --line-strong, 안전 영역 더함(§6-5 실물 .submit). */
 .stickySubmit {
   position: sticky;
   bottom: 0;
@@ -98,14 +86,18 @@
   z-index: var(--z-bar);
 }
 
-/* 04.3-06 — E4 경품 블록(라벨 「경품」 + 값, §6-5 실물 .pay) · 아래 문의 줄. */
+/* 04.3-06 · 04.3-15 — E′4 경품 블록(머리 = 라벨 「경품」 + 3차 「다른 경품 고르기」, 아래 경품명 한 줄,
+   §6-5 실물 .pay) · 아래 문의 줄. */
 .prizeBlock {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--s-4);
   border-top: var(--line-w-strong) solid var(--line-strong);
   padding-top: var(--s-3);
+}
+
+.prizeHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
 }
 
 .prizeLabel {
@@ -114,10 +106,10 @@
   font-weight: var(--fw-medium);
 }
 
-.prizeValue {
+.prizeName {
   font-size: var(--fs-lg);
   font-weight: var(--fw-bold);
-  text-align: right;
+  margin: 0;
 }
 
 .prizeInquiry {

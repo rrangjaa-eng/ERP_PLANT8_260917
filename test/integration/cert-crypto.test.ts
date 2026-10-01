@@ -2,7 +2,7 @@ import { eq, getTableName, sql } from "drizzle-orm";
 import { PgTable, type TableConfig } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/db/client";
-import { actionLog, certEvents, certSubmissions, certWinners } from "@/db/schema";
+import { actionLog, certEvents, certPrizes, certSubmissions } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { decrypt } from "@/lib/crypto";
 import { setSettingValue } from "@/domain/settings/registry";
@@ -32,7 +32,7 @@ describe("cert-crypto — 평문 부재 · 가린 값 · 토큰 해시(Task 3 �
     const rrn13 = "9304122123458";
     const rrnTail7 = rrn13.slice(6);
 
-    const tables: PgTable<TableConfig>[] = [certEvents, certWinners, certSubmissions];
+    const tables: PgTable<TableConfig>[] = [certEvents, certPrizes, certSubmissions];
 
     for (const table of tables) {
       const rows = await db.select().from(table);

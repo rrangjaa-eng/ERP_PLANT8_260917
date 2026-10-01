@@ -3,7 +3,6 @@ import {
   formatContactPhone,
   formatPhone,
   formatSubmittedAtKst,
-  maskName,
   maskRrn,
   normalizeContactPhone,
   normalizeName,
@@ -16,24 +15,6 @@ describe("domain/certs/format", () => {
       const nfd = "검는".normalize("NFD"); // 자모 분리 흉내는 아래 직접 비교로 검증
       void nfd;
       expect(normalizeName("  김하늘  ".normalize("NFD"))).toBe("김하늘");
-    });
-  });
-
-  describe("maskName", () => {
-    it.each([
-      ["김하늘", "김*늘"],
-      ["남궁민수", "남**수"],
-      ["김 하늘", "김 *늘"],
-      ["김", "*"],
-      ["김하", "김*"],
-      ["Joseph", "J****h"],
-    ])("%s → %s", (input, expected) => {
-      expect(maskName(input)).toBe(expected);
-    });
-
-    it("NFD로 들어온 이름도 김*늘로 가린다", () => {
-      const nfd = "김하늘".normalize("NFD");
-      expect(maskName(nfd)).toBe("김*늘");
     });
   });
 

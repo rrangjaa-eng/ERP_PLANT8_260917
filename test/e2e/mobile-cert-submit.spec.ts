@@ -2,17 +2,18 @@ import { existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, expect, type Locator, type Page, type Request } from "@playwright/test";
-import { and, eq, like } from "drizzle-orm";
+import { eq, like } from "drizzle-orm";
 import { db } from "@/db/client";
-import { certSignatureUploads, certSubmissions, certWinners } from "@/db/schema";
+import { certSignatureUploads, certSubmissions } from "@/db/schema";
 import { createCertEvent, withCertFeatureOff } from "./helpers/cert";
+import { drawSignature, fillIntakeForm, submitButton } from "./helpers/cert-form";
 
 test.use({ viewport: { width: 375, height: 800 } });
 test.describe.configure({ mode: "serial" });
 
-// 04.3-06 Task 3 — 375px 제출 흐름 · 서명 칸 계약(개정 ①-i) · 결과 불명 재전송 ·
-// 확인 시간 지남 → 값 되살림 · 자동 닫힘 · 택배 주소 · C1 직접 POST.
-// 자기 행사 · 자기 자리만 단언한다(전역 목록 · 전역 행 수 없음).
+// 04.3-06 Task 3 · 04.3-15 — 375px 제출 흐름 · 서명 칸 계약(개정 ①-i) · 결과 불명 재전송 · 택배 주소 ·
+// C1 직접 POST. 진입은 E′2 경품 고르기 → E′4(명단 · 확인 단계 없음 — 5909578685). 폼 채우기 · 서명은
+// 공용 도우미 helpers/cert-form.ts(eng-review newflow E14). 자기 행사만 단언한다(전역 목록 · 전역 행 수 없음).
 
 const LOGICAL_WIDTH = 520;
 const KEY_GUIDE = "Space로 펜을 대고 떼고 방향키로 그립니다 · Shift를 함께 누르면 크게 움직이고 Backspace는 마지막 획을 지웁니다";
@@ -41,30 +42,11 @@ async function drawLogical(page: Page, points: { x: number; y: number }[]) {
   await page.mouse.up();
 }
 
-async function signWell(page: Page) {
-  await drawLogical(page, [
-    { x: 60, y: 140 },
-    { x: 140, y: 60 },
-    { x: 220, y: 140 },
-    { x: 300, y: 60 },
-    { x: 380, y: 140 },
-  ]);
-}
-
-async function openForm(page: Page, link: string, maskedName: string, last4: string) {
-  await page.goto(link);
-  await page.getByRole("button", { name: maskedName }).click();
-  await page.getByLabel("전화번호 뒤 4자리").fill(last4);
-  await page.getByRole("button", { name: "전화번호 확인" }).click();
+// E′2에서 경품 행을 눌러 E′4로 간다(서버 왕복 없음).
+async function openForm(page: Page, link: string, prizeName: string) {
+  if (!page.url().startsWith(link)) await page.goto(link);
+  await page.getByRole("listitem").getByRole("button", { name: new RegExp(`^${prizeName}`) }).click();
   await expect(page.getByText("경품", { exact: true })).toBeVisible();
-}
-
-async function fillFields(page: Page, opts: { rrnFront?: string; rrnBack?: string; phone: string }) {
-  await page.locator("#name").fill("김하늘");
-  await page.getByLabel("주민등록번호 앞 6자리").fill(opts.rrnFront ?? "930412");
-  await page.getByLabel("주민등록번호 뒤 7자리").fill(opts.rrnBack ?? "2123458");
-  await page.locator("#phone").fill(opts.phone);
-  await page.getByRole("checkbox", { name: "개인정보 수집·이용에 동의합니다" }).check();
 }
 
 async function pasteInto(page: Page, selector: string, text: string) {
@@ -76,25 +58,14 @@ async function pasteInto(page: Page, selector: string, text: string) {
   }, text);
 }
 
-function submitButton(page: Page) {
-  return page.getByRole("button", { name: "확인증 제출" });
+async function submissionCount(eventId: string): Promise<number> {
+  return (await db.select().from(certSubmissions).where(eq(certSubmissions.eventId, eventId))).length;
 }
 
-async function winnerIdOf(eventId: string, name: string): Promise<string> {
-  const rows = await db.select().from(certWinners).where(eq(certWinners.eventId, eventId));
-  const row = rows.find((r) => r.name === name);
-  if (!row) throw new Error(`당첨자 없음: ${name}`);
-  return row.id;
-}
-
-async function submissionCount(winnerId: string): Promise<number> {
-  return (await db.select().from(certSubmissions).where(eq(certSubmissions.winnerId, winnerId))).length;
-}
-
-function localObjects(eventId: string, winnerId: string): string[] {
+function localObjects(eventId: string, prizeId: string): string[] {
   const dir = join(tmpdir(), "plant8-cert-signatures", "signatures", eventId);
   if (!existsSync(dir)) return [];
-  return readdirSync(dir).filter((f) => f.startsWith(`${winnerId}-`));
+  return readdirSync(dir).filter((f) => f.startsWith(`${prizeId}-`));
 }
 
 function isSubmitPost(link: string, request: Request): boolean {
@@ -102,14 +73,9 @@ function isSubmitPost(link: string, request: Request): boolean {
 }
 
 test("375px — 붙여넣기 · 점 · 왕복 낙서는 서명이 아니다 · 키보드로 두 획 · 지우고 다시 · 제출 → E5", async ({ page }) => {
-  const { link } = await createCertEvent({
-    name: "제출E2E키보드",
-    winners: [
-      { name: "김하늘", phone: "010-4821-7730", prizeName: "갤럭시 탭 S10", quantity: 1, delivery: "onsite" },
-      { name: "이도윤", phone: "010-2231-0045" },
-    ],
-  });
-  await openForm(page, link, "김*늘", "7730");
+  const { link } = await createCertEvent({ name: "제출E2E키보드" });
+  if (!link) throw new Error("링크 없음");
+  await openForm(page, link, "갤럭시 탭 S10");
 
   // 이름 · 연락처는 비어 있다(A3).
   await expect(page.locator("#name")).toHaveValue("");
@@ -122,9 +88,7 @@ test("375px — 붙여넣기 · 점 · 왕복 낙서는 서명이 아니다 · �
   await expect(page.getByLabel("주민등록번호 뒤 7자리")).toHaveValue("2123458");
   await expect(page.getByLabel("주민등록번호 뒤 7자리")).toBeFocused();
 
-  await page.locator("#name").fill("김하늘");
-  await page.locator("#phone").fill("010-4821-7730");
-  await page.getByRole("checkbox", { name: "개인정보 수집·이용에 동의합니다" }).check();
+  await fillIntakeForm(page, { phone: "010-4821-7730" });
 
   // 짧은 점 하나 — 서명이 아니다.
   await drawLogical(page, [{ x: 260, y: 100 }]);
@@ -171,24 +135,18 @@ test("375px — 붙여넣기 · 점 · 왕복 낙서는 서명이 아니다 · �
   await expect(page.getByText("서명을 해 주세요")).toHaveCount(0);
   await submitButton(page).click();
 
-  await expect(page.getByText("제출되었습니다 · 다시 제출할 수 없습니다")).toBeFocused();
+  await expect(page.getByText("제출되었습니다", { exact: true })).toBeFocused();
   await expect(page.getByText(/김하늘 · .* 제출 · 갤럭시 탭 S10 1개 현장 수령/)).toBeVisible();
   await expect(page.getByText(/^확인이 필요하면 담당자/)).toBeVisible();
   await expect(page).toHaveTitle("제출됨 · 기타소득 지급 확인");
 });
 
 test("결과 불명 — 서버는 처리했지만 응답을 잃으면 결과 불명 줄 · 값 유지 → 다시 누르면 E5 · 제출 줄 하나", async ({ page }) => {
-  const { link, eventId } = await createCertEvent({
-    name: "제출E2E결과불명",
-    winners: [
-      { name: "김하늘", phone: "010-4821-7730" },
-      { name: "이도윤", phone: "010-2231-0045" },
-    ],
-  });
-  const winnerId = await winnerIdOf(eventId, "김하늘");
-  await openForm(page, link, "김*늘", "7730");
-  await fillFields(page, { phone: "010-4821-7730" });
-  await signWell(page);
+  const { link, eventId } = await createCertEvent({ name: "제출E2E결과불명" });
+  if (!link) throw new Error("링크 없음");
+  await openForm(page, link, "갤럭시 탭 S10");
+  await fillIntakeForm(page, { phone: "010-4821-7730" });
+  await drawSignature(page);
 
   let dropped = false;
   await page.route(link, async (route, request) => {
@@ -207,22 +165,16 @@ test("결과 불명 — 서버는 처리했지만 응답을 잃으면 결과 불
   await expect(page.getByLabel("주민등록번호 뒤 7자리")).toHaveValue("2123458");
 
   await submitButton(page).click();
-  await expect(page.getByText("제출되었습니다 · 다시 제출할 수 없습니다")).toBeVisible();
-  expect(await submissionCount(winnerId)).toBe(1);
+  await expect(page.getByText("제출되었습니다", { exact: true })).toBeVisible();
+  expect(await submissionCount(eventId)).toBe(1);
 });
 
 test("되물음 뒤 결과 불명 — 같은 제출 키 · rrnRecheckConfirmed true 유지 · 다시 되묻지 않고 E5", async ({ page }) => {
-  const { link, eventId } = await createCertEvent({
-    name: "제출E2E되물음",
-    winners: [
-      { name: "김하늘", phone: "010-4821-7730" },
-      { name: "이도윤", phone: "010-2231-0045" },
-    ],
-  });
-  const winnerId = await winnerIdOf(eventId, "김하늘");
-  await openForm(page, link, "김*늘", "7730");
-  await fillFields(page, { rrnBack: "2123459", phone: "010-4821-7730" });
-  await signWell(page);
+  const { link, eventId } = await createCertEvent({ name: "제출E2E되물음" });
+  if (!link) throw new Error("링크 없음");
+  await openForm(page, link, "갤럭시 탭 S10");
+  await fillIntakeForm(page, { rrnBack: "2123459", phone: "010-4821-7730" });
+  await drawSignature(page);
 
   await submitButton(page).click();
   const rrnError = page.getByText("주민등록번호가 맞지 않습니다 · 앞 6자리(생년월일)와 뒤 7자리를 다시 확인해 주세요");
@@ -243,7 +195,7 @@ test("되물음 뒤 결과 불명 — 같은 제출 키 · rrnRecheckConfirmed t
   const retryPromise = page.waitForRequest((r) => isSubmitPost(link, r));
   await submitButton(page).click();
   const retry = await retryPromise;
-  await expect(page.getByText("제출되었습니다 · 다시 제출할 수 없습니다")).toBeVisible();
+  await expect(page.getByText("제출되었습니다", { exact: true })).toBeVisible();
 
   if (!aborted) throw new Error("끊은 요청을 잡지 못했다");
   const keyOf = (body: string) => /"idempotencyKey":"([^"]+)"/.exec(body)?.[1];
@@ -253,98 +205,38 @@ test("되물음 뒤 결과 불명 — 같은 제출 키 · rrnRecheckConfirmed t
   expect(keyOf(retryBody)).toBe(keyOf(abortedBody));
   expect(abortedBody).toContain('"rrnRecheckConfirmed":true');
   expect(retryBody).toContain('"rrnRecheckConfirmed":true');
-  expect(await submissionCount(winnerId)).toBe(1);
+  expect(await submissionCount(eventId)).toBe(1);
 });
 
-test("확인 시간 지남 → E3 → 같은 자리 재확인 → 주민등록번호 · 서명 획이 되살아난다", async ({ page }) => {
-  const { link, eventId } = await createCertEvent({
-    name: "제출E2E시간지남",
-    winners: [
-      { name: "김하늘", phone: "010-4821-7730" },
-      { name: "이도윤", phone: "010-2231-0045" },
-    ],
-  });
-  const winnerId = await winnerIdOf(eventId, "김하늘");
-  await openForm(page, link, "김*늘", "7730");
-  await fillFields(page, { phone: "010-4821-7730" });
-  await signWell(page);
-
-  await db
-    .update(certWinners)
-    .set({ verifiedUntil: new Date(Date.now() - 60_000) })
-    .where(and(eq(certWinners.id, winnerId), eq(certWinners.eventId, eventId)));
-  await submitButton(page).click();
-
-  await expect(page.getByText("확인 시간이 지났습니다 · 전화번호 뒤 4자리를 다시 적어 주세요")).toBeVisible();
-  await page.getByLabel("전화번호 뒤 4자리").fill("7730");
-  await page.getByRole("button", { name: "전화번호 확인" }).click();
-
-  await expect(page.getByLabel("주민등록번호 앞 6자리")).toHaveValue("930412");
-  await expect(page.getByLabel("주민등록번호 뒤 7자리")).toHaveValue("2123458");
-  await expect(page.getByRole("button", { name: "다시 쓰기" })).toBeEnabled();
-  expect(await submissionCount(winnerId)).toBe(0);
-});
-
-test("둘 남은 행사에서 두 사람이 제출하면 링크가 닫힌다 — 첫 브라우저가 다시 열면 E6-b 모두 제출", async ({ page, browser }) => {
-  const { link } = await createCertEvent({
-    name: "제출E2E자동닫힘",
-    winners: [
-      { name: "김하늘", phone: "010-4821-7730" },
-      { name: "이도윤", phone: "010-2231-0045" },
-    ],
-  });
-  await openForm(page, link, "김*늘", "7730");
-  await fillFields(page, { phone: "010-4821-7730" });
-  await signWell(page);
-  await submitButton(page).click();
-  await expect(page.getByText("제출되었습니다 · 다시 제출할 수 없습니다")).toBeVisible();
-
-  const other = await browser.newContext({ viewport: { width: 375, height: 800 } });
-  const otherPage = await other.newPage();
-  await openForm(otherPage, link, "이*윤", "0045");
-  await fillFields(otherPage, { phone: "010-2231-0045" });
-  await signWell(otherPage);
-  await submitButton(otherPage).click();
-  await expect(otherPage.getByText("제출되었습니다 · 다시 제출할 수 없습니다")).toBeVisible();
-  await other.close();
-
-  await page.goto(link);
-  await expect(page.getByText("이 링크는 닫혔습니다")).toBeVisible();
-  await expect(page.getByText(/^당첨자 모두 제출했습니다 · /)).toBeVisible();
-});
-
-test("택배 자리는 주소 칸 · 부제가 있고 현장 자리는 없다 · 경품 아래 문의 줄의 tel:은 숫자만", async ({ page }) => {
+test("택배 경품은 주소 칸 · 부제가 있고 현장 경품은 없다 · 경품 아래 문의 줄의 tel:은 숫자만", async ({ page }) => {
   const { link } = await createCertEvent({
     name: "제출E2E택배",
-    winners: [
-      { name: "김하늘", phone: "010-4821-7730", delivery: "parcel" },
-      { name: "이도윤", phone: "010-2231-0045", delivery: "onsite" },
+    prizes: [
+      { name: "다이슨 에어랩", unitValueKrw: 599_000, delivery: "parcel" },
+      { name: "갤럭시 탭 S10", delivery: "onsite" },
     ],
   });
-  await openForm(page, link, "김*늘", "7730");
+  if (!link) throw new Error("링크 없음");
+  await openForm(page, link, "다이슨 에어랩");
   await expect(page.getByLabel(/^주소/)).toBeVisible();
   await expect(page.getByText("택배로 보내 드립니다")).toBeVisible();
-  const inquiry = page.getByText(/^경품이나 받는 방법이 다르면 제출하기 전에/);
+  const inquiry = page.getByText(/^받은 경품이 목록에 없으면 제출하지 않아도 됩니다/);
   await expect(inquiry).toBeVisible();
   await expect(inquiry.locator("a")).toHaveAttribute("href", /^tel:\d+$/);
 
-  await openForm(page, link, "이*윤", "0045");
+  await page.getByRole("button", { name: "다른 경품 고르기" }).click();
+  await openForm(page, link, "갤럭시 탭 S10");
   await expect(page.getByLabel(/^주소/)).toHaveCount(0);
   await expect(page.getByText("택배로 보내 드립니다")).toHaveCount(0);
 });
 
 test("C1 직접 POST — 기능이 꺼진 동안 진짜 제출 요청을 보내도 저장 · 업로드 · 의도 줄이 없고, 켜면 저장된다", async ({ page }) => {
-  const { link, eventId } = await createCertEvent({
-    name: "제출E2E직접POST",
-    winners: [
-      { name: "김하늘", phone: "010-4821-7730" },
-      { name: "이도윤", phone: "010-2231-0045" },
-    ],
-  });
-  const winnerId = await winnerIdOf(eventId, "김하늘");
-  await openForm(page, link, "김*늘", "7730");
-  await fillFields(page, { phone: "010-4821-7730" });
-  await signWell(page);
+  const { link, eventId, prizeIds } = await createCertEvent({ name: "제출E2E직접POST" });
+  const prizeId = prizeIds[0];
+  if (!link || !prizeId) throw new Error("링크 없음");
+  await openForm(page, link, "갤럭시 탭 S10");
+  await fillIntakeForm(page, { phone: "010-4821-7730" });
+  await drawSignature(page);
 
   let captured: Request | undefined;
   await page.route(link, async (route, request) => {
@@ -367,15 +259,15 @@ test("C1 직접 POST — 기능이 꺼진 동안 진짜 제출 요청을 보내�
 
   await withCertFeatureOff(async () => {
     await page.request.post(link, { headers, data: body });
-    expect(await submissionCount(winnerId)).toBe(0);
+    expect(await submissionCount(eventId)).toBe(0);
     expect(await intentsFor()).toBe(0);
-    expect(localObjects(eventId, winnerId)).toHaveLength(0);
+    expect(localObjects(eventId, prizeId)).toHaveLength(0);
   });
 
   const on = await page.request.post(link, { headers, data: body });
   expect(on.ok()).toBe(true);
-  expect(await submissionCount(winnerId)).toBe(1);
-  expect(localObjects(eventId, winnerId)).toHaveLength(1);
+  expect(await submissionCount(eventId)).toBe(1);
+  expect(localObjects(eventId, prizeId)).toHaveLength(1);
 });
 
 // DOM 감사 F1 — 외부 수령자 화면은 480 한 열이라 PC 폭에서도 라벨이 칸 위다(SYSTEM §6-5).
@@ -386,21 +278,11 @@ async function expectLabelAbove(label: Locator, input: Locator) {
   expect(l.y + l.height).toBeLessThanOrEqual(i.y);
 }
 
-test("1280 — E3 · E4 모든 라벨은 칸 위(F1) · 이름 · 주민등록번호 자동 완성 끔(M2)", async ({ page }) => {
+test("1280 — E′4 모든 라벨은 칸 위(F1) · 이름 · 주민등록번호 자동 완성 끔(M2)", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
-  const { link } = await createCertEvent({
-    name: "제출E2E1280",
-    winners: [
-      { name: "김하늘", phone: "010-4821-7730", delivery: "parcel" },
-      { name: "이도윤", phone: "010-2231-0045" },
-    ],
-  });
-  await page.goto(link);
-  await page.getByRole("button", { name: "김*늘" }).click();
-  await expectLabelAbove(page.locator('label[for="last4"]'), page.locator("#last4"));
-  await page.getByLabel("전화번호 뒤 4자리").fill("7730");
-  await page.getByRole("button", { name: "전화번호 확인" }).click();
-  await expect(page.getByText("경품", { exact: true })).toBeVisible();
+  const { link } = await createCertEvent({ name: "제출E2E1280", prizes: [{ delivery: "parcel" }] });
+  if (!link) throw new Error("링크 없음");
+  await openForm(page, link, "갤럭시 탭 S10");
 
   await expectLabelAbove(page.locator('label[for="name"]'), page.locator("#name"));
   await expectLabelAbove(page.locator('[role="group"] > span').first(), page.locator("#rrn-front"));
@@ -418,17 +300,11 @@ test("1280 — E3 · E4 모든 라벨은 칸 위(F1) · 이름 · 주민등록�
 // 제출 줄이 그 칸을 부르면 칸의 aria-describedby가 그 줄을 가리킨다(새 문구 없음).
 // 화면 검사가 막는 값이라 제출 본문을 가로채 바꿔 진짜 서버 판정을 받는다.
 test("서버 칸 오류 — 이름 · 주소 invalid → aria-invalid + 제출 줄 연결 · 동의 거절 → 동의 칸 aria-invalid", async ({ page }) => {
-  const { link } = await createCertEvent({
-    name: "제출E2E칸오류",
-    winners: [
-      { name: "김하늘", phone: "010-4821-7730", delivery: "parcel" },
-      { name: "이도윤", phone: "010-2231-0045" },
-    ],
-  });
-  await openForm(page, link, "김*늘", "7730");
-  await fillFields(page, { phone: "010-4821-7730" });
-  await page.getByLabel(/^주소/).fill("서울시 중구 세종대로 110");
-  await signWell(page);
+  const { link } = await createCertEvent({ name: "제출E2E칸오류", prizes: [{ delivery: "parcel" }] });
+  if (!link) throw new Error("링크 없음");
+  await openForm(page, link, "갤럭시 탭 S10");
+  await fillIntakeForm(page, { phone: "010-4821-7730", address: "서울시 중구 세종대로 110" });
+  await drawSignature(page);
 
   let posts = 0;
   await page.route(link, async (route, request) => {
@@ -454,7 +330,7 @@ test("서버 칸 오류 — 이름 · 주소 invalid → aria-invalid + 제출 �
   await expect(page.locator("#name")).toBeFocused();
 
   await submitButton(page).click();
-  const consent = page.getByRole("checkbox", { name: "개인정보 수집·이용에 동의합니다" });
+  const consent = page.getByRole("checkbox");
   await expect(consent).toHaveAttribute("aria-invalid", "true");
   await expect(consent).toBeFocused();
   await expect(page.locator("#name")).not.toHaveAttribute("aria-invalid", "true");

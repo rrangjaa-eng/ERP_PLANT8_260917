@@ -57,7 +57,6 @@ export default async function CertSubmissionReviewPage({ params }: { params: Pro
           subtitle={subtitle}
           version={submission.version ?? 1}
           name={submission.name ?? ""}
-          registeredName={submission.registeredName ?? null}
           rrnMasked={submission.rrnMasked ?? ""}
           phone={submission.phone ?? ""}
           address={submission.delivery === "parcel" ? (submission.address ?? "") : null}

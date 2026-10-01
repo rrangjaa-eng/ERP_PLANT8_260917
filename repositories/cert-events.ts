@@ -2,17 +2,24 @@ import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db, type DbOrTx } from "@/db/client";
-import { certEvents, certWinners, users } from "@/db/schema";
+import { certEvents, certSubmissions, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
+
+// 행사 행 잠금 규약(04.3-15 — eng-review newflow E13): 경품 줄 · 행사 상태를 바꾸는 모든 쓰기와 수령자 제출은
+// 같은 행사 행을 lockEventRow로 먼저 잡는다. lockEventRow가 null이면(행이 지워짐 — 04.3-17 신청 취소, N16 a)
+// 호출자는 아무것도 쓰지 않고 notFound로 끝낸다 — 04.3-10 generateQr · savePrizes · 04.3-17 closeEvent ·
+// cancelRequest와 submitCertificate가 따른다.
 
 export type CertEventRow = InferSelectModel<typeof certEvents>;
 
+// 토큰 · 마감 · QR 생성 시각이 없으면 신청됨(QR 없음)이다 — 셋은 함께 채운다(cert_events_qr_state_check).
 export type InsertCertEventInput = {
   name: string;
   wonOn: string; // YYYY-MM-DD
-  tokenHash: string;
-  tokenEncrypted: string;
-  expiresAt: Date;
+  tokenHash?: string;
+  tokenEncrypted?: string;
+  expiresAt?: Date | null;
+  qrCreatedAt?: Date;
   contactPhone: string;
   createdBy: string | null;
   createRequestId?: string | null;
@@ -36,23 +43,11 @@ export async function findEventByTokenHash(viewer: Viewer, tokenHash: string): P
   return row ?? null;
 }
 
-// 04.3-06 — 같은 행사의 파기되지 않은 미제출 자리 수(제출 트랜잭션 안).
-export async function countOpenWinners(viewer: Viewer, eventId: string, tx: DbOrTx): Promise<number> {
+// 행사 행 FOR UPDATE(tx 안) — 위 규약의 잠금. 행이 없으면 null.
+export async function lockEventRow(viewer: Viewer, eventId: string, tx: DbOrTx): Promise<CertEventRow | null> {
   void viewer;
-  const [row] = await tx
-    .select({ count: sql<number>`count(*)::int` })
-    .from(certWinners)
-    .where(and(eq(certWinners.eventId, eventId), isNull(certWinners.submittedAt), isNull(certWinners.purgedAt)));
-  return row?.count ?? 0;
-}
-
-// 04.3-06 — 마지막 자리 제출이 같은 트랜잭션에서 링크를 닫는다(비어 있을 때만).
-export async function closeEventAllSubmitted(viewer: Viewer, eventId: string, at: Date, tx: DbOrTx): Promise<void> {
-  void viewer;
-  await tx
-    .update(certEvents)
-    .set({ closedAt: at, closedReason: "all_submitted", updatedAt: new Date() })
-    .where(and(eq(certEvents.id, eventId), isNull(certEvents.closedAt)));
+  const [row] = await tx.select().from(certEvents).where(eq(certEvents.id, eventId)).for("update");
+  return row ?? null;
 }
 
 // 04.3-04 Task 2 ④ — 내부 목록 · 상세. 범위 서술자: createdBy가 undefined면
@@ -63,13 +58,12 @@ export type CertEventSummaryRow = {
   id: string;
   name: string;
   wonOn: string;
-  expiresAt: Date;
+  expiresAt: Date | null;
   closedAt: Date | null;
   closedReason: string | null;
-  tokenEncrypted: string;
+  tokenEncrypted: string | null;
   ownerName: string | null;
   closerName: string | null;
-  totalCount: number;
   submittedCount: number;
 };
 
@@ -78,7 +72,7 @@ function scopeWhere(scope: CertEventScope): SQL | undefined {
   return scope.createdBy === null ? isNull(certEvents.createdBy) : eq(certEvents.createdBy, scope.createdBy);
 }
 
-// 목록 · 상세 머리 공용 — 만든 사람 · 닫은 사람 이름과 제출 수 집계를 한 쿼리로.
+// 목록 · 상세 머리 공용 — 만든 사람 · 닫은 사람 이름과 제출 건수(대조 제외 뺀 수 — E1 b)를 한 쿼리로.
 export async function listEventSummaries(
   viewer: Viewer,
   scope: CertEventScope,
@@ -89,12 +83,12 @@ export async function listEventSummaries(
   const closer = alias(users, "cert_event_closer");
   const tally = db
     .select({
-      eventId: certWinners.eventId,
-      total: sql<number>`count(*)::int`.as("total"),
-      submitted: sql<number>`count(${certWinners.submittedAt})::int`.as("submitted"),
+      eventId: certSubmissions.eventId,
+      submitted: sql<number>`count(*)::int`.as("submitted"),
     })
-    .from(certWinners)
-    .groupBy(certWinners.eventId)
+    .from(certSubmissions)
+    .where(isNull(certSubmissions.excludedAt))
+    .groupBy(certSubmissions.eventId)
     .as("cert_event_tally");
 
   return db
@@ -108,7 +102,6 @@ export async function listEventSummaries(
       tokenEncrypted: certEvents.tokenEncrypted,
       ownerName: owner.name,
       closerName: closer.name,
-      totalCount: sql<number>`coalesce(${tally.total}, 0)`,
       submittedCount: sql<number>`coalesce(${tally.submitted}, 0)`,
     })
     .from(certEvents)
@@ -116,20 +109,4 @@ export async function listEventSummaries(
     .leftJoin(closer, eq(closer.id, certEvents.closedBy))
     .leftJoin(tally, eq(tally.eventId, certEvents.id))
     .where(and(scopeWhere(scope), eventId === undefined ? undefined : eq(certEvents.id, eventId)));
-}
-
-// E3-22 — 만들기 멱등 키로 한 행. 만든 사람으로 묶어 남의 키로 남의 링크를 받지 못한다.
-export async function findEventByCreateRequest(
-  viewer: Viewer,
-  input: { requestId: string; createdBy: string | null },
-  tx: DbOrTx = db,
-): Promise<CertEventRow | null> {
-  void viewer;
-  const createdBy = input.createdBy === null ? isNull(certEvents.createdBy) : eq(certEvents.createdBy, input.createdBy);
-  const [row] = await tx
-    .select()
-    .from(certEvents)
-    .where(and(eq(certEvents.createRequestId, input.requestId), createdBy))
-    .limit(1);
-  return row ?? null;
 }

@@ -269,7 +269,9 @@ export async function seedSubmittedCert(opts: SeedSubmittedCertOptions = {}): Pr
   const rrn = opts.rrn ?? "9304122123458";
   const address = opts.address ?? (delivery === "parcel" ? "서울시 강남구 테헤란로 1" : undefined);
 
+  // 당첨일은 옛 표본과 같은 지난 날짜(늘 열림 — E8 b) — 인쇄 · I4 스펙이 이 값을 단언한다.
   const event = await createCertEvent({
+    wonOn: "2026-01-01",
     prizes: [
       {
         name: opts.prizeName ?? DEFAULT_PRIZE.name,

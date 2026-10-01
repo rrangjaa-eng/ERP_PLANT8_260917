@@ -6,8 +6,6 @@ import { formatSubmittedAtKst } from "@/domain/certs/format";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { QrSection } from "./qr-section";
-import { WinnersView } from "./winners-view";
-import { CreatedToast } from "./created-toast";
 import styles from "./event-detail.module.css";
 
 export const dynamic = "force-dynamic";
@@ -18,24 +16,20 @@ function subjectParticle(name: string): string {
   return code >= 0 && code <= 11171 && code % 28 === 0 ? "가" : "이";
 }
 
-// UI-SPEC Copywriting 「I3 닫힌 QR 섹션」 사유 셋.
+// UI-SPEC Copywriting 「I3 닫힌 QR 섹션」 사유 둘(담당자가 닫음 · 기한 — 04.3-15).
 function closedLine(event: Partial<CertEventDetailDto>): string {
   const at = event.closedAt ? formatSubmittedAtKst(event.closedAt) : "—";
-  if (event.closedReason === "allSubmitted") return `닫힘 · ${at} · 모두 제출`;
   if (event.closedReason === "expired") return `닫힘 · ${at} · 기한 지남`;
   const closer = event.closerName ?? "—";
   return `닫힘 · ${at} · ${closer}${subjectParticle(closer)} 닫음`;
 }
 
-// 04.3-04 Task 4 ① — I3 행사 상세(읽기). 기능이 꺼져 있거나 범위 밖이면 셸 안 404(C1 · T-04.3-19).
-// 머리 2차 「링크 닫기」 · 당첨자 편집은 04.3-10이 더한다(빈 버튼을 두지 않는다).
-export default async function CertEventDetailPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+const STATUS_LABEL = { requested: "신청됨", open: "접수 중", closed: "닫힘" } as const;
+
+// 04.3-04 Task 4 ① · 04.3-15 — I′3 행사 상세 머리 · QR 섹션(읽기). 기능이 꺼져 있거나 범위 밖이면 셸 안 404
+// (C1 · T-04.3-19). 경품 섹션 · QR 생성은 04.3-10, 제출 섹션 · 「링크 닫기」 · 「신청 취소」는 04.3-17이 더한다
+// (빈 버튼을 두지 않는다).
+export default async function CertEventDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { viewer } = await requireSession();
   await assertCertFeatureEnabled();
 
@@ -43,14 +37,14 @@ export default async function CertEventDetailPage({
   const detail = await getEventDetail(viewer, id);
   if (detail.kind === "notFound") notFound();
   const event = detail.event;
-  const created = (await searchParams).created === "1";
 
   const name = event.name ?? "—";
   const open = event.status === "open";
+  // 신청됨은 마감이 없다(QR 생성 전) — 「신청 {시각}」 꼬리는 04.3-10이 신청 화면과 함께 더한다.
   const subtitle = [
     `당첨일 ${event.wonOn ?? "—"}`,
     `담당 ${event.ownerName ?? "—"}`,
-    `마감 ${event.expiresAt ? formatSubmittedAtKst(event.expiresAt) : "—"}`,
+    ...(event.status === "requested" ? [] : [`마감 ${event.expiresAt ? formatSubmittedAtKst(event.expiresAt) : "—"}`]),
   ].join(" · ");
 
   return (
@@ -61,7 +55,7 @@ export default async function CertEventDetailPage({
         </div>
         {event.status ? (
           <StatusTag kind={open ? "accent" : "muted"} variant="tag">
-            {open ? "접수 중" : "닫힘"}
+            {STATUS_LABEL[event.status]}
           </StatusTag>
         ) : null}
       </div>
@@ -71,13 +65,6 @@ export default async function CertEventDetailPage({
       ) : event.status === "closed" ? (
         <QrSection closedLine={closedLine(event)} />
       ) : null}
-
-      <section className={styles.section}>
-        <h2 className={styles.sectionLabel}>당첨자</h2>
-        <WinnersView winners={event.winners ?? []} />
-      </section>
-
-      {created ? <CreatedToast eventId={id} message={`행사 만들기 · ${name} · 당첨자 ${event.totalCount ?? 0}명`} /> : null}
     </>
   );
 }

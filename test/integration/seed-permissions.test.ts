@@ -1,12 +1,7 @@
-import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { seedMasterData } from "@/domain/seed";
-import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { CEO_ROLE_ID, DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
-import { createAccount } from "@/domain/auth/accounts";
-import { setSettingValue } from "@/domain/settings/registry";
-import { CERT_CONTACT_PHONE, CERT_ENABLED } from "@/domain/settings/keys";
-import { createEvent, getEventDetail } from "@/domain/certs/events";
 import {
   findPermission,
   findVisibility,
@@ -37,15 +32,6 @@ async function allowed(roleId: string, menu: string, action: "view" | "write"): 
 
 async function visible(roleId: string, infoItem: string): Promise<boolean> {
   return (await findVisibility(SYSTEM_VIEWER, roleId, infoItem))?.visible === true;
-}
-
-async function makeUser(roleId: string): Promise<Viewer> {
-  const { userId } = await createAccount(SYSTEM_VIEWER, {
-    email: `seed-cert-${randomUUID()}@example.test`,
-    name: "시드 검증 PM",
-    roleId,
-  });
-  return { id: userId, roleId };
 }
 
 describe("기획 PM의 확인증 행사 기본 권한(04.3-09)", () => {
@@ -84,38 +70,11 @@ describe("확인증 정보 항목 노출 시드(04.3-09, codex final2 C)", () =>
     expect(await visible(DEFAULT_ROLE_ID, "cert.rrn_unmasked")).toBe(false);
   });
 
-  it("관리자가 PM의 cert_winner.value를 끈 뒤 재시드해도 꺼진 채이고 PM의 행사 상세에 당첨자 이름 · 전화번호가 없다", async () => {
-    await setSettingValue(SYSTEM_VIEWER, CERT_ENABLED, true);
-    await setSettingValue(SYSTEM_VIEWER, CERT_CONTACT_PHONE, "02-123-4567");
-    // 04.3-04 cert-events 선례 — 이 케이스는 노출만 본다. 메뉴 시드와 무관하게 PM에게 행사 권한을 준다.
-    await upsertPermission(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, menu: "certs.events", action: "view", allowed: true });
-    await upsertPermission(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, menu: "certs.events", action: "write", allowed: true });
-    const pm = await makeUser(DEFAULT_ROLE_ID);
-
-    const created = await createEvent(pm, {
-      name: `시드 회귀-${randomUUID().slice(0, 8)}`,
-      wonOn: "2026-09-13",
-      winners: [{ name: "김하늘", phone: "010-4821-7730", prizeName: "갤럭시 탭 S10", quantity: "1", delivery: "현장" }],
-    });
-    if (created.kind !== "ok") throw new Error(`createEvent 실패: ${created.kind}`);
-
-    // 대조 — 끄기 전에는 이름이 보인다.
-    const before = await getEventDetail(pm, created.eventId);
-    if (before.kind !== "ok") throw new Error("상세 실패");
-    expect(JSON.stringify(before)).toContain("김하늘");
-
+  it("관리자가 PM의 cert_winner.value를 끈 뒤 재시드해도 꺼진 채다", async () => {
     await upsertVisibility(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, infoItem: "cert_winner.value", visible: false });
     await seedMasterData(SYSTEM_VIEWER);
 
     expect((await findVisibility(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "cert_winner.value"))?.visible).toBe(false);
-    const after = await getEventDetail(pm, created.eventId);
-    if (after.kind !== "ok") throw new Error("상세 실패");
-    const dump = JSON.stringify(after);
-    for (const secret of ["김하늘", "01048217730", "010-4821-7730"]) expect(dump).not.toContain(secret);
-    const winner = after.event.winners?.[0];
-    expect(winner).toBeDefined();
-    expect(winner).not.toHaveProperty("name");
-    expect(winner).not.toHaveProperty("phone");
     // 시스템 관리자의 cert_winner.value는 재시드 뒤에도 켜져 있다.
     expect(await visible(SYSADMIN_ROLE_ID, "cert_winner.value")).toBe(true);
   });

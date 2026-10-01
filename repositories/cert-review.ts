@@ -1,6 +1,6 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { certEvents, certSubmissions, certWinners, users } from "@/db/schema";
+import { certEvents, certPrizes, certSubmissions, users } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
 // 04.3-07 — I4 확인·정정(경영관리). 권한 판정은 domain/certs/review.ts가 한다.
@@ -12,7 +12,6 @@ export type CertReviewSourceRow = {
   wonOn: string;
   submittedAt: Date;
   name: string | null;
-  registeredName: string | null;
   rrnMasked: string | null;
   phone: string | null;
   address: string | null;
@@ -25,7 +24,7 @@ export type CertReviewSourceRow = {
   version: number;
 };
 
-// 확인증 한 줄 + 자리(등록 이름 · 전달 · 경품 · 수량) + 행사 이름.
+// 확인증 한 줄 + 경품(경품명 · 전달 — 지금 경품 목록에서) · 수량(제출에서) + 행사 이름(04.3-15 — 명단 없음).
 export async function findSubmissionForReview(viewer: Viewer, id: string): Promise<CertReviewSourceRow | null> {
   void viewer;
   const [row] = await db
@@ -36,20 +35,19 @@ export async function findSubmissionForReview(viewer: Viewer, id: string): Promi
       wonOn: certEvents.wonOn,
       submittedAt: certSubmissions.submittedAt,
       name: certSubmissions.name,
-      registeredName: certWinners.name,
       rrnMasked: certSubmissions.rrnMasked,
       phone: certSubmissions.phone,
       address: certSubmissions.address,
-      delivery: certWinners.delivery,
-      prizeName: certWinners.prizeName,
-      quantity: certWinners.quantity,
+      delivery: certPrizes.delivery,
+      prizeName: certPrizes.name,
+      quantity: certSubmissions.quantity,
       consentAt: certSubmissions.consentAt,
       signatureKey: certSubmissions.signatureKey,
       purgedAt: certSubmissions.purgedAt,
       version: certSubmissions.version,
     })
     .from(certSubmissions)
-    .innerJoin(certWinners, eq(certWinners.id, certSubmissions.winnerId))
+    .innerJoin(certPrizes, eq(certPrizes.id, certSubmissions.prizeId))
     .innerJoin(certEvents, eq(certEvents.id, certSubmissions.eventId))
     .where(eq(certSubmissions.id, id))
     .limit(1);

@@ -52,7 +52,7 @@ describe("rotate-key 확인증 대상(04.3-08)", () => {
   it("cert_events.token_encrypted — fetchRows가 행사 행을 돌려주고 writeRow는 previous가 같을 때만 쓴다", async () => {
     await seedSubmittedCert();
     const [event] = await db.select().from(certEvents);
-    if (!event) throw new Error("행사 행이 없다");
+    if (!event?.tokenEncrypted) throw new Error("토큰이 있는 행사 행이 없다");
     const token = target("cert_events.token_encrypted");
 
     const fetched = await token.fetchRows();

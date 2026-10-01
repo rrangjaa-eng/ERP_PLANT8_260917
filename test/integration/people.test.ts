@@ -257,6 +257,26 @@ describe("listPeople — 조회 횟수와 현재 소속(이슈 #56)", () => {
     const detail = await getPerson(SYSTEM_VIEWER, userId);
     expect(person).toEqual(detail?.person);
   });
+
+  it("현재 소속의 오늘은 서울 날짜다 — KST 01:30(UTC 전날)에 오늘 발령 팀이 현재 소속이다", async () => {
+    const oldTeamId = await makeTestTeam();
+    const todayTeamId = await makeTestTeam();
+    const { userId } = await registerPerson(SYSTEM_VIEWER, {
+      name: "자정발령",
+      email: `${randomUUID()}@test.local`,
+      roleId: DEFAULT_ROLE_ID,
+      teamId: oldTeamId,
+      effectiveFrom: "2026-09-01",
+    });
+    await assignTeam(SYSTEM_VIEWER, { userId, teamId: todayTeamId, effectiveFrom: "2026-10-02" });
+    const now = () => new Date("2026-10-01T16:30:00Z"); // = 2026-10-02 01:30 KST
+
+    const people = await listPeople(SYSTEM_VIEWER, { now });
+    const detail = await getPerson(SYSTEM_VIEWER, userId, { now });
+
+    expect(people.find((p) => p.id === userId)?.currentTeamId).toBe(todayTeamId);
+    expect(detail?.person.currentTeamId).toBe(todayTeamId);
+  });
 });
 
 const INVERTED_MESSAGE = "퇴직일이 입사일보다 빠름 · 날짜 확인";

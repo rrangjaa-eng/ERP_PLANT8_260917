@@ -12,6 +12,7 @@ import { revokeAllSessions as defaultRevokeAllSessions } from "@/domain/auth/pas
 import { findRoleById as defaultFindRoleById, findRolesByIds as defaultFindRolesByIds } from "@/repositories/roles";
 import { findTeamById as defaultFindTeamById } from "@/repositories/teams";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { kstToday } from "@/lib/kst-date";
 import { isCheckViolation } from "@/lib/pg-errors";
 import { withTransaction } from "@/lib/db-transaction";
 import { loadActionLogGate, recordActionInTx, type TxLogDeps } from "@/domain/approvals/tx-log";
@@ -43,8 +44,11 @@ export const SELF_LEAVE_EDIT_ERROR = "본인 연차·입사일 변경 불가 · 
 const PEOPLE_MENU = "admin.people";
 const EFFECTIVE_FROM_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
-function todayIsoDate(): string {
-  return new Date().toISOString().slice(0, 10);
+// 현재 소속의 「오늘」은 서울 날짜다 — UTC면 KST 0~9시에 오늘 발령이 아직 안 보인다.
+export type PeopleReadDeps = { now: () => Date };
+
+function seoulTodayOf(deps?: Partial<PeopleReadDeps>): string {
+  return kstToday((deps?.now ?? (() => new Date()))());
 }
 
 // MAST-02: 사람 DTO. 03-05 Task 1이 「여기서 spec을 정의한다」고 못박은 대로
@@ -104,9 +108,9 @@ async function projectPerson(
   return (await project(viewer, source, PERSON_DTO_SPEC, deps)) as PersonDto;
 }
 
-async function toPersonDto(viewer: Viewer, row: UserRow): Promise<PersonDto> {
+async function toPersonDto(viewer: Viewer, row: UserRow, today: string): Promise<PersonDto> {
   const [team, role] = await Promise.all([
-    defaultTeamAtDate(viewer, row.id, todayIsoDate()),
+    defaultTeamAtDate(viewer, row.id, today),
     row.roleId ? defaultFindRoleById(viewer, row.roleId) : Promise.resolve(null),
   ]);
   return projectPerson(viewer, row, team, role?.name ?? null);
@@ -116,7 +120,7 @@ async function toPersonDto(viewer: Viewer, row: UserRow): Promise<PersonDto> {
 // 한정 메모로 바꿨다.
 // 사람 목록 — 행 필터 서술자를 따르고 보관된 사람은 보관함 권한 없이는
 // 보이지 않는다(scopeFor(viewer, "user")가 Phase 1 자리표시를 대신한다).
-export async function listPeople(viewer: Viewer): Promise<PersonDto[]> {
+export async function listPeople(viewer: Viewer, deps?: Partial<PeopleReadDeps>): Promise<PersonDto[]> {
   const scope = await scopeFor(viewer, "user");
   const rows = await repoListUsers(viewer, { scope, includeArchived: scope.includeArchived });
 
@@ -133,7 +137,7 @@ export async function listPeople(viewer: Viewer): Promise<PersonDto[]> {
     return cached;
   };
 
-  const today = todayIsoDate();
+  const today = seoulTodayOf(deps);
   const roleIds = [...new Set(rows.map((row) => row.roleId).filter((id): id is string => id !== null))];
   const [teamMap, roleRows] = await Promise.all([
     defaultTeamsAtDate(
@@ -162,11 +166,12 @@ export async function listPeople(viewer: Viewer): Promise<PersonDto[]> {
 export async function getPerson(
   viewer: Viewer,
   userId: string,
+  deps?: Partial<PeopleReadDeps>,
 ): Promise<{ person: PersonDto; assignments: TeamAssignmentDto[] } | null> {
   const row = await repoFindUserById(viewer, userId);
   if (!row) return null;
 
-  const person = await toPersonDto(viewer, row);
+  const person = await toPersonDto(viewer, row, seoulTodayOf(deps));
   const assignments = await defaultListAssignments(viewer, userId);
   return { person, assignments };
 }

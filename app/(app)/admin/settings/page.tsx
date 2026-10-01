@@ -14,6 +14,7 @@ import {
 import { isSettingActive, listApprovalRouteOptions, type ApprovalRouteOptions } from "@/domain/approvals/settings-options";
 import { listApprovalRouteSettingWarnings } from "@/domain/approvals/settings-warnings";
 import { formatCount, formatForeignAmount, formatFxRate, formatKrw, formatQuantity } from "@/lib/format-number";
+import { seoulToday } from "@/lib/dates";
 import type { HistoryEntry } from "@/ui/history-list/HistoryList";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { SettingsFormClient, type SettingsSection, type SettingsFieldViewModel } from "./settings-form-client";
@@ -22,10 +23,6 @@ import { SettingsFormClient, type SettingsSection, type SettingsFieldViewModel }
 // 레지스트리를 순회해 다시 그린다(ADMN-05: "설정 화면이 레지스트리에서
 // 자동 생성된다").
 export const dynamic = "force-dynamic";
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 // numberKind가 있으면 그 종류의 포맷터, 없으면 정수만 쉼표로 그리고 소수(0~1 비율 등)는 저장값 그대로 —
 // formatQuantity(2자리) · formatFxRate(4자리)는 0.088 같은 비율을 반올림해 잘못 보여 준다.
@@ -93,7 +90,7 @@ async function buildSections(viewer: Viewer): Promise<SettingsSection[]> {
 
     if (def.kind === "historized") {
       const history = await listSettingHistory(def);
-      const today = todayIso();
+      const today = seoulToday();
       // 가장 최근의 effectiveFrom <= 오늘인 행이 "적용 중" — listSettingHistory는
       // 이미 내림차순이므로 그 조건을 만족하는 첫 행이 유효값이다.
       let activeMarked = false;

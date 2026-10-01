@@ -94,6 +94,9 @@ describe("parseArgs", () => {
   });
 
   it.each([
+    [["/x", "--out", "r.md", "--base", "--output=/tmp/x"], "--base"],
+    [["/x", "--out"], "--out"],
+    [["/x", "--out", "r.md", "--plan"], "--plan"],
     [["--out", "r.md"], "경로"],
     [["admin/people", "--out", "r.md"], "/"],
     [["/admin/people"], "--out"],
@@ -213,6 +216,11 @@ describe("parseCodexFindings", () => {
 
   it.each(["```json\n{not json\n```", '```json\n{"a":1}\n```', "펜스 없음"])("잘못된 출력 %j는 []", (stdout) => {
     expect(parseCodexFindings(stdout)).toEqual([]);
+  });
+
+  it("형태가 틀린 항목(문자열 폭·모르는 지표·빠진 필드·객체 아님)은 버린다", () => {
+    const items = [finding, { ...finding, width: "320" }, { ...finding, metric: "color" }, { route: "/x" }, "문자열", null];
+    expect(parseCodexFindings(`\`\`\`json\n${JSON.stringify(items)}\n\`\`\``)).toEqual([finding]);
   });
 });
 

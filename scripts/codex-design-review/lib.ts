@@ -60,6 +60,8 @@ export function parseArgs(argv: string[]): ReviewArgs {
     const arg = argv[i] ?? "";
     const value = argv[i + 1] ?? "";
     if (arg === "--out" || arg === "--base" || arg === "--plan" || arg === "--sections") {
+      // 값이 비었거나 -로 시작하면 거부한다 — --base 값은 git diff 인자로 들어가 옵션(--output=…)이 될 수 있다.
+      if (!value || value.startsWith("-")) throw new Error(`${arg} 뒤에 값이 필요하다`);
       i++;
       if (arg === "--out") out = value;
       else if (arg === "--base") base = value;
@@ -198,12 +200,29 @@ export function parseCodexFindings(stdout: string): Finding[] {
   const blocks = [...stdout.matchAll(/```json\s*\n([\s\S]*?)```/g)];
   const last = blocks.at(-1)?.[1];
   if (last === undefined) return [];
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(last);
-    return Array.isArray(parsed) ? (parsed as Finding[]) : [];
+    parsed = JSON.parse(last);
   } catch {
     return [];
   }
+  // Codex 출력은 신뢰하지 않는다 — Finding 형태가 맞는 항목만 남긴다.
+  return Array.isArray(parsed) ? parsed.filter(isFinding) : [];
+}
+
+const METRICS: ReadonlyArray<Finding["metric"]> = ["overflowX", "overflow", "height", "lines", "gap", "visual"];
+
+function isFinding(value: unknown): value is Finding {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.route === "string" &&
+    typeof v.width === "number" &&
+    typeof v.selector === "string" &&
+    METRICS.includes(v.metric as Finding["metric"]) &&
+    typeof v.claim === "string" &&
+    typeof v.expected === "string"
+  );
 }
 
 export function crossCheck(findings: Finding[], screens: ScreenMeasure[]): Array<Finding & { measured: string }> {

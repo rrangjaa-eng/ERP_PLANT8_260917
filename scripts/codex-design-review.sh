@@ -7,6 +7,7 @@
 # CI=true 프로덕션 빌드 화면을 375·320·768·1280 폭으로 찍고 DOM 실측표를 만든 뒤, 변경(diff 또는
 # 계획)·SYSTEM.md 관련 절·실측표·스크린샷을 codex exec에 넘긴다. Codex 지적은 후보이고 판정은 실측.
 # codex CLI나 ChatGPT 로그인이 없으면 보고서에 한 줄만 남기고 0으로 끝낸다(건너뜀, 실패 아님).
+# 캡처는 E2E와 같은 globalSetup으로 erp_test를 초기화한다 — E2E와 동시에 돌리지 않는다.
 
 cd "$(dirname "$0")/.." || exit 1
 

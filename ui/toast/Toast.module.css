@@ -7,6 +7,8 @@
 .toast {
   position: fixed;
   left: var(--pad-page);
+  /* 04.3-17 C-L1 — 긴 문장도 오른쪽에 같은 여백(폰 375 · 320에서 끝에 붙지 않게). */
+  max-width: calc(100vw - 2 * var(--pad-page));
   bottom: var(--s-4);
   background: var(--bg);
   border: var(--line-w-strong) solid var(--line-strong);

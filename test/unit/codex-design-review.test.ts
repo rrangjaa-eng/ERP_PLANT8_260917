@@ -14,6 +14,7 @@ import {
   countLines,
   crossCheck,
   envFileSecrets,
+  envFileTexts,
   fillRoute,
   measurementsToMarkdown,
   parseArgs,
@@ -207,10 +208,30 @@ describe("writeReport", () => {
     expect(readFileSync(join(dir, "r.md"), "utf8")).toBe("보고서");
   });
 
+  it("쓰기에 실패하면 임시 파일을 남기지 않는다", () => {
+    const dir = dirWith("x");
+    mkdirSync(join(dir, "r.md"));
+    expect(() => writeReport(join(dir, "r.md"), "보고서")).toThrow();
+    expect(readdirSync(dir).sort()).toEqual(["CLAUDE.md", "r.md"]);
+  });
+
   it("상위 폴더가 없으면 만들고 쓴다", () => {
     const dir = dirWith("x");
     writeReport(join(dir, "a", "b", "r.md"), "보고서");
     expect(readFileSync(join(dir, "a", "b", "r.md"), "utf8")).toBe("보고서");
+  });
+});
+
+describe("envFileTexts", () => {
+  it("심볼릭 링크 .env*는 따라가 읽고 .env* 폴더는 건너뛴다", () => {
+    const dir = mkdtempSync(join(tmpdir(), "codex-dr-env-"));
+    const real = join(mkdtempSync(join(tmpdir(), "codex-dr-envsrc-")), "env");
+    writeFileSync(real, "LINKED=abcdefghij");
+    symlinkSync(real, join(dir, ".env.local"));
+    writeFileSync(join(dir, ".env"), "PLAIN=klmnopqrst");
+    mkdirSync(join(dir, ".env.d"));
+    writeFileSync(join(dir, "other"), "X=zzzzzzzzzz");
+    expect(envFileTexts(dir).sort()).toEqual(["LINKED=abcdefghij", "PLAIN=klmnopqrst"]);
   });
 });
 

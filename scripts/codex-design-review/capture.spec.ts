@@ -99,8 +99,11 @@ function measurePage(): Omit<ScreenMeasure, "route" | "width" | "screenshot" | "
       const style = getComputedStyle(cur);
       if (style.display === "contents") continue; // 상자가 없어 0×0으로 잡힌다
       const r = cur.getBoundingClientRect();
-      const clipped = style.clip !== "auto" || style.clipPath !== "none" || style.overflow !== "visible";
-      if (clipped && (r.width <= 1 || r.height <= 1)) return true;
+      const cut = style.clip !== "auto" || style.clipPath !== "none";
+      // 자기 자신: .sr-only(잘린 1px 상자). 조상: clip으로 잘린 칸, 높이 0으로 접힌 칸(overflow 숨김).
+      // 폭만 0으로 눌린 칸은 숨김이 아니라 레이아웃 결함일 수 있어 잰다.
+      if (cur === el && (cut || style.overflow !== "visible") && r.width <= 1 && r.height <= 1) return true;
+      if (cur !== el && ((cut && (r.width <= 1 || r.height <= 1)) || (style.overflow !== "visible" && r.height <= 1))) return true;
     }
     return false;
   };

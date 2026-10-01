@@ -4,8 +4,8 @@
 // 판정은 DOM 실측으로만 한다(CLAUDE.md §6 「스크린샷 육안 판정 금지」).
 
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, realpathSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 export const VIEWPORTS = [
   { width: 375, height: 800 },
@@ -132,8 +132,20 @@ export function assertRealPaths(args: { out: string; plans: string[] }, root = p
 export function writeReport(path: string, text: string): void {
   mkdirSync(dirname(resolve(path)), { recursive: true });
   const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync(tmp, text, { flag: "wx" });
-  renameSync(tmp, path);
+  try {
+    writeFileSync(tmp, text, { flag: "wx" });
+    renameSync(tmp, path);
+  } catch (error) {
+    rmSync(tmp, { force: true });
+    throw error;
+  }
+}
+
+// 폴더의 .env* 파일 내용(가릴 비밀 후보). 심볼릭 링크는 따라가 읽고(워크트리에서 흔하다) 폴더는 건너뛴다.
+export function envFileTexts(dir: string): string[] {
+  return readdirSync(dir)
+    .filter((name) => /^\.env/.test(name) && statSync(join(dir, name), { throwIfNoEntry: false })?.isFile())
+    .map((name) => readFileSync(join(dir, name), "utf8"));
 }
 
 // 동적 경로 자리 표시: {adminId} = 캡처 때 만든 관리자 계정 id(예: /admin/people/{adminId}).

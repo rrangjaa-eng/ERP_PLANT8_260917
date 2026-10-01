@@ -10,6 +10,7 @@ import {
   codexEnv,
   crossCheck,
   envFileSecrets,
+  envFileTexts,
   measurementsToMarkdown,
   parseArgs,
   parseCodexFindings,
@@ -112,12 +113,7 @@ rmSync(codexDir, { recursive: true, force: true });
 // Codex 출력은 파일로 남기기 전에 비밀을 가린다(자격 원본, auth.json 토큰 값, 저장소 .env* 값, 토큰 모양).
 const secrets = [
   authB64 ?? "",
-  ...envFileSecrets(
-    readdirSync(".", { withFileTypes: true })
-      .filter((f) => f.isFile() && /^\.env/.test(f.name))
-      .map((f) => f.name)
-      .map((f) => readFileSync(f, "utf8")),
-  ),
+  ...envFileSecrets(envFileTexts(".")),
 ];
 try {
   const auth = JSON.parse(readFileSync(join(process.env.CODEX_HOME ?? join(homedir(), ".codex"), "auth.json"), "utf8")) as {

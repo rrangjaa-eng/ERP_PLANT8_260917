@@ -56,7 +56,7 @@ if [ -n "$reason" ]; then
   line="Codex 디자인 검토 건너뜀: $reason"
   # 새 임시 파일에 쓴 뒤 mv로 바꿔 끼운다 — 그 사이 링크가 생겨도 링크 대상을 덮지 않는다.
   tmp="$(mktemp "$out.XXXXXX")" || exit 1
-  printf '%s\n' "$line" > "$tmp" && mv -f -- "$tmp" "$out"
+  { printf '%s\n' "$line" > "$tmp" && chmod 644 "$tmp" && mv -fT -- "$tmp" "$out"; } || { rm -f -- "$tmp"; exit 1; }
   echo "$line"
   exit 0
 fi

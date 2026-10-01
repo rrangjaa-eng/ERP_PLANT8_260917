@@ -43,7 +43,7 @@ jobs:
   # draft PR은 이 잡만 돈다.
   quality:
     runs-on: ubuntu-latest
-        outputs:
+    outputs:
       app: ${{ steps.scope.outputs.app }}
     steps:
       - uses: actions/checkout@v4

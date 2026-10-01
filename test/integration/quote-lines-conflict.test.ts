@@ -15,6 +15,9 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { insertRole } from "@/repositories/roles";
+import type { Viewer } from "@/domain/viewer";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines, SaveRejectedError, type QuoteLineBaseline } from "@/domain/quotes/lines";
 import { updateQuoteLineIfVersionMatches } from "@/repositories/quote-lines";
@@ -264,6 +267,118 @@ describe("domain/quotes/lines saveQuoteLines — 배치 충돌·전부 거부(04
       { id: randomUUID(), isNew: true, subcategory: subcategoryValue, itemName: "거부될 줄", quantity: 0, unitPrice: { currency: "KRW", amount: 100, fxRate: 1 }, execution: { currency: "KRW", amount: 0, fxRate: 1 } },
     ] }).catch(() => undefined);
     expect(await countActionLogRows(revision.id)).toBe(afterSuccess); // 늘지 않았다.
+  });
+});
+
+// /review PR #128 분리 과제 — 거래처 칸 충돌 이유가 거래처 UUID가 아니라 이름을 보인다. 이름은 거래처 정보라
+// QuoteLineDto.vendorName과 같은 all-of(project.value · vendor.value) 게이트 — 하나라도 없으면 「다른 값」.
+describe("domain/quotes/lines saveQuoteLines — 거래처 충돌 이유의 거래처 이름", () => {
+  async function createSaver(visible: string[]): Promise<Viewer> {
+    const roleId = `role-${randomUUID()}`;
+    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `계급 ${roleId.slice(5, 13)}` });
+    await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "projects", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "projects", action: "write", allowed: true });
+    for (const infoItem of visible) await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem, visible: true });
+    const { userId } = await createAccount(SYSTEM_VIEWER, { email: `r-${randomUUID()}@example.test`, name: "통합테스트 계급", roleId });
+    return { id: userId, roleId };
+  }
+
+  // 줄 하나를 거래처 A로 만들고, 다른 사람이 거래처 B로 바꾼 뒤, 옛 버전(거래처 A 기준)으로 항목명만 고쳐 저장한다.
+  async function vendorConflict(saver: Viewer) {
+    const { revision, subcategoryValue } = await setupProject();
+    const vendorA = await insertVendor(SYSTEM_VIEWER, { name: `거래처A-${randomUUID()}`, normalizedName: `거래처a-${randomUUID()}` });
+    const vendorB = await insertVendor(SYSTEM_VIEWER, { name: `거래처B-${randomUUID()}`, normalizedName: `거래처b-${randomUUID()}` });
+    const created = await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
+      { id: randomUUID(), isNew: true, subcategory: subcategoryValue, itemName: "A", vendorId: vendorA.id, unitPrice: { currency: "KRW", amount: 100, fxRate: 1 }, execution: { currency: "KRW", amount: 0, fxRate: 1 } },
+    ] });
+    const [line] = created.lines;
+    if (!line) throw new Error("setup 실패");
+    const baseline: QuoteLineBaseline = {
+      subcategory: line.subcategory,
+      itemName: line.itemName,
+      vendorId: line.vendorId,
+      quantity: line.quantity,
+      unitPriceAmountKrw: line.unitPrice.amountKrw,
+      executionAmountKrw: line.execution.amountKrw,
+      lineStatus: line.lineStatus,
+      note: line.note,
+    };
+    const unitPrice = { currency: "KRW" as const, amount: 100, fxRate: 1 };
+    const execution = { currency: "KRW" as const, amount: 0, fxRate: 1 };
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
+      { id: line.id, version: line.version, subcategory: line.subcategory, itemName: line.itemName, vendorId: vendorB.id, unitPrice, execution, baseline },
+    ] });
+    const rejected = await saveQuoteLines(saver, revision.id, { rows: [
+      { id: line.id, version: line.version, subcategory: line.subcategory, itemName: "A 수정", vendorId: vendorA.id, unitPrice, execution, baseline },
+    ] }).then(
+      () => {
+        throw new Error("이 지점에 도달하면 안 된다");
+      },
+      (error: unknown) => error,
+    );
+    expect(rejected).toBeInstanceOf(SaveRejectedError);
+    const conflict = (rejected as SaveRejectedError).conflicts.find((c) => c.field === "vendorId");
+    if (!conflict) throw new Error("거래처 칸 충돌이 없다");
+    return { conflict, vendorB };
+  }
+
+  it("project.value · vendor.value를 다 보는 사람은 충돌 이유에서 바뀐 거래처의 이름을 본다(UUID가 아니다)", async () => {
+    const saver = await createSaver(["quote.amount", "project.value", "vendor.value"]);
+    const { conflict, vendorB } = await vendorConflict(saver);
+    expect(conflict.reason).not.toContain(vendorB.id);
+    expect(conflict.reason).toMatch(new RegExp(`^다른 사람이 \\d{2}:\\d{2}에 ${vendorB.name}으로 바꿈 · 덮어쓰기 / 그 값으로$`));
+    expect(conflict.theirRaw).toBe(vendorB.id); // 「그 값으로」는 여전히 id로 받는다.
+  });
+
+  it("쓰기 시점 경합으로 거래처가 바뀌어도 충돌 이유는 거래처 이름이다", async () => {
+    const saver = await createSaver(["quote.amount", "project.value", "vendor.value"]);
+    const { revision, subcategoryValue } = await setupProject();
+    const vendorB = await insertVendor(SYSTEM_VIEWER, { name: `거래처B-${randomUUID()}`, normalizedName: `거래처b-${randomUUID()}` });
+    const created = await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
+      { id: randomUUID(), isNew: true, subcategory: subcategoryValue, itemName: "A", unitPrice: { currency: "KRW", amount: 100, fxRate: 1 }, execution: { currency: "KRW", amount: 0, fxRate: 1 } },
+    ] });
+    const [line] = created.lines;
+    if (!line) throw new Error("setup 실패");
+
+    const actual = await vi.importActual<typeof import("@/repositories/quote-lines")>("@/repositories/quote-lines");
+    vi.mocked(updateQuoteLineIfVersionMatches).mockImplementationOnce(async (viewer, id, expectedVersion, scope, input, tx) => {
+      await db.update(quoteLines).set({ vendorId: vendorB.id, version: sql`${quoteLines.version} + 1`, updatedAt: new Date() }).where(eq(quoteLines.id, id));
+      return actual.updateQuoteLineIfVersionMatches(viewer, id, expectedVersion, scope, input, tx);
+    });
+    const baseline: QuoteLineBaseline = {
+      subcategory: line.subcategory,
+      itemName: line.itemName,
+      vendorId: line.vendorId,
+      quantity: line.quantity,
+      unitPriceAmountKrw: line.unitPrice.amountKrw,
+      executionAmountKrw: line.execution.amountKrw,
+      lineStatus: line.lineStatus,
+      note: line.note,
+    };
+    const rejected = await saveQuoteLines(saver, revision.id, { rows: [
+      { id: line.id, version: line.version, subcategory: line.subcategory, itemName: "A 수정", unitPrice: { currency: "KRW", amount: 100, fxRate: 1 }, execution: { currency: "KRW", amount: 0, fxRate: 1 }, baseline },
+    ] }).then(
+      () => {
+        throw new Error("이 지점에 도달하면 안 된다");
+      },
+      (error: unknown) => error,
+    );
+    expect(rejected).toBeInstanceOf(SaveRejectedError);
+    const conflict = (rejected as SaveRejectedError).conflicts.find((c) => c.field === "vendorId");
+    expect(conflict?.reason).toContain(`${vendorB.name}으로 바꿈`);
+    expect(conflict?.reason).not.toContain(vendorB.id);
+  });
+
+  it.each([
+    ["vendor.value 없음", ["quote.amount", "project.value"]],
+    ["project.value 없음", ["quote.amount", "vendor.value"]],
+  ])("%s — 충돌 이유에 거래처 이름도 UUID도 싣지 않는다(「다른 값」)", async (_label, visible) => {
+    const saver = await createSaver(visible);
+    const { conflict, vendorB } = await vendorConflict(saver);
+    expect(conflict.reason).not.toContain(vendorB.name);
+    expect(conflict.reason).not.toContain(vendorB.id);
+    expect(conflict.theirValue).not.toContain(vendorB.name);
+    expect(conflict.reason).toMatch(/^다른 사람이 \d{2}:\d{2}에 다른 값으로 바꿈 · 덮어쓰기 \/ 그 값으로$/);
   });
 });
 

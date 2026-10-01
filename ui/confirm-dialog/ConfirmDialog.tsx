@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useEffect, useId, useRef, useTransition, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { Button, type ButtonReasonTone } from "@/ui/button/Button";
 import { isCtrlCombo } from "@/lib/shortcut";
 import styles from "./ConfirmDialog.module.css";
@@ -18,7 +19,7 @@ export type ConfirmDialogPrimary = {
   disabledReason?: string;
   /** §7-1 개정 ⑦ — 막힘(block, 기본) · 정상 상태(info) 이유 색. */
   reasonTone?: ButtonReasonTone;
-  /** 막힘 이유 옆에 두는 다음 한 수 3차(예: 04-21 「기간 적기」). */
+  /** 막힘 이유 옆에 두는 다음 한 수 3차(예: 04-21 「기간 적기」). 이유가 ` · 새로 고침`으로 끝나면 그 꼬리의 「새로 고침」이 대신 선다. */
   nextStep?: ReactNode;
   /**
    * 04-24 — 이유가 이미 근거 칸 아래(Form.Error)에 있을 때 그 요소의 id. 1차를 막고 aria-describedby로 그 글자를
@@ -62,6 +63,49 @@ export function secondaryLabelFor(primaryLabel: string): string {
   return primaryLabel.includes("취소") ? "닫기" : "취소";
 }
 
+// 막힘 이유가 ` · 새로 고침`으로 끝나면 그 꼬리는 글자가 아니라 다음 한 수 3차 버튼이다(§7-17 ERROR — 같은 말을
+// 두 자리에 쓰지 않는다). 서버 거부 문자열 · 서버가 계산한 막힘 이유 모두 같다.
+const REFRESH_TAIL = " · 새로 고침";
+
+export function splitRefreshTail(reason: string | undefined): { reason: string | undefined; refresh: boolean } {
+  if (!reason?.endsWith(REFRESH_TAIL)) return { reason, refresh: false };
+  return { reason: reason.slice(0, -REFRESH_TAIL.length), refresh: true };
+}
+
+// 거부는 화면이 본 값이 낡았다는 뜻이라 다시 받은 뒤 이 다이얼로그의 값도 낡았다 — 화면을 다시 받고 닫는다.
+// 새 화면이 그려진 뒤에 닫는다(먼저 닫으면 다시 열어 낡은 값으로 또 보낼 수 있고, 포커스는 사라질 트리거로 간다).
+function RefreshStep({ onDone }: { onDone: () => void }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const startedRef = useRef(false);
+  useEffect(() => {
+    if (!startedRef.current || pending) return;
+    startedRef.current = false;
+    onDone();
+  }, [pending, onDone]);
+  return (
+    <Button
+      variant="tertiary"
+      pending={pending}
+      onClick={() => {
+        startedRef.current = true;
+        startTransition(() => router.refresh());
+      }}
+    >
+      새로 고침
+    </Button>
+  );
+}
+
+// 닫힌 뒤 포커스 — 트리거, 트리거가 사라졌으면 화면 제목(§7-17).
+function returnFocus(trigger: HTMLElement | null) {
+  if (trigger && document.contains(trigger)) {
+    trigger.focus();
+  } else {
+    document.querySelector<HTMLElement>("h1")?.focus();
+  }
+}
+
 // 열릴 때 첫 포커스 — 확인 근거 칸 → 없으면 1차(막혔어도) → 목록형이면 첫 행.
 export function initialFocusTarget(args: {
   hasEvidence?: boolean;
@@ -91,11 +135,16 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   const titleId = useId();
 
   const submitting = Boolean(primary?.pending);
+  // 꼬리를 뗀 이유 하나가 1차 비활성 · Ctrl+Enter · 첫 포커스를 함께 정한다.
+  const refreshSplit = splitRefreshTail(primary?.disabledReason);
+  const disabledReason = refreshSplit.reason;
+  // 꼬리가 있으면 그 이유의 다음 한 수는 「새로 고침」이다 — 호출처가 준 다음 한 수는 다른 이유의 짝이라 내린다.
+  const nextStep = refreshSplit.refresh ? <RefreshStep onDone={closeNow} /> : (primary?.nextStep ?? null);
 
   const focusTarget = initialFocusTarget({
     hasEvidence: Boolean(evidenceField),
     hasPrimary: Boolean(primary),
-    primaryBlocked: Boolean(primary?.disabledReason),
+    primaryBlocked: Boolean(disabledReason),
     optionCount: options?.length ?? 0,
   });
 
@@ -119,6 +168,15 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // 열린 채로 사라질 때(예: 「새로 고침」 뒤 호스트 목록이 비어 빈 화면으로 바뀜)도 포커스를 닫힘 규칙대로 돌린다.
+  // 문서에서 실제로 빠졌을 때만 — StrictMode의 가짜 언마운트는 노드가 남아 있어 열릴 때 포커스를 건드리지 않는다.
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    return () => {
+      if (dialog?.open && !dialog.isConnected) returnFocus(previouslyFocusedRef.current);
+    };
+  }, []);
+
   function closeNow() {
     const dialog = dialogRef.current;
     if (!dialog?.open) return;
@@ -137,12 +195,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
 
   function finishClose() {
     onClose();
-    const trigger = previouslyFocusedRef.current;
-    if (trigger && document.contains(trigger)) {
-      trigger.focus();
-    } else {
-      document.querySelector<HTMLElement>("h1")?.focus();
-    }
+    returnFocus(previouslyFocusedRef.current);
   }
 
   function handleCancelNative(event: React.SyntheticEvent<HTMLDialogElement>) {
@@ -153,7 +206,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLDialogElement>) {
-    if (primary && !submitting && !primary.disabledReason && !primary.blockedBy && isCtrlCombo(event, "Enter")) {
+    if (primary && !submitting && !disabledReason && !primary.blockedBy && isCtrlCombo(event, "Enter")) {
       event.preventDefault();
       primary.onConfirm();
     }
@@ -265,25 +318,28 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
       <div className={styles.actions}>
         {primary ? (
           <>
-            {primary.disabledReason ? (
-              <span className={primary.reasonTone === "info" ? styles.reasonInfo : styles.reason}>
-                {primary.disabledReason}
+            {disabledReason || nextStep ? (
+              // 막힘 이유 + 다음 한 수 한 묶음 — PC는 행동 줄 왼쪽 그대로(display: contents), 폰은 버튼 윗줄(사용자 결정 2026-10-01).
+              <span className={styles.blocker}>
+                {disabledReason ? (
+                  <span className={primary.reasonTone === "info" ? styles.reasonInfo : styles.reason}>{disabledReason}</span>
+                ) : null}
+                {nextStep ? <span className={styles.nextStep}>{nextStep}</span> : null}
               </span>
             ) : primary.failure ? (
               <span className={styles.reason} role="alert">
                 {primary.failure}
               </span>
             ) : null}
-            {primary.nextStep ? <span className={styles.nextStep}>{primary.nextStep}</span> : null}
             {secondaryButton}
             <span ref={primaryWrapRef} className={styles.primaryWrap}>
               <Button
                 variant="primary"
                 shortcut={primary.shortcut ?? "Ctrl+Enter"}
                 pending={primary.pending}
-                disabled={Boolean(primary.disabledReason || primary.blockedBy)}
-                disabledReason={primary.disabledReason}
-                aria-describedby={primary.disabledReason ? undefined : primary.blockedBy}
+                disabled={Boolean(disabledReason || primary.blockedBy)}
+                disabledReason={disabledReason}
+                aria-describedby={disabledReason ? undefined : primary.blockedBy}
                 reasonTone={primary.reasonTone}
                 onClick={primary.onConfirm}
               >

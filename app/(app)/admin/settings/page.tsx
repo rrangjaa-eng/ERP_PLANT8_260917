@@ -13,6 +13,7 @@ import {
 } from "@/domain/settings/registry";
 import { isSettingActive, listApprovalRouteOptions, type ApprovalRouteOptions } from "@/domain/approvals/settings-options";
 import { listApprovalRouteSettingWarnings } from "@/domain/approvals/settings-warnings";
+import { formatCount, formatForeignAmount, formatFxRate, formatKrw, formatQuantity } from "@/lib/format-number";
 import type { HistoryEntry } from "@/ui/history-list/HistoryList";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { SettingsFormClient, type SettingsSection, type SettingsFieldViewModel } from "./settings-form-client";
@@ -26,13 +27,31 @@ function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// numberKind가 있으면 그 종류의 포맷터, 없으면 정수만 쉼표로 그리고 소수(0~1 비율 등)는 저장값 그대로 —
+// formatQuantity(2자리) · formatFxRate(4자리)는 0.088 같은 비율을 반올림해 잘못 보여 준다.
+function formatNumberValue(descriptor: SettingFieldDescriptor, value: number): string {
+  if (descriptor.kind === "number" && descriptor.numberKind) {
+    switch (descriptor.numberKind) {
+      case "krw":
+        return formatKrw(value);
+      case "fxRate":
+        return formatFxRate(value);
+      case "foreign":
+        return formatForeignAmount(value);
+      case "quantity":
+        return formatQuantity(value);
+    }
+  }
+  return Number.isInteger(value) ? formatCount(value) : String(value);
+}
+
 function formatValue(descriptor: SettingFieldDescriptor, value: unknown): string {
   if (descriptor.kind === "boolean") return value === true ? "켬" : "끔";
   if (descriptor.kind === "multi-enum") {
     return Array.isArray(value) && value.length > 0 ? value.join(", ") : "(없음)";
   }
   if (typeof value === "string") return value;
-  if (typeof value === "number") return String(value);
+  if (typeof value === "number") return formatNumberValue(descriptor, value);
   return "(값 없음)";
 }
 

@@ -94,11 +94,12 @@ export async function listProjectFormReferences(
     viewer,
     vendorRows.map((row) => ({ id: row.id, name: row.name })),
     VENDOR_OPTION_SPEC,
+    { visible: visibleFn },
   )) as ProjectReferenceOption[];
   return {
     clients: vendorOptions,
-    teams: (await projectMany(viewer, teamRows.map((row) => ({ id: row.id, name: row.name })), TEAM_OPTION_SPEC)) as ProjectReferenceOption[],
-    pmUsers: (await projectMany(viewer, userRows.map((row) => ({ id: row.id, name: row.name })), PERSON_OPTION_SPEC)) as ProjectReferenceOption[],
+    teams: (await projectMany(viewer, teamRows.map((row) => ({ id: row.id, name: row.name })), TEAM_OPTION_SPEC, { visible: visibleFn })) as ProjectReferenceOption[],
+    pmUsers: (await projectMany(viewer, userRows.map((row) => ({ id: row.id, name: row.name })), PERSON_OPTION_SPEC, { visible: visibleFn })) as ProjectReferenceOption[],
     vendors: vendorOptions,
     subcategories: subcategoryRows.map((row) => ({ value: row.value, label: row.label, description: row.description })),
   };

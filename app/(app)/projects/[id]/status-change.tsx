@@ -94,10 +94,13 @@ export function StatusChange({
   // 전환 성공 뒤 새로 고침으로 이 컴포넌트(트리거)가 사라지면 포커스를 머리 줄 제목으로(S16).
   const succeededRef = useRef(false);
   // 거부 옆 「새로 고침」을 눌러 다시 받은 화면에서 트리거가 사라져도 같다(§7-17 — 트리거가 사라졌으면 화면 제목).
+  // 다만 기다리는 동안 사용자가 옮긴 포커스는 그대로 둔다.
   const refreshStartedRef = useRef(false);
   useEffect(
     () => () => {
-      if (succeededRef.current || refreshStartedRef.current) document.querySelector<HTMLElement>("h1")?.focus();
+      if (succeededRef.current || (refreshStartedRef.current && document.activeElement === document.body)) {
+        document.querySelector<HTMLElement>("h1")?.focus();
+      }
     },
     [],
   );
@@ -143,6 +146,8 @@ export function StatusChange({
   // 트리거를 막는 이유가 시작일 게이트 이유보다 먼저다.
   // §7-17 ERROR — 이유 끝 ` · 새로 고침`은 글자가 아니라 이유 옆 3차 「새로 고침」이다. 다시 받은 화면이
   // 그려지면 거부(클라이언트 상태라 새로 받아도 남는다)를 지우고 포커스를 트리거로 돌린다.
+  // 다른 상태가 오면 버린다 — 상태가 미수주로 돌아와도 옛 거부가 되살아나지 않게(모달이 열린 동안은 모달의 「새로 고침」이 닫으며 지운다).
+  if (step.kind === "closed" && rejection && rejection.from !== props.from) setRejection(null);
   const triggerRejection = step.kind === "closed" && rejection?.from === props.from ? rejection.message : null;
   const triggerBlock = splitRefreshTail(unsavedEditsReason(dirtyCount) ?? triggerRejection ?? immediateBlockedReason ?? undefined);
   const triggerBlockedReason = triggerBlock.reason ?? null;

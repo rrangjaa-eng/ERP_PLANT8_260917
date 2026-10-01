@@ -329,6 +329,55 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(headerTag(page, "수주중")).toBeVisible();
     await expect(reason).toHaveCount(0);
     await expect(page.getByRole("button", { name: "새로 고침" })).toHaveCount(0);
+
+    // 다시 미수주로 돌아와도 버린 거부가 되살아나 트리거를 막지 않는다.
+    await db.update(projects).set({ status: "lost" }).where(eq(projects.id, project.id));
+    await page.locator("#period-open").click();
+    await page.getByLabel("종료일").fill(addDays(TODAY, 10));
+    await page.getByRole("button", { name: /일괄 저장 1/ }).click();
+    await expect(headerTag(page, "미수주")).toBeVisible();
+    await expect(page.getByRole("button", { name: "진행으로 되돌리기" })).not.toHaveAttribute("aria-disabled", "true");
+    await expect(reason).toHaveCount(0);
+  });
+
+  test("(b8) 즉시 되돌리기 거부 뒤 기다리는 동안 옮긴 포커스는 트리거가 사라져도 그대로 (§7-17)", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const lead = await makeAccount("role-team-lead", team.id);
+    const project = await makeProject({
+      teamId: team.id,
+      pmUserId: pm.userId,
+      status: "lost",
+      startDate: addDays(TODAY, 1),
+      endDate: addDays(TODAY, 7),
+      approved: true,
+    });
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    const trigger = page.getByRole("button", { name: "진행으로 되돌리기" });
+    await db.update(projects).set({ status: "in_progress" }).where(eq(projects.id, project.id));
+    await trigger.click();
+
+    let releaseRefresh = () => {};
+    const refreshHeld = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    await page.route(`**/projects/${project.id}**`, async (route) => {
+      const request = route.request();
+      if (request.method() === "GET" && (request.headers()["rsc"] === "1" || request.url().includes("_rsc="))) {
+        await refreshHeld;
+      }
+      await route.continue();
+    });
+    await page.getByRole("button", { name: "새로 고침" }).click();
+    const periodOpen = page.locator("#period-open");
+    await periodOpen.focus();
+    releaseRefresh();
+
+    await expect(headerTag(page, "진행")).toBeVisible();
+    await expect(trigger).toHaveCount(0);
+    await expect(periodOpen).toBeFocused();
   });
 
   test("(b7) 즉시 되돌리기 거부 뒤 「새로 고침」을 기다리는 동안 옮긴 포커스는 새 화면이 와도 그대로 (§7-17)", async ({ page }) => {

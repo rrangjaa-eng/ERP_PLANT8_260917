@@ -41,7 +41,7 @@ created: "2026-10-01"
 
 | Threat ID | Category | Component | Severity | Disposition | Mitigation | Status |
 |-----------|----------|-----------|----------|-------------|------------|--------|
-| T-02-01 | Tampering | SYSTEM.md 신설 절 | medium | mitigate | 02-01 blocking-human 체크포인트 · 사용자 출처 승인(02-VERIFICATION, 2026-10-01) | closed |
+| T-02-01 | Tampering | SYSTEM.md 신설 절 | medium | mitigate | 02-01 blocking-human 체크포인트 · 사용자 출처 승인(02-UAT, 2026-10-01 — 신설 절 전체 승인, 절 단위 확인 아님) | closed |
 | T-02-02 | Repudiation | DECISIONS.md | low | mitigate | 2026-09-19 기록 6건 · `design-system-docs.test.ts:139-146` | closed |
 | T-02-03 | Tampering | CI 사각지대(docs/**) | medium | mitigate | ci.yml:21-30 · deploy.yml:15-24 재포함 · `ci-guard.test.ts:175-192` | closed |
 | T-02-04 | Information Disclosure | `ui/**` import 경계 | high | mitigate | eslint.config.mjs:33·72 — 프로브 4건 error | closed |

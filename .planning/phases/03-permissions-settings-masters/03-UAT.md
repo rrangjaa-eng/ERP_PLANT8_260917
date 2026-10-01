@@ -13,9 +13,9 @@ updated: 2026-10-01T03:46:30Z
 ## Tests
 
 ### 1. 스테이징 `/admin` 인덱스 + 권한표
-expected: 시스템 관리자로 스테이징 `/admin`을 열면 마스터·설정·권한·운영 기록 그룹의 관리자 화면이 보이고, `/admin/permissions` 권한표는 현재 시드 메뉴 수만큼 열이 빈 칸 없이 채워진다. 배포(deploy #103 · main f85c9af)의 migrate·seed가 성공했다
+expected: 시스템 관리자로 스테이징 `/admin`을 열면 관리 화면 묶음이 보이고, `/admin/permissions` 권한표에 빈 칸이 없다. 배포(deploy #103 · main f85c9af)가 성공했다
 result: pass
-note: "deploy run #103(36807956531) success. 화면은 사용자 확인 — 「둘 다 정상」(2026-10-01). Claude는 자격증명 사용이 차단돼 직접 로그인하지 못함"
+note: "질문(2026-10-01 채팅): 「시스템 관리자 계정으로 스테이징에서 `/admin`: 관리 화면 묶음이 보이는지, `/admin/permissions`: 권한표에 빈 칸이 없는지 열어 보고 결과만 알려 주세요」 → 사용자: 「둘 다 정상」(03:20Z 전 — 스테이징은 #103 f85c9af). 열 수는 세지 않았다. deploy run #103(36807956531) success는 Claude가 gh로 확인. Claude는 자격증명 로그인이 auto mode에서 차단돼 직접 보지 못함"
 
 ## Summary
 

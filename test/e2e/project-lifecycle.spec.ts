@@ -273,6 +273,32 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(statusTrigger).toBeFocused();
   });
 
+  test("(b5) 즉시 되돌리기 거부 뒤 새로 받은 상태에 트리거가 없으면 포커스는 머리 줄 제목 (§7-17)", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const lead = await makeAccount("role-team-lead", team.id);
+    const project = await makeProject({
+      teamId: team.id,
+      pmUserId: pm.userId,
+      status: "lost",
+      startDate: addDays(TODAY, 1),
+      endDate: addDays(TODAY, 7),
+      approved: true,
+    });
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    const trigger = page.getByRole("button", { name: "진행으로 되돌리기" });
+    // 다른 곳에서 진행으로 바뀌었다 — 진행에는 누구에게도 상태 트리거가 없다((e)).
+    await db.update(projects).set({ status: "in_progress" }).where(eq(projects.id, project.id));
+    await trigger.click();
+    await page.getByRole("button", { name: "새로 고침" }).click();
+
+    await expect(headerTag(page, "진행")).toBeVisible();
+    await expect(trigger).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: project.name })).toBeFocused();
+  });
+
   test("(b3) 승인됐지만 종료일이 지난 미수주는 확인 모달 결과 줄 「종료일 지남 · 바로 정산」 (DR-7)", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);

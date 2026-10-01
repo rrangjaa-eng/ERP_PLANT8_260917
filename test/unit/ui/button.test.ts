@@ -82,3 +82,33 @@ describe("Button — reasonTone · aria-disabled(⑦, DR-10 · DR-11)", () => {
     }
   });
 });
+
+describe("Button — 이유 + 다음 한 수(nextStep, §7-1)", () => {
+  const nextStep = createElement("a", { href: "#next" }, "새로 고침");
+
+  it("이유가 보이면 이유와 다음 한 수가 한 덩어리(.reasonLine)이고 바깥 줄은 줄바꿈된다", () => {
+    const html = renderButton({ disabled: true, disabledReason: "상태가 진행으로 바뀜", nextStep });
+
+    expect(html).toContain(styles.wrapWithNext);
+    expect(html).toMatch(
+      new RegExp(`class="${styles.reasonLine}"><span id="[^"]+" class="${styles.reason}">상태가 진행으로 바뀜</span><a href="#next">새로 고침</a></span>`),
+    );
+  });
+
+  it("이유가 없으면(활성 · 진행 중) 다음 한 수도 없다", () => {
+    for (const props of [{}, { disabled: true, pending: true, disabledReason: "숨김" }] as Partial<ButtonProps>[]) {
+      const html = renderButton({ nextStep, ...props });
+      expect(html).not.toContain("새로 고침");
+      expect(html).not.toContain(styles.reasonLine);
+      expect(html).not.toContain(styles.wrapWithNext);
+    }
+  });
+
+  it("다음 한 수가 없으면 이유는 예전처럼 버튼 바로 옆 요소다", () => {
+    const html = renderButton({ disabled: true, disabledReason: "바뀐 칸 없음" });
+
+    expect(html).not.toContain(styles.reasonLine);
+    expect(html).not.toContain(styles.wrapWithNext);
+    expect(html).toMatch(new RegExp(`</button><span id="[^"]+" class="${styles.reason}">바뀐 칸 없음</span></span>$`));
+  });
+});

@@ -91,11 +91,11 @@ export function StatusChange({
   const submittedLabelRef = useRef("");
   // 전환 성공 뒤 새로 고침으로 이 컴포넌트(트리거)가 사라지면 포커스를 머리 줄 제목으로(S16).
   const succeededRef = useRef(false);
-  // 거부 옆 「새로 고침」으로 다시 받은 화면에서 트리거가 사라져도 같다(§7-17 — 트리거가 사라졌으면 화면 제목).
-  const refreshShownRef = useRef(false);
+  // 거부 옆 「새로 고침」을 눌러 다시 받은 화면에서 트리거가 사라져도 같다(§7-17 — 트리거가 사라졌으면 화면 제목).
+  const refreshStartedRef = useRef(false);
   useEffect(
     () => () => {
-      if (succeededRef.current || refreshShownRef.current) document.querySelector<HTMLElement>("h1")?.focus();
+      if (succeededRef.current || refreshStartedRef.current) document.querySelector<HTMLElement>("h1")?.focus();
     },
     [],
   );
@@ -144,10 +144,11 @@ export function StatusChange({
     unsavedEditsReason(dirtyCount) ?? (step.kind === "closed" ? rejection : null) ?? immediateBlockedReason ?? undefined,
   );
   const triggerBlockedReason = triggerBlock.reason ?? null;
-  useEffect(() => {
-    refreshShownRef.current = triggerBlock.refresh;
-  }, [triggerBlock.refresh]);
+  function markRefreshStarted() {
+    refreshStartedRef.current = true;
+  }
   function afterRefresh() {
+    refreshStartedRef.current = false;
     setRejection(null);
     document.getElementById(triggerId)?.focus();
   }
@@ -212,7 +213,7 @@ export function StatusChange({
         pending={reverting && step.kind === "closed" && isExecuting}
         disabled={triggerBlockedReason !== null}
         disabledReason={triggerBlockedReason ?? undefined}
-        nextStep={triggerBlock.refresh ? <RefreshStep onDone={afterRefresh} /> : undefined}
+        nextStep={triggerBlock.refresh ? <RefreshStep onDone={afterRefresh} onStart={markRefreshStarted} /> : undefined}
       >
         {reverting ? REVERT_LABEL : "상태 바꾸기"}
       </Button>

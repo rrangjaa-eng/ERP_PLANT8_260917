@@ -7,22 +7,17 @@
 <link rel="stylesheet" href="../tokens.css">
 <style>
 /* SYSTEM.md §6-5 외부 수령자 화면 실물(폰 전용, 로그인 없음, 평생 1회). 장면은 URL 해시로 고른다:
-   #pick          E2 이름 고르기 — 목록에서 자기 자리를 고른다(구별 표시 있는 행 포함)
-   #verify        E3 전화번호 확인 — 첫 진입 기본 폼(막힘 이유는 .blocked.ok, 개정 ①-m)
-   #wrong         E3 전화번호 확인 — 뒤 4자리 틀림(칸 오류 + 남은 횟수)
-   #locked        E3 전화번호 확인 — 짧은 잠김(해제 시각 · 문의 2행)
-   #locked-hard   E3 전화번호 확인 — 누적 잠김(서버 고정 상수 20, 알림 묶음 + 「잠금 확인」)
-   #locked-hard-retry (내부 보기, 실물 주석으로 구분) — 누적 잠김의 「잠금 확인」 재확인 실패
+   #pick          E′2 경품 고르기 — 목록에 오른 경품(1개 가액 > 50,000만, 서버가 거른다)을 고른다. 경품이 하나여도 이 장면(UD-5 a)
    #empty (기본)  E4 입력 폼 · 빈 칸 · 제출 막힘 이유
    #sign          E4 입력 폼 · 정보 입력 끝, 서명만 남음 · 「서명을 해 주세요」
    #error         E4 입력 폼 · 주민등록번호 오류 · ~해 주세요체. 검사(서버, 사용자 결정 2026-09-18 「1로 진행」): 형식(6+7) · 앞 6자리가 실제 날짜 · 뒷자리 첫 숫자가 생년 세기와 일치 · 검증번호(2020-10 이전 발급분만). 신분증 첨부·본인인증 없음
-   #done          E5 제출됨 — 「다시 제출할 수 없습니다」(공유 링크라 사람 단위로 닫힌다, PDF 링크 없음 = v1)
-   #submitted-slot E6-a 이미 제출한 자리(전화번호 확인을 통과한 뒤에만 — 옛 #expired를 이 이름으로 바꿨다)
-   #closed        E6-b 링크 닫힘(기한 · 모두 제출 · 담당자가 닫음 중 하나)
+   #done          E5 제출됨 — 첫 줄 「제출되었습니다」(사람 단위 잠금 없음 — 같은 폰에서 다시 들어오면 E′2부터, PDF 링크 없음 = v1)
+   #closed        E6-b 링크 닫힘(기한 · 담당자가 닫음 중 하나)
+   #noprize       E6-d 경품 없음 — 링크는 열렸는데 보낼 경품이 0(1차 없음)
    #notfound      E6-c 링크 없음(잘못된 토큰 · 기능 꺼짐) — 부제 없음, 문의 전화 없음
    #post          전달 방법 수정자(택배) — 다른 해시와 함께 쓰지 않고 단독으로 쓰면 #empty에 얹힌다. 기본은 현장 수령: 주소 칸 없음
    2026-09-18 사용자: 기타소득은 거의 경품(현물)이라 지급액·계좌를 빼고 경품명만 보인다(시가·원천징수·제세공과금·「미리 채운」 안내 없음). 주소는 택배일 때만.
-   04.3-01: 당첨자를 등록할 때 사람마다 이름·전화번호·경품·전달 방법을 담당자가 넣고 QR·링크는 행사당 하나를 전원이 같이 쓴다(D-1102·D-1103). 수령자는 로그인 없이 들어와 이름을 고르고(E2) 전화번호 뒤 4자리로 그 한 사람과만 대조한(E3) 뒤에만 이 폼(E4)이 열린다.
+   04.3-15(D-c, 사용자 5909578685): 명단이 없다. 경영관리가 경품마다 경품명 · 1개 가액 · 전달을 경품 목록에 넣고 QR · 링크는 행사당 하나를 당첨자 전원이 같이 쓴다. 수령자는 로그인 없이 들어와 받은 경품을 고르고(E′2 — 서버 왕복 없음) 곧바로 이 폼(E′4)을 채운다. 가액 · 판정 · 제출 수는 수령자 쪽으로 보내지 않는다(5905714131).
    이 화면만 본문 --fs-md · 입력 48px · 한 열. 나머지 규칙(직각·틴트·색)은 그대로. 컴포넌트는 tokens.css 변수만 참조한다. 앱 코드가 아니다. */
 *{box-sizing:border-box;margin:0;padding:0}
 html{font-size:var(--fs-md)}
@@ -44,11 +39,7 @@ main{padding:var(--s-5) var(--pad-page) 0;max-width:480px}
 h1{font-size:var(--fs-xl);font-weight:var(--fw-bold);letter-spacing:var(--ls-head);line-height:var(--lh-tight)}
 .sub{font-size:var(--fs-sm);color:var(--muted);margin-top:var(--s-1)}
 .pay{border-top:var(--line-w-strong) solid var(--line-strong);margin-top:var(--s-4);padding:var(--s-3) 0}
-.pay dl{display:grid;grid-template-columns:auto 1fr;gap:var(--s-1) var(--s-4)}
-.pay dt{font-size:var(--fs-sm);color:var(--muted);font-weight:var(--fw-medium);padding-top:2px}
-.pay dd{text-align:right}
-.pay dd.big{font-size:var(--fs-lg);font-weight:var(--fw-bold)}
-.pay .ro{font-size:var(--fs-sm);color:var(--faint);margin-top:var(--s-2)}
+.pay .big{font-size:var(--fs-lg);font-weight:var(--fw-bold)}
 .contact{font-size:var(--fs-md);color:var(--muted);margin-top:var(--s-2)}
 
 .form{border-top:var(--line-w-strong) solid var(--line-strong);padding-top:var(--s-3)}
@@ -91,57 +82,41 @@ h1{font-size:var(--fs-xl);font-weight:var(--fw-bold);letter-spacing:var(--ls-hea
 .state p{margin-bottom:var(--s-3)}
 .state .who{font-size:var(--fs-md);color:var(--muted)}
 
-/* E2 이름 고르기 */
+/* E′2 경품 고르기 */
 .pick-hd{font-size:var(--fs-md);color:var(--muted);font-weight:var(--fw-medium);margin-bottom:var(--s-2)}
 .namelist{list-style:none;border-top:var(--line-w-strong) solid var(--line-strong)}
 .namebtn{display:block;width:100%;min-height:48px;padding:var(--s-2) 0;border:0;border-bottom:var(--line-w) solid var(--line);background:none;text-align:left;font-size:var(--fs-md);cursor:pointer}
 .namebtn .sub2{display:block;font-size:var(--fs-sm);color:var(--muted)}
 
-/* E3 전화번호 확인 */
-.namepick{display:flex;align-items:baseline;justify-content:space-between;padding:var(--s-2) 0}
-.namepick .cur{font-size:var(--fs-lg);font-weight:var(--fw-bold)}
-.lockbundle{border:var(--line-w) solid var(--line-strong);padding:var(--s-3);margin-top:var(--s-1)}
-.lockbundle p{font-size:var(--fs-md);color:var(--danger);margin-bottom:var(--s-2)}
-.lockbundle p:last-of-type{margin-bottom:var(--s-3)}
+/* E′4 경품 블록 머리(라벨 + 3차 「다른 경품 고르기」) */
+.payhd{display:flex;align-items:center;justify-content:space-between}
+.payhd .lbl{font-size:var(--fs-sm);color:var(--muted);font-weight:var(--fw-medium)}
 
 .row-addr,.only-post{display:none}
 body[data-post] .row-addr{display:block}
 body[data-post] .only-post{display:inline}
 body[data-post] .only-site{display:none}
 
-/* 새 장면(E2·E3·E6) 블록 — 기본 숨김, 맞는 장면에서만 보인다 */
-.pick,.verify,.closed-scene,.notfound-scene{display:none}
+/* 새 장면(E′2 · E6) 블록 — 기본 숨김, 맞는 장면에서만 보인다 */
+.pick,.closed-scene,.notfound-scene,.noprize-scene{display:none}
 body[data-scene="pick"] .pick{display:block}
-body[data-scene="verify"] .verify,body[data-scene="wrong"] .verify,body[data-scene="locked"] .verify,body[data-scene="locked-hard"] .verify,body[data-scene="locked-hard-retry"] .verify{display:block}
 body[data-scene="closed"] .closed-scene{display:block}
 body[data-scene="notfound"] .notfound-scene{display:block}
+body[data-scene="noprize"] .noprize-scene{display:block}
 
-/* .verify 안 하위 상태별 노출(같은 골격, 다른 자리) */
-.verify [data-sub]{display:none}
-body[data-scene="verify"] .verify [data-sub~="verify"]{display:block}
-body[data-scene="wrong"] .verify [data-sub~="wrong"]{display:block}
-body[data-scene="locked"] .verify [data-sub~="locked"]{display:block}
-body[data-scene="locked-hard"] .verify [data-sub~="locked-hard"]{display:block}
-body[data-scene="locked-hard-retry"] .verify [data-sub~="locked-hard-retry"]{display:block}
-
-/* 새 장면에서는 옛 E4 폼·결과 블록을 전부 숨긴다 */
-body[data-scene="pick"] .pay,body[data-scene="pick"] .form,body[data-scene="pick"] .submit,body[data-scene="pick"] .s-done,body[data-scene="pick"] .s-submitted-slot,
-body[data-scene="verify"] .pay,body[data-scene="verify"] .form,body[data-scene="verify"] .submit,body[data-scene="verify"] .s-done,body[data-scene="verify"] .s-submitted-slot,
-body[data-scene="wrong"] .pay,body[data-scene="wrong"] .form,body[data-scene="wrong"] .submit,body[data-scene="wrong"] .s-done,body[data-scene="wrong"] .s-submitted-slot,
-body[data-scene="locked"] .pay,body[data-scene="locked"] .form,body[data-scene="locked"] .submit,body[data-scene="locked"] .s-done,body[data-scene="locked"] .s-submitted-slot,
-body[data-scene="locked-hard"] .pay,body[data-scene="locked-hard"] .form,body[data-scene="locked-hard"] .submit,body[data-scene="locked-hard"] .s-done,body[data-scene="locked-hard"] .s-submitted-slot,
-body[data-scene="locked-hard-retry"] .pay,body[data-scene="locked-hard-retry"] .form,body[data-scene="locked-hard-retry"] .submit,body[data-scene="locked-hard-retry"] .s-done,body[data-scene="locked-hard-retry"] .s-submitted-slot,
-body[data-scene="closed"] .pay,body[data-scene="closed"] .form,body[data-scene="closed"] .submit,body[data-scene="closed"] .s-done,body[data-scene="closed"] .s-submitted-slot,
-body[data-scene="notfound"] .pay,body[data-scene="notfound"] .form,body[data-scene="notfound"] .submit,body[data-scene="notfound"] .s-done,body[data-scene="notfound"] .s-submitted-slot
+/* 새 장면에서는 E′4 폼 · 결과 블록을 전부 숨긴다 */
+body[data-scene="pick"] .pay,body[data-scene="pick"] .form,body[data-scene="pick"] .submit,body[data-scene="pick"] .s-done,
+body[data-scene="closed"] .pay,body[data-scene="closed"] .form,body[data-scene="closed"] .submit,body[data-scene="closed"] .s-done,
+body[data-scene="notfound"] .pay,body[data-scene="notfound"] .form,body[data-scene="notfound"] .submit,body[data-scene="notfound"] .s-done,
+body[data-scene="noprize"] .pay,body[data-scene="noprize"] .form,body[data-scene="noprize"] .submit,body[data-scene="noprize"] .s-done
 {display:none}
 body[data-scene="notfound"] .sub{display:none}
 
-/* 옛 E4 폼·결과 장면(그대로 유지) */
-body[data-scene="empty"] .s-sign,body[data-scene="empty"] .s-error,body[data-scene="empty"] .s-done,body[data-scene="empty"] .s-submitted-slot{display:none}
-body[data-scene="sign"] .s-empty,body[data-scene="sign"] .s-error,body[data-scene="sign"] .s-done,body[data-scene="sign"] .s-submitted-slot{display:none}
-body[data-scene="error"] .s-empty,body[data-scene="error"] .s-sign,body[data-scene="error"] .s-done,body[data-scene="error"] .s-submitted-slot{display:none}
-body[data-scene="done"] .form,body[data-scene="done"] .submit,body[data-scene="done"] .s-submitted-slot{display:none}
-body[data-scene="submitted-slot"] .form,body[data-scene="submitted-slot"] .submit,body[data-scene="submitted-slot"] .s-done,body[data-scene="submitted-slot"] .pay{display:none}
+/* E′4 폼 · 결과 장면 */
+body[data-scene="empty"] .s-sign,body[data-scene="empty"] .s-error,body[data-scene="empty"] .s-done{display:none}
+body[data-scene="sign"] .s-empty,body[data-scene="sign"] .s-error,body[data-scene="sign"] .s-done{display:none}
+body[data-scene="error"] .s-empty,body[data-scene="error"] .s-sign,body[data-scene="error"] .s-done{display:none}
+body[data-scene="done"] .form,body[data-scene="done"] .submit{display:none}
 body[data-scene="sign"] .sig .ph,body[data-scene="error"] .sig .ph{display:none}
 body[data-scene="error"] .sig svg{display:block}
 </style>
@@ -154,67 +129,25 @@ body[data-scene="error"] .sig svg{display:block}
   <h1>기타소득 지급 확인</h1>
   <p class="sub">2026 현대자동차 아이오닉9 미디어 론칭 쇼케이스 · 현장 SNS 이벤트 경품 · <span class="num">2026-09-13</span> 당첨</p>
 
-  <!-- E2 이름 고르기 -->
-  <section class="pick" aria-label="이름 고르기">
-    <p class="pick-hd">이름을 골라 주세요 · <span class="num">12</span>명</p>
+  <!-- E′2 경품 고르기(행 누름 = 서버 왕복 없이 곧바로 E′4) -->
+  <section class="pick" aria-label="경품 고르기">
+    <p class="pick-hd">받은 경품을 골라 주세요</p>
     <ul class="namelist">
-      <li><button type="button" class="namebtn">강*준</button></li>
-      <li><button type="button" class="namebtn">김*늘<span class="sub2">갤럭시 탭 S10 <span class="num">1</span>개</span></button></li>
-      <li><button type="button" class="namebtn">김*수<span class="sub2">갤럭시 탭 S10 <span class="num">1</span>개 · 오전 조</span></button></li>
-      <li><button type="button" class="namebtn">김*수<span class="sub2">갤럭시 탭 S10 <span class="num">1</span>개 · 오후 조</span></button></li>
-      <li><button type="button" class="namebtn">남**수</button></li>
+      <li><button type="button" class="namebtn">갤럭시 탭 S10</button></li>
+      <li><button type="button" class="namebtn">다이슨 에어랩<span class="sub2">택배</span></button></li>
     </ul>
-    <p class="contact">목록에 이름이 없으면 PLANT8 경영관리 <a href="tel:0212345678">02-1234-5678</a>에 전화해 주세요</p>
-  </section>
-
-  <!-- E3 전화번호 확인(verify · wrong · locked · locked-hard · locked-hard-retry가 이 골격을 함께 쓴다) -->
-  <section class="verify" aria-label="전화번호 확인">
-    <div class="namepick">
-      <span><span class="lbl">이름</span><span class="cur">김*늘</span></span>
-      <button type="button" class="b3 sm">다른 이름 고르기</button>
-    </div>
-    <div class="sep"></div>
-    <div class="row">
-      <label for="last4">전화번호 뒤 4자리</label>
-      <input id="last4" class="inp num" inputmode="numeric" maxlength="4" placeholder="0000">
-      <p class="ferr" data-sub="wrong">전화번호 뒤 4자리가 맞지 않습니다 · 다시 적어 주세요 · 남은 횟수 <span class="num">4</span>번</p>
-    </div>
-    <div class="submit">
-      <button class="btn" data-sub="verify wrong" aria-describedby="why-verify">전화번호 확인</button>
-      <span class="blocked ok" id="why-verify" data-sub="verify wrong">뒤 4자리 숫자를 적으면 확인할 수 있습니다</span>
-
-      <button class="btn" disabled data-sub="locked" aria-describedby="lock1 lock2">전화번호 확인</button>
-      <p class="blocked" id="lock1" data-sub="locked">틀린 번호가 <span class="num">5</span>번 들어와 확인이 잠겼습니다 · <span class="num">18:45</span>부터 다시 해 주세요</p>
-      <p class="blocked" id="lock2" data-sub="locked">등록한 번호가 다르면 PLANT8 경영관리 <a href="tel:0212345678">02-1234-5678</a>에 전화해 주세요</p>
-
-      <button class="btn" disabled data-sub="locked-hard" aria-describedby="lh1 lh2">전화번호 확인</button>
-      <div class="lockbundle" data-sub="locked-hard" tabindex="-1">
-        <p id="lh1">틀린 번호가 너무 여러 번 들어와 확인이 잠겼습니다</p>
-        <p id="lh2">담당자 박서연 · PLANT8 경영관리 <a href="tel:0212345678">02-1234-5678</a>에 전화해 주세요</p>
-        <button type="button" class="b3" id="unlockcheck">잠금 확인</button>
-      </div>
-
-      <!-- 재확인 실패 보기(같은 #locked-hard 장면의 대안 상태 — 실물 주석으로 구분, 기본 상태와 다른 id) -->
-      <button class="btn" disabled data-sub="locked-hard-retry" aria-describedby="lhr1 lhr2">전화번호 확인</button>
-      <div class="lockbundle" data-sub="locked-hard-retry" tabindex="-1">
-        <p id="lhr1">틀린 번호가 너무 여러 번 들어와 확인이 잠겼습니다</p>
-        <p id="lhr2">담당자 박서연 · PLANT8 경영관리 <a href="tel:0212345678">02-1234-5678</a>에 전화해 주세요</p>
-        <button type="button" class="b3" id="unlockcheck-retry" aria-describedby="lhr3">잠금 확인</button>
-        <p class="blocked" id="lhr3">확인 결과를 받지 못했습니다 · 다시 눌러 주세요</p>
-      </div>
-    </div>
+    <p class="contact">받은 경품이 목록에 없으면 제출하지 않아도 됩니다 · 확인이 필요하면 담당자 박서연 · PLANT8 경영관리 <a href="tel:0212345678">02-1234-5678</a>에 전화해 주세요</p>
   </section>
 
   <section class="pay" aria-label="경품 내용">
-    <dl>
-      <dt>경품</dt><dd class="big">갤럭시 탭 S10 <span class="num">1</span>개</dd>
-    </dl>
-    <p class="contact">경품이나 받는 방법이 다르면 제출하기 전에 PLANT8 경영관리 <a href="tel:0212345678">02-1234-5678</a>에 전화해 주세요</p>
+    <div class="payhd"><span class="lbl">경품</span><button type="button" class="b3 sm">다른 경품 고르기</button></div>
+    <p class="big">갤럭시 탭 S10 <span class="num">1</span>개</p>
+    <p class="contact">받은 경품이 목록에 없으면 제출하지 않아도 됩니다 · 확인이 필요하면 담당자 박서연 · PLANT8 경영관리 <a href="tel:0212345678">02-1234-5678</a>에 전화해 주세요</p>
   </section>
 
   <form class="form" onsubmit="return false">
     <div class="row"><label for="name">이름</label><input id="name" class="inp" value=""><span class="s-sign s-error" hidden></span></div>
-    <div class="row"><label for="rrn1">주민등록번호</label>
+    <div class="row"><label for="rrn1">주민등록번호 <span class="lbl-sub">세무 신고용</span></label>
       <div class="two"><input id="rrn1" class="inp num" inputmode="numeric" placeholder="930412" maxlength="6"><span class="dash">-</span><input id="rrn2" class="inp num" inputmode="numeric" type="password" placeholder="•••••••" maxlength="7"></div>
       <div class="ferr s-error">주민등록번호가 맞지 않습니다 · 앞 6자리(생년월일)와 뒤 7자리를 다시 확인해 주세요</div>
     </div>
@@ -241,17 +174,12 @@ body[data-scene="error"] .sig svg{display:block}
   </form>
 
   <section class="state s-done" aria-live="polite">
-    <p><b>제출되었습니다 · 다시 제출할 수 없습니다</b></p>
+    <p><b>제출되었습니다</b></p>
     <p class="who">김하늘 · <span class="num">2026-09-20 18:42</span> 제출 · 갤럭시 탭 S10 <span class="num">1</span>개 <span class="only-site">현장 수령</span><span class="only-post">적은 주소로 보내 드립니다</span></p>
     <p class="who">확인이 필요하면 담당자 박서연 · PLANT8 경영관리 <a href="tel:0212345678">02-1234-5678</a>에 전화해 주세요</p>
   </section>
 
-  <section class="state s-submitted-slot" aria-live="polite">
-    <p><b>이미 제출하셨습니다</b></p>
-    <p class="who">김*늘 · <span class="num">2026-09-20 18:42</span> 제출됨. 내용을 고치려면 담당자 박서연 · PLANT8 경영관리 <a href="tel:0212345678">02-1234-5678</a>에 전화해 주세요</p>
-  </section>
-
-  <!-- E6-b 링크 닫힘(사유는 기한 예시 — 모두 제출·담당자가 닫음도 같은 골격, 문장만 다르다) -->
+  <!-- E6-b 링크 닫힘(사유는 기한 예시 — 담당자가 닫음도 같은 골격, 문장만 다르다) -->
   <section class="state closed-scene" aria-live="polite">
     <p><b>이 링크는 닫혔습니다</b></p>
     <p class="who">제출 기한 <span class="num">2026-09-23 18:00</span>이 지났습니다 · 확인이 필요하면 담당자 박서연 · PLANT8 경영관리 <a href="tel:0212345678">02-1234-5678</a>에 전화해 주세요</p>
@@ -261,6 +189,12 @@ body[data-scene="error"] .sig svg{display:block}
   <section class="state notfound-scene" aria-live="polite">
     <p><b>링크를 찾을 수 없습니다</b></p>
     <p class="who">받은 QR이나 링크를 다시 열어 주세요 · 계속 안 되면 행사 담당자에게 알려 주세요</p>
+  </section>
+
+  <!-- E6-d 경품 없음(링크는 열렸는데 보낼 경품이 0 — 1차 없음) -->
+  <section class="state noprize-scene" aria-live="polite">
+    <p><b>받을 수 있는 경품이 없습니다</b></p>
+    <p class="who">확인이 필요하면 담당자 박서연 · PLANT8 경영관리 <a href="tel:0212345678">02-1234-5678</a>에 전화해 주세요</p>
   </section>
 
 <div class="submit">
@@ -273,7 +207,7 @@ body[data-scene="error"] .sig svg{display:block}
 
 <script>
 (function(){
-  var scenes=['pick','verify','wrong','locked','locked-hard','locked-hard-retry','empty','sign','error','done','submitted-slot','closed','notfound'];
+  var scenes=['pick','empty','sign','error','done','closed','notfound','noprize'];
   var h=location.hash.slice(1);
   if(h==='post'){document.body.dataset.post='1';h='empty'}
   if(scenes.indexOf(h)!==-1)document.body.dataset.scene=h;
@@ -283,7 +217,6 @@ body[data-scene="error"] .sig svg{display:block}
     document.getElementById('agree').checked=true;
     if(h==='error'){var r=document.getElementById('rrn1');r.value='93041';r.classList.add('err');r.setAttribute('aria-invalid','true')}
   }
-  if(h==='wrong'){var l4=document.getElementById('last4');if(l4){l4.classList.add('err');l4.setAttribute('aria-invalid','true')}}
 })();
 </script>
 </body>

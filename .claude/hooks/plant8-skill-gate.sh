@@ -11,7 +11,7 @@
 #   agent          PreToolUse(Agent)        — gsd-* 에이전트는 맞는 /gsd-* 스킬을 부른 뒤에만,
 #                                            gsd-executor는 페이즈 계획 게이트(CEO·엔지·UI면 디자인 리뷰) 기록 뒤에만.
 #                                            세션당 실행 횟수·웨이브 제한(D-04)은 없앴다(사용자 결정 2026-10-01 —
-#                                            세션 종료는 문맥 크기·독립 검토로 정한다)
+#                                            세션은 독립 검토 경계에서만 끊는다)
 #   bash           PreToolUse(Bash)         — 모든 커밋(문서 포함)은 verification-before-completion 뒤에만,
 #                                            코드 커밋은 test-driven-development도 더해서(D-02, 사용자 결정
 #                                            2026-09-23). 페이즈 완료는 /gsd-verify-work·/review 뒤에만

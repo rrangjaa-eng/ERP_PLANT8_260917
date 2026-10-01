@@ -115,6 +115,8 @@ test.describe("가려진 참조 정보의 화면(quick 261001-85g)", () => {
     const writer = await makeWriter(teamId, "");
     const { projectId, client } = await makeProjectWithVendorLine(teamId, writer);
     await db.update(vendors).set({ archivedAt: new Date() }).where(eq(vendors.id, client.id));
+    // 대조 단언(「프로젝트 복사」 있음)은 클라이언트 선택지가 하나라도 있어야 한다 — 다른 테스트가 남긴 거래처에 기대지 않는다.
+    await insertVendor(SYSTEM_VIEWER, { name: `E2E살아있는거래처-${randomUUID()}`, normalizedName: `e2e살아있는거래처-${randomUUID()}` });
 
     await login(page, writer);
     await page.goto(`/projects/${projectId}`);
@@ -133,8 +135,28 @@ test.describe("가려진 참조 정보의 화면(quick 261001-85g)", () => {
     await expect(cell).toHaveText(before ?? "");
   });
 
+  test("D3: 팀 업무 범위인데 오늘 팀이 없는 계급에게는 「프로젝트 복사」가 없다(목록 등록 진입점과 같은 좁힌 규칙)", async ({ page }) => {
+    const teamId = await makeTeam();
+    const owner = await makeWriter(teamId, "");
+    const { projectId } = await makeProjectWithVendorLine(teamId, owner);
+    const role = await insertRole(SYSTEM_VIEWER, { id: `role-${randomUUID()}`, name: `E2E팀없음-${randomUUID().slice(0, 8)}`, workScope: "team" });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "write", allowed: true });
+    for (const infoItem of ["project.value", "quote.amount", "vendor.value", "team.value", "person.value"]) {
+      await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
+    }
+    const email = `e2e-noteam-${randomUUID()}@example.test`;
+    const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 팀없음", roleId: role.id });
+    const noTeam: Account = { userId, email, password: tempPassword };
+
+    await login(page, noTeam);
+    await page.goto(`/projects/${projectId}`);
+    await expect(page.getByRole("table", { name: "견적 줄" }).or(page.getByRole("grid", { name: "견적 줄" }))).toBeVisible();
+    await expect(page.getByRole("link", { name: /프로젝트 복사/ })).toHaveCount(0);
+  });
+
   // /qa ISSUE-001(PR #121) — 보관 거래처는 선택지에 없어 칸 · 편집기 선택지가 UUID를 그렸다. 줄이 실은 이름을 그린다.
-  test("D3: 보관된 거래처 줄은 거래처 칸 · 편집기 선택지에 실제 이름이 보인다", async ({ page }) => {
+  test("D4: 보관된 거래처 줄은 거래처 칸 · 편집기 선택지에 실제 이름이 보인다", async ({ page }) => {
     const teamId = await makeTeam();
     const writer = await makeWriter(teamId, "");
     const { projectId, client } = await makeProjectWithVendorLine(teamId, writer);
@@ -154,7 +176,7 @@ test.describe("가려진 참조 정보의 화면(quick 261001-85g)", () => {
   });
 
   // /review(PR #128) — 줄 복제(Ctrl+D)는 거래처 id만 옮겨 복제 줄이 「—」로 보였다(값은 거래처가 있는데 빈 칸처럼).
-  test("D4: 보관된 거래처 줄을 복제해도 복제 줄 거래처 칸에 실제 이름이 보인다", async ({ page }) => {
+  test("D5: 보관된 거래처 줄을 복제해도 복제 줄 거래처 칸에 실제 이름이 보인다", async ({ page }) => {
     const teamId = await makeTeam();
     const writer = await makeWriter(teamId, "");
     const { projectId, client } = await makeProjectWithVendorLine(teamId, writer);

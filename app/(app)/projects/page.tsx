@@ -9,7 +9,7 @@ import {
   type ProjectSortKey,
 } from "@/domain/projects";
 import { listProjectFormReferences, loadCreatorDefaults, scopeCreateFormReferences } from "@/domain/projects/references";
-import { projectsEmptyAction } from "./empty-action";
+import { canCreateProject, projectsEmptyState } from "./create-entry";
 import { listProjectStatusCatalog } from "@/domain/projects/status";
 import { recentFxRate } from "@/domain/money/currency";
 import { firstListParam, normalizeListYear, reconcileListYear, yearOptions } from "@/domain/projects/list-view";
@@ -111,13 +111,14 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   ]);
   // /review team-scope-create-review.md P3(2) — 팀 발령이 없는 팀 업무 범위 사람은
   // 등록해도 서버가 항상 거부한다(팀 목록 0개) — §7 "할 수 없는 선택지는 보이지 않게".
-  // quick 261001-85g — 노출표가 클라이언트 · 담당 PM 선택지를 가려 0개여도 같다(필수 칸을 고를 수 없다).
-  const canCreate =
-    canWrite &&
-    scopedCreateReferences !== null &&
-    scopedCreateReferences.teams.length > 0 &&
-    scopedCreateReferences.pmUsers.length > 0 &&
-    references.clients.length > 0;
+  // quick 261001-85g — 노출표가 클라이언트 · 담당 PM 선택지를 가려 0개여도 같다(필수 칸을 고를 수 없다). 규칙은 create-entry.ts.
+  const createChoices = {
+    canWrite,
+    teamCount: scopedCreateReferences?.teams.length ?? 0,
+    pmUserCount: scopedCreateReferences?.pmUsers.length ?? 0,
+    clientCount: references.clients.length,
+  };
+  const canCreate = canCreateProject(createChoices);
   const createReferences = canCreate && showCreateForm ? scopedCreateReferences : null;
   const creatorDefaults = createReferences ? loadedCreatorDefaults : null;
 
@@ -188,16 +189,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       {total > 0 ? <ListTotals totals={totals} /> : null}
 
       {emptyKind === "none" ? (
-        <ListEmpty
-          message="등록된 프로젝트가 없습니다"
-          action={projectsEmptyAction({
-            canCreate,
-            canWrite,
-            vendorShown: references.vendorShown,
-            clientCount: references.clients.length,
-            canWriteVendors,
-          })}
-        />
+        <ListEmpty {...projectsEmptyState({ ...createChoices, vendorShown: references.vendorShown, canWriteVendors })} />
       ) : emptyKind === "default-view" ? (
         <ListEmpty message={`${year}년에 걸친 프로젝트가 없습니다`} action={{ label: "전체 연도 보기", href: "/projects?year=all" }} />
       ) : emptyKind === "filtered" ? (

@@ -69,13 +69,16 @@
 
   .selectLabel > select {
     width: 200px;
+    max-width: 100%;
     margin-top: calc(-1 * var(--s-1));
   }
 
-  /* 칸 아래 힌트 · 경고 · 오류는 select와 같은 x에서 시작한다(§7-2 「입력 아래」). */
+  /* 칸 아래 힌트 · 경고 · 오류는 입력과 같은 x에서 시작한다(§7-2 「입력 아래」) — select 칸과
+     TextField 칸(.field의 div 자식) 둘 다. */
   .selectLabel ~ .hint,
   .selectLabel ~ .warning,
-  .selectLabel ~ .error {
+  .selectLabel ~ .error,
+  .field > div ~ .hint {
     margin-left: calc(var(--label-w) + var(--s-2));
   }
 }

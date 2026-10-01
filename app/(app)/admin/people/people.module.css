@@ -240,6 +240,12 @@
 
   .selectLabel > select {
     width: 200px;
+    max-width: 100%;
+  }
+
+  /* 계급 변경 오류(묶음 뒤 형제)는 select와 같은 x에서 시작한다(§7-2 「입력 아래」). */
+  .selectLabel + .registeredHint {
+    margin-left: calc(var(--label-w) + var(--s-2));
   }
 }
 

@@ -1,5 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
+import { randomUUID } from "node:crypto";
 import { loginAsSysadmin, tokenNumber } from "./row-actions-helpers";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { insertCodeItem, setCodeItemActive } from "@/repositories/code-tables";
 
 // 2026-10-01 PR #126 /design-review(DOM 실측)에서 확인된 기존 결함 2건의 회귀.
 // 1) SYSTEM.md §3 「섹션 사이: 2px 강한 선 위 --s-6, 아래 --s-3」 — 설정·사람 상세의
@@ -29,7 +32,7 @@ type SelectRow = {
 
 // select 한 칸 묶음(`class*=selectLabel`)을 전부 잰다. 라벨은 `<label>` 자식이거나
 // (div 묶음), 묶음 자체가 `<label>`이고 첫 글자 노드가 라벨이다(설정 화면).
-// 힌트는 묶음 안의 `p`와 묶음 바로 뒤 형제 `p`(설정 화면) 둘 다 본다.
+// 힌트는 묶음 안의 `p`와 묶음 바로 뒤 형제 `p`(설정 화면 · 사람 상세 계급 오류) 둘 다 본다.
 async function measureSelectRows(page: Page, scope: string): Promise<SelectRow[]> {
   return page.evaluate((scopeSelector) => {
     const rows = Array.from(document.querySelectorAll<HTMLElement>(`${scopeSelector} [class*="selectLabel"]`));
@@ -51,7 +54,7 @@ async function measureSelectRows(page: Page, scope: string): Promise<SelectRow[]
         const hints: Element[] = Array.from(row.querySelectorAll(":scope > p"));
         // 형제는 칸 힌트 · 경고 · 오류 클래스만 — 묶음 뒤의 섹션 전체 한 줄(코드표 `taxRuleHint`)은 칸 힌트가 아니다.
         for (let next = row.nextElementSibling; next && next.tagName === "P"; next = next.nextElementSibling) {
-          if (/(^|[_-])(hint|warning|error)([_-]|$)/.test(next.className)) hints.push(next);
+          if (/(^|[_-])(hint|warning|error|registeredHint)([_-]|$)/.test(next.className)) hints.push(next);
         }
         const rowRect = row.getBoundingClientRect();
         const selectRect = select.getBoundingClientRect();
@@ -72,9 +75,12 @@ async function measureSelectRows(page: Page, scope: string): Promise<SelectRow[]
   }, scope);
 }
 
+type TextFieldRow = { id: string; labelOffset: number; inputLeft: number; hintLefts: number[] };
+
 // 같은 범위의 TextField · Form.Field 행(라벨 열 + 입력)에서 「라벨 글자 위 − 입력 위」를 잰다.
 // select 묶음 라벨도 같은 높이에 와야 한 폼 안에서 라벨 줄이 맞는다(PC 전용).
-async function measureTextFieldLabelOffsets(page: Page, scope: string): Promise<number[]> {
+// 행 바로 뒤 형제 힌트(설정 화면)도 잰다 — select 칸 힌트와 같은 x(입력 x)에 와야 한다.
+async function measureTextFieldRows(page: Page, scope: string): Promise<TextFieldRow[]> {
   return page.evaluate((scopeSelector) => {
     return Array.from(document.querySelectorAll<HTMLLabelElement>(`${scopeSelector} label[for]`))
       .filter((label) => !label.closest('[class*="selectLabel"]') && label.getClientRects().length > 0)
@@ -83,21 +89,39 @@ async function measureTextFieldLabelOffsets(page: Page, scope: string): Promise<
         if (!(input instanceof HTMLInputElement) || input.type === "checkbox" || input.type === "hidden") return [];
         const range = document.createRange();
         range.selectNodeContents(label);
-        return [range.getBoundingClientRect().top - input.getBoundingClientRect().top];
+        const hintLefts: number[] = [];
+        for (let next = label.parentElement?.nextElementSibling; next && next.tagName === "P"; next = next.nextElementSibling) {
+          if (/(^|[_-])(hint|warning|error)([_-]|$)/.test(next.className)) hintLefts.push(next.getBoundingClientRect().left);
+        }
+        const inputRect = input.getBoundingClientRect();
+        return [{ id: input.id, labelOffset: range.getBoundingClientRect().top - inputRect.top, inputLeft: inputRect.left, hintLefts }];
       });
   }, scope);
 }
 
-async function expectPcLabelColumn(page: Page, scope: string): Promise<void> {
+function expectTextFieldHintsUnderInput(page: Page, textFields: TextFieldRow[]): void {
+  for (const field of textFields) {
+    for (const hintLeft of field.hintLefts) {
+      expect(
+        Math.abs(hintLeft - field.inputLeft),
+        `${field.id} @${page.viewportSize()?.width} TextField 뒤 힌트가 입력과 같은 x`,
+      ).toBeLessThanOrEqual(1);
+    }
+  }
+}
+
+async function expectPcLabelColumn(page: Page, scope: string, requireTextFields: boolean): Promise<void> {
   const labelW = await tokenNumber(page, "--label-w");
   const gap = await tokenNumber(page, "--s-2");
   const rows = await measureSelectRows(page, scope);
   expect(rows.length).toBeGreaterThan(0);
-  const textFieldOffsets = await measureTextFieldLabelOffsets(page, scope);
-  for (const offset of textFieldOffsets) {
+  const textFields = await measureTextFieldRows(page, scope);
+  if (requireTextFields) expect(textFields.length, `${scope} TextField 칸 있음`).toBeGreaterThan(0);
+  expectTextFieldHintsUnderInput(page, textFields);
+  for (const { labelOffset } of textFields) {
     for (const row of rows) {
       expect(
-        Math.abs(row.labelTop - row.selectTop - offset),
+        Math.abs(row.labelTop - row.selectTop - labelOffset),
         `${row.id} @${page.viewportSize()?.width} 라벨 글자 높이가 TextField 라벨과 같음`,
       ).toBeLessThanOrEqual(1);
     }
@@ -127,14 +151,16 @@ async function expectPhoneLabelAbove(page: Page, scope: string): Promise<void> {
       expect(Math.abs(hintLeft - row.rowLeft), `${where} 힌트가 묶음 왼쪽`).toBeLessThanOrEqual(1);
     }
   }
+  expectTextFieldHintsUnderInput(page, await measureTextFieldRows(page, scope));
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow, `가로 넘침 @${page.viewportSize()?.width}`).toBeLessThanOrEqual(0);
 }
 
-async function expectLabelLayoutAtAllWidths(page: Page, scope: string): Promise<void> {
+// 사람 상세는 첫 사람의 데이터에 따라 TextField가 없을 수 있어 requireTextFields를 끈다.
+async function expectLabelLayoutAtAllWidths(page: Page, scope: string, requireTextFields = true): Promise<void> {
   for (const width of PC_WIDTHS) {
     await page.setViewportSize({ width, height: 900 });
-    await expectPcLabelColumn(page, scope);
+    await expectPcLabelColumn(page, scope, requireTextFields);
   }
   for (const width of PHONE_WIDTHS) {
     await page.setViewportSize({ width, height: 900 });
@@ -143,7 +169,8 @@ async function expectLabelLayoutAtAllWidths(page: Page, scope: string): Promise<
 }
 
 // 2px 강한 선으로 여는 섹션마다 선 아래부터 첫 h2 상자 위까지가 --s-3인지 잰다.
-async function expectSectionGapBelowLine(page: Page): Promise<void> {
+// 잰 섹션 제목을 돌려준다 — 대상 섹션이 빠지지 않았는지 테스트가 고정한다.
+async function expectSectionGapBelowLine(page: Page): Promise<string[]> {
   const below = await tokenNumber(page, "--s-3");
   const strong = await tokenNumber(page, "--line-w-strong");
   const gaps = await page.evaluate((strongWidth) => {
@@ -164,6 +191,7 @@ async function expectSectionGapBelowLine(page: Page): Promise<void> {
   for (const { title, gap } of gaps) {
     expect(Math.abs(gap - below), `${title} 선 아래 간격 @${page.viewportSize()?.width}`).toBeLessThanOrEqual(0.5);
   }
+  return gaps.map(({ title }) => title);
 }
 
 async function openFirstPersonDetail(page: Page): Promise<void> {
@@ -178,23 +206,36 @@ test.describe("섹션 2px 선 아래 --s-3 (SYSTEM.md §3)", () => {
       await loginAsSysadmin(page);
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/admin/settings");
-      await expectSectionGapBelowLine(page);
+      const measured = await expectSectionGapBelowLine(page);
+      // 설정 섹션은 전부 같은 2px 선 섹션이다 — 하나도 빠지지 않는다.
+      expect(measured).toEqual(await page.locator("main section h2").allTextContents());
     });
 
     test(`사람 상세 섹션(연차 · 소속 발령 이력) @${width}`, async ({ page }) => {
       await loginAsSysadmin(page);
       await page.setViewportSize({ width, height: 900 });
       await openFirstPersonDetail(page);
-      await expectSectionGapBelowLine(page);
+      const measured = await expectSectionGapBelowLine(page);
+      expect(measured).toEqual(expect.arrayContaining(["연차", "소속 발령 이력"]));
     });
   }
 });
 
 test.describe("PC 폼 라벨 왼쪽 96 · select 200, 폰은 라벨 위 (SYSTEM.md §6-3 · §7-2 · §7-15)", () => {
-  test("사람 상세 계급 변경", async ({ page }) => {
+  test("사람 상세 계급 변경 · 변경 오류", async ({ page }) => {
     await loginAsSysadmin(page);
     await openFirstPersonDetail(page);
-    await expectLabelLayoutAtAllWidths(page, "main");
+    // 오류 줄(묶음 뒤 형제 `registeredHint`)까지 재려고 없는 계급 id로 바꿔 서버 오류를 낸다 — 계급은 바뀌지 않는다.
+    const select = page.locator("#person-role-change");
+    await select.evaluate((element: HTMLSelectElement) => {
+      const option = document.createElement("option");
+      option.value = "e2e-missing-role";
+      option.textContent = "없는 계급";
+      element.append(option);
+    });
+    await select.selectOption("e2e-missing-role");
+    await expect(page.locator("div:has(> #person-role-change) + p")).toBeVisible();
+    await expectLabelLayoutAtAllWidths(page, "main", false);
   });
 
   test("설정 화면 select 칸", async ({ page }) => {
@@ -220,19 +261,23 @@ test.describe("PC 폼 라벨 왼쪽 96 · select 200, 폰은 라벨 위 (SYSTEM.
   }
 
   test("코드표 증빙 종류 세금 규칙 select 칸", async ({ page }) => {
-    await loginAsSysadmin(page);
-    const stamp = Date.now();
-    const value = `e2e-label-${stamp}`;
-    await page.goto("/admin/code-tables?tableKey=evidence_type&new=1");
-    await page.getByLabel("값").fill(value);
-    await page.getByLabel("이름", { exact: true }).fill(`라벨열-${stamp}`);
-    await page.getByRole("button", { name: "코드 추가" }).click();
-    await expect(page.getByRole("cell", { name: value })).toBeVisible();
-
-    const row = page.getByRole("row").filter({ has: page.getByRole("cell", { name: value }) });
-    const taxRuleRow = row.locator("xpath=following-sibling::tr[1]");
-    await taxRuleRow.getByLabel("규칙 종류").selectOption("withholding");
-    await expect(taxRuleRow.getByLabel("절사 단위")).toBeVisible();
-    await expectLabelLayoutAtAllWidths(page, 'main [class*="taxRuleSection"]');
+    const stamp = randomUUID().slice(0, 8);
+    const item = await insertCodeItem(SYSTEM_VIEWER, {
+      tableKey: "evidence_type",
+      value: `e2e-label-${stamp}`,
+      label: `라벨열-${stamp}`,
+      sortOrder: 900,
+    });
+    try {
+      await loginAsSysadmin(page);
+      await page.goto("/admin/code-tables?tableKey=evidence_type");
+      const row = page.getByRole("row").filter({ has: page.getByRole("cell", { name: item.value }) });
+      const taxRuleRow = row.locator("xpath=following-sibling::tr[1]");
+      await taxRuleRow.getByLabel("규칙 종류").selectOption("withholding");
+      await expect(taxRuleRow.getByLabel("절사 단위")).toBeVisible();
+      await expectLabelLayoutAtAllWidths(page, 'main [class*="taxRuleSection"]');
+    } finally {
+      await setCodeItemActive(SYSTEM_VIEWER, item.id, false);
+    }
   });
 });

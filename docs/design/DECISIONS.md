@@ -1196,3 +1196,17 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **버린 대안**: 구현을 §7-7 옛 문구(사유 칸 아래)에 맞추기 — 근거 칸이 없는 확인 모달(상태 바꾸기 · 견적 줄 삭제 등)에는 「사유 칸」 자체가 없다.
 
 **범위**: SYSTEM.md §7-7(시트/모달 행 ERROR 칸만) · §7-16 · §7-17. 코드 · 토큰 변경 없음. 회귀: `test/unit/design-system-docs.test.ts`(구간 7-14 ~ 7-17 다섯 상태 · §7-7 ↔ §7-17 같은 글자). 점검표: `docs/design/checks/2026-10-01-다섯-상태-확인-모달.md`.
+
+---
+
+## 2026-10-01 — quick 261001-hfi ARCHITECTURE §5 예외: holidays_date_key 제거 → 부분 유일 인덱스(공휴일 보관, D-01)
+
+**결정**: 공휴일 삭제를 보관함으로 옮기며(ADMN-12), 마이그레이션 `0021`이 `holidays`에 보관 칸 둘(`archived_at` · `archived_by`)을 더하고 날짜 유일 제약 `holidays_date_key`를 지운 뒤 보관 안 된 행만 보는 부분 유일 인덱스 `holidays_date_active_key`(`date` WHERE `archived_at IS NULL`)로 바꾼다 — ARCHITECTURE §5 「확장 전용(DROP 없음)」의 예외 한 건. 0021 첫 줄의 `-- rollback-floor:` 표시로 이 마이그레이션이 롤백 하한이 된다(04-50 규칙). 프로덕션 승격은 업무 시간 밖에 한다.
+
+**왜**: 보관 행이 날짜를 붙잡으면 대체 공휴일 재계산과 같은 날짜 재추가가 막힌다. 직전 리비전의 `ON CONFLICT (date)`는 부분 인덱스를 추론하지 못하고 보관 행을 공휴일로 읽으므로 하한 아래 롤백은 거부해야 한다.
+
+**버린 대안**: expand/contract 두 단계(먼저 인덱스 추가, 다음 릴리스에 제약 제거) — 위험 경로 PR이 하나 더 늘어 택하지 않았다(사용자 승인 2026-10-01, 단일 마이그레이션).
+
+**되돌리는 법(복구 절차)**: 전진 수정이 먼저다. 불가피하면 쓰기를 멈춘 상태에서 보관 행을 처리(같은 날짜의 활성 행과 겹치지 않게)한 뒤 `ALTER TABLE holidays ADD CONSTRAINT holidays_date_key UNIQUE (date)` → `DROP INDEX holidays_date_active_key`를 적용하고 사람이 트래픽을 옮긴다. 보관 칸은 둔다.
+
+**범위**: `db/migrations/0021_holidays_archive.sql` · `db/schema`의 holidays · 배포 절차(업무 시간 밖 승격). 이 항목은 SYSTEM.md를 바꾸지 않는다.

@@ -232,6 +232,8 @@ test("「링크 닫기」 — 모달 문장 넷 · Esc 취소 · 응답 끊김 �
   await dialog.getByRole("button", { name: /^링크 닫기/ }).click();
   await expect(page.getByRole("status").filter({ hasText: "링크 닫기 · 제출 4건" })).toBeVisible();
   await expect(dialog).toBeHidden();
+  // DOM 감사 C-M2 — 트리거가 사라지는 성공이라 새 화면이 그려진 뒤 화면 제목(h1)으로 간다(body로 떨어지지 않는다).
+  await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).toBe("H1");
   await expect(page.getByText(/^닫힘 · .* · 박서연이 닫음$/)).toBeVisible();
   await expect(page.getByRole("button", { name: "링크 닫기" })).toHaveCount(0);
   // 닫은 뒤에도 가액 편집은 남는다 — 편집 표(grid)와 1차 「일괄 저장」.
@@ -247,10 +249,24 @@ test("「신청 취소」 — 경품 0 → 확인 없이 목록 + 토스트 · �
   const withPrize = await createCertEvent({ name: "E2E 취소 막힘", status: "requested", createdBy: pmRow?.id ?? null, prizes: [{}] });
 
   const page = await loggedInPage(browser, manager);
+  // 검토 X4(사용자 결정 PR #88 5934173511) — 주소에 적은 글자는 토스트가 되지 않는다(서버가 아는 사실만).
+  await page.goto(`/certs/events?cancelled=${encodeURIComponent("가짜 공지 · 이 링크로 다시 로그인")}`);
+  // 스트리밍 뼈대가 아니라 실제 목록이 그려진 뒤에 본다.
+  await expect(page.getByText(withPrize.eventName, { exact: true }).first()).toBeVisible();
+  // 토스트는 4초 뒤 스스로 사라지므로 기다리는 단언(toHaveCount)이 아니라 지금 값으로 본다.
+  expect(await page.getByText(/가짜 공지/).count()).toBe(0);
+
   await page.goto(`/certs/events/${empty.eventId}`);
   await page.getByRole("button", { name: "신청 취소" }).click();
-  await expect(page).toHaveURL(/\/certs\/events(\?.*)?$/);
-  await expect(page.getByRole("status").filter({ hasText: `신청 취소 · ${empty.eventName}` })).toBeVisible();
+  const cancelToast = page.getByRole("status").filter({ hasText: `신청 취소 · ${empty.eventName}` });
+  await expect(cancelToast).toBeVisible();
+  // 이름은 주소에 실리지 않는다(토스트가 떠 있는 동안에도 쿼리 없음).
+  expect(new URL(page.url()).search).toBe("");
+  // 한 번만 — 새로 고침은 다시 띄우지 않는다(쿠키는 착지 화면이 지운다).
+  await expect.poll(async () => (await page.context().cookies()).some((cookie) => cookie.name === "erp_cert_cancelled")).toBe(false);
+  await page.reload();
+  await expect(page.getByText(withPrize.eventName, { exact: true }).first()).toBeVisible();
+  expect(await page.getByText(`신청 취소 · ${empty.eventName}`).count()).toBe(0);
 
   await page.goto(`/certs/events/${withPrize.eventId}`);
   const blocked = page.getByRole("button", { name: "신청 취소" });
@@ -302,6 +318,78 @@ test("「대조 제외」 — I4 머리 2차 → 확인 → I′3 그 줄 포커
   await page.goto(`/print/certs/${ev.a1.id}`);
   await expect(page.getByRole("heading", { name: "페이지 찾을 수 없음" })).toBeVisible();
   await page.context().close();
+});
+
+// 검토 X2 · DOM 감사 C-H1 — 버전 충돌은 서버 거부라 막힘 자리(1차 막힘) + 3차 「다시 불러오기」, 다시 받은 뒤에는 새 버전으로 제외된다.
+test("「대조 제외」 버전 충돌 — 막힘 이유 `대조 제외 실패 · {이름}이 HH:mm에 먼저 고침` · 1차 막힘 · 다시 불러오기 → 제외", async ({ browser }) => {
+  const ev = await reconcileEvent("E2E 대조 제외 충돌");
+  const page = await loggedInPage(browser, manager);
+  await page.goto(`/certs/submissions/${ev.a3.id}`);
+  const [row] = await db.select().from(certSubmissions).where(eq(certSubmissions.id, ev.a3.id));
+  const [me] = await db.select({ id: users.id }).from(users).where(eq(users.email, manager.email));
+  await db
+    .update(certSubmissions)
+    .set({ version: (row?.version ?? 0) + 1, updatedBy: me?.id ?? null, updatedAt: new Date() })
+    .where(eq(certSubmissions.id, ev.a3.id));
+
+  await page.getByRole("button", { name: "대조 제외" }).click();
+  const dialog = page.getByRole("dialog", { name: "대조 제외" });
+  const primary = dialog.getByRole("button", { name: /^대조 제외/ });
+  await primary.click();
+  await expect(dialog.getByText(/^대조 제외 실패 · 박서연이 \d{2}:\d{2}에 먼저 고침$/)).toBeVisible();
+  await expect(primary).toHaveAttribute("aria-disabled", "true");
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "다시 불러오기" }).click();
+  await expect(dialog).toBeHidden();
+
+  await page.getByRole("button", { name: "대조 제외" }).click();
+  await expect(primary).not.toHaveAttribute("aria-disabled", "true");
+  await primary.click();
+  await expect(page).toHaveURL(new RegExp(`/certs/events/${ev.eventId}`));
+  await expect(page.getByRole("status").filter({ hasText: "대조 제외 · 이도윤" })).toBeVisible();
+  await page.context().close();
+});
+
+// 검토 X3 — 확정된 거부(화면을 연 뒤 권한이 빠짐)는 「다시 시도」 · 「결과 모름」이 아니라 거부 문장이고 1차를 막는다.
+test("확정된 거부 — 링크 닫기 · 대조 제외 `… 실패 · 권한 없음`(1차 막힘) · 신청 취소 토스트 `신청 취소 실패 · 권한 없음`", async ({ browser }) => {
+  const ev = await reconcileEvent("E2E 거부");
+  const requested = await createCertEvent({ name: "E2E 거부 취소", status: "requested" });
+  const page = await loggedInPage(browser, manager);
+  const setWrite = (menu: "certs.qr" | "certs.submissions", allowed: boolean) =>
+    upsertPermission(SYSTEM_VIEWER, { roleId: managerRoleId, menu, action: "write", allowed });
+  try {
+    await page.goto(`/certs/events/${ev.eventId}`);
+    await setWrite("certs.qr", false);
+    await page.getByRole("button", { name: "링크 닫기" }).click();
+    const closeDialog = page.getByRole("dialog", { name: "링크 닫기" });
+    const closePrimary = closeDialog.getByRole("button", { name: /^링크 닫기/ });
+    await closePrimary.click();
+    await expect(closeDialog.getByText("링크 닫기 실패 · 권한 없음", { exact: true })).toBeVisible();
+    await expect(closePrimary).toHaveAttribute("aria-disabled", "true");
+    await expect(closeDialog).not.toContainText("다시 시도");
+
+    await setWrite("certs.qr", true);
+    await page.goto(`/certs/events/${requested.eventId}`);
+    await setWrite("certs.qr", false);
+    await page.getByRole("button", { name: "신청 취소" }).click();
+    await expect(page.getByRole("alert").filter({ hasText: "신청 취소 실패 · 권한 없음" })).toBeVisible();
+    await expect(page.getByText("결과 모름")).toHaveCount(0);
+    await setWrite("certs.qr", true);
+
+    await page.goto(`/certs/submissions/${ev.a3.id}`);
+    await setWrite("certs.submissions", false);
+    await page.getByRole("button", { name: "대조 제외" }).click();
+    const excludeDialog = page.getByRole("dialog", { name: "대조 제외" });
+    const excludePrimary = excludeDialog.getByRole("button", { name: /^대조 제외/ });
+    await excludePrimary.click();
+    await expect(excludeDialog.getByText("대조 제외 실패 · 권한 없음", { exact: true })).toBeVisible();
+    await expect(excludePrimary).toHaveAttribute("aria-disabled", "true");
+    await expect(excludeDialog).not.toContainText("다시 시도");
+  } finally {
+    await setWrite("certs.qr", true);
+    await setWrite("certs.submissions", true);
+    await page.context().close();
+  }
 });
 
 test("경품 표 — 닫힌 행사 당첨 3 · 제출 1 목록 경품 → `1 · 미제출 2`(미제출만 --warning) · 접수 중 같은 줄은 `1`", async ({ browser }) => {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { certSubmissions, users } from "@/db/schema";
@@ -99,6 +99,62 @@ test("폰 375 — 칸 접기 → 행 시트 → 「제출 내용」 → I4", asy
   await expect(sheet).toBeVisible();
   const action = sheet.getByRole("link", { name: /^제출 내용/ });
   await expect(action).toBeVisible();
+  // DOM 감사 C-M3 — 시트 안 3차 링크도 폰 터치 목표 44×44(SYSTEM §3).
+  const box = await action.boundingBox();
+  expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
   await action.click();
   await expect(page).toHaveURL(new RegExp(`/certs/submissions/${row.id}$`));
+});
+
+async function widthOf(locator: Locator): Promise<number> {
+  return (await locator.boundingBox())?.width ?? 0;
+}
+
+// DOM 감사 C-M1 · C-M2 · C-L1(폭 320) — 다시 보낼 실패 줄은 버튼 윗줄(1차 = 2차 × 2 유지), 성공 뒤 포커스는 h1,
+// 긴 이름 토스트는 오른쪽에도 --pad-page 여백.
+test("폰 320 — 링크 닫기 실패 줄은 버튼 윗줄 · 1차 = 2차 × 2 · 성공 뒤 h1 · 긴 취소 토스트 좌우 여백", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 320, height: 800 }, isMobile: true, hasTouch: true });
+  const page = await context.newPage();
+  const event = await createCertEvent({ name: "E2E 폰 링크 닫기", prizes: [{ name: "갤럭시 탭 S10", unitValueKrw: 1_290_000, winnerCount: 1 }] });
+  const longName = "가나다라마바사아자차카타파하".repeat(5).slice(0, 71);
+  const requested = await createCertEvent({ name: longName, status: "requested" });
+
+  await login(page, manager);
+  await page.goto(`/certs/events/${event.eventId}`);
+  let cut = 0;
+  await page.route(`**/certs/events/${event.eventId}`, (route) => {
+    const request = route.request();
+    if (request.method() === "POST" && request.headers()["next-action"] !== undefined && cut === 0) {
+      cut += 1;
+      return route.abort();
+    }
+    return route.fallback();
+  });
+  await page.getByRole("button", { name: "링크 닫기" }).click();
+  const dialog = page.getByRole("dialog", { name: "링크 닫기" });
+  const primary = dialog.getByRole("button", { name: /^링크 닫기/ });
+  const secondary = dialog.getByRole("button", { name: /^취소/ });
+  await primary.click();
+  const failure = dialog.getByRole("alert");
+  await expect(failure).toHaveText("링크 닫기 실패 · 다시 시도");
+  const failureBox = await failure.boundingBox();
+  const primaryBox = await primary.boundingBox();
+  expect((failureBox?.y ?? 0) + (failureBox?.height ?? 0)).toBeLessThanOrEqual(primaryBox?.y ?? 0);
+  const ratio = (await widthOf(primary)) / (await widthOf(secondary));
+  expect(ratio).toBeGreaterThan(1.9);
+  expect(ratio).toBeLessThan(2.1);
+
+  await primary.click();
+  await expect(page.getByRole("status").filter({ hasText: "링크 닫기 · 제출 0건" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.activeElement?.tagName)).toBe("H1");
+
+  await page.goto(`/certs/events/${requested.eventId}`);
+  await page.getByRole("button", { name: "신청 취소" }).click();
+  const toast = page.getByRole("status").filter({ hasText: `신청 취소 · ${requested.eventName}` });
+  await expect(toast).toBeVisible();
+  const toastBox = await toast.boundingBox();
+  expect((toastBox?.x ?? 0) + (toastBox?.width ?? 0)).toBeLessThanOrEqual(320 - 14 + 0.5);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await context.close();
 });

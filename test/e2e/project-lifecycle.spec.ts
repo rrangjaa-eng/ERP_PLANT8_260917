@@ -362,13 +362,28 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await primary.click();
 
     await expect(confirm).toBeVisible();
-    const reason = confirm.getByText("상태가 미수주로 바뀜 · 새로 고침", { exact: true }).filter({ visible: true });
+    // 꼬리 ` · 새로 고침`은 글자가 아니라 다음 한 수 3차 버튼이다(SYSTEM.md §7-17 ERROR, 2026-10-01).
+    const reason = confirm.getByText("상태가 미수주로 바뀜", { exact: true }).filter({ visible: true });
     await expect(reason).toHaveCount(1);
+    await expect(confirm.getByRole("button", { name: "새로 고침" })).toBeVisible();
     await expect(primary).toHaveAttribute("aria-disabled", "true");
     const reasonBox = await reason.boundingBox();
     const primaryBox = await primary.boundingBox();
     expect(reasonBox && primaryBox && reasonBox.x + reasonBox.width <= primaryBox.x).toBe(true);
     await expect(page.getByText(/진행으로 바꾸기 · /)).toHaveCount(0);
+
+    // 거부가 붙은 동안 Ctrl+Enter도 막힌다 — 서버 액션이 더 가지 않는다(§7-17 ERROR).
+    let actionsAfterReject = 0;
+    page.on("request", (request) => {
+      if (request.method() === "POST" && request.headers()["next-action"]) actionsAfterReject += 1;
+    });
+    await primary.focus();
+    await page.keyboard.press("Control+Enter");
+    // 「새로 고침」은 새 화면이 그려진 뒤 닫는다 — 닫힌 순간 머리 태그가 이미 미수주다(기다리지 않고 한 번만 잰다).
+    await confirm.getByRole("button", { name: "새로 고침" }).click();
+    await expect(confirm).toBeHidden();
+    expect(await headerTag(page, "미수주").isVisible()).toBe(true);
+    expect(actionsAfterReject).toBe(0);
   });
 
   test("(e) 진행 프로젝트는 누구에게도 「상태 바꾸기」·「진행으로 되돌리기」가 없다 (CEO-D13)", async ({ page }) => {
@@ -451,7 +466,7 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(headerTag(page, "미수주")).toBeVisible();
     await Promise.all(actionRequests);
     expect(actionRequests).toHaveLength(1);
-    await expect(page.getByText("상태가 미수주로 바뀜 · 새로 고침")).toHaveCount(0);
+    await expect(page.getByText("상태가 미수주로 바뀜")).toHaveCount(0);
     const logs = await db.select().from(actionLog).where(eq(actionLog.entityId, project.id));
     expect(logs.filter((log) => log.actionType === "status_change")).toHaveLength(1);
   });

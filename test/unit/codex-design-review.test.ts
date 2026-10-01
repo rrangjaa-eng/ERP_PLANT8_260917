@@ -185,9 +185,13 @@ describe("fillRoute · envFileSecrets", () => {
 });
 
 describe("screenshotName", () => {
-  it("경로를 파일 이름으로 바꾼다", () => {
-    expect(screenshotName("/admin/people", 375)).toBe("admin_people-375.png");
-    expect(screenshotName("/", 320)).toBe("root-320.png");
+  it("경로를 읽을 수 있는 이름 + 경로 해시로 바꾼다", () => {
+    expect(screenshotName("/admin/people", 375)).toMatch(/^admin_people-[0-9a-f]{8}-375\.png$/);
+    expect(screenshotName("/", 320)).toMatch(/^root-[0-9a-f]{8}-320\.png$/);
+  });
+
+  it("문장부호만 다른 경로도 이름이 겹치지 않는다", () => {
+    expect(screenshotName("/projects?new=1&editId=x", 375)).not.toBe(screenshotName("/projects?new=1/editId=x", 375));
   });
 });
 

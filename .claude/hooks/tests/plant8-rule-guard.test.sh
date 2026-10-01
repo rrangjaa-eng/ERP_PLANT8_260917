@@ -230,6 +230,9 @@ r3_case "R3-43: pnpm -C /tmp codex -> 2" 2 'pnpm -C /tmp codex exec x' "$r3_none
 r3_case "R3-44: pnpm --filter web dlx @openai/codex -> 2" 2 'pnpm --filter web dlx @openai/codex exec x' "$r3_none"
 r3_case "R3-45: pnpm -C /tmp add -g @openai/codex(설치) -> 0" 0 'pnpm -C /tmp add -g @openai/codex@0.155.1' "$r3_none"
 r3_case "R3-46: pnpm -C /tmp test(다른 명령) -> 0" 0 'pnpm -C /tmp test' "$r3_none"
+r3_case "R3-47: corepack pnpm dlx @openai/codex -> 2" 2 'corepack pnpm dlx @openai/codex exec hello' "$r3_none"
+r3_case "R3-48: corepack npm exec codex -> 2" 2 'corepack npm exec codex exec x' "$r3_none"
+r3_case "R3-49: corepack pnpm install(다른 명령) -> 0" 0 'corepack pnpm install' "$r3_none"
 hook "$(payload_skill gsd-review '04.3')"
 expect_rc "R3-23: gsd-review 스킬 호출 자체는 막지 않는다 -> 0" 0 "$HOOK_RC"
 

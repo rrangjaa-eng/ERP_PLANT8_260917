@@ -3,6 +3,7 @@
 // 프롬프트로 묶고, Codex 지적을 실측표와 대조한 보고서를 만든다. Codex 지적은 후보이고 결함
 // 판정은 DOM 실측으로만 한다(CLAUDE.md §6 「스크린샷 육안 판정 금지」).
 
+import { createHash } from "node:crypto";
 import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 
@@ -153,7 +154,9 @@ export function countLines(rects: Array<[number, number]>): number | null {
 
 export function screenshotName(route: string, width: number): string {
   const slug = route.replace(/^\/+|\/+$/g, "").replace(/[^A-Za-z0-9]+/g, "_") || "root";
-  return `${slug}-${width}.png`;
+  // 문장부호만 다른 경로가 같은 파일로 겹치지 않게 경로 해시를 붙인다.
+  const hash = createHash("sha256").update(route).digest("hex").slice(0, 8);
+  return `${slug}-${hash}-${width}.png`;
 }
 
 export function selectSystemSections(systemMd: string, ids: string[]): string {

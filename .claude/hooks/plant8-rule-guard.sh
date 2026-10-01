@@ -435,6 +435,11 @@ check_segment() {
     w="${W[$k]}"
     case "$w" in
       '{'|'}'|'!'|if|then|elif|else|do|while|until|nohup|time|exec|builtin) k=$((k + 1)); continue ;;
+      corepack)
+        # corepack pnpm|npm|yarn … — 뒤의 패키지 매니저를 명령으로 본다(R3 우회 방지).
+        k=$((k + 1))
+        while [ "$k" -lt "$n" ] && [[ "${W[$k]}" == -* ]]; do k=$((k + 1)); done
+        continue ;;
       command)
         # command -v/-V는 조회다 — 뒤 단어를 실행하지 않는다.
         case "${W[$((k + 1))]:-}" in -v|-V) break ;; esac

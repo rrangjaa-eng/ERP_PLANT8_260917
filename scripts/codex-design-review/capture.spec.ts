@@ -135,8 +135,8 @@ function measurePage(): Omit<ScreenMeasure, "route" | "width" | "screenshot" | "
       height: Math.round(r.height),
       textRects: textRectsOf(el),
       overflowsSelf: !scrollable && el.scrollWidth > el.clientWidth + 1,
-      // 의도된 가로 스크롤 칸 안의 요소는 화면 밖으로 세지 않는다.
-      exceedsViewport: r.right > window.innerWidth + 0.5 && !insideScroller(el),
+      // 화면 왼쪽·오른쪽 밖(음수 여백·이동 포함). 의도된 가로 스크롤 칸 안의 요소는 세지 않는다.
+      exceedsViewport: (r.right > window.innerWidth + 0.5 || r.left < -0.5) && !insideScroller(el),
       scrollContainer: scrollable,
     };
   });

@@ -254,6 +254,8 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     const refresh = page.getByRole("button", { name: "새로 고침" });
     await expect(refresh).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
+    // 닫힌 확인 모달이 같은 거부로 둘째 「새로 고침」을 숨겨 들고 있지 않다.
+    await expect(page.locator("button", { hasText: "새로 고침" })).toHaveCount(1);
     // 이유와 다음 한 수는 같은 줄이다(§7-1) — 폰 320에서 자리가 모자라도 「새로 고침」만 떨어지지 않는다.
     await page.setViewportSize({ width: 320, height: 800 });
     const reasonBox = await reason.boundingBox();
@@ -297,6 +299,76 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(headerTag(page, "진행")).toBeVisible();
     await expect(trigger).toHaveCount(0);
     await expect(page.getByRole("heading", { name: project.name })).toBeFocused();
+  });
+
+  test("(b6) 즉시 되돌리기 거부는 다른 경로(기간 저장)로 새 상태가 와도 풀린다 (§7-17)", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const lead = await makeAccount("role-team-lead", team.id);
+    const project = await makeProject({
+      teamId: team.id,
+      pmUserId: pm.userId,
+      status: "lost",
+      startDate: addDays(TODAY, 1),
+      endDate: addDays(TODAY, 7),
+      approved: true,
+    });
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await db.update(projects).set({ status: "bidding" }).where(eq(projects.id, project.id));
+    await page.getByRole("button", { name: "진행으로 되돌리기" }).click();
+    const reason = page.getByText(/^상태가 수주중으?로 바뀜$/).filter({ visible: true });
+    await expect(reason).toHaveCount(1);
+
+    // 「새로 고침」 대신 기간을 저장한다 — 상태 바뀜으로 거부되고 그 저장이 새 상태를 받아 온다(DR-6).
+    await page.locator("#period-open").click();
+    await page.getByLabel("종료일").fill(addDays(TODAY, 9));
+    await page.getByRole("button", { name: /일괄 저장 1/ }).click();
+
+    await expect(headerTag(page, "수주중")).toBeVisible();
+    await expect(reason).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "새로 고침" })).toHaveCount(0);
+  });
+
+  test("(b7) 즉시 되돌리기 거부 뒤 「새로 고침」을 기다리는 동안 옮긴 포커스는 새 화면이 와도 그대로 (§7-17)", async ({ page }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const lead = await makeAccount("role-team-lead", team.id);
+    const project = await makeProject({
+      teamId: team.id,
+      pmUserId: pm.userId,
+      status: "lost",
+      startDate: addDays(TODAY, 1),
+      endDate: addDays(TODAY, 7),
+      approved: true,
+    });
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    await db.update(projects).set({ status: "bidding" }).where(eq(projects.id, project.id));
+    await page.getByRole("button", { name: "진행으로 되돌리기" }).click();
+
+    // router.refresh()의 RSC 요청을 붙잡아 두고 그 사이 포커스를 기간 칸 열기로 옮긴다.
+    let releaseRefresh = () => {};
+    const refreshHeld = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    await page.route(`**/projects/${project.id}**`, async (route) => {
+      const request = route.request();
+      if (request.method() === "GET" && (request.headers()["rsc"] === "1" || request.url().includes("_rsc="))) {
+        await refreshHeld;
+      }
+      await route.continue();
+    });
+    await page.getByRole("button", { name: "새로 고침" }).click();
+    const periodOpen = page.locator("#period-open");
+    await periodOpen.focus();
+    releaseRefresh();
+
+    await expect(headerTag(page, "수주중")).toBeVisible();
+    await expect(page.getByRole("button", { name: "새로 고침" })).toHaveCount(0);
+    await expect(periodOpen).toBeFocused();
   });
 
   test("(b3) 승인됐지만 종료일이 지난 미수주는 확인 모달 결과 줄 「종료일 지남 · 바로 정산」 (DR-7)", async ({ page }) => {

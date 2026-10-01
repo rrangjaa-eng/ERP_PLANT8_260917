@@ -83,12 +83,14 @@ export function StatusChange({
 }: StatusChangeProps & { dirtyCount: number; onChanged: (message: string) => void }) {
   const router = useRouter();
   const [step, setStep] = useState<Step>({ kind: "closed" });
-  const [rejection, setRejection] = useState<string | null>(null);
+  // 거부는 그때 화면이 본 상태(from)와 묶는다 — 어느 경로로든(새로 고침 · 기간 저장 등) 새 상태가 오면 트리거는 그 거부를 버린다.
+  const [rejection, setRejection] = useState<{ message: string; from: ProjectStatus } | null>(null);
   // 같은 틱의 두 번째 제출(1차 dblclick)은 isExecuting이 아직 거짓인 렌더에서
   // 처리되므로 동기 래치로 막는다(A-34, quote-table.tsx의 savingRef와 같은 이유).
   const submittingRef = useRef(false);
   // 성공 토스트 = 누른 버튼 라벨 · 번호(DR-21) — 제출하는 순간의 라벨을 둔다.
   const submittedLabelRef = useRef("");
+  const submittedFromRef = useRef(props.from);
   // 전환 성공 뒤 새로 고침으로 이 컴포넌트(트리거)가 사라지면 포커스를 머리 줄 제목으로(S16).
   const succeededRef = useRef(false);
   // 거부 옆 「새로 고침」을 눌러 다시 받은 화면에서 트리거가 사라져도 같다(§7-17 — 트리거가 사라졌으면 화면 제목).
@@ -113,7 +115,7 @@ export function StatusChange({
     },
     onError: ({ error }) => {
       // 서버 문자열 그대로(게이트 이유 · 「상태가 … 바뀜 · 새로 고침」) — 모달은 열린 채, 토스트 없음.
-      setRejection(error.serverError ?? null);
+      setRejection(error.serverError ? { message: error.serverError, from: submittedFromRef.current } : null);
     },
   });
 
@@ -122,6 +124,7 @@ export function StatusChange({
     submittingRef.current = true;
     succeededRef.current = false;
     submittedLabelRef.current = label;
+    submittedFromRef.current = props.from;
     execute({ projectId: props.projectId, from: props.from, to });
   }
 
@@ -140,18 +143,23 @@ export function StatusChange({
   // 트리거를 막는 이유가 시작일 게이트 이유보다 먼저다.
   // §7-17 ERROR — 이유 끝 ` · 새로 고침`은 글자가 아니라 이유 옆 3차 「새로 고침」이다. 다시 받은 화면이
   // 그려지면 거부(클라이언트 상태라 새로 받아도 남는다)를 지우고 포커스를 트리거로 돌린다.
-  const triggerBlock = splitRefreshTail(
-    unsavedEditsReason(dirtyCount) ?? (step.kind === "closed" ? rejection : null) ?? immediateBlockedReason ?? undefined,
-  );
+  const triggerRejection = step.kind === "closed" && rejection?.from === props.from ? rejection.message : null;
+  const triggerBlock = splitRefreshTail(unsavedEditsReason(dirtyCount) ?? triggerRejection ?? immediateBlockedReason ?? undefined);
   const triggerBlockedReason = triggerBlock.reason ?? null;
   function markRefreshStarted() {
     refreshStartedRef.current = true;
   }
-  function afterRefresh() {
-    refreshStartedRef.current = false;
+  function clearRejection() {
     setRejection(null);
-    document.getElementById(triggerId)?.focus();
   }
+  // 「새로 고침」이 사라진 뒤(거부가 풀린 그림) 한 번 — 버튼과 함께 포커스를 잃었을 때만 트리거로. 기다리는 동안
+  // 사용자가 옮긴 포커스는 그대로 둔다.
+  const refreshShown = triggerBlock.refresh;
+  useEffect(() => {
+    if (refreshShown || !refreshStartedRef.current) return;
+    refreshStartedRef.current = false;
+    if (document.activeElement === document.body) document.getElementById(triggerId)?.focus();
+  }, [refreshShown, triggerId]);
 
   function handleTrigger() {
     if (reverting && only && !revertNeedsConfirm) {
@@ -213,7 +221,7 @@ export function StatusChange({
         pending={reverting && step.kind === "closed" && isExecuting}
         disabled={triggerBlockedReason !== null}
         disabledReason={triggerBlockedReason ?? undefined}
-        nextStep={triggerBlock.refresh ? <RefreshStep onDone={afterRefresh} onStart={markRefreshStarted} /> : undefined}
+        nextStep={triggerBlock.refresh ? <RefreshStep onDone={clearRejection} onStart={markRefreshStarted} /> : undefined}
       >
         {reverting ? REVERT_LABEL : "상태 바꾸기"}
       </Button>
@@ -242,7 +250,7 @@ export function StatusChange({
             if (step.kind === "confirm" && copy) submit(step.to, copy.label);
           },
           pending: isExecuting,
-          disabledReason: rejection ?? target?.blockedReason ?? undefined,
+          disabledReason: step.kind === "confirm" ? (rejection?.message ?? target?.blockedReason ?? undefined) : undefined,
           nextStep: startDateStep,
         }}
       />

@@ -13,6 +13,7 @@ import {
   teamAtDate,
   PastAssignmentCancelError,
   NotFoundError,
+  ValidationError,
 } from "@/domain/org";
 import { queryActionLog } from "@/repositories/action-log";
 import { listMemberships } from "@/repositories/team-memberships";
@@ -95,6 +96,37 @@ describe("team-memberships (MAST-02, 실제 Postgres) — 발령 이력·시점 
     const remaining = await listAssignments(SYSTEM_VIEWER, userId);
     expect(remaining.some((a) => a.effectiveFrom === future)).toBe(false);
     expect(remaining.some((a) => a.effectiveFrom === today)).toBe(true);
+  });
+
+  it("오늘 판정은 서울 날짜 기준이다 — KST 01:30(UTC 전날)에 오늘 발령은 취소가 거부된다", async () => {
+    const userId = await makeTestUser();
+    const teamId = await makeTestTeam();
+    const now = () => new Date("2026-10-01T16:30:00Z"); // = 2026-10-02 01:30 KST
+
+    await assignTeam(SYSTEM_VIEWER, { userId, teamId, effectiveFrom: "2026-10-02" });
+
+    await expect(
+      cancelFutureAssignment(SYSTEM_VIEWER, { userId, effectiveFrom: "2026-10-02" }, { now }),
+    ).rejects.toBeInstanceOf(PastAssignmentCancelError);
+    const remaining = await listAssignments(SYSTEM_VIEWER, userId);
+    expect(remaining.some((a) => a.effectiveFrom === "2026-10-02")).toBe(true);
+  });
+
+  it("YYYY-MM-DD가 아닌 발령일로는 취소할 수 없다 — 문자열 비교를 우회해 과거 발령을 지우지 못한다", async () => {
+    const userId = await makeTestUser();
+    const teamId = await makeTestTeam();
+    const now = () => new Date("2026-10-01T03:00:00Z"); // = 2026-10-01 12:00 KST
+
+    await assignTeam(SYSTEM_VIEWER, { userId, teamId, effectiveFrom: "2026-09-30" });
+
+    await expect(
+      cancelFutureAssignment(SYSTEM_VIEWER, { userId, effectiveFrom: "2026-9-30" }, { now }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(
+      cancelFutureAssignment(SYSTEM_VIEWER, { userId, effectiveFrom: "2027-02-30" }, { now }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    const remaining = await listAssignments(SYSTEM_VIEWER, userId);
+    expect(remaining.some((a) => a.effectiveFrom === "2026-09-30")).toBe(true);
   });
 
   it("같은 사람에게 두 발령이 동시에 들어와도 둘 다 남고 시점 조회는 발령일 기준으로 하나를 고른다", async () => {

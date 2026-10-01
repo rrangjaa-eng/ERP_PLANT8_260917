@@ -18,7 +18,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **MAST-01**: 거래처·클라이언트를 등록·수정하고, 미사용은 삭제 대신 숨김 표시한다. 입력 시 자동완성된다. 거래처 계좌번호는 앱 단에서 암호화 저장하고 기본은 뒤 4자리만 보이며, 마스킹 해제는 정보 노출표 항목이다. 거래처마다 기본 증빙 종류(세금계산서·계산서·카드 전표·기타소득·사업소득 등)를 두어 지출결의·카드 사용 등록 때 자동으로 채워진다
 - [ ] **MAST-02**: 직원 등록 = 사람 + 계급 + 팀 선택. 입사자 추가에 코드 수정이 없다. 팀은 본부에 속한다(팀 ⊂ 본부). 팀 소속은 발령일 이력으로 남고, 비용 귀속·팀 손익은 사용일 시점의 소속 팀을 따른다
-- [ ] **MAST-03**: 법인카드 마스터: 직원별 개인 지급 카드와 팀 전용 카드를 등록하고, 카드마다 소지자(직원) 또는 소속 팀을 지정한다
+- [x] **MAST-03**: 법인카드 마스터: 직원별 개인 지급 카드와 팀 전용 카드를 등록하고, 카드마다 소지자(직원) 또는 소속 팀을 지정한다
 - [ ] **MAST-04**: 견적 대분류·소분류, 지급 방식, 프로젝트 상태 같은 코드표를 관리 화면에서 추가·수정·비활성화한다
 
 ### 프로젝트·견적 (PROJ)
@@ -102,14 +102,14 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### 코드 없는 운영 (ADMN)
 
-- [ ] **ADMN-01**: 권한표: 계급 × 메뉴 × 동작(보기/쓰기/승인) 체크박스
-- [ ] **ADMN-02**: 정보 노출표: 계급 × 정보 항목(손익 숫자·팀 비용·목표·인센티브·거래처 금액 등). 기획본부 기본값은 인트라넷 수준, 새 기능 정보는 기본 숨김
+- [x] **ADMN-01**: 권한표: 계급 × 메뉴 × 동작(보기/쓰기/승인) 체크박스
+- [x] **ADMN-02**: 정보 노출표: 계급 × 정보 항목(손익 숫자·팀 비용·목표·인센티브·거래처 금액 등). 기획본부 기본값은 인트라넷 수준, 새 기능 정보는 기본 숨김
 - [ ] **ADMN-03**: 정보 노출은 화면·API·Excel 내보내기·자동완성·검색에 동일하게 적용된다(우회 경로 없음). 강제 지점은 리포지토리의 viewer 투영이며(화면 코드가 아님), 누수 테스트가 서버 액션 레지스트리 × DTO 타입 목록 × Excel 내보내기 함수 × 계급에서 자동 생성되고, 노출표 항목에 매핑되지 않은 DTO 타입이 있으면 테스트가 실패한다
 - [ ] **ADMN-04**: 결재 단계·담당 계급, 규칙 on/off, 알림 시점·대상, 세율·수식을 설정 화면에서 바꾼다
-- [ ] **ADMN-05**: 설정 키는 레지스트리 한 곳에 등록되며 설정 화면이 자동 생성된다. 등록된 키를 서버가 읽는지 테스트가 강제한다
+- [x] **ADMN-05**: 설정 키는 레지스트리 한 곳에 등록되며 설정 화면이 자동 생성된다. 등록된 키를 서버가 읽는지 테스트가 강제한다
 - [ ] **ADMN-06**: 설정을 JSON으로 내보내고 빈 환경에 가져온다
 - [ ] **ADMN-07**: 관리자가 프로젝트·견적 줄·거래처에 텍스트/숫자/날짜/선택 4종 칸을 추가하면 입력·목록·검색·내보내기에 반영된다
-- [ ] **ADMN-08**: 계급 종류를 추가·이름 변경한다(데이터)
+- [x] **ADMN-08**: 계급 종류를 추가·이름 변경한다(데이터)
 - [x] **ADMN-09**: 문서 번호 서식(프로젝트·견적·지출결의·구매 요청·연차 등)을 설정에서 정의한다: 접두어·연도·순번 자릿수·구분자·순번 범위(전사/프로젝트별). 예: 프로젝트 26001, 지출결의 26001-0001. 번호 부여 시점: 지출결의는 제출 시, 구매 요청은 생성 시
 - [ ] **ADMN-10**: 대표·경영관리·관리자가 행동 로그 화면에서 핵심 로그 위주로 보고, 사람·기간·행동 종류·문서로 걸러 Excel로 내보낸다(사고 증거·인사평가 참고용). 어떤 행동을 핵심으로 남길지는 설정에서 고른다. 열람 권한은 정보 노출표로 통제
 - [x] **ADMN-11**: 영업일·공휴일: 법정 공휴일 규칙으로 매년 후보가 자동 생성되고 관리자가 검토·확정·수동 추가한다. 지급일·마감·알림 계산이 이 표를 쓴다
@@ -136,7 +136,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 기준: 260907의 화면·정보구조·UI 흐름은 참고하지 않는다. 세련되고 깔끔하며 사용자 편의 우선으로 `docs/DESIGN.md` 절차로 새로 설계한다.
 
-- [x] **UX-01**: `docs/design/SYSTEM.md`를 먼저 확정하고 모든 화면이 그 토큰·컴포넌트만 쓴다. 컴포넌트 계약은 LOADING/EMPTY/ERROR/SUCCESS/PARTIAL 상태를 필수로 정의하고, EMPTY·ERROR는 다음 행동을 유도한다
+- [ ] **UX-01**: `docs/design/SYSTEM.md`를 먼저 확정하고 모든 화면이 그 토큰·컴포넌트만 쓴다. 컴포넌트 계약은 LOADING/EMPTY/ERROR/SUCCESS/PARTIAL 상태를 필수로 정의하고, EMPTY·ERROR는 다음 행동을 유도한다
 - [ ] **UX-02**: 역할별 첫 화면: PM(내 프로젝트·내 지출결의), 경영관리(나갈 돈·결재·미증빙), 대표·팀장(손익)
 - [ ] **UX-03**: 폰에서 결재·조회·지출결의 작성이 된다(반응형)
 - [x] **UX-04**: 잘못된 입력은 서버 검증으로 즉시 안내되고, 저장 실패·중복 저장·입력값 유실이 없다
@@ -190,10 +190,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTH-02 | Phase 1 | Complete |
 | AUTH-03 | Phase 1 | Complete |
 | AUTH-04 | Phase 1 | Complete |
-| MAST-01 | Phase 3 | Pending |
-| MAST-02 | Phase 3 | Pending |
-| MAST-03 | Phase 3 | Pending |
-| MAST-04 | Phase 3 | Pending |
+| MAST-01 | Phase 3 | Gaps Found |
+| MAST-02 | Phase 3 | Gaps Found |
+| MAST-03 | Phase 3 | Complete |
+| MAST-04 | Phase 3 | Gaps Found |
 | PROJ-01 | Phase 4 | Complete |
 | PROJ-02 | Phase 4 | Complete |
 | PROJ-03 | Phase 4 | Complete |
@@ -245,28 +245,28 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CERT-02 | Phase 11 | Pending |
 | CERT-03 | Phase 11 | Pending |
 | CERT-04 | Phase 11 | Pending |
-| ADMN-01 | Phase 3 | Pending |
-| ADMN-02 | Phase 3 | Pending |
-| ADMN-03 | Phase 3 | Pending |
+| ADMN-01 | Phase 3 | Complete |
+| ADMN-02 | Phase 3 | Complete |
+| ADMN-03 | Phase 3 | Gaps Found |
 | ADMN-04 | Phase 04.1 (결재 부분 — 단계·담당 계급·조직 범위·규칙 on/off·문서 종류별 자기 승인 + 연차 연간 일수. 알림 시점·대상은 Phase 7, 세율·수식은 Phase 5) | Pending |
-| ADMN-05 | Phase 3 | Pending |
-| ADMN-06 | Phase 3 | Pending |
+| ADMN-05 | Phase 3 | Complete |
+| ADMN-06 | Phase 3 | Gaps Found |
 | ADMN-07 | Phase 10 | Pending |
-| ADMN-08 | Phase 3 | Pending |
+| ADMN-08 | Phase 3 | Complete |
 | ADMN-09 | Phase 4 | Complete |
-| ADMN-10 | Phase 3 | Pending |
+| ADMN-10 | Phase 3 | Gaps Found |
 | ADMN-11 | Phase 04.2 | Complete |
-| ADMN-12 | Phase 3 | Pending |
+| ADMN-12 | Phase 3 | Gaps Found |
 | MIG-04 | Phase 8 | Pending |
 | MIG-05 | Phase 8 | Pending |
 | OPS-01 | Phase 1 | Complete |
 | OPS-02 | Phase 1 | Complete |
 | OPS-03 | Phase 04.4 | Complete |
 | OPS-04 | Phase 1 | Complete |
-| OPS-05 | Phase 3 | Pending |
+| OPS-05 | Phase 3 | Gaps Found |
 | OPS-06 | Phase 1 (상태 화면 「복원 리허설」 항목은 Phase 04.4가 구현) | Complete |
 | OPS-07 | Phase 1 | Complete |
-| UX-01 | Phase 2 | Complete |
+| UX-01 | Phase 2 | Gaps Found |
 | UX-02 | Phase 9 | Pending |
 | UX-03 | Phase 5 | Pending |
 | UX-04 | Phase 4 | Complete |

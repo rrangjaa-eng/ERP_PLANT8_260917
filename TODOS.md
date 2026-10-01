@@ -128,7 +128,7 @@
 
 ### 행동 로그 · 사람 DTO 기존 결함 3건(/review 범위 밖)
 
-**What:** ① 「사람」 칸이 숨겨진 계급(person.value 꺼짐)도 URL `actorId`가 조회 · 엑셀 내보내기 · 정리(prune) 범위를 좁힌다 — 보이지 않는 조건. 서버에서 무시하거나 보이는 칩으로 ② action_log.detail 노출이 꺼진 계급은 /admin/action-log가 500(`domain/action-log/index.ts:265`) ③ `domain/people/index.ts:104`가 `Partial<PersonDto>`를 `PersonDto`로 단언해 「키가 없을 수 있음」이 타입에 안 보인다 — 다른 화면에서 같은 id 누락 버그가 다시 난다.
+**What:** ① ~~「사람」 칸이 숨겨진 계급(person.value 꺼짐)도 URL `actorId`가 조회 · 엑셀 내보내기 · 정리(prune) 범위를 좁힌다~~ — 해결: 페이지가 고를 사람이 없으면 URL actorId를 버린다(D1, PR #108 — #107에서 옮김) ② action_log.detail 노출이 꺼진 계급은 /admin/action-log가 500(`domain/action-log/index.ts:265`) ③ `domain/people/index.ts:104`가 `Partial<PersonDto>`를 `PersonDto`로 단언해 「키가 없을 수 있음」이 타입에 안 보인다 — 다른 화면에서 같은 id 누락 버그가 다시 난다.
 
 **Why:** 권한이 좁은 계급의 화면이 깨지거나 보이지 않는 조건으로 동작한다. ②는 오류 화면.
 

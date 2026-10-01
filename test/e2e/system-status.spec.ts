@@ -146,7 +146,7 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
     await insertRehearsal({ runKey: "9002-1", failedStage: "verify", minutes: 4, runUrl: RUN_URL_FAILED });
     const value = await openStatusAsAdmin(page);
     await expect(value).toHaveText(
-      "실패 · 검증 · 스테이징 · 2026-09-24 03:14 · 백업 1758684000000 · 4분 · 실행 기록",
+      "실패 · 검증 · 스테이징 · 2026-09-24 03:14 · 백업 1758684000000 · 4분 · 실행 기록 (새 탭)",
     );
     const link = value.getByRole("link", { name: "실행 기록" });
     await expect(link).toHaveAttribute("href", RUN_URL_FAILED);
@@ -164,6 +164,8 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
 
     // 앱 밖으로 가는 링크는 새 탭 — DECISIONS.md 2026-09-30(04.4-UI-SPEC 「같은 탭」을 대체).
     await expect(link).toHaveAttribute("target", "_blank");
+    // 사용자 결정 D2(2026-09-30): 새 탭으로 열림을 스크린 리더에도 알린다 — 눈에는 안 보이고 링크 이름에만 붙는다.
+    await expect(link).toHaveAccessibleName(/새 탭/);
     const rel = (await link.getAttribute("rel")) ?? "";
     expect(rel).toContain("noopener");
     expect(rel).toContain("noreferrer");
@@ -197,7 +199,7 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
     await insertRehearsal({ runKey: "9003-1", failedStage: "cleanup", minutes: 9, runUrl: RUN_URL_FAILED });
     const value = await openStatusAsAdmin(page);
     await expect(value).toHaveText(
-      "실패 · 정리 · 스테이징 · 2026-09-24 03:14 · 백업 1758684000000 · 9분 · 실행 기록",
+      "실패 · 정리 · 스테이징 · 2026-09-24 03:14 · 백업 1758684000000 · 9분 · 실행 기록 (새 탭)",
     );
     await expectNoStatusColors(page, value);
   });
@@ -231,7 +233,8 @@ test.describe.serial("상태 화면 「복원 리허설」 행 (04.4-05, D8-08)"
       value.evaluate((dd) => {
         const a = dd.querySelector("a") as HTMLAnchorElement;
         const range = document.createRange();
-        range.selectNodeContents(a);
+        // 보이는 글자(첫 글자 노드)만 잰다 — 뒤의 sr-only 「 (새 탭)」은 링크 상자 안쪽에 떠 있어 그 사각형이 섞이면 글자 위치가 아니다.
+        range.selectNodeContents(a.firstChild as Node);
         const rects = Array.from(range.getClientRects());
         const cs = getComputedStyle(dd);
         return {

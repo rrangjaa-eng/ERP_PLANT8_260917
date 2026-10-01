@@ -7,6 +7,7 @@ import { archivePerson, listPeople } from "@/domain/people";
 import { createVendor } from "@/domain/vendors";
 import { createCorpCard } from "@/domain/corp-cards";
 import { createCodeItem } from "@/domain/code-tables";
+import { archive } from "@/domain/archive";
 import { createFixtureUser } from "./fixtures";
 import { loginAsAdmin } from "./people-list-helpers";
 
@@ -72,6 +73,13 @@ test.describe("수작업 표 주 행 높이 ≥ --row-min (04.4 후속 항목 6)
       value: `row-min-${randomUUID().slice(0, 8)}`,
       label: "행높이코드",
     });
+    // 보관된 코드 항목은 입력 칸이 없어 행이 가장 낮다 — 다른 스펙의 보관 · 복원 순서에 기대지 않게 직접 만든다.
+    const archivedCode = await createCodeItem(SYSTEM_VIEWER, {
+      tableKey: "project_status",
+      value: `row-min-archived-${randomUUID().slice(0, 8)}`,
+      label: "행높이보관코드",
+    });
+    await archive(SYSTEM_VIEWER, "code_items", archivedCode.id);
     const archived = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
     await archivePerson(SYSTEM_VIEWER, await userIdOf(archived.email));
   });

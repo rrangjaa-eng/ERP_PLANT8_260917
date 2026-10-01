@@ -732,11 +732,108 @@ test("무입력 30분이면 I4가 스스로 로그인 화면으로 · 29분에 �
   await expect(page).not.toHaveURL(/\/login/);
 });
 
+// 독립 검토 Y1 · Y4 — 앱 안 이동(셸 링크)으로 떠났다가 브라우저 뒤로 오면 Next 라우터 캐시가 I4를 서버 요청 없이 되살린다.
+// 다시 붙은 화면은 마지막 서버 활동부터 잰다: 1분을 넘었으면 활동 기록 한 번(결과대로), 한도를 넘었으면 곧바로 로그인.
+test("라우터 캐시 복원 — 셸 링크로 떠났다가 10분 뒤 돌아오면 활동 기록 한 번 · 한도를 넘겨 돌아오면 로그인 화면 · 개인정보 없음(검토 Y1)", async ({
+  page,
+}) => {
+  const seeded = await seedSubmittedCert();
+  const account = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+  await login(page, account);
+  await page.clock.install();
+  const path = reviewPath(seeded.submissionId);
+  const heading = page.getByRole("heading", { name: `기타소득 확인증 — ${seeded.name}` });
+  const home = page.getByRole("link", { name: "PLANT8 내 차례" });
+  await page.goto(path);
+  await expect(heading).toBeVisible();
+  const views = await viewLogCount(seeded.submissionId);
+  const ids = await sessionIdsOf(account);
+  const lastSeen = async () => {
+    const rows = await db.select().from(privacySessionActivity).where(inArray(privacySessionActivity.sessionId, ids));
+    return rows[0]?.lastSeenAt.getTime() ?? 0;
+  };
+
+  // 서버 시계는 진짜 시각이다 — 화면 시계를 10분 넘기는 만큼 서버 활동 시각도 10분 앞으로 돌린다. 돌아온 화면이 활동 기록을
+  // 보내면 그 시각이 지금으로 다시 찍힌다(셸의 알림 수 갱신 같은 다른 서버 액션과 섞이지 않게 DB로 본다).
+  await home.click();
+  await expect(page).not.toHaveURL(new RegExp(`${path}$`));
+  await page.clock.fastForward("10:00");
+  await db
+    .update(privacySessionActivity)
+    .set({ lastSeenAt: new Date(Date.now() - 10 * 60_000) })
+    .where(inArray(privacySessionActivity.sessionId, ids));
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`${path}$`));
+  await expect(heading).toBeVisible();
+  await expect.poll(lastSeen).toBeGreaterThan(Date.now() - 60_000);
+  expect(await viewLogCount(seeded.submissionId)).toBe(views);
+
+  await home.click();
+  await expect(page).not.toHaveURL(new RegExp(`${path}$`));
+  await page.clock.fastForward("31:00");
+  await page.goBack();
+  await expect(page).toHaveURL(privacyLoginUrl(path));
+  await expect(page.getByText(seeded.name, { exact: false })).toHaveCount(0);
+  expect(await viewLogCount(seeded.submissionId)).toBe(views);
+});
+
+// 독립 검토 Y4 ② — 입력에 딸려 간 활동 기록이 끊김(expired)을 받으면 화면이 곧바로 로그인으로 간다(서버는 세션을 지웠다).
+test("활동 기록이 끊김을 받으면 로그인 화면(이유 줄 · 그 I4 next=)(검토 Y4)", async ({ page }) => {
+  const seeded = await seedSubmittedCert();
+  const account = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+  await login(page, account);
+  await page.clock.install();
+  const path = reviewPath(seeded.submissionId);
+  const heading = page.getByRole("heading", { name: `기타소득 확인증 — ${seeded.name}` });
+  await page.goto(path);
+  await expect(heading).toBeVisible();
+
+  await page.clock.fastForward("05:01");
+  await db
+    .update(privacySessionActivity)
+    .set({ lastSeenAt: new Date(Date.now() - 31 * 60_000) })
+    .where(inArray(privacySessionActivity.sessionId, await sessionIdsOf(account)));
+  await heading.click();
+  await expect(page).toHaveURL(privacyLoginUrl(path));
+  await expect(page.getByRole("status").filter({ hasText: PRIVACY_REASON_LINE })).toBeVisible();
+  expect(await sessionIdsOf(account)).toHaveLength(0);
+});
+
+// 독립 검토 Y4 ① — 브라우저 뒤로 · 앞으로 캐시(bfcache)로 되살아난 화면은 곧바로 다시 불러와 서버 판정을 거친다. Playwright
+// 브라우저는 bfcache를 끄므로 그 복원이 보내는 사건(pageshow persisted)을 직접 보낸다.
+test("pageshow persisted면 다시 불러와 서버 판정 · 조회 기록을 다시 거친다(검토 Y4)", async ({ page }) => {
+  const seeded = await seedSubmittedCert();
+  const account = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+  await login(page, account);
+  await page.goto(reviewPath(seeded.submissionId));
+  await expect(page.getByRole("heading", { name: `기타소득 확인증 — ${seeded.name}` })).toBeVisible();
+  const views = await viewLogCount(seeded.submissionId);
+
+  await page.evaluate(() => {
+    (window as unknown as { __restored?: boolean }).__restored = true;
+    window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+  });
+  await expect.poll(() => viewLogCount(seeded.submissionId)).toBe(views + 1);
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { __restored?: boolean }).__restored ?? null))
+    .toBeNull();
+});
+
 test("입력이 이어지면 5분에 한 번 활동 기록 — 정정 칸에 4분마다 한 글자씩 35분 입력해도 저장이 끊기지 않는다(G3 a)", async ({ page }) => {
   const seeded = await seedSubmittedCert();
   const account = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
   await login(page, account);
   await page.clock.install();
+  // 활동 기록은 입력 때도, 5분 창 끝의 뒤따르는 기록(검토 Y2)으로도 간다 — 보낸 때를 화면 시계로 재려고 서버 액션 fetch를 감싼다.
+  await page.addInitScript(() => {
+    const target = window as unknown as { __actionTimes: number[] };
+    target.__actionTimes = [];
+    const original = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      if (new Headers(init?.headers).has("next-action")) target.__actionTimes.push(Date.now());
+      return original(input, init);
+    };
+  });
   await page.goto(reviewPath(seeded.submissionId));
   await expect(page.getByLabel("이름")).toBeVisible();
 
@@ -762,18 +859,17 @@ test("입력이 이어지면 5분에 한 번 활동 기록 — 정정 칸에 4�
       .where(inArray(privacySessionActivity.sessionId, ids));
   };
 
-  const browserTimes: number[] = [];
   const nameField = page.getByLabel("이름");
   for (let step = 0; step < 9; step += 1) {
     await page.clock.fastForward("04:00");
     await shiftServerClock(4);
-    const before = touches.length;
     await nameField.press("End");
     await nameField.pressSequentially("가");
     await expect.poll(() => answered).toBe(touches.length);
-    if (touches.length > before) browserTimes.push(await page.evaluate(() => Date.now()));
   }
 
+  const browserTimes = await page.evaluate(() => (window as unknown as { __actionTimes: number[] }).__actionTimes);
+  expect(browserTimes.length).toBe(touches.length);
   expect(browserTimes.length).toBeGreaterThan(0);
   for (let index = 1; index < browserTimes.length; index += 1) {
     expect(browserTimes[index]! - browserTimes[index - 1]!).toBeGreaterThanOrEqual(5 * 60_000);

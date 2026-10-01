@@ -125,6 +125,8 @@ async function measureA4(page: Page): Promise<{
 
 const printPath = (id: string) => `/print/certs/${id}`;
 const reviewPath = (id: string) => `/certs/submissions/${id}`;
+// 경로 인코딩 결과(영문 · 숫자 · `-` · `%2F`)에는 정규식 특수 문자가 없다.
+const privacyLoginUrl = (path: string) => new RegExp(`/login\\?reason=privacy-session&next=${encodeURIComponent(path)}$`);
 
 async function expectNoFullRrn(page: Page): Promise<void> {
   const html = await page.content();
@@ -310,7 +312,31 @@ test.describe("인쇄 라우트", () => {
       .set({ lastSeenAt: new Date(Date.now() - 31 * 60_000) })
       .where(inArray(privacySessionActivity.sessionId, await sessionIdsOf(account)));
     await page.goto(printPath(seeded.submissionId));
-    await expect(page).toHaveURL(/\/login/);
+    // 사용자 결정 5936870579(Y3) — 서버 판정으로 끊겨도 되돌아갈 곳은 그 확인증 I4다(인쇄 창이 예고 없이 뜨지 않게).
+    await expect(page).toHaveURL(privacyLoginUrl(reviewPath(seeded.submissionId)));
+    await context.close();
+  });
+
+  test("세션이 이미 없어진 뒤 인쇄를 다시 열면 이유 줄 · 그 확인증 I4 next= · 다시 로그인하면 I4(인쇄 0번)(검토 Y5 · Y3)", async ({
+    browser,
+  }) => {
+    const seeded = await seedSubmittedCert();
+    const account = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+    const { context, page } = await loggedInContext(browser, account);
+    await page.goto(printPath(seeded.submissionId));
+    await expect(page.getByText(seeded.certNo)).toBeVisible();
+
+    await db.delete(sessions).where(inArray(sessions.id, await sessionIdsOf(account)));
+    await page.reload();
+    await expect(page).toHaveURL(privacyLoginUrl(reviewPath(seeded.submissionId)));
+    await expect(page.getByRole("status").filter({ hasText: "개인정보 화면 · 다시 로그인" })).toBeVisible();
+
+    await page.getByLabel("이메일").fill(account.email);
+    await page.getByLabel("비밀번호").fill(account.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(new RegExp(`${reviewPath(seeded.submissionId)}$`));
+    await expect(page.getByRole("heading", { name: `기타소득 확인증 — ${seeded.name}` })).toBeVisible();
+    expect(await printCalls(page)).toBe(0);
     await context.close();
   });
 

@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Request } from "@playwright/test";
+import { test, expect, type Locator, type Page, type Request } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { certEvents, certSubmissions } from "@/db/schema";
@@ -190,22 +190,80 @@ test("닫힌 링크 첫 진입 — 이 링크는 닫혔습니다 · 제목 「�
 });
 
 // DOM 감사 M1 — 문의 전화 tel: 링크는 3차(§6-5 E′2)라 §3 터치 목표 44×44. 문장 속 링크라 히트 영역만 키우고
-// 줄 상자는 그대로여야 한다(375에서 링크를 보통 인라인으로 되돌린 높이와 같음), 상자 위 · 아래 끝도 링크가 받는다.
+// 줄 상자는 그대로여야 한다(링크를 보통 인라인으로 되돌린 높이와 같음), 상자 위 · 아래 끝도 링크가 받는다.
+// 04.3-16 — 폭 320 · 375 · 390 · 480 모두 + Tab으로 오면 :focus-visible 포커스 링(--focus-w · --focus · --focus-offset).
+const TEL_WIDTHS = [320, 375, 390, 480];
+
+// 토큰이 계산된 값(px · 색)을 같은 문서에서 읽는다 — 새 값을 이 스펙에 박지 않는다.
+async function tokenValues(page: Page) {
+  return page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.style.cssText = "width: var(--focus-w); outline-offset: var(--focus-offset); outline-color: var(--focus); color: var(--focus);";
+    document.body.appendChild(probe);
+    const style = getComputedStyle(probe);
+    const values = { width: style.width, offset: style.outlineOffset, color: style.color };
+    probe.remove();
+    return values;
+  });
+}
+
+async function expectFocusRing(page: Page, link: Locator, detail: string) {
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  let focused = false;
+  for (let i = 0; i < 60 && !focused; i++) {
+    await page.keyboard.press("Tab");
+    focused = await link.evaluate((el) => el === document.activeElement);
+  }
+  expect(focused, `${detail} Tab으로 도달`).toBe(true);
+  const ring = await link.evaluate((el) => {
+    const style = getComputedStyle(el);
+    return { style: style.outlineStyle, width: style.outlineWidth, color: style.outlineColor, offset: style.outlineOffset, matches: el.matches(":focus-visible") };
+  });
+  const tokens = await tokenValues(page);
+  expect.soft(ring.matches, `${detail} :focus-visible`).toBe(true);
+  expect.soft(ring.style, `${detail} outline-style`).toBe("solid");
+  expect.soft(ring.width, `${detail} outline-width`).toBe(tokens.width);
+  expect.soft(ring.color, `${detail} outline-color`).toBe(tokens.color);
+  expect.soft(ring.offset, `${detail} outline-offset`).toBe(tokens.offset);
+}
+
+// V1 — 전화 링크 뒤 조사 「에」는 링크 끝과 같은 줄 상자에 선다(줄 맨 앞으로 떨어지지 않는다).
+async function expectParticleOnLinkLine(page: Page, link: Locator, state: string) {
+  for (let width = 320; width <= 480; width += 3) {
+    await page.setViewportSize({ width, height: 800 });
+    const tops = await link.evaluate((el) => {
+      const after = el.nextSibling;
+      const inner = el.firstChild;
+      if (!after || after.nodeType !== Node.TEXT_NODE || !inner || inner.nodeType !== Node.TEXT_NODE) return null;
+      const particle = document.createRange();
+      particle.setStart(after, 0);
+      particle.setEnd(after, 1);
+      const last = document.createRange();
+      const length = (inner.textContent ?? "").length;
+      last.setStart(inner, length - 1);
+      last.setEnd(inner, length);
+      return { particle: (after.textContent ?? "").slice(0, 1), particleTop: particle.getBoundingClientRect().top, linkEndTop: last.getBoundingClientRect().top };
+    });
+    expect(tops, `${state} @${width} 「에」 노드`).not.toBeNull();
+    expect(tops!.particle, `${state} @${width}`).toBe("에");
+    expect(Math.abs(tops!.particleTop - tops!.linkEndTop), `${state} @${width} 「에」가 링크 끝과 다른 줄 ${JSON.stringify(tops)}`).toBeLessThanOrEqual(2);
+  }
+  await page.setViewportSize({ width: 375, height: 800 });
+}
+
 async function expectTelLinkTouch(page: Page, scope: string, state: string) {
   const link = page.locator(`${scope} a[href^="tel:"]`);
   await expect(link).toHaveCount(1);
-  for (const width of [375, 320]) {
+  for (const width of TEL_WIDTHS) {
     await page.setViewportSize({ width, height: 800 });
     const detail = `${state} @${width}`;
     const box = await link.boundingBox();
     expect(box, detail).not.toBeNull();
     expect.soft(box!.width, detail).toBeGreaterThanOrEqual(44);
     expect.soft(box!.height, detail).toBeGreaterThanOrEqual(44);
-    if (width === 320) {
-      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-      expect.soft(overflow, `${detail} 가로 넘침`).toBeLessThanOrEqual(0);
-      continue;
-    }
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect.soft(overflow, `${detail} 가로 넘침`).toBeLessThanOrEqual(0);
+    if (width === 320) continue;
     const lineBox = await link.evaluate((el) => {
       const p = el.closest("p");
       if (!p) return null;
@@ -230,9 +288,11 @@ async function expectTelLinkTouch(page: Page, scope: string, state: string) {
     expect.soft(edges, detail).toEqual({ top: true, bottom: true });
   }
   await page.setViewportSize({ width: 375, height: 800 });
+  await expectFocusRing(page, link, state);
+  await expectParticleOnLinkLine(page, link, state);
 }
 
-test("DOM 감사 M1 — 문의 전화 tel: 링크는 E′2 · E′4 · E5 · E6-b(담당자 · 기한) 모두 375 · 320에서 44×44, 줄 상자 그대로(§3 터치 목표)", async ({
+test("DOM 감사 M1 · V1 — 문의 전화 tel: 링크는 E′2 · E′4 · E5 · E6-b(담당자 · 기한) 모두 320 · 375 · 390 · 480에서 44×44 · 줄 상자 그대로 · 포커스 링 · 「에」가 링크 끝과 같은 줄(§3 터치 목표)", async ({
   page,
 }) => {
   const { link, eventId } = await createCertEvent({ name: "모바일E2E문의44" });

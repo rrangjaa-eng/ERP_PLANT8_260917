@@ -29,8 +29,8 @@ function jobBlock(ci: string, name: string, nextName?: string): string {
   return ci.slice(start, end);
 }
 
-// draft PR은 quality만 돈다. integration·e2e는 ready(또는 workflow_call/push)에서만.
-const FULL_RUN_IF = "github.event_name != 'pull_request' || github.event.pull_request.draft == false";
+// draft PR은 quality만 돈다. integration·e2e는 ready(또는 workflow_call/push)에서만 — PR은 .claude/·CLAUDE.md 밖 변경(quality의 app 출력)이 있을 때만.
+const FULL_RUN_IF = "github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.quality.outputs.app == 'true')";
 
 describe("ci-guard: .github/workflows 메타 검사", () => {
   it("어떤 워크플로에도 drizzle-kit push 하위 명령이 없다", () => {

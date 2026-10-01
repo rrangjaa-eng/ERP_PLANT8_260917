@@ -791,7 +791,14 @@ function runStatusline() {
     // (a token count). When the env var is set, compute the buffer % dynamically so
     // the meter correctly reflects early-compaction configurations (#2219).
     const totalCtx = data.context_window?.total_tokens || 1_000_000;
-    const acw = parseInt(process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW || '0', 10);
+    // plant8: without the env var, fall back to the project's settings.json autoCompactWindow (PR #124)
+    let acw = parseInt(process.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW || '0', 10);
+    if (!(acw > 0)) {
+      try {
+        const settingsPath = path.join(data.workspace?.project_dir || dir, '.claude', 'settings.json');
+        acw = parseInt(JSON.parse(fs.readFileSync(settingsPath, 'utf8')).autoCompactWindow || '0', 10);
+      } catch (e) {}
+    }
     const AUTO_COMPACT_BUFFER_PCT = acw > 0
       ? Math.min(100, Math.max(0, (1 - acw / totalCtx) * 100))
       : 16.5;

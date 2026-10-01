@@ -126,6 +126,17 @@ describe("docs/design/SYSTEM.md — 확인 모달 SUCCESS · ERROR · 근거 칸
     expect(modalBullet).toContain("날짜형은 칸 아래 `Form.Error` 한 줄(`날짜 없음 · 날짜 고르기` · `날짜 형식 오류 · 2026-09-18처럼`)이고 왼쪽에 다시 쓰지 않는다");
   });
 
+  it("§7-17 · §7-8 — 폰은 막힘 이유 · 다음 한 수가 버튼 윗줄이고 버튼 줄은 2차 · 1차만(사용자 결정 2026-10-01)", () => {
+    const phoneRow = "폰(<700)은 막힘 이유 · 다음 한 수가 버튼 윗줄 전체 폭이고, 버튼 줄은 2차 · 1차만 둔다(1차가 2차의 두 배 폭)";
+    expect(confirmModal).toContain(phoneRow);
+    const sheetActions = section(SYSTEM, "### 7-8", "### 7-9")
+      .split("\n")
+      .find((line) => line.startsWith("- 시트 행동 줄:")) ?? "";
+    expect(sheetActions).toContain("막힘 이유 · 다음 한 수는 버튼 윗줄(§7-17)");
+    const headings = DECISIONS.split("\n").filter((line) => line.startsWith("## "));
+    expect(headings.some((line) => line.includes("폰 확인 시트") && line.includes("윗줄"))).toBe(true);
+  });
+
   it("DECISIONS.md에 확인 모달 SUCCESS · 「새로 고침」 꼬리 · 근거 칸 이유 자리 항목이 있다", () => {
     const headings = DECISIONS.split("\n").filter((line) => line.startsWith("## "));
     expect(headings.some((line) => line.includes("확인 모달") && line.includes("새로 고침"))).toBe(true);

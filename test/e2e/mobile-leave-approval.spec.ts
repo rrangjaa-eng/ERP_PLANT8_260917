@@ -130,6 +130,10 @@ test.describe("폰 결재 시트 (04.1-05)", () => {
       await dialogs.getByRole("button", { name: /^반려/ }).boundingBox(),
     ];
     expect(cancelBox?.x ?? 0).toBeLessThan(rejectBox?.x ?? 0);
+    // 사용자 결정 2026-10-01 — 폰은 막힘 이유(`사유 없음 · 사유 적기`)가 버튼 윗줄이고, 버튼 줄은 1차가 2차의 2배 폭(§7-8 · §7-17).
+    const reasonBox = await dialogs.getByText("사유 없음 · 사유 적기", { exact: true }).filter({ visible: true }).boundingBox();
+    expect((reasonBox?.y ?? 0) + (reasonBox?.height ?? 0)).toBeLessThanOrEqual(cancelBox?.y ?? 0);
+    expect(Math.abs((rejectBox?.width ?? 0) - 2 * (cancelBox?.width ?? 0))).toBeLessThanOrEqual(1);
     expect(
       await dialogs.evaluate((node) =>
         [...node.querySelectorAll("button")].map((button) => button.textContent?.trim() ?? "").filter((text) => /^(취소|반려)/.test(text)),

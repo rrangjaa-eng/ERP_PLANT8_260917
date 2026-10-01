@@ -1216,3 +1216,15 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 - 2: 「그대로」 유지(결재 확인의 버튼 제거) — 다음 한 수가 글자로만 남는다. 문서만 고치고 두 화면을 후속으로 미루기 — 같은 거부가 화면마다 다르게 보이는 상태가 남는다.
 
 **범위**: SYSTEM.md §7-7(시트/모달 행 ERROR · SUCCESS 칸) · §7-8(모달 첫 줄) · §7-17(ERROR 줄 · 다섯 상태 SUCCESS 행). 코드: `ui/confirm-dialog/ConfirmDialog.tsx`(`splitRefreshTail` · 「새로 고침」 다음 한 수). `app/(app)/approvals/decision-dialogs.tsx`는 같은 처리를 하던 자체 코드를 지웠다. `status-change.tsx` · `revision-dialogs.tsx`는 코드 변경 없이 컴포넌트를 따른다. 토큰 변경 없음. 회귀: `test/unit/design-system-docs.test.ts` · `test/unit/ui/confirm-dialog.test.ts` · E2E `project-lifecycle` · `quote-revisions`. 점검표: `docs/design/checks/2026-10-01-확인-모달-새로-고침-성공.md`.
+
+## 2026-10-01 — 폰 확인 시트: 막힘 이유 · 다음 한 수는 버튼 윗줄 (같은 날 확인 모달 항목 후속)
+
+**결정**: 폰(<700) 확인 시트(`ui/confirm-dialog`)에서 막힘 이유와 다음 한 수 3차(`새로 고침` · `기간 적기` 등)는 버튼 윗줄 전체 폭에 둔다. 버튼 줄에는 2차 · 1차만 둔다(1차가 2차의 두 배 폭, §7-8 · §7-17). PC는 그대로 행동 줄 왼쪽이다. DOM · Tab 순서(이유 → 다음 한 수 → 2차 → 1차)는 바뀌지 않는다.
+
+**결정자**: 사용자(2026-10-01 채팅, 「폰은 이유를 윗줄로」).
+
+**이유**: 독립 DOM 감사(3 시나리오 × 390 · 320)에서 이유가 있는 폰 시트의 1차 : 2차 폭이 1.02~1.68이었다. 원인은 기존 CSS다 — 두 버튼이 `flex: 2` · `flex: 1`(기준 폭 0)이라 같은 줄의 이유 글자가 남는 폭을 먼저 차지하면 두 버튼이 최소 폭까지 줄어든다. 320에서는 한 줄로 두 배를 지킬 폭 자체가 없다.
+
+**버린 대안**: 같은 줄 유지 + 이유 칸에 비율 주기 — 320에서 2차 최소 폭(`취소 Esc`)을 못 지킨다. 두 배 규칙에 「이유가 있을 때 예외」 두기 — 1차가 주 버튼이라는 시각 계층이 이유가 붙는 순간(가장 막히기 쉬운 순간) 무너진다.
+
+**범위**: `ui/confirm-dialog/ConfirmDialog.tsx`(이유 + 다음 한 수를 `.blocker` 한 묶음으로) · `ConfirmDialog.module.css`(폰 `flex-wrap` · `.blocker` 전체 폭, PC `display: contents`). SYSTEM.md §7-8 시트 행동 줄 · §7-17 슬롯. 회귀: E2E `mobile-leave-approval`(반려 확인 시트 — 이유가 버튼 윗줄, 1차 = 2차 × 2 ± 1px) · `design-system-docs`.

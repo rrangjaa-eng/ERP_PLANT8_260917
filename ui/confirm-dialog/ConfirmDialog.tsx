@@ -290,10 +290,15 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
       <div className={styles.actions}>
         {primary ? (
           <>
-            {disabledReason ? (
-              <span className={primary.reasonTone === "info" ? styles.reasonInfo : styles.reason}>{disabledReason}</span>
+            {disabledReason || nextStep ? (
+              // 막힘 이유 + 다음 한 수 한 묶음 — PC는 행동 줄 왼쪽 그대로(display: contents), 폰은 버튼 윗줄(사용자 결정 2026-10-01).
+              <span className={styles.blocker}>
+                {disabledReason ? (
+                  <span className={primary.reasonTone === "info" ? styles.reasonInfo : styles.reason}>{disabledReason}</span>
+                ) : null}
+                {nextStep ? <span className={styles.nextStep}>{nextStep}</span> : null}
+              </span>
             ) : null}
-            {nextStep ? <span className={styles.nextStep}>{nextStep}</span> : null}
             {secondaryButton}
             <span ref={primaryWrapRef} className={styles.primaryWrap}>
               <Button

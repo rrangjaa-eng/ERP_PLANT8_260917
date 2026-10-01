@@ -106,6 +106,8 @@ test.describe("가려진 참조 정보의 화면(quick 261001-85g)", () => {
     await expect(table.getByRole("columnheader", { name: "항목" })).toBeVisible();
     await expect(table.getByRole("columnheader", { name: "거래처" })).toHaveCount(0);
     await expect(table).not.toContainText(client.id);
+    // /qa ISSUE-002 — 등록할 수 없는 계급(클라이언트 선택지 0개)에게 「프로젝트 복사」는 막다른 길이라 없다.
+    await expect(page.getByRole("link", { name: /프로젝트 복사/ })).toHaveCount(0);
   });
 
   test("D2: 보관된 거래처 줄은 거래처 칸을 열었다 닫아도 값이 그대로다", async ({ page }) => {
@@ -116,6 +118,8 @@ test.describe("가려진 참조 정보의 화면(quick 261001-85g)", () => {
 
     await login(page, writer);
     await page.goto(`/projects/${projectId}`);
+    // 대조(/qa ISSUE-002) — 등록할 수 있는 계급에는 「프로젝트 복사」가 있다.
+    await expect(page.getByRole("link", { name: /프로젝트 복사/ }).first()).toBeVisible();
     const cell = vendorCell(page, 0);
     const before = await cell.textContent();
 

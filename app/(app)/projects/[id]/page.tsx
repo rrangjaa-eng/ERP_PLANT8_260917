@@ -224,7 +224,16 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       statusTagKind={PROJECT_STATUS_TAG_KIND[status]}
       statusChange={statusChange}
       newRevision={newRevision}
-      copyProjectHref={canWrite && project.archivedAt === null ? `/projects?new=1&copyFrom=${project.id}#project-form` : null}
+      copyProjectHref={
+        // /qa ISSUE-002 — 목록의 등록 진입점과 같은 규칙: 클라이언트 · 담당 PM · 팀 선택지가 하나라도 비면 등록할 수 없다.
+        canWrite &&
+        project.archivedAt === null &&
+        references.clients.length > 0 &&
+        references.pmUsers.length > 0 &&
+        references.teams.length > 0
+          ? `/projects?new=1&copyFrom=${project.id}#project-form`
+          : null
+      }
       customerApproval={customerApproval}
       approvedSeq={approvedSeq}
       revisions={revisionSummaries.flatMap((row) => (row.revisionId && row.seq !== undefined ? [{ id: row.revisionId, seq: row.seq }] : []))}

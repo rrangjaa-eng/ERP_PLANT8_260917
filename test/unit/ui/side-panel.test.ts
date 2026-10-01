@@ -93,14 +93,17 @@ describe("closeSidePanel — 닫히면 여는 버튼으로 포커스(성공으�
 
 describe("SidePanel 골격(renderToStaticMarkup)", () => {
   const html = renderToStaticMarkup(
-    createElement(SidePanel, {
-      open: true,
-      onClose: vi.fn(),
-      title: "QR 생성 신청",
-      opener: { current: null },
-      actions: createElement("span", null, createElement("button", null, "취소"), createElement("button", null, "QR 생성 신청")),
-      children: createElement("input", { "aria-label": "행사 이름" }),
-    }),
+    createElement(
+      SidePanel,
+      {
+        open: true,
+        onClose: vi.fn(),
+        title: "QR 생성 신청",
+        opener: { current: null },
+        actions: createElement("span", null, createElement("button", null, "취소"), createElement("button", null, "QR 생성 신청")),
+      },
+      createElement("input", { "aria-label": "행사 이름" }),
+    ),
   );
 
   it("<dialog> + 제목(--fs-lg 머리) + 닫기 × + 본문 + 행동 줄(2차 → 1차 순서)", () => {

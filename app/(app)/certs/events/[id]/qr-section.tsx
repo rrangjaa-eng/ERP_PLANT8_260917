@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/ui/button/Button";
+import { QR_SECTION_LABEL_ID } from "./prize-table-rules";
 import styles from "./event-detail.module.css";
 
 // 04.3-04 Task 4 ② — I3 QR 섹션. 접수 중이면 서버가 만든 SVG(currentColor — 토큰 --fg · --bg만) + 전체 링크 +
@@ -39,7 +40,9 @@ export function QrSection(props: { eventName: string; qrSvg: string; link: strin
 
   return (
     <section className={styles.section}>
-      <h2 className={styles.sectionLabel}>QR</h2>
+      <h2 id={QR_SECTION_LABEL_ID} tabIndex={-1} className={styles.sectionLabel}>
+        QR
+      </h2>
       <div role="img" aria-label={`${props.eventName} 확인증 QR`} className={styles.qr} dangerouslySetInnerHTML={{ __html: props.qrSvg }} />
       <div className={styles.linkRow}>
         <span className={styles.link}>{props.link}</span>

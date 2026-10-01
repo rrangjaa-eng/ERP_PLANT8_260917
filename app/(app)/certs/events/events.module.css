@@ -1,4 +1,11 @@
-/* 04.3-04 · 04.3-15 — I′1 확인증 행사 목록. 토큰만(docs/design/tokens.css). */
+/* 04.3-04 · 04.3-15 · 04.3-10 — I′1 확인증 행사 목록 · I′2 옆 패널 칸. 토큰만(docs/design/tokens.css). */
+
+/* §6-1 표 위 행동 줄 — 필터가 없어 오른쪽 1차 하나(UI-SPEC I′1). */
+.actionRow {
+  display: flex;
+  justify-content: flex-end;
+  margin: var(--s-3) 0;
+}
 
 /* 행사 이름 · 경품명은 줄바꿈(UI Considerations long-text). */
 .wrapText {
@@ -21,6 +28,38 @@
 
 .link:hover {
   text-decoration-thickness: var(--line-w-strong);
+}
+
+/* I′2 칸(옛 I2 행사 만들기 칸과 같은 모양). */
+.textInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 var(--s-2);
+  border: var(--line-w) solid var(--line-ui);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+}
+
+.textInput[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.textInput:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+/* I′2 결과 불명 — 행동 줄 위 한 줄(--danger). */
+.resultLine {
+  flex: 1 0 100%;
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--danger);
+  overflow-wrap: anywhere;
 }
 
 /* §7-7 LOADING 뼈대 — 머리글 + --surface 3행 + 합계 자리, 반짝임 없음. */

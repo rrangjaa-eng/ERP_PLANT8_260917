@@ -10,7 +10,7 @@ import { createAccount } from "@/domain/auth/accounts";
 import { insertRole } from "@/repositories/roles";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { setUserArchived } from "@/repositories/users";
-import { setSettingValue } from "@/domain/settings/registry";
+import { getSettingValue, setSettingValue } from "@/domain/settings/registry";
 import { CERT_CONTACT_PHONE, CERT_ENABLED } from "@/domain/settings/keys";
 import { generateQr, getEventDetail, listEvents, requestQr } from "@/domain/certs/events";
 import { loadIntake } from "@/domain/certs/intake";
@@ -101,7 +101,7 @@ describe("requestQr — 신청(N1 a): 행사 신청됨 + 알림 한 트랜잭션
 
     const row = await eventRow(eventId);
     expect(row).toMatchObject({ tokenHash: null, tokenEncrypted: null, expiresAt: null, qrCreatedAt: null, createdBy: pm.id });
-    expect(row.contactPhone).toBe(PHONE);
+    expect(row.contactPhone).toBe(await getSettingValue(CERT_CONTACT_PHONE));
 
     const rows = await notificationsOf(eventId, "cert_qr_request");
     expect(rows.map((r) => r.recipientId)).toEqual([manager.id]);
@@ -290,7 +290,9 @@ describe("generateQr — 경품 저장 + QR 생성 한 트랜잭션", () => {
 
     await setSettingValue(SYSTEM_VIEWER, CERT_CONTACT_PHONE, "02-999-0000");
     expect(await generateQr(manager, eventId, { requestId: randomUUID(), changes: ONE_PRIZE })).toEqual({ kind: "ok" });
-    expect((await eventRow(eventId)).contactPhone).toBe("02-999-0000");
+    const fresh = await getSettingValue(CERT_CONTACT_PHONE);
+    expect((await eventRow(eventId)).contactPhone).toBe(fresh);
+    expect(fresh).toMatch(/9990000/);
   });
 
   it("경품 없음 → blocked{noPrize} · 49,000뿐 → blocked{noListedPrize}(롤백 — 줄 0) · PM → Forbidden", async () => {

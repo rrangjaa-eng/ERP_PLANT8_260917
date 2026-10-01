@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { certPrizes, certSubmissions } from "@/db/schema";
@@ -103,6 +103,8 @@ export async function applyPrizeRows(
 }
 
 export type CertPrizeSummaryRow = CertPrizeRow & {
+  // 제출(대조 제외 포함)이 하나라도 있다 — 외래 키가 줄 삭제를 막고 경품명 · 전달이 읽기 전용이다(N5 a).
+  locked: boolean;
   submittedCount: number;
   // 수량별 제출 수(대조 제외 뺀 행) — 파기 대상 미리 보기(가액 × 수량 ≤ 50,000)의 재료.
   quantityCounts: Array<{ quantity: number; count: number }>;
@@ -116,16 +118,21 @@ export async function listPrizeSummaries(viewer: Viewer, eventId: string, tx: Db
     .select({
       prizeId: certSubmissions.prizeId,
       quantity: certSubmissions.quantity,
+      excluded: sql<boolean>`${certSubmissions.excludedAt} is not null`,
       count: sql<number>`count(*)::int`,
     })
     .from(certSubmissions)
-    .where(and(eq(certSubmissions.eventId, eventId), isNull(certSubmissions.excludedAt)))
-    .groupBy(certSubmissions.prizeId, certSubmissions.quantity)
+    .where(eq(certSubmissions.eventId, eventId))
+    .groupBy(certSubmissions.prizeId, certSubmissions.quantity, sql`${certSubmissions.excludedAt} is not null`)
     .orderBy(asc(certSubmissions.quantity));
   return prizes.map((prize) => {
-    const quantityCounts = tallies
-      .filter((tally) => tally.prizeId === prize.id)
-      .map((tally) => ({ quantity: tally.quantity, count: tally.count }));
-    return { ...prize, submittedCount: quantityCounts.reduce((sum, q) => sum + q.count, 0), quantityCounts };
+    const own = tallies.filter((tally) => tally.prizeId === prize.id);
+    const quantityCounts = own.filter((tally) => !tally.excluded).map((tally) => ({ quantity: tally.quantity, count: tally.count }));
+    return {
+      ...prize,
+      locked: own.length > 0,
+      submittedCount: quantityCounts.reduce((sum, q) => sum + q.count, 0),
+      quantityCounts,
+    };
   });
 }

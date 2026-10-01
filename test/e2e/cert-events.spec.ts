@@ -194,8 +194,11 @@ test.describe("04.3-10 tracer — QR 생성 신청 → QR 생성(1280)", () => {
 
     // ② 막힘 한 번에 하나 — 당첨일 빔 → 어제(지난 날짜) → 오늘(계산 줄)
     await panel.getByLabel("행사 이름").fill(eventName);
-    await panel.getByRole("button", { name: "QR 생성 신청" }).click();
+    // 막힌 1차는 aria-disabled(누름 무시) + 이유 글자(§7-1) — 이유가 1차의 접근 설명이다.
+    const panelPrimary = panel.getByRole("button", { name: "QR 생성 신청" });
+    await expect(panelPrimary).toHaveAttribute("aria-disabled", "true");
     await expect(panel.getByText("당첨일 비어 있음 · 당첨일 적기")).toBeVisible();
+    await expect(panelPrimary).toHaveAccessibleDescription("당첨일 비어 있음 · 당첨일 적기");
     await panel.getByLabel("당첨일").fill(kstToday(-1));
     await expect(panel.getByText("지난 날짜 · 당첨일 확인")).toBeVisible();
     await panel.getByLabel("당첨일").fill(today);
@@ -236,7 +239,7 @@ test.describe("04.3-10 tracer — QR 생성 신청 → QR 생성(1280)", () => {
 
     // ⑥ PM 알림함 · 수령자 링크에 그 경품
     await pmPage.goto("/notifications");
-    await expect(pmPage.getByText(`QR 생성 · ${eventName}`, { exact: true })).toBeVisible();
+    await expect(pmPage.getByRole("cell", { name: new RegExp(`QR 생성 · ${eventName}$`) })).toBeVisible();
     const recipient = await browser.newContext();
     const rPage = await recipient.newPage();
     await rPage.goto(link);

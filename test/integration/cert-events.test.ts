@@ -144,8 +144,8 @@ describe("getCreateGate", () => {
     await setSettingValue(SYSTEM_VIEWER, CERT_CONTACT_PHONE, "");
     await grantPmCertEvents();
     const pm = await makeUser(DEFAULT_ROLE_ID);
-    expect(await getCreateGate(SYSTEM_VIEWER)).toEqual({ contactMissing: true, canOpenSettings: true });
-    expect(await getCreateGate(pm)).toEqual({ contactMissing: true, canOpenSettings: false });
+    expect(await getCreateGate(SYSTEM_VIEWER)).toEqual({ contactMissing: true, canOpenSettings: true, linkExpireHours: 72 });
+    expect(await getCreateGate(pm)).toEqual({ contactMissing: true, canOpenSettings: false, linkExpireHours: 72 });
   });
 });
 

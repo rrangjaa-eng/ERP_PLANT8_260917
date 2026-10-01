@@ -344,8 +344,6 @@ export const CERT_LINK_EXPIRE_HOURS: SettingDef<number> = {
   hint: "링크는 당첨일 00:00에 열리고 · 당첨일 00:00과 QR 생성 가운데 늦은 때부터 이 시간이 지나면 링크가 닫힙니다.",
   namespace: "확인증",
   default: 72,
-  // 04.3-15: 유일한 독자였던 행사 만들기를 지웠다 — 04.3-10 QR 생성(Phase 4 안)이 다시 읽는다.
-  readBy: { phase: "4" },
 };
 
 export const CERT_RETENTION_YEARS: SettingDef<number> = {

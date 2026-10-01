@@ -1,4 +1,4 @@
-/* 04.3-04 Task 4 ④ — I3 행사 상세(읽기). 토큰만(docs/design/tokens.css). */
+/* 04.3-04 Task 4 ④ · 04.3-10 — I′3 행사 상세(머리 · QR · 경품 섹션). 토큰만(docs/design/tokens.css). */
 
 .header {
   display: flex;
@@ -70,4 +70,62 @@
   margin: 0;
   font-size: var(--fs-sm);
   color: var(--muted);
+}
+
+/* QR 섹션 라벨 — QR 생성 뒤 포커스가 오는 자리(tabindex -1). */
+.sectionLabel:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+/* 04.3-10 경품 표 — 경품명 줄바꿈(long-text), 숫자 열 우측 · 고정폭 숫자. */
+.wrapText {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.num {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 편집 셀 입력 — 옛 I2 · 리저브 대장 편집 셀과 같은 모양. */
+.cellInput,
+.cellInputNumeric,
+.cellSelect {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: var(--control-h);
+  padding: 0 var(--s-1);
+  border: 0;
+  border-bottom: var(--line-w) solid var(--accent);
+  background: var(--g-50);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+}
+
+.cellInputNumeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cellInput:focus-visible,
+.cellInputNumeric:focus-visible,
+.cellSelect:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.footerCell {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+/* 경품 표 아래 화면 1차(QR 생성 · 일괄 저장) — 오른쪽 하나, 막힘 이유는 그 옆. */
+.primaryRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--s-3);
 }

@@ -48,7 +48,7 @@ export type SidePanelProps = {
   opener: RefObject<HTMLElement | null>;
   /** 거짓이면 닫힐 때 여는 버튼으로 옮기지 않는다(성공 — 호출부가 새 행으로). 기본 참. */
   returnFocus?: boolean;
-  children: ReactNode;
+  children?: ReactNode;
   /** 행동 줄 — 2차 왼쪽 · 1차 오른쪽 순서로 넘긴다(DOM · Tab 순서 = 시각 순서). */
   actions: ReactNode;
 };

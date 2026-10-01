@@ -7,7 +7,13 @@ import { validateRrn } from "@/domain/certs/rrn";
 import { inspectSignaturePng } from "@/domain/certs/signature-png";
 import { CERT_CONSENT_VERSION } from "@/domain/certs/consent";
 import { certPrizeListed } from "@/domain/certs/prize-value";
-import { SUBMIT_RATE_WINDOW_MINUTES, certIpHash, submitBudgetScope, submitBudgets } from "@/domain/certs/submit-limit";
+import {
+  SUBMIT_RATE_WINDOW_MINUTES,
+  certIpHash,
+  submitBudgetScope,
+  submitBudgets,
+  type SubmitBudgets,
+} from "@/domain/certs/submit-limit";
 import { getSettingValue } from "@/domain/settings/registry";
 import { ACTION_LOG_OPTIONAL_TYPES, CERT_RETENTION_YEARS } from "@/domain/settings/keys";
 import { recordAction, type RecordActionDeps } from "@/domain/action-log/record";
@@ -20,12 +26,15 @@ import type { DbOrTx } from "@/repositories/document-counters";
 import { encrypt } from "@/lib/crypto";
 import { env } from "@/lib/env";
 import { log } from "@/lib/log";
-import { kstDayStart, kstYear } from "@/lib/kst-date";
+import { kstDayStart, kstToday, kstYear } from "@/lib/kst-date";
 import { getSignatureStore, type SignatureStore } from "@/lib/storage/signature-store";
 import { findUserById } from "@/repositories/users";
 import { findEventByTokenHash, lockEventRow, type CertEventRow } from "@/repositories/cert-events";
 import { listPrizesForEvent, type CertPrizeRow } from "@/repositories/cert-prizes";
+import { insertEventNotifications as defaultInsertEventNotifications } from "@/repositories/notifications";
+import { listActiveUserIdsAllowed } from "@/repositories/permissions";
 import {
+  countActiveSubmissionsByEvent,
   countRecentSubmissionsByEvent,
   countRecentSubmissionsByIp,
   deleteSignatureUploadIntent,
@@ -177,6 +186,8 @@ export type SubmitCertificateDeps = {
   // 테스트가 커밋 전 · 뒤 예외를 끼운다(커밋 결과 불명 갈래).
   withTransaction: typeof withTransaction;
   findSubmissionBySignatureKey: typeof findSubmissionBySignatureKey;
+  // 테스트가 제출 한도 알림 INSERT 실패를 끼운다(같은 트랜잭션 — 제출도 되돌려진다).
+  insertEventNotifications: typeof defaultInsertEventNotifications;
 };
 
 // 저장 트랜잭션의 판정 — stored만 이 요청이 쓴 것이다.
@@ -241,18 +252,56 @@ async function savedFromRow(row: CertSubmissionRow, event: CertEventRow, tx?: Db
   return savedResult(row, prize, event);
 }
 
-// 창 안 IP · 행사 셈을 한도와 비교한다. 막히면 로그 한 줄(IP 가명 없음)과 throttled.
+// 창 안 IP · 행사 셈을 한도와 비교한다. 막히면 로그 한 줄(IP 가명 없음)과 throttled. 행사 창 셈 · 한도는 잠근 뒤
+// 제출 한도 알림(04.3-10)이 다시 쓴다.
 async function throttleScope(
   input: { eventId: string; ipHash: string; since: Date; prizes: CertPrizeRow[] },
   tx?: DbOrTx,
-): Promise<"event" | "ip" | null> {
+): Promise<{ scope: "event" | "ip" | null; eventCount: number; budgets: SubmitBudgets }> {
   const [ip, event] = await Promise.all([
     countRecentSubmissionsByIp(SYSTEM_VIEWER, { eventId: input.eventId, ipHash: input.ipHash, since: input.since }, tx),
     countRecentSubmissionsByEvent(SYSTEM_VIEWER, { eventId: input.eventId, since: input.since }, tx),
   ]);
-  const scope = submitBudgetScope({ ip, event }, submitBudgets(winnerTotal(input.prizes)));
+  const budgets = submitBudgets(winnerTotal(input.prizes));
+  const scope = submitBudgetScope({ ip, event }, budgets);
   if (scope) log.warn("cert.submit_throttled", { scope, eventId: input.eventId });
-  return scope;
+  return { scope, eventCount: event, budgets };
+}
+
+// 04.3-10(새 흐름 설계 /cso E10 · T-04.3-428) — 이번 저장으로 행사 15분 창 셈이 행사 한도와 같아졌거나 누적(대조 제외 뺀)
+// 제출이 알림 임계에 처음 닿았으면, 받는 사람(certs.qr 쓰기 ∧ certs.events 보기 · 보관 안 됨)마다 알림 한 행을 같은 tx에.
+// 중복 키(cert_submit_limit · cert_event · 행사 id · 받는 사람 · 회차 1)라 행사당 한 번. 받는 사람은 그때만 같은 tx로
+// 읽는다(E27). 권한 판정이 아니라 받는 사람 조회다. 문장에 가액 · 수령자가 없다. 누적은 알림만 — 제출을 막지 않는다.
+async function alertSubmitLimit(
+  input: { event: CertEventRow; windowCount: number; budgets: SubmitBudgets; now: Date },
+  tx: DbOrTx,
+  insert: typeof defaultInsertEventNotifications,
+): Promise<void> {
+  const reached =
+    input.windowCount === input.budgets.event ||
+    (await countActiveSubmissionsByEvent(SYSTEM_VIEWER, input.event.id, tx)) === input.budgets.alertTotal;
+  if (!reached) return;
+  const recipients = await listActiveUserIdsAllowed(
+    SYSTEM_VIEWER,
+    [
+      { menu: "certs.qr", action: "write" },
+      { menu: "certs.events", action: "view" },
+    ],
+    tx,
+  );
+  await insert(
+    SYSTEM_VIEWER,
+    recipients.map((recipientId) => ({
+      conditionKind: "cert_submit_limit",
+      entity: "cert_event",
+      entityId: input.event.id,
+      recipientId,
+      round: 1,
+      referenceDate: kstToday(input.now),
+      message: `제출 한도 도달 · ${input.event.name}`,
+    })),
+    tx,
+  );
 }
 
 export async function submitCertificate(
@@ -301,7 +350,7 @@ export async function submitCertificate(
   // (f) 잠금 전 셈(설계 /cso E10) — 한도를 넘은 요청은 업로드 · 잠금 대기 없이 거절한다.
   const ipHash = certIpHash(env.BETTER_AUTH_SECRET, event.id, ip);
   const since = new Date(now.getTime() - SUBMIT_RATE_WINDOW_MINUTES * 60 * 1000);
-  if (await withTimeoutConversion(() => throttleScope({ eventId: event.id, ipHash, since, prizes }))) {
+  if ((await withTimeoutConversion(() => throttleScope({ eventId: event.id, ipHash, since, prizes }))).scope) {
     return { kind: "throttled" };
   }
 
@@ -364,9 +413,8 @@ export async function submitCertificate(
       }
       if (deliveryOf(lockedPrize) !== checkedDelivery) return { kind: "prizeGone", prizes: publicPrizes(lockedPrizes) };
 
-      if (await throttleScope({ eventId: event.id, ipHash, since, prizes: lockedPrizes }, tx)) {
-        return { kind: "throttled" };
-      }
+      const limit = await throttleScope({ eventId: event.id, ipHash, since, prizes: lockedPrizes }, tx);
+      if (limit.scope) return { kind: "throttled" };
 
       const { number: certNo } = await allocateDocumentNumber(
         SYSTEM_VIEWER,
@@ -396,6 +444,11 @@ export async function submitCertificate(
         tx,
       );
       await deleteSignatureUploadIntent(SYSTEM_VIEWER, objectKey, tx);
+      await alertSubmitLimit(
+        { event: lockedEvent, windowCount: limit.eventCount + 1, budgets: limit.budgets, now },
+        tx,
+        deps.insertEventNotifications ?? defaultInsertEventNotifications,
+      );
 
       // 제출 로그도 같은 트랜잭션 — 실패하면 제출 전체가 롤백된다(최종 리뷰 B5).
       await recordAction(

@@ -189,3 +189,65 @@ test.describe("사람 목록 로그인 상태 배지 · 행 머리글 (04.4-05, 
     expect(parseFloat(head.borderBottomWidth)).toBe(lineStrong);
   });
 });
+
+test.describe("PC 1280 — 「상세」와 「삭제」 사이가 --s-4 이상이다 (DR-7)", () => {
+  test("한 행의 「상세」 링크 오른쪽 끝과 「삭제」 버튼 왼쪽 끝 간격이 --s-4 이상이다", async ({ page }) => {
+    // 다른 열이 긴 행이 있어도 「삭제」가 「상세」 아래로 내려가지 않는다(wrap이면 표가 이 칸을 최소 폭으로 눌렀다).
+    await createAccount(SYSTEM_VIEWER, {
+      email: `e2e-${"x".repeat(70)}-${Date.now()}@${"long".repeat(15)}.test`,
+      name: "가".repeat(60),
+      roleId: DEFAULT_ROLE_ID,
+    });
+    await loginAsAdmin(page);
+    const email = await registerPerson(page, "간격대상");
+    const gapToken = await tokenNumber(page, "--s-4");
+
+    const row = personRow(page, email);
+    const detail = await row.getByRole("link", { name: "상세" }).boundingBox();
+    const remove = await row.getByRole("button", { name: "삭제" }).boundingBox();
+    if (!detail || !remove) throw new Error("「상세」 또는 「삭제」 상자를 잴 수 없다");
+    const gap = remove.x - (detail.x + detail.width);
+    expect(gap, `「상세」↔「삭제」 간격 ${gap}px`).toBeGreaterThanOrEqual(gapToken - 0.5);
+    // 칸이 눌려도 「상세」 글자가 두 줄(「상」/「세」)로 쪼개지지 않는다.
+    const detailLines = await row.getByRole("link", { name: "상세" }).evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      return new Set(Array.from(range.getClientRects()).map((rect) => Math.round(rect.top))).size;
+    });
+    expect(detailLines, "「상세」 글자 줄 수").toBe(1);
+  });
+});
+
+test.describe("PC — 「삭제」 확인 줄이 표를 가로로 넘치게 하지 않는다 (/review Red Team)", () => {
+  for (const width of [768, 1024, 1280]) {
+    test(`${width}: 「삭제」를 누른 뒤에도 페이지 가로 넘침이 없다`, async ({ page }) => {
+      // 다른 열이 긴 행이 있어야 동작 칸이 눌린다 — 앞 테스트가 남긴 데이터에 기대지 않는다.
+      await createAccount(SYSTEM_VIEWER, {
+        email: `e2e-${"x".repeat(70)}-${Date.now()}@${"long".repeat(15)}.test`,
+        name: "가".repeat(60),
+        roleId: DEFAULT_ROLE_ID,
+      });
+      await page.setViewportSize({ width, height: 800 });
+      await loginAsAdmin(page);
+      const email = await registerPerson(page, `확인줄대상${width}`);
+      const row = personRow(page, email);
+      await row.getByRole("button", { name: "삭제" }).click();
+      await expect(row.getByRole("button", { name: "취소" })).toBeVisible();
+      const overflow = await page.evaluate(() => {
+        const scroller = document.scrollingElement ?? document.documentElement;
+        return scroller.scrollWidth - scroller.clientWidth;
+      });
+      expect(overflow, `${width}px 가로 넘침 ${overflow}px`).toBeLessThanOrEqual(0);
+      // 조상이 넘침을 가려도 잡히게 표 오른쪽 끝이 부모 안에 있는지 본다.
+      const tableOverflow = await row.evaluate((element) => {
+        const table = element.closest("table");
+        const parent = table?.parentElement;
+        if (!table || !parent) return Number.POSITIVE_INFINITY;
+        const parentRect = parent.getBoundingClientRect();
+        const style = getComputedStyle(parent);
+        return table.getBoundingClientRect().right - (parentRect.right - parseFloat(style.paddingRight));
+      });
+      expect(tableOverflow, `${width}px 표가 부모 밖으로 ${tableOverflow}px`).toBeLessThanOrEqual(0.5);
+    });
+  }
+});

@@ -40,8 +40,14 @@
   font-weight: var(--fw-medium);
   font-size: var(--fs-sm);
   text-decoration: underline;
-  text-underline-offset: 2px;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
   cursor: pointer;
+}
+
+/* §4-4 · §7-1 3차 밑줄 1px → hover 2px. */
+.action:hover {
+  text-decoration-thickness: var(--line-w-strong);
 }
 
 /* 폰: 하단 탭 위(§7-6). */

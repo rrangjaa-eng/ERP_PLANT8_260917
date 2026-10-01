@@ -225,6 +225,8 @@
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
   cursor: pointer;
 }
 
@@ -236,6 +238,11 @@
   font-weight: var(--fw-medium);
   line-height: var(--lh-head);
   color: var(--faint);
+}
+
+/* §4-4 · §7-1 3차 밑줄 1px → hover 2px. */
+.restoreAction:hover:not([aria-disabled="true"]) {
+  text-decoration-thickness: var(--line-w-strong);
 }
 
 /* 04-04(나) — 저장 거부 요약(--danger). */

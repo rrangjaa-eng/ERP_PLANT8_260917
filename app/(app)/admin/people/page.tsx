@@ -28,19 +28,21 @@ export default async function PeoplePage({
   if (!(await can(session.viewer, "admin.people", "view"))) notFound();
 
   const { new: newParam } = await searchParams;
-  // §6-1: 목록이 화면이고 등록은 목록 머리글의 행동이다 — 기본 진입에는
-  // 폼이 없다(D-39, DECISIONS.md 2026-09-21).
-  const showForm = newParam === "1";
 
-  const [people, roles, orgUnits, teams, canArchive] = await Promise.all([
+  const [people, roles, orgUnits, teams, canArchive, canWrite] = await Promise.all([
     listPeople(session.viewer),
     listRoles(session.viewer),
     listOrgUnits(session.viewer),
     listTeams(session.viewer),
     can(session.viewer, "admin.archive", "write"),
+    can(session.viewer, "admin.people", "write"),
   ]);
 
-  const roleNameById = new Map(roles.map((role) => [role.id, role.name]));
+  // §6-1: 목록이 화면이고 등록은 목록 머리글의 행동이다 — 기본 진입에는
+  // 폼이 없다(D-39, DECISIONS.md 2026-09-21). 쓰기 권한이 없으면 제출이 거부될
+  // 폼을 그리지 않는다(표시 조건 — 서버 판정은 createAccount가 따로 한다).
+  const showForm = newParam === "1" && canWrite;
+
   const orgUnitNameById = new Map(orgUnits.map((org) => [org.id, org.name]));
   const teamOptions = teams.map((team) => ({
     id: team.id,
@@ -48,13 +50,34 @@ export default async function PeoplePage({
     orgUnitName: orgUnitNameById.get(team.orgUnitId) ?? "",
   }));
 
+  // 보이는 열은 투영된 DTO의 키 유무로 정한다 — PERSON_DTO_SPEC이 가린 키는 결과에 없다(person-status.ts와 같은 관례).
+  const has = (key: string) => people.some((person) => key in person);
+  type Person = (typeof people)[number];
+  const textColumns: { key: string; label: string; value: (person: Person) => string | null | undefined }[] = [];
+  if (has("name")) textColumns.push({ key: "name", label: "이름", value: (person) => person.name });
+  if (has("email")) textColumns.push({ key: "email", label: "이메일", value: (person) => person.email });
+  // 계급 이름은 role.value 소관이다 — roleId(person.value)만 있으면 계급 목록도 가려져 이름을 얻을 수 없다.
+  if (has("roleName")) {
+    textColumns.push({
+      key: "role",
+      label: "계급",
+      value: (person) => person.roleName ?? "—",
+    });
+  }
+  if (has("currentTeamName")) {
+    textColumns.push({ key: "team", label: "현재 소속", value: (person) => person.currentTeamName ?? "—" });
+  }
+  const showStatus = has("archivedAt") || has("firstLoginAt") || has("passwordIsTemporary");
+  const showActions = has("id");
+  const visibleColumnCount = textColumns.length + (showStatus ? 1 : 0) + (showActions ? 1 : 0);
+
   return (
     <>
       <PageHeader title="사람" />
 
       {showForm ? (
         <PersonForm roles={roles} teams={teamOptions} cancelHref="/admin/people" />
-      ) : people.length > 0 ? (
+      ) : canWrite && people.length > 0 ? (
         // §6-1 「새 지출결의」와 같은 자리 — 목록 머리글의 등록 행동. 폼이
         // 열려 있으면 그 폼의 「취소」가 같은 역할을 하므로 이 줄 자체가 없다.
         // 목록이 비면 §7-7 EMPTY가 같은 이름·같은 곳의 「다음 한 수」를 이미
@@ -67,86 +90,102 @@ export default async function PeoplePage({
       ) : null}
 
       {people.length === 0 ? (
-        <ListEmpty message="등록된 사람이 없습니다" action={{ label: "사람 등록", href: "/admin/people?new=1#person-form" }} />
+        <ListEmpty
+          message="등록된 사람이 없습니다"
+          action={canWrite ? { label: "사람 등록", href: "/admin/people?new=1#person-form" } : undefined}
+        />
+      ) : textColumns.length === 0 ? (
+        // 사람 · 계급 · 팀 정보가 모두 꺼진 계급(새 계급 기본값) — 보는 사람이 바꿀 수 없는 잠김이라 행동이 없다.
+        // 사람이 없다는 말이 아니다(보는 사람 자신이 늘 1행 — SYSTEM.md §7-3 · §8-3, DECISIONS.md 2026-09-30).
+        <ListEmpty message="정보 노출표 · 사람 정보 잠김" />
       ) : (
         <table className={`${styles.table} ${styles.peopleTable}`}>
           <caption className="sr-only">사람</caption>
           <thead>
             <tr>
-              <th scope="col">이름</th>
-              <th scope="col" className={styles.prioP2}>
-                이메일
-              </th>
-              <th scope="col" className={styles.prioP2}>
-                계급
-              </th>
-              <th scope="col" className={styles.prioP2}>
-                현재 소속
-              </th>
-              <th scope="col">상태</th>
-              <th scope="col">동작</th>
+              {textColumns.map((column, columnIndex) => (
+                <th key={column.key} scope="col" className={columnIndex === 0 ? undefined : styles.prioP2}>
+                  {column.label}
+                </th>
+              ))}
+              {showStatus ? <th scope="col">상태</th> : null}
+              {showActions ? <th scope="col">동작</th> : null}
             </tr>
           </thead>
           <tbody>
             {people.map((person, index) => {
               // 행 머리글 id는 순번으로 — person.value가 꺼진 계급의 DTO에는 id가 없다(UI-SPEC 접근성 관계 ①).
               const nameId = `people-row-${index}-name`;
-              const roleName = person.roleName ?? roleNameById.get(person.roleId ?? "") ?? "—";
-              const teamName = person.currentTeamName ?? "—";
               const loginStatus = personLoginStatus(person);
+              const foldedValues = textColumns.slice(1);
               return (
                 <Fragment key={person.id ?? nameId}>
                   <tr>
-                    <th scope="row" id={nameId}>
-                      {person.name}
-                    </th>
-                    <td className={styles.prioP2}>{person.email}</td>
-                    <td className={styles.prioP2}>{roleName}</td>
-                    <td className={styles.prioP2}>{teamName}</td>
-                    <td>
-                      {loginStatus.kind === "archived" ? (
-                        <StatusTag kind="muted" variant="text">
-                          보관됨
-                        </StatusTag>
-                      ) : loginStatus.badges.length === 0 ? (
-                        "—"
+                    {textColumns.map((column, columnIndex) =>
+                      // 이름이 가려진 계급은 첫 보이는 문자 칸이 행 머리글 — UI-SPEC 접근성 관계 ①의 이름 자리(§7-3 가려진 열은 그리지 않는다).
+                      columnIndex === 0 ? (
+                        <th key={column.key} scope="row" id={nameId}>
+                          {column.value(person)}
+                        </th>
                       ) : (
-                        // D8-07: PC는 · 로 한 줄, 폰은 구분자를 숨기고 세로로 쌓는다.
-                        <span className={styles.badges}>
-                          {loginStatus.badges.map((badge, badgeIndex) => (
-                            <Fragment key={badge}>
-                              {badgeIndex > 0 ? <span className={styles.badgeSep}> · </span> : null}
-                              <StatusTag kind="muted" variant="text">
-                                {badge}
-                              </StatusTag>
-                            </Fragment>
-                          ))}
-                        </span>
-                      )}
-                    </td>
-                    <td>
-                      {/* person.value가 꺼진 계급의 DTO에는 id가 없다 — 갈 상세·보관할 대상이 없어 「상세」·삭제를 그리지 않는다. */}
-                      {person.id ? (
-                        <>
-                          <Link href={`/admin/people/${person.id}`} className={styles.detailLink}>
-                            상세
-                          </Link>
-                          {!person.archivedAt && canArchive ? (
-                            <PersonDeleteButton userId={person.id} name={person.name} />
-                          ) : null}
-                        </>
-                      ) : null}
-                    </td>
+                        <td key={column.key} className={styles.prioP2}>
+                          {column.value(person)}
+                        </td>
+                      ),
+                    )}
+                    {showStatus ? (
+                      <td>
+                        {loginStatus.kind === "archived" ? (
+                          <StatusTag kind="muted" variant="text">
+                            보관됨
+                          </StatusTag>
+                        ) : loginStatus.badges.length === 0 ? (
+                          "—"
+                        ) : (
+                          // D8-07: PC는 · 로 한 줄, 폰은 구분자를 숨기고 세로로 쌓는다.
+                          <span className={styles.badges}>
+                            {loginStatus.badges.map((badge, badgeIndex) => (
+                              <Fragment key={badge}>
+                                {badgeIndex > 0 ? <span className={styles.badgeSep}> · </span> : null}
+                                <StatusTag kind="muted" variant="text">
+                                  {badge}
+                                </StatusTag>
+                              </Fragment>
+                            ))}
+                          </span>
+                        )}
+                      </td>
+                    ) : null}
+                    {showActions ? (
+                      <td>
+                        {/* person.value가 꺼진 계급의 DTO에는 id가 없다 — 갈 상세·보관할 대상이 없어 「상세」·삭제를 그리지 않는다. */}
+                        {person.id ? (
+                          <span className={styles.rowActions}>
+                            <Link href={`/admin/people/${person.id}`} className={styles.detailLink}>
+                              상세
+                            </Link>
+                            {!person.archivedAt && canArchive ? (
+                              <PersonDeleteButton userId={person.id} name={person.name} />
+                            ) : null}
+                          </span>
+                        ) : null}
+                      </td>
+                    ) : null}
                   </tr>
-                  {/* §7-3 폰 칸 접기: P2 값의 유일한 출처라 aria-hidden을 두지 않는다(UI-SPEC ④). */}
-                  <tr className={styles.collapsedRow}>
-                    <td colSpan={6} headers={nameId} className={styles.collapsedCell}>
-                      <span className="sr-only">이메일 </span>
-                      {person.email} · <span className="sr-only">계급 </span>
-                      {roleName} · <span className="sr-only">현재 소속 </span>
-                      {teamName}
-                    </td>
-                  </tr>
+                  {/* §7-3 폰 칸 접기: P2 값의 유일한 출처라 aria-hidden을 두지 않는다(UI-SPEC ④). 구분자는 보이는 값 사이에만(DR-5). */}
+                  {foldedValues.length > 0 ? (
+                    <tr className={styles.collapsedRow}>
+                      <td colSpan={visibleColumnCount} headers={nameId} className={styles.collapsedCell}>
+                        {foldedValues.map((column, foldedIndex) => (
+                          <Fragment key={column.key}>
+                            {foldedIndex > 0 ? " · " : null}
+                            <span className="sr-only">{column.label} </span>
+                            {column.value(person)}
+                          </Fragment>
+                        ))}
+                      </td>
+                    </tr>
+                  ) : null}
                 </Fragment>
               );
             })}

@@ -578,12 +578,19 @@ export function mergeRestoredEdits(
     const patch = restoredCellPatch(column, value);
     const base = readLineBase(edits[`${owner}:base`]);
     if (!patch || !base) continue;
-    // /review 적대 검토(PR #135) — 거래처를 가린 채 보관한 기준값의 거래처(null)는 본 적 없는 값이다. 지금 줄의 기준값으로
-    // 바꿔, 아무도 바꾸지 않은 거래처 칸에 충돌이 붙지 않게 한다. 가림 여부는 지금 줄(DTO)을 따른다.
+    // /review 적대 검토(PR #135) — 보관할 때나 지금 거래처가 가려졌으면 기준값의 거래처는 본 적 없는(또는 볼 수 없는) 값이다.
+    // 지금 줄의 기준값으로 바꿔, 아무도 바꾸지 않은 거래처 칸에 충돌이 붙거나 다음 보관이 거래처를 편집으로 남기지 않게 한다.
+    // 가림 여부는 지금 줄(DTO)을 따른다.
     const { vendorHidden, ...stored } = base;
     next = next.map((line) =>
       line.id === owner
-        ? { ...line, ...patch, ...stored, baseline: vendorHidden ? { ...stored.baseline, vendorId: line.baseline.vendorId } : stored.baseline, dirty: true }
+        ? {
+            ...line,
+            ...patch,
+            ...stored,
+            baseline: vendorHidden || line.vendorHidden ? { ...stored.baseline, vendorId: line.baseline.vendorId } : stored.baseline,
+            dirty: true,
+          }
         : line,
     );
   }

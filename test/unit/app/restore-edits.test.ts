@@ -119,6 +119,24 @@ describe("복원 — 보관할 때의 기준값으로 충돌 판정(검토 8)", 
     expect(restored).not.toHaveProperty("vendorHidden");
   });
 
+  // /review 최종 패스 P3 — 거래처가 보이던 때의 보관본을 가린 줄에 복원하면 거래처 기준값도 지금(가린) 값이다.
+  // 그렇지 않으면 다음 보관이 null 거래처를 편집으로 남겨, 다시 보이게 된 화면의 복원이 DB 거래처를 지운다.
+  it("줄 칸: 거래처가 보이던 때의 편집을 가린 줄에 복원해도 거래처를 편집으로 남기지 않는다", () => {
+    const vendorId = "vendor-1";
+    const shown = { ...savedLine(1, 1000), vendorId, baseline: { ...savedLine(1, 1000).baseline, vendorId } };
+    const stash = JSON.parse(JSON.stringify(editsSnapshot([{ ...shown, itemName: "배너 고침", dirty: true }], null, PERIOD_V1, null, null))) as Record<
+      string,
+      unknown
+    >;
+
+    const hidden: Line = { ...savedLine(1, 1000), vendorHidden: true };
+    const [restored] = mergeRestoredEdits([hidden], stash, "print", KIND_CELLS).lines;
+    if (!restored) throw new Error("복원 줄이 없습니다");
+
+    expect(restored).toMatchObject({ itemName: "배너 고침", vendorId: null, vendorHidden: true, baseline: { vendorId: null } });
+    expect(editsSnapshot([restored], null, PERIOD_V1, null, null)).not.toHaveProperty("line-1:vendor");
+  });
+
   it("새 줄: 모양이 틀린 원본 id는 버린다(서버 uuid 검증에 저장 전체가 막히지 않게)", () => {
     const newId = "6f1c2b8e-3d4a-4f5b-9c6d-7e8f9a0b1c2d";
     for (const duplicatedFrom of ["not-a-uuid", 123]) {

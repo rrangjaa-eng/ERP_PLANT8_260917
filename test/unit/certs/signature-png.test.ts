@@ -7,6 +7,7 @@ import {
   SIGNATURE_MAX_PNG_BYTES,
 } from "@/domain/certs/signature-png";
 import { checkPayloadSize } from "@/lib/actions/payload-size";
+import { submitCertificateSchema } from "@/app/c/[token]/submit-schema";
 import {
   chunkOffsets,
   encodePng,
@@ -222,12 +223,11 @@ describe("inspectSignaturePng — 크기 상한(Codex #27)", () => {
 });
 
 describe("본문 한도 예산 — 서명 상한 + 나머지 칸 최대치가 262,144바이트 아래", () => {
-  // 공개 제출 액션 스키마(app/c/[token]/submit-schema.ts)의 칸 최대 길이. 이름 · 주소는 3바이트 한글.
+  // 공개 제출 액션 스키마(app/c/[token]/submit-schema.ts)의 칸과 칸마다 최대 길이. 이름 · 주소는 3바이트 한글.
   function maxPayload(signatureBytes: number) {
     return {
       token: "t".repeat(128),
-      rowId: "00000000-0000-4000-8000-000000000000",
-      proof: "p".repeat(128),
+      prizeId: "00000000-0000-4000-8000-000000000000",
       name: "가".repeat(40),
       rrnFront6: "9".repeat(6),
       rrnBack7: "9".repeat(7),
@@ -238,7 +238,6 @@ describe("본문 한도 예산 — 서명 상한 + 나머지 칸 최대치가 26
       idempotencyKey: "k".repeat(64),
       consentVersion: "가".repeat(20),
       retentionYears: 99,
-      winnerVersion: 2_147_483_647,
       rrnRecheckConfirmed: true,
     };
   }
@@ -253,5 +252,11 @@ describe("본문 한도 예산 — 서명 상한 + 나머지 칸 최대치가 26
     const payload = maxPayload(SIGNATURE_MAX_PNG_BYTES + 1);
     expect(payload.signaturePngBase64.length).toBeGreaterThan(SIGNATURE_BASE64_MAX_LENGTH);
     expect(checkPayloadSize(payload)).toEqual({ ok: true });
+  });
+
+  it("표본 칸은 submitCertificateSchema 칸과 같고, 상한 표본이 스키마를 통과한다(04.3-15 R7)", () => {
+    const payload = maxPayload(SIGNATURE_MAX_PNG_BYTES);
+    expect(Object.keys(payload).sort()).toEqual(Object.keys(submitCertificateSchema.shape).sort());
+    expect(submitCertificateSchema.safeParse(payload).success).toBe(true);
   });
 });

@@ -60,6 +60,7 @@ test("차등 대조군 — 다른 가액(88,888 · 612,345)만 둔 행사의 같
   expect(actionPostCount).toBeGreaterThanOrEqual(1);
   expect(corpus).toContain("차등-가");
   expect(scanForLeaks(corpus, PATTERNS)).toEqual([]);
+  expect(scanForLeaks(corpus, leakPatternsFor([88_888, 612_345]))).toEqual([]);
 });
 
 test("서버가 실제로 돌려준 칸 오류 응답(이름 201자로 바꾼 본문)에도 가액 패턴 0건", async ({ page }) => {

@@ -500,7 +500,7 @@ describe("경합(E13) — 잠금을 거치는 실제 함수끼리 겹쳐도 500 
       name: "이도윤",
       phone: "010-1111-2222",
       quantity: "2",
-    });
+    }, { ip: null });
     await waitForLockWaiter(pool);
     pause.release.resolve();
     expect(await closing).toEqual({ kind: "closed", submitted: 4 });
@@ -592,8 +592,8 @@ describe("excludeSubmission — 「대조 제외」(E1 b · 게이트 = 쓰기, 
     expect(review.submission.rrnMasked).toBeNull();
     expect(review.submission.signatureDataUrl).toBeNull();
 
-    expect(await revealRrn(manager, f.a1)).toEqual({ kind: "denied" });
-    expect(await correctSubmission(manager, f.a1, { version: row?.version ?? 0, name: "김하늘", phone: "010-9999-0000" })).toEqual({
+    expect(await revealRrn(manager, f.a1, { ip: null })).toEqual({ kind: "denied" });
+    expect(await correctSubmission(manager, f.a1, { version: row?.version ?? 0, name: "김하늘", phone: "010-9999-0000" }, { ip: null })).toEqual({
       kind: "denied",
     });
     expect(await getCertificatePrint(manager, f.a1, { ip: null })).toEqual({ kind: "notFound" });

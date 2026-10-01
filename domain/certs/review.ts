@@ -9,8 +9,6 @@ import { isCertFeatureEnabled } from "@/domain/certs/feature";
 import { formatPhone, formatSubmittedAtKst, maskRrn, normalizeName, normalizePhone } from "@/domain/certs/format";
 import { validateRrn } from "@/domain/certs/rrn";
 import { certRrnPurgeTarget } from "@/domain/certs/prize-value";
-import { getSettingValue } from "@/domain/settings/registry";
-import { CERT_PRIVACY_IDLE_MINUTES } from "@/domain/settings/keys";
 import { withTransaction } from "@/lib/db-transaction";
 import { decrypt as defaultDecrypt, encrypt } from "@/lib/crypto";
 import { getSignatureStore, type SignatureStore } from "@/lib/storage/signature-store";
@@ -125,7 +123,6 @@ export type SubmissionForReviewResult =
       submission: Partial<CertSubmissionReviewDto>;
       canReveal: boolean;
       canCorrect: boolean;
-      idleMinutes: number;
       // 04.3-17 — 주민등록번호 줄 ` · 파기 대상` 표시(N10 a — 표시만). 가액 숫자는 싣지 않고 판정 결과만.
       purgeTarget: boolean;
       // 04.3-17 ⑥-b — 주민등록번호 암호문이 비었다(rrn_encrypted IS NULL — 제외 여부와 무관한 키 하나).
@@ -200,7 +197,6 @@ export async function getSubmissionForReview(
     submission,
     canReveal: !row.rrnCleared && !excluded && (await visible(viewer, UNMASKED_ITEM)),
     canCorrect: !excluded && (await can(viewer, MENU, "write")),
-    idleMinutes: await getSettingValue(CERT_PRIVACY_IDLE_MINUTES),
     purgeTarget: !row.rrnCleared && !excluded && certRrnPurgeTarget(row.unitValueKrw, row.quantity),
     rrnCleared: row.rrnCleared,
     canExclude: !excluded && (await canWriteSubmissions(viewer)),
@@ -311,7 +307,13 @@ export type RevealRrnResult = { kind: "revealed"; rrn: string } | { kind: "denie
 // 전체 보기 — vendors revealAccountNumber와 같은 순서(권한 → 기록 → 복호화)를 한 트랜잭션에서.
 // 행은 FOR SHARE로 잠가 읽고, mask_reveal은 잠금을 쥔 같은 tx 연결로 쓴다(결정 ⑨ — 전역 풀의
 // 두 번째 연결을 잡지 않는다). 기록이 실패하면 그대로 던진다(롤백 · 복호화 없음).
-export async function revealRrn(viewer: Viewer, id: string, deps?: Partial<RevealRrnDeps>): Promise<RevealRrnResult> {
+// 04.3-14 사용자 결정 ⑤ — mask_reveal detail에 접속지 · 확인증 id(번호 · 이름 · 전화 값은 싣지 않는다).
+export async function revealRrn(
+  viewer: Viewer,
+  id: string,
+  access: CertAccess,
+  deps?: Partial<RevealRrnDeps>,
+): Promise<RevealRrnResult> {
   if (!(await isCertFeatureEnabled())) return { kind: "notFound" };
   if (isCertPrivacyBarredRole(viewer)) return { kind: "denied" };
   if (!(await canRevealRrn(viewer))) return { kind: "denied" };
@@ -324,7 +326,7 @@ export async function revealRrn(viewer: Viewer, id: string, deps?: Partial<Revea
 
     await recordAction(
       viewer,
-      { actionType: "mask_reveal", entity: ENTITY, entityId: id },
+      { actionType: "mask_reveal", entity: ENTITY, entityId: id, detail: { ip: access.ip, submissionId: id } },
       { tx, appendActionLog: deps?.appendActionLog },
     );
     const plain = decrypt(row.rrnEncrypted);
@@ -339,6 +341,7 @@ export type RecordRrnReopenResult = { kind: "recorded" } | { kind: "denied" } | 
 export async function recordRrnReopen(
   viewer: Viewer,
   id: string,
+  access: CertAccess,
   deps?: Partial<RecordRrnReopenDeps>,
 ): Promise<RecordRrnReopenResult> {
   if (!(await isCertFeatureEnabled())) return { kind: "notFound" };
@@ -351,7 +354,7 @@ export async function recordRrnReopen(
 
   await recordAction(
     viewer,
-    { actionType: "mask_reveal", entity: ENTITY, entityId: id },
+    { actionType: "mask_reveal", entity: ENTITY, entityId: id, detail: { ip: access.ip, submissionId: id } },
     { appendActionLog: deps?.appendActionLog },
   );
   return { kind: "recorded" };
@@ -410,6 +413,7 @@ export async function correctSubmission(
   viewer: Viewer,
   id: string,
   input: CorrectSubmissionInput,
+  access: CertAccess,
   deps?: Partial<CorrectSubmissionDeps>,
 ): Promise<CorrectSubmissionResult> {
   if (!(await isCertFeatureEnabled())) return { kind: "notFound" };
@@ -501,7 +505,8 @@ export async function correctSubmission(
     if (count === 0) return false;
     await recordAction(
       viewer,
-      { actionType: "cert_correct", entity: ENTITY, entityId: id, detail: { fields } },
+      // 04.3-14 사용자 결정 ⑤ — 칸 이름에 접속지 · 확인증 id를 더한다(값은 싣지 않는다).
+      { actionType: "cert_correct", entity: ENTITY, entityId: id, detail: { fields, ip: access.ip, submissionId: id } },
       { tx, appendActionLog: deps?.appendActionLog },
     );
     return true;

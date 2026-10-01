@@ -3,12 +3,14 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { clientIp } from "@/lib/client-ip";
+import { privacyLoginHref } from "@/lib/login-next";
 import { getSessionId, requireSession } from "@/lib/viewer";
 import { assertCertFeatureEnabled } from "@/lib/certs/feature-guard";
 import { touchPrivacySession } from "@/domain/certs/privacy-session";
 import { getSubmissionForReview } from "@/domain/certs/review";
 import { formatSubmittedAtKst } from "@/domain/certs/format";
 import { ReviewForm } from "./review-form";
+import { PrivacyIdleLogout } from "./privacy-idle-logout";
 import styles from "./review.module.css";
 
 export const dynamic = "force-dynamic";
@@ -21,16 +23,22 @@ const loadReview = cache(async (id: string) => {
   await assertCertFeatureEnabled();
   const { viewer } = await requireSession();
 
+  // 끊기면 로그인 화면에 이유 줄 · 다시 로그인하면 이 I4로(04.3-14 U5 a).
   const sessionId = await getSessionId();
-  if (!sessionId) redirect("/login");
+  if (!sessionId) redirect(privacyLoginHref(reviewPath(id)));
   const touched = await touchPrivacySession(viewer, sessionId);
   if (touched.kind === "notAllowed") notFound();
-  if (touched.kind === "expired") redirect("/login");
+  if (touched.kind === "expired") redirect(privacyLoginHref(reviewPath(id)));
 
   const result = await getSubmissionForReview(viewer, id, { ip: clientIp(await headers()) });
   if (result.kind === "notFound") notFound();
-  return result;
+  // 무입력 화면 이동의 한도(분)는 비활동 판정이 읽은 값 그대로(설정을 한 번 더 읽지 않는다 — U4 a).
+  return { ...result, idleMinutes: touched.idleMinutes };
 });
+
+function reviewPath(id: string): string {
+  return `/certs/submissions/${id}`;
+}
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
@@ -53,6 +61,7 @@ export default async function CertSubmissionReviewPage({ params }: { params: Pro
 
   return (
     <div className={styles.root}>
+      <PrivacyIdleLogout idleMinutes={review.idleMinutes} returnPath={reviewPath(id)} />
       <div className={styles.screen}>
         <ReviewForm
           key={submission.version}
@@ -77,7 +86,6 @@ export default async function CertSubmissionReviewPage({ params }: { params: Pro
           signatureDataUrl={submission.signatureDataUrl ?? null}
           canReveal={review.canReveal}
           canCorrect={review.canCorrect}
-          idleMinutes={review.idleMinutes}
           purgeTarget={review.purgeTarget}
         />
       </div>

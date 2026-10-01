@@ -32,3 +32,11 @@ registerAction({
   action: "write",
   dtoName: null,
 });
+
+// 04.3-14 G3 a — 입력이 이어지는 동안 5분마다 보내는 개인정보 화면 활동 기록. 결과 종류만 돌려준다(행 DTO 없음).
+registerAction({
+  name: "touchPrivacySessionAction",
+  menu: "certs.submissions",
+  action: "view",
+  dtoName: null,
+});

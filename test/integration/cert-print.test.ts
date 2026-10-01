@@ -176,7 +176,7 @@ describe("getCertificatePrint — 수량 정정 뒤(04.3-17 E36)", () => {
   it("수량을 3으로 정정한 뒤 인쇄 DTO quantity가 3", async () => {
     const seeded = await seedSubmittedCert();
     const viewer = await makeReviewer(FULL_GRANT);
-    const saved = await correctSubmission(viewer, seeded.submissionId, { version: 1, name: seeded.name, phone: seeded.phone, quantity: 3 });
+    const saved = await correctSubmission(viewer, seeded.submissionId, { version: 1, name: seeded.name, phone: seeded.phone, quantity: 3 }, { ip: null });
     expect(saved.kind).toBe("saved");
     const print = await getCertificatePrint(viewer, seeded.submissionId, { ip: null }, { signatureStore: storeWith(signaturePngFixture()) });
     expect(print.kind === "ok" && print.print.quantity).toBe(3);

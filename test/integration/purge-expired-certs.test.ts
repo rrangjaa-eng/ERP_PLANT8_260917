@@ -262,7 +262,7 @@ describe("파기 대상 주민등록번호 — CS-2 a(제출 연도 다음 해 3
     const reviewer = await makeReviewer(FULL_GRANT);
     const spy = decryptSpy();
 
-    expect(await revealRrn(reviewer, c.target.submissionId, { decrypt: spy.fn })).toEqual({ kind: "denied" });
+    expect(await revealRrn(reviewer, c.target.submissionId, { ip: null }, { decrypt: spy.fn })).toEqual({ kind: "denied" });
     expect(spy.calls).toBe(0);
 
     const retentionDeadline = kst("2031-03-01T00:00:00");
@@ -347,7 +347,7 @@ describe("멱등 · 미리 보기 · 파기 뒤 화면 · 기능 플래그", () 
     const spy = decryptSpy();
 
     expect(await getSubmissionForReview(reviewer, sample.submissionId, { ip: null })).toEqual({ kind: "notFound" });
-    expect(await revealRrn(reviewer, sample.submissionId, { decrypt: spy.fn })).toEqual({ kind: "denied" });
+    expect(await revealRrn(reviewer, sample.submissionId, { ip: null }, { decrypt: spy.fn })).toEqual({ kind: "denied" });
     expect(spy.calls).toBe(0);
   });
 
@@ -370,7 +370,7 @@ describe("파기와 전체 보기 직렬화(codex #13)", () => {
     let entered!: () => void;
     const enteredLog = new Promise<void>((resolve) => (entered = resolve));
 
-    const reveal = revealRrn(reviewer, sample.submissionId, {
+    const reveal = revealRrn(reviewer, sample.submissionId, { ip: null }, {
       decrypt: spy.fn,
       appendActionLog: async (viewer, entry, tx) => {
         entered();
@@ -395,7 +395,7 @@ describe("파기와 전체 보기 직렬화(codex #13)", () => {
     await purge;
     expect((await submissionRow(sample.submissionId)).rrnEncrypted).toBeNull();
 
-    expect(await revealRrn(reviewer, sample.submissionId, { decrypt: spy.fn })).toEqual({ kind: "denied" });
+    expect(await revealRrn(reviewer, sample.submissionId, { ip: null }, { decrypt: spy.fn })).toEqual({ kind: "denied" });
     expect(spy.calls).toBe(1);
   });
 
@@ -406,7 +406,7 @@ describe("파기와 전체 보기 직렬화(codex #13)", () => {
 
     await runCertPurge({ now: kst("2026-03-01T00:00:00"), apply: true });
 
-    expect(await revealRrn(reviewer, sample.submissionId, { decrypt: spy.fn })).toEqual({ kind: "denied" });
+    expect(await revealRrn(reviewer, sample.submissionId, { ip: null }, { decrypt: spy.fn })).toEqual({ kind: "denied" });
     expect(spy.calls).toBe(0);
   });
 });

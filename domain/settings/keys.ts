@@ -378,16 +378,17 @@ export const CERT_CONTACT_PHONE: SettingDef<string> = {
   default: "",
 };
 
-// 04.3-07 — 개인정보취급자 비활동 만료(CONTEXT 「이미 확정된 입력」 2시간). 확인증
-// 개인정보 경로(I4 · 전체 보기 · 정정 · 인쇄)의 마지막 활동 뒤 이 분이 지나면 세션을 끊는다.
+// 04.3-07 — 개인정보취급자 비활동 만료. 확인증 개인정보 경로(I4 · 전체 보기 · 정정 · 인쇄)의 마지막 활동 뒤 —
+// 그 세션에 활동이 아직 없으면 로그인 뒤 — 이 분이 지나면 세션을 끊는다.
+// 04.3-14 사용자 결정 ③ — 기본 30분 · 범위 10~30(안전성 확보조치 기준 무입력 자동 차단).
 export const CERT_PRIVACY_IDLE_MINUTES: SettingDef<number> = {
   key: "cert.privacy.idle_minutes",
   kind: "simple",
-  schema: z.coerce.number().int().min(10).max(120),
+  schema: z.coerce.number().int().min(10).max(30),
   label: "개인정보취급자 비활동 만료(분)",
-  hint: "확인증 개인정보 화면에서 이 시간(분) 동안 활동이 없으면 로그인을 다시 요구합니다.",
+  hint: "확인증 개인정보 화면에서 이 시간(분) 동안 활동이 없거나 로그인한 지 이 시간이 지난 뒤 처음 열면 로그인을 다시 요구합니다.",
   namespace: "확인증",
-  default: 120,
+  default: 30,
 };
 
 export const DOCUMENT_NUMBER_CERT_PREFIX: SettingDef<string> = {

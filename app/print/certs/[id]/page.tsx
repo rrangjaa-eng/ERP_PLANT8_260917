@@ -1,6 +1,8 @@
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { clientIp } from "@/lib/client-ip";
+import { privacyLoginHref } from "@/lib/login-next";
+import { PrivacyIdleLogout } from "@/app/(app)/certs/submissions/[id]/privacy-idle-logout";
 import { getSessionId, requireSession } from "@/lib/viewer";
 import { assertCertFeatureEnabled } from "@/lib/certs/feature-guard";
 import { touchPrivacySession } from "@/domain/certs/privacy-session";
@@ -20,30 +22,36 @@ export default async function CertPrintPage({ params }: { params: Promise<{ id: 
   await assertCertFeatureEnabled();
   const { viewer } = await requireSession();
 
+  // 끊기면 로그인 화면에 이유 줄 · 다시 로그인하면 이 인쇄 화면으로(04.3-14 U5 a).
+  const { id } = await params;
+  const printPath = `/print/certs/${id}`;
   const sessionId = await getSessionId();
-  if (!sessionId) redirect("/login");
+  if (!sessionId) redirect(privacyLoginHref(printPath));
   const touched = await touchPrivacySession(viewer, sessionId);
   if (touched.kind === "notAllowed") notFound();
-  if (touched.kind === "expired") redirect("/login");
+  if (touched.kind === "expired") redirect(privacyLoginHref(printPath));
 
-  const { id } = await params;
   const result = await getCertificatePrint(viewer, id, { ip: clientIp(await headers()) });
   if (result.kind === "notFound") notFound();
   const print = result.print;
 
+  // 무입력 한도면 화면이 스스로 로그인으로 — 되돌아갈 곳은 그 확인증의 I4(U4 a · G8 a).
   return (
-    <PrintSheet
-      printedAt={result.printedAt}
-      certNo={print.certNo ?? "—"}
-      eventName={print.eventName ?? "—"}
-      wonOn={print.wonOn ?? "—"}
-      prizeLine={`${print.prizeName ?? "—"} ${print.quantity ?? ""}개`}
-      name={print.name ?? "—"}
-      rrnMasked={print.rrnMasked ?? "—"}
-      address={print.address ?? "—"}
-      phone={print.phone ?? "—"}
-      submittedAt={print.submittedAt ? formatSubmittedAtKst(print.submittedAt) : "—"}
-      signatureDataUrl={print.signatureDataUrl ?? null}
-    />
+    <>
+      <PrivacyIdleLogout idleMinutes={touched.idleMinutes} returnPath={printPath} />
+      <PrintSheet
+        printedAt={result.printedAt}
+        certNo={print.certNo ?? "—"}
+        eventName={print.eventName ?? "—"}
+        wonOn={print.wonOn ?? "—"}
+        prizeLine={`${print.prizeName ?? "—"} ${print.quantity ?? ""}개`}
+        name={print.name ?? "—"}
+        rrnMasked={print.rrnMasked ?? "—"}
+        address={print.address ?? "—"}
+        phone={print.phone ?? "—"}
+        submittedAt={print.submittedAt ? formatSubmittedAtKst(print.submittedAt) : "—"}
+        signatureDataUrl={print.signatureDataUrl ?? null}
+      />
+    </>
   );
 }

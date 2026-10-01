@@ -12,6 +12,7 @@ import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import type { CorrectionField, CorrectionFieldError } from "@/domain/certs/review";
 import { formatSubmittedAtKst } from "@/domain/certs/format";
 import { LOGIN_REQUIRED_MESSAGE } from "@/lib/actions/user-facing-error";
+import { privacyLoginHref } from "@/lib/login-next";
 import { correctCertSubmissionAction, excludeCertSubmissionAction } from "./actions";
 import { RrnField } from "./rrn-field";
 import { RRN_CLOSED, afterRrnSave, isRrnDirty, type RrnState } from "./rrn-state";
@@ -84,7 +85,6 @@ export function ReviewForm(props: {
   signatureDataUrl: string | null;
   canReveal: boolean;
   canCorrect: boolean;
-  idleMinutes: number;
   /** 04.3-17 — 가액 × 수량 ≤ 50,000(서버 판정 결과만 — 가액 숫자 없음). */
   purgeTarget: boolean;
   /** 04.3-17 — 수량 정정 칸(N3 a · 1~99). */
@@ -100,6 +100,8 @@ export function ReviewForm(props: {
   rrnCleared: boolean;
 }) {
   const router = useRouter();
+  // 끊기면 이유 줄 · 이 I4로 돌아오는 로그인 화면(04.3-14 U5 a) — 전체 이동이라 기록에 이 화면이 남지 않는다.
+  const toLogin = () => window.location.replace(privacyLoginHref(`/certs/submissions/${props.submissionId}`));
   const initial: Values = { name: props.name, phone: props.phone, address: props.address, quantity: String(props.quantity) };
   const [saved, setSaved] = useState<Values>(initial);
   const [values, setValues] = useState<Values>(initial);
@@ -141,7 +143,7 @@ export function ReviewForm(props: {
       return;
     }
     setExcluding(false);
-    if (data?.kind === "sessionExpired") return router.push("/login");
+    if (data?.kind === "sessionExpired") return toLogin();
     if (data?.kind === "alreadyExcluded") {
       setExcludeOpen(false);
       router.refresh();
@@ -251,7 +253,7 @@ export function ReviewForm(props: {
       const submitted = submittedRef.current;
       submittedRef.current = null;
       if (!data || !submitted) return setOutcome(SAVE_FAILED);
-      if (data.kind === "sessionExpired") return router.push("/login");
+      if (data.kind === "sessionExpired") return toLogin();
       if (data.kind === "saved") {
         setSaved(submitted.values);
         setVersion(data.version);
@@ -287,7 +289,7 @@ export function ReviewForm(props: {
     },
     onError: ({ error }) => {
       submittedRef.current = null;
-      if (error.serverError === LOGIN_REQUIRED_MESSAGE) return router.push("/login");
+      if (error.serverError === LOGIN_REQUIRED_MESSAGE) return toLogin();
       setOutcome(SAVE_FAILED);
     },
     // 결과를 화면 상태로 옮긴 뒤 훅의 보낸 입력(주민등록번호 평문 포함)을 비운다(검토 R-M1).
@@ -358,7 +360,6 @@ export function ReviewForm(props: {
       onChange={setRrn}
       onPendingChange={setRrnPending}
       error={fieldErrors.rrn}
-      idleMinutes={props.idleMinutes}
       purgeTarget={purgeTarget}
     />
   );

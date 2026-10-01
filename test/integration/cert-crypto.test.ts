@@ -80,7 +80,7 @@ describe("cert-crypto — 전체 보기는 기록 먼저 · 같은 tx(04.3-07)",
     const seeded = await seedSubmittedCert({ rrn: "9304122123458" });
     const viewer = await makeReviewer(FULL_GRANT);
 
-    const result = await revealRrn(viewer, seeded.submissionId);
+    const result = await revealRrn(viewer, seeded.submissionId, { ip: null });
 
     expect(result).toEqual({ kind: "revealed", rrn: "930412-2123458" });
     const rows = (await db.select().from(actionLog)).filter(
@@ -96,7 +96,7 @@ describe("cert-crypto — 전체 보기는 기록 먼저 · 같은 tx(04.3-07)",
     const viewer = await makeReviewer({ view: true, write: true, value: true, unmasked: false });
     const spy = decryptSpy();
 
-    const result = await revealRrn(viewer, seeded.submissionId, { decrypt: spy.fn });
+    const result = await revealRrn(viewer, seeded.submissionId, { ip: null }, { decrypt: spy.fn });
 
     expect(result).toEqual({ kind: "denied" });
     expect(spy.calls).toBe(0);
@@ -108,8 +108,8 @@ describe("cert-crypto — 전체 보기는 기록 먼저 · 같은 tx(04.3-07)",
     const viewer = await makeReviewer({ view: false, write: true, value: true, unmasked: true });
     const spy = decryptSpy();
 
-    expect(await revealRrn(viewer, seeded.submissionId, { decrypt: spy.fn })).toEqual({ kind: "denied" });
-    expect(await recordRrnReopen(viewer, seeded.submissionId)).toEqual({ kind: "denied" });
+    expect(await revealRrn(viewer, seeded.submissionId, { ip: null }, { decrypt: spy.fn })).toEqual({ kind: "denied" });
+    expect(await recordRrnReopen(viewer, seeded.submissionId, { ip: null })).toEqual({ kind: "denied" });
     expect(spy.calls).toBe(0);
     expect(await countLogs("mask_reveal", seeded.submissionId)).toBe(0);
   });
@@ -120,7 +120,7 @@ describe("cert-crypto — 전체 보기는 기록 먼저 · 같은 tx(04.3-07)",
     const spy = decryptSpy();
 
     await expect(
-      revealRrn(viewer, seeded.submissionId, {
+      revealRrn(viewer, seeded.submissionId, { ip: null }, {
         decrypt: spy.fn,
         appendActionLog: () => Promise.reject(new Error("기록 실패(주입)")),
       }),
@@ -135,8 +135,8 @@ describe("cert-crypto — 전체 보기는 기록 먼저 · 같은 tx(04.3-07)",
     const viewer = await makeReviewer(FULL_GRANT);
     const spy = decryptSpy();
 
-    expect(await revealRrn(viewer, seeded.submissionId, { decrypt: spy.fn })).toEqual({ kind: "denied" });
-    expect(await recordRrnReopen(viewer, seeded.submissionId)).toEqual({ kind: "denied" });
+    expect(await revealRrn(viewer, seeded.submissionId, { ip: null }, { decrypt: spy.fn })).toEqual({ kind: "denied" });
+    expect(await recordRrnReopen(viewer, seeded.submissionId, { ip: null })).toEqual({ kind: "denied" });
     expect(spy.calls).toBe(0);
     expect(await countLogs("mask_reveal", seeded.submissionId)).toBe(0);
   });
@@ -145,7 +145,7 @@ describe("cert-crypto — 전체 보기는 기록 먼저 · 같은 tx(04.3-07)",
     const seeded = await seedSubmittedCert();
     const viewer = await makeReviewer(FULL_GRANT);
 
-    expect(await recordRrnReopen(viewer, seeded.submissionId)).toEqual({ kind: "recorded" });
+    expect(await recordRrnReopen(viewer, seeded.submissionId, { ip: null })).toEqual({ kind: "recorded" });
     expect(await countLogs("mask_reveal", seeded.submissionId)).toBe(1);
   });
 
@@ -167,7 +167,7 @@ describe("cert-crypto — 전체 보기는 기록 먼저 · 같은 tx(04.3-07)",
       };
 
       const all = Promise.all(
-        Array.from({ length: count }, () => revealRrn(viewer, seeded.submissionId, { appendActionLog: appendAtBarrier })),
+        Array.from({ length: count }, () => revealRrn(viewer, seeded.submissionId, { ip: null }, { appendActionLog: appendAtBarrier })),
       );
       const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("10초 시간 초과")), 10_000));
       const results = await Promise.race([all, timeout]);
@@ -184,7 +184,7 @@ describe("cert-crypto — 전체 보기는 기록 먼저 · 같은 tx(04.3-07)",
     const reached = deferred();
     const release = deferred();
 
-    const pending = revealRrn(viewer, seeded.submissionId, {
+    const pending = revealRrn(viewer, seeded.submissionId, { ip: null }, {
       appendActionLog: async (v, entry, tx) => {
         reached.resolve();
         await release.promise;

@@ -4,6 +4,9 @@
 
 export type RrnState = { originalKey: string | null; input: string | null; open: boolean };
 
+// 04.3-14 사용자 결정 ③ — 드러난 평문은 입력(누름 · 키 · 입력)이 3분 없으면 가린다. 설정이 아닌 고정값이다.
+export const RRN_AUTO_HIDE_MS = 3 * 60_000;
+
 export const RRN_CLOSED: RrnState = { originalKey: null, input: null, open: false };
 
 // cyrb53(53비트) — 같은 번호인지만 본다. 암호 목적이 아니다(숫자만 비교 — 하이픈 유무는 같은 번호).

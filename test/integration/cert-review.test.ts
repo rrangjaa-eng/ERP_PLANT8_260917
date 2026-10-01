@@ -84,7 +84,7 @@ describe("getSubmissionForReview — 투영 · 404", () => {
 
     expect(await getSubmissionForReview(viewer, seeded.submissionId, { ip: null })).toEqual({ kind: "notFound" });
     expect(
-      await correctSubmission(viewer, seeded.submissionId, { version: 1, name: "김하늘", phone: "010-9999-0000" }),
+      await correctSubmission(viewer, seeded.submissionId, { version: 1, name: "김하늘", phone: "010-9999-0000" }, { ip: null }),
     ).toEqual({ kind: "denied" });
     expect(unchangedFields(await submissionRow(seeded.submissionId))).toEqual(before);
 
@@ -124,7 +124,7 @@ describe("getSubmissionForReview — 투영 · 404", () => {
 });
 
 describe("correctSubmission — D-1106 정정", () => {
-  it("연락처만, 맞는 version → 저장 · 버전 +1 · cert_correct 1줄 detail {fields: [연락처]}(값 없음)", async () => {
+  it("연락처만, 맞는 version → 저장 · 버전 +1 · cert_correct 1줄 detail {fields: [연락처], ip, submissionId}(값 없음 — 04.3-14 결정 ⑤)", async () => {
     const seeded = await seedSubmittedCert();
     const viewer = await makeReviewer(FULL_GRANT);
 
@@ -132,7 +132,7 @@ describe("correctSubmission — D-1106 정정", () => {
       version: 1,
       name: "김하늘",
       phone: "010-5555-6666",
-    });
+    }, { ip: null });
 
     expect(result).toMatchObject({ kind: "saved", fields: ["연락처"], version: 2, rrnMasked: "930412-2******" });
     const row = await submissionRow(seeded.submissionId);
@@ -142,7 +142,7 @@ describe("correctSubmission — D-1106 정정", () => {
     const logs = (await db.select().from(actionLog)).filter((r) => r.actionType === "cert_correct");
     expect(logs).toHaveLength(1);
     expect(logs[0]?.entityId).toBe(seeded.submissionId);
-    expect(logs[0]?.detail).toEqual({ fields: ["연락처"] });
+    expect(logs[0]?.detail).toEqual({ fields: ["연락처"], ip: null, submissionId: seeded.submissionId });
   });
 
   it("주민등록번호 정정 → v1: 새 암호문 · rrn_masked 갱신 · 행동 로그 어느 칸에도 새 13자리 · 뒤 7자리 없음", async () => {
@@ -155,7 +155,7 @@ describe("correctSubmission — D-1106 정정", () => {
       name: "김하늘",
       phone: "010-4821-7730",
       rrn: "930412-1234560",
-    });
+    }, { ip: null });
 
     expect(result).toMatchObject({ kind: "saved", fields: ["주민등록번호"], rrnMasked: "930412-1******" });
     const row = await submissionRow(seeded.submissionId);
@@ -176,7 +176,7 @@ describe("correctSubmission — D-1106 정정", () => {
     const before = unchangedFields(await submissionRow(seeded.submissionId));
 
     expect(
-      await correctSubmission(viewer, seeded.submissionId, { version: 1, name: "김하늘", phone: "010-4821-7730", rrn: NEW_RRN }),
+      await correctSubmission(viewer, seeded.submissionId, { version: 1, name: "김하늘", phone: "010-4821-7730", rrn: NEW_RRN }, { ip: null }),
     ).toEqual({ kind: "denied" });
     expect(unchangedFields(await submissionRow(seeded.submissionId))).toEqual(before);
     expect(await countLogs("cert_correct", seeded.submissionId)).toBe(0);
@@ -188,7 +188,7 @@ describe("correctSubmission — D-1106 정정", () => {
     const before = unchangedFields(await submissionRow(seeded.submissionId));
 
     expect(
-      await correctSubmission(viewer, seeded.submissionId, { version: 1, name: "김하늘", phone: "010-4821-7730", rrn: NEW_RRN }),
+      await correctSubmission(viewer, seeded.submissionId, { version: 1, name: "김하늘", phone: "010-4821-7730", rrn: NEW_RRN }, { ip: null }),
     ).toEqual({ kind: "denied" });
     expect(unchangedFields(await submissionRow(seeded.submissionId))).toEqual(before);
     expect(await countLogs("cert_correct", seeded.submissionId)).toBe(0);
@@ -200,7 +200,7 @@ describe("correctSubmission — D-1106 정정", () => {
     const before = unchangedFields(await submissionRow(seeded.submissionId));
 
     expect(
-      await correctSubmission(viewer, seeded.submissionId, { version: 1, name: "김하나", phone: "010-5555-6666" }),
+      await correctSubmission(viewer, seeded.submissionId, { version: 1, name: "김하나", phone: "010-5555-6666" }, { ip: null }),
     ).toEqual({ kind: "denied" });
     expect(unchangedFields(await submissionRow(seeded.submissionId))).toEqual(before);
     expect(await countLogs("cert_correct", seeded.submissionId)).toBe(0);
@@ -211,11 +211,11 @@ describe("correctSubmission — D-1106 정정", () => {
     const first = await makeReviewer(FULL_GRANT, "이수아");
     const second = await makeReviewer(FULL_GRANT, "박서연");
 
-    const saved = await correctSubmission(first, seeded.submissionId, { version: 1, name: "김하늘", phone: "010-1111-2222" });
+    const saved = await correctSubmission(first, seeded.submissionId, { version: 1, name: "김하늘", phone: "010-1111-2222" }, { ip: null });
     expect(saved.kind).toBe("saved");
     const afterFirst = unchangedFields(await submissionRow(seeded.submissionId));
 
-    const result = await correctSubmission(second, seeded.submissionId, { version: 1, name: "김하나", phone: "010-4821-7730" });
+    const result = await correctSubmission(second, seeded.submissionId, { version: 1, name: "김하나", phone: "010-4821-7730" }, { ip: null });
 
     expect(result).toMatchObject({ kind: "conflict", byName: "이수아" });
     expect(result.kind === "conflict" && typeof result.at).toBe("string");
@@ -228,12 +228,12 @@ describe("correctSubmission — D-1106 정정", () => {
     const viewer = await makeReviewer(FULL_GRANT);
 
     expect(
-      await correctSubmission(viewer, onsite.submissionId, { version: 1, name: "김하늘", phone: "010-4821-7730", address: "서울" }),
+      await correctSubmission(viewer, onsite.submissionId, { version: 1, name: "김하늘", phone: "010-4821-7730", address: "서울" }, { ip: null }),
     ).toEqual({ kind: "invalid", fields: { address: "notAllowed" } });
 
     const parcel = await seedSubmittedCert({ delivery: "parcel" });
     expect(
-      await correctSubmission(viewer, parcel.submissionId, { version: 1, name: "김하늘", phone: "010-4821-7730", address: "  " }),
+      await correctSubmission(viewer, parcel.submissionId, { version: 1, name: "김하늘", phone: "010-4821-7730", address: "  " }, { ip: null }),
     ).toEqual({ kind: "invalid", fields: { address: "empty" } });
     expect(
       await correctSubmission(viewer, parcel.submissionId, {
@@ -241,7 +241,7 @@ describe("correctSubmission — D-1106 정정", () => {
         name: "김하늘",
         phone: "010-4821-7730",
         address: "가".repeat(201),
-      }),
+      }, { ip: null }),
     ).toEqual({ kind: "invalid", fields: { address: "tooLong" } });
     expect(
       await correctSubmission(viewer, parcel.submissionId, {
@@ -249,7 +249,7 @@ describe("correctSubmission — D-1106 정정", () => {
         name: "김하늘",
         phone: "010-4821-7730",
         address: "부산시 해운대구 1",
-      }),
+      }, { ip: null }),
     ).toMatchObject({ kind: "saved", fields: ["주소"] });
   });
 
@@ -259,10 +259,10 @@ describe("correctSubmission — D-1106 정정", () => {
     const before = unchangedFields(await submissionRow(seeded.submissionId));
 
     expect(
-      await correctSubmission(viewer, seeded.submissionId, { version: 1, name: " ", phone: "02-123-4567", rrn: "931312-1234567" }),
+      await correctSubmission(viewer, seeded.submissionId, { version: 1, name: " ", phone: "02-123-4567", rrn: "931312-1234567" }, { ip: null }),
     ).toEqual({ kind: "invalid", fields: { name: "empty", phone: "format", rrn: "invalid" } });
     expect(
-      await correctSubmission(viewer, seeded.submissionId, { version: 1, name: "가".repeat(41), phone: "010-4821-7730" }),
+      await correctSubmission(viewer, seeded.submissionId, { version: 1, name: "가".repeat(41), phone: "010-4821-7730" }, { ip: null }),
     ).toEqual({ kind: "invalid", fields: { name: "tooLong" } });
     expect(unchangedFields(await submissionRow(seeded.submissionId))).toEqual(before);
   });
@@ -271,7 +271,7 @@ describe("correctSubmission — D-1106 정정", () => {
     const seeded = await seedSubmittedCert();
     const viewer = await makeReviewer(FULL_GRANT);
     expect(
-      await correctSubmission(viewer, seeded.submissionId, { version: 1, name: "김하늘", phone: "010-4821-7730" }),
+      await correctSubmission(viewer, seeded.submissionId, { version: 1, name: "김하늘", phone: "010-4821-7730" }, { ip: null }),
     ).toEqual({ kind: "unchanged" });
     expect((await submissionRow(seeded.submissionId)).version).toBe(1);
     expect(await countLogs("cert_correct", seeded.submissionId)).toBe(0);
@@ -302,7 +302,7 @@ describe("correctSubmission — D-1106 정정", () => {
       correctSubmission(
         viewer,
         seeded.submissionId,
-        { version: 1, name: "김하나", phone: "010-5555-6666", rrn: NEW_RRN },
+        { version: 1, name: "김하나", phone: "010-5555-6666", rrn: NEW_RRN }, { ip: null },
         { appendActionLog: () => Promise.reject(new Error("로그 실패(주입)")) },
       ),
     ).rejects.toThrow("로그 실패(주입)");
@@ -316,7 +316,7 @@ describe("correctSubmission — D-1106 정정", () => {
     const before = await submissionRow(seeded.submissionId);
     const input = { version: 1, name: "김하나", phone: "010-4821-7730", signatureKey: "signatures/other.png" };
 
-    await correctSubmission(viewer, seeded.submissionId, input);
+    await correctSubmission(viewer, seeded.submissionId, input, { ip: null });
     expect((await submissionRow(seeded.submissionId)).signatureKey).toBe(before.signatureKey);
   });
 });
@@ -330,10 +330,10 @@ describe("C1 기능 게이트 · 대표 차단", () => {
     await setSettingValue(SYSTEM_VIEWER, CERT_ENABLED, false);
 
     expect(await getSubmissionForReview(viewer, seeded.submissionId, { ip: null })).toEqual({ kind: "notFound" });
-    expect(await revealRrn(viewer, seeded.submissionId, { decrypt: spy.fn })).toEqual({ kind: "notFound" });
-    expect(await recordRrnReopen(viewer, seeded.submissionId)).toEqual({ kind: "notFound" });
+    expect(await revealRrn(viewer, seeded.submissionId, { ip: null }, { decrypt: spy.fn })).toEqual({ kind: "notFound" });
+    expect(await recordRrnReopen(viewer, seeded.submissionId, { ip: null })).toEqual({ kind: "notFound" });
     expect(
-      await correctSubmission(viewer, seeded.submissionId, { version: 1, name: "김하나", phone: "010-5555-6666", rrn: NEW_RRN }),
+      await correctSubmission(viewer, seeded.submissionId, { version: 1, name: "김하나", phone: "010-5555-6666", rrn: NEW_RRN }, { ip: null }),
     ).toEqual({ kind: "notFound" });
 
     expect(spy.calls).toBe(0);
@@ -351,10 +351,10 @@ describe("C1 기능 게이트 · 대표 차단", () => {
 
     expect(isCertPrivacyBarredRole(ceo)).toBe(true);
     expect(await getSubmissionForReview(ceo, seeded.submissionId, { ip: null })).toEqual({ kind: "notFound" });
-    expect(await revealRrn(ceo, seeded.submissionId, { decrypt: spy.fn })).toEqual({ kind: "denied" });
-    expect(await recordRrnReopen(ceo, seeded.submissionId)).toEqual({ kind: "denied" });
+    expect(await revealRrn(ceo, seeded.submissionId, { ip: null }, { decrypt: spy.fn })).toEqual({ kind: "denied" });
+    expect(await recordRrnReopen(ceo, seeded.submissionId, { ip: null })).toEqual({ kind: "denied" });
     expect(
-      await correctSubmission(ceo, seeded.submissionId, { version: 1, name: "김하나", phone: "010-5555-6666" }),
+      await correctSubmission(ceo, seeded.submissionId, { version: 1, name: "김하나", phone: "010-5555-6666" }, { ip: null }),
     ).toEqual({ kind: "denied" });
 
     expect(spy.calls).toBe(0);
@@ -561,12 +561,14 @@ describe("correctSubmission — 수량(04.3-17)", () => {
       name: seeded.name,
       phone: seeded.phone,
       quantity: 3,
-    });
+    }, { ip: null });
     expect(result.kind).toBe("saved");
     expect(result.kind === "saved" && result.fields).toEqual(["수량"]);
     expect((await submissionRow(seeded.submissionId)).quantity).toBe(3);
     const logs = await db.select().from(actionLog).where(eq(actionLog.actionType, "cert_correct"));
-    expect(logs.filter((l) => l.entityId === seeded.submissionId).map((l) => l.detail)).toEqual([{ fields: ["수량"] }]);
+    expect(logs.filter((l) => l.entityId === seeded.submissionId).map((l) => l.detail)).toEqual([
+      { fields: ["수량"], ip: null, submissionId: seeded.submissionId },
+    ]);
     const after = await getSubmissionForReview(viewer, seeded.submissionId, { ip: null });
     expect(after.kind === "ok" && after.purgeTarget).toBe(false);
   });
@@ -576,12 +578,12 @@ describe("correctSubmission — 수량(04.3-17)", () => {
     const viewer = await makeReviewer(FULL_GRANT);
     for (const quantity of [0, "abc", 100, 1.5] as const) {
       expect(
-        await correctSubmission(viewer, seeded.submissionId, { version: 1, name: seeded.name, phone: seeded.phone, quantity }),
+        await correctSubmission(viewer, seeded.submissionId, { version: 1, name: seeded.name, phone: seeded.phone, quantity }, { ip: null }),
       ).toEqual({ kind: "invalid", fields: { quantity: "format" } });
     }
     expect((await submissionRow(seeded.submissionId)).quantity).toBe(1);
-    await correctSubmission(viewer, seeded.submissionId, { version: 1, name: seeded.name, phone: seeded.phone, quantity: 2 });
-    const stale = await correctSubmission(viewer, seeded.submissionId, { version: 1, name: seeded.name, phone: seeded.phone, quantity: 5 });
+    await correctSubmission(viewer, seeded.submissionId, { version: 1, name: seeded.name, phone: seeded.phone, quantity: 2 }, { ip: null });
+    const stale = await correctSubmission(viewer, seeded.submissionId, { version: 1, name: seeded.name, phone: seeded.phone, quantity: 5 }, { ip: null });
     expect(stale.kind).toBe("conflict");
     expect((await submissionRow(seeded.submissionId)).quantity).toBe(2);
   });
@@ -615,9 +617,9 @@ describe("주민번호만 비운 I4 — rrnCleared(04.3-17 ⑥-b)", () => {
     const seeded = await clearedSample();
     const viewer = await makeReviewer(FULL_GRANT);
     const spy = decryptSpy();
-    expect(await revealRrn(viewer, seeded.submissionId, { decrypt: spy.fn })).toEqual({ kind: "denied" });
+    expect(await revealRrn(viewer, seeded.submissionId, { ip: null }, { decrypt: spy.fn })).toEqual({ kind: "denied" });
     expect(spy.calls).toBe(0);
-    expect(await recordRrnReopen(viewer, seeded.submissionId)).toEqual({ kind: "denied" });
+    expect(await recordRrnReopen(viewer, seeded.submissionId, { ip: null })).toEqual({ kind: "denied" });
     expect(await countLogs("mask_reveal", seeded.submissionId)).toBe(0);
   });
 
@@ -631,7 +633,7 @@ describe("주민번호만 비운 I4 — rrnCleared(04.3-17 ⑥-b)", () => {
         phone: "010-9999-0000",
         address: "서울시 마포구 월드컵로 1",
         rrn: NEW_RRN,
-      }),
+      }, { ip: null }),
     ).toEqual({ kind: "denied" });
     expect((await submissionRow(seeded.submissionId)).rrnEncrypted).toBeNull();
     expect(await countLogs("cert_correct", seeded.submissionId)).toBe(0);
@@ -640,7 +642,7 @@ describe("주민번호만 비운 I4 — rrnCleared(04.3-17 ⑥-b)", () => {
       name: seeded.name,
       phone: "010-9999-0000",
       address: "서울시 마포구 월드컵로 1",
-    });
+    }, { ip: null });
     expect(saved.kind).toBe("saved");
   });
 

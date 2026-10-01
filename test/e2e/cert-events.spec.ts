@@ -184,12 +184,18 @@ test.describe("04.3-10 tracer — QR 생성 신청 → QR 생성(1280)", () => {
     const prizeName = `E2E 경품-${randomUUID().slice(0, 6)}`;
     const today = kstToday();
 
-    // ① PM — 목록 1차 → 옆 패널(첫 칸 포커스 · 열린 동안 화면의 1차는 패널 1차 하나 — DR-9)
+    // ① PM — 목록 1차 → 옆 패널(첫 칸 포커스 · 열린 동안 화면의 1차는 패널 1차 하나 — DR-9). 목록 표가 서도록 기존 신청 하나.
+    const [pmRow] = await db.select({ id: users.id }).from(users).where(eq(users.email, pm.email));
+    await createCertEvent({ name: "E2E 기존 신청", status: "requested", createdBy: pmRow?.id ?? null });
     const pmPage = await loggedInPage(browser, pm);
     await pmPage.goto("/certs/events");
+    // 패널이 열려도 목록 표는 움직이지 않는다 — 1차 자리(행동 줄)가 높이를 지킨다(DOM 감사 A-M2).
+    const listTable = pmPage.locator("table").first();
+    const tableTopBefore = (await listTable.boundingBox())?.y;
     await pmPage.getByRole("button", { name: "QR 생성 신청" }).click();
     const panel = pmPage.getByRole("dialog", { name: "QR 생성 신청" });
     await expect(panel).toBeVisible();
+    expect((await listTable.boundingBox())?.y).toBe(tableTopBefore);
     await expect(panel.getByLabel("행사 이름")).toBeFocused();
     await expect(pmPage.getByRole("button", { name: "QR 생성 신청" })).toHaveCount(1);
     await expect(panel.getByRole("button", { name: "QR 생성 신청" })).toHaveCount(1);
@@ -201,11 +207,22 @@ test.describe("04.3-10 tracer — QR 생성 신청 → QR 생성(1280)", () => {
     await expect(panelPrimary).toHaveAttribute("aria-disabled", "true");
     await expect(panel.getByText("당첨일 비어 있음 · 당첨일 적기")).toBeVisible();
     await expect(panelPrimary).toHaveAccessibleDescription("당첨일 비어 있음 · 당첨일 적기");
+    // 막힘 이유는 행동 줄 맨 앞 전폭 한 줄 — 버튼 둘은 그 아래 2차 왼쪽 · 1차 오른쪽 끝(DOM 감사 A-M1).
+    const panelCancel = panel.getByRole("button", { name: /취소/ });
+    const blockedPrimary = await panelPrimary.boundingBox();
+    const blockedCancel = await panelCancel.boundingBox();
+    const blockLine = await panel.getByText("당첨일 비어 있음 · 당첨일 적기").boundingBox();
+    expect((blockedCancel?.x ?? 0) + (blockedCancel?.width ?? 0)).toBeLessThanOrEqual(blockedPrimary?.x ?? 0);
+    expect(blockedCancel?.y).toBe(blockedPrimary?.y);
+    expect((blockLine?.y ?? 0) + (blockLine?.height ?? 0)).toBeLessThanOrEqual(blockedPrimary?.y ?? 0);
     await panel.getByLabel("당첨일").fill(kstToday(-1));
     await expect(panel.getByText("지난 날짜 · 당첨일 확인")).toBeVisible();
     await panel.getByLabel("당첨일").fill(today);
     await expect(panel.getByText(new RegExp(`^열림 ${today.slice(5)} 00:00 · 마감 \\d{2}-\\d{2} \\d{2}:\\d{2}$`))).toBeVisible();
     await expect(panel.getByText("지난 날짜 · 당첨일 확인")).toHaveCount(0);
+    // 막힘이 풀려도 1차는 같은 오른쪽 끝에 선다(가로로 뛰지 않는다 — A-M1).
+    const openPrimary = await panelPrimary.boundingBox();
+    expect((openPrimary?.x ?? 0) + (openPrimary?.width ?? 0)).toBeCloseTo((blockedPrimary?.x ?? 0) + (blockedPrimary?.width ?? 0), 0);
 
     // ③ 신청 → 패널 닫힘 · 새 행 신청됨 그룹 · 포커스 = 그 행 · 토스트
     await panel.getByRole("button", { name: "QR 생성 신청" }).click();

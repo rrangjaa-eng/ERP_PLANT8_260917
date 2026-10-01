@@ -1,9 +1,10 @@
 /* 04.3-04 · 04.3-15 · 04.3-10 — I′1 확인증 행사 목록 · I′2 옆 패널 칸. 토큰만(docs/design/tokens.css). */
 
-/* §6-1 표 위 행동 줄 — 필터가 없어 오른쪽 1차 하나(UI-SPEC I′1). */
+/* §6-1 표 위 행동 줄 — 필터가 없어 오른쪽 1차 하나(UI-SPEC I′1). 옆 패널이 열려 1차가 없어도 높이를 지킨다(DOM 감사 A-M2). */
 .actionRow {
   display: flex;
   justify-content: flex-end;
+  min-height: var(--control-h);
   margin: var(--s-3) 0;
 }
 
@@ -48,12 +49,13 @@
   border-color: var(--danger);
 }
 
-.textInput:focus-visible {
+.textInput:focus-visible,
+.textInput::-webkit-calendar-picker-indicator:focus-visible {
   outline: var(--focus-w) solid var(--focus);
   outline-offset: var(--focus-offset);
 }
 
-/* I′2 결과 불명 — 행동 줄 위 한 줄(--danger). */
+/* I′2 막힘 이유 · 결과 불명 — 행동 줄 맨 앞 전폭 한 줄(--danger). */
 .resultLine {
   flex: 1 0 100%;
   margin: 0;

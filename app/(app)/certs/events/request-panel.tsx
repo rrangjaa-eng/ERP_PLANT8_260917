@@ -70,6 +70,7 @@ export function RequestEntry({
   children: ReactNode;
 }) {
   const hintId = useId();
+  const blockId = useId();
   const [open, setOpen] = useState(false);
   const [returnFocus, setReturnFocus] = useState(true);
   const [name, setName] = useState("");
@@ -154,13 +155,16 @@ export function RequestEntry({
 
   return (
     <>
-      {!empty && !open ? (
+      {/* 행동 줄은 패널이 열린 동안에도 자리를 지킨다 — 1차만 렌더하지 않아(DR-9) 목록 표가 위로 움직이지 않는다(DOM 감사 A-M2). */}
+      {!empty ? (
         <div className={styles.actionRow}>
-          <span ref={primaryWrapRef}>
-            <Button variant="primary" onClick={() => openPanel("primary")}>
-              QR 생성 신청
-            </Button>
-          </span>
+          {!open ? (
+            <span ref={primaryWrapRef}>
+              <Button variant="primary" onClick={() => openPanel("primary")}>
+                QR 생성 신청
+              </Button>
+            </span>
+          ) : null}
         </div>
       ) : null}
 
@@ -184,6 +188,13 @@ export function RequestEntry({
         returnFocus={returnFocus}
         actions={
           <>
+            {/* 막힘 이유는 행동 줄 맨 앞 전폭 한 줄 — 버튼 둘은 늘 2차 왼쪽 · 1차 오른쪽 끝에 서고 이유 유무로 움직이지 않는다
+                (SYSTEM §7-8 · DOM 감사 A-M1). 1차는 aria-describedby로 이 줄을 가리킨다. */}
+            {block && !pending ? (
+              <p id={blockId} className={styles.resultLine}>
+                {block.text}
+              </p>
+            ) : null}
             {resultLine ? (
               <p className={styles.resultLine} role="status">
                 {resultLine}
@@ -198,8 +209,7 @@ export function RequestEntry({
               variant="primary"
               pending={pending}
               disabled={block !== null}
-              disabledReason={block?.text}
-              reasonTone={block?.tone}
+              aria-describedby={block && !pending ? blockId : undefined}
             >
               QR 생성 신청
             </Button>

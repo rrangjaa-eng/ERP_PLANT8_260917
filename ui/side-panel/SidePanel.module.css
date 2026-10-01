@@ -82,7 +82,7 @@
   padding: var(--s-4) var(--pad-page);
 }
 
-/* 행동 줄 — 2차 왼쪽 · 1차 오른쪽(받은 순서 그대로), 오른쪽 끝에 붙는다. 막힘 이유가 길면 줄을 바꾼다. */
+/* 행동 줄 — 2차 왼쪽 · 1차 오른쪽(받은 순서 그대로), 오른쪽 끝에 붙는다. 이유 · 결과 줄은 호출부가 맨 앞 전폭으로 둔다. */
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -109,8 +109,19 @@
     background: var(--scrim);
   }
 
-  /* 시트 행동 줄 버튼은 터치 목표 44(§7-8 · §3 「터치 목표」). */
+  /* 시트 행동 줄 버튼은 터치 목표 44(§7-8 · §3 「터치 목표」). 2차 왼쪽 · 1차 오른쪽, 1차가 2차의 2배 폭(§7-8 시트 행동 줄 —
+     DOM 감사 A-L1). 이유 · 결과 줄은 버튼 앞 전폭 줄이라 마지막 둘이 버튼이다. */
+  .actions > :last-child {
+    flex: 2 1 0;
+  }
+
+  .actions > :nth-last-child(2):not(p) {
+    flex: 1 1 0;
+  }
+
   .actions button {
+    flex: 1 1 auto;
+    justify-content: center;
     min-height: var(--touch-min);
   }
 }

@@ -68,10 +68,23 @@ test.describe("04.3-10 폰 · 좁은 PC", () => {
     await page.goto("/certs/events");
     const opener = page.getByRole("button", { name: "QR 생성 신청" });
     await expect(opener).toHaveCount(1);
+    const listTable = page.locator("table").first();
+    const tableTopBefore = (await listTable.boundingBox())?.y;
     await opener.click();
 
     const sheet = page.getByRole("dialog", { name: "QR 생성 신청" });
     await expect(sheet).toBeVisible();
+    // 시트 뒤 목록 표는 움직이지 않는다(DOM 감사 A-M2).
+    expect((await listTable.boundingBox())?.y).toBe(tableTopBefore);
+    // 막힘(빈 칸)에서도 행동 줄은 2차 왼쪽 · 1차 오른쪽 한 줄, 1차가 2차의 2배 폭(SYSTEM §7-8 — A-M1 · A-L1).
+    await expect(sheet.getByText("행사 이름 · 당첨일 2칸 비어 있음 · 행사 이름 적기")).toBeVisible();
+    const cancelBox = await sheet.getByRole("button", { name: /취소/ }).boundingBox();
+    const primaryBox = await sheet.getByRole("button", { name: "QR 생성 신청" }).boundingBox();
+    expect(cancelBox?.y).toBe(primaryBox?.y);
+    expect((cancelBox?.x ?? 0) + (cancelBox?.width ?? 0)).toBeLessThanOrEqual(primaryBox?.x ?? 0);
+    const ratio = (primaryBox?.width ?? 0) / (cancelBox?.width ?? 1);
+    expect(ratio).toBeGreaterThan(1.8);
+    expect(ratio).toBeLessThan(2.2);
     // 폰은 모달 시트 — 스크림(::backdrop) · 브라우저 포커스 가두기(:modal).
     expect(await sheet.evaluate((el) => el.matches(":modal"))).toBe(true);
     await expect(sheet.getByLabel("행사 이름")).toBeFocused();

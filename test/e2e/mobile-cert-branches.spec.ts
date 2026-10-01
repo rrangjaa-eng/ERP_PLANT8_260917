@@ -1,7 +1,6 @@
 import { test, expect, type Page, type Request } from "@playwright/test";
-import { eq } from "drizzle-orm";
-import { db } from "@/db/client";
-import { certPrizes } from "@/db/schema";
+import { Client } from "pg";
+import { env } from "@/lib/env";
 import { createCertEvent, setCertPrizeValueForTest } from "./helpers/cert";
 import { drawSignature, fillIntakeForm, submitButton } from "./helpers/cert-form";
 import { collectCertResponses, leakPatternsFor, scanForLeaks, scannerSelfTest } from "./helpers/cert-leak";
@@ -162,10 +161,35 @@ test("경품 빠짐 응답 — 서버가 실제로 돌려준 새 목록(A · C �
   await second.close();
 });
 
+// 제출이 행사 행 잠금을 기다리는 동안 전달 방식을 바꾼다 — 서버가 잠근 뒤 다시 판정해 prizeGone을 돌려주는 진짜 경합
+// (04.3-15 R1). 별도 연결이 행사 행을 쥐고, 서버 연결이 그 잠금을 기다리는 것을 pg_stat_activity로 확인한 뒤 바꾸고 커밋한다.
+async function changeDeliveryWhileSubmitWaits(page: Page, eventId: string, prizeId: string, to: "onsite" | "parcel") {
+  const holder = new Client({ connectionString: env.DATABASE_URL });
+  await holder.connect();
+  try {
+    await holder.query("BEGIN");
+    await holder.query("SELECT id FROM cert_events WHERE id = $1 FOR UPDATE", [eventId]);
+    await submitButton(page).click();
+    // 서버 연결이 우리 행 잠금(트랜잭션 id)을 기다리는 것 = 아직 잠그기 전에 읽은 값(현장)으로 칸 검사를 마쳤다는 뜻이다.
+    await expect
+      .poll(
+        async () =>
+          (await holder.query<{ n: number }>("SELECT count(*)::int AS n FROM pg_locks WHERE NOT granted AND locktype IN ('transactionid', 'tuple')"))
+            .rows[0]?.n ?? 0,
+        { timeout: 4000 },
+      )
+      .toBeGreaterThan(0);
+    await holder.query("UPDATE cert_prizes SET delivery = $2, updated_at = now() WHERE id = $1", [prizeId, to]);
+    await holder.query("COMMIT");
+  } finally {
+    await holder.end();
+  }
+}
+
 test("V3 — 제출 중 전달 방식이 현장 → 택배로 바뀌면 같은 경품이 목록에 그대로 있어도 같은 알림 · 주소 칸이 새로 선다(비어 있음)", async ({
   page,
 }) => {
-  const { link, prizeIds } = await createCertEvent({
+  const { link, eventId, prizeIds } = await createCertEvent({
     name: "빠짐E2E전달",
     prizes: [
       { name: "전달-가", unitValueKrw: 73_519, delivery: "onsite" },
@@ -173,6 +197,7 @@ test("V3 — 제출 중 전달 방식이 현장 → 택배로 바뀌면 같은 �
     ],
   });
   if (!link) throw new Error("링크 없음");
+  const keys = trackSubmitKeys(page);
   await page.goto(link);
   await prizeRow(page, "전달-나").click();
   await fillIntakeForm(page, { phone: "010-4821-7730" });
@@ -181,8 +206,7 @@ test("V3 — 제출 중 전달 방식이 현장 → 택배로 바뀌면 같은 �
 
   const changing = prizeIds[1];
   if (!changing) throw new Error("둘째 경품 id 없음");
-  await db.update(certPrizes).set({ delivery: "parcel", updatedAt: new Date() }).where(eq(certPrizes.id, changing));
-  await submitButton(page).click();
+  await changeDeliveryWhileSubmitWaits(page, eventId, changing, "parcel");
 
   const notice = page.getByText(PRIZE_GONE_NOTICE, { exact: true });
   await expect(notice).toBeFocused();
@@ -200,6 +224,8 @@ test("V3 — 제출 중 전달 방식이 현장 → 택배로 바뀌면 같은 �
   await submitButton(page).click();
   await expect(page.getByText("제출되었습니다", { exact: true })).toBeVisible();
   await expect(page.getByText(/전달-나 1개 적은 주소로 보내 드립니다/)).toBeVisible();
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).not.toBe(keys[1]);
 });
 
 test("E6-d — 제출 중 마지막 경품이 빠지면 경품 없음 화면(1차 · 입력 없음 · 문의 줄 · 제목 · 포커스)", async ({ page }) => {

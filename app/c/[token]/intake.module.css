@@ -53,6 +53,13 @@
   color: var(--muted);
 }
 
+/* 04.3-16 — E′2 경품 빠짐 알림 줄: 기존 E′ 오류 줄 규칙(--fs-md --danger). 포커스를 받는다(tabindex -1). */
+.goneNotice {
+  color: var(--danger);
+  font-size: var(--fs-md);
+  margin: 0 0 var(--s-2);
+}
+
 .inquiryLine {
   font-size: var(--fs-md);
   color: var(--muted);

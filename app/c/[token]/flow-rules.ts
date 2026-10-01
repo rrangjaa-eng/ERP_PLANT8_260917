@@ -42,6 +42,16 @@ export function isDefiniteResult(result: ActionResultLike): boolean {
   return typeof kind === "string" && DEFINITE_KINDS.has(kind);
 }
 
+// 04.3-16 — E′2로 돌아갈 때 남길 값. 경품 빠짐 · 「다른 경품 고르기」(표시를 남긴 history.back())는 같은 사람의 값이라
+// 주소만 버리고(전달 방식이 바뀌었을 수 있다) 나머지 · 서명은 남긴다. 표시 없는 뒤로(브라우저 뒤로 · 폰 뒤로 몸짓)는 전부 버린다.
+export function draftAfterPrizeGone<T extends { address: string }>(draft: T): T {
+  return { ...draft, address: "" };
+}
+
+export function draftAfterBack<T extends { address: string }>(input: { draft: T; empty: T; keep: boolean }): T {
+  return input.keep ? draftAfterPrizeGone(input.draft) : input.empty;
+}
+
 // 04.3-06 — 되물음(rrnRecheck)을 받은 요청이 보낸 주민등록번호(armedRrn)와 지금
 // 두 칸 값이 같을 때만 「그대로 제출」 표시를 싣는다. 직전 결과를 보지 않으므로
 // 사이에 결과 불명이 끼어도 같은 값이면 같은 본문이다(같은 키 재전송).

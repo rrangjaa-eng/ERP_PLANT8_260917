@@ -6,6 +6,7 @@ import { TextField } from "@/ui/input/TextField";
 import { formatContactPhone, formatSubmittedAtKst } from "@/domain/certs/format";
 import { submitCertificateAction } from "./actions";
 import {
+  draftAfterBack,
   isDefiniteResult,
   nextRrnRecheckConfirmed,
   resolveHistoryEntry,
@@ -42,9 +43,10 @@ type Step =
   | { kind: "form"; prizeId: string }
   | { kind: "submitted"; name: string; submittedAt: string; prizeLine: string; delivery: "onsite" | "parcel" }
   | { kind: "closed"; reason: ClosedReason; at: string }
+  | { kind: "noPrize" }
   | { kind: "notFound" };
 
-type FocusTarget = "row" | "result" | "prize";
+type FocusTarget = "row" | "result" | "prize" | "notice";
 
 // E′4 값(서명 획 포함)은 같은 사람의 것이라 메모리에만 있다. 「다른 경품 고르기」로 경품을 바꾸면 주소만
 // 버리고, 표시 없는 뒤로(브라우저 뒤로) · 결과 화면으로 가면 전부 버린다. armedRrn = 되물음(rrnRecheck)을
@@ -80,12 +82,16 @@ const RESPONSE_TIMEOUT_MS = 20_000;
 const PROGRESS_DELAY_MS = 300;
 const RESULT_LEAD_ID = "cert-result-lead";
 const PRIZE_ID = "cert-prize";
+const PRIZE_GONE_ID = "cert-prize-gone";
+// 「목록에서 빠짐」과 「같은 경품의 전달 방식 바뀜」을 함께 덮는다(사용자 결정 PR #88 5928674957 — V3 a).
+const PRIZE_GONE_NOTICE = "고른 경품의 내용이 바뀌었습니다 · 다시 골라 주세요";
 
 const STEP_TITLE: Record<Step["kind"], string> = {
   pick: "경품 고르기",
   form: "확인증 입력",
   submitted: "제출됨",
   closed: "링크 닫힘",
+  noPrize: "경품 없음",
   notFound: "링크 없음",
 };
 
@@ -146,8 +152,41 @@ export function ClosedResult({
   );
 }
 
+// E6-d 경품 없음 — 링크는 열렸는데 보낼 경품이 0(첫 진입 · 제출 중 마지막 경품이 빠짐). 1차 · 입력 없음.
+export function NoPrizeResult({
+  managerName,
+  contactPhone,
+  focusOnMount,
+}: {
+  managerName: string;
+  contactPhone: string;
+  focusOnMount?: boolean;
+}) {
+  useEffect(() => {
+    if (focusOnMount) document.getElementById(RESULT_LEAD_ID)?.focus();
+  }, [focusOnMount]);
+  return (
+    <section className={styles.resultBlock}>
+      <p id={RESULT_LEAD_ID} tabIndex={-1} className={styles.resultLead}>
+        받을 수 있는 경품이 없습니다
+      </p>
+      <p className={styles.resultMuted}>
+        확인이 필요하면 담당자 {managerName} · PLANT8 경영관리{" "}
+        <a href={`tel:${contactPhone}`} className={styles.telLink}>
+          {formatContactPhone(contactPhone)}
+        </a>
+        에 전화해 주세요
+      </p>
+    </section>
+  );
+}
+
 export function IntakeFlow({ token, eventName, wonOn, prizes, terms, managerName, contactPhone }: IntakeFlowProps) {
   const [step, setStep] = useState<Step>({ kind: "pick" });
+  // 서버가 prizeGone으로 돌려준 새 목록 — E′2로 돌아온 뒤(popstate)에 바꿔 그린다.
+  const [prizeList, setPrizeList] = useState<IntakePrizeDto[]>(prizes);
+  const [prizeGone, setPrizeGone] = useState(false);
+  const pendingPrizesRef = useRef<IntakePrizeDto[] | null>(null);
   const [draft, setDraft] = useState<FormDraft>(EMPTY_DRAFT);
   const [busy, setBusy] = useState(false);
   const [showProgress, setShowProgress] = useState(false);
@@ -192,6 +231,7 @@ export function IntakeFlow({ token, eventName, wonOn, prizes, terms, managerName
     focusRef.current = null;
     if (target === "result") document.getElementById(RESULT_LEAD_ID)?.focus();
     else if (target === "prize") document.getElementById(PRIZE_ID)?.focus();
+    else if (target === "notice") document.getElementById(PRIZE_GONE_ID)?.focus();
     else if (target === "row" && lastPrizeRef.current) {
       document.querySelector<HTMLButtonElement>(`[data-prize-id="${lastPrizeRef.current}"]`)?.focus();
     }
@@ -201,8 +241,12 @@ export function IntakeFlow({ token, eventName, wonOn, prizes, terms, managerName
   // 새로 고침 · bfcache 복원)이면 E′2를 그리고 뒤로 간다.
   useEffect(() => {
     function backToPick(keepDraft: boolean) {
-      setDraft((d) => (keepDraft ? { ...d, address: "" } : EMPTY_DRAFT));
-      focusRef.current = "row";
+      setDraft((d) => draftAfterBack({ draft: d, empty: EMPTY_DRAFT, keep: keepDraft }));
+      const nextPrizes = pendingPrizesRef.current;
+      pendingPrizesRef.current = null;
+      if (nextPrizes) setPrizeList(nextPrizes);
+      setPrizeGone(nextPrizes !== null);
+      focusRef.current = nextPrizes ? "notice" : "row";
       setStep({ kind: "pick" });
     }
     function onPopState(event: PopStateEvent) {
@@ -241,6 +285,7 @@ export function IntakeFlow({ token, eventName, wonOn, prizes, terms, managerName
 
   // 행 누름은 서버를 부르지 않는다 — 곧바로 E′4.
   function choose(prize: IntakePrizeDto) {
+    setPrizeGone(false);
     lastPrizeRef.current = prize.id;
     keepDraftRef.current = false;
     history.pushState({ step: "form" }, "");
@@ -257,9 +302,14 @@ export function IntakeFlow({ token, eventName, wonOn, prizes, terms, managerName
         <p className={styles.subtitle}>
           {eventName} · {wonOn} 당첨
         </p>
+        {prizeGone ? (
+          <p id={PRIZE_GONE_ID} tabIndex={-1} className={styles.goneNotice}>
+            {PRIZE_GONE_NOTICE}
+          </p>
+        ) : null}
         <p className={styles.listLabel}>받은 경품을 골라 주세요</p>
         <ul className={styles.pickList}>
-          {prizes.map((prize) => (
+          {prizeList.map((prize) => (
             <li key={prize.id}>
               <button type="button" data-prize-id={prize.id} className={styles.pickRow} onClick={() => choose(prize)}>
                 <span>{prize.name}</span>
@@ -274,7 +324,7 @@ export function IntakeFlow({ token, eventName, wonOn, prizes, terms, managerName
   }
 
   if (step.kind === "form") {
-    const prize = prizes.find((p) => p.id === step.prizeId);
+    const prize = prizeList.find((p) => p.id === step.prizeId);
     if (!prize) return null;
     return (
       <div>
@@ -307,6 +357,16 @@ export function IntakeFlow({ token, eventName, wonOn, prizes, terms, managerName
             })
           }
           onClosed={(reason, at) => toResult({ kind: "closed", reason, at })}
+          onPrizeGone={(next) => {
+            // 새 목록이 비면 E6-d(값 버림). 아니면 표시를 남긴 history.back()으로 E′2 항목에 돌아가 값(주소만 버림)을 지킨다.
+            if (next.length === 0) {
+              toResult({ kind: "noPrize" });
+              return;
+            }
+            pendingPrizesRef.current = next;
+            keepDraftRef.current = true;
+            history.back();
+          }}
           onNotFound={() => toResult({ kind: "notFound" })}
         />
       </div>
@@ -318,6 +378,15 @@ export function IntakeFlow({ token, eventName, wonOn, prizes, terms, managerName
       <div>
         <h1 className={styles.title}>{TITLE}</h1>
         <ClosedResult reason={step.reason} at={step.at} managerName={managerName} contactPhone={contactPhone} />
+      </div>
+    );
+  }
+
+  if (step.kind === "noPrize") {
+    return (
+      <div>
+        <h1 className={styles.title}>{TITLE}</h1>
+        <NoPrizeResult managerName={managerName} contactPhone={contactPhone} />
       </div>
     );
   }
@@ -404,6 +473,7 @@ function IntakeForm({
   onOtherPrize,
   onSaved,
   onClosed,
+  onPrizeGone,
   onNotFound,
 }: {
   token: string;
@@ -418,6 +488,7 @@ function IntakeForm({
   onOtherPrize: () => void;
   onSaved: (data: SavedData) => void;
   onClosed: (reason: ClosedReason, at: string) => void;
+  onPrizeGone: (prizes: IntakePrizeDto[]) => void;
   onNotFound: () => void;
 }) {
   const [fieldErrors, setFieldErrors] = useState<SubmitField[]>([]);
@@ -515,12 +586,14 @@ function IntakeForm({
       showFieldErrors(["rrn"]);
     } else if (data?.kind === "closed") {
       onClosed(data.reason, data.at);
+    } else if (data?.kind === "prizeGone") {
+      onPrizeGone(data.prizes);
     } else if (data?.kind === "notFound") {
       onNotFound();
     } else {
       // 결과 불명(연결 끊김 · 20초 · 5xx · serverError · 해석 불가) · 제출 잠시 멈춤(throttled — 같은 키) ·
-      // 경품 빠짐 · 안내 바뀜 · 열리기 전(확정 판정 — 키는 끝났다). 갈래 화면은 04.3-16이 E′ 계약대로 만든다 —
-      // 그 전까지 값은 그대로 두고 결과 불명 줄을 보인다.
+      // 안내 바뀜 · 열리기 전(확정 판정 — 키는 끝났다)은 Task 2가 화면을 만든다 — 그 전까지 값은 그대로 두고
+      // 결과 불명 줄을 보인다.
       setUnknownLine(true);
     }
   }

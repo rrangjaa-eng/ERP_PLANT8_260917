@@ -586,6 +586,14 @@ deploy_jobs() {
     --command=node,dist/cli/restore-rehearsal-cli.mjs \
     --set-env-vars="$common_env" \
     --set-secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest"
+
+  # 04.3-12: 확인증 파기 Job — 배포는 Job을 만들기만 하고 실행하지 않는다(사람이 월 1회 실행).
+  # 실행 절차는 docs/OPERATIONS.md 「확인증 파기」 절. 파기는 복호화하지 않으므로 데이터 키 · KMS는 주지 않고 서명 버킷 이름만 준다.
+  run gcloud run jobs deploy "$(job_name "$ENV" purge-certs)" \
+    "${job_common[@]}" \
+    --command=node,dist/cli/purge-certs.mjs \
+    --set-env-vars="${common_env},CERT_SIGNATURE_BUCKET=$(cert_bucket "$ENV" "$PROJECT")" \
+    --set-secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest"
 }
 
 run_db_bootstrap() {

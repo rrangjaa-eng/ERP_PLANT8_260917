@@ -488,12 +488,12 @@ describe("deploy.sh — Job 환경 계약(시나리오 9)", () => {
     repoDir = setupRepo();
   });
 
-  it("Job 5개 모두 APP_ENV·BETTER_AUTH_URL·BETTER_AUTH_SECRET을 갖고, DB_ADMIN_PASSWORD는 db-bootstrap에만 있다", () => {
+  it("Job 6개 모두 APP_ENV·BETTER_AUTH_URL·BETTER_AUTH_SECRET을 갖고, DB_ADMIN_PASSWORD는 db-bootstrap에만 있다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
     expect(r.status).toBe(0);
 
     const deployLines = r.log.split("\n").filter((l) => l.startsWith("run jobs deploy plant8-staging-"));
-    expect(deployLines).toHaveLength(5);
+    expect(deployLines).toHaveLength(6);
     for (const line of deployLines) {
       expect(line).toContain("APP_ENV=staging");
       expect(line).toContain("BETTER_AUTH_URL=https://plant8-staging-");
@@ -530,6 +530,16 @@ describe("deploy.sh — Job 환경 계약(시나리오 9)", () => {
     expect(restore).not.toContain("--args=");
     expect(restore).toContain("CLOUD_SQL_CONNECTION_NAME=");
     expect(restore).not.toContain("DB_ADMIN_PASSWORD");
+
+    // 04.3-12: 확인증 파기 Job — 데이터 키 없이 서명 버킷 이름만, 실행은 사람(배포는 만들기만).
+    const purge = jobLine(r.log, "purge-certs");
+    expect(purge).toContain("--command=node,dist/cli/purge-certs.mjs");
+    expect(purge).not.toContain("--args=");
+    expect(purge).toContain("CERT_SIGNATURE_BUCKET=test-proj-plant8-staging-cert-signatures");
+    expect(purge).toContain("BETTER_AUTH_SECRET=better-auth-secret-staging:latest");
+    expect(purge).not.toContain("APP_DATA_KEY");
+    expect(purge).not.toContain("DB_ADMIN_PASSWORD");
+    expect(r.log).not.toContain("run jobs execute plant8-staging-purge-certs");
   });
 });
 

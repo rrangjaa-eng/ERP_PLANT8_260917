@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { codeItems } from "@/db/schema";
+import { codeItems, vendors } from "@/db/schema";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
@@ -14,7 +14,7 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { addDays, kstToday } from "@/lib/kst-date";
 
 // quick 261001-85g DOM 감사 — 등록 폼 선택지가 노출표를 지난 뒤(ADMN-03) 가려진 계급의 화면.
-// D: 거래처 정보가 가려진 계급이 견적 표 거래처 칸을 열었다 닫아도 그 줄의 거래처가 비지 않는다.
+// D: 거래처 정보가 가려진 계급의 견적 표에는 거래처 열이 없다(사용자 결정 2026-10-01). D2: 목록에 없는 거래처(보관)는 편집기를 열었다 닫아도 그대로다.
 // A · B: 클라이언트 · 담당 PM 선택지가 0개면 등록 진입점이 없다(팀 0개와 같은 규칙).
 const TODAY = kstToday(new Date());
 const COL_VENDOR = 3;
@@ -62,9 +62,8 @@ function vendorCell(page: Page, rowIndex: number): Locator {
 test.describe("가려진 참조 정보의 화면(quick 261001-85g)", () => {
   test.use({ viewport: { width: 1280, height: 900 } });
 
-  test("D: 거래처 정보가 가려진 계급이 거래처 칸을 열었다 닫아도 줄의 거래처가 그대로다", async ({ page }) => {
-    const teamId = await makeTeam();
-    const writer = await makeWriter(teamId, "vendor.value");
+  // 견적 줄 하나(거래처 있음)를 가진 프로젝트 — 담당 PM은 writer.
+  async function makeProjectWithVendorLine(teamId: string, writer: Account) {
     const client = await insertVendor(SYSTEM_VIEWER, { name: `E2E가림거래처-${randomUUID()}`, normalizedName: `e2e가림거래처-${randomUUID()}` });
     const created = await createProject(SYSTEM_VIEWER, {
       clientId: client.id,
@@ -93,11 +92,31 @@ test.describe("가려진 참조 정보의 화면(quick 261001-85g)", () => {
         },
       ],
     });
+    return { projectId: created.id, client };
+  }
+
+  test("D: 거래처 정보가 가려진 계급의 견적 표에는 거래처 열이 없다(가려진 정보의 열은 그리지 않는다)", async ({ page }) => {
+    const teamId = await makeTeam();
+    const writer = await makeWriter(teamId, "vendor.value");
+    const { projectId, client } = await makeProjectWithVendorLine(teamId, writer);
 
     await login(page, writer);
-    await page.goto(`/projects/${created.id}`);
+    await page.goto(`/projects/${projectId}`);
+    const table = page.getByRole("table", { name: "견적 줄" }).or(page.getByRole("grid", { name: "견적 줄" }));
+    await expect(table.getByRole("columnheader", { name: "항목" })).toBeVisible();
+    await expect(table.getByRole("columnheader", { name: "거래처" })).toHaveCount(0);
+    await expect(table).not.toContainText(client.id);
+  });
+
+  test("D2: 보관된 거래처 줄은 거래처 칸을 열었다 닫아도 값이 그대로다", async ({ page }) => {
+    const teamId = await makeTeam();
+    const writer = await makeWriter(teamId, "");
+    const { projectId, client } = await makeProjectWithVendorLine(teamId, writer);
+    await db.update(vendors).set({ archivedAt: new Date() }).where(eq(vendors.id, client.id));
+
+    await login(page, writer);
+    await page.goto(`/projects/${projectId}`);
     const cell = vendorCell(page, 0);
-    await expect(cell).not.toHaveText("—");
     const before = await cell.textContent();
 
     await cell.focus();

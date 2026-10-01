@@ -46,6 +46,20 @@ describe("프로젝트 등록 폼 선택지의 정보 노출표 투영(ADMN-03, 
     expect(references.vendors.find((row) => row.id === fx.vendor.id)).toEqual(fx.vendor);
     expect(references.teams.find((row) => row.id === fx.team.id)).toEqual(fx.team);
     expect(references.pmUsers.find((row) => row.id === fx.person.id)).toEqual(fx.person);
+    expect(references.vendorShown).toBe(true);
+  });
+
+  it("(v1b) 노출 판정은 항목마다 한 번 — 투영도 같은 판정을 쓴다", async () => {
+    await makeFixtures();
+    const viewer = await makeRole(ALL_SHOWN);
+    const calls: string[] = [];
+    await listProjectFormReferences(viewer, {
+      visible: (_viewer, item) => {
+        calls.push(item);
+        return Promise.resolve(true);
+      },
+    });
+    expect(calls.sort()).toEqual(["person.value", "team.value", "vendor.value"]);
   });
 
   it("(v2) vendor.value가 꺼지면 clients · vendors가 비고 팀 · 사람은 그대로다", async () => {
@@ -53,6 +67,8 @@ describe("프로젝트 등록 폼 선택지의 정보 노출표 투영(ADMN-03, 
     const references = await listProjectFormReferences(await makeRole({ ...ALL_SHOWN, "vendor.value": false }));
     expect(references.clients).toEqual([]);
     expect(references.vendors).toEqual([]);
+    // 견적 표는 이 값으로 거래처 열을 그리지 않는다(사용자 결정 2026-10-01 — 가려진 정보의 열은 그리지 않는다).
+    expect(references.vendorShown).toBe(false);
     expect(references.teams.map((row) => row.id)).toContain(fx.team.id);
     expect(references.pmUsers.map((row) => row.id)).toContain(fx.person.id);
   });

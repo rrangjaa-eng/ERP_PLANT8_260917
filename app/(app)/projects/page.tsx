@@ -9,6 +9,7 @@ import {
   type ProjectSortKey,
 } from "@/domain/projects";
 import { listProjectFormReferences, loadCreatorDefaults, scopeCreateFormReferences } from "@/domain/projects/references";
+import { projectsEmptyAction } from "./empty-action";
 import { listProjectStatusCatalog } from "@/domain/projects/status";
 import { recentFxRate } from "@/domain/money/currency";
 import { firstListParam, normalizeListYear, reconcileListYear, yearOptions } from "@/domain/projects/list-view";
@@ -81,9 +82,10 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const sortDirection = firstListParam(params.dir) === "desc" ? "desc" : "asc";
   const statusLabel = statusOptions.find((option) => option.value === status)?.label;
 
-  const [references, canWrite, list, copySource, usdDefaultFxRate] = await Promise.all([
+  const [references, canWrite, canWriteVendors, list, copySource, usdDefaultFxRate] = await Promise.all([
     listProjectFormReferences(session.viewer),
     can(session.viewer, "projects", "write"),
+    can(session.viewer, "admin.vendors", "write"),
     loadProjectList(session.viewer, {
       status,
       statusLabel,
@@ -188,7 +190,13 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       {emptyKind === "none" ? (
         <ListEmpty
           message="등록된 프로젝트가 없습니다"
-          action={canCreate ? { label: "프로젝트 등록", href: projectsHref({ isNew: true }) } : undefined}
+          action={projectsEmptyAction({
+            canCreate,
+            canWrite,
+            vendorShown: references.vendorShown,
+            clientCount: references.clients.length,
+            canWriteVendors,
+          })}
         />
       ) : emptyKind === "default-view" ? (
         <ListEmpty message={`${year}년에 걸친 프로젝트가 없습니다`} action={{ label: "전체 연도 보기", href: "/projects?year=all" }} />

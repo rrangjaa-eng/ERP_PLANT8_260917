@@ -172,6 +172,36 @@ describe("제출 — 동시 제출(T-04.3-07)", () => {
   });
 });
 
+describe("제출 — 같은 경품 다른 키 동시(N6 a — 같은 연락처 두 번째 제출을 막지 않는다)", () => {
+  it("같은 경품에 다른 키 둘이 잠그기 전 검사를 함께 통과 → 둘 다 saved · 줄 2 · 확인증 번호 둘 · 객체 2 · 의도 줄 0", async () => {
+    const { eventId, token, prizeId } = await makeEvent();
+    let arrived = 0;
+    let release: () => void = () => {};
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const store = storeWith({
+      afterPut: async () => {
+        arrived++;
+        if (arrived === 2) release();
+        await barrier;
+      },
+    });
+
+    const results = await Promise.all([
+      submitCertificate(token, await inputFor(prizeId), IP, { signatureStore: store }),
+      submitCertificate(token, await inputFor(prizeId), IP, { signatureStore: store }),
+    ]);
+
+    expect(results.map((r) => r.kind)).toEqual(["saved", "saved"]);
+    const rows = await submissionsFor(eventId);
+    expect(rows).toHaveLength(2);
+    expect(new Set(rows.map((r) => r.certNo)).size).toBe(2);
+    expect(objectsFor(eventId, prizeId)).toHaveLength(2);
+    expect(await intentCount()).toBe(0);
+  });
+});
+
 describe("제출 — 잠근 뒤 재판정(Codex #7)", () => {
   it("ⓐ put 동안 행사를 manual로 닫음 → closed · 제출 줄 0 · 객체 지워짐 · 의도 줄 0", async () => {
     const { eventId, token, prizeId } = await makeEvent();

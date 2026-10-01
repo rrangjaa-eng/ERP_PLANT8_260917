@@ -2,6 +2,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
+// 04.3-15 Task 2 ③ — 가액 경계(5905714131): app/c/** 어느 파일도 가액 판정 모듈을 import하지 않고 가액 필드
+// 이름을 갖지 않으며, domain/certs/intake.ts에서 가액 칸 이름은 certPrizeListed( 호출 줄에만 나온다.
 // 04.3-02 Task 3 ④ — 공개 경로 경계(T-04.3-09 · T-04.3-25). 정적 텍스트
 // 검사로 고정한다: `app/c/**` 어떤 파일도 `@/lib/viewer` ·
 // `@/domain/permissions/`를 import하지 않고, `app/**`에서 `publicActionClient`
@@ -72,5 +74,26 @@ describe("규약 C1 첫 겹 — 공개 진입점 첫 문장", () => {
   it("app/c/[token]/page.tsx 기본 export의 첫 문장이 await assertCertFeatureEnabled()다", () => {
     const src = readFileSync(resolve(ROOT, "app/c/[token]/page.tsx"), "utf8");
     expect(src).toMatch(/export default async function \w+\([^)]*\)[^{]*\{\s*await assertCertFeatureEnabled\(\);/);
+  });
+});
+
+describe("가액 경계 — 수령자 쪽 코드(04.3-15 · 5905714131)", () => {
+  const VALUE_FIELD_NAMES = /unitValue|unit_value|prizeValue|prize_value|가액/;
+
+  it("app/c/** 어느 파일도 prize-value 모듈을 import하지 않고 가액 필드 이름이 없다", () => {
+    const files = listSourceFiles(resolve(ROOT, "app/c"));
+    expect(files.length).toBeGreaterThan(0);
+    const violations = files.filter((file) => {
+      const content = readFileSync(file, "utf8");
+      return /prize-value/.test(content) || VALUE_FIELD_NAMES.test(content);
+    });
+    expect(violations).toEqual([]);
+  });
+
+  it("domain/certs/intake.ts에서 가액 칸 이름이 나오는 줄은 모두 certPrizeListed( 호출 줄이다", () => {
+    const lines = readFileSync(resolve(ROOT, "domain/certs/intake.ts"), "utf8").split("\n");
+    const valueLines = lines.filter((line) => /unitValue|unit_value/.test(line));
+    expect(valueLines.length).toBeGreaterThan(0);
+    expect(valueLines.filter((line) => !line.includes("certPrizeListed("))).toEqual([]);
   });
 });

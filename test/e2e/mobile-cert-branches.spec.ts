@@ -2,7 +2,7 @@ import { test, expect, type Page, type Request } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { Client } from "pg";
 import { db } from "@/db/client";
-import { certEvents } from "@/db/schema";
+import { certEvents, certPrizes } from "@/db/schema";
 import { env } from "@/lib/env";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { CERT_RETENTION_YEARS } from "@/domain/settings/keys";
@@ -577,4 +577,74 @@ test("320×568 — E′4 문서 scroll-padding-bottom이 sticky 제출 줄 높�
   await drawSignature(page);
   const ready = await measure();
   expect(ready.padding).toBeGreaterThanOrEqual(ready.bar);
+});
+
+// 사용자 결정 2026-10-01(PR #88 5931337199) — 낡은 목록 막다른 길. 현장일 때 연 페이지에서 담당자가 전달 방식을 택배로 바꾸면
+// (제출 중 경합이 아니다) 주소 칸 없이 낸 제출이 서버 칸 검사에서 invalid(address)가 되어 고칠 칸이 없었다.
+// 서버가 prizeGone으로 새 목록을 돌려주고, 클라이언트는 V3와 같은 알림 · 같은 경품(이제 택배)이 목록에 선다.
+test("낡은 목록 — 현장일 때 연 페이지에서 택배로 바뀐 뒤 제출하면 같은 알림 · 같은 경품이 택배로 · 다시 고르면 빈 주소 칸", async ({
+  page,
+}) => {
+  const { link, prizeIds } = await createCertEvent({
+    name: "낡은목록E2E",
+    prizes: [
+      { name: "낡은-가", unitValueKrw: 73_519, delivery: "onsite" },
+      { name: "낡은-나", unitValueKrw: 91_237, delivery: "onsite" },
+    ],
+  });
+  if (!link) throw new Error("링크 없음");
+  const keys = trackSubmitKeys(page);
+  const collector = await collectCertResponses(page);
+  await page.goto(link);
+  await prizeRow(page, "낡은-나").click();
+  await fillIntakeForm(page, { phone: "010-4821-7730" });
+  await drawSignature(page);
+  await expect(page.locator("#address")).toHaveCount(0);
+
+  const changing = prizeIds[1];
+  if (!changing) throw new Error("둘째 경품 id 없음");
+  await db.update(certPrizes).set({ delivery: "parcel", updatedAt: new Date() }).where(eq(certPrizes.id, changing));
+  await submitButton(page).click();
+
+  const notice = page.getByText(PRIZE_GONE_NOTICE, { exact: true });
+  await expect(notice).toBeFocused();
+  await expect(page.getByRole("listitem")).toHaveCount(2);
+  await expect(prizeRow(page, "낡은-나")).toHaveText("낡은-나택배");
+
+  await prizeRow(page, "낡은-나").click();
+  await expect(page.locator("#address")).toBeVisible();
+  await expect(page.locator("#address")).toHaveValue("");
+  await expect(page.locator("#name")).toHaveValue("김하늘");
+  await page.locator("#address").fill("서울시 마포구 월드컵로 1");
+  await expect(submitButton(page)).toBeEnabled();
+  await submitButton(page).click();
+  await expect(page.getByText("제출되었습니다", { exact: true })).toBeVisible();
+  expect(keys).toHaveLength(2);
+  expect(keys[0]).not.toBe(keys[1]);
+
+  const { actionBodies } = await collector.finish();
+  expect(actionBodies.some((body) => body.includes("prizeGone")), "서버가 돌려준 prizeGone 응답").toBe(true);
+  expect(actionBodies.some((body) => body.includes('"invalid"')), "invalid 응답 없음").toBe(false);
+});
+
+// B-M1(독립 DOM 감사) — E6-b 링크 닫힘 첫 진입에서도 결과 블록 첫 줄에 포커스(E6-d · E6-e와 같다).
+test("닫힘 E6-b 첫 진입 — 담당자가 닫은 링크 · 기한 지난 링크 모두 결과 블록 첫 줄에 포커스", async ({ page }) => {
+  const manual = await createCertEvent({ name: "닫힘첫진입수동", prizes: [A, B, C] });
+  if (!manual.link) throw new Error("링크 없음");
+  await closeCertEventForTest(manual.eventId);
+  await page.goto(manual.link);
+  await expect(page.getByText("이 링크는 닫혔습니다", { exact: true })).toBeVisible();
+  await expect(page.getByText("담당자가 접수를 마쳤습니다", { exact: false })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("cert-result-lead");
+
+  const expired = await createCertEvent({ name: "닫힘첫진입기한", prizes: [A, B, C] });
+  if (!expired.link) throw new Error("링크 없음");
+  await db
+    .update(certEvents)
+    .set({ expiresAt: new Date(Date.now() - 60 * 60 * 1000) })
+    .where(eq(certEvents.id, expired.eventId));
+  await page.goto(expired.link);
+  await expect(page.getByText("이 링크는 닫혔습니다", { exact: true })).toBeVisible();
+  await expect(page.getByText(/제출 기한 .* 지났습니다/)).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("cert-result-lead");
 });

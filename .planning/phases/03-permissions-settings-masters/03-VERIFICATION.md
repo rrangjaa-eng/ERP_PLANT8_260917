@@ -3,7 +3,7 @@ phase: 03-permissions-settings-masters
 verified: 2026-10-01T03:40:51Z
 status: passed
 score: 6/6 must-haves verified
-covered_digest: "v1:sha256:9f43c80e50b659548cbebd7ac220c7c975a8228cb85a20eb35ac25c31deb55d3"
+covered_digest: "v1:sha256:43acccbce38ec76e89fd5d9d75cf0982bd1f99f2d91b51e263b56568fc221c6d"
 covered_files:
   - ".github/workflows/account.yml"
   - ".planning/REQUIREMENTS.md"
@@ -424,7 +424,7 @@ human_verification:
     expected: "`/admin`에 마스터·설정·권한·운영 기록 그룹의 관리자 화면이 보이고, 권한표 격자는 현재 시드 메뉴 수만큼 열(지금 MENUS 22 × 동작 3)로 빈 칸 없이 채워진다. 배포 Job(migrate·seed) 성공"
     why_human: "스테이징 적용은 이 컨테이너에서 볼 수 없다(`*.run.app` 프록시 403). Claude는 이번에도 직접 로그인하지 못했다 — auto-mode 분류기가 자격 증명 사용을 막았다"
     status: resolved
-    resolution: "2026-10-01 사용자 확인. main SHA f85c9afa6dc30686758879afe39edaa7d304140b의 staging deploy workflow run #103(id 36807956531) conclusion success — 이 세션이 `gh run list --commit f85c9af…`로 같은 결과를 다시 읽었다. 앞선 deploy run #101·#102도 success(사용자 보고). 사용자가 https://plant8-staging-67rumhdgba-du.a.run.app 에 시스템 관리자로 로그인해 `/admin`과 `/admin/permissions`를 열고 「둘 다 정상」 — 관리자 인덱스 그룹이 보이고 권한표에 빈 칸 없음. 열 수는 6회차가 적은 46이 아니다(이후 페이즈가 메뉴를 더함) — 기대를 「현재 시드 메뉴 수만큼 열, 빈 칸 없음」으로 기록"
+    resolution: "2026-10-01 사용자 확인. main SHA f85c9afa6dc30686758879afe39edaa7d304140b의 staging deploy workflow run #103(id 36807956531) conclusion success — 이 세션이 `gh run list --commit f85c9af…`로 같은 결과를 다시 읽었다. 앞선 deploy run #101·#102도 success(오케스트레이터가 gh로 확인). 사용자가 https://plant8-staging-67rumhdgba-du.a.run.app 에 시스템 관리자로 로그인해 `/admin`과 `/admin/permissions`를 열고 「둘 다 정상」 — 관리자 인덱스 그룹이 보이고 권한표에 빈 칸 없음. 열 수는 6회차가 적은 46이 아니다(이후 페이즈가 메뉴를 더함) — 기대를 「현재 시드 메뉴 수만큼 열, 빈 칸 없음」으로 기록"
   - test: "스테이징 `/admin/permissions` 격자 + 배포 Job 3종 (5회차 사람 판정 1)"
     expected: "격자가 빈 칸 없이 렌더된다"
     why_human: "5회차 항목 — 이미 닫힘"

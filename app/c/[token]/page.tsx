@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 import { assertCertFeatureEnabled } from "@/lib/certs/feature-guard";
 import { loadIntake } from "@/domain/certs/intake";
-import { ClosedResult, IntakeFlow, NoPrizeResult } from "./intake-flow";
+import { ClosedResult, IntakeFlow, NoPrizeResult, NotYetOpenResult } from "./intake-flow";
 import styles from "./intake.module.css";
 
 // 한 요청 안에서 generateMetadata와 페이지가 같은 읽기를 한 번만 한다.
@@ -14,6 +14,7 @@ const loadIntakeOnce = cache(loadIntake);
 function titleOf(result: Awaited<ReturnType<typeof loadIntake>>): string {
   if (result.kind === "open") return result.prizes.length === 0 ? "경품 없음" : "경품 고르기";
   if (result.kind === "closed") return "링크 닫힘";
+  if (result.kind === "notYetOpen") return "열리기 전";
   return "링크 없음";
 }
 
@@ -33,9 +34,23 @@ export default async function CertIntakePage({ params }: { params: Promise<{ tok
   const { token } = await params;
   const result = await loadIntakeOnce(token);
 
-  // notYetOpen(당첨일 00:00 KST 전 — E8 b)은 04.3-16이 E6-e 계약 화면을 그리기 전까지 E6-c 모양으로 임시로
-  // 그린다(같은 PR이라 배포되지 않는다 — E32).
-  if (result.kind === "notFound" || result.kind === "notYetOpen") notFound();
+  if (result.kind === "notFound") notFound();
+
+  // E6-e 열리기 전(당첨일 00:00 KST 전 — E8 b) — 경품 목록 없이 부제 · 두 줄만(응답에 경품 이름이 없다).
+  if (result.kind === "notYetOpen") {
+    return (
+      <main className={styles.main}>
+        <h1 className={styles.title}>기타소득 지급 확인</h1>
+        <NotYetOpenResult
+          eventName={result.eventName}
+          wonOn={result.wonOn}
+          managerName={result.managerName}
+          contactPhone={result.contactPhone}
+          focusOnMount
+        />
+      </main>
+    );
+  }
 
   if (result.kind === "closed") {
     return (

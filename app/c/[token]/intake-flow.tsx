@@ -44,6 +44,7 @@ type Step =
   | { kind: "submitted"; name: string; submittedAt: string; prizeLine: string; delivery: "onsite" | "parcel" }
   | { kind: "closed"; reason: ClosedReason; at: string }
   | { kind: "noPrize" }
+  | { kind: "notYetOpen"; eventName: string; wonOn: string; managerName: string; contactPhone: string }
   | { kind: "notFound" };
 
 type FocusTarget = "row" | "result" | "prize" | "notice";
@@ -92,6 +93,7 @@ const STEP_TITLE: Record<Step["kind"], string> = {
   submitted: "제출됨",
   closed: "링크 닫힘",
   noPrize: "경품 없음",
+  notYetOpen: "열리기 전",
   notFound: "링크 없음",
 };
 
@@ -122,6 +124,18 @@ async function withDeadline<T>(call: () => Promise<T>): Promise<T | undefined> {
   }
 }
 
+// 문의 전화 3차 링크 + 조사 「에」 — 줄바꿈 금지 묶음이라 「에」가 줄 맨 앞으로 떨어지지 않는다(04.3-16 V1).
+function TelGroup({ phone }: { phone: string }) {
+  return (
+    <span className={styles.telGroup}>
+      <a href={`tel:${phone}`} className={styles.telLink}>
+        {formatContactPhone(phone)}
+      </a>
+      에
+    </span>
+  );
+}
+
 // E6-b 링크 닫힘 — 서버가 준 사유의 문장(사유 둘: 기한 · 담당자가 닫음). 진입(page)과 제출 결과 모두
 // 이 블록을 그린다.
 export function ClosedResult({
@@ -142,11 +156,7 @@ export function ClosedResult({
         이 링크는 닫혔습니다
       </p>
       <p className={styles.resultMuted}>
-        {reasonText} · 확인이 필요하면 담당자 {managerName} · PLANT8 경영관리{" "}
-        <a href={`tel:${contactPhone}`} className={styles.telLink}>
-          {formatContactPhone(contactPhone)}
-        </a>
-        에 전화해 주세요
+        {reasonText} · 확인이 필요하면 담당자 {managerName} · PLANT8 경영관리 <TelGroup phone={contactPhone} /> 전화해 주세요
       </p>
     </section>
   );
@@ -171,13 +181,45 @@ export function NoPrizeResult({
         받을 수 있는 경품이 없습니다
       </p>
       <p className={styles.resultMuted}>
-        확인이 필요하면 담당자 {managerName} · PLANT8 경영관리{" "}
-        <a href={`tel:${contactPhone}`} className={styles.telLink}>
-          {formatContactPhone(contactPhone)}
-        </a>
-        에 전화해 주세요
+        확인이 필요하면 담당자 {managerName} · PLANT8 경영관리 <TelGroup phone={contactPhone} /> 전화해 주세요
       </p>
     </section>
+  );
+}
+
+// E6-e 열리기 전(E8 b — 당첨일 00:00 KST 전) — E6-b 모양: E1 공통 머리의 부제(행사 이름 · 당첨일) + 결과 블록 두 줄.
+// 1차 · 입력 · 경품 목록 없음 · 자동 새로 고침 없음(시각을 재지 않는다). 첫 진입 · 제출 결과 둘 다 이 화면이다.
+export function NotYetOpenResult({
+  eventName,
+  wonOn,
+  managerName,
+  contactPhone,
+  focusOnMount,
+}: {
+  eventName: string;
+  wonOn: string;
+  managerName: string;
+  contactPhone: string;
+  focusOnMount?: boolean;
+}) {
+  useEffect(() => {
+    if (focusOnMount) document.getElementById(RESULT_LEAD_ID)?.focus();
+  }, [focusOnMount]);
+  return (
+    <>
+      <p className={styles.subtitle}>
+        {eventName} · {wonOn} 당첨
+      </p>
+      <section className={styles.resultBlock}>
+        <p id={RESULT_LEAD_ID} tabIndex={-1} className={styles.resultLead}>
+          아직 열리지 않았습니다
+        </p>
+        <p className={styles.resultMuted}>
+          {wonOn} 00:00부터 제출할 수 있습니다 · 확인이 필요하면 담당자 {managerName} · PLANT8 경영관리{" "}
+          <TelGroup phone={contactPhone} /> 전화해 주세요
+        </p>
+      </section>
+    </>
   );
 }
 
@@ -187,6 +229,8 @@ export function IntakeFlow({ token, eventName, wonOn, prizes, terms, managerName
   const [prizeList, setPrizeList] = useState<IntakePrizeDto[]>(prizes);
   const [prizeGone, setPrizeGone] = useState(false);
   const pendingPrizesRef = useRef<IntakePrizeDto[] | null>(null);
+  // 서버가 termsChanged로 돌려준 새 안내 판 — 안내 블록을 새 판으로 다시 그린다(체크만 풀림).
+  const [termsNow, setTermsNow] = useState<IntakeTermsDto>(terms);
   const [draft, setDraft] = useState<FormDraft>(EMPTY_DRAFT);
   const [busy, setBusy] = useState(false);
   const [showProgress, setShowProgress] = useState(false);
@@ -199,17 +243,11 @@ export function IntakeFlow({ token, eventName, wonOn, prizes, terms, managerName
   // U12 — 문의 전화는 어디서나 tel: 링크(숫자만)로 건다, 보이는 값은 하이픈 표기.
   const contactLine: ReactNode = (
     <>
-      PLANT8 경영관리{" "}
-      <a href={`tel:${contactPhone}`} className={styles.telLink}>
-        {formatContactPhone(contactPhone)}
-      </a>
+      PLANT8 경영관리 <TelGroup phone={contactPhone} />
     </>
   );
   const inquiryText: ReactNode = (
-    <>
-      받은 경품이 목록에 없으면 제출하지 않아도 됩니다 · 확인이 필요하면 담당자 {managerName} · {contactLine}에 전화해
-      주세요
-    </>
+    <>받은 경품이 목록에 없으면 제출하지 않아도 됩니다 · 확인이 필요하면 담당자 {managerName} · {contactLine} 전화해 주세요</>
   );
 
   // 진행 바 — 300ms 안에 끝나면 보이지 않는다(UI-SPEC E1 LOADING). 제출만 서버 왕복이다.
@@ -333,7 +371,7 @@ export function IntakeFlow({ token, eventName, wonOn, prizes, terms, managerName
         <IntakeForm
           token={token}
           prize={prize}
-          terms={terms}
+          terms={termsNow}
           draft={draft}
           busy={busy}
           inquiryText={inquiryText}
@@ -367,6 +405,11 @@ export function IntakeFlow({ token, eventName, wonOn, prizes, terms, managerName
             keepDraftRef.current = true;
             history.back();
           }}
+          onTermsChanged={(next) => {
+            setTermsNow(next);
+            setDraft((d) => ({ ...d, consent: false }));
+          }}
+          onNotYetOpen={(data) => toResult({ kind: "notYetOpen", ...data })}
           onNotFound={() => toResult({ kind: "notFound" })}
         />
       </div>
@@ -378,6 +421,20 @@ export function IntakeFlow({ token, eventName, wonOn, prizes, terms, managerName
       <div>
         <h1 className={styles.title}>{TITLE}</h1>
         <ClosedResult reason={step.reason} at={step.at} managerName={managerName} contactPhone={contactPhone} />
+      </div>
+    );
+  }
+
+  if (step.kind === "notYetOpen") {
+    return (
+      <div>
+        <h1 className={styles.title}>{TITLE}</h1>
+        <NotYetOpenResult
+          eventName={step.eventName}
+          wonOn={step.wonOn}
+          managerName={step.managerName}
+          contactPhone={step.contactPhone}
+        />
       </div>
     );
   }
@@ -418,7 +475,7 @@ export function IntakeFlow({ token, eventName, wonOn, prizes, terms, managerName
           {step.delivery === "parcel" ? "적은 주소로 보내 드립니다" : "현장 수령"}
         </p>
         <p className={styles.resultMuted}>
-          확인이 필요하면 담당자 {managerName} · {contactLine}에 전화해 주세요
+          확인이 필요하면 담당자 {managerName} · {contactLine} 전화해 주세요
         </p>
       </section>
     </div>
@@ -446,6 +503,7 @@ const FIELD_FOCUS_ID: Record<SubmitField, string> = {
 const RRN_ERROR = "주민등록번호가 맞지 않습니다 · 앞 6자리(생년월일)와 뒤 7자리를 다시 확인해 주세요";
 const PHONE_ERROR = "연락처 형식이 아닙니다 · 010-0000-0000처럼 적어 주세요";
 const SUBMIT_UNKNOWN = "제출됐는지 확인하지 못했습니다 · 다시 눌러 주세요 · 적은 내용은 남아 있습니다";
+const SUBMIT_THROTTLED = "제출이 잠시 멈췄습니다 · 잠시 뒤 다시 눌러 주세요";
 
 // 칸 오류 제출 줄 — §6-5 확정 문장 `주민등록번호를 고쳐 주세요 · 나머지는 채워졌습니다`의
 // 꼴로 틀린 칸 이름을 나열한다(받침에 맞는 을/를).
@@ -474,6 +532,8 @@ function IntakeForm({
   onSaved,
   onClosed,
   onPrizeGone,
+  onTermsChanged,
+  onNotYetOpen,
   onNotFound,
 }: {
   token: string;
@@ -489,11 +549,14 @@ function IntakeForm({
   onSaved: (data: SavedData) => void;
   onClosed: (reason: ClosedReason, at: string) => void;
   onPrizeGone: (prizes: IntakePrizeDto[]) => void;
+  onTermsChanged: (terms: IntakeTermsDto) => void;
+  onNotYetOpen: (head: { eventName: string; wonOn: string; managerName: string; contactPhone: string }) => void;
   onNotFound: () => void;
 }) {
   const [fieldErrors, setFieldErrors] = useState<SubmitField[]>([]);
   const [rrnMessage, setRrnMessage] = useState<string | undefined>(undefined);
-  const [unknownLine, setUnknownLine] = useState(false);
+  // 제출 줄의 결과 불명 · 속도 제한 문장 — 둘 다 같은 키로 다시 보낸다(키는 끝나지 않았다).
+  const [retryLine, setRetryLine] = useState<"unknown" | "throttled" | null>(null);
   const signatureRef = useRef<SignaturePadHandle>(null);
   const focusFieldRef = useRef<SubmitField | null>(null);
   // 멱등 키는 시도 단위 — 결과 불명이고 보낼 본문이 그대로일 때만 같은 키를 다시 쓴다.
@@ -507,6 +570,22 @@ function IntakeForm({
     focusFieldRef.current = null;
     document.getElementById(FIELD_FOCUS_ID[field])?.focus();
   }, [fieldErrors, rrnMessage]);
+
+  // 문서 scroll-padding-bottom = sticky 제출 줄의 지금 높이(DR-16 — 이유 줄이 접히면 바뀐다). CSS가 이 값을 읽는다.
+  const submitBarRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const bar = submitBarRef.current;
+    if (!bar) return;
+    const root = document.documentElement;
+    const apply = () => root.style.setProperty("--cert-submit-bar-h", `${Math.ceil(bar.getBoundingClientRect().height)}px`);
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(bar);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty("--cert-submit-bar-h");
+    };
+  }, []);
 
   // 「서명 있음」은 서명 칸이 잉크 픽셀로 정한다(서버와 같은 함수 · 상수) · 「다시 쓰기」는 잉크가 조금이라도 있으면.
   const [signed, setSigned] = useState(false);
@@ -522,13 +601,13 @@ function IntakeForm({
   const blockedReason = submitBlockedReason(missingFields);
 
   const fixLine = fixFieldsLine(fieldErrors);
-  const dangerLine = unknownLine ? SUBMIT_UNKNOWN : fixLine;
+  const dangerLine = retryLine === "throttled" ? SUBMIT_THROTTLED : retryLine === "unknown" ? SUBMIT_UNKNOWN : fixLine;
   // 제출 줄이 칸 이름을 부르는 동안만 그 칸이 줄을 가리킨다(N2 — 칸 아래 줄이 없는 이름 · 주소).
-  const fixLineId = !unknownLine && fixLine ? dangerLineId : undefined;
+  const fixLineId = !retryLine && fixLine ? dangerLineId : undefined;
 
   function edit(field: SubmitField, patch: Partial<FormDraft>) {
     onDraft(patch);
-    setUnknownLine(false);
+    setRetryLine(null);
     if (fieldErrors.includes(field)) setFieldErrors((list) => list.filter((f) => f !== field));
     if (field === "rrn") setRrnMessage(undefined);
   }
@@ -568,13 +647,13 @@ function IntakeForm({
     const latest = stepRef.current;
     if (latest.kind !== "form" || latest.prizeId !== prize.id || pendingSubmitRef.current?.key !== key) return;
     if (isDefiniteResult(result)) pendingSubmitRef.current = null;
-    setUnknownLine(false);
+    setRetryLine(null);
 
     const data = result?.data;
     if (result?.validationErrors) {
       const outcome = submitOutcomeFromValidationErrors(result.validationErrors);
       if (outcome) showFieldErrors(outcome.fields);
-      else setUnknownLine(true);
+      else setRetryLine("unknown");
       return;
     }
     if (data?.kind === "saved") {
@@ -588,13 +667,21 @@ function IntakeForm({
       onClosed(data.reason, data.at);
     } else if (data?.kind === "prizeGone") {
       onPrizeGone(data.prizes);
+    } else if (data?.kind === "termsChanged") {
+      // 안내 블록을 새 판으로 다시 그리고 체크만 푼다 — 다른 값 · 서명은 남고 포커스 = 그 체크박스. 새 문장 없음
+      // (제출 막힘 이유 줄이 빈 칸 목록 규칙대로 안내 확인 체크를 부른다).
+      onTermsChanged(data.terms);
+      focusFieldRef.current = "consent";
+      setFieldErrors([]);
+    } else if (data?.kind === "notYetOpen") {
+      onNotYetOpen({ eventName: data.eventName, wonOn: data.wonOn, managerName: data.managerName, contactPhone: data.contactPhone });
+    } else if (data?.kind === "throttled") {
+      setRetryLine("throttled");
     } else if (data?.kind === "notFound") {
       onNotFound();
     } else {
-      // 결과 불명(연결 끊김 · 20초 · 5xx · serverError · 해석 불가) · 제출 잠시 멈춤(throttled — 같은 키) ·
-      // 안내 바뀜 · 열리기 전(확정 판정 — 키는 끝났다)은 Task 2가 화면을 만든다 — 그 전까지 값은 그대로 두고
-      // 결과 불명 줄을 보인다.
-      setUnknownLine(true);
+      // 결과 불명(연결 끊김 · 20초 · 5xx · serverError · 해석 불가) — 같은 키로 다시 보낸다.
+      setRetryLine("unknown");
     }
   }
 
@@ -686,16 +773,14 @@ function IntakeForm({
           onStrokesChange={(strokes) => edit("signature", { strokes })}
           onSignedChange={setSigned}
         />
-        {hasInk ? (
-          <div className={styles.signatureRedo}>
-            <Button variant="tertiary" onClick={() => signatureRef.current?.clear()}>
-              다시 쓰기
-            </Button>
-          </div>
-        ) : null}
+        <div className={hasInk ? styles.signatureRedo : `${styles.signatureRedo} ${styles.signatureRedoIdle}`}>
+          <Button variant="tertiary" onClick={() => signatureRef.current?.clear()}>
+            다시 쓰기
+          </Button>
+        </div>
       </div>
 
-      <div className={styles.stickySubmit}>
+      <div ref={submitBarRef} className={styles.stickySubmit}>
         <Button
           type="submit"
           variant="primary"

@@ -136,6 +136,10 @@
   margin-right: var(--s-2);
 }
 
+.blocker {
+  display: contents;
+}
+
 .primaryWrap,
 .secondaryWrap {
   display: contents;
@@ -187,7 +191,22 @@
   }
 
   .actions {
+    flex-wrap: wrap;
+    row-gap: var(--s-2);
     padding: var(--s-3) var(--pad-page) var(--s-4);
+  }
+
+  /* 사용자 결정 2026-10-01 — 막힘 이유 · 다음 한 수는 버튼 윗줄 전체 폭. 같은 줄에 두면 이유 글자가 남는 폭을
+     먼저 차지해 아래 1차 : 2차 = 2 : 1이 깨진다(DOM 실측 1.02~1.68). */
+  .blocker {
+    display: flex;
+    flex: 1 0 100%;
+    align-items: center;
+    gap: var(--s-3);
+  }
+
+  .nextStep {
+    margin-right: 0;
   }
 
   /* §7-8 시트 행동 줄 — 1차가 2차의 두 배 폭, 버튼 높이 --touch-min.

@@ -411,7 +411,11 @@ type ApplyResult =
   | { kind: "ok"; rows: Array<{ unitValueKrw: number }>; counts: { updated: number; inserted: number; deleted: number } }
   | { kind: "invalid"; cellErrors: PrizeCellError[] }
   | { kind: "readOnly" }
-  | { kind: "conflict"; prizes: Partial<CertPrizeDto>[] };
+  | PrizeRowsInTx;
+
+// 잠근 트랜잭션은 원시 줄(summaries)만 돌려준다 — 권한 투영(projectMany는 전역 풀로 노출표를 읽는다)은 커밋 · 롤백
+// 뒤(ARCHITECTURE §4-8(3) · 플랜 E27, 독립 검토 W1).
+type PrizeRowsInTx = { kind: "conflict"; summaries: CertPrizeSummaryRow[] };
 
 function sameValues(row: CertPrizeSummaryRow, values: PrizeRowValues): boolean {
   return (
@@ -467,7 +471,7 @@ async function applyPrizeChanges(
     deletedIds: [...deleteIds],
   });
   if (checked.kind !== "ok") return checked;
-  if (conflictIds.length > 0) return { kind: "conflict", prizes: await prizeDtos(viewer, saved, true) };
+  if (conflictIds.length > 0) return { kind: "conflict", summaries: saved };
 
   const maxSort = saved.reduce((max, row) => Math.max(max, row.sortOrder), -1);
   const values = (row: { name: string; unitValueKrw: number; delivery: "onsite" | "parcel"; winnerCount: number }) => ({
@@ -569,8 +573,10 @@ export async function generateQr(
   const by = createdByOf(viewer);
   const recordAction = deps?.recordAction ?? defaultRecordAction;
 
+  type InTx = Exclude<GenerateQrResult, { kind: "conflict" }> | PrizeRowsInTx;
+  let result: InTx;
   try {
-    return await withTransaction(async (tx): Promise<GenerateQrResult> => {
+    result = await withTransaction(async (tx): Promise<InTx> => {
       const locked = await lockEventRow(viewer, eventId, tx);
       if (!locked) return { kind: "notFound" };
       if (locked.tokenHash) return locked.qrRequestId === parsed.requestId ? { kind: "ok" } : { kind: "alreadyGenerated" };
@@ -625,6 +631,8 @@ export async function generateQr(
     if (error instanceof RollbackWith) return error.result as GenerateQrResult;
     throw error;
   }
+  if (result.kind !== "conflict") return result;
+  return { kind: "conflict", prizes: await prizeDtos(viewer, result.summaries, true) };
 }
 
 // ── 경품 표 저장(I′3 「일괄 저장 Ctrl+S N」 · 신청됨 Ctrl+S) ─────────────────────────
@@ -654,7 +662,11 @@ export async function savePrizes(
   const now = deps?.now?.() ?? new Date();
   const recordAction = deps?.recordAction ?? defaultRecordAction;
 
-  return withTransaction(async (tx): Promise<SavePrizesResult> => {
+  type InTx =
+    | Exclude<SavePrizesResult, { kind: "saved" | "conflict" }>
+    | PrizeRowsInTx
+    | { kind: "saved"; rows: number; summaries: CertPrizeSummaryRow[] };
+  const result = await withTransaction(async (tx): Promise<InTx> => {
     const locked = await lockEventRow(viewer, eventId, tx);
     if (!locked) return { kind: "notFound" };
     const closed = locked.closedAt !== null || (locked.expiresAt !== null && locked.expiresAt.getTime() <= now.getTime());
@@ -668,6 +680,9 @@ export async function savePrizes(
         { tx },
       );
     }
-    return { kind: "saved", rows, prizes: await prizeDtos(viewer, await listPrizeSummaries(viewer, eventId, tx), true) };
+    return { kind: "saved", rows, summaries: await listPrizeSummaries(viewer, eventId, tx) };
   });
+  if (result.kind === "saved") return { kind: "saved", rows: result.rows, prizes: await prizeDtos(viewer, result.summaries, true) };
+  if (result.kind === "conflict") return { kind: "conflict", prizes: await prizeDtos(viewer, result.summaries, true) };
+  return result;
 }

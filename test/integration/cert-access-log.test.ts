@@ -7,6 +7,7 @@ import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { setSettingValue } from "@/domain/settings/registry";
 import { CERT_ENABLED } from "@/domain/settings/keys";
 import { getCertificatePrint, getSubmissionForReview } from "@/domain/certs/review";
+import type { RecordActionDeps } from "@/domain/action-log/record";
 import { seedSubmittedCert } from "@/test/e2e/helpers/cert";
 import { FULL_GRANT, grantCertReview, makeReviewer, makeUser } from "@/test/integration/cert-review-fixtures";
 
@@ -27,7 +28,7 @@ async function viewLogs(submissionId: string) {
     .where(and(eq(actionLog.actionType, "cert_view"), eq(actionLog.entityId, submissionId)));
 }
 
-function failingAppend(): () => Promise<void> {
+function failingAppend(): RecordActionDeps["appendActionLog"] {
   return () => Promise.reject(new Error("action_log 쓰기 실패"));
 }
 

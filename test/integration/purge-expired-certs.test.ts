@@ -346,7 +346,7 @@ describe("멱등 · 미리 보기 · 파기 뒤 화면 · 기능 플래그", () 
     await runCertPurge({ now: kst("2026-03-01T00:00:00"), apply: true });
     const spy = decryptSpy();
 
-    expect(await getSubmissionForReview(reviewer, sample.submissionId)).toEqual({ kind: "notFound" });
+    expect(await getSubmissionForReview(reviewer, sample.submissionId, { ip: null })).toEqual({ kind: "notFound" });
     expect(await revealRrn(reviewer, sample.submissionId, { decrypt: spy.fn })).toEqual({ kind: "denied" });
     expect(spy.calls).toBe(0);
   });

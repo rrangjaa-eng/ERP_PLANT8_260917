@@ -52,7 +52,7 @@ describe("getCertificatePrint — 가린 번호만 · 복호화 없음", () => {
     const seeded = await seedSubmittedCert({ delivery: "parcel", address: "서울시 마포구 월드컵로 1" });
     const viewer = await makeReviewer(FULL_GRANT);
 
-    const result = await getCertificatePrint(viewer, seeded.submissionId, {
+    const result = await getCertificatePrint(viewer, seeded.submissionId, { ip: null }, {
       signatureStore: storeWith(signaturePngFixture()),
       now: () => PRINTED_AT,
     });
@@ -81,14 +81,14 @@ describe("getCertificatePrint — 가린 번호만 · 복호화 없음", () => {
   it("현장 확인증은 address가 null이다", async () => {
     const seeded = await seedSubmittedCert();
     const viewer = await makeReviewer(FULL_GRANT);
-    const result = await getCertificatePrint(viewer, seeded.submissionId, { signatureStore: storeWith(null) });
+    const result = await getCertificatePrint(viewer, seeded.submissionId, { ip: null }, { signatureStore: storeWith(null) });
     expect(result.kind === "ok" && result.print.address).toBeNull();
   });
 
   it("저장소에 서명 객체가 없으면 DTO의 서명이 null이다(오류 표시는 화면 몫)", async () => {
     const seeded = await seedSubmittedCert();
     const viewer = await makeReviewer(FULL_GRANT);
-    const result = await getCertificatePrint(viewer, seeded.submissionId, { signatureStore: storeWith(null) });
+    const result = await getCertificatePrint(viewer, seeded.submissionId, { ip: null }, { signatureStore: storeWith(null) });
     expect(result.kind === "ok" && result.print.signatureDataUrl).toBeNull();
   });
 
@@ -100,7 +100,7 @@ describe("getCertificatePrint — 가린 번호만 · 복호화 없음", () => {
       get: () => Promise.reject(new Error("저장소 실패")),
       delete: () => Promise.resolve(),
     };
-    const result = await getCertificatePrint(viewer, seeded.submissionId, { signatureStore: broken });
+    const result = await getCertificatePrint(viewer, seeded.submissionId, { ip: null }, { signatureStore: broken });
     expect(result.kind === "ok" && result.print.signatureDataUrl).toBeNull();
   });
 });
@@ -111,27 +111,27 @@ describe("getCertificatePrint — notFound 다섯", () => {
   it("certs.submissions 보기가 없는 기획 PM → notFound", async () => {
     const seeded = await seedSubmittedCert();
     const pm = await makeReviewer({ view: false, write: false, value: true, unmasked: false });
-    expect(await getCertificatePrint(pm, seeded.submissionId, deps)).toEqual({ kind: "notFound" });
+    expect(await getCertificatePrint(pm, seeded.submissionId, { ip: null }, deps)).toEqual({ kind: "notFound" });
   });
 
   it("파기됨(purged_at) → notFound", async () => {
     const seeded = await seedSubmittedCert();
     const viewer = await makeReviewer(FULL_GRANT);
     await db.update(certSubmissions).set({ purgedAt: new Date() }).where(eq(certSubmissions.id, seeded.submissionId));
-    expect(await getCertificatePrint(viewer, seeded.submissionId, deps)).toEqual({ kind: "notFound" });
+    expect(await getCertificatePrint(viewer, seeded.submissionId, { ip: null }, deps)).toEqual({ kind: "notFound" });
   });
 
   it("없는 id · uuid 아닌 id → notFound", async () => {
     const viewer = await makeReviewer(FULL_GRANT);
-    expect(await getCertificatePrint(viewer, randomUUID(), deps)).toEqual({ kind: "notFound" });
-    expect(await getCertificatePrint(viewer, "not-a-uuid", deps)).toEqual({ kind: "notFound" });
+    expect(await getCertificatePrint(viewer, randomUUID(), { ip: null }, deps)).toEqual({ kind: "notFound" });
+    expect(await getCertificatePrint(viewer, "not-a-uuid", { ip: null }, deps)).toEqual({ kind: "notFound" });
   });
 
   it("게이트 꺼짐 → notFound · 복호화 0번", async () => {
     const seeded = await seedSubmittedCert();
     const viewer = await makeReviewer(FULL_GRANT);
     await setSettingValue(SYSTEM_VIEWER, CERT_ENABLED, false);
-    expect(await getCertificatePrint(viewer, seeded.submissionId, deps)).toEqual({ kind: "notFound" });
+    expect(await getCertificatePrint(viewer, seeded.submissionId, { ip: null }, deps)).toEqual({ kind: "notFound" });
     expect(decrypt).not.toHaveBeenCalled();
   });
 
@@ -139,7 +139,7 @@ describe("getCertificatePrint — notFound 다섯", () => {
     const seeded = await seedSubmittedCert();
     await grantCertReview("role-ceo", FULL_GRANT);
     const ceo = await makeUser("role-ceo", "대표");
-    expect(await getCertificatePrint(ceo, seeded.submissionId, deps)).toEqual({ kind: "notFound" });
+    expect(await getCertificatePrint(ceo, seeded.submissionId, { ip: null }, deps)).toEqual({ kind: "notFound" });
   });
 });
 
@@ -148,7 +148,7 @@ describe("getCertificatePrint — 정보 항목 cert_submission.value 투영(cod
     const seeded = await seedSubmittedCert();
     const off = await makeReviewer({ view: true, write: false, value: false, unmasked: false });
     expect(
-      await getCertificatePrint(off, seeded.submissionId, { signatureStore: storeWith(signaturePngFixture()) }),
+      await getCertificatePrint(off, seeded.submissionId, { ip: null }, { signatureStore: storeWith(signaturePngFixture()) }),
     ).toEqual({ kind: "notFound" });
 
     const sample: CertificatePrintRow = {
@@ -178,7 +178,7 @@ describe("getCertificatePrint — 수량 정정 뒤(04.3-17 E36)", () => {
     const viewer = await makeReviewer(FULL_GRANT);
     const saved = await correctSubmission(viewer, seeded.submissionId, { version: 1, name: seeded.name, phone: seeded.phone, quantity: 3 });
     expect(saved.kind).toBe("saved");
-    const print = await getCertificatePrint(viewer, seeded.submissionId, { signatureStore: storeWith(signaturePngFixture()) });
+    const print = await getCertificatePrint(viewer, seeded.submissionId, { ip: null }, { signatureStore: storeWith(signaturePngFixture()) });
     expect(print.kind === "ok" && print.print.quantity).toBe(3);
   });
 });

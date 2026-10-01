@@ -1,6 +1,8 @@
 import { cache } from "react";
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import { clientIp } from "@/lib/client-ip";
 import { getSessionId, requireSession } from "@/lib/viewer";
 import { assertCertFeatureEnabled } from "@/lib/certs/feature-guard";
 import { touchPrivacySession } from "@/domain/certs/privacy-session";
@@ -13,8 +15,8 @@ export const dynamic = "force-dynamic";
 
 // 04.3-07 — I4 확인증 확인 · 정정(경영관리 전용). 순서: 기능 게이트(C1 — 로그인한 사람은 권한과
 // 무관하게 404) → 세션 → 개인정보취급자 비활동 판정(볼 수 없는 사람은 시계를 건드리지 않고 404 ·
-// 만료면 로그인) → 조회(project 투영 — 값이 안 보이면 404). 메타데이터와 본문이 한 번만 돌도록 요청
-// 단위 cache로 묶는다.
+// 만료면 로그인) → 조회(project 투영 — 값이 안 보이면 404)와 끌 수 없는 cert_view 기록(04.3-14 — 접속지 IP).
+// 메타데이터와 본문이 한 번만 돌도록 요청 단위 cache로 묶는다 — 조회 기록도 요청당 한 줄이다.
 const loadReview = cache(async (id: string) => {
   await assertCertFeatureEnabled();
   const { viewer } = await requireSession();
@@ -25,7 +27,7 @@ const loadReview = cache(async (id: string) => {
   if (touched.kind === "notAllowed") notFound();
   if (touched.kind === "expired") redirect("/login");
 
-  const result = await getSubmissionForReview(viewer, id);
+  const result = await getSubmissionForReview(viewer, id, { ip: clientIp(await headers()) });
   if (result.kind === "notFound") notFound();
   return result;
 });

@@ -111,7 +111,13 @@ function isUuid(id: string): boolean {
   return UUID_PATTERN.test(id);
 }
 
-export type GetSubmissionForReviewDeps = { signatureStore: SignatureStore };
+export type GetSubmissionForReviewDeps = {
+  signatureStore: SignatureStore;
+  appendActionLog: RecordActionDeps["appendActionLog"];
+};
+
+// 04.3-14 사용자 결정 ⑤ — 접속기록의 「어디서」. 페이지 · 액션이 요청 헤더에서 lib/client-ip.ts clientIp로 읽어 넘긴다.
+export type CertAccess = { ip: string | null };
 
 export type SubmissionForReviewResult =
   | {
@@ -141,9 +147,12 @@ async function readSignatureDataUrl(store: SignatureStore, key: string | null): 
   }
 }
 
+// 04.3-14 — 판정을 모두 지나 투영이 비지 않았을 때만 끌 수 없는 cert_view를 남기고 그다음에 돌려준다(revealRrn의 「권한 →
+// 기록 → 복호화」와 같은 순서). 기록이 던지면 그대로 던진다 — 데이터가 돌아가지 않는다(fail-closed).
 export async function getSubmissionForReview(
   viewer: Viewer,
   id: string,
+  access: CertAccess,
   deps?: Partial<GetSubmissionForReviewDeps>,
 ): Promise<SubmissionForReviewResult> {
   if (!(await isCertFeatureEnabled())) return { kind: "notFound" };
@@ -179,6 +188,12 @@ export async function getSubmissionForReview(
 
   const submission = await project(viewer, source, CERT_SUBMISSION_REVIEW_DTO_SPEC);
   if (Object.keys(submission).length === 0) return { kind: "notFound" };
+
+  await recordAction(
+    viewer,
+    { actionType: "cert_view", entity: ENTITY, entityId: id, detail: { ip: access.ip, submissionId: id } },
+    { appendActionLog: deps?.appendActionLog },
+  );
 
   return {
     kind: "ok",
@@ -232,15 +247,21 @@ registerDto({
   fields: CERTIFICATE_PRINT_DTO_SPEC.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })),
 });
 
-export type GetCertificatePrintDeps = { signatureStore: SignatureStore; now: () => Date };
+export type GetCertificatePrintDeps = {
+  signatureStore: SignatureStore;
+  now: () => Date;
+  appendActionLog: RecordActionDeps["appendActionLog"];
+};
 
 export type CertificatePrintResult =
   | { kind: "ok"; print: Partial<CertificatePrintDto>; printedAt: string }
   | { kind: "notFound" };
 
+// 04.3-14 사용자 결정 U3 a — 인쇄를 열 때도 I4와 같은 cert_view(detail의 via는 print). 기록이 던지면 인쇄도 열리지 않는다.
 export async function getCertificatePrint(
   viewer: Viewer,
   id: string,
+  access: CertAccess,
   deps?: Partial<GetCertificatePrintDeps>,
 ): Promise<CertificatePrintResult> {
   if (!(await isCertFeatureEnabled())) return { kind: "notFound" };
@@ -270,6 +291,12 @@ export async function getCertificatePrint(
 
   const print = await project(viewer, source, CERTIFICATE_PRINT_DTO_SPEC);
   if (Object.keys(print).length === 0) return { kind: "notFound" };
+
+  await recordAction(
+    viewer,
+    { actionType: "cert_view", entity: ENTITY, entityId: id, detail: { ip: access.ip, submissionId: id, via: "print" } },
+    { appendActionLog: deps?.appendActionLog },
+  );
 
   return { kind: "ok", print, printedAt: formatSubmittedAtKst((deps?.now ?? (() => new Date()))().toISOString()) };
 }

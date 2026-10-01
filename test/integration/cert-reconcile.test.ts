@@ -214,7 +214,7 @@ describe("I4 파기 대상 표시(Task 1 — 가액 × 수량 ≤ 50,000, 가액
     const f = await reconcileFixture();
     const manager = await makeViewer(MANAGER, "경영관리");
     const purgeOf = async (id: string) => {
-      const result = await getSubmissionForReview(manager, id);
+      const result = await getSubmissionForReview(manager, id, { ip: null });
       if (result.kind !== "ok") throw new Error(result.kind);
       expect(JSON.stringify(result)).not.toMatch(/73,?519|30,?000|49,?000/);
       return result.purgeTarget;
@@ -568,9 +568,9 @@ describe("excludeSubmission — 「대조 제외」(E1 b · 게이트 = 쓰기, 
     }
     const [after] = await db.select().from(certSubmissions).where(eq(certSubmissions.id, f.a1));
     expect(after).toEqual(before);
-    const review = await getSubmissionForReview(viewOnly, f.a1);
+    const review = await getSubmissionForReview(viewOnly, f.a1, { ip: null });
     expect(review.kind === "ok" && review.canExclude).toBe(false);
-    const managerReview = await getSubmissionForReview(await makeViewer(MANAGER, "경영관리"), f.a1);
+    const managerReview = await getSubmissionForReview(await makeViewer(MANAGER, "경영관리"), f.a1, { ip: null });
     expect(managerReview.kind === "ok" && managerReview.canExclude).toBe(true);
   });
 
@@ -581,7 +581,7 @@ describe("excludeSubmission — 「대조 제외」(E1 b · 게이트 = 쓰기, 
     await excludeSubmission(manager, f.a1, { version: before?.version ?? 0 });
     const [row] = await db.select().from(certSubmissions).where(eq(certSubmissions.id, f.a1));
 
-    const review = await getSubmissionForReview(manager, f.a1);
+    const review = await getSubmissionForReview(manager, f.a1, { ip: null });
     expect(review.kind).toBe("ok");
     if (review.kind !== "ok") return;
     expect(review.excluded).toMatchObject({ byName: "경영관리" });
@@ -596,6 +596,6 @@ describe("excludeSubmission — 「대조 제외」(E1 b · 게이트 = 쓰기, 
     expect(await correctSubmission(manager, f.a1, { version: row?.version ?? 0, name: "김하늘", phone: "010-9999-0000" })).toEqual({
       kind: "denied",
     });
-    expect(await getCertificatePrint(manager, f.a1)).toEqual({ kind: "notFound" });
+    expect(await getCertificatePrint(manager, f.a1, { ip: null })).toEqual({ kind: "notFound" });
   });
 });

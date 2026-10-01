@@ -74,7 +74,7 @@ test.describe("단일 기둥 최대 폭 — 관리자 화면·폼 전면 적용 
     await expectSingleColumn(page, page.locator("main dl"));
   });
 
-  test("사람 상세의 main dl과 #person-role-change가 720px 이하로 main h1과 같은 x에서 시작한다", async ({
+  test("사람 상세의 main dl과 계급 변경 칸 묶음이 720px 이하로 main h1과 같은 x에서 시작한다", async ({
     page,
   }) => {
     await loginAs(page, SYSADMIN_ROLE_ID);
@@ -82,7 +82,8 @@ test.describe("단일 기둥 최대 폭 — 관리자 화면·폼 전면 적용 
     await page.getByRole("link", { name: "상세" }).first().click();
     await expect(page).toHaveURL(/\/admin\/people\/.+/);
     await expectSingleColumn(page, page.locator("main dl"));
-    await expectSingleColumn(page, page.locator("#person-role-change"));
+    // select 자체는 PC 라벨 열 뒤 200px이다(§6-3 칸 폭, form-label-section-gap.spec.ts) — 기둥은 그 묶음이 잡는다.
+    await expectSingleColumn(page, page.locator("div:has(> #person-role-change)"));
   });
 
   // 260922-o2b 후속(/review + 독립 DOM 감사) — SYSTEM.md §3 「단일 기둥 최대

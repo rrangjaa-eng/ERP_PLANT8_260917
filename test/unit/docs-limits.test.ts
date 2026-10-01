@@ -133,3 +133,37 @@ describe("docs/RESTORE.md", () => {
     expect(new Set(order).size).toBe(order.length);
   });
 });
+
+// 04.3-12 Task 3 ③ — OPERATIONS 줄 예산이 없어 확인증 파기 런북은 별도 문서다(사용자 결정 2026-10-01 채팅 — 파기 런북 별도 문서).
+describe("docs/CERT-PURGE.md", () => {
+  const content = readDoc("CERT-PURGE.md");
+
+  it("150줄 이하다", () => {
+    expect(lineCount(content)).toBeLessThanOrEqual(150);
+  });
+
+  it("12자리 숫자(프로젝트 번호 형태)가 없다(D-03)", () => {
+    expect(content).not.toMatch(/\d{12}/);
+  });
+
+  it.each([
+    "purge_certs.done",
+    "--args=--apply",
+    "35일",
+    "bootstrap-gcp.sh",
+    "사람 월 1회 + 35일 감시 런북 유지, Scheduler 자동화는 Phase 7 이관",
+    "백업 보관 7일이 지나야 완전 파기",
+    "filesPending",
+    "orphansDeleted",
+  ])("'%s'를 포함한다", (token) => {
+    expect(content).toContain(token);
+  });
+
+  it("백업 복원 뒤 곧바로 purge-certs --apply를 한 번 돌린다는 줄이 있다(AX-3)", () => {
+    expect(content.split("\n").some((line) => line.includes("복원") && line.includes("--apply"))).toBe(true);
+  });
+
+  it("OPERATIONS.md가 이 문서를 가리킨다", () => {
+    expect(readDoc("OPERATIONS.md")).toContain("CERT-PURGE.md");
+  });
+});

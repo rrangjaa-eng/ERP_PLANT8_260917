@@ -293,3 +293,5 @@ base64 -i ~/.codex/auth.json | tr -d '\n'                                # macOS
 자동 백업은 `deploy.sh`가 켠다(`--backup-start-time=18:00` UTC · `--retained-backups-count=7`, 확인: `gcloud sql instances describe plant8-{env}-db --format='value(settings.backupConfiguration)'`). PITR은 꺼져 있다 — 복원 단위는 하루 1회 자동 백업이고 그 뒤 입력은 복원에서 사라진다.
 리허설: Actions `restore-rehearsal.yml`을 main에서 실행(production은 `confirm_production`에 `plant8-prod-db`) → 임시 `plant8-{env}-rehearsal-<실행 id>-<시도>`에 최신 백업 복원 → `plant8-{env}-restore` Job 확인 → 삭제 → 그 환경 DB에 기록.
 결과는 `/admin/system-status` 「복원 리허설」과 Actions 요약 — 기록 단계 전 이른 실패(WIF 인증 등)는 화면에 남지 않아 이전 결과가 최신처럼 보인다, Actions 실행 결과를 먼저 본다. 남은 임시 인스턴스 정리와 실제 사고 복원은 [`docs/RESTORE.md`](RESTORE.md).
+
+확인증 파기(CERT-02)는 사람이 월 1회 Cloud Run Job으로 실행한다 — 절차 · 35일 감시 · 백업 복원 뒤 `--apply`는 [`docs/CERT-PURGE.md`](CERT-PURGE.md).

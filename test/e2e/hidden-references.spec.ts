@@ -182,6 +182,30 @@ test.describe("가려진 참조 정보의 화면(quick 261001-85g)", () => {
     expect(rows.map((row) => row.vendorId)).toEqual([client.id, client.id]);
   });
 
+  test("D6: 저장 전 복제 줄을 다시 복제해도 저장된 원본의 거래처를 갖는다", async ({ page }) => {
+    const teamId = await makeTeam();
+    const writer = await makeWriter(teamId, "vendor.value");
+    const { projectId, client, revisionId } = await makeProjectWithVendorLine(teamId, writer);
+
+    await login(page, writer);
+    await page.goto(`/projects/${projectId}`);
+    const itemCell = dataRow(page, 0).getByRole("gridcell").nth(COL_ITEM);
+    await expect(itemCell).toHaveText("가림 거래처 줄");
+    await itemCell.focus();
+    await page.keyboard.press("Control+d");
+    const copyCell = dataRow(page, 1).getByRole("gridcell").nth(COL_ITEM);
+    await expect(copyCell).toHaveText("가림 거래처 줄");
+    await copyCell.focus();
+    await page.keyboard.press("Control+d");
+    await expect(dataRow(page, 2).getByRole("gridcell").nth(COL_ITEM)).toHaveText("가림 거래처 줄");
+    await copyCell.focus();
+    await page.keyboard.press("Control+s");
+    await expect(page.locator("tfoot").getByText(/저장됨/)).toBeVisible();
+
+    const rows = await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revisionId));
+    expect(rows.map((row) => row.vendorId)).toEqual([client.id, client.id, client.id]);
+  });
+
   test("D3: 팀 업무 범위인데 오늘 팀이 없는 계급에게는 「프로젝트 복사」가 없다(목록 등록 진입점과 같은 좁힌 규칙)", async ({ page }) => {
     const teamId = await makeTeam();
     const owner = await makeWriter(teamId, "");

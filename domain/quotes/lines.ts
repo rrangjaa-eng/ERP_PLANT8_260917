@@ -848,9 +848,9 @@ export async function writeQuoteLinesInTx(
   const sourceIds = [...new Set(input.rows.flatMap((row) => (row.isNew && row.duplicatedFrom ? [row.duplicatedFrom] : [])))].filter(
     (id) => !existingIds.includes(id),
   );
-  const lockedRows = await repoFindQuoteLinesByIds(viewer, [...existingIds, ...sourceIds], { revisionId }, tx);
-  const currentById = new Map(lockedRows.map((row) => [row.id, row] as const));
-  const currentRows = lockedRows.filter((row) => !sourceIds.includes(row.id));
+  const foundRows = await repoFindQuoteLinesByIds(viewer, [...existingIds, ...sourceIds], { revisionId }, tx);
+  const currentById = new Map(foundRows.map((row) => [row.id, row] as const));
+  const currentRows = foundRows.filter((row) => !sourceIds.includes(row.id));
   const activeBefore = await repoListQuoteLinesByRevision(viewer, revisionId, tx);
   const order = input.order
     ? orderChange(
@@ -914,7 +914,10 @@ export async function writeQuoteLinesInTx(
     for (const [rowIndex, received] of input.rows.entries()) {
       // 04-13 — 판정·저장이 보는 종류: 기존 줄은 잠근 tx로 다시 읽은 DB 행, 새 줄만 요청 값(없으면 quote).
       const current = received.isNew ? undefined : currentById.get(received.id);
-      const requested = prepared.vendorShown ? received : keepHiddenVendor(received, current, currentById);
+      // /review 적대 검토 — 가려진 채 불러온 화면(버전 같음 · baseline 거래처 null · DB 거래처 있음)은 그 사이 거래처가
+      // 보이게 바뀌었어도 거래처를 본 적이 없다. 보이는 화면이라면 같은 버전의 baseline은 DB 값과 같다.
+      const sawNoVendor = current !== undefined && received.version === current.version && received.baseline?.vendorId === null && current.vendorId !== null;
+      const requested = prepared.vendorShown && !sawNoVendor ? received : keepHiddenVendor(received, current, currentById);
       const resolved = resolveLineKind(requested, current && lineKindOf(current));
       if (resolved === null) deny(LINE_EDIT_RULE, new UserFacingError(KIND_CHANGED));
       const kind = resolved ?? lineKindOf(current!);

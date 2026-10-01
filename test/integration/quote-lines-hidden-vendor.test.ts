@@ -103,6 +103,43 @@ describe("거래처 정보가 가려진 계급의 견적 줄(Codex 리뷰 P1)", 
     expect(stored?.vendorId).toBe(client.id);
   });
 
+  // /review 적대 검토 — 가려진 채 불러온 화면은 거래처를 null로 들고 있다. 그 사이 거래처가 보이게 바뀌어도
+  // 본 적 없는 거래처를 지우지 않는다(버전 같음 · baseline 거래처 null · DB 거래처 있음).
+  it("가려진 채 불러온 화면이 노출표가 바뀐 뒤 저장해도 거래처를 지우지 않는다", async () => {
+    const { pm, client, revisionId, lineId, subcategory } = await setup(false);
+    const [line] = await listQuoteLines(pm, revisionId, ctx);
+    if (!line || !pm.roleId) throw new Error("줄 · 계급이 없습니다");
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: pm.roleId, infoItem: "vendor.value", visible: true });
+
+    await saveQuoteLines(pm, revisionId, {
+      rows: [
+        {
+          id: lineId,
+          version: line.version,
+          subcategory,
+          itemName: "가림 줄 고침",
+          quantity: 1,
+          unitPrice: { currency: "KRW" as const, amount: 100_000, fxRate: 1 },
+          execution: { currency: "KRW" as const, amount: 80_000, fxRate: 1 },
+          baseline: {
+            subcategory,
+            itemName: "가림 줄",
+            vendorId: null,
+            quantity: 1,
+            unitPriceAmountKrw: 100_000,
+            executionAmountKrw: 80_000,
+            lineStatus: "not_started",
+            note: null,
+          },
+        },
+      ],
+    });
+
+    const [stored] = await db.select().from(quoteLines).where(eq(quoteLines.id, lineId));
+    expect(stored?.itemName).toBe("가림 줄 고침");
+    expect(stored?.vendorId).toBe(client.id);
+  });
+
   // Codex 리뷰 P1(PR #125) — 원본 줄이 요청에 없어도(바뀌지 않은 줄) 복제한 새 줄은 원본의 거래처를 받는다.
   it("가려진 계급이 바뀌지 않은 줄을 복제해 저장하면 새 줄이 원본 거래처를 받는다", async () => {
     const { pm, client, revisionId, lineId, subcategory } = await setup(false);
@@ -128,28 +165,37 @@ describe("거래처 정보가 가려진 계급의 견적 줄(Codex 리뷰 P1)", 
     expect(copy?.vendorId).toBe(client.id);
   });
 
-  it("복제 원본이 다른 차수의 줄이면 저장을 거부한다", async () => {
-    const { pm, revisionId, subcategory } = await setup(false);
-    const other = await setup(false);
+  const copyRow = (subcategory: string, duplicatedFrom: string, id: string = randomUUID()) => ({
+    id,
+    isNew: true as const,
+    duplicatedFrom,
+    lineKind: "quote" as const,
+    subcategory,
+    itemName: "가림 줄",
+    quantity: 1,
+    unitPrice: { currency: "KRW" as const, amount: 100_000, fxRate: 1 },
+    execution: { currency: "KRW" as const, amount: 80_000, fxRate: 1 },
+  });
 
-    await expect(
-      saveQuoteLines(pm, revisionId, {
-        rows: [
-          {
-            id: randomUUID(),
-            isNew: true as const,
-            duplicatedFrom: other.lineId,
-            lineKind: "quote" as const,
-            subcategory,
-            itemName: "남의 줄 복제",
-            quantity: 1,
-            unitPrice: { currency: "KRW" as const, amount: 100_000, fxRate: 1 },
-            execution: { currency: "KRW" as const, amount: 80_000, fxRate: 1 },
-          },
-        ],
-      }),
-    ).rejects.toThrow("차수와 프로젝트가 맞지 않음");
+  // 원본 확인은 계급과 무관하다 — 거래처가 보이는 계급도 같은 규칙.
+  it.each([false, true])("복제 원본이 다른 차수의 줄이거나 없는 id면 저장을 거부한다(거래처 보임 %s)", async (vendorShown) => {
+    const { pm, revisionId, subcategory } = await setup(vendorShown);
+    const other = await setup(vendorShown);
+
+    for (const source of [other.lineId, randomUUID()]) {
+      await expect(saveQuoteLines(pm, revisionId, { rows: [copyRow(subcategory, source)] })).rejects.toThrow("차수와 프로젝트가 맞지 않음");
+    }
     const rows = await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revisionId));
     expect(rows).toHaveLength(1);
+  });
+
+  it("원본을 같은 저장에서 지우며 복제해도 새 줄이 원본 거래처를 받는다", async () => {
+    const { pm, client, revisionId, lineId, subcategory } = await setup(false);
+    const copyId = randomUUID();
+
+    await saveQuoteLines(pm, revisionId, { rows: [copyRow(subcategory, lineId, copyId)], archivedLineIds: [lineId] });
+
+    const [copy] = await db.select().from(quoteLines).where(eq(quoteLines.id, copyId));
+    expect(copy?.vendorId).toBe(client.id);
   });
 });

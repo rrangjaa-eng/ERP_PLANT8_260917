@@ -94,4 +94,13 @@ describe("복원 — 보관할 때의 기준값으로 충돌 판정(검토 8)", 
 
     expect(restored).toMatchObject({ id: newId, isNew: true, duplicatedFrom: sourceId });
   });
+
+  it("새 줄: 모양이 틀린 원본 id는 버린다(서버 uuid 검증에 저장 전체가 막히지 않게)", () => {
+    const newId = "6f1c2b8e-3d4a-4f5b-9c6d-7e8f9a0b1c2d";
+    for (const duplicatedFrom of ["not-a-uuid", 123]) {
+      const stash = { [`${newId}:new`]: { lineKind: "quote", duplicatedFrom, subcategory: "print", itemName: "배너" } };
+      const [restored] = mergeRestoredEdits([], stash, "print", { quote: {} } as KindCells).lines;
+      expect(restored).not.toHaveProperty("duplicatedFrom");
+    }
+  });
 });

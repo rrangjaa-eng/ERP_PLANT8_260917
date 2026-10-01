@@ -99,4 +99,11 @@ describe("recordAction (OPS-05)", () => {
     expect(labels.account_unlock).toBe("잠금 해제");
     expect(labels.holiday_change).toBe("공휴일 변경");
   });
+
+  // 04.3-15(E7 a — 「[지시]」 5921849102): 경품 가액 변경은 원천징수 과세표준 · 수집 · 파기 근거의 이력이라 끌 수 없다.
+  it("cert_prize_value(경품 가액 변경)가 세 배열에 함께 있고 끌 수 없다(E7 a)", () => {
+    expect(CORE_ACTION_TYPES as readonly string[]).toContain("cert_prize_value");
+    expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain("cert_prize_value");
+    expect((ACTION_TYPE_LABELS as Record<string, string>).cert_prize_value).toBe("경품 가액 변경");
+  });
 });

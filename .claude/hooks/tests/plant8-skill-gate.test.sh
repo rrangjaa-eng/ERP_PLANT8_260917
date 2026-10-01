@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 회귀 테스트 — plant8-skill-gate.sh (D-02: 커밋 전 verification-before-completion,
-# D-04: 세션당 gsd-executor는 한 웨이브 — 플랜 wave 정보가 없으면 옛 규칙(한 번))
+# D-04 폐기(2026-10-01): 세션 안에서 gsd-executor를 몇 번이든·다음 웨이브도 띄울 수 있다)
 # payload를 stdin으로 넣어 각 이벤트를 검증한다. 실제 리포를 절대 건드리지 않는다.
 set -uo pipefail
 
@@ -199,8 +199,7 @@ hook plant8-skill-gate.sh agent "$(payload_agent "$E1" gsd-executor)" "$projE1"
 expect_rc "D-04 E1: 첫 실제 디스패치 -> exit 0" 0 "$HOOK_RC"
 
 hook plant8-skill-gate.sh agent "$(payload_agent "$E1" gsd-executor)" "$projE1"
-expect_rc "D-04 E1: 두 번째 디스패치 -> exit 2" 2 "$HOOK_RC"
-expect_contains "D-04 E1: 두 번째 디스패치 메시지(플랜 하나)" "$HOOK_STDERR" "플랜 하나"
+expect_rc "D-04 폐기: 두 번째 디스패치도 같은 세션에서 -> exit 0" 0 "$HOOK_RC"
 
 projE2="$(new_project)"
 E2="sid-d04-e2-$$"
@@ -242,15 +241,15 @@ pid2=$!
 wait "$pid1" "$pid2"
 rc1="$(cat "$f1")"
 rc2="$(cat "$f2")"
-if { [ "$rc1" = "0" ] && [ "$rc2" = "2" ]; } || { [ "$rc1" = "2" ] && [ "$rc2" = "0" ]; }; then
+if [ "$rc1" = "0" ] && [ "$rc2" = "0" ]; then
   PASS=$((PASS + 1))
 else
   FAIL=$((FAIL + 1))
-  echo "FAIL: D-04 parallel dispatch expected exactly one 0 and one 2, got rc1=$rc1 rc2=$rc2"
+  echo "FAIL: parallel dispatch expected both 0 (D-04 폐기), got rc1=$rc1 rc2=$rc2"
 fi
 
 # ---------------------------------------------------------------------------
-# D-04(웨이브): 같은 웨이브의 실행자는 여러 번 띄울 수 있고, 다음 웨이브는 새 세션
+# 웨이브: 같은 웨이브도, 다음 웨이브도 같은 세션에서 띄울 수 있다(사용자 결정 2026-10-01 — 세션 종료는 문맥·독립 검토로)
 wave_project() {  # 04-test 페이즈: wave 1 = 04-01·04-02, wave 2 = 04-03
   local proj
   proj="$(new_project)"
@@ -271,8 +270,7 @@ hook plant8-skill-gate.sh agent "$(payload_agent "$W" gsd-executor)" "$projW"
 expect_rc "D-04 wave: 웨이브 1 미완(04-02 남음) -> exit 0" 0 "$HOOK_RC"
 echo summary > "$projW/.planning/phases/04-test/04-02-SUMMARY.md"
 hook plant8-skill-gate.sh agent "$(payload_agent "$W" gsd-executor)" "$projW"
-expect_rc "D-04 wave: 웨이브 1 완료 뒤 디스패치(웨이브 2) -> exit 2" 2 "$HOOK_RC"
-expect_contains "D-04 wave: 메시지에 웨이브" "$HOOK_STDERR" "웨이브"
+expect_rc "wave: 웨이브 1 완료 뒤 디스패치(웨이브 2)도 같은 세션 -> exit 0" 0 "$HOOK_RC"
 
 # ---------------------------------------------------------------------------
 # 소수점 페이즈(04.1 …)는 Phase 4 로그와 섞이지 않는다
@@ -415,6 +413,19 @@ hook plant8-skill-gate.sh record-skill "$(payload_skill_args "$P10" gsd-verify-w
 hook plant8-skill-gate.sh bash "$(payload_bash "$P10" 'node .claude/gsd-core/bin/gsd-tools.cjs phase complete 04.1' "$projP10")" "$projP10"
 expect_rc "04.1 phase complete: Phase 4 기록으로 통과 안 함 -> exit 2" 2 "$HOOK_RC"
 expect_contains "04.1 phase complete: 메시지에 Phase 04.1" "$HOOK_STDERR" "Phase 04.1"
+# 화면 없는 페이즈 완료는 verify-work·review면 된다(/qa는 화면 페이즈만 — 사용자 결정 2026-10-01)
+projPc="$(new_project)"
+Pc="sid-complete-noui-$$"
+write_gate_line "$projPc" gsd-verify-work "$Pc"; write_gate_line "$projPc" review "$Pc"
+hook plant8-skill-gate.sh bash "$(payload_bash "$Pc" 'node .claude/gsd-core/bin/gsd-tools.cjs phase complete 4' "$projPc")" "$projPc"
+expect_rc "phase complete(화면 없음): verify-work·review -> exit 0" 0 "$HOOK_RC"
+echo spec > "$projPc/.planning/phases/04-test/04-UI-SPEC.md"
+hook plant8-skill-gate.sh bash "$(payload_bash "$Pc" 'node .claude/gsd-core/bin/gsd-tools.cjs phase complete 4' "$projPc")" "$projPc"
+expect_rc "phase complete(화면 페이즈): qa·design-review 없음 -> exit 2" 2 "$HOOK_RC"
+expect_contains "phase complete(화면 페이즈): 메시지에 /qa" "$HOOK_STDERR" "/qa"
+write_gate_line "$projPc" qa "$Pc"; write_gate_line "$projPc" design-review "$Pc"
+hook plant8-skill-gate.sh bash "$(payload_bash "$Pc" 'node .claude/gsd-core/bin/gsd-tools.cjs phase complete 4' "$projPc")" "$projPc"
+expect_rc "phase complete(화면 페이즈): qa·design-review 있음 -> exit 0" 0 "$HOOK_RC"
 
 # 슬래시로 시작하지 않는 글은 페이즈를 바꾸지 않는다
 projP11="$(new_project)"
@@ -447,7 +458,8 @@ record_skill "$projP7" "$P7" review
 expect_contains "gsd-quick 3: review는 STATE 페이즈(04)에" "$(gate_lines "$projP7" 04)" "review"
 
 # ---------------------------------------------------------------------------
-# merge: 문서만 바꾼 PR은 /qa 면제(/review는 그대로), 파일 목록을 못 읽으면 /qa 요구
+# merge(사용자 결정 2026-10-01): 문서만 바꾼 PR은 게이트 없음, 코드는 /review, 화면은 /qa·/design-review 더,
+# 돈·결재 경로는 /cso 더. 파일 목록을 못 읽으면 막는다
 GH_STUB_DIR="$TMPDIR/gh-stub"
 mkdir -p "$GH_STUB_DIR"
 cat > "$GH_STUB_DIR/gh" <<'STUB'
@@ -493,45 +505,82 @@ merge_hook() {  # $1=session $2=project $3=files(줄바꿈) $4=gh rc $5=changed_
 }
 projM="$(new_project)"
 M="sid-merge-$$"
-write_gate_line "$projM" review "$M"
 DOC_FILES=$'.planning/phases/04-test/04-01-PLAN.md\ndocs/ARCHITECTURE.md\n.claude/gates/phase-04.log\nREADME.md'
 merge_hook "$M" "$projM" "$DOC_FILES" 0 "" "" $'@@ -0,0 +1 @@\n+review 2026-10-01T00:00Z session=m'
-expect_rc "merge: 문서만 바뀐 PR + review만 -> 통과" 0 "$HOOK_RC"
+expect_rc "merge: 문서만 바뀐 PR + 게이트 없음 -> 통과" 0 "$HOOK_RC"
+merge_hook "$M" "$projM" $'docs/x.md\n.planning/STATE.md'
+expect_rc "merge: 문서만 바뀐 PR, 게이트 기록 전혀 없음 -> 통과" 0 "$HOOK_RC"
 merge_hook "$M" "$projM" $'docs/x.md\napp/page.tsx'
-expect_rc "merge: 코드 파일 섞인 PR + review만 -> exit 2" 2 "$HOOK_RC"
+expect_rc "merge: 코드 파일 섞인 PR + 게이트 없음 -> exit 2" 2 "$HOOK_RC"
 merge_hook "$M" "$projM" $'docs/x.md\n.claude/hooks/plant8-skill-gate.sh'
-expect_rc "merge: 훅 .sh 섞인 PR + review만 -> exit 2" 2 "$HOOK_RC"
+expect_rc "merge: 훅 .sh 섞인 PR + 게이트 없음 -> exit 2" 2 "$HOOK_RC"
 merge_hook "$M" "$projM" "$DOC_FILES" 1
-expect_rc "merge: 파일 목록 못 읽음 + review만 -> exit 2" 2 "$HOOK_RC"
+expect_rc "merge: 파일 목록 못 읽음 + 게이트 없음 -> exit 2" 2 "$HOOK_RC"
 merge_hook "$M" "$projM" ""
-expect_rc "merge: 빈 파일 목록 + review만 -> exit 2" 2 "$HOOK_RC"
+expect_rc "merge: 빈 파일 목록 + 게이트 없음 -> exit 2" 2 "$HOOK_RC"
 BIG_MIX="$(printf 'app/page.tsx\n'; for i in $(seq 1 20000); do printf 'docs/d%s.md\n' "$i"; done)"
 merge_hook "$M" "$projM" "$BIG_MIX"
-expect_rc "merge: 코드 1개 + 문서 2만 줄(SIGPIPE) + review만 -> exit 2" 2 "$HOOK_RC"
+expect_rc "merge: 코드 1개 + 문서 2만 줄(SIGPIPE) + 게이트 없음 -> exit 2" 2 "$HOOK_RC"
 merge_hook "$M" "$projM" $'docs/x.md\nCLAUDE.md'
-expect_rc "merge: CLAUDE.md 섞인 PR + review만 -> exit 2" 2 "$HOOK_RC"
+expect_rc "merge: CLAUDE.md 섞인 PR + 게이트 없음 -> exit 2" 2 "$HOOK_RC"
 merge_hook "$M" "$projM" $'docs/x.md\n.claude/skills/x/SKILL.md'
-expect_rc "merge: .claude/ 아래 .md 섞인 PR + review만 -> exit 2" 2 "$HOOK_RC"
+expect_rc "merge: .claude/ 아래 .md 섞인 PR + 게이트 없음 -> exit 2" 2 "$HOOK_RC"
 merge_hook "$M" "$projM" "$DOC_FILES" 0 9
-expect_rc "merge: 받은 목록 수 != changed_files + review만 -> exit 2" 2 "$HOOK_RC"
+expect_rc "merge: 받은 목록 수 != changed_files + 게이트 없음 -> exit 2" 2 "$HOOK_RC"
 merge_hook "$M" "$projM" $'docs/x.md\ndocs/moved.md\tapp/moved.ts'
-expect_rc "merge: 코드를 문서로 이름 바꾼 PR + review만 -> exit 2" 2 "$HOOK_RC"
+expect_rc "merge: 코드를 문서로 이름 바꾼 PR + 게이트 없음 -> exit 2" 2 "$HOOK_RC"
 merge_hook "$M" "$projM" 'docs/design/tokens.css'
-expect_rc "merge: docs/ 아래 .md 아닌 파일(tokens.css) + review만 -> exit 2" 2 "$HOOK_RC"
+expect_rc "merge: docs/ 아래 .md 아닌 파일(tokens.css) + 게이트 없음 -> exit 2" 2 "$HOOK_RC"
 projM2="$(new_project)"
 M2="sid-merge2-$$"
-merge_hook "$M2" "$projM2" "$DOC_FILES"
-expect_rc "merge: 문서만 바뀐 PR이어도 review 없으면 -> exit 2" 2 "$HOOK_RC"
-write_gate_line "$projM2" review "$M2"
-write_gate_line "$projM2" qa "$M2"
 merge_hook "$M2" "$projM2" $'domain/x.ts'
-expect_rc "merge: 코드 PR(화면 아님) + review·qa -> 통과" 0 "$HOOK_RC"
+expect_rc "merge: 코드 PR + 게이트 없음 -> exit 2" 2 "$HOOK_RC"
+expect_contains "merge: 코드 PR 메시지에 /review" "$HOOK_STDERR" "/review"
+write_gate_line "$projM2" review "$M2"
+merge_hook "$M2" "$projM2" $'domain/x.ts'
+expect_rc "merge: 코드 PR(화면 아님) + review만 -> 통과(/qa는 화면만)" 0 "$HOOK_RC"
+merge_hook "$M2" "$projM2" $'app/page.tsx'
+expect_rc "merge: 화면 코드 PR + review만 -> exit 2" 2 "$HOOK_RC"
+expect_contains "merge: 화면 코드 PR(qa 없음) 메시지에 /qa" "$HOOK_STDERR" "/qa"
+write_gate_line "$projM2" qa "$M2"
 merge_hook "$M2" "$projM2" $'app/page.tsx'
 expect_rc "merge: 화면 코드 PR + review·qa, design-review 없음 -> exit 2" 2 "$HOOK_RC"
 expect_contains "merge: 화면 코드 PR 메시지에 /design-review" "$HOOK_STDERR" "design-review"
 write_gate_line "$projM2" design-review "$M2"
 merge_hook "$M2" "$projM2" $'app/page.tsx'
 expect_rc "merge: 화면 코드 PR + review·qa·design-review -> 통과" 0 "$HOOK_RC"
+# 돈·결재 경로는 /cso(독립 보안 검토)가 더 있어야 한다
+for money in 'domain/money/x.ts' 'domain/corp-cards/x.ts' 'domain/reserves/x.ts' 'domain/revenue/x.ts' 'domain/approvals/x.ts'; do
+  merge_hook "$M2" "$projM2" "$money"
+  expect_rc "merge: 돈·결재 경로 $money + review(cso 없음) -> exit 2" 2 "$HOOK_RC"
+  expect_contains "merge: 돈·결재 경로 $money 메시지에 /cso" "$HOOK_STDERR" "/cso"
+done
+write_gate_line "$projM2" cso "$M2"
+merge_hook "$M2" "$projM2" 'domain/money/x.ts'
+expect_rc "merge: 돈 경로 + review·cso -> 통과" 0 "$HOOK_RC"
+projM3="$(new_project)"
+M3="sid-merge3-$$"
+write_gate_line "$projM3" review "$M3"
+merge_hook "$M3" "$projM3" $'docs/x.md
+domain/moneyish/x.ts'
+expect_rc "merge: 이름만 비슷한 경로(domain/moneyish)는 돈 경로 아님 + review -> 통과" 0 "$HOOK_RC"
+# 독립 검토 지적(2026-10-01): 화면 판정에 전역 토큰·ui/ 전부, 돈 판정에 저장소 계층, .planning/은 .md만 문서
+for f in 'docs/design/tokens.css' 'ui/input/use-comma-input.ts'; do
+  merge_hook "$M3" "$projM3" "$f"
+  expect_rc "merge: 화면 영향 $f + review만 -> exit 2" 2 "$HOOK_RC"
+  expect_contains "merge: 화면 영향 $f 메시지에 /qa" "$HOOK_STDERR" "/qa"
+done
+for f in 'repositories/corp-cards.ts' 'repositories/approvals.ts' 'repositories/reserve-entries.ts' 'repositories/revenue-entries.ts'; do
+  merge_hook "$M3" "$projM3" "$f"
+  expect_rc "merge: 돈·결재 저장소 $f + review(cso 없음) -> exit 2" 2 "$HOOK_RC"
+  expect_contains "merge: 돈·결재 저장소 $f 메시지에 /cso" "$HOOK_STDERR" "/cso"
+done
+projM4="$(new_project)"
+M4="sid-merge4-$$"
+merge_hook "$M4" "$projM4" $'.planning/config.json'
+expect_rc "merge: .planning/ 아래 .md 아닌 파일 + 게이트 없음 -> exit 2(/review 필요)" 2 "$HOOK_RC"
+merge_hook "$M4" "$projM4" $'.planning/phases/04-test/04-01-PLAN.md\n.planning/STATE.md'
+expect_rc "merge: .planning/ 아래 .md만 + 게이트 없음 -> 통과" 0 "$HOOK_RC"
 
 # ---------------------------------------------------------------------------
 # merge: 파일 목록을 못 읽으면 review·qa가 다 있어도 막는다 — 위험 경로 판정이 불가능하다(2026-09-27 #96)
@@ -635,8 +684,9 @@ S3="sid-n3-$$"
 git -C "$proj3" mv app/moved.ts docs/moved.md
 git -C "$proj3" commit -q -m "rename to docs" >/dev/null
 pr_push "$proj3"
+rm -f "$proj3/.claude/gates/phase-04.log"   # 게이트 없음 — 문서만이면 통과, 코드(옛 경로)면 /review가 없어 막혀야 한다
 merge_hook "$S3" "$proj3" "" 127 "" "$(git -C "$proj3" rev-parse HEAD)"
-expect_rc "merge(gh 없음): 코드를 문서로 이름 바꾼 PR + review만 -> exit 2" 2 "$HOOK_RC"
+expect_rc "merge(gh 없음): 코드를 문서로 이름 바꾼 PR + 게이트 없음 -> exit 2" 2 "$HOOK_RC"
 
 # N4: PR 헤드 커밋이 로컬에 없음(다른 클론에서 만든 커밋을 refs/pull/7/head로 푸시)
 proj4="$(pr_project o r)"

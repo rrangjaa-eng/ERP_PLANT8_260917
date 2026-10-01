@@ -2,6 +2,7 @@
 # 회귀 테스트 — plant8-session-boundary.sh
 # payload를 stdin으로 넣어 각 이벤트를 검증한다. 실제 리포를 절대 건드리지 않는다.
 set -uo pipefail
+unset PLANT8_ENV_ID  # 폴백 id 검사 — 실행 환경 값이 섞이지 않게
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOKS="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -226,6 +227,8 @@ git -C "$projG" commit -q -m "docs: ceo review report"
 hook plant8-session-boundary.sh post-tool "$(payload_tool "$G" Read)" "$projG"
 expect_contains "D-01 review done: post-tool announces 게이트 리뷰 종료" "$HOOK_STDOUT" "게이트 리뷰 종료"
 expect_contains "D-01 review done: post-tool mentions /plan-ceo-review" "$HOOK_STDOUT" "/plan-ceo-review"
+expect_contains "D-01 announcement names plant8 environment id (fallback when PLANT8_ENV_ID unset)" "$HOOK_STDOUT" "env_01BjvDha7fqn18V6L1UywqDh"
+expect_contains "D-01 announcement names the PLANT8_ENV_ID variable so another account knows what to set" "$HOOK_STDOUT" "PLANT8_ENV_ID"
 
 hook plant8-session-boundary.sh post-tool "$(payload_tool "$G" Read)" "$projG"
 expect_empty "D-01 review done: second post-tool empty (announced once)" "$HOOK_STDOUT"
@@ -254,171 +257,99 @@ hook plant8-session-boundary.sh stop "$(payload_session "$Sold")" "$projOld"
 expect_empty "D-01 older report commit doesn't count: stop empty" "$HOOK_STDOUT"
 
 # ---------------------------------------------------------------------------
-# quick 완료는 세션 경계가 아니다(2026-09-27: 세션 단위 = 웨이브). D-03 폐기.
+# 다른 계정의 환경: PLANT8_ENV_ID가 있으면 그 값을 쓰고 이 계정의 id는 나오지 않는다
+projEnv="$(new_project)"
+SEnv="sid-env-other-$$"
+hook plant8-session-boundary.sh session-start "$(payload_session_start "$SEnv" startup)" "$projEnv"
+record_skill "$projEnv" "$SEnv" plan-eng-review
+echo "review" > "$projEnv/docs/designs/x-eng-review-test.md"
+git -C "$projEnv" add docs/designs && git -C "$projEnv" commit -q -m "docs: eng review report"
+HOOK_STDOUT_OTHER="$(printf '%s' "$(payload_tool "$SEnv" Read)" | PLANT8_ENV_ID=env_01OtherAccountPlant8 CLAUDE_PROJECT_DIR="$projEnv" bash "$HOOKS/plant8-session-boundary.sh" post-tool 2>/dev/null)"
+expect_contains "env: PLANT8_ENV_ID set -> announcement uses that id" "$HOOK_STDOUT_OTHER" "env_01OtherAccountPlant8"
+expect_true "env: PLANT8_ENV_ID set -> this account's id must not appear" "$(printf '%s' "$HOOK_STDOUT_OTHER" | grep -qF env_01BjvDha7fqn18V6L1UywqDh && echo false || echo true)"
+
+# ---------------------------------------------------------------------------
+# 사용자 결정(2026-10-01): 플랜·웨이브·quick 종료는 세션 경계가 아니다 — 같은 세션에서 다음 웨이브를 이어 간다.
+# 세션 종료는 문맥 크기(gsd-context-monitor)나 독립 검토(게이트 리뷰·계획 완료) 경계로 정한다.
+projWv="$(new_project)"
+WV="sid-wave-$$"
+printf -- '---\nwave: 1\n---\n' > "$projWv/.planning/phases/04-test/04-01-PLAN.md"
+printf -- '---\nwave: 2\n---\n' > "$projWv/.planning/phases/04-test/04-02-PLAN.md"
+hook plant8-session-boundary.sh session-start "$(payload_session_start "$WV" startup)" "$projWv"
+expect_rc "session-start exit 0" 0 "$HOOK_RC"
+hook plant8-session-boundary.sh pre-tool "$(payload_agent "$WV" gsd-executor)" "$projWv"
+expect_rc "wave: first executor dispatch -> exit 0" 0 "$HOOK_RC"
+echo "summary" > "$projWv/.planning/phases/04-test/04-01-SUMMARY.md"
+hook plant8-session-boundary.sh post-tool "$(payload_tool "$WV" Write)" "$projWv"
+expect_empty "wave: wave 1 complete -> no announce" "$HOOK_STDOUT"
+hook plant8-session-boundary.sh pre-tool "$(payload_agent "$WV" gsd-executor)" "$projWv"
+expect_rc "wave: after wave 1 complete, executor (wave 2) allowed in same session" 0 "$HOOK_RC"
+hook plant8-session-boundary.sh stop "$(payload_session "$WV")" "$projWv"
+expect_empty "wave: stop not blocked after wave complete" "$HOOK_STDOUT"
+
+# 옛 형식(wave 없는 플랜)도 SUMMARY가 생겨도 경계가 아니다
+projE="$(new_project)"
+E="sid-plan-summary-$$"
+hook plant8-session-boundary.sh session-start "$(payload_session_start "$E" startup)" "$projE"
+echo "summary" > "$projE/.planning/phases/04-test/04-01-SUMMARY.md"
+hook plant8-session-boundary.sh post-tool "$(payload_tool "$E" Read)" "$projE"
+expect_empty "plan SUMMARY: post-tool does not announce" "$HOOK_STDOUT"
+hook plant8-session-boundary.sh pre-tool "$(payload_agent "$E" gsd-executor)" "$projE"
+expect_rc "plan SUMMARY: next gsd-executor allowed" 0 "$HOOK_RC"
+
+# quick SUMMARY도 경계가 아니다
 projQ="$(new_project)"
 Q="sid-quick-not-boundary-$$"
 hook plant8-session-boundary.sh session-start "$(payload_session_start "$Q" startup)" "$projQ"
 mkdir -p "$projQ/.planning/quick/260101-abc-x"
 echo "summary" > "$projQ/.planning/quick/260101-abc-x/260101-abc-SUMMARY.md"
-
 hook plant8-session-boundary.sh post-tool "$(payload_tool "$Q" Read)" "$projQ"
 expect_empty "quick SUMMARY: post-tool does not announce" "$HOOK_STDOUT"
-
-hook plant8-session-boundary.sh pre-tool "$(payload_agent "$Q" gsd-executor)" "$projQ"
-expect_rc "quick SUMMARY: pre-tool does not block gsd-executor" 0 "$HOOK_RC"
-
 hook plant8-session-boundary.sh stop "$(payload_session "$Q")" "$projQ"
 expect_empty "quick SUMMARY: stop not blocked" "$HOOK_STDOUT"
 
-# missing quick dir still fine
-projQ3="$(new_project)"
-rm -rf "$projQ3/.planning/quick"
-Q3="sid-quick-missing-$$"
-hook plant8-session-boundary.sh session-start "$(payload_session_start "$Q3" startup)" "$projQ3"
-expect_rc "missing quick dir: session-start exit 0" 0 "$HOOK_RC"
-expect_rc "missing quick dir: baseline file written" 0 "$([ -f "${TMPDIR}/plant8-session-boundary/${Q3}.baseline" ] && echo 0 || echo 1)"
-
 # ---------------------------------------------------------------------------
-# 웨이브 경계: 실행자가 디스패치된 세션은 그 웨이브의 플랜이 전부 끝날 때만 경계
-projWv="$(new_project)"
-WV="sid-wave-$$"
-printf -- '---\nwave: 1\n---\n' > "$projWv/.planning/phases/04-test/04-01-PLAN.md"
-printf -- '---\nwave: 1\n---\n' > "$projWv/.planning/phases/04-test/04-02-PLAN.md"
-printf -- '---\nwave: 2\n---\n' > "$projWv/.planning/phases/04-test/04-03-PLAN.md"
-hook plant8-session-boundary.sh session-start "$(payload_session_start "$WV" startup)" "$projWv"
-hook plant8-session-boundary.sh pre-tool "$(payload_agent "$WV" gsd-executor)" "$projWv"
-expect_rc "wave: first executor dispatch (wave 1) -> exit 0" 0 "$HOOK_RC"
-echo "summary" > "$projWv/.planning/phases/04-test/04-01-SUMMARY.md"
-hook plant8-session-boundary.sh post-tool "$(payload_tool "$WV" Write)" "$projWv"
-expect_empty "wave: one of two wave-1 plans done -> no announce" "$HOOK_STDOUT"
-hook plant8-session-boundary.sh pre-tool "$(payload_agent "$WV" gsd-executor)" "$projWv"
-expect_rc "wave: wave 1 still open -> executor allowed" 0 "$HOOK_RC"
-echo "summary" > "$projWv/.planning/phases/04-test/04-02-SUMMARY.md"
-hook plant8-session-boundary.sh post-tool "$(payload_tool "$WV" Write)" "$projWv"
-expect_contains "wave: wave 1 complete -> announces 웨이브" "$HOOK_STDOUT" "웨이브"
-expect_contains "wave: announcement names plant8 environment id (fallback when PLANT8_ENV_ID unset)" "$HOOK_STDOUT" "env_01BjvDha7fqn18V6L1UywqDh"
-expect_contains "wave: announcement names the PLANT8_ENV_ID variable so another account knows what to set" "$HOOK_STDOUT" "PLANT8_ENV_ID"
-# 다른 계정의 환경: PLANT8_ENV_ID가 있으면 그 값을 쓰고 이 계정의 id는 나오지 않는다(새 세션·새 프로젝트로 경계를 다시 만든다)
-projWv2="$(new_project)"
-WV2="sid-wave-other-$$"
-printf -- '---\nwave: 1\n---\n' > "$projWv2/.planning/phases/04-test/04-01-PLAN.md"
-hook plant8-session-boundary.sh session-start "$(payload_session_start "$WV2" startup)" "$projWv2"
-hook plant8-session-boundary.sh pre-tool "$(payload_agent "$WV2" gsd-executor)" "$projWv2"
-echo "summary" > "$projWv2/.planning/phases/04-test/04-01-SUMMARY.md"
-HOOK_STDOUT_OTHER="$(printf '%s' "$(payload_tool "$WV2" Write)" | PLANT8_ENV_ID=env_01OtherAccountPlant8 CLAUDE_PROJECT_DIR="$projWv2" bash "$HOOKS/plant8-session-boundary.sh" post-tool 2>/dev/null)"
-expect_contains "wave: PLANT8_ENV_ID set -> announcement uses that id" "$HOOK_STDOUT_OTHER" "env_01OtherAccountPlant8"
-expect_true "wave: PLANT8_ENV_ID set -> this account's id must not appear" "$(printf '%s' "$HOOK_STDOUT_OTHER" | grep -qF env_01BjvDha7fqn18V6L1UywqDh && echo false || echo true)"
-hook plant8-session-boundary.sh pre-tool "$(payload_agent "$WV" gsd-executor)" "$projWv"
-expect_rc "wave: after wave 1 complete, executor (wave 2) blocked" 2 "$HOOK_RC"
-expect_contains "wave: block message mentions 웨이브" "$HOOK_STDERR" "웨이브"
-hook plant8-session-boundary.sh stop "$(payload_session "$WV")" "$projWv"
-expect_contains "wave: stop blocks once" "$HOOK_STDOUT" '"decision":"block"'
-hook plant8-session-boundary.sh stop "$(payload_session "$WV")" "$projWv"
-expect_empty "wave: second stop empty" "$HOOK_STDOUT"
-
-# ---------------------------------------------------------------------------
-# Existing behavior still holds: new phase SUMMARY still announces
-projE="$(new_project)"
-E="sid-existing-phase-summary-$$"
-hook plant8-session-boundary.sh session-start "$(payload_session_start "$E" startup)" "$projE"
-mkdir -p "$projE/.planning/phases/04-test"
-echo "summary" > "$projE/.planning/phases/04-test/04-01-SUMMARY.md"
-hook plant8-session-boundary.sh post-tool "$(payload_tool "$E" Read)" "$projE"
-expect_contains "existing: phase SUMMARY still announces 04-01" "$HOOK_STDOUT" "04-01"
-
-# ---------------------------------------------------------------------------
-# Branch-switch: baseline taken on main, then session checks out a branch that
-# already has SUMMARYs finished by earlier sessions -> those must not block
-# this session's first gsd-executor dispatch or be announced as "new".
-projB="$(new_project)"
-B="sid-branch-switch-$$"
-hook plant8-session-boundary.sh session-start "$(payload_session_start "$B" startup)" "$projB"
-git -C "$projB" checkout -qb phase-branch
-mkdir -p "$projB/.planning/phases/04-test"
-echo "summary" > "$projB/.planning/phases/04-test/04-08-SUMMARY.md"
-echo "summary" > "$projB/.planning/phases/04-test/04-10-SUMMARY.md"
-
-hook plant8-session-boundary.sh post-tool "$(payload_tool "$B" Read)" "$projB"
-expect_empty "branch-switch: pre-existing branch SUMMARYs not announced" "$HOOK_STDOUT"
-
-hook plant8-session-boundary.sh pre-tool "$(payload_agent "$B" gsd-executor)" "$projB"
-expect_rc "branch-switch: gsd-executor not blocked by branch's own finished plans" 0 "$HOOK_RC"
-
-# After the rebase, a genuinely new SUMMARY from this session must still block.
-echo "summary" > "$projB/.planning/phases/04-test/04-25-SUMMARY.md"
-hook plant8-session-boundary.sh post-tool "$(payload_tool "$B" Read)" "$projB"
-expect_contains "branch-switch: own new SUMMARY still announces after rebase" "$HOOK_STDOUT" "04-25"
-
-hook plant8-session-boundary.sh pre-tool "$(payload_agent "$B" gsd-executor)" "$projB"
-expect_rc "branch-switch: own new SUMMARY still blocks gsd-executor" 2 "$HOOK_RC"
-
-# Once a boundary was already crossed this session, switching branches again
-# must not reset the count (D-01 must still hold).
-projB2="$(new_project)"
-B2="sid-branch-switch-noreset-$$"
-hook plant8-session-boundary.sh session-start "$(payload_session_start "$B2" startup)" "$projB2"
-mkdir -p "$projB2/.planning/phases/04-test"
-echo "summary" > "$projB2/.planning/phases/04-test/04-01-SUMMARY.md"
-hook plant8-session-boundary.sh post-tool "$(payload_tool "$B2" Read)" "$projB2"
-expect_contains "branch-switch-noreset: own SUMMARY announced on main" "$HOOK_STDOUT" "04-01"
-
-git -C "$projB2" checkout -qb phase-branch2
-echo "summary" > "$projB2/.planning/phases/04-test/04-40-SUMMARY.md"
-hook plant8-session-boundary.sh pre-tool "$(payload_agent "$B2" gsd-executor)" "$projB2"
-expect_rc "branch-switch-noreset: gsd-executor still blocked after switch" 2 "$HOOK_RC"
-
-# Old-format baseline (no recorded branch) is treated the same as a mismatch:
-# a switch is detected and, with no boundary crossed yet, the baseline rebases.
-projB3="$(new_project)"
-B3="sid-branch-switch-oldformat-$$"
-hook plant8-session-boundary.sh session-start "$(payload_session_start "$B3" startup)" "$projB3"
-rm -f "${TMPDIR}/plant8-session-boundary/${B3}.branch"
-git -C "$projB3" checkout -qb phase-branch3
-mkdir -p "$projB3/.planning/phases/04-test"
-echo "summary" > "$projB3/.planning/phases/04-test/04-08-SUMMARY.md"
-hook plant8-session-boundary.sh post-tool "$(payload_tool "$B3" Read)" "$projB3"
-expect_empty "branch-switch old-format baseline: pre-existing SUMMARY not announced" "$HOOK_STDOUT"
-
-# ---------------------------------------------------------------------------
-# main 병합: 세션 도중 origin/main을 병합해 들어온 다른 플랜의 SUMMARY는 이 세션의
-# 플랜 종료로 세지 않는다. 이 세션이 새로 만든 SUMMARY는 그대로 센다.
-projMg="$(new_project)"
-Mg="sid-main-merge-$$"
-git -C "$projMg" branch -q -M main
-git -C "$projMg" checkout -qb work
-hook plant8-session-boundary.sh session-start "$(payload_session_start "$Mg" startup)" "$projMg"
-git -C "$projMg" checkout -q main
-echo "summary" > "$projMg/.planning/phases/04-test/04-30-SUMMARY.md"
-git -C "$projMg" add .planning && git -C "$projMg" commit -qm "other plan"
-git -C "$projMg" update-ref refs/remotes/origin/main main
-git -C "$projMg" checkout -q work
-git -C "$projMg" merge -q --no-edit origin/main
-
-hook plant8-session-boundary.sh post-tool "$(payload_tool "$Mg" Bash)" "$projMg"
-expect_empty "main-merge: 병합으로 들어온 SUMMARY는 알리지 않음" "$HOOK_STDOUT"
-hook plant8-session-boundary.sh pre-tool "$(payload_agent "$Mg" gsd-executor)" "$projMg"
-expect_rc "main-merge: 병합으로 들어온 SUMMARY는 gsd-executor를 막지 않음" 0 "$HOOK_RC"
-hook plant8-session-boundary.sh stop "$(payload_tool "$Mg" Stop)" "$projMg"
-expect_empty "main-merge: 병합으로 들어온 SUMMARY로 stop을 막지 않음" "$HOOK_STDOUT"
-
-echo "summary" > "$projMg/.planning/phases/04-test/04-31-SUMMARY.md"
-hook plant8-session-boundary.sh post-tool "$(payload_tool "$Mg" Write)" "$projMg"
-expect_contains "main-merge: 이 세션이 만든 SUMMARY는 알림" "$HOOK_STDOUT" "04-31"
-expect_true "main-merge: 알림에 병합된 SUMMARY는 없음" "$(printf '%s' "$HOOK_STDOUT" | grep -q '04-30' && echo false || echo true)"
-hook plant8-session-boundary.sh pre-tool "$(payload_agent "$Mg" gsd-executor)" "$projMg"
-expect_rc "main-merge: 이 세션이 만든 SUMMARY는 gsd-executor를 막음" 2 "$HOOK_RC"
-
-# 이 세션의 PR이 머지돼 자기 SUMMARY가 origin/main에 들어가도 계속 센다.
-git -C "$projMg" add .planning && git -C "$projMg" commit -qm "own plan"
-git -C "$projMg" update-ref refs/remotes/origin/main work
-hook plant8-session-boundary.sh pre-tool "$(payload_agent "$Mg" gsd-executor)" "$projMg"
-expect_rc "main-merge: 자기 SUMMARY가 main에 들어간 뒤에도 gsd-executor를 막음" 2 "$HOOK_RC"
+# 계획 완료(state.planned-phase)는 여전히 경계 — 실행 전 독립 게이트 리뷰
+projP="$(new_project)"
+P="sid-plan-done-$$"
+hook plant8-session-boundary.sh session-start "$(payload_session_start "$P" startup)" "$projP"
+PLAN_DONE="$(jq -nc --arg s "$P" '{session_id:$s, tool_name:"Bash", tool_input:{command:"node .claude/gsd-core/bin/gsd-tools.cjs state.planned-phase 04"}}')"
+hook plant8-session-boundary.sh post-tool "$PLAN_DONE" "$projP"
+expect_contains "plan done: post-tool announces 계획" "$HOOK_STDOUT" "계획(/gsd-plan-phase) 완료"
+hook plant8-session-boundary.sh pre-tool "$(payload_agent "$P" gsd-executor)" "$projP"
+expect_rc "plan done: gsd-executor blocked" 2 "$HOOK_RC"
+expect_contains "plan done: block message mentions 계획 완료" "$HOOK_STDERR" "계획 완료"
+hook plant8-session-boundary.sh stop "$(payload_session "$P")" "$projP"
+expect_contains "plan done: stop blocks once" "$HOOK_STDOUT" '"decision":"block"'
+# Codex 지적(PR #122): 계획을 끝낸 세션이 같은 세션에서 게이트 리뷰·다른 계획·실행 단위를 시작하지 못한다(독립 검토)
+for sk in plan-eng-review plan-design-review plan-ceo-review gsd-execute-phase gsd-plan-phase gsd-quick; do
+  hook plant8-session-boundary.sh pre-tool "$(payload_skill "$P" "$sk")" "$projP"
+  expect_rc "plan done: Skill $sk blocked" 2 "$HOOK_RC"
+  expect_contains "plan done: Skill $sk message mentions 계획 완료" "$HOOK_STDERR" "계획 완료"
+done
+hook plant8-session-boundary.sh pre-tool "$(payload_skill "$P" gsd-pause-work)" "$projP"
+expect_rc "plan done: gsd-pause-work allowed" 0 "$HOOK_RC"
+hook plant8-session-boundary.sh pre-tool "$(payload_skill "$P" verification-before-completion)" "$projP"
+expect_rc "plan done: verification-before-completion allowed" 0 "$HOOK_RC"
+hook plant8-session-boundary.sh pre-tool "$(payload_skill "$P" plan-eng-review sub1)" "$projP"
+expect_rc "plan done: subagent payload passes" 0 "$HOOK_RC"
+hook plant8-session-boundary.sh session-start "$(payload_session_start "$P" startup)" "$projP"
+hook plant8-session-boundary.sh pre-tool "$(payload_agent "$P" gsd-executor)" "$projP"
+expect_rc "plan done: fresh startup clears the flag" 0 "$HOOK_RC"
 
 # ---------------------------------------------------------------------------
 # Wiring: settings.json has PreToolUse matcher Skill -> session-boundary pre-tool
 WIRED="$(jq -e '[.hooks.PreToolUse[]? | select(.matcher=="Skill") | .hooks[]? | select(.command | test("plant8-session-boundary\\.sh pre-tool"))] | length > 0' "$REPO/.claude/settings.json" 2>/dev/null)"
 [ "$WIRED" = "true" ] || WIRED="false"
 expect_true "settings.json wires PreToolUse Skill -> plant8-session-boundary.sh pre-tool" "$WIRED"
+
+# Wiring: 세션 종료의 문맥 기준(남은 35% 이하 경고)이 실제로 뜨도록 statusline 브리지와 context monitor를 건다(Codex 지적, PR #122)
+WIRED_CTX="$(jq -e '[.hooks.PostToolUse[]? | .hooks[]? | select(.command | test("gsd-context-monitor\\.js"))] | length > 0' "$REPO/.claude/settings.json" 2>/dev/null)"
+[ "$WIRED_CTX" = "true" ] || WIRED_CTX="false"
+expect_true "settings.json wires PostToolUse -> gsd-context-monitor.js" "$WIRED_CTX"
+WIRED_SL="$(jq -e '.statusLine.command // "" | test("gsd-statusline\\.js")' "$REPO/.claude/settings.json" 2>/dev/null)"
+[ "$WIRED_SL" = "true" ] || WIRED_SL="false"
+expect_true "settings.json statusLine -> gsd-statusline.js (context monitor bridge)" "$WIRED_SL"
 
 # ---------------------------------------------------------------------------
 # Isolation: real gate logs unchanged

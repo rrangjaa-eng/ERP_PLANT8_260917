@@ -117,4 +117,54 @@ test.describe("PC 1280 공유 Button 3차(표 행 「숨기기」)의 글자 밑
       await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
     }
   });
+
+  // PR #111 Codex 리뷰(P2): 대기 중 라벨과 「…」 사이 .btn gap 8px 때문에 글자 밑줄이 두 토막으로 그어졌다.
+  test("대기 중 「…」가 라벨에 붙어 글자 밑줄이 한 줄로 이어진다", async ({ page }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `대기밑줄거래처-${randomUUID().slice(0, 8)}`,
+      normalizedName: `대기밑줄-${randomUUID()}`,
+    });
+    try {
+      const admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+      await page.goto("/login");
+      await page.getByLabel("이메일").fill(admin.email);
+      await page.getByLabel("비밀번호").fill(admin.password);
+      await page.getByRole("button", { name: "로그인" }).click();
+      await expect(page).toHaveURL(/\/account$/);
+
+      await page.goto("/admin/vendors");
+      const hide = page.locator("tr", { hasText: vendor.name }).getByRole("button", { name: "숨기기" });
+      await expect(hide).toBeVisible();
+
+      // 서버 액션 요청을 붙잡아 대기 상태를 유지한 채 잰다.
+      let release: () => void = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await page.route("**/*", async (route) => {
+        const request = route.request();
+        if (request.method() !== "POST" || request.headers()["next-action"] === undefined) {
+          await route.continue();
+          return;
+        }
+        await held;
+        await route.continue();
+      });
+
+      await hide.click();
+      await expect(hide).toHaveAttribute("aria-disabled", "true");
+      const gap = await hide.evaluate((button) => {
+        const [label, ellipsis] = Array.from(button.children) as HTMLElement[];
+        return ellipsis!.getBoundingClientRect().left - label!.getBoundingClientRect().right;
+      });
+      expect(Math.abs(gap)).toBeLessThanOrEqual(0.5);
+
+      const done = page.waitForResponse((response) => response.request().headers()["next-action"] !== undefined);
+      release();
+      await done;
+      await page.unroute("**/*");
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
+  });
 });

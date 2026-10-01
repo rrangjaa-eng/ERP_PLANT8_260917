@@ -104,4 +104,10 @@ describe("ui/button .tertiary — 글자 밑줄 (FINDING-002)", () => {
     const disabled = rules.find((rule) => rule.selectors.includes('.tertiary[aria-disabled="true"]'));
     expect(disabled?.body).toMatch(/text-decoration-color\s*:\s*var\(--line\)/);
   });
+
+  // PR #111 Codex 리뷰(P2): 대기 중 라벨 span과 「…」 span 사이 .btn gap 8px 때문에 글자 밑줄이 두 토막으로 그어졌다.
+  it("기본 .tertiary 규칙이 flex gap을 0으로 둬 대기 중 라벨과 「…」 밑줄이 이어진다", () => {
+    const base = rules.find((rule) => rule.selectors.includes(".tertiary") && UNDERLINE.test(rule.body));
+    expect(base?.body).toMatch(/(^|;)\s*gap\s*:\s*0\s*(;|$)/);
+  });
 });

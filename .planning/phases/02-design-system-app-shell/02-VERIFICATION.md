@@ -6,6 +6,7 @@ score: 5/5 must-haves verified
 mode: mvp
 mvp_user_story_valid: false
 covered_files:
+
   - ".dockerignore"
   - ".github/workflows/ci.yml"
   - ".github/workflows/deploy.yml"
@@ -291,7 +292,8 @@ covered_files:
   - "ui/table/Table.module.css"
   - "ui/toast/Toast.module.css"
   - "ui/toast/Toast.tsx"
-covered_digest: "v1:sha256:312077367a73d20dc1cb365184d481a6b781d6e6de2e5c3ade09307e5a09b5db"
+
+covered_digest: "v1:sha256:7e34fc35e96b1d5218cc299c8bf743786532035a65e1e0b556a0e2c12c52fec5"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
@@ -307,7 +309,9 @@ re_verification:
   resolved_human_items:
     - "SYSTEM.md 신설 절 결정 출처 — 사용자 일괄 승인 2026-10-01(절 단위 검토 없음)"
     - "배포본 확인 — 사용자가 스테이징(f85c9af, deploy #103)에서 /admin·/admin/permissions와 그 화면의 셸(상단 바·서체)을 보고 「둘 다 정상」 2026-10-01. 내 계정 화면은 사람이 보지 않음(E2E만)"
+
 human_verification:
+
   - test: "SYSTEM.md 신설 절(02-01 체크포인트 이후 들어온 §6-7·§6-8·§6-9·§6-10·§7-11~§7-17과 2d7f73e 이후 개정분 — 워드마크 홈 링크 §6-0·§4-4 상단 바 포커스 링 예외 포함)의 확정 문장이 사람이 정한 결정인지 사용자에게 묻는다(02-01 금지 조항 ①)"
     expected: "사용자가 신설 절을 「사람이 정한 결정」으로 확인한다"
     why_human: "결정의 출처가 사람인지는 코드·문서 대조로 알 수 없다"
@@ -502,3 +506,5 @@ HEAD `2d7f73e`. /design-review FINDING-001~005·/qa ISSUE-001 수정분(워드�
 
 _Verified: 2026-10-01T04:36:00Z_
 _Verifier: Claude (gsd-verifier) — PR #117 리뷰 반영 재검증_
+
+> 2026-10-01 covered_digest 재계산(PR #119, 판정은 다시 하지 않음): 이 보고서의 covered 파일 중 바뀐 것은 .planning/REQUIREMENTS.md 하나다 — phase.complete 04.1·04.2·04.4가 04.x 행을 Complete로 바꿨다. PR #119 /review가 병합 중 잘못 넘어온 Phase 3 체크박스 3개(ADMN-10·ADMN-12·OPS-05)를 main(#117)대로 [ ]로 되돌린 상태에서 다시 계산했다. 비문서 covered diff 0.

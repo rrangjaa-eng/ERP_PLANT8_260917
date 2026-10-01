@@ -296,7 +296,7 @@ test.describe("인쇄 라우트", () => {
     await pmSession.context.close();
   });
 
-  test("비활동 만료 — 활동 행을 121분 전으로 돌리고 다시 열면 로그인 화면(대조: 열려 있을 땐 번호가 보인다)", async ({
+  test("비활동 만료 — 활동 행을 31분 전으로 돌리고(기본 30) 다시 열면 로그인 화면(대조: 열려 있을 땐 번호가 보인다)", async ({
     browser,
   }) => {
     const seeded = await seedSubmittedCert();
@@ -307,7 +307,7 @@ test.describe("인쇄 라우트", () => {
 
     await db
       .update(privacySessionActivity)
-      .set({ lastSeenAt: new Date(Date.now() - 121 * 60_000) })
+      .set({ lastSeenAt: new Date(Date.now() - 31 * 60_000) })
       .where(inArray(privacySessionActivity.sessionId, await sessionIdsOf(account)));
     await page.goto(printPath(seeded.submissionId));
     await expect(page).toHaveURL(/\/login/);
@@ -437,6 +437,34 @@ test.describe("인쇄 접속기록", () => {
     );
     expect(rows).toHaveLength(1);
     expect(rows[0]?.detail).toMatchObject({ submissionId: seeded.submissionId, via: "print" });
+    await context.close();
+  });
+});
+
+// 04.3-14 Task 2(사용자 결정 U4 a · G8 a) — 인쇄 화면도 무입력 한도면 스스로 로그인 화면으로 가고, 되돌아갈 곳은 그 확인증의
+// I4다 — 다시 로그인하자마자 인쇄 창이 뜨지 않는다.
+test.describe("인쇄 무입력 이동", () => {
+  test("무입력 30분 5초 뒤 /login?reason=privacy-session&next=가 그 확인증의 I4 · 다시 로그인하면 I4(인쇄 0번)", async ({
+    browser,
+  }) => {
+    const seeded = await seedSubmittedCert();
+    const account = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+    const { context, page } = await loggedInContext(browser, account);
+    await page.clock.install();
+    await page.goto(printPath(seeded.submissionId));
+    await expect(page.getByText(seeded.certNo)).toBeVisible();
+
+    const reviewPath = `/certs/submissions/${seeded.submissionId}`;
+    await page.clock.fastForward("30:05");
+    await expect(page).toHaveURL(new RegExp(`/login\\?reason=privacy-session&next=${encodeURIComponent(reviewPath)}$`));
+    await expect(page.getByRole("status").filter({ hasText: "개인정보 화면 · 다시 로그인" })).toBeVisible();
+
+    await page.getByLabel("이메일").fill(account.email);
+    await page.getByLabel("비밀번호").fill(account.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(new RegExp(`${reviewPath}$`));
+    await expect(page.getByRole("heading", { name: `기타소득 확인증 — ${seeded.name}` })).toBeVisible();
+    expect(await printCalls(page)).toBe(0);
     await context.close();
   });
 });

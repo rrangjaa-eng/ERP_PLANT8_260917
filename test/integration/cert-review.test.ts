@@ -67,7 +67,6 @@ describe("getSubmissionForReview — 투영 · 404", () => {
     expect(result.submission.delivery).toBe("parcel");
     expect(result.canReveal).toBe(true);
     expect(result.canCorrect).toBe(true);
-    expect(result.idleMinutes).toBe(120);
     expect(JSON.stringify(result)).not.toContain("2123458");
   });
 
@@ -365,7 +364,9 @@ describe("C1 기능 게이트 · 대표 차단", () => {
   });
 });
 
-describe("touchPrivacySession — 개인정보취급자 비활동(E3-10 · RB-5)", () => {
+// 04.3-14 사용자 결정 ④ — 첫 개인정보 접근은 로그인한 지 한도(기본 30분) 안일 때만, 이어진 접근은 마지막 개인정보 활동이
+// 한도 안일 때만(경계는 `>` — 정확히 한도는 통과). E3-10(로그인 시각을 읽지 않는다)은 폐기됐다.
+describe("touchPrivacySession — 개인정보취급자 비활동 · 첫 접근 판정(결정 ④ · RB-5)", () => {
   const MINUTE = 60_000;
 
   async function makeSession(viewer: Viewer, createdMinutesAgo: number, now: Date): Promise<string> {
@@ -392,7 +393,7 @@ describe("touchPrivacySession — 개인정보취급자 비활동(E3-10 · RB-5)
     await db.insert(privacySessionActivity).values({ sessionId: id, lastSeenAt: at });
   }
 
-  it("메뉴 보기 없는 viewer · 대표 계급 → notAllowed · 활동 행을 만들지도 고치지도 않고 한도 넘긴 옛 활동이 있어도 세션 그대로(RB-5)", async () => {
+  it("⒠ 메뉴 보기 없는 viewer · 대표 계급 → notAllowed · 활동 행을 만들지도 고치지도 않고 한도 넘긴 옛 활동이 있어도 세션 그대로(RB-5)", async () => {
     const now = new Date();
     const pm = await makeReviewer({ view: false, write: false, value: false, unmasked: false });
     await grantCertReview("role-ceo", FULL_GRANT);
@@ -412,28 +413,73 @@ describe("touchPrivacySession — 개인정보취급자 비활동(E3-10 · RB-5)
     }
   });
 
-  it("활동 행 없음 + 로그인 119분 전 → ok + 활동 행(마지막 활동 = 지금)", async () => {
+  it("⒜ 방금 로그인한 세션 · 활동 행 없음 → ok(한도 30분을 싣는다) · 활동 행 lastSeenAt = now(E4-B5)", async () => {
     const now = new Date();
     const viewer = await makeReviewer(FULL_GRANT);
-    const id = await makeSession(viewer, 119, now);
+    const id = await makeSession(viewer, 0, now);
 
-    expect(await touchPrivacySession(viewer, id, now)).toEqual({ kind: "ok" });
+    expect(await touchPrivacySession(viewer, id, now)).toEqual({ kind: "ok", idleMinutes: 30 });
     expect((await activity(id))[0]?.lastSeenAt.getTime()).toBe(now.getTime());
   });
 
-  it("(E3-10) 로그인 3시간 뒤 첫 방문 → ok · 세션 그대로 · 활동 행 생성 → 121분 무활동 → 만료 + 세션 행 삭제", async () => {
+  it("활동 행 없음 + 로그인 29분 전 → ok + 활동 행(마지막 활동 = 지금)(옛 「로그인 119분 전 → ok」)", async () => {
+    const now = new Date();
+    const viewer = await makeReviewer(FULL_GRANT);
+    const id = await makeSession(viewer, 29, now);
+
+    expect(await touchPrivacySession(viewer, id, now)).toEqual({ kind: "ok", idleMinutes: 30 });
+    expect((await activity(id))[0]?.lastSeenAt.getTime()).toBe(now.getTime());
+  });
+
+  it("⒝ 로그인 31분 전 · 활동 행 없음 → expired · 세션 행 삭제 · 활동 행 없음", async () => {
+    const now = new Date();
+    const viewer = await makeReviewer(FULL_GRANT);
+    const id = await makeSession(viewer, 31, now);
+
+    expect(await touchPrivacySession(viewer, id, now)).toEqual({ kind: "expired" });
+    expect(await sessionExists(id)).toBe(false);
+    expect(await activity(id)).toHaveLength(0);
+  });
+
+  it("(E3-10 폐기) 로그인 3시간 뒤 첫 방문 → expired + 세션 행 삭제(옛 「로그인 3시간 뒤 첫 방문 → ok」)", async () => {
     const now = new Date();
     const viewer = await makeReviewer(FULL_GRANT);
     const id = await makeSession(viewer, 180, now);
 
-    expect(await touchPrivacySession(viewer, id, now)).toEqual({ kind: "ok" });
-    expect(await sessionExists(id)).toBe(true);
-    expect((await activity(id))[0]?.lastSeenAt.getTime()).toBe(now.getTime());
-
-    const later = new Date(now.getTime() + 121 * MINUTE);
-    expect(await touchPrivacySession(viewer, id, later)).toEqual({ kind: "expired" });
+    expect(await touchPrivacySession(viewer, id, now)).toEqual({ kind: "expired" });
     expect(await sessionExists(id)).toBe(false);
     expect(await activity(id)).toHaveLength(0);
+  });
+
+  it("⒞ 로그인 3시간 전이지만 활동 5분 전 → ok", async () => {
+    const now = new Date();
+    const viewer = await makeReviewer(FULL_GRANT);
+    const id = await makeSession(viewer, 180, now);
+    await setLastSeen(id, new Date(now.getTime() - 5 * MINUTE));
+
+    expect(await touchPrivacySession(viewer, id, now)).toEqual({ kind: "ok", idleMinutes: 30 });
+    expect(await sessionExists(id)).toBe(true);
+  });
+
+  it("⒟ 활동 31분 전 → expired · 세션 행 삭제", async () => {
+    const now = new Date();
+    const viewer = await makeReviewer(FULL_GRANT);
+    const id = await makeSession(viewer, 5, now);
+    await setLastSeen(id, new Date(now.getTime() - 31 * MINUTE));
+
+    expect(await touchPrivacySession(viewer, id, now)).toEqual({ kind: "expired" });
+    expect(await sessionExists(id)).toBe(false);
+  });
+
+  it("⒢ 경계 — 로그인 정확히 30분 전 · 활동 없음 → ok · 30분 + 1ms → expired(`>` 비교)", async () => {
+    const now = new Date();
+    const viewer = await makeReviewer(FULL_GRANT);
+    const exact = await makeSession(viewer, 30, now);
+    expect(await touchPrivacySession(viewer, exact, now)).toEqual({ kind: "ok", idleMinutes: 30 });
+
+    const over = await makeSession(viewer, 30, now);
+    expect(await touchPrivacySession(viewer, over, new Date(now.getTime() + 1))).toEqual({ kind: "expired" });
+    expect(await sessionExists(over)).toBe(false);
   });
 
   it("로그인 29일 전 + 마지막 활동 10분 전 → ok", async () => {
@@ -441,32 +487,32 @@ describe("touchPrivacySession — 개인정보취급자 비활동(E3-10 · RB-5)
     const viewer = await makeReviewer(FULL_GRANT);
     const id = await makeSession(viewer, 29 * 24 * 60, now);
     await setLastSeen(id, new Date(now.getTime() - 10 * MINUTE));
-    expect(await touchPrivacySession(viewer, id, now)).toEqual({ kind: "ok" });
+    expect(await touchPrivacySession(viewer, id, now)).toEqual({ kind: "ok", idleMinutes: 30 });
   });
 
-  it("마지막 활동 119분 전(설정 120) → ok + 갱신 · 121분 전 → 만료 + 세션 행 삭제(활동 행은 cascade)", async () => {
+  it("마지막 활동 29분 전(기본 30) → ok + 갱신 · 31분 전 → 만료 + 세션 행 삭제(활동 행은 cascade)(옛 「119분 · 121분(설정 120)」)", async () => {
     const now = new Date();
     const viewer = await makeReviewer(FULL_GRANT);
 
     const near = await makeSession(viewer, 200, now);
-    await setLastSeen(near, new Date(now.getTime() - 119 * MINUTE));
-    expect(await touchPrivacySession(viewer, near, now)).toEqual({ kind: "ok" });
+    await setLastSeen(near, new Date(now.getTime() - 29 * MINUTE));
+    expect(await touchPrivacySession(viewer, near, now)).toEqual({ kind: "ok", idleMinutes: 30 });
     expect((await activity(near))[0]?.lastSeenAt.getTime()).toBe(now.getTime());
 
     const over = await makeSession(viewer, 200, now);
-    await setLastSeen(over, new Date(now.getTime() - 121 * MINUTE));
+    await setLastSeen(over, new Date(now.getTime() - 31 * MINUTE));
     expect(await touchPrivacySession(viewer, over, now)).toEqual({ kind: "expired" });
     expect(await sessionExists(over)).toBe(false);
     expect(await activity(over)).toHaveLength(0);
   });
 
-  it("마지막 활동이 정확히 120분 전(설정 120) → ok(경과 ≤ 한도 · 검토 R-L6)", async () => {
+  it("마지막 활동이 정확히 30분 전(기본 30) → ok(경과 ≤ 한도 · 검토 R-L6)(옛 「정확히 120분 전(설정 120)」)", async () => {
     const now = new Date();
     const viewer = await makeReviewer(FULL_GRANT);
     const id = await makeSession(viewer, 200, now);
-    await setLastSeen(id, new Date(now.getTime() - 120 * MINUTE));
+    await setLastSeen(id, new Date(now.getTime() - 30 * MINUTE));
 
-    expect(await touchPrivacySession(viewer, id, now)).toEqual({ kind: "ok" });
+    expect(await touchPrivacySession(viewer, id, now)).toEqual({ kind: "ok", idleMinutes: 30 });
     expect(await sessionExists(id)).toBe(true);
     expect((await activity(id))[0]?.lastSeenAt.getTime()).toBe(now.getTime());
   });
@@ -481,14 +527,22 @@ describe("touchPrivacySession — 개인정보취급자 비활동(E3-10 · RB-5)
     expect(await activity(id)).toHaveLength(0);
   });
 
-  it("설정을 10분으로 바꾸면 11분 전 → 만료", async () => {
+  it("설정을 10분으로 바꾸면 11분 전 → 만료 · ⒡ 로그인 11분 전 첫 접근도 만료", async () => {
     const now = new Date();
     await setSettingValue(SYSTEM_VIEWER, CERT_PRIVACY_IDLE_MINUTES, 10);
-    const viewer = await makeReviewer(FULL_GRANT);
-    const id = await makeSession(viewer, 30, now);
-    await setLastSeen(id, new Date(now.getTime() - 11 * MINUTE));
-    expect(await touchPrivacySession(viewer, id, now)).toEqual({ kind: "expired" });
-    expect(await sessionExists(id)).toBe(false);
+    try {
+      const viewer = await makeReviewer(FULL_GRANT);
+      const id = await makeSession(viewer, 30, now);
+      await setLastSeen(id, new Date(now.getTime() - 11 * MINUTE));
+      expect(await touchPrivacySession(viewer, id, now)).toEqual({ kind: "expired" });
+      expect(await sessionExists(id)).toBe(false);
+
+      const first = await makeSession(viewer, 11, now);
+      expect(await touchPrivacySession(viewer, first, now)).toEqual({ kind: "expired" });
+      expect(await sessionExists(first)).toBe(false);
+    } finally {
+      await setSettingValue(SYSTEM_VIEWER, CERT_PRIVACY_IDLE_MINUTES, 30);
+    }
   });
 });
 

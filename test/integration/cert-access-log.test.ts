@@ -6,7 +6,13 @@ import { actionLog, certSubmissions } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { setSettingValue } from "@/domain/settings/registry";
 import { CERT_ENABLED } from "@/domain/settings/keys";
-import { getCertificatePrint, getSubmissionForReview } from "@/domain/certs/review";
+import {
+  correctSubmission,
+  getCertificatePrint,
+  getSubmissionForReview,
+  recordRrnReopen,
+  revealRrn,
+} from "@/domain/certs/review";
 import type { RecordActionDeps } from "@/domain/action-log/record";
 import { seedSubmittedCert } from "@/test/e2e/helpers/cert";
 import { FULL_GRANT, grantCertReview, makeReviewer, makeUser } from "@/test/integration/cert-review-fixtures";
@@ -162,5 +168,56 @@ describe("getCertificatePrint — cert_view 접속기록(인쇄 · 사용자 결
     ).rejects.toThrow("action_log 쓰기 실패");
     expect(returned).toBeNull();
     expect(await viewLogs(seeded.submissionId)).toHaveLength(0);
+  });
+});
+
+// 04.3-14 Task 2 ⑤(사용자 결정 ⑤) — 전체 보기 · 고친 값 다시 열기(mask_reveal) · 정정(cert_correct)의 detail에 접속지와 확인증 id.
+describe("mask_reveal · cert_correct detail — ip · submissionId", () => {
+  async function logsOf(actionType: string, submissionId: string) {
+    return db
+      .select()
+      .from(actionLog)
+      .where(and(eq(actionLog.actionType, actionType), eq(actionLog.entityId, submissionId)));
+  }
+
+  it("revealRrn · recordRrnReopen의 mask_reveal detail = { ip, submissionId } · 평문 번호 없음", async () => {
+    const seeded = await seedSubmittedCert(SAMPLE);
+    const viewer = await makeReviewer(FULL_GRANT);
+
+    expect((await revealRrn(viewer, seeded.submissionId, { ip: IP })).kind).toBe("revealed");
+    expect((await recordRrnReopen(viewer, seeded.submissionId, { ip: IP })).kind).toBe("recorded");
+
+    const rows = await logsOf("mask_reveal", seeded.submissionId);
+    expect(rows.map((row) => row.detail)).toEqual([
+      { ip: IP, submissionId: seeded.submissionId },
+      { ip: IP, submissionId: seeded.submissionId },
+    ]);
+    for (const row of rows) {
+      expect(JSON.stringify(row.detail)).not.toMatch(/\d{13}/);
+      expectNoPersonalValues(row.detail);
+    }
+  });
+
+  it("correctSubmission의 cert_correct detail = { fields, ip, submissionId } · 새 주민등록번호 숫자 없음", async () => {
+    const seeded = await seedSubmittedCert(SAMPLE);
+    const viewer = await makeReviewer(FULL_GRANT);
+    const newRrn = "9304121234560";
+
+    const result = await correctSubmission(
+      viewer,
+      seeded.submissionId,
+      { version: 1, name: SAMPLE.name, phone: "010-5555-6666", rrn: newRrn },
+      { ip: IP },
+    );
+    expect(result.kind).toBe("saved");
+
+    const rows = await logsOf("cert_correct", seeded.submissionId);
+    expect(rows.map((row) => row.detail)).toEqual([
+      { fields: ["주민등록번호", "연락처"], ip: IP, submissionId: seeded.submissionId },
+    ]);
+    const text = JSON.stringify(rows[0]?.detail);
+    expect(text).not.toMatch(/\d{13}/);
+    expect(text).not.toContain(newRrn.slice(6));
+    expect(text).not.toContain("5555");
   });
 });

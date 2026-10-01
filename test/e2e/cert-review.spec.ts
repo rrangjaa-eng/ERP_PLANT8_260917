@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Browser, type Page, type Request } from "@playwright/test";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, certSubmissions, privacySessionActivity, sessions } from "@/db/schema";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
@@ -117,7 +117,8 @@ async function reactStateHas(page: Page, needles: string[]): Promise<boolean> {
     if (!key) throw new Error("React fiber 없음");
     const isReviewForm = (fiber: Fiber): boolean => {
       const props = fiber.memoizedProps;
-      return typeof props === "object" && props !== null && "submissionId" in props && "idleMinutes" in props;
+      // ReviewForm에만 있는 prop 둘(submissionId만으로는 RrnField props와 겹친다 — E4-B7).
+      return typeof props === "object" && props !== null && "submissionId" in props && "signatureDataUrl" in props;
     };
     // DOM 노드의 fiber는 지난 렌더의 짝(alternate)일 수 있다 — HostRoot(tag 3)의 FiberRoot.current에서
     // 지금 커밋된 트리를 다시 내려가 ReviewForm을 찾는다.
@@ -205,7 +206,9 @@ test("가림 · 전체 보기(로그) · 가리기 · 연락처 정정 · 동시
     (row) => row.entityId === seeded.submissionId,
   );
   expect(logs).toHaveLength(1);
-  expect(logs[0]?.detail).toEqual({ fields: ["연락처"] });
+  // 04.3-14 사용자 결정 ⑤ — 정정 기록에 접속지 · 확인증 id(로컬 서버는 소켓 주소가 접속지).
+  expect(logs[0]?.detail).toMatchObject({ fields: ["연락처"], submissionId: seeded.submissionId });
+  expect(typeof (logs[0]?.detail as { ip?: unknown }).ip).toBe("string");
 
   // 두 번째 브라우저 컨텍스트가 이름을 먼저 저장 → 첫 컨텍스트 저장은 충돌
   const other = await loggedInPage(browser, admin2);
@@ -278,7 +281,7 @@ test("기획 PM은 404이고 PM 세션의 비활동 활동 행이 생기지 않�
   expect(rows).toHaveLength(0);
 });
 
-test("비활동 만료 — 활동 행을 121분 전으로 돌리고 새로 고치면 로그인 화면", async ({ page }) => {
+test("비활동 만료 — 활동 행을 31분 전으로 돌리고(기본 30) 새로 고치면 로그인 화면", async ({ page }) => {
   const seeded = await seedSubmittedCert();
   const account = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
   await login(page, account);
@@ -288,7 +291,7 @@ test("비활동 만료 — 활동 행을 121분 전으로 돌리고 새로 고�
   const ids = await sessionIdsOf(account);
   await db
     .update(privacySessionActivity)
-    .set({ lastSeenAt: new Date(Date.now() - 121 * 60_000) })
+    .set({ lastSeenAt: new Date(Date.now() - 31 * 60_000) })
     .where(inArray(privacySessionActivity.sessionId, ids));
   await page.reload();
   await expect(page).toHaveURL(/\/login/);
@@ -415,7 +418,7 @@ test("세션이 없어진 뒤 전체 보기 · 저장은 로그인 화면으로 
   expect((await submission(seeded.submissionId)).version).toBe(1);
 });
 
-test("액션 단 비활동 만료는 로그인으로 · 화면 가림 · 비활동 시간이 지나면 저절로 가린다(검토 R-L6)", async ({ page }) => {
+test("액션 단 비활동 만료는 로그인으로 · 화면 가림 · 입력 3분 없으면 저절로 가린다(검토 R-L6 · 결정 ③)", async ({ page }) => {
   const seeded = await seedSubmittedCert();
   const account = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
   await login(page, account);
@@ -431,16 +434,16 @@ test("액션 단 비활동 만료는 로그인으로 · 화면 가림 · 비활�
   await page.goto(reviewPath(seeded.submissionId));
   await page.getByRole("button", { name: "전체 보기" }).click();
   await expect(rrnInput(page)).toHaveValue(RRN_FULL);
-  await page.clock.fastForward("02:00:05");
+  await page.clock.fastForward("03:05");
   await expect(rrnInput(page)).toHaveCount(0);
   await expect.poll(() => reactStateHas(page, ["2123458"])).toBe(false);
 
   await db
     .update(privacySessionActivity)
-    .set({ lastSeenAt: new Date(Date.now() - 121 * 60_000) })
+    .set({ lastSeenAt: new Date(Date.now() - 31 * 60_000) })
     .where(inArray(privacySessionActivity.sessionId, await sessionIdsOf(account)));
   await page.getByRole("button", { name: "전체 보기" }).click();
-  await expect(page).toHaveURL(/\/login/);
+  await expect(page).toHaveURL(/\/login\?reason=privacy-session&next=/);
 });
 
 test("저장 대기 중에는 칸 · 가리기가 잠기고, 결과는 보낸 값 기준이다(DOM 감사 H1 · L1)", async ({ page }) => {
@@ -631,4 +634,180 @@ test("접속기록 cert_view — I3 로드 · 스크롤 · 링크 머무름 0줄
   await page.reload();
   await expect(page.getByRole("heading", { name: `기타소득 확인증 — ${seeded.name}` })).toBeVisible();
   expect((await viewRows()).length).toBe(base + 2);
+});
+
+// ── 04.3-14 Task 2 — 첫 접근 판정 · 평문 3분 가림 · 무입력 화면 이동 · 되돌아가기 · 5분 활동 기록 ──────────────────────
+
+const PRIVACY_REASON_LINE = "개인정보 화면 · 다시 로그인";
+// 경로 인코딩 결과(영문 · 숫자 · `-` · `%2F`)에는 정규식 특수 문자가 없다.
+const privacyLoginUrl = (path: string) => new RegExp(`/login\\?reason=privacy-session&next=${encodeURIComponent(path)}$`);
+
+// 지금 열린 로그인 화면에서 폼만 채운다(되돌아갈 곳은 그 화면 주소의 next=가 정한다).
+async function submitLogin(page: Page, account: Account): Promise<void> {
+  await page.getByLabel("이메일").fill(account.email);
+  await page.getByLabel("비밀번호").fill(account.password);
+  await page.getByRole("button", { name: "로그인" }).click();
+}
+
+async function viewLogCount(submissionId: string): Promise<number> {
+  return countLogs("cert_view", submissionId);
+}
+
+test("평문은 입력 3분 없으면 가려진다 — 2분 55초에는 남고 3분 5초에는 가림 · 칸에 한 글자 치면 다시 3분부터", async ({ page }) => {
+  const seeded = await seedSubmittedCert();
+  await login(page, admin);
+  await page.clock.install();
+  await page.goto(reviewPath(seeded.submissionId));
+  await page.getByRole("button", { name: "전체 보기" }).click();
+  await expect(rrnInput(page)).toHaveValue(RRN_FULL);
+
+  await page.clock.fastForward("02:55");
+  await expect(rrnInput(page)).toHaveValue(RRN_FULL);
+  await rrnInput(page).press("End");
+  await rrnInput(page).pressSequentially("1");
+  await page.clock.fastForward("02:55");
+  await expect(rrnInput(page)).toHaveCount(1);
+  await page.clock.fastForward("00:10");
+  await expect(rrnInput(page)).toHaveCount(0);
+});
+
+test("첫 접근 판정 — 로그인 31분 뒤 처음 I4를 열면 로그인 화면(이유 줄 · next=) · cert_view 0줄 · 다시 로그인하면 그 I4로", async ({
+  page,
+}) => {
+  const seeded = await seedSubmittedCert();
+  const account = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+  await login(page, account);
+  await db
+    .update(sessions)
+    .set({ createdAt: new Date(Date.now() - 31 * 60_000) })
+    .where(inArray(sessions.id, await sessionIdsOf(account)));
+
+  const path = reviewPath(seeded.submissionId);
+  await page.goto(path);
+  await expect(page).toHaveURL(privacyLoginUrl(path));
+  expect(await viewLogCount(seeded.submissionId)).toBe(0);
+  const status = page.getByRole("status").filter({ hasText: PRIVACY_REASON_LINE });
+  await expect(status).toBeVisible();
+  await expect(status).toHaveText(PRIVACY_REASON_LINE);
+  expect(await page.content()).not.toContain(seeded.name);
+
+  await submitLogin(page, account);
+  await expect(page).toHaveURL(new RegExp(`${path}$`));
+  await expect(page.getByRole("heading", { name: `기타소득 확인증 — ${seeded.name}` })).toBeVisible();
+  expect(await viewLogCount(seeded.submissionId)).toBe(1);
+});
+
+test("무입력 30분이면 I4가 스스로 로그인 화면으로 · 29분에 누르면 다시 셈 · 뒤로 가기로 개인정보가 되살아나지 않음 · 다시 로그인 뒤 뒤로는 로그인 폼이 아님", async ({
+  page,
+}) => {
+  const seeded = await seedSubmittedCert();
+  const account = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+  await login(page, account);
+  await page.clock.install();
+  const path = reviewPath(seeded.submissionId);
+  await page.goto(path);
+  const heading = page.getByRole("heading", { name: `기타소득 확인증 — ${seeded.name}` });
+  await expect(heading).toBeVisible();
+
+  await page.clock.fastForward("29:00");
+  await heading.click();
+  await page.clock.fastForward("29:00");
+  await expect(page).toHaveURL(new RegExp(`${path}$`));
+  await page.clock.fastForward("01:05");
+  await expect(page).toHaveURL(privacyLoginUrl(path));
+  await expect(page.getByRole("status").filter({ hasText: PRIVACY_REASON_LINE })).toBeVisible();
+
+  // G0 DR-5 · F6 — 이동은 location.replace라 I4 항목이 기록에 없다. 뒤로 가도 개인정보가 보이지 않는다.
+  await page.goBack();
+  await expect(page).not.toHaveURL(new RegExp(`${path}$`));
+  await expect(page.getByText(seeded.name, { exact: false })).toHaveCount(0);
+  await page.goForward();
+  await expect(page).toHaveURL(privacyLoginUrl(path));
+
+  // G0 F8 — 다시 로그인하면 그 I4로 가고, 로그인 화면은 기록에 남지 않는다.
+  await submitLogin(page, account);
+  await expect(page).toHaveURL(new RegExp(`${path}$`));
+  await expect(heading).toBeVisible();
+  await page.goBack();
+  await expect(page).not.toHaveURL(/\/login/);
+});
+
+test("입력이 이어지면 5분에 한 번 활동 기록 — 정정 칸에 4분마다 한 글자씩 35분 입력해도 저장이 끊기지 않는다(G3 a)", async ({ page }) => {
+  const seeded = await seedSubmittedCert();
+  const account = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+  await login(page, account);
+  await page.clock.install();
+  await page.goto(reviewPath(seeded.submissionId));
+  await expect(page.getByLabel("이름")).toBeVisible();
+
+  const touches: number[] = [];
+  let answered = 0;
+  page.on("request", (request) => {
+    if (isServerAction(request)) touches.push(-1);
+  });
+  page.on("response", (response) => {
+    if (isServerAction(response.request())) answered += 1;
+  });
+
+  // 서버 시계는 진짜 시각이다 — 화면 시계를 4분 넘길 때마다 세션 · 활동 시각도 4분 앞으로 밀어 서버가 본 경과를 맞춘다.
+  const ids = await sessionIdsOf(account);
+  const shiftServerClock = async (minutes: number) => {
+    await db
+      .update(sessions)
+      .set({ createdAt: sql`${sessions.createdAt} - make_interval(mins => ${minutes})` })
+      .where(inArray(sessions.id, ids));
+    await db
+      .update(privacySessionActivity)
+      .set({ lastSeenAt: sql`${privacySessionActivity.lastSeenAt} - make_interval(mins => ${minutes})` })
+      .where(inArray(privacySessionActivity.sessionId, ids));
+  };
+
+  const browserTimes: number[] = [];
+  const nameField = page.getByLabel("이름");
+  for (let step = 0; step < 9; step += 1) {
+    await page.clock.fastForward("04:00");
+    await shiftServerClock(4);
+    const before = touches.length;
+    await nameField.press("End");
+    await nameField.pressSequentially("가");
+    await expect.poll(() => answered).toBe(touches.length);
+    if (touches.length > before) browserTimes.push(await page.evaluate(() => Date.now()));
+  }
+
+  expect(browserTimes.length).toBeGreaterThan(0);
+  for (let index = 1; index < browserTimes.length; index += 1) {
+    expect(browserTimes[index]! - browserTimes[index - 1]!).toBeGreaterThanOrEqual(5 * 60_000);
+  }
+  await saveButton(page).click();
+  await expect(page.getByText(/^저장됨 · 이름 · /)).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`${reviewPath(seeded.submissionId)}$`));
+});
+
+test("긴 실행 — 3시간 전 세션(A)은 I4에서 끊기고 같은 계정의 새 세션(B)은 열린다(판정은 세션 단위)", async ({ browser }) => {
+  const seeded = await seedSubmittedCert();
+  // 이 테스트만 쓰는 계정 — sessionIdsOf가 그 계정의 모든 세션을 돌려주므로 공유 계정을 쓰지 않는다(E4-B12).
+  const account = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
+  const pageA = await loggedInPage(browser, account);
+  const [sessionA] = await sessionIdsOf(account);
+  if (!sessionA) throw new Error("A 세션 없음");
+  await db
+    .update(sessions)
+    .set({ createdAt: new Date(Date.now() - 3 * 60 * 60_000) })
+    .where(eq(sessions.id, sessionA));
+
+  const pageB = await loggedInPage(browser, account);
+  const sessionB = (await sessionIdsOf(account)).find((id) => id !== sessionA);
+  if (!sessionB) throw new Error("B 세션 없음");
+  const path = reviewPath(seeded.submissionId);
+  await pageB.goto(path);
+  await expect(pageB.getByRole("heading", { name: `기타소득 확인증 — ${seeded.name}` })).toBeVisible();
+
+  await pageA.goto(path);
+  await expect(pageA).toHaveURL(privacyLoginUrl(path));
+
+  const left = await sessionIdsOf(account);
+  expect(left).not.toContain(sessionA);
+  expect(left).toContain(sessionB);
+  await pageA.context().close();
+  await pageB.context().close();
 });

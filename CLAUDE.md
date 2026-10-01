@@ -84,7 +84,7 @@
 
 **[Build] GSD가 뼈대, Superpowers가 규율**
 - `/gsd-execute-phase`로 실행. 상태의 단일 출처는 `.planning/`
-- **세션은 웨이브가 아니라 독립 검토 경계에서만 끊는다**(사용자 결정 2026-10-01). 같은 세션에서 다음 웨이브와 지적 반영을 이어 가고, 문맥이 차면 자동 압축(`autoCompactWindow` 40만 토큰)으로 이어 간다. 끊는 때: 계획 완료 뒤(실행 전 독립 게이트 리뷰)·게이트 리뷰 종료 뒤. 끊을 때는 커밋·푸시 → `/gsd-pause-work` → plant8 환경의 새 세션에서 `/gsd-progress`. 이 두 경계는 훅이 강제한다
+- **세션은 웨이브가 아니라 독립 검토 경계에서만 끊는다**(사용자 결정 2026-10-01). 같은 세션에서 다음 웨이브와 지적 반영을 이어 가고, 문맥이 차면 자동 압축(`autoCompactWindow` 40만 토큰, 모델 창이 더 작으면 그 창 — 환경변수 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`가 있으면 그 값)으로 이어 간다. 끊는 때: 계획 완료 뒤(실행 전 독립 게이트 리뷰)·게이트 리뷰 종료 뒤. 끊을 때는 커밋·푸시 → `/gsd-pause-work` → plant8 환경의 새 세션에서 `/gsd-progress`. 이 두 경계는 훅이 강제한다
 - 실행자는 Sonnet 기본. 돈·권한·DB 잠금·마이그레이션을 건드리는 플랜(`risk:` 태그)만 Opus 실행자 + Opus 독립 검토 1명. 화면 플랜은 독립 DOM 감사(§6)
 - 실행 중 Superpowers 스킬은 **호출**한다(켜졌다고 가정만 하지 않는다): 버그·테스트 실패·CI 실패를 쫓기 전에 `systematic-debugging`, "완료"를 말하기 전에 `verification-before-completion`, 구현 전에 `test-driven-development`. 서브에이전트에 위임할 때도 프롬프트에 그 스킬을 명시한다
 - 페이즈 밖 소규모 작업: `/gsd-quick` 또는 `/superpowers:brainstorm → write-plan → execute-plan` 중 **한 흐름만** — GSD·Superpowers·gstack의 계획·검토·검증을 겹쳐 쌓지 않는다

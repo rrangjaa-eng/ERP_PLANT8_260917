@@ -270,7 +270,7 @@ expect_true "env: PLANT8_ENV_ID set -> this account's id must not appear" "$(pri
 
 # ---------------------------------------------------------------------------
 # 사용자 결정(2026-10-01): 플랜·웨이브·quick 종료는 세션 경계가 아니다 — 같은 세션에서 다음 웨이브를 이어 간다.
-# 세션 종료는 문맥 크기(gsd-context-monitor)나 독립 검토(게이트 리뷰·계획 완료) 경계로 정한다.
+# 세션은 독립 검토(게이트 리뷰·계획 완료) 경계에서만 끊고, 문맥은 자동 압축으로 이어 간다(PR #124).
 projWv="$(new_project)"
 WV="sid-wave-$$"
 printf -- '---\nwave: 1\n---\n' > "$projWv/.planning/phases/04-test/04-01-PLAN.md"
@@ -343,7 +343,7 @@ WIRED="$(jq -e '[.hooks.PreToolUse[]? | select(.matcher=="Skill") | .hooks[]? | 
 [ "$WIRED" = "true" ] || WIRED="false"
 expect_true "settings.json wires PreToolUse Skill -> plant8-session-boundary.sh pre-tool" "$WIRED"
 
-# Wiring: 세션 종료의 문맥 기준(남은 35% 이하 경고)이 실제로 뜨도록 statusline 브리지와 context monitor를 건다(Codex 지적, PR #122)
+# Wiring: statusline 브리지와 context monitor를 건다(Codex 지적, PR #122)
 WIRED_CTX="$(jq -e '[.hooks.PostToolUse[]? | .hooks[]? | select(.command | test("gsd-context-monitor\\.js"))] | length > 0' "$REPO/.claude/settings.json" 2>/dev/null)"
 [ "$WIRED_CTX" = "true" ] || WIRED_CTX="false"
 expect_true "settings.json wires PostToolUse -> gsd-context-monitor.js" "$WIRED_CTX"
@@ -354,6 +354,10 @@ expect_true "settings.json statusLine -> gsd-statusline.js (context monitor brid
 ACW="$(jq -e '.autoCompactWindow == 400000' "$REPO/.claude/settings.json" 2>/dev/null)"
 [ "$ACW" = "true" ] || ACW="false"
 expect_true "settings.json autoCompactWindow = 400000" "$ACW"
+# 문맥 경고(멈출 준비·/gsd-pause-work)는 새 규칙과 부딪혀 끈다 — 200k 창 모델에서도 압축으로 이어 간다(PR #124 /review)
+CW="$(jq -e '.hooks.context_warnings == false' "$REPO/.planning/config.json" 2>/dev/null)"
+[ "$CW" = "true" ] || CW="false"
+expect_true ".planning/config.json hooks.context_warnings = false" "$CW"
 
 # ---------------------------------------------------------------------------
 # Isolation: real gate logs unchanged

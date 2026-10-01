@@ -59,9 +59,14 @@ type Outcome =
   | null;
 
 const SAVE_FAILED: Outcome = { kind: "failed", text: "저장 실패 · 다시 시도" };
-// 04.3-17 「대조 제외」 실패 — 다시 보내면 되는 실패는 모달 안 1차 왼쪽 줄(§7-17 failure). 충돌은 정정 충돌 꼴(`저장 실패 · …`
-// → `대조 제외 실패 · …`). 명사형은 사용자 결정 A(2026-09-26 — UI-SPEC 「제외하지 못했습니다」를 옮김, /design-review 확인).
+// 04.3-17 「대조 제외」 실패 — 다시 보내면 되는 실패(연결 끊김 · 결과 불명)만 모달 안 실패 줄(§7-17 failure, 1차 안 막음).
+// 서버 거부(버전 충돌 · 권한 없음 · 없는 제출)는 막힘 자리(disabledReason) — 다시 받거나 다시 열 때까지 1차를 막는다(검토 X2 · X3).
+// 충돌은 정정 충돌 꼴(`저장 실패 · …` → `대조 제외 실패 · …`). 명사형은 사용자 결정 A(2026-09-26 — UI-SPEC 「제외하지
+// 못했습니다」를 옮김, /design-review 확인).
 const EXCLUDE_FAILED = "대조 제외 실패 · 다시 시도";
+const EXCLUDE_DENIED = "대조 제외 실패 · 권한 없음";
+// 그새 파기됐거나 행사가 없어졌다 — 화면이 낡았으니 꼬리 「새로 고침」(§7-17 · 확인 부품이 3차로 세운다).
+const EXCLUDE_NOT_FOUND = "대조 제외 실패 · 없는 제출 · 새로 고침";
 
 type ExcludeResponse = Awaited<ReturnType<typeof excludeCertSubmissionAction>> | undefined;
 
@@ -108,7 +113,7 @@ export function ReviewForm(props: {
   const [purgeTarget, setPurgeTarget] = useState(props.purgeTarget);
   const [excludeOpen, setExcludeOpen] = useState(false);
   const [excluding, setExcluding] = useState(false);
-  const [excludeFailure, setExcludeFailure] = useState<{ text: string; reload: boolean } | null>(null);
+  const [excludeFailure, setExcludeFailure] = useState<{ text: string; rejected: boolean; reload: boolean } | null>(null);
   // 보낸 값 — 성공하면 이것이 저장된 값이다(DOM 감사 H1). 응답을 처리하면 비운다(평문 번호 포함 · 검토 R-M1).
   const submittedRef = useRef<{ values: Values; rrn: string | null } | null>(null);
 
@@ -145,10 +150,12 @@ export function ReviewForm(props: {
     if (data?.kind === "conflict") {
       const name = data.byName || "다른 사람";
       const at = HHMM_FORMAT.format(new Date(data.at));
-      setExcludeFailure({ text: `대조 제외 실패 · ${name}${subjectParticle(name)} ${at}에 먼저 고침 · `, reload: true });
+      setExcludeFailure({ text: `대조 제외 실패 · ${name}${subjectParticle(name)} ${at}에 먼저 고침`, rejected: true, reload: true });
       return;
     }
-    setExcludeFailure({ text: EXCLUDE_FAILED, reload: false });
+    if (data?.kind === "denied") return setExcludeFailure({ text: EXCLUDE_DENIED, rejected: true, reload: false });
+    if (data?.kind === "notFound") return setExcludeFailure({ text: EXCLUDE_NOT_FOUND, rejected: true, reload: false });
+    setExcludeFailure({ text: EXCLUDE_FAILED, rejected: false, reload: false });
   }
 
   const excludeDialog = props.canExclude ? (
@@ -162,7 +169,7 @@ export function ReviewForm(props: {
         label: "대조 제외",
         pending: excluding,
         onConfirm: () => void confirmExclude(),
-        ...(excludeFailure ? { failure: excludeFailure.text } : {}),
+        ...(excludeFailure ? (excludeFailure.rejected ? { disabledReason: excludeFailure.text } : { failure: excludeFailure.text }) : {}),
         ...(excludeFailure?.reload
           ? {
               nextStep: (

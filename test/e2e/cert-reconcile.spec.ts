@@ -336,7 +336,7 @@ test("「대조 제외」 버전 충돌 — 막힘 이유 `대조 제외 실패 
   const dialog = page.getByRole("dialog", { name: "대조 제외" });
   const primary = dialog.getByRole("button", { name: /^대조 제외/ });
   await primary.click();
-  await expect(dialog.getByText(/^대조 제외 실패 · 박서연이 \d{2}:\d{2}에 먼저 고침$/)).toBeVisible();
+  await expect(dialog.getByText(/^대조 제외 실패 · 박서연이 \d{2}:\d{2}에 먼저 고침$/).first()).toBeVisible();
   await expect(primary).toHaveAttribute("aria-disabled", "true");
   await expect(dialog.getByRole("alert")).toHaveCount(0);
   await dialog.getByRole("button", { name: "다시 불러오기" }).click();
@@ -364,7 +364,7 @@ test("확정된 거부 — 링크 닫기 · 대조 제외 `… 실패 · 권한 
     const closeDialog = page.getByRole("dialog", { name: "링크 닫기" });
     const closePrimary = closeDialog.getByRole("button", { name: /^링크 닫기/ });
     await closePrimary.click();
-    await expect(closeDialog.getByText("링크 닫기 실패 · 권한 없음", { exact: true })).toBeVisible();
+    await expect(closeDialog.getByText("링크 닫기 실패 · 권한 없음", { exact: true }).first()).toBeVisible();
     await expect(closePrimary).toHaveAttribute("aria-disabled", "true");
     await expect(closeDialog).not.toContainText("다시 시도");
 
@@ -382,7 +382,7 @@ test("확정된 거부 — 링크 닫기 · 대조 제외 `… 실패 · 권한 
     const excludeDialog = page.getByRole("dialog", { name: "대조 제외" });
     const excludePrimary = excludeDialog.getByRole("button", { name: /^대조 제외/ });
     await excludePrimary.click();
-    await expect(excludeDialog.getByText("대조 제외 실패 · 권한 없음", { exact: true })).toBeVisible();
+    await expect(excludeDialog.getByText("대조 제외 실패 · 권한 없음", { exact: true }).first()).toBeVisible();
     await expect(excludePrimary).toHaveAttribute("aria-disabled", "true");
     await expect(excludeDialog).not.toContainText("다시 시도");
   } finally {

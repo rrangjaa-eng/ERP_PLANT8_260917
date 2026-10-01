@@ -357,6 +357,7 @@ Recent decisions affecting current work:
 | 260930-kc9 | F(2) PR #104 후속 — ISSUE-001 설정 힌트 aria-describedby 전부 · DR-104-01 폰 복원 줄 폭 44 · DR-104-02 비활성 1차 kbd 대비 · DR-104-03 이력 숫자 쉼표 · DR-104-04 번호 칸 §7-3 · DR-104-05 폰 머리 줄 DOM 순서 = 보이는 순서 · G1 export 주석 · G2 PC 테스트 제목 · G3 SYSTEM.md 44 예외 역참조(ISSUE-002 제외, 독립 DOM 감사 A~G PASS) | 2026-09-30 | 4d23611 | [260930-kc9-f-2-pr104-followup-issue-001-dr-104-01-0](./quick/260930-kc9-f-2-pr104-followup-issue-001-dr-104-01-0/) |
 | 260930-nto | 04.4 후속 이연 2건: 관리 표 행 행동 간격 --s-4(거래처 · 법인카드 · 코드표, FINDING-001) · 공유 Button .tertiary 글자 밑줄(FINDING-002) | 2026-09-30 | 3655ab5 | [260930-nto-row-actions-gap-and-tertiary-underline](./quick/260930-nto-row-actions-gap-and-tertiary-underline/) |
 | 261001-440 | 머지 훅 게이트 판정 — PR이 추가한 .claude/gates 로그 줄로(사용자 결정 (가), PR #112 재현) | 2026-10-01 | e702988 | [261001-440-pr-gates](./quick/261001-440-pr-gates/) |
+| 261001-3uq | Codex(ChatGPT 구독) 디자인 검토 전용 복원: install-codex.sh(pnpm·API 키 없음)·gstack codex_reviews disabled·codex-design-review.sh(4폭 스크린샷·DOM 실측·후보/실측 대조) · settings 훅·rule-guard R3·CLAUDE.md는 승인 대기(BLOCKED-CHANGES) | 2026-10-01 | 8d52843 | [261001-3uq-codex](./quick/261001-3uq-codex/) |
 
 ### Roadmap Evolution
 

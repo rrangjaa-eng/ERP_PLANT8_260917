@@ -293,7 +293,7 @@ covered_files:
   - "ui/toast/Toast.module.css"
   - "ui/toast/Toast.tsx"
 
-covered_digest: "v1:sha256:b42fd005c8f3a3d7db0b8c59d9532db553df7b8b90cacd6929e92d5b192353bf"
+covered_digest: "v1:sha256:0e6e9028aeaca6735f819d89300db3368b012d559cd74c41cc922c1d8b7c23aa"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
@@ -452,6 +452,12 @@ ROADMAP은 `Mode: mvp`지만 목표 문장이 User Story 형식이 아니다(`mv
 
 참고(2026-10-01T04:54Z 추가 — 검증 뒤 오케스트레이터) — 02-02-SUMMARY의 사람 확인 「tokens.css 단독 PR에서 CI가 도는가」(이 보고서의 human_verification 밖, STATE 미결 항목)는 2026-10-01 확인용 draft PR #118에서 기계로 실측해 해소했다(ci run 36816314681이 pull_request로 뜸, 머지 안 함 — 02-UAT 3번).
 
+참고(2026-10-01T05:31Z 추가 — 오케스트레이터) — covered 파일 중 `.planning/REQUIREMENTS.md`만 바뀌어(phase.complete 02·03, Phase 3 요구사항 MAST-01·ADMN-03 되돌림) 같은 목록으로 covered_digest를 다시 계산했다. 코드 변경 0, 판정 영향 없음.
+
+참고(2026-10-01 추가 — 오케스트레이터, PR #117 Codex 2차 리뷰): 요구사항 UX-01(모든 컴포넌트 계약에 다섯 상태)은 위 경고처럼 SYSTEM.md §7-16·§7-17에 다섯 상태 정의가 없고 §7-17 ERROR 위치가 §7-7과 어긋나며, `design-system-docs.test.ts`의 7-14 검사 구간이 `## 8.`까지 이어져 §7-15~17을 한 덩어리로 통과시킨다. 이 보고서의 판정(ROADMAP 성공 기준 기준 passed)은 유지하되 요구사항 UX-01은 `Gaps Found`로 되돌렸다. 문서·테스트 보완은 별도 작업이다.
+
+참고(2026-10-01T05:57Z 추가 — 오케스트레이터): main 머지(2c044f6, PR #116)가 covered 파일 중 `TODOS.md` 끝에 Codex 디자인 검토 후속 과제 두 개만 덧붙여 같은 목록으로 covered_digest를 다시 계산했다. covered 코드 변경 0, 판정 영향 없음.
+
 ### Gaps Summary
 
 성공 기준을 거스르는 갭은 없다. main에서 들어온 `bada253`은 tokens.css에 정의된 변수만 쓰고, stylelint를 통과하며, 새 색·서체·radius를 만들지 않고, 셸을 건드리지 않았다 — 3차 버튼 밑줄은 오히려 SYSTEM §4-4 표에 맞춰졌다. tokens.css·stylelint·eslint 설정·서체 파일은 `2d7f73e` 이후 한 바이트도 바뀌지 않았고, 앱 CSS 47파일이 tokens.css 정의 변수만 참조하며, 셸은 권한표 계산(`roleMenu`) 결과만 그린다. 키보드·375·태블릿 셸 E2E를 포함한 전체 E2E가 이 HEAD와 앱 코드가 같은 main 커밋(bada253)의 CI에서 통과했다. 사람 확인은 질문 범위만큼만 인정했다(결정 출처 = 일괄 승인, 배포본 = f85c9af의 /admin 두 화면과 그 셸; 내 계정은 E2E만). 남은 것은 경고 2건(§7-16·§7-17 다섯 상태 문서 표류, 상단 바 포커스 링 이연)으로 Phase 2 계약을 깨지 않는다.
@@ -501,4 +507,4 @@ HEAD `2d7f73e`. /design-review FINDING-001~005·/qa ISSUE-001 수정분(워드�
 _Verified: 2026-10-01T04:36:00Z_
 _Verifier: Claude (gsd-verifier) — PR #117 리뷰 반영 재검증_
 
-> 2026-10-01 covered_digest 재계산(PR #119, 판정은 다시 하지 않음): phase.complete 04.1·04.2·04.4와 state.begin-phase 04.3 (그리고 PR #117의 phase.complete 02·03)이 covered 파일 중 .planning/ROADMAP.md·REQUIREMENTS.md의 진행 표기만 바꿨다. 비문서 diff 0을 확인하고 같은 covered_files 목록으로 다시 계산했다.
+> 2026-10-01 covered_digest 재계산(PR #119, 판정은 다시 하지 않음): phase.complete 04.1·04.2·04.4와 state.begin-phase 04.3이 covered 파일 중 .planning/REQUIREMENTS.md(04.x 진행 표기)만 바꿨다. 비문서 diff 0을 확인하고 같은 covered_files 목록으로 다시 계산했다.

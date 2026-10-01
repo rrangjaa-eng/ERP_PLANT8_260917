@@ -263,7 +263,7 @@ $(printf '%s\n' "$body" | sed -n 's/^[[:space:]]*화면:[[:space:]]*//p' | tr ',
     # PR이 .claude/gates/*.log를 건드렸으면 review·qa·design-review는 그 로그에 이 PR이 더한 줄(대상 대비 +)에서만 찾는다(사용자 결정 2026-10-01).
     pr="$(printf '%s' "$payload" | jq -r '.tool_input | "repos/\(.owner // "")/\(.repo // "")/pulls/\(.pullNumber // "")"')"
     pull_number="$(printf '%s' "$payload" | jq -r '.tool_input.pullNumber // empty')"
-    docs_only=0 base_sha=""
+    docs_only=0 base_sha="" push_note=""
     if pr_files="$(gh api "$pr/files" --paginate --jq '.[] | [.filename, .previous_filename // empty] | @tsv' 2>/dev/null)" \
       && pr_changed="$(gh api "$pr" --jq '.changed_files' 2>/dev/null)"; then
       if [ -z "$pr_files" ] || [ "$(grep -c . <<<"$pr_files")" != "$pr_changed" ]; then
@@ -327,17 +327,25 @@ $(printf '%s\n' "$body" | sed -n 's/^[[:space:]]*화면:[[:space:]]*//p' | tr ',
     fi
     if awk -F'\t' '{ for (i = 1; i <= NF; i++) if ($i ~ /^\.claude\/gates\/[^\/]+\.log$/) hit = 1 } END { exit !hit }' <<<"$pr_files"; then
       pr_gates=1
+      # 대상 브랜치의 그 로그들(이름 바꾸기 옛 경로 포함)에 이미 있는 줄은 빼고 본다 — gh 패치는 merge-base 기준이라
+      # squash된 앞 PR의 줄이 +로 남고, 끝 줄바꿈 없는 옛 줄·이름 바꾼 로그도 +로 나온다(/review 2026-10-01).
+      gate_files="$(awk -F'\t' '{ for (i = 1; i <= NF; i++) if ($i ~ /^\.claude\/gates\/[^\/]+\.log$/) print $i }' <<<"$pr_files")"
+      base_gate_lines=""
       if [ -n "$base_sha" ]; then
-        pr_gate_added="$(git -C "$cwd" diff --no-renames -U0 "$base_sha" "$merge_sha" -- ':(glob).claude/gates/*.log' 2>/dev/null || true)"
+        pr_gate_added="$(git -C "$cwd" diff --no-renames -U0 "$base_sha" "$merge_sha" -- ':(top,glob).claude/gates/*.log' 2>/dev/null || true)"
+        while IFS= read -r f; do base_gate_lines+="$(git -C "$cwd" show "$base_sha:$f" 2>/dev/null || true)"$'\n'; done <<<"$gate_files"
       else
         pr_gate_added="$(gh api "$pr/files" --paginate --jq '.[] | select(.filename | test("^\\.claude/gates/[^/]+\\.log$")) | .patch // ""' 2>/dev/null || true)"
+        base_ref="$(gh api "$pr" --jq '.base.ref' 2>/dev/null || true)"
+        while IFS= read -r f; do base_gate_lines+="$(gh api "${pr%/pulls/*}/contents/$f?ref=$base_ref" -H 'Accept: application/vnd.github.raw' 2>/dev/null || true)"$'\n'; done <<<"$gate_files"
       fi
-      pr_gate_added="$(sed -n 's/^+\([^+]\)/\1/p' <<<"$pr_gate_added")"
+      pr_gate_added="$(sed -n 's/^+\([^+]\)/\1/p' <<<"$pr_gate_added" | { grep -vxF -f <(printf '%s\n' "$base_gate_lines") || true; })"
+      push_note=" — 이 PR이 .claude/gates/*.log를 바꿨으므로 게이트 줄은 이 PR이 대상 브랜치 대비 더한 줄(커밋·푸시한 줄)에서만 찾는다. 기록을 커밋·푸시한 뒤 다시 시도하라."
     fi
     gate_has review && { [ "$docs_only" = 1 ] || gate_has qa; } \
-      || deny "PR 머지 전에 gstack Post-build를 실제로 호출하라: /review → /qa(문서만 바뀐 PR은 면제) → (해당 시)/cso → /ship. gh가 없으면 expectedHeadSha를 넣고 PR 커밋을 받아 둬야 문서 PR로 판정한다(git fetch origin pull/${pull_number:-N}/head pull/${pull_number:-N}/merge)."
+      || deny "PR 머지 전에 gstack Post-build를 실제로 호출하라: /review → /qa(문서만 바뀐 PR은 면제) → (해당 시)/cso → /ship. gh가 없으면 expectedHeadSha를 넣고 PR 커밋을 받아 둬야 문서 PR로 판정한다(git fetch origin pull/${pull_number:-N}/head pull/${pull_number:-N}/merge).${push_note}"
     if [ "$ui_changed" = 1 ] && ! gate_has design-review; then
-      deny "화면 파일(app/·ui/의 .tsx·.css)이 바뀐 PR은 /design-review 통과 기록이 있어야 머지한다(CLAUDE.md §6: UI 완료 판정 = /design-review → /qa). 호출 뒤 다시 시도하라."
+      deny "화면 파일(app/·ui/의 .tsx·.css)이 바뀐 PR은 /design-review 통과 기록이 있어야 머지한다(CLAUDE.md §6: UI 완료 판정 = /design-review → /qa). 호출 뒤 다시 시도하라.${push_note}"
     fi
     ;;
 esac

@@ -323,6 +323,9 @@ export type QuoteLineWriteRow = {
   isNew?: true;
   /** 04-12(사용자 D10) — 이 새 줄이 어느 줄의 복제인지(게이트의 `duplicate` 판정). */
   duplicatedFrom?: string;
+  /** /review 적대 검토(PR #135) — 화면이 이 줄을 거래처를 가린 채 그렸다(그 사이 노출표가 바뀌어도). 서버는 거래처를
+   * 기존 값(새 복제 줄은 원본 값)으로 둔다. */
+  vendorHidden?: true;
   /** 04-13 — 새 줄의 종류(없으면 quote). 기존 줄의 종류는 DB 행이 정한다. */
   lineKind?: QuoteLineKind;
   version?: number;
@@ -544,6 +547,7 @@ export const quoteLineRowInputSchema = z
     id: z.string().uuid().optional(),
     isNew: z.literal(true).optional(),
     duplicatedFrom: z.string().uuid().optional(),
+    vendorHidden: z.literal(true).optional(),
     version: z.number().optional(),
     subcategory: z.string(),
     itemName: z.string().min(1, "항목명 필요 · 항목명 입력"),
@@ -873,8 +877,13 @@ export async function writeQuoteLinesInTx(
 
   // (b)
   const existingIds = [...new Set([...input.rows.filter((row) => !row.isNew).map((row) => row.id), ...archivedIds])];
-  const currentRows = await repoFindQuoteLinesByIds(viewer, existingIds, { revisionId }, tx);
-  const currentById = new Map(currentRows.map((row) => [row.id, row] as const));
+  // Codex 리뷰 P1(PR #125) — 복제 원본은 요청에 없을 수 있다(바뀌지 않은 줄). 같은 차수 조회에 함께 읽어 거래처를 넘긴다.
+  const sourceIds = [...new Set(input.rows.flatMap((row) => (row.isNew && row.duplicatedFrom ? [row.duplicatedFrom] : [])))].filter(
+    (id) => !existingIds.includes(id),
+  );
+  const foundRows = await repoFindQuoteLinesByIds(viewer, [...existingIds, ...sourceIds], { revisionId }, tx);
+  const currentById = new Map(foundRows.map((row) => [row.id, row] as const));
+  const currentRows = foundRows.filter((row) => !sourceIds.includes(row.id));
   const activeBefore = await repoListQuoteLinesByRevision(viewer, revisionId, tx);
   const order = input.order
     ? orderChange(
@@ -888,7 +897,8 @@ export async function writeQuoteLinesInTx(
   const deny = (rule: string, error: Error) => {
     denial ??= { rule, error };
   };
-  if (currentRows.length !== existingIds.length) deny(MEMBERSHIP_RULE, new UserFacingError(MEMBERSHIP_MISMATCH));
+  const missingSource = sourceIds.some((id) => !currentById.has(id));
+  if (currentRows.length !== existingIds.length || missingSource) deny(MEMBERSHIP_RULE, new UserFacingError(MEMBERSHIP_MISMATCH));
   else if (currentRows.some((row) => row.archivedAt !== null)) deny(MEMBERSHIP_RULE, new UserFacingError(ARCHIVED_LINE));
   else if (order === "mismatch") deny(MEMBERSHIP_RULE, new UserFacingError(ORDER_MISMATCH));
 
@@ -937,7 +947,8 @@ export async function writeQuoteLinesInTx(
     for (const [rowIndex, received] of input.rows.entries()) {
       // 04-13 — 판정·저장이 보는 종류: 기존 줄은 잠근 tx로 다시 읽은 DB 행, 새 줄만 요청 값(없으면 quote).
       const current = received.isNew ? undefined : currentById.get(received.id);
-      const requested = prepared.vendorShown ? received : keepHiddenVendor(received, current, currentById);
+      // /review 적대 검토 — 가려진 채 그린 줄은 그 사이 거래처가 보이게 바뀌었어도 거래처를 본 적이 없다.
+      const requested = prepared.vendorShown && !received.vendorHidden ? received : keepHiddenVendor(received, current, currentById);
       const resolved = resolveLineKind(requested, current && lineKindOf(current));
       if (resolved === null) deny(LINE_EDIT_RULE, new UserFacingError(KIND_CHANGED));
       const kind = resolved ?? lineKindOf(current!);

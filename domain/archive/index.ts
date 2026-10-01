@@ -12,6 +12,7 @@ import { findUserById as defaultFindUserById } from "@/repositories/users";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { restoreQuoteLine } from "@/domain/quotes/lines";
 import { canViewReserves, restoreReserve } from "@/domain/reserves";
+import { restoreHoliday } from "@/domain/holidays/admin";
 
 // ADMN-12: "지우지 않는다" — archived_at/archived_by 규약의 유일한 진입점.
 // 물리 삭제 문장은 이 리포 어디에도 넣지 않는다 — DB 레벨 권한 회수(REVOKE)는
@@ -75,6 +76,10 @@ const DOMAIN_RESTORERS: Partial<Record<string, (viewer: Viewer, id: string, deps
   quote_line: (viewer, id, deps) => restoreQuoteLine(viewer, id, { recordAction: deps?.recordAction }),
   // 04-07(B-04 · T5) — 리저브 복원은 클라이언트 잠금 · pnl 쓰기 + reserve.amount · 날짜 마감 잔액 판정을 한 트랜잭션에서.
   reserve_entry: (viewer, id, deps) => restoreReserve(viewer, id, { recordAction: deps?.recordAction }),
+  // quick 261001-hfi(ADMN-12) — 공휴일 복원은 달력 잠금 · admin.holidays 쓰기 · 소급 금지 · 재계산 · 로그를 한 트랜잭션에서.
+  holiday: async (viewer, id, deps) => {
+    await restoreHoliday(viewer, id, { recordAction: deps?.recordAction });
+  },
 };
 
 export async function restore(

@@ -9,7 +9,9 @@ import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
 import { createVendor } from "@/domain/vendors";
 import { createAccount } from "@/domain/auth/accounts";
 import { archivePerson } from "@/domain/people";
-import { archive, restore, listArchive, ForbiddenError } from "@/domain/archive";
+import { findHolidayByDate } from "@/repositories/holidays";
+import { archive, restore, listArchive, ForbiddenError, ProtectedRowError } from "@/domain/archive";
+import { addHoliday, deleteHoliday } from "@/domain/holidays/admin";
 import { queryActionLog } from "@/domain/action-log";
 
 let ipCounter = 0;
@@ -163,5 +165,31 @@ describe("보관함 (ADMN-12, 실제 Postgres)", () => {
       headers: new Headers({ [CLIENT_IP_HEADER]: nextTestIp() }),
     });
     expect(afterRestore.token).toBeTruthy();
+  });
+
+  // ADMN-12(quick 261001-hfi D-01): 공휴일 삭제는 보관이고, 복원은 보관함에서도 한다.
+  // 날짜는 실행일과 무관하게 내일 이후여야 하므로 먼 미래(2034 — 음력 표 범위 안)를 쓴다.
+  it("공휴일: 범용 보관은 거부되고(재계산을 지나는 삭제로만), 보관함 목록에 「공휴일」 · `{날짜} {이름}`으로 나오며, 복원은 보관함 쓰기 권한을 보고 공휴일 복원에 맡긴다", async () => {
+    const { userId } = await createAccount(SYSTEM_VIEWER, { email: uniqueEmail("archive-holiday"), name: "공휴일 관리자", roleId: SYSADMIN_ROLE_ID });
+    const admin = { id: userId, roleId: SYSADMIN_ROLE_ID };
+    const added = await addHoliday(admin, { date: "2034-06-07", kind: "election", name: "보궐선거" });
+
+    await expect(archive(admin, "holiday", added.id)).rejects.toBeInstanceOf(ProtectedRowError);
+
+    await deleteHoliday(admin, added.id);
+    const listed = await listArchive(admin);
+    expect(listed).toContainEqual(
+      expect.objectContaining({ entity: "holiday", label: "공휴일", id: added.id, name: "2034-06-07 보궐선거", archivedBy: "공휴일 관리자" }),
+    );
+
+    const pmViewer = { id: `pm-${randomUUID()}`, roleId: DEFAULT_ROLE_ID };
+    await expect(restore(pmViewer, "holiday", added.id)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(await findHolidayByDate(SYSTEM_VIEWER, "2034-06-07")).toBeNull();
+
+    await restore(admin, "holiday", added.id);
+    expect(await findHolidayByDate(SYSTEM_VIEWER, "2034-06-07")).toMatchObject({ id: added.id, archivedAt: null });
+    const restoreLogs = await queryActionLog(SYSTEM_VIEWER, { actionType: "holiday_change" });
+    expect(restoreLogs.some((log) => log.entityId === added.id && (log.detail as { op?: string }).op === "restore")).toBe(true);
+    expect((await listArchive(admin)).some((item) => item.entity === "holiday" && item.id === added.id)).toBe(false);
   });
 });

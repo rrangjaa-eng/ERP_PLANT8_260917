@@ -8,7 +8,8 @@ import { ensureHolidayCandidates, recomputeFutureSubstitutes, withHolidayCalenda
 import { INITIAL_MANUAL_HOLIDAYS, LunarTableRangeError } from "@/domain/holidays/rules";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import {
-  deleteHolidayById,
+  archiveHolidayById,
+  deleteSubstituteById,
   findBlockingDates,
   findHolidayByDate,
   findHolidayDates,
@@ -195,7 +196,7 @@ async function addManual(date: string): Promise<void> {
 async function addManualAndRecompute(date: string, fromOriginYear: number, today = TODAY): Promise<void> {
   await withHolidayCalendarLock(async (tx) => {
     const existing = await findHolidayByDate(SYSTEM_VIEWER, date, tx);
-    if (existing) await deleteHolidayById(SYSTEM_VIEWER, existing.id, tx);
+    if (existing) await deleteSubstituteById(SYSTEM_VIEWER, existing.id, tx);
     expect(await insertManualHoliday(SYSTEM_VIEWER, { date, name: "임시", kind: "temporary", createdBy: null }, tx)).toBe(true);
     await recomputeFutureSubstitutes(fromOriginYear, today, tx);
   });
@@ -205,7 +206,7 @@ async function removeManualAndRecompute(date: string, fromOriginYear: number, to
   await withHolidayCalendarLock(async (tx) => {
     const existing = await findHolidayByDate(SYSTEM_VIEWER, date, tx);
     expect(existing?.kind).toBe("temporary");
-    if (existing) await deleteHolidayById(SYSTEM_VIEWER, existing.id, tx);
+    if (existing) await archiveHolidayById(SYSTEM_VIEWER, existing.id, tx);
     await recomputeFutureSubstitutes(fromOriginYear, today, tx);
   });
 }
@@ -246,8 +247,11 @@ describe("관리자 저장소 · 미래 대체일 재계산 (D-4210)", () => {
       "holiday-repo",
     );
 
-    expect(await deleteHolidayById(SYSTEM_VIEWER, "00000000-0000-4000-8000-000000000000")).toBeNull();
-    expect(await deleteHolidayById(SYSTEM_VIEWER, found?.id ?? "")).toMatchObject({ date: "2026-11-02" });
+    expect(await archiveHolidayById(SYSTEM_VIEWER, "00000000-0000-4000-8000-000000000000")).toBeNull();
+    // 수동 행은 물리 삭제되지 않는다(ADMN-12 · A-5) — 대체 행 전용 삭제는 수동 행을 건드리지 않는다.
+    expect(await deleteSubstituteById(SYSTEM_VIEWER, found?.id ?? "")).toBeNull();
+    expect(await archiveHolidayById(SYSTEM_VIEWER, found?.id ?? "")).toMatchObject({ date: "2026-11-02", archivedBy: SYSTEM_VIEWER.id });
+    expect(await archiveHolidayById(SYSTEM_VIEWER, found?.id ?? "")).toBeNull();
     expect(await findHolidayByDate(SYSTEM_VIEWER, "2026-11-02")).toBeNull();
   });
 
@@ -318,7 +322,7 @@ describe("관리자 저장소 · 미래 대체일 재계산 (D-4210)", () => {
 
     const first = withHolidayCalendarLock(async (tx) => {
       const row = await findHolidayByDate(SYSTEM_VIEWER, "2027-10-05", tx);
-      if (row) await deleteHolidayById(SYSTEM_VIEWER, row.id, tx);
+      if (row) await deleteSubstituteById(SYSTEM_VIEWER, row.id, tx);
       firstDeleted();
       await firstMayContinue;
       await recomputeFutureSubstitutes(2027, TODAY, tx);
@@ -326,7 +330,7 @@ describe("관리자 저장소 · 미래 대체일 재계산 (D-4210)", () => {
     await firstHasDeleted;
     const second = withHolidayCalendarLock(async (tx) => {
       const row = await findHolidayByDate(SYSTEM_VIEWER, "2027-10-04", tx);
-      if (row) await deleteHolidayById(SYSTEM_VIEWER, row.id, tx);
+      if (row) await archiveHolidayById(SYSTEM_VIEWER, row.id, tx);
       await recomputeFutureSubstitutes(2027, TODAY, tx);
     });
 
@@ -355,7 +359,7 @@ describe("관리자 저장소 · 미래 대체일 재계산 (D-4210)", () => {
     await withHolidayCalendarLock(async (tx) => {
       for (const date of weekdaysBetween("2027-12-27", "2027-12-31")) {
         const existing = await findHolidayByDate(SYSTEM_VIEWER, date, tx);
-        if (existing) await deleteHolidayById(SYSTEM_VIEWER, existing.id, tx);
+        if (existing) await deleteSubstituteById(SYSTEM_VIEWER, existing.id, tx);
         await insertManualHoliday(SYSTEM_VIEWER, { date, name: "임시", kind: "temporary", createdBy: null }, tx);
       }
       await recomputeFutureSubstitutes(2026, TODAY, tx);

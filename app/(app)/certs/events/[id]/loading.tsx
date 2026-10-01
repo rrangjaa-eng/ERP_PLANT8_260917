@@ -1,12 +1,34 @@
 import { PageHeader } from "@/ui/page-header/PageHeader";
+import styles from "./event-detail.module.css";
 
-// 04.3-04 Task 4 ④-b · 04.3-15 — I′3 LOADING. 제목은 아직 모르므로 제목 자리만(부제 없음 — app/(app)/projects/loading.tsx
-// 선례의 이유). 당첨자 표 뼈대는 명단과 함께 없어졌고, 경품 표 뼈대는 04.3-10이 경품 섹션과 함께 더한다(없는 것을 있는
-// 척하지 않는다).
+// 04.3-04 Task 4 ④-b · 04.3-15 · 04.3-10 — I′3 LOADING. 제목은 아직 모르므로 제목 자리만(부제 없음 — app/(app)/projects/loading.tsx
+// 선례의 이유) + 경품 표 뼈대(§7-7 — 머리글 + --surface 3행 + 합계 자리, 반짝임 없음).
 export default function CertEventDetailLoading() {
   return (
     <div aria-hidden="true">
-      <PageHeader title={"\u00a0"} />
+      <PageHeader title={" "} />
+      <table className={styles.skeletonTable}>
+        <thead>
+          <tr>
+            <th>경품명</th>
+            <th>전달</th>
+            <th>당첨 수</th>
+            <th>제출</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[0, 1, 2].map((i) => (
+            <tr key={i} className={styles.skeletonRow}>
+              <td colSpan={4} />
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className={styles.skeletonFooter}>
+            <td colSpan={4} />
+          </tr>
+        </tfoot>
+      </table>
     </div>
   );
 }

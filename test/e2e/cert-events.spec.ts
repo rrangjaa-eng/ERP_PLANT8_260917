@@ -144,7 +144,8 @@ function kstToday(offsetDays = 0): string {
 }
 
 const prizeGrid = (page: Page) => page.getByRole("grid", { name: "경품" });
-const prizeRows = (page: Page) => prizeGrid(page).locator("tbody > tr");
+// 폰 접힌 줄(P2 — aria-hidden, 데스크톱에서 숨김)은 행이 아니다(읽기 전용 P2 칸이 있는 줄만 생긴다).
+const prizeRows = (page: Page) => prizeGrid(page).locator('tbody > tr:not([aria-hidden="true"])');
 const prizeCell = (page: Page, row: number, col: number) => prizeRows(page).nth(row).locator("td").nth(col);
 const PRIZE_COL = { name: 1, value: 2, delivery: 3, winners: 4, submitted: 5 } as const;
 
@@ -263,6 +264,13 @@ async function focusGridCell(target: Locator) {
   }).toPass();
 }
 
+// 셸 링크의 RSC 미리 가져오기는 I′3 응답이 아니고, 브라우저가 그 본문을 내주지 않을 때가 있어 수집기가 실패한다 — 막는다.
+async function blockPrefetch(page: Page) {
+  await page.route("**/*", (route) =>
+    route.request().headers()["next-router-prefetch"] ? route.abort() : route.fallback(),
+  );
+}
+
 async function pasteIntoFocusedCell(page: Page, text: string) {
   await page.evaluate((clipboardText) => {
     const dt = new DataTransfer();
@@ -359,11 +367,12 @@ test.describe("04.3-10 Task 2 — I′3 경품 표(1280)", () => {
 
     await page.goto(`/certs/events/${requested.eventId}`);
     await expect(page.getByText("경품이 없습니다")).toBeVisible();
-    await expect(page.locator("kbd", { hasText: "Ctrl+S" }).first()).toBeVisible();
-    await expect(page.getByText("저장", { exact: true })).toBeVisible();
+    await expect(page.getByText("경품 없음 · 첫 줄 만들기")).toBeVisible();
+    // 줄이 생기면 표 아래 힌트 줄에 「저장 Ctrl+S」(1차 QR 생성에 없는 동작 — DR-14). 접수 중 · 닫힘은 1차 kbd가 말한다.
+    await page.getByRole("button", { name: /첫 줄 만들기/ }).click();
+    await expect(page.getByText(/새 줄 Ctrl\+Enter · 저장 Ctrl\+S$/)).toBeVisible();
     const qr = page.getByRole("button", { name: "QR 생성", exact: true });
     await expect(qr.locator("kbd")).toHaveCount(0);
-    await expect(page.getByText("경품 없음 · 첫 줄 만들기")).toBeVisible();
     await page.context().close();
   });
 
@@ -380,7 +389,10 @@ test.describe("04.3-10 Task 2 — I′3 경품 표(1280)", () => {
       ],
     });
 
+    // 수집은 빈 문서에서 시작한다 — 로그인 뒤 /account 화면의 미리 가져오기(RSC)가 이동으로 끊긴 응답을 담지 않게.
     const mPage = await loggedInPage(browser, manager);
+    await mPage.goto("about:blank");
+    await blockPrefetch(mPage);
     const mCollector = await collectCertResponses(mPage);
     await mPage.goto(`/certs/events/${ev.eventId}`);
     await expect(prizeGrid(mPage)).toBeVisible();
@@ -388,6 +400,8 @@ test.describe("04.3-10 Task 2 — I′3 경품 표(1280)", () => {
     expect(scanForLeaks(mCorpus.corpus, patterns).length).toBeGreaterThan(0);
 
     const pPage = await loggedInPage(browser, pm);
+    await pPage.goto("about:blank");
+    await blockPrefetch(pPage);
     const pCollector = await collectCertResponses(pPage);
     await pPage.goto(`/certs/events/${ev.eventId}`);
     await expect(pPage.getByRole("table", { name: "경품" })).toBeVisible();

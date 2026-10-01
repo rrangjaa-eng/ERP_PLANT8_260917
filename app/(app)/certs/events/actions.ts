@@ -4,10 +4,10 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { authedActionClient } from "@/lib/actions/client";
 import { assertCertFeatureEnabled } from "@/lib/certs/feature-guard";
-import { generateQr, prizeChangesSchema, requestQr } from "@/domain/certs/events";
+import { generateQr, prizeChangesSchema, requestQr, savePrizes } from "@/domain/certs/events";
 import "./actions.registry";
 
-// 04.3-10 — 「QR 생성 신청」(I′2) · 「QR 생성」(I′3 신청됨 1차). 첫 줄 기능 게이트(C1) → domain 함수 하나 → 결과 유니온
+// 04.3-10 — 「QR 생성 신청」(I′2) · 「QR 생성」(I′3 신청됨 1차) · 경품 표 저장(I′3 「일괄 저장」 · Ctrl+S). 첫 줄 기능 게이트(C1) → domain 함수 하나 → 결과 유니온
 // 그대로. 칸 내용은 domain이 셀 · 칸 오류로 판정하므로 여기서는 모양만 받는다.
 
 export const requestCertQrAction = authedActionClient
@@ -28,5 +28,14 @@ export const generateCertQrAction = authedActionClient
       changes: parsedInput.changes,
     });
     if (result.kind === "ok") revalidatePath(`/certs/events/${parsedInput.eventId}`);
+    return result;
+  });
+
+export const saveCertPrizesAction = authedActionClient
+  .schema(z.object({ eventId: z.string().uuid(), changes: prizeChangesSchema }))
+  .action(async ({ parsedInput, ctx }) => {
+    await assertCertFeatureEnabled();
+    const result = await savePrizes(ctx.viewer, parsedInput.eventId, { changes: parsedInput.changes });
+    if (result.kind === "saved") revalidatePath(`/certs/events/${parsedInput.eventId}`);
     return result;
   });

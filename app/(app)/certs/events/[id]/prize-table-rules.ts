@@ -1,4 +1,5 @@
-import { normalizePrizeName, type PrizeCellError } from "@/domain/certs/prize-rules";
+import { normalizePrizeName, parsePrizeAmount, type PrizeCellError } from "@/domain/certs/prize-rules";
+import { certPrizeListed, certRrnPurgeTarget } from "@/domain/certs/prize-value";
 import { contactMissingText } from "../request-rules";
 
 // 04.3-10 — I′3 경품 편집 표의 순수 판정(UI-SPEC I′3 경품 섹션 · 「개정 (2026-10-01 결정 확정)」 T2 · T12). React · DB ·
@@ -61,9 +62,44 @@ export function prizeChangesBody(
   return body;
 }
 
-/** 1차 라벨 · 「일괄 저장 N」의 N — 바뀐 줄 + 새 줄 + 지운 줄. */
-export function dirtyRowCount(body: PrizeChangesBody): number {
-  return body.updates.length + body.inserts.length + body.deletes.length;
+/**
+ * 「일괄 저장 Ctrl+S N」의 N — 화면 전체 dirty 칸 수(§7-3 (사)): 저장된 줄의 바뀐 칸 + 새 줄의 기본값과 다른 칸(방금 만든 빈 새
+ * 줄도 1) + 지운 줄 1.
+ */
+export function dirtyCellCount(body: PrizeChangesBody): number {
+  const updated = body.updates.reduce((sum, patch) => sum + EDIT_COLUMNS.filter((column) => patch[column] !== undefined).length, 0);
+  const inserted = body.inserts.reduce(
+    (sum, row) => sum + Math.max(1, EDIT_COLUMNS.filter((column) => !sameCell(column, row[column], NEW_PRIZE_DEFAULTS[column])).length),
+    0,
+  );
+  return updated + inserted + body.deletes.length;
+}
+
+// ── 제출 셀 미리 보기(편집 중 가액 — 판정은 저장 때 서버, G0 DR-2 · 「개정 (2026-10-01)」 T4) ─────────────────
+
+export type SubmitCell = { kind: "count"; n: number } | { kind: "noCert" } | { kind: "purge"; n: number; p: number };
+
+// 한 칸에 하나: ① 그 줄 제출 가운데 가액 × 수량 ≤ 50,000인 건 p ≥ 1 → `{N} · 파기 대상 {p}` ② 1개 가액 ≤ 50,000 ∧ N = 0 →
+// `확인증 없음` ③ 그 밖 `{N}`. N · p는 대조 제외를 뺀 수(서버가 준 quantityCounts). 편집 중 값이 금액이 아니면 저장된 가액.
+// 닫힘 ∧ N < 당첨 수의 `미제출 {k}`는 04.3-17(UD-3 a)이다.
+export function submitCellPreview(input: {
+  unitValue: string;
+  savedUnitValueKrw?: number;
+  submittedCount: number;
+  quantityCounts: ReadonlyArray<{ quantity: number; count: number }>;
+}): SubmitCell {
+  const amount = parsePrizeAmount(input.unitValue) ?? input.savedUnitValueKrw ?? null;
+  if (amount === null) return { kind: "count", n: input.submittedCount };
+  const p = input.quantityCounts.filter((q) => certRrnPurgeTarget(amount, q.quantity)).reduce((sum, q) => sum + q.count, 0);
+  if (p > 0) return { kind: "purge", n: input.submittedCount, p };
+  if (!certPrizeListed(amount) && input.submittedCount === 0) return { kind: "noCert" };
+  return { kind: "count", n: input.submittedCount };
+}
+
+export function submitCellText(cell: SubmitCell): string {
+  if (cell.kind === "noCert") return "확인증 없음";
+  if (cell.kind === "purge") return `${cell.n} · 파기 대상 ${cell.p}`;
+  return String(cell.n);
 }
 
 // 셀 오류 문장(명사형 — UI-SPEC Copywriting 새 흐름 I′3 셀 오류 · T2).
@@ -153,3 +189,61 @@ export function generateOutcome(response: unknown): GenerateOutcome {
       return { kind: "failed" };
   }
 }
+
+// ── 저장 결과(「일괄 저장」 · Ctrl+S) ─────────────────────────────────────────────
+
+export type SaveOutcome =
+  | { kind: "saved"; rows: number }
+  | { kind: "invalid"; cellErrors: PrizeCellError[] }
+  | { kind: "readOnly" }
+  | { kind: "conflict"; prizes: Array<Record<string, unknown>> }
+  | { kind: "forbidden" }
+  | { kind: "notFound" }
+  | { kind: "failed" };
+
+export function saveOutcome(response: unknown): SaveOutcome {
+  if (!isRecord(response) || response.validationErrors !== undefined) return { kind: "failed" };
+  if (response.serverError !== undefined) return response.serverError === FORBIDDEN_SERVER_ERROR ? { kind: "forbidden" } : { kind: "failed" };
+  const data = response.data;
+  if (!isRecord(data)) return { kind: "failed" };
+  switch (data.kind) {
+    case "saved":
+      return typeof data.rows === "number" ? { kind: "saved", rows: data.rows } : { kind: "failed" };
+    case "invalid":
+      return Array.isArray(data.cellErrors) ? { kind: "invalid", cellErrors: data.cellErrors as PrizeCellError[] } : { kind: "failed" };
+    case "conflict":
+      return Array.isArray(data.prizes) ? { kind: "conflict", prizes: data.prizes as Array<Record<string, unknown>> } : { kind: "failed" };
+    case "readOnly":
+    case "notFound":
+      return { kind: data.kind };
+    default:
+      return { kind: "failed" };
+  }
+}
+
+const KST_TIME = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+// 합계 행 오른쪽 한 줄(§7-3). 저장 거부는 사실만(G10 a — 「다시 시도」 없음). 셀 오류 · 충돌 요약은 표가 센다.
+export function saveResultText(outcome: SaveOutcome, at: Date): string | null {
+  switch (outcome.kind) {
+    case "saved":
+      return `저장됨 ${outcome.rows}줄 ${KST_TIME.format(at)}`;
+    case "forbidden":
+      return "저장 안 됨 · 권한 없음";
+    case "notFound":
+      return "저장 안 됨 · 없는 행사";
+    case "readOnly":
+      return READ_ONLY_REASON;
+    case "failed":
+      return SAVE_UNKNOWN_TEXT;
+    default:
+      return null;
+  }
+}
+
+// 제출 있는 줄의 경품명 · 전달 읽기 전용 이유(N5 a + E6 a — DR-2).
+export const READ_ONLY_REASON = "제출 있음 · 가액 · 당첨 수만 고침";
+// 결과 불명 — 신청 · 생성과 같은 명사형(옛 I2 선례 꼴, /design-review 확인 요청).
+export const SAVE_UNKNOWN_TEXT = "저장 결과 모름 · 다시 누르기";
+// 버전 충돌(§7-3 (나)) — 그 줄을 오류 셀 모양으로 고정하고 다음 한 수 둘. 바뀐 값 · 사람 · 시각은 이 표 DTO에 없어 적지 않는다.
+export const CONFLICT_REASON = "다른 사람이 먼저 바꿈 · 덮어쓰기 / 그 값으로";

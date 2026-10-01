@@ -624,3 +624,48 @@ export async function generateQr(
     throw error;
   }
 }
+
+// ── 경품 표 저장(I′3 「일괄 저장 Ctrl+S N」 · 신청됨 Ctrl+S) ─────────────────────────
+
+const savePrizesSchema = z.object({ changes: prizeChangesSchema });
+
+export type SavePrizesInput = z.input<typeof savePrizesSchema>;
+export type SavePrizesResult =
+  | { kind: "saved"; rows: number; prizes: Partial<CertPrizeDto>[] }
+  | { kind: "invalid"; cellErrors: PrizeCellError[] }
+  | { kind: "readOnly" }
+  | { kind: "conflict"; prizes: Partial<CertPrizeDto>[] }
+  | { kind: "notFound" };
+
+// 게이트 · 범위(notFound) → certs.qr 쓰기 ∧ cert_prize.value(E12 — 아니면 Forbidden) → 트랜잭션: 행사 행 잠금 먼저(null이면
+// notFound — E13 · 04.3-15 규약, 수령자 제출과 직렬화) → 경품 줄 적용(닫힌 행사면 가액 · 당첨 수만) → document_update(줄 수만 —
+// 가액 숫자 없음). QR은 만들지 않는다(신청됨 Ctrl+S는 저장만). 결과의 가액은 새 DTO 줄(권한자)뿐이다.
+export async function savePrizes(
+  viewer: Viewer,
+  eventId: string,
+  input: SavePrizesInput,
+  deps?: Partial<CertEventDeps>,
+): Promise<SavePrizesResult> {
+  if (!(await inScope(viewer, eventId))) return { kind: "notFound" };
+  if (!(await canManagePrizesOf(viewer))) throw new ForbiddenError(CERT_FORBIDDEN_MESSAGE);
+  const parsed = savePrizesSchema.parse(input);
+  const now = deps?.now?.() ?? new Date();
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+
+  return withTransaction(async (tx): Promise<SavePrizesResult> => {
+    const locked = await lockEventRow(viewer, eventId, tx);
+    if (!locked) return { kind: "notFound" };
+    const closed = locked.closedAt !== null || (locked.expiresAt !== null && locked.expiresAt.getTime() <= now.getTime());
+    const applied = await applyPrizeChanges(viewer, locked, parsed.changes, { closed, tx });
+    if (applied.kind !== "ok") return applied;
+    const rows = applied.counts.updated + applied.counts.inserted + applied.counts.deleted;
+    if (rows > 0) {
+      await recordAction(
+        viewer,
+        { actionType: "document_update", entity: "cert_event", entityId: eventId, detail: applied.counts },
+        { tx },
+      );
+    }
+    return { kind: "saved", rows, prizes: await prizeDtos(viewer, await listPrizeSummaries(viewer, eventId, tx), true) };
+  });
+}

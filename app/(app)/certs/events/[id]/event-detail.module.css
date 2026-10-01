@@ -118,6 +118,16 @@
   outline-offset: var(--focus-offset);
 }
 
+/* 제출 셀 색 글자(§7-3 ⑮ · T4) — 확인증 없음 --muted · 파기 대상 --warning(그 낱말만). */
+.mutedText {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.warningText {
+  color: var(--warning);
+}
+
 .footerCell {
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
@@ -128,4 +138,31 @@
   display: flex;
   justify-content: flex-end;
   margin-top: var(--s-3);
+}
+
+/* §7-7 LOADING 뼈대 — 머리글 + --surface 3행 + 합계 자리, 반짝임 없음(I′1 뼈대와 같은 모양). */
+.skeletonTable {
+  width: 100%;
+  margin-top: var(--s-6);
+  border-collapse: collapse;
+}
+
+.skeletonTable th {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  text-align: left;
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+}
+
+.skeletonRow td {
+  height: var(--row-min);
+  background: var(--surface);
+  border-bottom: var(--line-w) solid var(--line);
+}
+
+.skeletonFooter td {
+  height: var(--row-min);
+  border-top: var(--line-w-strong) solid var(--line-strong);
 }

@@ -16,3 +16,11 @@ registerAction({
   action: "write",
   dtoName: "CertPrizeDto",
 });
+
+// 저장 결과(saved · conflict)가 경품 줄 DTO(가액 키는 cert_prize.value)를 싣는다.
+registerAction({
+  name: "saveCertPrizesAction",
+  menu: "certs.qr",
+  action: "write",
+  dtoName: "CertPrizeDto",
+});

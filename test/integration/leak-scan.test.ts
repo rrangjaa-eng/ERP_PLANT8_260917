@@ -20,6 +20,7 @@ import "@/domain/corp-cards";
 import "@/domain/people";
 import "@/domain/vendors";
 import "@/domain/projects";
+import "@/domain/projects/references";
 import "@/domain/quotes/lines";
 import "@/domain/quotes/revisions";
 import "@/domain/revenue";
@@ -166,6 +167,20 @@ describe("정보 노출 누수 스캔 (ADMN-03)", () => {
       expect(infoItemOf("ReserveEvidenceOptionDto", "label")).toBe("reserve.amount");
       expect(infoItemOf("ReserveEntryDto", "projectName")).toEqual(["reserve.amount", "project.value"]);
       expect(infoItemOf("ReserveEntryDto", "evidenceLabel")).toBe("reserve.amount");
+    });
+
+    // quick 261001-85g(ADMN-03) — 프로젝트 등록 폼 선택지(거래처 · 팀 · 사람)도 명세로 등록돼 이 스캔이 본다.
+    // 정보 항목은 각 마스터 DTO의 이름 칸과 같다(마스터 목록 자체를 싣기 때문).
+    it("프로젝트 등록 폼 선택지 DTO의 정보 항목이 등록돼 있다", () => {
+      const infoItemOf = (dtoName: string, key: string) => DTO_REGISTRY.find((entry) => entry.name === dtoName)?.fields.find((field) => field.key === key)?.infoItem;
+      for (const [dtoName, infoItem] of [
+        ["ProjectVendorOptionDto", "vendor.value"],
+        ["ProjectTeamOptionDto", "team.value"],
+        ["ProjectPersonOptionDto", "person.value"],
+      ] as const) {
+        expect(infoItemOf(dtoName, "id"), dtoName).toBe(infoItem);
+        expect(infoItemOf(dtoName, "name"), dtoName).toBe(infoItem);
+      }
     });
 
     it("registerDto가 빈 목록 infoItem: []을 거부한다", () => {

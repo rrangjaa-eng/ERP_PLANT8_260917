@@ -44,7 +44,7 @@ async function makeAdjuster(teamId: string, withProjectsWrite = false): Promise<
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "view", allowed: true });
   if (withProjectsWrite) await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects", action: "write", allowed: true });
   await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "projects.adjustment", action: "write", allowed: true });
-  for (const infoItem of ["project.value", "quote.amount"]) {
+  for (const infoItem of ["project.value", "quote.amount", "vendor.value"]) {
     await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem, visible: true });
   }
   return makeAccount(role.id, teamId, "E2E 경영관리");

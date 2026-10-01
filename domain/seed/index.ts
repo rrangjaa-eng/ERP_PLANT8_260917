@@ -9,7 +9,7 @@ import {
 } from "@/domain/permissions/roles";
 import { MENUS, PERMISSION_ACTIONS } from "@/domain/permissions/menus";
 import { INFO_ITEMS } from "@/domain/permissions/info-items";
-import { SETTING_DEFS } from "@/domain/settings/keys";
+import { SEED_HISTORIZED_EFFECTIVE_FROM, SETTING_DEFS } from "@/domain/settings/keys";
 import { seedRole } from "@/repositories/roles";
 import {
   upsertPermission,
@@ -27,7 +27,7 @@ import { seedApprovalsLeave } from "@/domain/seed/approvals-leave";
 // 이력형 키의 시드 기본 행은 항상 과거인 고정 날짜를 쓴다 — 시드 직후부터
 // 유효값이 즉시 성립해(오늘 기준 effective_from <= asOf) 03-UI-SPEC.md가
 // 보장하는 "설정 화면에 EMPTY 상태가 발생하지 않는다"가 실제로 성립한다.
-const SEED_HISTORIZED_EFFECTIVE_FROM = "2000-01-01";
+// 날짜 상수는 SEED_HISTORIZED_EFFECTIVE_FROM(domain/settings/keys.ts) — 설정 가져오기도 같은 값으로 시드 행을 알아본다.
 
 // 프로젝트 상태 코드표 시드(D-41 → D-75, 04-06) — 수주중·진행·정산·완료·
 // 미수주 다섯 값. 옛 다섯 값(planning/on_hold/done/cancelled + 이 목록에 없던

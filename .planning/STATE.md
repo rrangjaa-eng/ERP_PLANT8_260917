@@ -360,6 +360,7 @@ Recent decisions affecting current work:
 | 261001-3uq | Codex(ChatGPT 구독) 디자인 검토 전용 복원: install-codex.sh(pnpm·API 키 없음)·gstack codex_reviews disabled·codex-design-review.sh(4폭 스크린샷·DOM 실측·후보/실측 대조) · settings 훅·rule-guard R3·CLAUDE.md는 승인 대기(BLOCKED-CHANGES) | 2026-10-01 | 8d52843 | [261001-3uq-codex](./quick/261001-3uq-codex/) |
 | 261001-5zp | 04.3-15 독립 검토·DOM 감사 지적 반영(R1 · R3~R7 · M1) | 2026-10-01 | 1e79494 | [261001-5zp-04-3-15-review-fix-round](./quick/261001-5zp-04-3-15-review-fix-round/) |
 | 261001-81j | Codex 디자인 검토 도구 후속 수정(PR #116 봇 지적 4건: dotenv 주석·--out 하드링크·--ephemeral·숨은 요소 실측 제외) | 2026-10-01 | 2fd934b4 | [261001-81j-codex-design-review-follow-up-fixes](./quick/261001-81j-codex-design-review-follow-up-fixes/) |
+| 261001-85g | Phase 2·3 요구사항 갭 4건 — ADMN-03 등록 폼 선택지 노출표 투영 · ADMN-06 미설정 키 지난 연도 가져오기 · 미래 발령 취소 로그 · UX-01 다섯 상태 | 2026-10-01 | 746dac6 | [261001-85g-phase-2-3-gaps](./quick/261001-85g-phase-2-3-gaps/) |
 
 ### Roadmap Evolution
 

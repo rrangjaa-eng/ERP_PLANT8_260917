@@ -11,6 +11,7 @@ import {
   SettingNotFoundError,
   SettingKindMismatchError,
   FutureCancelOnlyError,
+  FutureValueNotFoundError,
   type SettingDef,
 } from "@/domain/settings/registry";
 import { SETTING_DEFS } from "@/domain/settings/keys";
@@ -228,18 +229,42 @@ describe("addHistorizedValue / cancelHistorizedValue (이력형 전용)", () => 
     expect(deleteFutureHistorizedValue).not.toHaveBeenCalled();
   });
 
-  it("미래 적용 시작일은 취소가 성공하고 행동 로그를 남긴다", async () => {
+  it("미래 적용 시작일은 취소가 성공하고, 삭제와 행동 로그가 같은 트랜잭션에서 불린다", async () => {
     const can = vi.fn().mockResolvedValue(true);
-    const deleteFutureHistorizedValue = vi.fn().mockResolvedValue(undefined);
+    const deleteFutureHistorizedValue = vi.fn().mockResolvedValue(true);
     const recordAction = vi.fn().mockResolvedValue(undefined);
+    const tx = { marker: "tx" } as never;
+    const withTransaction = vi.fn((fn: (t: never) => Promise<unknown>) => fn(tx)) as never;
     const farFuture = "2999-01-01";
     await cancelHistorizedValue(viewer, HISTORIZED_DEF, farFuture, {
       can,
       deleteFutureHistorizedValue,
       recordAction,
+      withTransaction,
     });
-    expect(deleteFutureHistorizedValue).toHaveBeenCalledWith(viewer, HISTORIZED_DEF.key, farFuture);
+    expect(deleteFutureHistorizedValue).toHaveBeenCalledWith(viewer, HISTORIZED_DEF.key, farFuture, tx);
     expect(recordAction).toHaveBeenCalledTimes(1);
+    expect(recordAction).toHaveBeenCalledWith(
+      viewer,
+      expect.objectContaining({ actionType: "settings_change", entity: "settings_historized", entityId: HISTORIZED_DEF.key }),
+      { tx },
+    );
+  });
+
+  it("지운 예정값이 없으면 FutureValueNotFoundError이고 행동 로그를 남기지 않는다", async () => {
+    const can = vi.fn().mockResolvedValue(true);
+    const deleteFutureHistorizedValue = vi.fn().mockResolvedValue(false);
+    const recordAction = vi.fn().mockResolvedValue(undefined);
+    const withTransaction = vi.fn((fn: (t: never) => Promise<unknown>) => fn({} as never)) as never;
+    const attempt = cancelHistorizedValue(viewer, HISTORIZED_DEF, "2999-01-01", {
+      can,
+      deleteFutureHistorizedValue,
+      recordAction,
+      withTransaction,
+    });
+    await expect(attempt).rejects.toBeInstanceOf(FutureValueNotFoundError);
+    await expect(attempt).rejects.toThrow("취소할 예정값 찾을 수 없음");
+    expect(recordAction).not.toHaveBeenCalled();
   });
 });
 

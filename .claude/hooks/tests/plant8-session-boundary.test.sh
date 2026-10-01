@@ -2,6 +2,7 @@
 # 회귀 테스트 — plant8-session-boundary.sh
 # payload를 stdin으로 넣어 각 이벤트를 검증한다. 실제 리포를 절대 건드리지 않는다.
 set -uo pipefail
+unset PLANT8_ENV_ID  # 폴백 id 검사 — 실행 환경 값이 섞이지 않게
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOOKS="$(cd "$SCRIPT_DIR/.." && pwd)"

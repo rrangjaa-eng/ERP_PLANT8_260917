@@ -2,10 +2,12 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
 import { authedActionClient } from "@/lib/actions/client";
 import { assertCertFeatureEnabled } from "@/lib/certs/feature-guard";
 import { cancelRequest, closeEvent, generateQr, prizeChangesSchema, requestQr, savePrizes } from "@/domain/certs/events";
 import "./actions.registry";
+import { CANCELLED_TOAST_COOKIE, cancelledToastCookieOptions } from "./cancelled-toast-cookie";
 
 // 04.3-10 — 「QR 생성 신청」(I′2) · 「QR 생성」(I′3 신청됨 1차) · 경품 표 저장(I′3 「일괄 저장」 · Ctrl+S). 첫 줄 기능 게이트(C1) → domain 함수 하나 → 결과 유니온
 // 그대로. 칸 내용은 domain이 셀 · 칸 오류로 판정하므로 여기서는 모양만 받는다.
@@ -60,7 +62,18 @@ export const cancelCertRequestAction = authedActionClient
   .action(async ({ parsedInput, ctx }) => {
     await assertCertFeatureEnabled();
     const result = await cancelRequest(ctx.viewer, parsedInput.eventId);
-    if (result.kind === "cancelled") revalidatePath("/certs/events");
+    if (result.kind === "cancelled") {
+      // 착지 토스트의 이름 — 서버가 지운 행사의 이름만(검토 X4). 목록이 읽고 곧바로 지운다.
+      (await cookies()).set(CANCELLED_TOAST_COOKIE, result.name, cancelledToastCookieOptions);
+      revalidatePath("/certs/events");
+    }
     if (result.kind === "hasPrizes") revalidatePath(`/certs/events/${parsedInput.eventId}`);
     return result;
   });
+
+// 04.3-17 검토 X4 — 목록 착지 토스트가 뜬 뒤 그 쿠키를 지운다(한 번만 — 새로 고침 · 뒤로 가기에 다시 없음). 쿠키 지우기는
+// 렌더 중에 할 수 없어(서버 컴포넌트) 착지 화면이 이 액션을 한 번 부른다.
+export const clearCertCancelledToastAction = authedActionClient.action(async () => {
+  (await cookies()).delete({ name: CANCELLED_TOAST_COOKIE, path: cancelledToastCookieOptions.path });
+  return { kind: "cleared" as const };
+});

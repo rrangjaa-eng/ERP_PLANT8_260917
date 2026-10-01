@@ -41,3 +41,11 @@ registerAction({
   action: "write",
   dtoName: null,
 });
+
+// 04.3-17 검토 X4 — 착지 토스트 쿠키 지우기. 돌려주는 값이 결과 종류뿐이고 쓰기가 없다 — 목록을 볼 수 있는 사람이 부른다.
+registerAction({
+  name: "clearCertCancelledToastAction",
+  menu: "certs.events",
+  action: "view",
+  dtoName: null,
+});

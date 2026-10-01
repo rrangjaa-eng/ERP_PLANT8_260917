@@ -3,7 +3,7 @@ phase: 03-permissions-settings-masters
 verified: 2026-10-01T04:38:30Z
 status: passed
 score: 6/6 must-haves verified
-covered_digest: "v1:sha256:f724701daba41ba9560e5c25e7347ce12fea2a17b621be0b00a91bc621dcfff0"
+covered_digest: "v1:sha256:65b28a7bb0d9ce6dc461ac934d6218bcff345c860ff4373063bc6fd9b04f15e9"
 covered_files:
 
   - ".github/workflows/account.yml"
@@ -897,4 +897,4 @@ _Verifier: Claude (gsd-verifier), 7회차 재검증 (HEAD aa5464e, 페이즈 종
 
 _Addendum: 2026-10-01T04:38:30Z — Claude (gsd-verifier), HEAD d49ad56 (bada253·48da153 머지 뒤 재검증)_
 
-> 2026-10-01 covered_digest 재계산(PR #119, 판정은 다시 하지 않음): phase.complete 04.1·04.2·04.4와 state.begin-phase 04.3이 covered 파일 중 .planning/REQUIREMENTS.md(04.x 진행 표기)만 바꿨다. 비문서 diff 0을 확인하고 같은 covered_files 목록으로 다시 계산했다.
+> 2026-10-01 covered_digest 재계산(PR #119, 판정은 다시 하지 않음): 이 보고서의 covered 파일 중 바뀐 것은 .planning/REQUIREMENTS.md(04.x 행 Complete — Phase 3 행·체크박스는 main(#117)과 같음, /review로 ADMN-10·ADMN-12·OPS-05 체크박스 되돌림 확인)와 .planning/ROADMAP.md(04.1·04.2·04.4 Plans 줄 · Phase 04.2 목록 체크박스 [x] completed 2026-10-01)다. 비문서 covered diff 0.

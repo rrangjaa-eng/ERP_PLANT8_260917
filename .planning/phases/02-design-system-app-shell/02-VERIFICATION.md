@@ -293,7 +293,7 @@ covered_files:
   - "ui/toast/Toast.module.css"
   - "ui/toast/Toast.tsx"
 
-covered_digest: "v1:sha256:0e6e9028aeaca6735f819d89300db3368b012d559cd74c41cc922c1d8b7c23aa"
+covered_digest: "v1:sha256:7e34fc35e96b1d5218cc299c8bf743786532035a65e1e0b556a0e2c12c52fec5"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
@@ -507,4 +507,4 @@ HEAD `2d7f73e`. /design-review FINDING-001~005·/qa ISSUE-001 수정분(워드�
 _Verified: 2026-10-01T04:36:00Z_
 _Verifier: Claude (gsd-verifier) — PR #117 리뷰 반영 재검증_
 
-> 2026-10-01 covered_digest 재계산(PR #119, 판정은 다시 하지 않음): phase.complete 04.1·04.2·04.4와 state.begin-phase 04.3이 covered 파일 중 .planning/REQUIREMENTS.md(04.x 진행 표기)만 바꿨다. 비문서 diff 0을 확인하고 같은 covered_files 목록으로 다시 계산했다.
+> 2026-10-01 covered_digest 재계산(PR #119, 판정은 다시 하지 않음): 이 보고서의 covered 파일 중 바뀐 것은 .planning/REQUIREMENTS.md 하나다 — phase.complete 04.1·04.2·04.4가 04.x 행을 Complete로 바꿨다. PR #119 /review가 병합 중 잘못 넘어온 Phase 3 체크박스 3개(ADMN-10·ADMN-12·OPS-05)를 main(#117)대로 [ ]로 되돌린 상태에서 다시 계산했다. 비문서 covered diff 0.

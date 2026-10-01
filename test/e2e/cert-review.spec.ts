@@ -811,3 +811,13 @@ test("긴 실행 — 3시간 전 세션(A)은 I4에서 끊기고 같은 계정�
   await pageA.context().close();
   await pageB.context().close();
 });
+
+// 04.3-14 Task 3(사용자 결정 ①) — I4의 동의 줄이 라벨 「수집 안내」 · 값 「확인함 · {제출 일시}」로 바뀐다.
+test("I4 수집 안내 줄 — 라벨 수집 안내 · 값 확인함 · 일시", async ({ page }) => {
+  const seeded = await seedSubmittedCert();
+  await login(page, admin);
+  await page.goto(reviewPath(seeded.submissionId));
+  await expect(page.getByText("수집 안내", { exact: true })).toBeVisible();
+  await expect(page.getByText(/^확인함 · \d{4}-\d{2}-\d{2} \d{2}:\d{2}$/)).toBeVisible();
+  await expect(page.getByText("동의함", { exact: false })).toHaveCount(0);
+});

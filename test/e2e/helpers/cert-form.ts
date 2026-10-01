@@ -4,9 +4,10 @@ import type { Locator, Page } from "@playwright/test";
 // 스펙도 이것을 import한다. 수집 안내 확인 체크의 라벨은 이 파일 한 곳에만 둔다(04.3-14가 여기서만 바꾼다).
 // 규약 C4 — @playwright/test는 `import type`만.
 
-export const CONSENT_CHECKBOX_LABEL = "개인정보 수집·이용에 동의합니다";
-/** 이 체크가 비었을 때 E′4 제출 막힘 이유가 부르는 낱말(04.3-14가 `안내 확인 체크`로 바꾸는 자리 — 여기서만). */
-export const CONSENT_BLOCKED_WORD = "동의";
+// 04.3-14 사용자 결정 ① — 동의 대신 법령에 따른 수집 안내 + 안내 확인 체크(판 v3).
+export const CONSENT_CHECKBOX_LABEL = "수집 안내를 확인했습니다";
+/** 이 체크가 비었을 때 E′4 제출 막힘 이유가 부르는 낱말(G0 F11). */
+export const CONSENT_BLOCKED_WORD = "안내 확인 체크";
 
 /** 서명 캔버스에 마우스로 획 하나(잉크 판정을 넉넉히 넘는 지그재그)를 긋는다. */
 export async function drawSignature(page: Page): Promise<void> {

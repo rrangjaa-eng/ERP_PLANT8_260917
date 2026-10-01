@@ -6,7 +6,7 @@ import { eq, like } from "drizzle-orm";
 import { db } from "@/db/client";
 import { certSignatureUploads, certSubmissions } from "@/db/schema";
 import { createCertEvent, withCertFeatureOff } from "./helpers/cert";
-import { drawSignature, fillIntakeForm, submitButton } from "./helpers/cert-form";
+import { CONSENT_BLOCKED_WORD, CONSENT_CHECKBOX_LABEL, drawSignature, fillIntakeForm, submitButton } from "./helpers/cert-form";
 
 test.use({ viewport: { width: 375, height: 800 } });
 test.describe.configure({ mode: "serial" });
@@ -345,4 +345,41 @@ test("서버 칸 오류 — 이름 invalid · 주소 거절 → aria-invalid + �
   await expect(consent).toBeFocused();
   await expect(page.locator("#address")).not.toHaveAttribute("aria-invalid", "true");
   expect(posts).toBe(3);
+});
+
+// 04.3-14 사용자 결정 ① · G0 DR-7 · F11 · G9 a — 동의 대신 법령에 따른 수집 안내(v3). 전문은 제목 · 본문이 갈린 목록이고
+// 1절의 문의 전화는 바로 걸린다.
+test("수집 안내 v3 — 체크 이름 · 빈 폼 막힘 이유의 안내 확인 체크 · 전문 dl(dt 8 · dd 8) · 문의 전화 tel: · 체크 후 제출 → E5", async ({
+  page,
+}) => {
+  const { link } = await createCertEvent({ name: "제출E2E수집안내" });
+  if (!link) throw new Error("링크 없음");
+  await openForm(page, link, "갤럭시 탭 S10");
+
+  await expect(
+    page.getByText(`이름 · 주민등록번호 · 연락처 · ${CONSENT_BLOCKED_WORD} · 서명을 채우면 제출할 수 있습니다`, { exact: true }),
+  ).toBeVisible();
+  const checkbox = page.getByRole("checkbox", { name: CONSENT_CHECKBOX_LABEL });
+  await expect(checkbox).toBeVisible();
+  await expect(checkbox).not.toBeChecked();
+
+  const toggle = page.getByRole("button", { name: "전문 보기" });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await toggle.click();
+  await expect(page.getByRole("button", { name: "전문 접기" })).toHaveAttribute("aria-expanded", "true");
+  const fullId = await page.getByRole("button", { name: "전문 접기" }).getAttribute("aria-controls");
+  const list = page.locator(`[id="${fullId}"] dl`);
+  await expect(list).toBeVisible();
+  await expect(list.locator("dt")).toHaveCount(8);
+  await expect(list.locator("dd")).toHaveCount(8);
+  await expect(list.locator("dt").first()).toHaveText("처리자 · 문의");
+  const tel = list.locator("dd").first().getByRole("link");
+  await expect(tel).toHaveAttribute("href", /^tel:\d+$/);
+  await expect(list.locator("dd").first()).toHaveText(/^PLANT8 · 경영관리 \d{2,4}-\d{3,4}-\d{4}$/);
+
+  await fillIntakeForm(page, { phone: "010-4821-7730" });
+  await expect(checkbox).toBeChecked();
+  await drawSignature(page);
+  await submitButton(page).click();
+  await expect(page.getByText("제출되었습니다", { exact: true })).toBeVisible();
 });

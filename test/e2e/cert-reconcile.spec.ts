@@ -138,6 +138,8 @@ test("tracer — 제출 섹션(읽기 표 · 경품별 그룹 · 가린 연락�
   await page.goto(`/certs/events/${ev.eventId}`);
 
   const table = submissionsTable(page);
+  // 스트리밍 응답은 숨긴 자리에 먼저 꽂힌 뒤 옮겨진다 — 보이는 표를 기다린다.
+  await expect(table).toBeVisible();
   await expect(table).toHaveCount(1);
   await expect(page.locator('[role="grid"]').filter({ has: page.locator("caption", { hasText: /^제출$/ }) })).toHaveCount(0);
   await expect(table.locator("caption")).toHaveClass(/sr-only/);

@@ -68,6 +68,7 @@ export default async function CertSubmissionReviewPage({ params }: { params: Pro
           canReveal={review.canReveal}
           canCorrect={review.canCorrect}
           idleMinutes={review.idleMinutes}
+          purgeTarget={review.purgeTarget}
         />
       </div>
       <p className={styles.printLine}>이 화면은 인쇄하지 않습니다 · 머리의 「인쇄」 버튼으로 확인증을 열어 주세요</p>

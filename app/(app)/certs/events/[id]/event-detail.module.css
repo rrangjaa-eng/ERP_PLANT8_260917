@@ -171,3 +171,130 @@
   height: var(--row-min);
   border-top: var(--line-w-strong) solid var(--line-strong);
 }
+
+/* 04.3-17 제출 섹션(대조) — 공용 ui/table을 쓰지 않는 읽기 `<table>`(§7-3 「화면에서 직접 만든 표도 같다」 · 행동 로그 선례):
+   흰 머리글 · 그룹 머리글 행(--fs-sm --muted 600, 위 12px, 아래 1px --line-strong) · 폰 칸 접기(P1 이름 · 제출). */
+.readTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-base);
+}
+
+.readTable thead th {
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.readTable td {
+  height: var(--row-min);
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w) solid var(--line);
+  vertical-align: top;
+}
+
+.readTable tbody tr:not(.groupRow):not(.collapsedRow):hover > td {
+  background: var(--surface);
+}
+
+.readTable .alignRight {
+  text-align: right;
+}
+
+.groupRow > th {
+  padding: calc(var(--cell-pad-y) + var(--s-3)) var(--cell-pad-x) var(--cell-pad-y);
+  border-bottom: var(--line-w) solid var(--line-strong);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-align: left;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* 이름 아래 색 글자(§7-3 ⑮ — 파기 대상 · 같은 연락처 · 같은 이름, 모두 --warning --fs-sm, 320에서 줄바꿈). */
+.rowMarks,
+.rowMarkMuted {
+  display: block;
+  font-size: var(--fs-sm);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.rowMarks {
+  color: var(--warning);
+}
+
+.rowMarkMuted {
+  color: var(--muted);
+}
+
+/* 대조 제외된 줄 — 줄 글자 전체 --muted(T3). */
+.excludedRow > td {
+  color: var(--muted);
+}
+
+/* 「제출 내용」 3차 링크(§4-4 · §7-1 — 밑줄 1px → hover 2px). */
+.rowLink {
+  color: var(--accent);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
+}
+
+.rowLink:hover {
+  text-decoration-thickness: var(--line-w-strong);
+}
+
+.rowLink:focus-visible,
+.collapsedCell:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.emptyLine {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.collapsedRow {
+  display: none;
+}
+
+.readTable .collapsedCell {
+  height: auto;
+  padding: 0 var(--cell-pad-x) var(--cell-pad-y);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  border-bottom: 0;
+  cursor: pointer;
+}
+
+@media (max-width: 699.98px) {
+  .p2,
+  .p3 {
+    display: none;
+  }
+
+  .collapsedRow {
+    display: table-row;
+  }
+
+  /* 접힌 줄은 자기 행에 붙는다 — 선은 접힌 줄 아래(§7-3 폰 전략), 누름 자리 44(§3). */
+  .readTable tbody tr:has(+ .collapsedRow) > td {
+    border-bottom: 0;
+  }
+
+  .readTable .collapsedCell {
+    height: var(--touch-min);
+    border-bottom: var(--line-w) solid var(--line);
+  }
+}

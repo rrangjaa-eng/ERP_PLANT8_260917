@@ -1,7 +1,7 @@
-import { and, eq, gte, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
-import { certSignatureUploads, certSubmissions } from "@/db/schema";
+import { certPrizes, certSignatureUploads, certSubmissions } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
 export type CertSubmissionRow = InferSelectModel<typeof certSubmissions>;
@@ -96,6 +96,38 @@ export async function countActiveSubmissionsByEvent(viewer: Viewer, eventId: str
     .from(certSubmissions)
     .where(and(eq(certSubmissions.eventId, eventId), isNull(certSubmissions.excludedAt)));
   return row?.count ?? 0;
+}
+
+// 04.3-17 — I′3 제출 섹션(대조) 원재료: 파기되지 않은 제출(대조 제외 포함)을 제출 시각 오름차순으로, 필요한 칸만.
+// 경품 가액은 파기 대상 판정(domain)에만 쓰고 DTO로 옮기지 않는다. 주민등록번호 · 주소 · 서명은 고르지 않는다.
+export type CertSubmissionReconcileRow = {
+  id: string;
+  prizeId: string;
+  name: string | null;
+  phone: string | null;
+  quantity: number;
+  submittedAt: Date;
+  excludedAt: Date | null;
+  unitValueKrw: number;
+};
+
+export async function listSubmissionsForReconcile(viewer: Viewer, eventId: string): Promise<CertSubmissionReconcileRow[]> {
+  void viewer;
+  return db
+    .select({
+      id: certSubmissions.id,
+      prizeId: certSubmissions.prizeId,
+      name: certSubmissions.name,
+      phone: certSubmissions.phone,
+      quantity: certSubmissions.quantity,
+      submittedAt: certSubmissions.submittedAt,
+      excludedAt: certSubmissions.excludedAt,
+      unitValueKrw: certPrizes.unitValueKrw,
+    })
+    .from(certSubmissions)
+    .innerJoin(certPrizes, eq(certPrizes.id, certSubmissions.prizeId))
+    .where(and(eq(certSubmissions.eventId, eventId), isNull(certSubmissions.purgedAt)))
+    .orderBy(asc(certSubmissions.submittedAt), asc(certSubmissions.id));
 }
 
 // 04.3-06 — 커밋 결과 불명 뒤 이 요청이 올린 객체를 가리키는 제출 줄이 있는지.

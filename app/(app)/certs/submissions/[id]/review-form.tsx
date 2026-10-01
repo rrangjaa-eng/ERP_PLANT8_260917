@@ -71,6 +71,8 @@ export function ReviewForm(props: {
   canReveal: boolean;
   canCorrect: boolean;
   idleMinutes: number;
+  /** 04.3-17 — 가액 × 수량 ≤ 50,000(서버 판정 결과만 — 가액 숫자 없음). */
+  purgeTarget: boolean;
 }) {
   const router = useRouter();
   const initial: Values = { name: props.name, phone: props.phone, address: props.address };
@@ -238,6 +240,7 @@ export function ReviewForm(props: {
       onPendingChange={setRrnPending}
       error={fieldErrors.rrn}
       idleMinutes={props.idleMinutes}
+      purgeTarget={props.purgeTarget}
     />
   );
 

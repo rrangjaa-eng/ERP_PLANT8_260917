@@ -81,6 +81,8 @@ test("폰 375 — 칸 접기 → 행 시트 → 「제출 내용」 → I4", asy
   await login(page, manager);
   await page.goto(`/certs/events/${event.eventId}`);
   const table = page.locator("table").filter({ has: page.locator("caption", { hasText: /^제출$/ }) });
+  // 스트리밍 응답은 숨긴 자리에 먼저 꽂힌 뒤 옮겨진다 — 보이는 표를 기다린다.
+  await expect(table).toBeVisible();
   await expect(table).toHaveCount(1);
 
   // P1 이름 · 제출만 열 · P2 접힌 줄 `010-****-7730 · 1개` · 행동 열은 숨음(P3).

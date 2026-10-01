@@ -35,6 +35,7 @@ export function RrnField({
   onPendingChange,
   error,
   idleMinutes,
+  purgeTarget = false,
 }: {
   id: string;
   submissionId: string;
@@ -49,6 +50,8 @@ export function RrnField({
   onPendingChange: (pending: boolean) => void;
   error?: string;
   idleMinutes: number;
+  /** 04.3-17 — 가린 값 뒤 ` · 파기 대상`(--warning, N10 a — 표시만, 전체 보기 · 정정은 그대로). */
+  purgeTarget?: boolean;
 }) {
   const router = useRouter();
   const [failed, setFailed] = useState(false);
@@ -140,6 +143,12 @@ export function RrnField({
         <span className={styles.rrnText}>
           <span className={styles.num}>{maskEdited(state.input ?? "")}</span>
           <span className={styles.unsaved}> · 저장 안 함</span>
+        </span>
+      ) : purgeTarget ? (
+        <span className={styles.rrnText}>
+          <span className={styles.num}>{rrnMasked}</span>
+          {" · "}
+          <span className={styles.purgeMark}>파기 대상</span>
         </span>
       ) : (
         <span className={[styles.rrnText, styles.num].join(" ")}>{rrnMasked}</span>

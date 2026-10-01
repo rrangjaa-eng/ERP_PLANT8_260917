@@ -8,6 +8,7 @@ import { recordAction, type RecordActionDeps } from "@/domain/action-log/record"
 import { isCertFeatureEnabled } from "@/domain/certs/feature";
 import { formatPhone, formatSubmittedAtKst, maskRrn, normalizeName, normalizePhone } from "@/domain/certs/format";
 import { validateRrn } from "@/domain/certs/rrn";
+import { certRrnPurgeTarget } from "@/domain/certs/prize-value";
 import { getSettingValue } from "@/domain/settings/registry";
 import { CERT_PRIVACY_IDLE_MINUTES } from "@/domain/settings/keys";
 import { withTransaction } from "@/lib/db-transaction";
@@ -104,6 +105,8 @@ export type SubmissionForReviewResult =
       canReveal: boolean;
       canCorrect: boolean;
       idleMinutes: number;
+      // 04.3-17 — 주민등록번호 줄 ` · 파기 대상` 표시(N10 a — 표시만). 가액 숫자는 싣지 않고 판정 결과만.
+      purgeTarget: boolean;
     }
   | { kind: "notFound" };
 
@@ -159,6 +162,7 @@ export async function getSubmissionForReview(
     canReveal: await visible(viewer, UNMASKED_ITEM),
     canCorrect: await can(viewer, MENU, "write"),
     idleMinutes: await getSettingValue(CERT_PRIVACY_IDLE_MINUTES),
+    purgeTarget: certRrnPurgeTarget(row.unitValueKrw, row.quantity),
   };
 }
 

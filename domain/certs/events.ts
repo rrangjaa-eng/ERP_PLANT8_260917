@@ -18,6 +18,8 @@ import { isCertFeatureEnabled } from "@/domain/certs/feature";
 import { renderQrSvg } from "@/domain/certs/qr";
 import { certPrizeListed, certRrnPurgeTarget } from "@/domain/certs/prize-value";
 import { certLinkExpiresAt } from "@/domain/certs/link-window";
+import { maskPhone, sameNameKey } from "@/domain/certs/format";
+import { isCertPrivacyBarredRole } from "@/domain/certs/review";
 import { validatePrizeRows, type PrizeCellError, type PrizeRowInput } from "@/domain/certs/prize-rules";
 import { isCalendarDate } from "@/domain/projects/period";
 import type { DbOrTx } from "@/repositories/document-counters";
@@ -32,6 +34,7 @@ import {
   type CertEventSummaryRow,
 } from "@/repositories/cert-events";
 import { applyPrizeRows, listPrizeSummaries, type CertPrizeSummaryRow, type PrizeRowValues } from "@/repositories/cert-prizes";
+import { listSubmissionsForReconcile, type CertSubmissionReconcileRow } from "@/repositories/cert-submissions";
 import { insertEventNotifications } from "@/repositories/notifications";
 import { listActiveUserIdsAllowed } from "@/repositories/permissions";
 import { findUserById } from "@/repositories/users";
@@ -105,6 +108,31 @@ export type CertPrizeDto = {
   updatedByName: string | null;
 };
 
+// 04.3-17 — I′3 제출 섹션(대조) 줄. 연락처는 가린 값만(N11 a), 판정은 결과만(파기 대상 · 같은 연락처 · 같은 이름 수 —
+// 대조 제외 뺀 셈, E6 a · DR-2). 주민등록번호 · 주소 · 서명 · 전체 연락처 · 가액 키가 없다. 대조 제외된 줄은 제자리에 남고
+// 연락처 null · 셈 0(DR-1). 「대조 제외」는 I4 DTO의 version을 쓰므로 여기에 version이 없다(UD-2 a).
+export type CertSubmissionReconcileDto = {
+  id: string;
+  prizeId: string;
+  name: string;
+  phoneMasked: string | null;
+  quantity: number;
+  submittedAt: string;
+  purgeTarget: boolean;
+  samePhoneCount: number;
+  sameNameCount: number;
+  excluded: boolean;
+};
+
+// 경품별 그룹 — 제출(대조 제외 포함)이 있는 경품만, 경품 입력 순서. submittedCount = 대조 제외 뺀 수(N), winnerCount = M.
+export type CertSubmissionGroupDto = {
+  prizeId: string;
+  prizeName: string;
+  winnerCount: number;
+  submittedCount: number;
+  rows: Partial<CertSubmissionReconcileDto>[];
+};
+
 export type CertEventDetailDto = CertEventListDto & {
   expiresAt: string | null;
   link: string;
@@ -112,10 +140,13 @@ export type CertEventDetailDto = CertEventListDto & {
   requestedAt: string;
   canManagePrizes: boolean;
   prizes: Partial<CertPrizeDto>[];
+  // I4를 열 수 있는 사람(대표 계급 아님 · certs.submissions 보기 · cert_submission.value)에게만 — 아니면 키 자체가 없다(N7 a).
+  submissions: CertSubmissionGroupDto[];
 };
 
 const EVENT_ITEM = "cert_event.value";
 const PRIZE_VALUE_ITEM = "cert_prize.value";
+const SUBMISSION_VALUE_ITEM = "cert_submission.value";
 
 const LIST_FIELDS = [
   "id",
@@ -144,8 +175,29 @@ const DETAIL_FIELDS = [
   "prizes",
 ] as const satisfies ReadonlyArray<keyof CertEventDetailDto>;
 
+// 제출 섹션 키는 제출 값 항목에 건다 — 서버가 키를 실어도 그 항목이 꺼진 계급에는 투영이 뺀다(04.3-17).
 export const CERT_EVENT_DETAIL_DTO_SPEC: DtoSpec<CertEventDetailDto, CertEventDetailDto> = {
-  fields: DETAIL_FIELDS.map((key) => ({ key, from: key, infoItem: EVENT_ITEM })),
+  fields: [
+    ...DETAIL_FIELDS.map((key) => ({ key, from: key, infoItem: EVENT_ITEM })),
+    { key: "submissions", from: "submissions", infoItem: SUBMISSION_VALUE_ITEM },
+  ],
+};
+
+const RECONCILE_FIELDS = [
+  "id",
+  "prizeId",
+  "name",
+  "phoneMasked",
+  "quantity",
+  "submittedAt",
+  "purgeTarget",
+  "samePhoneCount",
+  "sameNameCount",
+  "excluded",
+] as const satisfies ReadonlyArray<keyof CertSubmissionReconcileDto>;
+
+export const CERT_SUBMISSION_RECONCILE_DTO_SPEC: DtoSpec<CertSubmissionReconcileDto, CertSubmissionReconcileDto> = {
+  fields: RECONCILE_FIELDS.map((key) => ({ key, from: key, infoItem: SUBMISSION_VALUE_ITEM })),
 };
 
 const PRIZE_EVENT_FIELDS = ["id", "name", "delivery", "winnerCount", "submittedCount", "locked", "version"] as const;
@@ -164,6 +216,7 @@ for (const [name, spec] of [
   ["CertEventListDto", CERT_EVENT_LIST_DTO_SPEC],
   ["CertEventDetailDto", CERT_EVENT_DETAIL_DTO_SPEC],
   ["CertPrizeDto", CERT_PRIZE_DTO_SPEC],
+  ["CertSubmissionReconcileDto", CERT_SUBMISSION_RECONCILE_DTO_SPEC],
 ] as const) {
   registerDto({ name, fields: spec.fields.map((field) => ({ key: field.key, infoItem: field.infoItem })) });
 }
@@ -182,6 +235,12 @@ async function scopeOf(viewer: Viewer): Promise<CertEventScope | null> {
 // 경품 편집 · QR 생성 · 가액 보기의 두 조건 — 화면(canManagePrizes)과 서버(generateQr · savePrizes)가 같다(E12).
 async function canManagePrizesOf(viewer: Viewer): Promise<boolean> {
   return (await defaultCan(viewer, CERT_QR_MENU, "write")) && (await defaultVisible(viewer, PRIZE_VALUE_ITEM));
+}
+
+// 제출 섹션 · I4를 여는 판정(domain/certs/review.ts getSubmissionForReview와 같은 세 조건 — 기능 게이트는 scopeOf가 먼저 본다).
+async function canSeeSubmissionsOf(viewer: Viewer): Promise<boolean> {
+  if (isCertPrivacyBarredRole(viewer)) return false;
+  return (await defaultCan(viewer, CERT_SUBMISSIONS_MENU, "view")) && (await defaultVisible(viewer, SUBMISSION_VALUE_ITEM));
 }
 
 // 토큰이 없으면 신청됨, 닫힌 시각이 있거나 마감이 지났으면 닫힘(마감이 NULL이면 기한으로 닫히지 않는다 —
@@ -246,13 +305,18 @@ export async function getEventDetail(
 
   const head = toListDto(row, now);
   const canManagePrizes = await canManagePrizesOf(viewer);
-  const detail: Omit<CertEventDetailDto, "link" | "qrSvg"> & Partial<Pick<CertEventDetailDto, "link" | "qrSvg">> = {
+  const prizeRows = await listPrizeSummaries(viewer, eventId);
+  const detail: Omit<CertEventDetailDto, "link" | "qrSvg" | "submissions"> &
+    Partial<Pick<CertEventDetailDto, "link" | "qrSvg" | "submissions">> = {
     ...head,
     expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
     requestedAt: row.createdAt.toISOString(),
     canManagePrizes,
-    prizes: await prizeDtos(viewer, await listPrizeSummaries(viewer, eventId), canManagePrizes),
+    prizes: await prizeDtos(viewer, prizeRows, canManagePrizes),
   };
+  if (await canSeeSubmissionsOf(viewer)) {
+    detail.submissions = await submissionGroups(viewer, prizeRows, await listSubmissionsForReconcile(viewer, eventId));
+  }
   // 접수 중에만 link · qrSvg를 싣는다 — 닫힌 행사(T-04.3-12a — 닫힌 QR이 다시 퍼지지 않게) · 신청됨(QR 없음)에는
   // 키 자체가 없다.
   if (head.status === "open" && row.tokenEncrypted) {
@@ -261,6 +325,54 @@ export async function getEventDetail(
     detail.qrSvg = await renderQrSvg(link);
   }
   return { kind: "ok", event: await project(viewer, detail as CertEventDetailDto, CERT_EVENT_DETAIL_DTO_SPEC) };
+}
+
+// 제출 섹션 그룹 — 같은 연락처 · 같은 이름은 행사 전체(경품 가리지 않음)에서 대조 제외 뺀 줄로 센다(N6 a · E6 a).
+// 연락처는 저장된 정규형(숫자만), 이름은 sameNameKey(NFC + 모든 공백 제거).
+async function submissionGroups(
+  viewer: Viewer,
+  prizes: CertPrizeSummaryRow[],
+  rows: CertSubmissionReconcileRow[],
+): Promise<CertSubmissionGroupDto[]> {
+  const active = rows.filter((row) => row.excludedAt === null);
+  const tally = (key: (row: CertSubmissionReconcileRow) => string) => {
+    const counts = new Map<string, number>();
+    for (const row of active) counts.set(key(row), (counts.get(key(row)) ?? 0) + 1);
+    return counts;
+  };
+  const phoneKey = (row: CertSubmissionReconcileRow) => row.phone ?? "";
+  const nameKey = (row: CertSubmissionReconcileRow) => sameNameKey(row.name ?? "");
+  const phones = tally(phoneKey);
+  const names = tally(nameKey);
+  const dtos: CertSubmissionReconcileDto[] = rows.map((row) => {
+    const excluded = row.excludedAt !== null;
+    return {
+      id: row.id,
+      prizeId: row.prizeId,
+      name: row.name ?? "",
+      phoneMasked: excluded || row.phone === null ? null : maskPhone(row.phone),
+      quantity: row.quantity,
+      submittedAt: row.submittedAt.toISOString(),
+      purgeTarget: !excluded && certRrnPurgeTarget(row.unitValueKrw, row.quantity),
+      samePhoneCount: excluded ? 0 : (phones.get(phoneKey(row)) ?? 0),
+      sameNameCount: excluded ? 0 : (names.get(nameKey(row)) ?? 0),
+      excluded,
+    };
+  });
+  const projected = await projectMany(viewer, dtos, CERT_SUBMISSION_RECONCILE_DTO_SPEC);
+  return prizes.flatMap((prize) => {
+    const own = projected.filter((_, i) => dtos[i]?.prizeId === prize.id);
+    if (own.length === 0) return [];
+    return [
+      {
+        prizeId: prize.id,
+        prizeName: prize.name,
+        winnerCount: prize.winnerCount,
+        submittedCount: dtos.filter((dto) => dto.prizeId === prize.id && !dto.excluded).length,
+        rows: own,
+      },
+    ];
+  });
 }
 
 // 경품 줄 DTO — 가액 세 키는 경영관리(canManagePrizes)일 때만 만들고, 투영이 cert_prize.value로 한 번 더 거른다.

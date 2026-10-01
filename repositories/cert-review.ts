@@ -18,6 +18,8 @@ export type CertReviewSourceRow = {
   delivery: string;
   prizeName: string;
   quantity: number;
+  // 04.3-17 — 파기 대상 판정(domain)에만 쓴다. DTO로 옮기지 않는다.
+  unitValueKrw: number;
   consentAt: Date;
   signatureKey: string | null;
   purgedAt: Date | null;
@@ -41,6 +43,7 @@ export async function findSubmissionForReview(viewer: Viewer, id: string): Promi
       delivery: certPrizes.delivery,
       prizeName: certPrizes.name,
       quantity: certSubmissions.quantity,
+      unitValueKrw: certPrizes.unitValueKrw,
       consentAt: certSubmissions.consentAt,
       signatureKey: certSubmissions.signatureKey,
       purgedAt: certSubmissions.purgedAt,

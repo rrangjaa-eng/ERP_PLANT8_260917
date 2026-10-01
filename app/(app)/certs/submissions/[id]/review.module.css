@@ -78,6 +78,11 @@
   font-size: var(--fs-sm);
 }
 
+/* 04.3-17 — 주민등록번호 가린 값 뒤 `파기 대상`(§7-3 ⑮ 색 글자 — --warning, N10 a). */
+.purgeMark {
+  color: var(--warning);
+}
+
 /* 서명 — 읽기 전용 이미지(폭 320 · 비율 520/200, 폰 전폭), 테두리 없이 아래 1px 선. */
 .signature {
   display: flex;

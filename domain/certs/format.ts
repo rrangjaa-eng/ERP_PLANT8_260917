@@ -22,6 +22,19 @@ export function formatPhone(digits: string): string {
   return digits;
 }
 
+// 04.3-17 — I′3 제출 섹션의 가린 연락처(N11 a · SYSTEM §2-4 ⑲): 가운데 자리만 `*`, 하이픈 표기. 전체 번호는 I4에만.
+export function maskPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 11) return `${digits.slice(0, 3)}-****-${digits.slice(7)}`;
+  if (digits.length === 10) return `${digits.slice(0, 3)}-***-${digits.slice(6)}`;
+  return "*".repeat(digits.length);
+}
+
+// 04.3-17 — 같은 이름 셈의 정규형(E6 a · DR-2): NFC + 모든 공백(전각 포함) 제거 — `김 하늘` = `김하늘`.
+export function sameNameKey(name: string): string {
+  return name.normalize("NFC").replace(/\s+/g, "");
+}
+
 // 수령자 문의 전화 전용 — 지역번호·070·휴대전화·대표번호(1XXX-XXXX)를
 // 받는다. 당첨자 전화(normalizePhone)보다 넓은 계약이라 같은 함수를 쓰지
 // 않는다(같은 02-123-4567이 문의 전화로는 저장되고 당첨자 전화로는

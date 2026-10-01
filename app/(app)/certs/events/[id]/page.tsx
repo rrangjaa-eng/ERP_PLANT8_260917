@@ -7,6 +7,7 @@ import { PageHeader } from "@/ui/page-header/PageHeader";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { QrSection } from "./qr-section";
 import { PrizeSection } from "./prize-section";
+import { SubmissionsSection } from "./submissions-section";
 import { QR_SECTION_LABEL_ID } from "./prize-table-rules";
 import styles from "./event-detail.module.css";
 
@@ -86,6 +87,9 @@ export default async function CertEventDetailPage({ params }: { params: Promise<
           qrLabelId={QR_SECTION_LABEL_ID}
         />
       ) : null}
+
+      {/* 04.3-17 — 제출 섹션: 접수 중(접수 전 포함) · 닫힘이고 서버가 키를 실었을 때만(I4를 열 수 있는 사람 — N7 a). */}
+      {event.status !== "requested" && event.submissions ? <SubmissionsSection key="submissions" groups={event.submissions} /> : null}
     </>
   );
 }

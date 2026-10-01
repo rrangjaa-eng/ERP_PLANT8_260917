@@ -22,10 +22,15 @@ expected: 시스템 관리자로 스테이징에 로그인했을 때 `/admin` �
 result: pass
 note: "질문(2026-10-01 채팅): 「시스템 관리자 계정으로 스테이징에서 `/admin`: 관리 화면 묶음이 보이는지, `/admin/permissions`: 권한표에 빈 칸이 없는지 열어 보고 결과만 알려 주세요. 상단 바·서체가 평소대로면 셸 확인도 함께 끝납니다」 → 사용자: 「둘 다 정상」. 답은 03:20Z 전에 왔다 — 그때 스테이징은 deploy #103(f85c9af, run 36807956531 success)이었고 #104(bada253) 스테이징 반영은 03:43:44Z. `/login` 200 + Pretendard CSS는 Claude curl 실측. 내 계정 화면은 사람이 보지 않았다(E2E만). Claude는 자격증명 로그인이 auto mode에서 차단돼 직접 보지 못함"
 
+### 3. tokens.css 단독 PR에서 CI가 돈다 (02-02 사람 확인 (1))
+expected: `docs/design/tokens.css`만 바뀐 PR에서 ci.yml의 `paths`(`**` · `!docs/**` 뒤 tokens.css 재포함)가 CI를 띄운다
+result: pass
+note: "2026-10-01 실측 — 확인용 draft PR #118(tokens.css 끝에 CSS 주석 한 줄, 커밋 bf066dc)에서 `ci` 워크플로가 pull_request 이벤트로 떴다(run 36816314681). 확인 뒤 run 취소·PR 닫음(머지 안 함). (2) 일반 소스 PR도 CI를 탄다는 것은 매 PR에서 확인됨(예: #117 head 9a03686·d49ad56 check suite)"
+
 ## Summary
 
-total: 2
-passed: 2
+total: 3
+passed: 3
 issues: 0
 pending: 0
 skipped: 0

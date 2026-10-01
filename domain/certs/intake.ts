@@ -306,7 +306,8 @@ export async function submitCertificate(
   }
 
   // (g) 칸 검사 → 주민등록번호 되묻기(한 번). 상태를 바꾸지 않은 판정은 키에 묶지 않는다.
-  const checked = checkFields(input, deliveryOf(chosen), now);
+  const checkedDelivery = deliveryOf(chosen);
+  const checked = checkFields(input, checkedDelivery, now);
   if (checked.fields.length > 0) return { kind: "invalid", fields: checked.fields };
   if (checked.rrnMismatch && !envelope.rrnRecheckConfirmed) return { kind: "rrnRecheck" };
   const rrnPlain = `${input.rrnFront6}${input.rrnBack7}`;
@@ -341,7 +342,7 @@ export async function submitCertificate(
   }
 
   // (i) 저장 트랜잭션 — 행사 행을 잠근 뒤 잠긴 값으로 다시 판정한다. 순서가 계약이다:
-  // 행사 행(null이면 notFound — E13 규약) → 같은 키 → 닫힘 · 열림 → 경품(잠근 뒤 읽은 경품 행이 정본 —
+  // 행사 행(null이면 notFound — E13 규약) → 같은 키 → 닫힘 · 열림 → 경품 · 전달 방식(잠근 뒤 읽은 경품 행이 정본 —
   // 경품 쓰기도 같은 잠금을 먼저 잡는다) → 속도 제한 재셈(동시 제출이 한도를 넘지 못한다) → 번호 → 저장.
   let decision: LockedDecision;
   try {
@@ -361,6 +362,7 @@ export async function submitCertificate(
       if (!lockedPrize || !certPrizeListed(lockedPrize.unitValueKrw)) {
         return { kind: "prizeGone", prizes: publicPrizes(lockedPrizes) };
       }
+      if (deliveryOf(lockedPrize) !== checkedDelivery) return { kind: "prizeGone", prizes: publicPrizes(lockedPrizes) };
 
       if (await throttleScope({ eventId: event.id, ipHash, since, prizes: lockedPrizes }, tx)) {
         return { kind: "throttled" };

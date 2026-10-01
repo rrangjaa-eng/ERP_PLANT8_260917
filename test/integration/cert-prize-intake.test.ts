@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { eq, sql } from "drizzle-orm";
+import { eq, like, sql } from "drizzle-orm";
 import { Client } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db/client";
-import { certEvents, certSubmissions } from "@/db/schema";
+import { certEvents, certSignatureUploads, certSubmissions } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { loadIntake, submitCertificate, type SubmitCertificateInput } from "@/domain/certs/intake";
 import { CERT_CONSENT_VERSION } from "@/domain/certs/consent";
@@ -457,6 +457,55 @@ describe("경합 — 제출과 가액 변경(행사 행 잠금 규약)", () => {
     expect(a.kind).toBe("saved");
     expect(b).toEqual(a);
     expect(await submissionsOf(ev.eventId)).toHaveLength(1);
+  });
+
+  it("잠금 전 검사 뒤 경품이 현장 → 택배로 바뀌면(주소 없이 낸 제출) prizeGone(지금 목록) · 저장 0 · 객체 0 · 의도 행 0", async () => {
+    const ev = await leakEvent();
+    let holder: Awaited<ReturnType<typeof holdEventRow>> | undefined;
+    const result = await submitCertificate(ev.token, inputFor(ev.prizeA, await currentTerms()), "203.0.113.9", {
+      signatureStore: storeAfterPut(async () => {
+        holder = await holdEventRow(ev.eventId, async (client) => {
+          await client.query("UPDATE cert_prizes SET delivery = 'parcel' WHERE id = $1", [ev.prizeA]);
+        });
+        setTimeout(() => void holder?.commit(), 300);
+      }),
+    });
+    expect(result.kind).toBe("prizeGone");
+    if (result.kind === "prizeGone") {
+      expect(result.prizes.find((p) => p.id === ev.prizeA)?.delivery).toBe("parcel");
+    }
+    expect(await submissionsOf(ev.eventId)).toHaveLength(0);
+    expect(objectCount(ev.eventId)).toBe(0);
+    const intents = await db
+      .select()
+      .from(certSignatureUploads)
+      .where(like(certSignatureUploads.objectKey, `signatures/${ev.eventId}/%`));
+    expect(intents).toHaveLength(0);
+  });
+
+  it("잠금 전 검사 뒤 경품이 택배 → 현장으로 바뀌면(주소를 낸 제출) prizeGone(지금 목록) · 저장 0 · 객체 0 · 의도 행 0", async () => {
+    const ev = await leakEvent();
+    let holder: Awaited<ReturnType<typeof holdEventRow>> | undefined;
+    const input = inputFor(ev.prizeB, await currentTerms(), { address: "서울시 중구 세종대로 110" });
+    const result = await submitCertificate(ev.token, input, "203.0.113.9", {
+      signatureStore: storeAfterPut(async () => {
+        holder = await holdEventRow(ev.eventId, async (client) => {
+          await client.query("UPDATE cert_prizes SET delivery = 'onsite' WHERE id = $1", [ev.prizeB]);
+        });
+        setTimeout(() => void holder?.commit(), 300);
+      }),
+    });
+    expect(result.kind).toBe("prizeGone");
+    if (result.kind === "prizeGone") {
+      expect(result.prizes.find((p) => p.id === ev.prizeB)?.delivery).toBe("onsite");
+    }
+    expect(await submissionsOf(ev.eventId)).toHaveLength(0);
+    expect(objectCount(ev.eventId)).toBe(0);
+    const intents = await db
+      .select()
+      .from(certSignatureUploads)
+      .where(like(certSignatureUploads.objectKey, `signatures/${ev.eventId}/%`));
+    expect(intents).toHaveLength(0);
   });
 });
 

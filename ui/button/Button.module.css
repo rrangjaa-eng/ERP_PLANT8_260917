@@ -6,6 +6,18 @@
   gap: var(--s-2);
 }
 
+/* §7-1 이유 + 다음 한 수(nextStep) — 둘은 한 덩어리(.reasonLine, 줄바꿈 없음)다. 버튼 옆에 자리가 모자라면
+   덩어리째 버튼 아래 줄로 내려간다(다음 한 수만 떨어지지 않는다 — 2026-10-01 DOM 감사, 폰 320). */
+.wrapWithNext {
+  flex-wrap: wrap;
+}
+
+.reasonLine {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
 .btn {
   display: inline-flex;
   align-items: center;

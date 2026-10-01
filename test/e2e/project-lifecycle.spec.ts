@@ -224,6 +224,55 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await expect(page.getByRole("heading", { name: project.name })).toBeFocused();
   });
 
+  test("(b4) 즉시 되돌리기가 거부되면 머리 글자 + 3차 「새로 고침」, 새로 받으면 트리거가 풀린다 (§7-17 ERROR)", async ({
+    page,
+  }) => {
+    const team = await makeTeam();
+    const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
+    const lead = await makeAccount("role-team-lead", team.id);
+    const project = await makeProject({
+      teamId: team.id,
+      pmUserId: pm.userId,
+      status: "lost",
+      startDate: addDays(TODAY, 1),
+      endDate: addDays(TODAY, 7),
+      approved: true,
+    });
+
+    await login(page, lead);
+    await page.goto(`/projects/${project.id}`);
+    const trigger = page.getByRole("button", { name: "진행으로 되돌리기" });
+    // 화면이 본 상태(from = 미수주)와 달라지게 다른 곳에서 수주중으로 바꿔 둔다.
+    await db.update(projects).set({ status: "bidding" }).where(eq(projects.id, project.id));
+    await trigger.click();
+
+    // 꼬리 ` · 새로 고침`은 글자가 아니라 트리거 이유 옆 3차 버튼이다.
+    const reason = page.getByText(/^상태가 수주중으?로 바뀜$/).filter({ visible: true });
+    await expect(reason).toHaveCount(1);
+    await expect(page.getByText(/바뀜 · 새로 고침/)).toHaveCount(0);
+    await expect(trigger).toHaveAttribute("aria-disabled", "true");
+    const refresh = page.getByRole("button", { name: "새로 고침" });
+    await expect(refresh).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    // 이유와 다음 한 수는 같은 줄이다(§7-1) — 폰 320에서 자리가 모자라도 「새로 고침」만 떨어지지 않는다.
+    await page.setViewportSize({ width: 320, height: 800 });
+    const reasonBox = await reason.boundingBox();
+    const refreshBox = await refresh.boundingBox();
+    if (!reasonBox || !refreshBox) throw new Error("이유 · 「새로 고침」 상자 없음");
+    const centerY = (box: { y: number; height: number }) => box.y + box.height / 2;
+    expect(Math.abs(centerY(reasonBox) - centerY(refreshBox))).toBeLessThanOrEqual(4);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+
+    // 새로 받으면 거부가 풀리고 트리거는 새 상태(수주중)의 「상태 바꾸기」로 켜진다.
+    await refresh.click();
+    await expect(headerTag(page, "수주중")).toBeVisible();
+    await expect(reason).toHaveCount(0);
+    await expect(refresh).toHaveCount(0);
+    const statusTrigger = page.getByRole("button", { name: "상태 바꾸기" });
+    await expect(statusTrigger).not.toHaveAttribute("aria-disabled", "true");
+    await expect(statusTrigger).toBeFocused();
+  });
+
   test("(b3) 승인됐지만 종료일이 지난 미수주는 확인 모달 결과 줄 「종료일 지남 · 바로 정산」 (DR-7)", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);

@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { changeProjectStatusAction } from "../actions";
 import { Button } from "@/ui/button/Button";
-import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
+import { ConfirmDialog, RefreshStep, splitRefreshTail } from "@/ui/confirm-dialog/ConfirmDialog";
 import type { ProjectStatus } from "@/domain/projects/status-transitions";
 import type { PeriodRights } from "@/domain/projects/period";
 import { unsavedEditsReason } from "./unsaved-edits";
@@ -91,12 +91,15 @@ export function StatusChange({
   const submittedLabelRef = useRef("");
   // 전환 성공 뒤 새로 고침으로 이 컴포넌트(트리거)가 사라지면 포커스를 머리 줄 제목으로(S16).
   const succeededRef = useRef(false);
+  // 거부 옆 「새로 고침」으로 다시 받은 화면에서 트리거가 사라져도 같다(§7-17 — 트리거가 사라졌으면 화면 제목).
+  const refreshShownRef = useRef(false);
   useEffect(
     () => () => {
-      if (succeededRef.current) document.querySelector<HTMLElement>("h1")?.focus();
+      if (succeededRef.current || refreshShownRef.current) document.querySelector<HTMLElement>("h1")?.focus();
     },
     [],
   );
+  const triggerId = useId();
 
   const { execute, isExecuting } = useAction(changeProjectStatusAction, {
     onSettled: () => {
@@ -135,8 +138,19 @@ export function StatusChange({
   const immediateBlockedReason = reverting && !revertNeedsConfirm ? (only?.blockedReason ?? null) : null;
   // DR-6 — 미저장 편집이 있으면 트리거 자체가 막힌다(고르기 목록·확인 모달이 열리지 않는다).
   // 트리거를 막는 이유가 시작일 게이트 이유보다 먼저다.
-  const triggerBlockedReason =
-    unsavedEditsReason(dirtyCount) ?? (step.kind === "closed" ? rejection : null) ?? immediateBlockedReason;
+  // §7-17 ERROR — 이유 끝 ` · 새로 고침`은 글자가 아니라 이유 옆 3차 「새로 고침」이다. 다시 받은 화면이
+  // 그려지면 거부(클라이언트 상태라 새로 받아도 남는다)를 지우고 포커스를 트리거로 돌린다.
+  const triggerBlock = splitRefreshTail(
+    unsavedEditsReason(dirtyCount) ?? (step.kind === "closed" ? rejection : null) ?? immediateBlockedReason ?? undefined,
+  );
+  const triggerBlockedReason = triggerBlock.reason ?? null;
+  useEffect(() => {
+    refreshShownRef.current = triggerBlock.refresh;
+  }, [triggerBlock.refresh]);
+  function afterRefresh() {
+    setRejection(null);
+    document.getElementById(triggerId)?.focus();
+  }
 
   function handleTrigger() {
     if (reverting && only && !revertNeedsConfirm) {
@@ -190,6 +204,7 @@ export function StatusChange({
   return (
     <>
       <Button
+        id={triggerId}
         type="button"
         variant="secondary"
         className={styles.headerTouchButton}
@@ -197,6 +212,7 @@ export function StatusChange({
         pending={reverting && step.kind === "closed" && isExecuting}
         disabled={triggerBlockedReason !== null}
         disabledReason={triggerBlockedReason ?? undefined}
+        nextStep={triggerBlock.refresh ? <RefreshStep onDone={afterRefresh} /> : undefined}
       >
         {reverting ? REVERT_LABEL : "상태 바꾸기"}
       </Button>

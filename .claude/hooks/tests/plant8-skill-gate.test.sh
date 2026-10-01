@@ -114,10 +114,10 @@ record_skill() {
 }
 
 # 게이트 로그 줄을 skill-gate와 같은 형식으로 직접 쓴다: '<skill> <분단위 시각> session=<id>'
-write_gate_line() {
-  local project="$1" skill="$2" session="$3"
+write_gate_line() {  # $4=로그 이름(기본 phase-04)
+  local project="$1" skill="$2" session="$3" log="${4:-phase-04}"
   mkdir -p "$project/.claude/gates"
-  echo "$skill $(date -u +%Y-%m-%dT%H:%MZ) session=$session" >> "$project/.claude/gates/phase-04.log"
+  echo "$skill $(date -u +%Y-%m-%dT%H:%MZ) session=$session" >> "$project/.claude/gates/$log.log"
 }
 
 stage_file() {
@@ -454,7 +454,8 @@ cat > "$GH_STUB_DIR/gh" <<'STUB'
 #!/usr/bin/env bash
 [ "${GH_STUB_RC:-0}" = "0" ] || exit "$GH_STUB_RC"
 case " $* " in
-  */files\ *) cat "$GH_STUB_FILES" ;;                                   # 파일 목록(이름 바꾸기는 "새<TAB>옛")
+  *patch*) cat "$GH_STUB_PATCH" ;;                                       # 게이트 로그 패치(.patch) — files보다 먼저
+  */files\ *) cat "$GH_STUB_FILES" ;;                                  # 파일 목록(이름 바꾸기는 "새<TAB>옛")
   *) printf '%s\n' "${GH_STUB_COUNT:-$(grep -c . "$GH_STUB_FILES")}" ;;  # changed_files
 esac
 STUB
@@ -469,11 +470,12 @@ payload_merge() {  # $1=session $2=expectedHeadSha(선택)
       '{session_id:$s, tool_name:"mcp__github__merge_pull_request", tool_input:{owner:$o, repo:$r, pullNumber:7}}'
   fi
 }
-merge_hook() {  # $1=session $2=project $3=files(줄바꿈) $4=gh rc $5=changed_files(기본: 목록 줄 수) $6=expectedHeadSha
+merge_hook() {  # $1=session $2=project $3=files(줄바꿈) $4=gh rc $5=changed_files(기본: 목록 줄 수) $6=expectedHeadSha $7=게이트 로그 패치(기본: 빈)
   printf '%s\n' "$3" > "$TMPDIR/gh-files"  # 큰 목록은 환경 변수 한도를 넘으므로 파일로
+  printf '%s\n' "${7:-}" > "$TMPDIR/gh-patch"
   local errfile
   errfile="$(mktemp "$TMPDIR/stderr.XXXXXX")"
-  HOOK_STDOUT="$(payload_merge "$1" "${6:-}" | PATH="$GH_STUB_DIR:$PATH" GH_STUB_FILES="$TMPDIR/gh-files" GH_STUB_RC="${4:-0}" GH_STUB_COUNT="${5:-}" \
+  HOOK_STDOUT="$(payload_merge "$1" "${6:-}" | PATH="$GH_STUB_DIR:$PATH" GH_STUB_FILES="$TMPDIR/gh-files" GH_STUB_PATCH="$TMPDIR/gh-patch" GH_STUB_RC="${4:-0}" GH_STUB_COUNT="${5:-}" \
     CLAUDE_PROJECT_DIR="$2" bash "$HOOKS/plant8-skill-gate.sh" merge 2>"$errfile")"
   HOOK_RC=$?
   HOOK_STDERR="$(cat "$errfile")"
@@ -483,7 +485,7 @@ projM="$(new_project)"
 M="sid-merge-$$"
 write_gate_line "$projM" review "$M"
 DOC_FILES=$'.planning/phases/04-test/04-01-PLAN.md\ndocs/ARCHITECTURE.md\n.claude/gates/phase-04.log\nREADME.md'
-merge_hook "$M" "$projM" "$DOC_FILES"
+merge_hook "$M" "$projM" "$DOC_FILES" 0 "" "" $'@@ -0,0 +1 @@\n+review 2026-10-01T00:00Z session=m'
 expect_rc "merge: 문서만 바뀐 PR + review만 -> 통과" 0 "$HOOK_RC"
 merge_hook "$M" "$projM" $'docs/x.md\napp/page.tsx'
 expect_rc "merge: 코드 파일 섞인 PR + review만 -> exit 2" 2 "$HOOK_RC"
@@ -542,7 +544,7 @@ for risky in 'db/migrations/0020_x.sql' 'db/schema/projects.ts' 'domain/auth/hoo
   expect_rc "merge: 위험 경로 $risky -> exit 2" 2 "$HOOK_RC"
   expect_contains "merge: 위험 경로 $risky 메시지에 사용자" "$HOOK_STDERR" "사용자"
 done
-merge_hook "$RK" "$projRk" $'domain/x.ts\n.claude/gates/phase-04.log'
+merge_hook "$RK" "$projRk" $'domain/x.ts\n.claude/gates/phase-04.log' 0 "" "" $'@@ -0,0 +1,2 @@\n+review 2026-10-01T00:00Z session=rk\n+qa 2026-10-01T00:01Z session=rk'
 expect_rc "merge: .claude/gates 로그는 위험 경로가 아님 -> 통과" 0 "$HOOK_RC"
 
 # ---------------------------------------------------------------------------
@@ -739,6 +741,55 @@ pr_commit "$proj18" docs/o.md
 git -C "$proj18" push -q -f origin HEAD:refs/pull/7/head >/dev/null
 merge_hook "$S18" "$proj18" "" 127 "" "$(git -C "$proj18" rev-parse HEAD)"
 expect_rc "merge(gh 없음): refs/pull/7/merge 없음 -> exit 2" 2 "$HOOK_RC"
+
+# ---------------------------------------------------------------------------
+# merge: PR이 .claude/gates/*.log를 건드렸으면 그 로그에 이 PR이 더한 줄로만 판정(사용자 결정 2026-10-01 (가),
+# PR #112: 게이트 줄은 phase-04.log, STATE 페이즈는 2라 막혔다). 건드리지 않았으면 STATE 페이즈 로그(그대로).
+projGa="$(new_project)"; SGa="sid-prgates-a-$$"
+printf 'current_phase: 2\n' > "$projGa/.planning/STATE.md"
+merge_hook "$SGa" "$projGa" $'app/page.tsx\n.claude/gates/phase-04.log' 0 "" "" $'@@ -1 +1,4 @@\n ship 2026-09-29T00:00Z session=old\n+review 2026-10-01T00:00Z session=a\n+qa 2026-10-01T00:01Z session=a\n+design-review 2026-10-01T00:02Z session=a'
+expect_rc "merge(PR 게이트): STATE 2·phase-02 없음, PR이 phase-04.log에 review·qa·design-review 추가 -> 통과" 0 "$HOOK_RC"
+projGb="$(new_project)"; SGb="sid-prgates-b-$$"
+write_gate_line "$projGb" review "$SGb"; write_gate_line "$projGb" qa "$SGb"; write_gate_line "$projGb" design-review "$SGb"
+merge_hook "$SGb" "$projGb" $'domain/x.ts\n.claude/gates/phase-04.log' 0 "" "" $'@@ -1 +1,2 @@\n review 2026-09-29T00:00Z session=old\n+qa 2026-10-01T00:01Z session=b'
+expect_rc "merge(PR 게이트): review는 옛 줄(문맥)에만, 추가 줄은 qa -> exit 2" 2 "$HOOK_RC"
+merge_hook "$SGb" "$projGb" $'domain/x.ts\n.claude/gates/phase-04.log' 0 "" "" $'@@ -0,0 +1,2 @@\n+design-review 2026-10-01T00:00Z session=b\n+qa 2026-10-01T00:01Z session=b'
+expect_rc "merge(PR 게이트): 추가 줄에 design-review·qa뿐(review 아님) -> exit 2" 2 "$HOOK_RC"
+merge_hook "$SGb" "$projGb" $'domain/x.ts\n.claude/gates/phase-04.log' 0 "" "" ""
+expect_rc "merge(PR 게이트): 로그를 건드렸는데 패치를 못 받음(빈 응답) -> exit 2" 2 "$HOOK_RC"
+merge_hook "$SGb" "$projGb" $'app/page.tsx\n.claude/gates/phase-04.log' 0 "" "" $'@@ -0,0 +1,2 @@\n+review 2026-10-01T00:00Z session=b\n+qa 2026-10-01T00:01Z session=b'
+expect_rc "merge(PR 게이트): 화면 PR, design-review는 옛 줄에만 -> exit 2" 2 "$HOOK_RC"
+expect_contains "merge(PR 게이트): 화면 PR 메시지에 /design-review" "$HOOK_STDERR" "design-review"
+# gh 실패 대체 경로: 병합 커밋 첫 부모 대비 git diff의 + 줄
+projGf="$(pr_project o r)"; SGf="sid-prgates-f-$$"   # pr_project가 phase-04.log에 review(추적 안 함)를 남긴다
+printf 'current_phase: 2\n' > "$projGf/.planning/STATE.md"
+pr_commit "$projGf" app/page.tsx
+write_gate_line "$projGf" qa "$SGf"; write_gate_line "$projGf" design-review "$SGf"
+git -C "$projGf" add .claude/gates/phase-04.log && git -C "$projGf" commit -q -m "gates" >/dev/null
+pr_push "$projGf"
+merge_hook "$SGf" "$projGf" "" 127 "" "$(git -C "$projGf" rev-parse HEAD)"
+expect_rc "merge(gh 없음, PR 게이트): STATE 2, PR이 phase-04.log에 review·qa·design-review 추가 -> 통과" 0 "$HOOK_RC"
+projGg="$(pr_project o r)"; SGg="sid-prgates-g-$$"
+git -C "$projGg" checkout -q main
+git -C "$projGg" add .claude/gates/phase-04.log && git -C "$projGg" commit -q -m "gates on main" >/dev/null   # main에 이미 review
+git -C "$projGg" push -q origin main >/dev/null 2>&1
+git -C "$projGg" fetch -q origin >/dev/null
+git -C "$projGg" checkout -q -b featureGg
+pr_commit "$projGg" domain/x.ts
+write_gate_line "$projGg" qa "$SGg"
+git -C "$projGg" add .claude/gates/phase-04.log && git -C "$projGg" commit -q -m "qa" >/dev/null
+pr_push "$projGg"
+merge_hook "$SGg" "$projGg" "" 127 "" "$(git -C "$projGg" rev-parse HEAD)"
+expect_rc "merge(gh 없음, PR 게이트): review는 main의 옛 줄, PR은 qa만 추가 -> exit 2" 2 "$HOOK_RC"
+# 게이트 로그를 건드리지 않은 PR은 지금처럼 STATE 페이즈 로그
+projGc="$(new_project)"; SGc="sid-prgates-c-$$"
+printf 'current_phase: 2\n' > "$projGc/.planning/STATE.md"
+write_gate_line "$projGc" review "$SGc"; write_gate_line "$projGc" qa "$SGc"
+merge_hook "$SGc" "$projGc" 'domain/x.ts'
+expect_rc "merge(로그 안 건드림): review·qa가 다른 페이즈 로그에만 -> exit 2" 2 "$HOOK_RC"
+write_gate_line "$projGc" review "$SGc" phase-02; write_gate_line "$projGc" qa "$SGc" phase-02
+merge_hook "$SGc" "$projGc" 'domain/x.ts'
+expect_rc "merge(로그 안 건드림): STATE 페이즈(02) 로그에 review·qa -> 통과" 0 "$HOOK_RC"
 
 # ---------------------------------------------------------------------------
 # DG: 디자인 관문(사용자 결정 2026-09-28) — 화면 파일 편집은 design-gate 스킬 뒤에만,

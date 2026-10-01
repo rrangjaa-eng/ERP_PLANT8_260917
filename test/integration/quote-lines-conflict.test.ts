@@ -11,13 +11,12 @@ vi.mock("@/repositories/quote-lines", async () => {
 
 import { db } from "@/db/client";
 import { quoteLines, codeItems, teams, actionLog } from "@/db/schema";
-import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
-import type { Viewer } from "@/domain/viewer";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines, SaveRejectedError, type QuoteLineBaseline } from "@/domain/quotes/lines";
 import { updateQuoteLineIfVersionMatches } from "@/repositories/quote-lines";
@@ -271,7 +270,7 @@ describe("domain/quotes/lines saveQuoteLines — 배치 충돌·전부 거부(04
 });
 
 // /review PR #128 분리 과제 — 거래처 칸 충돌 이유가 거래처 UUID가 아니라 이름을 보인다. 이름은 거래처 정보라
-// QuoteLineDto.vendorName과 같은 all-of(project.value · vendor.value) 게이트 — 하나라도 없으면 「다른 값」.
+// project.value · vendor.value를 다 볼 때만(all-of) 싣는다 — 하나라도 없으면 「다른 값」.
 describe("domain/quotes/lines saveQuoteLines — 거래처 충돌 이유의 거래처 이름", () => {
   async function createSaver(visible: string[]): Promise<Viewer> {
     const roleId = `role-${randomUUID()}`;
@@ -283,8 +282,8 @@ describe("domain/quotes/lines saveQuoteLines — 거래처 충돌 이유의 거�
     return { id: userId, roleId };
   }
 
-  // 줄 하나를 거래처 A로 만들고, 다른 사람이 거래처 B로 바꾼 뒤, 옛 버전(거래처 A 기준)으로 항목명만 고쳐 저장한다.
-  async function vendorConflict(saver: Viewer) {
+  // 줄 하나를 거래처 A로 만들고, 다른 사람이 거래처 B로 바꾼(clear면 비운) 뒤, 옛 버전(거래처 A 기준)으로 항목명만 고쳐 저장한다.
+  async function vendorConflict(saver: Viewer, opts?: { clear?: boolean }) {
     const { revision, subcategoryValue } = await setupProject();
     const vendorA = await insertVendor(SYSTEM_VIEWER, { name: `거래처A-${randomUUID()}`, normalizedName: `거래처a-${randomUUID()}` });
     const vendorB = await insertVendor(SYSTEM_VIEWER, { name: `거래처B-${randomUUID()}`, normalizedName: `거래처b-${randomUUID()}` });
@@ -306,7 +305,7 @@ describe("domain/quotes/lines saveQuoteLines — 거래처 충돌 이유의 거�
     const unitPrice = { currency: "KRW" as const, amount: 100, fxRate: 1 };
     const execution = { currency: "KRW" as const, amount: 0, fxRate: 1 };
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
-      { id: line.id, version: line.version, subcategory: line.subcategory, itemName: line.itemName, vendorId: vendorB.id, unitPrice, execution, baseline },
+      { id: line.id, version: line.version, subcategory: line.subcategory, itemName: line.itemName, vendorId: opts?.clear ? undefined : vendorB.id, unitPrice, execution, baseline },
     ] });
     const rejected = await saveQuoteLines(saver, revision.id, { rows: [
       { id: line.id, version: line.version, subcategory: line.subcategory, itemName: "A 수정", vendorId: vendorA.id, unitPrice, execution, baseline },
@@ -330,8 +329,18 @@ describe("domain/quotes/lines saveQuoteLines — 거래처 충돌 이유의 거�
     expect(conflict.theirRaw).toBe(vendorB.id); // 「그 값으로」는 여전히 id로 받는다.
   });
 
-  it("쓰기 시점 경합으로 거래처가 바뀌어도 충돌 이유는 거래처 이름이다", async () => {
+  it("다른 사람이 거래처를 비우면 충돌 이유는 「—」이다", async () => {
     const saver = await createSaver(["quote.amount", "project.value", "vendor.value"]);
+    const { conflict } = await vendorConflict(saver, { clear: true });
+    expect(conflict.theirRaw).toBeNull();
+    expect(conflict.reason).toMatch(/^다른 사람이 \d{2}:\d{2}에 —으로 바꿈 · 덮어쓰기 \/ 그 값으로$/);
+  });
+
+  it.each([
+    ["다 보는 사람은 이름", ["quote.amount", "project.value", "vendor.value"], true],
+    ["vendor.value 없으면 「다른 값」", ["quote.amount", "project.value"], false],
+  ])("쓰기 시점 경합으로 거래처가 바뀌면 — %s", async (_label, visible, named) => {
+    const saver = await createSaver(visible);
     const { revision, subcategoryValue } = await setupProject();
     const vendorB = await insertVendor(SYSTEM_VIEWER, { name: `거래처B-${randomUUID()}`, normalizedName: `거래처b-${randomUUID()}` });
     const created = await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
@@ -365,7 +374,8 @@ describe("domain/quotes/lines saveQuoteLines — 거래처 충돌 이유의 거�
     );
     expect(rejected).toBeInstanceOf(SaveRejectedError);
     const conflict = (rejected as SaveRejectedError).conflicts.find((c) => c.field === "vendorId");
-    expect(conflict?.reason).toContain(`${vendorB.name}으로 바꿈`);
+    expect(conflict?.reason).toContain(named ? `${vendorB.name}으로 바꿈` : "다른 값으로 바꿈");
+    if (!named) expect(conflict?.reason).not.toContain(vendorB.name);
     expect(conflict?.reason).not.toContain(vendorB.id);
   });
 

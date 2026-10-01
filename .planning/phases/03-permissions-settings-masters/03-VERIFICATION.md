@@ -1,9 +1,9 @@
 ---
 phase: 03-permissions-settings-masters
-verified: 2026-09-24T09:41:40Z
-status: human_needed
+verified: 2026-10-01T03:40:51Z
+status: passed
 score: 6/6 must-haves verified
-covered_digest: "v1:sha256:9ec23c7132194aaf985360606b6c6b825fda66e75613491b06cbf440d20ae7a3"
+covered_digest: "v1:sha256:9f43c80e50b659548cbebd7ac220c7c975a8228cb85a20eb35ac25c31deb55d3"
 covered_files:
   - ".github/workflows/account.yml"
   - ".planning/REQUIREMENTS.md"
@@ -154,6 +154,8 @@ covered_files:
   - "domain/permissions/roles.ts"
   - "domain/permissions/scope-for.ts"
   - "domain/permissions/visible.ts"
+  - "domain/projects/references.ts"
+  - "domain/projects/status.ts"
   - "domain/seed/index.ts"
   - "domain/settings/export.ts"
   - "domain/settings/keys.ts"
@@ -256,6 +258,7 @@ covered_files:
   - "test/integration/mast-04-code-item-label.test.ts"
   - "test/integration/org.test.ts"
   - "test/integration/people.test.ts"
+  - "test/integration/project-status.test.ts"
   - "test/integration/rate-limit.test.ts"
   - "test/integration/roles.test.ts"
   - "test/integration/seed-permissions.test.ts"
@@ -335,6 +338,29 @@ covered_files:
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
+  previous_status: human_needed
+  previous_score: 6/6
+  previous_verified: 2026-09-24T09:41:40Z
+  round: 7
+  head: "aa5464e (claude/close-phases-02-03 — origin/main f85c9af 위에 `.planning/.continue-here.md` 삭제 1커밋. 코드 트리는 f85c9af와 같다)"
+  trigger: "verification status = stale — 6회차 covered_files 327개 중 167개가 2d7f73e 이후 바뀜(Phase 4 묶음 ②~④, 04.1 결재·연차, 04.2 알림·공휴일, 04.4 복원 리허설, quick·리뷰 수정). 2d7f73e..HEAD = 커밋 902개(first-parent 71개)"
+  what_changed:
+    - "판정 함수: `can.ts`·`visible.ts` 무변경. `project.ts`가 `projectMany`(행 여러 개를 한 spec으로 — 서로 다른 정보 항목마다 `visible()`를 요청당 한 번)와 all-of `InfoItemRef`(문자열 또는 목록, 전부 보여야 키가 실림)를 얻었고 `project()`는 그 위의 한 행 래퍼다(캐시 없음 — 호출마다 DB 조회 유지). `dto-registry.ts`가 빈 목록 `infoItem: []`을 `EmptyInfoItemsError`로 거부(`every()` 공허 참 구멍 방지). `scope-for.ts`·`matrix.ts`·`archive`·`vendors`·`settings` 쪽은 오류 문구 명사형 변경 + 확장뿐"
+    - "Phase 3 메커니즘에 등록만으로 올라탄 것: MENUS 22개(admin.* 11 — `admin.holidays` 추가, `projects.status·complete·period·adjustment`, `leave`), INFO_ITEMS에 `approval.value`·`leave.value`·`reserve.amount`, CORE·ALWAYS_ON 행동 종류에 `account_lock`·`account_unlock`·`holiday_change`, 설정 키(연차 이력형 등 — `kind: \"historized\"` 7개), 누수 스캔 import에 approvals·leave·reserves·holidays·quotes/revisions·people/[id] 레지스트리, 보관함 `DOMAIN_RESTORERS`(견적 줄·리저브 복원은 도메인 함수가 잠금·게이트·로그를 한 트랜잭션에서)"
+    - "역할 데이터: `roles.work_scope`(team/company, 마이그레이션 0013) + `setRoleWorkScope`(`admin.people` 쓰기 게이트 + `permission_change` 로그). Phase 4 프로젝트 상태 전환·등록이 이 값을 `domain/projects/status.ts` 게이트 규칙에서 읽는다(advisory 6)"
+    - "6회차 deferred 1(배포 시드가 노출표 선택을 되돌림) — 04-20이 고쳤다: `domain/seed/index.ts:210-242`이 기획 PM·팀장·본부 책임자·대표 행을 `insertVisibilityIfAbsent`(onConflictDoNothing)로, 기획 PM의 `revenue.issued_amount`만 `upsertVisibilityIfUnedited`(`updated_by IS NULL`인 행만 갱신)로 넣는다. 시스템 관리자 행만 매번 `upsertVisibility`(설계 — advisory 7). 통합 테스트 4건이 재시드 보존을 고정하고 이번 라운드에 직접 돌려 green"
+    - "관리자 화면: 표시·문구·폭·aria-disabled 정돈. diff 전수에서 제거된 게이트 줄 10줄은 전부 같은 파일에서 재배치(예: `people/page.tsx:32-38` `canArchive`·`canWrite`, `vendors/page.tsx:48-54·165-171`, `action-log/page.tsx:33·48`) — 게이트 순감 0. 새 `/admin` 인덱스는 이메일 실패·공휴일 확정 배너가 붙었고 `can(view)` 필터·0그룹 404(`admin/page.tsx:28·35`) 그대로"
+    - "마이그레이션 0010~0020은 Phase 3 표에 대해 가산만 한다(`code_items.description`, `roles.work_scope`, `users.first_login_at`·`hire_date`·`resignation_date`, 새 FK). Phase 3 표를 DROP·DELETE하는 문장은 0012의 `project_status` 'settled' 행 교체(Phase 4 D-75)뿐"
+  gaps_closed: []
+  gaps_remaining: []
+  regressions: []
+  deferred_resolved:
+    - truth: "성공 기준 2 「정보 노출표 체크박스를 바꾸면 바뀐다」의 지속성 — 배포마다 도는 시드가 기획 PM·시스템 관리자 행의 노출표 선택을 기본값으로 되돌린다"
+      resolved_by: "04-20 (Phase 4) — `repositories/permissions.ts:120-153` `upsertVisibilityIfUnedited`·`insertVisibilityIfAbsent`, `domain/seed/index.ts:192-242`"
+      evidence: "이번 라운드 직접 실행 green: `test/integration/project-status.test.ts` 「ENG-D3 ③ — 첫 시드의 노출 기본값, 관리자가 끈 기획 PM quote.amount·대표 revenue.issued_amount는 재시드 뒤에도 꺼져 있고 시스템 관리자 항목은 재시드가 켠다」·「A-05 — … 관리자가 끈 팀장 projects.status는 재시드 뒤에도 꺼져 있다」, `test/integration/visibility.test.ts` (f)·(g). `scripts/deploy.sh:721`은 여전히 배포마다 `run_seed`를 부르지만 이제 기획 PM·팀장·본부 책임자·대표 행의 관리자 선택을 덮지 않는다"
+  corrections_to_previous_report:
+    - "6회차 human_verification 1의 기대 「권한표 5행 × 46열」은 더 이상 맞는 숫자가 아니다 — 이후 페이즈가 메뉴를 더해 지금 시드 MENUS는 22개 × 동작 3 = 66열이다. 기대를 「현재 시드 메뉴 수만큼 열, 빈 칸 없음」으로 바꿔 닫았다"
+history_round_6:
   previous_status: passed
   previous_score: 6/6
   previous_verified: 2026-09-22T06:23:57Z
@@ -355,43 +381,50 @@ re_verification:
     - "5회차 advisory 「`03-OPEN-ITEMS.md:32`가 없는 커밋 `fa4a5a2`를 인용」도 이미 닫혀 있었다 — `d7ad2f8`(2026-09-21 15:08Z)이 고쳤고 현재 파일에 `fa4a5a2` 0건"
     - "5회차 advisory 「`settings/actions.ts:52-54` 주석이 낡음」도 `d7ad2f8`로 닫혀 있었다 — 현재 `:50-55`가 `pnpm settings:import --file <경로>`와 `docs/OPERATIONS.md §12`를 가리킨다"
 advisory:
-  - finding: "F1 — `APP_ENV` 기본값 fail-open. `lib/env.ts:47-49`가 미지정 `APP_ENV`를 `local`로 두고 `:85`가 `local`이 아닐 때만 `BETTER_AUTH_SECRET` 32자 이상을 강제한다. `NODE_ENV=production` + `APP_ENV` 미지정 조합을 막는 검사는 여전히 없다"
+  - finding: "F1 — `APP_ENV` 기본값 fail-open. `lib/env.ts:47-49`가 미지정 `APP_ENV`를 `local`로 두고 `:89`가 `local`이 아닐 때만 `BETTER_AUTH_SECRET` 32자 이상을 강제한다. `NODE_ENV=production` + `APP_ENV` 미지정 조합을 막는 검사는 여전히 없다(이 파일은 이후 13줄 추가 — `NOTIFY_TICK_OIDC_DISABLED` 등 — 이 조합 검사는 아님)"
     category: security
-    reason: "`scripts/deploy.sh`가 staging·prod에 `APP_ENV`와 시크릿을 넣으므로 실배포 경로는 막혀 있다. 같은 이미지를 deploy.sh 밖에서 띄울 때의 심층 방어 부재. Phase 1 환경 계약 영역이고 Phase 3 성공 기준에 걸리지 않는다"
-    evidence_status: "결정적(파일·줄 실재, `lib/env.ts`는 06:23:57Z 이후 무변경). 빨간 named test 없음"
-  - finding: "F2 — `revealAccountNumber`가 행 범위를 좁히지 않는다. `domain/vendors/index.ts:376-393`은 `visible()`만 보고 `repositories/vendors.ts:47-50` `findVendorById`에 scope·archived 조건이 없다"
+    reason: "`scripts/deploy.sh`가 staging·prod에 `APP_ENV`와 시크릿을 넣으므로 실배포 경로는 막혀 있다. Phase 1 환경 계약 영역이고 Phase 3 성공 기준에 걸리지 않는다"
+    evidence_status: "결정적(파일·줄 실재). 빨간 named test 없음"
+  - finding: "F2 — `revealAccountNumber`(`domain/vendors/index.ts:388-405`)가 `visible()`만 보고 `repositories/vendors.ts:47` `findVendorById`에 scope·archived 조건이 없다(두 곳 로직 무변경)"
     category: security
     reason: "해제 권한 보유 계급이 보관된 거래처의 계좌번호도 id로 열 수 있다. 성공 기준 5의 계약(노출표 항목 + 권한 검사 + 행동 로그)은 충족 — 그 위의 심층 방어"
-    evidence_status: "결정적(두 파일 06:23:57Z 이후 무변경). 빨간 named test 없음"
-  - finding: "F4 — 행동 로그 조회·내보내기가 메뉴 권한 대신 `visible(action_log.detail)`만 본다(`domain/action-log/index.ts` 무변경)"
+    evidence_status: "결정적. 빨간 named test 없음"
+  - finding: "F4 — 행동 로그 조회·내보내기가 메뉴 권한 대신 `visible(action_log.detail)`만 본다(`domain/action-log/index.ts:262-266`, 문구만 바뀜)"
     category: security
-    reason: "REQUIREMENTS ADMN-10 「열람 권한은 정보 노출표로 통제」와 일치 — 결함 아님. 격자에서 메뉴만 끄고 정보 항목을 켜 둔 조합의 잠재 불일치로만 남는다"
+    reason: "REQUIREMENTS ADMN-10 「열람 권한은 정보 노출표로 통제」와 일치 — 결함 아님"
     evidence_status: "결정적. 시드 기본 상태에서 재현 불가"
-  - finding: "`domain/settings/keys.ts:56` 절 머리 주석 「뒤 페이즈가 읽는 키 (readBy 표시 있음)」이 낡았다 — Phase 4가 그 아래 세율·절사 키 11개의 `readBy`를 지웠다(키가 실제로 읽히기 시작해 `registry-coverage.test.ts`의 표시 만료 강제가 요구한 정리). 동작 영향 0"
+  - finding: "`domain/settings/keys.ts:56` 절 머리 주석 「뒤 페이즈가 읽는 키 (readBy 표시 있음)」 — 그 아래 세율·절사 키는 readBy가 없고(Phase 4가 읽음), readBy는 `:213·224·235·248`(Phase 5·6 키)에만 남았다. 동작 영향 0"
     category: other
-    reason: "다음 사람이 이 절의 키가 아직 안 읽힌다고 오해할 수 있다. 주석 한 줄 수정"
+    reason: "주석 한 줄 정리"
     evidence_status: "결정적(파일·줄 실재)"
   - finding: "MVP 모드 불일치 — ROADMAP Phase 3이 `**Mode:** mvp`인데 goal이 User Story 형식이 아니다"
     category: other
-    reason: "1~5회차와 같은 판단 — 성공 기준 6개가 구체적이라 표준 goal-backward로 진행했다. MVP 모드가 의도가 아니면 `Mode: mvp`를 지우는 것이 맞다"
+    reason: "1~6회차와 같은 판단 — 성공 기준 6개가 구체적이라 표준 goal-backward로 진행"
     evidence_status: "none provided"
+  - finding: "(신규) 성공 기준 2 문구 「판정은 `can()`/`visible()`/`scopeFor()` 세 함수에서만」과 Phase 4 업무 범위 판정의 관계 — `domain/projects/status.ts:64-89`(`loadActorTeamScope`·`coversProjectTeam`)이 `roles.work_scope`와 오늘 소속 팀으로 상태 전환 주체를 거르고, `domain/projects/references.ts:82`가 새 프로젝트 폼의 팀·PM 선택지를 같은 값으로 좁힌다. 세 함수 밖의 판정 지점이다"
+    category: architectural
+    reason: "Phase 4 04-20-PLAN이 「`can`·`visible`·`scopeFor`는 바꾸지 않는다(OV-4)」로 명시하고 게이트 규칙 안의 사실로 넣은 리뷰된 결정이다. 행 읽기 범위는 여전히 `scopeFor`, 필드는 `project()` — Phase 3 메커니즘 자체는 깨지지 않았다. Phase 7 전 메뉴 검수에서 SC2 문구와 업무 범위 규칙의 정합을 한 번 맞추는 것을 권장"
+    evidence_status: "결정적(파일·줄 실재). Phase 4 통합 테스트(`project-status.test.ts`)가 이 규칙을 고정"
+  - finding: "(신규) 시스템 관리자 행의 노출표·권한표는 배포 시드가 매번 전부 켠다(`domain/seed/index.ts:159-170·216-221` `upsertPermission`·`upsertVisibility`) — 관리자가 시스템 관리자 계급의 칸을 끄면 다음 배포에 되살아난다"
+    category: other
+    reason: "04-20 ENG-D2 설계(관리 계급이 자기 콘솔에서 잠기지 않게)이고 `project-status.test.ts` ENG-D3 ③이 「시스템 관리자 항목은 재시드가 켠다」로 고정한다. 결함이 아니라 운영 안내 대상(권한표 화면에서 시스템 관리자 열을 꺼도 유지되지 않음)"
+    evidence_status: "결정적. named test green(의도된 동작으로)"
 deferred:
-  - truth: "성공 기준 2 「정보 노출표 체크박스를 바꾸면 바뀐다」의 지속성 — 배포마다 도는 시드가 기획 PM·시스템 관리자 행의 노출표 선택을 기본값으로 되돌린다"
-    addressed_in: "Phase 4 (04-20-PLAN)"
-    evidence: "ROADMAP Phase 4 Plans: 「04-20-PLAN.md — … 없을 때만 넣는 시드(권한·노출) …」. 04-20-PLAN.md:400 「노출 시드(변경) | 기획 PM·팀장·본부 책임자 = staffDefault … 전부 없을 때만(시스템 관리자만 덮어쓰기)」, :308 ENG-D3 ③ 재시드 보존 증명. 현재 코드: `scripts/deploy.sh:666-668`이 배포마다 `run_seed`, `domain/seed/index.ts:165-180`이 `upsertVisibility`(= `repositories/permissions.ts` onConflictDoUpdate `set: { visible }`)로 role-pm 행을 `staffDefault`로, role-sysadmin 행을 true로 덮는다. 권한표 쪽은 PR #38이 새 셀(기획 PM `projects`)만 `insertPermissionIfAbsent`로 바꿨고 `test/integration/seed-permissions.test.ts`가 그 셀을 고정한다. **04-20 실행 전까지는 스테이징·운영에서 실제로 일어나는 결함이다**"
   - truth: "MAST-01 「입력 시 자동완성된다」의 화면 소비자"
     addressed_in: "Phase 5 · Phase 6"
-    evidence: "ROADMAP Phase 3 성공 기준 5: 「거래처마다 기본 증빙 종류를 두어 Phase 5·6의 지출결의·카드 사용 등록 때 자동으로 채워진다」. `domain/vendors.searchVendors`는 있다 — 붙을 화면이 아직 없다"
+    evidence: "ROADMAP Phase 3 성공 기준 5: 「거래처마다 기본 증빙 종류를 두어 Phase 5·6의 지출결의·카드 사용 등록 때 자동으로 채워진다」. `domain/vendors.searchVendors`는 있다 — 붙을 지출결의·카드 사용 화면이 아직 없다(이번 라운드 상태 변화 없음)"
   - truth: "성공 기준 2·6 — 전 메뉴 대상 권한·노출·행동 로그 검수"
     addressed_in: "Phase 7"
-    evidence: "Phase 3 goal 본문 「전 메뉴 대상 검수는 Phase 7 끝에서 한다」 + ROADMAP Phase 7 성공 기준 5"
+    evidence: "Phase 3 goal 본문 「전 메뉴 대상 검수는 Phase 7 끝에서 한다」 + ROADMAP Phase 7 성공 기준 5. ROADMAP Phase 3 절은 2d7f73e 이후 글자 단위로 같다(diff 0)"
   - truth: "관리자 폼 7개의 §6-3 폼 템플릿 이관 (design-review A-H2·A-H3) · 폰 375px 관리자 표 · /review M-4·L-1 · /cso R2~R5 · design-review 미승인 이월분 · 03-REVIEW-2 Low 4건"
     addressed_in: "Phase 4 · Phase 7 · 후속"
-    evidence: "5회차 deferred와 동일 근거(`03-OPEN-ITEMS.md` 해당 절, ROADMAP Phase 7 성공 기준 5). 이번 라운드에 상태 변화 없음"
+    evidence: "`03-OPEN-ITEMS.md` 해당 절(2d7f73e 이후 무변경), ROADMAP Phase 7 성공 기준 5. 이번 라운드는 항목별 진척을 재판정하지 않았다 — 성공 기준 판정에 걸리지 않는 이월분이다"
 human_verification:
-  - test: "PR #38 머지(3c1b015) 뒤 스테이징 배포가 끝났으면 시스템 관리자로 `/admin`과 `/admin/permissions`를 연다"
-    expected: "`/admin`에 마스터·설정·권한·운영 기록 그룹과 관리자 화면 10개가 보이고, 권한표 격자는 5행 × 46열(`projects.revenue` 「매출 정산」 추가)로 빈 셀 없이 채워진다. 배포 로그에서 migrate(0009·0010)·seed Job이 successfully completed"
-    why_human: "관리자 진입점 구조(「관리」 한 줄 + /admin 인덱스)와 권한표 열 수가 5회차 스테이징 실측(5×45) 뒤에 바뀌었다. 로컬 `CI=true` E2E는 같은 화면을 green으로 고정했지만 배포 이미지·마이그레이션 0009·0010의 스테이징 적용은 이 컨테이너에서 볼 수 없다(`*.run.app` 프록시 403)"
+  - test: "PR #38 머지(3c1b015) 뒤 스테이징 배포가 끝났으면 시스템 관리자로 `/admin`과 `/admin/permissions`를 연다 (6회차 사람 판정 1)"
+    expected: "`/admin`에 마스터·설정·권한·운영 기록 그룹의 관리자 화면이 보이고, 권한표 격자는 현재 시드 메뉴 수만큼 열(지금 MENUS 22 × 동작 3)로 빈 칸 없이 채워진다. 배포 Job(migrate·seed) 성공"
+    why_human: "스테이징 적용은 이 컨테이너에서 볼 수 없다(`*.run.app` 프록시 403). Claude는 이번에도 직접 로그인하지 못했다 — auto-mode 분류기가 자격 증명 사용을 막았다"
+    status: resolved
+    resolution: "2026-10-01 사용자 확인. main SHA f85c9afa6dc30686758879afe39edaa7d304140b의 staging deploy workflow run #103(id 36807956531) conclusion success — 이 세션이 `gh run list --commit f85c9af…`로 같은 결과를 다시 읽었다. 앞선 deploy run #101·#102도 success(사용자 보고). 사용자가 https://plant8-staging-67rumhdgba-du.a.run.app 에 시스템 관리자로 로그인해 `/admin`과 `/admin/permissions`를 열고 「둘 다 정상」 — 관리자 인덱스 그룹이 보이고 권한표에 빈 칸 없음. 열 수는 6회차가 적은 46이 아니다(이후 페이즈가 메뉴를 더함) — 기대를 「현재 시드 메뉴 수만큼 열, 빈 칸 없음」으로 기록"
   - test: "스테이징 `/admin/permissions` 격자 + 배포 Job 3종 (5회차 사람 판정 1)"
     expected: "격자가 빈 칸 없이 렌더된다"
     why_human: "5회차 항목 — 이미 닫힘"
@@ -404,7 +437,198 @@ human_verification:
     resolution: "2026-09-22 Cloud Shell 실측으로 staging·prod 모두 32바이트 확인(커밋 34f9154). 이후 재발은 `lib/env.ts` 부팅 검사가 막는다"
 ---
 
-# Phase 3: 권한·설정·마스터 (관리자 운영 콘솔) 검증 보고서 — 6회차 재검증
+# Phase 3: 권한·설정·마스터 (관리자 운영 콘솔) 검증 보고서 — 7회차 재검증 (페이즈 종료)
+
+**Phase Goal:** 관리자가 코드 수정 없이 사람·계급·본부·팀·권한표·정보 노출표·설정·코드표·거래처·법인카드를 화면에서 등록하고, 이후 모든 화면·API가 이 권한·설정 위에 얹힌다. 이 페이즈는 메커니즘(판정 함수·리포지토리 행 필터 + DTO 투영·설정 레지스트리·누수 스캔 테스트 생성기·암호화 헬퍼·보관함·행동 로그)과 마스터를 세우는 데서 끝나며, 전 메뉴 대상 검수는 Phase 7 끝에서 한다
+**Verified:** 2026-10-01T03:40:51Z (HEAD `aa5464e` = origin/main `f85c9af` + `.planning/.continue-here.md` 삭제)
+**Status:** passed — 성공 기준 6/6, gap·회귀 0, 열린 사람 판정 0
+**Re-verification:** Yes — 6회차(human_needed, 2026-09-24T09:41:40Z)가 later phase 변경으로 stale이 되어 다시 했다
+
+**이 라운드의 전제:** 6회차의 주장은 상속하지 않았다. 기준점 `2d7f73e`(6회차 HEAD) → `aa5464e` 사이에서 6회차 covered_files 중 바뀐 167개를 `git diff --name-status`로 뽑고, Phase 3 메커니즘 파일(`domain/permissions/*`·`domain/settings/*`·`domain/action-log/*`·`domain/archive`·`domain/vendors`·`domain/seed`·`repositories/permissions.ts`·`test/integration/leak-scan.test.ts`)은 diff 본문을 읽었다. 관리자 화면·`ui/`·`lib/actions`는 제거된 게이트 줄(`can(`·`canWrite`·`canArchive`·`notFound`·`visible(`·`authedActionClient`·`ForbiddenError`)을 전수 grep하고 남은 게이트 위치를 현재 파일에서 확인했다. ROADMAP Phase 3 절은 2d7f73e 이후 **글자 단위로 같고**(diff 0), REQUIREMENTS의 Phase 3 요구 13개도 문구 변화가 없다.
+
+**무변경 확인(`git diff --quiet 2d7f73e HEAD`):** `lib/crypto.ts` · `scripts/rotate-key.ts` · `eslint/` · `eslint.config.mjs` · `domain/permissions/can.ts` · `domain/permissions/visible.ts` · `db/schema/{corp-cards,org,vendors,permissions,settings,action-log}.ts` · `test/unit/settings/registry-coverage.test.ts` · `test/unit/crypto.test.ts`.
+
+## 게이트
+
+### 이 프로세스에서 직접 돌린 것 (HEAD `aa5464e`, 2026-10-01 03:22–03:40Z)
+
+| 게이트 | 명령 | 결과 |
+| ------ | ---- | ---- |
+| 린트 | `pnpm lint` | exit 0 (기존 boundaries v5→v6 설정 이관 경고만, error 0) |
+| 타입 | `pnpm typecheck` | exit 0 |
+| SQL 린트 | `pnpm lint:sql` | exit 0 (21 files, 0 issues) |
+| 단위 | `pnpm test:unit` | **171 files · 2272 passed** · exit 0 |
+| 통합 (Phase 3 대상 26파일) | `pnpm vitest run --project integration` + action-log-query · action-log · archive · archived-session · auth · code-tables · corp-card-owner-archived · corp-card-owner-edit · corp-cards · custom-fields · db-bootstrap · document-counters · document-counters-concurrency · leak-scan · lockout · mast-04-code-item-label · org · people · rate-limit · roles · seed-permissions · settings-export · settings · team-memberships · vendors · visibility | **26 files · 1768 passed** · exit 0 (877s) |
+| 통합 (재시드 보존 named) | `… project-status.test.ts visibility.test.ts -t "ENG-D3 ③ — 첫 시드\|A-05 — 빈 DB\|(f) 기획 PM\|(g) 관리자가" --reporter=verbose` | **4 passed** (이름 확인) |
+
+`test/e2e`·`test/integration` 전체에 `test|it|describe` `.skip`·`.only`·`.fixme` **0건**(grep).
+
+### CI (E2E — 이 컨테이너에서는 돌리지 않음)
+
+`f85c9af`는 PR #112의 squash 머지다. PR head `f7abfab`와 `aa5464e`의 트리 차이는 `.claude/rules/sessions.md`(+11줄, 세션 이름 규칙 문서)와 `.planning/.continue-here.md` 두 파일뿐이라 코드·테스트 트리가 같다. `gh api …/commits/f7abfab…/check-runs`: **quality · integration (1) · integration (2) · e2e (1) · e2e (2) 전부 success**(2026-10-01 02:28–02:40Z). E2E 2샤드가 돈 것은 ready PR의 전체 스위트다(CLAUDE.md §5 — CI가 `CI=true` 프로덕션 빌드). 아래 truth 표가 인용한 E2E 스펙(`permissions-grid`·`settings`·`action-log`·`archive`·`vendors`·`people`·`admin-nav` 등)은 이 실행 집합에 들어 있다. 2d7f73e 이후 이 스펙들의 diff는 문구 기대 갱신·새 회귀 테스트 추가·스크롤 좌표 보정뿐이고 기존 단언을 지운 줄은 없다(`permissions-grid.spec.ts:11` 「셀을 켜면 저장 버튼 없이 즉시 저장되고, 그 계급이 실제로 코드표 화면에 들어갈 수 있게 된다」·`:73` 권한 없는 계급 404 유지).
+
+## Goal Achievement
+
+### Observable Truths (ROADMAP 성공 기준 6개)
+
+| # | Truth | Status | Evidence (현재 코드 + 이번 게이트) |
+| - | ----- | ------ | -------- |
+| 1 | 사람 등록 + 계급 + 팀으로 입사자를 추가하고 계정·초기 비밀번호를 같은 화면에서 발급한다. 계급 5종은 추가·개명되는 데이터. 본부 ⊃ 팀, 팀 소속은 발령일 이력 | ✓ VERIFIED | `domain/people/index.ts:234`가 같은 흐름에서 `createAccount`를 부르고 `person-form.tsx:36-40·64`가 `tempPassword`를 한 번 보인다. `domain/permissions/roles.ts` 시드 5종(+ `workScope` 필드) · `createRole :111` · `renameRole :130`. `db/schema/org.ts:60` `effective_from`(무변경). 행동 증거: 통합 `people`·`org`·`team-memberships`·`roles` green(이번 실행), 단위 `org/team-at-date`·`people/change-person-role` green, E2E `people`·`org`·`roles`·`mobile-people` CI green |
+| 2 | 권한표·노출표 체크박스가 즉시 메뉴·동작·응답 필드를 바꾼다. 판정은 `can()`/`visible()`/`scopeFor()`, domain 출구는 `project()` DTO, `plant8/no-row-type-escape` 2차 방어 | ✓ VERIFIED | `can.ts`·`visible.ts` **무변경**(캐시 없음). `project()`는 `projectMany`의 한 행 래퍼가 됐고 노출 판정은 여전히 `visible()`만 부른다(요청당 항목별 1회, 저장 없음) — all-of 목록은 판정을 **더 엄격하게** 할 뿐이다. `registerDto`가 빈 all-of 목록을 거부. `eslint.config.mjs:79` error(무변경), `pnpm lint` exit 0. 관리자 화면 게이트 순감 0(제거 10줄 전부 재배치 확인), `/admin` 인덱스 `can(view)` + 0그룹 404(`admin/page.tsx:28·35`). **6회차 deferred 1(재시드가 노출표 선택을 되돌림)은 04-20이 닫았다** — frontmatter `deferred_resolved`. 행동 증거: 통합 `visibility.test.ts`(재시드 (f)·(g) 포함)·`seed-permissions.test.ts` green(이번 실행), `project-status.test.ts` ENG-D3 ③·A-05 green(named), 단위 `permissions/*`·`no-admin-boolean`·`role-menu`·`admin-menu-registry` green, E2E `permissions-grid`·`admin-nav`·`mobile-admin-nav` CI green. 세 함수 밖 업무 범위 판정(Phase 4)은 advisory 6 |
+| 3 | 누수 스캔 생성기: 액션 × 계급, DTO × 계급, 내보내기 × 계급 자동 생성, 노출표에 매핑 안 된 DTO 필드 실패 | ✓ VERIFIED | `test/integration/leak-scan.test.ts` 세 축(`:130` DTO · `:177` 액션 · `:192` 내보내기)과 빈 레지스트리 방어(`:99·103·110`)·`NULL_DTO_EXEMPT_EXPORTS`(`:114`) 유지. all-of 필드는 항목마다 펼쳐 케이스를 만든다(약화가 아니라 확장). 04.1·04.2·04-07 레지스트리가 import 추가만으로 편입 — 성공 기준 3 「등록만 하면 검사가 따라온다」가 계속 작동. `test/unit/leak-scan-coverage.test.ts`가 `app/**/actions.registry.ts` 전부의 import를 강제(단위 green). `registerDto` 호출 파일 18개 중 15개는 직접 import, 3개(`domain/approvals/dto`·`domain/leave/dto`·`domain/action-log/index`)는 import된 모듈(`domain/approvals`·`domain/leave`·`domain/action-log/export`)을 통해 들어온다. 통합 `leak-scan.test.ts` green(이번 실행) |
+| 4 | 설정 키 typed registry 한 곳 + 화면 자동 생성, 안 읽는 키 테스트 실패, JSON 왕복, 세율·면제·절사 이력형 키, 로그인 잠금 키 | ✓ VERIFIED | `settings/page.tsx:90` `for (const def of SETTING_DEFS)`(키 하드코딩 0). `registry-coverage.test.ts` **무변경**·green. 이력형 7개(세율 6 + 연차). `export.ts`의 가져오기가 일반 저장과 같은 적용 시작일 검증·순번 낮추기 가드를 한 트랜잭션에서 지나게 강화됐다(왕복 계약 유지). 행동 증거: 통합 `settings.test.ts`·`settings-export.test.ts` green(이번 실행), 단위 `settings/registry`·`settings-import-cli` green, E2E `settings.spec.ts` CI green |
+| 5 | 거래처(숨김·자동완성)·법인카드(개인/팀)·코드표 등록·수정·비활성화, 증빙 종류 세금 규칙 필드, 계좌번호 AES-256-GCM `v1:`, 뒤 4자리, 해제 = 노출표 항목 + 행동 로그, v1·v2 혼재 복호화 단위 테스트 | ✓ VERIFIED | `lib/crypto.ts`·`scripts/rotate-key.ts`·`crypto.test.ts` **무변경**(혼재 복호화 단위 green). `revealAccountNumber`(`domain/vendors/index.ts:388-405`) = `visible()` → `recordAction(mask_reveal)` → `decrypt`(기록이 먼저, 문구만 변경). `db/schema/corp-cards.ts:32` 소지자 XOR 팀 CHECK(무변경). 코드표는 `description` 열이 더해졌고 증빙 종류 세금 규칙 시드 무변경. 행동 증거: 통합 `vendors`·`code-tables`·`corp-cards`·`corp-card-owner-*`·`mast-04-code-item-label` green(이번 실행), 단위 `vendors/*`·`code-tables/tax-rule`·`corp-cards/owner-rule` green, E2E `vendors`·`vendor-edit`·`master-edit`·`code-tables`·`code-tables-write-gate`·`corp-cards` CI green |
+| 6 | 핵심 행동만 로그, Excel 내보내기·마스킹 해제 끌 수 없음, 사람·기간·종류·문서 필터 + Excel + 정리, 삭제 = 보관함, 관리자만 보고 복원 | ✓ VERIFIED | `record.ts:73-84` ALWAYS_ON = `excel_export`·`mask_reveal`·`action_log_prune`·`status_change`·`account_lock`·`account_unlock`·`holiday_change`. `:147` 핵심 아닌 종류 throw, `:150` ALWAYS_ON이면 설정 조회 생략(`tx` 주입은 같은 판정을 잠근 트랜잭션 안에서 할 뿐). `archive/page.tsx:15`·`action-log/page.tsx:33` `can()` 게이트. `domain/archive` `archive :51`·`restore :80`·`listArchive :142` — 복원이 도메인 규칙 엔티티(견적 줄·리저브)를 도메인 함수에 넘기기 전에 `assertCanWrite`(보관함 쓰기)를 먼저 지나고, 목록은 리저브 줄을 볼 수 있는 사람에게만 보인다(더 엄격). 행동 증거: 통합 `action-log`·`action-log-query`·`archive`·`archived-session` green(이번 실행), 단위 `action-log/*` green, E2E `action-log`·`archive` CI green |
+
+**Score:** 6/6 truths verified (0 present, behavior-unverified)
+
+여섯 truth 모두 상태 전이를 주장하므로 presence만으로 올리지 않았다 — 이번 프로세스의 통합 green과 코드 트리가 같은 PR head의 CI E2E green을 근거로 VERIFIED다.
+
+### Deferred Items
+
+| # | Item | Addressed In | Evidence |
+|---|------|-------------|----------|
+| 1 | MAST-01 자동완성의 화면 소비자 | Phase 5 · 6 | 성공 기준 5 본문 |
+| 2 | 전 메뉴 권한·노출·로그 검수 | Phase 7 | Phase 3 goal + Phase 7 성공 기준 5 |
+| 3 | 폼 템플릿 이관·폰 표·리뷰 이월분 | Phase 4 · 7 · 후속 | `03-OPEN-ITEMS.md`(무변경) |
+
+6회차 deferred 1(재시드 노출표 원복)은 **해결됨** — 아래 「6회차 지적 처리」.
+
+### 6회차 지적 처리
+
+| 6회차 항목 | 7회차 판정 | 근거 |
+| ---------- | --------- | ---- |
+| deferred 1 — 배포 시드가 노출표 선택을 되돌린다 | **해결 (04-20)** | 기획 PM·팀장·본부 책임자·대표 행은 `insertVisibilityIfAbsent`(onConflictDoNothing), 기획 PM 발행액만 `upsertVisibilityIfUnedited`(`updated_by IS NULL`일 때만). 관리자가 바꾼 행은 `setVisibilityCell`이 `updatedBy: viewer.id`(`matrix.ts:172`)로 남겨 두 함수 모두 건드리지 않는다. 이번 실행 named 4건 green. 시스템 관리자 행만 설계상 덮어씀(advisory 7) |
+| 사람 판정 1 — PR #38 뒤 스테이징 `/admin` + 권한표 | **해결 (사용자 확인 2026-10-01)** | deploy run #103(36807956531) success @f85c9af(이 세션이 `gh run list`로 재확인), #101·#102 success. 사용자 「둘 다 정상」. 열 수 기대는 「현재 시드 메뉴 수만큼(22 × 3 = 66), 빈 칸 없음」으로 바로잡음 |
+| advisory F1·F2·F4·keys 주석·MVP 모드 | 유지 | 줄 번호만 갱신(F1 `:89`, F2 `:388-405`) |
+
+### Advisory (New Scope, Unevidenced)
+
+| # | Finding | Category | Why Advisory |
+|---|---------|----------|--------------|
+| 1 | F1 `APP_ENV` fail-open (`lib/env.ts:47-49·89`) | security | 실배포 경로는 deploy.sh가 막음, Phase 1 영역 |
+| 2 | F2 해제 경로에 행 범위 없음 (`domain/vendors/index.ts:388-405`, `repositories/vendors.ts:47`) | security | SC5 계약은 충족 |
+| 3 | F4 행동 로그 열람이 노출표만 봄 | security | ADMN-10 원문과 일치 |
+| 4 | `keys.ts:56` 절 머리 주석이 낡음 | other | 동작 영향 0 |
+| 5 | MVP 모드 불일치 | other | 1~6회차와 같은 판단 |
+| 6 | (신규) 업무 범위(`roles.work_scope`) 판정이 세 함수 밖(`domain/projects/status.ts:64-89`, `references.ts:82`) | architectural | Phase 4 OV-4로 리뷰된 결정, Phase 3 메커니즘은 그대로. Phase 7 전 메뉴 검수에서 SC2 문구 정합 권장 |
+| 7 | (신규) 시스템 관리자 행은 재시드가 매번 켬 | other | 04-20 ENG-D2 설계, named test가 의도로 고정. 운영 안내 대상 |
+
+### Required Artifacts
+
+| Artifact | Expected | Status | Details |
+| -------- | -------- | ------ | ------- |
+| `domain/permissions/{can,visible,scope-for,project}.ts` | 판정 4함수 | ✓ VERIFIED | can·visible 무변경, project = projectMany 래퍼(all-of), scope-for 문구만 |
+| `eslint/rules/no-row-type-escape.mjs` + `eslint.config.mjs:79` | 2차 방어 | ✓ VERIFIED | 무변경, `pnpm lint` exit 0 |
+| `test/integration/leak-scan.test.ts` + `test/unit/leak-scan-coverage.test.ts` | 3축 생성기 + 등록 누락 검출 | ✓ VERIFIED | 새 레지스트리 편입, 둘 다 green |
+| `domain/settings/{keys,registry,export}.ts` + `registry-coverage.test.ts` | registry + JSON 왕복 + 미사용 키 검출 | ✓ VERIFIED | 키·검증 확장, coverage 테스트 무변경 green |
+| `lib/crypto.ts` · `scripts/rotate-key.ts` | AES-256-GCM + 회전 | ✓ VERIFIED | 무변경, 혼재 복호화 green |
+| `domain/action-log/{record,index,export}.ts` | 핵심 로그 + 필터 + CSV | ✓ VERIFIED | ALWAYS_ON 3종 추가, `tx` 주입 |
+| `domain/archive/index.ts` | 보관함 + 복원 | ✓ VERIFIED | 도메인 복원기 위임(쓰기 게이트 뒤) |
+| `repositories/permissions.ts` · `domain/seed/index.ts` | 권한·노출 저장 + 멱등 시드 | ✓ VERIFIED | 없을 때만 넣는 시드(04-20) |
+| `db/migrations/0003~0008` | 스키마 척추 | ✓ VERIFIED | SQL 무변경, 0010~0020은 가산, `lint:sql` exit 0, 통합 global-setup이 0020까지 적용한 DB로 green |
+| `app/(app)/admin/**` 화면 + `/admin` 인덱스 | 관리 콘솔 | ✓ VERIFIED | 게이트 순감 0, 인덱스 `can()` 게이트 |
+
+### Key Link Verification
+
+| From | To | Via | Status | Details |
+| ---- | -- | --- | ------ | ------- |
+| `permission-grid-client.tsx` | `matrix.setPermissionCell` | `setPermissionCellAction` | ✓ WIRED | E2E 즉시 반영 CI green |
+| `can()` | `repositories/permissions.findPermission` | 매 호출 DB 조회 | ✓ WIRED | `can.ts` 무변경 |
+| `setVisibilityCell` | 재시드 보존 | `updatedBy: viewer.id`(`matrix.ts:172`) ↔ `insertVisibilityIfAbsent`/`upsertVisibilityIfUnedited` | ✓ WIRED | named 4건 green |
+| `settings/page.tsx` | `SETTING_DEFS` | `for (const def of SETTING_DEFS)` | ✓ WIRED | `:90` |
+| `account-number.tsx` | `revealAccountNumber` | 서버 액션 → `visible()` → `recordAction` → `decrypt` | ✓ WIRED | 순서 무변경 |
+| PC 메뉴·더보기 시트 | 관리자 화면 11종 | 「관리」 → `/admin` 인덱스 → 그룹 링크 | ✓ WIRED | `ui/shell/role-menu.ts:79-120` ADMIN_MENUS 11키 = MENUS admin.* 11키(단위 `admin-menu-registry` green) |
+| `deploy.sh main()` | migrate · seed | `run_seed` | ✓ WIRED | `:721` — 이제 관리자 선택을 덮지 않는 시드 |
+
+### Data-Flow Trace (Level 4)
+
+| Artifact | Data Variable | Source | Produces Real Data | Status |
+| -------- | ------------- | ------ | ------------------ | ------ |
+| `admin/permissions/page.tsx` | 격자 셀 | `repositories/permissions` | 예 | ✓ FLOWING |
+| `admin/settings/page.tsx` | 섹션·필드·이력 | `SETTING_DEFS` + `repositories/settings` | 예 | ✓ FLOWING |
+| `admin/vendors/page.tsx` | 뒤 4자리·평문 | 암호문 → `decrypt()` | 예 | ✓ FLOWING |
+| `admin/page.tsx` | 그룹·링크 | `MENUS` × `can()` | 예 | ✓ FLOWING |
+| `admin/action-log/page.tsx` · `admin/archive/page.tsx` | 로그 행 · 보관 항목 | `repositories/action-log` · `repositories/archive` | 예 | ✓ FLOWING |
+
+### Behavioral Spot-Checks
+
+| Behavior | Command | Result | Status |
+| -------- | ------- | ------ | ------ |
+| 정적 게이트 | `pnpm lint` · `pnpm typecheck` · `pnpm lint:sql` | 전부 exit 0 | ✓ PASS |
+| 단위 전체 | `pnpm test:unit` | 2272 passed | ✓ PASS |
+| Phase 3 통합 26파일 | 위 표 | 1768 passed | ✓ PASS |
+| 재시드 보존 | named 4건 verbose | 4 passed | ✓ PASS |
+| 메뉴 수 | `pnpm exec tsx -e 'import("./domain/permissions/menus.ts")…'` | MENUS 22 · ACTIONS 3 · admin 11 | 확인(사람 판정 1 기대값) |
+| 관리자 화면 게이트 제거 | `git diff 2d7f73e HEAD -- 'app/(app)/admin' ui/ lib/actions` 제거 줄 grep | 10줄, 전부 같은 파일에 재배치 | ✓ PASS |
+| skip/only | `grep -rnE '\b(test\|it\|describe)\.(skip\|only\|fixme)\b' test/e2e test/integration` | 0건 | ✓ PASS |
+| CI E2E | `gh api …/commits/f7abfab…/check-runs` | quality·integration×2·e2e×2 success | ✓ PASS |
+| 스테이징 배포 | `gh run list --commit f85c9af…` | deploy #103 success | ✓ PASS |
+
+### Probe Execution
+
+| Probe | Command | Result | Status |
+| ----- | ------- | ------ | ------ |
+| — | — | `scripts/*/tests/probe-*.sh` 0개, PLAN·SUMMARY에 probe 선언 0건 | SKIPPED (해당 없음) |
+
+### Requirements Coverage
+
+| Requirement | Description | Status | Evidence |
+| ----------- | ----------- | ------ | -------- |
+| ADMN-01 | 권한표 계급×메뉴×동작 | ✓ SATISFIED | `matrix.ts` 문구만, E2E CI green |
+| ADMN-02 | 정보 노출표·기본값 | ✓ SATISFIED | 재시드 원복 결함 해결(04-20), 새 항목 모두 `staffDefault` 명시 |
+| ADMN-03 | 전 경로 동일 적용 + 누수 테스트 자동 생성 | ✓ SATISFIED | 새 레지스트리 등록만으로 편입, 통합 green |
+| ADMN-05 | 설정 레지스트리·자동 화면·읽기 강제 | ✓ SATISFIED | `registry-coverage.test.ts` 무변경 green |
+| ADMN-06 | JSON 내보내기·가져오기 | ✓ SATISFIED | `settings-export.test.ts` green |
+| ADMN-08 | 계급 추가·개명 | ✓ SATISFIED | `roles.ts:111·130`, `roles.test.ts` green |
+| ADMN-10 | 행동 로그 필터·Excel·정리·노출표 통제 | ✓ SATISFIED | `action-log*.test.ts` green, E2E CI green |
+| ADMN-12 | 삭제 = 보관함, 관리자 복원 | ✓ SATISFIED | `archive.test.ts` green |
+| OPS-05 | 핵심 행동만, Excel·해제 끌 수 없음 | ✓ SATISFIED | `record.test.ts` green |
+| MAST-01 | 거래처 숨김·자동완성·암호화·기본 증빙 | ✓ SATISFIED | 자동완성 화면 소비자는 Phase 5·6 deferred |
+| MAST-02 | 계급 + 팀, 팀 ⊂ 본부, 발령일 이력 | ✓ SATISFIED | `org.ts` 무변경, `team-memberships` green |
+| MAST-03 | 법인카드 개인/팀 | ✓ SATISFIED | XOR CHECK 무변경, `corp-cards*.test.ts` green |
+| MAST-04 | 코드표 추가·수정·비활성화 | ✓ SATISFIED | `code-tables.test.ts` green |
+
+**ORPHANED 요구사항:** 없음 — REQUIREMENTS.md가 Phase 3에 매핑한 13개(MAST-01~04, ADMN-01·02·03·05·06·08·10·12, OPS-05)가 모두 플랜에 선언돼 있고 문구 변화가 없다.
+
+### Anti-Patterns Found
+
+| File | Line | Pattern | Severity | Impact |
+| ---- | ---- | ------- | -------- | ------ |
+| — | — | `TBD`/`FIXME`/`XXX` — 2d7f73e 이후 바뀐 covered 코드·테스트 파일의 추가 줄 전수 | — | **0건** |
+| — | — | `TODO`/`HACK`/`PLACEHOLDER` (같은 범위) | — | **0건** |
+| `domain/settings/keys.ts` | 56 | 낡은 절 머리 주석 | ℹ️ Info | advisory 4 |
+
+### Human Verification Required
+
+없음 — 세 항목 모두 닫힘.
+
+#### 1. PR #38 뒤 스테이징 `/admin` 인덱스 + 권한표 — ✓ 닫힘 (2026-10-01, 사용자 확인)
+
+**Result:** pass — main `f85c9af` staging deploy run #103(id 36807956531) success(이 세션이 `gh run list`로 재확인), #101·#102 success. 사용자가 스테이징에 시스템 관리자로 로그인해 `/admin`·`/admin/permissions`를 열고 「둘 다 정상」(관리자 인덱스 그룹 보임, 권한표 빈 칸 없음). 열 수 기대는 6회차의 46이 아니라 「현재 시드 메뉴 수만큼 열(지금 22 × 3), 빈 칸 없음」. Claude는 직접 로그인하지 못했다(auto-mode 분류기가 자격 증명 사용 차단) — 판정은 사용자 관찰이다.
+
+#### 2. 스테이징 배포 Job 3종 + `/admin/permissions` 격자 — ✓ 닫힘 (5회차, 2026-09-22)
+
+#### 3. Secret Manager `app-data-key-v1` 32바이트 — ✓ 닫힘 (5회차, 2026-09-22)
+
+상세는 frontmatter `human_verification[].resolution`.
+
+### Gaps Summary
+
+**gap 없음, 회귀 없음, 열린 사람 판정 없음 → passed.** 성공 기준 6개가 현재 코드와 이번 게이트(lint·typecheck·lint:sql exit 0, 단위 2272, Phase 3 통합 1768 + 재시드 named 4, 코드 트리가 같은 PR head의 CI E2E 2샤드)로 뒷받침된다. 6회차 이후 167개 covered 파일 변경은 세 갈래다 — (1) 이후 페이즈가 Phase 3 메커니즘에 **등록만으로** 올라탐(메뉴·정보 항목·행동 종류·설정 키·DTO/액션 레지스트리·보관함 도메인 복원기), (2) 판정을 더 엄격하게 하는 확장(all-of 노출, 빈 목록 거부, 가져오기 적용일 검증, 리저브 보관 항목 가림), (3) 문구 명사형·표시 정돈(게이트 순감 0). 6회차가 deferred로 둔 재시드 노출표 원복 결함은 04-20이 고쳤고 이번 라운드에 named test로 확인했다. 새 advisory 둘(세 함수 밖 업무 범위 판정, 시스템 관리자 행 재시드)은 리뷰된 설계라 gap이 아니다.
+
+---
+
+## 이전 라운드 이력
+
+| 회차 | 날짜 | HEAD | 판정 | 요지 |
+| ---- | ---- | ---- | ---- | ---- |
+| 1~4 | ~2026-09-21 | — | — | 상세는 git 이력의 이전 `03-VERIFICATION.md` |
+| 5 | 2026-09-22T06:23:57Z | b3e3215 이전 main | passed 6/6 | 스테이징 격자 5×45 실측, 키 32바이트 |
+| 6 | 2026-09-24T09:41:40Z | 3c1b015 → 2d7f73e | human_needed 6/6 | PR #38 뒤 스테이징 실측 1건 대기, 재시드 노출표 원복 결함 deferred(04-20) |
+| **7** | **2026-10-01T03:40:51Z** | **aa5464e (= f85c9af 코드 트리)** | **passed 6/6** | 재시드 결함 해결 확인, 사람 판정 1 사용자 확인으로 닫힘 |
+
+### 6회차 보고서 본문 (2026-09-24, 보존)
 
 **Phase Goal:** 관리자가 코드 수정 없이 사람·계급·본부·팀·권한표·정보 노출표·설정·코드표·거래처·법인카드를 화면에서 등록하고, 이후 모든 화면·API가 이 권한·설정 위에 얹힌다. 이 페이즈는 메커니즘과 마스터를 세우는 데서 끝나며, 전 메뉴 대상 검수는 Phase 7 끝에서 한다
 **Verified:** 2026-09-24T09:41:40Z (코드 판정 07:53:19Z + 로컬 전체 게이트 07:48–08:10Z @3c1b015 + 2d7f73e 영향 판정 09:35Z + 2d7f73e 전체 게이트 green)
@@ -589,3 +813,8 @@ status가 passed가 아니라 human_needed인 이유는 코드 결함이 아니�
 
 _Verified: 2026-09-24T09:41:40Z_
 _Verifier: Claude (gsd-verifier), 6회차 재검증 (HEAD 3c1b015, 2d7f73e 영향 판정 보정)_
+
+---
+
+_Verified: 2026-10-01T03:40:51Z_
+_Verifier: Claude (gsd-verifier), 7회차 재검증 (HEAD aa5464e, 페이즈 종료)_

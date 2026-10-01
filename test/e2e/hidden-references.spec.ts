@@ -153,6 +153,20 @@ test.describe("가려진 참조 정보의 화면(quick 261001-85g)", () => {
     await expect(page.locator("main")).not.toContainText(client.id);
   });
 
+  // /review(PR #128) — 줄 복제(Ctrl+D)는 거래처 id만 옮겨 복제 줄이 「—」로 보였다(값은 거래처가 있는데 빈 칸처럼).
+  test("D4: 보관된 거래처 줄을 복제해도 복제 줄 거래처 칸에 실제 이름이 보인다", async ({ page }) => {
+    const teamId = await makeTeam();
+    const writer = await makeWriter(teamId, "");
+    const { projectId, client } = await makeProjectWithVendorLine(teamId, writer);
+    await db.update(vendors).set({ archivedAt: new Date() }).where(eq(vendors.id, client.id));
+
+    await login(page, writer);
+    await page.goto(`/projects/${projectId}`);
+    await vendorCell(page, 0).focus();
+    await page.keyboard.press("Control+d");
+    await expect(vendorCell(page, 1)).toHaveText(client.name);
+  });
+
   test("대조: 셋 다 보이는 계급에는 등록 진입점이 있다", async ({ page }) => {
     const teamId = await makeTeam();
     const writer = await makeWriter(teamId, "");

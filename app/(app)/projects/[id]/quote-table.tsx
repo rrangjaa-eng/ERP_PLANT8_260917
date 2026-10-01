@@ -43,7 +43,7 @@ import type { RevenueDto } from "@/domain/revenue";
 import type { Currency, Money } from "@/domain/money";
 import { RevenueSection, type EntryDraft } from "./revenue-section";
 import { otherCellsRejectedText, quoteTableRejectionText, routeRejectedRevenueCells } from "./revenue-cells";
-import { PreviousRevisionDraftRow, quoteLineClipboardMeta, quoteLineReadColumns, quoteLineVendorLabel } from "./previous-revision";
+import { PreviousRevisionDraftRow, quoteLineClipboardMeta, quoteLineReadColumns, quoteLineVendorLabel, savedVendorFrom } from "./previous-revision";
 import { StatusChange, type StatusChangeProps } from "./status-change";
 import { CustomerApprovalLine, NewRevisionDialog, type CustomerApprovalProps, type NewRevisionProps } from "./revision-dialogs";
 import { PeriodField, periodText, type PeriodDraft, type PeriodFieldError } from "./period-field";
@@ -557,7 +557,7 @@ export function mergeRestoredEdits(
     }
     if (column === "new") {
       const line = restoredNewLine(value, defaultSubcategory, kindCells, owner);
-      if (line) added.push(line);
+      if (line) added.push({ ...line, savedVendor: savedVendorFrom(lines, line.vendorId) });
       continue;
     }
     const patch = restoredCellPatch(column, value);
@@ -1420,6 +1420,7 @@ export function QuoteLedger({
         lineKind: source.lineKind,
         itemName: source.itemName,
         vendorId: source.vendorId,
+        savedVendor: source.savedVendor,
         quantity: source.quantity,
         unitPriceAmount: source.unitPriceAmount,
         unitPriceCurrency: source.unitPriceCurrency,

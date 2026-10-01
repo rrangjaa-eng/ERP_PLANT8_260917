@@ -1,6 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { test, expect } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { expectGapsAtLeastToken, expectNoRowOverflow, loginAsSysadmin, textLineCount } from "./row-actions-helpers";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { findUserByEmail } from "@/repositories/users";
+import { insertCorpCard, setCorpCardActive } from "@/repositories/corp-cards";
 
 // MAST-03: 법인카드를 개인/팀 구분과 함께 등록·비활성화할 수 있고, 소지자와
 // 팀이 동시에 채워진 카드를 만들 수 없다는 것을 화면·액션·domain 세 곳에서
@@ -122,4 +127,74 @@ test.describe("법인카드 관리 화면 (MAST-03)", () => {
     const response = await page.goto("/admin/corp-cards");
     expect(response?.status()).toBe(404);
   });
+});
+
+// 260930-f3l /design-review FINDING-001: 법인카드 표 행 동작 「수정 · 비활성화 · 삭제」 사이 가로 간격이 0px라 한 낱말처럼 읽혔다.
+// 사람 목록(PR #108)의 .rowActions 규칙(--s-4)을 같은 이름으로 적용한다(SYSTEM §6-1). 700은 .rowActions가 nowrap을 지키는 가장 좁은 폭(D3).
+test.describe("법인카드 행 동작 간격 --s-4 (260930-f3l FINDING-001)", () => {
+  async function seed(): Promise<{ target: string; cleanup: () => Promise<void> }> {
+    const stamp = randomUUID().slice(0, 8);
+    const holder = await findUserByEmail(SYSTEM_VIEWER, (await createFixtureUser({ roleId: DEFAULT_ROLE_ID })).email);
+    const issuer = `간격카드사-${stamp}`;
+    // 다른 열이 긴 행이 있어야 동작 칸이 눌린다 — 앞 테스트가 남긴 데이터에 기대지 않는다.
+    const long = await insertCorpCard(SYSTEM_VIEWER, {
+      issuer,
+      numberLast4: "1111",
+      label: `${"가".repeat(60)}${stamp}`,
+      kind: "personal",
+      holderUserId: holder!.id,
+    });
+    const target = await insertCorpCard(SYSTEM_VIEWER, {
+      issuer,
+      numberLast4: "2222",
+      label: `간격대상-${stamp}`,
+      kind: "personal",
+      holderUserId: holder!.id,
+    });
+    return {
+      target: target.label,
+      cleanup: async () => {
+        await setCorpCardActive(SYSTEM_VIEWER, long.id, false);
+        await setCorpCardActive(SYSTEM_VIEWER, target.id, false);
+      },
+    };
+  }
+
+  for (const width of [1280, 768, 700]) {
+    test(`${width}: 수정 · 비활성화 · 삭제 사이가 한 줄에서 --s-4 이상이고 표가 넘치지 않는다`, async ({ page }) => {
+      const { target, cleanup } = await seed();
+      try {
+        await page.setViewportSize({ width, height: 800 });
+        await loginAsSysadmin(page);
+        await page.goto("/admin/corp-cards");
+        const row = page.locator("tr", { hasText: target });
+        const edit = row.getByRole("link", { name: "수정" });
+        const deactivate = row.getByRole("button", { name: "비활성화" });
+        const remove = row.getByRole("button", { name: "삭제" });
+        await expectNoRowOverflow(page, row, `${width}px 일반 상태`);
+        const gaps = await expectGapsAtLeastToken(page, [edit, deactivate, remove], `${width}px`);
+        expect(gaps.every((item) => item.horizontal), `${width}px 한 줄`).toBe(true);
+        expect(await textLineCount(edit), "「수정」 글자 줄 수").toBe(1);
+      } finally {
+        await cleanup();
+      }
+    });
+  }
+
+  for (const width of [700, 768, 1024, 1280]) {
+    test(`${width}: 「삭제」를 누른 뒤에도 페이지와 표가 가로로 넘치지 않는다`, async ({ page }) => {
+      const { target, cleanup } = await seed();
+      try {
+        await page.setViewportSize({ width, height: 800 });
+        await loginAsSysadmin(page);
+        await page.goto("/admin/corp-cards");
+        const row = page.locator("tr", { hasText: target });
+        await row.getByRole("button", { name: "삭제" }).click();
+        await expect(row.getByRole("button", { name: "취소" })).toBeVisible();
+        await expectNoRowOverflow(page, row, `${width}px 확인 상태`);
+      } finally {
+        await cleanup();
+      }
+    });
+  }
 });

@@ -195,12 +195,17 @@ test.describe("폰 결재 시트 (04.1-05)", () => {
     expect(refresh?.height ?? 0).toBeGreaterThanOrEqual(44);
 
     // 본문이 행동 줄까지 내려오도록 낮은 화면에서 끝까지 내린다(높은 화면에서는 짧은 문서가 애초에 가려지지 않는다).
+    // 아래 여백은 ResizeObserver → state로 행동 줄 높이를 늦게 따라온다(충돌 줄 전 61 → 뒤 113) — 따라올 때까지 끝까지 내려 다시 잰다.
     await lead.setViewportSize({ width: 375, height: 420 });
-    await lead.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-    const content = await lead.locator("main dl").last().boundingBox();
-    const lineBox = await line.boundingBox();
-    if (!content || !lineBox) throw new Error("본문 · 충돌 줄 없음");
-    expect(content.y + content.height).toBeLessThanOrEqual(lineBox.y);
+    await expect
+      .poll(async () => {
+        await lead.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+        const content = await lead.locator("main dl").last().boundingBox();
+        const lineBox = await line.boundingBox();
+        if (!content || !lineBox) throw new Error("본문 · 충돌 줄 없음");
+        return lineBox.y - (content.y + content.height);
+      })
+      .toBeGreaterThanOrEqual(0);
   });
 
   test("폰 결재함 접힌 줄에 `기안자 · MM-DD · 잔여 초과 N일`, 문서 칸 2행은 폰에서 숨는다(UI-SPEC S4)", async ({ browser, baseURL }) => {

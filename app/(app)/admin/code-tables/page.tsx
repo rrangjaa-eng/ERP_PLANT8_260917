@@ -169,10 +169,10 @@ export default async function CodeTablesPage({
                   {canWrite || canArchive ? (
                     <td>
                       {item.archivedAt ? null : (
-                        <>
+                        <span className={styles.rowActions}>
                           {canWrite ? <CodeItemActiveToggle id={item.id} active={item.active} /> : null}
                           {canArchive ? <CodeItemDeleteButton id={item.id} label={item.label} /> : null}
-                        </>
+                        </span>
                       )}
                     </td>
                   ) : null}

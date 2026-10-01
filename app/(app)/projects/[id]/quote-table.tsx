@@ -1666,11 +1666,17 @@ export function QuoteLedger({
           ariaLabel: "소분류",
           initialValue: row.subcategory,
           // 04-23(D-93) — 편집 중에만 고른 소분류의 코드표 설명 한 줄(Select). 그 칸에 오류가 있으면 오류가 이긴다.
-          options: subcategories.map((option) => ({
-            value: option.value,
-            label: option.label,
-            description: row.cellErrors.subcategory ? null : option.description,
-          })),
+          // 끈 · 보관 분류를 쓰는 줄은 그 현재 값만 선택지에 남긴다 — 없으면 select가 빈 값을 골라 칸을 나가기만 해도 값이 지워진다.
+          options: [
+            ...subcategories.map((option) => ({
+              value: option.value,
+              label: option.label,
+              description: row.cellErrors.subcategory ? null : option.description,
+            })),
+            ...(row.subcategory && !subcategories.some((option) => option.value === row.subcategory)
+              ? [{ value: row.subcategory, label: subcategoryLabel(row.subcategory), description: null }]
+              : []),
+          ],
           onCommit: (value) => {
             commitCell(row.clientKey, "subcategory", { subcategory: value });
             ctx.onCommit(value);

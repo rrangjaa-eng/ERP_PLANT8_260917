@@ -128,6 +128,21 @@ test("비활성 견적 분류를 쓰던 줄도 편집 · 보기 전용 계정 �
     const optionValues = await cell.locator("select option").evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
     expect(optionValues).toContain("stage_construction");
     expect(optionValues).not.toContain(item.value);
+    await page.keyboard.press("Escape");
+
+    // 독립 검토(#138) — 끈 분류 줄의 소분류 칸을 열었다 나가기만 해도 값이 비면 안 된다(현재 값은 그대로 남는다).
+    const offRow = table.locator('tbody tr:has(td[role="gridcell"])', { hasText: "끈 분류 줄" });
+    const offCell = offRow.getByRole("gridcell").nth(1);
+    await expect(async () => {
+      await offCell.focus();
+      await page.keyboard.press("Enter");
+      await expect(offCell.locator("select")).toBeFocused({ timeout: 1000 });
+    }).toPass();
+    await expect(offCell.locator("select")).toHaveValue(item.value);
+    await page.keyboard.press("Tab");   // 칸을 나가며 커밋 — 다음 칸(항목)이 편집으로 열리므로 Escape로 닫는다
+    await page.keyboard.press("Escape");
+    await expect(offCell).toHaveText(item.label);
+    await expect(page.getByText("소분류 필요")).toHaveCount(0);
   } finally {
     await setCodeItemArchived(SYSTEM_VIEWER, item.id, true);
   }

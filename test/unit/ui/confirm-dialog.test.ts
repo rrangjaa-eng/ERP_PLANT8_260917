@@ -190,18 +190,24 @@ describe("ConfirmDialog — 「· 새로 고침」 꼬리 → 3차 「새로 고
     expect(html).toContain('aria-disabled="true"');
   });
 
-  it("호출처가 다음 한 수를 직접 주면 그것이 먼저고 이유 글자는 그대로다", () => {
-    const html = render({
-      title: "진행으로 바꾸기",
-      primary: {
-        label: "진행으로 바꾸기",
-        onConfirm: () => {},
-        disabledReason: "시작일 없음 · 새로 고침",
-        nextStep: createElement("button", { type: "button" }, "기간 적기"),
-      },
-    });
-    expect(html).toContain("시작일 없음 · 새로 고침");
-    expect(html).toContain("기간 적기");
-    expect(html).not.toContain("<span>새로 고침</span>");
+  it("꼬리가 있으면 호출처가 준 다음 한 수 대신 「새로 고침」이 서고, 꼬리가 없으면 호출처 것이 그대로다", () => {
+    const withStep = (disabledReason: string) =>
+      render({
+        title: "진행으로 바꾸기",
+        primary: {
+          label: "진행으로 바꾸기",
+          onConfirm: () => {},
+          disabledReason,
+          nextStep: createElement("button", { type: "button" }, "기간 적기"),
+        },
+      });
+    const tailed = withStep("상태가 진행으로 바뀜 · 새로 고침");
+    expect(tailed).not.toContain("· 새로 고침");
+    expect(tailed).toContain("<span>새로 고침</span>");
+    expect(tailed).not.toContain("기간 적기");
+    const plain = withStep("시작일 없음 · 기간 적기");
+    expect(plain).toContain("시작일 없음 · 기간 적기");
+    expect(plain).toContain(">기간 적기</button>");
+    expect(plain).not.toContain("<span>새로 고침</span>");
   });
 });

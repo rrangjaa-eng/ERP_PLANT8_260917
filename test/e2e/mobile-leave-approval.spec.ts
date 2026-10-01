@@ -144,6 +144,59 @@ test.describe("폰 결재 시트 (04.1-05)", () => {
     await expect(trigger).toBeFocused();
   });
 
+  // §7-17 ERROR(2026-10-01) — 서버 거부 꼬리 ` · 새로 고침`은 3차 버튼이고, 폰은 이유 · 버튼이 행동 줄 윗줄이다.
+  // 「새로 고침」은 새 화면이 그려진 뒤 닫는다(먼저 닫으면 낡은 값으로 다시 보낼 수 있다 — /review 적대적 검토).
+  test("폰 반려 확인 시트에서 서버가 거부하면 꼬리 없는 이유 + 「새로 고침」이 버튼 윗줄이고, 누르면 새 화면이 그려진 뒤 닫힌다", async ({ browser, baseURL }) => {
+    const today = seoulToday();
+    const range = leaveWeekdayRange(today, { week: 2, weekdays: 2 });
+    const org = await setupLeaveOrg(today);
+    const doc = await submitLeave(org.drafter.viewer, { kind: "full_day", startDate: range.startDate, endDate: range.endDate, half: "" });
+
+    const lead = await loginPage(browser, baseURL, org.teamLead, PHONE);
+    await lead.goto("/approvals");
+    const trigger = lead.getByRole("button", { name: documentLabel(range) });
+    await trigger.click();
+    await lead.getByRole("dialog").getByRole("button", { name: "반려" }).click();
+    const sheet = lead.getByRole("dialog");
+    await expect(sheet.getByRole("heading", { level: 2 })).toHaveText("연차 반려");
+    await sheet.getByLabel("사유").fill("일정 겹침");
+    await withdrawDocument(org.drafter.viewer, { instanceId: doc.instanceId, expectedVersion: doc.version });
+    const primary = sheet.getByRole("button", { name: /^반려/ });
+    await primary.click();
+
+    const reason = sheet.getByText(/에 회수함$/).filter({ visible: true });
+    await expect(reason).toHaveCount(1);
+    const refresh = sheet.getByRole("button", { name: "새로 고침" });
+    await expect(refresh).toBeVisible();
+    await expect(primary).toHaveAttribute("aria-disabled", "true");
+    const [reasonBox, refreshBox, cancelBox, primaryBox] = [
+      await reason.boundingBox(),
+      await refresh.boundingBox(),
+      await sheet.getByRole("button", { name: /^취소/ }).boundingBox(),
+      await primary.boundingBox(),
+    ];
+    expect(refreshBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+    expect((reasonBox?.y ?? 0) + (reasonBox?.height ?? 0)).toBeLessThanOrEqual(cancelBox?.y ?? 0);
+    expect((refreshBox?.y ?? 0) + (refreshBox?.height ?? 0)).toBeLessThanOrEqual(cancelBox?.y ?? 0);
+    expect(Math.abs((primaryBox?.width ?? 0) - 2 * (cancelBox?.width ?? 0))).toBeLessThanOrEqual(1);
+
+    // 거부가 붙은 동안 Ctrl+Enter도 막힌다 — 서버 액션이 더 가지 않는다.
+    let actionsAfterReject = 0;
+    lead.on("request", (request) => {
+      if (request.method() === "POST" && request.headers()["next-action"]) actionsAfterReject += 1;
+    });
+    await primary.focus();
+    await lead.keyboard.press("Control+Enter");
+
+    await refresh.click();
+    await expect(sheet).toHaveCount(0);
+    // 닫힌 순간 이미 새 화면이다 — 회수된 문서의 행이 없다(기다리지 않고 한 번만 잰다). 목록이 비어 다이얼로그째
+    // 사라져도 포커스는 화면 제목이다.
+    expect(await trigger.count()).toBe(0);
+    await expect(lead.locator("h1")).toBeFocused();
+    expect(actionsAfterReject).toBe(0);
+  });
+
   // 사용자 결정(2026-09-29 · PR #90 A2·A3): 폰 행동 줄은 결재 시트와 문서 화면 모두 반려(2차) 왼쪽 · 승인(1차)
   // 오른쪽이고, 두 버튼 사이는 --s-4(16px) 이상이다.
   test("폰 결재 시트와 문서 화면 행동 줄은 반려가 왼쪽 · 승인이 오른쪽이고 사이가 16px 이상이다", async ({ browser, baseURL }) => {

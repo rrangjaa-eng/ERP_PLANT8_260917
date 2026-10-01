@@ -116,7 +116,10 @@ describe("docs/design/SYSTEM.md — 확인 모달 SUCCESS · ERROR · 근거 칸
   it("§7-17 ERROR — 「새로 고침」은 화면을 다시 받고 닫으며, 거부가 붙은 동안 1차가 막힌다", () => {
     expect(confirmModal).not.toContain("그대로 붙고");
     expect(cell("ERROR")).not.toContain("그대로 붙고");
-    expect(confirmModal).toContain("`새로 고침`은 화면 데이터를 다시 받고 다이얼로그를 닫는다");
+    expect(confirmModal).toContain("`새로 고침`은 화면 데이터를 다시 받아 새 화면이 그려진 뒤 다이얼로그를 닫는다(받는 동안 `새로 고침…`");
+    // 꼬리가 있으면 그 이유의 다음 한 수는 언제나 「새로 고침」 — 호출처가 준 다음 한 수는 다른 이유의 짝이다.
+    expect(confirmModal).not.toContain("직접 주면 그것이 먼저다");
+    expect(confirmModal).toContain("호출한 화면이 준 다음 한 수보다 먼저다");
     expect(confirmModal).toContain("거부가 붙은 동안 1차는 막힌다(`Ctrl+Enter` 포함) — 근거 칸을 고치거나 다이얼로그를 닫았다 다시 열면 풀린다");
   });
 

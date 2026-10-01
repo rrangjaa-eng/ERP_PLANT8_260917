@@ -9,7 +9,7 @@ registerAction({
   dtoName: null,
 });
 
-// 04.2-12: 수동 추가(되돌리기도 같은 액션). 돌려주는 값은 날짜·연도뿐이다.
+// 04.2-12: 수동 추가. 돌려주는 값은 날짜·연도뿐이다.
 registerAction({
   name: "addHolidayAction",
   menu: "admin.holidays",
@@ -17,9 +17,17 @@ registerAction({
   dtoName: null,
 });
 
-// 04.2-12: 수동 미래 행 삭제. 지운 행의 날짜·이름·구분만 돌려준다.
+// 04.2-12: 수동 미래 행 삭제(= 보관). 지운 행의 id·날짜·이름·구분만 돌려준다.
 registerAction({
   name: "deleteHolidayAction",
+  menu: "admin.holidays",
+  action: "write",
+  dtoName: null,
+});
+
+// quick 261001-hfi: 결과 줄 `되돌리기` = 보관된 행 복원. 복원 여부만 돌려준다.
+registerAction({
+  name: "restoreHolidayAction",
   menu: "admin.holidays",
   action: "write",
   dtoName: null,

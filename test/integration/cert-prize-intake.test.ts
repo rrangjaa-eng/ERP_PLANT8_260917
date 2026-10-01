@@ -260,6 +260,44 @@ describe("경품 빠짐(prizeGone) — 고른 경품을 받을 수 없게 됨", 
     expect(result.kind).toBe("prizeGone");
     expect(objectCount(ev.eventId)).toBe(0);
   });
+
+  // 사용자 결정 2026-10-01(PR #88 5931337199) — 낡은 목록(현장일 때 열었다가 담당자가 택배로 바꿈)에서 주소 칸 없이 낸 제출은
+  // 막다른 길(invalid(address)인데 주소 칸이 없다)이 되지 않게 prizeGone으로 새 목록을 돌려준다. 클라이언트는 빈 주소의
+  // 택배 제출을 막으므로 낡은 목록에서만 닿는다. 잠금 전 검사라 업로드 의도 행 · 서명 객체를 만들기 전이다.
+  it("택배 경품 + 빈 주소(낡은 목록) → prizeGone(지금 목록 — 그 경품이 택배로) · 저장 0 · 서명 객체 0 · 의도 행 0", async () => {
+    const ev = await leakEvent();
+    const terms = await currentTerms();
+    for (const address of [undefined, "", "   "]) {
+      const result = await submitCertificate(
+        ev.token,
+        inputFor(ev.prizeB, terms, address === undefined ? {} : { address }),
+        "203.0.113.9",
+      );
+      expect(result.kind).toBe("prizeGone");
+      if (result.kind === "prizeGone") {
+        expect(result.prizes.find((p) => p.id === ev.prizeB)).toEqual({ id: ev.prizeB, name: B.name, delivery: "parcel" });
+      }
+    }
+    expect(await submissionsOf(ev.eventId)).toHaveLength(0);
+    expect(objectCount(ev.eventId)).toBe(0);
+    const intents = await db
+      .select()
+      .from(certSignatureUploads)
+      .where(like(certSignatureUploads.objectKey, `signatures/${ev.eventId}/%`));
+    expect(intents).toHaveLength(0);
+  });
+
+  it("택배 경품 + 200자 넘는 주소는 그대로 invalid(address) · 저장 0 · 의도 행 0", async () => {
+    const ev = await leakEvent();
+    const result = await submitCertificate(
+      ev.token,
+      inputFor(ev.prizeB, await currentTerms(), { address: "가".repeat(201) }),
+      "203.0.113.9",
+    );
+    expect(result).toEqual({ kind: "invalid", fields: ["address"] });
+    expect(await submissionsOf(ev.eventId)).toHaveLength(0);
+    expect(objectCount(ev.eventId)).toBe(0);
+  });
 });
 
 describe("안내 바뀜(termsChanged)", () => {

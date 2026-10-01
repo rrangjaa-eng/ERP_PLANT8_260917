@@ -455,8 +455,10 @@ cat > "$GH_STUB_DIR/gh" <<'STUB'
 [ "${GH_STUB_RC:-0}" = "0" ] || exit "$GH_STUB_RC"
 case " $* " in
   *patch*) cat "$GH_STUB_PATCH" ;;                                       # 게이트 로그 패치(.patch) — files보다 먼저
-  */contents/*) case "${GH_STUB_CONTENTS:-ok}" in                        # 대상 브랜치의 게이트 로그(raw)
-                  404) echo '{"message":"Not Found","status":"404"}'; exit 1 ;;
+  */contents/*) [ -z "${GH_STUB_LOG:-}" ] || printf '%s\n' "$*" >> "$GH_STUB_LOG"
+                case "${GH_STUB_CONTENTS:-ok}" in                        # 대상 브랜치의 게이트 로그(raw)
+                  404) echo '{"message":"Not Found","status":"404"}'; echo 'gh: Not Found (HTTP 404)' >&2; exit 1 ;;   # 실제 gh 2.89와 같게
+                  404stderr) echo 'gh: Not Found (HTTP 404)' >&2; exit 1 ;;                                              # 본문 없이 stderr만 내는 gh
                   fail) echo '{"message":"Server Error","status":"502"}'; exit 1 ;;
                   *) cat "$GH_STUB_BASE" ;;
                 esac ;;
@@ -810,6 +812,11 @@ GH_STUB_CONTENTS=fail merge_hook "$SGs" "$projGs" $'domain/x.ts\n.claude/gates/p
 expect_rc "merge(PR 게이트): 대상 브랜치 로그를 못 읽음(502) -> exit 2" 2 "$HOOK_RC"
 GH_STUB_CONTENTS=404 merge_hook "$SGs" "$projGs" $'domain/x.ts\n.claude/gates/phase-09.log' 0 "" "" $'@@ -0,0 +1,2 @@\n+review 2026-10-01T00:00Z session=b\n+qa 2026-10-01T00:01Z session=b'
 expect_rc "merge(PR 게이트): 새 로그(대상 브랜치에 없음, 404) + review·qa -> 통과" 0 "$HOOK_RC"
+GH_STUB_CONTENTS=404stderr merge_hook "$SGs" "$projGs" $'domain/x.ts\n.claude/gates/phase-09.log' 0 "" "" $'@@ -0,0 +1,2 @@\n+review 2026-10-01T00:00Z session=b\n+qa 2026-10-01T00:01Z session=b'
+expect_rc "merge(PR 게이트): 새 로그 404를 stderr로만 알리는 gh + review·qa -> 통과" 0 "$HOOK_RC"
+: > "$TMPDIR/gh-log"
+GH_STUB_LOG="$TMPDIR/gh-log" GH_STUB_BASEREF='release#1&x' merge_hook "$SGs" "$projGs" $'domain/x.ts\n.claude/gates/phase-04.log' 0 "" "" $'@@ -0,0 +1,2 @@\n+review 2026-10-01T00:00Z session=b\n+qa 2026-10-01T00:01Z session=b'
+expect_contains "merge(PR 게이트): 대상 브랜치 이름을 URL 인코딩해 contents에 넘김" "$(cat "$TMPDIR/gh-log")" "ref=release%231%26x"
 GH_STUB_BASEREF="" merge_hook "$SGs" "$projGs" $'domain/x.ts\n.claude/gates/phase-04.log' 0 "" "" $'@@ -0,0 +1,2 @@\n+review 2026-10-01T00:00Z session=b\n+qa 2026-10-01T00:01Z session=b'
 expect_rc "merge(PR 게이트): PR 대상 브랜치를 모름 -> exit 2" 2 "$HOOK_RC"
 merge_hook "$SGs" "$projGs" $'domain/x.ts\n.claude/gates/x#y.log' 0 "" "" $'@@ -0,0 +1,2 @@\n+review 2026-10-01T00:00Z session=b\n+qa 2026-10-01T00:01Z session=b'

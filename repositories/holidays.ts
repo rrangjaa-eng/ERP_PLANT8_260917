@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, gte, inArray, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { withDeadlineTransaction } from "@/db/deadline-transaction";
@@ -103,7 +103,7 @@ export async function insertHolidayRows(
   const inserted = await tx
     .insert(holidays)
     .values(rows.map((row) => ({ ...row, createdBy: row.createdBy ?? null })))
-    .onConflictDoNothing({ target: holidays.date })
+    .onConflictDoNothing({ target: holidays.date, where: isNull(holidays.archivedAt) })
     .returning({ id: holidays.id });
   return inserted.length;
 }
@@ -149,7 +149,7 @@ export async function findHolidayDates(viewer: Viewer, years: readonly number[],
     const rows = await reader
       .select({ date: holidays.date })
       .from(holidays)
-      .where(or(...years.map(yearRange)))
+      .where(and(isNull(holidays.archivedAt), or(...years.map(yearRange))))
       .orderBy(asc(holidays.date));
     return rows.map((row) => row.date);
   });
@@ -167,6 +167,7 @@ export async function findBlockingDates(
     .from(holidays)
     .where(
       and(
+        isNull(holidays.archivedAt),
         inArray(holidays.kind, ["temporary", "election", "substitute"]),
         gte(holidays.date, range.from),
         lte(holidays.date, range.to),
@@ -195,7 +196,7 @@ export async function listHolidaysForYear(
     .select({ holiday: holidays, createdByName: users.name })
     .from(holidays)
     .leftJoin(users, eq(users.id, holidays.createdBy))
-    .where(yearRange(year))
+    .where(and(isNull(holidays.archivedAt), yearRange(year)))
     .orderBy(asc(holidays.date));
   return rows.map((row) => ({ ...row.holiday, createdByName: row.createdByName }));
 }
@@ -203,7 +204,7 @@ export async function listHolidaysForYear(
 export async function listHolidayYears(viewer: Viewer): Promise<number[]> {
   void viewer;
   const year = sql<number>`extract(year from ${holidays.date})::int`;
-  const rows = await db.selectDistinct({ year }).from(holidays).orderBy(year);
+  const rows = await db.selectDistinct({ year }).from(holidays).where(isNull(holidays.archivedAt)).orderBy(year);
   return rows.map((row) => row.year);
 }
 
@@ -244,14 +245,18 @@ export async function insertManualHoliday(
   const inserted = await tx
     .insert(holidays)
     .values(row)
-    .onConflictDoNothing({ target: holidays.date })
+    .onConflictDoNothing({ target: holidays.date, where: isNull(holidays.archivedAt) })
     .returning({ id: holidays.id });
   return inserted.length > 0;
 }
 
 export async function findHolidayByDate(viewer: Viewer, date: string, tx: DbOrTx = db): Promise<HolidayRow | null> {
   void viewer;
-  const [row] = await tx.select().from(holidays).where(eq(holidays.date, date)).limit(1);
+  const [row] = await tx
+    .select()
+    .from(holidays)
+    .where(and(eq(holidays.date, date), isNull(holidays.archivedAt)))
+    .limit(1);
   return row ?? null;
 }
 

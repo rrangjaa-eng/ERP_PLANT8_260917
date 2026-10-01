@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, uuid, date, integer, timestamp, unique, check } from "drizzle-orm/pg-core";
+import { pgTable, text, uuid, date, integer, timestamp, uniqueIndex, check } from "drizzle-orm/pg-core";
 import { users } from "./auth";
 
 // Phase 04.2(ADMN-11): 영업일 계산이 읽는 공휴일 표 하나 — 날짜마다 한 행.
@@ -16,9 +16,12 @@ export const holidays = pgTable(
     originYear: integer("origin_year"),
     createdBy: text("created_by").references(() => users.id),
     createdAt: timestamp("created_at").notNull().defaultNow(),
+    archivedAt: timestamp("archived_at"),
+    archivedBy: text("archived_by"),
   },
   (table) => [
-    unique("holidays_date_key").on(table.date),
+    // 보관된 행은 날짜를 붙잡지 않는다(quick 261001-hfi D-01) — 같은 날짜 재추가 · 대체일 재배치가 보관 행에 막히지 않게.
+    uniqueIndex("holidays_date_active_key").on(table.date).where(sql`${table.archivedAt} is null`),
     check("holidays_kind_check", sql`${table.kind} in ('statutory', 'substitute', 'temporary', 'election')`),
     check(
       "holidays_origin_year_check",

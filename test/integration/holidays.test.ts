@@ -9,7 +9,9 @@ import { INITIAL_MANUAL_HOLIDAYS, LunarTableRangeError } from "@/domain/holidays
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import {
   deleteHolidayById,
+  findBlockingDates,
   findHolidayByDate,
+  findHolidayDates,
   findYearConfirmation,
   insertHolidayRows,
   insertManualHoliday,
@@ -432,7 +434,50 @@ describe("관리자 저장소 · 미래 대체일 재계산 (D-4210)", () => {
     const error = await withHolidayCalendarLock((tx) =>
       insertSubstituteRows(SYSTEM_VIEWER, [{ date: "2027-10-04", name: "충돌", originYear: 2026 }], tx),
     ).catch((caught: unknown) => caught);
-    expect(isUniqueViolation(error, "holidays_date_key")).toBe(true);
+    expect(isUniqueViolation(error, "holidays_date_active_key")).toBe(true);
     expect(await substitutesBetween("2027-01-01", "2028-12-31")).toEqual(before);
+  });
+});
+
+// ADMN-12 · quick 261001-hfi D-01 — 보관된 공휴일 행은 어떤 날짜 계산에도 공휴일로 잡히지 않고 날짜를 붙잡지 않는다.
+describe("보관된 공휴일은 공휴일이 아니다(ADMN-12 · D-01)", () => {
+  // 공유 DB — 다른 테스트와 겹치지 않는 먼 해의 평일(2034-03-07 화, 음력 표 안).
+  const DATE = "2034-03-07";
+
+  async function archiveByRaw(date: string): Promise<void> {
+    await db.update(holidays).set({ archivedAt: new Date() }).where(eq(holidays.date, date));
+  }
+
+  it("h1 · h2: 보관 행은 날짜 목록 · 해 목록 · 날짜 찾기 · 막는 날에서 빠지고 그날은 영업일이다", async () => {
+    await clearHolidayTables();
+    await addManual(DATE);
+    expect(await findHolidayDates(SYSTEM_VIEWER, [2034])).toContain(DATE);
+    await archiveByRaw(DATE);
+
+    expect(await findHolidayDates(SYSTEM_VIEWER, [2034])).not.toContain(DATE);
+    expect((await listHolidaysForYear(SYSTEM_VIEWER, 2034)).map((row) => row.date)).not.toContain(DATE);
+    expect(await findHolidayByDate(SYSTEM_VIEWER, DATE)).toBeNull();
+    expect(await listHolidayYears(SYSTEM_VIEWER)).not.toContain(2034);
+    expect((await findBlockingDates(SYSTEM_VIEWER, { from: "2034-03-01", to: "2034-03-31" })).manual).not.toContain(DATE);
+    expect(await isBusinessDayKst(DATE)).toBe(true);
+  });
+
+  it("h3: 보관 행과 같은 날짜로 수동 공휴일을 다시 넣을 수 있고, 활성 행이 있으면 지금처럼 건너뛴다", async () => {
+    await clearHolidayTables();
+    await addManual(DATE);
+    await archiveByRaw(DATE);
+    const row = { date: DATE, name: "다시", kind: "temporary" as const, createdBy: null };
+    expect(await insertManualHoliday(SYSTEM_VIEWER, row)).toBe(true);
+    expect(await insertManualHoliday(SYSTEM_VIEWER, row)).toBe(false);
+    expect(await findHolidayByDate(SYSTEM_VIEWER, DATE)).toMatchObject({ name: "다시" });
+  });
+
+  it("h4: 법정 행 적재도 활성 중복만 건너뛴다 — 보관 행과 같은 날짜의 법정 행은 들어간다", async () => {
+    await clearHolidayTables();
+    await addManual(DATE);
+    await archiveByRaw(DATE);
+    const statutory = [{ date: DATE, name: "법정", kind: "statutory" as const }];
+    expect(await insertHolidayRows(SYSTEM_VIEWER, statutory)).toBe(1);
+    expect(await insertHolidayRows(SYSTEM_VIEWER, statutory)).toBe(0);
   });
 });

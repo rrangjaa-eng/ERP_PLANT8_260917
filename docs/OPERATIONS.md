@@ -273,6 +273,21 @@ account·db-bootstrap·restore 다섯만 Job으로 존재한다) — `.env.local
 항목을 한 줄씩 나열하고 종료 코드 1로 끝난다 — 상태는 가져오기 전 그대로다. 파일이
 없거나 JSON이 아니거나 `settings` 필드가 없으면 사용법 오류(종료 코드 2)다.
 
+## 13. Codex 디자인 검토
+
+Codex는 `/design-review`·`/plan-design-review`에서 `scripts/codex-design-review.sh`로만 쓴다(그 밖의
+gstack 리뷰는 `codex_reviews disabled`). 설치는 `scripts/install-codex.sh`(pnpm 전역, SessionStart 훅이
+승인 전이면 손으로 실행). 인증은 ChatGPT 구독만 — API 키는 쓰지 않는다. 자격 옮기기: 1) PC에서
+`codex login`(브라우저) → `~/.codex/auth.json` 2) base64 한 줄 변환:
+```bash
+base64 -w0 ~/.codex/auth.json                                            # Linux
+base64 -i ~/.codex/auth.json | tr -d '\n'                                # macOS
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("$env:USERPROFILE\.codex\auth.json"))  # PowerShell
+```
+3) claude.ai 환경(plant8) 변수 `CODEX_AUTH_JSON_B64`에 붙여넣기 4) `api.openai.com`·`chatgpt.com`·
+`auth.openai.com`은 클라우드 세션 프록시를 통과한다 — 다른 환경에서 막히면 그 환경 허용 목록에 추가
+5) 갱신 실패(로그인 풀림) 시 2번을 다시 해 값 교체 6) 토큰은 리포·커밋·문서에 절대 넣지 않는다.
+
 ## 14. 백업·복원 (OPS-03)
 
 자동 백업은 `deploy.sh`가 켠다(`--backup-start-time=18:00` UTC · `--retained-backups-count=7`, 확인: `gcloud sql instances describe plant8-{env}-db --format='value(settings.backupConfiguration)'`). PITR은 꺼져 있다 — 복원 단위는 하루 1회 자동 백업이고 그 뒤 입력은 복원에서 사라진다.

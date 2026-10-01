@@ -128,6 +128,27 @@ describe("action-log 조회·필터·정리 (ADMN-10·OPS-05, 실제 Postgres)",
     expect(stillThere?.prunedAt).toBeNull();
   });
 
+  // 04.3-14 사용자 결정 5936870579 — 개인정보 접속기록(cert_view · mask_reveal · cert_correct)은 월 1회 점검 대상이라
+  // (안전성 확보조치 기준 제8조②) 정리 표시를 할 수 없다. 종류 필터로 골라도, 문서 필터에 섞여 있어도 남는다.
+  it("접속기록 세 종류는 정리 대상이 아니다 — 같은 필터의 다른 행만 정리된다", async () => {
+    const actor = await makeTestUser();
+    const doc = uniqueDocumentId();
+    await recordDocumentCreate(actor, doc);
+    for (const actionType of ["cert_view", "mask_reveal", "cert_correct"]) {
+      await recordAction(actor, { actionType, documentId: doc });
+    }
+
+    const result = await pruneActionLog(SYSTEM_VIEWER, { documentId: doc });
+    expect(result.count).toBe(1);
+    const left = await queryActionLog(SYSTEM_VIEWER, { documentId: doc });
+    expect(left.map((row) => row.actionType).sort()).toEqual(["cert_correct", "cert_view", "mask_reveal"]);
+
+    for (const actionType of ["cert_view", "mask_reveal", "cert_correct"]) {
+      expect((await pruneActionLog(SYSTEM_VIEWER, { documentId: doc, actionType })).count).toBe(0);
+    }
+    expect(await queryActionLog(SYSTEM_VIEWER, { documentId: doc })).toHaveLength(3);
+  });
+
   it("열람 권한이 없는 계급의 조회가 거부된다", async () => {
     const pmViewer = { id: `pm-${randomUUID()}`, roleId: DEFAULT_ROLE_ID };
     await expect(queryActionLog(pmViewer, {})).rejects.toBeInstanceOf(ForbiddenError);

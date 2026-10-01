@@ -259,4 +259,24 @@ describe("본문 한도 예산 — 서명 상한 + 나머지 칸 최대치가 26
     expect(Object.keys(payload).sort()).toEqual(Object.keys(submitCertificateSchema.shape).sort());
     expect(submitCertificateSchema.safeParse(payload).success).toBe(true);
   });
+
+  // 04.3-16 V5 — 표본의 문자열 칸마다 길이가 스키마 최대 길이와 같아야 한다. 스키마 한도를 늘리고 표본을 그대로 두면
+  // 「본문 한도 예산」이 옛 최대치로 재게 되어 한도 초과를 놓친다 — 그때 이 테스트가 실패한다.
+  it("표본의 문자열 칸은 모두 스키마 최대 길이(maxLength)와 같은 길이다(04.3-16 V5)", () => {
+    const payload = maxPayload(SIGNATURE_MAX_PNG_BYTES);
+    const checked: string[] = [];
+    for (const [key, value] of Object.entries(payload)) {
+      if (typeof value !== "string") continue;
+      const field = submitCertificateSchema.shape[key as keyof typeof submitCertificateSchema.shape];
+      // optional 칸(address)은 감싼 안쪽 문자열 스키마가 최대 길이를 든다.
+      const inner = "unwrap" in field && typeof field.unwrap === "function" ? field.unwrap() : field;
+      const max = (inner as { maxLength?: number | null }).maxLength;
+      if (max === null || max === undefined) continue; // 길이 한도가 없는 문자열 칸(uuid · 정규식)은 모양이 판정한다
+      expect(value.length, `${key} 표본 길이`).toBe(max);
+      checked.push(key);
+    }
+    expect(checked.sort()).toEqual(
+      ["address", "consentVersion", "name", "phone", "rrnBack7", "rrnFront6", "signaturePngBase64", "token"].sort(),
+    );
+  });
 });

@@ -532,6 +532,12 @@ describe("경합 — 제출과 가액 변경(행사 행 잠금 규약)", () => {
     expect(await submissionsOf(ev.eventId)).toHaveLength(0);
     expect(await counterOf()).toBe(counterBefore);
     expect(objectCount(ev.eventId)).toBe(0);
+    // 업로드 의도 행도 없다(04.3-15 R1 테스트와 같은 단언 — 04.3-16 V4).
+    const intents = await db
+      .select()
+      .from(certSignatureUploads)
+      .where(like(certSignatureUploads.objectKey, `signatures/${ev.eventId}/%`));
+    expect(intents).toHaveLength(0);
   });
 });
 

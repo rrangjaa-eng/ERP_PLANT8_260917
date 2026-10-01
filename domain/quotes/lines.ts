@@ -59,6 +59,7 @@ import {
   findLatestQuoteRevision as repoFindLatestQuoteRevision,
 } from "@/repositories/quote-revisions";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
+import { findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
 import { getSettingValue } from "@/domain/settings/registry";
 import { QUOTE_LINE_MAX_PER_REVISION } from "@/domain/settings/keys";
 
@@ -87,6 +88,7 @@ type QuoteLineProjectable = {
   subcategory: string;
   itemName: string;
   vendorId: string | null;
+  vendorName: string | null;
   quantity: number;
   unitPrice: MoneyDto;
   execution: MoneyDto;
@@ -109,7 +111,7 @@ type LineEditFacts = {
   readonlyReason: string | null;
 };
 
-function toProjectable(row: QuoteLineRow, facts: LineEditFacts): QuoteLineProjectable {
+function toProjectable(row: QuoteLineRow, facts: LineEditFacts, vendorName: string | null): QuoteLineProjectable {
   return {
     id: row.id,
     revisionId: row.revisionId,
@@ -117,6 +119,7 @@ function toProjectable(row: QuoteLineRow, facts: LineEditFacts): QuoteLineProjec
     subcategory: row.subcategory,
     itemName: row.itemName,
     vendorId: row.vendorId,
+    vendorName,
     quantity: Number(row.quantity),
     unitPrice: moneyToDto(
       moneyFromRow({
@@ -155,6 +158,8 @@ export type QuoteLineDto = {
   subcategory: string;
   itemName: string;
   vendorId: string | null;
+  // /qa ISSUE-001 — 거래처 이름(보관 · 숨김 거래처도). 선택지에 없는 거래처를 UUID 대신 이름으로 그린다.
+  vendorName: string | null;
   quantity: number;
   unitPrice: MoneyDto;
   execution: MoneyDto;
@@ -183,6 +188,8 @@ export const QUOTE_LINE_DTO_SPEC: DtoSpec<QuoteLineProjectable, QuoteLineDto> = 
     { key: "itemName", from: "itemName", infoItem: "project.value" },
     // quick 261001-85g(Codex 리뷰 P1) — 거래처 정보가 가려진 계급에게는 거래처 id도 싣지 않는다(저장은 서버가 기존 값을 지킨다).
     { key: "vendorId", from: "vendorId", infoItem: ["project.value", "vendor.value"] },
+    // /qa ISSUE-001 — 거래처 이름은 거래처 정보다. 프로젝트 정보와 함께 볼 때만(all-of, 리저브 선택지와 같은 결).
+    { key: "vendorName", from: "vendorName", infoItem: ["project.value", "vendor.value"] },
     { key: "quantity", from: "quantity", infoItem: "project.value" },
     { key: "unitPrice", from: "unitPrice", infoItem: "quote.amount" },
     { key: "execution", from: "execution", infoItem: "quote.amount" },
@@ -264,6 +271,8 @@ async function projectLines(
   ctx: QuoteLineListCtx,
   linked: LinkedDocumentsByLine,
 ): Promise<QuoteLineDto[]> {
+  const vendorIds = [...new Set(rows.flatMap((row) => (row.vendorId ? [row.vendorId] : [])))];
+  const vendorNames = await repoFindVendorNamesByIds(viewer, vendorIds);
   const projectables = rows.map((row) => {
     const firstLinked = linked.get(row.id)?.[0];
     const hasLinkedDocuments = firstLinked !== undefined;
@@ -279,7 +288,7 @@ async function projectLines(
       }),
       hasLinkedDocuments,
       readonlyReason: firstLinked ? linkedDocumentReason(firstLinked.number) : null,
-    });
+    }, row.vendorId ? (vendorNames.get(row.vendorId) ?? null) : null);
   });
   return (await projectMany(viewer, projectables, QUOTE_LINE_DTO_SPEC)) as QuoteLineDto[];
 }

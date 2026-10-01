@@ -523,7 +523,9 @@ export type SaveQuoteLinesResult = { lines: QuoteLineDto[] };
 
 // 저장 입력 — 차수의 줄 배치. `order`는 저장 뒤 활성 줄 전체의 표시 순서(보관할 줄 제외 · 새 줄 포함),
 // `archivedLineIds`는 이번 저장에서 지울(보관할) 줄(엔지 리뷰 A §2 P2 · D-56).
-export type QuoteLinesWriteInput = { rows: QuoteLineWriteRow[]; order?: string[]; archivedLineIds?: string[] };
+// `vendorShown`은 화면이 그려질 때 거래처가 보였는지(Codex 리뷰 P1, PR #125) — 거짓이면 그 사이 노출표가 바뀌어도
+// 거래처를 본 적 없는 화면이라 서버가 거래처를 기존 값으로 둔다.
+export type QuoteLinesWriteInput = { rows: QuoteLineWriteRow[]; order?: string[]; archivedLineIds?: string[]; vendorShown?: boolean };
 
 // A-37 — 화면 입력 검증. 줄 상태는 QUOTE_LINE_STATUSES만, 줄·보관·순서 id는 uuid. 줄 id가 없는 새 줄은
 // 04-30이 화면 uuid를 싣기 전까지의 과도기다(액션이 서버 uuid를 붙인다). 기존 줄은 version을 싣는다.
@@ -581,6 +583,7 @@ export const quoteLinesInputSchema = z.object({
   rows: z.array(quoteLineRowInputSchema),
   order: z.array(z.string().uuid()).optional(),
   archivedLineIds: z.array(z.string().uuid()).optional(),
+  vendorShown: z.boolean().optional(),
 });
 
 export type QuoteLineWriteDeps = {
@@ -920,13 +923,12 @@ export async function writeQuoteLinesInTx(
       if (archived) await judgeStructure(id, lineKindOf(archived), { kind: "archive", quoteAmountZero: archived.quoteAmountKrw === 0 });
     }
 
+    const vendorShown = prepared.vendorShown && input.vendorShown !== false;
     for (const [rowIndex, received] of input.rows.entries()) {
       // 04-13 — 판정·저장이 보는 종류: 기존 줄은 잠근 tx로 다시 읽은 DB 행, 새 줄만 요청 값(없으면 quote).
       const current = received.isNew ? undefined : currentById.get(received.id);
-      // /review 적대 검토 — 가려진 채 불러온 화면(버전 같음 · baseline 거래처 null · DB 거래처 있음)은 그 사이 거래처가
-      // 보이게 바뀌었어도 거래처를 본 적이 없다. 보이는 화면이라면 같은 버전의 baseline은 DB 값과 같다.
-      const sawNoVendor = current !== undefined && received.version === current.version && received.baseline?.vendorId === null && current.vendorId !== null;
-      const requested = prepared.vendorShown && !sawNoVendor ? received : keepHiddenVendor(received, current, currentById);
+      // /review 적대 검토 — 가려진 채 그린 화면은 그 사이 거래처가 보이게 바뀌었어도 거래처를 본 적이 없다.
+      const requested = vendorShown ? received : keepHiddenVendor(received, current, currentById);
       const resolved = resolveLineKind(requested, current && lineKindOf(current));
       if (resolved === null) deny(LINE_EDIT_RULE, new UserFacingError(KIND_CHANGED));
       const kind = resolved ?? lineKindOf(current!);

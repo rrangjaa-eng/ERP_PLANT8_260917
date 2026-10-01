@@ -1562,6 +1562,7 @@ export function QuoteLedger({
               revisionId,
               order,
               archivedLineIds: archivedLineIds.length > 0 ? archivedLineIds : undefined,
+              vendorShown,
               rows: dirtyLines.map((line) => ({
                 id: line.id,
                 isNew: line.isNew,

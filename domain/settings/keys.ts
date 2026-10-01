@@ -341,9 +341,11 @@ export const CERT_LINK_EXPIRE_HOURS: SettingDef<number> = {
   kind: "simple",
   schema: z.coerce.number().int().min(1).max(720),
   label: "확인증 링크 유효 시간(시간)",
-  hint: "행사 링크를 만든 뒤 이 시간(시간)이 지나면 링크가 닫힙니다.",
+  hint: "링크는 당첨일 00:00에 열리고 · 당첨일 00:00과 QR 생성 가운데 늦은 때부터 이 시간이 지나면 링크가 닫힙니다.",
   namespace: "확인증",
   default: 72,
+  // 04.3-15: 유일한 독자였던 행사 만들기를 지웠다 — 04.3-10 QR 생성(Phase 4 안)이 다시 읽는다.
+  readBy: { phase: "4" },
 };
 
 export const CERT_RETENTION_YEARS: SettingDef<number> = {
@@ -376,29 +378,6 @@ export const CERT_CONTACT_PHONE: SettingDef<string> = {
   hint: "확인증 화면에 보일 문의 전화번호입니다(행사를 만들 때 이 값이 그 행사에 복사됩니다).",
   namespace: "확인증",
   default: "",
-};
-
-// 04.3-03 Task 1 ① — 전화번호 뒤 4자리 짧은 잠김 두 키(CONTEXT 「이미 확정된
-// 입력」 5회 · 3분이 기본값). 누적 잠김 문턱 20은 설정이 아니라
-// domain/certs/verify-lock.ts의 고정 상수다(소유자 결정 2026-09-24).
-export const CERT_VERIFY_MAX_ATTEMPTS: SettingDef<number> = {
-  key: "cert.verify.max_attempts",
-  kind: "simple",
-  schema: z.coerce.number().int().min(1).max(20),
-  label: "확인증 전화번호 틀림 한도(회)",
-  hint: "수령자가 전화번호 뒤 4자리를 이 횟수만큼 틀리면 그 자리의 확인이 잠시 잠깁니다.",
-  namespace: "확인증",
-  default: 5,
-};
-
-export const CERT_VERIFY_LOCK_MINUTES: SettingDef<number> = {
-  key: "cert.verify.lock_minutes",
-  kind: "simple",
-  schema: z.coerce.number().int().min(1).max(60),
-  label: "확인증 전화번호 잠금 시간(분)",
-  hint: "틀림 한도에 닿은 자리는 이 시간(분) 동안 확인할 수 없습니다.",
-  namespace: "확인증",
-  default: 3,
 };
 
 // 04.3-07 — 개인정보취급자 비활동 만료(CONTEXT 「이미 확정된 입력」 2시간). 확인증
@@ -509,8 +488,6 @@ export const SETTING_DEFS: SettingDef<unknown>[] = [
   CERT_LINK_EXPIRE_HOURS,
   CERT_RETENTION_YEARS,
   CERT_CONTACT_PHONE,
-  CERT_VERIFY_MAX_ATTEMPTS,
-  CERT_VERIFY_LOCK_MINUTES,
   CERT_PRIVACY_IDLE_MINUTES,
   DOCUMENT_NUMBER_CERT_PREFIX,
   DOCUMENT_NUMBER_CERT_YEAR_DIGITS,

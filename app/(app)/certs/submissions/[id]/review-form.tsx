@@ -59,8 +59,9 @@ type Outcome =
   | null;
 
 const SAVE_FAILED: Outcome = { kind: "failed", text: "저장 실패 · 다시 시도" };
-// 04.3-17 「대조 제외」 실패 — 다시 보내면 되는 실패는 모달 안 1차 왼쪽 줄(§7-17 failure). 충돌은 정정 충돌 꼴(동사만 바뀜).
-const EXCLUDE_FAILED = "제외하지 못했습니다 · 다시 시도";
+// 04.3-17 「대조 제외」 실패 — 다시 보내면 되는 실패는 모달 안 1차 왼쪽 줄(§7-17 failure). 충돌은 정정 충돌 꼴(`저장 실패 · …`
+// → `대조 제외 실패 · …`). 명사형은 사용자 결정 A(2026-09-26 — UI-SPEC 「제외하지 못했습니다」를 옮김, /design-review 확인).
+const EXCLUDE_FAILED = "대조 제외 실패 · 다시 시도";
 
 type ExcludeResponse = Awaited<ReturnType<typeof excludeCertSubmissionAction>> | undefined;
 
@@ -144,7 +145,7 @@ export function ReviewForm(props: {
     if (data?.kind === "conflict") {
       const name = data.byName || "다른 사람";
       const at = HHMM_FORMAT.format(new Date(data.at));
-      setExcludeFailure({ text: `제외하지 못했습니다 · ${name}${subjectParticle(name)} ${at}에 먼저 고침 · `, reload: true });
+      setExcludeFailure({ text: `대조 제외 실패 · ${name}${subjectParticle(name)} ${at}에 먼저 고침 · `, reload: true });
       return;
     }
     setExcludeFailure({ text: EXCLUDE_FAILED, reload: false });

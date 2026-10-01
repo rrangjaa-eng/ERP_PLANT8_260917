@@ -12,7 +12,8 @@ import styles from "./event-detail.module.css";
 // 「링크 닫기」: 공용 확인 부품(§7-17) — 다시 보내면 되는 실패는 모달 안 1차 왼쪽 줄(`primary.failure`), 1차는 막지 않는다.
 // 「신청 취소」: 저장된 경품 줄이 0일 때만 켜지고 확인 없이 지운다(N4 a) — 1 이상이면 비활성 + 이유(경영관리 · 신청자 문장 둘).
 
-const CLOSE_FAILED = "닫지 못했습니다 · 다시 시도";
+// 실패 문장은 명사형(사용자 결정 A 2026-09-26 · error-copy-noun-style — UI-SPEC 「닫지 못했습니다」를 옮김, /design-review 확인).
+const CLOSE_FAILED = "링크 닫기 실패 · 다시 시도";
 // 결과 불명 — 신청 · 생성 · 저장과 같은 명사형(04.3-10 선례).
 const CANCEL_UNKNOWN = "신청 취소 결과 모름 · 다시 누르기";
 

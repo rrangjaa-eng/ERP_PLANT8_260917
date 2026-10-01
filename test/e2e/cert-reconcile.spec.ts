@@ -227,7 +227,7 @@ test("「링크 닫기」 — 모달 문장 넷 · Esc 취소 · 응답 끊김 �
   await trigger.click();
   await dialog.getByRole("button", { name: /^링크 닫기/ }).click();
   const failure = dialog.getByRole("alert");
-  await expect(failure).toHaveText("닫지 못했습니다 · 다시 시도");
+  await expect(failure).toHaveText("링크 닫기 실패 · 다시 시도");
   await expect(dialog.getByRole("button", { name: /^링크 닫기/ })).not.toHaveAttribute("aria-disabled", "true");
   await dialog.getByRole("button", { name: /^링크 닫기/ }).click();
   await expect(page.getByRole("status").filter({ hasText: "링크 닫기 · 제출 4건" })).toBeVisible();

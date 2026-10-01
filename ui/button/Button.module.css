@@ -60,6 +60,8 @@
   background: none;
   color: var(--accent);
   white-space: nowrap;
+  /* 대기 중 라벨 span과 「…」 span이 떨어지면 글자 밑줄이 두 토막이 된다(PR #111 리뷰). 3차엔 kbd 병기가 없다. */
+  gap: 0;
   text-decoration: underline;
   text-decoration-thickness: var(--line-w);
   text-underline-offset: var(--underline-offset);

@@ -160,6 +160,8 @@
 
 ### 대기 중 3차 버튼 밑줄 두 토막(PR #111 /review · /qa)
 
+**해결:** PR #111(Codex 리뷰 P2) — `.tertiary`의 flex gap을 0으로 둬 「…」가 라벨에 붙고 밑줄이 한 줄로 이어진다(3차 버튼엔 kbd 병기가 없다). 단위 CSS 단언 + E2E 대기 상태 실측(간격 8 → 0px).
+
 **What:** 공유 Button `.tertiary` 밑줄이 `<button>`(flex)에 걸려 대기 중에는 라벨 `<span>`과 「…」 `<span>`에 따로 그어지고 사이 8px(`--s-2`)는 비어 보인다(/qa 실측: 라벨 29.38px + 간격 8px + 「…」 9.8px, 밑줄 색 `--line`). 밑줄을 라벨 span에만 걸지(`.tertiary > span:first-child`) 정한다.
 
 **Why:** 예전 border-bottom은 한 줄이었다. 요청 중 잠깐만 보이지만 3차 버튼 약 35곳 전부 해당.

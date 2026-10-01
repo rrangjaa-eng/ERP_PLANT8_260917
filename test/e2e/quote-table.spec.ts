@@ -1159,6 +1159,36 @@ test.describe("견적 줄 표 — 쪽 경계 키보드·전체 복사·힌트 �
     expect(JSON.parse((await copied.jsonValue()) as string)).toHaveLength(45);
   });
 
+  test("표에 처음 들어온 셀(0,0)에서 Alt+↓로 줄을 옮기면 탭 정지가 옮긴 줄을 따라간다", async ({ page }) => {
+    await openProjectWithSavedLines(page, fortyFiveLines());
+    // 첫 탭 정지는 (0,0) — 격자 좌표가 아직 기억되지 않은 채로 같은 셀이 focus를 받는다.
+    const first = quoteCell(page, 0, 0);
+    await expect(first).toHaveAttribute("tabindex", "0");
+    await expect.poll(() => first.evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactFiber")))).toBe(true);
+    await first.focus();
+    await page.keyboard.press("Alt+ArrowDown");
+    await expect(quoteCell(page, 1, 2)).toHaveText("A줄1");
+    await expect(quoteCell(page, 1, 0)).toBeFocused();
+    await expect(quoteCell(page, 1, 0)).toHaveAttribute("tabindex", "0");
+  });
+
+  test("Shift+↓ 두 번은 세 칸 범위로 남고, Control+a 뒤 Enter로 편집에 들어가면 전체 선택이 풀린다", async ({ page }) => {
+    await openProjectWithSavedLines(page, fortyFiveLines());
+    const cell = quoteCell(page, 3, 2);
+    await expect.poll(() => cell.evaluate((element) => Object.keys(element).some((key) => key.startsWith("__reactFiber")))).toBe(true);
+    await cell.focus();
+    await page.keyboard.press("Shift+ArrowDown");
+    await page.keyboard.press("Shift+ArrowDown");
+    await expect(quoteCell(page, 5, 2)).toBeFocused();
+    await expect(quoteTable(page).locator("td[class*=selectedCell]")).toHaveCount(3);
+
+    await page.keyboard.press("Control+a");
+    await expect(quoteCell(page, 29, 2)).toHaveClass(/selectedCell/);
+    await page.keyboard.press("Enter");
+    await expect(quoteCell(page, 5, 2).locator("input")).toBeFocused();
+    await expect(quoteTable(page).locator("td[class*=selectedCell]")).toHaveCount(0);
+  });
+
   test("힌트 줄은 일곱 항목이고 페이지 줄 바로 다음 형제 · 매출 표 아래에는 없고 · 1000 폭에서는 없다", async ({ page }) => {
     await openProjectWithSavedLines(page, fortyFiveLines());
     const hint = page.locator("p", { has: page.locator("kbd", { hasText: "Ctrl+D" }) });

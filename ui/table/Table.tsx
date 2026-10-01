@@ -897,10 +897,11 @@ export function Table<Row>({
                               setActiveCell({ rowId, columnKey: column.key });
                             }
                           }}
-                          onFocus={() => {
-                            // 같은 셀로 다시 오는 focus(이동 뒤 DOM 포커스 맞추기 · React가 수화 뒤 다시 보내는 focusin)는 선택을 지우지 않는다.
-                            const same = keyboardState.focus.row === pos.row && keyboardState.focus.col === pos.col;
-                            if (enableGridKeyboard && !same) keyboardState.setFocus(pos);
+                          onFocus={(event) => {
+                            if (!enableGridKeyboard) return;
+                            // 셀 안 편집기·버튼으로 들어가는 focus는 전처럼 선택을 푼다.
+                            if (event.target === event.currentTarget) keyboardState.syncFocus(pos);
+                            else keyboardState.setFocus(pos);
                           }}
                           onKeyDown={
                             enableGridKeyboard

@@ -4,7 +4,7 @@
 // 판정은 DOM 실측으로만 한다(CLAUDE.md §6 「스크린샷 육안 판정 금지」).
 
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 
 export const VIEWPORTS = [
@@ -127,22 +127,39 @@ export function assertRealPaths(args: { out: string; plans: string[] }, root = p
   }
 }
 
+// 보고서는 같은 폴더의 새 임시 파일에 쓴 뒤 rename으로 바꿔 끼운다. 검사와 쓰기 사이에 그 자리가
+// 링크(심볼릭·하드)로 바뀌어도 rename은 링크 자리만 바꾸므로 링크 대상(보호 파일)을 덮지 않는다.
+export function writeReport(path: string, text: string): void {
+  mkdirSync(dirname(resolve(path)), { recursive: true });
+  const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tmp, text, { flag: "wx" });
+  renameSync(tmp, path);
+}
+
 // 동적 경로 자리 표시: {adminId} = 캡처 때 만든 관리자 계정 id(예: /admin/people/{adminId}).
 export function fillRoute(route: string, vars: { adminId: string }): string {
   return route.replaceAll("{adminId}", vars.adminId);
 }
 
 // .env 계열 파일에서 가릴 값을 모은다(8자 이상). Codex 출력에 섞여도 파일로 남기기 전에 가린다.
+// dotenv(@next/env)와 같은 문법으로 읽는다: 따옴표 값은 이스케이프·여러 줄 포함 닫는 따옴표까지,
+// 따옴표 없는 값은 첫 # 앞까지. 여러 줄 값(개인 키 등)은 줄마다도 가린다(일부만 되풀이돼도 가리게).
+const DOTENV_LINE =
+  /^\s*(?:export\s+)?[\w.-]+(?:\s*=\s*?|:\s+?)(\s*'(?:\\'|[^'])*'|\s*"(?:\\"|[^"])*"|\s*`(?:\\`|[^`])*`|[^#\r\n]+)?\s*(?:#.*)?$/gm;
 export function envFileSecrets(texts: string[]): string[] {
   const values: string[] = [];
   for (const text of texts) {
-    for (const line of text.split("\n")) {
-      const match = /^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*(.*)$/.exec(line);
-      const raw = (match?.[1] ?? "").trim();
-      // dotenv 문법: 따옴표 값은 닫는 따옴표까지, 따옴표 없는 값은 인라인 주석(" #") 앞까지.
-      const quoted = /^(["'`])(.*?)\1/.exec(raw);
-      const value = quoted ? (quoted[2] ?? "") : raw.replace(/\s+#.*$/, "");
-      if (value.length >= 8) values.push(value);
+    for (const match of text.replace(/\r\n?/g, "\n").matchAll(DOTENV_LINE)) {
+      const raw = (match[1] ?? "").trim();
+      const quote = raw[0];
+      let value = raw;
+      if ((quote === "'" || quote === '"' || quote === "`") && raw.endsWith(quote) && raw.length >= 2) {
+        value = raw.slice(1, -1);
+        if (quote === '"') value = value.replace(/\\n/g, "\n").replace(/\\r/g, "\r");
+      }
+      for (const v of [value, ...(value.includes("\n") ? value.split("\n") : [])]) {
+        if (v.trim().length >= 8) values.push(v.includes("\n") ? v : v.trim());
+      }
     }
   }
   return values;
@@ -285,7 +302,7 @@ export function buildPrompt(input: {
 
 export function codexArgs(prompt: string, imageFiles: string[]): string[] {
   // -i <FILE>...은 뒤 인자를 모두 파일로 먹는다 — 프롬프트를 첫 -i보다 앞에 둔다.
-  // --ephemeral: 프롬프트·실행 기록을 CODEX_HOME 세션 파일로 남기지 않는다(가리기 전 원문이 남지 않게).
+  // --ephemeral: Codex 세션 파일(프롬프트·도구 실행 기록)을 CODEX_HOME에 남기지 않는다.
   return ["exec", "--ephemeral", "--skip-git-repo-check", "-s", "read-only", prompt, ...imageFiles.flatMap((f) => ["-i", f])];
 }
 

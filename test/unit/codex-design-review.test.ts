@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -23,6 +23,7 @@ import {
   screenshotName,
   selectSystemSections,
   skipLine,
+  writeReport,
   type ElementMeasure,
   type Finding,
   type ScreenMeasure,
@@ -161,6 +162,12 @@ describe("assertRealPaths", () => {
     expect(() => assertRealPaths({ out: ".planning/esc/r.md", plans: [] }, root)).toThrow("--out");
   });
 
+  it("이미 있는 일반 보고서(링크 수 1)는 다시 써도 통과한다", () => {
+    const root = repo();
+    writeFileSync(join(root, ".planning", "r.md"), "old");
+    expect(() => assertRealPaths({ out: ".planning/r.md", plans: [] }, root)).not.toThrow();
+  });
+
   it("--out이 하드링크(링크 수 > 1)면 거부한다(보호 파일 덮어쓰기)", () => {
     const root = repo();
     linkSync(join(root, "CLAUDE.md"), join(root, ".planning", "r.md"));
@@ -173,6 +180,37 @@ describe("assertRealPaths", () => {
     writeFileSync(secret, "{}");
     symlinkSync(secret, join(root, "docs", "leak.md"));
     expect(() => assertRealPaths({ out: ".planning/r.md", plans: ["docs/leak.md"] }, root)).toThrow("--plan");
+  });
+});
+
+describe("writeReport", () => {
+  // 검사(assertRealPaths)와 쓰기 사이(캡처·codex로 수십 분)에 링크가 생겨도 링크 대상을 덮지 않는다.
+  function dirWith(protectedText: string) {
+    const dir = mkdtempSync(join(tmpdir(), "codex-dr-write-"));
+    writeFileSync(join(dir, "CLAUDE.md"), protectedText);
+    return dir;
+  }
+
+  it("보고서 자리에 심볼릭 링크가 생겨도 대상 대신 링크 자리를 바꾼다", () => {
+    const dir = dirWith("원본");
+    symlinkSync(join(dir, "CLAUDE.md"), join(dir, "r.md"));
+    writeReport(join(dir, "r.md"), "보고서");
+    expect(readFileSync(join(dir, "CLAUDE.md"), "utf8")).toBe("원본");
+    expect(readFileSync(join(dir, "r.md"), "utf8")).toBe("보고서");
+  });
+
+  it("보고서 자리에 하드링크가 생겨도 공유 내용을 덮지 않는다", () => {
+    const dir = dirWith("원본");
+    linkSync(join(dir, "CLAUDE.md"), join(dir, "r.md"));
+    writeReport(join(dir, "r.md"), "보고서");
+    expect(readFileSync(join(dir, "CLAUDE.md"), "utf8")).toBe("원본");
+    expect(readFileSync(join(dir, "r.md"), "utf8")).toBe("보고서");
+  });
+
+  it("상위 폴더가 없으면 만들고 쓴다", () => {
+    const dir = dirWith("x");
+    writeReport(join(dir, "a", "b", "r.md"), "보고서");
+    expect(readFileSync(join(dir, "a", "b", "r.md"), "utf8")).toBe("보고서");
   });
 });
 
@@ -195,6 +233,21 @@ describe("fillRoute · envFileSecrets", () => {
     expect(secrets).toContain("p#ss word 99");
     expect(secrets).toContain("x1y2z3w4");
     expect(secrets.some((v) => v.includes("credential") || v.includes("주석"))).toBe(false);
+  });
+
+  it("따옴표 없는 값에 붙은 #도 dotenv처럼 그 앞에서 자른다", () => {
+    expect(envFileSecrets(["SECRET=longsecretvalue#note"])).toEqual(["longsecretvalue"]);
+  });
+
+  it("큰따옴표 안 이스케이프된 따옴표를 값 끝으로 보지 않는다", () => {
+    expect(envFileSecrets(['A="abc\\"defghijklmn"'])).toEqual(['abc\\"defghijklmn']);
+  });
+
+  it("여러 줄 따옴표 값(개인 키)은 전체와 줄마다 가린다", () => {
+    const secrets = envFileSecrets(['PK="-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0B\n-----END PRIVATE KEY-----"\nNEXT=abcdefghij']);
+    expect(secrets).toContain("MIIEvQIBADANBgkqhkiG9w0B");
+    expect(secrets.some((v) => v.includes("BEGIN") && v.includes("MIIEvQIBADANBgkqhkiG9w0B"))).toBe(true);
+    expect(secrets).toContain("abcdefghij");
   });
 });
 
@@ -552,6 +605,18 @@ describe("scripts/codex-design-review.sh 건너뜀 계약", () => {
     const { result } = run(["/admin/people", "--out", join(dir, "r.md")]);
     expect(result.status).toBe(2);
     expect(readFileSync(target, "utf8")).toBe("원본");
+  });
+
+  it("--out이 일반 파일이면 그 자리를 새 파일로 바꿔 쓴다(링크 대상 덮기 방지)", () => {
+    const { result, out } = run(["/admin/people", "--out", "OUT"]);
+    expect(result.status).toBe(0);
+    const again = spawnSync("/bin/bash", [SCRIPT, "/admin/people", "--out", out], {
+      env: { ...process.env, PATH: "/usr/bin:/bin", HOME: tmpdir() },
+      encoding: "utf8",
+    });
+    expect(again.status).toBe(0);
+    expect(readFileSync(out, "utf8")).toMatch(/^Codex 디자인 검토 건너뜀: /);
+    expect(readdirSync(dirname(out))).toEqual(["report.md"]);
   });
 
   it("--out이 .planning/·test-results/의 .md가 아니면 2로 끝나고 쓰지 않는다", () => {

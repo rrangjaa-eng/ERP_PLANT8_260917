@@ -17,6 +17,7 @@ import {
   renderReport,
   selectSystemSections,
   skipLine,
+  writeReport,
   type ScreenMeasure,
 } from "./lib";
 
@@ -112,8 +113,9 @@ rmSync(codexDir, { recursive: true, force: true });
 const secrets = [
   authB64 ?? "",
   ...envFileSecrets(
-    readdirSync(".")
-      .filter((f) => /^\.env/.test(f))
+    readdirSync(".", { withFileTypes: true })
+      .filter((f) => f.isFile() && /^\.env/.test(f.name))
+      .map((f) => f.name)
       .map((f) => readFileSync(f, "utf8")),
   ),
 ];
@@ -133,8 +135,8 @@ const codexFailure = codex.error ? (codex.error as NodeJS.ErrnoException).code ?
 const codexStatus = codex.status === 0 ? "Codex 실행: 완료(exit 0)" : skipLine(`codex exec 실패(${codexFailure})`);
 
 const rows = crossCheck(parseCodexFindings(codexRaw), screens);
-mkdirSync(dirname(resolve(args.out)), { recursive: true });
-writeFileSync(
+assertRealPaths(args); // 캡처·codex 동안 경로가 바뀌었을 수 있다 — 쓰기 직전에 다시 본다
+writeReport(
   args.out,
   renderReport({ mode, base: args.base, plans: args.plans, artifactsDir, codexStatus, rows, measurementsMd, codexOutputPath }),
 );

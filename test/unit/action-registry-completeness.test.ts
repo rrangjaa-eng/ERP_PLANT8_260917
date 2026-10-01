@@ -18,9 +18,9 @@ const ACTIONS_WITHOUT_REGISTRY: Record<string, string[]> = {
   "app/(app)/account/actions.ts": ["changePasswordAction"],
   // 본인 알림함(04.2) — D-4208: 권한표 메뉴가 아니고 account와 같은 본인 범위라 등록하지 않는다(파일 머리 주석).
   "app/(app)/notifications/actions.ts": ["openInboxAction", "refreshUnreadCountAction", "loadMoreInboxAction"],
-  // 확인증 외부 수령자 공개 액션(04.3-02) — 세션 · 권한표 메뉴가 없는 링크 토큰 범위라 등록할 메뉴가 없다.
+  // 확인증 외부 수령자 공개 액션(04.3-02 · 04.3-15 제출 하나) — 세션 · 권한표 메뉴가 없는 링크 토큰 범위라 등록할 메뉴가 없다.
   // 첫 줄 가드는 test/unit/certs/public-route-boundary.test.ts가 고정한다.
-  "app/c/[token]/actions.ts": ["selectWinnerAction", "verifyLast4Action", "recheckLockAction", "submitCertificateAction"],
+  "app/c/[token]/actions.ts": ["submitCertificateAction"],
 };
 
 export type ActionFileEntry = { path: string; actionNames: string[]; registryNames: string[] | null };

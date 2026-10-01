@@ -19,15 +19,17 @@ async function expectTopBar(page: Page) {
 }
 
 test("열린 링크 · 닫힌 링크 · 없는 링크 모두 상단 바가 선다", async ({ page }) => {
-  const open = await createCertEvent({ name: "QA상단바", winners: [{ name: "김하늘", phone: "010-4821-7730" }] });
+  const open = await createCertEvent({ name: "QA상단바" });
+  if (!open.link) throw new Error("링크 없음");
   await page.goto(open.link);
   await expectTopBar(page);
 
-  await page.getByRole("button", { name: "김*늘" }).click();
-  await expect(page.getByLabel("전화번호 뒤 4자리")).toBeVisible();
+  await page.getByRole("button", { name: /^갤럭시 탭 S10/ }).click();
+  await expect(page.getByText("갤럭시 탭 S10 1개", { exact: true })).toBeVisible();
   await expectTopBar(page);
 
-  const closed = await createCertEvent({ name: "QA상단바닫힘", winners: [{ name: "이도윤", phone: "010-2231-0045" }] });
+  const closed = await createCertEvent({ name: "QA상단바닫힘" });
+  if (!closed.link) throw new Error("링크 없음");
   await db.update(certEvents).set({ closedAt: new Date(), closedReason: "manual" }).where(eq(certEvents.id, closed.eventId));
   await page.goto(closed.link);
   await expect(page.getByText("이 링크는 닫혔습니다")).toBeVisible();

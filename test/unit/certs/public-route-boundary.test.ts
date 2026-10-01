@@ -63,10 +63,10 @@ describe("공개 경로 경계 (T-04.3-09 · T-04.3-25)", () => {
 // 설정 cert.enabled를 끄므로 domain 두 겹째도 notFound를 내, 첫 줄을 지워도
 // 녹색이다(첫 겹을 증명하지 못한다).
 describe("규약 C1 첫 겹 — 공개 진입점 첫 문장", () => {
-  it("app/c/[token]/actions.ts의 .action 본문 넷 다 첫 문장이 await assertCertFeatureEnabled()다", () => {
+  it("app/c/[token]/actions.ts의 .action 본문(04.3-15 — 제출 하나) 첫 문장이 await assertCertFeatureEnabled()다", () => {
     const src = readFileSync(resolve(ROOT, "app/c/[token]/actions.ts"), "utf8");
     const firstStatements = [...src.matchAll(/\.action\(async \([^)]*\) => \{\s*([^;\n]+);/g)].map((m) => m[1]?.trim());
-    expect(firstStatements).toEqual(Array(4).fill("await assertCertFeatureEnabled()"));
+    expect(firstStatements).toEqual(Array(1).fill("await assertCertFeatureEnabled()"));
   });
 
   it("app/c/[token]/page.tsx 기본 export의 첫 문장이 await assertCertFeatureEnabled()다", () => {

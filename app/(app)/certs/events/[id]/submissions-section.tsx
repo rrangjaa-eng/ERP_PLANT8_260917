@@ -172,7 +172,7 @@ export function SubmissionsSection({
           ]}
           action={
             // 표 줄 링크와 같은 이유로 미리 가져오기 금지(04.3-14 E4-B2).
-            <Link href={reviewHref(sheet.row)} prefetch={false} className={styles.rowLink}>
+            <Link href={reviewHref(sheet.row)} prefetch={false} className={`${styles.rowLink} ${styles.sheetLink}`}>
               제출 내용
               <span className="sr-only">{linkSuffix(sheet.row)}</span>
             </Link>

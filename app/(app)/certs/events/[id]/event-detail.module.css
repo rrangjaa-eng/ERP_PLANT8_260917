@@ -249,6 +249,14 @@
   text-underline-offset: var(--underline-offset);
 }
 
+/* 폰 행 시트 안 「제출 내용」 — 폰 3차 터치 목표 44×44(SYSTEM §3 · DOM 감사 C-M3). 시트는 폰에만 열린다. */
+.sheetLink {
+  display: inline-flex;
+  align-items: center;
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+}
+
 .rowLink:hover {
   text-decoration-thickness: var(--line-w-strong);
 }

@@ -531,3 +531,29 @@
 **Effort:** M
 **Priority:** P2
 **Depends on:** ① 없음 · ② 사용자 결정 여부 판단
+
+## Codex 디자인 검토 후속(2026-10-01 quick 261001-3uq · PR #116)
+
+### rule-guard R3 우회 경로를 토큰 검사 밖에서 막기
+
+**What:** R3는 Bash 명령을 토큰으로 나눠 `codex` 실행을 찾는다. 이 방식으로는 다음 경로를 막을 수 없다: `node -e`·변수 간접 호출(`X=codex; $X`)·`find -exec`·`bash -c`(경고만). Codex 봇이 커밋마다 새로 찾는 우회도 이 묶음으로 모은다. 막는 쪽은 실행 단계(예: 디자인 스킬 밖에서는 PATH에서 codex를 빼거나, 감싸는 실행 파일이 스킬 기록을 확인)로 옮긴다.
+
+**Why:** 사용자 결정(2026-10-01): PR #116의 R3 우회 지적은 그 PR에서 계속 고치지 않고 후속으로 넘긴다. 1차 차단은 gstack `codex_reviews disabled`라 일상 리뷰 경로는 이미 막혀 있다.
+
+**Context:** `.claude/hooks/plant8-rule-guard.sh` R3, `.claude/hooks/tests/plant8-rule-guard.test.sh` R3-1~52. 위험 경로(`.claude/`)라 사용자 승인·직접 머지.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
+
+### Codex 실행 격리(별도 사용자·컨테이너)
+
+**What:** 디자인 검토의 Codex를 저장소·자격 파일을 읽을 수 없는 격리 환경에서 돌린다. refresh 토큰이 갈라지지 않게 자격 파일을 공유·회수하는 방법이 함께 필요하다.
+
+**Why:** 사용자가 PR #116에서 두 위험을 받아들였다(2026-10-01). 읽기 전용 샌드박스도 절대 경로 읽기는 되므로, 프롬프트 주입 시 `.env.local`·`~/.codex/auth.json` 값이 모델로 갈 수 있다. 저장되는 출력에서는 가린다.
+
+**Context:** `scripts/codex-design-review/run.ts`(임시 cwd·허용 env·비밀 가림).
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None

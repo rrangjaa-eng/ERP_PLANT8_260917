@@ -9,7 +9,8 @@ import { HolidayNotRestorableError } from "@/domain/holidays/admin";
 import "./actions.registry";
 
 // ADMN-12: domain/archive만 부른다(03-01의 보관·복원 진입점) — 등록은
-// ./actions.registry로 분리(03-03 선례).
+// ./actions.registry로 분리(03-03 선례). 예외 하나: 공휴일 복원 거부(HolidayNotRestorableError)를
+// 루트 오류로 바꾸려고 그 오류 클래스만 domain/holidays/admin에서 가져온다.
 const restoreArchivedSchema = z.object({ entity: z.string().min(1), id: z.string().min(1) });
 
 export const restoreArchivedAction = authedActionClient

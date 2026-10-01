@@ -11,6 +11,7 @@ import { createAccount } from "@/domain/auth/accounts";
 import { archivePerson } from "@/domain/people";
 import { findHolidayByDate } from "@/repositories/holidays";
 import { archive, restore, listArchive, ForbiddenError, ProtectedRowError } from "@/domain/archive";
+import { ARCHIVABLE_TABLES } from "@/repositories/archive";
 import { addHoliday, deleteHoliday } from "@/domain/holidays/admin";
 import { queryActionLog } from "@/domain/action-log";
 import { db } from "@/db/client";
@@ -179,6 +180,10 @@ describe("보관함 (ADMN-12, 실제 Postgres)", () => {
     const added = await addHoliday(admin, { date: "2034-06-07", kind: "election", name: "보궐선거" });
 
     await expect(archive(admin, "holiday", added.id)).rejects.toBeInstanceOf(ProtectedRowError);
+    // /review M1 — 범용 setArchived는 재계산 · 소급 금지를 건너뛰므로 직접 불려도 던진다(행은 그대로).
+    const holidayEntry = ARCHIVABLE_TABLES.find((entry) => entry.entity === "holiday");
+    await expect(holidayEntry?.setArchived(admin, added.id, true)).rejects.toThrow();
+    expect(await findHolidayByDate(SYSTEM_VIEWER, "2034-06-07")).toMatchObject({ id: added.id, archivedAt: null });
 
     await deleteHoliday(admin, added.id);
     const listed = await listArchive(admin);
@@ -211,6 +216,11 @@ describe("보관함 (ADMN-12, 실제 Postgres)", () => {
     const listed = await listArchive(admin);
     expect(listed.find((item) => item.id === future.id)).toMatchObject({ restorable: true });
     expect(listed.find((item) => item.id === past?.id)).toMatchObject({ restorable: false });
+    // 오늘 경계는 KST 날짜로 — 그 날짜 00:00 KST부터는 「오늘」이라 복원 불가(restoreHoliday의 `<= today`와 같다).
+    const atKstMidnight = await listArchive(admin, { now: new Date("2034-07-06T15:00:00Z") });
+    expect(atKstMidnight.find((item) => item.id === future.id)).toMatchObject({ restorable: false });
+    const justBefore = await listArchive(admin, { now: new Date("2034-07-06T14:59:59Z") });
+    expect(justBefore.find((item) => item.id === future.id)).toMatchObject({ restorable: true });
 
     const roleId = `role-${randomUUID()}`;
     await insertRole(SYSTEM_VIEWER, { id: roleId, name: `계급 ${roleId.slice(5, 13)}` });

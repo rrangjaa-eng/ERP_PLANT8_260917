@@ -16,12 +16,15 @@ type UndoResult =
   | null
   | undefined;
 
-// 되돌리기 결과 → 결과 줄 실패 문구. 거절(루트 오류)은 원인(` · ` 앞부분)을 싣고
+// 되돌리기 결과 → 결과 줄 실패 문구. 거절(루트 오류)은 원인(마지막 ` · ` 앞부분 — 이름에 ` · `가 있어도 잘리지 않게)을 싣고
 // `되돌리기`를 치운다. 연결·서버 실패(던짐은 null로 넘긴다)는 `다시 시도`로 남긴다.
 export function undoFailure(result: UndoResult): { text: string; retry: boolean } | null {
   if (result?.data) return null;
   const reason = result?.validationErrors?._errors?.[0];
-  if (reason) return { text: `되돌리기 실패 · ${reason.split(" · ")[0]}`, retry: false };
+  if (reason) {
+    const cut = reason.lastIndexOf(" · ");
+    return { text: `되돌리기 실패 · ${cut < 0 ? reason : reason.slice(0, cut)}`, retry: false };
+  }
   return { text: "되돌리기 실패 · 다시 시도", retry: true };
 }
 

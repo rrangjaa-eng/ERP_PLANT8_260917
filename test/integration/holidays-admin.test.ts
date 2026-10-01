@@ -674,12 +674,13 @@ describe("restoreHoliday — 보관된 공휴일 복원 = 되돌리기(ADMN-12 �
     expect(await rowsBetween("2027-06-08", "2027-06-08")).toHaveLength(0);
   });
 
-  it("활성 행 · 없는 id · 동시 중복 복원의 뒤 사람은 { restored: false }이고 로그가 없다", async () => {
+  // /review(#138) — 없는 id는 성공처럼 보이면 안 된다(거부). 활성 행 · 동시 중복 복원의 뒤 사람은 이미 활성이라 no-op.
+  it("활성 행 · 동시 중복 복원의 뒤 사람은 { restored: false }이고 로그가 없으며, 없는 id는 거부된다", async () => {
     const admin = await createViewer(SYSADMIN_ROLE_ID, "관리자");
     const added = await addHoliday(admin, { date: "2027-06-08", kind: "temporary", name: "x" }, { now: NOW_0924 });
 
     expect(await restoreHoliday(admin, added.id, { now: NOW_0924 })).toEqual({ restored: false });
-    expect(await restoreHoliday(admin, randomUUID(), { now: NOW_0924 })).toEqual({ restored: false });
+    await expect(restoreHoliday(admin, randomUUID(), { now: NOW_0924 })).rejects.toThrow("없는 공휴일 · 복원 불가");
     expect(await holidayLogs("restore")).toHaveLength(0);
 
     await deleteHoliday(admin, added.id, { now: NOW_0924 });

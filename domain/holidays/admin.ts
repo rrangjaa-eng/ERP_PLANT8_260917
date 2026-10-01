@@ -30,7 +30,7 @@ import { findUserById } from "@/repositories/users";
 
 // ADMN-11(04.2-11): 공휴일 관리 화면의 데이터와 연도 확정. 화면이 권한으로 버튼을
 // 숨겨도 도메인이 같은 권한을 다시 본다(T-4.2-70·73).
-const HOLIDAYS_MENU = "admin.holidays";
+export const HOLIDAYS_MENU = "admin.holidays";
 
 export class HolidayForbiddenError extends UserFacingError {}
 export class HolidayYearIncompleteError extends UserFacingError {}
@@ -322,7 +322,7 @@ export class HolidayNotRestorableError extends UserFacingError {}
 // ADMN-12(quick 261001-hfi): 보관된 공휴일 복원 — 삭제 결과 줄의 `되돌리기`와 보관함 복원이 같은 길을 탄다.
 // 달력 잠금 트랜잭션 하나에서: 보관 행 확인 → 소급 금지(오늘 이전 거부) → 그 날짜의 활성 행이 대체 행이면
 // 비우고(규칙이 옮긴다) 다른 공휴일이면 거부 → 보관 해제 → 원래 해 Y-1부터 재계산 → `holiday_change` op restore
-// 로그(D-4220). 이미 활성인 행 · 없는 id(동시 중복 복원의 뒤 사람)는 로그 없이 `{ restored: false }`.
+// 로그(D-4220). 이미 활성인 행(동시 중복 복원의 뒤 사람)은 로그 없이 `{ restored: false }`, 없는 id는 거부.
 export async function restoreHoliday(
   viewer: Viewer,
   id: string,
@@ -337,7 +337,8 @@ export async function restoreHoliday(
 
   return withHolidayCalendarLock(async (tx) => {
     const archived = await findHolidayById(viewer, id, tx);
-    if (!archived || archived.archivedAt === null) return { restored: false };
+    if (!archived) throw new HolidayNotRestorableError("없는 공휴일 · 복원 불가");
+    if (archived.archivedAt === null) return { restored: false };
     if (archived.date <= today) throw new HolidayNotRestorableError("오늘·지난 날짜 · 복원 불가");
     const existing = await findHolidayByDate(viewer, archived.date, tx);
     if (existing) {

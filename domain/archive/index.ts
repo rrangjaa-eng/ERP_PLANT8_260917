@@ -12,7 +12,7 @@ import { findUserById as defaultFindUserById } from "@/repositories/users";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { restoreQuoteLine } from "@/domain/quotes/lines";
 import { canViewReserves, restoreReserve } from "@/domain/reserves";
-import { restoreHoliday } from "@/domain/holidays/admin";
+import { HOLIDAYS_MENU, restoreHoliday } from "@/domain/holidays/admin";
 import { toKstDate } from "@/domain/holidays/business-day";
 
 // ADMN-12: "지우지 않는다" — archived_at/archived_by 규약의 유일한 진입점.
@@ -161,7 +161,7 @@ export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps
 
   // 독립 검토(#138) — 복원할 수 없는 공휴일 행은 「복원」을 내놓지 않는다(§7). 공휴일 복원은 공휴일 쓰기 권한과
   // 소급 금지(오늘 이후 날짜)를 요구한다(restoreHoliday) — 같은 판정을 목록에서 미리 한다.
-  const holidayWritable = rows.some((row) => row.entity === "holiday") && (await canFn(viewer, "admin.holidays", "write"));
+  const holidayWritable = rows.some((row) => row.entity === "holiday") && (await canFn(viewer, HOLIDAYS_MENU, "write"));
   const today = toKstDate(deps?.now ?? new Date());
   const isRestorable = (row: ArchivedItem) => row.entity !== "holiday" || (holidayWritable && row.date !== undefined && row.date > today);
 

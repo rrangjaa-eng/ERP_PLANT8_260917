@@ -74,9 +74,11 @@ export function ArchiveTable({ rows }: { rows: ArchiveTableRow[] }) {
                         id={item.id}
                         name={item.name}
                         onRestored={(name) => setToast({ message: `복원 · ${name} 복원됨`, tone: "default" })}
-                        onFailed={(reason) =>
-                          setToast({ message: `복원 · 실패 · ${reason?.split(" · ")[0] ?? "다시 시도"}`, tone: "error" })
-                        }
+                        onFailed={(reason) => {
+                          // 원인은 마지막 「 · 」 앞까지 — 이름에 「 · 」가 있어도 잘리지 않게.
+                          const cut = reason ? reason.lastIndexOf(" · ") : -1;
+                          setToast({ message: `복원 · 실패 · ${reason ? (cut < 0 ? reason : reason.slice(0, cut)) : "다시 시도"}`, tone: "error" });
+                        }}
                       />
                     ) : (
                       "—"

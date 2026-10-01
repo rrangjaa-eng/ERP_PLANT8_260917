@@ -494,6 +494,21 @@ test.describe("공휴일 보관함(quick 261001-hfi)", () => {
     await expect(archiveRow.getByRole("button", { name: "복원" })).toHaveCount(0);
     await expect(archiveRow.locator("td").last()).toHaveText("—");
   });
+
+  // /review(#138) — 그 날짜에 다른 공휴일이 생긴 행은 복원이 거부되고, 원인이 토스트에 실린다(행은 보관함에 남는다).
+  test("같은 날짜에 다른 공휴일이 있으면 보관함 복원은 원인을 실은 오류 토스트이고 행이 남는다", async ({ page }) => {
+    const conflicted = { date: ROW_B.date, name: "충돌 보관 공휴일 테스트" };
+    await db.insert(holidays).values({ ...conflicted, kind: "temporary", archivedAt: new Date(), archivedBy: null });
+    await loginAsSysadmin(page);
+    await page.goto("/admin/archive");
+    const archiveRow = page.locator("tr", { hasText: `${conflicted.date} ${conflicted.name}` });
+    await expect(archiveRow).toHaveCount(1);
+
+    await archiveRow.getByRole("button", { name: "복원" }).click();
+    await expect(page.getByText(`복원 · 실패 · 이미 공휴일(${ROW_B.name})`, { exact: true })).toBeVisible({ timeout: 15000 });
+    await page.reload();
+    await expect(archiveRow).toHaveCount(1);
+  });
 });
 
 // 04.2-12 Task 3 — 추가 폼 상태(UI-SPEC S2-d · Copywriting 막힘·칸 오류·폼 전체 오류).

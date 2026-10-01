@@ -33,6 +33,13 @@ describe("undoFailure — 되돌리기 결과 → 결과 줄 실패 문구", () 
     });
   });
 
+  it("이름에 「 · 」가 들어 있어도 원인은 마지막 「 · 」 앞까지 그대로", () => {
+    expect(undoFailure({ validationErrors: { _errors: ["이미 공휴일(설 · 연휴) · 복원 불가"] } })).toEqual({
+      text: "되돌리기 실패 · 이미 공휴일(설 · 연휴)",
+      retry: false,
+    });
+  });
+
   it("서버 오류 → 다시 시도, retry 있음", () => {
     expect(undoFailure({ serverError: "알 수 없는 오류" })).toEqual({
       text: "되돌리기 실패 · 다시 시도",

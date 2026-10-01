@@ -1,9 +1,9 @@
 ---
 phase: 03-permissions-settings-masters
-verified: 2026-10-01T03:40:51Z
+verified: 2026-10-01T04:38:30Z
 status: passed
 score: 6/6 must-haves verified
-covered_digest: "v1:sha256:43acccbce38ec76e89fd5d9d75cf0982bd1f99f2d91b51e263b56568fc221c6d"
+covered_digest: "v1:sha256:b07eda242fc47e1b448fafef853920e84388725172b04777097dd6d1e19c3e78"
 covered_files:
   - ".github/workflows/account.yml"
   - ".planning/REQUIREMENTS.md"
@@ -37,6 +37,7 @@ covered_files:
   - ".planning/phases/03-permissions-settings-masters/03-REVIEW-BATCH.md"
   - ".planning/phases/03-permissions-settings-masters/03-REVIEW.md"
   - ".planning/phases/03-permissions-settings-masters/03-SECURITY.md"
+  - ".planning/phases/03-permissions-settings-masters/03-UAT.md"
   - ".planning/phases/03-permissions-settings-masters/03-UI-SPEC.md"
   - ".planning/phases/03-permissions-settings-masters/03-VALIDATION.md"
   - "app/(app)/account/actions.ts"
@@ -233,6 +234,7 @@ covered_files:
   - "test/e2e/people.spec.ts"
   - "test/e2e/permissions-grid.spec.ts"
   - "test/e2e/roles.spec.ts"
+  - "test/e2e/row-actions-helpers.ts"
   - "test/e2e/settings.spec.ts"
   - "test/e2e/single-column.spec.ts"
   - "test/e2e/system-status.spec.ts"
@@ -275,6 +277,7 @@ covered_files:
   - "test/unit/actions/handle-server-error.test.ts"
   - "test/unit/actions/zod-error-message.test.ts"
   - "test/unit/admin-menu-registry.test.ts"
+  - "test/unit/app/tertiary-underline-css.test.ts"
   - "test/unit/archive-revalidate.test.ts"
   - "test/unit/code-tables/tax-rule.test.ts"
   - "test/unit/corp-cards/owner-rule.test.ts"
@@ -342,8 +345,9 @@ re_verification:
   previous_score: 6/6
   previous_verified: 2026-09-24T09:41:40Z
   round: 7
-  head: "aa5464e (claude/close-phases-02-03 — origin/main f85c9af 위에 `.planning/.continue-here.md` 삭제 1커밋. 코드 트리는 f85c9af와 같다)"
-  trigger: "verification status = stale — 6회차 covered_files 327개 중 167개가 2d7f73e 이후 바뀜(Phase 4 묶음 ②~④, 04.1 결재·연차, 04.2 알림·공휴일, 04.4 복원 리허설, quick·리뷰 수정). 2d7f73e..HEAD = 커밋 902개(first-parent 71개)"
+  head: "d49ad56 (claude/close-phases-02-03 — 7회차 본판정은 aa5464e(= f85c9af 코드 트리)에서 했고, 이후 origin/main bada253(PR #111)·48da153(PR #115)을 머지(9a03686)한 뒤 addendum을 이 HEAD에서 했다. HEAD 코드 트리는 더 이상 f85c9af와 같지 않다 — bada253의 관리자 행 동작·3차 버튼 CSS가 더해졌다. d49ad56은 9a03686 위 `.planning` 문서 1커밋)"
+  head_main_judgment: "aa5464e (origin/main f85c9af 위에 `.planning/.continue-here.md` 삭제 1커밋 — 그 시점 코드 트리는 f85c9af와 같았다)"
+  trigger: "verification status = stale — 6회차 covered_files 327개 중 167개가 2d7f73e 이후 바뀜(Phase 4 묶음 ②~④, 04.1 결재·연차, 04.2 알림·공휴일, 04.4 복원 리허설, quick·리뷰 수정). 2d7f73e..aa5464e = 커밋 841개(first-parent 70개 — `git rev-list --count` · GitHub compare API ahead_by 841로 확인)"
   what_changed:
     - "판정 함수: `can.ts`·`visible.ts` 무변경. `project.ts`가 `projectMany`(행 여러 개를 한 spec으로 — 서로 다른 정보 항목마다 `visible()`를 요청당 한 번)와 all-of `InfoItemRef`(문자열 또는 목록, 전부 보여야 키가 실림)를 얻었고 `project()`는 그 위의 한 행 래퍼다(캐시 없음 — 호출마다 DB 조회 유지). `dto-registry.ts`가 빈 목록 `infoItem: []`을 `EmptyInfoItemsError`로 거부(`every()` 공허 참 구멍 방지). `scope-for.ts`·`matrix.ts`·`archive`·`vendors`·`settings` 쪽은 오류 문구 명사형 변경 + 확장뿐"
     - "Phase 3 메커니즘에 등록만으로 올라탄 것: MENUS 22개(admin.* 11 — `admin.holidays` 추가, `projects.status·complete·period·adjustment`, `leave`), INFO_ITEMS에 `approval.value`·`leave.value`·`reserve.amount`, CORE·ALWAYS_ON 행동 종류에 `account_lock`·`account_unlock`·`holiday_change`, 설정 키(연차 이력형 등 — `kind: \"historized\"` 7개), 누수 스캔 import에 approvals·leave·reserves·holidays·quotes/revisions·people/[id] 레지스트리, 보관함 `DOMAIN_RESTORERS`(견적 줄·리저브 복원은 도메인 함수가 잠금·게이트·로그를 한 트랜잭션에서)"
@@ -359,7 +363,16 @@ re_verification:
       resolved_by: "04-20 (Phase 4) — `repositories/permissions.ts:120-153` `upsertVisibilityIfUnedited`·`insertVisibilityIfAbsent`, `domain/seed/index.ts:192-242`"
       evidence: "이번 라운드 직접 실행 green: `test/integration/project-status.test.ts` 「ENG-D3 ③ — 첫 시드의 노출 기본값, 관리자가 끈 기획 PM quote.amount·대표 revenue.issued_amount는 재시드 뒤에도 꺼져 있고 시스템 관리자 항목은 재시드가 켠다」·「A-05 — … 관리자가 끈 팀장 projects.status는 재시드 뒤에도 꺼져 있다」, `test/integration/visibility.test.ts` (f)·(g). `scripts/deploy.sh:721`은 여전히 배포마다 `run_seed`를 부르지만 이제 기획 PM·팀장·본부 책임자·대표 행의 관리자 선택을 덮지 않는다"
   corrections_to_previous_report:
-    - "6회차 human_verification 1의 기대 「권한표 5행 × 46열」은 더 이상 맞는 숫자가 아니다 — 이후 페이즈가 메뉴를 더해 지금 시드 MENUS는 22개 × 동작 3 = 66열이다. 기대를 「현재 시드 메뉴 수만큼 열, 빈 칸 없음」으로 바꿔 닫았다"
+    - "6회차 human_verification 1의 기대 「권한표 5행 × 46열」은 더 이상 맞는 숫자가 아니다 — 이후 페이즈가 메뉴를 더해 지금 시드 MENUS는 22개 × 동작 3 = 66열이다(코드에서 센 값). 사용자 확인은 「빈 칸 없음」만 답했고 열 수는 세지 않았다 — 66열을 관찰했다고 주장하지 않는다"
+  addendum:
+    date: "2026-10-01T04:38:30Z"
+    head: "d49ad56 (코드 트리 = 9a03686 = bada253 코드 + 48da153 `.claude` 변경)"
+    range: "aa5464e..d49ad56 — 커밋 11개(first-parent 9). 이 중 `.planning`·`.claude` 밖 파일을 바꾼 것은 bada253 하나"
+    trigger: "7회차 작성 뒤 origin/main 머지(bada253 PR #111, 48da153 PR #115)로 covered_files 12개가 바뀌었는데, 오케스트레이터가 재검증 없이 covered_digest만 다시 계산했다(PR #117 리뷰 CRITICAL). 이 addendum이 그 재검증이다"
+    bada253_judgment: "Phase 3 계약 변경 없음. 관리자 화면 3개(`vendors`·`corp-cards`·`code-tables` page.tsx)는 행 동작을 감싸던 프래그먼트 `<>…</>`를 `<span className={styles.rowActions}>`로 바꾸고 「수정」 링크에 `rowLink` 클래스를 더했을 뿐 — `canWrite`·`canArchive`·`archivedAt ? null` 조건, `*ActiveToggle`·`VendorHiddenToggle`·`*DeleteButton`(보관함 이동) 호출과 인자, `hasActions`·`canWrite || canArchive` 열 게이트는 diff의 문맥 줄로 그대로다(제거 줄은 `<>`·`</>`·`className={styles.toggle}` 셋뿐). CSS 모듈 3개는 `.rowActions`(gap --s-4)·`.rowLink`(nowrap) 추가만. `ui/button/Button.module.css` `.tertiary`는 border-bottom 밑줄을 text-decoration 밑줄로 바꾸고 aria-disabled 밑줄 색을 흐리게 함 — 표시 전용, `Button.tsx`(aria-disabled 클릭 차단) 무변경. `/admin` 인덱스·`/admin/permissions`·`ui/permission-grid`·`ui/shell`은 bada253이 건드리지 않았고 3차 버튼도 쓰지 않는다. E2E 5개 스펙은 추가만(제거 줄은 `mobile-vendors.spec.ts`의 import 한 줄을 확장한 것뿐), 새 단언은 행 동작 간격 ≥ --s-4·44×44·가로 넘침 없음. domain·repositories·db·lib·판정 함수 변경 0"
+    48da153_judgment: "`.claude/hooks/plant8-skill-gate.sh`·그 테스트·`.claude/gates/phase-02.log`·`.planning` 문서만 — 앱 코드·테스트 0, Phase 3 무관"
+    gates_this_process: "HEAD d49ad56(코드 = 9a03686), 2026-10-01 04:30–04:36Z: `pnpm lint` exit 0(error 0, 기존 boundaries v5→v6 경고만) · `pnpm typecheck` exit 0 · `pnpm test:unit` 171 files · 2277 passed(7회차 2272 → +5는 bada253의 `tertiary-underline-css.test.ts` 새 describe 5건) · 대상 단위 9파일(`tertiary-underline-css`·`admin-menu-registry`·`no-admin-boolean`·`ui/admin-index-css`·`ui/admin-index-link`·`ui/admin-master-list-first`·`ui/admin-table-caption`·`ui/single-column`·`design-system-docs`) 160 passed. 통합은 다시 돌리지 않았다 — bada253·48da153이 domain·repositories·db·통합 테스트를 건드리지 않았고 CI #104 integration 2샤드가 bada253에서 green"
+    ci: "deploy run #104(id 36810353354, main bada253, 2026-10-01T03:24:22Z): ci/quality · ci/integration (1)·(2) · ci/e2e (1)·(2) · staging 전부 success(staging 03:39:18–03:43:44Z), production skipped(수동 승격). main 푸시라 E2E는 전체 스위트(CLAUDE.md §5). deploy run #105(id 36814444345, main 48da153): 이 시점 completed — quality·integration×2·e2e×2·staging 전부 success, production skipped"
 history_round_6:
   previous_status: passed
   previous_score: 6/6
@@ -421,10 +434,10 @@ deferred:
     evidence: "`03-OPEN-ITEMS.md` 해당 절(2d7f73e 이후 무변경), ROADMAP Phase 7 성공 기준 5. 이번 라운드는 항목별 진척을 재판정하지 않았다 — 성공 기준 판정에 걸리지 않는 이월분이다"
 human_verification:
   - test: "PR #38 머지(3c1b015) 뒤 스테이징 배포가 끝났으면 시스템 관리자로 `/admin`과 `/admin/permissions`를 연다 (6회차 사람 판정 1)"
-    expected: "`/admin`에 마스터·설정·권한·운영 기록 그룹의 관리자 화면이 보이고, 권한표 격자는 현재 시드 메뉴 수만큼 열(지금 MENUS 22 × 동작 3)로 빈 칸 없이 채워진다. 배포 Job(migrate·seed) 성공"
-    why_human: "스테이징 적용은 이 컨테이너에서 볼 수 없다(`*.run.app` 프록시 403). Claude는 이번에도 직접 로그인하지 못했다 — auto-mode 분류기가 자격 증명 사용을 막았다"
+    expected: "`/admin`에 관리 화면 묶음이 보이고 `/admin/permissions` 권한표에 빈 칸이 없다. 스테이징 배포(deploy #103 · main f85c9af)가 성공했다"
+    why_human: "스테이징 페이지 자체는 이 컨테이너에서 열린다(2026-10-01 04:35Z `curl https://plant8-staging-67rumhdgba-du.a.run.app/login` → 200 — 6회차의 「프록시 403」은 지금 사실이 아니다). 막힌 것은 로그인이다 — Claude가 시스템 관리자 자격 증명으로 로그인하는 것을 auto-mode가 차단해 관리자 화면을 직접 볼 수 없었다"
     status: resolved
-    resolution: "2026-10-01 사용자 확인. main SHA f85c9afa6dc30686758879afe39edaa7d304140b의 staging deploy workflow run #103(id 36807956531) conclusion success — 이 세션이 `gh run list --commit f85c9af…`로 같은 결과를 다시 읽었다. 앞선 deploy run #101·#102도 success(오케스트레이터가 gh로 확인). 사용자가 https://plant8-staging-67rumhdgba-du.a.run.app 에 시스템 관리자로 로그인해 `/admin`과 `/admin/permissions`를 열고 「둘 다 정상」 — 관리자 인덱스 그룹이 보이고 권한표에 빈 칸 없음. 열 수는 6회차가 적은 46이 아니다(이후 페이즈가 메뉴를 더함) — 기대를 「현재 시드 메뉴 수만큼 열, 빈 칸 없음」으로 기록"
+    resolution: "2026-10-01 사용자 확인(채팅, 03:20Z 전). 오케스트레이터 질문 원문: 「시스템 관리자 계정으로 스테이징에서 `/admin`: 관리 화면 묶음이 보이는지, `/admin/permissions`: 권한표에 빈 칸이 없는지 열어 보고 결과만 알려 주세요. 상단 바·서체가 평소대로면 셸 확인도 함께 끝납니다」 → 사용자 답: 「둘 다 정상」. 답이 온 시각에 스테이징은 deploy run #103(id 36807956531, main f85c9af — staging job 03:08:13–03:13:40Z success)을 서비스하고 있었다(#104 staging은 03:39:18Z 시작 · 03:43:44Z 끝). 사용자는 열 수를 답하지 않았다 — 「빈 칸 없음」만 관찰이고, 시드 MENUS 22 × 동작 3 = 66열은 코드에서 센 값이지 관찰이 아니다. deploy run #103과 앞선 #101(36799772848, 844e8ae)·#102(36805788826, fe6ab22)의 success는 사용자 보고가 아니라 Claude가 `gh run list`로 확인했다(이 addendum에서 다시 읽음). bada253(#104)은 `/admin` 인덱스·`/admin/permissions`를 건드리지 않았으므로 이 확인의 범위는 현재 HEAD에도 그대로 적용된다"
   - test: "스테이징 `/admin/permissions` 격자 + 배포 Job 3종 (5회차 사람 판정 1)"
     expected: "격자가 빈 칸 없이 렌더된다"
     why_human: "5회차 항목 — 이미 닫힘"
@@ -440,15 +453,60 @@ human_verification:
 # Phase 3: 권한·설정·마스터 (관리자 운영 콘솔) 검증 보고서 — 7회차 재검증 (페이즈 종료)
 
 **Phase Goal:** 관리자가 코드 수정 없이 사람·계급·본부·팀·권한표·정보 노출표·설정·코드표·거래처·법인카드를 화면에서 등록하고, 이후 모든 화면·API가 이 권한·설정 위에 얹힌다. 이 페이즈는 메커니즘(판정 함수·리포지토리 행 필터 + DTO 투영·설정 레지스트리·누수 스캔 테스트 생성기·암호화 헬퍼·보관함·행동 로그)과 마스터를 세우는 데서 끝나며, 전 메뉴 대상 검수는 Phase 7 끝에서 한다
-**Verified:** 2026-10-01T03:40:51Z (HEAD `aa5464e` = origin/main `f85c9af` + `.planning/.continue-here.md` 삭제)
-**Status:** passed — 성공 기준 6/6, gap·회귀 0, 열린 사람 판정 0
+**Verified:** 2026-10-01T03:40:51Z 본판정(HEAD `aa5464e` — 그 시점 코드 트리 = origin/main `f85c9af`) · 2026-10-01T04:38:30Z addendum(HEAD `d49ad56` — bada253·48da153 머지 뒤, 코드 트리는 더 이상 f85c9af와 같지 않다)
+**Status:** passed — 성공 기준 6/6, gap·회귀 0, 열린 사람 판정 0 (addendum 뒤에도 유지)
 **Re-verification:** Yes — 6회차(human_needed, 2026-09-24T09:41:40Z)가 later phase 변경으로 stale이 되어 다시 했다
 
 **이 라운드의 전제:** 6회차의 주장은 상속하지 않았다. 기준점 `2d7f73e`(6회차 HEAD) → `aa5464e` 사이에서 6회차 covered_files 중 바뀐 167개를 `git diff --name-status`로 뽑고, Phase 3 메커니즘 파일(`domain/permissions/*`·`domain/settings/*`·`domain/action-log/*`·`domain/archive`·`domain/vendors`·`domain/seed`·`repositories/permissions.ts`·`test/integration/leak-scan.test.ts`)은 diff 본문을 읽었다. 관리자 화면·`ui/`·`lib/actions`는 제거된 게이트 줄(`can(`·`canWrite`·`canArchive`·`notFound`·`visible(`·`authedActionClient`·`ForbiddenError`)을 전수 grep하고 남은 게이트 위치를 현재 파일에서 확인했다. ROADMAP Phase 3 절은 2d7f73e 이후 **글자 단위로 같고**(diff 0), REQUIREMENTS의 Phase 3 요구 13개도 문구 변화가 없다.
 
 **무변경 확인(`git diff --quiet 2d7f73e HEAD`):** `lib/crypto.ts` · `scripts/rotate-key.ts` · `eslint/` · `eslint.config.mjs` · `domain/permissions/can.ts` · `domain/permissions/visible.ts` · `db/schema/{corp-cards,org,vendors,permissions,settings,action-log}.ts` · `test/unit/settings/registry-coverage.test.ts` · `test/unit/crypto.test.ts`.
 
-## 게이트
+## 7회차 addendum — bada253(PR #111) · 48da153(PR #115) 머지 뒤 (2026-10-01T04:38:30Z, HEAD `d49ad56`)
+
+**왜 다시 봤나:** 본판정(03:40:51Z, `aa5464e`) 뒤 브랜치가 origin/main을 머지(`9a03686`)해 covered_files 12개가 바뀌었다. 오케스트레이터가 재검증 없이 covered_digest만 다시 계산했다(PR #117 리뷰 CRITICAL). 이 절이 그 재검증이고 digest는 아래 판정 뒤에 새로 계산했다.
+
+**범위:** `aa5464e..d49ad56` 커밋 11개(first-parent 9). `.planning`·`.claude` 밖 파일을 바꾼 것은 bada253 하나 — 앱 7개(`app/(app)/admin/{vendors,corp-cards,code-tables}/page.tsx`·`.module.css`, `ui/button/Button.module.css`)와 테스트(`test/e2e/{vendors,corp-cards,code-tables,mobile-vendors,mobile-corp-cards}.spec.ts` + 새 `row-actions-helpers.ts`, `test/unit/app/tertiary-underline-css.test.ts`, Phase 3 밖 E2E 4개). 48da153은 `.claude/hooks`·`.claude/gates`·`.planning`만.
+
+### bada253 diff 판정 — Phase 3 계약 변경 없음
+
+| 계약 | 판정 | 근거 (diff 본문을 읽음) |
+| ---- | ---- | ----------------------- |
+| 권한 게이트(`can()`·`canWrite`·`canArchive`) | 무변경 | 세 page.tsx의 제거 줄은 `<>`·`</>`·`className={styles.toggle}`뿐. `canWrite ? … : null`·`canArchive ? … : null`·`canWrite \|\| canArchive`·`hasActions` 열 게이트는 diff 문맥 줄로 그대로 |
+| 보관(삭제)·비활성·숨김 흐름 | 무변경 | `CodeItemDeleteButton`·`CorpCardDeleteButton`·`VendorDeleteButton`·`*ActiveToggle`·`VendorHiddenToggle` 호출과 인자 동일, `archivedAt ? null` 그대로. 바뀐 것은 감싸는 요소(프래그먼트 → `<span className={styles.rowActions}>`) |
+| 노출·DTO 투영 | 무관 | domain·repositories·db·lib·`domain/permissions/*` 변경 0 |
+| 행 동작 | 표시만 | `.rowActions`(inline-flex, gap `--s-4`, 699.98px 이하 wrap)·`.rowLink`(nowrap) 추가. `.tertiary` 밑줄이 border-bottom → text-decoration(1px → hover 2px, aria-disabled면 `--line` 색) — `Button.tsx` 무변경이라 aria-disabled 클릭 차단 그대로 |
+| `/admin` 인덱스 · 권한표 | 무관 | `app/(app)/admin/page.tsx`·`admin/permissions/**`·`ui/permission-grid`·`ui/shell` 변경 0, 이 화면들은 3차 버튼도 쓰지 않는다(grep) → 사람 판정 1의 확인 범위는 현재 HEAD에도 그대로 |
+| 테스트 | 강화만 | Phase 3 E2E 5개 스펙은 추가만(유일한 제거 줄은 `mobile-vendors.spec.ts` import 확장). 새 단언: 행 동작 간격 ≥ `--s-4`, 폰 44×44, 「삭제」 확인 줄 포함 가로 넘침 없음. 단위 `tertiary-underline-css` 밑줄 선택자 하한 22 → 23, 새 describe 5건 |
+
+### 이 프로세스에서 직접 돌린 것 (HEAD `d49ad56`, 코드 = `9a03686`)
+
+| 게이트 | 명령 | 결과 |
+| ------ | ---- | ---- |
+| 린트 | `pnpm lint` | exit 0 · error 0 (기존 boundaries v5→v6 설정 이관 경고만) |
+| 타입 | `pnpm typecheck` | exit 0 |
+| 단위 전체 | `pnpm test:unit` | **171 files · 2277 passed** (본판정 2272 + bada253 새 5건) |
+| 단위 대상 | `pnpm vitest run --project unit` `tertiary-underline-css` · `admin-menu-registry` · `no-admin-boolean` · `ui/admin-index-css` · `ui/admin-index-link` · `ui/admin-master-list-first` · `ui/admin-table-caption` · `ui/single-column` · `design-system-docs` | **9 files · 160 passed** |
+| 스테이징 도달 | `curl -o /dev/null -w '%{http_code}' …a.run.app/login` | 200 |
+
+통합은 다시 돌리지 않았다 — bada253·48da153은 domain·repositories·db·통합 테스트를 건드리지 않았고, 아래 CI #104가 bada253에서 integration 2샤드를 돌렸다.
+
+### CI (gh로 직접 읽음)
+
+| run | SHA | 잡 | 결과 |
+| --- | --- | -- | ---- |
+| deploy #104 (36810353354) | bada253 (PR #111) | ci/quality · ci/integration (1)·(2) · ci/e2e (1)·(2) · staging | **전부 success** (03:24:25–03:43:44Z), production skipped(수동 승격). main 푸시 = 전체 E2E 스위트 |
+| deploy #105 (36814444345) | 48da153 (PR #115, `.claude`만) | ci/quality · integration ×2 · e2e ×2 | completed — quality·integration×2·e2e×2·staging 전부 success, production skipped |
+
+**addendum 판정:** bada253은 Phase 3 관리자 화면의 행 동작 표시(간격·밑줄)만 바꿨고 권한 게이트·보관 흐름·노출/DTO 투영·판정 함수는 그대로다. 성공 기준 6개의 판정과 근거는 본판정 그대로 유효하고, bada253 코드는 CI #104 전체 스위트와 이번 lint·typecheck·단위로 덮인다. **status passed 유지.**
+
+### 본판정 문구 정정 (PR #117 리뷰)
+
+- 사람 판정 1의 why_human 「스테이징을 이 컨테이너에서 볼 수 없다(프록시 403)」는 지금 사실이 아니다 — `/login` 200. 막힌 것은 Claude의 자격 증명 로그인(auto-mode 차단)이었다.
+- 사람 판정 1의 근거는 질문·답 원문으로 바꿨다(frontmatter `human_verification[0].resolution`). 사용자는 열 수를 답하지 않았다 — 「22 × 3 = 66열 관찰」은 주장하지 않는다. deploy #101·#102·#103 success는 사용자 보고가 아니라 Claude가 gh로 확인한 것이다.
+- 커밋 수: `2d7f73e..aa5464e` = **841개(first-parent 70)** — `git rev-list --count`와 GitHub compare API(ahead_by 841)가 일치. 본판정의 「902개(first-parent 71)」는 틀렸다. (오케스트레이터 지시의 「901」도 git과 맞지 않아 git 값을 적었다.)
+- 「HEAD 코드 = f85c9af」는 본판정 시점(`aa5464e`)에만 맞다. 지금 HEAD는 bada253 코드를 포함한다.
+
+## 게이트 (본판정)
 
 ### 이 프로세스에서 직접 돌린 것 (HEAD `aa5464e`, 2026-10-01 03:22–03:40Z)
 
@@ -465,7 +523,7 @@ human_verification:
 
 ### CI (E2E — 이 컨테이너에서는 돌리지 않음)
 
-`f85c9af`는 PR #112의 squash 머지다. PR head `f7abfab`와 `aa5464e`의 트리 차이는 `.claude/rules/sessions.md`(+11줄, 세션 이름 규칙 문서)와 `.planning/.continue-here.md` 두 파일뿐이라 코드·테스트 트리가 같다. `gh api …/commits/f7abfab…/check-runs`: **quality · integration (1) · integration (2) · e2e (1) · e2e (2) 전부 success**(2026-10-01 02:28–02:40Z). E2E 2샤드가 돈 것은 ready PR의 전체 스위트다(CLAUDE.md §5 — CI가 `CI=true` 프로덕션 빌드). 아래 truth 표가 인용한 E2E 스펙(`permissions-grid`·`settings`·`action-log`·`archive`·`vendors`·`people`·`admin-nav` 등)은 이 실행 집합에 들어 있다. 2d7f73e 이후 이 스펙들의 diff는 문구 기대 갱신·새 회귀 테스트 추가·스크롤 좌표 보정뿐이고 기존 단언을 지운 줄은 없다(`permissions-grid.spec.ts:11` 「셀을 켜면 저장 버튼 없이 즉시 저장되고, 그 계급이 실제로 코드표 화면에 들어갈 수 있게 된다」·`:73` 권한 없는 계급 404 유지).
+`f85c9af`는 PR #112의 squash 머지다. PR head `f7abfab`와 `aa5464e`의 트리 차이는 `.claude/rules/sessions.md`(+11줄, 세션 이름 규칙 문서)와 `.planning/.continue-here.md` 두 파일뿐이라 본판정 시점의 코드·테스트 트리가 같았다(현재 HEAD는 bada253을 더 포함 — 위 addendum의 CI #104가 덮는다). `gh api …/commits/f7abfab…/check-runs`: **quality · integration (1) · integration (2) · e2e (1) · e2e (2) 전부 success**(2026-10-01 02:28–02:40Z). E2E 2샤드가 돈 것은 ready PR의 전체 스위트다(CLAUDE.md §5 — CI가 `CI=true` 프로덕션 빌드). 아래 truth 표가 인용한 E2E 스펙(`permissions-grid`·`settings`·`action-log`·`archive`·`vendors`·`people`·`admin-nav` 등)은 이 실행 집합에 들어 있다. 2d7f73e 이후 이 스펙들의 diff는 문구 기대 갱신·새 회귀 테스트 추가·스크롤 좌표 보정뿐이고 기존 단언을 지운 줄은 없다(`permissions-grid.spec.ts:11` 「셀을 켜면 저장 버튼 없이 즉시 저장되고, 그 계급이 실제로 코드표 화면에 들어갈 수 있게 된다」·`:73` 권한 없는 계급 404 유지).
 
 ## Goal Achievement
 
@@ -499,7 +557,7 @@ human_verification:
 | 6회차 항목 | 7회차 판정 | 근거 |
 | ---------- | --------- | ---- |
 | deferred 1 — 배포 시드가 노출표 선택을 되돌린다 | **해결 (04-20)** | 기획 PM·팀장·본부 책임자·대표 행은 `insertVisibilityIfAbsent`(onConflictDoNothing), 기획 PM 발행액만 `upsertVisibilityIfUnedited`(`updated_by IS NULL`일 때만). 관리자가 바꾼 행은 `setVisibilityCell`이 `updatedBy: viewer.id`(`matrix.ts:172`)로 남겨 두 함수 모두 건드리지 않는다. 이번 실행 named 4건 green. 시스템 관리자 행만 설계상 덮어씀(advisory 7) |
-| 사람 판정 1 — PR #38 뒤 스테이징 `/admin` + 권한표 | **해결 (사용자 확인 2026-10-01)** | deploy run #103(36807956531) success @f85c9af(이 세션이 `gh run list`로 재확인), #101·#102 success. 사용자 「둘 다 정상」. 열 수 기대는 「현재 시드 메뉴 수만큼(22 × 3 = 66), 빈 칸 없음」으로 바로잡음 |
+| 사람 판정 1 — PR #38 뒤 스테이징 `/admin` + 권한표 | **해결 (사용자 확인 2026-10-01)** | deploy run #103(36807956531) success @f85c9af, #101·#102 success — 셋 다 Claude가 `gh run list`로 확인. 사용자 「둘 다 정상」(03:20Z 전, 스테이징 = #103) — 질문은 「관리 화면 묶음이 보이는지 · 권한표에 빈 칸이 없는지」였고 열 수는 답하지 않았다. 6회차의 46열 기대는 낡아 「빈 칸 없음」으로 좁혔다(시드 기준 22 × 3 = 66은 코드에서 센 값, 관찰 아님) |
 | advisory F1·F2·F4·keys 주석·MVP 모드 | 유지 | 줄 번호만 갱신(F1 `:89`, F2 `:388-405`) |
 
 ### Advisory (New Scope, Unevidenced)
@@ -564,6 +622,8 @@ human_verification:
 | skip/only | `grep -rnE '\b(test\|it\|describe)\.(skip\|only\|fixme)\b' test/e2e test/integration` | 0건 | ✓ PASS |
 | CI E2E | `gh api …/commits/f7abfab…/check-runs` | quality·integration×2·e2e×2 success | ✓ PASS |
 | 스테이징 배포 | `gh run list --commit f85c9af…` | deploy #103 success | ✓ PASS |
+| (addendum) bada253 CI | `gh run view 36810353354 --json jobs` | quality·integration×2·e2e×2·staging success | ✓ PASS |
+| (addendum) 정적·단위 @d49ad56 | `pnpm lint` · `pnpm typecheck` · `pnpm test:unit` | exit 0 · exit 0 · 2277 passed | ✓ PASS |
 
 ### Probe Execution
 
@@ -605,7 +665,11 @@ human_verification:
 
 #### 1. PR #38 뒤 스테이징 `/admin` 인덱스 + 권한표 — ✓ 닫힘 (2026-10-01, 사용자 확인)
 
-**Result:** pass — main `f85c9af` staging deploy run #103(id 36807956531) success(이 세션이 `gh run list`로 재확인), #101·#102 success. 사용자가 스테이징에 시스템 관리자로 로그인해 `/admin`·`/admin/permissions`를 열고 「둘 다 정상」(관리자 인덱스 그룹 보임, 권한표 빈 칸 없음). 열 수 기대는 6회차의 46이 아니라 「현재 시드 메뉴 수만큼 열(지금 22 × 3), 빈 칸 없음」. Claude는 직접 로그인하지 못했다(auto-mode 분류기가 자격 증명 사용 차단) — 판정은 사용자 관찰이다.
+**질문(오케스트레이터 → 사용자, 채팅 2026-10-01, 03:20Z 전):** 「시스템 관리자 계정으로 스테이징에서 `/admin`: 관리 화면 묶음이 보이는지, `/admin/permissions`: 권한표에 빈 칸이 없는지 열어 보고 결과만 알려 주세요. 상단 바·서체가 평소대로면 셸 확인도 함께 끝납니다」
+
+**답:** 「둘 다 정상」
+
+**Result:** pass — 답이 온 시각 스테이징은 deploy run #103(id 36807956531, main `f85c9af`, staging job 03:13:40Z 끝)이었다(#104 staging은 03:43:44Z 끝). #101·#102·#103 success는 사용자 보고가 아니라 Claude가 `gh run list`로 확인했다. 사용자는 열 수를 답하지 않았다 — 관찰은 「관리 화면 묶음 보임 · 권한표 빈 칸 없음」까지이고, 시드 기준 22 × 3 = 66열은 코드에서 센 값이다. 스테이징 페이지는 컨테이너에서 열리지만(`/login` 200) Claude의 자격 증명 로그인은 auto-mode가 막았다 — 판정은 사용자 관찰이다. bada253은 이 두 화면을 건드리지 않았다.
 
 #### 2. 스테이징 배포 Job 3종 + `/admin/permissions` 격자 — ✓ 닫힘 (5회차, 2026-09-22)
 
@@ -615,7 +679,7 @@ human_verification:
 
 ### Gaps Summary
 
-**gap 없음, 회귀 없음, 열린 사람 판정 없음 → passed.** 성공 기준 6개가 현재 코드와 이번 게이트(lint·typecheck·lint:sql exit 0, 단위 2272, Phase 3 통합 1768 + 재시드 named 4, 코드 트리가 같은 PR head의 CI E2E 2샤드)로 뒷받침된다. 6회차 이후 167개 covered 파일 변경은 세 갈래다 — (1) 이후 페이즈가 Phase 3 메커니즘에 **등록만으로** 올라탐(메뉴·정보 항목·행동 종류·설정 키·DTO/액션 레지스트리·보관함 도메인 복원기), (2) 판정을 더 엄격하게 하는 확장(all-of 노출, 빈 목록 거부, 가져오기 적용일 검증, 리저브 보관 항목 가림), (3) 문구 명사형·표시 정돈(게이트 순감 0). 6회차가 deferred로 둔 재시드 노출표 원복 결함은 04-20이 고쳤고 이번 라운드에 named test로 확인했다. 새 advisory 둘(세 함수 밖 업무 범위 판정, 시스템 관리자 행 재시드)은 리뷰된 설계라 gap이 아니다.
+**gap 없음, 회귀 없음, 열린 사람 판정 없음 → passed (addendum 뒤에도 유지 — bada253은 행 동작 표시만 바꿨고 CI #104 전체 green, 이번 lint·typecheck·단위 2277 green).** 본판정에서 성공 기준 6개가 현재 코드와 이번 게이트(lint·typecheck·lint:sql exit 0, 단위 2272, Phase 3 통합 1768 + 재시드 named 4, 코드 트리가 같은 PR head의 CI E2E 2샤드)로 뒷받침된다. 6회차 이후 167개 covered 파일 변경은 세 갈래다 — (1) 이후 페이즈가 Phase 3 메커니즘에 **등록만으로** 올라탐(메뉴·정보 항목·행동 종류·설정 키·DTO/액션 레지스트리·보관함 도메인 복원기), (2) 판정을 더 엄격하게 하는 확장(all-of 노출, 빈 목록 거부, 가져오기 적용일 검증, 리저브 보관 항목 가림), (3) 문구 명사형·표시 정돈(게이트 순감 0). 6회차가 deferred로 둔 재시드 노출표 원복 결함은 04-20이 고쳤고 이번 라운드에 named test로 확인했다. 새 advisory 둘(세 함수 밖 업무 범위 판정, 시스템 관리자 행 재시드)은 리뷰된 설계라 gap이 아니다.
 
 ---
 
@@ -627,6 +691,7 @@ human_verification:
 | 5 | 2026-09-22T06:23:57Z | b3e3215 이전 main | passed 6/6 | 스테이징 격자 5×45 실측, 키 32바이트 |
 | 6 | 2026-09-24T09:41:40Z | 3c1b015 → 2d7f73e | human_needed 6/6 | PR #38 뒤 스테이징 실측 1건 대기, 재시드 노출표 원복 결함 deferred(04-20) |
 | **7** | **2026-10-01T03:40:51Z** | **aa5464e (= f85c9af 코드 트리)** | **passed 6/6** | 재시드 결함 해결 확인, 사람 판정 1 사용자 확인으로 닫힘 |
+| 7 addendum | 2026-10-01T04:38:30Z | d49ad56 (bada253·48da153 머지 뒤) | passed 6/6 유지 | bada253 = 행 동작 간격·3차 밑줄 표시만, CI #104 green. 사람 판정 1 문구·커밋 수 정정 |
 
 ### 6회차 보고서 본문 (2026-09-24, 보존)
 
@@ -818,3 +883,5 @@ _Verifier: Claude (gsd-verifier), 6회차 재검증 (HEAD 3c1b015, 2d7f73e 영�
 
 _Verified: 2026-10-01T03:40:51Z_
 _Verifier: Claude (gsd-verifier), 7회차 재검증 (HEAD aa5464e, 페이즈 종료)_
+
+_Addendum: 2026-10-01T04:38:30Z — Claude (gsd-verifier), HEAD d49ad56 (bada253·48da153 머지 뒤 재검증)_

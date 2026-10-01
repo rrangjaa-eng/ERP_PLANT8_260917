@@ -3,8 +3,9 @@ phase: 03-permissions-settings-masters
 verified: 2026-10-01T04:38:30Z
 status: passed
 score: 6/6 must-haves verified
-covered_digest: "v1:sha256:3ac668a06d3f6216bc4c1be89ec3d05bcfa2173eb07864f0aa5c8d9057558e96"
+covered_digest: "v1:sha256:9302b81ed2f1d9b648f593288aad2b6c2fe81de7fc4354cbff5737fdd7c55c91"
 covered_files:
+
   - ".github/workflows/account.yml"
   - ".planning/REQUIREMENTS.md"
   - ".planning/ROADMAP.md"
@@ -338,6 +339,7 @@ covered_files:
   - "ui/shell/Shell.tsx"
   - "ui/shell/TopBar.tsx"
   - "ui/shell/role-menu.ts"
+
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
@@ -394,7 +396,9 @@ history_round_6:
     - "5회차 advisory F3(행동 로그 CSV 수식 주입)는 5회차가 쓰일 때 이미 고쳐져 있었다 — `05a1c9a`(2026-09-22 05:10Z)가 `domain/action-log/export.ts:31` `FORMULA_LEAD = /^[=+\\-@\\t\\r]/` + `csvEscape`의 `'` 접두어를 넣었고 `test/unit/action-log/export.test.ts:146`이 네 문자를 고정한다(이번 라운드 unit green). 5회차 본문은 4회차(09-21) 관찰을 그대로 옮겼다"
     - "5회차 advisory 「`03-OPEN-ITEMS.md:32`가 없는 커밋 `fa4a5a2`를 인용」도 이미 닫혀 있었다 — `d7ad2f8`(2026-09-21 15:08Z)이 고쳤고 현재 파일에 `fa4a5a2` 0건"
     - "5회차 advisory 「`settings/actions.ts:52-54` 주석이 낡음」도 `d7ad2f8`로 닫혀 있었다 — 현재 `:50-55`가 `pnpm settings:import --file <경로>`와 `docs/OPERATIONS.md §12`를 가리킨다"
+
 advisory:
+
   - finding: "F1 — `APP_ENV` 기본값 fail-open. `lib/env.ts:47-49`가 미지정 `APP_ENV`를 `local`로 두고 `:89`가 `local`이 아닐 때만 `BETTER_AUTH_SECRET` 32자 이상을 강제한다. `NODE_ENV=production` + `APP_ENV` 미지정 조합을 막는 검사는 여전히 없다(이 파일은 이후 13줄 추가 — `NOTIFY_TICK_OIDC_DISABLED` 등 — 이 조합 검사는 아님)"
     category: security
     reason: "`scripts/deploy.sh`가 staging·prod에 `APP_ENV`와 시크릿을 넣으므로 실배포 경로는 막혀 있다. Phase 1 환경 계약 영역이고 Phase 3 성공 기준에 걸리지 않는다"
@@ -424,6 +428,7 @@ advisory:
     reason: "04-20 ENG-D2 설계(관리 계급이 자기 콘솔에서 잠기지 않게)이고 `project-status.test.ts` ENG-D3 ③이 「시스템 관리자 항목은 재시드가 켠다」로 고정한다. 결함이 아니라 운영 안내 대상(권한표 화면에서 시스템 관리자 열을 꺼도 유지되지 않음)"
     evidence_status: "결정적. named test green(의도된 동작으로)"
 deferred:
+
   - truth: "MAST-01 「입력 시 자동완성된다」의 화면 소비자"
     addressed_in: "Phase 5 · Phase 6"
     evidence: "ROADMAP Phase 3 성공 기준 5: 「거래처마다 기본 증빙 종류를 두어 Phase 5·6의 지출결의·카드 사용 등록 때 자동으로 채워진다」. `domain/vendors.searchVendors`는 있다 — 붙을 지출결의·카드 사용 화면이 아직 없다(이번 라운드 상태 변화 없음)"
@@ -434,6 +439,7 @@ deferred:
     addressed_in: "Phase 4 · Phase 7 · 후속"
     evidence: "`03-OPEN-ITEMS.md` 해당 절(2d7f73e 이후 무변경), ROADMAP Phase 7 성공 기준 5. 이번 라운드는 항목별 진척을 재판정하지 않았다 — 성공 기준 판정에 걸리지 않는 이월분이다"
 human_verification:
+
   - test: "PR #38 머지(3c1b015) 뒤 스테이징 배포가 끝났으면 시스템 관리자로 `/admin`과 `/admin/permissions`를 연다 (6회차 사람 판정 1)"
     expected: "`/admin`에 관리 화면 묶음이 보이고 `/admin/permissions` 권한표에 빈 칸이 없다. 스테이징 배포(deploy #103 · main f85c9af)가 성공했다"
     why_human: "스테이징 페이지 자체는 이 컨테이너에서 열린다(2026-10-01 04:35Z `curl https://plant8-staging-67rumhdgba-du.a.run.app/login` → 200 — 6회차의 「프록시 403」은 지금 사실이 아니다). 막힌 것은 로그인이다 — Claude가 시스템 관리자 자격 증명으로 로그인하는 것을 auto-mode가 차단해 관리자 화면을 직접 볼 수 없었다"
@@ -886,3 +892,5 @@ _Verified: 2026-10-01T03:40:51Z_
 _Verifier: Claude (gsd-verifier), 7회차 재검증 (HEAD aa5464e, 페이즈 종료)_
 
 _Addendum: 2026-10-01T04:38:30Z — Claude (gsd-verifier), HEAD d49ad56 (bada253·48da153 머지 뒤 재검증)_
+
+> 2026-10-01 covered_digest 재계산(PR #119, 판정은 다시 하지 않음): phase.complete 04.1·04.2·04.4와 state.begin-phase 04.3 (그리고 PR #117의 phase.complete 02·03, 03-UAT.md note 문구 수정 49f6dff)이 covered 파일 중 .planning/ROADMAP.md·REQUIREMENTS.md의 진행 표기만 바꿨다. 비문서 diff 0을 확인하고 같은 covered_files 목록으로 다시 계산했다.

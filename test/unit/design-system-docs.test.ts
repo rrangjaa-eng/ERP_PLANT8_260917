@@ -29,7 +29,9 @@ const FIVE_STATES = ["LOADING", "EMPTY", "ERROR", "SUCCESS", "PARTIAL"];
 
 // quick 261001-85g(UX-01) — 확인 모달의 ERROR 자리. §7-7 「시트/모달(§7-8)」 행과 §7-17이 같은 글자로 말한다(구현: ConfirmDialog
 // disabledReason = 행동 줄 왼쪽 막힘 자리, blockedBy = 근거 칸 아래 Form.Error를 가리키고 왼쪽에 다시 쓰지 않음).
-const CONFIRM_SERVER_REJECT = "서버 거부 문자열은 막힘 자리(행동 줄 왼쪽 — 2차 · 1차 앞)에 그대로 붙고 다이얼로그는 닫히지 않는다";
+// 2026-10-01 — 「그대로」가 아니다: 끝의 ` · 새로 고침` 꼬리는 글자 대신 3차 버튼이 된다(ConfirmDialog가 강제).
+const CONFIRM_SERVER_REJECT = "서버 거부 문자열은 막힘 자리(행동 줄 왼쪽 — 2차 · 1차 앞)에 붙고 다이얼로그는 닫히지 않는다";
+const CONFIRM_REFRESH_TAIL = "끝이 ` · 새로 고침`이면 그 꼬리는 글자로 쓰지 않고 다음 한 수 3차 `새로 고침`";
 const CONFIRM_EVIDENCE_ERROR = "근거 칸 입력 오류(날짜 칸의 빈 값 · 형식)만 칸 아래 `Form.Error` 한 줄";
 
 describe("docs/design/SYSTEM.md — 신설 절 5개 (§6-7·§6-8·§6-9·§7-11·§7-12)", () => {
@@ -79,10 +81,54 @@ describe("docs/design/SYSTEM.md — 확인 모달 ERROR 자리 (§7-7 ↔ §7-17
 
   it.each([
     ["서버 거부 자리", CONFIRM_SERVER_REJECT],
+    ["「새로 고침」 꼬리", CONFIRM_REFRESH_TAIL],
     ["근거 칸 입력 오류 자리", CONFIRM_EVIDENCE_ERROR],
   ])("§7-7 시트/모달 ERROR 칸과 §7-17이 %s를 같은 글자로 말한다", (_name, phrase) => {
     expect(errorCell).toContain(phrase);
     expect(confirmModal).toContain(phrase);
+  });
+});
+
+// 2026-10-01(PR #121 독립 검토) — 확인 모달 문서를 구현에 맞춤. 정본 판단은 DECISIONS.md 같은 날 항목.
+describe("docs/design/SYSTEM.md — 확인 모달 SUCCESS · ERROR · 근거 칸 이유 자리 (§7-7 · §7-8 · §7-17)", () => {
+  const headers = ["컴포넌트", "LOADING", "EMPTY", "ERROR", "SUCCESS", "PARTIAL"];
+  const row = section(SYSTEM, "### 7-7", "### 7-8")
+    .split("\n")
+    .find((line) => line.startsWith("| 시트/모달(§7-8) |"));
+  const cell = (state: string) => row?.split("|").slice(1, -1)[headers.indexOf(state)] ?? "";
+  const modalBullet = section(SYSTEM, "### 7-8", "### 7-9")
+    .split("\n")
+    .find((line) => line.startsWith("- 모달(PC):")) ?? "";
+  const confirmModal = section(SYSTEM, "### 7-17", "## 8. 카피 규칙");
+  const confirmSuccess = confirmModal.split("\n").find((line) => line.startsWith("| SUCCESS |")) ?? "";
+
+  it("§7-7 SUCCESS — 결과 한 줄을 보이지 않고 바로 닫힌다(ConfirmDialog 호출처 전부)", () => {
+    expect(cell("SUCCESS")).toContain("성공하면 바로 닫힌다");
+    expect(cell("SUCCESS")).not.toContain("결과 한 줄을 보인 뒤 닫히고");
+    expect(confirmSuccess).toContain("성공하면 바로 닫는다");
+  });
+
+  it("§7-7 SUCCESS — 토스트는 화면에 드러나지 않는 결과에만, 1차 라벨과 같은 단어", () => {
+    expect(cell("SUCCESS")).toContain("토스트 `{1차 라벨} · {결과}`(반려 · 회수 · 새 차수 만들기 · 상태 바꾸기)");
+    expect(cell("SUCCESS")).toContain("토스트 없음(승인일 줄 · 지운 줄 · 입력 버리기의 이동)");
+  });
+
+  it("§7-17 ERROR — 「새로 고침」은 화면을 다시 받고 닫으며, 거부가 붙은 동안 1차가 막힌다", () => {
+    expect(confirmModal).not.toContain("그대로 붙고");
+    expect(cell("ERROR")).not.toContain("그대로 붙고");
+    expect(confirmModal).toContain("`새로 고침`은 화면 데이터를 다시 받고 다이얼로그를 닫는다");
+    expect(confirmModal).toContain("거부가 붙은 동안 1차는 막힌다(`Ctrl+Enter` 포함) — 근거 칸을 고치거나 다이얼로그를 닫았다 다시 열면 풀린다");
+  });
+
+  it("§7-8 모달 — 근거 칸 이유 자리는 칸 종류가 정한다(사유형 = 행동 줄 왼쪽 · 날짜형 = 칸 아래)", () => {
+    expect(modalBullet).not.toContain("1차 버튼 비활성 + 왼쪽에 이유");
+    expect(modalBullet).toContain("사유형(여러 줄 사유 칸)은 행동 줄 왼쪽(`사유 없음 · 사유 적기`, §7-1)");
+    expect(modalBullet).toContain("날짜형은 칸 아래 `Form.Error` 한 줄(`날짜 없음 · 날짜 고르기` · `날짜 형식 오류 · 2026-09-18처럼`)이고 왼쪽에 다시 쓰지 않는다");
+  });
+
+  it("DECISIONS.md에 확인 모달 SUCCESS · 「새로 고침」 꼬리 · 근거 칸 이유 자리 항목이 있다", () => {
+    const headings = DECISIONS.split("\n").filter((line) => line.startsWith("## "));
+    expect(headings.some((line) => line.includes("확인 모달") && line.includes("새로 고침"))).toBe(true);
   });
 });
 

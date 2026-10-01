@@ -143,12 +143,17 @@ export function ClosedResult({
   at,
   managerName,
   contactPhone,
+  focusOnMount,
 }: {
   reason: ClosedReason;
   at: string;
   managerName: string;
   contactPhone: string;
+  focusOnMount?: boolean;
 }) {
+  useEffect(() => {
+    if (focusOnMount) document.getElementById(RESULT_LEAD_ID)?.focus();
+  }, [focusOnMount]);
   const reasonText = reason === "manual" ? "담당자가 접수를 마쳤습니다" : `제출 기한 ${formatSubmittedAtKst(at)}이 지났습니다`;
   return (
     <section className={styles.resultBlock}>

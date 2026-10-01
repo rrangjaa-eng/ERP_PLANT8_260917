@@ -61,6 +61,7 @@ export default async function CertIntakePage({ params }: { params: Promise<{ tok
           at={result.at}
           managerName={result.managerName}
           contactPhone={result.contactPhone}
+          focusOnMount
         />
       </main>
     );

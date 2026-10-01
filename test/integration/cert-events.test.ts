@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/db/client";
-import { certEvents } from "@/db/schema";
+import { certEvents, certSubmissions } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
@@ -11,7 +11,7 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { setSettingValue } from "@/domain/settings/registry";
 import { CERT_CONTACT_PHONE, CERT_ENABLED } from "@/domain/settings/keys";
 import { getCreateGate, getEventDetail, listEvents } from "@/domain/certs/events";
-import { createCertEvent } from "@/test/e2e/helpers/cert";
+import { createCertEvent, seedSubmittedCert } from "@/test/e2e/helpers/cert";
 
 // 04.3-04 Task 2 · 04.3-15 — 행사 목록 · 상세 domain(실제 Postgres). 매 테스트 전 setup.ts가 TRUNCATE + 시드한다.
 // 행사는 규약 C4 도우미 createCertEvent({ status, prizes, createdBy })로 만든다(만들기 화면은 04.3-10).
@@ -83,16 +83,37 @@ describe("listEvents · getEventDetail — 범위(T-04.3-19)", () => {
     expect((await getEventDetail(manager, b.eventId)).kind).toBe("ok");
   });
 
-  it("목록은 접수 중 → 닫힘, 그룹 안 당첨일 내림차순", async () => {
+  it("목록은 신청됨 → 접수 중 → 닫힘, 그룹 안 당첨일 내림차순", async () => {
     const early = await createOk({ wonOn: "2026-09-01" });
     const late = await createOk({ wonOn: "2026-09-20" });
     const closed = await createOk({ wonOn: "2026-09-30" });
     await db.update(certEvents).set({ closedAt: new Date(), closedReason: "manual" }).where(eq(certEvents.id, closed.eventId));
+    const requestedOld = await createCertEvent({ status: "requested", wonOn: "2026-08-01" });
+    const requestedNew = await createCertEvent({ status: "requested", wonOn: "2026-10-05" });
 
     const list = await listEvents(SYSTEM_VIEWER);
     if (list.kind !== "ok") throw new Error("목록 실패");
-    expect(list.events.map((e) => e.id)).toEqual([late.eventId, early.eventId, closed.eventId]);
-    expect(list.events.map((e) => e.status)).toEqual(["open", "open", "closed"]);
+    expect(list.events.map((e) => e.id)).toEqual([
+      requestedNew.eventId,
+      requestedOld.eventId,
+      late.eventId,
+      early.eventId,
+      closed.eventId,
+    ]);
+    expect(list.events.map((e) => e.status)).toEqual(["requested", "requested", "open", "open", "closed"]);
+  });
+
+  it("제출 건수는 대조 제외 행을 세지 않는다(DR-1)", async () => {
+    const seeded = await seedSubmittedCert();
+    const countOf = async () => {
+      const list = await listEvents(SYSTEM_VIEWER);
+      if (list.kind !== "ok") throw new Error("목록 실패");
+      return list.events.find((e) => e.id === seeded.eventId)?.submittedCount;
+    };
+    expect(await countOf()).toBe(1);
+
+    await db.update(certSubmissions).set({ excludedAt: new Date() }).where(eq(certSubmissions.id, seeded.submissionId));
+    expect(await countOf()).toBe(0);
   });
 });
 
@@ -140,7 +161,7 @@ describe("상세 DTO 링크 · QR", () => {
     await db.update(certEvents).set({ closedAt: new Date(), closedReason: "manual" }).where(eq(certEvents.id, made.eventId));
     const closed = await getEventDetail(SYSTEM_VIEWER, made.eventId);
     if (closed.kind !== "ok") throw new Error("상세 실패");
-    expect(closed.event.status).toBe("closed");
+    expect(closed.event).toMatchObject({ status: "closed", closedReason: "manual" });
     expect(closed.event).not.toHaveProperty("link");
     expect(closed.event).not.toHaveProperty("qrSvg");
   });
@@ -153,5 +174,15 @@ describe("상세 DTO 링크 · QR", () => {
     expect(expired.event).toMatchObject({ status: "closed", closedReason: "expired" });
     expect(expired.event).not.toHaveProperty("link");
     expect(expired.event).not.toHaveProperty("qrSvg");
+  });
+
+  it("신청됨 행사(토큰 없음)는 link · qrSvg 키가 없고 마감 · 닫힘 사유가 비어 있다", async () => {
+    const made = await createCertEvent({ status: "requested" });
+    expect(made.link).toBeUndefined();
+    const requested = await getEventDetail(SYSTEM_VIEWER, made.eventId);
+    if (requested.kind !== "ok") throw new Error("상세 실패");
+    expect(requested.event).toMatchObject({ status: "requested", closedReason: null, expiresAt: null, closedAt: null });
+    expect(requested.event).not.toHaveProperty("link");
+    expect(requested.event).not.toHaveProperty("qrSvg");
   });
 });

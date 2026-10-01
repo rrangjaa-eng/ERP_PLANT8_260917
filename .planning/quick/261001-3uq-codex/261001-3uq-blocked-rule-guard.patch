@@ -1,0 +1,162 @@
+--- a/.claude/hooks/plant8-rule-guard.sh
++++ b/.claude/hooks/plant8-rule-guard.sh
+@@ -12,7 +12,8 @@
+ #   2) git push --force/-f/+refspec 차단. --force-with-lease는 경고만(차단 아님).
+ #   3) 커밋 접두어 docs/feat/fix/chore 외(test/style/perf/refactor…)는 경고만.
+ #      접두어 자체가 없으면 차단하되 Merge/Revert 제목, -m/-F 없는 commit, -F 파일은 항상 통과.
+-#   4) Codex 해제 시각은 KST로 본다.
++#   4) Codex는 디자인 검토에서만(사용자 결정 2026-10-01) — 세션 스킬 기록(plant8-skill-gate)에
++#      design-review·plan-design-review가 있을 때만 codex 실행을 허용한다(R3).
+ set -uo pipefail
+ # 로케일 고정: 셸·grep·sed는 바이트 단위(C)로 돌리고, 한글 판정은 모두 jq(항상 UTF-8)로 한다.
+ # 사용자 로케일(C.UTF-8 등)에 따라 결과가 바뀌지 않게 한다.
+@@ -60,7 +61,18 @@
+   exit 0
+ }
+ 
+-# Codex 검토는 2026-09-27 폐지 — 관련 차단 규칙(옛 R3)은 없다.
++# --- R3: Codex는 디자인 검토에서만 (사용자 결정 2026-10-01) ------------------------
++# 1차 차단은 gstack codex_reviews disabled(scripts/install-gstack.sh)다. 이 규칙은 그 설정을 따르지
++# 않는 경로(/codex·/office-hours·/spec 등, 손으로 친 codex)를 막는다. 허용 = 이 세션의 스킬 기록
++# (plant8-skill-gate.sh record-skill이 쓰는 세션 전체 파일)에 design-review나 plan-design-review가
++# 있을 때. 한계: 기록은 세션 단위라 디자인 검토 뒤 같은 세션의 codex 호출은 통과한다.
++CODEX_MSG='Codex는 디자인 검토(/design-review·/plan-design-review)에서만 쓴다(CLAUDE.md §6, 사용자 결정 2026-10-01). 그 밖의 검토는 Claude 독립 검토로.'
++codex_allowed() {
++  local session
++  session="$(printf '%s' "$payload" | jq -r '.session_id // empty' 2>/dev/null)"
++  [ -n "$session" ] || return 1
++  grep -Eqx '(design-review|plan-design-review)' "${TMPDIR:-/tmp}/plant8-skill-gate/${session}.skills" 2>/dev/null
++}
+ 
+ # --- 사용자 승인 판정 (R7·R8) ------------------------------------------------
+ # 사람 글로 인정하는 것은 두 가지뿐이다.
+@@ -427,7 +439,7 @@
+         k=$((k + 1))
+         while [ "$k" -lt "$n" ] && { [[ "${W[$k]}" == -* ]] || [[ "${W[$k]}" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; }; do k=$((k + 1)); done
+         continue ;;
+-      timeout)
++      timeout|gtimeout|_gstack_codex_timeout_wrapper)
+         k=$((k + 1))
+         while [ "$k" -lt "$n" ] && [[ "${W[$k]}" == -* ]]; do k=$((k + 1)); done
+         k=$((k + 1)); continue ;;
+@@ -452,6 +464,18 @@
+   case "$cmd" in
+     git) check_git "${ARGS[@]}" ;;
+     gh) check_gh "${ARGS[@]}" ;;
++    codex)
++      case "${ARGS[0]:-} ${ARGS[1]:-}" in
++        "--version "*|"-V "*|"--help "*|"-h "*|"login status") ;;
++        *) codex_allowed || block "$CODEX_MSG" ;;
++      esac ;;
++    npx|bunx|pnpm|npm)
++      # 실행(npx, bunx, pnpm/npm dlx·exec·x)만 막는다 — 설치는 Codex 호출이 아니다.
++      if [ "$cmd" = npx ] || [ "$cmd" = bunx ] || [[ "${ARGS[0]:-}" =~ ^(dlx|exec|x)$ ]]; then
++        for a in "${ARGS[@]}"; do
++          case "$a" in @openai/codex|@openai/codex@*) codex_allowed || block "$CODEX_MSG" ;; esac
++        done
++      fi ;;&
+     npm)
+       local sub=""
+       for a in "${ARGS[@]}"; do case "$a" in -*) ;; *) sub="$a"; break ;; esac; done
+--- a/.claude/hooks/tests/plant8-rule-guard.test.sh
++++ b/.claude/hooks/tests/plant8-rule-guard.test.sh
+@@ -5,7 +5,8 @@
+ #   2) git push --force/-f/+refspec 차단, --force-with-lease는 경고만
+ #   3) 커밋 접두어 docs/feat/fix/chore 외 경고만, 접두어 자체 없으면 차단(단 Merge/Revert 제목,
+ #      -m/-F 없는 commit, -F 파일은 항상 통과)
+-#   4) Codex 검토 폐지(2026-09-27) — Codex 차단 규칙 없음
++#   4) Codex는 디자인 검토에서만(2026-10-01) — 세션 스킬 기록에 design-review·plan-design-review가
++#      없으면 codex 실행(맨 명령·timeout/_gstack_codex_timeout_wrapper 경유·npx/dlx)을 막는다
+ #   5) 훅·settings 승인 = 사용자 글에 "훅"+(넣어/고쳐/걸어/수정/추가/만들어), 물음표로 끝나면 불인정
+ # payload를 stdin으로 넣어 각 이벤트를 검증한다. 실제 리포를 절대 건드리지 않는다.
+ set -uo pipefail
+@@ -168,12 +169,44 @@
+ payload_bash() { jq -nc --arg c "$1" '{tool_name:"Bash", tool_input:{command:$c}}'; }
+ payload_skill() { jq -nc --arg s "$1" --arg a "$2" '{tool_name:"Skill", tool_input:{skill:$s, args:$a}}'; }
+ 
+-echo "== R3: Codex 폐지 — codex 명령·스킬을 막지 않는다 =="
+-hook "$(payload_bash 'codex exec "review"')"
+-expect_rc "R3-1: codex exec -> 0 (규칙 없음)" 0 "$HOOK_RC"
++echo "== R3: Codex는 디자인 검토(/design-review·/plan-design-review)에서만 =="
++payload_bash_s() { jq -nc --arg c "$1" --arg s "$2" '{tool_name:"Bash", tool_input:{command:$c}, session_id:$s}'; }
++r3_state="${TMPDIR:-/tmp}/plant8-skill-gate"
++mkdir -p "$r3_state"
++r3_none="sid-r3-none-$$"
++r3_dr="sid-r3-dr-$$";   printf 'gsd-quick\ndesign-review\n' > "$r3_state/${r3_dr}.skills"
++r3_pdr="sid-r3-pdr-$$"; echo "plan-design-review" > "$r3_state/${r3_pdr}.skills"
++r3_rev="sid-r3-rev-$$"; echo "review" > "$r3_state/${r3_rev}.skills"
++r3_ios="sid-r3-ios-$$"; echo "ios-design-review" > "$r3_state/${r3_ios}.skills"
++r3_case() {  # $1=설명 $2=기대 rc $3=명령 $4=세션
++  hook "$(payload_bash_s "$3" "$4")"
++  expect_rc "$1" "$2" "$HOOK_RC"
++}
++r3_case "R3-1: codex exec, 스킬 기록 없음 -> 2" 2 'codex exec "review"' "$r3_none"
++expect_contains "R3-1: 디자인 검토 안내" "$HOOK_STDERR" "디자인 검토"
++r3_case "R3-2: codex exec, design-review 기록 -> 0" 0 'codex exec "review"' "$r3_dr"
++r3_case "R3-3: codex exec, plan-design-review 기록 -> 0" 0 'codex exec "review"' "$r3_pdr"
++r3_case "R3-4: codex exec, review만 기록 -> 2" 2 'codex exec "review"' "$r3_rev"
++r3_case "R3-5: codex exec, ios-design-review(정확히 일치 아님) -> 2" 2 'codex exec "review"' "$r3_ios"
++r3_case "R3-6: cd && codex review -> 2" 2 'cd /repo && codex review --base main' "$r3_none"
++r3_case "R3-7: timeout 600 codex exec -> 2" 2 'timeout 600 codex exec -' "$r3_none"
++r3_case "R3-8: _gstack_codex_timeout_wrapper codex exec -> 2" 2 '_gstack_codex_timeout_wrapper 300 codex exec "x"' "$r3_none"
++r3_case "R3-9: wrapper + design-review 기록 -> 0" 0 '_gstack_codex_timeout_wrapper 300 codex exec "x"' "$r3_dr"
++r3_case "R3-10: 경로로 부른 codex -> 2" 2 '~/.local/bin/codex exec x' "$r3_none"
++r3_case "R3-11: codex --version -> 0" 0 'codex --version' "$r3_none"
++r3_case "R3-12: codex login status -> 0" 0 'codex login status' "$r3_none"
++r3_case "R3-13: codex login(상태 아님) -> 2" 2 'codex login' "$r3_none"
++r3_case "R3-14: command -v codex -> 0" 0 'command -v codex' "$r3_none"
++r3_case "R3-15: grep codex -> 0" 0 'grep -rn codex docs/' "$r3_none"
++r3_case "R3-16: install-codex.sh -> 0" 0 'bash scripts/install-codex.sh' "$r3_none"
++r3_case "R3-17: codex-design-review.sh -> 0" 0 'bash scripts/codex-design-review.sh /admin/people --out x.md' "$r3_none"
++r3_case "R3-18: echo 속 codex -> 0" 0 'echo "codex exec 나중에"' "$r3_none"
++r3_case "R3-19: npx @openai/codex -> 2" 2 'npx -y @openai/codex exec x' "$r3_none"
++r3_case "R3-20: pnpm dlx @openai/codex -> 2" 2 'pnpm dlx @openai/codex exec x' "$r3_none"
++r3_case "R3-21: pnpm add -g @openai/codex(설치) -> 0" 0 'pnpm add -g @openai/codex@0.155.1' "$r3_none"
++r3_case "R3-22: session_id 없음 -> 2" 2 'codex exec x' ""
+ hook "$(payload_skill gsd-review '04.3')"
+-expect_rc "R3-2: gsd-review -> 0" 0 "$HOOK_RC"
+-expect_empty "R3-2: Codex 경고 없음" "$HOOK_STDOUT"
++expect_rc "R3-23: gsd-review 스킬 호출 자체는 막지 않는다 -> 0" 0 "$HOOK_RC"
+ 
+ # ---------------------------------------------------------------------------
+ echo "== R4: 사용자에게 보이는 글 한국어 =="
+@@ -609,7 +642,7 @@
+ hook "$(payload_bash 'cat CLAUDE.md > /tmp/c.md')"
+ expect_rc "B5-5: read CLAUDE.md into other file -> 0" 0 "$HOOK_RC"
+ 
+-echo "== B6: 토크나이저 — 따옴표·heredoc 속 단어는 명령이 아니다(codex는 폐지되어 어디서도 막지 않음) =="
++echo "== B6: 토크나이저 — 따옴표·heredoc 속 단어는 명령이 아니다 =="
+ hook "$(payload_bash 'git commit -m "docs: 리뷰 기록 (codex 한도로 Opus 대체)"')"
+ expect_rc "B6-1: commit message with (codex -> 0" 0 "$HOOK_RC"
+ hook "$(payload_bash "$(printf 'git commit -m "$(cat <<'"'"'EOF'"'"'\nfix: y\n\n`codex exec`는 한도로 못 씀 "인용"\nEOF\n)"')")"
+@@ -618,16 +651,16 @@
+ hook "$(payload_bash 'echo "a | codex b"')"
+ expect_rc "B6-3: echo \"a | codex b\" -> 0" 0 "$HOOK_RC"
+ hook "$(payload_bash 'codex --version && codex exec review')"
+-expect_rc "B6-4: codex --version && codex exec -> 0 (Codex 규칙 없음)" 0 "$HOOK_RC"
++expect_rc "B6-4: codex --version && codex exec -> 2 (R3)" 2 "$HOOK_RC"
+ hook "$(payload_bash 'bash -c "codex exec x"')"
+-expect_rc "B6-5: bash -c string with codex -> 0" 0 "$HOOK_RC"
+-expect_empty "B6-5: no Codex warning" "$HOOK_STDOUT"
++expect_rc "B6-5: bash -c string with codex -> 0 (판정 불확실, 경고로 낮춤)" 0 "$HOOK_RC"
++expect_contains "B6-5: Codex 경고" "$HOOK_STDOUT" "디자인 검토"
+ hook "$(payload_bash 'gh pr create --draft --title "x" --body "codex 한도로 Opus 대체"')"
+ expect_rc "B6-6: PR body with codex -> 0" 0 "$HOOK_RC"
+ hook "$(payload_bash 'npx -y @openai/codex exec x')"
+-expect_rc "B6-8: npx @openai/codex -> 0 (Codex 규칙 없음)" 0 "$HOOK_RC"
++expect_rc "B6-8: npx @openai/codex -> 2 (R3)" 2 "$HOOK_RC"
+ hook "$(payload_bash 'pnpm dlx @openai/codex exec x')"
+-expect_rc "B6-9: pnpm dlx @openai/codex -> 0 (Codex 규칙 없음)" 0 "$HOOK_RC"
++expect_rc "B6-9: pnpm dlx @openai/codex -> 2 (R3)" 2 "$HOOK_RC"
+ hook "$(payload_bash 'echo "unterminated | codex exec')"
+ expect_rc "B6-7: unparsable quoting -> 0 (경고로 낮춤)" 0 "$HOOK_RC"
+ 
+@@ -790,7 +823,7 @@
+ expect_empty "P3-12: no new-dependency warning" "$HOOK_STDOUT"
+ hook "$(payload_skill gsd-review '04.3 --all')"
+ expect_rc "P3-13: gsd-review --all -> 0" 0 "$HOOK_RC"
+-expect_empty "P3-13: --all: no Codex warning (Codex 폐지)" "$HOOK_STDOUT"
++expect_empty "P3-13: --all: 스킬 호출에는 Codex 경고 없음" "$HOOK_STDOUT"
+ hook "$(payload_bash 'git status && echo "$(git push --force origin x)"')"
+ expect_rc "P3-14: force push inside quoted \$(...) -> 0 (판정 불확실, 경고)" 0 "$HOOK_RC"
+ expect_contains "P3-14: warns force" "$HOOK_STDOUT" "force"

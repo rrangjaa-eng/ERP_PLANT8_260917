@@ -469,14 +469,11 @@ test.describe("고객 승인 표시와 취소 (04-24 Task 2 — ENG-D4 · D7 · 
     await expect(page.getByText(`고객 승인 ${TODAY} ${PM_NAME}`, { exact: true })).toHaveCount(0);
 
     // 다음 한 수 3차 「새로 고침」 — 화면을 다시 받고 다이얼로그를 닫는다(SYSTEM.md §7-17 ERROR, 2026-10-01).
-    // 다시 연 다이얼로그가 새 기준값을 싣도록 router.refresh()의 RSC 응답을 기다린다.
-    const refreshed = page.waitForResponse(
-      (response) => response.request().method() === "GET" && (response.request().headers()["rsc"] === "1" || response.url().includes("_rsc=")),
-    );
     await dialog.getByRole("button", { name: "새로 고침" }).click();
     await expect(dialog).toBeHidden();
-    await refreshed;
     dialog = await openApprovalDialog(page);
+    // 새로 받은 기준값(합계 · 내용 토큰)이 그려진 뒤에 제출한다 — RSC 응답 도착은 렌더 반영을 보장하지 않는다.
+    await expect(dialog.getByText("상세 견적 1차 · 3,000,000", { exact: true })).toBeVisible();
     await submitAndWait(page, dialog.getByRole("button", { name: /고객 승인 표시/ }));
     await expect(dialog).toBeHidden();
     await expect(page.getByText(`고객 승인 ${TODAY} ${PM_NAME}`, { exact: true })).toBeVisible();

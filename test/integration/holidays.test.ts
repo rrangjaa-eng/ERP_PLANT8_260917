@@ -484,4 +484,15 @@ describe("보관된 공휴일은 공휴일이 아니다(ADMN-12 · D-01)", () =>
     expect(await insertHolidayRows(SYSTEM_VIEWER, statutory)).toBe(1);
     expect(await insertHolidayRows(SYSTEM_VIEWER, statutory)).toBe(0);
   });
+
+  it("h5: 보관 행은 대체일 자리를 붙잡지 않는다 — 같은 날짜에 대체 행이 들어간다", async () => {
+    await clearHolidayTables();
+    await addManual(DATE);
+    await archiveByRaw(DATE);
+    const inserted = await withHolidayCalendarLock((tx) =>
+      insertSubstituteRows(SYSTEM_VIEWER, [{ date: DATE, name: "대체", originYear: 2034 }], tx),
+    );
+    expect(inserted).toBe(1);
+    expect(await findHolidayByDate(SYSTEM_VIEWER, DATE)).toMatchObject({ kind: "substitute" });
+  });
 });

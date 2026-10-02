@@ -323,6 +323,9 @@ export type QuoteLineWriteRow = {
   isNew?: true;
   /** 04-12(사용자 D10) — 이 새 줄이 어느 줄의 복제인지(게이트의 `duplicate` 판정). */
   duplicatedFrom?: string;
+  /** /review 적대 검토(PR #135) — 화면이 이 줄을 거래처를 가린 채 그렸다(그 사이 노출표가 바뀌어도). 서버는 거래처를
+   * 기존 값(새 복제 줄은 원본 값)으로 둔다. */
+  vendorHidden?: true;
   /** 04-13 — 새 줄의 종류(없으면 quote). 기존 줄의 종류는 DB 행이 정한다. */
   lineKind?: QuoteLineKind;
   version?: number;
@@ -385,7 +388,8 @@ function currentFieldValue(row: QuoteLineRow, field: CompareField): string | num
   }
 }
 
-function formatFieldValue(field: CompareField, value: string | number | null): string {
+function formatFieldValue(field: CompareField, value: string | number | null, vendorLabel: string): string {
+  if (field === "vendorId") return vendorLabel;
   if (field === "unitPriceAmountKrw" || field === "executionAmountKrw") {
     return formatKrw(Number(value ?? 0));
   }
@@ -477,7 +481,12 @@ export function computeQuoteLineAmounts(input: {
 // 04-04 Task 2 ② — 버전이 다른 줄 하나의 칸 단위 충돌. baseline과 서버
 // 현재 값이 실제로 다른 칸만 담는다. baseline이 없으면(방어적 폴백 — 정상
 // 클라이언트는 항상 보낸다) 줄 전체를 itemName 한 칸의 충돌로 본다.
-function cellConflictsFor(rowId: string, baseline: QuoteLineBaseline | undefined, current: QuoteLineRow): CellConflict[] {
+function cellConflictsFor(
+  rowId: string,
+  baseline: QuoteLineBaseline | undefined,
+  current: QuoteLineRow,
+  vendorLabel: string,
+): CellConflict[] {
   if (!baseline) {
     return [
       {
@@ -504,7 +513,7 @@ function cellConflictsFor(rowId: string, baseline: QuoteLineBaseline | undefined
     const baselineValue = baseline[field];
     const currentValue = currentFieldValue(current, field);
     if (baselineValue === currentValue) continue; // 값이 실제로 같으면 충돌이 아니다.
-    const theirValue = formatFieldValue(field, currentValue);
+    const theirValue = formatFieldValue(field, currentValue, vendorLabel);
     conflicts.push({
       rowId,
       field,
@@ -538,6 +547,7 @@ export const quoteLineRowInputSchema = z
     id: z.string().uuid().optional(),
     isNew: z.literal(true).optional(),
     duplicatedFrom: z.string().uuid().optional(),
+    vendorHidden: z.literal(true).optional(),
     version: z.number().optional(),
     subcategory: z.string(),
     itemName: z.string().min(1, "항목명 필요 · 항목명 입력"),
@@ -609,6 +619,8 @@ const REPLAY_MISMATCH = "이미 저장된 줄과 값이 다름 · 새로 고침"
 const ARCHIVED_LINE = "보관된 줄 · 새로 고침";
 // 04-13 rev 5에 없는 방어 문구 — 기존 줄에 저장된 것과 다른 종류를 실은 요청(T-04-64).
 const KIND_CHANGED = "줄 종류는 바뀌지 않음 · 새로 고침";
+// 거래처 칸 충돌 값 — 거래처 이름을 볼 수 없거나 이름을 찾지 못하면(「다른 사람이 HH:mm에 다른 값으로 바꿈」).
+const HIDDEN_CONFLICT_VALUE = "다른 값";
 
 type QuoteLineCustomFieldsSchema = Awaited<ReturnType<typeof quoteLineCustomFieldsSchema>>;
 
@@ -622,6 +634,8 @@ export type PreparedQuoteLineSave = {
   /** 04-13 — `projects` 쓰기와 `projects.adjustment` 쓰기(입구는 둘 중 하나, 줄마다의 판정은 게이트). */
   canWrite: boolean;
   canAdjust: boolean;
+  /** 충돌 이유에 거래처 이름을 실을지 — 거래처 정보라 project.value · vendor.value를 다 볼 때만(all-of, 리저브 선택지와 같은 결). */
+  vendorNamesVisible: boolean;
   /** quick 261001-85g — 거래처 정보(vendor.value)를 보는가. 거짓이면 요청의 거래처 칸을 읽지 않고 기존 값을 지킨다. */
   vendorShown: boolean;
 };
@@ -653,6 +667,7 @@ export async function prepareQuoteLineSave(
     lineCap: await getSettingValue(QUOTE_LINE_MAX_PER_REVISION),
     canWrite,
     canAdjust,
+    vendorNamesVisible: (await Promise.all([defaultVisible(viewer, "project.value"), defaultVisible(viewer, "vendor.value")])).every(Boolean),
     vendorShown: await defaultVisible(viewer, "vendor.value"),
   };
 }
@@ -828,7 +843,7 @@ export async function writeQuoteLinesInTx(
   deps?: Partial<Pick<QuoteLineWriteDeps, "now" | "afterLock" | "recordAction">>,
 ): Promise<WrittenQuoteLines> {
   const recordAction = deps?.recordAction ?? defaultRecordAction;
-  const { revisionId, projectId, customFieldsSchema, lineCap, canWrite, canAdjust } = prepared;
+  const { revisionId, projectId, customFieldsSchema, lineCap, canWrite, canAdjust, vendorNamesVisible } = prepared;
   const archivedIds = [...new Set(input.archivedLineIds ?? [])];
   const lineIds = input.rows.map((row) => row.id);
   const denyIds = { projectId, revisionId, lineIds: [...lineIds, ...archivedIds] };
@@ -851,10 +866,24 @@ export async function writeQuoteLinesInTx(
       : { status, ...actor, hasLinkedDocuments: false, change };
   };
 
+  // 충돌 칸의 거래처 표시 — UUID가 아니라 이름. 이름을 볼 수 없는 사람에겐 이름도 id도 아닌 「다른 값」.
+  // 거래처 칸이 실제로 충돌일 때만 조회한다(아니면 cellConflictsFor가 이 값을 쓰지 않는다).
+  const conflictVendorLabel = async (baseline: QuoteLineBaseline | undefined, current: QuoteLineRow): Promise<string> => {
+    if (!vendorNamesVisible || !baseline || baseline.vendorId === current.vendorId) return HIDDEN_CONFLICT_VALUE;
+    if (current.vendorId === null) return "—";
+    const names = await repoFindVendorNamesByIds(viewer, [current.vendorId], tx);
+    return names.get(current.vendorId) ?? HIDDEN_CONFLICT_VALUE;
+  };
+
   // (b)
   const existingIds = [...new Set([...input.rows.filter((row) => !row.isNew).map((row) => row.id), ...archivedIds])];
-  const currentRows = await repoFindQuoteLinesByIds(viewer, existingIds, { revisionId }, tx);
-  const currentById = new Map(currentRows.map((row) => [row.id, row] as const));
+  // Codex 리뷰 P1(PR #125) — 복제 원본은 요청에 없을 수 있다(바뀌지 않은 줄). 같은 차수 조회에 함께 읽어 거래처를 넘긴다.
+  const sourceIds = [...new Set(input.rows.flatMap((row) => (row.isNew && row.duplicatedFrom ? [row.duplicatedFrom] : [])))].filter(
+    (id) => !existingIds.includes(id),
+  );
+  const foundRows = await repoFindQuoteLinesByIds(viewer, [...existingIds, ...sourceIds], { revisionId }, tx);
+  const currentById = new Map(foundRows.map((row) => [row.id, row] as const));
+  const currentRows = foundRows.filter((row) => !sourceIds.includes(row.id));
   const activeBefore = await repoListQuoteLinesByRevision(viewer, revisionId, tx);
   const order = input.order
     ? orderChange(
@@ -868,7 +897,8 @@ export async function writeQuoteLinesInTx(
   const deny = (rule: string, error: Error) => {
     denial ??= { rule, error };
   };
-  if (currentRows.length !== existingIds.length) deny(MEMBERSHIP_RULE, new UserFacingError(MEMBERSHIP_MISMATCH));
+  const missingSource = sourceIds.some((id) => !currentById.has(id));
+  if (currentRows.length !== existingIds.length || missingSource) deny(MEMBERSHIP_RULE, new UserFacingError(MEMBERSHIP_MISMATCH));
   else if (currentRows.some((row) => row.archivedAt !== null)) deny(MEMBERSHIP_RULE, new UserFacingError(ARCHIVED_LINE));
   else if (order === "mismatch") deny(MEMBERSHIP_RULE, new UserFacingError(ORDER_MISMATCH));
 
@@ -917,7 +947,8 @@ export async function writeQuoteLinesInTx(
     for (const [rowIndex, received] of input.rows.entries()) {
       // 04-13 — 판정·저장이 보는 종류: 기존 줄은 잠근 tx로 다시 읽은 DB 행, 새 줄만 요청 값(없으면 quote).
       const current = received.isNew ? undefined : currentById.get(received.id);
-      const requested = prepared.vendorShown ? received : keepHiddenVendor(received, current, currentById);
+      // /review 적대 검토 — 가려진 채 그린 줄은 그 사이 거래처가 보이게 바뀌었어도 거래처를 본 적이 없다.
+      const requested = prepared.vendorShown && !received.vendorHidden ? received : keepHiddenVendor(received, current, currentById);
       const resolved = resolveLineKind(requested, current && lineKindOf(current));
       if (resolved === null) deny(LINE_EDIT_RULE, new UserFacingError(KIND_CHANGED));
       const kind = resolved ?? lineKindOf(current!);
@@ -946,7 +977,9 @@ export async function writeQuoteLinesInTx(
         throw new UserFacingError("버전 정보 필요 · 새로 고침");
       }
       if (!current) continue; // (b)가 이미 막았다.
-      if (current.version !== row.version) conflicts.push(...cellConflictsFor(row.id, row.baseline, current));
+      if (current.version !== row.version) {
+        conflicts.push(...cellConflictsFor(row.id, row.baseline, current, await conflictVendorLabel(row.baseline, current)));
+      }
 
       // 바뀐 칸마다 판정해 칸 오류로 싣는다(이유 = 표 위 한 줄과 같은 문자열). 바뀐 칸이 없으면 게이트를 부르지 않는다.
       const changed = changedFields(current, payload);
@@ -1016,8 +1049,9 @@ export async function writeQuoteLinesInTx(
       // 04-28 — 같은 트랜잭션에서 서버 현재 행을 다시 읽어, 실제로 달라진 칸만 서버 값·버전으로 싣는다.
       const [current] = await repoFindQuoteLinesByIds(viewer, [row.id], { revisionId }, tx);
       if (!current) throw new UserFacingError(MEMBERSHIP_MISMATCH);
-      const raceConflicts = cellConflictsFor(row.id, row.baseline, current);
-      throw new SaveRejectedError(raceConflicts.length > 0 ? raceConflicts : cellConflictsFor(row.id, undefined, current), []);
+      const vendorLabel = await conflictVendorLabel(row.baseline, current);
+      const raceConflicts = cellConflictsFor(row.id, row.baseline, current, vendorLabel);
+      throw new SaveRejectedError(raceConflicts.length > 0 ? raceConflicts : cellConflictsFor(row.id, undefined, current, vendorLabel), []);
     }
     wrote = true;
   }

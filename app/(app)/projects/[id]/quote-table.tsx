@@ -69,6 +69,12 @@ type DraftLine = {
   id?: string;
   /** 04-30(ENG-D10) — 화면이 만든 uuid로 아직 저장되지 않은 줄. 재전송에도 같은 id를 싣는다. */
   isNew?: true;
+  /** Codex 리뷰 P1(PR #125) — 복제한 새 줄의 원본(저장된 줄) id. 거래처가 가려진 계급의 거래처를 서버가 원본에서 넘기고,
+   * 서버 구조 판정도 새 줄이 아니라 복제로 본다(같은 차수의 줄이 아니면 저장 거부). */
+  duplicatedFrom?: string;
+  /** /review 적대 검토(PR #135) — 거래처를 가린 채 그린 줄(DTO에 vendorId 없음). 그 뒤 화면만 다시 그려져 거래처가
+   * 보여도 이 줄의 거래처는 본 적 없는 값이라, 저장 때 표시를 실어 서버가 거래처를 기존(복제는 원본) 값으로 둔다. */
+  vendorHidden?: true;
   /** 04-23(D-83 · D-48) — 줄 종류(서버 DTO). 새 줄에서만 정해지고 바뀌지 않는다. */
   lineKind: QuoteLineKind;
   version?: number;
@@ -250,7 +256,8 @@ function baselineFromDto(dto: QuoteLineDto): QuoteLineBaseline {
   return {
     subcategory: dto.subcategory,
     itemName: dto.itemName,
-    vendorId: dto.vendorId,
+    // Codex 리뷰 P1(PR #125) — 거래처가 가려진 계급의 DTO에는 vendorId가 없다(저장 스키마는 null을 받는다).
+    vendorId: dto.vendorId ?? null,
     quantity: dto.quantity,
     unitPriceAmountKrw: dto.unitPrice?.amountKrw ?? 0,
     executionAmountKrw: dto.execution?.amountKrw ?? 0,
@@ -267,7 +274,8 @@ function fromDto(dto: QuoteLineDto): DraftLine {
     version: dto.version,
     subcategory: dto.subcategory,
     itemName: dto.itemName,
-    vendorId: dto.vendorId,
+    vendorId: dto.vendorId ?? null,
+    ...(dto.vendorId === undefined ? { vendorHidden: true as const } : {}),
     savedVendor: dto.vendorId && dto.vendorName ? { id: dto.vendorId, name: dto.vendorName } : null,
     quantity: dto.quantity,
     unitPriceAmount: dto.unitPrice?.amount ?? 0,
@@ -338,10 +346,12 @@ function newDraftLine(defaultSubcategory: string, cells: LineCells, id: string =
 // 검토 B1 — 기간·총 매출 예상가 칸은 차수가 아니라 프로젝트의 칸이다(다른 차수 보관본에서 현재 차수로 옮긴다).
 export const PROJECT_EDIT_OWNERS = ["period", "preEstimate"] as const;
 type StoredUnitPrice = { amount: number; currency: Currency; fxRate: number };
-type StoredLineBase = { version: number; baseline: QuoteLineBaseline };
+type StoredLineBase = { version: number; baseline: QuoteLineBaseline; vendorHidden?: true };
 type StoredPeriodBase = { startDate: string | null; endDate: string | null };
 type StoredNewLine = {
   lineKind: QuoteLineKind;
+  duplicatedFrom?: string;
+  vendorHidden?: true;
   subcategory: string;
   itemName: string;
   vendorId: string | null;
@@ -365,6 +375,8 @@ export function editsSnapshot(
     if (line.isNew || !line.id) {
       const stored: StoredNewLine = {
         lineKind: line.lineKind,
+        duplicatedFrom: line.duplicatedFrom,
+        vendorHidden: line.vendorHidden,
         subcategory: line.subcategory,
         itemName: line.itemName,
         vendorId: line.vendorId,
@@ -388,7 +400,7 @@ export function editsSnapshot(
     if (line.note !== base.note) edits[`${line.id}:note`] = line.note;
     // 검토 8(S18) — 칸이 하나라도 있으면 그 줄의 version·baseline을 함께 보관한다(복원 뒤 저장이 충돌 판정을 받는다).
     if (lineDiffersFromBaseline(line) && line.version !== undefined) {
-      const stored: StoredLineBase = { version: line.version, baseline: base };
+      const stored: StoredLineBase = { version: line.version, baseline: base, vendorHidden: line.vendorHidden };
       edits[`${line.id}:base`] = stored;
     }
   }
@@ -446,6 +458,7 @@ function readLineBase(value: unknown): StoredLineBase | null {
   }
   return {
     version: value.version,
+    ...(value.vendorHidden === true ? { vendorHidden: true as const } : {}),
     baseline: {
       subcategory: b.subcategory,
       itemName: b.itemName,
@@ -501,6 +514,8 @@ function restoredNewLine(value: unknown, defaultSubcategory: string, kindCells: 
   let line: DraftLine = {
     ...newDraftLine(lineKind === "quote" ? defaultSubcategory : "", cells, UUID_PATTERN.test(storedId) ? storedId : crypto.randomUUID()),
     lineKind,
+    ...(typeof value.duplicatedFrom === "string" && UUID_PATTERN.test(value.duplicatedFrom) ? { duplicatedFrom: value.duplicatedFrom } : {}),
+    ...(value.vendorHidden === true ? { vendorHidden: true as const } : {}),
   };
   for (const [field, column] of [
     ["subcategory", "subcategory"],
@@ -563,7 +578,21 @@ export function mergeRestoredEdits(
     const patch = restoredCellPatch(column, value);
     const base = readLineBase(edits[`${owner}:base`]);
     if (!patch || !base) continue;
-    next = next.map((line) => (line.id === owner ? { ...line, ...patch, ...base, dirty: true } : line));
+    // /review 적대 검토(PR #135) — 보관할 때나 지금 거래처가 가려졌으면 기준값의 거래처는 본 적 없는(또는 볼 수 없는) 값이다.
+    // 지금 줄의 기준값으로 바꿔, 아무도 바꾸지 않은 거래처 칸에 충돌이 붙거나 다음 보관이 거래처를 편집으로 남기지 않게 한다.
+    // 가림 여부는 지금 줄(DTO)을 따른다.
+    const { vendorHidden, ...stored } = base;
+    next = next.map((line) =>
+      line.id === owner
+        ? {
+            ...line,
+            ...patch,
+            ...stored,
+            baseline: vendorHidden || line.vendorHidden ? { ...stored.baseline, vendorId: line.baseline.vendorId } : stored.baseline,
+            dirty: true,
+          }
+        : line,
+    );
   }
   return { lines: [...next, ...added], period, preEstimate };
 }
@@ -1429,6 +1458,9 @@ export function QuoteLedger({
         // 04-23(D-48) — 견적 외 비용 줄의 복제는 같은 종류다.
         ...newDraftLine(subcategory, source.lineKind === "out_of_quote" ? outOfQuoteLineCells : newLineCells),
         lineKind: source.lineKind,
+        // Codex 리뷰 P1(PR #125) — 저장되지 않은 줄의 복제는 그 줄의 원본을 잇는다.
+        duplicatedFrom: source.isNew ? source.duplicatedFrom : source.id,
+        vendorHidden: source.vendorHidden,
         itemName: source.itemName,
         vendorId: source.vendorId,
         savedVendor: source.savedVendor,
@@ -1567,6 +1599,9 @@ export function QuoteLedger({
               rows: dirtyLines.map((line) => ({
                 id: line.id,
                 isNew: line.isNew,
+                duplicatedFrom: line.isNew ? line.duplicatedFrom : undefined,
+                // 가린 채 그린 줄에 거래처를 고르면(그 뒤 열이 보인 화면) 고른 값을 저장한다.
+                vendorHidden: line.vendorHidden && line.vendorId === null ? true : undefined,
                 version: line.isNew ? undefined : line.version,
                 lineKind: line.isNew ? line.lineKind : undefined,
                 subcategory: line.subcategory,

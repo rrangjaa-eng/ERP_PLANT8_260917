@@ -169,6 +169,24 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
     expect(block).toContain("name: playwright-report-${{ matrix.shard }}");
   });
 
+  // 배포 CI 중복 제거(2026-10-01 사용자 결정): PR 병합 결과 tree가 세 잡을 모두 통과하면
+  // 그 tree를 아티팩트 이름에 남긴다. deploy.yml은 main 커밋 tree와 같은 기록이 있으면 CI를 건너뛴다.
+  it("tested-tree 잡은 quality·integration·e2e가 모두 성공한 pull_request에서만 돈다(draft·건너뜀이면 안 돈다)", () => {
+    const ci = readWorkflow("ci.yml");
+    const block = jobBlock(ci, "tested-tree");
+    expect(block).toContain("needs: [quality, integration, e2e]");
+    const ifLine = block.split("\n").find((line) => /^\s{4}if:/.test(line));
+    expect(ifLine?.trim()).toBe("if: github.event_name == 'pull_request'");
+    expect(block).not.toMatch(/always\(\)|cancelled\(\)|failure\(\)/);
+  });
+
+  it("tested-tree 잡은 병합 결과 tree를 이름에 넣은 아티팩트를 올린다", () => {
+    const ci = readWorkflow("ci.yml");
+    const block = jobBlock(ci, "tested-tree");
+    expect(block).toContain("git rev-parse 'HEAD^{tree}'");
+    expect(block).toContain("name: tested-tree-${{ steps.tree.outputs.tree }}");
+  });
+
   // WR-09: !docs/**가 unit 테스트가 실제로 읽는 docs 파일까지 가려서, 그 파일만
   // 바뀐 PR은 CI가 아예 돌지 않는다. test/unit/design-system-docs.test.ts·
   // test/unit/ui/role-menu.test.ts·test/unit/docs-limits.test.ts가 읽는 6개

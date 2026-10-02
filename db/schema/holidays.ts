@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, uuid, date, integer, timestamp, uniqueIndex, check } from "drizzle-orm/pg-core";
 import { users } from "./auth";
 
-// Phase 04.2(ADMN-11): 영업일 계산이 읽는 공휴일 표 하나 — 날짜마다 한 행.
+// Phase 04.2(ADMN-11): 영업일 계산이 읽는 공휴일 표 하나 — 보관 안 된 행은 날짜마다 한 행.
 // 규칙 행·초기 수동 목록은 created_by가 null이다. 대체공휴일 행만 origin_year
 // (그 대체일을 낳은 공휴일의 해)를 갖는다 — 다음 해 1월로 넘어간 대체일도
 // 원래 해 단위로 다시 계산한다(D-4210).

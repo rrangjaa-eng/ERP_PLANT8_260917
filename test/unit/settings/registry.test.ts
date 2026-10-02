@@ -87,6 +87,15 @@ describe("getSettingValue (ADMN-05)", () => {
     expect(findEffectiveValue).toHaveBeenCalledWith(expect.anything(), HISTORIZED_DEF.key, "2026-01-01");
   });
 
+  it("이력형: 기준일을 주지 않으면 서울 오늘이다 — KST 01:30(UTC 전날)에 오늘 적용 행을 찾는다", async () => {
+    const findEffectiveValue = vi.fn().mockResolvedValue(null);
+    await getSettingValue(HISTORIZED_DEF, undefined, {
+      findEffectiveValue,
+      now: new Date("2026-10-01T16:30:00Z"), // = 2026-10-02 01:30 KST
+    });
+    expect(findEffectiveValue).toHaveBeenCalledWith(expect.anything(), HISTORIZED_DEF.key, "2026-10-02");
+  });
+
   it("이력형: 해당하는 행이 없으면(모든 행이 미래) 기본값으로 떨어진다", async () => {
     const findEffectiveValue = vi.fn().mockResolvedValue(null);
     const result = await getSettingValue(HISTORIZED_DEF, { asOf: new Date("2020-01-01") }, { findEffectiveValue });

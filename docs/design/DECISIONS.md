@@ -1233,7 +1233,7 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 
 ## 2026-10-01 — quick 261001-hfi ARCHITECTURE §5 예외: holidays_date_key 제거 → 부분 유일 인덱스(공휴일 보관, D-01)
 
-**결정**: 공휴일 삭제를 보관함으로 옮기며(ADMN-12), 마이그레이션 `0021`이 `holidays`에 보관 칸 둘(`archived_at` · `archived_by`)을 더하고 날짜 유일 제약 `holidays_date_key`를 지운 뒤 보관 안 된 행만 보는 부분 유일 인덱스 `holidays_date_active_key`(`date` WHERE `archived_at IS NULL`)로 바꾼다 — ARCHITECTURE §5 「확장 전용(DROP 없음)」의 예외 한 건. 0021 첫 줄의 `-- rollback-floor:` 표시로 이 마이그레이션이 롤백 하한이 된다(04-50 규칙). 프로덕션 승격은 업무 시간 밖에 한다.
+**결정**: 공휴일 삭제를 보관함으로 옮기며(ADMN-12), 마이그레이션 `0021`이 `holidays`에 보관 칸 둘(`archived_at` · `archived_by`)을 더하고 날짜 유일 제약 `holidays_date_key`를 지운 뒤 보관 안 된 행만 보는 부분 유일 인덱스 `holidays_date_active_key`(`date` WHERE `archived_at IS NULL`)로 바꾼다 — ARCHITECTURE §5 「확장 전용(DROP 없음)」의 예외 한 건. 0021 첫 줄의 `-- rollback-floor:` 표시로 이 마이그레이션이 롤백 하한이 된다(04-50 규칙). 프로덕션 승격은 업무 시간 밖에 한다. 배포 중 마이그레이션 적용부터 새 리비전이 트래픽을 받기까지는 옛 리비전의 공휴일 추가(연도 후보 생성 · 관리자 수동 추가)가 `ON CONFLICT (date)`로 부분 인덱스를 추론하지 못해 42P10으로 실패하고, 새 리비전이 받으면 풀린다(데이터 손상 없음).
 
 **왜**: 보관 행이 날짜를 붙잡으면 대체 공휴일 재계산과 같은 날짜 재추가가 막힌다. 직전 리비전의 `ON CONFLICT (date)`는 부분 인덱스를 추론하지 못하고 보관 행을 공휴일로 읽으므로 하한 아래 롤백은 거부해야 한다.
 

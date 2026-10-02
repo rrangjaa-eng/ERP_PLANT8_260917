@@ -89,7 +89,7 @@ export async function insertYearGeneration(viewer: Viewer, year: number, tx: DbO
   return inserted.length > 0;
 }
 
-// 법정·수동 행 전용 — 이미 있는 날짜의 행(관리자 수동 행 포함)은 남는다.
+// 법정·수동 행 전용 — 같은 날짜의 활성(보관 안 된) 행(관리자 수동 행 포함)이 있으면 남는다.
 export async function insertHolidayRows(
   viewer: Viewer,
   rows: readonly HolidayRowInsert[],
@@ -108,7 +108,7 @@ export async function insertHolidayRows(
   return inserted.length;
 }
 
-// 충돌을 삼키지 않는다 — 같은 날짜가 있으면 유니크 위반(23505)으로 트랜잭션 전체가 되돌려진다.
+// 충돌을 삼키지 않는다 — 같은 날짜의 활성(보관 안 된) 행이 있으면 유니크 위반(23505)으로 트랜잭션 전체가 되돌려진다.
 export async function insertSubstituteRows(
   viewer: Viewer,
   rows: readonly SubstituteRowInsert[],

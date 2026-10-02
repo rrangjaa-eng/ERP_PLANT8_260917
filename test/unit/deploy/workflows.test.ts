@@ -79,9 +79,46 @@ describe("deploy.yml", () => {
     expect(stagingStart).toBeGreaterThan(-1);
     expect(productionStart).toBeGreaterThan(stagingStart);
     const stagingBlock = deploy.slice(stagingStart, productionStart);
-    expect(stagingBlock).toContain("needs: ci");
+    expect(stagingBlock).toContain("needs: [tested, ci]");
     expect(stagingBlock).toContain("github.event_name == 'push'");
     expect(stagingBlock).toContain("inputs.target == 'staging'");
+  });
+
+  // 배포 CI 중복 제거(2026-10-01 사용자 결정): main 커밋 tree가 PR CI 전체 통과 기록(ci.yml
+  // tested-tree 아티팩트)과 같으면 CI를 다시 돌리지 않는다. 기록이 없거나 조회가 실패하면 CI 전체.
+  it("tested 잡은 push에서만 main tree 이름의 아티팩트를 찾고, 만료·다른 저장소 실행은 세지 않는다", () => {
+    const testedStart = deploy.indexOf("\n  tested:");
+    const ciStart = deploy.indexOf("\n  ci:");
+    expect(testedStart).toBeGreaterThan(-1);
+    expect(ciStart).toBeGreaterThan(testedStart);
+    const testedBlock = deploy.slice(testedStart, ciStart);
+    expect(testedBlock).toContain("if: github.event_name == 'push'");
+    expect(testedBlock).toContain("actions: read");
+    expect(testedBlock).toContain("git rev-parse 'HEAD^{tree}'");
+    expect(testedBlock).toContain("actions/artifacts?name=tested-tree-$tree");
+    expect(testedBlock).toContain(".expired == false");
+    expect(testedBlock).toContain(".workflow_run.head_repository_id == .workflow_run.repository_id");
+    expect(testedBlock).toContain("hit: ${{ steps.find.outputs.hit }}");
+  });
+
+  it("ci 잡은 tested 기록이 없을 때만 돌고(조회 실패 포함), 수동 staging 실행에서는 늘 돈다", () => {
+    const ciStart = deploy.indexOf("\n  ci:");
+    const stagingStart = deploy.indexOf("\n  staging:");
+    const ciBlock = deploy.slice(ciStart, stagingStart);
+    expect(ciBlock).toContain("needs: tested");
+    expect(ciBlock).toContain("!cancelled()");
+    expect(ciBlock).toContain("needs.tested.outputs.hit != 'true'");
+    expect(ciBlock).toContain("inputs.target == 'staging'");
+  });
+
+  it("staging 잡은 ci 성공 또는 (ci 건너뜀 + tested 기록 있음)일 때만 배포한다", () => {
+    const stagingStart = deploy.indexOf("\n  staging:");
+    const productionStart = deploy.indexOf("\n  production:");
+    const stagingBlock = deploy.slice(stagingStart, productionStart);
+    expect(stagingBlock).toContain("!cancelled()");
+    expect(stagingBlock).toContain("needs.ci.result == 'success'");
+    expect(stagingBlock).toContain("(needs.ci.result == 'skipped' && needs.tested.outputs.hit == 'true')");
+    expect(stagingBlock).not.toContain("always()");
   });
 
   it("production 잡은 workflow_dispatch + target==production으로만 실행되고 needs가 없으며 push로는 실행되지 않는다", () => {

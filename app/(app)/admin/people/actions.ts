@@ -57,7 +57,12 @@ export const assignTeamAction = authedActionClient
   });
 
 export const cancelAssignmentAction = authedActionClient
-  .schema(z.object({ userId: z.string().min(1), effectiveFrom: z.string().min(1) }))
+  .schema(
+    z.object({
+      userId: z.string().min(1),
+      effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "발령일 형식 오류 · 2026-09-18처럼"),
+    }),
+  )
   .action(async ({ parsedInput, ctx }) => {
     await cancelFutureAssignment(ctx.viewer, parsedInput);
     revalidatePath(`/admin/people/${parsedInput.userId}`);

@@ -144,7 +144,9 @@ for (const viewport of PHONE_VIEWPORTS) {
     expect(tel.length, `E′2 ${width} — 문의 전화 링크`).toBeGreaterThan(0);
     for (const h of tel) expect(h, `E′2 ${width} — tel: 터치 높이`).toBeGreaterThanOrEqual(44);
     await expect(page.getByText(eventName, { exact: false }).first()).toBeVisible();
-    expect(await textLines(page, `button[data-prize-id="${longId}"] span`), `E′2 ${width} — 80자 경품명 줄 수`).toBeGreaterThanOrEqual(1);
+    const nameLines = await textLines(page, `button[data-prize-id="${longId}"] span`);
+    record(`E′2 ${width} 80자 경품명 줄 수`, nameLines);
+    expect(nameLines, `E′2 ${width} — 80자 경품명 줄 수(줄바꿈)`).toBeGreaterThanOrEqual(2);
 
     // 행 누름은 서버 액션을 부르지 않는다.
     const posts = trackPosts(page);
@@ -310,10 +312,19 @@ test.describe("내부 화면 폰 폭", () => {
     await expectNoOverflow(page, 320, "알림함 320");
     const cell = await row.evaluate((el) => {
       const cellEl = el.closest("td") ?? el;
-      return { sw: cellEl.scrollWidth, cw: cellEl.clientWidth };
+      // 보이는 글자(직속 텍스트 노드)만 줄을 센다 — `.sr-only` 「안 읽음 · 」 상자는 세지 않는다.
+      const tops = new Set<number>();
+      for (const node of el.childNodes) {
+        if (node.nodeType !== Node.TEXT_NODE) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        for (const rect of range.getClientRects()) tops.add(Math.round(rect.top));
+      }
+      return { sw: cellEl.scrollWidth, cw: cellEl.clientWidth, lines: tops.size };
     });
     record("알림함 320 내용 칸", cell);
     expect(cell.sw, "알림함 — 내용 칸 scrollWidth").toBeLessThanOrEqual(cell.cw);
+    expect(cell.lines, "알림함 320 — 행 문장 줄 수(줄바꿈)").toBeGreaterThanOrEqual(2);
     await page.context().close();
   });
 

@@ -88,15 +88,22 @@ async function expectPendingButton(button: Locator, label: string): Promise<void
   await expect(button, `${label} — aria-disabled`).toHaveAttribute("aria-disabled", "true");
 }
 
-// 화면의 다른 1차(보이는 primary 버튼)는 모두 비활성이어야 한다.
-async function expectOtherPrimariesInactive(page: Page, self: Locator, label: string): Promise<void> {
+// 화면의 다른 1차(보이는 primary 버튼)는 모두 비활성이어야 한다. 보이는 1차 후보 수(자신 포함)가 화면마다 기대한
+// 최소 개수 이상인지도 단언한다 — 클래스 이름 규칙이 바뀌어 후보가 0개면 조용히 통과하지 않게.
+async function expectOtherPrimariesInactive(page: Page, self: Locator, label: string, minVisible: number): Promise<void> {
   const total = await page.locator('button[class*="primary"]').count();
+  let visible = 0;
+  let others = 0;
   for (let i = 0; i < total; i += 1) {
     const candidate = page.locator('button[class*="primary"]').nth(i);
     if (!(await candidate.isVisible())) continue;
+    visible += 1;
     if (await candidate.evaluate((el, target) => el === target, await self.elementHandle())) continue;
+    others += 1;
     await expect(candidate, `${label} — 다른 1차 비활성`).toHaveAttribute("aria-disabled", "true");
   }
+  record(`${label} 1차 후보`, { visible, others });
+  expect(visible, `${label} — 보이는 1차 후보 수`).toBeGreaterThanOrEqual(minVisible);
 }
 
 const prizeGrid = (page: Page) => page.getByRole("grid", { name: "경품" });
@@ -190,7 +197,7 @@ test("I′2 옆 패널(오른쪽 480) — 목록 표가 밀리지 않는다 · �
   await submit.click();
   await expectPendingButton(submit, "I′2 신청 진행 중");
   await expect(panel.getByRole("button", { name: /^취소/ }), "I′2 진행 중 — 취소 aria-disabled").toHaveAttribute("aria-disabled", "true");
-  await expectOtherPrimariesInactive(page, submit, "I′2 진행 중");
+  await expectOtherPrimariesInactive(page, submit, "I′2 진행 중", 1); // 패널 제출 자신(머리 1차는 패널이 열린 동안 렌더하지 않는다 — DR-9)
   await expect(panel).toBeHidden({ timeout: 15_000 });
   await page.context().close();
 });
@@ -269,7 +276,7 @@ test("I′3 「QR 생성」 요청을 늦추면 버튼 라벨 뒤 `…` + 경품
   await expect(prizeGrid(page), "I′3 QR 생성 진행 중 — 경품 표 aria-busy").toHaveAttribute("aria-busy", "true");
   await prizeCell(page, 0, PRIZE_COL.value).click();
   await expect(prizeCell(page, 0, PRIZE_COL.value).locator("input"), "진행 중 — 편집 칸 입력 열림 없음").toHaveCount(0);
-  await expectOtherPrimariesInactive(page, qr, "I′3 QR 생성 진행 중");
+  await expectOtherPrimariesInactive(page, qr, "I′3 QR 생성 진행 중", 1); // 「QR 생성」 자신
   await expect(page.getByRole("heading", { name: "QR", level: 2 })).toBeVisible({ timeout: 15_000 });
   await page.context().close();
 });
@@ -348,7 +355,7 @@ test("I4 「전체 보기」 · 「고친 내용 저장」 요청을 늦추면 �
   await reveal.click();
   await expectPendingButton(reveal, "I4 전체 보기 진행 중");
   await expect(save, "I4 전체 보기 진행 중 — 저장 aria-disabled").toHaveAttribute("aria-disabled", "true");
-  await expectOtherPrimariesInactive(page, reveal, "I4 전체 보기 진행 중");
+  await expectOtherPrimariesInactive(page, reveal, "I4 전체 보기 진행 중", 1); // 「고친 내용 저장」(「전체 보기」는 3차)
   await expect(rrnInput(page)).toBeVisible({ timeout: 15_000 });
   await expect(reveal).toHaveCount(0);
 
@@ -357,7 +364,7 @@ test("I4 「전체 보기」 · 「고친 내용 저장」 요청을 늦추면 �
   await save.click();
   await expectPendingButton(save, "I4 고친 내용 저장 진행 중");
   await expect(page.getByRole("button", { name: "가리기" }), "I4 저장 진행 중 — 가리기 aria-disabled").toHaveAttribute("aria-disabled", "true");
-  await expectOtherPrimariesInactive(page, save, "I4 저장 진행 중");
+  await expectOtherPrimariesInactive(page, save, "I4 저장 진행 중", 1); // 「고친 내용 저장」 자신
   await expect(page.getByText(/^저장됨 · 연락처 · \d{2}:\d{2}$/)).toBeVisible({ timeout: 15_000 });
   await page.context().close();
 });

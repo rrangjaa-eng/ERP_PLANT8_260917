@@ -3,6 +3,7 @@ import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan, ForbiddenError } from "@/domain/permissions/can";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
 import { withTransaction } from "@/lib/db-transaction";
+import { isUniqueViolation } from "@/lib/pg-errors";
 import { insertFieldDefinition, lockCustomFieldGrants, type DbOrTx } from "@/repositories/field-definitions";
 import { listRoles as defaultListRoles } from "@/repositories/roles";
 import { insertVisibilityIfAbsent as defaultInsertVisibility } from "@/repositories/permissions";
@@ -17,6 +18,9 @@ const FIELD_ENTITY = "vendor";
 function customFieldInfoItem(entity: string, key: string): string {
   return `cf.${entity}.${key}`;
 }
+
+// 키 충돌(entity, key)이면 새 키로 트랜잭션 전체를 다시 연다 — 제약 위반 뒤의 트랜잭션은 쓸 수 없다.
+const KEY_ATTEMPTS = 3;
 
 // 키는 이름에서 유도하지 않는다(A1) — 이름을 바꿔도 키는 그대로다.
 function generateFieldKey(): string {
@@ -48,9 +52,47 @@ export async function createFieldDefinition(
 
   const listRoles = deps?.listRoles ?? defaultListRoles;
   const insertVisibility = deps?.insertVisibility ?? defaultInsertVisibility;
-  const key = (deps?.generateKey ?? generateFieldKey)();
-  const id = randomUUID();
+  const generateKey = deps?.generateKey ?? generateFieldKey;
 
+  const created = await insertWithKeyRetry(viewer, input, generateKey, listRoles, insertVisibility);
+
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  await recordAction(viewer, {
+    actionType: "document_create",
+    entity: "field_definitions",
+    entityId: created.id,
+    detail: { key: created.key, entity: FIELD_ENTITY },
+  });
+
+  return created;
+}
+
+async function insertWithKeyRetry(
+  viewer: Viewer,
+  input: CreateFieldDefinitionInput,
+  generateKey: () => string,
+  listRoles: CreateFieldDefinitionDeps["listRoles"],
+  insertVisibility: CreateFieldDefinitionDeps["insertVisibility"],
+): Promise<{ id: string; key: string }> {
+  for (let attempt = 1; ; attempt += 1) {
+    const key = generateKey();
+    try {
+      return { id: await insertWithGrants(viewer, input, key, listRoles, insertVisibility), key };
+    } catch (error) {
+      // 이름 유일(field_definitions_entity_label_key) 등 다른 위반은 다시 하지 않는다.
+      if (attempt >= KEY_ATTEMPTS || !isUniqueViolation(error, "field_definitions_entity_key_key")) throw error;
+    }
+  }
+}
+
+async function insertWithGrants(
+  viewer: Viewer,
+  input: CreateFieldDefinitionInput,
+  key: string,
+  listRoles: CreateFieldDefinitionDeps["listRoles"],
+  insertVisibility: CreateFieldDefinitionDeps["insertVisibility"],
+): Promise<string> {
+  const id = randomUUID();
   await withTransaction(async (tx) => {
     await lockCustomFieldGrants(viewer, tx);
     const roles = await listRoles(viewer, { includeArchived: true }, tx);
@@ -75,14 +117,5 @@ export async function createFieldDefinition(
       );
     }
   });
-
-  const recordAction = deps?.recordAction ?? defaultRecordAction;
-  await recordAction(viewer, {
-    actionType: "document_create",
-    entity: "field_definitions",
-    entityId: id,
-    detail: { key, entity: FIELD_ENTITY },
-  });
-
-  return { id, key };
+  return id;
 }

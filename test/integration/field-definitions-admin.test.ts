@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { and, eq, like, sql } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -176,4 +178,88 @@ describe("화면 항목 생성 (04.5-01)", () => {
     },
     30_000,
   );
+
+  it("첫 키가 기존 거래처 칸 키와 부딪히면 새 키로 다시 열어 성공하고 노출 행은 새 키로만 있다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    await insertFieldDefinition(SYSTEM_VIEWER, { id: `fd-${randomUUID()}`, entity: "vendor", key: "cf_aaaaaaaa", type: "text" });
+    const keys = ["cf_aaaaaaaa", "cf_bbbbbbbb"];
+
+    const { key } = await createFieldDefinition(admin, input("충돌 뒤 칸"), { generateKey: () => keys.shift() ?? "cf_cccccccc" });
+
+    expect(key).toBe("cf_bbbbbbbb");
+    const [def] = await db.select().from(fieldDefinitions).where(eq(fieldDefinitions.label, "충돌 뒤 칸"));
+    expect(def?.key).toBe("cf_bbbbbbbb");
+    expect(await db.select().from(visibilityMatrix).where(eq(visibilityMatrix.infoItem, "cf.vendor.cf_aaaaaaaa"))).toHaveLength(0);
+    const [{ count: roleCount } = { count: 0 }] = await db.select({ count: sql<number>`count(*)::int` }).from(roles);
+    expect(await db.select().from(visibilityMatrix).where(eq(visibilityMatrix.infoItem, "cf.vendor.cf_bbbbbbbb"))).toHaveLength(roleCount);
+  });
+
+  it("세 번 모두 기존 키와 부딪히면 오류로 끝나고 칸 정의 · 노출 행 · 로그가 늘지 않는다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    await insertFieldDefinition(SYSTEM_VIEWER, { id: `fd-${randomUUID()}`, entity: "vendor", key: "cf_aaaaaaaa", type: "text" });
+    const before = [await countFieldDefinitions(), await countVendorVisibilityRows(), await countFieldLogs()];
+    let generated = 0;
+
+    await expect(
+      createFieldDefinition(admin, input("늘 충돌 칸"), {
+        generateKey: () => {
+          generated += 1;
+          return "cf_aaaaaaaa";
+        },
+      }),
+    ).rejects.toThrow();
+
+    expect(generated).toBe(3);
+    expect([await countFieldDefinitions(), await countVendorVisibilityRows(), await countFieldLogs()]).toEqual(before);
+  });
+});
+
+// 04.5-01 Task 2: 이 페이즈 전에 만든 거래처 칸 정의의 노출 행 채움 — 마이그레이션의 손 편집 문장을
+// 그대로 읽어 실행한다(문장이 사라지면 이 테스트가 먼저 빨개진다).
+const BACKFILL_MARKER = "-- 04.5: 기존 거래처 칸 노출 행 채움";
+
+function backfillStatement(): string {
+  const dir = path.resolve(process.cwd(), "db/migrations");
+  const files = readdirSync(dir).filter((name) => name.endsWith("_custom_field_admin.sql"));
+  expect(files).toHaveLength(1);
+  const source = readFileSync(path.join(dir, files[0] ?? ""), "utf8");
+  const at = source.indexOf(BACKFILL_MARKER);
+  expect(at, "표시 주석이 없다").toBeGreaterThanOrEqual(0);
+  const rest = source.slice(at + BACKFILL_MARKER.length);
+  const statement = rest.slice(0, rest.indexOf(";") + 1).trim();
+  expect(statement).toMatch(/^INSERT INTO "visibility_matrix"/);
+  return statement;
+}
+
+describe("기존 거래처 칸 노출 행 채움 (04.5-01 마이그레이션)", () => {
+  it("전 계급(보관 포함)에 한 줄씩 채우고 꺼진 행은 그대로 · 프로젝트 칸 제외 · 두 번 돌려도 같다", async () => {
+    const statement = backfillStatement();
+    await insertFieldDefinition(SYSTEM_VIEWER, { id: `fd-${randomUUID()}`, entity: "vendor", key: "legacyVendorNote", type: "text" });
+    await insertFieldDefinition(SYSTEM_VIEWER, { id: `fd-${randomUUID()}`, entity: "project", key: "legacyProjectNote", type: "text" });
+    const archivedRoleId = `role-fd-backfill-${randomUUID()}`;
+    await insertRole(SYSTEM_VIEWER, { id: archivedRoleId, name: `채움 보관 계급 ${archivedRoleId.slice(-8)}`, sortOrder: 91 });
+    await setRoleArchived(SYSTEM_VIEWER, archivedRoleId, true);
+    await insertVisibilityIfAbsent(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, infoItem: "cf.vendor.legacyVendorNote", visible: false });
+
+    const snapshot = async () =>
+      (
+        await db
+          .select({ roleId: visibilityMatrix.roleId, infoItem: visibilityMatrix.infoItem, visible: visibilityMatrix.visible })
+          .from(visibilityMatrix)
+          .where(like(visibilityMatrix.infoItem, "cf.%"))
+      ).sort((a, b) => a.roleId.localeCompare(b.roleId));
+
+    await db.execute(sql.raw(statement));
+    const first = await snapshot();
+
+    const allRoles = (await db.select({ id: roles.id }).from(roles)).map((role) => role.id).sort();
+    expect(first.filter((row) => row.infoItem === "cf.vendor.legacyVendorNote").map((row) => row.roleId)).toEqual(allRoles);
+    expect(first.map((row) => row.roleId)).toContain(archivedRoleId);
+    expect(first.find((row) => row.roleId === DEFAULT_ROLE_ID)?.visible).toBe(false);
+    expect(first.filter((row) => row.roleId !== DEFAULT_ROLE_ID).every((row) => row.visible)).toBe(true);
+    expect(first.some((row) => row.infoItem.startsWith("cf.project."))).toBe(false);
+
+    await db.execute(sql.raw(statement));
+    expect(await snapshot()).toEqual(first);
+  });
 });

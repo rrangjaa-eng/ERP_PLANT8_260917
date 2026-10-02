@@ -14,4 +14,6 @@ ALTER TABLE "field_definitions" ADD COLUMN "archived_by" text;--> statement-brea
 ALTER TABLE "field_definitions" ADD COLUMN "archived_options" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
 ALTER TABLE "field_definitions" ADD COLUMN "version" integer DEFAULT 1 NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "field_definitions_entity_label_key" ON "field_definitions" USING btree ("entity","label");--> statement-breakpoint
-ALTER TABLE "field_definitions" ADD CONSTRAINT "field_definitions_entity_label_key" UNIQUE USING INDEX "field_definitions_entity_label_key";
+ALTER TABLE "field_definitions" ADD CONSTRAINT "field_definitions_entity_label_key" UNIQUE USING INDEX "field_definitions_entity_label_key";--> statement-breakpoint
+-- 04.5: 기존 거래처 칸 노출 행 채움
+INSERT INTO "visibility_matrix" ("role_id", "info_item", "visible") SELECT r."id", 'cf.vendor.' || fd."key", true FROM "field_definitions" fd CROSS JOIN "roles" r WHERE fd."entity" = 'vendor' ON CONFLICT ("role_id", "info_item") DO NOTHING;

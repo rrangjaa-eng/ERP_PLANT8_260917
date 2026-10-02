@@ -85,7 +85,7 @@ async function addQuoteLine(projectId: string, amounts: { quote: number; executi
       {
         id: randomUUID(),
         isNew: true,
-        subcategory: "sub-a",
+        subcategory: "stage_construction",
         itemName,
         quantity: 1,
         unitPrice: { currency: "KRW", amount: amounts.quote, fxRate: 1 },
@@ -531,7 +531,7 @@ describe("loadProjectList — 목록 입구 (04-17, 실제 Postgres)", () => {
       id: randomUUID(),
       isNew: true as const,
       lineKind,
-      subcategory: lineKind === "quote" ? "sub-a" : "",
+      subcategory: lineKind === "quote" ? "stage_construction" : "",
       itemName: `${lineKind} 줄`,
       unitPrice: { currency: "KRW" as const, amount: lineKind === "quote" ? 1_000_000 : 0, fxRate: 1 },
       execution: { currency: "KRW" as const, amount: execution, fxRate: 1 },

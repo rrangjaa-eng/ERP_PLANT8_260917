@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
-import { listCodeItems } from "@/domain/code-tables";
+import { listCodeItems, CODE_TABLES } from "@/domain/code-tables";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
@@ -19,11 +19,8 @@ import styles from "./code-tables.module.css";
 
 // 03-06: 증빙 종류 코드표(evidence_type)가 두 번째 표로 늘었다 — 표 위
 // 전환 링크로 고른다. 기본값은 기존 계약 그대로 project_status다(회귀 없음).
-const TABLE_OPTIONS = [
-  { key: "project_status", label: "프로젝트 상태" },
-  { key: "evidence_type", label: "증빙 종류" },
-  { key: "quote_subcategory", label: "견적 분류" },
-] as const;
+// quick 261002-3mx — 목록은 domain(CODE_TABLES) 한 곳이다(createCodeItem의 서버 판정과 같은 목록).
+const TABLE_OPTIONS = CODE_TABLES;
 const DEFAULT_TABLE_KEY = "project_status";
 const EVIDENCE_TYPE_TABLE_KEY = "evidence_type";
 

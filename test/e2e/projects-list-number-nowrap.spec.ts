@@ -39,21 +39,21 @@ test.describe("숫자 열 nowrap — /projects 견적 (S15 backstop)", () => {
     // 없다 — 합계(SUM)는 bigint라 세 줄로 나눠 목표 합계에 닿는다.
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
       {
-        id: randomUUID(), isNew: true, subcategory: "sub-a",
+        id: randomUUID(), isNew: true, subcategory: "stage_construction",
         itemName: "nowrap 확인 줄1",
         quantity: 1,
         unitPrice: { currency: "KRW", amount: 2000000000, fxRate: 1 },
         execution: { currency: "KRW", amount: 0, fxRate: 1 },
       },
       {
-        id: randomUUID(), isNew: true, subcategory: "sub-a",
+        id: randomUUID(), isNew: true, subcategory: "stage_construction",
         itemName: "nowrap 확인 줄2",
         quantity: 1,
         unitPrice: { currency: "KRW", amount: 2000000000, fxRate: 1 },
         execution: { currency: "KRW", amount: 0, fxRate: 1 },
       },
       {
-        id: randomUUID(), isNew: true, subcategory: "sub-a",
+        id: randomUUID(), isNew: true, subcategory: "stage_construction",
         itemName: "nowrap 확인 줄3",
         quantity: 1,
         unitPrice: { currency: "KRW", amount: 318181799, fxRate: 1 },

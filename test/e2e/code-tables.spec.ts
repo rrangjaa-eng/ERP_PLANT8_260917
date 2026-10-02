@@ -1,5 +1,9 @@
 import { test, expect, type Locator, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
+import { expectGapsAtLeastToken, expectNoRowOverflow, loginAsSysadmin } from "./row-actions-helpers";
+import { randomUUID } from "node:crypto";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { insertCodeItem, setCodeItemActive } from "@/repositories/code-tables";
 
 test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 코드에 계급 이름 분기 없음)", () => {
   test("시스템 관리자 계급은 코드표 항목을 추가하고 목록에서 확인한다", async ({ page }) => {
@@ -46,7 +50,8 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
   // .filterRow가 display:flex인데 gap이 없다(code-tables.module.css) — 링크가
   // 하나뿐인 「숨김 포함」 줄에서는 드러나지 않았지만, 코드표 선택 nav는 링크가
   // 둘이라 두 이름이 한 덩어리로 읽힌다.
-  test("코드표 선택 링크 둘이 서로 붙어 있지 않다", async ({ page }) => {
+  // quick 261001-hfi(MAST-04) — 견적 분류가 세 번째 표로 늘었다. 이웃한 링크 쌍마다 간격을 본다.
+  test("코드표 선택 링크 셋이 서로 붙어 있지 않다", async ({ page }) => {
     const admin = await createFixtureUser({ roleId: "role-sysadmin" });
 
     await page.goto("/login");
@@ -59,16 +64,33 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
 
     const nav = page.getByRole("navigation", { name: "코드표 선택" });
     const links = nav.getByRole("link");
-    await expect(links).toHaveCount(2);
+    await expect(links).toHaveCount(3);
+    await expect(links.nth(2)).toHaveText("견적 분류");
 
-    const first = await links.nth(0).boundingBox();
-    const second = await links.nth(1).boundingBox();
-    expect(first).not.toBeNull();
-    expect(second).not.toBeNull();
+    for (const index of [0, 1]) {
+      const left = await links.nth(index).boundingBox();
+      const right = await links.nth(index + 1).boundingBox();
+      expect(left).not.toBeNull();
+      expect(right).not.toBeNull();
+      // 두 상자 사이의 가로 간격. 붙어 있으면 0이다.
+      const gap = right!.x - (left!.x + left!.width);
+      expect(gap).toBeGreaterThan(0);
+    }
+  });
 
-    // 두 상자 사이의 가로 간격. 붙어 있으면 0이다.
-    const gap = second!.x - (first!.x + first!.width);
-    expect(gap).toBeGreaterThan(0);
+  test("「견적 분류」를 고르면 견적 분류 코드표(시드 「무대·시공」)가 보인다", async ({ page }) => {
+    const admin = await createFixtureUser({ roleId: "role-sysadmin" });
+
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill(admin.email);
+    await page.getByLabel("비밀번호").fill(admin.password);
+    await page.getByRole("button", { name: "로그인" }).click();
+    await expect(page).toHaveURL(/\/account$/);
+
+    await page.goto("/admin/code-tables");
+    await page.getByRole("navigation", { name: "코드표 선택" }).getByRole("link", { name: "견적 분류" }).click();
+    await expect(page).toHaveURL(/tableKey=quote_subcategory/);
+    await expect(page.locator("main table").first().getByText("stage_construction")).toBeVisible();
   });
 
   // DR-P4-01(design-review) — 현재 표 링크가 형제 링크와 계산 스타일이 같아
@@ -89,7 +111,7 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
     const current = nav.locator("a[aria-current='page']");
     const sibling = nav.locator("a:not([aria-current='page'])");
     await expect(current).toHaveCount(1);
-    await expect(sibling).toHaveCount(1);
+    await expect(sibling).toHaveCount(2);
 
     // tokens.css --fg는 hex다 — 브라우저가 계산하는 rgb() 문자열과 직접
     // 비교하려고 임시 요소에 먹여 같은 방식으로 정규화한다.
@@ -115,7 +137,7 @@ test.describe("코드표 관리 화면 (MAST-04, ADMN-01, D-36 계약: 화면 �
     expect(currentStyle.fontWeight).toBe("700");
     expect(currentStyle.textDecorationLine).toBe("none");
 
-    const siblingTextDecoration = await sibling.evaluate((el) => getComputedStyle(el).textDecorationLine);
+    const siblingTextDecoration = await sibling.first().evaluate((el) => getComputedStyle(el).textDecorationLine);
     expect(siblingTextDecoration).toBe("underline");
   });
 
@@ -360,4 +382,68 @@ test.describe("코드표 항목 설명 (D-93, UI-SPEC rev 5 S14, DR-29)", () => 
     await controlResponse;
     expect(actionRequests).toBe(1);
   });
+});
+
+// 260930-f3l /design-review FINDING-001: 코드표 표 행 동작 「비활성화 · 삭제」 사이 가로 간격이 0px라 한 낱말처럼 읽혔다.
+// 사람 목록(PR #108)의 .rowActions 규칙(--s-4)을 같은 이름으로 적용한다(SYSTEM §6-1). 700은 .rowActions가 nowrap을 지키는 가장 좁은 폭(D3).
+test.describe("코드표 행 동작 간격 --s-4 (260930-f3l FINDING-001)", () => {
+  async function seed(): Promise<{ target: string; cleanup: () => Promise<void> }> {
+    const stamp = randomUUID().slice(0, 8);
+    // 다른 열이 긴 행이 있어야 동작 칸이 눌린다 — 앞 테스트가 남긴 데이터에 기대지 않는다.
+    const long = await insertCodeItem(SYSTEM_VIEWER, {
+      tableKey: "project_status",
+      value: `gap-long-${stamp}-${"x".repeat(50)}`,
+      label: `${"가".repeat(60)}${stamp}`,
+      sortOrder: 900,
+    });
+    const target = await insertCodeItem(SYSTEM_VIEWER, {
+      tableKey: "project_status",
+      value: `gap-target-${stamp}`,
+      label: `간격대상-${stamp}`,
+      sortOrder: 901,
+    });
+    return {
+      target: target.value,
+      cleanup: async () => {
+        await setCodeItemActive(SYSTEM_VIEWER, long.id, false);
+        await setCodeItemActive(SYSTEM_VIEWER, target.id, false);
+      },
+    };
+  }
+
+  for (const width of [1280, 768, 700]) {
+    test(`${width}: 비활성화 · 삭제 사이가 한 줄에서 --s-4 이상이고 표가 넘치지 않는다`, async ({ page }) => {
+      const { target, cleanup } = await seed();
+      try {
+        await page.setViewportSize({ width, height: 800 });
+        await loginAsSysadmin(page);
+        await page.goto("/admin/code-tables");
+        const row = page.locator("tr", { hasText: target });
+        const deactivate = row.getByRole("button", { name: "비활성화" });
+        const remove = row.getByRole("button", { name: "삭제" });
+        await expectNoRowOverflow(page, row, `${width}px 일반 상태`);
+        const gaps = await expectGapsAtLeastToken(page, [deactivate, remove], `${width}px`);
+        expect(gaps.every((item) => item.horizontal), `${width}px 한 줄`).toBe(true);
+      } finally {
+        await cleanup();
+      }
+    });
+  }
+
+  for (const width of [700, 768, 1024, 1280]) {
+    test(`${width}: 「삭제」를 누른 뒤에도 페이지와 표가 가로로 넘치지 않는다`, async ({ page }) => {
+      const { target, cleanup } = await seed();
+      try {
+        await page.setViewportSize({ width, height: 800 });
+        await loginAsSysadmin(page);
+        await page.goto("/admin/code-tables");
+        const row = page.locator("tr", { hasText: target });
+        await row.getByRole("button", { name: "삭제" }).click();
+        await expect(row.getByRole("button", { name: "취소" })).toBeVisible();
+        await expectNoRowOverflow(page, row, `${width}px 확인 상태`);
+      } finally {
+        await cleanup();
+      }
+    });
+  }
 });

@@ -6,6 +6,18 @@
   gap: var(--s-2);
 }
 
+/* §7-1 이유 + 다음 한 수(nextStep) — 둘은 한 덩어리(.reasonLine, 줄바꿈 없음)다. 버튼 옆에 자리가 모자라면
+   덩어리째 버튼 아래 줄로 내려간다(다음 한 수만 떨어지지 않는다 — 2026-10-01 DOM 감사, 폰 320). */
+.wrapWithNext {
+  flex-wrap: wrap;
+}
+
+.reasonLine {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -50,18 +62,29 @@
   background: var(--surface);
 }
 
+/* 3차 버튼 밑줄은 §4-4대로 글자 밑줄(offset 2px, 1px → hover 2px)이다 —
+   border-bottom이면 폰 44px 상자의 바닥에 붙고 hover에서 상자 높이가 자란다
+   (260930-f3l /design-review FINDING-002, ListEmpty FINDING-005와 같은 결함). */
 .tertiary {
   height: auto;
   padding: 0;
   border: 0;
-  border-bottom: var(--line-w) solid var(--accent);
   background: none;
   color: var(--accent);
   white-space: nowrap;
+  /* 대기 중 라벨 span과 「…」 span이 떨어지면 글자 밑줄이 두 토막이 된다(PR #111 리뷰). 3차엔 kbd 병기가 없다. */
+  gap: 0;
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
 }
 
 .tertiary:hover:not([aria-disabled="true"]) {
-  border-bottom-width: var(--line-w-strong);
+  text-decoration-thickness: var(--line-w-strong);
+}
+
+.tertiary[aria-disabled="true"] {
+  text-decoration-color: var(--line);
 }
 
 /* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. .tertiary는 height: auto
@@ -98,6 +121,12 @@
   padding: 0 var(--s-1);
   font-size: var(--fs-xs);
   line-height: var(--lh-head);
+}
+
+/* 비활성 · 진행 중 1차는 --accent 면이 아니라 --surface 면이라 기본 kbd 값(SYSTEM §7-1 · §1-2 --faint on --surface 4.95). */
+.btn[aria-disabled="true"] .kbdOnAccent {
+  opacity: 1;
+  border-color: var(--line);
 }
 
 .reason {

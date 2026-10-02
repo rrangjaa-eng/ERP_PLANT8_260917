@@ -1,6 +1,6 @@
-import { and, eq, ilike, isNull, isNotNull } from "drizzle-orm";
+import { and, eq, ilike, inArray, isNull, isNotNull } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, type DbOrTx } from "@/db/client";
 import { vendors } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import type { Scope } from "@/domain/permissions/scope-for";
@@ -47,6 +47,14 @@ export async function searchVendorsByNormalizedName(
 export async function findVendorById(viewer: Viewer, id: string): Promise<VendorRow | null> {
   const [row] = await db.select().from(vendors).where(eq(vendors.id, id)).limit(1);
   return row ?? null;
+}
+
+// /qa ISSUE-001 — 견적 줄이 이미 가리키는 거래처의 이름(id → 이름). 보관 · 숨김도 넣는다 — 선택지가 아니라
+// 이미 고른 값의 이름이다. 노출 판정은 호출자가 한다(DTO 명세 projectMany · 충돌 이유는 vendorNamesVisible).
+export async function findVendorNamesByIds(viewer: Viewer, ids: string[], tx: DbOrTx = db): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const rows = await tx.select({ id: vendors.id, name: vendors.name }).from(vendors).where(inArray(vendors.id, ids));
+  return new Map(rows.map((row) => [row.id, row.name]));
 }
 
 // 등록 시 중복 후보 경고에 쓴다 — 이름 unique 제약이 없으므로(같은 이름의

@@ -30,7 +30,8 @@ function jobBlock(ci: string, name: string, nextName?: string): string {
 }
 
 // draft PR은 quality만 돈다. integration·e2e는 ready(또는 workflow_call/push)에서만.
-const FULL_RUN_IF = "github.event_name != 'pull_request' || github.event.pull_request.draft == false";
+const FULL_RUN_IF =
+  "github.event_name != 'pull_request' || (github.event.pull_request.draft == false && needs.quality.outputs.app == 'true')";
 
 describe("ci-guard: .github/workflows 메타 검사", () => {
   it("어떤 워크플로에도 drizzle-kit push 하위 명령이 없다", () => {
@@ -126,7 +127,7 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
     }
   });
 
-  it("integration·e2e 잡은 draft PR에서 건너뛰고 ready·workflow_call에서만 돈다", () => {
+  it("integration·e2e 잡은 draft PR·.claude만 바뀐 PR에서 건너뛰고 ready·workflow_call에서만 돈다", () => {
     const ci = readWorkflow("ci.yml");
     for (const block of [jobBlock(ci, "integration", "e2e"), jobBlock(ci, "e2e")]) {
       expect(block).toContain(FULL_RUN_IF);
@@ -166,6 +167,24 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
     const ci = readWorkflow("ci.yml");
     const block = jobBlock(ci, "e2e");
     expect(block).toContain("name: playwright-report-${{ matrix.shard }}");
+  });
+
+  // 배포 CI 중복 제거(2026-10-01 사용자 결정): PR 병합 결과 tree가 세 잡을 모두 통과하면
+  // 그 tree를 아티팩트 이름에 남긴다. deploy.yml은 main 커밋 tree와 같은 기록이 있으면 CI를 건너뛴다.
+  it("tested-tree 잡은 quality·integration·e2e가 모두 성공한 pull_request에서만 돈다(draft·건너뜀이면 안 돈다)", () => {
+    const ci = readWorkflow("ci.yml");
+    const block = jobBlock(ci, "tested-tree");
+    expect(block).toContain("needs: [quality, integration, e2e]");
+    const ifLine = block.split("\n").find((line) => /^\s{4}if:/.test(line));
+    expect(ifLine?.trim()).toBe("if: github.event_name == 'pull_request'");
+    expect(block).not.toMatch(/always\(\)|cancelled\(\)|failure\(\)/);
+  });
+
+  it("tested-tree 잡은 병합 결과 tree를 이름에 넣은 아티팩트를 올린다", () => {
+    const ci = readWorkflow("ci.yml");
+    const block = jobBlock(ci, "tested-tree");
+    expect(block).toContain("git rev-parse 'HEAD^{tree}'");
+    expect(block).toContain("name: tested-tree-${{ steps.tree.outputs.tree }}");
   });
 
   // WR-09: !docs/**가 unit 테스트가 실제로 읽는 docs 파일까지 가려서, 그 파일만

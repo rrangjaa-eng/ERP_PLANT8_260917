@@ -132,13 +132,21 @@
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
   cursor: pointer;
+}
+
+/* §4-4 · §7-1 3차 밑줄 1px → hover 2px. */
+.restoreAction:hover:not([aria-disabled="true"]) {
+  text-decoration-thickness: var(--line-w-strong);
 }
 
 @media (max-width: 699.98px) {
   /* 리뷰 R14 — 폰에서 복원·버림은 터치 최소 높이(견적 원장 S18과 같은 규칙). */
   .restoreAction {
     min-height: var(--touch-min);
+    min-width: var(--touch-min);
   }
 }
 

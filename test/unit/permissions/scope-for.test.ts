@@ -33,6 +33,17 @@ describe("scopeFor (ADMN-01·ADMN-12 행 필터 서술자)", () => {
     expect(scope.includeArchived).toBe(true);
   });
 
+  it("공휴일(holiday)은 admin.holidays 보기 권한으로 rows를, 보관함 보기 권한으로 includeArchived를 판정한다", async () => {
+    const holidaysOnly = await scopeFor(viewer, "holiday", {
+      can: (_v, menu) => Promise.resolve(menu === "admin.holidays"),
+    });
+    expect(holidaysOnly).toMatchObject({ rows: "all", includeArchived: false });
+    const withArchive = await scopeFor(viewer, "holiday", {
+      can: (_v, menu) => Promise.resolve(menu === "admin.holidays" || menu === "admin.archive"),
+    });
+    expect(withArchive).toMatchObject({ rows: "all", includeArchived: true });
+  });
+
   it("등록되지 않은 entity면 UnknownScopeEntityError를 던진다", async () => {
     await expect(scopeFor(viewer, "not_registered")).rejects.toBeInstanceOf(UnknownScopeEntityError);
   });

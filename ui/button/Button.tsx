@@ -22,6 +22,8 @@ export type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "disable
   reasonId?: string;
   /** 비활성 사유의 색 — block(기본) = --danger, info = --muted(§7-1 개정 ⑦, DR-10, U-4). */
   reasonTone?: ButtonReasonTone;
+  /** 이유 옆 다음 한 수 3차(§7-1 「이유 텍스트 + 다음 한 수」) — 이유와 한 덩어리라 좁은 폭에서는 둘이 함께 버튼 아래 줄로 내려간다. 이유가 보일 때만 렌더한다. */
+  nextStep?: ReactNode;
   /** 단축키 표기, 라벨 오른쪽에 kbd로 병기(§7-1). */
   shortcut?: string;
   children: ReactNode;
@@ -39,6 +41,7 @@ export function Button({
   disabledReason,
   reasonId: givenReasonId,
   reasonTone = "block",
+  nextStep,
   shortcut,
   children,
   className,
@@ -71,8 +74,14 @@ export function Button({
     onClick?.(event);
   }
 
+  const reason = showReason ? (
+    <span id={reasonId} className={reasonTone === "info" ? styles.reasonInfo : styles.reason}>
+      {disabledReason}
+    </span>
+  ) : null;
+
   return (
-    <span className={styles.wrap}>
+    <span className={reason && nextStep ? `${styles.wrap} ${styles.wrapWithNext}` : styles.wrap}>
       <button
         type={type ?? "button"}
         {...rest}
@@ -87,11 +96,14 @@ export function Button({
           <kbd className={variant === "primary" ? styles.kbdOnAccent : styles.kbd}>{shortcut}</kbd>
         ) : null}
       </button>
-      {showReason ? (
-        <span id={reasonId} className={reasonTone === "info" ? styles.reasonInfo : styles.reason}>
-          {disabledReason}
+      {reason && nextStep ? (
+        <span className={styles.reasonLine}>
+          {reason}
+          {nextStep}
         </span>
-      ) : null}
+      ) : (
+        reason
+      )}
     </span>
   );
 }

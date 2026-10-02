@@ -17,6 +17,8 @@ DONE_MARKER="$GSTACK_DIR/.install-gstack-done"
 # 멱등: setup까지 끝난 설치가 있으면(resume 등) 건너뛴다. 업데이트는 gstack 자체 훅이 맡는다.
 # 표식이 없는 디렉터리는 중간에 끊긴 설치이므로 지우고 다시 받는다.
 if [ -f "$DONE_MARKER" ]; then
+  # Codex는 디자인 검토 스킬에서만 — 그 밖의 gstack 리뷰는 Codex를 건너뛴다(사용자 결정 2026-10-01).
+  "$GSTACK_DIR/bin/gstack-config" set codex_reviews disabled >/dev/null 2>&1 || true
   echo "install-gstack: already installed ($(cat "$GSTACK_DIR/VERSION" 2>/dev/null)) — skipping"
   exit 0
 fi
@@ -40,6 +42,8 @@ fi
 
 # 팀 모드 setup이 켜는 세션 시작 자동 업그레이드를 끈다(고정 버전 유지).
 "$GSTACK_DIR/bin/gstack-config" set auto_upgrade false >/dev/null 2>&1 || true
+# Codex는 디자인 검토 스킬에서만 — 그 밖의 gstack 리뷰는 Codex를 건너뛴다(사용자 결정 2026-10-01).
+"$GSTACK_DIR/bin/gstack-config" set codex_reviews disabled >/dev/null 2>&1 || true
 
 touch "$DONE_MARKER"
 echo "install-gstack: installed gstack $(cat "$GSTACK_DIR/VERSION" 2>/dev/null) (team mode)"

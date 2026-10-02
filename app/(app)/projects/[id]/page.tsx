@@ -3,7 +3,7 @@ import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
 import { findProject } from "@/domain/projects";
-import { listProjectFormReferences } from "@/domain/projects/references";
+import { listProjectFormReferences, scopeCreateFormReferences } from "@/domain/projects/references";
 import { getCurrentQuoteRevision, listQuoteLines } from "@/domain/quotes/lines";
 import { listRevisionSummaries } from "@/domain/quotes/revisions";
 import { listRevenue } from "@/domain/revenue";
@@ -28,6 +28,7 @@ import { periodEditRights } from "@/domain/projects/period";
 import { PROJECT_STATUSES } from "@/domain/projects/status-transitions";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { PROJECT_STATUS_TAG_KIND } from "../status-display";
+import { canCreateProject } from "../create-entry";
 import { QuoteLedger } from "./quote-table";
 import { RevisionSection } from "./revision-section";
 import type { StatusChangeProps } from "./status-change";
@@ -122,6 +123,17 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     listRevisionSummaries(session.viewer, project.id),
   ]);
   const currentSummary = revisionSummaries.find((row) => row.revisionId === revision.id);
+  // /qa ISSUE-002 · /design-review — 「프로젝트 복사」는 목록 등록 진입점과 같은 규칙(업무 범위로 좁힌 팀 · 담당 PM).
+  const scopedCreateReferences =
+    canWrite && project.archivedAt === null ? await scopeCreateFormReferences(session.viewer, references, { todayKst }) : null;
+  const canCopyProject =
+    project.archivedAt === null &&
+    canCreateProject({
+      canWrite,
+      teamCount: scopedCreateReferences?.teams.length ?? 0,
+      pmUserCount: scopedCreateReferences?.pmUsers.length ?? 0,
+      clientCount: references.clients.length,
+    });
 
   // 04-24(D-53 · CEO-D10 · B-02) — 「복사해 새 차수」 렌더 조건은 새 차수 게이트의 입력과 같은 canCreateRevision 하나다.
   const newRevision: NewRevisionProps | null = structuralEditability({ status: project.status, canWrite }).newRevision
@@ -224,7 +236,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       statusTagKind={PROJECT_STATUS_TAG_KIND[status]}
       statusChange={statusChange}
       newRevision={newRevision}
-      copyProjectHref={canWrite && project.archivedAt === null ? `/projects?new=1&copyFrom=${project.id}#project-form` : null}
+      copyProjectHref={canCopyProject ? `/projects?new=1&copyFrom=${project.id}#project-form` : null}
       customerApproval={customerApproval}
       approvedSeq={approvedSeq}
       revisions={revisionSummaries.flatMap((row) => (row.revisionId && row.seq !== undefined ? [{ id: row.revisionId, seq: row.seq }] : []))}
@@ -232,7 +244,9 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
       revisionId={revision.id}
       initialLines={lines}
       vendors={references.vendors}
+      vendorShown={references.vendorShown}
       subcategories={references.subcategories}
+      subcategoryLabels={references.subcategoryLabels}
       structural={structural}
       newLineCells={newLineCells}
       adjustmentStructural={adjustmentStructural}
@@ -255,7 +269,7 @@ export default async function ProjectDetailPage({ params }: { params: Promise<{ 
     <RevisionSection
       projectId={project.id}
       summaries={revisionSummaries}
-      references={{ subcategories: references.subcategories, vendors: references.vendors }}
+      references={{ subcategories: references.subcategoryLabels, vendors: references.vendors, vendorShown: references.vendorShown }}
     />
     </>
   );

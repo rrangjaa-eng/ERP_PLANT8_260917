@@ -1082,3 +1082,34 @@ test.describe("리저브 대장 — Codex 재검토 #3 · #4", () => {
     expect(kept?.archivedAt).toBeNull();
   });
 });
+
+// PR #104 후속 F(2) — DR-104-01(/design-review): 폰 복원 줄 「복원」·「버림」 폭이 글자 폭(32)에 그쳐 44 미만.
+test.describe("리저브 대장 — 폰 복원 줄 44 (DR-104-01)", () => {
+  test("DR-104-01 — 폰 375·320 복원 줄 「복원」·「버림」이 44×44 이상", async ({ page }) => {
+    const roles = await createRoles();
+    const client = await createClient("E2E리저브복원44");
+    await seedEntries(client.id, [{ date: "2026-08-01", direction: "deposit", amount: 50_000 }]);
+    await openLedger(page, roles.finance);
+    await typeInto(page, cell(page, 0, COL.note), "메모", "복원 줄 44");
+    await expect
+      .poll(() => page.evaluate(() => Object.keys(window.localStorage).filter((key) => key.startsWith("quote-ledger:dirty:")).length))
+      .toBe(1);
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.reload();
+    const main = page.getByRole("main");
+    const restore = main.getByRole("button", { name: "복원", exact: true });
+    const discard = main.getByRole("button", { name: "버림", exact: true });
+    await expect(restore).toBeVisible();
+    await expect(discard).toBeVisible();
+
+    for (const width of [375, 320]) {
+      await page.setViewportSize({ width, height: 800 });
+      for (const [label, locator] of [["복원", restore], ["버림", discard]] as const) {
+        const b = await locator.boundingBox();
+        if (!b) throw new Error(`${label} @${width}: bounding box 없음`);
+        expect.soft(b.height, `${label} @${width} 높이`).toBeGreaterThanOrEqual(44);
+        expect.soft(b.width, `${label} @${width} 폭`).toBeGreaterThanOrEqual(44);
+      }
+    }
+  });
+});

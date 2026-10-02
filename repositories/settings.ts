@@ -90,11 +90,14 @@ export async function deleteFutureHistorizedValue(
   viewer: Viewer,
   key: string,
   effectiveFrom: string,
-): Promise<void> {
+  tx: DbOrTx = db,
+): Promise<boolean> {
   void viewer;
-  await db
+  const deleted = await tx
     .delete(settingsHistorized)
-    .where(and(eq(settingsHistorized.key, key), eq(settingsHistorized.effectiveFrom, effectiveFrom)));
+    .where(and(eq(settingsHistorized.key, key), eq(settingsHistorized.effectiveFrom, effectiveFrom)))
+    .returning({ id: settingsHistorized.id });
+  return deleted.length > 0;
 }
 
 // 멱등 시드 전용(onConflictDoNothing) — 이미 값이 저장돼 있으면 건드리지

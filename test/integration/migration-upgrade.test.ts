@@ -369,3 +369,41 @@ describe("원화 금액 bigint 전환(0016)", () => {
     expect(big).toEqual([{ unit: String(BIG) }]);
   });
 });
+
+// 공휴일 보관(0021 · quick 261001-hfi D-01 · ADMN-12) — 0020까지 적용한 DB의 공휴일 행이 0021 뒤 그대로이고 보관 칸은
+// NULL, 날짜 유일 제약 holidays_date_key가 부분 유일 인덱스 holidays_date_active_key(보관 안 된 행만)로 바뀐다.
+describe("공휴일 보관 칸 · 부분 유일 인덱스(0021)", () => {
+  it("0020 상태의 공휴일 행이 0021 뒤 값 그대로이고, 활성 행끼리만 같은 날짜가 막힌다", async () => {
+    const pool = await createScratchDb();
+    await migrateTo(pool, countThrough("_hot_maestro"));
+    await pool.query(`INSERT INTO holidays (date, name, kind) VALUES ('2034-03-07', '옛 임시', 'temporary')`);
+
+    await migrateTo(pool);
+
+    const { rows } = await pool.query<{ date: string; name: string; kind: string; archived_at: Date | null; archived_by: string | null }>(
+      `SELECT to_char(date, 'YYYY-MM-DD') AS date, name, kind, archived_at, archived_by FROM holidays`,
+    );
+    expect(rows).toEqual([{ date: "2034-03-07", name: "옛 임시", kind: "temporary", archived_at: null, archived_by: null }]);
+
+    const { rows: constraints } = await pool.query(`SELECT 1 FROM pg_constraint WHERE conname = 'holidays_date_key'`);
+    expect(constraints).toEqual([]);
+    const { rows: indexes } = await pool.query<{ indexdef: string }>(
+      `SELECT indexdef FROM pg_indexes WHERE tablename = 'holidays' AND indexname = 'holidays_date_active_key'`,
+    );
+    expect(indexes).toHaveLength(1);
+    expect(indexes[0]?.indexdef).toMatch(/UNIQUE INDEX .* WHERE \(archived_at IS NULL\)/);
+
+    let caught: unknown;
+    try {
+      await pool.query(`INSERT INTO holidays (date, name, kind) VALUES ('2034-03-07', '중복', 'election')`);
+    } catch (error) {
+      caught = error;
+    }
+    expect(errorText(caught)).toContain("holidays_date_active_key");
+
+    await pool.query(`UPDATE holidays SET archived_at = now() WHERE name = '옛 임시'`);
+    await pool.query(`INSERT INTO holidays (date, name, kind) VALUES ('2034-03-07', '새 임시', 'temporary')`);
+    const { rows: count } = await pool.query<{ n: string }>(`SELECT count(*)::text AS n FROM holidays WHERE date = '2034-03-07'`);
+    expect(count).toEqual([{ n: "2" }]);
+  });
+});

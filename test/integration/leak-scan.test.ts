@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
+import { seedMasterData } from "@/domain/seed";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { skipDbReset } from "./setup";
 import { DTO_REGISTRY, registerDto } from "@/domain/permissions/dto-registry";
 import { ACTION_REGISTRY, EXPORT_REGISTRY } from "@/lib/actions/registry";
 import { SEED_ROLES } from "@/domain/permissions/roles";
@@ -20,6 +23,7 @@ import "@/domain/corp-cards";
 import "@/domain/people";
 import "@/domain/vendors";
 import "@/domain/projects";
+import "@/domain/projects/references";
 import "@/domain/quotes/lines";
 import "@/domain/quotes/revisions";
 import "@/domain/revenue";
@@ -43,6 +47,13 @@ import "@/app/(app)/pnl/reserves/actions.registry";
 // 등록한다) — dtoName이 null인 내보내기는 사람 단위 정보 항목이 없는
 // 키-값 스냅샷만 여기 들어간다. 목록에 없는 null 항목은 실패한다.
 const NULL_DTO_EXEMPT_EXPORTS = ["settings.export"];
+
+// 이 파일은 노출표를 읽기만 한다 — 케이스 1611건마다 TRUNCATE+시드를 하면 CI에서
+// 4분이 걸린다(건당 약 150ms). 매 테스트 리셋을 끄고 시드만 한 번 넣는다.
+skipDbReset();
+beforeAll(async () => {
+  await seedMasterData(SYSTEM_VIEWER);
+});
 
 // Phase 4(04-32, ENG-D3 ②) — infoItem은 문자열(정보 항목 하나) 또는 목록
 // (all-of, 전부 봐야 참)이다. 목록이면 원소마다 펼쳐 각각을 검사한다 —
@@ -162,6 +173,26 @@ describe("정보 노출 누수 스캔 (ADMN-03)", () => {
       expect(infoItemOf("ReserveEvidenceOptionDto", "label")).toBe("reserve.amount");
       expect(infoItemOf("ReserveEntryDto", "projectName")).toEqual(["reserve.amount", "project.value"]);
       expect(infoItemOf("ReserveEntryDto", "evidenceLabel")).toBe("reserve.amount");
+    });
+
+    // /qa ISSUE-001(PR #121) — 견적 줄의 거래처 이름은 프로젝트 정보와 거래처 정보를 모두 볼 때만(all-of).
+    it("QuoteLineDto의 거래처 이름 정보 항목이 등록돼 있다", () => {
+      const dto = DTO_REGISTRY.find((entry) => entry.name === "QuoteLineDto");
+      expect(dto?.fields.find((field) => field.key === "vendorName")?.infoItem).toEqual(["project.value", "vendor.value"]);
+    });
+
+    // quick 261001-85g(ADMN-03) — 프로젝트 등록 폼 선택지(거래처 · 팀 · 사람)도 명세로 등록돼 이 스캔이 본다.
+    // 정보 항목은 각 마스터 DTO의 이름 칸과 같다(마스터 목록 자체를 싣기 때문).
+    it("프로젝트 등록 폼 선택지 DTO의 정보 항목이 등록돼 있다", () => {
+      const infoItemOf = (dtoName: string, key: string) => DTO_REGISTRY.find((entry) => entry.name === dtoName)?.fields.find((field) => field.key === key)?.infoItem;
+      for (const [dtoName, infoItem] of [
+        ["ProjectVendorOptionDto", "vendor.value"],
+        ["ProjectTeamOptionDto", "team.value"],
+        ["ProjectPersonOptionDto", "person.value"],
+      ] as const) {
+        expect(infoItemOf(dtoName, "id"), dtoName).toBe(infoItem);
+        expect(infoItemOf(dtoName, "name"), dtoName).toBe(infoItem);
+      }
     });
 
     it("registerDto가 빈 목록 infoItem: []을 거부한다", () => {

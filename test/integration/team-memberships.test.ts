@@ -12,8 +12,11 @@ import {
   listAssignments,
   teamAtDate,
   PastAssignmentCancelError,
+  NotFoundError,
+  ValidationError,
 } from "@/domain/org";
 import { queryActionLog } from "@/repositories/action-log";
+import { listMemberships } from "@/repositories/team-memberships";
 
 async function makeTestUser(): Promise<string> {
   const id = `test-user-${randomUUID()}`;
@@ -95,6 +98,37 @@ describe("team-memberships (MAST-02, 실제 Postgres) — 발령 이력·시점 
     expect(remaining.some((a) => a.effectiveFrom === today)).toBe(true);
   });
 
+  it("오늘 판정은 서울 날짜 기준이다 — KST 01:30(UTC 전날)에 오늘 발령은 취소가 거부된다", async () => {
+    const userId = await makeTestUser();
+    const teamId = await makeTestTeam();
+    const now = () => new Date("2026-10-01T16:30:00Z"); // = 2026-10-02 01:30 KST
+
+    await assignTeam(SYSTEM_VIEWER, { userId, teamId, effectiveFrom: "2026-10-02" });
+
+    await expect(
+      cancelFutureAssignment(SYSTEM_VIEWER, { userId, effectiveFrom: "2026-10-02" }, { now }),
+    ).rejects.toBeInstanceOf(PastAssignmentCancelError);
+    const remaining = await listAssignments(SYSTEM_VIEWER, userId);
+    expect(remaining.some((a) => a.effectiveFrom === "2026-10-02")).toBe(true);
+  });
+
+  it("YYYY-MM-DD가 아닌 발령일로는 취소할 수 없다 — 문자열 비교를 우회해 과거 발령을 지우지 못한다", async () => {
+    const userId = await makeTestUser();
+    const teamId = await makeTestTeam();
+    const now = () => new Date("2026-10-01T03:00:00Z"); // = 2026-10-01 12:00 KST
+
+    await assignTeam(SYSTEM_VIEWER, { userId, teamId, effectiveFrom: "2026-09-30" });
+
+    await expect(
+      cancelFutureAssignment(SYSTEM_VIEWER, { userId, effectiveFrom: "2026-9-30" }, { now }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(
+      cancelFutureAssignment(SYSTEM_VIEWER, { userId, effectiveFrom: "2027-02-30" }, { now }),
+    ).rejects.toBeInstanceOf(ValidationError);
+    const remaining = await listAssignments(SYSTEM_VIEWER, userId);
+    expect(remaining.some((a) => a.effectiveFrom === "2026-09-30")).toBe(true);
+  });
+
   it("같은 사람에게 두 발령이 동시에 들어와도 둘 다 남고 시점 조회는 발령일 기준으로 하나를 고른다", async () => {
     const userId = await makeTestUser();
     const teamA = await makeTestTeam();
@@ -128,5 +162,46 @@ describe("team-memberships (MAST-02, 실제 Postgres) — 발령 이력·시점 
 
     const log = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_create" });
     expect(log.some((entry) => entry.entity === "team_membership")).toBe(true);
+  });
+
+  // quick 261001-85g — 미래 발령 취소(물리 삭제)도 같은 트랜잭션에서 행동 로그에 남는다.
+  async function futureAssignment(): Promise<{ userId: string; membershipId: string }> {
+    const userId = await makeTestUser();
+    await assignTeam(SYSTEM_VIEWER, { userId, teamId: await makeTestTeam(), effectiveFrom: "2999-01-01" });
+    const [row] = await listMemberships(SYSTEM_VIEWER, userId);
+    if (!row) throw new Error("발령 행이 없습니다.");
+    return { userId, membershipId: row.id };
+  }
+
+  async function deleteLogsFor(userId: string) {
+    const log = await queryActionLog(SYSTEM_VIEWER, { actionType: "document_delete" });
+    return log.filter((entry) => entry.entity === "team_membership" && (entry.detail as { userId?: string }).userId === userId);
+  }
+
+  it("미래 발령을 취소하면 document_delete 기록이 지운 발령 행 id로 한 건 남는다", async () => {
+    const { userId, membershipId } = await futureAssignment();
+    await cancelFutureAssignment(SYSTEM_VIEWER, { userId, effectiveFrom: "2999-01-01" });
+
+    const logs = await deleteLogsFor(userId);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]?.entityId).toBe(membershipId);
+    expect(logs[0]?.detail).toEqual({ userId, effectiveFrom: "2999-01-01" });
+  });
+
+  it("취소 기록이 실패하면 발령도 지워지지 않는다(같은 트랜잭션)", async () => {
+    const { userId } = await futureAssignment();
+    const failure = new Error("action log down");
+    await expect(
+      cancelFutureAssignment(SYSTEM_VIEWER, { userId, effectiveFrom: "2999-01-01" }, { recordAction: () => Promise.reject(failure) }),
+    ).rejects.toBe(failure);
+
+    const remaining = await listAssignments(SYSTEM_VIEWER, userId);
+    expect(remaining.some((a) => a.effectiveFrom === "2999-01-01")).toBe(true);
+  });
+
+  it("없는 발령 취소는 NotFoundError이고 기록을 남기지 않는다", async () => {
+    const userId = await makeTestUser();
+    await expect(cancelFutureAssignment(SYSTEM_VIEWER, { userId, effectiveFrom: "2999-01-01" })).rejects.toBeInstanceOf(NotFoundError);
+    expect(await deleteLogsFor(userId)).toEqual([]);
   });
 });

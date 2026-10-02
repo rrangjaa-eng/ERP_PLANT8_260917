@@ -13,8 +13,10 @@ import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { log } from "@/lib/log";
 import type { DbOrTx } from "@/repositories/document-counters";
 import {
-  deleteHolidayById,
+  archiveHolidayById,
+  deleteSubstituteById,
   findHolidayByDate,
+  findHolidayById,
   findHolidayDates,
   findYearConfirmation,
   findYearGeneration,
@@ -22,12 +24,13 @@ import {
   insertYearConfirmation,
   listHolidaysForYear,
   listHolidayYears,
+  restoreHolidayById,
 } from "@/repositories/holidays";
 import { findUserById } from "@/repositories/users";
 
 // ADMN-11(04.2-11): 공휴일 관리 화면의 데이터와 연도 확정. 화면이 권한으로 버튼을
 // 숨겨도 도메인이 같은 권한을 다시 본다(T-4.2-70·73).
-const HOLIDAYS_MENU = "admin.holidays";
+export const HOLIDAYS_MENU = "admin.holidays";
 
 export class HolidayForbiddenError extends UserFacingError {}
 export class HolidayYearIncompleteError extends UserFacingError {}
@@ -247,7 +250,7 @@ export async function addHoliday(
     const existing = await findHolidayByDate(viewer, input.date, tx);
     if (existing) {
       if (existing.kind !== "substitute") throw new DuplicateHolidayError(existing.name);
-      await deleteHolidayById(viewer, existing.id, tx);
+      await deleteSubstituteById(viewer, existing.id, tx);
     }
     const inserted = await insertManualHoliday(
       viewer,
@@ -272,14 +275,14 @@ export async function addHoliday(
 }
 
 export type DeleteHolidayResult =
-  | { deleted: true; date: string; name: string; kind: "temporary" | "election" }
+  | { deleted: true; id: string; date: string; name: string; kind: "temporary" | "election" }
   | { deleted: false };
 
-// D-4210 「삭제」: 달력 잠금 트랜잭션 하나에서 행을 지우고(RETURNING) 규칙 행·오늘 이전
+// D-4210 「삭제」: 달력 잠금 트랜잭션 하나에서 행을 보관하고(RETURNING · ADMN-12) 규칙 행·오늘 이전
 // 행이면 던져 트랜잭션째 되돌린다(소급 금지 — T-4.2-77). 이미 지워진 행(동시 중복 삭제의
 // 뒤 사람)은 로그 없이 `{ deleted: false }`. 지운 날짜의 해 Y에 대해 원래 해 Y-1부터 표
 // 끝까지 재계산 한 번 → 원래 값을 실은 `holiday_change` op delete 로그(D-4220). 돌려준
-// 원래 값으로 결과 줄 `되돌리기`가 addHoliday를 다시 부른다(D-4209 개정).
+// 행 id로 결과 줄 `되돌리기`가 restoreHoliday를 부른다(D-4209 개정 · quick 261001-hfi).
 export async function deleteHoliday(
   viewer: Viewer,
   id: string,
@@ -293,7 +296,7 @@ export async function deleteHoliday(
   const recompute = deps?.recompute ?? recomputeFutureSubstitutes;
 
   return withHolidayCalendarLock(async (tx) => {
-    const row = await deleteHolidayById(viewer, id, tx);
+    const row = await archiveHolidayById(viewer, id, tx);
     if (!row) return { deleted: false };
     if ((row.kind !== "temporary" && row.kind !== "election") || row.date <= today) {
       throw new HolidayNotDeletableError("지울 수 없는 공휴일 · 규칙 행이나 오늘 이전 행");
@@ -310,6 +313,51 @@ export async function deleteHoliday(
       },
       { tx },
     );
-    return { deleted: true, date: row.date, name: row.name, kind };
+    return { deleted: true, id: row.id, date: row.date, name: row.name, kind };
+  });
+}
+
+export class HolidayNotRestorableError extends UserFacingError {}
+
+// ADMN-12(quick 261001-hfi): 보관된 공휴일 복원 — 삭제 결과 줄의 `되돌리기`와 보관함 복원이 같은 길을 탄다.
+// 달력 잠금 트랜잭션 하나에서: 보관 행 확인 → 소급 금지(오늘 이전 거부) → 그 날짜의 활성 행이 대체 행이면
+// 비우고(규칙이 옮긴다) 다른 공휴일이면 거부 → 보관 해제 → 원래 해 Y-1부터 재계산 → `holiday_change` op restore
+// 로그(D-4220). 이미 활성인 행(동시 중복 복원의 뒤 사람)은 로그 없이 `{ restored: false }`, 없는 id는 거부.
+export async function restoreHoliday(
+  viewer: Viewer,
+  id: string,
+  deps?: HolidayWriteDeps,
+): Promise<{ restored: boolean }> {
+  if (!(await can(viewer, HOLIDAYS_MENU, "write"))) {
+    throw new HolidayForbiddenError("공휴일 복원 권한 없음");
+  }
+  const today = toKstDate(deps?.now ?? new Date());
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  const recompute = deps?.recompute ?? recomputeFutureSubstitutes;
+
+  return withHolidayCalendarLock(async (tx) => {
+    const archived = await findHolidayById(viewer, id, tx);
+    if (!archived) throw new HolidayNotRestorableError("없는 공휴일 · 복원 불가");
+    if (archived.archivedAt === null) return { restored: false };
+    if (archived.date <= today) throw new HolidayNotRestorableError("오늘·지난 날짜 · 복원 불가");
+    const existing = await findHolidayByDate(viewer, archived.date, tx);
+    if (existing) {
+      if (existing.kind !== "substitute") throw new HolidayNotRestorableError(`이미 공휴일(${existing.name}) · 복원 불가`);
+      await deleteSubstituteById(viewer, existing.id, tx);
+    }
+    const row = await restoreHolidayById(viewer, id, tx);
+    if (!row) return { restored: false };
+    await recompute(Number(row.date.slice(0, 4)) - 1, { today }, tx);
+    await recordAction(
+      viewer,
+      {
+        actionType: "holiday_change",
+        entity: "holiday",
+        entityId: row.id,
+        detail: { op: "restore", date: row.date, name: row.name, kind: row.kind },
+      },
+      { tx },
+    );
+    return { restored: true };
   });
 }

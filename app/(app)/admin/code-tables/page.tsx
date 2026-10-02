@@ -22,6 +22,7 @@ import styles from "./code-tables.module.css";
 const TABLE_OPTIONS = [
   { key: "project_status", label: "프로젝트 상태" },
   { key: "evidence_type", label: "증빙 종류" },
+  { key: "quote_subcategory", label: "견적 분류" },
 ] as const;
 const DEFAULT_TABLE_KEY = "project_status";
 const EVIDENCE_TYPE_TABLE_KEY = "evidence_type";
@@ -169,10 +170,10 @@ export default async function CodeTablesPage({
                   {canWrite || canArchive ? (
                     <td>
                       {item.archivedAt ? null : (
-                        <>
+                        <span className={styles.rowActions}>
                           {canWrite ? <CodeItemActiveToggle id={item.id} active={item.active} /> : null}
                           {canArchive ? <CodeItemDeleteButton id={item.id} label={item.label} /> : null}
-                        </>
+                        </span>
                       )}
                     </td>
                   ) : null}

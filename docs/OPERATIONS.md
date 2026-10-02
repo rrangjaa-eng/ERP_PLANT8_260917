@@ -166,7 +166,8 @@ account:reset --email …` / `pnpm account:unlock --email …`. 운영에서는 
 세션이 gcloud를 직접 쓰지 않고 `verify.yml`(workflow_dispatch, WIF)을 띄워 로그를 읽는다 —
 조직 정책 `iam.disableServiceAccountKeyCreation`이 SA 키 생성을 막기 때문이다. gha-deployer에
 읽기 전용 두 역할 `roles/orgpolicy.policyViewer`(조직 수준)·`roles/iam.securityReviewer`만
-준다(쓰기 권한 없음, 2026-09-22 결정).
+준다(쓰기 권한 없음, 2026-09-22 결정). `verify.yml`의 `notify-tick` 점검(스테이징 스케줄러 잡·실행 기록·앱 로그)은
+부트스트랩이 이미 준 `cloudscheduler.admin`·`logging.admin`으로 조회만 한다.
 
 백업 실패 경보 테스트: 이메일 채널에는 콘솔 "테스트 알림 보내기"가 없다. Owner 계정의
 Cloud Shell에서 경보 필터의 `jsonPayload.message` 분기에 맞는 합성 ERROR 로그 한 줄을
@@ -266,6 +267,26 @@ account·db-bootstrap·restore 다섯만 Job으로 존재한다) — `.env.local
 **아무것도 쓰지 않는다**(단일 트랜잭션). 부분적으로만 유효한 파일을 넣으면 CLI가 실패한
 항목을 한 줄씩 나열하고 종료 코드 1로 끝난다 — 상태는 가져오기 전 그대로다. 파일이
 없거나 JSON이 아니거나 `settings` 필드가 없으면 사용법 오류(종료 코드 2)다.
+
+지난 연도 이력(연차 일수처럼 1월 1일 적용 키)은 대상 환경이 **새 환경**일 때만 그대로 받는다 —
+그 키 이력이 배포 시드 행(2000-01-01 = 기본값)뿐이고, 올해 전 업무 기록(연차 신청 · 조정, 매출,
+리저브, 고객 승인 견적)이 한 건도 없을 때다. 실제 운영된 환경에는 그날 유효값과 같은 무변화 행만
+통과한다(소급 변경 금지). 그래서 이관 순서는 **설정 가져오기 → 업무 데이터 적재**다.
+
+## 13. Codex 디자인 검토
+
+Codex는 `/design-review`·`/plan-design-review`에서 `scripts/codex-design-review.sh`로만 쓴다(그 밖의
+gstack 리뷰는 `codex_reviews disabled`). 설치는 `scripts/install-codex.sh`(pnpm 전역, SessionStart 훅이
+승인 전이면 손으로 실행). 인증은 ChatGPT 구독만 — API 키는 쓰지 않는다. 자격 옮기기: 1) PC에서
+`codex login`(브라우저) → `~/.codex/auth.json` 2) base64 한 줄 변환:
+```bash
+base64 -w0 ~/.codex/auth.json                                            # Linux
+base64 -i ~/.codex/auth.json | tr -d '\n'                                # macOS
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("$env:USERPROFILE\.codex\auth.json"))  # PowerShell
+```
+3) claude.ai 환경(plant8) 변수 `CODEX_AUTH_JSON_B64`에 붙여넣기 4) `api.openai.com`·`chatgpt.com`·
+`auth.openai.com`은 클라우드 세션 프록시를 통과한다 — 다른 환경에서 막히면 그 환경 허용 목록에 추가
+5) 갱신 실패(로그인 풀림) 시 2번을 다시 해 값 교체 6) 토큰은 리포·커밋·문서에 절대 넣지 않는다.
 
 ## 14. 백업·복원 (OPS-03)
 

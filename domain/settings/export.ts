@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { Viewer } from "@/domain/viewer";
 import { can as defaultCan } from "@/domain/permissions/can";
 import { recordAction as defaultRecordAction } from "@/domain/action-log/record";
-import { SETTING_DEFS } from "@/domain/settings/keys";
+import { SEED_HISTORIZED_EFFECTIVE_FROM, SETTING_DEFS } from "@/domain/settings/keys";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { seoulDateToUtcDate, seoulToday } from "@/lib/dates";
 import {
@@ -12,6 +12,7 @@ import {
   SettingNotFoundError,
 } from "@/domain/settings/registry";
 import { applySettingsImport as defaultApplySettingsImport } from "@/repositories/settings";
+import { hasBusinessRecordsBefore } from "@/repositories/business-records";
 import { assertSeqStartNotLowered } from "@/domain/document-numbering";
 import { withTransaction } from "@/lib/db-transaction";
 
@@ -58,10 +59,10 @@ export async function exportSettings(viewer: Viewer, deps?: Partial<ExportDeps>)
       continue;
     }
     try {
-      // 저장 원값이 아니라 실효값을 쓴다 — 허용 밖 저장값은 기본값으로 읽히므로(readInvalidAsDefault) 이 파일을 되가져오면 원값과 log.error 신호가 사라진다.
+      // 저장 원값이 아니라 실효값을 쓴다 — readInvalidAsDefault 표시 키는 허용 밖 저장값이 기본값으로 읽히므로 이 파일을 되가져오면 원값과 log.error 신호가 사라진다.
       settings[def.key] = await getSettingValue(def);
     } catch {
-      // 기본값도 없고 값도 없는 키(신규 등록 직후)는 내보내기에서 건너뛴다.
+      // 기본값도 없고 값도 없는 키(신규 등록 직후)는 내보내기에서 건너뛴다. 표시 없는 키의 허용 밖 저장값도 여기서 건너뛴다.
     }
   }
 
@@ -79,6 +80,8 @@ export type ImportDeps = ExportDeps & {
   applySettingsImport: typeof defaultApplySettingsImport;
   // 04.1-04: 적용 시작일 규칙의 서울 오늘 기준 시각(테스트 주입).
   now: Date;
+  // quick 261001-85g: 올해 전 업무 기록이 있는가(빈 새 환경 판정 — 테스트 주입).
+  hasPastBusinessRecords: (year: number) => Promise<boolean>;
 };
 
 type HistorizedImportEntry = { effectiveFrom?: unknown; value?: unknown };
@@ -96,6 +99,8 @@ export async function importSettings(
   if (!allowed) throw new ForbiddenError("설정 가져오기 권한 없음");
 
   const getSettingValue = deps?.getSettingValue ?? defaultGetSettingValue;
+  const listSettingHistory = deps?.listSettingHistory ?? defaultListSettingHistory;
+  const hasPastBusinessRecords = deps?.hasPastBusinessRecords ?? ((year: number) => hasBusinessRecordsBefore(viewer, year));
   const today = seoulToday(deps?.now);
   const issues: string[] = [];
   const simple: Array<{ key: string; value: unknown; by: string | null }> = [];
@@ -114,6 +119,11 @@ export async function importSettings(
         continue;
       }
       const seenDates = new Set<string>();
+      // quick 261001-85g(ADMN-06): 대상 환경의 이력이 0행이거나 배포 시드 행(2000-01-01 = 기본값) 하나뿐이면 미설정 키다
+      // (시드가 아닌 행은 기본값과 같아도 설정된 값 — 같은 날 다른 값이 조용히 무시되지 않게 기존 검증을 탄다).
+      // 올해 전 업무 기록(연차 · 매출 · 리저브 · 고객 승인 견적)이 있으면 실제 운영된 환경이라 미설정으로 보지 않는다
+      // (사용자 결정 2026-10-01 — 지난 연도 값은 그 잔고 · 세액을 다시 계산하게 한다. 소급은 막고 새 환경 이관만 받는다).
+      let unconfigured: boolean | undefined;
       for (const entry of raw as HistorizedImportEntry[]) {
         const effectiveFrom = entry?.effectiveFrom;
         if (typeof effectiveFrom !== "string") {
@@ -131,12 +141,21 @@ export async function importSettings(
         }
         // 04.1-04(ENG-5): 일반 저장과 같은 적용 시작일 검증. 지난 연도는 그날 이미 유효한
         // 값(기존 행 또는 기본값)과 같은 무변화 행만 통과 — 어느 날의 유효값도 바꾸지 않는다.
+        // quick 261001-85g: 미설정 키(이력이 기본값뿐)는 지난 연도 행을 그대로 받는다 — 바꿀 설정된 값이 없다.
         const violation = validateEffectiveFrom(def, effectiveFrom, today);
         if (violation?.reason === "format") {
           issues.push(`'${key}'(${effectiveFrom}) ${violation.message}`);
           continue;
         }
         if (violation?.reason === "past_year") {
+          unconfigured ??=
+            (await listSettingHistory(def)).every(
+              (row) => row.effectiveFrom === SEED_HISTORIZED_EFFECTIVE_FROM && isDeepStrictEqual(row.value, def.default),
+            ) && !(await hasPastBusinessRecords(Number(today.slice(0, 4))));
+        }
+        // 시드 날짜 행은 이미 있으면 쓰기가 건너뛴다(onConflictDoNothing) — 다른 값은 미설정 키라도 기존 검증으로 거부한다.
+        const seedDateConflict = effectiveFrom === SEED_HISTORIZED_EFFECTIVE_FROM && !isDeepStrictEqual(parsed.data, def.default);
+        if (violation?.reason === "past_year" && (!unconfigured || seedDateConflict)) {
           const effective: unknown = await getSettingValue(def, { asOf: seoulDateToUtcDate(effectiveFrom) }).catch((caught: unknown) => {
             if (caught instanceof SettingNotFoundError) return undefined;
             throw caught;

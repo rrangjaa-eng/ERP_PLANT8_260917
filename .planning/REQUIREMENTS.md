@@ -18,8 +18,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **MAST-01**: 거래처·클라이언트를 등록·수정하고, 미사용은 삭제 대신 숨김 표시한다. 입력 시 자동완성된다. 거래처 계좌번호는 앱 단에서 암호화 저장하고 기본은 뒤 4자리만 보이며, 마스킹 해제는 정보 노출표 항목이다. 거래처마다 기본 증빙 종류(세금계산서·계산서·카드 전표·기타소득·사업소득 등)를 두어 지출결의·카드 사용 등록 때 자동으로 채워진다
 - [ ] **MAST-02**: 직원 등록 = 사람 + 계급 + 팀 선택. 입사자 추가에 코드 수정이 없다. 팀은 본부에 속한다(팀 ⊂ 본부). 팀 소속은 발령일 이력으로 남고, 비용 귀속·팀 손익은 사용일 시점의 소속 팀을 따른다
-- [ ] **MAST-03**: 법인카드 마스터: 직원별 개인 지급 카드와 팀 전용 카드를 등록하고, 카드마다 소지자(직원) 또는 소속 팀을 지정한다
-- [ ] **MAST-04**: 견적 대분류·소분류, 지급 방식, 프로젝트 상태 같은 코드표를 관리 화면에서 추가·수정·비활성화한다
+- [x] **MAST-03**: 법인카드 마스터: 직원별 개인 지급 카드와 팀 전용 카드를 등록하고, 카드마다 소지자(직원) 또는 소속 팀을 지정한다
+- [x] **MAST-04**: 견적 대분류·소분류, 프로젝트 상태 같은 코드표를 관리 화면에서 추가·수정·비활성화한다 (2026-10-01: 지급 방식 코드표는 MAST-05로 분리)
+- [ ] **MAST-05**: 지급 방식 코드표를 관리 화면에서 추가·수정·비활성화한다. 값은 Phase 6 계획에서 정한다 (2026-10-01 MAST-04에서 분리)
 
 ### 프로젝트·견적 (PROJ)
 
@@ -35,9 +36,9 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **EXP-01**: 견적 줄에서 "지출결의 올리기"를 누르면 거래처·금액·프로젝트가 자동으로 채워진다. 같은 값을 다시 적지 않는다. 지출결의는 기본 견적 줄 1개당 문서 1개다(여러 줄을 골라도 문서는 줄마다 하나). 분할 지급을 계획한 줄만 회차별 문서를 두며 회차 합계는 실행가를 넘을 수 없다. 같은 줄에서 두 번 눌러도 문서가 겹치지 않는다(idempotency key)
 - [ ] **EXP-02**: 지출결의 한 건을 화면 하나에서 작성·증빙 첨부·제출까지 끝낸다
-- [ ] **EXP-03**: 결재는 기본 4단(기안자 팀의 팀장 → 기안자 본부의 책임자 → 경영관리본부 담당 → 대표). 단계는 계급 × 조직 범위(기안자의 팀/본부/전사/특정 부서)로 정의되고 빈 자리는 건너뛴다. 기안자가 단계 담당 본인이면 그 단계를 건너뛴다(설정). 승인·반려(기안자에게 복귀)·회수가 된다. 상태 문서는 version 컬럼 낙관적 잠금으로 승인↔회수·승인↔반려 동시 조작을 막는다
-- [ ] **EXP-04**: 결재선은 제출 시점에 문서에 고정된다. 이후 설정 변경이 진행 중 문서에 영향을 주지 않는다. 고정되는 것은 단계별 계급 × 조직 범위이며, 사람은 표시 시점의 현재 담당으로 해석하고 이미 승인한 사람은 그대로 보존된다
-- [ ] **EXP-05**: 결재자는 결재 대기함에서 폰으로도 승인·반려한다
+- [x] **EXP-03**: 결재는 기본 4단(기안자 팀의 팀장 → 기안자 본부의 책임자 → 경영관리본부 담당 → 대표). 단계는 계급 × 조직 범위(기안자의 팀/본부/전사/특정 부서)로 정의되고 빈 자리는 건너뛴다. 기안자가 단계 담당 본인이면 그 단계를 건너뛴다(설정). 승인·반려(기안자에게 복귀)·회수가 된다. 상태 문서는 version 컬럼 낙관적 잠금으로 승인↔회수·승인↔반려 동시 조작을 막는다
+- [x] **EXP-04**: 결재선은 제출 시점에 문서에 고정된다. 이후 설정 변경이 진행 중 문서에 영향을 주지 않는다. 고정되는 것은 단계별 계급 × 조직 범위이며, 사람은 표시 시점의 현재 담당으로 해석하고 이미 승인한 사람은 그대로 보존된다
+- [x] **EXP-05**: 결재자는 결재 대기함에서 폰으로도 승인·반려한다
 - [ ] **EXP-06**: 결재를 통과하지 않은 지출결의는 지급 완료 처리가 되지 않는다. 지급 완료된 견적 줄은 잠겨 새 지출결의를 올릴 수 없다(이중 지급 방지)
 - [ ] **EXP-07**: 직원은 자기 카드·자기 팀 카드의 사용을 등록하고 견적 줄, 프로젝트 '견적 외 비용', 팀 비용 중 하나에 연결한다. 팀 비용을 고르면 소속 팀이 자동으로 정해진다. 연결 없는 카드 사용은 서버가 막는다(이중 계산 방지)
 - [ ] **EXP-08**: 수주 단계 비용(제안·PT 등)은 수주중 프로젝트(PROJ-04)의 견적 줄에 올리는 것이 기본 경로이고, 프로젝트가 아예 열리지 않은 건만 프로젝트 없이 팀 이름으로 올린다. 팀 이름 지출은 미수주 비용·팀 관리비로 종류를 구분한다. 직원 개인이 쓴 비용(개인 카드 사용·개인 지출결의)이 프로젝트에 연결되지 않으면 사용일 기준 그 직원의 소속 팀 비용으로 귀속되고, 팀장 화면에 '프로젝트 미연결'로 표시된다
@@ -90,7 +91,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### 연차 (LEAV)
 
-- [ ] **LEAV-01**: 직원이 종일·반차·반반차·재택 중 하나로 신청하면 결재 모듈로 승인되고, 연차 종류는 잔여 일수에서 차감(종일 1, 반차 0.5, 반반차 0.25)되며 재택은 차감 없이 기록만 된다. 연차 일수는 관리자가 연 1회 설정한다
+- [x] **LEAV-01**: 직원이 종일·반차·반반차·재택 중 하나로 신청하면 결재 모듈로 승인되고, 연차 종류는 잔여 일수에서 차감(종일 1, 반차 0.5, 반반차 0.25)되며 재택은 차감 없이 기록만 된다. 연차 일수는 관리자가 연 1회 설정한다
 
 ### 기타소득 확인증 (CERT)
 
@@ -102,18 +103,18 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### 코드 없는 운영 (ADMN)
 
-- [ ] **ADMN-01**: 권한표: 계급 × 메뉴 × 동작(보기/쓰기/승인) 체크박스
-- [ ] **ADMN-02**: 정보 노출표: 계급 × 정보 항목(손익 숫자·팀 비용·목표·인센티브·거래처 금액 등). 기획본부 기본값은 인트라넷 수준, 새 기능 정보는 기본 숨김
-- [ ] **ADMN-03**: 정보 노출은 화면·API·Excel 내보내기·자동완성·검색에 동일하게 적용된다(우회 경로 없음). 강제 지점은 리포지토리의 viewer 투영이며(화면 코드가 아님), 누수 테스트가 서버 액션 레지스트리 × DTO 타입 목록 × Excel 내보내기 함수 × 계급에서 자동 생성되고, 노출표 항목에 매핑되지 않은 DTO 타입이 있으면 테스트가 실패한다
+- [x] **ADMN-01**: 권한표: 계급 × 메뉴 × 동작(보기/쓰기/승인) 체크박스
+- [x] **ADMN-02**: 정보 노출표: 계급 × 정보 항목(손익 숫자·팀 비용·목표·인센티브·거래처 금액 등). 기획본부 기본값은 인트라넷 수준, 새 기능 정보는 기본 숨김
+- [x] **ADMN-03**: 정보 노출은 화면·API·Excel 내보내기·자동완성·검색에 동일하게 적용된다(우회 경로 없음). 강제 지점은 리포지토리의 viewer 투영이며(화면 코드가 아님), 누수 테스트가 서버 액션 레지스트리 × DTO 타입 목록 × Excel 내보내기 함수 × 계급에서 자동 생성되고, 노출표 항목에 매핑되지 않은 DTO 타입이 있으면 테스트가 실패한다
 - [ ] **ADMN-04**: 결재 단계·담당 계급, 규칙 on/off, 알림 시점·대상, 세율·수식을 설정 화면에서 바꾼다
-- [ ] **ADMN-05**: 설정 키는 레지스트리 한 곳에 등록되며 설정 화면이 자동 생성된다. 등록된 키를 서버가 읽는지 테스트가 강제한다
-- [ ] **ADMN-06**: 설정을 JSON으로 내보내고 빈 환경에 가져온다
+- [x] **ADMN-05**: 설정 키는 레지스트리 한 곳에 등록되며 설정 화면이 자동 생성된다. 등록된 키를 서버가 읽는지 테스트가 강제한다
+- [x] **ADMN-06**: 설정을 JSON으로 내보내고 빈 환경에 가져온다
 - [ ] **ADMN-07**: 관리자가 프로젝트·견적 줄·거래처에 텍스트/숫자/날짜/선택 4종 칸을 추가하면 입력·목록·검색·내보내기에 반영된다
-- [ ] **ADMN-08**: 계급 종류를 추가·이름 변경한다(데이터)
+- [x] **ADMN-08**: 계급 종류를 추가·이름 변경한다(데이터)
 - [x] **ADMN-09**: 문서 번호 서식(프로젝트·견적·지출결의·구매 요청·연차 등)을 설정에서 정의한다: 접두어·연도·순번 자릿수·구분자·순번 범위(전사/프로젝트별). 예: 프로젝트 26001, 지출결의 26001-0001. 번호 부여 시점: 지출결의는 제출 시, 구매 요청은 생성 시
-- [ ] **ADMN-10**: 대표·경영관리·관리자가 행동 로그 화면에서 핵심 로그 위주로 보고, 사람·기간·행동 종류·문서로 걸러 Excel로 내보낸다(사고 증거·인사평가 참고용). 어떤 행동을 핵심으로 남길지는 설정에서 고른다. 열람 권한은 정보 노출표로 통제
+- [ ] **ADMN-10**: 대표·경영관리·관리자가 행동 로그 화면에서 핵심 로그 위주로 보고, 사람·기간·행동 종류·문서로 걸러 Excel로 내보낸다(사고 증거·인사평가 참고용). 어떤 행동을 핵심으로 남길지는 설정에서 고른다. 열람 권한은 정보 노출표로 통제 (2026-10-01: 새 배포 직후 대표 계정이 행동 로그 화면에서 404를 받는 문제 — 계급 기본 권한 — 는 Phase 7 전 메뉴 권한 검수의 확정 항목)
 - [x] **ADMN-11**: 영업일·공휴일: 법정 공휴일 규칙으로 매년 후보가 자동 생성되고 관리자가 검토·확정·수동 추가한다. 지급일·마감·알림 계산이 이 표를 쓴다
-- [ ] **ADMN-12**: "지우지 않는다": 사용자가 무엇을 삭제해도 보관함으로 이동하며, 관리자만 보관함에서 보고 복원할 수 있다. 삭제·복원은 행동 로그에 남는다
+- [x] **ADMN-12**: "지우지 않는다": 사용자가 무엇을 삭제해도 보관함으로 이동하며, 관리자만 보관함에서 보고 복원할 수 있다. 삭제·복원은 행동 로그에 남는다. 아직 적용되지 않은 예약(미래 설정값·미래 발령)의 취소는 삭제가 아니며 행동 로그로 남는다 (2026-10-01 사용자 결정)
 
 ### 전환 (MIG)
 
@@ -128,9 +129,13 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **OPS-02**: 사용 없을 때 비용이 0에 가깝고(스케일-투-제로), 월 비용 목표가 문서화된다
 - [x] **OPS-03**: DB가 자동 백업되고 복원 절차가 문서화되며 복원 리허설을 1회 한다
 - [x] **OPS-04**: 린트(`any` 금지)·타입체크·핵심 흐름(로그인→지출결의→결재→손익) 통합 테스트가 CI에서 돈다. ESLint import 경계(app↛repositories/db, domain↛app, repository는 viewer 필수)와 Server Action zod 검증 필수 린트가 포함된다
-- [ ] **OPS-05**: 직원 계정별 핵심 행동만 로그로 남긴다: 로그인, 문서 생성·제출·승인·반려·회수·삭제, 지급·구매 처리, 설정·권한 변경, 민감 정보(손익·인센티브·주민등록번호) 열람. 단순 조회·화면 이동 같은 잡음은 남기지 않는다. 관리자는 로그를 정리(수정·삭제)할 수 있다. Excel 내보내기와 마스킹 해제는 설정으로 끌 수 없는 핵심 로그다
+- [x] **OPS-05**: 직원 계정별 핵심 행동만 로그로 남긴다: 로그인, 문서 생성·삭제, 설정·권한 변경. 단순 조회·화면 이동 같은 잡음은 남기지 않는다. 관리자는 로그를 정리(조건 삭제)할 수 있고 감사 기록 자체는 고치지 않는다. Excel 내보내기와 마스킹 해제는 설정으로 끌 수 없는 핵심 로그다 (2026-10-01 분리: 문서 제출·승인·반려·회수 → OPS-08, 지급·구매 처리 → OPS-09, 손익 열람 → OPS-10, 인센티브 열람 → OPS-11, 주민등록번호 열람 기록 → CERT-02)
 - [x] **OPS-06**: 관리자 시스템 상태 화면: 마지막 알림 tick·백업·복원 리허설·계산 불가 건수·DB 커넥션·배포 버전을 보이고 한도 초과 시 배너가 뜬다. 서버 로그는 JSON 형식이다 (2026-09-23: 데이터 이전이 없어 '이전 실행' 항목을 '복원 리허설'로 바꿈)
 - [x] **OPS-07**: `docs/ARCHITECTURE.md`·`docs/OPERATIONS.md`(런북 포함)를 Phase 1 산출물로 만들고 페이즈마다 갱신한다(각 300줄 상한)
+- [ ] **OPS-08**: 문서 제출·승인·반려·회수를 핵심 행동 로그로 남긴다 (2026-10-01 OPS-05에서 분리)
+- [ ] **OPS-09**: 지급·구매 처리를 핵심 행동 로그로 남긴다 (2026-10-01 OPS-05에서 분리)
+- [ ] **OPS-10**: 손익 열람을 민감 정보 열람 로그로 남긴다 (2026-10-01 OPS-05에서 분리)
+- [ ] **OPS-11**: 인센티브 열람을 민감 정보 열람 로그로 남긴다 (2026-10-01 OPS-05에서 분리)
 
 ### 기획본부 편의·디자인 (UX)
 
@@ -190,10 +195,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTH-02 | Phase 1 | Complete |
 | AUTH-03 | Phase 1 | Complete |
 | AUTH-04 | Phase 1 | Complete |
-| MAST-01 | Phase 3 | Pending |
-| MAST-02 | Phase 3 | Pending |
-| MAST-03 | Phase 3 | Pending |
-| MAST-04 | Phase 3 | Pending |
+| MAST-01 | Phase 3 | Gaps Found |
+| MAST-02 | Phase 3 | Gaps Found |
+| MAST-03 | Phase 3 | Complete |
+| MAST-04 | Phase 3 | Complete |
+| MAST-05 | Phase 6 | Pending |
 | PROJ-01 | Phase 4 | Complete |
 | PROJ-02 | Phase 4 | Complete |
 | PROJ-03 | Phase 4 | Complete |
@@ -203,9 +209,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PROJ-07 | Phase 4 | Complete |
 | EXP-01 | Phase 5 | Pending |
 | EXP-02 | Phase 5 | Pending |
-| EXP-03 | Phase 04.1 | Pending |
-| EXP-04 | Phase 04.1 | Pending |
-| EXP-05 | Phase 04.1 | Pending |
+| EXP-03 | Phase 04.1 | Complete |
+| EXP-04 | Phase 04.1 | Complete |
+| EXP-05 | Phase 04.1 | Complete |
 | EXP-06 | Phase 6 | Pending |
 | EXP-07 | Phase 6 | Pending |
 | EXP-08 | Phase 5 | Pending |
@@ -240,32 +246,36 @@ Which phases cover which requirements. Updated during roadmap creation.
 | NOTI-02 | Phase 04.2 | Complete |
 | NOTI-03 | Phase 7 | Pending |
 | NOTI-04 | Phase 04.2 | Complete |
-| LEAV-01 | Phase 04.1 | Pending |
+| LEAV-01 | Phase 04.1 | Complete |
 | CERT-01 | Phase 11 | Pending |
 | CERT-02 | Phase 11 | Pending |
 | CERT-03 | Phase 11 | Pending |
 | CERT-04 | Phase 11 | Pending |
-| ADMN-01 | Phase 3 | Pending |
-| ADMN-02 | Phase 3 | Pending |
-| ADMN-03 | Phase 3 | Pending |
-| ADMN-04 | Phase 04.1 (결재 부분 — 단계·담당 계급·조직 범위·규칙 on/off·문서 종류별 자기 승인 + 연차 연간 일수. 알림 시점·대상은 Phase 7, 세율·수식은 Phase 5) | Pending |
-| ADMN-05 | Phase 3 | Pending |
-| ADMN-06 | Phase 3 | Pending |
+| ADMN-01 | Phase 3 | Complete |
+| ADMN-02 | Phase 3 | Complete |
+| ADMN-03 | Phase 3 | Complete |
+| ADMN-04 | Phase 04.1 (결재 부분 — 단계·담당 계급·조직 범위·규칙 on/off·문서 종류별 자기 승인 + 연차 연간 일수. 알림 시점·대상은 Phase 7, 세율·수식은 Phase 5) | Complete |
+| ADMN-05 | Phase 3 | Complete |
+| ADMN-06 | Phase 3 | Complete |
 | ADMN-07 | Phase 10 | Pending |
-| ADMN-08 | Phase 3 | Pending |
+| ADMN-08 | Phase 3 | Complete |
 | ADMN-09 | Phase 4 | Complete |
-| ADMN-10 | Phase 3 | Pending |
+| ADMN-10 | Phase 3 (새 배포 직후 대표 계정의 행동 로그 화면 404 — 계급 기본 권한 — 는 Phase 7 전 메뉴 권한 검수 확정 항목, 2026-10-01) | Gaps Found |
 | ADMN-11 | Phase 04.2 | Complete |
-| ADMN-12 | Phase 3 | Pending |
+| ADMN-12 | Phase 3 | Complete |
 | MIG-04 | Phase 8 | Pending |
 | MIG-05 | Phase 8 | Pending |
 | OPS-01 | Phase 1 | Complete |
 | OPS-02 | Phase 1 | Complete |
 | OPS-03 | Phase 04.4 | Complete |
 | OPS-04 | Phase 1 | Complete |
-| OPS-05 | Phase 3 | Pending |
+| OPS-05 | Phase 3 | Complete |
 | OPS-06 | Phase 1 (상태 화면 「복원 리허설」 항목은 Phase 04.4가 구현) | Complete |
 | OPS-07 | Phase 1 | Complete |
+| OPS-08 | Phase 5 | Pending |
+| OPS-09 | Phase 6 | Pending |
+| OPS-10 | Phase 9 | Pending |
+| OPS-11 | Phase 10 | Pending |
 | UX-01 | Phase 2 | Complete |
 | UX-02 | Phase 9 | Pending |
 | UX-03 | Phase 5 | Pending |
@@ -275,14 +285,15 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 **Coverage:**
 
-- v1 requirements: 86 total (2026-09-23: MIG-01~03 → Out of Scope, 89 → 86)
-- Mapped to phases: 86
+- v1 requirements: 91 total (2026-09-23: MIG-01~03 → Out of Scope, 89 → 86; 2026-10-01: MAST-05 · OPS-08~11 분리 추가, 86 → 91)
+- Mapped to phases: 91
 - Unmapped: 0 ✓
 
-**By phase:** 1 (9) · 2 (1) · 3 (13) · 4 (11) · 04.1 (5) · 04.2 (4) · 04.4 (1) · 5 (8) · 6 (10) · 7 (3) · 8 (2) · 9 (10) · 10 (5) · 11 (4)
+**By phase:** 1 (9) · 2 (1) · 3 (13) · 4 (11) · 04.1 (5) · 04.2 (4) · 04.4 (1) · 5 (9) · 6 (12) · 7 (3) · 8 (2) · 9 (11) · 10 (6) · 11 (4)
 
 ---
 *Requirements defined: 2026-09-17*
 *2026-09-24: Phase 7에서 Phase 04.2로 ADMN-11·NOTI-01·NOTI-02·NOTI-04 이동(PR #50 분리 — 옮긴 4 + 남긴 3 = 원래 7)*
+*2026-10-01: quick 261001-hfi — 지급 방식 코드표 MAST-04 → MAST-05(Phase 6), OPS-05에서 문서 제출·승인·반려·회수(OPS-08 · Phase 5) · 지급·구매 처리(OPS-09 · Phase 6) · 손익 열람(OPS-10 · Phase 9) · 인센티브 열람(OPS-11 · Phase 10) 분리, 주민등록번호 열람 기록은 CERT-02. OPS-05 로그 정리는 조건 삭제(감사 기록 수정 없음). ADMN-12에 예약 취소 예외. ADMN-10 대표 404 → Phase 7 확정 항목. v1 86 → 91 (91/91 mapped)*
 *Last updated: 2026-09-23 — 데이터 이전 제외(사용자 결정): MIG-01·02·03 → Out of Scope, MIG-04·05를 수기 입력 전환으로 재정의, OPS-06 '이전 실행' → '복원 리허설', 인트라넷 미러링 사유 정정, v1 89 → 86 (86/86 mapped)*
 *Earlier update: 2026-09-17 after /plan-ceo-review (23 findings + D3·D4·D5 + OV-1..8 folded in; OPS-06·OPS-07 added; OV-3 redefined → EXP-15 증빙 종류별 세금 자동 계산; CERT-01 QR 진입; EXP-16 경영관리 카드 사용 대리 등록·개인 비용 팀 귀속·경품 대납 세금 비용 포함; 89/89 mapped; /plan-eng-review decisions 1–15 + OV-1..8 folded: 본부·계급×조직 범위·자기 승인, 세율 기준일·절사, effectiveCost 식 공유, upsert 이전·결정적 번호·amount_basis·중복 후보, demo 입력; roadmap Phase 6 split per Eng OV-6 → 11 phases, traceability renumbered: old 6 → 6/7, old 7~10 → 8~11; 회사 GCP Phase 1부터)*

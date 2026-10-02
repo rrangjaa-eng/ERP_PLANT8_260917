@@ -7,6 +7,7 @@ import { recordAction as defaultRecordAction } from "@/domain/action-log/record"
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { seoulToday } from "@/lib/dates";
 import { log } from "@/lib/log";
+import { withTransaction as defaultWithTransaction } from "@/lib/db-transaction";
 import {
   findSimpleValue as defaultFindSimpleValue,
   findSimpleValues as defaultFindSimpleValues,
@@ -58,6 +59,7 @@ export class SettingNotFoundError extends UserFacingError {}
 export class ForbiddenError extends UserFacingError {}
 export class SettingKindMismatchError extends UserFacingError {}
 export class FutureCancelOnlyError extends UserFacingError {}
+export class FutureValueNotFoundError extends UserFacingError {}
 export class EffectiveFromRuleError extends UserFacingError {}
 
 function dateOnly(date: Date): string {
@@ -107,6 +109,7 @@ export type RegistryDeps = {
   listHistory: typeof defaultListHistory;
   insertHistorizedValue: typeof defaultInsertHistorizedValue;
   deleteFutureHistorizedValue: typeof defaultDeleteFutureHistorizedValue;
+  withTransaction: typeof defaultWithTransaction;
   // 04.1-04: 적용 시작일 규칙 · 「이미 적용됨」 판정의 서울 오늘 기준 시각(테스트 주입).
   now: Date;
 };
@@ -115,7 +118,9 @@ export type RegistryDeps = {
 // opts.asOf는 이력형 키에서만 쓰이고 비이력형은 무시한다. 「어느 날짜를
 // 넘길지」는 호출자의 책임이다 — 원천징수·회사 대납은 지급일(미지급이면
 // 지급 예정일), 부가세는 증빙일(없으면 작성일)이라는 규칙(Eng OV-5)은
-// Phase 4의 금액 모듈이 결정해 asOf로 넘긴다. 읽기는 권한 판정을 거치지
+// Phase 4의 금액 모듈이 결정해 asOf로 넘긴다. asOf를 생략하면 서울 오늘이고,
+// 넘길 때는 seoulDateToUtcDate로 만든 UTC 자정 Date여야 한다(앞 10자를 날짜로
+// 쓴다 — 현재 시각 Date를 넘기면 KST 0~9시에 하루 밀린다). 읽기는 권한 판정을 거치지
 // 않는다 — 설정 값은 domain 전역에서 자유롭게 읽히는 계산 입력이고, 게이트는
 // 설정 "화면"(admin.settings 보기 권한)에 있다.
 export async function getSettingValue<T>(
@@ -125,7 +130,7 @@ export async function getSettingValue<T>(
 ): Promise<T> {
   if (def.kind === "historized") {
     const findEffectiveValue = deps?.findEffectiveValue ?? defaultFindEffectiveValue;
-    const asOf = dateOnly(opts?.asOf ?? new Date());
+    const asOf = opts?.asOf ? dateOnly(opts.asOf) : seoulToday(deps?.now);
     const row = await findEffectiveValue(SYSTEM_VIEWER, def.key, asOf);
     if (!row) {
       if (def.default !== undefined) return def.default;
@@ -248,15 +253,23 @@ export async function cancelHistorizedValue<T>(
     throw new FutureCancelOnlyError("이미 적용된 이력 행은 취소할 수 없음 — 미래로 예정된 행만 취소 가능");
   }
 
+  // quick 261001-hfi — 삭제와 settings_change 기록을 한 트랜잭션에 묶는다(85g 발령 취소와 같은 모양 · ADMN-12 예약 취소 예외의 전제).
   const deleteFutureHistorizedValue = deps?.deleteFutureHistorizedValue ?? defaultDeleteFutureHistorizedValue;
-  await deleteFutureHistorizedValue(viewer, def.key, effectiveFrom);
-
   const recordAction = deps?.recordAction ?? defaultRecordAction;
-  await recordAction(viewer, {
-    actionType: "settings_change",
-    entity: "settings_historized",
-    entityId: def.key,
-    detail: { key: def.key, effectiveFrom, cancelled: true },
+  const withTransaction = deps?.withTransaction ?? defaultWithTransaction;
+  await withTransaction(async (tx) => {
+    const deleted = await deleteFutureHistorizedValue(viewer, def.key, effectiveFrom, tx);
+    if (!deleted) throw new FutureValueNotFoundError("취소할 예정값 찾을 수 없음");
+    await recordAction(
+      viewer,
+      {
+        actionType: "settings_change",
+        entity: "settings_historized",
+        entityId: def.key,
+        detail: { key: def.key, effectiveFrom, cancelled: true },
+      },
+      { tx },
+    );
   });
 }
 

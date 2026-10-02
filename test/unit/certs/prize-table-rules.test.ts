@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   ALREADY_GENERATED_TEXT,
   dirtyCellCount,
+  generateKeyFor,
   generateOutcome,
   mergeConflict,
   resolveConflict,
@@ -319,6 +320,35 @@ describe("generateOutcome — 「QR 생성」 충돌 · 이미 생성(W3)", () =
 
   it("alreadyGenerated는 성공이 아니라 사실 한 줄", () => {
     expect(generateOutcome({ data: { kind: "alreadyGenerated" } })).toEqual({ kind: "alreadyGenerated" });
-    expect(ALREADY_GENERATED_TEXT).toBe("다른 사람이 먼저 QR 생성 · 표 편집 저장 안 됨");
+    // 내 첫 클릭이 만든 경우(고친 표를 새 키로)와 다른 사람이 만든 경우 모두 사실인 중립 문구(사용자 결정 2026-10-02).
+    expect(ALREADY_GENERATED_TEXT).toBe("이미 QR 생성 · 표 편집 저장 안 됨");
+  });
+});
+
+describe("generateKeyFor — 「QR 생성」 요청 키는 보낸 경품 변경 본문에 묶인다(결과 모름 재시도 = QR 하나 · PR #88 Codex P2)", () => {
+  const edited: DraftPrizeRow[] = [{ ...saved[0]!, unitValue: "73,519" }, saved[1]!];
+
+  it("처음 보내면 새 키를 한 번 만들고 본문 JSON을 함께 둔다", () => {
+    const newKey = vi.fn(() => "key-1");
+    const body = prizeChangesBody(saved, edited, []);
+    expect(generateKeyFor(null, body, newKey)).toEqual({ key: "key-1", body: JSON.stringify(body) });
+    expect(newKey).toHaveBeenCalledTimes(1);
+  });
+
+  it("같은 표 상태에서 다시 만든 본문(새 객체)이면 같은 키 · 새 키를 만들지 않는다", () => {
+    const prev = generateKeyFor(null, prizeChangesBody(saved, edited, []), () => "key-1");
+    const newKey = vi.fn(() => "key-2");
+    expect(generateKeyFor(prev, prizeChangesBody(saved, edited.map((row) => ({ ...row })), []), newKey)).toBe(prev);
+    expect(newKey).not.toHaveBeenCalled();
+  });
+
+  it("한 칸이나 지운 줄이 다르면 새 키", () => {
+    const prev = generateKeyFor(null, prizeChangesBody(saved, edited, []), () => "key-1");
+    const newKey = vi.fn(() => "key-2");
+    const changedCell = prizeChangesBody(saved, [{ ...edited[0]!, unitValue: "80,000" }, saved[1]!], []);
+    expect(generateKeyFor(prev, changedCell, newKey)).toEqual({ key: "key-2", body: JSON.stringify(changedCell) });
+    const deletedRow = prizeChangesBody(saved, [edited[0]!], [{ id: "p2", version: 1 }]);
+    expect(generateKeyFor(prev, deletedRow, newKey).key).toBe("key-2");
+    expect(newKey).toHaveBeenCalledTimes(2);
   });
 });

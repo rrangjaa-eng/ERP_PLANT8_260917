@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import { test, expect, type Browser, type Locator, type Page } from "@playwright/test";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { certEvents, users } from "@/db/schema";
+import { certEvents, certPrizes, users } from "@/db/schema";
 import { setPermissionCell } from "@/domain/permissions/matrix";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
+import { ALREADY_GENERATED_TEXT, GENERATE_UNKNOWN_TEXT } from "@/app/(app)/certs/events/[id]/prize-table-rules";
 import { REQUEST_UNKNOWN_TEXT } from "@/app/(app)/certs/events/request-rules";
 import { createFixtureUser } from "./fixtures";
 import { createCertEvent, seedIpSubmissionsForTest, seedSubmittedCert, withCertFeatureOff } from "./helpers/cert";
@@ -500,11 +501,24 @@ async function countEventsNamed(name: string): Promise<number> {
 test.describe("결과 모름 뒤 다시 보내기 — 요청 키(PR #88 Codex)", () => {
   let pm: { email: string; password: string };
   let pmId: string;
+  let manager: { email: string; password: string };
+  let managerRoleId: string;
 
   test.beforeAll(async () => {
     pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
     const [me] = await db.select({ id: users.id }).from(users).where(eq(users.email, pm.email));
     pmId = me?.id ?? "";
+    managerRoleId = `role-e2e-qr3-${randomUUID()}`;
+    await insertRole(SYSTEM_VIEWER, { id: managerRoleId, name: `E2E 경영3 ${managerRoleId.slice(-12)}`, sortOrder: 99 });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: managerRoleId, menu: "certs.events", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: managerRoleId, menu: "certs.qr", action: "write", allowed: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: managerRoleId, infoItem: "cert_event.value", visible: true });
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: managerRoleId, infoItem: "cert_prize.value", visible: true });
+    manager = await createFixtureUser({ roleId: managerRoleId });
+  });
+
+  test.afterAll(async () => {
+    await setRoleArchived(SYSTEM_VIEWER, managerRoleId, true);
   });
 
   test("QR 생성 신청 — 그대로 다시 누르면 행사 하나 · 이름을 고쳐 다시 누르면 그 이름으로 새 신청", async ({ browser }) => {
@@ -549,6 +563,41 @@ test.describe("결과 모름 뒤 다시 보내기 — 요청 키(PR #88 Codex)",
     expect(await countEventsNamed(nameC)).toBe(1);
     // 먼저 커밋된 B도 신청됨에 남는다 — 되돌리기는 상세 머리 「신청 취소」.
     expect(await countEventsNamed(nameB)).toBe(1);
+    await page.context().close();
+  });
+
+  test("QR 생성 — 표를 그대로 다시 누르면 생성 · 표를 고쳐 다시 누르면 「표 편집 저장 안 됨」 줄(성공 토스트 없음)", async ({ browser }) => {
+    test.setTimeout(120_000);
+    const first = await createCertEvent({ name: "E2E 결과모름 생성1", status: "requested", createdBy: pmId || null, prizes: [{ name: "스타벅스 카드", unitValueKrw: 73_519 }] });
+    const second = await createCertEvent({ name: "E2E 결과모름 생성2", status: "requested", createdBy: pmId || null, prizes: [{ name: "스타벅스 카드", unitValueKrw: 73_519 }] });
+    const page = await loggedInPage(browser, manager);
+    const qr = page.getByRole("button", { name: "QR 생성", exact: true });
+    const tokenOf = async (eventId: string) =>
+      (await db.select({ tokenHash: certEvents.tokenHash }).from(certEvents).where(eq(certEvents.id, eventId)))[0]?.tokenHash ?? null;
+
+    // ① 응답 끊김(서버는 생성) → 결과 모름 → 표를 그대로 두고 다시 → 같은 요청이라 성공 토스트
+    await page.goto(`/certs/events/${first.eventId}`);
+    await expect(prizeRows(page)).toHaveCount(1);
+    await loseNextActionResponse(page);
+    await qr.click();
+    await expect(page.getByText(GENERATE_UNKNOWN_TEXT)).toBeVisible({ timeout: 30_000 });
+    expect(await tokenOf(first.eventId)).not.toBeNull();
+    await qr.click();
+    await expect(page.getByRole("status").filter({ hasText: `QR 생성 · ${first.eventName}` })).toBeVisible();
+
+    // ② 응답 끊김(서버는 생성) → 가액을 80,000으로 고쳐 다시 → 새 요청이라 이미 생성 · 편집 저장 안 됨 줄, 성공 토스트 없음
+    await page.goto(`/certs/events/${second.eventId}`);
+    await expect(prizeRows(page)).toHaveCount(1);
+    await loseNextActionResponse(page);
+    await qr.click();
+    await expect(page.getByText(GENERATE_UNKNOWN_TEXT)).toBeVisible({ timeout: 30_000 });
+    expect(await tokenOf(second.eventId)).not.toBeNull();
+    await editPrizeCell(page, 0, PRIZE_COL.value, "80,000");
+    await qr.click();
+    await expect(page.getByText(ALREADY_GENERATED_TEXT)).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: `QR 생성 · ${second.eventName}` })).toHaveCount(0);
+    const [prize] = await db.select({ unitValueKrw: certPrizes.unitValueKrw }).from(certPrizes).where(eq(certPrizes.eventId, second.eventId));
+    expect(prize?.unitValueKrw).toBe(73_519);
     await page.context().close();
   });
 });

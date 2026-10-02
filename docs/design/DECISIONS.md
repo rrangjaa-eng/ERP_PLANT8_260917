@@ -1390,3 +1390,16 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **버린 대안**: 거부 뒤에도 버튼을 남기고 원인만 보이기 — 같은 실패를 되풀이하게 둔다.
 
 **범위**: SYSTEM.md §7-8(목록 행 삭제 항목). 코드: `app/(app)/admin/holidays/delete-undo.tsx`(`undoFailure`) · `app/(app)/admin/archive/archive-table.tsx`. 토큰 변경 없음. 회귀: `test/e2e/holidays.spec.ts`(보관함 충돌 복원 · 되돌리기 거부). 점검표: `docs/design/checks/2026-10-01-공휴일-보관함.md`.
+
+## 2026-10-02 — QR 생성 이미 됨 문구 중립화 (사용자 결정, PR #88 Codex 봇 P2)
+
+**결정**: I′3 「QR 생성」의 alreadyGenerated 줄을 `다른 사람이 먼저 QR 생성 · 표 편집 저장 안 됨`에서 `이미 QR 생성 · 표 편집 저장 안 됨`으로 바꾼다. 모든 경우에 이 문구 하나다.
+
+**결정자**: 사용자(2026-10-02 채팅).
+
+**이유**: 요청 키를 보낸 경품 변경 본문에 묶으면(quick 261002-3c1) 결과 모름 뒤 표를 고쳐 다시 보낸 사람이 자기 첫 클릭이 만든 QR 때문에 이 줄을 본다 — 「다른 사람이 먼저」는 그 경로에서 사실과 다르다. 중립 문구는 다른 사람이 만든 경우에도 사실이다. 명사형 한 줄 규칙 그대로.
+
+**버린 대안**: 옛 문구 유지(드문 경로) — 사실과 다른 말을 남긴다. 경로마다 다른 문구 — 서버가 누가 만들었는지 화면에 따로 알려야 해 범위가 커진다.
+
+**범위**: `app/(app)/certs/events/[id]/prize-table-rules.ts` `ALREADY_GENERATED_TEXT` · 회귀 `test/unit/certs/prize-table-rules.test.ts` · `test/e2e/cert-events.spec.ts`(상수 import). 점검표 `docs/design/checks/2026-10-02-결과-모름-요청-키.md`. SYSTEM.md · 토큰 변경 없음.
+

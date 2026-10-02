@@ -20,6 +20,7 @@ import {
   READ_ONLY_REASON,
   cellErrorSummary,
   dirtyCellCount,
+  generateKeyFor,
   generateOutcome,
   mergeConflict,
   pinPrizeCellErrors,
@@ -31,6 +32,7 @@ import {
   submitCellPreview,
   withServerLocks,
   type DraftPrizeRow,
+  type GenerateKey,
   type PrizeConflict,
   type SubmitCell,
 } from "./prize-table-rules";
@@ -267,7 +269,7 @@ function PrizeEditor({ eventId, eventName, status, prizes, contactMissing: initi
   const [openCell, setOpenCell] = useState<{ rowId: string; columnKey: string } | null>(null);
   const [contactMissing, setContactMissing] = useState(initialContactMissing);
   const [toast, setToast] = useState<string | null>(null);
-  const [generateRequestId, setGenerateRequestId] = useState<string | null>(null);
+  const [generateKey, setGenerateKey] = useState<GenerateKey | null>(null);
   const [cellEditing, setCellEditing] = useState(false);
   const focusQrRef = useRef(false);
 
@@ -468,18 +470,18 @@ function PrizeEditor({ eventId, eventName, status, prizes, contactMissing: initi
 
   async function generate() {
     if (pending || block || stopAtLocalIssues()) return;
-    const requestId = generateRequestId ?? crypto.randomUUID();
-    setGenerateRequestId(requestId);
+    const sent = generateKeyFor(generateKey, body, () => crypto.randomUUID());
+    setGenerateKey(sent);
     setPending(true);
     clearResult();
-    const outcome = generateOutcome(await callWithin(() => generateCertQrAction({ eventId, requestId, changes: body })));
+    const outcome = generateOutcome(await callWithin(() => generateCertQrAction({ eventId, requestId: sent.key, changes: body })));
     setPending(false);
     if (outcome.kind === "failed") {
-      // 결과 불명 — 같은 요청 키로 다시 누른다(QR 둘 안 생김).
+      // 결과 불명 — 같은 표로 다시 누르면 같은 키(QR 둘 안 생김) · 고쳐 보내면 새 키.
       setResultLine(GENERATE_UNKNOWN_TEXT);
       return;
     }
-    setGenerateRequestId(null);
+    setGenerateKey(null);
     switch (outcome.kind) {
       case "ok":
         focusQrRef.current = true;

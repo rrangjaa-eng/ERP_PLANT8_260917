@@ -62,6 +62,16 @@ export function prizeChangesBody(
   return body;
 }
 
+export type GenerateKey = { key: string; body: string };
+
+// 보낸 본문이 같을 때만 같은 키 — 결과 모름 재시도는 QR 하나. 고쳐 보내면 새 키라 옛 키가 이미 만들었으면 서버가
+// alreadyGenerated(표 편집 저장 안 됨을 말함)를 돌려준다(수령자 제출 intake-flow.tsx와 같은 규약).
+export function generateKeyFor(prev: GenerateKey | null, body: PrizeChangesBody, newKey: () => string): GenerateKey {
+  const text = JSON.stringify(body);
+  if (prev && prev.body === text) return prev;
+  return { key: newKey(), body: text };
+}
+
 /**
  * 「일괄 저장 Ctrl+S N」의 N — 화면 전체 dirty 칸 수(§7-3 (사)): 저장된 줄의 바뀐 칸 + 새 줄의 기본값과 다른 칸(방금 만든 빈 새
  * 줄도 1) + 지운 줄 1.
@@ -172,7 +182,7 @@ export type GenerateOutcome =
   | { kind: "failed" };
 
 // 다른 키로 이미 생성됨 — 성공 토스트가 아니라 사실 한 줄(화면은 서버가 다시 그린다 — 독립 검토 W3, /design-review 확인).
-export const ALREADY_GENERATED_TEXT = "다른 사람이 먼저 QR 생성 · 표 편집 저장 안 됨";
+export const ALREADY_GENERATED_TEXT = "이미 QR 생성 · 표 편집 저장 안 됨";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;

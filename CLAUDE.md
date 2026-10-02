@@ -85,7 +85,7 @@
 **[Build] GSD가 뼈대, Superpowers가 규율**
 - `/gsd-execute-phase`로 실행. 상태의 단일 출처는 `.planning/`
 - **세션은 웨이브가 아니라 독립 검토 경계에서만 끊는다**(사용자 결정 2026-10-01). 같은 세션에서 다음 웨이브와 지적 반영을 이어 가고, 문맥이 차면 자동 압축(`autoCompactWindow` 40만 토큰, 모델 창이 더 작으면 그 창 — 환경변수 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`가 있으면 그 값)으로 이어 간다. 끊는 때: 계획 완료 뒤(실행 전 독립 게이트 리뷰)·게이트 리뷰 종료 뒤. 끊을 때는 커밋·푸시 → `/gsd-pause-work` → plant8 환경의 새 세션에서 `/gsd-progress`. 이 두 경계는 훅이 강제한다
-- 실행자는 Sonnet 기본. 돈·권한·DB 잠금·마이그레이션을 건드리는 플랜(`risk:` 태그)만 Opus 실행자 + Opus 독립 검토 1명. 화면 플랜은 독립 DOM 감사(§6),GSD 판정 에이전트(plan-checker·code-reviewer·verifier·integration-checker·ui-checker·ui-auditor)는 Opus(.planning/config.json model_overrides)
+- 실행자는 Sonnet 기본. 돈·권한·DB 잠금·마이그레이션을 건드리는 플랜(`risk:` 태그)만 Opus 실행자 + Opus 독립 검토 1명. 화면 플랜은 독립 DOM 감사(§6). GSD 판정 에이전트(plan-checker·code-reviewer·verifier·integration-checker·ui-checker·ui-auditor)는 Opus(.planning/config.json model_overrides)
 - 실행 중 Superpowers 스킬은 **호출**한다(켜졌다고 가정만 하지 않는다): 버그·테스트 실패·CI 실패를 쫓기 전에 `systematic-debugging`, "완료"를 말하기 전에 `verification-before-completion`, 구현 전에 `test-driven-development`. 서브에이전트에 위임할 때도 프롬프트에 그 스킬을 명시한다
 - 페이즈 밖 소규모 작업: `/gsd-quick` 또는 `/superpowers:brainstorm → write-plan → execute-plan` 중 **한 흐름만** — GSD·Superpowers·gstack의 계획·검토·검증을 겹쳐 쌓지 않는다
 - 페이즈 종료: `/gsd-verify-work` → `/gsd-complete-milestone`
@@ -131,7 +131,7 @@
 
 ## 8. 캐시·컨텍스트·모델 선택
 - 조사·탐색·긴 로그는 서브에이전트에 위임, 결론만 받는다
-- **모델 선택**: 점검·계획·기획·판단·검토는 Opus 5로 한다. 메인 세션(Opus)은 판단·지휘만 하고 구현·테스트 실행은 Sonnet 에이전트에 넘긴다. Fable 5는 정말 필요한 순간에만 쓴다 — 아키텍처·보안처럼 되돌리기 어려운 결정, Opus 5가 두 번 이상 틀리거나 판단이 갈리는 문제, 사용자가 명시로 요청한 때. 나머지(조사·탐색·코드 실행·정리·이관·문서 생성 등)는 작업에 알맞은 지능을 골라, 오류가 나지 않는 조건으로 필요한 지능만큼만 쓴다(Sonnet → Haiku 순으로 낮춰 본다). 서브에이전트를 띄울 때는 `model`을 반드시 명시하고, GSD `model_profile`은 `adaptive`로 둔다(실행자 = Sonnet). 판정 에이전트 6종은 model_overrides로 Opus. 실행자를 Opus로 올리는 것은 `risk:` 태그(돈·권한·DB 잠금·마이그레이션) 플랜만. 외부(Codex) 검토는 디자인 검토에서만(§6)
+- **모델 선택**: 점검·계획·기획·판단·검토는 Opus 5로 한다. 메인 세션(Opus)은 판단·지휘만 하고 구현·테스트 실행은 Sonnet 에이전트에 넘긴다. Fable 5는 정말 필요한 순간에만 쓴다 — 페이즈 최종 전체 검토, 아키텍처·보안처럼 되돌리기 어려운 결정, Opus 5가 두 번 이상 틀리거나 판단이 갈리는 문제, 사용자가 명시로 요청한 때. 나머지(조사·탐색·코드 실행·정리·이관·문서 생성 등)는 작업에 알맞은 지능을 골라, 오류가 나지 않는 조건으로 필요한 지능만큼만 쓴다(Sonnet → Haiku 순으로 낮춰 본다). 서브에이전트를 띄울 때는 `model`을 반드시 명시하고, GSD `model_profile`은 `adaptive`로 둔다(실행자 = Sonnet). 판정 에이전트 6종은 model_overrides로 Opus. 실행자를 Opus로 올리는 것은 `risk:` 태그(돈·권한·DB 잠금·마이그레이션) 플랜만. 외부(Codex) 검토는 디자인 검토에서만(§6)
 - 파일은 Grep으로 위치 찾고 필요한 범위만 Read. 500줄 이상은 range 필수
 - 테스트·빌드 출력은 요약만. 실패 시 실패 부분만 인용
 - **토큰을 아낀다.** 이미 읽은 파일·이미 받은 도구 결과를 다시 조회하지 않는다. 나머지 수단은 위 세 줄(위임·범위 Read·출력 요약)이다

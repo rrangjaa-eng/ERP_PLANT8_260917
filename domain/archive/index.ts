@@ -161,12 +161,12 @@ export type ListArchiveDeps = {
   now: Date;
 };
 
-async function entitiesWithoutRequiredView(viewer: Viewer, canFn: typeof defaultCan): Promise<Set<string>> {
-  const hidden = new Set<string>();
+async function entitiesWithoutRequired(viewer: Viewer, canFn: typeof defaultCan, action: "view" | "write"): Promise<Set<string>> {
+  const lacking = new Set<string>();
   for (const entry of ARCHIVABLE_TABLES) {
-    if (entry.requiredMenu && !(await canFn(viewer, entry.requiredMenu, "view"))) hidden.add(entry.entity);
+    if (entry.requiredMenu && !(await canFn(viewer, entry.requiredMenu, action))) lacking.add(entry.entity);
   }
-  return hidden;
+  return lacking;
 }
 
 // 보관함 메뉴 보기 권한 확인 → 여러 표를 훑는 조회(repositories/archive의
@@ -185,14 +185,18 @@ export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps
   // 묶음 ④ /review R3 — 리저브 줄은 리저브를 볼 수 있는 사람에게만(pnl 보기 + reserve.amount, B-15).
   const showReserves = await canViewReserves(viewer);
   // 04.5-04(O21) — 추가 권한 조건이 있는 항목은 그 메뉴 보기 권한이 없으면 행을 뺀다(항목마다 한 번 판정).
-  const hiddenEntities = await entitiesWithoutRequiredView(viewer, canFn);
+  const hiddenEntities = await entitiesWithoutRequired(viewer, canFn, "view");
   const rows = (await listFn(viewer)).filter((row) => (row.entity !== "reserve_entry" || showReserves) && !hiddenEntities.has(row.entity));
 
   // 독립 검토(#138) — 복원할 수 없는 공휴일 행은 「복원」을 내놓지 않는다(§7). 공휴일 복원은 공휴일 쓰기 권한과
   // 소급 금지(오늘 이후 날짜) · 그 날짜에 다른 공휴일(대체일 제외) 없음을 요구한다(restoreHoliday) — 같은 판정을 목록에서 미리 한다.
   const holidayWritable = rows.some((row) => row.entity === "holiday") && (await canFn(viewer, HOLIDAYS_MENU, "write"));
   const today = toKstDate(deps?.now ?? new Date());
-  const isRestorable = (row: ArchivedItem) => row.entity !== "holiday" || (holidayWritable && row.date !== undefined && row.date > today && !row.dateTaken);
+  // 추가 권한 조건(requiredMenu)의 쓰기가 없는 항목의 행은 복원 불가(항목마다 한 번 판정 — restore()의 assertCanWriteEntry와 같은 조건).
+  const unwritableEntities = await entitiesWithoutRequired(viewer, canFn, "write");
+  const isRestorable = (row: ArchivedItem) =>
+    !unwritableEntities.has(row.entity) &&
+    (row.entity !== "holiday" || (holidayWritable && row.date !== undefined && row.date > today && !row.dateTaken));
 
   const findUserById = deps?.findUserById ?? defaultFindUserById;
   const archivedByIds = [...new Set(rows.map((row) => row.archivedBy).filter((id): id is string => id !== null))];

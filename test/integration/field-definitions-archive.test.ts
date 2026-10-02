@@ -123,6 +123,21 @@ describe("칸 보관 · 복원 권한 (04.5-04)", () => {
     });
   });
 
+  it("칸 관리 보기만 있으면 보관함 목록의 칸 정의 행이 복원 불가다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const viewOnly = await viewerWith([
+      ["admin.archive", "view"],
+      ["admin.archive", "write"],
+      ["admin.field-definitions", "view"],
+    ]);
+    const field = await createFieldDefinition(admin, textInput("목록 칸 보기만"));
+    await archive(admin, ENTITY, field.id);
+
+    expect((await listArchive(viewOnly)).find((item) => item.entity === ENTITY && item.id === field.id)).toMatchObject({
+      restorable: false,
+    });
+  });
+
   it("(d) 칸 관리 쓰기만 있고 보관함 쓰기가 없으면 보관 · 복원이 거부된다", async () => {
     const admin = await createViewer(SYSADMIN_ROLE_ID);
     const fieldWriter = await viewerWith([

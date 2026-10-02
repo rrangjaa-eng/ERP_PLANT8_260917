@@ -73,8 +73,11 @@ test.describe("숫자 열 nowrap — /projects 견적 (S15 backstop)", () => {
     await expect(amountCell).toBeVisible();
 
     const rectCount = await amountCell.evaluate((el) => {
+      // 04.6-10 — 금액은 Num 칸 안 `span`에 있다. 칸 전체를 재면 상자(span)와 글자가 따로 잡혀 2가 되므로 글자 노드만 잰다.
+      const text = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode();
+      if (!text) return 0;
       const range = document.createRange();
-      range.selectNodeContents(el);
+      range.selectNodeContents(text);
       return range.getClientRects().length;
     });
     expect(rectCount).toBe(1);

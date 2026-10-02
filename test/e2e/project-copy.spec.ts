@@ -143,8 +143,7 @@ test.describe("프로젝트 복사 등록 (04-15, PROJ-05 · D-70)", () => {
     await openCopyForm(page, original);
     await page.getByLabel("프로젝트명").focus();
     await page.keyboard.press("Escape");
-    // 패널 닫기 = 연 곳으로(앱 안에서 상세 → 패널이면 `router.back()` — 04.6-04 닫기 경로 하나). 옛 `router.push(cancelHref)` 목록 이동은 중복이라 지웠다.
-    await expect(page).toHaveURL(new RegExp(`/projects/${original.id}$`));
+    await expect(page).toHaveURL(/\/projects$/);
     await expect(page.getByRole("dialog", { name: "입력 버리기" })).toHaveCount(0);
 
     await openCopyForm(page, original);

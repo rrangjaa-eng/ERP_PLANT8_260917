@@ -684,13 +684,19 @@ test.describe("프로젝트 옆 패널 — PC 1280 (04.6-10)", () => {
     const account = await makeProjectFixture();
     await loginAs(page, account);
     await page.goto("/projects");
+    // 글꼴 · 스트리밍이 끝나 배치가 자리 잡은 뒤에 기준을 잰다(부하가 있으면 첫 측정이 늦은 배치 이동을 섞는다).
+    await page.waitForLoadState("networkidle");
+    await page.evaluate(() => document.fonts.ready);
     await page.evaluate(() => {
       document.body.style.minHeight = "3000px";
       window.scrollTo(0, 40);
     });
     const beforeScroll = await scrollY(page);
     expect(beforeScroll).toBeGreaterThan(0);
-    const titleTop = async () => page.locator('[data-ui="screen-title"]').evaluate((element) => Math.round(element.getBoundingClientRect().top));
+    // 이동 중에는 숨은 뼈대 틀의 제목이 DOM에 함께 붙을 수 있다 — 보이는 제목만 잰다.
+    // 문서 기준 위치(스크롤을 더한다) — 배치가 밀렸는지만 잰다. 스크롤 자체는 따로 단언한다.
+    const titleTop = async () =>
+      page.locator('[data-ui="screen-title"]:visible').evaluate((element) => Math.round(element.getBoundingClientRect().top + window.scrollY));
     const beforeTitle = await titleTop();
 
     await page.route(

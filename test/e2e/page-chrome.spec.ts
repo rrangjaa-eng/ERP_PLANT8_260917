@@ -170,7 +170,7 @@ test.describe("시스템 상태 라벨·값 목록 — KvList (02-08 Task 1, §6
 });
 
 test.describe("§6-0 화면 제목·부제 · §6-9 오류 제목 (02-08 Task 2)", () => {
-  test("/projects 제목·부제 계산값이 PageHeader 골격이다", async ({ page }) => {
+  test("/projects 제목 계산값이 ListScreen 골격이다(부제 없음 — 04.6-10)", async ({ page }) => {
     await loginAs(page, DEFAULT_ROLE_ID);
     await page.goto("/projects");
 
@@ -183,10 +183,8 @@ test.describe("§6-0 화면 제목·부제 · §6-9 오류 제목 (02-08 Task 2)
     const lineHeight = await h1.evaluate((el) => getComputedStyle(el).lineHeight);
     expect(px(lineHeight)).toBeCloseTo(px(titleSize) * 1.3, 1);
 
-    // 코디네이터 대리 결정 2026-09-26 /design-review FINDING-014 — 기본 보기가 올해 · 전체 상태라 「진행 중인」을 뺀다.
-    const subtitle = page.getByText("프로젝트 원장", { exact: true });
-    await expect(subtitle).toHaveCSS("font-size", await tokenValue(page, "--text-aux"));
-    await expect(subtitle).toHaveCSS("color", await tokenAsColor(page, "--text-muted"));
+    // UI-SPEC 「화면 틀 계약」 — 목록 부제(「프로젝트 원장」 설명문)는 틀이 그리지 않는다.
+    await expect(page.getByText("프로젝트 원장", { exact: true })).toHaveCount(0);
   });
 
   test("/account 제목·부제(이메일) 계산값이 PageHeader 골격이다", async ({ page }) => {

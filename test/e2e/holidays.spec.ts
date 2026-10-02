@@ -555,18 +555,19 @@ test.describe("공휴일 보관함(quick 261001-hfi)", () => {
   });
 
   // /review(#138) — 그 날짜에 다른 공휴일이 생긴 행은 복원이 거부되고, 원인이 토스트에 실린다(행은 보관함에 남는다).
+  // quick 261002-4jn — 목록은 처음부터 「—」를 보이므로, 거부 토스트는 화면을 연 뒤 공휴일이 생긴 낡은 화면에서만 난다.
   test("같은 날짜에 다른 공휴일이 있으면 보관함 복원은 원인을 실은 오류 토스트이고 행이 남는다", async ({ page }) => {
     // 원인 문구는 마지막 「 · 」 앞까지 — 이름에 「 · 」가 든 공휴일과 부딪혀 잘리지 않음을 본다(/review 2차 testing).
     const date = `2039-${String(1 + randomInt(12)).padStart(2, "0")}-${String(1 + randomInt(28)).padStart(2, "0")}`;
     const active = { date, name: `충돌 · 활성 ${randomUUID().slice(0, 6)}` };
     const conflicted = { date, name: `충돌 보관 공휴일 ${randomUUID().slice(0, 6)}` };
-    await db.insert(holidays).values({ ...active, kind: "temporary" });
     await db.insert(holidays).values({ ...conflicted, kind: "temporary", archivedAt: new Date(), archivedBy: null });
     try {
       await loginAsSysadmin(page);
       await page.goto("/admin/archive");
       const archiveRow = page.locator("tr", { hasText: `${conflicted.date} ${conflicted.name}` });
       await expect(archiveRow).toHaveCount(1);
+      await db.insert(holidays).values({ ...active, kind: "temporary" });
 
       await archiveRow.getByRole("button", { name: "복원" }).click();
       await expect(page.getByText(`복원 · 실패 · 이미 공휴일(${active.name})`, { exact: true })).toBeVisible({ timeout: 15000 });
@@ -575,6 +576,9 @@ test.describe("공휴일 보관함(quick 261001-hfi)", () => {
       await expect(archiveRow.locator("td").last()).toHaveText("—");
       await page.reload();
       await expect(archiveRow).toHaveCount(1);
+      // 새로 연 목록은 날짜 점유를 보고 처음부터 「복원」을 숨긴다.
+      await expect(archiveRow.getByRole("button", { name: "복원" })).toHaveCount(0);
+      await expect(archiveRow.locator("td").last()).toHaveText("—");
     } finally {
       // 이 describe의 다른 정리처럼 날짜로 지운다 — 2039년 행이 쌓이거나 연도 목록에 끼지 않게.
       await db.delete(holidays).where(eq(holidays.date, date));

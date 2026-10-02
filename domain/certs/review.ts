@@ -367,6 +367,7 @@ export type CorrectSubmissionInput = {
   phone: string;
   address?: string | null;
   rrn?: string;
+  rrnRecheckConfirmed?: boolean;
   // 04.3-17(N3 a · E30) — 정수 1~99.
   quantity?: number | string;
 };
@@ -388,6 +389,7 @@ export type CorrectSubmissionResult =
   | { kind: "conflict"; byName: string; at: string }
   | { kind: "invalid"; fields: Partial<Record<CorrectionField, CorrectionFieldError>> }
   | { kind: "unchanged" }
+  | { kind: "rrnRecheck" }
   | { kind: "denied" }
   | { kind: "notFound" };
 
@@ -403,6 +405,7 @@ const correctInputSchema = z.object({
   phone: z.string().max(40),
   address: z.string().max(1000).nullish(),
   rrn: z.string().max(20).optional(),
+  rrnRecheckConfirmed: z.boolean().optional(),
   quantity: z.union([z.number(), z.string().max(10)]).optional(),
 });
 
@@ -438,11 +441,14 @@ export async function correctSubmission(
   else if (Array.from(name).length > NAME_MAX) errors.name = "tooLong";
 
   let rrn13: string | null = null;
+  let rrnMismatch = false;
   if (data.rrn !== undefined) {
     const digits = data.rrn.replace(/-/g, "");
-    const checked = /^\d{13}$/.test(digits) ? validateRrn(digits.slice(0, 6), digits.slice(6)) : { ok: false };
-    if (checked.ok) rrn13 = digits;
-    else errors.rrn = "invalid";
+    const checked = /^\d{13}$/.test(digits) ? validateRrn(digits.slice(0, 6), digits.slice(6)) : { ok: false as const };
+    if (checked.ok) {
+      rrn13 = digits;
+      rrnMismatch = checked.checkDigit === "mismatch";
+    } else errors.rrn = "invalid";
   }
 
   const phone = normalizePhone(data.phone);
@@ -468,6 +474,7 @@ export async function correctSubmission(
 
   // 주민등록번호를 바꾸는 정정은 전체 보기와 같은 두 판정을 더 본다(codex final C1).
   if (rrn13 !== null && !(await canRevealRrn(viewer))) return { kind: "denied" };
+  if (rrnMismatch && !data.rrnRecheckConfirmed) return { kind: "rrnRecheck" };
 
   const patch: CorrectSubmissionPatch = {};
   const changed: CorrectionField[] = [];

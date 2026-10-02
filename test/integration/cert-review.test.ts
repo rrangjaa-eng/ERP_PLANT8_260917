@@ -38,7 +38,8 @@ beforeEach(async () => {
   await setSettingValue(SYSTEM_VIEWER, CERT_ENABLED, true);
 });
 
-const NEW_RRN = "9304121234560";
+const NEW_RRN = "9304121234564";
+const MISMATCH_RRN = "9304121234560";
 
 function unchangedFields(row: Awaited<ReturnType<typeof submissionRow>>) {
   return {
@@ -166,7 +167,7 @@ describe("correctSubmission — D-1106 정정", () => {
       version: 1,
       name: "김하늘",
       phone: "010-4821-7730",
-      rrn: "930412-1234560",
+      rrn: "930412-1234564",
     }, { ip: null });
 
     expect(result).toMatchObject({ kind: "saved", fields: ["주민등록번호"], rrnMasked: "930412-1******" });
@@ -180,6 +181,32 @@ describe("correctSubmission — D-1106 정정", () => {
       expect(text).not.toContain(NEW_RRN.slice(6));
       expect(text).not.toContain("2123458");
     }
+  });
+
+  it("검증번호 mismatch 정정 번호는 첫 저장이 rrnRecheck · 제출 행 · 로그 무변경 → rrnRecheckConfirmed로 같은 번호를 다시 보내면 saved", async () => {
+    const seeded = await seedSubmittedCert();
+    const viewer = await makeReviewer(FULL_GRANT);
+    const before = await submissionRow(seeded.submissionId);
+    const input = { version: 1, name: "김하늘", phone: "010-4821-7730", rrn: MISMATCH_RRN };
+
+    expect(await correctSubmission(viewer, seeded.submissionId, input, { ip: null })).toEqual({ kind: "rrnRecheck" });
+    const unchanged = await submissionRow(seeded.submissionId);
+    expect(unchanged.rrnEncrypted).toBe(before.rrnEncrypted);
+    expect(unchanged.version).toBe(1);
+    expect(await countLogs("cert_correct", seeded.submissionId)).toBe(0);
+
+    const second = await correctSubmission(viewer, seeded.submissionId, { ...input, rrnRecheckConfirmed: true }, { ip: null });
+    expect(second).toMatchObject({ kind: "saved", fields: ["주민등록번호"], rrnMasked: "930412-1******" });
+    expect((await submissionRow(seeded.submissionId)).rrnEncrypted).not.toBe(before.rrnEncrypted);
+  });
+
+  it("검증번호 notApplicable(2020-10-01 이후 출생) 정정 번호는 되묻지 않고 바로 saved", async () => {
+    const seeded = await seedSubmittedCert();
+    const viewer = await makeReviewer(FULL_GRANT);
+
+    expect(
+      await correctSubmission(viewer, seeded.submissionId, { version: 1, name: "김하늘", phone: "010-4821-7730", rrn: "2112313123456" }, { ip: null }),
+    ).toMatchObject({ kind: "saved", fields: ["주민등록번호"] });
   });
 
   it("주민등록번호 정정을 cert.rrn_unmasked가 안 보이는 viewer가 보냄 → 거부 · 아무것도 안 바뀜", async () => {

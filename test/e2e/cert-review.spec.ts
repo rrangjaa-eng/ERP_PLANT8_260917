@@ -241,14 +241,14 @@ test("택배는 주소 칸 · 주민등록번호를 고쳐 가리면 「저장 �
   await expect(page.getByLabel("주소")).toHaveValue("서울시 강남구 테헤란로 1");
 
   await page.getByRole("button", { name: "전체 보기" }).click();
-  await rrnInput(page).fill("930412-1234560");
+  await rrnInput(page).fill("930412-1234564");
   await page.getByRole("button", { name: "가리기" }).click();
   await expect(page.getByText("930412-1****** · 저장 안 함")).toBeVisible();
-  expect(await page.content()).not.toContain("930412-1234560");
+  expect(await page.content()).not.toContain("930412-1234564");
   expect(await countLogs("mask_reveal", seeded.submissionId)).toBe(1);
 
   await page.getByRole("button", { name: "전체 보기" }).click();
-  await expect(rrnInput(page)).toHaveValue("930412-1234560");
+  await expect(rrnInput(page)).toHaveValue("930412-1234564");
   expect(await countLogs("mask_reveal", seeded.submissionId)).toBe(2);
 
   await saveButton(page).click();
@@ -314,10 +314,10 @@ test("게이트 꺼짐 — 잡아 둔 세 액션을 직접 보내도 평문 · �
   });
 
   await page.getByRole("button", { name: "전체 보기" }).click();
-  await rrnInput(page).fill("930412-1234560");
+  await rrnInput(page).fill("930412-1234564");
   await page.getByRole("button", { name: "가리기" }).click();
   await page.getByRole("button", { name: "전체 보기" }).click();
-  await expect(rrnInput(page)).toHaveValue("930412-1234560");
+  await expect(rrnInput(page)).toHaveValue("930412-1234564");
   await rrnInput(page).fill(RRN_FULL);
   await page.getByLabel("연락처").fill("010-5555-6666");
   await saveButton(page).click();
@@ -373,10 +373,10 @@ test("전체 보기 뒤 가리기 · 번호 저장 뒤에는 React 상태에도 
   await expect.poll(() => reactStateHas(page, ["2123458"])).toBe(false);
 
   await page.getByRole("button", { name: "전체 보기" }).click();
-  await rrnInput(page).fill("930412-1234560");
+  await rrnInput(page).fill("930412-1234564");
   await saveButton(page).click();
   await expect(page.getByText(/^저장됨 · 주민등록번호 · \d{2}:\d{2}$/)).toBeVisible();
-  await expect.poll(() => reactStateHas(page, ["2123458", "1234560"])).toBe(false);
+  await expect.poll(() => reactStateHas(page, ["2123458", "1234564"])).toBe(false);
 });
 
 test("화면이 가려진 동안 늦게 온 전체 보기 응답은 칸을 열지 않는다(검토 R-L5)", async ({ page }) => {
@@ -498,6 +498,29 @@ test("가린 주민등록번호는 이름 붙은 묶음이고 「전체 보기�
   await expect(page.getByRole("group", { name: "주민등록번호" })).toContainText("저장 안 함");
   const describedBy = await page.getByRole("button", { name: "전체 보기" }).getAttribute("aria-describedby");
   expect(describedBy?.split(" ")).toContain("cert-review-rrn-error");
+});
+
+test("정정 주민등록번호 되물음 — 검증번호 불일치는 첫 저장이 오류 줄만 · 같은 번호 다시 저장은 저장 · 번호를 고치면 다시 되묻는다", async ({ page }) => {
+  const seeded = await seedSubmittedCert();
+  await login(page, admin);
+  await page.goto(reviewPath(seeded.submissionId));
+  const before = (await submission(seeded.submissionId)).rrnMasked;
+
+  await page.getByRole("button", { name: "전체 보기" }).click();
+  await rrnInput(page).fill("930412-1234560");
+  await saveButton(page).click();
+  await expect(page.locator("#cert-review-rrn-error")).toHaveText("주민등록번호 맞지 않음 · 앞 6자리와 뒤 7자리 확인");
+  expect((await submission(seeded.submissionId)).rrnMasked).toBe(before);
+
+  await rrnInput(page).fill("930412-1234561");
+  await saveButton(page).click();
+  await expect(page.locator("#cert-review-rrn-error")).toBeVisible();
+  expect((await submission(seeded.submissionId)).rrnMasked).toBe(before);
+
+  await rrnInput(page).fill("930412-1234561");
+  await saveButton(page).click();
+  await expect(page.getByText(/^저장됨 · 주민등록번호 · \d{2}:\d{2}$/)).toBeVisible();
+  expect((await submission(seeded.submissionId)).rrnMasked).toBe("930412-1******");
 });
 
 test("저장 결과 · 실패는 늘 있는 알림 영역에서 읽히고, 성공하면 포커스가 제목으로 간다(DOM 감사 M2 · M3)", async ({ page }) => {

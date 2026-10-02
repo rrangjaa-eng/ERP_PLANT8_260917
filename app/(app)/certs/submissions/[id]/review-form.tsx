@@ -15,6 +15,7 @@ import { LOGIN_REQUIRED_MESSAGE } from "@/lib/actions/user-facing-error";
 import { privacyLoginHref } from "@/lib/login-next";
 import { correctCertSubmissionAction, excludeCertSubmissionAction } from "./actions";
 import { RrnField } from "./rrn-field";
+import { nextRrnRecheckConfirmed } from "@/app/c/[token]/flow-rules";
 import { RRN_CLOSED, afterRrnSave, isRrnDirty, type RrnState } from "./rrn-state";
 import styles from "./review.module.css";
 
@@ -122,6 +123,8 @@ export function ReviewForm(props: {
   const [excludeFailure, setExcludeFailure] = useState<{ text: string; rejected: boolean; reload: boolean } | null>(null);
   // 보낸 값 — 성공하면 이것이 저장된 값이다(DOM 감사 H1). 응답을 처리하면 비운다(평문 번호 포함 · 검토 R-M1).
   const submittedRef = useRef<{ values: Values; rrn: string | null } | null>(null);
+  // 되물음(rrnRecheck)을 받은 요청이 보낸 번호 — 지금 번호와 같을 때만 「그대로 저장」 표시를 싣는다(수령자 제출과 같은 규약).
+  const armedRrnRef = useRef<string | null>(null);
 
   const changedCount =
     (values.name !== saved.name ? 1 : 0) +
@@ -258,7 +261,13 @@ export function ReviewForm(props: {
       submittedRef.current = null;
       if (!data || !submitted) return setOutcome(SAVE_FAILED);
       if (data.kind === "sessionExpired") return toLogin();
+      if (data.kind === "rrnRecheck") {
+        armedRrnRef.current = submitted.rrn;
+        setFieldErrors({ rrn: fieldErrorText("rrn", "invalid") });
+        return;
+      }
       if (data.kind === "saved") {
+        armedRrnRef.current = null;
         setSaved(submitted.values);
         setVersion(data.version);
         setRrnMasked(data.rrnMasked);
@@ -318,6 +327,9 @@ export function ReviewForm(props: {
       phone: values.phone,
       ...(values.address !== null ? { address: values.address } : {}),
       ...(sentRrn !== null ? { rrn: sentRrn } : {}),
+      ...(sentRrn !== null && nextRrnRecheckConfirmed({ armedRrn: armedRrnRef.current, rrn: sentRrn })
+        ? { rrnRecheckConfirmed: true }
+        : {}),
       quantity: values.quantity,
     });
   }

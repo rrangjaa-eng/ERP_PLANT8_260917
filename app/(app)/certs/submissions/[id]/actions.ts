@@ -60,6 +60,7 @@ export const correctCertSubmissionAction = authedActionClient
       phone: z.string().max(40),
       address: z.string().max(1000).nullish(),
       rrn: z.string().max(20).optional(),
+      rrnRecheckConfirmed: z.boolean().optional(),
       quantity: z.union([z.number(), z.string().max(10)]).optional(),
     }),
   )

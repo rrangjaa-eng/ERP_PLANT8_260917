@@ -29,6 +29,14 @@ export class ArchivedCodeItemError extends UserFacingError {}
 
 const EVIDENCE_TYPE_TABLE_KEY = "evidence_type";
 
+// quick 261002-3mx — 관리자가 다루는 코드표의 정본. 코드표 화면의 전환 링크와
+// createCodeItem의 서버 판정이 이 목록 하나를 쓴다(그 밖의 표 키는 거부).
+export const CODE_TABLES = [
+  { key: "project_status", label: "프로젝트 상태" },
+  { key: "evidence_type", label: "증빙 종류" },
+  { key: "quote_subcategory", label: "견적 분류" },
+] as const;
+
 // 04-10(D-93): 코드표 설명 40자 상한 — 서버 판정, DB CHECK 아님(설정 hint와
 // 같은 결). .length(UTF-16 단위)로 센다 — 한글은 글자당 1. 값 자체는
 // description-max.ts(잎 모듈)에 있다 — 클라이언트 컴포넌트가 이 파일 전체
@@ -104,6 +112,7 @@ export async function createCodeItem(
 ): Promise<CodeItemDto> {
   const allowed = await can(viewer, "admin.code-tables", "write");
   if (!allowed) throw new ForbiddenError("코드표 항목 추가 권한 없음");
+  if (!CODE_TABLES.some((table) => table.key === input.tableKey)) throw new UserFacingError("없는 코드표 · 새로 고침");
 
   const description = normalizeDescription(input.description ?? "");
 

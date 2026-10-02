@@ -367,7 +367,8 @@ export async function updateVendor(
   };
   // customFields를 보내지 않으면(undefined) 커스텀 열을 건드리지 않는다(M-5) — 경합이 없어 트랜잭션도 없다.
   // 보내면(04.5-05 · T-04.5-41/44) 행을 잠가 읽은 저장값으로 판정 · 합치고 같은 트랜잭션에서 쓴다. 입력 칸 집합도
-  // 잠금 뒤 같은 tx로 읽는다 — 정의 변경은 거래처 행을 건드리지 않으므로 행 잠금이 정의 읽기의 직렬 기준점이다.
+  // 잠금 뒤 같은 tx의 한 문으로 읽는다 — 그 문의 스냅숏에 커밋된 정의 · 보임 변경을 한꺼번에 본다. 거래처 행을
+  // 건드리지 않는 정의 · 보임 변경과의 순서까지 행 잠금이 정하지는 않는다(같은 tx 한 문 스냅숏).
   const submitted = input.customFields;
   if (submitted === undefined) {
     await repoUpdateVendor(viewer, id, updatePayload);

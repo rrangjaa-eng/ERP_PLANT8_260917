@@ -24,7 +24,7 @@ import {
   upsertVisibility,
 } from "@/repositories/permissions";
 import { insertRole, listRoles } from "@/repositories/roles";
-import { insertVendor } from "@/repositories/vendors";
+import { findVendorByIdForUpdate, insertVendor } from "@/repositories/vendors";
 
 // 04.5-05(ROADMAP 04.5 기준 2·4 · T-04.5-05/17/41/44): 거래처 저장이 보는 사람이 볼 수 없는 칸의 값을 지우거나 바꾸지 않는다.
 // 거래처 폼 경로는 formEdit/formCreate가 흉내 낸다 — 폼이 그리는 정의(listVendorFieldDefinitions)만으로 customFields를
@@ -169,7 +169,14 @@ const lockWaiterInThisDb = async () =>
       sql`select 1 from pg_stat_activity where wait_event_type = 'Lock' and datname = current_database()`,
     )
   ).rows.length > 0;
-const ungrantedLock = async () => (await db.execute(sql`select 1 from pg_locks where not granted`)).rows.length > 0;
+// 다른 DB(병렬 실행 · 개발 DB)의 대기 잠금을 이 테스트의 대기로 오인하지 않게 이 DB 세션만 본다(05 독립 검토 M3).
+// 행 잠금 대기는 transactionid 잠금이라 pg_locks.database가 비어 있다 — pg_stat_activity.datname으로 거른다.
+const ungrantedLock = async () =>
+  (
+    await db.execute(
+      sql`select 1 from pg_locks l join pg_stat_activity a on a.pid = l.pid where not l.granted and a.datname = current_database()`,
+    )
+  ).rows.length > 0;
 
 describe("보이지 않는 칸의 저장값 보존 (04.5-05)", () => {
   it("칸 A를 끈 계급이 폼으로 수정 저장해도 DB의 A 값은 그대로이고 그 사람의 DTO에는 A가 없다", async () => {
@@ -412,7 +419,7 @@ describe("동시 저장 — 행 잠금 한 트랜잭션 (T-04.5-41 · T-04.5-44)
     expect((await stored(vendor.id)).customFields).toEqual({ [a]: "관리자가바꾼값", [e]: "사용자값" });
   });
 
-  it("숨김 후 저장 — 관리자가 칸 A를 숨기고 값을 고친 트랜잭션 뒤에 끝나는 저장은 A에 사용자 제출값을 쓰지 않는다", async () => {
+  it("숨김 후 저장 — 전제: 칸 A 숨김과 거래처 값 변경이 관리자의 한 트랜잭션 — 그 뒤에 끝나는 저장은 A에 사용자 제출값을 쓰지 않는다", async () => {
     const a = await addField();
     const pm = await pmEditor();
     const vendor = await seedVendor({ [a]: "옛값" });
@@ -438,7 +445,7 @@ describe("동시 저장 — 행 잠금 한 트랜잭션 (T-04.5-41 · T-04.5-44)
     expect((await stored(vendor.id)).customFields).toEqual({ [a]: "관리자가바꾼값" });
   });
 
-  it("거래처 정보 끔 + 칸 켬 — 두 보임 변경이 모두 반영된 스냅숏으로 판정해 A에 사용자 제출값을 쓰지 않는다", async () => {
+  it("거래처 정보 끔 + 칸 켬 — 전제: 두 보임 변경이 거래처 행 갱신과 한 트랜잭션 — 모두 반영된 스냅숏으로 판정해 A에 사용자 제출값을 쓰지 않는다", async () => {
     const a = await addField();
     const pm = await pmEditor();
     await setFieldVisible(DEFAULT_ROLE_ID, a, false);
@@ -467,5 +474,18 @@ describe("동시 저장 — 행 잠금 한 트랜잭션 (T-04.5-41 · T-04.5-44)
     }
     expect(await saving).toBeNull();
     expect((await stored(vendor.id)).customFields).toEqual({ [a]: "관리자가바꾼값" });
+  });
+
+  it("저장의 행 잠금은 이 거래처를 가리키는 FK 참조 잠금(KEY SHARE)을 막지 않는다 — FOR NO KEY UPDATE", async () => {
+    const vendor = await seedVendor({});
+    const held = await holdTransaction(async (tx) => {
+      await findVendorByIdForUpdate(SYSTEM_VIEWER, vendor.id, tx);
+    });
+    try {
+      const rows = await db.execute(sql`select id from vendors where id = ${vendor.id} for key share nowait`);
+      expect(rows.rows).toHaveLength(1);
+    } finally {
+      await held.commit();
+    }
   });
 });

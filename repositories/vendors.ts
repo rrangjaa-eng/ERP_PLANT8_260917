@@ -50,8 +50,9 @@ export async function findVendorById(viewer: Viewer, id: string): Promise<Vendor
 }
 
 // 04.5-05(T-04.5-41): 커스텀 값 합치기 · 쓰기를 한 트랜잭션으로 묶는 행 잠금 조회 — 트랜잭션 안에서만 부른다(tx 필수).
+// 키를 바꾸지 않는 갱신이라 NO KEY UPDATE — 이 거래처를 가리키는 FK 검사(KEY SHARE)를 막지 않는다(선례 reserve-entries.ts).
 export async function findVendorByIdForUpdate(viewer: Viewer, id: string, tx: DbOrTx): Promise<VendorRow | null> {
-  const [row] = await tx.select().from(vendors).where(eq(vendors.id, id)).for("update");
+  const [row] = await tx.select().from(vendors).where(eq(vendors.id, id)).for("no key update");
   return row ?? null;
 }
 

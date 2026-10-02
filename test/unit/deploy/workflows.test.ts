@@ -486,6 +486,20 @@ describe("visual-baseline.yml", () => {
     expect(tail).toContain("retention-days: 7");
   });
 
+  it("재비교가 실패하면 test-results를 visual-baseline-diff 아티팩트로 올리고 커밋 잡은 받지 않는다", () => {
+    const block = baseline();
+    const none = block.indexOf("--update-snapshots=none");
+    const step = block.indexOf("if: failure()");
+    expect(step, "failure() 조건의 업로드 스텝이 있어야 한다").toBeGreaterThan(none);
+    const tail = block.slice(step);
+    expect(tail).toContain("actions/upload-artifact@v4");
+    expect(tail).toContain("name: visual-baseline-diff");
+    expect(tail).toContain("path: test-results/");
+    expect(tail).toContain("retention-days: 7");
+    expect(tail).toContain("if-no-files-found: ignore");
+    expect(commit()).not.toContain("visual-baseline-diff");
+  });
+
   it("샤드 값이 없다 — --project=visual만 돈다", () => {
     for (const token of ["--shard", "PWTEST_SHARD_WEIGHTS", "E2E_SKIP_DESKTOP", "matrix"]) {
       expect(body, `visual-baseline.yml 본문에 ${token}가 있으면 안 된다`).not.toContain(token);

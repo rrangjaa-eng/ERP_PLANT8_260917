@@ -59,6 +59,14 @@ jobs:
           name: visual-baseline
           path: test/e2e/*.spec.ts-snapshots/**/*.png
           retention-days: 7
+      # 재비교가 실패하면 위 업로드는 건너뛴다 — 차이 사진(actual·diff)은 여기서 따로 올려 원인을 본다. commit 잡은 받지 않는다.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-baseline-diff
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore
 
   commit:
     if: startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/main'

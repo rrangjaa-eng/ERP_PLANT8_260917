@@ -906,8 +906,22 @@ describe("deploy.sh — 데이터 키는 평문 시크릿(KMS 없음)", () => {
     });
     expect(r.status).toBe(0);
     expect(r.log).not.toContain(`secrets versions add ${PLAIN} `);
+    expect(r.log).toContain(`secrets versions list ${PLAIN} `);
+    expect(r.log).not.toContain("--secret=");
     expect(stateFile(r.stateDir, `secret-data-${PLAIN}`)).toBe(ORIGINAL_KEY_TEXT);
     expect(deployLine(r.log)).toContain(`APP_DATA_KEY_v1=${PLAIN}:latest`);
+  });
+
+  it("better-auth-secret · 데이터 키에 ENABLED 버전이 이미 있으면 새 버전을 더하지 않는다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: {
+        [`secret-data-${PLAIN}`]: ORIGINAL_KEY_TEXT,
+        "secret-data-better-auth-secret-staging": "existing\n",
+      },
+    });
+    expect(r.status).toBe(0);
+    expect(r.log).not.toContain("secrets versions add better-auth-secret-staging");
+    expect(r.log).not.toContain(`secrets versions add ${PLAIN}`);
   });
 
   it("시크릿에 버전은 있지만 ENABLED가 없으면 새 키를 만들지 않고 멈춘다 — 서비스도 배포하지 않는다", () => {
@@ -934,12 +948,51 @@ describe("deploy.sh — 데이터 키는 평문 시크릿(KMS 없음)", () => {
 
   it("versions list가 오류로 실패하면 새 키를 만들지 않고 멈춘다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: { [`secret-data-${PLAIN}`]: ORIGINAL_KEY_TEXT, "fail-gcloud": `secrets versions list --secret=${PLAIN}` },
+      state: { [`secret-data-${PLAIN}`]: ORIGINAL_KEY_TEXT, "fail-gcloud": `secrets versions list ${PLAIN}` },
     });
     expect(r.status).not.toBe(0);
     expect(r.stderr).toContain("forced failure");
     expect(r.log).not.toContain(`secrets versions add ${PLAIN} `);
     expect(r.log).not.toContain("run deploy plant8-staging ");
+  });
+
+  it("better-auth-secret versions list가 오류로 실패하면 새 값을 쓰지 않고 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "fail-gcloud": "secrets versions list better-auth-secret-staging" },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("cannot list versions of better-auth-secret-staging");
+    expect(r.log).not.toContain("secrets versions add better-auth-secret-staging");
+    expect(r.log).not.toContain("run deploy plant8-staging ");
+  });
+
+  it("db-admin-password versions list가 오류로 실패하면 비밀번호를 새로 만들거나 바꾸지 않고 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "fail-gcloud": "secrets versions list db-admin-password-staging" },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("cannot list versions of db-admin-password-staging");
+    expect(r.log).not.toContain("secrets versions add db-admin-password-staging");
+    expect(r.log).not.toContain("sql users set-password");
+  });
+
+  it("db-admin-password는 새 환경에서 postgres 비밀번호를 먼저 바꾼 뒤 Secret Manager에 저장한다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
+    expect(r.status).toBe(0);
+    const setIdx = lineIndex(r.log, "sql users set-password postgres");
+    const addIdx = lineIndex(r.log, "secrets versions add db-admin-password-staging");
+    expect(setIdx).toBeGreaterThanOrEqual(0);
+    expect(addIdx).toBeGreaterThanOrEqual(0);
+    expect(setIdx).toBeLessThan(addIdx);
+  });
+
+  it("postgres 비밀번호 변경이 실패하면 db-admin-password 버전을 저장하지 않고 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "fail-gcloud": "sql users set-password" },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.log).toContain("sql users set-password postgres");
+    expect(r.log).not.toContain("secrets versions add db-admin-password-staging");
   });
 
   it("gcloud kms를 부르지 않고 KMS · 감싼 키 환경 변수 · 감싼 시크릿을 붙이지 않는다", () => {

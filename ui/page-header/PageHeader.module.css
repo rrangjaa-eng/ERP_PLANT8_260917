@@ -1,6 +1,5 @@
-/* 04.6 스킨 A 이관 전: CSS */
 /* SYSTEM.md §6-0 화면 제목·부제 · §6-9 오류 제목. 실물: preview.html:48-50 .sec 이관.
-   색·서체·radius는 토큰 참조만 쓴다(D-20). */
+   색·서체·radius는 역할 토큰 참조만 쓴다. 아직 틀로 옮기지 않은 화면이 쓰는 동안만 남는다. */
 
 .header {
   display: flex;
@@ -13,19 +12,18 @@
 
 .title {
   margin: 0;
-  font-size: var(--fs-lg);
+  font-size: var(--text-title);
   font-weight: var(--fw-bold);
   letter-spacing: var(--ls-head);
-  line-height: var(--lh-head);
+  line-height: var(--lh-tight);
 }
 
 .title2xl {
-  font-size: var(--fs-2xl);
-  line-height: var(--lh-tight);
+  font-size: var(--text-kpi);
 }
 
 .subtitle {
   margin: 0;
-  font-size: var(--fs-sm);
-  color: var(--muted);
+  font-size: var(--text-aux);
+  color: var(--text-muted);
 }

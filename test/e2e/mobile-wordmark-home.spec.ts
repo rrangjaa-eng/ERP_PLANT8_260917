@@ -19,14 +19,15 @@ async function login(page: Page): Promise<void> {
 }
 
 test.describe("폰 375 상단 바 워드마크 = 「내 차례」 홈 링크 (/design-review FINDING-001)", () => {
-  test("바 높이 44 불변 · 워드마크 44×44 이상 · 바를 넘치지 않는다 · 누르면 / 로 간다", async ({ page }) => {
+  test("바 높이 --bar-h(48) · 워드마크 44×44 이상 · 바를 넘치지 않는다 · 누르면 / 로 간다", async ({ page }) => {
     await login(page);
     await page.goto("/projects");
 
     const header = page.getByRole("banner");
     const headerBox = await header.boundingBox();
     expect(headerBox).not.toBeNull();
-    expect(headerBox!.height).toBeCloseTo(44, 0);
+    const barH = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bar-h").trim());
+    expect(headerBox!.height).toBeCloseTo(Number.parseFloat(barH), 0);
 
     const wordmark = header.getByRole("link", { name: WORDMARK, exact: true });
     const box = await wordmark.boundingBox();

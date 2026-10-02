@@ -1,5 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
 import { createFixtureUser } from "./fixtures";
+import { createVendor } from "@/domain/vendors";
+import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 
 // 02-08 갭 클로저 — 페이지 층(body 아홉 선언 · §4-4 브라우저 표면 · 컨트롤 서체 ·
@@ -10,6 +13,22 @@ import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 // 다를 수 있다(예: "22.4px" vs "22.3999px").
 function px(value: string): number {
   return Number.parseFloat(value);
+}
+
+// 토큰 값을 브라우저 계산 값으로 바꿔 비교한다(역할 토큰 이름으로 단언 — 값은 tokens.css가 정한다).
+function tokenAsColor(page: Page, name: string): Promise<string> {
+  return page.evaluate((token) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${token})`;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, name);
+}
+
+function tokenValue(page: Page, name: string): Promise<string> {
+  return page.evaluate((token) => getComputedStyle(document.documentElement).getPropertyValue(token).trim(), name);
 }
 
 async function loginAs(
@@ -31,8 +50,8 @@ test.describe("페이지 층 — body 아홉 선언 (02-08 Task 1)", () => {
     await page.goto("/login");
     const body = page.locator("body");
 
-    await expect(body).toHaveCSS("color", "rgb(11, 21, 18)");
-    await expect(body).toHaveCSS("background-color", "rgb(255, 255, 255)");
+    await expect(body).toHaveCSS("color", await tokenAsColor(page, "--text-strong"));
+    await expect(body).toHaveCSS("background-color", await tokenAsColor(page, "--surface-canvas"));
     await expect(body).toHaveCSS("font-size", "14px");
     await expect(body).toHaveCSS("word-break", "keep-all");
     await expect(body).toHaveCSS("overflow-wrap", "anywhere");
@@ -106,6 +125,8 @@ test.describe("로그인 실패 문구 — FormAlert (02-08 Task 1, §6-7 A②)"
 test.describe("전역 포커스 링 (02-08 Task 1, §4-4)", () => {
   test("컴포넌트 포커스 스타일이 없는 3차 링크에 전역 포커스 링이 적용된다", async ({ page }) => {
     // 팀 발령이 없는 팀 업무 범위 사람에게는 「프로젝트 등록」이 보이지 않는다 — 팀을 준다.
+    // 거래처가 하나도 없으면 등록할 수 없어 링크가 빠진다(quick 261001-85g) — 다른 스펙이 먼저 만든 거래처에 기대지 않고 직접 만든다.
+    await createVendor(SYSTEM_VIEWER, { name: `포커스링거래처-${randomUUID().slice(0, 8)}` });
     await loginAs(page, DEFAULT_ROLE_ID, { withTeam: true });
     await page.goto("/projects");
 
@@ -154,17 +175,18 @@ test.describe("§6-0 화면 제목·부제 · §6-9 오류 제목 (02-08 Task 2)
     await page.goto("/projects");
 
     const h1 = page.locator("main h1");
-    await expect(h1).toHaveCSS("font-size", "18px");
+    const titleSize = await tokenValue(page, "--text-title");
+    await expect(h1).toHaveCSS("font-size", titleSize);
     await expect(h1).toHaveCSS("font-weight", "700");
     const letterSpacing = await h1.evaluate((el) => getComputedStyle(el).letterSpacing);
-    expect(px(letterSpacing)).toBeCloseTo(-0.36, 1);
+    expect(px(letterSpacing)).toBeCloseTo(px(titleSize) * -0.02, 1);
     const lineHeight = await h1.evaluate((el) => getComputedStyle(el).lineHeight);
-    expect(px(lineHeight)).toBeCloseTo(25.2, 1);
+    expect(px(lineHeight)).toBeCloseTo(px(titleSize) * 1.3, 1);
 
     // 코디네이터 대리 결정 2026-09-26 /design-review FINDING-014 — 기본 보기가 올해 · 전체 상태라 「진행 중인」을 뺀다.
     const subtitle = page.getByText("프로젝트 원장", { exact: true });
-    await expect(subtitle).toHaveCSS("font-size", "12px");
-    await expect(subtitle).toHaveCSS("color", "rgb(78, 93, 89)");
+    await expect(subtitle).toHaveCSS("font-size", await tokenValue(page, "--text-aux"));
+    await expect(subtitle).toHaveCSS("color", await tokenAsColor(page, "--text-muted"));
   });
 
   test("/account 제목·부제(이메일) 계산값이 PageHeader 골격이다", async ({ page }) => {
@@ -172,11 +194,11 @@ test.describe("§6-0 화면 제목·부제 · §6-9 오류 제목 (02-08 Task 2)
     await page.goto("/account");
 
     const h1 = page.locator("main h1");
-    await expect(h1).toHaveCSS("font-size", "18px");
+    await expect(h1).toHaveCSS("font-size", await tokenValue(page, "--text-title"));
 
     const subtitle = page.getByText(user.email);
-    await expect(subtitle).toHaveCSS("font-size", "12px");
-    await expect(subtitle).toHaveCSS("color", "rgb(78, 93, 89)");
+    await expect(subtitle).toHaveCSS("font-size", await tokenValue(page, "--text-aux"));
+    await expect(subtitle).toHaveCSS("color", await tokenAsColor(page, "--text-muted"));
   });
 
   test("루트 404(셸 밖) 제목이 --fs-2xl 자간·행간이다", async ({ page }) => {
@@ -203,6 +225,35 @@ test.describe("§6-0 화면 제목·부제 · §6-9 오류 제목 (02-08 Task 2)
   });
 });
 
+test.describe("§6-0 상단 바 — 스킨 A (04.6-08)", () => {
+  test("바 높이가 --bar-h이고 아래 선이 없고 면이 --bar-bg다", async ({ page }) => {
+    await loginAs(page, DEFAULT_ROLE_ID);
+    await page.goto("/projects");
+
+    const bar = page.getByRole("banner");
+    await expect(bar).toHaveCSS("height", await tokenValue(page, "--bar-h"));
+    await expect(bar).toHaveCSS("border-bottom-width", "0px");
+    await expect(bar).toHaveCSS("background-color", await tokenAsColor(page, "--bar-bg"));
+  });
+
+  test("바 위 메뉴 링크 포커스 윤곽은 --focus-on-bar, 바 밖 사용자 메뉴 항목은 --focus다", async ({ page }) => {
+    await loginAs(page, DEFAULT_ROLE_ID);
+    await page.goto("/projects");
+
+    const navLink = page.getByRole("banner").getByRole("link", { name: "프로젝트", exact: true });
+    await navLink.focus();
+    await expect(navLink).toHaveCSS("outline-color", await tokenAsColor(page, "--focus-on-bar"));
+
+    // 마우스로 연 뒤의 스크립트 포커스는 :focus-visible이 아니다 — 키보드로 열어 키보드 포커스 상태로 만든다.
+    const trigger = page.locator('header button[aria-haspopup="menu"]');
+    await trigger.focus();
+    await page.keyboard.press("Enter");
+    const item = page.getByRole("menuitem").first();
+    await item.focus();
+    await expect(item).toHaveCSS("outline-color", await tokenAsColor(page, "--focus"));
+  });
+});
+
 test.describe("§6-0 현재 메뉴(WR-01)", () => {
   test("/projects에서 주 메뉴 현재 링크가 하나이고 계산값이 현재 표시다", async ({ page }) => {
     await loginAs(page, DEFAULT_ROLE_ID);
@@ -212,9 +263,10 @@ test.describe("§6-0 현재 메뉴(WR-01)", () => {
     await expect(current).toHaveCount(1);
     await expect(current).toHaveText("프로젝트");
     await expect(current).toHaveCSS("font-weight", "700");
-    await expect(current).toHaveCSS("color", "rgb(220, 232, 228)");
-    const boxShadow = await current.evaluate((el) => getComputedStyle(el).boxShadow);
-    expect(boxShadow).toContain("inset");
+    await expect(current).toHaveCSS("color", await tokenAsColor(page, "--bar-fg"));
+    // 현재 표시 = 아래 2px(--underline-w-hover) --bar-leaf 밑줄(04.6-08 — inset 그림자 대신 투명 자리를 채운다).
+    await expect(current).toHaveCSS("border-bottom-width", await tokenValue(page, "--underline-w-hover"));
+    await expect(current).toHaveCSS("border-bottom-color", await tokenAsColor(page, "--bar-leaf"));
   });
 
   test("/account에서는 주 메뉴 현재 링크가 없다", async ({ page }) => {

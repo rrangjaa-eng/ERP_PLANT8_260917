@@ -167,6 +167,14 @@ test.describe("폰 터치 목표 44 (quick 260929-npq · 04-UI-REVIEW 지적 1·
       }
       await expectNoOverflow(page, `상세 일괄 저장·복사 @${width}`);
     }
+
+    // 04.6-08 스킨 A — 1·2차 버튼(링크 모양 포함) 모서리는 --radius-control이고 1차만 원칙 점검 훅을 단다.
+    const radius = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--radius-control").trim());
+    for (const [label, locator] of [["일괄 저장", save], ["복사해 새 차수", copyRevision], ["프로젝트 복사", copyProject]] as const) {
+      await expect.soft(locator, `${label} 모서리`).toHaveCSS("border-top-left-radius", radius);
+    }
+    await expect.soft(save, "1차 훅").toHaveAttribute("data-ui", "primary-button");
+    await expect.soft(copyRevision, "2차는 훅 없음").not.toHaveAttribute("data-ui", "primary-button");
   });
 
   test("PC 1280·경계 700 — 「상태 바꾸기」·「일괄 저장」 높이 32 · 「더보기」 없음 · 정렬 머리글 높이 그대로", async ({ page }) => {

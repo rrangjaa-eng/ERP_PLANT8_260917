@@ -119,6 +119,8 @@ export function Button({
     >
       <button
         type={type ?? "button"}
+        // 원칙 점검(04.6-29)이 한 화면의 1차 버튼 수를 세는 훅.
+        data-ui={variant === "primary" ? "primary-button" : undefined}
         {...rest}
         aria-disabled={inactive ? "true" : undefined}
         aria-describedby={describedBy}

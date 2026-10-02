@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -163,5 +164,59 @@ describe("Button — 이유 + 다음 한 수(nextStep, §7-1)", () => {
         `</button><span id="[^"]+" class="${styles.reason}">바뀐 칸 없음</span></span>$`,
       ),
     );
+  });
+});
+
+// 04.6-08 스킨 A — 버튼 3위계 · 원칙 점검 훅(04.6-06 도구 · 04.6-29가 `data-ui="primary-button"`을 읽는다).
+describe("Button — 1차 data-ui 훅(04.6-08)", () => {
+  it("1차 버튼만 data-ui=\"primary-button\"을 단다", () => {
+    expect(renderButton({ variant: "primary" })).toContain('data-ui="primary-button"');
+    expect(renderButton({ variant: "secondary" })).not.toContain("data-ui");
+    expect(renderButton({ variant: "tertiary" })).not.toContain("data-ui");
+  });
+
+  it("비활성·진행 중 1차도 훅을 단다(원칙 점검이 한 화면의 1차 수를 센다)", () => {
+    expect(renderButton({ variant: "primary", disabled: true, disabledReason: "이유" })).toContain('data-ui="primary-button"');
+    expect(renderButton({ variant: "primary", pending: true })).toContain('data-ui="primary-button"');
+  });
+});
+
+describe("Button.module.css — 스킨 A 역할 토큰(04.6-08)", () => {
+  const css = readFileSync("ui/button/Button.module.css", "utf8");
+  const rule = (selector: string): string => {
+    const start = css.indexOf(`${selector} {`);
+    expect(start, `${selector} 규칙`).toBeGreaterThanOrEqual(0);
+    return css.slice(start, css.indexOf("}", start));
+  };
+
+  it(".btn은 옆 패널 행동 줄이 정하는 --field-h를 읽고(없으면 --control-h) 모서리는 --radius-control이다", () => {
+    const btn = rule(".btn");
+    expect(btn).toContain("height: var(--field-h, var(--control-h));");
+    expect(btn).toContain("border-radius: var(--radius-control);");
+    expect(btn).toContain("font-size: var(--text-body);");
+    expect(btn).toContain("font-weight: var(--fw-medium);");
+  });
+
+  it("1차는 --accent 면 · --text-on-accent 글자, 2차는 --border-button 테두리다", () => {
+    expect(rule(".primary")).toContain("background: var(--accent);");
+    expect(rule(".primary")).toContain("color: var(--text-on-accent);");
+    expect(rule(".primary:hover:not([aria-disabled=\"true\"])")).toContain("var(--accent-hover)");
+    expect(rule(".secondary")).toContain("var(--border-button)");
+  });
+
+  it("3차 hover 밑줄은 --underline-w-hover이고 비활성에는 걸리지 않는다 · gap 0과 비활성 밑줄 색 --border-strong", () => {
+    expect(rule(".tertiary:hover:not([aria-disabled=\"true\"])")).toContain("text-decoration-thickness: var(--underline-w-hover);");
+    expect(rule(".tertiary")).toContain("gap: 0;");
+    expect(rule(".tertiary[aria-disabled=\"true\"]")).toContain("text-decoration-color: var(--border-strong);");
+  });
+
+  it("외부 수령자 변형은 두 클래스 .btn.external · --s-12 · --text-prose(15 고정)다", () => {
+    expect(rule(".btn.external")).toContain("height: var(--s-12);");
+    expect(rule(".btn.external")).toContain("font-size: var(--text-prose);");
+    expect(rule(".wrapExternal .reason,\n.wrapExternal .reasonInfo")).toContain("font-size: var(--text-prose);");
+  });
+
+  it("옛 이름(--line · --line-w-strong · --fs-md)이 없다", () => {
+    expect(css).not.toMatch(/var\(--line\)|--line-w-strong|--fs-md/);
   });
 });

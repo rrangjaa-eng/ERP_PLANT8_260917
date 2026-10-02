@@ -7,6 +7,7 @@ import { maskRrn } from "@/domain/certs/format";
 import { LOGIN_REQUIRED_MESSAGE } from "@/lib/actions/user-facing-error";
 import { privacyLoginHref } from "@/lib/login-next";
 import { reopenCertRrnAction, revealCertRrnAction } from "./actions";
+import { PRIVACY_ACTIVITY_EVENTS } from "./privacy-idle-state";
 import { RRN_AUTO_HIDE_MS, hideRrn, isRrnDirty, revealedRrn, type RrnState } from "./rrn-state";
 import styles from "./review.module.css";
 
@@ -20,8 +21,6 @@ function maskEdited(value: string): string {
   const digits = value.replace(/\D/g, "");
   return digits.length >= 7 ? maskRrn(digits) : "*".repeat(digits.length);
 }
-
-const ACTIVITY_EVENTS = ["pointerdown", "keydown", "input"] as const;
 
 export function RrnField({
   id,
@@ -193,11 +192,11 @@ function useRrnAutoHide(onChange: Dispatch<SetStateAction<RrnState>>): void {
     };
 
     document.addEventListener("visibilitychange", onVisibility);
-    for (const type of ACTIVITY_EVENTS) document.addEventListener(type, onActivity);
+    for (const type of PRIVACY_ACTIVITY_EVENTS) document.addEventListener(type, onActivity);
     return () => {
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisibility);
-      for (const type of ACTIVITY_EVENTS) document.removeEventListener(type, onActivity);
+      for (const type of PRIVACY_ACTIVITY_EVENTS) document.removeEventListener(type, onActivity);
     };
   }, [onChange]);
 }

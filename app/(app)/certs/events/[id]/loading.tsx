@@ -1,3 +1,5 @@
+// 04.6 스킨 A 이관 전: 화면 틀
+/* eslint-disable no-restricted-syntax -- 04.6 스킨 A 이관 전 */
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import styles from "./event-detail.module.css";
 

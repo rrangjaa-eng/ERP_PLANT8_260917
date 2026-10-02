@@ -1,3 +1,4 @@
+// 04.6 스킨 A 이관 전: 화면 틀
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/viewer";
 import { buildNextTurnView } from "@/ui/next-turn/build-next-turn-view";

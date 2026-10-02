@@ -1,3 +1,4 @@
+// 04.6 스킨 A 이관 전: 화면 틀
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import styles from "@/app/(app)/approvals/loading.module.css";
 

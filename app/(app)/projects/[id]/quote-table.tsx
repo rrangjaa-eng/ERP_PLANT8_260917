@@ -1,3 +1,4 @@
+// 04.6 스킨 A 이관 전: 화면 틀
 "use client";
 
 import { Children, useCallback, useEffect, useEffectEvent, useId, useMemo, useRef, useState, type ReactNode } from "react";

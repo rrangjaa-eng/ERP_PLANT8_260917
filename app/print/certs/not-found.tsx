@@ -1,3 +1,4 @@
+// 04.6 스킨 A 이관 전: 화면 틀
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import styles from "./[id]/print-cert.module.css";

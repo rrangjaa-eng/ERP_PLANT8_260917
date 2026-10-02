@@ -1,3 +1,4 @@
+// 04.6 스킨 A 이관 전: 화면 틀
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";

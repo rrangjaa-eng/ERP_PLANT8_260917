@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax -- 04.6 스킨 A 이관 전 */
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";

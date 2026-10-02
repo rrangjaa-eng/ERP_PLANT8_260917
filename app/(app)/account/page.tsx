@@ -1,3 +1,4 @@
+// 04.6 스킨 A 이관 전: 화면 틀
 import { requireSession } from "@/lib/viewer";
 import { Banner } from "@/ui/banner/Banner";
 import { PageHeader } from "@/ui/page-header/PageHeader";

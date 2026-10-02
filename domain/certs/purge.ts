@@ -23,9 +23,9 @@ const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 const ORPHAN_AFTER_HOURS = 24;
 
-// 제출한 해(KST) 종료 + 지급명세서 제출기한(다음 해 2월 말) + 보존 기간 — (제출 KST 연도 + 1 + 보존 연수)-03-01 00:00 KST.
+// 제출한 해(KST) 종료 + 법인세 신고기한(법인세법 제116조① · 국세기본법 제85조의3② — 12월 결산은 다음 해 3월 31일) 다음 날 + 보존 기간 — (제출 KST 연도 + 1 + 보존 연수)-04-01 00:00 KST.
 export function certPurgeDeadline(submittedAt: Date, retentionYears: number): Date {
-  return kstDayStart(`${kstYear(submittedAt) + 1 + retentionYears}-03-01`);
+  return kstDayStart(`${kstYear(submittedAt) + 1 + retentionYears}-04-01`);
 }
 
 export type CertPurgeResult = {
@@ -54,7 +54,7 @@ export async function runCertPurge(
   );
   const retentionDueIds = new Set(retentionDue.map((row) => row.id));
 
-  // CS-2 a — 지급명세서 제출기한 다음 날(제출 연도 다음 해 3월 1일) 이상 · 실행 시점 가액 × 수량 ≤ 50,000. 같은 실행에서
+  // CS-2 a — 법인세 신고기한(법인세법 제116조① · 국세기본법 제85조의3②) 다음 날(제출 연도 다음 해 4월 1일) 이상 · 실행 시점 가액 × 수량 ≤ 50,000. 같은 실행에서
   // 보존 기한 파기 대상인 줄은 어차피 전부 비워지므로 뺀다.
   const rrnDue = (await listRrnPurgeCandidates(SYSTEM_VIEWER, kstDayStart(`${kstYear(now)}-01-01`))).filter(
     (row) =>

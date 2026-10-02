@@ -101,12 +101,12 @@ function countingStore(): { store: SignatureStore; deleteCalls: number } {
   return spy;
 }
 
-describe("기한 경계 — 제출 KST 연도 + 1 + 보존 연수의 3월 1일 00:00 KST", () => {
+describe("기한 경계 — 제출 KST 연도 + 1 + 보존 연수의 4월 1일 00:00 KST", () => {
   it("기한 1ms 전에는 그대로 · 기한 정각에는 비워지고 행과 세무 칸은 남는다", async () => {
     const submittedAt = kst("2020-06-01T10:00:00");
     const sample = await seed({ submittedAt });
     const deadline = certPurgeDeadline(submittedAt, 5);
-    expect(deadline.getTime()).toBe(kst("2026-03-01T00:00:00").getTime());
+    expect(deadline.getTime()).toBe(kst("2026-04-01T00:00:00").getTime());
     const before = await rowCounts();
 
     const early = await runCertPurge({ now: new Date(deadline.getTime() - 1), apply: true });
@@ -129,11 +129,11 @@ describe("기한 경계 — 제출 KST 연도 + 1 + 보존 연수의 3월 1일 0
     expect(await rowCounts()).toEqual(before);
   });
 
-  it("KST 연도 경계 — 2020-12-31 23:30 KST 제출은 2026-03-01에 비워지고 2021-01-01 00:10 KST 제출은 남는다", async () => {
+  it("KST 연도 경계 — 2020-12-31 23:30 KST 제출은 2026-04-01에 비워지고 2021-01-01 00:10 KST 제출은 남는다", async () => {
     const lastOfYear = await seed({ submittedAt: new Date("2020-12-31T14:30:00Z") });
     const firstOfYear = await seed({ submittedAt: new Date("2020-12-31T15:10:00Z") });
 
-    const result = await runCertPurge({ now: kst("2026-03-01T00:00:00"), apply: true });
+    const result = await runCertPurge({ now: kst("2026-04-01T00:00:00"), apply: true });
 
     expect(result.submissions).toBe(1);
     expect((await submissionRow(lastOfYear.submissionId)).purgedAt).not.toBeNull();
@@ -154,7 +154,7 @@ describe("기한 경계 — 제출 KST 연도 + 1 + 보존 연수의 3월 1일 0
       .set({ submittedAt: kst("2020-06-01T10:00:00") })
       .where(eq(certSubmissions.id, later.submissionId));
 
-    const result = await runCertPurge({ now: kst("2026-03-01T00:00:00"), apply: true });
+    const result = await runCertPurge({ now: kst("2026-04-01T00:00:00"), apply: true });
 
     expect(result.submissions).toBe(1);
     expect((await submissionRow(early.submissionId)).purgedAt).not.toBeNull();
@@ -188,9 +188,9 @@ describe("기한 경계 — 제출 KST 연도 + 1 + 보존 연수의 3월 1일 0
   });
 });
 
-describe("파기 대상 주민등록번호 — CS-2 a(제출 연도 다음 해 3월 1일, 그 칸만)", () => {
+describe("파기 대상 주민등록번호 — CS-2 a(제출 연도 다음 해 4월 1일, 그 칸만)", () => {
   const SUBMITTED = kst("2025-06-01T10:00:00");
-  const MARCH_1 = kst("2026-03-01T00:00:00");
+  const APRIL_1 = kst("2026-04-01T00:00:00");
 
   async function seedCases() {
     const target = await seed({ submittedAt: SUBMITTED, valueNow: 30_000 });
@@ -210,11 +210,11 @@ describe("파기 대상 주민등록번호 — CS-2 a(제출 연도 다음 해 3
   it("기한 1ms 전에는 비우지 않고 기한 정각에는 주민등록번호 칸만 비운다(가액 × 수량 · 실행 시점 가액)", async () => {
     const c = await seedCases();
 
-    const early = await runCertPurge({ now: new Date(MARCH_1.getTime() - 1), apply: true });
+    const early = await runCertPurge({ now: new Date(APRIL_1.getTime() - 1), apply: true });
     expect(early.rrnCleared).toBe(0);
     expect(await submissionRow(c.target.submissionId)).toEqual(c.target.row);
 
-    const result = await runCertPurge({ now: MARCH_1, apply: true });
+    const result = await runCertPurge({ now: APRIL_1, apply: true });
     expect(result.rrnCleared).toBe(2);
     expect(result.submissions).toBe(0);
 
@@ -247,25 +247,25 @@ describe("파기 대상 주민등록번호 — CS-2 a(제출 연도 다음 해 3
   it("두 번째 적용은 0이고 미리 보기는 수만 세며 쓰기가 없고 대조 제외 줄은 세지 않는다", async () => {
     const c = await seedCases();
 
-    const preview = await runCertPurge({ now: MARCH_1, apply: false });
+    const preview = await runCertPurge({ now: APRIL_1, apply: false });
     expect(preview.rrnCleared).toBe(2);
     expect(await submissionRow(c.target.submissionId)).toEqual(c.target.row);
     expect(await purgeLogs()).toHaveLength(0);
 
-    expect((await runCertPurge({ now: MARCH_1, apply: true })).rrnCleared).toBe(2);
-    expect((await runCertPurge({ now: MARCH_1, apply: true })).rrnCleared).toBe(0);
+    expect((await runCertPurge({ now: APRIL_1, apply: true })).rrnCleared).toBe(2);
+    expect((await runCertPurge({ now: APRIL_1, apply: true })).rrnCleared).toBe(0);
   });
 
-  it("비운 뒤 전체 보기는 복호화 없이 거부되고 보존 기한(2031-03-01)에 나머지 칸도 비워진다", async () => {
+  it("비운 뒤 전체 보기는 복호화 없이 거부되고 보존 기한(2031-04-01)에 나머지 칸도 비워진다", async () => {
     const c = await seedCases();
-    await runCertPurge({ now: MARCH_1, apply: true });
+    await runCertPurge({ now: APRIL_1, apply: true });
     const reviewer = await makeReviewer(FULL_GRANT);
     const spy = decryptSpy();
 
     expect(await revealRrn(reviewer, c.target.submissionId, { ip: null }, { decrypt: spy.fn })).toEqual({ kind: "denied" });
     expect(spy.calls).toBe(0);
 
-    const retentionDeadline = kst("2031-03-01T00:00:00");
+    const retentionDeadline = kst("2031-04-01T00:00:00");
     const result = await runCertPurge({ now: retentionDeadline, apply: true });
     expect(result.rrnCleared).toBe(0);
     const row = await submissionRow(c.target.submissionId);
@@ -281,7 +281,7 @@ describe("서명 파일 — DB 먼저 · 파일 나중, 실패분은 다음 실�
     expect(key).not.toBeNull();
     expect(await getSignatureStore().get(key ?? "")).not.toBeNull();
 
-    const result = await runCertPurge({ now: kst("2026-03-01T00:00:00"), apply: true });
+    const result = await runCertPurge({ now: kst("2026-04-01T00:00:00"), apply: true });
 
     expect(result).toMatchObject({ submissions: 1, filesDeleted: 1, filesPending: 0 });
     expect(await getSignatureStore().get(key ?? "")).toBeNull();
@@ -291,7 +291,7 @@ describe("서명 파일 — DB 먼저 · 파일 나중, 실패분은 다음 실�
   it("삭제 실패 — 칸은 비워지고 signature_key는 남고 filesPending 1 · 정상 저장소로 다시 실행하면 지워지고 새 파기 수는 0", async () => {
     const sample = await seed({ submittedAt: kst("2020-06-01T10:00:00") });
     const key = sample.row.signatureKey ?? "";
-    const now = kst("2026-03-01T00:00:00");
+    const now = kst("2026-04-01T00:00:00");
 
     const failed = await runCertPurge({ now, apply: true }, { signatureStore: failingDeleteStore().store });
     expect(failed).toMatchObject({ submissions: 1, filesDeleted: 0, filesPending: 1 });
@@ -311,7 +311,7 @@ describe("서명 파일 — DB 먼저 · 파일 나중, 실패분은 다음 실�
     const sample = await seed({ submittedAt: kst("2020-06-01T10:00:00") });
     await getSignatureStore().delete(sample.row.signatureKey ?? "");
 
-    const result = await runCertPurge({ now: kst("2026-03-01T00:00:00"), apply: true });
+    const result = await runCertPurge({ now: kst("2026-04-01T00:00:00"), apply: true });
 
     expect(result).toMatchObject({ filesDeleted: 1, filesPending: 0 });
     expect((await submissionRow(sample.submissionId)).signatureKey).toBeNull();
@@ -321,7 +321,7 @@ describe("서명 파일 — DB 먼저 · 파일 나중, 실패분은 다음 실�
 describe("멱등 · 미리 보기 · 파기 뒤 화면 · 기능 플래그", () => {
   it("적용을 두 번 돌리면 두 번째 새 파기 수는 0이다", async () => {
     await seed({ submittedAt: kst("2020-06-01T10:00:00") });
-    const now = kst("2026-03-01T00:00:00");
+    const now = kst("2026-04-01T00:00:00");
 
     expect((await runCertPurge({ now, apply: true })).submissions).toBe(1);
     expect(await runCertPurge({ now, apply: true })).toMatchObject({ submissions: 0, filesDeleted: 0 });
@@ -331,7 +331,7 @@ describe("멱등 · 미리 보기 · 파기 뒤 화면 · 기능 플래그", () 
     const sample = await seed({ submittedAt: kst("2020-06-01T10:00:00") });
     const store = countingStore();
 
-    const preview = await runCertPurge({ now: kst("2026-03-01T00:00:00"), apply: false }, { signatureStore: store.store });
+    const preview = await runCertPurge({ now: kst("2026-04-01T00:00:00"), apply: false }, { signatureStore: store.store });
 
     expect(preview.submissions).toBe(1);
     expect(await submissionRow(sample.submissionId)).toEqual(sample.row);
@@ -343,7 +343,7 @@ describe("멱등 · 미리 보기 · 파기 뒤 화면 · 기능 플래그", () 
   it("파기 뒤 경영관리 화면은 notFound이고 전체 보기는 복호화 없이 거부된다", async () => {
     const sample = await seed({ submittedAt: kst("2020-06-01T10:00:00") });
     const reviewer = await makeReviewer(FULL_GRANT);
-    await runCertPurge({ now: kst("2026-03-01T00:00:00"), apply: true });
+    await runCertPurge({ now: kst("2026-04-01T00:00:00"), apply: true });
     const spy = decryptSpy();
 
     expect(await getSubmissionForReview(reviewer, sample.submissionId, { ip: null })).toEqual({ kind: "notFound" });
@@ -354,7 +354,7 @@ describe("멱등 · 미리 보기 · 파기 뒤 화면 · 기능 플래그", () 
   it("기능 플래그를 꺼도 파기가 돈다", async () => {
     const sample = await seed({ submittedAt: kst("2020-06-01T10:00:00") });
 
-    await withCertFeatureOff(() => runCertPurge({ now: kst("2026-03-01T00:00:00"), apply: true }));
+    await withCertFeatureOff(() => runCertPurge({ now: kst("2026-04-01T00:00:00"), apply: true }));
 
     expect((await submissionRow(sample.submissionId)).purgedAt).not.toBeNull();
   });
@@ -381,7 +381,7 @@ describe("파기와 전체 보기 직렬화(codex #13)", () => {
     await enteredLog;
 
     let purgeDone = false;
-    const purge = runCertPurge({ now: kst("2026-03-01T00:00:00"), apply: true }).then((result) => {
+    const purge = runCertPurge({ now: kst("2026-04-01T00:00:00"), apply: true }).then((result) => {
       purgeDone = true;
       return result;
     });
@@ -404,7 +404,7 @@ describe("파기와 전체 보기 직렬화(codex #13)", () => {
     const reviewer = await makeReviewer(FULL_GRANT);
     const spy = decryptSpy();
 
-    await runCertPurge({ now: kst("2026-03-01T00:00:00"), apply: true });
+    await runCertPurge({ now: kst("2026-04-01T00:00:00"), apply: true });
 
     expect(await revealRrn(reviewer, sample.submissionId, { ip: null }, { decrypt: spy.fn })).toEqual({ kind: "denied" });
     expect(spy.calls).toBe(0);
@@ -468,7 +468,7 @@ describe("칸 비우기 함수 재사용 — mode: exclude (E1 b)", () => {
     expect(await getSignatureStore().get(key)).toBeNull();
     expect((await submissionRow(sample.submissionId)).signatureKey).toBeNull();
 
-    const retentionDeadline = kst("2031-03-01T00:00:00");
+    const retentionDeadline = kst("2031-04-01T00:00:00");
     await runCertPurge({ now: retentionDeadline, apply: true });
     const purged = await submissionRow(sample.submissionId);
     expect(purged.name).toBeNull();
@@ -480,7 +480,7 @@ describe("행동 로그 cert_purge — 비우기와 한 트랜잭션(C6)", () =>
   it("적용 실행 한 번 = 한 줄, detail은 개수 셋뿐 · 반환값은 여섯 · 개인정보가 로그에 없다", async () => {
     const sample = await seed({ submittedAt: kst("2020-06-01T10:00:00") });
 
-    const result = await runCertPurge({ now: kst("2026-03-01T00:00:00"), apply: true });
+    const result = await runCertPurge({ now: kst("2026-04-01T00:00:00"), apply: true });
 
     expect(Object.keys(result).sort()).toEqual(
       ["filesDeleted", "filesPending", "ipCleared", "orphansDeleted", "rrnCleared", "submissions"].sort(),
@@ -501,7 +501,7 @@ describe("행동 로그 cert_purge — 비우기와 한 트랜잭션(C6)", () =>
 
     await expect(
       runCertPurge(
-        { now: kst("2026-03-01T00:00:00"), apply: true },
+        { now: kst("2026-04-01T00:00:00"), apply: true },
         {
           signatureStore: store.store,
           appendActionLog: () => Promise.reject(new Error("로그 쓰기 실패(주입)")),

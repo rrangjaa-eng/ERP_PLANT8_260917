@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: "04.5"
 current_phase_name: 화면 항목 관리 (INSERTED)
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Completed 04.5-08-PLAN.md
-last_updated: "2026-10-02T09:22:33.105Z"
+stopped_at: Completed 04.5-09-PLAN.md
+last_updated: "2026-10-02T09:45:36.706Z"
 last_activity: 2026-10-02
 last_activity_desc: Phase 04.5 execution started
-state_head: c9d0a2722d3d5a5a0e45bba9ef6b51e13661ecac
+state_head: c91c093ff14b5dc26e810ec3ec31e89c12262a3c
 progress:
   total_phases: 17
   completed_phases: 7
   total_plans: 178
-  completed_plans: 114
+  completed_plans: 115
   percent: 41
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-30)
 ## Current Position
 
 Phase: 04.5 (화면 항목 관리 (INSERTED)) — EXECUTING
-Current Plan: 3
+Current Plan: 4
 Total Plans in Phase: 9
 Status: Ready to execute
 Last activity: 2026-10-02 — Phase 04.5 execution started
@@ -124,6 +124,7 @@ Progress: [████░░░░░░] 41%
 | Phase 04 P53 | 25min | 3 tasks | 7 files |
 | Phase 04.5 P01 | 50 min | 2 tasks | 18 files |
 | Phase 04.5 P08 | 33min | 2 tasks | 15 files |
+| Phase 04.5 P09 | 16min | 1 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -314,6 +315,8 @@ Recent decisions affecting current work:
 - [Phase 04.5]: 04.5-01: 칸 생성·계급 생성 노출 행 부여는 lockCustomFieldGrants(advisory 420_701) 뒤 같은 tx로 상대 표를 읽는다 — 풀 고갈 회귀 테스트는 DB_POOL_MAX×2 동시
 - [Phase 04.5]: 04.5-01: 액션 등록부는 09 — 그때까지 action-registry-completeness에 field-definitions 임시 예외(02가 액션을 더하면 이름 목록 갱신)
 - [Phase 04.5]: 04.5-08: 오류 문구는 UI-SPEC 표의 뜻 그대로 명사형(error-copy-noun-style, DECISIONS 2026-09-26 우선) — 02·06 문구도 같은 변환 필요 — 표의 -습니다 종결이 사용자 결정 테스트와 충돌
+- [Phase 04.5]: 04.5-09: 새 메뉴 시드는 시스템 관리자 루프에서 건너뛰고 view·write를 insertPermissionIfAbsent로 — 재시드가 회수를 되살리지 않음
+- [Phase 04.5]: 04.5-09: 정보 노출표 항목 없는 관리 DTO는 누수 스캔 메뉴 게이트 DTO 축(MENU_GATED_DTOS)으로 검사
 
 ### Pending Todos
 
@@ -404,6 +407,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-02T09:22:32.661Z
-Stopped at: Completed 04.5-08-PLAN.md
+Last session: 2026-10-02T09:45:36.272Z
+Stopped at: Completed 04.5-09-PLAN.md
 Resume file: None

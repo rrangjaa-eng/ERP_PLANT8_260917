@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { codeItems, teams, vendors } from "@/db/schema";
+import { teams, vendors } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
@@ -10,6 +10,7 @@ import { insertRole } from "@/repositories/roles";
 import { upsertVisibility } from "@/repositories/permissions";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, listQuoteLines, saveQuoteLines } from "@/domain/quotes/lines";
+import { firstSelectableSubcategory } from "../support/quote-subcategory";
 
 // /qa ISSUE-001(PR #121) — 보관 · 숨김 거래처는 선택지(listProjectFormReferences)에 없어 견적 표가 UUID를 그렸다.
 // 줄 DTO가 거래처 이름을 싣는다 — project.value와 vendor.value를 모두 볼 때만(all-of, 리저브 선택지와 같은 결).
@@ -30,8 +31,7 @@ async function makeLineWithArchivedVendor() {
   const { userId: pmUserId } = await createAccount(SYSTEM_VIEWER, { email: `vn-pm-${randomUUID()}@example.test`, name: "PM", roleId: "role-pm" });
   const [team] = await db.select().from(teams).limit(1);
   if (!team) throw new Error("시드된 팀이 없습니다");
-  const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
-  if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+  const subcategory = await firstSelectableSubcategory();
   const project = await createProject(SYSTEM_VIEWER, { clientId: vendor.id, teamId: team.id, pmUserId, name: `프로젝트-${randomUUID()}` });
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
   if (!revision) throw new Error("1차 차수가 없습니다");

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { codeItems, quoteLines, teams } from "@/db/schema";
+import { quoteLines, teams } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
@@ -11,6 +11,7 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, listQuoteLines, saveQuoteLines } from "@/domain/quotes/lines";
 import { saveProjectLedger } from "@/domain/projects/ledger";
+import { firstSelectableSubcategory } from "../support/quote-subcategory";
 
 // quick 261001-85g(Codex 리뷰 P1) — 거래처 정보(vendor.value)가 가려진 계급에게 견적 줄 DTO는 vendorId를 싣지 않는다
 // (화면이 열을 빼도 RSC 페이로드에 거래처 id가 남던 경로). 그 계급이 줄을 저장해도 서버가 기존 거래처를 그대로 둔다.
@@ -32,8 +33,7 @@ async function setup(vendorShown: boolean) {
   const client = await insertVendor(SYSTEM_VIEWER, { name: `가림거래처-${randomUUID()}`, normalizedName: `가림거래처-${randomUUID()}` });
   const [team] = await db.select().from(teams).limit(1);
   if (!team) throw new Error("시드된 팀이 없습니다");
-  const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
-  if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+  const subcategory = await firstSelectableSubcategory();
   const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId: pm.id, name: `가림-${randomUUID()}` });
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
   if (!revision) throw new Error("1차 차수가 없습니다");

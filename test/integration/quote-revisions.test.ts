@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, codeItems, projects, quoteLines, quoteRevisions, teams } from "@/db/schema";
+import { actionLog, projects, quoteLines, quoteRevisions, teams } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
@@ -27,6 +27,7 @@ import { PROJECT_CUSTOMER_APPROVAL_GATE } from "@/domain/settings/keys";
 import { restore } from "@/domain/archive";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { log } from "@/lib/log";
+import { firstSelectableSubcategory } from "../support/quote-subcategory";
 
 // 04-14(D-53 · D-54 · CEO 리뷰 B-02·B-21·B-32 · 엔지 리뷰 GAP 5b · B §1) — 새 차수: 보던 차수 확인 → 견적 줄 전체
 // 복사(계보 · version 1 · 업무 컬럼 보존) → 조정 줄 이동(보관 포함). 두 연결 경합은 04-40.
@@ -59,8 +60,7 @@ async function setupProject(pmMenus: Menu[] = writerMenus) {
   const client = await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}`, normalizedName: `거래처-${randomUUID()}` });
   const [team] = await db.select().from(teams).limit(1);
   if (!team) throw new Error("시드된 팀이 없습니다");
-  const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
-  if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+  const subcategory = await firstSelectableSubcategory();
   const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId: pm.id, name: `차수-${randomUUID()}` });
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
   if (!revision) throw new Error("1차 차수가 없습니다");

@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
 import { db, pool } from "@/db/client";
-import { codeItems, teams } from "@/db/schema";
+import { teams } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import type { Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
@@ -13,6 +12,7 @@ import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { saveRevenue } from "@/domain/revenue";
+import { firstSelectableSubcategory } from "../support/quote-subcategory";
 
 // 과거 버그: rememberFxRate → upsertSimpleValue가 호출자의 트랜잭션이 아니라
 // **전역 풀**(repositories/settings.ts의 db)로 설정을 썼다. 저장
@@ -138,12 +138,7 @@ describe("rememberFxRate 동시 저장 — 풀 소진 애플리케이션 교착 
       const project = await setupProject();
       const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
       if (!revision) throw new Error("1차 차수가 없습니다");
-      const [subcategory] = await db
-        .select()
-        .from(codeItems)
-        .where(eq(codeItems.tableKey, "quote_subcategory"))
-        .limit(1);
-      if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+      const subcategory = await firstSelectableSubcategory();
 
       const seeded = await saveQuoteLines(
         SYSTEM_VIEWER,

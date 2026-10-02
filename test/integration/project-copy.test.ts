@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, codeItems, projects, quoteLines, quoteRevisions, revenueEntries, teams } from "@/db/schema";
+import { actionLog, projects, quoteLines, quoteRevisions, revenueEntries, teams } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
@@ -14,6 +14,7 @@ import { getSettingValue } from "@/domain/settings/registry";
 import { FX_RECENT_RATE_USD } from "@/domain/settings/keys";
 import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
 import { log } from "@/lib/log";
+import { firstSelectableSubcategory } from "../support/quote-subcategory";
 
 // 04-15(D-70 · PROJ-05 · CEO 리뷰 B-32 · 사용자 D19-10 · D19-3 · B-26) — 프로젝트 복사 등록. 복사는 기본 정보와 견적 줄
 // 구조(견적 줄 · 견적 외 비용, 보관 · 취소 제외)까지만이고 돈 기록(매출 · 조정 · 계보 · 기간 · 총 매출 예상가)은 따라오지 않는다.
@@ -68,8 +69,7 @@ async function setupOriginal() {
   const client = await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}`, normalizedName: `거래처-${randomUUID()}` });
   const [team] = await db.select().from(teams).limit(1);
   if (!team) throw new Error("시드된 팀이 없습니다");
-  const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
-  if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+  const subcategory = await firstSelectableSubcategory();
   const vendor = await insertVendor(SYSTEM_VIEWER, { name: `공급처-${randomUUID()}`, normalizedName: `공급처-${randomUUID()}` });
 
   const original = await createProject(SYSTEM_VIEWER, {

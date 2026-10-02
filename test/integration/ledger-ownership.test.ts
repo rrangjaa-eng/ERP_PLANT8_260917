@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { actionLog, codeItems, projects, quoteLines, revenueEntries, teams } from "@/db/schema";
+import { actionLog, projects, quoteLines, revenueEntries, teams } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
@@ -11,6 +11,7 @@ import { createProject } from "@/domain/projects";
 import { saveProjectLedger } from "@/domain/projects/ledger";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { saveRevenue } from "@/domain/revenue";
+import { firstSelectableSubcategory } from "../support/quote-subcategory";
 
 // /review(PR #38) — 저장 요청의 줄 id·차수 id가 요청한 프로젝트·차수에
 // 속하는지 확인한다. 다른 프로젝트의 줄을 id·version만으로 덮어쓰면 안 된다.
@@ -23,8 +24,7 @@ async function setupProject() {
   });
   const [team] = await db.select().from(teams).limit(1);
   if (!team) throw new Error("시드된 팀이 없습니다");
-  const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
-  if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+  const subcategory = await firstSelectableSubcategory();
   const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId, name: `프로젝트-${randomUUID()}` });
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
   if (!revision) throw new Error("1차 차수가 없습니다");

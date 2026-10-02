@@ -27,6 +27,7 @@ import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import { findPermission, findVisibility } from "@/repositories/permissions";
 import { withTransaction } from "@/lib/db-transaction";
 import { deferred, waitForLockWaiter } from "./lock-race";
+import { firstSelectableSubcategory } from "../support/quote-subcategory";
 
 // 04-06(D-75) — 프로젝트 상태 다섯 값. 04-20·04-21이 같은 파일에 전환
 // describe를 더한다. 이 목록은 db/migrations/0012_project_status_five_values.sql
@@ -52,12 +53,7 @@ async function setupProjectWithLine(status: string) {
   });
   const [team] = await db.select().from(teams).limit(1);
   if (!team) throw new Error("시드된 팀이 없습니다");
-  const [subcategory] = await db
-    .select()
-    .from(codeItems)
-    .where(eq(codeItems.tableKey, "quote_subcategory"))
-    .limit(1);
-  if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+  const subcategory = await firstSelectableSubcategory();
 
   const project = await createProject(SYSTEM_VIEWER, {
     clientId: client.id,

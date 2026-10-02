@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { codeItems, quoteLines, teams } from "@/db/schema";
+import { quoteLines, teams } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { createAccount } from "@/domain/auth/accounts";
 import { insertVendor } from "@/repositories/vendors";
@@ -15,6 +15,7 @@ import { createRevisionFromCurrent, setCustomerApproval } from "@/domain/quotes/
 import { listRevenue } from "@/domain/revenue";
 import { restore } from "@/domain/archive";
 import { kstToday } from "@/lib/kst-date";
+import { firstSelectableSubcategory } from "../support/quote-subcategory";
 
 // 04-16(사용자 D7 · CEO 리뷰 OV-1 · 엔지니어링 리뷰 GAP 1) — 「계약 금액은 항상 승인값과 같다」를 계약 금액 쪽에서 증명한다.
 // 조작은 04-40이 잠근 서버 경로(saveQuoteLines · 보관함 restore)를 그대로 부르고, 매번 listRevenue의 계약 금액과 DB의 승인
@@ -97,8 +98,7 @@ async function setupApproved() {
   const client = await insertVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}`, normalizedName: `거래처-${randomUUID()}` });
   const [team] = await db.select().from(teams).limit(1);
   if (!team) throw new Error("시드된 팀이 없습니다");
-  const [code] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
-  if (!code) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+  const code = await firstSelectableSubcategory();
   const project = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId: pm.id, name: `계약 불변-${randomUUID()}` });
   const first = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
   if (!first) throw new Error("1차 차수가 없습니다");

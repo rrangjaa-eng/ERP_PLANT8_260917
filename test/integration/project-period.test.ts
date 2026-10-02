@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { and, asc, eq } from "drizzle-orm";
 import { db, pool } from "@/db/client";
-import { actionLog, codeItems, projects, quoteLines } from "@/db/schema";
+import { actionLog, projects, quoteLines } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
@@ -28,6 +28,7 @@ import { log } from "@/lib/log";
 import { addDays, kstDayStart, kstToday } from "@/lib/kst-date";
 import { gate } from "@/domain/rules/gate";
 import { deferred, waitForLockWaiter } from "./lock-race";
+import { firstSelectableSubcategory } from "../support/quote-subcategory";
 
 // S1(04-22 리뷰): 견적 줄 게이트가 어느 행으로 판정했는지 보려고 gate를 통과형 스파이로 감싼다 —
 // 판정 결과는 원본 그대로다. 견적 줄 로그는 커밋 뒤에 남아 seq로는 순서를 증명할 수 없다.
@@ -92,8 +93,7 @@ function period(s: Setup, next: { startDate?: string | null; endDate?: string | 
 }
 
 async function subcategoryValue(): Promise<string> {
-  const [item] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
-  if (!item) throw new Error("시드된 소분류가 없습니다");
+  const item = await firstSelectableSubcategory();
   return item.value;
 }
 

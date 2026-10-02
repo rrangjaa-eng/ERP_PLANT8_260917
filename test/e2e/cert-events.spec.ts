@@ -117,6 +117,9 @@ test.describe("확인증 행사 — 임시 계급(자기 행사만)", () => {
     await page.goto("/certs/events");
     await expect(page.getByText("확인증 행사가 없습니다")).toBeVisible();
     await expect(page.getByRole("link", { name: "행사 만들기" })).toHaveCount(0);
+    // DR5 A — 빈 목록은 머리 1차 없이 빈 화면의 「QR 생성 신청」 링크 하나(`?new=1`).
+    await expect(page.locator('[data-ui="primary-button"]')).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "QR 생성 신청" })).toHaveAttribute("href", "/certs/events?new=1");
     await page.context().close();
   });
 
@@ -204,19 +207,23 @@ test.describe("04.3-10 tracer — QR 생성 신청 → QR 생성(1280)", () => {
     const pmPage = await loggedInPage(browser, pm);
     await pmPage.goto("/certs/events");
     // 스트리밍 응답은 로딩 뼈대 표가 선 채 숨긴 자리에 먼저 꽂힌다 — 실제 목록(1차가 있는 화면)이 보인 뒤에 잰다(04.3-17 재실행 중 경합 확인).
-    await expect(pmPage.getByRole("button", { name: "QR 생성 신청" })).toBeVisible();
+    // 04.6-23(Q1 A): 여는 요소는 버튼이 아니라 `?new=1` 링크다.
+    const opener = pmPage.getByRole("link", { name: "QR 생성 신청" });
+    await expect(opener).toBeVisible();
     // 패널이 열려도 목록 표는 움직이지 않는다 — 1차 자리(행동 줄)가 높이를 지킨다(DOM 감사 A-M2).
     const listTable = pmPage.locator("table").first();
     const tableTopBefore = (await listTable.boundingBox())?.y;
-    await pmPage.getByRole("button", { name: "QR 생성 신청" }).click();
+    await opener.click();
+    await expect(pmPage).toHaveURL(/\/certs\/events\?new=1$/);
     const panel = pmPage.getByRole("dialog", { name: "QR 생성 신청" });
     await expect(panel).toBeVisible();
     // 04.6-04: 열림 모션(--dur-sheet 200ms)이 끝난 뒤에 잰다.
     await expect.poll(() => panel.evaluate((el) => el.getAnimations().length)).toBe(0);
     expect((await listTable.boundingBox())?.y).toBe(tableTopBefore);
     await expect(panel.getByLabel("행사 이름")).toBeFocused();
-    // 04.6-04(Q1 A · R4): 패널이 열려도 여는 1차는 DOM에 남는다(뒤는 모달이 막는다) — 접근 트리에 둘(여는 1차 + 패널 안 1차).
-    await expect(pmPage.getByRole("button", { name: "QR 생성 신청" })).toHaveCount(2);
+    // 04.6-04(Q1 A · R4): 패널이 열려도 여는 링크는 DOM에 남는다(뒤는 모달이 막는다) — 여는 링크 하나 + 패널 안 1차 버튼 하나.
+    await expect(opener).toHaveCount(1);
+    await expect(pmPage.getByRole("button", { name: "QR 생성 신청" })).toHaveCount(1);
     await expect(panel.getByRole("button", { name: "QR 생성 신청" })).toHaveCount(1);
 
     // ② 막힘 한 번에 하나 — 당첨일 빔 → 어제(지난 날짜) → 오늘(계산 줄)
@@ -246,6 +253,8 @@ test.describe("04.3-10 tracer — QR 생성 신청 → QR 생성(1280)", () => {
     // ③ 신청 → 패널 닫힘 · 새 행 신청됨 그룹 · 포커스 = 그 행 · 토스트
     await panel.getByRole("button", { name: "QR 생성 신청" }).click();
     await expect(panel).toBeHidden();
+    // Q2 A: 닫히면 목록 주소로 돌아오고 목록에 남는다(상세로 가지 않는다).
+    await expect(pmPage).toHaveURL(/\/certs\/events$/);
     const newRow = eventRow(pmPage, eventName);
     await expect(newRow).toBeVisible();
     await expect(newRow.getByRole("link", { name: eventName })).toBeFocused();
@@ -286,6 +295,52 @@ test.describe("04.3-10 tracer — QR 생성 신청 → QR 생성(1280)", () => {
     await recipient.close();
     await pmPage.context().close();
     await mPage.context().close();
+  });
+
+  // 04.6-23 — 「QR 생성 신청」은 `?new=1` URL 옆 패널이다(Q1 A). 직접 URL · 닫기 · 입력 버리기(DR1 A) · 권한 없음(T-04.6-60).
+  test("?new=1 직접 URL — 패널이 열려 있고 Esc는 목록 주소로 · 포커스는 화면 제목 · 바뀐 칸이 있으면 입력 버리기 확인", async ({ browser }) => {
+    const [pmRow] = await db.select({ id: users.id }).from(users).where(eq(users.email, pm.email));
+    await createCertEvent({ name: "E2E 기존 신청", status: "requested", createdBy: pmRow?.id ?? null });
+    const page = await loggedInPage(browser, pm);
+    await page.goto("/certs/events?new=1");
+    const panel = page.getByRole("dialog", { name: "QR 생성 신청" });
+    await expect(panel).toBeVisible();
+    await expect(panel.getByLabel("행사 이름")).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(panel).toBeHidden();
+    await expect(page).toHaveURL(/\/certs\/events$/);
+    await expect(page.getByRole("heading", { name: "확인증 행사", level: 1 })).toBeFocused();
+
+    // 앱 안에서 연 패널을 Esc로 닫으면 포커스는 여는 링크로 돌아온다.
+    const opener = page.getByRole("link", { name: "QR 생성 신청" });
+    await opener.click();
+    await expect(panel).toBeVisible();
+    await expect.poll(() => panel.evaluate((el) => el.getAnimations().length)).toBe(0);
+    await page.keyboard.press("Escape");
+    await expect(panel).toBeHidden();
+    await expect(page).toHaveURL(/\/certs\/events$/);
+    await expect(opener).toBeFocused();
+
+    // DR1 A — 바뀐 칸이 있으면 Esc는 「입력 버리기」 확인을 연다.
+    await opener.click();
+    await expect(panel).toBeVisible();
+    await panel.getByLabel("행사 이름").fill("E2E 버릴 이름");
+    await page.keyboard.press("Escape");
+    const confirm = page.getByRole("dialog", { name: "입력 버리기" });
+    await expect(confirm).toBeVisible();
+    await confirm.getByRole("button", { name: "입력 버리기" }).click();
+    await expect(panel).toBeHidden();
+    await expect(page).toHaveURL(/\/certs\/events$/);
+    await page.context().close();
+  });
+
+  test("신청 권한이 없는 계급은 ?new=1로 와도 패널 없이 목록만 보인다(T-04.6-60)", async ({ browser }) => {
+    const page = await loggedInPage(browser, manager);
+    await page.goto("/certs/events?new=1");
+    await expect(page.getByRole("heading", { name: "확인증 행사", level: 1 })).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "QR 생성 신청" })).toHaveCount(0);
+    await page.context().close();
   });
 });
 
@@ -413,7 +468,17 @@ test.describe("04.3-10 Task 2 — I′3 경품 표(1280)", () => {
       }),
     }));
     expect(heights.delivery.every((lines) => lines <= 1)).toBe(true);
-    expect(heights.row).toBeLessThan(40);
+    // 04.6-07 스킨 A: 한 줄 행 높이는 역할 토큰 `--row-h`(옛 리터럴 < 40 대신 계산된 토큰 값 — 한 줄 행은 토큰 높이를 넘지 않는다).
+    const rowH = await page.evaluate(() => {
+      const probe = document.createElement("div");
+      probe.style.height = "var(--row-h)";
+      document.body.append(probe);
+      const value = probe.getBoundingClientRect().height;
+      probe.remove();
+      return value;
+    });
+    expect(rowH).toBeGreaterThan(0);
+    expect(heights.row).toBeLessThanOrEqual(rowH);
     await context.close();
   });
 
@@ -534,7 +599,7 @@ test.describe("결과 모름 뒤 다시 보내기 — 요청 키(PR #88 Codex)",
     await createCertEvent({ name: "E2E 기존 신청", status: "requested", createdBy: pmId || null });
     const page = await loggedInPage(browser, pm);
     await page.goto("/certs/events");
-    const listPrimary = page.getByRole("button", { name: "QR 생성 신청" });
+    const listPrimary = page.getByRole("link", { name: "QR 생성 신청" });
     await expect(listPrimary).toBeVisible();
     const panel = page.getByRole("dialog", { name: "QR 생성 신청" });
     const panelPrimary = panel.getByRole("button", { name: "QR 생성 신청" });

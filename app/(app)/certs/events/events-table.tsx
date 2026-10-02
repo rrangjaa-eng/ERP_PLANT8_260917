@@ -4,17 +4,19 @@ import Link from "next/link";
 import { Table } from "@/ui/table/Table";
 import type { TableColumn } from "@/ui/table/types";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
+import type { StatusWord } from "@/ui/status-tag/status-map";
+import { Num } from "@/ui/num/Num";
 import type { CertEventListDto } from "@/domain/certs/events";
 import styles from "./events.module.css";
 
 // 04.3-04 Task 3 ② · 04.3-15 · 04.3-10 — I′1 읽기 표(흰 머리글). domain이 신청됨 → 접수 전 → 접수 중 → 닫힘(UD-1 b),
-// 그룹 안 당첨일 내림차순으로 정렬해 준 순서 그대로. `접수 전`은 QR이 있고 당첨일 00:00 KST 전인 파생 표시(--muted). 제출 셀 = 건수 하나(명단이 없어 분모가 없다 — 대조 제외 뺀 수), 신청됨은 `—`.
+// 그룹 안 당첨일 내림차순으로 정렬해 준 순서 그대로. `접수 전`은 QR이 있고 당첨일 00:00 KST 전인 파생 표시(muted — 색은 `status-map.ts`가 낱말로 정한다). 제출 셀 = 건수 하나(명단이 없어 분모가 없다 — 대조 제외 뺀 수), 신청됨은 `—`.
 // 폰(<700)은 칸 접기 — P1 행사 · 제출 · 상태, P2 접힌 줄 `당첨일 · 담당`, 행 전체가 상세 링크(phoneRowLink).
 type Row = Partial<CertEventListDto> & { id: string };
 
 const STATUS_LABEL = { requested: "신청됨", open: "접수 중", closed: "닫힘" } as const;
 
-function statusLabel(row: Row): string {
+function statusLabel(row: Row): StatusWord {
   if (row.status === "open" && row.beforeOpen) return "접수 전";
   return STATUS_LABEL[row.status ?? "open"];
 }
@@ -45,7 +47,9 @@ export function EventsTable({ rows }: { rows: Row[] }) {
           "—"
         ) : (
           <>
-            <span aria-hidden="true" className={styles.nowrap}>{`${row.submittedCount ?? 0}`}</span>
+            <span aria-hidden="true" className={styles.nowrap}>
+              <Num value={row.submittedCount ?? 0} unit="count" />
+            </span>
             <span className="sr-only">{`제출 ${row.submittedCount ?? 0}건`}</span>
           </>
         ),
@@ -55,13 +59,7 @@ export function EventsTable({ rows }: { rows: Row[] }) {
       header: "상태",
       priority: "p1",
       cell: (row) =>
-        row.status ? (
-          <StatusTag kind={row.status === "open" && !row.beforeOpen ? "accent" : "muted"} variant="text">
-            {statusLabel(row)}
-          </StatusTag>
-        ) : (
-          "—"
-        ),
+        row.status ? <StatusTag status={statusLabel(row)} variant="text" /> : "—",
     },
   ];
 

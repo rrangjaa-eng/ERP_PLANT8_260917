@@ -259,7 +259,7 @@ test.describe("내부 화면 폰 폭", () => {
       await createCertEvent({ name: "폰감사 닫힘", status: "closed", createdBy: pmId });
       const page = await loggedInPage(browser, pm, width);
       await page.goto("/certs/events");
-      const primary = page.getByRole("button", { name: "QR 생성 신청" });
+      const primary = page.getByRole("link", { name: "QR 생성 신청" });
       await expect(primary).toBeVisible();
       await expect(page.getByRole("link", { name: long.eventName })).toBeVisible();
       await expectNoOverflow(page, width, `I′1 ${width}`);
@@ -271,6 +271,7 @@ test.describe("내부 화면 폰 폭", () => {
       expect(visibleHeaders, `I′1 ${width} — 보이는 머리글`).toEqual(["행사", "제출", "상태"]);
 
       await primary.click();
+      await expect(page).toHaveURL(/\/certs\/events\?new=1$/);
       const sheet = page.getByRole("dialog", { name: "QR 생성 신청" });
       await expect(sheet).toBeVisible();
       // 04.6-04: 열림 모션(--dur-sheet 200ms)이 끝난 뒤에 잰다.
@@ -297,7 +298,7 @@ test.describe("내부 화면 폰 폭", () => {
     const pmPage = await loggedInPage(browser, pm, 320);
     await createCertEvent({ name: "폰감사 알림 기존", status: "requested", createdBy: pmId });
     await pmPage.goto("/certs/events");
-    await pmPage.getByRole("button", { name: "QR 생성 신청" }).click();
+    await pmPage.getByRole("link", { name: "QR 생성 신청" }).click();
     const sheet = pmPage.getByRole("dialog", { name: "QR 생성 신청" });
     await sheet.getByLabel("행사 이름").fill(eventName);
     await sheet.getByLabel("당첨일").fill(today);

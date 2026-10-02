@@ -51,6 +51,12 @@ describe("SidePanel 소스 계약 — 모든 폭 모달(Q1 A)", () => {
     expect(tsx).toContain("requestClose");
     expect(tsx).not.toContain("router.refresh");
   });
+
+  it("닫기 요청이 이번 닫기만 포커스 복귀를 건너뛸 수 있다 — 성공 뒤 새 결과로 포커스를 옮기는 URL 패널(04.6-23)", () => {
+    expect(tsx).toContain("options?: { returnFocus?: boolean }");
+    expect(tsx).toMatch(/options\?\.returnFocus === false\) skipReturnFocusRef\.current = true/);
+    expect(tsx).toMatch(/!returnFocusRef\.current \|\| skipReturnFocusRef\.current/);
+  });
 });
 
 describe("isPanelCloseKey — Esc로 닫힘(조합 중 · 안쪽 컨트롤이 먼저 쓴 Esc는 아님)", () => {

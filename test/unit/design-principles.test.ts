@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { evaluatePrinciples, type ScreenSnapshot } from "../e2e/design-principles";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import {
+  evaluatePrinciples,
+  isStrict,
+  LEGACY_PRIMARY_SELECTOR,
+  LEGACY_SUBTITLE_SELECTOR,
+  PRIMARY_BUTTON_SELECTOR,
+  type ScreenSnapshot,
+} from "../e2e/design-principles";
 
 // 화면 사용성 원칙(.claude/rules/frontend.md)의 잴 수 있는 부분 — 판정 로직만. 값은 E2E가 실제 화면에서 잰다.
 const clean: ScreenSnapshot = {
@@ -42,5 +51,36 @@ describe("evaluatePrinciples", () => {
     const row = ["13px|underline", "14px|none", "14px|none"];
     expect(evaluatePrinciples({ ...clean, rowActionStyles: [row] }).map((w) => w.rule)).toEqual(["같은 행동은 같은 모양"]);
     expect(evaluatePrinciples({ ...clean, rowActionStyles: [["14px|none", "14px|none"]] })).toEqual([]);
+  });
+});
+
+describe("isStrict", () => {
+  it("값이 없거나 1이면 막는 모드, 0만 경고 모드다", () => {
+    expect(isStrict(undefined)).toBe(true);
+    expect(isStrict("1")).toBe(true);
+    expect(isStrict("0")).toBe(false);
+  });
+});
+
+describe("수집 선택자(04.6-06 · R11)", () => {
+  it("1차 버튼 선택자는 data-ui 훅과 옛 CSS 모듈 선택자의 합집합이다(querySelectorAll 한 번)", () => {
+    const parts = PRIMARY_BUTTON_SELECTOR.split(",").map((p) => p.trim());
+    expect(parts).toEqual(['[data-ui="primary-button"]', LEGACY_PRIMARY_SELECTOR]);
+  });
+
+  it("부제 선택자는 옛 PageHeader 부제 선택자다", () => {
+    expect(LEGACY_SUBTITLE_SELECTOR).toContain("PageHeader-module__");
+    expect(LEGACY_SUBTITLE_SELECTOR).toContain("__subtitle");
+  });
+
+  it("순수 판정 파일은 Playwright를 import하지 않는다(단위 테스트가 읽는다)", () => {
+    const source = readFileSync(resolve(process.cwd(), "test/e2e/design-principles.ts"), "utf8");
+    expect(source).not.toContain("@playwright/test");
+  });
+
+  it("보임 판정이 [inert] 조상과 dialog:modal 밖 요소를 뺀다", () => {
+    const source = readFileSync(resolve(process.cwd(), "test/e2e/design-principles.ts"), "utf8");
+    expect(source).toContain('closest("[inert]")');
+    expect(source).toContain("dialog:modal");
   });
 });

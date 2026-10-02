@@ -218,7 +218,8 @@ function checkFields(
   if (phone === null) fields.push("phone");
   if (input.consent !== true) fields.push("consent");
   const png = Buffer.from(typeof input.signaturePngBase64 === "string" ? input.signaturePngBase64 : "", "base64");
-  if (!inspectSignaturePng(png).ok) fields.push("signature");
+  // 서명 검사(약 1.6MB 풀기 · 잉크 셈)는 싼 칸이 모두 맞을 때만 — 서명 오류는 다른 칸 오류와 함께 오지 않는다(PR #88 /review F7).
+  if (fields.length === 0 && !inspectSignaturePng(png).ok) fields.push("signature");
   return {
     fields,
     name,

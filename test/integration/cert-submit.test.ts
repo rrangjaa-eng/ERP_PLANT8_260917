@@ -23,6 +23,19 @@ import {
   signaturePngWithLine,
 } from "@/test/fixtures/signature-png";
 
+// PR #88 /review F7 — 서명 PNG 검사(약 1.6MB 풀기 · 잉크 셈)가 불렸는지 보려고 실제 함수를 감싼다(동작은 그대로).
+const inspectSpy = vi.hoisted(() => ({ calls: 0 }));
+vi.mock("@/domain/certs/signature-png", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/domain/certs/signature-png")>();
+  return {
+    ...actual,
+    inspectSignaturePng: (...args: Parameters<typeof actual.inspectSignaturePng>) => {
+      inspectSpy.calls++;
+      return actual.inspectSignaturePng(...args);
+    },
+  };
+});
+
 // 04.3-06 Task 1 · 04.3-15 — 제출 완성(서버). 같은 키 재생 · 잠근 뒤 재판정 · 동시 제출 · 업로드 의도 줄(C3) ·
 // 커밋 결과 불명 · 로그 원자성 · 서명 PNG · 칸 검사. 명단 · 증표가 없어져(5909578685) 경품 id로 제출한다.
 // 정상 경로는 cert-intake.test.ts가, 경품 갈래 · 속도 제한 · 누수 스윕은 cert-prize-intake.test.ts가 본다.
@@ -408,6 +421,25 @@ describe("제출 — 서명 PNG · 칸 검사(저장 전 거부)", () => {
     expect(saved.kind).toBe("saved");
     const [row] = await submissionsFor(onsite.eventId);
     expect(row?.address).toBeNull();
+  });
+
+  // PR #88 /review F7 — 싼 칸(이름 · 주민등록번호 · 연락처 · 주소 · 동의)이 틀리면 서명 검사를 건너뛴다. 서명 오류는 다른 칸이
+  // 맞을 때만 알린다(같은 응답에 함께 오던 서명 오류는 다음 제출에서 온다).
+  it("주민등록번호가 틀리면 서명 PNG 검사를 하지 않고 invalid(rrn)만 · 다른 칸이 맞으면 검사해 invalid(signature)", async () => {
+    const { token, prizeId } = await makeEvent();
+    const blank = encodePng(rgbaWithInk([])).toString("base64");
+
+    inspectSpy.calls = 0;
+    expect(
+      await submitCertificate(token, await inputFor(prizeId, { rrnBack7: "9999999", signaturePngBase64: blank }), IP),
+    ).toEqual({ kind: "invalid", fields: ["rrn"] });
+    expect(inspectSpy.calls).toBe(0);
+
+    expect(await submitCertificate(token, await inputFor(prizeId, { signaturePngBase64: blank }), IP)).toEqual({
+      kind: "invalid",
+      fields: ["signature"],
+    });
+    expect(inspectSpy.calls).toBe(1);
   });
 
   it("칸 오류를 받은 키로 고친 값을 다시 보내면 새로 판정해 저장한다", async () => {

@@ -13,36 +13,49 @@ export type ListScreenProps = {
   primaryAction?: { label: string; href: string };
   /** 필터 줄 왼쪽. */
   filters?: ReactNode;
+  /** 필터 줄 아래 합계 면(`--surface-base` 1px 면). */
+  summary?: ReactNode;
+  /**
+   * DR5 A — 등록된 대상이 하나도 없을 때만 넘기는 빈 화면(`ListEmpty` + 등록 행동 하나). 받으면 표 자리에 이것만 그리고 `primaryAction`은 그리지 않는다.
+   * 필터 결과 0건은 빈 목록이 아니다 — 그때는 `children`에 필터 빈 화면을 두고 머리 1차를 남긴다.
+   */
+  empty?: ReactNode;
   /** 표(`Table`)나 필터 빈 화면. */
   children: ReactNode;
+  /** 표 아래 페이지 줄. */
+  pagination?: ReactNode;
   /** `SidePanel` — 열린 동안에도 목록은 그대로 그려진다(뒤는 네이티브 모달이 막는다). */
   panel?: ReactNode;
 };
 
-export function ListScreen({ title, primaryAction, filters, children, panel }: ListScreenProps) {
+export function ListScreen({ title, primaryAction, filters, summary, empty, children, pagination, panel }: ListScreenProps) {
+  // DR5 A — 빈 목록이면 머리 1차는 빈 화면의 버튼 하나로 갈음한다(규칙을 틀 안에 두어 화면마다 조건을 다시 쓰지 않는다).
+  const headAction = empty ? undefined : primaryAction;
   return (
     <div className={styles.screen}>
       {/* tabIndex -1 — 연 요소가 사라진 뒤 포커스를 받을 자리(패널 닫기 복귀). 탭 순서에는 넣지 않는다. */}
       <h1 data-ui="screen-title" tabIndex={-1} className={styles.title}>
         {title}
       </h1>
-      {filters || primaryAction ? (
+      {filters || headAction ? (
         <div className={styles.bar}>
           <div className={styles.filters}>{filters}</div>
-          {primaryAction ? (
+          {headAction ? (
             <Link
-              href={primaryAction.href}
+              href={headAction.href}
               scroll={false}
               data-ui="primary-button"
               className={`${buttonStyles.btn} ${buttonStyles.primary}`}
             >
-              {primaryAction.label}
+              {headAction.label}
               <LinkPending />
             </Link>
           ) : null}
         </div>
       ) : null}
-      {children}
+      {summary ? <div className={styles.summary}>{summary}</div> : null}
+      {empty ?? children}
+      {pagination ? <div className={styles.pagination}>{pagination}</div> : null}
       {panel}
     </div>
   );

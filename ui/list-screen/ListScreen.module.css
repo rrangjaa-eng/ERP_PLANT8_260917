@@ -27,3 +27,17 @@
   gap: var(--s-4);
   min-width: 0;
 }
+
+.summary {
+  margin: var(--s-3) 0 0;
+  padding: var(--s-3) var(--s-4);
+  border: var(--line-w) solid var(--border-surface);
+  border-radius: var(--radius-surface);
+  background: var(--surface-base);
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  margin: var(--s-4) 0 0;
+}

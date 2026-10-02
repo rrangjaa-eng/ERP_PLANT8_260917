@@ -73,18 +73,20 @@ export async function updateCodeItemDescription(
 
 // 보관·복원 둘 다 조건부 UPDATE로 멱등·경합 안전을 확보한다(repositories/roles.ts
 // setRoleArchived와 같은 패턴).
-export async function setCodeItemArchived(viewer: Viewer, id: string, value: boolean): Promise<void> {
-  if (value) {
-    await db
-      .update(codeItems)
-      .set({ archivedAt: new Date(), archivedBy: viewer.id })
-      .where(and(eq(codeItems.id, id), isNull(codeItems.archivedAt)));
-  } else {
-    await db
-      .update(codeItems)
-      .set({ archivedAt: null, archivedBy: null })
-      .where(and(eq(codeItems.id, id), isNotNull(codeItems.archivedAt)));
-  }
+export async function setCodeItemArchived(viewer: Viewer, id: string, value: boolean): Promise<boolean> {
+  // 조건부 갱신이 실제로 바꾼 행이 있으면 참 — 범용 복원이 「이미 복원됨」 · 로그를 이 결과로 정한다(PR #149).
+  const rows = value
+    ? await db
+        .update(codeItems)
+        .set({ archivedAt: new Date(), archivedBy: viewer.id })
+        .where(and(eq(codeItems.id, id), isNull(codeItems.archivedAt)))
+        .returning({ id: codeItems.id })
+    : await db
+        .update(codeItems)
+        .set({ archivedAt: null, archivedBy: null })
+        .where(and(eq(codeItems.id, id), isNotNull(codeItems.archivedAt)))
+        .returning({ id: codeItems.id });
+  return rows.length > 0;
 }
 
 export async function findCodeItemById(viewer: Viewer, id: string): Promise<CodeItemRow | null> {

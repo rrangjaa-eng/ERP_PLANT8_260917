@@ -100,7 +100,8 @@ export async function restore(
   // quick 261002-4jn — 이미 활성인 행(낡은 화면 · 동시 복원의 뒤 사람)은 로그 없이 「이미 복원됨」.
   if (row.archivedAt === null) return { restored: false };
 
-  await entry.setArchived(viewer, id, false);
+  // 동시 복원은 둘 다 위 판정을 지날 수 있다 — 조건부 갱신이 실제로 바꾼 쪽만 「복원됨」 · 로그(PR #149 리뷰).
+  if (!(await entry.setArchived(viewer, id, false))) return { restored: false };
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "restore", entity, entityId: id });

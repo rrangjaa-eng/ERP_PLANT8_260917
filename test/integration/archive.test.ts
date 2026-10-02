@@ -245,6 +245,38 @@ describe("보관함 (ADMN-12, 실제 Postgres)", () => {
     expect(logs.filter((log) => log.entity === "vendor" && log.entityId === vendor.id)).toHaveLength(1);
   });
 
+  // PR #149 리뷰 — 범용 경로는 조건부 갱신이 실제로 바꾼 행이 있는지로 「복원됨」과 로그를 정한다.
+  it("범용 setArchived는 실제로 바꾼 행이 있을 때만 참을 돌려준다", async () => {
+    const { vendor } = await createVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}` });
+    const entry = ARCHIVABLE_TABLES.find((item) => item.entity === "vendor");
+    if (!entry) throw new Error("vendor 항목 없음");
+
+    expect(await entry.setArchived(SYSTEM_VIEWER, vendor.id, true)).toBe(true);
+    expect(await entry.setArchived(SYSTEM_VIEWER, vendor.id, true)).toBe(false);
+    expect(await entry.setArchived(SYSTEM_VIEWER, vendor.id, false)).toBe(true);
+    expect(await entry.setArchived(SYSTEM_VIEWER, vendor.id, false)).toBe(false);
+  });
+
+  it("읽을 땐 보관이었지만 갱신 직전 다른 요청이 복원했으면 { restored: false }이고 로그가 없다", async () => {
+    // 동시 복원의 뒤 요청 — findById는 보관 행을 보지만 조건부 갱신은 바꿀 행이 없다.
+    const raceEntry = {
+      entity: `race-${randomUUID()}`,
+      label: "경합",
+      setArchived: () => Promise.resolve(false),
+      findById: (_viewer: unknown, id: string) => Promise.resolve({ id, archivedAt: new Date() }),
+      listArchived: () => Promise.resolve([]),
+    };
+    ARCHIVABLE_TABLES.push(raceEntry);
+    try {
+      const logged: unknown[] = [];
+      const result = await restore(SYSTEM_VIEWER, raceEntry.entity, randomUUID(), { recordAction: (_viewer, input) => { logged.push(input); return Promise.resolve(); } });
+      expect(result).toEqual({ restored: false });
+      expect(logged).toHaveLength(0);
+    } finally {
+      ARCHIVABLE_TABLES.splice(ARCHIVABLE_TABLES.indexOf(raceEntry), 1);
+    }
+  });
+
   it("공휴일: 두 번째 복원은 { restored: false }, 동시 복원은 정확히 하나만 참", async () => {
     const { userId } = await createAccount(SYSTEM_VIEWER, { email: uniqueEmail("archive-holiday-twice"), name: "공휴일 관리자", roleId: SYSADMIN_ROLE_ID });
     const admin = { id: userId, roleId: SYSADMIN_ROLE_ID };

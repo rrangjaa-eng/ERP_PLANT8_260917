@@ -1191,8 +1191,20 @@ async function bodyNumberLook(table: Locator) {
   });
 }
 
+// 토큰 값을 브라우저 계산 색 문자열(rgb(...))로 바꾼다(people.spec.ts tokenAsColor와 같은 꼴 — 04.6-08 M5).
+function tokenAsColor(page: Page, name: string): Promise<string> {
+  return page.evaluate((token) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${token})`;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, name);
+}
+
 test.describe("PR #104 후속 — 비활성 1차 kbd (DR-104-02) · 「번호」 본문 칸 모양 (DR-104-04)", () => {
-  test("DR-104-02 — 편집 없는 비활성 「일괄 저장」 kbd는 opacity 1 · --line 테두리 · --faint 글자, 면 위 대비 4.5 이상 · 활성 kbd는 그대로(0.8)", async ({ page }) => {
+  test("DR-104-02 — 편집 없는 비활성 「일괄 저장」 kbd는 opacity 1 · --border-strong 테두리 · --text-faint 글자, 면 위 대비 4.5 이상 · 활성 kbd는 그대로(0.8)", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
     const project = await makeProject({ teamId: team.id, pmUserId: pm.userId, lines: [{ itemName: "kbd 줄", unitPrice: 1_000_000, execution: 600_000 }] });
@@ -1205,8 +1217,8 @@ test.describe("PR #104 후속 — 비활성 1차 kbd (DR-104-02) · 「번호」
       await expect(save).toHaveAttribute("aria-disabled", "true");
       const look = await saveKbdLook(save);
       expect.soft(look.opacity, `비활성 kbd opacity @${width}`).toBe("1");
-      expect.soft(look.borderTopColor, `비활성 kbd 테두리 @${width}`).toBe("rgb(207, 219, 215)");
-      expect.soft(look.color, `비활성 kbd 글자 @${width}`).toBe("rgb(95, 110, 106)");
+      expect.soft(look.borderTopColor, `비활성 kbd 테두리 @${width}`).toBe(await tokenAsColor(page, "--border-strong"));
+      expect.soft(look.color, `비활성 kbd 글자 @${width}`).toBe(await tokenAsColor(page, "--text-faint"));
       const ratio = contrastOnSurface(parseRgb(look.color), Number(look.opacity), parseRgb(look.background));
       expect.soft(ratio, `비활성 kbd 대비 @${width}`).toBeGreaterThanOrEqual(4.5);
     }

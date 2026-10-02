@@ -1157,7 +1157,7 @@ export async function restoreQuoteLine(
   viewer: Viewer,
   id: string,
   deps?: Partial<Pick<QuoteLineWriteDeps, "can" | "now" | "afterLock" | "recordAction">>,
-): Promise<void> {
+): Promise<{ restored: boolean }> {
   const canFn = deps?.can ?? defaultCan;
   // 04-13(OV-2 · D-83) — 입구는 저장과 같은 두 권한 중 하나. 보관된 줄의 종류로 게이트가 가른다(조정 줄은 조정 권한만).
   const [canWrite, canAdjust] = await Promise.all([canFn(viewer, PROJECTS_MENU, "write"), canFn(viewer, ADJUSTMENT_MENU, "write")]);
@@ -1169,12 +1169,13 @@ export async function restoreQuoteLine(
   // 04-26(A-19 · ENG-D3 ①) — 상한 값은 트랜잭션 전에 읽는다. 복원도 줄 하나를 더하는 것이라 같은 상한을 지난다.
   const lineCap = await getSettingValue(QUOTE_LINE_MAX_PER_REVISION);
 
-  await withTransaction(async (tx) => {
+  return withTransaction(async (tx) => {
     const projectRow = await loadProjectForGate(viewer, revision.projectId, { now: deps?.now, tx, afterLock: deps?.afterLock }, { recordAction });
     if (!projectRow) throw new RevisionNotFoundError("연결된 프로젝트 찾을 수 없음");
     const current = await repoFindQuoteLineById(viewer, id, tx);
     if (!current || current.revisionId !== line.revisionId) throw new UserFacingError(MEMBERSHIP_MISMATCH);
-    if (current.archivedAt === null) return;
+    // quick 261002-4jn — 이미 활성(낡은 화면 · 동시 복원의 뒤 사람)은 로그 없이 「이미 복원됨」.
+    if (current.archivedAt === null) return { restored: false };
 
     const firstLinked = (await linkedDocumentsByLine(viewer, current.revisionId, tx)).get(id)?.[0];
     // 04-40(OV-2 · B-01) — 잠금 뒤 같은 tx로 읽은 현재 차수: 이전 차수 줄은 되살리지 않고, 승인 차수는 합계를 바꾸는 복원을 막는다.
@@ -1197,6 +1198,7 @@ export async function restoreQuoteLine(
 
     if (!(await repoRestoreQuoteLineRow(viewer, id, tx))) throw new UserFacingError(MEMBERSHIP_MISMATCH);
     await recordAction(viewer, { actionType: "restore", entity: QUOTE_LINE_ENTITY, entityId: id }, { tx });
+    return { restored: true };
   });
 }
 

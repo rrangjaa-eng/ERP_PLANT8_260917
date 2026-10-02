@@ -73,34 +73,39 @@ export async function archive(
 
 // 04-12(A-19 · OV-2) — 도메인 규칙이 있는 엔티티의 복원은 도메인 함수에 통째로 맡긴다(잠금·게이트·보관 해제·로그를
 // 한 트랜잭션에서). 범용 setArchived 경로는 이 표에 없는 엔티티만 탄다(리저브는 04-07 · 그룹 B가 더한다).
-const DOMAIN_RESTORERS: Partial<Record<string, (viewer: Viewer, id: string, deps?: Partial<ArchiveDeps>) => Promise<void>>> = {
+const DOMAIN_RESTORERS: Partial<Record<string, (viewer: Viewer, id: string, deps?: Partial<ArchiveDeps>) => Promise<RestoreResult>>> = {
   quote_line: (viewer, id, deps) => restoreQuoteLine(viewer, id, { recordAction: deps?.recordAction }),
   // 04-07(B-04 · T5) — 리저브 복원은 클라이언트 잠금 · pnl 쓰기 + reserve.amount · 날짜 마감 잔액 판정을 한 트랜잭션에서.
   reserve_entry: (viewer, id, deps) => restoreReserve(viewer, id, { recordAction: deps?.recordAction }),
   // quick 261001-hfi(ADMN-12) — 공휴일 복원은 달력 잠금 · admin.holidays 쓰기 · 소급 금지 · 재계산 · 로그를 한 트랜잭션에서.
-  holiday: async (viewer, id, deps) => {
-    await restoreHoliday(viewer, id, { recordAction: deps?.recordAction });
-  },
+  holiday: (viewer, id, deps) => restoreHoliday(viewer, id, { recordAction: deps?.recordAction }),
 };
+
+export type RestoreResult = { restored: boolean };
 
 export async function restore(
   viewer: Viewer,
   entity: string,
   id: string,
   deps?: Partial<ArchiveDeps>,
-): Promise<void> {
+): Promise<RestoreResult> {
   await assertCanWrite(viewer, deps);
+  // 도메인 복원기는 자기 권한 · 형식 판정 뒤 잠금 안에서 「이미 복원됨」({ restored: false })을 가린다(quick 261002-4jn).
   const domainRestorer = DOMAIN_RESTORERS[entity];
   if (domainRestorer) return domainRestorer(viewer, id, deps);
   const entry = findEntry(entity);
 
   const row = await entry.findById(viewer, id);
   if (!row) throw new ArchivableRowNotFoundError("대상 찾을 수 없음");
+  // quick 261002-4jn — 이미 활성인 행(낡은 화면 · 동시 복원의 뒤 사람)은 로그 없이 「이미 복원됨」.
+  if (row.archivedAt === null) return { restored: false };
 
-  await entry.setArchived(viewer, id, false);
+  // 동시 복원은 둘 다 위 판정을 지날 수 있다 — 조건부 갱신이 실제로 바꾼 쪽만 「복원됨」 · 로그(PR #149 리뷰).
+  if (!(await entry.setArchived(viewer, id, false))) return { restored: false };
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "restore", entity, entityId: id });
+  return { restored: true };
 }
 
 // 03-07: 보관함 화면의 domain 진입점 — 새 정보 항목("archive.value")으로
@@ -160,10 +165,10 @@ export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps
   const rows = (await listFn(viewer)).filter((row) => row.entity !== "reserve_entry" || showReserves);
 
   // 독립 검토(#138) — 복원할 수 없는 공휴일 행은 「복원」을 내놓지 않는다(§7). 공휴일 복원은 공휴일 쓰기 권한과
-  // 소급 금지(오늘 이후 날짜)를 요구한다(restoreHoliday) — 같은 판정을 목록에서 미리 한다.
+  // 소급 금지(오늘 이후 날짜) · 그 날짜에 다른 공휴일(대체일 제외) 없음을 요구한다(restoreHoliday) — 같은 판정을 목록에서 미리 한다.
   const holidayWritable = rows.some((row) => row.entity === "holiday") && (await canFn(viewer, HOLIDAYS_MENU, "write"));
   const today = toKstDate(deps?.now ?? new Date());
-  const isRestorable = (row: ArchivedItem) => row.entity !== "holiday" || (holidayWritable && row.date !== undefined && row.date > today);
+  const isRestorable = (row: ArchivedItem) => row.entity !== "holiday" || (holidayWritable && row.date !== undefined && row.date > today && !row.dateTaken);
 
   const findUserById = deps?.findUserById ?? defaultFindUserById;
   const archivedByIds = [...new Set(rows.map((row) => row.archivedBy).filter((id): id is string => id !== null))];

@@ -176,18 +176,20 @@ export async function restoreQuoteLineRow(viewer: Viewer, id: string, tx: DbOrTx
 }
 
 // 보관함 등록(repositories/archive.ts)의 범용 보관·해제 — 다른 표와 같은 조건부 UPDATE(멱등).
-export async function setQuoteLineArchived(viewer: Viewer, id: string, value: boolean): Promise<void> {
-  if (value) {
-    await db
-      .update(quoteLines)
-      .set({ archivedAt: new Date(), archivedBy: viewer.id })
-      .where(and(eq(quoteLines.id, id), isNull(quoteLines.archivedAt)));
-  } else {
-    await db
-      .update(quoteLines)
-      .set({ archivedAt: null, archivedBy: null })
-      .where(and(eq(quoteLines.id, id), isNotNull(quoteLines.archivedAt)));
-  }
+export async function setQuoteLineArchived(viewer: Viewer, id: string, value: boolean): Promise<boolean> {
+  // 조건부 갱신이 실제로 바꾼 행이 있으면 참 — 범용 복원이 「이미 복원됨」 · 로그를 이 결과로 정한다(PR #149).
+  const rows = value
+    ? await db
+        .update(quoteLines)
+        .set({ archivedAt: new Date(), archivedBy: viewer.id })
+        .where(and(eq(quoteLines.id, id), isNull(quoteLines.archivedAt)))
+        .returning({ id: quoteLines.id })
+    : await db
+        .update(quoteLines)
+        .set({ archivedAt: null, archivedBy: null })
+        .where(and(eq(quoteLines.id, id), isNotNull(quoteLines.archivedAt)))
+        .returning({ id: quoteLines.id });
+  return rows.length > 0;
 }
 
 // 04-12(A-03) — 순서는 셀 갱신이 쓰지 않는다(기존 줄의 sort_order는 그대로).

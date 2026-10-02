@@ -858,8 +858,11 @@ describe("domain/reserves — 권한 · 노출 · 보관/복원 · 페이지 · 
     expect(await caught(restore(noPnl, "reserve_entry", small.id))).toBeInstanceOf(ForbiddenError);
 
     await saveReserves(finance, { rows: [newRow(client.id, "2026-09-02", "deposit", 500_000)] });
-    await restore(SYSTEM_VIEWER, "reserve_entry", small.id);
+    expect(await restore(SYSTEM_VIEWER, "reserve_entry", small.id)).toEqual({ restored: true });
     expect((await storedRow(small.id))?.archivedAt).toBeNull();
+    expect((await reserveLogs("restore")).map((row) => row.entityId)).toEqual([small.id]);
+    // quick 261002-4jn — 이미 활성인 줄은 잠금 안 판정으로 「이미 복원됨」, 로그 없음.
+    expect(await restore(SYSTEM_VIEWER, "reserve_entry", small.id)).toEqual({ restored: false });
     expect((await reserveLogs("restore")).map((row) => row.entityId)).toEqual([small.id]);
   });
 

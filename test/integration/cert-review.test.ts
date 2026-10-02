@@ -110,6 +110,18 @@ describe("getSubmissionForReview — 투영 · 404", () => {
     expect(Object.keys(projected).sort()).toEqual(CERT_SUBMISSION_REVIEW_DTO_SPEC.fields.map((f) => f.key).sort());
   });
 
+  // PR #88 /review F4 — 전체 보기도 I4 보기 · 인쇄 · 정정 · 제외처럼 cert_submission.value를 요구한다.
+  it("cert.rrn_unmasked는 켜고 cert_submission.value를 끈 viewer → revealRrn · recordRrnReopen denied · 복호화 0번 · mask_reveal 0줄", async () => {
+    const seeded = await seedSubmittedCert();
+    const viewer = await makeReviewer({ view: true, write: true, value: false, unmasked: true });
+    const spy = decryptSpy();
+
+    expect(await revealRrn(viewer, seeded.submissionId, { ip: null }, { decrypt: spy.fn })).toEqual({ kind: "denied" });
+    expect(await recordRrnReopen(viewer, seeded.submissionId, { ip: null })).toEqual({ kind: "denied" });
+    expect(spy.calls).toBe(0);
+    expect(await countLogs("mask_reveal", seeded.submissionId)).toBe(0);
+  });
+
   it("메뉴 보기 없음 · 파기됨 · 없는 id → notFound", async () => {
     const seeded = await seedSubmittedCert();
     const noView = await makeReviewer({ view: false, write: true, value: true, unmasked: true });

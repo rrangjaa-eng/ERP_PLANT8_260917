@@ -100,9 +100,10 @@ async function canWriteSubmissions(viewer: Viewer): Promise<boolean> {
   return visible(viewer, VALUE_ITEM);
 }
 
-// 결정 ⑧ — 메뉴 보기와 정보 항목을 함께 본다(둘은 서로 독립, D-35).
+// 결정 ⑧ — 메뉴 보기와 정보 항목을 함께 본다(둘은 서로 독립, D-35). I4를 볼 수 없는(cert_submission.value 꺼짐)
+// viewer는 전체 보기도 못 한다 — 보기 · 인쇄 · 정정 · 제외와 같은 값 항목 판정(PR #88 /review F4).
 async function canRevealRrn(viewer: Viewer): Promise<boolean> {
-  return (await canViewSubmissions(viewer)) && (await visible(viewer, UNMASKED_ITEM));
+  return (await canViewSubmissions(viewer)) && (await visible(viewer, VALUE_ITEM)) && (await visible(viewer, UNMASKED_ITEM));
 }
 
 function isUuid(id: string): boolean {

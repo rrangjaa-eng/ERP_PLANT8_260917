@@ -9,7 +9,8 @@
 #   record-skill   PostToolUse(Skill)       — 호출한 스킬 이름을 기록(GSD 페이즈 스킬의 페이즈 인자는 세션 페이즈로)
 #   record-prompt  UserPromptSubmit         — /gsd-… 같은 슬래시 명령을 기록(페이즈 인자도 같다)
 #   agent          PreToolUse(Agent)        — gsd-* 에이전트는 맞는 /gsd-* 스킬을 부른 뒤에만,
-#                                            gsd-executor는 페이즈 계획 게이트(CEO·엔지·UI면 디자인 리뷰) 기록 뒤에만.
+#                                            페이즈 실행(/gsd-execute-phase·/gsd-autonomous)의 gsd-executor는 페이즈 계획
+#                                            게이트(CEO·엔지·UI면 디자인 리뷰) 기록 뒤에만(quick 실행자는 제외, 2026-10-02).
 #                                            세션당 실행 횟수·웨이브 제한(D-04)은 없앴다(사용자 결정 2026-10-01 —
 #                                            세션은 독립 검토 경계에서만 끊는다)
 #   bash           PreToolUse(Bash)         — 모든 커밋(문서 포함)은 verification-before-completion 뒤에만,
@@ -128,7 +129,8 @@ case "$event" in
       gsd-debugger|gsd-debug-session-manager) need="gsd-debug" ;;
       *) need="gsd-[a-z0-9-]+" ;;
     esac
-    if [ "$sub" = "gsd-executor" ]; then
+    # 페이즈 계획 게이트는 페이즈 실행에만 — quick(/gsd-quick·/gsd-quick-batch) 실행자는 페이즈 계획이 없다(2026-10-02)
+    if [ "$sub" = "gsd-executor" ] && has_skill "$session_skills" "gsd-execute-phase|gsd-autonomous"; then
       missing=""
       # 소수점 페이즈(04.1 …)는 /plan-ceo-review 생략(사용자 결정 2026-09-24 22:04 KST)
       [[ "$phase" =~ ^[0-9]+\.0*[1-9][0-9]*$ ]] || gate_has plan-ceo-review || missing="$missing /plan-ceo-review"

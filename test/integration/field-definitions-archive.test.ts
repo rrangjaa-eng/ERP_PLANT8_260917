@@ -16,6 +16,7 @@ import {
 import {
   createFieldDefinition,
   DuplicateFieldNameError,
+  FieldDefinitionArchivedError,
   FieldDefinitionConflictError,
   updateFieldDefinition,
 } from "@/domain/custom-fields/admin";
@@ -154,6 +155,12 @@ describe("칸 보관 · 복원 권한 (04.5-04)", () => {
     const again = await readRow(field.id);
     expect(again.version).toBe(2);
     expect(again.archivedAt).toEqual(archived.archivedAt);
+    // 다시 보관은 바뀐 행이 없어 로그도 없다(복원의 「이미 복원됨」과 같은 꼴 — 04 독립 검토).
+    expect(await countLogs(field.id, "archive")).toBe(1);
+    // 보관된 칸은 수정 폼 저장이 막힌다.
+    await expect(
+      updateFieldDefinition(admin, { id: field.id, version: 2, name: "권한 칸 이", required: false, sortOrder: 1 }),
+    ).rejects.toBeInstanceOf(FieldDefinitionArchivedError);
 
     expect(await restore(admin, ENTITY, field.id)).toEqual({ restored: true });
     const restored = await readRow(field.id);

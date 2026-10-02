@@ -77,7 +77,8 @@ export async function archive(
     throw new ProtectedRowError("보호된 항목은 보관할 수 없음");
   }
 
-  await entry.setArchived(viewer, id, true);
+  // 04.5-07: 이미 보관된 행(다시 보관 · 동시 보관의 뒤 사람)은 조건부 갱신이 바꾼 행이 없다 — 로그 없이 돌아온다(복원과 같은 꼴).
+  if (!(await entry.setArchived(viewer, id, true))) return;
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "archive", entity, entityId: id });

@@ -347,6 +347,24 @@ describe("필수 판정 · 보관 선택지 (UI-SPEC 화면 3)", () => {
     expect((error as CustomFieldsInvalidError).fieldErrors).toEqual({ [d]: ARCHIVED_OPTION_MESSAGE });
     expect((await stored(vendor.id)).customFields).toEqual({ [d]: "구형" });
   });
+
+  it("활성 · 보관 어디에도 없는 옛 저장값(0023 이전 삭제)은 이름만 고친 수정 저장을 막지 않고, 다른 거래처에는 고를 수 없다", async () => {
+    const d = await addField({ type: "select", options: ["상", "옛값"] });
+    const admin = await viewerOf(SYSADMIN_ROLE_ID);
+    const vendor = await seedVendor({ [d]: "옛값" });
+    const other = await seedVendor({ [d]: "상" });
+    await db.update(fieldDefinitions).set({ options: ["상"], archivedOptions: [] }).where(eq(fieldDefinitions.key, d));
+
+    const renamed = { id: vendor.id, name: `${vendor.name}-새이름` };
+    await formEdit(admin, renamed);
+    const row = await db.select({ name: vendors.name }).from(vendors).where(eq(vendors.id, vendor.id));
+    expect(row[0]?.name).toBe(renamed.name);
+    expect((await stored(vendor.id)).customFields).toEqual({ [d]: "옛값" });
+
+    const error = await formEdit(admin, other, { [d]: "옛값" }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(CustomFieldsInvalidError);
+    expect((await stored(other.id)).customFields).toEqual({ [d]: "상" });
+  });
 });
 
 describe("한 문 조회 readVendorFieldAccess (T-04.5-44)", () => {

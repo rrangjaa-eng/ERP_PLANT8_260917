@@ -39,7 +39,10 @@ function failingAppend(): RecordActionDeps["appendActionLog"] {
 }
 
 function expectNoPersonalValues(detail: unknown): void {
-  const text = JSON.stringify(detail);
+  const text = JSON.stringify(detail).replace(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+    "<uuid>",
+  );
   expect(text).not.toContain(SAMPLE.name);
   expect(text).not.toContain(SAMPLE.phone.replace(/-/g, ""));
   expect(text).not.toContain("4821");

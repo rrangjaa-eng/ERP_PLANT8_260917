@@ -167,6 +167,14 @@ describe("docs/CERT-PURGE.md", () => {
     expect(readDoc("OPERATIONS.md")).toContain("CERT-PURGE.md");
   });
 
+  // PR #88 /review F8 — 새 DB는 확인증 정보 항목 셋이 모든 계급에 꺼져 있다(E3-13). 운영 시작 때 켤 항목 · 권한을 적는다.
+  it.each(["cert_prize.value", "cert_submission.value", "cert.rrn_unmasked", "certs.qr", "정보 노출표"])(
+    "운영 시작 절에 '%s'가 있다",
+    (token) => {
+      expect(content).toContain(token);
+    },
+  );
+
   // 04.3-14 반영 — 접속기록 월 1회 점검 절차(사용자 결정 5936195107 · 안전성 확보조치 기준 제8조②). 정리 제외는 5936870579.
   it.each([
     "접속기록 월 1회 점검",

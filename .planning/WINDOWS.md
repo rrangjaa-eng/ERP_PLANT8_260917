@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 19
+open_count: 20
 waived_count: 1
 fixed_count: 20
-total_count: 40
-last_updated: 2026-10-02T13:39:45.912Z
+total_count: 41
+last_updated: 2026-10-02T18:23:03.602Z
 ---
 
 # Broken Windows Ledger
@@ -55,6 +55,7 @@ last_updated: 2026-10-02T13:39:45.912Z
 | 38 | 04.3 | unrun-verify | app/c/[token]/intake-flow.tsx |  | 04.3-15 Task 3 ③ 독립 DOM 감사(E′2 · E′4 · E5 폭 320 · 375 · 390 · 480, I′1 1280 · 1024 · 375, I′3 머리) — 오케스트레이터가 별도 에이전트로 실행 | fixed |  | 2026-10-01T03:21:32.434Z | 2026-10-01T06:50:48.616Z |
 | 39 | 04.5 | stub | app/(app)/admin/field-definitions/field-definition-form.tsx |  | 등록 폼이 서버 오류·칸 오류·막힘 이유를 아직 보이지 않음(결과 줄·칸 오류·이유 자리·제출 중 잠금·정렬 기본값은 04.5-08 E2 행) | fixed |  | 2026-10-02T08:45:12.785Z | 2026-10-02T09:21:08.231Z |
 | 40 | 04.5 | deviation | app/(app)/admin/holidays/holiday-form.tsx | 37 | 칸 이름 구분자 「, 」(SYSTEM §7-15 · DECISIONS 2026-09-25 U2) 미이전 — 공휴일 폼과 app/(app)/certs/events/request-rules.ts:26이 아직 「 · 」로 칸 이름을 잇는다(04.5-09가 SYSTEM 예시만 고침) | fixed |  | 2026-10-02T09:44:02.256Z | 2026-10-02T13:39:45.912Z |
+| 41 | 04.6 | unrun-verify | test/e2e/side-panel.spec.ts |  | 04.6-04 @wave-merge 높이 둘(PC 입력 40 · 행동 줄 40 / 폰 입력 40 · 행동 줄 44)은 04.6-07·08이 --field-h를 읽어야 초록 — 합본 웨이브 뒤 실행 | open |  | 2026-10-02T18:23:03.602Z |  |
 
 ````json
 [
@@ -576,6 +577,19 @@ last_updated: 2026-10-02T13:39:45.912Z
     "reason": "",
     "recorded_at": "2026-10-02T09:44:02.256Z",
     "resolved_at": "2026-10-02T13:39:45.912Z",
+    "milestone": null
+  },
+  {
+    "id": 41,
+    "kind": "unrun-verify",
+    "phase": "04.6",
+    "file": "test/e2e/side-panel.spec.ts",
+    "line": null,
+    "description": "04.6-04 @wave-merge 높이 둘(PC 입력 40 · 행동 줄 40 / 폰 입력 40 · 행동 줄 44)은 04.6-07·08이 --field-h를 읽어야 초록 — 합본 웨이브 뒤 실행",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-02T18:23:03.602Z",
+    "resolved_at": null,
     "milestone": null
   }
 ]

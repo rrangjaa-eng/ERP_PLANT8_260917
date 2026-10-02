@@ -399,7 +399,7 @@ Plans:
 12. 글자·바탕 대비 4.5:1 미만(큰 글자 3:1)을 자동 검사가 막는다
 13. 시스템 변경은 `docs/design/DECISIONS.md` 기록 → `docs/design/SYSTEM.md` 수정 순서로 한다(`.claude/rules/frontend.md`): radius 0 · 그림자 없음 · 2px 진한 선 결정 뒤집기, D-39 폼 배치 → 옆 패널, 고른 완화 후보
 
-**Plans:** 2/32 plans executed
+**Plans:** 3/32 plans executed
 
 Plans:
 **Wave 1**
@@ -410,7 +410,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 04.6-04-PLAN.md — ② UQ-8·R9·DR1·DR5 확인 → 트레이서: 거래처 옆 패널(SidePanel·PanelForm·ListScreen·Form layout)
+- [x] 04.6-04-PLAN.md — ② UQ-8·R9·DR1·DR5 확인 → 트레이서: 거래처 옆 패널(SidePanel·PanelForm·ListScreen·Form layout)
 - [ ] 04.6-05-PLAN.md — ② 공용 표현 컴포넌트(Num·RowActions·TableSkeleton·StaticTable·status-map·ListEmpty)
 - [ ] 04.6-06-PLAN.md — ② DetailScreen · /dev/components 뼈대(로그인·운영 404) · 원칙 점검 도구(isStrict·data-ui·모달 인지)
 - [ ] 04.6-07-PLAN.md — ② 스킨: 표·입력·확인 창·배지 + 역할 간격 값

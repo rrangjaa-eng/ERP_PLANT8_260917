@@ -24,6 +24,7 @@ const ENTITY_MENUS: Record<string, string> = {
   user: "admin.people",
   corp_card: "admin.corp-cards",
   vendor: "admin.vendors",
+  holiday: "admin.holidays",
   // Phase 4(04-01): 프로젝트·견적 줄은 관리자 메뉴가 아니라 업무 메뉴
   // "projects" 하나를 공유한다(견적 줄은 프로젝트에 종속된 문서라 별도
   // 메뉴가 없다).

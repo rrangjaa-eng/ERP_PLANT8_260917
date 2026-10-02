@@ -5,6 +5,7 @@
 -- 두 파일의 손 편집(이 머리 · 끝의 지연 UNIQUE 다시 걸기)을 옮겨 적었다.
 -- origin/main(0018_reserve_entries, #85) 머지 뒤 0018_cert_intake를 지우고 다시 생성해 0019로 옮겼다(본문 동일).
 -- origin/main(0019_restore_rehearsal_login_status #91 · 0020_hot_maestro #90) 머지 뒤 0019_cert_intake를 지우고 다시 생성해 0021로 옮겼다(본문 동일).
+-- origin/main(0021_holidays_archive #137) 머지 뒤 0021_cert_intake를 지우고 다시 생성해 0022로 옮겼다(본문 동일).
 -- 04.3-15 — 명단 폐지 · 경품 목록(5909578685)으로 다시 생성했다: 당첨자 표와 그 지연 UNIQUE 절이 없어지고 `cert_prizes` · 제출 경품 칸 · 행사 QR 칸이 생겼다.
 SET LOCAL lock_timeout = '1s';
 SET LOCAL statement_timeout = '5s';

@@ -1,6 +1,6 @@
 {
-  "id": "2ff7f769-b890-4748-9c10-ef2182c4a675",
-  "prevId": "33aee49f-f339-4ec3-a0c9-624dbd12b1d3",
+  "id": "a941e78c-d2d1-4112-95fb-939e82527c52",
+  "prevId": "2ff7f769-b890-4748-9c10-ef2182c4a675",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -978,6 +978,630 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.cert_events": {
+      "name": "cert_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "won_on": {
+          "name": "won_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_encrypted": {
+          "name": "token_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "qr_created_at": {
+          "name": "qr_created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "qr_created_by": {
+          "name": "qr_created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "qr_request_id": {
+          "name": "qr_request_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "closed_at": {
+          "name": "closed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "closed_reason": {
+          "name": "closed_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "closed_by": {
+          "name": "closed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contact_phone": {
+          "name": "contact_phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expense_document_id": {
+          "name": "expense_document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "create_request_id": {
+          "name": "create_request_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "cert_events_qr_created_by_users_id_fk": {
+          "name": "cert_events_qr_created_by_users_id_fk",
+          "tableFrom": "cert_events",
+          "tableTo": "users",
+          "columnsFrom": [
+            "qr_created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "cert_events_closed_by_users_id_fk": {
+          "name": "cert_events_closed_by_users_id_fk",
+          "tableFrom": "cert_events",
+          "tableTo": "users",
+          "columnsFrom": [
+            "closed_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "cert_events_created_by_users_id_fk": {
+          "name": "cert_events_created_by_users_id_fk",
+          "tableFrom": "cert_events",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "cert_events_token_hash_unique": {
+          "name": "cert_events_token_hash_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "token_hash"
+          ]
+        },
+        "cert_events_create_request_id_unique": {
+          "name": "cert_events_create_request_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "create_request_id"
+          ]
+        },
+        "cert_events_qr_request_id_unique": {
+          "name": "cert_events_qr_request_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "qr_request_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "cert_events_closed_reason_check": {
+          "name": "cert_events_closed_reason_check",
+          "value": "\"cert_events\".\"closed_reason\" is null or \"cert_events\".\"closed_reason\" = 'manual'"
+        },
+        "cert_events_qr_state_check": {
+          "name": "cert_events_qr_state_check",
+          "value": "((\"cert_events\".\"token_hash\" is null and \"cert_events\".\"token_encrypted\" is null and \"cert_events\".\"qr_created_at\" is null) or (\"cert_events\".\"token_hash\" is not null and \"cert_events\".\"token_encrypted\" is not null and \"cert_events\".\"qr_created_at\" is not null)) and (\"cert_events\".\"expires_at\" is null or \"cert_events\".\"token_hash\" is not null)"
+        },
+        "cert_events_closed_after_qr_check": {
+          "name": "cert_events_closed_after_qr_check",
+          "value": "\"cert_events\".\"closed_at\" is null or \"cert_events\".\"token_hash\" is not null"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.cert_prizes": {
+      "name": "cert_prizes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unit_value_krw": {
+          "name": "unit_value_krw",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "delivery": {
+          "name": "delivery",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "winner_count": {
+          "name": "winner_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "expense_line_id": {
+          "name": "expense_line_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "cert_prizes_event_id_idx": {
+          "name": "cert_prizes_event_id_idx",
+          "columns": [
+            {
+              "expression": "event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "cert_prizes_event_id_cert_events_id_fk": {
+          "name": "cert_prizes_event_id_cert_events_id_fk",
+          "tableFrom": "cert_prizes",
+          "tableTo": "cert_events",
+          "columnsFrom": [
+            "event_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "cert_prizes_updated_by_users_id_fk": {
+          "name": "cert_prizes_updated_by_users_id_fk",
+          "tableFrom": "cert_prizes",
+          "tableTo": "users",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "cert_prizes_unit_value_krw_check": {
+          "name": "cert_prizes_unit_value_krw_check",
+          "value": "\"cert_prizes\".\"unit_value_krw\" >= 1"
+        },
+        "cert_prizes_delivery_check": {
+          "name": "cert_prizes_delivery_check",
+          "value": "\"cert_prizes\".\"delivery\" in ('onsite','parcel')"
+        },
+        "cert_prizes_winner_count_check": {
+          "name": "cert_prizes_winner_count_check",
+          "value": "\"cert_prizes\".\"winner_count\" >= 1"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.cert_signature_uploads": {
+      "name": "cert_signature_uploads",
+      "schema": "",
+      "columns": {
+        "object_key": {
+          "name": "object_key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.cert_submissions": {
+      "name": "cert_submissions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prize_id": {
+          "name": "prize_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "cert_no": {
+          "name": "cert_no",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rrn_encrypted": {
+          "name": "rrn_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rrn_masked": {
+          "name": "rrn_masked",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "address": {
+          "name": "address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "consent_at": {
+          "name": "consent_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "consent_version": {
+          "name": "consent_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "retention_years": {
+          "name": "retention_years",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "signature_key": {
+          "name": "signature_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "idempotency_key_hash": {
+          "name": "idempotency_key_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "submit_ip_hash": {
+          "name": "submit_ip_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "excluded_at": {
+          "name": "excluded_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "excluded_by": {
+          "name": "excluded_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "submitted_at": {
+          "name": "submitted_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purged_at": {
+          "name": "purged_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "cert_submissions_prize_id_idx": {
+          "name": "cert_submissions_prize_id_idx",
+          "columns": [
+            {
+              "expression": "prize_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "cert_submissions_event_id_cert_events_id_fk": {
+          "name": "cert_submissions_event_id_cert_events_id_fk",
+          "tableFrom": "cert_submissions",
+          "tableTo": "cert_events",
+          "columnsFrom": [
+            "event_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "cert_submissions_prize_id_cert_prizes_id_fk": {
+          "name": "cert_submissions_prize_id_cert_prizes_id_fk",
+          "tableFrom": "cert_submissions",
+          "tableTo": "cert_prizes",
+          "columnsFrom": [
+            "prize_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "cert_submissions_excluded_by_users_id_fk": {
+          "name": "cert_submissions_excluded_by_users_id_fk",
+          "tableFrom": "cert_submissions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "excluded_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "cert_submissions_updated_by_users_id_fk": {
+          "name": "cert_submissions_updated_by_users_id_fk",
+          "tableFrom": "cert_submissions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "cert_submissions_cert_no_unique": {
+          "name": "cert_submissions_cert_no_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "cert_no"
+          ]
+        },
+        "cert_submissions_event_id_idempotency_key_hash_unique": {
+          "name": "cert_submissions_event_id_idempotency_key_hash_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "event_id",
+            "idempotency_key_hash"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "cert_submissions_quantity_check": {
+          "name": "cert_submissions_quantity_check",
+          "value": "\"cert_submissions\".\"quantity\" >= 1"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.code_items": {
@@ -3328,6 +3952,46 @@
             "id"
           ],
           "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.privacy_session_activity": {
+      "name": "privacy_session_activity",
+      "schema": "",
+      "columns": {
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "privacy_session_activity_session_id_sessions_id_fk": {
+          "name": "privacy_session_activity_session_id_sessions_id_fk",
+          "tableFrom": "privacy_session_activity",
+          "tableTo": "sessions",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },

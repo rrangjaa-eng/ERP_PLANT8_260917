@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { Table } from "@/ui/table/Table";
 import { Button } from "@/ui/button/Button";
 import { KvList } from "@/ui/kv-list/KvList";
@@ -394,8 +395,7 @@ export function RevenueSection({
         : `초과 입금 ${formatKrw(balanceKrw)}`;
 
   return (
-    <section className={styles.section}>
-      <h2 className={styles.sectionTitle}>매출</h2>
+    <DetailScreen.Section title="매출">
       <p className={styles.sectionSubtitle}>{paidVisible ? "공급가액 기준 · 입금액만 통장 합계" : "공급가액 기준"}</p>
 
       {contract ? (
@@ -485,6 +485,6 @@ export function RevenueSection({
           ) : null}
         </>
       ) : null}
-    </section>
+    </DetailScreen.Section>
   );
 }

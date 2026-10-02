@@ -1,4 +1,3 @@
-// 04.6 스킨 A 이관 전: 화면 틀
 "use client";
 
 import { Children, useCallback, useEffect, useEffectEvent, useId, useMemo, useRef, useState, type ReactNode } from "react";
@@ -6,8 +5,10 @@ import { useAction } from "next-safe-action/hooks";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { saveProjectLedgerAction } from "../actions";
-import { PageHeader } from "@/ui/page-header/PageHeader";
-import { StatusTag, type StatusTagKind } from "@/ui/status-tag/StatusTag";
+import { DetailScreen, type DetailScreenProps } from "@/ui/detail-screen/DetailScreen";
+import { Num } from "@/ui/num/Num";
+import { StatusTag } from "@/ui/status-tag/StatusTag";
+import type { StatusWord } from "@/ui/status-tag/status-map";
 import { Button, buttonLinkClassName } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { Table } from "@/ui/table/Table";
@@ -910,6 +911,15 @@ function HeaderCopyActions({ children }: { children?: ReactNode }) {
 // 편집에 들어가는 진짜 grid 계약을 따른다(로빙 tabIndex · 방향키 · Esc ·
 // Delete · 붙여넣기 · 셀 오류·충돌 고정 렌더) — 04-01/04-02의 always-on
 // 인풋 트레이서를 여기서 완성한다.
+// 상태 배지 낱말 — 색은 status-map 한 표가 정한다(수주중·미수주 muted · 진행 accent · 정산 warning · 완료 success — 옛 PROJECT_STATUS_TAG_KIND와 같은 색).
+const PROJECT_STATUS_WORD: Record<ProjectStatus, StatusWord> = {
+  bidding: "수주중",
+  in_progress: "진행",
+  settling: "정산",
+  completed: "완료",
+  lost: "미수주",
+};
+
 export function QuoteLedger({
   viewerId,
   projectId,
@@ -917,11 +927,8 @@ export function QuoteLedger({
   period,
   preEstimate,
   canSave,
-  projectName,
-  subtitle,
+  frame,
   statusSinceText,
-  statusLabel,
-  statusTagKind,
   statusChange,
   newRevision,
   copyProjectHref,
@@ -929,6 +936,7 @@ export function QuoteLedger({
   approvedSeq,
   revisions,
   endDateNote,
+  children,
   revisionId,
   initialLines,
   vendors,
@@ -958,13 +966,10 @@ export function QuoteLedger({
   preEstimate: { value: Money | null; canEdit: boolean };
   /** 04-22(A-12) — 1차 「일괄 저장」 렌더 조건(서버 계산). */
   canSave: boolean;
-  projectName: string;
-  /** `{번호} · 상세 견적 {n}차` — 서버가 만든다. */
-  subtitle: string;
+  /** DetailScreen 머리의 제목(프로젝트 이름)과 메타 한 줄(`{번호} · 상세 견적 {n}차`) — 서버가 만든다. */
+  frame: Pick<DetailScreenProps, "title" | "meta">;
   /** `{상태} {마지막 변경일}`(D-50) — 부제 마지막 항목. 총 매출 예상가 뒤에 온다(UI-SPEC S3). */
   statusSinceText: string;
-  statusLabel: string;
-  statusTagKind: StatusTagKind;
   statusChange: StatusChangeProps | null;
   /** 04-24(D-53 · CEO-D10) — 「복사해 새 차수」. 서버 canCreateRevision이 거짓이면 null(버튼 없음). */
   newRevision: NewRevisionProps | null;
@@ -978,6 +983,8 @@ export function QuoteLedger({
   revisions: { id: string; seq: number }[];
   /** D-81 `종료일 지남`(또는 `· 팀장 {이름}`) — 서버가 만든다. 없으면 null. */
   endDateNote: string | null;
+  /** 원장 아래 섹션들(차수 · 이전 차수) — 서버 page.tsx가 넘긴다. */
+  children?: ReactNode;
   revisionId: string;
   initialLines: QuoteLineDto[];
   vendors: QuoteTableOption[];
@@ -1705,7 +1712,11 @@ export function QuoteLedger({
       collapseBelow: 1280,
       align: "right",
       pasteRole: "computed",
-      cell: (row) => <span className={styles.rowNumber}>{lines.indexOf(row) + 1}</span>,
+      cell: (row) => (
+        <span className={styles.rowNumber}>
+          <Num value={lines.indexOf(row) + 1} unit="count" />
+        </span>
+      ),
     },
     {
       key: "subcategory",
@@ -2306,47 +2317,46 @@ export function QuoteLedger({
     ) : null;
 
   return (
-    <>
-      <div className={styles.header}>
-        <div className={styles.titleBlock}>
-          <PageHeader title={projectName} subtitle={subtitle} />
-          <CustomerApprovalLine {...customerApproval} className={styles.periodLine} dirtyCount={dirtyCount} />
-          {/* S13 — 칸이 열린 동안 기간 글자와 「기간 바꾸기」는 숨는다(같은 값을 두 번 보이지 않는다). */}
-          {periodDraft ? null : (
-            <p className={`${styles.periodLine} ${styles.periodLead}`}>
-              <span>{periodText(periodBaseline.startDate, periodBaseline.endDate)}</span>
-              {period.rights !== "none" ? (
-                <Button id={PERIOD_TRIGGER_ID} type="button" variant="tertiary" onClick={() => (saveLocked ? undefined : openPeriodField("start"))}>
-                  기간 바꾸기
-                </Button>
-              ) : null}
-            </p>
-          )}
-          {/* S17 — 금액을 볼 수 없으면 줄이 없다. 칸이 열린 동안 값과 3차는 숨는다. */}
-          {preEstimateBase === null || preEstimateDraft ? null : (
-            <p className={styles.periodLine}>
-              <span>{preEstimateText(preEstimateBase)}</span>
-              {preEstimate.canEdit ? (
-                <Button id={PRE_ESTIMATE_TRIGGER_ID} type="button" variant="tertiary" onClick={() => (saveLocked ? undefined : openPreEstimateField())}>
-                  총 매출 예상가 바꾸기
-                </Button>
-              ) : null}
-            </p>
-          )}
-          <p className={styles.periodLine}>{statusSinceText}</p>
-        </div>
+    <DetailScreen
+      title={frame.title}
+      status={
         <span className={styles.statusLine}>
-          <StatusTag kind={statusTagKind} variant="tag">
-            {statusLabel}
-          </StatusTag>
+          <StatusTag status={PROJECT_STATUS_WORD[status]} />
           {endDateNote ? <span className={styles.endDateNote}>{endDateNote}</span> : null}
         </span>
-        <div className={styles.headerActions}>
-          {/* 폰(<700)은 수화 뒤 DOM · Tab 순서 = 보이는 순서 — SYSTEM §10, DR-104-05. 서버 · 수화 중에는 PC DOM 순서이고
-              그때 보이는 순서는 기존 CSS order가 맞춘다 — 연차 화면 usePhoneWidth 선례(DECISIONS 2026-09-29). key 덕에 순서가 바뀌어도 다시 마운트되지 않는다. */}
-          {phone ? [statusActions, saveAction, copyActions] : [copyActions, statusActions, saveAction]}
-        </div>
-      </div>
+      }
+      meta={frame.meta}
+      actions={{
+        // 폰(<700)은 수화 뒤 DOM 순서 = 보이는 순서 — SYSTEM §10, DR-104-05. 서버 · 수화 중에는 PC 순서다 — 연차 화면 usePhoneWidth 선례(DECISIONS 2026-09-29).
+        // key 덕에 순서가 바뀌어도 다시 마운트되지 않는다. 1차 「일괄 저장」은 늘 마지막(오른쪽 끝, D4).
+        secondary: phone ? [statusActions, copyActions] : [copyActions, statusActions],
+        primary: saveAction,
+      }}
+    >
+      <CustomerApprovalLine {...customerApproval} className={styles.periodLine} dirtyCount={dirtyCount} />
+      {/* S13 — 칸이 열린 동안 기간 글자와 「기간 바꾸기」는 숨는다(같은 값을 두 번 보이지 않는다). */}
+      {periodDraft ? null : (
+        <p className={styles.periodLine}>
+          <span>{periodText(periodBaseline.startDate, periodBaseline.endDate)}</span>
+          {period.rights !== "none" ? (
+            <Button id={PERIOD_TRIGGER_ID} type="button" variant="tertiary" onClick={() => (saveLocked ? undefined : openPeriodField("start"))}>
+              기간 바꾸기
+            </Button>
+          ) : null}
+        </p>
+      )}
+      {/* S17 — 금액을 볼 수 없으면 줄이 없다. 칸이 열린 동안 값과 3차는 숨는다. */}
+      {preEstimateBase === null || preEstimateDraft ? null : (
+        <p className={styles.periodLine}>
+          <span>{preEstimateText(preEstimateBase)}</span>
+          {preEstimate.canEdit ? (
+            <Button id={PRE_ESTIMATE_TRIGGER_ID} type="button" variant="tertiary" onClick={() => (saveLocked ? undefined : openPreEstimateField())}>
+              총 매출 예상가 바꾸기
+            </Button>
+          ) : null}
+        </p>
+      )}
+      <p className={styles.periodLine}>{statusSinceText}</p>
 
       {periodDraft ? (
         <PeriodField
@@ -2602,11 +2612,13 @@ export function QuoteLedger({
         }}
       />
 
+      {children}
+
       {statusToast && !discardedEdits ? <Toast message={statusToast} onDismiss={() => setStatusToast(null)} /> : null}
       {discardedEdits ? (
         <Toast message="편집을 버렸습니다" actionLabel="되돌리기" onAction={undoDiscard} onDismiss={() => setDiscardedEdits(null)} />
       ) : null}
-    </>
+    </DetailScreen>
   );
 }
 

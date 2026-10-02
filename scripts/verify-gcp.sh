@@ -8,6 +8,14 @@ cd "$(dirname "$0")/.."
 source infra/names.sh
 
 FAILED=0
+# 명령 출력을 보여 주고, 실패했거나 출력이 비었으면 실패로 돌려준다.
+nonempty() {
+  local out
+  out="$("$@")" || return 1
+  [ -n "$out" ] || { echo "(결과 없음)"; return 1; }
+  printf '%s\n' "$out"
+}
+
 run_check() {
   local title="$1"; shift
   echo "::group::${title}"
@@ -35,19 +43,23 @@ case "$INPUT_CHECK" in
     done
     ;;
   notify-tick)
-    # (c) 스테이징 notify-tick — 스케줄러 잡 설정, 잡 실행 기록, 앱의 notify.tick* 로그(최근 7일).
-    # 읽기만 한다(gha-deployer의 기존 cloudscheduler.admin·logging.admin 범위 안).
+    # (c) 스테이징 notify-tick — 스케줄러 잡 설정·상태, 잡 실행 기록, 앱의 notify.*·holiday.* 로그(최근 7일).
+    # 읽기만 한다(gha-deployer에 이미 있는 cloudscheduler.admin·logging.admin으로 조회).
+    # gcloud logging read는 결과가 없어도 0으로 끝나므로, 빈 결과와 ENABLED 아닌 잡은 실패로 센다.
     job="$(scheduler_job staging)"
-    run_check "scheduler job ${job}" gcloud scheduler jobs describe "$job" --location="$REGION" --project="$PROJECT" \
+    region="${REGION:-$REGION_DEFAULT}"
+    run_check "scheduler job ${job}" gcloud scheduler jobs describe "$job" --location="$region" --project="$PROJECT" \
       --format='yaml(schedule,timeZone,state,lastAttemptTime,status,httpTarget.uri,httpTarget.oidcToken)'
-    run_check "scheduler runs ${job}" gcloud logging read \
+    run_check "scheduler job ${job} is ENABLED" test \
+      "$(gcloud scheduler jobs describe "$job" --location="$region" --project="$PROJECT" --format='value(state)')" = ENABLED
+    run_check "scheduler runs ${job}" nonempty gcloud logging read \
       "resource.type=\"cloud_scheduler_job\" AND resource.labels.job_id=\"${job}\"" \
-      --project="$PROJECT" --freshness=7d --limit=20 \
-      --format='table(timestamp,severity,jsonPayload.status,httpRequest.status,jsonPayload.debugInfo)'
-    run_check "app logs notify.tick*" gcloud logging read \
-      "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"$(svc_name staging)\" AND jsonPayload.event=~\"^notify\\.tick\"" \
-      --project="$PROJECT" --freshness=7d --limit=20 \
-      --format='table(timestamp,severity,jsonPayload.event,jsonPayload.ok,jsonPayload.sent,jsonPayload.skipped,jsonPayload.remaining,jsonPayload.reason,jsonPayload.message)'
+      --project="$PROJECT" --freshness=7d --limit=40 \
+      --format='table(timestamp,severity,httpRequest.status,jsonPayload.status,jsonPayload.debugInfo)'
+    run_check "app logs notify.* holiday.*" nonempty gcloud logging read \
+      "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"$(svc_name staging)\" AND jsonPayload.event=~\"^(notify|holiday)[.]\"" \
+      --project="$PROJECT" --freshness=7d --limit=40 \
+      --format='table(timestamp,severity,jsonPayload.event,jsonPayload.ok,jsonPayload.businessDay,jsonPayload.sent,jsonPayload.skipped,jsonPayload.remaining,jsonPayload.emailSent,jsonPayload.emailFailed,jsonPayload.emailUnknown,jsonPayload.reason,jsonPayload.message)'
     ;;
   *)
     echo "::error::알 수 없는 INPUT_CHECK: ${INPUT_CHECK}"

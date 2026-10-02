@@ -4,7 +4,8 @@ name: verify
 # iam.disableServiceAccountKeyCreation이 SA 키 생성을 막으므로(2026-09-22 실측)
 # Claude 세션이 gcloud를 직접 쓰지 않고, WIF로 붙는 이 워크플로를 띄워 로그를 읽는다.
 #   policies — 조직 정책 4개 원문 + 런타임·배포 SA의 프로젝트 역할 (01-UAT 8)
-#   notify-tick — 스테이징 스케줄러 잡 설정·실행 기록 + 앱 notify.tick* 로그 7일 (04.2)
+#   notify-tick — 스테이징 스케줄러 잡 설정·상태·실행 기록 + 앱 notify.*·holiday.* 로그 7일 (04.2).
+#                 조회에는 bootstrap이 이미 준 cloudscheduler.admin·logging.admin을 쓴다(새 역할 없음).
 # 필요한 역할(gha-deployer, 둘 다 읽기 전용): roles/orgpolicy.policyViewer(조직 수준)·
 # roles/iam.securityReviewer. 쓰기 권한은 주지 않는다(2026-09-22 사용자 결정) —
 # 백업 실패 경보 테스트(01-UAT 7)는 그래서 여기 없고 콘솔의 "테스트 알림 보내기"로 한다.

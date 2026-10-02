@@ -399,7 +399,7 @@ Plans:
 12. 글자·바탕 대비 4.5:1 미만(큰 글자 3:1)을 자동 검사가 막는다
 13. 시스템 변경은 `docs/design/DECISIONS.md` 기록 → `docs/design/SYSTEM.md` 수정 순서로 한다(`.claude/rules/frontend.md`): radius 0 · 그림자 없음 · 2px 진한 선 결정 뒤집기, D-39 폼 배치 → 옆 패널, 고른 완화 후보
 
-**Plans:** 8/32 plans executed
+**Plans:** 12/32 plans executed
 
 Plans:
 **Wave 1**
@@ -419,10 +419,10 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 04.6-10-PLAN.md — ③ /projects 목록·등록·복사 패널(A1 실측)
-- [ ] 04.6-11-PLAN.md — ③ /admin/vendors 표·행동 링크·필터 마무리
-- [ ] 04.6-12-PLAN.md — ③ /projects/[id] DetailScreen(견적 줄 엑셀식 유지)
-- [ ] 04.6-13-PLAN.md — ③ 모음 페이지 완성 · 시각 회귀 스펙·visual 프로젝트
+- [x] 04.6-10-PLAN.md — ③ /projects 목록·등록·복사 패널(A1 실측)
+- [x] 04.6-11-PLAN.md — ③ /admin/vendors 표·행동 링크·필터 마무리
+- [x] 04.6-12-PLAN.md — ③ /projects/[id] DetailScreen(견적 줄 엑셀식 유지)
+- [x] 04.6-13-PLAN.md — ③ 모음 페이지 완성 · 시각 회귀 스펙·visual 프로젝트
 
 **Wave 4** *(blocked on Wave 3 completion)*
 

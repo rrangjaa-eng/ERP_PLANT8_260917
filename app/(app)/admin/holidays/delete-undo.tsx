@@ -48,59 +48,71 @@ export function DeleteUndoSection({ children }: { children: ReactNode }) {
   const [stack, setStack] = useState<RemovedHoliday[]>([]);
   // 새로 지울 때만 `되돌리기`를 다시 그려 포커스를 준다 — 되돌린 뒤 앞 것이 보일 때는 복원된 행이 포커스를 받는다.
   const [shown, setShown] = useState(0);
-  const [pending, setPending] = useState(false);
-  const [failure, setFailure] = useState<{ text: string; retry: boolean } | null>(null);
+  // 대기 · 연결 실패는 그 행(id)에만 붙는다 — 다른 행이 맨 위에 와도 옮겨 붙지 않는다(/review PR #146).
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [retryFailure, setRetryFailure] = useState<{ id: string; text: string } | null>(null);
+  // 다시 해도 안 되는 거절 — 그 행은 결과 줄에서 빼고 문구만 남겨 앞서 지운 행을 계속 되돌릴 수 있게 한다.
+  const [rejection, setRejection] = useState<string | null>(null);
   const [focusDate, setFocusDate] = useState<string | null>(null);
   // 같은 함수를 유지한다 — 먼저 되돌린 행의 효과가 다시 돌며 다음 되돌린 행의 표식을 지우지 않게.
   const clearFocus = useCallback(() => setFocusDate(null), []);
 
   const removed = stack.at(-1) ?? null;
+  const removedFailure = removed && retryFailure?.id === removed.id ? retryFailure.text : null;
 
   function show(next: RemovedHoliday) {
     setStack((current) => [...current.filter((item) => item.id !== next.id), next]);
     setShown((count) => count + 1);
-    setFailure(null);
-    setPending(false);
+    setRejection(null);
   }
 
   async function handleUndo() {
     if (!removed) return;
-    setPending(true);
+    const target = removed;
+    setPendingId(target.id);
+    setRetryFailure(null);
+    setRejection(null);
     let result: UndoResult = null;
     try {
-      result = await restoreHolidayAction({ id: removed.id });
+      result = await restoreHolidayAction({ id: target.id });
     } catch {
       result = null;
     }
+    setPendingId((current) => (current === target.id ? null : current));
     const failed = undoFailure(result);
-    if (!failed) {
-      setFocusDate(removed.date);
-      setStack((current) => current.filter((item) => item.id !== removed.id));
-      setPending(false);
-      router.refresh();
+    if (failed?.retry) {
+      setRetryFailure({ id: target.id, text: failed.text });
       return;
     }
-    setFailure(failed);
-    setPending(false);
+    setStack((current) => current.filter((item) => item.id !== target.id));
+    if (failed) {
+      setRejection(failed.text);
+      return;
+    }
+    setFocusDate(target.date);
+    router.refresh();
   }
 
   return (
     <DeleteUndoContext.Provider value={{ show, focusDate, clearFocus }}>
-      {removed ? (
+      {removed || rejection ? (
         <p role="status" className={styles.undoLine}>
-          <span className={failure ? styles.undoFailed : undefined}>
-            {failure ? failure.text : `${removed.date} ${removed.name} 삭제됨`}
-          </span>
-          {!failure || failure.retry ? (
-            <Button
-              key={shown}
-              variant="tertiary"
-              pending={pending}
-              autoFocus
-              onClick={() => void handleUndo()}
-            >
-              되돌리기
-            </Button>
+          {rejection ? <span className={styles.undoFailed}>{rejection}</span> : null}
+          {removed ? (
+            <>
+              <span className={removedFailure ? styles.undoFailed : undefined}>
+                {removedFailure ?? `${removed.date} ${removed.name} 삭제됨`}
+              </span>
+              <Button
+                key={shown}
+                variant="tertiary"
+                pending={pendingId === removed.id}
+                autoFocus
+                onClick={() => void handleUndo()}
+              >
+                되돌리기
+              </Button>
+            </>
           ) : null}
         </p>
       ) : null}

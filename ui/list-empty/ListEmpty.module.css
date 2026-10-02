@@ -72,11 +72,3 @@
 .secondary:hover {
   background: var(--surface);
 }
-
-/* §3 터치 목표: 폰에서 「다시 시도」도 최소 44px 높이(.tertiary와 같은 폰 전용 규칙 — 04.2
-   /design-review 재실측에서 69×40). 글자 폭이 넓어 가로는 이미 44를 넘는다. */
-@media (max-width: 699.98px) {
-  .secondary {
-    min-height: var(--touch-min);
-  }
-}

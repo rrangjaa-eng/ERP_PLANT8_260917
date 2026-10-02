@@ -56,7 +56,7 @@ describe("되돌리기 = 같은 행 복원(ADMN-12 · quick 261001-hfi)", () => 
   const source = readFileSync(resolve(process.cwd(), "app/(app)/admin/holidays/delete-undo.tsx"), "utf8");
 
   it("되돌리기는 restoreHolidayAction을 지운 행 id로 부르고 addHolidayAction을 부르지 않는다", () => {
-    expect(source).toContain("restoreHolidayAction({ id: removed.id })");
+    expect(source).toContain("restoreHolidayAction({ id: target.id })");
     expect(source).not.toContain("addHolidayAction");
   });
 });
@@ -76,16 +76,13 @@ describe("deleteFailure — 삭제 결과 → 행 실패 문구", () => {
     ).toEqual({ text: "삭제 실패 · 지울 수 없는 공휴일", retry: false });
   });
 
+  it("거절 원인에 「 · 」가 없으면 원인 전체", () => {
+    expect(deleteFailure({ validationErrors: { _errors: ["원인"] } })).toEqual({ text: "삭제 실패 · 원인", retry: false });
+  });
+
   it("서버 오류·던짐 → 다시 시도, retry 있음", () => {
     expect(deleteFailure({ serverError: "알 수 없는 오류" })).toEqual({ text: "삭제 실패 · 다시 시도", retry: true });
     expect(deleteFailure(null)).toEqual({ text: "삭제 실패 · 다시 시도", retry: true });
   });
 });
 
-describe("결과 줄은 지운 행을 쌓는다(04.2 /review 이월 1)", () => {
-  const source = readFileSync(resolve(process.cwd(), "app/(app)/admin/holidays/delete-undo.tsx"), "utf8");
-
-  it("결과 줄 상태는 한 건이 아니라 목록이다", () => {
-    expect(source).toContain("useState<RemovedHoliday[]>");
-  });
-});

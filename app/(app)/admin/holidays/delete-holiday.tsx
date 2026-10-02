@@ -17,7 +17,7 @@ type DeleteResult =
   | undefined;
 
 // 삭제 결과 → 행 실패 문구. 거절(루트 오류 — 화면을 연 뒤 규칙 행이 됐거나 자정이 지남)은 다시 해도
-// 성공할 수 없어 원인(마지막 ` · ` 앞부분)을 싣고 `삭제`를 치운다. 연결·서버 실패(던짐은 null)는 `다시 시도`.
+// 성공할 수 없어 원인(마지막 ` · ` 앞부분)을 이유로 단 비활성 `삭제`로 남긴다(DR-11 — 포커스를 잃지 않게). 연결·서버 실패(던짐은 null)는 `다시 시도`.
 export function deleteFailure(result: DeleteResult): { text: string; retry: boolean } | null {
   if (result?.data) return null;
   const reason = result?.validationErrors?._errors?.[0];
@@ -62,12 +62,17 @@ export function DeleteHoliday({ id, date }: { id: string; date: string }) {
 
   return (
     <span className={styles.rowAction}>
-      {!failure || failure.retry ? (
-        <Button variant="tertiary" pending={pending} autoFocus={restored} onClick={() => void handleDelete()}>
-          삭제
-        </Button>
-      ) : null}
-      {failure ? <span className={styles.rowError}>{failure.text}</span> : null}
+      <Button
+        variant="tertiary"
+        pending={pending}
+        disabled={failure?.retry === false}
+        disabledReason={failure?.retry === false ? failure.text : undefined}
+        autoFocus={restored}
+        onClick={() => void handleDelete()}
+      >
+        삭제
+      </Button>
+      {failure?.retry ? <span className={styles.rowError}>{failure.text}</span> : null}
     </span>
   );
 }

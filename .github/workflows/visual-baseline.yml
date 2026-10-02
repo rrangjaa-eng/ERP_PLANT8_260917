@@ -1,0 +1,88 @@
+name: visual baseline
+
+# 시각 회귀 기준 사진은 CI e2e 잡과 같은 Linux·같은 Chromium(Playwright 번들)에서 만든다 —
+# 로컬 Chromium과 판이 달라 로컬에서 만든 사진은 CI에서 전부 실패한다. 손으로만 돌린다(workflow_dispatch).
+# 잡을 둘로 나눈 이유: 의존성 설치·테스트 코드가 도는 baseline 잡은 읽기 권한이고 자격 증명을 남기지
+# 않는다. 쓰기 토큰은 설치·실행이 전혀 없이 아티팩트(사진 파일)만 add·commit·push하는 commit 잡에만 있다.
+# GITHUB_TOKEN으로 push한 커밋은 다른 워크플로를 깨우지 않는다 — 기준 사진을 받은 뒤 CI는 직접 다시 돌린다.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # 평소 13분 안쪽(설치 2–10분). playwright 설치가 멈추면 기본 360분을 기다리므로 끊는다.
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: erp
+          POSTGRES_PASSWORD: erp
+          POSTGRES_DB: erp_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://erp:erp@127.0.0.1:5432/erp_test
+      BETTER_AUTH_URL: http://127.0.0.1:3100
+      APP_ENV: local
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: echo "BETTER_AUTH_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+      - timeout-minutes: 15
+        run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright test --project=visual --update-snapshots=all
+      # 방금 만든 사진으로 한 번 더 비교한다 — 흔들리면 여기서 빨개져 commit 잡이 돌지 않는다.
+      - run: pnpm exec playwright test --project=visual --update-snapshots=none
+      - uses: actions/upload-artifact@v4
+        with:
+          name: visual-baseline
+          path: test/e2e/*.spec.ts-snapshots/**/*.png
+          retention-days: 7
+
+  commit:
+    if: github.ref != 'refs/heads/main'
+    needs: baseline
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      # 업로드 경로에 와일드카드가 있어 아티팩트는 첫 와일드카드 뒤 계층만 담는다 — test/e2e에 받아야 제 자리에 앉는다.
+      - uses: actions/download-artifact@v4
+        with:
+          name: visual-baseline
+          path: test/e2e
+      - name: commit and push
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- 'test/e2e/*.spec.ts-snapshots/*.png'
+          if git diff --cached --quiet; then
+            echo "바뀐 기준 사진이 없다 — 커밋하지 않는다"
+            exit 0
+          fi
+          git commit -m "chore: 시각 회귀 기준 사진 (CI Chromium)"
+          git push origin "HEAD:refs/heads/${BRANCH}"

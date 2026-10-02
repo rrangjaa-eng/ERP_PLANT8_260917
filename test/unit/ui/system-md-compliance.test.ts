@@ -107,13 +107,23 @@ describe("관리자 표 — 숫자 칸 정렬 (F-07)", () => {
   it.each([
     ["code-tables.module.css", ["app", "(app)", "admin", "code-tables", "code-tables.module.css"]],
     ["people.module.css", ["app", "(app)", "admin", "people", "people.module.css"]],
-    ["HistoryList.module.css", ["ui", "history-list", "HistoryList.module.css"]],
   ])("%s의 .table .num이 우측 정렬·tabular-nums·nowrap이다", (_name, parts) => {
     const css = read(...parts);
     const match = css.match(/\.table \.num\s*\{[^}]*\}/);
     expect(match).not.toBeNull();
     expect(match?.[0]).toContain("text-align: right");
     expect(match?.[0]).toContain("tabular-nums");
+    expect(match?.[0]).toContain("white-space: nowrap");
+    expect(match?.[0]).toContain("var(--ls-num)");
+  });
+
+  // 04.6-09: tabular-nums는 stylelint가 `ui/num`에만 허용한다. HistoryList의 값 칸은 서식이 끝난 글자(displayValue)라 `Num`이
+  // 못 감싸므로(Num은 숫자를 받는다) 정렬·nowrap만 이 CSS가 맡는다 — 값 칸 숫자 폭 결정은 넘김(MERGE 기록).
+  it("HistoryList.module.css의 .table .num이 우측 정렬·nowrap이다(tabular-nums는 ui/num 몫)", () => {
+    const css = read("ui", "history-list", "HistoryList.module.css");
+    const match = css.match(/\.table \.num\s*\{[^}]*\}/);
+    expect(match).not.toBeNull();
+    expect(match?.[0]).toContain("text-align: right");
     expect(match?.[0]).toContain("white-space: nowrap");
     expect(match?.[0]).toContain("var(--ls-num)");
   });

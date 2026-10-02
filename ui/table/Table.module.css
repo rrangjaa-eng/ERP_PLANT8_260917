@@ -115,7 +115,12 @@
      이 규칙 자체를 없앤다. */
 }
 
-/* 그룹 줄 — 옅은 초록 면 + 그룹 글자 600. 선 없음(면이 구분한다). */
+/* 그룹 줄 — 옅은 초록 면 + 그룹 글자 600. 선 없음(면이 구분한다). `.groupRow`는 E2E 선택자(`[class*='groupRow']`)가 쓰는 행 이름이라
+   규칙이 있어야 CSS 모듈이 이름을 내보낸다 — 행 면은 칸(.groupHeader)과 같은 값. */
+.groupRow {
+  background: var(--surface-group);
+}
+
 .groupHeader {
   padding: var(--s-2) var(--s-4);
   border-bottom: 0;

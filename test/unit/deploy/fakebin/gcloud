@@ -122,6 +122,12 @@ case "$ARGS" in
         ;;
     esac
     secret="$4"
+    # 실제 gcloud처럼 없는 시크릿의 버전 목록은 NOT_FOUND다(describe와 같은 존재 판정).
+    if ! { state_file secret-exists || state_file "secret-data-${secret}" ||
+      state_file "secret-created-${secret}" || state_file "secret-disabled-${secret}"; }; then
+      echo "ERROR: (gcloud.secrets.versions.list) NOT_FOUND: Secret [projects/test-proj/secrets/${secret}] not found or has no versions." >&2
+      exit 1
+    fi
     if state_file "secret-disabled-${secret}"; then
       case "$ARGS" in
         *"state:ENABLED"*) ;;

@@ -247,15 +247,15 @@ ensure_sql_db_users() {
 
   local admin_secret
   admin_secret="$(secret_name db-admin-password "$ENV")"
+  if ! run gcloud secrets describe "$admin_secret" --project="$PROJECT" >/dev/null 2>&1; then
+    run gcloud secrets create "$admin_secret" --replication-policy=user-managed --locations="$REGION" --project="$PROJECT"
+  fi
   local has_version
   has_version="$(run gcloud secrets versions list "$admin_secret" --project="$PROJECT" --filter='state:ENABLED' --format='value(name)')" || {
     echo "cannot list versions of ${admin_secret} — stopped before touching the secret" >&2
     return 1
   }
   if [ -z "$has_version" ]; then
-    if ! run gcloud secrets describe "$admin_secret" --project="$PROJECT" >/dev/null 2>&1; then
-      run gcloud secrets create "$admin_secret" --replication-policy=user-managed --locations="$REGION" --project="$PROJECT"
-    fi
     local admin_password
     admin_password="$(openssl rand -base64 32)"
     printf '%s' "$admin_password" | run gcloud secrets versions add "$admin_secret" --project="$PROJECT" --data-file=-

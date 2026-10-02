@@ -367,7 +367,7 @@ export function Table<Row>({
       const row = flatRows[pos.row];
       const column = columns[pos.col];
       if (!row || !column) return false;
-      return activeCell?.rowId === getRowId(row) && activeCell.columnKey === column.key;
+      return activeCell !== null && activeCell.rowId === getRowId(row) && activeCell.columnKey === column.key;
     },
     saveLocked,
     isHiddenCol: (col) => isHiddenColumn(columns[col]),
@@ -720,7 +720,7 @@ export function Table<Row>({
   function renderCell(column: TableColumn<Row>, row: Row) {
     const rowId = getRowId(row);
     const editability = cellEditability(column, row);
-    const isActive = activeCell?.rowId === rowId && activeCell.columnKey === column.key;
+    const isActive = activeCell !== null && activeCell.rowId === rowId && activeCell.columnKey === column.key;
 
     if (isActive && editability === "edit" && column.editCell) {
       return column.editCell(row, {

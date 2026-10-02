@@ -1,6 +1,6 @@
-import { StatusTag, type StatusTagKind } from "@/ui/status-tag/StatusTag";
-import { formatKrw } from "@/lib/format-number";
-import type { NextTurnTag, NextTurnView } from "./build-next-turn-view";
+import { StatusTag } from "@/ui/status-tag/StatusTag";
+import { Num } from "@/ui/num/Num";
+import type { NextTurnView } from "./build-next-turn-view";
 import styles from "./NextTurn.module.css";
 
 // SYSTEM.md §7-4 「내 차례」 블록. Task 1(build-next-turn-view.ts)의 계산 결과를
@@ -14,16 +14,6 @@ export type NextTurnProps = {
    * Phase 4부터 호출부가 넘긴다.
    */
   moreHref?: string;
-};
-
-// §7-4: 태그 순서 고정(막힘 → 오늘 → 결재 → 대기)의 색 대응 — 막힘 danger,
-// 오늘 warning, 결재 accent. 대기는 §7-5 의미 목록(muted)을 따른다 —
-// 같은 낱말이 블록마다 다른 색을 갖지 않는다(개정 ⑩, 04-08 Task 2).
-const TAG_KIND: Record<NextTurnTag, StatusTagKind> = {
-  막힘: "danger",
-  오늘: "warning",
-  결재: "accent",
-  대기: "muted",
 };
 
 export function NextTurn({ view, moreHref }: NextTurnProps) {
@@ -41,7 +31,7 @@ export function NextTurn({ view, moreHref }: NextTurnProps) {
         {view.items.map((item, index) => (
           <li key={index} className={styles.item}>
             <span className={styles.tagSlot}>
-              <StatusTag kind={TAG_KIND[item.tag]}>{item.tag}</StatusTag>
+              <StatusTag status={item.tag} />
             </span>
             <span className={styles.grow}>
               {/* 대상은 자기 span을 가진다 — 폰(§7-4 두 줄)에서 .grow가 display:contents로
@@ -49,7 +39,7 @@ export function NextTurn({ view, moreHref }: NextTurnProps) {
               <span className={styles.label}>{item.label}</span>
               <span className={styles.why}> · {item.reason}</span>
             </span>
-            <span className={styles.amt}>{formatKrw(item.amount)}</span>
+            <span className={styles.amt}><Num value={item.amount} /></span>
             <span className={styles.action}>
               {/* WR-04: §10 — 페이지 이동은 <a>다. ListEmpty의 3차 링크와 같은 모양. */}
               <a href={item.action.href} className={styles.tertiary}>

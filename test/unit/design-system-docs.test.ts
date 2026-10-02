@@ -275,12 +275,12 @@ describe("docs/design/SYSTEM.md — 2026-09-23 개정(04-08)", () => {
     expect(SYSTEM).not.toContain("대기(`--accent`)");
   });
 
-  it("NextTurn.tsx 소스에서 `대기`와 `accent`가 한 줄에 없다(항목 8, ⑩)", () => {
-    const NEXT_TURN = readFileSync(
-      resolve(process.cwd(), "ui", "next-turn", "NextTurn.tsx"),
+  it("status-map.ts 소스에서 `대기`와 `accent`가 한 줄에 없다(항목 8, ⑩ — NextTurn 태그 색은 04.6-05 이후 status-map 한 표)", () => {
+    const STATUS_MAP = readFileSync(
+      resolve(process.cwd(), "ui", "status-tag", "status-map.ts"),
       "utf8",
     );
-    const line = NEXT_TURN.split("\n").find((l) => l.includes("대기"));
+    const line = STATUS_MAP.split("\n").find((l) => l.includes("대기:"));
     expect(line).toBeDefined();
     expect(line).not.toContain("accent");
   });

@@ -242,13 +242,9 @@ export function HistoryList({
               <td className={valueKind.kind === "number" ? styles.num : undefined}>{entry.displayValue}</td>
               <td>
                 {entry.status === "active" ? (
-                  <StatusTag kind="success" variant="text">
-                    적용 중
-                  </StatusTag>
+                  <StatusTag status="적용 중" variant="text" />
                 ) : entry.status === "scheduled" ? (
-                  <StatusTag kind="muted" variant="text">
-                    예정
-                  </StatusTag>
+                  <StatusTag status="예정" variant="text" />
                 ) : null}
               </td>
               <td>

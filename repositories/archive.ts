@@ -22,6 +22,7 @@ import {
 import { findUserById, setUserArchived } from "@/repositories/users";
 import { findVendorById, setVendorArchived } from "@/repositories/vendors";
 import { findQuoteLineById, setQuoteLineArchived } from "@/repositories/quote-lines";
+import { findHolidayById, listArchivedHolidays } from "@/repositories/holidays";
 import { findEntriesByIds as findReserveEntriesByIds, setEntryArchived as setReserveEntryArchived, listArchivedEntryNames as listArchivedReserveEntryNames } from "@/repositories/reserve-entries";
 
 // archive()/restore()(domain/archive/index.ts)가 필요로 하는 최소 행 모양.
@@ -37,6 +38,8 @@ export type ArchivedItem = {
   name: string;
   archivedAt: Date;
   archivedBy: string | null;
+  // 공휴일만 — 복원 가능 판정(소급 금지)에 쓰는 날짜. 화면 DTO에는 싣지 않는다.
+  date?: string;
 };
 
 export type ArchivableEntry = {
@@ -215,6 +218,26 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     async listArchived(viewer) {
       const rows = await listArchivedReserveEntryNames(viewer);
       return rows.map((row) => ({ entity: "reserve_entry", label: "리저브", ...row }));
+    },
+  },
+  // quick 261001-hfi(ADMN-12 · D-01) — 공휴일. 보관은 대체일 재계산을 지나는 domain/holidays의 deleteHoliday로만 한다 —
+  // 범용 archive()는 재계산을 하지 않으므로 늘 보호 행이다. 복원은 DOMAIN_RESTORERS가 restoreHoliday에 맡긴다.
+  {
+    entity: "holiday",
+    label: "공휴일",
+    // 보관 · 복원 모두 재계산 · 소급 금지를 지나는 domain/holidays로만 — 범용 경로가 잘못 불리면 바로 던진다.
+    setArchived() {
+      return Promise.reject(new Error("공휴일 보관 · 복원은 domain/holidays로만"));
+    },
+    async findById(viewer, id) {
+      return findHolidayById(viewer, id);
+    },
+    isProtected() {
+      return true;
+    },
+    async listArchived(viewer) {
+      const rows = await listArchivedHolidays(viewer);
+      return rows.map((row) => ({ entity: "holiday", label: "공휴일", ...row }));
     },
   },
 ];

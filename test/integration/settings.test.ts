@@ -12,6 +12,7 @@ import {
   ForbiddenError,
   SettingNotFoundError,
   FutureCancelOnlyError,
+  FutureValueNotFoundError,
   type SettingDef,
 } from "@/domain/settings/registry";
 
@@ -121,6 +122,48 @@ describe("설정 레지스트리 (ADMN-05, 실제 Postgres)", () => {
     await cancelHistorizedValue(SYSTEM_VIEWER, def, "2999-01-01");
     const history = await listSettingHistory(def);
     expect(history.some((entry) => entry.effectiveFrom === "2999-01-01")).toBe(false);
+  });
+
+  // ADMN-12 예약 취소 예외의 전제(quick 261001-hfi) — 미래 예정값 취소와 그 로그는 한 트랜잭션이다(85g 발령 취소와 같은 모양).
+  it("미래 예정값을 취소하면 행이 없어지고 settings_change 로그 한 건(key · effectiveFrom · cancelled)이 남는다", async () => {
+    const { queryActionLog } = await import("@/repositories/action-log");
+    const def = historizedDef();
+    await addHistorizedValue(SYSTEM_VIEWER, def, { effectiveFrom: "2999-01-01", value: 0.3 });
+
+    await cancelHistorizedValue(SYSTEM_VIEWER, def, "2999-01-01");
+
+    expect((await listSettingHistory(def)).some((entry) => entry.effectiveFrom === "2999-01-01")).toBe(false);
+    const logs = (await queryActionLog(SYSTEM_VIEWER, { actionType: "settings_change" })).filter(
+      (log) => log.entityId === def.key && (log.detail as { cancelled?: boolean } | null)?.cancelled === true,
+    );
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({ entity: "settings_historized" });
+    expect(logs[0]?.detail).toEqual({ key: def.key, effectiveFrom: "2999-01-01", cancelled: true });
+  });
+
+  it("로그 쓰기가 실패하면 예정값 취소도 되돌려져 행이 남는다", async () => {
+    const def = historizedDef();
+    await addHistorizedValue(SYSTEM_VIEWER, def, { effectiveFrom: "2999-01-01", value: 0.3 });
+
+    await expect(
+      cancelHistorizedValue(SYSTEM_VIEWER, def, "2999-01-01", {
+        recordAction: () => Promise.reject(new Error("로그 쓰기 실패 흉내")),
+      }),
+    ).rejects.toThrow("로그 쓰기 실패 흉내");
+
+    expect((await listSettingHistory(def)).some((entry) => entry.effectiveFrom === "2999-01-01")).toBe(true);
+  });
+
+  it("없는 미래 예정값 취소는 FutureValueNotFoundError이고 로그가 없다", async () => {
+    const { queryActionLog } = await import("@/repositories/action-log");
+    const def = historizedDef();
+
+    await expect(cancelHistorizedValue(SYSTEM_VIEWER, def, "2999-01-01")).rejects.toBeInstanceOf(FutureValueNotFoundError);
+
+    const logs = (await queryActionLog(SYSTEM_VIEWER, { actionType: "settings_change" })).filter(
+      (log) => log.entityId === def.key,
+    );
+    expect(logs).toHaveLength(0);
   });
 
   it("설정 저장이 행동 로그에 행 하나를 남긴다", async () => {

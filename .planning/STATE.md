@@ -361,6 +361,7 @@ Recent decisions affecting current work:
 | 261001-5zp | 04.3-15 독립 검토·DOM 감사 지적 반영(R1 · R3~R7 · M1) | 2026-10-01 | 1e79494 | [261001-5zp-04-3-15-review-fix-round](./quick/261001-5zp-04-3-15-review-fix-round/) |
 | 261001-81j | Codex 디자인 검토 도구 후속 수정(PR #116 봇 지적 4건: dotenv 주석·--out 하드링크·--ephemeral·숨은 요소 실측 제외) | 2026-10-01 | 2fd934b4 | [261001-81j-codex-design-review-follow-up-fixes](./quick/261001-81j-codex-design-review-follow-up-fixes/) |
 | 261001-85g | Phase 2·3 요구사항 갭 4건 — ADMN-03 등록 폼 선택지 노출표 투영 · ADMN-06 미설정 키 지난 연도 가져오기 · 미래 발령 취소 로그 · UX-01 다섯 상태 | 2026-10-01 | 746dac6 | [261001-85g-phase-2-3-gaps](./quick/261001-85g-phase-2-3-gaps/) |
+| 261001-hfi | Phase 2·3 요구사항 갭 남은 몫 — ADMN-12 공휴일 보관 · 예정값 취소 같은 tx 로그 · MAST-04 견적 분류 코드표 · OPS-05/MAST-04 분리(v1 91) | 2026-10-01 | 0787af7 | [261001-hfi-phase-2-3](./quick/261001-hfi-phase-2-3/) |
 | 261001-x6q | 04.3 legal fixes - purge deadline 04-01 and collection notice v4 | 2026-10-02 | 5da5430 | [261001-x6q-04-3-legal-fixes-purge-deadline-04-01-an](./quick/261001-x6q-04-3-legal-fixes-purge-deadline-04-01-an/) |
 
 ### Roadmap Evolution

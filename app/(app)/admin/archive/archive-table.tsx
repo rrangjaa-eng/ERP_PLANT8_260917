@@ -15,6 +15,7 @@ export type ArchiveTableRow = {
   name: string;
   archivedAtLabel: string;
   archivedBy: string | null;
+  restorable: boolean;
 };
 
 // ADMN-12: page.tsx가 EMPTY/표 갈림을 여기로 넘긴 이유 — 복원은
@@ -35,6 +36,8 @@ export type ArchiveTableRow = {
 // 사라진다.
 export function ArchiveTable({ rows }: { rows: ArchiveTableRow[] }) {
   const [toast, setToast] = useState<{ message: string; tone: "default" | "error" } | null>(null);
+  // /design-review(#138) — 도메인이 거부한 행(원인 있음)은 다시 눌러도 같은 실패라 「복원」을 치운다(공휴일 되돌리기 거부와 같은 처리).
+  const [rejected, setRejected] = useState<ReadonlySet<string>>(() => new Set());
 
   return (
     <>
@@ -66,13 +69,23 @@ export function ArchiveTable({ rows }: { rows: ArchiveTableRow[] }) {
                   <td className={`${styles.archivedAt} ${styles.p2}`}>{item.archivedAtLabel}</td>
                   <td className={styles.p2}>{item.archivedBy ?? "—"}</td>
                   <td>
-                    <RestoreRowButton
-                      entity={item.entity}
-                      id={item.id}
-                      name={item.name}
-                      onRestored={(name) => setToast({ message: `복원 · ${name} 복원됨`, tone: "default" })}
-                      onFailed={() => setToast({ message: "복원 · 실패 · 다시 시도", tone: "error" })}
-                    />
+                    {/* 복원할 수 없는 행(지난 날짜 공휴일 등)은 버튼을 숨긴다(§7) — 빈 칸 표기는 보관한 사람 칸과 같은 「—」. */}
+                    {item.restorable && !rejected.has(`${item.entity}:${item.id}`) ? (
+                      <RestoreRowButton
+                        entity={item.entity}
+                        id={item.id}
+                        name={item.name}
+                        onRestored={(name) => setToast({ message: `복원 · ${name} 복원됨`, tone: "default" })}
+                        onFailed={(reason) => {
+                          // 원인은 마지막 「 · 」 앞까지 — 이름에 「 · 」가 있어도 잘리지 않게.
+                          const cut = reason ? reason.lastIndexOf(" · ") : -1;
+                          if (reason) setRejected((prev) => new Set(prev).add(`${item.entity}:${item.id}`));
+                          setToast({ message: `복원 · 실패 · ${reason ? (cut < 0 ? reason : reason.slice(0, cut)) : "다시 시도"}`, tone: "error" });
+                        }}
+                      />
+                    ) : (
+                      "—"
+                    )}
                   </td>
                 </tr>
                 <tr className={styles.collapsedRow}>
@@ -105,11 +118,12 @@ function RestoreRowButton({
   id: string;
   name: string;
   onRestored: (name: string) => void;
-  onFailed: () => void;
+  onFailed: (reason?: string) => void;
 }) {
   const { execute, isExecuting } = useAction(restoreArchivedAction, {
     onSuccess: () => onRestored(name),
-    onError: () => onFailed(),
+    // 도메인 거부(루트 오류)는 원인을 싣고, 그 밖의 실패는 `다시 시도`.
+    onError: ({ error }) => onFailed(error.validationErrors?._errors?.[0]),
   });
 
   return (

@@ -45,8 +45,10 @@ function writeDeps(now: Date = NOW) {
     now,
     can: vi.fn().mockResolvedValue(true),
     insertHistorizedValue: vi.fn().mockResolvedValue(undefined),
-    deleteFutureHistorizedValue: vi.fn().mockResolvedValue(undefined),
+    // quick 261001-hfi(B2) — 취소는 지운 행이 있어야 성공하고, 삭제 · 로그를 한 트랜잭션에서 부른다.
+    deleteFutureHistorizedValue: vi.fn().mockResolvedValue(true),
     recordAction: vi.fn().mockResolvedValue(undefined),
+    withTransaction: vi.fn((fn: (t: never) => Promise<unknown>) => fn({} as never)) as never,
   };
 }
 
@@ -114,7 +116,7 @@ describe("cancelHistorizedValue — 같은 검증 · 정규형 · 서울 기준 
   it("규칙 없는 키의 2999-01-01은 기존대로 삭제된다", async () => {
     const deps = writeDeps();
     await cancelHistorizedValue(viewer, PLAIN_DEF, "2999-01-01", deps);
-    expect(deps.deleteFutureHistorizedValue).toHaveBeenCalledWith(viewer, PLAIN_DEF.key, "2999-01-01");
+    expect(deps.deleteFutureHistorizedValue).toHaveBeenCalledWith(viewer, PLAIN_DEF.key, "2999-01-01", expect.anything());
   });
 
   it("year_start 키의 2027-03-01 · 2025-01-01은 각각 1월 1일 · 지난 연도 문구로 거부되고 삭제가 불리지 않는다", async () => {

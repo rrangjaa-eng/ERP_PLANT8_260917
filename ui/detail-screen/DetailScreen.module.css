@@ -1,0 +1,64 @@
+/* UI-SPEC 「화면 틀 계약」 DetailScreen. 컨테이너 폭·좌우 안쪽 여백은 셸 main이 가진다. 토큰은 역할 이름만. */
+
+.screen {
+  width: 100%;
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  margin: 0 0 var(--s-3);
+}
+
+.heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--text-title);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-3);
+  margin-inline-start: auto;
+}
+
+.meta {
+  margin: 0 0 var(--s-4);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  line-height: var(--lh-head);
+}
+
+.numbers {
+  margin: 0 0 var(--s-4);
+}
+
+.section {
+  margin: var(--s-6) 0 0;
+  padding: var(--s-4) 0 0;
+  border-top: var(--line-w) solid var(--border-row);
+}
+
+.sectionTitle {
+  margin: 0 0 var(--s-3);
+  color: var(--text-strong);
+  font-size: var(--text-subtitle);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+}

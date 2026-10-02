@@ -811,7 +811,10 @@ test.describe("매출 입력을 연 채 1024 미만 전환 — 값 유지 (G-04-
       });
     });
     const typing = page.keyboard.type("123456789", { delay: 100 });
-    await expect.poll(async () => (await amount.inputValue()).replace(/\D/g, "").length).toBeGreaterThanOrEqual(3);
+    // 2026-10-02: 칸에는 기존 발행액(3,000,000)이 남아 있어 칸 값 길이로는 첫 키 전에 통과한다 — 기록기(친 숫자)로 기다린다.
+    await expect
+      .poll(() => page.evaluate(() => ((window as unknown as { __g0464Last?: string }).__g0464Last ?? "").length))
+      .toBeGreaterThanOrEqual(3);
     await page.setViewportSize({ width: 1000, height: 800 });
     await typing;
 

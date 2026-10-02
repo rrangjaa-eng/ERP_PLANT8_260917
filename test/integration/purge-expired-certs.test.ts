@@ -547,6 +547,24 @@ describe("칸 비우기 함수 재사용 — mode: exclude (E1 b)", () => {
   });
 });
 
+describe("미리 보기 서명 파일 수 — 삭제 대기와 보존 기한이 겹치는 줄은 한 번만 센다", () => {
+  it("대조 제외로 서명이 삭제 대기인 줄이 보존 기한에도 닿으면 미리 보기 filesDeleted는 1이고 적용 결과와 같다", async () => {
+    const sample = await seed({ submittedAt: kst("2025-06-01T10:00:00") });
+    const at = kst("2025-07-01T00:00:00");
+    await withTransaction(async (tx) => {
+      await clearSubmissionPersonalFields(SYSTEM_VIEWER, [sample.submissionId], { mode: "exclude", at }, tx);
+    });
+    await db.update(certSubmissions).set({ excludedAt: at }).where(eq(certSubmissions.id, sample.submissionId));
+
+    const retentionDeadline = kst("2031-04-01T00:00:00");
+    const preview = await runCertPurge({ now: retentionDeadline, apply: false });
+    expect(preview).toMatchObject({ submissions: 1, filesDeleted: 1 });
+
+    const applied = await runCertPurge({ now: retentionDeadline, apply: true });
+    expect(applied).toMatchObject({ submissions: 1, filesDeleted: 1 });
+  });
+});
+
 describe("행동 로그 cert_purge — 비우기와 한 트랜잭션(C6)", () => {
   it("적용 실행 한 번 = 한 줄, detail은 개수 셋뿐 · 반환값은 여섯 · 개인정보가 로그에 없다", async () => {
     const sample = await seed({ submittedAt: kst("2020-06-01T10:00:00") });

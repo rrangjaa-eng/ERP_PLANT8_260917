@@ -68,9 +68,11 @@ export async function runCertPurge(
 
   if (!apply) {
     const pendingFiles = await listPendingSignatureFiles(SYSTEM_VIEWER);
+    // 삭제 대기이면서 보존 기한에도 닿은 줄은 한 번만 센다 — 제출 id 합집합.
+    const fileIds = new Set([...pendingFiles.map((file) => file.id), ...retentionDue.filter((row) => row.hasSignature).map((row) => row.id)]);
     return {
       submissions: retentionDue.length,
-      filesDeleted: pendingFiles.length + retentionDue.filter((row) => row.hasSignature).length,
+      filesDeleted: fileIds.size,
       filesPending: 0,
       orphansDeleted: orphanKeys.length,
       ipCleared: await countClosedEventIpHashes(SYSTEM_VIEWER, closedBefore),

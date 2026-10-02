@@ -147,9 +147,9 @@
   --s-6:  24px;
   --s-8:  32px;
   --s-12: 48px;
-  --pad-page:      var(--s-5);   /* 폰 14px */
-  --cell-pad-y:    6px;          /* 폰 10px — 척도 밖(옮기는 중, 04.6-07) */
-  --cell-pad-x:    8px;          /* 척도 밖 날 값(옮기는 중, 04.6-07) */
+  --pad-page:      var(--s-5);   /* 폰 --s-4 (옛 14 → 16, UQ-1 A) */
+  --cell-pad-y:    var(--s-1);   /* 폰 --s-3 (옛 6 → 4 · 10 → 12, UQ-1 A) */
+  --cell-pad-x:    var(--s-2);
   --field-gap:     var(--s-4);   /* 패널 칸 사이 */
   --label-gap:     var(--s-1);   /* 라벨-입력 사이 */
   --panel-pad-x:   var(--s-6);   /* 옆 패널 좌우 안쪽(폰 --s-4) */
@@ -271,8 +271,8 @@
     --text-body:   15px;
     --panel-pad-x: var(--s-4);
     --fs-base:   15px;
-    --pad-page:  14px;
-    --cell-pad-y: 10px;
+    --pad-page:  var(--s-4);
+    --cell-pad-y: var(--s-3);
     --row-min:   44px;
     --control-h: 40px;
   }

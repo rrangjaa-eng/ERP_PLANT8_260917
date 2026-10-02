@@ -141,6 +141,7 @@ export async function searchVendors(viewer: Viewer, query: string, limit = 10): 
 export type FieldDefinitionDto = {
   id: string;
   key: string;
+  label: string;
   type: "text" | "number" | "date" | "select";
   options: string[] | null;
   required: boolean;
@@ -158,10 +159,12 @@ export async function listVendorFieldDefinitions(
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, VENDORS_MENU, "view"))) return [];
 
-  const defs = await repoListFieldDefinitions(viewer, VENDOR_ENTITY);
+  // 04.5(D10-12): 보관된 칸은 거래처 폼 입력에서 뺀다.
+  const defs = (await repoListFieldDefinitions(viewer, VENDOR_ENTITY)).filter((def) => def.archivedAt === null);
   return defs.map((def) => ({
     id: def.id,
     key: def.key,
+    label: def.label,
     type: def.type as FieldDefinitionDto["type"],
     options: Array.isArray(def.options) ? (def.options as string[]) : null,
     required: def.required,

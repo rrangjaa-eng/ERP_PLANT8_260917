@@ -1,15 +1,19 @@
 import { and, eq, inArray, isNull, isNotNull } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, type DbOrTx } from "@/db/client";
 import { roles } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 import { normalizeRoleName } from "@/domain/permissions/role-name";
 
 export type RoleRow = InferSelectModel<typeof roles>;
 
-export async function listRoles(viewer: Viewer, opts?: { includeArchived?: boolean }): Promise<RoleRow[]> {
+export async function listRoles(
+  viewer: Viewer,
+  opts?: { includeArchived?: boolean },
+  tx: DbOrTx = db,
+): Promise<RoleRow[]> {
   void viewer;
-  return db
+  return tx
     .select()
     .from(roles)
     .where(opts?.includeArchived ? undefined : isNull(roles.archivedAt))

@@ -137,9 +137,10 @@ export async function upsertVisibilityIfUnedited(
 export async function insertVisibilityIfAbsent(
   viewer: Viewer,
   input: { roleId: string; infoItem: string; visible: boolean; updatedBy?: string | null },
+  tx: DbOrTx = db,
 ): Promise<void> {
   void viewer;
-  await db
+  await tx
     .insert(visibilityMatrix)
     .values({
       roleId: input.roleId,

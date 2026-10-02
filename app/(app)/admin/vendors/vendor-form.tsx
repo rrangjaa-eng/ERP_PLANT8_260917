@@ -17,6 +17,7 @@ export type EvidenceTypeOption = { value: string; label: string; description: st
 export type VendorFieldDefinition = {
   id: string;
   key: string;
+  label: string;
   type: "text" | "number" | "date" | "select";
   options: string[] | null;
   required: boolean;
@@ -224,7 +225,7 @@ function VendorCustomField({ def, defaultValue }: { def: VendorFieldDefinition; 
   if (def.type === "select") {
     return (
       <div className={styles.selectLabel}>
-        <label htmlFor={id}>{def.key}</label>
+        <label htmlFor={id}>{def.label}</label>
         <select id={id} name={id} className={styles.select} defaultValue={stringValue} required={def.required}>
           <option value="">선택 없음</option>
           {(def.options ?? []).map((option) => (
@@ -239,7 +240,7 @@ function VendorCustomField({ def, defaultValue }: { def: VendorFieldDefinition; 
 
   const inputType = def.type === "number" ? "number" : def.type === "date" ? "date" : "text";
   return (
-    <TextField id={id} name={id} label={def.key} type={inputType} required={def.required} defaultValue={stringValue} />
+    <TextField id={id} name={id} label={def.label} type={inputType} required={def.required} defaultValue={stringValue} />
   );
 }
 

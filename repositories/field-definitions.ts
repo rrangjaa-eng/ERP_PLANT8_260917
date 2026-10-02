@@ -1,13 +1,23 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
-import { db } from "@/db/client";
+import { db, type DbOrTx } from "@/db/client";
 import { fieldDefinitions } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
 
 export type FieldDefinitionRow = InferSelectModel<typeof fieldDefinitions>;
 
-export async function listFieldDefinitions(viewer: Viewer, entity: string): Promise<FieldDefinitionRow[]> {
-  return db
+export type { DbOrTx };
+
+// 04.5-01(T-04.5-07): 칸 생성과 계급 생성 쪽 노출 행 부여(03 grantCustomFieldsToRole)가 같은
+// 잠금 하나로 직렬화된다 — notify tick(420_401) · 공휴일 달력(420_601)과 다른 값.
+const CUSTOM_FIELD_GRANTS_LOCK_KEY = 420_701;
+
+export async function listFieldDefinitions(
+  viewer: Viewer,
+  entity: string,
+  tx: DbOrTx = db,
+): Promise<FieldDefinitionRow[]> {
+  return tx
     .select()
     .from(fieldDefinitions)
     .where(eq(fieldDefinitions.entity, entity))
@@ -25,18 +35,22 @@ export async function insertFieldDefinition(
     id: string;
     entity: string;
     key: string;
+    // 없으면 key — 화면 이름 없이 부르는 기존 호출(테스트 픽스처)이 그대로 돈다.
+    label?: string;
     type: string;
     options?: unknown;
     required?: boolean;
     sortOrder?: number;
   },
+  tx: DbOrTx = db,
 ): Promise<FieldDefinitionRow> {
-  const [row] = await db
+  const [row] = await tx
     .insert(fieldDefinitions)
     .values({
       id: input.id,
       entity: input.entity,
       key: input.key,
+      label: input.label ?? input.key,
       type: input.type,
       options: input.options ?? null,
       required: input.required ?? false,
@@ -63,4 +77,12 @@ export async function updateFieldDefinition(
       updatedAt: new Date(),
     })
     .where(eq(fieldDefinitions.id, id));
+}
+
+// 트랜잭션 잠금(커밋·롤백 때 저절로 풀림) — 칸 생성과 계급 생성 쪽 노출 행 부여가 이 함수
+// 하나로 잠근 뒤 상대 표(계급 목록 · 칸 정의)를 같은 tx로 읽는다. 어느 순서로 겹쳐도
+// (계급, 칸) 쌍마다 노출 행이 생긴다. 트랜잭션 밖에서는 의미가 없어 tx에 기본값이 없다.
+export async function lockCustomFieldGrants(viewer: Viewer, tx: DbOrTx): Promise<void> {
+  void viewer;
+  await tx.execute(sql`select pg_advisory_xact_lock(${CUSTOM_FIELD_GRANTS_LOCK_KEY})`);
 }

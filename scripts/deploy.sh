@@ -38,10 +38,13 @@ PROJECT_NUMBER=""
 SERVICE_URL=""
 CONN_NAME=""
 EXISTS=0
+ADD_DATA_KEY_V2=0
+WRAPPED_V2_ATTACH=0
 
 usage() {
   cat >&2 <<'USAGE'
 Usage: deploy.sh --env staging|prod --project ID [--region R] [--sha S] [--domain D] [--allow-dirty] [--dry-run]
+       [--add-data-key-v2]   키 회전 전: 감싼 데이터 키 v2를 만들어 서비스에 v1과 함께 붙인다(docs/OPERATIONS.md §9)
 USAGE
 }
 
@@ -84,6 +87,10 @@ parse_args() {
         ;;
       --dry-run)
         DRY_RUN=1
+        shift
+        ;;
+      --add-data-key-v2)
+        ADD_DATA_KEY_V2=1
         shift
         ;;
       *)
@@ -166,6 +173,7 @@ ensure_apis() {
     run.googleapis.com sqladmin.googleapis.com secretmanager.googleapis.com \
     artifactregistry.googleapis.com monitoring.googleapis.com logging.googleapis.com \
     compute.googleapis.com servicenetworking.googleapis.com cloudscheduler.googleapis.com \
+    storage.googleapis.com \
     --project="$PROJECT"
 }
 
@@ -282,10 +290,198 @@ _ensure_secret() {
     --member="serviceAccount:${runtime_email}" --role=roles/secretmanager.secretAccessor
 }
 
+# 04.3-08: 데이터 키 KMS 봉투. KMS 키링 · 키 · KMS IAM은 소유자의 scripts/bootstrap-gcp.sh가
+# 만든다(E3-12 교차 B-3). 배포자는 그 키에만 cryptoKeyEncrypterDecrypter + viewer라 키링 단위
+# 조회 · IAM 정책 조회 권한이 없다 — 여기서는 키 존재 하나만 확인한다(교차 B4). 런타임 복호화
+# 권한은 기동 때 instrumentation.ts의 loadDataKeys와 스모크가 실제로 증명한다.
+ensure_kms_key() {
+  STAGE=ensure_kms_key
+  local err
+  if err="$(run gcloud kms keys describe "$(kms_key)" --keyring="$(kms_keyring "$ENV")" --location="$REGION" --project="$PROJECT" 2>&1 >/dev/null)"; then
+    return 0
+  fi
+  printf '%s\n' "$err" >&2
+  if printf '%s' "$err" | grep -q 'NOT_FOUND'; then
+    echo "KMS key $(kms_keyring "$ENV")/$(kms_key) missing — run scripts/bootstrap-gcp.sh first (docs/OPERATIONS.md §9)" >&2
+  else
+    # 재검토 L-a: 키 단위 viewer에게 실제 KMS는 없는 키 · 키링도 PERMISSION_DENIED("or it may not exist")로 답한다.
+    echo "KMS key $(kms_keyring "$ENV")/$(kms_key) missing or not readable — run scripts/bootstrap-gcp.sh first, or check the deployer's roles on that key (docs/OPERATIONS.md §9)" >&2
+  fi
+  return 1
+}
+
+# 검토 반영 M2: 조회 실패나 빈 값을 빈 라벨로 흘려보내지 않는다 — 부르는 쪽은 대입으로 받아 멈춘다.
+_kms_primary_version() {
+  local primary
+  primary="$(run gcloud kms keys describe "$(kms_key)" --keyring="$(kms_keyring "$ENV")" --location="$REGION" --project="$PROJECT" --format='value(primary.name)')" || return 1
+  primary="${primary##*/}"
+  if [ -z "$primary" ]; then
+    echo "cannot read the primary version of KMS key $(kms_keyring "$ENV")/$(kms_key)" >&2
+    return 1
+  fi
+  printf '%s\n' "$primary"
+}
+
+# 검토 반영 B1 · H2: 데이터 키 경로의 조회는 오류를 삼키지 않는다. NOT_FOUND만 「없음」(absent)이고
+# 일시 · 권한 오류는 gcloud 메시지를 보이고 실패한다 — 「없음」으로 읽어 새 키를 만들지 않는다.
+# 부르는 쪽은 local과 따로 대입해 받는다(대입이 실패하면 set -e가 멈춘다).
+_secret_presence() {
+  local err
+  if err="$(run gcloud secrets describe "$1" --project="$PROJECT" 2>&1 >/dev/null)"; then
+    echo present
+  elif printf '%s' "$err" | grep -q 'NOT_FOUND'; then
+    echo absent
+  else
+    printf '%s\n' "$err" >&2
+    echo "cannot read secret $1 — stopped before touching the data key" >&2
+    return 1
+  fi
+}
+
+# 버전 이름 목록(인자를 더 주면 --filter 등으로 좁힌다) — 실패는 그대로 실패다.
+_secret_versions() {
+  local name="$1"
+  shift
+  run gcloud secrets versions list --secret="$name" --project="$PROJECT" "$@" --format='value(name)'
+}
+
+_wrapped_label() {
+  run gcloud secrets describe "$1" --project="$PROJECT" --format='value(labels.kms-key-version)'
+}
+
+# 감싼 값(KMS 암호문의 한 줄 base64)을 실제 KMS로 풀어 본다 — 푼 base64 텍스트가 seed_bytes
+# 바이트 키로 해석되는지, 평문 시크릿에서 옮기는 경우 원래 키와 해시가 같은지. 평문은
+# 파이프로만 흐르고 비교하는 것은 바이트 수 · 해시뿐이다(codex #1).
+_verify_wrapped_data_key() {
+  STAGE=_verify_wrapped_data_key
+  local wrapped="$1" plain_name="$2" seed_bytes="$3" from_plain="$4"
+  local kms_args=(--key="$(kms_key)" --keyring="$(kms_keyring "$ENV")" --location="$REGION" --project="$PROJECT")
+  local got_bytes
+  got_bytes="$(printf '%s' "$wrapped" | openssl base64 -d -A |
+    run gcloud kms decrypt "${kms_args[@]}" --ciphertext-file=- --plaintext-file=- |
+    tr -d '[:space:]' | openssl base64 -d -A | wc -c | tr -d '[:space:]')"
+  if [ "$got_bytes" != "$seed_bytes" ]; then
+    echo "wrapped data key round trip failed: ${plain_name} (bytes)" >&2
+    return 1
+  fi
+  if [ "$from_plain" = "1" ]; then
+    local want_hash got_hash
+    want_hash="$(run gcloud secrets versions access latest --secret="$plain_name" --project="$PROJECT" |
+      tr -d '[:space:]' | openssl base64 -d -A | openssl dgst -sha256 | awk '{print $NF}')"
+    got_hash="$(printf '%s' "$wrapped" | openssl base64 -d -A |
+      run gcloud kms decrypt "${kms_args[@]}" --ciphertext-file=- --plaintext-file=- |
+      tr -d '[:space:]' | openssl base64 -d -A | openssl dgst -sha256 | awk '{print $NF}')"
+    if [ "$want_hash" != "$got_hash" ]; then
+      echo "wrapped data key round trip failed: ${plain_name} (hash)" >&2
+      return 1
+    fi
+  fi
+}
+
+# 인코딩 계약: KMS 평문 = 평문 시크릿과 같은 base64 텍스트, 감싼 시크릿 = KMS 암호문의 한 줄
+# base64. 평문 시크릿에 버전이 있으면 그 값 그대로를(새 키를 만들지 않는다), 평문 시크릿이
+# 확실히 없을 때(NOT_FOUND)만 새 seed_bytes 키를 감싼다. 감싼 시크릿에 버전이 하나라도 있으면
+# (어떤 상태든) 새로 감싸거나 바꾸지 않는다 — ENABLED가 없으면 멈춘다(검토 반영 B1).
+# 왕복 확인이 통과해야 라벨(감쌀 때의 주 버전) → 버전 순으로 넣는다.
+# 권한 · 빠진 라벨은 여기가 아니라 _ensure_wrapped_data_key_access가 매번 보장한다.
+_ensure_wrapped_data_key() {
+  local base="$1" seed_bytes="$2"
+  local name plain_name presence versions
+  name="$(secret_name "${base}-wrapped" "$ENV")"
+  plain_name="$(secret_name "$base" "$ENV")"
+  presence="$(_secret_presence "$name")"
+  if [ "$presence" = absent ]; then
+    run gcloud secrets create "$name" --replication-policy=user-managed --locations="$REGION" --project="$PROJECT"
+  else
+    versions="$(_secret_versions "$name")"
+    if [ -n "$versions" ]; then
+      versions="$(_secret_versions "$name" --filter='state:ENABLED')"
+      if [ -n "$versions" ]; then
+        return 0
+      fi
+      echo "${name} has versions but none ENABLED — not wrapping a data key again (docs/OPERATIONS.md §9)" >&2
+      return 1
+    fi
+  fi
+  local from_plain=0 version wrapped
+  presence="$(_secret_presence "$plain_name")"
+  if [ "$presence" = present ]; then
+    versions="$(_secret_versions "$plain_name" --filter='state:ENABLED')"
+    if [ -z "$versions" ]; then
+      echo "${plain_name} has no ENABLED version and ${name} is empty — not generating a new data key (docs/OPERATIONS.md §9)" >&2
+      return 1
+    fi
+    from_plain=1
+  fi
+  version="$(_kms_primary_version)"
+  wrapped="$(
+    if [ "$from_plain" = "1" ]; then
+      run gcloud secrets versions access latest --secret="$plain_name" --project="$PROJECT"
+    else
+      openssl rand -base64 "$seed_bytes"
+    fi | run gcloud kms encrypt --key="$(kms_key)" --keyring="$(kms_keyring "$ENV")" --location="$REGION" --project="$PROJECT" \
+      --plaintext-file=- --ciphertext-file=- | openssl base64 -A
+  )"
+  _verify_wrapped_data_key "$wrapped" "$plain_name" "$seed_bytes" "$from_plain"
+  STAGE=ensure_secrets
+  run gcloud secrets update "$name" --project="$PROJECT" --update-labels="kms-key-version=${version}" >/dev/null
+  printf '%s' "$wrapped" | run gcloud secrets versions add "$name" --project="$PROJECT" --data-file=-
+}
+
+_ensure_wrapped_data_key_access() {
+  local name runtime_email enabled label primary
+  name="$(secret_name "${1}-wrapped" "$ENV")"
+  runtime_email="$(runtime_sa "$ENV")@${PROJECT}.iam.gserviceaccount.com"
+  run gcloud secrets add-iam-policy-binding "$name" --project="$PROJECT" \
+    --member="serviceAccount:${runtime_email}" --role=roles/secretmanager.secretAccessor
+  enabled="$(_secret_versions "$name" --filter='state:ENABLED')"
+  if [ -n "$enabled" ]; then
+    label="$(_wrapped_label "$name")"
+    if [ -z "$label" ]; then
+      primary="$(_kms_primary_version)"
+      run gcloud secrets update "$name" --project="$PROJECT" --update-labels="kms-key-version=${primary}" >/dev/null
+    fi
+  fi
+}
+
 ensure_secrets() {
   STAGE=ensure_secrets
   _ensure_secret better-auth-secret 48
-  _ensure_secret app-data-key-v1 32
+  # 평문 데이터 키 시크릿에는 _ensure_secret을 부르지 않는다 — 운영자가 파기 · 뗀 평문 버전과
+  # 런타임 secretAccessor를 되살리지 않는다(AX-2, docs/OPERATIONS.md §9).
+  _ensure_wrapped_data_key app-data-key-v1 32
+  _ensure_wrapped_data_key_access app-data-key-v1
+  # 검토 반영 H2: 감싼 v2를 붙일지는 여기서 한 번 오류를 삼키지 않고 정한다(deploy_service가 쓴다).
+  local wrapped_v2 v2_presence v2_enabled="" v2_versions
+  wrapped_v2="$(secret_name app-data-key-v2-wrapped "$ENV")"
+  v2_presence="$(_secret_presence "$wrapped_v2")"
+  if [ "$v2_presence" = present ]; then
+    v2_enabled="$(_secret_versions "$wrapped_v2" --filter='state:ENABLED')"
+    # 재검토 L-b: 버전은 있는데 ENABLED가 없으면 v2 없이 배포하지 않는다(v2로 회전한 행을 못 읽는다).
+    if [ -z "$v2_enabled" ]; then
+      v2_versions="$(_secret_versions "$wrapped_v2")"
+      if [ -n "$v2_versions" ]; then
+        echo "${wrapped_v2} has versions but none ENABLED — not deploying without it (docs/OPERATIONS.md §9)" >&2
+        return 1
+      fi
+    fi
+  fi
+  if [ "$ADD_DATA_KEY_V2" = "1" ] && [ -z "$v2_enabled" ]; then
+    # v2는 v1과 다른 KMS 키 버전으로 감싼다 — 새 주 버전은 소유자가 만든다(배포는 만들지 않는다).
+    local primary v1_label
+    primary="$(_kms_primary_version)"
+    v1_label="$(_wrapped_label "$(secret_name app-data-key-v1-wrapped "$ENV")")"
+    if [ -z "$v1_label" ] || [ "$primary" = "$v1_label" ]; then
+      echo "KMS 키에 새 주 버전이 필요합니다 — 소유자 계정으로 OPERATIONS §9 회전 (0) 단계를 먼저 실행하세요" >&2
+      exit 1
+    fi
+    _ensure_wrapped_data_key app-data-key-v2 32
+    v2_enabled=1
+  fi
+  if [ -n "$v2_enabled" ]; then
+    _ensure_wrapped_data_key_access app-data-key-v2
+    WRAPPED_V2_ATTACH=1
+  fi
   _ensure_secret smtp-host sentinel
   _ensure_secret smtp-user sentinel
   _ensure_secret smtp-password sentinel
@@ -295,6 +491,27 @@ ensure_secrets() {
   runtime_email="$(runtime_sa "$ENV")@${PROJECT}.iam.gserviceaccount.com"
   run gcloud secrets add-iam-policy-binding "$(secret_name db-admin-password "$ENV")" --project="$PROJECT" \
     --member="serviceAccount:${runtime_email}" --role=roles/secretmanager.secretAccessor
+}
+
+# 04.3-05: 서명 버킷은 소유자의 scripts/bootstrap-gcp.sh가 만든다 — 여기서는 만들지
+# 않고 확인 · 같은 설정 맞춤 · 런타임에 그 버킷의 객체 역할만 건다(배포자는 그 버킷에만
+# roles/storage.admin). 없거나 맞춤이 거부되면 서비스를 바꾸기 전에 멈춘다.
+ensure_cert_bucket() {
+  STAGE=ensure_cert_bucket
+  local bucket runtime_email hint
+  bucket="$(cert_bucket "$ENV" "$PROJECT")"
+  runtime_email="$(runtime_sa "$ENV")@${PROJECT}.iam.gserviceaccount.com"
+  if ! run gcloud storage buckets describe "gs://${bucket}" --project="$PROJECT" >/dev/null 2>&1; then
+    echo "cert bucket ${bucket} not found — run scripts/bootstrap-gcp.sh first (docs/OPERATIONS.md §8)" >&2
+    return 1
+  fi
+  hint="cert bucket ${bucket} not managed by the deployer — run scripts/bootstrap-gcp.sh first (docs/OPERATIONS.md §8)"
+  run gcloud storage buckets update "gs://${bucket}" --project="$PROJECT" \
+    --uniform-bucket-level-access --public-access-prevention --clear-soft-delete --no-versioning >/dev/null ||
+    { echo "$hint" >&2; return 1; }
+  run gcloud storage buckets add-iam-policy-binding "gs://${bucket}" --project="$PROJECT" \
+    --member="serviceAccount:${runtime_email}" --role=roles/storage.objectUser >/dev/null ||
+    { echo "$hint" >&2; return 1; }
 }
 
 # D-05 빌드 1회: prod는 require_prod_image가 이미 존재를 보장했으므로 이 describe는
@@ -369,6 +586,14 @@ deploy_jobs() {
     --command=node,dist/cli/restore-rehearsal-cli.mjs \
     --set-env-vars="$common_env" \
     --set-secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest"
+
+  # 04.3-12: 확인증 파기 Job — 배포는 Job을 만들기만 하고 실행하지 않는다(사람이 월 1회 실행).
+  # 실행 절차는 docs/OPERATIONS.md 「확인증 파기」 절. 파기는 복호화하지 않으므로 데이터 키 · KMS는 주지 않고 서명 버킷 이름만 준다.
+  run gcloud run jobs deploy "$(job_name "$ENV" purge-certs)" \
+    "${job_common[@]}" \
+    --command=node,dist/cli/purge-certs.mjs \
+    --set-env-vars="${common_env},CERT_SIGNATURE_BUCKET=$(cert_bucket "$ENV" "$PROJECT")" \
+    --set-secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest"
 }
 
 run_db_bootstrap() {
@@ -427,7 +652,7 @@ deploy_service() {
   instance="$(sql_instance "$ENV")"
   local better_auth_secret app_data_key_secret smtp_host_secret smtp_user_secret smtp_password_secret smtp_from_secret
   better_auth_secret="$(secret_name better-auth-secret "$ENV")"
-  app_data_key_secret="$(secret_name app-data-key-v1 "$ENV")"
+  app_data_key_secret="$(secret_name app-data-key-v1-wrapped "$ENV")"
   smtp_host_secret="$(secret_name smtp-host "$ENV")"
   smtp_user_secret="$(secret_name smtp-user "$ENV")"
   smtp_password_secret="$(secret_name smtp-password "$ENV")"
@@ -455,8 +680,18 @@ deploy_service() {
 
   local deployed_at
   deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  local env_vars="APP_ENV=${ENV},APP_GIT_SHA=${SHA},APP_DEPLOYED_AT=${deployed_at},CLOUD_SQL_CONNECTION_NAME=${CONN_NAME},DB_IAM_USER=${iam_user},DB_NAME=${DB_NAME},DB_POOL_MAX=${DB_POOL_MAX},BETTER_AUTH_URL=${SERVICE_URL},AUTH_PROVIDER=email,GCP_PROJECT_ID=${PROJECT},CLOUD_SQL_INSTANCE_ID=${instance},NOTIFY_TICK_SCHEDULER_SA=$(scheduler_sa "$ENV")@${PROJECT}.iam.gserviceaccount.com"
-  local secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest,APP_DATA_KEY_v1=${app_data_key_secret}:latest,SMTP_HOST=${smtp_host_secret}:latest,SMTP_USER=${smtp_user_secret}:latest,SMTP_PASSWORD=${smtp_password_secret}:latest,SMTP_FROM=${smtp_from_secret}:latest"
+  local env_vars="APP_ENV=${ENV},APP_GIT_SHA=${SHA},APP_DEPLOYED_AT=${deployed_at},CLOUD_SQL_CONNECTION_NAME=${CONN_NAME},DB_IAM_USER=${iam_user},DB_NAME=${DB_NAME},DB_POOL_MAX=${DB_POOL_MAX},BETTER_AUTH_URL=${SERVICE_URL},AUTH_PROVIDER=email,GCP_PROJECT_ID=${PROJECT},CLOUD_SQL_INSTANCE_ID=${instance},NOTIFY_TICK_SCHEDULER_SA=$(scheduler_sa "$ENV")@${PROJECT}.iam.gserviceaccount.com,CERT_SIGNATURE_BUCKET=$(cert_bucket "$ENV" "$PROJECT"),APP_DATA_KEY_KMS_KEY=projects/${PROJECT}/locations/${REGION}/keyRings/$(kms_keyring "$ENV")/cryptoKeys/$(kms_key)"
+  if [ "$ENV" = "staging" ]; then
+    # 확인증 환경 게이트 — 스테이징만. 프로덕션은 Phase 11이 켠다(04.3 D-1107).
+    env_vars="${env_vars},CERT_FEATURE_ALLOWED=true"
+  fi
+  local secrets="BETTER_AUTH_SECRET=${better_auth_secret}:latest,APP_DATA_KEY_v1_WRAPPED=${app_data_key_secret}:latest,SMTP_HOST=${smtp_host_secret}:latest,SMTP_USER=${smtp_user_secret}:latest,SMTP_PASSWORD=${smtp_password_secret}:latest,SMTP_FROM=${smtp_from_secret}:latest"
+  # 04.3-08(codex C1): 감싼 v2가 한 번 생기면 플래그와 무관하게 이후 배포마다 붙인다 —
+  # 회전으로 DB가 v2 암호문이 된 뒤에도 돌고 있는 서비스가 읽는다.
+  # 붙일지는 ensure_secrets가 오류를 삼키지 않고 정했다(검토 반영 H2).
+  if [ "$DRY_RUN" != "1" ] && [ "$WRAPPED_V2_ATTACH" = "1" ]; then
+    secrets="${secrets},APP_DATA_KEY_v2_WRAPPED=$(secret_name app-data-key-v2-wrapped "$ENV"):latest"
+  fi
 
   # 신규·기존 서비스 모두 바로 100% 트래픽으로 배포한다(--no-traffic/--tag
   # 카나리 단계 없음). 원래는 기존 서비스 업데이트를 0%로 몰래 올려 태그
@@ -713,7 +948,9 @@ main() {
   ensure_network
   ensure_sql_instance
   ensure_sql_db_users
+  ensure_kms_key
   ensure_secrets
+  ensure_cert_bucket
   build_and_push_image
   deploy_jobs
   run_db_bootstrap

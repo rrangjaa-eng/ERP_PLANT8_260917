@@ -103,4 +103,18 @@ test.describe("로그인 버튼 위치 (/design-review 발견 4)", () => {
     const buttonCenterX = buttonBox!.x + buttonBox!.width / 2;
     expect(Math.abs(formCenterX - buttonCenterX)).toBeLessThanOrEqual(1);
   });
+
+  // SYSTEM.md §7-1 — 내부 1차 버튼은 PC 32 · 폰 40, 글자 --fs-sm(12px).
+  test("로그인 1차 버튼은 PC 1280에서 높이 32 · 글자 12px, 폰 375에서 높이 40 · 글자 12px(04.3-03 F1 · 04.3-15 R3)", async ({
+    page,
+  }) => {
+    const button = page.getByRole("button", { name: "로그인" });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/login");
+    await expect(button).toHaveCSS("height", "32px");
+    await expect(button).toHaveCSS("font-size", "12px");
+    await page.setViewportSize({ width: 375, height: 800 });
+    await expect(button).toHaveCSS("height", "40px");
+    await expect(button).toHaveCSS("font-size", "12px");
+  });
 });

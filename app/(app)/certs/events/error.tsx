@@ -1,0 +1,20 @@
+"use client";
+
+import { useEffect } from "react";
+import { ListEmpty } from "@/ui/list-empty/ListEmpty";
+import { PageHeader } from "@/ui/page-header/PageHeader";
+
+// 04.3-04 Task 3 ⑤ — 목록 조회 실패는 표 자리 --danger 한 줄 + 2차 「다시 시도」(app/(app)/projects/error.tsx 선례).
+// 문구는 사용자 결정 A(2026-09-29) — 명사형 「원인 · 다음 행동」, 다음 행동은 버튼이 말한다.
+export default function CertEventsError({ error, retry }: { error: Error & { digest?: string }; retry: () => void }) {
+  useEffect(() => {
+    console.error(error);
+  }, [error]);
+
+  return (
+    <>
+      <PageHeader title="확인증 행사" />
+      <ListEmpty message="확인증 행사 불러오기 실패" action={{ label: "다시 시도", onClick: retry }} tone="error" />
+    </>
+  );
+}

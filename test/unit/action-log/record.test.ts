@@ -99,4 +99,33 @@ describe("recordAction (OPS-05)", () => {
     expect(labels.account_unlock).toBe("잠금 해제");
     expect(labels.holiday_change).toBe("공휴일 변경");
   });
+
+  // 04.3-15(E7 a — 「[지시]」 5921849102): 경품 가액 변경은 원천징수 과세표준 · 수집 · 파기 근거의 이력이라 끌 수 없다.
+  it("cert_prize_value(경품 가액 변경)가 세 배열에 함께 있고 끌 수 없다(E7 a)", () => {
+    expect(CORE_ACTION_TYPES as readonly string[]).toContain("cert_prize_value");
+    expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain("cert_prize_value");
+    expect((ACTION_TYPE_LABELS as Record<string, string>).cert_prize_value).toBe("경품 가액 변경");
+  });
+
+  // 04.3-12(CERT-02): 확인증 파기 실행 기록은 칸 비우기와 한 트랜잭션으로 남기는 기록이라 끌 수 없다.
+  it("cert_purge(확인증 파기)가 세 배열에 함께 있고 끌 수 없다", () => {
+    expect(CORE_ACTION_TYPES as readonly string[]).toContain("cert_purge");
+    expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain("cert_purge");
+    expect((ACTION_TYPE_LABELS as Record<string, string>).cert_purge).toBe("확인증 파기");
+  });
+
+  // 04.3-14(사용자 결정 ⑤): 확인증 조회 접속기록 — 안전성 확보조치 기준 제2조3호 요소라 끌 수 없다.
+  it("cert_view(확인증 조회)가 세 배열에 함께 있고 선택 로그 설정에서 빼도 기록된다", async () => {
+    expect(CORE_ACTION_TYPES as readonly string[]).toContain("cert_view");
+    expect(ALWAYS_ON_ACTION_TYPES as readonly string[]).toContain("cert_view");
+    expect((ACTION_TYPE_LABELS as Record<string, string>).cert_view).toBe("확인증 조회");
+
+    const appendActionLog = vi.fn().mockResolvedValue(undefined);
+    await recordAction(
+      viewer,
+      { actionType: "cert_view", entity: "cert_submission", entityId: "s1" },
+      { appendActionLog, isActionTypeEnabled: () => Promise.resolve(false) },
+    );
+    expect(appendActionLog).toHaveBeenCalledTimes(1);
+  });
 });

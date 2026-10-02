@@ -213,7 +213,7 @@ test.describe("공휴일 표·확정 버튼의 상태", () => {
 
     const confirm = page.getByRole("button", { name: `${NEXT_YEAR}년 공휴일 확정` });
     await confirm.click();
-    await expect(confirm).toHaveText(`${NEXT_YEAR}년 공휴일 확정…`);
+    await expect(confirm).toHaveText(`${NEXT_YEAR}년 공휴일 확정…처리 중`);
     await expect(confirm).toHaveAttribute("aria-disabled", "true");
 
     release();
@@ -351,7 +351,7 @@ test.describe("공휴일 삭제 · 되돌리기(04.2-12)", () => {
     const before = await holidayCount(NEXT_YEAR);
     const release = await holdNextAction(page, "continue");
     await deleteA.click();
-    await expect(deleteA).toHaveText("삭제…");
+    await expect(deleteA).toHaveText("삭제…처리 중");
     await expect(deleteA).toHaveAttribute("aria-disabled", "true");
     await expect(deleteB).toHaveText("삭제");
     await expect(deleteB).not.toHaveAttribute("aria-disabled", "true");
@@ -386,7 +386,7 @@ test.describe("공휴일 삭제 · 되돌리기(04.2-12)", () => {
     const releaseUndo = await holdNextAction(page, "continue");
     await resultLine.getByRole("button", { name: "되돌리기" }).click();
     const undoPending = resultLine.getByRole("button", { name: "되돌리기" });
-    await expect(undoPending).toHaveText("되돌리기…");
+    await expect(undoPending).toHaveText("되돌리기…처리 중");
     await expect(undoPending).toHaveAttribute("aria-disabled", "true");
     releaseUndo();
 
@@ -663,9 +663,9 @@ test.describe("공휴일 추가 폼의 상태(04.2-12)", () => {
     await page.getByLabel("날짜").fill(`${NEXT_YEAR}-07-14`);
     await page.getByLabel("이름").fill("끊김 확인");
     const release = await holdNextAction(page, "abort");
-    const submit = page.getByRole("button", { name: "공휴일 추가", exact: true });
+    const submit = page.getByRole("button", { name: /^공휴일 추가(\s*처리 중)?$/ });
     await submit.click();
-    await expect(submit).toHaveText("공휴일 추가…");
+    await expect(submit).toHaveText("공휴일 추가…처리 중");
     await expect(submit).toHaveAttribute("aria-disabled", "true");
     await expect(page.getByRole("link", { name: "취소" })).toHaveAttribute("aria-disabled", "true");
     release();

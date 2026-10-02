@@ -111,6 +111,15 @@ describe("domain/document-numbering 서식 설정 (ADMN-09, 실제 Postgres)", (
     expect(number).toBe("26-001");
   });
 
+  // 04.3-02 Task 2 ④ — 확인증 번호 서식(document_number.cert.*, 기본
+  // CERT- + 4자리 연도 + - + 4자리 순번). counterKey가 project와 독립
+  // (다른 카운터 행)임도 함께 확인한다.
+  it("cert counterKey는 기본 서식으로 CERT-2026-0001을 낸다", async () => {
+    const format = await loadDocumentNumberFormat("cert");
+    const { number } = await allocateDocumentNumber(SYSTEM_VIEWER, { counterKey: "cert", year: 2026, format });
+    expect(number).toBe("CERT-2026-0001");
+  });
+
   it("허용 목록 밖 구분자(#)는 저장이 거부되고 기존 서식이 유지된다", async () => {
     await expect(setSettingValue(SYSTEM_VIEWER, DOCUMENT_NUMBER_PROJECT_SEPARATOR, "#")).rejects.toThrow();
 

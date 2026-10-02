@@ -42,8 +42,16 @@ export const MENUS: MenuDef[] = [
   { key: "admin.settings", label: "설정" },
   { key: "admin.action-log", label: "행동 로그" },
   { key: "admin.archive", label: "보관함" },
+  // 04.3-02 — 확인증 행사 관리(수령자 QR 확인증 발급). 시드가 시스템
+  // 관리자 계급에 자동으로 켠다(seedMasterData가 MENUS 전체를 순회).
+  { key: "certs.events", label: "확인증 행사" },
   // 04.2-11(ADMN-11): 공휴일 표 검토·연도 확정 — 「관리」 인덱스 「마스터」 끝.
   { key: "admin.holidays", label: "공휴일" },
+  // 04.3-04: 확인증 제출 내용 보기 — 있으면 모든 행사, 없으면 자기가 만든 행사만.
+  { key: "certs.submissions", label: "확인증 제출 내용" },
+  // 04.3-10(5909578685): 경영관리가 QR 생성 · 경품 목록 편집 · 링크 닫기 · 신청 취소(경영관리 쪽)를 한다.
+  // 시드는 시스템 관리자 계급 루프로만 켜고 경영관리 계급은 권한표에서 켠다 — 역할 이름을 코드에 두지 않는다.
+  { key: "certs.qr", label: "확인증 QR 생성 · 경품 목록" },
 ];
 
 // 04.1-02(UI-SPEC S10 · A1): 연차 — 계정 그룹의 셀프 서비스. 계급 5종 view·write 기본

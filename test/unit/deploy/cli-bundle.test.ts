@@ -18,7 +18,9 @@ function bundledOutputs(): string[] {
 }
 
 function cliEntriesCalledByDeploy(): string[] {
-  return [...DEPLOY_SH.matchAll(/--args=(dist\/cli\/[A-Za-z0-9._-]+\.mjs)/g)].map((m) => m[1] ?? "");
+  // `--args=dist/cli/<name>.mjs`(migrate · seed · db-bootstrap)와 `--command=node,dist/cli/<name>.mjs`(account ·
+  // restore · purge-certs — 인자를 execute --args로 줄 수 있는 모양) 두 형태를 모두 읽는다.
+  return [...DEPLOY_SH.matchAll(/(?:--args=|--command=node,)(dist\/cli\/[A-Za-z0-9._-]+\.mjs)/g)].map((m) => m[1] ?? "");
 }
 
 describe("CLI 번들 계약(deploy.sh ↔ build-cli.mjs)", () => {
@@ -34,5 +36,9 @@ describe("CLI 번들 계약(deploy.sh ↔ build-cli.mjs)", () => {
 
   it("파생 시드(seed-master)가 번들에 들어 있다", () => {
     expect(bundledOutputs()).toContain("dist/cli/seed-master.mjs");
+  });
+
+  it("확인증 파기 CLI(purge-certs)가 번들에 들어 있다(04.3-12)", () => {
+    expect(bundledOutputs()).toContain("dist/cli/purge-certs.mjs");
   });
 });

@@ -4,6 +4,7 @@ import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { queryActionLog, parseActionLogDateBoundary, type ActionLogFilter } from "@/domain/action-log";
 import { CORE_ACTION_TYPES, ACTION_TYPE_LABELS, type CoreActionType } from "@/domain/action-log/record";
+import { isPrunableActionType } from "@/domain/action-log/prune-scope";
 import { listPeople } from "@/domain/people";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
@@ -63,7 +64,7 @@ export default async function ActionLogPage({ searchParams }: { searchParams: Pr
 
   const rows = await queryActionLog(session.viewer, filter);
 
-  const pruneCount = rows.filter((row) => !row.prunedAt && row.actionType !== "action_log_prune").length;
+  const pruneCount = rows.filter((row) => !row.prunedAt && isPrunableActionType(row.actionType)).length;
 
   const filterValues: ActionLogFilterValues = {
     actorId,

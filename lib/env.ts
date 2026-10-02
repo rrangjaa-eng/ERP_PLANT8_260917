@@ -69,6 +69,11 @@ const rawSchema = z.object({
   // 앱이 뜬다(Phase 1 계약 그대로) — lib/crypto.ts가 있으면 새 암호화에 이
   // 버전을 쓰고, 없으면 v1만 쓴다. 회전 완료 후에만 v1을 지운다.
   APP_DATA_KEY_v2: optionalString(),
+  // 04.3-08 — 스테이징·프로덕션의 데이터 키는 Cloud KMS로 감싼 값(KMS 암호문의 한 줄
+  // base64)으로 받고, lib/crypto.ts loadDataKeys()가 기동 때 이 KMS 키로 한 번 푼다.
+  APP_DATA_KEY_KMS_KEY: optionalString(),
+  APP_DATA_KEY_v1_WRAPPED: optionalString(),
+  APP_DATA_KEY_v2_WRAPPED: optionalString(),
   SMTP_HOST: optionalString(),
   SMTP_USER: optionalString(),
   SMTP_PASSWORD: optionalString(),
@@ -79,11 +84,22 @@ const rawSchema = z.object({
   APP_DEPLOYED_AT: optionalString(),
   MAX_INSTANCES: optionalNumber(),
   STATUS_CONN_BANNER_RATIO: numberWithDefault(0.8),
+  // 04.3-02(규약 C1) — 확인증 기능의 첫 번째 게이트(환경). __unset__·없음은
+  // "false"로 정규화된다. 설정 cert.enabled(두 번째 게이트)와 AND로
+  // 묶여야만 기능이 켜진다 — 이 값만으로는 켜지지 않는다.
+  CERT_FEATURE_ALLOWED: z
+    .preprocess(unsetToUndefined, z.enum(["true", "false"]).optional())
+    .transform((value) => value ?? "false"),
+  // 04.3-05 — 서명 이미지 GCS 버킷 이름(deploy.sh가 넣는다). 비로컬 refine에
+  // 넣지 않는다: 없으면 확인증 기능을 쓰는 순간 서명 저장소가 실패로 닫힌다.
+  CERT_SIGNATURE_BUCKET: optionalString(),
   // 04.2-05: /internal/notify-tick의 기대 호출자(Cloud Scheduler 서비스 계정 이메일 —
   // deploy.sh가 넣는다)와 로컬 전용 OIDC 검증 끄기("1"만 인정 — handle.ts).
   NOTIFY_TICK_SCHEDULER_SA: optionalString(),
   NOTIFY_TICK_OIDC_DISABLED: optionalString(),
 });
+
+const KMS_KEY_NAME = /^projects\/[^/]+\/locations\/[^/]+\/keyRings\/[^/]+\/cryptoKeys\/[^/]+$/;
 
 const envSchema = rawSchema.superRefine((data, ctx) => {
   if (data.APP_ENV !== "local") {
@@ -122,6 +138,35 @@ const envSchema = rawSchema.superRefine((data, ctx) => {
         message: `${key} must be base64-encoded 32 bytes`,
       });
     }
+  }
+  // 04.3-08 — 감싼 키는 KMS 키 이름 없이 풀 수 없다. 비로컬에서 감싼 키가 하나라도 있는데
+  // 평문 변수가 (어느 버전이든) 함께 있으면 평문 시크릿이 아직 서비스에 붙어 있는 배포다 —
+  // 부팅에서 막는다(검토 반영 L4).
+  const anyWrapped = data.APP_DATA_KEY_v1_WRAPPED !== undefined || data.APP_DATA_KEY_v2_WRAPPED !== undefined;
+  for (const version of ["v1", "v2"] as const) {
+    const wrappedKey = `APP_DATA_KEY_${version}_WRAPPED` as const;
+    if (data[wrappedKey] !== undefined && !data.APP_DATA_KEY_KMS_KEY) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["APP_DATA_KEY_KMS_KEY"],
+        message: `APP_DATA_KEY_KMS_KEY is required when ${wrappedKey} is set`,
+      });
+    }
+    if (anyWrapped && data.APP_ENV !== "local" && data[`APP_DATA_KEY_${version}`] !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: [`APP_DATA_KEY_${version}`],
+        message: `APP_DATA_KEY_${version} must not be set together with a wrapped data key when APP_ENV is not local`,
+      });
+    }
+  }
+  // 검토 반영 L3 — KMS 키 이름은 cryptoKeys 경로(버전 없이)여야 한다.
+  if (data.APP_DATA_KEY_KMS_KEY !== undefined && !KMS_KEY_NAME.test(data.APP_DATA_KEY_KMS_KEY)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["APP_DATA_KEY_KMS_KEY"],
+      message: "APP_DATA_KEY_KMS_KEY must be projects/<p>/locations/<l>/keyRings/<r>/cryptoKeys/<k>",
+    });
   }
   if (data.AUTH_PROVIDER === "google") {
     if (!data.GOOGLE_CLIENT_ID) {
@@ -163,6 +208,9 @@ const ENV_KEYS = [
   "RATE_LIMIT_LOGIN_MAX",
   "APP_DATA_KEY_v1",
   "APP_DATA_KEY_v2",
+  "APP_DATA_KEY_KMS_KEY",
+  "APP_DATA_KEY_v1_WRAPPED",
+  "APP_DATA_KEY_v2_WRAPPED",
   "SMTP_HOST",
   "SMTP_USER",
   "SMTP_PASSWORD",
@@ -173,6 +221,8 @@ const ENV_KEYS = [
   "APP_DEPLOYED_AT",
   "MAX_INSTANCES",
   "STATUS_CONN_BANNER_RATIO",
+  "CERT_FEATURE_ALLOWED",
+  "CERT_SIGNATURE_BUCKET",
   "NOTIFY_TICK_SCHEDULER_SA",
   "NOTIFY_TICK_OIDC_DISABLED",
 ] as const;

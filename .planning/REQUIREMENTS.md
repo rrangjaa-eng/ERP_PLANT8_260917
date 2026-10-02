@@ -95,7 +95,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### 기타소득 확인증 (CERT)
 
-- [ ] **CERT-01**: 외부 인력(수령자)이 직원 화면·인쇄물의 QR(1회성 링크)을 폰으로 찍고 들어와 본인 정보(이름·주민등록번호·주소·연락처·계좌)를 직접 입력하고 터치 서명을 제출한다(로그인 없음). 지급 금액·소득 종류·원천징수액은 지출결의에서 미리 채워져 수령자는 고칠 수 없다. 링크는 1회 제출 후 만료된다
+- [ ] **CERT-01**: 경품(현물) 수령자가 행사 QR(행사당 하나, 여러 명이 같이 씀)을 폰으로 찍고 로그인 없이 들어와 받은 경품을 목록에서 고른 뒤, 본인 정보(이름·주민등록번호·연락처, 택배 경품이면 주소)와 수집 안내 확인·터치 서명을 제출한다. 행사 QR은 기획본부가 신청하면 경영관리가 경품 목록(경품명·1개 가액·현장/택배·당첨 수)을 넣어 만들고, 1개 가액 5만원 이하 경품은 목록에 오르지 않는다. 수령자 화면에는 경품명만 보이고 금액·세금·계좌 칸은 없다(D-1101). 링크는 당첨일 00:00에 열리고 만료 시간(기본 72시간)이 지나거나 경영관리가 닫으면 닫히며, 대리·허위 제출은 경영관리가 제출 건을 현장 추첨 결과와 대조해 거른다(D-1102 · 2026-09-30 결정)
 - [ ] **CERT-02**: 주민등록번호는 앱 단에서 암호화 저장되고, 열람은 권한자로 제한되며 열람 기록이 남고, 보존 기간 뒤 파기된다
 - [ ] **CERT-03**: 제출된 확인증을 해당 지출결의 건에 연결한다
 - [ ] **CERT-04**: 개인 지급(기타소득·사업소득) 건에는 원천징수 제안 금액이 자동 계산되어 뜨고(EXP-15의 증빙 종류별 세금 규칙 중 원천징수 종류. 세율·면제 기준은 이력형 설정, 기본 기타소득 8.8%·사업소득 3.3%, 기타소득 면제 기준 = 기타소득금액 5만원 이하 = 지급액 125,000원 이하), 경영관리가 확정하면 지급액에 반영된다
@@ -247,8 +247,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | NOTI-03 | Phase 7 | Pending |
 | NOTI-04 | Phase 04.2 | Complete |
 | LEAV-01 | Phase 04.1 | Complete |
-| CERT-01 | Phase 11 | Pending |
-| CERT-02 | Phase 11 | Pending |
+| CERT-01 | Phase 04.3 | Pending |
+| CERT-02 | Phase 04.3 | Pending |
 | CERT-03 | Phase 11 | Pending |
 | CERT-04 | Phase 11 | Pending |
 | ADMN-01 | Phase 3 | Complete |
@@ -289,11 +289,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 - Mapped to phases: 91
 - Unmapped: 0 ✓
 
-**By phase:** 1 (9) · 2 (1) · 3 (13) · 4 (11) · 04.1 (5) · 04.2 (4) · 04.4 (1) · 5 (9) · 6 (12) · 7 (3) · 8 (2) · 9 (11) · 10 (6) · 11 (4)
+**By phase:** 1 (9) · 2 (1) · 3 (13) · 4 (11) · 04.1 (5) · 04.2 (4) · 04.3 (2) · 04.4 (1) · 5 (9) · 6 (12) · 7 (3) · 8 (2) · 9 (11) · 10 (6) · 11 (2)
 
 ---
 *Requirements defined: 2026-09-17*
 *2026-09-24: Phase 7에서 Phase 04.2로 ADMN-11·NOTI-01·NOTI-02·NOTI-04 이동(PR #50 분리 — 옮긴 4 + 남긴 3 = 원래 7)*
+*Last updated: 2026-10-02 — CERT-01 문장을 명단 폐지 흐름(2026-09-30 결정)에 맞춤(사용자 승인, PR #88)*
+*Earlier update: 2026-09-24 — CERT-01·02 → Phase 04.3(D-1101·D-1102·D-1103 문구), Phase 11은 CERT-03·04 (86/86 mapped)*
 *2026-10-01: quick 261001-hfi — 지급 방식 코드표 MAST-04 → MAST-05(Phase 6), OPS-05에서 문서 제출·승인·반려·회수(OPS-08 · Phase 5) · 지급·구매 처리(OPS-09 · Phase 6) · 손익 열람(OPS-10 · Phase 9) · 인센티브 열람(OPS-11 · Phase 10) 분리, 주민등록번호 열람 기록은 CERT-02. OPS-05 로그 정리는 조건 삭제(감사 기록 수정 없음). ADMN-12에 예약 취소 예외. ADMN-10 대표 404 → Phase 7 확정 항목. v1 86 → 91 (91/91 mapped)*
 *Last updated: 2026-09-23 — 데이터 이전 제외(사용자 결정): MIG-01·02·03 → Out of Scope, MIG-04·05를 수기 입력 전환으로 재정의, OPS-06 '이전 실행' → '복원 리허설', 인트라넷 미러링 사유 정정, v1 89 → 86 (86/86 mapped)*
 *Earlier update: 2026-09-17 after /plan-ceo-review (23 findings + D3·D4·D5 + OV-1..8 folded in; OPS-06·OPS-07 added; OV-3 redefined → EXP-15 증빙 종류별 세금 자동 계산; CERT-01 QR 진입; EXP-16 경영관리 카드 사용 대리 등록·개인 비용 팀 귀속·경품 대납 세금 비용 포함; 89/89 mapped; /plan-eng-review decisions 1–15 + OV-1..8 folded: 본부·계급×조직 범위·자기 승인, 세율 기준일·절사, effectiveCost 식 공유, upsert 이전·결정적 번호·amount_basis·중복 후보, demo 입력; roadmap Phase 6 split per Eng OV-6 → 11 phases, traceability renumbered: old 6 → 6/7, old 7~10 → 8~11; 회사 GCP Phase 1부터)*

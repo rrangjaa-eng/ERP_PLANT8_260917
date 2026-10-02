@@ -8,17 +8,25 @@ import styles from "./TextField.module.css";
 // SYSTEM.md §7-2 입력 · 오류 표시, §10 접근성 계약.
 export type TextFieldProps = Omit<
   InputHTMLAttributes<HTMLInputElement>,
-  "id" | "aria-invalid" | "aria-describedby"
+  "id" | "aria-invalid" | "aria-describedby" | "size"
 > & {
   id: string;
   label: string;
   /** 서버 검증 오류 문자열 — next-safe-action의 validationErrors 필드값을 그대로 넣는다. */
   error?: string;
+  /** 칸 아래 줄 없이 틀림만 알릴 때(오류 문장이 칸 밖 다른 줄에 있을 때 — 04.3-06 N2).
+   * error가 있으면 error가 이긴다. */
+  "aria-invalid"?: true;
+  "aria-describedby"?: string;
   /** 금액 입력용 우측 정렬 + tabular-nums 변형. */
   numeric?: boolean;
   /** 쉼표 입력 칸(UI-SPEC S15, 04-09) — 있으면 useCommaInput으로 렌더한다.
    * numeric은 이때 의미가 없다(항상 우측 정렬 + tabular-nums). */
   numberKind?: NumberInputKind;
+  /** 04.3-02 UI-SPEC 개정 ⑦(a) — external은 외부 수령자 화면 전용(높이
+   * --s-12 · --fs-md). 기본값은 기존 모양(HTML `size` 속성을 가린다 —
+   * 이 저장소의 27개 기존 호출부는 그 속성을 쓰지 않는다). */
+  size?: "default" | "external";
   /** 칸 밖에 그린 힌트 요소의 id — aria-describedby에 오류 id 뒤로 더한다. */
   hintId?: string;
 };
@@ -36,11 +44,22 @@ function describedBy(errorId: string | undefined, hintId: string | undefined): s
   return [errorId, hintId].filter(Boolean).join(" ") || undefined;
 }
 
-function PlainTextField({ id, label, error, numeric = false, className, hintId, ...rest }: TextFieldProps) {
+function PlainTextField({
+  id,
+  label,
+  error,
+  numeric = false,
+  size = "default",
+  className,
+  hintId,
+  "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedBy,
+  ...rest
+}: TextFieldProps) {
   const errorId = `${id}-error`;
 
   return (
-    <div className={styles.row}>
+    <div className={size === "external" ? `${styles.row} ${styles.rowExternal}` : styles.row}>
       <label htmlFor={id} className={styles.label}>
         {label}
       </label>
@@ -48,14 +67,20 @@ function PlainTextField({ id, label, error, numeric = false, className, hintId, 
         <input
           id={id}
           {...rest}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={describedBy(error ? errorId : undefined, hintId)}
-          className={[styles.input, numeric ? styles.numeric : "", error ? styles.inputError : "", className]
+          aria-invalid={error ? true : ariaInvalid}
+          aria-describedby={describedBy(error ? errorId : ariaDescribedBy, hintId)}
+          className={[
+            styles.input,
+            numeric ? styles.numeric : "",
+            size === "external" ? styles.external : "",
+            error ? styles.inputError : "",
+            className,
+          ]
             .filter(Boolean)
             .join(" ")}
         />
         {error ? (
-          <p id={errorId} className={styles.error}>
+          <p id={errorId} className={size === "external" ? `${styles.error} ${styles.errorExternal}` : styles.error}>
             {error}
           </p>
         ) : null}
@@ -75,9 +100,13 @@ function CommaTextField({
   numberKind,
   name,
   defaultValue,
+  size,
   hintId,
+  "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedBy,
   ...rest
 }: TextFieldProps & { numberKind: NumberInputKind }) {
+  void size; // 쉼표 입력 칸은 external 변형을 쓰지 않는다 — native size 유출만 막는다.
   const initial = defaultValue === undefined || defaultValue === null ? "" : String(defaultValue);
   const { inputRef, value, onChange, error: commaError, rawValue } = useCommaInput(numberKind, initial);
   const errorId = `${id}-error`;
@@ -97,8 +126,8 @@ function CommaTextField({
           inputMode={numberKind === "krw" ? "numeric" : "decimal"}
           value={value}
           onChange={onChange}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={describedBy(error ? errorId : undefined, hintId)}
+          aria-invalid={error ? true : ariaInvalid}
+          aria-describedby={describedBy(error ? errorId : ariaDescribedBy, hintId)}
           className={[styles.input, styles.numeric, error ? styles.inputError : "", className]
             .filter(Boolean)
             .join(" ")}

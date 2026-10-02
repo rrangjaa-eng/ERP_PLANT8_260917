@@ -45,3 +45,26 @@ describe("WR-07: (app) 그룹의 모든 페이지가 자체 인증 검사를 갖
     expect(layout).toContain("requireSession");
   });
 });
+
+// 04.3-11 — 인쇄 라우트(app/print)는 (app) 그룹 밖이라 위 테스트가 훑지 않는다. (app) 레이아웃의
+// requireSession()도 앞서지 않으므로 페이지가 자체 세션 검사를 갖는지 같은 기준으로 훑는다.
+const PRINT_ROOT = resolve(process.cwd(), "app/print");
+
+function printPages(): string[] {
+  return globSync("**/page.tsx", { cwd: PRINT_ROOT }).sort();
+}
+
+describe("04.3-11: app/print의 모든 페이지가 자체 인증 검사를 갖는다", () => {
+  it("훑을 페이지를 실제로 찾는다(빈 목록이면 이 테스트가 공허해진다)", () => {
+    expect(printPages().length).toBeGreaterThanOrEqual(1);
+  });
+
+  it.each(printPages())("%s가 자체 세션 검사를 갖는다", (page) => {
+    const source = readFileSync(resolve(PRINT_ROOT, page), "utf8");
+    expect(
+      hasOwnSessionGuard(source),
+      `${relative(process.cwd(), resolve(PRINT_ROOT, page))}에 자체 세션 검사가 없다 — ` +
+        `requireSession() 또는 getSession() + redirect("/login") 중 하나가 있어야 한다`,
+    ).toBe(true);
+  });
+});

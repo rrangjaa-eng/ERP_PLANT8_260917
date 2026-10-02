@@ -1,7 +1,7 @@
 import { build } from "esbuild";
 import { readFileSync } from "node:fs";
 
-// Cloud Run Job 5개(migrate·seed·db-bootstrap·account·restore)가 공유하는 CLI 번들.
+// Cloud Run Job 6개(migrate·seed·db-bootstrap·account·restore·purge-certs)가 공유하는 CLI 번들.
 // next를 끌어오면 01-01·01-02 계약 위반이므로 빌드 뒤 문자열 검사로 실패시킨다.
 
 const entryPoints = [
@@ -10,6 +10,7 @@ const entryPoints = [
   "scripts/account-cli.ts",
   "scripts/db-bootstrap.ts",
   "scripts/restore-rehearsal-cli.ts",
+  "scripts/purge-certs.ts",
 ];
 
 const outputs = [
@@ -18,6 +19,7 @@ const outputs = [
   "dist/cli/account-cli.mjs",
   "dist/cli/db-bootstrap.mjs",
   "dist/cli/restore-rehearsal-cli.mjs",
+  "dist/cli/purge-certs.mjs",
 ];
 
 async function main() {

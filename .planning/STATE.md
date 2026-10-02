@@ -2,18 +2,17 @@
 gsd_state_version: "1.0"
 current_phase: "04.3"
 current_phase_name: QR 확인증 접수
-current_plan: 1
+current_plan: 17
 status: executing
 stopped_at: "Phase 04.1·04.2·04.4 complete (PR #119); Phase 04.3 executing (PR #88)"
-last_updated: "2026-10-02T03:24:10.564Z"
-last_activity: 2026-10-01
-last_activity_desc: Phase 04.3 execution started
-state_head: 26d00a109d992289e6bcfd1aa55f99fe98125790
+last_updated: "2026-10-02T03:21:14.630Z"
+last_activity: 2026-10-02
+state_head: dd4f15508f7f0b26c6430a69cf8cc102a929dd3f
 progress:
   total_phases: 17
   completed_phases: 7
-  total_plans: 142
-  completed_plans: 95
+  total_plans: 146
+  completed_plans: 111
   percent: 41
 ---
 
@@ -29,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-09-30)
 ## Current Position
 
 Phase: 04.3 (QR 확인증 접수) — EXECUTING
-Current Plan: 1
-Total Plans in Phase: 13
+Current Plan: 17
+Total Plans in Phase: 17
 Status: Executing Phase 04.3
-Last activity: 2026-10-01 — Phase 04.3 execution started
+Last activity: 2026-10-02
 
 Progress: [████░░░░░░] 41%
 
@@ -358,10 +357,13 @@ Recent decisions affecting current work:
 | 260930-nto | 04.4 후속 이연 2건: 관리 표 행 행동 간격 --s-4(거래처 · 법인카드 · 코드표, FINDING-001) · 공유 Button .tertiary 글자 밑줄(FINDING-002) | 2026-09-30 | 3655ab5 | [260930-nto-row-actions-gap-and-tertiary-underline](./quick/260930-nto-row-actions-gap-and-tertiary-underline/) |
 | 261001-440 | 머지 훅 게이트 판정 — PR이 추가한 .claude/gates 로그 줄로(사용자 결정 (가), PR #112 재현) | 2026-10-01 | e702988 | [261001-440-pr-gates](./quick/261001-440-pr-gates/) |
 | 261001-3uq | Codex(ChatGPT 구독) 디자인 검토 전용 복원: install-codex.sh(pnpm·API 키 없음)·gstack codex_reviews disabled·codex-design-review.sh(4폭 스크린샷·DOM 실측·후보/실측 대조) · settings 훅·rule-guard R3·CLAUDE.md는 승인 대기(BLOCKED-CHANGES) | 2026-10-01 | 8d52843 | [261001-3uq-codex](./quick/261001-3uq-codex/) |
+| 261001-5zp | 04.3-15 독립 검토·DOM 감사 지적 반영(R1 · R3~R7 · M1) | 2026-10-01 | 1e79494 | [261001-5zp-04-3-15-review-fix-round](./quick/261001-5zp-04-3-15-review-fix-round/) |
 | 261001-81j | Codex 디자인 검토 도구 후속 수정(PR #116 봇 지적 4건: dotenv 주석·--out 하드링크·--ephemeral·숨은 요소 실측 제외) | 2026-10-01 | 2fd934b4 | [261001-81j-codex-design-review-follow-up-fixes](./quick/261001-81j-codex-design-review-follow-up-fixes/) |
 | 261001-85g | Phase 2·3 요구사항 갭 4건 — ADMN-03 등록 폼 선택지 노출표 투영 · ADMN-06 미설정 키 지난 연도 가져오기 · 미래 발령 취소 로그 · UX-01 다섯 상태 | 2026-10-01 | 746dac6 | [261001-85g-phase-2-3-gaps](./quick/261001-85g-phase-2-3-gaps/) |
 | 261001-hfi | Phase 2·3 요구사항 갭 남은 몫 — ADMN-12 공휴일 보관 · 예정값 취소 같은 tx 로그 · MAST-04 견적 분류 코드표 · OPS-05/MAST-04 분리(v1 91) | 2026-10-01 | 0787af7 | [261001-hfi-phase-2-3](./quick/261001-hfi-phase-2-3/) |
+| 261001-x6q | 04.3 legal fixes - purge deadline 04-01 and collection notice v4 | 2026-10-02 | 5da5430 | [261001-x6q-04-3-legal-fixes-purge-deadline-04-01-an](./quick/261001-x6q-04-3-legal-fixes-purge-deadline-04-01-an/) |
 | 261002-0jy | #133 Codex P2 후속 — 견적 줄 저장 충돌 거래처 이름 조회를 루프 뒤 1회 묶음으로(충돌 없으면 0회) | 2026-10-02 | 5478f90 | [261002-0jy-133-codex-p2](./quick/261002-0jy-133-codex-p2/) |
+| 261002-3c1 | 04.3 PR #88 Codex 봇 지적 3건 — 파기 갱신 안 가액 재평가(P1) · 결과 모름 요청 키를 보낸 내용에 묶음(P2 둘) · 이미 QR 생성 문구 중립화 | 2026-10-02 | dd4f1550 | [261002-3c1-04-3-codex-bot-review-fixes-purge-thresh](./quick/261002-3c1-04-3-codex-bot-review-fixes-purge-thresh/) |
 | 261002-3mx | 서버 검증 묶음 — 견적 소분류 서버 검증 · 코드표 tableKey 허용 목록 · 설정 예정값 취소 자정 경합 | 2026-10-02 | 3d61fc5 | [261002-3mx-server-validation-bundle-quote-subcatego](./quick/261002-3mx-server-validation-bundle-quote-subcatego/) |
 | 261002-4jn | 보관함 복원: 이미 복원됨 토스트 · 날짜 점유 공휴일 복원 숨김(회고 #3·#4) | 2026-10-02 | ecd2f6e | [261002-4jn-archive-restore-already-restored-toast-a](./quick/261002-4jn-archive-restore-already-restored-toast-a/) |
 
@@ -383,6 +385,7 @@ Recent decisions affecting current work:
 - Phase 10 edited: edited fields: success_criteria (/review 반영: 프로젝트·견적 줄 대상 켜기와 칸별 판정·값 보존 적용을 Phase 10 기준 4에 명시)
 - Phase 9 edited: edited fields: depends_on, success_criteria(6·7), 결정 메모 — 손익을 테스트 데이터로 검증, Phase 6 뒤 착수(2026-09-27 사용자 결정)
 - Phase 04.6 inserted after Phase 4: 스킨 A 적용 — 스킨 A 정돈 + 옆 패널, 역할 토큰·lint·공용/화면 틀 컴포넌트·컴포넌트 모음·화면 사진 비교·원칙 점검 막는 모드. Phase 4 머지 뒤 착수
+- Phase 04.3 edited: edited fields: goal, success_criteria 1-5, list line — 명단 폐지 흐름 · 파기 다음 해 4월 1일 (PR #88 5942919192)
 - Phase 5 edited: edited fields: depends_on (04.5·04.6 추가 — 실행 순서 04.5 → 04.6 → 5, 사용자 결정 2026-10-02)
 
 ## Deferred Items

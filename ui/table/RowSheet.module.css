@@ -84,3 +84,8 @@
   overflow-y: auto;
   padding: var(--s-3) var(--pad-page) var(--s-6);
 }
+
+/* §7-3 (바) ⑫ — 본문 아래 3차 한 자리(접힌 값 목록과 --s-4 떨어진다). */
+.action {
+  margin-top: var(--s-4);
+}

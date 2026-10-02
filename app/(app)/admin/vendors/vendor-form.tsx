@@ -10,7 +10,7 @@ import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { SelectHint } from "@/ui/select/Select";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
-import { maskTail4 } from "@/lib/crypto";
+import { maskTail4 } from "@/lib/mask-tail4";
 import styles from "./vendors.module.css";
 
 export type EvidenceTypeOption = { value: string; label: string; description: string | null };

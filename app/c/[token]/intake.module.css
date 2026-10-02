@@ -1,0 +1,375 @@
+/* 04.3-02 Task 2 ⑮ — 외부 수령자 화면. 토큰만 쓴다(새 색·크기·radius
+   리터럴 없음). main 최대 폭 480, 한 열, 이 화면 글자 크기는 --fs-sm ·
+   --fs-md · --fs-lg · --fs-xl 넷뿐이다(UI-SPEC ①-j). */
+
+.main {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: var(--s-4);
+  font-size: var(--fs-md);
+}
+
+.title {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+  margin: 0 0 var(--s-1);
+}
+
+.subtitle {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  margin: 0 0 var(--s-4);
+}
+
+.listLabel {
+  font-size: var(--fs-md);
+  color: var(--muted);
+  font-weight: var(--fw-medium);
+  margin: 0 0 var(--s-2);
+}
+
+.pickList {
+  list-style: none;
+  margin: 0 0 var(--s-4);
+  padding: 0;
+}
+
+.pickRow {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 48px;
+  padding: var(--s-2) 0;
+  border: none;
+  border-bottom: var(--line-w) solid var(--line);
+  background: none;
+  text-align: left;
+  font-size: var(--fs-md);
+  cursor: pointer;
+}
+
+.pickRowSecondLine {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+/* 04.3-16 — E′2 경품 빠짐 알림 줄: 기존 E′ 오류 줄 규칙(--fs-md --danger). 포커스를 받는다(tabindex -1). */
+.goneNotice {
+  color: var(--danger);
+  font-size: var(--fs-md);
+  margin: 0 0 var(--s-2);
+}
+
+.inquiryLine {
+  font-size: var(--fs-md);
+  color: var(--muted);
+}
+
+.blockedDanger {
+  color: var(--danger);
+  font-size: var(--fs-md);
+}
+
+.fieldLabel {
+  display: block;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  font-weight: var(--fw-medium);
+  margin-bottom: var(--s-1);
+}
+
+/* §3 터치 목표: tel: 3차는 폰에서 최소 44×44(.runLink와 같은 결). 문장 속 링크라 히트 영역만 44 —
+   위아래 음수 margin이 줄 상자를 글자 한 줄 높이로 되돌리고, position: relative가 앞뒤 줄에 가려지지 않게 한다. */
+.telLink {
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+  /* 1lh를 모르는 브라우저(iOS Safari 16.4 미만)는 앞 줄(--lh-body × 글자 크기)을 쓴다. 둘 다 양수가 되지 않게 묶는다. */
+  margin-block: min(0px, calc((var(--lh-body) * 1em - var(--touch-min)) / 2));
+  margin-block: min(0px, calc((1lh - var(--touch-min)) / 2));
+  position: relative;
+}
+
+/* 전화 링크 + 조사 「에」 — 「에」가 줄 맨 앞으로 떨어지지 않는다(04.3-16 V1). */
+.telGroup {
+  white-space: nowrap;
+}
+
+/* E′4 문서 스크롤 여백 — 가상 키보드가 열린 채 연락처 · 주소 칸으로 포커스가 가도 sticky 제출 줄에 가리지 않게
+   (DR-16). 값 = 제출 줄의 지금 높이(IntakeForm이 --cert-submit-bar-h로 잰다 — 이유 줄이 접히면 높이가 바뀐다).
+   잴 수 없는 첫 그림 동안은 1차 48 · 이유 두 줄 쪽으로 넉넉히 잡는다. */
+:global(html):has(.stickySubmit) {
+  scroll-padding-bottom: var(
+    --cert-submit-bar-h,
+    calc(var(--touch-min) * 2 + var(--line-w-strong) + var(--s-4) * 2)
+  );
+}
+
+/* 제출 줄(E′4) — main 안 sticky, 위 2px --line-strong, 안전 영역 더함(§6-5 실물 .submit). */
+.stickySubmit {
+  position: sticky;
+  bottom: 0;
+  background: var(--bg);
+  border-top: var(--line-w-strong) solid var(--line-strong);
+  padding: var(--s-4) 0 calc(var(--s-4) + env(safe-area-inset-bottom, 0px));
+  margin-top: var(--s-4);
+  z-index: var(--z-bar);
+}
+
+/* 04.3-06 · 04.3-15 — E′4 경품 블록(머리 = 라벨 「경품」 + 3차 「다른 경품 고르기」, 아래 경품명 한 줄,
+   §6-5 실물 .pay) · 아래 문의 줄. */
+.prizeBlock {
+  border-top: var(--line-w-strong) solid var(--line-strong);
+  padding-top: var(--s-3);
+}
+
+.prizeHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+}
+
+.prizeLabel {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  font-weight: var(--fw-medium);
+}
+
+.prizeName {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  margin: 0;
+}
+
+.prizeInquiry {
+  font-size: var(--fs-md);
+  color: var(--muted);
+  margin: var(--s-2) 0 0;
+}
+
+.formFields {
+  border-top: var(--line-w-strong) solid var(--line-strong);
+  margin-top: var(--s-4);
+  padding-top: var(--s-3);
+}
+
+.fieldRow {
+  margin-bottom: var(--s-4);
+}
+
+.labelSub {
+  font-size: var(--fs-md);
+  color: var(--muted);
+  font-weight: var(--fw-regular);
+}
+
+/* 화면 전용 칸은 ui/input의 외부 칸 모양을 그대로 가져온다(개정 ⑦ (a)). */
+.textInput {
+  composes: input external from "../../../ui/input/TextField.module.css";
+}
+
+.fieldInvalid {
+  composes: inputError from "../../../ui/input/TextField.module.css";
+}
+
+/* 주민등록번호 두 칸(UI-SPEC E4) — 앞 · 하이픈 · 뒤. */
+.rrnRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: var(--s-2);
+  align-items: center;
+}
+
+.rrnInput {
+  composes: input external from "../../../ui/input/TextField.module.css";
+  font-variant-numeric: tabular-nums;
+}
+
+.rrnInputError {
+  composes: inputError from "../../../ui/input/TextField.module.css";
+}
+
+.rrnDash {
+  color: var(--faint);
+}
+
+.rrnError {
+  composes: error errorExternal from "../../../ui/input/TextField.module.css";
+}
+
+.consentBlock {
+  border-top: var(--line-w) solid var(--line);
+  border-bottom: var(--line-w) solid var(--line);
+  padding: var(--s-3) 0;
+  margin: var(--s-4) 0;
+}
+
+/* 라벨 전체가 클릭 영역(44 확보), 체크박스 20×20. */
+.consentLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: var(--touch-min);
+  font-size: var(--fs-md);
+  cursor: pointer;
+}
+
+.consentBox {
+  flex: 0 0 auto;
+  width: var(--s-5);
+  height: var(--s-5);
+  margin: 0;
+}
+
+.consentSummary {
+  font-size: var(--fs-md);
+  color: var(--muted);
+  line-height: var(--lh-body);
+  margin: 0;
+}
+
+.consentToggle {
+  font-size: var(--fs-sm);
+}
+
+/* 전문 — 같은 블록 안 제자리 펼침(개정 ①-f). */
+.consentFull {
+  font-size: var(--fs-md);
+  color: var(--fg);
+  line-height: var(--lh-body);
+  max-width: var(--measure);
+  margin-top: var(--s-2);
+}
+
+/* 전문 <dl> — 절 제목 <dt>(--fs-md 600) · 본문 <dd>(--fs-md). 제목과 본문 사이 구분 글자 없음(G0 DR-7). */
+.consentFull dl {
+  margin: 0;
+}
+
+.consentFull dt {
+  font-weight: var(--fw-medium);
+}
+
+.consentFull dd {
+  margin: 0 0 var(--s-2);
+}
+
+/* 캔버스 좌우 --s-4 스크롤 여백(DR-21) — 한 손 스크롤 중 엄지가 서명 칸을 건드려 획이 생기지 않게 캔버스를 좁힌다.
+   비율(520 / 200)은 그대로. */
+.signatureWrap {
+  position: relative;
+  border: var(--line-w) solid var(--line-ui);
+  aspect-ratio: 520 / 200;
+  margin-inline: var(--s-4);
+}
+
+.signatureCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+.signatureRedo {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* 잉크가 없을 때도 「다시 쓰기」 줄의 자리를 비워 둔다 — 첫 획에 문서가 길어지지 않아 제출 줄 위 스크롤이 손가락 밑에서
+   밀리지 않는다. 숨긴 버튼은 포커스 · 읽기 순서에서 빠진다. */
+.signatureRedoIdle {
+  visibility: hidden;
+}
+
+.signaturePlaceholder {
+  position: absolute;
+  left: var(--s-3);
+  top: var(--s-2);
+  color: var(--faint);
+  font-size: var(--fs-sm);
+  pointer-events: none;
+}
+
+/* 기준선 — 논리 y 155(아래에서 45/200), 좌우 --s-4 안쪽(§6-5 실물 .sig .base). */
+.signatureBaseline {
+  position: absolute;
+  left: var(--s-4);
+  right: var(--s-4);
+  bottom: 22.5%;
+  border-top: var(--line-w) dashed var(--line);
+  pointer-events: none;
+}
+
+/* 키 안내 줄 — 캔버스가 키보드 포커스(:focus-visible)를 받았을 때만 보인다.
+   숨어 있어도 캔버스 aria-describedby 설명으로는 읽힌다. */
+.keyGuide {
+  font-size: var(--fs-md);
+  color: var(--muted);
+  margin: var(--s-1) 0 0;
+}
+
+.keyGuideHidden {
+  display: none;
+}
+
+/* U14 — E5·E6-a 결과 블록: SYSTEM §6-5 / external-cert.html .state 그대로
+   (2px 강한 선 위 · 첫 줄 굵게 · 나머지 --muted). */
+.resultBlock {
+  border-top: var(--line-w-strong) solid var(--line-strong);
+  margin-top: var(--s-6);
+  padding-top: var(--s-4);
+}
+
+.resultBlock p {
+  margin: 0 0 var(--s-3);
+}
+
+.resultLead {
+  font-weight: var(--fw-bold);
+}
+
+.resultMuted {
+  color: var(--muted);
+}
+
+/* UI-SPEC E1 상단 바(layout.tsx) — 실물 external-cert.html `.bar`. 토큰만. */
+.bar {
+  display: flex;
+  align-items: center;
+  height: var(--touch-min);
+  padding: 0 var(--pad-page);
+  background: var(--bar);
+  color: var(--bar-fg);
+  font-size: var(--fs-sm);
+}
+
+.mark {
+  color: var(--bg);
+  font-weight: var(--fw-mark);
+  font-size: var(--fs-md);
+  letter-spacing: var(--ls-head);
+}
+
+.leaf {
+  color: var(--bar-leaf);
+  font-style: normal;
+}
+
+.barName {
+  margin-left: auto;
+  color: var(--bar-muted);
+}
+
+/* 04.3-03 — E1 LOADING 진행 바(상단 바 바로 아래 2px --accent, 글자 없음). */
+.progress {
+  position: fixed;
+  top: var(--touch-min);
+  left: 0;
+  right: 0;
+  height: var(--line-w-strong);
+  background: var(--accent);
+}

@@ -11,6 +11,11 @@ import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision } from "@/domain/quotes/lines";
 import { withTransaction } from "@/lib/db-transaction";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
+import { setSettingValue } from "@/domain/settings/registry";
+import { CERT_ENABLED } from "@/domain/settings/keys";
+import { insertRole } from "@/repositories/roles";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { createCertEvent } from "@/test/e2e/helpers/cert";
 
 // Phase 4(04-32, ENG-D3 ①) — 잠금·풀 시간 제한의 통합 증명. (c)의 describe는
 // 04-22·04-12가 saveProjectLedger 안의 트랜잭션 규약 위반(잠근 트랜잭션 안에서
@@ -375,4 +380,56 @@ describe("잠금·풀 시간 제한(ENG-D3 ①)", () => {
       15_000,
     );
   });
+});
+
+describe("풀 2 · 동시 경품 저장 셋(04.3-10 독립 검토 W1)", () => {
+  // savePrizes는 행사 행을 잠근 트랜잭션 안에서 원시 줄만 읽고, 권한 투영(projectMany — 전역 풀로 노출표를 읽는다)은
+  // 커밋 뒤에 한다(ARCHITECTURE §4-8(3) · 플랜 E27). 투영이 tx 안이면 잠금을 쥔 연결이 둘째 연결을 기다리고, 다른 저장이
+  // 나머지 연결로 잠금을 기다려 풀 2에서 셋 다 끝나지 않는다.
+  it(
+    "(g) 풀 크기 2에서 같은 행사에 새 줄 하나씩 실은 savePrizes 셋을 동시에 보내면 10초 안에 셋 다 saved",
+    async () => {
+      await setSettingValue(SYSTEM_VIEWER, CERT_ENABLED, true);
+      const roleId = `role-tx-prize-${randomUUID()}`;
+      await insertRole(SYSTEM_VIEWER, { id: roleId, name: `풀 ${roleId.slice(-8)}`, sortOrder: 99 });
+      await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "certs.events", action: "view", allowed: true });
+      await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "certs.qr", action: "write", allowed: true });
+      await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "cert_prize.value", visible: true });
+      const { userId } = await createAccount(SYSTEM_VIEWER, { email: `prize-${randomUUID()}@example.test`, name: "경영 풀", roleId });
+      const manager = { id: userId, roleId };
+      const event = await createCertEvent({ name: "풀 경품", prizes: [{ name: "기존 경품", unitValueKrw: 73_519, winnerCount: 1 }] });
+
+      const previousPoolMax = process.env.DB_POOL_MAX;
+      process.env.DB_POOL_MAX = "2";
+      vi.resetModules();
+
+      try {
+        const clientModule = await import("@/db/client");
+        expect((clientModule.pool as unknown as { options: { max: number } }).options.max).toBe(2);
+        const { savePrizes } = await import("@/domain/certs/events");
+
+        const start = Date.now();
+        const results = await Promise.allSettled(
+          [1, 2, 3].map((n) =>
+            savePrizes(manager, event.eventId, {
+              changes: { inserts: [{ key: `n${n}`, name: `새 경품 ${n}`, unitValue: "60,000", delivery: "현장", winnerCount: "1" }] },
+            }),
+          ),
+        );
+        const elapsed = Date.now() - start;
+
+        expect(elapsed).toBeLessThan(10_000);
+        expect(results.map((result) => (result.status === "rejected" ? String(result.reason) : result.value.kind))).toEqual([
+          "saved",
+          "saved",
+          "saved",
+        ]);
+
+        await clientModule.closeDb();
+      } finally {
+        process.env.DB_POOL_MAX = previousPoolMax;
+      }
+    },
+    20_000,
+  );
 });

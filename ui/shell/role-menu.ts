@@ -56,7 +56,7 @@ const TOP_BAR_MENU: readonly MenuLink[] = [
 ];
 
 // D-17 → 「관리」 한 줄로 접기(2026-09-22, quick/260922-i3k, 사용자 결정 옵션 B):
-// 관리자 화면 11종(§6-8 시스템 상태 + Phase 3의 나머지 10개) 전부 — 개별 이름은
+// 관리자 화면 12종(§6-8 시스템 상태 + Phase 3의 나머지 10개 + 04.3의 확인증 행사) 전부 — 개별 이름은
 // PC 사용자 메뉴·「더보기」 시트에 더 이상 나오지 않고, 두 표면 모두 「관리」 한
 // 줄(/admin)만 보여준다. 개별 화면·순서·그룹은 `/admin` 인덱스 화면
 // (app/(app)/admin/page.tsx)이 adminIndexGroups로 받는다. key는
@@ -75,6 +75,9 @@ const TOP_BAR_MENU: readonly MenuLink[] = [
 const ADMIN_GROUP_MASTER = "마스터";
 const ADMIN_GROUP_SETTINGS_PERMISSIONS = "설정·권한";
 const ADMIN_GROUP_OPERATIONS = "운영 기록";
+// 04.3-09(개정 ④, D-b): Phase 04.3 임시 진입 — 기능 게이트가 꺼지면 app/(app)/layout.tsx ·
+// admin/page.tsx가 certs.events를 allowedMenus에서 걷어 이 그룹째 없다.
+const ADMIN_GROUP_CERTS = "확인증";
 
 const ADMIN_MENUS: ReadonlyArray<{ key: string; label: string; href: string; group: string }> = [
   { key: "admin.people", label: "사람", href: "/admin/people", group: ADMIN_GROUP_MASTER },
@@ -118,6 +121,7 @@ const ADMIN_MENUS: ReadonlyArray<{ key: string; label: string; href: string; gro
     group: ADMIN_GROUP_OPERATIONS,
   },
   { key: "admin.archive", label: "보관함", href: "/admin/archive", group: ADMIN_GROUP_OPERATIONS },
+  { key: "certs.events", label: "확인증 행사", href: "/certs/events", group: ADMIN_GROUP_CERTS },
 ];
 
 // 02-01 체크포인트 항목 H① 확정 — 「설정」은 실제 라우트(02-05가 /settings를 만든다).
@@ -131,21 +135,26 @@ const SETTINGS_ENTRY: AccountEntry = { kind: "link", label: "설정", href: "/se
 // 이 상수는 라우트와 라벨 정본일 뿐 건수를 담지 않는다.
 export const NOTIFICATIONS_HREF = "/notifications";
 
-/** allowedMenus에 admin.* 메뉴가 하나라도 있으면 「관리」 한 줄, 없으면 빈 배열
+/** allowedMenus에 관리자 메뉴(admin.* · certs.events)가 하나라도 있으면 「관리」 한 줄, 없으면 빈 배열
  * (「관리」 한 줄로 접기 — 개별 화면 이름은 adminIndexGroups가 담당). */
 function buildAdminMenu(viewer: RoleMenuViewer): MenuLink[] {
   const hasAnyAdminMenu = ADMIN_MENUS.some((menu) => viewer.allowedMenus.includes(menu.key));
   return hasAnyAdminMenu ? [{ label: "관리", href: "/admin" }] : [];
 }
 
-/** SYSTEM.md §6-10 「관리」 인덱스 화면의 그룹 3개 — allowedMenus에 있는 admin.*
- * 메뉴만 ADMIN_MENUS 순서 그대로 그룹별로 묶는다. 순서는 allowedMenus의 순서와
+/** SYSTEM.md §6-10 「관리」 인덱스 화면의 그룹 4개 — allowedMenus에 있는
+ * 관리자 메뉴(admin.* · certs.events)만 ADMIN_MENUS 순서 그대로 그룹별로 묶는다. 순서는 allowedMenus의 순서와
  * 무관하다(순수 함수). 항목이 0개인 그룹은 결과 배열에 나타나지 않는다 — 서버가
  * 거른 목록을 그대로 렌더할 app/(app)/admin/page.tsx가 빈 그룹 머리글을 찍지
  * 않아도 되게 한다. */
 export function adminIndexGroups(viewer: RoleMenuViewer): AdminMenuGroup[] {
   const allowed = ADMIN_MENUS.filter((menu) => viewer.allowedMenus.includes(menu.key));
-  const groupOrder = [ADMIN_GROUP_MASTER, ADMIN_GROUP_SETTINGS_PERMISSIONS, ADMIN_GROUP_OPERATIONS];
+  const groupOrder = [
+    ADMIN_GROUP_MASTER,
+    ADMIN_GROUP_SETTINGS_PERMISSIONS,
+    ADMIN_GROUP_OPERATIONS,
+    ADMIN_GROUP_CERTS,
+  ];
   return groupOrder
     .map((label) => ({
       label,

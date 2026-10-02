@@ -6,13 +6,16 @@ import { authClient } from "@/lib/auth-client";
 import { Button } from "@/ui/button/Button";
 import { TextField } from "@/ui/input/TextField";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
+import { loginDestination } from "@/lib/login-next";
 import { loginErrorMessage } from "./login-error";
 import styles from "./login-form.module.css";
 
 // AUTH-04: showGoogle은 서버 컴포넌트(page.tsx)의 getAuthProvider() === "google"
 // 조건 결과를 그대로 넘겨받는다 — 클라이언트 컴포넌트만 authClient.signIn.social을
 // 호출할 수 있어 조건 자체는 여기(login-form.tsx)가 아니라 page.tsx에 둔다.
-export function LoginForm({ showGoogle = false }: { showGoogle?: boolean }) {
+// 04.3-14 U5 a — next는 page.tsx가 safeLoginNext로 거른 같은 출처 경로(없으면 null → /account). 성공 이동은 router.replace —
+// 기록에 로그인 화면을 남기지 않는다(G0 F8). Google 로그인도 같은 곳으로 돌아온다(G0 DR-12).
+export function LoginForm({ showGoogle = false, next = null }: { showGoogle?: boolean; next?: string | null }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -35,11 +38,11 @@ export function LoginForm({ showGoogle = false }: { showGoogle?: boolean }) {
       return;
     }
 
-    router.push("/account");
+    router.replace(loginDestination(next));
   }
 
   async function handleGoogleSignIn() {
-    await authClient.signIn.social({ provider: "google", callbackURL: "/account" });
+    await authClient.signIn.social({ provider: "google", callbackURL: loginDestination(next) });
   }
 
   return (

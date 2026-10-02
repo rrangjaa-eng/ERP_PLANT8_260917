@@ -133,3 +133,60 @@ describe("docs/RESTORE.md", () => {
     expect(new Set(order).size).toBe(order.length);
   });
 });
+
+// 04.3-12 Task 3 ③ — OPERATIONS 줄 예산이 없어 확인증 파기 런북은 별도 문서다(사용자 결정 2026-10-01 채팅 — 파기 런북 별도 문서).
+describe("docs/CERT-PURGE.md", () => {
+  const content = readDoc("CERT-PURGE.md");
+
+  it("150줄 이하다", () => {
+    expect(lineCount(content)).toBeLessThanOrEqual(150);
+  });
+
+  it("12자리 숫자(프로젝트 번호 형태)가 없다(D-03)", () => {
+    expect(content).not.toMatch(/\d{12}/);
+  });
+
+  it.each([
+    "purge_certs.done",
+    "--args=--apply",
+    "35일",
+    "bootstrap-gcp.sh",
+    "사람 월 1회 + 35일 감시 런북 유지, Scheduler 자동화는 Phase 7 이관",
+    "백업 보관 7일이 지나야 완전 파기",
+    "filesPending",
+    "orphansDeleted",
+  ])("'%s'를 포함한다", (token) => {
+    expect(content).toContain(token);
+  });
+
+  it("백업 복원 뒤 곧바로 purge-certs --apply를 한 번 돌린다는 줄이 있다(AX-3)", () => {
+    expect(content.split("\n").some((line) => line.includes("복원") && line.includes("--apply"))).toBe(true);
+  });
+
+  it("OPERATIONS.md가 이 문서를 가리킨다", () => {
+    expect(readDoc("OPERATIONS.md")).toContain("CERT-PURGE.md");
+  });
+
+  // PR #88 /review F8 — 새 DB는 확인증 정보 항목 셋이 모든 계급에 꺼져 있다(E3-13). 운영 시작 때 켤 항목 · 권한을 적는다.
+  it.each(["cert_prize.value", "cert_submission.value", "cert.rrn_unmasked", "certs.qr", "정보 노출표"])(
+    "운영 시작 절에 '%s'가 있다",
+    (token) => {
+      expect(content).toContain(token);
+    },
+  );
+
+  // 04.3-14 반영 — 접속기록 월 1회 점검 절차(사용자 결정 5936195107 · 안전성 확보조치 기준 제8조②). 정리 제외는 5936870579.
+  it.each([
+    "접속기록 월 1회 점검",
+    "개인정보 보호책임자",
+    "2026-10-30",
+    "/admin/action-log",
+    "cert_view",
+    "mask_reveal",
+    "cert_correct",
+    'via: "print"',
+    "정리할 수 없다",
+  ])("접속기록 점검 절이 '%s'를 포함한다", (token) => {
+    expect(content).toContain(token);
+  });
+});

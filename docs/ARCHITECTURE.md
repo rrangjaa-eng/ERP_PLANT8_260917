@@ -106,6 +106,7 @@ append-only다).
 접두어의 버전으로 키를 골라 v1·v2가 동시에 있어도 둘 다 복호화된다. 마스킹
 표시용 뒤 4자리는 암호문과 별도 평문 컬럼에 함께 저장한다(목록이 복호화
 없이 그려지고, 복호화 호출 자체가 "마스킹 해제"라는 의미를 갖는다).
+봉투(04.3-08): 스테이징·프로덕션은 Cloud KMS로 감싼 `APP_DATA_KEY_v*_WRAPPED`를 받아 `instrumentation.ts`가 첫 요청 때 `loadDataKeys()`로 한 번 풀어(못 풀면 프로세스 종료 → 인스턴스 교체) `globalThis[Symbol.for("plant8.appDataKeys")]`에 둔다 — 인터페이스·접두어는 그대로, 로컬은 평문 변수.
 
 ## 4-5. 커스텀 필드 규약(Phase 3, 03-06)
 
@@ -211,6 +212,16 @@ routeSettings?, canResubmit?, loadDetails?, detailDto?, buildDetailRows?})`(`dom
 (6) 차수는 승인 0건으로 끝나지 않는다(대표 폴백 `FALLBACK_ROLE_ID`) · 한 차수 한 사람 한 승인.
 (7) 「오늘」은 `seoulToday()`(`lib/dates.ts`).
 
+## 4-10. 확인증 수집 경계(Phase 04.3)
+
+(1) 로그인 없는 `/c/[token]`은 `proxy.ts`(matcher `/api/auth`뿐)를 거치지 않고 `publicActionClient`(세션 없음 · 본문 한도)만 쓴다.
+(2) 공개 domain `domain/certs/intake.ts`는 `can` · `visible` · `scopeFor`를 부르지 않는다 — 토큰 · 행사 id · 경품 id로 where를 좁히고,
+공개 결과(`publicPrizes`)에 가액 칸을 싣지 않는다. 제출은 IP 가명 기준 속도 제한(`domain/certs/submit-limit.ts`)을 거친다.
+(3) 서명 저장소 포트 `lib/storage/signature-store.ts` — 로컬은 로컬 드라이버, 그 밖은 GCS REST 드라이버(버킷 수준 권한).
+(4) 인쇄 `/print/certs/[id]`는 앱 셸 밖이고 페이지가 스스로 세션 · 개인정보 접근을 판정한다.
+(5) 파기는 사람이 실행하는 Cloud Run Job(`scripts/purge-certs.ts` — 인자 없음 = 미리 보기, `docs/CERT-PURGE.md`).
+(6) 주민등록번호 · QR 토큰 암호화의 데이터 키 봉투는 §4-4 봉투(04.3-08)를 따른다.
+
 ## 5. DB·마이그레이션
 
 `drizzle-kit generate` → Squawk(`.squawk.toml`, `pnpm lint:sql`) → `scripts/migrate-runner.ts`
@@ -264,6 +275,7 @@ domain 모듈 = 단위, 새 액션·DTO = 통합(+Phase 3부터 누수 생성), 
 | `LOCKOUT_THRESHOLD`·`LOCKOUT_WINDOW_MINUTES` | 잠금 | Phase 3부터 설정 레지스트리 키(`auth.lockout.*`)의 기본값 출처로만 남는다 |
 | `RATE_LIMIT_LOGIN_MAX` | 속도 제한 | 부팅 시 1회(`lib/auth.ts` better-auth 설정) — 레지스트리 밖, 런타임 변경 불가 |
 | `APP_DATA_KEY_v1`·`APP_DATA_KEY_v2` | 암호화 키(Phase 3부터 사용, v2는 회전용 두 번째 버전) | Secret Manager |
+| `APP_DATA_KEY_v1_WRAPPED`·`APP_DATA_KEY_v2_WRAPPED`·`APP_DATA_KEY_KMS_KEY` | KMS로 감싼 데이터 키(한 줄 base64)와 그 KMS 키 이름 — 감싼 값이 있으면 키 이름 필수, 비로컬에서 같은 버전 평문과 함께 두지 않는다(04.3-08) | Secret Manager / deploy.sh가 주입 |
 | `SMTP_HOST`·`SMTP_USER`·`SMTP_PASSWORD`·`SMTP_FROM` | 이메일 — 넷 다 채워져야 켜짐(Phase 04.2, D-711) | Secret Manager |
 | `NOTIFY_TICK_SCHEDULER_SA` | `/internal/notify-tick` OIDC 기대 호출자(스케줄러 서비스 계정 이메일) | deploy.sh가 주입 |
 | `NOTIFY_TICK_OIDC_DISABLED` | 로컬 전용 OIDC 우회(`1`) — 비로컬이면 부팅 거부·deploy.sh 거부 | `.env.local`만 |

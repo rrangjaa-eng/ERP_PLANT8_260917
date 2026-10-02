@@ -134,6 +134,56 @@ describe("ConfirmDialog — 정적 렌더(슬롯 · 파생 라벨 · 막힌 1차
     expect(html).not.toContain(`class="${styles.reason}"`);
   });
 
+  // 04.3-17 — 다시 누를 수 있는 실패 줄(DECISIONS 2026-09-30 §7-17 실패 줄): 1차 왼쪽 막힘 자리에 role="alert", 1차는 막지 않는다.
+  it("primary.failure만 있으면 1차 왼쪽 이유 자리에 role=alert 줄이 서고 1차는 aria-disabled가 아니다", () => {
+    const html = render({
+      title: "링크 닫기",
+      primary: { label: "링크 닫기", onConfirm: () => {}, failure: "닫지 못했습니다 · 다시 시도" },
+    });
+    expect(html).toContain(`<span class="${styles.reason}" role="alert">닫지 못했습니다 · 다시 시도</span>`);
+    expect(html).not.toContain('aria-disabled="true"');
+    const actions = html.slice(html.indexOf(`class="${styles.actions}"`));
+    expect(actions.indexOf("닫지 못했습니다")).toBeLessThan(actions.indexOf(`class="${styles.primaryWrap}"`));
+  });
+
+  // 04.3-17 독립 검토 X1 · DOM 감사 C-H1 · C-M1 — 실패 줄은 막힘 묶음(.blocker) 안이다: 폰은 버튼 윗줄 전체 폭(1차 = 2차 × 2 유지),
+  // 다음 한 수(nextStep)와 함께 와도 둘 다 선다.
+  it("failure 줄은 .blocker 묶음 안에 role=alert로 선다(폰 버튼 윗줄 전체 폭)", () => {
+    const html = render({
+      title: "링크 닫기",
+      primary: { label: "링크 닫기", onConfirm: () => {}, failure: "링크 닫기 실패 · 다시 시도" },
+    });
+    expect(html).toContain(
+      `<span class="${styles.blocker}"><span class="${styles.reason}" role="alert">링크 닫기 실패 · 다시 시도</span></span>`,
+    );
+  });
+
+  it("failure + nextStep이면 실패 줄 → 다음 한 수 순서로 둘 다 서고 1차는 막지 않는다", () => {
+    const html = render({
+      title: "대조 제외",
+      primary: {
+        label: "대조 제외",
+        onConfirm: () => {},
+        failure: "대조 제외 실패 · 다시 시도",
+        nextStep: createElement("button", { type: "button" }, "다시 불러오기"),
+      },
+    });
+    expect(html).toContain(
+      `<span class="${styles.blocker}"><span class="${styles.reason}" role="alert">대조 제외 실패 · 다시 시도</span><span class="${styles.nextStep}"><button type="button">다시 불러오기</button></span></span>`,
+    );
+    expect(html).not.toContain('aria-disabled="true"');
+  });
+
+  it("disabledReason이 있으면 그것만 그리고 failure는 그리지 않는다", () => {
+    const html = render({
+      title: "링크 닫기",
+      primary: { label: "링크 닫기", onConfirm: () => {}, disabledReason: "권한 없음", failure: "닫지 못했습니다 · 다시 시도" },
+    });
+    expect(html).toContain("권한 없음");
+    expect(html).not.toContain("닫지 못했습니다");
+    expect(html).not.toContain('role="alert"');
+  });
+
   it("목록형(options)은 1차가 없고 행마다 라벨 + 설명이 있다", () => {
     const html = render({
       title: "상태 바꾸기",

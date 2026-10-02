@@ -1,0 +1,317 @@
+/* 04.3-04 Task 4 ④ · 04.3-10 — I′3 행사 상세(머리 · QR · 경품 섹션). 토큰만(docs/design/tokens.css). */
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--s-3);
+}
+
+.titleBlock {
+  min-width: 0;
+  flex: 1 1 auto;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* 섹션 시작은 2px 강한 선(§3 「섹션 사이」 · project-detail.module.css .section 선례). */
+.section {
+  margin-top: var(--s-6);
+  padding-top: var(--s-3);
+  border-top: var(--line-w-strong) solid var(--line-strong);
+}
+
+.sectionLabel {
+  margin: 0 0 var(--s-3);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-bold);
+}
+
+/* QR 160×160 고정(폰도 160) — 모듈은 currentColor라 --fg on --bg, radius 0. */
+.qr {
+  width: 160px;
+  height: 160px;
+  color: var(--fg);
+  background: var(--bg);
+  border-radius: 0;
+}
+
+.qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.linkRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2) var(--s-4);
+  margin-top: var(--s-3);
+}
+
+.link {
+  min-width: 0;
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.copied {
+  font-size: var(--fs-sm);
+  color: var(--success);
+}
+
+.copyFailed {
+  font-size: var(--fs-sm);
+  color: var(--danger);
+}
+
+.closedLine {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+
+/* QR 섹션 라벨 — QR 생성 뒤 포커스가 오는 자리(tabindex -1). */
+.sectionLabel:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+/* 04.3-10 경품 표 — 경품명 줄바꿈(long-text), 숫자 열 우측 · 고정폭 숫자. */
+.wrapText {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.num {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 전달(현장 · 택배)은 한 낱말 — 긴 경품명이 열을 좁혀도 두 줄로 쪼개지지 않는다(쪼개지면 모든 행이 두 줄 높이 — DOM 감사 A-L3). */
+.nowrap {
+  white-space: nowrap;
+}
+
+/* 편집 셀 입력 — 옛 I2 · 리저브 대장 편집 셀과 같은 모양. */
+.cellInput,
+.cellInputNumeric,
+.cellSelect {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: var(--control-h);
+  padding: 0 var(--s-1);
+  border: 0;
+  border-bottom: var(--line-w) solid var(--accent);
+  background: var(--g-50);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+}
+
+.cellInputNumeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.cellInput:focus-visible,
+.cellInputNumeric:focus-visible,
+.cellSelect:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+/* 제출 셀 색 글자(§7-3 ⑮ · T4) — 확인증 없음 --muted · 파기 대상 --warning(그 낱말만). */
+.mutedText {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.warningText {
+  color: var(--warning);
+}
+
+.footerCell {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+/* 경품 표 아래 화면 1차(QR 생성 · 일괄 저장) — 오른쪽 하나, 막힘 이유는 그 옆. */
+.primaryRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--s-3);
+}
+
+/* §7-7 LOADING 뼈대 — 머리글 + --surface 3행 + 합계 자리, 반짝임 없음(I′1 뼈대와 같은 모양). */
+.skeletonTable {
+  width: 100%;
+  margin-top: var(--s-6);
+  border-collapse: collapse;
+}
+
+.skeletonTable th {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--muted);
+  text-align: left;
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+}
+
+.skeletonRow td {
+  height: var(--row-min);
+  background: var(--surface);
+  border-bottom: var(--line-w) solid var(--line);
+}
+
+.skeletonFooter td {
+  height: var(--row-min);
+  border-top: var(--line-w-strong) solid var(--line-strong);
+}
+
+/* 04.3-17 제출 섹션(대조) — 공용 ui/table을 쓰지 않는 읽기 `<table>`(§7-3 「화면에서 직접 만든 표도 같다」 · 행동 로그 선례):
+   흰 머리글 · 그룹 머리글 행(--fs-sm --muted 600, 위 12px, 아래 1px --line-strong) · 폰 칸 접기(P1 이름 · 제출). */
+.readTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-base);
+}
+
+.readTable thead th {
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w-strong) solid var(--line-strong);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.readTable td {
+  height: var(--row-min);
+  padding: var(--cell-pad-y) var(--cell-pad-x);
+  border-bottom: var(--line-w) solid var(--line);
+  vertical-align: top;
+}
+
+.readTable tbody tr:not(.groupRow):not(.collapsedRow):hover > td {
+  background: var(--surface);
+}
+
+.readTable .alignRight {
+  text-align: right;
+}
+
+.groupRow > th {
+  padding: calc(var(--cell-pad-y) + var(--s-3)) var(--cell-pad-x) var(--cell-pad-y);
+  border-bottom: var(--line-w) solid var(--line-strong);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-align: left;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* 이름 아래 색 글자(§7-3 ⑮ — 파기 대상 · 같은 연락처 · 같은 이름, 모두 --warning --fs-sm, 320에서 줄바꿈). */
+.rowMarks,
+.rowMarkMuted {
+  display: block;
+  font-size: var(--fs-sm);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.rowMarks {
+  color: var(--warning);
+}
+
+.rowMarkMuted {
+  color: var(--muted);
+}
+
+/* 대조 제외된 줄 — 줄 글자 전체 --muted(T3). */
+.excludedRow > td {
+  color: var(--muted);
+}
+
+/* 「제출 내용」 3차 링크(§4-4 · §7-1 — 밑줄 1px → hover 2px). */
+.rowLink {
+  color: var(--accent);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
+}
+
+/* 폰 행 시트 안 「제출 내용」 — 폰 3차 터치 목표 44×44(SYSTEM §3 · DOM 감사 C-M3). 시트는 폰에만 열린다. */
+.sheetLink {
+  display: inline-flex;
+  align-items: center;
+  min-width: var(--touch-min);
+  min-height: var(--touch-min);
+}
+
+.rowLink:hover {
+  text-decoration-thickness: var(--line-w-strong);
+}
+
+.rowLink:focus-visible,
+.collapsedCell:focus-visible {
+  outline: var(--focus-w) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.emptyLine {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.collapsedRow {
+  display: none;
+}
+
+.readTable .collapsedCell {
+  height: auto;
+  padding: 0 var(--cell-pad-x) var(--cell-pad-y);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  border-bottom: 0;
+  cursor: pointer;
+}
+
+@media (max-width: 699.98px) {
+  .p2,
+  .p3 {
+    display: none;
+  }
+
+  .collapsedRow {
+    display: table-row;
+  }
+
+  /* 접힌 줄은 자기 행에 붙는다 — 선은 접힌 줄 아래(§7-3 폰 전략), 누름 자리 44(§3). */
+  .readTable tbody tr:has(+ .collapsedRow) > td {
+    border-bottom: 0;
+  }
+
+  .readTable .collapsedCell {
+    height: var(--touch-min);
+    border-bottom: var(--line-w) solid var(--line);
+  }
+}
+
+/* 04.3-17 머리 2차(링크 닫기 · 신청 취소) — 제목 · 태그 오른쪽 끝, 막힘 이유는 버튼 옆(§7-1). */
+.headerActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  margin-left: auto;
+}

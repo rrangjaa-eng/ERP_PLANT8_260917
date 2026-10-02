@@ -75,3 +75,51 @@ test("추가한 칸이 노출표 열로 올라오고, 기획 PM 셀을 끄면 �
     await upsertVisibility(SYSTEM_VIEWER, { roleId: PM_ROLE.id, infoItem, visible: true });
   }
 });
+
+test("시스템 관리자 행에서 칸을 끄면 거래처 목록 · 편집 화면 HTML에 칸 이름과 값이 없고, 다시 켜면 값이 보인다", async ({
+  page,
+}) => {
+  await login(page, admin);
+  const label = `${PREFIX}${randomBytes(3).toString("hex")}`;
+  const value = `누수금지값${randomBytes(3).toString("hex")}`;
+  const infoItem = await addField(page, label);
+
+  try {
+    // 01의 거래처 폼으로 값을 저장한다.
+    const name = `V노${Date.now() % 100000}`;
+    await page.goto("/admin/vendors?new=1");
+    await page.getByLabel("이름").fill(name);
+    await page.getByLabel(label, { exact: true }).fill(value);
+    await page.getByRole("button", { name: "거래처 등록" }).click();
+    await expect(page.getByRole("cell", { name })).toBeVisible();
+    const editHref = await page.locator("tr", { hasText: name }).getByRole("link", { name: "수정" }).getAttribute("href");
+    expect(editHref).toBeTruthy();
+    await page.goto(editHref!);
+    await expect(page.getByLabel(label, { exact: true })).toHaveValue(value);
+
+    // 노출표에서 시스템 관리자 행의 그 칸을 끈다.
+    await page.goto("/admin/visibility");
+    await page.getByRole("checkbox", { name: `시스템 관리자 · ${label}`, exact: true }).uncheck();
+    await expect.poll(() => storedVisible(SYSADMIN_ROLE_ID, infoItem)).toBe(false);
+
+    await page.goto("/admin/vendors");
+    await expect(page.getByRole("cell", { name })).toBeVisible();
+    const listHtml = await page.content();
+    expect(listHtml).not.toContain(label);
+    expect(listHtml).not.toContain(value);
+    await page.goto(editHref!);
+    await expect(page.getByRole("button", { name: "거래처 수정" })).toBeVisible();
+    const editHtml = await page.content();
+    expect(editHtml).not.toContain(label);
+    expect(editHtml).not.toContain(value);
+
+    // 다시 켜면 편집 화면에 값이 돌아온다.
+    await page.goto("/admin/visibility");
+    await page.getByRole("checkbox", { name: `시스템 관리자 · ${label}`, exact: true }).check();
+    await expect.poll(() => storedVisible(SYSADMIN_ROLE_ID, infoItem)).toBe(true);
+    await page.goto(editHref!);
+    await expect(page.getByLabel(label, { exact: true })).toHaveValue(value);
+  } finally {
+    await upsertVisibility(SYSTEM_VIEWER, { roleId: SYSADMIN_ROLE_ID, infoItem, visible: true });
+  }
+});

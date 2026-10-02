@@ -344,3 +344,77 @@ describe("메뉴 게이트 DTO 축 — 정보 노출표 항목이 없는 관리 
     expect(allowedRoles).toEqual([SYSADMIN_ROLE_ID]);
   });
 });
+
+// 04.5-03(ROADMAP 04.5 기준 4·5 · T-04.5-04) — 커스텀 칸 축. 활성 거래처 칸 × 시드 계급마다, 그 계급에 거래처 메뉴 보기와
+// 「거래처 정보」(vendor.value)를 켠 상태로 끄기 전 직렬화에 두 칸 값이 있음을 먼저 확인(헛통과 방지)한 뒤, 그 칸만 끄면
+// 그 값만 사라지고 다른 칸 값은 남는다. vendor.value를 켜지 않으면 상위 차단으로 DTO가 비어 헛되이 통과한다.
+import { listVendors } from "@/domain/vendors";
+import { insertVendor } from "@/repositories/vendors";
+import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
+import { customFieldInfoItem } from "@/domain/custom-fields/targets";
+
+function buildCustomFieldCases(
+  defs: ReadonlyArray<{ key: string; value: string }>,
+  roles: ReadonlyArray<{ id: string }>,
+) {
+  return defs.flatMap((def) =>
+    roles.map((role) => ({
+      name: `cf.vendor.${def.key}·${role.id}`,
+      def,
+      role,
+    })),
+  );
+}
+
+describe("커스텀 칸 축 — 계급에게서 끈 거래처 칸의 값이 그 계급의 거래처 DTO 직렬화에 없다 (04.5-03)", () => {
+  it("활성 칸 × 시드 계급마다 끄기 전 값이 있고, 끈 칸 값만 사라진다", async () => {
+    const { userId } = await createAccount(SYSTEM_VIEWER, {
+      email: `leak-scan-cf-${Date.now()}@example.test`,
+      name: "누수 스캔 커스텀 칸",
+      roleId: SYSADMIN_ROLE_ID,
+    });
+    const admin: Viewer = { id: userId, roleId: SYSADMIN_ROLE_ID };
+    const suffix = Date.now() % 100000;
+    const first = await createFieldDefinition(admin, { name: `누수칸가${suffix}`, type: "text", required: false, sortOrder: 1 });
+    const second = await createFieldDefinition(admin, { name: `누수칸나${suffix}`, type: "text", required: false, sortOrder: 2 });
+    const defs = [
+      { key: first.key, value: `누수금지가-${suffix}` },
+      { key: second.key, value: `누수금지나-${suffix}` },
+    ];
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: `누수스캔거래처${suffix}`,
+      normalizedName: `누수스캔거래처${suffix}`,
+      customFields: Object.fromEntries(defs.map((def) => [def.key, def.value])),
+    });
+
+    const cases = buildCustomFieldCases(defs, SEED_ROLES);
+    expect(cases.map((c) => c.name)).toEqual(buildCustomFieldCases(defs, SEED_ROLES).map((c) => c.name));
+    expect(cases).toHaveLength(SEED_ROLES.length * defs.length);
+
+    const checked: string[] = [];
+    for (const { name, def, role } of cases) {
+      await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "admin.vendors", action: "view", allowed: true });
+      await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "vendor.value", visible: true });
+      const viewer: Viewer = { id: "leak-scan-probe", roleId: role.id };
+      const serialize = async () => JSON.stringify((await listVendors(viewer)).filter((row) => row.id === vendor.id));
+
+      const before = await serialize();
+      for (const each of defs) expect(before, `${name}: 끄기 전 ${each.key} 값이 없다(헛통과)`).toContain(each.value);
+
+      const item = customFieldInfoItem("vendor", def.key);
+      await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: item, visible: false });
+      try {
+        const after = await serialize();
+        expect(after, `${name}: 끈 칸 값이 남았다`).not.toContain(def.value);
+        for (const other of defs.filter((each) => each.key !== def.key)) {
+          expect(after, `${name}: 다른 칸 ${other.key} 값이 사라졌다`).toContain(other.value);
+        }
+      } finally {
+        await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: item, visible: true });
+      }
+      checked.push(name);
+    }
+    console.log(`커스텀 칸 축 양성·음성 단언 통과 ${checked.length}건: ${checked.join(", ")}`);
+    expect(checked).toEqual(cases.map((c) => c.name));
+  });
+});

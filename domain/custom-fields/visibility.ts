@@ -5,7 +5,7 @@ import {
   listFieldDefinitions as defaultListFieldDefinitions,
   lockCustomFieldGrants,
 } from "@/repositories/field-definitions";
-import { insertVisibilityIfAbsent } from "@/repositories/permissions";
+import { insertVisibilityIfAbsent, listVisibility } from "@/repositories/permissions";
 import { FIELD_DEFINITION_TARGETS, customFieldInfoItem, parseCustomFieldInfoItem } from "@/domain/custom-fields/targets";
 
 // 04.5-03: 커스텀 항목(cf.<entity>.<key>)의 노출 — INFO_ITEMS(코드 상수) 옆에 더한다(add-alongside).
@@ -62,4 +62,29 @@ export async function grantCustomFieldsToRole(
       }
     }
   });
+}
+
+// 보는 사람에게 보이는 커스텀 칸 키: 그 대상의 활성 정의 중 보는 사람 계급에 cf.<entity>.<key> 보임 행이 있는 것.
+// 조회는 두 번(정의 · 그 계급의 노출 행) — 행마다 visible()을 부르지 않는다. 계급이 없으면 빈 집합(기본 거부).
+export async function visibleCustomFieldKeys(viewer: Viewer, entity: string): Promise<Set<string>> {
+  if (!viewer.roleId) return new Set();
+  const [defs, rows] = await Promise.all([
+    defaultListFieldDefinitions(viewer, entity),
+    listVisibility(viewer, { roleId: viewer.roleId }),
+  ]);
+  const shown = new Set(rows.filter((row) => row.visible).map((row) => row.infoItem));
+  return new Set(
+    defs
+      .filter((def) => def.archivedAt === null && shown.has(customFieldInfoItem(entity, def.key)))
+      .map((def) => def.key),
+  );
+}
+
+// 칸 값 객체에서 보이는 키만 남긴 새 객체 — 값이 없으면(「거래처 정보」로 이미 가려짐) 그대로 없다.
+export function pickVisibleCustomFields(
+  values: Record<string, unknown> | undefined,
+  keys: ReadonlySet<string>,
+): Record<string, unknown> | undefined {
+  if (values === undefined) return undefined;
+  return Object.fromEntries(Object.entries(values).filter(([key]) => keys.has(key)));
 }

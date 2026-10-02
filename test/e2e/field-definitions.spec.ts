@@ -3,9 +3,9 @@ import { test, expect, type Page } from "@playwright/test";
 import { archiveE2EFieldDefinitions, createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { nextSortOrder } from "@/domain/custom-fields/targets";
-import { upsertPermission } from "@/repositories/permissions";
+import { insertVisibilityIfAbsent, upsertPermission } from "@/repositories/permissions";
 import { insertFieldDefinition, listFieldDefinitions } from "@/repositories/field-definitions";
-import { insertRole, setRoleArchived } from "@/repositories/roles";
+import { insertRole, listRoles, setRoleArchived } from "@/repositories/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 
 // 04.5-01 트레이서 + 04.5-08: 관리 화면에서 추가한 거래처 칸이 거래처 폼에 한글 이름으로 보이고,
@@ -41,6 +41,14 @@ async function login(page: Page, account: Account): Promise<void> {
 
 const uniqueLabel = () => `${PREFIX}${randomBytes(3).toString("hex")}`;
 
+// 04.5-03: 노출 행이 없는 거래처 칸은 누구에게도 보이지 않는다(기본 숨김) — 직접 넣은 칸에는 화면 생성(01)과 같이
+// 전 계급(보관 포함) 보임 행을 명시로 더한다.
+async function grantAllRoles(key: string): Promise<void> {
+  for (const role of await listRoles(SYSTEM_VIEWER, { includeArchived: true })) {
+    await insertVisibilityIfAbsent(SYSTEM_VIEWER, { roleId: role.id, infoItem: `cf.vendor.${key}`, visible: true });
+  }
+}
+
 async function seedField(label: string, sortOrder = 1): Promise<string> {
   const key = `cf_${randomBytes(4).toString("hex")}`;
   await insertFieldDefinition(SYSTEM_VIEWER, {
@@ -51,20 +59,23 @@ async function seedField(label: string, sortOrder = 1): Promise<string> {
     type: "text",
     sortOrder,
   });
+  await grantAllRoles(key);
   return key;
 }
 
 async function seedSelectField(label: string, options: string[]): Promise<string> {
   const id = `fd-${randomUUID()}`;
+  const key = `cf_${randomBytes(4).toString("hex")}`;
   await insertFieldDefinition(SYSTEM_VIEWER, {
     id,
     entity: "vendor",
-    key: `cf_${randomBytes(4).toString("hex")}`,
+    key,
     label,
     type: "select",
     options,
     sortOrder: 1,
   });
+  await grantAllRoles(key);
   return id;
 }
 

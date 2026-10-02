@@ -20,6 +20,7 @@ import {
   type VendorRow,
 } from "@/repositories/vendors";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
+import { pickVisibleCustomFields, visibleCustomFieldKeys } from "@/domain/custom-fields/visibility";
 
 export class ForbiddenError extends UserFacingError {}
 
@@ -98,6 +99,15 @@ export function scoreVendorNameMatch(normalizedName: string, normalizedQuery: st
   return 0;
 }
 
+// 04.5-03(D10-13 · T-04.5-04): 거래처 DTO의 유일한 출구 — 「거래처 정보」(vendor.value) 판정 뒤 customFields를
+// 칸별로 거른다(활성이면서 보는 사람 계급에 cf.vendor.<key> 보임 행이 있는 키만 — 둘 다 켜져야 보인다).
+// 보이는 키 집합은 호출자가 한 번 계산해 넘긴다(목록은 행마다 다시 조회하지 않는다).
+async function toVendorDto(viewer: Viewer, row: VendorRow, visibleKeys: ReadonlySet<string>): Promise<VendorDto> {
+  const dto = (await project(viewer, row, VENDOR_DTO_SPEC)) as VendorDto;
+  if (dto.customFields === undefined) return dto;
+  return { ...dto, customFields: pickVisibleCustomFields(dto.customFields, visibleKeys) ?? {} };
+}
+
 export type VendorListDeps = { can: typeof defaultCan };
 
 export async function listVendors(
@@ -106,7 +116,8 @@ export async function listVendors(
 ): Promise<VendorDto[]> {
   const scope = await scopeFor(viewer, VENDOR_ENTITY);
   const rows = await repoListVendors(viewer, { scope, includeHidden: opts?.includeHidden ?? false });
-  return Promise.all(rows.map((row) => project(viewer, row, VENDOR_DTO_SPEC))) as Promise<VendorDto[]>;
+  const visibleKeys = await visibleCustomFieldKeys(viewer, VENDOR_ENTITY);
+  return Promise.all(rows.map((row) => toVendorDto(viewer, row, visibleKeys)));
 }
 
 // 자동완성 — 검색어를 NFC 정규화 + 소문자로 낮춘 뒤 normalizedName의 부분
@@ -131,7 +142,8 @@ export async function searchVendors(viewer: Viewer, query: string, limit = 10): 
     )
     .slice(0, limit);
 
-  return Promise.all(scored.map((entry) => project(viewer, entry.row, VENDOR_DTO_SPEC))) as Promise<VendorDto[]>;
+  const visibleKeys = await visibleCustomFieldKeys(viewer, VENDOR_ENTITY);
+  return Promise.all(scored.map((entry) => toVendorDto(viewer, entry.row, visibleKeys)));
 }
 
 // 커스텀 필드 정의 Dto — 필드 정의 자체는 사람 단위 민감 정보가 아니라
@@ -159,8 +171,11 @@ export async function listVendorFieldDefinitions(
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, VENDORS_MENU, "view"))) return [];
 
-  // 04.5(D10-12): 보관된 칸은 거래처 폼 입력에서 뺀다.
-  const defs = (await repoListFieldDefinitions(viewer, VENDOR_ENTITY)).filter((def) => def.archivedAt === null);
+  // 04.5(D10-12): 보관된 칸은 거래처 폼 입력에서 뺀다. 04.5-03(D10-13): 보는 사람에게 꺼진 칸도 뺀다(활성 ∩ 보임).
+  const visibleKeys = await visibleCustomFieldKeys(viewer, VENDOR_ENTITY);
+  const defs = (await repoListFieldDefinitions(viewer, VENDOR_ENTITY)).filter(
+    (def) => def.archivedAt === null && visibleKeys.has(def.key),
+  );
   return defs.map((def) => ({
     id: def.id,
     key: def.key,
@@ -288,7 +303,7 @@ export async function createVendor(
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "document_create", entity: VENDOR_ENTITY, entityId: row.id });
 
-  const vendor = (await project(viewer, row, VENDOR_DTO_SPEC)) as VendorDto;
+  const vendor = await toVendorDto(viewer, row, await visibleCustomFieldKeys(viewer, VENDOR_ENTITY));
   return { vendor, duplicateCount: duplicates.length };
 }
 
@@ -351,7 +366,7 @@ export async function updateVendor(
   await recordAction(viewer, { actionType: "document_update", entity: VENDOR_ENTITY, entityId: id });
 
   const updated = await repoFindVendorById(viewer, id);
-  return updated ? ((await project(viewer, updated, VENDOR_DTO_SPEC)) as VendorDto) : null;
+  return updated ? toVendorDto(viewer, updated, await visibleCustomFieldKeys(viewer, VENDOR_ENTITY)) : null;
 }
 
 // 숨김 플래그 — 보관함(archived)과는 다른 메커니즘이다(03-UI-SPEC.md 비활성화
@@ -371,13 +386,14 @@ export async function setVendorHidden(
 
   const current = await repoFindVendorById(viewer, id);
   if (!current) return null;
+  const visibleKeys = await visibleCustomFieldKeys(viewer, VENDOR_ENTITY);
   if (current.hidden === hidden) {
-    return (await project(viewer, current, VENDOR_DTO_SPEC)) as VendorDto;
+    return toVendorDto(viewer, current, visibleKeys);
   }
 
   await repoSetVendorHidden(viewer, id, hidden);
   const updated = await repoFindVendorById(viewer, id);
-  return updated ? ((await project(viewer, updated, VENDOR_DTO_SPEC)) as VendorDto) : null;
+  return updated ? toVendorDto(viewer, updated, visibleKeys) : null;
 }
 
 export type RevealAccountNumberDeps = { visible: typeof defaultVisible; recordAction: typeof defaultRecordAction };

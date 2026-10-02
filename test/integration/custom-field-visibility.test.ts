@@ -11,7 +11,20 @@ import { INFO_ITEMS } from "@/domain/permissions/info-items";
 import { createAccount } from "@/domain/auth/accounts";
 import { createFieldDefinition } from "@/domain/custom-fields/admin";
 import { customFieldInfoItem } from "@/domain/custom-fields/targets";
-import { grantCustomFieldsToRole, isAssignableInfoItem } from "@/domain/custom-fields/visibility";
+import {
+  grantCustomFieldsToRole,
+  isAssignableInfoItem,
+  pickVisibleCustomFields,
+} from "@/domain/custom-fields/visibility";
+import {
+  createVendor,
+  listVendorFieldDefinitions,
+  listVendors,
+  searchVendors,
+  setVendorHidden,
+  updateVendor,
+} from "@/domain/vendors";
+import { insertVisibilityIfAbsent, upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { seedMasterData } from "@/domain/seed";
 import { insertFieldDefinition, listFieldDefinitions } from "@/repositories/field-definitions";
 import { insertRole, listRoles } from "@/repositories/roles";
@@ -315,5 +328,110 @@ describe("나중에 만든 계급의 커스텀 항목 기본 행 (04.5-03)", () 
       const rows = await visibilityRows(id, customFieldInfoItem("vendor", key));
       expect(rows).toHaveLength(1);
     }
+  });
+});
+
+describe("거래처 DTO 칸별 판정 (04.5-03)", () => {
+  it("pickVisibleCustomFields: 집합 안 키만 남기고, 값 객체가 없으면 그대로 없다", () => {
+    expect(pickVisibleCustomFields({ a: 1, b: 2 }, new Set(["a"]))).toEqual({ a: 1 });
+    expect(pickVisibleCustomFields(undefined, new Set(["a"]))).toBeUndefined();
+  });
+
+  // 기획 PM(기본 계급)은 시드로 「거래처 정보」(vendor.value)를 본다 — 거래처 메뉴 보기·쓰기만 테스트에서 켠다.
+  async function pmWithVendorMenu(): Promise<Viewer> {
+    await upsertPermission(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, menu: "admin.vendors", action: "view", allowed: true });
+    await upsertPermission(SYSTEM_VIEWER, { roleId: DEFAULT_ROLE_ID, menu: "admin.vendors", action: "write", allowed: true });
+    return createViewer(DEFAULT_ROLE_ID);
+  }
+
+  it("칸 B를 끈 계급은 목록 · 검색 · 수정 · 숨김 반환 DTO 모두에서 A 값만 받고, 폼 정의도 A만 받는다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const a = await createFieldDefinition(admin, input("칸 에이"));
+    const b = await createFieldDefinition(admin, input("칸 비"));
+    const pm = await pmWithVendorMenu();
+    const name = `칸별거래처-${randomUUID()}`;
+    const { vendor } = await createVendor(SYSTEM_VIEWER, {
+      name,
+      customFields: { [a.key]: "에이값", [b.key]: "비값" },
+    });
+    await upsertVisibility(SYSTEM_VIEWER, {
+      roleId: DEFAULT_ROLE_ID,
+      infoItem: customFieldInfoItem("vendor", b.key),
+      visible: false,
+    });
+    const onlyA = { [a.key]: "에이값" };
+
+    const listed = (await listVendors(pm)).find((row) => row.id === vendor.id);
+    expect(listed?.customFields).toEqual(onlyA);
+    const searched = (await searchVendors(pm, name)).find((row) => row.id === vendor.id);
+    expect(searched?.customFields).toEqual(onlyA);
+    const updated = await updateVendor(pm, vendor.id, { name });
+    expect(updated?.customFields).toEqual(onlyA);
+    const hidden = await setVendorHidden(pm, vendor.id, true);
+    expect(hidden?.customFields).toEqual(onlyA);
+    expect(JSON.stringify([listed, searched, updated, hidden])).not.toContain("비값");
+
+    expect((await listVendorFieldDefinitions(pm)).map((def) => def.key)).toEqual([a.key]);
+    // 시스템 관리자는 둘 다 본다.
+    const forAdmin = (await listVendors(SYSTEM_VIEWER, { includeHidden: true })).find((row) => row.id === vendor.id);
+    expect(forAdmin?.customFields).toEqual({ [a.key]: "에이값", [b.key]: "비값" });
+  });
+
+  it("생성 반환 DTO도 끈 칸 값을 싣지 않는다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const a = await createFieldDefinition(admin, input("생성 에이"));
+    const b = await createFieldDefinition(admin, input("생성 비"));
+    const pm = await pmWithVendorMenu();
+    await upsertVisibility(SYSTEM_VIEWER, {
+      roleId: DEFAULT_ROLE_ID,
+      infoItem: customFieldInfoItem("vendor", b.key),
+      visible: false,
+    });
+
+    const { vendor } = await createVendor(pm, {
+      name: `생성거래처-${randomUUID()}`,
+      customFields: { [a.key]: "에이", [b.key]: "비숨김" },
+    });
+
+    expect(vendor.customFields).toEqual({ [a.key]: "에이" });
+  });
+
+  it("보관된 칸의 값은 시스템 관리자 DTO에도 없다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const a = await createFieldDefinition(admin, input("보관 전 에이"));
+    const b = await createFieldDefinition(admin, input("보관 될 비"));
+    const { vendor } = await createVendor(SYSTEM_VIEWER, {
+      name: `보관칸거래처-${randomUUID()}`,
+      customFields: { [a.key]: "남는값", [b.key]: "보관값" },
+    });
+    await archiveField(b.id);
+
+    const row = (await listVendors(SYSTEM_VIEWER)).find((candidate) => candidate.id === vendor.id);
+    expect(row?.customFields).toEqual({ [a.key]: "남는값" });
+    expect((await listVendorFieldDefinitions(SYSTEM_VIEWER)).map((def) => def.key)).toEqual([a.key]);
+  });
+
+  it("노출 행이 하나도 없는 거래처 정의의 값은 시스템 관리자에게도 숨고, 행을 넣으면 보인다(백필이 선행 조건인 이유)", async () => {
+    await insertFieldDefinition(SYSTEM_VIEWER, {
+      id: `fd-${randomUUID()}`,
+      entity: "vendor",
+      key: "legacyNote",
+      type: "text",
+    });
+    const { vendor } = await createVendor(SYSTEM_VIEWER, {
+      name: `백필전거래처-${randomUUID()}`,
+      customFields: { legacyNote: "옛값" },
+    });
+
+    const before = (await listVendors(SYSTEM_VIEWER)).find((row) => row.id === vendor.id);
+    expect(before?.customFields).toEqual({});
+
+    await insertVisibilityIfAbsent(SYSTEM_VIEWER, {
+      roleId: SYSADMIN_ROLE_ID,
+      infoItem: customFieldInfoItem("vendor", "legacyNote"),
+      visible: true,
+    });
+    const after = (await listVendors(SYSTEM_VIEWER)).find((row) => row.id === vendor.id);
+    expect(after?.customFields).toEqual({ legacyNote: "옛값" });
   });
 });

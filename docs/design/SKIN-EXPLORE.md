@@ -41,6 +41,8 @@
 | `--line` / `--line-strong` | `#E3E6E2` / `#BCC6C2` | 행 사이 / 합계·머리 1px |
 | `--accent` | `#005446` | 그대로 |
 
+> 이 표의 웜톤 바탕·r6은 §5 실물 보드의 「A 정돈」(`#F2F5F4` · r8)으로 대체됨 — 적용 값은 `SYSTEM.md`·`tokens.css`
+
 서체 Pretendard 단일. 레이아웃: 딥그린 상단 바 유지, 표를 흰 종이 한 장(1px `#E1E3DE` · radius 6 · `0 1px 2px` 그림자)에 올린다.
 ```
 ▓PLANT8 프로젝트 …▓

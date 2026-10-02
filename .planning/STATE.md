@@ -363,6 +363,7 @@ Recent decisions affecting current work:
 | 261001-85g | Phase 2·3 요구사항 갭 4건 — ADMN-03 등록 폼 선택지 노출표 투영 · ADMN-06 미설정 키 지난 연도 가져오기 · 미래 발령 취소 로그 · UX-01 다섯 상태 | 2026-10-01 | 746dac6 | [261001-85g-phase-2-3-gaps](./quick/261001-85g-phase-2-3-gaps/) |
 | 261001-hfi | Phase 2·3 요구사항 갭 남은 몫 — ADMN-12 공휴일 보관 · 예정값 취소 같은 tx 로그 · MAST-04 견적 분류 코드표 · OPS-05/MAST-04 분리(v1 91) | 2026-10-01 | 0787af7 | [261001-hfi-phase-2-3](./quick/261001-hfi-phase-2-3/) |
 | 261001-x6q | 04.3 legal fixes - purge deadline 04-01 and collection notice v4 | 2026-10-02 | 5da5430 | [261001-x6q-04-3-legal-fixes-purge-deadline-04-01-an](./quick/261001-x6q-04-3-legal-fixes-purge-deadline-04-01-an/) |
+| 261002-0jy | #133 Codex P2 후속 — 견적 줄 저장 충돌 거래처 이름 조회를 루프 뒤 1회 묶음으로(충돌 없으면 0회) | 2026-10-02 | 5478f90 | [261002-0jy-133-codex-p2](./quick/261002-0jy-133-codex-p2/) |
 
 ### Roadmap Evolution
 

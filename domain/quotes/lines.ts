@@ -867,12 +867,22 @@ export async function writeQuoteLinesInTx(
   };
 
   // 충돌 칸의 거래처 표시 — UUID가 아니라 이름. 이름을 볼 수 없는 사람에겐 이름도 id도 아닌 「다른 값」.
-  // 거래처 칸이 실제로 충돌일 때만 조회한다(아니면 cellConflictsFor가 이 값을 쓰지 않는다).
-  const conflictVendorLabel = async (baseline: QuoteLineBaseline | undefined, current: QuoteLineRow): Promise<string> => {
-    if (!vendorNamesVisible || !baseline || baseline.vendorId === current.vendorId) return HIDDEN_CONFLICT_VALUE;
-    if (current.vendorId === null) return "—";
-    const names = await repoFindVendorNamesByIds(viewer, [current.vendorId], tx);
-    return names.get(current.vendorId) ?? HIDDEN_CONFLICT_VALUE;
+  // 거래처 칸이 실제로 충돌인 줄만 모아 한 번에 조회한다(잠금 중 조회는 많아야 1회).
+  type ConflictCandidate = { rowId: string; baseline: QuoteLineBaseline | undefined; current: QuoteLineRow };
+  const conflictsWithVendorNames = async (candidates: ConflictCandidate[]): Promise<CellConflict[]> => {
+    const vendorShown = ({ baseline, current }: ConflictCandidate) =>
+      vendorNamesVisible && baseline !== undefined && baseline.vendorId !== current.vendorId;
+    const ids = [...new Set(candidates.filter(vendorShown).flatMap(({ current }) => (current.vendorId === null ? [] : [current.vendorId])))];
+    const names = ids.length > 0 ? await repoFindVendorNamesByIds(viewer, ids, tx) : new Map<string, string>();
+    return candidates.flatMap((candidate) => {
+      const { rowId, baseline, current } = candidate;
+      const label = !vendorShown(candidate)
+        ? HIDDEN_CONFLICT_VALUE
+        : current.vendorId === null
+          ? "—"
+          : (names.get(current.vendorId) ?? HIDDEN_CONFLICT_VALUE);
+      return cellConflictsFor(rowId, baseline, current, label);
+    });
   };
 
   // (b)
@@ -910,6 +920,7 @@ export async function writeQuoteLinesInTx(
 
   // (c)(d)
   const conflicts: CellConflict[] = [];
+  const conflictCandidates: ConflictCandidate[] = [];
   const formatErrors: CellFormatError[] = [];
   const gateErrors: CellFormatError[] = [];
   // unchanged — DB 현재 값과 바뀐 칸이 없는 기존 줄(A-21). 쓰지 않는다(version·로그 그대로 — 완료 줄도 잠김 그대로).
@@ -978,7 +989,7 @@ export async function writeQuoteLinesInTx(
       }
       if (!current) continue; // (b)가 이미 막았다.
       if (current.version !== row.version) {
-        conflicts.push(...cellConflictsFor(row.id, row.baseline, current, await conflictVendorLabel(row.baseline, current)));
+        conflictCandidates.push({ rowId: row.id, baseline: row.baseline, current });
       }
 
       // 바뀐 칸마다 판정해 칸 오류로 싣는다(이유 = 표 위 한 줄과 같은 문자열). 바뀐 칸이 없으면 게이트를 부르지 않는다.
@@ -991,6 +1002,7 @@ export async function writeQuoteLinesInTx(
         if (!decision.allowed) gateErrors.push({ rowIndex, rowId: row.id, field, label: CELL_LABELS[field], reason: decision.reason });
       }
     }
+    conflicts.push(...(await conflictsWithVendorNames(conflictCandidates)));
     if (gateErrors.length > 0) deny(LINE_EDIT_RULE, new SaveRejectedError(conflicts, [...formatErrors, ...gateErrors]));
 
     // 04-26(D-86 · A-36 · ENG-D10) — 잠금 뒤 센 활성 줄 − 이번에 보관할 활성 줄 + 실제로 새로 들어갈 줄(그 차수에 이미
@@ -1049,9 +1061,8 @@ export async function writeQuoteLinesInTx(
       // 04-28 — 같은 트랜잭션에서 서버 현재 행을 다시 읽어, 실제로 달라진 칸만 서버 값·버전으로 싣는다.
       const [current] = await repoFindQuoteLinesByIds(viewer, [row.id], { revisionId }, tx);
       if (!current) throw new UserFacingError(MEMBERSHIP_MISMATCH);
-      const vendorLabel = await conflictVendorLabel(row.baseline, current);
-      const raceConflicts = cellConflictsFor(row.id, row.baseline, current, vendorLabel);
-      throw new SaveRejectedError(raceConflicts.length > 0 ? raceConflicts : cellConflictsFor(row.id, undefined, current, vendorLabel), []);
+      const raceConflicts = await conflictsWithVendorNames([{ rowId: row.id, baseline: row.baseline, current }]);
+      throw new SaveRejectedError(raceConflicts.length > 0 ? raceConflicts : cellConflictsFor(row.id, undefined, current, HIDDEN_CONFLICT_VALUE), []);
     }
     wrote = true;
   }

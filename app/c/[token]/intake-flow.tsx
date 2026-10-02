@@ -9,6 +9,7 @@ import {
   draftAfterBack,
   isDefiniteResult,
   nextRrnRecheckConfirmed,
+  randomIdemKey,
   resolveHistoryEntry,
   submitBlockedReason,
   submitOutcomeFromValidationErrors,
@@ -73,10 +74,6 @@ const EMPTY_DRAFT: FormDraft = {
   strokes: [],
   armedRrn: null,
 };
-
-function randomIdemKey(): string {
-  return crypto.randomUUID();
-}
 
 const TITLE = "기타소득 지급 확인";
 const RESPONSE_TIMEOUT_MS = 20_000;

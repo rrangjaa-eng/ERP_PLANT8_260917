@@ -97,3 +97,16 @@ export function submitBlockedReason(missing: readonly string[]): string | undefi
   const particle = code >= 0 && code <= 11171 && code % 28 !== 0 ? "을" : "를";
   return `${missing.join(" · ")}${particle} 채우면 제출할 수 있습니다`;
 }
+
+// 제출 멱등 키 — crypto.randomUUID가 없는 브라우저(iOS Safari 15.4 미만 · 옛 Android WebView)는 getRandomValues로
+// 만든 UUID v4로 대신한다. 없으면 제출이 보내기 전에 던진다(PR #88 /review F9).
+export function randomIdemKey(
+  source: { getRandomValues: Crypto["getRandomValues"]; randomUUID?: () => string } = crypto,
+): string {
+  if (typeof source.randomUUID === "function") return source.randomUUID();
+  const bytes = source.getRandomValues(new Uint8Array(16));
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}

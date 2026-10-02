@@ -5,9 +5,11 @@ import {
   submitBlockedReason,
   isDefiniteResult,
   nextRrnRecheckConfirmed,
+  randomIdemKey,
   resolveHistoryEntry,
   submitOutcomeFromValidationErrors,
 } from "@/app/c/[token]/flow-rules";
+import { submitCertificateSchema } from "@/app/c/[token]/submit-schema";
 
 // 04.3-03 Task 2a ③ — 외부 수령자 흐름의 순수 판정(브라우저 API 없음).
 // 04.3-15 — 명단 · 확인 단계가 없어져 기록 단계는 pick · form · result(렌더 E2′ · E4 · result)다.
@@ -187,5 +189,27 @@ describe("확정 판정 · 결과 불명 경계(04.3-16 E39 · T-04.3-413)", () 
 
   it("throttled는 결과 불명 쪽 — 같은 키로 다시 보낸다", () => {
     expect(isDefiniteResult({ data: { kind: "throttled" } })).toBe(false);
+  });
+});
+
+// PR #88 /review F9 — iOS Safari 15.4 미만 · 옛 Android WebView에는 crypto.randomUUID가 없다. getRandomValues로 만든
+// UUID v4로 대신해, 서버 멱등 키 형식(/^[A-Za-z0-9_-]{22,64}$/)을 그대로 지난다.
+describe("randomIdemKey — randomUUID 없는 브라우저", () => {
+  const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  const oldBrowser = { getRandomValues: globalThis.crypto.getRandomValues.bind(globalThis.crypto) };
+
+  it("randomUUID가 없으면 getRandomValues로 UUID v4를 만들고 서버 키 형식을 지난다", () => {
+    const keys = Array.from({ length: 50 }, () => randomIdemKey(oldBrowser));
+    for (const key of keys) {
+      expect(key).toMatch(UUID_V4);
+      expect(submitCertificateSchema.shape.idempotencyKey.safeParse(key).success).toBe(true);
+    }
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("randomUUID가 있으면 그것을 쓴다", () => {
+    expect(randomIdemKey({ ...oldBrowser, randomUUID: () => "11111111-2222-4333-8444-555555555555" })).toBe(
+      "11111111-2222-4333-8444-555555555555",
+    );
   });
 });

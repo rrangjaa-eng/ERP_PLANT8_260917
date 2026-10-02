@@ -15,10 +15,10 @@ import { APP_DATA_KEY_BYTES } from "@/lib/crypto";
 const DEPLOY_SH = readFileSync(resolve(process.cwd(), "scripts/deploy.sh"), "utf8");
 
 function seedBytesFor(secretBase: string): number {
-  const pattern = new RegExp(`_ensure_wrapped_data_key ${secretBase} (\\d+)`);
+  const pattern = new RegExp(`_ensure_secret ${secretBase} (\\d+)`);
   const match = DEPLOY_SH.match(pattern);
   if (!match || match[1] === undefined) {
-    throw new Error(`scripts/deploy.sh에서 "_ensure_wrapped_data_key ${secretBase} <n>" 호출을 찾지 못했다`);
+    throw new Error(`scripts/deploy.sh에서 "_ensure_secret ${secretBase} <n>" 호출을 찾지 못했다`);
   }
   return Number(match[1]);
 }

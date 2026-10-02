@@ -203,39 +203,39 @@ WIF 풀·프로바이더, 서비스 계정 5개(배포자 + 환경별 런타임�
 (`__unset__`) — Workspace SMTP 릴레이 확인 결과는 이 절에 추가한다(TODOS.md 참고, 확인
 전).
 
-**평문 데이터 키 시크릿만 아래 승격 순서 끝에서 끄고 파기한다.** 감싼 시크릿과 그 밖의
-시크릿 버전은 지우거나 끄지 않는다. 감싼 시크릿 `app-data-key-v1-wrapped-{env}`나 KMS 키를 잃으면 Phase 3
+**시크릿 버전은 삭제·비활성화하지 않는다.** `app-data-key-v1-{env}`를 잃으면 Phase 3
 이후 암호화된 데이터를 복구할 수 없다. `db-admin-password-{env}`는 인스턴스를 다시 만들
 때 `deploy.sh`가 재설정하지 않으므로, 그때는 `gcloud sql users set-password postgres`를
 손으로 맞춘다.
 
-**데이터 키는 KMS 봉투다(04.3-08).** 서비스는 감싼 시크릿 `app-data-key-v1-wrapped-{env}`와 KMS 키
-(`plant8-{env}`/`app-data-key`) 이름만 받고 첫 요청 때 한 번 풀어 메모리에 둔다. 감싸는 평문은 평문
-시크릿과 같은 base64 텍스트, 감싼 값은 KMS 암호문의 한 줄 base64다(`deploy.sh`가 넣기 전에 왕복 확인).
-정확히 32바이트여야 한다(`lib/crypto.ts` `APP_DATA_KEY_BYTES`) — 어긋나거나 KMS가 3번 실패하면 프로세스가 끝나 인스턴스가 바뀌고 스모크가 막는다.
-01-07·01-08의 48바이트 키는 2026-09-22 실측으로 두 환경 모두 32바이트임을 확인했다(옛 키 암호문 없음).
+**`app-data-key-v1`은 base64로 인코딩된 정확히 32바이트여야 한다**(`lib/crypto.ts`
+`APP_DATA_KEY_BYTES`, aes-256-gcm 키 길이). 길이가 다르면 `lib/env.ts`가 **부팅 시점에**
+거부해 그 리비전은 뜨지 않고 `deploy.sh` 스모크가 실패한다(값이 없으면 통과 — Job은
+이 키를 받지 않는다). `keyFor()`의 같은 검사는 두 번째 방어선이다. `_ensure_secret`은
+ENABLED 버전이 이미 있으면 새로 만들지 않으므로, 이 계약이 생기기 전(03-06 이전)에 배포된 환경은 `deploy.sh`를 다시 돌려도
+고쳐지지 않는다 — 실제로 01-07·01-08에서 만든 `app-data-key-v1-staging`·
+`app-data-key-v1-prod`가 옛 코드(`openssl rand -base64 48`, 48바이트)로 생성돼 이
+상태였다 — **2026-09-22 실측으로 두 환경 모두 `latest`가 32바이트임을 확인했다**
+(`gcloud secrets versions access latest … | base64 -d | wc -c`). 길이가 틀린 키로는
+`encrypt()`/`decrypt()`가 애초에 실행되지 않으므로(fail-closed) 옛 버전으로 암호화에
+성공한 데이터는 존재할 수 없다. 다시 틀어지면 고치는 법(추가만 하고 옛 버전은 지우지
+않는다):
 
-**PR 머지 전 준비(머지 = 스테이징 자동 배포):** 소유자가 `gcloud projects get-iam-policy $PROJECT
---flatten='bindings[].members' --filter='bindings.members:gha-deployer@' --format='value(bindings.role)'`에
-`roles/cloudkms.admin`이 없는지, `gcloud kms keys get-iam-policy app-data-key --location=asia-northeast3
---keyring=plant8-{env}`(같은 세 옵션)에 `cryptoKeyEncrypterDecrypter` · `viewer`가 있는지 본다 — 어긋나면
-머지 전에 PR 브랜치의 `scripts/bootstrap-gcp.sh`를 한 번(§8 — 키링 · 키 · 키 단위 권한, 프로젝트 단위 admin 제거).
-**승격 순서:** 스테이징 배포 → 거래처 계좌번호 전체 보기로 복호화 확인 → 평문 시크릿 버전 `disable` →
-프로덕션 같은 순서 → 두 환경 확인 + 유예 기간 뒤 평문 데이터 키 시크릿(평문 v2가 있으면 그것도)의 모든
-버전을 `gcloud secrets versions destroy`로 파기하고 `gcloud secrets remove-iam-policy-binding
-app-data-key-v1-{env} --member=serviceAccount:plant8-{env}-runtime@… --role=roles/secretmanager.secretAccessor`로
-런타임 바인딩을 뗀다(끈 버전은 `secretmanager.admin`이 다시 켤 수 있다 — destroy 뒤에야 시크릿 하나로 못 푼다).
-되돌리기는 destroy 전에만 — 평문 버전을 다시 켜고 이전 리비전으로 롤백.
+```bash
+openssl rand -base64 32 | gcloud secrets versions add app-data-key-v1-staging --project="$PROJECT" --data-file=-
+openssl rand -base64 32 | gcloud secrets versions add app-data-key-v1-prod    --project="$PROJECT" --data-file=-
+```
 
-**키 회전(환경마다 스테이징 먼저):** (0) 소유자 계정으로 `gcloud kms keys versions create
---location=asia-northeast3 --keyring=plant8-{env} --key=app-data-key --primary`(배포는 버전을 만들지 않는다 —
-이 단계 없이 (1)을 돌리면 `deploy.sh`가 한 줄로 멈춘다). (1) `bash scripts/deploy.sh --env … --project …
---add-data-key-v2`로 감싼 v2를 만들고 v1·v2를 함께 받는 리비전의 스모크 통과를 본다 — 이 리비전부터 새
-암호문은 v2이므로 v2 없는 리비전으로 롤백하지 않는다. (2) 그 뒤에만 운영자 ADC로 `APP_DATA_KEY_v1_WRAPPED` ·
-`APP_DATA_KEY_v2_WRAPPED`(감싼 시크릿 `latest` — KMS 암호문이라 비밀 아님) · `APP_DATA_KEY_KMS_KEY`를 두고
-`pnpm db:rotate-key`(확인증 주민등록번호 · QR 토큰 포함). (3) 한 번 더 돌려 모든 대상의 `rotate_key.done`
-`rotated`가 0이면 회전 대상 칸에 v1 암호문이 없다. (4) v1 감싼 시크릿은 떼지 않는다(회전 전 백업). (5) v1 유출
-대응(서비스에서 v1 분리·KMS 버전 사용 중지)은 이번 범위 밖 — 필요하면 별도 계획.
+새 버전이 최신(`latest`)이 되고 앱은 `--set-secrets=...:latest`로 그 버전만 읽으므로
+다음 리비전 배포부터 바로 적용된다. 옛 48바이트 버전을 지우지 않아도 무해하다 —
+아무 데이터도 그 키로 암호화되지 않았고, `_ensure_secret`은 ENABLED 버전이 하나라도
+있으면 건드리지 않는다.
+
+**키 회전 절차(03-06):** `app-data-key-v2-{env}` 시크릿을 새로 만들고 두 키(v1·v2)를
+함께 둔 상태에서 `pnpm db:rotate-key`를 돌린다 — 옛 버전 암호문을 복호화해 새 버전으로
+다시 쓴다(중단·재실행 안전, 이미 최신 버전인 행은 건너뛴다). **회전 완료 후에만** 옛
+키(`app-data-key-v1-{env}`)를 지운다 — 먼저 지우면 아직 재암호화되지 않은 행이 영구히
+읽히지 않는다.
 
 ### 이메일(SMTP) 확인 경로
 

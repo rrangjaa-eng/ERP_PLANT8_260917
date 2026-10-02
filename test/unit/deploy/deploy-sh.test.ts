@@ -1,9 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { mkdtempSync, mkdirSync, cpSync, writeFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 // scripts/deploy.sh를 가짜 gcloud/docker/curl(fakebin/) 위에서 실행해 순서·분기·
 // 거부 조건을 단언한다. 실제 GCP 호출은 전혀 없다 — 01-RESEARCH.md §Pattern 7·8·10.
@@ -52,8 +51,6 @@ function deploy(
     state?: Record<string, string | true>;
     // 04.3-05(B3): 서명 버킷은 부트스트랩이 만든다 — 기본은 버킷 있음.
     bucketExists?: boolean;
-    // 04.3-08: KMS 키링·키도 부트스트랩이 만든다 — 기본은 키 있음.
-    kmsKeyExists?: boolean;
   } = {},
 ): DeployResult {
   const stateDir = mkdtempSync(join(tmpdir(), "deploy-state-"));
@@ -62,9 +59,6 @@ function deploy(
   }
   if (opts.bucketExists ?? true) {
     writeFileSync(join(stateDir, "bucket-exists"), "");
-  }
-  if (opts.kmsKeyExists ?? true) {
-    writeFileSync(join(stateDir, "kms-key-exists"), "");
   }
   const logDir = mkdtempSync(join(tmpdir(), "deploy-log-"));
   const logPath = join(logDir, "log");
@@ -873,53 +867,16 @@ describe("경보 템플릿 API 한도 가드 (eng R2-1)", () => {
   }
 });
 
-// 04.3-08 Task 2 — 데이터 키 KMS 봉투. 인코딩 계약(codex #1): KMS가 감싸는 평문 = 평문
-// 시크릿과 같은 base64 텍스트, 감싼 시크릿 = KMS 암호문의 한 줄 base64. 가짜 KMS는
-// 암호문 = "FAKEKMS<주 버전>" + 평문이다. 배포가 넣은 값을 lib/crypto.ts loadDataKeys가
-// 그대로 풀어 원래 키가 되는지 대조한다 — 풀린 키는 프로세스 전역 칸에 있으므로
-// 케이스마다 그 칸과 키 환경 변수를 비운다(RB-P1).
-describe("deploy.sh — 데이터 키 KMS 봉투(04.3-08)", () => {
+// 데이터 키는 평문 Secret Manager 시크릿(app-data-key-v1-{env}) → 환경 변수 APP_DATA_KEY_v1이다.
+// KMS 봉투(04.3-08)는 소유자 결정(비용)으로 배포에서 뺐다 — gcloud kms를 부르지 않고, 이미 있는
+// 시크릿 값은 절대 새로 만들지 않는다(기존 암호문을 읽을 수 없게 되므로).
+describe("deploy.sh — 데이터 키는 평문 시크릿(KMS 없음)", () => {
   const PLAIN = "app-data-key-v1-staging";
-  const WRAPPED_V1 = "app-data-key-v1-wrapped-staging";
-  const WRAPPED_V2 = "app-data-key-v2-wrapped-staging";
-  const KMS_KEY_NAME = "projects/test-proj/locations/asia-northeast3/keyRings/plant8-staging/cryptoKeys/app-data-key";
-  const RUNTIME = "--member=serviceAccount:plant8-staging-runtime@test-proj.iam.gserviceaccount.com";
-  const KEY_ENV = [
-    "APP_DATA_KEY_v1",
-    "APP_DATA_KEY_v2",
-    "APP_DATA_KEY_v1_WRAPPED",
-    "APP_DATA_KEY_v2_WRAPPED",
-    "APP_DATA_KEY_KMS_KEY",
-  ] as const;
-  const DATA_KEY_SLOT = Symbol.for("plant8.appDataKeys");
-  // openssl rand -base64 32 모양(44자 + 끝 개행)의 평문 시크릿 값.
   const ORIGINAL_KEY_TEXT = `${Buffer.alloc(32, 9).toString("base64")}\n`;
-
   let repoDir: string;
-  let savedEnv: Record<string, string | undefined> = {};
-
-  function clearDataKeySlot(): void {
-    delete (globalThis as unknown as Record<symbol, unknown>)[DATA_KEY_SLOT];
-  }
 
   beforeEach(() => {
     repoDir = setupRepo();
-    savedEnv = {};
-    for (const key of KEY_ENV) {
-      savedEnv[key] = process.env[key];
-      delete process.env[key];
-    }
-    clearDataKeySlot();
-    vi.resetModules();
-  });
-
-  afterEach(() => {
-    for (const key of KEY_ENV) {
-      if (savedEnv[key] === undefined) delete process.env[key];
-      else process.env[key] = savedEnv[key];
-    }
-    clearDataKeySlot();
-    vi.resetModules();
   });
 
   function stateFile(stateDir: string, name: string): string | undefined {
@@ -927,437 +884,47 @@ describe("deploy.sh — 데이터 키 KMS 봉투(04.3-08)", () => {
     return existsSync(path) ? readFileSync(path, "utf8") : undefined;
   }
 
-  function sha256(data: Buffer | string): string {
-    return createHash("sha256").update(data).digest("hex");
+  function deployLine(log: string): string {
+    return log.split("\n").find((l) => l.startsWith("run deploy plant8-staging ")) ?? "";
   }
 
-  // 감싼 시크릿 값(한 줄 base64) → 가짜 KMS 머리와 평문 바이트.
-  function unwrapFake(wrapped: string): { header: string; plaintext: Buffer } {
-    const bytes = Buffer.from(wrapped, "base64");
-    return { header: bytes.subarray(0, 8).toString("utf8"), plaintext: bytes.subarray(8) };
-  }
+  it("신규 — 시크릿이 없으면 32바이트 키를 만들어 넣고, 서비스에 APP_DATA_KEY_v1으로 붙인다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
+    expect(r.status).toBe(0);
+    expect(r.log).toContain(`secrets create ${PLAIN} `);
+    const stored = stateFile(r.stateDir, `secret-data-${PLAIN}`) ?? "";
+    expect(Buffer.from(stored.trim(), "base64")).toHaveLength(32);
+    const line = deployLine(r.log);
+    expect(line).toContain(`APP_DATA_KEY_v1=${PLAIN}:latest`);
+    const binding = r.log.split("\n").find((l) => l.startsWith(`secrets add-iam-policy-binding ${PLAIN} `));
+    expect(binding).toContain("--role=roles/secretmanager.secretAccessor");
+  });
 
-  function fakeUnwrap({ ciphertext }: { keyName: string; ciphertext: string }): Promise<Buffer> {
-    return Promise.resolve(unwrapFake(ciphertext).plaintext);
-  }
-
-  function deployLine(log: string): string | undefined {
-    return log.split("\n").find((l) => l.startsWith("run deploy plant8-staging "));
-  }
-
-  // 평문 변수로 키를 쓰던 시절(승격 전)의 v1: 표본.
-  async function legacySample(keyText: string, plaintext: string): Promise<string> {
-    process.env.APP_DATA_KEY_v1 = keyText.trim();
-    const { encrypt } = await import("@/lib/crypto");
-    const stored = encrypt(plaintext);
-    delete process.env.APP_DATA_KEY_v1;
-    vi.resetModules();
-    return stored;
-  }
-
-  it("옮기기 — 평문 시크릿 값 그대로를 감싼다: 한 줄 base64 · 머리를 뗀 바이트의 SHA-256이 원래 값과 같고 loadDataKeys가 승격 전 v1: 표본을 푼다", async () => {
+  it("기존 시크릿 — 값이 있으면 새 키를 만들지 않고 값 그대로 둔다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
       state: { [`secret-data-${PLAIN}`]: ORIGINAL_KEY_TEXT },
     });
-    expect(r.stderr).not.toContain("deploy failed at");
-    expect(r.status).toBe(0);
-
-    const wrapped = stateFile(r.stateDir, `secret-data-${WRAPPED_V1}`) ?? "";
-    expect(wrapped).toMatch(/^[A-Za-z0-9+/=]+$/);
-    const { header, plaintext } = unwrapFake(wrapped);
-    expect(header).toBe("FAKEKMS1");
-    expect(sha256(plaintext)).toBe(sha256(ORIGINAL_KEY_TEXT));
-    // 평문 시크릿에는 새 버전을 더하지 않았다(값이 그대로다).
-    expect(stateFile(r.stateDir, `secret-data-${PLAIN}`)).toBe(ORIGINAL_KEY_TEXT);
-
-    const legacy = await legacySample(ORIGINAL_KEY_TEXT, "승격 전 계좌번호");
-    process.env.APP_DATA_KEY_v1_WRAPPED = wrapped;
-    process.env.APP_DATA_KEY_KMS_KEY = KMS_KEY_NAME;
-    const { loadDataKeys, decrypt } = await import("@/lib/crypto");
-    await loadDataKeys({ unwrap: fakeUnwrap });
-    expect(decrypt(legacy)).toBe("승격 전 계좌번호");
-  });
-
-  it("생성 — 평문 시크릿이 없으면 새 32바이트 키를 감싼다: 풀면 32바이트 · encrypt → decrypt 왕복 · 라벨 kms-key-version=1이 버전보다 먼저", async () => {
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
-    expect(r.status).toBe(0);
-
-    const wrapped = stateFile(r.stateDir, `secret-data-${WRAPPED_V1}`) ?? "";
-    const { header, plaintext } = unwrapFake(wrapped);
-    expect(header).toBe("FAKEKMS1");
-    expect(Buffer.from(plaintext.toString("utf8").trim(), "base64")).toHaveLength(32);
-    expect(stateFile(r.stateDir, `secret-label-${WRAPPED_V1}`)).toBe("1");
-    const labelIdx = lineIndex(r.log, `secrets update ${WRAPPED_V1} `);
-    const addIdx = lineIndex(r.log, `secrets versions add ${WRAPPED_V1} `);
-    expect(labelIdx).toBeGreaterThan(-1);
-    expect(addIdx).toBeGreaterThan(labelIdx);
-
-    process.env.APP_DATA_KEY_v1_WRAPPED = wrapped;
-    process.env.APP_DATA_KEY_KMS_KEY = KMS_KEY_NAME;
-    const { loadDataKeys, encrypt, decrypt } = await import("@/lib/crypto");
-    await loadDataKeys({ unwrap: fakeUnwrap });
-    expect(decrypt(encrypt("주민번호"))).toBe("주민번호");
-  });
-
-  it("서비스 — 감싼 v1과 KMS 키 이름만 받고 평문 데이터 키 연결 · 감싼 v2는 없다", () => {
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
-    expect(r.status).toBe(0);
-    const line = deployLine(r.log) ?? "";
-    expect(line).toContain(`APP_DATA_KEY_v1_WRAPPED=${WRAPPED_V1}:latest`);
-    expect(line).toContain(`APP_DATA_KEY_KMS_KEY=${KMS_KEY_NAME}`);
-    expect(line).not.toContain("APP_DATA_KEY_v1=");
-    expect(line).not.toContain("APP_DATA_KEY_v2_WRAPPED=");
-    // 런타임은 감싼 시크릿을 읽는다.
-    const binding = r.log.split("\n").find((l) => l.startsWith(`secrets add-iam-policy-binding ${WRAPPED_V1} `));
-    expect(binding).toContain(RUNTIME);
-    expect(binding).toContain("--role=roles/secretmanager.secretAccessor");
-  });
-
-  it("왕복 확인 실패(kms decrypt 실패) — 0이 아닌 코드 · 감싼 시크릿 versions add와 run deploy가 없다", () => {
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: { "fail-gcloud": "kms decrypt" },
-    });
-    expect(r.status).not.toBe(0);
-    expect(r.log).not.toContain(`secrets versions add ${WRAPPED_V1} `);
-    expect(r.log).not.toMatch(/^run deploy /m);
-  });
-
-  it("KMS 키가 없으면 bootstrap을 먼저 돌리라고 멈추고 KMS 자원 생성 · IAM 조회를 하나도 부르지 않는다(E3-12 · 교차 B4)", () => {
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], { kmsKeyExists: false });
-    expect(r.status).not.toBe(0);
-    expect(r.stderr).toContain("run scripts/bootstrap-gcp.sh first");
-    expect(r.stderr.trim().split("\n").at(-1)).toBe("deploy failed at ensure_kms_key");
-    for (const forbidden of [
-      "kms keyrings create",
-      "kms keys create",
-      "kms keys add-iam-policy-binding",
-      "kms keyrings describe",
-      "kms keys get-iam-policy",
-    ]) {
-      expect(r.log).not.toContain(forbidden);
-    }
-    expect(r.log).toContain("kms keys describe app-data-key --keyring=plant8-staging --location=asia-northeast3 --project=test-proj");
-    expect(r.log).not.toMatch(/^run deploy /m);
-  });
-
-  it("회전 준비 — 주 버전이 v1을 감싼 버전과 같으면 --add-data-key-v2가 소유자 단계를 이름 대는 한 줄로 멈춘다", () => {
-    const wrappedV1 = Buffer.from(`FAKEKMS1${ORIGINAL_KEY_TEXT}`).toString("base64");
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj", "--add-data-key-v2"], {
-      state: { [`secret-data-${WRAPPED_V1}`]: wrappedV1, [`secret-label-${WRAPPED_V1}`]: "1" },
-    });
-    expect(r.status).not.toBe(0);
-    expect(r.stderr.trim().split("\n").at(-1)).toMatch(/OPERATIONS §9 회전 \(0\)/);
-    expect(r.log).not.toContain("kms encrypt");
-    expect(r.log).not.toContain(`secrets versions add ${WRAPPED_V2} `);
-    expect(r.log).not.toMatch(/^run deploy /m);
-  });
-
-  // 라벨 없는 감싼 v1은 보장 단계가 지금 주 버전(2)으로 채운다 — 그래서 v1이 실제로는
-  // 1로 감싸졌어도 「같은 버전」으로 보여 한 번 더 멈추는 쪽으로 틀린다(v2를 v1과 같은
-  // KMS 버전으로 감싸는 쪽으로는 틀리지 않는다 — codex final C4).
-  it("회전 준비 — 감싼 v1에 라벨이 없으면 --add-data-key-v2가 v2를 감싸지 않고 멈춘다", () => {
-    const wrappedV1 = Buffer.from(`FAKEKMS1${ORIGINAL_KEY_TEXT}`).toString("base64");
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj", "--add-data-key-v2"], {
-      state: { [`secret-data-${WRAPPED_V1}`]: wrappedV1, "kms-primary": "2" },
-    });
-    expect(r.status).not.toBe(0);
-    expect(r.stderr.trim().split("\n").at(-1)).toMatch(/OPERATIONS §9 회전 \(0\)/);
-    expect(r.log).not.toContain(`secrets versions add ${WRAPPED_V2} `);
-    expect(r.log).not.toMatch(/^run deploy /m);
-  });
-
-  it("회전 준비 — 소유자가 새 주 버전(2)을 만든 뒤 --add-data-key-v2: v2를 FAKEKMS2로 감싸 run deploy보다 먼저 더하고 v1 · v2를 함께 붙인다 · v1은 다시 감싸지 않는다 · 버전을 만들지 않는다", async () => {
-    const wrappedV1 = Buffer.from(`FAKEKMS1${ORIGINAL_KEY_TEXT}`).toString("base64");
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj", "--add-data-key-v2"], {
-      state: { [`secret-data-${WRAPPED_V1}`]: wrappedV1, [`secret-label-${WRAPPED_V1}`]: "1", "kms-primary": "2" },
-    });
-    expect(r.stderr).not.toContain("deploy failed at");
-    expect(r.status).toBe(0);
-
-    const addV2 = lineIndex(r.log, `secrets versions add ${WRAPPED_V2} `);
-    const runDeploy = lineIndex(r.log, "run deploy plant8-staging ");
-    expect(addV2).toBeGreaterThan(-1);
-    expect(runDeploy).toBeGreaterThan(addV2);
-    const line = deployLine(r.log) ?? "";
-    expect(line).toContain(`APP_DATA_KEY_v1_WRAPPED=${WRAPPED_V1}:latest`);
-    expect(line).toContain(`APP_DATA_KEY_v2_WRAPPED=${WRAPPED_V2}:latest`);
-
-    const v1After = stateFile(r.stateDir, `secret-data-${WRAPPED_V1}`) ?? "";
-    expect(sha256(v1After)).toBe(sha256(wrappedV1));
-    expect(unwrapFake(v1After).header).toBe("FAKEKMS1");
-    const v2 = stateFile(r.stateDir, `secret-data-${WRAPPED_V2}`) ?? "";
-    expect(unwrapFake(v2).header).toBe("FAKEKMS2");
-    expect(stateFile(r.stateDir, `secret-label-${WRAPPED_V2}`)).toBe("2");
-    expect(r.log).not.toContain("versions create");
-    const v2Binding = r.log.split("\n").find((l) => l.startsWith(`secrets add-iam-policy-binding ${WRAPPED_V2} `));
-    expect(v2Binding).toContain(RUNTIME);
-
-    // 회전 준비 계약 — 그 리비전이 회전 전후 암호문을 모두 읽는다.
-    const legacy = await legacySample(ORIGINAL_KEY_TEXT, "회전 전");
-    process.env.APP_DATA_KEY_v1_WRAPPED = v1After;
-    process.env.APP_DATA_KEY_v2_WRAPPED = v2;
-    process.env.APP_DATA_KEY_KMS_KEY = KMS_KEY_NAME;
-    const { loadDataKeys, encrypt, decrypt, newestKeyVersion } = await import("@/lib/crypto");
-    await loadDataKeys({ unwrap: fakeUnwrap });
-    expect(newestKeyVersion()).toBe("v2");
-    expect(decrypt(legacy)).toBe("회전 전");
-    expect(encrypt("회전 뒤").startsWith("v2:")).toBe(true);
-
-    // 회전 준비 유지 — 그 상태로 플래그 없이 다시 배포해도 v2가 붙는다.
-    const again = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: {
-        [`secret-data-${WRAPPED_V1}`]: v1After,
-        [`secret-label-${WRAPPED_V1}`]: "1",
-        [`secret-data-${WRAPPED_V2}`]: v2,
-        [`secret-label-${WRAPPED_V2}`]: "2",
-        "kms-primary": "2",
-      },
-    });
-    expect(again.status).toBe(0);
-    expect(deployLine(again.log)).toContain(`APP_DATA_KEY_v2_WRAPPED=${WRAPPED_V2}:latest`);
-    expect(again.log).not.toContain("kms encrypt");
-  });
-
-  it("회전 준비 — 감싼 v2가 이미 있으면 --add-data-key-v2가 주 버전 확인 없이 그대로 붙인다(멱등)", () => {
-    const wrappedV1 = Buffer.from(`FAKEKMS1${ORIGINAL_KEY_TEXT}`).toString("base64");
-    const wrappedV2 = Buffer.from(`FAKEKMS2${ORIGINAL_KEY_TEXT}`).toString("base64");
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj", "--add-data-key-v2"], {
-      state: {
-        [`secret-data-${WRAPPED_V1}`]: wrappedV1,
-        [`secret-label-${WRAPPED_V1}`]: "1",
-        [`secret-data-${WRAPPED_V2}`]: wrappedV2,
-        [`secret-label-${WRAPPED_V2}`]: "2",
-      },
-    });
-    expect(r.status).toBe(0);
-    expect(r.log).not.toContain("kms encrypt");
-    expect(deployLine(r.log)).toContain(`APP_DATA_KEY_v2_WRAPPED=${WRAPPED_V2}:latest`);
-  });
-
-  it("중간 실패 → 재실행 복구 — 권한 단계에서 멈춘 뒤 다시 돌리면 다시 감싸지 않고 secretAccessor를 건다(codex final C4)", () => {
-    const first = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: {
-        [`secret-data-${PLAIN}`]: ORIGINAL_KEY_TEXT,
-        "fail-gcloud": `secrets add-iam-policy-binding ${WRAPPED_V1} `,
-      },
-    });
-    expect(first.status).not.toBe(0);
-    const wrapped = stateFile(first.stateDir, `secret-data-${WRAPPED_V1}`);
-    const label = stateFile(first.stateDir, `secret-label-${WRAPPED_V1}`);
-    expect(wrapped).toBeDefined();
-    expect(label).toBe("1");
-    expect(lineIndex(first.log, `secrets update ${WRAPPED_V1} `)).toBeLessThan(
-      lineIndex(first.log, `secrets versions add ${WRAPPED_V1} `),
-    );
-
-    const second = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: {
-        [`secret-data-${PLAIN}`]: ORIGINAL_KEY_TEXT,
-        [`secret-data-${WRAPPED_V1}`]: wrapped ?? "",
-        [`secret-label-${WRAPPED_V1}`]: label ?? "",
-      },
-    });
-    expect(second.status).toBe(0);
-    expect(second.log).not.toContain("kms encrypt");
-    const binding = second.log.split("\n").find((l) => l.startsWith(`secrets add-iam-policy-binding ${WRAPPED_V1} `));
-    expect(binding).toContain(RUNTIME);
-    expect(binding).toContain("--role=roles/secretmanager.secretAccessor");
-    expect(sha256(stateFile(second.stateDir, `secret-data-${WRAPPED_V1}`) ?? "")).toBe(sha256(wrapped ?? ""));
-  });
-
-  it("라벨 복구 — 감싼 v1은 있고 라벨이 없으면 지금 주 버전으로 채우고 다시 감싸지 않는다 · 감싼 v2가 있으면 플래그 없이도 v2 secretAccessor를 건다", () => {
-    const wrappedV1 = Buffer.from(`FAKEKMS1${ORIGINAL_KEY_TEXT}`).toString("base64");
-    const wrappedV2 = Buffer.from(`FAKEKMS1${ORIGINAL_KEY_TEXT}`).toString("base64");
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: { [`secret-data-${WRAPPED_V1}`]: wrappedV1, [`secret-data-${WRAPPED_V2}`]: wrappedV2 },
-    });
-    expect(r.status).toBe(0);
-    expect(stateFile(r.stateDir, `secret-label-${WRAPPED_V1}`)).toBe("1");
-    expect(r.log).not.toContain("kms encrypt");
-    const v2Binding = r.log.split("\n").find((l) => l.startsWith(`secrets add-iam-policy-binding ${WRAPPED_V2} `));
-    expect(v2Binding).toContain(RUNTIME);
-  });
-
-  it("평문 파기 뒤(AX-2) — 평문 시크릿에 버전이 없어도 새 평문 키를 만들거나 런타임 secretAccessor를 다시 걸지 않는다", () => {
-    const wrappedV1 = Buffer.from(`FAKEKMS1${ORIGINAL_KEY_TEXT}`).toString("base64");
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: { [`secret-data-${WRAPPED_V1}`]: wrappedV1, [`secret-label-${WRAPPED_V1}`]: "1" },
-    });
     expect(r.status).toBe(0);
     expect(r.log).not.toContain(`secrets versions add ${PLAIN} `);
-    expect(r.log).not.toContain(`secrets add-iam-policy-binding ${PLAIN} `);
-    expect(r.log).not.toContain("app-data-key-v2-staging");
+    expect(stateFile(r.stateDir, `secret-data-${PLAIN}`)).toBe(ORIGINAL_KEY_TEXT);
+    expect(deployLine(r.log)).toContain(`APP_DATA_KEY_v1=${PLAIN}:latest`);
   });
 
-  // 04.3-08 검토 반영 B1 — 데이터 키 경로의 존재 확인은 오류를 삼키지 않는다. NOT_FOUND만
-  // 「없음」이고, 다른 오류는 배포를 멈춘다(새 키를 만들거나 감싼 v1을 바꾸지 않는다).
-  function expectNoKeyChange(r: DeployResult, { wrapped = false } = {}): void {
-    expect(r.status).not.toBe(0);
-    if (!wrapped) expect(r.log).not.toContain("kms encrypt");
-    expect(r.log).not.toContain(`secrets versions add ${WRAPPED_V1} `);
-    expect(r.log).not.toMatch(/^run deploy /m);
-  }
-
-  it("B1 재현 1 — 평문 v1이 있는데 평문 버전 목록 조회가 실패하면 새 키를 만들지 않고 멈춘다", () => {
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: {
-        [`secret-data-${PLAIN}`]: ORIGINAL_KEY_TEXT,
-        "fail-gcloud": `secrets versions list --secret=${PLAIN} `,
-      },
-    });
-    expectNoKeyChange(r);
-    expect(r.stderr).toContain("forced failure");
-  });
-
-  it("B1 — 평문 시크릿 조회(describe)가 NOT_FOUND가 아닌 오류로 실패하면 새 키를 만들지 않고 gcloud 메시지를 보이며 멈춘다", () => {
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: {
-        [`secret-data-${PLAIN}`]: ORIGINAL_KEY_TEXT,
-        "fail-gcloud": `secrets describe ${PLAIN} `,
-      },
-    });
-    expectNoKeyChange(r);
-    expect(r.stderr).toContain("forced failure");
-    expect(r.stderr.trim().split("\n").at(-1)).toBe("deploy failed at ensure_secrets");
-  });
-
-  it("B1 재현 2 — 평문 파기 뒤 감싼 v1 버전 목록 조회가 실패하면 감싼 v1을 바꾸지 않고 멈춘다", () => {
-    const wrappedV1 = Buffer.from(`FAKEKMS1${ORIGINAL_KEY_TEXT}`).toString("base64");
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: {
-        [`secret-data-${WRAPPED_V1}`]: wrappedV1,
-        [`secret-label-${WRAPPED_V1}`]: "1",
-        "fail-gcloud": `secrets versions list --secret=${WRAPPED_V1} `,
-      },
-    });
-    expectNoKeyChange(r);
-    expect(stateFile(r.stateDir, `secret-data-${WRAPPED_V1}`)).toBe(wrappedV1);
-  });
-
-  it("B1 — 감싼 v1에 버전이 있지만 ENABLED가 없으면(끔) 평문이 있어도 다시 감싸지 않고 멈춘다", () => {
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: {
-        [`secret-data-${PLAIN}`]: ORIGINAL_KEY_TEXT,
-        [`secret-disabled-${WRAPPED_V1}`]: true,
-      },
-    });
-    expectNoKeyChange(r);
-    expect(r.stderr).toContain(WRAPPED_V1);
-  });
-
-  it("B1 — 평문 시크릿은 있는데 ENABLED 버전이 없고 감싼 v1이 비었으면 새 키를 만들지 않고 멈춘다", () => {
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: { [`secret-disabled-${PLAIN}`]: true },
-    });
-    expectNoKeyChange(r);
-    expect(r.stderr).toContain(PLAIN);
-  });
-
-  it("B1 — 감싼 v1 시크릿만 있고 버전이 없으면(앞 배포가 만든 뒤 멈춤) 평문 확인 뒤 새로 감싼다", () => {
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: { [`secret-data-${PLAIN}`]: ORIGINAL_KEY_TEXT, [`secret-created-${WRAPPED_V1}`]: true },
-    });
-    expect(r.stderr).not.toContain("deploy failed at");
+  it("gcloud kms를 부르지 않고 KMS · 감싼 키 환경 변수 · 감싼 시크릿을 붙이지 않는다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
     expect(r.status).toBe(0);
-    expect(r.log).not.toContain(`secrets create ${WRAPPED_V1} `);
-    expect(sha256(unwrapFake(stateFile(r.stateDir, `secret-data-${WRAPPED_V1}`) ?? "").plaintext)).toBe(
-      sha256(ORIGINAL_KEY_TEXT),
-    );
+    expect(r.log).not.toContain("kms ");
+    expect(r.log).not.toContain("cloudkms");
+    expect(r.log).not.toContain("wrapped");
+    const line = deployLine(r.log);
+    expect(line).not.toContain("APP_DATA_KEY_KMS_KEY");
+    expect(line).not.toContain("_WRAPPED");
+    expect(line).not.toContain("APP_DATA_KEY_v2");
   });
 
-  // 04.3-08 검토 반영 H2 — 감싼 v2가 있는데 버전 조회가 실패하면 v2 없이 배포하지 않는다.
-  it("H2 — 감싼 v2가 있는데 v2 버전 목록 조회가 실패하면 v2 없는 리비전을 배포하지 않고 멈춘다", () => {
-    const wrappedV1 = Buffer.from(`FAKEKMS1${ORIGINAL_KEY_TEXT}`).toString("base64");
-    const wrappedV2 = Buffer.from(`FAKEKMS2${ORIGINAL_KEY_TEXT}`).toString("base64");
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: {
-        [`secret-data-${WRAPPED_V1}`]: wrappedV1,
-        [`secret-label-${WRAPPED_V1}`]: "1",
-        [`secret-data-${WRAPPED_V2}`]: wrappedV2,
-        [`secret-label-${WRAPPED_V2}`]: "2",
-        "fail-gcloud": `secrets versions list --secret=${WRAPPED_V2} `,
-      },
-    });
+  it("--add-data-key-v2 플래그는 없다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj", "--add-data-key-v2"]);
     expect(r.status).not.toBe(0);
-    expect(r.log).not.toMatch(/^run deploy /m);
-  });
-
-  it("H2 — 감싼 v2 시크릿 조회(describe)가 NOT_FOUND가 아닌 오류면 배포하지 않고 멈춘다", () => {
-    const wrappedV1 = Buffer.from(`FAKEKMS1${ORIGINAL_KEY_TEXT}`).toString("base64");
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: {
-        [`secret-data-${WRAPPED_V1}`]: wrappedV1,
-        [`secret-label-${WRAPPED_V1}`]: "1",
-        "fail-gcloud": `secrets describe ${WRAPPED_V2} `,
-      },
-    });
-    expect(r.status).not.toBe(0);
-    expect(r.stderr).toContain("forced failure");
-    expect(r.log).not.toMatch(/^run deploy /m);
-  });
-
-  // 04.3-08 재검토 L-b — 감싼 v2에 버전이 있는데 ENABLED가 없으면(끔) 플래그 없이도 v2 없는
-  // 리비전을 배포하지 않는다(v2로 회전한 행을 못 읽게 된다) — v1의 「none ENABLED」와 같이 멈춘다.
-  it("L-b — 감싼 v2에 버전이 있지만 ENABLED가 없으면 --add-data-key-v2 없이도 배포하지 않고 멈춘다", () => {
-    const wrappedV1 = Buffer.from(`FAKEKMS1${ORIGINAL_KEY_TEXT}`).toString("base64");
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: {
-        [`secret-data-${WRAPPED_V1}`]: wrappedV1,
-        [`secret-label-${WRAPPED_V1}`]: "1",
-        [`secret-disabled-${WRAPPED_V2}`]: true,
-      },
-    });
-    expect(r.status).not.toBe(0);
-    expect(r.stderr).toContain(`${WRAPPED_V2} has versions but none ENABLED`);
-    expect(r.stderr.trim().split("\n").at(-1)).toBe("deploy failed at ensure_secrets");
-    expect(r.log).not.toContain("kms encrypt");
-    expect(r.log).not.toMatch(/^run deploy /m);
-  });
-
-  // 04.3-08 검토 반영 M1 — 왕복 확인이 실제로 어긋남을 잡는다(가짜 KMS가 다른 평문을 돌려줌).
-  it("M1 — kms decrypt가 32바이트가 아닌 키를 돌려주면 (bytes)로 멈추고 감싼 시크릿 · 서비스를 바꾸지 않는다", () => {
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: { "kms-decrypt-plaintext": `${Buffer.alloc(16, 3).toString("base64")}\n` },
-    });
-    expectNoKeyChange(r, { wrapped: true });
-    expect(r.stderr).toContain(`wrapped data key round trip failed: ${PLAIN} (bytes)`);
-  });
-
-  it("M1 — 옮기기에서 kms decrypt가 다른 32바이트 키를 돌려주면 (hash)로 멈추고 감싼 시크릿 · 서비스를 바꾸지 않는다", () => {
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: {
-        [`secret-data-${PLAIN}`]: ORIGINAL_KEY_TEXT,
-        "kms-decrypt-plaintext": `${Buffer.alloc(32, 4).toString("base64")}\n`,
-      },
-    });
-    expectNoKeyChange(r, { wrapped: true });
-    expect(r.stderr).toContain(`wrapped data key round trip failed: ${PLAIN} (hash)`);
-  });
-
-  // 04.3-08 검토 반영 M2 — 주 버전 조회 실패가 빈 라벨로 흘러가지 않는다.
-  it("M2 — KMS 주 버전 조회가 실패하면 빈 라벨로 감싸지 않고 멈춘다", () => {
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: {
-        "fail-gcloud":
-          "kms keys describe app-data-key --keyring=plant8-staging --location=asia-northeast3 --project=test-proj --format",
-      },
-    });
-    expectNoKeyChange(r);
-    expect(r.log).not.toContain(`secrets update ${WRAPPED_V1} `);
-  });
-
-  // 04.3-08 검토 반영 L2 — KMS 키 확인 실패가 NOT_FOUND가 아니면 gcloud 메시지를 그대로 보인다.
-  it("L2 · L-a — KMS 키 확인이 NOT_FOUND가 아닌 오류(권한 등)면 gcloud 메시지와 함께 키 없음 · 권한 없음 둘 다를 안내하고 ensure_kms_key에서 멈춘다", () => {
-    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
-      state: { "fail-gcloud": "kms keys describe" },
-    });
-    expect(r.status).not.toBe(0);
-    expect(r.stderr).toContain("forced failure");
-    // 재검토 L-a: 키 단위 viewer에게 실제 KMS는 없는 키도 PERMISSION_DENIED로 답한다 — 두 원인을 함께 이름 댄다.
-    expect(r.stderr).toContain("missing or not readable");
-    expect(r.stderr).toContain("run scripts/bootstrap-gcp.sh first");
-    expect(r.stderr).toContain("check the deployer's roles");
-    expect(r.stderr.trim().split("\n").at(-1)).toBe("deploy failed at ensure_kms_key");
-    expect(r.log).not.toMatch(/^run deploy /m);
+    expect(r.stderr).toContain("unknown argument");
   });
 });

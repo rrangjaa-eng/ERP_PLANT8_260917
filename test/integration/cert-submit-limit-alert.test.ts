@@ -176,7 +176,16 @@ describe("cert_submit_limit — 임계가 제출 사이에 낮아진 경우(당�
     await submitMany(ev, 1);
     expect((await alertsOf(event.eventId)).map((r) => r.recipientId)).toEqual([people.manager]);
 
-    await submitMany(ev, 1);
+    // 알림이 이미 있으면 잠근 채로 받는 사람 조회 · INSERT를 되풀이하지 않는다 — 삽입 함수가 불리지 않는다.
+    let insertCalls = 0;
+    const after = await submitCertificate(ev.token, await input(ev.prizeId), nextIp(), {
+      insertEventNotifications: () => {
+        insertCalls += 1;
+        return Promise.resolve([]);
+      },
+    });
+    expect(after.kind).toBe("saved");
+    expect(insertCalls).toBe(0);
     expect(await alertsOf(event.eventId)).toHaveLength(1);
   }, 120_000);
 });

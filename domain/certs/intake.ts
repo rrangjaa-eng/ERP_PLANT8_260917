@@ -31,7 +31,7 @@ import { getSignatureStore, type SignatureStore } from "@/lib/storage/signature-
 import { findUserById } from "@/repositories/users";
 import { findEventByTokenHash, lockEventRow, type CertEventRow } from "@/repositories/cert-events";
 import { listPrizesForEvent, type CertPrizeRow } from "@/repositories/cert-prizes";
-import { insertEventNotifications as defaultInsertEventNotifications } from "@/repositories/notifications";
+import { hasEventNotification, insertEventNotifications as defaultInsertEventNotifications } from "@/repositories/notifications";
 import { listActiveUserIdsAllowed } from "@/repositories/permissions";
 import {
   countActiveSubmissionsByEvent,
@@ -277,6 +277,8 @@ async function alertSubmitLimit(
   tx: DbOrTx,
   insert: typeof defaultInsertEventNotifications,
 ): Promise<void> {
+  // 이 행사 알림이 이미 있으면(받는 사람 누구든) 잠근 채로 셈 · 받는 사람 조회 · INSERT를 되풀이하지 않는다.
+  if (await hasEventNotification(SYSTEM_VIEWER, { conditionKind: "cert_submit_limit", entity: "cert_event", entityId: input.event.id, round: 1 }, tx)) return;
   const reached =
     input.windowCount >= input.budgets.event ||
     (await countActiveSubmissionsByEvent(SYSTEM_VIEWER, input.event.id, tx)) >= input.budgets.alertTotal;

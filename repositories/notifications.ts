@@ -132,6 +132,28 @@ export async function insertEventNotifications(
   return inserted.map((row) => row.id);
 }
 
+// 사건 알림이 받는 사람과 무관하게 한 행이라도 있는지 — 같은 사건의 되풀이 판정을 싸게 건너뛰는 데 쓴다.
+export async function hasEventNotification(
+  viewer: Viewer,
+  key: Omit<DedupKey, "recipientId">,
+  tx: DbOrTx,
+): Promise<boolean> {
+  void viewer;
+  const rows = await tx
+    .select({ id: notificationLog.id })
+    .from(notificationLog)
+    .where(
+      and(
+        eq(notificationLog.conditionKind, key.conditionKind),
+        eq(notificationLog.entity, key.entity),
+        eq(notificationLog.entityId, key.entityId),
+        eq(notificationLog.round, key.round),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
 // ── 알림함 읽기 (04.2-07, D-4218) ──────────────────────────────────────
 
 export type InboxCursor = { createdAt: string; id: string };

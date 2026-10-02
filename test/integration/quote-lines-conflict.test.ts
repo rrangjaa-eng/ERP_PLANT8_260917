@@ -15,7 +15,7 @@ vi.mock("@/repositories/vendors", async () => {
 });
 
 import { db } from "@/db/client";
-import { quoteLines, codeItems, teams, actionLog } from "@/db/schema";
+import { quoteLines, teams, actionLog } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
@@ -26,6 +26,7 @@ import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines, SaveRejectedError, type QuoteLineBaseline } from "@/domain/quotes/lines";
 import { updateQuoteLineIfVersionMatches } from "@/repositories/quote-lines";
 import { checkPayloadSize, MAX_ACTION_PAYLOAD_BYTES } from "@/lib/actions/payload-size";
+import { firstSelectableSubcategory } from "@/test/support/quote-subcategory";
 
 async function setupProject() {
   const client = await insertVendor(SYSTEM_VIEWER, {
@@ -40,8 +41,7 @@ async function setupProject() {
   const [team] = await db.select().from(teams).limit(1);
   if (!team) throw new Error("시드된 팀이 없습니다");
 
-  const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
-  if (!subcategory) throw new Error("시드된 quote_subcategory 코드 항목이 없습니다");
+  const subcategory = await firstSelectableSubcategory();
 
   const project = await createProject(SYSTEM_VIEWER, {
     clientId: client.id,

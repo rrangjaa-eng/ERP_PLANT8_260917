@@ -56,7 +56,33 @@ describe("되돌리기 = 같은 행 복원(ADMN-12 · quick 261001-hfi)", () => 
   const source = readFileSync(resolve(process.cwd(), "app/(app)/admin/holidays/delete-undo.tsx"), "utf8");
 
   it("되돌리기는 restoreHolidayAction을 지운 행 id로 부르고 addHolidayAction을 부르지 않는다", () => {
-    expect(source).toContain("restoreHolidayAction({ id: removed.id })");
+    expect(source).toContain("restoreHolidayAction({ id: target.id })");
     expect(source).not.toContain("addHolidayAction");
   });
 });
+
+// 04.2 /review 이월 2 — 화면을 연 뒤 지울 수 없게 된 행(규칙 행·오늘 이전)을 지우면 서버가 거절한다.
+// 다시 해도 성공할 수 없으니 원인 앞부분을 싣고 `삭제`를 치운다. 연결·서버 실패만 `다시 시도`.
+const { deleteFailure } = await import("@/app/(app)/admin/holidays/delete-holiday");
+
+describe("deleteFailure — 삭제 결과 → 행 실패 문구", () => {
+  it("성공(data)이면 null", () => {
+    expect(deleteFailure({ data: { deleted: false } })).toBeNull();
+  });
+
+  it("거절(루트 오류) → 원인 앞부분, retry 없음", () => {
+    expect(
+      deleteFailure({ validationErrors: { _errors: ["지울 수 없는 공휴일 · 규칙 행이나 오늘 이전 행"] } }),
+    ).toEqual({ text: "삭제 실패 · 지울 수 없는 공휴일", retry: false });
+  });
+
+  it("거절 원인에 「 · 」가 없으면 원인 전체", () => {
+    expect(deleteFailure({ validationErrors: { _errors: ["원인"] } })).toEqual({ text: "삭제 실패 · 원인", retry: false });
+  });
+
+  it("서버 오류·던짐 → 다시 시도, retry 있음", () => {
+    expect(deleteFailure({ serverError: "알 수 없는 오류" })).toEqual({ text: "삭제 실패 · 다시 시도", retry: true });
+    expect(deleteFailure(null)).toEqual({ text: "삭제 실패 · 다시 시도", retry: true });
+  });
+});
+

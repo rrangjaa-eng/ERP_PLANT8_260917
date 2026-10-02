@@ -7,6 +7,7 @@ import { recordAction as defaultRecordAction } from "@/domain/action-log/record"
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { seoulToday } from "@/lib/dates";
 import { log } from "@/lib/log";
+import { withTransaction as defaultWithTransaction } from "@/lib/db-transaction";
 import {
   findSimpleValue as defaultFindSimpleValue,
   findSimpleValues as defaultFindSimpleValues,
@@ -58,6 +59,7 @@ export class SettingNotFoundError extends UserFacingError {}
 export class ForbiddenError extends UserFacingError {}
 export class SettingKindMismatchError extends UserFacingError {}
 export class FutureCancelOnlyError extends UserFacingError {}
+export class FutureValueNotFoundError extends UserFacingError {}
 export class EffectiveFromRuleError extends UserFacingError {}
 
 function dateOnly(date: Date): string {
@@ -107,6 +109,7 @@ export type RegistryDeps = {
   listHistory: typeof defaultListHistory;
   insertHistorizedValue: typeof defaultInsertHistorizedValue;
   deleteFutureHistorizedValue: typeof defaultDeleteFutureHistorizedValue;
+  withTransaction: typeof defaultWithTransaction;
   // 04.1-04: 적용 시작일 규칙 · 「이미 적용됨」 판정의 서울 오늘 기준 시각(테스트 주입).
   now: Date;
 };
@@ -250,15 +253,23 @@ export async function cancelHistorizedValue<T>(
     throw new FutureCancelOnlyError("이미 적용된 이력 행은 취소할 수 없음 — 미래로 예정된 행만 취소 가능");
   }
 
+  // quick 261001-hfi — 삭제와 settings_change 기록을 한 트랜잭션에 묶는다(85g 발령 취소와 같은 모양 · ADMN-12 예약 취소 예외의 전제).
   const deleteFutureHistorizedValue = deps?.deleteFutureHistorizedValue ?? defaultDeleteFutureHistorizedValue;
-  await deleteFutureHistorizedValue(viewer, def.key, effectiveFrom);
-
   const recordAction = deps?.recordAction ?? defaultRecordAction;
-  await recordAction(viewer, {
-    actionType: "settings_change",
-    entity: "settings_historized",
-    entityId: def.key,
-    detail: { key: def.key, effectiveFrom, cancelled: true },
+  const withTransaction = deps?.withTransaction ?? defaultWithTransaction;
+  await withTransaction(async (tx) => {
+    const deleted = await deleteFutureHistorizedValue(viewer, def.key, effectiveFrom, tx);
+    if (!deleted) throw new FutureValueNotFoundError("취소할 예정값 찾을 수 없음");
+    await recordAction(
+      viewer,
+      {
+        actionType: "settings_change",
+        entity: "settings_historized",
+        entityId: def.key,
+        detail: { key: def.key, effectiveFrom, cancelled: true },
+      },
+      { tx },
+    );
   });
 }
 

@@ -29,7 +29,7 @@ export function DeleteHoliday({ id, date }: { id: string; date: string }) {
       const result = await deleteHolidayAction({ id });
       if (result?.data) {
         if (result.data.deleted) {
-          show({ date: result.data.date, name: result.data.name, kind: result.data.kind });
+          show({ id: result.data.id, date: result.data.date, name: result.data.name, kind: result.data.kind });
         }
         router.refresh();
         return;

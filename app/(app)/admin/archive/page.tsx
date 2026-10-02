@@ -31,6 +31,7 @@ export default async function ArchivePage() {
           name: item.name,
           archivedAtLabel: new Date(item.archivedAt).toISOString().slice(0, 19).replace("T", " "),
           archivedBy: item.archivedBy,
+          restorable: item.restorable,
         }))}
       />
     </>

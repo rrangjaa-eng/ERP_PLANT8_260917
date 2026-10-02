@@ -46,7 +46,8 @@ describe("보관 액션은 보관함을 다시 그리게 한다 (/review L-2)", 
   const files = listActionFiles(APP_DIR);
   const archiveActions = files.flatMap((file) =>
     actionBlocks(readFileSync(file, "utf8"))
-      .filter((block) => /await archive\(/.test(block.body))
+      // quick 261001-hfi(ADMN-12): 공휴일 삭제(= 보관) · 복원 액션도 보관함 목록을 바꾼다.
+      .filter((block) => /await (archive|deleteHoliday|restoreHoliday)\(/.test(block.body))
       .map((block) => ({ file: file.replace(`${ROOT}/`, ""), ...block })),
   );
 
@@ -59,5 +60,16 @@ describe("보관 액션은 보관함을 다시 그리게 한다 (/review L-2)", 
       .filter((action) => !action.body.includes('revalidatePath("/admin/archive")'))
       .map((action) => `${action.file}:${action.name}`);
     expect(missing, `보관함 재검증이 빠진 액션: ${missing.join(", ")}`).toEqual([]);
+  });
+
+  it("보관함 복원은 공휴일 화면도 다시 그리게 한다(quick 261001-hfi)", () => {
+    const src = readFileSync(resolve(APP_DIR, "(app)/admin/archive/actions.ts"), "utf8");
+    const restoreBlock = actionBlocks(src).find((block) => block.name === "restoreArchivedAction");
+    expect(restoreBlock?.body).toContain('revalidatePath("/admin/holidays")');
+  });
+
+  it("공휴일 삭제 · 복원 액션을 둘 다 찾았다", () => {
+    const names = archiveActions.map((action) => action.name);
+    expect(names).toEqual(expect.arrayContaining(["deleteHolidayAction", "restoreHolidayAction"]));
   });
 });

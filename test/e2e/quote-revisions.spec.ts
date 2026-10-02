@@ -1098,14 +1098,13 @@ async function numberColumnCells(table: Locator) {
         text: (cell?.textContent ?? "").trim(),
         textAlign: style.textAlign,
         whiteSpace: style.whiteSpace,
-        fontVariantNumeric: style.fontVariantNumeric,
       };
     });
   });
 }
 
 test.describe("견적 줄 「번호」 열 숫자 규칙 (PR #104 [지시] (나) — SYSTEM §2 숫자 칸)", () => {
-  test("1280에서 현재 차수 견적 줄 표와 이전 차수 읽기 표의 「번호」 머리글·칸이 숫자 규칙(오른쪽 정렬 · tabular-nums · nowrap)이다 (PR #104 (나))", async ({ page }) => {
+  test("1280에서 현재 차수 견적 줄 표와 이전 차수 읽기 표의 「번호」 머리글·칸이 숫자 규칙(오른쪽 정렬 · nowrap)이다 (PR #104 (나) — tabular-nums는 04.6-07 이후 ui/num 몫)", async ({ page }) => {
     const team = await makeTeam();
     const pm = await makeAccount(DEFAULT_ROLE_ID, team.id);
     const project = await makeProject({
@@ -1123,7 +1122,9 @@ test.describe("견적 줄 「번호」 열 숫자 규칙 (PR #104 [지시] (나)
     await expect(quoteRows(page)).toHaveCount(2);
     await expect(quoteTable(page).getByRole("columnheader", { name: "번호", exact: true })).toBeVisible();
 
-    const rule = { textAlign: "right", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" };
+    // 04.6-08 합본: 표 CSS에서 font-variant-numeric이 빠졌다(04.6-07 · stylelint가 ui/num에만 허용). 칸의 숫자 폭은 Num 요소 몫이고
+    // 번호 칸(span.rowNumber)을 Num으로 감싸는 일은 견적 표 소유 플랜(04.6-12)으로 넘겼다 — 여기서는 정렬·nowrap만 잰다.
+    const rule = { textAlign: "right", whiteSpace: "nowrap" };
     const expected = [
       { text: "번호", ...rule },
       { text: "1", ...rule },

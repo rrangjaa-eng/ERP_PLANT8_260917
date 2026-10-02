@@ -364,6 +364,8 @@ Recent decisions affecting current work:
 | 261001-x6q | 04.3 legal fixes - purge deadline 04-01 and collection notice v4 | 2026-10-02 | 5da5430 | [261001-x6q-04-3-legal-fixes-purge-deadline-04-01-an](./quick/261001-x6q-04-3-legal-fixes-purge-deadline-04-01-an/) |
 | 261002-0jy | #133 Codex P2 후속 — 견적 줄 저장 충돌 거래처 이름 조회를 루프 뒤 1회 묶음으로(충돌 없으면 0회) | 2026-10-02 | 5478f90 | [261002-0jy-133-codex-p2](./quick/261002-0jy-133-codex-p2/) |
 | 261002-3c1 | 04.3 PR #88 Codex 봇 지적 3건 — 파기 갱신 안 가액 재평가(P1) · 결과 모름 요청 키를 보낸 내용에 묶음(P2 둘) · 이미 QR 생성 문구 중립화 | 2026-10-02 | dd4f1550 | [261002-3c1-04-3-codex-bot-review-fixes-purge-thresh](./quick/261002-3c1-04-3-codex-bot-review-fixes-purge-thresh/) |
+| 261002-3mx | 서버 검증 묶음 — 견적 소분류 서버 검증 · 코드표 tableKey 허용 목록 · 설정 예정값 취소 자정 경합 | 2026-10-02 | 3d61fc5 | [261002-3mx-server-validation-bundle-quote-subcatego](./quick/261002-3mx-server-validation-bundle-quote-subcatego/) |
+| 261002-4jn | 보관함 복원: 이미 복원됨 토스트 · 날짜 점유 공휴일 복원 숨김(회고 #3·#4) | 2026-10-02 | ecd2f6e | [261002-4jn-archive-restore-already-restored-toast-a](./quick/261002-4jn-archive-restore-already-restored-toast-a/) |
 
 ### Roadmap Evolution
 

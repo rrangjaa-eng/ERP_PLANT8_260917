@@ -358,6 +358,13 @@ describe("codexArgs", () => {
     expect(args.indexOf("PROMPT")).toBeLessThan(args.indexOf("-i"));
     expect(args.slice(args.indexOf("PROMPT") + 1)).toEqual(["-i", "a.png", "-i", "b.png"]);
   });
+
+  it("모델을 GPT-6.1 Sol · 추론 medium으로 고정한다(사용자 결정 2026-10-02)", () => {
+    const args = codexArgs("PROMPT", []);
+    const before = args.slice(0, args.indexOf("PROMPT"));
+    expect(before.join(" ")).toContain("-c model=gpt-6.1-sol");
+    expect(before.join(" ")).toContain("-c model_reasoning_effort=medium");
+  });
 });
 
 describe("measurementsToMarkdown", () => {

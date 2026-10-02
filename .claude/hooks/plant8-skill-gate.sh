@@ -9,7 +9,8 @@
 #   record-skill   PostToolUse(Skill)       — 호출한 스킬 이름을 기록(GSD 페이즈 스킬의 페이즈 인자는 세션 페이즈로)
 #   record-prompt  UserPromptSubmit         — /gsd-… 같은 슬래시 명령을 기록(페이즈 인자도 같다)
 #   agent          PreToolUse(Agent)        — gsd-* 에이전트는 맞는 /gsd-* 스킬을 부른 뒤에만,
-#                                            gsd-executor는 페이즈 계획 게이트(CEO·엔지·UI면 디자인 리뷰) 기록 뒤에만.
+#                                            페이즈 실행(/gsd-execute-phase·/gsd-autonomous)의 gsd-executor는 페이즈 계획
+#                                            게이트(CEO·엔지·UI면 디자인 리뷰) 기록 뒤에만(quick 실행자는 제외, 2026-10-02).
 #                                            세션당 실행 횟수·웨이브 제한(D-04)은 없앴다(사용자 결정 2026-10-01 —
 #                                            세션은 독립 검토 경계에서만 끊는다)
 #   bash           PreToolUse(Bash)         — 모든 커밋(문서 포함)은 verification-before-completion 뒤에만,
@@ -19,7 +20,8 @@
 #   edit           PreToolUse(Edit|Write)   — 코드 작성은 test-driven-development 뒤에만,
 #                                            테스트·빌드 실패 뒤 코드 수정은 systematic-debugging 뒤에만
 #   failure        PostToolUseFailure(Bash) — 테스트·빌드 실패를 표시
-#   merge          PreToolUse(PR 머지)      — 변경 종류에 맞는 게이트만(사용자 결정 2026-10-01): 문서만 바뀐 PR은
+#   merge          PreToolUse(PR 머지)      — PR 헤드 커밋의 CI(check-runs)가 전부 끝나 초록(success·skipped·neutral)이어야 한다
+#                                            (CLAUDE.md §4, 2026-10-02 — 모르면 막는다). 변경 종류에 맞는 게이트만(사용자 결정 2026-10-01): 문서만 바뀐 PR은
 #                                            게이트 없음, 코드는 /review, 화면 영향(app/의 .tsx·.css, ui/ 전부,
 #                                            docs/design/tokens.css)은 /qa·/design-review 더, 돈·결재 경로는 /cso 더. 위험 경로(마이그레이션·스키마·
 #                                            인증·권한·암호화·배포·.claude·CLAUDE.md)는 세션이 머지하지 않는다 —
@@ -128,7 +130,10 @@ case "$event" in
       gsd-debugger|gsd-debug-session-manager) need="gsd-debug" ;;
       *) need="gsd-[a-z0-9-]+" ;;
     esac
-    if [ "$sub" = "gsd-executor" ]; then
+    # 페이즈 계획 게이트는 페이즈 실행에만 — quick(/gsd-quick·/gsd-quick-batch) 실행자는 페이즈 계획이 없다(2026-10-02)
+    # quick로 불러도 페이즈 PLAN(.planning/phases/)을 실행하면 게이트를 본다(/review 2026-10-02)
+    sub_prompt="$(printf '%s' "$payload" | jq -r '.tool_input.prompt // empty')"
+    if [ "$sub" = "gsd-executor" ] && { has_skill "$session_skills" "gsd-execute-phase|gsd-autonomous" || printf '%s' "$sub_prompt" | grep -q '\.planning/phases/'; }; then
       missing=""
       # 소수점 페이즈(04.1 …)는 /plan-ceo-review 생략(사용자 결정 2026-09-24 22:04 KST)
       [[ "$phase" =~ ^[0-9]+\.0*[1-9][0-9]*$ ]] || gate_has plan-ceo-review || missing="$missing /plan-ceo-review"
@@ -309,6 +314,19 @@ $(printf '%s\n' "$body" | sed -n 's/^[[:space:]]*화면:[[:space:]]*//p' | tr ',
       if printf '%s\n' "$pr_files" | tr '\t' '\n' | grep -Eq '^(app/.*\.(tsx|css)$|ui/|docs/design/tokens\.css$)'; then ui_changed=1; fi
       if printf '%s\n' "$pr_files" | tr '\t' '\n' | grep -Eq '^(domain/(money|corp-cards|reserves|revenue|approvals)/|repositories/(corp-cards|approvals|reserve-entries|revenue-entries)\.ts$)'; then money_changed=1; fi
     fi
+    # 최신 커밋 CI 점검(2026-10-02, CLAUDE.md §4): PR 헤드의 check-runs가 전부 completed이고 success·skipped·neutral이어야 한다.
+    # 헤드 SHA·체크런 조회 실패나 체크런 0개는 판정하지 않고 막는다. 판정은 파이프 없이.
+    # 단 문서만 바뀐 PR(.planning/·docs/**)은 ci.yml paths에서 빠져 체크런이 0개일 수 있어 0개를 허용한다.
+    ci_sha="$(gh api "$pr" --jq '.head.sha' 2>/dev/null || true)"
+    [ -n "$ci_sha" ] || ci_sha="${head_sha:-}"
+    [[ "$ci_sha" =~ ^[0-9a-f]{40}$ ]] || deny "PR 헤드 커밋을 알 수 없어 CI를 확인하지 못해 머지하지 않는다(gh api ${pr} .head.sha). 다시 시도하라."
+    ci_rows="" ci_rc=0
+    ci_rows="$(gh api "${pr%/pulls/*}/commits/$ci_sha/check-runs" --paginate --jq '.check_runs[] | [.name, .status, (.conclusion // "")] | @tsv' 2>/dev/null)" || ci_rc=$?
+    [ "$ci_rc" = 0 ] || deny "PR 헤드 커밋(${ci_sha:0:7})의 CI 체크런을 읽지 못해 머지하지 않는다(gh api commits/…/check-runs). 다시 시도하라."
+    [ -n "$ci_rows" ] || [ "$docs_only" = 1 ] || deny "PR 헤드 커밋(${ci_sha:0:7})에 CI 체크런이 없어 머지하지 않는다 — CI가 돈 뒤 다시 시도하라."
+    ci_bad=""
+    [ -z "$ci_rows" ] || ci_bad="$(awk -F'\t' '$2 != "completed" || ($3 != "success" && $3 != "skipped" && $3 != "neutral") { printf "%s%s(%s)", (n++ ? ", " : ""), $1, ($2 != "completed" ? $2 : $3) }' <<<"$ci_rows")"
+    [ -z "$ci_bad" ] || deny "PR 헤드 커밋(${ci_sha:0:7})의 CI가 초록이 아니다 — ${ci_bad}. CI가 전부 성공(또는 skipped·neutral)한 뒤 다시 시도하라(CLAUDE.md §4)."
     [ "$docs_only" = 1 ] && exit 0
     if awk -F'\t' '{ for (i = 1; i <= NF; i++) if ($i ~ /^\.claude\/gates\/[^\/]+\.log$/) hit = 1 } END { exit !hit }' <<<"$pr_files"; then
       pr_gates=1

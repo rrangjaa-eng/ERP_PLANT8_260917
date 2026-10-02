@@ -77,7 +77,11 @@ export default defineConfig({
   projects: [
     {
       name: "desktop",
-      testIgnore: [MOBILE_SPEC_PATTERN, CERT_SPEC_PATTERN, "settings-approval-route.spec.ts"],
+      // CI 2번 샤드가 desktop 절반을 이미 돌린 뒤 폰·설정만 잇는 단계에서 desktop을 비운다
+      // (2026-10-02, ci.yml e2e 잡). 로컬·1번 샤드에서는 환경 변수가 없어 그대로다.
+      testIgnore: process.env.E2E_SKIP_DESKTOP
+        ? ["**"]
+        : [MOBILE_SPEC_PATTERN, CERT_SPEC_PATTERN, "settings-approval-route.spec.ts"],
     },
     {
       name: "mobile-375",

@@ -40,12 +40,14 @@ export type ArchivedItem = {
   archivedBy: string | null;
   // 공휴일만 — 복원 가능 판정(소급 금지)에 쓰는 날짜. 화면 DTO에는 싣지 않는다.
   date?: string;
+  // 공휴일만 — 그 날짜에 활성 공휴일(대체일 제외)이 있으면 참(복원 불가). 화면 DTO에는 싣지 않는다.
+  dateTaken?: boolean;
 };
 
 export type ArchivableEntry = {
   entity: string;
   label: string;
-  setArchived(viewer: Viewer, id: string, value: boolean): Promise<void>;
+  setArchived(viewer: Viewer, id: string, value: boolean): Promise<boolean>;
   findById(viewer: Viewer, id: string): Promise<ArchivableRow | null>;
   isProtected?(row: ArchivableRow): boolean;
   // 03-07: 이 표의 보관된 행 전부. listArchivedAcrossEntities가 이 클로저를
@@ -62,7 +64,7 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     entity: "roles",
     label: "계급",
     async setArchived(viewer, id, value) {
-      await setRoleArchived(viewer, id, value);
+      return setRoleArchived(viewer, id, value);
     },
     async findById(viewer, id) {
       return findRoleById(viewer, id);
@@ -83,7 +85,7 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     entity: "code_items",
     label: "코드표",
     async setArchived(viewer, id, value) {
-      await setCodeItemArchived(viewer, id, value);
+      return setCodeItemArchived(viewer, id, value);
     },
     async findById(viewer, id) {
       return findCodeItemById(viewer, id);
@@ -100,7 +102,7 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     entity: "org_unit",
     label: "본부",
     async setArchived(viewer, id, value) {
-      await setOrgUnitArchived(viewer, id, value);
+      return setOrgUnitArchived(viewer, id, value);
     },
     async findById(viewer, id) {
       return findOrgUnitById(viewer, id);
@@ -117,7 +119,7 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     entity: "team",
     label: "팀",
     async setArchived(viewer, id, value) {
-      await setTeamArchived(viewer, id, value);
+      return setTeamArchived(viewer, id, value);
     },
     async findById(viewer, id) {
       return findTeamById(viewer, id);
@@ -134,7 +136,7 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     entity: "corp_card",
     label: "법인카드",
     async setArchived(viewer, id, value) {
-      await setCorpCardArchived(viewer, id, value);
+      return setCorpCardArchived(viewer, id, value);
     },
     async findById(viewer, id) {
       return findCorpCardById(viewer, id);
@@ -151,7 +153,7 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     entity: "user",
     label: "사람",
     async setArchived(viewer, id, value) {
-      await setUserArchived(viewer, id, value);
+      return setUserArchived(viewer, id, value);
     },
     async findById(viewer, id) {
       return findUserById(viewer, id);
@@ -168,7 +170,7 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     entity: "vendor",
     label: "거래처",
     async setArchived(viewer, id, value) {
-      await setVendorArchived(viewer, id, value);
+      return setVendorArchived(viewer, id, value);
     },
     async findById(viewer, id) {
       return findVendorById(viewer, id);
@@ -187,7 +189,7 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     entity: "quote_line",
     label: "견적 줄",
     async setArchived(viewer, id, value) {
-      await setQuoteLineArchived(viewer, id, value);
+      return setQuoteLineArchived(viewer, id, value);
     },
     async findById(viewer, id) {
       return findQuoteLineById(viewer, id);
@@ -206,7 +208,9 @@ export const ARCHIVABLE_TABLES: ArchivableEntry[] = [
     entity: "reserve_entry",
     label: "리저브",
     async setArchived(viewer, id, value) {
+      // 보호 행이라 범용 경로가 부르지 않는다. 리저브 setter는 무조건 갱신이라 바뀐 것으로 본다.
       await setReserveEntryArchived(viewer, id, value);
+      return true;
     },
     async findById(viewer, id) {
       const [row] = await findReserveEntriesByIds(viewer, [id]);

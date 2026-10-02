@@ -7,7 +7,7 @@ import { createProject } from "@/domain/projects";
 import { getCurrentQuoteRevision, saveQuoteLines } from "@/domain/quotes/lines";
 import { db } from "@/db/client";
 import { codeItems, quoteLines, revenueEntries } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { addDays, kstToday } from "@/lib/kst-date";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { insertVendor } from "@/repositories/vendors";
@@ -115,7 +115,7 @@ async function seedRevenueProject(opts: {
   if (opts.quoteAmounts && opts.quoteAmounts.length > 0) {
     const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
     if (!revision) throw new Error("1차 차수가 없습니다");
-    const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+    const [subcategory] = await db.select().from(codeItems).where(and(eq(codeItems.tableKey, "quote_subcategory"), eq(codeItems.active, true), isNull(codeItems.archivedAt))).orderBy(asc(codeItems.sortOrder), asc(codeItems.value)).limit(1);
     if (!subcategory) throw new Error("소분류 코드가 없습니다");
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
       rows: opts.quoteAmounts.map((amount, index) => ({
@@ -167,7 +167,7 @@ test.describe("계약 금액 — 고객 승인된 현재 차수 합계 (04-16 Ta
     const project = await createProject(SYSTEM_VIEWER, { clientId: vendor.id, teamId: team.id, pmUserId: pm.userId, name: `E2E계약-${randomUUID().slice(0, 8)}` });
     const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
     if (!revision) throw new Error("1차 차수가 없습니다");
-    const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+    const [subcategory] = await db.select().from(codeItems).where(and(eq(codeItems.tableKey, "quote_subcategory"), eq(codeItems.active, true), isNull(codeItems.archivedAt))).orderBy(asc(codeItems.sortOrder), asc(codeItems.value)).limit(1);
     if (!subcategory) throw new Error("소분류 코드가 없습니다");
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, {
       rows: [1_000_000, 500_000].map((amount, index) => ({
@@ -811,7 +811,10 @@ test.describe("매출 입력을 연 채 1024 미만 전환 — 값 유지 (G-04-
       });
     });
     const typing = page.keyboard.type("123456789", { delay: 100 });
-    await expect.poll(async () => (await amount.inputValue()).replace(/\D/g, "").length).toBeGreaterThanOrEqual(3);
+    // 2026-10-02: 칸에는 기존 발행액(3,000,000)이 남아 있어 칸 값 길이로는 첫 키 전에 통과한다 — 기록기(친 숫자)로 기다린다.
+    await expect
+      .poll(() => page.evaluate(() => ((window as unknown as { __g0464Last?: string }).__g0464Last ?? "").length))
+      .toBeGreaterThanOrEqual(3);
     await page.setViewportSize({ width: 1000, height: 800 });
     await typing;
 

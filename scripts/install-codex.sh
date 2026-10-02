@@ -11,7 +11,7 @@ if [ "$CLAUDE_CODE_REMOTE" != "true" ]; then
   exit 0
 fi
 
-CODEX_VERSION=0.155.1
+CODEX_VERSION=0.160.0
 
 # pnpm 전역 설치(CLAUDE.md §1 pnpm만). 전역 bin 디렉터리가 없으면 pnpm add -g가 실패하므로
 # PATH에 이미 있는 ~/.local/bin을 명시한다.

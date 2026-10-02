@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
-import { eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, codeItems, projects, quoteRevisions } from "@/db/schema";
 import { createProject } from "@/domain/projects";
@@ -82,7 +82,7 @@ async function makeProject(input: {
 
 async function addQuoteLine(projectId: string): Promise<{ revisionId: string; subcategory: string }> {
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, projectId);
-  const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+  const [subcategory] = await db.select().from(codeItems).where(and(eq(codeItems.tableKey, "quote_subcategory"), eq(codeItems.active, true), isNull(codeItems.archivedAt))).orderBy(asc(codeItems.sortOrder), asc(codeItems.value)).limit(1);
   if (!revision || !subcategory) throw new Error("차수·소분류 준비 실패");
   await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
     {
@@ -479,7 +479,7 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     // (d) 완료 뒤 담당 PM의 견적 줄 저장은 04-06 규칙으로 거부된다(셀 단위 잠금 렌더는 04-30 —
     // 지금 화면은 편집 칸을 내주지 않으므로 서버 쪽 저장을 직접 부른다).
     const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
-    const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+    const [subcategory] = await db.select().from(codeItems).where(and(eq(codeItems.tableKey, "quote_subcategory"), eq(codeItems.active, true), isNull(codeItems.archivedAt))).orderBy(asc(codeItems.sortOrder), asc(codeItems.value)).limit(1);
     if (!revision || !subcategory) throw new Error("차수·소분류 준비 실패");
     await expect(
       saveQuoteLines({ id: pm.userId, roleId: DEFAULT_ROLE_ID }, revision.id, { rows: [

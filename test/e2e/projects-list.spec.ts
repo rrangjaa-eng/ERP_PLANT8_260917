@@ -86,7 +86,7 @@ async function addQuoteLine(projectId: string, quote: number, execution = 0) {
       {
         id: randomUUID(),
         isNew: true,
-        subcategory: "sub-a",
+        subcategory: "stage_construction",
         itemName: "항목",
         quantity: 1,
         unitPrice: { currency: "KRW", amount: quote, fxRate: 1 },

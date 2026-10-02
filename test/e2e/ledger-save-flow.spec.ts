@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { test, expect, type Page } from "@playwright/test";
-import { eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import { codeItems, projects, quoteLines } from "@/db/schema";
 import { createProject } from "@/domain/projects";
@@ -48,7 +48,7 @@ test.describe("저장 흐름 (04-22, S19)", () => {
     const project = await createProject(SYSTEM_VIEWER, { clientId: vendor.id, teamId: team.id, pmUserId: pm.userId, name });
     const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
     if (!revision) throw new Error("차수가 없습니다");
-    const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+    const [subcategory] = await db.select().from(codeItems).where(and(eq(codeItems.tableKey, "quote_subcategory"), eq(codeItems.active, true), isNull(codeItems.archivedAt))).orderBy(asc(codeItems.sortOrder), asc(codeItems.value)).limit(1);
     if (!subcategory) throw new Error("시드된 소분류가 없습니다");
     const firstItem = `첫 줄-${randomUUID().slice(0, 6)}`;
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
@@ -120,7 +120,7 @@ test.describe("저장 중 잠금(DR-3)", () => {
     });
     const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
     if (!revision) throw new Error("차수가 없습니다");
-    const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+    const [subcategory] = await db.select().from(codeItems).where(and(eq(codeItems.tableKey, "quote_subcategory"), eq(codeItems.active, true), isNull(codeItems.archivedAt))).orderBy(asc(codeItems.sortOrder), asc(codeItems.value)).limit(1);
     if (!subcategory) throw new Error("시드된 소분류가 없습니다");
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
       { id: randomUUID(), isNew: true, subcategory: subcategory.value, itemName: "잠금 첫 줄", quantity: 1, unitPrice: { currency: "KRW", amount: 1_000_000, fxRate: 1 }, execution: { currency: "KRW", amount: 500_000, fxRate: 1 } },
@@ -217,7 +217,7 @@ async function openLockProject(page: Page) {
   });
   const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
   if (!revision) throw new Error("차수가 없습니다");
-  const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+  const [subcategory] = await db.select().from(codeItems).where(and(eq(codeItems.tableKey, "quote_subcategory"), eq(codeItems.active, true), isNull(codeItems.archivedAt))).orderBy(asc(codeItems.sortOrder), asc(codeItems.value)).limit(1);
   if (!subcategory) throw new Error("시드된 소분류가 없습니다");
   await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
     { id: randomUUID(), isNew: true, subcategory: subcategory.value, itemName: "보강 첫 줄", quantity: 1, unitPrice: { currency: "KRW", amount: 1_000_000, fxRate: 1 }, execution: { currency: "KRW", amount: 500_000, fxRate: 1 } },
@@ -339,7 +339,7 @@ test.describe("복원 줄 수화(#418)", () => {
     const project = await createProject(SYSTEM_VIEWER, { clientId: vendor.id, teamId: team.id, pmUserId: pm.userId, name });
     const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
     if (!revision) throw new Error("차수가 없습니다");
-    const [subcategory] = await db.select().from(codeItems).where(eq(codeItems.tableKey, "quote_subcategory")).limit(1);
+    const [subcategory] = await db.select().from(codeItems).where(and(eq(codeItems.tableKey, "quote_subcategory"), eq(codeItems.active, true), isNull(codeItems.archivedAt))).orderBy(asc(codeItems.sortOrder), asc(codeItems.value)).limit(1);
     if (!subcategory) throw new Error("시드된 소분류가 없습니다");
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
       { id: randomUUID(), isNew: true, subcategory: subcategory.value, itemName: "수화 줄", quantity: 1, unitPrice: { currency: "KRW", amount: 1_000_000, fxRate: 1 }, execution: { currency: "KRW", amount: 500_000, fxRate: 1 } },

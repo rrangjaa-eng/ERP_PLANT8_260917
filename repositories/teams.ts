@@ -46,18 +46,20 @@ export async function renameTeam(viewer: Viewer, id: string, name: string): Prom
   await db.update(teams).set({ name, updatedAt: new Date() }).where(eq(teams.id, id));
 }
 
-export async function setTeamArchived(viewer: Viewer, id: string, value: boolean): Promise<void> {
-  if (value) {
-    await db
-      .update(teams)
-      .set({ archivedAt: new Date(), archivedBy: viewer.id })
-      .where(and(eq(teams.id, id), isNull(teams.archivedAt)));
-  } else {
-    await db
-      .update(teams)
-      .set({ archivedAt: null, archivedBy: null })
-      .where(and(eq(teams.id, id), isNotNull(teams.archivedAt)));
-  }
+export async function setTeamArchived(viewer: Viewer, id: string, value: boolean): Promise<boolean> {
+  // 조건부 갱신이 실제로 바꾼 행이 있으면 참 — 범용 복원이 「이미 복원됨」 · 로그를 이 결과로 정한다(PR #149).
+  const rows = value
+    ? await db
+        .update(teams)
+        .set({ archivedAt: new Date(), archivedBy: viewer.id })
+        .where(and(eq(teams.id, id), isNull(teams.archivedAt)))
+        .returning({ id: teams.id })
+    : await db
+        .update(teams)
+        .set({ archivedAt: null, archivedBy: null })
+        .where(and(eq(teams.id, id), isNotNull(teams.archivedAt)))
+        .returning({ id: teams.id });
+  return rows.length > 0;
 }
 
 // 멱등 시드 전용 — 이미 있으면 건드리지 않는다(onConflictDoNothing, 복합 unique 대상).

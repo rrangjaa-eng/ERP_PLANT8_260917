@@ -165,7 +165,7 @@ async function seedLine(revisionId: string, kind: SeedKind, opts: { subcategory?
     .insert(quoteLines)
     .values({
       revisionId,
-      subcategory: kind === "quote" ? (opts.subcategory ?? "sub-a") : kind,
+      subcategory: kind === "quote" ? (opts.subcategory ?? "stage_construction") : kind,
       itemName: `${kind} 줄`,
       unitPriceAmountKrw: unitPrice,
       executionAmountKrw: execution,
@@ -227,7 +227,7 @@ function newRow(kind: SeedKind, execution: number, patch: Partial<QuoteLineWrite
     id: randomUUID(),
     isNew: true,
     lineKind: kind,
-    subcategory: kind === "quote" ? "sub-a" : "",
+    subcategory: kind === "quote" ? "stage_construction" : "",
     itemName: `새 ${kind} 줄`,
     unitPrice: { currency: "KRW", amount: 100_000, fxRate: 1 },
     execution: { currency: "KRW", amount: execution, fxRate: 1 },

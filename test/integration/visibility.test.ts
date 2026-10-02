@@ -11,7 +11,8 @@ import { insertRole } from "@/repositories/roles";
 import { visible } from "@/domain/permissions/visible";
 import { seedMasterData } from "@/domain/seed";
 
-const TABLE_KEY = `visibility_test_${randomUUID()}`;
+// quick 261002-3mx — createCodeItem은 허용 코드표(CODE_TABLES)만 받는다. 매 테스트 TRUNCATE+시드라 항목은 id로 찾는다.
+const TABLE_KEY = "project_status";
 
 // ADMN-02·ADMN-03: 노출 판정이 domain 출구(project)에서 실제로 필드를
 // 가리고 남기는지 증명한다. 03-01의 코드표 DTO를 대상으로 삼는다(leak-scan은

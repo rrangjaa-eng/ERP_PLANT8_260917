@@ -31,7 +31,7 @@ function uniqueEmail(prefix: string): string {
 
 describe("보관함 (ADMN-12, 실제 Postgres)", () => {
   it("여러 표의 보관 항목이 한 조회에 나오고, 두 번 조회해도 같은 순서다(결정적 정렬)", async () => {
-    const tableKey = `test_archive_${randomUUID()}`;
+    const tableKey = "project_status"; // quick 261002-3mx — 허용 코드표만 추가된다
     const codeItem = await createCodeItem(SYSTEM_VIEWER, { tableKey, value: "a", label: "A" });
     const { vendor } = await createVendor(SYSTEM_VIEWER, { name: `거래처-${randomUUID()}` });
 
@@ -47,7 +47,7 @@ describe("보관함 (ADMN-12, 실제 Postgres)", () => {
   });
 
   it("복원 후 원래 표의 기본 목록에 다시 나타난다", async () => {
-    const tableKey = `test_archive_restore_${randomUUID()}`;
+    const tableKey = "project_status"; // quick 261002-3mx — 허용 코드표만 추가된다
     const codeItem = await createCodeItem(SYSTEM_VIEWER, { tableKey, value: "a", label: "A" });
 
     await archive(SYSTEM_VIEWER, "code_items", codeItem.id);
@@ -60,7 +60,7 @@ describe("보관함 (ADMN-12, 실제 Postgres)", () => {
   });
 
   it("이미 복원된 항목을 다시 복원해도 상태가 바뀌지 않는다(멱등)", async () => {
-    const tableKey = `test_archive_idem_${randomUUID()}`;
+    const tableKey = "project_status"; // quick 261002-3mx — 허용 코드표만 추가된다
     const codeItem = await createCodeItem(SYSTEM_VIEWER, { tableKey, value: "a", label: "A" });
     await archive(SYSTEM_VIEWER, "code_items", codeItem.id);
     await restore(SYSTEM_VIEWER, "code_items", codeItem.id);
@@ -72,7 +72,7 @@ describe("보관함 (ADMN-12, 실제 Postgres)", () => {
   });
 
   it("보관과 복원이 동시에 오면 최종 상태가 둘 중 하나로 확정되고 중간 상태가 남지 않는다", async () => {
-    const tableKey = `test_archive_race_${randomUUID()}`;
+    const tableKey = "project_status"; // quick 261002-3mx — 허용 코드표만 추가된다
     const codeItem = await createCodeItem(SYSTEM_VIEWER, { tableKey, value: "a", label: "A" });
 
     const results = await Promise.allSettled([
@@ -97,7 +97,7 @@ describe("보관함 (ADMN-12, 실제 Postgres)", () => {
   });
 
   it("보관·복원이 각각 행동 로그에 남는다", async () => {
-    const tableKey = `test_archive_log_${randomUUID()}`;
+    const tableKey = "project_status"; // quick 261002-3mx — 허용 코드표만 추가된다
     const codeItem = await createCodeItem(SYSTEM_VIEWER, { tableKey, value: "a", label: "A" });
 
     await archive(SYSTEM_VIEWER, "code_items", codeItem.id);

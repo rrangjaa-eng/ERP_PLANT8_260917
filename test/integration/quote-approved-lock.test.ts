@@ -171,7 +171,7 @@ describe("승인 차수 잠금 — 단독 저장(04-40 · 사용자 D7 · ENG-D7
 
   it("소분류 변경은 거부(ENG-D7)", async () => {
     const s = await setupApproved();
-    await expect(saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [asInput(s.krwLine, { subcategory: `${s.subcategory}-변경` })] })).rejects.toThrow(LOCKED);
+    await expect(saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [asInput(s.krwLine, { subcategory: s.subcategory === "etc" ? "staffing" : "etc" })] })).rejects.toThrow(LOCKED);
     expect((await reload(s.krwLine.id)).subcategory).toBe(s.krwLine.subcategory);
   });
 
@@ -242,7 +242,9 @@ describe("승인 차수 잠금 — 단독 저장(04-40 · 사용자 D7 · ENG-D7
   it("승인 표시를 끄면 같은 수량·소분류 변경이 통과한다", async () => {
     const s = await setupApproved();
     await setCustomerApproval(s.pm, s.revisionId, null);
-    await saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [asInput(s.krwLine, { quantity: 2, subcategory: `${s.subcategory}-변경` })] });
+    // quick 261002-3mx — 바꿀 소분류도 고를 수 있는 코드여야 한다(시드의 다른 값).
+    const otherSubcategory = s.subcategory === "etc" ? "staffing" : "etc";
+    await saveQuoteLines(SYSTEM_VIEWER, s.revisionId, { rows: [asInput(s.krwLine, { quantity: 2, subcategory: otherSubcategory })] });
     const after = await reload(s.krwLine.id);
     expect(after.quantity).toBe("2.00");
     expect(after.quoteAmountKrw).toBe(200_000);

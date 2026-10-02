@@ -87,14 +87,15 @@ export function resolveCustomFieldsWrite(input: CustomFieldsWriteInput): Record<
     toValidate.push(def);
   }
 
-  // 타입 검증 — 기존 검증기 그대로. 필수는 위에서 판정했다. 선택지에는 저장값을 더한다(저장값이 보관 선택지일 때만).
+  // 타입 검증 — 기존 검증기 그대로. 필수는 위에서 판정했다. 수정이면 선택지에 그 거래처의 저장값을 더한다
+  // (보관 선택지 · 0023 이전에 지워져 목록 어디에도 없는 옛 값 — 같은 값을 다시 보낼 때만 통과, 다른 목록 밖 값은 여전히 거부).
   const schemaDefs: FieldDef[] = toValidate.map((def) => {
     const storedValue = stored[def.key];
-    const keepArchived = typeof storedValue === "string" && def.archivedOptions.includes(storedValue);
+    const keepStored = mode === "update" && typeof storedValue === "string" && !def.options.includes(storedValue);
     return {
       key: def.key,
       type: def.type,
-      options: keepArchived ? [...def.options, storedValue] : def.options,
+      options: keepStored ? [...def.options, storedValue] : def.options,
       required: false,
     };
   });

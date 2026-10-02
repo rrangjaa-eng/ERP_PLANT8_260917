@@ -176,6 +176,28 @@ describe("보관 선택지", () => {
   });
 });
 
+// 0023 이전에 지워진 선택지 — 활성 · 보관 어디에도 없는 저장값. 수정에서 그대로 다시 보내면 통과(안 바꿈).
+describe("목록에 없는 옛 저장값", () => {
+  it("수정에서 저장값과 같은 값을 다시 보내면 통과하고 값 유지 — 다른 칸 수정이 막히지 않는다", () => {
+    expect(run({ stored: { grade: "옛값", memo: "옛메모" }, submitted: { grade: "옛값", memo: "새메모" } })).toEqual({
+      grade: "옛값",
+      memo: "새메모",
+    });
+  });
+
+  it("수정에서 저장값과 다른 목록 밖 값이면 허용되지 않은 값(그 거래처가 유지할 수 있는 저장값도 나열)", () => {
+    expect(fieldErrorsOf(() => run({ stored: { grade: "옛값" }, submitted: { grade: "다른값" } }))).toEqual({
+      grade: "허용되지 않은 값 · 상, 중, 옛값 중 선택",
+    });
+  });
+
+  it("등록에서는 목록 밖 값이 저장값과 같아도 거부", () => {
+    expect(fieldErrorsOf(() => run({ mode: "create", stored: { grade: "옛값" }, submitted: { grade: "옛값" } }))).toEqual({
+      grade: "허용되지 않은 값 · 상, 중 중 선택",
+    });
+  });
+});
+
 describe("타입 검증 — 기존 한국어 한 줄", () => {
   it("숫자 칸에 「abc」면 형식 오류", () => {
     expect(fieldErrorsOf(() => run({ submitted: { qty: "abc" } }))).toEqual({ qty: "형식 오류 · 값 확인" });

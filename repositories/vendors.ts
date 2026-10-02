@@ -49,6 +49,13 @@ export async function findVendorById(viewer: Viewer, id: string): Promise<Vendor
   return row ?? null;
 }
 
+// 04.5-05(T-04.5-41): 커스텀 값 합치기 · 쓰기를 한 트랜잭션으로 묶는 행 잠금 조회 — 트랜잭션 안에서만 부른다(tx 필수).
+// 키를 바꾸지 않는 갱신이라 NO KEY UPDATE — 이 거래처를 가리키는 FK 검사(KEY SHARE)를 막지 않는다(선례 reserve-entries.ts).
+export async function findVendorByIdForUpdate(viewer: Viewer, id: string, tx: DbOrTx): Promise<VendorRow | null> {
+  const [row] = await tx.select().from(vendors).where(eq(vendors.id, id)).for("no key update");
+  return row ?? null;
+}
+
 // /qa ISSUE-001 — 견적 줄이 이미 가리키는 거래처의 이름(id → 이름). 보관 · 숨김도 넣는다 — 선택지가 아니라
 // 이미 고른 값의 이름이다. 노출 판정은 호출자가 한다(DTO 명세 projectMany · 충돌 이유는 vendorNamesVisible).
 export async function findVendorNamesByIds(viewer: Viewer, ids: string[], tx: DbOrTx = db): Promise<Map<string, string>> {
@@ -110,8 +117,8 @@ export type VendorUpdateInput = Partial<{
 
 // 계좌번호를 바꾸지 않는 일반 갱신 — 암호문·뒤 4자리 두 컬럼을 아예 건드리지
 // 않는다(T-03-33과 같은 결: 두 번의 쓰기로 나누지 않는다).
-export async function updateVendor(viewer: Viewer, id: string, input: VendorUpdateInput): Promise<void> {
-  await db
+export async function updateVendor(viewer: Viewer, id: string, input: VendorUpdateInput, tx: DbOrTx = db): Promise<void> {
+  await tx
     .update(vendors)
     .set({ ...input, updatedAt: new Date() })
     .where(eq(vendors.id, id));

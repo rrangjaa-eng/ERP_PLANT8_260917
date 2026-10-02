@@ -34,7 +34,7 @@ export function HolidayForm({ min, max, cancelHref }: { min: string; max: string
   ];
   const firstEmpty = empty[0];
   const blockedReason = firstEmpty
-    ? `${empty.map((field) => field.label).join(" · ")} ${empty.length}칸 비어 있음`
+    ? `${empty.map((field) => field.label).join(", ")} ${empty.length}칸 비어 있음`
     : undefined;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {

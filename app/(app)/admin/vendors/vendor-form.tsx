@@ -7,16 +7,17 @@ import { useAction } from "next-safe-action/hooks";
 import { createVendorAction, updateVendorAction, setVendorHiddenAction, archiveVendorAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
-import { FormAlert } from "@/ui/form-alert/FormAlert";
 import { SelectHint } from "@/ui/select/Select";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import { maskTail4 } from "@/lib/mask-tail4";
+import { fieldErrorsReason, formReason, staleFieldsReason } from "@/lib/actions/form-reason";
 import styles from "./vendors.module.css";
 
 export type EvidenceTypeOption = { value: string; label: string; description: string | null };
 export type VendorFieldDefinition = {
   id: string;
   key: string;
+  label: string;
   type: "text" | "number" | "date" | "select";
   options: string[] | null;
   required: boolean;
@@ -93,17 +94,18 @@ export function VendorForm({
       router.replace(cancelHref);
     },
   });
-  const { result, isExecuting } = isEditing ? updateState : createState;
+  const { result, isExecuting, reset } = isEditing ? updateState : createState;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setDuplicateCount(null);
     const formData = new FormData(event.currentTarget);
 
+    // 04.5-05: 수정은 그린 칸을 빈 값까지 모두 보낸다(서버 계약 — 키 없음 = 안 바꿈 · 빈 값 = 비움). 등록은 빈 칸을 뺀다.
     const customFields: Record<string, unknown> = {};
     for (const def of fieldDefs) {
       const raw = getStringField(formData, `cf_${def.key}`);
-      if (raw === "" && !def.required) continue;
+      if (!isEditing && raw === "" && !def.required) continue;
       customFields[def.key] = raw;
     }
     const baseFields = {
@@ -142,8 +144,31 @@ export function VendorForm({
   const nameError = result.validationErrors?.name?._errors?.[0];
   const maskedCurrent = editing ? maskTail4(editing.accountNumberLast4) : "";
 
+  // 04.5-06: 칸 오류는 칸 아래에, 요약은 1차 옆 이유 자리에 — 화면 순서(기본 칸 먼저, 그다음 커스텀 칸 정렬 순서).
+  const customFieldErrors = result.validationErrors?.customFields;
+  const errorFields: { label: string; id: string }[] = [];
+  if (nameError) errorFields.push({ label: "이름", id: "name" });
+  for (const def of fieldDefs) {
+    if (customFieldErrors?.[def.key]?._errors?.[0]) errorFields.push({ label: def.label, id: `cf_${def.key}` });
+  }
+  const verb = isEditing ? "수정" : "등록";
+  const staleReason = staleFieldsReason(
+    verb,
+    Object.keys(customFieldErrors ?? {}).filter((key) => key !== "_errors"),
+    fieldDefs.map((def) => def.key),
+  );
+  const summary = !staleReason && errorFields.length > 0 ? fieldErrorsReason(verb, errorFields.map((field) => field.label)) : null;
+  const serverReason = staleReason ?? (!summary && result.serverError ? formReason(verb, result.serverError) : null);
+  const blocked = serverReason?.blocked === true;
+  const firstErrorId = errorFields[0]?.id;
+
+  function refresh() {
+    reset();
+    router.refresh();
+  }
+
   return (
-    <form ref={formRef} onSubmit={handleSubmit} id="vendor-form" className="single-column">
+    <form ref={formRef} onSubmit={handleSubmit} id="vendor-form" className="single-column" noValidate>
       <TextField id="name" name="name" label="이름" required defaultValue={editing?.name} error={nameError} />
       <TextField id="businessNo" name="businessNo" label="사업자 번호" defaultValue={editing?.businessNo ?? undefined} />
 
@@ -196,18 +221,49 @@ export function VendorForm({
         <TextField id="accountNumber" name="accountNumber" label="계좌번호" autoComplete="off" />
       )}
 
-      {fieldDefs.map((def) => (
-        <VendorCustomField key={def.id} def={def} defaultValue={editing?.customFields[def.key]} />
-      ))}
+      {fieldDefs.length > 0 ? (
+        <div className={styles.customFields} data-testid="vendor-custom-fields">
+          {fieldDefs.map((def) => (
+            <VendorCustomField
+              key={def.id}
+              def={def}
+              defaultValue={editing?.customFields[def.key]}
+              error={customFieldErrors?.[def.key]?._errors?.[0]}
+            />
+          ))}
+        </div>
+      ) : null}
 
       {duplicateCount ? (
         <p className={styles.duplicateNotice}>같은 이름의 거래처가 이미 있습니다 · 확인</p>
       ) : null}
-      {result.serverError ? <FormAlert>{result.serverError}</FormAlert> : null}
       <div className={styles.formActions}>
-        <Button type="submit" variant="primary" pending={isExecuting}>
+        <Button
+          type="submit"
+          variant="primary"
+          pending={isExecuting}
+          disabled={blocked}
+          disabledReason={blocked ? serverReason?.text : undefined}
+          aria-describedby="vendor-form-reason"
+        >
           {isEditing ? "거래처 수정" : "거래처 등록"}
         </Button>
+        <span id="vendor-form-reason" className={styles.reason}>
+          {summary ? (
+            <>
+              {summary.text}
+              <Button variant="tertiary" onClick={() => document.getElementById(firstErrorId ?? "")?.focus()}>
+                {summary.fix}
+              </Button>
+            </>
+          ) : blocked ? (
+            <Button variant="tertiary" onClick={refresh}>
+              새로 불러오기
+            </Button>
+          ) : (
+            serverReason?.text
+          )}
+        </span>
         {/* 등록 모드도 이제 폼이 항상 열려 있지 않다(§6-1) — 열었던 방법과
             무관하게 닫는 방법이 있어야 하므로 등록·수정 둘 다 취소를 보인다. */}
         <Link href={cancelHref} className={styles.toggle}>
@@ -218,28 +274,54 @@ export function VendorForm({
   );
 }
 
-function VendorCustomField({ def, defaultValue }: { def: VendorFieldDefinition; defaultValue?: unknown }) {
+function VendorCustomField({
+  def,
+  defaultValue,
+  error,
+}: {
+  def: VendorFieldDefinition;
+  defaultValue?: unknown;
+  error?: string;
+}) {
   const id = `cf_${def.key}`;
+  const errorId = `${id}-error`;
   const stringValue = customFieldDefaultValue(def, defaultValue);
   if (def.type === "select") {
+    const options = def.options ?? [];
+    // 04.5-06: 저장값이 활성 선택지에 없으면(보관된 선택지) 그 값을 「(보관됨)」 옵션으로 활성화한 채 목록 끝에 더한다 —
+    // disabled 옵션은 FormData에서 빠져 「안 바꿈」과 「지움」을 구분할 수 없다(UI-SPEC O2). 판정은 서버(05)가 한다.
+    const archivedValue = stringValue !== "" && !options.includes(stringValue) ? stringValue : null;
     return (
       <div className={styles.selectLabel}>
-        <label htmlFor={id}>{def.key}</label>
-        <select id={id} name={id} className={styles.select} defaultValue={stringValue} required={def.required}>
+        <label htmlFor={id}>{def.label}</label>
+        <select
+          id={id}
+          name={id}
+          className={error ? `${styles.select} ${styles.selectInvalid}` : styles.select}
+          defaultValue={stringValue}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+        >
           <option value="">선택 없음</option>
-          {(def.options ?? []).map((option) => (
+          {options.map((option) => (
             <option key={option} value={option}>
               {option}
             </option>
           ))}
+          {archivedValue !== null ? <option value={archivedValue}>{archivedValue} (보관됨)</option> : null}
         </select>
+        {error ? (
+          <p id={errorId} className={styles.fieldError}>
+            {error}
+          </p>
+        ) : null}
       </div>
     );
   }
 
   const inputType = def.type === "number" ? "number" : def.type === "date" ? "date" : "text";
   return (
-    <TextField id={id} name={id} label={def.key} type={inputType} required={def.required} defaultValue={stringValue} />
+    <TextField id={id} name={id} label={def.label} type={inputType} defaultValue={stringValue} error={error} />
   );
 }
 

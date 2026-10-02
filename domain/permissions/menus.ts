@@ -34,6 +34,8 @@ export const MENUS: MenuDef[] = [
   { key: "pnl", label: "손익" },
   { key: "admin.system-status", label: "시스템 상태" },
   { key: "admin.code-tables", label: "코드표" },
+  // 04.5-09: 화면 항목(커스텀 칸) 관리 — 시드는 시스템 관리자 view·write만 insert-if-absent로 준다.
+  { key: "admin.field-definitions", label: "화면 항목" },
   { key: "admin.people", label: "사람" },
   { key: "admin.vendors", label: "거래처" },
   { key: "admin.corp-cards", label: "법인카드 마스터" },

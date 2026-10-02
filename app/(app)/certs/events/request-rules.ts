@@ -23,7 +23,7 @@ export function requestBlockReason(input: {
   const empty = [...(input.name.trim() === "" ? ["행사 이름"] : []), ...(input.wonOn === "" ? ["당첨일"] : [])];
   const [first] = empty;
   if (first) {
-    const fields = empty.length > 1 ? `${empty.join(" · ")} ${empty.length}칸` : first;
+    const fields = empty.length > 1 ? `${empty.join(", ")} ${empty.length}칸` : first;
     return { text: `${fields} 비어 있음 · ${first} 적기`, tone: "block" };
   }
   if (isCalendarDate(input.wonOn) && input.wonOn < input.today) return { text: "지난 날짜 · 당첨일 확인", tone: "block" };

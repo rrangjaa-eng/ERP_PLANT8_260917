@@ -1,8 +1,10 @@
-import { and, asc, eq, exists, isNull } from "drizzle-orm";
+import { and, asc, eq, exists, isNull, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db, type DbOrTx } from "@/db/client";
-import { permissionMatrix, users, visibilityMatrix } from "@/db/schema";
+import { fieldDefinitions, permissionMatrix, users, visibilityMatrix } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
+import { customFieldInfoItem, type FieldDefinitionTarget } from "@/domain/custom-fields/targets";
 
 export type PermissionMatrixRow = InferSelectModel<typeof permissionMatrix>;
 export type VisibilityMatrixRow = InferSelectModel<typeof visibilityMatrix>;
@@ -137,9 +139,10 @@ export async function upsertVisibilityIfUnedited(
 export async function insertVisibilityIfAbsent(
   viewer: Viewer,
   input: { roleId: string; infoItem: string; visible: boolean; updatedBy?: string | null },
+  tx: DbOrTx = db,
 ): Promise<void> {
   void viewer;
-  await db
+  await tx
     .insert(visibilityMatrix)
     .values({
       roleId: input.roleId,
@@ -209,4 +212,47 @@ export async function listActiveUserIdsAllowed(
     .where(and(isNull(users.archivedAt), ...allowed, ...shown))
     .orderBy(asc(users.createdAt), asc(users.id));
   return rows.map((row) => row.id);
+}
+
+export type VendorFieldAccess = {
+  /** 거래처 정의 전체(보관 포함) — listFieldDefinitions와 같은 조건 · 정렬(sortOrder, key) */
+  definitions: InferSelectModel<typeof fieldDefinitions>[];
+  vendorValueVisible: boolean;
+  /** 그 계급에 cf.vendor.<key> 보임 행이 있는 정의 키(보관 여부와 무관 — 판정은 domain) */
+  visibleFieldKeys: Set<string>;
+};
+
+const VENDOR_TARGET: FieldDefinitionTarget = "vendor";
+
+// 04.5-05(T-04.5-44): 거래처 입력 칸 판정 재료를 SQL 한 문(READ COMMITTED에서 한 스냅숏)으로 읽는다 — 정의에 노출표를
+// 두 번 LEFT JOIN(칸별 cf.vendor.<key> · 「거래처 정보」 vendor.value). (role_id, info_item)이 유일이라 행이 늘지 않는다.
+// 행 없음 · roleId 없음은 거짓(기본 숨김). 정의가 0개면 vendorValueVisible은 거짓이다(입력 칸도 0개라 쓰이지 않는다).
+export async function readVendorFieldAccess(
+  viewer: Viewer,
+  roleId: string | null,
+  tx: DbOrTx = db,
+): Promise<VendorFieldAccess> {
+  void viewer;
+  const fieldRow = alias(visibilityMatrix, "cf_visibility");
+  const valueRow = alias(visibilityMatrix, "vendor_value_visibility");
+  const rows = await tx
+    .select({ definition: fieldDefinitions, fieldVisible: fieldRow.visible, valueVisible: valueRow.visible })
+    .from(fieldDefinitions)
+    .leftJoin(
+      fieldRow,
+      roleId === null
+        ? sql`false`
+        : and(eq(fieldRow.roleId, roleId), eq(fieldRow.infoItem, sql`${customFieldInfoItem(VENDOR_TARGET, "")}::text || ${fieldDefinitions.key}`)),
+    )
+    .leftJoin(
+      valueRow,
+      roleId === null ? sql`false` : and(eq(valueRow.roleId, roleId), eq(valueRow.infoItem, "vendor.value")),
+    )
+    .where(eq(fieldDefinitions.entity, VENDOR_TARGET))
+    .orderBy(fieldDefinitions.sortOrder, fieldDefinitions.key);
+  return {
+    definitions: rows.map((row) => row.definition),
+    vendorValueVisible: rows.some((row) => row.valueVisible === true),
+    visibleFieldKeys: new Set(rows.filter((row) => row.fieldVisible === true).map((row) => row.definition.key)),
+  };
 }

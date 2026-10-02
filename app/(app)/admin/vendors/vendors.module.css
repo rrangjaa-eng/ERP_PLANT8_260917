@@ -239,6 +239,30 @@
   gap: var(--s-3);
 }
 
+/* 04.5-06: 기본 칸과 커스텀 칸 사이 구분선 — 1px --line + --s-6 간격(텍스트 머리 없음). 커스텀 칸이 0개면 이 묶음 자체를 그리지 않는다. */
+.customFields {
+  margin-top: var(--s-6);
+  padding-top: var(--s-6);
+  border-top: var(--line-w) solid var(--line);
+}
+
+/* 04.5-06: 네이티브 select 칸 아래 오류 — ui/select의 .error · .selectError와 같은 모양(--fs-sm --danger). */
+.fieldError {
+  margin: var(--s-1) 0 0;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
+.selectInvalid {
+  border-color: var(--danger);
+}
+
+/* 04.5-06: 1차 옆 이유 자리 — 칸 오류 요약 · 서버 오류 한 줄(§7-15). */
+.reason {
+  color: var(--danger);
+  font-size: var(--fs-sm);
+}
+
 /* §3 터치 목표: 폰에서 모든 행동 요소 최소 44×44. */
 @media (max-width: 699.98px) {
   .clearRow input {

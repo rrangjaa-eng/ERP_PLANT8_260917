@@ -1,18 +1,19 @@
 ---
 gsd_state_version: "1.0"
-current_phase: "04.3"
-current_phase_name: QR 확인증 접수
-current_plan: 17
-status: executing
-stopped_at: "Phase 04.1·04.2·04.4 complete (PR #119); Phase 04.3 executing (PR #88)"
-last_updated: "2026-10-02T03:21:14.630Z"
+current_phase: "04.5"
+current_phase_name: 화면 항목 관리 (INSERTED)
+current_plan: 9
+status: verifying
+stopped_at: Completed 04.5-07-PLAN.md
+last_updated: "2026-10-02T14:28:23.432Z"
 last_activity: 2026-10-02
-state_head: dd4f15508f7f0b26c6430a69cf8cc102a929dd3f
+last_activity_desc: Phase 04.5 execution started
+state_head: 02c42f32a1af8b3bd10c8bac8e271398728b4f72
 progress:
   total_phases: 17
   completed_phases: 7
-  total_plans: 146
-  completed_plans: 111
+  total_plans: 178
+  completed_plans: 121
   percent: 41
 ---
 
@@ -23,15 +24,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-30)
 
 **Core value:** 기획본부와 경영관리본부가 프로젝트마다 같은 숫자(견적·예상 비용·확정 비용·손익)를 본다. 기획본부는 계산식·근거 없이 결과 숫자로 납득하고, 경영관리·대표는 근거 줄까지 본다.
-**Current focus:** Phase 04.3 — QR 확인증 접수
+**Current focus:** Phase 04.5 — 화면 항목 관리 (INSERTED)
 
 ## Current Position
 
-Phase: 04.3 (QR 확인증 접수) — EXECUTING
-Current Plan: 17
-Total Plans in Phase: 17
-Status: Executing Phase 04.3
-Last activity: 2026-10-02
+Phase: 04.5 (화면 항목 관리 (INSERTED)) — EXECUTING
+Current Plan: 9
+Total Plans in Phase: 9
+Status: Phase complete — ready for verification
+Last activity: 2026-10-02 — Phase 04.5 execution started
 
 Progress: [████░░░░░░] 41%
 
@@ -121,6 +122,15 @@ Progress: [████░░░░░░] 41%
 | Phase 4 P31 | 5h(다중세션) | 3 tasks | 15 files |
 | Phase 4 P52 | 11min | 3 tasks | 5 files |
 | Phase 04 P53 | 25min | 3 tasks | 7 files |
+| Phase 04.5 P01 | 50 min | 2 tasks | 18 files |
+| Phase 04.5 P08 | 33min | 2 tasks | 15 files |
+| Phase 04.5 P09 | 16min | 1 tasks | 15 files |
+| Phase 04.5 P02 | 43min | 3 tasks | 16 files |
+| Phase 04.5 P03 | 36min | 2 tasks | 9 files |
+| Phase 04.5 P04 | 43 min | 2 tasks | 14 files |
+| Phase 04.5 P05 | 51min | 3 tasks | 12 files |
+| Phase 04.5 P06 | 25 min | 2 tasks | 8 files |
+| Phase 04.5 P07 | 66min | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -308,6 +318,21 @@ Recent decisions affecting current work:
 - [Phase 4]: 04-53: 자동 전환 진행 → 정산 판정은 gate 규칙 project.auto-settle 하나 — 리포지토리 후보 WHERE는 잠금 범위 좁히기로만 남긴다
 - [Phase 4]: 04-53: 쓰기 입구 gate 허용 뒤 종료일 null이면 project.auto_settle_gate_no_end_date로 던진다(fail-closed 타입 좁히기)
 - [Phase 4]: DR-P4-02(375 정렬 머리글 44px)는 04.6 이월 대신 Phase 4에서 해소 — quick 260929-npq(43dd5de4) · E2E mobile-touch-targets · DOM 감사 PASS 24로 UAT test 53 증거 대조 pass 재기록, gsd-core 업데이트·판정기 이식 없음 — 사용자 결정 2026-09-30 「[지시] 전환 (C)」(PR #104)
+- [Phase 04.5]: 04.5-01: 칸 생성·계급 생성 노출 행 부여는 lockCustomFieldGrants(advisory 420_701) 뒤 같은 tx로 상대 표를 읽는다 — 풀 고갈 회귀 테스트는 DB_POOL_MAX×2 동시
+- [Phase 04.5]: 04.5-01: 액션 등록부는 09 — 그때까지 action-registry-completeness에 field-definitions 임시 예외(02가 액션을 더하면 이름 목록 갱신)
+- [Phase 04.5]: 04.5-08: 오류 문구는 UI-SPEC 표의 뜻 그대로 명사형(error-copy-noun-style, DECISIONS 2026-09-26 우선) — 02·06 문구도 같은 변환 필요 — 표의 -습니다 종결이 사용자 결정 테스트와 충돌
+- [Phase 04.5]: 04.5-09: 새 메뉴 시드는 시스템 관리자 루프에서 건너뛰고 view·write를 insertPermissionIfAbsent로 — 재시드가 회수를 되살리지 않음
+- [Phase 04.5]: 04.5-09: 정보 노출표 항목 없는 관리 DTO는 누수 스캔 메뉴 게이트 DTO 축(MENU_GATED_DTOS)으로 검사
+- [Phase 04.5]: 04.5-02: 오류 문구는 UI-SPEC 뜻 그대로 명사형(error-copy-noun-style 결정 우선) · 폼은 등록/수정 래퍼가 useAction을 쥐고 공용 본문에 key를 줌 · 보관 선택지는 서버가 (저장 ∪ 보관 − 제출)로 파생 — 사용자 결정 2026-09-26 · 재검증 뒤 결과 줄 유지 · 선택지 유실 방지
+- [Phase 04.5]: 04.5-03: 커스텀 항목은 읽는 자리 넷(노출표 열·저장 허용·거래처 DTO·누수 스캔)에서 INFO_ITEMS 옆에 더함 — vendor.value AND cf.vendor.<key> 둘 다 켜져야 보임
+- [Phase 04.5]: 04.5-03: createRole이 grantCustomFieldsToRole을 동적 import(roles↔viewer 순환), 실패 시 1회 재시도 후 role.custom_field_grant_failed 경고 · 시드 계급을 더하는 뒤 페이즈는 같은 함수를 불러야 함
+- [Phase 04.5]: 04.5-04: 보관함 등록부 항목별 추가 권한 requiredMenu — 칸 정의 보관·복원은 admin.archive write AND admin.field-definitions write, 보관함 목록은 admin.field-definitions view
+- [Phase 04.5]: 04.5-04: 칸 보관·복원은 같은 UPDATE에서 version + 1(멱등은 불변) — 그 전에 연 수정 폼은 충돌
+- [Phase 04.5]: 04.5-05: 거래처 커스텀 값 저장은 행 잠금(SELECT FOR UPDATE) 뒤 같은 tx로 입력 칸 집합(vendor.value AND 활성 ∩ 칸별 보임)을 한 문으로 읽어 판정 · 합침 — 입력 칸 밖 저장값은 되살리고, 정의에 없는 키만 거부
+- [Phase 04.5]: 04.5-05: 커스텀 칸 오류 문구는 명사형 상수(preserve.ts) — 「필수 칸 비어 있음 · 값 입력」 등. 06은 UI-SPEC 원문이 아니라 이 상수를 기대값으로
+- [Phase 04.5]: 04.5-06: FieldDefinitionDto에 archivedOptions를 더하지 않음 — 「(보관됨)」은 저장값이 활성 선택지에 없을 때, 서버(05)가 최종 판정
+- [Phase 04.5]: 04.5-07: E5 셀 이유 문구 차이는 사양 오기 — 공유 PermissionGrid 문구(「저장 실패 · 다시 시도」)·폰 셀 오류 표시는 디자인 리뷰 대기
+- [Phase 04.5]: 04.5-07: origin/main 미이동(2453653)이라 병합·마이그레이션 재생성 없음 — 0023 = main 마지막 + 1, /ship 전 main이 움직이면 머지 의식 재실행
 
 ### Pending Todos
 
@@ -398,6 +423,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-01T06:54:29.667Z
-Stopped at: Phase 04.1·04.2·04.4 complete (PR #119); Phase 04.3 executing (PR #88)
+Last session: 2026-10-02T14:28:23.006Z
+Stopped at: Completed 04.5-07-PLAN.md
 Resume file: None

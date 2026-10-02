@@ -6,6 +6,7 @@ import { registerDto } from "@/domain/permissions/dto-registry";
 import {
   ARCHIVABLE_TABLES,
   listArchivedAcrossEntities as defaultListArchivedAcrossEntities,
+  type ArchivableEntry,
   type ArchivedItem,
 } from "@/repositories/archive";
 import { findUserById as defaultFindUserById } from "@/repositories/users";
@@ -47,6 +48,16 @@ async function assertCanWrite(viewer: Viewer, deps?: Partial<ArchiveDeps>): Prom
   }
 }
 
+// 04.5-04(UI-SPEC O21): 항목에 추가 권한 조건(requiredMenu)이 있으면 그 메뉴의 write도 요구한다 — 행 조회 · 쓰기 · 로그 전에.
+// 조건 없는 항목은 그대로다. 문구는 보관함 쓰기 거부와 같다(새 문구 없음).
+async function assertCanWriteEntry(viewer: Viewer, entry: ArchivableEntry, deps?: Partial<ArchiveDeps>): Promise<void> {
+  if (!entry.requiredMenu) return;
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, entry.requiredMenu, "write"))) {
+    throw new ForbiddenError("보관함 쓰기 권한 없음");
+  }
+}
+
 // 보관은 대상 행의 보관 시각이 이미 있으면 그 값을 유지한 채 성공으로
 // 돌아온다(멱등 — repositories의 조건부 UPDATE가 보장). 시드 계급은 거부한다
 // (isProtected).
@@ -58,6 +69,7 @@ export async function archive(
 ): Promise<void> {
   await assertCanWrite(viewer, deps);
   const entry = findEntry(entity);
+  await assertCanWriteEntry(viewer, entry, deps);
 
   const row = await entry.findById(viewer, id);
   if (!row) throw new ArchivableRowNotFoundError("대상 찾을 수 없음");
@@ -65,7 +77,8 @@ export async function archive(
     throw new ProtectedRowError("보호된 항목은 보관할 수 없음");
   }
 
-  await entry.setArchived(viewer, id, true);
+  // 04.5-07: 이미 보관된 행(다시 보관 · 동시 보관의 뒤 사람)은 조건부 갱신이 바꾼 행이 없다 — 로그 없이 돌아온다(복원과 같은 꼴).
+  if (!(await entry.setArchived(viewer, id, true))) return;
 
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   await recordAction(viewer, { actionType: "archive", entity, entityId: id });
@@ -94,6 +107,7 @@ export async function restore(
   const domainRestorer = DOMAIN_RESTORERS[entity];
   if (domainRestorer) return domainRestorer(viewer, id, deps);
   const entry = findEntry(entity);
+  await assertCanWriteEntry(viewer, entry, deps);
 
   const row = await entry.findById(viewer, id);
   if (!row) throw new ArchivableRowNotFoundError("대상 찾을 수 없음");
@@ -147,6 +161,14 @@ export type ListArchiveDeps = {
   now: Date;
 };
 
+async function entitiesWithoutRequired(viewer: Viewer, canFn: typeof defaultCan, action: "view" | "write"): Promise<Set<string>> {
+  const lacking = new Set<string>();
+  for (const entry of ARCHIVABLE_TABLES) {
+    if (entry.requiredMenu && !(await canFn(viewer, entry.requiredMenu, action))) lacking.add(entry.entity);
+  }
+  return lacking;
+}
+
 // 보관함 메뉴 보기 권한 확인 → 여러 표를 훑는 조회(repositories/archive의
 // ARCHIVABLE_TABLES 순회) → 보관한 사람 id를 이름으로 합성 → 투영. 새 표
 // 목록을 이 함수가 만들지 않는다 — 정본은 ARCHIVABLE_TABLES 하나다.
@@ -162,13 +184,19 @@ export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps
   const listFn = deps?.listArchivedAcrossEntities ?? defaultListArchivedAcrossEntities;
   // 묶음 ④ /review R3 — 리저브 줄은 리저브를 볼 수 있는 사람에게만(pnl 보기 + reserve.amount, B-15).
   const showReserves = await canViewReserves(viewer);
-  const rows = (await listFn(viewer)).filter((row) => row.entity !== "reserve_entry" || showReserves);
+  // 04.5-04(O21) — 추가 권한 조건이 있는 항목은 그 메뉴 보기 권한이 없으면 행을 뺀다(항목마다 한 번 판정).
+  const hiddenEntities = await entitiesWithoutRequired(viewer, canFn, "view");
+  const rows = (await listFn(viewer)).filter((row) => (row.entity !== "reserve_entry" || showReserves) && !hiddenEntities.has(row.entity));
 
   // 독립 검토(#138) — 복원할 수 없는 공휴일 행은 「복원」을 내놓지 않는다(§7). 공휴일 복원은 공휴일 쓰기 권한과
   // 소급 금지(오늘 이후 날짜) · 그 날짜에 다른 공휴일(대체일 제외) 없음을 요구한다(restoreHoliday) — 같은 판정을 목록에서 미리 한다.
   const holidayWritable = rows.some((row) => row.entity === "holiday") && (await canFn(viewer, HOLIDAYS_MENU, "write"));
   const today = toKstDate(deps?.now ?? new Date());
-  const isRestorable = (row: ArchivedItem) => row.entity !== "holiday" || (holidayWritable && row.date !== undefined && row.date > today && !row.dateTaken);
+  // 추가 권한 조건(requiredMenu)의 쓰기가 없는 항목의 행은 복원 불가(항목마다 한 번 판정 — restore()의 assertCanWriteEntry와 같은 조건).
+  const unwritableEntities = await entitiesWithoutRequired(viewer, canFn, "write");
+  const isRestorable = (row: ArchivedItem) =>
+    !unwritableEntities.has(row.entity) &&
+    (row.entity !== "holiday" || (holidayWritable && row.date !== undefined && row.date > today && !row.dateTaken));
 
   const findUserById = deps?.findUserById ?? defaultFindUserById;
   const archivedByIds = [...new Set(rows.map((row) => row.archivedBy).filter((id): id is string => id !== null))];

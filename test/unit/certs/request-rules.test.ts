@@ -20,7 +20,7 @@ describe("requestBlockReason — 막힘 이유 한 번에 하나(문의 전화 �
   });
 
   it("빈 칸 — 둘 다 비면 2칸 · 하나면 그 칸", () => {
-    expect(block()?.text).toBe("행사 이름 · 당첨일 2칸 비어 있음 · 행사 이름 적기");
+    expect(block()?.text).toBe("행사 이름, 당첨일 2칸 비어 있음 · 행사 이름 적기");
     expect(block({ name: "쇼케이스" })?.text).toBe("당첨일 비어 있음 · 당첨일 적기");
     expect(block({ name: "   ", wonOn: "2026-10-12" })?.text).toBe("행사 이름 비어 있음 · 행사 이름 적기");
   });

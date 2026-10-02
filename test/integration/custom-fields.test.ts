@@ -11,8 +11,22 @@ import {
   updateFieldDefinition,
   findFieldDefinitionById,
 } from "@/repositories/field-definitions";
+import { upsertVisibility } from "@/repositories/permissions";
+import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { customFieldInfoItem } from "@/domain/custom-fields/targets";
+import { CustomFieldsInvalidError, UnknownCustomFieldKeyError } from "@/domain/custom-fields/preserve";
 
 const VENDOR_ENTITY = "vendor";
+
+// 04.5-05: 노출 행 없는 거래처 정의는 입력 칸이 아니다 — 직접 넣는 정의는 시스템 관리자(SYSTEM_VIEWER의 계급) 보임 행을 명시로 더한다.
+async function exposeToSysadmin(key: string): Promise<void> {
+  await upsertVisibility(SYSTEM_VIEWER, {
+    roleId: SYSADMIN_ROLE_ID,
+    infoItem: customFieldInfoItem(VENDOR_ENTITY, key),
+    visible: true,
+    updatedBy: null,
+  });
+}
 
 describe("custom fields (ROADMAP 트레일링 스키마 규약, 실제 Postgres)", () => {
   it("등록된 키만 저장된다 — vendors.custom_fields에 정의된 필드만 실제로 담긴다", async () => {
@@ -23,6 +37,7 @@ describe("custom fields (ROADMAP 트레일링 스키마 규약, 실제 Postgres)
       type: "text",
       required: false,
     });
+    await exposeToSysadmin("contractNote");
 
     const { vendor } = await createVendor(SYSTEM_VIEWER, {
       name: `거래처-${randomUUID()}`,
@@ -41,13 +56,14 @@ describe("custom fields (ROADMAP 트레일링 스키마 규약, 실제 Postgres)
       type: "text",
       required: false,
     });
+    await exposeToSysadmin("registeredKey");
 
     await expect(
       createVendor(SYSTEM_VIEWER, {
         name: `거래처-${randomUUID()}`,
         customFields: { registeredKey: "값", unregisteredKey: "안됨" },
       }),
-    ).rejects.toThrow();
+    ).rejects.toBeInstanceOf(UnknownCustomFieldKeyError);
   });
 
   it("타입이 맞지 않는 값을 거부한다 — select 필드에 등록되지 않은 선택지", async () => {
@@ -59,13 +75,14 @@ describe("custom fields (ROADMAP 트레일링 스키마 규약, 실제 Postgres)
       options: ["A", "B"],
       required: false,
     });
+    await exposeToSysadmin("grade");
 
-    await expect(
-      createVendor(SYSTEM_VIEWER, {
-        name: `거래처-${randomUUID()}`,
-        customFields: { grade: "C" },
-      }),
-    ).rejects.toThrow();
+    const error = await createVendor(SYSTEM_VIEWER, {
+      name: `거래처-${randomUUID()}`,
+      customFields: { grade: "C" },
+    }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(CustomFieldsInvalidError);
+    expect((error as CustomFieldsInvalidError).fieldErrors.grade).toBeDefined();
   });
 
   it("필드 정의 갱신 함수가 타입 컬럼을 대상으로 받지 않는다 — 타입은 갱신 후에도 그대로다", async () => {

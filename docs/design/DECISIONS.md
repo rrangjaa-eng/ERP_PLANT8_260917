@@ -1402,4 +1402,3 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **버린 대안**: 옛 문구 유지(드문 경로) — 사실과 다른 말을 남긴다. 경로마다 다른 문구 — 서버가 누가 만들었는지 화면에 따로 알려야 해 범위가 커진다.
 
 **범위**: `app/(app)/certs/events/[id]/prize-table-rules.ts` `ALREADY_GENERATED_TEXT` · 회귀 `test/unit/certs/prize-table-rules.test.ts` · `test/e2e/cert-events.spec.ts`(상수 import). 점검표 `docs/design/checks/2026-10-02-결과-모름-요청-키.md`. SYSTEM.md · 토큰 변경 없음.
-

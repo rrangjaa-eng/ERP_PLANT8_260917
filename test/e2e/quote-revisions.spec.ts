@@ -1191,6 +1191,18 @@ async function bodyNumberLook(table: Locator) {
   });
 }
 
+// 토큰 값을 브라우저 계산 글자 크기 문자열(예 13px)로 바꾼다(tokenAsColor와 같은 꼴 — 04.6-08).
+function tokenAsFontSize(page: Page, name: string): Promise<string> {
+  return page.evaluate((token) => {
+    const probe = document.createElement("span");
+    probe.style.fontSize = `var(${token})`;
+    document.body.append(probe);
+    const size = getComputedStyle(probe).fontSize;
+    probe.remove();
+    return size;
+  }, name);
+}
+
 // 토큰 값을 브라우저 계산 색 문자열(rgb(...))로 바꾼다(people.spec.ts tokenAsColor와 같은 꼴 — 04.6-08 M5).
 function tokenAsColor(page: Page, name: string): Promise<string> {
   return page.evaluate((token) => {
@@ -1259,7 +1271,7 @@ test.describe("PR #104 후속 — 비활성 1차 kbd (DR-104-02) · 「번호」
     for (const [label, table] of [["현재 격자", quoteTable(page)], ["이전 차수 읽기 표", previousTable(page, 1)]] as const) {
       const look = await bodyNumberLook(table);
       expect.soft(look.cells, `${label} 번호 칸`).toEqual(expectedCells);
-      expect.soft(look.head?.fontSize, `${label} 번호 머리글 글자 크기`).toBe("12px");
+      expect.soft(look.head?.fontSize, `${label} 번호 머리글 글자 크기`).toBe(await tokenAsFontSize(page, "--text-aux"));
       expect.soft(look.head?.color, `${label} 번호 머리글 색은 faint 아님`).not.toBe("rgb(95, 110, 106)");
     }
   });

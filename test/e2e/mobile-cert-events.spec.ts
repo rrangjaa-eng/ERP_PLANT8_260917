@@ -77,7 +77,7 @@ test.describe("04.3-10 폰 · 좁은 PC", () => {
     // 시트 뒤 목록 표는 움직이지 않는다(DOM 감사 A-M2).
     expect((await listTable.boundingBox())?.y).toBe(tableTopBefore);
     // 막힘(빈 칸)에서도 행동 줄은 2차 왼쪽 · 1차 오른쪽 한 줄, 1차가 2차의 2배 폭(SYSTEM §7-8 — A-M1 · A-L1).
-    await expect(sheet.getByText("행사 이름 · 당첨일 2칸 비어 있음 · 행사 이름 적기")).toBeVisible();
+    await expect(sheet.getByText("행사 이름, 당첨일 2칸 비어 있음 · 행사 이름 적기")).toBeVisible();
     const cancelBox = await sheet.getByRole("button", { name: /취소/ }).boundingBox();
     const primaryBox = await sheet.getByRole("button", { name: "QR 생성 신청" }).boundingBox();
     expect(cancelBox?.y).toBe(primaryBox?.y);

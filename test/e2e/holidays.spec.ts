@@ -608,7 +608,7 @@ test.describe("공휴일 추가 폼의 상태(04.2-12)", () => {
     await expect(submit).toHaveAttribute("aria-disabled", "true");
     const reasonId = await submit.getAttribute("aria-describedby");
     expect(reasonId).toBeTruthy();
-    await expect(page.locator(`[id="${reasonId}"]`)).toHaveText("날짜 · 이름 2칸 비어 있음");
+    await expect(page.locator(`[id="${reasonId}"]`)).toHaveText("날짜, 이름 2칸 비어 있음");
     await name.focus();
     await page.getByRole("button", { name: "날짜 고르기" }).click();
     await expect(date).toBeFocused();

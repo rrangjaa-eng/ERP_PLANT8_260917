@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 20
+open_count: 19
 waived_count: 1
-fixed_count: 19
+fixed_count: 20
 total_count: 40
-last_updated: 2026-10-02T09:44:02.256Z
+last_updated: 2026-10-02T13:39:45.912Z
 ---
 
 # Broken Windows Ledger
@@ -54,7 +54,7 @@ last_updated: 2026-10-02T09:44:02.256Z
 | 37 | 4 | deviation | ui/table/Table.tsx |  | DR-P4-02: 375폭 목록 정렬 머리글 링크 20x19·51x19 <44px — ui/table 동결 지시(스킨 리프레시 병행)로 04-31에서 보류, Phase 04.6 제안 · 답 대기(HANDOFF id 68) | waived | Phase 04.6(스킨 A) 범위로 이관 — 사용자 결정 2026-09-28, PR #85 [지시] 5864259502 항목 2. 묶음 ④ 머지를 막지 않음 | 2026-09-28T05:08:25.963Z | 2026-09-28T06:03:22.837Z |
 | 38 | 04.3 | unrun-verify | app/c/[token]/intake-flow.tsx |  | 04.3-15 Task 3 ③ 독립 DOM 감사(E′2 · E′4 · E5 폭 320 · 375 · 390 · 480, I′1 1280 · 1024 · 375, I′3 머리) — 오케스트레이터가 별도 에이전트로 실행 | fixed |  | 2026-10-01T03:21:32.434Z | 2026-10-01T06:50:48.616Z |
 | 39 | 04.5 | stub | app/(app)/admin/field-definitions/field-definition-form.tsx |  | 등록 폼이 서버 오류·칸 오류·막힘 이유를 아직 보이지 않음(결과 줄·칸 오류·이유 자리·제출 중 잠금·정렬 기본값은 04.5-08 E2 행) | fixed |  | 2026-10-02T08:45:12.785Z | 2026-10-02T09:21:08.231Z |
-| 40 | 04.5 | deviation | app/(app)/admin/holidays/holiday-form.tsx | 37 | 칸 이름 구분자 「, 」(SYSTEM §7-15 · DECISIONS 2026-09-25 U2) 미이전 — 공휴일 폼과 app/(app)/certs/events/request-rules.ts:26이 아직 「 · 」로 칸 이름을 잇는다(04.5-09가 SYSTEM 예시만 고침) | open |  | 2026-10-02T09:44:02.256Z |  |
+| 40 | 04.5 | deviation | app/(app)/admin/holidays/holiday-form.tsx | 37 | 칸 이름 구분자 「, 」(SYSTEM §7-15 · DECISIONS 2026-09-25 U2) 미이전 — 공휴일 폼과 app/(app)/certs/events/request-rules.ts:26이 아직 「 · 」로 칸 이름을 잇는다(04.5-09가 SYSTEM 예시만 고침) | fixed |  | 2026-10-02T09:44:02.256Z | 2026-10-02T13:39:45.912Z |
 
 ````json
 [
@@ -572,10 +572,10 @@ last_updated: 2026-10-02T09:44:02.256Z
     "file": "app/(app)/admin/holidays/holiday-form.tsx",
     "line": 37,
     "description": "칸 이름 구분자 「, 」(SYSTEM §7-15 · DECISIONS 2026-09-25 U2) 미이전 — 공휴일 폼과 app/(app)/certs/events/request-rules.ts:26이 아직 「 · 」로 칸 이름을 잇는다(04.5-09가 SYSTEM 예시만 고침)",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-02T09:44:02.256Z",
-    "resolved_at": null,
+    "resolved_at": "2026-10-02T13:39:45.912Z",
     "milestone": null
   }
 ]

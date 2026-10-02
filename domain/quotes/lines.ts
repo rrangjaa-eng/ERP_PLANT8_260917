@@ -799,8 +799,8 @@ const CELL_LABELS: Record<QuoteLineField, string> = {
 
 // UI-SPEC rev 5 `Error — 셀(금액 범위, 04-40 · DR-9)` — 계산값 상한은 수량·단가 두 칸 모두.
 const QUOTE_AMOUNT_OVER = "견적가 상한 초과 · 수량이나 단가 수정";
-// quick 261002-3mx — 고를 수 없는 소분류(코드표에 없음 · 비활성 · 보관). 화면의 소분류 칸은 이 값을 만들지 않는다.
-const SUBCATEGORY_NOT_LISTED = "목록에 없는 소분류 · 소분류 다시 고르기";
+// quick 261002-3mx — 고를 수 없는 소분류(코드표에 없음 · 비활성 · 보관). 화면은 불러온 뒤 꺼진 분류를 아직 보일 수 있다.
+const SUBCATEGORY_NOT_LISTED = "고를 수 없는 소분류 · 새로 고침";
 
 // 04-40(엔지니어링 리뷰 B §2 · DR-9) — 단가·실행가를 한 규칙으로 정규화하고(거부는 그 칸의 셀 오류), 수량 × 단가의 계산
 // 견적가가 저장 상한 밖이면 수량·단가 두 칸 오류. 쓰기 전에 판정해 PG 22003이 화면에 닿지 않는다.
@@ -970,6 +970,10 @@ export async function writeQuoteLinesInTx(
       if (archived) await judgeStructure(id, lineKindOf(archived), { kind: "archive", quoteAmountZero: archived.quoteAmountKrw === 0 });
     }
 
+    // 04-26 · ENG-D10 — 요청의 새 줄 id 중 그 차수에 이미 있는 줄(응답을 잃은 재전송). 상한 판정과 소분류 판정이 같이 본다.
+    const newIds = input.rows.filter((row) => row.isNew).map((row) => row.id);
+    const presentById = new Map((await repoFindQuoteLinesByIds(viewer, newIds, { revisionId }, tx)).map((row) => [row.id, row] as const));
+
     for (const [rowIndex, received] of input.rows.entries()) {
       // 04-13 — 판정·저장이 보는 종류: 기존 줄은 잠근 tx로 다시 읽은 DB 행, 새 줄만 요청 값(없으면 quote).
       const current = received.isNew ? undefined : currentById.get(received.id);
@@ -980,8 +984,9 @@ export async function writeQuoteLinesInTx(
       const kind = resolved ?? lineKindOf(current!);
       const kindRow = normalizeForKind(requested, kind);
       formatErrors.push(...quoteLineFormatErrors(kindRow, rowIndex, kind));
-      // quick 261002-3mx — 견적 줄의 소분류는 고를 수 있는 코드이거나 기존 줄에 저장된 값 그대로다(복제한 새 줄은 새 입력).
-      if (kind === "quote" && !prepared.selectableSubcategories.has(kindRow.subcategory) && kindRow.subcategory !== current?.subcategory) {
+      // quick 261002-3mx — 견적 줄의 소분류는 고를 수 있는 코드이거나 저장된 값 그대로다(기존 줄 · 재전송한 새 줄). 복제한 새 줄은 새 입력.
+      const storedSubcategory = (current ?? (received.isNew ? presentById.get(received.id) : undefined))?.subcategory;
+      if (kind === "quote" && !prepared.selectableSubcategories.has(kindRow.subcategory) && kindRow.subcategory !== storedSubcategory) {
         formatErrors.push({ rowIndex, rowId: kindRow.id, field: "subcategory", label: CELL_LABELS.subcategory, reason: SUBCATEGORY_NOT_LISTED });
       }
       const money = normalizeLineMoney(kindRow, rowIndex);
@@ -1026,9 +1031,7 @@ export async function writeQuoteLinesInTx(
 
     // 04-26(D-86 · A-36 · ENG-D10) — 잠금 뒤 센 활성 줄 − 이번에 보관할 활성 줄 + 실제로 새로 들어갈 줄(그 차수에 이미
     // 있는 id는 응답을 잃은 재전송이라 새 줄이 아니다). 뒤에 온 저장은 앞 저장이 커밋한 줄까지 센다.
-    const newIds = input.rows.filter((row) => row.isNew).map((row) => row.id);
-    const presentIds = new Set((await repoFindQuoteLinesByIds(viewer, newIds, { revisionId }, tx)).map((row) => row.id));
-    const newLines = newIds.filter((id) => !presentIds.has(id)).length;
+    const newLines = newIds.filter((id) => !presentById.has(id)).length;
     const archivingActive = archivedIds.filter((id) => currentById.get(id)?.archivedAt === null).length;
     const capCtx: QuoteLineCapCtx = { newLines, countAfter: activeBefore.length - archivingActive + newLines, cap: lineCap };
     const capDecision = await gate(projectRow, LINE_CAP_RULE, capCtx);

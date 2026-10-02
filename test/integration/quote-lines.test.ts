@@ -1294,7 +1294,7 @@ describe("계산 견적가 상한(04-40 · DR-9)", () => {
 
 // quick 261002-3mx — 견적 줄 소분류는 고를 수 있는 코드(활성 · 보관 아님)만 받는다. 기존 줄은 저장된 값을 그대로 둘 수 있다.
 describe("소분류 서버 검증(quick 261002-3mx)", () => {
-  const NOT_LISTED = "목록에 없는 소분류 · 소분류 다시 고르기";
+  const NOT_LISTED = "고를 수 없는 소분류 · 새로 고침";
 
   async function retireSubcategory(value: string, how: "inactive" | "archived") {
     const set = how === "inactive" ? { active: false } : { archivedAt: new Date() };
@@ -1322,11 +1322,11 @@ describe("소분류 서버 검증(quick 261002-3mx)", () => {
     expect(error.formatErrors).toContainEqual(expect.objectContaining({ rowId: bad.id, field: "subcategory", reason: NOT_LISTED }));
   });
 
-  it("기존 줄은 그 사이 비활성이 된 저장 값을 그대로 두고 다른 칸을 저장할 수 있다", async () => {
+  it.each(["inactive", "archived"] as const)("기존 줄은 그 사이 %s가 된 저장 값을 그대로 두고 다른 칸을 저장할 수 있다", async (how) => {
     const { revision } = await setupProject();
     const line = newRow("staffing");
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [line] });
-    await retireSubcategory("staffing", "inactive");
+    await retireSubcategory("staffing", how);
 
     const stored = await reloadLine(line.id);
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [asInput(stored, { itemName: "이름만 바꿈" })] });
@@ -1362,6 +1362,18 @@ describe("소분류 서버 검증(quick 261002-3mx)", () => {
     expect(error.formatErrors).toContainEqual(expect.objectContaining({ rowId: copy.id, field: "subcategory", reason: NOT_LISTED }));
   });
 
+  // ENG-D10 — 응답을 잃은 새 줄 재전송은 no-op이다. 그 사이 소분류가 비활성이 되어도 저장된 값과 같으면 재전송이다.
+  it("저장된 새 줄을 같은 값으로 재전송하면 그 사이 소분류가 비활성이 되어도 no-op이다", async () => {
+    const { revision } = await setupProject();
+    const line = newRow("staffing");
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [line] });
+    await retireSubcategory("staffing", "inactive");
+
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [line] });
+
+    expect((await reloadLine(line.id)).subcategory).toBe("staffing");
+  });
+
   it("합성 저장(saveProjectLedger)도 같은 판정이다", async () => {
     const { project, revision } = await setupProject();
     const bad = newRow("no-such-subcategory");
@@ -1372,12 +1384,12 @@ describe("소분류 서버 검증(quick 261002-3mx)", () => {
     expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id))).toHaveLength(0);
   });
 
-  it("조정 · 견적 외 비용 줄은 소분류 칸을 서버가 종류 값으로 채운다(판정 대상 아님)", async () => {
+  it.each(["adjustment", "out_of_quote"] as const)("%s 줄은 소분류 칸을 서버가 종류 값으로 채운다(판정 대상 아님)", async (lineKind) => {
     const { revision } = await setupProject();
-    const outOfQuote = newRow("anything", { lineKind: "out_of_quote" });
+    const line = newRow("anything", { lineKind, unitPrice: krw(0) });
 
-    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [outOfQuote] });
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [line] });
 
-    expect((await reloadLine(outOfQuote.id)).subcategory).toBe("out_of_quote");
+    expect((await reloadLine(line.id)).subcategory).toBe(lineKind);
   });
 });

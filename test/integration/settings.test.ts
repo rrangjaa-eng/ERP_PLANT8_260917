@@ -157,9 +157,12 @@ describe("설정 레지스트리 (ADMN-05, 실제 Postgres)", () => {
   // quick 261002-3mx — 미래 판정과 삭제 사이에 KST 자정이 지나면 방금 적용된 행이다. 삭제 조건이 DB 시각으로 다시 판정한다.
   it("취소 판정 뒤 KST 자정이 지나 오늘 적용된 행은 지우지 않고 로그도 없다", async () => {
     const { queryActionLog } = await import("@/repositories/action-log");
-    const { kstToday } = await import("@/lib/kst-date");
+    const { db } = await import("@/db/client");
+    const { sql } = await import("drizzle-orm");
     const def = historizedDef();
-    const today = kstToday(new Date());
+    // 삭제 조건과 같은 시계(DB)의 오늘 — 테스트 러너와 DB 시계가 어긋나도 판정이 같다.
+    const { rows } = await db.execute<{ today: string }>(sql`select ((now() at time zone 'Asia/Seoul')::date)::text as today`);
+    const today = rows[0]!.today;
     await addHistorizedValue(SYSTEM_VIEWER, def, { effectiveFrom: today, value: 0.3 });
     // 자정 1초 전(KST)에 판정한 것처럼 — JS 판정은 오늘 행을 아직 미래로 본다.
     const justBeforeMidnight = new Date(new Date(`${today}T00:00:00+09:00`).getTime() - 1000);

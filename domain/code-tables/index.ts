@@ -29,8 +29,8 @@ export class ArchivedCodeItemError extends UserFacingError {}
 
 const EVIDENCE_TYPE_TABLE_KEY = "evidence_type";
 
-// quick 261002-3mx — 관리자가 다루는 코드표의 정본. 코드표 화면의 전환 링크와
-// createCodeItem의 서버 판정이 이 목록 하나를 쓴다(그 밖의 표 키는 거부).
+// quick 261002-3mx — 관리자가 다루는 코드표의 정본. createCodeItem은 이 목록
+// 밖의 표 키를 거부한다.
 export const CODE_TABLES = [
   { key: "project_status", label: "프로젝트 상태" },
   { key: "evidence_type", label: "증빙 종류" },

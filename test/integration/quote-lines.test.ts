@@ -1291,3 +1291,93 @@ describe("계산 견적가 상한(04-40 · DR-9)", () => {
     expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id))).toHaveLength(0);
   });
 });
+
+// quick 261002-3mx — 견적 줄 소분류는 고를 수 있는 코드(활성 · 보관 아님)만 받는다. 기존 줄은 저장된 값을 그대로 둘 수 있다.
+describe("소분류 서버 검증(quick 261002-3mx)", () => {
+  const NOT_LISTED = "목록에 없는 소분류 · 소분류 다시 고르기";
+
+  async function retireSubcategory(value: string, how: "inactive" | "archived") {
+    const set = how === "inactive" ? { active: false } : { archivedAt: new Date() };
+    await db.update(codeItems).set(set).where(and(eq(codeItems.tableKey, "quote_subcategory"), eq(codeItems.value, value)));
+  }
+
+  it("코드표에 없는 값은 그 칸의 셀 오류이고 아무것도 저장되지 않는다", async () => {
+    const { revision, subcategoryValue } = await setupProject();
+    const ok = newRow(subcategoryValue);
+    const bad = newRow("no-such-subcategory");
+
+    const error = await rejectionOf(saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [ok, bad] }));
+
+    expect(error.formatErrors).toContainEqual(expect.objectContaining({ rowId: bad.id, field: "subcategory", label: "소분류", reason: NOT_LISTED }));
+    expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id))).toHaveLength(0);
+  });
+
+  it.each(["inactive", "archived"] as const)("%s 소분류로 새 줄을 만들 수 없다", async (how) => {
+    const { revision } = await setupProject();
+    await retireSubcategory("staffing", how);
+    const bad = newRow("staffing");
+
+    const error = await rejectionOf(saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [bad] }));
+
+    expect(error.formatErrors).toContainEqual(expect.objectContaining({ rowId: bad.id, field: "subcategory", reason: NOT_LISTED }));
+  });
+
+  it("기존 줄은 그 사이 비활성이 된 저장 값을 그대로 두고 다른 칸을 저장할 수 있다", async () => {
+    const { revision } = await setupProject();
+    const line = newRow("staffing");
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [line] });
+    await retireSubcategory("staffing", "inactive");
+
+    const stored = await reloadLine(line.id);
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [asInput(stored, { itemName: "이름만 바꿈" })] });
+
+    const after = await reloadLine(line.id);
+    expect(after.itemName).toBe("이름만 바꿈");
+    expect(after.subcategory).toBe("staffing");
+  });
+
+  it("기존 줄을 다른 비활성 소분류로 바꾸면 거부된다", async () => {
+    const { revision } = await setupProject();
+    const line = newRow("stage_construction");
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [line] });
+    await retireSubcategory("staffing", "inactive");
+
+    const stored = await reloadLine(line.id);
+    const error = await rejectionOf(saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [asInput(stored, { subcategory: "staffing" })] }));
+
+    expect(error.formatErrors).toContainEqual(expect.objectContaining({ rowId: line.id, field: "subcategory", reason: NOT_LISTED }));
+    expect((await reloadLine(line.id)).subcategory).toBe("stage_construction");
+  });
+
+  // 화면은 복제할 때 고를 수 없는 소분류를 기본값으로 바꾼다 — 서버도 복제한 새 줄을 새 입력으로 본다.
+  it("비활성 소분류 줄을 복제한 새 줄이 그 값을 그대로 실으면 거부된다", async () => {
+    const { revision } = await setupProject();
+    const source = newRow("staffing");
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [source] });
+    await retireSubcategory("staffing", "inactive");
+
+    const copy = newRow("staffing", { duplicatedFrom: source.id });
+    const error = await rejectionOf(saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [copy] }));
+
+    expect(error.formatErrors).toContainEqual(expect.objectContaining({ rowId: copy.id, field: "subcategory", reason: NOT_LISTED }));
+  });
+
+  it("합성 저장(saveProjectLedger)도 같은 판정이다", async () => {
+    const { project, revision } = await setupProject();
+    const bad = newRow("no-such-subcategory");
+
+    await expect(
+      saveProjectLedger(SYSTEM_VIEWER, project.id, { seenStatus: "bidding", quoteLines: { revisionId: revision.id, rows: [bad] } }),
+    ).rejects.toBeInstanceOf(SaveRejectedError);
+    expect(await db.select().from(quoteLines).where(eq(quoteLines.revisionId, revision.id))).toHaveLength(0);
+  });
+
+  it("조정 · 견적 외 비용 줄은 소분류 칸을 서버가 종류 값으로 채운다(판정 대상 아님)", async () => {
+    const { revision } = await setupProject();
+    const outOfQuote = newRow("anything", { lineKind: "out_of_quote" });
+
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [outOfQuote] });
+
+    expect((await reloadLine(outOfQuote.id)).subcategory).toBe("out_of_quote");
+  });
+});

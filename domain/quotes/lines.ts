@@ -60,6 +60,8 @@ import {
 } from "@/repositories/quote-revisions";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
 import { findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
+import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
+import { QUOTE_SUBCATEGORY_TABLE_KEY } from "@/domain/projects/references";
 import { getSettingValue } from "@/domain/settings/registry";
 import { QUOTE_LINE_MAX_PER_REVISION } from "@/domain/settings/keys";
 
@@ -638,6 +640,8 @@ export type PreparedQuoteLineSave = {
   vendorNamesVisible: boolean;
   /** quick 261001-85g — 거래처 정보(vendor.value)를 보는가. 거짓이면 요청의 거래처 칸을 읽지 않고 기존 값을 지킨다. */
   vendorShown: boolean;
+  /** quick 261002-3mx — 고를 수 있는 견적 소분류 값(활성 · 보관 아님). 견적 줄의 소분류는 이 값이거나 기존 줄의 저장 값이다. */
+  selectableSubcategories: ReadonlySet<string>;
 };
 
 export async function prepareQuoteLineSave(
@@ -669,6 +673,15 @@ export async function prepareQuoteLineSave(
     canAdjust,
     vendorNamesVisible: (await Promise.all([defaultVisible(viewer, "project.value"), defaultVisible(viewer, "vendor.value")])).every(Boolean),
     vendorShown: await defaultVisible(viewer, "vendor.value"),
+    selectableSubcategories: new Set(
+      (
+        await repoListCodeItems(viewer, {
+          tableKey: QUOTE_SUBCATEGORY_TABLE_KEY,
+          scope: { rows: "all", includeArchived: false },
+          includeInactive: false,
+        })
+      ).map((row) => row.value),
+    ),
   };
 }
 
@@ -786,6 +799,8 @@ const CELL_LABELS: Record<QuoteLineField, string> = {
 
 // UI-SPEC rev 5 `Error — 셀(금액 범위, 04-40 · DR-9)` — 계산값 상한은 수량·단가 두 칸 모두.
 const QUOTE_AMOUNT_OVER = "견적가 상한 초과 · 수량이나 단가 수정";
+// quick 261002-3mx — 고를 수 없는 소분류(코드표에 없음 · 비활성 · 보관). 화면의 소분류 칸은 이 값을 만들지 않는다.
+const SUBCATEGORY_NOT_LISTED = "목록에 없는 소분류 · 소분류 다시 고르기";
 
 // 04-40(엔지니어링 리뷰 B §2 · DR-9) — 단가·실행가를 한 규칙으로 정규화하고(거부는 그 칸의 셀 오류), 수량 × 단가의 계산
 // 견적가가 저장 상한 밖이면 수량·단가 두 칸 오류. 쓰기 전에 판정해 PG 22003이 화면에 닿지 않는다.
@@ -965,6 +980,10 @@ export async function writeQuoteLinesInTx(
       const kind = resolved ?? lineKindOf(current!);
       const kindRow = normalizeForKind(requested, kind);
       formatErrors.push(...quoteLineFormatErrors(kindRow, rowIndex, kind));
+      // quick 261002-3mx — 견적 줄의 소분류는 고를 수 있는 코드이거나 기존 줄에 저장된 값 그대로다(복제한 새 줄은 새 입력).
+      if (kind === "quote" && !prepared.selectableSubcategories.has(kindRow.subcategory) && kindRow.subcategory !== current?.subcategory) {
+        formatErrors.push({ rowIndex, rowId: kindRow.id, field: "subcategory", label: CELL_LABELS.subcategory, reason: SUBCATEGORY_NOT_LISTED });
+      }
       const money = normalizeLineMoney(kindRow, rowIndex);
       if (money.errors.length > 0) {
         formatErrors.push(...money.errors);

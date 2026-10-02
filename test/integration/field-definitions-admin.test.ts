@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { and, eq, like, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { actionLog, fieldDefinitions, roles, visibilityMatrix } from "@/db/schema";
@@ -17,13 +17,13 @@ import {
 } from "@/domain/custom-fields/admin";
 import { createFieldDefinitionInput } from "@/domain/custom-fields/admin-input";
 import { PERMISSION_DENIED_CAUSE } from "@/lib/actions/form-reason";
-import { insertVisibilityIfAbsent, upsertPermission } from "@/repositories/permissions";
+import { insertVisibilityIfAbsent } from "@/repositories/permissions";
 import { insertFieldDefinition, listFieldDefinitions } from "@/repositories/field-definitions";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
 import { env } from "@/lib/env";
 
 // 04.5-01: 화면 항목(커스텀 칸) 생성 — 칸 정의 + 전 계급 노출 행이 한 트랜잭션.
-const MENU = "admin.field-definitions";
+// 시스템 관리자의 admin.field-definitions view·write는 시드가 준다(04.5-09) — 권한 행을 따로 넣지 않는다.
 
 async function createViewer(roleId: string): Promise<Viewer> {
   const { userId } = await createAccount(SYSTEM_VIEWER, {
@@ -58,12 +58,6 @@ async function countFieldDefinitions(): Promise<number> {
 const input = (name: string) => ({ name, type: "text" as const, required: false, sortOrder: 1 });
 
 describe("화면 항목 생성 (04.5-01)", () => {
-  beforeEach(async () => {
-    // 09가 MENUS에 키를 등록하기 전까지 시드가 이 행을 주지 않는다 — 테스트가 명시로 넣는다.
-    await upsertPermission(SYSTEM_VIEWER, { roleId: SYSADMIN_ROLE_ID, menu: MENU, action: "view", allowed: true });
-    await upsertPermission(SYSTEM_VIEWER, { roleId: SYSADMIN_ROLE_ID, menu: MENU, action: "write", allowed: true });
-  });
-
   it("시스템 관리자가 거래처 칸을 만든다 — 자동 키 · 자른 이름 · version 1 · 보관 안 됨", async () => {
     const admin = await createViewer(SYSADMIN_ROLE_ID);
 
@@ -222,11 +216,6 @@ describe("화면 항목 생성 (04.5-01)", () => {
 
 // 04.5-08: 이름 예약 · domain 재판정 · 관리 목록(검토된 DTO).
 describe("화면 항목 이름 예약 · 관리 목록 (04.5-08)", () => {
-  beforeEach(async () => {
-    await upsertPermission(SYSTEM_VIEWER, { roleId: SYSADMIN_ROLE_ID, menu: MENU, action: "view", allowed: true });
-    await upsertPermission(SYSTEM_VIEWER, { roleId: SYSADMIN_ROLE_ID, menu: MENU, action: "write", allowed: true });
-  });
-
   const uniqueName = (prefix: string) => `${prefix}${randomUUID().slice(0, 6)}`;
 
   async function insertArchivedVendorField(label: string): Promise<string> {

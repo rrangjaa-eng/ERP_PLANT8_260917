@@ -24,6 +24,22 @@ describe("seedMasterData가 관리자의 권한 회수를 덮어쓰지 않는다
     const row = await findPermission(SYSTEM_VIEWER, DEFAULT_ROLE_ID, "projects", "write");
     expect(row?.allowed).toBe(false);
   });
+
+  // 04.5-09(UI-SPEC 화면 1 — 이미 있는 행은 덮지 않는다): 화면 항목 메뉴는 시스템 관리자 view·write만 insert-if-absent.
+  it("시스템 관리자의 admin.field-definitions write를 꺼둔 뒤 시드를 다시 돌려도 꺼진 채로 유지된다", async () => {
+    expect((await findPermission(SYSTEM_VIEWER, SYSADMIN_ROLE_ID, "admin.field-definitions", "view"))?.allowed).toBe(true);
+    expect((await findPermission(SYSTEM_VIEWER, SYSADMIN_ROLE_ID, "admin.field-definitions", "write"))?.allowed).toBe(true);
+    expect(await findPermission(SYSTEM_VIEWER, SYSADMIN_ROLE_ID, "admin.field-definitions", "approve")).toBeNull();
+    await upsertPermission(SYSTEM_VIEWER, { roleId: SYSADMIN_ROLE_ID, menu: "admin.field-definitions", action: "write", allowed: false });
+    try {
+      await seedMasterData(SYSTEM_VIEWER);
+
+      const row = await findPermission(SYSTEM_VIEWER, SYSADMIN_ROLE_ID, "admin.field-definitions", "write");
+      expect(row?.allowed).toBe(false);
+    } finally {
+      await upsertPermission(SYSTEM_VIEWER, { roleId: SYSADMIN_ROLE_ID, menu: "admin.field-definitions", action: "write", allowed: true });
+    }
+  });
 });
 
 // 04.3-09 — 확인증 기본 권한 · 노출. 매 테스트 전 setup.ts가 TRUNCATE + 시드한다 —

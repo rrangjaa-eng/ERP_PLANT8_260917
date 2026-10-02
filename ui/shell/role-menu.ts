@@ -89,6 +89,12 @@ const ADMIN_MENUS: ReadonlyArray<{ key: string; label: string; href: string; gro
     group: ADMIN_GROUP_MASTER,
   },
   { key: "admin.code-tables", label: "코드표", href: "/admin/code-tables", group: ADMIN_GROUP_MASTER },
+  {
+    key: "admin.field-definitions",
+    label: "화면 항목",
+    href: "/admin/field-definitions",
+    group: ADMIN_GROUP_MASTER,
+  },
   { key: "admin.holidays", label: "공휴일", href: "/admin/holidays", group: ADMIN_GROUP_MASTER },
   {
     key: "admin.permissions",

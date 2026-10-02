@@ -1402,3 +1402,27 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 **버린 대안**: 옛 문구 유지(드문 경로) — 사실과 다른 말을 남긴다. 경로마다 다른 문구 — 서버가 누가 만들었는지 화면에 따로 알려야 해 범위가 커진다.
 
 **범위**: `app/(app)/certs/events/[id]/prize-table-rules.ts` `ALREADY_GENERATED_TEXT` · 회귀 `test/unit/certs/prize-table-rules.test.ts` · `test/e2e/cert-events.spec.ts`(상수 import). 점검표 `docs/design/checks/2026-10-02-결과-모름-요청-키.md`. SYSTEM.md · 토큰 변경 없음.
+
+## 2026-09-25 — §7-15 이유 자리: 칸 이름 구분자 「, 」, 가운뎃점은 원인 · 다음 행동 전용
+
+**결정**: 이유 자리에서 칸 이름 여럿은 「, 」로 잇고, 가운뎃점 「 · 」는 원인과 다음 행동 사이에만 쓴다. SYSTEM.md §7-15 필수 칸 예시를 `클라이언트, 담당 PM 2칸 비어 있음 · 클라이언트 고르기`로 고친다.
+
+**결정자**: 사용자(Phase 04.5 디자인 리뷰 결정 카드 U2 — 권장안 A, `docs/designs/plant8-erp-phase04.5-design-review-260925.md`).
+
+**왜**: 가운뎃점으로 이름을 이으면 「담당자 연락처 · 계약 유형 2칸 · 담당자 연락처 고치기」처럼 어디까지가 원인인지 흐려진다.
+
+**버린 대안**: SYSTEM 예시대로 가운뎃점.
+
+**범위**: SYSTEM.md §7-15 「검증 관문은 서버 하나」의 예시 한 곳. 첫 사용처는 거래처 폼 요약(04.5-06). 이 규칙보다 먼저 만들어져 칸 이름을 가운뎃점으로 잇는 기존 구현 둘 — 공휴일 폼(`app/(app)/admin/holidays/holiday-form.tsx`)과 확인증 신청 규칙(`app/(app)/certs/events/request-rules.ts`의 「행사 이름 · 당첨일 2칸」) — 은 아직 옮기지 않았다(04.5-09 SUMMARY · WINDOWS.md 후속). 토큰 변경 없음.
+
+## 2026-09-25 — §7-15 펼침: 네이티브 details/summary, 기본 표식 유지
+
+**결정**: 펼침은 네이티브 `details`/`summary`다. 브라우저 기본 펼침 표식을 그대로 두고, `summary`는 3차 버튼과 같은 글자 모양(폰 최소 높이 `--touch-min`), 키보드 포커스는 전역 `:focus-visible` 링(2px `--focus`)을 덮지 않는다. SYSTEM.md §7-15 구성 목록에 한 줄.
+
+**결정자**: 디자인 리뷰 R2(Codex 일치, `docs/designs/plant8-erp-phase04.5-design-review-260925.md` 2-A).
+
+**왜**: 표식을 지우면 열림/닫힘이 글자로 안 보이고, 새 아이콘은 §9 사용처 밖이다.
+
+**버린 대안**: 표식 숨김(`list-style: none`), Lucide chevron.
+
+**범위**: SYSTEM.md §7-15 한 줄 추가. 첫 사용처는 화면 항목 수정 폼의 「보관된 선택지 N개」(04.5-02). 토큰 변경 없음.

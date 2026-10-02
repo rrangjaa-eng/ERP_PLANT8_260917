@@ -46,6 +46,15 @@ import "@/domain/certs/events";
 import "@/app/(app)/certs/events/actions.registry";
 import "@/domain/certs/review";
 import "@/app/(app)/certs/submissions/[id]/actions.registry";
+import "@/app/(app)/admin/field-definitions/actions.registry";
+import {
+  createFieldDefinition,
+  FIELD_DEFINITION_ADMIN_DTO_FIELDS,
+  listFieldDefinitionsForAdmin,
+} from "@/domain/custom-fields/admin";
+import { can, ForbiddenError } from "@/domain/permissions/can";
+import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
+import { createAccount } from "@/domain/auth/accounts";
 
 // D-38: 이 페이즈의 정본 예외 목록은 이 하나뿐이다(03-04가 이 이름으로
 // 등록한다) — dtoName이 null인 내보내기는 사람 단위 정보 항목이 없는
@@ -260,3 +269,78 @@ import "@/domain/leave";
 import "@/app/(app)/leave/actions.registry";
 import "@/app/(app)/approvals/actions.registry";
 import "@/app/(app)/admin/people/[id]/actions.registry";
+
+// 04.5-09(Codex #6 · ROADMAP 04.5 기준 5) — 메뉴 게이트 DTO 축. 정보 노출표 항목이 없는 관리 메타데이터 DTO의
+// 검토된 목록이다(사람 단위 값 없음 · 메뉴 view 뒤에서만 나간다). 여기 없는 관리 DTO는 위 DTO 등록부 축에 있어야 한다.
+// 필드를 더하려면 아래 검토 목록도 손으로 고친다(생산 상수를 복사해 비교하지 않는다 — 검토 게이트).
+const MENU_GATED_DTOS = [
+  {
+    name: "FieldDefinitionAdminDto",
+    menu: "admin.field-definitions",
+    reviewedFields: ["id", "key", "label", "type", "options", "archivedOptions", "required", "sortOrder", "version", "archived"],
+    fields: FIELD_DEFINITION_ADMIN_DTO_FIELDS,
+    list: listFieldDefinitionsForAdmin,
+  },
+];
+
+function buildMenuGatedDtoCases() {
+  return MENU_GATED_DTOS.flatMap((dto) =>
+    SEED_ROLES.map((role) => ({
+      name: `${dto.name}·${role.id}`,
+      dto,
+      role,
+    })),
+  );
+}
+
+describe("메뉴 게이트 DTO 축 — 정보 노출표 항목이 없는 관리 DTO는 메뉴 view 뒤에서만 나간다 (04.5-09)", () => {
+  it("검토된 목록이 비어 있지 않고 케이스 생성이 결정적이다", () => {
+    expect(MENU_GATED_DTOS.length).toBeGreaterThan(0);
+    expect(buildMenuGatedDtoCases().map((c) => c.name)).toEqual(buildMenuGatedDtoCases().map((c) => c.name));
+  });
+
+  it.each(MENU_GATED_DTOS)("$name: 메뉴가 MENUS에 있고 DTO 등록부에 없으며 검토된 필드 목록과 DTO 필드 상수가 같다", (dto) => {
+    expect(MENUS.some((menu) => menu.key === dto.menu), `메뉴 '${dto.menu}'이 MENUS에 없습니다`).toBe(true);
+    expect(DTO_REGISTRY.some((entry) => entry.name === dto.name), `'${dto.name}'은 두 축 중 하나에만 있어야 합니다`).toBe(false);
+    expect([...dto.fields]).toEqual(dto.reviewedFields);
+  });
+
+  it("FieldDefinitionAdminDto: 시스템 관리자가 거래처 칸을 만든 뒤 목록이 돌려준 DTO의 키 집합이 검토된 목록과 같다", async () => {
+    const { userId } = await createAccount(SYSTEM_VIEWER, {
+      email: `leak-scan-fd-${Date.now()}@example.test`,
+      name: "누수 스캔 화면 항목",
+      roleId: SYSADMIN_ROLE_ID,
+    });
+    const admin: Viewer = { id: userId, roleId: SYSADMIN_ROLE_ID };
+    const { id } = await createFieldDefinition(admin, {
+      name: `누수스캔${Date.now() % 100000}`,
+      type: "text",
+      required: false,
+      sortOrder: 1,
+    });
+
+    const [entry] = MENU_GATED_DTOS;
+    if (!entry) throw new Error("MENU_GATED_DTOS가 비었다 — 전제가 깨졌다");
+    const rows = await entry.list(admin);
+    const row = rows.find((candidate) => candidate.id === id);
+    expect(row, "방금 만든 칸이 관리 목록에 없다").toBeTruthy();
+    expect(Object.keys(row ?? {}).sort()).toEqual([...entry.reviewedFields].sort());
+  });
+
+  it.each(buildMenuGatedDtoCases())("$name", async ({ dto, role }) => {
+    const viewer: Viewer = { id: "leak-scan-probe", roleId: role.id };
+    if (await can(viewer, dto.menu, "view")) {
+      expect(Array.isArray(await dto.list(viewer))).toBe(true);
+    } else {
+      await expect(dto.list(viewer)).rejects.toBeInstanceOf(ForbiddenError);
+    }
+  });
+
+  it("시드 기준으로 목록을 받는 계급은 시스템 관리자 하나다", async () => {
+    const allowedRoles: string[] = [];
+    for (const role of SEED_ROLES) {
+      if (await can({ id: "leak-scan-probe", roleId: role.id }, "admin.field-definitions", "view")) allowedRoles.push(role.id);
+    }
+    expect(allowedRoles).toEqual([SYSADMIN_ROLE_ID]);
+  });
+});

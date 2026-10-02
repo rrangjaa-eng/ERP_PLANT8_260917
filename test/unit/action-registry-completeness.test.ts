@@ -21,10 +21,6 @@ const ACTIONS_WITHOUT_REGISTRY: Record<string, string[]> = {
   // 확인증 외부 수령자 공개 액션(04.3-02 · 04.3-15 제출 하나) — 세션 · 권한표 메뉴가 없는 링크 토큰 범위라 등록할 메뉴가 없다.
   // 첫 줄 가드는 test/unit/certs/public-route-boundary.test.ts가 고정한다.
   "app/c/[token]/actions.ts": ["submitCertificateAction"],
-  // 화면 항목 관리(04.5-01) — 임시: 메뉴 키 admin.field-definitions가 아직 MENUS에 없어 누수 스캔 액션 축이
-  // 등록을 받지 못한다. 04.5-09가 MENUS 등록과 함께 actions.registry.ts를 만들며 이 줄을 지운다
-  // (등록 파일이 생기면 위 「낡은 예외」 검사가 이 줄을 빨갛게 만든다).
-  "app/(app)/admin/field-definitions/actions.ts": ["createFieldDefinitionAction"],
 };
 
 export type ActionFileEntry = { path: string; actionNames: string[]; registryNames: string[] | null };
@@ -126,13 +122,11 @@ describe("app 아래 모든 actions.ts (T-04.1-57)", () => {
     expect(violations, violations.join("\n")).toEqual([]);
   });
 
-  // 화면 항목(04.5-01)은 임시 — 04.5-09가 MENUS 등록 · 등록 파일과 함께 목록과 이 단언에서 지운다.
-  it("예외 목록은 account · notifications · 확인증 공개(app/c) 세 항목 + 임시 화면 항목뿐이다", () => {
+  it("예외 목록은 account · notifications · 확인증 공개(app/c) 세 항목뿐이다", () => {
     expect(Object.keys(ACTIONS_WITHOUT_REGISTRY)).toEqual([
       "app/(app)/account/actions.ts",
       "app/(app)/notifications/actions.ts",
       "app/c/[token]/actions.ts",
-      "app/(app)/admin/field-definitions/actions.ts",
     ]);
   });
 });

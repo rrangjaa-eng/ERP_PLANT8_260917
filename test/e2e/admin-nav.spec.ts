@@ -43,7 +43,7 @@ test.describe("PC 사용자 메뉴 → /admin 인덱스로 클릭만으로 관�
     await expect(page.getByRole("navigation", { name: "코드표 선택" })).toBeVisible();
   });
 
-  test("PC 사용자 메뉴에는 「관리」 항목만 보이고, 관리자 화면 개별 라벨 11개는 메뉴 안에 하나도 없다", async ({
+  test("PC 사용자 메뉴에는 「관리」 항목만 보이고, 관리자 화면 개별 라벨 12개는 메뉴 안에 하나도 없다", async ({
     page,
   }) => {
     await loginAsSysadmin(page);
@@ -57,6 +57,7 @@ test.describe("PC 사용자 메뉴 → /admin 인덱스로 클릭만으로 관�
     const individualLabels = [
       "시스템 상태",
       "코드표",
+      "화면 항목",
       "사람",
       "거래처",
       "법인카드 마스터",
@@ -76,7 +77,7 @@ test.describe("PC 사용자 메뉴 → /admin 인덱스로 클릭만으로 관�
     await expect(menu.getByRole("menuitem", { name: "설정", exact: true })).toHaveCount(0);
   });
 
-  test("/admin 인덱스에 그룹 머리글 셋(마스터·설정·권한·운영 기록)과 항목 링크 11개가 전부 보인다", async ({
+  test("/admin 인덱스에 그룹 머리글 셋(마스터·설정·권한·운영 기록)과 항목 링크 12개가 전부 보인다", async ({
     page,
   }) => {
     await loginAsSysadmin(page);
@@ -93,6 +94,7 @@ test.describe("PC 사용자 메뉴 → /admin 인덱스로 클릭만으로 관�
       "거래처",
       "법인카드 마스터",
       "코드표",
+      "화면 항목",
       "공휴일",
       "권한표",
       "정보 노출표",

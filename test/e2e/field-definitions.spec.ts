@@ -10,8 +10,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 
 // 04.5-01 트레이서 + 04.5-08: 관리 화면에서 추가한 거래처 칸이 거래처 폼에 한글 이름으로 보이고,
 // 목록 표 · 등록 폼의 모든 상태(빈 상태 기본값 · 칸 오류 · 이름 예약 · 이유 자리 · 잠금 · 결과 줄)가 UI-SPEC 문구 그대로 보인다.
-// 09가 MENUS에 admin.field-definitions를 등록하기 전까지 시드가 권한 행을 주지 않는다 —
-// 시스템 관리자 view·write 행을 여기서 명시로 넣는다(공유 결정 4의 마지막 단계).
+// 시스템 관리자의 admin.field-definitions view·write는 시드(globalSetup)가 준다(04.5-09) — 권한 행을 따로 넣지 않는다.
 const MENU = "admin.field-definitions";
 // 이 스펙이 만든 칸은 afterAll이 보관한다 — 다른 스펙은 자기 접두를 쓴다. 「이름」이라는 글자를 넣지 않는다
 // (vendors.spec.ts의 getByLabel("이름")이 부분 일치로 센다). 이름 상한 20자 안이다.
@@ -24,8 +23,6 @@ let pm: Account;
 test.describe.configure({ mode: "serial" });
 
 test.beforeAll(async () => {
-  await upsertPermission(SYSTEM_VIEWER, { roleId: SYSADMIN_ROLE_ID, menu: MENU, action: "view", allowed: true });
-  await upsertPermission(SYSTEM_VIEWER, { roleId: SYSADMIN_ROLE_ID, menu: MENU, action: "write", allowed: true });
   admin = await createFixtureUser({ roleId: SYSADMIN_ROLE_ID });
   pm = await createFixtureUser({ roleId: DEFAULT_ROLE_ID });
 });
@@ -78,7 +75,12 @@ test("화면 항목을 추가하면 거래처 폼에 그 한글 이름으로 보
   await login(page, admin);
   const label = uniqueLabel();
 
-  await page.goto("/admin/field-definitions?new=1");
+  // 04.5-09: 여정은 「관리」 인덱스에서 시작한다 — 마스터 그룹 「화면 항목」 → 「화면 항목 추가」.
+  await page.goto("/admin");
+  await page.getByRole("link", { name: "화면 항목", exact: true }).click();
+  await expect(page).toHaveURL(/\/admin\/field-definitions$/);
+  await page.getByRole("link", { name: "화면 항목 추가", exact: true }).first().click();
+  await expect(page).toHaveURL(/\/admin\/field-definitions\?new=1$/);
   await page.getByLabel("이름", { exact: true }).fill(label);
   await page.getByLabel("타입", { exact: true }).selectOption({ label: "텍스트" });
   await page.getByLabel("정렬 순서", { exact: true }).fill("1");

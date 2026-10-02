@@ -158,6 +158,8 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
 
   let permissionsCount = 0;
   for (const menu of MENUS) {
+    // 04.5-09: 화면 항목 메뉴는 아래에서 insert-if-absent로 준다 — 관리자가 권한표에서 끈 값을 재시드가 되살리지 않는다.
+    if (menu.key === "admin.field-definitions") continue;
     for (const action of PERMISSION_ACTIONS) {
       // certs.submissions는 확인증 개인정보 열람 메뉴라 다른 새 메뉴처럼 시드가 자동으로 켜지 않는다 —
       // 소유자가 시스템 관리자 계급에서 끄면 배포가 되살리지 않는다(E3-13).
@@ -181,6 +183,18 @@ export async function seedMasterData(viewer: Viewer): Promise<SeedResult> {
       });
       permissionsCount++;
     }
+  }
+
+  // 04.5-09(UI-SPEC 화면 1): 화면 항목 관리 — 시스템 관리자 view·write만, 이미 있는 행은 덮지 않는다(approve 없음).
+  for (const action of ["view", "write"] as const) {
+    await insertPermissionIfAbsent(viewer, {
+      roleId: SYSADMIN_ROLE_ID,
+      menu: "admin.field-definitions",
+      action,
+      allowed: true,
+      updatedBy: null,
+    });
+    permissionsCount++;
   }
 
   // Phase 4(04-01): 기획 PM(DEFAULT_ROLE_ID)의 기본 업무 메뉴 — "projects"

@@ -119,22 +119,27 @@ describe("tokens.css — ① 웜톤 금지(R ≤ G · R ≤ B)", () => {
 });
 
 describe("tokens.css — ② 역할 간격 토큰은 --s-* 척도만 참조한다", () => {
-  // 이 플랜이 값을 바꾸지 않는 척도 밖(날 px) 값 — 04.6-07이 화면을 옮기며 비운다.
-  // 목록 항목은 실제로 아직 날 값이어야 한다(낡으면 실패).
-  const MIGRATING = ["--cell-pad-x", "--cell-pad-y"];
   const spacing = [...ROLE.keys()].filter((k) => /^--(pad-|cell-pad-|field-gap|label-gap|panel-pad-)/.test(k));
 
   it("대상이 5개 이상이다(공허 방지)", () => {
     expect(spacing.length).toBeGreaterThanOrEqual(5);
   });
 
-  it.each(spacing.filter((k) => !MIGRATING.includes(k)))("%s 는 var(--s-n)만 참조한다", (name) => {
+  it.each(spacing)("%s 는 var(--s-n)만 참조한다", (name) => {
     expect(ROLE.get(name)).toMatch(/^var\(--s-\d+\)$/);
     expect(ALL.has((ROLE.get(name) as string).slice(4, -1))).toBe(true);
   });
 
-  it.each(MIGRATING)("옮기는 중 목록 %s 는 아직 날 px 값이다(낡은 목록 방지)", (name) => {
-    expect(ROLE.get(name)).toMatch(/^\d+px$/);
+  // 폰 미디어 쿼리가 덮는 역할 간격 값도 척도다(14→16 · 10→12 — UQ-1 A 매핑).
+  const phoneSpacing = [...PHONE.keys()].filter((k) => spacing.includes(k));
+
+  it("폰이 덮는 역할 간격 토큰이 있다(공허 방지)", () => {
+    expect(phoneSpacing.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it.each(phoneSpacing)("폰 %s 는 var(--s-n)만 참조한다", (name) => {
+    expect(PHONE.get(name)).toMatch(/^var\(--s-\d+\)$/);
+    expect(ALL.has((PHONE.get(name) as string).slice(4, -1))).toBe(true);
   });
 });
 

@@ -55,9 +55,9 @@ export async function findEffectiveValue(
 
 // 적용 시작일 내림차순 — 복합 UNIQUE(key, effectiveFrom)가 같은 키에 같은
 // 시작일 두 행을 허용하지 않으므로 이 정렬은 항상 결정적이다.
-export async function listHistory(viewer: Viewer, key: string): Promise<SettingHistorizedRow[]> {
+export async function listHistory(viewer: Viewer, key: string, tx: DbOrTx = db): Promise<SettingHistorizedRow[]> {
   void viewer;
-  return db
+  return tx
     .select()
     .from(settingsHistorized)
     .where(eq(settingsHistorized.key, key))

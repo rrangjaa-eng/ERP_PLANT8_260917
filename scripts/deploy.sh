@@ -283,10 +283,49 @@ _ensure_secret() {
     --member="serviceAccount:${runtime_email}" --role=roles/secretmanager.secretAccessor
 }
 
+# 데이터 키(app-data-key-v1)는 값이 바뀌면 기존 암호문을 영구히 못 읽는다 — 그래서 일반
+# _ensure_secret(조회 실패를 삼키고 새로 만든다)을 쓰지 않는다. NOT_FOUND일 때만 「없음」이고,
+# 그 밖의 조회 오류 · 버전은 있는데 ENABLED가 없는 상태는 새 키를 만들지 않고 멈춘다.
+_ensure_data_key_secret() {
+  local base="$1" seed_bytes="$2"
+  local name err versions
+  name="$(secret_name "$base" "$ENV")"
+  if err="$(run gcloud secrets describe "$name" --project="$PROJECT" 2>&1 >/dev/null)"; then
+    versions="$(run gcloud secrets versions list --secret="$name" --project="$PROJECT" --format='value(name)')" || {
+      echo "cannot list versions of ${name} — stopped before touching the data key" >&2
+      return 1
+    }
+    if [ -n "$versions" ]; then
+      versions="$(run gcloud secrets versions list --secret="$name" --project="$PROJECT" --filter='state:ENABLED' --format='value(name)')" || {
+        echo "cannot list versions of ${name} — stopped before touching the data key" >&2
+        return 1
+      }
+      if [ -z "$versions" ]; then
+        echo "${name} has versions but none ENABLED — not generating a new data key (docs/OPERATIONS.md §9)" >&2
+        return 1
+      fi
+    fi
+  elif printf '%s' "$err" | grep -q 'NOT_FOUND'; then
+    run gcloud secrets create "$name" --replication-policy=user-managed --locations="$REGION" --project="$PROJECT"
+    versions=""
+  else
+    printf '%s\n' "$err" >&2
+    echo "cannot read secret ${name} — stopped before touching the data key" >&2
+    return 1
+  fi
+  if [ -z "$versions" ]; then
+    openssl rand -base64 "$seed_bytes" | run gcloud secrets versions add "$name" --project="$PROJECT" --data-file=-
+  fi
+  local runtime_email
+  runtime_email="$(runtime_sa "$ENV")@${PROJECT}.iam.gserviceaccount.com"
+  run gcloud secrets add-iam-policy-binding "$name" --project="$PROJECT" \
+    --member="serviceAccount:${runtime_email}" --role=roles/secretmanager.secretAccessor
+}
+
 ensure_secrets() {
   STAGE=ensure_secrets
   _ensure_secret better-auth-secret 48
-  _ensure_secret app-data-key-v1 32
+  _ensure_data_key_secret app-data-key-v1 32
   _ensure_secret smtp-host sentinel
   _ensure_secret smtp-user sentinel
   _ensure_secret smtp-password sentinel

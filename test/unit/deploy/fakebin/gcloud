@@ -108,10 +108,9 @@ case "$ARGS" in
     exit 0
     ;;
 
-  # 04.3-08: 시크릿 데이터는 상태 파일 secret-data-<이름>에 둔다(versions add가 쓰고
+  # 시크릿 데이터는 상태 파일 secret-data-<이름>에 둔다(versions add가 쓰고
   # versions access가 읽는다). 데이터 파일이 있으면 ENABLED 버전 하나가 있는 것이고,
-  # 없으면 예전처럼 공용 secret-version-exists를 따른다 — 단 감싼 시크릿(-wrapped-)은
-  # 데이터 파일 유무만 따른다(공용 상태 하나로 감싼 시크릿이 있는 것처럼 보이지 않게).
+  # 없으면 예전처럼 공용 secret-version-exists를 따른다.
   # 검토 반영 B1: secret-disabled-<이름>이면 버전은 있지만 ENABLED는 없다(끈 버전).
   "secrets versions list"*)
     secret="$(printf '%s\n' "$ARGS" | grep -oE -- '--secret=[^ ]+' | cut -d= -f2)"
@@ -123,10 +122,7 @@ case "$ARGS" in
     elif state_file "secret-data-${secret}"; then
       echo "projects/test-proj/secrets/${secret}/versions/1"
     else
-      case "$secret" in
-        *-wrapped-*) ;;
-        *) state_val secret-version-exists ;;
-      esac
+      state_val secret-version-exists
     fi
     ;;
   "secrets versions access latest "*)

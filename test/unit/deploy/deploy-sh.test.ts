@@ -910,6 +910,38 @@ describe("deploy.sh — 데이터 키는 평문 시크릿(KMS 없음)", () => {
     expect(deployLine(r.log)).toContain(`APP_DATA_KEY_v1=${PLAIN}:latest`);
   });
 
+  it("시크릿에 버전은 있지만 ENABLED가 없으면 새 키를 만들지 않고 멈춘다 — 서비스도 배포하지 않는다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { [`secret-disabled-${PLAIN}`]: "" },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("none ENABLED");
+    expect(r.stderr).toContain("docs/OPERATIONS.md");
+    expect(r.log).not.toContain(`secrets versions add ${PLAIN} `);
+    expect(r.log).not.toContain("run deploy plant8-staging ");
+  });
+
+  it("describe가 NOT_FOUND가 아닌 오류로 실패하면 새 키를 만들지 않고 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "fail-gcloud": `secrets describe ${PLAIN}` },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("forced failure");
+    expect(r.log).not.toContain(`secrets create ${PLAIN} `);
+    expect(r.log).not.toContain(`secrets versions add ${PLAIN} `);
+    expect(r.log).not.toContain("run deploy plant8-staging ");
+  });
+
+  it("versions list가 오류로 실패하면 새 키를 만들지 않고 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { [`secret-data-${PLAIN}`]: ORIGINAL_KEY_TEXT, "fail-gcloud": `secrets versions list --secret=${PLAIN}` },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("forced failure");
+    expect(r.log).not.toContain(`secrets versions add ${PLAIN} `);
+    expect(r.log).not.toContain("run deploy plant8-staging ");
+  });
+
   it("gcloud kms를 부르지 않고 KMS · 감싼 키 환경 변수 · 감싼 시크릿을 붙이지 않는다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
     expect(r.status).toBe(0);

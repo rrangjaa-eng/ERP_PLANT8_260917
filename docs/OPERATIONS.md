@@ -235,7 +235,7 @@ openssl rand -base64 32 | gcloud secrets versions add app-data-key-v1-prod    --
 함께 둔 상태에서 `pnpm db:rotate-key`를 돌린다 — 옛 버전 암호문을 복호화해 새 버전으로
 다시 쓴다(중단·재실행 안전, 이미 최신 버전인 행은 건너뛴다). **회전 완료 후에만** 옛
 키(`app-data-key-v1-{env}`)를 지운다 — 먼저 지우면 아직 재암호화되지 않은 행이 영구히
-읽히지 않는다.
+읽히지 않는다. 배포(`deploy.sh`)는 아직 `APP_DATA_KEY_v2`를 붙이지 않는다 — 붙이는 변경 전에는 회전하지 않는다.
 
 ### 이메일(SMTP) 확인 경로
 

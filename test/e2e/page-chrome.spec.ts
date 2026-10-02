@@ -150,11 +150,11 @@ test.describe("시스템 상태 라벨·값 목록 — KvList (02-08 Task 1, §6
     await page.goto("/admin/system-status");
 
     const firstDt = page.locator("main dt").first();
-    await expect(firstDt).toHaveCSS("font-size", "12px");
-    await expect(firstDt).toHaveCSS("font-weight", "600");
-    await expect(firstDt).toHaveCSS("color", "rgb(78, 93, 89)");
+    await expect(firstDt).toHaveCSS("font-size", await tokenValue(page, "--text-aux"));
+    await expect(firstDt).toHaveCSS("font-weight", await tokenValue(page, "--fw-medium"));
+    await expect(firstDt).toHaveCSS("color", await tokenAsColor(page, "--text-muted"));
     await expect(firstDt).toHaveCSS("border-bottom-style", "dotted");
-    await expect(firstDt).toHaveCSS("border-bottom-color", "rgb(207, 219, 215)");
+    await expect(firstDt).toHaveCSS("border-bottom-color", await tokenAsColor(page, "--border-row"));
 
     const box = await firstDt.boundingBox();
     expect(box).not.toBeNull();

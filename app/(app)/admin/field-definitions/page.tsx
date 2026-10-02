@@ -9,7 +9,7 @@ import { PageHeader } from "@/ui/page-header/PageHeader";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 // Button.tsx는 클라이언트 모듈이라 서버 컴포넌트가 buttonLinkClassName을 부를 수 없다 — 같은 3차 클래스를 직접 쓴다(pnl 선례).
 import buttonStyles from "@/ui/button/Button.module.css";
-import { FieldDefinitionForm } from "./field-definition-form";
+import { FieldDefinitionEditForm, FieldDefinitionForm } from "./field-definition-form";
 import styles from "./field-definitions.module.css";
 
 // 04.5-01 인증 가드 · 권한 게이트 · 제목 · `?new=1` 등록 폼, 04.5-08 목록 표(UI-SPEC 화면 1 · E1).
@@ -29,26 +29,45 @@ function optionsText(def: FieldDefinitionAdminDto): string {
   return def.type === "select" && def.options.length > 0 ? def.options.join(", ") : "—";
 }
 
-export default async function FieldDefinitionsPage({ searchParams }: { searchParams: Promise<{ new?: string }> }) {
+export default async function FieldDefinitionsPage({ searchParams }: { searchParams: Promise<{ new?: string; editId?: string }> }) {
   const session = await getSession();
   if (!session) redirect("/login");
   if (!(await can(session.viewer, "admin.field-definitions", "view"))) notFound();
 
-  const { new: newParam } = await searchParams;
+  const { new: newParam, editId } = await searchParams;
   const [canWrite, canViewVisibility, allDefs] = await Promise.all([
     can(session.viewer, "admin.field-definitions", "write"),
     can(session.viewer, "admin.visibility", "view"),
     listFieldDefinitionsForAdmin(session.viewer),
   ]);
-  // 쓰기 권한이 없으면 `?new=1`로 직접 와도 폼을 렌더하지 않는다.
-  const showForm = canWrite && newParam === "1";
   // 보관 행은 이 목록에서 뺀다(보관 포함 필터는 04). 정렬은 listFieldDefinitions 순서(정렬 순서, 내부 키) 그대로다.
   const defs = allDefs.filter((def) => !def.archived);
+  // 수정 폼은 편집 가능한 칸(대상 상수 안 · 보관 안 됨)을 가리키는 editId일 때만 연다 — 보관된 칸 · 없는 id · 대상 밖
+  // 정의는 폼 없이 목록만 보인다(vendors와 같은 조건). 쓰기 권한이 없으면 `?editId=` · `?new=1`로 직접 와도 폼이 없다.
+  const editing = canWrite && editId ? (defs.find((def) => def.id === editId) ?? null) : null;
+  const showCreateForm = canWrite && editing === null && newParam === "1";
+  const showForm = editing !== null || showCreateForm;
 
   return (
     <>
       <PageHeader title="화면 항목" subtitle="거래처" />
-      {showForm ? (
+      {editing ? (
+        <FieldDefinitionEditForm
+          key={editing.id}
+          cancelHref={LIST_HREF}
+          editing={{
+            id: editing.id,
+            version: editing.version,
+            name: editing.label,
+            type: editing.type,
+            required: editing.required,
+            sortOrder: editing.sortOrder,
+            options: editing.options,
+            archivedOptions: editing.archivedOptions,
+          }}
+        />
+      ) : null}
+      {showCreateForm ? (
         <FieldDefinitionForm
           cancelHref={LIST_HREF}
           defaultSortOrder={nextSortOrder(defs.map((def) => def.sortOrder))}
@@ -98,7 +117,17 @@ export default async function FieldDefinitionsPage({ searchParams }: { searchPar
                     <td className={styles.number}>{def.sortOrder}</td>
                     <td className={styles.p2}>{optionsText(def)}</td>
                     <td className={styles.p2}>—</td>
-                    <td />
+                    <td>
+                      {canWrite ? (
+                        <Link
+                          href={`${LIST_HREF}?editId=${encodeURIComponent(def.id)}`}
+                          aria-label={`${def.label} 수정`}
+                          className={`${buttonStyles.btn} ${buttonStyles.tertiary}`}
+                        >
+                          수정
+                        </Link>
+                      ) : null}
+                    </td>
                   </tr>
                   <tr className={styles.collapsedRow}>
                     <td colSpan={7} className={styles.collapsedCell}>

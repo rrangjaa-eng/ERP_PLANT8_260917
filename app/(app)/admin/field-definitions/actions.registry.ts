@@ -9,3 +9,9 @@ registerAction({
   action: "write",
   dtoName: null,
 });
+registerAction({
+  name: "updateFieldDefinitionAction",
+  menu: "admin.field-definitions",
+  action: "write",
+  dtoName: null,
+});

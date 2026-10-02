@@ -6,7 +6,7 @@ import {
   nextSortOrder,
   parseCustomFieldInfoItem,
 } from "@/domain/custom-fields/targets";
-import { createFieldDefinitionInput, nameConflictMessage } from "@/domain/custom-fields/admin-input";
+import { createFieldDefinitionInput, nameConflictMessage, updateFieldDefinitionInput } from "@/domain/custom-fields/admin-input";
 import { addOption, deriveArchivedOptions, normalizeOption, removeOption } from "@/domain/custom-fields/options";
 
 // 04.5-08: 대상 등록부 · 입력 규칙 · 이름 충돌 문구 — DB 없이 도는 순수 계약.
@@ -180,5 +180,40 @@ describe("생성 입력 — 선택형", () => {
     expect(createFieldDefinitionInput.safeParse({ ...valid, options: ["기본"] }).success).toBe(false);
     expect(createFieldDefinitionInput.safeParse({ ...valid, options: [] }).success).toBe(true);
     expect(createFieldDefinitionInput.safeParse(valid).success).toBe(true);
+  });
+});
+
+describe("수정 입력 (04.5-02)", () => {
+  const update = { id: "fd-1", version: 3, name: "계약 메모", required: true, sortOrder: 2 };
+
+  it("id · version · 이름 · 필수 · 정렬 순서만 받고 선택지는 선택이다", () => {
+    expect(updateFieldDefinitionInput.safeParse(update).success).toBe(true);
+    expect(updateFieldDefinitionInput.safeParse({ ...update, options: [" 기본 ", "특약"] }).success).toBe(true);
+    expect(updateFieldDefinitionInput.parse({ ...update, name: "  계약  ", options: [" 기본 "] })).toMatchObject({
+      name: "계약",
+      options: ["기본"],
+    });
+  });
+
+  it("type · entity 키가 실린 입력은 거부한다(타입 불변 · 대상 위조 금지)", () => {
+    expect(updateFieldDefinitionInput.safeParse({ ...update, type: "number" }).success).toBe(false);
+    expect(updateFieldDefinitionInput.safeParse({ ...update, entity: "project" }).success).toBe(false);
+  });
+
+  it.each([0, -1, 1.5, Number.NaN])("version %s는 거부한다", (version) => {
+    expect(updateFieldDefinitionInput.safeParse({ ...update, version }).success).toBe(false);
+  });
+
+  it("이름 · 정렬 순서 · 선택지 규칙은 생성과 같은 문구다", () => {
+    const messages = (input: unknown) => {
+      const result = updateFieldDefinitionInput.safeParse(input);
+      return result.success ? [] : result.error.issues.map((issue) => issue.message);
+    };
+    expect(messages({ ...update, name: "  " })).toContain("이름 비어 있음 · 화면 항목 이름 적기");
+    expect(messages({ ...update, sortOrder: 1000 })).toContain("0~999 사이 정수 아님 · 숫자 고치기");
+    expect(messages({ ...update, options: ["기본", "기본"] })).toContain("이미 있는 선택지 · 다른 이름 적기");
+    expect(messages({ ...update, options: Array.from({ length: 31 }, (_, i) => `선택${i}`) })).toContain(
+      "선택지는 30개까지 · 쓰지 않는 선택지 삭제",
+    );
   });
 });

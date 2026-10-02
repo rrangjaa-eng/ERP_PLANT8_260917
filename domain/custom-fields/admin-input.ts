@@ -63,6 +63,21 @@ export const createFieldDefinitionInput = z
 
 export type CreateFieldDefinitionInput = z.infer<typeof createFieldDefinitionInput>;
 
+// 04.5-02: 수정 입력 — type · entity 키가 없다(.strict()가 거부 — 타입은 바꿀 수 없고 대상은 서버가 정한다, T-04.5-02).
+// 선택형인지는 읽은 행으로 판정하므로 선택지 배열은 모양 규칙만 본다(선택형의 0개 거부는 domain).
+export const updateFieldDefinitionInput = z
+  .object({
+    id: z.string().min(1),
+    version: z.number().int().positive(),
+    name: nameField,
+    required: z.boolean(),
+    sortOrder: sortOrderField,
+    options: optionsField.optional(),
+  })
+  .strict();
+
+export type UpdateFieldDefinitionInput = z.infer<typeof updateFieldDefinitionInput>;
+
 // 이름 충돌 칸 오류 문구 — 활성과 같음 / 보관과 같음(복원 권한이 있으면 복원 링크 변형, 없으면 이름 바꾸기 평문).
 export function nameConflictMessage(opts: { archived: boolean; canRestore?: boolean }): string {
   if (!opts.archived) return NAME_CONFLICT_ACTIVE_MESSAGE;

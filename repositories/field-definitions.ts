@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { fieldDefinitions } from "@/db/schema";
@@ -77,6 +77,35 @@ export async function updateFieldDefinition(
       updatedAt: new Date(),
     })
     .where(eq(fieldDefinitions.id, id));
+}
+
+// 04.5-02(O20): 버전 조건부 갱신 — 읽은 행의 version이 그대로이고 보관되지 않았을 때만 한 문장으로 쓰고
+// version을 1 올린다. 바뀐 행이 있었는지를 돌려준다(false면 호출자가 다시 읽어 보관 · 충돌을 가른다).
+// type은 받지 않는다(타입 불변). options · archivedOptions는 undefined면 건드리지 않는다.
+export async function updateFieldDefinitionIfVersion(
+  viewer: Viewer,
+  id: string,
+  expectedVersion: number,
+  patch: { label: string; required: boolean; sortOrder: number; options?: string[]; archivedOptions?: string[] },
+  tx: DbOrTx = db,
+): Promise<boolean> {
+  void viewer;
+  const rows = await tx
+    .update(fieldDefinitions)
+    .set({
+      label: patch.label,
+      required: patch.required,
+      sortOrder: patch.sortOrder,
+      options: patch.options,
+      archivedOptions: patch.archivedOptions,
+      version: sql`${fieldDefinitions.version} + 1`,
+      updatedAt: sql`now()`,
+    })
+    .where(
+      and(eq(fieldDefinitions.id, id), eq(fieldDefinitions.version, expectedVersion), isNull(fieldDefinitions.archivedAt)),
+    )
+    .returning({ id: fieldDefinitions.id });
+  return rows.length > 0;
 }
 
 // 트랜잭션 잠금(커밋·롤백 때 저절로 풀림) — 칸 생성과 계급 생성 쪽 노출 행 부여가 이 함수

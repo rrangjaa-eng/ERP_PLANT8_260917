@@ -151,3 +151,11 @@
   align-items: flex-start;
   gap: var(--s-4);
 }
+
+/* 수정 모드 타입 자리 — 「텍스트」 글자 + 3차 「새 화면 항목 추가」. */
+.typeText {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-4);
+}

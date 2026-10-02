@@ -13,10 +13,22 @@ import {
   createFieldDefinition,
   DuplicateFieldNameError,
   FIELD_DEFINITION_ADMIN_DTO_FIELDS,
+  FieldDefinitionArchivedError,
+  FieldDefinitionConflictError,
+  FieldDefinitionNotFoundError,
   listFieldDefinitionsForAdmin,
+  updateFieldDefinition,
 } from "@/domain/custom-fields/admin";
-import { createFieldDefinitionInput } from "@/domain/custom-fields/admin-input";
-import { PERMISSION_DENIED_CAUSE } from "@/lib/actions/form-reason";
+import {
+  createFieldDefinitionInput,
+  FIELD_DEFINITION_CONFLICT_CAUSE,
+  OPTIONS_ZERO_CAUSE,
+} from "@/domain/custom-fields/admin-input";
+import {
+  FIELD_DEFINITION_ARCHIVED_CAUSE,
+  FIELD_DEFINITION_NOT_FOUND_CAUSE,
+  PERMISSION_DENIED_CAUSE,
+} from "@/lib/actions/form-reason";
 import { insertVisibilityIfAbsent } from "@/repositories/permissions";
 import { insertFieldDefinition, listFieldDefinitions } from "@/repositories/field-definitions";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
@@ -340,6 +352,162 @@ describe("화면 항목 이름 예약 · 관리 목록 (04.5-08)", () => {
   it("관리 목록은 쓰기·보기 권한이 없는 기획 PM에게 ForbiddenError다", async () => {
     const pm = await createViewer(DEFAULT_ROLE_ID);
     await expect(listFieldDefinitionsForAdmin(pm)).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+// 04.5-02: 칸 수정 — 버전 조건부 갱신 · 보관 먼저 판정 · 타입 불변 · 이름 예약(자기 제외).
+describe("화면 항목 수정 (04.5-02)", () => {
+  const uniqueName = (prefix: string) => `${prefix}${randomUUID().slice(0, 6)}`;
+
+  async function readRow(id: string) {
+    const [row] = await db.select().from(fieldDefinitions).where(eq(fieldDefinitions.id, id));
+    if (!row) throw new Error("행이 없다");
+    return row;
+  }
+
+  async function countUpdateLogs(id: string): Promise<number> {
+    const [row] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(actionLog)
+      .where(and(eq(actionLog.entity, "field_definitions"), eq(actionLog.entityId, id), eq(actionLog.actionType, "document_update")));
+    return row?.count ?? 0;
+  }
+
+  const edit = (id: string, version: number, name: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    version,
+    name,
+    required: false,
+    sortOrder: 1,
+    ...extra,
+  });
+
+  it("이름을 바꾸면 key · type · 노출 행이 그대로이고 label만 바뀌며 version이 1 오르고 로그가 한 줄 남는다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const { id, key } = await createFieldDefinition(admin, input(uniqueName("수정전")));
+    const visibilityBefore = await db.select().from(visibilityMatrix).where(eq(visibilityMatrix.infoItem, `cf.vendor.${key}`));
+    const newName = uniqueName("수정후");
+
+    await updateFieldDefinition(admin, edit(id, 1, `  ${newName}  `, { required: true, sortOrder: 7 }));
+
+    const row = await readRow(id);
+    expect(row.label).toBe(newName);
+    expect(row.key).toBe(key);
+    expect(row.type).toBe("text");
+    expect(row.required).toBe(true);
+    expect(row.sortOrder).toBe(7);
+    expect(row.version).toBe(2);
+    const visibilityAfter = await db.select().from(visibilityMatrix).where(eq(visibilityMatrix.infoItem, `cf.vendor.${key}`));
+    expect(visibilityAfter).toHaveLength(visibilityBefore.length);
+    expect(await countUpdateLogs(id)).toBe(1);
+  });
+
+  it("같은 version으로 두 번 저장하면 두 번째가 충돌로 거부되고 행은 첫 저장 그대로이며, 새 version으로는 통과한다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const { id } = await createFieldDefinition(admin, input(uniqueName("충돌")));
+    const first = uniqueName("첫저장");
+    await updateFieldDefinition(admin, edit(id, 1, first));
+
+    const second = updateFieldDefinition(admin, edit(id, 1, uniqueName("둘째저장")));
+
+    await expect(second).rejects.toBeInstanceOf(FieldDefinitionConflictError);
+    await expect(second).rejects.toThrow(FIELD_DEFINITION_CONFLICT_CAUSE);
+    const row = await readRow(id);
+    expect(row.label).toBe(first);
+    expect(row.version).toBe(2);
+    expect(await countUpdateLogs(id)).toBe(1);
+
+    const third = uniqueName("셋째저장");
+    await updateFieldDefinition(admin, edit(id, 2, third));
+    expect((await readRow(id)).label).toBe(third);
+    expect((await readRow(id)).version).toBe(3);
+  });
+
+  it("폼을 연 뒤 보관되면(version도 오른다) 옛 version 저장은 버전 문구가 아니라 보관 문구로 거부된다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const { id } = await createFieldDefinition(admin, input(uniqueName("보관먼저")));
+    await db
+      .update(fieldDefinitions)
+      .set({ archivedAt: new Date(), version: sql`${fieldDefinitions.version} + 1` })
+      .where(eq(fieldDefinitions.id, id));
+
+    const attempt = updateFieldDefinition(admin, edit(id, 1, uniqueName("보관뒤")));
+
+    await expect(attempt).rejects.toBeInstanceOf(FieldDefinitionArchivedError);
+    await expect(attempt).rejects.toThrow(FIELD_DEFINITION_ARCHIVED_CAUSE);
+    expect((await readRow(id)).version).toBe(2);
+  });
+
+  it("이름 중복 판정은 자기 자신을 빼고 본다 — 같은 이름 그대로 저장 가능, 다른 활성 칸 이름이면 활성 문구, 보관 칸 이름이면 보관 문구", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const mine = uniqueName("내칸");
+    const { id } = await createFieldDefinition(admin, input(mine));
+    const other = uniqueName("남칸");
+    await createFieldDefinition(admin, input(other));
+    const archivedName = uniqueName("보관칸");
+    const archivedId = `fd-${randomUUID()}`;
+    await insertFieldDefinition(SYSTEM_VIEWER, { id: archivedId, entity: "vendor", key: `cf_${randomUUID().slice(0, 8)}`, label: archivedName, type: "text" });
+    await db.update(fieldDefinitions).set({ archivedAt: new Date() }).where(eq(fieldDefinitions.id, archivedId));
+
+    await updateFieldDefinition(admin, edit(id, 1, mine, { required: true }));
+    expect((await readRow(id)).version).toBe(2);
+
+    const toActive = updateFieldDefinition(admin, edit(id, 2, other));
+    await expect(toActive).rejects.toBeInstanceOf(DuplicateFieldNameError);
+    await expect(toActive).rejects.toMatchObject({ archived: false });
+    const toArchived = updateFieldDefinition(admin, edit(id, 2, archivedName));
+    await expect(toArchived).rejects.toMatchObject({ archived: true });
+    expect((await readRow(id)).label).toBe(mine);
+  });
+
+  it("선택형 칸을 options [] 로, 그리고 options를 빼고 저장하면 둘 다 선택지 0개로 거부되고 아무것도 바뀌지 않는다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const { id } = await createFieldDefinition(admin, { ...input(uniqueName("선택수정")), type: "select", options: ["기본", "특약"] });
+    const before = await readRow(id);
+    const logsBefore = await countFieldLogs();
+
+    await expect(updateFieldDefinition(admin, edit(id, 1, uniqueName("새이름"), { options: [] }))).rejects.toThrow(OPTIONS_ZERO_CAUSE);
+    await expect(updateFieldDefinition(admin, edit(id, 1, uniqueName("새이름")))).rejects.toThrow(OPTIONS_ZERO_CAUSE);
+
+    expect(await readRow(id)).toEqual(before);
+    expect(await countFieldLogs()).toBe(logsBefore);
+  });
+
+  it("선택형이 아닌 칸에 선택지를 실으면 거부한다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const { id } = await createFieldDefinition(admin, input(uniqueName("텍스트수정")));
+    const before = await readRow(id);
+
+    await expect(updateFieldDefinition(admin, edit(id, 1, uniqueName("새이름"), { options: ["기본"] }))).rejects.toThrow();
+
+    expect(await readRow(id)).toEqual(before);
+  });
+
+  it("없는 id와 대상 상수 밖(프로젝트) 정의의 수정은 「화면 항목 없음」으로 거부되고 행이 바뀌지 않는다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const projectId = `fd-${randomUUID()}`;
+    await insertFieldDefinition(SYSTEM_VIEWER, { id: projectId, entity: "project", key: `cf_pj${randomUUID().slice(0, 6)}`, label: uniqueName("프로젝트칸"), type: "text" });
+    const before = await readRow(projectId);
+
+    await expect(updateFieldDefinition(admin, edit(`fd-없음-${randomUUID()}`, 1, uniqueName("없음")))).rejects.toBeInstanceOf(FieldDefinitionNotFoundError);
+    const attempt = updateFieldDefinition(admin, edit(projectId, 1, uniqueName("프로젝트수정")));
+    await expect(attempt).rejects.toBeInstanceOf(FieldDefinitionNotFoundError);
+    await expect(attempt).rejects.toThrow(FIELD_DEFINITION_NOT_FOUND_CAUSE);
+
+    expect(await readRow(projectId)).toEqual(before);
+  });
+
+  it("쓰기 권한이 없는 기획 PM의 수정은 ForbiddenError이고 행 · 로그가 그대로다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const pm = await createViewer(DEFAULT_ROLE_ID);
+    const { id } = await createFieldDefinition(admin, input(uniqueName("권한수정")));
+    const before = await readRow(id);
+    const logsBefore = await countFieldLogs();
+
+    await expect(updateFieldDefinition(pm, edit(id, 1, uniqueName("PM수정")))).rejects.toBeInstanceOf(ForbiddenError);
+
+    expect(await readRow(id)).toEqual(before);
+    expect(await countFieldLogs()).toBe(logsBefore);
   });
 });
 

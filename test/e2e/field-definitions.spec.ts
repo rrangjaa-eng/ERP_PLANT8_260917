@@ -54,6 +54,20 @@ async function seedField(label: string, sortOrder = 1): Promise<string> {
   return key;
 }
 
+async function seedSelectField(label: string, options: string[]): Promise<string> {
+  const id = `fd-${randomUUID()}`;
+  await insertFieldDefinition(SYSTEM_VIEWER, {
+    id,
+    entity: "vendor",
+    key: `cf_${randomBytes(4).toString("hex")}`,
+    label,
+    type: "select",
+    options,
+    sortOrder: 1,
+  });
+  return id;
+}
+
 async function expectedDefaultSortOrder(): Promise<number> {
   const defs = await listFieldDefinitions(SYSTEM_VIEWER, "vendor");
   return nextSortOrder(defs.filter((def) => def.archivedAt === null).map((def) => def.sortOrder));
@@ -371,4 +385,124 @@ test("선택지는 30개까지이고 30개면 「선택지 추가」가 이유�
   await expect(page.getByRole("button", { name: /^선택\d+ 삭제$/ })).toHaveCount(30);
   await page.getByRole("button", { name: "선택0 삭제" }).click();
   await expect(addOption).not.toHaveAttribute("aria-disabled", "true");
+});
+
+// 04.5-02 Task 2: 수정 모드 — 타입 읽기 전용 · 버전 조건부 수정 · 충돌 · 보관 · 없는 id.
+test("수정: 목록 「수정」으로 열면 값이 채워지고 타입은 텍스트이며, 저장하면 결과 줄이 남고 이어서 다시 저장해도 충돌이 아니다", async ({ page }) => {
+  await login(page, admin);
+  const first = uniqueLabel();
+  const second = uniqueLabel();
+  const third = uniqueLabel();
+  await seedField(first, 4);
+
+  await page.goto("/admin/field-definitions");
+  await page.getByRole("link", { name: `${first} 수정`, exact: true }).click();
+  await expect(page).toHaveURL(/\/admin\/field-definitions\?editId=/);
+
+  const form = page.locator("#field-definition-form");
+  await expect(page.getByLabel("이름", { exact: true })).toHaveValue(first);
+  await expect(page.getByLabel("정렬 순서", { exact: true })).toHaveValue("4");
+  // 타입은 select가 아니라 텍스트이고, 타입을 바꾸는 길은 새 화면 항목 추가 링크뿐이다.
+  await expect(form.locator("select")).toHaveCount(0);
+  await expect(form.getByText("텍스트", { exact: true })).toBeVisible();
+  await expect(form.getByRole("link", { name: "새 화면 항목 추가" })).toHaveAttribute("href", "/admin/field-definitions?new=1");
+  // 폼이 열려 있으면 필터 줄 「화면 항목 추가」는 숨는다.
+  await expect(page.getByRole("link", { name: "화면 항목 추가", exact: true })).toHaveCount(0);
+  const version = form.locator('input[name="version"]');
+  await expect(version).toHaveValue("1");
+
+  await page.getByLabel("이름", { exact: true }).fill(second);
+  await page.getByRole("button", { name: "화면 항목 수정" }).click();
+  const result = page.getByRole("status").filter({ hasText: `화면 항목 수정 · ${second} 수정됨` });
+  await expect(result).toBeVisible();
+  // 재검증으로 새 version이 와 입력이 다시 마운트돼도 결과 줄은 남고 포커스가 있다.
+  await expect(version).toHaveValue("2");
+  await expect(result).toBeVisible();
+  await expect(result).toBeFocused();
+  await expect(page.getByLabel("이름", { exact: true })).toHaveAttribute("readonly", "");
+
+  await page.getByRole("button", { name: "닫기" }).click();
+  await expect(page).toHaveURL(/\/admin\/field-definitions$/);
+
+  // 닫고 다시 수정으로 이어서 저장 — 새 version이라 충돌이 아니다.
+  await page.getByRole("link", { name: `${second} 수정`, exact: true }).click();
+  await expect(form.locator('input[name="version"]')).toHaveValue("2");
+  await page.getByLabel("이름", { exact: true }).fill(third);
+  await page.getByRole("button", { name: "화면 항목 수정" }).click();
+  await expect(page.getByRole("status").filter({ hasText: `화면 항목 수정 · ${third} 수정됨` })).toBeVisible();
+  await page.getByRole("button", { name: "닫기" }).click();
+
+  await page.goto("/admin/vendors?new=1");
+  await expect(page.getByLabel(third, { exact: true })).toBeVisible();
+});
+
+test("수정 충돌: 먼저 저장된 값을 새로 불러오기로 받는다 — 이름 · 선택지 목록이 최신이고 포커스는 이름 입력이다", async ({ page }) => {
+  await login(page, admin);
+  const original = uniqueLabel();
+  const renamed = uniqueLabel();
+  const loser = uniqueLabel();
+  const id = await seedSelectField(original, ["기본", "특약"]);
+  const url = `/admin/field-definitions?editId=${id}`;
+  const other = await page.context().newPage();
+  await page.goto(url);
+  await other.goto(url);
+  await expect(other.getByRole("button", { name: "특약 삭제" })).toBeVisible();
+
+  await page.getByLabel("이름", { exact: true }).fill(renamed);
+  await page.getByLabel("새 선택지", { exact: true }).fill("MOU");
+  await page.getByLabel("새 선택지", { exact: true }).press("Enter");
+  await page.getByRole("button", { name: "화면 항목 수정" }).click();
+  await expect(page.getByRole("status").filter({ hasText: `화면 항목 수정 · ${renamed} 수정됨` })).toBeVisible();
+
+  await other.getByLabel("이름", { exact: true }).fill(loser);
+  const submit = other.getByRole("button", { name: "화면 항목 수정" });
+  await submit.click();
+  const form = other.locator("#field-definition-form");
+  await expect(form.getByText("수정할 수 없음 — 다른 사람이 먼저 수정함 ·", { exact: false })).toHaveCount(1);
+  await expect(submit).not.toHaveAttribute("aria-disabled", "true");
+  // 누르기 전까지 입력이 남는다.
+  await expect(other.getByLabel("이름", { exact: true })).toHaveValue(loser);
+
+  await form.getByRole("button", { name: "새로 불러오기" }).click();
+  await expect(form.getByText("수정할 수 없음")).toHaveCount(0);
+  await expect(other.getByLabel("이름", { exact: true })).toHaveValue(renamed);
+  await expect(other.getByRole("button", { name: "MOU 삭제" })).toBeVisible();
+  await expect(other.getByRole("button", { name: "특약 삭제" })).toBeVisible();
+  await expect(other.getByLabel("이름", { exact: true })).toBeFocused();
+  await other.close();
+});
+
+test("보관된 칸의 수정 폼에서 저장하면 보관 이유와 「목록으로」가 보이고 1차가 비활성이다", async ({ page }) => {
+  await login(page, admin);
+  const label = uniqueLabel();
+  await seedField(label, 3);
+  await page.goto("/admin/field-definitions");
+  await page.getByRole("link", { name: `${label} 수정`, exact: true }).click();
+  await expect(page.getByLabel("이름", { exact: true })).toHaveValue(label);
+
+  await archiveE2EFieldDefinitions(label);
+  const submit = page.getByRole("button", { name: "화면 항목 수정" });
+  await submit.click();
+
+  const form = page.locator("#field-definition-form");
+  await expect(form.getByText("수정할 수 없음 — 보관된 화면 항목 ·", { exact: false })).toHaveCount(1);
+  await expect(form.getByText("수정할 수 없음")).toHaveCount(1);
+  await expect(form.getByRole("button", { name: "목록으로" })).toHaveCount(1);
+  await expect(submit).toBeDisabled();
+  await expect(form.getByText("다시 시도")).toHaveCount(0);
+
+  await form.getByRole("button", { name: "목록으로" }).click();
+  await expect(page).toHaveURL(/\/admin\/field-definitions$/);
+  await expect(page.locator("#field-definition-form")).toHaveCount(0);
+});
+
+test("없는 editId로 오면 폼 없이 목록만 보인다", async ({ page }) => {
+  await login(page, admin);
+  await seedField(uniqueLabel(), 2);
+
+  await page.goto("/admin/field-definitions?editId=없는-id");
+
+  await expect(page.getByRole("heading", { name: "화면 항목" })).toBeVisible();
+  await expect(page.locator("#field-definition-form")).toHaveCount(0);
+  await expect(page.getByRole("table", { name: "화면 항목" })).toBeVisible();
 });

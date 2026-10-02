@@ -5,16 +5,31 @@ import { recordAction as defaultRecordAction } from "@/domain/action-log/record"
 import { withTransaction } from "@/lib/db-transaction";
 import { isUniqueViolation } from "@/lib/pg-errors";
 import {
+  findFieldDefinitionById,
   insertFieldDefinition,
   listFieldDefinitions,
   lockCustomFieldGrants,
+  updateFieldDefinitionIfVersion,
   type DbOrTx,
+  type FieldDefinitionRow,
 } from "@/repositories/field-definitions";
 import { listRoles as defaultListRoles } from "@/repositories/roles";
 import { insertVisibilityIfAbsent as defaultInsertVisibility } from "@/repositories/permissions";
-import { createFieldDefinitionInput, type CreateFieldDefinitionInput } from "@/domain/custom-fields/admin-input";
+import {
+  createFieldDefinitionInput,
+  FIELD_DEFINITION_CONFLICT_CAUSE,
+  OPTIONS_ON_NON_SELECT_MESSAGE,
+  OPTIONS_ZERO_CAUSE,
+  updateFieldDefinitionInput,
+  type CreateFieldDefinitionInput,
+  type UpdateFieldDefinitionInput,
+} from "@/domain/custom-fields/admin-input";
 import { FIELD_DEFINITION_TARGETS, customFieldInfoItem } from "@/domain/custom-fields/targets";
-import { PERMISSION_DENIED_CAUSE } from "@/lib/actions/form-reason";
+import {
+  FIELD_DEFINITION_ARCHIVED_CAUSE,
+  FIELD_DEFINITION_NOT_FOUND_CAUSE,
+  PERMISSION_DENIED_CAUSE,
+} from "@/lib/actions/form-reason";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 
 const MENU = "admin.field-definitions";
@@ -152,6 +167,115 @@ async function insertWithGrants(
     }
   });
   return id;
+}
+
+// 04.5-02: 칸 수정 — 판정 순서는 행 없음·대상 밖 → 보관 → 버전 → 이름 예약(자기 제외) → 선택지 모양이다.
+// 보관을 버전보다 먼저 봐야 보관 문구에 닿는다(04의 보관이 version을 올린다 — UI checker R1).
+export class FieldDefinitionNotFoundError extends UserFacingError {
+  constructor() {
+    super(FIELD_DEFINITION_NOT_FOUND_CAUSE);
+    this.name = "FieldDefinitionNotFoundError";
+  }
+}
+
+export class FieldDefinitionArchivedError extends UserFacingError {
+  constructor() {
+    super(FIELD_DEFINITION_ARCHIVED_CAUSE);
+    this.name = "FieldDefinitionArchivedError";
+  }
+}
+
+export class FieldDefinitionConflictError extends UserFacingError {
+  constructor() {
+    super(FIELD_DEFINITION_CONFLICT_CAUSE);
+    this.name = "FieldDefinitionConflictError";
+  }
+}
+
+export type UpdateFieldDefinitionDeps = {
+  can: typeof defaultCan;
+  recordAction: typeof defaultRecordAction;
+  findById: (viewer: Viewer, id: string) => Promise<FieldDefinitionRow | null>;
+  // 자기 자신(excludeId)을 뺀 같은 이름의 칸이 있으면 { archived }.
+  findNameConflict: (viewer: Viewer, name: string, excludeId: string) => Promise<{ archived: boolean } | null>;
+};
+
+async function defaultFindOtherNameConflict(
+  viewer: Viewer,
+  name: string,
+  excludeId: string,
+): Promise<{ archived: boolean } | null> {
+  const rows = await listFieldDefinitions(viewer, FIELD_ENTITY);
+  const match = rows.find((row) => row.id !== excludeId && row.label === name);
+  return match ? { archived: match.archivedAt !== null } : null;
+}
+
+// 읽은 행이 보관됐거나 그 사이 바뀌었는지로 0행의 원인을 가른다.
+async function rejectStaleUpdate(
+  viewer: Viewer,
+  id: string,
+  findById: UpdateFieldDefinitionDeps["findById"],
+): Promise<never> {
+  const latest = await findById(viewer, id);
+  if (!latest) throw new FieldDefinitionNotFoundError();
+  if (latest.archivedAt !== null) throw new FieldDefinitionArchivedError();
+  throw new FieldDefinitionConflictError();
+}
+
+export async function updateFieldDefinition(
+  viewer: Viewer,
+  input: UpdateFieldDefinitionInput,
+  deps?: Partial<UpdateFieldDefinitionDeps>,
+): Promise<void> {
+  const canFn = deps?.can ?? defaultCan;
+  if (!(await canFn(viewer, MENU, "write"))) throw new ForbiddenError(PERMISSION_DENIED_CAUSE);
+
+  // 액션 밖 호출자 방어 — 입력 스키마와 같은 상수로 다시 판정한다(type · entity 키는 .strict()가 거부).
+  const parsed = updateFieldDefinitionInput.parse(input);
+  const findById = deps?.findById ?? findFieldDefinitionById;
+  const row = await findById(viewer, parsed.id);
+  if (!row || !isTargetEntity(row.entity)) throw new FieldDefinitionNotFoundError();
+  if (row.archivedAt !== null) throw new FieldDefinitionArchivedError();
+  if (row.version !== parsed.version) throw new FieldDefinitionConflictError();
+
+  const findNameConflict = deps?.findNameConflict ?? defaultFindOtherNameConflict;
+  const conflict = await findNameConflict(viewer, parsed.name, row.id);
+  if (conflict) throw new DuplicateFieldNameError(conflict.archived);
+
+  // 타입은 읽은 행으로 본다 — 수정 입력에 type이 없다. 빈 선택지가 저장되면 build-schema의 z.enum이 비어 거래처 폼 검증이 깨진다.
+  const submittedOptions = parsed.options ?? [];
+  if (row.type === "select" && submittedOptions.length === 0) throw new UserFacingError(OPTIONS_ZERO_CAUSE);
+  if (row.type !== "select" && submittedOptions.length > 0) throw new UserFacingError(OPTIONS_ON_NON_SELECT_MESSAGE);
+
+  let updated: boolean;
+  try {
+    updated = await updateFieldDefinitionIfVersion(viewer, row.id, parsed.version, {
+      label: parsed.name,
+      required: parsed.required,
+      sortOrder: parsed.sortOrder,
+      options: row.type === "select" ? submittedOptions : undefined,
+    });
+  } catch (error) {
+    // 조회와 쓰기 사이 경합으로 이름 유일 위반이 나면 같은 조회로 활성 · 보관을 가려 같은 오류로 바꾼다.
+    if (isUniqueViolation(error, NAME_UNIQUE_CONSTRAINT)) {
+      const raced = await findNameConflict(viewer, parsed.name, row.id);
+      if (raced) throw new DuplicateFieldNameError(raced.archived);
+    }
+    throw error;
+  }
+  if (!updated) await rejectStaleUpdate(viewer, row.id, findById);
+
+  const recordAction = deps?.recordAction ?? defaultRecordAction;
+  await recordAction(viewer, {
+    actionType: "document_update",
+    entity: "field_definitions",
+    entityId: row.id,
+    detail: { key: row.key, entity: row.entity },
+  });
+}
+
+function isTargetEntity(entity: string): boolean {
+  return FIELD_DEFINITION_TARGETS.some((target) => target === entity);
 }
 
 // 관리 화면 목록 DTO — 행 타입을 그대로 돌려주지 않고 다시 매핑한다. 키는 화면 어느 열에도 그리지 않는다.

@@ -762,7 +762,9 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
 // 머리 행동 묶음 = h1을 품은 머리 줄의 둘째 자식(ui/detail-screen). 순서를 뒤집는 CSS가 없어 DOM 순서가 시각·Tab 순서다(D4).
 async function headerActionsLook(page: Page) {
   return page.evaluate(() => {
-    const head = document.querySelector('h1[data-ui="screen-title"]')?.parentElement?.parentElement;
+    // 목록 loading 뼈대(h1 · 04.6-10)가 뒤로가기 캐시용으로 숨겨져 남을 수 있다 — 보이는 h1만 센다.
+    const title = Array.from(document.querySelectorAll('h1[data-ui="screen-title"]')).find((node) => node.getClientRects().length > 0);
+    const head = title?.parentElement?.parentElement;
     const actions = head?.children[1] as HTMLElement | undefined;
     if (!actions) return null;
     const items = Array.from(actions.querySelectorAll<HTMLElement>("a, button")).map((node) => ({
@@ -789,7 +791,7 @@ test.describe("프로젝트 상세 틀 (04.6-12 — DetailScreen)", () => {
     await login(page, lead);
     await page.goto(`/projects/${project.id}`);
 
-    const title = page.locator('h1[data-ui="screen-title"]');
+    const title = page.locator('h1[data-ui="screen-title"]:visible');
     await expect(title).toHaveText(project.name);
     // 상태 배지는 제목 옆(같은 머리 묶음 안).
     await expect(title.locator("xpath=..").getByText("수주중", { exact: true })).toBeVisible();

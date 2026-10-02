@@ -6,6 +6,7 @@ import {
   FIELD_DEFINITION_ARCHIVED_CAUSE,
   FIELD_DEFINITION_NOT_FOUND_CAUSE,
   PERMISSION_DENIED_CAUSE,
+  fieldErrorsReason,
   formReason,
 } from "@/lib/actions/form-reason";
 import { FIELD_DEFINITION_CONFLICT_CAUSE, OPTIONS_ZERO_CAUSE } from "@/domain/custom-fields/admin-input";
@@ -96,5 +97,85 @@ describe("formReason — 수정 모드 원인 (04.5-02)", () => {
       next: "retry",
       blocked: false,
     });
+  });
+});
+
+// 04.5-06: 거래처 폼 칸 오류 요약 — 기본 칸이 앞, 이름 사이는 「, 」(U2-A).
+describe("fieldErrorsReason (04.5-06)", () => {
+  it("한 칸이면 「{칸} 1칸 · 」과 첫 칸 고치기", () => {
+    expect(fieldErrorsReason("수정", ["담당자 연락처"])).toEqual({
+      text: "수정할 수 없음 — 담당자 연락처 1칸 · ",
+      fix: "담당자 연락처 고치기",
+    });
+  });
+
+  it("두 칸이면 「, 」로 잇고 고치기는 첫 칸이다", () => {
+    expect(fieldErrorsReason("수정", ["담당자 연락처", "계약 유형"])).toEqual({
+      text: "수정할 수 없음 — 담당자 연락처, 계약 유형 2칸 · ",
+      fix: "담당자 연락처 고치기",
+    });
+  });
+
+  it("기본 칸 「이름」이 앞이면 이름이 첫 칸이다", () => {
+    expect(fieldErrorsReason("등록", ["이름", "담당자 연락처"])).toEqual({
+      text: "등록할 수 없음 — 이름, 담당자 연락처 2칸 · ",
+      fix: "이름 고치기",
+    });
+  });
+});
+
+// 04.5-06(U1-A · D1 · 드리프트 B1): 거래처 domain 원문은 바꾸지 않고 표가 실제 글자를 비교한다.
+const VENDOR_ARCHIVED_SOURCE = "보관됐거나 존재하지 않는 거래처는 수정할 수 없음";
+const VENDOR_CREATE_FORBIDDEN_SOURCE = "거래처 등록 권한 없음";
+const VENDOR_UPDATE_FORBIDDEN_SOURCE = "거래처 수정 권한 없음";
+
+describe("formReason — 거래처 원인 (04.5-06)", () => {
+  it("보관된 거래처 원문은 1차를 막고 새로 불러오기로 보낸다", () => {
+    expect(formReason("수정", VENDOR_ARCHIVED_SOURCE)).toEqual({
+      text: "수정할 수 없음 — 보관된 거래처 · ",
+      next: "refresh",
+      blocked: true,
+    });
+  });
+
+  it("거래처 수정 권한 원문은 「권한 없음」으로 막는다", () => {
+    expect(formReason("수정", VENDOR_UPDATE_FORBIDDEN_SOURCE)).toEqual({
+      text: "수정할 수 없음 — 권한 없음 · ",
+      next: "refresh",
+      blocked: true,
+    });
+  });
+
+  it("거래처 등록 권한 원문은 「권한 없음」으로 막는다", () => {
+    expect(formReason("등록", VENDOR_CREATE_FORBIDDEN_SOURCE)).toEqual({
+      text: "등록할 수 없음 — 권한 없음 · ",
+      next: "refresh",
+      blocked: true,
+    });
+  });
+
+  it("표에 없는 일반 오류는 막지 않는다", () => {
+    expect(formReason("등록", "처리 중 오류 · 잠시 후 다시 시도").blocked).toBe(false);
+  });
+
+  it("표의 거래처 원문 셋이 domain/vendors/index.ts 소스에 글자 그대로 있다(domain 문구가 바뀌면 빨갛다)", () => {
+    const source = readFileSync(path.join(process.cwd(), "domain/vendors/index.ts"), "utf8");
+    for (const message of [VENDOR_ARCHIVED_SOURCE, VENDOR_CREATE_FORBIDDEN_SOURCE, VENDOR_UPDATE_FORBIDDEN_SOURCE]) {
+      expect(source).toContain(`"${message}"`);
+    }
+  });
+
+  it("ArchivedVendorError 호출 인자는 전부 표의 키와 같고 2곳 이상이다(선검사 + 트랜잭션 안 잠금 읽기)", () => {
+    const source = readFileSync(path.join(process.cwd(), "domain/vendors/index.ts"), "utf8");
+    const constants = new Map<string, string>(
+      [...source.matchAll(/const\s+([A-Z_]+)\s*=\s*"([^"]+)"/g)].map((m): [string, string] => [m[1] ?? "", m[2] ?? ""]),
+    );
+    const args = [...source.matchAll(/new ArchivedVendorError\(\s*([^)]+?)\s*\)/g)].map((m) => m[1] ?? "");
+    expect(args.length).toBeGreaterThanOrEqual(2);
+    for (const arg of args) {
+      const literal = arg.startsWith('"') ? arg.slice(1, -1) : constants.get(arg);
+      expect(literal, `인자 ${arg}`).toBe(VENDOR_ARCHIVED_SOURCE);
+      expect(formReason("수정", literal ?? "").blocked).toBe(true);
+    }
   });
 });

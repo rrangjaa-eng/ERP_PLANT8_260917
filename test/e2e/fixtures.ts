@@ -6,6 +6,14 @@ import { createAccount } from "@/domain/auth/accounts";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { setPermissionCell } from "@/domain/permissions/matrix";
+import { archive } from "@/domain/archive";
+import { createFieldDefinition, updateFieldDefinition } from "@/domain/custom-fields/admin";
+import { customFieldInfoItem } from "@/domain/custom-fields/targets";
+import { findFieldDefinitionById } from "@/repositories/field-definitions";
+import { findRoleById, insertRole } from "@/repositories/roles";
+import { insertVisibilityIfAbsent, listVisibility } from "@/repositories/permissions";
 
 // D-36(03-02): 계급 식별자가 필수 필드다 — 선택 인자가 아니다(호출자가 계급을
 // 의식하지 않고 픽스처를 만드는 상태를 없앤다). 표시 이름은 시스템 관리자
@@ -39,4 +47,80 @@ export async function archiveE2EFieldDefinitions(labelPrefix: string): Promise<v
     .update(fieldDefinitions)
     .set({ archivedAt: new Date(), version: sql`${fieldDefinitions.version} + 1` })
     .where(and(like(fieldDefinitions.label, `${labelPrefix}%`), isNull(fieldDefinitions.archivedAt)));
+}
+
+// 04.5-06: 거래처 폼 E2E 격리 — 이 스펙이 만든 필수 칸이 다른 워커의 시스템 관리자 거래처 등록을 막지 않게
+// 칸을 처음부터 전용 계급에만 보이게 만든다(전 계급에 보였다가 끄는 창을 두지 않는다).
+// 전용 계급은 domain createRole이 아니라 리포지토리 insertRole로 넣는다 — createRole의 grant가 돌면 같은 시각
+// 다른 스펙의 필수 칸 보임 행이 이 계급에 생겨 이 사용자의 거래처 저장이 막힐 수 있다.
+export async function createE2EVendorEditor(
+  options: { vendorValue?: boolean } = {},
+): Promise<{ email: string; password: string; roleId: string; roleName: string }> {
+  const roleId = `role-e2e-vcf-${randomUUID()}`;
+  const roleName = `E2E 거래처 ${roleId.slice(-8)}`;
+  await insertRole(SYSTEM_VIEWER, { id: roleId, name: roleName, sortOrder: 99 });
+  await setPermissionCell(SYSTEM_VIEWER, { roleId, menu: "admin.vendors", action: "view", allowed: true });
+  await setPermissionCell(SYSTEM_VIEWER, { roleId, menu: "admin.vendors", action: "write", allowed: true });
+  await insertVisibilityIfAbsent(SYSTEM_VIEWER, {
+    roleId,
+    infoItem: "vendor.value",
+    visible: options.vendorValue ?? true,
+  });
+  const credentials = await createFixtureUser({ roleId });
+  return { ...credentials, roleId, roleName };
+}
+
+// 칸 하나를 만든다 — 노출 행은 onlyRoleId 계급에만 생성 트랜잭션 안에서 생긴다(계급 목록 deps 주입).
+// 주입 함수는 DB를 부르지 않는다(잠금을 쥔 트랜잭션 안에서 전역 db로 또 조회하면 풀 고갈 경로가 된다).
+export async function createE2EFieldDefinition(input: {
+  label: string;
+  type: "text" | "number" | "date" | "select";
+  required: boolean;
+  options?: string[];
+  sortOrder?: number;
+  onlyRoleId: string;
+}): Promise<{ id: string; key: string; version: number }> {
+  const role = await findRoleById(SYSTEM_VIEWER, input.onlyRoleId);
+  if (!role) throw new Error(`E2E 전용 계급이 없습니다: ${input.onlyRoleId}`);
+  const created = await createFieldDefinition(
+    SYSTEM_VIEWER,
+    {
+      name: input.label,
+      type: input.type,
+      required: input.required,
+      sortOrder: input.sortOrder ?? 0,
+      options: input.type === "select" ? input.options : undefined,
+    },
+    { listRoles: () => Promise.resolve([role]) },
+  );
+  const info = customFieldInfoItem("vendor", created.key);
+  const rows = (await listVisibility(SYSTEM_VIEWER)).filter((row) => row.infoItem === info);
+  const own = rows.find((row) => row.roleId === input.onlyRoleId);
+  if (!own || !own.visible) throw new Error(`전용 계급 노출 행이 없습니다: ${info}`);
+  for (const seeded of [SYSADMIN_ROLE_ID, DEFAULT_ROLE_ID]) {
+    if (rows.some((row) => row.roleId === seeded)) throw new Error(`시드 계급에 노출 행이 생겼습니다: ${seeded} · ${info}`);
+  }
+  const row = await findFieldDefinitionById(SYSTEM_VIEWER, created.id);
+  if (!row) throw new Error(`만든 칸을 다시 읽지 못했습니다: ${created.id}`);
+  return { id: created.id, key: created.key, version: row.version };
+}
+
+// 선택지 하나를 뺀다 — 서버가 그 선택지를 보관으로 파생한다(남는 활성 선택지는 1개 이상이어야 한다).
+export async function archiveE2EFieldDefinitionOption(id: string, option: string): Promise<void> {
+  const row = await findFieldDefinitionById(SYSTEM_VIEWER, id);
+  if (!row) throw new Error(`칸이 없습니다: ${id}`);
+  const active = Array.isArray(row.options) ? (row.options as string[]) : [];
+  await updateFieldDefinition(SYSTEM_VIEWER, {
+    id,
+    version: row.version,
+    name: row.label,
+    required: row.required,
+    sortOrder: row.sortOrder,
+    options: active.filter((item) => item !== option),
+  });
+}
+
+// 거래처 보관(기존 domain archive).
+export async function archiveE2EVendor(vendorId: string): Promise<void> {
+  await archive(SYSTEM_VIEWER, "vendor", vendorId);
 }

@@ -14,12 +14,21 @@ export type FormReason = { text: string; next: FormReasonNext; blocked: boolean 
 // 순수 모듈 규칙상 import하지 않는다 — 같은 값임은 단위 테스트가 지킨다).
 const LOGIN_REQUIRED_CAUSE_SOURCE = "로그인 필요 · 다시 로그인";
 
-// 원문 → { cause, next }. 06이 같은 표에 원인을 더한다.
+// 04.5-06(B1): 거래처 domain 원문 — domain/vendors/index.ts의 글자 그대로(그 문구는 바꾸지 않는다). 거래처 domain은
+// 서버 전용이라 폼이 import할 수 없어 여기 한 번 더 적고, 단위 테스트가 소스와 어긋나지 않는지 지킨다.
+const VENDOR_ARCHIVED_SOURCE = "보관됐거나 존재하지 않는 거래처는 수정할 수 없음";
+const VENDOR_CREATE_FORBIDDEN_SOURCE = "거래처 등록 권한 없음";
+const VENDOR_UPDATE_FORBIDDEN_SOURCE = "거래처 수정 권한 없음";
+
+// 원문 → { cause, next }.
 const NON_RETRYABLE_CAUSES: Record<string, { cause: string; next: "refresh" | "list" }> = {
   [PERMISSION_DENIED_CAUSE]: { cause: PERMISSION_DENIED_CAUSE, next: "refresh" },
   [LOGIN_REQUIRED_CAUSE_SOURCE]: { cause: "로그인 필요", next: "refresh" },
   [FIELD_DEFINITION_NOT_FOUND_CAUSE]: { cause: FIELD_DEFINITION_NOT_FOUND_CAUSE, next: "list" },
   [FIELD_DEFINITION_ARCHIVED_CAUSE]: { cause: "보관된 화면 항목", next: "list" },
+  [VENDOR_ARCHIVED_SOURCE]: { cause: "보관된 거래처", next: "refresh" },
+  [VENDOR_CREATE_FORBIDDEN_SOURCE]: { cause: PERMISSION_DENIED_CAUSE, next: "refresh" },
+  [VENDOR_UPDATE_FORBIDDEN_SOURCE]: { cause: PERMISSION_DENIED_CAUSE, next: "refresh" },
 };
 
 export function formReason(verb: string, serverError: string): FormReason {
@@ -29,4 +38,9 @@ export function formReason(verb: string, serverError: string): FormReason {
   }
   const base = `${verb}할 수 없음 — ${serverError}`;
   return { text: serverError.includes(" · ") ? base : `${base} · 다시 시도`, next: "retry", blocked: false };
+}
+
+// 04.5-06: 칸 오류 요약 — 화면 순서(기본 칸 먼저, 그다음 커스텀 칸)로 받은 칸 이름들. 구분자는 「, 」(가운뎃점은 원인 · 다음 행동에 쓴다).
+export function fieldErrorsReason(verb: string, names: readonly string[]): { text: string; fix: string } {
+  return { text: `${verb}할 수 없음 — ${names.join(", ")} ${names.length}칸 · `, fix: `${names[0] ?? ""} 고치기` };
 }

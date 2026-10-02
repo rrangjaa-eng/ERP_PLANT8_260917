@@ -2,18 +2,18 @@
 gsd_state_version: "1.0"
 current_phase: "04.5"
 current_phase_name: 화면 항목 관리 (INSERTED)
-current_plan: 6
+current_plan: 7
 status: executing
-stopped_at: Completed 04.5-03-PLAN.md
-last_updated: "2026-10-02T11:09:55.503Z"
+stopped_at: Completed 04.5-04-PLAN.md
+last_updated: "2026-10-02T12:04:07.705Z"
 last_activity: 2026-10-02
 last_activity_desc: Phase 04.5 execution started
-state_head: 95ffd0b564f0823b219666d27541a516719da22c
+state_head: 0dd8e6fcf4aa4042c2df45ca9499ae78546f25b7
 progress:
   total_phases: 17
   completed_phases: 7
   total_plans: 178
-  completed_plans: 117
+  completed_plans: 118
   percent: 41
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-30)
 ## Current Position
 
 Phase: 04.5 (화면 항목 관리 (INSERTED)) — EXECUTING
-Current Plan: 6
+Current Plan: 7
 Total Plans in Phase: 9
 Status: Ready to execute
 Last activity: 2026-10-02 — Phase 04.5 execution started
@@ -127,6 +127,7 @@ Progress: [████░░░░░░] 41%
 | Phase 04.5 P09 | 16min | 1 tasks | 15 files |
 | Phase 04.5 P02 | 43min | 3 tasks | 16 files |
 | Phase 04.5 P03 | 36min | 2 tasks | 9 files |
+| Phase 04.5 P04 | 43 min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -322,6 +323,8 @@ Recent decisions affecting current work:
 - [Phase 04.5]: 04.5-02: 오류 문구는 UI-SPEC 뜻 그대로 명사형(error-copy-noun-style 결정 우선) · 폼은 등록/수정 래퍼가 useAction을 쥐고 공용 본문에 key를 줌 · 보관 선택지는 서버가 (저장 ∪ 보관 − 제출)로 파생 — 사용자 결정 2026-09-26 · 재검증 뒤 결과 줄 유지 · 선택지 유실 방지
 - [Phase 04.5]: 04.5-03: 커스텀 항목은 읽는 자리 넷(노출표 열·저장 허용·거래처 DTO·누수 스캔)에서 INFO_ITEMS 옆에 더함 — vendor.value AND cf.vendor.<key> 둘 다 켜져야 보임
 - [Phase 04.5]: 04.5-03: createRole이 grantCustomFieldsToRole을 동적 import(roles↔viewer 순환), 실패 시 1회 재시도 후 role.custom_field_grant_failed 경고 · 시드 계급을 더하는 뒤 페이즈는 같은 함수를 불러야 함
+- [Phase 04.5]: 04.5-04: 보관함 등록부 항목별 추가 권한 requiredMenu — 칸 정의 보관·복원은 admin.archive write AND admin.field-definitions write, 보관함 목록은 admin.field-definitions view
+- [Phase 04.5]: 04.5-04: 칸 보관·복원은 같은 UPDATE에서 version + 1(멱등은 불변) — 그 전에 연 수정 폼은 충돌
 
 ### Pending Todos
 
@@ -412,6 +415,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-02T11:09:55.002Z
-Stopped at: Completed 04.5-03-PLAN.md
+Last session: 2026-10-02T12:04:07.128Z
+Stopped at: Completed 04.5-04-PLAN.md
 Resume file: None

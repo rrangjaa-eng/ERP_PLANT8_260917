@@ -270,7 +270,7 @@ const DANGER_RGB = "rgb(155, 28, 28)";
 const FOCUS_RGB = "rgb(0, 84, 70)";
 
 test.describe("내부 칸 오류 상태(04.3-03 F2 · F3 · 04.3-15 R3)", () => {
-  test("F2 · F3 — 설정 쉼표 칸 오류는 포커스 중에도 --danger 테두리 · 포커스 링 유지 · 글자 12px · 높이 32 그대로", async ({
+  test("F2 · F3 — 설정 쉼표 칸 오류는 포커스 중에도 --danger 테두리 · 포커스 링 유지 · 글자 --text-aux · 높이 32 그대로", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
@@ -290,7 +290,10 @@ test.describe("내부 칸 오류 상태(04.3-03 F2 · F3 · 04.3-15 R3)", () => 
     await expect(field).toHaveCSS("border-top-color", DANGER_RGB);
     await expect(field).toHaveCSS("outline-color", FOCUS_RGB);
     await expect(field).toHaveCSS("outline-style", "solid");
-    await expect(error).toHaveCSS("font-size", "12px");
+    await expect(error).toHaveCSS(
+      "font-size",
+      await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--text-aux").trim()),
+    );
     await expect(field).toHaveCSS("height", "32px");
 
     await page.keyboard.press("End");

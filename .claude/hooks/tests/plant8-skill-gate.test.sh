@@ -221,6 +221,37 @@ hook plant8-skill-gate.sh agent "$(payload_agent "$E1" gsd-planner)" "$projE1"
 expect_rc "D-04 E1: executor 플래그가 서도 gsd-planner는 허용" 0 "$HOOK_RC"
 
 # ---------------------------------------------------------------------------
+# quick 실행자는 페이즈 계획 게이트를 보지 않는다(2026-10-02: /gsd-quick 실행자가 늘 막혀 Opus 메인이 구현함)
+projQ="$(new_project)"
+SQ="sid-quick-$$"
+record_skill "$projQ" "$SQ" gsd-quick
+hook plant8-skill-gate.sh agent "$(payload_agent "$SQ" gsd-executor)" "$projQ"
+expect_rc "Q1: /gsd-quick 뒤 gsd-executor, 페이즈 게이트 없어도 -> exit 0" 0 "$HOOK_RC"
+expect_not_contains "Q1: Pre-build 게이트 안내 없음" "$HOOK_STDERR" "Pre-build"
+
+projQ2="$(new_project)"
+SQ2="sid-quick-batch-$$"
+record_skill "$projQ2" "$SQ2" gsd-quick-batch
+hook plant8-skill-gate.sh agent "$(payload_agent "$SQ2" gsd-executor)" "$projQ2"
+expect_rc "Q2: /gsd-quick-batch 뒤 gsd-executor -> exit 0" 0 "$HOOK_RC"
+
+projQ3="$(new_project)"
+SQ3="sid-quick-phase-$$"
+record_skill "$projQ3" "$SQ3" gsd-quick
+record_skill "$projQ3" "$SQ3" gsd-execute-phase
+hook plant8-skill-gate.sh agent "$(payload_agent "$SQ3" gsd-executor)" "$projQ3"
+expect_rc "Q3: /gsd-execute-phase도 불렀으면 페이즈 게이트 검사 유지 -> exit 2" 2 "$HOOK_RC"
+expect_contains "Q3: Pre-build 게이트 안내" "$HOOK_STDERR" "Pre-build"
+
+projQ4="$(new_project)"
+SQ4="sid-quick-phaseplan-$$"
+record_skill "$projQ4" "$SQ4" gsd-quick
+hook plant8-skill-gate.sh agent "$(jq -nc --arg s "$SQ4" '{session_id:$s, tool_name:"Agent", tool_input:{subagent_type:"gsd-executor", prompt:"Execute .planning/phases/04-test/04-01-PLAN.md"}}')" "$projQ4"
+expect_rc "Q4: quick로 불러도 페이즈 PLAN을 실행하면 게이트 검사 -> exit 2" 2 "$HOOK_RC"
+hook plant8-skill-gate.sh agent "$(jq -nc --arg s "$SQ4" '{session_id:$s, tool_name:"Agent", tool_input:{subagent_type:"gsd-executor", prompt:"Execute .planning/quick/261002-abc/PLAN.md"}}')" "$projQ4"
+expect_rc "Q5: quick PLAN 실행은 통과 -> exit 0" 0 "$HOOK_RC"
+
+# ---------------------------------------------------------------------------
 # D-04, 한 메시지 안 병렬 디스패치
 projE3="$(new_project)"
 E3="sid-d04-e3-$$"

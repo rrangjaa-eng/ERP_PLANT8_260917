@@ -78,16 +78,18 @@ export async function setCorpCardActive(viewer: Viewer, id: string, active: bool
 }
 
 // 보관·복원 둘 다 조건부 UPDATE로 멱등·경합 안전을 확보한다(repositories/roles.ts와 같은 패턴).
-export async function setCorpCardArchived(viewer: Viewer, id: string, value: boolean): Promise<void> {
-  if (value) {
-    await db
-      .update(corpCards)
-      .set({ archivedAt: new Date(), archivedBy: viewer.id })
-      .where(and(eq(corpCards.id, id), isNull(corpCards.archivedAt)));
-  } else {
-    await db
-      .update(corpCards)
-      .set({ archivedAt: null, archivedBy: null })
-      .where(and(eq(corpCards.id, id), isNotNull(corpCards.archivedAt)));
-  }
+export async function setCorpCardArchived(viewer: Viewer, id: string, value: boolean): Promise<boolean> {
+  // 조건부 갱신이 실제로 바꾼 행이 있으면 참 — 범용 복원이 「이미 복원됨」 · 로그를 이 결과로 정한다(PR #149).
+  const rows = value
+    ? await db
+        .update(corpCards)
+        .set({ archivedAt: new Date(), archivedBy: viewer.id })
+        .where(and(eq(corpCards.id, id), isNull(corpCards.archivedAt)))
+        .returning({ id: corpCards.id })
+    : await db
+        .update(corpCards)
+        .set({ archivedAt: null, archivedBy: null })
+        .where(and(eq(corpCards.id, id), isNotNull(corpCards.archivedAt)))
+        .returning({ id: corpCards.id });
+  return rows.length > 0;
 }

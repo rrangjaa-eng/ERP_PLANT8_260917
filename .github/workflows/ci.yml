@@ -180,7 +180,17 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: ${{ steps.pw-cache.outputs.cache-primary-key }}
-      - run: pnpm test:e2e --shard=${{ matrix.shard }}/2
+      # 2026-10-02: Playwright는 dependencies로 걸린 프로젝트(desktop·mobile-375)를 샤딩에서 빼고
+      # 맨 끝 desktop-settings(파일 1개)만 나눈다 — 전체를 `--shard=N/2` 한 번으로 돌리면 1번에 전부, 2번은 0건이었다.
+      # 그래서 desktop만 직접 샤딩한다(가중치 6:4 — 2번 샤드가 폰·설정을 더 맡는다). 폰 → 설정 결재선은
+      # 2번 샤드가 같은 DB에서 순서대로 이어 돈다(E2E_SKIP_DESKTOP: dependencies의 desktop을 비워 중복 실행을 막는다).
+      - run: pnpm test:e2e --project=desktop --shard=${{ matrix.shard }}/2
+        env:
+          PWTEST_SHARD_WEIGHTS: "6:4"
+      - if: matrix.shard == 2
+        env:
+          E2E_SKIP_DESKTOP: "1"
+        run: pnpm test:e2e --project=desktop-settings
       - if: failure()
         uses: actions/upload-artifact@v4
         with:

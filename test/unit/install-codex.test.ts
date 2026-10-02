@@ -20,7 +20,7 @@ function run(envAuth: string | undefined, existing?: string) {
   // 설치는 건너뛰도록 이미 같은 버전이 있는 codex를 흉내 낸다.
   writeFileSync(
     join(bin, "codex"),
-    '#!/bin/sh\ncase "$1" in --version) echo "codex-cli 0.155.1" ;; login) echo "Logged in using ChatGPT" ;; esac\n',
+    '#!/bin/sh\ncase "$1" in --version) echo "codex-cli 0.160.0" ;; login) echo "Logged in using ChatGPT" ;; esac\n',
   );
   chmodSync(join(bin, "codex"), 0o755);
   if (existing !== undefined) {

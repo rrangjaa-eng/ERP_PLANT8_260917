@@ -60,6 +60,8 @@ import {
 } from "@/repositories/quote-revisions";
 import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
 import { findVendorNamesByIds as repoFindVendorNamesByIds } from "@/repositories/vendors";
+import { listCodeItems as repoListCodeItems } from "@/repositories/code-tables";
+import { QUOTE_SUBCATEGORY_TABLE_KEY } from "@/domain/projects/references";
 import { getSettingValue } from "@/domain/settings/registry";
 import { QUOTE_LINE_MAX_PER_REVISION } from "@/domain/settings/keys";
 
@@ -638,6 +640,8 @@ export type PreparedQuoteLineSave = {
   vendorNamesVisible: boolean;
   /** quick 261001-85g — 거래처 정보(vendor.value)를 보는가. 거짓이면 요청의 거래처 칸을 읽지 않고 기존 값을 지킨다. */
   vendorShown: boolean;
+  /** quick 261002-3mx — 고를 수 있는 견적 소분류 값(활성 · 보관 아님). 견적 줄의 소분류는 이 값이거나 기존 줄의 저장 값이다. */
+  selectableSubcategories: ReadonlySet<string>;
 };
 
 export async function prepareQuoteLineSave(
@@ -669,6 +673,15 @@ export async function prepareQuoteLineSave(
     canAdjust,
     vendorNamesVisible: (await Promise.all([defaultVisible(viewer, "project.value"), defaultVisible(viewer, "vendor.value")])).every(Boolean),
     vendorShown: await defaultVisible(viewer, "vendor.value"),
+    selectableSubcategories: new Set(
+      (
+        await repoListCodeItems(viewer, {
+          tableKey: QUOTE_SUBCATEGORY_TABLE_KEY,
+          scope: { rows: "all", includeArchived: false },
+          includeInactive: false,
+        })
+      ).map((row) => row.value),
+    ),
   };
 }
 
@@ -786,6 +799,8 @@ const CELL_LABELS: Record<QuoteLineField, string> = {
 
 // UI-SPEC rev 5 `Error — 셀(금액 범위, 04-40 · DR-9)` — 계산값 상한은 수량·단가 두 칸 모두.
 const QUOTE_AMOUNT_OVER = "견적가 상한 초과 · 수량이나 단가 수정";
+// quick 261002-3mx — 고를 수 없는 소분류(코드표에 없음 · 비활성 · 보관). 화면은 불러온 뒤 꺼진 분류를 아직 보일 수 있다.
+const SUBCATEGORY_NOT_LISTED = "고를 수 없는 소분류 · 새로 고침";
 
 // 04-40(엔지니어링 리뷰 B §2 · DR-9) — 단가·실행가를 한 규칙으로 정규화하고(거부는 그 칸의 셀 오류), 수량 × 단가의 계산
 // 견적가가 저장 상한 밖이면 수량·단가 두 칸 오류. 쓰기 전에 판정해 PG 22003이 화면에 닿지 않는다.
@@ -955,6 +970,10 @@ export async function writeQuoteLinesInTx(
       if (archived) await judgeStructure(id, lineKindOf(archived), { kind: "archive", quoteAmountZero: archived.quoteAmountKrw === 0 });
     }
 
+    // 04-26 · ENG-D10 — 요청의 새 줄 id 중 그 차수에 이미 있는 줄(응답을 잃은 재전송). 상한 판정과 소분류 판정이 같이 본다.
+    const newIds = input.rows.filter((row) => row.isNew).map((row) => row.id);
+    const presentById = new Map((await repoFindQuoteLinesByIds(viewer, newIds, { revisionId }, tx)).map((row) => [row.id, row] as const));
+
     for (const [rowIndex, received] of input.rows.entries()) {
       // 04-13 — 판정·저장이 보는 종류: 기존 줄은 잠근 tx로 다시 읽은 DB 행, 새 줄만 요청 값(없으면 quote).
       const current = received.isNew ? undefined : currentById.get(received.id);
@@ -965,6 +984,11 @@ export async function writeQuoteLinesInTx(
       const kind = resolved ?? lineKindOf(current!);
       const kindRow = normalizeForKind(requested, kind);
       formatErrors.push(...quoteLineFormatErrors(kindRow, rowIndex, kind));
+      // quick 261002-3mx — 견적 줄의 소분류는 고를 수 있는 코드이거나 저장된 값 그대로다(기존 줄 · 재전송한 새 줄). 복제한 새 줄은 새 입력.
+      const storedSubcategory = (current ?? (received.isNew ? presentById.get(received.id) : undefined))?.subcategory;
+      if (kind === "quote" && !prepared.selectableSubcategories.has(kindRow.subcategory) && kindRow.subcategory !== storedSubcategory) {
+        formatErrors.push({ rowIndex, rowId: kindRow.id, field: "subcategory", label: CELL_LABELS.subcategory, reason: SUBCATEGORY_NOT_LISTED });
+      }
       const money = normalizeLineMoney(kindRow, rowIndex);
       if (money.errors.length > 0) {
         formatErrors.push(...money.errors);
@@ -1007,9 +1031,7 @@ export async function writeQuoteLinesInTx(
 
     // 04-26(D-86 · A-36 · ENG-D10) — 잠금 뒤 센 활성 줄 − 이번에 보관할 활성 줄 + 실제로 새로 들어갈 줄(그 차수에 이미
     // 있는 id는 응답을 잃은 재전송이라 새 줄이 아니다). 뒤에 온 저장은 앞 저장이 커밋한 줄까지 센다.
-    const newIds = input.rows.filter((row) => row.isNew).map((row) => row.id);
-    const presentIds = new Set((await repoFindQuoteLinesByIds(viewer, newIds, { revisionId }, tx)).map((row) => row.id));
-    const newLines = newIds.filter((id) => !presentIds.has(id)).length;
+    const newLines = newIds.filter((id) => !presentById.has(id)).length;
     const archivingActive = archivedIds.filter((id) => currentById.get(id)?.archivedAt === null).length;
     const capCtx: QuoteLineCapCtx = { newLines, countAfter: activeBefore.length - archivingActive + newLines, cap: lineCap };
     const capDecision = await gate(projectRow, LINE_CAP_RULE, capCtx);
@@ -1135,7 +1157,7 @@ export async function restoreQuoteLine(
   viewer: Viewer,
   id: string,
   deps?: Partial<Pick<QuoteLineWriteDeps, "can" | "now" | "afterLock" | "recordAction">>,
-): Promise<void> {
+): Promise<{ restored: boolean }> {
   const canFn = deps?.can ?? defaultCan;
   // 04-13(OV-2 · D-83) — 입구는 저장과 같은 두 권한 중 하나. 보관된 줄의 종류로 게이트가 가른다(조정 줄은 조정 권한만).
   const [canWrite, canAdjust] = await Promise.all([canFn(viewer, PROJECTS_MENU, "write"), canFn(viewer, ADJUSTMENT_MENU, "write")]);
@@ -1147,12 +1169,13 @@ export async function restoreQuoteLine(
   // 04-26(A-19 · ENG-D3 ①) — 상한 값은 트랜잭션 전에 읽는다. 복원도 줄 하나를 더하는 것이라 같은 상한을 지난다.
   const lineCap = await getSettingValue(QUOTE_LINE_MAX_PER_REVISION);
 
-  await withTransaction(async (tx) => {
+  return withTransaction(async (tx) => {
     const projectRow = await loadProjectForGate(viewer, revision.projectId, { now: deps?.now, tx, afterLock: deps?.afterLock }, { recordAction });
     if (!projectRow) throw new RevisionNotFoundError("연결된 프로젝트 찾을 수 없음");
     const current = await repoFindQuoteLineById(viewer, id, tx);
     if (!current || current.revisionId !== line.revisionId) throw new UserFacingError(MEMBERSHIP_MISMATCH);
-    if (current.archivedAt === null) return;
+    // quick 261002-4jn — 이미 활성(낡은 화면 · 동시 복원의 뒤 사람)은 로그 없이 「이미 복원됨」.
+    if (current.archivedAt === null) return { restored: false };
 
     const firstLinked = (await linkedDocumentsByLine(viewer, current.revisionId, tx)).get(id)?.[0];
     // 04-40(OV-2 · B-01) — 잠금 뒤 같은 tx로 읽은 현재 차수: 이전 차수 줄은 되살리지 않고, 승인 차수는 합계를 바꾸는 복원을 막는다.
@@ -1175,6 +1198,7 @@ export async function restoreQuoteLine(
 
     if (!(await repoRestoreQuoteLineRow(viewer, id, tx))) throw new UserFacingError(MEMBERSHIP_MISMATCH);
     await recordAction(viewer, { actionType: "restore", entity: QUOTE_LINE_ENTITY, entityId: id }, { tx });
+    return { restored: true };
   });
 }
 

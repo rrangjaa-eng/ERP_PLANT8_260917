@@ -312,7 +312,7 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     // 아직 dirty·id 없는 새 줄이라 "저장된 줄에서 Delete" 전제와 다르다.
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
       {
-        id: randomUUID(), isNew: true, subcategory: "sub-a",
+        id: randomUUID(), isNew: true, subcategory: "stage_construction",
         itemName: "삭제 대상 줄",
         unitPrice: { currency: "KRW", amount: 1000000, fxRate: 1 },
         execution: { currency: "KRW", amount: 0, fxRate: 1 },
@@ -418,7 +418,7 @@ test.describe("견적 줄 표 — 키보드 계약·붙여넣기·전부 거부(
     const revision = await getCurrentQuoteRevision(SYSTEM_VIEWER, project.id);
     if (!revision) throw new Error("1차 차수가 없습니다");
     await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: [
-      { id: randomUUID(), isNew: true, subcategory: "sub-a", itemName: "숨김 줄", unitPrice: { currency: "KRW", amount: 1000, fxRate: 1 }, execution: { currency: "KRW", amount: 0, fxRate: 1 } },
+      { id: randomUUID(), isNew: true, subcategory: "stage_construction", itemName: "숨김 줄", unitPrice: { currency: "KRW", amount: 1000, fxRate: 1 }, execution: { currency: "KRW", amount: 0, fxRate: 1 } },
     ] });
 
     const email = `e2e-ceo-${randomUUID()}@example.test`;
@@ -509,7 +509,7 @@ async function editTextCell(page: Page, rowIndex: number, colIndex: number, text
 
 test.describe("견적 줄 표 — Ctrl 전용 단축키·힌트 줄·이중 저장 없음(04-28 Task 1)", () => {
   test("(a)(b) Meta+s는 저장하지 않고 Control+s는 저장한다", async ({ page }) => {
-    await openProjectWithSavedLines(page, [{ subcategory: "sub-a", itemName: "메타 키 확인 줄", amount: 1000000 }]);
+    await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "메타 키 확인 줄", amount: 1000000 }]);
     let actionRequests = 0;
     page.on("request", (request) => {
       if (isServerAction(request)) actionRequests++;
@@ -534,7 +534,7 @@ test.describe("견적 줄 표 — Ctrl 전용 단축키·힌트 줄·이중 저�
   });
 
   test("(c) 힌트 줄은 지금 되는 키 일곱 항목(04-19 — Tab·Ctrl+C 되돌림)의 라벨 kbd 묶음이고 저장 항목이 없다", async ({ page }) => {
-    await openProjectWithSavedLines(page, [{ subcategory: "sub-a", itemName: "힌트 줄 확인", amount: 1000 }]);
+    await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "힌트 줄 확인", amount: 1000 }]);
 
     const hintRow = page.locator("p", { hasText: "줄 복제" });
     await expect(hintRow).toHaveCount(1);
@@ -551,7 +551,7 @@ test.describe("견적 줄 표 — Ctrl 전용 단축키·힌트 줄·이중 저�
   });
 
   test("(d) 새 줄 + Control+s 두 번 빠르게 → 새로 고친 뒤 줄 수가 정확히 +1", async ({ page }) => {
-    await openProjectWithSavedLines(page, [{ subcategory: "sub-a", itemName: "기존 줄", amount: 1000 }]);
+    await openProjectWithSavedLines(page, [{ subcategory: "stage_construction", itemName: "기존 줄", amount: 1000 }]);
     await expect(quoteDataRows(page)).toHaveCount(1);
     let actionRequests = 0;
     page.on("request", (request) => {

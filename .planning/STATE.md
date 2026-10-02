@@ -363,6 +363,7 @@ Recent decisions affecting current work:
 | 261001-hfi | Phase 2·3 요구사항 갭 남은 몫 — ADMN-12 공휴일 보관 · 예정값 취소 같은 tx 로그 · MAST-04 견적 분류 코드표 · OPS-05/MAST-04 분리(v1 91) | 2026-10-01 | 0787af7 | [261001-hfi-phase-2-3](./quick/261001-hfi-phase-2-3/) |
 | 261002-0jy | #133 Codex P2 후속 — 견적 줄 저장 충돌 거래처 이름 조회를 루프 뒤 1회 묶음으로(충돌 없으면 0회) | 2026-10-02 | 5478f90 | [261002-0jy-133-codex-p2](./quick/261002-0jy-133-codex-p2/) |
 | 261002-3mx | 서버 검증 묶음 — 견적 소분류 서버 검증 · 코드표 tableKey 허용 목록 · 설정 예정값 취소 자정 경합 | 2026-10-02 | 3d61fc5 | [261002-3mx-server-validation-bundle-quote-subcatego](./quick/261002-3mx-server-validation-bundle-quote-subcatego/) |
+| 261002-4jn | 보관함 복원: 이미 복원됨 토스트 · 날짜 점유 공휴일 복원 숨김(회고 #3·#4) | 2026-10-02 | ecd2f6e | [261002-4jn-archive-restore-already-restored-toast-a](./quick/261002-4jn-archive-restore-already-restored-toast-a/) |
 
 ### Roadmap Evolution
 

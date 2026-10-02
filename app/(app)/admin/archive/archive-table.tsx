@@ -75,7 +75,7 @@ export function ArchiveTable({ rows }: { rows: ArchiveTableRow[] }) {
                         entity={item.entity}
                         id={item.id}
                         name={item.name}
-                        onRestored={(name) => setToast({ message: `복원 · ${name} 복원됨`, tone: "default" })}
+                        onRestored={(name, restored) => setToast({ message: `복원 · ${name} ${restored ? "복원됨" : "이미 복원됨"}`, tone: "default" })}
                         onFailed={(reason) => {
                           // 원인은 마지막 「 · 」 앞까지 — 이름에 「 · 」가 있어도 잘리지 않게.
                           const cut = reason ? reason.lastIndexOf(" · ") : -1;
@@ -117,11 +117,11 @@ function RestoreRowButton({
   entity: string;
   id: string;
   name: string;
-  onRestored: (name: string) => void;
+  onRestored: (name: string, restored: boolean) => void;
   onFailed: (reason?: string) => void;
 }) {
   const { execute, isExecuting } = useAction(restoreArchivedAction, {
-    onSuccess: () => onRestored(name),
+    onSuccess: ({ data }) => onRestored(name, data?.restored !== false),
     // 도메인 거부(루트 오류)는 원인을 싣고, 그 밖의 실패는 `다시 시도`.
     onError: ({ error }) => onFailed(error.validationErrors?._errors?.[0]),
   });

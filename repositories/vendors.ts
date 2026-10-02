@@ -139,16 +139,18 @@ export async function setVendorHidden(viewer: Viewer, id: string, hidden: boolea
 }
 
 // 보관·복원 둘 다 조건부 UPDATE로 멱등·경합 안전을 확보한다(repositories/roles.ts와 같은 패턴).
-export async function setVendorArchived(viewer: Viewer, id: string, value: boolean): Promise<void> {
-  if (value) {
-    await db
-      .update(vendors)
-      .set({ archivedAt: new Date(), archivedBy: viewer.id })
-      .where(and(eq(vendors.id, id), isNull(vendors.archivedAt)));
-  } else {
-    await db
-      .update(vendors)
-      .set({ archivedAt: null, archivedBy: null })
-      .where(and(eq(vendors.id, id), isNotNull(vendors.archivedAt)));
-  }
+export async function setVendorArchived(viewer: Viewer, id: string, value: boolean): Promise<boolean> {
+  // 조건부 갱신이 실제로 바꾼 행이 있으면 참 — 범용 복원이 「이미 복원됨」 · 로그를 이 결과로 정한다(PR #149).
+  const rows = value
+    ? await db
+        .update(vendors)
+        .set({ archivedAt: new Date(), archivedBy: viewer.id })
+        .where(and(eq(vendors.id, id), isNull(vendors.archivedAt)))
+        .returning({ id: vendors.id })
+    : await db
+        .update(vendors)
+        .set({ archivedAt: null, archivedBy: null })
+        .where(and(eq(vendors.id, id), isNotNull(vendors.archivedAt)))
+        .returning({ id: vendors.id });
+  return rows.length > 0;
 }

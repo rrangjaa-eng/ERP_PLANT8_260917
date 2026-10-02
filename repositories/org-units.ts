@@ -45,18 +45,20 @@ export async function renameOrgUnit(viewer: Viewer, id: string, name: string): P
 }
 
 // 보관·복원 둘 다 조건부 UPDATE로 멱등·경합 안전을 확보한다(repositories/roles.ts와 같은 패턴).
-export async function setOrgUnitArchived(viewer: Viewer, id: string, value: boolean): Promise<void> {
-  if (value) {
-    await db
-      .update(orgUnits)
-      .set({ archivedAt: new Date(), archivedBy: viewer.id })
-      .where(and(eq(orgUnits.id, id), isNull(orgUnits.archivedAt)));
-  } else {
-    await db
-      .update(orgUnits)
-      .set({ archivedAt: null, archivedBy: null })
-      .where(and(eq(orgUnits.id, id), isNotNull(orgUnits.archivedAt)));
-  }
+export async function setOrgUnitArchived(viewer: Viewer, id: string, value: boolean): Promise<boolean> {
+  // 조건부 갱신이 실제로 바꾼 행이 있으면 참 — 범용 복원이 「이미 복원됨」 · 로그를 이 결과로 정한다(PR #149).
+  const rows = value
+    ? await db
+        .update(orgUnits)
+        .set({ archivedAt: new Date(), archivedBy: viewer.id })
+        .where(and(eq(orgUnits.id, id), isNull(orgUnits.archivedAt)))
+        .returning({ id: orgUnits.id })
+    : await db
+        .update(orgUnits)
+        .set({ archivedAt: null, archivedBy: null })
+        .where(and(eq(orgUnits.id, id), isNotNull(orgUnits.archivedAt)))
+        .returning({ id: orgUnits.id });
+  return rows.length > 0;
 }
 
 // 멱등 시드 전용 — 이미 있으면 건드리지 않는다(onConflictDoNothing).

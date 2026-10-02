@@ -20,12 +20,12 @@ prior_rounds:
 
 ## User Decisions (2026-10-02, 스레드 「05 계획 main 대조」 선택 카드)
 
-카드 세 장을 올렸고 답을 기다린다. 프로젝트 규칙(카드는 작업을 멈추지 않고 추천안으로 진행)대로 **추천안 A로 반영**한다. 답이 다르면 다음 라운드에서 다시 반영한다.
+카드 세 장 모두 사용자가 추천안 A를 골랐다(2026-10-02 15:38 UTC).
 
-- **U1 (F2 · F3) — 04.6 화면 규칙 맞추기: A(추천, 답 대기)** — 지금은 착수 게이트(F1)와 화면 밖 지적만 반영한다. 화면 부분(05-UI-SPEC 컴포넌트 · 토큰 · 간격 · 색 · 글자 절, 05-02 B1~B9 SYSTEM 개정 문장, 05-01 Task 4 · 05-05~05-11 · 05-13 · 05-15 화면 task)은 각 플랜에 「04.6 의존 — 04.6 머지 판 기준으로 다시 씀」을 표시하고 Ledger에 deferral로 남긴다. 04.6 머지 뒤 화면 재대조 라운드(UI-SPEC 개정 `/gsd-ui-phase 5` → `/plan-design-review` → 코드 대조 Round 6 → `/gsd-plan-phase 5 --reviews`)를 한 번 돈다. 근거: CLAUDE.md 「계획 레인은 확정되지 않은 부분을 의존성으로 표시하고 확정된 부분부터 계획한다」
+- **U1 (F2 · F3) — 04.6 화면 규칙 맞추기: A(사용자 확정)** — 지금은 착수 게이트(F1)와 화면 밖 지적만 반영한다. 화면 부분(05-UI-SPEC 컴포넌트 · 토큰 · 간격 · 색 · 글자 절, 05-02 B1~B9 SYSTEM 개정 문장, 05-01 Task 4 · 05-05~05-11 · 05-13 · 05-15 화면 task)은 각 플랜에 「04.6 의존 — 04.6 머지 판 기준으로 다시 씀」을 표시하고 Ledger에 deferral로 남긴다. 04.6 머지 뒤 화면 재대조 라운드(UI-SPEC 개정 `/gsd-ui-phase 5` → `/plan-design-review` → 코드 대조 Round 6 → `/gsd-plan-phase 5 --reviews`)를 한 번 돈다. 근거: CLAUDE.md 「계획 레인은 확정되지 않은 부분을 의존성으로 표시하고 확정된 부분부터 계획한다」
 - **U2 (F4 위계) — 폰 행 시트 지출결의 행동 1차 vs 3차: 이 라운드에서 묻지 않음** — 화면 결정이라 U1 A의 화면 재대조 라운드에서 묻는다. 이 라운드는 사실 수정(새 prop을 만들지 않고 기존 `action?: ReactNode` 자리를 쓴다)만 반영한다
-- **U3 (F5) — 300줄 한도 문서: A(추천, 답 대기)** — 증빙 버킷 런북과 지출결의 · 증빙 계약을 별도 문서(가칭 `docs/EVIDENCE-STORAGE.md` · `docs/EXPENSES.md`)로 떼고, `docs/OPERATIONS.md` · `docs/ARCHITECTURE.md`에는 가리키는 한 줄만 둔다. `test/unit/docs-limits.test.ts`에 새 문서 상한 · 가리킴 단언을 더한다(04.3 `docs/CERT-PURGE.md` 선례, 사용자 결정 2026-10-01)
-- **U4 (F11 ②) — 지급 방식 코드표: A(추천, 답 대기)** — 05-03이 코드표(`CODE_TABLES` 등록 + 시드 셋)를 만들고, 값 확정 · 관리 화면 점검은 Phase 6(MAST-05)이 한다
+- **U3 (F5) — 300줄 한도 문서: A(사용자 확정)** — 증빙 버킷 런북과 지출결의 · 증빙 계약을 별도 문서(가칭 `docs/EVIDENCE-STORAGE.md` · `docs/EXPENSES.md`)로 떼고, `docs/OPERATIONS.md` · `docs/ARCHITECTURE.md`에는 가리키는 한 줄만 둔다. `test/unit/docs-limits.test.ts`에 새 문서 상한 · 가리킴 단언을 더한다(04.3 `docs/CERT-PURGE.md` 선례, 사용자 결정 2026-10-01)
+- **U4 (F11 ②) — 지급 방식 코드표: A(사용자 확정)** — 05-03이 코드표(`CODE_TABLES` 등록 + 시드 셋)를 만들고, 값 확정 · 관리 화면 점검은 Phase 6(MAST-05)이 한다
 - 앞선 결정(U1 · U2 · `expenses.evidence_void` A · E1 A · E2 A · G1~G4 A · R1 A · Round 4 Z1~Z3 A · M1 A)은 그대로 전제
 
 ## Consensus Summary
@@ -70,4 +70,4 @@ prior_rounds:
 
 ## Divergent Views
 
-- 없음. U1 · U3 · U4는 카드 답 대기 중이며 추천안으로 반영한다. U2는 화면 재대조 라운드로 미룬다.
+- 없음. U1 · U3 · U4는 사용자가 A로 확정했다. U2는 화면 재대조 라운드로 미룬다.

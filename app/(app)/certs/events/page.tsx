@@ -3,14 +3,13 @@ import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/viewer";
 import { assertCertFeatureEnabled } from "@/lib/certs/feature-guard";
 import { can } from "@/domain/permissions/can";
-import { getCreateGate, listEvents } from "@/domain/certs/events";
+import { CERT_EVENT_NAME_MAX, getCreateGate, listEvents } from "@/domain/certs/events";
 import { kstToday } from "@/lib/kst-date";
 import { PageHeader } from "@/ui/page-header/PageHeader";
 import { EventsTable } from "./events-table";
 import { RequestEntry } from "./request-panel";
 import { CancelledToast } from "./cancelled-toast";
 import { CANCELLED_TOAST_COOKIE } from "./cancelled-toast-cookie";
-import { CERT_EVENT_NAME_MAX } from "@/domain/certs/events";
 
 export const dynamic = "force-dynamic";
 

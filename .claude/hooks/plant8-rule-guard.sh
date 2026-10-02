@@ -80,6 +80,7 @@ codex_allowed() {
 #       — 봉투가 없으면 그 항목 전체(사람이 직접 친 글)
 #   (b) 코디네이터 중계(<relay from="coordinator">/<coordinator-relay>, isMeta·projects-relay 포함)의
 #       줄 머리 <cited author="user">
+# 작업 중에 도착한 글은 attachment(queued_command)로 남는다 — 같은 규칙으로 user 항목처럼 본다(2026-10-02).
 # 서브에이전트 보고(<agent-message>, origin peer), task-notification·Monitor 출력, tool_result,
 # assistant 항목, 사이드체인은 절대 인정하지 않는다. 카드 버튼 누름도 제외.
 # 문장 단위로 보고, 질문(?, 될까, 돼?)·부정(하지 마, 안 돼, 말고, 금지, 나중에)은 승인이 아니다.
@@ -122,7 +123,11 @@ def merge_calls: select(type == "object" and .type == "assistant") | (.timestamp
   | {id: .id, ts: $ts};
 def ok_results: select(type == "object" and .type == "user") | .message.content[]?
   | select(type == "object" and .type == "tool_result" and (.is_error != true)) | .tool_use_id;
-[inputs | fromjson? ] as $e
+def queued: if type == "object" and .type == "attachment" and (.attachment.type // "") == "queued_command"
+  then {type: "user", isSidechain: (.isSidechain // false), timestamp: .timestamp,
+        origin: (.attachment.origin // {}), message: {content: (.attachment.prompt // "")}}
+  else . end;
+[inputs | fromjson? | queued ] as $e
 | [ $e[] | frags ] as $f
 | if $mode == "hook" then
     (if any($f[]; .text | sentences | any(.[]; hook_sent)) then "1" else "0" end)
@@ -260,7 +265,7 @@ HOOK_APPROVAL_MSG='훅 스크립트·settings.json 수정은 사용자가 채팅
 CLAUDE_MD_MSG='CLAUDE.md는 사용자가 직접 관리한다. Bash로 우회하지 말고 바꿀 문장과 위치를 사용자에게 주고 직접 붙여 넣게 하라.'
 PNPM_ONLY_MSG='이 저장소는 pnpm만 쓴다(CLAUDE.md §1). pnpm install / pnpm add로 바꿔라. 새 의존성이면 이유 한 줄 + 사용자 승인 먼저(§5).'
 DRAFT_MSG='PR은 draft로 연다(지침 §9). draft: true / --draft를 붙여 다시 호출하라.'
-READY_WARN='draft 해제(ready)는 사용자 확인 뒤에(지침 §9). 게이트가 끝났는지 확인하라.'
+READY_WARN='draft 해제(ready)는 변경 종류에 맞는 게이트 기록과 최신 커밋 CI 초록을 확인한 뒤에(CLAUDE.md §4 머지).'
 
 is_claude_md() { case "$1" in CLAUDE.md|*/CLAUDE.md) return 0 ;; esac; return 1; }
 is_hook_path() { [[ "$1" =~ $HOOK_PATH_RE ]]; }

@@ -426,6 +426,26 @@ expect_rc "R8-7: write unrelated .claude path -> 0" 0 "$HOOK_RC"
 hook "$(payload_write "$PROJECT/docs/hooks.md" "$TE")"
 expect_rc "R8-8: write docs about hooks -> 0" 0 "$HOOK_RC"
 
+# 작업 중에 온 사용자 글은 user 항목이 아니라 attachment(queued_command)로 남는다(2026-10-02: 「훅 고쳐」를 못 읽음)
+line_queued() {  # $1=본문 $2=시각 $3=origin.kind
+  jq -nc --arg t "$1" --arg ts "$2" --arg k "$3" \
+    '{type:"attachment", isSidechain:false, timestamp:$ts,
+      attachment:{type:"queued_command", origin:{kind:$k}, commandMode:"prompt",
+        prompt:("<wake reason=\"mention\"><project><thread><message trigger=\"true\" from=\"human\" trust=\"principal\">" + $t + "</message></thread></project></wake>")}}'
+}
+TQC="$(new_transcript)"
+line_queued '훅 고쳐' "2026-09-26T10:00:00Z" human > "$TQC"
+hook "$(payload_edit "$PROJECT/.claude/hooks/plant8-skill-gate.sh" "$TQC")"
+expect_rc "R8-11: 작업 중 온 사람 글(queued_command) 승인 -> 0" 0 "$HOOK_RC"
+TQP="$(new_transcript)"
+line_queued '훅 고쳐' "2026-09-26T10:00:00Z" peer > "$TQP"
+hook "$(payload_edit "$PROJECT/.claude/hooks/plant8-skill-gate.sh" "$TQP")"
+expect_rc "R8-12: 사람이 아닌 queued_command는 승인 아님 -> 2" 2 "$HOOK_RC"
+TQQ="$(new_transcript)"
+line_queued '훅 고쳐도 돼?' "2026-09-26T10:00:00Z" human > "$TQQ"
+hook "$(payload_edit "$PROJECT/.claude/hooks/plant8-skill-gate.sh" "$TQQ")"
+expect_rc "R8-13: queued_command 질문형은 승인 아님 -> 2" 2 "$HOOK_RC"
+
 hook "$(payload_bash 'cat .claude/hooks/plant8-pre-push-gate.sh')"
 expect_rc "R8-9: read hook file -> 0" 0 "$HOOK_RC"
 hook "$(payload_bash 'bash .claude/hooks/tests/plant8-skill-gate.test.sh')"
@@ -808,9 +828,17 @@ expect_contains "P2-d1: warns draft" "$HOOK_STDOUT" "draft"
 hook "$(jq -nc '{tool_name:"mcp__github__update_pull_request", tool_input:{pullNumber:72, draft:false}}')"
 expect_rc "P2-d2: update_pull_request draft:false -> 0" 0 "$HOOK_RC"
 expect_contains "P2-d2: warns draft" "$HOOK_STDOUT" "draft"
+expect_contains "P2-d2: ready 조건은 CLAUDE.md 머지 규칙(게이트 기록·CI)" "$HOOK_STDOUT" "CI"
 hook "$(jq -nc '{tool_name:"mcp__github__update_pull_request", tool_input:{pullNumber:72, title:"x"}}')"
 expect_rc "P2-d3: update_pull_request title only -> 0" 0 "$HOOK_RC"
 expect_empty "P2-d3: no warning" "$HOOK_STDOUT"
+
+echo "== 연결: 스크립트가 검사하는 hearthbot 도구는 settings.json 매처에 있어야 한다 =="
+SETTINGS="$HOOKS/../settings.json"
+matcher="$(jq -r '.hooks.PreToolUse[] | select(any(.hooks[]; .command | test("plant8-rule-guard"))) | .matcher' "$SETTINGS")"
+for t in $(grep -oE '^  mcp__hearthbot__[a-z_|]+\)' "$SCRIPT" | tr -d ' )' | tr '|' '\n'); do
+  if printf '%s' "$matcher" | tr '|' '\n' | grep -qx "$t"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo "FAIL: wiring: $t 가 settings.json 매처에 없다"; fi
+done
 
 echo "== P2: GNU 도구가 없으면 경고 후 통과 =="
 SHIM="$(mktemp -d "$TMPDIR/shim.XXXXXX")"

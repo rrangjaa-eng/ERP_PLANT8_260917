@@ -1,17 +1,16 @@
-/* 04.6 스킨 A 이관 전: CSS */
 /* SYSTEM.md §7-4 「내 차례」 목록. 실물: docs/design/system/preview.html .next 블록.
-   색·서체·radius는 토큰 참조만 쓴다(D-20). */
+   역할 토큰만 쓴다(스킨 A). */
 
 .next {
-  border-top: var(--line-w-strong) solid var(--line-strong);
+  border-top: var(--line-w) solid var(--border-row);
   padding: var(--s-3) 0;
   margin-bottom: var(--s-6);
 }
 
 .heading {
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
-  color: var(--muted);
+  color: var(--text-muted);
   margin-bottom: var(--s-1);
 }
 
@@ -25,9 +24,9 @@
   display: flex;
   align-items: baseline;
   gap: var(--s-3);
-  padding: 6px 0;
-  border-bottom: var(--line-w) dotted var(--line);
-  min-height: var(--row-min);
+  padding: var(--s-2) 0;
+  border-bottom: var(--line-w) dotted var(--border-row);
+  min-height: var(--row-h);
 }
 
 .item:last-child {
@@ -44,13 +43,12 @@
 }
 
 .why {
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .amt {
   flex: none;
   min-width: 11ch;
-  font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
@@ -72,7 +70,7 @@
     display: grid;
     grid-template-columns: auto auto 1fr auto;
     column-gap: var(--s-3);
-    row-gap: 2px;
+    row-gap: var(--s-1);
     align-items: baseline;
   }
 
@@ -101,22 +99,22 @@
     grid-column: 2;
     min-width: 0;
     text-align: left;
-    font-size: var(--fs-sm);
-    color: var(--muted);
+    font-size: var(--text-aux);
+    color: var(--text-muted);
   }
 
   .why {
     grid-row: 2;
     grid-column: 3;
     min-width: 0;
-    font-size: var(--fs-sm);
+    font-size: var(--text-aux);
   }
 
   /* §10 터치 목표 44 — 글자 위치는 그대로 두고 닿는 영역만 위아래로 늘린다. */
   .action .tertiary {
     display: inline-block;
-    padding: 13px 0;
-    margin: -13px 0;
+    padding: var(--s-3) 0;
+    margin: calc(-1 * var(--s-3)) 0;
   }
 }
 
@@ -124,21 +122,21 @@
    ListEmpty.module.css의 .tertiary와 같은 선언이다. */
 .tertiary {
   border: 0;
-  border-bottom: var(--line-w) solid var(--accent);
+  border-bottom: var(--line-w) solid var(--text-link);
   background: none;
   padding: 0;
-  color: var(--accent);
+  color: var(--text-link);
   font-weight: var(--fw-medium);
-  font-size: var(--fs-base);
+  font-size: var(--text-body);
   text-decoration: none;
 }
 
 .tertiary:hover {
-  border-bottom-width: var(--line-w-strong);
+  border-bottom-width: var(--underline-w-hover);
 }
 
 /* 갈 곳이 없을 때의 건수 — 행동이 아니므로 3차 링크 모양을 주지 않는다. */
 .moreText {
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
 }

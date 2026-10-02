@@ -115,7 +115,7 @@ test.describe("프로젝트 상태 생애 (04-21, PROJ-04)", () => {
     await login(page, pm);
     await page.goto("/projects?new=1");
     await page.getByLabel("클라이언트").selectOption({ label: vendor.name });
-    await page.getByLabel("팀").selectOption({ label: team.name });
+    await page.locator("#project-form").getByLabel("팀").selectOption({ label: team.name });
     await page.getByLabel("담당 PM").selectOption({ index: 1 });
     const projectName = `E2E생애-${randomUUID().slice(0, 8)}`;
     await page.getByLabel("프로젝트명").fill(projectName);

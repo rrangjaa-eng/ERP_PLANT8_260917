@@ -238,7 +238,7 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
 
     await page.goto("/projects?new=1");
     await page.getByLabel("클라이언트").selectOption({ label: vendor.name });
-    await page.getByLabel("팀").selectOption({ index: 1 });
+    await page.locator("#project-form").getByLabel("팀").selectOption({ index: 1 });
     await page.getByLabel("담당 PM").selectOption({ index: 1 });
     const projectName = `E2E수익섹션-${Date.now()}`;
     await page.getByLabel("프로젝트명").fill(projectName);
@@ -316,7 +316,7 @@ test.describe("매출 섹션 (Phase 4 Task 3)", () => {
 
     await page.goto("/projects?new=1");
     await page.getByLabel("클라이언트").selectOption({ label: vendor.name });
-    await page.getByLabel("팀").selectOption({ index: 1 });
+    await page.locator("#project-form").getByLabel("팀").selectOption({ index: 1 });
     await page.getByLabel("담당 PM").selectOption({ index: 1 });
     await page.getByLabel("프로젝트명").fill(`E2E매출폭-${Date.now()}`);
     await page.getByRole("button", { name: "프로젝트 등록" }).click();

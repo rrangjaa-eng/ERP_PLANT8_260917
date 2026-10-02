@@ -495,6 +495,16 @@ GH_STUB_DIR="$TMPDIR/gh-stub"
 mkdir -p "$GH_STUB_DIR"
 cat > "$GH_STUB_DIR/gh" <<'STUB'
 #!/usr/bin/env bash
+case " $* " in                                                           # CI 점검(2026-10-02): GH_STUB_RC보다 먼저 — 기본은 초록
+  *head.sha*) printf '%s\n' "${GH_STUB_HEADSHA-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}"; exit 0 ;;
+  */check-runs*) case "${GH_STUB_CHECKS:-green}" in
+                   green) printf 'quality\tcompleted\tsuccess\ne2e\tcompleted\tskipped\nlint\tcompleted\tneutral\n' ;;
+                   failure) printf 'quality\tcompleted\tsuccess\ne2e\tcompleted\tfailure\n' ;;
+                   pending) printf 'quality\tcompleted\tsuccess\nintegration\tin_progress\t\n' ;;
+                   none) ;;
+                   error) exit 1 ;;
+                 esac; exit 0 ;;
+esac
 [ "${GH_STUB_RC:-0}" = "0" ] || exit "$GH_STUB_RC"
 case " $* " in
   *patch*) cat "$GH_STUB_PATCH" ;;                                       # 게이트 로그 패치(.patch) — files보다 먼저
@@ -528,7 +538,7 @@ merge_hook() {  # $1=session $2=project $3=files(줄바꿈) $4=gh rc $5=changed_
   printf '%s\n' "${8:-}" > "$TMPDIR/gh-base"
   local errfile
   errfile="$(mktemp "$TMPDIR/stderr.XXXXXX")"
-  HOOK_STDOUT="$(payload_merge "$1" "${6:-}" | PATH="$GH_STUB_DIR:$PATH" GH_STUB_FILES="$TMPDIR/gh-files" GH_STUB_PATCH="$TMPDIR/gh-patch" GH_STUB_BASE="$TMPDIR/gh-base" GH_STUB_RC="${4:-0}" GH_STUB_COUNT="${5:-}" \
+  HOOK_STDOUT="$(payload_merge "$1" "${6:-}" | PATH="$GH_STUB_DIR:$PATH" GH_STUB_FILES="$TMPDIR/gh-files" GH_STUB_PATCH="$TMPDIR/gh-patch" GH_STUB_BASE="$TMPDIR/gh-base" GH_STUB_RC="${4:-0}" GH_STUB_CHECKS="${GH_STUB_CHECKS:-green}" GH_STUB_COUNT="${5:-}" \
     CLAUDE_PROJECT_DIR="$2" bash "$HOOKS/plant8-skill-gate.sh" merge 2>"$errfile")"
   HOOK_RC=$?
   HOOK_STDERR="$(cat "$errfile")"
@@ -614,6 +624,29 @@ merge_hook "$M4" "$projM4" $'.planning/phases/04-test/04-01-PLAN.md\n.planning/S
 expect_rc "merge: .planning/ 아래 .md만 + 게이트 없음 -> 통과" 0 "$HOOK_RC"
 
 # ---------------------------------------------------------------------------
+# merge: 최신 커밋 CI 점검(2026-10-02, CLAUDE.md §4) — 체크런이 전부 completed + success·skipped·neutral일 때만, 모르면 막는다
+projCI="$(new_project)"
+SCI="sid-merge-ci-$$"
+merge_hook "$SCI" "$projCI" "$DOC_FILES"
+expect_rc "merge CI: 체크런 전부 초록(문서 PR) -> 통과" 0 "$HOOK_RC"
+GH_STUB_CHECKS=failure merge_hook "$SCI" "$projCI" "$DOC_FILES"
+expect_rc "merge CI: 실패한 체크런 -> exit 2" 2 "$HOOK_RC"
+expect_contains "merge CI: 실패 메시지에 체크 이름" "$HOOK_STDERR" "e2e"
+GH_STUB_CHECKS=pending merge_hook "$SCI" "$projCI" "$DOC_FILES"
+expect_rc "merge CI: 진행 중인 체크런 -> exit 2" 2 "$HOOK_RC"
+expect_contains "merge CI: 진행 중 메시지에 체크 이름" "$HOOK_STDERR" "integration"
+GH_STUB_CHECKS=none merge_hook "$SCI" "$projCI" "$DOC_FILES"
+expect_rc "merge CI: 문서 PR은 체크런 0개 -> 통과(ci.yml paths 제외)" 0 "$HOOK_RC"
+GH_STUB_CHECKS=error merge_hook "$SCI" "$projCI" "$DOC_FILES"
+expect_rc "merge CI: check-runs 조회 실패 -> exit 2" 2 "$HOOK_RC"
+GH_STUB_HEADSHA= merge_hook "$SCI" "$projCI" "$DOC_FILES"
+expect_rc "merge CI: PR 헤드 SHA를 모름 -> exit 2" 2 "$HOOK_RC"
+write_gate_line "$projCI" review "setup"
+GH_STUB_CHECKS=failure merge_hook "$SCI" "$projCI" $'domain/x.ts'
+expect_rc "merge CI: 코드 PR + review 있어도 CI 실패 -> exit 2" 2 "$HOOK_RC"
+GH_STUB_CHECKS=none merge_hook "$SCI" "$projCI" $'domain/x.ts'
+expect_rc "merge CI: 코드 PR은 체크런 0개 -> exit 2" 2 "$HOOK_RC"
+
 # merge: 파일 목록을 못 읽으면 review·qa가 다 있어도 막는다 — 위험 경로 판정이 불가능하다(2026-09-27 #96)
 projMq="$(new_project)"
 MQ="sid-merge-unknown-$$"

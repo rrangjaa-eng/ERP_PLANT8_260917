@@ -24,6 +24,21 @@
       "status": "complete"
     },
     {
+      "number": "04.1",
+      "name": "결재 모듈·연차",
+      "status": "complete"
+    },
+    {
+      "number": "04.2",
+      "name": "알림·공휴일 기반",
+      "status": "complete"
+    },
+    {
+      "number": "04.4",
+      "name": "복원 리허설·로그인 상태",
+      "status": "complete"
+    },
+    {
       "number": "5",
       "name": "지출결의·결재·연차",
       "status": "pending"
@@ -62,7 +77,7 @@
   "next": {
     "command": "/gsd:progress --next",
     "label": "Advance to the next step",
-    "reason": "Phase 04.3 of 17 · 24% · executing"
+    "reason": "Phase 04.5 of 17 · 41% · executing"
   },
-  "updated_at": "2026-10-01T06:35:00.459Z"
+  "updated_at": "2026-10-02T07:54:15.398Z"
 }

@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
+import { Num } from "@/ui/num/Num";
 import { Table } from "@/ui/table/Table";
 import { Button } from "@/ui/button/Button";
 import { KvList } from "@/ui/kv-list/KvList";
@@ -82,7 +83,9 @@ function contractNoteGroups(contract: ContractInfo): string[] {
 function ContractValue({ contract }: { contract: ContractInfo }) {
   return (
     <>
-      <span className={styles.contractAmount}>{contract.amountKrw === null ? "—" : formatKrw(contract.amountKrw)}</span>
+      <span className={styles.contractAmount}>
+        <Num value={contract.amountKrw} />
+      </span>
       <NumberGroups groups={contractNoteGroups(contract)} className={styles.contractNote} />
     </>
   );

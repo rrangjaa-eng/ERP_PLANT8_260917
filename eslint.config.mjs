@@ -4,6 +4,7 @@ import nextTs from "eslint-config-next/typescript";
 import tseslint from "typescript-eslint";
 import boundaries from "eslint-plugin-boundaries";
 import plant8 from "./eslint/index.mjs";
+import restrictions from "./eslint/restrictions.mjs";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -49,7 +50,9 @@ const eslintConfig = defineConfig([
             // 이므로 db→lib 한 방향은 허용(db→domain은 여전히 금지, 01-01 기존 코드).
             { from: "db", allow: ["db", "lib"] },
             { from: "lib", allow: ["lib", "domain", "repositories", "db"] },
-            { from: "scripts", allow: ["scripts", "domain", "repositories", "db", "lib"] },
+            // scripts/design/mark-legacy.mjs가 eslint/restrictions.mjs(app/** 표·dialog 금지 설정)를 읽어
+            // 이관 전 표시를 넣는다 — 설정 배열을 두 곳에 복사하지 않는다(04.6-02).
+            { from: "scripts", allow: ["scripts", "domain", "repositories", "db", "lib", "eslint"] },
             {
               from: "test",
               // eslint-rules 테스트가 eslint/rules/*.mjs를 직접 import해 규칙을 검증한다.
@@ -79,6 +82,8 @@ const eslintConfig = defineConfig([
       "plant8/no-row-type-escape": "error",
     },
   },
+  // 04.6: app/**의 <table>·<dialog> 직접 그리기 금지(이관 전 파일은 첫 줄 표시로 뺀다)
+  ...restrictions,
   // *.mjs는 tsconfig project service 밖(타입 정보 없음) — type-checked 규칙 제외.
   // money-boundary·no-row-type-escape는 타입 정보가 필수라 그 자체를 끈다
   // (설정 오류로 오인되지 않게).

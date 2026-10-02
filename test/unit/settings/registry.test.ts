@@ -264,16 +264,21 @@ describe("addHistorizedValue / cancelHistorizedValue (이력형 전용)", () => 
     const can = vi.fn().mockResolvedValue(true);
     const deleteFutureHistorizedValue = vi.fn().mockResolvedValue(false);
     const recordAction = vi.fn().mockResolvedValue(undefined);
-    const withTransaction = vi.fn((fn: (t: never) => Promise<unknown>) => fn({} as never)) as never;
+    const tx = { tx: true };
+    const withTransaction = vi.fn((fn: (t: never) => Promise<unknown>) => fn(tx as never)) as never;
+    const listHistory = vi.fn().mockResolvedValue([]);
     const attempt = cancelHistorizedValue(viewer, HISTORIZED_DEF, "2999-01-01", {
       can,
       deleteFutureHistorizedValue,
       recordAction,
       withTransaction,
+      listHistory,
     });
     await expect(attempt).rejects.toBeInstanceOf(FutureValueNotFoundError);
     await expect(attempt).rejects.toThrow("취소할 예정값 찾을 수 없음");
     expect(recordAction).not.toHaveBeenCalled();
+    // 트랜잭션이 연결을 쥔 채 전역 db로 두 번째 연결을 기다리지 않는다(PR #148 Codex 지적).
+    expect(listHistory).toHaveBeenCalledWith(viewer, HISTORIZED_DEF.key, tx);
   });
 });
 

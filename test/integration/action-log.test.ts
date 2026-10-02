@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
@@ -15,7 +14,8 @@ import { createAccount, unlockAccount } from "@/domain/auth/accounts";
 import { lockoutConfig, recordLoginFailure, windowStart } from "@/domain/auth/lockout";
 import { countOpenFailures } from "@/repositories/login-attempts";
 
-const TABLE_KEY = `test_action_log_${randomUUID()}`;
+// quick 261002-3mx — createCodeItem은 허용 코드표(CODE_TABLES)만 받는다. 매 테스트 TRUNCATE+시드라 항목은 id로 찾는다.
+const TABLE_KEY = "project_status";
 
 // Phase 4(04-32, ENG-D3 ①) — recordAction의 선택 tx 인자: 로그 쓰기와 끌 수
 // 있는 종류의 설정 조회가 둘 다 그 tx로 돈다(잠근 트랜잭션 안에서 풀 연결을

@@ -451,9 +451,12 @@ describe("visual-baseline.yml", () => {
     expect(body).not.toMatch(/drizzle-kit\s+push/);
   });
 
-  it("두 잡 모두 main에서는 돌지 않는다", () => {
+  // 태그로 디스패치하면 ref_name이 태그 이름이라 커밋 잡이 refs/heads/<태그>로 새 브랜치를 만든다 — 브랜치 ref에서만 돈다.
+  it("두 잡 모두 브랜치 ref에서만, main이 아닐 때만 돈다", () => {
     for (const block of [baseline(), commit()]) {
-      expect(block).toContain("if: github.ref != 'refs/heads/main'");
+      expect(block).toContain(
+        "if: startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/main'",
+      );
     }
   });
 

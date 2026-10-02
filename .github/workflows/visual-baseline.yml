@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   baseline:
-    if: github.ref != 'refs/heads/main'
+    if: startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -61,7 +61,7 @@ jobs:
           retention-days: 7
 
   commit:
-    if: github.ref != 'refs/heads/main'
+    if: startsWith(github.ref, 'refs/heads/') && github.ref != 'refs/heads/main'
     needs: baseline
     runs-on: ubuntu-latest
     permissions:

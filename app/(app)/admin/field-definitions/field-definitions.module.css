@@ -217,4 +217,10 @@
   .archivedSummary {
     min-height: var(--touch-min);
   }
+
+  /* §3 터치 목표: 「필수」 체크박스(거래처 폼 .clearRow input과 같은 값). */
+  .fields input[type="checkbox"] {
+    width: var(--touch-min);
+    height: var(--touch-min);
+  }
 }

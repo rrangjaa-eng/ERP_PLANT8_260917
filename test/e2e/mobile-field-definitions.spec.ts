@@ -68,3 +68,12 @@ test("폰 375 화면 항목 목록: 이름 · 정렬 · 동작만 열이고 타�
 
   await expectNoRowOverflow(page, row, "화면 항목 목록");
 });
+
+// 04.5 디자인 리뷰: 폰에서 「필수」 체크박스도 행동 요소 — 터치 목표 44×44(SYSTEM.md §3, 거래처 폼 .clearRow와 같은 값).
+test("폰 375 화면 항목 폼: 「필수」 체크박스 터치 영역 44×44", async ({ page }) => {
+  await loginAsSysadmin(page);
+  await page.goto("/admin/field-definitions?new=1");
+  const box = await page.getByLabel("필수", { exact: true }).boundingBox();
+  expect(box?.width).toBeGreaterThanOrEqual(44);
+  expect(box?.height).toBeGreaterThanOrEqual(44);
+});

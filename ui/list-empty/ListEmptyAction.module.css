@@ -1,0 +1,10 @@
+/* 빈 화면 첫 행동 — 모양은 ui/button 2차 클래스(btn · secondary)가 정하고, 여기는 폰 누르는 영역 44만 더한다.
+   ListEmpty.module.css(04.6-07 소유)와 따로 둔 이유: 같은 웨이브에서 한 파일을 둘이 고치지 않는다. */
+
+@media (max-width: 699.98px) {
+  .action {
+    justify-content: center;
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+}

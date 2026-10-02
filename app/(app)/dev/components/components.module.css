@@ -8,10 +8,9 @@
 }
 
 .fields {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--s-6);
+  display: grid;
+  gap: var(--s-4);
+  max-width: var(--form-max);
 }
 
 .fieldLabel {

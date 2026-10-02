@@ -4,6 +4,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { db, type DbOrTx } from "@/db/client";
 import { fieldDefinitions, permissionMatrix, users, visibilityMatrix } from "@/db/schema";
 import type { Viewer } from "@/domain/viewer";
+import { customFieldInfoItem, type FieldDefinitionTarget } from "@/domain/custom-fields/targets";
 
 export type PermissionMatrixRow = InferSelectModel<typeof permissionMatrix>;
 export type VisibilityMatrixRow = InferSelectModel<typeof visibilityMatrix>;
@@ -221,6 +222,8 @@ export type VendorFieldAccess = {
   visibleFieldKeys: Set<string>;
 };
 
+const VENDOR_TARGET: FieldDefinitionTarget = "vendor";
+
 // 04.5-05(T-04.5-44): 거래처 입력 칸 판정 재료를 SQL 한 문(READ COMMITTED에서 한 스냅숏)으로 읽는다 — 정의에 노출표를
 // 두 번 LEFT JOIN(칸별 cf.vendor.<key> · 「거래처 정보」 vendor.value). (role_id, info_item)이 유일이라 행이 늘지 않는다.
 // 행 없음 · roleId 없음은 거짓(기본 숨김). 정의가 0개면 vendorValueVisible은 거짓이다(입력 칸도 0개라 쓰이지 않는다).
@@ -239,13 +242,13 @@ export async function readVendorFieldAccess(
       fieldRow,
       roleId === null
         ? sql`false`
-        : and(eq(fieldRow.roleId, roleId), eq(fieldRow.infoItem, sql`'cf.vendor.' || ${fieldDefinitions.key}`)),
+        : and(eq(fieldRow.roleId, roleId), eq(fieldRow.infoItem, sql`${customFieldInfoItem(VENDOR_TARGET, "")}::text || ${fieldDefinitions.key}`)),
     )
     .leftJoin(
       valueRow,
       roleId === null ? sql`false` : and(eq(valueRow.roleId, roleId), eq(valueRow.infoItem, "vendor.value")),
     )
-    .where(eq(fieldDefinitions.entity, "vendor"))
+    .where(eq(fieldDefinitions.entity, VENDOR_TARGET))
     .orderBy(fieldDefinitions.sortOrder, fieldDefinitions.key);
   return {
     definitions: rows.map((row) => row.definition),

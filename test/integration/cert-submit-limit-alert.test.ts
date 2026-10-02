@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/db/client";
-import { certSubmissions, notificationLog } from "@/db/schema";
+import { certPrizes, certSubmissions, notificationLog } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
@@ -155,6 +155,29 @@ describe("cert_submit_limit — 누적(대조 제외 뺀) 제출이 알림 임�
 
     await submitMany(ev, 1);
     expect(await alertsOf(ev.eventId)).toHaveLength(1);
+  }, 120_000);
+});
+
+describe("cert_submit_limit — 임계가 제출 사이에 낮아진 경우(당첨 수 축소)", () => {
+  it("W = 30(누적 임계 90)에서 65건 → 0 · 당첨 수를 1로 줄인 뒤 제출(누적 66 > 60) → 받는 사람 1명에게 1행 · 다음 제출은 새 행 0", async () => {
+    const people = await recipients();
+    const event = await createCertEvent({ name: "한도 축소 행사", prizes: [{ name: "축소 경품", unitValueKrw: VALUE, winnerCount: 30 }] });
+    const [prizeId] = event.prizeIds;
+    if (!event.token || !prizeId) throw new Error("열린 행사를 만들지 못했다");
+    const ev = { token: event.token, prizeId };
+
+    await submitMany(ev, 40);
+    await ageSubmissionsForTest(event.eventId, { count: 40, minutes: 16 });
+    await submitMany(ev, 25);
+    expect(await alertsOf(event.eventId)).toHaveLength(0);
+
+    await db.update(certPrizes).set({ winnerCount: 1 }).where(eq(certPrizes.id, prizeId));
+
+    await submitMany(ev, 1);
+    expect((await alertsOf(event.eventId)).map((r) => r.recipientId)).toEqual([people.manager]);
+
+    await submitMany(ev, 1);
+    expect(await alertsOf(event.eventId)).toHaveLength(1);
   }, 120_000);
 });
 

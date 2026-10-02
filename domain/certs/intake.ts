@@ -278,8 +278,8 @@ async function alertSubmitLimit(
   insert: typeof defaultInsertEventNotifications,
 ): Promise<void> {
   const reached =
-    input.windowCount === input.budgets.event ||
-    (await countActiveSubmissionsByEvent(SYSTEM_VIEWER, input.event.id, tx)) === input.budgets.alertTotal;
+    input.windowCount >= input.budgets.event ||
+    (await countActiveSubmissionsByEvent(SYSTEM_VIEWER, input.event.id, tx)) >= input.budgets.alertTotal;
   if (!reached) return;
   const recipients = await listActiveUserIdsAllowed(
     SYSTEM_VIEWER,

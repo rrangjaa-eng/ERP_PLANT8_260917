@@ -7,7 +7,7 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { setSettingValue } from "@/domain/settings/registry";
 import { CERT_ENABLED, CERT_RETENTION_YEARS } from "@/domain/settings/keys";
 import { certPurgeDeadline, runCertPurge } from "@/domain/certs/purge";
-import { correctSubmission, getSubmissionForReview, revealRrn } from "@/domain/certs/review";
+import { correctSubmission, excludeSubmission, getSubmissionForReview, revealRrn } from "@/domain/certs/review";
 import { withTransaction } from "@/lib/db-transaction";
 import { getSignatureStore, type SignatureStore } from "@/lib/storage/signature-store";
 import { appendActionLog } from "@/repositories/action-log";
@@ -287,7 +287,7 @@ describe("파기 대상 주민등록번호 — CS-2 a(제출 연도 다음 해 4
     await db.update(certSubmissions).set({ quantity: 2 }).where(eq(certSubmissions.id, raisedQty.submissionId));
 
     const result = await withTransaction((tx) =>
-      clearSubmissionPersonalFields(SYSTEM_VIEWER, ids, { mode: "belowThreshold", at: APRIL_1 }, tx),
+      clearSubmissionPersonalFields(SYSTEM_VIEWER, ids, { mode: "belowThreshold", at: APRIL_1, by: null }, tx),
     );
     expect(result.cleared).toBe(2);
 
@@ -305,6 +305,35 @@ describe("파기 대상 주민등록번호 — CS-2 a(제출 연도 다음 해 4
     }
     expect((await submissionRow(raisedQty.submissionId)).quantity).toBe(2);
     expect(await submissionRow(outEdge.submissionId)).toEqual(outEdge.row);
+  });
+
+  // PR #88 /review F10 — 파기 작업이 비운 줄은 updated_by를 비운다. 앞서 고친 사람이 남아 있으면 그 뒤 정정 충돌이
+  // 엉뚱한 사람 이름을 댄다 — 시스템 변경은 이름 없이(화면은 「다른 사람」) 돌려준다.
+  it("파기 작업이 주민등록번호를 비우면 updated_by가 비고, 옛 버전 정정의 충돌은 앞서 고친 사람 이름을 대지 않는다", async () => {
+    const sample = await seed({ submittedAt: SUBMITTED, valueNow: 30_000 });
+    const first = await makeReviewer(FULL_GRANT, "먼저고친사람");
+    const firstSave = await correctSubmission(
+      first,
+      sample.submissionId,
+      { version: sample.row.version, name: sample.name, phone: "010-1111-2222" },
+      { ip: null },
+    );
+    expect(firstSave.kind).toBe("saved");
+    expect((await submissionRow(sample.submissionId)).updatedBy).toBe(first.id);
+
+    expect((await runCertPurge({ now: APRIL_1, apply: true })).rrnCleared).toBeGreaterThanOrEqual(1);
+    const cleared = await submissionRow(sample.submissionId);
+    expect(cleared.rrnEncrypted).toBeNull();
+    expect(cleared.updatedBy).toBeNull();
+
+    const second = await makeReviewer(FULL_GRANT, "나중고친사람");
+    const stale = await correctSubmission(
+      second,
+      sample.submissionId,
+      { version: sample.row.version + 1, name: sample.name, phone: "010-3333-4444" },
+      { ip: null },
+    );
+    expect(stale).toMatchObject({ kind: "conflict", byName: "" });
   });
 
   it("수량 정정이 커밋 전이면 파기는 그 줄을 기다렸다가 새 수량으로 판정한다 — 로그 수는 실제로 비운 수", async () => {
@@ -521,7 +550,7 @@ describe("칸 비우기 함수 재사용 — mode: exclude (E1 b)", () => {
     const at = kst("2025-07-01T00:00:00");
 
     await withTransaction(async (tx) => {
-      await clearSubmissionPersonalFields(SYSTEM_VIEWER, [sample.submissionId], { mode: "exclude", at }, tx);
+      await clearSubmissionPersonalFields(SYSTEM_VIEWER, [sample.submissionId], { mode: "exclude", at, by: null }, tx);
     });
     await db.update(certSubmissions).set({ excludedAt: at }).where(eq(certSubmissions.id, sample.submissionId));
 
@@ -547,12 +576,28 @@ describe("칸 비우기 함수 재사용 — mode: exclude (E1 b)", () => {
   });
 });
 
+describe("대조 제외 · 보존 기한 파기의 updated_by(PR #88 /review F10)", () => {
+  it("대조 제외는 제외한 사람을, 보존 기한 파기는 null을 updated_by에 남긴다", async () => {
+    const sample = await seed({ submittedAt: kst("2020-06-01T10:00:00") });
+    const first = await makeReviewer(FULL_GRANT, "먼저고친사람");
+    await correctSubmission(first, sample.submissionId, { version: sample.row.version, name: sample.name, phone: "010-1111-2222" }, { ip: null });
+    const excluder = await makeReviewer(FULL_GRANT, "제외한사람");
+    expect((await excludeSubmission(excluder, sample.submissionId, { version: sample.row.version + 1 })).kind).toBe("excluded");
+    expect((await submissionRow(sample.submissionId)).updatedBy).toBe(excluder.id);
+
+    await runCertPurge({ now: kst("2031-04-01T00:00:00"), apply: true });
+    const purged = await submissionRow(sample.submissionId);
+    expect(purged.purgedAt).not.toBeNull();
+    expect(purged.updatedBy).toBeNull();
+  });
+});
+
 describe("미리 보기 서명 파일 수 — 삭제 대기와 보존 기한이 겹치는 줄은 한 번만 센다", () => {
   it("대조 제외로 서명이 삭제 대기인 줄이 보존 기한에도 닿으면 미리 보기 filesDeleted는 1이고 적용 결과와 같다", async () => {
     const sample = await seed({ submittedAt: kst("2025-06-01T10:00:00") });
     const at = kst("2025-07-01T00:00:00");
     await withTransaction(async (tx) => {
-      await clearSubmissionPersonalFields(SYSTEM_VIEWER, [sample.submissionId], { mode: "exclude", at }, tx);
+      await clearSubmissionPersonalFields(SYSTEM_VIEWER, [sample.submissionId], { mode: "exclude", at, by: null }, tx);
     });
     await db.update(certSubmissions).set({ excludedAt: at }).where(eq(certSubmissions.id, sample.submissionId));
 

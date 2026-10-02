@@ -576,7 +576,7 @@ export async function excludeSubmission(
     if (current.version !== parsed.data.version) return { kind: "stale" };
 
     await markSubmissionExcluded(viewer, id, { at, by: viewer.id }, tx);
-    await clearSubmissionPersonalFields(SYSTEM_VIEWER, [id], { mode: "exclude", at }, tx);
+    await clearSubmissionPersonalFields(SYSTEM_VIEWER, [id], { mode: "exclude", at, by: viewer.id }, tx);
     await recordAction(
       viewer,
       { actionType: "cert_purge", entity: ENTITY, entityId: id, detail: { submissions: 1, reason: "excluded" } },

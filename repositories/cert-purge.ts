@@ -65,19 +65,21 @@ export type ClearResult = { cleared: number; withSignature: number };
 // 칸 비우기 하나를 세 모드로 — purge: 이름 · 주민 암호문 · 가린 값 · 연락처 · 주소 · IP 가명을 비우고 purged_at을 채운다 ·
 // exclude(대조 제외): 이름 · purged_at만 두고 나머지를 비운다 · belowThreshold(CS-2 a): 주민 암호문 · 가린 값만 비운다.
 // signature_key는 어느 모드도 건드리지 않는다 — 삭제 대기 표시로 남아 파일 삭제가 끝난 뒤 비운다.
+// updated_by는 by로 덮는다 — 파기 작업(purge · belowThreshold)은 null, 대조 제외는 제외한 사람. 앞서 고친 사람이 남으면
+// 그 뒤 정정 충돌이 엉뚱한 이름을 댄다(PR #88 /review F10).
 // 파기되지 않은 줄에만 쓰고(조건부 UPDATE), 전체 보기의 FOR SHARE 잠금이 있으면 그 커밋까지 기다린다.
 // belowThreshold는 같은 문장에서 지금 가액 × 수량 ≤ 50,000을 다시 본다(후보를 읽은 뒤 바뀐 값 — 수량 정정이 커밋 전이면 그 행을 기다렸다가 새 값으로 판정).
 export async function clearSubmissionPersonalFields(
   viewer: Viewer,
   submissionIds: string[],
-  options: { mode: ClearMode; at: Date },
+  options: { mode: ClearMode; at: Date; by: string | null },
   tx: DbOrTx,
 ): Promise<ClearResult> {
   void viewer;
   if (submissionIds.length === 0) return { cleared: 0, withSignature: 0 };
 
-  const { mode, at } = options;
-  const common = { version: sql`${certSubmissions.version} + 1`, updatedAt: at };
+  const { mode, at, by } = options;
+  const common = { version: sql`${certSubmissions.version} + 1`, updatedAt: at, updatedBy: by };
   const values =
     mode === "purge"
       ? {

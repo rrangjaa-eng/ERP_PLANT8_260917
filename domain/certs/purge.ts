@@ -86,13 +86,13 @@ export async function runCertPurge(
     const purged = await clearSubmissionPersonalFields(
       SYSTEM_VIEWER,
       retentionDue.map((row) => row.id),
-      { mode: "purge", at: now },
+      { mode: "purge", at: now, by: null },
       tx,
     );
     const rrn = await clearSubmissionPersonalFields(
       SYSTEM_VIEWER,
       rrnDue.map((row) => row.id),
-      { mode: "belowThreshold", at: now },
+      { mode: "belowThreshold", at: now, by: null },
       tx,
     );
     await recordAction(

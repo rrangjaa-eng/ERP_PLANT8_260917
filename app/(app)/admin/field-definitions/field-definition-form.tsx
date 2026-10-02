@@ -330,7 +330,7 @@ function FieldDefinitionFormBody({
         {editing ? (
           <Form.Field id="fd-type" label="타입" width="select">
             <span className={styles.typeText}>
-              <span id="fd-type">{TYPE_OPTIONS.find((option) => option.value === editing.type)?.label}</span>
+              <output id="fd-type">{TYPE_OPTIONS.find((option) => option.value === editing.type)?.label}</output>
               <Link href={NEW_HREF} className={buttonLinkClassName("tertiary")}>
                 새 화면 항목 추가
               </Link>

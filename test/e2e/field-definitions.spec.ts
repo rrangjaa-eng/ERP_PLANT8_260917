@@ -418,6 +418,8 @@ test("수정: 목록 「수정」으로 열면 값이 채워지고 타입은 텍
   // 타입은 select가 아니라 텍스트이고, 타입을 바꾸는 길은 새 화면 항목 추가 링크뿐이다.
   await expect(form.locator("select")).toHaveCount(0);
   await expect(form.getByText("텍스트", { exact: true })).toBeVisible();
+  // 「타입」 라벨이 타입 글자를 가리킨다(label for가 라벨 붙일 수 없는 요소를 가리키지 않는다).
+  await expect(form.getByLabel("타입", { exact: true })).toHaveText("텍스트");
   await expect(form.getByRole("link", { name: "새 화면 항목 추가" })).toHaveAttribute("href", "/admin/field-definitions?new=1");
   // 폼이 열려 있으면 필터 줄 「화면 항목 추가」는 숨는다.
   await expect(page.getByRole("link", { name: "화면 항목 추가", exact: true })).toHaveCount(0);

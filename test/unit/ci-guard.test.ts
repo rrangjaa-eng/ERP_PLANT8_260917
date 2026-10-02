@@ -50,6 +50,7 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
       "pg_isready",
       "pnpm lint",
       "pnpm typecheck",
+      "pnpm build:cli",
       "pnpm lint:sql",
       "pnpm test:unit",
       ".claude/hooks/tests",
@@ -96,18 +97,47 @@ describe("ci-guard: .github/workflows 메타 검사", () => {
     expect(indexes).toEqual([...indexes].sort((a, b) => a - b));
   });
 
-  it("quality 잡 내부 순서: lint < typecheck < lint:sql < test:unit < 훅 테스트", () => {
+  it("quality 잡 내부 순서: lint < typecheck < build:cli < lint:sql < test:unit < 훅 테스트", () => {
     const ci = readWorkflow("ci.yml");
     const qualityBlock = jobBlock(ci, "quality", "integration");
     const order = [
       "pnpm lint",
       "pnpm typecheck",
+      "pnpm build:cli",
       "pnpm lint:sql",
       "pnpm test:unit",
       ".claude/hooks/tests",
     ].map((token) => firstLine(qualityBlock, token));
     for (const line of order) expect(line).toBeGreaterThan(-1);
     expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
+  it("quality 잡은 같은 merge tree가 이미 통과했으면 나머지 단계를 건너뛴다(캐시 키 = tree)", () => {
+    const ci = readWorkflow("ci.yml");
+    const qualityBlock = jobBlock(ci, "quality", "integration");
+    for (const token of [
+      "HEAD^{tree}",
+      "actions/cache/restore@v4",
+      "lookup-only: true",
+      "key: quality-passed-${{ steps.tree.outputs.tree }}",
+      "actions/cache/save@v4",
+    ]) {
+      expect(qualityBlock, `quality 잡에 ${token}이 있어야 한다`).toContain(token);
+    }
+  });
+
+  it("quality 잡은 passed 스텝 뒤의 모든 스텝에 cache-hit 가드가 있다", () => {
+    const ci = readWorkflow("ci.yml");
+    const lines = jobBlock(ci, "quality", "integration").split("\n");
+    const passedAt = lines.findIndex((line) => /^ {6}- id: passed$/.test(line));
+    expect(passedAt, "quality 잡에 id: passed 스텝이 있어야 한다").toBeGreaterThan(-1);
+    const after = lines.slice(passedAt + 1);
+    const stepCount = after.filter((line) => /^ {6}- /.test(line)).length;
+    const guardCount = after.filter(
+      (line) => line.trim() === "if: steps.passed.outputs.cache-hit != 'true'",
+    ).length;
+    expect(stepCount).toBeGreaterThan(0);
+    expect(guardCount).toBe(stepCount);
   });
 
   it("quality 잡은 if 조건 없이 항상 돈다(draft PR의 빠른 경로)", () => {

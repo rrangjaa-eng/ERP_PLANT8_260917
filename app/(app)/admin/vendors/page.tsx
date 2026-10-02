@@ -1,8 +1,6 @@
-/* eslint-disable no-restricted-syntax -- 04.6 스킨 A 이관 전 */
 import { Fragment } from "react";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { LinkPending } from "@/ui/link-pending/LinkPending";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
@@ -13,6 +11,8 @@ import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
 import { SidePanel } from "@/ui/side-panel/SidePanel";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
+import { StaticTable } from "@/ui/table/StaticTable";
+import { RowAction, RowActions } from "@/ui/row-actions/RowActions";
 import { VendorForm, VendorHiddenToggle, VendorDeleteButton } from "./vendor-form";
 import { AccountNumberCell } from "./account-number";
 import styles from "./vendors.module.css";
@@ -86,9 +86,9 @@ export default async function VendorsPage({
       title="거래처"
       primaryAction={primaryAction}
       filters={
-        <a href={includeHidden ? "?includeHidden=0" : "?includeHidden=1"} className={styles.toggle}>
+        <Link href={includeHidden ? "?includeHidden=0" : "?includeHidden=1"} scroll={false} className={styles.toggle}>
           {includeHidden ? "숨김 제외" : "숨김 포함"}
-        </a>
+        </Link>
       }
       panel={
         // 쓰기 권한이 없는 계급에는 등록 폼 자체를 렌더하지 않는다 — "이유 있는 비활성" 대신 "버튼 자체가 없음"(03-UI-SPEC.md).
@@ -109,87 +109,56 @@ export default async function VendorsPage({
           action={{ label: "거래처 등록", href: vendorsHref(includeHidden, { isNew: true }) }}
         />
       ) : (
-        <table className={styles.table}>
-          <caption className="sr-only">거래처</caption>
-          <thead>
-            <tr>
-              <th scope="col">이름</th>
-              <th scope="col" className={styles.p2}>사업자 번호</th>
-              <th scope="col" className={styles.p2}>기본 증빙 종류</th>
-              <th scope="col">계좌</th>
-              <th scope="col" className={styles.p2}>상태</th>
-              {hasActions ? <th scope="col">동작</th> : null}
-            </tr>
-          </thead>
-          <tbody>
-            {vendors.map((vendor) => {
-              const evidenceType = vendor.defaultEvidenceType
-                ? (evidenceTypeLabelByValue.get(vendor.defaultEvidenceType) ?? vendor.defaultEvidenceType)
-                : null;
-              // §7-3 폰 전략 — P1(이름·계좌·동작)만 열로 남고 나머지는 행 아래
-              // 접힌 줄 하나로 들어간다(상세 화면이 없어 P3로 숨기지 않는다).
-              const folded = [
-                vendor.businessNo,
-                evidenceType,
-                vendor.archivedAt ? "보관됨" : vendor.hidden ? "숨김" : null,
-              ].filter((value): value is string => !!value);
-              return (
-                <Fragment key={vendor.id}>
-                  <tr>
-                    <td>{vendor.name}</td>
-                    <td className={styles.p2}>{vendor.businessNo ?? "—"}</td>
-                    <td className={styles.p2}>{evidenceType ?? "—"}</td>
-                    <td>
-                      <AccountNumberCell
-                        vendorId={vendor.id}
-                        masked={maskTail4(vendor.accountNumberLast4)}
-                        canReveal={canReveal}
-                      />
-                    </td>
-                    <td className={styles.p2}>
-                      {vendor.archivedAt ? (
-                        <StatusTag kind="muted" variant="text">
-                          보관됨
-                        </StatusTag>
-                      ) : vendor.hidden ? (
-                        <StatusTag kind="muted" variant="text">
-                          숨김
-                        </StatusTag>
-                      ) : "—"}
-                    </td>
-                    {hasActions ? (
-                      <td>
-                        {vendor.archivedAt ? null : (
-                          <span className={styles.rowActions}>
-                            {canWrite ? (
-                              <Link
-                                href={vendorsHref(includeHidden, { editId: vendor.id })}
-                                scroll={false}
-                                className={`${styles.toggle} ${styles.rowLink}`}
-                              >
-                                수정
-                                <LinkPending />
-                              </Link>
-                            ) : null}
-                            {canWrite ? <VendorHiddenToggle id={vendor.id} hidden={vendor.hidden} /> : null}
-                            {canArchive ? <VendorDeleteButton id={vendor.id} name={vendor.name} /> : null}
-                          </span>
-                        )}
-                      </td>
-                    ) : null}
-                  </tr>
-                  {folded.length > 0 ? (
-                    <tr className={styles.collapsedRow}>
-                      <td colSpan={hasActions ? 6 : 5} className={styles.collapsedCell}>
-                        {folded.join(" · ")}
-                      </td>
-                    </tr>
-                  ) : null}
-                </Fragment>
-              );
-            })}
-          </tbody>
-        </table>
+        <StaticTable
+          caption="거래처"
+          columns={[
+            { key: "name", header: "이름", priority: "p1" },
+            { key: "businessNo", header: "사업자 번호", priority: "p2" },
+            { key: "evidenceType", header: "기본 증빙 종류", priority: "p2" },
+            { key: "account", header: "계좌", priority: "p1" },
+            { key: "status", header: "상태", priority: "p2" },
+            ...(hasActions ? [{ key: "actions", header: "동작", priority: "p1" as const }] : []),
+          ]}
+          rows={vendors.map((vendor) => {
+            const evidenceType = vendor.defaultEvidenceType
+              ? (evidenceTypeLabelByValue.get(vendor.defaultEvidenceType) ?? vendor.defaultEvidenceType)
+              : null;
+            return {
+              key: vendor.id,
+              cells: [
+                vendor.name,
+                vendor.businessNo ?? "—",
+                evidenceType ?? "—",
+                <AccountNumberCell
+                  key="account"
+                  vendorId={vendor.id}
+                  masked={maskTail4(vendor.accountNumberLast4)}
+                  canReveal={canReveal}
+                />,
+                <Fragment key="status">
+                  {vendor.archivedAt ? (
+                    <StatusTag status="보관됨" variant="text" />
+                  ) : vendor.hidden ? (
+                    <StatusTag status="숨김" variant="text" />
+                  ) : "—"}
+                </Fragment>,
+                ...(hasActions
+                  ? [
+                      vendor.archivedAt ? null : (
+                        <RowActions key="actions">
+                          {canWrite ? (
+                            <RowAction href={vendorsHref(includeHidden, { editId: vendor.id })}>수정</RowAction>
+                          ) : null}
+                          {canWrite ? <VendorHiddenToggle id={vendor.id} hidden={vendor.hidden} /> : null}
+                          {canArchive ? <VendorDeleteButton id={vendor.id} name={vendor.name} /> : null}
+                        </RowActions>
+                      ),
+                    ]
+                  : []),
+              ],
+            };
+          })}
+        />
       )}
     </ListScreen>
   );

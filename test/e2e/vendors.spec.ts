@@ -6,8 +6,17 @@ import { setPermissionCell } from "@/domain/permissions/matrix";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
 import { upsertVisibility } from "@/repositories/permissions";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
-import { expectGapsAtLeastToken, expectNoRowOverflow, loginAsSysadmin, textLineCount } from "./row-actions-helpers";
+import {
+  adjacentActionGaps,
+  expectGapsAtLeastToken,
+  expectNoRowOverflow,
+  loginAsSysadmin,
+  textLineCount,
+  tokenNumber,
+} from "./row-actions-helpers";
 import { insertVendor, setVendorHidden } from "@/repositories/vendors";
+import { checkPrinciples } from "./principles-check";
+import { isStrict } from "./design-principles";
 
 // MAST-01: 거래처를 등록하고, 계좌번호가 뒤 4자리만 보이며, 마스킹 해제
 // 권한이 있는 계급만 「번호 보기」를 볼 수 있고 그 해제가 로그에 남는 것을
@@ -232,7 +241,7 @@ test.describe("거래처 목록 — 계좌번호 없음 빈 칸 em dash (§2-4 �
 });
 
 // 260930-f3l /design-review FINDING-001: 거래처 표 행 동작 「수정 · 숨기기 · 삭제」 사이 가로 간격이 0px라 한 낱말처럼 읽혔다.
-// 사람 목록(PR #108)의 .rowActions 규칙(--s-4)을 같은 이름으로 적용한다(SYSTEM §6-1). 700은 .rowActions가 nowrap을 지키는 가장 좁은 폭(D3).
+// 공용 `RowActions`(04.6-05 · ui/row-actions)가 사이 --s-4, 위험 「삭제」는 맨 끝 앞 --s-8로 그린다(SYSTEM §6-1). 700은 PC 폭의 가장 좁은 값(D3).
 test.describe("거래처 행 동작 간격 --s-4 (260930-f3l FINDING-001)", () => {
   async function seed(): Promise<{ target: string; cleanup: () => Promise<void> }> {
     const stamp = randomUUID().slice(0, 8);
@@ -269,6 +278,82 @@ test.describe("거래처 행 동작 간격 --s-4 (260930-f3l FINDING-001)", () =
     });
   }
 
+  // 04.6-11 · M13 · D21: 간격은 글자 박스 기준 — 「수정」↔「숨기기」 = --s-4, 「숨기기」↔「삭제」 ≥ --s-8(위험 행동 떨어뜨림).
+  // PC 폭에서는 RowAction에 좌우 패딩이 없어 요소 상자 = 글자 상자라 기존 도우미(요소 상자)로 잰다.
+  for (const width of [1280, 768, 700]) {
+    test(`${width}: 행 행동 간격이 글자 박스 기준 --s-4 · 삭제 앞 --s-8이고 세 행동의 모양이 같다 (D21 · M13)`, async ({ page }) => {
+      const { target, cleanup } = await seed();
+      try {
+        await page.setViewportSize({ width, height: 800 });
+        await loginAsSysadmin(page);
+        await page.goto("/admin/vendors");
+        const row = page.locator("tr", { hasText: target });
+        const edit = row.getByRole("link", { name: "수정" });
+        const hide = row.getByRole("button", { name: "숨기기" });
+        const remove = row.getByRole("button", { name: "삭제" });
+        const s4 = await tokenNumber(page, "--s-4");
+        const s8 = await tokenNumber(page, "--s-8");
+        const gaps = await adjacentActionGaps([edit, hide, remove]);
+        expect(gaps.every((item) => item.horizontal), `${width}px 세 행동 한 줄`).toBe(true);
+        expect(Math.abs(gaps[0]!.gap - s4), `${width}px 수정↔숨기기 ${gaps[0]!.gap}px`).toBeLessThanOrEqual(0.5);
+        expect(gaps[1]!.gap, `${width}px 숨기기↔삭제 ${gaps[1]!.gap}px`).toBeGreaterThanOrEqual(s8 - 0.5);
+
+        // 글자 박스 전제 — 요소 상자 너비와 안 글자 Range 너비의 차 ≤ 0.5.
+        for (const action of [edit, hide, remove]) {
+          const delta = await action.evaluate((element) => {
+            const range = document.createRange();
+            range.selectNodeContents(element);
+            const rects = Array.from(range.getClientRects());
+            const glyph = Math.max(...rects.map((rect) => rect.right)) - Math.min(...rects.map((rect) => rect.left));
+            return element.getBoundingClientRect().width - glyph;
+          });
+          expect(Math.abs(delta), `${width}px 요소 상자 − 글자 상자 ${delta}px`).toBeLessThanOrEqual(0.5);
+        }
+
+        // 세 행동의 글자 크기 · 굵기 · 밑줄이 같고, 위험 색은 「삭제」 하나뿐이다.
+        const looks = await Promise.all(
+          [edit, hide, remove].map((action) =>
+            action.evaluate((element) => {
+              const style = getComputedStyle(element);
+              return { size: style.fontSize, weight: style.fontWeight, line: style.textDecorationLine, color: style.color };
+            }),
+          ),
+        );
+        expect(looks[1]!.size).toBe(looks[0]!.size);
+        expect(looks[2]!.size).toBe(looks[0]!.size);
+        expect(looks[1]!.weight).toBe(looks[0]!.weight);
+        expect(looks[2]!.weight).toBe(looks[0]!.weight);
+        expect(looks[1]!.line).toBe(looks[0]!.line);
+        expect(looks[2]!.line).toBe(looks[0]!.line);
+        expect(looks[1]!.color, "수정 · 숨기기 같은 색").toBe(looks[0]!.color);
+        expect(looks[2]!.color, "위험 색은 삭제 하나뿐").not.toBe(looks[0]!.color);
+      } finally {
+        await cleanup();
+      }
+    });
+  }
+
+  // D21: 폰 390의 누르는 영역(요소 상자) 높이 ≥ 44 — PC 글자 박스 기준 간격과 따로 잰다.
+  test("390: 세 행동의 누르는 영역 높이가 44 이상이다 (D21)", async ({ page }) => {
+    const { target, cleanup } = await seed();
+    try {
+      await page.setViewportSize({ width: 390, height: 800 });
+      await loginAsSysadmin(page);
+      await page.goto("/admin/vendors");
+      const row = page.locator("tr", { hasText: target });
+      for (const action of [
+        row.getByRole("link", { name: "수정" }),
+        row.getByRole("button", { name: "숨기기" }),
+        row.getByRole("button", { name: "삭제" }),
+      ]) {
+        const box = await action.boundingBox();
+        expect(box!.height).toBeGreaterThanOrEqual(44);
+      }
+    } finally {
+      await cleanup();
+    }
+  });
+
   for (const width of [700, 768, 1024, 1280]) {
     test(`${width}: 「삭제」를 누른 뒤에도 페이지와 표가 가로로 넘치지 않는다`, async ({ page }) => {
       const { target, cleanup } = await seed();
@@ -285,4 +370,45 @@ test.describe("거래처 행 동작 간격 --s-4 (260930-f3l FINDING-001)", () =
       }
     });
   }
+});
+
+// 04.6-11 · R1: 필터 토글은 next/link scroll={false}라 스크롤이 유지되고, 서버 표(StaticTable)라 목록 응답이 200이다.
+test.describe("거래처 필터 토글 · 서버 표 (04.6-11 R1)", () => {
+  test("「숨김 포함」을 눌러도 스크롤이 유지되고 목록 응답이 200이다", async ({ page }) => {
+    const stamp = randomUUID().slice(0, 8);
+    const rows = [];
+    for (let index = 0; index < 30; index += 1) {
+      rows.push(await insertVendor(SYSTEM_VIEWER, { name: `스크롤-${stamp}-${index}`, normalizedName: `스크롤-${randomUUID()}` }));
+    }
+    try {
+      await page.setViewportSize({ width: 1280, height: 400 });
+      await loginAsSysadmin(page);
+      const response = await page.goto("/admin/vendors");
+      expect(response?.status()).toBe(200);
+      // 링크가 보이는 위치에서 잰다 — 화면 밖 링크는 Playwright가 먼저 스크롤해 측정이 깨진다(04.6-04 E2E 요령).
+      await page.evaluate(() => window.scrollTo(0, 40));
+      const before = await page.evaluate(() => window.scrollY);
+      expect(before).toBeGreaterThan(0);
+      await page.getByRole("link", { name: "숨김 포함" }).click();
+      await expect(page.getByRole("link", { name: "숨김 제외" })).toBeVisible();
+      expect(await page.evaluate(() => window.scrollY)).toBe(before);
+    } finally {
+      for (const vendor of rows) await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
+  });
+});
+
+// 04.6-11 · R11 · 공통 §10: 옮긴 화면의 원칙 막는 모드 — 목록 · 등록 패널 · 수정 패널 모두 경고 0.
+test.describe("거래처 화면 사용성 원칙 (04.6-11 R11)", () => {
+  test("화면 사용성 원칙(막는 모드) — 거래처", async ({ page }) => {
+    const vendor = await insertVendor(SYSTEM_VIEWER, { name: `원칙점검-${randomUUID().slice(0, 8)}`, normalizedName: `원칙점검-${randomUUID()}` });
+    try {
+      await loginAsSysadmin(page);
+      await checkPrinciples(page, ["/admin/vendors", "/admin/vendors?new=1", `/admin/vendors?editId=${vendor.id}`], {
+        strict: isStrict(process.env.DESIGN_PRINCIPLES_STRICT),
+      });
+    } finally {
+      await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+    }
+  });
 });

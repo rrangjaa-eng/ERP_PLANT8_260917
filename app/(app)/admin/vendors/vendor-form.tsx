@@ -6,6 +6,7 @@ import { useAction } from "next-safe-action/hooks";
 import { createVendorAction, updateVendorAction, setVendorHiddenAction, archiveVendorAction } from "./actions";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
+import { RowAction } from "@/ui/row-actions/RowActions";
 import { PanelForm, type PanelFormHandle } from "@/ui/side-panel/PanelForm";
 import { SelectHint } from "@/ui/select/Select";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
@@ -341,9 +342,9 @@ export function VendorHiddenToggle({ id, hidden }: { id: string; hidden: boolean
   const { execute, isExecuting } = useAction(setVendorHiddenAction);
 
   return (
-    <Button variant="tertiary" pending={isExecuting} onClick={() => execute({ id, hidden: !hidden })}>
+    <RowAction pending={isExecuting} onClick={() => execute({ id, hidden: !hidden })}>
       {hidden ? "보이기" : "숨기기"}
-    </Button>
+    </RowAction>
   );
 }
 

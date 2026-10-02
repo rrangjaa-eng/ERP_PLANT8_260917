@@ -956,6 +956,26 @@ describe("deploy.sh — 데이터 키는 평문 시크릿(KMS 없음)", () => {
     expect(r.log).not.toContain("run deploy plant8-staging ");
   });
 
+  it("better-auth-secret versions list가 오류로 실패하면 새 값을 쓰지 않고 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "fail-gcloud": "secrets versions list better-auth-secret-staging" },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("cannot list versions of better-auth-secret-staging");
+    expect(r.log).not.toContain("secrets versions add better-auth-secret-staging");
+    expect(r.log).not.toContain("run deploy plant8-staging ");
+  });
+
+  it("db-admin-password versions list가 오류로 실패하면 비밀번호를 새로 만들거나 바꾸지 않고 멈춘다", () => {
+    const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"], {
+      state: { "fail-gcloud": "secrets versions list db-admin-password-staging" },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain("cannot list versions of db-admin-password-staging");
+    expect(r.log).not.toContain("secrets versions add db-admin-password-staging");
+    expect(r.log).not.toContain("sql users set-password");
+  });
+
   it("gcloud kms를 부르지 않고 KMS · 감싼 키 환경 변수 · 감싼 시크릿을 붙이지 않는다", () => {
     const r = deploy(repoDir, ["--env", "staging", "--project", "test-proj"]);
     expect(r.status).toBe(0);

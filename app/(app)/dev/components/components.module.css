@@ -1,8 +1,103 @@
-/* 04.6-06 컴포넌트 모음 뼈대 — 표본을 한 줄에 늘어놓는다. 토큰은 역할 이름만. */
+/* 04.6-06 컴포넌트 모음 뼈대 + 04.6-13 전 구역 — 표본을 늘어놓는 자리. 토큰은 역할 이름만. */
 
 .samples {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   gap: var(--s-6);
+}
+
+.fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--s-6);
+}
+
+.fieldLabel {
+  color: var(--text-strong);
+  font-size: var(--text-body);
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3) var(--s-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.numbers {
+  display: grid;
+  gap: var(--s-3);
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--text-body);
+}
+
+.numbers > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-4);
+}
+
+.numbers dt {
+  min-width: var(--s-12);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+}
+
+.numbers dd {
+  margin: 0;
+}
+
+/* 합계 면(UI-SPEC 「합계 면」) — 흰 면 · 1px 면 테두리 · r8 · 안쪽 --s-3 --s-4. */
+.totalFace {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  border: var(--line-w) solid var(--border-surface);
+  border-radius: var(--radius-surface);
+  background: var(--surface-base);
+  color: var(--text-strong);
+  font-size: var(--text-body);
+}
+
+/* 화면 틀 3종 축소 예 — 실제 틀이 아니라 칸 이름만 그린 그림이다(제목 h1이 둘이 되지 않게). */
+.frames {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-4);
+}
+
+.frame {
+  display: grid;
+  flex: 1 1 var(--s-12);
+  align-content: start;
+  gap: var(--s-2);
+  min-width: 0;
+  padding: var(--s-3);
+  border: var(--line-w) solid var(--border-surface);
+  border-radius: var(--radius-surface);
+  background: var(--surface-muted);
+}
+
+.frameName {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--text-aux);
+  font-weight: var(--fw-bold);
+}
+
+.framePart {
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--radius-tag);
+  background: var(--surface-base);
+  color: var(--text-muted);
+  font-size: var(--text-tag);
 }

@@ -1413,7 +1413,7 @@ C-2 손익 원장 초안(`system/dashboard-pnl.html`, 표)을 보드로 보이�
 
 **버린 대안**: SYSTEM 예시대로 가운뎃점.
 
-**범위**: SYSTEM.md §7-15 「검증 관문은 서버 하나」의 예시 한 곳. 첫 사용처는 거래처 폼 요약(04.5-06). 이 규칙보다 먼저 만들어져 칸 이름을 가운뎃점으로 잇는 기존 구현 둘 — 공휴일 폼(`app/(app)/admin/holidays/holiday-form.tsx`)과 확인증 신청 규칙(`app/(app)/certs/events/request-rules.ts`의 「행사 이름 · 당첨일 2칸」) — 은 아직 옮기지 않았다(04.5-09 SUMMARY · WINDOWS.md 후속). 토큰 변경 없음.
+**범위**: SYSTEM.md §7-15 「검증 관문은 서버 하나」의 예시 한 곳. 첫 사용처는 거래처 폼 요약(04.5-06). 이 규칙보다 먼저 만들어져 칸 이름을 가운뎃점으로 잇는 기존 구현 둘 — 공휴일 폼(`app/(app)/admin/holidays/holiday-form.tsx`)과 확인증 신청 규칙(`app/(app)/certs/events/request-rules.ts`의 「행사 이름 · 당첨일 2칸」) — 도 같은 페이즈에 「, 」로 옮겼다(커밋 d58f756). 토큰 변경 없음.
 
 ## 2026-09-25 — §7-15 펼침: 네이티브 details/summary, 기본 표식 유지
 

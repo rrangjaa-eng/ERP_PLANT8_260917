@@ -1,0 +1,6 @@
+/* 후보 7 — 포커스 링이 radius를 따라감 + 저장 대기 칸 --g-100 틴트. 비교용(확정 아님). 새 값 없음(토큰 재사용). */
+[class*="Table-module__"][class*="__editableCell"]:focus-visible { outline-offset: calc(-1 * var(--focus-w)); border-radius: var(--radius-control); }
+[class*="__cellInput"]:focus-visible,
+[class*="__cellInputNumeric"]:focus-visible,
+[class*="__cellSelect"]:focus-visible { outline: var(--focus-w) solid var(--focus); outline-offset: var(--focus-offset); border-radius: var(--radius-control); }
+[class*="Table-module__"][class*="__dirtyCell"] { background: var(--g-100); }

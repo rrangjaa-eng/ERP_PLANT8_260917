@@ -3,6 +3,7 @@
 import type { FormEvent } from "react";
 import { useAction } from "next-safe-action/hooks";
 import { changePasswordAction } from "./actions";
+import { Form } from "@/ui/form/Form";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
 import { FormAlert } from "@/ui/form-alert/FormAlert";
@@ -33,8 +34,7 @@ export function ChangePasswordForm() {
   const newPasswordError = result.validationErrors?.newPassword?._errors?.[0];
 
   return (
-    <form onSubmit={handleSubmit}>
-      <h2 className={styles.sectionTitle}>비밀번호 변경</h2>
+    <Form layout="page" className={styles.passwordForm} onSubmit={handleSubmit}>
       <TextField
         id="currentPassword"
         name="currentPassword"
@@ -57,6 +57,6 @@ export function ChangePasswordForm() {
       <Button type="submit" variant="primary" pending={isExecuting}>
         비밀번호 변경
       </Button>
-    </form>
+    </Form>
   );
 }

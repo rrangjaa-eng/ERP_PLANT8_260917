@@ -5,8 +5,8 @@ import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { insertCodeItem, setCodeItemActive } from "@/repositories/code-tables";
 
 // 2026-10-01 PR #126 /design-review(DOM 실측)에서 확인된 기존 결함 2건의 회귀.
-// 1) SYSTEM.md §3 「섹션 사이: 2px 강한 선 위 --s-6, 아래 --s-3」 — 설정·사람 상세의
-//    섹션이 선 아래 24px였다.
+// 1) 섹션 위 선 1px(`--border-row`) 아래 --s-3(UI-SPEC 「상세 섹션」 — 옛 SYSTEM.md §3은 2px 강한 선) —
+//    설정·사람 상세의 섹션이 선 아래 24px였다.
 // 2) SYSTEM.md §6-3 · §7-2 · §7-15 「PC 폼 라벨은 왼쪽 96px(--label-w), 폰에서는 위」
 //    · 칸 폭 「select 200」 — 폼의 `.selectLabel`(select 한 칸 묶음)이 PC에서도 라벨을
 //    위에 두고 select를 전폭으로 그렸다. TextField·Form.Field와 같은 라벨 열(96 + --s-2).
@@ -168,25 +168,40 @@ async function expectLabelLayoutAtAllWidths(page: Page, scope: string, requireTe
   }
 }
 
-// 2px 강한 선으로 여는 섹션마다 선 아래부터 첫 h2 상자 위까지가 --s-3인지 잰다.
+// 1px 위 선(`--line-w` · `--border-row`)으로 여는 섹션마다 선 아래부터 첫 h2 상자 위까지가 --s-3인지 잰다.
+// 선 색은 스펙 안 탐침 요소로 `--border-row` 계산 색을 얻어 비교한다.
 // 잰 섹션 제목을 돌려준다 — 대상 섹션이 빠지지 않았는지 테스트가 고정한다.
 async function expectSectionGapBelowLine(page: Page): Promise<string[]> {
   const below = await tokenNumber(page, "--s-3");
-  const strong = await tokenNumber(page, "--line-w-strong");
-  const gaps = await page.evaluate((strongWidth) => {
-    return Array.from(document.querySelectorAll<HTMLElement>("main section"))
-      .filter((section) => parseFloat(getComputedStyle(section).borderTopWidth) === strongWidth)
-      .flatMap((section) => {
-        const heading = section.querySelector("h2");
-        if (!heading) return [];
-        return [
-          {
-            title: (heading.textContent ?? "").trim(),
-            gap: heading.getBoundingClientRect().top - (section.getBoundingClientRect().top + strongWidth),
-          },
-        ];
-      });
-  }, strong);
+  const lineWidth = await tokenNumber(page, "--line-w");
+  const rowBorderColor = await page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.style.borderTop = "1px solid var(--border-row)";
+    document.body.append(probe);
+    const color = getComputedStyle(probe).borderTopColor;
+    probe.remove();
+    return color;
+  });
+  const gaps = await page.evaluate(
+    ({ width, color }) => {
+      return Array.from(document.querySelectorAll<HTMLElement>("main section"))
+        .filter((section) => {
+          const style = getComputedStyle(section);
+          return parseFloat(style.borderTopWidth) === width && style.borderTopColor === color;
+        })
+        .flatMap((section) => {
+          const heading = section.querySelector("h2");
+          if (!heading) return [];
+          return [
+            {
+              title: (heading.textContent ?? "").trim(),
+              gap: heading.getBoundingClientRect().top - (section.getBoundingClientRect().top + width),
+            },
+          ];
+        });
+    },
+    { width: lineWidth, color: rowBorderColor },
+  );
   expect(gaps.length).toBeGreaterThan(0);
   for (const { title, gap } of gaps) {
     expect(Math.abs(gap - below), `${title} 선 아래 간격 @${page.viewportSize()?.width}`).toBeLessThanOrEqual(0.5);
@@ -200,18 +215,19 @@ async function openFirstPersonDetail(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/admin\/people\/.+/);
 }
 
-test.describe("섹션 2px 선 아래 --s-3 (SYSTEM.md §3)", () => {
+test.describe("섹션 1px 선 아래 --s-3 (UI-SPEC 「상세 섹션」)", () => {
   for (const width of [...PC_WIDTHS, ...PHONE_WIDTHS]) {
     test(`설정 화면 섹션 @${width}`, async ({ page }) => {
       await loginAsSysadmin(page);
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/admin/settings");
       const measured = await expectSectionGapBelowLine(page);
-      // 설정 섹션은 전부 같은 2px 선 섹션이다 — 하나도 빠지지 않는다.
+      // 설정 섹션은 전부 같은 1px 선 섹션이다 — 하나도 빠지지 않는다.
       expect(measured).toEqual(await page.locator("main section h2").allTextContents());
     });
 
-    test(`사람 상세 섹션(연차 · 소속 발령 이력) @${width}`, async ({ page }) => {
+    // 사람 상세 섹션은 같은 웨이브 04.6-14가 1px로 바꾼다 — 합본 묶음(--grep @wave-merge)이 돈다.
+    test(`사람 상세 섹션(연차 · 소속 발령 이력) @${width}`, { tag: "@wave-merge" }, async ({ page }) => {
       await loginAsSysadmin(page);
       await page.setViewportSize({ width, height: 900 });
       await openFirstPersonDetail(page);

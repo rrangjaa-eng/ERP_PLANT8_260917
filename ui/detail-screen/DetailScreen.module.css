@@ -52,7 +52,7 @@
 
 .section {
   margin: var(--s-6) 0 0;
-  padding: var(--s-4) 0 0;
+  padding: var(--s-3) 0 0;
   border-top: var(--line-w) solid var(--border-row);
 }
 

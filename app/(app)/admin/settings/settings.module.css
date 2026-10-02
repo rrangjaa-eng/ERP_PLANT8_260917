@@ -1,19 +1,5 @@
-/* 04.6 스킨 A 이관 전: CSS */
 /* SYSTEM.md §6-2 상세 화면 골격(탭 없이 섹션) + §7-2 자동 생성 설정 화면
-   필드 렌더 규칙. 색·서체·radius는 tokens.css 변수만(D-20). 간격 리터럴은
-   허용된다(02-02 결정). */
-
-.section {
-  border-top: var(--line-w-strong) solid var(--line-strong);
-  padding-top: var(--s-3);
-  margin-top: var(--s-6);
-}
-
-.sectionTitle {
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-bold);
-  margin: 0 0 var(--s-4) 0;
-}
+   필드 렌더 규칙. 역할 토큰만(D-20). 섹션 틀(위 1px 선 `--border-row` · 아래 --s-3 · 제목 크기)은 `DetailScreen.Section`이 맡는다. */
 
 .field {
   margin-bottom: var(--s-4);
@@ -22,9 +8,9 @@
 }
 
 .field legend {
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
-  color: var(--muted);
+  color: var(--text-muted);
   padding: 0;
   margin-bottom: var(--s-1);
 }
@@ -33,7 +19,7 @@
   display: flex;
   align-items: center;
   gap: var(--s-2);
-  font-size: var(--fs-base);
+  font-size: var(--text-body);
 }
 
 .checkboxLabel input {
@@ -46,9 +32,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--s-1);
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 /* §6-3 · §7-2 · §7-15 — PC 폼 라벨 열 96(--label-w) + --s-2(TextField · Form.Field와
@@ -69,59 +55,70 @@
   }
 
   .selectLabel > select {
-    width: 200px;
+    width: var(--field-w-select);
     max-width: 100%;
     margin-top: calc(-1 * var(--s-1));
   }
 
   /* 칸 아래 힌트 · 경고 · 오류는 입력과 같은 x에서 시작한다(§7-2 「입력 아래」) — select 칸과
      TextField 칸(.field의 div 자식) 둘 다. */
+  .field {
+    display: grid;
+    grid-template-columns: var(--label-w) minmax(0, 1fr);
+    column-gap: var(--s-2);
+  }
+
+  .field > * {
+    grid-column: 1 / -1;
+  }
+
   .selectLabel ~ .hint,
   .selectLabel ~ .warning,
   .selectLabel ~ .error,
   .field > div ~ .hint {
-    margin-left: calc(var(--label-w) + var(--s-2));
+    grid-column: 2;
   }
 }
 
 .select {
-  height: var(--control-h);
-  border: var(--line-w) solid var(--line-ui);
-  background: var(--bg);
-  color: var(--fg);
+  height: var(--field-h, var(--control-h));
+  border: var(--line-w) solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-base);
+  color: var(--text-strong);
   padding: 0 var(--s-2);
-  font-size: var(--fs-base);
+  font-size: var(--text-body);
 }
 
-/* SYSTEM.md §1-2: 비활성 글자는 --faint on --surface. 반투명은 --scrim 하나뿐이라 UA opacity를 끈다. */
+/* SYSTEM.md §1-2: 비활성 글자는 --text-faint on --surface-muted. UA 반투명(opacity)은 끈다. */
 .select:disabled {
-  color: var(--faint);
-  background: var(--surface);
+  color: var(--text-faint);
+  background: var(--surface-muted);
   opacity: 1;
 }
 
 .hint {
-  font-size: var(--fs-sm);
-  color: var(--muted);
+  font-size: var(--text-aux);
+  color: var(--text-muted);
   margin: var(--s-1) 0 0 0;
 }
 
 .error {
-  font-size: var(--fs-sm);
-  color: var(--danger);
+  font-size: var(--text-aux);
+  color: var(--status-danger);
   margin: var(--s-1) 0 0 0;
 }
 
 .warning {
-  font-size: var(--fs-sm);
-  color: var(--warning);
+  font-size: var(--text-aux);
+  color: var(--status-warning);
   margin: var(--s-1) 0 0 0;
 }
 
 .historizedLabel {
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
-  color: var(--muted);
+  color: var(--text-muted);
   margin: 0;
 }
 
@@ -144,8 +141,8 @@
   align-items: center;
   column-gap: var(--s-2);
   margin: var(--s-2) 0;
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
   word-break: keep-all;
 }
 
@@ -159,7 +156,7 @@
   border: 0;
   background: none;
   color: var(--accent);
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
   text-decoration: underline;
   text-decoration-thickness: var(--line-w);
@@ -169,7 +166,7 @@
 
 /* §4-4 · §7-1 3차 밑줄 1px → hover 2px. */
 .restoreAction:hover {
-  text-decoration-thickness: var(--line-w-strong);
+  text-decoration-thickness: var(--underline-w-hover);
 }
 
 @media (max-width: 699.98px) {

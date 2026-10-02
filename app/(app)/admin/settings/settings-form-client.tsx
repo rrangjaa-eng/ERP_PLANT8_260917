@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAction } from "next-safe-action/hooks";
 import { TextField } from "@/ui/input/TextField";
 import { Button } from "@/ui/button/Button";
+import { DetailScreen } from "@/ui/detail-screen/DetailScreen";
 import { ConfirmDialog } from "@/ui/confirm-dialog/ConfirmDialog";
 import { HistoryList, type HistoryEntry } from "@/ui/history-list/HistoryList";
 import { Toast } from "@/ui/toast/Toast";
@@ -706,8 +707,7 @@ export function SettingsFormClient({ sections, viewerId }: { sections: SettingsS
     <div>
       <ExportButton />
       {sections.map((section) => (
-        <section key={section.namespace} className={styles.section}>
-          <h2 className={styles.sectionTitle}>{section.namespace}</h2>
+        <DetailScreen.Section key={section.namespace} title={section.namespace}>
           {restorableSteps.length > 0 && section.fields.some((field) => field.step) ? (
             <p className={styles.restoreBanner}>
               <span>{`저장 안 한 편집 ${stepList(restorableSteps)}`}</span>
@@ -722,7 +722,7 @@ export function SettingsFormClient({ sections, viewerId }: { sections: SettingsS
             </p>
           ) : null}
           {renderFields(section.fields, onDraftChange, restored)}
-        </section>
+        </DetailScreen.Section>
       ))}
       <ConfirmDialog
         open={leaveHref !== null}

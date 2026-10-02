@@ -73,7 +73,9 @@ describe("확인증 공개 흐름 — 정상 제출", () => {
 });
 
 describe("확인증 공개 흐름 — 저장소 fail-closed 순서(S3)", () => {
-  it("put이 실패하고 객체 삭제가 성공하면 delete가 그 키로 불리고 의도 행이 0이다", async () => {
+  // PR #88 /review F6 — put이 실패해도 진행 중이던 업로드가 늦게 끝나 객체를 남길 수 있다. 의도 행을 지우면 그 객체를
+  // 아무도 치우지 않으므로, 객체 삭제를 시도하되 의도 행은 남겨 24시간 고아 정리에 맡긴다.
+  it("put이 실패하고 객체 삭제가 성공해도 delete가 그 키로 불리고 그 키의 의도 행 1이 남는다", async () => {
     const { eventId, token, prizeId } = await makeEvent();
 
     let deletedKey: string | undefined;
@@ -97,7 +99,7 @@ describe("확인증 공개 흐름 — 저장소 fail-closed 순서(S3)", () => {
     expect(deletedKey).toBeDefined();
     expect(deletedKey).toMatch(new RegExp(`^signatures/${eventId}/${prizeId}-`));
     const intents = await db.select().from(certSignatureUploads);
-    expect(intents).toHaveLength(0);
+    expect(intents.map((row) => row.objectKey)).toEqual([deletedKey]);
     const submissions = await db.select().from(certSubmissions).where(eq(certSubmissions.eventId, eventId));
     expect(submissions).toHaveLength(0);
   });

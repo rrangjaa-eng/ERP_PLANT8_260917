@@ -384,7 +384,8 @@ export async function submitCertificate(
   }
 
   // 규약 C3 — 저장소를 먼저 확정(드라이버 없음은 여기서 던진다) → 의도 행을 자기 문장으로 커밋 → put.
-  // put이 실패하면 지우기가 성공했을 때만 의도 행을 지운다.
+  // put이 실패하면 객체 지우기만 시도하고 의도 행은 남긴다 — 진행 중이던 업로드가 지운 뒤에 끝나 객체를 남길 수 있어
+  // 04.3-12 고아 정리(24시간)가 그 키를 다시 지우게 한다(PR #88 /review F6).
   const signatureStore = deps.signatureStore ?? getSignatureStore();
   await insertSignatureUploadIntent(SYSTEM_VIEWER, objectKey);
   try {
@@ -392,9 +393,8 @@ export async function submitCertificate(
   } catch (putError) {
     try {
       await signatureStore.delete(objectKey);
-      await deleteSignatureUploadIntent(SYSTEM_VIEWER, objectKey);
     } catch {
-      // 지우기 실패 — 의도 행을 남긴다(04.3-12가 24시간 뒤 치운다).
+      // 지우기 실패 — 의도 행이 남아 있으니 고아 정리가 치운다.
     }
     throw putError;
   }

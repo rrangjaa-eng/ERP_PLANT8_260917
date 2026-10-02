@@ -243,6 +243,14 @@ hook plant8-skill-gate.sh agent "$(payload_agent "$SQ3" gsd-executor)" "$projQ3"
 expect_rc "Q3: /gsd-execute-phase도 불렀으면 페이즈 게이트 검사 유지 -> exit 2" 2 "$HOOK_RC"
 expect_contains "Q3: Pre-build 게이트 안내" "$HOOK_STDERR" "Pre-build"
 
+projQ4="$(new_project)"
+SQ4="sid-quick-phaseplan-$$"
+record_skill "$projQ4" "$SQ4" gsd-quick
+hook plant8-skill-gate.sh agent "$(jq -nc --arg s "$SQ4" '{session_id:$s, tool_name:"Agent", tool_input:{subagent_type:"gsd-executor", prompt:"Execute .planning/phases/04-test/04-01-PLAN.md"}}')" "$projQ4"
+expect_rc "Q4: quick로 불러도 페이즈 PLAN을 실행하면 게이트 검사 -> exit 2" 2 "$HOOK_RC"
+hook plant8-skill-gate.sh agent "$(jq -nc --arg s "$SQ4" '{session_id:$s, tool_name:"Agent", tool_input:{subagent_type:"gsd-executor", prompt:"Execute .planning/quick/261002-abc/PLAN.md"}}')" "$projQ4"
+expect_rc "Q5: quick PLAN 실행은 통과 -> exit 0" 0 "$HOOK_RC"
+
 # ---------------------------------------------------------------------------
 # D-04, 한 메시지 안 병렬 디스패치
 projE3="$(new_project)"

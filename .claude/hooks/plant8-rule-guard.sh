@@ -123,9 +123,13 @@ def merge_calls: select(type == "object" and .type == "assistant") | (.timestamp
   | {id: .id, ts: $ts};
 def ok_results: select(type == "object" and .type == "user") | .message.content[]?
   | select(type == "object" and .type == "tool_result" and (.is_error != true)) | .tool_use_id;
-def queued: if type == "object" and .type == "attachment" and (.attachment.type // "") == "queued_command"
-  then {type: "user", isSidechain: (.isSidechain // false), timestamp: .timestamp,
-        origin: (.attachment.origin // {}), message: {content: (.attachment.prompt // "")}}
+# origin.kind가 human인 것만 받는다 — origin이 없는 queued_command(중계 등)는 보낸 쪽을 알 수 없다(/review 2026-10-02).
+def queued: if type == "object" and .type == "attachment" then
+    (.attachment | objects) as $a
+    | if ($a.type // "") == "queued_command" and (($a.origin | objects | .kind) // "") == "human"
+      then {type: "user", isSidechain: (.isSidechain // false), timestamp: .timestamp,
+            origin: $a.origin, message: {content: ($a.prompt // "")}}
+      else empty end
   else . end;
 [inputs | fromjson? | queued ] as $e
 | [ $e[] | frags ] as $f
@@ -628,7 +632,7 @@ count_hangul_chars() { printf '%s' "$1" | jq -Rrs '[match("[가-힣ㄱ-ㅎㅏ-�
 count_word_tokens() { printf '%s' "$1" | grep -oE '[A-Za-z]{2,}' 2>/dev/null | wc -l | tr -d ' '; }
 count_hangul_tokens() { printf '%s' "$1" | jq -Rrs '[splits("[ \n]+") | select(test("[가-힣ㄱ-ㅎㅏ-ㅣ]"))] | length' 2>/dev/null || echo 0; }
 
-R4_KOREAN_ONLY_MSG='사용자에게 보이는 글(답글·상태·카드)은 한국어로 쓴다(지침·메모 korean-only-user-text). 한국어로 다시 써서 호출하라. 코드·경로·URL은 그대로 둬도 된다.'
+R4_KOREAN_ONLY_MSG='사용자에게 보이는 글(답글·상태·카드)은 한국어로 쓴다(지침·메모 korean-only-user-text). 한국어로 다시 써서 호출하라. 코드·경로·URL은 그대로 둬도 되고, 오류 로그는 코드 블록에 넣는다.'
 
 r4_check() {  # $1=필드들(줄마다 base64로 인코딩된 값), $2=목록 검사용 원문(reply/update_message의 .text만, 없으면 빈 문자열)
   local fields="$1" list_text="${2:-}"

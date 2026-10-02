@@ -130,7 +130,9 @@ case "$event" in
       *) need="gsd-[a-z0-9-]+" ;;
     esac
     # 페이즈 계획 게이트는 페이즈 실행에만 — quick(/gsd-quick·/gsd-quick-batch) 실행자는 페이즈 계획이 없다(2026-10-02)
-    if [ "$sub" = "gsd-executor" ] && has_skill "$session_skills" "gsd-execute-phase|gsd-autonomous"; then
+    # quick로 불러도 페이즈 PLAN(.planning/phases/)을 실행하면 게이트를 본다(/review 2026-10-02)
+    sub_prompt="$(printf '%s' "$payload" | jq -r '.tool_input.prompt // empty')"
+    if [ "$sub" = "gsd-executor" ] && { has_skill "$session_skills" "gsd-execute-phase|gsd-autonomous" || printf '%s' "$sub_prompt" | grep -q '\.planning/phases/'; }; then
       missing=""
       # 소수점 페이즈(04.1 …)는 /plan-ceo-review 생략(사용자 결정 2026-09-24 22:04 KST)
       [[ "$phase" =~ ^[0-9]+\.0*[1-9][0-9]*$ ]] || gate_has plan-ceo-review || missing="$missing /plan-ceo-review"

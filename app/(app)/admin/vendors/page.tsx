@@ -1,16 +1,17 @@
-// 04.6 스킨 A 이관 전: 화면 틀
 /* eslint-disable no-restricted-syntax -- 04.6 스킨 A 이관 전 */
 import { Fragment } from "react";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
+import { LinkPending } from "@/ui/link-pending/LinkPending";
 import { getSession } from "@/lib/viewer";
 import { can } from "@/domain/permissions/can";
 import { visible } from "@/domain/permissions/visible";
 import { listVendors, listVendorFieldDefinitions } from "@/domain/vendors";
 import { listCodeItems } from "@/domain/code-tables";
 import { maskTail4 } from "@/lib/mask-tail4";
-import { PageHeader } from "@/ui/page-header/PageHeader";
+import { ListScreen } from "@/ui/list-screen/ListScreen";
 import { ListEmpty } from "@/ui/list-empty/ListEmpty";
+import { SidePanel } from "@/ui/side-panel/SidePanel";
 import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { VendorForm, VendorHiddenToggle, VendorDeleteButton } from "./vendor-form";
 import { AccountNumberCell } from "./account-number";
@@ -22,7 +23,7 @@ const REVEAL_INFO_ITEM = "vendor.account_number_unmasked";
 export const dynamic = "force-dynamic";
 
 // 목록 화면의 필터 상태(숨김 포함 여부)를 유지한 채 이동하는 링크를 만든다 —
-// 「수정」·「거래처 등록」에서 폼으로 들어갈 때도, 폼의 「취소」에서 목록으로
+// 「수정」·「거래처 등록」에서 패널로 들어갈 때도, 패널을 닫고 목록으로
 // 돌아올 때도 같은 필터를 쓴다. `isNew`는 등록 모드(D-39: 추가·수정은 별도
 // 화면 — vendors가 이미 쓰던 ?editId= 토글 방식을 등록에도 그대로 확장한다,
 // DECISIONS.md 2026-09-21 참고).
@@ -32,7 +33,7 @@ function vendorsHref(includeHidden: boolean, opts?: { editId?: string; isNew?: b
   if (opts?.editId) params.set("editId", opts.editId);
   if (opts?.isNew) params.set("new", "1");
   const query = params.toString();
-  return query ? `/admin/vendors?${query}#vendor-form` : "/admin/vendors";
+  return query ? `/admin/vendors?${query}` : "/admin/vendors";
 }
 
 export default async function VendorsPage({
@@ -76,36 +77,32 @@ export default async function VendorsPage({
   const showCreateForm = newParam === "1";
   const showForm = editingVendor !== null || showCreateForm;
 
+  // DR5 A — 빈 목록(등록된 거래처가 하나도 없음)이면 머리 1차를 그리지 않고 빈 화면의 「거래처 등록」 하나가 등록을 맡는다.
+  const primaryAction =
+    canWrite && vendors.length > 0 ? { label: "거래처 등록", href: vendorsHref(includeHidden, { isNew: true }) } : undefined;
+
   return (
-    <>
-      <PageHeader title="거래처" />
-
-      {/* 쓰기 권한이 없는 계급에는 등록 폼 자체를 렌더하지 않는다 —
-          "이유 있는 비활성" 대신 "버튼 자체가 없음"(03-UI-SPEC.md). */}
-      {canWrite && showForm ? (
-        <VendorForm
-          key={editingVendor?.id ?? "create"}
-          evidenceTypes={evidenceTypes.map((item) => ({ value: item.value, label: item.label, description: item.description }))}
-          fieldDefs={fieldDefs}
-          editing={editingVendor}
-          cancelHref={cancelHref}
-        />
-      ) : null}
-
-      <div className={styles.filterRow}>
+    <ListScreen
+      title="거래처"
+      primaryAction={primaryAction}
+      filters={
         <a href={includeHidden ? "?includeHidden=0" : "?includeHidden=1"} className={styles.toggle}>
           {includeHidden ? "숨김 제외" : "숨김 포함"}
         </a>
-        {/* §6-1 「새 지출결의」와 같은 자리 — 목록 머리글의 등록 행동. 폼이
-            이미 열려 있으면 그 폼의 「취소」가 같은 역할을 하므로 중복해
-            보이지 않는다. */}
-        {canWrite && !showForm && vendors.length > 0 ? (
-          <Link href={vendorsHref(includeHidden, { isNew: true })} className={styles.toggle}>
-            거래처 등록
-          </Link>
-        ) : null}
-      </div>
-
+      }
+      panel={
+        // 쓰기 권한이 없는 계급에는 등록 폼 자체를 렌더하지 않는다 — "이유 있는 비활성" 대신 "버튼 자체가 없음"(03-UI-SPEC.md).
+        canWrite && showForm ? (
+          <SidePanel key={editingVendor?.id ?? "new"} title={editingVendor ? "거래처 수정" : "거래처 등록"} closeHref={cancelHref}>
+            <VendorForm
+              evidenceTypes={evidenceTypes.map((item) => ({ value: item.value, label: item.label, description: item.description }))}
+              fieldDefs={fieldDefs}
+              editing={editingVendor}
+            />
+          </SidePanel>
+        ) : null
+      }
+    >
       {vendors.length === 0 ? (
         <ListEmpty
           message="등록된 거래처가 없습니다"
@@ -167,9 +164,11 @@ export default async function VendorsPage({
                             {canWrite ? (
                               <Link
                                 href={vendorsHref(includeHidden, { editId: vendor.id })}
+                                scroll={false}
                                 className={`${styles.toggle} ${styles.rowLink}`}
                               >
                                 수정
+                                <LinkPending />
                               </Link>
                             ) : null}
                             {canWrite ? <VendorHiddenToggle id={vendor.id} hidden={vendor.hidden} /> : null}
@@ -192,6 +191,6 @@ export default async function VendorsPage({
           </tbody>
         </table>
       )}
-    </>
+    </ListScreen>
   );
 }

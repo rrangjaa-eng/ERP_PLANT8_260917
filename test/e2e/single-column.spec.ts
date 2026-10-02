@@ -136,7 +136,7 @@ test.describe("단일 기둥 최대 폭 — 관리자 화면·폼 전면 적용 
   });
 
   const registrationForms: Array<{ listPath: string; linkName: string; formSelector: string }> = [
-    { listPath: "/admin/vendors", linkName: "거래처 등록", formSelector: "#vendor-form" },
+    // 거래처 폼은 04.6-04에서 옆 패널(480)로 옮겨 단일 기둥(720)이 아니다 — test/e2e/side-panel.spec.ts가 폭을 잰다.
     { listPath: "/admin/corp-cards", linkName: "법인카드 등록", formSelector: "#corp-card-form" },
     { listPath: "/admin/code-tables", linkName: "코드 추가", formSelector: "#code-item-form" },
     { listPath: "/admin/people", linkName: "사람 등록", formSelector: "#person-form" },

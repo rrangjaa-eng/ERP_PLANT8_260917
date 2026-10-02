@@ -32,7 +32,7 @@ export const TARGETS = [
   "app/(app)/admin/people/[id]/page.tsx",
   "app/(app)/admin/people/org/page.tsx",
   "app/(app)/admin/system-status/page.tsx",
-  "app/(app)/admin/vendors/vendor-form.tsx",
+  // 거래처 폼은 04.6-04에서 옆 패널(PanelForm — Form layout="panel")로 옮겨 단일 기둥(.single-column) 대상이 아니다.
   "app/(app)/admin/corp-cards/card-form.tsx",
   "app/(app)/admin/code-tables/code-item-form.tsx",
   "app/(app)/admin/people/person-form.tsx",

@@ -246,7 +246,7 @@ test.describe("PC 폼 라벨 왼쪽 96 · select 200, 폰은 라벨 위 (SYSTEM.
 
   const panelForms: Array<{ listPath: string; linkName: string; scope: string }> = [
     { listPath: "/admin/people", linkName: "사람 등록", scope: "#person-form" },
-    { listPath: "/admin/vendors", linkName: "거래처 등록", scope: "#vendor-form" },
+    // 거래처 폼은 04.6-04에서 옆 패널(라벨 위 한 열)로 옮겨 이 격자(라벨 왼쪽 96)가 아니다 — test/e2e/side-panel.spec.ts의 M2가 잰다.
     { listPath: "/admin/corp-cards", linkName: "법인카드 등록", scope: "#corp-card-form" },
     { listPath: "/admin/people/org", linkName: "팀 추가", scope: "#team-form" },
   ];

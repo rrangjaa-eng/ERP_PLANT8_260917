@@ -59,7 +59,7 @@ function PlainTextField({
   const errorId = `${id}-error`;
 
   return (
-    <div className={size === "external" ? `${styles.row} ${styles.rowExternal}` : styles.row}>
+    <div data-ui="field-row" className={size === "external" ? `${styles.row} ${styles.rowExternal}` : styles.row}>
       <label htmlFor={id} className={styles.label}>
         {label}
       </label>
@@ -113,7 +113,7 @@ function CommaTextField({
   const error = commaError ?? externalError;
 
   return (
-    <div className={styles.row}>
+    <div data-ui="field-row" className={styles.row}>
       <label htmlFor={id} className={styles.label}>
         {label}
       </label>

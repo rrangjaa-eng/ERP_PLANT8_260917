@@ -39,6 +39,10 @@ test.describe("거래처 수정 화면 경로 (MAST-01)", () => {
     await page.goto("/admin/vendors?new=1");
     await page.getByLabel("이름").fill(name);
     await page.getByRole("button", { name: "거래처 등록" }).click();
+    // 04.6-04(UQ-8 B): 등록 성공 뒤 패널은 열린 채 결과 한 줄을 보인다 — Esc로 닫고 목록을 이어 본다.
+    await expect(page.locator('dialog[data-ui="side-panel"]').getByRole("status")).toHaveText("거래처 등록됨");
+    await page.keyboard.press("Escape");
+    await expect(page.locator('dialog[data-ui="side-panel"]')).toHaveCount(0);
     await expect(page.getByRole("cell", { name })).toBeVisible();
 
     const row = page.locator("tr", { hasText: name });
@@ -79,6 +83,10 @@ test.describe("거래처 기본 증빙 종류 설명 힌트 (D-93, S14)", () => 
     await page.getByLabel("이름").fill(name);
     await page.getByLabel("기본 증빙 종류").selectOption({ label: "세금계산서" });
     await page.getByRole("button", { name: "거래처 등록" }).click();
+    // 04.6-04(UQ-8 B): 등록 성공 뒤 패널은 열린 채 결과 한 줄을 보인다 — Esc로 닫고 목록을 이어 본다.
+    await expect(page.locator('dialog[data-ui="side-panel"]').getByRole("status")).toHaveText("거래처 등록됨");
+    await page.keyboard.press("Escape");
+    await expect(page.locator('dialog[data-ui="side-panel"]')).toHaveCount(0);
     await expect(page.getByRole("cell", { name })).toBeVisible();
 
     await page.locator("tr", { hasText: name }).getByRole("link", { name: "수정" }).click();

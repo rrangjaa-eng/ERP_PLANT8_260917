@@ -41,6 +41,10 @@ test.describe("거래처 관리 화면 (MAST-01)", () => {
     await page.getByLabel("예금주").fill("홍길동");
     await page.getByLabel("계좌번호").fill(accountNumber);
     await page.getByRole("button", { name: "거래처 등록" }).click();
+    // 04.6-04(UQ-8 B): 등록 성공 뒤 패널은 열린 채 결과 한 줄을 보인다 — Esc로 닫고 목록을 이어 본다.
+    await expect(page.locator('dialog[data-ui="side-panel"]').getByRole("status")).toHaveText("거래처 등록됨");
+    await page.keyboard.press("Escape");
+    await expect(page.locator('dialog[data-ui="side-panel"]')).toHaveCount(0);
     await expect(page.getByText(vendorName)).toBeVisible();
 
     const row = page.locator("tr", { hasText: vendorName });
@@ -149,6 +153,10 @@ test.describe("거래처 수정 왕복 (MAST-01 · M-5)", () => {
     await page.getByLabel("예금주").fill("홍길동");
     await page.getByLabel("계좌번호").fill(accountNumber);
     await page.getByRole("button", { name: "거래처 등록" }).click();
+    // 04.6-04(UQ-8 B): 등록 성공 뒤 패널은 열린 채 결과 한 줄을 보인다 — Esc로 닫고 목록을 이어 본다.
+    await expect(page.locator('dialog[data-ui="side-panel"]').getByRole("status")).toHaveText("거래처 등록됨");
+    await page.keyboard.press("Escape");
+    await expect(page.locator('dialog[data-ui="side-panel"]')).toHaveCount(0);
     await expect(page.getByText(before)).toBeVisible();
 
     // 「수정」으로 들어간다 — 등록 폼이 아니라 수정 폼이 열린다(버튼이
@@ -205,6 +213,10 @@ test.describe("거래처 목록 — 계좌번호 없음 빈 칸 em dash (§2-4 �
     const vendorName = `E2E계좌없음-${Date.now()}`;
     await page.getByLabel("이름").fill(vendorName);
     await page.getByRole("button", { name: "거래처 등록" }).click();
+    // 04.6-04(UQ-8 B): 등록 성공 뒤 패널은 열린 채 결과 한 줄을 보인다 — Esc로 닫고 목록을 이어 본다.
+    await expect(page.locator('dialog[data-ui="side-panel"]').getByRole("status")).toHaveText("거래처 등록됨");
+    await page.keyboard.press("Escape");
+    await expect(page.locator('dialog[data-ui="side-panel"]')).toHaveCount(0);
     await expect(page.getByText(vendorName)).toBeVisible();
 
     const row = page.locator("tr", { hasText: vendorName });

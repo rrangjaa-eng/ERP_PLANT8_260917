@@ -1,5 +1,4 @@
-/* 04.6 스킨 A 이관 전: CSS */
-/* SYSTEM.md §7-15 — Form 컴포넌트 계약. 색·서체·radius는 토큰만(D-20). */
+/* SYSTEM.md §7-15 — Form 컴포넌트 계약 · §6-3 폼 템플릿. 역할 토큰만(D-20). */
 
 .form {
   display: flex;
@@ -15,8 +14,8 @@
 }
 
 .label {
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
 }
 
@@ -27,28 +26,28 @@
 /* 칸 폭 3종 — select 200 · 짧은 칸 280 · 긴 칸 480. 폰(<700px)은 컨트롤 전폭(§7-15). */
 @media (min-width: 700px) {
   .select {
-    max-width: 200px;
+    max-width: var(--field-w-select);
   }
 
   .short {
-    max-width: 280px;
+    max-width: var(--field-w-short);
   }
 
   .long {
-    max-width: 480px;
+    max-width: var(--field-w-long);
   }
 }
 
 .hint {
   margin: 0;
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-size: var(--text-aux);
 }
 
 .error {
   margin: 0;
-  color: var(--danger);
-  font-size: var(--fs-sm);
+  color: var(--status-danger);
+  font-size: var(--text-aux);
 }
 
 .actions {
@@ -57,7 +56,7 @@
   align-items: center;
   gap: var(--s-3);
   padding-top: var(--s-4);
-  border-top: var(--line-w) solid var(--line);
+  border-top: var(--line-w) solid var(--border-row);
 }
 
 /* PC: 라벨 왼쪽 96px. 폰(<700px)은 위 세로쌓기 규칙이 기본값이다 */
@@ -76,4 +75,41 @@
   .control {
     flex: 1 1 auto;
   }
+}
+
+/* 옆 패널 배치(04.6-04 · UI-SPEC 「옆 패널 상호작용 계약」 본문) — 모든 폭에서 한 열 · 라벨 위 · 입력 전폭.
+   입력·행동 줄 버튼 높이는 이 컨테이너의 --field-h 한 변수(칸에 높이를 직접 적지 않는다 — D14). 폼이 패널 본문을
+   채우고(머리·행동 줄 고정, 칸 묶음만 스크롤 — PanelForm), 폭 제한(--form-max)은 풀린다. */
+.panel {
+  --field-h: var(--control-h-panel);
+  flex: 1 1 auto;
+  min-height: 0;
+  max-width: none;
+  gap: 0;
+}
+
+.panel .row {
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.panel .label {
+  flex: none;
+  padding-top: 0;
+}
+
+.panel .control {
+  flex: none;
+  max-width: none;
+}
+
+/* TextField(ui/input — 04.6-07 소유)의 줄 · 라벨 · 칸 — 같은 파일을 고치지 않고 data-ui 훅으로 덮는다. 클래스 + 속성이라 .row 규칙보다 높다. */
+.panel :global([data-ui="field-row"]) {
+  display: block;
+}
+
+.panel :global([data-ui="field-row"]) > label {
+  flex: none;
+  margin-bottom: var(--s-1);
+  padding-top: 0;
 }

@@ -1,0 +1,29 @@
+/* UI-SPEC 「화면 틀 계약」 ListScreen. 컨테이너 폭·좌우 안쪽 여백은 셸 main이 가진다. 토큰은 역할 이름만. */
+
+.screen {
+  width: 100%;
+}
+
+.title {
+  margin: 0 0 var(--s-4);
+  color: var(--text-strong);
+  font-size: var(--text-title);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  margin: 0 0 var(--s-3);
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-4);
+  min-width: 0;
+}

@@ -15,20 +15,26 @@ describe("거래처 폼 이유 자리 (04.5-06)", () => {
     expect(CODE.match(/FormAlert/g) ?? []).toHaveLength(0);
   });
 
-  it("이유 자리 id가 한 번 있다", () => {
-    expect(CODE.match(/id="vendor-form-reason"/g) ?? []).toHaveLength(1);
+  // 04.6-04: 이유 자리(행동 줄 위 한 줄)와 1차 버튼은 `PanelForm`이 그린다 — 호출부는 `reasonId`로 id를 주고,
+  // PanelForm이 그 줄에 id를 달고 1차 aria-describedby가 가리키게 한다(ui/side-panel/PanelForm.tsx).
+  it("이유 자리 id를 한 번 넘긴다(PanelForm reasonId)", () => {
+    expect(CODE.match(/reasonId="vendor-form-reason"/g) ?? []).toHaveLength(1);
   });
 
-  it("1차 버튼의 aria-describedby가 이유 자리를 가리킨다", () => {
-    expect(CODE).toMatch(/<Button[^>]*aria-describedby="vendor-form-reason"/);
+  it("PanelForm이 이유 자리 id를 그 줄에 달고 1차 버튼의 aria-describedby가 가리킨다", () => {
+    const panelForm = readFileSync(resolve(process.cwd(), "ui/side-panel/PanelForm.tsx"), "utf8");
+    expect(panelForm).toMatch(/<p id=\{lineId\}/);
+    expect(panelForm).toMatch(/aria-describedby=\{reasonContent \? lineId : undefined\}/);
   });
 
   it("이유 자리는 role=\"alert\"가 아니다", () => {
     expect(CODE).not.toContain('role="alert"');
   });
 
-  it("<form>에 noValidate가 있다", () => {
-    expect(CODE).toMatch(/<form[^>]*\bnoValidate\b/);
+  it("폼은 noValidate를 가진 공용 Form(PanelForm)으로 그려진다", () => {
+    expect(CODE).toMatch(/<PanelForm[^>]*id="vendor-form"/);
+    const form = readFileSync(resolve(process.cwd(), "ui/form/Form.tsx"), "utf8");
+    expect(form).toMatch(/<form[^>]*\bnoValidate\b/);
   });
 
   it("커스텀 칸에 required 속성을 넘기지 않는다(기본 칸 「이름」만 required)", () => {

@@ -8,6 +8,11 @@ import { setPermissionCell } from "@/domain/permissions/matrix";
 import { insertRole, setRoleArchived } from "@/repositories/roles";
 import { upsertVisibility } from "@/repositories/permissions";
 import { insertVendor } from "@/repositories/vendors";
+import { createAccount } from "@/domain/auth/accounts";
+import { assignTeam, createOrgUnit, createTeam } from "@/domain/org";
+import { createProject } from "@/domain/projects";
+import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
+import { kstToday } from "@/lib/kst-date";
 import { archiveE2EVendor, createFixtureUser } from "./fixtures";
 import { loginAsSysadmin } from "./row-actions-helpers";
 
@@ -631,5 +636,260 @@ test.describe("합본 뒤 높이 (D14)", { tag: "@wave-merge" }, () => {
     for (const name of ["취소", "거래처 등록"]) {
       expect(await dialog.getByRole("button", { name }).evaluate((element) => parseFloat(getComputedStyle(element).height))).toBe(44);
     }
+  });
+});
+
+// 04.6-10 — 프로젝트 `?new=1` · `&copyFrom=` 옆 패널. A1(`loading.tsx`가 있는 첫 패널 화면에서 검색 파라미터만 바뀌는 이동에 뼈대가 다시 보이지 않고 스크롤·배치가 그대로) ·
+// D6(여는 링크 「진행 중」) · DR1 A(입력한 채 닫기 = 「입력 버리기」 확인 — 답 `04.6-ANSWERS.md` 257e5ea2) · R9 D(등록 성공 = 새 상세로 이동) · R15(쓰기 권한 없는 `?new=1` = dialog 0).
+const PM_PREFIX = "프로젝트패널E2E";
+
+type ProjectFixture = { email: string; password: string; teamId: string; pmUserId: string; original: { id: string; number: string; name: string; clientId: string } };
+
+// 팀에 발령된 기획 PM + 그 팀의 프로젝트 하나 — 목록이 비지 않아야 머리 1차 「프로젝트 등록」이 있다(빈 목록은 DR5 A로 머리 1차가 없다).
+async function makeProjectFixture(): Promise<ProjectFixture> {
+  const orgUnit = await createOrgUnit(SYSTEM_VIEWER, { name: `E2E패널본부-${randomUUID()}` });
+  const team = await createTeam(SYSTEM_VIEWER, { orgUnitId: orgUnit.id, name: `E2E패널팀-${randomUUID().slice(0, 8)}` });
+  const email = `e2e-projpanel-${randomUUID()}@example.test`;
+  const { userId, tempPassword } = await createAccount(SYSTEM_VIEWER, { email, name: "E2E 패널 PM", roleId: DEFAULT_ROLE_ID });
+  await assignTeam(SYSTEM_VIEWER, { userId, teamId: team.id, effectiveFrom: kstToday(new Date()) });
+  const clientName = `${PM_PREFIX}-거래처-${randomUUID().slice(0, 8)}`;
+  const client = await insertVendor(SYSTEM_VIEWER, { name: clientName, normalizedName: clientName.toLowerCase() });
+  const name = `${PM_PREFIX}-${randomUUID().slice(0, 8)}`;
+  const created = await createProject(SYSTEM_VIEWER, { clientId: client.id, teamId: team.id, pmUserId: userId, name });
+  return { email, password: tempPassword, teamId: team.id, pmUserId: userId, original: { id: created.id, number: created.number, name, clientId: client.id } };
+}
+
+async function loginAs(page: Page, account: { email: string; password: string }): Promise<void> {
+  await page.goto("/login");
+  await page.getByLabel("이메일").fill(account.email);
+  await page.getByLabel("비밀번호").fill(account.password);
+  await page.getByRole("button", { name: "로그인" }).click();
+  await expect(page).toHaveURL(/\/account$/);
+}
+
+function projectOpenLink(page: Page): Locator {
+  return page.getByRole("link", { name: "프로젝트 등록" });
+}
+
+async function openProjectPanel(page: Page): Promise<void> {
+  await projectOpenLink(page).click();
+  await expect(panel(page)).toBeVisible();
+  await expect(page).toHaveURL(/\/projects\?new=1$/);
+}
+
+test.describe("프로젝트 옆 패널 — PC 1280 (04.6-10)", () => {
+  // A1 실측(R8 · RESEARCH A1) — 패널이 있는 첫 `loading.tsx` 화면. 「프로젝트 등록」 이동(`/projects` → `/projects?new=1`)은 검색 파라미터만 바뀐다.
+  // 뼈대(`[data-ui="table-skeleton"]` 또는 옛 `table[aria-hidden]`)는 한 번도 보이지 않고(300ms 지연 표시 — 보이는 순간 opacity > 0) 스크롤 · 제목 위치가 그대로다.
+  test("A1 — 「프로젝트 등록」 이동에서 뼈대가 보이지 않고 스크롤 · 제목 위치가 그대로다", async ({ page }) => {
+    const account = await makeProjectFixture();
+    await loginAs(page, account);
+    await page.goto("/projects");
+    await page.evaluate(() => {
+      document.body.style.minHeight = "3000px";
+      window.scrollTo(0, 40);
+    });
+    const beforeScroll = await scrollY(page);
+    expect(beforeScroll).toBeGreaterThan(0);
+    const titleTop = async () => page.locator('[data-ui="screen-title"]').evaluate((element) => Math.round(element.getBoundingClientRect().top));
+    const beforeTitle = await titleTop();
+
+    await page.route(
+      (url) => url.pathname === "/projects" && url.searchParams.get("new") === "1",
+      async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        await route.continue();
+      },
+    );
+    await projectOpenLink(page).click();
+    let visibleSkeleton = 0;
+    for (let index = 0; index < 14; index += 1) {
+      visibleSkeleton += await page.evaluate(
+        () =>
+          Array.from(document.querySelectorAll('[data-ui="table-skeleton"], table[aria-hidden="true"]')).filter(
+            (element) => parseFloat(getComputedStyle(element.parentElement && element.matches("table") ? element.parentElement : element).opacity) > 0,
+          ).length,
+      );
+      await page.waitForTimeout(100);
+    }
+    await expect(panel(page)).toBeVisible();
+    expect(visibleSkeleton).toBe(0);
+    expect(await scrollY(page)).toBe(beforeScroll);
+    expect(await titleTop()).toBe(beforeTitle);
+    await expect(panel(page).getByRole("heading", { name: "프로젝트 등록" })).toBeVisible();
+  });
+
+  test("누른 직후 패널이 뜨기 전까지 「프로젝트 등록」 링크가 「진행 중」 모양을 보인다(D6)", async ({ page }) => {
+    const account = await makeProjectFixture();
+    await loginAs(page, account);
+    await page.goto("/projects");
+    await page.route(
+      (url) => url.pathname === "/projects" && url.searchParams.get("new") === "1",
+      async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        await route.continue();
+      },
+    );
+    const link = projectOpenLink(page);
+    await link.click();
+    const busy = link.locator('[aria-busy="true"]');
+    await expect(busy).toBeVisible();
+    await expect(busy.locator('[aria-hidden="true"]')).toHaveText("…");
+    await expect(busy.locator(".sr-only")).toHaveText("처리 중");
+    await expect(panel(page)).toBeVisible();
+    await expect(link.locator("[aria-busy]")).toHaveCount(0);
+  });
+
+  test("여는 요소는 패널이 열려 있어도 렌더에 남는다(R4) · 주소에 해시가 없다", async ({ page }) => {
+    const account = await makeProjectFixture();
+    await loginAs(page, account);
+    await page.goto("/projects");
+    await openProjectPanel(page);
+    expect(new URL(page.url()).hash).toBe("");
+    await expect(projectOpenLink(page)).toHaveCount(1);
+    await expect(page.locator('[data-ui="primary-button"]').filter({ hasText: "프로젝트 등록" })).toHaveCount(2);
+  });
+
+  test("바뀐 칸이 있으면 Esc · x · 「취소」는 「입력 버리기」 확인 — 확인 창 Esc는 확인만 닫고 값은 그대로 · 가림막 하나 · 확인하면 닫히고 포커스가 「프로젝트 등록」으로(DR1 A · D16)", async ({ page }) => {
+    const account = await makeProjectFixture();
+    await loginAs(page, account);
+    await page.goto("/projects");
+    await openProjectPanel(page);
+    const dialog = panel(page);
+    const nameField = dialog.locator("#name");
+    await nameField.fill("입력함");
+
+    await page.keyboard.press("Escape");
+    const confirm = page.getByRole("dialog", { name: "입력 버리기" });
+    await expect(confirm).toBeVisible();
+    await expect(confirm.getByText("프로젝트 등록 · 1칸")).toBeVisible();
+    await expect(dialog).toBeVisible();
+    const opaque = await page.evaluate(
+      () =>
+        Array.from(document.querySelectorAll("dialog[open]")).filter((element) => {
+          const color = getComputedStyle(element, "::backdrop").backgroundColor;
+          return color !== "rgba(0, 0, 0, 0)" && color !== "transparent";
+        }).length,
+    );
+    expect(opaque).toBe(1);
+
+    await page.keyboard.press("Escape");
+    await expect(confirm).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+    await expect(nameField).toHaveValue("입력함");
+
+    await dialog.getByRole("button", { name: "닫기" }).click();
+    await expect(confirm).toBeVisible();
+    await page.keyboard.press("Escape");
+    await dialog.getByRole("button", { name: "취소" }).click();
+    await expect(confirm).toBeVisible();
+    await confirm.getByRole("button", { name: "입력 버리기" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page).toHaveURL(/\/projects$/);
+    await expect(projectOpenLink(page)).toBeFocused();
+  });
+
+  test("손대지 않은 등록 패널의 Esc는 확인 없이 닫힌다", async ({ page }) => {
+    const account = await makeProjectFixture();
+    await loginAs(page, account);
+    await page.goto("/projects");
+    await openProjectPanel(page);
+    await page.keyboard.press("Escape");
+    await expect(panel(page)).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "입력 버리기" })).toHaveCount(0);
+    await expect(projectOpenLink(page)).toBeFocused();
+  });
+
+  test("복사 패널(&copyFrom=) — 원본 값이 미리 채워지고 아무 칸도 바꾸지 않은 Esc는 확인 없이 닫힌다", async ({ page }) => {
+    const account = await makeProjectFixture();
+    await loginAs(page, account);
+    await page.goto(`/projects?new=1&copyFrom=${account.original.id}`);
+    const dialog = panel(page);
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: "프로젝트 등록" })).toBeVisible();
+    await expect(dialog.locator("#name")).toHaveValue(account.original.name);
+    await expect(dialog.getByText(`${account.original.number} ${account.original.name}에서 복사`)).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog", { name: "입력 버리기" })).toHaveCount(0);
+    await expect(dialog).toHaveCount(0);
+    await expect(page).toHaveURL(/\/projects$/);
+  });
+
+  test("등록 성공은 새 프로젝트 상세로 이동한다(R9 D) · 실패는 패널 유지 + 칸 아래 오류 + 값 보존", async ({ page }) => {
+    const account = await makeProjectFixture();
+    await loginAs(page, account);
+    await page.goto("/projects");
+    await openProjectPanel(page);
+    const dialog = panel(page);
+    await dialog.getByLabel("클라이언트").selectOption({ index: 1 });
+    const clientValue = await dialog.getByLabel("클라이언트").inputValue();
+    await dialog.locator("#project-form #startDate").fill("2026-12-31");
+    await dialog.locator("#project-form #endDate").fill("2026-01-01");
+    await dialog.getByRole("button", { name: "프로젝트 등록" }).click();
+    await expect(dialog.locator("#name-error")).toBeVisible();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("클라이언트")).toHaveValue(clientValue);
+    await expect(dialog.locator("#project-form #startDate")).toHaveValue("2026-12-31");
+
+    const projectName = `${PM_PREFIX}-등록-${randomUUID().slice(0, 8)}`;
+    await dialog.locator("#name").fill(projectName);
+    await dialog.locator("#project-form #startDate").fill("");
+    await dialog.locator("#project-form #endDate").fill("");
+    await page.keyboard.press("Control+Enter");
+    await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+    await expect(page.getByRole("heading", { name: projectName })).toBeVisible();
+  });
+
+  test("쓰기 권한이 없는 계급의 ?new= · &copyFrom=은 dialog가 0개다(R15 · T-04.6-31)", async ({ browser }) => {
+    const roleId = `role-e2e-projpanel-${randomUUID()}`;
+    await insertRole(SYSTEM_VIEWER, { id: roleId, name: `E2E 프로젝트 패널 ${roleId.slice(-12)}`, sortOrder: 99 });
+    const reader = await createFixtureUser({ roleId });
+    try {
+      await setPermissionCell(SYSTEM_VIEWER, { roleId, menu: "projects", action: "view", allowed: true });
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await loginAs(page, reader);
+      await page.goto("/projects?new=1");
+      await expect(page.getByRole("heading", { name: "프로젝트", level: 1 })).toBeVisible();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await page.goto("/projects?new=1&copyFrom=00000000-0000-0000-0000-000000000000");
+      await expect(page.getByRole("heading", { name: "프로젝트", level: 1 })).toBeVisible();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await context.close();
+    } finally {
+      await setRoleArchived(SYSTEM_VIEWER, roleId, true);
+    }
+  });
+});
+
+// 같은 웨이브 04.6-11(거래처 「수정」 = `RowAction href`)과 04.6-12(상세 `DetailScreen`의 `screen-title`)가 합쳐져야 뜻이 있다 — 합본 묶음(--grep @wave-merge)이 돈다.
+test.describe("합본 뒤 — 프로젝트 패널 (04.6-10)", { tag: "@wave-merge" }, () => {
+  test("여는 중 — 행 행동", async ({ page }) => {
+    await loginAsSysadmin(page);
+    await page.goto("/admin/vendors");
+    await page.route(
+      (url) => url.pathname === "/admin/vendors" && url.searchParams.has("editId"),
+      async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        await route.continue();
+      },
+    );
+    const link = page.locator("table tbody tr").first().getByRole("link", { name: "수정" });
+    await link.click();
+    await expect(link.locator('[aria-busy="true"]')).toBeVisible();
+    await expect(panel(page)).toBeVisible();
+    await expect(link.locator("[aria-busy]")).toHaveCount(0);
+  });
+
+  test("등록 뒤 상세 제목 포커스", async ({ page }) => {
+    const account = await makeProjectFixture();
+    await loginAs(page, account);
+    await page.goto("/projects");
+    await openProjectPanel(page);
+    const dialog = panel(page);
+    await dialog.getByLabel("클라이언트").selectOption({ index: 1 });
+    await dialog.locator("#name").fill(`${PM_PREFIX}-포커스-${randomUUID().slice(0, 8)}`);
+    await page.keyboard.press("Control+Enter");
+    await expect(page).toHaveURL(/\/projects\/[0-9a-f-]{36}$/);
+    await expect(page.locator('[data-ui="screen-title"]')).toBeFocused();
   });
 });

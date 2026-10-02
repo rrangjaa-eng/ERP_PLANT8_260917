@@ -101,11 +101,11 @@ test.describe("프로젝트 복사 등록 (04-15, PROJ-05 · D-70)", () => {
     await expect(page.getByText(`${original.number} ${original.name}에서 복사 · 2줄`, { exact: true })).toBeVisible();
     await expect(page.getByLabel("클라이언트")).toHaveValue(original.clientId);
     await expect(page.getByLabel("담당 PM")).toHaveValue(account.userId);
-    await expect(page.getByLabel("팀")).toHaveValue(teamId);
+    await expect(page.locator("#project-form").getByLabel("팀")).toHaveValue(teamId);
     const nameField = page.getByLabel("프로젝트명");
     await expect(nameField).toHaveValue(original.name);
-    // S2 — 폼이 열려 있으면 목록 필터 줄의 1차 「프로젝트 등록」이 없다(복사 등록 포함).
-    await expect(page.getByRole("link", { name: "프로젝트 등록" })).toHaveCount(0);
+    // R4(04.6-10) — 여는 요소는 패널이 열려 있어도 그대로 있다(옛 S2 「폼이 열리면 머리 1차 숨김」은 이 계약이 대체한다).
+    await expect(page.getByRole("link", { name: "프로젝트 등록" })).toHaveCount(1);
 
     const copyName = `E2E복사본-${randomUUID().slice(0, 8)}`;
     await nameField.fill(copyName);
@@ -143,7 +143,8 @@ test.describe("프로젝트 복사 등록 (04-15, PROJ-05 · D-70)", () => {
     await openCopyForm(page, original);
     await page.getByLabel("프로젝트명").focus();
     await page.keyboard.press("Escape");
-    await expect(page).toHaveURL(/\/projects$/);
+    // 패널 닫기 = 연 곳으로(앱 안에서 상세 → 패널이면 `router.back()` — 04.6-04 닫기 경로 하나). 옛 `router.push(cancelHref)` 목록 이동은 중복이라 지웠다.
+    await expect(page).toHaveURL(new RegExp(`/projects/${original.id}$`));
     await expect(page.getByRole("dialog", { name: "입력 버리기" })).toHaveCount(0);
 
     await openCopyForm(page, original);

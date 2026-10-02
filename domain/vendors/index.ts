@@ -7,11 +7,13 @@ import { recordAction as defaultRecordAction } from "@/domain/action-log/record"
 import { registerDto } from "@/domain/permissions/dto-registry";
 import { UserFacingError } from "@/lib/actions/user-facing-error";
 import { encrypt, decrypt } from "@/lib/crypto";
-import { buildCustomFieldsSchema } from "@/domain/custom-fields/build-schema";
+import { withTransaction } from "@/lib/db-transaction";
+import { resolveCustomFieldsWrite, type InputFieldDef } from "@/domain/custom-fields/preserve";
 import {
   listVendors as repoListVendors,
   searchVendorsByNormalizedName as repoSearchVendorsByNormalizedName,
   findVendorById as repoFindVendorById,
+  findVendorByIdForUpdate as repoFindVendorByIdForUpdate,
   findVendorsByNormalizedName as repoFindVendorsByNormalizedName,
   insertVendor as repoInsertVendor,
   updateVendor as repoUpdateVendor,
@@ -19,13 +21,16 @@ import {
   setVendorHidden as repoSetVendorHidden,
   type VendorRow,
 } from "@/repositories/vendors";
-import { listFieldDefinitions as repoListFieldDefinitions } from "@/repositories/field-definitions";
+import { readVendorFieldAccess } from "@/repositories/permissions";
+import type { DbOrTx } from "@/repositories/document-counters";
 import { pickVisibleCustomFields, visibleCustomFieldKeys } from "@/domain/custom-fields/visibility";
 
 export class ForbiddenError extends UserFacingError {}
 
 // 보관은 사용자에게 "삭제"로 보이는 상태다 — 삭제된 것이 조용히 바뀌면 안 된다.
 export class ArchivedVendorError extends UserFacingError {}
+// 선검사와 트랜잭션 안 잠금 조회가 같은 문구를 쓴다(경합으로 안에서 잡혀도 같은 원인 — 디자인 교차 리뷰 m-3).
+const ARCHIVED_VENDOR_MESSAGE = "보관됐거나 존재하지 않는 거래처는 수정할 수 없음";
 
 const VENDORS_MENU = "admin.vendors";
 const VENDOR_ENTITY = "vendor";
@@ -171,36 +176,48 @@ export async function listVendorFieldDefinitions(
   const canFn = deps?.can ?? defaultCan;
   if (!(await canFn(viewer, VENDORS_MENU, "view"))) return [];
 
-  // 04.5(D10-12): 보관된 칸은 거래처 폼 입력에서 뺀다. 04.5-03(D10-13): 보는 사람에게 꺼진 칸도 뺀다(활성 ∩ 보임).
-  const visibleKeys = await visibleCustomFieldKeys(viewer, VENDOR_ENTITY);
-  const defs = (await repoListFieldDefinitions(viewer, VENDOR_ENTITY)).filter(
-    (def) => def.archivedAt === null && visibleKeys.has(def.key),
-  );
-  return defs.map((def) => ({
+  // 04.5-05: 폼이 그리는 칸 = 서버 저장 판정의 입력 칸 집합(같은 함수) — 보관 제외(D10-12) · 칸별 보임(D10-13) · 「거래처 정보」 AND.
+  const { inputDefs } = await vendorInputFieldKeys(viewer);
+  return inputDefs.map((def) => ({
     id: def.id,
     key: def.key,
     label: def.label,
-    type: def.type as FieldDefinitionDto["type"],
-    options: Array.isArray(def.options) ? (def.options as string[]) : null,
+    type: def.type,
+    options: def.optionsColumn,
     required: def.required,
     sortOrder: def.sortOrder,
   }));
 }
 
-async function validatedCustomFields(
+type VendorInputFieldDef = InputFieldDef & { id: string; sortOrder: number; optionsColumn: string[] | null };
+
+// 04.5-05: 보는 사람의 거래처 입력 칸 집합 하나 — 「거래처 정보」(vendor.value)가 보이면 활성 ∩ 칸별 보임(03의
+// visibleCustomFieldKeys와 같은 규칙), 아니면 빈 집합. knownKeys는 정의 전체 키(보관 · 노출 행 없는 칸 포함).
+// 정의 · 두 보임을 SQL 한 문(한 스냅숏)으로 읽는다(T-04.5-44). tx는 받은 그대로 넘긴다(domain은 db를 import하지 않는다).
+async function vendorInputFieldKeys(
   viewer: Viewer,
-  input: Record<string, unknown> | undefined,
-): Promise<Record<string, unknown>> {
-  const defs = await repoListFieldDefinitions(viewer, VENDOR_ENTITY);
-  const schema = buildCustomFieldsSchema(
-    defs.map((def) => ({
-      key: def.key,
-      type: def.type as "text" | "number" | "date" | "select",
-      options: Array.isArray(def.options) ? (def.options as string[]) : undefined,
-      required: def.required,
-    })),
-  );
-  return schema.parse(input ?? {}) as Record<string, unknown>;
+  tx?: DbOrTx,
+): Promise<{ inputDefs: VendorInputFieldDef[]; knownKeys: Set<string> }> {
+  const access = await readVendorFieldAccess(viewer, viewer.roleId, tx);
+  const inputDefs = access.vendorValueVisible
+    ? access.definitions
+        .filter((def) => def.archivedAt === null && access.visibleFieldKeys.has(def.key))
+        .map((def) => {
+          const optionsColumn = Array.isArray(def.options) ? (def.options as string[]) : null;
+          return {
+            id: def.id,
+            key: def.key,
+            label: def.label,
+            type: def.type as FieldDefinitionDto["type"],
+            options: optionsColumn ?? [],
+            archivedOptions: def.archivedOptions,
+            required: def.required,
+            sortOrder: def.sortOrder,
+            optionsColumn,
+          };
+        })
+    : [];
+  return { inputDefs, knownKeys: new Set(access.definitions.map((def) => def.key)) };
 }
 
 export type VendorWriteDeps = {
@@ -224,11 +241,10 @@ export type VendorInput = {
    */
   accountNumber?: string | null;
   /**
-   * updateVendor에서 undefined면 기존 customFields를 건드리지 않는다(M-5와 같은
-   * 이유 — 필드 정의가 늘어난 뒤 일부 값만 보내는 경우를 생각하면, 전체를 무조건
-   * 교체하는 편이 "보내지 않은 값은 지운다"는 뜻이 되어 위험하다). 객체를 보내면
-   * (빈 객체 포함) 그 값으로 통째로 교체한다. createVendor에서는 항상 검증해
-   * 저장한다.
+   * updateVendor에서 undefined면 기존 customFields를 건드리지 않는다(M-5). 객체를
+   * 보내면 04.5-05 쓰기 판정(resolveCustomFieldsWrite)으로 합친다 — 키 없음 = 안 바꿈 ·
+   * 빈 값 = 비움 · 입력 칸 밖 키는 저장값 유지 · 정의에 없는 키는 거부. createVendor에서는
+   * 키 없음 = 빈칸으로 판정한다.
    */
   customFields?: Record<string, unknown>;
 };
@@ -278,7 +294,15 @@ export async function createVendor(
     throw new ForbiddenError("거래처 등록 권한 없음");
   }
 
-  const customFields = await validatedCustomFields(viewer, input.customFields);
+  // 04.5-05: 행 삽입보다 먼저 판정한다(실패 시 행 없음). 새 행이라 경합이 없어 트랜잭션을 더하지 않는다.
+  const { inputDefs, knownKeys } = await vendorInputFieldKeys(viewer);
+  const customFields = resolveCustomFieldsWrite({
+    mode: "create",
+    inputDefs,
+    knownKeys,
+    stored: {},
+    submitted: input.customFields ?? {},
+  });
   const normalizedName = normalizeVendorName(input.name);
   const duplicates = await repoFindVendorsByNormalizedName(viewer, normalizedName);
 
@@ -328,7 +352,7 @@ export async function updateVendor(
   const findVendorById = deps?.findVendorById ?? repoFindVendorById;
   const existing = await findVendorById(viewer, id);
   if (!existing || existing.archivedAt !== null) {
-    throw new ArchivedVendorError("보관됐거나 존재하지 않는 거래처는 수정할 수 없음");
+    throw new ArchivedVendorError(ARCHIVED_VENDOR_MESSAGE);
   }
 
   const normalizedName = normalizeVendorName(input.name);
@@ -341,13 +365,27 @@ export async function updateVendor(
     accountBank: input.accountBank ?? null,
     accountHolder: input.accountHolder ?? null,
   };
-  // customFields를 보내지 않으면(undefined) 기존 값을 그대로 둔다 — 무조건
-  // validatedCustomFields(viewer, undefined)를 태우면 필드 정의가 늘어난 뒤
-  // 빈 값으로 검증되어 기존에 입력된 값을 조용히 지울 수 있다.
-  if (input.customFields !== undefined) {
-    updatePayload.customFields = await validatedCustomFields(viewer, input.customFields);
+  // customFields를 보내지 않으면(undefined) 커스텀 열을 건드리지 않는다(M-5) — 경합이 없어 트랜잭션도 없다.
+  // 보내면(04.5-05 · T-04.5-41/44) 행을 잠가 읽은 저장값으로 판정 · 합치고 같은 트랜잭션에서 쓴다. 입력 칸 집합도
+  // 잠금 뒤 같은 tx로 읽는다 — 정의 변경은 거래처 행을 건드리지 않으므로 행 잠금이 정의 읽기의 직렬 기준점이다.
+  const submitted = input.customFields;
+  if (submitted === undefined) {
+    await repoUpdateVendor(viewer, id, updatePayload);
+  } else {
+    await withTransaction(async (tx) => {
+      const locked = await repoFindVendorByIdForUpdate(viewer, id, tx);
+      if (!locked || locked.archivedAt !== null) throw new ArchivedVendorError(ARCHIVED_VENDOR_MESSAGE);
+      const { inputDefs, knownKeys } = await vendorInputFieldKeys(viewer, tx);
+      const customFields = resolveCustomFieldsWrite({
+        mode: "update",
+        inputDefs,
+        knownKeys,
+        stored: locked.customFields as Record<string, unknown>,
+        submitted,
+      });
+      await repoUpdateVendor(viewer, id, { ...updatePayload, customFields }, tx);
+    });
   }
-  await repoUpdateVendor(viewer, id, updatePayload);
 
   const accountNumberPlan = planAccountNumberUpdate(input.accountNumber);
   if (accountNumberPlan.kind === "clear") {

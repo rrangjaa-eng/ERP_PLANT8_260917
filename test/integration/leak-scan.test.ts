@@ -348,7 +348,7 @@ describe("메뉴 게이트 DTO 축 — 정보 노출표 항목이 없는 관리 
 // 04.5-03(ROADMAP 04.5 기준 4·5 · T-04.5-04) — 커스텀 칸 축. 활성 거래처 칸 × 시드 계급마다, 그 계급에 거래처 메뉴 보기와
 // 「거래처 정보」(vendor.value)를 켠 상태로 끄기 전 직렬화에 두 칸 값이 있음을 먼저 확인(헛통과 방지)한 뒤, 그 칸만 끄면
 // 그 값만 사라지고 다른 칸 값은 남는다. vendor.value를 켜지 않으면 상위 차단으로 DTO가 비어 헛되이 통과한다.
-import { listVendors } from "@/domain/vendors";
+import { listVendors, searchVendors } from "@/domain/vendors";
 import { insertVendor } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { customFieldInfoItem } from "@/domain/custom-fields/targets";
@@ -396,7 +396,12 @@ describe("커스텀 칸 축 — 계급에게서 끈 거래처 칸의 값이 그 
       await upsertPermission(SYSTEM_VIEWER, { roleId: role.id, menu: "admin.vendors", action: "view", allowed: true });
       await upsertVisibility(SYSTEM_VIEWER, { roleId: role.id, infoItem: "vendor.value", visible: true });
       const viewer: Viewer = { id: "leak-scan-probe", roleId: role.id };
-      const serialize = async () => JSON.stringify((await listVendors(viewer)).filter((row) => row.id === vendor.id));
+      // 04.5-05(03 검토 M-3): 목록 · 검색 두 출구를 함께 직렬화한다.
+      const serialize = async () =>
+        JSON.stringify([
+          ...(await listVendors(viewer)).filter((row) => row.id === vendor.id),
+          ...(await searchVendors(viewer, vendor.name)).filter((row) => row.id === vendor.id),
+        ]);
 
       const before = await serialize();
       for (const each of defs) expect(before, `${name}: 끄기 전 ${each.key} 값이 없다(헛통과)`).toContain(each.value);

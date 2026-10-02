@@ -28,6 +28,7 @@ import { insertVisibilityIfAbsent, upsertPermission, upsertVisibility } from "@/
 import { seedMasterData } from "@/domain/seed";
 import { insertFieldDefinition, listFieldDefinitions } from "@/repositories/field-definitions";
 import { insertRole, listRoles } from "@/repositories/roles";
+import { insertVendor } from "@/repositories/vendors";
 import { env } from "@/lib/env";
 import { log } from "@/lib/log";
 
@@ -418,8 +419,11 @@ describe("거래처 DTO 칸별 판정 (04.5-03)", () => {
       key: "legacyNote",
       type: "text",
     });
-    const { vendor } = await createVendor(SYSTEM_VIEWER, {
-      name: `백필전거래처-${randomUUID()}`,
+    // 04.5-05: 노출 행 없는 정의는 입력 칸이 아니라 저장 경로가 값을 받지 않는다 — 백필 전에 이미 있던 값을 직접 넣는다.
+    const legacyName = `백필전거래처-${randomUUID()}`;
+    const vendor = await insertVendor(SYSTEM_VIEWER, {
+      name: legacyName,
+      normalizedName: legacyName,
       customFields: { legacyNote: "옛값" },
     });
 

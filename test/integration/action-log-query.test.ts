@@ -149,6 +149,21 @@ describe("action-log 조회·필터·정리 (ADMN-10·OPS-05, 실제 Postgres)",
     expect(await queryActionLog(SYSTEM_VIEWER, { documentId: doc })).toHaveLength(3);
   });
 
+  // PR #88 /review F5 — 끌 수 없는 확인증 감사 기록(가액 변경 · 파기)도 정리 표시를 할 수 없다.
+  it("확인증 가액 변경 · 파기 기록은 정리 대상이 아니다", async () => {
+    const actor = await makeTestUser();
+    const doc = uniqueDocumentId();
+    for (const actionType of ["cert_prize_value", "cert_purge"]) {
+      await recordAction(actor, { actionType, documentId: doc });
+    }
+
+    expect((await pruneActionLog(SYSTEM_VIEWER, { documentId: doc })).count).toBe(0);
+    for (const actionType of ["cert_prize_value", "cert_purge"]) {
+      expect((await pruneActionLog(SYSTEM_VIEWER, { documentId: doc, actionType })).count).toBe(0);
+    }
+    expect(await queryActionLog(SYSTEM_VIEWER, { documentId: doc })).toHaveLength(2);
+  });
+
   it("열람 권한이 없는 계급의 조회가 거부된다", async () => {
     const pmViewer = { id: `pm-${randomUUID()}`, roleId: DEFAULT_ROLE_ID };
     await expect(queryActionLog(pmViewer, {})).rejects.toBeInstanceOf(ForbiddenError);

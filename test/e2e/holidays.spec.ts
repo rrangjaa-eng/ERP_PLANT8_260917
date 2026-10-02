@@ -511,6 +511,9 @@ test.describe("공휴일 보관함(quick 261001-hfi)", () => {
 
       await archiveRow.getByRole("button", { name: "복원" }).click();
       await expect(page.getByText(`복원 · 실패 · 이미 공휴일(${active.name})`, { exact: true })).toBeVisible({ timeout: 15000 });
+      // /design-review(#138) — 거부된 행은 다시 눌러도 같은 실패라 「복원」을 치운다(공휴일 되돌리기 거부와 같은 처리).
+      await expect(archiveRow.getByRole("button", { name: "복원" })).toHaveCount(0);
+      await expect(archiveRow.locator("td").last()).toHaveText("—");
       await page.reload();
       await expect(archiveRow).toHaveCount(1);
     } finally {

@@ -36,6 +36,8 @@ export type ArchiveTableRow = {
 // 사라진다.
 export function ArchiveTable({ rows }: { rows: ArchiveTableRow[] }) {
   const [toast, setToast] = useState<{ message: string; tone: "default" | "error" } | null>(null);
+  // /design-review(#138) — 도메인이 거부한 행(원인 있음)은 다시 눌러도 같은 실패라 「복원」을 치운다(공휴일 되돌리기 거부와 같은 처리).
+  const [rejected, setRejected] = useState<ReadonlySet<string>>(() => new Set());
 
   return (
     <>
@@ -68,7 +70,7 @@ export function ArchiveTable({ rows }: { rows: ArchiveTableRow[] }) {
                   <td className={styles.p2}>{item.archivedBy ?? "—"}</td>
                   <td>
                     {/* 복원할 수 없는 행(지난 날짜 공휴일 등)은 버튼을 숨긴다(§7) — 빈 칸 표기는 보관한 사람 칸과 같은 「—」. */}
-                    {item.restorable ? (
+                    {item.restorable && !rejected.has(`${item.entity}:${item.id}`) ? (
                       <RestoreRowButton
                         entity={item.entity}
                         id={item.id}
@@ -77,6 +79,7 @@ export function ArchiveTable({ rows }: { rows: ArchiveTableRow[] }) {
                         onFailed={(reason) => {
                           // 원인은 마지막 「 · 」 앞까지 — 이름에 「 · 」가 있어도 잘리지 않게.
                           const cut = reason ? reason.lastIndexOf(" · ") : -1;
+                          if (reason) setRejected((prev) => new Set(prev).add(`${item.entity}:${item.id}`));
                           setToast({ message: `복원 · 실패 · ${reason ? (cut < 0 ? reason : reason.slice(0, cut)) : "다시 시도"}`, tone: "error" });
                         }}
                       />

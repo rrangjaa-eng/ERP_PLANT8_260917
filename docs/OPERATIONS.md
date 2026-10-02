@@ -168,7 +168,8 @@ account:reset --email …` / `pnpm account:unlock --email …`. 운영에서는 
 세션이 gcloud를 직접 쓰지 않고 `verify.yml`(workflow_dispatch, WIF)을 띄워 로그를 읽는다 —
 조직 정책 `iam.disableServiceAccountKeyCreation`이 SA 키 생성을 막기 때문이다. gha-deployer에
 읽기 전용 두 역할 `roles/orgpolicy.policyViewer`(조직 수준)·`roles/iam.securityReviewer`만
-준다(쓰기 권한 없음, 2026-09-22 결정).
+준다(쓰기 권한 없음, 2026-09-22 결정). `verify.yml`의 `notify-tick` 점검(스테이징 스케줄러 잡·실행 기록·앱 로그)은
+부트스트랩이 이미 준 `cloudscheduler.admin`·`logging.admin`으로 조회만 한다.
 
 백업 실패 경보 테스트: 이메일 채널에는 콘솔 "테스트 알림 보내기"가 없다. Owner 계정의
 Cloud Shell에서 경보 필터의 `jsonPayload.message` 분기에 맞는 합성 ERROR 로그 한 줄을
@@ -274,7 +275,6 @@ account·db-bootstrap·restore 다섯만 Job으로 존재한다) — `.env.local
 그 키 이력이 배포 시드 행(2000-01-01 = 기본값)뿐이고, 올해 전 업무 기록(연차 신청 · 조정, 매출,
 리저브, 고객 승인 견적)이 한 건도 없을 때다. 실제 운영된 환경에는 그날 유효값과 같은 무변화 행만
 통과한다(소급 변경 금지). 그래서 이관 순서는 **설정 가져오기 → 업무 데이터 적재**다.
-
 게이트가 꺼진 환경(`CERT_FEATURE_ALLOWED`가 없는 프로덕션)은 게이트가 켜진 환경(스테이징)에서 내보낸 파일의 `cert.enabled`를
 `등록되지 않은 키: cert.enabled`로 거부하고 아무것도 쓰지 않는다 — 의도한 동작이다(꺼진 기능의 스위치가 프로덕션에 들어가지 않는다) · 그 키를 파일에서 지우고 다시 가져온다.
 

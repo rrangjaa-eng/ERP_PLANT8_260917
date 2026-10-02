@@ -384,6 +384,7 @@ Recent decisions affecting current work:
 - Phase 9 edited: edited fields: depends_on, success_criteria(6·7), 결정 메모 — 손익을 테스트 데이터로 검증, Phase 6 뒤 착수(2026-09-27 사용자 결정)
 - Phase 04.6 inserted after Phase 4: 스킨 A 적용 — 스킨 A 정돈 + 옆 패널, 역할 토큰·lint·공용/화면 틀 컴포넌트·컴포넌트 모음·화면 사진 비교·원칙 점검 막는 모드. Phase 4 머지 뒤 착수
 - Phase 04.3 edited: edited fields: goal, success_criteria 1-5, list line — 명단 폐지 흐름 · 파기 다음 해 4월 1일 (PR #88 5942919192)
+- Phase 5 edited: edited fields: depends_on (04.5·04.6 추가 — 실행 순서 04.5 → 04.6 → 5, 사용자 결정 2026-10-02)
 
 ## Deferred Items
 

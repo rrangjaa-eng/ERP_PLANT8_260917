@@ -265,11 +265,13 @@ describe("addHistorizedValue / cancelHistorizedValue (이력형 전용)", () => 
     const deleteFutureHistorizedValue = vi.fn().mockResolvedValue(false);
     const recordAction = vi.fn().mockResolvedValue(undefined);
     const withTransaction = vi.fn((fn: (t: never) => Promise<unknown>) => fn({} as never)) as never;
+    const listHistory = vi.fn().mockResolvedValue([]);
     const attempt = cancelHistorizedValue(viewer, HISTORIZED_DEF, "2999-01-01", {
       can,
       deleteFutureHistorizedValue,
       recordAction,
       withTransaction,
+      listHistory,
     });
     await expect(attempt).rejects.toBeInstanceOf(FutureValueNotFoundError);
     await expect(attempt).rejects.toThrow("취소할 예정값 찾을 수 없음");

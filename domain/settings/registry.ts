@@ -257,9 +257,16 @@ export async function cancelHistorizedValue<T>(
   const deleteFutureHistorizedValue = deps?.deleteFutureHistorizedValue ?? defaultDeleteFutureHistorizedValue;
   const recordAction = deps?.recordAction ?? defaultRecordAction;
   const withTransaction = deps?.withTransaction ?? defaultWithTransaction;
+  const listHistory = deps?.listHistory ?? defaultListHistory;
   await withTransaction(async (tx) => {
     const deleted = await deleteFutureHistorizedValue(viewer, def.key, effectiveFrom, tx);
-    if (!deleted) throw new FutureValueNotFoundError("취소할 예정값 찾을 수 없음");
+    if (!deleted) {
+      // quick 261002-3mx — 위 판정 뒤 KST 자정이 지나면 삭제 조건(DB 시각)이 막는다: 행이 있으면 방금 적용된 것이다.
+      if ((await listHistory(viewer, def.key)).some((row) => row.effectiveFrom === effectiveFrom)) {
+        throw new FutureCancelOnlyError("이미 적용된 이력 행은 취소할 수 없음 — 미래로 예정된 행만 취소 가능");
+      }
+      throw new FutureValueNotFoundError("취소할 예정값 찾을 수 없음");
+    }
     await recordAction(
       viewer,
       {

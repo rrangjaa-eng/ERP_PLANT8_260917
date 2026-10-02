@@ -167,8 +167,9 @@ describe("설정 레지스트리 (ADMN-05, 실제 Postgres)", () => {
     // 자정 1초 전(KST)에 판정한 것처럼 — JS 판정은 오늘 행을 아직 미래로 본다.
     const justBeforeMidnight = new Date(new Date(`${today}T00:00:00+09:00`).getTime() - 1000);
 
+    // 행은 그대로 있다 — 「없음」이 아니라 「이미 적용됨」이다.
     await expect(cancelHistorizedValue(SYSTEM_VIEWER, def, today, { now: justBeforeMidnight })).rejects.toBeInstanceOf(
-      FutureValueNotFoundError,
+      FutureCancelOnlyError,
     );
 
     expect((await listSettingHistory(def)).some((entry) => entry.effectiveFrom === today)).toBe(true);

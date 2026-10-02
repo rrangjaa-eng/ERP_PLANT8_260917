@@ -1,4 +1,5 @@
-import { and, asc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, ne, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { InferSelectModel } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { withDeadlineTransaction } from "@/db/deadline-transaction";
@@ -300,8 +301,10 @@ export async function restoreHolidayById(viewer: Viewer, id: string, tx: DbOrTx 
 
 export async function listArchivedHolidays(
   viewer: Viewer,
-): Promise<{ id: string; name: string; date: string; archivedAt: Date; archivedBy: string | null }[]> {
+): Promise<{ id: string; name: string; date: string; archivedAt: Date; archivedBy: string | null; dateTaken: boolean }[]> {
   void viewer;
+  // 그 날짜에 활성 공휴일(대체일 제외)이 있는가 — restoreHoliday가 거부하는 경우(quick 261002-4jn).
+  const active = alias(holidays, "active_holidays");
   const rows = await db
     .select({
       id: holidays.id,
@@ -309,6 +312,10 @@ export async function listArchivedHolidays(
       name: holidays.name,
       archivedAt: holidays.archivedAt,
       archivedBy: holidays.archivedBy,
+      dateTaken: sql<boolean>`exists (${db
+        .select({ one: sql`1` })
+        .from(active)
+        .where(and(eq(active.date, holidays.date), isNull(active.archivedAt), ne(active.kind, "substitute")))})`,
     })
     .from(holidays)
     .where(isNotNull(holidays.archivedAt));
@@ -318,5 +325,6 @@ export async function listArchivedHolidays(
     date: row.date,
     archivedAt: row.archivedAt as Date,
     archivedBy: row.archivedBy,
+    dateTaken: row.dateTaken,
   }));
 }

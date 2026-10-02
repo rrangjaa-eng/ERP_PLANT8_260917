@@ -169,10 +169,10 @@ export async function listArchive(viewer: Viewer, deps?: Partial<ListArchiveDeps
   const rows = (await listFn(viewer)).filter((row) => row.entity !== "reserve_entry" || showReserves);
 
   // 독립 검토(#138) — 복원할 수 없는 공휴일 행은 「복원」을 내놓지 않는다(§7). 공휴일 복원은 공휴일 쓰기 권한과
-  // 소급 금지(오늘 이후 날짜)를 요구한다(restoreHoliday) — 같은 판정을 목록에서 미리 한다.
+  // 소급 금지(오늘 이후 날짜) · 그 날짜에 다른 공휴일(대체일 제외) 없음을 요구한다(restoreHoliday) — 같은 판정을 목록에서 미리 한다.
   const holidayWritable = rows.some((row) => row.entity === "holiday") && (await canFn(viewer, HOLIDAYS_MENU, "write"));
   const today = toKstDate(deps?.now ?? new Date());
-  const isRestorable = (row: ArchivedItem) => row.entity !== "holiday" || (holidayWritable && row.date !== undefined && row.date > today);
+  const isRestorable = (row: ArchivedItem) => row.entity !== "holiday" || (holidayWritable && row.date !== undefined && row.date > today && !row.dateTaken);
 
   const findUserById = deps?.findUserById ?? defaultFindUserById;
   const archivedByIds = [...new Set(rows.map((row) => row.archivedBy).filter((id): id is string => id !== null))];

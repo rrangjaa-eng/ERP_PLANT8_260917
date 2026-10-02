@@ -40,6 +40,8 @@ export type ArchivedItem = {
   archivedBy: string | null;
   // 공휴일만 — 복원 가능 판정(소급 금지)에 쓰는 날짜. 화면 DTO에는 싣지 않는다.
   date?: string;
+  // 공휴일만 — 그 날짜에 활성 공휴일(대체일 제외)이 있으면 참(복원 불가). 화면 DTO에는 싣지 않는다.
+  dateTaken?: boolean;
 };
 
 export type ArchivableEntry = {

@@ -259,4 +259,21 @@ describe("보관함 (ADMN-12, 실제 Postgres)", () => {
     const results = await Promise.all([restore(admin, "holiday", concurrent.id), restore(admin, "holiday", concurrent.id)]);
     expect(results.filter((result) => result.restored)).toHaveLength(1);
   });
+
+  // quick 261002-4jn(회고 #4) — 그 날짜에 다른 공휴일(대체일 제외)이 있으면 복원은 거부되므로 「복원」을 내놓지 않는다.
+  it("공휴일: 같은 날짜에 활성 공휴일이 있으면 restorable이 거짓이고, 대체일만 있으면 참", async () => {
+    const { userId } = await createAccount(SYSTEM_VIEWER, { email: uniqueEmail("archive-holiday-taken"), name: "공휴일 관리자", roleId: SYSADMIN_ROLE_ID });
+    const admin = { id: userId, roleId: SYSADMIN_ROLE_ID };
+    const taken = await addHoliday(admin, { date: "2034-08-10", kind: "election", name: "보관된 선거" });
+    await deleteHoliday(admin, taken.id);
+    await addHoliday(admin, { date: "2034-08-10", kind: "election", name: "새 선거" });
+    const bySubstitute = await addHoliday(admin, { date: "2034-08-11", kind: "election", name: "대체일 날 선거" });
+    await deleteHoliday(admin, bySubstitute.id);
+    await db.insert(holidays).values({ date: "2034-08-11", kind: "substitute", name: "대체공휴일", originYear: 2034 });
+
+    const listed = await listArchive(admin);
+    expect(listed.find((item) => item.id === taken.id)).toMatchObject({ restorable: false });
+    expect(listed.find((item) => item.id === bySubstitute.id)).toMatchObject({ restorable: true });
+    await expect(restore(admin, "holiday", taken.id)).rejects.toThrow("이미 공휴일");
+  });
 });

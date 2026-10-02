@@ -47,6 +47,7 @@ export class DuplicateFieldNameError extends UserFacingError {
 }
 
 const NAME_UNIQUE_CONSTRAINT = "field_definitions_entity_label_key";
+const KEY_UNIQUE_CONSTRAINT = "field_definitions_entity_key_key";
 
 async function defaultFindNameConflict(viewer: Viewer, name: string): Promise<{ archived: boolean } | null> {
   const rows = await listFieldDefinitions(viewer, FIELD_ENTITY);
@@ -128,7 +129,7 @@ async function insertWithKeyRetry(
         if (conflict) throw new DuplicateFieldNameError(conflict.archived);
         throw error;
       }
-      if (attempt >= KEY_ATTEMPTS || !isUniqueViolation(error, "field_definitions_entity_key_key")) throw error;
+      if (attempt >= KEY_ATTEMPTS || !isUniqueViolation(error, KEY_UNIQUE_CONSTRAINT)) throw error;
     }
   }
 }

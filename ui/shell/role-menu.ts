@@ -68,6 +68,8 @@ const TOP_BAR_MENU: readonly MenuLink[] = [
 //
 // 배열 순서와 group은 SYSTEM.md §6-10 표(정본)와 원소 단위로 같아야 한다 —
 // role-menu.test.ts가 그 표를 읽어 adminIndexGroups 결과와 대조한다.
+// 04.5-09: 「화면 항목」(admin.field-definitions)을 코드표 다음에 더했다 — 시스템 관리자 시드는
+// MENUS × PERMISSION_ACTIONS 전부이되 화면 항목 제외(view·write만, domain/seed/index.ts).
 //
 // admin.settings의 라벨은 "시스템 설정"이다 — 아래 SETTINGS_ENTRY(/settings,
 // 사용자 자신의 설정)와 "설정"으로 같은 라벨을 쓰면 관리자 화면에 두 항목이

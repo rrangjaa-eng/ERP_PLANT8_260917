@@ -25,6 +25,7 @@ import {
   type UpdateFieldDefinitionInput,
 } from "@/domain/custom-fields/admin-input";
 import { FIELD_DEFINITION_TARGETS, customFieldInfoItem } from "@/domain/custom-fields/targets";
+import { deriveArchivedOptions } from "@/domain/custom-fields/options";
 import {
   FIELD_DEFINITION_ARCHIVED_CAUSE,
   FIELD_DEFINITION_NOT_FOUND_CAUSE,
@@ -247,13 +248,23 @@ export async function updateFieldDefinition(
   if (row.type === "select" && submittedOptions.length === 0) throw new UserFacingError(OPTIONS_ZERO_CAUSE);
   if (row.type !== "select" && submittedOptions.length > 0) throw new UserFacingError(OPTIONS_ON_NON_SELECT_MESSAGE);
 
+  // 보관 선택지는 클라이언트가 보내지 않는다 — 버전 확인을 통과한 이 읽은 행의 저장값으로 서버가 파생해
+  // 같은 조건부 UPDATE 한 문장에 쓴다(WHERE version이 파생의 전제를 지킨다 · 저장된 선택지는 활성이나 보관 중 한쪽에 남는다).
+  const select = row.type === "select";
   let updated: boolean;
   try {
     updated = await updateFieldDefinitionIfVersion(viewer, row.id, parsed.version, {
       label: parsed.name,
       required: parsed.required,
       sortOrder: parsed.sortOrder,
-      options: row.type === "select" ? submittedOptions : undefined,
+      options: select ? submittedOptions : undefined,
+      archivedOptions: select
+        ? deriveArchivedOptions({
+            storedActive: toStringArray(row.options),
+            storedArchived: toStringArray(row.archivedOptions),
+            submittedActive: submittedOptions,
+          })
+        : undefined,
     });
   } catch (error) {
     // 조회와 쓰기 사이 경합으로 이름 유일 위반이 나면 같은 조회로 활성 · 보관을 가려 같은 오류로 바꾼다.

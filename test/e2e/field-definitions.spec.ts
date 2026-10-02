@@ -506,3 +506,73 @@ test("없는 editId로 오면 폼 없이 목록만 보인다", async ({ page }) 
   await expect(page.locator("#field-definition-form")).toHaveCount(0);
   await expect(page.getByRole("table", { name: "화면 항목" })).toBeVisible();
 });
+
+// 04.5-02 Task 3: 선택지 삭제 = 보관 · 「보관된 선택지 N개」 펼침 · 같은 글자 재추가 = 복원.
+test("저장된 선택지 「삭제」는 보관으로 가고 보관 펼침에 텍스트 + 보관됨만 보이며 다시 적으면 활성으로 돌아온다", async ({ page }) => {
+  await login(page, admin);
+  const label = uniqueLabel();
+  const id = await seedSelectField(label, ["기본", "특약"]);
+
+  await page.goto(`/admin/field-definitions?editId=${id}`);
+  // 보관 선택지가 없으면 펼침을 렌더하지 않는다.
+  await expect(page.locator("details")).toHaveCount(0);
+  await page.getByRole("button", { name: "특약 삭제" }).click();
+  await expect(page.getByRole("button", { name: "특약 삭제" })).toHaveCount(0);
+  await expect(page.getByLabel("새 선택지", { exact: true })).toBeFocused();
+
+  const details = page.locator("#field-definition-form details");
+  await expect(details.locator("summary")).toHaveText("보관된 선택지 1개");
+  await expect(details).not.toHaveAttribute("open", "");
+  await details.locator("summary").click();
+  await expect(details).toContainText("특약");
+  await expect(details).toContainText("보관됨");
+  await expect(details.getByRole("button")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "화면 항목 수정" }).click();
+  await expect(page.getByRole("status").filter({ hasText: `화면 항목 수정 · ${label} 수정됨` })).toBeVisible();
+
+  await page.goto("/admin/vendors?new=1");
+  const optionTexts = await page.getByLabel(label, { exact: true }).locator("option").allTextContents();
+  expect(optionTexts).toContain("기본");
+  expect(optionTexts).not.toContain("특약");
+
+  // 다시 수정 폼에서 보관 선택지와 같은 글자를 적으면 활성으로 돌아오고 펼침이 사라진다.
+  await page.goto(`/admin/field-definitions?editId=${id}`);
+  await expect(page.locator("details summary")).toHaveText("보관된 선택지 1개");
+  const newOption = page.getByLabel("새 선택지", { exact: true });
+  await newOption.fill("특약");
+  await newOption.press("Enter");
+  await expect(page.getByRole("button", { name: "특약 삭제" })).toBeVisible();
+  await expect(page.locator("details")).toHaveCount(0);
+});
+
+test("충돌 뒤 새로 불러오기는 먼저 저장된 보관 선택지를 보관 목록으로 가져온다", async ({ page }) => {
+  await login(page, admin);
+  const label = uniqueLabel();
+  const id = await seedSelectField(label, ["기본", "특약"]);
+  const url = `/admin/field-definitions?editId=${id}`;
+  const other = await page.context().newPage();
+  await page.goto(url);
+  await other.goto(url);
+  await expect(other.getByRole("button", { name: "특약 삭제" })).toBeVisible();
+
+  await page.getByRole("button", { name: "특약 삭제" }).click();
+  await page.getByRole("button", { name: "화면 항목 수정" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "수정됨" })).toBeVisible();
+
+  await other.getByLabel("이름", { exact: true }).fill(uniqueLabel());
+  await other.getByRole("button", { name: "화면 항목 수정" }).click();
+  const form = other.locator("#field-definition-form");
+  await expect(form.getByText("수정할 수 없음 — 다른 사람이 먼저 수정함 ·", { exact: false })).toHaveCount(1);
+
+  await form.getByRole("button", { name: "새로 불러오기" }).click();
+  await expect(form.getByText("수정할 수 없음")).toHaveCount(0);
+  await expect(other.getByRole("button", { name: "특약 삭제" })).toHaveCount(0);
+  await expect(other.getByRole("button", { name: "기본 삭제" })).toBeVisible();
+  const details = form.locator("details");
+  await expect(details.locator("summary")).toHaveText("보관된 선택지 1개");
+  await details.locator("summary").click();
+  await expect(details).toContainText("특약");
+  await expect(details).toContainText("보관됨");
+  await other.close();
+});

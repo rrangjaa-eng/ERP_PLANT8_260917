@@ -159,3 +159,36 @@
   align-items: center;
   gap: var(--s-4);
 }
+
+/* 보관된 선택지 펼침(§7-15 details/summary 한 줄) — 네이티브 details, 기본 접힘. 기본 펼침 표식과 전역 :focus-visible
+   링(2px --focus)을 그대로 받는다. summary는 3차 버튼(Button.module.css .tertiary)과 같은 글자 모양이다. */
+.archivedOptions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.archivedSummary {
+  width: fit-content;
+  color: var(--accent);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-decoration: underline;
+  text-decoration-thickness: var(--line-w);
+  text-underline-offset: var(--underline-offset);
+  cursor: pointer;
+}
+
+.archivedSummary:hover {
+  text-decoration-thickness: var(--line-w-strong);
+}
+
+.archivedOptions[open] .archivedSummary {
+  margin-bottom: var(--s-2);
+}
+
+@media (max-width: 699.98px) {
+  .archivedSummary {
+    min-height: var(--touch-min);
+  }
+}

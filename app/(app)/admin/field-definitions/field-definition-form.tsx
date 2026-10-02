@@ -8,6 +8,7 @@ import { Form } from "@/ui/form/Form";
 import { TextField } from "@/ui/input/TextField";
 import { Select } from "@/ui/select/Select";
 import { Button, buttonLinkClassName } from "@/ui/button/Button";
+import { StatusTag } from "@/ui/status-tag/StatusTag";
 import { ACTIVE_OPTIONS_MAX, FIELD_NAME_MAX, OPTION_MAX_LENGTH } from "@/domain/custom-fields/targets";
 import {
   FIELD_DEFINITION_CONFLICT_CAUSE,
@@ -380,6 +381,21 @@ function FieldDefinitionFormBody({
                 </div>
               ))}
             </div>
+            {options.archived.length > 0 ? (
+              <details className={styles.archivedOptions}>
+                <summary className={styles.archivedSummary}>보관된 선택지 {options.archived.length}개</summary>
+                <div role="list" className={styles.optionList}>
+                  {options.archived.map((value) => (
+                    <div role="listitem" key={value} className={styles.optionRow}>
+                      <span className={styles.optionText}>{value}</span>
+                      <StatusTag kind="muted" variant="text">
+                        보관됨
+                      </StatusTag>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            ) : null}
             {done ? null : (
               <div className={styles.optionAdd}>
                 <TextField

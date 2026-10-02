@@ -497,6 +497,60 @@ describe("화면 항목 수정 (04.5-02)", () => {
     expect(await readRow(projectId)).toEqual(before);
   });
 
+  // 04.5-02 Task 3: 선택지 삭제 = 보관 — archived_options는 서버가 버전 확인을 통과한 저장값에서 파생한다.
+  it("저장된 선택지를 빼고 제출하면 archived_options로 가고, 다시 제출하면 활성으로 돌아온다(중복 없음)", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const { id } = await createFieldDefinition(admin, { ...input(uniqueName("선택보관")), type: "select", options: ["기본", "특약"] });
+
+    await updateFieldDefinition(admin, edit(id, 1, uniqueName("선택보관이름"), { options: ["기본", "MOU"] }));
+    const archived = await readRow(id);
+    expect(archived.options).toEqual(["기본", "MOU"]);
+    expect(archived.archivedOptions).toEqual(["특약"]);
+
+    await updateFieldDefinition(admin, edit(id, 2, archived.label, { options: ["기본", "MOU", "특약"] }));
+    const restored = await readRow(id);
+    expect(restored.options).toEqual(["기본", "MOU", "특약"]);
+    expect(restored.archivedOptions).toEqual([]);
+  });
+
+  it("오래 열린 폼: A가 선택지 c를 보관해 저장한 뒤 같은 version의 B 저장은 충돌로 거부되고 c는 보관된 채다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const name = uniqueName("오래열린");
+    const { id } = await createFieldDefinition(admin, { ...input(name), type: "select", options: ["a", "b", "c"] });
+
+    await updateFieldDefinition(admin, edit(id, 1, name, { options: ["a", "b"] }));
+    const attempt = updateFieldDefinition(admin, edit(id, 1, name, { options: ["a", "b", "c", "d"] }));
+
+    await expect(attempt).rejects.toBeInstanceOf(FieldDefinitionConflictError);
+    const row = await readRow(id);
+    expect(row.options).toEqual(["a", "b"]);
+    expect(row.archivedOptions).toEqual(["c"]);
+  });
+
+  it("보관 선택지가 이미 있는 칸을 저장해도 저장된 선택지 문자열이 어느 쪽에서도 사라지지 않는다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const name = uniqueName("유실없음");
+    const { id } = await createFieldDefinition(admin, { ...input(name), type: "select", options: ["a", "b", "c"] });
+    await updateFieldDefinition(admin, edit(id, 1, name, { options: ["a", "b"] }));
+
+    await updateFieldDefinition(admin, edit(id, 2, name, { options: ["b", "z"] }));
+
+    const row = await readRow(id);
+    expect(row.options).toEqual(["b", "z"]);
+    expect([...row.archivedOptions].sort()).toEqual(["a", "c"]);
+  });
+
+  it("선택형이 아닌 칸의 수정은 선택지 열을 건드리지 않는다", async () => {
+    const admin = await createViewer(SYSADMIN_ROLE_ID);
+    const { id } = await createFieldDefinition(admin, input(uniqueName("텍스트열")));
+
+    await updateFieldDefinition(admin, edit(id, 1, uniqueName("텍스트열수정")));
+
+    const row = await readRow(id);
+    expect(row.options).toBeNull();
+    expect(row.archivedOptions).toEqual([]);
+  });
+
   it("쓰기 권한이 없는 기획 PM의 수정은 ForbiddenError이고 행 · 로그가 그대로다", async () => {
     const admin = await createViewer(SYSADMIN_ROLE_ID);
     const pm = await createViewer(DEFAULT_ROLE_ID);

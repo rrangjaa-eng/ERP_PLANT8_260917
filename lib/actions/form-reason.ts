@@ -44,3 +44,11 @@ export function formReason(verb: string, serverError: string): FormReason {
 export function fieldErrorsReason(verb: string, names: readonly string[]): { text: string; fix: string } {
   return { text: `${verb}할 수 없음 — ${names.join(", ")} ${names.length}칸 · `, fix: `${names[0] ?? ""} 고치기` };
 }
+
+// 서버 칸 오류 중 폼에 없는 칸이 있으면(폼을 연 사이 칸이 생기거나 필수 · 노출이 바뀜) 고칠 칸이 화면에 없다 — 1차를 막고 새로 불러오기로.
+export const CUSTOM_FIELDS_STALE_CAUSE = "화면 항목 변경됨";
+
+export function staleFieldsReason(verb: string, errorKeys: readonly string[], formKeys: readonly string[]): FormReason | null {
+  if (!errorKeys.some((key) => !formKeys.includes(key))) return null;
+  return { text: `${verb}할 수 없음 — ${CUSTOM_FIELDS_STALE_CAUSE} · `, next: "refresh", blocked: true };
+}

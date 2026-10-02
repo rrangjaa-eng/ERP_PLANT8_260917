@@ -225,6 +225,24 @@ test.describe("거래처 폼 커스텀 칸 (04.5-06)", () => {
     await expect(page.locator("#vendor-form")).toHaveCount(0);
   });
 
+  test("폼이 열린 사이 필수 칸이 생기면 화면 항목 변경됨과 새로 불러오기가 보이고, 새로 불러오면 그 칸이 보인다", async ({ page }) => {
+    const editor = await createE2EVendorEditor();
+    await login(page, editor);
+    await page.goto("/admin/vendors?new=1");
+    await page.locator("#name").fill(vendorName());
+
+    const fieldLabel = label("새필");
+    await createE2EFieldDefinition({ label: fieldLabel, type: "text", required: true, onlyRoleId: editor.roleId });
+    await page.getByRole("button", { name: "거래처 등록" }).click();
+
+    const reason = page.locator("#vendor-form-reason");
+    await expect(reason.locator("..")).toContainText("등록할 수 없음 — 화면 항목 변경됨 · 새로 불러오기");
+    await expect(page.getByRole("button", { name: "거래처 등록" })).toBeDisabled();
+
+    await reason.getByRole("button", { name: "새로 불러오기" }).click();
+    await expect(page.getByLabel(fieldLabel, { exact: true })).toBeVisible();
+  });
+
   test("폼이 열린 사이 쓰기 권한이 회수되면 권한 없음과 새로 불러오기가 보인다", async ({ page }) => {
     const editor = await createE2EVendorEditor();
     await login(page, editor);

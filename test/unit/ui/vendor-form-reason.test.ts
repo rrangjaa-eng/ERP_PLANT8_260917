@@ -46,4 +46,9 @@ describe("거래처 폼 이유 자리 (04.5-06)", () => {
     expect(CODE).toMatch(/<option value=\{archivedValue\}>\{archivedValue\} \(보관됨\)<\/option>/);
     expect(CODE).not.toMatch(/<option[^>]*\bdisabled\b/);
   });
+
+  it("폼에 없는 칸의 서버 오류는 staleFieldsReason으로 막힘 이유 · 새로 불러오기가 된다(칸 정의 키와 비교)", () => {
+    expect(CODE).toMatch(/staleFieldsReason\(\s*verb,[^;]*fieldDefs\.map\(\(def\) => def\.key\)/);
+    expect(CODE).toMatch(/const serverReason = staleReason \?\?/);
+  });
 });

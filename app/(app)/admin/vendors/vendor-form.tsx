@@ -10,7 +10,7 @@ import { Button } from "@/ui/button/Button";
 import { SelectHint } from "@/ui/select/Select";
 import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
 import { maskTail4 } from "@/lib/mask-tail4";
-import { fieldErrorsReason, formReason } from "@/lib/actions/form-reason";
+import { fieldErrorsReason, formReason, staleFieldsReason } from "@/lib/actions/form-reason";
 import styles from "./vendors.module.css";
 
 export type EvidenceTypeOption = { value: string; label: string; description: string | null };
@@ -152,8 +152,13 @@ export function VendorForm({
     if (customFieldErrors?.[def.key]?._errors?.[0]) errorFields.push({ label: def.label, id: `cf_${def.key}` });
   }
   const verb = isEditing ? "수정" : "등록";
-  const summary = errorFields.length > 0 ? fieldErrorsReason(verb, errorFields.map((field) => field.label)) : null;
-  const serverReason = !summary && result.serverError ? formReason(verb, result.serverError) : null;
+  const staleReason = staleFieldsReason(
+    verb,
+    Object.keys(customFieldErrors ?? {}).filter((key) => key !== "_errors"),
+    fieldDefs.map((def) => def.key),
+  );
+  const summary = !staleReason && errorFields.length > 0 ? fieldErrorsReason(verb, errorFields.map((field) => field.label)) : null;
+  const serverReason = staleReason ?? (!summary && result.serverError ? formReason(verb, result.serverError) : null);
   const blocked = serverReason?.blocked === true;
   const firstErrorId = errorFields[0]?.id;
 

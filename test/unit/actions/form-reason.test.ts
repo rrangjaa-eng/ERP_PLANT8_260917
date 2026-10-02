@@ -8,6 +8,7 @@ import {
   PERMISSION_DENIED_CAUSE,
   fieldErrorsReason,
   formReason,
+  staleFieldsReason,
 } from "@/lib/actions/form-reason";
 import { FIELD_DEFINITION_CONFLICT_CAUSE, OPTIONS_ZERO_CAUSE } from "@/domain/custom-fields/admin-input";
 
@@ -177,5 +178,20 @@ describe("formReason — 거래처 원인 (04.5-06)", () => {
       expect(literal, `인자 ${arg}`).toBe(VENDOR_ARCHIVED_SOURCE);
       expect(formReason("수정", literal ?? "").blocked).toBe(true);
     }
+  });
+});
+
+describe("staleFieldsReason — 폼에 없는 칸의 서버 오류", () => {
+  it("오류 칸이 모두 폼에 있으면 null", () => {
+    expect(staleFieldsReason("수정", ["cf_a"], ["cf_a", "cf_b"])).toBeNull();
+    expect(staleFieldsReason("등록", [], ["cf_a"])).toBeNull();
+  });
+
+  it("폼에 없는 칸의 오류가 하나라도 있으면 1차를 막고 새로 불러오기로 보낸다", () => {
+    expect(staleFieldsReason("등록", ["cf_a", "cf_new"], ["cf_a"])).toEqual({
+      text: "등록할 수 없음 — 화면 항목 변경됨 · ",
+      next: "refresh",
+      blocked: true,
+    });
   });
 });

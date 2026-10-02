@@ -8,13 +8,18 @@ vi.mock("@/repositories/quote-lines", async () => {
   const actual = await vi.importActual<typeof import("@/repositories/quote-lines")>("@/repositories/quote-lines");
   return { ...actual, updateQuoteLineIfVersionMatches: vi.fn(actual.updateQuoteLineIfVersionMatches) };
 });
+// 충돌 경로의 거래처 이름 조회 횟수를 세기 위해 감싼다. 기본 동작은 실제 함수 그대로다.
+vi.mock("@/repositories/vendors", async () => {
+  const actual = await vi.importActual<typeof import("@/repositories/vendors")>("@/repositories/vendors");
+  return { ...actual, findVendorNamesByIds: vi.fn(actual.findVendorNamesByIds) };
+});
 
 import { db } from "@/db/client";
 import { quoteLines, codeItems, teams, actionLog } from "@/db/schema";
 import { SYSTEM_VIEWER, type Viewer } from "@/domain/viewer";
 import { DEFAULT_ROLE_ID } from "@/domain/permissions/roles";
 import { createAccount } from "@/domain/auth/accounts";
-import { insertVendor } from "@/repositories/vendors";
+import { insertVendor, findVendorNamesByIds } from "@/repositories/vendors";
 import { upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertRole } from "@/repositories/roles";
 import { createProject } from "@/domain/projects";
@@ -400,6 +405,74 @@ describe("domain/quotes/lines saveQuoteLines — 거래처 충돌 이유의 거�
     expect(conflict.reason).not.toContain(vendorB.id);
     expect(conflict.theirValue).not.toContain(vendorB.name);
     expect(conflict.reason).toMatch(/^다른 사람이 \d{2}:\d{2}에 다른 값으로 바꿈 · 덮어쓰기 \/ 그 값으로$/);
+  });
+
+  // 거래처 A인 줄 둘을 만들고, 다른 사람이 한 번에 바꾼(change) 뒤, 옛 버전으로 두 줄의 항목명만 고쳐 저장한다. 이름 조회는 거부된 저장에서만 센다.
+  async function twoLineConflict(
+    saver: Viewer,
+    change: (index: number, vendors: { a: string; b: string; c: string }) => { vendorId: string; unitPriceAmount: number },
+  ) {
+    const { revision, subcategoryValue } = await setupProject();
+    const vendorA = await insertVendor(SYSTEM_VIEWER, { name: `거래처A-${randomUUID()}`, normalizedName: `거래처a-${randomUUID()}` });
+    const vendorB = await insertVendor(SYSTEM_VIEWER, { name: `거래처B-${randomUUID()}`, normalizedName: `거래처b-${randomUUID()}` });
+    const vendorC = await insertVendor(SYSTEM_VIEWER, { name: `거래처C-${randomUUID()}`, normalizedName: `거래처c-${randomUUID()}` });
+    const unitPrice = { currency: "KRW" as const, amount: 100, fxRate: 1 };
+    const execution = { currency: "KRW" as const, amount: 0, fxRate: 1 };
+    const created = await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: ["A1", "A2"].map((itemName) => (
+      { id: randomUUID(), isNew: true, subcategory: subcategoryValue, itemName, vendorId: vendorA.id, unitPrice, execution }
+    )) });
+    const lines = created.lines.map((line) => ({
+      line,
+      baseline: {
+        subcategory: line.subcategory,
+        itemName: line.itemName,
+        vendorId: line.vendorId,
+        quantity: line.quantity,
+        unitPriceAmountKrw: line.unitPrice.amountKrw,
+        executionAmountKrw: line.execution.amountKrw,
+        lineStatus: line.lineStatus,
+        note: line.note,
+      } satisfies QuoteLineBaseline,
+    }));
+    expect(lines).toHaveLength(2);
+    await saveQuoteLines(SYSTEM_VIEWER, revision.id, { rows: lines.map(({ line, baseline }, index) => {
+      const next = change(index, { a: vendorA.id, b: vendorB.id, c: vendorC.id });
+      return { id: line.id, version: line.version, subcategory: line.subcategory, itemName: line.itemName, vendorId: next.vendorId, unitPrice: { ...unitPrice, amount: next.unitPriceAmount }, execution, baseline };
+    }) });
+    vi.mocked(findVendorNamesByIds).mockClear();
+    const rejected = await saveQuoteLines(saver, revision.id, { rows: lines.map(({ line, baseline }) => (
+      { id: line.id, version: line.version, subcategory: line.subcategory, itemName: `${line.itemName} 수정`, vendorId: vendorA.id, unitPrice, execution, baseline }
+    )) }).then(
+      () => {
+        throw new Error("이 지점에 도달하면 안 된다");
+      },
+      (error: unknown) => error,
+    );
+    expect(rejected).toBeInstanceOf(SaveRejectedError);
+    return { conflicts: (rejected as SaveRejectedError).conflicts, lineIds: lines.map(({ line }) => line.id), vendorB, vendorC };
+  }
+
+  it("거래처 칸 충돌 줄이 여럿이어도 거래처 이름은 같은 tx로 한 번만 묶어 조회한다", async () => {
+    const saver = await createSaver(["quote.amount", "project.value", "vendor.value"]);
+    const { conflicts, lineIds, vendorB, vendorC } = await twoLineConflict(saver, (index, vendors) => (
+      { vendorId: index === 0 ? vendors.b : vendors.c, unitPriceAmount: 100 }
+    ));
+    const vendorConflicts = conflicts.filter((c) => c.field === "vendorId");
+    expect(vendorConflicts.map((c) => c.rowId)).toEqual(lineIds);
+    expect(vendorConflicts.map((c) => c.theirValue)).toEqual([vendorB.name, vendorC.name]);
+    expect(vendorConflicts[0]?.reason).toContain(`${vendorB.name}으로 바꿈`);
+    expect(vendorConflicts[1]?.reason).toContain(`${vendorC.name}으로 바꿈`);
+    const calls = vi.mocked(findVendorNamesByIds).mock.calls;
+    expect(calls).toHaveLength(1);
+    expect([...(calls[0]?.[1] ?? [])].sort()).toEqual([vendorB.id, vendorC.id].sort());
+    expect(calls[0]?.[2]).toBeDefined();
+  });
+
+  it("거래처 칸 충돌이 없으면 거래처 이름을 조회하지 않는다", async () => {
+    const saver = await createSaver(["quote.amount", "project.value", "vendor.value"]);
+    const { conflicts } = await twoLineConflict(saver, (_index, vendors) => ({ vendorId: vendors.a, unitPriceAmount: 200 }));
+    expect(conflicts.map((c) => c.field)).toEqual(["unitPriceAmountKrw", "unitPriceAmountKrw"]);
+    expect(findVendorNamesByIds).not.toHaveBeenCalled();
   });
 });
 

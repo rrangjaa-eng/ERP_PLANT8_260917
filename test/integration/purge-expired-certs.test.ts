@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { db } from "@/db/client";
+import { db, pool } from "@/db/client";
 import { actionLog, certEvents, certPrizes, certSignatureUploads, certSubmissions } from "@/db/schema";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
 import { setSettingValue } from "@/domain/settings/registry";
 import { CERT_ENABLED, CERT_RETENTION_YEARS } from "@/domain/settings/keys";
 import { certPurgeDeadline, runCertPurge } from "@/domain/certs/purge";
-import { getSubmissionForReview, revealRrn } from "@/domain/certs/review";
+import { correctSubmission, getSubmissionForReview, revealRrn } from "@/domain/certs/review";
 import { withTransaction } from "@/lib/db-transaction";
 import { getSignatureStore, type SignatureStore } from "@/lib/storage/signature-store";
 import { appendActionLog } from "@/repositories/action-log";
@@ -15,6 +15,7 @@ import { clearSubmissionPersonalFields } from "@/repositories/cert-purge";
 import { insertSignatureUploadIntent } from "@/repositories/cert-submissions";
 import { setCertPrizeValueForTest, seedSubmittedCert, signaturePngFixture, withCertFeatureOff } from "@/test/e2e/helpers/cert";
 import { FULL_GRANT, decryptSpy, makeReviewer, submissionRow } from "@/test/integration/cert-review-fixtures";
+import { deferred, waitForLockWaiter } from "@/test/integration/lock-race";
 
 // 04.3-12 Task 1 — 확인증 파기(CERT-02): 기한 경계 · 행 보존 · IP 가명 · 파일 대기 재시도 · 멱등 · 미리 보기 ·
 // 로그(한 트랜잭션) · 고아 서명(C3) · 파기 대상 주민등록번호(CS-2 a) · 전체 보기와의 직렬화(실제 Postgres).
@@ -271,6 +272,76 @@ describe("파기 대상 주민등록번호 — CS-2 a(제출 연도 다음 해 4
     const row = await submissionRow(c.target.submissionId);
     expect(row.purgedAt?.getTime()).toBe(retentionDeadline.getTime());
     expect(row.name).toBeNull();
+  });
+
+  it("후보를 읽은 뒤 가액 · 수량이 50,000을 넘게 바뀐 줄은 비우지 않는다(같은 문장 재평가 · 경계 16,666 × 3)", async () => {
+    const plain = await seed({ submittedAt: SUBMITTED, valueNow: 30_000 });
+    const raisedValue = await seed({ submittedAt: SUBMITTED, valueNow: 30_000 });
+    const raisedQty = await seed({ submittedAt: SUBMITTED, valueNow: 30_000 });
+    const inEdge = await seed({ submittedAt: SUBMITTED, quantity: 3, valueNow: 16_666 });
+    const outEdge = await seed({ submittedAt: SUBMITTED, quantity: 3, valueNow: 16_667 });
+    const ids = [plain, raisedValue, raisedQty, inEdge, outEdge].map((s) => s.submissionId);
+
+    // 후보 판정(30,000 × 1) 뒤에 바뀐 상황 — 가액을 올리고 수량을 정정한다.
+    await setCertPrizeValueForTest(raisedValue.prizeId, 60_000);
+    await db.update(certSubmissions).set({ quantity: 2 }).where(eq(certSubmissions.id, raisedQty.submissionId));
+
+    const result = await withTransaction((tx) =>
+      clearSubmissionPersonalFields(SYSTEM_VIEWER, ids, { mode: "belowThreshold", at: APRIL_1 }, tx),
+    );
+    expect(result.cleared).toBe(2);
+
+    for (const hit of [plain, inEdge]) {
+      const row = await submissionRow(hit.submissionId);
+      expect(row.rrnEncrypted).toBeNull();
+      expect(row.rrnMasked).toBeNull();
+      expect(row.version).toBe(hit.row.version + 1);
+    }
+    for (const kept of [raisedValue, raisedQty]) {
+      const row = await submissionRow(kept.submissionId);
+      expect(row.rrnEncrypted).toBe(kept.row.rrnEncrypted);
+      expect(row.rrnMasked).toBe(kept.row.rrnMasked);
+      expect(row.version).toBe(kept.row.version);
+    }
+    expect((await submissionRow(raisedQty.submissionId)).quantity).toBe(2);
+    expect(await submissionRow(outEdge.submissionId)).toEqual(outEdge.row);
+  });
+
+  it("수량 정정이 커밋 전이면 파기는 그 줄을 기다렸다가 새 수량으로 판정한다 — 로그 수는 실제로 비운 수", async () => {
+    const raced = await seed({ submittedAt: SUBMITTED, valueNow: 30_000 });
+    const control = await seed({ submittedAt: SUBMITTED, valueNow: 30_000 });
+    const reviewer = await makeReviewer(FULL_GRANT);
+    const entered = deferred();
+    const release = deferred();
+
+    const correction = correctSubmission(
+      reviewer,
+      raced.submissionId,
+      { version: raced.row.version, name: raced.name, phone: raced.phone, quantity: 2 },
+      { ip: null },
+      {
+        appendActionLog: async (viewer, entry, tx) => {
+          entered.resolve();
+          await release.promise;
+          return appendActionLog(viewer, entry, tx);
+        },
+      },
+    );
+    await entered.promise;
+
+    const purge = runCertPurge({ now: APRIL_1, apply: true });
+    await waitForLockWaiter(pool);
+    release.resolve();
+
+    expect((await correction).kind).toBe("saved");
+    expect((await purge).rrnCleared).toBe(1);
+
+    const racedRow = await submissionRow(raced.submissionId);
+    expect(racedRow.rrnEncrypted).toBe(raced.row.rrnEncrypted);
+    expect(racedRow.quantity).toBe(2);
+    expect(racedRow.version).toBe(raced.row.version + 1);
+    expect((await submissionRow(control.submissionId)).rrnEncrypted).toBeNull();
+    expect((await purgeLogs()).map((log) => log.detail)).toEqual([{ submissions: 0, filesQueued: 0, rrnCleared: 1 }]);
   });
 });
 

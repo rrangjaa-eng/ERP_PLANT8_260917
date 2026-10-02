@@ -1,6 +1,7 @@
-import { and, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, exists, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { db, type DbOrTx } from "@/db/client";
 import { certEvents, certPrizes, certSubmissions } from "@/db/schema";
+import { CERT_RRN_EXEMPT_PRIZE_VALUE_KRW } from "@/domain/certs/prize-value";
 import type { Viewer } from "@/domain/viewer";
 
 // 파기 전용 · 권한 판정 없음 · domain/certs/purge.ts만 SYSTEM_VIEWER로 부른다(칸 비우기는 04.3-17 「대조 제외」도 부른다).
@@ -65,6 +66,7 @@ export type ClearResult = { cleared: number; withSignature: number };
 // exclude(대조 제외): 이름 · purged_at만 두고 나머지를 비운다 · belowThreshold(CS-2 a): 주민 암호문 · 가린 값만 비운다.
 // signature_key는 어느 모드도 건드리지 않는다 — 삭제 대기 표시로 남아 파일 삭제가 끝난 뒤 비운다.
 // 파기되지 않은 줄에만 쓰고(조건부 UPDATE), 전체 보기의 FOR SHARE 잠금이 있으면 그 커밋까지 기다린다.
+// belowThreshold는 같은 문장에서 지금 가액 × 수량 ≤ 50,000을 다시 본다(후보를 읽은 뒤 바뀐 값 — 수량 정정이 커밋 전이면 그 행을 기다렸다가 새 값으로 판정).
 export async function clearSubmissionPersonalFields(
   viewer: Viewer,
   submissionIds: string[],
@@ -93,7 +95,21 @@ export async function clearSubmissionPersonalFields(
         : { ...common, rrnEncrypted: null, rrnMasked: null };
   const guard =
     mode === "belowThreshold"
-      ? and(isNull(certSubmissions.purgedAt), isNotNull(certSubmissions.rrnEncrypted))
+      ? and(
+          isNull(certSubmissions.purgedAt),
+          isNotNull(certSubmissions.rrnEncrypted),
+          exists(
+            tx
+              .select({ id: certPrizes.id })
+              .from(certPrizes)
+              .where(
+                and(
+                  eq(certPrizes.id, certSubmissions.prizeId),
+                  lte(certPrizes.unitValueKrw, sql`${CERT_RRN_EXEMPT_PRIZE_VALUE_KRW}::integer / ${certSubmissions.quantity}`),
+                ),
+              ),
+          ),
+        )
       : isNull(certSubmissions.purgedAt);
 
   const rows = await tx

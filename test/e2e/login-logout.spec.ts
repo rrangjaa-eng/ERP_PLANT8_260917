@@ -104,17 +104,19 @@ test.describe("로그인 버튼 위치 (/design-review 발견 4)", () => {
     expect(Math.abs(formCenterX - buttonCenterX)).toBeLessThanOrEqual(1);
   });
 
-  // SYSTEM.md §7-1 — 내부 1차 버튼은 PC 32 · 폰 40, 글자 --fs-sm(12px).
-  test("로그인 1차 버튼은 PC 1280에서 높이 32 · 글자 12px, 폰 375에서 높이 40 · 글자 12px(04.3-03 F1 · 04.3-15 R3)", async ({
+  // SYSTEM.md §7-1 · §2-2 — 내부 1차 버튼은 PC 32 · 폰 40, 글자 --text-body(PC 14 · 폰 15 — 계산된 역할 토큰 값).
+  test("로그인 1차 버튼은 PC 1280에서 높이 32 · 폰 375에서 높이 40, 글자는 --text-body(04.3-03 F1 · 04.3-15 R3)", async ({
     page,
   }) => {
     const button = page.getByRole("button", { name: "로그인" });
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto("/login");
     await expect(button).toHaveCSS("height", "32px");
-    await expect(button).toHaveCSS("font-size", "12px");
+    const bodySize = () =>
+      page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--text-body").trim());
+    await expect(button).toHaveCSS("font-size", await bodySize());
     await page.setViewportSize({ width: 375, height: 800 });
     await expect(button).toHaveCSS("height", "40px");
-    await expect(button).toHaveCSS("font-size", "12px");
+    await expect(button).toHaveCSS("font-size", await bodySize());
   });
 });

@@ -171,6 +171,27 @@ describe("getCertificatePrint — 정보 항목 cert_submission.value 투영(cod
   });
 });
 
+// 04.3-11 기준 5 / D-1108 — 세무 보관용 인쇄물에는 경품 가액도 「파기 대상」 표시도 없다.
+describe("getCertificatePrint — 가액 · 파기 대상 미노출(D-1108)", () => {
+  it("가액 73,000원 경품의 인쇄 DTO에 가액 숫자 · 가액 필드명 · 파기 대상이 없다(대조: 가린 번호 · 경품명은 있다)", async () => {
+    const seeded = await seedSubmittedCert({ unitValueKrw: 73_000 });
+    const viewer = await makeReviewer(FULL_GRANT);
+    const result = await getCertificatePrint(viewer, seeded.submissionId, { ip: null }, { signatureStore: storeWith(null) });
+
+    expect(result.kind).toBe("ok");
+    if (result.kind !== "ok") return;
+    const text = JSON.stringify(result);
+    // 대조군 — 빈 결과로 통과하지 않게
+    expect(text).toContain("930412-2******");
+    expect(text).toContain("갤럭시 탭 S10");
+    expect(text).not.toMatch(/73,?000/);
+    expect(text).not.toMatch(/unitValue|unit_value|prizeValue|가액/);
+    expect(Object.keys(result.print).some((k) => /value|가액|amount|price/i.test(k))).toBe(false);
+    expect(text).not.toContain("파기 대상");
+    expect(text).not.toMatch(/purge|파기/i);
+  });
+});
+
 // 04.3-17 E36 — I4에서 수량을 고치면 인쇄 DTO의 경품 줄 수량이 따라간다.
 describe("getCertificatePrint — 수량 정정 뒤(04.3-17 E36)", () => {
   it("수량을 3으로 정정한 뒤 인쇄 DTO quantity가 3", async () => {

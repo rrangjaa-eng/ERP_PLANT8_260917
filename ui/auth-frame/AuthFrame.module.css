@@ -1,7 +1,6 @@
-/* 04.6 스킨 A 이관 전: CSS */
-/* SYSTEM.md §6-7 — 셸 없는 화면 골격. 색·서체·radius는 토큰 참조만 쓴다(D-20).
-   최대 폭은 §6-7의 360 = --auth-max(2026-09-22 DECISIONS.md) — 480 모달 폭
-   (--modal-w) 재사용은 기록 없는 이탈이었다. */
+/* SYSTEM.md §6-7 — 셸 없는 화면 골격. 역할 토큰만 쓴다(스킨 A).
+   최대 폭은 §6-7의 360 = --auth-max(2026-09-22 DECISIONS.md) — 480 대화상자 폭
+   재사용은 기록 없는 이탈이었다. */
 
 .page {
   display: flex;
@@ -18,9 +17,9 @@
 
 .mark {
   margin: 0 0 var(--s-6);
-  color: var(--fg);
+  color: var(--text-strong);
   font-weight: var(--fw-mark);
-  font-size: var(--fs-lg);
+  font-size: var(--text-subtitle);
   letter-spacing: var(--ls-head);
   text-align: center;
 }

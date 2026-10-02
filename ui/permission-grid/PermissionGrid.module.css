@@ -1,8 +1,6 @@
-/* 04.6 스킨 A 이관 전: CSS */
 /* SYSTEM.md §7-13 체크박스 매트릭스(권한표·정보 노출표) — §7-3(엑셀식 표)과
    분리된 별개 컴포넌트다(D-40). 다행 편집·범위 복사·오류 셀 inset 선 같은
-   §7-3의 기계장치는 없다. 색·서체·radius는 tokens.css 변수만 쓴다(D-20).
-   간격 리터럴은 허용된다(02-02 결정). */
+   §7-3의 기계장치는 없다. 역할 토큰만 쓴다(스킨 A). */
 
 /* §7-13: 「열이 많아지면 가로 스크롤 · 항목 수가 늘면 세로 스크롤도 함께
    필요」 — 두 sticky(top·left)가 .wrap을 컨테이닝 블록으로 쓰므로, .wrap
@@ -13,22 +11,23 @@
    overflow: auto로 .wrap 자체를 세로 스크롤 컨테이너로 만든다. overflow-x를
    overflow-y와 분리해 한쪽만 auto로 둘 수 없다(CSS 스펙상 auto/visible을
    섞으면 둘 다 auto로 계산된다) — 어차피 같은 값이라 축약형으로 합친다.
-   vh 치수 리터럴은 MoreSheet.module.css(max-height: 85vh)의 선례를 따른다
-   — 간격·치수 리터럴은 02-02 결정으로 허용되고, 색·서체·radius만 토큰
-   강제 대상이다(D-20). 70vh는 상단 바 + 화면 제목이 항상 보이게 하면서
-   격자에 충분한 세로 공간을 남긴다. */
+   vh 치수 리터럴은 MoreSheet.module.css(max-height: 85vh)의 선례를 따른다.
+   70vh는 상단 바 + 화면 제목이 항상 보이게 하면서 격자에 충분한 세로 공간을
+   남긴다. */
 .wrap {
   overflow: auto;
   max-height: 70vh;
+  /* 안쪽 sticky z-index(--z-sticky · 좌상단 모서리 --z-bar)가 이 격자 안에서만 겹침을 정한다 — 상단 바와 같은 층에서 다투지 않는다. */
+  isolation: isolate;
 }
 
 /* 시각적으로 숨긴 <caption> — 스크린리더만 읽는다. */
 .caption {
   position: absolute;
-  width: 1px;
-  height: 1px;
+  width: var(--line-w);
+  height: var(--line-w);
   padding: 0;
-  margin: -1px;
+  margin: 0;
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
@@ -42,19 +41,19 @@
 
 .table th,
 .table td {
-  border-bottom: var(--line-w) solid var(--line);
+  border-bottom: var(--line-w) solid var(--border-row);
 }
 
-/* 열 머리글 — 위 sticky. §7-3의 "편집 가능한 표" 신호(--g-100 바탕 +
-   --g-950 글자)를 물려받는다 — 체크박스 격자도 값을 바꾸는 컨트롤이다. */
+/* 열 머리글 — 위 sticky. §7-3의 "편집 가능한 표" 신호(--surface-selected
+   바탕 + --text-strong 글자)를 물려받는다 — 체크박스 격자도 값을 바꾸는 컨트롤이다. */
 .colHeader,
 .groupHeader {
   position: sticky;
   top: 0;
   z-index: var(--z-sticky);
-  background: var(--g-100);
-  color: var(--g-950);
-  font-size: var(--fs-sm);
+  background: var(--surface-selected);
+  color: var(--text-strong);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
   padding: var(--cell-pad-y) var(--cell-pad-x);
   text-align: center;
@@ -62,7 +61,7 @@
 }
 
 .groupHeader {
-  border-left: var(--line-w) solid var(--line);
+  border-left: var(--line-w) solid var(--border-surface);
   /* 고정 높이 — 2단 머리글이 실제로 스크롤 컨테이너 안에서 고정되면(위
    * .wrap 수정) 그룹 행과 열 머리글 행이 둘 다 top: 0으로 각자 sticky를
    * 걸어 서로 겹친다(회귀 테스트로 실측: 31.6875px 어긋남). 이 행의 높이를
@@ -82,32 +81,32 @@
   height: var(--icon-lg);
 }
 
-/* 행 머리글(계급) — 왼쪽 sticky + 오른쪽 강한 구분선. */
+/* 행 머리글(계급) — 왼쪽 sticky + 오른쪽 1px 구분선. */
 .rowHeader {
   position: sticky;
   left: 0;
   z-index: var(--z-sticky);
-  background: var(--g-100);
-  color: var(--g-950);
-  border-right: var(--line-w-strong) solid var(--line-strong);
+  background: var(--surface-selected);
+  color: var(--text-strong);
+  border-right: var(--line-w) solid var(--border-strong);
   text-align: left;
   padding: var(--cell-pad-y) var(--cell-pad-x);
   white-space: nowrap;
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
 }
 
-/* 좌상단 모서리 — 두 sticky가 겹치는 자리. --g-100으로 채워 스크롤 시
+/* 좌상단 모서리 — 두 sticky가 겹치는 자리. --surface-selected로 채워 스크롤 시
    배경이 끊기지 않게 한다. */
 .corner {
   position: sticky;
   left: 0;
   top: 0;
-  z-index: calc(var(--z-sticky) + 1);
-  background: var(--g-100);
-  color: var(--g-950);
+  z-index: var(--z-bar);
+  background: var(--surface-selected);
+  color: var(--text-strong);
   padding: var(--cell-pad-y) var(--cell-pad-x);
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
   text-align: left;
 }
@@ -134,8 +133,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: var(--s-8);
+  height: var(--s-8);
   margin: 0 auto;
   cursor: pointer;
 }
@@ -148,18 +147,18 @@
 }
 
 .delayed {
-  background: var(--surface);
+  background: var(--surface-muted);
 }
 
 .errorCell {
-  box-shadow: inset 0 0 0 1px var(--danger);
+  box-shadow: var(--inset-error);
 }
 
 .mobileSelectLabel {
   display: block;
-  font-size: var(--fs-sm);
+  font-size: var(--text-aux);
   font-weight: var(--fw-medium);
-  color: var(--muted);
+  color: var(--text-muted);
   margin-bottom: var(--s-3);
 }
 
@@ -167,17 +166,17 @@
   display: block;
   width: 100%;
   height: var(--control-h);
-  border: var(--line-w) solid var(--line-ui);
-  background: var(--bg);
+  border: var(--line-w) solid var(--border-control);
+  background: var(--surface-base);
   padding: 0 var(--s-2);
-  font-size: var(--fs-base);
+  font-size: var(--text-body);
   margin-top: var(--s-1);
 }
 
 .mobileCheckbox {
   accent-color: var(--native-accent);
-  width: 44px;
-  height: 44px;
+  width: var(--touch-min);
+  height: var(--touch-min);
   cursor: pointer;
 }
 

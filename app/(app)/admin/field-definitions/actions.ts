@@ -1,5 +1,6 @@
 "use server";
 
+import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { returnValidationErrors } from "next-safe-action";
 import { authedActionClient } from "@/lib/actions/client";
@@ -14,6 +15,7 @@ import {
   nameConflictMessage,
   updateFieldDefinitionInput,
 } from "@/domain/custom-fields/admin-input";
+import { archive } from "@/domain/archive";
 import type { Viewer } from "@/domain/viewer";
 import "./actions.registry";
 
@@ -64,4 +66,13 @@ export const updateFieldDefinitionAction = authedActionClient
       throw error;
     }
     revalidateFieldDefinitionPaths();
+  });
+
+// 04.5-04: 칸 「삭제」 = 보관. 권한(보관함 쓰기 + 칸 관리 쓰기)은 domain/archive가 판정한다(UI-SPEC O21).
+export const archiveFieldDefinitionAction = authedActionClient
+  .schema(z.object({ id: z.string().min(1) }))
+  .action(async ({ parsedInput, ctx }) => {
+    await archive(ctx.viewer, "field_definitions", parsedInput.id);
+    revalidateFieldDefinitionPaths();
+    revalidatePath("/admin/archive");
   });

@@ -20,7 +20,8 @@ import {
 } from "@/domain/custom-fields/admin-input";
 import { addOption, removeOption, type OptionError, type OptionState } from "@/domain/custom-fields/options";
 import { formReason } from "@/lib/actions/form-reason";
-import { createFieldDefinitionAction, updateFieldDefinitionAction } from "./actions";
+import { DeleteToArchive } from "@/app/(app)/admin/archive/delete-to-archive";
+import { archiveFieldDefinitionAction, createFieldDefinitionAction, updateFieldDefinitionAction } from "./actions";
 import styles from "./field-definitions.module.css";
 
 type FieldType = "text" | "number" | "date" | "select";
@@ -504,5 +505,18 @@ function FieldDefinitionFormBody({
         )}
       </Form.Actions>
     </Form>
+  );
+}
+
+// 04.5-04: 목록 행 「삭제」 — 보관함으로 이동한다(VendorDeleteButton과 같은 모양, DeleteToArchive는 그대로).
+export function FieldDefinitionDeleteButton({ id, name }: { id: string; name: string }) {
+  return (
+    <DeleteToArchive
+      name={name}
+      onArchive={async () => {
+        const result = await archiveFieldDefinitionAction({ id });
+        if (result?.serverError) throw new Error(result.serverError);
+      }}
+    />
   );
 }

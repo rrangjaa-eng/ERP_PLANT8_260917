@@ -8,6 +8,11 @@
   margin: var(--s-3) 0;
 }
 
+/* 04.5-04: 3차 토글 「보관 포함」/「보관 제외」는 필터 줄 왼쪽, 「화면 항목 추가」는 오른쪽. */
+.filterToggle {
+  margin-right: auto;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -50,6 +55,19 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 행 안 동작 사이 --s-4(SYSTEM §6-1 · vendors.module.css .rowActions와 같은 값). 폰에서는 줄바꿈된다. */
+.rowActions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+/* 보관 행의 동작 자리 「보관됨」 — 상태 열(P2)이 숨는 폰에서만 보인다(UI-SPEC 화면 1 폰). */
+.phoneOnly {
+  display: none;
+}
+
 /* §7-3 폰 전략 — <700px에서 P1(이름 · 정렬 · 동작)만 열로 남고 P2는 행 아래 접힌 줄 하나로 들어간다. */
 .collapsedRow {
   display: none;
@@ -70,6 +88,14 @@
 
   .collapsedRow {
     display: table-row;
+  }
+
+  .phoneOnly {
+    display: inline;
+  }
+
+  .rowActions {
+    flex-wrap: wrap;
   }
 
   .table tbody tr:has(+ .collapsedRow) th,

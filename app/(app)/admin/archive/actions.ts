@@ -35,5 +35,7 @@ export const restoreArchivedAction = authedActionClient
     revalidatePath("/admin/corp-cards");
     revalidatePath("/admin/vendors");
     revalidatePath("/admin/holidays");
+    revalidatePath("/admin/field-definitions");
+    revalidatePath("/admin/visibility");
     return { restored: result.restored };
   });

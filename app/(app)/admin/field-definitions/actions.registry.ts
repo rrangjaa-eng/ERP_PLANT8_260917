@@ -15,3 +15,10 @@ registerAction({
   action: "write",
   dtoName: null,
 });
+// 04.5-04: 칸 보관은 보관함 쓰기 메뉴로 등록한다(거래처 보관 선례) — 칸 관리 쓰기는 domain/archive의 항목 조건이 더 본다.
+registerAction({
+  name: "archiveFieldDefinitionAction",
+  menu: "admin.archive",
+  action: "write",
+  dtoName: null,
+});

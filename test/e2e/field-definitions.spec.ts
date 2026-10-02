@@ -3,10 +3,12 @@ import { test, expect, type Page } from "@playwright/test";
 import { archiveE2EFieldDefinitions, createFixtureUser } from "./fixtures";
 import { DEFAULT_ROLE_ID, SYSADMIN_ROLE_ID } from "@/domain/permissions/roles";
 import { nextSortOrder } from "@/domain/custom-fields/targets";
-import { insertVisibilityIfAbsent, upsertPermission } from "@/repositories/permissions";
+import { insertVisibilityIfAbsent, upsertPermission, upsertVisibility } from "@/repositories/permissions";
 import { insertFieldDefinition, listFieldDefinitions } from "@/repositories/field-definitions";
 import { insertRole, listRoles, setRoleArchived } from "@/repositories/roles";
 import { SYSTEM_VIEWER } from "@/domain/viewer";
+import { archive } from "@/domain/archive";
+import { insertVendor, setVendorHidden } from "@/repositories/vendors";
 
 // 04.5-01 트레이서 + 04.5-08: 관리 화면에서 추가한 거래처 칸이 거래처 폼에 한글 이름으로 보이고,
 // 목록 표 · 등록 폼의 모든 상태(빈 상태 기본값 · 칸 오류 · 이름 예약 · 이유 자리 · 잠금 · 결과 줄)가 UI-SPEC 문구 그대로 보인다.
@@ -586,4 +588,133 @@ test("충돌 뒤 새로 불러오기는 먼저 저장된 보관 선택지를 보
   await expect(details).toContainText("특약");
   await expect(details).toContainText("보관됨");
   await other.close();
+});
+
+// 04.5-04: 칸 삭제 = 보관 · 보관함 복원 · 보관 포함 필터 · 두 쓰기 권한 조합(디자인 리뷰 R5 · R6 · R8 · D6 · D8).
+async function seedFieldRow(label: string, sortOrder = 1): Promise<{ id: string; key: string }> {
+  const id = `fd-${randomUUID()}`;
+  const key = `cf_${randomBytes(4).toString("hex")}`;
+  await insertFieldDefinition(SYSTEM_VIEWER, { id, entity: "vendor", key, label, type: "text", sortOrder });
+  await grantAllRoles(key);
+  return { id, key };
+}
+
+async function loginInNewContext(page: Page, account: Account): Promise<Page> {
+  const context = await page.context().browser()?.newContext();
+  if (!context) throw new Error("새 브라우저 컨텍스트를 열 수 없다");
+  const other = await context.newPage();
+  await login(other, account);
+  return other;
+}
+
+function listRow(page: Page, label: string) {
+  return page.locator("tbody tr", { has: page.locator('th[scope="row"]', { hasText: label }) });
+}
+
+test("칸 「삭제」는 보관이다 — 기본 목록 · 거래처 폼 · 노출표에서 숨고, 보관함 복원 뒤 값과 함께 돌아온다", async ({ page }) => {
+  await login(page, admin);
+  const label = uniqueLabel();
+  const { key } = await seedFieldRow(label, 4);
+  const vendorName = `칸보관거래처-${randomBytes(4).toString("hex")}`;
+  const vendor = await insertVendor(SYSTEM_VIEWER, {
+    name: vendorName,
+    normalizedName: `칸보관거래처-${randomUUID()}`,
+    customFields: { [key]: "남는 값" },
+  });
+
+  try {
+    await page.goto("/admin/field-definitions");
+    const row = listRow(page, label);
+    await row.getByRole("button", { name: "삭제" }).click();
+    await expect(row.getByText(`${label} 삭제 · 보관함으로 이동합니다 · 관리자가 복원할 수 있습니다`)).toBeVisible();
+    await row.getByRole("button", { name: "삭제" }).click();
+    await expect(listRow(page, label)).toHaveCount(0);
+
+    await page.getByRole("link", { name: "보관 포함", exact: true }).click();
+    await expect(page).toHaveURL(/includeArchived=1/);
+    const archivedRow = listRow(page, label);
+    await expect(archivedRow.locator("td").nth(4)).toHaveText("보관됨");
+    await expect(archivedRow.getByRole("link")).toHaveCount(0);
+    await expect(archivedRow.getByRole("button")).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "보관 제외", exact: true })).toBeVisible();
+
+    await page.goto(`/admin/vendors?editId=${vendor.id}`);
+    await expect(page.getByLabel("이름", { exact: true })).toHaveValue(vendorName);
+    await expect(page.getByLabel(label, { exact: true })).toHaveCount(0);
+    await page.goto("/admin/visibility");
+    await expect(page.locator("#main-content")).not.toContainText(label);
+
+    await page.goto("/admin/archive");
+    const archiveRow = page.locator("tr", { hasText: label });
+    await expect(archiveRow).toContainText("화면 항목");
+    await archiveRow.getByRole("button", { name: "복원" }).click();
+    await expect(page.getByText(`복원 · ${label} 복원됨`)).toBeVisible({ timeout: 15000 });
+
+    await page.goto(`/admin/vendors?editId=${vendor.id}`);
+    await expect(page.getByLabel(label, { exact: true })).toHaveValue("남는 값");
+    await page.goto("/admin/visibility");
+    await expect(page.locator("#main-content")).toContainText(label);
+    await page.goto("/admin/field-definitions");
+    await expect(listRow(page, label).locator("td").nth(4)).toHaveText("—");
+  } finally {
+    await setVendorHidden(SYSTEM_VIEWER, vendor.id, true);
+  }
+});
+
+test("권한 조합: 칸 관리 쓰기만이면 「수정」만, 보관함 쓰기 + 칸 관리 보기면 둘 다 없고 보관함 「복원」이 실패한다", async ({ page }) => {
+  const active = uniqueLabel();
+  const archived = uniqueLabel();
+  await seedFieldRow(active, 5);
+  const { id: archivedId } = await seedFieldRow(archived, 6);
+  await archive(SYSTEM_VIEWER, "field_definitions", archivedId);
+
+  const { account, roleId } = await createTempRoleUser([
+    { menu: MENU, action: "view", allowed: true },
+    { menu: MENU, action: "write", allowed: true },
+  ]);
+  // insertRole은 노출 행을 만들지 않고 archive.value는 기본 숨김이다 — 보관함 행의 이름 · 종류가 투영에서 빠지지 않게.
+  await upsertVisibility(SYSTEM_VIEWER, { roleId, infoItem: "archive.value", visible: true });
+  const other = await loginInNewContext(page, account);
+
+  // ① admin.field-definitions view · write만
+  await other.goto("/admin/field-definitions");
+  await expect(other.getByRole("link", { name: `${active} 수정`, exact: true })).toHaveCount(1);
+  await expect(listRow(other, active).getByRole("button", { name: "삭제" })).toHaveCount(0);
+
+  // ② admin.field-definitions view만 + admin.archive view · write
+  await upsertPermission(SYSTEM_VIEWER, { roleId, menu: MENU, action: "write", allowed: false });
+  await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "admin.archive", action: "view", allowed: true });
+  await upsertPermission(SYSTEM_VIEWER, { roleId, menu: "admin.archive", action: "write", allowed: true });
+  await other.goto("/admin/field-definitions");
+  await expect(listRow(other, active)).toHaveCount(1);
+  await expect(other.getByRole("link", { name: `${active} 수정`, exact: true })).toHaveCount(0);
+  await expect(listRow(other, active).getByRole("button", { name: "삭제" })).toHaveCount(0);
+
+  await other.goto("/admin/archive");
+  const archiveRow = other.locator("tr", { hasText: archived });
+  await expect(archiveRow).toContainText("화면 항목");
+  await archiveRow.getByRole("button", { name: "복원" }).click();
+  await expect(other.getByText("복원 · 실패 · 다시 시도")).toBeVisible({ timeout: 15000 });
+  await expect(other.locator("tr", { hasText: archived })).toHaveCount(1);
+
+  await other.goto("/admin/field-definitions?includeArchived=1");
+  await expect(listRow(other, archived).locator("td").nth(4)).toHaveText("보관됨");
+  await other.context().close();
+});
+
+test("폼이 열려 있으면 화면 어디에도 「화면 항목 추가」 링크가 없다", async ({ page }) => {
+  await login(page, admin);
+  await page.goto("/admin/field-definitions?new=1");
+  await expect(page.locator("#field-definition-form")).toBeVisible();
+  await expect(page.getByRole("link", { name: "화면 항목 추가", exact: true })).toHaveCount(0);
+});
+
+test("「보관 포함」 토글은 열린 폼의 쿼리를 지킨다", async ({ page }) => {
+  await login(page, admin);
+  await seedFieldRow(uniqueLabel(), 2);
+  await page.goto("/admin/field-definitions?new=1");
+  await expect(page.getByRole("link", { name: "보관 포함", exact: true })).toHaveAttribute(
+    "href",
+    "/admin/field-definitions?includeArchived=1&new=1",
+  );
 });

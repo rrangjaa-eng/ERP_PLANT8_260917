@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { createElement, type ReactNode } from "react";
+import { createElement, Fragment, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Num } from "../../../ui/num/Num";
-import { RowAction, RowActions, rowActionClickHandler } from "../../../ui/row-actions/RowActions";
+import { RowAction, RowActions, rowActionClickHandler, type RowActionProps } from "../../../ui/row-actions/RowActions";
 import { StaticTable } from "../../../ui/table/StaticTable";
 import { Table } from "../../../ui/table/Table";
 import { TableSkeleton } from "../../../ui/table/TableSkeleton";
@@ -91,12 +91,14 @@ describe("Table — 숫자 열이 Num으로 그려진다", () => {
   });
 });
 
+const act = (props: RowActionProps): ReactNode => createElement(RowAction, props);
+
 describe("RowActions — 행동 링크 묶음", () => {
-  const order = (markup: string): string[] => [...markup.matchAll(/>([가-힣]+)<\/(?:a|button)>/g)].map((match) => match[1] ?? "");
+  const order = (markup: string): string[] => [...markup.matchAll(/(?:<a [^>]*>|<button [^>]*><span>)([가-힣]+)</g)].map((match) => match[1] ?? "");
 
   it("data-ui 훅을 달고 href 항목은 next/link 앵커다", () => {
     const markup = html(
-      createElement(RowActions, null, createElement(RowAction, { href: "/admin/vendors?editId=1" }, "수정")),
+      createElement(RowActions, null, act({ href: "/admin/vendors?editId=1", children: "수정" })),
     );
     expect(markup).toContain('data-ui="row-actions"');
     expect(markup).toMatch(/<a [^>]*href="\/admin\/vendors\?editId=1"[^>]*>수정<\/a>/);
@@ -107,9 +109,9 @@ describe("RowActions — 행동 링크 묶음", () => {
       createElement(
         RowActions,
         null,
-        createElement(RowAction, { href: "/a" }, "수정"),
-        createElement(RowAction, { danger: true, onClick: () => undefined }, "삭제"),
-        createElement(RowAction, { onClick: () => undefined }, "숨기기"),
+        act({ href: "/a", children: "수정" }),
+        act({ danger: true, onClick: () => undefined, children: "삭제" }),
+        act({ onClick: () => undefined, children: "숨기기" }),
       ),
     );
     expect(order(markup)).toEqual(["수정", "숨기기", "삭제"]);
@@ -117,7 +119,7 @@ describe("RowActions — 행동 링크 묶음", () => {
 
   it("개수와 무관하게 같은 구조 — 하나 · 둘 · 셋", () => {
     for (const count of [1, 2, 3]) {
-      const items = Array.from({ length: count }, (_, index) => createElement(RowAction, { key: index, href: `/x${index}` }, `행동${"가나다"[index]}`));
+      const items = Array.from({ length: count }, (_, index) => createElement(Fragment, { key: index }, act({ href: `/x${index}`, children: `행동${"가나다"[index]}` })));
       const markup = html(createElement(RowActions, null, ...items));
       expect(markup.match(/<a /g)).toHaveLength(count);
       expect(markup.match(/data-ui="row-actions"/g)).toHaveLength(1);
@@ -129,8 +131,8 @@ describe("RowActions — 행동 링크 묶음", () => {
       createElement(
         RowActions,
         null,
-        createElement(RowAction, { href: "/a" }, "수정"),
-        createElement(RowAction, { onClick: () => undefined }, "숨기기"),
+        act({ href: "/a", children: "수정" }),
+        act({ onClick: () => undefined, children: "숨기기" }),
       ),
     );
     const classes = [...markup.matchAll(/<(?:a|button) [^>]*class="([^"]*)"/g)].map((match) => match[1] ?? "");
@@ -141,7 +143,7 @@ describe("RowActions — 행동 링크 묶음", () => {
 
 describe("RowAction button 형 — pending · autoFocus · disabled + disabledReason(M8)", () => {
   const button = (props: Record<string, unknown>, label = "삭제"): string =>
-    html(createElement(RowAction, { onClick: () => undefined, ...props } as never, label));
+    html(act({ onClick: () => undefined, ...props, children: label }));
 
   it("pending이면 aria-disabled · 네이티브 disabled 없음 · 라벨 뒤 aria-hidden … · sr-only 처리 중", () => {
     const markup = button({ pending: true });
@@ -179,8 +181,8 @@ describe("RowAction button 형 — pending · autoFocus · disabled + disabledRe
       createElement(
         RowActions,
         null,
-        createElement(RowAction, { danger: true, onClick: () => undefined, disabled: true, disabledReason: "이유" }, "삭제"),
-        createElement(RowAction, { href: "/a" }, "수정"),
+        act({ danger: true, onClick: () => undefined, disabled: true, disabledReason: "이유", children: "삭제" }),
+        act({ href: "/a", children: "수정" }),
       ),
     );
     expect(markup.indexOf("수정")).toBeLessThan(markup.indexOf("삭제"));
@@ -198,10 +200,10 @@ describe("RowAction button 형 — pending · autoFocus · disabled + disabledRe
 
   it("disabled인데 disabledReason이 없으면 타입 오류다(Button UX-06과 같은 규약)", () => {
     // @ts-expect-error — disabled는 disabledReason과 함께만 쓴다
-    createElement(RowAction, { onClick: () => undefined, disabled: true }, "삭제");
+    void act({ onClick: () => undefined, disabled: true, children: "삭제" });
     // @ts-expect-error — href 형에는 pending이 없다(링크 대기 표시는 04.6-10)
-    createElement(RowAction, { href: "/a", pending: true }, "수정");
-    createElement(RowAction, { onClick: () => undefined, disabled: true, disabledReason: "이유" }, "삭제");
+    void act({ href: "/a", pending: true, children: "수정" });
+    void act({ onClick: () => undefined, disabled: true, disabledReason: "이유", children: "삭제" });
   });
 });
 
@@ -283,10 +285,12 @@ describe("StaticTable — 서버 렌더 읽기 전용 표(R1)", () => {
       }),
     );
     const classSets = (markup: string, tag: string): string[][] =>
-      [...markup.matchAll(new RegExp(`<${tag}[ >][^>]*?(?:class="([^"]*)")?[^>]*>`, "g"))].map((match) =>
-        (match[1] ?? "").split(/\s+/).filter(Boolean).sort(),
+      [...markup.matchAll(new RegExp(`<${tag}\\b([^>]*)>`, "g"))].map((match) =>
+        (/class="([^"]*)"/.exec(match[1] ?? "")?.[1] ?? "").split(/\s+/).filter(Boolean).sort(),
       );
     const staticMarkup = staticTable(columns, rows);
+    expect(classSets(staticMarkup, "th")).toHaveLength(4);
+    expect(classSets(staticMarkup, "th").every((set) => set.length >= 2)).toBe(true);
     expect(classSets(staticMarkup, "th")).toEqual(classSets(tableMarkup, "th"));
     expect(classSets(staticMarkup, "td").slice(0, 4)).toEqual(classSets(tableMarkup, "td").slice(0, 4));
     // 표 면 클래스(`.table`)와 접힌 줄(`collapsedRow` · `collapsedCell`)이 Table.module.css 이름이다.

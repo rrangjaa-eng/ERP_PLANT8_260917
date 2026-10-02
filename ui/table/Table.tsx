@@ -4,6 +4,7 @@ import { Fragment, useEffect, useRef, useState, type ElementType, type ReactNode
 import Link from "next/link";
 import { clampPage } from "@/lib/paging";
 import { isCtrlCombo } from "@/lib/shortcut";
+import { Num } from "@/ui/num/Num";
 import { Pagination } from "@/ui/pagination/Pagination";
 import styles from "./Table.module.css";
 import { composeFooterNotice, withIssueCount, type FooterNoticeItem } from "./footer-notice";
@@ -137,6 +138,11 @@ export type TableProps<Row> = {
 };
 
 type ActiveCell = { rowId: string; columnKey: string } | null;
+
+// SC 8 — 오른쪽 정렬 열이 숫자 값(number)을 돌려주면 `Num`이 그린다(서식 · tabular-nums · 줄바꿈 없음). 이미 서식을 정한 문자열·노드는 그대로다.
+function numericNode<Row>(column: TableColumn<Row>, value: ReactNode): ReactNode {
+  return column.align === "right" && typeof value === "number" ? <Num value={value} /> : value;
+}
 
 // 04-18 — 정렬 방향 아이콘(Lucide arrow-up / arrow-down 경로, 패키지 없이 인라인 SVG — RowSheet 닫기 아이콘 선례).
 function SortIcon({ direction }: { direction: "asc" | "desc" }) {
@@ -729,7 +735,7 @@ export function Table<Row>({
       });
     }
 
-    const primary = column.cell(row);
+    const primary = numericNode(column, column.cell(row));
     const secondary = column.secondaryLine?.(row);
     if (secondary === null || secondary === undefined || secondary === "") return primary;
     return (
@@ -847,7 +853,7 @@ export function Table<Row>({
               const p2Values = columns
                 .filter((column) => column.priority === "p2")
                 .filter((column) => cellEditability(column, row) !== "edit" || column.summary)
-                .map((column) => (column.summary ? column.summary(row) : column.cell(row)))
+                .map((column) => numericNode(column, column.summary ? column.summary(row) : column.cell(row)))
                 .filter((value): value is ReactNode => value !== null && value !== undefined && value !== "");
 
               return (

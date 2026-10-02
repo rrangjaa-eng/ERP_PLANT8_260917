@@ -1,0 +1,28 @@
+/* SC 10 — 불러오는 중 뼈대. 반짝임 · 반복 · 진행 바 없음. 지연 표시: 처음 opacity 0, 300ms 뒤 한 번만 1로(길이 0 키프레임) —
+   300ms 안에 끝나는 스트리밍에서는 뼈대가 보이지 않는다(§7-7). 표 면 · 머리글은 Table.module.css 클래스를 그대로 쓴다. */
+
+@keyframes appear {
+  to {
+    opacity: 1;
+  }
+}
+
+.delayed {
+  opacity: 0;
+  animation-name: appear;
+  animation-duration: 0s;
+  animation-delay: 300ms;
+  animation-fill-mode: forwards;
+}
+
+.skeletonRow td {
+  height: var(--row-h);
+  border-bottom: var(--line-w) solid var(--border-row);
+  background: var(--surface-muted);
+}
+
+.footerRow td {
+  height: var(--row-h);
+  border-top: var(--line-w) solid var(--border-strong);
+  background: var(--surface-muted);
+}

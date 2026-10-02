@@ -1,0 +1,27 @@
+/* SC 8 — 숫자 표기. font-variant-numeric은 ui/num에서만 허용(stylelint). 정렬은 표 칸(Table.module.css)이 정한다. */
+
+.num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+/* 외화 병기 — 1행 원화, 2행 `통화 금액` · `@환율`. 2행은 두 묶음 사이에서만 줄바꿈한다(묶음 안은 nowrap). */
+.withFx {
+  display: inline-block;
+}
+
+.main {
+  display: block;
+}
+
+.fx {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--text-aux);
+  white-space: normal;
+}
+
+.fxPart {
+  white-space: nowrap;
+}
